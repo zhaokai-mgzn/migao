@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Save, Newspaper } from 'lucide-react'
+import { Building2, Bot, Bell, Save, Newspaper, SlidersHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi } from '@/lib/api'
+import { TenantParamsPanel } from '@/components/settings/TenantParamsPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { useAuthStore } from '@/store/auth'
 import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
@@ -16,11 +17,14 @@ import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 // #3098: 恢复 #3006 之前的左侧 tab 导航布局（基本设置 / AI 客服设置 / 通知设置）；
 // 修改密码/登录日志保持 #3006 隐藏决定（登录日志无记录、密码未来统一短信码登录）。
 
-type SettingsTab = 'basic' | 'ai' | 'notification'
+type SettingsTab = 'basic' | 'ai' | 'params' | 'notification'
 
+// issue #5131：新增「参数总览」tab —— 企业参数中心（§22 配置类页面规范）。
+// 它与既有三个 tab 同层：都是**企业级**配置，放一处才符合「整合到一块」（用户 2026-09-22）。
 const TABS: { key: SettingsTab; label: string; icon: typeof Building2 }[] = [
   { key: 'basic', label: '基本设置', icon: Building2 },
   { key: 'ai', label: 'AI 客服设置', icon: Bot },
+  { key: 'params', label: '参数总览', icon: SlidersHorizontal },
   { key: 'notification', label: '通知设置', icon: Bell },
 ]
 
@@ -28,7 +32,9 @@ export default function SettingsPage() {
   const searchParams = useSearchParams()
   const urlTab = searchParams?.get('tab')
   // 支持 ?tab=ai 直达（原 /chat/config 时代的旧链接兼容，#3098 tab 布局）
-  const [activeTab, setActiveTab] = useState<SettingsTab>(urlTab === 'ai' ? 'ai' : 'basic')
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    urlTab === 'ai' ? 'ai' : urlTab === 'params' ? 'params' : 'basic'
+  )
 
   // ============ 基本设置（企业信息）============
   // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除
@@ -467,6 +473,9 @@ export default function SettingsPage() {
           )}
 
           {/* 通知设置（#3119：开关即时保存，无独立保存按钮） */}
+          {/* 参数总览（issue #5131 · 企业参数中心）*/}
+          {activeTab === 'params' && <TenantParamsPanel />}
+
           {activeTab === 'notification' && (
             <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
               <h2 className="text-lg font-semibold text-neutral-900 mb-6">通知设置</h2>

@@ -7463,6 +7463,25 @@ _CASE_UI_053 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端纸面用例：前置（订单对象含明细/物流/备注、收款码 map）由单测自建（frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx 直接构造 Order/OrderItem 并注入 paymentQrcodes；tests/unit/pages/order-detail.test.tsx mock `orderApi.getOrder`；`settingsApi.getPaymentQrcodes` 打桩），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-054 [NORMAL] 企业参数中心「参数总览」- 按域分组 + 每参数三件套 + 默认值可见 + 行式配置只给入口（源: cases/ui.yml）──
+_CASE_UI_054 = EvalCase(
+    id='UI-054',
+    legacy_id='',
+    title='企业参数中心「参数总览」- 按域分组 + 每参数三件套 + 默认值可见 + 行式配置只给入口',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #5131：商家可配参数散在 6 个页面 / 7 张表 ⇒ 新增「参数总览」tab 一处列出'],
+    expectations=['direct_reply'],
+    data_checks=['settings 页有「参数总览」tab；URL 带 tab=params 可直达（既有 tab=ai 行为不变）', '域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套', '算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记', '「高级」默认收起：初始不渲染其中参数，点开后渲染', '参数文案里不出现数字字符（扫描 tenant-params.ts 全部文案）；算料域 common 并 advanced 与 CALC_SCALAR_KEYS 双向相等', '算料口径读面失败（权限拒绝等）⇒ 渲染可行动话术（含「请联系管理员」），不静默空白', '行式配置（加工费组合 / 特殊选项价 / 工序库 / 工序管理 / 计件）只给入口链接与「钱在哪」说明，不在本页做列表编辑'],
+    skip_reason='[backend-contract] 纯前端 tab 与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx 与 frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行',
+    tags=['ui', 'settings'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建，不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -7888,6 +7907,7 @@ ALL_CASES = (
     _CASE_UI_051,
     _CASE_UI_052,
     _CASE_UI_053,
+    _CASE_UI_054,
     _CASE_UT_001,
     _CASE_UT_002,
 )

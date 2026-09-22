@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034, UI-037
+// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,6 +23,11 @@ vi.mock('lucide-react', () => {
     Loader2: stub('loader2'),
     // issue #3468: 智能每日经营简报图标
     Newspaper: stub('newspaper'),
+    // issue #5131: 「参数总览」tab 与参数面板用到的图标
+    SlidersHorizontal: stub('sliders-horizontal'),
+    ChevronDown: stub('chevron-down'),
+    AlertCircle: stub('alert-circle'),
+    ExternalLink: stub('external-link'),
   }
 })
 
@@ -42,6 +47,8 @@ const mockUpdateSettings = vi.fn()
 const mockGetAiConfig = vi.fn()
 const mockUpdateAiConfig = vi.fn()
 const mockUploadImage = vi.fn()
+// 参数总览（issue #5131）：算料口径**只读**读面（面板不做任何判定与换算）
+const mockGetCraftCalcConfig = vi.fn()
 // 智能每日经营简报（issue #3468）：配置读写
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
@@ -55,6 +62,10 @@ vi.mock('@/lib/api', () => ({
   },
   uploadApi: {
     uploadImage: (...args: any[]) => mockUploadImage(...args),
+  },
+  // 参数总览（issue #5131）：面板挂载时读算料口径
+  productionApi: {
+    getCraftCalcConfig: (...args: any[]) => mockGetCraftCalcConfig(...args),
   },
   briefingApi: {
     getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
@@ -654,5 +665,34 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(toast.error).toHaveBeenCalledWith('保存失败')
       })
     })
+  })
+})
+
+describe('SettingsPage — 参数总览 tab（issue #5131，企业参数中心）', () => {
+  it('第四个 tab「参数总览」在；点它挂载参数中心（按域分组）', async () => {
+    const user = userEvent.setup()
+    mockApiSuccess()
+    mockGetCraftCalcConfig.mockResolvedValue({
+      data: { success: true, data: { source: 'default', config: {} } },
+    })
+    mockSearchParams.mockReturnValue(new URLSearchParams(''))
+    render(<SettingsPage />)
+
+    const tab = await screen.findByRole('button', { name: /参数总览/ })
+    await user.click(tab)
+
+    expect(await screen.findByTestId('tenant-params-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('param-domain-calc')).toBeInTheDocument()
+  })
+
+  it('?tab=params 可直达（既有 ?tab=ai 行为不变）', async () => {
+    mockApiSuccess()
+    mockGetCraftCalcConfig.mockResolvedValue({
+      data: { success: true, data: { source: 'default', config: {} } },
+    })
+    mockSearchParams.mockReturnValue(new URLSearchParams('tab=params'))
+    render(<SettingsPage />)
+
+    expect(await screen.findByTestId('tenant-params-panel')).toBeInTheDocument()
   })
 })
