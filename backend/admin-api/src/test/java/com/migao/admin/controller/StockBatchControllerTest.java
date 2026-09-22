@@ -111,7 +111,11 @@ class StockBatchControllerTest extends BaseControllerTest {
                         12L, "SKU-A", "prod-1", new BigDecimal("57.3"), new BigDecimal("60"),
                         new BigDecimal("60"), new BigDecimal("0"), new BigDecimal("2.7"),
                         new BigDecimal("0"), new BigDecimal("0"), new BigDecimal("2.7"),
-                        new BigDecimal("2.7"), true)), new BigDecimal("2.7"), 0));
+                        new BigDecimal("2.7"),
+                        // V119 / issue #5158：差额拆成「已售未派」+「排料节省」两项（此处无排料 ⇒ 省 0）
+                        new BigDecimal("2.7"), new BigDecimal("0"), new BigDecimal("2.7"),
+                        true)), new BigDecimal("2.7"), 0,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
 
         mockMvc.perform(get(BASE + "/reconcile").param("productId", "prod-1"))
                 .andExpect(status().isOk())
@@ -165,7 +169,8 @@ class StockBatchControllerTest extends BaseControllerTest {
         when(stockBatchConsumptionService.distribution(any(), any()))
                 .thenReturn(new BatchStockViews.Distribution(0, List.of()));
         when(stockBatchConsumptionService.reconcile(any(), any(), any()))
-                .thenReturn(new BatchStockViews.Reconcile(List.of(), BigDecimal.ZERO, 0));
+                .thenReturn(new BatchStockViews.Reconcile(List.of(), BigDecimal.ZERO, 0,
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
         when(stockBatchConsumptionService.candidates(any(), any(), any(), any()))
                 .thenReturn(new BatchStockViews.Candidates(
                         StockBatchConsumptionService.SUGGESTION_RULE_FIFO, null, BigDecimal.ZERO, List.of()));

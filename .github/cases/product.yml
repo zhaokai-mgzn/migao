@@ -2377,3 +2377,101 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: PR-065
+    legacy_id: ""
+    title: "排料接线：并排的两扇矮窗领料合计 3 米（不是 6 米）；省下的米数留在批次余量上；不可并排逐值不倒退；同一加工单不二次扣"
+    domains:
+      - product
+      - inventory
+      - production
+    tier: normal
+    tags:
+      - inventory
+      - production
+      - cutting-plan
+      - backend-contract
+    truths_ref:
+      - batch-stock-plan.deduction-by-cutting-plan
+    user_inputs:
+      - "生成加工单时的领料米数口径（非 LLM 行为，由 Java 单测 + 真 PG 判据覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**并排成立 ⇒ 真省**：门幅 2.8 米、窗高各 1.1 米（+ 上下卷边 0.3 ⇒ 各占门幅 1.4）、各需 3 米的两扇矮窗指派到**同一批次** ⇒ 排料后 1 行 / 行长 3 米 ⇒ **批次扣减 = 3 米**（不是 6 米，逐行分摊 1.5 + 1.5）。真 PG 实测读数：`Σ(−delta) = 3`、`formula_meters = 6`、`planned_meters = 3`、批次余量 60 → 57。**注入红证** = 同参数但去掉定尺入参（= 改前形态）⇒ `Σ(−delta) = 6`（同一测试内 A/B 对照打印）。"
+      - "判据 2·**不倒退**：不可并排（窗高 2.7 + 卷边 0.3 > 门幅 2.8）⇒ 逐行 `planned == formula` **逐值相同**、`saved_meters = 0`（宁可为 0，不许估）。真 PG 读数：两行各 2.7 ⇒ 合计 5.4、`SUM(formula_meters - planned_meters) = 0`。"
+      - "判据 3·**不虚报**：跨批次（不同卷）即使门幅相同也**不得**成组 —— 两块料各自都要单独占一段卷长 ⇒ 两行各扣 3 米。工艺未知 / 缺窗高 / 缺幅数（引擎 `panels` 缺席，不自己算 `ceil(M/G)`）/ 门幅没记 / 取不到上下卷边 / 排料器报错 ⇒ **逐值退回公式口径**（saved = 0），且绝不因排料失败让加工单生成失败。"
+      - "判据 4·**幂等**：同一加工单重复落账 ⇒ 被 `uk_batch_consumption_line` 挡下（真 PG 实测 SQLSTATE **23505**）、台账行数不变、批次余量不变（不得静默二次扣减）。"
+      - "判据 5·**不损失客户**：对客金额 / 售价 / 成品口径逐值不变（排料只改**批次实物账**的扣减米数，`product_skus.stock` 与 `stock_ledger_entries` 一字不动）。"
+    skip_reason: "[backend-contract] 加工单/批次账的后端口径（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5158，P1）：把 #5142 的 A 类排料接进生成加工单 —— 扣减米数从公式口径改为排料口径（省下的米数留在批次余量上），成组键 = **批次 × 加工类型**（跨批次成组是虚报），排不了料一律逐值退回公式口径。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchConsumptionCuttingPlanRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+      ci:
+        - pr-check.yml
+
+  - id: PR-063
+    legacy_id: ""
+    title: "两个米数落库：formula/planned/当时均价三列可逐单审计；换价后历史单 saved_amount 不变；对账差额拆成「已售未派」+「排料节省」两项且仍平"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - reconciliation
+      - cutting-plan
+      - backend-contract
+    truths_ref:
+      - batch-stock-plan.two-meters-and-cost-snapshot
+      - batch-stock-plan.reconcile-splits-two-items
+    user_inputs:
+      - "「到底省了多少料」的逐单读数与对账口径（非 LLM 行为，由 Java 单测 + 真 PG 判据覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**两个米数 + 当时均价三列真落库**（V119）：`formula_meters` / `planned_meters` / `unit_cost` 随扣减行写入，`saved_meters = formula − planned`、`saved_amount = saved_meters × unit_cost` 在**读面派生**（不落第三个数）。真 PG 读数：两行各 1.5 米 ⇒ `saved_meters = 3`、`saved_amount = 37.50`（均价 12.5）。回补行逐值对称（两个米数取相反数、均价原样搬运）⇒ 作废后整单净额归零、不冒功。"
+      - "判据 2·**单价口径不变量**：把 `stock_batches.unit_cost` 改成 99 之后，**历史单**的 `saved_amount` 仍为 37.50（用的是行内**当时**均价快照，不是查询时 join 批次价）。历史行（V119 之前）`formula = planned = −delta`、均价 NULL = 未知（不回填、不猜）。"
+      - "判据 3·**汇总一致**：按加工单聚合与按批次聚合的 `Σ saved_meters` 逐值相等（同一批行、同一个列族，不许两套口径）；对账读面另给 `totalFormulaMeters` / `totalPlannedMeters` / `totalSavedMeters`。"
+      - "判据 4·**对账可拆且不放宽**：`soldUnbatchedMeters`（已售未派）与 `planSavedMeters`（排料节省）**分别可读**，两项之和**逐值等于**拆之前的总解释项 ⇒ `reconciled` 判据仍是 `diff == explainedDiff`（改前判 true 的账改后仍判 true；不许一项冒充另一项）。夹具：批次入 60 / 卖 6 / 排料后只扣 3 ⇒ 差 3 全部读作排料节省、已售未派 0；另一组「已售未派 2 + 排料节省 3 = 差 5」两项并存。"
+    skip_reason: "[backend-contract] 台账列与对账读面的口径（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5158，P1；硬要求来自 #5159 L1）：两个米数与「当时该批次均价」落库（V119），对账差额拆成「已售未派」与「排料节省」两项分别可读。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchConsumptionCuttingPlanRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java"
+      ci:
+        - pr-check.yml
+
+  - id: PR-064
+    legacy_id: ""
+    title: "迁移 V119：批次消耗台账追加 formula_meters / planned_meters / unit_cost（历史行回填、只多不少约束、显式事务、bootstrap 终态同步）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - migration
+      - backend-contract
+    truths_ref:
+      - batch-stock-plan.two-meters-and-cost-snapshot
+    user_inputs:
+      - "迁移形态与终态口径（非 LLM 行为，由 Python 真 PG 判据覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**三列存在且两个米数 NOT NULL**：真 PG 跑 V119 后 `information_schema.columns` 逐列可查；NULL 会让「答不出省了多少」的账静默落库。"
+      - "判据 2·**历史行回填**：V119 之前写入的行 `formula_meters = planned_meters = −delta`（⇒ saved = 0，与「本单之前节省恒为 0」的事实一致）；均价**不回填**（NULL = 未知，不拿今天的批次价冒充当时价）。"
+      - "判据 3·**「只多不少」约束**：`ck_batch_consumption_plan_meters` = `planned_meters <= formula_meters AND formula_meters * planned_meters >= 0` —— 违反者当场 23514（前半句禁「排料比公式多领」，后半句禁「两列符号打架」）。"
+      - "判据 4·**幂等/显式事务/停止条件**：`BEGIN; … COMMIT;`；两遍真跑幂等（`ADD COLUMN IF NOT EXISTS` + `WHERE … IS NULL` 回填 + 覆盖式注释）；前置表/列缺失 ⇒ `RAISE EXCEPTION` 停下；文末终态对账两遍都成立；已登记 `migration_fingerprints.json`（旧条目零改动）；`docs/sql/schema.sql`（bootstrap 终态）已同步。"
+    skip_reason: "[backend-contract] 迁移形态判据（真 PG + 源码），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5158）：V119 —— 批次消耗台账的两个米数与当时均价快照列。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_cutting_plan_meters_migration.py"
+      ci:
+        - pr-check.yml

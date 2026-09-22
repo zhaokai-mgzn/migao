@@ -93,6 +93,37 @@ public class CraftCalcConfigService {
     private final CraftCalcConfigMapper craftCalcConfigMapper;
     private final CraftCalcClient craftCalcClient;
 
+    /** 读面响应里「生效配置」那一格的键名（`get()` 的返回形态；只在这里写一次）。 */
+    public static final String KEY_CONFIG = "config";
+
+    /**
+     * **上下卷边**（米）—— 排料定尺用（issue #5158）：定高买宽的一块料占门幅宽 = 窗高 + 本值。
+     *
+     * <p>键名 = {@link #CONFIG_KEYS} 里的同名字面量（引擎 {@code DEFAULT_CRAFT_CALC_CONFIG.hem_margin}
+     * 是唯一真值源；本类不复制它的**数值**）。</p>
+     *
+     * <p>🔴 <b>fail-soft</b>（与 {@link #get} 的 fail-closed **有意不同**）：排料是**优化**，
+     * 不是正确性前提 —— 取不到本值 ⇒ 返回 {@code null}，调用方**不排料**（按公式口径扣，
+     * saved = 0），绝不因为一个优化参数取不到就让加工单生成失败（「不能损失客户」）。
+     * 也**绝不**返回一个凭空的默认余量：猜小了 ⇒ 少领 ⇒ 裁床切不出货（比不省料严重得多）。</p>
+     */
+    public BigDecimal hemMarginOrNull(Long tenantId) {
+        try {
+            Map<String, Object> read = get(tenantId);
+            Object config = read == null ? null : read.get(KEY_CONFIG);
+            Object raw = config instanceof Map<?, ?> m ? m.get("hem_margin") : null;
+            if (raw == null) {
+                return null;
+            }
+            BigDecimal value = new BigDecimal(String.valueOf(raw));
+            return value.signum() > 0 ? value : null;
+        } catch (RuntimeException e) {
+            log.warn("取上下卷边失败 ⇒ 本次不排料（按公式口径扣、saved=0）: tenant={}, error={}",
+                    tenantId, e.getMessage());
+            return null;
+        }
+    }
+
     /** 读本租户的**生效**算料配置（**不带**引擎默认值 —— 既有调用方口径逐字节不变）。 */
     public Map<String, Object> get(Long tenantId) {
         return get(tenantId, false);

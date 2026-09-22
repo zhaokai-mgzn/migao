@@ -165,7 +165,34 @@ final class OrderLineCraftFields {
     }
 
     private static Integer integer(Map<String, Object> source, String key, String where) {
-        Object raw = source.get(key);
+        return integerOrNull(source.get(key), where + " key=" + key);
+    }
+
+    private static BigDecimal decimal(Map<String, Object> source, String key, String where) {
+        return decimalOrNull(source.get(key), where + " key=" + key);
+    }
+
+    /**
+     * **值级**数字取值（宽松：类型不对 / 解析失败 ⇒ WARN + {@code null}，不静默丢值）。
+     *
+     * <p>给同包的**快照消费方**复用（issue #5158：生成加工单时要从快照行取「窗高 / 分幅数」
+     * 两个排料定尺入参）—— 与上面的 {@code Map + key} 版本是**同一套**判据，不是第二份口径
+     * （本仓反复复发的形态正是「同一件事各写一份」，漂移的那一份不会变红）。</p>
+     */
+    static BigDecimal decimalOrNull(Object raw, String where) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(raw).trim());
+        } catch (NumberFormatException e) {
+            log.warn("下单行要素 {} 不是可解析的数字（不落列）", where);
+            return null;
+        }
+    }
+
+    /** {@link #decimalOrNull} 的整数版（同一条宽松判据）。 */
+    static Integer integerOrNull(Object raw, String where) {
         if (raw == null) {
             return null;
         }
@@ -175,20 +202,7 @@ final class OrderLineCraftFields {
         try {
             return new BigDecimal(String.valueOf(raw).trim()).intValue();
         } catch (NumberFormatException e) {
-            log.warn("下单行要素 {} 不是可解析的整数（不落列）: key={}, value={}", where, key, raw);
-            return null;
-        }
-    }
-
-    private static BigDecimal decimal(Map<String, Object> source, String key, String where) {
-        Object raw = source.get(key);
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return new BigDecimal(String.valueOf(raw).trim());
-        } catch (NumberFormatException e) {
-            log.warn("下单行要素 {} 不是可解析的数字（不落列）: key={}, value={}", where, key, raw);
+            log.warn("下单行要素 {} 不是可解析的整数（不落列）", where);
             return null;
         }
     }

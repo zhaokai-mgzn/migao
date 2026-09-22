@@ -469,6 +469,20 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
                     it.quantity != null && `数量 ${it.quantity}${it.unit ?? ''}`,
                   ].filter(Boolean).join(' · ')}
                 </div>
+                {/* 排料结果（V119 / issue #5158）：**应领米数**（排料口径）与公式口径并列。
+                    缺键（未指派批次 / 排不了料的单）⇒ 整块不出现（缺值不渲染，不显示 0 冒充省了）。 */}
+                {it.plannedMeters != null && (
+                  <div
+                    className="mt-1.5 text-xs text-neutral-600"
+                    data-testid={`po-item-cutting-plan-${idx}`}
+                  >
+                    应领 {formatStockQuantity(Number(it.plannedMeters))} 米（公式{' '}
+                    {formatStockQuantity(Number(it.formulaMeters ?? it.plannedMeters))} 米
+                    {Number(it.savedMeters ?? 0) > 0 &&
+                      ` · 省 ${formatStockQuantity(Number(it.savedMeters))} 米`}
+                    ）
+                  </div>
+                )}
                 {/* 工艺规格：无任何工艺键（存量单）时整块不出现 */}
                 {specRows.length > 0 && (
                   <div className="mt-1.5 space-y-0.5" data-testid="po-item-craft-spec">

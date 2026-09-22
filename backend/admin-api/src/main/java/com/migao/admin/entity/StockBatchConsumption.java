@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 
 /**
@@ -68,6 +69,33 @@ public class StockBatchConsumption {
     /** 变更后**该批次余量** */
     private BigDecimal afterQty;
 
+    /**
+     * **行业公式口径**米数（= {@code toStockScaleByCeiling(order_items.quantity)}，与销售账扣减同源）
+     * —— 即本单之前的扣减口径（V119，issue #5158；硬要求来自 #5159 L1）。
+     *
+     * <p><b>带符号</b>，与 {@link #delta} 同向：扣减行为正、回补行为负（回补行 = 原值的相反数
+     * ⇒ 作废后整单两列净额都归零，读面不必再做一次「扣减 − 回补」的减法）。</p>
+     */
+    private BigDecimal formulaMeters;
+
+    /**
+     * **排料口径**米数（A 类完整布并排后的应领米数）= 本行**实际扣减**口径，恒等于 {@code -delta}。
+     *
+     * <p>单独立列是为让「两个米数」在账上**逐行自证**（#5159 L1 的逐单审计面）：读的人不必知道
+     * {@code delta} 的符号约定就能同时读出两个口径。DB 侧有约束保证
+     * {@code planned_meters <= formula_meters}（**只多不少**）且两列同号。</p>
+     */
+    private BigDecimal plannedMeters;
+
+    /**
+     * **当时**该批次均价（元/米）快照（源 {@code stock_batches.unit_cost}，V119）。
+     *
+     * <p>🔴 均价随行**快照**（而不是读面 join 批次）是判据「换价后历史单的 {@code saved_amount}
+     * 不得变」的**唯一**实现方式。{@code NULL} = 未知（V119 之前的历史行：那时没记这个数，
+     * **不回填、不猜** —— 拿今天的批次价冒充当时价正是本列要防的事）。</p>
+     */
+    private BigDecimal unitCost;
+
     /** 见 {@link #REASON_PROCESSING_ORDER} / {@link #REASON_PROCESSING_ORDER_CANCELLED} */
     private String reason;
 
@@ -91,4 +119,29 @@ public class StockBatchConsumption {
 
     @TableLogic
     private Integer deleted;
+
+    /**
+     * 排料省下的米数 = {@code formula_meters − planned_meters}（**派生，不落库** —— 落库就是第三个数，
+     * 与两个真值之间迟早对不上）。两列同号 ⇒ 作废行得到的是负数（整单净额仍然对），
+     * 「宁可为 0，不许估」由约束 {@code planned <= formula} 保证不为负。
+     *
+     * <p>两列缺一（历史形态 / 未取到）⇒ {@code null}（不造值）。</p>
+     */
+    public BigDecimal getSavedMeters() {
+        return formulaMeters == null || plannedMeters == null
+                ? null : formulaMeters.subtract(plannedMeters);
+    }
+
+    /**
+     * 省下的钱 = {@code saved_meters × 当时该批次均价}（{@link #getSavedMeters()} 的派生）。
+     *
+     * <p>均价是**行内快照**（{@link #unitCost}）⇒ 事后改 {@code stock_batches.unit_cost}
+     * **不会**改掉历史单的这个数（#5159 硬约束二）。金额按**分**（2 位，{@code HALF_UP}）计
+     * —— 与批次均价同为金额口径；均价未知（历史行）⇒ {@code null}，**不按 0 或现价折算**。</p>
+     */
+    public BigDecimal getSavedAmount() {
+        BigDecimal saved = getSavedMeters();
+        return saved == null || unitCost == null
+                ? null : saved.multiply(unitCost).setScale(2, RoundingMode.HALF_UP);
+    }
 }

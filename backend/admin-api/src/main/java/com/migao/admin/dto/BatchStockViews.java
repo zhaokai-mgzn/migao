@@ -57,20 +57,32 @@ public final class BatchStockViews {
     }
 
     /**
-     * 对账一行（**路线 A 的交换条件**，issue #5145 判据 5）。
+     * 对账一行（**路线 A 的交换条件**，issue #5145 判据 5；两项拆分见 issue #5158）。
      *
-     * <p>差额恒等式（{@code reconciled} 就是它的可执行判据）：</p>
+     * <p>差额恒等式（{@code reconciled} 就是它的可执行判据）——<b>拆成两项、分别可读</b>：</p>
      * <pre>
      *   diff = batchRemaining − skuStock
-     *   explainedDiff = soldDeducted − dispatched − otherLedgerDelta
-     *   diff == explainedDiff − unbatched          // ← reconciled
+     *   soldUnbatched = soldDeducted − formulaDeducted − otherLedgerDelta − unbatched   // 已售未派
+     *   planSaved     = formulaDeducted − dispatched                                     // 排料节省
+     *   explainedDiff = soldUnbatched + planSaved
+     *   diff == explainedDiff                                                            // ← reconciled
      * </pre>
      * <p>推导：{@code batchRemaining = 入库总米数 − 派工扣减}；
      * {@code skuStock = 入库总米数 − 销售已扣 + 其它台账净额 + 台账之外形成的库存}。
-     * 两式相减即得。含义：{@code soldDeducted − dispatched} = <b>已售未派</b>（顾客已付款扣了
-     * 销售账、加工单还没派 ⇒ 实物账还没动）；{@code unbatched} = **台账之外的库存**
+     * 两式相减即得。含义：{@code soldDeducted − dispatched} 这一项**混合了两件事**，
+     * 必须拆开读 —— ①「顾客已付款扣了销售账、加工单还没派」；②「派工按排料结果扣、
+     * 比公式米数少扣的那部分」；{@code unbatched} = **台账之外的库存**
      * （本功能上线前就存在的存量 / 建品时直接写 stock 的部分）——它**不是**差额的异常，
      * 是「这批库存从来没有批次来源」这个事实本身。</p>
+     *
+     * <p>🔴 <b>两项叠加逐值等于拆之前的总解释项</b>（{@code formulaDeducted} 在两项里一加一减
+     * 抵消）⇒ 本单**只**把口径说清楚，没有放宽 {@code reconciled}：改前判 true 的账，
+     * 改后仍判 true（改前判 false 的同样判 false）。这样「拆开」不会顺手把一条真判据改成恒真。</p>
+     *
+     * <p>🔴 <b>不许一项冒充另一项</b>：{@code planSaved} 只取「公式口径 − 排料口径」的差
+     * （V119 的 {@code formula_meters − planned_meters}，落库值，不重算）；
+     * 没有 `formula_meters` 的历史行回填为 {@code −delta} ⇒ 那部分恒为 0，
+     * 于是历史差额**全部**归到「已售未派」（与改前读法一致，不冒功）。</p>
      */
     public record ReconcileRow(
             Long skuId,
@@ -85,11 +97,26 @@ public final class BatchStockViews {
             BigDecimal unbatchedMeters,
             BigDecimal diff,
             BigDecimal explainedDiff,
+            /** 差额的第 1 项：**已售未派**（顾客已扣销售账、加工单还没派 / 公式口径之外的正常差额）。 */
+            BigDecimal soldUnbatchedMeters,
+            /** 差额的第 2 项：**排料节省**（{@code Σ formula_meters − Σ 派工扣减}，V119 / issue #5158）。 */
+            BigDecimal planSavedMeters,
+            /** 公式口径的派工扣减净额（拆分的枢轴；历史行回填为 {@code −delta} ⇒ 该腿恒等于 dispatched）。 */
+            BigDecimal formulaDeductedMeters,
             boolean reconciled) {
     }
 
-    /** 对账读面（{@code totalDiff} = Σ差额；{@code unreconciledCount} > 0 ⇒ 恒等式不成立，须排查） */
-    public record Reconcile(List<ReconcileRow> rows, BigDecimal totalDiff, int unreconciledCount) {
+    /**
+     * 对账读面（{@code totalDiff} = Σ差额；{@code unreconciledCount} > 0 ⇒ 恒等式不成立，须排查）。
+     *
+     * <p>{@code totalFormulaMeters} / {@code totalPlannedMeters} / {@code totalSavedMeters}（V119）
+     * = 逐 SKU 口径的**汇总读面**：{@code totalSavedMeters} 必须与「逐加工单读面」
+     * （{@code /stock-batches/consumptions} 逐行 {@code savedMeters} 求和）**逐值相等**
+     * —— 两条路各自聚合的是同一批行、同一个列族，不许是两套口径。</p>
+     */
+    public record Reconcile(List<ReconcileRow> rows, BigDecimal totalDiff, int unreconciledCount,
+                            BigDecimal totalFormulaMeters, BigDecimal totalPlannedMeters,
+                            BigDecimal totalSavedMeters) {
     }
 
     /**

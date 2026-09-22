@@ -1,6 +1,6 @@
 package com.migao.admin.mapper;
 
-// case_ids: PR-056
+// case_ids: PR-056, PR-063
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -39,6 +40,8 @@ class StockBatchConsumptionMapperTest {
 
     private static final String V116 =
             "backend/admin-api/src/main/resources/db/migration/V116__create_stock_batch_consumptions.sql";
+    private static final String V119 =
+            "backend/admin-api/src/main/resources/db/migration/V119__add_cutting_plan_meters_to_batch_consumptions.sql";
     private static final String SCHEMA = "docs/sql/schema.sql";
     private static final Path MIGRATION_DIR =
             ProductionMigrationSql.repoRoot().resolve("backend/admin-api/src/main/resources/db/migration");
@@ -128,6 +131,69 @@ class StockBatchConsumptionMapperTest {
         //    各有两份（历史遗留，与本判据无关）⇒ 全量查重会对历史假红；而新增迁移只会出现在尾部。
         //    V116 自身的逐字节冻结另由 migration_fingerprints.json 的 sha256 账本守（此处不重复主张）。
         assertThat(versions.stream().filter(v -> v >= 116).toList()).doesNotHaveDuplicates();
+    }
+
+    @Test
+    @DisplayName("V119：两个米数 + 当时均价三列在实体与迁移里都收敛（#5159 的「两个米数必须落库」）")
+    void cuttingPlanMetersArePersisted() {
+        List<String> fields = Arrays.stream(StockBatchConsumption.class.getDeclaredFields())
+                .map(Field::getName)
+                .toList();
+        assertThat(fields).contains("formulaMeters", "plannedMeters", "unitCost");
+        // V119 是**加列**迁移（表在 V116 建）⇒ 判据看 ADD COLUMN 与 bootstrap 终态，不看 CREATE TABLE
+        String sql = ProductionMigrationSql.read(V119);
+        assertThat(sql).contains("ADD COLUMN IF NOT EXISTS formula_meters NUMERIC(12,1)")
+                .contains("ADD COLUMN IF NOT EXISTS planned_meters NUMERIC(12,1)")
+                .contains("ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(12,4)");
+        // 两个米数**必填**（漏了它 ⇒ 「答不出省了多少」的账能静默落库）
+        assertThat(sql).contains("ALTER COLUMN formula_meters SET NOT NULL")
+                .contains("ALTER COLUMN planned_meters SET NOT NULL");
+        // 历史行回填 = 改前口径（扣减行正、回补行负），且**不猜均价**
+        assertThat(sql).contains("SET formula_meters = -delta").contains("planned_meters = -delta");
+        assertThat(sql).doesNotContain("SET unit_cost");
+    }
+
+    @Test
+    @DisplayName("V119：「只多不少」约束同时钉住 planned<=formula 与两列同号（漏后半句 ⇒ 符号打架的行能落库）")
+    void planMetersInvariantIsEnforcedInSql() {
+        String sql = ProductionMigrationSql.read(V119);
+        assertThat(sql).contains("ck_batch_consumption_plan_meters")
+                .contains("planned_meters <= formula_meters")
+                .contains("formula_meters * planned_meters >= 0")
+                .contains("ck_batch_consumption_unit_cost");
+    }
+
+    @Test
+    @DisplayName("派生值不落库：saved_meters / saved_amount 由实体算（落库就是第三个会漂移的数）")
+    void derivedSavingsAreNotPersisted() {
+        List<String> fields = Arrays.stream(StockBatchConsumption.class.getDeclaredFields())
+                .map(Field::getName)
+                .toList();
+        assertThat(fields).doesNotContain("savedMeters", "savedAmount");
+        String sql = ProductionMigrationSql.read(V119);
+        // ⚠️ 断言带 `ADD COLUMN` 前缀：迁移**注释**里会解释 saved_meters 这个派生口径（那是文档，不是落库）
+        assertThat(sql).doesNotContain("ADD COLUMN IF NOT EXISTS saved_meters")
+                .doesNotContain("ADD COLUMN IF NOT EXISTS saved_amount");
+        // 派生口径可执行：formula 6 / planned 1.5 / 均价 12.5 ⇒ 省 4.5 米、56.25 元
+        StockBatchConsumption row = StockBatchConsumption.builder()
+                .formulaMeters(new BigDecimal("6")).plannedMeters(new BigDecimal("1.5"))
+                .unitCost(new BigDecimal("12.5")).build();
+        assertThat(row.getSavedMeters()).isEqualByComparingTo("4.5");
+        assertThat(row.getSavedAmount()).isEqualByComparingTo("56.25");
+        // 均价未知（历史行）⇒ 省钱数读不出（**不按 0 或现价折算**）
+        assertThat(StockBatchConsumption.builder()
+                .formulaMeters(new BigDecimal("6")).plannedMeters(new BigDecimal("6")).build()
+                .getSavedAmount()).isNull();
+    }
+
+    @Test
+    @DisplayName("bootstrap 终态同步：docs/sql/schema.sql 也带三列与「只多不少」约束")
+    void bootstrapSchemaMirrorsCuttingPlanMeters() {
+        String schema = ProductionMigrationSql.read(SCHEMA);
+        assertThat(schema).contains("formula_meters NUMERIC(12,1) NOT NULL")
+                .contains("planned_meters NUMERIC(12,1) NOT NULL")
+                .contains("unit_cost NUMERIC(12,4)")
+                .contains("ck_batch_consumption_plan_meters");
     }
 
     @Test

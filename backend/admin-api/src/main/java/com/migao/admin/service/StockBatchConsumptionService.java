@@ -51,6 +51,23 @@ import java.util.Set;
  * 而**异常不逸出事务边界 ⇒ 不会回滚**。⇒ 若在写库之后再抛业务异常，就会留下「有加工单、扣了半截」
  * 的半成品（同 #4116 对工序实例 payload 的处置）。故本服务的纪律是：
  * <b>{@link #plan} 只读校验（任何业务异常都在这里抛完）；{@link #apply} 只落账、不再抛业务异常。</b>
+ *
+ * <h2>扣减米数 = 排料口径（V119，issue #5158）—— 「省料」真正产生的地方</h2>
+ * 本单之前，扣减米数 = 公式米数（{@code toStockScaleByCeiling(order_items.quantity)}）⇒ 哪怕排料
+ * 能省，批次账照旧按公式扣（#5142 的排料器因此只是积木、省不了一米）。本单起：
+ * <ol>
+ *   <li>按「**批次 × 加工类型**」成组调用 {@link CuttingPlanCalculator}（同批次 = 同一卷布，
+ *       跨批次成组是虚报 —— 理由见 {@link #cuttingPlanByItemId}）；</li>
+ *   <li>组的应领米数按各行公式米数占比分摊回行，再经
+ *       {@link StockQuantity#toStockScaleByCeiling}（**领料量归一的唯一入口**，公式口径与排料口径
+ *       共用同一个函数）归一到 0.1 ⇒ 实际扣减 = 排料结果，**省下的米数留在批次余量上**；</li>
+ *   <li>两个口径的米数**都落库**（{@code formula_meters} / {@code planned_meters}）+
+ *       **当时**该批次均价快照（{@code unit_cost}）⇒ 事后能逐单回答「省了多少米、多少钱」
+ *       （#5159 L1），且换价后历史单的 {@code saved_amount} 不变。</li>
+ * </ol>
+ * <p>排不了料（工艺未知 / 缺窗高或幅数 / 门幅没记 / 取不到上下卷边 / 排料器报错）⇒ 该组
+ * **逐值退回公式口径**（saved = 0）：排料是优化，不是加工单生成的正确性前提
+ * （「宁可为 0，不许估」，且绝不因为优化失败让加工单生成不了）。</p>
  */
 @Slf4j
 @Service
@@ -77,10 +94,30 @@ public class StockBatchConsumptionService {
     private static final BigDecimal LE_0_5 = new BigDecimal("0.5");
     private static final BigDecimal LE_1 = new BigDecimal("1");
 
+    /**
+     * 分摊商的小数位（内部中间值，**不是业务精度**）：分摊的结果紧接着就经
+     * {@link StockQuantity#toStockScaleByCeiling} 归一到 0.1 —— 这里多留几位只是为了让
+     * 「Σ 分摊 = 组应领米数」在归一之前逐值成立（`BigDecimal.divide` 除不尽必须给 scale，
+     * 给 1 位就等于在归一之前先私自舍入了一次）。
+     */
+    private static final int SHARE_SCALE = 10;
+
+    /** 定宽买高「每幅」的小数位（同上：中间值，落库存前统一由 {@code toStockScaleByCeiling} 归一）。 */
+    private static final int PER_PIECE_SCALE = 6;
+
     private final StockBatchMapper stockBatchMapper;
     private final StockBatchConsumptionMapper consumptionMapper;
     private final ProductSkuMapper productSkuMapper;
     private final StockLedgerMapper stockLedgerMapper;
+
+    /**
+     * 算料配置的**单一读面**（issue #5158）：排料定尺要一个「上下卷边」（{@link CraftCalcConfigService#hemMarginOrNull}）。
+     *
+     * <p>只借它取这**一个**参数 —— 门幅/褶倍/幅数一律不在 Java 侧重算（它们由算料引擎产出、
+     * 随订单落 {@code processing_info}，本服务只搬不算）。取不到 ⇒ **不排料**（fail-soft，
+     * 见 {@link #hemMarginOrNull}）：排料是优化，不是加工单生成的正确性前提。</p>
+     */
+    private final CraftCalcConfigService craftCalcConfigService;
 
     // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ① plan —— 只读校验（全部业务异常在此抛完）
@@ -94,17 +131,50 @@ public class StockBatchConsumptionService {
      * 用「订单行 skuCode vs 批次 skuCode」做一致性判据，比从订单行反解 skuId 少一层猜测
      * （反解要靠 {@code OrderService.matchSkuId} 那套匹配，那是销售腿的口径）。</p>
      *
+     * <h2>后面三个字段是**排料定尺**的入参（issue #5158），不是可选的装饰</h2>
+     * 排料要回答「这一行在门幅上占多宽、沿卷长要多长」，而这两条边**全部来自算料引擎的产物**
+     * （本服务不重算幅数/褶倍/窗宽 —— 重算就是第二份会漂移的算料口径）：
+     * <ul>
+     *   <li><b>定高买宽</b>：一块 = 整窗 ⇒ {@code 占门幅宽 = height + 上下卷边}（卷边取自算料配置）、
+     *       {@code 沿卷长 = meters}（= 引擎给的该行用料米数）；</li>
+     *   <li><b>定宽买高</b>：一块 = 每一幅 ⇒ 幅数 {@code panels}（引擎的 {@code panels} 输出）
+     *       把该行米数**等分**成 {@code panels} 块（{@code 每幅 = meters / panels} 就是引擎口径下的
+     *       「幅宽」与「每幅长」—— 引擎的 {@code M = P × (H + 卷边)} 决定了这两个数恒等，
+     *       故等分是**分解**引擎的输出，不是重新推导它）。</li>
+     * </ul>
+     * <p>任一字段缺席（存量单没有该键 / 加工类型未知）⇒ **该行不参与排料**，按 {@code meters}
+     * （公式口径）扣 —— 「宁可为 0，不许估」。</p>
+     *
      * @param orderItemId 订单明细行 id（= 快照行的 itemId，唯一标识「哪一行」）
      * @param batchNo     文员指定的批次号（**人工最终选择**，不是建议值）
-     * @param meters      该行要扣的米数（口径 = 订单行数量向上进位到 0.1，与销售账扣减**同一个函数**）
+     * @param meters      **公式口径**米数（= {@code toStockScaleByCeiling(order_items.quantity)}，
+     *                    与销售账扣减**同一个函数**）—— 它是「改前的扣减口径」，本单把它原样落
+     *                    {@code formula_meters}，与排料口径并列可读
+     * @param cuttingMode 加工类型（{@code 定高买宽} / {@code 定宽买高}；其它值 ⇒ 不排料）
+     * @param height      窗高（米；定高买宽定尺用）
+     * @param panels      分幅数（定宽买高定尺用；引擎的 {@code panels} 输出）
      */
     public record Designation(String orderItemId, String productId, String skuCode,
-                              String batchNo, BigDecimal meters) {
+                              String batchNo, BigDecimal meters,
+                              String cuttingMode, BigDecimal height, Integer panels) {
     }
 
-    /** 计划里的一行（已校验「批次存在 / 属于该 SKU / 余量足够」；apply 只负责落账） */
+    /**
+     * 计划里的一行（已校验「批次存在 / 属于该 SKU / 余量足够」；apply 只负责落账）。
+     *
+     * <p>{@code formulaMeters} / {@code plannedMeters}（V119，issue #5158）= 两个口径的米数，
+     * 随扣减行一起落库并**带符号**（见 {@link StockBatchConsumption}）；
+     * {@code unitCost} = **当时**该批次均价快照（源 {@code stock_batches.unit_cost}，
+     * {@code null} = 批次未记成本 ⇒ 省钱数读不出，不猜）。</p>
+     */
     public record Deduction(Long batchId, String batchNo, String productId, Long skuId, String skuCode,
-                            String orderItemId, BigDecimal meters, BigDecimal remainingBefore) {
+                            String orderItemId, BigDecimal formulaMeters, BigDecimal plannedMeters,
+                            BigDecimal unitCost, BigDecimal remainingBefore) {
+
+        /** 实际扣减米数 = **排料口径**（= 改后口径）。保留此访问器：既有调用点读的就是「扣多少」。 */
+        public BigDecimal meters() {
+            return plannedMeters;
+        }
     }
 
     /**
@@ -115,6 +185,12 @@ public class StockBatchConsumptionService {
      * （列出同 SKU 的有余量批次），绝不「有多少扣多少」。</p>
      *
      * <p>同一批次被多行指定时按**累积**判余量（不是逐行各自判）——否则两行各 3 米会把只剩 5 米的批次扣成 -1。</p>
+     *
+     * <p>🔴 <b>扣减米数 = 排料口径</b>（V119，issue #5158）：先按「批次 × 加工类型」成组排料
+     * （{@link #cuttingPlanByItemId}），把每组的应领米数按各行公式米数占比分摊回行、
+     * 经 {@link StockQuantity#toStockScaleByCeiling} 归一到 0.1，再拿它判余量 ——
+     * 「省下的米数留在批次余量上」就是这一步的结果。排不了料的行**逐值退回公式口径**
+     * （= 改前行为，节省恒为 0）。</p>
      */
     public List<Deduction> plan(Long tenantId, List<Designation> designations) {
         if (designations == null || designations.isEmpty()) {
@@ -141,6 +217,8 @@ public class StockBatchConsumptionService {
         }
         // 累积口径：running = 「该批次已消耗净额」（负数为扣减）—— 同一批次被多行指定时逐行递减
         Map<Long, BigDecimal> running = new HashMap<>(consumedByBatchId(tenantId, batchIds));
+        // 排料口径（V119 / issue #5158）：缺席的行 = 该行不参与排料 ⇒ 下面逐值退回公式口径
+        Map<String, BigDecimal> plannedByItemId = cuttingPlanByItemId(tenantId, designations, byNo);
 
         List<Deduction> plan = new ArrayList<>();
         for (Designation d : designations) {
@@ -163,7 +241,8 @@ public class StockBatchConsumptionService {
                                 batch.getBatchNo(), batch.getSkuCode(), d.skuCode()), 400,
                         "请选择与该行颜色/门幅一致的批次");
             }
-            BigDecimal meters = StockQuantity.orZero(d.meters());
+            BigDecimal formula = StockQuantity.orZero(d.meters());
+            BigDecimal meters = plannedByItemId.getOrDefault(d.orderItemId(), formula);
             BigDecimal before = StockQuantity.orZero(batch.getQuantity())
                     .add(running.getOrDefault(batch.getId(), BigDecimal.ZERO));
             if (before.compareTo(meters) < 0) {
@@ -176,7 +255,7 @@ public class StockBatchConsumptionService {
             plan.add(new Deduction(batch.getId(), batch.getBatchNo(), batch.getProductId(),
                     batch.getSkuId(),
                     StringUtils.hasText(batch.getSkuCode()) ? batch.getSkuCode() : d.skuCode(),
-                    d.orderItemId(), meters, before));
+                    d.orderItemId(), formula, meters, batch.getUnitCost(), before));
         }
         return plan;
     }
@@ -202,6 +281,11 @@ public class StockBatchConsumptionService {
                     .delta(delta)
                     .beforeQty(d.remainingBefore())
                     .afterQty(d.remainingBefore().add(delta))
+                    // 两个米数 + 当时均价随扣减行**同时**落库（V119 / issue #5158；#5159 硬约束一）：
+                    // 事后重算会随口径漂移（算料配置可改、排料器会迭代）⇒ 写账这一笔才是唯一真相。
+                    .formulaMeters(d.formulaMeters())
+                    .plannedMeters(d.plannedMeters())
+                    .unitCost(d.unitCost())
                     .reason(REASON_PROCESSING_ORDER)
                     .processingOrderNo(processingOrderNo)
                     .orderNo(orderNo)
@@ -211,9 +295,12 @@ public class StockBatchConsumptionService {
                     .createdAt(OffsetDateTime.now())
                     .build());
         }
-        log.info("派工扣批次库存: po={}, orderNo={}, tenant={}, lines={}, meters={}",
+        log.info("派工扣批次库存: po={}, orderNo={}, tenant={}, lines={}, meters={}, formula={}, saved={}",
                 processingOrderNo, orderNo, tenantId, plan.size(),
-                plain(StockQuantity.sum(plan.stream().map(Deduction::meters).toList())));
+                plain(StockQuantity.sum(plan.stream().map(Deduction::plannedMeters).toList())),
+                plain(StockQuantity.sum(plan.stream().map(Deduction::formulaMeters).toList())),
+                plain(StockQuantity.sum(plan.stream()
+                        .map(d -> d.formulaMeters().subtract(d.plannedMeters())).toList())));
         return plan.size();
     }
 
@@ -280,6 +367,10 @@ public class StockBatchConsumptionService {
             BigDecimal before = StockQuantity.orZero(batch.getQuantity())
                     .add(running.getOrDefault(batch.getId(), BigDecimal.ZERO));
             BigDecimal delta = c.getDelta().negate();
+            // 回补行**逐值对称**地回写两个米数与当时均价（取相反数）：
+            // ① 两列同带符号 ⇒ 作废后整单两个口径都净额归零（读面不必再写第二套减法）；
+            // ② saved_meters 于是得到 −(原省数) ⇒ 与扣减行的省数**相加归零**（作废不冒功）；
+            // ③ 均价是**同一笔成本基础**的快照，原样搬运（不是「今天的价」）。
             consumptionMapper.insert(StockBatchConsumption.builder()
                     .tenantId(tenantId)
                     .batchId(c.getBatchId())
@@ -290,6 +381,9 @@ public class StockBatchConsumptionService {
                     .delta(delta)
                     .beforeQty(before)
                     .afterQty(before.add(delta))
+                    .formulaMeters(negated(c.getFormulaMeters()))
+                    .plannedMeters(negated(c.getPlannedMeters()))
+                    .unitCost(c.getUnitCost())
                     .reason(REASON_PROCESSING_ORDER_CANCELLED)
                     .processingOrderNo(processingOrderNo)
                     .orderNo(orderNo != null ? orderNo : c.getOrderNo())
@@ -383,11 +477,14 @@ public class StockBatchConsumptionService {
                 skuCodes.putIfAbsent(b.getSkuId(), b.getSkuCode());
             }
         }
-        // 派工扣减净额（逐 SKU）
+        // 派工扣减净额（逐 SKU）—— 口径 = **排料后**实际扣的米数（V119 起）
         Map<Long, BigDecimal> dispatchedBySku = new LinkedHashMap<>();
+        // 公式口径的派工扣减净额（逐 SKU，V119）：与上面同一次扫描 ⇒ 拆分不是两次查询凑出来的
+        Map<Long, BigDecimal> formulaBySku = new LinkedHashMap<>();
         for (StockBatchConsumptionMapper.SkuDeltaSum sum : consumptionMapper.sumDeltaBySku(tenantId)) {
             dispatchedBySku.merge(sum.getSkuId(), StockQuantity.orZero(sum.getDeltaSum()).negate(),
                     BigDecimal::add);
+            formulaBySku.merge(sum.getSkuId(), StockQuantity.orZero(sum.getFormulaSum()), BigDecimal::add);
         }
         // 销售账分腿（逐 SKU）
         Map<Long, StockLedgerMapper.SkuLedgerSum> ledger = new LinkedHashMap<>();
@@ -401,10 +498,14 @@ public class StockBatchConsumptionService {
                 .eq(skuId != null, ProductSku::getId, skuId));
         List<BatchStockViews.ReconcileRow> rows = new ArrayList<>();
         BigDecimal totalDiff = BigDecimal.ZERO;
+        BigDecimal totalFormula = BigDecimal.ZERO;
+        BigDecimal totalPlanned = BigDecimal.ZERO;
+        BigDecimal totalSaved = BigDecimal.ZERO;
         int unreconciled = 0;
         for (ProductSku sku : skus) {
             BigDecimal inbound = inboundBySku.getOrDefault(sku.getId(), BigDecimal.ZERO);
             BigDecimal dispatched = dispatchedBySku.getOrDefault(sku.getId(), BigDecimal.ZERO);
+            BigDecimal formulaDeducted = formulaBySku.getOrDefault(sku.getId(), BigDecimal.ZERO);
             BigDecimal batchRemaining = remainingBySku.getOrDefault(sku.getId(), BigDecimal.ZERO);
             // 只列出「与批次账有关」的 SKU（从未入库过的 SKU 没有批次来源，差额恒为 −stock，读它无意义）
             if (inbound.compareTo(BigDecimal.ZERO) == 0 && dispatched.compareTo(BigDecimal.ZERO) == 0) {
@@ -417,21 +518,31 @@ public class StockBatchConsumptionService {
             BigDecimal totalDelta = l == null ? BigDecimal.ZERO : StockQuantity.orZero(l.getTotalDelta());
             BigDecimal unbatched = stock.subtract(totalDelta);
             BigDecimal diff = batchRemaining.subtract(stock);
-            BigDecimal explained = soldDeducted.subtract(dispatched).subtract(otherDelta);
-            boolean ok = diff.compareTo(explained.subtract(unbatched)) == 0;
+            // 差额拆成两项（V119 / issue #5158；两项之和**逐值等于**拆之前的总解释项 —— formulaDeducted 一加一减）
+            BigDecimal planSaved = formulaDeducted.subtract(dispatched);
+            BigDecimal soldUnbatched = soldDeducted.subtract(formulaDeducted).subtract(otherDelta)
+                    .subtract(unbatched);
+            BigDecimal explained = soldUnbatched.add(planSaved);
+            boolean ok = diff.compareTo(explained) == 0;
             if (!ok) {
                 unreconciled++;
-                log.warn("批次账对账不平: tenant={}, skuId={}, diff={}, explained={}, unbatched={}",
-                        tenantId, sku.getId(), plain(diff), plain(explained), plain(unbatched));
+                log.warn("批次账对账不平: tenant={}, skuId={}, diff={}, explained={}, 已售未派={}, 排料节省={}",
+                        tenantId, sku.getId(), plain(diff), plain(explained),
+                        plain(soldUnbatched), plain(planSaved));
             }
             totalDiff = totalDiff.add(diff);
+            totalFormula = totalFormula.add(formulaDeducted);
+            totalPlanned = totalPlanned.add(dispatched);
+            totalSaved = totalSaved.add(planSaved);
             rows.add(new BatchStockViews.ReconcileRow(sku.getId(),
                     StringUtils.hasText(sku.getSkuCode()) ? sku.getSkuCode() : skuCodes.get(sku.getId()),
                     sku.getProductId(), plain(stock), plain(batchRemaining), plain(inbound),
                     plain(dispatched), plain(soldDeducted), plain(otherDelta), plain(unbatched),
-                    plain(diff), plain(explained), ok));
+                    plain(diff), plain(explained), plain(soldUnbatched), plain(planSaved),
+                    plain(formulaDeducted), ok));
         }
-        return new BatchStockViews.Reconcile(rows, plain(totalDiff), unreconciled);
+        return new BatchStockViews.Reconcile(rows, plain(totalDiff), unreconciled,
+                plain(totalFormula), plain(totalPlanned), plain(totalSaved));
     }
 
     /**
@@ -512,6 +623,249 @@ public class StockBatchConsumptionService {
     // ══════════════════════════════════════════════════════════════════════════════════
     // 内部
     // ══════════════════════════════════════════════════════════════════════════════════
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 排料（V119 / issue #5158）：A 类完整布并排 —— 「省下的米数留在批次余量上」
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 逐行算出**排料口径**米数（= 该行应领多少米）。排不了料的行**不出现在结果里**
+     * ⇒ 调用方逐值退回公式口径（{@link #plan} 里的 {@code getOrDefault}）。
+     *
+     * <h2>成组键 =（批次 × 加工类型）—— 🔴 为什么必须含<b>批次</b>，不能只按门幅</h2>
+     * 并排省料的物理前提是「两块料裁自**同一卷**」。两块料若在不同批次（不同卷）上，
+     * 各自都必须单独占一段卷长 ⇒ 跨批次成组会把「两卷各自 3 米」算成「共 3 米」——
+     * 那是**虚报**（#5159 硬约束四「不虚报」）。
+     * 「同门幅」由批次自身保证：批次由入库产生、{@code sku_id} 固定，而 SKU 组合 = 颜色 × 门幅
+     * ⇒ 同批次必然同门幅（跨批次即使门幅相同也**不得**成组）。
+     *
+     * <h2>应领米数怎么分摊回行</h2>
+     * 排料器给的是**组**的应领米数（{@code Σ 行长}），而扣减是**逐行**落账的 ⇒ 按各行公式米数占比分摊：
+     * {@code 分摊_i = issued × formula_i / Σformula}。两条性质是判据的基础：
+     * <ul>
+     *   <li>{@code Σ 分摊 = issued}（逐值）⇒ 组内总扣减 = 排料结果 ⇒ 省下的米数**真的**留在批次上；</li>
+     *   <li>{@code issued ≤ Σformula}（行长 = 行内最大沿卷长 ≤ 行内各块之和）⇒ 每一行
+     *       {@code 分摊_i ≤ formula_i}；再经 {@code toStockScaleByCeiling} 进位，
+     *       {@code 归一后 ≤ formula_i} 仍然成立（公式米数本身已是 0.1 粒度）
+     *       ⇒ DB 约束 {@code planned_meters <= formula_meters} **不可能**被触发，节省恒 ≥ 0。</li>
+     * </ul>
+     * <p>「不可并排 ⇒ 与公式米数逐值相同」也来自这里：每块各占一行时 {@code issued = Σformula}，
+     * 分摊恒等于自己那行的公式米数（判据「不倒退」）。</p>
+     */
+    private Map<String, BigDecimal> cuttingPlanByItemId(Long tenantId, List<Designation> designations,
+                                                        Map<String, StockBatch> byNo) {
+        Map<String, BigDecimal> planned = new LinkedHashMap<>();
+        BigDecimal hemMargin = craftCalcConfigService == null ? null
+                : craftCalcConfigService.hemMarginOrNull(tenantId);
+        if (hemMargin == null) {
+            return planned; // 取不到上下卷边 ⇒ 不排料（宁可为 0，不许估一个余量）
+        }
+        Map<Long, Double> doorWidthBySkuId = doorWidthsBySkuId(tenantId, byNo.values());
+        Map<String, PlanGroup> groups = new LinkedHashMap<>();
+        for (Designation d : designations) {
+            String mode = cuttingModeOf(d.cuttingMode());
+            StockBatch batch = StringUtils.hasText(d.batchNo()) ? byNo.get(d.batchNo().trim()) : null;
+            Double doorWidth = mode == null || batch == null ? null : doorWidthBySkuId.get(batch.getSkuId());
+            if (doorWidth == null) {
+                continue; // 工艺未知 / 批次查不到 / 门幅没记 ⇒ 该行不排料
+            }
+            List<CuttingPlanCalculator.Piece> pieces = piecesOf(d, mode, doorWidth, hemMargin);
+            if (pieces.isEmpty()) {
+                continue; // 定尺输入不全（缺窗高 / 缺幅数）⇒ 该行不排料
+            }
+            groups.computeIfAbsent(batch.getId() + "|" + mode,
+                            k -> new PlanGroup(batch.getId(), mode, doorWidth))
+                    .add(d.orderItemId(), StockQuantity.orZero(d.meters()), pieces);
+        }
+        for (PlanGroup group : groups.values()) {
+            CuttingPlanCalculator.CuttingPlan cuttingPlan;
+            try {
+                cuttingPlan = CuttingPlanCalculator.plan(group.pieces(), group.doorWidth(),
+                        hemMargin.doubleValue());
+            } catch (IllegalArgumentException e) {
+                // 排料失败（如窗高 + 卷边 > 门幅 ⇒ 这块料排不下）⇒ **整组退回公式口径**。
+                // 这里有意**不** fail-closed：排料是优化，不是加工单生成的正确性前提
+                // —— 让一张排不出方案的订单生成不了加工单是更坏的交换（「不能损失客户」）；
+                // 退回后行为与本单之前**逐字相同**（saved = 0），且日志里留得下原因。
+                log.warn("排料失败 ⇒ 该组退回公式口径（saved=0）: tenant={}, batchId={}, mode={}, reason={}",
+                        tenantId, group.batchId(), group.cuttingMode(), e.getMessage());
+                continue;
+            }
+            BigDecimal issued = cuttingPlan.issuedMeters();
+            BigDecimal totalFormula = group.totalFormula();
+            for (String itemId : group.itemIds()) {
+                BigDecimal share = totalFormula.signum() == 0 ? BigDecimal.ZERO
+                        : issued.multiply(group.formulaOf(itemId))
+                                .divide(totalFormula, SHARE_SCALE, RoundingMode.HALF_UP);
+                // 🔴 归一的**唯一入口**（公式口径与排料口径共用同一个函数）：
+                // 排料结果**不取整**，落库存前按 0.1 向上进位 ⇒ 领料量只多不少
+                // （少领 = 切不出货，比不省料严重得多）。关系与理由见 StockQuantity#toStockScaleByCeiling。
+                planned.put(itemId, StockQuantity.toStockScaleByCeiling(share));
+            }
+        }
+        return planned;
+    }
+
+    /** 一个排料组（同批次 = 同一卷布；同加工类型 = 同一套定尺口径）。 */
+    private static final class PlanGroup {
+
+        private final Long batchId;
+        private final String cuttingMode;
+        private final double doorWidth;
+        private final List<String> itemIds = new ArrayList<>();
+        private final List<CuttingPlanCalculator.Piece> pieces = new ArrayList<>();
+        private final Map<String, BigDecimal> formulaByItemId = new LinkedHashMap<>();
+
+        private PlanGroup(Long batchId, String cuttingMode, double doorWidth) {
+            this.batchId = batchId;
+            this.cuttingMode = cuttingMode;
+            this.doorWidth = doorWidth;
+        }
+
+        private void add(String itemId, BigDecimal formulaMeters,
+                         List<CuttingPlanCalculator.Piece> linePieces) {
+            itemIds.add(itemId);
+            formulaByItemId.put(itemId, formulaMeters);
+            pieces.addAll(linePieces);
+        }
+
+        private Long batchId() {
+            return batchId;
+        }
+
+        private String cuttingMode() {
+            return cuttingMode;
+        }
+
+        private double doorWidth() {
+            return doorWidth;
+        }
+
+        private List<String> itemIds() {
+            return itemIds;
+        }
+
+        private List<CuttingPlanCalculator.Piece> pieces() {
+            return pieces;
+        }
+
+        private BigDecimal formulaOf(String itemId) {
+            return formulaByItemId.getOrDefault(itemId, BigDecimal.ZERO);
+        }
+
+        private BigDecimal totalFormula() {
+            return StockQuantity.sum(formulaByItemId.values());
+        }
+    }
+
+    /**
+     * 一行的排料块（**定尺输入，本服务不重算算料口径** —— 两条边全部来自算料引擎的产物）。
+     *
+     * <ul>
+     *   <li><b>定高买宽</b>（一块 = 整窗）：{@code 占门幅宽 = 窗高 + 上下卷边}；
+     *       {@code 沿卷长 = 公式米数}（引擎给的 {@code W×N}）。</li>
+     *   <li><b>定宽买高</b>（一块 = 每一幅）：幅数 = 引擎的 {@code panels} 输出，
+     *       把公式米数**等分**成 {@code panels} 块。等分不是新口径：引擎的
+     *       {@code M = P × (H + 卷边)} 使「每幅宽」与「每幅长」恒为 {@code M/P}，
+     *       故这里只是**分解**引擎的输出（`panels` 缺席 ⇒ 不排料，绝不自己算 {@code ceil(M/G)}）。</li>
+     * </ul>
+     */
+    private static List<CuttingPlanCalculator.Piece> piecesOf(Designation d, String mode,
+                                                              double doorWidth, BigDecimal hemMargin) {
+        BigDecimal formula = StockQuantity.orZero(d.meters());
+        if (formula.signum() <= 0) {
+            return List.of();
+        }
+        if (CuttingPlanCalculator.MODE_FIXED_HEIGHT.equals(mode)) {
+            BigDecimal height = StockQuantity.orZero(d.height());
+            if (height.signum() <= 0) {
+                return List.of();
+            }
+            return List.of(new CuttingPlanCalculator.Piece(d.orderItemId() + "#1", mode,
+                    height.add(hemMargin).doubleValue(), formula.doubleValue()));
+        }
+        if (CuttingPlanCalculator.MODE_FIXED_WIDTH.equals(mode)) {
+            int panels = d.panels() == null ? 0 : d.panels();
+            if (panels <= 0) {
+                return List.of();
+            }
+            BigDecimal per = formula.divide(BigDecimal.valueOf(panels), PER_PIECE_SCALE,
+                    RoundingMode.HALF_UP);
+            List<CuttingPlanCalculator.Piece> pieces = new ArrayList<>(panels);
+            for (int i = 1; i <= panels; i++) {
+                pieces.add(new CuttingPlanCalculator.Piece(d.orderItemId() + "#" + i, mode,
+                        per.doubleValue(), per.doubleValue()));
+            }
+            return pieces;
+        }
+        return List.of();
+    }
+
+    /**
+     * 订单侧加工类型（{@code processing_info.cuttingMode}，中文串）→
+     * {@link CuttingPlanCalculator} 的模式常量。
+     *
+     * <p>真值源 = 算料引擎的 {@code CUTTING_MODE_FIXED_HEIGHT = "定高买宽"} /
+     * {@code CUTTING_MODE_FIXED_WIDTH = "定宽买高"}（订单侧下单时原样透传该中文串）。
+     * 映射**只在这里写一次**；未知取值 ⇒ {@code null}（不排料，**不猜工艺** —— 猜错会把整窗
+     * 当成多幅拆开，那是少领）。</p>
+     */
+    private static String cuttingModeOf(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return switch (raw.trim()) {
+            case "定高买宽" -> CuttingPlanCalculator.MODE_FIXED_HEIGHT;
+            case "定宽买高" -> CuttingPlanCalculator.MODE_FIXED_WIDTH;
+            default -> null;
+        };
+    }
+
+    /** 批次 SKU → 门幅（米）。只有**批次**的 SKU 才作数（扣的是这批布，不是订单行上写的那个）。 */
+    private Map<Long, Double> doorWidthsBySkuId(Long tenantId, Collection<StockBatch> batches) {
+        Set<Long> skuIds = new LinkedHashSet<>();
+        for (StockBatch b : batches) {
+            if (b.getSkuId() != null) {
+                skuIds.add(b.getSkuId());
+            }
+        }
+        Map<Long, Double> out = new LinkedHashMap<>();
+        if (skuIds.isEmpty()) {
+            return out;
+        }
+        for (ProductSku sku : productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .in(ProductSku::getId, skuIds))) {
+            Double meters = parseDoorWidth(sku.getDoorWidth());
+            if (meters != null) {
+                out.put(sku.getId(), meters);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 门幅原串 → 米。存量有两种形态（{@code "2.8米"} / {@code "2.8"}），与
+     * {@code ProductService} 的建品解析、前端 {@code craft-display} 同一口径（去掉非数字修饰）。
+     *
+     * <p>解析不出 / 非正 ⇒ {@code null} ⇒ 该批次**不参与排料**（**不猜门幅**：
+     * 猜大了会把两块料并进一行 ⇒ 少领 ⇒ 切不出货）。</p>
+     */
+    private static Double parseDoorWidth(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            BigDecimal value = new BigDecimal(raw.replaceAll("[^0-9.]", ""));
+            return value.signum() > 0 ? value.doubleValue() : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal negated(BigDecimal value) {
+        return value == null ? null : value.negate();
+    }
 
     private List<StockBatch> listBatches(Long tenantId, String productId, Long skuId) {
         return stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()

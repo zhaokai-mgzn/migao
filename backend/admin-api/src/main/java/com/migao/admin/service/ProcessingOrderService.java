@@ -448,6 +448,9 @@ public class ProcessingOrderService {
         // 把**文员最终指定**的批次写进加工单快照的 batchNo（V63 白名单早有该键、此前全仓零写入方
         // = 现成的空插座）；在插入**之前**写，故不多一次 UPDATE。
         stampAssignedBatches(snapshot, deductionPlan);
+        // 排料结果（V119 / issue #5158）同样在插入之前写进快照：应领米数 / 公式米数 / 省下的米数
+        // —— 快照是固化真相，前端与车间都读它（批次侧另有逐行台账，两条路都可审计）。
+        stampCuttingPlan(snapshot, deductionPlan);
 
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
@@ -517,10 +520,15 @@ public class ProcessingOrderService {
      * <p>逐行两件事：① 指派的行必须在该订单的加工单快照里（不在 ⇒ 显式拒绝 —— 配件/赠品行
      * 不成部位、不进快照，静默忽略会让文员以为指定了）；② 扣减米数 = 该行米数。</p>
      *
-     * <p><b>扣减米数口径</b> = {@link StockQuantity#toStockScaleByCeiling}（订单行数量向上进位到 0.1）
-     * —— 与销售账扣减（{@code OrderService.deductSkuStock}）**同一个函数**。两边同源是对账读面
-     * 成立的前提：于是「{@code Σ批次余量} − {@code product_skus.stock}」恰好等于**已售未派米数**，
-     * 而不是「已售未派 ± 口径差」（口径差会让差额读得出来却解释不清，正是路线 A 要防的漂移）。</p>
+     * <p><b>两个米数（V119 / issue #5158）</b>：入参给 {@code StockBatchConsumptionService}
+     * 的是**公式口径**（{@link StockQuantity#toStockScaleByCeiling} 后的订单行数量，与销售账扣减
+     * **同一个函数**）+ 排料定尺要的三项（加工类型 / 窗高 / 分幅数，全部来自**快照**，即订单侧
+     * 下单时落库的算料输出 —— Java 不重算幅数/褶倍/卷边）。扣多少米由
+     * {@code StockBatchConsumptionService} 成组排料后决定（= 排料口径），本方法**不**替它算。</p>
+     *
+     * <p>两边同源是对账读面成立的前提：公式口径腿与销售账的扣减腿同函数 ⇒
+     * 「{@code Σ批次余量} − {@code product_skus.stock}」的差额可以被拆成「已售未派」与
+     * 「排料节省」两项而**不留口径差**（口径差会让差额读得出来却解释不清，正是路线 A 要防的漂移）。</p>
      */
     private List<StockBatchConsumptionService.Deduction> buildDeductionPlan(
             List<OrderItem> items, List<Map<String, Object>> snapshot,
@@ -561,9 +569,47 @@ public class ProcessingOrderService {
             }
             designations.add(new StockBatchConsumptionService.Designation(
                     itemId, productIdByItemId.get(itemId), str(row.get("skuCode")),
-                    a.getBatchNo().trim(), meters));
+                    a.getBatchNo().trim(), meters,
+                    // 排料定尺入参（V119 / issue #5158）：**逐字来自快照**（下单时落库的算料输出）
+                    str(row.get("cuttingMode")),
+                    OrderLineCraftFields.decimalOrNull(row.get("height"), "快照行 " + itemId + " 的窗高"),
+                    OrderLineCraftFields.integerOrNull(row.get("panels"), "快照行 " + itemId + " 的分幅数")));
         }
         return batchStock().plan(tenantId, designations);
+    }
+
+    /**
+     * 把排料结果写进快照行（V119 / issue #5158）：{@code formulaMeters}（公式口径）/
+     * {@code plannedMeters}（**应领米数** = 排料口径）/ {@code savedMeters}（省下的米数）。
+     *
+     * <p>快照是加工单的**固化真相** ⇒ 这三个数在生成那一刻就固定，事后改算料配置/批次价都不会
+     * 改掉它（#5159 硬约束一「落库不重算」）。前端（{@code ProcessingOrderBlock}）据此显示
+     * 「应领 X 米 / 公式 Y 米 / 省 Z 米」；批次侧另有一份逐行账（可逐单、可按批次汇总）。</p>
+     *
+     * <p>⚠️ 新键**必须**同时进 {@code ProcessingOrderResponse.ProcessingOrderItemBrief} ——
+     * 快照里出现 DTO 没声明的键会让 {@code items} 整段解析失败（Jackson 未知属性 ⇒
+     * {@code toResponse} 的 convertValue 抛错被 catch ⇒ 响应静默退化）。</p>
+     */
+    private static void stampCuttingPlan(List<Map<String, Object>> snapshot,
+                                         List<StockBatchConsumptionService.Deduction> plan) {
+        if (plan.isEmpty()) {
+            return;
+        }
+        Map<String, StockBatchConsumptionService.Deduction> byItemId = new LinkedHashMap<>();
+        for (StockBatchConsumptionService.Deduction d : plan) {
+            byItemId.put(d.orderItemId(), d);
+        }
+        for (Map<String, Object> row : snapshot) {
+            Object itemId = row.get("itemId");
+            StockBatchConsumptionService.Deduction d =
+                    itemId == null ? null : byItemId.get(String.valueOf(itemId));
+            if (d == null) {
+                continue;
+            }
+            row.put("formulaMeters", d.formulaMeters());
+            row.put("plannedMeters", d.plannedMeters());
+            row.put("savedMeters", d.formulaMeters().subtract(d.plannedMeters()));
+        }
     }
 
     /** 把指定的批次号写进快照行（`batchNo` = 加工单的固化真相里「这行从哪一批裁」）。 */

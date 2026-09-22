@@ -646,6 +646,19 @@ export interface ProcessingOrderItem {
    * 展示映射 `lib/craft-display.ts` 两个别名同登记）。存量加工单无该键 ⇒ 该行不出现。
    */
   formula_text?: string
+  /**
+   * **排料结果**（V119 / issue #5158）：生成加工单那一刻随快照固化 —— 三个数一起出现。
+   *
+   * - `formulaMeters` = 行业公式口径（= 改前的扣减口径，与销售账扣减同源）；
+   * - `plannedMeters` = 排料口径 = **应领米数**（= 批次实际扣减的米数，车间按它领料）；
+   * - `savedMeters` = 两者之差（**不可并排时为 0** —— 宁可为 0，不许估）。
+   *
+   * 未指派批次 / 排不了料的加工单**没有**这三个键 ⇒ 前端整块不渲染
+   * （不显示「省 0 米」，免得把「没排料」画成「排了但没省」）。
+   */
+  formulaMeters?: number
+  plannedMeters?: number
+  savedMeters?: number
   remark?: string
 }
 

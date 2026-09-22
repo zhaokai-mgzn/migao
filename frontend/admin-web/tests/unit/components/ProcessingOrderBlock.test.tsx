@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, PR-057
+// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, PR-057, PR-065
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -174,7 +174,65 @@ describe('ProcessingOrderBlock', () => {
     expect(text).toContain('打孔（四爪钩）')
   })
 
-  // ── issue #4355：加工单展示工艺规格（设计文档 §4.9 ③）─────────────────
+  // ── V119 / issue #5158：快照里的**排料结果**（应领米数 / 公式口径 / 省下的米数）──────
+
+/**
+ * 指派了批次且排料成功的加工单：快照带 `formulaMeters` / `plannedMeters` / `savedMeters`
+ * （生成加工单那一刻固化）。前端据此把「车间要领多少米」显示出来 —— 这是本单唯一的前端面。
+ */
+const poWithCuttingPlan = {
+  ...poIssued,
+  items: [
+    { ...poIssued.items[0], quantity: 3, formulaMeters: 3, plannedMeters: 1.5, savedMeters: 1.5 },
+  ],
+}
+
+describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () => {
+  beforeEach(() => {
+    mockedDetail.mockReset()
+    mockedGenerate.mockReset()
+    mockedUpdate.mockReset()
+    mockedCandidates.mockReset()
+  })
+
+  it('PR-065 快照带排料结果 ⇒ 显示「应领 X 米（公式 Y 米 · 省 Z 米）」（0.1 米粒度口径）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithCuttingPlan } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    const plan = await screen.findByTestId('po-item-cutting-plan-0')
+    // 应领 1.5（排料口径）；公式 3；省 1.5 —— 三个数分列，读的人不会把公式米数当成要领的米数
+    expect(plan.textContent).toContain('应领 1.5 米')
+    expect(plan.textContent).toContain('公式 3 米')
+    expect(plan.textContent).toContain('省 1.5 米')
+  })
+
+  it('PR-065 不可并排（saved = 0）⇒ 如实显示公式口径，**不冒功**说省了 0 米', async () => {
+    mockedDetail.mockResolvedValueOnce({
+      data: {
+        data: {
+          ...poIssued,
+          items: [{ ...poIssued.items[0], formulaMeters: 2.7, plannedMeters: 2.7, savedMeters: 0 }],
+        },
+      },
+    })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    const plan = await screen.findByTestId('po-item-cutting-plan-0')
+    expect(plan.textContent).toContain('应领 2.7 米')
+    expect(plan.textContent).toContain('公式 2.7 米')
+    expect(plan.textContent).not.toContain('省')
+  })
+
+  it('PR-065 未指派批次 / 排不了料（无排料键）⇒ 整块不渲染（缺值不渲染，也不画成「省 0 米」）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    expect(await screen.findByText('布艺遮光帘A')).toBeInTheDocument()
+    expect(screen.queryByTestId('po-item-cutting-plan-0')).toBeNull()
+  })
+})
+
+// ── issue #4355：加工单展示工艺规格（设计文档 §4.9 ③）─────────────────
 
   it('快照明细展示工艺规格：部位/工艺/加工类型/打开方式/是否定型/款式/特殊选项（PG-019）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })

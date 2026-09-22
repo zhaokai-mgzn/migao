@@ -441,8 +441,10 @@ class ProcessingOrderServiceTest {
     /** 一条已校验过的扣减计划行（`plan` 的返回值）。 */
     private StockBatchConsumptionService.Deduction plannedDeduction(String itemId, String batchNo,
                                                                     String meters, String remainingBefore) {
+        // 两个米数（V119 / issue #5158）：本桩不排料 ⇒ 排料口径 = 公式口径
         return new StockBatchConsumptionService.Deduction(77L, batchNo, "prod-1", 12L, "SKU-1",
-                itemId, new BigDecimal(meters), new BigDecimal(remainingBefore));
+                itemId, new BigDecimal(meters), new BigDecimal(meters), new BigDecimal("12.5"),
+                new BigDecimal(remainingBefore));
     }
 
     /**
