@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.47.0
+version: 1.48.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -1182,6 +1182,8 @@ cron 也已删除）承担。
 | **改了静态资源 / 发布链路，却没确认发布腿被触发**（v1.41 新增，实证） | 发布 workflow 的触发面是**路径过滤**的 ⇒ 若本次改动**不在**该路径里（实测：某 PR 改的是 `deploy/**`），发布**不会跑** ⇒ **线上副本静默滞后**（实测：线上 `app.mjs` 一度缺计件幂等修复）。**规避**：改完**核线上内容 == `origin/main` 的内容**（`git show origin/main:<f> \| shasum` vs `curl \| shasum`），不一致就 `workflow_dispatch` 手动补发布 |
 | **把「部署 run success + 健康检查全绿」读成「线上跑的就是那个版本」**（v1.41 新增，实证 P0） | 实测：一条**为旧 commit 创建**的部署 run 被 `flock` 排队到**新 run 之后**执行 ⇒ 三个服务被**静默回退**到旧 tag；而 run 结论 `success`、健康检查三个全 `200`、`deploy.sh` 自己也打印「✅ 部署成功」⇒ **三重绿、零告警**（线上实测 main 已前进而容器仍是旧 tag）。**规避**：**"线上是哪个版本"只有一个判据 = 容器真身**（`docker ps --format '{{.Image}}'` / `docker inspect` 的 created + image tag），**不是** run 结论、**不是**健康检查、**不是**部署脚本的自述 —— 与本节上面那条「CI 绿 ≠ 交付物在 main 上」同族，本条是**第三层** |
 | **native auto-merge「秒合」吞掉后续 commit ⇒ 交付物与 PR 声明脱节**（v1.29 新增，2026-09-15 实证，同款第 2 次） | **新增规则**：① **auto-merge 生效后不得再往该分支推新 commit** —— 要推就**先关掉 auto-merge**（`gh api graphql` 的 `disablePullRequestAutoMerge` 或关 PR 上的 auto-merge），推完**确认 PR 未被合并**（`gh pr view <N> --json state,mergedAt`；`MERGED` ⇒ 你的新 commit **不在里面**）；② **不要赌"CI 还没跑完"** —— auto-merge 只等**必需**检查，且与你的本地时序无关（本 PR 实操：先把 auto-merge 关掉再补 commit）。**实证**：PR #3842 被秒级合并 ⇒ 其 **3 个 commit 搁浅**，main 上 `assertion_taxonomy.py` 只有 **6 条规则**、L0 守卫 **40 条**（PR 声称 9 条规则；`main` 上**没有** `CASE-TRUST-VOLATILE-LOCATOR` / `NO-PRECONDITION-ASSERTION` / `STALE-LINE-REF`）⇒ 靠**跟随 PR #3847** 补齐；更早同款：**#3819** 搁浅 commit 靠 **#3826** 收口（同款第 2 次，见该 PR body 原文「只收口 #3819 因 native auto-merge 秒合而**搁浅**的第二个 commit」）。**判据与核法见下方「三件事」** |
+| **在无 PyYAML 的 job 里硬 `import yaml`**（v1.48.0 新增，issue #5170；实测来自 #5151 / PR #5165） | 渲染腿所在的 `case-truth-check`（`Case Contract (truths_ref)`）**没有 `pip install`**，runner 镜像里**也没有系统 PyYAML**（镜像清单 `toolset-2404.json` 无 pip 段；yamllint/ansible 走 pipx 隔离 venv；apt 无 `python3-yaml`）⇒ `.github/` 下要在这种 job 里跑的脚本，**硬 `import yaml` = 每个 PR 常红**；而"显式装依赖"要改 workflow，又受 token **无 `workflow` scope** 限制（§7.3）⇒ 只剩**零依赖实现**一条路。**推论（有用）**：这类脚本的「严格校验」必须准备一条**零依赖退路**，且退路与主路**判决一致**要有判据钉住（#5151 已落 **9/9 语料一致性守卫**） |
+| **给某个 job 新增一次全量解析 ⇒ 撞该 job 自身超时，却想靠调 `timeout-minutes` 过关**（v1.48.0 新增，issue #5170；实测来自 #5151 / PR #5165） | 给 `load_case_dicts()` 新增一次严格解析 ⇒ `.github/cases`（**25 文件 / 1.05MB**）**0.063s → 0.726s（+0.66s/次）**；`ci workflow helper unit tests`（`timeout-minutes: 8`）实测 **253s（#5163）→ 357s → 522s** ⇒ **撞 8 分钟 job 超时被 `CANCELLED`**。⚠️ 该形态在 `gh pr checks` 里**显示成 "fail"**，但 `conclusion=cancelled` —— 与真正判红**长得一样**（本会话已因此误判过一次）。**修法（已验证，非权宜）**：① 严格解析换 C 加速 **`CSafeLoader`**（同一套安全构造规则；25 文件逐值深比较相同、`problem_mark` 行列相同；**快 ~11×**：0.626s → 0.055s；两条腿共用 `.github/cases_yaml.py` 的同一个 `_safe_load()`）；② 判定按**文件内容 sha256 缓存**（**不缓存解析结果**，避免共享可变对象；键是内容 ⇒ 不会过期）⇒ 额外开销 **0.66s → 0.01s**，该 job 由取消变 **223s success**（比基线 253s 还快）。🔴 **反模式**：**不要**靠调 `timeout-minutes` 过关（治症状；且属 workflow 改动 —— token 无 `workflow` scope） |
 
 > **⚠️ 「CI 绿」≠「auto-merge 就绪」≠「交付物在 main 上」—— 这是三件事**（v1.29 新增）：
 > ① **CI 绿**只说明**语义检查**过了（逻辑、测试、门禁）；② **auto-merge 成功**只说明**合并动作**发生了
@@ -1310,6 +1312,15 @@ git grep -n '<pattern>' origin/main -- '<pathspec>'   # ④ 全树检索
   （派发前自查才抓到）；写本节时实测**主工作区** `HEAD=aa64bb98` 落后 `origin/main` **136 个提交**且脏
   —— 在那种工作区里判存在性/行号，**结论必然错**。
   ⇒ 开工先 `git fetch origin main`；`git rev-list --left-right --count HEAD...origin/main` 显示落后就**改用 `git show` 读**。
+- 🔴 **只读核查动作自己也会过期 —— 在主工作区核查一律走 `origin/main` 的 git 对象**（v1.48.0 新增，issue #5170；本会话集成方亲测）：
+  主工作区**允许长期落后**（它只在 `fetch/rebase/merge` 时前进），而**普通 `grep` 走的是文件系统** ⇒ 查到的只是**工作树快照**。
+  实测（2026-09-22，**当时值**）：主工作区工作树停在 **14 个提交之前**（工作区 `a9048c4f1` vs 当时 `origin/main` `982d2c5da`），
+  集成方用普通 `grep` 核查 `backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java`
+  与常量 `SKU_MISMATCH`，**两次都查不到**（前者"文件不存在"、后者零命中）—— 它们是在之后的 PR 里才合入的；
+  改用 `git grep <pat> origin/main -- <path>` / `git show origin/main:<path>` 后**立刻查到**。
+  ⇒ **纪律**：在主工作区做**任何只读核查**（找符号、查常量、读实现）**一律**用上面 ④ 与 ② 两条命令；
+  **需要真实检出的核查（跑测试 / 起服务 / 读生成物）请在独立 worktree 里做**（§2.3 第 1 条）。
+  本条与上一条**同因** —— 读的是快照而快照会过期，只不过过期的是**核查动作**本身，不是被测对象。
 - **禁止裸行号 `path:NNN`**：PR / issue / 回报 / 文档里一律禁止。两个理由：① 会被后续的**模式扫描**
   误判成「残留引用」；② 会被读者误当**现值**照抄。行号一律写成「**第 N 行**」且**以 `@<sha>` 限定**
   （例：`_needs_serial_lane`（`@c5f07f29` 位于 `:5088`））；**能吃符号就吃符号**（函数名 / 守卫串 /
@@ -1826,7 +1837,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   （列名 = 引擎配置键，6 处同源守卫的锚），而「通用键值表」是 JSON 形态 ——
   ⇒ 用户 2026-09-22 已裁定 **D6′ = 方案 A：整合落在「页面 / 信息架构」，存储保持结构化列**。
 
-## 版本沿革（v1.1 → v1.47.0）
+## 版本沿革（v1.1 → v1.48.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -2351,3 +2362,23 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   （`craft-calc-glossary.ts` 的键集守卫），**另两条基线与七条原则全是纪律 —— 不会有人拦着你**；
   本节**不改任何门禁的通过条件、不新增豁免**；设计资产滚动在 issue **#5131**（企业参数整合中心），
   其形态已裁定 **D6′ = 整合落在「页面 / 信息架构」，存储保持结构化列**（与 §22.4 末条同源）。
+- v1.48.0（2026-09-22 **`.github/` 脚本两条实测约束 + 一条只读核查纪律入册**，本次，issue #5170）：
+  三条**全部来自实测**（①② 来自 #5151 / PR #5165；③ 来自本会话集成方亲测），**无一条新增门禁**（只补判据与指针）：
+  ① **渲染腿所在的 job 不能 `import yaml`**（**§17.3 新增行**）：`case-truth-check`（`Case Contract (truths_ref)`）**没有 `pip install`**，
+     runner 镜像**也没有系统 PyYAML** ⇒ 该腿硬 `import yaml` = **每个 PR 常红**；"显式装依赖"要改 workflow ⇒ 又受 token
+     `workflow` scope 限制 ⇒ **推论**：这类脚本的「严格校验」必须准备**零依赖退路**，且退路与主路**判决一致**要有判据钉住
+     （#5151 已落 **9/9 语料一致性守卫**）。
+  ② **新增一次全量解析会撞 job 自身超时，修法不是调 timeout**（**§17.3 新增行**）：`.github/cases`（**25 文件 / 1.05MB**）
+     **0.063s → 0.726s（+0.66s/次）** ⇒ `ci workflow helper unit tests`（`timeout-minutes: 8`）
+     **253s（#5163）→ 357s → 522s** ⇒ **CANCELLED**；⚠️ `gh pr checks` 把它显示成 **"fail"** 而 `conclusion=cancelled` ——
+     **与真红长得一样**。**修法（已验证）**：`CSafeLoader`（**快 ~11×**：0.626s → 0.055s；逐值深比较相同、`problem_mark` 行列相同）
+     + **文件内容 sha256 缓存**（不缓存解析结果，键是内容 ⇒ 不会过期）⇒ 额外开销 **0.66s → 0.01s**，
+     该 job 由取消变 **223s success**（比基线 253s 还快）。🔴 **不要**靠调 `timeout-minutes` 过关（治症状；且属 workflow 改动）。
+  ③ **主工作区允许长期落后 ⇒ 只读核查绝不能 grep 工作树**（落 **§18.1 读源纪律**，**不新增章节**）：实测工作树停在
+     **14 个提交之前**时，普通 `grep` 核查某服务类与常量 `SKU_MISMATCH` **两次都查不到**，改
+     `git grep <pat> origin/main -- <path>` / `git show origin/main:<path>` 后**立刻查到** ⇒ **纪律**：只读核查一律走
+     `origin/main` 的 git 对象；**需要真实检出的核查去独立 worktree**。放进 §18.1 的理由：与「落后工作副本 ≠ 真相」
+     **同因**（读的是快照，而快照会过期），只是过期的对象是**核查动作**本身。
+  **未实装 / 边界（照实登记，§19.1）**：三条**全是纪律 + 指针** —— **不改任何门禁的通过条件、不新增豁免、不动任何 workflow**
+  （② 点名的反模式正是"改 workflow 调 timeout"）；**没有机械锁**会拦住"在无 PyYAML 的 job 里写 `import yaml`"或
+  "在主工作区用裸 `grep` 核查"（能红的只有 `preset-guard`，它只管 `.agent-presets/**` 的版本单调性与活锚）。
