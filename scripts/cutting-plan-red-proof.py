@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -72,11 +73,16 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "排料结果依赖入参顺序 ⇒ 顺序无关判据必须红（单行算例仍绿 = 红是这一条抓的）",
     ),
     (
-        "M4 行长度只取第一块（丢掉 max）",
+        "M4 行长度取行内最后一块（丢掉 max）",
         "            if (meters.compareTo(length) > 0) {\n                length = meters;\n            }",
-        "            if (length.signum() == 0) {\n                length = meters;\n            }",
-        {"keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth", "randomizedInvariantsHold"},
-        "行长度 ≠ 行内最大沿卷长 ⇒ 不变式判据必须红",
+        "            if (true) {\n                length = meters;\n            }",
+        {"keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth", "randomizedInvariantsHold",
+         "fixedHeightTallWindowsPairIntoOneRow"},
+        "行长度 ≠ 行内最大沿卷长（A 5.0 + B 3.0 同行 ⇒ 应领 5.0 被算成 3.0 = **少算**）"
+        " ⇒ 不变式判据必须红。\n"
+        "    ⚠️ 本变异的第一版是「改成 `length.signum()==0` 才赋值」（= 取行内**第一块**）："
+        "实测**恒绿**且**原理上不可能红** —— 规范序按沿卷长降序，行内第一块**必然是该行最大值**"
+        " ⇒ 那个变异与正确实现**语义等价**。已换成真正可观测的缺陷（取最后一块）。",
     ),
     (
         "M5 去掉入参校验（非正数 / 超门幅照算）",
@@ -102,10 +108,14 @@ def run_test(method: str | None) -> bool:
     全被读成「无判别力」）。故先删编译产物再跑，让「编译了没有」不再靠时间戳。
     """
     selector = f"{TEST_CLASS}" + (f"#{method}" if method else "")
-    for stale in (JAVA_DIR / "target/classes/com/migao/admin/service").glob("CuttingPlanCalculator*.class"):
-        stale.unlink()
-    for stale in (JAVA_DIR / "target/test-classes/com/migao/admin/service").glob(f"{TEST_CLASS}*.class"):
-        stale.unlink()
+    # ⚠️ **必须整棵构建树删掉**，不能只删 `*.class` 再靠 `mvn test` 增量编译：
+    # 实测同一秒内「改源 → 跑测 → 再改源」时 maven 的增量判定会认定「没有改动」而**跳过编译**，
+    # 于是变异后的判据照旧全绿 —— 那是**机具自己的假绿**（本脚本第一版就踩了：M3~M5 全被读成
+    # 「无判别力」，而真相是「根本没编译变异后的源码」）。删 target/classes + target/test-classes
+    # 让「编译了没有」不再靠时间戳。（不用 `mvn clean`：它要联网拉插件，离线环境会失败。）
+    for tree in (JAVA_DIR / "target/classes", JAVA_DIR / "target/test-classes"):
+        if tree.exists():
+            shutil.rmtree(tree)
     proc = subprocess.run(
         ["./mvnw", "-o", "test", f"-Dtest={selector}", "-DfailIfNoSpecifiedTests=false"],
         cwd=JAVA_DIR, capture_output=True, text=True,

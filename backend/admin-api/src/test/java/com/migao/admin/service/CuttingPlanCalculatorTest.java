@@ -165,21 +165,20 @@ class CuttingPlanCalculatorTest {
     @Test
     @DisplayName("完整布不变式：行内 Σ占门幅宽 ≤ 门幅、行长度 = 行内最大沿卷长、料一字未改")
     void keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth() {
-        // ⚠️ 每行两块料的沿卷长**故意不同**（3.0/2.0 与 1.2/0.9）：若相同，
-        //    「行长度 = 行内最大沿卷长」这条在「只取行内第一块」的缺陷下**照样成立**（假绿）。
+        // ⚠️ 数据是**被红证逼出来的**：同一行里要有两块，且**第一块比第二块长**。
+        //    规范序按沿卷长降序 ⇒ A(5.0) 先摆、B(3.0) 填进同一行 ⇒ 行1 = {A, B}，
+        //    该行长度必须是 max = 5.0。若实现取成「行内**最后**一块」（3.0）⇒ 立刻红。
         List<Piece> pieces = List.of(
-                new Piece("P1", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.4, 3.0),
-                new Piece("P2", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.4, 2.0),
-                new Piece("P3", CuttingPlanCalculator.MODE_FIXED_WIDTH, 1.2, 1.2),
-                new Piece("P4", CuttingPlanCalculator.MODE_FIXED_WIDTH, 1.2, 0.9));
+                new Piece("A", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.8, 5.0),
+                new Piece("B", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.0, 3.0),
+                new Piece("C", CuttingPlanCalculator.MODE_FIXED_WIDTH, 1.0, 2.0));
 
         CuttingPlan plan = CuttingPlanCalculator.plan(pieces, DOOR_WIDTH, HEM_MARGIN);
 
-        assertEquals(2, plan.rows().size(), "两个模式各自两两成行");
-        assertEquals(0, plan.issuedMeters().compareTo(new BigDecimal("4.2")),
-                "3.0（定高那一行 max(3.0, 2.0)）+ 1.2（定宽那一行 max(1.2, 0.9)）");
-        assertTrue(plan.issuedMeters().compareTo(perPieceMeters(pieces)) < 0,
-                "并排必须**省**（issued 4.2 < 逐窗口径 7.1）");
+        assertEquals(2, plan.rows().size(), "行1 = A+B（1.8+1.0 = 2.8 ✓）、行2 = C（1.8+1.0 已满）");
+        assertEquals(0, plan.issuedMeters().compareTo(new BigDecimal("7.0")),
+                "5.0（行1 max(5.0, 3.0)）+ 2.0（行2）"
+                        + "—— 若行长度取错（取到非最大那一块），这里立刻不等");
         List<Piece> seen = new ArrayList<>();
         BigDecimal issued = BigDecimal.ZERO;
         for (Row row : plan.rows()) {
@@ -191,8 +190,8 @@ class CuttingPlanCalculatorTest {
         for (Piece piece : pieces) {
             assertTrue(seen.contains(piece), "料 " + piece.pieceId() + " 未出现在任何输出行里");
         }
-        assertInRowOrder(plan.rows().get(0), "P1", "P2");
-        assertInRowOrder(plan.rows().get(1), "P3", "P4");
+        assertInRowOrder(plan.rows().get(0), "A", "B");
+        assertInRowOrder(plan.rows().get(1), "C");
     }
 
     @Test
