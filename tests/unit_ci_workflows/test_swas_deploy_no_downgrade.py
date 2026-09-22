@@ -55,6 +55,7 @@
 """
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -133,6 +134,150 @@ def function_body(text: str, name: str) -> str:
     end = text.find("\n}\n", m.end())
     assert end != -1, f"函数 `{name}()` 没有配对的收尾 `}}`（脚本语法已坏）"
     return text[m.end():end]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判据本体（二）：降级许可的**语义**判据（issue #5128）
+#
+# 被替换掉的旧判据是**逐字钉住一行字面量**：
+#
+#     bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/$allow}
+#
+# 必须出现在 `deploy_attempt` 里。它防的是真事故（「许可渲染被搬走/重排 ⇒ 静默失效」），
+# 但**失败信息不解释意图**，而且**钉住了实现位置**：#5120 的实现包把许可渲染搬进
+# `render_bootstrap`（结果仍生效）就被误红 ⇒ 下一个重构者会看到「一条红判据 + 一个
+# 看起来可以顺手放宽的断言」，而放宽它恰恰丢掉保护（issue #5128 正文）。
+#
+# ⇒ 本节的判据**只断言语义**：**真正发给远端执行的那条命令里，许可已被渲染成 `<allow>`**。
+#    它不关心渲染点写在哪一行、在哪个函数里（合法重构不误红），
+#    但四种真失效都会被抓住（见本节末尾的注入式红证，**每种单独一条**）：
+#    ① 渲染点被**删** ② 渲染点被挪到**不生效**的位置（渲染进没人用的变量）
+#    ③ 占位符从 `BOOTSTRAP` 模板里**消失**（渲染点成了空转） ④ 渲染成**常量**（`allow` 不生效）。
+#    前三种的后果是「执行命令里仍留占位符 / 命令根本没发出去」，第四种是「许可值被写死」
+#    —— 都是本单要防的**静默失效**（远端 deploy.sh 的闸门会按「许可状态未知」或错误许可放行/误挡）。
+#
+# 手法：把 `deploy_attempt` 及其调用链上的函数**原样抽出来**真跑（不重写、不复刻），
+# 只桩掉 `run_cmd`（拦住 `aliyun` CLI）与 `nap`（不真等），并**捕获**它实际收到的
+# `--command-content` —— 那就是远端真正会执行的那条命令。
+# ══════════════════════════════════════════════════════════════════════════
+
+# 抽函数用的段界：从「deploy.sh 与镜像 tag 同源」那一节（含 `bootstrap_tag_to_sha` /
+# `bootstrap_ref_for_tag` / `render_bootstrap`）到**主流程**（主流程只调用 `deploy_attempt`）
+PROBE_START = "# ⑤ 部署脚本**自己**也必须与镜像 tag 同源"
+PROBE_END = "# ── 主流程 "
+# `deploy_attempt` 调用链上的函数（缺任一个 ⇒ `function_body` 显式失败，不是「通过」）
+PROBE_FUNCS = ("bootstrap_tag_to_sha", "bootstrap_ref_for_tag", "render_bootstrap", "deploy_attempt")
+# 桩 `run_cmd`：把真正要执行的命令落盘，并回一个「三次都没 InvokeId」的响应（脚本随即走
+# `RunCommand 三次均失败` 分支退出 —— 本判据只看**被执行命令的内容**，不看退出码）
+RUN_CMD_STUB = """
+run_cmd() {
+  local k=$1 c=$2; shift 2
+  local arg prev=""
+  for arg in "$@"; do
+    if [ "$prev" = "--command-content" ]; then printf '%s' "$arg" > "$CAPTURED_CMD"; fi
+    prev=$arg
+  done
+  printf '%s' '{"InvokeId": ""}'
+  return 0
+}
+nap() { return 0; }
+"""
+
+
+def bootstrap_template(ci_text: str, *, require_placeholder: bool = True) -> str:
+    """取脚本里 `BOOTSTRAP="…"` 的**取值**（被渲染的模板）。
+
+    ⚠️ 反空跑锚点：取不到 / 取成空串 ⇒ **显式失败**。少了它，探针会在「模板为空」下空跑
+    ——`render_bootstrap` 渲染空串、`case *__ALLOW_DOWNGRADE__*` 不匹配 ⇒ 判据**恒绿**
+    （本单实测踩到：探针第一版就是这样静默空跑的）。
+    """
+    m = re.search(r"^BOOTSTRAP=(.+)$", ci_text, re.M)
+    assert m, "反空跑锚点：脚本里找不到 `BOOTSTRAP=` 模板（判据已过期）"
+    value = _shell_double_quoted(m.group(1))
+    assert value.strip(), "反空跑锚点：`BOOTSTRAP` 模板解析成空串 ⇒ 探针会空跑（不是「通过」）"
+    if require_placeholder:
+        assert "__ALLOW_DOWNGRADE__" in value, (
+            "反空跑锚点：`BOOTSTRAP` 模板里没有许可占位符 ⇒ 语义判据无从施加（不是「通过」）"
+        )
+    return value
+
+
+def _shell_double_quoted(raw: str) -> str:
+    r"""取 shell 双引号字符串的**字面内容**（`\$` / `\"` 等转义**原样保留**）。
+
+    ⚠️ 不能用 `shlex.split(posix=True)`：它会把 `\$` 解成 `$`、把 `\"` 解成 `"` ——
+    模板一变形，`render_bootstrap` 里的字面量替换（`${IMAGE_TAG}` / `__BOOTSTRAP_REF__`）
+    就匹配不上 ⇒ 渲染出半成品 ⇒ **探针静默跑偏**（本单实测踩到）。
+    """
+    i = raw.find('"')
+    assert i >= 0, f"`BOOTSTRAP=` 不是双引号字符串（形态已变）：{raw[:80]!r}"
+    out, j = [], i + 1
+    while j < len(raw):
+        ch = raw[j]
+        if ch == "\\":
+            out.append(raw[j:j + 2]); j += 2; continue
+        if ch == '"':
+            return "".join(out)
+        out.append(ch); j += 1
+    raise AssertionError(f"`BOOTSTRAP=` 的双引号没有闭合：{raw[:80]!r}")
+
+
+def probe_region(ci_text: str) -> str:
+    """`deploy_attempt` 及其调用链所在的段（`function_body` 只能取单个函数，这里取整段）。"""
+    i = ci_text.find(PROBE_START)
+    assert i >= 0, f"反空跑锚点：找不到 `deploy_attempt` 段的注释头 {PROBE_START!r}（判据已过期）"
+    j = ci_text.find(PROBE_END, i)
+    assert j > i, f"反空跑锚点：找不到主流程段 {PROBE_END!r}（判据已过期）"
+    return ci_text[i:j]
+
+
+def deploy_attempt_command(ci_text: str, tmp_path: Path, tag: str, allow: str,
+                           *, require_placeholder: bool = True) -> str:
+    """真跑 `deploy_attempt`，返回它**实际发给远端执行**的命令（`--command-content` 的值）。
+
+    只桩外部依赖（`run_cmd` ⇒ `aliyun` CLI、`nap` ⇒ `sleep`）；被测的是脚本自己的渲染编排。
+    """
+    region = probe_region(ci_text)
+    # 调用方按场景分子目录（每个场景各一份探针）⇒ 目录得先存在（否则捕获文件写不出）
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    parts = [
+        "set -uo pipefail",
+        f'CAPTURED_CMD={shlex.quote(str(tmp_path / "captured-cmd"))}',
+        'IMAGE_TAG="sha-1a1a1a1"',
+        'INSTANCE_ID="i-probe"',
+        'REGION="cn-probe"',
+        'REGISTRY_SETUP=""',
+        # 被渲染的模板本身（**必给**：缺了它渲染出空串 ⇒ 判据恒绿、探针空跑）。
+        # ⚠️ 走**环境变量**而不是拼进源码：模板里带 `\$` / `\"` 转义，一旦经 shell 引号再解释
+        #    一遍就会被改写（`${IMAGE_TAG}` 的替换随之失配 ⇒ 探针静默跑偏，本单实测踩到）。
+        'BOOTSTRAP="$PROBE_BOOTSTRAP"',
+        'DEPLOY_TIMEOUT_SECONDS=1',
+        'CLI_TIMEOUT_SECONDS=1',
+        'POLL_INTERVAL_SECONDS=0',
+        'RETRY_PAUSE_SECONDS=0',
+        'DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))',
+        'remaining_seconds() { echo $(( DEADLINE - $(date +%s) )); }',
+    ]
+    for name in PROBE_FUNCS:
+        parts.append(f"{name}() {{{function_body(region, name)}\n}}")
+    # ⚠️ 桩必须定义在**被抽出来的真实函数之后**：shell 函数是「后定义覆盖先定义」，
+    #    反过来写会让脚本里那份真 `run_cmd`（要调 `aliyun` CLI）生效 ⇒ 探针静默跑偏。
+    parts.append(RUN_CMD_STUB)
+    parts.append(f'deploy_attempt {shlex.quote(tag)} {shlex.quote(allow)}')
+    probe = "\n".join(parts)
+    proc = subprocess.run(
+        ["bash", "-c", probe], capture_output=True, text=True, timeout=60,
+        env={**os.environ, "PROBE_BOOTSTRAP": bootstrap_template(
+            ci_text, require_placeholder=require_placeholder)},
+    )
+    captured = tmp_path / "captured-cmd"
+    if captured.is_file():
+        return captured.read_text(encoding="utf-8")
+    # 没捕获到 = `deploy_attempt` **在把命令交给远端之前就 fail-closed 早退**了（判据要抓的形态之一：
+    # 命令根本没发出去 ⇒ 许可自然也没到远端）。这里**不能**报「反空跑失败」，而是返回空串让判据判红；
+    # 真·空跑（脚本语法坏 / 抽不到函数）由 `function_body` 与 `bootstrap_template` 的反空跑锚点兜住。
+    assert proc.returncode == 0, f"探针非预期失败（不是「许可未送达」那种早退）：\n{proc.stdout}\n{proc.stderr}"
+    return ""
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -311,8 +456,15 @@ def judge_ci_wiring(ci_text: str, wf_texts: dict) -> list:
         v.append("bootstrap 没有把许可注入远端 deploy.sh（闸门拿不到许可）")
     if "&& bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}" not in ci_text:
         v.append("bootstrap 的 deploy.sh 调用形态被改动（#4767 的原子安装形态是既有护栏）")
-    if 'bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/$allow}' not in ci_text:
-        v.append("`deploy_attempt` 没有渲染许可占位符")
+    # ⚠️ 降级许可的渲染**不在这里**做逐字判据（issue #5128）：逐字钉住一行会把「合法重构」
+    #    （把渲染搬进 `render_bootstrap`、结果仍生效）误判成红，而失败信息也不解释意图。
+    #    ⇒ 语义判据 = `judge_permit_reaches_the_executed_command()`
+    #      （真跑在 `test_executed_command_carries_the_rendered_permit()` 里）：
+    #      **真正发给远端执行的命令里，许可占位符必须已被替换掉**（残留 = 静默失效 ⇒ 红）。
+    #      下面两条仍是**便宜的结构性前哨**（占位符存在 + 渲染后仍留占位符会报错），
+    #      与语义判据互补：前哨能给出「为什么」的可读失败信息，语义判据才是真正拦得住的那条。
+    if "__ALLOW_DOWNGRADE__" not in ci_text:
+        v.append("BOOTSTRAP 模板里没有许可占位符 ⇒ 降级许可根本无从注入（闸门会拒掉显式回滚）")
     if "*__ALLOW_DOWNGRADE__*" not in ci_text or "降级许可注入未生效" not in ci_text:
         v.append("渲染后仍留占位符时不报错 ⇒ 会在「许可状态未知」下静默部署")
     if 'local tag=$1 allow=${2:-0}' not in ci_text:
@@ -1064,3 +1216,192 @@ def test_ci_full_path_from_base64_remote_output_to_summary(tmp_path):
     assert f"PREV_GOOD_TAG={NEW_TAG}" not in text, "summary 里混进了原始标记行（应只渲染人的可读行）"
     assert b64encode(payload.encode()).decode("ascii") not in text, "summary 里出现 base64（解码没生效）"
     assert f"本次实际生效：`admin-api={NEW_TAG}" in out, out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 五、降级许可渲染的**语义**判据（issue #5128）—— 替换掉原先「逐字钉住一行」的形态
+# ══════════════════════════════════════════════════════════════════════════
+
+# 降级许可渲染点（现状 = `deploy_attempt` 里就地渲染那一行）。**只**作为注入锚点；
+# 判据本体**不钉它**（钉住实现位置正是本单要修掉的形态）。
+ALLOW_RENDER = "bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/$allow}"
+# `render_bootstrap` 里 tag/ref 渲染的最后一步 —— 「把许可渲染搬进 render_bootstrap」的注入点
+REF_RENDER_TAIL = "out=${out//__BOOTSTRAP_REF__/$ref}"
+
+# 许可必须落到**真正发给远端执行**的那条命令里（未渲染 / 渲染进没人用的变量 ⇒ 都不是这个形态）。
+# 取值随 `allow` 变（判据**不**只认 1：allow=0 也必须**显式**注入 0，而不是留占位符或干脆不注入）。
+def permit_in_command(allow: str) -> str:
+    return f"export ALLOW_DOWNGRADE={allow};"
+
+
+def judge_permit_reaches_the_executed_command(ci_text: str, tmp_path: Path, tag: str, allow: str,
+                                              *, require_placeholder: bool = True) -> list:
+    """语义判据本体（纯函数：文本进 → 违规清单出；注入式红证驱动**同一份本体**）。
+
+    = 「**真正发给远端执行的那条命令里，许可已被渲染成 `<allow>`**」。
+
+    这一条**不关心渲染点写在哪一行、在哪个函数里**（⇒ 合法重构不误红），但它同时覆盖四种真失效：
+    ① 渲染点被**删**、② 渲染点被挪到**不生效**的位置（渲染进没人用的变量）、
+    ③ 占位符从模板里**消失**（渲染点成了空转）、④ 渲染成**常量**（`allow` 不生效）——
+    四者的共同后果都是「远端拿到的命令里没有 `ALLOW_DOWNGRADE=<allow>`」，
+    而远端 deploy.sh 的闸门在「许可状态未知」/ 许可被写死下的行为正是本单要防的**静默失效**。
+    """
+    cmd = deploy_attempt_command(
+        ci_text, tmp_path, tag, allow, require_placeholder=require_placeholder,
+    )
+    v = []
+    if "__ALLOW_DOWNGRADE__" in cmd:
+        v.append(
+            "发给远端执行的命令里仍留许可占位符 `__ALLOW_DOWNGRADE__`"
+            "（远端会拿到「许可状态未知」⇒ 降级许可**静默失效**）"
+        )
+    want = permit_in_command(allow)
+    if want not in cmd:
+        v.append(f"发给远端执行的命令里没有注入许可（找不到 `{want}`）⇒ 许可没送到远端")
+    if "bash /opt/migao-deploy/deploy.sh " not in cmd:
+        v.append("发给远端执行的命令不是预期的 `bash /opt/migao-deploy/deploy.sh` 调用（判据锚点已过期）")
+    return v
+
+
+# ⚠️ **本判据不校验 tag 是否已渲染进命令**（有意，实测依据）：`render_bootstrap` 里的 tag 替换是
+#    `${var//pat/repl}` —— **bash 4+ 形态**，而 macOS 自带 `/bin/bash` 是 **3.2**（本机实测：
+#    探针里那两行渲染**静默不生效**）⇒ 在 3.2 上「tag 已渲染」恒假。tag 同源本身由
+#    tests/unit_ci_workflows/test_swas_bootstrap_same_source_guard.py 的 `render_bootstrap` 判据承担；
+#    本判据只管**许可**（`export ALLOW_DOWNGRADE=<allow>;` 那一段不依赖任何 bash 4 特性）。
+
+
+def test_executed_command_carries_the_rendered_permit(tmp_path):
+    """🔴 语义判据本体在**真实脚本**上干净（许可 1 / 0 两种取值各跑一次）。
+
+    这是原「逐字钉住一行」判据要保护的东西的**语义形态**：`#5128` 的验收判据 ①②③ 都由它承担。
+    """
+    ci = read_ci_script()
+    for allow in ("1", "0"):
+        v = judge_permit_reaches_the_executed_command(
+            ci, tmp_path / f"permit-{allow}", "sha-1a1a1a1", allow)
+        assert v == [], f"许可={allow} 时语义判据判红：\n- " + "\n- ".join(v)
+
+
+def test_legit_refactor_moving_the_render_does_not_go_red(tmp_path):
+    """🔴 验收判据 ①：**合法重构不误红** —— 许可渲染搬进 `render_bootstrap` 且仍生效 ⇒ 判据必绿。
+
+    这一条在**旧的逐字判据**下是**红**的（#5120 的实现包实测撞到）；这正是本单要修的东西。
+    """
+    ci = legit_refactor_moving_the_render_into_render_bootstrap(read_ci_script())
+    assert ALLOW_RENDER not in ci, "注入后仍留着旧渲染行 ⇒ 这条红证是空跑（没真的搬走）"
+    for token in ("render_bootstrap() {", "deploy_attempt() {", REF_RENDER_TAIL):
+        assert token in ci, f"注入把脚本改坏了（找不到 {token!r}）⇒ 红证空跑"
+    v = judge_permit_reaches_the_executed_command(ci, tmp_path / "refactor", "sha-1a1a1a1", "1")
+    assert v == [], "合法重构被误判为「许可失效」：\n- " + "\n- ".join(v)
+
+
+def _render_bootstrap_with_sed(ci_text: str) -> str:
+    """把 `render_bootstrap` 的许可渲染换成**可移植**写法（`sed`）。
+
+    ⚠️ 不是可有可无的细节：macOS 自带 `/bin/bash` 是 **3.2**，**不支持** `${var//pat/repl}`
+    （本单实测：本机探针里那两行渲染**静默不生效**）⇒ 「搬进 `render_bootstrap`」若沿用
+    bash 4+ 的写法，本机探针跑的是**半成品**。`sed` 形态在两个 bash 版本上语义一致。
+    """
+    return _inject(
+        ci_text, REF_RENDER_TAIL,
+        REF_RENDER_TAIL + "\n  out=$(printf '%s' \"$out\" | sed \"s/__ALLOW_DOWNGRADE__/$allow/g\")",
+    )
+
+
+def legit_refactor_moving_the_render_into_deploy_attempt(ci_text: str) -> str:
+    """**合法重构（另一种）**：`render_bootstrap` 把渲染收敛到它**自己内部**（原地改一行），
+    `deploy_attempt` 里那一行随之删掉 —— 渲染点换了写法与位置，但结果照样进执行命令。"""
+    region = probe_region(ci_text)
+    assert ALLOW_RENDER in region, f"注入锚点不存在（判据已过期）：{ALLOW_RENDER!r}"
+    out = ci_text.replace(ALLOW_RENDER + "\n", "", 1)
+    assert out != ci_text, "注入没有改变文本（空跑）"
+    # 用 `sed` 而不是 `\${out//…}`：**可移植**（macOS bash 3.2 不支持后者，见 `_render_bootstrap_with_sed`）
+    return _inject(
+        out, "  printf '%s' \"$out\"",
+        '  printf %s "$(printf %s \"$out\" | sed \"s/__ALLOW_DOWNGRADE__/$allow/g\")"',
+    )
+
+
+def legit_refactor_moving_the_render_into_deploy_attempt_wrapper(ci_text: str) -> str:
+    """**合法重构（第三种）**：`deploy_attempt` 用 `printf` + 命令替换（换掉参数展开写法）。"""
+    return _inject(
+        ci_text, ALLOW_RENDER,
+        'bootstrap=$(printf %s "$bootstrap" | sed "s/__ALLOW_DOWNGRADE__/$allow/g")',
+    )
+
+
+def legit_refactor_moving_the_render_into_render_bootstrap(ci_text: str) -> str:
+    """**合法重构（本单的主形态）**：#5120 的实现包最初想做、结果被旧判据误红的那一步 ——
+    把许可渲染从 `deploy_attempt` 搬进 `render_bootstrap`（tag + ref + 许可一起渲染）。
+
+    结果**仍生效**：`render_bootstrap` 的输出就是 `bootstrap`，照样进执行命令。
+    """
+    region = probe_region(ci_text)
+    assert ALLOW_RENDER in region, f"注入锚点不存在（判据已过期）：{ALLOW_RENDER!r}"
+    out = ci_text.replace(ALLOW_RENDER + "\n", "", 1)
+    assert out != ci_text, "注入没有改变文本（空跑）"
+    return _render_bootstrap_with_sed(out)
+
+
+@pytest.mark.parametrize("refactor", [
+    legit_refactor_moving_the_render_into_render_bootstrap,
+    legit_refactor_moving_the_render_into_deploy_attempt,
+    legit_refactor_moving_the_render_into_deploy_attempt_wrapper,
+])
+def test_legit_refactors_do_not_go_red(tmp_path, refactor):
+    """🔴 验收判据 ①（三种**不同机制**的合法重构各跑一次）：都不许误红。
+
+    旧判据对三种都红（它们都改了 `deploy_attempt` 里那一行的形态/位置），
+    而语义判据只问「执行命令里许可对不对」⇒ 三种都绿。
+    """
+    ci = refactor(read_ci_script())
+    assert ALLOW_RENDER not in ci, f"{refactor.__name__}: 注入后仍留着旧渲染行 ⇒ 红证空跑"
+    v = judge_permit_reaches_the_executed_command(ci, tmp_path / "ok", "sha-1a1a1a1", "1")
+    assert v == [], f"{refactor.__name__}: 合法重构被误红：\n- " + "\n- ".join(v)
+
+
+@pytest.mark.parametrize("how,inject,need_placeholder", [
+    ("渲染点删除", lambda ci: _inject(ci, ALLOW_RENDER + "\n", ""), True),
+    ("渲染到不生效的位置（渲染进没人用的变量）", lambda ci: _inject(
+        ci, ALLOW_RENDER, "local permit_only=${bootstrap//__ALLOW_DOWNGRADE__/$allow}",
+    ), True),
+    ("占位符从 BOOTSTRAP 模板里消失（渲染点成了空转）", lambda ci: _inject(
+        ci, "export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; ", "",
+    ), False),
+    ("渲染成常量（许可值不生效：回滚也被当普通部署）", lambda ci: _inject(
+        ci, ALLOW_RENDER, "bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/0}",
+    ), True),
+])
+def test_real_failure_modes_go_red(tmp_path, how, inject, need_placeholder):
+    """🔴 验收判据 ②：**真失效必须红** —— 四种形态各自**单独**让判据红（不是「一起红」）。
+
+    第三种（占位符从模板里消失）下，模板里**本来就没有**占位符 ⇒ 显式关掉那条「模板必须含占位符」
+    的反空跑锚点（它是给另外三种形态兜底的，在这里会先于判据触发）。
+    """
+    v = judge_permit_reaches_the_executed_command(
+        inject(read_ci_script()), tmp_path / "broken", "sha-1a1a1a1", "1",
+        require_placeholder=need_placeholder,
+    )
+    assert v != [], f"「{how}」之后判据没红（= 判据无判别力）"
+
+
+def legacy_literal_criterion(ci_text: str) -> list:
+    """**旧判据逐字内联**（#5128 要替换掉的那条，取自改动前的 `judge_ci_wiring`）：
+    只问「`deploy_attempt` 里有没有那一行字面量」，不问「许可有没有真的进执行命令」。"""
+    return [] if ALLOW_RENDER in ci_text else ["`deploy_attempt` 没有渲染许可占位符"]
+
+
+def test_legacy_literal_pin_would_misfire_on_legit_refactor(tmp_path):
+    """🔴 红证（本单的病根 / 验收判据 ① 的「改前红」）：**旧的逐字判据**在合法重构上**会红**。
+
+    逐字内联旧判据（不引用实现），证明它正是 #5120 的实现包撞到的那一条：
+    许可渲染一搬进 `render_bootstrap`，字面量就消失 ⇒ 旧判据判红，**而结果其实仍生效**
+    （同一份文本在新判据下是绿的 —— 这就是本单要达成的效果）。
+    """
+    ci = read_ci_script()
+    assert legacy_literal_criterion(ci) == [], "现状（就地渲染）下旧判据本该是绿的（反空跑）"
+    refactored = legit_refactor_moving_the_render_into_render_bootstrap(ci)
+    assert legacy_literal_criterion(refactored) != [], "合法重构居然没让旧判据红 ⇒ 这条红证是空跑"
+    assert judge_permit_reaches_the_executed_command(refactored, tmp_path / "legacy", "sha-1a1a1a1", "1") == [], (
+        "新判据在合法重构上也红了（本单没修好）"
+    )
