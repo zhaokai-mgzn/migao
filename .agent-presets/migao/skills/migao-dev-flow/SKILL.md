@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.44.0
+version: 1.45.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -141,6 +141,18 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   ① **元判据（裸判据差集）** = `python3 scripts/merge_gate.py --required-diff` —— required 集合 vs「**实际存在且会判红**」的 job 集合的**差集**（**反推、不硬编码**；数字用命令自证，**不写死**）；
   ② **判红落闸** = `python3 scripts/merge_gate.py --check <PR> --apply-label`（**默认同时 disarm** —— 见 §3.3）；
   三态 `0/1/3`（`3` = 无法判定，**不得当 `0` 读**），**默认只读**（dry-run）。
+- 🔴 **把一条 job 翻成 required 有两条前置，缺一不可**（v1.45.0 新增，2026-09-21/22 本会话**踩了两次**）：
+  ① **它在每个 PR 上都会被上报** —— 判据：该 workflow 的 `on.pull_request` **不得**有 `paths:` 过滤。
+     有 ⇒ 翻 required 会让所有**不碰该路径**的 PR **永久 `BLOCKED`**（GitHub 报
+     "Expected — waiting for status to be reported"，而**永远不会有人来报**）。
+  ② **它的判定方式是确定的** —— **先读判据实现**再决定翻不翻：`network=True`（真去连网）、
+     时间窗依赖（如 `scripts/drift_audit.py` 的 `check_heartbeat`）、以及"面内 / 面外"归因逻辑，
+     都会让「翻了就能拦」这个直觉失效。
+  **两条都满足才翻；只满足一条 ⇒ 不翻**，改用「报告型 + 判红打 `block/merge`」。
+  **实证（同一 PR、零代码改动）**：把 `worker-h5 unit tests` 与 `Mini-app e2e static contract preflight`
+  翻成 required 后 `#5101` **立刻 `BLOCKED`**；撤回这两条 ⇒ 立刻 `MERGEABLE/CLEAN`。
+  ⚠️ **本会话还犯了元层面的错**：**先错翻、又以错理由撤回**（把"不在 required ⇒ 红着也能合"这个**事实**，
+  错推成"翻 required = 修好"）⇒ **判据该不该翻，要先读它的判定方式，不能只看它红不红**。
 - **文档里写裸 `文件名:行号` 会被 Case Trust 规则 G 判红，且本地不复现**（v1.39 新增，2026-09-21 / **#4668**）：
   `Case Trust Gate` 的规则 **G** 对**裸文件名引用**（= **裸文件名 + 冒号 + 行号**，而非仓库相对全路径）判 **`CASE-TRUST-STALE-LINE-REF`**（**阻塞**），
   要求写成**仓库相对全路径**（如 `backend/ai-agent-service/app/production/routing.py`）。
@@ -173,6 +185,12 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 4. **主工作区只读**：主仓库（migao/）只做 `fetch/rebase/merge` 与 PR 管理，**不在主工作区直接改文件**（防止未提交改动静默携带）。
    - ⚠️ **硬红线：任何 worktree 里都禁止 `git stash` / `git stash pop` / `git reset --hard` / `git checkout -f`**（v1.18 新增，本会话两次实证：主仓库 stash 被 worktree 里的 stash pop+drop 误删，两次都靠 `git fsck` 找回悬空对象才救回）。**`git stash` 是仓库全局的、跨 worktree 共享**——你以为在动自己的 worktree，实际动的是主仓库的 stash ref。需要暂存/还原时：用 `git worktree add` 另开干净检出、或把改动 commit 到临时分支（stash 之外的任何方式都行）。
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
+   - **清理走事件驱动，不要高频定时任务**（v1.45.0 新增，用户裁定：「依赖高频的定时清理任务，不是很安全，而且不高效，浪费时间成本」）
+     ⇒ 交付形态 = **本地、attended、单一入口**：`bash scripts/issue-lifecycle.sh finish <分支>`（单包收尾）/
+     `prune [--apply]`（批量；**默认 dry-run**）。安全条件：**未合并 ⇒ fail-closed** / **活锚硬保护** /
+     **三态退出码（`3` = 无法判定，不得当 `0` 读）** / 幂等靠 **git common dir 台账**。
+     ⚠️ **`prune` 会一并删远程分支**（仅当有**已合并** PR 且**无 open PR**）—— 本会话实测（`prune` 自身输出）
+     远程分支 **294 → 7**、worktree **13 → 1**。**先跑 dry-run 看清单**，再 `--apply`。
 6. **开工前读契约**：`docs/wiki/CONTRACT-LEDGER.md`（状态枚举/字段名/端点签名）；跨模块改动后跑 `./contract-check.sh`。
 7. **worktree 里的 `.agent-presets/` 是「创建时的快照」** —— **`git add -A` 会静默回退研发模式**（v1.29 新增，2026-09-15 实证）：
    - **病根**：`.agent-presets/**` 看起来是**普通代码路径**（跟着分支走），实际是 **fork 那一刻的副本**；
@@ -329,6 +347,12 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 - `mergeStateStatus` 含义：`UNKNOWN`=GitHub 重算中（main 刚更新），等 30~60s；`BLOCKED`=CI 重跑中或有 pending check；`UNSTABLE`=有 failed check 但非 required，通常可合并；`CLEAN`=直接可合并。
 - **分支落后（DIRTY/CONFLICTING）**：`gh pr update-branch <PR>` 触发 rebase；若 update 报冲突，本地 fetch PR 分支 merge origin/main 解决后 push（dependabot 分支同名推送即可）。
 - 合并前先 `gh pr checks <PR>` 确认无 required check 失败；改 workflow 文件的 PR 若报 `without workflow scope` ⇒ **先看 §7.1**：**只改 `uses:` 版本 tag 的 bot PR 已由 `automerge.yml` 自动 arm（无需人工）**，其余仍属保留类。
+- **改 `.github/workflows/**` 的 PR 的合并路径**（v1.45.0 实测，关联 #5104）：`gh pr merge` 与 `gh pr merge --auto`
+  对**本机 gh token** 都被 GraphQL 拒 —— `refusing to allow an OAuth App to create or update workflow … without workflow scope`
+  （实测 scope 只有 `admin:public_key, gist, read:org, repo`，`gh auth status` 可自证）；而 **`git push` 同一改动是允许的**
+  （git 走另一套凭据）⇒ **两者权限不同**，**不要**用 `gh pr merge` 的失败推断"推不上去"。
+  落地路径只有两条：① `automerge.yml` 对**非 bot** PR 自动 arm，由 `app/github-actions` 执行合并
+  （实测 `#5104` 的 `mergedBy=app/github-actions`）；② **网页合并**。bot 的受限安全类见 §7.1。
 
 ## 8. CI/本地环境差异已知坑（v1.1 新增，issue #2693 全量教训）
 
@@ -342,6 +366,7 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 | **本地 .env 云库地址泄漏进单测**（issue #2957，2026-09-06） | 本地 pytest 从分钟级恶化到小时级（`verify-all.sh quick` 实测 58min 跑不完），CI 却 1-3 分钟正常 | 根因：本地 `.env` 的 DATABASE_URL/REDIS_URL 指向阿里云 RDS/Redis **公网地址**，单测未 mock 的存储调用（SessionStateStore/SessionMemory/context_manager）真实连接云库，每用例挂起/超时数十秒。修复：`tests/conftest.py` 顶部 `os.environ.setdefault("DATABASE_URL"/"REDIS_URL", localhost)`——setdefault 不覆盖 CI 注入的真实 env（环境变量优先级高于 .env 文件），单测内未 mock 连接毫秒级拒绝走降级。**判断信号：本地慢、CI 快 = 环境差异（.env/依赖），不是业务代码** |
 | **测试产物用「全局通配」定位 / 清理**（issue #4158，2026-09-18） | `/tmp/verify-all-*-*.log` 这类**跨进程通配**：清理时会删掉**别的会话 / 别的 worktree 正在用**的日志 ⇒ **跨会话假红**（issue 载**三路执行者独立撞到**）；`<PID>` 通配定位还会因 **PID 复用**读到别的会话的同前缀残骸；日志被外部清理器删掉则退化成**空 glob 断言**或裸 `FileNotFoundError`（看不出该找什么、找过哪些路径） | **产物路径必须由被测系统给出，或限定在测试自己的临时目录**（`tmp_path` / `TMPDIR` + 唯一前缀）；🔴 **禁止 `/tmp/verify-all-*-*.log` 这类全局通配清理**（清理收窄到 **`$$` 作用域**）；定位失败必须**明确报红 + 打印全现场**（期望路径模式 / PID / 实际命中 / 被排除的残骸清单 / 控制台原文 / 处置线索），**不得**空跑 —— 形态同 `migao-acceptance`「空跑：绿了但没跑」。**已落码**：单一实现 `tests/unit_ci_workflows/test_verify_all_log_scope.py` 的 `run_gate()`（PID 通配 ∩ **归属过滤**＝运行前快照 + mtime 窗口；定位不到 ⇒ `VerifyAllLogNotFound` + 全现场），静态清理口径守卫 + 行为判据 ⑨⑩ 同在该文件 |
 | **`patch()` 目标与「调用点」不同源**（issue #4310，2026-09-18） | `app/main.py` 在**导入期按值绑定**（`from app.utils.database import init_db`）⇒ patch **源模块** `app.utils.database.init_db` **对 lifespan 无效**：fixture 宣称「跳过真实 DB/Redis 初始化」**实际未达成** —— 属**测试基础设施静默失效**（patch 生效期内 `app.main.init_db is app.utils.database.init_db` 为 **False**，而真实 init 照跑） | patch **调用点所在模块里的那个名字**（`app.main.<name>`），**不是**源模块；判据 = patch 生效期内二者**不同一**才算真的换掉了。锚点 = `tests/conftest.py` 的 lifespan fixture（`patch("app.main.init_db"…)` 四条）+ `tests/test_conftest_fixtures.py`（同族假绿：单跑时恰好是 mock、patch 退出后 mock **永久残留**） |
+| **macOS BSD 工具 / git 子命令的静默失败**（v1.45.0 新增，本会话实证） | ① 用 `sed` 剥离 `git branch -r` 输出的 `origin/` 前缀（正则里写了 `\s`）在 **BSD sed** 上**静默失败**（BSD 不支持 `\s`）⇒ 293 条分支全被判"从未有 PR"、**数字完全失真**；② `git ls-remote` **逐分支轮询**，9 个就 >60s 超时；③ `git push --delete` 传**多 ref 非原子** —— 一个 ref 不存在 ⇒ **整批失败** | ① 用 `[[:space:]]` 或交给 python；② 批量改用 `gh api`；③ **逐个删**。**判据**：**"命令有输出" ≠ "命令按预期跑"** —— 数字型结论必须先用**小样本自证管道本身**（同 §19.2 ③「不写死易变数字」） |
 
 ## 9. 本地验证防恶化（v1.5 新增，2026-09-06 issue #2957 复盘固化）
 
@@ -1146,7 +1171,9 @@ cron 也已删除）承担。
 | **改了单一事实源后没回头同步「在飞」的引用副本**（v1.20 新增，2026-09-15 实证） | 按旧稿写出的 brief 会**忠实产出旧口径**，副本合入后与源**直接矛盾**——读者拿到两个打架的"事实源"，比不写更糟；且 brief 里的笔误会被**逐字复制**进产物（实证：把两个 **issue** 写成 **PR**，文档照抄并合入，事后需更正）。**规避**：① brief 优先写**源路径 + 章节号**让 worker 去读源，只在"措辞本身就是交付物"时才整段内联；② 改了源就 `grep` 出在飞 PR/分支里引用该内容的位置，逐一对齐；③ 副本已合并 → 开**跟随 PR**（上一行：禁止向已合并分支追加） |
 | **照 issue / 指令的字面实现，不先核前提**（v1.41 新增，本会话 **6 次**实证） | issue 是**路标不是判据**：本会话 6 次前提被证伪（页面时区 / 帘头 / 守卫其实已存在 / 「10 键」实为 11 / 某「设计零提及」其实早已登记 / **某入口的环境语义恰好反了**）—— 其中最后一条是**维护者自己的裁定基于错前提**（"保留 post-deploy-eval 那层"），照做会**净减一层覆盖面**。**规避**：动手前用**源码 / CI 日志 / 线上读数**核一遍前提，**与指令矛盾就先回报事实**（事实优先于指令）；**维护者让你顺手改的那个数也要核**（实证：授权把「70」订正为「69」，复核后 **70 才对** ⇒ **不执行 + 回执证据**） |
 | **用「看起来更硬」的旁证给结论加信度，而旁证其实不约束该结论**（v1.41 新增，实证） | 实测：某包用 `[A-Z]{2}-\d+` 数用例得 **69**，又拿「7s 起动 + 2873s 跨度 + 11s 尾条 = 2891s 墙钟」当**时序自洽**旁证 —— ⚠️ **该旁证只约束跨度、不约束条数**（漏掉的那条在跨度**内部**，其耗时被算到前一条头上）⇒ 用一个"更硬"的旁证给**错结论**加了信度。正确读数：runner **自身汇总行**（`❌ 10/70 个用例未通过`）的**分母**才是权威 ⇒ **70**（且数条数必须用 `[A-Za-z]+-\d+`，两位前缀会漏 3 字母前缀用例 `API-010`）。**规避**：加旁证前先问「**它若为假，这个旁证会不会不同？**」—— 不会不同 ⇒ 它不是旁证，是**装饰** |
-| **判据能被自己的文案 / 输出喂绿**（v1.41 新增，实证两条） | ① 「approve 的 fail-closed 出口」原先只查"步骤文本里有 `::error::` + `exit 1`"，而同一步**还有别的出口** ⇒ **摘掉 approve 自己的出口照样通过**；② `STALE_MINUTES` 原先只查"文本里提到过" ⇒ **报错文案里的 `${STALE_MINUTES}` 自己就把判据喂绿**。**规避**：判据读**结构化来源**（job env 的取值、语法绑定位置如"`|| {…}` 必须落在该命令 2 行内"），**不读"文本里提到过"**；每条判据都要有**一条变异让它单独变红** |
+| **判据能被自己的文案 / 输出喂绿或喂红**（v1.41 新增，实证两条；v1.45.0 又实证四条） | ① 「approve 的 fail-closed 出口」原先只查"步骤文本里有 `::error::` + `exit 1`"，而同一步**还有别的出口** ⇒ **摘掉 approve 自己的出口照样通过**；② `STALE_MINUTES` 原先只查"文本里提到过" ⇒ **报错文案里的 `${STALE_MINUTES}` 自己就把判据喂绿**。**v1.45.0 又实证四条**（形态统一为：判据**文本匹配扫源码**，命中的是注释 / 报错文案里对该手法的**说明**）：③ 弱断言门禁的 `is None` 正则**误报真断言**；④ 新守卫 `re.search(r"git\s+push\b", src)` 命中 `.github/workflows/flaky-ledger-reconcile.yml` 里 `echo "::error::…"` 的**建议文案**（该 workflow 声明 `contents: read` 且逐字写着"不 push"）；⑤ 可达性判据 grep 源码找 `cherry`，而函数体**注释**里写着「squash 下 `git cherry` 结构性失效」（那是在**解释为什么不能用它**）；⑥ `.github/danger_scan.py` 把注释里逐字写出的 `secrets.*`（在说明「不得新增 secrets 引用」）当成 **3 处真引用** ⇒ **required 判红**。**规避（照本仓既有口径）**：判据读**结构化 / 位置性证据** —— 实际 argv（如 `GH_CALL_LOG` 里的调用参数）、job env 取值、语法绑定位置、`permissions:` 块 —— **不读"文本里提到过"**；每条判据都要有**一条变异让它单独变红** |
+| **worker（subagent）中途失败 ⇒ 先查它的工作区，别急着重跑**（v1.45.0 新增，本会话 **5 个包**实证） | 中途失败的包（`#5100` / 分支卫生 / issue 生命周期 / bot 自动 arm / 部署包）**成果基本都在 worktree 里**（有的**已提交未 push**、有的**未提交**）⇒ 重跑既慢，又可能**覆盖已完成部分**。**处置 = 查工作区 → 判断成果完整性 → 从断点收尾**。**判据**：`git -C <worktree> status --porcelain` + `git -C <worktree> log --oneline -1` + 与 `origin/main` 的差异（**内容级**，见本节「三件事」） |
+| **验证动作本身没核对"跑的是哪个 commit"**（v1.45.0 新增，本会话实证） | 实测：「Java 升级后 2566 passed」其实跑在**升级前**的 commit 上（`ff` 之后**没重跑**）⇒ **"我在某个 commit 上跑过"必须核对那个 commit 是否已含被验证的改动**（本节「分支 ≠ 交付」的同族，只是发生在**验证动作**上）。**规避**：跑之前 / 之后 `git rev-parse HEAD` 与改动所在 commit 对齐；结论里**连 sha 一起写**（§19.2 ③） |
 | **豁免 / 白名单没有死亡条件**（v1.41 新增，实证） | 登记"某码结构性不可达 ⇒ 不入账本"这类豁免时，若只写理由不写**失效判据**，豁免会**永远躺在那里没人敢删**（源码后来真抛了它也没人知道）。**规避**：每条豁免**必须自带反向断言**（"源码不再如此 ⇒ 豁免已死 ⇒ 红"）+ 正向断言（"出现第 3 个可达形态 ⇒ 码集比对红"） |
 | **为了过门禁去绕判据**（v1.41 新增，实证） | 门禁判红时想"抽成新文件 / 换个写法"绕过：实测 `.github/danger_scan.py` 的 BLOCK 逐字含「**新增/删除 workflow 文件**」与「**修改 workflow 且新增 secrets 引用**」⇒ **"新增文件"本身就是 BLOCK**（"换文件名降级"不成立），`secrets[format(...)]` 之类写法属**规避**。**规避**：**修判据**（走评审）或**改方案**，不许绕；发现门禁与需求冲突时**报维护者** |
 | **改了静态资源 / 发布链路，却没确认发布腿被触发**（v1.41 新增，实证） | 发布 workflow 的触发面是**路径过滤**的 ⇒ 若本次改动**不在**该路径里（实测：某 PR 改的是 `deploy/**`），发布**不会跑** ⇒ **线上副本静默滞后**（实测：线上 `app.mjs` 一度缺计件幂等修复）。**规避**：改完**核线上内容 == `origin/main` 的内容**（`git show origin/main:<f> \| shasum` vs `curl \| shasum`），不一致就 `workflow_dispatch` 手动补发布 |
@@ -1334,8 +1361,10 @@ done
   —— 刷的是**专职只读镜像**（`fetch` + `checkout --detach origin/main`；镜像没有分支状态，故不用 `merge`）。
   **活锚必须指向专职只读镜像**，指向工作区会有两种静默失效：① 落后 `main` ⇒ 改进到不了加载点（`#4026`）；
   ② 被清理/被切分支 ⇒ 软链悬空 ⇒ **DSH 静默加载不到研发模式**（`#3956` 实证）。换链见根 `AGENTS.md`「开发环境准备」。
-- **改本仓库 `.agent-presets/**` 的 PR 合并后，活锚必然又落后一格** ⇒ **合并后顺手再核一次**
-  （把上面的循环当例行收口动作；本节的 PR 自身也适用）。
+- **改本仓库 `.agent-presets/**` 的 PR 合并后，必须跑 `./scripts/preset-anchor-refresh.sh`**（v1.45.0 硬化，本会话**两次**实证）：
+  只"核一次"不够 —— 活锚落后会让 `drift_audit` 的 **`skill-anchor` 判据判硬漂移**（**永不进基线、不可放行**）。
+  实测两次：活锚 `1.43.0` 落后仓库 `1.44.0`。**判据** = `./scripts/preset-anchor-check.sh`（红就刷新，绿才算收口；
+  **不要**去动 `drift_audit_baseline.json` —— 那是掩盖，不是修复）。
 
 ### 18.3 被测对象必须用**不可变标识**定位
 
@@ -1535,6 +1564,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 | 13 | **豁免账本按类分流（增长判据不许只看总数）** | `skip_total` **不作增长分母**；增长只判**债务类**（`debt_skip_ids`/`debt_skip_total`，**只许缩**）；`[backend-contract]` 单列**只增**合规清单 `backend_contract_ids`（其 `skip_reason` 是 runner 侧分隔符、设计上不进 agent-eval ⇒ 新增该类合规用例**无需**重锚定）；`_when_to_update` 与门禁例外条款**口径合一**（`history` 末行带显式 note 的锚点前移是**唯一**例外） | `.github/skip-exemption-baseline.json` 的 `_scope` / `_when_to_update` / `debt_*` / `backend_contract_ids` 字段；守卫 `tests/unit_ci_workflows/test_skip_exemption_gate.py`（**#4233**） | **已落码**（判据 = 该文件字段 + 守卫测试，随 pr-check 的 `ci workflow helper unit tests` job 跑） |
 | 14 | **迁移不可变（已发布迁移只增不改）** | 种子追加走**新迁移**（改已应用迁移被按**文件名**整份 skip ⇒ CI 绿、功能静默缺失）；种子守卫**按集合聚合**（按内容发现 `INSERT INTO <table>` 的迁移）⇒ 新增种子迁移无需改守卫；**新增迁移必须同 PR `--write-ledger` 登记指纹**（已登记文件被改 ⇒ exit 1 **拒绝重生成**） | `tests/unit_ci_workflows/test_migration_immutability.py` + 账本 `tests/unit_ci_workflows/migration_fingerprints.json`（**#4235**）；**§18.5**；详版 `docs/wiki/Database.md` | **已落码**（指纹账本三向可红 + 注入式自证；随 pr-check 的 `ci workflow helper unit tests` job 跑，**与 git 历史无关** ⇒ 浅克隆也真跑） |
 | 15 | **往返预算（步数才是计费单位）** | 读要成批 / 改要成批（同一步多个 `edit`；>3 处或整体重写用一次 `write`）/ 查要合并（多条 `grep` 合成一条 bash）/ 验证不来回（先窄跑再全量）/ **等待不轮询**（`--watch` 或后台 job，禁 `sleep N`）；分母 = 「调用数 / 步数」比 + 各工具的**调用占比 vs 执行耗时占比** + 「等待型调用」次数/时长 | **§21**（判据表 P1~**P7**）；`scripts/roundtrip_report.py`（**#4428** + 等待段 **#4455**，报告型三态 `0/2/3`）+ `tests/unit_ci_workflows/test_roundtrip_report.py` | **部分落码**：报告型工具 + L0 守卫（含注入式红证）已落码；**「批量化 / 不轮询」本身是纪律，无门禁** —— 有意不加阈值：加了阈值就没人敢跑它 |
+| 16 | **翻 required 的两条前置**（`paths:` 过滤 / 判定确定性） | **两条都满足才翻**：① 该 workflow 的 `on.pull_request` **不得**有 `paths:` 过滤（有 ⇒ 不碰该路径的 PR **永久 `BLOCKED`**，"Expected — waiting for status to be reported" 而**永远不会有人来报**）；② **先读判据实现**确认判定**确定**（`network=True` / 时间窗 / 面内-面外归因）；只满足一条 ⇒ **不翻**，改「报告型 + 判红打 `block/merge`」 | **§2.2**（required 条目）；元判据 `python3 scripts/merge_gate.py --required-diff`（**现查，不硬编码清单**） | **部分落码**：`merge_gate.py` 的 `--required-diff` / `--check` 已落码；**"该不该翻"本身是纪律** —— 没有门禁会替你读 `paths:` 与判据实现 |
 
 > **表的使用方式**：判据在**落码锚点**那一格的文件/脚本/技能节里；本表**不复述**判据正文。
 > 「现状」列**照实写** —— **未落码就是未落码**（同 §18 开头的警告：登记为纪律 ≠ 有人拦着你）。
@@ -1724,7 +1754,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 **尚未接 CI required check** —— 现为人工 / 会话收尾时调用，**不会自动拦人**。
 ⚠️ **P7 只解决墙钟与往返，不解决「CI 本身 3-4 min」** —— 那不在本单内。
 
-## 版本沿革（v1.1 → v1.44.0）
+## 版本沿革（v1.1 → v1.45.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -2173,3 +2203,39 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      `jsdom 26.1.0→30.0.1` / `numpy 1.26.4→2.5.3`）**全是 major**，故 major 闸已覆盖该风险；
      `docs/wiki/DEV-FLOW.md` 的 §7.1 镜像**有意不同步**（该页页头已声明「已停止同步」（issue #4315），
      且有**正向**机械判据 C4 要求页头必须声明「已停止同步 + 以技能为准」）。
+- v1.45.0（2026-09-22 **把 2026-09-21/22 会话的通用教训入册（防同形态复发）**，本次，issue #5118）：
+  七条，**每条都带现场证据 + 判据 / 规避**；**无一条新增门禁、不改任何 workflow**（只补判据与指针）：
+  ① **改 `.github/workflows/**` 的 PR 的合并路径**（§7.3 新增末条）：`gh pr merge` / `--auto` 对**本机 gh token**
+     均被 GraphQL 拒（`without workflow scope`；实测 scope = `admin:public_key, gist, read:org, repo`），
+     而 **`git push` 同一改动允许**（git 另一套凭据）⇒ **两者权限不同**，不得用前者的失败推断"推不上去"；
+     落地只有 `automerge.yml`（非 bot PR 自动 arm；实测 `#5104` 的 `mergedBy=app/github-actions`）与**网页合并**。
+     **核对结论：§7.1 那行「⏸ 保留 | 留给有权限者」已在 v1.44.0 同步改判，本单无需再改。**
+  ② **翻 required 的两条前置**（§2.2 新增条目 + §19 表第 16 行）：① `on.pull_request` **不得**有 `paths:` 过滤
+     （有 ⇒ 不碰该路径的 PR **永久 `BLOCKED`**，"Expected — waiting for status to be reported"，而**永远不会有人来报**）；
+     ② 判定方式必须**确定**（先读判据实现：`network=True` / 时间窗如 `scripts/drift_audit.py` 的 `check_heartbeat` /
+     面内-面外归因）。两条都满足才翻；只满足一条 ⇒ 不翻，改「报告型 + 判红打 `block/merge`」。
+     实证（同一 PR、零代码改动）：翻 `worker-h5 unit tests` + `Mini-app e2e static contract preflight` ⇒ `#5101` 立刻 `BLOCKED`；撤回 ⇒ `MERGEABLE/CLEAN`。
+     元层面教训：**先错翻、又以错理由撤回**（把"不在 required ⇒ 红着也能合"这个事实错推成"翻 required = 修好"）
+     ⇒ **该不该翻要先读判定方式，不能只看它红不红**。
+  ③ **「判据被自己的文案喂红 / 喂绿」再实证四条**（§17.3 该行扩充）：弱断言门禁 `is None` 误报真断言 /
+     `git push` 守卫命中 `.github/workflows/flaky-ledger-reconcile.yml` 的 `::error::` 建议文案（该 workflow
+     `contents: read` 且逐字写着"不 push"）/ `cherry` 可达性判据命中"解释为什么不能用它"的**注释** /
+     `.github/danger_scan.py` 把注释里说明「不得新增 `secrets.*`」的文本当成 **3 处真引用** ⇒ **required 判红**。
+     规避口径统一为：读**结构化 / 位置性证据**（实际 argv、job env、语法绑定位置、`permissions:` 块）。
+  ④ **worker（subagent）中途失败先查工作区**（§17.3 新增行）：本会话 **5 个包**中途失败，成果基本都在 worktree
+     （已提交未 push / 未提交）⇒ 处置 = `status --porcelain` + `log --oneline -1` + 与 `origin/main` 的**内容级**差异，
+     **从断点收尾**；重跑既慢又会覆盖已完成部分。
+  ⑤ **清理走事件驱动，不要高频定时任务**（§2.3 第 5 条扩写，用户裁定）：入口 = `scripts/issue-lifecycle.sh`
+     的 `finish <分支>` / `prune [--apply]`（**默认 dry-run**）；安全条件 = 未合并 fail-closed / 活锚硬保护 /
+     三态退出码（`3` 不得当 `0` 读）/ 幂等靠 git common dir 台账；`prune` 仅在有**已合并** PR 且**无 open PR** 时删远程分支
+     （本会话实测远程 **294 → 7**、worktree **13 → 1**）。
+  ⑥ **改 `.agent-presets/**` 合并后必须跑 `./scripts/preset-anchor-refresh.sh`**（§18.2 硬化）：只"核一次"不够 ——
+     活锚落后会让 `drift_audit` 的 `skill-anchor` 判**硬漂移**（**永不进基线、不可放行**）；本会话实测两次
+     （活锚 `1.43.0` 落后仓库 `1.44.0`）；判据 = `./scripts/preset-anchor-check.sh`；**不要**改 `drift_audit_baseline.json`。
+  ⑦ **验证动作本身也要核对 + 本地命令的静默失败**（§17.3 新增行 + §8 新增行）：①「Java 升级后 2566 passed」
+     实际跑在**升级前**的 commit（`ff` 之后没重跑）⇒ **结论必须核对被测 commit 是否已含被验证的改动**；
+     ② BSD sed 不支持 `\s` ⇒ 293 条分支全被判"从未有 PR"、数字失真；`git ls-remote` 逐分支轮询 9 个 >60s 超时
+     （批量用 `gh api`）；`git push --delete` 多 ref **非原子**（一个不存在整批失败）。
+  **未实装 / 边界（照实登记，§19.1）**：本单**不改任何门禁的通过条件**，全部是判据 + 指针；
+  ①②③⑦ 的"规避"仍是**纪律**（无机械锁会替你读 `paths:`、判据实现或被测 commit）；
+  ⑤ 的入口是**本地 attended** 脚本，**未接 CI**（有意：定时清理已被用户裁定不做）。
