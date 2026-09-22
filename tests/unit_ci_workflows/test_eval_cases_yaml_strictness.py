@@ -35,11 +35,15 @@ CI 里**没有任何环节**用标准 YAML 解析 `cases/*.yml`：
 `test_mibao_case_invariants.py` / `truths.py check` 承担。）
 """
 from pathlib import Path
+import sys
 
 import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / ".github"))     # cases_yaml（严格 loader 的单一真相源）
+import cases_yaml  # noqa: E402
+
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 CASE_FILES = sorted(CASES_DIR.glob("*.yml"))
 
@@ -52,14 +56,17 @@ def test_case_library_is_not_empty():
 
 @pytest.mark.parametrize("path", CASE_FILES, ids=[p.name for p in CASE_FILES])
 def test_case_file_parses_with_standard_yaml(path: Path):
-    """**核心守卫**：标准 YAML 必须能解析（`yaml_light` 宽松 ⇒ CI 其余环节挡不住）。"""
-    try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as e:                     # pragma: no cover - 合法库不该触发
+    """**核心守卫**：标准 YAML 必须能解析（`yaml_light` 宽松 ⇒ CI 其余环节挡不住）。
+
+    ⚠️ 判定走 `.github/cases_yaml.py` 的 `strict_error()`（#5151 的**唯一**严格 loader）——
+    与渲染腿 / 判据腿**同一处实现**；本守卫只是它在"全量用例库"这个面上的放大器。
+    """
+    err = cases_yaml.strict_error(path)
+    if err:                                         # pragma: no cover - 合法库不该触发
         raise AssertionError(
-            f"{path.name} 不是合法 YAML（渲染器用的 yaml_light 比标准 YAML 宽松，"
-            f"CI 的新鲜度/Case Contract 都不会报）：{type(e).__name__}: {str(e)[:200]}"
-        ) from e
+            f"{path.name} 不是合法 YAML（渲染腿用的 yaml_light 比标准 YAML 宽松，"
+            f"旧形态下 CI 的新鲜度/Case Contract 都不会报）：{err}")
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))   # 结构断言仍按标准 YAML 复算
     assert isinstance(doc, dict), f"{path.name} 顶层不是映射：{type(doc).__name__}"
     cases = doc.get("cases")
     assert isinstance(cases, list) and cases, (
