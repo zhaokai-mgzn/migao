@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
@@ -213,5 +214,42 @@ public class ProductController {
         log.info("导出商品: keyword={}, categoryId={}, status={}, tenantId={}",
                 query.getKeyword(), query.getCategoryId(), query.getStatus(), tenantId);
         productService.exportProducts(query, tenantId, response);
+    }
+
+    /**
+     * 批量导入商品 + SKU（issue #5154）—— 「导出」的对偶入口。
+     *
+     * <p>响应**恒为 200 + 逐行报告**（行级原子，不是整包回滚）：合法的行照常落库，
+     * 非法的行在 {@code data.errors[]} 里带「行号 + 货号 + 可行动原因」。
+     * 只有「整包级别的输入问题」（文件为空 / 表头缺必填列）才走 400。</p>
+     *
+     * <p>租户取自 {@link TenantContext}，**不接受**客户端传入 —— 导入建的是本租户的商品。</p>
+     *
+     * POST /api/admin/products/import （multipart/form-data，字段名 file）
+     */
+    @RequirePermission("product:create")
+    @PostMapping("/import")
+    public ApiResponse<ProductImportResult> importProducts(@RequestParam("file") MultipartFile file) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("导入商品: filename={}, size={}, tenantId={}",
+                file != null ? file.getOriginalFilename() : null,
+                file != null ? file.getSize() : -1, tenantId);
+        ProductImportResult result = productService.importProducts(file, tenantId);
+        log.info("导入商品完成: total={}, success={}, fail={}, blank={}, created={}, updated={}",
+                result.getTotal(), result.getSuccessCount(), result.getFailCount(),
+                result.getBlankRows(), result.getCreatedProducts(), result.getUpdatedProducts());
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 下载商品导入模板（「导入」的对偶入口：模板表头与导入解析共用同一常量）。
+     *
+     * GET /api/admin/products/import-template
+     */
+    @RequirePermission("product:list")
+    @GetMapping("/import-template")
+    public void downloadImportTemplate(HttpServletResponse response) throws IOException {
+        log.info("下载商品导入模板: tenantId={}", TenantContext.getTenantId());
+        productService.generateImportTemplate(response);
     }
 }

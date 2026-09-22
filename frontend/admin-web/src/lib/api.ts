@@ -13,6 +13,7 @@ import type {
   Product, 
   ProductListParams, 
   ProductFormData,
+  ProductImportResult,
   Category,
   CategoryFormData,
   ProcessingItem,
@@ -195,6 +196,21 @@ export const productApi = {
   // 导出商品（返回 blob）
   exportProducts: (params?: ProductListParams) =>
     request.get<Blob>('/api/admin/products/export', { params, responseType: 'blob' }),
+
+  // 批量导入商品 + SKU（issue #5154）——「导出」的对偶入口。
+  // 后端**恒返 200 + 逐行报告**（行级原子，不是整包回滚）：合法的行照常落库，
+  // 非法的行在 data.errors[] 里带「行号 + 货号 + 可行动原因」。
+  importProducts: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post<ApiResponse<ProductImportResult>>('/api/admin/products/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  // 下载导入模板（表头与导入解析共用同一常量 ⇒ 模板填得了的列，导入一定认识）
+  downloadImportTemplate: () =>
+    request.get<Blob>('/api/admin/products/import-template', { responseType: 'blob' }),
 }
 
 // 分类 API
