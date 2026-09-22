@@ -27,6 +27,11 @@
 //   使 lint 门禁保持**升级前口径**（既不新增、也不放宽），而不是借升级之名
 //   悄悄把关卡从「2 条 hooks 规则」扩成「16 条」、或反过来把 69 条真错当噪音忽略。
 //
+//   ── 后续包已收紧其中 3 条（见下面 REFS_PURITY_RULES）────────────────────────────
+//   那 69 个 error 里，**9 个与 React Compiler 无关、是真实代码缺陷**（渲染期读写 ref 6 处 /
+//   声明前访问 2 处 / 渲染期 `Date.now()` 1 处）。把真缺陷长期 `off` 掉 = 把它们重新藏起来，
+//   故已逐条修好后把这 3 条**从 `off` 收紧为 `error`**（残留违规 0 才收紧）。其余 11 条仍 `off`。
+//
 //   ⚠️ 未引入 `eslint-config-next/typescript`（= typescript-eslint `recommended`）：
 //   它与 `core-web-vitals` 是**并列**的两个 config，升级前并未启用；引入它会新增一整套
 //   `@typescript-eslint/*` 规则（`no-explicit-any` 等），同属独立专项，不混进本包。
@@ -39,17 +44,23 @@ const REACT_COMPILER_RULES = [
   'use-memo',
   'preserve-manual-memoization',
   'incompatible-library',
-  'immutability',
   'globals',
-  'refs',
   'set-state-in-effect',
   'error-boundaries',
-  'purity',
   'set-state-in-render',
   'unsupported-syntax',
   'config',
   'gating',
 ]
+
+/**
+ * 原先与上面一起 `off`、现**收紧回 error** 的 3 条。
+ * 它们命中的是**与 React Compiler 无关的真缺陷**（渲染期读写 ref / 声明前访问 / 渲染期 `Date.now()`），
+ * 不是「编译器风格偏好」——把真缺陷长期 `off` 掉等于把它们藏起来（本仓把「豁免掩盖」列为要治的病）。
+ * 收紧前实测：这 3 条在 `src/` 上报 **9 个 error / 5 个文件**；逐条修完后为 **0**，故收紧。
+ * 残留的另外 11 条（如 `set-state-in-effect` 57 处）仍 `off`，见文件头与 PR body 的登记。
+ */
+const REFS_PURITY_RULES = ['refs', 'immutability', 'purity']
 
 export default defineConfig([
   ...nextVitals,
@@ -61,6 +72,8 @@ export default defineConfig([
       'react-hooks/exhaustive-deps': 'warn',
       // ── React Compiler 规则：本包不采纳（见文件头）──
       ...Object.fromEntries(REACT_COMPILER_RULES.map((r) => [`react-hooks/${r}`, 'off'])),
+      // ── 其中 3 条是「与编译器无关的真缺陷」⇒ 逐条修好后**收紧为 error**（残留 0 才收紧）──
+      ...Object.fromEntries(REFS_PURITY_RULES.map((r) => [`react-hooks/${r}`, 'error'])),
 
       // ── 原有自定义规则，等级不变 ──
       'no-console': ['warn', { allow: ['warn', 'error'] }],

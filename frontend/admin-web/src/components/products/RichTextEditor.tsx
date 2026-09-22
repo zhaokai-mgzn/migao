@@ -36,7 +36,6 @@ interface ToolButton {
   icon: React.ComponentType<{ className?: string }>
   command?: string
   arg?: string
-  custom?: () => void
   isActive?: () => boolean
 }
 
@@ -71,13 +70,8 @@ export default function RichTextEditor({
     }
   }, [value])
 
-  const exec = useCallback((command: string, arg?: string) => {
-    editorRef.current?.focus()
-    document.execCommand(command, false, arg)
-    handleInput()
-    forceTick((n) => n + 1)
-  }, [])
-
+  // handleInput 必须先于 exec 声明：exec 会调用它，声明在使用点之后会被
+  // `react-hooks/immutability` 判为「声明前访问」（且回调会捕获旧引用）。
   const handleInput = useCallback(() => {
     if (!editorRef.current) return
     if (isComposingRef.current) return
@@ -85,6 +79,13 @@ export default function RichTextEditor({
     lastValueRef.current = html
     onChange(html)
   }, [onChange])
+
+  const exec = useCallback((command: string, arg?: string) => {
+    editorRef.current?.focus()
+    document.execCommand(command, false, arg)
+    handleInput()
+    forceTick((n) => n + 1)
+  }, [handleInput])
 
   // 链接插入
   const handleInsertLink = () => {
@@ -174,6 +175,9 @@ export default function RichTextEditor({
     }
   }
 
+  // 工具栏只存**纯数据**（不再把闭包塞进数组）：闭包进数组会让数组在渲染期带上
+  // 「可能读 ref」的类型，`react-hooks/refs` 会把 `buttons.map(...)` 判为渲染期读 ref。
+  // 需要 ref 的两个动作（插入链接/图片）在 onClick 里按 key 分发。
   const buttons: (ToolButton | 'divider')[] = [
     { key: 'bold', title: '加粗', icon: Bold, command: 'bold', isActive: () => isCmdActive('bold') },
     { key: 'italic', title: '斜体', icon: Italic, command: 'italic', isActive: () => isCmdActive('italic') },
@@ -186,8 +190,8 @@ export default function RichTextEditor({
     { key: 'ul', title: '无序列表', icon: List, command: 'insertUnorderedList', isActive: () => isCmdActive('insertUnorderedList') },
     { key: 'ol', title: '有序列表', icon: ListOrdered, command: 'insertOrderedList', isActive: () => isCmdActive('insertOrderedList') },
     'divider',
-    { key: 'link', title: '插入链接', icon: LinkIcon, custom: handleInsertLink },
-    { key: 'image', title: '插入图片', icon: ImageIcon, custom: handlePickImage },
+    { key: 'link', title: '插入链接', icon: LinkIcon },
+    { key: 'image', title: '插入图片', icon: ImageIcon },
     'divider',
     { key: 'undo', title: '撤销', icon: Undo2, command: 'undo' },
     { key: 'redo', title: '重做', icon: Redo2, command: 'redo' },
@@ -219,7 +223,8 @@ export default function RichTextEditor({
               title={b.title}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                if (b.custom) b.custom()
+                if (b.key === 'link') handleInsertLink()
+                else if (b.key === 'image') handlePickImage()
                 else if (b.command) exec(b.command, b.arg)
               }}
               className={cn(

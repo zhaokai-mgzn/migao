@@ -210,19 +210,21 @@ export default function KnowledgePage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (activeTab === 'candidates') loadCandidates()
-    if (activeTab === 'templates') loadTemplates()
-  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadTemplates = async () => {
+  // loadTemplates 必须在下面那个 effect **之前**声明（否则是「声明前使用」）：
+  // 用 useCallback 固定引用，effect 依赖才既完整又不会每次渲染都重跑。
+  const loadTemplates = useCallback(async () => {
     try {
       const res = await knowledgeApi.getTemplates()
       setTemplates(res.data?.data ?? [])
     } catch {
       toast.error('加载行业模板失败')
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'candidates') loadCandidates()
+    if (activeTab === 'templates') loadTemplates()
+  }, [activeTab, loadCandidates, loadTemplates])
 
   const adoptCandidate = async (candidate: KnowledgeCandidate) => {
     try {
