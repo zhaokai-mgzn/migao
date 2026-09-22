@@ -5,6 +5,7 @@ import com.migao.admin.entity.Product;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -35,9 +36,16 @@ public interface ProductMapper extends BaseMapper<Product> {
      * <p>用显式 SQL 而不是 LambdaQueryWrapper：这里是「命中即原地更新、未命中才新建」的判定点，
      * 软删过滤（{@code deleted = 0}）与 {@code ORDER BY id LIMIT 1}（历史重复数据下取最早那条，
      * 避免每次导入更新到不同的行）必须**看得见**，不能依赖 wrapper 的默认行为。</p>
+     *
+     * <p>⚠️ {@code @ResultMap} 是**判据的一部分**，不是可选优化：{@code @TableName(autoResultMap = true)}
+     * 只对 BaseMapper 的内置方法生效，手写 {@code @Select} 不显式绑 resultMap 就会生成一条**内联
+     * ResultMap（无类型处理器）** ⇒ {@code products.images} / {@code selling_methods} 这些 JSONB 列
+     * 以 **JSON 字符串**落到字段上，所有 {@code instanceof} 判据**静默为假**（#3340 / #4865 同根因）。
+     * 守卫：{@code JacksonTypeHandlerMappingGuardTest}（类级扫描，删掉本行即红）。</p>
      */
     @Select("SELECT * FROM products WHERE tenant_id = #{tenantId} AND sku_code = #{skuCode} " +
             "AND deleted = 0 ORDER BY id ASC LIMIT 1")
+    @ResultMap("mybatis-plus_Product")
     Product selectByTenantAndSkuCode(@Param("tenantId") Long tenantId, @Param("skuCode") String skuCode);
 
     /**
