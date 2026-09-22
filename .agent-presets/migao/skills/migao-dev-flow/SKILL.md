@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.43.0
+version: 1.44.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -298,7 +298,25 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 |---|---|---|
 | ✅ 合并 | CI 全绿；或仅 Agent Eval 偶发失败（§3.1 重跑后转绿） | squash 合并 + 删分支 |
 | ❌ 关闭 | 依赖解析冲突（npm ERESOLVE / pip ResolutionImpossible）或大版本破坏性升级 | 关闭 + comment 注明原因 |
-| ⏸ 保留 | 修改 `.github/workflows/` 的 PR 需要 gh token 的 `workflow` scope（默认 OAuth token 没有） | 保持 open，留给有权限者 |
+| 🤖 自动（bot 专用，v1.44.0 / #5077 新增） | **bot PR**（dependabot 等）且落在两个**受限安全类**里：① 改动文件**全部**在 `.github/workflows/**` 且 diff 的每一处改动**都是** `uses:` 行上的版本 tag；② 改动文件**全部**不在 `.github/workflows/**` 且标题声明的版本变更是 **patch/minor（同 major）**、且该版本字面量确实出现在 diff 增删行里 | **`automerge.yml` 的 `enable-auto-merge-bot-safe` job 自动 arm**（required 检查全绿后 GitHub 自动 squash 合并 + 删分支），**无需人工** |
+| ⏸ 保留（**范围已收窄**） | 其余全部：**major 升级**、多包/无 `from A to B` 的标题、新增/删除/改名 workflow 文件、diff 新增 `secrets.*`、改触发条件/权限、required 检查判红、带 `block/merge` 标签；以及所有**非 bot** 改 workflow 的 PR | 保持 open，留给有权限者。fail-closed：bot job 会把**拒绝码 + 可行动处置**写进 step summary（未 arm 时 job 仍是 success，不造红） |
+
+> **2026-09-22 改判（关联 #5077）—— 本行原为**：`⏸ 保留 | 修改 .github/workflows/ 的 PR 需要 gh token 的 workflow scope（默认 OAuth token 没有） | 保持 open，留给有权限者`。
+> 那行是「AI First —— 应移除需要人工操作的环节」方针下**最大的一处人工**。实测（2026-09-21/22）：
+> **16 条 dependabot PR 全部停在「没人合」**；其中 `#4470`/`#4475` 改 `.github/workflows/**`，
+> **连人工 `gh pr merge` 都合不了**（本机 token 无 `workflow` scope，GraphQL 拒），最后靠把改动
+> 折进自建非 bot PR（#5104）才落地。改判后的形态：
+> ① **自建非 bot PR** 由 `automerge.yml` 自动 arm（既有路径，**行为逐字未变**）；
+> ② **bot 的「只改 uses 版本 tag」类**（= `#4470`/`#4475` 的形态）经两个安全类 + required 检查门禁后
+> **也自动 arm**；
+> ③ **major 升级仍留人工** —— 这是仓库原本跳过 bot PR 的真实理由（半套升级 / 大版本破坏要人工关）。
+>
+> ⚠️ 「required 检查全绿」的口径是 **GitHub 自己的判定** `mergeStateStatus ∈ {CLEAN, UNSTABLE}`，
+> **不是**「`gh pr checks` 一条不红」：CI 里读不到 required 集合（`GET /branches/main/protection` 需 admin；
+> `gh pr view --json statusCheckRollup` 的 `isRequired` 实测恒为 `null`），且实测 dependabot PR 上恒有
+> 一条**非 required** 的陈旧红 `Reconcile and dispatch missing deploys` ⇒ 按字面实现会让
+> `#4475`/`#4471`/`#4469` 依然不 arm，自动化**零生效**。判据与逐条红证见
+> `tests/unit_ci_workflows/test_automerge_bot_safe_path.py`。
 
 ### 7.2 高频关闭模式（实战 9/27）
 - **「半套升级」**：只升子包不升核心 → peer 冲突。例：`@vitest/coverage-v8@4` 配 `vitest@3`；`@tarojs/react@4` 或 `@tarojs/plugin-platform-*@4` 配 tarojs 3.6.40 全家桶；`@babel/core@8` 配 ts-jest 29。
@@ -310,7 +328,7 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 - **同文件组串行合并**：多个 PR 改同一文件（requirements.txt / pom.xml / package.json）时逐个合并，避免同时合并互相冲突；可用后台循环脚本轮询 `mergeStateStatus`，CLEAN/UNSTABLE 才合并。
 - `mergeStateStatus` 含义：`UNKNOWN`=GitHub 重算中（main 刚更新），等 30~60s；`BLOCKED`=CI 重跑中或有 pending check；`UNSTABLE`=有 failed check 但非 required，通常可合并；`CLEAN`=直接可合并。
 - **分支落后（DIRTY/CONFLICTING）**：`gh pr update-branch <PR>` 触发 rebase；若 update 报冲突，本地 fetch PR 分支 merge origin/main 解决后 push（dependabot 分支同名推送即可）。
-- 合并前先 `gh pr checks <PR>` 确认无 required check 失败；改 workflow 文件的 PR 若报 `without workflow scope` 即属 §7.1 保留类。
+- 合并前先 `gh pr checks <PR>` 确认无 required check 失败；改 workflow 文件的 PR 若报 `without workflow scope` ⇒ **先看 §7.1**：**只改 `uses:` 版本 tag 的 bot PR 已由 `automerge.yml` 自动 arm（无需人工）**，其余仍属保留类。
 
 ## 8. CI/本地环境差异已知坑（v1.1 新增，issue #2693 全量教训）
 
@@ -1706,7 +1724,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 **尚未接 CI required check** —— 现为人工 / 会话收尾时调用，**不会自动拦人**。
 ⚠️ **P7 只解决墙钟与往返，不解决「CI 本身 3-4 min」** —— 那不在本单内。
 
-## 版本沿革（v1.1 → v1.43.0）
+## 版本沿革（v1.1 → v1.44.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -2117,3 +2135,41 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      （`EVAL_WORKFLOWS` 双向相等），一个纯评论的零 LLM PR workflow 若被重造，仍能溜过。
      另外：删除 workflow 需要**仓库 owner 本人在 PR 上贴 `/danger-ack delete-workflow all`**
      才放行（`danger_scan` 的确认通道），那是**人工步骤**，不在 agent 范围内。
+- v1.44.0（2026-09-22 **移除 §7.1 最大的那处人工环节：dependabot PR 不再全靠人工分类合并**，关联 #5077）：
+  `automerge.yml` 原 `if:` 逐字含 `github.event.pull_request.user.type != 'Bot'`（注释自陈
+  「bot PR（dependabot 等）跳过 —— 依赖升级仍需人工按 SOP 分类」）⇒ **每一条 dependabot PR 都跳过
+  auto-merge**。实测（2026-09-21/22）**16 条 dependabot PR 全部停在「没人合」**；其中
+  `#4470`/`#4475` 改 `.github/workflows/**`，**连人工 `gh pr merge` 都合不了**（本机 token 无
+  `workflow` scope，GraphQL 拒），属本技能 §7.1 的「⏸ 保留 | 保持 open，留给有权限者」——
+  该行即被移除的人工环节。本次落码：
+  ① **workflow**：`automerge.yml` 新增 job `enable-auto-merge-bot-safe`（与既有 job **同一组护栏**：
+     base=main / 非 draft / 同仓 / 无 `block/merge`），为 bot PR 增加一条**受限**自动 arm 路径，
+     只放行两个安全类 —— 安全类 1 = 改动文件全部在 `.github/workflows/**` 且 diff 的每一处改动
+     都是 `uses:` 行上的版本 tag（action 名不变、只 tag 变；= `#4470`/`#4475` 的真实形态）；
+     安全类 2 = 非 workflow 文件 + 标题声明的 patch/minor 升级（同 major）**且该版本字面量确实
+     出现在 diff 增删行里**（不信标题）。其余一律 **fail-closed** 留人工，并把**拒绝码 + 可行动处置**
+     写进 step summary。**major 升级仍留人工**（半套升级 / 大版本破坏）。**非 bot 路径逐字不变**
+     （本文件从 `on:` 起原文原样保留，新增只在文件头注释与文件末尾的新 job）。
+     **未新增任何 `secrets.*` 引用**（新 job 用 `github.token`，同一凭据）。
+  ② **§7.1 改判**：原「⏸ 保留 | 修改 `.github/workflows/` 的 PR 需要 gh token 的 `workflow` scope
+     （默认 OAuth token 没有） | 保持 open，留给有权限者」拆成「🤖 自动（两个安全类）」+
+     「⏸ 保留（范围已收窄）」两行；§7.3 末条同步改判（否则与 §7.1 立刻打架）。
+  ③ **判据 6 的口径（实测，非推断）**：required 集合在 CI 里**读不到**（`GET /branches/main/protection`
+     需 admin，`GITHUB_TOKEN` 不是；`gh pr view --json statusCheckRollup` 的 `isRequired` 实测恒为
+     `null`）⇒ 用 GitHub 自己的 `mergeStateStatus`：`UNSTABLE` = required 未判红、只是非 required 项
+     在红。这条例外**不是可有可无**：实测 dependabot PR 上恒有一条非 required 陈旧红
+     `Reconcile and dispatch missing deploys`（真因 = bot 触发的 workflow 拿不到 secrets ⇒
+     `docker login` 无凭据）⇒ 按字面「一条不红才算绿」实现会让 `#4475`/`#4471`/`#4469` 依然不 arm，
+     本包**零生效**。required 真红时 GitHub 报 `BLOCKED` ⇒ 仍然不 arm。
+  ④ **守卫**：新增 `tests/unit_ci_workflows/test_automerge_bot_safe_path.py`（挂既有 `MC-012`，
+     **不新建用例族**）：8 条判据**各带能单独变红的红证**，其中 6 条是**对真脚本源码做单点变异**
+     后重跑（把 `UNSTABLE` 例外放宽成 `if True:`、打掉 major 闸 / `block/merge` 闸 / secrets 闸 /
+     `status != modified` 闸 / tag-变化闸 ⇒ 对应红证**必须变红**）⇒ 证明每条红证都有判别力，
+     而不是"一起红"（注入点在**源码文本**，避开「判据被自己的文案喂绿」）。
+  ⑤ **未实装 / 边界（照实登记，§19.1）**：真实 dependabot PR 上的**生产首跑无法在本 PR 内验证**
+     （`pull_request_target` 只在真实事件上触发，本包不派发 workflow、不跑真实评测）；
+     `0.x` 包的 minor 升级按「同 major」放行（严格 semver 下 0.x minor 可能破坏，如
+     `pytest-asyncio 0.25.1→0.26.0`）—— 本仓实测的历史破坏（`@vitejs/plugin-react 4.7.0→6.1.1` /
+     `jsdom 26.1.0→30.0.1` / `numpy 1.26.4→2.5.3`）**全是 major**，故 major 闸已覆盖该风险；
+     `docs/wiki/DEV-FLOW.md` 的 §7.1 镜像**有意不同步**（该页页头已声明「已停止同步」（issue #4315），
+     且有**正向**机械判据 C4 要求页头必须声明「已停止同步 + 以技能为准」）。

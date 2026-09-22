@@ -6,11 +6,30 @@ name: Auto Merge
 # 消除「等待人工点合并」环节。本工作流对满足条件的 PR 开启原生 auto-merge，
 # 由 GitHub 在 required checks 全绿后自动 squash 合并 + 删分支（仓库已开 delete_branch_on_merge）。
 #
-# 安全护栏：
+# 安全护栏（两条路径共用同一组护栏）：
 # - 仅同仓库 PR 生效（fork PR 除外，防 token 滥用）
-# - bot PR（dependabot 等）跳过 —— 依赖升级仍需人工按 SOP 分类（半套升级/大版本破坏要人工关）
 # - draft PR 跳过；带 block/merge 标签的 PR 跳过（人工闸）
 # - 目标分支仅 main
+#
+# ── 2026-09-22 新增 bot 安全路径（关联 #5077，移除 `migao-dev-flow` §7.1 的「⏸ 保留」人工环节）──
+# 原 `if:` 逐字含 `user.type != 'Bot'`（注释自陈「bot PR 跳过 —— 依赖升级仍需人工按 SOP 分类」）
+# ⇒ **每一条 dependabot PR 都跳过 auto-merge**。实测（2026-09-21/22，issue #5077）：16 条
+# dependabot PR 全部停在「没人合」；其中 #4470 / #4475 改 `.github/workflows/**`，**连人工
+# `gh pr merge` 都合不了**（本机 token 无 `workflow` scope，GraphQL 拒）⇒ 属技能 §7.1 的
+# 「⏸ 保留 | 保持 open，留给有权限者」—— 这一行正是要移除的人工环节。
+#
+# 现为 **bot PR** 增加一条**受限的**自动 arm 路径（job `enable-auto-merge-bot-safe`）：
+# **只有**落在下面两个安全类里才 arm，其余一律 fail-closed 留人工（理由写进 step summary）。
+#   安全类 1（#4470 / #4475 的真实形态）：改动文件**全部**在 `.github/workflows/**`，且 diff 的
+#     每一处改动**都是** `uses:` 行上的版本 tag（action 名不变、只 tag 变）；不得新增/删除/改名
+#     文件、不得新增任何 secrets 引用、不得改触发条件/权限。
+#   安全类 2：改动文件**全部**不在 `.github/workflows/**`，且标题声明的版本变更是 **patch 或
+#     minor（同 major）**，且该版本字面量确实出现在 diff 的增删行里（不信标题）。**major 升级
+#     仍然留人工** —— 这是仓库原本跳过 bot PR 的真实理由（半套升级 / 大版本破坏要人工关）。
+# 两类都要求 required 检查未判红、且无 `block/merge` 标签。
+# **非 bot（人类 PR）路径的行为逐字不变** —— 既有 job 的 `if:` 与 steps 一个字未改（本文件
+# 从 `on:` 起的所有原文原样保留，新增内容只在文件头注释与文件末尾的新 job）。
+# 守卫：tests/unit_ci_workflows/test_automerge_bot_safe_path.py（8 条判据各带注入式红证）。
 
 on:
   pull_request_target:
@@ -124,3 +143,245 @@ jobs:
               exit 1
               ;;
           esac
+  # ── bot 安全路径（2026-09-22 新增，关联 #5077）────────────────────────────────
+  # 与既有 job 同一组护栏，只把作者类型换成 bot（两条路径互斥 ⇒ 任一 PR 只可能走一条）。
+  enable-auto-merge-bot-safe:
+    name: Enable auto-merge (bot, safe classes only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.type == 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(github.event.pull_request.labels.*.name, 'block/merge')
+
+    steps:
+      # 同既有 job：gh CLI 需要 git 上下文才能解析仓库。`pull_request_target` 下
+      # `actions/checkout` 默认取 **base** ref，且这里**不传 `ref`** ⇒ 绝不在特权上下文
+      # 执行 PR 代码（判据见守卫的 test_bot_job_does_not_checkout_pr_head）。
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify bot PR (fail-closed) and arm only if safe
+        env:
+          # 用 `github.token`（= 内置 GITHUB_TOKEN，同一凭据）而**不是**再写一处 secrets 引用
+          # 引用：本 PR 的硬约束禁止新增 secrets 引用（Danger Scan 会 BLOCK），两者取值完全相同。
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          python3 - <<'PY'
+          """bot PR 安全分类 + 受限 arm（fail-closed）。
+
+          判定口径见本 workflow 头部注释；守卫见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py。
+          任何一步「不确定」⇒ 不 arm（fail-closed），并把可行动的理由写进 step summary。
+          """
+          import json
+          import os
+          import re
+          import subprocess
+
+          GH = os.environ.get("AUTOMERGE_GH_BIN", "gh")
+          REPO = os.environ.get("GH_REPO", "")
+          PR = os.environ.get("PR_NUMBER", "")
+          TITLE = os.environ.get("PR_TITLE", "")
+          LABELS = [x.strip() for x in os.environ.get("PR_LABELS", "").split(",") if x.strip()]
+          SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
+
+          WORKFLOW_DIR = ".github/workflows/"
+          # workflow 里 uses 是**列表项**（`- uses: a@v1`），且 pin 形态常带尾注释（`@<sha> # v4`）
+          USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s*([^\s@]+)@(\S+?)\s*(?:#.*)?$")
+          BUMP_RE = re.compile(
+              r"^\s*(?:chore|build)\(deps(?:-dev)?\):\s*(?:bump|update)\s+.+?\s+"
+              r"(?:requirement\s+)?from\s+(\S+)\s+to\s+(\S+)")
+          SECRETS_RE = re.compile(r"secrets\.")
+          SEMVER_RE = re.compile(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+
+          ACTION = {
+              "BLOCK_LABEL": "人工闸生效：移除 block/merge 标签后，labeled/unlabeled 事件会让本 job 重跑",
+              "GH_API_FAILED": "读不到 PR 文件清单（token/网络）⇒ 保持人工，勿凭猜测 arm",
+              "NO_FILES": "PR 改动文件清单为空 ⇒ 无法判定安全类，保持人工",
+              "FILE_ADDED_OR_REMOVED": "新增/删除/改名文件不在任何安全类内（workflow 可携带 secrets 执行）⇒ 人工审查",
+              "SECRETS_ADDED": "diff 新增了 secrets 引用 ⇒ 人工安全审查",
+              "PATCH_UNAVAILABLE": "拿不到 patch（二进制/超大 diff）⇒ 无法逐行校验 ⇒ 人工",
+              "NOT_USES_ONLY": "workflow 改动不止 uses 版本 tag（触发条件/权限/结构）⇒ 人工审查",
+              "ACTION_NAME_CHANGED": "action 名变了（不只是 tag）⇒ 人工审查",
+              "NO_TAG_CHANGE": "uses tag 无实际变化 ⇒ 没有可自动合并的升级",
+              "MIXED_SURFACE": "同时改了 workflow 与非 workflow 文件 ⇒ 不在两个安全类内 ⇒ 人工",
+              "TITLE_UNPARSEABLE": "标题不是「单包 from A to B」形态（多包/无版本）⇒ 半套升级风险 ⇒ 人工",
+              "NO_VERSION_CHANGE": "版本未变化 ⇒ 无需自动合并",
+              "VERSION_DOWNGRADE": "版本回退 ⇒ 人工确认",
+              "VERSION_MAJOR": "major 升级 ⇒ 人工（半套升级/大版本破坏）",
+              "TITLE_PATCH_MISMATCH": "标题声明的版本字面量未出现在 diff 增删行里 ⇒ 标题不可信 ⇒ 人工",
+              "CHECKS_UNREADABLE": "读不到检查状态 ⇒ fail-closed（「看不了」不当「没问题」）",
+              "CHECKS_FAILED": "存在判红检查（required 判红时 GitHub 报 BLOCKED）⇒ 先修红；修好后 push 会重跑本 job",
+              "MERGE_CMD_FAILED": "gh pr merge --auto 返回非 0 ⇒ 见日志（已 arm 过 / 暂不可合并非错误）",
+              "ARMED": "已开启 native auto-merge：required 检查全绿后由 GitHub squash 合并 + 删分支",
+          }
+
+
+          def gh(*args):
+              return subprocess.run([GH, *args], capture_output=True, text=True)
+
+
+          def note(fields):
+              lines = ["%s=%s" % (k, v) for k, v in fields.items()]
+              lines.append("处置=%s" % ACTION.get(fields.get("CODE", ""), "（未登记处置）"))
+              print("\n".join(lines))
+              if SUMMARY:
+                  with open(SUMMARY, "a", encoding="utf-8") as fh:
+                      fh.write("\n".join(lines) + "\n")
+
+
+          def ver(text):
+              m = SEMVER_RE.search(text)
+              return None if m is None else tuple(int(g) if g else 0 for g in m.groups())
+
+
+          def added_removed(patch):
+              added, removed = [], []
+              for line in patch.splitlines():
+                  if line.startswith("+++") or line.startswith("---"):
+                      continue
+                  if line.startswith("+"):
+                      added.append(line[1:])
+                  elif line.startswith("-"):
+                      removed.append(line[1:])
+              return added, removed
+
+
+          def check_uses_only(wf_files):
+              """安全类 1：全部改动都是 uses: 行上的版本 tag（action 名不变、只 tag 变）。"""
+              for f in wf_files:
+                  name = f.get("filename", "?")
+                  patch = f.get("patch")
+                  if not patch:
+                      return False, "PATCH_UNAVAILABLE", "%s 拿不到 patch" % name
+                  added, removed = added_removed(patch)
+                  if not added or len(added) != len(removed):
+                      return False, "NOT_USES_ONLY", "%s 增删行数不等或为空（+%d/-%d）" % (name, len(added), len(removed))
+                  a_uses = [USES_RE.match(x) for x in added]
+                  r_uses = [USES_RE.match(x) for x in removed]
+                  for line, m in list(zip(added, a_uses)) + list(zip(removed, r_uses)):
+                      if m is None:
+                          return False, "NOT_USES_ONLY", "%s 存在非 uses: 行改动：%s" % (name, line.strip()[:120])
+                  if sorted(m.group(1) for m in a_uses) != sorted(m.group(1) for m in r_uses):
+                      return False, "ACTION_NAME_CHANGED", "%s 改动了 action 名（不只是 tag）" % name
+                  if [m.group(2) for m in a_uses] == [m.group(2) for m in r_uses]:
+                      return False, "NO_TAG_CHANGE", "%s 的 uses tag 没有实际变化" % name
+              return True, "WORKFLOW_USES_TAG_ONLY", "全部改动都是 uses: 行上的版本 tag"
+
+
+          def check_version_bump(dep_files):
+              """安全类 2：非 workflow 文件 + 标题声明的 patch/minor 升级，且 diff 与标题一致。"""
+              m = BUMP_RE.match(TITLE)
+              if m is None:
+                  return False, "TITLE_UNPARSEABLE", "标题不是可解析的单包升级形态：%r" % TITLE
+              old_raw, new_raw = m.group(1), m.group(2)
+              old, new = ver(old_raw), ver(new_raw)
+              if old is None or new is None:
+                  return False, "TITLE_UNPARSEABLE", "版本号无法解析：%r → %r" % (old_raw, new_raw)
+              if new == old:
+                  return False, "NO_VERSION_CHANGE", "版本未变化（%s → %s）" % (old_raw, new_raw)
+              if new < old:
+                  return False, "VERSION_DOWNGRADE", "版本回退（%s → %s）" % (old_raw, new_raw)
+              if new[0] != old[0]:
+                  return False, "VERSION_MAJOR", "major 升级（%s → %s）仍需人工" % (old_raw, new_raw)
+              for f in dep_files:
+                  name = f.get("filename", "?")
+                  patch = f.get("patch")
+                  if not patch:
+                      return False, "PATCH_UNAVAILABLE", "%s 拿不到 patch" % name
+                  added, removed = added_removed(patch)
+                  if not any(new_raw in x for x in added) or not any(old_raw in x for x in removed):
+                      return False, "TITLE_PATCH_MISMATCH", "%s 的 diff 里找不到标题声明的 %r→%r" % (name, old_raw, new_raw)
+              return True, "DEP_PATCH_OR_MINOR", "patch/minor 升级（%s → %s）且 diff 与标题一致" % (old_raw, new_raw)
+
+
+          def classify():
+              if "block/merge" in LABELS:
+                  return False, "BLOCK_LABEL", "PR 带 block/merge 标签（人工闸）"
+              proc = gh("api", "repos/%s/pulls/%s/files" % (REPO, PR), "--paginate", "--jq", ".[]")
+              if proc.returncode != 0:
+                  return False, "GH_API_FAILED", "gh api 返回 %d：%s" % (proc.returncode, proc.stderr.strip()[:200])
+              files = []
+              try:
+                  for line in proc.stdout.splitlines():
+                      if line.strip():
+                          files.append(json.loads(line))
+              except json.JSONDecodeError as exc:
+                  return False, "GH_API_FAILED", "gh api 输出不是 JSON：%s" % exc
+              if not files:
+                  return False, "NO_FILES", "PR 改动文件清单为空"
+              for f in files:
+                  if f.get("status") != "modified":
+                      return False, "FILE_ADDED_OR_REMOVED", "%s 状态=%s" % (f.get("filename", "?"), f.get("status"))
+              for f in files:
+                  for line in (f.get("patch") or "").splitlines():
+                      if line.startswith("+") and not line.startswith("+++") and SECRETS_RE.search(line):
+                          return False, "SECRETS_ADDED", "%s：%s" % (f.get("filename", "?"), line.strip()[:120])
+              wf_files = [f for f in files if f.get("filename", "").startswith(WORKFLOW_DIR)]
+              dep_files = [f for f in files if not f.get("filename", "").startswith(WORKFLOW_DIR)]
+              if wf_files and dep_files:
+                  return False, "MIXED_SURFACE", "同时改了 workflow 与非 workflow 文件"
+              if wf_files:
+                  return check_uses_only(wf_files)
+              return check_version_bump(dep_files)
+
+
+          def checks_verdict():
+              """required 检查是否未判红 —— 用 GitHub 自己的判定，不自己拼 required 清单。
+
+              CI 里读不到分支保护的 required 集合（GET /branches/main/protection 需 admin，GITHUB_TOKEN
+              不是 admin），gh pr view --json statusCheckRollup 的 isRequired 也恒为 null（该字段是需带参的
+              GraphQL 字段）⇒ 唯一权威信号是 mergeStateStatus：UNSTABLE = required 未判红、只是非 required
+              项在红；required 真红时 GitHub 报 BLOCKED。实测（#5077 ③）：dependabot PR 上恒有一条非 required
+              的陈旧红 Reconcile and dispatch missing deploys ⇒ 若按「一条不红才算绿」实现，#4475/#4471/#4469
+              依然不 arm，本路径等于零生效。
+              """
+              proc = gh("pr", "checks", PR, "--json", "name,state,bucket")
+              if proc.returncode not in (0, 1, 8):
+                  return False, "CHECKS_UNREADABLE", "gh pr checks 返回 %d：%s" % (proc.returncode, proc.stderr.strip()[:200])
+              try:
+                  rows = json.loads(proc.stdout or "[]")
+              except json.JSONDecodeError as exc:
+                  return False, "CHECKS_UNREADABLE", "gh pr checks 输出不是 JSON：%s" % exc
+              if not rows and proc.returncode != 0:
+                  return False, "CHECKS_UNREADABLE", "gh pr checks 无输出且退出码非 0"
+              failing = [r.get("name") for r in rows if r.get("bucket") in ("fail", "cancel")]
+              if not failing:
+                  return True, "CHECKS_GREEN", "无判红检查"
+              view = gh("pr", "view", PR, "--json", "mergeStateStatus", "--jq", ".mergeStateStatus")
+              state = view.stdout.strip() if view.returncode == 0 else ""
+              if state == "UNSTABLE":
+                  return True, "CHECKS_UNSTABLE_NONREQUIRED", "mergeStateStatus=UNSTABLE（required 未判红）；非 required 判红：%s" % failing
+              return False, "CHECKS_FAILED", "mergeStateStatus=%s；判红检查：%s" % (state or "<读不到>", failing)
+
+
+          def main():
+              ok, code, detail = classify()
+              klass = code if ok else ""
+              if ok:
+                  ok, code, detail = checks_verdict()
+              if not ok:
+                  note({"CODE": code, "REASON": detail})
+                  print("未 arm（fail-closed）—— 该 PR 保持人工处置")
+                  return
+              merge = gh("pr", "merge", PR, "--auto", "--squash", "--delete-branch")
+              if merge.returncode != 0:
+                  note({"CODE": "MERGE_CMD_FAILED",
+                        "REASON": "gh pr merge --auto 返回 %d：%s" % (merge.returncode, merge.stderr.strip()[:200])})
+                  return
+              note({"CODE": "ARMED", "CLASS": klass, "CHECKS": code, "REASON": detail})
+              print("已 arm native auto-merge（required 检查全绿后 GitHub 自动 squash 合并 + 删分支）")
+
+
+          if __name__ == "__main__":
+              main()
+
+          PY
