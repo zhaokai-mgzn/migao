@@ -751,6 +751,17 @@ public class ProcessingOrderService {
     /** 自动派单落进 {@code processing_orders.generated_by} 的前缀（**可审计**的持久痕迹）。 */
     public static final String AUTO_BATCH_OPERATOR_PREFIX = "auto:";
 
+    /**
+     * 定时腿（到期扫描）的触发原因 —— {@code generated_by} 上的第五个取值，也是**唯一**一个
+     * **非事件**触发的原因（issue #5184）。
+     *
+     * <p>前四个（{@link PoolChangeNotifier} 的四类）都是「某件业务刚发生」⇒ 顺带评估一次；
+     * 本值是「**什么都没发生**，但有单已经过了最晚派单日」⇒ 定时腿兜底把它派出去。
+     * 两者的持久痕迹因此天然可区分：{@code auto:order_confirmed:fifo} vs
+     * {@code auto:due_scan:fifo}。</p>
+     */
+    public static final String AUTO_BATCH_TRIGGER_DUE_SCAN = "due_scan";
+
     // 自动成批的生效策略：属性缺失 ⇒ 上面的代码缺省（**唯一**的缺省值表；不在别处再写一遍）。
     @Value("${migao.production.auto-batch.enabled:" + AUTO_BATCH_DEFAULT_ENABLED + "}")
     private boolean autoBatchEnabled = AUTO_BATCH_DEFAULT_ENABLED;
@@ -918,6 +929,84 @@ public class ProcessingOrderService {
         }
 
         // ③ 业务兜底（**不可取消**）：最晚派单日已到 ⇒ 必派（判据 4）
+        //   ⇒ 与定时腿（issue #5184）**共用同一实现**（dispatchDueOrders）：判定写两遍必然漂移，
+        //     而「到日必派」一旦分叉，就会出现「事件腿认为到期、定时腿认为没到期」的静默压单。
+        dispatchDueOrders(linesByOrder, tenantId, trigger, operator + ":due", policy, rule,
+                reasons, dispatched, failedIds, failures);
+
+        return new AutoBatchOutcome(true, trigger, rule, List.copyOf(reasons),
+                List.copyOf(dispatched), List.copyOf(failedIds), List.copyOf(failures));
+    }
+
+    /**
+     * 🔴 <b>定时腿的唯一入口（issue #5184）：只做业务兜底 —— 已过最晚派单日的池内订单 ⇒ 必派。</b>
+     *
+     * <h2>它<b>不是</b>什么（这条区分写在这里，因为做反了就正好是用户要去掉的东西）</h2>
+     * <ul>
+     *   <li>它<b>不</b>判成批条件 ①②③：那三条是**优化参数**（值不值得现在凑一批），
+     *       定时腿是**兜底**、不是主触发 —— 主触发仍是业务事件（{@code AutoBatchDispatchListener}）。
+     *       ⇒ 定时腿**只**跑第 ③ 段（{@code dispatchDueOrders}），与事件腿逐字同一实现。</li>
+     *   <li>它<b>不</b>读「池化窗口 / 等待时长上限」（{@code maxWaitHours} / {@code PoolLine.overdue()}）：
+     *       那个参数只决定**看板告警**（多早开始提示），**不是派单死线**。判据只有一条：
+     *       {@code 今天 ≥ 最晚派单日}（= {@link #latestDispatchDate}，客户的到货日倒推 / 标准生产周期）。
+     *       🔴 本类<b>没有</b>新增任何窗口类配置项 —— 判据的入参只有「到货日 / 进池日 / 标准生产周期」。</li>
+     * </ul>
+     *
+     * <h2>默认关（判据 4）与幂等（判据 3）</h2>
+     * 开关关 ⇒ <b>零读零写</b>（连池都不查），与事件腿同一条 {@code policy.enabled()} 判断、同一份缺省值表。
+     * 与事件腿并发 ⇒ 沿用既有三道闸（{@code selectActiveByOrderId} + {@code uk_processing_orders_active}
+     * + {@code uk_batch_consumption_line}）：派过的单已有活跃加工单 ⇒ 池里看不见它 ⇒ 不重复派、不重复扣。
+     *
+     * <h2>留痕（可区分来源）</h2>
+     * {@code generated_by = auto:due_scan:<规则>}（如 {@code auto:due_scan:fifo}）——
+     * 与事件腿的 {@code auto:<事件原因>:<规则>} 同一形态、不同取值 ⇒ 「这几张单是定时兜底派的」
+     * 一眼可查。
+     *
+     * @return 与事件腿同一个读数结构（{@code trigger = due_scan}；{@code enabled=false} = 缺省关、零动作）
+     */
+    public AutoBatchOutcome autoBatchDispatchDue(Long tenantId) {
+        return autoBatchDispatchDue(tenantId, AUTO_BATCH_TRIGGER_DUE_SCAN, autoBatchPolicy());
+    }
+
+    /** 显式策略版本（定时扫描与测试的入口；{@code null} ⇒ {@link #autoBatchPolicy()}）。 */
+    public AutoBatchOutcome autoBatchDispatchDue(Long tenantId, String trigger,
+                                                 AutoBatchPolicy policyRaw) {
+        AutoBatchPolicy policy = policyRaw == null ? autoBatchPolicy() : policyRaw;
+        if (tenantId == null || !policy.enabled()) {
+            // 🔴 判据 4：缺省关 ⇒ **零读零写**（与 autoBatchDispatch 同一条判断，不另立口径）
+            return new AutoBatchOutcome(false, trigger, null, List.of(), List.of(), List.of(),
+                    List.of());
+        }
+        String rule = StockBatchConsumptionService.normalizeAssignmentRule(policy.assignmentRule());
+        // 触发原因直接就是痕迹的一部分（**不**再追加 `:due` —— `due_scan` 已经说明了「为什么派」）；
+        // 形态与事件腿**逐字同款**：`auto:<触发原因>:<规则>`（判别只看这一段）。
+        String operator = AUTO_BATCH_OPERATOR_PREFIX + trigger + ":" + rule;
+        List<String> reasons = new ArrayList<>();
+        List<String> dispatched = new ArrayList<>();
+        List<String> failedIds = new ArrayList<>();
+        List<String> failures = new ArrayList<>();
+        dispatchDueOrders(linesByOrderOf(pool(tenantId, policy.maxWaitHours())), tenantId, trigger,
+                operator, policy, rule, reasons, dispatched, failedIds, failures);
+        return new AutoBatchOutcome(true, trigger, rule, List.copyOf(reasons),
+                List.copyOf(dispatched), List.copyOf(failedIds), List.copyOf(failures));
+    }
+
+    /**
+     * 业务兜底段的**唯一实现**（事件腿的 ③ 与定时腿 {@link #autoBatchDispatchDue} 共用）。
+     *
+     * <p>判据 = {@code 今天 ≥ 最晚派单日}：{@code 有客户要求到货日 ⇒ 到货日 − 标准生产周期}；
+     * {@code 无 ⇒ 进池日 + 标准生产周期}（见 {@link #latestDispatchDate}）。到日 ⇒ 必派，**不看条件**。</p>
+     *
+     * <p>🔴 <b>与等待时长无关</b>：本方法<b>不读</b> {@code PoolLine.waitHours()} / {@code overdue()}
+     * —— 池化窗口（{@code maxWaitHours}）是**优化参数**、只决定看板多早告警；把它当派单死线正是
+     * issue #5182/#5184 明令排除的形态。红证：把本方法的判据换成 {@code line.overdue()}
+     * ⇒ 「超窗但未到期 ⇒ 不派」那条判据当场红（见 {@code scripts/auto-batch-due-scan-red-proof.py}）。</p>
+     */
+    private void dispatchDueOrders(Map<String, List<ProductionPoolViews.PoolLine>> linesByOrder,
+                                   Long tenantId, String trigger, String operator,
+                                   AutoBatchPolicy policy, String rule, List<String> reasons,
+                                   List<String> dispatched, List<String> failedIds,
+                                   List<String> failures) {
         LocalDate today = LocalDate.now();
         List<String> dueOrderIds = new ArrayList<>();
         List<String> dueReasons = new ArrayList<>();
@@ -928,19 +1017,23 @@ public class ProcessingOrderService {
                 continue;
             }
             dueOrderIds.add(entry.getKey());
-            dueReasons.add("order=" + first.orderNo() + ":business_due=" + latest
-                    + (first.requiredDeliveryDate() != null
-                    ? "(required_delivery_date=" + first.requiredDeliveryDate() + ")"
-                    : "(no_required_delivery_date ⇒ 进池日 + 标准生产周期)"));
+            dueReasons.add(dueReason(first, latest));
         }
-        if (!dueOrderIds.isEmpty()) {
-            reasons.addAll(dueReasons);
-            collect(dispatchAuto(dueOrderIds, assignmentsOf(pluck(linesByOrder, dueOrderIds)),
-                            tenantId, operator + ":due", rule, true),
-                    trigger, dispatched, failedIds, failures);
+        if (dueOrderIds.isEmpty()) {
+            return;
         }
-        return new AutoBatchOutcome(true, trigger, rule, List.copyOf(reasons),
-                List.copyOf(dispatched), List.copyOf(failedIds), List.copyOf(failures));
+        reasons.addAll(dueReasons);
+        collect(dispatchAuto(dueOrderIds, assignmentsOf(pluck(linesByOrder, dueOrderIds)),
+                        tenantId, operator, rule, true),
+                trigger, dispatched, failedIds, failures);
+    }
+
+    /** 到期理由的**唯一措辞**（两条腿的 {@code reasons} 逐字一致 ⇒ 痕迹可对比、不留两套说法）。 */
+    static String dueReason(ProductionPoolViews.PoolLine first, LocalDate latest) {
+        return "order=" + first.orderNo() + ":business_due=" + latest
+                + (first.requiredDeliveryDate() != null
+                ? "(required_delivery_date=" + first.requiredDeliveryDate() + ")"
+                : "(no_required_delivery_date ⇒ 进池日 + 标准生产周期)");
     }
 
     /**
