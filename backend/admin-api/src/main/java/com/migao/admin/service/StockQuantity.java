@@ -117,8 +117,24 @@ public final class StockQuantity {
     }
 
     /**
-     * 订单侧数量落到库存列前的<b>显式定向舍入</b>：按 {@code docs/curtain-fabric-quote-rules.md}
+     * 领料量落到库存列前的**显式定向舍入**（唯一入口）：按 {@code docs/curtain-fabric-quote-rules.md}
      * §8「用料米数一律向上进位到 0.1」进位。
+     *
+     * <h2>它是「两个口径」共用的<b>同一个</b>归一入口（issue #5158）</h2>
+     * 领料量有两个口径，**归一都在这一处**（不许两处各写一套进位）：
+     * <ol>
+     *   <li><b>公式口径</b>：{@code order_items.quantity}（定高买宽 {@code W×N}、定宽买高 {@code P×(H+卷边)}）
+     *       —— 与销售账扣减同源，落在 {@code stock_batch_consumptions.formula_meters}；</li>
+     *   <li><b>排料口径</b>：{@code CuttingPlanCalculator} 的 {@code issuedMeters}（并排后的应领米数，
+     *       {@code BigDecimal}、**不取整**）按占比分摊到行后，落在 {@code planned_meters}。</li>
+     * </ol>
+     *
+     * <p>🔴 <b>为什么是「同族可复用」而不是「语义不同故不复用」</b>：两个口径的入参虽然来源不同
+     * （已成交数量 / 装箱结果），但**落库存前的取向要求是同一个** —— 都必须是
+     * 「**不小于**该口径算出来的用料量」：少领 = 裁床切不出货（比不省料严重得多），
+     * 而多领最多是批次余量少一点（下一次派工看得见）。进位方向、粒度（0.1 米）、真值源（§8）
+     * 三者逐字相同 ⇒ 复用本方法；另写一套「排料专用进位」只会在两处各自漂移
+     * （本仓反复复发的形态：同一事实的第二份口径）。</p>
      *
      * <p><b>为什么不在这里拒绝</b>：入参是顾客已成交的 {@code order_items.quantity}
      * （{@code DECIMAL(10,2)}，`per_meter` 是米数、`per_area` 是 ㎡）——在下单点拒绝 =

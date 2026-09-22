@@ -171,6 +171,20 @@ public class ProcessingOrderResponse {
          */
         @JsonProperty("formula_text")
         private Object formulaText;
+
+        // ── 排料结果（V119，issue #5158）────────────────────────────────────────────
+        //
+        // 生成加工单那一刻随快照固化（`ProcessingOrderService#stampCuttingPlan`），前端据此显示
+        // 「应领 X 米 / 公式 Y 米 / 省 Z 米」。⚠️ 三个键**必须**在这里声明：快照里出现 DTO 没声明的
+        // 键 ⇒ Jackson 未知属性 ⇒ `items` 整段变 null（响应静默退化）。
+        // 未指派批次 / 排不了料的加工单没有这三个键 ⇒ 恒 null（前端「缺值不渲染」）。
+
+        /** **公式口径**米数（= 行业公式口径 = 改前的扣减口径，与销售账扣减同源同函数）。 */
+        private Object formulaMeters;
+        /** **排料口径**米数 = **应领米数**（= 改后的扣减口径）—— 车间按它领料。 */
+        private Object plannedMeters;
+        /** 排料省下的米数 = {@code formulaMeters − plannedMeters}（不可并排时为 0）。 */
+        private Object savedMeters;
     }
 
     @Data

@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PR-055
+// case_ids: PR-055, PR-065, PR-063
 
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.entity.ProductSku;
@@ -57,6 +57,8 @@ class StockBatchConsumptionServiceTest {
     @Mock private StockBatchConsumptionMapper consumptionMapper;
     @Mock private ProductSkuMapper productSkuMapper;
     @Mock private StockLedgerMapper stockLedgerMapper;
+    /** 排料定尺要一个「上下卷边」—— 走算料配置的**单一读面**（V119 / issue #5158）。 */
+    @Mock private CraftCalcConfigService craftCalcConfigService;
 
     @InjectMocks private StockBatchConsumptionService service;
 
@@ -66,6 +68,8 @@ class StockBatchConsumptionServiceTest {
         return StockBatch.builder()
                 .id(id).tenantId(TENANT).batchNo(batchNo).productId(PRODUCT_ID)
                 .skuId(SKU_ID).skuCode("SKU-A").inboundNo("RK-1").dyeLot("L1")
+                // 当时均价 12.5 元/米（V119 的快照源；saved_amount = saved_meters × 它）
+                .unitCost(new BigDecimal("12.5"))
                 .quantity(new BigDecimal(meters)).receivedDate(LocalDate.of(2026, 9, 1))
                 .build();
     }
@@ -85,17 +89,48 @@ class StockBatchConsumptionServiceTest {
     private StockBatchConsumption consumption(long batchId, String batchNo, long id,
                                               String orderItemId, String delta, String before, String after,
                                               String reason) {
+        BigDecimal signed = new BigDecimal(delta);
         return StockBatchConsumption.builder()
                 .id(id).tenantId(TENANT).batchId(batchId).batchNo(batchNo).productId(PRODUCT_ID)
                 .skuId(SKU_ID).skuCode("SKU-A")
-                .delta(new BigDecimal(delta)).beforeQty(new BigDecimal(before)).afterQty(new BigDecimal(after))
+                .delta(signed).beforeQty(new BigDecimal(before)).afterQty(new BigDecimal(after))
+                // 两个米数 = −delta（V119 起的历史行口径）；均价 12.5 = 当时快照
+                .formulaMeters(signed.negate()).plannedMeters(signed.negate())
+                .unitCost(new BigDecimal("12.5"))
                 .reason(reason).processingOrderNo("JG-1").orderNo("ORD-1").orderItemId(orderItemId)
                 .operator("u1").build();
     }
 
     private StockBatchConsumptionService.Designation designation(String itemId, String batchNo, String meters) {
         return new StockBatchConsumptionService.Designation(
-                itemId, PRODUCT_ID, "SKU-A", batchNo, new BigDecimal(meters));
+                itemId, PRODUCT_ID, "SKU-A", batchNo, new BigDecimal(meters), null, null, null);
+    }
+
+    /** **定高买宽**的派工行（一块 = 整窗；占门幅宽 = 窗高 + 上下卷边）。 */
+    private StockBatchConsumptionService.Designation fixedHeight(String itemId, String batchNo,
+                                                                 String meters, String height) {
+        return new StockBatchConsumptionService.Designation(itemId, PRODUCT_ID, "SKU-A", batchNo,
+                new BigDecimal(meters), "定高买宽", new BigDecimal(height), null);
+    }
+
+    /** **定宽买高**的派工行（一块 = 每一幅；幅数 = 引擎的 `panels` 输出）。 */
+    private StockBatchConsumptionService.Designation fixedWidth(String itemId, String batchNo,
+                                                                String meters, int panels) {
+        return new StockBatchConsumptionService.Designation(itemId, PRODUCT_ID, "SKU-A", batchNo,
+                new BigDecimal(meters), "定宽买高", new BigDecimal("1.1"), panels);
+    }
+
+    /** 上下卷边桩（引擎默认 0.3）；传 {@code null} = 取不到（fail-soft ⇒ 不排料）。 */
+    private void stubHemMargin(String value) {
+        when(craftCalcConfigService.hemMarginOrNull(TENANT))
+                .thenReturn(value == null ? null : new BigDecimal(value));
+    }
+
+    /** 批次 SKU 的门幅（{@code "2.8米"} / {@code "2.8"} 两种存量形态都要能解析）。 */
+    private void stubDoorWidth(String doorWidth) {
+        when(productSkuMapper.selectList(any())).thenReturn(List.of(ProductSku.builder()
+                .id(SKU_ID).tenantId(TENANT).productId(PRODUCT_ID)
+                .doorWidth(doorWidth).skuCode("SKU-A").build()));
     }
 
     // ── 派工扣减：plan（只读校验）─────────────────────────────────────────────
@@ -204,6 +239,195 @@ class StockBatchConsumptionServiceTest {
         }
     }
 
+    // ── 排料接线（V119 / issue #5158）───────────────────────────────────────────
+
+    /**
+     * 「省料」真正产生的地方：扣减米数 = 排料口径。
+     *
+     * <p>判据全部用**可并排 / 不可并排**的对照读数（不是「调用了哪个方法」）：不接线时
+     * 两扇矮窗各扣 3 米（合计 6），接线后合计 3 —— 差额只能来自
+     * {@link CuttingPlanCalculator} 的装箱结果。</p>
+     */
+    @Nested
+    @DisplayName("排料接线 —— 扣减按排料结果落账（V119 / issue #5158）")
+    class CuttingPlanWiring {
+
+        @Test
+        @DisplayName("判据1 并排成立：门幅 2.8 / 窗高各 1.1 / 各需 3 米 ⇒ 合计扣 3 米（不是 6 米）")
+        void pairableSmallWindowsAreDeductedOnce() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8米");
+
+            var plan = service.plan(TENANT, List.of(
+                    fixedHeight("item-1", "PC-1", "3", "1.1"),
+                    fixedHeight("item-2", "PC-1", "3", "1.1")));
+
+            assertThat(plan).hasSize(2);
+            // 每行：公式 3 米；排料后每行分摊 = 3 × 3/6 = 1.5（组应领 3 = 行长 max(3,3)，两块各占 1.4 门幅）
+            assertThat(plan).allSatisfy(d -> {
+                assertThat(d.formulaMeters()).isEqualByComparingTo("3");
+                assertThat(d.plannedMeters()).isEqualByComparingTo("1.5");
+                assertThat(d.meters()).as("实际扣减 = 排料口径").isEqualByComparingTo("1.5");
+            });
+            BigDecimal deducted = StockQuantity.sum(
+                    plan.stream().map(StockBatchConsumptionService.Deduction::meters).toList());
+            assertThat(deducted).as("🔴 本单的核心读数：合计扣 3 米（不接线时是 6 米）")
+                    .isEqualByComparingTo("3");
+            assertThat(StockQuantity.sum(
+                    plan.stream().map(StockBatchConsumptionService.Deduction::formulaMeters).toList()))
+                    .as("公式口径合计仍是 6（两个米数都要能读出来）").isEqualByComparingTo("6");
+        }
+
+        @Test
+        @DisplayName("判据1' 定宽买高并排：两扇单开窄窗（各 1.4 米）⇒ 合计扣 1.4 米（不是 2.8）")
+        void pairableNarrowWindowsShareOneRow() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8");
+
+            var plan = service.plan(TENANT, List.of(
+                    fixedWidth("item-1", "PC-1", "1.4", 1),
+                    fixedWidth("item-2", "PC-1", "1.4", 1)));
+
+            assertThat(plan).allSatisfy(d -> assertThat(d.formulaMeters()).isEqualByComparingTo("1.4"));
+            assertThat(StockQuantity.sum(
+                    plan.stream().map(StockBatchConsumptionService.Deduction::meters).toList()))
+                    .as("两块各占 1.4 门幅（合计 2.8 ✓）⇒ 1 行 / 领 1.4 米").isEqualByComparingTo("1.4");
+        }
+
+        @Test
+        @DisplayName("判据2 不倒退：不可并排（窗高 2.7 + 卷边 0.3 > 门幅 2.8）⇒ 逐值等于公式米数、saved = 0")
+        void nonPairableKeepsFormulaMetersExactly() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8");
+
+            var plan = service.plan(TENANT, List.of(
+                    fixedHeight("item-1", "PC-1", "2.7", "2.7"),
+                    fixedHeight("item-2", "PC-1", "2.7", "2.7")));
+
+            assertThat(plan).hasSize(2);
+            assertThat(plan).allSatisfy(d -> {
+                assertThat(d.formulaMeters()).isEqualByComparingTo("2.7");
+                assertThat(d.plannedMeters()).as("宁可为 0，不许估").isEqualByComparingTo("2.7");
+                assertThat(d.formulaMeters().subtract(d.plannedMeters())).isEqualByComparingTo("0");
+            });
+        }
+
+        @Test
+        @DisplayName("🔴 不虚报：跨批次（不同卷）即使门幅相同也**不得**成组（否则省的是假数）")
+        void differentBatchesAreNeverPooledTogether() {
+            StockBatch b2 = batch(78L, "PC-2", "60");
+            stubBatches(batch(77L, "PC-1", "60"), b2);
+            when(consumptionMapper.sumDeltaByBatchIds(eq(TENANT), any())).thenReturn(List.of());
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8");
+
+            var plan = service.plan(TENANT, List.of(
+                    fixedHeight("item-1", "PC-1", "3", "1.1"),
+                    fixedHeight("item-2", "PC-2", "3", "1.1")));
+
+            assertThat(plan).allSatisfy(d -> assertThat(d.plannedMeters())
+                    .as("两块料在两卷上 ⇒ 各自都要单独占一段卷长").isEqualByComparingTo("3"));
+        }
+
+        @Test
+        @DisplayName("取不到上下卷边 / 工艺未知 / 缺定尺输入 ⇒ 一律退回公式口径（不猜，saved = 0）")
+        void missingInputsFallBackToFormula() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubDoorWidth("2.8米");
+
+            stubHemMargin(null); // 算料配置取不到 ⇒ 不排料
+            assertThat(service.plan(TENANT, List.of(
+                    fixedHeight("item-1", "PC-1", "3", "1.1"),
+                    fixedHeight("item-2", "PC-1", "3", "1.1"))))
+                    .allSatisfy(d -> assertThat(d.plannedMeters()).isEqualByComparingTo("3"));
+
+            stubHemMargin("0.3");
+            // 加工类型未知 ⇒ 不猜工艺（猜错会把整窗拆成多幅 ⇒ 少领）
+            assertThat(service.plan(TENANT, List.of(
+                    designation("item-1", "PC-1", "3"), designation("item-2", "PC-1", "3"))))
+                    .allSatisfy(d -> assertThat(d.plannedMeters()).isEqualByComparingTo("3"));
+            // 定高买宽缺窗高 ⇒ 定不了尺
+            assertThat(service.plan(TENANT, List.of(
+                    new StockBatchConsumptionService.Designation("item-1", PRODUCT_ID, "SKU-A", "PC-1",
+                            new BigDecimal("3"), "定高买宽", null, null))))
+                    .allSatisfy(d -> assertThat(d.plannedMeters()).isEqualByComparingTo("3"));
+            // 定宽买高缺幅数（引擎的 panels 输出缺席）⇒ 不自己算 ceil(M/G)
+            assertThat(service.plan(TENANT, List.of(
+                    new StockBatchConsumptionService.Designation("item-1", PRODUCT_ID, "SKU-A", "PC-1",
+                            new BigDecimal("2.8"), "定宽买高", new BigDecimal("1.1"), null))))
+                    .allSatisfy(d -> assertThat(d.plannedMeters()).isEqualByComparingTo("2.8"));
+        }
+
+        @Test
+        @DisplayName("排料省下的米数落在批次余量上 + 当时均价随行落库（saved_amount 可读）")
+        void savingStaysOnBatchAndIsAuditable() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8米");
+
+            var plan = service.plan(TENANT, List.of(
+                    fixedHeight("item-1", "PC-1", "3", "1.1"),
+                    fixedHeight("item-2", "PC-1", "3", "1.1")));
+            service.apply(TENANT, "JG-1", "ORD-1", plan);
+
+            ArgumentCaptor<StockBatchConsumption> captor =
+                    ArgumentCaptor.forClass(StockBatchConsumption.class);
+            verify(consumptionMapper, times(2)).insert(captor.capture());
+            List<StockBatchConsumption> rows = captor.getAllValues();
+            assertThat(StockQuantity.sum(rows.stream().map(StockBatchConsumption::getSavedMeters).toList()))
+                    .as("🔴 账面看得见的省钱：省下 3 米留在批次余量上（6 − 3）")
+                    .isEqualByComparingTo("3");
+            assertThat(StockQuantity.sum(rows.stream().map(StockBatchConsumption::getFormulaMeters).toList()))
+                    .isEqualByComparingTo("6");
+            assertThat(StockQuantity.sum(rows.stream().map(StockBatchConsumption::getPlannedMeters).toList()))
+                    .isEqualByComparingTo("3");
+            assertThat(rows.get(0).getSavedAmount())
+                    .as("saved_amount = saved_meters × 当时该批次均价（12.5 元/米）")
+                    .isEqualByComparingTo("18.75");
+        }
+
+        @Test
+        @DisplayName("🔴 均价快照的不变量：改掉批次均价 ⇒ 历史单的 saved_amount 一字不变")
+        void savedAmountIgnoresLaterBatchPriceChange() {
+            StockBatchConsumption row = consumption(77L, "PC-1", 1L, "item-1", "-1.5", "60", "58.5",
+                    StockBatchConsumptionService.REASON_PROCESSING_ORDER);
+            row.setFormulaMeters(new BigDecimal("3"));
+            row.setPlannedMeters(new BigDecimal("1.5"));
+            row.setUnitCost(new BigDecimal("12.5"));
+
+            assertThat(row.getSavedAmount()).as("1.5 米 × 12.5 = 18.75").isEqualByComparingTo("18.75");
+            // 批次均价被改（调价 / 成本订正）—— 台账行里的快照**不受影响**
+            StockBatch repriced = batch(77L, "PC-1", "60");
+            repriced.setUnitCost(new BigDecimal("99"));
+            assertThat(row.getSavedAmount()).as("用的是**当时**均价 ⇒ 换价后历史数不得变")
+                    .isEqualByComparingTo("18.75");
+            assertThat(row.getUnitCost()).isEqualByComparingTo("12.5");
+        }
+
+        @Test
+        @DisplayName("双口径与排料器无关的行：只给公式米数时 planned 逐值等于 formula（`meters()` 仍读得出）")
+        void plannedEqualsFormulaWhenNoGeometryGiven() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8米");
+
+            var plan = service.plan(TENANT, List.of(designation("item-1", "PC-1", "2.7")));
+
+            assertThat(plan.get(0).formulaMeters()).isEqualByComparingTo("2.7");
+            assertThat(plan.get(0).plannedMeters()).isEqualByComparingTo("2.7");
+            assertThat(plan.get(0).remainingBefore()).isEqualByComparingTo("60");
+        }
+    }
+
     // ── 派工扣减：apply / reverse ─────────────────────────────────────────────
 
     @Nested
@@ -218,7 +442,8 @@ class StockBatchConsumptionServiceTest {
 
             var deduction = new StockBatchConsumptionService.Deduction(
                     77L, "PC-1", PRODUCT_ID, SKU_ID, "SKU-A", "item-1",
-                    new BigDecimal("2.7"), new BigDecimal("60"));
+                    new BigDecimal("2.7"), new BigDecimal("2.7"), new BigDecimal("12.5"),
+                    new BigDecimal("60"));
             service.apply(TENANT, "JG-1", "ORD-1", List.of(deduction));
 
             ArgumentCaptor<StockBatchConsumption> captor =
@@ -230,6 +455,12 @@ class StockBatchConsumptionServiceTest {
             assertThat(row.getAfterQty()).isEqualByComparingTo("57.3");
             assertThat(row.getAfterQty().subtract(row.getBeforeQty()))
                     .isEqualByComparingTo(row.getDelta());
+            // 两个米数 + 当时均价随行落库（V119 / issue #5158）
+            assertThat(row.getFormulaMeters()).isEqualByComparingTo("2.7");
+            assertThat(row.getPlannedMeters()).isEqualByComparingTo("2.7");
+            assertThat(row.getUnitCost()).isEqualByComparingTo("12.5");
+            assertThat(row.getSavedMeters()).isEqualByComparingTo("0");
+            assertThat(row.getSavedAmount()).isEqualByComparingTo("0.00");
             assertThat(row.getReason()).isEqualTo(StockBatchConsumptionService.REASON_PROCESSING_ORDER);
             assertThat(row.getProcessingOrderNo()).isEqualTo("JG-1");
             assertThat(row.getOrderNo()).isEqualTo("ORD-1");
@@ -241,7 +472,7 @@ class StockBatchConsumptionServiceTest {
         void applyNeverTouchesSkuStock() {
             var deduction = new StockBatchConsumptionService.Deduction(
                     77L, "PC-1", PRODUCT_ID, SKU_ID, "SKU-A", "item-1",
-                    new BigDecimal("2.7"), new BigDecimal("60"));
+                    new BigDecimal("2.7"), new BigDecimal("2.7"), null, new BigDecimal("60"));
             service.apply(TENANT, "JG-1", "ORD-1", List.of(deduction));
 
             verify(consumptionMapper, times(1)).insert(any(StockBatchConsumption.class));
@@ -267,6 +498,11 @@ class StockBatchConsumptionServiceTest {
             assertThat(back.getDelta()).isEqualByComparingTo("2.7");
             assertThat(back.getBeforeQty()).isEqualByComparingTo("57.3");
             assertThat(back.getAfterQty()).isEqualByComparingTo("60"); // ← 派工前逐值相同
+            // 回补行**逐值对称**：两个米数取相反数（整单净额归零 ⇒ 作废不冒功），均价原样搬运
+            assertThat(back.getFormulaMeters()).isEqualByComparingTo("-2.7");
+            assertThat(back.getPlannedMeters()).isEqualByComparingTo("-2.7");
+            assertThat(back.getUnitCost()).isEqualByComparingTo("12.5");
+            assertThat(back.getSavedMeters()).isEqualByComparingTo("0");
             assertThat(back.getReason())
                     .isEqualTo(StockBatchConsumptionService.REASON_PROCESSING_ORDER_CANCELLED);
             assertThat(back.getOrderItemId()).isEqualTo("item-1");
@@ -440,6 +676,77 @@ class StockBatchConsumptionServiceTest {
         }
 
         @Test
+        @DisplayName("🔴 对账可拆（V119）：差额拆成「已售未派」+「排料节省」两项且分别可读，拆开后仍平")
+        void reconcileSplitsSoldUnbatchedAndPlanSaved() {
+            // 批次入 60；卖 6（销售账扣了 6）；派工按排料结果只扣 3 ⇒ 差额 3 应读作**排料节省**
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "-3");
+            when(consumptionMapper.sumDeltaBySku(eq(TENANT))).thenReturn(List.of(
+                    skuDelta(SKU_ID, "-3", "6")));
+            when(stockLedgerMapper.sumBySku(eq(TENANT))).thenReturn(List.of(
+                    ledgerSum(SKU_ID, "6", "0", "54")));
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(sku("54")));
+
+            BatchStockViews.Reconcile reconcile = service.reconcile(TENANT, PRODUCT_ID, SKU_ID);
+
+            BatchStockViews.ReconcileRow row = reconcile.rows().get(0);
+            assertThat(row.batchRemaining()).isEqualByComparingTo("57");   // 60 − 3（排料口径）
+            assertThat(row.skuStock()).isEqualByComparingTo("54");         // 60 − 6（公式口径）
+            assertThat(row.diff()).isEqualByComparingTo("3");
+            assertThat(row.planSavedMeters()).as("🔴 第 2 项：排料节省 = Σ公式 6 − Σ派工扣减 3")
+                    .isEqualByComparingTo("3");
+            assertThat(row.soldUnbatchedMeters()).as("第 1 项：已售未派 = 0（6 都派了、只是少扣 3）")
+                    .isEqualByComparingTo("0");
+            assertThat(row.explainedDiff()).isEqualByComparingTo("3");
+            assertThat(row.reconciled()).as("拆成两项后恒等式仍成立（不是把一项挪到另一项）").isTrue();
+            assertThat(reconcile.totalSavedMeters()).isEqualByComparingTo("3");
+            assertThat(reconcile.totalFormulaMeters()).isEqualByComparingTo("6");
+            assertThat(reconcile.totalPlannedMeters()).isEqualByComparingTo("3");
+        }
+
+        @Test
+        @DisplayName("🔴 两项并存且仍平：已售未派 2 + 排料节省 3 = 差额 5（不许一项冒充另一项）")
+        void reconcileReadsBothItemsSeparately() {
+            // 批次入 60；卖 10（销售账扣 10，其中只派了 5）；派工 5 的公式口径是 8、排料后 5
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "-5");
+            when(consumptionMapper.sumDeltaBySku(eq(TENANT))).thenReturn(List.of(
+                    skuDelta(SKU_ID, "-5", "8")));
+            when(stockLedgerMapper.sumBySku(eq(TENANT))).thenReturn(List.of(
+                    ledgerSum(SKU_ID, "10", "0", "50")));
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(sku("50")));
+
+            BatchStockViews.ReconcileRow row =
+                    service.reconcile(TENANT, PRODUCT_ID, SKU_ID).rows().get(0);
+
+            assertThat(row.diff()).isEqualByComparingTo("5");
+            assertThat(row.planSavedMeters()).isEqualByComparingTo("3");   // 8 − 5
+            assertThat(row.soldUnbatchedMeters()).isEqualByComparingTo("2"); // 10 − 8
+            assertThat(row.explainedDiff()).isEqualByComparingTo("5");
+            assertThat(row.reconciled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("历史行（formula ≡ −delta，无排料）⇒ 排料节省腿恒为 0，差额全部归「已售未派」（不冒功）")
+        void historicalRowsHaveNoPlanSaving() {
+            stubBatches(batch(77L, "PC-1", "60"));
+            stubConsumed(77L, "-2.7");
+            when(consumptionMapper.sumDeltaBySku(eq(TENANT))).thenReturn(List.of(
+                    skuDelta(SKU_ID, "-2.7", "2.7")));
+            when(stockLedgerMapper.sumBySku(eq(TENANT))).thenReturn(List.of(
+                    ledgerSum(SKU_ID, "5.4", "0", "54.6")));
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(sku("54.6")));
+
+            BatchStockViews.ReconcileRow row =
+                    service.reconcile(TENANT, PRODUCT_ID, SKU_ID).rows().get(0);
+
+            assertThat(row.planSavedMeters()).isEqualByComparingTo("0");
+            assertThat(row.soldUnbatchedMeters()).isEqualByComparingTo("2.7");
+            assertThat(row.diff()).isEqualByComparingTo("2.7");
+            assertThat(row.reconciled()).isTrue();
+        }
+
+        @Test
         @DisplayName("候选批次：建议值 = 入库日期先进先出且余量够的那一个（朴素口径，非 best-fit）")
         void candidatesSuggestFifoEnoughBatch() {
             StockBatch first = batch(1L, "PC-OLD", "0.5");
@@ -490,9 +797,19 @@ class StockBatchConsumptionServiceTest {
     }
 
     private StockBatchConsumptionMapper.SkuDeltaSum skuDelta(Long skuId, String delta) {
+        // 历史行口径：formula_meters = −delta（V119 的回填值）⇒ 排料节省腿为 0
+        return skuDelta(skuId, delta, new BigDecimal(delta).negate().toPlainString());
+    }
+
+    /**
+     * 逐 SKU 汇总桩。{@code formulaSum} = **公式口径**净额（V119，扣减行为正）
+     * —— 单参版即历史行口径（= −delta ⇒ 排料节省为 0）。
+     */
+    private StockBatchConsumptionMapper.SkuDeltaSum skuDelta(Long skuId, String delta, String formulaSum) {
         StockBatchConsumptionMapper.SkuDeltaSum sum = new StockBatchConsumptionMapper.SkuDeltaSum();
         sum.setSkuId(skuId);
         sum.setDeltaSum(new BigDecimal(delta));
+        sum.setFormulaSum(new BigDecimal(formulaSum));
         return sum;
     }
 

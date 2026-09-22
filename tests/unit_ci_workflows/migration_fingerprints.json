@@ -113,6 +113,7 @@
     "V115__stock_quantity_decimal_1dp.sql": "sha256:5c2fb2befcde2fba07bf697db257cd8a12bd2f82167be69d72cc83e3ad090bf8",
     "V116__create_stock_batch_consumptions.sql": "sha256:701c4034121c60712be9a4fbb44014cd2f70c860e65dca8e381dde0d71b4f116",
     "V117__inbound_order_idempotency_and_source.sql": "sha256:1894552289444061ed98d6f9e3d7ce27ca6d6869a3b9290efdb9f645cede1e3f",
-    "V118__stock_batch_legacy_no_and_opening_register.sql": "sha256:4492200ae65cf4f1c765ee736a61f386ad42fafe903f0127e8c0a0dd06f8c208"
+    "V118__stock_batch_legacy_no_and_opening_register.sql": "sha256:4492200ae65cf4f1c765ee736a61f386ad42fafe903f0127e8c0a0dd06f8c208",
+    "V119__add_cutting_plan_meters_to_batch_consumptions.sql": "sha256:79f001539a0485553a6f7517b7997826922487f41a4619809eba8900f2fc648f"
   }
 }

@@ -1688,6 +1688,11 @@ CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
     delta NUMERIC(12,1) NOT NULL,                    -- 变化量（正 = 回补，负 = 扣减）；V115/#5063 精度
     before_qty NUMERIC(12,1) NOT NULL,               -- 变更前**该批次余量**（不是 SKU 库存）
     after_qty NUMERIC(12,1) NOT NULL,                -- 变更后**该批次余量**
+    -- V119（issue #5158）：两个米数 + 「当时」均价快照 —— #5159 L1「逐单反事实」的载体。
+    -- 带符号（与 delta 同向：扣减行为正、回补行为负）；约束保证 planned <= formula（只多不少）。
+    formula_meters NUMERIC(12,1) NOT NULL,           -- 行业公式口径（= 改前的扣减口径，与销售账同源同函数）
+    planned_meters NUMERIC(12,1) NOT NULL,           -- 排料口径（= 改后的扣减口径，恒等于 -delta）
+    unit_cost NUMERIC(12,4),                         -- **当时**该批次均价快照（NULL = 历史行未知，不回填不猜）
     reason VARCHAR(32) NOT NULL,                     -- processing_order / processing_order_cancelled
     processing_order_no VARCHAR(32) NOT NULL,
     order_no VARCHAR(32),
@@ -1701,6 +1706,16 @@ CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
     ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
     WHERE deleted = 0;
+-- V119（issue #5158）不变式：排料口径**只多不少**（planned <= formula）且两列**同号**
+-- （扣减行都正 / 回补行都负 —— 少了后半句，(+6, −3) 这种符号打架的行也能落库）。
+ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_plan_meters;
+ALTER TABLE stock_batch_consumptions
+    ADD CONSTRAINT ck_batch_consumption_plan_meters
+    CHECK (planned_meters <= formula_meters AND formula_meters * planned_meters >= 0);
+ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_unit_cost;
+ALTER TABLE stock_batch_consumptions
+    ADD CONSTRAINT ck_batch_consumption_unit_cost
+    CHECK (unit_cost IS NULL OR unit_cost >= 0);
 CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_batch
     ON stock_batch_consumptions (tenant_id, batch_no, id);
 CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_po
