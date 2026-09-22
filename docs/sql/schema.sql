@@ -1630,6 +1630,7 @@ CREATE TABLE IF NOT EXISTS inbound_order_items (
     unit_cost NUMERIC(12,4),                         -- NULL = 未记单价 ⇒ 只加数量不算成本
     amount NUMERIC(16,4),                            -- quantity * unit_cost；NULL 单价 ⇒ NULL（不用 0 冒充）
     batch_no VARCHAR(32),                            -- 过账时才写（草稿为 NULL）
+    legacy_batch_no VARCHAR(64),                     -- 旧系统批次号（V118/#5153）：仅 source='opening' 的期初单可填，过账时透传到 stock_batches
     dye_lot VARCHAR(64),                             -- 供应商缸号（外部事实，可空）
     roll_length_m NUMERIC(8,2),                      -- 每卷米数（仅记录/打印，不参与换算）
     remark VARCHAR(255),
@@ -1645,7 +1646,8 @@ COMMENT ON TABLE inbound_order_items IS
 CREATE TABLE IF NOT EXISTS stock_batches (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    batch_no VARCHAR(32) NOT NULL,
+    batch_no VARCHAR(32) NOT NULL,                   -- 服务端生成的系统批次号 PC-yyyyMMdd-NNNN（**不得**被旧系统批次号冒充，V111）
+    legacy_batch_no VARCHAR(64),                     -- 旧系统批次号（V118/#5153）：外部事实，与 batch_no / dye_lot 各是一义
     product_id VARCHAR(64) NOT NULL REFERENCES products(id),
     sku_id BIGINT,
     sku_code VARCHAR(64),
@@ -1667,6 +1669,7 @@ CREATE TABLE IF NOT EXISTS stock_batches (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_stock_batches_no ON stock_batches (tenant_id, batch_no);
 CREATE INDEX IF NOT EXISTS idx_stock_batches_tenant_sku ON stock_batches (tenant_id, sku_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_stock_batches_tenant_dye_lot ON stock_batches (tenant_id, dye_lot);
+CREATE INDEX IF NOT EXISTS idx_stock_batches_tenant_legacy_no ON stock_batches (tenant_id, legacy_batch_no);
 CREATE INDEX IF NOT EXISTS idx_stock_batches_inbound ON stock_batches (inbound_order_id);
 COMMENT ON TABLE stock_batches IS
     '批次台账（V111）：一行 = 一个入库批次（= 一条入库单明细行）。缸号随批次可见 —— 对应 AHFA 卷标须带 Lot number 的行业要求（docs/curtain-selling-method-industry-research.md §1/S10）。批次行不可改：冲销走新单据';

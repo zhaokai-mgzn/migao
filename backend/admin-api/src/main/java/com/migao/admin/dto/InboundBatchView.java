@@ -41,6 +41,14 @@ public class InboundBatchView {
     /** 供应商缸号（可空） */
     private String dyeLot;
 
+    /**
+     * 旧系统批次号（可空；V118 / issue #5153）。
+     *
+     * <p>与 {@link #batchNo}（服务端生成）**两列两义** —— 期初建账登记进来的批次靠它
+     * 与旧系统对得上（「旧系统里那个号在 MIGAO 里是哪一批、还剩多少」）。</p>
+     */
+    private String legacyBatchNo;
+
     private BigDecimal rollLengthM;
 
     private String supplier;

@@ -101,7 +101,7 @@ public class InboundOrderService {
     public InboundOrderResponse create(InboundOrderCreateRequest req, Long tenantId, String operator) {
         Validated validated = validateRequest(req, tenantId);
         List<InboundOrderCreateRequest.Item> items = validated.items();
-        String source = normalizeSource(req.getSource());
+        String source = validated.source();
         String importRunId = trimToNull(req.getImportRunId());
 
         // 运行级幂等：同一份导入重跑 ⇒ 返回**同一张**单（不建第二张）
@@ -160,6 +160,9 @@ public class InboundOrderService {
                     .unitCost(item.getUnitCost())
                     .amount(amountOf(item.getQuantity(), item.getUnitCost()))
                     .dyeLot(trimToNull(item.getDyeLot()))
+                    // 旧系统批次号（V118 / issue #5153）：**外部事实**，原样透传 —— 与 batch_no
+                    // （服务端生成的系统号）两列两义，永不互相赋值（V111 明令不得互相冒充）
+                    .legacyBatchNo(item.getLegacyBatchNo())
                     .rollLengthM(item.getRollLengthM())
                     .remark(item.getRemark())
                     .build();
@@ -277,6 +280,9 @@ public class InboundOrderService {
                     .unitCost(unitCost)
                     .amount(amountOf(quantity, unitCost))
                     .dyeLot(line.getDyeLot())
+                    // 旧系统批次号（V118 / issue #5153）：明细行 → 批次行**透传**。建单与过账是两次
+                    // 请求 ⇒ 明细行不落这一列，建单时填的旧号在过账那一刻就丢了
+                    .legacyBatchNo(line.getLegacyBatchNo())
                     .rollLengthM(line.getRollLengthM())
                     .supplier(order.getSupplier())
                     .warehouse(order.getWarehouse())
@@ -357,12 +363,16 @@ public class InboundOrderService {
      *
      * <p>**全部条件都限定 tenant_id**（跨租户读 = 数据泄漏，不是过滤问题）。</p>
      */
-    public List<InboundBatchView> batches(Long skuId, String dyeLot, String inboundNo, Long tenantId) {
+    public List<InboundBatchView> batches(Long skuId, String dyeLot, String inboundNo,
+                                          String legacyBatchNo, Long tenantId) {
         LambdaQueryWrapper<StockBatch> wrapper = new LambdaQueryWrapper<StockBatch>()
                 .eq(StockBatch::getTenantId, tenantId)
                 .eq(skuId != null, StockBatch::getSkuId, skuId)
                 .eq(StringUtils.hasText(dyeLot), StockBatch::getDyeLot, dyeLot)
                 .eq(StringUtils.hasText(inboundNo), StockBatch::getInboundNo, inboundNo)
+                // 按**旧系统批次号**查回来（V118 / issue #5153）——期初登记进来的批次要「能被看见」：
+                // 迁移期最常见的问法是「旧系统里那个号在 MIGAO 里是哪一批、还剩多少」
+                .eq(StringUtils.hasText(legacyBatchNo), StockBatch::getLegacyBatchNo, legacyBatchNo)
                 .orderByDesc(StockBatch::getId)
                 .last("LIMIT " + BATCH_LIMIT);
         List<InboundBatchView> views = new ArrayList<>();
@@ -379,12 +389,17 @@ public class InboundOrderService {
     /**
      * 校验请求（不靠注解 —— Agent/程序化调用不经过 Bean Validation，同 OrderService 口径）。
      *
-     * @return 校验通过的明细行 + 各行 SKU（原样返回，避免调用方再查一次库）
+     * <p>单据来源在这里一并归一（{@link #normalizeSource}）并随 {@link Validated} 带出：明细行的
+     * 「旧系统批次号只在期初建账时可填」这条判据**依赖它**，而来源口径全仓只有
+     * {@code normalizeSource} 一处（不在这里再写第二遍取值集合）。</p>
+     *
+     * @return 校验通过的明细行 + 各行 SKU（原样返回，避免调用方再查一次库）+ 归一后的单据来源
      */
     private Validated validateRequest(InboundOrderCreateRequest req, Long tenantId) {
         if (req == null || req.getItems() == null || req.getItems().isEmpty()) {
             throw BusinessException.validationError("入库单至少要有 1 行明细");
         }
+        String source = normalizeSource(req.getSource());
         // 按商品缓存 SKU：同一商品多行时不重复查库
         Map<String, Map<Long, ProductSku>> skuCache = new HashMap<>();
         List<InboundOrderCreateRequest.Item> items = new ArrayList<>();
@@ -398,19 +413,10 @@ public class InboundOrderService {
             if (item.getSkuId() == null) {
                 throw BusinessException.validationError("商品明细第 " + idx + " 项缺少 SKU");
             }
-            if (item.getQuantity() == null
-                    || item.getQuantity().compareTo(BigDecimal.ONE) < 0) {
-                throw BusinessException.validationError(
-                        "商品明细第 " + idx + " 项的数量必须 ≥1 米（按米入库）");
-            }
-            // issue #5063（V115）：库存米数已小数化（NUMERIC(12,1) = 0.1 米粒度）⇒ 入库量支持 1 位小数。
-            // 口径**不变**的是那条纪律：**显式拒绝，不静默取整**（V111 对非整数入库存的就是这条精神）
-            // —— 超 1 位小数（如 2.755）不是「四舍五入成 2.8」，而是当场拒绝并给出可行动文案。
-            item.setQuantity(StockQuantity.requireOneDecimal(
-                    item.getQuantity(), "商品明细第 " + idx + " 项的数量"));
-            if (item.getUnitCost() != null && item.getUnitCost().compareTo(BigDecimal.ZERO) <= 0) {
-                throw BusinessException.validationError("商品明细第 " + idx + " 项的入库单价必须大于 0（不记单价请留空）");
-            }
+            // 数量/单价判据**只有一处**（requireItemNumbers）：建单与批量建账导入共用同一条口径
+            item.setQuantity(requireItemNumbers(item.getQuantity(), item.getUnitCost(),
+                    "商品明细第 " + idx + " 项的数量", "商品明细第 " + idx + " 项的入库单价"));
+            item.setLegacyBatchNo(legacyBatchNoOf(item.getLegacyBatchNo(), source, idx));
             Map<Long, ProductSku> skuById = skuCache.computeIfAbsent(item.getProductId(), this::skusOfProduct);
             if (!skuById.containsKey(item.getSkuId())) {
                 // SKU 与商品不匹配 = 串行/越权写入：必须挡住（否则库存会加到别的货号上）
@@ -420,17 +426,85 @@ public class InboundOrderService {
             items.add(item);
             skuByIdAll.put(item.getSkuId(), skuById.get(item.getSkuId()));
         }
-        return new Validated(items, skuByIdAll);
+        return new Validated(items, skuByIdAll, source);
     }
 
     /**
-     * 校验结果：明细行 + 各行的 SKU 实体。
+     * 单行**数值准入** —— 全仓**唯一一处**（下限、粒度、单价三条口径都在这里）。
+     *
+     * <p>建单（{@link #validateRequest}）与期初建账的 Excel 批量导入
+     * （{@link OpeningRegisterImportService}）**共用**本方法：两处各写一遍必然漂移
+     * （一处收 0.5、另一处拒 0.5，用户看到的是「同一个数有时能填有时不能」）。</p>
+     *
+     * <h3>下限：{@code > 0} 米（issue #5153，GAP-12 —— 放宽的是「≥1 米」这条）</h3>
+     * 用户痛点逐字：「当前企业剩余了**大量的 0.5 米左右**的批次布料」，而改前的
+     * {@code quantity ≥ 1} 让这些批次**连登记都进不来**（尾料被系统挡在门外 = 看不见 = 假真值）。
+     * 尾部米数是**实物事实**，拒绝它等于让系统说谎。
+     *
+     * <p>🔴 <b>下限与粒度是同一个判据的两半，不是两条口径</b>：{@code > 0} 加上
+     * 「最多 1 位小数」（{@link StockQuantity#requireOneDecimal}）⇒ 合法值恒
+     * {@code ≥ 0.1} 米。所以全仓**不需要也不得**再写一个 {@code 0.1} 的字面量下限
+     * （写了就是第二处口径，迟早在某条路径上漂移）。</p>
+     *
+     * <h3>粒度：仍是最多 1 位小数（**没有**因为放宽下限而放宽）</h3>
+     * 超 1 位小数（如 {@code 2.755}）⇒ **显式拒绝**，绝不静默取整 ——
+     * {@code stock_batches.quantity} 是 {@code NUMERIC(12,1)}，PG 对超 scale 的写入会
+     * **静默四舍五入且不报错**，所以 fail-closed 只能在应用层本方法里完成。
+     *
+     * <h3>🔴 不得改用它做归一</h3>
+     * 归一**只能**用 {@link StockQuantity#requireOneDecimal} 一族（库存类输入口径：拒绝非法值）。
+     * **不得**换成 {@link StockQuantity#toStockScaleByCeiling}（**订单侧**口径：向上进位，模拟裁床
+     * 用料）—— 用在批次余量上每条最多虚增 {@code +0.099m} = **系统性虚增资产**
+     * （#5149 §3.6.2 的显式禁令；用户裁定「不能损失客户」）。
+     *
+     * @return 归一后的数量（去尾零的合法值：{@code 2.70} → {@code 2.7}、{@code 10.00} → {@code 10}）
+     */
+    static BigDecimal requireItemNumbers(BigDecimal quantity, BigDecimal unitCost,
+                                         String quantityLabel, String unitCostLabel) {
+        BigDecimal qty = StockQuantity.orZero(quantity);
+        if (qty.signum() <= 0) {
+            throw BusinessException.validationError(
+                    quantityLabel + "必须大于 0 米（按米入库；库存按 0.1 米粒度记账，"
+                            + "0.5 米的尾料可如实登记）");
+        }
+        BigDecimal normalized = StockQuantity.requireOneDecimal(qty, quantityLabel);
+        if (unitCost != null && unitCost.compareTo(BigDecimal.ZERO) <= 0) {
+            throw BusinessException.validationError(unitCostLabel + "必须大于 0（不记单价请留空）");
+        }
+        return normalized;
+    }
+
+    /**
+     * 旧系统批次号准入（V118 / issue #5153）：**只在期初建账（{@code source=opening}）时可填**。
+     *
+     * <p>为什么必须在语义层挡住：{@code legacy_batch_no} 与 {@code batch_no}（服务端生成的
+     * {@code PC-yyyyMMdd-NNNN}）是**两列两义**，V111 明令不得互相冒充（{@code dye_lot} 亦然）。
+     * 采购收货的批次号由服务端生成，没有「旧系统批次号」这个事实 —— 放行它只会让两列的含义
+     * 在数据里混起来（事后无法区分哪个号是系统发的）。</p>
+     */
+    private static String legacyBatchNoOf(String raw, String source, int idx) {
+        String value = trimToNull(raw);
+        if (value == null) {
+            return null;
+        }
+        if (!InboundOrder.SOURCE_OPENING.equals(source)) {
+            throw BusinessException.validationError(
+                    "商品明细第 " + idx + " 项填了旧系统批次号，但本单来源是「采购收货」—— "
+                            + "旧系统批次号只在期初建账（source=opening）时可填"
+                            + "（系统批次号与旧系统批次号不得互相冒充）");
+        }
+        return value;
+    }
+
+    /**
+     * 校验结果：明细行 + 各行的 SKU 实体 + 归一后的单据来源。
      *
      * <p>把 SKU 一起带出来，是为了让建单路径**不重复查库**（校验阶段本就必须读到 SKU
      * 才能判「SKU 属于该商品」）—— 重复查一次不仅多一次 IO，还多一个「两次读到的 SKU
      * 不是同一个」的窗口。</p>
      */
-    private record Validated(List<InboundOrderCreateRequest.Item> items, Map<Long, ProductSku> skuById) {}
+    private record Validated(List<InboundOrderCreateRequest.Item> items, Map<Long, ProductSku> skuById,
+                             String source) {}
 
     /** 该商品在本租户下的全部 SKU（id → 实体） */
     private Map<Long, ProductSku> skusOfProduct(String productId) {

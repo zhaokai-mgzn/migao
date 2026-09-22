@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058]
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058, PR-061]
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -302,6 +302,123 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("至少要有 1 行明细");
             verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+    }
+
+    // ============================================================ PR-061 期初建账（V118 / issue #5153）
+
+    @Nested
+    @DisplayName("PR-061 期初建账：<1 米尾料可登记 + 旧系统批次号")
+    class OpeningRegister {
+
+        /** 期初建账单：来源 + 运行标识（幂等键）都由调用方给（V117 的既有件，本单不新造） */
+        private InboundOrderCreateRequest openingRequest(InboundOrderCreateRequest.Item... items) {
+            InboundOrderCreateRequest req = request(items);
+            req.setSource(InboundOrder.SOURCE_OPENING);
+            req.setImportRunId("opening-register-20260924-01");
+            return req;
+        }
+
+        private void stubCreate() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+        }
+
+        @Test
+        @DisplayName("GAP-12：数量 0.5 米 ⇒ 建单**通过**（改前被「≥1 米」拒绝，文案可复现）")
+        void acceptsHalfMeterTail() {
+            stubCreate();
+
+            // 红证（改前形态）：`validateRequest` 判 `quantity.compareTo(BigDecimal.ONE) < 0`
+            // ⇒ 0.5 当场抛「商品明细第 1 项的数量必须 ≥1 米（按米入库）」——
+            //    用户痛点「剩余了大量的 0.5 米左右的批次布料」正是被这条挡在门外。
+            service.create(openingRequest(itemQty("prod-1", 11L, "0.5", "12.50")), TENANT, "op");
+
+            ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(itemCap.capture());
+            // 落库就是 0.5 —— 既没被下限挡下，也没被任何归一改写成 1（系统性虚增的反面）
+            assertThat(itemCap.getValue().getQuantity()).isEqualByComparingTo("0.5");
+            assertThat(itemCap.getValue().getAmount()).isEqualByComparingTo("6.25");
+        }
+
+        @Test
+        @DisplayName("放宽下限**不**连带放宽精度：2.755 仍显式拒绝，不静默取整成 2.8")
+        void relaxingLowerBoundKeepsThePrecisionGate() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(
+                    openingRequest(itemQty("prod-1", 11L, "2.755", null)), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数")
+                    .hasMessageContaining("2.755");
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("旧系统批次号只在期初建账可填：opening 落库、purchase（含缺省来源）拒绝")
+        void legacyBatchNoIsScopedToOpening() {
+            stubCreate();
+            InboundOrderCreateRequest.Item line = itemQty("prod-1", 11L, "0.5", null);
+            line.setLegacyBatchNo("OLD-2024-0001");
+
+            service.create(openingRequest(line), TENANT, "op");
+
+            ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(itemCap.capture());
+            assertThat(itemCap.getValue().getLegacyBatchNo()).isEqualTo("OLD-2024-0001");
+            // 系统批次号此时还不存在（过账才生成）⇒ 旧号**没有**被塞进 batch_no（不得互相冒充）
+            assertThat(itemCap.getValue().getBatchNo()).isNull();
+
+            // 采购收货（缺省来源）填旧号 ⇒ 拒绝：采购批次号由服务端生成，没有「旧系统批次号」这个事实
+            InboundOrderCreateRequest.Item purchaseLine = itemQty("prod-1", 11L, "0.5", null);
+            purchaseLine.setLegacyBatchNo("OLD-2024-0001");
+            assertThatThrownBy(() -> service.create(request(purchaseLine), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("旧系统批次号只在期初建账");
+        }
+
+        @Test
+        @DisplayName("过账：旧系统批次号由明细行**透传**到批次行（batch_no 与 legacy_batch_no 两列两义）")
+        void postCarriesLegacyBatchNoToTheBatchRow() {
+            InboundOrder order = new InboundOrder();
+            order.setId("inbound-uuid-1");
+            order.setTenantId(TENANT);
+            order.setInboundNo("RK-20260924-0301");
+            order.setStatus(InboundOrder.STATUS_DRAFT);
+            order.setSource(InboundOrder.SOURCE_OPENING);
+            order.setInboundDate(LocalDate.now());
+            InboundOrderItem line = new InboundOrderItem();
+            line.setId(100L);
+            line.setTenantId(TENANT);
+            line.setInboundOrderId("inbound-uuid-1");
+            line.setSkuId(11L);
+            line.setProductId("prod-1");
+            line.setQuantity(new BigDecimal("0.5"));
+            line.setLegacyBatchNo("OLD-2024-0001");
+            line.setDyeLot("缸A-8891");
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(line)).thenReturn(List.of(line));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 0, null));
+
+            service.post("RK-20260924-0301", TENANT, "op");
+
+            ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
+            verify(stockBatchMapper).insert(batchCap.capture());
+            StockBatch batch = batchCap.getValue();
+            assertThat(batch.getQuantity()).isEqualByComparingTo("0.5");
+            assertThat(batch.getLegacyBatchNo()).isEqualTo("OLD-2024-0001");
+            assertThat(batch.getDyeLot()).isEqualTo("缸A-8891");
+            // 「不得互相冒充」：系统批次号是 PC-*，与旧号各占一列、值不同
+            assertThat(batch.getBatchNo()).matches("PC-\\d{8}-\\d{4}");
+            assertThat(batch.getBatchNo()).isNotEqualTo(batch.getLegacyBatchNo());
         }
     }
 
@@ -773,17 +890,17 @@ class InboundOrderServiceTest {
     class Validation {
 
         @Test
-        @DisplayName("数量为 0 / 负数 ⇒ 拒绝（≥1 米；1 位小数以内支持，超 1 位小数的拒绝见 PR-048）")
+        @DisplayName("数量为 0 / 负数 ⇒ 拒绝（下限是「大于 0 米」；0.5 米的尾料**可以**登记，见 PR-061）")
         void rejectsBadQuantity() {
             when(productMapper.selectById("prod-1")).thenReturn(new Product());
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku(11L, "prod-1", 0, null)));
 
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, 0, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("必须 ≥1 米");
+                    .hasMessageContaining("必须大于 0 米");
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, -3, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("必须 ≥1 米");
+                    .hasMessageContaining("必须大于 0 米");
             verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
         }
 

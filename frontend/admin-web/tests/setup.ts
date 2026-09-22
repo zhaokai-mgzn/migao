@@ -212,6 +212,8 @@ vi.mock('lucide-react', () => ({
   GripVertical: iconStub('grip-vertical'),
   GripHorizontal: iconStub('grip-horizontal'),
   Upload: iconStub('upload'),
+  // 入库单的期初建账导入（V118 / issue #5153）：页头「期初建账导入」与弹窗「下载模板」
+  Download: iconStub('download'),
   ImageIcon: iconStub('image-icon'),
   Bold: iconStub('bold'),
   Italic: iconStub('italic'),

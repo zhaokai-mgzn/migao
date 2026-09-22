@@ -1,14 +1,16 @@
-// case_ids: PR-046, PR-048
+// case_ids: PR-046, PR-048, PR-062
 //
-// 库存数量口径的**纯函数**单测（issue #5063：库存米数小数化，0.1 米粒度）。
+// 库存数量口径的**纯函数**单测（issue #5063：库存米数小数化，0.1 米粒度；
+// issue #5153 / GAP-12：下限由「≥1 米」放宽为「> 0 米」）。
 //   本文件直接断言 `src/lib/stock-quantity.ts`，不经页面 —— 判据的**唯一真值**在这里，
 //   页面（tests/unit/pages/inbound-orders-decimal.test.tsx）只验证它被接进了提交前校验。
-//   PR-045 = 库存米数支持 1 位小数（入库 60.5 米被接受）；PR-047 = 超 1 位小数显式拒绝（fail-closed）。
+//   PR-046 = 库存米数支持 1 位小数（入库 60.5 米被接受）；PR-048 = 超 1 位小数显式拒绝（fail-closed）；
+//   PR-062 = 建账入口（0.5 米的实物尾料**能**提交 —— 改前被 `≥1` 挡在门外）。
 import { describe, it, expect } from 'vitest'
 import { checkStockQuantity, formatStockQuantity, STOCK_QUANTITY_RULE } from '@/lib/stock-quantity'
 
-describe('checkStockQuantity —— ≥1 且最多 1 位小数（PR-045 / PR-047）', () => {
-  // PR-045：1 位小数（含小数部分为 0 的整数）必须通过 —— 这是本单的**新增能力**，
+describe('checkStockQuantity —— 大于 0 且最多 1 位小数（PR-046 / PR-048 / PR-062）', () => {
+  // PR-046：1 位小数（含小数部分为 0 的整数）必须通过 —— 这是那一单的**新增能力**，
   // 改前判据是 `Number.isInteger(q)`，这几条会全红。
   it.each([
     ['60.5 米（用户裁定里点名的例子）', '60.5'],
@@ -17,6 +19,13 @@ describe('checkStockQuantity —— ≥1 且最多 1 位小数（PR-045 / PR-047
     ['1', '1'],
     ['8.7（8.7 * 10 = 87.00000000000001 的浮点陷阱值）', '8.7'],
     ['1.1', '1.1'],
+    // PR-062（issue #5153 / GAP-12）：**0.5 米与 0.1 米的实物尾料必须能提交**。
+    // 改前（下限 `≥1`）这两条会被拒 ⇒ 用户痛点「剩余了大量的 0.5 米左右的批次布料」
+    // 连登记都进不来（挡在门外 = 看不见 = 假真值）。
+    ['0.5 米（用户在 issue 里点名的尾料，改前被 ≥1 挡下）', '0.5'],
+    ['0.5（数值入参）', 0.5],
+    ['0.1（0.1 米粒度下限：0.1 * 10 = 1.0000000000000002 也不能误杀）', '0.1'],
+    ['0.1（数值入参）', 0.1],
     ['60.5（数值入参，不是字符串）', 60.5],
     ['2.7（数值入参）', 2.7],
     ['10（数值入参）', 10],
@@ -30,8 +39,9 @@ describe('checkStockQuantity —— ≥1 且最多 1 位小数（PR-045 / PR-047
     expect(checkStockQuantity(value)).toBeNull()
   })
 
-  // PR-047：超过 1 位小数 ⇒ **显式拒绝**（fail-closed），文案必须说清位数与粒度，
+  // PR-048：超过 1 位小数 ⇒ **显式拒绝**（fail-closed），文案必须说清位数与粒度，
   // 且**不得**静默取整（取整的判定会返回 null = 放行 ⇒ 这条必红）。
+  // 🔴 放宽下限（PR-062）**不连带**放宽精度 —— 这一组是那条边界的判据。
   it.each([
     ['2.755', '2.755'],
     ['1.05', '1.05'],
@@ -47,16 +57,16 @@ describe('checkStockQuantity —— ≥1 且最多 1 位小数（PR-045 / PR-047
     const reason = checkStockQuantity(value)
     expect(reason).toBe(STOCK_QUANTITY_RULE)
     expect(reason).toContain('1 位小数')
-    expect(reason).toContain('≥1')
+    expect(reason).toContain('大于 0')
   })
 
-  // 下限仍是 ≥1（本单只放开小数位，不放宽下限）—— 删掉下限判据这条必红。
+  // 下限 = **大于 0**（issue #5153 起；改前是 `≥1`）。0 / 负数仍逐条被拒 —— 删掉下限判据这条必红。
   it.each([
-    ['0.5（一位小数但不足 1 米）', '0.5'],
-    ['0.1（浮点陷阱值：0.1 * 10 = 1.0000000000000002，仍须因 < 1 被拒）', '0.1'],
-    ['0', '0'],
+    ['0（不是「一批布」，是没填）', '0'],
     ['0（数值入参）', 0],
+    ['0.0（零的另一种写法）', '0.0'],
     ['-1', '-1'],
+    ['-0.5', '-0.5'],
   ])('%s ⇒ 拒绝', (_name, value) => {
     expect(checkStockQuantity(value)).toBe(STOCK_QUANTITY_RULE)
   })

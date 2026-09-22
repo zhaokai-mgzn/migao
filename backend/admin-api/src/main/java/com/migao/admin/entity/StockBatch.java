@@ -59,6 +59,15 @@ public class StockBatch {
     /** 供应商缸号（外部事实，可空） */
     private String dyeLot;
 
+    /**
+     * 旧系统批次号（外部事实，可空；V118 / issue #5153）。
+     *
+     * <p><b>与 {@link #batchNo} 两列两义</b>：{@code batchNo} 是**服务端生成**的系统号
+     * （{@code PC-yyyyMMdd-NNNN}），本列是**旧系统**的批次号 —— V111 明令不得互相冒充
+     * （与 {@link #dyeLot} 的缸号亦不同义）。期初建账时由明细行透传而来，采购入库恒为 NULL。</p>
+     */
+    private String legacyBatchNo;
+
     private BigDecimal rollLengthM;
 
     private String supplier;
