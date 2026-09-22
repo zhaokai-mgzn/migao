@@ -1236,6 +1236,15 @@ export interface CraftCalcConfig {
 export interface CraftCalcConfigResponse {
   source: string
   config: CraftCalcConfig
+  /**
+   * **引擎默认值**（§22 P3 逐键「我改过没有」，issue #5131 增量 2）。
+   *
+   * ⚠️ **只在显式 `?with_defaults=true` 时后端才附**；且 `defaults_source !== 'engine'` 时**键缺席**
+   * —— 「拿不到」**不得**画成「就是默认值」（所以是 `?`，而不是给一份空对象）。
+   */
+  defaults?: CraftCalcConfig
+  /** `'engine'` = `defaults` 可用；`'unavailable'` = 本次取不到（**显式**，不静默）；缺省 = 调用方没要 */
+  defaults_source?: 'engine' | 'unavailable'
 }
 
 /** 统一规则区一条：工艺变体 ∪ 特殊选项的**路线编排**规则（`action` = insert / remove） */

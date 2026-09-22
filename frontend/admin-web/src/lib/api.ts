@@ -775,8 +775,18 @@ export const productionApi = {
   // 缺配置行 ⇒ 后端返回**引擎默认值** + `source='default'`（前端不抄第二份默认值）。
   // PUT = **全量替换**：缺键 / 未知键 / 非法值 ⇒ 422 + `error.details[].message` 逐条理由
   //（**不得静默回退默认值** —— 静默 = 商家以为改了、系统按默认算 ⇒ 算错钱且无人知道）。
-  getCraftCalcConfig: () =>
-    request.get<ApiResponse<CraftCalcConfigResponse>>('/api/admin/production/craft-calc-config'),
+  /**
+   * 读算料配置。
+   *
+   * @param withDefaults 是否**额外**附**引擎默认值**（`defaults` + `defaults_source`，
+   *   §22 P3 逐键「我改过没有」，issue #5131 增量 2）。
+   *   🔴 **默认 false** —— 既有调用方（算料配置页）响应**逐字节不变**，也**不新增**
+   *   「读配置要依赖引擎可达性」这条依赖；只有「参数总览」要它。
+   */
+  getCraftCalcConfig: (withDefaults = false) =>
+    request.get<ApiResponse<CraftCalcConfigResponse>>(
+      '/api/admin/production/craft-calc-config' + (withDefaults ? '?with_defaults=true' : '')
+    ),
   updateCraftCalcConfig: (data: CraftCalcConfig) =>
     request.put<ApiResponse<CraftCalcConfigResponse>>('/api/admin/production/craft-calc-config', data),
 

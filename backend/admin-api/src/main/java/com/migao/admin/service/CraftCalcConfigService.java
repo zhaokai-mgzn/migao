@@ -46,6 +46,19 @@ public class CraftCalcConfigService {
     /** 本租户有活跃行 ⇒ 用的是商家配置。 */
     public static final String SOURCE_STORED = "stored";
 
+    /** 读面 {@code defaults_source}：引擎默认值**取到了**（逐键「我改过没有」可用）。 */
+    public static final String DEFAULTS_SOURCE_ENGINE = "engine";
+
+    /**
+     * 读面 {@code defaults_source}：引擎默认值**本次取不到** ⇒ 逐键对比**不可用**（**显式**告知）。
+     *
+     * <p>🔴 与 {@code source='default'} 的 fail-closed **不是一回事**：缺行时取不到默认值 ⇒ **422**
+     * （那时默认值就是返回值本身，凭空造一份 = 让商家按错的口径改配置）；而这里默认值只是**读面的注解**，
+     * 取不到不影响 {@code config} 本身的正确性 ⇒ 不拖垮读面，但必须**说出来**（前端据此显式显示
+     * 「默认值暂不可用」，**不得**把「拿不到」画成「就是默认值」）。</p>
+     */
+    public static final String DEFAULTS_SOURCE_UNAVAILABLE = "unavailable";
+
     /**
      * 褶倍下限的**行业美学红线**：配置可配但**不可关**（低于它 ⇒ 422）。
      *
@@ -80,22 +93,64 @@ public class CraftCalcConfigService {
     private final CraftCalcConfigMapper craftCalcConfigMapper;
     private final CraftCalcClient craftCalcClient;
 
+    /** 读本租户的**生效**算料配置（**不带**引擎默认值 —— 既有调用方口径逐字节不变）。 */
+    public Map<String, Object> get(Long tenantId) {
+        return get(tenantId, false);
+    }
+
     /**
      * 读本租户的**生效**算料配置。
      *
-     * @return {@code {source, config}}：{@code source='stored'} = 商家配置行；
-     *         {@code source='default'} = 本租户没有配置行，值取自**算料引擎默认值**
-     *         （未配置租户的算料结果因此与包 D 合并后的默认结果**逐值一致**）。
-     * @throws BusinessException 422 —— 缺行时取引擎默认值失败（ai-agent 不可达等）：
+     * @param withDefaults 是否**额外**附上**引擎默认值**（§22 P3「逐键我改过没有」，issue #5131 增量 2）。
+     *        🔴 **默认 false** 是有意的：既有调用方（算料配置页）走 {@code get(tenantId)} ⇒ 响应**逐字节不变**、
+     *        也**不新增**「读配置要依赖引擎可达性」这条依赖；只有「参数总览」显式要时才去取。
+     * @return {@code {source, config}}；{@code withDefaults=true} 时**再加** {@code defaults} +
+     *         {@code defaults_source}（见 {@link #putEngineDefaultsBestEffort}）。
+     *         {@code source='stored'} = 商家配置行；{@code source='default'} = 本租户没有配置行，
+     *         值取自**算料引擎默认值**（未配置租户的算料结果因此与包 D 合并后的默认结果**逐值一致**）。
+     * @throws BusinessException 422 —— **缺行**时取引擎默认值失败（ai-agent 不可达等）：
      *         <b>fail-closed</b>，绝不返回一份凭空的默认值（那会让商家按错的口径改配置）。
+     *         ⚠️ **有行**时取默认值失败**不** 422（那条路径今天不依赖引擎可达性，见下）。
      */
-    public Map<String, Object> get(Long tenantId) {
+    public Map<String, Object> get(Long tenantId, boolean withDefaults) {
         requireTenant(tenantId);
         CraftCalcConfig row = craftCalcConfigMapper.selectActiveByTenant(tenantId);
         if (row != null) {
-            return response(SOURCE_STORED, row.toConfigMap());
+            Map<String, Object> data = response(SOURCE_STORED, row.toConfigMap());
+            if (withDefaults) {
+                putEngineDefaultsBestEffort(data);
+            }
+            return data;
         }
-        return response(SOURCE_DEFAULT, craftCalcClient.defaultConfig());
+        Map<String, Object> defaults = craftCalcClient.defaultConfig();
+        Map<String, Object> data = response(SOURCE_DEFAULT, defaults);
+        if (withDefaults) {
+            // 缺行时 config 本身就是默认值 ⇒ 同一份直接作为 defaults（**不第二次调用引擎**）
+            data.put("defaults", defaults);
+            data.put("defaults_source", DEFAULTS_SOURCE_ENGINE);
+        }
+        return data;
+    }
+
+    /**
+     * 把**引擎默认值**挂到读面响应上（§22 P3「默认值可见」的**逐键**形态）—— **尽力取，且显式**。
+     *
+     * <p>🔴 **为什么是尽力而为、而不是 fail-closed**：本字段是**读面注解**，不是参与者。有配置行的读
+     * 今天**不依赖**引擎可达性（值来自库）—— 若为它引入 fail-closed，就把一个**新失败面**加到了
+     * 本来能工作的读面上（引擎抖一下 ⇒ 商家连自己的配置都看不了）。</p>
+     *
+     * <p>🔴 **但绝不静默**：取不到 ⇒ {@code defaults_source='unavailable'}（且**不带** {@code defaults} 键），
+     * 前端据此**显式**显示「默认值暂不可用」，而不是把「拿不到」画成「就是默认值」。</p>
+     */
+    private void putEngineDefaultsBestEffort(Map<String, Object> data) {
+        try {
+            data.put("defaults", craftCalcClient.defaultConfig());
+            data.put("defaults_source", DEFAULTS_SOURCE_ENGINE);
+        } catch (RuntimeException e) {
+            log.warn("取引擎默认值失败 ⇒ 逐键「我改过没有」本次不可用（读面其余字段照常）: error={}",
+                    e.getMessage());
+            data.put("defaults_source", DEFAULTS_SOURCE_UNAVAILABLE);
+        }
     }
 
     /**

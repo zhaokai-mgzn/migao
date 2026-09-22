@@ -71,7 +71,7 @@ class CraftCalcConfigControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("GET 无配置行 ⇒ 200 + source=default + 引擎默认值（本租户=BaseControllerTest 的 1 号）")
     void getReturnsEngineDefaultsWhenNoRow() throws Exception {
-        when(service.get(TEST_TENANT_ID)).thenReturn(defaultResponse());
+        when(service.get(TEST_TENANT_ID, false)).thenReturn(defaultResponse());
 
         mockMvc.perform(get(URL))
                 .andExpect(status().isOk())
@@ -80,7 +80,8 @@ class CraftCalcConfigControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.config.per_fold_single").value(0.25))
                 .andExpect(jsonPath("$.data.config.min_fullness").value(1.5));
 
-        verify(service).get(eq(TEST_TENANT_ID));   // 租户来自 TenantContext（不来自请求参数）
+        // 租户来自 TenantContext（不来自请求参数）；**不带 with_defaults ⇒ false**（= 既有调用方口径）
+        verify(service).get(eq(TEST_TENANT_ID), eq(false));
     }
 
     @Test
@@ -88,7 +89,7 @@ class CraftCalcConfigControllerTest extends BaseControllerTest {
     void getReturnsStoredWhenRowExists() throws Exception {
         Map<String, Object> data = defaultResponse();
         data.put("source", "stored");
-        when(service.get(TEST_TENANT_ID)).thenReturn(data);
+        when(service.get(TEST_TENANT_ID, false)).thenReturn(data);
 
         mockMvc.perform(get(URL))
                 .andExpect(status().isOk())
@@ -152,4 +153,17 @@ class CraftCalcConfigControllerTest extends BaseControllerTest {
                 org.springframework.web.bind.annotation.RequestMapping.class).value())
                 .containsExactly(URL);
     }
+
+    @Test
+    @DisplayName("GET ?with_defaults=true ⇒ **参数真的传到服务**（不是收下不用）")
+    void getPassesWithDefaultsFlagThrough() throws Exception {
+        when(service.get(TEST_TENANT_ID, true)).thenReturn(defaultResponse());
+
+        mockMvc.perform(get(URL).param("with_defaults", "true"))
+                .andExpect(status().isOk());
+
+        // 🔴 红证形态：控制器若忽略该参数（恒传 false）⇒ 本断言红
+        verify(service).get(eq(TEST_TENANT_ID), eq(true));
+    }
+
 }

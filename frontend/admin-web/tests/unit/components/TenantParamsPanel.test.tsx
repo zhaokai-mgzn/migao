@@ -28,10 +28,27 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-/** 服务端读面形状：`{success, data: {source, config}}` —— 配置值由**引擎键集**生成，不写死 */
-function calcResponse(source: string, value = 0.4) {
+/**
+ * 服务端读面形状：`{success, data: {source, config}}` —— 配置值由**引擎键集**生成，不写死。
+ *
+ * @param defaults 第三参（issue #5131 增量 2）：`{value}` ⇒ 附 `defaults` + `defaults_source='engine'`；
+ *   `'unavailable'` ⇒ 只附 `defaults_source='unavailable'`（**不带** `defaults` 键）；
+ *   缺省 ⇒ 两个键都不附（= 既有调用方口径）。
+ */
+function calcResponse(
+  source: string,
+  value = 0.4,
+  defaults?: { value: number } | 'unavailable'
+) {
   const config = Object.fromEntries(CALC_SCALAR_KEYS.map((k) => [k, value]))
-  return { data: { success: true, data: { source, config } } }
+  const data: Record<string, unknown> = { source, config }
+  if (defaults === 'unavailable') {
+    data.defaults_source = 'unavailable'
+  } else if (defaults) {
+    data.defaults = Object.fromEntries(CALC_SCALAR_KEYS.map((k) => [k, defaults.value]))
+    data.defaults_source = 'engine'
+  }
+  return { data: { success: true, data } }
 }
 
 const aiResponse = {
@@ -133,3 +150,41 @@ describe('判据 6：AI 客服域的清单与文案一致', () => {
     expect(screen.getByTestId('param-value-botName')).toHaveTextContent('小布')
   })
 })
+
+describe('判据 7：§22 P3 逐键「我改过没有」（issue #5131 增量 2）', () => {
+  it('引擎默认值可用 ⇒ 被改过的键标「已改（默认 X）」、未改的标「默认」', async () => {
+    const res = calcResponse('stored', 0.4, { value: 0.25 })
+    const cfg = (res.data.data as Record<string, unknown>).config as Record<string, unknown>
+    cfg.hem_margin = 0.25 // 与默认值相同 ⇒ 该键应标「默认」
+    getCraftCalcConfig.mockResolvedValue(res)
+
+    render(<TenantParamsPanel />)
+
+    expect(await screen.findByTestId('param-changed-per_fold_single')).toHaveTextContent(
+      '已改（默认 0.25）'
+    )
+    expect(screen.getByTestId('param-is-default-hem_margin')).toHaveTextContent('默认')
+  })
+
+  it('引擎默认值**取不到** ⇒ 显式说要「判不了」，且**一个徽标都不标**（拿不到 ≠ 就是默认值）', async () => {
+    getCraftCalcConfig.mockResolvedValue(calcResponse('stored', 0.4, 'unavailable'))
+
+    render(<TenantParamsPanel />)
+
+    expect(await screen.findByTestId('param-defaults-unavailable')).toBeInTheDocument()
+    expect(screen.queryByTestId('param-changed-per_fold_single')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('param-is-default-per_fold_single')).not.toBeInTheDocument()
+  })
+
+  it('读面**没带** defaults（既有调用方口径）⇒ 一个徽标都不标、也不显示「取不到」', async () => {
+    getCraftCalcConfig.mockResolvedValue(calcResponse('stored', 0.4))
+
+    render(<TenantParamsPanel />)
+
+    await waitFor(() => expect(screen.getByTestId('param-per_fold_single')).toBeInTheDocument())
+    expect(screen.queryByTestId('param-changed-per_fold_single')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('param-is-default-per_fold_single')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('param-defaults-unavailable')).not.toBeInTheDocument()
+  })
+})
+

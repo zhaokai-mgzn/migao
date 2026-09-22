@@ -330,4 +330,67 @@ class CraftCalcConfigServiceTest {
                 .deleted(0)
                 .build();
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 判据 6（§22 P3 逐键「我改过没有」，issue #5131 增量 2）：`with_defaults`
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("默认（不带 with_defaults）⇒ 不含 defaults/defaults_source，且**不问引擎**（既有契约逐字节不变）")
+    void getWithoutFlagKeepsLegacyShape() {
+        when(mapper.selectActiveByTenant(7L)).thenReturn(row(7L, "0.5", "0.4"));
+
+        Map<String, Object> data = service.get(7L);
+
+        assertThat(data.keySet()).containsExactly("source", "config");
+        verify(client, never()).defaultConfig();
+    }
+
+    @Test
+    @DisplayName("with_defaults=true + 有行 ⇒ defaults **逐值取自引擎**（不是回显 config）+ defaults_source=engine")
+    void getWithDefaultsReturnsEngineDefaultsNotEcho() {
+        when(mapper.selectActiveByTenant(7L)).thenReturn(row(7L, "0.5", "0.4"));
+        // 引擎默认值故意给**与 row 不同**的值：服务若把 config 回显成 defaults，本断言必红
+        when(client.defaultConfig()).thenReturn(Map.of("per_fold_single", 0.25, "min_fullness", 1.5));
+
+        Map<String, Object> data = service.get(7L, true);
+
+        assertThat(data).containsEntry("defaults_source", CraftCalcConfigService.DEFAULTS_SOURCE_ENGINE);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> defaults = (Map<String, Object>) data.get("defaults");
+        assertThat(defaults).containsEntry("per_fold_single", 0.25);
+        assertThat(defaults.get("per_fold_single")).isNotEqualTo(new BigDecimal("0.5"));
+    }
+
+    @Test
+    @DisplayName("with_defaults=true + 有行 + 引擎不可达 ⇒ **不失败**且**显式** unavailable（静默回退 / 抛 422 ⇒ 红）")
+    void getWithDefaultsDegradesExplicitlyWhenEngineDown() {
+        when(mapper.selectActiveByTenant(7L)).thenReturn(row(7L, "0.5", "0.4"));
+        when(client.defaultConfig()).thenThrow(new RuntimeException("ai-agent 不可达"));
+
+        Map<String, Object> data = service.get(7L, true);
+
+        assertThat(data).containsEntry("source", CraftCalcConfigService.SOURCE_STORED);
+        assertThat(data).containsEntry("defaults_source",
+                CraftCalcConfigService.DEFAULTS_SOURCE_UNAVAILABLE);
+        // 🔴 「拿不到」**不得**画成「就是默认值」
+        assertThat(data).doesNotContainKey("defaults");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) data.get("config");
+        assertThat(config).containsEntry("per_fold_single", new BigDecimal("0.5"));
+    }
+
+    @Test
+    @DisplayName("with_defaults=true + 无行 ⇒ defaults 与 config **同一份**（不第二次调用引擎）")
+    void getWithDefaultsWithoutRowReusesTheSameMap() {
+        when(mapper.selectActiveByTenant(7L)).thenReturn(null);
+        when(client.defaultConfig()).thenReturn(Map.of("per_fold_single", 0.99));
+
+        Map<String, Object> data = service.get(7L, true);
+
+        assertThat(data).containsEntry("source", CraftCalcConfigService.SOURCE_DEFAULT);
+        assertThat(data.get("defaults")).isSameAs(data.get("config"));
+        verify(client).defaultConfig();   // 恰好一次（verify 默认 times(1)）
+    }
+
 }
