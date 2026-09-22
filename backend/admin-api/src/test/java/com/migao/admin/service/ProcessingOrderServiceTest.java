@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068, PR-069, PR-070
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -4144,5 +4144,310 @@ class ProcessingOrderServiceTest {
         assertThat(resp.getOrderNo()).isEqualTo("ORD-20260912-0001");
         verify(orderMapper, times(1)).selectById("order-001");
         verify(orderMapper, never()).selectBatchIds(anyCollection());
+    }
+
+    // ── 池化 + 跨订单成组派单（issue #5169 = 阶段 2b-1）────────────────────────────
+    //
+    // 判据分工：**批次账上真的省了几米**的真库判据在 PooledDispatchRealDbTest（PR-071）；
+    // 本类只判**装配**（谁在什么时候调了台账服务、入参里有哪些行）——
+    // 池化开关缺省关（不启用 ⇒ 逐单派、plan 每单各调一次）、池化开启时 plan **只调一次**
+    // 且入参含**池内多张单**的行、预览与实际落账同源同值、待派池的可见性与兜底告警。
+
+    /** 池内第二张单（两支单的键只在这里写一次，免得多处硬编码字符串）。 */
+    private static final String ORDER_2 = "order-002";
+
+    private Order confirmedOrderOf(String id, String orderNo, java.time.OffsetDateTime createdAt) {
+        return Order.builder().id(id).tenantId(TENANT).orderNo(orderNo).status("confirmed")
+                .createdAt(createdAt).build();
+    }
+
+    /**
+     * 一行明细（带 {@code productId} + {@code processing_info.sku}）—— 「物料」（商品 × 颜色 × 门幅）
+     * 就是这两维，池视图的分组与池级求解的 SKU 过滤都读它。
+     */
+    private OrderItem itemOf(String orderId, String itemId, String skuCode) {
+        Map<String, Object> info = processingInfo("米白");
+        info.put("sku", skuCode);
+        info.put("cuttingMode", "定高买宽");
+        return OrderItem.builder()
+                .id(itemId).tenantId(TENANT).orderId(orderId).productId("prod-1")
+                .productName("布艺遮光帘A").quantity(new BigDecimal("3"))
+                .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
+                .processingInfo(info).build();
+    }
+
+    private com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment assignmentOf(
+            String orderId, String itemId, String batchNo) {
+        var assignment = new com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment();
+        assignment.setOrderId(orderId);
+        assignment.setItemId(itemId);
+        assignment.setBatchNo(batchNo);
+        return assignment;
+    }
+
+    /**
+     * 两张单的生成前置桩：明细行**按调用次序**回（池化的准备阶段按 {@code orderIds} 顺序逐单取快照
+     * —— 这是被测实现的可观测顺序，故意与它对齐，而不是造一个与顺序无关的假桩）。
+     */
+    private void stubTwoOrders(List<OrderItem> first, List<OrderItem> second) {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderMapper.selectById(ORDER_2))
+                .thenReturn(confirmedOrderOf(ORDER_2, "ORD-20260912-0002", null));
+        // 明细行给**两单的并集**：同一个 mock 要服务三处调用者（逐单取快照、实例化时反查樘窗组键），
+        // 而测试桩只能给一个集合。被测代码按 orderId / IN 过滤，且**哪一行真的进入排料入参由
+        // 指派决定**（见 assertions 里的 containsExactly）⇒ 并集不会让两张单混起来。
+        List<OrderItem> all = new ArrayList<>(first);
+        all.addAll(second);
+        when(orderItemMapper.selectList(any())).thenReturn(all);
+        // 幂等闸与工序实例化都要读回**刚落的那张单**（同 stubGenerate 的 wiring：insert 回填主键 +
+        // 把活跃单挂进 ref）—— 否则 ProductionService.instantiate 会判「尚无加工单」而失败
+        java.util.concurrent.atomic.AtomicReference<ProcessingOrder> firstRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<ProcessingOrder> secondRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT))
+                .thenAnswer(inv -> firstRef.get());
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_2, TENANT))
+                .thenAnswer(inv -> secondRef.get());
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+            ProcessingOrder inserted = inv.getArgument(0);
+            inserted.setId("po-" + inserted.getOrderId());
+            if ("order-001".equals(inserted.getOrderId())) {
+                firstRef.set(inserted);
+            } else {
+                secondRef.set(inserted);
+            }
+            return 1;
+        });
+    }
+
+    private StockBatchConsumptionService.Deduction pooledDeduction(String itemId, String formula,
+                                                                   String planned) {
+        return new StockBatchConsumptionService.Deduction(77L, "PC-5169-A", "prod-1", 12L, "SKU-1",
+                itemId, new BigDecimal(formula), new BigDecimal(planned), new BigDecimal("12.5"),
+                new BigDecimal("60"));
+    }
+
+    /**
+     * 台账桩：**按入参行数**给不同的结果 —— 池级调用（两单的行一起）⇒ 并排后各分摊 1.5 米；
+     * 逐单调用（一行）⇒ 该行独占 3 米。这样就**只有真正做了跨订单成组**才会得到 3 米，
+     * 「入参里有几张单」这件事因此是可判别的（而不是靠桩自己说）。
+     */
+    private void stubPlanByLineCount() {
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList())).thenAnswer(inv -> {
+            List<StockBatchConsumptionService.Designation> lines = inv.getArgument(1);
+            if (lines.size() == 2) {
+                return List.of(pooledDeduction(lines.get(0).orderItemId(), "3", "1.5"),
+                        pooledDeduction(lines.get(1).orderItemId(), "3", "1.5"));
+            }
+            return List.of(pooledDeduction(lines.get(0).orderItemId(), "3", "3"));
+        });
+    }
+
+    @Test
+    @DisplayName("#5169 判据1 默认关：不传 pooled ⇒ **逐单派**（plan 每单各一次、每次只带这一单的行）")
+    @SuppressWarnings("unchecked")
+    void poolingIsOffByDefaultSoEachOrderIsPlannedAlone() {
+        stubLibrary();
+        stubTwoOrders(List.of(itemOf("order-001", "item-1", "SKU-1")),
+                List.of(itemOf(ORDER_2, "item-2", "SKU-1")));
+        stubPlanByLineCount();
+
+        // 5 参调用 = **缺省**（调用方根本没提池化这回事）
+        var results = realChainService().generate(List.of("order-001", ORDER_2),
+                List.of(assignmentOf("order-001", "item-1", "PC-5169-A"),
+                        assignmentOf(ORDER_2, "item-2", "PC-5169-A")),
+                TENANT, "文员");
+
+        assertThat(results).hasSize(2);
+        assertThat(results).allSatisfy(r -> assertThat(r.isSuccess()).isTrue());
+        assertThat(results).extracting(ProcessingOrderService.GenerateResult::getOrderRef)
+                .as("结果顺序 = orderIds 顺序（判据 1 的「含顺序」）")
+                .containsExactly("order-001", ORDER_2);
+        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService, times(2)).plan(eq(TENANT), captor.capture());
+        List<StockBatchConsumptionService.Designation> firstCall = captor.getAllValues().get(0);
+        List<StockBatchConsumptionService.Designation> secondCall = captor.getAllValues().get(1);
+        assertThat(firstCall).extracting(StockBatchConsumptionService.Designation::orderItemId)
+                .as("缺省 = 逐单派：第一次调用只带**第一张单**的行").containsExactly("item-1");
+        assertThat(secondCall).extracting(StockBatchConsumptionService.Designation::orderItemId)
+                .as("第二次调用只带**第二张单**的行 ⇒ 跨订单成组**不发生**").containsExactly("item-2");
+        // 🔴 开关的唯一缺省值（红证：把 POOLED_DEFAULT_ENABLED 改成 true ⇒ 上面两条断言立刻红）
+        assertThat(ProcessingOrderService.pooledEnabled(null))
+                .as("池化开关缺省 = 关（不启用池化 ⇒ 行为与今天逐值相同）").isFalse();
+        assertThat(ProcessingOrderService.pooledEnabled(Boolean.FALSE)).isFalse();
+        assertThat(ProcessingOrderService.pooledEnabled(Boolean.TRUE)).isTrue();
+    }
+
+    @Test
+    @DisplayName("🔴 #5169 判据2 服务层：pooled=true ⇒ plan **只调一次**，入参含**池内两张单**的行")
+    @SuppressWarnings("unchecked")
+    void pooledDispatchPlansOnceAcrossOrders() {
+        stubLibrary();
+        stubTwoOrders(List.of(itemOf("order-001", "item-1", "SKU-1")),
+                List.of(itemOf(ORDER_2, "item-2", "SKU-1")));
+        stubPlanByLineCount();
+
+        var results = realChainService().generate(List.of("order-001", ORDER_2),
+                List.of(assignmentOf("order-001", "item-1", "PC-5169-A"),
+                        assignmentOf(ORDER_2, "item-2", "PC-5169-A")),
+                TENANT, "文员", null, Boolean.TRUE);
+
+        assertThat(results).hasSize(2);
+        assertThat(results).allSatisfy(r -> assertThat(r.isSuccess()).isTrue());
+        assertThat(results).extracting(ProcessingOrderService.GenerateResult::getOrderRef)
+                .containsExactly("order-001", ORDER_2);
+        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService, times(1)).plan(eq(TENANT), captor.capture());
+        List<StockBatchConsumptionService.Designation> pooledLines = captor.getAllValues().get(0);
+        assertThat(pooledLines).extracting(StockBatchConsumptionService.Designation::orderItemId)
+                .as("🔴 池级求解的入参 = 池内**两张单**的行（跨订单成组排料的前提）")
+                .containsExactly("item-1", "item-2");
+        // 落库仍是**各自**的加工单（一单一加工单的约束不变）：apply 两次、各带本单那一笔
+        ArgumentCaptor<List> applied = ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService, times(2))
+                .apply(eq(TENANT), anyString(), anyString(), applied.capture());
+        BigDecimal first = plannedOf(applied.getAllValues().get(0));
+        BigDecimal second = plannedOf(applied.getAllValues().get(1));
+        assertThat(first).as("第一张单分摊到并排后的一半（3 米那一行的一半）")
+                .isEqualByComparingTo("1.5");
+        assertThat(second).isEqualByComparingTo("1.5");
+        assertThat(first.add(second)).as("🔴 两单合计 3 米（不是 6 米）").isEqualByComparingTo("3");
+        // 快照盖的是**本单**的那一笔（批次号 + 两个米数），不是池级合计、也不是别单的行
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper, times(2)).insert(poCaptor.capture());
+        List<ProcessingOrder> inserted = poCaptor.getAllValues();
+        assertThat(inserted).hasSize(2);
+        List<String> ownItem = List.of("item-1", "item-2");
+        for (int i = 0; i < inserted.size(); i++) {
+            List<Map<String, Object>> stamped = new ArrayList<>();
+            for (Map<String, Object> row : snapshotOf(inserted.get(i))) {
+                if (row.containsKey("batchNo")) {
+                    stamped.add(row);
+                }
+            }
+            assertThat(stamped).as("第 %d 张单**只有本单那一行**被盖上批次号", i + 1).hasSize(1);
+            assertThat(stamped.get(0))
+                    .as("盖的是本单自己的行（池化派单仍是各是各的加工单）")
+                    .containsEntry("itemId", ownItem.get(i))
+                    .containsEntry("batchNo", "PC-5169-A")
+                    .containsEntry("plannedMeters", new BigDecimal("1.5"));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> snapshotOf(ProcessingOrder po) {
+        return (List<Map<String, Object>>) po.getItemsSnapshot();
+    }
+
+    private static BigDecimal plannedOf(List<?> rows) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Object row : rows) {
+            total = total.add(((StockBatchConsumptionService.Deduction) row).plannedMeters());
+        }
+        return total;
+    }
+
+    @Test
+    @DisplayName("🔴 #5169 判据4 预览不说谎：预览「预计节省」== 实际交给台账的 Σ(formula − planned)")
+    @SuppressWarnings("unchecked")
+    void previewMatchesWhatIsActuallyApplied() {
+        stubLibrary();
+        List<OrderItem> a = List.of(itemOf("order-001", "item-1", "SKU-1"));
+        List<OrderItem> b = List.of(itemOf(ORDER_2, "item-2", "SKU-1"));
+        // 两段（预览 + 派单）各按顺序取一遍明细行
+        stubTwoOrders(a, b);
+        stubPlanByLineCount();
+        var assignments = List.of(assignmentOf("order-001", "item-1", "PC-5169-A"),
+                assignmentOf(ORDER_2, "item-2", "PC-5169-A"));
+
+        var preview = realChainService().preview(TENANT, List.of("order-001", ORDER_2), assignments, null);
+
+        assertThat(preview.orderCount()).isEqualTo(2);
+        assertThat(preview.formulaMeters()).as("逐单公式米数合计 6").isEqualByComparingTo("6");
+        assertThat(preview.pooledPlannedMeters()).as("池化后应领合计 3").isEqualByComparingTo("3");
+        assertThat(preview.savedMeters()).as("预计节省 = 6 − 3").isEqualByComparingTo("3");
+        assertThat(preview.perOrderPlannedMeters()).as("对照：逐单派应领合计 6").isEqualByComparingTo("6");
+        assertThat(preview.poolingGainMeters()).as("池化**新增**收益 = 6 − 3（不把 #5158 的旧收益算进来）")
+                .isEqualByComparingTo("3");
+        // 预览是只读的：不建加工单、不落台账
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(stockBatchConsumptionService, never()).apply(any(), any(), any(), anyList());
+
+        var results = realChainService().generate(List.of("order-001", ORDER_2), assignments,
+                TENANT, "文员", null, Boolean.TRUE);
+        assertThat(results).allSatisfy(r -> assertThat(r.isSuccess()).isTrue());
+        ArgumentCaptor<List> applied = ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService, times(2))
+                .apply(eq(TENANT), anyString(), anyString(), applied.capture());
+        BigDecimal actuallyApplied = BigDecimal.ZERO;
+        for (List<?> rows : applied.getAllValues()) {
+            for (Object row : rows) {
+                StockBatchConsumptionService.Deduction d = (StockBatchConsumptionService.Deduction) row;
+                actuallyApplied = actuallyApplied.add(d.formulaMeters().subtract(d.plannedMeters()));
+            }
+        }
+        assertThat(preview.savedMeters())
+                .as("🔴 预览「预计节省」与**实际落账**的 Σ(formula − planned) 逐值相等（同一个数，不是两套口径）")
+                .isEqualByComparingTo(actuallyApplied);
+        assertThat(actuallyApplied).isEqualByComparingTo("3");
+        assertThat(preview.perOrderPlannedMeters().subtract(preview.pooledPlannedMeters()))
+                .as("判别力：按**逐单派**口径算的节省是 0（≠3）⇒ 上面那条断言不是空断言")
+                .isEqualByComparingTo("3");
+    }
+
+    @Test
+    @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带单号**告警")
+    void poolGroupsByMaterialAndWarnsOverdueOrders() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                confirmedOrderOf("order-001", "ORD-20260912-0001", now.minusHours(2)),
+                confirmedOrderOf(ORDER_2, "ORD-20260912-0002", now.minusHours(30)),
+                confirmedOrderOf("order-003", "ORD-20260912-0003", now.minusHours(40)),
+                confirmedOrderOf("order-004", "ORD-20260912-0004", now.minusHours(1))));
+        // order-003 已有活跃加工单 ⇒ **不进池**（池 = 已确认支付 **且无活跃加工单**）
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection()))
+                .thenReturn(List.of("order-003"));
+        List<OrderItem> sku1 = List.of(itemOf("order-001", "item-1", "SKU-1"));
+        List<OrderItem> sku1b = List.of(itemOf(ORDER_2, "item-2", "SKU-1"));
+        List<OrderItem> sku2 = List.of(itemOf("order-004", "item-4", "SKU-2"));
+        when(orderItemMapper.selectList(any())).thenReturn(sku1, sku1b, sku2);
+
+        var pool = processingOrderService.pool(TENANT, null);
+
+        assertThat(pool.maxWaitHours()).as("生效阈值**回口径**（读的人不必猜）").isEqualByComparingTo("24");
+        assertThat(pool.poolingEnabled()).as("池**看得见** ≠ 池化**已开启**（缺省关）").isFalse();
+        assertThat(pool.orderCount()).as("order-003 被排除 ⇒ 3 张单在池").isEqualTo(3);
+        assertThat(pool.lineCount()).isEqualTo(3);
+        assertThat(pool.groups()).as("按物料（商品 × 颜色 × 门幅 = productId|skuCode）分组").hasSize(2);
+        var group = pool.groups().stream().filter(g -> "SKU-1".equals(g.skuCode())).findFirst()
+                .orElseThrow();
+        assertThat(group.materialKey()).isEqualTo("prod-1|SKU-1");
+        assertThat(group.orderCount()).as("同物料两张单只算两张（按行去重）").isEqualTo(2);
+        assertThat(group.requiredMeters()).isEqualByComparingTo("6");
+        assertThat(pool.overdueCount()).as("30 小时 > 上限 24 小时 ⇒ 恰好一张超上限").isEqualTo(1);
+        assertThat(pool.warnings()).hasSize(1);
+        assertThat(pool.warnings().get(0).orderNo()).isEqualTo("ORD-20260912-0002");
+        assertThat(pool.warnings().get(0).waitHours()).isEqualByComparingTo("30.0");
+        assertThat(pool.warnings().get(0).message())
+                .as("🔴 告警必须**带着对象名字**说出来：哪张单、等了多久、该做什么（不得静默压单）")
+                .contains("ORD-20260912-0002").contains("30.0").contains("24")
+                .contains("成批派单");
+        assertThat(pool.groups().get(0).lines().get(0).waitHours())
+                .as("池内等待时长**逐单可读**").isEqualByComparingTo("2.0");
+        assertThat(pool.groups().get(0).lines().get(0).overdue()).isFalse();
+
+        // 上限**可配**：调成 1 小时 ⇒ 三张单全超上限（这张图才是「没有单被静默压住」）
+        when(orderItemMapper.selectList(any())).thenReturn(sku1, sku1b, sku2);
+        var tighter = processingOrderService.pool(TENANT, new BigDecimal("1"));
+        assertThat(tighter.maxWaitHours()).isEqualByComparingTo("1");
+        assertThat(tighter.overdueCount())
+                .as("上限可配：调成 1 小时 ⇒ 2 小时与 30 小时的两张超上限；恰好 1.0 小时的那张"
+                        + "**不算**超（判据是严格大于）")
+                .isEqualTo(2);
+        // 非正数 ⇒ 显式拒绝（不静默回落缺省值：静默回落会让看板以为在按自己设的阈值告警）
+        assertThatThrownBy(() -> processingOrderService.pool(TENANT, BigDecimal.ZERO))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("maxWaitHours 必须为正数");
     }
 }

@@ -6,6 +6,7 @@ import com.migao.admin.dto.ProcessingOrderGenerateRequest;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment;
 import com.migao.admin.dto.ProcessingOrderResponse;
 import com.migao.admin.dto.ProcessingOrderUpdateRequest;
+import com.migao.admin.dto.ProductionPoolViews;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
@@ -26,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -343,6 +346,218 @@ public class ProcessingOrderService {
 
     private static final DateTimeFormatter PO_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    // ============================================================ 池化（issue #5169 = 阶段 2b-1）
+
+    /**
+     * 🔴 <b>池化开关的缺省值 = 关</b>（issue #5169 判据 1）。
+     *
+     * <p>不启用池化 ⇒ 行为与今天**逐值相同**（逐单派；含错误文案与结果顺序）。这不是保守：
+     * 记录期基线正建立在「指派行为不变」之上（#5145/#5158/#5167 一路同款），
+     * 池化窗口一开，攒下来的可比性就没了。</p>
+     *
+     * <p>开关只有这一个载体（{@code ProductionPoolRequest.pooled} 是显式入参，
+     * 缺省值**不在 DTO 上**再写一遍 —— 两处缺省值必然漂移）。红证 = 把它改为 {@code true}
+     * ⇒ 「不传 pooled == 逐单派」的判据当场变红（见 {@code PooledDispatchTest}）。</p>
+     */
+    public static final boolean POOLED_DEFAULT_ENABLED = false;
+
+    /**
+     * 池内滞留上限的**缺省值**（小时）—— 可配：请求参数 {@code maxWaitHours} 覆盖它。
+     *
+     * <p>为什么是请求参数而不是租户级配置表：本单「能不加迁移就不加」（池的判定口径与读面
+     * 全部复用既有 {@code orders} / {@code processing_orders} 状态），而滞留上限是**看板口径**
+     * （多早开始告警），不是生产口径 —— 它不影响任何落账数值。传非正数 ⇒ 显式拒绝
+     * （不静默回落本值，见 {@link #maxWaitHours}）。</p>
+     */
+    public static final BigDecimal DEFAULT_POOL_MAX_WAIT_HOURS = new BigDecimal("24");
+
+    /** 池化开关归一：{@code null} ⇒ 缺省（{@link #POOLED_DEFAULT_ENABLED}）。**唯一**的缺省值解析点。 */
+    public static boolean pooledEnabled(Boolean requested) {
+        return requested == null ? POOLED_DEFAULT_ENABLED : requested;
+    }
+
+    /**
+     * 待派池视图（issue #5169 判据 5 的可查面）。
+     *
+     * <h2>池的定义（唯一口径）</h2>
+     * <b>已确认支付</b>（{@code orders.status = 'confirmed'} —— 与「仅已确认订单可生成加工单」同一道闸）
+     * 且 **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
+     * 无加工部位的单（配件/赠品行、无加工项）**不进池**：它们本来就不会生成加工单，
+     * 进池只会让「池里有单却派不了」变成噪声。
+     *
+     * <h2>等待时长的口径（**不猜**，照实登记）</h2>
+     * {@code waitHours = now − orders.created_at}。系统**没有**记录「支付时刻」（{@code orders}
+     * 无 {@code paid_at}/{@code confirmed_at} 列）⇒ 用下单时刻作**上界**口径：它只会把等待算得**更久**、
+     * 不会假装刚进池 —— 「不得静默压单」要的是**早**告警，故取保守方向。
+     *
+     * @param maxWaitHoursRaw 滞留上限（小时）；{@code null} ⇒ {@link #DEFAULT_POOL_MAX_WAIT_HOURS}，
+     *                        非正数 ⇒ 显式拒绝（见 {@link #maxWaitHours}）
+     */
+    public ProductionPoolViews.Pool pool(Long tenantId, BigDecimal maxWaitHoursRaw) {
+        BigDecimal maxWaitHours = maxWaitHours(maxWaitHoursRaw);
+        List<Order> confirmed = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId)
+                .eq(Order::getDeleted, 0)
+                .eq(Order::getStatus, "confirmed")
+                .orderByAsc(Order::getCreatedAt)
+                .orderByAsc(Order::getId));
+        if (confirmed == null) {
+            confirmed = List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (Order order : confirmed) {
+            if (order.getId() != null) {
+                ids.add(order.getId());
+            }
+        }
+        Set<String> dispatched = ids.isEmpty() ? Set.of()
+                : new LinkedHashSet<>(processingOrderMapper.selectActiveOrderIds(tenantId, ids));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        // 物料键 → 行；顺序 = 先出现的物料在前（确定性输出，便于看板与快照比对）
+        Map<String, List<ProductionPoolViews.PoolLine>> linesByMaterial = new LinkedHashMap<>();
+        Map<String, String[]> materialOf = new LinkedHashMap<>();
+        List<ProductionPoolViews.PoolWarning> warnings = new ArrayList<>();
+        Set<String> ordersInPool = new LinkedHashSet<>();
+        int lineCount = 0;
+        for (Order order : confirmed) {
+            if (order.getId() == null || dispatched.contains(order.getId())) {
+                continue;
+            }
+            List<OrderItem> items = loadOrderItems(order.getId(), tenantId);
+            List<Map<String, Object>> snapshot = buildSnapshot(items, tenantId);
+            if (snapshot.isEmpty()) {
+                continue;
+            }
+            Map<String, String> productIdByItemId = new LinkedHashMap<>();
+            for (OrderItem item : items) {
+                if (item.getId() != null) {
+                    productIdByItemId.put(item.getId(), item.getProductId());
+                }
+            }
+            BigDecimal waitHours = hoursBetween(order.getCreatedAt(), now);
+            boolean overdue = waitHours.compareTo(maxWaitHours) > 0;
+            if (overdue) {
+                // 「不得静默压单」= 超上限这件事**必须带着对象名字说出来**（哪张单、等了多久、该做什么），
+                // 而不是一个数不清对象的计数
+                warnings.add(new ProductionPoolViews.PoolWarning(order.getId(), order.getOrderNo(),
+                        waitHours, String.format(
+                        "订单 %s 已在待派池里等了 %s 小时（上限 %s 小时）：请成批派单或单独派单"
+                                + "（池化窗口不得把这张单压住）",
+                        order.getOrderNo(), waitHours.toPlainString(), maxWaitHours.toPlainString())));
+            }
+            for (Map<String, Object> row : snapshot) {
+                String itemId = str(row.get("itemId"));
+                BigDecimal required = StockQuantity.toStockScaleByCeiling(
+                        row.get("quantity") instanceof BigDecimal q ? q : null);
+                if (itemId == null || required.signum() <= 0) {
+                    continue;
+                }
+                String productId = productIdByItemId.get(itemId);
+                String skuCode = snapshotSkuCode(row);
+                String key = materialKey(productId, skuCode);
+                materialOf.putIfAbsent(key, new String[]{productId, skuCode});
+                linesByMaterial.computeIfAbsent(key, k -> new ArrayList<>())
+                        .add(new ProductionPoolViews.PoolLine(order.getId(), order.getOrderNo(), itemId,
+                                productId, str(row.get("productName")), skuCode, required,
+                                order.getCreatedAt(), waitHours, overdue));
+                lineCount++;
+            }
+            ordersInPool.add(order.getId());
+        }
+        List<ProductionPoolViews.PoolGroup> groups = new ArrayList<>();
+        for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByMaterial.entrySet()) {
+            String[] material = materialOf.get(entry.getKey());
+            Set<String> groupOrders = new LinkedHashSet<>();
+            BigDecimal required = BigDecimal.ZERO;
+            for (ProductionPoolViews.PoolLine line : entry.getValue()) {
+                groupOrders.add(line.orderId());
+                required = required.add(line.requiredMeters());
+            }
+            groups.add(new ProductionPoolViews.PoolGroup(entry.getKey(), material[0], material[1],
+                    groupOrders.size(), required, List.copyOf(entry.getValue())));
+        }
+        return new ProductionPoolViews.Pool(maxWaitHours, POOLED_DEFAULT_ENABLED, ordersInPool.size(),
+                lineCount, warnings.size(), List.copyOf(warnings), List.copyOf(groups));
+    }
+
+    /**
+     * 成批预览（issue #5169 判据 4「预览不说谎」）—— **只读**，不建加工单、不落台账。
+     *
+     * <p>🔴 它跑的是与 {@code /dispatch}（{@code pooled=true}）**同一条**准备链与**同一个**
+     * {@code plan} 求解器、同一份入参 ⇒ 预览里的 {@code savedMeters} 与派单后落账的
+     * {@code Σ saved_meters} 是**同一个数**，不是两套口径（两套口径正是「预览说谎」的成因）。</p>
+     *
+     * <p><b>同样 fail-closed</b>：池级累计余量不足 ⇒ 显式报错（不静默给一份派不出去的方案）；
+     * 订单不存在 / 状态不对 / 已有加工单 / 指派行不在快照里 ⇒ 同样显式拒绝（与派单同一批判据）。</p>
+     */
+    public ProductionPoolViews.Preview preview(Long tenantId, List<String> orderIds,
+                                               List<BatchAssignment> batches, String assignmentRule) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw BusinessException.validationError("orderIds 不能为空");
+        }
+        String normalizedRule = StockBatchConsumptionService.normalizeAssignmentRule(assignmentRule);
+        String rule = StringUtils.hasText(assignmentRule) ? normalizedRule : null;
+        Map<String, List<BatchAssignment>> byOrder = assignmentsByOrder(orderIds, batches);
+        List<Prepared> prepared = new ArrayList<>();
+        List<StockBatchConsumptionService.Designation> pooledLines = new ArrayList<>();
+        for (String rawId : orderIds) {
+            Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, null, rule, true);
+            prepared.add(p);
+            pooledLines.addAll(p.designations());
+        }
+        List<StockBatchConsumptionService.Deduction> pooledPlan = batchStock().plan(tenantId, pooledLines);
+        BigDecimal formula = StockQuantity.sum(
+                pooledPlan.stream().map(StockBatchConsumptionService.Deduction::formulaMeters).toList());
+        BigDecimal pooledPlanned = StockQuantity.sum(
+                pooledPlan.stream().map(StockBatchConsumptionService.Deduction::plannedMeters).toList());
+        // 对照读数：**逐单派**的应领合计（池化**新增**的收益 = 两者之差 —— 不把 #5158 已有的
+        // 单订单内并排算成池化的功劳）
+        BigDecimal perOrderPlanned = BigDecimal.ZERO;
+        for (Prepared p : prepared) {
+            perOrderPlanned = perOrderPlanned.add(StockQuantity.sum(
+                    batchStock().plan(tenantId, p.designations()).stream()
+                            .map(StockBatchConsumptionService.Deduction::plannedMeters).toList()));
+        }
+        return new ProductionPoolViews.Preview(prepared.size(), rule, formula, pooledPlanned,
+                formula.subtract(pooledPlanned), perOrderPlanned,
+                perOrderPlanned.subtract(pooledPlanned));
+    }
+
+    /** 滞留上限归一：缺省用 {@link #DEFAULT_POOL_MAX_WAIT_HOURS}；非正数 ⇒ **显式拒绝**（不静默回落）。 */
+    private static BigDecimal maxWaitHours(BigDecimal raw) {
+        if (raw == null) {
+            return DEFAULT_POOL_MAX_WAIT_HOURS;
+        }
+        if (raw.signum() <= 0) {
+            throw BusinessException.validationError(
+                    "maxWaitHours 必须为正数（实际 " + raw.toPlainString() + "）");
+        }
+        return raw;
+    }
+
+    /**
+     * 等待时长（小时，1 位小数）= {@code now − orders.created_at}。
+     *
+     * <p>取 {@code created_at} 的理由与保守方向见 {@link #pool}；时间倒挂（时钟回拨 / 脏数据）
+     * ⇒ 记 0 而不是负数（负的等待时长在读面上无法解释，且会让「超上限」恒为假 = 静默压单）。</p>
+     */
+    private static BigDecimal hoursBetween(OffsetDateTime from, OffsetDateTime to) {
+        if (from == null) {
+            return BigDecimal.ZERO;
+        }
+        long minutes = Duration.between(from, to).toMinutes();
+        if (minutes < 0) {
+            minutes = 0;
+        }
+        return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 1, RoundingMode.HALF_UP);
+    }
+
+    /** 物料键（商品 × 颜色 × 门幅）。{@code skuCode} 在本系统里就是「颜色 × 门幅」的组合。 */
+    private static String materialKey(String productId, String skuCode) {
+        return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
+    }
+
     // ============================================================ 生成
 
     /**
@@ -408,6 +623,42 @@ public class ProcessingOrderService {
     @Transactional(rollbackFor = Exception.class)
     public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
                                          Long tenantId, String operator, String assignmentRule) {
+        return generate(orderIds, batches, tenantId, operator, assignmentRule, null);
+    }
+
+    /**
+     * 🔴 <b>池化开关（{@code pooled}）—— 缺省关</b>（issue #5169 判据 1：
+     * 不启用池化 ⇒ 行为与今天**逐值相同**，含错误文案与结果顺序）。
+     *
+     * <h2>池化改的是什么（且只改这个）</h2>
+     * 逐单派时，{@code StockBatchConsumptionService.plan} 每张单**各调一次** ⇒ 它的成组
+     * （批次 × 加工类型）**只在本单内**发生。池化 = 把**池内多张单的行**合成一个
+     * {@code List<Designation>}，**只调一次** {@code plan} ⇒ 候选块来自池内多张单，
+     * 于是「两张单各一扇可并排的矮窗」从 2 行 6 米变成 1 行 3 米。
+     * <b>成组键仍是「批次 × 加工类型」（#5158 口径不变）</b>：跨批次不得成组 ——
+     * 两块料裁自不同卷时各自都得占一段卷长，跨批次并排是**虚报**。
+     *
+     * <h2>池化**不改**什么</h2>
+     * <ul>
+     *   <li>「一单一加工单」的约束（{@code uk_processing_orders_active}）：本单是
+     *       **一次动作批量生成多张**加工单，不是把多单塞进一张（{@link #generatePooled}）；</li>
+     *   <li>指派规则（#5167）：合法值集合、非法值 fail-closed、缺省 = 不补位 —— 一字不动；</li>
+     *   <li>对客金额 / 售价 / 成品口径：池化只改「领料几米、从哪批裁」，
+     *       公式口径米数（{@code formula_meters}）逐值不变（判据 7）。</li>
+     * </ul>
+     *
+     * <h2>失败面（与逐单派的分工）</h2>
+     * 逐单失败（订单不存在 / 状态不对 / 已有加工单 / 无加工项 / 指派行不在快照里）仍**逐单**
+     * 记 {@code GenerateResult.fail} 且**不影响**其余单（顺序 = {@code orderIds} 顺序）。
+     * 池级求解失败（累计余量不足 —— 池化**新出现**的失败面：两张单各要 3 米而批次只剩 5 米，
+     * 逐单看各自都够）⇒ **整批显式拒绝**（fail-closed，不静默少扣，也不静默少派一张）。
+     *
+     * @param pooled 池化开关（{@code null} = 缺省，见 {@link #pooledEnabled}）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
+                                         Long tenantId, String operator, String assignmentRule,
+                                         Boolean pooled) {
         if (orderIds == null || orderIds.isEmpty()) {
             throw BusinessException.validationError("orderIds 不能为空");
         }
@@ -415,8 +666,34 @@ public class ProcessingOrderService {
         // `rule == null` = 调用方没传 ⇒ 不自动补位（缺省路径逐字不变，见方法注释）。
         String normalizedRule = StockBatchConsumptionService.normalizeAssignmentRule(assignmentRule);
         String rule = StringUtils.hasText(assignmentRule) ? normalizedRule : null;
+        Map<String, List<BatchAssignment>> byOrder = assignmentsByOrder(orderIds, batches);
+        // 🔴 默认关（判据 1）：不启用池化 ⇒ **逐单派**，与今天逐值相同（顺序、文案都不动）。
+        boolean on = pooledEnabled(pooled);
+        if (!on) {
+            List<GenerateResult> results = new ArrayList<>();
+            for (String rawId : orderIds) {
+                try {
+                    results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId,
+                            operator, rule));
+                } catch (BusinessException e) {
+                    results.add(GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion()));
+                }
+            }
+            return results;
+        }
+        return generatePooled(orderIds, byOrder, tenantId, operator, rule);
+    }
+
+    /**
+     * 批次指派 → {@code orderId → 逐行指派}（**任何写库之前**的唯一装配点；
+     * 逐单派、池化派、成批预览三条路径共用 ⇒ ① 的 fail-closed 不可能只在一处生效）。
+     *
+     * <p>① 未匹配的指派（{@code orderId} 不在本次 {@code orderIds} 内）⇒ 显式拒绝
+     * （静默丢掉 = 文员以为指定了、账上永远少一笔）。</p>
+     */
+    private static Map<String, List<BatchAssignment>> assignmentsByOrder(List<String> orderIds,
+                                                                        List<BatchAssignment> batches) {
         List<BatchAssignment> assignments = batches == null ? List.of() : batches;
-        // ① 未匹配的指派（orderId 不在本次 orderIds 内）⇒ 任何写库之前拒绝
         Set<String> requested = new LinkedHashSet<>(orderIds);
         List<String> unknown = new ArrayList<>();
         for (BatchAssignment a : assignments) {
@@ -433,20 +710,119 @@ public class ProcessingOrderService {
         for (BatchAssignment a : assignments) {
             byOrder.computeIfAbsent(a.getOrderId(), k -> new ArrayList<>()).add(a);
         }
-        List<GenerateResult> results = new ArrayList<>();
-        for (String rawId : orderIds) {
+        return byOrder;
+    }
+
+    /**
+     * 池化成批派单（issue #5169 判据 2 的落点）—— 两段式：
+     * <b>① 全部只读准备 → ② 池级一次性求解 → ③ 逐张落库</b>。
+     *
+     * <h2>为什么必须两段（不能边准备边落库）</h2>
+     * 排料的成组要看**整个池子**：第 1 张单准备好时还不知道第 2 张单有没有可并排的块。
+     * 故「写库」必须等到池级求解完成之后。而只读准备阶段**任何业务异常都还没写库**
+     * ⇒ {@link #prepare} 抛错的那张单直接记 {@code fail} 并**不污染**其余单
+     * （同 {@link #generateOne} 的既有纪律：异常不逸出事务边界 ⇒ 写库之后再抛就会留半成品）。
+     *
+     * <h2>结果顺序 = {@code orderIds} 顺序</h2>
+     * 用下标槽位回填（不是「先追加成功的、再追加失败的」）—— 顺序也是判据 1 的一部分。
+     */
+    private List<GenerateResult> generatePooled(List<String> orderIds,
+                                                Map<String, List<BatchAssignment>> byOrder,
+                                                Long tenantId, String operator, String rule) {
+        GenerateResult[] slots = new GenerateResult[orderIds.size()];
+        List<Prepared> prepared = new ArrayList<>();
+        List<Integer> indexes = new ArrayList<>();
+        List<StockBatchConsumptionService.Designation> pooledLines = new ArrayList<>();
+        for (int i = 0; i < orderIds.size(); i++) {
+            String rawId = orderIds.get(i);
             try {
-                results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId,
-                        operator, rule));
+                Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, operator,
+                        rule, true);
+                prepared.add(p);
+                indexes.add(i);
+                pooledLines.addAll(p.designations());
             } catch (BusinessException e) {
-                results.add(GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion()));
+                slots[i] = GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion());
             }
+        }
+        if (!prepared.isEmpty()) {
+            // 🔴 本单的核心：**只调一次** plan，候选块来自池内多张单 ⇒ 跨订单并排成立。
+            // 成组键（批次 × 加工类型）在 plan 内部，本方法不碰（#5158 口径）。
+            // 没有指派（`pooledLines` 为空）⇒ **一次都不调** plan：与逐单派的缺省路径逐字相同
+            // （「不指派 ⇒ 不碰批次账」是 #5145 记录期的定义特征，见 generateOne 的同款守卫）。
+            Map<String, List<StockBatchConsumptionService.Deduction>> byItemId = pooledLines.isEmpty()
+                    ? Map.of() : deductionsByItemId(batchStock().plan(tenantId, pooledLines));
+            for (int k = 0; k < prepared.size(); k++) {
+                Prepared p = prepared.get(k);
+                int slot = indexes.get(k);
+                try {
+                    slots[slot] = commit(p, deductionsOf(p, byItemId), tenantId, operator);
+                } catch (BusinessException e) {
+                    slots[slot] = GenerateResult.fail(orderIds.get(slot), e.getCode(), e.getMessage(),
+                            e.getSuggestion());
+                }
+            }
+        }
+        List<GenerateResult> results = new ArrayList<>(orderIds.size());
+        for (int i = 0; i < orderIds.size(); i++) {
+            // 每个下标要么在上面的失败分支写过、要么在 commit 分支写过 ⇒ 恒非 null；
+            // 非 BusinessException（如 DB 层错误）照旧逸出本方法（与逐单派同款：不吞异常）
+            results.add(slots[i]);
         }
         return results;
     }
 
+    /** 池级求解结果按 {@code orderItemId} 归拢（一行可能命中多行 —— 同一行被拆到多批次时才发生）。 */
+    private static Map<String, List<StockBatchConsumptionService.Deduction>> deductionsByItemId(
+            List<StockBatchConsumptionService.Deduction> plan) {
+        Map<String, List<StockBatchConsumptionService.Deduction>> out = new LinkedHashMap<>();
+        for (StockBatchConsumptionService.Deduction d : plan) {
+            out.computeIfAbsent(d.orderItemId(), k -> new ArrayList<>()).add(d);
+        }
+        return out;
+    }
+
+    /** 本单该落的那几行（**按本单指派顺序**取 ⇒ 与逐单派落的行序逐值相同）。 */
+    private static List<StockBatchConsumptionService.Deduction> deductionsOf(Prepared p,
+            Map<String, List<StockBatchConsumptionService.Deduction>> byItemId) {
+        List<StockBatchConsumptionService.Deduction> out = new ArrayList<>();
+        for (StockBatchConsumptionService.Designation d : p.designations()) {
+            out.addAll(byItemId.getOrDefault(d.orderItemId(), List.of()));
+        }
+        return out;
+    }
+
+    /**
+     * 一个订单的**只读准备结果**（池化两段式的第一段）：写库之前的全部校验、快照与工序计划。
+     *
+     * <p>{@code designations} 是**排料/扣减的入参**（池级求解的输入），
+     * 而 {@code po} 已经建好（含加工单号）但**未插入** —— 插入与扣账都在 {@link #commit}。</p>
+     */
+    private record Prepared(String rawId, Order order, List<Map<String, Object>> snapshot,
+                            List<Map<String, Object>> positions, ProcessingOrder po,
+                            List<StockBatchConsumptionService.Designation> designations) {
+    }
+
+    /** 逐单派（缺省路径）：准备 → 本单求解 → 落库。与池化派**共用**同一条准备与落库链。 */
     private GenerateResult generateOne(String rawId, List<BatchAssignment> assignments,
-                                       Long tenantId, String operator, String assignmentRule) {
+                                       Long tenantId, String operator, String rule) {
+        Prepared p = prepare(rawId, assignments, tenantId, operator, rule, false);
+        // 不指派批次（本单没有指定、也没传规则）⇒ **一次都不调** plan：与 #5145 之前逐字相同
+        // （「不指派 ⇒ 不扣批次、不产生台账行、不多一个错误分支」—— 连 mock 交互次数都不许多一次）
+        List<StockBatchConsumptionService.Deduction> deductions = p.designations().isEmpty()
+                ? List.of() : batchStock().plan(tenantId, p.designations());
+        return commit(p, deductions, tenantId, operator);
+    }
+
+    /**
+     * 只读准备（**不写任何一行**）：解析订单 → 状态闸 → 快照 → 幂等闸 → 工序 payload →
+     * 扣减入参（{@link #buildDesignations}）。
+     *
+     * <p>语句顺序与拆分前的 {@code generateOne} **逐字相同**（判据 1 要的「不启用池化 ⇒
+     * 逐值相同」包括「哪一步先失败」——把幂等闸挪到快照之前就会换一条错误文案）。</p>
+     */
+    private Prepared prepare(String rawId, List<BatchAssignment> assignments,
+                             Long tenantId, String operator, String rule, boolean pooled) {
         Order order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
@@ -482,14 +858,8 @@ public class ProcessingOrderService {
         // 与上面工序 payload 同一条纪律（generate() 逐单 catch BusinessException 后事务不回滚 ⇒
         // 写库之后再抛业务异常会留下「有加工单、扣了半截」的半成品，见
         // StockBatchConsumptionService 类注释「写面分两段」）。
-        List<StockBatchConsumptionService.Deduction> deductionPlan =
-                buildDeductionPlan(items, snapshot, assignments, tenantId, assignmentRule);
-        // 把**文员最终指定**的批次写进加工单快照的 batchNo（V63 白名单早有该键、此前全仓零写入方
-        // = 现成的空插座）；在插入**之前**写，故不多一次 UPDATE。
-        stampAssignedBatches(snapshot, deductionPlan);
-        // 排料结果（V119 / issue #5158）同样在插入之前写进快照：应领米数 / 公式米数 / 省下的米数
-        // —— 快照是固化真相，前端与车间都读它（批次侧另有逐行台账，两条路都可审计）。
-        stampCuttingPlan(snapshot, deductionPlan);
+        List<StockBatchConsumptionService.Designation> designations =
+                buildDesignations(items, snapshot, assignments, tenantId, rule, pooled);
 
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
@@ -509,6 +879,24 @@ public class ProcessingOrderService {
                 .routeSource(payload.routeSource())
                 .deleted(0)
                 .build();
+        return new Prepared(rawId, order, snapshot, positions, po, designations);
+    }
+
+    /**
+     * 落库（两段式的第二段）：快照盖章 → 插加工单 → 扣批次 → 实例化工序。
+     *
+     * <p>{@code deductions} 由调用方给出（逐单派 = 本单求解；池化派 = 池级求解里属于本单的那几行）
+     * —— 本方法因此对「池化开了没有」无感，判据 3「不可成组 ⇒ 与逐单派逐值相同」是
+     * **结构性**成立的，而不是靠分支对齐。</p>
+     */
+    private GenerateResult commit(Prepared p, List<StockBatchConsumptionService.Deduction> deductions,
+                                  Long tenantId, String operator) {
+        // 把**文员最终指定**的批次写进加工单快照的 batchNo（V63 白名单早有该键、此前全仓零写入方
+        // = 现成的空插座）；在插入**之前**写，故不多一次 UPDATE。
+        stampAssignedBatches(p.snapshot(), deductions);
+        // 排料结果（V119 / issue #5158）同样在插入之前写进快照：应领米数 / 公式米数 / 省下的米数
+        // —— 快照是固化真相，前端与车间都读它（批次侧另有逐行台账，两条路都可审计）。
+        stampCuttingPlan(p.snapshot(), deductions);
 
         // 生成**不**联动订单状态（issue #4305，用户裁定「发加工 = 订单进入生产中」）：
         // 订单 confirmed→producing 的时点已从「生成加工单」挪到「发加工」（见 updateStatus）。
@@ -516,29 +904,29 @@ public class ProcessingOrderService {
         // 也就没有「producing 无加工单」的孤儿态可言（该孤儿态的成因随联动一并挪走）。
         // 并发重复生成仍由 partial unique index 兜底 → 转幂等错误（P2①）。
         try {
-            processingOrderMapper.insert(po);
+            processingOrderMapper.insert(p.po());
         } catch (org.springframework.dao.DuplicateKeyException e) {
             throw BusinessException.validationError(
-                    "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
+                    "订单 " + p.order().getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
         }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
-                po.getProcessingOrderNo(), order.getId(), tenantId, operator);
+                p.po().getProcessingOrderNo(), p.order().getId(), tenantId, operator);
         // 派工扣批次库存（issue #5145 判据 1）：与加工单生成**同一事务** ——
         // 加工单插入成功之后才扣（重复生成在更上游就被 selectActiveByOrderId +
         // uk_processing_orders_active 拒掉 ⇒ 不可能二次扣减）；计划已在插入前校验完，
         // 这里只落账、不再抛业务异常。不指定批次 ⇒ 计划为空 ⇒ 本段零动作（行为与今天逐字相同）。
-        if (!deductionPlan.isEmpty()) {
-            batchStock().apply(tenantId, po.getProcessingOrderNo(), order.getOrderNo(), deductionPlan);
+        if (!deductions.isEmpty()) {
+            batchStock().apply(tenantId, p.po().getProcessingOrderNo(), p.order().getOrderNo(), deductions);
         }
         // 工序实例化（issue #4116，P0 断链第一环）：加工单落行后**立即**实例化工序。
         // 此前 instantiate 端点全仓零调用者 ⇒ 工序列表恒空 ⇒ qr_token 恒 null ⇒
         // 任务卡只出「二维码待生成」占位、工人扫码报工不可达。
-        // 工序序列已在插入前解析完毕（见上方 positions）：库取不到 ⇒ 根本走不到这里，
-        // 所以本行的失败只可能是 DB 层错误 —— 那种情况异常逸出 generateOne 并由外层逐单
+        // 工序序列已在插入前解析完毕（见 prepare 的 positions）：库取不到 ⇒ 根本走不到这里，
+        // 所以本行的失败只可能是 DB 层错误 —— 那种情况异常逸出并由外层逐单
         // catch 记账，同样不留「有加工单、无工序」的静默半成品（工序另可由
         // POST .../instantiate 手工补做）。
-        instantiateOperations(order, po, positions, tenantId);
-        return GenerateResult.ok(rawId, po.getProcessingOrderNo());
+        instantiateOperations(p.order(), p.po(), p.positions(), tenantId);
+        return GenerateResult.ok(p.rawId(), p.po().getProcessingOrderNo());
     }
 
     /**
@@ -554,7 +942,9 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 派工指定批次 → **只读校验 + 扣减计划**（必须在任何写库之前调用完）。
+     * 派工指定批次 → **只读校验 + 扣减入参**（必须在任何写库之前调用完）；**不**做池级求解
+     * —— 求解在调用方（逐单派 = 本单一次 {@code plan}；池化派 = 池内多单一次 {@code plan}，
+     * issue #5169 判据 2）。
      *
      * <p>逐行两件事：① 指派的行必须在该订单的加工单快照里（不在 ⇒ 显式拒绝 —— 配件/赠品行
      * 不成部位、不进快照，静默忽略会让文员以为指定了）；② 扣减米数 = 该行米数。</p>
@@ -574,10 +964,15 @@ public class ProcessingOrderService {
      * （{@link StockBatchConsumptionService#suggestedBatchNo}，与读面同一挑法），
      * 没有可满足批次 ⇒ 显式拒绝该行（不静默跳过 = 不静默少扣）。补位用的需求 = **公式口径**米数
      * （该行的领料上限），而实际扣减仍由 {@code plan} 按排料结果定（#5158 口径，本方法不碰）。</p>
+     *
+     * <p><b>池化（issue #5169）</b>：{@code pooled = true} 时本方法只多做一件事 ——
+     * SKU 码取**正确的快照键**（{@link #snapshotSkuCode}），使「批次 SKU 必须与订单行一致」
+     * 这条判据在池级求解里真的生效（池把多单的行放进同一组，错配的代价被放大）。
+     * 其余口径（缺省拒绝、规则补位、米数、定尺入参）两条路径**逐字相同**。</p>
      */
-    private List<StockBatchConsumptionService.Deduction> buildDeductionPlan(
+    private List<StockBatchConsumptionService.Designation> buildDesignations(
             List<OrderItem> items, List<Map<String, Object>> snapshot,
-            List<BatchAssignment> assignments, Long tenantId, String assignmentRule) {
+            List<BatchAssignment> assignments, Long tenantId, String assignmentRule, boolean pooled) {
         if (assignments == null || assignments.isEmpty()) {
             return List.of();
         }
@@ -614,10 +1009,13 @@ public class ProcessingOrderService {
                         "明细行 %s 的米数为 %s，无法指定批次扣减", itemId, meters.toPlainString()));
             }
             String batchNo = a.getBatchNo() == null ? null : a.getBatchNo().trim();
+            // SKU 码（= 颜色 × 门幅）：池化路径取**正确的快照键** `sku`，既有路径逐字保留原取值
+            // （见 {@link #snapshotSkuCode} —— 取值键不同的理由必须写在那一处，不能靠猜）
+            String skuCode = pooled ? snapshotSkuCode(row) : str(row.get("skuCode"));
             if (!StringUtils.hasText(batchNo)) {
                 // 显式传了规则且该行没指定批次 ⇒ 按规则补位（建议值 = 直接采用）
                 batchNo = batchStock().suggestedBatchNo(tenantId, productIdByItemId.get(itemId),
-                        str(row.get("skuCode")), meters, assignmentRule);
+                        skuCode, meters, assignmentRule);
                 if (!StringUtils.hasText(batchNo)) {
                     throw BusinessException.validationError(String.format(
                             "明细行 %s 在指派规则 %s 下没有可满足的批次（该行需要 %s 米）",
@@ -625,14 +1023,39 @@ public class ProcessingOrderService {
                 }
             }
             designations.add(new StockBatchConsumptionService.Designation(
-                    itemId, productIdByItemId.get(itemId), str(row.get("skuCode")),
+                    itemId, productIdByItemId.get(itemId), skuCode,
                     batchNo, meters,
                     // 排料定尺入参（V119 / issue #5158）：**逐字来自快照**（下单时落库的算料输出）
                     str(row.get("cuttingMode")),
                     OrderLineCraftFields.decimalOrNull(row.get("height"), "快照行 " + itemId + " 的窗高"),
                     OrderLineCraftFields.integerOrNull(row.get("panels"), "快照行 " + itemId + " 的分幅数")));
         }
-        return batchStock().plan(tenantId, designations);
+        return designations;
+    }
+
+    /**
+     * 快照行的 SKU 码（= **颜色 × 门幅**，即池化视图的「物料」维）—— 池化路径的取键。
+     *
+     * <p>🔴 快照里这个事实的键是 {@code sku}：{@code buildSnapshot} 把
+     * {@code processing_info.sku} 与 {@code processing_info.skuCode} **都写进 {@code sku}**
+     * 这一个键（两行 {@code copyIfPresent}，落键同为 {@code sku}）。</p>
+     *
+     * <p><b>为什么池化路径与既有路径取值键不同（照实登记，不粉饰）</b>：既有路径读的是
+     * {@code row.get("skuCode")} ⇒ **恒为 null**，于是
+     * 「批次的 SKU 与订单行的 SKU 一致」这条判据、以及 {@code suggestedBatchNo} 的 SKU 过滤，
+     * 在**生产路径上从未生效**（后果：同商品下不同颜色/门幅的批次可能被自动指派 ⇒ 排料时
+     * 会用**批次**的 SKU 门幅去装**订单行**的料 ⇒ 可能多装 ⇒ 少领 ⇒ 裁床切不出货）。
+     * 池化要按「物料」分组、且池级求解会把多单的行放进同一组，这个洞**不能再放大** ⇒
+     * 新路径用正确的键。</p>
+     *
+     * <p>而既有路径**一个字也不改**：把它的取值键改对，会让「文员显式指定了另一 SKU 的批次」
+     * 从**静默接受**变成 {@code BATCH_SKU_MISMATCH} 拒绝 —— 那是改**记录期基线**的行为变更，
+     * 与判据 1「不启用池化 ⇒ 与今天逐值相同」正面冲突。⇒ 既有路径的修正（连同它的基线影响）
+     * 属于**另一单**，不在本单范围。</p>
+     */
+    private static String snapshotSkuCode(Map<String, Object> row) {
+        String sku = str(row.get("sku"));
+        return sku != null ? sku : str(row.get("skuCode"));
     }
 
     /**

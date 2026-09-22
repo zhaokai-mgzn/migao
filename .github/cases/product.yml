@@ -2580,3 +2580,139 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-069
+    legacy_id: ""
+    title: "待派池可按物料查看、等待时长可读、超上限**带着单号**告警（不静默压单）；滞留上限可配且非法值显式拒绝"
+    domains:
+      - product
+      - processing-order
+    tier: normal
+    tags:
+      - batch-ledger
+      - processing-order
+      - dispatch-pool
+      - backend-contract
+    truths_ref:
+      - batch-ledger.dispatch-pool-visibility
+    user_inputs:
+      - "看板读取待派池（非 LLM 行为，由 Java 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 5·**池的定义**：池 = 已确认支付（`orders.status='confirmed'`）**且无活跃加工单**的订单 —— 有活跃加工单的那张（`selectActiveOrderIds` 回它）**不进池**（真装配下 `orderCount` 只数 3 张），口径与 `uk_processing_orders_active` 逐字相同（少一个口径就会出现「池里看得见、派的时候被唯一键拒掉」）。"
+      - "判据 5·**按物料分组**：分组键 = `productId|skuCode`（`skuCode` = `processing_info.sku`，在本系统里就是「颜色 × 门幅」）⇒ 同商品同 SKU 的两张单落在**同一组**（`orderCount=2`、`requiredMeters=6`），不同 SKU 各成一组；`materialKey` 机器可判。"
+      - "判据 5·**等待时长可读 + 上限可配**：`waitHours = now − orders.created_at`（系统无 `paid_at/confirmed_at` 列 ⇒ 用下单时刻作**上界**口径，只会算得更久、不假装刚进池），`maxWaitHours` 回口径；缺省 24 小时 ⇒ 30 小时的那张超上限、2 小时的不超；调成 1 小时 ⇒ 2 小时与 30 小时的两张超上限，而**恰好 1.0 小时**的那张不算（判据是严格大于）⇒ 阈值确实生效。"
+      - "判据 5·**不得静默压单**：超上限必须有**带对象名字**的告警（`orderNo` + `waitHours` + 上限 + 「请成批派单或单独派单」），不是数不清对象的计数；红证：把 `overdue` 恒置 false ⇒ 告警数与超限数都变 0 ⇒ 判据红。"
+      - "**非法上限 fail-closed**：`maxWaitHours <= 0` ⇒ 400（`maxWaitHours 必须为正数`），**不静默回落**缺省值 —— 静默回落会让看板以为在按自己设的阈值告警。"
+    skip_reason: "[backend-contract] 池读面的分组/等待/兜底判定（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5169）：待派池读面与兜底（按物料分组 / 等待时长 / 超上限可行动告警 / 上限可配且非法值拒绝）。取号 PR-069（本单硬分配区间 PR-069~PR-072）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-070
+    legacy_id: ""
+    title: "池化开关**缺省关**（不传 ⇒ 逐单派、plan 每单各调一次）；显式 pooled=true 才把 plan 改成**池级一次**求解（入参含池内多张单）"
+    domains:
+      - product
+      - inventory
+      - processing-order
+    tier: normal
+    tags:
+      - batch-ledger
+      - dispatch-pool
+      - processing-order
+      - backend-contract
+    truths_ref:
+      - batch-ledger.pooled-batch-dispatch
+      - batch-stock-plan.deduction-by-cutting-plan
+    user_inputs:
+      - "成批派单时是否跨订单成组（非 LLM 行为，由 Java 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**缺省关（逐值不变）**：5 参 `generate` 调用（调用方根本没提池化）⇒ `plan` 被调 **2 次**（每张单各一次），第一次的入参只有第一张单的行、第二次只有第二张单的行 ⇒ **跨订单成组不发生**；结果顺序 = `orderIds` 顺序。红证：把 `POOLED_DEFAULT_ENABLED` 改成 true ⇒ `plan` 变成一次调用、入参含两单 ⇒ 该断言当场红。"
+      - "判据 2·**池级一次求解（本单的存在理由在服务层的形态）**：`pooled=true` ⇒ `plan` **恰好调 1 次**，入参 = 池内**两张单**的行（`containsExactly(item-1, item-2)`）；两单的行因此可以并排成同一行 ⇒ 两单各分摊 1.5 米、**合计 3 米**（对照逐单派各 3 米合计 6 米）。"
+      - "**一单一加工单的约束不变**：池化派单产出 N 张**各自独立**的加工单（`insert` 两次），`apply` 也按单各调一次（各带本单那一笔）；每张单的快照**只有本单自己的行**被盖上 `batchNo`/`plannedMeters`（不是池级合计、也不是别单的行）。"
+      - "判据 4·**预览不说谎**：`preview` 的「预计节省」= `formulaMeters − pooledPlannedMeters`，与实际交给台账的 `Σ(formula − planned)` **逐值相等**（3 == 3）；同时 `perOrderPlannedMeters`（对照读数，逐单派口径）与 `poolingGainMeters`（池化**新增**收益）分开报 —— 不把 #5158 已有的单订单内并排算成池化的功劳。红证：把 `savedMeters` 改用逐单派口径 ⇒ 预览给 0、实际落账是 3 ⇒ 判据红。预览本身**只读**（不 `insert`、不 `apply`）。"
+      - "判据 3·**不倒退**（不可成组 ⇒ 与逐单派逐值相同）：`commit` 对「池化开了没有」无感，扣减行由调用方按 `orderItemId` 切分 ⇒ 不可成组时逐单派与池级派落的行**逐值相同**（真库读数见 PR-071）。"
+    skip_reason: "[backend-contract] 池化的装配与顺序（plan 调几次、入参有哪些行）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5169）：池化开关缺省关 + 池级一次求解 + 预览同源。取号 PR-070。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-071
+    legacy_id: ""
+    title: "🔴 跨订单成组的**真库**读数：池内两张单各一扇可并排矮窗 ⇒ 合计 1 行 3 米（不是 2 行 6 米）+ 幂等闸 + 不损失客户"
+    domains:
+      - product
+      - inventory
+      - processing-order
+    tier: normal
+    tags:
+      - batch-ledger
+      - dispatch-pool
+      - real-db
+      - backend-contract
+    truths_ref:
+      - batch-ledger.pooled-batch-dispatch
+      - batch-stock-plan.deduction-by-cutting-plan
+      - batch-ledger.remaining-derived
+    user_inputs:
+      - "跨订单成组派单的真库落账读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 2·**跨订单并排 ⇒ 3 米而不是 6 米**：真库夹具（门幅 2.8、窗高各 1.1、各需 3 米、同批次同加工类型的两张单）下，池级一次求解 ⇒ 排料器**1 行**（行长度 = 最大值 3 米）、`Σ(formula)=6`、`Σ(−delta)=3`、批次余量 60 → **57**；**同参数对照**逐单派 ⇒ **2 行**、合计 **6 米**（同一测试内对照打印 ⇒ 「3 而不是 6」不是自说自话）。"
+      - "判据 2·**落账仍按各自的加工单**：3 米拆成 2 行、两行分属 `JG-5169-A` 与 `JG-5169-B`（`COUNT(DISTINCT processing_order_no)=2`）—— 一单一加工单的约束不变，池化只改「排料与批次分配在池级求解」。"
+      - "判据 4·**预览 == 落账**：预览算式 `Σ(formula − planned)` == 真库 `Σ(formula_meters − planned_meters)` == 实体派生的 `Σ saved_meters`（三腿同值 = 3）；对照逐单派口径算出的是 0 ⇒ 该断言有判别力。"
+      - "判据 3·**不倒退（跨批次不得成组）**：两张单分属不同批次 ⇒ 每一行 `planned == formula`、合计 6 米，且池级求解与逐单派**逐值相同**（成组键含批次是 #5158 口径，本单不动）；红证：把成组键去掉批次 ⇒ 跨批次也成组 ⇒ 判据红。"
+      - "判据 6·**幂等**：重复落同一张单 ⇒ 被 `uk_batch_consumption_line` 挡下（SQLSTATE **23505**）、台账行数不变、批次余量不变。**注入式红证**：`DROP INDEX uk_batch_consumption_line`（DDL 取自 `docs/sql/schema.sql` 原文）⇒ 第二遍**真的进账**（行数 2、余量 60−3−3=54）⇒ 证明拦下它的确实是这个闸；复原后索引仍在。"
+      - "判据 7·**不损失客户**：`product_skus.stock` 与 `stock_ledger_entries` 指纹**一字不动**（池化只动批次实物账）；公式口径 `Σ formula_meters` 在池化派与逐单派下**逐值相同**（对客口径不由排料方式决定）。"
+    skip_reason: "[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5169）：跨订单成组的真库守卫（1 行 3 米 vs 2 行 6 米 / 预览==落账 / 幂等闸 + 注入式红证 / 不损失客户）。取号 PR-071。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PooledDispatchRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-072
+    legacy_id: ""
+    title: "池化三个 HTTP 端点的装配：`/pool` 上限可配、`/preview` 只读、`/dispatch` **不传 pooled ⇒ 下传 null**（缺省关的入口守卫）"
+    domains:
+      - product
+      - processing-order
+    tier: normal
+    tags:
+      - dispatch-pool
+      - processing-order
+      - backend-contract
+    truths_ref:
+      - batch-ledger.dispatch-pool-visibility
+      - batch-ledger.pooled-batch-dispatch
+    user_inputs:
+      - "看板/文员调用池化端点（非 LLM 行为，由 MockMvc 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 1·**缺省关的 HTTP 入口守卫**：`POST /api/admin/production/pool/dispatch` 不传 `pooled` ⇒ 控制器下传 **null**（服务侧的 `POOLED_DEFAULT_ENABLED` 是**唯一**的缺省值来源）；这一层若写死 true（或在 DTO 上再写一个缺省值），池化就会对所有既有调用方默认生效 ⇒ 记录期基线被污染。`pooled=true` ⇒ 原样下传（池化必须**显式**开启）。"
+      - "判据 5·`GET /api/admin/production/pool` 不传 `maxWaitHours` ⇒ 下传 null（服务侧用缺省 24 小时，**不在控制器里编造**）；传 `6` ⇒ 原样下传（上限可配）；响应回 `maxWaitHours` / `poolingEnabled=false` / `overdueCount`（池**看得见** ≠ 池化**已开启**）。"
+      - "判据 4·`POST /api/admin/production/pool/preview` 把 `orderIds`/`batches`/`assignmentRule` 原样下传，响应回 `formulaMeters`（6）/`savedMeters`（3）/`assignmentRule` 口径 —— 预览是只读端点（不建加工单、不落台账）。"
+    skip_reason: "[backend-contract] 端点装配与缺省下传（无米宝工具面）⇒ 由 MockMvc 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5169）：池化端点装配（缺省关下传 null / 上限可配 / 预览只读）。取号 PR-072。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionPoolControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
