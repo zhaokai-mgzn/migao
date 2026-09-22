@@ -35,6 +35,7 @@ import {
   type ScalarParam,
 } from '@/lib/tenant-params'
 import type { AiConfig, CraftCalcConfigResponse } from '@/types'
+import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
 
 export function TenantParamsPanel() {
   const [activeKey, setActiveKey] = useState<string>(PARAM_DOMAINS[0].key)
@@ -225,6 +226,11 @@ export function TenantParamsPanel() {
                   </Link>
                 ))}
               </div>
+            )}
+
+            {/* §22 P4：改钱的参数给预览（本页唯一能做**真预演**的两个参数 —— 见组件头注释） */}
+            {domain.key === 'calc' && !calcError && (
+              <OversizeThresholdPreview config={calc?.config ?? null} />
             )}
 
             {domain.edit && (

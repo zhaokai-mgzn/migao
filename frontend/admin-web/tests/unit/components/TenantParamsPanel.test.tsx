@@ -22,6 +22,10 @@ const getAiConfig = vi.fn()
 vi.mock('@/lib/api', () => ({
   productionApi: { getCraftCalcConfig: () => getCraftCalcConfig() },
   settingsApi: { getAiConfig: () => getAiConfig() },
+  // §22 P4 阈值试算（issue #5131）：算料域会挂载试算块 ⇒ 该读面必须可用
+  autoFeaturesApi: {
+    preview: () => Promise.resolve({ data: { success: true, data: { auto_features: [] } } }),
+  },
 }))
 
 /** 服务端读面形状：`{success, data: {source, config}}` —— 配置值由**引擎键集**生成，不写死 */

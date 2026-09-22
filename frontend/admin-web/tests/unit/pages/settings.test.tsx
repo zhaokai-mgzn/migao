@@ -67,6 +67,10 @@ vi.mock('@/lib/api', () => ({
   productionApi: {
     getCraftCalcConfig: (...args: any[]) => mockGetCraftCalcConfig(...args),
   },
+  // §22 P4 阈值试算（issue #5131）：算料域会挂载试算块（配置里没有阈值时不会发请求，mock 仍须在）
+  autoFeaturesApi: {
+    preview: () => Promise.resolve({ data: { success: true, data: { auto_features: [] } } }),
+  },
   briefingApi: {
     getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
     updateConfig: (...args: any[]) => mockBriefingUpdateConfig(...args),
