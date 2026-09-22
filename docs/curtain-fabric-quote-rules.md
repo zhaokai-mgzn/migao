@@ -37,6 +37,21 @@
 | `TIEBACK_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `TIEBACK_PRICE` | 绑带单价（元/对） | 15.0 |
 | `INSTALL_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `INSTALL_PRICE` | 安装单价（元/米，按杆长） | 18.0 |
 | `MIXED_COLOR_SURCHARGE_PER_METER` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIXED_COLOR_SURCHARGE_PER_METER` | 拼色款报价加价（元/米，按该款面料米数；§10 已裁定） | 2.4 |
+| `OVERSIZE_WIDTH_THRESHOLD` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `OVERSIZE_WIDTH_THRESHOLD` | 自动特征「超宽」阈值（**净窗宽**，米；企业参数 `oversize_width_threshold`） | 6 |
+| `OVERSIZE_HEIGHT_THRESHOLD` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `OVERSIZE_HEIGHT_THRESHOLD` | 自动特征「超高」阈值（**净窗高**，米；企业参数 `oversize_height_threshold`） | 4 |
+
+> 🔴 **2026-09-22 新增两行（issue #5130，用户裁定 D1 / D2 / D3 / D7）**：自动特征「超高 / 超宽」的判据
+> 由「与**门幅**比」（几何层）换成「与**企业阈值参数**比」—— 用户裁定 **D2**「`6 / 4` 是客户给的口径
+> ⇒ 做成企业参数」、**D3**「**替换**当前判定公式」、**D7**「默认 `6 / 4`、对所有租户立即生效」。
+> 判据（**唯一实现** = 引擎 `curtain_calc.detect_auto_features`）：`净窗宽 > oversize_width_threshold`
+> ⇒ 特征名 `超宽`；`净窗高 > oversize_height_threshold` ⇒ 特征名 `超高`；`倒幅` **不变**。
+> 三条旧判据（#4661 按加工类型分流 / #4662 超宽含褶倍 / #4877 判定面门幅）**一并退役**（D10），
+> 改判留档见 `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `detect_auto_features` docstring、
+> `frontend/admin-web/src/lib/craft-calc-glossary.ts` 的 `AUTO_FEATURE_TERMS`、
+> `.github/cases/order.yml` 的「下单页系统识别」用例。
+> ⚠️ **与本节其余行的关系**：这两行是**特征（取价档）**的口径，**不是**用料公式量 ——
+> §3 的用料公式**一字未动**（几何层与特征层在代码里是分离的，见
+> `docs/design/oversize-threshold-and-enterprise-params.md` §4.4）。
 
 ⚠️ **本节只登记「公式里会被引用的标量常量」**。字典型常量（`DEFAULT_FULLNESS` / `DEFAULT_PROCESSING_PRICE` /
 `DEFAULT_CRAFT_TIERS`）与拼色系数表（`MIXED_COLOR_PER_FOLD_BY_TIMES`）的散文副本仍散在 §1 / §5 / §8 / §10，
@@ -59,6 +74,12 @@
   定高买宽做得下 ⇒ 取可行集里最小门幅；做不下 ⇒ 倒幅；**接高不参与自动比较**）。
   顾客**明确指定**门幅时才传单值 `fabric_width`（该路径口径不变）。
   「选型建议」仍是**展示性背景知识**。
+- 🔴 **2026-09-22 改判（issue #5130，用户裁定 D1 / D2 / D3 / D7 / D10）**：本节（以及 §3 的几何公式）
+  管的是**用料与加工类型**（几何层）—— **不再**是自动特征「超高 / 超宽」的判据。
+  用户裁定「超高 / 超宽」改为**企业阈值**判定：`净窗高 > oversize_height_threshold` /
+  `净窗宽 > oversize_width_threshold`（默认值见 §0 的 `OVERSIZE_*_THRESHOLD` 两行）
+  ⇒ 判定面**不读门幅**（原 #4661 分流 / #4662 褶倍 / #4877 判定面三条一并退役）。
+  ⚠️ 本节其余内容（门幅标准值 / 挂向 / 选型）**一字未动**。
 
 ## 3. 用布量精确公式
 
@@ -70,7 +91,11 @@
 > 我们是否需要移除左右余量这个概念」⇒ 结论：**移除**（宽方向的余量常量与配置键**整体退场** ——
 > 退场登记见 §0 的说明；该标识符**不得**再出现在本节，反向守卫 =
 > `tests/unit_ci_workflows/test_panels_formula_split_audit.py` 判据 C5）。
-> ⇒ **宽方向没有余量 ⇒ 下面的宽方向公式只写 `W`**；**高方向 `HEM_MARGIN` 保留**（超高判据与定宽买高每幅长仍用它）。
+> ⇒ **宽方向没有余量 ⇒ 下面的宽方向公式只写 `W`**；**高方向 `HEM_MARGIN` 保留**（定宽买高每幅长仍用它）。
+> 🔴 **2026-09-22 再改判（issue #5130）**：本句原先还写着「**超高判据**与定宽买高每幅长仍用它」——
+> 那半句**已作废**：自动特征「超高」的判据改成了 `净窗高 > oversize_height_threshold`（**企业参数**，
+> 见 §0），**不再**读 `HEM_MARGIN`、**不再**读门幅。`HEM_MARGIN` 保留的**其余**消费点（定高可行性 /
+> 定宽买高每幅长 / 折数法 / 罗马帘）**一字未动** —— 那些是**几何层**（管用料）。
 > **数值锚**（6.6 窗 / 2.0 倍 / 双开）：倍数法 = **13.2 米**（改前 13.8）；韩褶褶数法 = 13.3 米（52 折，不变）；
 > ERP 实证锚点 `CSO260915-02615`（5.5 × 2.00 = 11.00 米）不变。
 

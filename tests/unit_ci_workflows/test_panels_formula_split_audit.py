@@ -31,11 +31,24 @@
 |---|---|---|---|
 | 1 | **引擎 A 通路** | `calculate_fabric_meters()` 定宽分支 | `ceil(窗宽 × 褶倍 ÷ 门幅)` |
 | 2 | **`build_quote` 的 panels** | `build_quote()` 的 `fixed_width` 复算 | 与 ① 逐字同式（同源，不新造第二式） |
-| 3 | **前端超宽判据** | `frontend/admin-web/src/lib/craft-auto-features.ts` | `width * fullness > doorWidth`（同一条件的布尔形态） |
+| 3 | ~~前端超宽判据~~ | **已退场**（issue #5035 起判定整条搬到服务端）⇒ 只剩 ①② 两处 | — |
 | 4 | **真值源 §3 公式** | `docs/curtain-fabric-quote-rules.md` §3 | `P = ceil(W × N / G)`（**不得**含 `SIDE_MARGIN`） |
 
 **为什么这四条必须一起判**：它们是同一个物理量的四处落点 —— 只判一处 ⇒ 另外三处漂移
 **没有任何东西会红**（#4760 的病根就是「A 与 B1 分叉而无人知」）。
+
+🔴 **2026-09-22 再改判（issue #5130，用户裁定 D1 / D3 / D10）**：判据 3 的**原形态**是
+「**判定面**（引擎 `detect_auto_features`）的超宽判据 == 分幅条件的**布尔形态**」
+（`product = window_width * fullness`）—— 那条**耦合本身被用户裁定掉了**：
+「超宽」不再由**几何**（窗宽 × 褶倍 vs 门幅）推出，而是由**企业阈值参数**推出
+（`净窗宽 > oversize_width_threshold`），因为用户裁定 D1 = **工艺分档**
+（超阈值时加工费与标准档不同）、D3 = **替换**判定公式。
+⇒ 旧判据的前提（「判定面 == 分幅条件的布尔形态」）消失 ⇒ **改判为**：
+① **新判据形态**在本文件钉住（判定面读的是**企业参数**，不是门幅）；
+② **死亡条件**：旧的**几何耦合**不得回来（引擎代码里**不再有** `product = window_width * fullness`
+   这条判定面写法）—— 这正是「改判不是删断言」的形态（§17.3 ④）。
+⚠️ **分幅公式本身一字未动**（判据 C1 / C2 / C4 原样保留）—— 退役的只是「特征名 == 分幅条件的布尔形态」
+这条**推论**，不是分幅。
 
 ## 判据（每条都能**单独**判红）
 
@@ -43,7 +56,7 @@
 |---|---|---|
 | C1 | 引擎 A 通路公式串 == 真值源 §3 公式串（**归一化后**逐字） | 真值源改回 `(W + SIDE_MARGIN) × N`（或引擎改回含余量）⇒ 红 |
 | C2 | `build_quote` 的 panels 复算与 A 通路**逐字同式**（`ceil(窗宽 × 褶倍 ÷ 门幅)`） | 只在 `build_quote` 里加回 `+ cfg["side_margin"]` ⇒ 红 |
-| C3 | **判定面**（引擎 `detect_auto_features`，issue #5035 起判定已迁服务端）的超宽判据 == 分幅条件的**布尔形态**（`product = window_width * fullness`，**无任何余量**） | 引擎改回 `(window_width + side_margin) * fullness > fabric_width` ⇒ 红 |
+| C3 | **判定面**（引擎 `detect_auto_features`）的超宽判据 == **企业阈值参数**形态（`window_width > cfg["oversize_width_threshold"]`），**且旧的几何耦合不得复活** | 判定面改回 `product = window_width * fullness`（与门幅比）⇒ 红 |
 | C4 | **对照表逐行可复算**（≥6 组）：引擎 A 与 `build_quote` 复算**逐组相等**，且「一致？」列与实测相符 | 任一组 panels 改一个数 ⇒ 红 |
 | C5 | **反向守卫**：引擎 / 前端 / TS 类型 / Java 实体 / Java 服务 / `schema.sql` / 真值源 §3 公式行里**再出现** `side_margin`/`SIDE_MARGIN` ⇒ 红 | 把常量或配置键加回任一源 ⇒ 红 |
 | ~~通路 C~~ | ~~第 4 份副本（前端 `door-width-plan.ts`）已登记~~ —— **已退场**（**issue #5043 包 2b**：规则面迁服务端、该模块删除）⇒ 本审计只剩 **A / B1 / B2 三方**；「前端不得再持有规则 / 余量副本」改由 `tests/unit_ci_workflows/test_fabric_width_truth_source.py` 与 `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py` 的反向守卫钉住 | — |
@@ -106,9 +119,12 @@ TABLE: tuple[tuple[float, float, float, int], ...] = (
 
 #: 引擎源码里的分幅表达式（**逐字**；A 通路与 `build_quote` 的复算各一处）
 ENGINE_PANELS_RE = re.compile(r"math\.ceil\(\s*window_width\s*\*\s*(\w+)\s*/\s*fabric_width\s*\)")
-#: **判定面**的超宽判据（逐字：`product = window_width * fullness`，**不得**有任何余量项）
+#: **判定面**的超宽判据（逐字：判的是**企业阈值参数**，不是分幅条件 —— issue #5130 改判）
 #: ⚠️ issue #5035 起判定面已整条搬到服务端（前端 `detectAutoFeatures` 删除）⇒ 本条瞄**引擎**。
-OVER_WIDTH_CRITERION = "product = window_width * fullness"
+OVER_WIDTH_CRITERION = 'window_width > cfg["oversize_width_threshold"]'
+#: **已退役**的旧判定面写法（issue #5130 前的几何耦合：超宽 == 分幅条件的布尔形态）
+#: —— 它的回归是 C3 的**死亡条件**（§17.3 ④：豁免 / 改判必须能证明旧做法没有回来）。
+RETIRED_OVER_WIDTH_CRITERION = "product = window_width * fullness"
 
 
 def _read(path: Path) -> str:
@@ -238,20 +254,33 @@ class TestPanelsFormulaSplitAudit:
             "引擎里又出现 `cfg[\"side_margin\"]` 消费点 —— 该配置键已整体退场（issue #5030）⇒ 红"
         )
 
-    def test_c3_over_width_criterion_is_the_boolean_form(self):
-        """C3：**判定面**的超宽判据 == 引擎分幅条件的布尔形态（`窗宽 × 褶倍 > 门幅`，无余量）。
+    def test_c3_over_width_criterion_is_the_enterprise_threshold(self):
+        """C3（**issue #5130 改判**）：判定面判的是**企业阈值参数**，且旧的**几何耦合**不得复活。
 
-        引擎分幅条件：`ceil(窗宽 × 褶倍 ÷ 门幅) ≥ 2` ⟺ **原始浮点**的 `窗宽 × 褶倍 > 门幅`
-        （取整会漏报）。红证：改回 `(window_width + side_margin) * fullness > fabric_width` ⇒ 红。
-        ⚠️ **issue #5035 起判定面已整条搬到服务端**（前端 `detectAutoFeatures` / `detectAutoFeatureNotices`
-        删除，判据换腿到 `test_production/test_auto_features.py`）⇒ 本判据改瞄**引擎的判定实现**
-        `curtain_calc.detect_auto_features`（原瞄前端实现 —— 那条腿已退场，不是被绕过）。
+        🔴 旧判据（#5030 版）钉的是「超宽判据 == 分幅条件的布尔形态」
+        （`product = window_width * fullness` ⟺ `ceil(窗宽 × 褶倍 ÷ 门幅) ≥ 2`）。
+        用户 2026-09-22 裁定 **D1 = 工艺分档 / D3 = 替换判定公式 / D10 = 三条一并退役**
+        ⇒ 那条耦合（#4662）**被裁定掉了**：新的「超宽」判据 = `净窗宽 > oversize_width_threshold`
+        （**企业参数**），与门幅、褶倍、分幅条件**全无关**。
+        ⇒ 旧判据的前提消失，**改判**为「新形态 + 死亡条件」（同强度，不放宽）：
+        ① 引擎代码里必须有 `window_width > cfg["oversize_width_threshold"]`（判定面真值）；
+        ② 引擎代码里**不得再有** `product = window_width * fullness`（旧几何耦合回来 ⇒ 红）；
+        ③ 分幅公式（`ceil(窗宽 × 褶倍 ÷ 门幅)`）**一字未动** —— 由 C1 / C2 / C4 钉住。
+
+        ⚠️ 与 `test_c2_*` 的分工：C2 管**分幅**（几何层），本条管**特征判定**（企业参数层）——
+        两层在代码里是分离的（`docs/design/oversize-threshold-and-enterprise-params.md` §4.4）。
         """
         src = _code_only(CALC_PY)
         assert OVER_WIDTH_CRITERION in src, (
             f"引擎「超宽」判据不再是 `{OVER_WIDTH_CRITERION}` ⇒ "
-            "它已与分幅条件（`ceil(窗宽 × 褶倍 ÷ 门幅)`）脱钩 —— "
-            "同一张单判定说超宽、算料却不分幅（或反之）= 静默不一致（#4760 的形态）"
+            "判定面已按用户 2026-09-22 裁定（issue #5130：D1 工艺分档 + D3 替换公式）"
+            "改为与**企业阈值参数**比 —— 判据形态变了却没人同步 ⇒ 红"
+        )
+        assert RETIRED_OVER_WIDTH_CRITERION not in src, (
+            f"引擎里又出现 `{RETIRED_OVER_WIDTH_CRITERION}` —— 那是 issue #5130 **已退役**的"
+            "几何耦合（超宽 == 分幅条件的布尔形态，裁定 #4662）。它一旦回来，「超宽」就又由"
+            "**门幅 × 褶倍**推出（而不是由该租户的 `oversize_width_threshold`）⇒ "
+            "企业参数静默失效 + 判定与商家配置脱钩 ⇒ 红"
         )
         assert "side_margin" not in src, (
             "引擎**代码**里又出现 `side_margin` —— 宽方向余量已整体退场（issue #5030）⇒ 红"
