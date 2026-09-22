@@ -52,6 +52,23 @@ export interface RowConfigLink {
   money: string
 }
 
+/**
+ * 域内一段**内联编辑**的配置（编辑器渲染在**本页内**）。
+ *
+ * ⚠️ 为什么需要它（而不是再开一个页面）：§22 **P1「一处入口，按域分组」**。
+ * 有些参数是**行式**的（一行一个小件、列是尺寸），既塞不进标量表格，又不该另起一个配置页
+ * ⇒ 折中是「挂进本域、编辑器在本页内渲染」，入口仍然**只有这一个**。
+ *
+ * ⚠️ 与 {@link RowConfigLink} 的分工：`rows` 是**去别处**的入口（既有的列表编辑页），
+ * `inline` 是**就在这里**编辑。两者可并存于同一域。
+ */
+export interface InlineConfig {
+  /** 面板 key —— 页面按它选渲染哪个组件；加了面板而不加渲染分支 ⇒ 守卫红（不会静默不显示） */
+  panel: 'remnant-specs'
+  /** 与标量参数同形的**三件套**（§22 P2） */
+  copy: ParamCopy
+}
+
 /** 一个域（页面第一层分组，§22 P1） */
 export interface ParamDomain {
   key: string
@@ -64,6 +81,8 @@ export interface ParamDomain {
   advanced?: ScalarParam[]
   /** 行式配置入口（与标量参数可并存） */
   rows?: RowConfigLink[]
+  /** 本页内联编辑的配置（与标量参数 / 行式入口可并存） */
+  inline?: InlineConfig
   /** 就地编辑入口（既有页面；本增量**不新建编辑器**） */
   edit?: { href: string; label: string }
 }
@@ -103,6 +122,23 @@ export const AI_PARAM_COPY: Record<string, ParamCopy> = {
   },
 }
 
+/**
+ * **余料回收**域的文案（本模块持有：余料那一侧没有既有的说明真值模块）。
+ *
+ * ⚠️ 三条约束（都有守卫）：
+ * ① 文案里**不出现数字**（§22 基线 ①）—— 尺寸与金额一律由真值渲染；
+ * ② **必须说清「不改钱」**：本参数只决定「余料能不能拿来做这个小件」，
+ *    **不改对客价、不改加工费、不改成品尺寸**（用户裁定「不能损失客户」）；
+ * ③ **必须说清默认值**：默认值为空 = 未启用（§22 P3）—— 商家最容易误以为「系统会自动推荐」。
+ */
+export const REMNANT_PARAM_COPY: ParamCopy = {
+  label: '小件用料尺寸表',
+  hint: '做一个小件需要多大一块布：用料长（沿卷长）× 用料宽（沿门幅）；系统按它挑装得下的余料',
+  impact:
+    '决定「余料能不能拿来做这个小件」—— 填了才启用该小件的余料匹配，不填就完全不产生匹配建议（不会凭空推荐）；' +
+    '改它不改对客价、不改加工费、不改成品尺寸',
+}
+
 /** 域清单（页面按此渲染；顺序即页面顺序） */
 export const PARAM_DOMAINS: readonly ParamDomain[] = [
   {
@@ -127,6 +163,22 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
     summary: '顾客在对话里看到的称呼与开场文案',
     common: Object.keys(AI_PARAM_COPY).map((key) => ({ key, copy: AI_PARAM_COPY[key] })),
     edit: { href: '/settings?tab=ai', label: '去 AI 客服设置' },
+  },
+  {
+    key: 'remnant',
+    label: '余料回收',
+    summary: '裁剪剩下的余料怎么用起来 —— 余料只记实物可用性，不计价、不进库存金额',
+    // 🔴 §22 P1：**不新造第二个配置入口** —— 小件用料尺寸表就配在**本页本域**里
+    // （它是行式参数：一行一个小件、列是尺寸；另开一个 settings 段就是第二个入口）。
+    inline: { panel: 'remnant-specs', copy: REMNANT_PARAM_COPY },
+    rows: [
+      {
+        label: '余料台账',
+        href: '/production/remnants',
+        hint: '一块余料的来源订单 / 来源批次 / 缸号 / 尺寸 / 状态，以及报废留痕',
+        money: '不改对客价 —— 余料回收只冲减内部面料成本，售价与加工费一字不动',
+      },
+    ],
   },
   {
     key: 'fee',
@@ -212,6 +264,11 @@ export function findDomainViolations(domains: readonly ParamDomain[]): string[] 
       if (!r.hint?.trim()) bad.push(`域 ${d.key} 的入口 ${r.label} 缺 hint`)
     }
     if (d.edit && !d.edit.href.startsWith('/')) bad.push(`域 ${d.key} 的编辑入口 href 必须以 / 开头`)
+    // 内联配置（`inline`）的三件套与标量参数**同一口径**扫（§22 P2：每参数都有 label+hint+impact；
+    // 只给 label 看不出口径 —— 内联配置没有豁免）
+    if (d.inline) {
+      bad.push(...findCopyViolations({ [`${d.key}.inline`]: d.inline.copy }))
+    }
     bad.push(...findCopyViolations(Object.fromEntries((d.common ?? []).map((p) => [p.key, p.copy]))))
     bad.push(...findCopyViolations(Object.fromEntries((d.advanced ?? []).map((p) => [p.key, p.copy]))))
   }

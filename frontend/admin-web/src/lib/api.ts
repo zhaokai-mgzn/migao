@@ -139,6 +139,10 @@ import type {
   ReceivableReconciliationItem,
   UnpricedRepricingResult,
   PaymentQrcodeMap,
+  RemnantLine,
+  RemnantLedgerView,
+  RemnantSpecsView,
+  RemnantMatchView,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
@@ -740,6 +744,40 @@ export const batchStockApi = {
   // 派工候选 + 建议值（meters = 本行米数，用于算 enough 与建议值）
   candidates: (params: { productId?: string; skuId?: number; meters?: number }) =>
     request.get<ApiResponse<BatchCandidates>>('/api/admin/batch-stock/candidates', { params }),
+}
+
+/**
+ * 余料成本回收（V122 / issue #5146；后端 `RemnantController`，权限 `processing:manage`）。
+ *
+ * 🔴 权限码与算料配置 / 工序库同口径（同属「生产口径配置」，不新开权限码）；
+ * 🔴 余料**不是资产**：本组端点既不读也不写库存金额。
+ */
+export const remnantApi = {
+  // 余料台账（列表 + 回收率/报废率汇总一次回）
+  ledger: (params?: { status?: string; batchNo?: string; orderNo?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<RemnantLedgerView>>('/api/admin/production/remnants', { params }),
+
+  // 小件用料尺寸表（**可配参数**）—— `configured=false` ⇒ `notice` 说明「未启用」
+  smallItemSpecs: () =>
+    request.get<ApiResponse<RemnantSpecsView>>('/api/admin/production/remnants/small-item-specs'),
+
+  // 全量替换（`[]` = 清空 = 回到未配置）；`itemKey` 必须是工序库里真有的工序名
+  putSmallItemSpecs: (items: { itemKey: string; lengthM: number; widthM: number; note?: string }[]) =>
+    request.put<ApiResponse<RemnantSpecsView>>('/api/admin/production/remnants/small-item-specs', {
+      items,
+    }),
+
+  // 小件优先匹配（只读：不占余料、不记账）
+  match: (params: { orderItemId: string; batchNo?: string }) =>
+    request.get<ApiResponse<RemnantMatchView>>('/api/admin/production/remnants/match', { params }),
+
+  // 回收记账（冲减用它的那张单的面料成本；**不新增批次消耗**）
+  recover: (id: number, body: { orderItemId?: string; orderNo?: string; itemKey: string }) =>
+    request.post<ApiResponse<RemnantLine>>(`/api/admin/production/remnants/${id}/recover`, body),
+
+  // 报废留痕（原因必填 —— 留痕要答得出「为什么」）
+  scrap: (id: number, reason: string) =>
+    request.post<ApiResponse<RemnantLine>>(`/api/admin/production/remnants/${id}/scrap`, { reason }),
 }
 
 export const processingOrderApi = {
@@ -1528,6 +1566,7 @@ const api = {
   feePreview: feePreviewApi,
   processingOrder: processingOrderApi,
   batchStock: batchStockApi,
+  remnant: remnantApi,
   production: productionApi,
   dashboard: dashboardApi,
   upload: uploadApi,

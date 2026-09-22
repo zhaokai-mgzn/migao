@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SavingMetricViews;
+import com.migao.admin.entity.FabricRemnant;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
@@ -145,6 +146,15 @@ public class StockBatchConsumptionService {
      */
     private final CraftCalcConfigService craftCalcConfigService;
 
+    /**
+     * 余料台账写面（V122 / issue #5146）：派工扣批次之后**立即**把排料结果里的余料登记进台账。
+     *
+     * <p>🔴 <b>可为 null</b>（既有 5 个真库判据直接 new 本服务、不装余料腿）—— null ⇒ 跳过登记，
+     * 批次账行为与今天**逐字相同**（余料是**附加事实**，不是扣减的正确性前提；
+     * 与 #5158 排料的 fail-soft 同一条纪律）。</p>
+     */
+    private final RemnantService remnantService;
+
     // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ① plan —— 只读校验（全部业务异常在此抛完）
     // ══════════════════════════════════════════════════════════════════════════════════
@@ -195,7 +205,21 @@ public class StockBatchConsumptionService {
      */
     public record Deduction(Long batchId, String batchNo, String productId, Long skuId, String skuCode,
                             String orderItemId, BigDecimal formulaMeters, BigDecimal plannedMeters,
-                            BigDecimal unitCost, BigDecimal remainingBefore) {
+                            BigDecimal unitCost, BigDecimal remainingBefore,
+                            List<RemnantService.Draft> remnantDrafts) {
+
+        /**
+         * 旧签名（V119 形态）—— 排料产生的余料为**空**。
+         *
+         * <p>保留它是为了让「不关心余料」的既有调用点（真库判据、单测）**一个字都不用改**：
+         * 余料是附加事实，缺省 = 不登记，批次账行为逐字不变。</p>
+         */
+        public Deduction(Long batchId, String batchNo, String productId, Long skuId, String skuCode,
+                         String orderItemId, BigDecimal formulaMeters, BigDecimal plannedMeters,
+                         BigDecimal unitCost, BigDecimal remainingBefore) {
+            this(batchId, batchNo, productId, skuId, skuCode, orderItemId, formulaMeters,
+                    plannedMeters, unitCost, remainingBefore, List.of());
+        }
 
         /** 实际扣减米数 = **排料口径**（= 改后口径）。保留此访问器：既有调用点读的就是「扣多少」。 */
         public BigDecimal meters() {
@@ -243,8 +267,12 @@ public class StockBatchConsumptionService {
         }
         // 累积口径：running = 「该批次已消耗净额」（负数为扣减）—— 同一批次被多行指定时逐行递减
         Map<Long, BigDecimal> running = new HashMap<>(consumedByBatchId(tenantId, batchIds));
-        // 排料口径（V119 / issue #5158）：缺席的行 = 该行不参与排料 ⇒ 下面逐值退回公式口径
-        Map<String, BigDecimal> plannedByItemId = cuttingPlanByItemId(tenantId, designations, byNo);
+        // 排料口径（V119 / issue #5158）：缺席的行 = 该行不参与排料 ⇒ 下面逐值退回公式口径。
+        // 余料草稿（V122 / issue #5146）：**同一遍排料**顺带算出的空处（门幅余料 + 端部余料）
+        // —— 不重排、不重算口径、不额外扫一遍（余料是排料结果的副产品，不是第二次求解）。
+        Map<String, List<RemnantService.Draft>> draftsByItemId = new LinkedHashMap<>();
+        Map<String, BigDecimal> plannedByItemId =
+                cuttingPlanByItemId(tenantId, designations, byNo, draftsByItemId);
 
         List<Deduction> plan = new ArrayList<>();
         for (Designation d : designations) {
@@ -281,7 +309,8 @@ public class StockBatchConsumptionService {
             plan.add(new Deduction(batch.getId(), batch.getBatchNo(), batch.getProductId(),
                     batch.getSkuId(),
                     StringUtils.hasText(batch.getSkuCode()) ? batch.getSkuCode() : d.skuCode(),
-                    d.orderItemId(), formula, meters, batch.getUnitCost(), before));
+                    d.orderItemId(), formula, meters, batch.getUnitCost(), before,
+                    draftsByItemId.getOrDefault(d.orderItemId(), List.of())));
         }
         return plan;
     }
@@ -320,6 +349,21 @@ public class StockBatchConsumptionService {
                     .note("生成加工单指定批次扣减")
                     .createdAt(OffsetDateTime.now())
                     .build());
+        }
+        // 余料登记（V122 / issue #5146）：**排料/派工结果自动产生**，不需要任何人手工登记。
+        // 时点 = 扣减落账之后、同一事务内 —— 余料的来源（批次/缸号/商品/颜色）就是刚扣的那一批。
+        // fail-soft：余料腿为 null（既有真库判据直接 new 本服务）或登记失败都**不影响**批次账
+        //（余料是附加事实，不是扣减的正确性前提；与 #5158 排料的 fail-soft 同一条纪律）。
+        if (remnantService != null) {
+            for (Deduction d : plan) {
+                if (d.remnantDrafts() == null || d.remnantDrafts().isEmpty()) {
+                    continue;
+                }
+                remnantService.accrue(tenantId, processingOrderNo, orderNo,
+                        new RemnantService.Source(d.batchId(), d.batchNo(), d.productId(),
+                                d.skuId(), d.skuCode()),
+                        d.remnantDrafts());
+            }
         }
         log.info("派工扣批次库存: po={}, orderNo={}, tenant={}, lines={}, meters={}, formula={}, saved={}",
                 processingOrderNo, orderNo, tenantId, plan.size(),
@@ -1112,8 +1156,12 @@ public class StockBatchConsumptionService {
      * 分摊恒等于自己那行的公式米数（判据「不倒退」）。</p>
      */
     private Map<String, BigDecimal> cuttingPlanByItemId(Long tenantId, List<Designation> designations,
-                                                        Map<String, StockBatch> byNo) {
+                                                        Map<String, StockBatch> byNo,
+                                                        Map<String, List<RemnantService.Draft>> draftsOut) {
         Map<String, BigDecimal> planned = new LinkedHashMap<>();
+        // 余料序号在**整张加工单**范围内递增（幂等闸 uk_fabric_remnants_piece 的键：
+        // 同一份排料结果两遍得到同一组序号 ⇒ 重复登记撞唯一键而不是写两遍）
+        int[] pieceSeq = {0};
         BigDecimal hemMargin = craftCalcConfigService == null ? null
                 : craftCalcConfigService.hemMarginOrNull(tenantId);
         if (hemMargin == null) {
@@ -1152,6 +1200,13 @@ public class StockBatchConsumptionService {
             }
             BigDecimal issued = cuttingPlan.issuedMeters();
             BigDecimal totalFormula = group.totalFormula();
+            // 余料（V122 / issue #5146）：排料结果里的空处 = 门幅余料 + 端部余料。
+            // 🔴 余料属于**组**（同一卷布上这一段里没被占的地方），不拆到行 ⇒ 挂在组内**第一行**上，
+            //    由 apply() 连同该行的批次上下文一起登记（批次的缸号/商品/颜色就在那一行上）。
+            List<RemnantService.Draft> groupDrafts = remnantDraftsOf(cuttingPlan, group.doorWidth(), pieceSeq);
+            if (!groupDrafts.isEmpty()) {
+                draftsOut.put(group.itemIds().get(0), groupDrafts);
+            }
             for (String itemId : group.itemIds()) {
                 BigDecimal share = totalFormula.signum() == 0 ? BigDecimal.ZERO
                         : issued.multiply(group.formulaOf(itemId))
@@ -1163,6 +1218,58 @@ public class StockBatchConsumptionService {
             }
         }
         return planned;
+    }
+
+    /**
+     * 排料结果 → 余料草稿（V122 / issue #5146）—— **纯函数**，两种余料都在这里算清。
+     *
+     * <h2>两种余料的几何</h2>
+     * 排料器逐行给出「行长度」（= 该行各块沿卷长的**最大值**）与行内各块的「占门幅宽」：
+     * <ul>
+     *   <li><b>门幅余料</b>：行内 {@code Σ占门幅宽 < 门幅} ⇒ 剩下一条竖带
+     *       （长 = 行长度、宽 = 门幅 − Σ占门幅宽）；</li>
+     *   <li><b>端部余料</b>：某块比该行最长块短 ⇒ 它尾部剩一条横带
+     *       （长 = 行长度 − 该块沿卷长、宽 = 该块占门幅宽）。</li>
+     * </ul>
+     * 两者都在「**这一行已按行长度整段领下来**」的那段布里面 ⇒ 它们的米数**确实已被计价**
+     * （每幅按整门幅算，门幅余料的钱客户已经付过 = 本单「成本回收」的物理前提）。
+     *
+     * <h2>取整方向：**向下**（fail-closed）</h2>
+     * 排料器给的是 double，余料落库是 {@code NUMERIC(12,2)}。这里一律
+     * {@code setScale(2, FLOOR)} —— 向上取整会把「其实装不下」报成装得下，
+     * 正是判据 5「不凭空推荐」要防的形态。<b>宁可少报 1 厘米，不可多报。</b>
+     *
+     * <p>小于 {@link RemnantService#MIN_REMNANT_DIM_M} 的碎边**不登记**：那不是业务阈值而是
+     * 「0 面积的矩形不是余料」这条物理事实（本仓宽高按厘米报），登记它只会把台账灌满零面积行。</p>
+     */
+    private static List<RemnantService.Draft> remnantDraftsOf(
+            CuttingPlanCalculator.CuttingPlan cuttingPlan, double doorWidth, int[] pieceSeq) {
+        List<RemnantService.Draft> drafts = new ArrayList<>();
+        BigDecimal door = BigDecimal.valueOf(doorWidth);
+        for (CuttingPlanCalculator.Row row : cuttingPlan.rows()) {
+            BigDecimal span = BigDecimal.ZERO;
+            for (CuttingPlanCalculator.Piece piece : row.pieces()) {
+                span = span.add(BigDecimal.valueOf(piece.doorSpanMeters()));
+            }
+            BigDecimal widthLeft = door.subtract(span);
+            if (widthLeft.compareTo(RemnantService.MIN_REMNANT_DIM_M) >= 0) {
+                drafts.add(new RemnantService.Draft(pieceSeq[0]++, FabricRemnant.KIND_WIDTH,
+                        floor2(row.length()), floor2(widthLeft)));
+            }
+            for (CuttingPlanCalculator.Piece piece : row.pieces()) {
+                BigDecimal endLeft = row.length().subtract(BigDecimal.valueOf(piece.meters()));
+                if (endLeft.compareTo(RemnantService.MIN_REMNANT_DIM_M) >= 0) {
+                    drafts.add(new RemnantService.Draft(pieceSeq[0]++, FabricRemnant.KIND_END,
+                            floor2(endLeft), floor2(BigDecimal.valueOf(piece.doorSpanMeters()))));
+                }
+            }
+        }
+        return drafts;
+    }
+
+    /** 余料尺寸取整：**向下**到 2 位（见 {@link #remnantDraftsOf} 的取整方向说明）。 */
+    private static BigDecimal floor2(BigDecimal value) {
+        return value.setScale(2, RoundingMode.FLOOR);
     }
 
     /** 一个排料组（同批次 = 同一卷布；同加工类型 = 同一套定尺口径）。 */

@@ -1,4 +1,4 @@
-// case_ids: UI-054
+// case_ids: UI-054, PR-098
 /**
  * 「参数总览」面板（企业参数中心 · 增量 1）**渲染面**守卫（issue #5131）。
  *
@@ -18,6 +18,8 @@ import { CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
 
 const getCraftCalcConfig = vi.fn()
 const getAiConfig = vi.fn()
+// issue #5146：余料域的内联参数（小件用料尺寸表）也要读面 ⇒ 替身必须给得出形状
+const getRemnantSpecs = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: { getCraftCalcConfig: () => getCraftCalcConfig() },
@@ -25,6 +27,11 @@ vi.mock('@/lib/api', () => ({
   // §22 P4 阈值试算（issue #5131）：算料域会挂载试算块 ⇒ 该读面必须可用
   autoFeaturesApi: {
     preview: () => Promise.resolve({ data: { success: true, data: { auto_features: [] } } }),
+  },
+  // §22 P1（issue #5146）：余料域的内联面板读面（默认「未配置」—— 也就是本参数的默认值）
+  remnantApi: {
+    smallItemSpecs: () => getRemnantSpecs(),
+    putSmallItemSpecs: () => Promise.resolve({ data: { success: true, data: null } }),
   },
 }))
 
@@ -58,8 +65,19 @@ const aiResponse = {
 beforeEach(() => {
   getCraftCalcConfig.mockReset()
   getAiConfig.mockReset()
+  getRemnantSpecs.mockReset()
   getCraftCalcConfig.mockResolvedValue(calcResponse('default'))
   getAiConfig.mockResolvedValue(aiResponse)
+  getRemnantSpecs.mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        configured: false,
+        items: [],
+        notice: '未配置小件用料尺寸 ⇒ 不产生匹配建议（本参数默认值为空 = 未启用）',
+      },
+    },
+  })
 })
 
 describe('判据 1：一处入口 —— 按域分组渲染（§22 P1）', () => {
@@ -188,3 +206,32 @@ describe('判据 7：§22 P3 逐键「我改过没有」（issue #5131 增量 2�
   })
 })
 
+/**
+ * 判据 8（issue #5146 / §22 P1+P3）：**余料域的参数就配在本页里**（不另开第二个配置入口）。
+ *
+ * 红证形态：把 `TenantParamsPanel` 里那段 `domain.inline?.panel === 'remnant-specs'` 的渲染分支
+ * 删掉 ⇒ 本用例必红（参数**静默不显示**是配置页最坏的形态，且不会有别的检查发现它）。
+ */
+describe('判据 8：内联参数（余料回收域）在本页内渲染（issue #5146）', () => {
+  it('切到「余料回收」域 ⇒ 小件用料尺寸表面板出现，且**默认值可见**（未配置徽标 + 服务端说明）', async () => {
+    render(<TenantParamsPanel />)
+    fireEvent.click(screen.getByTestId('param-domain-remnant'))
+    await waitFor(() => expect(screen.getByTestId('param-remnant-specs')).toBeInTheDocument())
+    expect(screen.getByTestId('remnant-specs-unset')).toBeInTheDocument()
+    expect(screen.getByTestId('remnant-specs-notice').textContent).toContain('不产生匹配建议')
+    // 同一个域里的行式入口（余料台账）也还在
+    expect(screen.getByTestId('param-row-/production/remnants')).toBeInTheDocument()
+  })
+
+  it('红证：内联面板**不出现**在别的域里（防止把面板挂到算料域 = 入口分裂）', async () => {
+    render(<TenantParamsPanel />)
+    await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())
+    expect(screen.queryByTestId('param-remnant-specs')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('param-domain-remnant'))
+    await waitFor(() => expect(screen.getByTestId('param-remnant-specs')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('param-domain-calc'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('param-remnant-specs')).not.toBeInTheDocument()
+    )
+  })
+})

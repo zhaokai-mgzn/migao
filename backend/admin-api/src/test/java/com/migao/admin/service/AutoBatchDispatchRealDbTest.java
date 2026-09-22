@@ -168,7 +168,10 @@ class AutoBatchDispatchRealDbTest {
                 session.getMapper(CraftCalcConfigMapper.class), null);
         batchStock = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
-                session.getMapper(ProductSkuMapper.class), null, configService);
+                session.getMapper(ProductSkuMapper.class), null, configService,
+                // 余料腿显式不装（V122 / issue #5146）：本判据覆盖的是**批次账**，余料是附加事实
+                // —— null ⇒ 不登记余料，批次账行为与 #5158 逐字相同
+                null);
 
         // 工序库读面与工序实例化落库 stub（见类注释「边界」）；被判定的事实全在真库
         ProductionOperationQueryService operations = mock(ProductionOperationQueryService.class);

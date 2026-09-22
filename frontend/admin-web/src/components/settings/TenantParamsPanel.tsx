@@ -13,6 +13,10 @@
  * ✅ **还做 P4**：算料域挂 {@link OversizeThresholdPreview}（阈值试算，双列对照、服务端判定真值、不保存）
  * —— ⚠️ **只覆盖超高 / 超宽两个阈值键**（算料试算端点不收 `config`，其余算料参数做不到「改前预演」）。
  *
+ * ✅ **#5146 起还承载「余料回收」域**（§22 P1）：小件用料尺寸表是**行式**参数，
+ * 按「一处入口」的要求**挂进本页本域**（{@link RemnantSmallItemSpecsPanel} 页内渲染），
+ * 而不是另开第二个配置页 / 第二个 settings 段。
+ *
  * ❌ **不做**（见设计文档 §6 未实装登记）：
  * - **P3 逐键「我改过没有」** —— 需要读面补 `defaults` 字段（增量 2）；
  * - **P4 推广到其余算料参数** —— 前置：给算料试算端点加 `config` 透传；
@@ -41,6 +45,7 @@ import {
 } from '@/lib/tenant-params'
 import type { AiConfig, CraftCalcConfigResponse } from '@/types'
 import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
+import { RemnantSmallItemSpecsPanel } from '@/components/settings/RemnantSmallItemSpecsPanel'
 
 export function TenantParamsPanel() {
   const [activeKey, setActiveKey] = useState<string>(PARAM_DOMAINS[0].key)
@@ -278,6 +283,16 @@ export function TenantParamsPanel() {
                     <p className="text-xs text-neutral-600 mt-1">钱在哪：{r.money}</p>
                   </Link>
                 ))}
+              </div>
+            )}
+
+            {/* 内联编辑的参数（`inline`，issue #5146）：行式参数**挂进本域、编辑器在本页内** ——
+                §22 P1 要求「一处入口」，所以不为它另开一个配置页 / 第二个 settings 段。
+                加了面板而不加这个渲染分支 ⇒ 参数**静默不显示**（配置页最坏的形态）
+                ⇒ 守卫 `tests/unit/components/TenantParamsPanel.test.tsx` 逐面板钉住这一条。 */}
+            {domain.inline?.panel === 'remnant-specs' && (
+              <div className="mt-4">
+                <RemnantSmallItemSpecsPanel copy={domain.inline.copy} />
               </div>
             )}
 
