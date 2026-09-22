@@ -289,13 +289,14 @@ jobs:
           echo "::notice::📒 flaky 台账已追加并推送 ${BRANCH}（远端 ref 复核通过）—— PR #$PR 待批准后走 required 检查"
 
       # ── ④b 取 **main** 上的判据脚本副本（#4825 实测根因：工作区已被步骤④ 切到台账分支）──
-      # ⚠️ **勿删、勿改回工作区那份**：步骤④ `git checkout -B "$BRANCH" FETCH_HEAD` 已把工作区
-      #    切到**台账分支** ⇒ 直接跑工作区里的 `.github/scripts/flaky_ledger.py`，执行的是
-      #    **台账分支的旧副本**（该分支 fork 自 #4804 之前的 main ⇒ **没有 `approve` 子命令**）
+      # ⚠️ **勿删、勿改回工作区那份**：步骤④ 已把工作区切到**台账分支**（脚本内 `git checkout -B
+      #    "$BRANCH" origin/main`）⇒ 跑工作区里的 `.github/scripts/flaky_ledger.py` 拿到的是
+      #    **该分支上的副本**：历史上它 fork 自 #4804 之前的 main ⇒ **没有 `approve` 子命令**
       #    ⇒ 实测报 `error: argument cmd: invalid choice: 'approve'`。
       #    后果 = **死锁**：要 approve 才能把台账落 main，而 approve 只存在于 main 的脚本里，
       #    台账分支永远拿不到它 ⇒ 步骤⑤ 自上线起**从未成功过一次**（main 侧台账恒为 0 条）。
-      #    故本步骤显式从 `origin/main` 取副本；步骤⑤ 只允许用这个副本。
+      #    #5100 之后该分支每次追加都会被重基到 main（这个具体形态已大幅收敛），但「判据与动作
+      #    必须与 main 同源」这条纪律**不变** —— 故仍显式从 `origin/main` 取副本，步骤⑤ 只用它。
       - name: ④b 取 main 上的判据脚本副本（#4825：工作区此时是台账分支，不是 main）
         if: steps.decide.outputs.entry_count != '0'
         run: |

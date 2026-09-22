@@ -33,6 +33,7 @@ HEAD** 当基线（`git checkout -B "$BRANCH" FETCH_HEAD`）⇒ 追加提交的�
 · 出货步骤④ 的正文按**原文**执行，只把**输入路径** `/tmp/flaky-entries.json` 换成夹具私有路径，
   并机械自证「除该路径外一字未改」（见 `_run_step`）—— 夹具产物全部落在 `tmp_path`，不写 `/tmp`。
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -533,15 +534,40 @@ def _workflow_steps(src: str) -> list:
 #: 写台账的**调用形态**（不是「提及」——本仓库「提及 ≠ 调用」已踩过多次）
 _WRITE_CALL = re.compile(r"flaky_ledger\.py\s+append\b")
 _LEDGER_ADD = "git add .github/flaky-ledger.json"
+_PUSH_CMD = re.compile(r"git\s+push\b")
+
+
+def _command_form(text: str) -> str:
+    """剥掉**引号串**与 `#` 注释 ⇒ 只留**命令本体**（判据读结构化位置，不读「文本里提到过」）。
+
+    ⚠️ 为什么必须这样（本仓库「提及 ≠ 调用」的**第 4 次**现场；前三次：`--disable-auto` /
+    `autoMergeRequest` / `head_branch=`）：`flaky-ledger-reconcile.yml` 的**错误提示文案**里
+    **逐字**写着 `git push --force-with-lease origin HEAD:$LEDGER_BRANCH`（#5102 给人工留的
+    「可行动出口」）⇒ 裸子串判据会把「给建议」读成「第二个写者」= **判据被自己的文案喂红**
+    （§17.3「判据能被自己的文案 / 输出喂绿」的**镜像形态**，同一缺陷类）。
+    """
+    out = []
+    for line in text.splitlines():
+        line = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)     # 双引号串
+        line = re.sub(r"'(?:[^'\\]|\\.)*'", "''", line)     # 单引号串
+        line = re.sub(r"(?<!\S)#.*$", "", line)             # 行首/空白后的 `#` 注释
+        out.append(line)
+    return "\n".join(out)
 
 
 def ledger_writers(src: str) -> list:
-    """返回写 `chore/flaky-ledger` 的步骤下标（空 = 本文件不写台账）。"""
+    """返回写 `chore/flaky-ledger` 的步骤下标（空 = 本文件不写台账）。
+
+    判据只看**命令本体**（`_command_form`）：写调用（`flaky_ledger.py append` / `git add` 台账文件）
+    或**真实命令行** `git push`（该 workflow 与这条分支有关时）。
+    """
+    branch_named = BRANCH in src
     hits = []
-    for i, text in enumerate(_workflow_steps(src)):
-        if _WRITE_CALL.search(text) or _LEDGER_ADD in text:
+    for i, raw in enumerate(_workflow_steps(src)):
+        cmd = _command_form(raw)
+        if _WRITE_CALL.search(cmd) or _LEDGER_ADD in cmd:
             hits.append(i)
-        elif "git push" in text and BRANCH in text:
+        elif branch_named and _PUSH_CMD.search(cmd):
             hits.append(i)
     return hits
 
@@ -556,10 +582,15 @@ class TestSingleWriter:
             f"写 `{BRANCH}` 的 workflow 不止一个：{sorted(writers)} ⇒ 双写者会互相覆盖（#5100 的修法前提）")
 
     def test_reconcile_only_reads_and_approves(self):
-        """兜底 workflow 只 approve/arm：**不写内容**（否则第二个写者与主路径打架）。"""
+        """兜底 workflow 只 approve/arm：**不写内容**（否则第二个写者与主路径打架）。
+
+        「不写」的**结构性声明** = `permissions.contents: read`（**不是**在自由文本里搜命令）——
+        该文件的错误文案里逐字含 `git push`（给人工的建议），故文本判据只认**命令本体**。
+        """
         src = RECONCILE_PATH.read_text(encoding="utf-8")
         assert ledger_writers(src) == [], "兜底 workflow 竟在写台账 ⇒ 引入第二个写者"
-        assert not re.search(r"git\s+push\b", src), "兜底 workflow 不许 push"
+        assert not _PUSH_CMD.search(_command_form(src)), \
+            "兜底 workflow 出现**命令本体**的 `git push` ⇒ 第二个写者（文案里的建议不算调用）"
         assert re.search(r"flaky_ledger\.py\s+(ledger-drift|approve)\b", src), \
             "兜底必须复用主路径脚本（否则判据会漂移）"
         perms = (yaml.safe_load(src) or {}).get("permissions") or {}
@@ -574,6 +605,30 @@ class TestSingleWriter:
             "run: python3 .github/scripts/flaky_ledger.py append --ledger .github/flaky-ledger.json", 1)
         assert mutated != src, "注入锚点失效（先修本测试）"
         assert ledger_writers(mutated) != [], "注入第二个写者后判据 5 仍绿 ⇒ 空断言"
+
+    def test_red_proof_a_real_push_command_is_detected(self):
+        """注入式红证：塞一条**真命令行**（**不在任何字符串里**）⇒ 判据 5 必须红；还原 ⇒ 绿。
+
+        这条专门钉「文案 vs 命令」的判别力：该文件**本来就有** `git push` 字样（在错误文案里），
+        故「注入一条命令本体的 push ⇒ 必须红」才是**可单独变红**的判据（不会红的断言 = 空断言）。
+        还原用**内容指纹**自证（§19.1 元规则 ③：不用 mtime / size）。
+        """
+        src = RECONCILE_PATH.read_text(encoding="utf-8")
+        fingerprint = hashlib.sha256(src.encode("utf-8")).hexdigest()
+        mutated = src.replace(
+            "        run: python3 .github/scripts/flaky_ledger.py selftest",
+            "        run: |\n"
+            "          git push --force-with-lease origin HEAD:$LEDGER_BRANCH\n"
+            "          python3 .github/scripts/flaky_ledger.py selftest", 1)
+        assert mutated != src, "注入锚点失效（先修本测试）"
+        assert _PUSH_CMD.search(_command_form(mutated)), "注入没落到**命令本体**上（先修本测试）"
+        assert ledger_writers(mutated) != [], \
+            "注入**命令本体**的 push 后判据 5 仍绿 ⇒ 判据是空断言（只认不了真命令）"
+        # 还原自证（内容指纹）：源文件一字未改 ⇒ 判据绿
+        restored = RECONCILE_PATH.read_text(encoding="utf-8")
+        assert hashlib.sha256(restored.encode("utf-8")).hexdigest() == fingerprint, \
+            "源文件在用例期间被改动（夹具不干净）"
+        assert ledger_writers(restored) == []
 
 
 # ── 既有护栏锚点（**不由本包修改**的测试文件依赖它们） ───────────────────────────
