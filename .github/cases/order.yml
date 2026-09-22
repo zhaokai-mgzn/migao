@@ -3460,3 +3460,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-047
+    legacy_id: ""
+    title: "订单腿库存按真实米数扣减/回补（2.7 米 ⇒ 台账 delta = -2.7、首尾相接）"
+    domains:
+      - order
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - stock
+      - ledger
+      - decimal
+      - backend_contract
+    truths_ref:
+      - product-sku-stock.decimal-1dp
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**扣减取整落点已消除**：确认支付时 `OrderService.deductSkuStock` 不再 `item.getQuantity().intValue()` —— `quantity = 2.7` ⇒ 台账 `delta = -2.7`、`after_qty = before_qty - 2.7`（改前实测：delta = -2，0.7 米凭空消失）。"
+      - "判据 2·**商品级销量同源**：`products.sales_count` / `product_skus.sales_count` 与库存同源（不再 `intValue()`），单笔单据内部不得自相矛盾（库存 -2.7 而销量 +2）。"
+      - "判据 3·**台账不变式在小数下仍成立**：同一 SKU 相邻两行 `上一行 after_qty == 下一行 before_qty`，且 `after_qty - before_qty == delta` —— 比较一律 `compareTo`（`2.70` 与 `2.7` 的 `equals` 为 false）。"
+    skip_reason: "[backend-contract] 订单腿契约（Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java 执行"
+    merge_log: "2026-09-22 新增（#5063 点名的 `OrderService` 四处 `intValue()` 静默取整落点）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

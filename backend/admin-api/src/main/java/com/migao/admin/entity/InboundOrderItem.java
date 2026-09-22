@@ -48,8 +48,8 @@ public class InboundOrderItem {
     /** 快照：门幅 */
     private String doorWidth;
 
-    /** 入库数量（整数：与 {@code product_skus.stock} 粒度逐字一致） */
-    private Integer quantity;
+    /** 入库数量（米，1 位小数：与 {@code product_skus.stock} 粒度逐字一致；V115/#5063 起支持小数米） */
+    private BigDecimal quantity;
 
     /** 入库单价（元/单位）；NULL = 未记单价 ⇒ 只加数量、不算成本 */
     private BigDecimal unitCost;

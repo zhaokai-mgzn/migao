@@ -189,7 +189,7 @@ class OrderStockSkuKeyFamilyTest {
                 .colorId(11L).colorName("米白")
                 .doorWidth("2.8")
                 .skuCode("SKU-MB-28")
-                .price(new BigDecimal("168.00")).stock(10).salesCount(5)
+                .price(new BigDecimal("168.00")).stock(BigDecimal.valueOf(10)).salesCount(BigDecimal.valueOf(5))
                 .build();
     }
 
@@ -260,11 +260,11 @@ class OrderStockSkuKeyFamilyTest {
 
         // then: 效果层证据三件套 —— 库存真的减了、销量真的涨了、台账真的落了行
         // （修前这三处一起静默跳过：订单成交但库存不动/销量不涨/台账无行 ⇒ 红）
-        verify(productSkuMapper).deductStock(SKU_ID, 2);
-        verify(productSkuMapper).increaseSalesCount(SKU_ID, 2);
+        verify(productSkuMapper).deductStock(SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).increaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
         verify(stockLedgerService).recordChangesAgainstSnapshot(
                 eq(1L), anyMap(), eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
-        verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(2), any(BigDecimal.class));
+        verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
     @Test
@@ -279,8 +279,8 @@ class OrderStockSkuKeyFamilyTest {
         assertThat(captured[0]).isNotNull();
         orderService.cancelOrder(ORDER_ID, "客户不要了");
 
-        verify(productSkuMapper).restoreStock(SKU_ID, 2);
-        verify(productSkuMapper).decreaseSalesCount(SKU_ID, 2);
+        verify(productSkuMapper).restoreStock(SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).decreaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
         verify(stockLedgerService).recordChangesAgainstSnapshot(
                 eq(1L), anyMap(), eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
     }
@@ -317,7 +317,7 @@ class OrderStockSkuKeyFamilyTest {
         assertThatThrownBy(() -> orderService.confirmPayment(ORDER_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("SKU");
-        verify(productSkuMapper, never()).deductStock(anyLong(), anyInt());
+        verify(productSkuMapper, never()).deductStock(anyLong(), any());
     }
 
     // ======================== 3. 负例（R2）：无 SKU 身份的合法订单不得被拒 ========================
@@ -335,11 +335,11 @@ class OrderStockSkuKeyFamilyTest {
         orderService.confirmPayment(ORDER_ID);
 
         // 合法跳过：不猜 SKU（不扣减、不记 SKU 销量、不落台账行）——这是设计，不是缺陷
-        verify(productSkuMapper, never()).deductStock(anyLong(), anyInt());
-        verify(productSkuMapper, never()).increaseSalesCount(anyLong(), anyInt());
+        verify(productSkuMapper, never()).deductStock(anyLong(), any());
+        verify(productSkuMapper, never()).increaseSalesCount(anyLong(), any());
         verify(stockLedgerService, never()).recordChangesAgainstSnapshot(
                 anyLong(), anyMap(), anyString(), anyString(), anyString());
         // 但商品级销量照记（订单本身是有效的）
-        verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(2), any(BigDecimal.class));
+        verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 }

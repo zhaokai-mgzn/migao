@@ -7,6 +7,8 @@ business_truths:
   - [product-sku-stock.low-stock] 低库存 = 库存 ≤ 阈值（默认 100），且仅 on_sale 商品（SKU 级 EXISTS 子查询 #1396）
   - [product-sku-stock.realtime] 库存数字 = 实时数据
   - [product-sku-stock.status-flow] 商品状态流转必须合法（不允许废弃状态 in_warehouse）
+  - [product-sku-stock.decimal-1dp] 库存/数量列 = NUMERIC(12,1)（0.1 米粒度，V115/#5063）：库存类**输入**（入库数量 / 库存调整量 / 商品建改的 stock）最多 1 位小数，**超过即显式拒绝**（fail-closed，文案可行动；服务端**不做**静默取整/截断）；订单侧（`order_items.quantity`，DECIMAL(10,2)）按真实米数落库存与台账（`stock_ledger_entries.delta = after_qty - before_qty`，相邻两行首尾相接，比较用 compareTo）；整数场景**逐值不变**
+  - [product-sku-stock.decimal-1dp-migration] V115 把 `product_skus.stock` / `products.stock` / `stock_ledger_entries.{delta,before_qty,after_qty}` / `inbound_order_items.quantity` / `stock_batches.quantity` / `sales_count`（两处）由 INTEGER 改 NUMERIC(12,1)；显式 BEGIN/COMMIT、幂等（已是终态则 0 次 ALTER）、前置表列 fail-closed、文末 DO 块终态对账；`docs/sql/schema.sql`（bootstrap 路径）同步终态
 
   - [inbound-order-flow.draft-then-post] 入库单：建单是**草稿**（不动库存）；**过账**才一次性地自动生成批次号（PC-yyyyMMdd-NNNN）+ 加 SKU 库存 + 落 stock_ledger_entries(reason=inbound) + 按移动加权平均重算 product_skus.avg_cost；已过账不得重复过账、不得作废（V111，issue #5034）
   - [inbound-order-flow.batch-granularity] 批次粒度 = **入库单行**（一个 SKU 行 = 一个批次，用户裁定 2026-09-23）；系统批次号 batch_no 与供应商缸号 dye_lot 是**两列**，dye_lot 可空且不得用 batch_no 冒充（docs/curtain-selling-method-industry-research.md §1/§8.2）

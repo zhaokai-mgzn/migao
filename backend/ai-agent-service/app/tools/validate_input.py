@@ -128,7 +128,11 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
             # nonzero：adjustment=0 被 Service 拒（`ProductService.java:1716-1718`
             # 「调整量 adjustment 不能为空或 0」）→ 闸门必须同样拦下（issue #3566 核查）
-            "adjustment": {"type": int, "nonzero": True, "label": "调整数量（正数增加，负数减少，不能为0）"},
+            # 类型放宽到 (int, float)：库存列 = NUMERIC(12,1)（issue #5063）⇒ 1 位小数是**合法**输入；
+            # 旧规则 `int` 会把 `60.5` 判成「类型错误」并拦在写之前（工具层的精度判定根本没机会跑）。
+            # 小数位上限**不**在这里判：精度拒绝的唯一落点是 `inventory_manage._adjust_inventory`
+            # （此处只做「结构上能否被消费」的闸门，与 `BaseTool` 的宽松口径一致）。
+            "adjustment": {"type": (int, float), "nonzero": True, "label": "调整数量（正数增加，负数减少，不能为0）"},
             "reason": {"type": str, "min_len": 1, "label": "调整原因"},
         },
     },

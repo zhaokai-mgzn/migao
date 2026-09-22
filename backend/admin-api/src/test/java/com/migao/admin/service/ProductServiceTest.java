@@ -335,7 +335,7 @@ class ProductServiceTest {
         request.setName("测试商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        request.setStock(100);
+        request.setStock(BigDecimal.valueOf(100));
         request.setSkuCode("2699"); // 货号
         ProductColorInput c1 = new ProductColorInput();
         c1.setColorName("黑色");
@@ -384,7 +384,7 @@ class ProductServiceTest {
         request.setName("无货号商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("50.00"));
-        request.setStock(50);
+        request.setStock(BigDecimal.valueOf(50));
         // skuCode 不设置
         ProductColorInput c1 = new ProductColorInput();
         c1.setColorName("红色");
@@ -720,7 +720,7 @@ class ProductServiceTest {
         ProductSku sku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001")
                 .colorName("红色").doorWidth("2.8米")
-                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+                .price(new BigDecimal("88.00")).stock(BigDecimal.valueOf(10)).skuCode("HCL-01-SJ-28").build();
         when(productSkuMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(sku);
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
@@ -783,7 +783,7 @@ class ProductServiceTest {
         s1.setColorName("红色");
         s1.setDoorWidth("2.8米");
         s1.setPrice(new BigDecimal("99.00"));
-        s1.setStock(10);
+        s1.setStock(BigDecimal.valueOf(10));
         request.setSkus(List.of(s1));
 
         ProductColor existingColor = ProductColor.builder()
@@ -791,7 +791,7 @@ class ProductServiceTest {
         ProductSku existingSku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
                 .colorName("红色").doorWidth("2.8米")
-                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+                .price(new BigDecimal("88.00")).stock(BigDecimal.valueOf(10)).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
@@ -829,7 +829,7 @@ class ProductServiceTest {
         ProductSku existingSku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
                 .colorName("红色").doorWidth("2.8米")
-                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+                .price(new BigDecimal("88.00")).stock(BigDecimal.valueOf(10)).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
@@ -893,7 +893,7 @@ class ProductServiceTest {
         ProductSku legacySku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
                 .colorName(null).doorWidth("2.8米")
-                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+                .price(new BigDecimal("88.00")).stock(BigDecimal.valueOf(10)).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
@@ -1066,7 +1066,7 @@ class ProductServiceTest {
     void getLowStockByColor_HasResults() {
         List<LowStockByColorResponse> mockResult = List.of(
             new LowStockByColorResponse(1L, "prod-001", "遮光窗帘", "8827-2",
-                100L, "红色", "2.8m", 5, new BigDecimal("8.80"))
+                100L, "红色", "2.8m", BigDecimal.valueOf(5), new BigDecimal("8.80"))
         );
         when(productMapper.findLowStockByColor(100, 50)).thenReturn(mockResult);
 
@@ -1075,7 +1075,7 @@ class ProductServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getProductName()).isEqualTo("遮光窗帘");
         assertThat(result.get(0).getColorName()).isEqualTo("红色");
-        assertThat(result.get(0).getStock()).isEqualTo(5);
+        assertThat(result.get(0).getStock()).isEqualTo(BigDecimal.valueOf(5));
     }
 
     @Test
@@ -1496,13 +1496,13 @@ class ProductServiceTest {
         request.setName("库存口径测试帘");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        request.setStock(999); // 非权威的请求值：不得成为商品级列的最终值
+        request.setStock(BigDecimal.valueOf(999)); // 非权威的请求值：不得成为商品级列的最终值
         ProductSkuInput s1 = new ProductSkuInput();
         s1.setDoorWidth("2.8米");
-        s1.setStock(30);
+        s1.setStock(BigDecimal.valueOf(30));
         ProductSkuInput s2 = new ProductSkuInput();
         s2.setDoorWidth("3.2米");
-        s2.setStock(70);
+        s2.setStock(BigDecimal.valueOf(70));
         request.setSkus(List.of(s1, s2));
 
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
@@ -1535,7 +1535,7 @@ class ProductServiceTest {
                 .orElseThrow(() -> new AssertionError("SKU 变更后未回写商品级 stock"));
         assertThat(synced.getStock())
                 .as("商品级 stock 必须等于 SKU 汇总（权威）")
-                .isEqualTo(100);
+                .isEqualTo(BigDecimal.valueOf(100));
     }
 
     @Test
@@ -1546,7 +1546,7 @@ class ProductServiceTest {
         request.setName("无规格商品");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("50.00"));
-        request.setStock(50);
+        request.setStock(BigDecimal.valueOf(50));
 
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
         when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
@@ -1554,7 +1554,7 @@ class ProductServiceTest {
             return 1;
         });
         when(productMapper.selectById("prod-no-sku")).thenReturn(
-                Product.builder().id("prod-no-sku").name("无规格商品").stock(50).build());
+                Product.builder().id("prod-no-sku").name("无规格商品").stock(BigDecimal.valueOf(50)).build());
 
         // When
         productService.createProduct(request, 1L);
@@ -1574,7 +1574,7 @@ class ProductServiceTest {
         return ProductSku.builder()
                 .id(2001L).tenantId(1L).productId("prod-001")
                 .colorName("米白").doorWidth("2.8")
-                .price(new BigDecimal("168.00")).stock(500).skuCode("EVAL-BLK-28-米白").build();
+                .price(new BigDecimal("168.00")).stock(BigDecimal.valueOf(500)).skuCode("EVAL-BLK-28-米白").build();
     }
 
     @Test

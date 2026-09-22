@@ -74,7 +74,7 @@ public class ProductResponse {
     /**
      * 库存数量
      */
-    private Integer stock;
+    private BigDecimal stock;
 
     /**
      * 库存预警阈值
@@ -109,12 +109,12 @@ public class ProductResponse {
     /**
      * SKU总库存
      */
-    private Integer totalStock;
+    private BigDecimal totalStock;
 
     /**
      * 累计销量
      */
-    private Integer salesCount;
+    private BigDecimal salesCount;
 
     /**
      * 累计销售额

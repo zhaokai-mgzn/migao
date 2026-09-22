@@ -48,7 +48,7 @@ public class ProductSkuResponse {
     /**
      * 库存
      */
-    private Integer stock;
+    private BigDecimal stock;
 
     /**
      * SKU编码

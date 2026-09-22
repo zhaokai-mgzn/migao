@@ -45,7 +45,7 @@ public class AgentProductCreateRequest {
     private String pricingType;
 
     /** 库存数量，默认 0 */
-    private Integer stock;
+    private BigDecimal stock;
 
     /** 商品状态，默认 "draft" */
     private String status;

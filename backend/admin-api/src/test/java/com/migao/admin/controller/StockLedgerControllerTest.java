@@ -4,6 +4,7 @@
 
 package com.migao.admin.controller;
 
+import java.math.BigDecimal;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.StockLedger;
 import com.migao.admin.service.StockLedgerService;
@@ -63,7 +64,7 @@ class StockLedgerControllerTest extends BaseControllerTest {
         when(stockLedgerService.getLedgerPage(eq(TEST_TENANT_ID), eq(null), eq(null), eq(null), eq(1L), eq(20L)))
                 .thenReturn(PageResponse.of(1L, 1L, 20L, List.of(
                         StockLedger.builder().id(7L).skuId(100L).skuCode("SKU-100")
-                                .beforeQty(30).afterQty(20).delta(-10)
+                                .beforeQty(BigDecimal.valueOf(30)).afterQty(BigDecimal.valueOf(20)).delta(BigDecimal.valueOf(-10))
                                 .reason(StockLedger.REASON_MANUAL).operator("13800138000").build())));
 
         mockMvc.perform(get(BASE))

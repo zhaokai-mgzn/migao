@@ -32,7 +32,7 @@ public class LowStockByColorResponse {
     /** 规格尺寸（门幅） */
     private String doorWidth;
     /** SKU 粒度库存 */
-    private Integer stock;
+    private BigDecimal stock;
     /** 价格 */
     private BigDecimal price;
 }

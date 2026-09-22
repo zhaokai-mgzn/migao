@@ -618,7 +618,7 @@ class OrderServiceTest {
         request.setItems(List.of(itemReq));
 
         when(productSkuMapper.selectById(100L))
-                .thenReturn(ProductSku.builder().id(100L).stock(1).build());
+                .thenReturn(ProductSku.builder().id(100L).stock(BigDecimal.valueOf(1)).build());
 
         // when & then: 拒绝创建，库存不足提示出现在下单时而非确认付款时
         assertThatThrownBy(() -> orderService.createOrder(request, 1L))
@@ -646,7 +646,7 @@ class OrderServiceTest {
         request.setItems(List.of(itemReq));
 
         when(productSkuMapper.selectById(100L))
-                .thenReturn(ProductSku.builder().id(100L).stock(5).build());
+                .thenReturn(ProductSku.builder().id(100L).stock(BigDecimal.valueOf(5)).build());
         when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
             Order o = invocation.getArgument(0);
             o.setId("order-stock-ok");
@@ -727,7 +727,7 @@ class OrderServiceTest {
         orderService.updateOrderStatus("order-001", "confirmed");
 
         // then: 委托 confirmPayment → 扣减库存/增加销量（此前此路径会跳过副作用）
-        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(productMapper).increaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
     @Test
@@ -742,7 +742,7 @@ class OrderServiceTest {
 
         // then: pending 取消不恢复库存
         verify(orderMapper).update(any(), any());
-        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        verify(productMapper, never()).decreaseSales(anyString(), any(), any(BigDecimal.class));
     }
 
     @Test
@@ -942,7 +942,7 @@ class OrderServiceTest {
 
         // then: 原子流转 + 商品级 increaseSales + 自动登记收款流水
         verify(orderMapper).update(any(), any());
-        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(productMapper).increaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
@@ -962,7 +962,7 @@ class OrderServiceTest {
 
         // then: 原子流转 + 恢复库存
         verify(orderMapper).update(any(), any());
-        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(productMapper).decreaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
     @Test
@@ -977,7 +977,7 @@ class OrderServiceTest {
 
         // then: pending 订单取消不应调用库存恢复
         verify(orderMapper).update(any(), any());
-        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        verify(productMapper, never()).decreaseSales(anyString(), any(), any(BigDecimal.class));
     }
 
     @Test
@@ -1026,7 +1026,7 @@ class OrderServiceTest {
         assertThat(testOrder.getRefundAt()).isNotNull();
         // 原子条件更新（防并发双花，审计 07 P1-10）
         verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
-        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        verify(productMapper, never()).decreaseSales(anyString(), any(), any(BigDecimal.class));
         // 登记退款流水（金额=本次退款额）
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
@@ -1133,7 +1133,7 @@ class OrderServiceTest {
         // then: 不再把状态硬改为 cancelled，也不恢复库存
         assertThat(testOrder.getStatus()).isEqualTo("confirmed");
         verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
-        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        verify(productMapper, never()).decreaseSales(anyString(), any(), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
@@ -1553,7 +1553,7 @@ class OrderServiceTest {
 
         // then: 状态流转 + 恢复库存 + 登记退款流水
         verify(orderMapper).update(any(), any());
-        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(productMapper).decreaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
                         && t.getAmount().compareTo(new BigDecimal("599.00")) == 0));
@@ -1598,7 +1598,7 @@ class OrderServiceTest {
         // given: 订单 2 件，SKU 库存仅 1
         testOrder.setStatus("pending");
         OrderItem skuItem = buildItemWithSku(100L, 2);
-        ProductSku sku = ProductSku.builder().id(100L).stock(1).build();
+        ProductSku sku = ProductSku.builder().id(100L).stock(BigDecimal.valueOf(1)).build();
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(skuItem));
@@ -1608,8 +1608,8 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("库存不足");
-        verify(productSkuMapper, never()).deductStock(anyLong(), anyInt());
-        verify(productMapper, never()).increaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        verify(productSkuMapper, never()).deductStock(anyLong(), any());
+        verify(productMapper, never()).increaseSales(anyString(), any(), any(BigDecimal.class));
     }
 
     @Test
@@ -1618,7 +1618,7 @@ class OrderServiceTest {
         // given: 订单 2 件，SKU 库存 5 充足
         testOrder.setStatus("pending");
         OrderItem skuItem = buildItemWithSku(100L, 2);
-        ProductSku sku = ProductSku.builder().id(100L).stock(5).build();
+        ProductSku sku = ProductSku.builder().id(100L).stock(BigDecimal.valueOf(5)).build();
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any())).thenReturn(1);
@@ -1629,8 +1629,8 @@ class OrderServiceTest {
         orderService.confirmPayment("order-001");
 
         // then: 正常扣减 SKU 库存 + 商品销量
-        verify(productSkuMapper).deductStock(100L, 2);
-        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(productSkuMapper).deductStock(100L, BigDecimal.valueOf(2));
+        verify(productMapper).increaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
     @Test
@@ -2291,8 +2291,8 @@ class OrderServiceTest {
                 .colorName("米白")
                 .doorWidth(doorWidth)
                 .price(new BigDecimal("168.00"))
-                .stock(10)
-                .salesCount(5)
+                .stock(BigDecimal.valueOf(10))
+                .salesCount(BigDecimal.valueOf(5))
                 .build();
     }
 
@@ -2329,8 +2329,8 @@ class OrderServiceTest {
         orderService.cancelOrder("order-001", "客户不要了");
 
         // then: 库存回补 + 销量减记落到既有 SKU 行（不再静默跳过）
-        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
-        verify(productSkuMapper).decreaseSalesCount(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).decreaseSalesCount(COMBO_SKU_ID, BigDecimal.valueOf(2));
     }
 
     @Test
@@ -2346,7 +2346,7 @@ class OrderServiceTest {
 
         orderService.cancelOrder("order-001", "客户不要了");
 
-        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
     }
 
     @Test
@@ -2364,8 +2364,8 @@ class OrderServiceTest {
 
         orderService.confirmPayment("order-001");
 
-        verify(productSkuMapper).deductStock(COMBO_SKU_ID, 2);
-        verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, 2);
+        verify(productSkuMapper).deductStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, BigDecimal.valueOf(2));
     }
 
     // ======================== V108：优先整卷发货分配落订单行 ========================
@@ -2583,8 +2583,8 @@ class OrderServiceTest {
                     .hasMessageContaining("doorWidth=2.8米");
 
             // 不同门幅不得被归一化合并（不得回补到 3.2 行，也不得减记销量）
-            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
-            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
+            verify(productSkuMapper, never()).restoreStock(anyLong(), any());
+            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), any());
             // 且不静默：WARN 说明后果 + 拒绝理由（未命中/歧义）
             assertThat(appender.list).anyMatch(e ->
                     e.getLevel() == ch.qos.logback.classic.Level.WARN
@@ -2608,12 +2608,12 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(java.util.List.<ProductSku>of(storedSku("2.8")));
-        when(productSkuMapper.restoreStock(anyLong(), anyInt())).thenReturn(1);
+        when(productSkuMapper.restoreStock(anyLong(), any())).thenReturn(1);
 
         orderService.cancelOrder("order-001", "客户不要了");
 
         // Then: 回补到那一行（售卖方式不参与定位）
-        verify(productSkuMapper).restoreStock(anyLong(), anyInt());
+        verify(productSkuMapper).restoreStock(anyLong(), any());
         // 且查询条件里**没有**售卖方式（枚举与中文标签都不该出现）
         ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
@@ -2653,8 +2653,8 @@ class OrderServiceTest {
         orderService.cancelOrder("order-001", "客户不要了");
 
         // 回退到组合匹配的现有行，而不是拿陈旧 id 去 update（命中 0 行的静默失败）
-        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
-        verify(productSkuMapper, never()).restoreStock(eq(999L), anyInt());
+        verify(productSkuMapper).restoreStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper, never()).restoreStock(eq(999L), any());
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════

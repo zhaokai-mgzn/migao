@@ -75,7 +75,7 @@ public class ProductCreateRequest {
     /**
      * 库存数量，默认 0
      */
-    private Integer stock = 0;
+    private BigDecimal stock = BigDecimal.ZERO;
 
     /**
      * 库存预警阈值，默认 10

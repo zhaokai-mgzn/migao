@@ -41,7 +41,7 @@ public class AgentProductUpdateRequest {
     private String pricingType;
 
     /** 库存数量，null = 不修改 */
-    private Integer stock;
+    private BigDecimal stock;
 
     /** 主图 URL 列表，null = 不修改，[] = 清空 */
     private List<String> images;

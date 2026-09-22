@@ -4,7 +4,9 @@ AI 智能客服系统 - 库存管理 Tool
 查询和调整商品库存，支持库存预警查询。
 """
 
-from typing import Optional
+from decimal import Decimal, InvalidOperation
+from typing import Any, Optional, Union
+
 from loguru import logger
 
 from app.tools.base import (
@@ -27,6 +29,41 @@ from app.utils.http_client import get_admin_api_client
 
 # 操作类型
 VALID_ACTIONS = {"query", "adjust", "low_stock_alert"}
+
+#: 库存（米）的记数粒度 = 0.1（后端列 `NUMERIC(12,1)`，issue #5063；
+#: 与算料口径「用料米数一律向上进位到 0.1」同源）。
+STOCK_QUANTUM = Decimal("0.1")
+
+
+def _one_decimal_or_none(value: Any) -> Optional[Decimal]:
+    """库存类数值的小数位判定：最多 1 位小数 ⇒ `Decimal`，否则 `None`（fail-closed）。
+
+    **为什么不用 `round(x, 1) == x`**：`2.7` 的二进制表示并不精确，浮点比较会把
+    **合法**的 `2.7` 判成「超过 1 位小数」而误拒（误拒 = 客户办不成事）。
+    判据取**十进制字面量**的小数位数（`Decimal("2.755").as_tuple().exponent == -3`），
+    正是 LLM / 用户在界面上看到的那一位。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not parsed.is_finite():
+        return None
+    exponent = parsed.as_tuple().exponent
+    if not isinstance(exponent, int) or exponent < -1:
+        return None
+    return parsed
+
+
+def _stock_number(value: Decimal) -> Union[int, float]:
+    """`Decimal` → 整数保持 `int`（**整数场景逐值不变**），小数才落 `float`。
+
+    保留 int 不是洁癖：Java DTO 若声明为整型，下发 `10.0` 会被 Jackson 判非法，
+    白丢一次写操作（本单「不能损失客户」）。
+    """
+    return int(value) if value == value.to_integral_value() else float(value)
 
 
 class InventoryManageTool(BaseTool):
@@ -68,8 +105,12 @@ class InventoryManageTool(BaseTool):
                 "description": "商品 32 位 UUID。必须先通过 product_detail 或 product_search 查出真实 UUID 再传入，禁止传商品名称或序号",
             },
             "adjustment": {
-                "type": "integer",
-                "description": "调整数量（adjust 时必填），正数增加，负数减少",
+                "type": "number",
+                "description": (
+                    "调整数量（adjust 时必填，单位与库存一致：米，1 位小数）。"
+                    "库存按 0.1 米粒度记录，最多 1 位小数，例如 60.5 / -2.7；"
+                    "正数增加，负数减少。超过 1 位小数会被拒绝，不会自动四舍五入或截断"
+                ),
             },
             "reason": {
                 "type": "string",
@@ -85,7 +126,7 @@ class InventoryManageTool(BaseTool):
         context: ToolContext,
         action: str,
         product_id: Optional[str] = None,
-        adjustment: Optional[int] = None,
+        adjustment: Optional[float] = None,
         reason: Optional[str] = None,
         threshold: int = LOW_STOCK_THRESHOLD,
     ) -> ToolResult:
@@ -236,24 +277,27 @@ class InventoryManageTool(BaseTool):
                 suggestion="请在商品详情维护 SKU（颜色/售卖方式/门幅）后重试",
             )
         
+        # issue #5063：库存可为 1 位小数 ⇒ 展示与 data 都过一遍 Decimal 归一，
+        # 免得整数库存（float 9599.0）显示成「9599.0」、小数带二进制毛刺。
+        stock_display = _stock_number(Decimal(str(stock["stock"])))
         return ToolResult(
             success=True,
             data={
                 "product_id": product_id,
                 "product_name": product_name,
-                "stock": stock["stock"],
+                "stock": stock_display,
                 "stock_source": stock["stock_source"],
                 "status": data.get("status"),
             },
-            message=f"商品【{product_name}】当前库存：{stock['stock']}",
-            summary=f"库存查询: {product_name}, 库存{stock['stock']}件",
+            message=f"商品【{product_name}】当前库存：{stock_display}",
+            summary=f"库存查询: {product_name}, 库存{stock_display}米",
         )
     
     async def _adjust_inventory(
         self,
         context: ToolContext,
         product_id: Optional[str],
-        adjustment: Optional[int],
+        adjustment: Optional[float],
         reason: Optional[str],
     ) -> ToolResult:
         """调整库存数量
@@ -280,8 +324,27 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="缺少调整数量",
                 message="调整库存时必须提供调整数量（adjustment）",
-                suggestion="缺少调整数量 adjustment，请向用户确认要增加还是减少多少件后重试",
+                suggestion="缺少调整数量 adjustment，请向用户确认要增加还是减少多少米后重试",
             )
+
+        # issue #5063：库存按 0.1 米粒度记 ⇒ 超过 1 位小数**显式拒绝**（fail-closed），
+        # 既不四舍五入也不截断后照常执行 —— 静默取整 = 与实物不符的账，
+        # 且读回校验会拿「算出来的数」去比「后端存的数」，假成功假失败都可能发生。
+        adjustment_value = _one_decimal_or_none(adjustment)
+        if adjustment_value is None:
+            return ToolResult(
+                success=False,
+                error="调整数量精度超出范围",
+                message=(
+                    f"库存按 {STOCK_QUANTUM} 米粒度记录，调整数量最多支持 1 位小数；"
+                    f"本次 adjustment={adjustment} 超过 1 位小数（或不是数字），未执行任何调整。"
+                ),
+                suggestion=(
+                    "请把调整数量改成最多 1 位小数的数字后重试（例如 2.755 改成 2.7 或 2.8）；"
+                    "系统不会自动四舍五入或截断，以免库存与实际不符"
+                ),
+            )
+        adjustment_clean = _stock_number(adjustment_value)
         
         if not reason:
             return ToolResult(
@@ -318,14 +381,19 @@ class InventoryManageTool(BaseTool):
                 message=no_sku_stock_note(product_name),
                 suggestion="请先在商品详情维护 SKU（颜色/售卖方式/门幅）后再调整库存",
             )
-        current_stock = current["stock"]
-        new_stock = current_stock + adjustment
-        
-        if new_stock < 0:
+        # issue #5063：相加也必须走 Decimal —— 朴素 float 会得
+        # `60.1 + 0.2 + 0.4 == 60.70000000000001`：既让读回校验误判「未生效」，
+        # 又把一串毛刺数字吐给用户。
+        current_value = Decimal(str(current["stock"]))
+        new_value = current_value + adjustment_value
+        current_display = _stock_number(current_value)
+        new_stock = _stock_number(new_value)
+
+        if new_value < 0:
             return ToolResult(
                 success=False,
                 error="库存不足",
-                message=f"当前库存 {current_stock}，无法减少 {abs(adjustment)}",
+                message=f"当前库存 {current_display}，无法减少 {abs(adjustment_value)}",
                 suggestion="请向用户说明当前库存不足，确认是否减少调整数量或改为先入库后再出库",
             )
         
@@ -334,7 +402,7 @@ class InventoryManageTool(BaseTool):
         # 但仍返回 success → agent 报"已调整"而 DB 未变（假成功）。
         # 现在改调 agent 专用库存端点 /api/admin/agent/products/{id}/stock，
         # 并读回校验端点返回的 stock 是否等于 new_stock，不一致即 fail-closed。
-        update_payload: dict = {"adjustment": adjustment}
+        update_payload: dict = {"adjustment": adjustment_clean}
         if reason:
             update_payload["reason"] = reason
         response = await client.patch(
@@ -364,17 +432,20 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="库存调整未生效",
                 message=(
-                    f"库存调整未生效：预期 {current_stock} → {new_stock}，"
+                    f"库存调整未生效：预期 {current_display} → {new_stock}，"
                     f"但系统读回仍为 {actual_stock}。为避免误导，本次操作已标记失败，"
                     f"请在商家后台库存页面核实后重试。"
                 ),
                 suggestion="库存写入链路异常，请联系技术支持核查 SKU 库存端点",
             )
 
-        adjust_text = f"增加 {adjustment}" if adjustment > 0 else f"减少 {abs(adjustment)}"
+        adjust_text = (
+            f"增加 {adjustment_clean}" if adjustment_value > 0
+            else f"减少 {abs(adjustment_clean)}"
+        )
         logger.info(
             f"Inventory adjusted: product_id={product_id}, "
-            f"adjustment={adjustment}, {current_stock} -> {new_stock}, "
+            f"adjustment={adjustment_clean}, {current_display} -> {new_stock}, "
             f"reason={reason}, tenant={context.tenant_id}, user={context.user_id}"
         )
 
@@ -382,12 +453,12 @@ class InventoryManageTool(BaseTool):
             success=True,
             data={
                 "product_id": product_id,
-                "previous_stock": current_stock,
-                "adjustment": adjustment,
+                "previous_stock": current_display,
+                "adjustment": adjustment_clean,
                 "new_stock": new_stock,
                 "reason": reason,
             },
-            message=f"库存已{adjust_text}，{current_stock} → {new_stock}",
+            message=f"库存已{adjust_text}，{current_display} → {new_stock}",
         )
     
     async def _low_stock_alert(

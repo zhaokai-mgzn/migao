@@ -74,7 +74,7 @@ public class ProductUpdateRequest {
     /**
      * 库存数量
      */
-    private Integer stock;
+    private BigDecimal stock;
 
     /**
      * 库存预警阈值

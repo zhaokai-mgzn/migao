@@ -350,7 +350,7 @@ class ProductControllerTest extends BaseControllerTest {
             LowStockByColorResponse item = new LowStockByColorResponse();
             item.setColorName("深灰");
             item.setDoorWidth("2.5m");
-            item.setStock(50);
+            item.setStock(BigDecimal.valueOf(50));
 
             when(productService.getLowStockByColor(100, 50))
                     .thenReturn(List.of(item));

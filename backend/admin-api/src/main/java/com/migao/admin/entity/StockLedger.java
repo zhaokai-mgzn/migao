@@ -1,5 +1,6 @@
 package com.migao.admin.entity;
 
+import java.math.BigDecimal;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
@@ -53,12 +54,12 @@ public class StockLedger {
 
     private String skuCode;
 
-    /** 变化量（正=入库/回补，负=出库/扣减），恒等于 afterQty - beforeQty */
-    private Integer delta;
+    /** 变化量（正=入库/回补，负=出库/扣减），恒等于 afterQty - beforeQty（NUMERIC(12,1)，V115/#5063） */
+    private BigDecimal delta;
 
-    private Integer beforeQty;
+    private BigDecimal beforeQty;
 
-    private Integer afterQty;
+    private BigDecimal afterQty;
 
     /** 见 {@link #REASON_ORDER} / {@link #REASON_AFTERSALES} / {@link #REASON_MANUAL} / {@link #REASON_INBOUND} */
     private String reason;

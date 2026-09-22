@@ -13,6 +13,7 @@ import type {
   ProductSku,
 } from '@/types'
 import { cn } from '@/lib/utils'
+import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
 
 // ============================================================
 // 入库单（V111，issue #5034）—— 商品布料入库
@@ -22,6 +23,8 @@ import { cn } from '@/lib/utils'
 //   ② 过账 —— 服务端**自动生成批次号** + **自动加库存** + 落库存台账 + 按移动加权平均算成本；
 //   ③ 作废（仅草稿）—— 已过账的库存已进台账，冲销须另开单据。
 // 批次粒度 = **一个 SKU 行 = 一个批次**（用户裁定 2026-09-23）。
+// 数量口径（issue #5063）：库存米数**小数化**，0.1 米粒度 ⇒ 数量「≥1 且最多 1 位小数」，
+//   与后端 admin-api 同一判据；超 1 位小数**显式拒绝**（不静默取整），见 lib/stock-quantity.ts。
 
 const STATUS_OPTIONS: { value: InboundOrderStatus | ''; label: string }[] = [
   { value: '', label: '全部状态' },
@@ -183,11 +186,12 @@ export default function InboundOrdersPage() {
       toast.error('请至少勾选一个 SKU 作为入库明细')
       return
     }
-    // 数量必须 ≥1 的整数 —— 与后端同一判据（按米入库暂不支持小数米，后端会显式拒绝）
+    // 数量必须 ≥1 且**最多 1 位小数**（0.1 米粒度）—— 与后端同一判据。
+    // 超 1 位小数**显式拒绝**，绝不静默取整/截断（账面库存要照米数对得上）。
     for (const l of draftLines) {
-      const q = Number(l.quantity)
-      if (!Number.isInteger(q) || q < 1) {
-        toast.error(`「${l.label}」的数量必须是 ≥1 的整数（按米入库暂不支持小数米）`)
+      const reason = checkStockQuantity(l.quantity)
+      if (reason) {
+        toast.error(`「${l.label}」的${reason}`)
         return
       }
       if (l.unitCost !== '' && !(Number(l.unitCost) > 0)) {
@@ -335,7 +339,7 @@ export default function InboundOrdersPage() {
                 <td className="px-4 py-2.5 text-neutral-600">{row.supplier || '-'}</td>
                 <td className="px-4 py-2.5 text-neutral-600">{row.warehouse || '-'}</td>
                 <td className="px-4 py-2.5 text-right text-neutral-600">
-                  {row.itemCount} / {row.totalQuantity}
+                  {row.itemCount} / {formatStockQuantity(row.totalQuantity)}
                 </td>
                 <td className="px-4 py-2.5 text-right text-neutral-900">
                   {row.totalAmount != null ? `¥${Number(row.totalAmount).toFixed(2)}` : '-'}
@@ -483,7 +487,9 @@ export default function InboundOrdersPage() {
                       <span className="flex-1">
                         {sku.colorName || '默认色'} / {sku.doorWidth || '默认门幅'}
                       </span>
-                      <span className="text-neutral-500">当前库存 {sku.stock ?? 0}</span>
+                      <span className="text-neutral-500">
+                        当前库存 {formatStockQuantity(sku.stock ?? 0)}
+                      </span>
                     </label>
                   )
                 })}
@@ -521,7 +527,7 @@ export default function InboundOrdersPage() {
                         <input
                           type="number"
                           min={1}
-                          step={1}
+                          step={0.1}
                           aria-label={`${l.label} 数量`}
                           value={l.quantity}
                           onChange={(e) => patchLine(l.skuId, { quantity: e.target.value })}
@@ -573,6 +579,7 @@ export default function InboundOrdersPage() {
                 </tbody>
               </table>
               <p className="text-xs text-neutral-400 mt-2">
+                数量按 0.1 米粒度（如 60.5 米），最多 1 位小数 —— 超 1 位小数会被拒绝，不会四舍五入；
                 单价留空 = 只加数量、不算成本（均价保持原值）；缸号是供应商给的外部事实，与系统批次号是两件事。
               </p>
             </div>
@@ -663,7 +670,7 @@ export default function InboundOrdersPage() {
                     <td className="px-3 py-2 text-neutral-700">
                       {it.skuCode || '-'} / {it.colorName || '-'} / {it.doorWidth || '-'}
                     </td>
-                    <td className="px-3 py-2 text-right">{it.quantity}</td>
+                    <td className="px-3 py-2 text-right">{formatStockQuantity(it.quantity)}</td>
                     <td className="px-3 py-2 text-right">
                       {it.unitCost != null ? `¥${Number(it.unitCost).toFixed(2)}` : '未记'}
                     </td>

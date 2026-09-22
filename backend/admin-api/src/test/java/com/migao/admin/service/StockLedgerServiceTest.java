@@ -5,6 +5,7 @@
 
 package com.migao.admin.service;
 
+import java.math.BigDecimal;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockLedger;
@@ -77,16 +78,16 @@ class StockLedgerServiceTest {
     @DisplayName("record —— 写入行的 before/after/delta 三者自洽，reason/refNo/note/tenant 原样落库")
     void recordWritesSelfConsistentRow() {
         StockLedger row = captureRecorded(() -> stockLedgerService.record(
-                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", 30, 20,
+                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", BigDecimal.valueOf(30), BigDecimal.valueOf(20),
                 StockLedger.REASON_MANUAL, null, "报损"));
 
         assertThat(row.getTenantId()).isEqualTo(TENANT_ID);
         assertThat(row.getProductId()).isEqualTo(PRODUCT_ID);
         assertThat(row.getSkuId()).isEqualTo(100L);
         assertThat(row.getSkuCode()).isEqualTo("SKU-100");
-        assertThat(row.getBeforeQty()).isEqualTo(30);
-        assertThat(row.getAfterQty()).isEqualTo(20);
-        assertThat(row.getDelta()).as("delta 必须由 after-before 推出").isEqualTo(-10);
+        assertThat(row.getBeforeQty()).isEqualTo(BigDecimal.valueOf(30));
+        assertThat(row.getAfterQty()).isEqualTo(BigDecimal.valueOf(20));
+        assertThat(row.getDelta()).as("delta 必须由 after-before 推出").isEqualTo(BigDecimal.valueOf(-10));
         assertThat(row.getReason()).isEqualTo(StockLedger.REASON_MANUAL);
         assertThat(row.getRefNo()).isNull();
         assertThat(row.getNote()).isEqualTo("报损");
@@ -97,12 +98,12 @@ class StockLedgerServiceTest {
     @DisplayName("record —— 订单/工单流水带 refNo（无单据号就答不出「哪一单改的」）")
     void recordKeepsRefNo() {
         StockLedger row = captureRecorded(() -> stockLedgerService.record(
-                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", 20, 22,
+                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", BigDecimal.valueOf(20), BigDecimal.valueOf(22),
                 StockLedger.REASON_AFTERSALES, "AS-20260918-0001", "退货回补"));
 
         assertThat(row.getReason()).isEqualTo(StockLedger.REASON_AFTERSALES);
         assertThat(row.getRefNo()).isEqualTo("AS-20260918-0001");
-        assertThat(row.getDelta()).isEqualTo(2);
+        assertThat(row.getDelta()).isEqualTo(BigDecimal.valueOf(2));
     }
 
     @Test
@@ -114,13 +115,13 @@ class StockLedgerServiceTest {
                 new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
 
         StockLedger withAuth = captureRecorded(() -> stockLedgerService.record(
-                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", 10, 12,
+                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", BigDecimal.valueOf(10), BigDecimal.valueOf(12),
                 StockLedger.REASON_MANUAL, null, "盘点"));
         assertThat(withAuth.getOperator()).isEqualTo("13800138000");
 
         SecurityContextHolder.clearContext();
         StockLedger withoutAuth = captureRecorded(() -> stockLedgerService.record(
-                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", 12, 11,
+                TENANT_ID, PRODUCT_ID, 100L, "SKU-100", BigDecimal.valueOf(12), BigDecimal.valueOf(11),
                 StockLedger.REASON_MANUAL, null, "报损"));
         assertThat(withoutAuth.getOperator()).isEqualTo(StockLedgerService.OPERATOR_SYSTEM);
     }
@@ -144,9 +145,9 @@ class StockLedgerServiceTest {
         verify(stockLedgerMapper).insert(captor.capture());
         StockLedger row = captor.getValue();
         assertThat(row.getSkuId()).isEqualTo(100L);
-        assertThat(row.getBeforeQty()).isEqualTo(10);
-        assertThat(row.getAfterQty()).isEqualTo(15);
-        assertThat(row.getDelta()).isEqualTo(5);
+        assertThat(row.getBeforeQty()).isEqualTo(BigDecimal.valueOf(10));
+        assertThat(row.getAfterQty()).isEqualTo(BigDecimal.valueOf(15));
+        assertThat(row.getDelta()).isEqualTo(BigDecimal.valueOf(5));
         assertThat(row.getRefNo()).isEqualTo("AS-1");
     }
 
@@ -174,7 +175,7 @@ class StockLedgerServiceTest {
         Map<Long, ProductSku> snapshot = stockLedgerService.snapshotSkus(Set.of(PRODUCT_ID));
 
         assertThat(snapshot).containsOnlyKeys(100L, 200L);
-        assertThat(snapshot.get(100L).getStock()).isEqualTo(10);
+        assertThat(snapshot.get(100L).getStock()).isEqualTo(BigDecimal.valueOf(10));
         assertThat(stockLedgerService.snapshotSkus(List.of())).isEmpty();
     }
 
@@ -247,7 +248,7 @@ class StockLedgerServiceTest {
         s.setTenantId(TENANT_ID);
         s.setProductId(PRODUCT_ID);
         s.setSkuCode("SKU-" + id);
-        s.setStock(stock);
+        s.setStock(BigDecimal.valueOf(stock));
         s.setUpdatedAt(OffsetDateTime.now());
         return s;
     }

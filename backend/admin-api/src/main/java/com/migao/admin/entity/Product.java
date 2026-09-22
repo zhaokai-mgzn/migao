@@ -68,7 +68,7 @@ public class Product {
      * 库存数量
      */
     @TableField("stock")
-    private Integer stock = 0;
+    private BigDecimal stock = BigDecimal.ZERO;
 
     /**
      * 库存预警阈值
@@ -84,7 +84,7 @@ public class Product {
     /**
      * 累计销量
      */
-    private Integer salesCount;
+    private BigDecimal salesCount;
 
     /**
      * 累计销售额

@@ -1383,7 +1383,7 @@ class AfterSalesTicketServiceTest {
         sku.setTenantId(1L);
         sku.setProductId("prod-1");
         sku.setSkuCode("SKU-" + id);
-        sku.setStock(stock);
+        sku.setStock(BigDecimal.valueOf(stock));
         return sku;
     }
 
