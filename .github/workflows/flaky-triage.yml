@@ -51,6 +51,18 @@ name: Flaky Triage (失败重跑分流)
 #      打印 `mergeStateStatus` / check-runs），不是静默失效；如需更强兜底，另开单做
 #      「独立定时对账」。
 #
+# ── #5100：台账**追加路径不自愈**的根治（实测，别再重新猜）────────────────────────
+# 病根：旧实现在**分支自己的 HEAD**（旧基线）上追加（`git checkout -B "$BRANCH" FETCH_HEAD`），
+#   而台账 PR 走 **squash 合并** ⇒ 分支历史**永不含** main 上那个 squash 提交 ⇒ 一个**只追加**
+#   的分支 **behind_by 永远 > 0** ⇒ **每轮都会再冲突**（实测 `compare/main...chore/flaky-ledger`
+#   = `diverged, ahead_by 34, behind_by 16`；兜底判据 ~72 次/天红 ⇒ 告警疲劳，且掩盖真实失效）。
+#   ⇒ **一次性 rebase 只是止血**，下一次追加原样复发（内容其实是「只追加超集」，零信息损失）。
+# 修法（**单一写者设计不变**：仍只有本文件写这条分支；reconcile 只 approve/arm，不写内容）：
+#   步骤④ **推送前先与 main 对齐** —— 取 main 侧台账 → 按幂等键 `workflow|run_id|job` **并集**
+#   （复用 `append_entries`：幂等且不丢条目）→ 在**最新 main 之上**提交 → `--force-with-lease`
+#   推送（lease 失败 = 别人刚推 ⇒ **重取重算，绝不强推**）。
+#   判据：`tests/unit_ci_workflows/test_flaky_ledger_append_selfheal.py`（六条，均带注入式红证）。
+#
 # 守卫（本文件的结构不许被静默改坏）：`tests/unit_ci_workflows/test_flaky_triage.py`，
 # 跑在 **required** 的 `ci workflow helper unit tests` 里（每条判据都带注入式红证）。
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,10 +209,13 @@ jobs:
             echo "💬 已贴 triage 评论"
           fi
 
-      # ── ④ 记账：只追加 + 幂等，落仓 `.github/flaky-ledger.json` ───────────────
+      # ── ④ 记账：**推前先与 main 对齐** + 只追加 + 幂等，落仓 `.github/flaky-ledger.json` ──
       # ⚠️ 台账**直推 main 被分支保护拒绝**（实测 409「Changes must be made through a
       #    pull request. 12 of 12 required status checks are expected.」）⇒ 只能走 PR。
-      - name: ④ 台账追加（只追加 + 幂等；落仓 = 文件，不是隐藏状态）
+      # ⚠️ **#5100 根治（实测根因）**：台账 PR 走 **squash 合并** ⇒ 分支历史**永不含** main 上
+      #    那个 squash 提交 ⇒ 旧实现「在**分支自己的 HEAD**（旧基线）上追加」⇒ 只追加的分支
+      #    **behind_by 永远 > 0** ⇒ 每轮再冲突（一次性 rebase 只是止血）。修法 = 推前先与 main 对齐。
+      - name: ④ 台账追加（**推前先与 main 对齐**：并集 + 最新 main 之上重放 + lease 推送）
         id: ledger
         if: steps.decide.outputs.entry_count != '0'
         env:
@@ -209,29 +224,49 @@ jobs:
         run: |
           set -uo pipefail
           BRANCH="chore/flaky-ledger"
-          # 台账分支已存在 ⇒ 以它为基线（避免与未合并的既有条目分叉）
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            git fetch --quiet origin "$BRANCH"
-            git checkout -B "$BRANCH" FETCH_HEAD
-          else
-            git checkout -B "$BRANCH"
-          fi
-          python3 .github/scripts/flaky_ledger.py append \
-            --ledger .github/flaky-ledger.json --entries /tmp/flaky-entries.json
+          # `--align-main`（#5100）= ① 取 `origin/main` 侧台账（**权威态**）② 取远端分支侧台账
+          #   （并记下它的 HEAD 当 lease 期望值）③ 按幂等键 `workflow|run_id|job` **并集**
+          #   （复用 `append_entries`：幂等、不丢条目）④ `git checkout -B "$BRANCH" origin/main`
+          #   并把并集写回台账文件 ⇒ 本步骤之后的 `git diff` 基线是 **main**（不再是旧分支），
+          #   提交落在**最新 main 之上**。
+          # ⚠️ 任一步取不到事实 ⇒ 脚本**抛错退出**（fail-closed）：绝不许把「取不到 main 台账」
+          #    当「main 没有条目」继续 —— 那会**丢 main 的条目**（并集的全部意义）。
+          # ⚠️ 用**工作区**脚本 = main 的副本（checkout 的 `ref:` 就是 main，本步骤之前没人切过树）。
+          #    勿改成「切树之后跑工作区脚本」—— 那时它是**台账分支的旧副本**（#4825 实测
+          #    `invalid choice: 'approve'`）。④b 另取 /tmp 副本给步骤⑤ 用。
+          align_and_append() {
+            python3 .github/scripts/flaky_ledger.py append \
+              --align-main --branch "$BRANCH" --ledger .github/flaky-ledger.json \
+              --entries /tmp/flaky-entries.json --gh-output "$GITHUB_OUTPUT" || {
+              echo "::error::推前对齐失败（取 main/分支台账或重放失败）⇒ 拒绝在旧基线上追加（fail-closed）"; exit 1; }
+            # lease = 对齐那一刻**远端**分支 HEAD（空 = 分支尚不存在）⇒ 推送前用它防并发覆盖
+            EXPECTED=$(sed -n 's/^lease=//p' "$GITHUB_OUTPUT" | tail -1)
+            LEASE=""
+            [ -n "$EXPECTED" ] && LEASE="--force-with-lease=$EXPECTED"
+            return 0
+          }
+          align_and_append
           # 幂等判据（机械）：同 (workflow, run_id, job) 已登记 ⇒ append 是空操作 ⇒ 无 diff
           if git diff --quiet -- .github/flaky-ledger.json; then
             echo "::notice::⏭️ 台账无新增（幂等：同一 (workflow, run_id, job) 已登记）"
           else
-            git config user.name "migao-flaky-bot"
-            git config user.email "flaky-bot@users.noreply.github.com"
-            git add .github/flaky-ledger.json
-            git commit -q -m "chore(ci): flaky 台账追加（run ${RUN_ID}）"
-            git push --quiet origin "$BRANCH" || {
-              echo "::error::台账 push 失败 ⇒ 记账**未落仓**（fail-closed，不静默）"; exit 1; }
+            PUSHED=""
+            for attempt in 1 2 3; do
+              git config user.name "migao-flaky-bot"
+              git config user.email "flaky-bot@users.noreply.github.com"
+              git add .github/flaky-ledger.json
+              git commit -q -m "chore(ci): flaky 台账追加（run ${RUN_ID}）"
+              if git push --quiet $LEASE origin "$BRANCH"; then PUSHED="1"; break; fi
+              # lease 失败 = 别人刚推过 ⇒ **不强推**，重取重算（并集幂等 ⇒ 重复调用无副作用）
+              echo "::warning::台账 push 的 lease 失败（远端已被别人推过）⇒ **不强推**，重取重算（第 ${attempt} 次）"
+              align_and_append
+            done
+            [ -n "$PUSHED" ] || {
+              echo "::error::台账 push 连续 lease 失败 ⇒ 记账**未落仓**（fail-closed，不静默）"; exit 1; }
             # 落仓复核：**远端 ref** 必须就是本次提交（判据是远端，不是本地 git log）
             git fetch --quiet origin "$BRANCH"
             [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ] || {
-              echo "::error::台账未落到远端分支 $BRANCH（落仓复核失败）"; exit 1; }
+              echo "::error::台账未落到远端分支 ${BRANCH}（落仓复核失败）"; exit 1; }
           fi
           PR=$(gh pr list --head "$BRANCH" --state open --json number \
                  --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
@@ -251,16 +286,17 @@ jobs:
             [ -n "$PR" ] || { echo "::error::台账 PR 创建后取不到 PR 号 ⇒ fail-closed"; exit 1; }
           fi
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
-          echo "::notice::📒 flaky 台账已追加并推送 $BRANCH（远端 ref 复核通过）—— PR #$PR 待批准后走 required 检查"
+          echo "::notice::📒 flaky 台账已追加并推送 ${BRANCH}（远端 ref 复核通过）—— PR #$PR 待批准后走 required 检查"
 
       # ── ④b 取 **main** 上的判据脚本副本（#4825 实测根因：工作区已被步骤④ 切到台账分支）──
-      # ⚠️ **勿删、勿改回工作区那份**：步骤④ `git checkout -B "$BRANCH" FETCH_HEAD` 已把工作区
-      #    切到**台账分支** ⇒ 直接跑工作区里的 `.github/scripts/flaky_ledger.py`，执行的是
-      #    **台账分支的旧副本**（该分支 fork 自 #4804 之前的 main ⇒ **没有 `approve` 子命令**）
+      # ⚠️ **勿删、勿改回工作区那份**：步骤④ 已把工作区切到**台账分支**（脚本内 `git checkout -B
+      #    "$BRANCH" origin/main`）⇒ 跑工作区里的 `.github/scripts/flaky_ledger.py` 拿到的是
+      #    **该分支上的副本**：历史上它 fork 自 #4804 之前的 main ⇒ **没有 `approve` 子命令**
       #    ⇒ 实测报 `error: argument cmd: invalid choice: 'approve'`。
       #    后果 = **死锁**：要 approve 才能把台账落 main，而 approve 只存在于 main 的脚本里，
       #    台账分支永远拿不到它 ⇒ 步骤⑤ 自上线起**从未成功过一次**（main 侧台账恒为 0 条）。
-      #    故本步骤显式从 `origin/main` 取副本；步骤⑤ 只允许用这个副本。
+      #    #5100 之后该分支每次追加都会被重基到 main（这个具体形态已大幅收敛），但「判据与动作
+      #    必须与 main 同源」这条纪律**不变** —— 故仍显式从 `origin/main` 取副本，步骤⑤ 只用它。
       - name: ④b 取 main 上的判据脚本副本（#4825：工作区此时是台账分支，不是 main）
         if: steps.decide.outputs.entry_count != '0'
         run: |
