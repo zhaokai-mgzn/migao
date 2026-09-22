@@ -58,6 +58,25 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
     List<ProcessingOrder> selectByKeyword(@Param("keyword") String keyword, @Param("tenantId") Long tenantId);
 
     /**
+     * 这批订单里**已有活跃加工单**的那些（issue #5169 待派池的排除面）。
+     *
+     * <p>活跃口径与 {@link #selectActiveByOrderId} / {@code uk_processing_orders_active}
+     * **逐字相同**（非取消态 + 未软删）—— 池 = 「已确认支付 **且不在本方法结果里**」的订单，
+     * 少一个口径就会出现「池里看得见、派的时候被唯一键拒掉」这种自相矛盾的读面。</p>
+     *
+     * <p>返回**标量 order_id**，故不需要 {@code @ResultMap}（那个注解是给
+     * {@code items_snapshot} 这个 JSONB 列用的，见类注释）；本方法一个 JSONB 列都不碰。</p>
+     *
+     * @param orderIds 非空集合（调用方保证；空集合会被渲染成 {@code IN ()} 而语法错误）
+     */
+    @Select("<script>SELECT DISTINCT order_id FROM processing_orders WHERE tenant_id = #{tenantId} "
+            + "AND deleted = 0 AND status IN ('generated','issued','in_processing','completed') "
+            + "AND order_id IN <foreach item='id' collection='orderIds' open='(' separator=',' close=')'>"
+            + "#{id}</foreach></script>")
+    List<String> selectActiveOrderIds(@Param("tenantId") Long tenantId,
+                                      @Param("orderIds") java.util.Collection<String> orderIds);
+
+    /**
      * 订单是否已有完成的加工单（shipped 守卫用）
      */
     @Select("SELECT COUNT(1) FROM processing_orders WHERE order_id = #{orderId} AND tenant_id = #{tenantId} " +
