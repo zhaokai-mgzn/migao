@@ -378,7 +378,7 @@ jobs:
         # buildx + `type=gha` 让层跨 run 复用：命中时大幅缩短，未命中只是退化为全量重建。
         # ⚠️ 这里的 buildx 不再只是"让 compose 用 BuildKit"——下方构建段会**显式**调
         #    `docker buildx build`，故这一步是硬依赖（原注释描述的是旧用法，已更新）。
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: "Export dev RS256 keys for stack (issue #3270)"
         # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
@@ -889,7 +889,7 @@ jobs:
       - name: Download 两 persona 汇总（issue 要点来源）
         # 取不到 artifact 不能挡住建 issue（否则又回到"静默"）→ continue-on-error
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
