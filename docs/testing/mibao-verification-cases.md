@@ -4045,7 +4045,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（48 case）
+## 商品域（49 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4345,7 +4345,7 @@
 跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.draft-then-post
-溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24（issue #5148 用例库同步）：**整格改判** —— 本条仍写「数量 ≥1 整数 / 按米入库暂不支持小数米」，而 #5063（V115，已合入 94aacbc46）已把入库数量放宽到 **1 位小数**（超 1 位小数由服务端显式拒绝）⇒ 陈旧真值源订正为现状口径。**判据一格不放宽**：被拒的仍是 0 / 负数 / 超 1 位小数 / 非正单价 / 串 SKU。 ｜ tags: inventory, inbound, backend-contract
 
 ### PR-030. 入库单过账：自动生成批次号 + 自动加库存 + 落台账 + 落批次台账（含缸号） 🔵
 ```
@@ -4367,11 +4367,11 @@
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
 
-### PR-032. 入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品 🔵
+### PR-032. 入库单建单校验：数量 ≥1 米且**最多 1 位小数**、单价 >0、SKU 必须属于该商品 🔵
 ```
 你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
 期望: direct_reply
-数据: 数量 0/负数/非整数被拒（按米入库暂不支持小数米，**不静默取整**）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）
+数据: 数量 0 / 负数被拒；**超过 1 位小数**（如 2.755）被**显式拒绝**且文案说明 0.1 米粒度（V115/#5063 起入库量支持 1 位小数，**不静默取整**成 2.8）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）
 跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.draft-then-post
@@ -4629,6 +4629,20 @@
 ```
 真值: batch-ledger.dispatch-deduct, batch-ledger.reconcile
 溯源: 2026-09-22 新增：#5145 阶段 1 的后台可见面 —— 派工批次指派对话框（文员指定，系统给候选 + 建议值、可改）+ 批次余量/剩余量分布/对账三读面。读面挂在商品详情库存区（复用既有页，不新造导航）。取号 PR-057（原 PR-054，rebase 后整组顺延）。 ｜ tags: product, ui, stock, batch, backend_contract
+
+### PR-058. 入库单幂等与并发：并发过账只加一次库存；进程重启后当天仍能建单；同一 import_run_id 重跑不建第二张 🔵
+```
+你: 入库单的并发过账 / 重跑导入 / 服务重启后建单（非 LLM 行为，由 Java 单测 + 真 PG 判据覆盖）
+期望: direct_reply
+数据: 判据 1·**并发过账闸**：两个并发过账 ⇒ **恰好一个成功**、库存**只加一次**、台账**只落一条**。判据源 = 条件更新 CAS（`UPDATE inbound_orders SET status='posted', posted_at, posted_by … WHERE id AND tenant_id AND status='draft' AND deleted=0`，按**影响行数**判是否抢到过账权；PG 行锁持有到事务结束），SQL 从 `backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java` 的真源码取；真 PG 两会话并发实测读数：`claimed=1` / `claimed=0`、库存 5 → 35、台账 1 条、单据 posted。**注入红证** = 换回改前形态（先 `SELECT status` 判 draft 再干活）⇒ 两会话**都**读到 draft ⇒ 库存 5 → 65、台账 2 条（证明「只加一次」不是恒真）。
+数据: 判据 2·**重启/多副本当天首个建单必须成功**：进程内计数器归零后取号会再次走到 `RK-<今天>-0001`（当天已被占）⇒ 改前直接撞唯一索引、建单失败；改后取号前查库内占用并**重试**（上限 20 次，同批次号 `nextFreeBatchNo` 范式）⇒ 建单成功且换用未占用的号（真 PG 兜底 = `uk_inbound_orders_no (tenant_id, inbound_no) WHERE deleted = 0`）。
+数据: 判据 3·**建单幂等（GAP-02）**：同一 `(tenant_id, import_run_id)` 重跑建单 ⇒ **返回同一张单**（不建第二张；两张都过账 = 库存加两次）。真 PG 实测：第二张被 `uk_inbound_orders_tenant_import_run (tenant_id, import_run_id) WHERE import_run_id IS NOT NULL AND deleted = 0` 挡下、同键单据数 = 1；**注入红证** = DROP 该索引 ⇒ 同键 2 张。**不误伤**：不带运行标识的普通建单可并存、另一租户同键允许。
+数据: 判据 4·**口径一致**：单号唯一索引范围 = **租户内**（与 V111 建表注释逐字写的「租户内唯一」一致；改前是全局唯一索引 ⇒ 注释与索引矛盾，且另一租户同号会把本租户的建单挡下）；`source ∈ {purchase, opening}` 有 CHECK 取值约束（写 `gift` 当场拒绝），缺省 `purchase`。
+数据: 判据 5·**不损失客户**：既有单行/多行过账行为、移动加权均价、台账 `ref_no` = 入库单号、成本快照逐值不变；不带 `import_run_id` 的建单行为与改前逐字一致。
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-24 新增（issue #5148，P1）：入库单过账/建单的幂等与并发健壮性 —— 并发过账闸（条件更新 CAS）、单号取号重试、建单运行级幂等键（V117）+ 单号索引口径统一 + 过期 javadoc 订正。 ｜ tags: inventory, inbound, backend-contract
 
 ## 工具注册器域（1 case）
 
@@ -5525,8 +5539,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：405（活跃 156，跳过 249）
-- tier 分布：smoke 10 / normal 364 / adversarial 31
+- 用例总数：406（活跃 156，跳过 250）
+- tier 分布：smoke 10 / normal 365 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5546,7 +5560,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：52
-- 商品域：48
+- 商品域：49
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

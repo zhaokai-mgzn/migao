@@ -6089,16 +6089,16 @@ _CASE_PR_031 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-032 [NORMAL] 入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品（源: cases/product.yml）──
+# ── PR-032 [NORMAL] 入库单建单校验：数量 ≥1 米且**最多 1 位小数**、单价 >0、SKU 必须属于该商品（源: cases/product.yml）──
 _CASE_PR_032 = EvalCase(
     id='PR-032',
     legacy_id='',
-    title='入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品',
+    title='入库单建单校验：数量 ≥1 米且**最多 1 位小数**、单价 >0、SKU 必须属于该商品',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
     expectations=['direct_reply'],
-    data_checks=['数量 0/负数/非整数被拒（按米入库暂不支持小数米，**不静默取整**）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）'],
+    data_checks=['数量 0 / 负数被拒；**超过 1 位小数**（如 2.755）被**显式拒绝**且文案说明 0.1 米粒度（V115/#5063 起入库量支持 1 位小数，**不静默取整**成 2.8）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）'],
     skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
     tags=['inventory', 'inbound', 'backend-contract'],
     persona='',
@@ -6515,6 +6515,24 @@ _CASE_PR_057 = EvalCase(
     data_checks=['判据 1·**不指派 ⇒ 行为与今天逐字相同**：一行都不可指派（无候选批次 / 候选查询失败）⇒ **不弹对话框**、`generate(orderIds)` **单参调用**（请求层断言：不指派时请求体里**没有** `batches` 键，不是空数组）。红证：让 `submitGenerate` 恒传第二参 ⇒ 本断言红。', '判据 2·**人工最终选择被如实记录**：对话框里逐行选批次 ⇒ 请求体 `batches` 逐条为 `{orderId, itemId, batchNo}`（`batchNo` = 文员改后的值，空选择的行**不**进 batches）；无可用批次的行**不给下拉**（不能选）。红证：去掉空选择过滤 / 给无候选行也渲染下拉 ⇒ 必红。', '判据 3·**系统给建议值且默认选中**：每行默认选中后端 `suggestedBatchNo`（可改）；余量不足的候选 disabled。红证：`defaultPickOf` 恒返回空串 ⇒ 必红。', '判据 4·**缺料可行动**：生成返回 `success=false` ⇒ 原样展示 `message` + `suggestion`（不得吞掉、不得改写）。红证：把 `suggestion` 换成空串 ⇒ 必红。', '判据 5·**读面口径说清**：余量表含「余量」列且文案写明「派生余量 = 入库量 − 已派工消耗」；分布**恒四档**（0 档也渲染）；对账表展示 `diff` 与分解腿，并写明「差额 = 已售未派 + 台账外存量，**不是异常**」；`reconciled=false` 显式告警 + `unreconciledCount` 报数。红证：四档 `filter(batchCount > 0)` / 文案改成「差额异常」/ 去掉告警块 ⇒ 各自必红。', '判据 6·**只读、不动钱**：读面板只调 `GET /api/admin/batch-stock/*`（无写端点）；对客金额/售价/成品尺寸一字未改。'],
     skip_reason='[backend-contract] 纯前端单元测试（admin-web vitest：ProcessingOrderBlock / BatchStockPanel / batch-stock 请求层），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['product', 'ui', 'stock', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-058 [NORMAL] 入库单幂等与并发：并发过账只加一次库存；进程重启后当天仍能建单；同一 import_run_id 重跑不建第二张（源: cases/product.yml）──
+_CASE_PR_058 = EvalCase(
+    id='PR-058',
+    legacy_id='',
+    title='入库单幂等与并发：并发过账只加一次库存；进程重启后当天仍能建单；同一 import_run_id 重跑不建第二张',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的并发过账 / 重跑导入 / 服务重启后建单（非 LLM 行为，由 Java 单测 + 真 PG 判据覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**并发过账闸**：两个并发过账 ⇒ **恰好一个成功**、库存**只加一次**、台账**只落一条**。判据源 = 条件更新 CAS（`UPDATE inbound_orders SET status='posted', posted_at, posted_by … WHERE id AND tenant_id AND status='draft' AND deleted=0`，按**影响行数**判是否抢到过账权；PG 行锁持有到事务结束），SQL 从 `backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java` 的真源码取；真 PG 两会话并发实测读数：`claimed=1` / `claimed=0`、库存 5 → 35、台账 1 条、单据 posted。**注入红证** = 换回改前形态（先 `SELECT status` 判 draft 再干活）⇒ 两会话**都**读到 draft ⇒ 库存 5 → 65、台账 2 条（证明「只加一次」不是恒真）。", '判据 2·**重启/多副本当天首个建单必须成功**：进程内计数器归零后取号会再次走到 `RK-<今天>-0001`（当天已被占）⇒ 改前直接撞唯一索引、建单失败；改后取号前查库内占用并**重试**（上限 20 次，同批次号 `nextFreeBatchNo` 范式）⇒ 建单成功且换用未占用的号（真 PG 兜底 = `uk_inbound_orders_no (tenant_id, inbound_no) WHERE deleted = 0`）。', '判据 3·**建单幂等（GAP-02）**：同一 `(tenant_id, import_run_id)` 重跑建单 ⇒ **返回同一张单**（不建第二张；两张都过账 = 库存加两次）。真 PG 实测：第二张被 `uk_inbound_orders_tenant_import_run (tenant_id, import_run_id) WHERE import_run_id IS NOT NULL AND deleted = 0` 挡下、同键单据数 = 1；**注入红证** = DROP 该索引 ⇒ 同键 2 张。**不误伤**：不带运行标识的普通建单可并存、另一租户同键允许。', '判据 4·**口径一致**：单号唯一索引范围 = **租户内**（与 V111 建表注释逐字写的「租户内唯一」一致；改前是全局唯一索引 ⇒ 注释与索引矛盾，且另一租户同号会把本租户的建单挡下）；`source ∈ {purchase, opening}` 有 CHECK 取值约束（写 `gift` 当场拒绝），缺省 `purchase`。', '判据 5·**不损失客户**：既有单行/多行过账行为、移动加权均价、台账 `ref_no` = 入库单号、成本快照逐值不变；不带 `import_run_id` 的建单行为与改前逐字一致。'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -8107,6 +8125,7 @@ ALL_CASES = (
     _CASE_PR_055,
     _CASE_PR_056,
     _CASE_PR_057,
+    _CASE_PR_058,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
