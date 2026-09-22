@@ -814,6 +814,42 @@
       "remedy": "排查 runner 容量 / 依赖源 / 网络：偶发一次属环境抖动；反复出现 ⇒ 查依赖锁定与 runner 超时配置",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 35675239197,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35675239197",
+      "pr": 4476,
+      "head_sha": "38f2461046b5fe99fbf3f661e3a23001e73887f7",
+      "head_branch": "dependabot/npm_and_yarn/frontend/admin-web/eslint-10.10.0",
+      "first_failure_step": "ESLint",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-22T01:22:58Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests",
+      "run_id": 35675347857,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35675347857",
+      "pr": 5106,
+      "head_sha": "6136089754f53400c49787a1ac045f9006433b5e",
+      "head_branch": "fix/5100-ledger-append-selfheal",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-22T01:28:42Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
