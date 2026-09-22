@@ -106,7 +106,9 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
       key,
       copy: CALC_PARAM_COPY[key],
     })),
-    advanced: CALC_ADVANCED_KEYS.filter((k) => CALC_SCALAR_KEYS.includes(k)).map((key) => ({
+    advanced: CALC_ADVANCED_KEYS.filter((k) =>
+      (CALC_SCALAR_KEYS as readonly string[]).includes(k)
+    ).map((key) => ({
       key,
       copy: CALC_PARAM_COPY[key],
     })),

@@ -39,13 +39,8 @@ interface Row {
   reason: string
 }
 
-/** 把「配置 + 覆盖的阈值」拼成服务端要的那一份（**不改原对象**） */
-function configWith(
-  config: CraftCalcConfig | null,
-  width: number,
-  height: number
-): CraftCalcConfig | null {
-  if (!config) return null
+/** 把「配置 + 覆盖的阈值」拼成服务端要的那一份（**不改原对象**；入参已收窄为非空） */
+function configWith(config: CraftCalcConfig, width: number, height: number): CraftCalcConfig {
   const bag = config as unknown as Record<string, unknown>
   return {
     ...bag,
@@ -73,15 +68,17 @@ export function OversizeThresholdPreview({ config }: Props) {
 
   useEffect(() => {
     if (!config || widthThreshold === '' || heightThreshold === '') return
+    // 显式收窄：闭包里 TS **不保留** `config` 的非空收窄（否则报 `CraftCalcConfig | null` 不可赋给 `config?`）
+    const cfg: CraftCalcConfig = config
     let alive = true
     const run = async () => {
       setError('')
       const [nowRes, adjRes] = await Promise.allSettled([
-        autoFeaturesApi.preview({ width, height, config }),
+        autoFeaturesApi.preview({ width, height, config: cfg }),
         autoFeaturesApi.preview({
           width,
           height,
-          config: configWith(config, Number(widthThreshold), Number(heightThreshold)),
+          config: configWith(cfg, Number(widthThreshold), Number(heightThreshold)),
         }),
       ])
       if (!alive) return
