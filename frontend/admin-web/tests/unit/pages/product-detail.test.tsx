@@ -1,8 +1,8 @@
-// case_ids: PR-011, PR-019, PR-042, PR-043, PR-044, OR-046
+// case_ids: PR-011, PR-019, PR-042, PR-043, PR-044, OR-046, UI-055
 // #4371：加工项与商品解耦 —— 商品详情页不再展示商品维度的「加工项」块
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // Mock API
 const mockGetProduct = vi.fn()
@@ -14,6 +14,31 @@ vi.mock('@/lib/api', () => ({
     updateProductStatus: (...args: any[]) => mockUpdateProductStatus(...args),
   },
 }))
+
+// Mock request（行内改价走 `request.patch`，见 SkuPriceCell.save）
+const mockPatch = vi.fn()
+vi.mock('@/lib/request', () => ({
+  default: { patch: (...args: any[]) => mockPatch(...args) },
+}))
+
+// **稳定** router：`tests/setup.ts` 的 `useRouter()` 每次调用返回**新对象**，而详情页的
+// `loadProduct` 以 router 为依赖 ⇒ effect 反复重跑、loading 态周期性回来（见下方既有注释）。
+// 只读断言可以躲在 `waitFor` 里，**交互型**断言（点开行内改价框 → 键入 → 提交）会被这个抖动
+// 打断（子组件随 loading 卸载、state 丢失）⇒ 本文件改用稳定 router，从根上消掉抖动。
+vi.mock('next/navigation', () => {
+  const router = {
+    push: vi.fn(), replace: vi.fn(), back: vi.fn(), forward: vi.fn(),
+    refresh: vi.fn(), prefetch: vi.fn(),
+  }
+  return {
+    useRouter: () => router,
+    usePathname: () => '/',
+    useSearchParams: () => new URLSearchParams(),
+    useParams: () => ({}),
+    redirect: vi.fn(),
+    notFound: vi.fn(),
+  }
+})
 
 // Mock useRouteId
 vi.mock('@/lib/use-route-id', () => ({
@@ -235,5 +260,61 @@ describe('ProductDetailPage', () => {
       expect(screen.getByText('1 卷 = 多少米')).toBeInTheDocument()
       expect(screen.getByText('未配置')).toBeInTheDocument()
     })
+  })
+})
+
+// ========== 行内改价（SkuPriceCell）的数值语义（issue #5228 缺口 2）==========
+//
+// ⚠️ 判据**不建在「`0.` 中间态」上**：jsdom 把 `type="number"` 的 `"0."` 归一成 `""`，
+// 真 Chromium 归一成 `"0"`（#5228 主会话真浏览器实测，两套读数**相反**）⇒ 谁在 jsdom 里拿它
+// 当判据，谁就是在拿与环境相反的读数下结论（必然假红或假绿）。
+// 这里钉的是**与引擎无关**的三条语义：完整串 ⇒ 提交原值；`0` ⇒ **不被当空**；空 ⇒ 显式拒绝（不是 0）。
+describe('ProductDetailPage — 行内改价 SkuPriceCell 的数值语义（issue #5228 缺口 2）', () => {
+  // ⚠️ 本 describe 与外层 `describe('ProductDetailPage')` 是**兄弟** ⇒ 不继承它的 `beforeEach`
+  // ⇒ 必须自己复位（否则 `mockPatch` 的调用次数跨用例累积，`toHaveBeenCalledTimes(1)` 会永远等不到）。
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProduct.mockResolvedValue({ data: { data: mockProduct } })
+    mockPatch.mockResolvedValue({ data: { data: {} } })
+  })
+
+  /** 打开第 1 个 SKU 的价格行内编辑框（夹具价 99.5），返回那个 input */
+  async function openPriceEditor() {
+    render(<ProductDetailPage />)
+    const cells = await screen.findAllByTitle('点击编辑价格')
+    fireEvent.click(cells[0])
+    return screen.getByDisplayValue('99.5') as HTMLInputElement
+  }
+
+  it('完整串 `0.5` ⇒ 提交的就是 0.5（原值：不取整、不被当空）', async () => {
+    const input = await openPriceEditor()
+    fireEvent.change(input, { target: { value: '0.5' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1))
+    expect(mockPatch).toHaveBeenCalledWith('/api/admin/agent/products/test-product-1/skus/1', {
+      price: 0.5,
+    })
+  })
+
+  it('`0` 不被当空（#5198 那族的病根本体）：输入 0 ⇒ 提交 price: 0，且不报「请输入有效价格」', async () => {
+    const input = await openPriceEditor()
+    fireEvent.change(input, { target: { value: '0' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1))
+    expect(mockPatch.mock.calls[0][1]).toEqual({ price: 0 })
+    const { toast } = await import('sonner')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('清空 ⇒ **不是 0**：提交被显式拒绝（可行动文案），且一个请求都不发', async () => {
+    const input = await openPriceEditor()
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    const { toast } = await import('sonner')
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('请输入有效价格'))
+    expect(mockPatch).not.toHaveBeenCalled()
   })
 })

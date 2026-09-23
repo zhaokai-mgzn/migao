@@ -1,4 +1,4 @@
-// case_ids: PR-046, PR-048, PR-062
+// case_ids: PR-046, PR-048, PR-062, UI-055
 //
 // 入库单页面 —— **库存米数小数化（0.1 米粒度，issue #5063）** 的前端动线。
 //   PR-045 = 库存米数支持 1 位小数（入库 60.5 米被接受、**原值**提交）；
@@ -252,5 +252,77 @@ describe('数量展示口径：最多 1 位小数、无浮点毛刺（PR-045）'
     expect(rowOf('SKU-FLOAT').getByText('3.3')).toBeInTheDocument()
     expect(screen.queryByText('3.3000000000000003')).not.toBeInTheDocument()
     expect(rowOf('SKU-NOISE').getByText('2.7')).toBeInTheDocument()
+  })
+})
+
+// ========== 建单三格（数量 / 单价 / 卷长）的数值语义（issue #5228 缺口 2）==========
+//
+// ⚠️ 判据**不建在「`0.` 中间态」上**：jsdom 把 `type="number"` 的 `"0."` 归一成 `""`，
+// 真 Chromium 归一成 `"0"`（#5228 主会话真浏览器实测，两套读数**相反**）。这里一律用
+// `fireEvent.change` **一次给完整串**，钉的是与引擎无关的语义：
+// 完整串 ⇒ 原值提交；空 ⇒ `null`（**不是 0**）；`0` ⇒ **不被当空**。
+describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与引擎无关（issue #5228 缺口 2）', () => {
+  /** 打开建单弹窗 → 勾一行（默认数量 1）→ 返回三格 */
+  async function threeCells() {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    const qty = await openCreateWithLine()
+    return {
+      qty,
+      cost: screen.getByLabelText(/单价$/) as HTMLInputElement,
+      roll: screen.getByLabelText(/卷长$/) as HTMLInputElement,
+    }
+  }
+
+  it('三格各给完整串 `0.5` ⇒ 原值提交 0.5（不取整、不当空）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: decimalDetail } })
+    const { qty, cost, roll } = await threeCells()
+    fireEvent.change(qty, { target: { value: '0.5' } })
+    fireEvent.change(cost, { target: { value: '0.5' } })
+    fireEvent.change(roll, { target: { value: '0.5' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
+      quantity: 0.5,
+      unitCost: 0.5,
+      rollLengthM: 0.5,
+    })
+  })
+
+  it('单价 / 卷长 留空 ⇒ `null`（**不是 0**）—— 「没填」与「填了 0」是两回事', async () => {
+    mockCreate.mockResolvedValue({ data: { data: decimalDetail } })
+    const { cost, roll } = await threeCells()
+    // 空态先在自己这一层确认（不依赖 DOM 对非法数字的归一化，故也与引擎无关）
+    expect(cost.value).toBe('')
+    expect(roll.value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    const item = mockCreate.mock.calls[0][0].items[0]
+    expect(item.unitCost).toBeNull()
+    expect(item.rollLengthM).toBeNull()
+  })
+
+  it('卷长 `0` 不被当空：输入 0 ⇒ 提交 rollLengthM: 0（不是 null）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: decimalDetail } })
+    const { roll } = await threeCells()
+    fireEvent.change(roll, { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    expect(mockCreate.mock.calls[0][0].items[0].rollLengthM).toBe(0)
+  })
+
+  it('单价 `0` ⇒ 显式拒绝并说清口径（既不静默当 0 提交、也不静默当空）', async () => {
+    const { cost } = await threeCells()
+    fireEvent.change(cost, { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    const { toast } = await import('sonner')
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('入库单价必须大于 0')),
+    )
+    expect(mockCreate).not.toHaveBeenCalled()
   })
 })
