@@ -1,0 +1,49 @@
+  [shot] /tmp/ua-evidence/00-登录页.png
+  登录页 title="米高 - AI电商管理系统" bodyLen=60
+✅ 登录成功
+  [reqfail] http://localhost:8090/api/admin/dashboard/product-ranking?period=day&limit=10 :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/dashboard/recent-orders?limit=5 :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/dashboard/stats :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/auth/me :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/dashboard/order-trend?days=7 :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/briefing/config :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/dashboard/product-ranking?period=day&limit=10 :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/dashboard/stats :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/briefing/config :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/notifications/unread-count :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/briefing/config :: net::ERR_ABORTED
+  [reqfail] http://localhost:8090/api/admin/notifications/unread-count :: net::ERR_ABORTED
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height
+  [初次进入 /orders/new] testids(2) = ["order-logistics-type","order-logistics-company"]
+  [初次进入 /orders/new] aria-labels(4) = ["用户菜单","返回","加急","Notifications alt+T"]
+  [shot] /tmp/ua-evidence/01-orders-new-初始.png
+✅ 已选商品
+  [选完商品] testids(14) = ["wizard-step-1","craft-plan-edit","craft-pleat-count","auto-detected-features","door-width-need-size","auto-feature-add-超高","auto-feature-add-超宽","auto-feature-add-倒幅","craft-plan-manual","craft-plan-join-height-input","wizard-step-2","order-logistics-type","order-logistics-company","unpriced-fee-alert"]
+  [选完商品] aria-labels(17) = ["用户菜单","返回","售卖形态","帘体","窗宽 (米)","窗高 (米)","用料米数","单价 (¥/米)","加工类型","打开方式","款式","用料公式","是否对花","拼接（人工加）","人工加接高（米）","加急","Notifications alt+T"]
+  [shot] /tmp/ua-evidence/02-选完商品.png
+✅ 已选颜色「浅灰」
+  [选完颜色] testids(13) = ["wizard-step-1","craft-plan-edit","craft-pleat-count","auto-detected-features","auto-feature-add-超高","auto-feature-add-超宽","auto-feature-add-倒幅","craft-plan-manual","craft-plan-join-height-input","wizard-step-2","order-logistics-type","order-logistics-company","unpriced-fee-alert"]
+  [选完颜色] aria-labels(17) = ["用户菜单","返回","售卖形态","帘体","窗宽 (米)","窗高 (米)","用料米数","单价 (¥/米)","加工类型","打开方式","款式","用料公式","是否对花","拼接（人工加）","人工加接高（米）","加急","Notifications alt+T"]
+  [shot] /tmp/ua-evidence/02b-选完颜色.png
+✅ 已填 窗宽 6.6
+✅ 已填 窗高 2.6
+  [net] 200 /api/admin/orders/auto-features :: {"success":true,"data":{"auto_features":[{"name":"超宽","source":"推算","reason":"净窗宽 6.6 米 > 超宽阈值 6.0 米"}],"notices":[{"kind":"cutting-mode-conflict","reason":"加工类型选了「定高买宽」，但成品高 2.6 + 上下卷边 0.3 = 2.9 米 超过本 SKU 门幅 2.8 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型）⇒ 按本 SKU 门幅口径，系统实际会按定宽买高算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"}],"door_width":2.8},"requestId":"req_7c67c2c5cfa14eea","timest
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不
+  [填完宽高] testids(28) = ["wizard-step-1","size-auto-badges","size-auto-badge-超宽","craft-plan","craft-plan-mode","craft-plan-source","craft-plan-craft","craft-plan-door-width","craft-plan-panels","craft-plan-splice","craft-plan-join-height","craft-plan-join-width","craft-plan-meters","craft-plan-reason","craft-plan-derived-options","craft-plan-derived-option-接高","craft-plan-derived-reject-接高","craft-plan-candidates","craft-plan-candidate-fixed_height","craft-plan-candidate-fixed_height_join_height","craft-plan-candidate-fixed_width","craft-plan-candidate-fixed_width_join_width","craft-plan-candidate-fixed_width_join_height","craft-plan-edit","wizard-step-2","order-logistics-type","order-logistics-company","unpriced-fee-alert"]
+  [填完宽高] aria-labels(10) = ["用户菜单","返回","售卖形态","帘体","窗宽 (米)","窗高 (米)","用料米数","单价 (¥/米)","加急","Notifications alt+T"]
+  [shot] /tmp/ua-evidence/03-填完宽高.png
+✅ craft-plan 面板已渲染
+    craft-plan-mode = "加工类型：定高买宽"
+    craft-plan-source = "系统推导"
+    craft-plan-craft = "工艺 韩褶（系统默认，可在③加工项改）"
+    craft-plan-door-width = "门幅 2.8 米"
+    craft-plan-panels = "分幅 —"
+    craft-plan-splice = "拼接 不拼接"
+    craft-plan-join-height = "接高 0.1 米"
+    craft-plan-join-width = "接宽 — 米"
+    craft-plan-meters = "用料 13.3 米"
+    craft-plan-reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+    candidates(5) = ["定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）","定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次","倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次","倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）","倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"]
+  [shot] /tmp/ua-evidence/04-推导面板.png
+PROBE_DONE_OK
