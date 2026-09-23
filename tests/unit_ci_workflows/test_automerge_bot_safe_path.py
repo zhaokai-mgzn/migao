@@ -75,11 +75,16 @@ ORIGINAL_NONBOT_IF_RAW = """      github.event.pull_request.base.ref == 'main' &
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')"""
 
-# ⚠️ 2026-09-22 刷新（`#5109` → `#5113`）：本常量 = **origin/main 当前内容**（判据 7 的语义是
-# 「非 bot 路径相对**当前主干**逐字不变」，不是「相对某个历史快照不变」）。`#5109` 给它加了
-# 「arm 后回读 autoMergeRequest」；`#5113` 把该回读改成**退避重试 + 按 mergeable 分流三态**
+# ⚠️ 2026-09-23（**#5235**）再次刷新：非 bot 路径的 **arm 增加有界重试**（3 次、退避 5/10 秒）
+# —— 真因是 GitHub 侧**瞬时** GraphQL 错误（两个失败 run 的逐字输出见 workflow 文件头），
+# 不是权限缺口，故修法是重试而不是补权限；判据仍是回读的 `autoMergeRequest`（重试后仍失败
+# **且**未 arm ⇒ 判红）。**刷新前**的历史（`#5109` → `#5113`）：`#5109` 加了「arm 后回读
+# autoMergeRequest」；`#5113` 把该回读改成**退避重试 + 按 mergeable 分流三态**
 # （`null` + `mergeable=UNKNOWN` ⇒ unknown、**非红**；`null` + `MERGEABLE` ⇒ 仍判红）。
-# 提取方式：从该 run 块按行取原文并**转义反斜杠**（双引号在 `"""` 串里无需转义）。
+# 本常量 = **origin/main 当前内容**（判据 7 的语义是「非 bot 路径相对**当前主干**逐字不变」，
+# 不是「相对某个历史快照不变」）⇒ 每次改这条腿都必须同步刷新它**并**在 PR 里说明改了什么。
+# 提取方式：从该 run 块按行取原文并**转义反斜杠**（双引号在 `"""` 串里无需转义）；
+# 行为面另由 `test_mechanism_jobs_alerting.py::TestAutomergeArmRetry` 真跑锁定。
 # 判别力自证：`test_nonbot_run_block_mutation_turns_the_assertion_red` —— 改一处即失配。
 ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
 
@@ -88,10 +93,26 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
           #    用 `rc=$?` 会覆盖主流程已判定的退出码（本脚本初版就这么错过一次）。
           trap 'trc=$?; rm -f "${merge_out:-}"; exit $trc' EXIT
 
+          # ---------- ① arm（**有界重试**：#5235 族 A）----------
+          # 真因（2026-09-23 两个失败 run `35872446921`(#5234) / `35871475072`(#5232) 的逐字输出）：
+          #     GraphQL: Something went wrong while executing your query on 2026-09-23T14:12:31Z.
+          #     Please include `4829:3FD750:2EC91:9A0B5:6AB3DE4E` when reporting this issue.
+          #   ⇒ **GitHub 侧瞬时错误**（带 request-id 的服务端报错）；同一 run 的权限面逐字是
+          #   `Contents: write / PullRequests: write` ⇒ **不是权限缺口、不是静态缺陷**。
+          # ⇒ 修法 = **重试**（不是补权限）。退避：最多 3 次、等待 5/10 秒（累计 15 秒）——
+          #   远小于本 job 的 `timeout-minutes: 5`，也给下面的回读（最多 20 秒）留足余量。
+          # ⚠️ **重试不许把真失败吞成 warning**：最终判据只有一条 —— 回读的 `autoMergeRequest`
+          #    是否真的 `armed`（重试仍失败且仍未 arm ⇒ 判红，见下方 `none)` 分支）。
+          MERGE_ATTEMPTS=3
+          m_attempt=0
           rc=0
-          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
-
-          if [ "$rc" -ne 0 ]; then
+          while [ "$m_attempt" -lt "$MERGE_ATTEMPTS" ]; do
+            m_attempt=$((m_attempt + 1))
+            rc=0
+            gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              break
+            fi
             # 预期内（幂等/暂不可合并）：**只收窄**——必须逐字命中这些标记才算预期内，
             # 其余一律按真失败处理（fail-closed：宁可多报一次，也不静默放过）。
             if grep -qiE 'already (in|queued|enabled|merged)|already been merged' "$merge_out"; then
@@ -99,21 +120,13 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
               echo "    PR #$PR_NUMBER 的 auto-merge 已处于目标状态，非失败。"
               exit 0
             fi
-            echo "::error::gh pr merge --auto 真失败（rc=${rc}）—— PR #$PR_NUMBER 未被 arm，且不会有别的东西因此停手"
-            sed 's/^/    /' "$merge_out"
-            {
-              echo "### Enable auto-merge — 真失败"
-              echo ""
-              echo "- PR：#$PR_NUMBER"
-              echo "- \\`gh pr merge --auto\\` 退出码：$rc"
-              echo "- 输出（未命中预期内幂等标记）："
-              echo '```'
-              cat "$merge_out"
-              echo '```'
-              echo "- ⇒ **auto-merge 未 arm**；本 job 判红即为真问题（不是幂等正常）。"
-            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-            exit 1
-          fi
+            if [ "$m_attempt" -lt "$MERGE_ATTEMPTS" ]; then
+              delay=$((m_attempt * 5))
+              echo "::warning::gh pr merge --auto 第 ${m_attempt}/${MERGE_ATTEMPTS} 次失败（rc=${rc}）⇒ ${delay} 秒后重试（#5235：实测该失败是 GitHub 侧瞬时 GraphQL 错误，退避即可越过）"
+              sed 's/^/    /' "$merge_out"
+              sleep "$delay"
+            fi
+          done
 
           # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
           # 三态口径（issue #5113）：`armed` ⇒ 绿；`none` + `mergeable=MERGEABLE`（GitHub 已算完
@@ -136,21 +149,48 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
             if [ "$attempt" -lt 5 ]; then sleep $((attempt * 2)); fi
           done
           if [ -z "$state" ]; then
-            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次）—— 无法判定是否已 arm，不得当成功"
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次；arm 命令 rc=${rc}、尝试 ${m_attempt} 次）—— 无法判定是否已 arm，不得当成功"
             {
               echo "### Enable auto-merge — 后置状态无法判定"
               echo ""
               echo "- PR：#$PR_NUMBER"
-              echo "- \\`gh pr merge --auto\\` 返回 0，但 \\`gh pr view --json autoMergeRequest\\` 查询失败（已重试 ${attempt} 次）。"
+              echo "- \\`gh pr merge --auto\\` 退出码 ${rc}（尝试 ${m_attempt} 次），且 \\`gh pr view --json autoMergeRequest\\` 查询失败（已重试 ${attempt} 次）。"
               echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
             } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             exit 1
           fi
           case "$state" in
             armed)
-              echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              if [ "$rc" -ne 0 ]; then
+                # 动作失败 ∧ 回读已 arm ⇒ 目标状态**已达成**（读数与动作自洽，同
+                # flaky-ledger-reconcile.yml §⑤-B 的口径）：非致命，但**不静默**。
+                echo "::warning::gh pr merge --auto 重试 ${m_attempt} 次后仍返回 ${rc}，但回读 autoMergeRequest=armed ⇒ 目标状态已达成（读数与动作自洽）⇒ 非致命；required 全绿后 GitHub 会自行合并"
+                {
+                  echo "### Enable auto-merge — 动作失败但回读已 arm（非致命，不静默）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- \\`gh pr merge --auto\\` 重试 ${m_attempt} 次后仍返回 ${rc}（见上方输出）"
+                  echo "- 但**动作之后回读** \\`autoMergeRequest\\` = armed ⇒ 已由其它路径 arm。"
+                  echo "- ⇒ 读数与动作自洽：**目标状态已达成** ⇒ 非致命；本 job 判绿（这条注解就是它的可见性，不静默）。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              else
+                echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              fi
               ;;
             none)
+              if [ "$rc" -ne 0 ]; then
+                # 🔴 #5235 族 A 的判据本体：**arm 失败（已重试）且回读仍未 arm** ⇒ 判红。
+                #    「真失败吞成 warning」这条老路在这里被明确堵死（见文件头的族 A 段）。
+                echo "::error::auto-merge 未 arm：arm 命令重试 ${m_attempt} 次后仍失败（rc=${rc}）且回读 autoMergeRequest=null ⇒ PR #$PR_NUMBER 会停在「required 全绿但永不合并」（#5235 族 A）。可行动：重跑本 job（push/打标签等事件会重新触发 arm），或人工 \\`gh pr merge $PR_NUMBER --auto --squash\\`"
+                {
+                  echo "### Enable auto-merge — arm 失败且仍未 arm（#5235 族 A）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- \\`gh pr merge --auto\\` 重试 ${m_attempt} 次后仍返回 ${rc}，且回读 \\`autoMergeRequest\\` 为 null ⇒ **未 arm 是确证**（不是「还没算完」）。"
+                  echo "- ⇒ 本 job 判红即为真问题：CI 一绿**不会**自动合并，PR 会静默停在「全绿但不合」。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+                exit 1
+              fi
               # 只有**逐字 `UNKNOWN`** 才分流到 unknown（读不到可合并性时仍 fail-closed 判红：
               # 宁可多报一次，也不静默放过 —— 与本 job 既有口径一致）。
               mergeable="$(gh pr view "$PR_NUMBER" \\
