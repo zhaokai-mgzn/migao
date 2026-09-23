@@ -135,7 +135,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 🔴 **2026-09-23 改判「每米数量」密度列（issue #5245 A1）**：本行原写
 **「per_meter_quantity / custom_per_meter_quantity 已全链路移除」—— 与库事实相反**。
 真实迁移史：`V33` 加列 → `V34` 删列 → **`V41`（`V41__align_bootstrap_schema_missing_columns.sql`）
-又把 `processing_items.per_meter_quantity` 加回**，初始化建库脚本 `docs/sql/schema.sql` 亦
+又把 `processing_items.per_meter_quantity` 加回**，初始化建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` 亦
 `ADD COLUMN IF NOT EXISTS` ⇒ **该列在存量库与新建库里都真实存在**。
 准确口径 = **僵尸列**（列在、生产零消费者：DTO/TS/Python 确实已删，无读无写）；
 **删列（新迁移 + 初始化脚本同步）待 #5243 合入后执行**（本单 #5245 不动 DB 面）。
