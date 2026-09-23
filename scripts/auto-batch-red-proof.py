@@ -17,9 +17,11 @@
 ## 用法
     python3 scripts/auto-batch-red-proof.py                 # 跑全部变异，逐条打印
     python3 scripts/auto-batch-red-proof.py --only default_off
+    python3 scripts/auto-batch-red-proof.py --check         # 前提自检（门禁调用这个面；零副作用）
 
-退出码：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；
+退出码（实跑面）：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；
 `3` = 无法判定（工作区不干净 / 找不到注入点）。
+退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 """
 from __future__ import annotations
 
@@ -28,7 +30,10 @@ import hashlib
 import re
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
+
+import red_proof_harness as h  # noqa: E402  #5193 门禁调用的是 --check 面（零 Maven/零副作用）
 
 REPO = Path(__file__).resolve().parents[1]
 MODULE = REPO / "backend/admin-api"
@@ -44,6 +49,8 @@ MOUNT_FQN = f"com.migao.admin.service.{MOUNT}"
 NOTIFIER_FQN = f"com.migao.admin.service.{NOTIFIER}"
 LISTENER_FQN = f"com.migao.admin.service.{LISTENER}"
 REALDB_FQN = f"com.migao.admin.service.{REALDB}"
+TOOL_REL = "scripts/auto-batch-red-proof.py"
+TEST_DIR = "backend/admin-api/src/test/java/com/migao/admin/service/"
 
 #: 判据方法 → 它钉的那一格（打印用）
 CRITERIA = {
@@ -178,6 +185,23 @@ MUTATIONS = [
 ]
 
 
+def _probe(mut: dict) -> None:
+    """一条变异的前提探针（**只读**）：注入点存在且唯一 + 目标判据方法存在。"""
+    name = mut["name"]
+    text = h.read_source(mut["file"], what=f"变异 [{name}] 的被测源码")
+    h.require_anchor(text, mut["old"], what=f"变异 [{name}] 的注入锚点")
+    test = h.read_source(f"{TEST_DIR}{mut['cls']}.java", what=f"变异 [{name}] 的判据源码")
+    for method in mut["expect"]:
+        h.require_method(test, method, what=f"变异 [{name}] 的期望判据")
+
+
+def check() -> int:
+    """前提自检（`--check`）：不注入、不跑判据、不写任何文件。"""
+    decls = [h.declare(mut["name"], "、".join(mut["expect"]), partial(_probe, mut))
+             for mut in MUTATIONS]
+    return h.report_and_exit(TOOL_REL, decls)
+
+
 def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -202,7 +226,11 @@ def failed_methods(report: str) -> set[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="#5182 红证机具（单点变异 ⇒ 逐条判据必须变红）")
     parser.add_argument("--only", help="只跑名字匹配的变异（子串）")
+    parser.add_argument("--check", action="store_true",
+                        help="只做前提自检（#5193 门禁调用的面）：零副作用、不注入")
     args = parser.parse_args()
+    if args.check:
+        return check()
 
     unknown = [m["expect"][0] for m in MUTATIONS if m["expect"][0] not in CRITERIA]
     if unknown:

@@ -9,6 +9,8 @@
 #   ./verify-all.sh backend        # 仅 Java 后端
 #   ./verify-all.sh agent          # 仅 AI Agent
 #   ./verify-all.sh gate           # 本地预检：QA Growth Gate +（命中 cases 受管面时）cases 面门禁
+#                                  +（命中红证面时）红证机具前提自检
+#   ./verify-all.sh redproof       # 红证机具实跑（#5193）：逐个真注入 + 跑判据（需 JDK/npm/PG，慢）
 #
 # ⚠️ gate 档的扫描源是**已提交**的 diff（`git diff … origin/main...HEAD`）：工作区有未提交改动
 #    时，按已提交 diff 扫描的部分（缺测/case_ids 追溯）**覆盖不到它们** —— 脚本会**点名该范围**
@@ -142,6 +144,30 @@ probe_ready() {
         return 1
       fi
       ;;
+    admin-api-pg)
+      # 真库红证腿要**两样**：JDK（Maven 构建）+ PG 二进制（判据用 initdb/pg_ctl 起一次性集群，
+      # 见 backend/admin-api/src/test/java/com/migao/admin/service/PgCluster.java 的 BIN_DIRS）。
+      # ⚠️ 候选目录与 PgCluster 同源；漂移时最坏结果是「未就绪」= ⏭️（不会假绿：缺 PG 时真库测试
+      #    自己会 Assumptions 跳过，而「跳过」若被读成「全绿」正是本面要消灭的形态）。
+      local pg_bin_dir=""
+      local d
+      for d in ${PATH//:/ } /opt/homebrew/bin /usr/local/bin /usr/bin \
+               /usr/lib/postgresql/16/bin /usr/lib/postgresql/15/bin /usr/lib/postgresql/14/bin; do
+        if [ -x "$d/initdb" ] && [ -x "$d/pg_ctl" ]; then
+          pg_bin_dir="$d"
+          break
+        fi
+      done
+      if [ -z "$pg_bin_dir" ]; then
+        READY_MISSING="PATH 与 PgCluster 的候选目录下都没有 initdb/pg_ctl（真库判据要起一次性 PG 集群）"
+        READY_HINT="安装 PostgreSQL（本机实测：brew install postgresql@16，二进制落在 /opt/homebrew/bin）"
+        return 1
+      fi
+      # ⚠️ **不能**只写 `probe_ready admin-api`：`probe_ready` 末尾有 `return 0`（就绪路径的兜底）
+      #    ⇒ 嵌套调用的非零会被它吞掉，本 key 会变成「缺 JDK 也报就绪」= **假绿**
+      #    （实测：桩仓库里删掉 mvnw 后 admin-api 记 ⏭️、而 admin-api-pg 仍记 ✅）。
+      probe_ready admin-api || return $?
+      ;;
     *)
       # 未声明的 key = 脚本配置错误（**不静默放行**：否则新增检查项会悄悄退回「未就绪即 ❌」）。
       READY_MISSING="report_env 的 env key '$key' 未在 probe_ready() 里声明"
@@ -245,6 +271,51 @@ case_coverage_check() {
     echo "  🔍 ${persona} 评测覆盖体检"
     python3 "scripts/${persona}_coverage.py" --check || return 1
   done
+}
+
+# ── 红证面命中判定（**单一实现**，#5193）────────────────────────────────────
+# 红证面的**被守卫对象** = ① 六个机具自身 + 它们的共享登记表；② 机具注入变异的被测源码 /
+# 判据源码（admin-api 的 com/migao/admin 树、admin-web 的 src 与 tests、schema.sql）。
+# 为什么需要（沿用 cases 面的既有取舍，issue #4221 / #4155）：不碰红证面的变更 ⇒ 该面门禁
+# **不跑**，绝不因新增检查把无关 PR 卡在红证面上。
+# ⚠️ 有意**不含** verify-all.sh 自身：本脚本的接线由 CI 守卫**无条件**把关
+#    （tests/unit_ci_workflows/test_redproof_harness_gate.py，每个 PR 都跑），
+#    本地再判一次只会让「改一行接线」也拖起一个面。
+redproof_face_paths() {
+  grep -E '^(scripts/[a-z0-9-]*-red-proof\.py|scripts/red_proof_harness\.py|backend/admin-api/src/(main|test)/java/com/migao/admin/.*|frontend/admin-web/(src|tests)/.*|docs/sql/schema\.sql|tests/unit_ci_workflows/test_redproof_harness_gate\.py)$' || true
+}
+
+# 变更集是否命中红证面。⚠️ 与 cases_face_hit() 同款：用变量收结果再判空，**不要**写成
+# `... | grep -q .`（`grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
+# 函数返回非零 = 命中被读成不命中，**假绿**）。
+redproof_face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | redproof_face_paths)"
+  [ -n "$hit" ]
+}
+
+# 红证机具前提自检（#5193）—— 逐个调用机具的 `--check` 面（零 Maven / 零 npm / 零 PG、零副作用）。
+# 为什么需要：六个红证机具此前**没有任何 CI/门禁调用**（只能靠人手跑）⇒ 被测源码一重构、
+# 判据方法一改名，机具就**静默腐烂** —— 而没有任何东西会因此变红。本腿把「前提能否成立」
+# 变成每次都跑得起的门禁。
+# ⚠️ 退出码**不吞**：`|| rc=$?` 只用来把机具的码原样带回（1 = 有腐烂 / 3 = 无法判定），
+#    不用来放行；`set +e` / `|| true` 一律不许出现在这里。
+# ⚠️ 桩仓库（tests/unit_ci_workflows 里复制本脚本的最小仓库）不带 `scripts/*-red-proof.py`
+#    ⇒ 那类环境**显式声明「未跑」**（「没跑」必须长得像「没跑」，不是「通过」）。
+redproof_preflight() {
+  local rc=0 tool ran=0
+  for tool in scripts/*-red-proof*.py; do
+    [ -f "$tool" ] || continue
+    ran=$((ran + 1))
+    python3 "$tool" --check || rc=$?
+  done
+  if [ "$ran" -eq 0 ]; then
+    echo "::warning:: 红证机具前提自检**未跑**：本工作区没有 scripts/*-red-proof*.py（桩仓库 / 裁剪检出）—— 这不是「通过」。"
+    return 0
+  fi
+  echo "红证机具门禁：跑了 $ran 个机具的前提自检（逐条变异：注入锚点可命中 + 期望判据方法存在）"
+  echo "::warning:: 红证机具门禁：跑了 $ran 个机具的前提自检 / 未跑 $ran 个机具的**实跑**（原因：实跑要 JDK + npm + PG 二进制，单机具实测 2~30 分钟 ⇒ 不进 quick/full/gate；入口 ./verify-all.sh redproof）—— 未跑 ≠ 通过。"
+  return "$rc"
 }
 
 # ── cases 受管面命中判定（**单一实现**，issue #4221）──────────────────────────
@@ -404,8 +475,9 @@ MODE="${1:-quick}"
 #    `case "$MODE" in`（模式分支所属的那个）—— L0 守卫 `test_verify_all_quick_scope.py`
 #    的 `_mode_block()` 按「第一个顶层 case」定位模式分支，多一个 case 会让它找不到 `quick)`。
 if [ "$MODE" != quick ] && [ "$MODE" != full ] && [ "$MODE" != frontend ] && \
-   [ "$MODE" != backend ] && [ "$MODE" != agent ] && [ "$MODE" != gate ]; then
-  echo "用法: $0 {quick|full|frontend|backend|agent|gate}"
+   [ "$MODE" != backend ] && [ "$MODE" != agent ] && [ "$MODE" != gate ] && \
+   [ "$MODE" != redproof ]; then
+  echo "用法: $0 {quick|full|frontend|backend|agent|gate|redproof}"
   exit 2
 fi
 
@@ -475,9 +547,24 @@ case "$MODE" in
     else
       echo "— cases 面门禁**未跑**：本次变更集未命中受管面（.github/cases/** 等）—— 这不是「通过」（CI 的 case-truth-check / case-trust-gate 仍对每个 PR 跑；命中判据 = managed_case_paths()）"
     fi
+    if redproof_face_hit; then
+      report "红证机具前提自检（前提能否成立）" redproof_preflight
+    else
+      echo "— 红证机具门禁**未跑**：本次变更集未命中红证面（机具 / 被守卫源码）—— 这不是「通过」（CI 的 ci workflow helper unit tests 对每个 PR 无条件跑同名守卫；命中判据 = redproof_face_paths()）"
+    fi
+    ;;
+  redproof)
+    report "红证机具前提自检（前提能否成立）" redproof_preflight
+    echo "⏳ 以下为**实跑**腿（真注入 + 真跑判据），单机具实测 2~30 分钟 —— 工具链是否就绪由 report_env 的就绪探测判定（未就绪 = 跳过，既不是通过也不是失败）"
+    report_env admin-api "红证机具 pool-board 实跑" bash -c "python3 '$ROOT/scripts/pool-board-red-proof.py'"
+    report_env admin-api "红证机具 cutting-plan 实跑" bash -c "python3 '$ROOT/scripts/cutting-plan-red-proof.py'"
+    report_env admin-api-pg "红证机具 auto-batch 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-red-proof.py'"
+    report_env admin-api-pg "红证机具 auto-batch-due-scan 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-due-scan-red-proof.py'"
+    report_env admin-api-pg "红证机具 saving-metrics-backend 实跑（真库判据）" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-backend.py'"
+    report_env admin-web-vitest "红证机具 saving-metrics-web 实跑" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-web.py'"
     ;;
   *)
-    echo "用法: $0 {quick|full|frontend|backend|agent|gate}"
+    echo "用法: $0 {quick|full|frontend|backend|agent|gate|redproof}"
     exit 2
     ;;
 esac

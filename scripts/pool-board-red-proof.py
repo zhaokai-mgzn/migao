@@ -23,8 +23,10 @@
 ## 用法
     python3 scripts/pool-board-red-proof.py            # 跑全部变异，逐条打印
     python3 scripts/pool-board-red-proof.py --only urgent_guard
+    python3 scripts/pool-board-red-proof.py --check    # 前提自检（门禁调用这个面；零 Maven/零副作用）
 
-退出码：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；`3` = 无法判定。
+退出码（实跑面）：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；`3` = 无法判定。
+退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**报出哪条变异烂在哪）；`3` = 无法判定。
 """
 from __future__ import annotations
 
@@ -34,13 +36,19 @@ import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from functools import partial
 from pathlib import Path
+
+import red_proof_harness as h  # noqa: E402  #5193 门禁调用的是 --check 面（零 Maven/零副作用）
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"
 MODULE = REPO / "backend/admin-api"
 TEST_CLASS = "PoolBoardUrgencyTest"
 TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
+TOOL_REL = "scripts/pool-board-red-proof.py"
+SRC_REL = SRC.relative_to(REPO).as_posix()
+TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
 
 #: 判据方法 → 它钉的那一格（打印用）
 CRITERIA = {
@@ -134,6 +142,22 @@ MUTATIONS = [
 ]
 
 
+def _probe(mutate, target: str, name: str) -> None:
+    """一条变异的前提探针（**只读**）：被守卫文件可读 + 注入锚点命中 1 次 + 目标判据存在。"""
+    src = h.read_source(SRC_REL, what=f"变异 [{name}] 的被测源码")
+    test = h.read_source(TEST_REL, what=f"变异 [{name}] 的判据源码")
+    h.require_method(test, target, what=f"变异 [{name}] 的目标判据")
+    if mutate(src) == src:
+        raise h.Rot("变异没有改变源码（锚点失配，或它与原文语义等价）")
+
+
+def check() -> int:
+    """前提自检（`--check`）：不注入、不跑判据、不写任何文件。"""
+    decls = [h.declare(name, target, partial(_probe, mutate, target, name))
+             for name, _label, mutate, target in MUTATIONS]
+    return h.report_and_exit(TOOL_REL, decls)
+
+
 def run_suite() -> dict[str, bool]:
     """跑整类，返回 {方法名: 是否通过}。无法判定（无 XML / 编译失败）⇒ 抛错。"""
     report = MODULE / "target/surefire-reports" / f"TEST-{TEST_FQN}.xml"
@@ -156,7 +180,11 @@ def run_suite() -> dict[str, bool]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", default=None, help="只跑指定变异（名字见 MUTATIONS）")
+    parser.add_argument("--check", action="store_true",
+                        help="只做前提自检（#5193 门禁调用的面）：零 Maven、零副作用、不注入")
     args = parser.parse_args()
+    if args.check:
+        return check()
 
     original = SRC.read_text(encoding="utf-8")
     original_hash = sha256(original)
