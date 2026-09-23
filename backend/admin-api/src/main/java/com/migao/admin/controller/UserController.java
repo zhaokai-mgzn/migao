@@ -16,12 +16,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 用户控制器
- * 处理用户信息、角色、权限、菜单等相关接口
+ * 处理用户信息、角色、权限等相关接口
  */
 @Slf4j
 @RestController
@@ -36,7 +35,7 @@ public class UserController {
 
     /**
      * 获取当前登录用户信息
-     * 包含用户信息、角色、权限和菜单
+     * 包含用户信息、角色、权限
      *
      * GET /api/admin/user/info
      *
@@ -45,19 +44,28 @@ public class UserController {
      *   "data": {
      *     "user": { "id": "...", "username": "admin", "nickname": "管理员", "avatar": "..." },
      *     "roles": ["admin"],
-     *     "permissions": ["product:manage", "knowledge:manage", ...],
-     *     "menus": [
-     *       { "key": "dashboard", "name": "经营看板", "icon": "BarChart3", "path": "/dashboard" },
-     *       { "key": "products", "name": "商品管理", "icon": "Package", "path": "/products" },
-     *       ...
-     *     ]
+     *     "permissions": ["product:manage", "knowledge:manage", ...]
      *   }
      * }
      *
      * <p>issue #5246（审计裁定「该放行」）：本端点**有意不加权限注解** —— 它是登录后首屏的
-     * 自助接口，返回的只有**调用方自己**的 roles / permissions / menus（全部按 {@code userId}
+     * 自助接口，返回的只有**调用方自己**的 roles / permissions（全部按 {@code userId}
      * 现算，无任何跨用户入参）；加码会让「没有任何菜单权限」的员工连首屏都拿不到，
      * 前端无法渲染 403/空态。</p>
+     *
+     * <p>⚠️ **本端点不下发菜单**（issue #5236，修正上一句里的 menus）：方法内原持有的私有菜单表
+     * {@code generateMenus} 是「菜单三源同构」之外的**第四处菜单源**（只覆盖 dashboard / products /
+     * processing / knowledge / settings 共 5 项，与 `frontend/admin-web/src/config/menu.ts`、
+     * `backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的
+     * `MENU_TREE`、`backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java`
+     * 的 `buildMenusByPermissions` 三处**都不一致**），且**实测无任何消费方**
+     * （前端 frontend/admin-web/src/lib/api.ts 只调 `/api/auth/me`；本端点无 HTTP 契约账本条目；
+     * 测试只断言本端点的状态码、不断言其 `menus` 内容）⇒ 判为死代码，连同调用点整段删除。</p>
+     *
+     * <p>菜单的**服务端唯一下发面** = `AuthService.getCurrentUser()`（`GET /api/auth/me`）。
+     * `UserInfoResponse.menus` 字段**保留**：它的消费方在前端
+     * `frontend/admin-web/src/store/auth.ts`（生产读取点）与 `frontend/admin-web/src/types/index.ts`
+     * （wire 声明），删字段会砍掉真实消费面。</p>
      */
     @GetMapping("/info")
     public ApiResponse<UserInfoResponse> getUserInfo() {
@@ -87,9 +95,6 @@ public class UserController {
 
         // 获取用户权限
         List<String> permissions = roleService.getUserPermissions(userId);
-
-        // 根据权限生成菜单
-        List<UserInfoResponse.MenuItem> menus = generateMenus(permissions, roles);
 
         // 查询租户名称
         String tenantName = null;
@@ -127,7 +132,6 @@ public class UserController {
                         .build())
                 .roles(roles)
                 .permissions(permissions)
-                .menus(menus)
                 .build();
 
         log.debug("获取用户信息成功: userId={}, roles={}, permissions={}", userId, roles, permissions);
@@ -147,75 +151,5 @@ public class UserController {
             return securityUser.getUserId();
         }
         return null;
-    }
-
-    /**
-     * 根据用户权限生成菜单列表
-     *
-     * @param permissions 权限列表
-     * @param roles       角色列表
-     * @return 菜单列表
-     */
-    private List<UserInfoResponse.MenuItem> generateMenus(List<String> permissions, List<String> roles) {
-        List<UserInfoResponse.MenuItem> menus = new ArrayList<>();
-
-        // ⚠️ issue #5246 登记（**残留，不是静默**）：本方法是菜单的**第 4 处（legacy）来源**，
-        // 只有 5 个一级节点，**没有** after-sales（售后工单）节点 —— 故本单的读码拆分
-        // （after_sales:view）在本文件**无对应节点可改**；知识库节点在本文件改用读码
-        // knowledge:view（下方）。真正下发给侧边栏的是 AuthService.buildMenusByPermissions
-        // 与前端 config/menu.ts（本方法的产物仅作 /user/info 的兼容字段）。
-
-        // 检查是否为管理员（拥有所有权限）
-        boolean isAdmin = roles.contains("admin") || permissions.contains("*");
-
-        // 经营看板菜单 - 需要 dashboard:view 权限或者是管理员
-        if (isAdmin || permissions.contains("dashboard:view")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("dashboard")
-                    .name("经营看板")
-                    .path("/dashboard")
-                    .build());
-        }
-
-        // 商品管理菜单 - 需要 product:manage 权限或者是管理员
-        if (isAdmin || permissions.contains("product:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("products")
-                    .name("商品管理")
-                    .path("/products")
-                    .build());
-        }
-
-        // 加工项管理菜单 - 需要 processing:manage 权限或者是管理员
-        if (isAdmin || permissions.contains("processing:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("processing")
-                    .name("加工项管理")
-                    .path("/processing")
-                    .build());
-        }
-
-        // 知识库管理菜单 - 需要 knowledge:view 权限或者是管理员
-        // issue #5246：本处由 knowledge:manage 改为**读**码 knowledge:view —— 与前端
-        // config/menu.ts 的 `knowledge` 节点、AuthService.buildMenusByPermissions 同码
-        // （否则「登录下发菜单」与真实侧边栏对不上）。
-        if (isAdmin || permissions.contains("knowledge:view")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("knowledge")
-                    .name("知识库管理")
-                    .path("/knowledge")
-                    .build());
-        }
-
-        // 系统设置菜单 - 需要 system:manage 权限或者是管理员
-        if (isAdmin || permissions.contains("system:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("settings")
-                    .name("系统设置")
-                    .path("/settings")
-                    .build());
-        }
-
-        return menus;
     }
 }

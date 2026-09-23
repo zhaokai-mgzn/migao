@@ -14,7 +14,7 @@
 |---|---|---|
 | **S1 工具** | `backend/ai-agent-service/app/tools/*.py` 的 `required_permissions` / `read_only` / `allowed_roles` | 44 个工具里只有 21 个声明权限码，其余靠**手写角色白名单**（#4106 F3/F4 说的漂移病根）；`inventory_manage.allowed_roles` 里还留着 C 端角色 `customer` |
 | **S2 端点** | `backend/admin-api/src/main/java/com/migao/admin/controller/**` 的 `@RequirePermission`（**方法级优先于类级**，同 `PermissionInterceptor.resolveRequirePermission`） | 类级读码盖住写端点（`AgentProductController` 的 `product:list` 盖住 4 个 PATCH/POST）；11 个 controller 完全没有注解 |
-| **S3 菜单** | 四处菜单源（`frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`、`UserController.generateMenus`） | 同一节点四处各写各的码（`售后工单` = `order:refund`，而客服岗位没有该码）；第四处是**5 节点遗留树**（`product:manage` 粗码），没有任何守卫覆盖 |
+| **S3 菜单** | **三处**菜单源（`frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`）—— 第四处（`UserController.generateMenus`）已于 issue #5236 整段删除，本守卫**双向**钉住它不得长回来 | 同一节点多源各写各的码（`售后工单` = `order:refund`，而客服岗位没有该码）；被删的第四处当时是**5 节点遗留树**（`product:manage` 粗码），没有任何守卫覆盖 |
 | **S4 岗位** | 内置岗位默认权限（`RegistrationService.initializeDefaultRolesAndPermissions` 的 `attachDefaultPermissions` + `RoleService.getPermissionCodesForRole` 硬编码回退） | 岗位持 `processing:view` 却**没有**对应菜单节点 ⇒ 经 Agent 能查到页面里看不到的生产数据 |
 
 ## 三条授权面（对账必须同时覆盖）
@@ -32,7 +32,8 @@
 2. **工具码 ≡ 它调用的每个已注解端点的生效码**（集合相等；未注解端点必须登记在
    `UNANNOTATED_ENDPOINTS` 里 —— 沉默放行正是本单要治的失效模式）。
 3. **工具码 ≡ 其对应菜单节点的码**（读工具必须持节点码；写工具允许持该页的写码，登记在
-   `PAGE_WRITE_CODES`），且**四处菜单源在交集上同构**（同一节点名不得两处不同码）。
+   `PAGE_WRITE_CODES`），且**菜单源在交集上同构**（同一节点名不得两处不同码），
+   并**双向**钉住第四处菜单源已删（issue #5236）：被删符号不得长回来，且它缺席时解析器不得静默恒绿。
 4. **零权限泄露**：对每个内置岗位 R 与每个已编码工具 T —— `R 可调 T ⇒ R 看得见 T 的菜单节点`
    （用户逐字要求）。
 5. **读写码不错配**：`read_only=True` 的工具不得只要求写码；写工具不得只要求读码
@@ -56,8 +57,14 @@
   C 端的隔离靠业务层的 `X-User-Id` 过滤（`/api/customer/**` 与 `/api/admin/agent/**` 各自过滤）。
   见 `backend/admin-api/src/main/java/com/migao/admin/security/ServiceTokenFilter.java` 与
   `.../security/PermissionInterceptor.java`。本守卫只判「商户员工」这条线。
-- **四处菜单源不做全树同构**（那是 #5236 的产品裁定）：本守卫只比**交集**（同名节点不得两处不同码），
+- **菜单源不做全树同构**（那是 #5236 的产品裁定）：本守卫只比**交集**（同名节点不得两处不同码），
   并把未覆盖部分登记进 `REGISTERED_RESIDUALS`（见 `problems_registered_decisions`）。
+- **第四处菜单源已删（issue #5236）**：`UserController.generateMenus` 整段删除 ⇒ `menu:user` 允许解析出
+  **空表**；但放行**有条件**（剥注释后的代码面必须一个被删符号都没有），且符号一长回来判据 3 立刻红 ——
+  「对象没了 ⇒ 把断言删掉」是本守卫明确拒绝的形态（见 `problems_menu_parity` ④ 与 `parse_menus`）。
+- **该对象的三条判据仍有漏网形态（如实登记，不粉饰）**：一个**换名 + 换 DTO + 从未接回响应**的私有菜单表
+  （纯死代码）符号面 / 解析面 / 结构面都看不见 —— 它与「任意死代码」静态不可区分，登记为残留
+  （见 `REGISTERED_RESIDUALS` 的「第四处菜单源（已于 #5236 删除）」）。
 - 本守卫**只读源码文本**（零依赖：只用标准库 + 共用的静态归属机具
   `backend/ai-agent-service/tests/tool_http_attribution.py`），不连库、不跑 LLM。
 """
@@ -262,7 +269,7 @@ def endpoints_by_tool(index) -> dict[str, tuple[tuple[str, str, str | None], ...
     return {k: tuple(sorted(set(v))) for k, v in out.items()}
 
 
-# ── 2.3 菜单四处来源 ──────────────────────────────────────────────────────────
+# ── 2.3 菜单来源（三处现役 + 第四处已删的登记） ──────────────────────────────────────────────────────────
 
 
 def _iter_menu_ts(text: str):
@@ -294,13 +301,36 @@ def _iter_menu_auth(text: str):
 
 
 def _iter_menu_user(text: str):
-    """`UserController.generateMenus`（**第四处**，5 节点遗留树）：`.key(...)` + `.name(...)`。"""
+    """`UserController.generateMenus`（**第四处**，5 节点遗留树）：`.key(...)` + `.name(...)`。
+
+    ⚠️ 该对象已于 issue #5236 **整段删除** ⇒ 本迭代器在**方法不存在**时返回空（而非抛错），
+    但空表**不是**无条件放行：前提由 `fourth_menu_source_symbols` 判（代码面确实无被删符号），
+    见 `parse_menus`。对象回来时它必须仍能解析出节点 —— 否则「空表」会把回归读成缺席。
+    """
     pattern = re.compile(
         r'permissions\.contains\("([^"]+)"\)\)\s*\{\s*\n\s*menus\.add\([^;]*?\.key\("([^"]+)"\)\s*\n\s*\.name\("([^"]+)"\)',
         re.S,
     )
     for m in pattern.finditer(text):
         yield m.group(3), m.group(1)
+
+
+#: 第四处菜单源的**被删符号**（issue #5236 整段删除后，只允许出现在**注释**里 ——
+#: 删除落码时写入的决策记录 javadoc 必然点名它们）。口径与
+#: `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的
+#: 「不得再长出第四处独立菜单表」一致（`\bgenerateMenus\b` + `MenuItem`）：那边判它不得长回来，
+#: 这边还要判「它不在时解析器不许瞎」。
+_FOURTH_MENU_SOURCE_RE = re.compile(r"\bgenerateMenus\b|MenuItem")
+
+
+def fourth_menu_source_symbols(text: str) -> list[str]:
+    """`UserController` **代码面**（剥注释后）残留的被删符号；空表 = 第四处菜单源确实不在。
+
+    🔴 必须剥注释（`ATTR._strip_java_comments`）：扫原文会把判据**永久喂红** —— migao-dev-flow
+    §17.3「判据被自己的文案喂红」，同族实证见
+    `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的 `_strip_java_comments`。
+    """
+    return sorted(set(_FOURTH_MENU_SOURCE_RE.findall(ATTR._strip_java_comments(text))))
 
 
 MENU_SOURCES = {
@@ -312,11 +342,28 @@ MENU_SOURCES = {
 
 
 def parse_menus(sources: dict[str, str]) -> dict[str, dict[str, str | None]]:
-    """S3：四处菜单源的 `节点名 → 权限码`（无码节点值为 None）。"""
+    """S3：菜单源的 `节点名 → 权限码`（无码节点值为 None）。
+
+    ⚠️ 第四处（`menu:user`）自 issue #5236 起**已删除** ⇒ 允许解析出**空表**；另三源照旧
+    fail-closed（解析出 0 个节点 = 判据空跑 ⇒ 红）。空表放行**只有一个前提**：剥注释后的代码面
+    一个被删符号都没有（`fourth_menu_source_symbols`）。符号在、节点却解析出 0 个 ⇒ 照旧抛错
+    —— 这就是「对象缺席不得让解析器静默恒绿」的机械形态（换名长回会被它抓住）。
+    """
     out: dict[str, dict[str, str | None]] = {}
     for label, (key, it) in MENU_SOURCES.items():
-        nodes = dict(it(sources[key]))
-        assert nodes, f"菜单源 `{label}`（{key}）解析出 0 个节点 ⇒ 判据会空跑（fail-closed）"
+        text = sources[key]
+        nodes = dict(it(text))
+        if not nodes:
+            absent = label == "user" and not fourth_menu_source_symbols(text)
+            assert absent, (
+                f"菜单源 `{label}`（{key}）解析出 0 个节点 ⇒ 判据会空跑（fail-closed）"
+                + (
+                    f"：第四处菜单源虽已按 issue #5236 删除，但代码面仍有被删符号 "
+                    f"{fourth_menu_source_symbols(text)} ⇒ 「对象在、解析器却没解析出来」不许静默"
+                    if label == "user"
+                    else ""
+                )
+            )
         out[label] = nodes
     return out
 
@@ -435,7 +482,7 @@ def parse_agent_skills(sources: dict[str, str], agent: str) -> tuple[frozenset[s
 # 三、核定表（**判据的唯一来源**；新增/改动必须显式落在这里 —— diff 里看得见）
 # ══════════════════════════════════════════════════════════════════════════════
 
-#: 工具 → 其对应菜单节点（**节点名逐字取自四处菜单源**）。
+#: 工具 → 其对应菜单节点（**节点名逐字取自现役三处菜单源**）。
 #: 取值口径（issue #5246 的裁定）：**节点的码就是该工具应当持有的码**；
 #: 节点无码（全员可见）⇒ 该工具只受端点层约束。
 TOOL_MENU_NODE: dict[str, str] = {
@@ -593,12 +640,18 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
                "（产品裁定），要么改前端调用口径 —— 超出本单授权",
         "where": "`UNANNOTATED_ENDPOINTS` 只管「无码」；本项是「有码但码粒度错」，逐条记在这里；去向：#5236",
     },
-    "第四处菜单源（遗留树）": {
-        "what": "`UserController.generateMenus` 是 **5 节点遗留树**（经营看板/商品管理/加工项管理/知识库管理/系统设置），"
-                "用粗码 `product:manage`，且不含售后工单/生产看板/订单列表等节点",
-        "why": "四处菜单源全树同构是 #5236 的产品裁定（前端 7 组 vs 服务端 9 节点 vs 遗留 5 节点，"
-               "节点集本就不同）；本守卫只比**交集**（同名节点不得两处不同码）",
-        "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236",
+    "第四处菜单源（已于 #5236 删除）": {
+        "what": "`UserController.generateMenus` 曾是**第四处**菜单源（5 节点遗留树：经营看板/商品管理/加工项管理/"
+                "知识库管理/系统设置，粗码 `product:manage`），issue #5236 已**整段删除**（含唯一调用点与 "
+                "`.menus(menus)` 构建行；端点 `GET /api/admin/user/info` 本体与 `UserInfoResponse.menus` 字段 **未动**）",
+        "why": "删除取证（实测）：该表只有本类一个调用点；端点前端零调用（`frontend/admin-web/src/lib/api.ts` "
+               "只调 `/api/auth/me`）；`docs/wiki/CONTRACT-LEDGER.md` 无本端点条目；测试只断言该端点状态码、"
+               "0 处断言其 `menus` 内容。⇒ 「全树同构」的残留问题因此收窄为**三源之间**",
+        "where": "本守卫不再把它当「登记残留」而是**双向钉住不得长回来**（判据 3 ④：符号面 + 解析面 + "
+                 "结构面 `.menus(...)`）；全树同构仍不做（产品裁定）。"
+                 "**残留（如实登记，不粉饰）**：三条判据看不见「换名 + 换 DTO + 且从未接回响应」的私有菜单表"
+                 "（= 与任意死代码静态不可区分）—— 与 `test_menu_three_sources_are_isomorphic.py` 同口径，"
+                 "登记为残留而不是假装覆盖。去向：#5236",
     },
     "MenuController 省略的节点": {
         "what": "**只剩「通知中心」**：它不在 `MenuController.MENU_TREE`（该树每个节点都必须有权限码，"
@@ -607,12 +660,13 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
                 "企业基础信息/每日简报），本条残留原先列的其它节点**均已消除**",
         "why": "通知中心无权限码 ⇒ 结构上不进权限树（不是漏改）；三处菜单源（前端 / `MenuController` / "
                "`AuthService`）现已是**全树同构**，判据见 `test_menu_three_sources_are_isomorphic.py`"
-               "（#5271 升级）；第四处源的全树统一是 #5236 的产品裁定",
-        "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236（第四处源）",
+               "（#5271 升级）；第四处源已于 issue #5236 **整段删除**（本单，不再是待统一的残留）",
+        "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236",
     },
     "权限码零消费": {
         "what": "`order:detail` / `product:manage` 在目录里且被岗位授予/菜单使用，但没有任何 "
-                "`@RequirePermission` 消费它们（`product:manage` 只出现在第四处菜单源）",
+                "`@RequirePermission` 消费它们（`product:manage` 原只出现在第四处菜单源，"
+                "该源已于 issue #5236 删除 ⇒ 它现在只剩目录 / 岗位面）",
         "why": "删码/改码会动岗位矩阵（产品裁定）；本单不动",
         "where": "去向：#5236",
     },
@@ -623,9 +677,10 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
     },
 }
 
-#: 四处菜单源**交集**的覆盖度下限（自检：低于它说明解析面缩小了 ⇒ 红）。
-#: 实测值（含 after-sales/知识库改动后）见 `problems_menu_parity` 的报错文案；不写死到刚好相等，
-#: 留 2 个余量 —— 但**只许上调**：改小它等于把「不检查」伪装成「检查过」。
+#: 菜单源**交集**的覆盖度下限（自检：低于它说明解析面缩小了 ⇒ 红）。
+#: 实测值见 `problems_menu_parity` 的报错文案（**不写死读数**：它会随菜单重排漂移）；不写死到刚好相等，
+#: 留余量 —— 但**只许上调**：改小它等于把「不检查」伪装成「检查过」。
+#: （#5271 全树重排后实测 = 19：`frontend ∩ controller` 19 / `frontend ∩ auth` 13 / `menu:user` 已空）
 CROSS_CHECKED_FLOOR = 8
 
 
@@ -781,7 +836,8 @@ def _matches_registered(key: str, table: dict[str, str]) -> bool:
 
 
 def problems_menu_parity(w: World) -> list[str]:
-    """判据 3：工具码 ≡ 菜单节点码（写工具可持页内写码/跨页读码）+ 四处菜单源在交集上同构。"""
+    """判据 3：工具码 ≡ 菜单节点码（写工具可持页内写码/跨页读码）+ 三处菜单源在交集上同构
+    + 第四处菜单源（issue #5236 已删）不得长回来（两种口径都钉）。"""
     out: list[str] = []
     by_name = _by_name(w)
     front = w.menus["frontend"]
@@ -824,7 +880,7 @@ def problems_menu_parity(w: World) -> list[str]:
                 f"{name}：required_permissions={sorted(codes)} 与节点『{node_name}』"
                 f"（本页码域 {sorted(anchor)}）无任何交集 ⇒ 工具做的事与它登记的页面不是同一件事"
             )
-    # ③ 四处菜单源：**交集**上同名节点不得两处不同码
+    # ③ 现役三处菜单源：**交集**上同名节点不得两处不同码
     checked: set[str] = set()
     base = {k: v for k, v in front.items() if v}
     for other, nodes in w.menus.items():
@@ -840,8 +896,36 @@ def problems_menu_parity(w: World) -> list[str]:
                 )
     if len(checked) < CROSS_CHECKED_FLOOR:
         out.append(
-            f"四处菜单源的**交集**只剩 {len(checked)} 个节点（下限 {CROSS_CHECKED_FLOOR}）"
+            f"菜单源的**交集**只剩 {len(checked)} 个节点（下限 {CROSS_CHECKED_FLOOR}）"
             f"：{sorted(checked)} —— 解析面缩小 = 「没检查」被读成「检查过」"
+        )
+    # ④ 第四处菜单源（issue #5236 已整段删除）：**双向**钉住 —— 不是「对象没了就把断言删掉」。
+    #    正向（符号面）：`UserController` 的**代码面**不得再出现被删符号（原名长回、换名构造
+    #    `MenuItem` 都拦得住）—— 判据改挂在「不得再长出第四处」这件事上，与
+    #    `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的
+    #    `test_no_fourth_menu_source` 同口径（只读剥注释后的代码，不吃自己的说明文字）；
+    #    反向（解析面）：符号不在却解析出节点 ⇒ 解析器认错了对象（空表只对「真的不在」成立）。
+    #    ⚠️ 两条**缺一不可**：只留正向 ⇒ 换名长回时解析器空表、判据以为「没长回来」照样绿；
+    #    只留反向 ⇒ 对象整段消失就没人管了（判据随对象一起被删除 = 丢覆盖）。
+    user_text = w.sources.get("menu:user", "")
+    user_symbols = fourth_menu_source_symbols(user_text)
+    if user_symbols:
+        out.append(
+            f"第四处菜单源又长回来了：`UserController` 的代码面出现 {user_symbols} —— issue #5236 "
+            "已把它整段删除（它与另三源都不一致、且实测无任何消费方）；新增菜单必须走三源之一"
+            "（`frontend/admin-web/src/config/menu.ts` / `MenuController.MENU_TREE` / "
+            "`AuthService.buildMenusByPermissions`），否则它又是判据射程之外的第 N 处"
+        )
+    elif w.menus.get("user"):
+        out.append(
+            f"`UserController` 代码面已无被删符号，却仍解析出 {len(w.menus['user'])} 个菜单节点 —— "
+            "解析器认错了对象（空表只对「第四处确实不在」成立 ⇒ 同步本判据）"
+        )
+    elif ".menus(" in ATTR._strip_java_comments(user_text):  # noqa: SLF001
+        out.append(
+            "`UserController` 的响应构建又挂上了 `.menus(...)`（issue #5236 已把 "
+            "`GET /api/admin/user/info` 收窄为**不下发菜单**）—— 这条判据**不看名字**："
+            "无论那份菜单表叫什么、用什么 DTO，只要它重新接到响应上，就又是三源之外的第 N 处"
         )
     return out
 
@@ -1199,6 +1283,20 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             _diverge_shared_node,
             problems_menu_parity,
         ),
+        "④b 第四处菜单源长回来（还原原名 + 真树 + 调用点）⇒ 判据 3 红": (
+            # issue #5236 的**真实回归形态**（不是改一个字的假变异）：同时压住两条 ——
+            # 符号面（判据 3 ④ 红）与解析面（还原后的树必须仍能被 `_iter_menu_user` 解析出来，
+            # 否则「空表」会把「长回来了」读成「缺席」）。
+            "menu:user",
+            _restore_fourth_menu_source,
+            problems_menu_parity,
+        ),
+        "④c 第四处菜单源**换名**长回并接回响应（无 generateMenus / MenuItem 字面量）⇒ 判据 3 红": (
+            # 名-based 判据的漏网形态：只有结构面（`.menus(...)`）看得见 ⇒ 它自己的判别力证明。
+            "menu:user",
+            _regrow_fourth_source_renamed,
+            problems_menu_parity,
+        ),
         "⑤ 只读工具要求写码 ⇒ 判据 5 红": (
             "tool:order_query.py",
             lambda s: _set_codes(s, "order_query.py", '["product:create"]'),
@@ -1251,17 +1349,110 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
     }
 
 
+def _restore_fourth_menu_source(text: str) -> str:
+    """把第四处菜单源**长回来**（issue #5236 的回归形态：原名 + 调用点 + 真树）。
+
+    注入的是当初被删的那棵表的**结构**（`permissions.contains(...)` + `menus.add(MenuItem.builder()
+    .key(...).name(...))`），不是「改一个字的假变异」⇒ 它让 `_iter_menu_user` 真的解析出节点
+    （没有这一条，注入后仍是空表 ⇒ 判据 3 ④ 的「解析面」那一半永远测不到）。
+    """
+    assert not fourth_menu_source_symbols(text), "注入前提：`UserController` 代码面已有该符号（同步本判据）"
+    method = (
+        "\n    // issue #5236 回归注入：第四处菜单源长回来\n"
+        "    private List<UserInfoResponse.MenuItem> generateMenus(List<String> permissions, List<String> roles) {\n"
+        "        List<UserInfoResponse.MenuItem> menus = new ArrayList<>();\n"
+        "        boolean isAdmin = roles.contains(\"admin\") || permissions.contains(\"*\");\n"
+        "        if (isAdmin || permissions.contains(\"dashboard:view\")) {\n"
+        "            menus.add(UserInfoResponse.MenuItem.builder()\n"
+        "                    .key(\"dashboard\")\n"
+        "                    .name(\"经营看板\")\n"
+        "                    .build());\n"
+        "        }\n"
+        "        if (isAdmin || permissions.contains(\"knowledge:view\")) {\n"
+        "            menus.add(UserInfoResponse.MenuItem.builder()\n"
+        "                    .key(\"knowledge\")\n"
+        "                    .name(\"知识库管理\")\n"
+        "                    .build());\n"
+        "        }\n"
+        "        return menus;\n"
+        "    }\n"
+    )
+    idx = text.rstrip().rfind("\n}")
+    assert idx != -1, "注入锚点失配：`UserController` 的类体收尾 `}` 找不到（同步本判据）"
+    return text[:idx] + method + text[idx:]
+
+
+def _regrow_fourth_source_renamed(text: str) -> str:
+    """**换名**长回第四处菜单源（既无 `generateMenus`、也无 `MenuItem` 字面量）+ 重新接到响应上。
+
+    这是「按名字钉」的漏网形态：`_FOURTH_MENU_SOURCE_RE` 看不见它，`_iter_menu_user` 也解析不出节点
+    ⇒ 只剩**结构面**（响应构建里的 `.menus(...)`）兜得住。
+
+    ⚠️ 夹具只做**文本变异**、不编译（本判据零依赖、只读源码文本，与 ⑨「删注解」同族）；
+    它压的是**结构事实**（有没有菜单表接到响应上），不是 Java 类型正确性。
+    """
+    assert not fourth_menu_source_symbols(text), "注入前提：`UserController` 代码面已有该符号（同步本判据）"
+    injected = text.replace(
+        "        // 构建响应\n        UserInfoResponse response = UserInfoResponse.builder()",
+        "        // 构建响应（issue #5236 回归注入：第四处菜单源**换名**长回）\n"
+        "        List<LegacyMenuNode> legacyMenus = buildLegacyMenuTable(permissions);\n"
+        "        UserInfoResponse response = UserInfoResponse.builder()",
+        1,
+    )
+    assert injected != text, "注入锚点失配：响应构建处找不到（同步本判据）"
+    relinked = injected.replace(
+        "                .permissions(permissions)\n",
+        "                .permissions(permissions)\n                .menus(legacyMenus)\n",
+        1,
+    )
+    assert relinked != injected, "注入锚点失配：`.permissions(permissions)` 构建行找不到（同步本判据）"
+    return relinked.rstrip() + (
+        "\n\n    private List<LegacyMenuNode> buildLegacyMenuTable(List<String> permissions) {\n"
+        "        return List.of(new LegacyMenuNode(\"dashboard\", \"经营看板\"));\n"
+        "    }\n"
+    )
+
+
 def _diverge_shared_node(text: str) -> str:
     """把 `MenuController` 的『生产看板』节点码改成**与其它菜单源不同**的值。
 
     选『生产看板』而不是『售后工单』：前者在三处菜单源里**同名**（才落在交集判据的射程内），
     后者在 `MenuController` 里叫「退换货」—— 名字都不同的节点本就不参与同构比对
-    （这正是 `REGISTERED_RESIDUALS` 登记「四处菜单源不做全树同构」的含义）。
+    （这正是 `REGISTERED_RESIDUALS` 所登记「菜单源不做全树同构」的含义）。
     """
     m = re.search(r'new MenuNode\("([^"]+)", "生产看板"\)', text)
     assert m, "注入锚点失配：`MenuController` 里找不到『生产看板』节点（同步本判据）"
     other = "order:list" if m.group(1) != "order:list" else "processing:manage"
     return text.replace(m.group(0), f'new MenuNode("{other}", "生产看板")', 1)
+
+
+def test_fourth_source_comment_mention_stays_green() -> None:
+    """**负控**：被删符号只出现在**注释**里 ⇒ 判据 3 必须保持绿（判据读的是剥注释后的代码）。
+
+    为什么必须有这条：`UserController` 的决策记录 javadoc **必然**点名 `generateMenus`
+    （issue #5236 落码时就写了一段 ⚠️ 说明）⇒ 若判据扫原文，它会被自己的说明文字**永久喂红**
+    （migao-dev-flow §17.3「判据被自己的文案喂红」）。
+
+    与上面 ④b 注入**成对**才有判别力：**只有**「注入注释必须绿」+「注入代码必须红」同时成立，
+    符号判据才是「读代码」而不是「读文本」—— 单看任何一边都可以是一条恒绿 / 恒红的空断言。
+    """
+    base = _source_map()
+    text = base["menu:user"]
+    assert not fourth_menu_source_symbols(text), "前提：现存 `UserController` 代码面已无被删符号"
+    injected = text.replace(
+        "public class UserController {",
+        "public class UserController {\n"
+        "    // 这里曾经有 generateMenus（第四处菜单源，issue #5236 已整段删除）\n"
+        "    /* MenuItem 同理：只在注释里提到 ≠ 长回来 */",
+        1,
+    )
+    assert injected != text, "注入锚点失配：`public class UserController {` 找不到（同步本判据）"
+    assert fourth_menu_source_symbols(injected) == [], "剥注释失效：注释里的提及被当成了代码"
+    sources = dict(base)
+    sources["menu:user"] = injected
+    assert not problems_menu_parity(build_world(sources)), (
+        "负控失败：只在注释里提及被删符号 ⇒ 判据被自己的说明文字喂红了"
+    )
 
 
 def test_every_judgement_can_go_red() -> None:
