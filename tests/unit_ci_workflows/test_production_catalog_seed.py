@@ -11,7 +11,7 @@
 `production_operations` / `production_routings` 自 V49 建表起**零种子、零消费者**
 ⇒ 商家无配置入口、库里无数据、§3 工艺路线在 DB 层不可查不可展示。
 V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常量作为种子）
-+ 只读消费者，并同步 `docs/sql/schema.sql`（bootstrap 路径不跑迁移链 ⇒ 不同步就是
++ 只读消费者，并同步 `backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径不跑迁移链 ⇒ 不同步就是
 「全新库无工序库」的静默缺口）。
 
 ## 为什么是「多源」（issue #4230，2026-09-18）
@@ -27,7 +27,7 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 | `db/migration/V54__seed_production_operations.sql` | 存量库的**初始**种子（已发布 ⇒ 只增不改） |
 | `db/migration/V56__seed_special_option_operations.sql` | 存量库的**增量**种子（#4230 的 5 道新工序） |
 | `db/migration/V58__seed_sheer_curtain_routings.sql` | 存量库的**增量**路线种子（#4246 的 3 条纱帘路线，**零新造工序** ⇒ 只种路线） |
-| `docs/sql/schema.sql` | 全新库 bootstrap 的**终态**种子（CI/本地 docker 栈**不跑迁移链**） |
+| `backend/admin-api/src/main/resources/db/init/schema.sql` | 全新库 bootstrap 的**终态**种子（CI/本地 docker 栈**不跑迁移链**） |
 
 ## 判据 1（issue #4235）：种子源**按集合聚合**，不再写死文件名
 
@@ -75,7 +75,19 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 MIGRATION_GLOB = "V*.sql"
 _VERSION_RE = re.compile(r"^V(\d+)__")
 # 第五源（issue #4361）：开租自动套用的生产模板目录（jar 内资产，Java 侧真会读它）
@@ -138,7 +150,7 @@ def values_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple
 # 工序库 / 路线种子源：**按集合聚合**（判据 1）——新增种子迁移无需在此追加任何东西。
 SEED_OPERATION_SQLS = seed_sources_for("production_operations")
 ROUTING_SEED_SQLS = seed_sources_for("production_routings")
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 ROUTING_PY_DIR = REPO / "backend/ai-agent-service"
 
 # 列序 = 种子 SQL 里 INSERT ... VALUES 的书写顺序（解析器按位取值）
@@ -197,7 +209,7 @@ def _split_fields(row: str):
 def declared_columns(sql: str, table: str) -> tuple:
     """从 `INSERT INTO <table> (列清单) …` **读出**该源声明的列序（读不到 ⇒ 返回 `()`）。
 
-    为什么读而不是写死（issue #4690）：`docs/sql/schema.sql`（bootstrap）是**终态**种子，它对
+    为什么读而不是写死（issue #4690）：`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap）是**终态**种子，它对
     「V88 退场」的表达是**显式写 `deleted` 列**（行保留、翻标记）⇒ 列数比迁移侧多一列。
     把列清单写死会让「bootstrap 多写一列」被读成「列序漂移」（**假红**），而把 `deleted` 从
     两侧都删掉又会丢掉「bootstrap 到底种成什么态」的可判性 ⇒ 只能按源文本取值。
@@ -295,8 +307,8 @@ def routing_row_of(row: dict) -> dict:
 # 为什么必须排除（不是放宽，是**两侧合法地不同**）：唯一的真相是——
 #   · 迁移链侧的 V54 是**已发布迁移**（内容被 `migration_fingerprints.json` 逐字节冻结）⇒
 #     它仍留着历史的 `外帘装袋 = TRUE`，**不可改**；
-#   · bootstrap 侧 `docs/sql/schema.sql` 是**终态** ⇒ 该列一律 `FALSE` 才算对
-#     （存量库由 `backend/admin-api/src/main/resources/db/migration/V107__retire_must_finish_flag.sql` 收敛）。
+#   · bootstrap 侧 `backend/admin-api/src/main/resources/db/init/schema.sql` 是**终态** ⇒ 该列一律 `FALSE` 才算对
+#     （存量库由 `backend/admin-api/src/main/resources/db/migration-archive/V107__retire_must_finish_flag.sql` 收敛）。
 # ⇒ 若继续把该列放进 `by_name` / `by_name_ident`，只有两个结局：**永久假红**，
 #   或把判据改成恒真（恒真 = 空断言，比假红更糟）。
 #
@@ -532,7 +544,7 @@ def test_frozen_seed_must_finish_is_the_recorded_history(catalog_rows):
 def test_must_finish_is_false_in_every_terminal_source(schema_sql, template_json):
     """两个**终态源**的 `is_must_finish` 一律 `FALSE`（bootstrap 种子 / 模板 JSON）。
 
-    · bootstrap（`docs/sql/schema.sql`，**不跑迁移链**）⇒ 必须自己就是终态，否则新建库落在旧口径；
+    · bootstrap（`backend/admin-api/src/main/resources/db/init/schema.sql`，**不跑迁移链**）⇒ 必须自己就是终态，否则新建库落在旧口径；
     · 模板（`production-templates/curtain/seed.json`，**开租播种**）⇒ **不得带**该键
       （带 = 把已退场的键又播进每个新租户；写面收到该字段已 422）。
     迁移链侧的终态由 V107 承担，真库判据见
@@ -645,7 +657,7 @@ def test_routings_match_python(routing_rows, python_catalog):
 # ── ② bootstrap（schema.sql）↔ 迁移源聚合 ──
 
 def test_schema_sql_matches_seed_sources(catalog_rows, routing_rows, schema_sql):
-    """docs/sql/schema.sql 的种子与 V54 ∪ V56（工序）/ V54 ∪ V58（路线）一致。
+    """backend/admin-api/src/main/resources/db/init/schema.sql 的种子与 V54 ∪ V56（工序）/ V54 ∪ V58（路线）一致。
 
     比对口径 = **名称 → 逐值**（`schema.sql` 是终态、工序行内按 sort_order 连续；迁移侧是两段拼接
     ⇒ 跨文件行序本来不同，故工序不比对行序，但**每个值逐个比** —— 改名/改价/改标记照样红）。
@@ -1345,14 +1357,14 @@ def position_price_rows(sql: str) -> dict:
     """价目行 → `{逻辑工序: (单价|None, applicable, status)}`（**逐值**口径）。
 
     ⚠️ **要求输入已在终态**（一道逻辑工序一行）—— 120 行态会 fail-closed 抛错（见 `_price_rows`）。
-    `docs/sql/schema.sql` 的矩阵段是 **120 行字面量**（已发布迁移的行集合必须可比对）⇒
+    `backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵段是 **120 行字面量**（已发布迁移的行集合必须可比对）⇒
     读 bootstrap **终态**请用 `schema_terminal_price_rows()`。
     """
     return _price_rows(parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS))
 
 
 def schema_terminal_price_rows(sql: str) -> dict:
-    """`docs/sql/schema.sql` 的矩阵段 → **bootstrap 终态**的 `{逻辑工序: (价, 适用, status)}`。
+    """`backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵段 → **bootstrap 终态**的 `{逻辑工序: (价, 适用, status)}`。
 
     终态 = 「按显式 `deleted` 分流 ⇒ 存活行」+「按四档选行收敛为一道逻辑工序一行」
     （issue #4937 / **合并后的 V102**；两份判据都与生产代码同源，见 `collapse_position_rows`）。
@@ -1738,7 +1750,7 @@ def test_rule_positions_are_kept_across_seed_and_bootstrap(schema_sql):
     **已作废** ⇒ 该迁移文件被删除（**删除即撤销**），bootstrap 镜像也要**恢复**成 `'布帘'`。
     ⇒ 本判据改钉**保留侧的终态**，三条都**可红**：
       ① `V103__clear_route_rule_positions.sql` **不存在**（谁把清空意图加回来即红）；
-      ② 迁移侧字面量（`V71`）与 bootstrap 镜像（`docs/sql/schema.sql`）的 `position`
+      ② 迁移侧字面量（`V71`）与 bootstrap 镜像（`backend/admin-api/src/main/resources/db/init/schema.sql`）的 `position`
          **逐条逐值一致**（改任一侧即红）；
       ③ 唯一那条部位限定的种子规则 `韩褶 → insert 上车布` 的 `position` **逐字 = `'布帘'`**
          （改成 `NULL` 或别的部位即红 —— 上一版当时按已删除的 `V103` 把它镜像成了 `NULL`）。
@@ -1973,7 +1985,7 @@ def test_customer_unit_price_is_an_explicit_debt_exemption():
     # ② 迁移侧真有该列（否则豁免无对象）
     migration_sql = _aggregate_text(RULE_SEED_SQLS)
     ddl = "\n".join(
-        p.read_text(encoding="utf-8") for p in sorted(MIGRATION_DIR.glob(MIGRATION_GLOB),
+        p.read_text(encoding="utf-8") for p in sorted(_migration_files(MIGRATION_GLOB),
                                                      key=lambda p: version_key(p.name))
         if "customer_unit_price" in p.read_text(encoding="utf-8"))
     assert re.search(r"customer_unit_price\s+NUMERIC\(12,\s*2\)", ddl, re.I), \
@@ -2113,7 +2125,7 @@ def test_factor_retire_keeps_the_column_and_history():
 
 
 def test_bootstrap_schema_also_retires_factor_rows(schema_sql):
-    """判据 3（#4589）：bootstrap（`docs/sql/schema.sql`）**同样**软删 —— 两条路径终态一致。
+    """判据 3（#4589）：bootstrap（`backend/admin-api/src/main/resources/db/init/schema.sql`）**同样**软删 —— 两条路径终态一致。
 
     bootstrap 路径（docker-entrypoint-initdb.d）**不跑迁移链** ⇒ 只写迁移 = 新建库仍留着
     活跃系数档（形状同 #3270：迁移链不在该栈运行）。本判据钉住该同步。
@@ -2121,7 +2133,7 @@ def test_bootstrap_schema_also_retires_factor_rows(schema_sql):
     assert factor_retire_statements(), "迁移侧没有软删语句（本判据的前提不成立）"
     code = sql_code(schema_sql)
     assert re.search(r"UPDATE\s+production_route_rules[\s\S]{0,200}?\bdeleted\s*=\s*1", code, re.I), (
-        "docs/sql/schema.sql 没有同步「软删 action='factor' 活跃行」—— "
+        "backend/admin-api/src/main/resources/db/init/schema.sql 没有同步「软删 action='factor' 活跃行」—— "
         "bootstrap 路径不跑迁移链 ⇒ 新建库会留着活跃系数档")
     assert re.search(r"action\s*=\s*'factor'", code, re.I), (
         "schema.sql 的软删语句没有限定 action='factor'")

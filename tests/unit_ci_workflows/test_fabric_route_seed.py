@@ -30,13 +30,13 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-SCHEMA = REPO / "docs/sql/schema.sql"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 
 DEFAULT_TEMPLATE_NAME = "窗帘工序路线（默认）"
 FABRIC_TEMPLATE_NAME = "布料工序路线"
-#: **bootstrap 字面量**（`docs/sql/schema.sql` 的种子）—— 自 issue #4690 起**已是终态**
+#: **bootstrap 字面量**（`backend/admin-api/src/main/resources/db/init/schema.sql` 的种子）—— 自 issue #4690 起**已是终态**
 #: `裁剪 → 打包`（该文件是「新建库一次性 bootstrap」，`docker-entrypoint-initdb.d` 栈**不跑迁移链**
 #: ⇒ 它必须一次给全终态；V88 只改迁移 ⇒ 不同步就是「迁移库与新库两套口径」）。
 FABRIC_MAINLINE_BOOTSTRAP = ("裁剪", "打包")

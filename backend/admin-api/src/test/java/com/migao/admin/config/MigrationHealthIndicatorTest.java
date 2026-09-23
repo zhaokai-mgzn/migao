@@ -161,6 +161,9 @@ class MigrationHealthIndicatorTest {
     private MigrationRunner newRunner() {
         MigrationRunner runner = new MigrationRunner(jdbcProvider, resolver);
         ReflectionTestUtils.setField(runner, "migrationPattern", "classpath:db/migration/*.sql");
+        // 基线（issue #5243）：`@Value` 字段在纯单测里不会被注入 ⇒ 显式钉上与生产一致的
+        // 默认值（与本行的 migrationPattern 同理），否则 applyBaseline 会拿到 null 位置。
+        ReflectionTestUtils.setField(runner, "initScriptLocation", "classpath:db/init/schema.sql");
         return runner;
     }
 
@@ -176,7 +179,13 @@ class MigrationHealthIndicatorTest {
             resources[i] = resource;
         }
         when(resolver.getResources(anyString())).thenReturn(resources);
+        // 基线（issue #5243）：本类测的是**迁移失败的可观测性**，与建库脚本无关 ⇒
+        // 钉成「台账已记账 ⇒ 整段跳过」，不让基线分支混进被测行为。
+        Resource baseline = mock(Resource.class);
+        when(baseline.getFilename()).thenReturn("schema.sql");
+        when(baseline.exists()).thenReturn(true);
+        when(resolver.getResource(anyString())).thenReturn(baseline);
         when(jdbc.queryForList("SELECT version FROM schema_migrations", String.class))
-                .thenReturn(List.of());
+                .thenReturn(List.of("schema.sql"));
     }
 }

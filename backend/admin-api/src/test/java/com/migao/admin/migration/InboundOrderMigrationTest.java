@@ -38,10 +38,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InboundOrderMigrationTest {
 
     private static final String MIGRATION_DIR =
-            "backend/admin-api/src/main/resources/db/migration";
+            "backend/admin-api/src/main/resources/db/migration-archive";
     private static final String V111 =
             MIGRATION_DIR + "/V111__create_inbound_orders_and_batches.sql";
-    private static final String SCHEMA_SQL = "docs/sql/schema.sql";
+    private static final String SCHEMA_SQL = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private static Path findRepoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
@@ -120,7 +120,7 @@ class InboundOrderMigrationTest {
     }
 
     @Test
-    @DisplayName("docs/sql/schema.sql（新建库路径）已同步 V111 终态：三张新表 + 成本列 + inbound 约束")
+    @DisplayName("backend/admin-api/src/main/resources/db/init/schema.sql（新建库路径）已同步 V111 终态：三张新表 + 成本列 + inbound 约束")
     void schemaSqlIsSyncedWithV111() throws IOException {
         String schema = read(SCHEMA_SQL);
         assertThat(schema).contains("CREATE TABLE IF NOT EXISTS inbound_orders");
@@ -138,7 +138,7 @@ class InboundOrderMigrationTest {
     }
 
     @Test
-    @DisplayName("V117（#5148）终态已同步 docs/sql/schema.sql：单号租户内唯一 + 幂等键部分唯一索引 + source 取值约束")
+    @DisplayName("V117（#5148）终态已同步 backend/admin-api/src/main/resources/db/init/schema.sql：单号租户内唯一 + 幂等键部分唯一索引 + source 取值约束")
     void schemaSqlIsSyncedWithV117() throws IOException {
         String schema = read(SCHEMA_SQL);
         // 单号唯一索引**租户内**（与 V111 建表注释「租户内唯一」一致 —— 改前是全局唯一，两者矛盾）

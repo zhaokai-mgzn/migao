@@ -6,7 +6,7 @@
 
 ## 被测对象
 
-`backend/admin-api/src/main/resources/db/migration/V96__backfill_operation_price_versions.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V96__backfill_operation_price_versions.sql`
 = **1 条语句**：为**每条没有版本账的活跃工序**补 1 行初始版本行
 （`'pv-v96-' || o.id` / `unit_price = o.unit_price` / 逐工序 `NOT EXISTS` 守卫）。
 
@@ -35,7 +35,7 @@
 1. **红证（改前必红）**：真库形态下跑 V55 ⇒ 20/21 号租户版本账 **0 行**（静默跳过）；
    跑 V96 ⇒ 差集归零、每户拿到**恰好等于其活跃工序数**的行（**数字从现场派生，不写死**）；
 2. **三处一致**：迁移链终态（真跑 V55→V79→V89→V91→**V96**）↔ bootstrap 终态
-   （**真跑 `docs/sql/schema.sql`**）↔ 从 `production_operations` **现场派生** —— 三处都断言
+   （**真跑 `backend/admin-api/src/main/resources/db/init/schema.sql`**）↔ 从 `production_operations` **现场派生** —— 三处都断言
    「活跃工序缺账 = 0」，且**不写死任何条数**；
 3. **幂等**：V96 跑两次净效果相同（第二次零插入；逐表行指纹一致）；
 4. **反向护栏**：不覆盖商家已改（改价后再跑，值一字不动）· 不复活软删（软删的**工序**与
@@ -67,14 +67,14 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 MIGRATION = MIGRATION_DIR / "V96__backfill_operation_price_versions.sql"
 V55 = MIGRATION_DIR / "V55__create_production_operation_price_versions.sql"
 V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 V89 = MIGRATION_DIR / "V89__backfill_fabric_seed_for_existing_tenants.sql"
 V91 = MIGRATION_DIR / "V91__backfill_baseline_operations_for_empty_catalogs.sql"
 V93 = MIGRATION_DIR / "V93__backfill_route_rules_for_empty_catalogs.sql"
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: 本迁移的 id 前缀（回滚 / 认领判据；与 V55 的 `pv-` 区分开）。
 PREFIX = "pv-v96-"
@@ -292,7 +292,7 @@ class TestMigrationShape:
 
 
 class TestBootstrapOrdering:
-    """bootstrap 那一格（`docs/sql/schema.sql` 不跑迁移链）**已经是终态** —— 本单只加指针注释。
+    """bootstrap 那一格（`backend/admin-api/src/main/resources/db/init/schema.sql` 不跑迁移链）**已经是终态** —— 本单只加指针注释。
 
     承重判据 = **顺序**：schema.sql 的单价版本回填段必须位于**所有** `production_operations`
     写语句**之后**（否则 bootstrap 建出的库会缺账，正是本单要治的形态）。
@@ -392,7 +392,7 @@ def pg(tmp_path, realdb_binaries):
 
 
 def _ddl_from_schema(table: str) -> str:
-    """从 `docs/sql/schema.sql` 抽出**真终态 DDL**（不手抄列清单 —— 手抄会漂移）。
+    """从 `backend/admin-api/src/main/resources/db/init/schema.sql` 抽出**真终态 DDL**（不手抄列清单 —— 手抄会漂移）。
 
     含 `CREATE TABLE` + 该表**所有** `ALTER TABLE … ADD COLUMN IF NOT EXISTS` 语句
     （终态列集由 schema.sql 自己给，例如 `production_operations.source` / `.scope` 是
@@ -644,7 +644,7 @@ def test_v96_leaves_snapshot_tables_untouched(pg):
 
 
 def test_bootstrap_schema_sql_terminal_state_matches_derived_truth(pg):
-    """bootstrap 那一格**真跑一遍**：`docs/sql/schema.sql` 建出的库，活跃工序缺账 = **0**。
+    """bootstrap 那一格**真跑一遍**：`backend/admin-api/src/main/resources/db/init/schema.sql` 建出的库，活跃工序缺账 = **0**。
 
     ⚠️ 用 **`ON_ERROR_STOP=1`** 跑全文（与 `docker-entrypoint-initdb.d` 的 entrypoint 同款）：
     建库顺序缺陷（`production_route_signals` 的种子在租户种子之前）已由 **issue #4762** 修掉

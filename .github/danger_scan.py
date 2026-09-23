@@ -57,8 +57,20 @@ import sys
 BASE = os.environ.get("DANGER_BASE", "origin/main")
 BULK_DELETE_THRESHOLD = 30
 
-MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
-SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
+# 迁移文件的**两个**载体目录（issue #5243）：历史链（V1 … V114）整链归档到
+# `migration-archive/`（只读、逐字节冻结，账本 = migration_fingerprints.json），
+# `migration/` 此后只放**未来的**增量迁移。**两个都要扫** —— 只看归档 ⇒
+# 「已发布迁移只增不改 / 不得破坏性 DDL」的判定对**将来**失效；只看活目录 ⇒
+# 今天扫不到任何文件（门禁空转 = 假绿）。**判据强度一字未改**，只是扫描面变成两个目录。
+MIGRATION_DIRS = (
+    "backend/admin-api/src/main/resources/db/migration-archive",
+    "backend/admin-api/src/main/resources/db/migration",
+)
+#: 活目录（新迁移该放这儿 —— 提示文案用）
+LIVE_MIGRATION_DIR = MIGRATION_DIRS[1]
+#: 兼容既有引用（= 归档目录；账本与测试都以它为锚）
+MIGRATION_DIR = MIGRATION_DIRS[0]
+SCHEMA_FILES = ("backend/admin-api/src/main/resources/db/init/schema.sql", "docs/sql/archive/schema_full.sql")
 MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
 # workflow 目录（**整目录**为扫描范围，不再写 `*.yml` glob）。
@@ -285,16 +297,94 @@ def _read_ledger_entries():
     return entries if isinstance(entries, dict) else None
 
 
+def _git_name_status_all_migrations():
+    """两个载体目录的迁移变更清单；**任一目录取证失败 ⇒ `None`**（fail-closed）。"""
+    out = []
+    for d in MIGRATION_DIRS:
+        changes = _git_name_status(d + "/*.sql")
+        if changes is None:
+            return None
+        out.extend(changes)
+    return out
+
+
+def _blob_sha256_at_base(rel_path, base=BASE):
+    """`<base>:<rel_path>` 的 blob sha256；取不到 ⇒ `None`（**fail-closed**：判不了「同一份内容」）。
+
+    用 **merge-base 的 blob** 而不是账本指纹：账本可能没被同批重生成，
+    那样「是不是同一份内容」的判据就会跟着账本一起腐烂。
+    """
+    try:
+        proc = subprocess.run(["git", "show", f"{base}:{rel_path}"],
+                              capture_output=True, check=False)
+    except Exception:  # noqa: BLE001 —— 取证失败一律 fail-closed（不得当成「内容相同」）
+        return None
+    if proc.returncode != 0:
+        return None
+    return "sha256:" + hashlib.sha256(proc.stdout).hexdigest()
+
+
+def split_migration_moves(migration_changes, base=BASE):
+    """把 `D` 拆成「**逐字节一致的归档移动**」与「真删除」。**纯函数**（便于注入式自证）。
+
+    ## 为什么需要它（issue #5243 实测）
+
+    迁移链整链归档是一次 `git mv`（116 条，内容逐字节未变），但 `_git_name_status` 是
+    **按目录分片**跑的：
+
+      · 片 = `migration-archive/*.sql` ⇒ 那些路径在 base 上不存在 ⇒ 全部报 **`A`**；
+      · 片 = `migration/*.sql` ⇒ HEAD 上只剩活目录那几条 ⇒ 全部报 **`D`**。
+
+    git **配不出** old↔new（旧路径被第二片的 pathspec 滤掉了）⇒ 纯搬家被读成「116 条已发布迁移被删除」。
+    实测：116 处 blocker，整条 PR 被卡死。**但并没有任何内容被改写** —— 用 ack 放行 116 次「删除」，
+    在审计上等于「owner 批准删除已发布迁移」，是**错误先例**。
+
+    ## 判据（**同时**满足才认作搬家，否则照旧算真删除 ⇒ blocker）
+
+      ① 该 `D` 路径的文件名在**另一个**迁移载体目录里存在；
+      ② 那份文件的内容与 **merge-base 上原路径的 blob** sha256 **逐字节相同**。
+
+    ⇒ 改内容再搬（哈希不符）= **重写已发布迁移** ⇒ 照旧 BLOCK；删掉且无同名归档件 = 真删除 ⇒ 照旧 BLOCK。
+
+    Returns:
+        `(kept, moves)`：`kept` = 仍按原判据处理的 `[(status, path)]`（含 `M` / `A` / **真删除**）；
+        `moves` = `[(status, old_path, new_path)]`（已确认是同一份文件的搬家）。
+    """
+    kept, moves = [], []
+    for status, path in migration_changes or []:
+        if status[0] != "D":
+            kept.append((status, path))
+            continue
+        name = path.rsplit("/", 1)[-1]
+        counterpart = None
+        for d in MIGRATION_DIRS:
+            if path.startswith(d + "/"):
+                continue  # 同一个载体目录内部的重名不算搬家
+            cand = f"{d}/{name}"
+            if _repo_file(cand).is_file():
+                counterpart = cand
+                break
+        if counterpart and _sha256_of(counterpart) == _blob_sha256_at_base(path, base):
+            moves.append((status, path, counterpart))
+        else:
+            kept.append((status, path))
+    return kept, moves
+
+
 def _changed_migration_paths():
     """本次被**修改/删除**的迁移文件路径；取证失败 ⇒ `[]`（= 无可确认项）。
 
     与 workflow 侧不同：本通道**不新增环境变量**承载这份清单 —— `--resolve-acks` 自己算，
     少一个「调用方忘了传 ⇒ 静默永不确认」的失效面。
     """
-    changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    changes = _git_name_status_all_migrations()
     if changes is None:
         return []
-    return [p for s, p in changes if s[0] in ("M", "D")]
+    # ⚠️ issue #5243：**搬家不算改动**（见 `split_migration_moves`）—— 否则一次整链归档
+    # 会要求 owner 逐个 ack 116 次「删除」，在审计上留下「批准删除已发布迁移」的错误先例。
+    # 真改写 / 真删除仍照旧进这份清单（通道原样保留）。
+    kept, _moves = split_migration_moves(changes)
+    return [p for s, p in kept if s[0] in ("M", "D")]
 
 
 def resolve_acks_main():
@@ -516,9 +606,10 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
         comment_only = diff_ok and added_line_seen and not added_ddl_lines
         if added_tables:
             try:
-                mig_files = subprocess.run(
-                    ["git", "ls-files", MIGRATION_DIR], capture_output=True, text=True,
-                    check=False).stdout
+                mig_files = "".join(
+                    subprocess.run(["git", "ls-files", d], capture_output=True, text=True,
+                                   check=False).stdout
+                    for d in MIGRATION_DIRS)
             except Exception:
                 mig_files = ""
             all_migration_sql = ""
@@ -536,7 +627,7 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
     if schema_changes and not new_migrations and not bootstrap_alignment and not comment_only:
         blockers.append(
             f"修改了表结构参考 {SCHEMA_FILES[0]}/{SCHEMA_FILES[1]} 但未新增迁移文件 —— "
-            f"请新增 {MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
+            f"请新增 {LIVE_MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
         )
     elif comment_only:
         warnings.append(
@@ -656,13 +747,16 @@ def main():
     deleted_files = [p for s, p in all_changes if s == "D"]
     deploy_files = [p for s, p in all_changes if s[0] in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
-    migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")
-    if migration_changes is None:
+    raw_migration_changes = _git_name_status_all_migrations()
+    if raw_migration_changes is None:
         blockers.append(
             "无法获取迁移文件变更清单 —— 安全门禁取证失败（「迁移只增不改」判定未执行，"
             "不得按「无迁移变更」放行）"
         )
-        migration_changes = []
+        raw_migration_changes = []
+    # 逐字节一致的**归档搬家**（issue #5243）不是「重写已发布迁移」⇒ 从判定面摘出 + 单独报告。
+    # 改内容再搬 / 删掉且无同名归档件 ⇒ 留在 migration_changes 里，照旧 BLOCK（判据强度不变）。
+    migration_changes, archived_moves = split_migration_moves(raw_migration_changes)
     schema_changes = [p for s, p in all_changes if p in SCHEMA_FILES]
 
     trusted = os.environ.get("DANGER_TRUSTED_ACTOR", "").lower() in ("1", "true", "yes")
@@ -693,6 +787,11 @@ def main():
     # analyze 内部会再算一次（同一纯函数、同一输入 ⇒ 结果必然一致）；这里算一次只为写 acks 留痕。
     migration_granted, _ = verify_migration_acks(
         migration_acked, migration_changes, ledger_changed, ledger_entries, disk_hashes)
+    for _status, _old, _new in archived_moves:
+        print(f"ℹ️ 迁移已归档（内容逐字节一致，非重写）：{_old} → {_new}")
+    if archived_moves:
+        print(f"ℹ️ 共 {len(archived_moves)} 条迁移已归档（内容逐字节一致，非重写）—— 不计入 blocker")
+
     a_blockers, warnings = analyze(
         workflow_paths, wf_new_secrets, deleted_files, deploy_files,
         migration_changes, schema_changes, trusted_actor=trusted,

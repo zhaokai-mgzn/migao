@@ -151,7 +151,8 @@ def test_red_line_detector_has_teeth():
 #     `/usr/lib/postgresql/16/bin`，**不在 PATH** ⇒ 按裸名调用必 `FileNotFoundError`）。
 #    本模块已登记进 `pg_cluster.REALDB_TEST_MODULES`（判据⑤的冻结表）。
 
-#: 与 `docs/sql/schema.sql` / V83 同形的**最小** DDL（本迁移触碰的表 + 红线表）。
+#: 与建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` / V83 同形的**最小** DDL
+#: （本迁移触碰的表 + 红线表）。
 _DDL = """
 CREATE TABLE tenants (id BIGINT PRIMARY KEY, deleted INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE processing_items (

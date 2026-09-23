@@ -6,7 +6,7 @@
 
 ## 被测对象
 
-`backend/admin-api/src/main/resources/db/migration/V88__retire_material_prep_and_fabric_position.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V88__retire_material_prep_and_fabric_position.sql`
 = 设计 `docs/design/public-operations-and-craft-ui.md`（#4675 已合并）§5.2 的 7 条动作：
 
 | # | 动作 | 本文件的判据 |
@@ -57,13 +57,25 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 V88 = MIGRATION_DIR / "V88__retire_material_prep_and_fabric_position.sql"
 SEED_SERVICE = REPO / ("backend/admin-api/src/main/java/com/migao/admin/service/"
                        "ProductionSeedTemplateService.java")
 #: **bootstrap 终态**（`docker-entrypoint-initdb.d` 用的建库脚本；该栈**不跑迁移链** ⇒ issue #4690）。
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 #: 设计稿（#4675）：§5.2 ⑤ / §5.6 ⑤ / §8.3 F6 的「退场格数」是**文档层**口径，
 #: 必须与 V88 终态一致（issue #4701 P2-2 —— 设计稿原写 35 格，V88 落 31）。
 DESIGN_DOC = REPO / "docs/design/public-operations-and-craft-ui.md"
@@ -193,7 +205,7 @@ def test_v88_is_present_and_published_migrations_are_append_only():
       · **没有** V88 的回滚迁移文件（回滚 SQL 只登记在 V88 的注释里，不落码）。
     ⚠️ **不是放宽**：三条断言各自可红（删/改名 V88 ⇒ 红；删 V79 ⇒ 红；落一个回滚迁移 ⇒ 红）。
     """
-    names = sorted(p.name for p in MIGRATION_DIR.glob("V*.sql"))
+    names = sorted(p.name for p in _migration_files("V*.sql"))
     versions = [int(_VERSION_RE.match(n).group(1)) for n in names if _VERSION_RE.match(n)]
     assert V88.exists(), f"缺 {V88.name} —— V88 的迁移未落码"
     assert 88 in versions, f"迁移链里没有 V88（实测版本号 = {sorted(versions)}）—— 被删/改名了？"
@@ -533,10 +545,10 @@ def test_six_stop_conditions_are_clean_on_the_real_migration():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
-# bootstrap 路径（`docs/sql/schema.sql`）与迁移终态的一致性 —— 新建库**不跑迁移链**（issue #4690）
+# bootstrap 路径（`backend/admin-api/src/main/resources/db/init/schema.sql`）与迁移终态的一致性 —— 新建库**不跑迁移链**（issue #4690）
 # ══════════════════════════════════════════════════════════════════════════════════════
 #
-# 病根：`bootstrap-first` 栈（`docker-entrypoint-initdb.d`）直接用 `docs/sql/schema.sql` 建库、
+# 病根：`bootstrap-first` 栈（`docker-entrypoint-initdb.d`）直接用 `backend/admin-api/src/main/resources/db/init/schema.sql` 建库、
 # **不跑迁移链** ⇒ V88 只改了迁移 ⇒ **新建库仍是旧口径**（布料主线 `配料→打包` / `配料` 工序在 /
 # 36 格全活）⇒ 迁移库与新库**两套口径**（本仓最忌）。下面两条判据把两条口径**接上**：
 #   ① `test_bootstrap_terminal_state_matches_v88` —— bootstrap **终态**逐项 = V88 的 4 条改写；
@@ -654,7 +666,7 @@ def _v79_all_operation_rows() -> list:
 
 
 def test_bootstrap_terminal_state_matches_v88():
-    """bootstrap（`docs/sql/schema.sql`）的**终态**逐项 = V88 ①②③④⑤⑦ + **O4 塌缩**（issue #4937）。
+    """bootstrap（`backend/admin-api/src/main/resources/db/init/schema.sql`）的**终态**逐项 = V88 ①②③④⑤⑦ + **O4 塌缩**（issue #4937）。
 
     ⚠️ **本判据的基线随用户 2026-09-21 裁定换过一次**（母单 #4936「不计成本的改」）：
     原来它钉的是「退场 31 格 + 存活 5 格 = 36」的 **V88 终态**；现在矩阵按 O4 **物理塌缩**为
@@ -753,7 +765,7 @@ def test_bootstrap_matches_migration_chain_terminal_state():
 def test_bootstrap_literals_keep_the_full_v79_seed_set():
     """bootstrap 的字面量种子**行集合** = V79（行保留、只翻 `deleted`）—— 不是「不种这些行」。
 
-    理由（issue #4690 的「先核清再动手」）：`docs/sql/schema.sql` **确实**是字面量种子
+    理由（issue #4690 的「先核清再动手」）：`backend/admin-api/src/main/resources/db/init/schema.sql` **确实**是字面量种子
     （与 V54 ∪ V56 ∪ V71 ∪ V79 逐行同口径，由 `test_production_catalog_seed.py` 钉住）⇒
     退场只能靠**显式 `deleted`** 表达；直接删行会让「迁移链 ↔ bootstrap」的行集合不可比对
     （守卫只能退化成「只比对存活行」，漏掉「行整个消失」这一形态）。
@@ -845,7 +857,7 @@ def test_selfcheck_comment_counts_do_not_drift():
     破坏「已发布迁移不可改」（#4235）⇒ 本项只能在**守卫层**收口：存量豁免**从账本派生**
     （不手写白名单）且**只许缩短**。
     """
-    texts = {p.name: _read(p) for p in MIGRATION_DIR.glob("V*.sql")}
+    texts = {p.name: _read(p) for p in _migration_files("V*.sql")}
     frozen = _frozen_migration_names()
     offenders = _drifting_selfcheck_offenders(texts)
     assert offenders <= frozen, (
@@ -1008,7 +1020,7 @@ class TestInjectedDrift:
 
     def test_selfcheck_count_guard_red_when_a_new_migration_claims_a_count(self):
         """把「在自己身上跑 `grep -c`」的计数写进一份**未冻结**迁移 ⇒ P2-1 判据必红。"""
-        texts = {p.name: _read(p) for p in MIGRATION_DIR.glob("V*.sql")}
+        texts = {p.name: _read(p) for p in _migration_files("V*.sql")}
         frozen = _frozen_migration_names()
         assert _drifting_selfcheck_offenders(texts) <= frozen, "改前判据应为绿 ⇒ 本红证的前提不成立"
         injected = dict(texts)

@@ -34,6 +34,7 @@ import re
 from pathlib import Path
 
 MIGRATION_DIR = (
+
     Path(__file__).resolve().parents[2]
     / "backend"
     / "admin-api"
@@ -41,8 +42,17 @@ MIGRATION_DIR = (
     / "main"
     / "resources"
     / "db"
-    / "migration"
+    / "migration-archive"
 )
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
 
 # 存量同号迁移（burn-down 登记，见 issue #3813）：修一条删一条。
 # 当前为 V29 ×2 / V33 ×2（均先于 #3812 存在）；V45 已由 #3812 改名让号。
@@ -105,7 +115,7 @@ def test_migration_files_follow_version_naming():
     若路径写错（目录不存在/空），本测试先红 —— 避免「什么都没扫到」却绿着通过。
     """
     assert MIGRATION_DIR.is_dir(), f"迁移目录不存在：{MIGRATION_DIR}"
-    files = sorted(p.name for p in MIGRATION_DIR.glob("*.sql"))
+    files = sorted(p.name for p in _migration_files("*.sql"))
     assert len(files) >= 20, f"迁移文件数异常（{len(files)}）—— 路径对吗？{MIGRATION_DIR}"
 
     unmatched = [f for f in files if not _VERSION_RE.match(f)]
@@ -114,7 +124,7 @@ def test_migration_files_follow_version_naming():
 
 def test_repo_has_no_unregistered_duplicate_versions():
     """新增同号迁移一律拦截；存量登记放行；登记销账未删即红。"""
-    files = sorted(p.name for p in MIGRATION_DIR.glob("*.sql"))
+    files = sorted(p.name for p in _migration_files("*.sql"))
     duplicates = scan_duplicate_versions(files)
 
     unregistered = sorted(v for v in duplicates if v not in KNOWN_DUPLICATE_VERSIONS)

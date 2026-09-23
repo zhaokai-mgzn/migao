@@ -3,7 +3,7 @@ SQL schema 完整性守卫（issue #3270）。
 
 背景（2026-09-11 CI 实测根因，串联出同一 commit 的多处遗留）：
 `xiaobu-acceptance` 自 2026-08-31 起 **9/9 全 failure**，真因是
-`docs/sql/schema.sql` 无法初始化 —— `docker-entrypoint-initdb.d` 的 psql 带
+`backend/admin-api/src/main/resources/db/init/schema.sql` 无法初始化 —— `docker-entrypoint-initdb.d` 的 psql 带
 `ON_ERROR_STOP=1`，任何一条语句报错都会中止建库 → postgres 容器 `exited (3)`
 → admin-api/ai-agent 起不来 → 整个评测栈不可用。
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-SCHEMA = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+SCHEMA = Path(__file__).parent.parent.parent / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 # 允许被引用但不由本文件创建的表（运行时扩展/外部扩展；当前为空）
 EXTERNAL_TABLES = set()
@@ -280,7 +280,7 @@ class TestPostgresHealthcheckMatchesDatabase:
         pg = self._postgres()
         mounts = " ".join(pg.get("volumes") or [])
         assert "schema.sql" in mounts and "docker-entrypoint-initdb.d" in mounts, (
-            f"compose 未把 docs/sql/schema.sql 挂为 initdb 脚本：{mounts!r}"
+            f"compose 未把 backend/admin-api/src/main/resources/db/init/schema.sql 挂为 initdb 脚本：{mounts!r}"
         )
 
 
@@ -1155,7 +1155,7 @@ class TestNamedProductsAreSeeded:
 
 
 class TestSchemaFullDeprecation:
-    """`docs/sql/schema_full.sql` 必须保持「已废弃」标注，直到它真正与迁移链对齐。
+    """`docs/sql/archive/schema_full.sql` 必须保持「已废弃」标注，直到它真正与迁移链对齐。
 
     背景（2026-09-11 实测逐表比对）：该文件是 2026-05-30 的快照，此后未跟进，
     **两个方向都失真** —— 缺 6 张新表，且仍会创建 4 张已被 V36 等迁移 DROP 的表
@@ -1166,8 +1166,8 @@ class TestSchemaFullDeprecation:
     若头部没有显著废弃标注，读者会以为它是权威全量脚本。
     """
 
-    FULL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema_full.sql"
-    CANONICAL = Path(__file__).parent.parent.parent / "docs" / "sql" / "schema.sql"
+    FULL = Path(__file__).parent.parent.parent / "docs/sql/archive/schema_full.sql"
+    CANONICAL = Path(__file__).parent.parent.parent / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
     @staticmethod
     def _tables(p: Path) -> set:
@@ -1187,8 +1187,8 @@ class TestSchemaFullDeprecation:
                 f"{sorted(drift)[:6]}，但文件头部没有废弃标注 —— "
                 "读者会把它当成权威全量脚本。"
             )
-            assert "docs/sql/schema.sql" in full_sql, (
-                "废弃标注必须明确指向正确入口 docs/sql/schema.sql"
+            assert "backend/admin-api/src/main/resources/db/init/schema.sql" in full_sql, (
+                "废弃标注必须明确指向正确入口 backend/admin-api/src/main/resources/db/init/schema.sql"
             )
         else:
             assert not has_banner, (
@@ -1231,11 +1231,11 @@ class TestSchemaCoversMigrationChainColumns:
     """`schema.sql` 必须覆盖**迁移链**的全部表与列（issue #3270 实测根因）
 
     CI 实证（run 34617597854，postgres 日志原文）：C 端验收栈的库由
-    `docs/sql/schema.sql` 经 docker-entrypoint-initdb.d 建立，而 **Flyway 不在该栈运行**
+    `backend/admin-api/src/main/resources/db/init/schema.sql` 经 docker-entrypoint-initdb.d 建立，而 **Flyway 不在该栈运行**
     → 只存在于迁移链的列**建库后并不存在** →
 
         column "actual_amount" does not exist      (orders，来自 V5/V14)
-        column "position" does not exist           (users，来自 docs/sql/migrations)
+        column "position" does not exist           (users，来自 docs/sql/archive/legacy-scripts/V2026)
         ... → admin-api 查询 500 → ai-agent 工具拿到 "服务暂时不可用"(CIRCUIT_OPEN)
         → 熔断器打开 → 后续同类工具调用**全部失败** → 整轮评测被污染
 
@@ -1243,9 +1243,14 @@ class TestSchemaCoversMigrationChainColumns:
     本测试把「bootstrap 必须与迁移链终态一致」变成可执行约束。
     """
 
+    # 迁移链的三个载体（issue #5243）：历史链整链归档到 `migration-archive/`，
+    # 老一代 `docs/sql/migrations/V2026*` 归档到 `docs/sql/archive/legacy-scripts/V2026/`，
+    # `db/migration/` 只放未来的增量迁移。**判据一字未改**（仍是「建库脚本 ⊇ 迁移链终态」），
+    # 只是被比较的对象换成了归档路径 + 活目录。
     MIGRATION_DIRS = [
+        Path(__file__).parent.parent.parent / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration-archive",
+        Path(__file__).parent.parent.parent / "docs" / "sql" / "archive" / "legacy-scripts" / "V2026",
         Path(__file__).parent.parent.parent / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration",
-        Path(__file__).parent.parent.parent / "docs" / "sql" / "migrations",
     ]
 
     # schema.sql 里以 `key` 这类 SQL 关键字命名的列，解析时需特判（否则被当约束跳过）
@@ -1281,7 +1286,7 @@ class TestSchemaCoversMigrationChainColumns:
         原实现只认 `DROP TABLE`（`superseded` 表集合），**不认 `DROP COLUMN`** ——
         于是「先加的列被后续迁移删掉」这种**合法终态**会被算成
         「schema.sql 缺该列」⇒ 假缺口（门禁要求把已删的列加回 bootstrap）。
-        （实测形态：`applicable_product_categories` 由 `docs/sql/migrations/V20260604` 加、
+        （实测形态：`applicable_product_categories` 由 `docs/sql/archive/legacy-scripts/V2026/V20260604` 加、
         V66 `DROP COLUMN` 删；旧注释把这个删除动作写成 V61 —— V61 实为报工计件快照迁移。）
         病根与 `RENAME TO` 那一支同族：**只处理了建/改，没处理删** ⇒ 要求集合不是终态。
         故此处对称地收集 `dropped_cols[(表, 列)]` 并在返回前剔除。

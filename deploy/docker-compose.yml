@@ -28,7 +28,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../docs/sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+      - ../backend/admin-api/src/main/resources/db/init/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
     healthcheck:
       # 必须显式指定 -d 目标库：`pg_isready -U app_user` 会以「用户名」为库名连接，
       # 而本实例只有 POSTGRES_DB=ai_customer_service，并无名为 app_user 的库 →

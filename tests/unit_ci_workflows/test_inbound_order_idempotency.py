@@ -23,7 +23,7 @@
 | 判别力（注入红证） | 把该索引 DROP 掉再跑同一场景 ⇒ 第二张单**建得进去**（读数 1 → 2）⇒ 「只有一张」不是空断言 |
 | 口径一致（真库 + 源码） | 单号唯一索引 = `(tenant_id, inbound_no) WHERE deleted = 0`（**租户内**，与 V111 建表注释逐字一致）；改前同号跨租户被拒 ⇒ 改后允许，同租户仍被拒；`source` CHECK 拒 `gift`（23514）、缺省 `purchase`；列注释与索引口径一致 |
 | 过账闸的**源码判据** | CAS 的 SQL 从 `InboundOrderMapper` 的 `@Update` **真源码**里取（不是测试里再抄一份）：谓词丢了 `status = 'draft'` / `tenant_id` / `deleted = 0` ⇒ 本文件当场红 |
-| 迁移形态 | V117 已登记进 `migration_fingerprints.json`；显式 `BEGIN/COMMIT`；前置 fail-closed 在写语句之前；两遍真跑幂等；`docs/sql/schema.sql`（bootstrap 路径不跑迁移链）已同步终态 |
+| 迁移形态 | V117 已登记进 `migration_fingerprints.json`；显式 `BEGIN/COMMIT`；前置 fail-closed 在写语句之前；两遍真跑幂等；`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径不跑迁移链）已同步终态 |
 """
 from __future__ import annotations
 
@@ -40,11 +40,23 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V111 = MIGRATION_DIR / "V111__create_inbound_orders_and_batches.sql"
 V117 = MIGRATION_DIR / "V117__inbound_order_idempotency_and_source.sql"
 MAPPER = REPO / "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 TENANT_A = 1
@@ -495,7 +507,7 @@ def test_source_check_constraint_and_default(psql):
 def test_v117_exists_and_is_the_unique_highest_version():
     assert V117.exists(), f"缺少迁移文件：{V117.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
-                for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+                for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     assert versions.count(117) == 1, "V117 版本号重复"
     assert max(versions) >= 117, f"V117 不是最高版本号（当前最大 V{max(versions)}）"
 

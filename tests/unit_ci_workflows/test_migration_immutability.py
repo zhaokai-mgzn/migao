@@ -54,11 +54,22 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 LEDGER_REGEN_CMD = ("python3 tests/unit_ci_workflows/"
                     "test_migration_immutability.py --write-ledger")
+
+#: 迁移文件的两个载体 + 建库脚本（单一事实源 = tests/unit_ci_workflows/_migration_paths.py）
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import (  # noqa: E402
+    ARCHIVE_DIR, INIT_SCRIPT, LIVE_DIR, MIGRATION_DIRS,
+)
 
 _VERSION_RE = re.compile(r"^V(\d+)__")
 
@@ -74,10 +85,25 @@ def fingerprint(path: Path) -> str:
     return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def scan_disk(migration_dir: Path = MIGRATION_DIR) -> dict:
-    """磁盘上的迁移文件 → 内容指纹（按版本号数值序，便于账本 diff 稳定）。"""
-    paths = sorted(Path(migration_dir).glob("V*.sql"), key=lambda p: version_key(p.name))
-    return {p.name: fingerprint(p) for p in paths}
+def scan_disk(migration_dir: Path = None) -> dict:
+    """**冻结面**上的文件 → 内容指纹（按版本号数值序，便于账本 diff 稳定）。
+
+    冻结面（issue #5243 起）= ① 唯一的一份建库脚本 `db/init/schema.sql`（基线；台账键 = 文件名）
+    + ② **归档**的迁移链（`db/migration-archive/`）+ ③ 未来的增量迁移（`db/migration/`）。
+
+    ⚠️ 三个载体**都要扫**：只看归档 ⇒ 新迁移不在射程（账本对**将来**失效）；
+    只看活目录 ⇒ 今天扫不到任何文件（判据空转 = 假绿）。建库脚本按**文件名**登记，
+    与 `MigrationRunner` 的台账键同粒度。
+    """
+    dirs = (Path(migration_dir),) if migration_dir is not None else MIGRATION_DIRS
+    out = {}
+    for d in dirs:
+        for p in sorted(Path(d).glob("V*.sql"), key=lambda p: version_key(p.name)):
+            assert p.name not in out, f"迁移文件名在两个载体目录里重复：{p.name}"
+            out[p.name] = fingerprint(p)
+    if migration_dir is None:
+        out[INIT_SCRIPT.name] = fingerprint(INIT_SCRIPT)
+    return {k: out[k] for k in sorted(out, key=version_key)}
 
 
 def load_ledger(path: Path = LEDGER) -> dict:
@@ -197,6 +223,75 @@ def test_audit_detects_injected_drift():
         "「账本条目对应文件消失」读不出来"
 
 
+
+# ── 切点不变式（issue #5243）：活目录只许放**晚于切点**的迁移 ──────────────────
+
+def _versions_of(files) -> dict:
+    """`{文件名: 版本号}`（不可解析版本号 → `1 << 30`，与 `version_key` 同款兜底）。"""
+    return {Path(p).name: version_key(Path(p).name)[0] for p in files}
+
+
+def cut_point_violations(live_files=None, archive_files=None) -> list:
+    """**切点不变式**：活目录里的最小版本号必须 **大于** 归档里的最大版本号。
+
+    ## 为什么需要它（而不是「收尾时小心点」）
+
+    切点 = **建库脚本已经体现其效果的迁移集合**。结构变更按既有约定会同步进脚本
+    （`schema.sql`）⇒ 进归档；**纯数据迁移**（如把某批种子行撤下）改不了表/列，脚本里
+    体现不出来 ⇒ **必须留在活目录**，在新库上照常跑一遍 —— 那是**设计路径**，不是缺陷。
+
+    于是一个**结构性**风险随之出现：main 持续合入新迁移，「哪条该归档」会随 main 移动。
+    若某条**低于切点**的迁移落进活目录（漏归档 / 后人回填 / 分支切点不同），它会被
+    `MigrationRunner` 当成「未来增量」在**已建出终态的库**上再跑一遍（不在 `schema_migrations` 里）
+    —— 正是本 issue 要消灭的「两份真相」。本函数把那条判断变成机械判据。
+
+    ## 判据形态（纯函数，便于注入式自证）
+
+    违规 = 活目录里版本号 **≤ max(归档版本号)** 的迁移（返回文件名清单，空 = 合规）。
+    两个目录任一为空 ⇒ 返回空（切点尚未建立 / 已有意清空活目录，不算违规）。
+    """
+    live = _versions_of(list(live_files) if live_files is not None
+                        else LIVE_DIR.glob("V*.sql"))
+    archive = _versions_of(list(archive_files) if archive_files is not None
+                           else ARCHIVE_DIR.glob("V*.sql"))
+    if not live or not archive:
+        return []
+    cut = max(archive.values())
+    return sorted((n for n, v in live.items() if v <= cut), key=version_key)
+
+
+def test_live_dir_holds_only_migrations_after_the_cut_point():
+    """活目录里不得出现**编号 ≤ 归档切点**的迁移（issue #5243）。"""
+    violations = cut_point_violations()
+    assert violations == [], (
+        "活目录里出现了**编号不晚于归档切点**的迁移：\n"
+        + _diff_detail(violations, {}, {n: "(活目录)" for n in violations})
+        + "\n  ⇒ 二选一，并说明理由：\n"
+          "     ① 它属**结构/脚本已体现**的那一类 ⇒ 移进 `backend/admin-api/src/main/resources/"
+          "db/migration-archive/`（并重生成账本）；\n"
+          "     ② 它是**纯数据迁移**（脚本体现不出来，必须在新库上照跑）⇒ 说明为什么它的编号"
+          "落在切点之下（例如它与切点同批、切点判定需要更新）。\n"
+          "  为什么必须显式裁决：`MigrationRunner` 会把活目录里的每一条都当成「未来增量」"
+          "执行 —— 编号在切点之下的一条会在**已建出终态的库**上再跑一遍（两份真相）。")
+
+
+def test_cut_point_helper_detects_injected_regression():
+    """注入式自证：把一条**归档**里的迁移放进活目录 ⇒ 判据必须变红（否则它是空断言）。"""
+    archive = [Path("V1__a.sql"), Path("V122__b.sql")]
+    # ① 合规：活目录只有**晚于切点**的一条
+    assert cut_point_violations([Path("V123__c.sql")], archive) == [], \
+        "合规形态被误判 ⇒ 这条判据会挡住正常开发"
+    # ② 违规：把归档里的一条复制回活目录（版本号 == 切点）
+    assert cut_point_violations([Path("V122__b.sql"), Path("V123__c.sql")], archive) == \
+        ["V122__b.sql"], "「低于切点却留在活目录」读不出来 ⇒ 本判据是空断言"
+    # ③ 违规：连归档里最小的一条也在
+    assert cut_point_violations([Path("V1__a.sql")], archive) == ["V1__a.sql"], \
+        "最极端形态（整链还在活目录）没被挡住"
+    # ④ 边界：两个目录任一为空 ⇒ 不算违规（切点未建立 / 有意清空）
+    assert cut_point_violations([], archive) == []
+    assert cut_point_violations([Path("V9__c.sql")], []) == []
+
+
 # ── 账本重生成入口（唯一新增条目的合法路径；不覆盖已登记指纹）──
 
 def write_ledger(path: Path = LEDGER) -> int:
@@ -223,7 +318,7 @@ def write_ledger(path: Path = LEDGER) -> int:
         raw = json.loads(path.read_text(encoding="utf-8"))
         preserved = {k: v for k, v in raw.items() if k not in ("note", "migrations")}
     payload = {
-        "note": ("已发布迁移的内容指纹账本（issue #4235）。"
+        "note": ("已发布迁移 + 唯一建库脚本的内容指纹账本（issue #4235 / #5243）。"
                  f"新增迁移后跑：{LEDGER_REGEN_CMD}（只新增条目，不覆盖已登记指纹）"),
         **preserved,
         "migrations": {name: on_disk[name] for name in sorted(on_disk, key=version_key)},

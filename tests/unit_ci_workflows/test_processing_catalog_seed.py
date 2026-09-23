@@ -53,7 +53,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import synthetic_processing_fee_data as synthetic  # noqa: E402
 
 FIXTURE = REPO / "tests/e2e/fixtures/processing-list.json"
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 #: 期望的迁移文件名（主会话落地的那个）；解析时按 `V83__*.sql` 发现 ⇒ 文件名微调不至于让本判据静默跳过。
 MIGRATION_NAME = "V83__seed_processing_item_catalog.sql"
 
@@ -269,7 +281,7 @@ def fixture_document() -> dict:
 
 def migration_path():
     """按 `V83__*.sql` 发现迁移（文件名微调 ⇒ 仍然收敛，不静默跳过）；不存在 ⇒ `None`。"""
-    hits = sorted(MIGRATION_DIR.glob("V83__*.sql"))
+    hits = sorted(_migration_files("V83__*.sql"))
     return hits[0] if hits else None
 
 
@@ -491,6 +503,6 @@ def test_v83_is_executable_shaped_and_idempotent_by_double_guard():
         "删掉 `NOT EXISTS` 读不出差异 ⇒ 对「覆盖商家数据」那一族是空断言"
 
     # bootstrap 同源块：JOIN 形态必须同样合法（该路径不跑迁移链，坏了不会被迁移守卫发现）
-    schema = (REPO / "docs/sql/schema.sql").read_text(encoding="utf-8")
+    schema = (REPO / "backend/admin-api/src/main/resources/db/init/schema.sql").read_text(encoding="utf-8")
     join_defects = [d for d in executability_defects(schema) if "缺 `ON`" in d]
-    assert join_defects == [], f"docs/sql/schema.sql 的 JOIN 形态不合法：{join_defects}"
+    assert join_defects == [], f"backend/admin-api/src/main/resources/db/init/schema.sql 的 JOIN 形态不合法：{join_defects}"

@@ -14,7 +14,7 @@
 | 顺序（不可交换） | 回填（从 SKU 取真值）**先于** DROP COLUMN；去重**先于** ADD CONSTRAINT（否则建约束失败 / 回填丢失真值） |
 | 真库（临时 PG） | 两遍真跑：第二遍净效果相同；`selling_method` 列已消失；唯一键定义逐字 = `(product_id, color_id, door_width)`；**重复行被去重**（保留价格最低、同价取 id 最小）；`products.selling_methods` 回填自旧 SKU 真值、无 NULL |
 | 判别力（注入红证） | ① 不去重就建唯一键 ⇒ 建约束失败（证明「去重」这条不是装饰）；② 把 `selling_method` 加回唯一键 ⇒ 终态对账抛（证明约束判据有判别力）；③ 回填挪到 DROP 之后 ⇒ 回填拿不到真值（顺序判据有判别力） |
-| bootstrap 镜像 | `docs/sql/schema.sql`（bootstrap 路径**不跑迁移链**）的 `product_skus` 已无该列、唯一键已是两维、`products` 已带两列 |
+| bootstrap 镜像 | `backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径**不跑迁移链**）的 `product_skus` 已无该列、唯一键已是两维、`products` 已带两列 |
 
 ## 为什么必须真跑两遍
 
@@ -40,9 +40,9 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 V113 = MIGRATION_DIR / "V113__product_roll_length_and_selling_method_base_attribute.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 UNIQUE_CONSTRAINT = "uq_product_skus_combination"
@@ -117,7 +117,7 @@ def test_v111_backfill_never_references_a_column_that_does_not_exist():
     """**静态钉住那个真缺陷**：回填**不得**引用 `product_skus.deleted`（该表没有这一列）。
 
     为什么必须有这条静态断言（而不只靠真库判据）：
-    `product_skus` 全仓从未有过软删列（`docs/sql/schema.sql` 的 `CREATE TABLE product_skus` 无该列、
+    `product_skus` 全仓从未有过软删列（`backend/admin-api/src/main/resources/db/init/schema.sql` 的 `CREATE TABLE product_skus` 无该列、
     迁移链无 `ALTER TABLE product_skus ADD COLUMN deleted`、`ProductSku` 无 `@TableLogic`，
     删除走 `deleteById` = **物理删除**）。回填写了 `AND deleted = 0` ⇒ 真库抛
     「字段 "deleted" 不存在」⇒ 整份迁移回滚，而 `MigrationRunner` 对非连接类失败是
@@ -154,7 +154,7 @@ def test_v111_documents_rollback_and_its_irreversible_part():
 # ══════════════════════════ ② bootstrap 终态镜像（静态） ══════════════════════════
 
 def test_bootstrap_schema_mirrors_the_v111_end_state():
-    """`docs/sql/schema.sql` 是新建库路径（**不跑迁移链**）⇒ 必须已是 V113 终态。"""
+    """`backend/admin-api/src/main/resources/db/init/schema.sql` 是新建库路径（**不跑迁移链**）⇒ 必须已是 V113 终态。"""
     schema = _read(SCHEMA_SQL)
     skus = schema[schema.index("CREATE TABLE product_skus ("):]
     skus = skus[:skus.index(");")]

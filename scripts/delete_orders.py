@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 # 删除顺序 = 外键依赖拓扑（被引用表先于引用表），每级 = (表, 定位列, 键空间)。
-# 真值源：docs/sql/schema.sql + V49 / V92 迁移的外键链 ——
+# 真值源：backend/admin-api/src/main/resources/db/init/schema.sql + V49 / V92 迁移的外键链 ——
 #   orders ← order_items / order_logistics / processing_orders
 #   processing_orders ← processing_position_operations / production_work_logs
 #                      / processing_order_sets / processing_set_part_tokens

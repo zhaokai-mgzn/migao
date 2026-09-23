@@ -100,7 +100,7 @@ NO_SIDE_MARGIN_SOURCES: tuple[Path, ...] = (
     REPO_ROOT / "frontend/admin-web/src/types/index.ts",
     REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/entity/CraftCalcConfig.java",
     REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
-    REPO_ROOT / "docs/sql/schema.sql",
+    REPO_ROOT / "backend/admin-api/src/main/resources/db/init/schema.sql",
 )
 
 #: 对照表（**写死**的几何：`W` = 净窗宽、`N` = 褶倍、`G` = 门幅）

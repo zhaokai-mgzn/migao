@@ -6,7 +6,7 @@
 
 ## 被测对象
 
-`backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V92__add_processing_order_sets_and_scan_loop.sql`
 = ① `processing_order_sets`（一单 × 一套，两个唯一键）② `processing_set_part_tokens`（一部位一码）
 ③ 工序实例六列（全可空）④ 卡点索引 ⑤ 存量回填（套行）⑥ 实例行回填 ⑦ 软停读数 ⑧ 硬停断言。
 
@@ -45,9 +45,9 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 MIGRATION = MIGRATION_DIR / "V92__add_processing_order_sets_and_scan_loop.sql"
 #: 回滚 = **新迁移**（设计 §11.4）。⚠️ **只登记、不落码** —— 落码即会被 `MigrationRunner`
@@ -468,7 +468,7 @@ def test_token_carrier_ships_no_rows():
 
 
 def test_bootstrap_schema_carries_the_terminal_state():
-    """设计 §11.2 ⑩：`docs/sql/schema.sql` 必须同步终态（新建库路径**不跑迁移链**）。
+    """设计 §11.2 ⑩：`backend/admin-api/src/main/resources/db/init/schema.sql` 必须同步终态（新建库路径**不跑迁移链**）。
 
     不同步 ⇒ bootstrap 库没有这两张表 / 六列，而存量库有 ⇒ 两条路径分叉（#3270 同族）。
     """

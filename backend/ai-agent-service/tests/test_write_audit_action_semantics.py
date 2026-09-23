@@ -35,8 +35,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = REPO_ROOT / "app" / "tools"
 REGISTRY_PY = TOOLS_DIR / "registry.py"
-MIGRATION_DIR = (REPO_ROOT.parent / "admin-api" / "src" / "main" / "resources"
-                 / "db" / "migration")
+# 迁移文件的定位走**全仓单一事实源**（issue #5243：历史链已整链归档到
+# `db/migration-archive/`，活目录只放切点之后的增量 ⇒ 「写死一个目录」必然腐烂）。
+import sys as _sys  # noqa: E402
+_sys.path.insert(0, str(REPO_ROOT.parents[1] / "tests"))
+from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
 
 # 工具被判定为「写工具」的**唯一**依据（与 registry 的执行分支同一字段）
 _WRITE_MARKER = "read_only = False"
@@ -321,8 +324,7 @@ class TestBoundedFailOpenContract:
         ② 有一张**工具名拒收清单**（JSON 里仍是工具名 ⇒ 保持原值）；
         ③ 不回退成任何"最可能的动词"（无 `ELSE`/`COALESCE` 式兜底改写）。
         """
-        path = MIGRATION_DIR / "V52__audit_logs_tool_name.sql"
-        assert path.is_file(), f"迁移缺失：{path}"
+        path = find_migration("V52__audit_logs_tool_name.sql")   # 归档 ∪ 活目录（缺失即 fail-loud）
         sql = path.read_text(encoding="utf-8")
         assert "ADD COLUMN IF NOT EXISTS tool_name" in sql, "V52 未新增 tool_name 列"
         assert "action_details ->> 'action'" in sql, (

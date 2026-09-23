@@ -555,7 +555,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                 `60.5` 静默变 `60`。改用共享 NumberInput（`type="text"` + 字符串草稿，与 #5218
                 的订正段口径一致），`decimals={1}` 对齐列口径 `NUMERIC(12,1)` = 0.1 米粒度。
                 ⚠️ 单位文案仍是「件」：#5237 已把「库存到底按米还是按件」登记为**待用户裁定**项
-                （`docs/sql/schema.sql` 的列注释口径写的是「米」）⇒ 本单**只落数值精度、不擅改文案**。 */}
+                （`backend/admin-api/src/main/resources/db/init/schema.sql` 的列注释口径写的是「米」）⇒ 本单**只落数值精度、不擅改文案**。 */}
             <NumberInput
               min={0}
               decimals={1}

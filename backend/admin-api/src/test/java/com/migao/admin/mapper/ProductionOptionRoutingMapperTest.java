@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * ProductionOptionRoutingMapper 契约测试（特殊选项 → 条件工序，issue #4230，V59）
  *
- * 验证：表映射 {@code production_option_routings} + 实体字段与迁移 V59 / {@code docs/sql/schema.sql}
+ * 验证：表映射 {@code production_option_routings} + 实体字段与迁移 V59 / {@code backend/admin-api/src/main/resources/db/init/schema.sql}
  * **双源收敛**（只写实体不写迁移、或迁移不同步 bootstrap 都会在此变红）。
  *
  * <p>为什么需要本文件：这两张表是「设计过但从未接线」的另一半 —— 列名与实体字段一旦漂移，
@@ -58,5 +58,5 @@ class ProductionOptionRoutingMapperTest {
 
     /** V59 迁移路径（两张表同迁移；本常量与 Factor 侧共用同一份字面量以避免两处漂移）。 */
     static final String V59 =
-            "backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V59__create_production_option_tables.sql";
 }

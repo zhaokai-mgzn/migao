@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ProcessingFeeCombinationVersionMapper 契约测试（加工费组合定价版本账，issue #4386，V68）
  *
  * <p>验证：表映射 {@code processing_fee_combination_versions} + 实体字段与迁移 V68 /
- * {@code docs/sql/schema.sql} **双源收敛**（与 #4308 的 {@code production_routing_versions} 同构）。</p>
+ * {@code backend/admin-api/src/main/resources/db/init/schema.sql} **双源收敛**（与 #4308 的 {@code production_routing_versions} 同构）。</p>
  *
  * <p><b>为什么需要本文件</b>：加工费单价是**订单金额**的直接输入 ⇒ 改价必须留痕。
  * 列漂移（如 {@code composition_key} 漏列）会让「这个组合昨天什么价」答不出来
@@ -29,7 +29,7 @@ class ProcessingFeeCombinationVersionMapperTest {
 
     /** V68 迁移路径（本包内**唯一**一份字面量：两个 Mapper 契约测试共用，避免两处漂移）。 */
     static final String V68 =
-            "backend/admin-api/src/main/resources/db/migration/V68__create_processing_fee_combinations.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V68__create_processing_fee_combinations.sql";
 
     @Test
     @DisplayName("实体映射 processing_fee_combination_versions 表")

@@ -70,9 +70,9 @@ const typesSrc = readFileSync(TYPES_SRC, 'utf8')
 /** 后端迁移目录 + bootstrap 终态（**反向守卫**：`side_margin` 列不得残留，issue #5030） */
 const MIGRATION_DIR = resolve(
   __dirname,
-  '../../../../../backend/admin-api/src/main/resources/db/migration'
+  '../../../../../backend/admin-api/src/main/resources/db/migration-archive'
 )
-const SCHEMA_SRC = resolve(__dirname, '../../../../../docs/sql/schema.sql')
+const SCHEMA_SRC = resolve(__dirname, '../../../../../backend/admin-api/src/main/resources/db/init/schema.sql')
 const schemaSrc = readFileSync(SCHEMA_SRC, 'utf8')
 
 /** Java 侧（实体 + 写面）—— 键集/字段同属跨源收敛面 */

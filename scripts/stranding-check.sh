@@ -38,7 +38,7 @@
 #        是 base 自己前进了 ⇒ `STALE-BRANCH`，**无害，不报红**；
 #      · `h != m` 且分支动过 ⇒ **再比一次内容**：把「分支相对 fork 的新增行」逐行在**合并点内容**里找，
 #        全在 ⇒ `LANDED-MERGED`（改动交付了；该文件同时被 base 的**并发改动**并入 /
-#        或由别的 PR 以不同形态落地）⇒ **不报红**（实证 #4127 的 `docs/sql/schema.sql`：
+#        或由别的 PR 以不同形态落地）⇒ **不报红**（实证 #4127 的 `backend/admin-api/src/main/resources/db/init/schema.sql`：
 #        合并点 = main 版 + 本 PR 的 hunk，与分支 tip 逐字节不同，只比 blob 必假红）；
 #      · 仍不全在 ⇒ `STRANDED`（若该内容现已由跟随 PR 补齐 ⇒ 标注 `STRANDED-BACKFILLED`，
 #        **仍计入红**：机制**发生过**，这就是 §17.3 要显形的形态）。
@@ -346,7 +346,7 @@ for p in order:
     else:
         # 分支自己动过这文件、但内容与锚点不同 ⇒ 判「分支自己的新增内容**在不在锚点里**」（内容级）。
         # ⚠️ 为什么不能直接拿 h != m 当搁浅：squash 合入时 GitHub 会把 **main 的并发改动一起并入**
-        #    该文件（实测 #4127 的 docs/sql/schema.sql：合并点内容 = main 版 + 本 PR 的 hunk，
+        #    该文件（实测 #4127 的 backend/admin-api/src/main/resources/db/init/schema.sql：合并点内容 = main 版 + 本 PR 的 hunk，
         #    与分支 tip 逐字节不同，但**改动确实交付了**）⇒ 直接比 blob 会假红。
         addl = added_lines(fork, h, p)
         anchor_lines = lines(ANCHOR, p)

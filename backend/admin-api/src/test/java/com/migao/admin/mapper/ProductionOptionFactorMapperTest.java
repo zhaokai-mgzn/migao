@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * ProductionOptionFactorMapper 契约测试（特殊选项 → 计件系数，issue #4230，V59）
  *
- * 验证：表映射 {@code production_option_factors} + 实体字段与迁移 V59 / {@code docs/sql/schema.sql}
+ * 验证：表映射 {@code production_option_factors} + 实体字段与迁移 V59 / {@code backend/admin-api/src/main/resources/db/init/schema.sql}
  * 双源收敛。{@code factor} 是**直接乘进计件工资**的列（Σ 合格数 × 单价 × 系数）——
  * 字段名/精度漂移就是发错钱，故单独钉住。
  */

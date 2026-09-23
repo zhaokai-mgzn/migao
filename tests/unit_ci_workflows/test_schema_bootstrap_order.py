@@ -1,10 +1,10 @@
 # case_ids: PG-031, MC-012
-"""`docs/sql/schema.sql` 建库顺序守卫（issue #4762）。
+"""`backend/admin-api/src/main/resources/db/init/schema.sql` 建库顺序守卫（issue #4762）。
 
 ## 缺陷（#4741 的包实测发现，本单复现）
 
 `production_route_signals` 的种子（V60 段）**排在租户种子（V40 段）之前** ⇒
-`psql -v ON_ERROR_STOP=1 -f docs/sql/schema.sql` 在
+`psql -v ON_ERROR_STOP=1 -f backend/admin-api/src/main/resources/db/init/schema.sql` 在
 `production_route_signals_tenant_id_fkey` 上**中止**。中止点 = V60 段
 （段首 `-- 信号种子（tenant_id=1；`，本文件用 `_SIGNAL_BLOCK` 按**文本锚点**定位它）
 里的 `INSERT INTO production_route_signals … ON CONFLICT DO NOTHING;`，报错原文：
@@ -53,7 +53,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-SCHEMA = REPO / "docs" / "sql" / "schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: `deploy/docker-compose.yml` 把本文件挂成的 initdb 脚本名（**登记用**，见模块 docstring）
 COMPOSE_INITDB_TARGET = "docker-entrypoint-initdb.d/001_schema.sql"
@@ -293,7 +293,7 @@ def test_no_fk_seed_precedes_the_row_it_references():
     text = SCHEMA.read_text(encoding="utf-8")
     violations = fk_seed_order_violations(text)
     assert violations == [], (
-        "docs/sql/schema.sql 有越序的 FK 种子 ⇒ `ON_ERROR_STOP=1` 建库会中止"
+        "backend/admin-api/src/main/resources/db/init/schema.sql 有越序的 FK 种子 ⇒ `ON_ERROR_STOP=1` 建库会中止"
         "（docker-entrypoint-initdb.d 栈正是该模式）：\n  " + "\n  ".join(violations)
     )
 
@@ -494,7 +494,7 @@ def test_schema_sql_builds_with_on_error_stop_1(pg):
     errors = [l for l in combined.splitlines() if "ERROR:" in l or "错误:" in l]
     assert errors == [], f"schema.sql 建库报错（ON_ERROR_STOP=1 下即中止）：\n  " + "\n  ".join(errors)
     assert proc.returncode == 0, (
-        f"`psql -v ON_ERROR_STOP=1 -f docs/sql/schema.sql` 非零退出（exit={proc.returncode}）⇒ "
+        f"`psql -v ON_ERROR_STOP=1 -f backend/admin-api/src/main/resources/db/init/schema.sql` 非零退出（exit={proc.returncode}）⇒ "
         f"docker-entrypoint-initdb.d 栈会建库中止。输出尾部：\n{combined[-1500:]}"
     )
 

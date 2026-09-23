@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * ProductionRoutingMapper 契约测试（工艺路线模板，issue #3995，V49）
- * 验证：表映射 production_routings + 实体字段与迁移 V49 / docs/sql/schema.sql 收敛。
+ * 验证：表映射 production_routings + 实体字段与迁移 V49 / backend/admin-api/src/main/resources/db/init/schema.sql 收敛。
  */
 @DisplayName("ProductionRoutingMapper 表/字段契约（工艺路线模板）")
 class ProductionRoutingMapperTest {

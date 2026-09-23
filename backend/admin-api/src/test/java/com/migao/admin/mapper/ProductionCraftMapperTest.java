@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * ProductionCraftMapper 契约测试（issue #4423 P2 / #4432，V72）。
  *
- * 验证：表映射 `production_crafts` + 实体字段与 `docs/sql/schema.sql` 终态收敛。
+ * 验证：表映射 `production_crafts` + 实体字段与 `backend/admin-api/src/main/resources/db/init/schema.sql` 终态收敛。
  * 为什么必须有（门禁口径）：新增 Mapper 缺契约测试 ⇒ QA Growth Gate **阻塞合并**；
  * 且实体↔schema 漂移会让建库后相关接口 **500**（`test_schema_covers_entity_columns` 的互补项）。
  */
@@ -40,7 +40,7 @@ class ProductionCraftMapperTest {
                 .toList();
         assertThat(fields).contains("tenantId", "name", "isDefault", "status", "deleted");
         ProductionMigrationSql.assertTableColumnsIn(
-                "backend/admin-api/src/main/resources/db/migration/V72__switch_routing_model_consumers.sql",
+                "backend/admin-api/src/main/resources/db/migration-archive/V72__switch_routing_model_consumers.sql",
                 "production_crafts",
                 "id", "tenant_id", "name", "is_default", "status", "created_at", "updated_at", "deleted");
     }

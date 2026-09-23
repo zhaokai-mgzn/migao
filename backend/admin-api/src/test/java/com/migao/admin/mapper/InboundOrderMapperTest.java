@@ -20,13 +20,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * InboundOrderMapper 契约测试（入库单，V111 / issue #5034）。
  *
  * <p>守「Java 实体 ↔ 迁移 V111 ↔ bootstrap schema」三源收敛：只写实体不写迁移、
- * 或迁移不同步 {@code docs/sql/schema.sql} 都在此变红（同 StockLedgerMapperTest 口径）。</p>
+ * 或迁移不同步 {@code backend/admin-api/src/main/resources/db/init/schema.sql} 都在此变红（同 StockLedgerMapperTest 口径）。</p>
  */
 @DisplayName("InboundOrderMapper 表/字段契约（入库单）")
 class InboundOrderMapperTest {
 
     private static final String V111 =
-            "backend/admin-api/src/main/resources/db/migration/V111__create_inbound_orders_and_batches.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V111__create_inbound_orders_and_batches.sql";
 
     @Test
     @DisplayName("实体映射 inbound_orders 表")

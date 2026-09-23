@@ -47,7 +47,19 @@ SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/Produc
 #: 收敛实现的**唯一**出处（issue #4883 去部位化）：读面 / 实例化 / 补价三处共用它。
 QUERY_SERVICE = REPO / ("backend/admin-api/src/main/java/com/migao/admin/service/"
                         "ProductionOperationQueryService.java")
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 ROUTING_PY_DIR = REPO / "backend/ai-agent-service"
 
 POSITION_TABLE = "production_operation_positions"
@@ -118,7 +130,7 @@ def _literal_values_sources(table: str) -> list:
     **派生**语句的 JOIN 源、不是字面量种子行（把它算进来会造出第二份「种子」口径）。
     """
     found = []
-    for path in sorted(MIGRATION_DIR.glob("V*.sql")):
+    for path in sorted(_migration_files("V*.sql")):
         sql = _read(path)
         for m in re.finditer(r"INSERT\s+INTO\s+" + table + r"\b(?P<mid>[\s\S]{0,600}?)\bVALUES\b", sql, re.I):
             if "select" not in m.group("mid").lower():

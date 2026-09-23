@@ -5,8 +5,10 @@
 
 在**本机真库**上复刻 `MigrationRunner` 的迁移执行语义，用来验证：
 
-1. **bootstrap-first 全新库**：`docs/sql/schema.sql`（= docker `docker-entrypoint-initdb.d/
-   001_schema.sql`）建出终态后，再跑一遍 `db/migration/*.sql` 迁移链 ——
+1. **bootstrap-first 全新库**：`backend/admin-api/src/main/resources/db/init/schema.sql`（= docker `docker-entrypoint-initdb.d/
+   001_schema.sql`）建出终态后，再跑一遍**归档**的历史迁移链
+   （`backend/admin-api/src/main/resources/db/migration-archive/*.sql`，issue #5243 起整链归档；
+   活目录 `db/migration/` 此后只放未来的增量迁移）——
    是否有迁移失败（有则 admin-api 启动打印「schema 可能与代码不一致」噪音）；
 2. **幂等性**：清空 `schema_migrations` 后全量重跑，是否仍全绿。
 
@@ -51,6 +53,10 @@ PostgreSQL 扩展查询下多语句走**单一隐式事务**，任一句失败�
 ## 用法（仓库根目录）
 
     python3 scripts/migration_chain_repro.py            # 全新库跑一遍
+
+⚠️ issue #5243 起：**建库**在生产上走 `MigrationRunner.applyBaseline`（空库执行基线脚本、
+存量库只记账不执行），本脚本仍按「先用 psql 灌 schema.sql、再跑归档链」复刻 bootstrap-first
+环境 —— 它验的是**归档链在终态库上跑一遍会不会失败**，与基线语义是两条互补的判据。
     python3 scripts/migration_chain_repro.py --rerun    # 再清空 schema_migrations 全量重跑（幂等）
 
 退出码：0 = 全绿（42/42 应用、零失败）；1 = 有迁移失败（会打印 MigrationRunner 的原告警文案）。
@@ -63,8 +69,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MIG_DIR = ROOT / "backend/admin-api/src/main/resources/db/migration"
-SCHEMA = ROOT / "docs/sql/schema.sql"
+MIG_DIR = ROOT / "backend/admin-api/src/main/resources/db/migration-archive"
+SCHEMA = ROOT / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 PG_HOST = os.environ.get("MIGAO_PG_HOST", "/tmp/migao-pg")
 PG_PORT = os.environ.get("MIGAO_PG_PORT", "5433")

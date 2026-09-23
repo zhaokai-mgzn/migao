@@ -667,7 +667,7 @@ jobs:
             echo "-- volume: $v --"
             docker run --rm -v "$v":/v alpine:3 sh -c 'ls -la /v | head -20' 2>&1 || true
           done
-          ls -la docs/sql/schema.sql 2>&1 || true
+          ls -la backend/admin-api/src/main/resources/db/init/schema.sql 2>&1 || true
           echo ""
           echo "── compose 配置解析（确认变量插值成功）──"
           docker compose -f deploy/docker-compose.yml config --services 2>&1 | head -10 || true

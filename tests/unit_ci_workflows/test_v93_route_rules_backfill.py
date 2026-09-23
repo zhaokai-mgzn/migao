@@ -23,7 +23,7 @@
 2. **出厂真值 = 29 = V71 的 26（21 insert + 5 remove）∪ V84 的 3**，逐值比对（不是只数条数）；
 3. **幂等**：V93 跑两次净效果相同（第二次零插入）；
 4. **不覆盖商家已改**：商家改过/软删过某条规则 ⇒ V93 一字不动（**红证**：先改一条再跑，值不变）；
-5. **三处口径一致**：迁移链终态（V93）↔ bootstrap 终态（`docs/sql/schema.sql`）↔ 出厂真值（V71∪V84）。
+5. **三处口径一致**：迁移链终态（V93）↔ bootstrap 终态（`backend/admin-api/src/main/resources/db/init/schema.sql`）↔ 出厂真值（V71∪V84）。
 
 ## 真库判据（临时 PG 集群；缺 PG 的处置收口在 `pg_cluster.py`：CI 判**红** / 本机显式 skip，issue #5203）
 
@@ -43,12 +43,12 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 MIGRATION = MIGRATION_DIR / "V93__backfill_route_rules_for_empty_catalogs.sql"
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
 V72 = MIGRATION_DIR / "V72__switch_routing_model_consumers.sql"
 V84 = MIGRATION_DIR / "V84__seed_processing_item_route_rules.sql"
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: 规则字段（**不含 id**：id 是各迁移自己的槽位命名，出厂知识比的是业务字段）。
 RULE_FIELDS = ("trigger_kind", "trigger_value", "position", "action",
@@ -189,7 +189,7 @@ def test_v93_is_per_tenant_and_has_no_operation_catalog_filter():
 
 
 def test_bootstrap_schema_sql_carries_the_same_factory_truth():
-    """判据 5：bootstrap 终态（`docs/sql/schema.sql`，该路径**不跑迁移链**）逐值同款。
+    """判据 5：bootstrap 终态（`backend/admin-api/src/main/resources/db/init/schema.sql`，该路径**不跑迁移链**）逐值同款。
 
     ⚠️ bootstrap **不需要** V93 的段落：该文件的 V72 ⑤ 回填块 + V84 块已经在**建库那一刻**
     给每个租户落齐 26 + 3 条（`schema.sql` 的 `tenants` 是空集也无所谓 —— 回填是

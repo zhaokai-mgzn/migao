@@ -69,7 +69,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  *
  * <h2>环境</h2>
  * 一次性真 PG 集群（{@code PgCluster}，与 #5158 的真库守卫共用），schema 取自
- * {@code docs/sql/schema.sql}（bootstrap 终态，**不手抄列清单** ⇒ 列名/约束漂移会被抓）。
+ * {@code backend/admin-api/src/main/resources/db/init/schema.sql}（bootstrap 终态，**不手抄列清单** ⇒ 列名/约束漂移会被抓）。
  * 缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
  * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。
  */
@@ -448,7 +448,7 @@ class BatchAssignmentRuleRealDbTest {
     }
 
     /**
-     * {@code uk_batch_consumption_line} 的 DDL **原文**（从 {@code docs/sql/schema.sql} 里取）。
+     * {@code uk_batch_consumption_line} 的 DDL **原文**（从 {@code backend/admin-api/src/main/resources/db/init/schema.sql} 里取）。
      *
      * <p>注入式红证要先把闸拆掉、再把它装回去 —— 装回去时若手抄一份 DDL，抄漏一个列就会让
      * 「复原」变成另一条索引（后续判据静默失效）。故只认原文。</p>
@@ -465,10 +465,10 @@ class BatchAssignmentRuleRealDbTest {
 
     private static String schemaSql() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 }

@@ -328,7 +328,7 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
-        - "backend/admin-api/src/main/resources/db/migration/V44__create_daily_briefings.sql"
+        - "backend/admin-api/src/main/resources/db/migration-archive/V44__create_daily_briefings.sql"
       ci:
         - pr-check.yml
       verifies: []

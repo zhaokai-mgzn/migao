@@ -32,9 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderLogisticsShipperNameMigrationTest {
 
     private static final String MIGRATION_DIR =
-            "backend/admin-api/src/main/resources/db/migration";
+            "backend/admin-api/src/main/resources/db/migration-archive";
     private static final String V46 = MIGRATION_DIR + "/V46__add_order_logistics_shipper_name.sql";
-    private static final String SCHEMA_SQL = "docs/sql/schema.sql";
+    private static final String SCHEMA_SQL = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private static Path findRepoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
@@ -75,7 +75,7 @@ class OrderLogisticsShipperNameMigrationTest {
     }
 
     @Test
-    @DisplayName("docs/sql/schema.sql 同步：order_logistics.shipper_name 同样 nullable")
+    @DisplayName("backend/admin-api/src/main/resources/db/init/schema.sql 同步：order_logistics.shipper_name 同样 nullable")
     void schemaSql_shipperNameIsNullable() throws IOException {
         String schema = read(SCHEMA_SQL);
         int at = schema.indexOf("shipper_name");

@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProcessingOrderSetMapperTest {
 
     private static final String V92 =
-            "backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V92__add_processing_order_sets_and_scan_loop.sql";
 
     @Test
     @DisplayName("实体映射 processing_order_sets 表")

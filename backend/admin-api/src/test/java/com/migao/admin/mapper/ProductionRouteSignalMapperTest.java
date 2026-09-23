@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ProductionRouteSignalMapper 契约测试（信号 → 路线键，issue #4308，V60）
  *
  * <p>验证：表映射 {@code production_route_signals} + 实体字段与迁移 V60 /
- * {@code docs/sql/schema.sql} **双源收敛**（只写实体不写迁移、或迁移不同步 bootstrap 都会在此变红）。</p>
+ * {@code backend/admin-api/src/main/resources/db/init/schema.sql} **双源收敛**（只写实体不写迁移、或迁移不同步 bootstrap 都会在此变红）。</p>
  *
  * <p><b>为什么需要本文件</b>：这张表取代了迁移前的两个 Java 常量关键字表（{@code CURTAIN_TYPE_KEYWORDS}
  * / {@code CRAFT_KEYWORDS}）—— 列名与实体字段一旦漂移，派生时读到的就是 null ⇒ 路线键静默退化成
@@ -30,7 +30,7 @@ class ProductionRouteSignalMapperTest {
 
     /** V60 迁移路径（三张表/列同迁移；本常量与 Version 侧共用同一份字面量以避免两处漂移）。 */
     static final String V60 =
-            "backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V60__create_routing_customization_tables.sql";
 
     @Test
     @DisplayName("实体映射 production_route_signals 表")

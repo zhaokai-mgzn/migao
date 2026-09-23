@@ -39,12 +39,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StockBatchConsumptionMapperTest {
 
     private static final String V116 =
-            "backend/admin-api/src/main/resources/db/migration/V116__create_stock_batch_consumptions.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V116__create_stock_batch_consumptions.sql";
     private static final String V119 =
-            "backend/admin-api/src/main/resources/db/migration/V119__add_cutting_plan_meters_to_batch_consumptions.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V119__add_cutting_plan_meters_to_batch_consumptions.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final Path MIGRATION_DIR =
-            ProductionMigrationSql.repoRoot().resolve("backend/admin-api/src/main/resources/db/migration");
+            ProductionMigrationSql.repoRoot().resolve("backend/admin-api/src/main/resources/db/migration-archive");
 
     @Test
     @DisplayName("实体映射 stock_batch_consumptions 表")
@@ -187,7 +187,7 @@ class StockBatchConsumptionMapperTest {
     }
 
     @Test
-    @DisplayName("bootstrap 终态同步：docs/sql/schema.sql 也带三列与「只多不少」约束")
+    @DisplayName("bootstrap 终态同步：backend/admin-api/src/main/resources/db/init/schema.sql 也带三列与「只多不少」约束")
     void bootstrapSchemaMirrorsCuttingPlanMeters() {
         String schema = ProductionMigrationSql.read(SCHEMA);
         assertThat(schema).contains("formula_meters NUMERIC(12,1) NOT NULL")
@@ -208,7 +208,7 @@ class StockBatchConsumptionMapperTest {
     }
 
     @Test
-    @DisplayName("bootstrap 终态同步：docs/sql/schema.sql（新建库路径不跑迁移链）也建了该表")
+    @DisplayName("bootstrap 终态同步：backend/admin-api/src/main/resources/db/init/schema.sql（新建库路径不跑迁移链）也建了该表")
     void bootstrapSchemaMirrorsTable() {
         String schema = ProductionMigrationSql.read(SCHEMA);
         assertThat(schema).contains("CREATE TABLE IF NOT EXISTS stock_batch_consumptions");

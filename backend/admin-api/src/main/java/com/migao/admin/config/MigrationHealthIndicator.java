@@ -21,7 +21,7 @@ import java.util.Map;
  *
  * <h2>⚠️ 为什么**恒 UP**（不熔断）</h2>
  * 若迁移失败让健康检查变 {@code DOWN}，那 {@link MigrationRunner#isKnownBenignLegacy} 里那几条
- * **每次起栈必失败**的历史非幂等迁移（目标态已由 {@code docs/sql/schema.sql} 达成）
+ * **每次起栈必失败**的历史非幂等迁移（目标态已由 {@code backend/admin-api/src/main/resources/db/init/schema.sql} 达成）
  * 就会把**整个环境打挂** —— 那是比原问题更糟的故障。
  * ⇒ 本类**只暴露事实**，健康判定**不含**迁移失败；是否 fail 部署由 owner 在部署腿上裁定。
  *

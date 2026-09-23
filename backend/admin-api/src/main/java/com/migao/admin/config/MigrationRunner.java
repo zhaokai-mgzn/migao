@@ -37,6 +37,14 @@ import java.util.stream.Collectors;
  * 跳过已执行的文件，执行新的 migration。
  * 通过 schema_migrations 表追踪执行历史。
  *
+ * ⚠️ **建库只有一份脚本（issue #5243）**：历史迁移链（V1 … V114）已**整链归档**到
+ * `backend/admin-api/src/main/resources/db/migration-archive/`，`db/migration/` 此后**只放未来的增量迁移**。
+ * 于是「空库怎么建出终态」不再由迁移链承担，而由**基线**承担 ——
+ * `db/init/schema.sql`（配置键 `migao.migration.init-script`，台账键 = 文件名 `schema.sql`）。
+ * 三条语义：台账已有该键 ⇒ 跳过；库非空 ⇒ **只记账不执行**；库为空 ⇒ 执行后记账。
+ * 见 {@link #applyBaseline}。这也让「一份建库脚本」同时进了 Docker 构建上下文
+ * （`Dockerfile` 只 `COPY src`）与 runner 的 classpath。
+ *
  * 所有 SQL 文件必须幂等（IF NOT EXISTS / ON CONFLICT DO NOTHING）。
  *
  * ⚠️ 两条硬约束（issue #3270 CI 实证，两者叠加曾让 schema 与代码长期脱节）：
@@ -60,7 +68,7 @@ import java.util.stream.Collectors;
  *     **逐字不变**（跳过该条 + 继续其余 + 记账 + ERROR，见下条），**不重试、不拒启动**。
  *
  * ⚠️ **失败分级（issue #3714）**：bootstrap-first 评测栈上，`KNOWN_BENIGN_LEGACY` 里那几条
- * 已诊断的**历史非幂等**迁移**每次起栈必失败**（目标态已由 `docs/sql/schema.sql` 建出，
+ * 已诊断的**历史非幂等**迁移**每次起栈必失败**（目标态已由 `backend/admin-api/src/main/resources/db/init/schema.sql` 建出，
  * 失败真因是"目标已存在"而非"对象缺失"）。旧实现对它们一律打 ERROR +
  * 「请立即修复并在修复后重跑」—— 一句**必然为假**的行动指令（无物可修、重跑必复现）。
  * 长期后果是**真失败与永久噪音同形** → 归因层失效（本仓库自认的最大失败模式）。
@@ -104,6 +112,29 @@ public class MigrationRunner implements CommandLineRunner {
 
     @Value("${migao.migration.locations:classpath:db/migration/*.sql}")
     private String migrationPattern;
+
+    /**
+     * **基线初始化脚本**（唯一的一份建库脚本，issue #5243）。
+     *
+     * <p>本仓曾有四代 SQL 资产（`docs/sql/schema_full.sql` / `docs/sql/migrations/V2026*` /
+     * `docs/sql/00*.sql` / 迁移链）。现在**只有一份**建库脚本，且它必须在 admin-api 的
+     * **classpath** 内 —— 这样它既进 Docker 构建上下文（`Dockerfile` 只 `COPY src`，
+     * 模块外的文件在镜像构建时**根本不可见**），又能被本 runner 读到（此前它在 `docs/sql/`，
+     * 两者都够不着）。</p>
+     *
+     * <p>台账键 = 该资源的**文件名**（如 `schema.sql`）—— 与迁移同一种记账粒度（按文件名）。</p>
+     */
+    @Value("${migao.migration.init-script:classpath:db/init/schema.sql}")
+    private String initScriptLocation;
+
+    /**
+     * 判「库**已经有** schema」的哨兵表。
+     *
+     * <p>`tenants` 自最早一批迁移起就存在，任何有业务的库都必然有它。用它区分
+     * 「空库（要建）」与「存量库（**绝不重放**建库脚本）」—— 重放建库脚本会往活库上
+     * 灌终态种子，是比「少建一张表」严重得多的故障。</p>
+     */
+    private static final String BASELINE_PROBE_TABLE = "tenants";
 
     /**
      * 连接类失败的重试上限（含首次尝试）。连接抖动是**暂时**的，重试能自愈；
@@ -174,6 +205,8 @@ public class MigrationRunner implements CommandLineRunner {
      */
     private void migrate(JdbcTemplate jdbc) throws Exception {
         ensureHistoryTable(jdbc);
+        List<Failure> failed = new ArrayList<>();
+        applyBaseline(jdbc, failed);
         Resource[] resources = resolver.getResources(migrationPattern);
         // 按文件名升序执行（V1 < V2 < ... < V30）：getResources 的返回顺序
         // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
@@ -182,7 +215,6 @@ public class MigrationRunner implements CommandLineRunner {
                 Comparator.nullsLast(MIGRATION_ORDER)));
         List<String> applied = getAppliedMigrations(jdbc);
 
-        List<Failure> failed = new ArrayList<>();
         for (Resource r : resources) {
             String filename = r.getFilename();
             if (filename == null) continue;
@@ -228,6 +260,78 @@ public class MigrationRunner implements CommandLineRunner {
         this.lastFailedBenignCount = (int) benignCount;
         this.lastFailedRealCount = failed.size() - (int) benignCount;
         this.lastSkippedByLedger = applied.size();
+    }
+
+    /**
+     * **基线**：唯一的那份建库脚本（issue #5243）。语义四条，缺一即事故：
+     *
+     * <ol>
+     *   <li><b>台账已有该键 ⇒ 整段跳过</b>（幂等；普通迁移扫描照跑）。</li>
+     *   <li><b>台账无该键 ∧ 库非空 ⇒ 只记账、不执行</b>（存量库绝不重放建库脚本）。</li>
+     *   <li><b>台账无该键 ∧ 库为空 ⇒ 执行后记账</b>（空库 = 建出终态的唯一路径；
+     *       迁移链已归档，空库没有第二条路）。</li>
+     *   <li><b>失败分级与既有语义逐字相同</b>：连接类 ⇒ 抛给外层退避重试 / 重试耗尽 fail-closed；
+     *       内容类 ⇒ 记入失败清单 + ERROR，**不拒绝启动**（同 #3615/#3270 的刻意权衡）。</li>
+     * </ol>
+     *
+     * <p>执行形态与迁移逐一相同：整份文件文本一次 {@code jdbc.execute(...)}
+     * （PG 扩展查询下多语句走单一隐式事务，任一句失败即整份回滚）。</p>
+     */
+    private void applyBaseline(JdbcTemplate jdbc, List<Failure> failed) throws Exception {
+        Resource resource = resolver.getResource(initScriptLocation);
+        String key = resource.getFilename() == null ? initScriptLocation : resource.getFilename();
+
+        if (!resource.exists()) {
+            failed.add(new Failure(key, new IllegalStateException(
+                    "基线初始化脚本不存在: " + initScriptLocation)));
+            log.error("❌ 基线初始化脚本不存在: {}（未执行任何建库 SQL —— 空库上 schema 会缺失；"
+                    + "未来增量迁移照常扫描）", initScriptLocation);
+            return;
+        }
+
+        if (getAppliedMigrations(jdbc).contains(key)) {
+            log.info("⏭️ 跳过基线 {}：台账已有该键（幂等）", key);
+            return;
+        }
+
+        if (databaseHasSchema(jdbc)) {
+            // 🔴 关键分支：存量库上**只记账、绝不执行** —— 重放建库脚本会往活库灌终态种子。
+            recordMigration(jdbc, key);
+            log.info("⏭️ 跳过基线 {}：库中已存在哨兵表 {} ⇒ 判为存量库，只记账不执行",
+                    key, BASELINE_PROBE_TABLE);
+            return;
+        }
+
+        log.info("🔄 执行基线 {}（空库 ⇒ 建出终态）", key);
+        try {
+            String sql = readResource(resource);
+            jdbc.execute(sql);
+            recordMigration(jdbc, key);
+            log.info("✅ 基线完成: {}", key);
+        } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw e;  // 连接类不是「这份脚本坏」⇒ 交给外层退避重试 / fail-closed（#4241）
+            }
+            failed.add(new Failure(key, e));
+            log.error("❌ 基线失败（空库上建库未成功，schema 可能缺失）: {}", key, e);
+        }
+    }
+
+    /**
+     * 库里是否已经有 schema（哨兵表 {@link #BASELINE_PROBE_TABLE} 是否存在）。
+     *
+     * <p>用 `information_schema` 而非 `to_regclass`：后者的可见性受 `search_path` 影响，
+     * 判「不可见」时返回 null —— 那会让**存量库被误判成空库 ⇒ 重放建库脚本**（危险方向）。
+     * `information_schema` 不匹配 search_path 时只会**多**认（判成「有 schema」），
+     * 那是安全方向（跳过执行）。</p>
+     *
+     * <p>⚠️ 本方法**不吞异常**：连不上就该冒泡成连接类失败，走既有 fail-closed 通道。</p>
+     */
+    private boolean databaseHasSchema(JdbcTemplate jdbc) {
+        Boolean present = jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ?)",
+                Boolean.class, BASELINE_PROBE_TABLE);
+        return Boolean.TRUE.equals(present);
     }
 
     /** 最近一轮**失败**的迁移文件名（含已知存量非幂等那几条）—— 只读、供探针消费。 */
@@ -321,7 +425,7 @@ public class MigrationRunner implements CommandLineRunner {
                 .map(Failure::filename).toList();
 
         if (!benign.isEmpty()) {
-            log.info("ℹ️ 本次有 {} 条迁移失败属**已知存量非幂等**（目标态已达成 —— 由 docs/sql/schema.sql "
+            log.info("ℹ️ 本次有 {} 条迁移失败属**已知存量非幂等**（目标态已达成 —— 由 backend/admin-api/src/main/resources/db/init/schema.sql "
                             + "引导或由登记的补偿迁移补齐；无需修复、重跑亦会复现；见 #3615/#3714 / #4991）：{}",
                     benign.size(), benign);
         }
@@ -359,7 +463,7 @@ public class MigrationRunner implements CommandLineRunner {
      *
      * <p>为什么这些是良性的（**逐条有据，不是「猜」**）：</p>
      * <ul>
-     *   <li>`V37`/`V42`/`V44`（#3615/#3714）：bootstrap-first 库由 `docs/sql/schema.sql` 建出**终态**，
+     *   <li>`V37`/`V42`/`V44`（#3615/#3714）：bootstrap-first 库由 `backend/admin-api/src/main/resources/db/init/schema.sql` 建出**终态**，
      *       失败真因是「目标已存在」而非「对象缺失」（`ALTER ... IF EXISTS` 只守卫源对象；
      *       PG 不支持 `CREATE POLICY IF NOT EXISTS`）。</li>
      *   <li>`V74`（#4501）：载体①打在不存在的列上（`processing_info` 在 `order_items`，不在 `orders`）

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ProcessingFeeCombinationMapper 契约测试（加工费组合定价，issue #4386，V68）
  *
  * <p>验证：表映射 {@code processing_fee_combinations} + 实体字段与迁移 V68 /
- * {@code docs/sql/schema.sql} **双源收敛**。</p>
+ * {@code backend/admin-api/src/main/resources/db/init/schema.sql} **双源收敛**。</p>
  *
  * <p><b>为什么需要本文件</b>：本表是**下单侧唯一取价源**（组合 → 单价 元/米）。
  * 列一旦与实体漂移（如 {@code unit_price} 改名/漏列），取价会读到 null ⇒ 静默变成「0 元」
@@ -29,7 +29,7 @@ class ProcessingFeeCombinationMapperTest {
 
     /** V68 迁移路径（本包内**唯一**一份字面量：两个 Mapper 契约测试共用，避免两处漂移）。 */
     static final String V68 =
-            "backend/admin-api/src/main/resources/db/migration/V68__create_processing_fee_combinations.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V68__create_processing_fee_combinations.sql";
 
     @Test
     @DisplayName("实体映射 processing_fee_combinations 表")

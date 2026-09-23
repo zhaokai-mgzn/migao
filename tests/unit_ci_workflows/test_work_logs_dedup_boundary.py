@@ -5,7 +5,7 @@ r"""报工明细「去重没有 DB 兜底」的真值面守卫（issue #4845）�
 
 `production_work_logs` 是计件的**唯一凭证**，而它在**全库 migration 里没有任何 UNIQUE**
 （建表迁移
-`backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V49__create_production_operations_and_work_logs.sql`
 只建了两条**非唯一**索引）。挡住重复写入的**不是**数据库，而是
 `ProductionScanService` / `ProductionScanCompleteService` / `ProductionService` 里的**三道业务判据**。
 真值源若**没写出**这条边界，后来人会**以为有 DB 兜底**（于是新增写路径时不再复用那三道判据），
@@ -17,7 +17,7 @@ r"""报工明细「去重没有 DB 兜底」的真值面守卫（issue #4845）�
 
 | # | 判据 | 怎么让它红 |
 |---|---|---|
-| C1 | 全库 SQL（迁移目录 + `docs/sql/schema.sql`）对 `production_work_logs` **零 UNIQUE**（唯一索引 / 建表体内约束 / `ALTER TABLE … UNIQUE` 三种形态都扫） | 新增一个 `CREATE UNIQUE INDEX … ON production_work_logs …` 的迁移；或往建表体里塞 `UNIQUE (…)` |
+| C1 | 全库 SQL（迁移目录 + `backend/admin-api/src/main/resources/db/init/schema.sql`）对 `production_work_logs` **零 UNIQUE**（唯一索引 / 建表体内约束 / `ALTER TABLE … UNIQUE` 三种形态都扫） | 新增一个 `CREATE UNIQUE INDEX … ON production_work_logs …` 的迁移；或往建表体里塞 `UNIQUE (…)` |
 | C2 | 三道应用层判据的**落点符号**仍在（`ProductionScanService` 的 `pending` + `isDone` 过滤 / `ProductionScanCompleteService#plannedRemaining` / `ProductionService#assertWithinPlannedQty` + `advanceDoneQtyIfUnchanged` 的 CAS） | 摘掉或改名任一处 ⇒ 去重只剩两道或更少 |
 | C3 | 真值源**登记了**该边界（设计 `docs/design/set-code-and-scan-loop.md` 的 §5.3.2 + `docs/curtain-production-rules.md` 的 §5 各有一段文本锚点） | 删掉登记语句 ⇒ 边界重新变成「没人知道」 |
 | C4 | **判据不恒真**（反空跑 + 判别力）：检测器在**注入载荷**上必须报出来、在**非唯一索引**与**别的表**上必须不报；且真扫读到的 SQL 文件数 > 0、目标表建表体真的被解析到 | 检测器改成恒返回 `[]` ⇒ C4 红 |
@@ -33,8 +33,20 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
 DESIGN = REPO / "docs/design/set-code-and-scan-loop.md"
 PRODUCTION_RULES = REPO / "docs/curtain-production-rules.md"
@@ -125,7 +137,7 @@ def unique_constraints_on(sql: str, table: str) -> list[str]:
 
 
 def _sql_files() -> list[Path]:
-    files = sorted(p for p in MIGRATION_DIR.glob("*.sql") if p.is_file())
+    files = sorted(p for p in _migration_files("*.sql") if p.is_file())
     if SCHEMA_SQL.is_file():
         files.append(SCHEMA_SQL)
     return files

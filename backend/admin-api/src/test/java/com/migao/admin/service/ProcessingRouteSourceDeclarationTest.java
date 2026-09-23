@@ -358,11 +358,20 @@ class ProcessingRouteSourceDeclarationTest {
     @Test
     @DisplayName("#4452 判据 5：craft_hint 迁移只加列、不猜值（无 UPDATE 回填）")
     void craftHintMigrationAddsColumnWithoutGuessing() throws Exception {
-        Path dir = Path.of("src/main/resources/db/migration");
+        // 迁移文件的两个载体（issue #5243）：历史链整链归档到 `db/migration-archive/`，
+        // 活目录只放切点之后的增量 ⇒ **两个都要扫**（只看活目录 ⇒ 找不到 V78 ⇒ 本判据空转/假红）。
+        // 判据意图一字未改：仍是「**恰好一条**专门加 craft_hint 的迁移，且它不猜值」。
         List<Path> hit = new ArrayList<>();
-        try (var stream = Files.list(dir)) {
-            stream.filter(p -> p.getFileName().toString().contains("craft_hint"))
-                    .forEach(hit::add);
+        for (String sub : List.of("src/main/resources/db/migration",
+                                  "src/main/resources/db/migration-archive")) {
+            Path dir = Path.of(sub);
+            if (!Files.isDirectory(dir)) {
+                continue;   // 两个目录都缺席时 hasSize(1) 会判红（fail-loud，不静默）
+            }
+            try (var stream = Files.list(dir)) {
+                stream.filter(p -> p.getFileName().toString().contains("craft_hint"))
+                        .forEach(hit::add);
+            }
         }
         assertThat(hit).as("必须有一条专门加 craft_hint 的迁移").hasSize(1);
         String sql = Files.readString(hit.get(0), StandardCharsets.UTF_8);

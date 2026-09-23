@@ -304,7 +304,7 @@ objects:
         source: "ProductSku.stock"
         description: 库存
       # 🔴 2026-09-23 改判（issue #5245 B1）：原 `source: "ProductSku.status"` **不成立** ——
-      # `ProductSku.java` 无 status 字段、`product_skus` 表无 status 列（docs/sql/schema.sql）。
+      # `ProductSku.java` 无 status 字段、`product_skus` 表无 status 列（backend/admin-api/src/main/resources/db/init/schema.sql）。
       # 该枚举的真实载体是**商品级** `Product.status`（`ProductService.STATUS_TRANSITIONS` 4 值状态机，
       # CONTRACT-LEDGER §一「商品状态」行引用的后端真值；V4 迁移 in_warehouse→on_sale 亦指该列）。
       # 枚举与词表（loader.STATUS_LEXICON）**保持不变**：这是三端真契约，改的只是挂载点。

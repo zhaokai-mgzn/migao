@@ -7,7 +7,7 @@
 **评测栈种子仍是编造名单**（3 + 1 项）⇒ 评测里的目录与真实店铺目录**两份口径**。
 
 第一轮修法是「往两个评测种子各插 16 行」—— **真库实测证明这个修法本身是错的**：
-`docs/sql/schema.sql` / 迁移链**已经**由 V83 为每个活跃租户种了那 16 项 ⇒ 评测栈上
+`backend/admin-api/src/main/resources/db/init/schema.sql` / 迁移链**已经**由 V83 为每个活跃租户种了那 16 项 ⇒ 评测栈上
 `processing_items` = **32 行**，其中 `打孔`/`韩折`/`定型` **各重名 2 条**
 （`pi_eval_punch` ¥8 与 `pi-v83-1-01` ¥0）⇒
 ① `processing_item_query(打孔)` 返 2 条、金额断言不确定；
@@ -60,14 +60,18 @@
 from __future__ import annotations
 
 import re
+import sys as _sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "agent_eval" / "fixtures"
-V83 = (REPO / "backend" / "admin-api" / "src" / "main" / "resources" / "db"
-       / "migration" / "V83__seed_processing_item_catalog.sql")
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
+
+#: 定位走**全仓单一事实源**（归档 ∪ 活目录；issue #5243）—— 判据本身一字未改
+V83 = find_migration("V83__seed_processing_item_catalog.sql")
 
 #: 两个评测种子（xiaobu 栈只注 C 端；mibao 栈 = C 端 + B 端）—— 两份都只该有那 3 条带价夹具。
 SEED_FILES = ("xiaobu_eval_seed.sql", "mibao_eval_seed.sql")

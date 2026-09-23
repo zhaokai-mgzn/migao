@@ -3,7 +3,7 @@
 
 ## 被测对象
 
-`backend/admin-api/src/main/resources/db/migration/V89__backfill_fabric_seed_for_existing_tenants.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V89__backfill_fabric_seed_for_existing_tenants.sql`
 = 4 条语句：① 每活跃租户补 `打包` 工序 / ② 每活跃租户补 **5 格**价目 / ③ 每活跃租户补
 `布料工序路线` / ④ 每活跃租户的默认窗帘主线补 `打包`（9 → 10 道）。
 
@@ -45,7 +45,19 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 V88 = MIGRATION_DIR / "V88__retire_material_prep_and_fabric_position.sql"
@@ -140,7 +152,7 @@ def test_v89_exists_and_published_migrations_are_untouched():
     ⚠️ **不写「V89 是当前最大号」** —— 那是自毁式真值主张（`migao-acceptance` 点名的形态）：
     下一个新增迁移一到就必红、且报错指向错误行动。号数前进本身不是违规。
     """
-    names = sorted(p.name for p in MIGRATION_DIR.glob("V*.sql"))
+    names = sorted(p.name for p in _migration_files("V*.sql"))
     versions = [int(_VERSION_RE.match(n).group(1)) for n in names if _VERSION_RE.match(n)]
     assert V89.exists(), f"缺 {V89.name} —— 本单的补种迁移未落码"
     assert V79.exists(), "V79 被删/改名了 —— 已发布迁移不可改（指纹守卫 + #4235）"

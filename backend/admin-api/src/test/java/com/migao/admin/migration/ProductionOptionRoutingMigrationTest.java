@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>守四条会被下一位验收者重开的判据：</p>
  * <ol>
  *   <li><b>真值源逐行相等</b>：V59 的 {@code production_option_routings} 种子（经 V65 改名）↔
- *       {@code docs/sql/schema.sql} 的终态 ↔ ai-agent {@code routing.py::SPECIAL_OPTION_ROUTINGS}
+ *       {@code backend/admin-api/src/main/resources/db/init/schema.sql} 的终态 ↔ ai-agent {@code routing.py::SPECIAL_OPTION_ROUTINGS}
  *       **三源逐行逐值**相等（沿用 V54/V56 的既有防漂移范式）。「忘了映射」与「本来就不计件」
  *       此前在数据上长得一模一样（都是 {@code .get(opt) → None} 的静默黑洞）—— 本判据让
  *       改名/改值/加减选项立刻变红。</li>
@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ⇒ 改名只能走<b>新迁移</b> {@code V65__align_special_option_names_with_erp.sql}。
  * 故本文件的「迁移侧」不再是「直读 V59」，而是 <b>V59 ∪ V65 的改名补丁</b>
  * （{@code UPDATE ... SET option_name = '新' WHERE option_name = '旧'}，按<b>内容</b>发现
- * ⇒ 将来的改名迁移无需改本文件）；{@code docs/sql/schema.sql} 是 bootstrap <b>终态</b>，
+ * ⇒ 将来的改名迁移无需改本文件）；{@code backend/admin-api/src/main/resources/db/init/schema.sql} 是 bootstrap <b>终态</b>，
  * 直接写 ERP 名（不经过 V65）。</p>
  *
  * <p>红证（issue #4389）：把 V65 从迁移目录里挪走 / 把任一条 UPDATE 的旧名写错 ⇒
@@ -61,10 +61,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionOptionRoutingMigrationTest {
 
     private static final String MIGRATION_DIR =
-            "backend/admin-api/src/main/resources/db/migration";
+            "backend/admin-api/src/main/resources/db/migration-archive";
     private static final String MIGRATION =
             MIGRATION_DIR + "/V59__create_production_option_tables.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final String ROUTING_PY =
             "backend/ai-agent-service/app/production/routing.py";
 
@@ -86,7 +86,7 @@ class ProductionOptionRoutingMigrationTest {
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();

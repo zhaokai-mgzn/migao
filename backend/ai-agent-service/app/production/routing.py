@@ -150,7 +150,7 @@ PENDING_CUSTOMER_CONFIRMATION_OPERATIONS = frozenset(
 # 登记在这里的唯一理由与上面那个集合相同：让「旧模型孤儿」与「忘了建路线」在数据上**可区分**。
 # `打包` 出现在 `ROUTE_MAINLINE_STEPS`（新模型主线）⇒ 它对 `ROUTINGS` 确实是孤儿。
 # `配料` **自 issue #4952 起零消费**（`FABRIC_MAINLINE_STEPS` 已改判为 `裁剪 → 打包`）；它的
-# 工序行 / 价目行仍留作 V79/V88 已发布迁移与 `docs/sql/schema.sql` 的**历史真值源镜像**
+# 工序行 / 价目行仍留作 V79/V88 已发布迁移与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的**历史真值源镜像**
 # （删表 = 删守卫）。本集合的语义 = 「有工序、有价，但**旧 `ROUTINGS` 不引用**」—— 它只把这两道
 # 从孤儿集合里摘出来，避免 `tests/test_production/test_routing.py` 的孤儿判据把它们判成「忘了建路线」。
 NEW_MODEL_ONLY_OPERATIONS = frozenset({"配料", "打包"})
@@ -188,7 +188,7 @@ SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
 #
 # ⚠️ **为什么不连表一起删**：本表是 **V59/V72 已发布迁移种子**（`production_option_factors`
 # 的「一分为二 ⇒ ×1.7」，V72 搬进 `production_route_rules` 的 `action='factor'` 行）与
-# `docs/sql/schema.sql` bootstrap 终态的**真值源镜像** —— 三源收敛守卫
+# `backend/admin-api/src/main/resources/db/init/schema.sql` bootstrap 终态的**真值源镜像** —— 三源收敛守卫
 # （`tests/unit_ci_workflows/test_production_catalog_seed.py`）按它逐值比对**已发布**迁移。
 # 删表 = 删守卫（守卫只能靠删断言才绿 ⇒ 停手信号）。数据侧由新迁移**软删**那批活跃行
 # （`deleted=1`，留痕），列本身保留（历史工序实例快照 / 历史报工上的值是当时工资的证据）。
@@ -481,7 +481,7 @@ def instance_operations(
 # ① **9/9 逐字重建**：`build_route_v2` 重建 9 个 `(部位, 工艺)` 组合，与冻结期望 +
 #    旧 `ROUTINGS` 归一序列三方逐字一致 —— `tests/test_production/test_route_model_v2.py`；
 # ② **三源收敛**：本段常量 ↔ `V71__normalize_routing_model_structure.sql` ↔
-#    `docs/sql/schema.sql` 逐行逐值 —— `tests/unit_ci_workflows/test_production_catalog_seed.py`。
+#    `backend/admin-api/src/main/resources/db/init/schema.sql` 逐行逐值 —— `tests/unit_ci_workflows/test_production_catalog_seed.py`。
 #
 # ## ⚠️ 如实登记（P1 边界，别把半截当完整交付）
 #
@@ -510,7 +510,7 @@ SALE_FORM_FABRIC = "布料"
 #: —— 用户裁定逐字「布料单该用 **裁剪**」（#4673 评论，设计 F5 已改判掉早期的「配料是公共工序」），
 #: 迁移侧 `V88__retire_material_prep_and_fabric_position.sql` ③ 把 `配料` 手术式替换成 `裁剪`、
 #: `V89__backfill_fabric_seed_for_existing_tenants.sql` ③ 直接落字面量 `["裁剪","打包"]`、
-#: `docs/sql/schema.sql` 的 `布料工序路线` 与 Java 开租播种
+#: `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `布料工序路线` 与 Java 开租播种
 #: `ProductionSeedTemplateService.FABRIC_MAINLINE_STEPS = List.of("裁剪","打包")` **四处同值**
 #: ⇒ 本常量是**最后一个旧口径**（三源收敛守卫此前靠「折算」记账，本单撤掉折算、改逐字直比）。
 #: ⚠️ `配料` 随之**零消费**（工序行 / 价目行仍留作历史真值源镜像，见 `NEW_MODEL_ONLY_OPERATIONS`）。
@@ -829,7 +829,7 @@ def _beats_for_collapse(candidate: tuple, candidate_index: int,
 #:
 #: 🔴 **去部位化（issue #4937 / P2，用户裁定 2026-09-21「不计成本的改」）**：本表原来按
 #: `[逻辑工序][部位]` 两级索引（30 × 4 = 120 格）。部位退场 ⇒ **只按逻辑工序**建索引
-#: （**30 行**，与 `V104` 迁移 / `docs/sql/schema.sql` 的**终态逐行同值**）。
+#: （**30 行**，与 `V104` 迁移 / `backend/admin-api/src/main/resources/db/init/schema.sql` 的**终态逐行同值**）。
 #: 每个逻辑工序的价 = `collapse_to_logical()` 的幸存行价（选行规则见该函数；结果恒定，
 #: 因为收敛由判据决定、与输入序无关）。
 #:

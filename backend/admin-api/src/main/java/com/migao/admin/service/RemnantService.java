@@ -59,7 +59,7 @@ import java.util.Set;
  * <h2>余料从哪来（时点 = 排料/派工结果**自动产生**）</h2>
  * 排料器（{@link CuttingPlanCalculator}）逐行给出「行长度」与行内各块的「占门幅宽」，
  * 两种余料都是矩形、都能直接算出（推导见
- * {@code backend/admin-api/src/main/resources/db/migration/V122__create_fabric_remnants.sql} 文件头）：
+ * {@code backend/admin-api/src/main/resources/db/migration-archive/V122__create_fabric_remnants.sql} 文件头）：
  * <ul>
  *   <li>{@link FabricRemnant#KIND_WIDTH} 门幅余料：行内 {@code Σ占门幅宽 < 门幅} 剩下的竖带；</li>
  *   <li>{@link FabricRemnant#KIND_END} 端部余料：行内短块尾部剩下的横带。</li>

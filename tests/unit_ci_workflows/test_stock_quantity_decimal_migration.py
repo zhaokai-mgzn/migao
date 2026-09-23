@@ -12,7 +12,7 @@
 | 形态（静态） | 显式 `BEGIN;/COMMIT;`；五张前置表 fail-closed；**只 ALTER 类型**（不 DROP 列、不建影子表）；幂等靠「先问 `information_schema` 再 `EXECUTE`」（已是终态 ⇒ `CONTINUE`）；文末 `DO` 块逐列核对 `data_type/numeric_precision/numeric_scale` |
 | 真库（临时 PG） | 两遍真跑：都成功、终态列类型与精度一致、**存量整数值逐位不失**（`60 :: numeric(12,1)` = `60.0`）；把某列**退回 INTEGER** 后再跑 ⇒ 自愈回终态（证明 ALTER 路径可重入，不是一次性）；列集合前后不变（没有多列/少列） |
 | 判别力（注入红证） | ① 目标列表漏一列 ⇒ 终态对账在 `col_count <> 9` 处 `RAISE EXCEPTION`；② 把某列错改成 `NUMERIC(12,2)` ⇒ 精度对账抛；③ DROP 一张前置表 ⇒ 前置 fail-closed 抛（不兜底建表） |
-| bootstrap 镜像 | `docs/sql/schema.sql`（**新建库路径不跑迁移链**）九列同为 `NUMERIC(12,1)` |
+| bootstrap 镜像 | `backend/admin-api/src/main/resources/db/init/schema.sql`（**新建库路径不跑迁移链**）九列同为 `NUMERIC(12,1)` |
 | 不可变护栏 | V115 已登记进 `migration_fingerprints.json`（#4235）—— 否则它以后能被静默改 |
 
 ## 为什么必须真跑
@@ -39,9 +39,21 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V115 = MIGRATION_DIR / "V115__stock_quantity_decimal_1dp.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 #: 本迁移的目标：九列一律 `numeric(12,1)`（`(表, 列)`；与迁移里的 `VALUES` 列表同源，不另立一份）
@@ -58,7 +70,7 @@ TARGET_COLUMNS = (
 )
 
 
-#: 与 `docs/sql/schema.sql` 同形的**最小** DDL —— 起点是**改前**形态（数量列 INTEGER）。
+#: 与 `backend/admin-api/src/main/resources/db/init/schema.sql` 同形的**最小** DDL —— 起点是**改前**形态（数量列 INTEGER）。
 #: 只建本迁移触碰的表/列（+ 前置判据要用的表名），不复制整份 schema。
 _DDL = """
 CREATE TABLE products (
@@ -132,7 +144,7 @@ def _strip_comments(sql: str) -> str:
 def test_v115_exists_and_is_the_unique_highest_version():
     assert V115.exists(), f"缺少迁移文件：{V115.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
-                for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+                for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     assert versions.count(115) == 1, "V115 版本号重复"
     assert max(versions) >= 115, f"V115 不是最高版本号（当前最大 V{max(versions)}）"
 

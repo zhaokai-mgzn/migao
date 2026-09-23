@@ -77,6 +77,8 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
+    # issue #5243：基线语义判据（空库建终态 / 存量库不重放）**自带一次性真 PG 集群** ⇒ 登记。
+    _SVC + "MigrationBaselineSemanticsTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
     # 类名不含 `RealDb`（`*RealMappingTest`）—— 判据①**不能**只扫 `*RealDbTest` 通配，

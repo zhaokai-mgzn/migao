@@ -108,7 +108,7 @@ public final class RoutingModelFixture {
             {"立边-布", "车位", "米", "0.5", "false", "false"},
             {"扣环-布", "车位", "个", "0.3", "false", "false"},
             {"防翘扣-布", "车位", "个", "0.2", "false", "false"},
-            // ── issue #4937（去部位化彻底版）：补 4 道纱帘变体（与 `docs/sql/schema.sql` 的
+            // ── issue #4937（去部位化彻底版）：补 4 道纱帘变体（与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的
             // `op-v54-31..34` 逐字同值）。`applicable` 过滤退场后，`熨烫/定型/复烫/车被`
             // 会进入**纱帘**路线的实例化路径 —— 没有这些变体 ⇒ `variantNameOf` 返回 null
             // ⇒ **整张纱帘单 fail-closed**（一张也建不出来）。
@@ -561,7 +561,7 @@ public final class RoutingModelFixture {
 
     /**
      * **加工项触发**规则（3 条，issue #4577）：与
-     * {@code V84__seed_processing_item_route_rules.sql} / {@code docs/sql/schema.sql} 逐条同值。
+     * {@code V84__seed_processing_item_route_rules.sql} / {@code backend/admin-api/src/main/resources/db/init/schema.sql} 逐条同值。
      *
      * <p>刻意**不并进** {@link #rules()}：那张表被守卫钉为「V71 字面量种子的 26 行镜像」
      * （{@code test_production_catalog_seed.py::test_route_rules_converge_across_three_sources}）

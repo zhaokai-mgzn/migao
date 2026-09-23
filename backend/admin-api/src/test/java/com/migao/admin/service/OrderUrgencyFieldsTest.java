@@ -214,7 +214,7 @@ class OrderUrgencyFieldsTest {
 
     private static Path repoRoot() {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
         assertThat(root).as("必须能定位仓库根").isNotNull();

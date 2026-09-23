@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 生产报工迁移契约（V49，issue #3995，M4-G-2）
  *
  * 守三条会被下一位验收者重开的判据：
- *   ① 四张表 + 索引齐备（迁移与 docs/sql/schema.sql 双源同口径）；
+ *   ① 四张表 + 索引齐备（迁移与 backend/admin-api/src/main/resources/db/init/schema.sql 双源同口径）；
  *   ② `processing_orders.qr_token` 走 ADD COLUMN IF NOT EXISTS（存量库必须可重复执行）
  *      + 部分唯一索引只约束 deleted=0（软删后 token 释放可复用）；
  *   ③ 报工三态语义写在 SQL 注释里（normal/rework/scrap、必完工序、二维码 token），
@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionReportingMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V49__create_production_operations_and_work_logs.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private static Path findRepoRoot() {
         Path cur = Paths.get("").toAbsolutePath();

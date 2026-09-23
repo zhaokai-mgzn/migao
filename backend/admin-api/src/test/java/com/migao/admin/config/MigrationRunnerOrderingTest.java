@@ -5,9 +5,14 @@ package com.migao.admin.config;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +45,41 @@ class MigrationRunnerOrderingTest {
         return MigrationRunner.sortMigrationNames(names);
     }
 
+    /**
+     * 历史迁移链的**归档目录**（issue #5243）：`db/migration/` 此后**只放未来的增量迁移**，
+     * 已发布的那一整条链（V1 … V114）整链归档到 `backend/admin-api/src/main/resources/db/migration-archive/`，
+     * 由 `migration_fingerprints.json` 逐字节冻结。
+     *
+     * <p>⚠️ 为什么这里改成读归档目录而不是继续用 {@link MigrationRunner#listMigrationNames()}：
+     * 后者扫的是 **classpath**（生产扫描口径），归档目录不在 classpath 上。本测试要断言的是
+     * 「**真实存在过的**迁移文件集整体有序、版本号可解析」—— 数据集换位置，判据一字不放宽。</p>
+     */
+    private static Path archiveDir() {
+        Path cur = Paths.get("").toAbsolutePath();
+        while (cur != null) {
+            Path candidate = cur.resolve("backend/admin-api/src/main/resources/db/migration-archive");
+            if (Files.isDirectory(candidate)) {
+                return candidate;
+            }
+            cur = cur.getParent();
+        }
+        throw new IllegalStateException(
+                "找不到迁移归档目录 backend/admin-api/src/main/resources/db/migration-archive —— 本判据会空转，不得静默通过");
+    }
+
+    /** 归档链 ∪ 未来增量目录（classpath）的全部迁移文件名 —— 两处都要在射程内。 */
+    private static List<String> realMigrationNames() {
+        List<String> names = new ArrayList<>(MigrationRunner.listMigrationNames());
+        try (Stream<Path> entries = Files.list(archiveDir())) {
+            entries.map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".sql"))
+                    .forEach(names::add);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("无法读取迁移归档目录 —— 本判据会空转，不得静默通过", e);
+        }
+        return names;
+    }
+
     @Test
     @DisplayName("版本号按数值排序：V2 必须排在 V10 / V19 之前（字典序会排反）")
     void sortsByNumericVersionNotLexicographically() {
@@ -61,7 +101,7 @@ class MigrationRunnerOrderingTest {
     @Test
     @DisplayName("真实迁移目录整体有序：每个版本号都严格递增")
     void realMigrationDirectoryIsMonotonic() {
-        List<String> names = MigrationRunner.listMigrationNames();
+        List<String> names = realMigrationNames();
         assertThat(names).isNotEmpty();
         List<String> sorted = sortedByRunner(names);
         int prev = -1;
@@ -90,7 +130,7 @@ class MigrationRunnerOrderingTest {
     @Test
     @DisplayName("迁移目录里不得有无法解析版本号的文件（否则顺序不可预期）")
     void everyMigrationParses() {
-        for (String n : MigrationRunner.listMigrationNames()) {
+        for (String n : realMigrationNames()) {
             assertThat(MigrationRunner.versionOf(n))
                     .as("迁移文件名 %s 无法解析版本号 —— 必须为 V{n}__desc.sql", n)
                     .isGreaterThan(0);
