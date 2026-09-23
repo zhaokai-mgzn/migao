@@ -1,6 +1,7 @@
-"""AfterSalesManageTool 单元测试 — 售后工单查询/创建/状态流转。
+"""AfterSalesManageTool 单元测试 — 售后工单查询（只读）。
 
-覆盖 list/detail/create/update_status 的正常路径与参数校验，
+B 端只读化（issue #5247）：after_sales_manage（售后工单） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+覆盖 list/detail 的正常路径与参数校验，
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
 # case_ids: AS-001, AS-002, AS-004, AS-007, DF-008
@@ -42,9 +43,7 @@ class TestAfterSalesReadOnlyConfirmation:
     def test_detail_query_exempt_from_confirm(self, tool):
         assert _requires_confirmation(tool, {"action": "detail", "ticket_id": "x"}, "查工单详情") is False
 
-    def test_write_actions_still_require_confirm(self, tool):
-        assert _requires_confirmation(tool, {"action": "create"}, "创建工单") is True
-        assert _requires_confirmation(tool, {"action": "update_status"}, "关闭工单") is True
+    # [RETIRED #5247] test_write_actions_still_require_confirm 已退休：售后写 action（create/update_status）已从 B 端移除（B 端只读化）：写 action 不再存在，确认拦截断言无对象。
 
 
 class TestAfterSalesPermission:
@@ -151,134 +150,7 @@ class TestAfterSalesDetail:
         assert mock_client.get.call_args[0][0] == "/api/admin/after-sales/t1"
 
 
-class TestAfterSalesCreate:
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_create_missing_required_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="create", ticket_type="refund", reason="尺寸不符")
-        assert r1.success is False and "缺少订单 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="create", order_id="o1", reason="尺寸不符")
-        assert r2.success is False and "缺少工单类型" in r2.error
-        r3 = await tool.execute(context=admin_tool_context, action="create", order_id="o1", ticket_type="refund")
-        assert r3.success is False and "缺少原因说明" in r3.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_create_invalid_ticket_type(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="create", order_id="o1", ticket_type="destroy", reason="x")
-        assert result.success is False
-        assert "无效的工单类型" in result.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_create_description_fallback_to_reason(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "t-new", "ticketNo": "AS-1"}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create", order_id="o1", ticket_type="refund", reason="尺寸不符")
-        assert result.success is True
-        assert result.data["id"] == "t-new"
-        assert mock_client.post.call_args[0][0] == "/api/admin/agent/after-sales"
-        json_data = mock_client.post.call_args[1]["json_data"]
-        assert json_data["orderId"] == "o1"
-        assert json_data["ticketType"] == "refund"
-        assert json_data["description"] == "尺寸不符"
-        # 不下发 body 里的 source（issue #3605）：DTO AgentAfterSalesCreateRequest 无该字段 → 静默丢弃。
-        # issue #3686：来源改由 X-Agent-Client **请求头**声明（不由 payload 决定），
-        # 服务端按真实来源写库（本工具 = B 端米宝 AI 建单 → agent）。
-        assert "source" not in json_data
-        assert mock_client.post.call_args[1]["headers"]["X-Agent-Client"] == "agent"
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_create_kwargs_passthrough(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "t-new"}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="create",
-            order_id="o1",
-            ticket_type="refund",
-            reason="尺寸不符",
-            images=["https://img/1.png"],
-            priority="urgent",
-            refund_amount=50.0,
-        )
-        assert result.success is True
-        json_data = mock_client.post.call_args[1]["json_data"]
-        assert json_data["images"] == ["https://img/1.png"]
-        assert json_data["priority"] == "urgent"
-        assert json_data["refundAmount"] == 50.0
+# [RETIRED #5247] TestAfterSalesCreate（4 例） 已退休：建售后工单（create）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestAfterSalesUpdateStatus:
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_update_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="update_status", status="resolved")
-        assert r1.success is False and "缺少工单 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="update_status", ticket_id="t1")
-        assert r2.success is False and "缺少状态参数" in r2.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_update_invalid_status(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="update_status", ticket_id="t1", status="archived")
-        assert result.success is False
-        assert "无效的工单状态" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_update_success_with_reason(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update_status", ticket_id="t1", status="resolved", reason="已处理")
-        assert result.success is True
-        assert result.data == {"ticket_id": "t1", "status": "resolved"}
-        assert mock_client.put.call_args[0][0] == "/api/admin/after-sales/t1/status"
-        # 下发字段必须用 admin-api DTO 的 canonical 名 remark（Java 侧 remark → closeReason）；
-        # 发 reason 会被静默丢弃（issue #3540 / AS-004），契约哨兵见 test_tool_field_name_contract.py
-        assert mock_client.put.call_args[1]["json_data"] == {"status": "resolved", "remark": "已处理"}
-        # 状态更新回执必须用中文业务术语，禁止输出英文枚举
-        assert "已解决" in result.message
-        assert "resolved" not in result.message
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_close_without_reason_fails_closed(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """关闭/拒绝工单必须带原因（issue #3744 / AS-004）：无 reason → 失败关闭且不下发请求。
-
-        红证：改前这里 `success is False` 会失败 —— 旧实现无 reason 也返回成功且 json_data 里
-        没有 remark，admin-api 只在 remark 非空时写 closeReason（AfterSalesTicketService
-        #updateTicketStatus）⇒ 落库 closedAt 有、closeReason 空 = 关闭留痕缺失；
-        而 closed/rejected 是**终态不可再流转**，事后补不回来。
-        """
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-        for st in ("closed", "rejected"):
-            result = await tool.execute(
-                context=admin_tool_context, action="update_status", ticket_id="t1", status=st)
-            assert result.success is False, f"{st} 无原因必须失败关闭，不得产生无留痕关闭"
-            assert "原因" in result.message
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_close_with_reason_lands_remark(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """关闭工单带原因 → 原因经 canonical 字段 remark 下发（admin-api 写 closeReason）。"""
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="update_status", ticket_id="t1",
-            status="closed", reason="客户已协商一致")
-        assert result.success is True
-        assert mock_client.put.call_args[1]["json_data"] == {
-            "status": "closed", "remark": "客户已协商一致"}
-        assert "已关闭" in result.message
+# [RETIRED #5247] TestAfterSalesUpdateStatus（5 例） 已退休：工单状态流转（update_status）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。

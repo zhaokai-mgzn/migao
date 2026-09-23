@@ -3,6 +3,14 @@
 
 验证新增 Skill 不会抢走已有 Skill 的路由，
 确保 Skill Registry 注册正确、意图映射不冲突。
+
+issue #5247（B 端米宝只读，用户裁定 2026-09-23）：B 端全部 skill 只绑 `read_only=True`
+工具 ⇒ 本文件两处派生面的前提随之变化（逐条写在相关用例 docstring 里）：
+  · 「持有需确认写工具」的 skill 从 B 端 4 个变成 **C 端 2 个 + `settings`**（后者仍注册、
+    仍绑 `settings_manage` / `notification_manage`，但已不在米宝的 `skill_names` 里）；
+  · 需要「写工具清单」的判据一律改**注册表派生**（`read_only=False`），不再维护人工清单 ——
+    人工清单在 `employee_manage` / `role_manage` / `inventory_manage` 被收窄为只读后立刻误红
+    （§19.1「误红即坏断言」）。
 """
 # case_ids: DF-008, DF-015, PR-008, OR-009, OR-010, CH-010, CH-019, HR-005, ST-003, ST-005, FN-001
 
@@ -112,21 +120,30 @@ def test_no_overlapping_route_keys():
 
 
 def test_general_has_only_read_tools():
-    """兜底 general Skill 只应有只读 Tool（写操作需确认后走领域 Skill）
+    """兜底 general Skill 只应有**只读** Tool（写操作需确认后走领域 Skill）。
 
-    例外：customer_manage / notification_manage 虽然有写能力，
-    但在 general 中主要用于查询和列表展示，写操作仍需用户明确触发。
+    issue #5247 重新锚定（B 端米宝只读）：原判据维护人工清单
+    `{product_manage, order_create, inventory_manage, order_manage, employee_manage,
+    role_manage, settings_manage}` —— 其中 `employee_manage` / `role_manage` /
+    `inventory_manage`（连同 `customer_manage` / `category_manage` / `after_sales_manage` /
+    `finance_api` / `session_manage`）已被产品裁定**收窄为只读工具**（保留工具名与只读
+    action、权限码改读码）⇒ 它们进 general 是**预期**形态，人工清单从此恒红。
+    判据改为**注册表派生**（同本文件 #3594/#3624 的收敛口径，也不再维护第二份人工清单）：
+    general 绑定的**每个**工具都必须 `read_only=True` —— 比原清单更强（新写工具落地即入射程，
+    不再依赖某次人工补名单）。
     """
     registry = get_skill_registry()
+    tool_registry = get_tool_registry()
     general = registry.get("general")
     assert general is not None
-    # 确认核心写操作 Tool 不会漏进 general
-    # processing_item_manage 等管理类 Tool 在 general 中用于列表展示
-    truly_write_only = {"product_manage", "order_create", "inventory_manage", "order_manage", "employee_manage", "role_manage", "settings_manage"}
-    for tool in truly_write_only:
-        assert tool not in general.tool_names, (
-            f"纯写 Tool '{tool}' 不应在 general Skill 中"
-        )
+    write_bound = sorted(
+        name for name in (general.tool_names or [])
+        if (tool := tool_registry.get_tool(name)) is not None and not tool.read_only
+    )
+    assert not write_bound, (
+        f"非只读 Tool {write_bound} 出现在 general Skill 中 —— 写操作必须走领域 Skill 的"
+        f"确认链（#5247：B 端兜底同样只读）"
+    )
 
 
 # 注（issue #3594 / #3624）：此处原有硬编码 `ALL_WRITE_TOOLS` 常量（12 个工具名）——
@@ -232,6 +249,11 @@ def test_all_write_skills_bind_interact_via_confirm_guard():
     `test_skill_config_registry.py::test_confirmed_write_tools_require_interact_in_same_skill`
     是同一不变式在 C 端的**子集**（该文件 docstring 里"B 端经评估不补 interact"的前提
     已被 #3577 推翻）。
+
+    issue #5247（B 端米宝只读）：派生集随绑定面收缩 —— B 端 skill 不再持有任何需确认写工具，
+    持有者只剩 C 端（`customer_order` / `customer_aftersales`）与仍注册的 `settings`。
+    判据本身（注册表派生 × 全部已注册 skill）**不需要改口径**：前提变了，判据自动跟着变
+    —— 这正是 #3624 收敛掉硬编码枚举的收益。
     """
     write_skills, violations = _write_skills_missing_interact(
         get_skill_registry().get_all(), get_tool_registry()
@@ -258,7 +280,13 @@ class TestWriteSkillInteractInvariant:
 
     # 旧实现的硬编码清单 —— 只作为**回归锚点**（证明收敛真的带来增益、防回退），
     # 不再是判据本身。
-    LEGACY_ENUMERATION = ("product", "order", "aftersales", "customer")
+    # ⚠️ issue #5247 重新锚定：原锚点 = B 端 4 元组
+    # `("product", "order", "aftersales", "customer")` —— 那 4 个 skill 已不再持有任何
+    # 需确认写工具（B 端只读）⇒ 锚点本身失效（`derived > legacy` 变成两个不相交集合的比较）。
+    # 改用**仍持有需确认写工具**的 C 端子集（与 `test_skill_config_registry.py` 的 C 端
+    # 清单同源）。锚点语义不变：派生集必须**严格超出**它 —— `settings` 不在任何人工枚举里，
+    # 靠它证明"派生 ≠ 抄清单"（谁把判据改回硬编码，这里就红）。
+    LEGACY_ENUMERATION = ("customer_aftersales", "customer_order")
 
     @staticmethod
     def _derived_write_skills() -> list:
@@ -277,12 +305,15 @@ class TestWriteSkillInteractInvariant:
         ]
 
     # ── 方向 1：不变式必须真的会红（防空转）──
-    @pytest.mark.parametrize("skill_name", ["settings", "staff", "data", "general"])
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales", "settings"])
     def test_invariant_catches_skill_that_lost_interact(self, skill_name):
         """变验验证：拿掉某写 skill 的 `interact` → 派生必须把它报为违规。
 
-        参数含 `settings`（用户点名的回归场景）、`staff` / `data`（同为 #3577 补绑的三处）
-        与 `general`（兜底也持写工具）—— 后三个**都不在旧枚举里**，旧判据对它们恒绿。
+        issue #5247 重新锚定：原参数含 `settings`（用户点名的回归场景）、`staff` / `data`
+        （#3577 补绑的三处）与 `general`（兜底也持写工具）—— 后三个在 B 端只读后**不再持有
+        任何需确认写工具**，拿掉它们的 `interact` 不再产生违规（不是写 skill 了）⇒ 旧参数
+        恒红。改用**确实持有需确认写工具**的 skill：C 端 `customer_order` /
+        `customer_aftersales` + `settings`。判据本身仍覆盖全部已注册 skill（一处未漏）。
         """
         write_skills, violations = _write_skills_missing_interact(
             self._without_interact(skill_name), get_tool_registry()
@@ -306,6 +337,8 @@ class TestWriteSkillInteractInvariant:
         """派生集必须**严格超出**旧枚举 —— 旧枚举漏掉的 skill 必须有人检查。
 
         这条同时是防回退闸门：谁把判据改回硬编码 4 元组（或其等价物），这里就红。
+        issue #5247：锚点从 B 端 4 元组改为 C 端 2 元组（见 `LEGACY_ENUMERATION` 注释），
+        判据方向不变 —— `settings` 仍不在任何人工枚举里，是"派生真的在派生"的证据。
         """
         derived = set(self._derived_write_skills())
         assert derived > set(self.LEGACY_ENUMERATION), (
@@ -313,14 +346,16 @@ class TestWriteSkillInteractInvariant:
             f"枚举漏掉的 skill 仍无人检查（#3624 的缺陷形态）"
         )
 
-    @pytest.mark.parametrize("skill_name", ["product", "order", "aftersales", "customer",
-                                            "staff", "settings", "data", "general"])
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales", "settings"])
     def test_real_write_skills_are_all_covered(self, skill_name):
         """真实写 skill 全部进入判据（防收敛过窄导致漏检）。
 
-        名单 = 旧枚举 ∪ #3577 补绑 interact 的 staff/settings/data ∪ 兜底 general。
-        若某个 skill **合法地**不再持有任何需确认写工具，应连同本条一起删掉该参数
-        （判据本身仍是注册表派生，这里只是"派生结果不得缩水"的回归锚点）。
+        名单 = **注册表派生**的写 skill（持有需确认写工具者）。issue #5247：原名单
+        （旧枚举 ∪ #3577 补绑 interact 的 staff/settings/data ∪ 兜底 general）随 B 端
+        只读失效 —— B 端 skill 已不持有任何需确认写工具，按本条既定口径（"若某个 skill
+        **合法地**不再持有任何需确认写工具，应连同本条一起删掉该参数"）删去 B 端参数；
+        `settings` 保留：它仍注册、仍持有 `settings_manage` / `notification_manage`，
+        且**不在任何人工枚举里** —— "派生结果不得缩水"的锚点。
         """
         assert skill_name in self._derived_write_skills(), (
             f"{skill_name} 持有需确认写工具却不在判据内 —— 收敛过窄"

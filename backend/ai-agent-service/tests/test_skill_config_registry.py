@@ -463,6 +463,34 @@ _ISSUE_3317_BINDINGS = {
     "data": ("finance_api", "session_manage"),
 }
 
+#: 🔴 **#5247 退役子集**（键 = 工具名，值 = 前提为什么消失）。
+#: 这 6 处里已随 **B 端米宝只读化**（用户裁定 2026-09-23）收窄为只读的 4 把 ——
+#: 它们的 `requires_confirmation`/`destructive` 语义按设计消失（只读工具不是写操作、
+#: 不再走确认门禁）⇒ 从「禁止 B 路径」的判据面退场，改用**前提消失的判据**替代：
+#: 必须是只读（`read_only = True`）。谁把它们改回写工具，判据立刻红 → 那时必须把
+#: `destructive`/`requires_confirmation` 一起加回来（否则就是"写操作没有确认门禁"= B 路径）。
+_ISSUE_3317_RETIRED_READ_ONLY: dict = {
+    "employee_manage": "写 action（create/update/delete/reset_password/toggle_status）全删 ⇒ 收窄为 list/detail",
+    "role_manage": "写 action（create/update/delete）全删 ⇒ 收窄为 list/all/detail/list_permissions",
+    "finance_api": "写 action（create_transaction）删除 ⇒ 收窄为三个 get_*",
+    "session_manage": "写 action（assign/end）删除 ⇒ 收窄为 list/monitor/detail",
+}
+
+#: 仍绑定「需确认写工具」的 Skill 名册（#5247 后 **3** 个）—— 由
+#: `test_confirmed_write_tools_require_interact_in_same_skill` 现算并**集合相等**校验。
+#:
+#: 🔴 **issue #5247 改判**：原阈值 `checked >= 10` 的真值是 15 个 Skill；本单把 6 个 B 端
+#: Skill（order / product / aftersales / customer / staff / data）的写工具全部解绑、只剩只读
+#: 工具（只读 Skill 永远走不到确认门禁的补救话术）⇒ 真值降到 **3**。**只降阈值 = 拔牙**：
+#: 再解绑一个 Skill 也不会有东西变红，所以改成**名册相等**。仍在名册里的 3 个：
+#:   · `settings`（B 端**孤儿配置**：只绑写工具 settings_manage / notification_manage，
+#:     已从 mibao 的 skill_names 移出、但注册关系保留 ⇒ 结构上仍走得到确认门禁）；
+#:   · `customer_order`（C 端，绑 order_create）；
+#:   · `customer_aftersales`（C 端，绑 aftersale_create）。
+_CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
+    "settings", "customer_order", "customer_aftersales",
+})
+
 # 显式豁免台账（键 = Skill 名，值 = 不绑 `interact` 的理由）：**没绑 `interact` 的 Skill 必须
 # 在这里逐条记录在案**，且理由必须成立（只读、prompt 不承诺确认卡）。台账由
 # `test_interact_absent_only_for_recorded_read_only_skills` 机械校验——新 Skill 若漏绑
@@ -558,6 +586,13 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
     配置层统一后，**该分支的"无 interact"支路对所有已注册 Skill 不可达** —— 本用例即其
     常量/断言驱动的守护（分支本体在 base_skill.py，属其它包所有权，本包不改；保留它是对
     "非注册 tool_names 动态子集"的防御性兜底，不再承担已注册 Skill 的话术分流）。
+
+    🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）：厚度守卫由阈值改成名册**。
+    本单解绑了 6 个 B 端 Skill 的全部写工具（只剩只读）⇒ 判据前提集从 15 个 Skill 缩到 3
+    （见 `_CONFIRM_GATE_BINDING_SKILLS`）。原 `checked >= 10` 若只改成 `>= 3`，**再解绑一个
+    也不会有东西变红**（判据退化成"至少还有一个"）⇒ 换成**名册集合相等 + 非空下限**：
+    任何 Skill 的进出都必须在本文件显式改判。判据本体（绑需确认写工具 ⇒ 必须暴露
+    `interact`）**一字未改**，仍对有牙的那 3 个 Skill 逐条生效。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
@@ -566,7 +601,7 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
     skills = [c for c in get_skill_registry().get_all() if c.tool_names]
     exempt_granted: list[str] = []
     violations: list[str] = []
-    checked = 0
+    checked_skills: list[str] = []
 
     for config in skills:
         gated = _confirm_gated_tools(config, full_registry)
@@ -576,17 +611,22 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
             continue
         if not gated:
             continue
-        checked += 1
+        checked_skills.append(config.name)
         if "interact" not in (config.tool_names or []):
             violations.append(
                 f"{config.name} 绑定需确认写工具 {'/'.join(gated)} 但未暴露 interact"
             )
 
     _assert_exemptions_are_honest(_CONFIRM_GATE_INTERACT_EXEMPT, exempt_granted)
-    # 厚度守卫：防 registry/工具注册解析失效导致不变式空转（假绿）
-    assert checked >= 10, (
-        f"仅检查了 {checked} 个绑定需确认写工具的 Skill —— 解析疑似失效（不变式空转）"
+    # 厚度守卫（#5247 改判）：名册**集合相等** + 非空下限，防解析失效 / 静默空转（假绿）
+    assert sorted(checked_skills) == sorted(_CONFIRM_GATE_BINDING_SKILLS), (
+        f"绑定需确认写工具的 Skill 实测 {sorted(checked_skills)} —— 与名册 "
+        f"{sorted(_CONFIRM_GATE_BINDING_SKILLS)} 不等：\n"
+        "  多出来 ⇒ 有 Skill 重新绑了写工具（要登记，并确认它绑了 interact）；\n"
+        "  少掉 ⇒ 该 Skill 的写工具被解绑 / 收窄为只读（#5247 的形态）—— 显式改判名册条目，"
+        "别让它静默消失（那样这条不变式会随之空转）"
     )
+    assert checked_skills, "名册为空 ⇒ 不变式退化成恒真（假绿）"
     assert not violations, (
         "以下 Skill 的弹卡确认路径不可达（写工具只能靠口头确认侥幸放行）：\n  "
         + "\n  ".join(violations)
@@ -596,15 +636,33 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
 def test_issue_3317_six_bindings_now_expose_interact():
     """#3317 的 6 处（staff×2 / settings×2 / data×2）逐一锁定：补绑后交互形态统一。
 
-    同时锁住**禁止的 B 路径**：这 6 个工具的 `requires_confirmation`/`destructive` 安全
+    同时锁住**禁止的 B 路径**：需确认写工具的 `requires_confirmation`/`destructive` 安全
     语义不得被下调（写操作安全由 admin-api 层承担，但 agent 侧门禁本身也是安全网，
     不得为"话术好写"而摘除）。
+
+    🔴 **issue #5247 改判（判据面收窄，不是放宽）**：6 处里 4 把（staff/data 的
+    employee_manage、role_manage、finance_api、session_manage）随 B 端只读化收窄为**只读**
+    ⇒ 「写工具的需确认标记」这个前提按设计消失，改判为**前提消失的判据**：
+    它们必须是只读（`read_only = True`）—— 一旦谁把它改回写工具，本条立刻红，并要求同时
+    把 `destructive`/`requires_confirmation` 加回来（否则就是"写操作没有确认门禁"= B 路径）。
+    仍在写侧（判据面**非空**）的是 `settings` 的两把：
+    `settings_manage` / `notification_manage` —— 「禁止 B 路径」的判据由它们承重，
+    两条绑定与"Skill 必须绑 interact"照旧逐条断言。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
 
     reg = get_skill_registry()
     tools = get_tool_registry()
+
+    all_bound = {n for names in _ISSUE_3317_BINDINGS.values() for n in names}
+    assert set(_ISSUE_3317_RETIRED_READ_ONLY) <= all_bound, (
+        f"退役子集里有不在 #3317 绑定表里的工具 {sorted(set(_ISSUE_3317_RETIRED_READ_ONLY) - all_bound)}"
+        " —— 台账与本表脱节（陈旧条目要销账）"
+    )
+    for name, why in _ISSUE_3317_RETIRED_READ_ONLY.items():
+        assert isinstance(why, str) and why.strip(), (
+            f"退役子集里的 {name} 没写「前提为什么消失」—— 无理由的退役等于宽泛 skip")
 
     for skill_name, gated_names in _ISSUE_3317_BINDINGS.items():
         cfg = reg.get_or_raise(skill_name)
@@ -614,15 +672,35 @@ def test_issue_3317_six_bindings_now_expose_interact():
             f"对该 Skill 是不可执行指令（#3317）"
         )
         for name in gated_names:
-            assert name in tool_names, f"{skill_name} 的既有写工具 {name} 被移除（回归）"
+            assert name in tool_names, f"{skill_name} 的既有工具 {name} 被移除（回归）"
             tool = tools.get_tool(name)
-            assert tool is not None and (
+            if tool is None:
+                # fail-closed 的前提自检（不是断言值）：解析不到对象就必须响亮失败，
+                # **不得**静默跳过下面两条业务判据。用 `raise` 而非 `assert … is not None`
+                # —— 后者会被弱断言门禁登记为「空断言」（本条不提供新信息，只是防指错对象）。
+                raise AssertionError(f"{name} 不在工具注册表里（判据指错对象 ⇒ fail-closed）")
+            if name in _ISSUE_3317_RETIRED_READ_ONLY:
+                assert tool.read_only is True, (
+                    f"{skill_name}.{name} 是 #5247 收窄为只读的工具（"
+                    f"{_ISSUE_3317_RETIRED_READ_ONLY[name]}）—— 需确认标记随之退场。\n"
+                    "它若重新变回**写工具**，必须把 `destructive`/`requires_confirmation` "
+                    "一起加回来（否则就是「写操作没有确认门禁」= 被禁止的 B 路径）"
+                )
+                continue
+            assert (
                 getattr(tool, "destructive", False)
                 or getattr(tool, "requires_confirmation", False)
             ), (
                 f"{skill_name}.{name} 的需确认标记被下调 —— 禁止 B 路径"
                 f"（安全语义不得为交互话术让路）"
             )
+
+    # 厚度守卫：写侧的判据面必须非空（否则本用例退化成"只断言一批只读工具"= 空判据）
+    live_writes = sorted(all_bound - set(_ISSUE_3317_RETIRED_READ_ONLY))
+    assert live_writes, (
+        "「禁止 B 路径」的判据面已空（6 处全被收窄为只读）—— 请为写工具另找见证，"
+        "或把本用例按 #5247 的台账纪律整体退役（不许留一条恒真的空判据）"
+    )
 
 
 def test_confirm_gate_guidance_takes_card_branch_for_unified_skills():

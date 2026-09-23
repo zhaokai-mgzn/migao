@@ -1,5 +1,6 @@
 """售后工单真实来源（source）声明契约测试 — issue #3686
 
+B 端只读化（issue #5247）：after_sales_manage（B 端米宝建单路径） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
 服务端侧：`AfterSalesTicketService.createTicket` 不再无条件硬编码 `source="agent"`
 （原实现 :348），来源按真实调用方写入（C 端小布 `customer` / AI 建单 `agent` /
 后台人工 `merchant`）。本文件锁 **ai-agent 侧的三条下发路径**：
@@ -83,30 +84,7 @@ class TestAftersaleCreateDeclaresCustomer:
         assert mock_client.post.call_args.kwargs["headers"][CLIENT_HEADER] == "customer"
 
 
-class TestAfterSalesManageDeclaresAgent:
-    """B 端米宝建单（AI 建单）→ 声明 agent"""
-
-    @patch("app.tools.after_sales_manage.get_admin_api_client")
-    async def test_declares_agent_header(self, mock_get_client):
-        from app.tools.after_sales_manage import AfterSalesManageTool
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "t-new"}})
-        mock_get_client.return_value = mock_client
-
-        result = await AfterSalesManageTool().execute(
-            context=_ctx("admin"),
-            action="create",
-            order_id="o1",
-            ticket_type="refund",
-            reason="尺寸不符",
-        )
-
-        assert result.success is True
-        assert mock_client.post.call_args[0][0] == "/api/admin/agent/after-sales"
-        assert mock_client.post.call_args.kwargs["headers"][CLIENT_HEADER] == "agent"
-        # 仍不下发 body 里的 source（#3605 取舍不变：来源不由 payload 决定）
-        assert "source" not in mock_client.post.call_args.kwargs["json_data"]
+# [RETIRED #5247] TestAfterSalesManageDeclaresAgent 已退休：B 端米宝建售后工单（after_sales_manage create）已从 B 端移除（B 端只读化）：X-Agent-Client=agent 的下发路径不再存在，断言无对象。其余两条下发路径（小布建单 / 转人工）用例保留。
 
 
 class TestHumanHandoffDeclaresCallerSource:

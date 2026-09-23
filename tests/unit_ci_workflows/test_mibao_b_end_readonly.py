@@ -244,8 +244,6 @@ def parse_agent_direct_replies(sources: dict[str, str], agent: str) -> dict[str,
 
     ⚠️ 两处**分开存键**（`greeting` vs `direct_replies.greeting`）：同名键互相覆盖会让
     「只改了一处」的注入在读数上被另一处盖掉 ⇒ 判据看着绿、注入就成了空断言（实测踩到）。"""
-    if False:
-        pass
     tree = ast.parse(sources[f"agent:{agent}"])
     out: dict[str, str] = {}
     for node in ast.walk(tree):

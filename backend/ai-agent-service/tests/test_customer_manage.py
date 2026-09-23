@@ -1,6 +1,7 @@
-"""CustomerManageTool 单元测试 — 客户档案 + 标签库 CRUD。
+"""CustomerManageTool 单元测试 — 客户档案 + 标签库查询（只读）。
 
-覆盖 list 脱敏/分页、detail/update 参数校验、标签增删、标签库 CRUD，
+B 端只读化（issue #5247）：customer_manage（客户档案 / 标签库） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+覆盖 list 脱敏/分页、detail 参数校验、标签库查询，
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
 # case_ids: DF-008, CU-001, CU-002, CU-003, CU-004, CU-008
@@ -44,10 +45,7 @@ class TestCustomerReadOnlyConfirmation:
     def test_list_tags_exempt_from_confirm(self, tool):
         assert _requires_confirmation(tool, {"action": "list_tags"}, "有哪些客户标签") is False
 
-    def test_write_actions_still_require_confirm(self, tool):
-        assert _requires_confirmation(tool, {"action": "update"}, "帮我改客户信息") is True
-        assert _requires_confirmation(tool, {"action": "add_tag"}, "给客户打标签") is True
-        assert _requires_confirmation(tool, {"action": "delete_tag"}, "删除标签") is True
+    # [RETIRED #5247] test_write_actions_still_require_confirm 已退休：客户写 action（update/add_tag/remove_tag）已从 B 端移除（B 端只读化）：写 action 不再存在，确认拦截断言无对象。
 
 
 class TestCustomerPermission:
@@ -180,168 +178,10 @@ class TestCustomerDetail:
         assert mock_client.get.call_args[0][0] == "/api/admin/customers/c1"
 
 
-class TestCustomerUpdate:
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", data={"name": "张三"})
-        assert result.success is False
-        assert "缺少客户 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_missing_data(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", customer_id="c1")
-        assert result.success is False
-        assert "缺少更新数据" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1",
-            data={"wechatNickname": "新名字"})
-        assert result.success is True
-        assert result.data["customer_id"] == "c1"
-        assert mock_client.put.call_args[0][0] == "/api/admin/customers/c1"
-        assert mock_client.put.call_args[1]["json_data"] == {"wechatNickname": "新名字"}
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_name_lands_on_writable_field(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """姓名必须下发到可写列 wechatNickname（#3551）。
-
-        CustomerProfile 无 name 列 → 下发 {"name": ...} 被 Spring 静默丢弃
-        （HTTP 200、name 不落库）→ 米宝谎报「已更新客户姓名」。修复前本测试红。
-        """
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="update",
-            customer_id="c1",
-            data={"name": "李四", "phone": "13900001111"},
-        )
-
-        assert result.success is True
-        payload = mock_client.put.call_args[1]["json_data"]
-        assert payload == {"wechatNickname": "李四", "phone": "13900001111"}
-        assert "name" not in payload, "name 不是 CustomerProfile 列，下发即被静默丢弃"
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_rejects_unwritable_fields(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """不可写字段必须显式报错，禁止「静默忽略后返回成功」，且不得部分写入（#3551）。"""
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1",
-            data={"totalOrders": 99})
-        assert result.success is False
-        assert "totalOrders" in result.error
-        assert result.suggestion and "wechatNickname" in result.suggestion
-        mock_client.put.assert_not_called()
-
-        # 混合 payload（可写 + 不可写）整体拒绝，避免「部分写入」造成的假成功
-        mixed = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1",
-            data={"phone": "13900001111", "rScore": 5})
-        assert mixed.success is False
-        assert "rScore" in mixed.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_rejects_invalid_craft_mode(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """非法 craftMode 必须被拒且错误可行动（#4115）。
-
-        craft_mode 是枚举列（standard/economy/self_quoted，V47）：非法值服务端会 400 拒绝，
-        工具不得把它下发（更不得谎报「已更新」），且提示必须列出全部合法值供 LLM 自修复。
-        """
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1",
-            data={"craftMode": "xxx", "phone": "13900001111"})
-
-        assert result.success is False
-        assert "craftMode" in result.error and "xxx" in result.error
-        assert result.suggestion
-        assert all(mode in result.suggestion for mode in CRAFT_MODES)
-        # 非法枚举不得发起写请求（防服务端 400 + 部分成功假象）
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_accepts_valid_craft_mode(
-            self, mock_get_client, tool, admin_tool_context, mock_client):
-        """合法 craftMode（含工艺画像/常用物流）必须原样下发，不被本层改写或拦截（#4115）。"""
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", customer_id="c1",
-            data={
-                "craftMode": "self_quoted",
-                "craftProfile": {"openCount": 2},
-                "defaultLogisticsType": "logistics",
-                "defaultLogisticsCompany": "四季安",
-            })
-
-        assert result.success is True
-        assert mock_client.put.call_args[1]["json_data"] == {
-            "craftMode": "self_quoted",
-            "craftProfile": {"openCount": 2},
-            "defaultLogisticsType": "logistics",
-            "defaultLogisticsCompany": "四季安",
-        }
-        assert sorted(result.data["updated_fields"]) == [
-            "craftMode", "craftProfile", "defaultLogisticsCompany", "defaultLogisticsType",
-        ]
+# [RETIRED #5247] TestCustomerUpdate（7 例） 已退休：客户档案 update（改资料/工艺画像/收货信息）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestCustomerTags:
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_add_tag_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="add_tag", tag_id="t1")
-        assert r1.success is False and "缺少客户 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="add_tag", customer_id="c1")
-        assert r2.success is False and "缺少标签 ID" in r2.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_add_tag_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="add_tag", customer_id="c1", tag_id="t1")
-        assert result.success is True
-        assert mock_client.post.call_args[0][0] == "/api/admin/customers/c1/tags/t1"
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_remove_tag_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="remove_tag", tag_id="t1")
-        assert r1.success is False and "缺少客户 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="remove_tag", customer_id="c1")
-        assert r2.success is False and "缺少标签 ID" in r2.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_remove_tag_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="remove_tag", customer_id="c1", tag_id="t1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/customers/c1/tags/t1"
+# [RETIRED #5247] TestCustomerTags（4 例） 已退休：客户标签增删（add_tag/remove_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
 class TestCustomerTagLibrary:
@@ -355,62 +195,16 @@ class TestCustomerTagLibrary:
         assert result.data["count"] == 1
         assert mock_client.get.call_args[0][0] == "/api/admin/customer-tags"
 
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_create_tag_missing_name(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="create_tag")
-        assert result.success is False
-        assert "缺少标签名称" in result.error
-        mock_client.post.assert_not_called()
+    # [RETIRED #5247] test_create_tag_missing_name 已退休：标签库建标签（create_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_create_tag_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "t-new"}})
-        mock_get_client.return_value = mock_client
+    # [RETIRED #5247] test_create_tag_success 已退休：标签库建标签（create_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-        result = await tool.execute(context=admin_tool_context, action="create_tag", name="VIP", color="red")
-        assert result.success is True
-        assert mock_client.post.call_args[1]["json_data"] == {"name": "VIP", "color": "red"}
+    # [RETIRED #5247] test_update_tag_missing_id 已退休：标签库改标签（update_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_tag_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update_tag", name="VIP")
-        assert result.success is False
-        assert "缺少标签 ID" in result.error
-        mock_client.put.assert_not_called()
+    # [RETIRED #5247] test_update_tag_no_content 已退休：标签库改标签（update_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_tag_no_content(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update_tag", tag_id="t1")
-        assert result.success is False
-        assert "缺少更新内容" in result.error
-        mock_client.put.assert_not_called()
+    # [RETIRED #5247] test_update_tag_success 已退休：标签库改标签（update_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_update_tag_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
+    # [RETIRED #5247] test_delete_tag_missing_id 已退休：标签库删标签（delete_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-        result = await tool.execute(context=admin_tool_context, action="update_tag", tag_id="t1", name="新名")
-        assert result.success is True
-        assert mock_client.put.call_args[0][0] == "/api/admin/customer-tags/t1"
-        assert mock_client.put.call_args[1]["json_data"] == {"name": "新名"}
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_delete_tag_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete_tag")
-        assert result.success is False
-        assert "缺少标签 ID" in result.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.customer_manage.get_admin_api_client")
-    async def test_delete_tag_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete_tag", tag_id="t1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/customer-tags/t1"
+    # [RETIRED #5247] test_delete_tag_success 已退休：标签库删标签（delete_tag）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。

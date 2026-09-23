@@ -43,6 +43,35 @@ from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
 
 # 工具被判定为「写工具」的**唯一**依据（与 registry 的执行分支同一字段）
 _WRITE_MARKER = "read_only = False"
+
+#: 写工具**名册**（源码真值：`app/tools/*.py` 里带 `read_only = False` 的工具）—— #5247 后 **12** 把。
+#:
+#: 为什么把原来的「`len(tools) >= 15` 下限」换成**名册相等**（增强，不是收紧到过不去）：
+#: 下限只防"扫到空集"，扫到 11 把时它照样绿 —— 而 #5247 恰好把写工具集从 20 缩到 12，
+#: 若只降阈值，**下次再收窄一把也不会有任何东西变红**。名册相等 ⇒ 每把写工具的进出
+#: 都必须在本表里显式留痕（`stale entries are red too`）。
+#:
+#: 🔴 **# [RETIRED #5247]** 下列 8 把已收窄为只读（写 action 删除 + `read_only = True`），
+#: 不再是写工具，故从名册移除（它们的职责见 `tests/test_tool_permission_codes.py` 的码表与
+#: `tests/test_readonly_cross_domain_sharing.py` 的 B-only 只读见证）：
+#:   `after_sales_manage` / `category_manage` / `customer_manage` / `employee_manage` /
+#:   `finance_api` / `inventory_manage` / `role_manage` / `session_manage`
+#: （`human_handoff` 仍在名册里：它 `deprecated = True`、不在注册表，但**源码仍是写工具形态**
+#:  —— 本扫描的口径是源码面；它的退场由 `tests/unit_ci_workflows/test_human_handoff_retired.py` 管。）
+WRITE_TOOL_INVENTORY: frozenset = frozenset({
+    "aftersale_create",
+    "human_handoff",
+    "notification_manage",
+    "order_create",
+    "order_manage",
+    "processing_item_manage",
+    "processing_order_generate",
+    "processing_order_update",
+    "product_manage",
+    "product_update",
+    "settings_manage",
+    "sku_update",
+})
 # 留痕标记（判据引用的字面量必须在实现里真出现，见 test_*_markers_exist_in_source）
 _PERSIST_FAILED_MARK = "[AUDIT] PERSIST_FAILED"
 _SUGGESTION_MARK = "suggestion="
@@ -109,9 +138,23 @@ class TestActionMappingIsComplete:
     """裁定 ① 的集合差集：写工具集 ⊖ 有 action 参数的工具集 == 映射表键集。"""
 
     def test_write_tool_scan_is_non_trivial(self):
-        """自检：确实扫到写工具与两类工具（否则下面几条空转 = 假绿）。"""
+        """自检：扫到的写工具必须**逐把**等于 `WRITE_TOOL_INVENTORY`（否则下面几条空转/失真）。
+
+        #5247 改判：原判据是 `len(tools) >= 15`（只防空集）。写工具集被本单从 20 收到 12
+        ⇒ 只降阈值等于把判据的牙拔掉（再收窄一把也不红）。改为**名册集合相等**：
+        多一把（新写工具）⇒ 红（必须登记 + 确认审计动作动词）；少一把（收窄为只读/删文件）
+        ⇒ 也红（必须从名册移除并留痕）。
+        """
         tools = _write_tools()
-        assert len(tools) >= 15, f"写工具扫描结果过少（{len(tools)}）—— 解析疑似失效：{tools}"
+        scanned = set(tools)
+        missing = sorted(WRITE_TOOL_INVENTORY - scanned)
+        unexpected = sorted(scanned - WRITE_TOOL_INVENTORY)
+        assert not missing and not unexpected, (
+            f"写工具扫描结果与名册不等：名册有而扫描没有 {missing}；扫描有而名册没有 {unexpected}\n"
+            "  新增写工具 ⇒ 补进 WRITE_TOOL_INVENTORY 并确认它在 _NO_ACTION_PARAM_TOOL_ACTION "
+            "里有动作动词（或自带 action 参数）；\n"
+            "  收窄为只读/删除 ⇒ 从名册移除（并说明去向，见本文件 WRITE_TOOL_INVENTORY 的 #5247 段）"
+        )
         assert any(tools.values()), "没有任何写工具声明 action 参数 —— 解析口径已坏"
         assert not all(tools.values()), (
             "所有写工具都被判为「有 action 参数」—— 解析口径已坏（无参数工具必然存在）"

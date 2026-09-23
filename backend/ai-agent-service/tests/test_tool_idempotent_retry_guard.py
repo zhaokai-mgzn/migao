@@ -300,7 +300,25 @@ class TestIdempotencyClassificationLock:
         assert _unclassified_write_tools([_IdempotentWriteTool()]) == []
 
     def test_real_registry_has_known_non_idempotent_writes(self):
-        """真值抽样：核心非幂等写工具必须仍是 idempotent=False（防被顺手改成 True）。"""
+        """真值抽样：核心非幂等**写**工具必须仍是 idempotent=False（防被顺手改成 True）。
+
+        🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 收窄抽样域，不是放宽**：
+        抽样口径一直是「**注册表里的非幂等写工具**」，而本单把 8 把写工具收窄成只读
+        ⇒ 其中 4 把的**前提消失**，从抽样里退场（`# [RETIRED #5247]`）：
+          · `customer_manage` / `finance_api` / `inventory_manage` / `role_manage`
+            —— 写 action 已删除、`read_only = True`；只读工具**无需表态**幂等性
+            （重试只读查询无副作用，见 `test_lock_ignores_read_only_tools`）。
+            ⚠️ 前三把的 `idempotent = False` 行**仍留在类上**（无害的保守声明，本抽样不再覆盖它）；
+            `role_manage` / `employee_manage` / `session_manage` 的行已随写 action 一并删除
+            ⇒ 「写工具必须显式表态」这条**不再对它们成立**，故不能继续拿它们当真值。
+        同时把**其余仍在注册表的非幂等写工具补进抽样**（`settings_manage` / `order_manage` /
+        `processing_item_manage` / `processing_order_update`）⇒ 抽样厚度 4 → **8**，
+        比改前（8 条里 4 条是写工具）更严。
+
+        另加**前提自断言**：抽样里的每个工具必须**仍**是写工具（`read_only is False`）——
+        否则本用例会退化成「断言一批只读工具的 idempotent 取值」（空判据），
+        而这正是 #5247 踩过的形态（收窄一个工具就静默掏空一条判据）。
+        """
         from app.tools.registry import create_default_registry
 
         by_name = {t.name: t for t in create_default_registry().get_all_tools()}
@@ -312,13 +330,24 @@ class TestIdempotencyClassificationLock:
             # 它的 `idempotent = False` 声明**仍留在类上**（工具类保留），
             # 由 `tests/test_tools_human_handoff.py` 直测类覆盖 —— 不留判据真空。
             "notification_manage",  # 发通知
-            "customer_manage",    # 建客户
             "product_manage",     # 建商品
-            "role_manage",        # 建/删角色
-            "finance_api",        # 财务写
-            "inventory_manage",   # 库存调整
+            # ── #5247 补进的 4 把（本单未收窄，仍是写工具 + 非幂等）──────────────
+            "order_manage",            # 改单 / 取消 / 退款（资金动作）
+            "settings_manage",         # 改设置 / 改 AI 配置 / 改密码
+            "processing_item_manage",  # 加工项与分类的增删改
+            "processing_order_update", # 加工单状态流转
+            # ── # [RETIRED #5247] 4 把退场（收窄为只读 ⇒ 不再是"非幂等**写**工具"）──
+            # "customer_manage"  （写 action 已删除，read_only = True）
+            # "finance_api"      （写 action 已删除，read_only = True）
+            # "inventory_manage" （写 action 已删除，read_only = True）
+            # "role_manage"      （写 action 已删除，read_only = True）
         ):
             assert name in by_name, f"{name} 未注册"
+            assert by_name[name].read_only is False, (
+                f"{name} 已不是写工具（read_only=True）—— 本抽样的口径是「非幂等**写**工具」，"
+                "它收窄为只读后该前提消失：请按 #5247 的做法把它移进 RETIRED 段，"
+                "而不是把这条断言改成对只读工具也成立（那会让判据失去判别力）"
+            )
             assert by_name[name].idempotent is False, (
                 f"{name} 是非幂等写工具，idempotent 必须为 False（否则失败会被自动重试 → 重复副作用）"
             )

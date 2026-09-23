@@ -1,5 +1,6 @@
 """ProductManageTool 单元测试 — 商品创建/更新/上下架。
 
+B 端只读化（issue #5247）：商品域写路径（product_skill 只绑定只读工具，product_manage/sku_update/product_update 已解绑） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
 对应 app/tools/product_manage.py 的 create/update/toggle_status 三条 action，
 覆盖正常路径、参数校验、camelCase 字段映射、异常泛化兜底。
 """
@@ -416,15 +417,7 @@ class TestProductUpdateStatusGuard:
         assert "未落库" in tool.description, "description 必须明令禁止断言'未落库'"
 
 
-class TestProductSkillRecheckGuidance:
-    """issue #3899：product_skill 系统提示必须含写后复查指引（同族 #3885 已在 delete_item 修）。"""
-
-    def test_product_system_prompt_includes_recheck_guidance(self):
-        from app.graph.skills.product_skill import PRODUCT_SYSTEM_PROMPT
-
-        assert "已写入" in PRODUCT_SYSTEM_PROMPT
-        assert "读取延迟" in PRODUCT_SYSTEM_PROMPT
-        assert "toggle_status" in PRODUCT_SYSTEM_PROMPT
+# [RETIRED #5247] TestProductSkillRecheckGuidance 已退休：商品域写能力（含 toggle_status 上下架）已从 B 端移除（B 端只读化，product_skill 不再绑定写工具）：#3899「写后复查」指引随写路径一并删除，断言无对象。
 
 
 class TestProductToggleStatus:

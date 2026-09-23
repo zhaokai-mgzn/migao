@@ -176,16 +176,25 @@ def test_order_prompt_requires_interact_for_sku_selection():
     assert 'interact(component="choice")' in prompt
 
 
-def test_order_prompt_requires_proactive_processing_item():
-    """issue #3033：创建订单 confirm 前必须主动询问加工项，禁止直接弹确认卡。
+def test_order_prompt_is_read_only_no_write_confirmation_flow():
+    """issue #5247（用户裁定 2026-09-23 B 端只读化）**改判**原 #3033 断言。
 
-    旧 prompt 是「用户要求加工时禁止遗漏」（被动式）→ sess_7f27137647e14b1e 实证
-    confirm 卡在加工项询问前弹出、金额不含加工费，用户质问后才补。
+    原断言（`test_order_prompt_requires_proactive_processing_item`）要求 order prompt 含
+    「必须主动询问」+「确认卡之前」——那是**建单写路径**的强制词（#3033 的病灶：confirm 卡
+    早于加工项询问）。B 端建单能力已整体退场 ⇒ 该强制词随写路径一并作废（真值变了，不是放宽）。
+    改判后的正向锁（仍有牙）：prompt 必须**明示本域只读**，且**不得**再出现写前确认路径的强制词
+    —— 写流程若被悄悄搬回提示词，本用例立刻变红。
     """
     prompt = _build_system_prompt("order")
-    assert "必须主动询问" in prompt, "order prompt 缺少『主动询问加工项』强制词"
-    assert "确认卡之前" in prompt or "确认订单卡之前" in prompt, (
-        "order prompt 未约束加工项询问必须先于 confirm 卡"
+    assert "只读" in prompt, "order prompt 未声明本域已只读（issue #5247 的如实告知口径）"
+    assert "必须主动询问" not in prompt, (
+        "order prompt 仍含建单写路径的强制词「必须主动询问」—— B 端建单能力已退场（#5247），"
+        "提示词不得再教模型走写前确认流程"
+    )
+    # 「确认卡之前」可以**描述性**出现（`prompts/order.md` 说明**后台建单页**何时让商家选加工项），
+    # 但不得是**指令**：判据 = 它附近必须没有让米宝自己发卡的措辞。
+    assert "本域不代选" in prompt or "不在能力内" in prompt, (
+        "order prompt 未声明「下单/选加工项不在本域能力内」—— 描述性提及会退化成能力谎报"
     )
 
 

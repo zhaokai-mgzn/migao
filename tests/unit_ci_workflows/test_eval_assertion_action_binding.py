@@ -112,28 +112,37 @@ class TestRedEvidenceDanglingActionBlocks:
     def test_must_succeed_and_db_verify_sources_are_covered(self):
         """`must_succeed` / `db_verify.source` 的 action 同受约束（不漏面）。
 
-        ⚠️ 2026-09-15（#3917）：fixture 里的 `processing_order_update` 已从注册表移除
-        （未注册工具由 `dangling_cases` 判据管，不在此函数）→ 改用 `order_manage`
-        （已注册的多 action 工具），断言语义不变。
+        ⚠️ 夹具工具**再次重锚**（2026-09-24，issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+        原用的 `product_manage` / `order_manage` 已从 B 端解绑（两侧工具集都不可达）⇒
+        `action_binding_violations` 只判**两端注册表并集内**的工具，夹具会因此**静默失去判别力**
+        （本测试当场变红——这正是「幽灵夹具」会被抓住的形态）。改用 B 端可达且**多 action** 的
+        `inventory_manage` / `role_manage`（只读化后各 action 仍成群），断言语义不变。
         """
         cases = [{"id": "T-RED-4",
-                  "must_succeed": [{"tool": "product_manage", "action": "no_such_action"}],
-                  "db_verify": [{"fetch": "processing_order", "source": "order_manage",
-                                 "action": "jump", "checks": ["status==completed"]}]}]
+                  "must_succeed": [{"tool": "inventory_manage", "action": "no_such_action"}],
+                  "db_verify": [{"fetch": "role", "source": "role_manage",
+                                 "action": "jump", "checks": ["name!=null"]}]}]
         v = {x[1:] for x in action_binding_violations(cases)}
-        assert ("product_manage", "no_such_action", "not_in_enum") in v, v
-        assert ("order_manage", "jump", "not_in_enum") in v, v
+        assert ("inventory_manage", "no_such_action", "not_in_enum") in v, v
+        assert ("role_manage", "jump", "not_in_enum") in v, v
 
 
 class TestNoFalsePositives:
     """**假红面**：合法声明不得被误报（否则门禁变成一堵红墙，逼后代删判据）。"""
 
     def test_valid_action_is_green(self):
+        """合法声明不得被误报。
+
+        ⚠️ 夹具工具重锚（2026-09-24，issue #5247）：原用 `order_manage` / `product_manage` /
+        `processing_order_update` 已从 B 端解绑 ⇒ 三者都不在两端注册表并集内，本函数会
+        **整条空转**（`tool not in tools: continue`）＝ 假绿。改用 B 端可达的多 action 工具，
+        恢复「合法 action 不报」的判别力。
+        """
         cases = [{"id": "T-OK-1",
-                  "expectations": [{"tool": "order_manage", "args": {"action": "cancel"}}],
-                  "must_fail": [{"tool": "product_manage", "action": "create"}],
-                  "user_inputs": [{"repeat_until": {"tool_called": "processing_order_update",
-                                                    "action": "complete", "max": 3}}]}]
+                  "expectations": [{"tool": "after_sales_manage", "args": {"action": "list"}}],
+                  "must_fail": [{"tool": "category_manage", "action": "tree"}],
+                  "user_inputs": [{"repeat_until": {"tool_called": "inventory_manage",
+                                                    "action": "query", "max": 3}}]}]
         assert action_binding_violations(cases) == []
 
     def test_tool_without_action_param_and_no_action_declared_is_green(self):

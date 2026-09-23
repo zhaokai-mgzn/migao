@@ -104,4 +104,8 @@ __all__ = [
     "ProductionWorklogQueryTool",
     "PaymentQrcodeQueryTool",
     "BatchStockQueryTool",
+    # B 端只读模块覆盖（issue #5247）：6 个新只读工具类（必须与 registry 注册集逐一对应 ——
+    # tests/test_tools_registry.py::TestToolsFacadeCompleteness 会双向核对）
+    "StockLedgerQueryTool", "InboundOrderQueryTool", "OperationCatalogQueryTool",
+    "BriefingQueryTool", "CraftCalcConfigQueryTool", "ProcessingOrderSetQueryTool",
 ]

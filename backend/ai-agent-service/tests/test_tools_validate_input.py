@@ -2,6 +2,15 @@
 # case_ids: PR-005, AS-003, PR-019, OR-015, HR-005, PP-006, PR-021, FN-001, ST-001
 # 域级映射（本文件覆盖 20+ 写工具的闸门规则）：PP-006 加工项计价方式、PR-005 调整库存、
 # PR-021 SKU 调价、FN-001 资金流水登记、ST-001 系统设置。
+# 🔴 #5247（B 端米宝只读化，用户裁定 2026-09-23）：8 把工具的**写 action 已从工具删除**
+#    （收窄为只读），但这些 action 的**规则块仍在** `_VALIDATION_RULES` 里 ⇒
+#    本文件里针对它们的行为用例**仍然有效**（`validate_input` 按 (工具, action) 查表，
+#    与工具当前能不能收到该 action 无关）；它们的**时效性**由 `RETIRED_RULE_KEYS_5247`
+#    台账单独治理（单次收窄的账，集合相等：新死键红、陈旧条目也红）。
+#    ⚠️ 耦合登记：app 侧一旦清理这些规则块，对应行为用例（如
+#    `TestValidateInputGateContractAudit.test_inventory_adjustment_zero_blocked` 用的
+#    `inventory_manage.adjust`）会随之失去被测对象 ⇒ 必须**同批改判**（清理规则 + 改判用例
+#    + 清空台账），三者不同批就会出现"断言不存在规则"的陈旧用例。
 # 缺口（不编造 id）：settings_manage 的 update_settings/update_ai_config 与
 # notification_manage.create 没有专属可执行用例（§14.1 候选，用例文件属另一包独占区）。
 from unittest.mock import AsyncMock, patch
@@ -652,23 +661,106 @@ def _dead_rule_keys(rules_by_tool):
     return dead
 
 
+#: 🔴 **#5247 退役台账**：`_VALIDATION_RULES` 里 **action 已从工具删除**的规则键
+#: （B 端米宝只读化：8 把工具的写 action 被删、规则块留在 app 侧未同批清理，共 23 条）。
+#:
+#: 这是**单次收窄的账**、不是通用豁免池：
+#:   · 判据是**集合相等**（见 `TestValidationRuleKeysAreLive`）⇒ 新死键照旧红、陈旧条目也红；
+#:   · **去向**：`app/tools/validate_input.py` 删除这些规则块后，本台账必须同批清空。
+#: 每个工具一条理由（`# [RETIRED #5247]`），避免"一堆元组说不清为什么"。
+RETIRED_RULE_KEYS_5247: frozenset = frozenset({
+    # [RETIRED #5247] after_sales_manage：收窄为 list/detail（写 action create/update_status 删除）
+    ("after_sales_manage", "create"),
+    ("after_sales_manage", "update_status"),
+    # [RETIRED #5247] category_manage：收窄为 tree（写 action create/update/delete 删除）
+    ("category_manage", "create"),
+    ("category_manage", "delete"),
+    ("category_manage", "update"),
+    # [RETIRED #5247] customer_manage：收窄为 list/detail/list_tags（含打标签族写 action 全删）
+    ("customer_manage", "add_tag"),
+    ("customer_manage", "create_tag"),
+    ("customer_manage", "delete_tag"),
+    ("customer_manage", "remove_tag"),
+    ("customer_manage", "update"),
+    ("customer_manage", "update_tag"),
+    # [RETIRED #5247] employee_manage：收窄为 list/detail（写 action 全删）
+    ("employee_manage", "create"),
+    ("employee_manage", "delete"),
+    ("employee_manage", "reset_password"),
+    ("employee_manage", "toggle_status"),
+    ("employee_manage", "update"),
+    # [RETIRED #5247] finance_api：收窄为三个 get_*（写 action create_transaction 删除）
+    ("finance_api", "create_transaction"),
+    # [RETIRED #5247] inventory_manage：收窄为 query/low_stock_alert（写 action adjust 删除）
+    ("inventory_manage", "adjust"),
+    # [RETIRED #5247] role_manage：收窄为 list/all/detail/list_permissions（写 action 全删）
+    ("role_manage", "create"),
+    ("role_manage", "delete"),
+    ("role_manage", "update"),
+    # [RETIRED #5247] session_manage：收窄为 list/monitor/detail（写 action assign/end 删除）
+    ("session_manage", "assign"),
+    ("session_manage", "end"),
+})
+
+
 class TestValidationRuleKeysAreLive:
-    """L0 静态不变式：闸门规则键必须能命中工具的 action（issue #3566）。"""
+    """L0 静态不变式：闸门规则键必须能命中工具的 action（issue #3566）。
+
+    ## 🔴 issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 台账化，不是放宽
+
+    本单把 8 把 B 端写工具的**写 action 全部删除**（收窄为只读），而这些 action 的规则块
+    留在 `app/tools/validate_input.py` 的 `_VALIDATION_RULES` 里未同批清理 ⇒ 检测器报出
+    **23 个死键**（见 `RETIRED_RULE_KEYS_5247`）。
+
+    处置（按"前提没了不许悄悄放宽阈值"的纪律）：**退役台账 + 集合相等**，三个方向都有牙 ——
+      ① 出现**台账之外**的死键（又有规则没人命中）⇒ 红（原判据的本意，一字未减）；
+      ② 台账里的键**已不再是死键**（action 被加回 / app 侧已清理规则块）⇒ 红
+         （陈旧台账 = 永久后门：`stale entries are red too`）；
+      ③ 检测器自证（`test_detector_catches_dead_rule_key`）仍要求"注入即报"，
+         且**注入不得掩盖台账**（除注入项外的输出必须与真值逐项一致）。
+    **去向**：app 侧删除这 23 个规则块（写 action 已不存在）后，本台账必须同批清空
+    —— ②会把"清完了却没销账"也判红。
+    """
 
     def test_no_dead_rule_keys(self):
         from app.tools.validate_input import _VALIDATION_RULES
 
-        assert _dead_rule_keys(_VALIDATION_RULES) == [], (
-            "闸门规则键与工具 action 枚举不一致 → 规则永不命中（破坏性操作不过闸门）"
+        dead = set(_dead_rule_keys(_VALIDATION_RULES))
+        unexpected = sorted(dead - RETIRED_RULE_KEYS_5247)
+        stale = sorted(RETIRED_RULE_KEYS_5247 - dead)
+        assert not unexpected, (
+            "闸门规则键与工具 action 枚举不一致 → 规则永不命中（破坏性操作不过闸门）：\n  "
+            + "\n  ".join(f"{t}.{a}" for t, a in unexpected)
+            + "\n→ 修法二选一：①该 action 仍应存在 ⇒ 把它加回工具的 action 枚举；"
+              "②action 已废弃 ⇒ 删除该规则块。**不许**把新死键塞进 #5247 退役台账"
+              "（那是单次收窄的账，不是通用豁免池）"
+        )
+        assert not stale, (
+            "以下 #5247 退役台账条目已**不再是死键**（action 又存在了，或规则块已被清理）：\n  "
+            + "\n  ".join(f"{t}.{a}" for t, a in stale)
+            + "\n→ 台账是唯一真值，陈旧条目必须销账：从 RETIRED_RULE_KEYS_5247 删除这些元组"
+              "（若 app 侧已按 #5247 清完这 23 条规则，整张台账清空即可）"
         )
 
     def test_detector_catches_dead_rule_key(self):
-        """检测器自证：注入旧 bug 形态（`delete` vs `delete_item`）必须被报出。"""
+        """检测器自证：注入旧 bug 形态（`delete` vs `delete_item`）必须被报出。
+
+        注入口径（#5247 加强）：除注入项之外，检测器的输出必须与真值**逐项一致** ——
+        否则"注入即报"可能只是注入顺手打翻了别的东西（判据漂移而看不出来）。
+        """
         from app.tools.validate_input import _VALIDATION_RULES
 
         broken = {**_VALIDATION_RULES,
                   "processing_item_manage": {"delete": {"required": ["item_id"]}}}
-        assert _dead_rule_keys(broken) == [("processing_item_manage", "delete")]
+        injected = ("processing_item_manage", "delete")
+        reported = set(_dead_rule_keys(broken))
+        assert injected in reported, (
+            f"检测器漏报注入的死键 {injected} —— issue #3566 的形态会静默复发")
+        assert reported - {injected} == set(_dead_rule_keys(_VALIDATION_RULES)), (
+            "注入改动影响了检测器的其它输出 ⇒ 判据漂移（注入把真值一起打翻了）：\n"
+            f"  注入后（去掉注入项）={sorted(reported - {injected})}\n"
+            f"  真值={sorted(set(_dead_rule_keys(_VALIDATION_RULES)))}"
+        )
 
 
 class TestOrderManageGateMatchesContract:

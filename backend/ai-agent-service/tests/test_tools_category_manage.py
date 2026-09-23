@@ -1,4 +1,7 @@
-"""CategoryManageTool 单元测试 — 分类树/CRUD"""
+"""CategoryManageTool 单元测试 — 分类树（只读）
+
+B 端只读化（issue #5247）：category_manage（商品分类） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+"""
 # case_ids: CT-001, CT-002, CT-003
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -44,44 +47,9 @@ class TestCategoryTree:
 
 
 class TestCategoryCreate:
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_create_success(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={
-            "success": True,
-            "data": {"id": "cat-new", "name": "新分类"}
-        })
-        mock_get_client.return_value = mock_client
+    # [RETIRED #5247] test_create_success 已退休：建分类（create）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="create",
-            name="新分类",
-        )
-
-        assert result.success is True
-        assert result.data["name"] == "新分类"
-
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_create_no_parent_field(self, mock_get_client, tool, admin_tool_context):
-        """分类已扁平化（#2905），create 不再透传 parentId——对齐 admin-api 忽略 parentId。"""
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={
-            "success": True,
-            "data": {"id": "cat-new", "name": "新分类"}
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="create",
-            name="新分类",
-        )
-
-        assert result.success is True
-        # 请求体不得含 parentId（admin-api 已忽略父子概念）
-        json_data = mock_client.post.call_args[1]["json_data"]
-        assert "parentId" not in json_data
+    # [RETIRED #5247] test_create_no_parent_field 已退休：建分类（create）已从 B 端移除（B 端只读化）：parentId 不下发的写断言无对象。
 
     def test_schema_no_parent_id(self, tool):
         """schema 不得再暴露 parent_id（扁平分类，防 LLM 引导「子分类」错误语义）。"""
@@ -92,49 +60,10 @@ class TestCategoryCreate:
         assert "子分类" not in tool.description
         assert "顶级" not in tool.description
 
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_create_missing_name(self, mock_get_client, tool, admin_tool_context):
-        mock_get_client.return_value = AsyncMock()
-
-        result = await tool.execute(context=admin_tool_context, action="create")
-
-        assert result.success is False
+    # [RETIRED #5247] test_create_missing_name 已退休：建分类（create）已从 B 端移除（B 端只读化）：入参校验随之消失，断言无对象。
 
 
-class TestCategoryDelete:
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_delete_success(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="delete",
-            category_id="cat-to-delete",
-        )
-
-        assert result.success is True
-
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_delete_missing_id(self, mock_get_client, tool, admin_tool_context):
-        mock_get_client.return_value = AsyncMock()
-
-        result = await tool.execute(context=admin_tool_context, action="delete")
-
-        assert result.success is False
+# [RETIRED #5247] TestCategoryDelete（2 例） 已退休：删分类（delete）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestCategoryPermission:
-    @patch("app.tools.category_manage.get_admin_api_client")
-    async def test_customer_no_create(self, mock_get_client, tool, sample_tool_context):
-        mock_get_client.return_value = AsyncMock()
-
-        result = await tool.execute(
-            context=sample_tool_context,
-            action="create",
-            name="test",
-        )
-
-        assert result.success is False
-        assert "权限" in result.error
+# [RETIRED #5247] TestCategoryPermission 已退休：建分类（create）已从 B 端移除（B 端只读化）：该权限断言的对象是写 action，写能力已不存在。

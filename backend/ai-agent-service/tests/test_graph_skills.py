@@ -70,7 +70,9 @@ class TestSkillToolSubsets:
         """订单 Skill 包含正确的 Tool"""
         assert "order_query" in ORDER_TOOLS
         assert "logistics_track" in ORDER_TOOLS
-        assert "order_manage" in ORDER_TOOLS
+        # [RETIRED #5247] `order_manage`（改订单状态/发货/退款）已从全部 B 端 skill 解绑
+        # （用户裁定「创建和更新能力从 B 端移除」）⇒ 本行 premise 消失；同一批解绑见
+        # `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 2（写工具零绑定）。
         assert "product_search" in ORDER_TOOLS  # 订单搜索商品需要
         assert "product_detail" in ORDER_TOOLS   # 订单查商品加工项需要
         assert "knowledge_search" not in ORDER_TOOLS
@@ -79,12 +81,11 @@ class TestSkillToolSubsets:
         """商品 Skill 包含正确的 Tool"""
         assert "product_search" in PRODUCT_TOOLS
         assert "product_detail" in PRODUCT_TOOLS
-        assert "product_manage" in PRODUCT_TOOLS
-        assert "inventory_manage" in PRODUCT_TOOLS
-        # PP-006 回归防线：processing_manage 意图路由到 product_skill（intents 配置），
-        # 但 PRODUCT_TOOLS 曾缺 processing_item_manage → agent 说「只有查询加工项能力」
-        # （工具列表里确实没有创建加工项的工具，能力误宣的架构根因）
-        assert "processing_item_manage" in PRODUCT_TOOLS
+        # [RETIRED #5247] `product_manage`（建品/上下架）已从全部 B 端 skill 解绑 ⇒ premise 消失。
+        assert "inventory_manage" in PRODUCT_TOOLS  # #5247：收窄为只读（query/low_stock_alert）
+        # [RETIRED #5247] `processing_item_manage`（加工项增删改）已从全部 B 端 skill 解绑 ⇒
+        # PP-006 的 premise（"商品 skill 绑了它"）随之消失；加工项**查询**仍绑
+        # （`processing_item_query`，只读），能力误宣的防线由只读工具集承担。
         assert "order_query" not in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
@@ -105,9 +106,10 @@ class TestSkillToolSubsets:
         按同型先例（customer_order #3365：补工具）补上两个**只读**商品工具。
         """
         assert "order_query" in AFTERSALES_TOOLS
-        assert "order_manage" in AFTERSALES_TOOLS
+        # [RETIRED #5247] `order_manage` 已从全部 B 端 skill 解绑（B 端只读）⇒ premise 消失；
+        # 售后线查订单的能力由只读的 `order_query` 承担（上一行仍在射程内）。
         # [RAG 禁用] assert "knowledge_search" in AFTERSALES_TOOLS
-        assert "after_sales_manage" in AFTERSALES_TOOLS
+        assert "after_sales_manage" in AFTERSALES_TOOLS  # #5247：收窄为只读（list/detail）
         # 换货选目标商品 → 取加工项（issue #3033 / AS-007）
         assert "product_search" in AFTERSALES_TOOLS
         assert "product_detail" in AFTERSALES_TOOLS
@@ -120,6 +122,17 @@ class TestSkillToolSubsets:
         分类器可能落 general ⇒ 不绑则「米宝查不了生产进度/计件」= 能力谎报。
         issue #5188：同理补只读的批次账/省料度量工具（`batch_stock_query`）——
         「哪些批次快用尽了 / 这个月省了多少料」也没有专属意图，不绑 = 能力谎报。
+        issue #5247（B 端米宝只读）逐条变更（用户裁定：B 端侧重数据查询与分析、
+        创建/更新能力全部移除、商家后端模块"仅限查询和数据分析"）：
+          · 移除 `notification_manage` / `processing_item_manage`（写工具，已从全部 B 端
+            skill 解绑）；
+          · 新增 `employee_manage` / `role_manage` / `category_manage` / `after_sales_manage`
+            （收窄为只读后归入 B 端兜底，含员工与岗位的只读查询）；
+          · 新增 B 端只读模块覆盖：`inbound_order_query`（入库单/批次）、`operation_catalog_query`
+            （工序库/路线）、`stock_ledger_query`（库存台账）、`briefing_query`（经营日报）、
+            `craft_calc_config_query`（算料配置）、`processing_order_query`（加工单查询）。
+        ⚠️ 本判据是**等值**断言（增删都红）—— 上面每一次变更都必须像这样**指名登记**，
+        不得"顺手刷新清单"。
         """
         expected = {
             "order_query",
@@ -136,22 +149,42 @@ class TestSkillToolSubsets:
             "dashboard_stats",
             "session_manage",
             "after_sales_manage",
-            "notification_manage",
-            "processing_item_manage",
             "category_manage",
             "interact",
+            # ── issue #5247（B 端只读）新增：收窄为只读的既有模块 ──
+            "employee_manage",            # 员工只读（list/detail）
+            "role_manage",                # 岗位只读（list/all/detail/list_permissions）
+            # ── issue #5247（B 端只读）新增：只读模块覆盖工具 ──
+            "inbound_order_query",        # 入库单/批次查询
+            "operation_catalog_query",    # 工序库/工艺路线查询
+            "stock_ledger_query",         # 库存台账查询
+            "briefing_query",             # 经营日报
+            "craft_calc_config_query",    # 算料配置查询
+            "processing_order_query",     # 加工单查询（写侧加工单工具已解绑）
         }
         assert set(GENERAL_TOOLS) == expected
 
     def test_general_tools_no_core_write_operations(self):
-        """通用兜底 Skill 不包含核心写操作 Tool（创建/修改/删除类）"""
-        core_write_tools = {
-            "order_manage", "order_create",
-            "product_manage", "inventory_manage",
-            "employee_manage", "role_manage",
-            "settings_manage",
-        }
-        assert set(GENERAL_TOOLS).isdisjoint(core_write_tools)
+        """通用兜底 Skill 不包含核心写操作 Tool（创建/修改/删除类）。
+
+        issue #5247 重新锚定：原判据维护人工清单
+        `{order_manage, order_create, product_manage, inventory_manage, employee_manage,
+        role_manage, settings_manage}` —— 其中 `inventory_manage` / `employee_manage` /
+        `role_manage` 已被产品裁定**收窄为只读工具** ⇒ 它们进 general 是预期形态，
+        人工清单恒红（§19.1）。判据改为**注册表派生**：general 绑定的工具里不得有任何
+        `read_only=False` 者 —— 比原清单更强（新写工具落地即入射程）。
+        """
+        from app.tools.registry import get_tool_registry
+
+        tools = get_tool_registry()
+        write_bound = sorted(
+            name for name in GENERAL_TOOLS
+            if (tool := tools.get_tool(name)) is not None and not tool.read_only
+        )
+        assert not write_bound, (
+            f"general 兜底 Skill 绑定了非只读 Tool {write_bound} —— "
+            f"写操作必须走领域 Skill 的确认链（#5247：B 端兜底同样只读）"
+        )
 
     def test_general_tools_has_query_tools(self):
         """通用兜底 Skill 保留核心查询能力"""

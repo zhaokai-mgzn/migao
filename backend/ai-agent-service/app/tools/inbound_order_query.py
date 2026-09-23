@@ -89,7 +89,6 @@ class InboundOrderQueryTool(BaseTool):
                 suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
 
-        params: Dict[str, Any] = {}
         try:
             client = get_admin_api_client()
             if action == "detail":
@@ -106,20 +105,25 @@ class InboundOrderQueryTool(BaseTool):
                     user_id=context.user_id,
                 )
             elif action == "batches":
+                # ⚠️ 独立字典（不要复用 `params`）：`tests/test_tool_payload_backend_contract.py` 的
+                # 静态归属分析器按**调用点之前**收集 `name["k"]=v`，与 `list` 分支共用一个字典会把
+                # `skuId` 误判成 `/inbound-orders`（list）的不可读键（实测踩到；HTTP 参数名本身没错）。
+                batch_params: Dict[str, Any] = {}
                 if sku_id:
-                    params["skuId"] = sku_id
+                    batch_params["skuId"] = sku_id
                 response = await client.get(
                     "/api/admin/inbound-orders/batches",
-                    params=params,
+                    params=batch_params,
                     tenant_id=context.tenant_id,
                     user_id=context.user_id,
                 )
             else:
+                list_params: Dict[str, Any] = {}
                 if keyword:
-                    params["keyword"] = keyword.strip()
+                    list_params["keyword"] = keyword.strip()
                 response = await client.get(
                     "/api/admin/inbound-orders",
-                    params=params,
+                    params=list_params,
                     tenant_id=context.tenant_id,
                     user_id=context.user_id,
                 )

@@ -1788,6 +1788,13 @@ def _flow_owner_skill(state: dict | None = None,
         for name in owners:
             if name in reachable:
                 return name
+        if cfg is not None:
+            # persona **已知**：只能回锁该 persona 图里真的存在的节点。一个候选都不可达 ⇒
+            # fail-safe 返回 ""（不回锁）。issue #5247 实测暴露：B 端只读化后 `order_create`
+            # 的唯一归属是 C 端 `customer_order`，若仍走下面的"唯一候选"兜底，**米宝**（已知 persona）
+            # 会拿到一个**不在自己图里**的节点名（`route_by_intent` 原样返回 pending 名 ⇒ 条件边
+            # 映射缺失，会话被打坏）。兜底只对"persona 完全解析不出"的情形保留。
+            return ""
         # 认不出 persona 时只在**唯一候选**下回锁，避免猜错图（猜错 = 指向图中不存在的节点）
         return owners[0] if len(owners) == 1 else ""
     except Exception as e:

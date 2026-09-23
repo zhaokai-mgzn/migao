@@ -49,18 +49,21 @@ cases:
       - "新客服王五 13812345678，密码 Abc123456，开账号"
       - "确认"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除
+      # （`employee_manage` 收窄为只读 `{list, detail}`）⇒ 机器可判字段改判到**存活的只读路径**
+      # `action: list`（写 action 不得残留：悬空声明永不满足，会阻塞 CI 的 action 绑定判据）。
       - tool: employee_manage
         args:
-          action: create
+          action: list
     # 效果层断言（门禁 a2 条，#3778「调用了 ≠ 成了」）：`expectations` 只证明"调了"，
     # 本字段证明**至少一次 create 真的 success=true**。本条原先只有自然语义 data_check
     # （"收集确认后创建成功"**不计分**，见 acceptance-protocol §1.3 铁律）⇒ 写用例只有
     # "调用了"级断言 = 已知假绿形态（`CASE-TRUST-NO-EFFECT-ASSERTION`）。
-    must_succeed:
-      - tool: employee_manage
-        action: create
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=create)]`
+    # **整格移除**（写声明同步移除）—— `create` 已从源码删除 ⇒ 该断言在新事实下**永不满足**
+    # （悬空声明）。写能力下线后的正确判定层 = 工具层单测 + B 端绑定判据（见 `traces.tests`）。
     data_checks:
-      - "收集确认后创建成功 —— 机器断言见 must_succeed[employee_manage(action=create)]（工具真的返回 success）"
+      - "收集确认后创建成功 —— 机器断言见 must_succeed[employee_manage(action=create)]（工具真的返回 success）｜ ⚠️ 2026-09-24（issue #5247，B 端只读化）：该 `must_succeed` 已随写 action `create` 下线而整格移除（悬空声明），本条作为**历史判据说明**保留；本用例已退役（见 `skip_reason`），能力下线由工具层单测与绑定判据承担"
     # 全局命名空间声明（issue #3781）：本用例**写**员工姓名/手机号命名空间 ——
     # 每跑一次就往栈里放一个「王五/13812345678」。任何同样依赖「王五」的用例
     # （HR-003 是 KEY_JOURNEY）都会因**重名**而目标不唯一 ⇒ 必须与本用例互斥。
@@ -87,8 +90,8 @@ cases:
         source: "13812345678"
         expect: 0
         max_growth: 1
-    skip_reason: ""
-    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。2026-09-19（issue #4189 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13812345678, expect: 0, max_growth: 1]` —— 创建前提 = 该号码名下无既有员工（残留撞唯一校验 ⇒ 恒红且归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099）；定位口径与 `pre_clean[employee_remove]` 同一份（`_norm_phone`）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建员工/开账号」（employee_manage / action=create）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 employee_manage(action=list)（只读查询员工列表）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。2026-09-19（issue #4189 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13812345678, expect: 0, max_growth: 1]` —— 创建前提 = 该号码名下无既有员工（残留撞唯一校验 ⇒ 恒红且归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099）；定位口径与 `pre_clean[employee_remove]` 同一份（`_norm_phone`）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create)` 改判为存活的只读路径 `employee_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -147,10 +150,11 @@ cases:
       - type: employee_count_for_phone
         source: "13700137000"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `toggle_status` 已从源码删除
+      # （工具收窄为只读 `{list, detail}`）⇒ 机器可判字段改判到**存活的只读路径** `action: list`。
       - tool: employee_manage
         args:
-          action: toggle_status
-          status: disabled
+          action: list
     # ── 效果层断言（Case Trust 规则 a2，2026-09-20 issue #4709-A 的 burn-down 缴费）──
     # 「调用了 ≠ 成了」（#3778）：上面的 `expectations` 只证明 `employee_manage` 被调用且
     # args 给对 —— 工具返回 `success=false`（停用失败 / 无权限 / 目标不在位）也照样通过。
@@ -158,14 +162,13 @@ cases:
     # 停用失败 ⇒ 判红。⚠️ `action` 必填：`employee_manage` 是**多 action 工具**
     # （create/update/toggle_status/list/...），缺 action 会按**工具名**取首个成功 payload
     # ⇒ 可能核到别的 action 的返回（假红/假绿双面，同 FN-001 的 `finance_api` 口径）。
-    must_succeed:
-      - tool: employee_manage
-        action: toggle_status
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=toggle_status)]`
+    # **整格移除**（写声明同步移除）—— `toggle_status` 已从源码删除 ⇒ 该断言永不满足（悬空声明）。
     data_checks:
       - "二次确认后停用"
       - "目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号"
-    skip_reason: ""
-    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`。2026-09-20（issue #4709-A 的 burn-down 缴费，metric=entries ⇒ 必须**整条**销账）：本用例此前命中两条存量违规 —— `CASE-TRUST-NO-EFFECT-ASSERTION`（有写期望却无任何效果层断言）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（多轮 + 写期望却无可判定前置）⇒ ① 补**效果层** `must_succeed[employee_manage(action=toggle_status)]`（停用失败即红，「调用了 ≠ 成了」）；② 补**声明层** `precondition[employee_count_for_phone: 13700137000]`（不写 `expect`，同 OR-012/OR-025 口径）。两条合起来 ⇒ 该用例**不再命中任何码**、整条销账，清单条目随之删除（`--prune-baseline`，只删不加）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` / `namespaces`）**一字未动、无放宽、无删减**。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「停用员工账号」（employee_manage / action=toggle_status）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 employee_manage(action=list)（只读查询员工列表）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`。2026-09-20（issue #4709-A 的 burn-down 缴费，metric=entries ⇒ 必须**整条**销账）：本用例此前命中两条存量违规 —— `CASE-TRUST-NO-EFFECT-ASSERTION`（有写期望却无任何效果层断言）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（多轮 + 写期望却无可判定前置）⇒ ① 补**效果层** `must_succeed[employee_manage(action=toggle_status)]`（停用失败即红，「调用了 ≠ 成了」）；② 补**声明层** `precondition[employee_count_for_phone: 13700137000]`（不写 `expect`，同 OR-012/OR-025 口径）。两条合起来 ⇒ 该用例**不再命中任何码**、整条销账，清单条目随之删除（`--prune-baseline`，只删不加）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` / `namespaces`）**一字未动、无放宽、无删减**。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `toggle_status` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=toggle_status)` 改判为存活的只读路径 `employee_manage(action=list)`，`must_succeed[employee_manage(action=toggle_status)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"

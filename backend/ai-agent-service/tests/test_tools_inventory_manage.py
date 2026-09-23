@@ -1,4 +1,7 @@
-"""InventoryManageTool 单元测试 — 库存查询/调整/低库存告警"""
+"""InventoryManageTool 单元测试 — 库存查询/低库存告警（只读）
+
+B 端只读化（issue #5247）：inventory_manage（库存） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+"""
 # case_ids: PR-004, PR-005, PR-006
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -30,63 +33,7 @@ class TestInventoryQuery:
         assert result.success is True
 
 
-class TestInventoryAdjust:
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust_uses_agent_stock_endpoint(self, mock_get_client, tool, admin_tool_context):
-        """生产回归修复：库存调整必须走 agent 专用库存端点并校验读回。
-
-        旧实现 PUT /api/admin/products/{id} 传 stock，admin-api 静默忽略该字段
-        但仍返回 success → agent 报"50→80"而 DB 仍是 50（假成功）。
-        """
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}
-        })
-        mock_client.patch = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 150}
-        })
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="adjust",
-            product_id="prod-1", adjustment=50, reason="盘点调整")
-        assert result.success is True
-        # 必须调用 agent 专用库存端点，且透传 adjustment/reason
-        path = mock_client.patch.call_args.args[0]
-        assert path == "/api/admin/agent/products/prod-1/stock"
-        body = mock_client.patch.call_args.kwargs.get("json_data", {})
-        assert body.get("adjustment") == 50
-        assert body.get("reason") == "盘点调整"
-        assert result.data.get("new_stock") == 150
-
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust_readback_mismatch_fails_closed(self, mock_get_client, tool, admin_tool_context):
-        """端点返回 success 但读回库存与预期不符 → 必须报失败（杜绝假成功）"""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}
-        })
-        mock_client.patch = AsyncMock(return_value={
-            "success": True, "data": {"name": "窗帘-欧式", "stock": 100, "skus": [{"stock": 100}]}  # 未被更新
-        })
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="adjust",
-            product_id="prod-1", adjustment=50, reason="盘点调整")
-        assert result.success is False
-        assert "未生效" in (result.message or "")
-
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust_endpoint_error_fails_closed(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"stock": 100, "skus": [{"stock": 100}]}
-        })
-        mock_client.patch = AsyncMock(return_value={"success": False, "error": {"message": "库存不足"}})
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="adjust",
-            product_id="prod-1", adjustment=50, reason="盘点调整")
-        assert result.success is False
+# [RETIRED #5247] TestInventoryAdjust（3 例） 已退休：库存调整（adjust）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
 class TestInventoryStockAuthority:
@@ -198,33 +145,7 @@ class TestInventoryQueryValidation:
         assert result.data["product_name"] == "窗帘"
 
 
-class TestInventoryAdjustValidation:
-    """adjust 参数校验与库存不足"""
-
-    async def test_adjust_missing_product_id(self, tool, admin_tool_context):
-        result = await tool.execute(context=admin_tool_context, action="adjust", adjustment=1, reason="r")
-        assert result.success is False
-        assert "缺少商品 ID" in result.error
-
-    async def test_adjust_missing_adjustment(self, tool, admin_tool_context):
-        result = await tool.execute(context=admin_tool_context, action="adjust", product_id="p1", reason="r")
-        assert result.success is False
-        assert "缺少调整数量" in result.error
-
-    async def test_adjust_missing_reason(self, tool, admin_tool_context):
-        result = await tool.execute(context=admin_tool_context, action="adjust", product_id="p1", adjustment=1)
-        assert result.success is False
-        assert "缺少调整原因" in result.error
-
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust_insufficient_stock(self, mock_get_client, tool, admin_tool_context):
-        """new_stock < 0 → 库存不足"""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={"success": True, "data": {"name": "窗帘", "stock": 5, "skus": [{"stock": 5}]}})
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="adjust", product_id="p1", adjustment=-10, reason="出库")
-        assert result.success is False
-        assert "库存不足" in result.error
+# [RETIRED #5247] TestInventoryAdjustValidation（4 例） 已退休：库存调整（adjust）已从 B 端移除（B 端只读化）：调整入参校验随之消失，断言无对象。
 
 
 class TestInventoryLowStockAlert:
@@ -259,10 +180,7 @@ class TestInventoryLowStockAlert:
 class TestInventoryCustomerRestriction:
     """customer 角色仅允许 query"""
 
-    async def test_customer_adjust_denied(self, tool, sample_tool_context):
-        result = await tool.execute(context=sample_tool_context, action="adjust", product_id="p1", adjustment=1, reason="r")
-        assert result.success is False
-        assert "权限不足" in result.error
+    # [RETIRED #5247] test_customer_adjust_denied 已退休：库存调整（adjust）已从 B 端移除（B 端只读化）：该权限断言的对象是写 action，写能力已不存在。
 
     async def test_customer_low_stock_denied(self, tool, sample_tool_context):
         result = await tool.execute(context=sample_tool_context, action="low_stock_alert")

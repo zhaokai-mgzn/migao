@@ -48,7 +48,9 @@ class TestBuildGraph:
             "intent_router", "direct_reply",
             "order_skill", "product_skill",
             "aftersales_skill", "customer_skill", "staff_skill",
-            "settings_skill", "data_skill", "general_skill",
+            # issue #5247：`settings` skill 已从米宝解绑（系统设置/通知配置不进 B 端对话面）
+            # ⇒ 米宝图里**没有** settings_skill 节点；skill 本身仍在注册表里（C 端/回归口径）。
+            "data_skill", "general_skill",
         }
         for node_name in expected:
             assert node_name in nodes, f"Node '{node_name}' not found in mibao graph. Got: {nodes}"

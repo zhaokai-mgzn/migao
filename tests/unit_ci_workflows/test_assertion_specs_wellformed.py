@@ -278,14 +278,24 @@ class TestOutputVerifyActionScope:
         return load_case_dicts(str(CASES_DIR))
 
     def test_multi_action_tools_detected(self):
-        """检测器自证：已知多 action 工具必须被认出来（防解析失效 → 守卫恒真）。"""
+        """检测器自证：已知多 action 工具必须被认出来（防解析失效 → 守卫恒真）。
+
+        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+        `category_manage` 已收窄为**单 action**（只剩 `tree`）⇒ 它从「必须被认出」组
+        移入「不得被误判」组；「必须被认出」的名单改为**当前 B 端可达**的多 action 工具
+        （含 #5247 新接入的 `inbound_order_query` / `operation_catalog_query` /
+        `processing_order_set_query` —— 它们正是本守卫要保护的新断言面）。
+        """
         multi = _multi_action_tools()
         assert len(multi) >= 8, f"只解析出 {len(multi)} 个多 action 工具 —— 解析疑似失效"
-        for name in ("processing_item_manage", "employee_manage", "product_manage",
-                     "after_sales_manage", "category_manage"):
+        for name in ("after_sales_manage", "customer_manage", "employee_manage", "role_manage",
+                     "session_manage", "inventory_manage", "finance_api", "dashboard_stats",
+                     "order_query", "inbound_order_query", "operation_catalog_query",
+                     "processing_order_set_query"):
             assert name in multi, f"{name} 未被识别为多 action 工具（检测器漏了）"
-        # 单 action 工具不得误判（防过度收紧：PR-024 curtain_calc / PR-021 sku_update）
-        for name in ("curtain_calc", "sku_update"):
+        # 单 action 工具不得误判（防过度收紧：curtain_calc 只有算料一个入口；
+        # category_manage 已由 #5247 收窄为 {tree} 单 action —— 这是**新增**的反例面）
+        for name in ("curtain_calc", "category_manage"):
             assert name not in multi, f"{name} 被误判为多 action 工具"
 
     def test_output_verify_on_multi_action_tool_declares_action(self):

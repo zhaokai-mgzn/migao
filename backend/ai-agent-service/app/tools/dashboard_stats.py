@@ -72,7 +72,10 @@ class DashboardStatsTool(BaseTool):
                     "order_status（订单状态分布饼图数据） / "
                     "recent_orders（最近订单列表，需配合 limit） / "
                     "active_sessions（当前活跃客服会话列表，需配合 limit） / "
-                    "product_ranking（商品销量排行，需配合 period 与 limit，适用于“哪个商品卖得最好”场景）"
+                    "product_ranking（商品销量排行，需配合 period 与 limit，适用于“哪个商品卖得最好”场景） / "
+                    "pending_tasks（待办任务清单） / "
+                    "pending_shipment_count（待发货单数） / "
+                    "processing_shipment_count（加工中待发货单数）"
                 ),
                 "enum": ["overview", "order_trend", "order_status", "recent_orders", "active_sessions", "product_ranking", "pending_tasks", "pending_shipment_count", "processing_shipment_count"],
             },

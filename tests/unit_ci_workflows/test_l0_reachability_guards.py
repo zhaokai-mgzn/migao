@@ -54,8 +54,31 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
+sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 
 import assertion_taxonomy as tax  # noqa: E402
+import eval_case_filter  # noqa: E402  （零依赖；可达面真值 = 两端 skill 工具集并集）
+
+#: 已注册但**两端都不可达**的写工具（`#5247` B 端只读化后新出现的形态）。
+#:
+#: 语义：`create_default_registry()` 仍注册它们（类与注册行都在、工具文件也在），但它们
+#: **不在任何 skill 的 `*_TOOLS` 里** ⇒ 模型永远调不到 ⇒ taxonomy **不得**为它们表态
+#: （表态 = 幽灵写工具，`test_write_tool_sets_only_name_reachable_tools` 会判红）。
+#: 与 `human_handoff`（注册行被注释 ⇒ 连注册表都不在）是**两种不同**的不可达：
+#: 这里是「注册着但绑不上任何 skill」。
+#:
+#: ⚠️ **fail-closed 登记表**：新出现一个「已注册 ∧ 不可达」的写工具而没登记在此 ⇒ 判红
+#: （要么把它绑回某个 skill，要么在这里写明为什么留着它）。这条取代了旧口径下
+#: 「已注册 ⇒ 必然可达」的隐含前提。
+UNREACHABLE_REGISTERED_WRITE_TOOLS: dict[str, str] = {
+    "order_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端改状态/发货）；C 端从未绑定",
+    "product_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端建品/上下架/改商品）",
+    "product_update": "#5247：从 B 端全部 skill 解绑（原为 B 端改商品字段）",
+    "sku_update": "#5247：从 B 端全部 skill 解绑（原为 B 端 SKU 调价）",
+    "processing_item_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端增删改加工项）",
+    "processing_order_generate": "#5247：从 B 端全部 skill 解绑（原为 B 端生成加工单）",
+    "processing_order_update": "#5247：从 B 端全部 skill 解绑（原为 B 端加工单状态迁移）",
+}
 
 SERVICE_ROOT = REPO_ROOT / "backend" / "ai-agent-service"
 REGISTRY_PY = SERVICE_ROOT / "app" / "tools" / "registry.py"
@@ -93,6 +116,14 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # 批次账 / 省料度量只读查询（issue #5188）：`read_only=True` ⇒ 同样**不进** taxonomy 的
     # `WRITE_TOOLS`（该集合是「写用例必须有效果层断言」的判据源）；本条只同步注册表真值。
     "batch_stock_query",
+    # B 端只读化新接入的 6 个只读查询工具（issue #5247，用户裁定 2026-09-23）：
+    # `stock_ledger_query`（库存台账）/ `inbound_order_query`（入库单·批次）/
+    # `operation_catalog_query`（工序库·工艺路线）/ `craft_calc_config_query`（算料配置）/
+    # `briefing_query`（经营日报）/ `processing_order_set_query`（加工套件·扫码循环）。
+    # 均为 `read_only=True` ⇒ **不进** taxonomy 的 `WRITE_TOOLS`；本条只同步注册表真值
+    # （本守卫失败信息里的「① 工具真的增删了」正是这条路径）。
+    "stock_ledger_query", "inbound_order_query", "operation_catalog_query",
+    "craft_calc_config_query", "briefing_query", "processing_order_set_query",
 })
 
 

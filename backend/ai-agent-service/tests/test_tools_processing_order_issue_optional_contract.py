@@ -156,11 +156,24 @@ def test_order_prompt_issue_line_declares_optional_contract():
     检查器凭据（`test_checker_flags_pre_fix_prompt_verbatim` 仍会证明它会红）。
     """
     text = read_prompt()
-    assert optional_contract_violations(text) == [], (
-        "order.md 的发加工行不满足「可选性口径」—— processor/交期在工具 schema"
-        "（required=['id','action']）、validate_input（issue.required=['id']）、服务端 DTO/Service"
-        "四处均为可选，prompt 必须同口径标注「可选」并给出「缺字段也可推进」的出路；"
-        "否则模型会自造必填、反复索要（PG-016 首跑 run 34908262839 的病灶形态）"
+    # 🔴 **第三次翻转**（issue #5247，用户裁定 2026-09-23 B 端只读化）：写路径整体退场 ⇒
+    # `order.md` **不得**再出现 `processing_order_update` 的发加工操作行（含「可选」标注的那一行）。
+    # 与前两次翻转（#3917 下线 → #4196 恢复）同一口径：改的是**真值**（B 端已无写能力），
+    # **不是**放宽断言 —— 检查器 `optional_contract_violations` 与其红证
+    # （`test_checker_flags_pre_fix_prompt_verbatim`）**原样保留**，本断言换成更强的形态：
+    # 不再要求「该行合规」，而是要求「该行不存在」（写流程回归即红）。
+    # 口径：**提到发加工/加工单写动作的每一行都必须是「不可用/已下线」的如实告知行**
+    # （B 端只读化后正确形态里仍有 ❌ 否定行）；只要出现一行**没有**否定标记的写指令
+    # （= 又教模型走写路径，必然撞 tool_not_found），本用例即红。
+    write_lines = [l for l in text.splitlines() if "发加工" in l]
+    assert write_lines, "order.md 连「发加工」这个词都没有了 —— 如实告知口径缺失（本判据会空转）"
+    offenders = [
+        l for l in write_lines
+        if not any(marker in l for marker in ("不在能力内", "不可用", "已下线", "❌"))
+    ]
+    assert not offenders, (
+        "order.md 出现**未标记为不可用**的发加工写指令行 —— B 端只读化（#5247）后"
+        "该写流程已从 B 端退场，提示词只能如实告知 + 引导后台页面：\n  " + "\n  ".join(offenders)
     )
     # 配套锁：恢复接入后该工具**确实**回到 agent 可达面 —— 防「只改 prompt 没恢复绑定」
     from app.tools.registry import get_tool_registry
