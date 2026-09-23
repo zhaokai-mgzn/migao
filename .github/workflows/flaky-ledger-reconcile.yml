@@ -61,10 +61,7 @@ on:
 
 permissions:
   actions: write        # approve 被抑制的 run（与 flaky-triage.yml 同一权限面；**不新增 secret**）
-  contents: write       # ⚠️ **临时对照实验**（#5235，读完即 revert）：验证 enablePullRequestAutoMerge
-                        # 是否真的需要 contents: write（本仓 automerge.yml / flaky-triage.yml 有 write 且能 arm，
-                        # 本文件 read 且恒失败）。**这不是要保留的改动** —— 它会红在 test_flaky_ledger_reconcile.py
-                        # 的「contents 必须 read」判据上，那是判据在正常工作。
+  contents: read        # 只读台账分支：本 workflow **不写**台账、**不 push**、**不建 PR**
   pull-requests: write  # 读台账 PR / arm auto-merge（不 approve 评审、不改标签）
 
 # 与 flaky-triage.yml 的 `flaky-triage-ledger` **不同组**：两者都只做幂等动作，不该互相排队/取消。
