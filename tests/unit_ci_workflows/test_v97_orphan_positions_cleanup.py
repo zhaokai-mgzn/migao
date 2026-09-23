@@ -70,12 +70,24 @@ from test_v91_baseline_operations_backfill import (  # noqa: E402
     runtime_resolve, runtime_variant_map)
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 MIGRATION = MIGRATION_DIR / "V97__soft_delete_orphan_operation_positions.sql"
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
 QUERY_SERVICE = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
                  / "ProductionOperationQueryService.java")
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: `variantNameOf` 的逆索引源（逐条字面量；**不推导**）。
 _VARIANT_CALL = re.compile(r'variant\(\s*names\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
@@ -163,7 +175,7 @@ def test_v97_migration_exists_and_version_is_unique():
     `test_migration_version_uniqueness.py` 兜底），本处只钉「V97 在、且只此一条」。
     """
     assert MIGRATION.exists(), f"缺少 {MIGRATION.name}"
-    v97 = sorted(p.name for p in MIGRATION_DIR.glob("V97__*.sql"))
+    v97 = sorted(p.name for p in _migration_files("V97__*.sql"))
     assert v97 == [MIGRATION.name], (
         f"V97 号不唯一（实际 {v97}）—— 若 V97 已被别的 PR 占用，本迁移必须改号并在 PR body 说明")
 
@@ -248,7 +260,7 @@ def test_v97_criterion_miscounts_curtain_head_cells_that_the_runtime_resolves():
     """判据 1c（issue #4796 的**假阳性读数**）：同一批格，两份口径给出不同读数。
 
     对象 = 规范矩阵里 `applicable = TRUE` 的格（`ProductionSeedTemplateService.CANONICAL_POSITION_PRICES`）
-    × 工序库（`docs/sql/schema.sql` 的 36 行基线）：
+    × 工序库（`backend/admin-api/src/main/resources/db/init/schema.sql` 的 36 行基线）：
 
     * **V97 口径**（30 条 map，**刻意不含**帘头回落 —— 迁移注释逐字写明）⇒ 帘头格落裸逻辑名
       ⇒ 库里没有 ⇒ 计成「**从未登记 / 解析不到**」= `#4672`「105 格」的算法；
@@ -428,7 +440,7 @@ def test_v97_has_count_reconciliation_stop_condition():
 
 
 def test_bootstrap_schema_sql_needs_no_v97_section():
-    """bootstrap 路径（`docs/sql/schema.sql` 不跑迁移链）**结构上不含孤儿** ⇒ 无需同步段落。
+    """bootstrap 路径（`backend/admin-api/src/main/resources/db/init/schema.sql` 不跑迁移链）**结构上不含孤儿** ⇒ 无需同步段落。
 
     红证形态：往 `schema.sql` 里种一条 `测试22` 一类商家自建格 ⇒ 本判据红
     （那时才必须同步）。

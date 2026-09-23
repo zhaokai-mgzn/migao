@@ -80,7 +80,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  *
  * <h2>环境</h2>
  * 一次性真 PG 集群（{@code initdb} + {@code pg_ctl}，随机端口、跑完即停；共用 {@link PgCluster}），
- * schema 取自 {@code docs/sql/schema.sql}（bootstrap 终态，**不手抄列清单**）。缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
+ * schema 取自 {@code backend/admin-api/src/main/resources/db/init/schema.sql}（bootstrap 终态，**不手抄列清单**）。缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
  * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。
  *
  * <p>范式与 {@code PooledDispatchRealDbTest}（#5169）/ {@code BatchAssignmentRuleRealDbTest}（#5167）
@@ -461,10 +461,10 @@ class SkuBatchGuardRealDbTest {
 
     private static String schemaSql() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 }

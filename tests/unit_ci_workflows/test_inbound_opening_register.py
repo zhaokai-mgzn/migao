@@ -22,7 +22,7 @@
 | 幂等（真库 + 注入红证） | 同一 `(tenant_id, import_run_id)` 的第二张期初单被 `uk_inbound_orders_tenant_import_run` 挡下（23505）、同键单据数 = 1；注入红证 = DROP 该索引 ⇒ 同键 2 张 |
 | 分布可复算（真库） | 给定 `source='opening'` 的批次集合 ⇒ 逐值 `quantity + Σ(delta)` 可复算、两遍读数逐字相同（**不需要**物化快照表）、采购批次不进这一集合 |
 | 两条禁令（源码，**去注释后**） | ① 期初/批次余量路径**不得**出现 `toStockScaleByCeiling`（订单侧向上进位口径）；② 导入器**不得**自己归一（`setScale` / `RoundingMode` / `intValue()` / `(long)` / `getNumericCellValue`），必须调服务层 `create` + `post` |
-| 迁移形态 | V118 已登记进 `migration_fingerprints.json`；显式 `BEGIN/COMMIT`；前置 fail-closed 在写语句之前；两遍真跑幂等；`docs/sql/schema.sql`（bootstrap 路径不跑迁移链）已同步终态 |
+| 迁移形态 | V118 已登记进 `migration_fingerprints.json`；显式 `BEGIN/COMMIT`；前置 fail-closed 在写语句之前；两遍真跑幂等；`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径不跑迁移链）已同步终态 |
 """
 from __future__ import annotations
 
@@ -38,14 +38,26 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V117 = MIGRATION_DIR / "V117__inbound_order_idempotency_and_source.sql"
 V118 = MIGRATION_DIR / "V118__stock_batch_legacy_no_and_opening_register.sql"
 SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
 INBOUND_SERVICE = SERVICE_DIR / "InboundOrderService.java"
 IMPORT_SERVICE = SERVICE_DIR / "OpeningRegisterImportService.java"
 CONTROLLER = REPO / "backend/admin-api/src/main/java/com/migao/admin/controller/InboundOrderController.java"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 TENANT_A = 1
@@ -542,7 +554,7 @@ def test_import_requires_an_idempotency_key(psql):
 def test_v118_exists_and_is_the_unique_highest_version():
     assert V118.exists(), f"缺少迁移文件：{V118.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
-                for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+                for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     assert versions.count(118) == 1, "V118 版本号重复"
     # ⚠️ 原写 `max(versions) == 118`（「V118 是当前最大迁移号」）—— 那是本仓**点名过的自毁式真值主张**：
     #    下一个迁移一出现就必红，且报错文案把人指向错误行动。**#5158 新增 V119 时实测踩中**：

@@ -277,7 +277,7 @@ class ProductionSeedTemplateServiceTest {
             ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
                     ArgumentCaptor.forClass(com.migao.admin.entity.ProductionRouteRule.class);
             verify(productionRouteRuleMapper, times(30)).insert(ruleCaptor.capture());
-            // 加工项触发规则逐值（与 V84 迁移 / docs/sql/schema.sql 三源同值；`拼接`/`双眼皮` 不建行）
+            // 加工项触发规则逐值（与 V84 迁移 / backend/admin-api/src/main/resources/db/init/schema.sql 三源同值；`拼接`/`双眼皮` 不建行）
             assertThat(ruleCaptor.getAllValues().stream()
                     .filter(r -> "processing_item".equals(r.getTriggerKind()))
                     .map(r -> r.getTriggerValue() + "→" + r.getOperation() + "@" + r.getAfterOperation())

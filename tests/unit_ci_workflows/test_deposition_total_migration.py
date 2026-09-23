@@ -35,7 +35,7 @@
 | `V103` 清空规则 `position` | **改判（#4962）**：部位维**保留** ⇒ 本文件改判为「`V102` **一字不碰** `production_route_rules`」+「真库跑完规则表**逐字节指纹不变**」（见 `test_v102_never_touches_production_route_rules` 与 `test_route_rules_are_byte_identical`）。规则侧的**终态**判据在 `test_production_catalog_seed.py` 的「部位维在多源间一致」用例 |
 | `V104` 四档选行 / 软删 / 共享物化判据 / 注入红证 | **全部保留**，另**加强**一格：幸存行由「**迁移前**状态上独立重算的期望集合」逐行核对（不再是「拿终态自重算的不动点」） |
 | `V105` / `V106` 多租户补种 / 闸门 / 软删不复活 / 已知边界 | **全部保留**（合并成一条迁移的两个来源），另**加强**一格：单价/分组/单位/scope 必须**逐字取对应 `-布` 行**（夹具故意让 2 号租户的 `-布` 值不同 ⇒ 发明一个值即红） |
-| bootstrap ↔ 迁移链终态一致 | **保留并加强**：除真库「不动点」判据外，新增静态判据把 `docs/sql/schema.sql` 的终态与「**迁移字面量按同一四档规则塌缩**」的结果**逐 id / 逐价**比对 |
+| bootstrap ↔ 迁移链终态一致 | **保留并加强**：除真库「不动点」判据外，新增静态判据把 `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态与「**迁移字面量按同一四档规则塌缩**」的结果**逐 id / 逐价**比对 |
 | `no_applicable_position` 相关 | **改判**：该态随 `applicable` 退场而不可达（改判登记见 `.github/cases/processing-order.yml` 的 #4939 条目）⇒ 本文件不再判它，改判在「存活行 `applicable` 恒 `TRUE`」上 |
 """
 from __future__ import annotations
@@ -51,7 +51,19 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V102 = MIGRATION_DIR / "V102__retire_applicability_flag.sql"
 #: **已删除**的四条（内容已并入 `V102`）—— 名字写在这里，是为了让「文件又冒出来」或
 #: 「账本条目没删干净」都能被机械判出来（不是「静默不判」）。
@@ -61,7 +73,7 @@ SUPERSEDED = (
     "V105__add_sheer_variant_operations.sql",
     "V106__backfill_sheer_variant_operations.sql",
 )
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 #: 选行规则的**同一份**字面量（Java 侧常量；跨语言判据按源码解析，不靠人抄）。
 QUERY_SERVICE = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
@@ -92,7 +104,7 @@ def _strip_comments(sql: str) -> str:
 
 def _versions() -> list:
     return [int(re.match(r"^V(\d+)__", p.name).group(1))
-            for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+            for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
 
 
 # ══════════════════════════ ① 存在性 / 版本号 / 账本 ══════════════════════════
@@ -370,7 +382,7 @@ def test_java_neutral_position_matches_the_sql_literal():
     assert f"SET position = '{neutral}'" in _strip_comments(_read(V102)), (
         f"V102 写的幸存行 position 不是 Java 的 `{neutral}` ⇒ 读面认不出塌缩终态")
     assert f"'{neutral}'" in _read(SCHEMA_SQL), (
-        f"`docs/sql/schema.sql` 的矩阵终态里没有 `{neutral}`（bootstrap 路径不跑迁移链）")
+        f"`backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵终态里没有 `{neutral}`（bootstrap 路径不跑迁移链）")
 
 
 # ══════════════════════════ ③ 真库判据（临时 PG 集群） ══════════════════════════
@@ -1086,7 +1098,7 @@ def _four_tier_survivors(rows: list) -> dict:
 
 
 def test_bootstrap_matrix_terminal_equals_the_four_tier_collapse_of_the_migration_literals():
-    """🔴 **静态强判据**：`docs/sql/schema.sql` 的矩阵终态 == 迁移字面量按四档规则塌缩的结果。
+    """🔴 **静态强判据**：`backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵终态 == 迁移字面量按四档规则塌缩的结果。
 
     口径：bootstrap 是 `docker-entrypoint-initdb.d` 的**单租户建库脚本**（**不跑迁移链**）
     ⇒ 它必须**一次给全终态**。迁移侧的**字面量**来源 = `V71` ∪ `V79`（bootstrap 那 120 行
@@ -1136,7 +1148,7 @@ def test_bootstrap_matrix_terminal_equals_the_four_tier_collapse_of_the_migratio
 
 
 def test_bootstrap_matches_migration_chain_terminal_state(psql):
-    """真库：`docs/sql/schema.sql` 的矩阵段是 `V102` 的**不动点**，且逐值等于真库终态。
+    """真库：`backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵段是 `V102` 的**不动点**，且逐值等于真库终态。
 
     本测试把 `schema.sql` 的矩阵**字面量**当输入喂进真库，再跑本迁移 ⇒
     终态必须与 `schema.sql` **自己写的那份终态**逐值相等（防两条口径分裂：bootstrap 栈不跑迁移链）。

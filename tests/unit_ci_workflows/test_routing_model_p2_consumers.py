@@ -31,9 +31,9 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 JAVA_SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: P2a 的迁移（V71 已被 P1 / #4427 占用；已发布迁移不可改）。
 V72_NAME = "V72__switch_routing_model_consumers.sql"
@@ -492,7 +492,7 @@ def test_seed_service_craft_rules_match_truth_source():
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_schema_sql_carries_p2_terminal_state():
-    """判据 D：`docs/sql/schema.sql` 必须同步本单的终态（列 + 表）。"""
+    """判据 D：`backend/admin-api/src/main/resources/db/init/schema.sql` 必须同步本单的终态（列 + 表）。"""
     schema = _read(SCHEMA)
     assert re.search(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + CRAFT_TABLE + r"\b", schema, re.I), (
         f"schema.sql 缺 {CRAFT_TABLE} —— bootstrap 栈（docker-entrypoint-initdb.d）**不跑迁移链**"

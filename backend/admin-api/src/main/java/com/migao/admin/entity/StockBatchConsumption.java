@@ -21,7 +21,7 @@ import java.time.OffsetDateTime;
  * 是 <b>SKU 级销售账</b>（{@code product_skus.stock} 随支付扣，本单**一字不动**）；
  * 本表是 <b>批次级实物账</b>（随加工单生成而扣、随作废而回补）。把批次行塞进 SKU 账会
  * 破坏它「同一 SKU 相邻两行首尾相接」的不变式（理由详见
- * {@code backend/admin-api/src/main/resources/db/migration/V116__create_stock_batch_consumptions.sql} 文件头）。</p>
+ * {@code backend/admin-api/src/main/resources/db/migration-archive/V116__create_stock_batch_consumptions.sql} 文件头）。</p>
  *
  * <p><b>余量是派生值</b>：{@code remaining = stock_batches.quantity + Σ(delta)}——
  * <b>不原地改</b> {@code stock_batches.quantity}（V111 裁定「批次行不可改、冲销走新单据」），

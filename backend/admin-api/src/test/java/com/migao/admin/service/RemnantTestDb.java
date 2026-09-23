@@ -226,10 +226,10 @@ public final class RemnantTestDb {
     /** bootstrap 终态 schema（**不手抄列清单** ⇒ 列名 / 约束漂移会被抓）。 */
     private static String schemaSql() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql").isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql").isNotNull();
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 }

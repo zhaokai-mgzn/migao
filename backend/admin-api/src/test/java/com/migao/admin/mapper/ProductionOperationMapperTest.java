@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * ProductionOperationMapper 契约测试（生产工序库，issue #3995，V49）
- * 验证：表映射 production_operations + 实体字段与迁移 V49 / docs/sql/schema.sql 收敛。
+ * 验证：表映射 production_operations + 实体字段与迁移 V49 / backend/admin-api/src/main/resources/db/init/schema.sql 收敛。
  */
 @DisplayName("ProductionOperationMapper 表/字段契约（工序库）")
 class ProductionOperationMapperTest {

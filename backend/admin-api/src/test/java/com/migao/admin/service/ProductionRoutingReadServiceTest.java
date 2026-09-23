@@ -259,7 +259,7 @@ class ProductionRoutingReadServiceTest {
     @DisplayName("PG-018 塌缩终态（issue #5008）：矩阵行 position = 中性值「通用」⇒ 元数据按**取价同一行**解析，不得全 null")
     void operationPositionsResolvesVariantMetadataForCollapsedNeutralPosition() {
         // V102 把矩阵按 (租户, 逻辑工序) 塌缩成一行，幸存行 position 写成中性值「通用」
-        // （`backend/admin-api/src/main/resources/db/migration/V102__retire_applicability_flag.sql`）。
+        // （`backend/admin-api/src/main/resources/db/migration-archive/V102__retire_applicability_flag.sql`）。
         // 读面若仍只按 `row.getPosition()` 查变体 ⇒ 库里只有变体名（布三边）的那 21 道工序解析落空
         // ⇒ 分组/单位/variant_operation_id 静默变 null（商家面「未分组 · 21 道」+ 行尾 `—`）。
         // 判据 = 与 `collapseToLogical` 的**取价同一行**（布帘列）解析元数据。

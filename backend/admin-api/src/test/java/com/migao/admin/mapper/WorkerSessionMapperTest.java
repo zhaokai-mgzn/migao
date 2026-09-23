@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * WorkerSessionMapper 契约测试（工人登录态，issue #4733，V98）。
  *
- * <p>验证三件事：① 表/列三源收敛（实体 ↔ V98 迁移 ↔ docs/sql/schema.sql）；
+ * <p>验证三件事：① 表/列三源收敛（实体 ↔ V98 迁移 ↔ backend/admin-api/src/main/resources/db/init/schema.sql）；
  * ② 三条 SQL 的 **fail-closed 谓词**逐字在位（`deleted = 0 AND ended_at IS NULL`）——
  * 缺了它，「已切换/已登出的会话」会被复活 ⇒ 把活记到上一个人头上（本单最忌的形态）；
  * ③ `endSession` 的 `ended_at IS NULL` 谓词 = 幂等（重复结束不改首次的原因）。</p>
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WorkerSessionMapperTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V98__create_worker_sessions_and_worker_no.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V98__create_worker_sessions_and_worker_no.sql";
 
     @Test
     @DisplayName("实体映射 worker_sessions 表")

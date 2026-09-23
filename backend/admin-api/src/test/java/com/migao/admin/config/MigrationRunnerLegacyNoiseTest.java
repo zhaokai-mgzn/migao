@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  *
  * ## 为什么是本测试（病灶与不变量）
  *
- * bootstrap-first 评测栈（`docker-entrypoint-initdb.d/001_schema.sql` = `docs/sql/schema.sql`
+ * bootstrap-first 评测栈（`docker-entrypoint-initdb.d/001_schema.sql` = `backend/admin-api/src/main/resources/db/init/schema.sql`
  * 先建终态，随后 admin-api 再跑迁移链）上，3 条**已发布**的历史非幂等迁移每次起栈必失败：
  * `V37`/`V42`（`ALTER ... IF EXISTS` 只守卫**源**对象、不守卫目标）、`V44`（裸 `CREATE POLICY`，
  * PG 不支持 `CREATE POLICY IF NOT EXISTS`）。旧实现一律打 ERROR + 「请立即修复并在修复后重跑」
@@ -293,6 +293,9 @@ class MigrationRunnerLegacyNoiseTest {
         // 会抛错并被 run() 的外层 catch 打成「❌ 迁移失败」，测试就测不到被测分支了。
         // 显式钉上与生产一致的默认 pattern（MigrationRunner 的 @Value 默认值）。
         ReflectionTestUtils.setField(runner, "migrationPattern", "classpath:db/migration/*.sql");
+        // 基线（issue #5243）：`@Value` 字段在纯单测里不会被注入 ⇒ 显式钉上与生产一致的
+        // 默认值（与本行的 migrationPattern 同理），否则 applyBaseline 会拿到 null 位置。
+        ReflectionTestUtils.setField(runner, "initScriptLocation", "classpath:db/init/schema.sql");
         return runner;
     }
 
@@ -332,8 +335,15 @@ class MigrationRunnerLegacyNoiseTest {
             resources[i] = resource;
         }
         when(resolver.getResources(anyString())).thenReturn(resources);
+        // 基线（issue #5243）：本类测的是**迁移链**的失败汇总形状，与建库脚本无关。
+        // ⇒ 把基线显式钉成「台账已记账 ⇒ 整段跳过」：既不引入新的日志/失败计数（判据面不变），
+        //    也不让基线走到 `jdbc.execute` 去和下面的注入式 Answer 打架。
+        Resource baseline = org.mockito.Mockito.mock(Resource.class);
+        when(baseline.getFilename()).thenReturn("schema.sql");
+        when(baseline.exists()).thenReturn(true);
+        when(resolver.getResource(anyString())).thenReturn(baseline);
         when(jdbc.queryForList("SELECT version FROM schema_migrations", String.class))
-                .thenReturn(List.of());
+                .thenReturn(List.of("schema.sql"));
 
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0, String.class);

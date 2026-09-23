@@ -72,7 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>环境</h2>
  * 一次性真 PG 集群（{@link PgCluster}，与 #5158 的真库判据**共用同一个装配**，
- * 不再复制第三份），schema 取自 {@code docs/sql/schema.sql}（bootstrap 终态，
+ * 不再复制第三份），schema 取自 {@code backend/admin-api/src/main/resources/db/init/schema.sql}（bootstrap 终态，
  * **不手抄列清单** ⇒ 列名/约束漂移会被抓），并**装上与生产同源的多租户拦截器**
  * （少了它就只测了 mapper 原文 —— 而本单新增的三条 SQL 全带 join 与子查询，
  * 正是拦截器重写的受力面）。缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
@@ -481,11 +481,11 @@ class SavingMetricsBoardRealDbTest {
 
     private static String schemaSql() throws Exception {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql（真库建表取终态 schema，不手抄列清单）")
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql（真库建表取终态 schema，不手抄列清单）")
                 .isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 }

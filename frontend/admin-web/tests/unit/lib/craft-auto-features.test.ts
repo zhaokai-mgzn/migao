@@ -46,14 +46,14 @@ const CALC_SRC = resolve(
 const source = readFileSync(CALC_SRC, 'utf8')
 
 /**
- * 加工项目录种子（真值源）：`backend/admin-api/src/main/resources/db/migration/V83__seed_processing_item_catalog.sql`。
+ * 加工项目录种子（真值源）：`backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql`。
  * issue #4592：自动推导特征会**进加工费组合键** ⇒ 清单里多一个目录没有的名字 = 商家配不出该组合
  * = 组合价永远匹配不到（P0）。本文件据此把「清单 ↔ 目录」钉成**逐值对齐**。
  */
 const V83_SEED_SRC = readFileSync(
   resolve(
     __dirname,
-    '../../../../../backend/admin-api/src/main/resources/db/migration/V83__seed_processing_item_catalog.sql'
+    '../../../../../backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql'
   ),
   'utf8'
 )

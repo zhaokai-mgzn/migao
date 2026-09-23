@@ -186,7 +186,7 @@ MUTATIONS = [
     {
         "name": "constraint_sign_asymmetry",
         "why": "把 V121 修好的约束换回 V119 的符号不对称原文（真库基线 schema）",
-        "file": "docs/sql/schema.sql",
+        "file": "backend/admin-api/src/main/resources/db/init/schema.sql",
         "old": "    CHECK (abs(planned_meters) <= abs(formula_meters) AND formula_meters * planned_meters >= 0);",
         "new": "    CHECK (planned_meters <= formula_meters AND formula_meters * planned_meters >= 0); -- [RED-PROOF]",
         "cls": REALDB, "fqn": REALDB_FQN,

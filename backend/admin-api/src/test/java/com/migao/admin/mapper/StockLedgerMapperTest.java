@@ -1,5 +1,5 @@
 // case_ids: PR-005, AS-006
-// 库存台账三源收敛（issue #4055）：Java 实体字段 ↔ 迁移 V53 列 ↔ bootstrap docs/sql/schema.sql。
+// 库存台账三源收敛（issue #4055）：Java 实体字段 ↔ 迁移 V53 列 ↔ bootstrap backend/admin-api/src/main/resources/db/init/schema.sql。
 // 只写实体不写迁移、或迁移不同步 schema.sql 都在此变红（跨源漂移守卫
 // tests/unit_ci_workflows/test_schema_integrity.py 的用例级补充，同时覆盖 docker bootstrap 路径）。
 
@@ -45,7 +45,7 @@ class StockLedgerMapperTest {
                 "reason", "refNo", "note", "operator", "createdAt", "deleted"
         );
         ProductionMigrationSql.assertTableColumnsIn(
-                "backend/admin-api/src/main/resources/db/migration/V53__create_stock_ledger.sql",
+                "backend/admin-api/src/main/resources/db/migration-archive/V53__create_stock_ledger.sql",
                 "stock_ledger_entries",
                 "id", "tenant_id", "product_id", "sku_id", "sku_code", "delta", "before_qty",
                 "after_qty", "reason", "ref_no", "note", "operator", "created_at", "deleted");

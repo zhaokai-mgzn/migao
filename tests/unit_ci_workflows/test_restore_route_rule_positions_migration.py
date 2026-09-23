@@ -9,7 +9,7 @@
 |---|---|---|
 | `V108__restore_route_rule_positions.sql` | 每个**活跃租户**上把**唯一**那条部位限定规则（`craft`/`韩褶`/`insert`/`上车布`/锚 `韩褶`）写回 `position = '布帘'` | ① 静态：恰好一条 `UPDATE`；`SET` 列**恰好** `['position','updated_at']`；含 `BEGIN`/`COMMIT`/`RAISE EXCEPTION`；含 `r.position IS NULL` 幂等谓词；不含 `DROP COLUMN`；谓词逐字与 **V71 冻结种子**同源；② 真库：两遍幂等（命中 2 → 0）、终态对账、**非 1 号租户**一并拿回、软删行与「商家已写过的值」不动、`customer_unit_price` 与**行数**不变；③ 注入红证（见文末表） |
 | `V109__allow_position_trigger_kind.sql` | 放开 `production_route_rules.trigger_kind` 的**表级 CHECK 闭词表**，加第 4 档 `position` | ① 静态：`BEGIN`/`COMMIT`、**可执行语句里没有任何 `INSERT`/`UPDATE`/`DELETE`**（只改约束、不动数据）、含 `DROP CONSTRAINT` 与逐字 `'position'`；② 真库：改前插 `trigger_kind='position'` **必被拒**（`23514`，即红证前提）⇒ 改后插入成功；两遍幂等且**约束恰好一条**；闭词表**仍是闭的**（`bogus` 仍被拒）；**规则行数不变** |
-| bootstrap 镜像 | `docs/sql/schema.sql`（`docker-entrypoint-initdb.d`，**不跑迁移链**）必须**自己就是终态** | ① `rr-v70-*` 26 行字面量里**有且只有 1 行**非 `NULL`（`rr-v70-02` = `'布帘'`）；② 闭词表含 `position`，且与 V109 的 `ADD CONSTRAINT` **逐字**同款；③ 把 bootstrap 的 26 行字面量喂进真库 + 跑 V103 ⇒ V108 ⇒ 终态与 bootstrap **逐值**相等 |
+| bootstrap 镜像 | `backend/admin-api/src/main/resources/db/init/schema.sql`（`docker-entrypoint-initdb.d`，**不跑迁移链**）必须**自己就是终态** | ① `rr-v70-*` 26 行字面量里**有且只有 1 行**非 `NULL`（`rr-v70-02` = `'布帘'`）；② 闭词表含 `position`，且与 V109 的 `ADD CONSTRAINT` **逐字**同款；③ 把 bootstrap 的 26 行字面量喂进真库 + 跑 V103 ⇒ V108 ⇒ 终态与 bootstrap **逐值**相等 |
 
 ## 为什么必须真跑真库
 
@@ -62,23 +62,35 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
 V108 = MIGRATION_DIR / "V108__restore_route_rule_positions.sql"
 V109 = MIGRATION_DIR / "V109__allow_position_trigger_kind.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 TABLE = "production_route_rules"
-#: V108 写回的那个值（逐字；与 V71 冻结种子 / `docs/sql/schema.sql` 三处必须一致）
+#: V108 写回的那个值（逐字；与 V71 冻结种子 / `backend/admin-api/src/main/resources/db/init/schema.sql` 三处必须一致）
 RESTORED_VALUE = "布帘"
 #: 那条规则的**形态**（谓词的业务部分；id 前缀因租户而异 ⇒ 不能按 id 匹配）
 SHAPE = [("trigger_kind", "craft"), ("trigger_value", "韩褶"),
          ("action", "insert"), ("operation", "上车布"), ("after_operation", "韩褶")]
-#: V109 放开后的闭词表（逐字；与 `docs/sql/schema.sql` 的 CHECK 同款）
+#: V109 放开后的闭词表（逐字；与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 CHECK 同款）
 TRIGGER_KIND_VOCAB = "('craft', 'option', 'shaped', 'processing_item', 'position')"
 
-#: `rr-v70-*` 种子行形态（V71 与 `docs/sql/schema.sql` 同形；`position` / `operation` /
+#: `rr-v70-*` 种子行形态（V71 与 `backend/admin-api/src/main/resources/db/init/schema.sql` 同形；`position` / `operation` /
 #: `after_operation` 三列可能是裸 `NULL`，也可能是自带引号的字面量）。
 _RULE_ROW_RE = re.compile(
     r"\(\s*'(?P<id>rr-v70-\d+)'\s*,\s*(?P<tenant>\d+)\s*,\s*'(?P<kind>[^']*)'\s*,\s*"
@@ -176,7 +188,7 @@ def test_both_migrations_exist_with_unique_versions():
     for path, version in ((V108, 108), (V109, 109)):
         assert path.exists(), f"缺少迁移文件：{path.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
-                for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+                for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     for want in (108, 109):
         assert versions.count(want) == 1, f"V{want} 版本号重复"
     assert max(versions) >= 109, f"V109 不是最高版本号（当前最大 V{max(versions)}）"
@@ -343,7 +355,7 @@ def test_v109_shape_guard_is_load_bearing():
 # ══════════════════════════ ⑤ 真库判据（临时 PG 集群） ══════════════════════════
 
 
-#: 与 V71 / `docs/sql/schema.sql` 同形的**最小** DDL（本单触碰的表 + 部分唯一索引）。
+#: 与 V71 / `backend/admin-api/src/main/resources/db/init/schema.sql` 同形的**最小** DDL（本单触碰的表 + 部分唯一索引）。
 #: ⚠️ `trigger_kind` 的 CHECK **逐字照抄 V71 的内联 CHECK**（= V109 之前的口径）
 #: —— 夹具必须能复现「`trigger_kind='position'` 落不了库」这个改前形态，否则 V109 的红证是空跑。
 _DDL = """
@@ -779,10 +791,10 @@ def test_v109_lets_position_trigger_kind_rows_land_and_leaves_data_untouched(psq
 # ══════════════════ ⑥ bootstrap 镜像（两条路径终态一致） ══════════════════
 
 def test_bootstrap_schema_sql_is_the_terminal_state_of_the_migration_chain(psql):
-    """`docs/sql/schema.sql`（bootstrap，**不跑迁移链**）的 V70 规则终态 == 迁移链（V71 种子 + V103 + V108）终态。
+    """`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，**不跑迁移链**）的 V70 规则终态 == 迁移链（V71 种子 + V103 + V108）终态。
 
     核对方式（**机械**，不靠人读）：
-      ① **bootstrap 侧**：解析 `docs/sql/schema.sql` 的 `rr-v70-*` 26 行字面量 ⇒
+      ① **bootstrap 侧**：解析 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `rr-v70-*` 26 行字面量 ⇒
          **有且只有 1 行**非 `NULL`，且必是 `rr-v70-02` = `'布帘'`（其余 25 行 `NULL`）；
       ② **迁移链侧**：把 **V71 冻结种子**的 26 行喂进真库 ⇒ 跑 V103 ⇒（此时必须**全 NULL**，
          否则本判据在「两边恰好都是 NULL」时也会绿 = 空断言）⇒ 跑 V108 ⇒ 终态；
@@ -854,7 +866,7 @@ def test_bootstrap_trigger_kind_vocabulary_includes_position():
     schema = _read(SCHEMA_SQL)
     v109 = _read(V109)
     assert TRIGGER_KIND_VOCAB in schema, (
-        f"docs/sql/schema.sql 的 `trigger_kind` CHECK 不是逐字 `{TRIGGER_KIND_VOCAB}`")
+        f"backend/admin-api/src/main/resources/db/init/schema.sql 的 `trigger_kind` CHECK 不是逐字 `{TRIGGER_KIND_VOCAB}`")
     assert TRIGGER_KIND_VOCAB in v109, (
         f"V109 的 `ADD CONSTRAINT` 不是逐字 `{TRIGGER_KIND_VOCAB}`")
     # 逐字同款的反面（自证判据非空跑）：把 `position` 从任一侧拿掉，本判据即红

@@ -60,9 +60,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import synthetic_processing_fee_data as synthetic  # noqa: E402
 
-MIGRATION = REPO / "backend/admin-api/src/main/resources/db/migration/V77__customer_option_unit_price.sql"
-V82 = REPO / "backend/admin-api/src/main/resources/db/migration/V82__seed_option_customer_unit_price.sql"
-SCHEMA = REPO / "docs/sql/schema.sql"
+MIGRATION = REPO / "backend/admin-api/src/main/resources/db/migration-archive/V77__customer_option_unit_price.sql"
+V82 = REPO / "backend/admin-api/src/main/resources/db/migration-archive/V82__seed_option_customer_unit_price.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 FIXTURE = REPO / "tests/e2e/fixtures/processing-list.json"
 JAVA_MAIN = REPO / "backend/admin-api/src/main/java"
 
@@ -336,7 +336,7 @@ def test_v82_guard_detects_injected_drift():
 
 
 def test_schema_sql_carries_the_same_option_prices():
-    """bootstrap 终态（`docs/sql/schema.sql`）必须带**同源同值**的写价语句。
+    """bootstrap 终态（`backend/admin-api/src/main/resources/db/init/schema.sql`）必须带**同源同值**的写价语句。
 
     该路径**不跑迁移链**（docker-entrypoint-initdb.d）⇒ 只改 V82 = 新建库（CI / 本地 docker 栈）
     选项全无价（同 #3270 形态）。判据 = 与 V82 **同一解析器**、逐值相等。
@@ -411,13 +411,13 @@ def test_priced_option_rows_are_exactly_the_option_rules():
 
 
 def test_schema_sql_carries_the_new_column():
-    """bootstrap 路径（`docs/sql/schema.sql`）必须同步终态 —— 该路径**不跑迁移链**。
+    """bootstrap 路径（`backend/admin-api/src/main/resources/db/init/schema.sql`）必须同步终态 —— 该路径**不跑迁移链**。
 
     漏同步 = 全新库（CI / 本地 docker 栈）建库后取价读不到列（形态见 #3270）。
     """
     sql = SCHEMA.read_text(encoding="utf-8")
     assert re.search(r"customer_unit_price\s+NUMERIC\(12,\s*2\)", sql, re.I), \
-        "docs/sql/schema.sql 缺少 customer_unit_price 列（bootstrap 库与迁移库不一致）"
+        "backend/admin-api/src/main/resources/db/init/schema.sql 缺少 customer_unit_price 列（bootstrap 库与迁移库不一致）"
 
 
 def test_e2e_fixture_is_the_rebuilt_feature_dictionary():

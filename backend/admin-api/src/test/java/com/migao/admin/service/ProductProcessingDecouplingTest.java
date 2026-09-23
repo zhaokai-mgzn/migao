@@ -58,7 +58,7 @@ class ProductProcessingDecouplingTest {
 
     /** V66 迁移（迁移不可变，见 issue #4235：本文件只读它，不生成它）。 */
     private static final String V66 =
-            "backend/admin-api/src/main/resources/db/migration/V66__decouple_product_processing_items.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V66__decouple_product_processing_items.sql";
 
     // ── 反射工具 ──────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ class ProductProcessingDecouplingTest {
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();

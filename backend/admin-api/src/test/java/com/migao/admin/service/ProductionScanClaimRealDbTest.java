@@ -64,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * mock 只能证明「调了哪个方法」；本单的判据是「**那一列真的落进了 PG、且值正确**」——
  * 列名拼错 / SET 子句漏项 / {@code COALESCE} 幂等写错，在 mock 面**结构上不可见**。
  * 与 {@code ProductionPartCodeRealMappingTest}（#4865 真库×真映射守卫）同款：一次性真 PG 集群
- * （{@code initdb} + {@code pg_ctl}，随机端口、跑完即停），schema 取自 {@code docs/sql/schema.sql}
+ * （{@code initdb} + {@code pg_ctl}，随机端口、跑完即停），schema 取自 {@code backend/admin-api/src/main/resources/db/init/schema.sql}
  * （bootstrap 终态，含 V92 三列）—— <b>不手抄列清单</b>（手抄会漂移）。
  *
  * <h2>判据不许恒真（红证形态）</h2>
@@ -277,11 +277,11 @@ class ProductionScanClaimRealDbTest {
 
     private static String schemaSql() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 
 }

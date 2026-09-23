@@ -304,6 +304,9 @@ class MigrationRunnerConnectionFailClosedTest {
         MigrationRunner runner = new MigrationRunner(jdbcProvider, resolver);
         // 纯单测不走 Spring：`@Value` 注入的字段保留声明处默认值，这里显式压小以缩短测试时长
         ReflectionTestUtils.setField(runner, "migrationPattern", "classpath:db/migration/*.sql");
+        // 基线（issue #5243）：`@Value` 字段在纯单测里不会被注入 ⇒ 显式钉上与生产一致的
+        // 默认值（与本行的 migrationPattern 同理），否则 applyBaseline 会拿到 null 位置。
+        ReflectionTestUtils.setField(runner, "initScriptLocation", "classpath:db/init/schema.sql");
         tuneIfPresent(runner, "maxConnectAttempts", maxAttempts);
         tuneIfPresent(runner, "connectRetryBackoffMs", backoffMs);
         return runner;
@@ -338,8 +341,14 @@ class MigrationRunnerConnectionFailClosedTest {
             resources[i] = resource;
         }
         when(resolver.getResources(anyString())).thenReturn(resources);
+        // 基线（issue #5243）同上：本类测连接类失败的重试/fail-closed，与建库脚本无关 ⇒
+        // 钉成「台账已记账 ⇒ 整段跳过」，避免基线分支混进被测行为。
+        Resource baseline = org.mockito.Mockito.mock(Resource.class);
+        when(baseline.getFilename()).thenReturn("schema.sql");
+        when(baseline.exists()).thenReturn(true);
+        when(resolver.getResource(anyString())).thenReturn(baseline);
         when(jdbc.queryForList("SELECT version FROM schema_migrations", String.class))
-                .thenReturn(List.of());
+                .thenReturn(List.of("schema.sql"));
     }
 
     private static String formatted(ILoggingEvent e) {

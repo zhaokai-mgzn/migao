@@ -18,15 +18,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * 防「文档-代码状态漂移」（self-consistency-checklist P0-3）：
  * 1. V35 迁移创建 knowledge_entries，V37 重命名为 knowledge_cards；V35 创建 knowledge_candidates 全字段；
- * 2. docs/sql/schema.sql（全量 schema 文档）必须同步包含两张新表；
+ * 2. backend/admin-api/src/main/resources/db/init/schema.sql（全量 schema 文档）必须同步包含两张新表；
  * 3. 迁移用 CREATE TABLE IF NOT EXISTS（MigrationRunner 幂等，失败不阻塞启动）。
  */
 @DisplayName("知识卡片迁移契约（V35 + V37 + schema.sql 同步）")
 class KnowledgeWikiMigrationTest {
 
     private static final String MIGRATION_DIR =
-            "backend/admin-api/src/main/resources/db/migration";
-    private static final String SCHEMA_SQL = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive";
+    private static final String SCHEMA_SQL = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private static String read(String relative) throws IOException {
         // 从仓库根目录解析（mvn 在模块目录运行时向上回溯）
@@ -138,7 +138,7 @@ class KnowledgeWikiMigrationTest {
     }
 
     @Test
-    @DisplayName("docs/sql/schema.sql 全量 schema 同步包含两张新表")
+    @DisplayName("backend/admin-api/src/main/resources/db/init/schema.sql 全量 schema 同步包含两张新表")
     void schemaSql_inSyncWithMigration() throws IOException {
         String schema = read(SCHEMA_SQL);
         assertThat(schema).as("schema.sql 应包含 knowledge_cards 建表")

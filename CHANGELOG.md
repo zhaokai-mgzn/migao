@@ -1064,3 +1064,12 @@
 - 新增 `CONTRIBUTING.md`（外部贡献者指南：Issue 先行 / 分支 / TDD / PR 门禁）
 - `README.md` 全面修订：修正文档矛盾（工具 31、Controller 27、Service 23、Entity/Mapper 44、Boot 3.3.9、表 41 等）、RAG 按决策 D1 标注暂不开放、新增 CI/License badges
 - `pr-check` 新增 Secret Scan (gitleaks) job
+
+### 建库/迁移收口成「唯一一份建库脚本 + 一条归档链 + 未来的增量迁移」：空库照旧一次建全，存量库绝不会被重放（2026-09-23，issue #5243）
+
+- **改前的形态（四代 SQL 资产并存，互相漂移）**：`docs/sql/schema_full.sql`（自陈已废弃的快照）、`docs/sql/migrations/V2026*`、`docs/sql/00*.sql`，以及 admin-api 的 `db/migration/V*__*.sql` 迁移链。建库路径分裂成两条：docker 用 `docs/sql/schema.sql` 建**终态**、admin-api 启动再跑一遍迁移链；而那份「建库脚本」既**不在** admin-api 的 classpath 上，也**不在** Docker 构建上下文里（`Dockerfile` 只 `COPY src`）。
+- **现在的形态**：**只有一份**建库脚本 —— `backend/admin-api/src/main/resources/db/init/schema.sql`（表 + 索引 + RLS + 终态种子，内容逐字节未变）。它同时在 **admin-api 的 classpath** 内与 **Docker 构建上下文**内；历史迁移链**整链归档**到 `db/migration-archive/`（只读、逐字节冻结，仍是历史证据与判据对象）；`db/migration/` 此后**只放未来的增量迁移**；其余三代资产归档到 `docs/sql/archive/`。
+- **新建库怎么建**：`MigrationRunner` 新增**基线语义**（配置键 `migao.migration.init-script`，台账键 = 文件名 `schema.sql`）：台账已有该键 ⇒ 跳过；库**非空**（哨兵表 `tenants`）⇒ **只记账、不执行**；库**为空** ⇒ 执行后记账。⇒ 空库仍**一次建出终态**（迁移链归档后这是空库唯一的建库路径），而**存量库绝不会被重放建库脚本**（重放会往活库灌终态种子，比少建一张表严重得多）。
+- **失败语义一字未改**：连接类失败仍是有限退避重试 + 重试耗尽 fail-closed 拒绝启动；内容类失败仍是跳过该条 + 继续 + ERROR、不阻塞启动；已知存量非幂等迁移的降级名单保留（诊断不静默删）。
+- **防复发**：迁移指纹账本扩为「**冻结面 = 唯一建库脚本 + 归档链 + 新增迁移**」；「建库脚本 ⊇ 迁移链终态」的比对对象换成归档链（**判据强度不变**）；按路径读迁移的 30+ 个守卫改为「归档 ∪ 活目录」两个载体一起扫（`tests/unit_ci_workflows/_migration_paths.py` 单一事实源）；新增基线语义守卫，带注入式红证（空库 + 坏脚本 ⇒ 红；同一份坏脚本 + 存量库 ⇒ 照旧只记账、不执行）。
+- **边界（如实登记）**：`docs/design/**` 等历史设计文档与用例文本里引用的旧位置 `backend/admin-api/src/main/resources/db/migration/V*.sql` **有意未批量改写**（历史证据，批量重写会把证据链改花，已在该归档目录的 README 里写明）；本 PR 会触发 `.github/danger_scan.py` 的迁移人工确认通道，需仓库 owner 在 PR 上评论 `/danger-ack rewrite-migration all` 放行。

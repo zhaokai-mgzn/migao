@@ -16,7 +16,7 @@ V49 给 `processing_position_operations`（工序实例）与 `production_work_l
 ## 本文件怎么拿到「红证」（不连任何真实 DB）
 
 用**假 asyncpg 连接**驱动脚本真实代码路径（`asyncio.run(run(...))`），把它**按顺序执行的
-SQL** 记下来，再与**从 `docs/sql/schema.sql` 现场抽出的外键边**对照 —— 表名清单**不写死**，
+SQL** 记下来，再与**从 `backend/admin-api/src/main/resources/db/init/schema.sql` 现场抽出的外键边**对照 —— 表名清单**不写死**，
 schema 加了新外键就自动要求删除计划跟上（这是防"下次再加一层依赖又漏"的护栏）。
 
 RED 钩子：`DELETE_ORDERS_SCRIPT=/tmp/orig/delete_orders.py` 可把被测脚本换成改动前版本
@@ -35,12 +35,12 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_SQL = REPO_ROOT / "docs" / "sql" / "schema.sql"
+SCHEMA_SQL = REPO_ROOT / "backend/admin-api/src/main/resources/db/init/schema.sql"
 MIGRATIONS = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration"
 
 # issue #4242 判据 1 的显式序列（前两级经加工单定位），末尾 `order_logistics` 是
 # schema 真值补出的第三层漏项（见报告「外键链核对表」）。
-# ⚠️ **本序列必须随 `docs/sql/schema.sql` 的外键链一起长**（本文件的
+# ⚠️ **本序列必须随 `backend/admin-api/src/main/resources/db/init/schema.sql` 的外键链一起长**（本文件的
 # `test_plan_covers_every_table_referencing_orders` 就是从 schema 反推闭包来守它的）：
 # issue #4698 切片 ⓪ 的 V92 新增两层 —— `processing_set_part_tokens`（码行，引用套行）必须排在
 # `processing_order_sets` **之前**，两者都在 `processing_orders` 之前。
@@ -123,9 +123,9 @@ def _fk_edges_in(path: Path) -> set:
 
 
 def schema_fk_edges() -> set:
-    """外键边真值 = `docs/sql/schema.sql`（合并后的完整建库脚本）+ 迁移链里的显式加列外键。
+    """外键边真值 = `backend/admin-api/src/main/resources/db/init/schema.sql`（合并后的完整建库脚本）+ 迁移链里的显式加列外键。
 
-    ⚠️ 不含 `docs/sql/schema_full.sql` —— 该文件头部自述「已废弃（DEPRECATED）、两个方向都已失真」，
+    ⚠️ 不含 `docs/sql/archive/schema_full.sql` —— 该文件头部自述「已废弃（DEPRECATED）、两个方向都已失真」，
     是 2026-05-30 的快照（连 processing_orders 都没有）；拿它当真相 = 读落后副本。
     """
     edges = _fk_edges_in(SCHEMA_SQL)

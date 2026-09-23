@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProcessingSetPartTokenMapperTest {
 
     private static final String V92 =
-            "backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V92__add_processing_order_sets_and_scan_loop.sql";
     private static final String V99 =
-            "backend/admin-api/src/main/resources/db/migration/V99__add_short_code_to_set_part_tokens.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V99__add_short_code_to_set_part_tokens.sql";
 
     @Test
     @DisplayName("实体映射 processing_set_part_tokens 表")

@@ -36,9 +36,21 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V119 = MIGRATION_DIR / "V119__add_cutting_plan_meters_to_batch_consumptions.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 TENANT = 1
@@ -268,7 +280,7 @@ def test_missing_prerequisite_table_fails_closed(psql):
 
 def test_v119_is_the_unique_highest_version():
     assert V119.exists(), f"缺少迁移文件：{V119.name}"
-    versions = [int(m.group(1)) for p in MIGRATION_DIR.glob("V*.sql")
+    versions = [int(m.group(1)) for p in _migration_files("V*.sql")
                 if (m := re.match(r"^V(\d+)__", p.name))]
     print(f"[#5158 迁移] 最高版本 = V{max(versions)}，V119 出现 {versions.count(119)} 次")
     assert versions.count(119) == 1, "V119 版本号重复（有一条永远不会跑）"

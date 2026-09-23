@@ -55,8 +55,8 @@ from app.production.routing import (
 )
 
 REPO = Path(__file__).resolve().parents[4]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-SCHEMA = REPO / "docs/sql/schema.sql"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 
 #: 既有三部位（窗帘）—— 布料是**第 4 个**部位（顶层产品形态键，**不是**矩阵的索引维）。
@@ -219,7 +219,7 @@ def test_position_matrix_is_thirty_rows_by_logical_operation():
     """**30 行**逐行显式（不留隐式缺省）—— 缺一行 ⇒ `build_route_v2` KeyError ⇒ 建单 500。
 
     🔴 基线换代（issue #4937）：旧基线是 `30 × 4 = 120` 格（两级索引）；O4 把矩阵**物理塌缩**为
-    「一道逻辑工序一行」（`V104`），与 `docs/sql/schema.sql` 的终态一致。
+    「一道逻辑工序一行」（`V104`），与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态一致。
     """
     cells = _cells()
     assert len(OPERATION_POSITION_PRICES) == 30, (

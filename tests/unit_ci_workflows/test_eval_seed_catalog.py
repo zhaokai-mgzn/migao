@@ -7,7 +7,7 @@
 **评测栈种子仍是编造名单**（3 + 1 项）⇒ 评测里的目录与真实店铺目录**两份口径**。
 
 第一轮修法是「往两个评测种子各插 16 行」—— **真库实测证明这个修法本身是错的**：
-`docs/sql/schema.sql` / 迁移链**已经**由 V83 为每个活跃租户种了那 16 项 ⇒ 评测栈上
+`backend/admin-api/src/main/resources/db/init/schema.sql` / 迁移链**已经**由 V83 为每个活跃租户种了那 16 项 ⇒ 评测栈上
 `processing_items` = **32 行**，其中 `打孔`/`韩折`/`定型` **各重名 2 条**
 （`pi_eval_punch` ¥8 与 `pi-v83-1-01` ¥0）⇒
 ① `processing_item_query(打孔)` 返 2 条、金额断言不确定；

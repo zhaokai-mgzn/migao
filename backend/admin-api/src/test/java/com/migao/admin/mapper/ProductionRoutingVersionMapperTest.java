@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ProductionRoutingVersionMapper 契约测试（工艺路线版本账，issue #4308，V60）
  *
  * <p>验证：表映射 {@code production_routing_versions} + 实体字段与迁移 V60 /
- * {@code docs/sql/schema.sql} **双源收敛**。</p>
+ * {@code backend/admin-api/src/main/resources/db/init/schema.sql} **双源收敛**。</p>
  *
  * <p><b>为什么需要本文件</b>：路线是**计件工资**（Σ 报工数量 × 工序单价）与**完工判定**
  * （必完工序全绿）的唯一输入 —— 版本账的列一旦与实体漂移，{@code operations} 读到 null ⇒

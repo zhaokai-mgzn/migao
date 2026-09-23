@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 「**主线引用的工序必须在工序库里存在**」—— **运行时读面**口径（issue #4707，三处口径的第三处）。
  *
  * <h3>本类回答的问题</h3>
- * 前两处口径是**静态**的（`bootstrap` = `docs/sql/schema.sql`、`迁移链终态` = 聚合全部种子迁移），
+ * 前两处口径是**静态**的（`bootstrap` = `backend/admin-api/src/main/resources/db/init/schema.sql`、`迁移链终态` = 聚合全部种子迁移），
  * 见 {@code tests/unit_ci_workflows/test_v91_baseline_operations_backfill.py}。
  * 它们只能证明「库里**有**这一行」；**能不能被实例化路径取到**由本类证明 ——
  * 判据直接用生产代码 {@link ProductionOperationQueryService#variantNameOf}
@@ -173,7 +173,7 @@ class MainlineOperationReferenceTest {
      * <p>用户 2026-09-21 裁定（母单 #4936「我们移除了部位的设计，**不计成本的改**」）把那条过滤
      * **整块删除** ⇒ 纱帘单里**真的**会出现 `熨烫/定型/复烫/车被` ⇒ 「解析不出」**不再是**可接受形态
      * —— 它会进 `missing_operations` ⇒ **422 整单中止**。本包因此补了 4 道纱帘变体
-     * （`docs/sql/schema.sql` 的 `op-v56-06..09` + `sheerVariants(...)` 的映射）。</p>
+     * （`backend/admin-api/src/main/resources/db/init/schema.sql` 的 `op-v56-06..09` + `sheerVariants(...)` 的映射）。</p>
      *
      * <p><b>新判据（守卫强度只升不降）</b>：`熨烫 × 纱帘` 必须解析到 **`熨烫-纱`**；
      * 且把这件事**扩到全部三部位 × 全部主线工序**（旧判据只覆盖 1 格）。</p>

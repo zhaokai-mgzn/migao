@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>守四条会被下一位验收者重开的判据：</p>
  * <ol>
  *   <li><b>种子 = 迁移前常量表逐条</b>：V60 的 {@code production_route_signals} 种子 ↔
- *       {@code docs/sql/schema.sql} 的 bootstrap 终态 ↔ **迁移前的两张常量表**（{@code
+ *       {@code backend/admin-api/src/main/resources/db/init/schema.sql} 的 bootstrap 终态 ↔ **迁移前的两张常量表**（{@code
  *       CURTAIN_TYPE_KEYWORDS} / {@code CRAFT_KEYWORDS} @9673df68，本文件逐条转录）
  *       **三源逐行逐值**相等。改名/改值/加减信号即红。</li>
  *   <li><b>用途拆分不可压成一行</b>：{@code 帘头} 在两个用途里位次相反（帘种表**最前**、
@@ -56,17 +56,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionRouteSignalMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V60__create_routing_customization_tables.sql";
     private static final String MIGRATION_V63 =
-            "backend/admin-api/src/main/resources/db/migration/V63__structure_order_line_craft_spec.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V63__structure_order_line_craft_spec.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final String SERVICE =
             "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java";
 
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();

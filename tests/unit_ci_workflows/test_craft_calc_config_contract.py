@@ -8,7 +8,7 @@
 |---|---|---|
 | 1 | 算料引擎 `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`（**真值源**） | —— |
 | 2 | 迁移 `V80__create_craft_calc_configs.sql` 的列 | 少一列 ⇒ 该口径**永远存不下来**（商家改了没生效） |
-| 3 | `docs/sql/schema.sql` 的列（bootstrap 终态） | 少一列 ⇒ 新建库缺列 ⇒ 配置端点 500（#3270 形态） |
+| 3 | `backend/admin-api/src/main/resources/db/init/schema.sql` 的列（bootstrap 终态） | 少一列 ⇒ 新建库缺列 ⇒ 配置端点 500（#3270 形态） |
 | 4 | Java 实体 `CraftCalcConfig` 的字段 | 少一个 ⇒ 读回时丢值（静默用默认算） |
 | 5 | Java 写面 `CraftCalcConfigService.CONFIG_KEYS` | 少一个 ⇒ PUT 报「缺键」；多一个 ⇒ 收下永不生效的键 |
 
@@ -38,10 +38,22 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 ENGINE = REPO / "backend/ai-agent-service/app/tools/curtain_calc.py"
-MIGRATIONS_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATIONS_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 #: 建表迁移 —— ⚠️ 它**不是**配置列的唯一来源（增量列走新迁移，见 `_migration_config_columns`）
 MIGRATION = MIGRATIONS_DIR / "V80__create_craft_calc_configs.sql"
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 ENTITY = REPO / "backend/admin-api/src/main/java/com/migao/admin/entity/CraftCalcConfig.java"
 SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java"
 
@@ -53,7 +65,7 @@ _TRIPLE = re.compile(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'')
 _BLOCK = re.compile(r"/\*[\s\S]*?\*/")
 _LINE_COMMENT = re.compile(r"(?:^|\s)(?:\*/?\s*)?(?://|--|#)[^\n]*", re.M)
 #: SQL 里还有第三种「散文载体」：**单引号字符串字面量**（`COMMENT ON COLUMN … IS '…'`）。
-#: 实测 `docs/sql/schema.sql` 的 `hem_margin` 列注释里逐字写着「`side_margin` 已随 issue #5030
+#: 实测 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `hem_margin` 列注释里逐字写着「`side_margin` 已随 issue #5030
 #: 退场」—— 那是**注释正文**，不是列定义。不排除它 ⇒ 判据**误红**（误红即坏断言）。
 _SQL_STRING = re.compile(r"'(?:[^']|'')*'")
 
@@ -132,7 +144,7 @@ def _migration_config_columns() -> set:
     ⇒ 按**内容**聚合（同族先例：种子守卫按集合聚合，不再写死 V54）；**注释掉的语句不算**（`_sql_code`）。
     """
     cols = _create_table_columns(MIGRATION.read_text(encoding="utf-8"), "craft_calc_configs")
-    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+    for path in sorted(_migration_files("V*.sql")):
         code = _sql_code(path.read_text(encoding="utf-8"))
         cols |= {n.lower() for n in _ALTER_COLUMN_RE.findall(code)}
         cols -= {n.lower() for n in _DROP_COLUMN_RE.findall(code)}
@@ -188,7 +200,7 @@ def test_migration_columns_match_engine_keys():
 
 
 def test_schema_sql_columns_match_engine_keys():
-    """判据 3：`docs/sql/schema.sql`（bootstrap 终态）的列 == 引擎配置键。
+    """判据 3：`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 终态）的列 == 引擎配置键。
 
     红证：只改迁移不同步 schema.sql ⇒ 新建库缺列 ⇒ 配置端点 500（#3270 形态，不是账面问题）。
     """
@@ -343,7 +355,7 @@ def test_side_margin_column_is_dropped_by_a_migration():
     不写死「哪一份迁移干了这件事」—— 写死文件名会逼下一个人改判据）。
     """
     dropped = set()
-    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+    for path in sorted(_migration_files("V*.sql")):
         dropped |= {n.lower() for n in _DROP_COLUMN_RE.findall(_sql_code(path.read_text(encoding="utf-8")))}
     assert "side_margin" in dropped, (
         "迁移链里没有任何 `ALTER TABLE craft_calc_configs DROP COLUMN side_margin` —— "
@@ -359,7 +371,7 @@ def test_alter_migrations_are_idempotent():
 
     红证：写成裸 `ADD COLUMN` ⇒ 重复执行报错（`MigrationRunner` 硬要求所有迁移可重复执行）。
     """
-    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+    for path in sorted(_migration_files("V*.sql")):
         code = "\n".join(
             line for line in path.read_text(encoding="utf-8").split("\n")
             if not line.strip().startswith("--")

@@ -11,7 +11,7 @@
 |---|---|
 | `9/9 逐字重建` = 旧 9 条展开路线（`ROUTINGS`）归一序列（与**旧结构**逐字相等） | **部位无关的冻结序列**：同一工艺在**任何**帘种上得到**同一套逻辑工序名** |
 | `ROUTINGS` 是 9 条 `(部位, 工艺)` 展开快照、`build_routing` 按 `(部位, 工艺)` 查表 | `ROUTINGS` 只按**工艺**建键（**5 条**）；`build_routing` 只按工艺查表 |
-| 部位价目 `30 × 4 = 120 行`、`OPERATION_POSITION_PRICES[工序][部位]`（两级） | 部位价目 **30 行**、`OPERATION_POSITION_PRICES[工序]`（**单键**，与 `V104` / `docs/sql/schema.sql` 终态逐行同值） |
+| 部位价目 `30 × 4 = 120 行`、`OPERATION_POSITION_PRICES[工序][部位]`（两级） | 部位价目 **30 行**、`OPERATION_POSITION_PRICES[工序]`（**单键**，与 `V104` / `backend/admin-api/src/main/resources/db/init/schema.sql` 终态逐行同值） |
 | 规则表 26 条**带 `position`**（部位限定生效） | 规则表 26 条**无 `position`**（O2 退场；`V103` 清空存量值） |
 
 ## 🔴 本文件在 issue #4962 **部分回退**了上面第 4 行（照实登记）
@@ -22,7 +22,7 @@
 
 | #4937 的形态（已改判） | #4962 的形态（本文件现在钉的） |
 |---|---|
-| 规则表 26 条**一律无 `position`** | 26 条里**恰好 1 条**带 `position`（`韩褶 → insert 上车布`，`position="布帘"`）—— 与 `V71` 字面量 / `V108__restore_route_rule_positions.sql` / `docs/sql/schema.sql` / Java `ProductionSeedTemplateService#CRAFT_RULES` **同值** |
+| 规则表 26 条**一律无 `position`** | 26 条里**恰好 1 条**带 `position`（`韩褶 → insert 上车布`，`position="布帘"`）—— 与 `V71` 字面量 / `V108__restore_route_rule_positions.sql` / `backend/admin-api/src/main/resources/db/init/schema.sql` / Java `ProductionSeedTemplateService#CRAFT_RULES` **同值** |
 | 「同一工艺在**任何**帘种上得到**同一套**工序」 | **带 `position` 的规则只在该部位生效** ⇒ `韩褶` 在**布帘**上多出 `上车布`、在**纱帘/帘头**上没有；其余规则（`position` 为空 = 不限）**逐字不变** |
 
 **判据值全部硬编码在文件内**（不从被测实现推导 —— 否则「实现自洽」就能骗过测试）。
@@ -115,7 +115,7 @@ EXPECTED_COUNTS = {
 #: 布料单（`saleForm=布料`）走**独立主线**（「产品形态」分支，与部位维无关）。
 #: 🔴 **issue #4952 口径改判**：字面量已从 `配料 → 打包`（V88 之前的旧口径）改为
 #: `裁剪 → 打包` —— 与 `V88__retire_material_prep_and_fabric_position.sql` ③ /
-#: `V89__backfill_fabric_seed_for_existing_tenants.sql` ③ / `docs/sql/schema.sql` /
+#: `V89__backfill_fabric_seed_for_existing_tenants.sql` ③ / `backend/admin-api/src/main/resources/db/init/schema.sql` /
 #: Java 开租播种 `ProductionSeedTemplateService.FABRIC_MAINLINE_STEPS` **四处同值**。
 #: ⇒ 三源收敛守卫不再需要「口径折算」（`_as_truth_caliber` 已随本单删除，改为逐字直比）。
 FABRIC_EXPECTED = ["裁剪", "打包"]
@@ -156,7 +156,7 @@ SHEER_VARIANT_NAMES = {
 EXPECTED_LOGICAL_NAMES = {**FROZEN_LOGICAL_NAMES, **SHEER_VARIANT_NAMES}
 
 # ── ④ 逻辑工序价目（**30 行**，单键；#4937）──
-#: 逐值冻结（来源 = `V104` 的四档选行结果；与 `docs/sql/schema.sql` 的 30 行存活格逐行同值）。
+#: 逐值冻结（来源 = `V104` 的四档选行结果；与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 30 行存活格逐行同值）。
 LOGICAL_UNIT_PRICES = {
     "精裁": 0.4, "裁剪": 0.4, "三边": 0.4, "韩褶": 0.4, "上车布": 0.5, "打孔": 0.15,
     "拼1次": 0.8, "拼2次": 1.2, "拼3次": 1.6, "花边": 0.6, "铅坠": 0.3, "接高": 1.0,
@@ -369,7 +369,7 @@ class TestPositionPrices:
 
         ⚠️ 这里是**基线换代**：旧基线是 `30 × 4 = 120` 的两级索引
         （`OPERATION_POSITION_PRICES[工序][部位]`）。部位退场 ⇒ 只按逻辑工序建键，
-        与 `V104__deposition_matrix_collapse.sql` / `docs/sql/schema.sql` 的终态一致。
+        与 `V104__deposition_matrix_collapse.sql` / `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态一致。
         """
         assert set(OPERATION_POSITION_PRICES) == set(LOGICAL_UNIT_PRICES)
         assert len(OPERATION_POSITION_PRICES) == 30, (
@@ -454,7 +454,7 @@ class TestRouteRules:
     def test_position_key_uses_the_same_value_as_the_migration_seed(self):
         """部位值与迁移/字面量种子**同值**（`V71` 的 `rr-v70-02` = `'布帘'`）。
 
-        三源（本表 / `V108` 写回 / `docs/sql/schema.sql`）由
+        三源（本表 / `V108` 写回 / `backend/admin-api/src/main/resources/db/init/schema.sql`）由
         `tests/unit_ci_workflows/test_production_catalog_seed.py` 另钉；本条钉**真值源自己**。
         """
         limited = [r for r in ROUTE_RULES if "position" in r]

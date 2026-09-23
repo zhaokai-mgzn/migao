@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 守三条会被下一位验收者重开的判据：
  *   ① 迁移走 {@code ADD COLUMN IF NOT EXISTS}（MigrationRunner 要求可重复执行），且列**可空**
  *      —— 存量行留 NULL 表示「本列引入之前的旧实例」，与 {@code fallback} 可区分（不回填、不猜）；
- *   ② bootstrap（{@code docs/sql/schema.sql}，CI/本地 docker 栈由 docker-entrypoint-initdb.d 执行、
+ *   ② bootstrap（{@code backend/admin-api/src/main/resources/db/init/schema.sql}，CI/本地 docker 栈由 docker-entrypoint-initdb.d 执行、
  *      **不跑迁移链**）的终态里必须有同一列，否则新建库上该列不存在 → admin-api 查询 500
  *      （issue #3270 的实测根因形态）；
  *   ③ 三源收敛：迁移列 ↔ Java 实体字段 ↔ 落库语句（{@code ProductionService.instantiate} 必须真写它，
@@ -31,8 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionPositionOperationQtySourceMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V57__add_qty_source_to_position_operations.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V57__add_qty_source_to_position_operations.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final String ENTITY =
             "backend/admin-api/src/main/java/com/migao/admin/entity/ProcessingPositionOperation.java";
     private static final String SERVICE =
@@ -42,7 +42,7 @@ class ProductionPositionOperationQtySourceMigrationTest {
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();
@@ -73,7 +73,7 @@ class ProductionPositionOperationQtySourceMigrationTest {
     }
 
     @Test
-    @DisplayName("bootstrap 终态：docs/sql/schema.sql 的 processing_position_operations 含 qty_source")
+    @DisplayName("bootstrap 终态：backend/admin-api/src/main/resources/db/init/schema.sql 的 processing_position_operations 含 qty_source")
     void bootstrapSchemaCarriesTheColumn() throws Exception {
         String sql = read(SCHEMA);
         int at = sql.toLowerCase().indexOf("create table if not exists " + TABLE);

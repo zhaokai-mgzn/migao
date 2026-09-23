@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code node.path("scope").asText("position")} 兜底 ⇒ <b>外帘打卷 / 外帘装袋 / 外帘发货</b>
  *       在<b>开租租户</b>上落 {@code position}（部位级）；</li>
  *   <li><b>迁移链终态</b>：V67 回填 {@code scope='set'}（三道外帘）∪ V79（{@code 打包}）；</li>
- *   <li><b>bootstrap</b> {@code docs/sql/schema.sql}：种子 INSERT 不带 {@code scope} 列，靠回填
+ *   <li><b>bootstrap</b> {@code backend/admin-api/src/main/resources/db/init/schema.sql}：种子 INSERT 不带 {@code scope} 列，靠回填
  *       {@code UPDATE ... WHERE name IN ('外帘打卷','外帘装袋','外帘发货','打包')} 落 {@code set}。</li>
  * </ol>
  *
@@ -59,8 +59,8 @@ class ProductionOperationScopeTemplateTest {
 
     private static final String TEMPLATE =
             "backend/admin-api/src/main/resources/production-templates/curtain/seed.json";
-    private static final String SCHEMA = "docs/sql/schema.sql";
-    private static final String MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
+    private static final String MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration-archive";
 
     /** 合法取值（闭词表，与写面 {@code ProductionOperationCommandService.scope()} 同口径）。 */
     private static final Set<String> SCOPE_VOCABULARY = Set.of("position", "set");
@@ -204,7 +204,7 @@ class ProductionOperationScopeTemplateTest {
         return scopes;
     }
 
-    /** bootstrap（{@code docs/sql/schema.sql}）的终态「工序名 → scope」（同款推演）。 */
+    /** bootstrap（{@code backend/admin-api/src/main/resources/db/init/schema.sql}）的终态「工序名 → scope」（同款推演）。 */
     static Map<String, String> bootstrapTerminalScopes(String schema) {
         String sql = dmlOf(schema);   // 同款剥注释（该文件里也有成段的注释示例）
         Map<String, String> scopes = new LinkedHashMap<>();

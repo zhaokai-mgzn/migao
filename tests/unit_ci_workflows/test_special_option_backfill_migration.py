@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 # ⚠️ 修正版是 **V75**（V74 首版打在不存在的列上；Danger Scan 禁止改已发布迁移 ⇒ 只能新增）
 V74_NAME = "V75__backfill_legacy_special_option_names_fix.sql"
 
@@ -141,5 +141,5 @@ def test_does_not_touch_schema_sql():
     """判据 5：本迁移是**数据**回填 ⇒ **不得**改 schema（bootstrap 路径无需镜像）。"""
     sql = _strip_comments(_sql())
     assert not re.search(r"\b(ALTER\s+TABLE|CREATE\s+TABLE|DROP\s+TABLE|CREATE\s+INDEX)\b", sql, re.I), (
-        "回填迁移里出现了 DDL —— 本单只改**数据**，不动 schema（`docs/sql/schema.sql` 无需镜像）"
+        "回填迁移里出现了 DDL —— 本单只改**数据**，不动 schema（`backend/admin-api/src/main/resources/db/init/schema.sql` 无需镜像）"
     )

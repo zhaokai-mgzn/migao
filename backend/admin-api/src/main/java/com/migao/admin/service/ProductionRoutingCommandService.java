@@ -69,7 +69,7 @@ public class ProductionRoutingCommandService {
      * {@link ProductionOperationQueryService#POSITION_LIMIT_VOCABULARY}），落库时**镜像**进
      * {@code position} 列 —— 实例化侧只看列（唯一判据，见
      * {@code ProcessingOrderService#rulePositionMatches}）。DB 的 CHECK 约束同批由
-     * {@code backend/admin-api/src/main/resources/db/migration/V109__allow_position_trigger_kind.sql} 放开。</p>
+     * {@code backend/admin-api/src/main/resources/db/migration-archive/V109__allow_position_trigger_kind.sql} 放开。</p>
      */
     private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item", "position");
 

@@ -10,7 +10,7 @@
 | 形态（静态） | 显式 `BEGIN;/COMMIT;`；只写 `is_must_finish` / `updated_at` 两列；幂等谓词逐字 = `WHERE deleted = 0 AND is_must_finish IS DISTINCT FROM FALSE`；**不 DROP 列** + `COMMENT ON COLUMN` 改成历史载体；不碰三张快照表；文件里不出现种子解析关键字（`INSERT INTO production_operations` / `VALUES` / CTE） |
 | 真库（临时 PG） | 两遍真跑：**第二遍谓词匹配 0 行**、净效果相同；存活行（含非 1 号租户）全部 `FALSE`；**已软删的 TRUE 行不复活也不动**；列仍在（`information_schema.columns`）；三张快照表指纹逐字节不变 |
 | 判别力（注入红证） | ① 写语句漏改一行 ⇒ 终态对账 `RAISE EXCEPTION` + 整份回滚；② 注入 `DROP COLUMN` ⇒ 红线护栏当场抛；③ 谓词丢掉 `deleted = 0` ⇒ 软删行被改（证明「软删行不动」那条断言**有判别力**，不是恒真） |
-| bootstrap 镜像 | `docs/sql/schema.sql`（bootstrap 路径，**不跑迁移链**）的工序库种子 `is_must_finish` 已全 `FALSE`；迁移链侧「冻结 V54 种子里的 `TRUE`」+ V107 ⇒ 全 `FALSE`；两侧终态取值集合相等 |
+| bootstrap 镜像 | `backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径，**不跑迁移链**）的工序库种子 `is_must_finish` 已全 `FALSE`；迁移链侧「冻结 V54 种子里的 `TRUE`」+ V107 ⇒ 全 `FALSE`；两侧终态取值集合相等 |
 
 ## 为什么必须真跑两遍
 
@@ -41,10 +41,22 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V107 = MIGRATION_DIR / "V107__retire_must_finish_flag.sql"
 V54 = MIGRATION_DIR / "V54__seed_production_operations.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 TABLE = "production_operations"
@@ -59,7 +71,7 @@ SNAPSHOT_TABLES = {
     "processing_orders": "id, tenant_id, items_snapshot::text, deleted",
 }
 
-#: 种子行形态（V54 与 `docs/sql/schema.sql` 的工序库种子同形；后者多一列 `deleted`）
+#: 种子行形态（V54 与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的工序库种子同形；后者多一列 `deleted`）
 _ROW_RE = re.compile(
     r"\(\s*'(?P<id>op-[^']+)'\s*,\s*(?P<tenant>\d+)\s*,\s*'(?P<name>[^']*)'\s*,\s*"
     r"'(?P<group>[^']*)'\s*,\s*(?P<position>NULL|'[^']*')\s*,\s*'(?P<unit>[^']*)'\s*,\s*"
@@ -91,7 +103,7 @@ def _seed_rows(sql: str) -> list:
 def test_v107_exists_and_is_the_highest_version():
     assert V107.exists(), f"缺少迁移文件：{V107.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
-                for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
+                for p in _migration_files("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     assert versions.count(107) == 1, "V107 版本号重复"
     assert max(versions) >= 107, f"V107 不是最高版本号（当前最大 V{max(versions)}）"
 
@@ -135,7 +147,7 @@ def test_v107_never_drops_the_column_and_relabels_it_as_a_historical_carrier():
     #    还原用的**旧注释文案**，拿全文找 `COMMENT ON COLUMN` 会先命中那一段（假绿/假红都会）。
     stripped = _strip_comments(body).upper()
     assert "DROP COLUMN" not in stripped, (
-        "V107 里出现 `DROP COLUMN` —— 列是历史载体，且读面冻结键集与 `docs/sql/schema.sql` 的 "
+        "V107 里出现 `DROP COLUMN` —— 列是历史载体，且读面冻结键集与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 "
         "bootstrap 终态都仍带它（删列 = bootstrap 与迁移链两条路径的 schema 分叉）")
     executable = _strip_comments(body)
     assert re.search(r"COMMENT ON COLUMN production_operations\.is_must_finish IS", executable), (
@@ -183,7 +195,7 @@ def test_v107_does_not_confuse_the_seed_parsers():
 # ══════════════════════════ ② 真库判据（临时 PG 集群） ══════════════════════════
 
 
-#: 与 V49 / `docs/sql/schema.sql` 同形的**最小** DDL（本单触碰的表 + 三张快照表）。
+#: 与 V49 / `backend/admin-api/src/main/resources/db/init/schema.sql` 同形的**最小** DDL（本单触碰的表 + 三张快照表）。
 #: ⚠️ `production_operations.is_must_finish` 是 `NOT NULL DEFAULT FALSE`（V49 的原始定义）——
 #: 本文件**照抄**该约束（不为了造 `NULL` 行而放宽）：V107 谓词里的 `IS DISTINCT FROM` 对
 #: `NULL` 的覆盖是**防御性**的（真库下不可达），它防的是「将来某迁移把该列放宽成可空」。
@@ -446,10 +458,10 @@ def test_predicate_without_the_deleted_gate_would_touch_soft_deleted_rows(psql):
 # ══════════════════════════ ③ bootstrap 镜像（双路径终态一致） ══════════════════════════
 
 def test_bootstrap_matches_migration_chain_terminal_state(psql):
-    """`docs/sql/schema.sql`（bootstrap，不跑迁移链）的终态 == 迁移链（V54 冻结种子 + V107）终态。
+    """`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，不跑迁移链）的终态 == 迁移链（V54 冻结种子 + V107）终态。
 
     核对方式（**机械**，不靠人读）：
-      ① **bootstrap 侧**：解析 `docs/sql/schema.sql` 的工序库种子字面量 ⇒ 存活行的
+      ① **bootstrap 侧**：解析 `backend/admin-api/src/main/resources/db/init/schema.sql` 的工序库种子字面量 ⇒ 存活行的
          `is_must_finish` 取值集合必须 == `{"FALSE"}`（且行数自证解析没失效）；
       ② **迁移链侧**：真库里灌入**冻结 V54 种子**里的 `TRUE` 行（`外帘装袋`）+ 其余行，跑 V107
          ⇒ 终态取值集合必须 == `{"FALSE"}`；

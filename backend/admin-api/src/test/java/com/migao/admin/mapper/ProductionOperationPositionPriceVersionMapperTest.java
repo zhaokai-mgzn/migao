@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>守三条会被下一位验收者重开的判据：</p>
  * <ol>
- *   <li><b>三源收敛</b>：实体字段 ↔ V86 迁移 ↔ {@code docs/sql/schema.sql}（bootstrap 路径不跑迁移链，
+ *   <li><b>三源收敛</b>：实体字段 ↔ V86 迁移 ↔ {@code backend/admin-api/src/main/resources/db/init/schema.sql}（bootstrap 路径不跑迁移链，
  *       只写迁移不写 schema.sql ⇒ 全新库缺表 ⇒ 矩阵改价端点 500）；</li>
  *   <li><b>{@code unit_price} 必须**可空**</b>：这是本表与 V55 的**唯一**差别 —— 不可空 ⇒
  *       「改回未定价」「明确不做 ⇒ 价清空」两条语义**根本写不进去**（而它们正是三态里的两态）；</li>
@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionOperationPositionPriceVersionMapperTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V86__create_operation_position_price_versions.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V86__create_operation_position_price_versions.sql";
 
     private static final String TABLE = "production_operation_position_price_versions";
 

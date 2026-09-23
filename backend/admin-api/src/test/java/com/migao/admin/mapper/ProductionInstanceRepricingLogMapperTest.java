@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>守三条会被下一位验收者重开的判据：</p>
  * <ol>
- *   <li><b>三源收敛</b>：实体字段 ↔ V94 迁移 ↔ {@code docs/sql/schema.sql}
+ *   <li><b>三源收敛</b>：实体字段 ↔ V94 迁移 ↔ {@code backend/admin-api/src/main/resources/db/init/schema.sql}
  *       （bootstrap 路径**不跑迁移链** ⇒ 只写迁移不写 schema.sql 会让全新库缺表 ⇒ 补价端点 500）；</li>
  *   <li><b>幂等</b>：{@code CREATE TABLE/INDEX IF NOT EXISTS}（bootstrap-first 会让迁移在建好终态的库上再跑一遍）；
  *       <b>且不回填任何存量行</b>（补价是**商家的动作**，迁移静默改价正是本 issue 要治的「无人知道」形态）；</li>
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionInstanceRepricingLogMapperTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V94__create_instance_repricing_logs.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V94__create_instance_repricing_logs.sql";
 
     @Test
     @DisplayName("实体映射 production_instance_repricing_logs 表")

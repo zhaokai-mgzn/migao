@@ -52,7 +52,7 @@ CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
 #: 副本（订单侧）：admin-api 取价
 FEE_JAVA = REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java"
 #: 已发布迁移（**数据面**：库里那两笔元/套价 —— 只许读，不许本单改）
-V82_SQL = REPO_ROOT / "backend/admin-api/src/main/resources/db/migration/V82__seed_option_customer_unit_price.sql"
+V82_SQL = REPO_ROOT / "backend/admin-api/src/main/resources/db/migration-archive/V82__seed_option_customer_unit_price.sql"
 #: 两侧的算例钉点（G5：两侧算出的加价必须相等 ⇒ 两处的期望值字面量必须相同）
 CALC_TEST_PY = REPO_ROOT / "backend/ai-agent-service/tests/test_curtain_calc.py"
 FEE_TEST_JAVA = REPO_ROOT / "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingFeeCalculatorTest.java"

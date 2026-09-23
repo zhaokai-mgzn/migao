@@ -6,7 +6,7 @@
 
 ## 被测对象
 
-`backend/admin-api/src/main/resources/db/migration/V91__backfill_baseline_operations_for_empty_catalogs.sql`
+`backend/admin-api/src/main/resources/db/migration-archive/V91__backfill_baseline_operations_for_empty_catalogs.sql`
 = **1 条语句**：为每个**从未种过基线工序**的活跃租户补 **36 行**基线工序
 （V54 的 30 + V56 的 5 + `打包`）。
 
@@ -37,7 +37,7 @@
 
 | # | 口径 | 载体 | 守卫 |
 |---|---|---|---|
-| ① | bootstrap 终态 | `docs/sql/schema.sql` | `test_bootstrap_mainlines_all_have_library_rows` |
+| ① | bootstrap 终态 | `backend/admin-api/src/main/resources/db/init/schema.sql` | `test_bootstrap_mainlines_all_have_library_rows` |
 | ② | 迁移链终态 | `db/migration/V*.sql` 聚合（**按内容发现**） | `test_migration_chain_terminal_mainlines_all_have_library_rows` |
 | ③ | 运行时读面 | `ProductionOperationQueryService.variantNameOf` | `MainlineOperationReferenceTest`（Java，含部位维变体解析） |
 
@@ -55,9 +55,21 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
 V91 = MIGRATION_DIR / "V91__backfill_baseline_operations_for_empty_catalogs.sql"
-SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 SEED_JSON = REPO / (
     "backend/admin-api/src/main/resources/production-templates/curtain/seed.json")
 
@@ -289,7 +301,7 @@ def test_v91_exists_and_published_migrations_are_untouched():
 def test_v91_is_present_and_no_later_version_exists():
     """⚠️ **不得**写成 `max(versions) == 91`：下一个迁移一出现就自毁（#4685 的包踩过的假红陷阱）。"""
     versions = sorted(int(re.match(r"^V(\d+)__", p.name).group(1))
-                      for p in MIGRATION_DIR.glob("V*.sql")
+                      for p in _migration_files("V*.sql")
                       if re.match(r"^V(\d+)__", p.name))
     assert 91 in versions, f"V91 不在迁移目录里（当前最大 = V{max(versions)}）"
     assert versions.count(91) == 1, "V91 版本号重复"
@@ -418,9 +430,9 @@ def test_must_finish_history_versus_terminal(schema_sql):
     该列已退出 `v91_row_values` / `bootstrap_row_values` 的逐值比对（两侧**合法地**不同）：
       · **V91（已发布迁移，指纹逐字节冻结）**：历史值里 `TRUE` 的**只有 `外帘装袋`**
         （沿 V54 的历史口径；改它 = 改历史，已发布迁移不可改）；
-      · **bootstrap（`docs/sql/schema.sql`，终态）**：存活行一律 `FALSE`
+      · **bootstrap（`backend/admin-api/src/main/resources/db/init/schema.sql`，终态）**：存活行一律 `FALSE`
         （它不跑迁移链 ⇒ 必须自己就是终态，否则新建库落在旧口径）。
-    迁移链上存量行由 `backend/admin-api/src/main/resources/db/migration/V107__retire_must_finish_flag.sql`
+    迁移链上存量行由 `backend/admin-api/src/main/resources/db/migration-archive/V107__retire_must_finish_flag.sql`
     收敛为 `FALSE`（真库判据见 `tests/unit_ci_workflows/test_must_finish_retire_migration.py`）。
     """
     v91_true = _true_names(v91_must_finish(migration_text()))
@@ -626,7 +638,7 @@ def test_migration_chain_terminal_mainlines_all_have_library_rows():
     library: set[str] = set()
     mainlines: list[list[str]] = []
     rewritten: set[str] = set()
-    for path in sorted(MIGRATION_DIR.glob("V*.sql"),
+    for path in sorted(_migration_files("V*.sql"),
                        key=lambda p: int(re.match(r"^V(\d+)__", p.name).group(1))):
         text = path.read_text(encoding="utf-8")
         library |= set(operation_names(text))
@@ -653,7 +665,7 @@ def test_library_covers_every_logical_name_used_by_any_mainline():
     不覆盖 ⇒ `dangling_in` 会把它当成悬空（假红）或漏判（假绿）—— 两种都不许。
     """
     seen: set[str] = set()
-    for path in list(MIGRATION_DIR.glob("V*.sql")) + [SCHEMA_SQL]:
+    for path in list(_migration_files("V*.sql")) + [SCHEMA_SQL]:
         for mainline in mainline_literals(path.read_text(encoding="utf-8")):
             seen |= set(mainline)
     assert seen, "聚合不到任何主线工序名（守卫会空跑）"
@@ -664,7 +676,7 @@ def test_library_covers_every_logical_name_used_by_any_mainline():
 def test_v91_is_load_bearing_in_the_migration_chain_aggregate():
     """承重自证：`V91` 的 36 行**必须**是聚合的一部分（否则它没在承重）。"""
     library: set[str] = set()
-    for path in MIGRATION_DIR.glob("V*.sql"):
+    for path in _migration_files("V*.sql"):
         library |= set(operation_names(path.read_text(encoding="utf-8")))
     assert set(baseline_names(migration_text())) <= library
 

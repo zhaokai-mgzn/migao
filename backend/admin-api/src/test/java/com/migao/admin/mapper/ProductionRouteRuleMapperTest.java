@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * ProductionRouteRuleMapper 契约测试（issue #4423 P2 / #4432，V72）。
  *
- * 验证：表映射 `production_route_rules` + 实体字段与 `docs/sql/schema.sql` 终态收敛。
+ * 验证：表映射 `production_route_rules` + 实体字段与 `backend/admin-api/src/main/resources/db/init/schema.sql` 终态收敛。
  * 为什么必须有（门禁口径）：新增 Mapper 缺契约测试 ⇒ QA Growth Gate **阻塞合并**；
  * 且实体↔schema 漂移会让建库后相关接口 **500**（`test_schema_covers_entity_columns` 的互补项）。
  */
@@ -40,7 +40,7 @@ class ProductionRouteRuleMapperTest {
                 .toList();
         assertThat(fields).contains("tenantId", "triggerKind", "triggerValue", "position", "action", "operation", "afterOperation", "priority", "status", "deleted");
         ProductionMigrationSql.assertTableColumnsIn(
-                "backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql",
+                "backend/admin-api/src/main/resources/db/migration-archive/V71__normalize_routing_model_structure.sql",
                 "production_route_rules",
                 "id", "tenant_id", "trigger_kind", "trigger_value", "position", "action", "operation", "after_operation", "priority", "status", "created_at", "updated_at", "deleted");
     }
@@ -50,7 +50,7 @@ class ProductionRouteRuleMapperTest {
     void factorColumnAddedByAlter() {
         // 计件系数档（`一分为二 ×1.7`）在 V72 里以 ALTER 形式补到规则表 ——
         // 实体字段断言已覆盖 `factor`；此处钉住「它确实被加进 schema 终态」，防两源漂移。
-        String schema = ProductionMigrationSql.read("docs/sql/schema.sql");
+        String schema = ProductionMigrationSql.read("backend/admin-api/src/main/resources/db/init/schema.sql");
         assertThat(schema).contains("ALTER TABLE production_route_rules ADD COLUMN IF NOT EXISTS factor");
     }
 

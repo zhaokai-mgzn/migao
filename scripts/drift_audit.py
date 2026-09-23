@@ -90,6 +90,9 @@ REF_SURFACE = (
     # 而它们此前整类不在判定面内 ⇒ 那里的裸行号引用永久免检。**加面不是加豁免**：
     # 已发布迁移被 `migration_fingerprints.json` 指纹守卫冻结（不可改）⇒ 其中查出的存量
     # 逐条进 burn-down 基线（见基线 JSON 的 `reason`），**新增**迁移照常 fail-closed。
+    "backend/admin-api/src/main/resources/db/migration-archive/",
+    # 活目录（issue #5243）：历史链归档后，**新**迁移写在这里 —— 判定面必须跟着扩，
+    # 否则「新迁移里的裸行号引用」整类永久免检（加面不是加豁免）。
     "backend/admin-api/src/main/resources/db/migration/",
 )
 REF_SURFACE_EXEMPT = (

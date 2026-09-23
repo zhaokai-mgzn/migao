@@ -377,7 +377,7 @@ class TestInjectionRedProofs:
         assert looks_like_test_file("tests/unit_ci_workflows/test_migration_idempotency.py")
         # 负控：非测试文件不得被判成测试（否则守卫过严/过松都失效）
         for ref in ("backend/admin-api/pom.xml",
-                    "backend/admin-api/src/main/resources/db/migration/V44__create_daily_briefings.sql",
+                    "backend/admin-api/src/main/resources/db/migration-archive/V44__create_daily_briefings.sql",
                     "docs/testing/mibao-verification-cases.md",
                     "tests/unit_ci_workflows/conftest.py"):
             assert not looks_like_test_file(ref), f"{ref} 被误判成测试文件 ⇒ 形状判定不判别"

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 单价版本表契约测试（issue #4204，V55）
  *
  * 守三条会被下一位验收者重开的判据：
- *   ① 三源收敛：实体字段 ↔ V55 迁移 ↔ docs/sql/schema.sql（bootstrap 路径不跑迁移链，
+ *   ① 三源收敛：实体字段 ↔ V55 迁移 ↔ backend/admin-api/src/main/resources/db/init/schema.sql（bootstrap 路径不跑迁移链，
  *      只写迁移不写 schema.sql ⇒ 全新库缺表 ⇒ PUT 端点 500）；
  *   ② 幂等：CREATE TABLE/INDEX IF NOT EXISTS + 回填按 NOT EXISTS 守卫
  *      （bootstrap-first 会让迁移在建好终态的库上再跑一遍）；
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionOperationPriceVersionMapperTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V55__create_production_operation_price_versions.sql";
 
     @Test
     @DisplayName("实体映射 production_operation_price_versions 表")

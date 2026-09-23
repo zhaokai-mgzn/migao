@@ -106,7 +106,7 @@ class TestBulkDeleteAndDeploy:
 class TestMigrationRules:
     """迁移不可变 / 命名校验 / DDL 伴随迁移（OB-001 关联）"""
 
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
 
     def test_modified_published_migration_blocks(self):
         blockers, _ = analyze(
@@ -178,7 +178,7 @@ class TestMigrationRules:
     def test_schema_change_without_migration_blocks(self):
         blockers, _ = analyze(
             workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
-            migration_changes=[], schema_changes=[("M", "docs/sql/schema.sql")],
+            migration_changes=[], schema_changes=[("M", "backend/admin-api/src/main/resources/db/init/schema.sql")],
         )
         assert any("未新增迁移" in b for b in blockers)
 
@@ -186,7 +186,7 @@ class TestMigrationRules:
         blockers, _ = analyze(
             workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
             migration_changes=[("A", f"{self.MIG}/V19__add_x.sql")],
-            schema_changes=[("M", "docs/sql/schema_full.sql")],
+            schema_changes=[("M", "docs/sql/archive/schema_full.sql")],
         )
         assert not blockers
 
@@ -245,14 +245,14 @@ class TestTrustedActor:
 class TestSchemaCommentOnlyExemption:
     """schema 文件**纯注释**改动免迁移；但 diff 拿不到时必须 fail-closed（issue #3270）。
 
-    背景（实证假 blocker）：给 `docs/sql/schema_full.sql` 加废弃标注（纯注释）也被判
+    背景（实证假 blocker）：给 `docs/sql/archive/schema_full.sql` 加废弃标注（纯注释）也被判
     「改了表结构未加迁移」—— 规则本意是「**结构**变更需迁移」，注释不改变结构。
     但放宽这条判定极易开出安全口子：只要判定「没看到 DDL」就放行，那么
     BASE 配错 / 非 git 环境 / diff 读取失败时，**任何**结构改动都会被静默放行。
     故豁免成立的前提是「diff 确实读到了新增行」。
     """
 
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
 
     @staticmethod
     def _fake_git_diff(monkeypatch, diff_text: str, returncode: int = 0):
@@ -274,7 +274,7 @@ class TestSchemaCommentOnlyExemption:
 
         monkeypatch.setattr(danger_scan.subprocess, "run", fake_run)
 
-    def _analyze(self, schema_file="docs/sql/schema_full.sql"):
+    def _analyze(self, schema_file="docs/sql/archive/schema_full.sql"):
         from danger_scan import analyze
         return analyze(
             workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
@@ -283,9 +283,9 @@ class TestSchemaCommentOnlyExemption:
 
     def test_comment_only_change_is_exempt(self, monkeypatch):
         diff = (
-            "diff --git a/docs/sql/schema_full.sql b/docs/sql/schema_full.sql\n"
-            "--- a/docs/sql/schema_full.sql\n"
-            "+++ b/docs/sql/schema_full.sql\n"
+            "diff --git a/docs/sql/archive/schema_full.sql b/docs/sql/archive/schema_full.sql\n"
+            "--- a/docs/sql/archive/schema_full.sql\n"
+            "+++ b/docs/sql/archive/schema_full.sql\n"
             "@@ -1,3 +1,6 @@\n"
             "+-- ⚠️ 已废弃（DEPRECATED）—— 请勿用于新建库\n"
             "+--   本文件缺失 finance_transactions 等 6 张表\n"
@@ -299,7 +299,7 @@ class TestSchemaCommentOnlyExemption:
     def test_comment_mentioning_create_table_still_exempt(self, monkeypatch):
         """注释里提到 CREATE TABLE 不算 DDL（否则文档写不了「本文件会创建 X 表」）"""
         diff = (
-            "+++ b/docs/sql/schema_full.sql\n"
+            "+++ b/docs/sql/archive/schema_full.sql\n"
             "+-- 注意：本文件仍会 CREATE TABLE knowledge_documents（已被 V36 DROP）\n"
         )
         self._fake_git_diff(monkeypatch, diff)
@@ -309,21 +309,21 @@ class TestSchemaCommentOnlyExemption:
     def test_real_ddl_still_blocks(self, monkeypatch):
         """真正的结构改动必须照旧 block（豁免不得开成安全口子）"""
         diff = (
-            "+++ b/docs/sql/schema.sql\n"
+            "+++ b/backend/admin-api/src/main/resources/db/init/schema.sql\n"
             "+CREATE TABLE brand_new_table (\n"
             "+    id VARCHAR(36) PRIMARY KEY\n"
             "+);\n"
         )
         self._fake_git_diff(monkeypatch, diff)
-        blockers, _ = self._analyze(schema_file="docs/sql/schema.sql")
+        blockers, _ = self._analyze(schema_file="backend/admin-api/src/main/resources/db/init/schema.sql")
         assert any("未新增迁移" in b for b in blockers), (
             "新增建表语句必须仍然 block —— 豁免把结构变更也放过了就是安全口子"
         )
 
     def test_added_alter_table_blocks(self, monkeypatch):
-        diff = "+++ b/docs/sql/schema.sql\n+ALTER TABLE orders ADD COLUMN foo TEXT;\n"
+        diff = "+++ b/backend/admin-api/src/main/resources/db/init/schema.sql\n+ALTER TABLE orders ADD COLUMN foo TEXT;\n"
         self._fake_git_diff(monkeypatch, diff)
-        blockers, _ = self._analyze(schema_file="docs/sql/schema.sql")
+        blockers, _ = self._analyze(schema_file="backend/admin-api/src/main/resources/db/init/schema.sql")
         assert any("未新增迁移" in b for b in blockers)
 
     def test_empty_diff_fails_closed(self, monkeypatch):
@@ -669,7 +669,7 @@ class TestParseMigrationAcks:
     """`/danger-ack rewrite-migration <V###|all>` 的解析（行为级纯函数）。"""
 
     OWNER = "zhaokai-mgzn"
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
     V102 = f"{MIG}/V102__rewrite_published.sql"
     V103 = f"{MIG}/V103__other.sql"
 
@@ -768,7 +768,7 @@ class TestParseMigrationAcks:
 class TestVerifyMigrationAcks:
     """交叉校验纯函数（四条判据各自独立，互不掩盖）。"""
 
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
     V102 = f"{MIG}/V102__rewrite_published.sql"
     NAME = "V102__rewrite_published.sql"
     H = "sha256:" + "a" * 64
@@ -822,7 +822,7 @@ class TestVerifyMigrationAcks:
 class TestMigrationRewriteAck:
     """`analyze` **行为级**：ack + 交叉校验通过 ⇒ 降 WARN；任一条件不满足 ⇒ 照旧 BLOCK。"""
 
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
     V102 = f"{MIG}/V102__rewrite_published.sql"
     V103 = f"{MIG}/V103__other.sql"
     NAME102 = "V102__rewrite_published.sql"
@@ -926,7 +926,7 @@ class TestMigrationAckResolveMode:
     """`--resolve-acks`：除既有三行外**追加**迁移三行；迁移清单由脚本自己算。"""
 
     OWNER = "zhaokai-mgzn"
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
     V102 = f"{MIG}/V102__rewrite_published.sql"
     V103 = f"{MIG}/V103__other.sql"
 
@@ -992,7 +992,7 @@ class TestMigrationAckScanMode:
     """scan 模式端到端：从 `DANGER_ACK_MIGRATION` 读入，**并重跑交叉校验**（不只信环境变量）。"""
 
     LEDGER = "tests/unit_ci_workflows/migration_fingerprints.json"
-    MIG = "backend/admin-api/src/main/resources/db/migration"
+    MIG = "backend/admin-api/src/main/resources/db/migration-archive"
     # 用一条**真实且已登记**的迁移：账本指纹必须等于磁盘指纹（本 worktree 干净 ⇒ 恒等）
     REAL = f"{MIG}/V1__add_permissions_to_users.sql"
 

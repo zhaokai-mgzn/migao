@@ -9,7 +9,7 @@
 
 ## 本文件钉的四件事（各有红证，互不掩盖）
 
-1. **逐值**：V84 的 3 行 = `docs/sql/schema.sql`（bootstrap 终态，该路径不跑迁移链）
+1. **逐值**：V84 的 3 行 = `backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 终态，该路径不跑迁移链）
    = `ProductionSeedTemplateService`（开租套用）—— 三源逐值一致；
 2. **按租户 + 工序库护栏**：`FROM tenants` + `deleted = 0` + 目标工序归一后存在才种
    （否则规则永远插不进来 = 黑洞）；
@@ -34,9 +34,9 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION = (REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION = (REPO / "backend/admin-api/src/main/resources/db/migration-archive"
              / "V84__seed_processing_item_route_rules.sql")
-SCHEMA = REPO / "docs/sql/schema.sql"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 SEED_SERVICE = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
                 / "ProductionSeedTemplateService.java")
 
@@ -90,7 +90,7 @@ def test_v84_seeds_exactly_the_three_processing_item_rules():
 
 
 def test_bootstrap_schema_sql_carries_the_same_three_rows():
-    """判据 1（bootstrap 半边）：`docs/sql/schema.sql` 逐值同款（该路径不跑迁移链）。"""
+    """判据 1（bootstrap 半边）：`backend/admin-api/src/main/resources/db/init/schema.sql` 逐值同款（该路径不跑迁移链）。"""
     sql = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
     # ⚠️ 选择器按 `rr-v84-` 收敛（issue #4714 起）：V93 的补种段也含 `processing_item` 三个触发值，
     # 而它的列集是 **8 列**（带 `position`，与 V72 同形）⇒ 用旧的 `"processing_item" in chunk`
@@ -260,7 +260,7 @@ def test_v84_runs_on_real_postgres_and_is_idempotent_per_tenant(psql):
     assert psql("SELECT count(*) FROM production_route_rules WHERE deleted = 0;").strip() == "3", \
         "软删过的槽位不得被种子复活（PK 冲突必须收敛成无操作，而不是整份迁移回滚）"
 
-    # bootstrap 路径（`docs/sql/schema.sql` **不跑迁移链**）：同一段 SQL 必须**真能执行**且逐值同款
+    # bootstrap 路径（`backend/admin-api/src/main/resources/db/init/schema.sql` **不跑迁移链**）：同一段 SQL 必须**真能执行**且逐值同款
     psql("INSERT INTO tenants (id) VALUES (4);"
          "INSERT INTO production_operations (id, tenant_id, name) VALUES"
          " ('o5', 4, '花边-布'), ('o6', 4, '扣环-布'), ('o7', 4, '接高-布');")

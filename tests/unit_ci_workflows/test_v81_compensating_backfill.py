@@ -31,7 +31,7 @@
 （按元素替换 / 保序 / 有守卫）；本单的判据是**效果**，故落真库。
 
 真库由本文件**自建临时集群**（`initdb` + `pg_ctl`，unix socket 于临时目录，随机端口），
-**只建本迁移用到的两列族的最小表**（不载 `docs/sql/schema.sql`：那是 65 张表的大工程，
+**只建本迁移用到的两列族的最小表**（不载 `backend/admin-api/src/main/resources/db/init/schema.sql`：那是 65 张表的大工程，
 且本迁移的射程只有 `products.status` / `users.position` / `users.role`）。
 跑完即 `pg_ctl stop` + 删临时目录。
 
@@ -56,7 +56,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 MIGRATION_NAME = "V81__compensate_lost_v3_v4_backfill.sql"
 
 # Flyway 时代的原文出处（红证锚点用**不可变引用** `@<sha>`，不读 `origin/main` —— 它会随合并变）
@@ -118,12 +118,12 @@ def test_v3_statement_backfills_only_empty_positions():
 
 
 def test_migration_is_pure_data_migration_without_ddl():
-    """判据 4（形态）：纯数据迁移 ⇒ **不得**含 DDL（`docs/sql/schema.sql` 无需同步）。"""
+    """判据 4（形态）：纯数据迁移 ⇒ **不得**含 DDL（`backend/admin-api/src/main/resources/db/init/schema.sql` 无需同步）。"""
     sql = _strip_comments(_migration_sql())
     ddl = re.findall(r"\b(ALTER\s+TABLE|CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)|DROP\s+(?:TABLE|INDEX))\b", sql, re.I)
     assert not ddl, (
         f"数据回填迁移里出现了 DDL {ddl} ⇒ 本单是纯 `UPDATE`，改 schema 会让 "
-        f"`docs/sql/schema.sql` 的同步要求被触发（issue #4551 硬约束 4）"
+        f"`backend/admin-api/src/main/resources/db/init/schema.sql` 的同步要求被触发（issue #4551 硬约束 4）"
     )
 
 
@@ -304,7 +304,7 @@ def test_migration_is_idempotent_on_rerun(migrated):
     **不是**「再跑一次没报错」—— 后者对幂等是**空断言**（改写型非幂等 SQL 重跑照样不报错）。
 
     ⚠️ **一处如实登记的真库事实（不粉饰）**：`users.role` 是 **nullable** 的
-    （`docs/sql/schema.sql` 的 `CREATE TABLE users` 里 `role VARCHAR(64)` 无 `NOT NULL`；
+    （`backend/admin-api/src/main/resources/db/init/schema.sql` 的 `CREATE TABLE users` 里 `role VARCHAR(64)` 无 `NOT NULL`；
     `User.role` 同样可空）。当 `role IS NULL AND position IS NULL` 时，
     `SET position = role` 把 NULL 写成 NULL ⇒ **数据不变，但 PG 照记 1 行受影响**。
     ⇒ 这种行**永远**会被计入受影响行数（重跑 1 行是**不可避免且无副作用**的）。

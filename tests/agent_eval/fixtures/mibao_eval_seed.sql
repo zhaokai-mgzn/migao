@@ -15,7 +15,7 @@
 --     · HR-003  点名员工「王五」（停用账号）
 --
 -- 幂等：ON CONFLICT DO NOTHING / WHERE NOT EXISTS，可重复执行。
--- 仅用于评测栈，**不并入** docs/sql/schema.sql（生产 bootstrap 不应含演示数据）。
+-- 仅用于评测栈，**不并入** backend/admin-api/src/main/resources/db/init/schema.sql（生产 bootstrap 不应含演示数据）。
 -- ============================================================================
 
 -- ── 1. 商品：2699 系列雪尼尔窗帘面料（OR-016 点名）──
@@ -104,7 +104,7 @@ WHERE pc.product_id = 'prod_eval_2699'
 --       ① 先注种子后跑 V83 ⇒ V83 的 `NOT EXISTS (tenant_id, name)` 业务键去重会**跳过**这 3 项；
 --       ② 先跑 V83 后注种子 ⇒ 本 DELETE 把 V83 那 3 行删掉再插带价行。
 --     V83 没跑过时 DELETE 影响 0 行（安全）；`processing_items` **没有任何外键引用它**
---     （已核 `docs/sql/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
+--     （已核 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
 --   · `刺绣工艺`（`pi_eval_embroidery`，per_area）**已按用户裁定真删** —— 它原是 PR-020 /
 --     PP-009 / OR-028 的 per_area 接地对象，那 3 处已按 **per_meter** 重算改判；
 --     **per_area 计价路径的评测覆盖随之移除**（逐处登记在各 case 的 `merge_log`）。
@@ -383,7 +383,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 未处理（pending）退货工单：AS-004 第 2 轮「把第一张未处理的工单关闭」的指代对象。
--- 列核对（docs/sql/schema.sql:604~630 + V8/V25 迁移）：显式给出 id/tenant_id/ticket_no/
+-- 列核对（backend/admin-api/src/main/resources/db/init/schema.sql:604~630 + V8/V25 迁移）：显式给出 id/tenant_id/ticket_no/
 --   order_id/customer_id/ticket_type/status/source/priority/description/images/
 --   refund_amount/evidence_images/created_at/updated_at/deleted。
 --   · ticket_type 是**唯一 NOT NULL 且无默认值**的业务列（id/tenant_id 同理必给；其余

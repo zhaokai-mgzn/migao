@@ -8,7 +8,7 @@
 ## 为什么需要这条不变式（真库实测根因）
 
 独立栈全新库 bootstrap 走的是「**bootstrap-first**」路径：
-`docs/sql/schema.sql` 由 docker `docker-entrypoint-initdb.d/001_schema.sql` 建出**终态**，
+`backend/admin-api/src/main/resources/db/init/schema.sql` 由 docker `docker-entrypoint-initdb.d/001_schema.sql` 建出**终态**，
 随后 admin-api 启动再跑一遍 `db/migration/V*__*.sql` 迁移链（`MigrationRunner`）。
 ⇒ 迁移链里每条语句都可能在「对象已经存在」的库上再执行一次，
 即 `MigrationRunner` 类注释写死的约定：**所有 SQL 文件必须幂等**。
@@ -79,9 +79,19 @@ import re
 from pathlib import Path
 
 MIGRATION_DIR = (
+
     Path(__file__).parent.parent.parent
-    / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration"
+    / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration-archive"
 )
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
 
 # ── 已发布迁移的存量缺口登记表（显式登记 + 理由，非 skip）──
 # 修复这 3 个文件受 required 护栏（danger_scan「已发布迁移只增不改」）约束，需先裁决豁免机制；
@@ -140,7 +150,7 @@ _MIGRATION_RUNNER_JAVA = (
     / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin"
     / "config" / "MigrationRunner.java"
 )
-_SCHEMA_SQL = _REPO_ROOT / "docs" / "sql" / "schema.sql"
+_SCHEMA_SQL = _REPO_ROOT / "backend/admin-api/src/main/resources/db/init/schema.sql"
 _JAVA_KEY_MARKER = "MIGAO_BENIGN_LEGACY_BEGIN"
 _JAVA_KEY_END_MARKER = "MIGAO_BENIGN_LEGACY_END"
 # 键形态 = 迁移文件名（V{n}__desc.sql）—— **按文本出现**取，不是只取「整条字面量」：
@@ -236,7 +246,7 @@ def find_terminal_state_problems(entries: dict) -> list:
             )
             continue
         comp = int(m.group(1))
-        if not sorted(MIGRATION_DIR.glob(f"V{comp}__*.sql")):
+        if not sorted(_migration_files(f"V{comp}__*.sql")):
             problems.append(f"{name}: 登记的补偿迁移 V{comp} 在迁移链里**不存在** —— 登记必须有据")
         elif comp <= broken:
             problems.append(f"{name}: 补偿迁移 V{comp} 必须**晚于**被补偿的 V{broken}")
@@ -335,7 +345,7 @@ def find_non_idempotent(sql_text: str) -> list:
 def _scan_all() -> list:
     """全量扫 db/migration/*.sql → [(文件名, kind, 片段), ...]（不含业务豁免）。"""
     hits = []
-    for path in sorted(MIGRATION_DIR.glob("*.sql")):
+    for path in sorted(_migration_files("*.sql")):
         for kind, snippet in find_non_idempotent(path.read_text(encoding="utf-8")):
             if (path.name, kind, snippet) in GUARDED_DDL_EXEMPTIONS:
                 continue
@@ -351,7 +361,7 @@ def _scan_forward() -> list:
 class TestMigrationIdempotencyInvariant:
     def test_migration_dir_is_present_and_parsed(self):
         """防解析失效：目录必须存在且扫到迁移文件（否则下面的断言永远绿）。"""
-        files = sorted(MIGRATION_DIR.glob("*.sql"))
+        files = sorted(_migration_files("*.sql"))
         assert len(files) >= 40, f"迁移文件过少（{len(files)}）—— 路径或解析疑似失效"
         v44 = (MIGRATION_DIR / "V44__create_daily_briefings.sql").read_text(encoding="utf-8")
         assert _blocks(v44), "语句切分结果为空 —— 解析疑似失效"

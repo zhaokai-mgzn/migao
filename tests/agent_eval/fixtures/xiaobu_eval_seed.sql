@@ -9,7 +9,7 @@
 -- 实测（CI，空库）：PR-003 `tools=[product_search ×3]`，期望 `product_detail` → 0 分
 --
 -- 幂等：全部 ON CONFLICT DO NOTHING，可重复执行（每次 CI 起栈后都会重放）。
--- 仅用于评测栈，**不并入** docs/sql/schema.sql（生产 bootstrap 不应含演示数据）。
+-- 仅用于评测栈，**不并入** backend/admin-api/src/main/resources/db/init/schema.sql（生产 bootstrap 不应含演示数据）。
 --
 -- 覆盖的评测用例：PR-001（商品搜索）/ PR-003（商品详情 ID 解析）/
 --                OR-017 / OR-016（下单加工项）/ CH-010（选购下单表单化）
@@ -46,7 +46,7 @@ ON CONFLICT (id) DO NOTHING;
 --       ① 先注种子后跑 V83 ⇒ V83 的 `NOT EXISTS (tenant_id, name)` 业务键去重会**跳过**这 3 项；
 --       ② 先跑 V83 后注种子 ⇒ 本 DELETE 把 V83 那 3 行删掉再插带价行。
 --     V83 没跑过时 DELETE 影响 0 行（安全）；`processing_items` **没有任何外键引用它**
---     （已核 `docs/sql/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
+--     （已核 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
 --   · `刺绣工艺`（`pi_eval_embroidery`，per_area）**已按用户裁定真删** —— 它原是 PR-020 /
 --     PP-009 / OR-028 的 per_area 接地对象，那 3 处已按 **per_meter** 重算改判；
 --     **per_area 计价路径的评测覆盖随之移除**（逐处登记在各 case 的 `merge_log`）。
@@ -187,7 +187,7 @@ WHERE pc.product_id = 'prod_eval_summer'
 --   这三条都是**测量环境缺数据**，不是 agent 能力问题。补数据后才能测得真实能力。
 --
 -- 幂等：ON CONFLICT DO NOTHING / WHERE NOT EXISTS，可重复执行。
--- 仅用于评测栈，不并入 docs/sql/schema.sql（生产 bootstrap 不应含演示数据）。
+-- 仅用于评测栈，不并入 backend/admin-api/src/main/resources/db/init/schema.sql（生产 bootstrap 不应含演示数据）。
 -- ============================================================================
 
 -- 6.1 C 端顾客（与 auth.py DEBUG customer 身份 user_id 严格一致）

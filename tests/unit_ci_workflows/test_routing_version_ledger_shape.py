@@ -27,7 +27,7 @@ admin-api 的 pom **没有** testcontainers / H2 ⇒ `ProductionRoutingCommandSe
   ① `production_routing_versions.routing_id` **不得**再挂指向 `production_routings` 的外键；
   ② 必须有指向 `production_route_templates` 的外键（旧表退役后新表才是真值源）；
   ③ `curtain_type` / `craft` 必须**可空**（列保留 = 历史行仍答得出「当时是哪条 部位×工艺」）；
-  ④ **两处口径一致**：`docs/sql/schema.sql`（bootstrap 路径，**不跑迁移链**）与
+  ④ **两处口径一致**：`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap 路径，**不跑迁移链**）与
      迁移 `V85__fix_routing_version_ledger_shape.sql`（存量库路径）叠加结果不得分叉
      —— 只修一处 = 另一条路径上照样 500（形态见 #3270）；
   ⑤ **写面静态判据**：`appendVersion` 段内不得再出现 `.curtainType(` / `.craft(`，且必须有 `.routingId(`。
@@ -44,8 +44,8 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SCHEMA = REPO / "docs" / "sql" / "schema.sql"
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 MIGRATION = MIGRATION_DIR / "V85__fix_routing_version_ledger_shape.sql"
 SERVICE = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
            / "ProductionRoutingCommandService.java")
@@ -191,7 +191,7 @@ def test_migration_drops_not_null_on_legacy_columns():
 # ══════════════════════════ ④ 两处口径一致 ══════════════════════════
 
 def test_bootstrap_schema_and_migration_agree():
-    """`docs/sql/schema.sql`（bootstrap，**不跑迁移链**）与 V85（存量库）必须同口径。
+    """`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，**不跑迁移链**）与 V85（存量库）必须同口径。
 
     只修一处 = 另一条路径上照样 500 —— bootstrap-first 栈正是用 schema.sql 建库的（形态见 #3270）。
     """

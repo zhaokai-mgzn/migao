@@ -57,8 +57,20 @@ import sys
 BASE = os.environ.get("DANGER_BASE", "origin/main")
 BULK_DELETE_THRESHOLD = 30
 
-MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
-SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
+# 迁移文件的**两个**载体目录（issue #5243）：历史链（V1 … V114）整链归档到
+# `migration-archive/`（只读、逐字节冻结，账本 = migration_fingerprints.json），
+# `migration/` 此后只放**未来的**增量迁移。**两个都要扫** —— 只看归档 ⇒
+# 「已发布迁移只增不改 / 不得破坏性 DDL」的判定对**将来**失效；只看活目录 ⇒
+# 今天扫不到任何文件（门禁空转 = 假绿）。**判据强度一字未改**，只是扫描面变成两个目录。
+MIGRATION_DIRS = (
+    "backend/admin-api/src/main/resources/db/migration-archive",
+    "backend/admin-api/src/main/resources/db/migration",
+)
+#: 活目录（新迁移该放这儿 —— 提示文案用）
+LIVE_MIGRATION_DIR = MIGRATION_DIRS[1]
+#: 兼容既有引用（= 归档目录；账本与测试都以它为锚）
+MIGRATION_DIR = MIGRATION_DIRS[0]
+SCHEMA_FILES = ("backend/admin-api/src/main/resources/db/init/schema.sql", "docs/sql/archive/schema_full.sql")
 MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
 # workflow 目录（**整目录**为扫描范围，不再写 `*.yml` glob）。
@@ -285,13 +297,24 @@ def _read_ledger_entries():
     return entries if isinstance(entries, dict) else None
 
 
+def _git_name_status_all_migrations():
+    """两个载体目录的迁移变更清单；**任一目录取证失败 ⇒ `None`**（fail-closed）。"""
+    out = []
+    for d in MIGRATION_DIRS:
+        changes = _git_name_status(d + "/*.sql")
+        if changes is None:
+            return None
+        out.extend(changes)
+    return out
+
+
 def _changed_migration_paths():
     """本次被**修改/删除**的迁移文件路径；取证失败 ⇒ `[]`（= 无可确认项）。
 
     与 workflow 侧不同：本通道**不新增环境变量**承载这份清单 —— `--resolve-acks` 自己算，
     少一个「调用方忘了传 ⇒ 静默永不确认」的失效面。
     """
-    changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    changes = _git_name_status_all_migrations()
     if changes is None:
         return []
     return [p for s, p in changes if s[0] in ("M", "D")]
@@ -516,9 +539,10 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
         comment_only = diff_ok and added_line_seen and not added_ddl_lines
         if added_tables:
             try:
-                mig_files = subprocess.run(
-                    ["git", "ls-files", MIGRATION_DIR], capture_output=True, text=True,
-                    check=False).stdout
+                mig_files = "".join(
+                    subprocess.run(["git", "ls-files", d], capture_output=True, text=True,
+                                   check=False).stdout
+                    for d in MIGRATION_DIRS)
             except Exception:
                 mig_files = ""
             all_migration_sql = ""
@@ -536,7 +560,7 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
     if schema_changes and not new_migrations and not bootstrap_alignment and not comment_only:
         blockers.append(
             f"修改了表结构参考 {SCHEMA_FILES[0]}/{SCHEMA_FILES[1]} 但未新增迁移文件 —— "
-            f"请新增 {MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
+            f"请新增 {LIVE_MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
         )
     elif comment_only:
         warnings.append(
@@ -656,7 +680,7 @@ def main():
     deleted_files = [p for s, p in all_changes if s == "D"]
     deploy_files = [p for s, p in all_changes if s[0] in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
-    migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    migration_changes = _git_name_status_all_migrations()
     if migration_changes is None:
         blockers.append(
             "无法获取迁移文件变更清单 —— 安全门禁取证失败（「迁移只增不改」判定未执行，"

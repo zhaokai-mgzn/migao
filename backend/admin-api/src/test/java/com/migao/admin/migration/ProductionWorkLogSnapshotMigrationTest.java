@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * （MigrationRunner 要求所有 SQL 可重复执行）；
  * ② **回填含软删实例** —— 存量报工里已经有指向软删实例的行（那正是本单要治的形态），
  * 过滤 {@code deleted = 0} 会把最需要救的那批历史报工留成 NULL ⇒ 钱照样消失；
- * ③ 三源同口径：迁移列 / {@code docs/sql/schema.sql} bootstrap 终态 / Java 实体字段
+ * ③ 三源同口径：迁移列 / {@code backend/admin-api/src/main/resources/db/init/schema.sql} bootstrap 终态 / Java 实体字段
  * （schema 侧由 {@code TestSchemaCoversEntityColumns} 另行按实体守，本类只钉 SQL 文本）。</p>
  *
  * <p>写法沿用同目录 {@code ProductionReportingMigrationTest}（直接断言迁移 SQL 文本）。</p>
@@ -28,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionWorkLogSnapshotMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V61__add_piecework_snapshot_to_work_logs.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V61__add_piecework_snapshot_to_work_logs.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private static Path findRepoRoot() {
         Path cur = Paths.get("").toAbsolutePath();

@@ -48,9 +48,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionSourceProvenanceMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/"
+            "backend/admin-api/src/main/resources/db/migration-archive/"
                     + "V62__add_source_to_production_operations_and_routings.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     /** 冻结映射（见类注释表）——集合写死，漏标/多标都红。 */
     private static final List<String> OPERATION_SOURCES = List.of("占位待确认", "推算");
@@ -157,13 +157,13 @@ class ProductionSourceProvenanceMigrationTest {
 
         // 从**迁移源本身**取 id（不是从回填 SQL 抄一份 —— 抄一份就变成第二份口径）
         String v54 = Files.readString(root.resolve(
-                "backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql"),
+                "backend/admin-api/src/main/resources/db/migration-archive/V54__seed_production_operations.sql"),
                 StandardCharsets.UTF_8);
         String v56 = Files.readString(root.resolve(
-                "backend/admin-api/src/main/resources/db/migration/V56__seed_special_option_operations.sql"),
+                "backend/admin-api/src/main/resources/db/migration-archive/V56__seed_special_option_operations.sql"),
                 StandardCharsets.UTF_8);
         String v58 = Files.readString(root.resolve(
-                "backend/admin-api/src/main/resources/db/migration/V58__seed_sheer_curtain_routings.sql"),
+                "backend/admin-api/src/main/resources/db/migration-archive/V58__seed_sheer_curtain_routings.sql"),
                 StandardCharsets.UTF_8);
 
         List<String> v54Ops = idsMatching(v54, "'(op-v54-\\d+)'");

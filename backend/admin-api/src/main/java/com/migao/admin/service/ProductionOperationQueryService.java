@@ -164,8 +164,8 @@ public class ProductionOperationQueryService {
     /**
      * 矩阵塌缩（V102）后幸存行的 {@code position} —— **中性值，不是部位**（部位维已退场）。
      *
-     * <p>出处 = `backend/admin-api/src/main/resources/db/migration/V102__retire_applicability_flag.sql`
-     * （与 `docs/sql/schema.sql` 的矩阵终态字面量逐字一致）。读面必须**认出**它：塌缩行的变体元数据
+     * <p>出处 = `backend/admin-api/src/main/resources/db/migration-archive/V102__retire_applicability_flag.sql`
+     * （与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的矩阵终态字面量逐字一致）。读面必须**认出**它：塌缩行的变体元数据
      * （{@code group} / {@code unit} / {@code variant_operation_id}）只能按
      * {@link #COLLAPSE_PRICE_SOURCE_POSITION 取价同一行}解析 —— 按中性值查变体必然落空，
      * 于是库里只有变体名的工序会静默变 null（issue #5008：商家面「未分组」+ 行尾 `—`）。</p>
@@ -449,8 +449,8 @@ public class ProductionOperationQueryService {
      * （那是 {@code NOT NULL DEFAULT 0} ⇒ 回落把「未定价」变成「真 0 元」，工人白干且无人知道）。</p>
      *
      * <p><b>为什么在代码里收敛、而不是加一条迁移把这些行软删</b>：V71 的矩阵种子是
-     * {@code routing.py} ↔ {@code V71} ↔ {@code docs/sql/schema.sql} <b>三源收敛</b>的冻结产物，
-     * 且 <b>bootstrap 路径不跑迁移链</b>（{@code docs/sql/schema.sql} 是终态种子）——
+     * {@code routing.py} ↔ {@code V71} ↔ {@code backend/admin-api/src/main/resources/db/init/schema.sql} <b>三源收敛</b>的冻结产物，
+     * 且 <b>bootstrap 路径不跑迁移链</b>（{@code backend/admin-api/src/main/resources/db/init/schema.sql} 是终态种子）——
      * 在迁移里删种子行会让 bootstrap 与迁移链终态**分叉**，而那正是既有守卫要防的形态。
      * ⇒ 收敛发生在**三个取用侧共用的这一处**（读面 / 实例化 / 补价），物理行保持不动。</p>
      *
@@ -1116,7 +1116,7 @@ public class ProductionOperationQueryService {
      * 本包把那条过滤**整块删除**（用户裁定「部位不再参与任何取价、取路、筛选、配置」，
      * 母单 #4936）⇒ 这 4 道会进入纱帘路线的实例化路径，而 {@link #variantNameOf} 解析不到
      * ⇒ {@code null} ⇒ **整张纱帘单 fail-closed（一张也建不出来）**。
-     * ⇒ 补齐变体行（{@code docs/sql/schema.sql} 的 {@code op-v54-31..34}，单价逐字取对应
+     * ⇒ 补齐变体行（{@code backend/admin-api/src/main/resources/db/init/schema.sql} 的 {@code op-v54-31..34}，单价逐字取对应
      * {@code -布} 变体 —— **不发明单价**）。</p>
      *
      * <p>⚠️ <b>为什么另起一段而不是并进 {@link #variantNames()}</b>：后者被 {@code V97} 的守卫

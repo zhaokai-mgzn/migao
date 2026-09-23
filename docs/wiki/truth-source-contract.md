@@ -46,7 +46,7 @@
 | I1-e | 报告的 `(base, cases_fingerprint, policy_version)` 三元组随每次审计落盘（JSON 报告头部） | 运行期护栏把它写进 `run_key`（见 §3.2） | `drift_audit.py` 报告头 |
 
 **受管引用面（`ref-freshness` 的判定范围）**：`docs/wiki/`、`docs/testing/`、`tests/unit_ci_workflows/`、
-`.github/workflows/`、`.agent-presets/`、`scripts/`、`backend/admin-api/src/main/resources/db/migration/`
+`.github/workflows/`、`.agent-presets/`、`scripts/`、`backend/admin-api/src/main/resources/db/migration-archive/`
 （迁移文件最常引用代码位置 —— `#4708` 的缺口正在这里）。点时效快照面（`acceptance/`、`docs/audit-`、
 `docs/design/`）**有意排除**：那里的行号是当时的读数。
 

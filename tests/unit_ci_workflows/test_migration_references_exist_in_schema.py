@@ -1,5 +1,5 @@
 # case_ids: PG-020
-"""数据迁移引用的**表/列必须真实存在于 `docs/sql/schema.sql`**（issue #4402）。
+"""数据迁移引用的**表/列必须真实存在于 `backend/admin-api/src/main/resources/db/init/schema.sql`**（issue #4402）。
 
 ## 为什么需要这条（一次真实事故）
 
@@ -20,7 +20,7 @@ V74（#4399 特殊选项旧名回填）首版把载体①误写成 **`orders.pro
 ## 判据
 
 对每条迁移：抽出它引用的表名（`UPDATE x` / `INSERT INTO x` / `ALTER TABLE x` / `DELETE FROM x`），
-以及 `x.列` 形式的列引用 ⇒ 断言二者都在 `docs/sql/schema.sql` 里存在。
+以及 `x.列` 形式的列引用 ⇒ 断言二者都在 `backend/admin-api/src/main/resources/db/init/schema.sql` 里存在。
 
 **红证**：把任一条迁移的 `UPDATE order_items` 改成 `UPDATE orders`（无该列的表）⇒ 本判据红。
 
@@ -39,8 +39,20 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-SCHEMA = REPO / "docs/sql/schema.sql"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
+
+# ── 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+
+
+
+SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 # 这些是**故意**指向历史/临时对象的引用，不在终态 schema 里（逐条给理由）
 ALLOWLIST_TABLES = {
@@ -52,7 +64,7 @@ ALLOWLIST_TABLES = {
     # 合并后的 `V102__retire_applicability_flag.sql` 里
     # `CREATE TEMP TABLE _v102_survivors ON COMMIT DROP AS …` 是**会话级临时表**
     # —— 由**同一个迁移文件**建、用完随事务消失，**结构上不可能**出现在 bootstrap
-    # `docs/sql/schema.sql` 里（该文件不跑迁移链）。判据 `_referenced_tables` 读 `FROM <标识符>`，
+    # `backend/admin-api/src/main/resources/db/init/schema.sql` 里（该文件不跑迁移链）。判据 `_referenced_tables` 读 `FROM <标识符>`，
     # 它天然分不清「临时表」与「终态表」。
     # ⇒ 登记在此的**理由与作用域都写清楚**：只允许这一个名字（**不做前缀通配**），
     # 且本条目**必须**被 `test_temp_table_allowlist_entry_is_load_bearing` 的反向断言证明在承重。
@@ -191,7 +203,7 @@ def test_migration_referenced_tables_exist():
     schema = _schema_text()
     tables = _tables_in_schema(schema)
     missing = []
-    for p in sorted(MIGRATION_DIR.glob("V*.sql")):
+    for p in sorted(_migration_files("V*.sql")):
         for t in _referenced_tables(p.read_text(encoding="utf-8")):
             if t in ALLOWLIST_TABLES or t in tables:
                 continue
@@ -210,7 +222,7 @@ def _columns_added_by(sql: str) -> set:
     ⚠️ **为什么必须排除它们**（否则守卫会永久假红、被人直接关掉）：新增列的正确写法是
     「同一文件里 `ALTER TABLE t ADD COLUMN IF NOT EXISTS c` + `COMMENT ON COLUMN t.c`」
     —— 而 `COMMENT ON COLUMN t.c` 是**合法的自引用**（该列由本文件刚建出来），
-    终态 `docs/sql/schema.sql` 里当然还没有它。不排除就会把「按规范写注释」判成缺陷。
+    终态 `backend/admin-api/src/main/resources/db/init/schema.sql` 里当然还没有它。不排除就会把「按规范写注释」判成缺陷。
     （实证：V78 `craft_hint` 首版即命中此假红；而**真正的**缺陷形态 —— 引用**别人**的、
     或**根本不存在**的列 —— 仍会被抓住。）
     """
@@ -232,7 +244,7 @@ def test_migration_referenced_columns_exist():
     schema = _schema_text()
     tables = _tables_in_schema(schema)
     missing = []
-    for p in sorted(MIGRATION_DIR.glob("V*.sql")):
+    for p in sorted(_migration_files("V*.sql")):
         sql = p.read_text(encoding="utf-8")
         self_added = _columns_added_by(sql)
         for t, c in _referenced_columns(sql):
@@ -341,7 +353,7 @@ def test_distinct_from_operator_is_not_read_as_a_table():
 # 病根：判据 1~4 全都**遍历「已出现的引用」** ⇒ 引用集为空时循环体不执行 ⇒ **恒真（vacuous）**
 # ⇒ 「一份只有注释的迁移」完全合法地通过。而它的后果是**真实故障**：
 # `MigrationRunner` 把它记进 `schema_migrations`（按文件名）⇒ **该迁移永不生效**，
-# 而 `docs/sql/schema.sql` 是手写终态、看起来「列在」⇒ **bootstrap 库有列、存量库没有**
+# 而 `backend/admin-api/src/main/resources/db/init/schema.sql` 是手写终态、看起来「列在」⇒ **bootstrap 库有列、存量库没有**
 # ⇒ 存量环境查询 500（#3270 同族）。实证：PR #4532 用脚本改写 V78 文件尾注释时
 # 截掉了 `ALTER TABLE … ADD COLUMN` 与 `COMMENT ON COLUMN` 两段 SQL，守卫**判绿**，
 # 最后靠 `test_migration_immutability` 的 sha 校验 + 人工 diff 才发现
@@ -399,7 +411,7 @@ def test_migration_must_contain_at_least_one_statement():
 
     ⚠️ 只判「有没有语句」，**不判语句语义**（那是判据 1~4 的射程）。
     """
-    files = sorted(MIGRATION_DIR.glob("V*.sql"))
+    files = sorted(_migration_files("V*.sql"))
     assert files, f"{MIGRATION_DIR} 下一条迁移都没找到 —— 本判据空转（假绿）"
     vacuous = [
         p.name for p in files
@@ -409,7 +421,7 @@ def test_migration_must_contain_at_least_one_statement():
     assert not vacuous, (
         "这些迁移**一条可执行语句都没有**（只有注释）：\n  " + "\n  ".join(vacuous)
         + "\n⇒ `MigrationRunner` 会把它记进 `schema_migrations`（按文件名）⇒ **该迁移永不生效**，"
-          "而 `docs/sql/schema.sql`（手写终态）看起来「列在」⇒ **bootstrap 库有列、存量库没有**"
+          "而 `backend/admin-api/src/main/resources/db/init/schema.sql`（手写终态）看起来「列在」⇒ **bootstrap 库有列、存量库没有**"
           "⇒ 存量环境查询 500（issue #4543；实证 PR #4532 的 V78：脚本改写注释时截掉了两段 SQL，"
           "守卫判绿，靠 sha 校验 + 人工 diff 才发现）。\n"
           "修法：把被截掉的 SQL 补回去（**新增**迁移走新文件；已发布迁移不可改）。"
@@ -460,7 +472,7 @@ def test_vacuous_placeholder_exemptions_are_still_vacuous():
     没有这条，豁免会永久留在文件里（将来有人给 V3 补上语句、或清单被复制粘贴扩大）。
     """
     actual = {
-        p.name for p in sorted(MIGRATION_DIR.glob("V*.sql"))
+        p.name for p in sorted(_migration_files("V*.sql"))
         if _statements_without_executable_sql(p.read_text(encoding="utf-8"))
     }
     assert actual == set(VACUOUS_PLACEHOLDER_MIGRATIONS), (
@@ -500,7 +512,7 @@ def test_update_set_columns_exist_on_their_table():
     schema = _schema_text()
     tables = _tables_in_schema(schema)
     missing = []
-    for p in sorted(MIGRATION_DIR.glob("V*.sql")):
+    for p in sorted(_migration_files("V*.sql")):
         for t, c in _update_set_columns(p.read_text(encoding="utf-8")):
             if t in ALLOWLIST_TABLES or t not in tables:
                 continue
@@ -554,7 +566,7 @@ def test_alias_qualified_columns_exist():
     schema = _schema_text()
     tables = _tables_in_schema(schema)
     missing = []
-    for p in sorted(MIGRATION_DIR.glob("V*.sql")):
+    for p in sorted(_migration_files("V*.sql")):
         if p.name in KNOWN_BROKEN_PUBLISHED:
             continue          # 已知损坏且不可修（见常量里的理由与补偿迁移）
         for stmt in _statements(p.read_text(encoding="utf-8")):

@@ -16,14 +16,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 生产报工（V49，issue #3995）/ 库存台账（V53，issue #4055）SQL 契约测试支撑
  *
  * 把「Java 实体字段 ↔ 迁移列 ↔ bootstrap schema」三源收敛变成可执行断言：
- * 只写实体不写迁移、或迁移不同步 docs/sql/schema.sql 都会在此变红
+ * 只写实体不写迁移、或迁移不同步 backend/admin-api/src/main/resources/db/init/schema.sql 都会在此变红
  * （跨源漂移守卫 tests/unit_ci_workflows/test_schema_integrity.py 的用例级补充）。
  */
 final class ProductionMigrationSql {
 
     static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql";
-    static final String SCHEMA = "docs/sql/schema.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V49__create_production_operations_and_work_logs.sql";
+    static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
 
     private ProductionMigrationSql() {
     }
@@ -32,7 +32,7 @@ final class ProductionMigrationSql {
     static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();
@@ -49,7 +49,7 @@ final class ProductionMigrationSql {
     }
 
     /**
-     * 断言 table 在「迁移 V49」与「docs/sql/schema.sql」两源里都存在，且 CREATE TABLE 体含全部列。
+     * 断言 table 在「迁移 V49」与「backend/admin-api/src/main/resources/db/init/schema.sql」两源里都存在，且 CREATE TABLE 体含全部列。
      * 列名按行首匹配（避免 `qty` 被 `done_qty` 这类子串误命中）。
      */
     static void assertTableColumns(String table, String... columns) {

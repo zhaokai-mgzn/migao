@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WorkerReportAuditMapperTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/V98__create_worker_sessions_and_worker_no.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V98__create_worker_sessions_and_worker_no.sql";
 
     @Test
     @DisplayName("实体映射 worker_report_audits 表")

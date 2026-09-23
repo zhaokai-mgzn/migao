@@ -16,7 +16,7 @@ mock 掉 git 等于把被测对象换成替身，红证会变成假绿）：
    （本仓明确记过：commit 可达性不是判据，用错了会把**已交付**判成搁浅 = 假警报）。
 ③ **squash 的并发并入 ≠ 搁浅**：合并点把 base 对同一文件的并发改动一起并入 ⇒ 与分支 tip **逐字节不同**，
    但分支自己的新增内容都在合并点里 ⇒ `LANDED-MERGED`，不进搁浅清单。
-   （这条是**回归护栏**：判据若只比 blob，这一形态必假红；实证 #4127 的 `docs/sql/schema.sql`。）
+   （这条是**回归护栏**：判据若只比 blob，这一形态必假红；实证 #4127 的 `backend/admin-api/src/main/resources/db/init/schema.sql`。）
 ④ **三态**：`gh` 不在 PATH / PR 未合并 / 元数据不全 / 远端不可达 ⇒ **exit=3，不是 0**
    （「看不了」不得当「没问题」）。
 ⑤ **接入口**：`batch-integrate-check.sh <branch> <pr>` 真的调用本检测，且 exit=3 被计成 FAIL。

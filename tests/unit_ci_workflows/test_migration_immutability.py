@@ -54,11 +54,20 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
 LEDGER_REGEN_CMD = ("python3 tests/unit_ci_workflows/"
                     "test_migration_immutability.py --write-ledger")
+
+#: 迁移文件的两个载体 + 建库脚本（单一事实源 = tests/unit_ci_workflows/_migration_paths.py）
+# 共享件（issue #5243）：`tests/` 上 sys.path 才能按**包名**导入；直接以脚本运行时
+#（如 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）
+# 包不在路径上，故显式补一次 —— 两种入口都要能跑。
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import INIT_SCRIPT, MIGRATION_DIRS  # noqa: E402
 
 _VERSION_RE = re.compile(r"^V(\d+)__")
 
@@ -74,10 +83,25 @@ def fingerprint(path: Path) -> str:
     return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def scan_disk(migration_dir: Path = MIGRATION_DIR) -> dict:
-    """磁盘上的迁移文件 → 内容指纹（按版本号数值序，便于账本 diff 稳定）。"""
-    paths = sorted(Path(migration_dir).glob("V*.sql"), key=lambda p: version_key(p.name))
-    return {p.name: fingerprint(p) for p in paths}
+def scan_disk(migration_dir: Path = None) -> dict:
+    """**冻结面**上的文件 → 内容指纹（按版本号数值序，便于账本 diff 稳定）。
+
+    冻结面（issue #5243 起）= ① 唯一的一份建库脚本 `db/init/schema.sql`（基线；台账键 = 文件名）
+    + ② **归档**的迁移链（`db/migration-archive/`）+ ③ 未来的增量迁移（`db/migration/`）。
+
+    ⚠️ 三个载体**都要扫**：只看归档 ⇒ 新迁移不在射程（账本对**将来**失效）；
+    只看活目录 ⇒ 今天扫不到任何文件（判据空转 = 假绿）。建库脚本按**文件名**登记，
+    与 `MigrationRunner` 的台账键同粒度。
+    """
+    dirs = (Path(migration_dir),) if migration_dir is not None else MIGRATION_DIRS
+    out = {}
+    for d in dirs:
+        for p in sorted(Path(d).glob("V*.sql"), key=lambda p: version_key(p.name)):
+            assert p.name not in out, f"迁移文件名在两个载体目录里重复：{p.name}"
+            out[p.name] = fingerprint(p)
+    if migration_dir is None:
+        out[INIT_SCRIPT.name] = fingerprint(INIT_SCRIPT)
+    return {k: out[k] for k in sorted(out, key=version_key)}
 
 
 def load_ledger(path: Path = LEDGER) -> dict:
@@ -223,7 +247,7 @@ def write_ledger(path: Path = LEDGER) -> int:
         raw = json.loads(path.read_text(encoding="utf-8"))
         preserved = {k: v for k, v in raw.items() if k not in ("note", "migrations")}
     payload = {
-        "note": ("已发布迁移的内容指纹账本（issue #4235）。"
+        "note": ("已发布迁移 + 唯一建库脚本的内容指纹账本（issue #4235 / #5243）。"
                  f"新增迁移后跑：{LEDGER_REGEN_CMD}（只新增条目，不覆盖已登记指纹）"),
         **preserved,
         "migrations": {name: on_disk[name] for name in sorted(on_disk, key=version_key)},

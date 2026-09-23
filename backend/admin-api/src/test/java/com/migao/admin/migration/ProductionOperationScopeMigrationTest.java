@@ -47,11 +47,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductionOperationScopeMigrationTest {
 
     private static final String MIGRATION =
-            "backend/admin-api/src/main/resources/db/migration/"
+            "backend/admin-api/src/main/resources/db/migration-archive/"
                     + "V67__add_scope_to_production_operations.sql";
     /** V79（issue #4529，包 F）：把 `打包` 追加进套级集合（跨产品形态的套级工序）。 */
     private static final String MIGRATION_V79 =
-            "backend/admin-api/src/main/resources/db/migration/"
+            "backend/admin-api/src/main/resources/db/migration-archive/"
                     + "V79__seed_fabric_route_and_packing_operation.sql";
     /**
      * V95（issue #4715）：**存量纠正** —— 把「开租播种来源」错落成 {@code position} 的三道套级工序
@@ -59,13 +59,13 @@ class ProductionOperationScopeMigrationTest {
      * 故并入迁移链的并集判据（集合不变、覆盖更严）。
      */
     private static final String MIGRATION_V95 =
-            "backend/admin-api/src/main/resources/db/migration/"
+            "backend/admin-api/src/main/resources/db/migration-archive/"
                     + "V95__correct_seeded_set_scope_for_existing_tenants.sql";
-    private static final String SCHEMA = "docs/sql/schema.sql";
+    private static final String SCHEMA = "backend/admin-api/src/main/resources/db/init/schema.sql";
     private static final String SEED_V54 =
-            "backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V54__seed_production_operations.sql";
     private static final String SEED_V56 =
-            "backend/admin-api/src/main/resources/db/migration/V56__seed_special_option_operations.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V56__seed_special_option_operations.sql";
 
     /**
      * V67 的冻结集合（issue #4384 用户裁定）：**恰好**这三道是套级（每樘窗一次）。
@@ -241,7 +241,7 @@ class ProductionOperationScopeMigrationTest {
     // ══════════════════════ ③ bootstrap 终态镜像 ══════════════════════
 
     @Test
-    @DisplayName("判据 1f：docs/sql/schema.sql 同步 V67 ∪ V79 终态（列 + 注释 + 回填）")
+    @DisplayName("判据 1f：backend/admin-api/src/main/resources/db/init/schema.sql 同步 V67 ∪ V79 终态（列 + 注释 + 回填）")
     void schemaSqlMirrorsMigrationFinalState() throws Exception {
         String schema = read(SCHEMA);
 

@@ -100,7 +100,7 @@ TOOLS: dict[str, ToolSpec] = {
             _AAPI_MAIN + "service/AutoBatchDispatchListener.java",
             _AAPI_MAIN + "service/PoolChangeNotifier.java",
             _AAPI_MAIN + "service/OrderService.java",
-            "docs/sql/schema.sql",
+            "backend/admin-api/src/main/resources/db/init/schema.sql",
         ),
         criteria=(
             _AAPI_TEST + "service/AutoBatchDispatchTest.java",

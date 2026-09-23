@@ -75,7 +75,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>环境</h2>
  * 本类**自建一次性 PG 集群**（{@code initdb} + {@code pg_ctl}，随机端口、跑完即停），
  * 与 {@code tests/unit_ci_workflows/test_v9x_*.py} 的真库判据同款；缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
- * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。schema 取自 {@code docs/sql/schema.sql}
+ * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。schema 取自 {@code backend/admin-api/src/main/resources/db/init/schema.sql}
  * （= docker 栈的 bootstrap 终态，含 V92/V99 的列）—— **不手抄列清单**（手抄会漂移）。
  */
 @DisplayName("#4865 真库×真映射守卫：实例化 ⇒ processing_set_part_tokens 有行且 short_code 非空")
@@ -459,11 +459,11 @@ class ProductionPartCodeRealMappingTest {
 
     private static String schemaSql() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("docs/sql/schema.sql"))) {
+        while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"))) {
             root = root.getParent();
         }
-        assertThat(root).as("必须能定位 docs/sql/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
-        return Files.readString(root.resolve("docs/sql/schema.sql"));
+        assertThat(root).as("必须能定位 backend/admin-api/src/main/resources/db/init/schema.sql（真库建表取终态 schema，不手抄列清单）").isNotNull();
+        return Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
     }
 
 }

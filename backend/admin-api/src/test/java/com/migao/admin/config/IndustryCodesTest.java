@@ -103,7 +103,7 @@ class IndustryCodesTest {
     void migrationBackfillMatchesJavaNormalization() throws Exception {
         Path repo = repoRoot();
         String sql = Files.readString(
-                repo.resolve("backend/admin-api/src/main/resources/db/migration/"
+                repo.resolve("backend/admin-api/src/main/resources/db/migration-archive/"
                         + "V62__add_source_to_production_operations_and_routings.sql"),
                 java.nio.charset.StandardCharsets.UTF_8);
 
@@ -149,7 +149,7 @@ class IndustryCodesTest {
     private static Path repoRoot() {
         Path cur = Paths.get("").toAbsolutePath();
         while (cur != null) {
-            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration"))) {
+            if (Files.isDirectory(cur.resolve("backend/admin-api/src/main/resources/db/migration-archive"))) {
                 return cur;
             }
             cur = cur.getParent();

@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InboundOrderItemMapperTest {
 
     private static final String V111 =
-            "backend/admin-api/src/main/resources/db/migration/V111__create_inbound_orders_and_batches.sql";
+            "backend/admin-api/src/main/resources/db/migration-archive/V111__create_inbound_orders_and_batches.sql";
 
     @Test
     @DisplayName("实体映射 inbound_order_items 表")

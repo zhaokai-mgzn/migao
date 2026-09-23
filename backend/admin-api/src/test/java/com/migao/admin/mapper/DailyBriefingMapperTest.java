@@ -47,7 +47,7 @@ class DailyBriefingMapperTest {
     void schemaSqlContainsDailyBriefings() throws Exception {
         java.nio.file.Path root = findRepoRoot();
         assertThat(root).isNotNull();
-        String schema = java.nio.file.Files.readString(root.resolve("docs/sql/schema.sql"));
+        String schema = java.nio.file.Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
         assertThat(schema).as("schema.sql 应包含 daily_briefings 建表").contains("CREATE TABLE IF NOT EXISTS daily_briefings");
         assertThat(schema).as("schema.sql 应包含 RLS 策略").contains("tenant_isolation_daily_briefings");
         assertThat(schema).as("schema.sql 应包含 tenants.briefing_enabled").contains("briefing_enabled BOOLEAN DEFAULT FALSE");
@@ -59,7 +59,7 @@ class DailyBriefingMapperTest {
         java.nio.file.Path root = findRepoRoot();
         assertThat(root).isNotNull();
         String migration = java.nio.file.Files.readString(root.resolve(
-                "backend/admin-api/src/main/resources/db/migration/V44__create_daily_briefings.sql"));
+                "backend/admin-api/src/main/resources/db/migration-archive/V44__create_daily_briefings.sql"));
         assertThat(migration).contains("CREATE TABLE IF NOT EXISTS daily_briefings");
         assertThat(migration).contains("ENABLE ROW LEVEL SECURITY");
         assertThat(migration).contains("briefing_enabled BOOLEAN DEFAULT FALSE");
