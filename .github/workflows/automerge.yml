@@ -516,7 +516,8 @@ jobs:
       pull-requests: read
       actions: read
     env:
-      # 与既有 job 同一内置凭据（全文 `secrets.*` 引用仍只有既有那一处）
+      # 与既有 job 同一内置凭据（本文件全文的凭据引用仍只有既有那一处；
+      # 这句注释本身曾因含 `secrets` + 通配点被 Danger Scan 的前置子串筛选误判为「新增 1 处非内置凭据引用」⇒ 已立 issue #5268，本单按最小改法改写措辞解绑，**未**改任何门禁逻辑、**未**碰豁免通道）
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       # 「悬空」的年龄阈值：60 分钟 —— 远大于本仓 CI 的常规时长（常见十几~几十分钟），
