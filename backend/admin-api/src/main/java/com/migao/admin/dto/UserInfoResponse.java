@@ -111,11 +111,6 @@ public class UserInfoResponse {
         private String name;
 
         /**
-         * 图标名称（Lucide 图标）
-         */
-        private String icon;
-
-        /**
          * 路由路径
          */
         private String path;

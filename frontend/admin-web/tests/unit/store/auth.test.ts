@@ -299,7 +299,7 @@ describe('useAuthStore (Zustand auth store)', () => {
             },
             roles: ['admin'],
             permissions: ['*'],
-            menus: [{ key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' }],
+            menus: [{ key: 'dashboard', name: '经营看板', path: '/dashboard' }],
           },
         },
       })
@@ -318,7 +318,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       // 角色/权限/菜单保留（侧边栏过滤等依赖）
       expect(user.roles).toEqual(['admin'])
       expect(user.permissions).toEqual(['*'])
-      expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' }])
+      expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', path: '/dashboard' }])
     })
 
     it('should set user and isAuthenticated on success', async () => {

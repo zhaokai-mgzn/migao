@@ -1,4 +1,4 @@
-# case_ids: MC-017
+# case_ids: MC-017, MC-018
 """六个红证机具必须**真的有人调用**，且「腐烂」必须能被检出（issue #5193，L0 零 LLM、零网络）。
 
 ## 缺陷（issue #5193，独立验收锚 `c5adc883d`，非推断）
@@ -33,6 +33,13 @@ CI / 门禁调用它们** ⇒ 「每条断言都要有红证」落地成了**手
    桩机具非零 ⇒ 腿**非零**（不许 `|| true` / `set +e` 吞掉）；没有机具（桩仓库，如
    `tests/unit_ci_workflows` 里复制本脚本的最小仓库）⇒ 显式「未跑」且**不红**；桩机具绿 ⇒ 腿绿。
 6. **三态退出码契约**：`report_and_exit` 的 `0`（全绿）/ `1`（有腐烂）/ `3`（无法判定 = 没有声明）。
+7. **报告卫生（issue #5216，P1）**：读数取自 `target/surefire-reports/**` 的机具**必须先 `unlink`
+   目标报告、且报告缺失必须 fail-closed**（`if not <report>.exists(): raise`）—— 报告由 Maven 在
+   测试跑完后才重写，运行被打断（并发抢 `target`）或编译失败时它**保持上一次变异的内容**，
+   于是机具给出**错误归因**（把环境事故读成「这条变异被抓到 / 没抓到」）；而**红证机具的错误归因
+   比没有红证更危险**（它会让人相信一条判据有判别力）。判据只对**真的读报告**的机具施加
+   （由**代码里的字符串常量**判定，注释/docstring 提及不算），不读报告的机具 = **不适用**。
+   红证 = 删掉 `unlink` / 把 fail-closed 削成 `return ""` ⇒ 同名判据必须变红。
 
 ## 为什么不是「实跑」在 CI 里（边界，如实登记）
 
@@ -433,6 +440,172 @@ class TestRotIsCaught:
                 f"实得 {r.returncode}\n{r.stdout[-800:]}")
             assert "被削弱" in r.stdout, f"{tool} 没有把腐烂归因到「机具被削弱」：\n{r.stdout[-800:]}"
         _check_green(tool)
+
+
+# ══════════════════ ⑥ 报告卫生：surefire 报告必须先 unlink + 缺失即「无法判定」 ══════════════════
+#
+# issue #5216（P1）：`auto-batch` / `auto-batch-due-scan` 跑被测测试前**不删**目标类的
+# `target/surefire-reports/<fqn>.txt` ⇒ 运行被打断（并发抢 `target`）或编译失败时读到
+# **上一次变异**留下的报告 ⇒ **错误归因**（把环境事故读成「这条变异被抓到 / 没抓到」）。
+# 同族的 `scripts/pool-board-red-proof.py` **有**这道卫生 ⇒ 正确做法就在仓库里，本判据把它变成机械的。
+
+_REPORT_MARK = "surefire-reports"
+
+
+def _docstring_constants(tree: ast.AST) -> set[int]:
+    """模块 / 函数 / 类的 docstring 常量节点 id（**剥 docstring** ⇒ 注释里「提及」不算读报告）。"""
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        body = getattr(node, "body", [])
+        if not body:
+            continue
+        first = body[0]
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            out.add(id(first.value))
+    return out
+
+
+def _reads_surefire_report(tree: ast.AST) -> bool:
+    """机具是否**真的读** surefire 报告（由**代码里的字符串常量**判定 —— 注释/docstring 不算）。"""
+    docs = _docstring_constants(tree)
+    return any(isinstance(n, ast.Constant) and isinstance(n.value, str)
+               and _REPORT_MARK in n.value and id(n) not in docs for n in ast.walk(tree))
+
+
+def _report_readers() -> list[str]:
+    """读 surefire 报告的机具清单 —— 由机具自身源码决定（不另立登记表，避免与实现漂移）。"""
+    out: list[str] = []
+    for tool in TOOL_RELS:
+        if _reads_surefire_report(ast.parse((REPO_ROOT / tool).read_text(encoding="utf-8"))):
+            out.append(tool)
+    return out
+
+
+REPORT_READERS = _report_readers()
+
+
+def _guarded_report_raises(tree: ast.AST) -> list[ast.Raise]:
+    """`if not <report>.exists(): raise …` 形态的 raise 列表（= **报告缺失 ⇒ fail-closed**）。"""
+    found: dict[int, ast.Raise] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if not any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                   and n.func.attr == "exists" for n in ast.walk(node.test)):
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Raise):
+                found.setdefault(sub.lineno, sub)
+    return [found[no] for no in sorted(found)]
+
+
+def _hygiene_problems(tool_rel: str, text: str | None = None) -> list[str]:
+    """报告卫生判据（**纯函数** ⇒ 可对源码注入验证判别力，见 `TestSurefireReportHygiene`）。
+
+    只对**读 surefire 报告的机具**施加；不读的（stdout / 退出码 / npm 路径）返回 `[]` = **不适用**：
+
+    ① **跑 Maven 前必须先 `unlink` 目标报告**：报告由 Maven 在测试跑完后才重写，被打断时它保持
+       上一次变异的内容 ⇒ 错误归因；
+    ② **报告缺失必须 fail-closed**（`if not <report>.exists(): raise`）—— 不得回落成空内容：
+       空内容 = 「没有方法级失败」 = 读成「判据没有判别力」或（更糟）「通过」。
+    """
+    text = (REPO_ROOT / tool_rel).read_text(encoding="utf-8") if text is None else text
+    tree = ast.parse(text)
+    if not _reads_surefire_report(tree):
+        return []
+    problems: list[str] = []
+    unlink_lines = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+                    and isinstance(n.func, ast.Attribute) and n.func.attr == "unlink"]
+    maven_lines = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+                   and isinstance(n.func, ast.Attribute) and n.func.attr == "run"
+                   and getattr(n.func.value, "id", None) == "subprocess"]
+    if not maven_lines:
+        problems.append("读 surefire 报告却没有 `subprocess.run`（结构变了就同步本守卫）")
+    elif not any(u < m for u in unlink_lines for m in maven_lines):
+        problems.append("跑 Maven 前没有 `unlink` 目标报告 ⇒ 被打断 / 编译失败时读到上一次变异的"
+                        "报告（**错误归因**：把环境事故读成「抓到 / 没抓到」）")
+    if not _guarded_report_raises(tree):
+        problems.append("报告缺失时没有 fail-closed（缺 `if not <report>.exists(): raise`）"
+                        "⇒ 会回落读上一次内容 / 被当成「通过」")
+    if re.search(r'else\s+""|return\s+""', text):
+        problems.append("报告读取回落成空串（读到缺失 = 读到「没有方法级失败」）")
+    return problems
+
+
+def _drop_unlink(text: str) -> str:
+    """注入①：把 `…unlink()` 那一行换成 `pass`（保持语法合法）—— 模拟「删掉报告卫生」。"""
+    out: list[str] = []
+    changed = False
+    for ln in text.splitlines(keepends=True):
+        if ln.strip().endswith(".unlink()"):
+            indent = ln[: len(ln) - len(ln.lstrip())]
+            out.append(f"{indent}pass  # [RED-PROOF] 报告卫生被摘掉\n")
+            changed = True
+        else:
+            out.append(ln)
+    assert changed, "找不到 `.unlink()` 行 ⇒ 注入无从进行（结构变了就同步本守卫）"
+    return "".join(out)
+
+
+def _replace_span(text: str, span: tuple[int, int], new: str) -> str:
+    first, last = span
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[: first - 1] + [new] + lines[last:])
+
+
+def _weaken_fail_closed(text: str) -> str:
+    """注入②：把「报告缺失 ⇒ raise」换成 `return ""` —— 模拟「回落读上一次内容 / 当成通过」。"""
+    guarded = _guarded_report_raises(ast.parse(text))
+    assert guarded, "找不到 fail-closed 的 raise ⇒ 注入无从进行（同步本守卫）"
+    node = guarded[0]
+    indent = " " * node.col_offset
+    return _replace_span(text, (node.lineno, node.end_lineno), f'{indent}return ""  # [RED-PROOF]\n')
+
+
+class TestSurefireReportHygiene:
+    """issue #5216：读 surefire 报告的机具**跑前先 unlink、缺失即「无法判定」**（现状不红 = 本形态）。"""
+
+    def test_report_reader_set_is_not_empty(self):
+        """扫描口径本身必须非空 —— 否则下面两条参数化用例在空集上**恒真**（vacuous）。"""
+        assert REPORT_READERS, (
+            "scripts/*-red-proof*.py 里找不到任何读 `surefire-reports` 的机具 ⇒ 本判据空跑"
+            "（扫描口径失效，或机具路径漂移）")
+
+    @pytest.mark.parametrize("tool", REPORT_READERS)
+    def test_real_tools_have_report_hygiene(self, tool):
+        assert _hygiene_problems(tool) == [], (
+            f"{tool} 缺报告卫生（issue #5216）：" + repr(_hygiene_problems(tool)))
+
+    @pytest.mark.parametrize("tool", REPORT_READERS)
+    def test_dropping_the_unlink_is_caught(self, tool):
+        """红证①：删掉跑前的 `unlink` ⇒ 判据必须变红（这就是 issue #5216 的现状形态）。"""
+        text = (REPO_ROOT / tool).read_text(encoding="utf-8")
+        mutated = _drop_unlink(text)
+        assert mutated != text, f"{tool}：注入没生效 —— 同步本守卫"
+        assert _hygiene_problems(tool, mutated), f"{tool}：删掉 unlink 后判据没有变红 ⇒ 它是空断言"
+
+    @pytest.mark.parametrize("tool", REPORT_READERS)
+    def test_weakened_fail_closed_is_caught(self, tool):
+        """红证②：报告缺失回落成 `return ""`（而不是 `raise`）⇒ 判据必须变红。"""
+        text = (REPO_ROOT / tool).read_text(encoding="utf-8")
+        mutated = _weaken_fail_closed(text)
+        assert mutated != text, f"{tool}：注入没生效 —— 同步本守卫"
+        assert _hygiene_problems(tool, mutated), (
+            f"{tool}：fail-closed 被削成 return \"\" 后判据没有变红 ⇒ 它是空断言")
+
+    def test_the_prefix_shape_was_red(self):
+        """回归锚（**逐字节内联片段**，不读可变引用）：修复前 `report_of` 的形态必须仍被判红。"""
+        prefix = ('def report_of(fqn: str) -> str:\n'
+                  '    path = MODULE / "target/surefire-reports" / f"{fqn}.txt"\n'
+                  '    return path.read_text(encoding="utf-8") if path.exists() else ""\n')
+        fake = ("import subprocess\nfrom pathlib import Path\nMODULE = Path('.')\n"
+                "def run_tests(fqn):\n    return subprocess.run(['./mvnw'])\n" + prefix)
+        problems = _hygiene_problems(REPORT_READERS[0], fake)
+        assert problems, "修复前的形态（无 unlink + `else \"\"` 回落）必须被判红 —— 否则判据是空断言"
+        assert any("fail-closed" in p or "空串" in p for p in problems), repr(problems)
 
 
 # ══════════════════ ④ 接线腿的三态 + 不吞退出码（真跑 shell） ══════════════════

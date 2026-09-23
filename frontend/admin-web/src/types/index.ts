@@ -49,7 +49,6 @@ export interface User {
 export interface MenuItem {
   key: string
   name: string
-  icon: string
   path: string
   children?: MenuItem[]
 }
