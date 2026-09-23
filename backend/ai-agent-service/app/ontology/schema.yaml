@@ -148,6 +148,19 @@ intent_ownership:
     agents: [xiaobu]
     description: 窗帘算料报价（仅小布 customer_quote）
 
+# ── 外部关系目标登记（issue #5245 B6）──
+# relations[].target 必须落在 objects 或本表，loader 加载时 fail-closed 校验
+# （未登记 ⇒ OntologySchemaError，错误消息点名对象/关系/目标）。
+# 为什么是「显式登记为外部概念」而不是「补成本体对象」：这五个概念是切片范围外的**承载者**
+# （订单明细行 / 商品 / 加工分类 / 人工会话 / 租户），真值在 DB 表与 Java 实体里；
+# 补成对象 = 在本体里造第二份会漂移的副本（违反单一事实源）。
+external_targets:
+  order_item: 订单明细行（order_items；属订单聚合内部行，不单独建对象）
+  product: 商品（products；本体切片以 product_sku 作为商品入口）
+  processing_category: 加工分类（processing_categories；加工项的分类目录）
+  agent_session: 人工/Agent 会话（agent_sessions；员工接管面）
+  tenant: 租户（tenants；多租户隔离根）
+
 objects:
   order:
     display_name: 订单
@@ -290,17 +303,22 @@ objects:
         required: false
         source: "ProductSku.stock"
         description: 库存
+      # 🔴 2026-09-23 改判（issue #5245 B1）：原 `source: "ProductSku.status"` **不成立** ——
+      # `ProductSku.java` 无 status 字段、`product_skus` 表无 status 列（docs/sql/schema.sql）。
+      # 该枚举的真实载体是**商品级** `Product.status`（`ProductService.STATUS_TRANSITIONS` 4 值状态机，
+      # CONTRACT-LEDGER §一「商品状态」行引用的后端真值；V4 迁移 in_warehouse→on_sale 亦指该列）。
+      # 枚举与词表（loader.STATUS_LEXICON）**保持不变**：这是三端真契约，改的只是挂载点。
       status:
         type: enum
         required: true
-        source: "ProductSku.status"
+        source: "Product.status"
         values: [draft, on_sale, off_sale, under_review]
-        description: 商品状态
-      attributes:
-        type: string
-        required: false
-        source: "ProductSku.attributes"
-        description: SKU 属性（颜色/尺寸等 JSON）
+        description: 商品状态（**商品级**：products.status；SKU 表无状态列，SKU 由 颜色 × 门幅 组成）
+      # 原 `attributes`（source: "ProductSku.attributes"，描述「SKU 属性（颜色/尺寸等 JSON）」）已删除
+      # （issue #5245 B1）：`ProductSku.java` 无该字段、`product_skus` 表无该列；SKU 的组合维度
+      # 只有 颜色 × 门幅（V113__product_roll_length_and_selling_method_base_attribute.sql），
+      # 商品级属性真值在 `product_attributes` 键值表（商品级，不是 SKU 级）⇒ 无真实载体可改指。
+      # 有意**不**顺手补 color_name/door_width：清漂移不扩本体（YAGNI，issue #5245 的范围）。
     relations:
       - name: belongs_to_product
         target: product
@@ -349,11 +367,14 @@ objects:
         source: "AfterSalesTicket.status"
         values: [pending, processing, rejected, resolved, closed]
         description: 售后工单状态
-      type:
+      # 🔴 2026-09-23 改名（issue #5245 B2）：原 `type` / `source: "AfterSalesTicket.type"` 是
+      # **不存在的字段名**。真实字段 = `AfterSalesTicket.ticketType`（Java）+ DB `after_sales_tickets.ticket_type`
+      # + Agent 三端参数名 `ticket_type`（app/tools/after_sales_manage.py 的必需参数 / aftersale_create.py）。
+      ticket_type:
         type: string
         required: false
-        source: "AfterSalesTicket.type"
-        description: 售后类型（退货/换货/维修）
+        source: "AfterSalesTicket.ticketType"
+        description: 售后工单类型（合法值 refund/exchange/repair/complaint/other；DB 列 ticket_type）
       reason:
         type: string
         required: false
@@ -398,26 +419,35 @@ objects:
         required: true
         source: "CustomerProfile.id"
         description: 客户 UUID
-      name:
+      # 🔴 2026-09-23 三处改判（issue #5245 B3）：原 `name` / `address` / `user_id` 在
+      # `customer_profiles` 与 `CustomerProfile.java` 里**都不存在**。逐个改指真实载体：
+      #   · 姓名：客户实体无 name 列，姓名存 `wechat_nickname`（app/tools/customer_manage.py 的
+      #     NAME_ALIAS_TO_CANONICAL：name/nickname/realName → wechatNickname，写路径同口径）；
+      #   · 地址：真值 = `default_receiver_address`（V70__customer_default_receiver_address.sql，
+      #     CONTRACT-LEDGER §二「客户默认收货信息」行；单字段文本，与 orders.customer_address 同口径）；
+      #   · C 端身份：真值 = `wechat_openid`（`CustomerService.createFromSession(tenantId, wechatOpenid, …)`
+      #     按 openid 找/建客户档案）。C 端**数据隔离**字段是订单侧 `orders.user_id`（X-User-Id 透传，
+      #     见本文件 order.user_id 与 CONTRACT-LEDGER §二「下单用户ID」行），不在客户档案上。
+      wechat_nickname:
         type: string
         required: false
-        source: "CustomerProfile.name"
-        description: 客户姓名
+        source: "CustomerProfile.wechatNickname"
+        description: 客户姓名（客户实体无 name 列；name/nickname/realName 由工具层归一到此字段）
       phone:
         type: string
         required: false
         source: "CustomerProfile.phone"
         description: 客户手机号
-      address:
+      wechat_openid:
         type: string
         required: false
-        source: "CustomerProfile.address"
-        description: 客户地址
-      user_id:
+        source: "CustomerProfile.wechatOpenid"
+        description: C 端身份绑定键（微信 openid；客户档案无 user_id 列）
+      default_receiver_address:
         type: string
         required: false
-        source: "CustomerProfile.userId"
-        description: 绑定用户ID（C 端）
+        source: "CustomerProfile.defaultReceiverAddress"
+        description: 默认收货地址（单字段文本，V70；下单选客户逐字带出）
       last_active_at:
         type: datetime
         required: false
@@ -570,7 +600,10 @@ objects:
     rules:
       - text: "加工项状态合法值为 active/inactive（前端 ProcessingItemStatus）"
         severity: must
-      - text: "算料报价引用加工项单价，禁止编造计价"
+      # 🔴 2026-09-23 改判（issue #5245 B5）：原句「算料报价引用加工项单价」与库事实相反 ——
+      # `processing_items.unit_price` / `.pricing_method` 已由 V101 删除（issue #4882 用户裁定），
+      # 加工项目录不再承担计价；加工费真值源 = `processing_fee_combinations`（组合价 × 加工费米数）。
+      - text: "算料报价的加工费取加工费组合价（组合价 × 加工费米数）；加工项目录无单价，禁止编造计价"
         severity: must
 
   category:

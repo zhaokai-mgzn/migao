@@ -38,6 +38,7 @@
 | **加工费人工改价（行级 override）**（issue #4872 / #4874） | 无 Java 字段：键在 **`processingInfo` JSONB 顶层** = `processingFeeOverride`（**元/米**）；取价结果 `ProcessingFeeCalculator.Fee` 表达为 `feeSource='manual'` + `unitPrice` = override + `processingFeeDetail` 的 `unit_price` / `fee_source` / 金额 | 建单页 `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 的「加工费组合」明细块（**仅** `fee_source='unpriced'` ∧ 组合键非空时出现「改单价」入口）；该键随 `feePreview` 与建单**同一份** `buildLineProcessingInfo` 产出 | —（Agent 侧暂不产该键） | 🔴 **仅当该行组合未命中活跃价目时才采用**：命中 ⇒ **忽略** override（既有组合价不受影响）；未命中且无 override ⇒ 仍 `unpriced`、组合那半记 0、**不回落 Σ 加工项**（既有纪律一字不改）。**建单成功后同一事务内**把该组合 upsert 进 `processing_fee_combinations`：`composition_key` = `ProcessingFeeCombinationCommandService.compositionKey`（**同源口径**，不许自己拼第二套）、`items` = 规范化特征名、`unit_price` = override、`status='active'`、`source='实证'`，并追加版本台账。**已存在 active 行 ⇒ 不覆盖其价**（该行本该命中）；**已存在 disabled 行 ⇒ 复活为 active 并写新价**。⚠️ 缺选配信息（组合键为空）⇒ **不给**改单价入口（没有 key 可同步） |
 | **订单收货物流（下单意向）**（issue #4872 / #4874，V100） | `OrderCreateRequest.logisticsType` / `logisticsCompany`（顶层）；`Order.logisticsType` / `logisticsCompany`；DB `orders.logistics_type` VARCHAR(16) DEFAULT `'express'` / `orders.logistics_company` VARCHAR(128) | `types/index.ts` 的建单请求体与 `Order`；建单页收货信息两个**可编辑**控件（选客户后默认带出）；发货页 `ShipOrder.tsx` **优先读订单值、缺省回落客户档案** | — | 值域 `logisticsType ∈ {express 快递, logistics 物流专线}`（与 `CustomerProfile.defaultLogisticsType` 同域）。⚠️ 与 `order_logistics`（**发货**表，`tracking_no NOT NULL`）**不是一回事** —— 本两列只承载**下单时的意向物流**，发货仍走 `order_logistics`（见下一行的既有行） |
 | **物流类型**（issue #3984 引入，issue #4419 补上 admin-web 写面） | `logisticsType`（`order_logistics.logistics_type`；客户常用值在 `customer_profiles.default_logistics_type`） | `logisticsType`（`LogisticsFormData` → `buildLogisticsPayload` → `PUT /orders/{id}/logistics`） | 读响应 `logistics_type`（`logistics_track.py`，缺省回退 `express`） | `express` 快递 / `logistics` 物流专线。⚠️ **修前 admin-web 从不下发该字段** ⇒ 商家端发货恒落列默认 `express`，V47 的区分形同虚设（#4419 补） |
+| **商品库存预警阈值 / 扣减模式**（issue #5245 C1） | `stockWarningThreshold` / `stockDeductionMode`（`Product` 实体 + DB 列 `products.stock_warning_threshold` / `products.stock_deduction_mode`；`ProductResponse` / `ProductCreateRequest` / `ProductUpdateRequest` 透出） | `types/index.ts` 的 `stockWarningThreshold` / `stockDeductionMode`；`components/products/ProductTable.tsx`（阈值判红）、`app/(dashboard)/products/[id]/ProductDetail.tsx`（两列都渲染）、`components/products/ProductForm.tsx`（扣减模式可编辑） | —（Agent 侧不读写这两列） | 🔴 **两列都有消费者**：V51 的 DB `COMMENT` 写「⚠️ 当前**无消费方**／全仓无任何 service/mapper 读取该列」是**错的**（实测 admin-web 商品表 + 商品详情页 + 商品表单都在读/写）。⚠️ V51 是**已发布、字节冻结**的迁移文件（改它会被迁移不可变守卫判红）⇒ **不改该文件**；DB 注释订正登记为**待办 DB 工作**（随 #5243 收口落一条新迁移 `COMMENT ON COLUMN` 反向订正）。**绝不删列**（删了商品页崩） |
 
 ## 三、端点签名（勿自造）
 
@@ -129,7 +130,16 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 ## 六、加工项计价方式契约（issue #3005 回滚 #2986，2026-09-07）
 
 行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米单价中 → 加工项计价方式仅 `per_meter / per_set / fixed / per_area`，
-**per_piece 与「每米数量」密度（per_meter_quantity / custom_per_meter_quantity）已全链路移除**（schema V34 回滚迁移 + DTO/TS/Python 删除）。
+**per_piece 已全链路移除**（schema V34 回滚迁移 + DTO/TS/Python 删除）。
+
+🔴 **2026-09-23 改判「每米数量」密度列（issue #5245 A1）**：本行原写
+**「per_meter_quantity / custom_per_meter_quantity 已全链路移除」—— 与库事实相反**。
+真实迁移史：`V33` 加列 → `V34` 删列 → **`V41`（`V41__align_bootstrap_schema_missing_columns.sql`）
+又把 `processing_items.per_meter_quantity` 加回**，初始化建库脚本 `docs/sql/schema.sql` 亦
+`ADD COLUMN IF NOT EXISTS` ⇒ **该列在存量库与新建库里都真实存在**。
+准确口径 = **僵尸列**（列在、生产零消费者：DTO/TS/Python 确实已删，无读无写）；
+**删列（新迁移 + 初始化脚本同步）待 #5243 合入后执行**（本单 #5245 不动 DB 面）。
+`custom_per_meter_quantity` 随 `product_processing_items` 表由 V66 DROP，无残留。
 
 | 字段 | 后端 Java | 前端 TS | Agent Python | 备注 |
 |---|---|---|---|---|

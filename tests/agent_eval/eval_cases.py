@@ -3400,16 +3400,16 @@ _CASE_OB_005 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端页面用例：前置 = `corporate-home` 页面源码与其单测同时存在、且被 vitest 正常收集（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx）；前置由测试自身持有、不依赖共享夹具 ⇒ 前置不成立时（页面文件缺失/改名/选择器被摘）该单测直接红，不会表现成「agent 不干活」；agent-eval 栈不跑它',
 )
 
-# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展三对象）（源: cases/ontology.yml）──
 _CASE_ON_001 = EvalCase(
     id='ON-001',
     legacy_id='',
-    title='本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）',
+    title='本体 schema 加载与状态枚举校验（核心四对象 + 扩展三对象）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举'],
+    user_inputs=['加载默认本体 schema，校验七对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类）定义、状态枚举、关系目标与 source 挂载点（issue #5245）'],
     expectations=['none'],
-    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document', '每个对象具备属性/关系/动作/规则四要素', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]', '扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 七对象：order/product_sku/aftersales/customer + employee/processing_item/category（knowledge_document 已随旧 RAG 知识库退场，issue #3051）', '每个对象具备属性/关系/动作/规则四要素', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]（载体是商品级 Product.status，SKU 表无状态列）', '扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）', '词表 STATUS_LEXICON 与 schema 的 status 枚举键集**双向一致**（无死条目、无漏挂：knowledge_document.status 已随对象删除清出词表）；非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误', '关系目标 fail-closed（issue #5245 B6）：relations[].target 必须 ∈ objects ∪ external_targets（order_item/product/processing_category/agent_session/tenant 显式登记为外部概念）；未登记目标 ⇒ 加载拒绝', 'source 挂载点与真实载体一致（issue #5245 B1~B3，逐个 Java 实体/迁移取证）：product_sku.status → Product.status、product_sku 无 attributes、aftersales.ticket_type → AfterSalesTicket.ticketType、customer 的 wechat_nickname/wechat_openid/default_receiver_address → CustomerProfile 同名列'],
     skip_reason='[backend-contract] 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ontology', 'schema', 'enum_alignment'],
     persona='',

@@ -36,7 +36,9 @@ public class ProductSkuResponse {
      *
      * <p>⚠️ 本 DTO **不再有** {@code sellingMethod} —— 用户裁定 2026-09-21：
      * SKU 组合只有 颜色 × 门幅，售卖方式已上移为商品级
-     * {@code ProductResponse.sellingMethods}（V111 迁移删列）。</p>
+     * {@code ProductResponse.sellingMethods}（V113 迁移删列；原注释误记为 V111 ——
+     * V111 是库存成本/批次迁移，删 `product_skus.selling_method` 的是
+     * V113__product_roll_length_and_selling_method_base_attribute.sql，issue #5245 C2）。</p>
      */
     private String doorWidth;
 
