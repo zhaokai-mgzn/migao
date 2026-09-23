@@ -1,7 +1,7 @@
 import React from 'react';
-// case_ids: FN-001, FN-002, FN-003, FN-004
+// case_ids: FN-001, FN-002, FN-003, FN-004, UI-055
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock API
@@ -277,5 +277,51 @@ describe('FinancePage', () => {
     expect(screen.getByLabelText('开始日期')).toHaveValue(currentPeriod.start)
     expect(screen.getByLabelText('结束日期')).toHaveValue(currentPeriod.end)
     expect(mockGetSummary).toHaveBeenLastCalledWith({ startDate: currentPeriod.start, endDate: currentPeriod.end })
+  })
+
+  // ── 登记收支「金额」的数值语义（issue #5228 缺口 2，**涉钱面**）──────────────
+  //
+  // ⚠️ 判据**不建在「`0.` 中间态」上**：jsdom 把 `type="number"` 的 `"0."` 归一成 `""`，
+  // 真 Chromium 归一成 `"0"`（#5228 主会话真浏览器实测，两套读数**相反**）⇒ 谁在 jsdom 里拿它
+  // 当判据，谁就是在拿与环境相反的读数下结论（必然假红或假绿）。这里一律用
+  // `fireEvent.change` **一次给完整串**，钉的是与引擎无关的语义。
+
+  /** 打开登记弹窗 → 给金额框一次性赋值（`null` = 保持空，不改动） */
+  async function openCreateWithAmount(value: string | null) {
+    render(<FinancePage />)
+    await user.click(screen.getByText('登记收支'))
+    const amount = screen.getByPlaceholderText('0.00') as HTMLInputElement
+    if (value !== null) fireEvent.change(amount, { target: { value } })
+    return amount
+  }
+
+  it('金额完整串 `0.5` ⇒ 原值提交 amount: 0.5（涉钱面：不取整、不被当空）', async () => {
+    mockCreateTransaction.mockResolvedValue({ data: { data: {} } })
+    await openCreateWithAmount('0.5')
+    await user.click(screen.getByText('提交'))
+
+    await waitFor(() => expect(mockCreateTransaction).toHaveBeenCalledTimes(1))
+    expect(mockCreateTransaction.mock.calls[0][0]).toMatchObject({ amount: 0.5, type: 'income' })
+  })
+
+  it('金额留空 ⇒ 显式拒绝、**一个请求都不发**（空不是 0）', async () => {
+    const amount = await openCreateWithAmount(null)
+    expect(amount.value).toBe('')
+    const { toast } = await import('sonner')
+    const errSpy = vi.spyOn(toast, 'error')
+    await user.click(screen.getByText('提交'))
+
+    await waitFor(() => expect(errSpy).toHaveBeenCalledWith('请输入正确的金额'))
+    expect(mockCreateTransaction).not.toHaveBeenCalled()
+  })
+
+  it('金额 `0` ⇒ 显式拒绝（不是静默按 0 提交、也不是被当空吞掉）', async () => {
+    await openCreateWithAmount('0')
+    const { toast } = await import('sonner')
+    const errSpy = vi.spyOn(toast, 'error')
+    await user.click(screen.getByText('提交'))
+
+    await waitFor(() => expect(errSpy).toHaveBeenCalledWith('请输入正确的金额'))
+    expect(mockCreateTransaction).not.toHaveBeenCalled()
   })
 })
