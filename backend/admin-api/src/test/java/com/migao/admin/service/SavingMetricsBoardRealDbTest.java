@@ -182,7 +182,10 @@ class SavingMetricsBoardRealDbTest {
         session = factory.openSession(true);
         consumptionMapper = session.getMapper(StockBatchConsumptionMapper.class);
         service = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
-                consumptionMapper, session.getMapper(ProductSkuMapper.class), null, null);
+                consumptionMapper, session.getMapper(ProductSkuMapper.class), null, null,
+                // 余料腿显式不装（V122 / issue #5146）：本判据覆盖的是**批次账读面**，余料是附加事实
+                // —— null ⇒ 不登记余料，批次账行为与 #5158 逐字相同
+                null);
     }
 
     @AfterAll
