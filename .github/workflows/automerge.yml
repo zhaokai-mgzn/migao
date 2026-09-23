@@ -30,10 +30,46 @@ name: Auto Merge
 # **非 bot（人类 PR）路径的行为逐字不变** —— 既有 job 的 `if:` 与 steps 一个字未改（本文件
 # 从 `on:` 起的所有原文原样保留，新增内容只在文件头注释与文件末尾的新 job）。
 # 守卫：tests/unit_ci_workflows/test_automerge_bot_safe_path.py（8 条判据各带注入式红证）。
+#
+# ── 2026-09-23 新增（issue #5235「PR 悬空但零信号」的两族）────────────────────────
+# 族 A（**arm 腿自己失败**）：PR 停在「required 全绿但永不合并」，不红、不通知。真因是
+#   **GitHub 侧瞬时错误**，不是权限缺口 —— 两个失败 run（`35872446921` 的 PR #5234、
+#   `35871475072` 的 PR #5232）的逐字输出：
+#       GraphQL: Something went wrong while executing your query on 2026-09-23T14:12:31Z.
+#       Please include `4829:3FD750:2EC91:9A0B5:6AB3DE4E` when reporting this issue.
+#   而**同一个 run** 的权限面逐字是 `Contents: write / PullRequests: write`
+#   ⇒ `permissions:` 不是病因（`gh run list --workflow=automerge.yml` 的 success/failure 混合
+#   就是这个瞬时性的读数：近 40 次 19 success / 2 failure / 19 skipped）。
+#   ⇒ ① **arm 命令有界重试**（3 次、退避 5/10 秒）；② 判据仍是**回读**的 `autoMergeRequest`
+#      （命令成功 ≠ 真的 arm 上了，issue #4829 的既有口径不变）：
+#      · 重试后回读 `armed` ⇒ 绿；
+#      · 重试后仍失败 **且**回读 `null` ⇒ **红**（`::error::` + step summary）——
+#        「真失败吞成 warning」这条老路被明确堵死（守卫见 test_mechanism_jobs_alerting.py
+#        的 `TestAutomergeArmRetry`）。
+#   ⚠️ **有意不改** bot 安全路径（`enable-auto-merge-bot-safe`）：它的「未 arm」是**设计如此**的
+#      fail-closed 结局（留人工），且已把拒绝码写进 step summary；它 `exit 0` 的形态被
+#      `test_guard_script_is_fail_closed_by_default` 钉住 ⇒ 不在本单半径内。
+# 族 A 的**可见性面**（本文件新增 job `detect-dangling-prs`，判据落在
+#   `scripts/dangling_pr_scan.py`）：判据 = **「一个 open PR 在 N 分钟内既没变红、也没合入，
+#   且其 required checks 未达可合状态」⇒ 必须产生可见信号**（issue #5235 的裁定口径）。
+#   **宿主选择**：挂在本文件（同域 —— 本 workflow 就是「PR 该自动合并却没合」的责任方；
+#   arm 腿的修复与它的可见性放在**同一个文件**里 ⇒ 一个评审单元、一个回滚单元）。
+#   否决项：`flaky-ledger-reconcile.yml`（其全部注释与测试都定义它是**台账**兜底，
+#   且它是 `contents: read` 的只读最小面）、`deploy-reconcile.yml`（部署域）、
+#   `close-linked-issues.yml`（合并**之后**的 issue 生命周期，方向相反）、
+#   `stale.yml`（第三方 `actions/stale` + 每天 03:17 的日级节奏，装不下 60 分钟级信号）、
+#   新建 workflow 文件（本仓裁定：优先挂既有宿主）。
+#   ⚠️ 定时档只为这个 job 存在：悬空 PR **不产生任何事件**（这正是它"零信号"的原因）
+#   ⇒ 必须有定时入口。GitHub 对 schedule 有节流（本仓实测 2~5.5h），故它是兜底不是实时。
 
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  schedule:
+    # `detect-dangling-prs` 的入口（其余两个 job 在 schedule 上被各自的 `if:` 跳过）：
+    # 悬空＝没有事件，只能靠定时扫；实测被节流到 2~5.5h（同 flaky-ledger-reconcile）。
+    - cron: '*/20 * * * *'
+  workflow_dispatch:   # 手动重扫入口（与对账族一致；不派发任何评测）
 
 permissions:
   pull-requests: write
@@ -83,10 +119,26 @@ jobs:
           #    用 `rc=$?` 会覆盖主流程已判定的退出码（本脚本初版就这么错过一次）。
           trap 'trc=$?; rm -f "${merge_out:-}"; exit $trc' EXIT
 
+          # ---------- ① arm（**有界重试**：#5235 族 A）----------
+          # 真因（2026-09-23 两个失败 run `35872446921`(#5234) / `35871475072`(#5232) 的逐字输出）：
+          #     GraphQL: Something went wrong while executing your query on 2026-09-23T14:12:31Z.
+          #     Please include `4829:3FD750:2EC91:9A0B5:6AB3DE4E` when reporting this issue.
+          #   ⇒ **GitHub 侧瞬时错误**（带 request-id 的服务端报错）；同一 run 的权限面逐字是
+          #   `Contents: write / PullRequests: write` ⇒ **不是权限缺口、不是静态缺陷**。
+          # ⇒ 修法 = **重试**（不是补权限）。退避：最多 3 次、等待 5/10 秒（累计 15 秒）——
+          #   远小于本 job 的 `timeout-minutes: 5`，也给下面的回读（最多 20 秒）留足余量。
+          # ⚠️ **重试不许把真失败吞成 warning**：最终判据只有一条 —— 回读的 `autoMergeRequest`
+          #    是否真的 `armed`（重试仍失败且仍未 arm ⇒ 判红，见下方 `none)` 分支）。
+          MERGE_ATTEMPTS=3
+          m_attempt=0
           rc=0
-          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
-
-          if [ "$rc" -ne 0 ]; then
+          while [ "$m_attempt" -lt "$MERGE_ATTEMPTS" ]; do
+            m_attempt=$((m_attempt + 1))
+            rc=0
+            gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              break
+            fi
             # 预期内（幂等/暂不可合并）：**只收窄**——必须逐字命中这些标记才算预期内，
             # 其余一律按真失败处理（fail-closed：宁可多报一次，也不静默放过）。
             if grep -qiE 'already (in|queued|enabled|merged)|already been merged' "$merge_out"; then
@@ -94,21 +146,13 @@ jobs:
               echo "    PR #$PR_NUMBER 的 auto-merge 已处于目标状态，非失败。"
               exit 0
             fi
-            echo "::error::gh pr merge --auto 真失败（rc=${rc}）—— PR #$PR_NUMBER 未被 arm，且不会有别的东西因此停手"
-            sed 's/^/    /' "$merge_out"
-            {
-              echo "### Enable auto-merge — 真失败"
-              echo ""
-              echo "- PR：#$PR_NUMBER"
-              echo "- \`gh pr merge --auto\` 退出码：$rc"
-              echo "- 输出（未命中预期内幂等标记）："
-              echo '```'
-              cat "$merge_out"
-              echo '```'
-              echo "- ⇒ **auto-merge 未 arm**；本 job 判红即为真问题（不是幂等正常）。"
-            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-            exit 1
-          fi
+            if [ "$m_attempt" -lt "$MERGE_ATTEMPTS" ]; then
+              delay=$((m_attempt * 5))
+              echo "::warning::gh pr merge --auto 第 ${m_attempt}/${MERGE_ATTEMPTS} 次失败（rc=${rc}）⇒ ${delay} 秒后重试（#5235：实测该失败是 GitHub 侧瞬时 GraphQL 错误，退避即可越过）"
+              sed 's/^/    /' "$merge_out"
+              sleep "$delay"
+            fi
+          done
 
           # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
           # 三态口径（issue #5113）：`armed` ⇒ 绿；`none` + `mergeable=MERGEABLE`（GitHub 已算完
@@ -131,21 +175,48 @@ jobs:
             if [ "$attempt" -lt 5 ]; then sleep $((attempt * 2)); fi
           done
           if [ -z "$state" ]; then
-            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次）—— 无法判定是否已 arm，不得当成功"
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次；arm 命令 rc=${rc}、尝试 ${m_attempt} 次）—— 无法判定是否已 arm，不得当成功"
             {
               echo "### Enable auto-merge — 后置状态无法判定"
               echo ""
               echo "- PR：#$PR_NUMBER"
-              echo "- \`gh pr merge --auto\` 返回 0，但 \`gh pr view --json autoMergeRequest\` 查询失败（已重试 ${attempt} 次）。"
+              echo "- \`gh pr merge --auto\` 退出码 ${rc}（尝试 ${m_attempt} 次），且 \`gh pr view --json autoMergeRequest\` 查询失败（已重试 ${attempt} 次）。"
               echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
             } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             exit 1
           fi
           case "$state" in
             armed)
-              echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              if [ "$rc" -ne 0 ]; then
+                # 动作失败 ∧ 回读已 arm ⇒ 目标状态**已达成**（读数与动作自洽，同
+                # flaky-ledger-reconcile.yml §⑤-B 的口径）：非致命，但**不静默**。
+                echo "::warning::gh pr merge --auto 重试 ${m_attempt} 次后仍返回 ${rc}，但回读 autoMergeRequest=armed ⇒ 目标状态已达成（读数与动作自洽）⇒ 非致命；required 全绿后 GitHub 会自行合并"
+                {
+                  echo "### Enable auto-merge — 动作失败但回读已 arm（非致命，不静默）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- \`gh pr merge --auto\` 重试 ${m_attempt} 次后仍返回 ${rc}（见上方输出）"
+                  echo "- 但**动作之后回读** \`autoMergeRequest\` = armed ⇒ 已由其它路径 arm。"
+                  echo "- ⇒ 读数与动作自洽：**目标状态已达成** ⇒ 非致命；本 job 判绿（这条注解就是它的可见性，不静默）。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              else
+                echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              fi
               ;;
             none)
+              if [ "$rc" -ne 0 ]; then
+                # 🔴 #5235 族 A 的判据本体：**arm 失败（已重试）且回读仍未 arm** ⇒ 判红。
+                #    「真失败吞成 warning」这条老路在这里被明确堵死（见文件头的族 A 段）。
+                echo "::error::auto-merge 未 arm：arm 命令重试 ${m_attempt} 次后仍失败（rc=${rc}）且回读 autoMergeRequest=null ⇒ PR #$PR_NUMBER 会停在「required 全绿但永不合并」（#5235 族 A）。可行动：重跑本 job（push/打标签等事件会重新触发 arm），或人工 \`gh pr merge $PR_NUMBER --auto --squash\`"
+                {
+                  echo "### Enable auto-merge — arm 失败且仍未 arm（#5235 族 A）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- \`gh pr merge --auto\` 重试 ${m_attempt} 次后仍返回 ${rc}，且回读 \`autoMergeRequest\` 为 null ⇒ **未 arm 是确证**（不是「还没算完」）。"
+                  echo "- ⇒ 本 job 判红即为真问题：CI 一绿**不会**自动合并，PR 会静默停在「全绿但不合」。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+                exit 1
+              fi
               # 只有**逐字 `UNKNOWN`** 才分流到 unknown（读不到可合并性时仍 fail-closed 判红：
               # 宁可多报一次，也不静默放过 —— 与本 job 既有口径一致）。
               mergeable="$(gh pr view "$PR_NUMBER" \
@@ -422,3 +493,44 @@ jobs:
               main()
 
           PY
+
+  # ── 可见性面（2026-09-23 新增，issue #5235：「悬空 PR 零信号」的通用检测器）────────
+  # 判据（issue 裁定口径，逐字落码在 scripts/dangling_pr_scan.py）：
+  #   **一个 open PR 在 N 分钟内既没变红、也没合入，且其 required checks 未达可合状态
+  #   ⇒ 必须产生一条可见信号**（本 job 判红 + `::error::` + step summary 落笔）。
+  # 两条实测实例：#5139（族 B：`GITHUB_TOKEN` 推的提交 ⇒ workflow 不触发 ⇒ 0 条 check、
+  # required 永远 pending、auto-merge 已 armed 却永不合）与族 A 的 arm 失败（#5232/#5234）。
+  # 与 `flaky-ledger-reconcile.yml` §⑤-C 的关系：那条只覆盖**台账 PR**（三条件 fail-closed），
+  # 本 job 是同一口径的**通用面**（全部 `base=main` 的 open PR）⇒ 两台检测器对台账 PR 会同时红，
+  # 那不是矛盾（同一个真问题、两条独立证据链），而台账之外的人类 PR 只有这一台。
+  # ⚠️ **本 job 只在 `schedule` / `workflow_dispatch` 上跑**：它的红说的是「主线上有悬空 PR」，
+  #    与任何单个 PR 无关 ⇒ 绝不许挂上 `pull_request_target`（否则每个 PR 都会多出一条与它无关的红）。
+  detect-dangling-prs:
+    name: Detect dangling PRs (open >N min, no red, required not met)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # 只读（**窄于** workflow 顶层的写权限）：本 job 只扫、不改任何东西。
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    env:
+      # 与既有 job 同一内置凭据（本文件全文的凭据引用仍只有既有那一处；
+      # 这句注释本身曾因含 `secrets` + 通配点被 Danger Scan 的前置子串筛选误判为「新增 1 处非内置凭据引用」⇒ 已立 issue #5268，本单按最小改法改写措辞解绑，**未**改任何门禁逻辑、**未**碰豁免通道）
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # 「悬空」的年龄阈值：60 分钟 —— 远大于本仓 CI 的常规时长（常见十几~几十分钟），
+      # 且另有「有 pending check / 有在跑的 run ⇒ 不报」这条异步窗口护栏（双保险，防假红）。
+      DANGLING_MINUTES: '60'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: "Scan open PRs (悬空 ⇒ ::error:: + 非零退出)"
+        run: |
+          # 判据与动作都在 scripts/dangling_pr_scan.py（单一实现，本机可复跑）。
+          # 退出码三态：0 = 无悬空；1 = **有**悬空（本行让 job 判红）；3 = 无法判定（不得当 0 读）。
+          python3 scripts/dangling_pr_scan.py \
+            --repo "$GITHUB_REPOSITORY" --minutes "$DANGLING_MINUTES"

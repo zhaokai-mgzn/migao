@@ -55,6 +55,12 @@ CLOSE_LINKED = WORKFLOWS / "close-linked-issues.yml"
 
 # ---------------------------------------------------------------- 通用工具
 
+# #5235 追加两个**可选**注入面（不设时既有行为逐字不变）：
+#   · `STUB_EXIT_SEQ`：按调用次序给退出码（一行一次，用尽后沿用最后一个）——
+#     用来表达「第一次瞬时失败、第二次成功」（arm 有界重试的判据需要它）；
+#   · `STUB_ARMED_FILE`：把 GitHub 的**因果**建进桩里 —— 只有 `gh pr merge` **成功**过
+#     才会写下这个文件，而 `autoMergeRequest` 回读据此给 `armed`/`none`。
+#     ⇒ 「绿」不再能靠固定喂 `armed` 凑出来：重试被拿掉就必须判红（判据有判别力）。
 # `gh` 桩：行为完全由环境变量决定（STUB_EXIT / STUB_STDERR / STUB_STDOUT）。
 # ⚠️ 必须**真的实现 `--jq`**：真 `gh` 会把 JSON 先过 jq 再输出，桩若原样吐 JSON，
 #    被测脚本的 `case "$state"` 就会走到 `*`（不可解析）分支 —— 那是**桩的缺陷**，
@@ -70,6 +76,18 @@ for a in "$@"; do
   case "$a" in --jq=*) jqexpr="${a#--jq=}";; esac
   prev="$a"
 done
+# 退出码：常量（STUB_EXIT）或按调用次序（STUB_EXIT_SEQ，用尽后沿用最后一个）
+code="${STUB_EXIT:-0}"
+if [ -n "${STUB_EXIT_SEQ:-}" ]; then
+  first="$(head -n 1 "$STUB_EXIT_SEQ")"
+  rest="$(tail -n +2 "$STUB_EXIT_SEQ")"
+  printf '%s\n' "${rest:-$first}" > "$STUB_EXIT_SEQ"
+  code="${first:-0}"
+fi
+# 因果桩：`gh pr merge` 成功 ⇒ 记一笔（供 autoMergeRequest 回读使用）
+if [ "$1" = "pr" ] && [ "$2" = "merge" ] && [ "$code" = "0" ] && [ -n "${STUB_ARMED_FILE:-}" ]; then
+  : > "$STUB_ARMED_FILE"
+fi
 jq_py() {
   STUB_JQ_IN="$payload" STUB_JQ_EXPR="$jqexpr" python3 - <<'PYJQ'
 import json, os, sys
@@ -105,6 +123,8 @@ if [ -n "$jqexpr" ]; then
         rest="$(tail -n +2 "$STUB_AMR_SEQ")"
         printf '%s\n' "${rest:-$first}" > "$STUB_AMR_SEQ"
         payload="$first"
+      elif [ -n "${STUB_ARMED_FILE:-}" ]; then
+        if [ -e "$STUB_ARMED_FILE" ]; then payload="armed"; else payload="none"; fi
       else
         payload="$(jq_py)"
       fi ;;
@@ -117,7 +137,7 @@ if [ -n "$jqexpr" ]; then
 fi
 if [ -n "$payload" ]; then printf '%s\n' "$payload"; fi
 if [ -n "${STUB_STDERR:-}" ]; then printf '%s\n' "$STUB_STDERR" >&2; fi
-exit "${STUB_EXIT:-0}"
+exit "$code"
 """
 
 # `sleep` 桩（#5113 夹具）：退避等待被**记录**而不是真的睡 ⇒ 新夹具能确定性地断言退避序列
@@ -454,6 +474,117 @@ class TestAutomergeReadbackThreeStates:
             STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, ""), STUB_MERGEABLE="UNKNOWN")
         assert w.rc != 0, "回读查询本身失败时不得静默成功（三态里的 unknown 是「可合并性未算完」）"
         assert _has_error_annotation(w.out), f"回读查询失败必须打 ::error::：\n{w.out}"
+
+
+# ------------------------------------------------ ① automerge · arm 有界重试（#5235 族 A）
+
+def _exit_seq(tmp_path, *codes):
+    """`gh` 桩的退出码序列（一行一次；用尽后沿用最后一个）。"""
+    p = Path(tmp_path) / "exit-seq.txt"
+    p.write_text("\n".join(str(c) for c in codes) + "\n", encoding="utf-8")
+    return str(p)
+
+
+# 实测形态（run `35872446921` 的 PR #5234 / `35871475072` 的 PR #5232，逐字输出）：
+# GitHub 侧**瞬时** GraphQL 错误（带 request-id），同一 run 的权限面是
+# `Contents: write / PullRequests: write` ⇒ 不是权限缺口 ⇒ 修法是重试。
+TRANSIENT_GRAPHQL = ("GraphQL: Something went wrong while executing your query on "
+                     "2026-09-23T14:12:31Z. Please include `4829:3FD750:2EC91:9A0B5:6AB3DE4E` "
+                     "when reporting this issue.")
+
+
+class TestAutomergeArmRetry:
+    """#5235 族 A：arm 腿失败**没有重试** ⇒ PR 停在「required 全绿但永不合并」。
+
+    两条判据缺一不可（**双侧读数**）：
+    · 第一次瞬时失败、重试后成功且回读 `armed` ⇒ **绿**（重试真的修好了它）；
+    · 重试都失败 **且**回读仍 `none` ⇒ **红**（`::error::` + summary + 非零退出；
+      「真失败吞成 warning」这条老路被堵死）。
+    判据本体仍是**回读**的 `autoMergeRequest`（#4829 的既有口径：命令成功 ≠ 真的 arm 上了）。
+    """
+
+    def test_transient_failure_is_recovered_by_retry(self, tmp_path):
+        """第一次 `gh pr merge` 瞬时失败、第二次成功 ⇒ **判绿**（这正是事故的真因形态）。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 0), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_ARMED_FILE=str(Path(tmp_path) / "armed.flag"))
+        assert w.rc == 0, f"重试后已 arm 却判红：rc={w.rc}\n{w.out}"
+        assert not _has_error_annotation(w.out), f"重试成功的路径不得打 ::error::：\n{w.out}"
+        assert len([c for c in w.calls if c.startswith("pr merge")]) == 2, w.calls
+        assert w.sleeps == ["5"], f"应恰好退避一次（5 秒）：{w.sleeps}"
+
+    def test_retry_removal_turns_the_recovery_case_red(self, tmp_path):
+        """**变异红证**：把重试上界压成 1 次 ⇒ 上一条的「绿」立刻变红（判别力证明）。
+
+        桩把因果建进来了（只有 `gh pr merge` **成功**过，回读才给 `armed`）⇒
+        这里的"绿"不可能来自回读被固定喂 `armed`。
+        """
+        src = _mutate(_automerge_script(), 'while [ "$m_attempt" -lt "$MERGE_ATTEMPTS" ]; do',
+                      'while [ "$m_attempt" -lt 1 ]; do')
+        w = World(tmp_path, src, env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 0), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_ARMED_FILE=str(Path(tmp_path) / "armed.flag"))
+        assert w.rc != 0, "打掉重试后「瞬时失败」仍判绿 ⇒ 上一条的绿不是重试带来的（无判别力）"
+
+    def test_retry_exhausted_and_still_not_armed_is_red(self, tmp_path):
+        """🔴 判据本体：重试全部失败 **且**回读仍 `none` ⇒ `::error::` + 非零退出。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 1, 1), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_ARMED_FILE=str(Path(tmp_path) / "armed.flag"))
+        assert w.rc != 0, (
+            f"重试后仍未 arm 却判绿 ⇒ #5235 族 A 的静默形态原样复发：rc={w.rc}\n{w.out}"
+        )
+        assert _has_error_annotation(w.out), f"必须打 ::error::（真失败不得吞成 warning）：\n{w.out}"
+        assert "族 A" in w.summary_text(), f"summary 必须点名病因：{w.summary_text()!r}"
+        assert len([c for c in w.calls if c.startswith("pr merge")]) == 3, w.calls
+        assert w.sleeps[:2] == ["5", "10"], f"重试退避必须是 5/10 秒：{w.sleeps}"
+
+    def test_idempotent_failure_is_not_retried(self, tmp_path):
+        """幂等命中（已在 merge queue）⇒ **不重试**、不刷红（#5076 ① 的既有语义一字未改）。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT=1, STUB_STDERR="already in merge queue")
+        assert w.rc == 0 and not _has_error_annotation(w.out), w.out
+        assert len([c for c in w.calls if c.startswith("pr merge")]) == 1, w.calls
+        assert w.sleeps == [], f"幂等路径不该有任何退避：{w.sleeps}"
+
+    def test_failed_but_armed_is_warning_not_error(self, tmp_path):
+        """**边界（有意收窄）**：重试都失败，但回读 `armed` ⇒ 目标状态已达成 ⇒ 非致命、**不静默**。
+
+        判据不是"命令返回码"，而是回读的 `autoMergeRequest`（#4829 的既有口径）——
+        与 `flaky-ledger-reconcile.yml` §⑤-B 的「读数与动作自洽」同源。
+        （反向对照：同夹具若回读 `none` ⇒ 上一条判红。）
+        """
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 1, 1), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_AMR_SEQ=_amr_seq(tmp_path, "armed"))
+        assert w.rc == 0, f"回读已 armed 时判红 = 假红（PR 其实已 arm）：rc={w.rc}\n{w.out}"
+        assert _has_warning_annotation(w.out), f"非致命路径必须留痕（不静默）：\n{w.out}"
+        assert not _has_error_annotation(w.out), f"非致命路径不得打 ::error::：\n{w.out}"
+        assert "已达成" in w.summary_text(), f"summary 必须写明读数与动作自洽：{w.summary_text()!r}"
+
+    def test_arm_failure_outranks_the_unknown_mergeable_exception(self, tmp_path):
+        """🔴 **次序判据**：`rc != 0` 的判红**优先于** #5113 的 `mergeable=UNKNOWN` 分流。
+
+        #5113 的 unknown（`null` + `UNKNOWN` ⇒ 非红）只对「命令**成功**、只是还没算完」成立；
+        arm 命令自己报了失败时，不许用「还没算完」把红洗掉（fail-closed）。
+        """
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 1, 1), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_ARMED_FILE=str(Path(tmp_path) / "armed.flag"), STUB_MERGEABLE="UNKNOWN")
+        assert w.rc != 0, (
+            f"arm 失败 + mergeable=UNKNOWN 被分流成「非红」= 用 unknown 洗掉真失败：\n{w.out}"
+        )
+        assert _has_error_annotation(w.out), w.out
+
+    def test_mutating_the_red_gate_turns_that_case_green(self, tmp_path):
+        """**变异红证**：打掉「rc != 0 且仍未 arm」的判红闸 ⇒ 上一场景变绿（判别力证明）。"""
+        src = _mutate(_automerge_script(),
+                      'if [ "$rc" -ne 0 ]; then\n      # 🔴 #5235 族 A 的判据本体',
+                      'if false; then\n      # 🔴 #5235 族 A 的判据本体')
+        w = World(tmp_path, src, env=AUTOMERGE_ENV).run(
+            STUB_EXIT_SEQ=_exit_seq(tmp_path, 1, 1, 1), STUB_STDERR=TRANSIENT_GRAPHQL,
+            STUB_ARMED_FILE=str(Path(tmp_path) / "armed.flag"), STUB_MERGEABLE="UNKNOWN")
+        assert w.rc == 0, "打掉该闸后仍判红 ⇒ 「红来自这条判据」这个结论没有判别力"
 
 
 # ================================================================ ② pr-issue-link
