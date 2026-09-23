@@ -4,7 +4,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { Plus, Trash2, GripVertical, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Select } from '@/components/ui'
+import { Button, NumberInput, Select } from '@/components/ui'
 import type { ProductColor, ProductSku } from '@/types'
 import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
 
@@ -655,19 +655,21 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                           {formatDoorWidth(width)}
                         </td>
                         <td className="px-3 py-2 border-r border-neutral-100">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                          {/* issue #5198：旧形态 `value={sku?.price || ''}` + `parseFloat(raw) || 0`
+                              会把合法的 0 与空值混为一谈 ⇒ 用户敲下 "0" 的当刻输入框被清空，
+                              "0.5" 永远打不出来。改用 NumberInput（内部字符串草稿，0 原样回调）。 */}
+                          <NumberInput
+                            min={0}
+                            decimals={2}
                             placeholder="0.00"
-                            value={sku?.price || ''}
-                            onChange={(e) =>
+                            value={sku?.price ? sku.price : null}
+                            onChange={(v) =>
                               handleSkuChange(
                                 color.id,
                                 color.colorName,
                                 width,
                                 'price',
-                                parseFloat(e.target.value) || 0
+                                v ?? 0
                               )
                             }
                             aria-invalid={validationOn && priceInvalid ? true : undefined}
@@ -677,19 +679,19 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
+                          {/* issue #5198：同族形态（`sku?.stock || ''` + `parseInt(raw) || 0`）——
+                              库存 0（无库存）是合法值，改前敲 "0" 会被清空。 */}
+                          <NumberInput
+                            min={0}
                             placeholder="0"
-                            value={sku?.stock || ''}
-                            onChange={(e) =>
+                            value={sku?.stock ? sku.stock : null}
+                            onChange={(v) =>
                               handleSkuChange(
                                 color.id,
                                 color.colorName,
                                 width,
                                 'stock',
-                                parseInt(e.target.value, 10) || 0
+                                v ?? 0
                               )
                             }
                             aria-invalid={validationOn && stockInvalid ? true : undefined}

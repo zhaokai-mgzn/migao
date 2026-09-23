@@ -836,9 +836,12 @@ export default function ProductionPage() {
                     <View className='operation-item__actions'>
                       {/* 数量可改（issue #4206 判据 1）：默认 = 应做数量，上限 = 应做数量 */}
                       <View className='operation-item__qty'>
+                        {/* 数量可改（issue #4206 判据 1）：默认 = 应做数量，上限 = 应做数量。
+                            issue #5198：键盘类型改 `digit` —— 微信小程序的 `number` 键盘**没有小数点键**，
+                            而报工数量按米常有小数（如 60.5 米）⇒ 改前小数点根本打不出来。 */}
                         <Input
                           className='operation-item__qty-input'
-                          type='number'
+                          type='digit'
                           placeholder='完成数量'
                           value={qtyValueOf(operation)}
                           onInput={(event) =>
