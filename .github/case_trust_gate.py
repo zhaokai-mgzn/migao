@@ -918,7 +918,8 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
                   refs: dict | None = None, recon: dict | None = None,
                   budget: dict | None = None,
                   unimpl_guard: dict | None = None,
-                  scoring_channel: dict | None = None) -> str:
+                  scoring_channel: dict | None = None,
+                  prose_refs: dict | None = None) -> str:
     """人类/agent 可读的失败报告 —— **每条都带「怎么改」**。"""
     out: list[str] = []
     out.append("═══ 断言可信度门禁（假红/假绿结构性护栏 A 层，单一判据源 "
@@ -931,6 +932,13 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
             f"用例的计分通道 = `traces.tests`（非空且文件真实存在）⇒ 不适用 "
             f"EMPTY/NO-EFFECT-ASSERTION；其余 {scoring_channel['other']} 条仍按 runner "
             f"计分口径判（分流读数必须可见 —— 静默豁免同族反模式）")
+    if prose_refs:
+        out.append(
+            f"ℹ️ 散文点名测试通道的读数（#5196）：`[backend-contract]` {prose_refs['backend_contract']} 条中"
+            f"**可判 {prose_refs['judgeable']} 条**（散文里点名了可识别的测试类/文件）/"
+            f"**不可判 {prose_refs['unjudgeable']} 条**（散文没点名任何测试 ⇒ 判据判不了，"
+            f"**不得读成通过**）；可判中：跨引用 {prose_refs['cross_ref']} 条（点名别的用例/套件的测试，"
+            f"合法但**可见**）/ 幽灵名 {prose_refs['ghost']} 条（阻塞项）")
     if recon:
         out.append(f"全量对账范围：**全库 {recon['judged_cases']} 条用例**重算"
                    f"（判出违规 {recon['violating_cases']} 条，豁免清单 {recon['recorded_entries']} 条"
@@ -1604,7 +1612,8 @@ def main(argv: list[str] | None = None) -> int:
     print(render_report(verdict["blocking"], verdict["passed"], recon["stale"],
                         changed_ids, unimpl_guard["entries"], refs, recon=recon,
                         budget=budget, unimpl_guard=unimpl_guard,
-                        scoring_channel=scoring_channel_stats(all_cases)))
+                        scoring_channel=scoring_channel_stats(all_cases),
+                        prose_refs=tax.prose_test_ref_stats(all_cases, REPO_ROOT)))
     if refs["blocking"]:
         print("")
         for b in refs["blocking"]:

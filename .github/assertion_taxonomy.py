@@ -1165,6 +1165,179 @@ def missing_persona_annotation(case: dict) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 三之四、散文点名的测试通道必须**真实存在**（#5196）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病灶（#5196，独立验收锚 `c5adc883d`）：`[backend-contract]` 用例的 `data_checks` 是**散文**
+# （运行期不计分、且永不执行 —— 计分通道在 `traces.tests`，见三之零）⇒ 它声称的
+# 「这条判据的证据在哪条测试里」与 `traces.tests` 之间**没有任何判据**：
+# 散文可以点名一个**不存在**的测试而无人发现（静默漂移）。
+#
+# **口径（有意收窄 —— 宁可少判也不要假红，实测依据见下）**：
+#   ① 判据面 = `data_checks` 里**可识别的测试类/文件名**（`XxxTest` / `*Test.java` /
+#      `test_*.py` / `*_test.py` / `*.test.ts(x)` / `*.spec.ts(x)`）；
+#   ② 每个名字**必须**解析到一个真实存在的文件 —— 先按本用例的 `traces.tests`，
+#      再按**测试根目录索引**；两条路都解析不到 ⇒ 违规
+#      （= 散文声称了一个**不存在**的通道，这正是 #5196 点名的那种漂移）；
+#   ③ 名字解析进 `traces.tests` 时，对应的 trace 文件**必须真实存在**（名字级存在性）。
+#
+# 🔴 **为什么不把「不在 `traces.tests` 里」本身判违规**（与 #5196 初稿口径的**有意偏离**，
+# 依据是实测而非口味）：全库 **290** 条 `[backend-contract]` 用例里，散文点名测试的有
+# **63** 条可判，其中 **21** 条点名的是**别的用例 / 别的套件的测试**（合法**跨引用**：
+# 「拦截器语义见 PermissionInterceptorTest/DF-007」「这两条等价断言落在
+# tests/unit/pages/orders-new.test.tsx」「判据本体 = tests/unit_ci_workflows/
+# test_migration_immutability.py」）⇒ 把「不在 traces.tests」一律判违规 = **21 条假红**；
+# 而那 21 条一旦进基线，就变成**鼓励删散文的纸面修复压力**
+# （`migao-dev-flow` §19.1 明令禁止「靠改措辞让主张不再是假主张」）。
+# ⇒ 该子口径落成**可见读数**（`prose_test_ref_stats`，门禁每跑必打印），**不阻塞**。
+#    「没跑 / 判不了」必须长得像「没跑 / 判不了」—— 读数里逐项打印，不得读成通过。
+
+#: 可识别的测试类/文件形态（**窄口径**：只认「能说明这是测试」的形态，
+#: 故 `OrderService.java` / `curtain_calc.py` / `dashboard_stats.py` 这类**产品源码**
+#: 不会被误当成测试通道 —— 实测这是初稿口径 43 条假红的来源）。
+#: ⚠️ 类名的前视字符集**含 `*`**：`*RealDbTest` 这种**通配形态**不是点名，不得命中
+#: （实测：PR-104 的散文正写着「**不靠 `*RealDbTest` 通配**」）。
+PROSE_TEST_REF_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("java-class", re.compile(r"(?<![\w`./*-])([A-Z][A-Za-z0-9_]*Tests?)(?![\w])")),
+    ("java-file", re.compile(r"([\w./-]*[A-Za-z0-9_]+Tests?\.java)\b")),
+    ("py-file", re.compile(r"([\w./-]*(?:test_[A-Za-z0-9_]+|[A-Za-z0-9_]+_test)\.py)\b")),
+    ("ts-file", re.compile(r"([\w./-]*[A-Za-z0-9_.-]+\.(?:test|spec)\.tsx?)\b")),
+)
+
+#: 扩展名**同族归一**（`.tsx` ≡ `.ts` 家族 …）—— 治「散文把 `x.test.tsx` 写成 `x.test.ts`」
+#: 这类**笔误**：通道是存在的，把它判红会逼出「改措辞消红」的纸面修复
+#: （实测：全库唯一一条「幽灵名」就是 PR-106 的这处笔误）。**跨族不归一**（`.py` ≠ `.ts`）。
+_EXT_ALIASES = ((".tsx", ".ts"), (".jsx", ".js"), (".mjs", ".js"))
+
+
+def _normalize_test_name(name: str) -> str:
+    base = Path(name).name
+    for ext, alias in _EXT_ALIASES:
+        if base.endswith(ext):
+            return base[: -len(ext)] + alias
+    return base
+
+
+_TEST_INDEX_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _test_roots(repo_root) -> list:
+    """**明确的测试根**（只遍历这些，不碰 `node_modules` / `target` / `.next`）。"""
+    root = Path(repo_root)
+    roots = [root / "tests", root / "scripts", root / ".github" / "cases"]
+    for pattern in ("backend/*/src/test", "backend/*/tests", "frontend/*/tests", "frontend/*/e2e"):
+        roots.extend(sorted(root.glob(pattern)))
+    return [r for r in roots if r.is_dir()]
+
+
+def _test_file_index(repo_root) -> dict[str, str]:
+    """`basename → 仓库相对路径` 索引（懒加载 + 进程内缓存；测试根范围内）。
+
+    `repo_root is None` ⇒ 返回空索引（**不做任何文件系统接触**，判据随之**判不了**，
+    由调用方按「未跑」读数处理 —— 这里**不** fail-closed 成违规：本规则治的是
+    「散文声称了一个不存在的通道」，没有索引时无法区分「不存在」与「没去看」，
+    把它当成违规就是**假红**）。
+    """
+    if repo_root is None:
+        return {}
+    key = str(repo_root)
+    cached = _TEST_INDEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+    index: dict[str, str] = {}
+    for base_dir in _test_roots(repo_root):
+        for path in base_dir.rglob("*"):
+            if path.is_file() and path.suffix in (".py", ".java", ".ts", ".tsx", ".js", ".mjs"):
+                rel = path.relative_to(repo_root).as_posix()
+                index.setdefault(path.name, rel)
+                index.setdefault(_normalize_test_name(path.name), rel)
+    _TEST_INDEX_CACHE[key] = index
+    return index
+
+
+def prose_test_refs(case: dict) -> list[str]:
+    """`[backend-contract]` 用例的 `data_checks` 散文里点名的**测试类/文件**（有序去重）。"""
+    if not is_backend_contract_case(case):
+        return []
+    text = "\n".join(str(c) for c in (case.get("data_checks") or []))
+    out: list[str] = []
+    for _kind, pat in PROSE_TEST_REF_PATTERNS:
+        for m in pat.findall(text):
+            if m not in out:
+                out.append(m)
+    return out
+
+
+def _resolve_prose_ref(ref: str, traces: list[str], index: dict[str, str]):
+    """把点名的名字解析到 `("traces", 路径)` / `("index", 路径)` / `(None, None)`。"""
+    base = Path(ref).name
+    norm = _normalize_test_name(ref)
+    for t in traces:
+        tb = Path(t).name
+        if t == ref or tb == base or tb == base + ".java" or _normalize_test_name(tb) == norm:
+            return "traces", t
+    for cand in (base, base + ".java", norm):
+        if cand in index:
+            return "index", index[cand]
+    return None, None
+
+
+def prose_test_ref_audit(case: dict, repo_root=None) -> dict:
+    """单条用例的散文点名审计（纯函数；唯一文件系统接触点 = 显式传入的 `repo_root`）。
+
+    返回 `{"judgeable", "refs", "traces_refs", "cross_refs", "ghosts"}`。
+    `judgeable=False` = **判不了**（没有点名的名字，或没传 `repo_root` ⇒ 无从解析）
+    —— 调用方必须把它计进「不可判」读数，**不得**读成通过。
+    """
+    refs = prose_test_refs(case)
+    if not refs or repo_root is None:
+        return {"judgeable": False, "refs": refs, "traces_refs": [],
+                "cross_refs": [], "ghosts": []}
+    index = _test_file_index(repo_root)
+    traces = [str(t) for t in ((case.get("traces") or {}).get("tests") or [])]
+    audit = {"judgeable": True, "refs": refs, "traces_refs": [], "cross_refs": [], "ghosts": []}
+    for ref in refs:
+        kind, path = _resolve_prose_ref(ref, traces, index)
+        if kind is None:
+            audit["ghosts"].append({
+                "ref": ref,
+                "reason": "既不在本用例 `traces.tests` 里，测试根目录里也没有同名文件"})
+        elif kind == "traces":
+            if not (Path(repo_root) / path).is_file():
+                audit["ghosts"].append({
+                    "ref": ref, "reason": f"`traces.tests` 点名的文件不存在：{path}"})
+            else:
+                audit["traces_refs"].append(ref)
+        else:
+            audit["cross_refs"].append({"ref": ref, "path": path})
+    return audit
+
+
+def prose_test_ref_stats(cases: list, repo_root=None) -> dict:
+    """读数（#5196）—— **必须打印**（`skip ≠ pass` 同族：判不了的条数不得静默）。
+
+    `{backend_contract, judgeable, unjudgeable, cross_ref, ghost}`：逐项计数，
+    其中 `unjudgeable` = 散文里没点名任何测试文件（或未传 `repo_root`）⇒ **判据判不了**。
+    """
+    out = {"backend_contract": 0, "judgeable": 0, "unjudgeable": 0,
+           "cross_ref": 0, "ghost": 0}
+    for case in cases:
+        if not is_backend_contract_case(case):
+            continue
+        out["backend_contract"] += 1
+        audit = prose_test_ref_audit(case, repo_root)
+        if not audit["judgeable"]:
+            out["unjudgeable"] += 1
+            continue
+        out["judgeable"] += 1
+        if audit["cross_refs"]:
+            out["cross_ref"] += 1
+        if audit["ghosts"]:
+            out["ghost"] += 1
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 七、规则表（**门禁与分类器共用的唯一规则源**）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1346,6 +1519,31 @@ RULES: tuple[dict, ...] = (
         "counterexample": "（存量：按工具集可判定的纯小布用例中，缺 `persona` 标注者见基线清单）",
         "implemented": True,
         "fix": "在该用例上加 `persona: xiaobu`（或 `mibao`）。",
+    },
+    {
+        "code": "CASE-TRUST-PROSE-TEST-REF-GHOST",
+        "title": "散文点名的测试通道必须真实存在",
+        "why": (
+            "`[backend-contract]` 用例的 `data_checks` 是**散文**（运行期不计分、永不执行，"
+            "计分通道在 `traces.tests`）⇒ 它声称的「证据在哪条测试里」与 `traces.tests` 之间"
+            "**没有任何判据**：散文可以点名一个**不存在**的测试而无人发现（#5196，"
+            "锚 `c5adc883d`）。"
+            "⚠️ 口径**有意收窄**（宁可少判也不要假红）：只判「名字解析不到任何真实文件」；"
+            "「不在 `traces.tests` 里」本身**不**判违规 —— 实测全库 21 条是合法**跨引用**，"
+            "一律判违规 = 21 条假红，且会逼出删散文的纸面修复。该子口径落成"
+            "`prose_test_ref_stats` 的**可见读数**（门禁每跑必打印），不阻塞。"
+        ),
+        "counterexample": (
+            "（建规则时全库 0 条 —— 实测 290 条 `[backend-contract]` 里 63 条可判、"
+            "幽灵名 0 条；读数为「可判 63 / 不可判 227 / 跨引用 21 / 幽灵 0」）"
+        ),
+        "implemented": True,
+        "fix": (
+            "把点名的测试改成**真实存在**的测试文件；确属**跨用例引用**时写"
+            "**仓库相对全路径**（如 `tests/unit_ci_workflows/test_migration_immutability.py`），"
+            "并按需把它登记进本用例的 `traces.tests`（登记后它就是本用例的计分通道之一）。"
+            "**不要**为了消红把散文改写成更含糊的措辞（那是纸面修复）。"
+        ),
     },
 )
 
@@ -1823,5 +2021,13 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
             f"⇒ 只能跑单端，但 persona 未标注"
             f"（缺 persona 的另一条腿必挂；`case_ids` 窄跑还会触发"
             f"「{SILENT_SKIP_GUARD_ANCHOR}」守卫，#3822）")
+
+    # ── 规则 e：散文点名的测试通道必须**真实存在**（#5196）──
+    audit = prose_test_ref_audit(case, repo_root)
+    for g in audit["ghosts"]:
+        add("CASE-TRUST-PROSE-TEST-REF-GHOST",
+            f"`data_checks` 散文点名了测试 `{g['ref']}`，但{g['reason']}"
+            f"⇒ 散文声称的通道**不存在**（#5196：`data_checks` 是文档不是断言，"
+            f"写死的东西会随实现改动静默漂移）")
 
     return out

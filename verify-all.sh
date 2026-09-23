@@ -557,6 +557,7 @@ case "$MODE" in
     report "红证机具前提自检（前提能否成立）" redproof_preflight
     echo "⏳ 以下为**实跑**腿（真注入 + 真跑判据），单机具实测 2~30 分钟 —— 工具链是否就绪由 report_env 的就绪探测判定（未就绪 = 跳过，既不是通过也不是失败）"
     report_env admin-api "红证机具 pool-board 实跑" bash -c "python3 '$ROOT/scripts/pool-board-red-proof.py'"
+    report_env admin-api "红证机具 order-urgency 实跑" bash -c "python3 '$ROOT/scripts/order-urgency-red-proof.py'"
     report_env admin-api "红证机具 cutting-plan 实跑" bash -c "python3 '$ROOT/scripts/cutting-plan-red-proof.py'"
     report_env admin-api-pg "红证机具 auto-batch 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-red-proof.py'"
     report_env admin-api-pg "红证机具 auto-batch-due-scan 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-due-scan-red-proof.py'"

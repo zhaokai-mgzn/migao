@@ -143,6 +143,7 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 | `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` | `TestSelfTargetMaxGrowth` 的注入夹具 | 自建名 + `expect: 0` 前置缺 `max_growth`（或 <1）⇒ 运行期 `0 → 1` 恒判漂移 |
 | `CASE-TRUST-STALE-LINE-REF` | `TestReferenceFreshness` 的 3 个注入夹具 | 行号越界 / 文件不存在 / 符号在文件里完全找不到 |
 | `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked`（**正**）/ `fixture_shared_tool_unmarked`（**反**：必须**不报**） | `{curtain_calc}` ⊆ 小布且 ⊄ 米宝但无 `persona` ⇒ 报；共享工具（`product_detail`+`order_create`，两端都有）⇒ **不得**判单端（#4356） |
+| `CASE-TRUST-PROSE-TEST-REF-GHOST` | `TestProseTestRefChannel` 的注入夹具（正 + **反**：合法跨引用必须**不报**） | 散文点名的测试**解析不到任何真实文件**（既不在 `traces.tests`、测试根目录里也没有同名文件）⇒ 报（#5196） |
 
 ### 绿证 C —— 门禁对**正确形态**保持沉默（防假红）
 
@@ -295,6 +296,50 @@ E   'OR-028', 'OR-029', 'OR-030', 'OR-031', 'PR-018']
 小布工具集**转发**单一源而非复制、未实装项带理由与缺口、`RULES` 内无恒真规则。
 
 ---
+
+### 红证 G —— `CASE-TRUST-PROSE-TEST-REF-GHOST`（2026-09-23 落码，issue #5196）
+
+**被测对象**：`[backend-contract]` 用例的 `data_checks` 是**散文**（运行期不计分、永不执行，
+计分通道在 `traces.tests`）⇒ 它声称的「证据在哪条测试里」此前**没有任何判据**：
+散文可以声称一个**不存在**的通道而无人发现（#5196，独立验收锚 `c5adc883d`）。
+
+**口径（有意收窄，宁可少判也不要假红 —— 依据是实测不是口味）**：全库 **290** 条
+`[backend-contract]` 用例里散文点名测试的有 **63** 条可判，其中 **22** 条点名的是
+**别的用例 / 别的套件的测试**（合法**跨引用**：「拦截器语义见 `PermissionInterceptorTest`/DF-007」
+「这两条等价断言落在 `tests/unit/pages/orders-new.test.tsx`」「判据本体 =
+`tests/unit_ci_workflows/test_migration_immutability.py`」）⇒ 把「不在 `traces.tests`」
+一律判违规 = **22 条假红**，且那 22 条一旦进基线就变成「鼓励删散文」的**纸面修复**压力。
+⇒ 阻塞面 = **「点名的名字解析不到任何真实文件」**；「不在 `traces.tests` 里」落成
+`prose_test_ref_stats` 的**可见读数**（门禁每跑必打印）。
+
+**RED（真跑，`fixture_backend_contract_case` + 散文点名 `GhostChannelTest`）**：
+
+```
+$ PYTHONPATH=.github:tests/unit_ci_workflows python3 - <<'EOF'
+... tax.judge_case(fixture_backend_contract_case(data_checks=["判据① 冻结常量：由 GhostChannelTest 逐值断言"]), repo_root=gate.REPO_ROOT)
+EOF
+  [CASE-TRUST-PROSE-TEST-REF-GHOST] FAKE-API-999
+    现象：`data_checks` 散文点名了测试 `GhostChannelTest`，但既不在本用例 `traces.tests` 里，
+          测试根目录里也没有同名文件⇒ 散文声称的通道**不存在**（#5196）
+```
+
+**GREEN（对照组 ①）**：同一夹具，名字换成本用例 `traces.tests` 里的真实测试
+（`tests/test_chat.py`）⇒ 违规 `[]`。
+
+**GREEN（对照组 ②，防假红）**：散文同时点名**两个别的套件的真实测试**
+（`test_migration_immutability.py` / `test_case_trust_gate.py`）⇒ 违规 `[]`，且审计读数
+为 `traces_refs=['tests/test_chat.py'] cross_refs=[…两个…] ghosts=[]` —— **跨引用合法，
+但必须可见**。
+
+**读数（真库，落库时实测）**：`{'backend_contract': 290, 'judgeable': 63,
+'unjudgeable': 227, 'cross_ref': 22, 'ghost': 0}` —— **不可判 227 条**是
+「散文没点名任何测试 ⇒ 判据判不了」，**不得读成通过**（`skip ≠ pass` 同族）。
+
+**边界（如实登记）**：① 本规则只判 `[backend-contract]` 用例（它们才是「散文 = 文档」的那批），
+其余用例的散文语义质量仍属 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#3483）的范围；
+② 扩展名**同族归一**（`.tsx ≡ .ts`）：散文把 `x.test.tsx` 写成 `x.test.ts` 这类笔误**不**判红
+（实测全库唯一一处「幽灵名」就是 PR-106 的这处笔误 —— 通道是存在的，判红会逼出改措辞）；
+③ 不传 `repo_root` ⇒ **判不了**（不是违规、也不是通过），读数里计入「不可判」。
 
 ## 读数（锚定 SHA）
 

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
+import { urgencyRequestFields } from '@/lib/order-urgency'
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
@@ -2354,8 +2355,7 @@ export default function NewOrderPage() {
         // **加急 / 要求到货日**（issue #5177，做在订单上）：**未勾/未填 ⇒ 键不出现** ——
         // 「没填」与「显式不加急」在请求体上必须能区分（后端库列 NOT NULL DEFAULT FALSE / NULL）。
         // 不写死默认值（#4419 同族口径）；与售后 priority 零联动。
-        ...(isUrgent ? { isUrgent: true } : {}),
-        ...(requiredDeliveryDate ? { requiredDeliveryDate } : {}),
+        ...urgencyRequestFields(isUrgent, requiredDeliveryDate),
         remark: finalRemark || undefined,
         items,
       })

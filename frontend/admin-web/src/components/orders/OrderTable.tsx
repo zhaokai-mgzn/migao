@@ -7,6 +7,7 @@ import { normalizeOrderStatus } from '@/types'
 import { Badge } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
+import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import RemarkPopover from './RemarkPopover'
 
 /**
@@ -345,10 +346,10 @@ export default function OrderTable({
 
                   {/* 加急（issue #5177）：订单级真值，与售后工单的 priority **零联动** */}
                   <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-urgent-${order.id}`}>
-                    {order.isUrgent ? (
-                      <Badge variant="warning">加急</Badge>
+                    {isUrgentFlag(order) ? (
+                      <Badge variant="warning">{urgentBadgeText(order)}</Badge>
                     ) : (
-                      <span className="text-xs text-neutral-400">不加急</span>
+                      <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
                     )}
                   </td>
 
