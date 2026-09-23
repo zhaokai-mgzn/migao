@@ -284,6 +284,20 @@ describe('ProductionPage（工人扫码报工）', () => {
     expect(screen.queryByText(/褶倍 undefined/)).toBeNull()
   })
 
+  it('报工数量输入框用小数键位（type=digit）—— number 键盘没有小数点键，小数米数打不出来（issue #5198）', async () => {
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+    await screen.findByText('韩褶')
+
+    const qtyInputs = Array.from(
+      document.querySelectorAll('.operation-item__qty-input'),
+    ) as HTMLInputElement[]
+    expect(qtyInputs.length).toBeGreaterThan(0)
+    // 红证：改前是 `type='number'` ⇒ 本条必红。微信小程序的 number 键盘**不提供小数点**，
+    // 而报工数量按米常有小数（如 60.5 米）⇒ 工人根本打不出这个点。
+    qtyInputs.forEach((el) => expect(el.getAttribute('type')).toBe('digit'))
+  })
+
   it('点「完成报工」→ 调用 reportOperation（qty 默认=应做数量、work_type=normal）', async () => {
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))

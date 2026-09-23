@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, NumberInput } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
@@ -1051,14 +1051,16 @@ export default function ProcessConfigPage() {
     }
   }
 
-  /** 草稿里某个数值键的当前值（渲染用；不在这里补默认值） */
-  const calcNumber = (key: CalcScalarKey): string => {
+  /** 草稿里某个数值键的当前值（渲染用；不在这里补默认值）——
+   *  issue #5198：非有限数（清空时落的是 NaN 哨兵）一律返回 null，
+   *  否则 `String(NaN)` 会把输入框渲染成字面量 `NaN`，用户清都清不掉。 */
+  const calcNumber = (key: CalcScalarKey): number | null => {
     const v = calcDraft?.[key]
-    return v === undefined || v === null ? '' : String(v)
+    return typeof v === 'number' && Number.isFinite(v) ? v : null
   }
 
-  const setCalcNumber = (key: CalcScalarKey, raw: string) => {
-    setCalcDraft((d) => (d ? { ...d, [key]: raw === '' ? Number.NaN : Number(raw) } : d))
+  const setCalcNumber = (key: CalcScalarKey, next: number | null) => {
+    setCalcDraft((d) => (d ? { ...d, [key]: next === null ? Number.NaN : next } : d))
   }
 
   const libraryOps = useMemo(() => (catalog?.groups ?? []).flatMap((g) => g.operations), [catalog])
@@ -2923,13 +2925,13 @@ export default function ProcessConfigPage() {
                         {CALC_SCALAR_FIELDS.map((f) => (
                           <label key={f.key} className="block">
                             <span className="mb-1 block text-neutral-600">{f.label}</span>
-                            <input
-                              type="number"
-                              step="0.01"
+                            {/* issue #5198：改用 NumberInput（旧形态 `value={String(v ?? '')}` 在清空时
+                                渲染成字面量 `NaN`；`type="number"` 还会把 "0." 中间态吞掉） */}
+                            <NumberInput
                               className={inputCls}
                               data-testid={`craft-calc-config-scalar-${f.key}`}
                               value={calcNumber(f.key)}
-                              onChange={(e) => setCalcNumber(f.key, e.target.value)}
+                              onChange={(v) => setCalcNumber(f.key, v)}
                             />
                             <span className="mt-1 block text-xs text-neutral-400">
                               {f.hint}{' '}
@@ -2995,13 +2997,15 @@ export default function ProcessConfigPage() {
                                     />
                                   </td>
                                   <td className="py-1.5">
-                                    <input
-                                      type="number"
-                                      step="0.1"
+                                    <NumberInput
                                       className={inputCls}
                                       data-testid={`craft-calc-config-tier-${name}-fullness`}
-                                      value={String(tier.fullness ?? '')}
-                                      onChange={(e) =>
+                                      value={
+                                        typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)
+                                          ? tier.fullness
+                                          : null
+                                      }
+                                      onChange={(v) =>
                                         setCalcDraft((d) =>
                                           d
                                             ? {
@@ -3010,7 +3014,7 @@ export default function ProcessConfigPage() {
                                                   ...d.tiers,
                                                   [name]: {
                                                     ...d.tiers[name],
-                                                    fullness: e.target.value === '' ? Number.NaN : Number(e.target.value),
+                                                    fullness: v === null ? Number.NaN : v,
                                                   },
                                                 },
                                               }
@@ -3032,20 +3036,22 @@ export default function ProcessConfigPage() {
                                 <tr key={times} className="border-b border-neutral-100">
                                   <td className="py-1.5 pr-3 text-neutral-600">拼{times}次</td>
                                   <td className="py-1.5">
-                                    <input
-                                      type="number"
-                                      step="0.05"
+                                    <NumberInput
                                       className={inputCls}
                                       data-testid={`craft-calc-config-mixed-${times}`}
-                                      value={String(perFold ?? '')}
-                                      onChange={(e) =>
+                                      value={
+                                        typeof perFold === 'number' && Number.isFinite(perFold)
+                                          ? perFold
+                                          : null
+                                      }
+                                      onChange={(v) =>
                                         setCalcDraft((d) =>
                                           d
                                             ? {
                                                 ...d,
                                                 per_fold_mixed_times: {
                                                   ...d.per_fold_mixed_times,
-                                                  [times]: e.target.value === '' ? Number.NaN : Number(e.target.value),
+                                                  [times]: v === null ? Number.NaN : v,
                                                 },
                                               }
                                             : d,

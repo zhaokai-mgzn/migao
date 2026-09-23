@@ -1844,3 +1844,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-055
+    legacy_id: ""
+    title: "数字输入框统一治理：0 打不进去 / 小数点吞键 / 中间态丢失 —— 共享 NumberInput（type=text + inputMode=decimal + 字符串草稿），站点级落地 SkuMatrix 价格库存 / 算料配置参数 / 工人端报工数量（issue #5198）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - number-input
+      - decimal
+      - admin-web
+      - bmini
+    truths_ref:
+      - frontend-fix.vitest
+      - frontend-fix.tsc
+    user_inputs:
+      - "migao 整个页面系统的数字输入框有不少问题，我碰到过 1 个是不能直接输入 0，所以导致无法输入 0.？这样的需求，还有其他问题，你统一把代码审查一遍。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**控件形态**：共享组件 `frontend/admin-web/src/components/ui/NumberInput.tsx` 用 `type=\"text\"` + `inputMode=\"decimal\"`（**不用** `type=\"number\"`：浏览器对 `0.` / `.` / `-` 这类中间态按非法浮点数处理，受控回写即吞键），内部持有**字符串草稿**，`onChange(v: number | null)` 在草稿可解析成有限数时回调该数、**0 原样回调**（不得出现 `value={n || ''}` / `Number(raw) || 0` 这类把 0 与空混为一谈的归一化）；`forwardRef` 透传真实 input；默认 className 与仓库既有输入框逐字一致（UI 回退检测比对 neutral token）。证据：frontend/admin-web/tests/unit/components/NumberInput.test.tsx 的「控件用 type=\"text\" + inputMode=\"decimal\"」「默认 className …逐字一致」「forwardRef 拿到真实 input 元素」（**红证**：把组件换回 `type=\"number\"` + `value={n || ''}` 形态 ⇒ 判据 1/2 全红，实测 `AssertionError: expected '' to be '0'`）"
+      - "判据 2·**中间态逐键不丢**（用户原始 bug 的正身）：输入序列 `0` ⇒ **DOM 值仍为 \"0\"**、回调 `0`；续输 `0.` ⇒ DOM `\"0.\"`、回调 `null`（不谎报成 0）；再输 `0.5` ⇒ 回调 `0.5`；清空 ⇒ DOM `\"\"`、回调 `null`；负号中间态 `-` ⇒ DOM `\"-\"` 不被吞；`abc` 等非法字符 ⇒ 草稿与 DOM 都不变（不静默变 0）。证据：NumberInput.test.tsx 的 ①②③⑥ 与「非法字符被忽略」。**红证（真实浏览器 + 真实 React 19，Chrome for Testing 实测）**：旧形态 `value={n || ''}` + `onChange(Number(raw))` 在 `0 → . → 5` 序列上 `dom=\"\"` / `state=0`（输入框敲下 \"0\" 当刻被清空 ⇒ 永远打不出 0.x）；本组件同序列 `dom=\"0\"/\"0.\"/\"0.5\"`"
+      - "判据 3·**失焦归一化与边界**：`decimals`（默认 2）截断 —— `0.567` 失焦 ⇒ DOM `0.57`、回调 `0.57`；尾随小数点 `2.` ⇒ `2`；`min` / `max` 夹紧（`1.2` + min=5 ⇒ 5；`99` + max=10 ⇒ 10）；空草稿失焦 ⇒ `null`（`allowEmpty` 默认 true），`allowEmpty={false}` ⇒ 回上一个有效值（不落 null、不落 0）；外部 `value` 变化同步草稿（1 ⇒ 2 时 DOM 变 `\"2\"`），但**用户正在输入的中间态优先**（外部 value 未变时输入 `\"2.\"` 不被洗回 `\"2\"`）。证据：NumberInput.test.tsx 的 ④⑤a⑤b 与 blur 组（**红证**：去掉「草稿解析值等于外部值则不覆盖」这条守卫 ⇒ ④ 必红）"
+      - "判据 4·**站点落地（改前必红的存量站点）**：① `components/products/SkuMatrix.tsx` 价格/库存单元格（旧 `value={sku?.price || ''}` + `parseFloat(raw) || 0`）⇒ 输入 `0` 后 DOM 仍为 `0`、可连续打出 `0.5`；库存 `0`（无库存）同样是合法值；空值仍显示占位符 `0.00`/`0`；`onChange` 载荷形状（`{colors,doorWidths,skus}` 且带 colorId/colorName/doorWidth 定位）与 #2908 的 `border-red-400` + `aria-invalid` 标红行为**不变**。证据：frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx（**红证**：改前实测 `AssertionError: expected '' to be '0'`，三条全红）② `app/(dashboard)/production/routings/page.tsx` 算料配置三处（标量参数 / 档位 fullness / 拼次数，旧 `value={String(v ?? '')}` + 清空落 `NaN` 哨兵 ⇒ 输入框渲染出**字面量 `NaN`** 且清不掉）⇒ 清空即空框、`0.5` 可逐键录入、面板内任何输入框都不以 `NaN` 为值。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入」（**红证**：还原旧代码后该条实测红 —— `toHaveValue('0.5')` 收到空值；`NaN` 兜底断言同因）"
+      - "判据 5·**工人端同一病灶**：`frontend/bmini-app/src/pages/production/index/index.tsx` 报工数量输入框键盘类型 = `digit`（微信小程序 `number` 键盘**没有小数点键**，而报工数量按米常有小数如 60.5 ⇒ 改前小数点根本打不出来）；数量仍走既有「默认 = 应做数量 / 上限 = 应做数量」校验，请求体字段与幂等键一字未变。证据：frontend/bmini-app/tests/production-page.test.tsx「报工数量输入框用小数键位（type=digit）」（**红证**：还原旧代码后实测 `Expected: \"digit\" / Received: \"number\"`）"
+    skip_reason: "[backend-contract] 纯前端输入控件 + 既有端点透传（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/NumberInput.test.tsx、tests/unit/components/SkuMatrixNumbers.test.tsx、tests/unit/pages/production-routings.test.tsx、frontend/bmini-app/tests/production-page.test.tsx 执行"
+    precondition: "本用例是 [backend-contract] 纯前端控件用例：前置（受控夹具的 value/onChange、SKU 矩阵的 colors×doorWidths 组合、算料配置 GET 的引擎默认值、工人端工序夹具）全部由单测自建或打桩（`mockGetCraftCalcConfig` 等），不依赖共享夹具与真实服务 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "2026-09-23 新增（issue #5198，用户实测报告「不能直接输入 0，所以导致无法输入 0.？」）：把「数字输入框 0 打不进去 / 小数点吞键 / 中间态丢失」这一族反模式收敛到共享组件 NumberInput（`type=\"text\"` + `inputMode=\"decimal\"` + 字符串草稿），并就地修掉三处真缺陷（SkuMatrix 价格库存格、算料配置参数、工人端报工键盘）。同时**如实登记未改站点**（`orders/new/page.tsx` 由另一工作包整体重写，缺陷只登记；inbound-orders / finance / RefundOrderModal / ProductDetail 行内改价 / ProductForm「1 卷 = 多少米」/ OrderCraftFields / OversizeThresholdPreview 经真实浏览器实测「0 → . → 5 得 0.5」判为无缺陷 ⇒ 按最少代码阶梯**不为了统一而改**）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/NumberInput.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrix.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
+        - "frontend/bmini-app/tests/production-page.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

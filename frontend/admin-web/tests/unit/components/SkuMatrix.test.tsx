@@ -460,7 +460,7 @@ describe('SkuMatrix (#563)', () => {
     // ① 行数 = 2 × 2 = 4（**不是** 8）
     expect(container.querySelectorAll('tbody tr')).toHaveLength(4)
     // 每行 2 个输入框（价格 / 库存）⇒ 4 × 2 = 8
-    expect(container.querySelectorAll('td input[type="number"]')).toHaveLength(8)
+    expect(container.querySelectorAll('td input[type="text"]')).toHaveLength(8)
 
     // ② 表头没有「售卖方式」列
     const headers = Array.from(
@@ -524,11 +524,11 @@ describe('SkuMatrix (#563)', () => {
       />
     )
     const priceInput = container.querySelector(
-      'td input[type="number"]'
+      'td input[type="text"]'
     ) as HTMLInputElement
     expect(priceInput.className).toContain('border-red-400')
     // 库存为 0 视为有效，不标红
-    const stockInput = container.querySelectorAll('td input[type="number"]')[1]
+    const stockInput = container.querySelectorAll('td input[type="text"]')[1]
     expect((stockInput as HTMLInputElement).className).not.toContain(
       'border-red-400'
     )
@@ -541,7 +541,7 @@ describe('SkuMatrix (#563)', () => {
       <SkuMatrix value={skuErrorValue} onChange={vi.fn()} />
     )
     const priceInput = container.querySelector(
-      'td input[type="number"]'
+      'td input[type="text"]'
     ) as HTMLInputElement
     expect(priceInput.className).not.toContain('border-red-400')
   })
@@ -560,7 +560,7 @@ describe('SkuMatrix (#563)', () => {
         errors={{ skus: SKU_ERROR }}
       />
     )
-    const inputs = container.querySelectorAll('td input[type="number"]')
+    const inputs = container.querySelectorAll('td input[type="text"]')
     expect(inputs.length).toBe(2)
     inputs.forEach((i) =>
       expect((i as HTMLInputElement).className).toContain('border-red-400')
@@ -737,7 +737,7 @@ describe('门幅口径统一 (#3621)', () => {
       />
     )
 
-    const inputs = container.querySelectorAll('td input[type="number"]')
+    const inputs = container.querySelectorAll('td input[type="text"]')
     expect(inputs).toHaveLength(2)
     expect((inputs[0] as HTMLInputElement).value).toBe('168')
     expect((inputs[1] as HTMLInputElement).value).toBe('500')

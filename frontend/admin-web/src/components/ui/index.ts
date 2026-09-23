@@ -11,6 +11,8 @@ export { default as EmptyState } from './EmptyState'
 export { default as Card } from './Card'
 export { default as Loading } from './Loading'
 export { default as FileUpload } from './FileUpload'
+export { default as NumberInput } from './NumberInput'
 
 export type { TableColumn } from './Table'
 export type { SearchField } from './SearchBar'
+export type { NumberInputProps } from './NumberInput'

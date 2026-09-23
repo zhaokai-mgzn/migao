@@ -790,7 +790,7 @@ _CASE_BM_006 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」；🔴 2026-09-21 改判（issue #4967）：工人**扫新码（套 × 部位）** ⇒ A 模式一屏显示「套号 · 部位 + 系统推断的这一道 + 应做数量」+ 一个大按钮**【开工】** + **本套工序明细**（本套 → 部位 → 工序：逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）⇒ 点【开工】= 领活（先领活再生产，完工不扫）'],
     expectations=['direct_reply'],
-    data_checks=['二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求', '报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量', '报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」（⚠️ **2026-09-21 订正（issue #4961）**：`order_completed` 的服务端口径 = **该加工单全部活跃工序实例**合格报工满应做数量，**不再**是「必完工序全绿」；`is_must_finish` 键读面保留、值恒 false，工人端**零消费**）', '🔴 **扫码 = 开工 / 领活**（issue #4967，2026-09-21 用户逐字裁定①「工人都是先扫码报工后再真实进行生产」）：A 模式一屏的大按钮文案 = **【开工】**（改回【完成】⇒ 必红）；点它只调一次 `completeByScan(token, operation_id, 幂等键)`（数量/身份都不传：数量缺省由服务端取剩余应做、身份由服务端从工人 session 解）；未确定工序（operation=null）⇒ 屏上**没有**【开工】按钮且 `completeByScan` 一次都不调；旧码降级（granularity=order）⇒ 提示必须选部位 + **不**出【开工】按钮（绝不默认取第 1 套）。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx', '🔴 **按套展示工序细节**（issue #4967 交付物 2）：扫码后（除「当前这道 + 按钮」外）列出**本套各部位的工序明细**（逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量），让工人一眼看到「这一套还有哪几道没做」。数据**只**来自服务端解析响应的 `set_overview`（`ProductionScanService#setOverview`）—— 页面**不**自己聚合、也**不**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排（第二份口径）。🔴 **缺值不渲染**：`set_overview` 缺失 / `positions` 为空 ⇒ 明细块一个字节都不出现（不渲染 undefined 米 / ¥NaN）；`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）显式写「未定价」。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx'],
+    data_checks=['二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求', '报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量', '报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」（⚠️ **2026-09-21 订正（issue #4961）**：`order_completed` 的服务端口径 = **该加工单全部活跃工序实例**合格报工满应做数量，**不再**是「必完工序全绿」；`is_must_finish` 键读面保留、值恒 false，工人端**零消费**）', '🔴 **扫码 = 开工 / 领活**（issue #4967，2026-09-21 用户逐字裁定①「工人都是先扫码报工后再真实进行生产」）：A 模式一屏的大按钮文案 = **【开工】**（改回【完成】⇒ 必红）；点它只调一次 `completeByScan(token, operation_id, 幂等键)`（数量/身份都不传：数量缺省由服务端取剩余应做、身份由服务端从工人 session 解）；未确定工序（operation=null）⇒ 屏上**没有**【开工】按钮且 `completeByScan` 一次都不调；旧码降级（granularity=order）⇒ 提示必须选部位 + **不**出【开工】按钮（绝不默认取第 1 套）。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx', '🔴 **按套展示工序细节**（issue #4967 交付物 2）：扫码后（除「当前这道 + 按钮」外）列出**本套各部位的工序明细**（逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量），让工人一眼看到「这一套还有哪几道没做」。数据**只**来自服务端解析响应的 `set_overview`（`ProductionScanService#setOverview`）—— 页面**不**自己聚合、也**不**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排（第二份口径）。🔴 **缺值不渲染**：`set_overview` 缺失 / `positions` 为空 ⇒ 明细块一个字节都不出现（不渲染 undefined 米 / ¥NaN）；`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）显式写「未定价」。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx', '🔴 **报工数量键盘 = 小数键位**（issue #5198）：数量输入框键盘类型必须是 `digit`（改回 `number` ⇒ 必红）—— 微信小程序的 `number` 键盘**不提供小数点键**，而报工数量按米常有小数（如 60.5 米）⇒ 改前工人根本打不出这个点（与 admin-web 侧「数字输入框打不出 0.x」同一族病灶）。数量校验（默认 = 应做数量 / 上限 = 应做数量 / 已报满拦截）与请求体字段、幂等键一字未变。证据：frontend/bmini-app/tests/production-page.test.tsx「报工数量输入框用小数键位（type=digit）」（**红证**：还原旧代码后实测 `Expected: "digit" / Received: "number"`）'],
     skip_reason='[backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts + production-scan-complete.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'production', 'qr-report'],
     persona='mibao',
@@ -8547,6 +8547,25 @@ _CASE_UI_054 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建，不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-055 [NORMAL] 数字输入框统一治理：0 打不进去 / 小数点吞键 / 中间态丢失 —— 共享 NumberInput（type=text + inputMode=decimal + 字符串草稿），站点级落地 SkuMatrix 价格库存 / 算料配置参数 / 工人端报工数量（issue #5198）（源: cases/ui.yml）──
+_CASE_UI_055 = EvalCase(
+    id='UI-055',
+    legacy_id='',
+    title='数字输入框统一治理：0 打不进去 / 小数点吞键 / 中间态丢失 —— 共享 NumberInput（type=text + inputMode=decimal + 字符串草稿），站点级落地 SkuMatrix 价格库存 / 算料配置参数 / 工人端报工数量（issue #5198）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['migao 整个页面系统的数字输入框有不少问题，我碰到过 1 个是不能直接输入 0，所以导致无法输入 0.？这样的需求，还有其他问题，你统一把代码审查一遍。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**控件形态**：共享组件 `frontend/admin-web/src/components/ui/NumberInput.tsx` 用 `type="text"` + `inputMode="decimal"`（**不用** `type="number"`：浏览器对 `0.` / `.` / `-` 这类中间态按非法浮点数处理，受控回写即吞键），内部持有**字符串草稿**，`onChange(v: number | null)` 在草稿可解析成有限数时回调该数、**0 原样回调**（不得出现 `value={n || \'\'}` / `Number(raw) || 0` 这类把 0 与空混为一谈的归一化）；`forwardRef` 透传真实 input；默认 className 与仓库既有输入框逐字一致（UI 回退检测比对 neutral token）。证据：frontend/admin-web/tests/unit/components/NumberInput.test.tsx 的「控件用 type="text" + inputMode="decimal"」「默认 className …逐字一致」「forwardRef 拿到真实 input 元素」（**红证**：把组件换回 `type="number"` + `value={n || \'\'}` 形态 ⇒ 判据 1/2 全红，实测 `AssertionError: expected \'\' to be \'0\'`）', '判据 2·**中间态逐键不丢**（用户原始 bug 的正身）：输入序列 `0` ⇒ **DOM 值仍为 "0"**、回调 `0`；续输 `0.` ⇒ DOM `"0."`、回调 `null`（不谎报成 0）；再输 `0.5` ⇒ 回调 `0.5`；清空 ⇒ DOM `""`、回调 `null`；负号中间态 `-` ⇒ DOM `"-"` 不被吞；`abc` 等非法字符 ⇒ 草稿与 DOM 都不变（不静默变 0）。证据：NumberInput.test.tsx 的 ①②③⑥ 与「非法字符被忽略」。**红证（真实浏览器 + 真实 React 19，Chrome for Testing 实测）**：旧形态 `value={n || \'\'}` + `onChange(Number(raw))` 在 `0 → . → 5` 序列上 `dom=""` / `state=0`（输入框敲下 "0" 当刻被清空 ⇒ 永远打不出 0.x）；本组件同序列 `dom="0"/"0."/"0.5"`', '判据 3·**失焦归一化与边界**：`decimals`（默认 2）截断 —— `0.567` 失焦 ⇒ DOM `0.57`、回调 `0.57`；尾随小数点 `2.` ⇒ `2`；`min` / `max` 夹紧（`1.2` + min=5 ⇒ 5；`99` + max=10 ⇒ 10）；空草稿失焦 ⇒ `null`（`allowEmpty` 默认 true），`allowEmpty={false}` ⇒ 回上一个有效值（不落 null、不落 0）；外部 `value` 变化同步草稿（1 ⇒ 2 时 DOM 变 `"2"`），但**用户正在输入的中间态优先**（外部 value 未变时输入 `"2."` 不被洗回 `"2"`）。证据：NumberInput.test.tsx 的 ④⑤a⑤b 与 blur 组（**红证**：去掉「草稿解析值等于外部值则不覆盖」这条守卫 ⇒ ④ 必红）', "判据 4·**站点落地（改前必红的存量站点）**：① `components/products/SkuMatrix.tsx` 价格/库存单元格（旧 `value={sku?.price || ''}` + `parseFloat(raw) || 0`）⇒ 输入 `0` 后 DOM 仍为 `0`、可连续打出 `0.5`；库存 `0`（无库存）同样是合法值；空值仍显示占位符 `0.00`/`0`；`onChange` 载荷形状（`{colors,doorWidths,skus}` 且带 colorId/colorName/doorWidth 定位）与 #2908 的 `border-red-400` + `aria-invalid` 标红行为**不变**。证据：frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx（**红证**：改前实测 `AssertionError: expected '' to be '0'`，三条全红）② `app/(dashboard)/production/routings/page.tsx` 算料配置三处（标量参数 / 档位 fullness / 拼次数，旧 `value={String(v ?? '')}` + 清空落 `NaN` 哨兵 ⇒ 输入框渲染出**字面量 `NaN`** 且清不掉）⇒ 清空即空框、`0.5` 可逐键录入、面板内任何输入框都不以 `NaN` 为值。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入」（**红证**：还原旧代码后该条实测红 —— `toHaveValue('0.5')` 收到空值；`NaN` 兜底断言同因）", '判据 5·**工人端同一病灶**：`frontend/bmini-app/src/pages/production/index/index.tsx` 报工数量输入框键盘类型 = `digit`（微信小程序 `number` 键盘**没有小数点键**，而报工数量按米常有小数如 60.5 ⇒ 改前小数点根本打不出来）；数量仍走既有「默认 = 应做数量 / 上限 = 应做数量」校验，请求体字段与幂等键一字未变。证据：frontend/bmini-app/tests/production-page.test.tsx「报工数量输入框用小数键位（type=digit）」（**红证**：还原旧代码后实测 `Expected: "digit" / Received: "number"`）'],
+    skip_reason='[backend-contract] 纯前端输入控件 + 既有端点透传（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/NumberInput.test.tsx、tests/unit/components/SkuMatrixNumbers.test.tsx、tests/unit/pages/production-routings.test.tsx、frontend/bmini-app/tests/production-page.test.tsx 执行',
+    tags=['ui', 'number-input', 'decimal', 'admin-web', 'bmini'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端控件用例：前置（受控夹具的 value/onChange、SKU 矩阵的 colors×doorWidths 组合、算料配置 GET 的引擎默认值、工人端工序夹具）全部由单测自建或打桩（`mockGetCraftCalcConfig` 等），不依赖共享夹具与真实服务 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -9032,6 +9051,7 @@ ALL_CASES = (
     _CASE_UI_052,
     _CASE_UI_053,
     _CASE_UI_054,
+    _CASE_UI_055,
     _CASE_UT_001,
     _CASE_UT_002,
 )

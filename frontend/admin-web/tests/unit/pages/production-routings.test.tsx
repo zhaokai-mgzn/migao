@@ -3128,11 +3128,13 @@ describe('算料配置 tab（issue #4528）', () => {
     expect(mockGetCraftCalcConfig).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
     // 默认值来自**后端**（逐值渲染，前端不持有）
-    expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue(0.25)
-    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue(1.5)
+    // issue #5198：算料参数改用 NumberInput（`type="text"` + 字符串草稿，否则清空时框里会变字面量 `NaN`）
+    // ⇒ jest-dom 的 `toHaveValue` 对 text 控件按**字符串**比对，逐值钉住的强度不变。
+    expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue('0.25')
+    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue('1.5')
     expect(screen.getByTestId('craft-calc-config-default_formula')).toHaveValue('pleat')
-    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue(2)
-    expect(screen.getByTestId('craft-calc-config-mixed-1')).toHaveValue(0.65)
+    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue('2')
+    expect(screen.getByTestId('craft-calc-config-mixed-1')).toHaveValue('0.65')
   })
 
   it('改「单色每折吃布」⇒ PUT 带全量键（缺键会让后端静默回默认值）', async () => {
@@ -3191,7 +3193,7 @@ describe('算料配置 tab（issue #4528）', () => {
     expect(reasons).toHaveTextContent('不得低于行业红线 1.5')
     expect(reasons).toHaveTextContent('必须是 [pleat, fullness] 之一')
     // 不静默回退：用户输入**还在**（没有被悄悄写回默认 1.5），且来源仍标注「系统默认值」
-    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue(1)
+    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue('1')
     expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
   })
 
@@ -3209,7 +3211,38 @@ describe('算料配置 tab（issue #4528）', () => {
     await waitFor(() => expect(screen.getByTestId('routings-list')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
 
-    expect(screen.getByTestId('craft-calc-config-scalar-margin_multi')).toHaveValue(0.45)
+    expect(screen.getByTestId('craft-calc-config-scalar-margin_multi')).toHaveValue('0.45')
+  })
+
+  // issue #5198：算料参数原形态 `type="number"` + `value={String(v ?? '')}` + 清空落 NaN 哨兵
+  // ⇒ 用户一清空，输入框里就渲染出**字面量 `NaN`**（`String(NaN)`），而且清都清不掉。
+  // 红证：把这几格换回旧形态，本条必红（实测 `toHaveValue('')` 收到 'NaN'）。
+  it('清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const scalar = screen.getByTestId('craft-calc-config-scalar-per_fold_single')
+    const fullness = screen.getByTestId('craft-calc-config-tier-standard-fullness')
+    const mixed = screen.getByTestId('craft-calc-config-mixed-1')
+
+    // ① 0.x 中间态逐键录得进去（0 → 0. → 0.5，不吞小数点、不把 0 当空）
+    await userEvent.clear(scalar)
+    await userEvent.type(scalar, '0.5')
+    expect(scalar).toHaveValue('0.5')
+
+    // ② 清空 ⇒ 空框（不是 `NaN`）
+    await userEvent.clear(scalar)
+    expect(scalar).toHaveValue('')
+    await userEvent.clear(fullness)
+    expect(fullness).toHaveValue('')
+    await userEvent.clear(mixed)
+    expect(mixed).toHaveValue('')
+
+    // ③ 兜底：面板里任何输入框都不得以 `NaN` 为值
+    const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[]
+    expect(inputs.filter((el) => el.value === 'NaN')).toEqual([])
   })
 
   it('工艺档位显示中文（标准档 / 经济档），但**键**仍是 standard / economy（testid + 提交体 + label 初值）', async () => {
@@ -3243,7 +3276,7 @@ describe('算料配置 tab（issue #4528）', () => {
     expect(rowOf('custom')).toHaveTextContent('custom')
 
     // ③ 键**不许改**：data-testid 仍是英文键；label 输入框初值 = 后端逐字（不是中文显示名）
-    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue(2)
+    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue('2')
     expect(screen.getByTestId('craft-calc-config-tier-standard-label')).toHaveValue('标准工艺')
 
     // ④ 提交给 API 的 tiers 键仍是 standard / economy（中文只是显示名）
@@ -3267,7 +3300,7 @@ describe('算料配置 tab（issue #4528）', () => {
     expect(screen.queryByTestId('craft-calc-config-scalar-per_fold_single')).toBeNull()
 
     await userEvent.click(screen.getByTestId('craft-calc-config-retry'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue(0.25))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue('0.25'))
   })
 })
 })
