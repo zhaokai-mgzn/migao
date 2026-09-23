@@ -1,0 +1,13 @@
+✅ 登录成功
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height_threshold":4.000}},"requestId":"req_2ba9ed18518141b6","timestamp":1790178510}
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height_threshold":4.000}},"requestId":"req_4b3c9c86bd3c43b2","timestamp":1790178510}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":""},"requestId":"req_ba13fbdf1b3e4f36","timestamp":1790178519}
+✅ 已建行：夏日清风窗帘 / 米白色 / 6.6×2.6（该 SKU 门幅已置空 ⇒ 不发 fabric_width）
+  [DOM] craft-plan 面板逐字："推导服务未就绪：算料响应没有返回推导方案（`data.plan`）—— 加工类型 / 拼接 / 接高接宽请人工确认（系统不会自行猜一个方案）。"
+  [DOM] craft_plan_unavailable = "推导服务未就绪：算料响应没有返回推导方案（`data.plan`）—— 加工类型 / 拼接 / 接高接宽请人工确认（系统不会自行猜一个方案）。"
+  [DOM] craft_plan_source = null
+  [DOM] craft_plan_mode = null
+  [DOM] meters_manual_stale = null
+  [DOM] door_width_missing_badge = null
+  [DOM] craft_plan_edit_label = "收起工艺参数"
+  [shot] /tmp/ua5255/r8-degraded/20-推导服务未就绪-降级提示.png

@@ -1,0 +1,68 @@
+✅ 登录成功
+
+===== 站点① frontend/admin-web/src/app/(dashboard)/products/[id]/ProductDetail.tsx :: SkuPriceCell（行内改价）=====
+  改价前显示值（商品 SKU 表）= "¥128.00"
+  [DOM] 输入框属性 = type=number step=0.01
+  SKU 价格（行内改价）（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  SKU 价格（行内改价）（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  [commit-req] PATCH api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"price":0}
+  [commit-res] 200 api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"success":true,"data":{"id":"3","productId":"prod_eval_dark_green","colorId":"3","colorName":"白色","doorWidth":"2.8","price":0,"stock":500.0,"skuCode":"EVAL-NRD-28-白色","createdAt":"2026-09-23 23:39:34","updatedAt":"2026-09-23 23:39:34"},"requestId":"req_86b3af0a4bca426e","timestamp":1790178495}
+  '0' 提交后显示值 = "¥0.00"
+  SKU 价格（行内改价）：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  [commit-req] PATCH api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"price":0.5}
+  [commit-res] 200 api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"success":true,"data":{"id":"3","productId":"prod_eval_dark_green","colorId":"3","colorName":"白色","doorWidth":"2.8","price":0.5,"stock":500.0,"skuCode":"EVAL-NRD-28-白色","createdAt":"2026-09-23 23:39:34","updatedAt":"2026-09-23 23:39:34"},"requestId":"req_c19067f719d4433c","timestamp":1790178500}
+  [shot] /tmp/ua5255/r7-sites/b1-改价-输入0.5.png
+  提交后显示值（回写口径）= "¥0.50"　（0.5 提交前 "¥128.00"）
+
+===== 站点② frontend/admin-web/src/app/(dashboard)/inbound-orders/page.tsx :: 数量 / 单价 / 卷长 =====
+  默认值：数量="1" 单价="" 卷长=""
+  数量（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  数量（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  单价（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  单价（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  卷长（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  卷长（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  [shot] /tmp/ua5255/r7-sites/b2a-入库-三项只敲0.png
+  「数量=0」提交后 toast = ["「遮光窗帘 / 浅灰 / 2.8」的数量必须大于 0，最多 1 位小数（库存按 0.1 米粒度记：0.5 米的尾料可以、0 与 2.755 不行）"]
+  「数量=0」提交后弹窗是否仍在（true=被拦下）= true
+  数量：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  单价：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  卷长：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  [shot] /tmp/ua5255/r7-sites/b2-入库-三项输0.5.png
+  [commit-req] POST api/api/admin/inbound-orders :: {"supplier":"遮光窗帘","supplierDocNo":null,"warehouse":null,"inboundDate":null,"remark":null,"source":"purchase","items":[{"productId":"prod_eval_blackout","skuId":2,"quantity":0.5,"unitCost":0.5,"dyeLot":null,"legacyBatchNo":null,"rollLengthM":0.5}]}
+  [commit-res] 200 api/api/admin/inbound-orders :: {"success":true,"data":{"id":"b453cbee36c0c1149fd42d5b842a381e","inboundNo":"RK-20260923-0002","supplier":"遮光窗帘","inboundDate":"2026-09-23","status":"draft","totalAmount":0.2500,"source":"purchase","createdBy":"13600136000","createdAt":"2026-09-23T23:48:39.301381+08:00","items":[{"id":2,"skuId":2,"p
+  [shot] /tmp/ua5255/r7-sites/b2-入库-提交后.png
+  提交后弹窗是否仍在（true=被拦下）= false
+
+===== 站点③ frontend/admin-web/src/app/(dashboard)/finance/page.tsx :: 金额 =====
+  [DOM] 输入框属性 = type=number min=0.01 placeholder=0.00
+  金额（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  金额（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  「金额=0」提交后 toast = ["请输入正确的金额"]
+  「金额=0」提交后弹窗是否仍在（true=被拦下）= true
+  金额：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  [shot] /tmp/ua5255/r7-sites/b3-财务-金额0.5.png
+  [commit-req] POST api/api/admin/finance/transactions :: {"type":"income","amount":0.5,"paymentMethod":"wechat"}
+  [commit-res] 200 api/api/admin/finance/transactions :: {"success":true,"data":{"id":"e1e4a6d2a59527b118c338c5fc49b58f","transactionNo":"FIN-20260923-0004","type":"income","amount":0.5,"paymentMethod":"wechat","status":"success","operator":"13600136000","occurredAt":"2026-09-23T23:48:51.160302+08:00","createdAt":"2026-09-23T23:48:51.161332+08:00"},"reque
+  [shot] /tmp/ua5255/r7-sites/b3-财务-提交后.png
+  提交后弹窗是否仍在（true=被拦下）= false
+
+===== 站点④ frontend/admin-web/src/components/orders/RefundOrderModal.tsx :: 退款金额 =====
+  [DOM] 输入框属性 = type=number min=0.01
+  退款金额（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  退款金额（只敲 '0'）：DOM 值 = "0"　尾随字符会否追加 = ✅ 保留 "0"（未当空）
+  「退款金额=0」时「确定」是否禁用 = true
+  退款金额：'0'→"0"  '.'→"0"  '5'→"0.5"   终值 = "0.5"
+  [shot] /tmp/ua5255/r7-sites/b4-退款-金额0.5.png
+  「确定」是否可点（disabled）= false
+  [commit-req] PUT api/api/admin/orders/b1c2d3e4-f5a6-4b7c-8d9e-000000000006/refund :: {"refund_reason":"质量问题","refund_amount":0.5}
+  [commit-res] 200 api/api/admin/orders/b1c2d3e4-f5a6-4b7c-8d9e-000000000006/refund :: {"success":true,"requestId":"req_deb205b35cfe4665","timestamp":1790178541}
+  [shot] /tmp/ua5255/r7-sites/b4-退款-提交后.png
+  提交后弹窗是否仍在（true=被拦下）= false
+
+===== 提交值 / 回调值（POST/PATCH 载荷，逐字）=====
+  PATCH api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"price":0}
+  PATCH api/api/admin/agent/products/prod_eval_dark_green/skus/3 :: {"price":0.5}
+  POST api/api/admin/inbound-orders :: {"supplier":"遮光窗帘","supplierDocNo":null,"warehouse":null,"inboundDate":null,"remark":null,"source":"purchase","items":[{"productId":"prod_eval_blackout","skuId":2,"quantity":0.5,"unitCost":0.5,"dyeLot":null,"legacyBatchNo":null,"rollLengthM":0.5}]}
+  POST api/api/admin/finance/transactions :: {"type":"income","amount":0.5,"paymentMethod":"wechat"}
+  PUT api/api/admin/orders/b1c2d3e4-f5a6-4b7c-8d9e-000000000006/refund :: {"refund_reason":"质量问题","refund_amount":0.5}
