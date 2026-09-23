@@ -32,6 +32,24 @@
 - **边界（如实登记）**：不做侧边栏二级导航（页面内 tab 留在页内，用户 2026-09-23 裁定）；
   命令面板不做模糊匹配与「最近访问」排序；「每日简报」仍受企业开关控制（开关关 = 菜单隐藏，口径未变）。
 
+### 删除 `/api/admin/user/info` 的第四处菜单源：该端点响应不再含 `menus`（2026-09-23，issue #5236）
+
+- **为什么入册**：这是**响应体收窄**（不是纯重构）—— `GET /api/admin/user/info` 的 `data.menus` 不再返回。
+- **删的是什么**：`backend/admin-api/src/main/java/com/migao/admin/controller/UserController.java` 的私有方法
+  `generateMenus`（硬编码 5 项：dashboard / products / processing / knowledge / settings）**整段删除** ——
+  它是「菜单三源同构」之外的**第四处菜单源**，且与另三处（`frontend/admin-web/src/config/menu.ts`、
+  `MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`）**都不一致**。
+- **为什么判死代码（实测，非推断）**：该表只有 1 个调用点（本类 `getUserInfo`）；端点全路径是
+  `GET /api/admin/user/info`（issue 正文写的复数 `users/info` 全库 **0 命中**）；前端唯一用户信息调用面
+  `frontend/admin-web/src/lib/api.ts` 只调 `/api/auth/me`（菜单由 `AuthService` 下发）⇒ 本端点**前端零调用**；
+  `docs/wiki/CONTRACT-LEDGER.md` 无本端点条目；测试只断言该端点的**状态码**、**0 处**断言其 `menus` 内容。
+- **不动的部分**：端点本体（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java`
+  的反向护栏钉着它的可达性）与 `UserInfoResponse.menus` **字段**（消费方在 `/api/auth/me`：
+  前端 `frontend/admin-web/src/store/auth.ts` 是生产读取点、`frontend/admin-web/src/types/index.ts` 是 wire 声明）。
+- **判据**：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 新增「不得再长出第四处独立菜单表」
+  + 五条注入式红证 + 一条负控（判据读剥注释后的代码，不吃自己的说明文字）。
+- **边界（如实登记）**：仓库**外**的消费者无法从本仓取证 —— 若存在外部集成方读该端点的 `menus`，本次即其收窄点。
+
 ### 验收报告追加 §12：UA-2（手工改后的「未跟随」告知）判定完成，数字输入逐字符读数补齐四个站点（2026-09-23，issue #5255）
 
 - **为什么入册**：这不是"补个文档" —— 它**关掉两条被引用的结论**（§11.4 的「UA-2 仍 ⏸ 未做」、

@@ -40,6 +40,15 @@
 
 对三份源码分别做**单点变异**后重跑判据，断言它**变红**（不是「一起红」）：
 改前端组名 / 删服务端一组 / 打乱 `AuthService` 项序 / 让任一源解析为空 / 往 `MenuController` 塞一个未登记动作节点。
+
+## 第四处菜单源：**已删除，且不得长回来**（issue #5236，见文件末尾 `test_no_fourth_menu_source`）
+
+上面三处之外，`backend/admin-api/src/main/java/com/migao/admin/controller/UserController.java`
+还**私自持有第四张菜单表**（私有方法 `generateMenus`：只覆盖
+`dashboard` / `products` / `processing` / `knowledge` / `settings` **5 项**，与另三处**都不一致**）
+⇒ 本文件的上半段**结构上看不到它**（它不在被判的三处里，「三源同构」四个字本身就把覆盖面写死了）。
+实测该表**无任何消费方**（见文件末尾的取证口径）⇒ 判为死代码，连同调用点整段删除；
+本文件把裁决落成**「服务端不得再长出第四处独立菜单表」**的机械判据。
 """
 
 from __future__ import annotations
@@ -394,3 +403,182 @@ def test_each_icon_ruling_assertion_can_go_red() -> None:
         parts[which] = mutate(parts[which])
         assert parts[which] != base[which], f"{label}：注入没生效（锚点失配）—— 同步本判据"
         assert _icon_ruling_problems(*parts.values()), f"{label}：判据没有变红 ⇒ 它是空断言"
+# ══════════════ 第四处菜单源：**不得重新长出来**（issue #5236） ══════════════
+#
+# ## 病根
+#
+# `UserController` 私有持有第四张菜单表（`generateMenus`，5 项硬编码：dashboard / products /
+# processing / knowledge / settings），而上面那条同构判据只比**三处**（前端 `config/menu.ts` /
+# `MenuController.MENU_TREE` / `AuthService.buildMenusByPermissions`）⇒ **第四处天然在覆盖面之外**，
+# 它怎么腐烂都不会红 —— 这正是「三源同构」这个说法本身埋的雷（判据的覆盖面被口号写死了）。
+#
+# ## 取证（**实测**，非推断；只读核查一律走 `origin/main` 的 git 对象，命令逐条记录在本单 commit message）
+#
+# · `git grep -n "generateMenus" origin/main` ⇒ 除**定义**（`UserController`）与**唯一调用点**
+#   （同文件 `getUserInfo`）外，**零调用方**（其余命中全是文档 / 用例里的文字引用）；
+# · 端点全路径 = 类 `@RequestMapping("/api/admin/user")` + `@GetMapping("/info")`
+#   = `GET /api/admin/user/info`（issue 正文写的复数 `users/info` 全库 **0 命中**）；
+# · 🔴 **该端点可达 —— 但没有任何消费方读它的 `menus`**：
+#   - 前端唯一用户信息调用面 `frontend/admin-web/src/lib/api.ts` 只调 `/api/auth/me`
+#     （`AuthService.getCurrentUser` 自己下发菜单）⇒ `/api/admin/user/info` **前端零调用**；
+#   - `docs/wiki/CONTRACT-LEDGER.md` 无该端点条目；
+#   - 后端测试只断言该端点的**状态码**（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java`
+#     的 worker 403 与「零权限员工仍可达」反向护栏），**字面量 0 处断言其 `menus` 内容**；
+#     `backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java` 确实断言了
+#     `info.getMenus()` 非空 —— 但那是 **`AuthService.getCurrentUser()`**（另一条端点），不是本表。
+# ⇒ 结论 = **确无消费者 ⇒ 可以删**（端点本体保留：它被反向护栏钉着，删端点属另一件事）。
+#
+# ## 为什么这不是放宽门槛
+#
+# 对象（第四处菜单表）删除后，「让它与另三处同构」这类断言**无从施加** —— 若就此把断言删掉，
+# 那才是**丢覆盖**。本判据把它改挂到**同一件事的持续约束**上：
+# **服务端不得再出现第四处独立菜单表**（`UserController` 不得有 `generateMenus`、不得构造 `MenuItem`）。
+# 判据强度**双向**（见下），不比原来弱。
+#
+# ⚠️ **`UserInfoResponse.menus` 字段有意保留**（不随本单删）：它的消费方在**另一条端点**
+# `/api/auth/me` —— `frontend/admin-web/src/store/auth.ts` 的 `menus: payload?.menus` 是**生产读取点**、
+# `frontend/admin-web/src/types/index.ts` 的 `User.menus` 是 wire 声明。按「wire 类型声明 + 有生产读取点
+# ⇒ 保留字段、只删生成逻辑」⇒ 本判据第 ③④⑤ 条把这个决策也钉住：
+# 若有人把「删第四处源」错做成「删字段 / 删读取点」，判据变红。
+
+USER_CONTROLLER = (
+    REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/controller/UserController.java")
+AUTH_STORE = REPO_ROOT / "frontend/admin-web/src/store/auth.ts"
+
+#: 判据的唯一实现（纯函数）—— 生产判据与五条注入式红证**共用**，避免「红证测的是另一份逻辑」。
+_DTO_MENUS_FIELD = re.compile(r"private\s+List<MenuItem>\s+menus\s*;")
+_WIRE_MENUS_FIELD = re.compile(r"^\s*menus\??\s*:", re.M)
+_STORE_MENUS_READ = "payload?.menus"
+
+_JAVA_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_JAVA_LINE_COMMENT = re.compile(r"//[^\n]*")
+
+
+def _strip_java_comments(src: str) -> str:
+    """剥掉 Java 注释 —— **判据只读可编译的代码**。
+
+    🔴 **本函数是被自己的文案喂红之后加的（实测，见下）**：
+    删除落码时，`UserController` 的**决策记录 javadoc** 必然要点名被删掉的符号
+    （「原来的私有菜单表 `generateMenus` 是第四处菜单源」）⇒ 若判据直接扫原文，
+    **判据会被自己的说明文字永久喂红**（修完了还是红，且红得「有理由」）。
+    这与 `migao-dev-flow` §17.3「判据被自己的文案喂红 / 喂绿」同形
+    （实证：弱断言门禁被 `is None` 误报、`danger_scan` 把注释里的 `secrets.*` 当引用）。
+    ⇒ 规避口径 = 读**结构化证据**（这里 = 剥注释后的代码文本），而不是读原文。
+    代价（**如实登记**）：把菜单表**注释掉**不会被判红 —— 但注释掉的代码不参与编译，
+    结构上就不再是菜单源，故这是有意的取舍。
+    """
+    return _JAVA_LINE_COMMENT.sub("", _JAVA_BLOCK_COMMENT.sub("", src))
+
+
+def _fourth_menu_source_problems(
+    controller_src: str, dto_src: str, wire_src: str, store_src: str
+) -> list[str]:
+    """第四处菜单源裁决判据（**纯函数** ⇒ 可对文本注入验证判别力）。"""
+    problems: list[str] = []
+    code = _strip_java_comments(controller_src)  # 只认代码，不认说明文字（见 `_strip_java_comments`）
+
+    # ① 原名长回（还原调用点 / 还原方法）
+    if re.search(r"\bgenerateMenus\b", code):
+        problems.append(
+            "`UserController` 重新长出了 `generateMenus` —— issue #5236 已裁决它是**第四处菜单源**"
+            "（5 项硬编码，与三源都不同构）且**无任何消费方**，整段已删除 ⇒ **不得还原**。"
+            "要按权限下发菜单请走 `AuthService`（`/api/auth/me`，菜单的服务端唯一下发面）")
+
+    # ② 换名长回（改名规避 —— 不认名字认结构：控制器本就不该构造菜单项）
+    if "MenuItem" in code:
+        problems.append(
+            "`UserController` 里出现了 `MenuItem` ⇒ 它又在**自己构造菜单项**（无论叫什么名字）"
+            "= 第四处菜单源长回来了。控制器的职责是读用户/租户，**不下发菜单**")
+
+    # ③ 把「删第四处源」错做成「删字段」：DTO 的 menus 字段是 `/api/auth/me` 的下发面，必须还在
+    if not _DTO_MENUS_FIELD.search(dto_src):
+        problems.append(
+            "`UserInfoResponse.menus` 字段消失了 —— 但它的消费方在**另一条端点** `/api/auth/me`"
+            "（`AuthService` 下发、前端 `store/auth.ts` 有生产读取点）⇒ 删字段砍的是真实消费面。"
+            "issue #5236 的范围是**只删生成逻辑**（第四处菜单源），不含删字段")
+
+    # ④ 前端 wire 声明
+    if not _WIRE_MENUS_FIELD.search(wire_src):
+        problems.append(
+            "前端 wire 类型 `User.menus`（`frontend/admin-web/src/types/index.ts`）不再声明 —— "
+            "「保留字段」的裁决依据（有 wire 声明 + 有生产读取点）消失，须**重新裁决**后再动本判据")
+
+    # ⑤ 前端生产读取点
+    if _STORE_MENUS_READ not in store_src:
+        problems.append(
+            f"前端生产读取点 `{_STORE_MENUS_READ}`（`frontend/admin-web/src/store/auth.ts`）消失 ⇒ "
+            "同上：先复核消费面，再动本判据")
+
+    return problems
+
+
+def test_no_fourth_menu_source() -> None:
+    """第四处菜单源**不得长回来**，且「保留字段」的裁决不得被错做成「删字段」。"""
+    problems = _fourth_menu_source_problems(
+        _read(USER_CONTROLLER), _read(USER_INFO_RESPONSE), _read(WIRE_TYPES), _read(AUTH_STORE))
+    assert problems == [], "issue #5236 的第四处菜单源裁决被破坏：\n  - " + "\n  - ".join(problems)
+
+
+#: 五个注入点 —— ① ② 打「第四处源不得长回」（原名 / 改名两条路径），
+#: ③ ④ ⑤ 打「保留字段」的反向误删。每条都要能**单独**变红（否则它只是空断言）。
+_FOURTH_SOURCE_INJECTIONS = {
+    "① 第四处菜单源以原名长回（还原调用点，未引入 `MenuItem` 字面量 ⇒ 只触发第 ① 条）": (
+        "controller",
+        lambda s: s.replace(
+            "        // 查询租户名称",
+            "        // 根据权限生成菜单\n"
+            "        var menus = generateMenus(permissions, roles);\n\n"
+            "        // 查询租户名称",
+            1)),
+    "② 第四处菜单源换名长回（改名规避 ⇒ 只触发第 ② 条）": (
+        "controller",
+        lambda s: s.replace(
+            "    private String extractUserId(Authentication authentication) {",
+            "    private List<UserInfoResponse.MenuItem> buildMenuTable() {\n"
+            "        return List.of(UserInfoResponse.MenuItem.builder().key(\"dashboard\").build());\n"
+            "    }\n\n"
+            "    private String extractUserId(Authentication authentication) {",
+            1)),
+    "③ 把「删第四处源」错做成「删字段」：DTO 的 `menus` 被删": (
+        "dto", lambda s: s.replace("    private List<MenuItem> menus;\n", "", 1)),
+    "④ 前端 wire 声明被删（`User.menus`）": (
+        "wire", lambda s: s.replace("  menus?: MenuItem[]\n", "", 1)),
+    "⑤ 前端生产读取点被删（`menus: payload?.menus`）": (
+        "store", lambda s: s.replace("          menus: payload?.menus,\n", "", 1)),
+}
+
+#: **负控**（反向断言）：只在**注释**里提到被删符号 ⇒ 判据**必须保持绿**。
+#: 这是 `_strip_java_comments` 的判别力证明 —— 反过来说，没有它，判据会被自己的说明文字喂红
+#: （`UserController` 的决策记录 javadoc 必然点名 `generateMenus`，实测形态见 `_strip_java_comments`）。
+_PROSE_ONLY_INJECTIONS = {
+    "把 `generateMenus` 写进一行注释（提到 ≠ 长回来）": (
+        "controller",
+        lambda s: s.replace(
+            "    private String extractUserId(Authentication authentication) {",
+            "    // 这里曾经有 generateMenus（第四处菜单源，issue #5236 已删）\n"
+            "    private String extractUserId(Authentication authentication) {",
+            1)),
+}
+
+
+def test_each_fourth_source_assertion_can_go_red() -> None:
+    """注入式红证：**每一条**判据都要有能**单独**变红的负向夹具（否则它只是空断言）。"""
+    base = {
+        "controller": _read(USER_CONTROLLER),
+        "dto": _read(USER_INFO_RESPONSE),
+        "wire": _read(WIRE_TYPES),
+        "store": _read(AUTH_STORE),
+    }
+    assert _fourth_menu_source_problems(*base.values()) == [], (
+        "对照组：未注入时裁决判据必须全绿（否则红证无从归因）")
+    for label, (which, mutate) in _FOURTH_SOURCE_INJECTIONS.items():
+        parts = dict(base)
+        parts[which] = mutate(parts[which])
+        assert parts[which] != base[which], f"{label}：注入没生效（锚点失配）—— 同步本判据"
+        assert _fourth_menu_source_problems(*parts.values()), f"{label}：判据没有变红 ⇒ 它是空断言"
+    for label, (which, mutate) in _PROSE_ONLY_INJECTIONS.items():
+        parts = dict(base)
+        parts[which] = mutate(parts[which])
+        assert parts[which] != base[which], f"{label}：注入没生效（锚点失配）—— 同步本判据"
+        assert _fourth_menu_source_problems(*parts.values()) == [], (
+            f"{label}：判据被**说明文字**喂红（读的是原文而不是代码）⇒ 修完了还会红，交不出绿")
