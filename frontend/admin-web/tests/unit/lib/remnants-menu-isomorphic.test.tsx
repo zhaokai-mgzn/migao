@@ -87,10 +87,12 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     expect(MENU_CONTROLLER).toMatch(
       /new MenuNode\("production", "生产管理", List\.of\([^)]*\bprRemnants\b[^)]*\)\)/,
     )
-    // ② AuthService：id/名称/图标/路径四处一起钉（图标不同步 = 登录后侧边栏图标漂移）
-    expect(AUTH_SERVICE).toContain(
-      `menuItem("production-remnants", "${NAME}", "Recycle", "${PATH}")`,
-    )
+    // ② AuthService：id/名称/路径三处一起钉。
+    // 🔴 issue #5217 裁决：**图标是前端专属** —— 服务端不下发 icon，故这里**不钉服务端图标**
+    // （服务端图标字段实测无人消费、只会与前端漂移：`production-piecework` 前端 Calculator /
+    // 服务端 Coins）。图标真值源 = 上面 `MENU_TS` 的 `icon: 'Recycle'`，服务端**不得**长回该字段。
+    expect(AUTH_SERVICE).toContain(`menuItem("production-remnants", "${NAME}", "${PATH}")`)
+    expect(AUTH_SERVICE).not.toMatch(/menuItem\("[^"]+", "[^"]+", "[^"]+", "[^"]+"\)/)
   })
 
   it('② 权限不放宽：菜单权限码 == RemnantController 的类级 @RequirePermission（同一个判据）', () => {

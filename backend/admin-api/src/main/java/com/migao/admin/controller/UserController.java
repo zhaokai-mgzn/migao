@@ -162,7 +162,6 @@ public class UserController {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("dashboard")
                     .name("经营看板")
-                    .icon("BarChart3")
                     .path("/dashboard")
                     .build());
         }
@@ -172,7 +171,6 @@ public class UserController {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("products")
                     .name("商品管理")
-                    .icon("Package")
                     .path("/products")
                     .build());
         }
@@ -182,7 +180,6 @@ public class UserController {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("processing")
                     .name("加工项管理")
-                    .icon("Scissors")
                     .path("/processing")
                     .build());
         }
@@ -192,7 +189,6 @@ public class UserController {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("knowledge")
                     .name("知识库管理")
-                    .icon("BookOpen")
                     .path("/knowledge")
                     .build());
         }
@@ -202,7 +198,6 @@ public class UserController {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("settings")
                     .name("系统设置")
-                    .icon("Settings")
                     .path("/settings")
                     .build());
         }

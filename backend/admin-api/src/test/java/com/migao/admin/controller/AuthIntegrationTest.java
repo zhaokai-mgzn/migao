@@ -214,7 +214,6 @@ class AuthIntegrationTest {
                         UserInfoResponse.MenuItem.builder()
                                 .key("dashboard")
                                 .name("仪表盘")
-                                .icon("LayoutDashboard")
                                 .path("/dashboard")
                                 .build()))
                 .build();

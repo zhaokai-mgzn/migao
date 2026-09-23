@@ -14,13 +14,23 @@
 同族机具（同一批纪律）。差异：本脚本的变异点跨 5 个文件（服务 / 监听器 / 通知点 /
 迁移基线 schema / 挂载点），故每条变异自带 `file`；且其中一条跑**真 PG** 类。
 
+## 报告卫生（issue #5216）—— 为什么跑前必须 `unlink` 目标报告
+
+判据读数取自 `target/surefire-reports/<fqn>.txt`，而该文件由 **Maven 在测试跑完后才重写**
+⇒ 运行**被打断**（并发抢 `target`）或**编译失败**时它**保持上一次变异的内容**，
+`failed_methods()` 于是读到**上一条变异**的方法级失败集 ⇒ 把环境事故读成
+「这条变异被抓到 / 没抓到」。**红证机具的错误归因比没有红证更危险**：它会让人相信一条判据有判别力。
+⇒ 两道卫生（与 `scripts/pool-board-red-proof.py` 同款，不新发明）：
+① 跑测试前 `unlink` 目标报告；② 跑完**报告缺失 ⇒ 判「无法判定」（exit 3）** ——
+既不回落读上一次内容，也不当成「通过」。
+
 ## 用法
     python3 scripts/auto-batch-red-proof.py                 # 跑全部变异，逐条打印
     python3 scripts/auto-batch-red-proof.py --only default_off
     python3 scripts/auto-batch-red-proof.py --check         # 前提自检（门禁调用这个面；零副作用）
 
 退出码（实跑面）：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；
-`3` = 无法判定（工作区不干净 / 找不到注入点）。
+`3` = 无法判定（工作区不干净 / 找不到注入点 / **surefire 报告未产出**）。
 退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 """
 from __future__ import annotations
@@ -206,7 +216,20 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+class Undecidable(Exception):
+    """surefire 报告未产出 ⇒ **无法判定**（issue #5216：既不是「抓到」、也不是「没抓到」）。"""
+
+
+def report_path(fqn: str) -> Path:
+    return MODULE / "target/surefire-reports" / f"{fqn}.txt"
+
+
 def run_tests(fqn: str) -> tuple[int, str]:
+    # 报告卫生①（issue #5216）：跑前删掉目标类的报告 —— 否则运行被打断（并发抢 target）或
+    # 编译失败时，读到的是**上一次变异**留下的报告（同款做法见 scripts/pool-board-red-proof.py）。
+    report = report_path(fqn)
+    if report.exists():
+        report.unlink()
     proc = subprocess.run(
         ["./mvnw", "-o", "test", f"-Dtest={fqn.split('.')[-1]}", "-DfailIfNoTests=false"],
         cwd=MODULE, capture_output=True, text=True)
@@ -214,8 +237,13 @@ def run_tests(fqn: str) -> tuple[int, str]:
 
 
 def report_of(fqn: str) -> str:
-    path = MODULE / "target/surefire-reports" / f"{fqn}.txt"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+    """报告卫生②（issue #5216）：**缺失 ⇒ 无法判定**，不回落读上一次内容、也不当成「通过」。"""
+    path = report_path(fqn)
+    if not path.exists():
+        raise Undecidable(
+            f"surefire 报告未产出（{path.relative_to(REPO)}）—— 疑似运行被打断 / 编译失败"
+            f"（环境事故）⇒ **无法判定**：既不是「判据有判别力」，也不是「判据没有判别力」")
+    return path.read_text(encoding="utf-8")
 
 
 def failed_methods(report: str) -> set[str]:
@@ -260,7 +288,13 @@ def main() -> int:
         if not restored:
             print(f"❌ [{mutation['name']}] 源码还原失败（sha256 不符）—— 停手，先人工核对")
             return 1
-        reds = failed_methods(report_of(mutation["fqn"]))
+        try:
+            reds = failed_methods(report_of(mutation["fqn"]))
+        except Undecidable as exc:
+            print(f"❓ [{mutation['name']}] {exc}")
+            print("    （末尾输出如下 —— 不得据此判「判据没有判别力」）")
+            print("    " + "\n    ".join(output.strip().splitlines()[-8:]))
+            return 3
         caught = [m for m in mutation["expect"] if m in reds]
         if code == 0 and not reds:
             # 编译失败 / 真库异常等 ⇒ 从输出里找线索，别当「通过」

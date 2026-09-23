@@ -2028,7 +2028,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（17 case）
+## 杂项域（19 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2227,6 +2227,31 @@
 跳过: [backend-contract] 门禁接线与机具前提自检由 pytest 单测 + 真跑子进程验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5193）：六个红证机具此前无任何 CI/门禁调用（会静默腐烂）—— 接进 verify-all.sh（gate 条件腿 + redproof 实跑腿）+ 每个机具新增 --check 前提自检面（零 Maven/npm/PG） ｜ tags: ci, red-proof, gate, mutation_testing
+
+### MC-018. 红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因） 🔵
+```
+你: scripts/auto-batch-red-proof.py / scripts/auto-batch-due-scan-red-proof.py 被并发打断或编译失败后，机具不得把「环境事故」读成「这条变异被抓到 / 没抓到」
+期望: direct_reply
+数据: 读 `target/surefire-reports/**` 的机具**跑 Maven 前必须先 unlink 目标报告**（报告由 Maven 在测试跑完后才重写 ⇒ 被打断 / 编译失败时它保持**上一次变异**的内容）。判据只对**真的读报告**的机具施加（由代码里的字符串常量判定，注释 / docstring 提及不算）；不读报告的机具 = 不适用（cutting-plan 读 Maven stdout、saving-metrics-backend 读退出码、saving-metrics-web 走 npm）
+数据: 报告缺失 ⇒ **fail-closed**（`if not <report>.exists(): raise`），实跑面退出码 `3` = **无法判定** —— 不回落读上一次的内容，也不当成「通过」
+数据: 🔴 红证（**实测**，非推断）：种一份**陈旧**报告（含目标判据的 FAILURE 行）+ 让编译失败 ⇒ 改前机具打印「✅ 判据有判别力」并 exit 0（**假绿**：把编译失败读成「这条变异被抓到」）；改后打印「surefire 报告未产出 ⇒ 无法判定」并 exit 3。两个机具各实测一次
+数据: 对照组（修法不改变正常路径）：同一条真变异（`--only default_off` / `--only tenant_context_not_set`）在改前 / 改后结论一致（exit 0 + 「✅ … 判据有判别力」逐字相同）
+数据: 静态守卫的注入式红证（三个读报告机具逐条参数化）：删掉跑前的 unlink ⇒ 判据红；把 fail-closed 削成 `return ""` ⇒ 判据红；另有一条对**修复前形态**（无 unlink + `else ""` 回落）的逐字节内联回归锚
+跳过: [backend-contract] 机具的报告卫生由 pytest 纯函数判据 + 注入式红证，以及真跑 Maven 的红证 / 对照组验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5216）：auto-batch / auto-batch-due-scan 两个红证机具缺 surefire 报告卫生（同族的 pool-board 有）⇒ 跑前 unlink + 报告缺失判「无法判定」（exit 3）+ 把这条做成机械判据 ｜ tags: ci, red-proof, gate, mutation_testing
+
+### MC-019. 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon） 🔵
+```
+你: 改菜单图标（frontend/admin-web/src/config/menu.ts）或改服务端菜单下发面后，图标这一维必须按已裁决的口径判定（**前端专属**），而不是静默漂移
+期望: direct_reply
+数据: 裁决 = **方案 2「图标是前端专属」**，依据（**实测**，非推断）：`MenuNode`（`GET /api/admin/menus` 的节点 DTO）结构上只有 `code/label/children`（权限树本就没有图标这一维，走方案 1 得先**新增**该字段）；前端对「登录下发菜单」的读取点只有 `frontend/admin-web/src/types/index.ts` 的 `User.menus` 类型声明与 `frontend/admin-web/src/store/auth.ts` 的透传，**没有任何生产读取点**读 `menus[].icon`（真实侧边栏 `frontend/admin-web/src/components/layout/Sidebar.tsx` 的 `iconMap[...]` 取自 `@/config/menu`）⇒ 服务端那份 `icon` 是**无人消费、只会与前端漂移**的雷（实证 `production-piecework` 前端 `Calculator` / 服务端 `Coins`）
+数据: 落码 = **删字段**（而不是把服务端图标抄成前端值把漂移盖住）：`UserInfoResponse.MenuItem` 不再有 `icon`（`AuthService` 的 `menuItem` / `menuGroup` 形参一并删除、`UserController.generateMenus` 同步）；前端 wire 类型 `types/index.ts` 的 `MenuItem` 不再声明 `icon`；`MenuNode` 不得长回 `icon`
+数据: 「**不留读取点**」：`Sidebar.tsx` 的图标来源必须仍是 `@/config/menu`，且不得出现对登录下发菜单（`.menus`）的读取点——一旦出现，说明图标维度**不再是**前端专属，必须改回方案 1（把图标纳入同构判据）
+数据: 红证（五条注入**各能单独变红**）：① 服务端 DTO 长回 `icon` ② 前端 wire 类型长回 `icon` ③ `MenuNode` 长回 `icon` ④ `Sidebar` 改从登录下发菜单读 ⑤ `Sidebar` 不再从前端 config 取菜单 ⇒ 判据逐条变红
+跳过: [backend-contract] 图标归属裁决由纯函数判据 + 五条注入式红证验证（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5217）：既有守卫只比名字/路径/顺序、不比图标 ⇒ 图标维度纸面同构、实测已漂移（production-piecework Calculator/Coins）。按实测证据选方案 2（服务端不下发图标 ⇒ 删字段），并把裁决做成机械判据 + 五条注入式红证 ｜ tags: ci, menu, criteria
 
 ## 商家入驻域（5 case）
 
@@ -6189,8 +6214,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：455（活跃 159，跳过 296）
-- tier 分布：smoke 10 / normal 414 / adversarial 31
+- 用例总数：457（活跃 159，跳过 298）
+- tier 分布：smoke 10 / normal 416 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6204,7 +6229,7 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：17
+- 杂项域：19
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：46
@@ -6246,6 +6271,8 @@
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 - MC-016: 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）
 - MC-017: 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）
+- MC-018: 红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因）
+- MC-019: 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

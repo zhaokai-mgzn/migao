@@ -9,7 +9,8 @@
 //   ③ backend/.../service/AuthService.java             —— 登录返回的侧边栏菜单（buildMenusByPermissions）
 //
 // 本文件是**静态文本守卫**：读三份源文件，断言「入库单」节点在每份里都存在，且
-// path / 权限码 / 图标三者一致。它不启动 Spring，因此不可能被「后端没跑起来」掩盖 ——
+// path / 权限码一致（**图标是前端专属** —— 服务端不下发该字段，issue #5217 裁决，
+// 故图标只在判据① 的前端侧钉）。它不启动 Spring，因此不可能被「后端没跑起来」掩盖 ——
 // 而三处漂移正是那种「本地全绿、线上菜单少了」的形态。
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -48,10 +49,12 @@ describe('入库单菜单三处同构（PR-038 / issue #5034）', () => {
     )
   })
 
-  it('③ AuthService.buildMenusByPermissions 有入库单节点（真实侧边栏看得到），且与①同路径同图标', () => {
-    expect(AUTH_SERVICE).toContain(
-      'menuItem("inbound-orders", "入库单", "PackageOpen", "/inbound-orders")',
-    )
+  it('③ AuthService.buildMenusByPermissions 有入库单节点（真实侧边栏看得到），且与①同路径', () => {
+    // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— 故这里只钉 id/名称/路径。
+    // 图标真值源 = 判据① 的 `MENU_TS` 行（`icon: 'PackageOpen'`）；服务端**不得**长回该字段
+    // （实测无人消费、只会与前端漂移）。
+    expect(AUTH_SERVICE).toContain('menuItem("inbound-orders", "入库单", "/inbound-orders")')
+    expect(AUTH_SERVICE).not.toMatch(/menuItem\("[^"]+", "[^"]+", "[^"]+", "[^"]+"\)/)
   })
 
   it('权限码边界：入库单用 inbound:view（不挪用 processing:manage / product:list）', () => {

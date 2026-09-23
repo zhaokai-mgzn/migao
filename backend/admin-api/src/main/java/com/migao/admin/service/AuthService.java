@@ -1053,6 +1053,16 @@ public class AuthService {
     }
 
     // ======================== 菜单构建 ========================
+    //
+    // 🔴 issue #5217 裁决：**图标是前端专属 —— 服务端不下发图标**。
+    // 真实侧边栏 `frontend/admin-web/src/config/menu.ts` 是图标的唯一真值源；本类只下发
+    // key / name / path / children。依据（实测，非推断）：前端对「登录下发菜单」的读取点只有
+    // 类型声明与 store 透传（`frontend/admin-web/src/types/index.ts` 的 `User.menus` 与
+    // `frontend/admin-web/src/store/auth.ts`），**没有任何生产读取点**读 `menus[].icon`；
+    // 真实侧边栏 `frontend/admin-web/src/components/layout/Sidebar.tsx` 的图标解析（`iconMap[...]`）
+    // 取自 `@/config/menu`。故此前服务端那份 `icon` 是**无人消费、只会与前端漂移**的雷
+    // （实证：`production-piecework` 前端 `Calculator` / 服务端 `Coins`）。
+    // 守卫：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`。
 
     /**
      * 平台管理员菜单
@@ -1063,11 +1073,11 @@ public class AuthService {
         // 注：入驻审批页已废弃（2026-08-30 起商家入驻由 AI 自动甄别开通，
         // 不再需要人工审批页面；审批接口仍保留供 API 兜底应急）。
         menus.add(UserInfoResponse.MenuItem.builder()
-                .key("platform-dashboard").name("平台概览").icon("LayoutDashboard").path("/platform-dashboard").build());
+                .key("platform-dashboard").name("平台概览").path("/platform-dashboard").build());
         menus.add(UserInfoResponse.MenuItem.builder()
-                .key("tenants").name("租户管理").icon("Building2").path("/tenants").build());
+                .key("tenants").name("租户管理").path("/tenants").build());
         menus.add(UserInfoResponse.MenuItem.builder()
-                .key("platform-settings").name("平台设置").icon("Settings").path("/platform-settings").build());
+                .key("platform-settings").name("平台设置").path("/platform-settings").build());
 
         return menus;
     }
@@ -1081,33 +1091,33 @@ public class AuthService {
         List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
 
         // 工作台（所有人可见）
-        menus.add(menuItem("dashboard", "工作台", "LayoutDashboard", "/dashboard"));
+        menus.add(menuItem("dashboard", "工作台", "/dashboard"));
 
         // 智能客服分组（米宝·在线对话 / 在线接待 / 知识库；#3081 AI 客服配置已合并进企业基础信息）
         List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {
-            csChildren.add(menuItem("chat", "米宝 · 在线对话", "MessageCircle", "/chat"));
+            csChildren.add(menuItem("chat", "米宝 · 在线对话", "/chat"));
         }
         if (isAll || permissions.contains("agent:session")) {
-            csChildren.add(menuItem("human-sessions", "在线接待", "Headphones", "/agent-workspace/human-sessions"));
+            csChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
         }
         if (isAll || permissions.contains("knowledge:manage")) {
-            csChildren.add(menuItem("knowledge", "知识库", "BookOpen", "/knowledge"));
+            csChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
         }
         if (!csChildren.isEmpty()) {
-            menus.add(menuGroup("smart-customer-service", "智能客服", "MessageSquare", csChildren));
+            menus.add(menuGroup("smart-customer-service", "智能客服", csChildren));
         }
 
         // 商品管理分组
         List<UserInfoResponse.MenuItem> productChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("product:list")) {
-            productChildren.add(menuItem("products", "商品列表", "Package", "/products"));
+            productChildren.add(menuItem("products", "商品列表", "/products"));
         }
         if (isAll || permissions.contains("processing:manage")) {
-            productChildren.add(menuItem("processing", "加工项管理", "Scissors", "/processing"));
+            productChildren.add(menuItem("processing", "加工项管理", "/processing"));
         }
         if (!productChildren.isEmpty()) {
-            menus.add(menuGroup("product-center", "商品管理", "Store", productChildren));
+            menus.add(menuGroup("product-center", "商品管理", productChildren));
         }
 
         // 生产管理分组（issue #4203/#4205 后端半边）：生产看板 / 工艺配置 / 计件工资（权限码统一
@@ -1119,26 +1129,26 @@ public class AuthService {
         // 与代码漂移（**代码是对的、注释在说谎**）。改判后与 `config/menu.ts` 的 production 组逐字一致。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("processing:manage")) {
-            productionChildren.add(menuItem("production", "生产看板", "Factory", "/production"));
-            // 池看板（issue #5177）：id/名称/图标/路径必须与前端
+            productionChildren.add(menuItem("production", "生产看板", "/production"));
+            // 池看板（issue #5177）：id/名称/路径必须与前端
             // `frontend/admin-web/src/config/menu.ts` 的 `production-pool` 与
             // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
             // 权限码沿用 processing:manage —— 与「生产看板」同权（都是加工/生产管理动作）。
-            productionChildren.add(menuItem("production-pool", "池看板", "Layers", "/production/pool"));
-            // 省料看板（issue #5159）：id/名称/图标/路径必须与前端
+            productionChildren.add(menuItem("production-pool", "池看板", "/production/pool"));
+            // 省料看板（issue #5159）：id/名称/路径必须与前端
             // `frontend/admin-web/src/config/menu.ts` 的 `production-saving-board` 与
             // `MenuController` 的静态权限树**三处同构**；权限码沿用 processing:manage。
-            productionChildren.add(menuItem("production-saving-board", "省料看板", "BarChart3", "/production/saving-board"));
-            // 余料台账（issue #5191）：id/名称/图标/路径必须与前端
+            productionChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
+            // 余料台账（issue #5191）：id/名称/路径必须与前端
             // `frontend/admin-web/src/config/menu.ts` 的 `production-remnants` 与
             // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
             // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission` 同码。
-            productionChildren.add(menuItem("production-remnants", "余料台账", "Recycle", "/production/remnants"));
-            // 🔴 issue #4440：id/名称/图标/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
+            productionChildren.add(menuItem("production-remnants", "余料台账", "/production/remnants"));
+            // 🔴 issue #4440：id/名称/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
             // `production-process` **逐字一致**（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；
             // 本处此前仍是合并前的两个节点 ⇒ 「岗位权限」页（消费本列表）与真实侧边栏漂移）。
-            productionChildren.add(menuItem("production-process", "工艺配置", "Route", "/production/routings"));
-            productionChildren.add(menuItem("production-piecework", "计件工资", "Coins", "/production/piecework"));
+            productionChildren.add(menuItem("production-process", "工艺配置", "/production/routings"));
+            productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
         }
         // 入库单（V111，issue #5034）：生产管理组**第四项**（#4440 改判：合并后本组已回落到三项，
         // 入库单接在其后），但**权限码独立**（inbound:view）——
@@ -1147,66 +1157,66 @@ public class AuthService {
         // 的人就看不到菜单（权限页勾得动、侧边栏看不到 = #4203 点名的同族坑）。
         // ⚠️ 本节点必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构。
         if (isAll || permissions.contains("inbound:view")) {
-            productionChildren.add(menuItem("inbound-orders", "入库单", "PackageOpen", "/inbound-orders"));
+            productionChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
         if (!productionChildren.isEmpty()) {
-            menus.add(menuGroup("production-center", "生产管理", "Factory", productionChildren));
+            menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }
 
         // 订单管理分组
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("order:list")) {
-            tradeChildren.add(menuItem("orders", "订单列表", "ClipboardList", "/orders"));
+            tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
         }
         if (isAll || permissions.contains("order:refund")) {
-            tradeChildren.add(menuItem("after-sales", "售后工单", "ShieldCheck", "/after-sales"));
+            tradeChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
         }
         if (!tradeChildren.isEmpty()) {
-            menus.add(menuGroup("trade-center", "订单管理", "ShoppingCart", tradeChildren));
+            menus.add(menuGroup("trade-center", "订单管理", tradeChildren));
         }
 
         // 客户管理分组（客户列表 / 财务对账）
         List<UserInfoResponse.MenuItem> customerChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("customer:view")) {
-            customerChildren.add(menuItem("customers", "客户列表", "UserCircle", "/customers"));
+            customerChildren.add(menuItem("customers", "客户列表", "/customers"));
         }
         if (isAll || permissions.contains("finance:view")) {
-            customerChildren.add(menuItem("finance", "财务对账", "Calculator", "/finance"));
+            customerChildren.add(menuItem("finance", "财务对账", "/finance"));
         }
         if (!customerChildren.isEmpty()) {
-            menus.add(menuGroup("customer-center", "客户管理", "UserCircle", customerChildren));
+            menus.add(menuGroup("customer-center", "客户管理", customerChildren));
         }
 
         // 组织管理分组（员工管理 / 岗位权限 / 企业基础信息）
         List<UserInfoResponse.MenuItem> orgChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("employee:list")) {
-            orgChildren.add(menuItem("employees", "员工管理", "Users", "/employees"));
+            orgChildren.add(menuItem("employees", "员工管理", "/employees"));
         }
         if (isAll || permissions.contains("system:manage")) {
-            orgChildren.add(menuItem("roles", "岗位权限", "ShieldCheck", "/roles"));
+            orgChildren.add(menuItem("roles", "岗位权限", "/roles"));
         }
         if (isAll || permissions.contains("system:manage")) {
-            orgChildren.add(menuItem("settings", "企业基础信息", "Building2", "/settings"));
+            orgChildren.add(menuItem("settings", "企业基础信息", "/settings"));
         }
         if (!orgChildren.isEmpty()) {
-            menus.add(menuGroup("org-center", "组织管理", "Users", orgChildren));
+            menus.add(menuGroup("org-center", "组织管理", orgChildren));
         }
 
         // 通知中心：全员可见（与顶栏铃铛一致，无权限码限制）
-        menus.add(menuItem("notifications", "通知中心", "Bell", "/notifications"));
+        menus.add(menuItem("notifications", "通知中心", "/notifications"));
 
         return menus;
     }
 
-    private UserInfoResponse.MenuItem menuItem(String key, String name, String icon, String path) {
+    private UserInfoResponse.MenuItem menuItem(String key, String name, String path) {
         return UserInfoResponse.MenuItem.builder()
-                .key(key).name(name).icon(icon).path(path).build();
+                .key(key).name(name).path(path).build();
     }
 
-    private UserInfoResponse.MenuItem menuGroup(String key, String name, String icon,
+    private UserInfoResponse.MenuItem menuGroup(String key, String name,
                                                  List<UserInfoResponse.MenuItem> children) {
         return UserInfoResponse.MenuItem.builder()
-                .key(key).name(name).icon(icon).children(children).build();
+                .key(key).name(name).children(children).build();
     }
 
     /**

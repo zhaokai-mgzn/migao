@@ -3,6 +3,9 @@
 // 保证「权限分配里看到的菜单」与「真实侧边栏菜单」始终一致（不再各自漂移）。
 // 注意：与后端 AuthService.buildMenusByPermissions 保持同构 ——
 // permissionCode 即 DB permissions.code（agent:session 等）。
+// 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon，同构判据**不比这一维**）——
+// 本文件的 `icon` 即图标的唯一真值源，改它不会与服务端漂移；
+// 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
 
 export interface MenuItem {
   key: string
