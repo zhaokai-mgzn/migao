@@ -1046,3 +1046,98 @@ class TestMigrationAckScanMode:
             monkeypatch, tmp_path, self._scopes(ledger_changed=False), self.ACK_ENV)
         assert rc == 1, f"账本没改却放行了：{payload}"
         assert any("同批更新" in b for b in payload["blockers"]), payload["blockers"]
+
+
+class TestArchiveMoveIsNotARewrite:
+    """**归档搬家 ≠ 重写已发布迁移**（issue #5243）—— `split_migration_moves()` 的判据与红证。
+
+    ## 为什么需要这条（实测）
+
+    迁移链整链归档是一次 `git mv`（内容逐字节未变），但 `danger_scan` 的
+    `_git_name_status()` 是**按目录分片**跑的 ⇒ git 配不出 old↔new：
+    归档片全报 `A`、活目录片全报 `D` ⇒ 116 处 blocker，PR 被卡死。
+    而用 ack 放行 116 次「删除」，在审计上等于「owner 批准删除已发布迁移」—— 错误先例。
+
+    ## 判据（**同时**满足才算搬家；否则照旧按真删除 ⇒ blocker）
+
+      ① 该 `D` 路径的文件名在**另一个**载体目录里存在；
+      ② 那份文件的内容与 **merge-base 上原路径的 blob** sha256 **逐字节相同**。
+
+    下面五条各自**单独可红**（把对应分支改掉即红），且都**不放过**真改写/真删除。
+    """
+
+    LIVE = "backend/admin-api/src/main/resources/db/migration"
+    ARCH = "backend/admin-api/src/main/resources/db/migration-archive"
+
+    @staticmethod
+    def _identical(monkeypatch, digest="sha256:same"):
+        import danger_scan
+        monkeypatch.setattr(danger_scan, "_sha256_of", lambda rel: digest)
+        monkeypatch.setattr(danger_scan, "_blob_sha256_at_base",
+                            lambda rel, base=None: digest)
+
+    def test_identical_content_is_recognised_as_a_move(self, monkeypatch):
+        """① 内容逐字节一致 ⇒ 认作搬家（不进 blocker 面），且**单独报告**（不静默）。"""
+        import danger_scan
+        self._identical(monkeypatch)
+        kept, moves = danger_scan.split_migration_moves(
+            [("D", f"{self.LIVE}/V50__create_client_request_keys.sql")])
+        assert kept == [], f"搬家被当成改动 ⇒ 整链归档会被 116 处 blocker 卡死：{kept}"
+        assert moves == [("D", f"{self.LIVE}/V50__create_client_request_keys.sql",
+                          f"{self.ARCH}/V50__create_client_request_keys.sql")], moves
+
+    def test_one_byte_changed_is_still_a_rewrite(self, monkeypatch):
+        """② **改了内容再搬** ⇒ 留在判定面（⇒ 照旧 BLOCK）—— 这是本判据的红线。"""
+        import danger_scan
+        monkeypatch.setattr(danger_scan, "_sha256_of", lambda rel: "sha256:new")
+        monkeypatch.setattr(danger_scan, "_blob_sha256_at_base",
+                            lambda rel, base=None: "sha256:old")
+        kept, moves = danger_scan.split_migration_moves(
+            [("D", f"{self.LIVE}/V50__create_client_request_keys.sql")])
+        assert moves == [], "内容变了还被当成搬家 ⇒ 重写已发布迁移从这个口子溜过去了"
+        assert [p for _s, p in kept] == [f"{self.LIVE}/V50__create_client_request_keys.sql"], kept
+
+    def test_deleted_archive_entry_without_counterpart_is_kept(self, monkeypatch):
+        """③ 从**归档**里删一条、活目录里没有同名件 ⇒ 真删除（⇒ 照旧 BLOCK）。
+
+        用真实文件系统判据（不 stub 内容比对）：`V50` 在归档里、活目录里没有同名件。
+        """
+        import danger_scan
+        self._identical(monkeypatch)   # 即便「内容一致」也不该放行 —— 关键是**没有对应件**
+        got = danger_scan._repo_file(f"{self.ARCH}/V50__create_client_request_keys.sql")
+        assert got.is_file(), f"夹具前提不成立（归档里应有 {got}）"
+        kept, moves = danger_scan.split_migration_moves(
+            [("D", f"{self.ARCH}/V50__create_client_request_keys.sql")])
+        assert moves == [], "归档件被删却当成搬家 ⇒ 「删掉历史迁移」失去护栏"
+        assert [p for _s, p in kept] == [f"{self.ARCH}/V50__create_client_request_keys.sql"]
+
+    def test_genuinely_deleted_live_migration_is_kept(self, monkeypatch):
+        """④ 真删一条**活目录**里的迁移（归档无同名件）⇒ 照旧进判定面（BLOCK）。"""
+        import danger_scan
+        self._identical(monkeypatch)
+        live = sorted((danger_scan._repo_file(self.LIVE)).glob("V*.sql"))
+        assert live, "活目录当前应有至少一条迁移（切点之后的增量）—— 夹具前提"
+        path = f"{self.LIVE}/{live[-1].name}"
+        kept, moves = danger_scan.split_migration_moves([("D", path)])
+        assert moves == [], "真删除被当成搬家 ⇒ 已发布迁移可以静默消失"
+        assert [p for _s, p in kept] == [path]
+
+    def test_unreadable_base_blob_fails_closed(self, monkeypatch):
+        """⑤ 取不到 merge-base 的 blob（取证失败）⇒ **不得**当成「内容相同」⇒ 留在判定面。"""
+        import danger_scan
+        monkeypatch.setattr(danger_scan, "_sha256_of", lambda rel: "sha256:x")
+        monkeypatch.setattr(danger_scan, "_blob_sha256_at_base",
+                            lambda rel, base=None: None)
+        kept, moves = danger_scan.split_migration_moves(
+            [("D", f"{self.LIVE}/V50__create_client_request_keys.sql")])
+        assert moves == [], "取证失败被读成「内容相同」⇒ fail-open（本仓最忌的形态）"
+        assert len(kept) == 1
+
+    def test_non_delete_statuses_pass_through_untouched(self, monkeypatch):
+        """反向护栏：`M` / `A` 一律原样通过（搬家识别不得顺手吞掉改写/新增）。"""
+        import danger_scan
+        self._identical(monkeypatch)
+        changes = [("M", f"{self.LIVE}/V9__x.sql"), ("A", f"{self.LIVE}/V124__y.sql"),
+                   ("R100", f"{self.LIVE}/V45__z.sql")]
+        kept, moves = danger_scan.split_migration_moves(changes)
+        assert kept == changes and moves == []

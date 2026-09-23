@@ -50,7 +50,24 @@ Flyway 已移除（与 PG 18 不兼容），替换为自定义 `MigrationRunner`
 |---|---|---|
 | **建库脚本（唯一）** | `backend/admin-api/src/main/resources/db/init/schema.sql` | 表 + 索引 + RLS + 终态种子。位置有两条硬理由：在 **admin-api 的 classpath** 内（`MigrationRunner` 读得到），且在 **Docker 构建上下文**内（`backend/admin-api/Dockerfile` 只 `COPY src` ⇒ 模块外的文件镜像构建时**根本不可见**） |
 | 归档链 | `backend/admin-api/src/main/resources/db/migration-archive/` | 历史迁移链，**只读**：逐字节冻结（`migration_fingerprints.json`），**不得修改** |
-| 活目录 | `backend/admin-api/src/main/resources/db/migration/` | **只放未来的增量迁移**（每个文件必须幂等）；文件一发布即冻结 |
+| 活目录 | `backend/admin-api/src/main/resources/db/migration/` | **只放晚于归档切点**的增量迁移（每个文件必须幂等）；文件一发布即冻结 |
+
+### 切点：哪条该归档、哪条该留在活目录
+
+**切点 = 建库脚本已经体现其效果的那批迁移**。结构变更（建表 / 加列 / 索引 / RLS）按契约同步进脚本
+⇒ 进归档；**纯数据迁移**（撤种子行 / 改存量数据，不动表结构）脚本里体现不出来 ⇒ **必须留在活目录**，
+在新库上照常跑一遍 —— 那是**设计路径**，不是缺陷。反过来，一条**编号 ≤ 切点**的迁移留在活目录才是
+缺陷：`MigrationRunner` 会把活目录里的每一条都当「未来增量」执行，于是它会在**已建出终态的库**上
+再跑一遍（两份真相）。
+
+**机械判据**（会红，不靠人记得）：`min(活目录) > max(归档目录)`，落点
+`tests/unit_ci_workflows/test_migration_immutability.py::test_live_dir_holds_only_migrations_after_the_cut_point`
+（含注入式自证：把归档里任一条复制回活目录 ⇒ 必红）。
+
+> ⚠️ 活目录**当前非空**是**有意登记**的，不是遗漏：`V123__retire_join_height_processing_item.sql`
+> 是纯数据迁移（建库脚本里没有这一笔，复算 `grep -c join_height backend/admin-api/src/main/resources/db/init/schema.sql`
+> → `0`）⇒ 归档它会让每个新建环境上「接高」重新活跃。理由全文见
+> `backend/admin-api/src/main/resources/db/migration/README.md`。
 
 清单以**目录**为单一源（**别在本页抄文件数/版本号 —— 会腐烂**）：
 
