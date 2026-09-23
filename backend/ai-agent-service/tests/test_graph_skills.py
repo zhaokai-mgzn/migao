@@ -118,6 +118,8 @@ class TestSkillToolSubsets:
         issue #3996（M4-I）：兜底节点新增两个**只读**生产类查询工具
         （production_progress_query / piecework_query）—— 生产/计件没有专属意图，
         分类器可能落 general ⇒ 不绑则「米宝查不了生产进度/计件」= 能力谎报。
+        issue #5188：同理补只读的批次账/省料度量工具（`batch_stock_query`）——
+        「哪些批次快用尽了 / 这个月省了多少料」也没有专属意图，不绑 = 能力谎报。
         """
         expected = {
             "order_query",
@@ -129,6 +131,8 @@ class TestSkillToolSubsets:
             "production_progress_query",  # issue #3996
             "piecework_query",            # issue #3996（B 端专用，不对 C 端开放）
             "production_worklog_query",   # issue #4201（B 端专用：过程明细含报工人/计件）
+            "batch_stock_query",          # issue #5188（B 端专用只读：批次账/省料度量；
+                                          # 声明 product:list ⇒ C 端恒不可达）
             "dashboard_stats",
             "session_manage",
             "after_sales_manage",

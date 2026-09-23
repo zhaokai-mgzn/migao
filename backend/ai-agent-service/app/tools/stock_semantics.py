@@ -46,6 +46,36 @@ LOW_STOCK_THRESHOLD = 100
 # 上界含（≤）——见模块 docstring 的 SQL 依据
 LOW_STOCK_OPERATOR = "≤"
 
+# ── 批次余量的「快用尽」档 = 服务端第一档（issue #5188）─────────────────────
+#: 服务端四档 `≤0.2 / 0.2~0.5 / 0.5~1 / >1`（`StockBatchConsumptionService` 的
+#: `LE_0_2` / `LE_0_5` / `LE_1`，**唯一定义处**）里**第一档的上界**。
+#:
+#: 🔴 **这不是第二份口径，是同一份口径的镜像**：agent 侧要按「快用尽」筛行，
+#: 而 `/batch-stock/batches` 读面没有阈值参数（只有 `onlyAvailable`）⇒ 只能取服务端
+#: 第一档的边界来筛。它与服务端常量**逐字一致**由判据钉住：
+#: `backend/ai-agent-service/tests/test_batch_stock_query.py` 的
+#: `test_threshold_matches_backend_constant`（直接解析 Java 源码的 `LE_0_2`）。
+#:
+#: ⚠️ **不许用 `onlyAvailable` 实现「快用尽」**：负余量（超扣）也落在服务端第一档
+#: （`BatchStockViews.Distribution` 的分档注释），`onlyAvailable` 会把它剔掉 ⇒ 两份口径。
+#: 四档的**标签**同样不得在工具里自写 —— 一律用服务端回的 `buckets[].label`。
+BATCH_NEARLY_USED_UP_METERS = Decimal("0.2")
+
+
+def batch_is_nearly_used_up(remaining: Any) -> bool:
+    """批次余量是否已落到服务端第一档（「快用尽」）—— 上界含（`≤`）。
+
+    与 `StockBatchConsumptionService.bucketIndex` 的**第一个分支**同口径
+    （`r.compareTo(LE_0_2) <= 0`）；读不出数值 ⇒ `False`（不把「读不到」算成「快用尽」）。
+    """
+    try:
+        value = Decimal(str(remaining))
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+    if not value.is_finite():
+        return False
+    return value <= BATCH_NEARLY_USED_UP_METERS
+
 # ── 商品库存唯一权威（issue #4038）──────────────────────────────────────────
 #: 权威来源 = SKU 级。**故意显式命名**：让「权威是谁」在代码里可被断言，而不是靠注释。
 STOCK_AUTHORITY = "sku"

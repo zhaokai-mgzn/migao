@@ -138,6 +138,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 #: 工具 → 应声明的权限码（下表的「工具 × 角色」放行集由它推导，不手写第二遍）
 TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "after_sales_manage": ("order:refund",),
+    # 批次账 / 省料读面（issue #5188）：码与 `StockBatchController` 各端点的
+    # `@RequirePermission("product:list")` **逐字一致**（判据见
+    # `tests/test_batch_stock_query.py::TestPermissionAlignment`）。
+    "batch_stock_query": ("product:list",),
     "category_manage": ("product:category",),
     "customer_manage": ("customer:view",),
     "dashboard_stats": ("dashboard:view",),
@@ -162,6 +166,8 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
 #: 映射一变本表就得跟着改，diff 里看得见「谁新拿到/谁被收回」。
 EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "after_sales_manage": frozenset({"operator"}),
+    # 批次/省料读面（issue #5188）：`product:list` 的持有角色（目录推导，不手抄）
+    "batch_stock_query": frozenset({"operator", "sales", "product_manager", "knowledge_editor"}),
     "category_manage": frozenset({"operator", "product_manager"}),
     "customer_manage": frozenset({"operator", "customer_service", "sales"}),
     "dashboard_stats": frozenset({

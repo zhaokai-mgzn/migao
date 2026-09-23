@@ -5,6 +5,7 @@ import type { ChatCard } from '@/types'
 import ProductCard from './ProductCard'
 import LogisticsCard from './LogisticsCard'
 import ProductionProgressCard, { type ProductionProgressCardData } from './ProductionProgressCard'
+import BatchStockCard, { type BatchStockCardData } from './BatchStockCard'
 
 interface ToolResultCardProps {
   card: ChatCard
@@ -24,6 +25,10 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
       // 生产进度卡（#4016 P14「补发射点」；两个 persona 都绑了该工具 ⇒ 三端都要能渲染）
       // 出站载荷是弱类型 Record（与其他卡同族），此处按卡载荷形状收窄一次
       return <ProductionProgressCard data={card.data as ProductionProgressCardData} />
+    case 'batch_stock':
+      // 批次账 / 省料度量卡（issue #5188）。该工具只绑米宝 Skill（`product:list` 门禁 ⇒
+      // C 端恒不可达）⇒ 按 persona 推导只需 B 端两端渲染（本端 + bmini-app）。
+      return <BatchStockCard data={card.data as BatchStockCardData} />
     default:
       // 未知卡片类型：不回显内部 type（避免把内部类型名泄漏给商家用户），
       // 给出可理解的通用占位（与 C 端「消息内容暂不支持预览」同族口径，issue #3960）

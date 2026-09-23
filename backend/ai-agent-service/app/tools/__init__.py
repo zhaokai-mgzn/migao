@@ -73,6 +73,7 @@ from app.tools.production_progress_query import ProductionProgressQueryTool
 from app.tools.piecework_query import PieceworkQueryTool
 from app.tools.production_worklog_query import ProductionWorklogQueryTool
 from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
+from app.tools.batch_stock_query import BatchStockQueryTool
 
 __all__ = [
     # 基础设施 + 注册器
@@ -96,4 +97,5 @@ __all__ = [
     "ProductionProgressQueryTool", "PieceworkQueryTool",
     "ProductionWorklogQueryTool",
     "PaymentQrcodeQueryTool",
+    "BatchStockQueryTool",
 ]

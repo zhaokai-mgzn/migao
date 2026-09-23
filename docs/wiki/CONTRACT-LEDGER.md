@@ -211,6 +211,7 @@ DDL `source VARCHAR(32) DEFAULT 'customer'` 现状：服务端各路径均显式
 | 工具 | 权限码 | 出处 |
 |---|---|---|
 | `after_sales_manage` | `order:refund` | `AfterSalesController` / `AgentAfterSalesController` |
+| `batch_stock_query` | `product:list` | `StockBatchController`（批次余量 / 分布 / 省料看板 / 省料趋势四个只读端点；issue #5188） |
 | `category_manage` | `product:category` | `CategoryController` |
 | `customer_manage` | `customer:view` | `CustomerController` |
 | `dashboard_stats` | `dashboard:view` | `DashboardController` |
