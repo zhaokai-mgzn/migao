@@ -383,7 +383,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 未处理（pending）退货工单：AS-004 第 2 轮「把第一张未处理的工单关闭」的指代对象。
--- 列核对（backend/admin-api/src/main/resources/db/init/schema.sql:604~630 + V8/V25 迁移）：显式给出 id/tenant_id/ticket_no/
+-- 列核对（初始化建库脚本里 `after_sales_tickets` 的 CREATE TABLE 段 + V8/V25 迁移）：显式给出 id/tenant_id/ticket_no/
 --   order_id/customer_id/ticket_type/status/source/priority/description/images/
 --   refund_amount/evidence_images/created_at/updated_at/deleted。
 --   · ticket_type 是**唯一 NOT NULL 且无默认值**的业务列（id/tenant_id 同理必给；其余
@@ -409,7 +409,7 @@ VALUES
    TIMESTAMPTZ '2026-09-14 09:30:00+08', TIMESTAMPTZ '2026-09-14 09:30:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
--- 建单时间线（可选，非 AS-004 断言依赖）：schema.sql:633 的 ticket_timeline 只有
+-- 建单时间线（可选，非 AS-004 断言依赖）：初始化建库脚本里 `ticket_timeline` 的 CREATE TABLE 段只有
 --   id/tenant_id/ticket_id/action/actor_type 非空（V8 给 actor_type 补了 DEFAULT 'system'，
 --   但这里显式给出，避免 V8 未应用的库上落空值）。
 -- 为什么仍然插：售后详情的 statusHistory 由 ticket_timeline 渲染（AS-002 断言

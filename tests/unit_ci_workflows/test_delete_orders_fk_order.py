@@ -36,7 +36,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_SQL = REPO_ROOT / "backend/admin-api/src/main/resources/db/init/schema.sql"
-MIGRATIONS = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" / "db" / "migration"
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from unit_ci_workflows._migration_paths import migration_files  # noqa: E402
 
 # issue #4242 判据 1 的显式序列（前两级经加工单定位），末尾 `order_logistics` 是
 # schema 真值补出的第三层漏项（见报告「外键链核对表」）。
@@ -129,7 +131,7 @@ def schema_fk_edges() -> set:
     是 2026-05-30 的快照（连 processing_orders 都没有）；拿它当真相 = 读落后副本。
     """
     edges = _fk_edges_in(SCHEMA_SQL)
-    for f in sorted(MIGRATIONS.glob("*.sql")):
+    for f in migration_files():   # 归档 ∪ 活目录（issue #5243）
         edges |= _fk_edges_in(f)
     return edges
 

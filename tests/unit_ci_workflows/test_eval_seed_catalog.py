@@ -60,14 +60,18 @@
 from __future__ import annotations
 
 import re
+import sys as _sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "agent_eval" / "fixtures"
-V83 = (REPO / "backend" / "admin-api" / "src" / "main" / "resources" / "db"
-       / "migration" / "V83__seed_processing_item_catalog.sql")
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
+
+#: 定位走**全仓单一事实源**（归档 ∪ 活目录；issue #5243）—— 判据本身一字未改
+V83 = find_migration("V83__seed_processing_item_catalog.sql")
 
 #: 两个评测种子（xiaobu 栈只注 C 端；mibao 栈 = C 端 + B 端）—— 两份都只该有那 3 条带价夹具。
 SEED_FILES = ("xiaobu_eval_seed.sql", "mibao_eval_seed.sql")

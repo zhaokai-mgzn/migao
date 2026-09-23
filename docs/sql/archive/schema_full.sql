@@ -2,7 +2,7 @@
 -- ⚠️⚠️ 已废弃（DEPRECATED）—— 请勿用于新建库 / 重建环境 ⚠️⚠️
 -- ================================================================
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
--- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
+-- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
 --   本文件缺失（schema.sql 已有，共 40 张）：
 --     client_request_keys, craft_calc_configs, daily_briefings, fabric_remnants,
@@ -53,7 +53,7 @@
 -- 即：拿它建库会**同时**缺表和多出已废弃的表 —— 不是"旧一点"，是错的。
 --
 -- ✅ 正确入口（单一事实源）：
---   - 新建库：`docs/sql/schema.sql`（bootstrap，与迁移链对齐，CI 起栈用的就是它）
+--   - 新建库：`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，与迁移链对齐，CI 起栈用的就是它）
 --   - 结构变更：`backend/admin-api/src/main/resources/db/migration/V{n}__*.sql`
 --     并同步 `schema.sql`（跨源漂移守卫见 tests/unit_ci_workflows/test_schema_integrity.py）
 --

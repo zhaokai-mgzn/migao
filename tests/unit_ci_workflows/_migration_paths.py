@@ -47,3 +47,19 @@ def migration_files(pattern: str = "*.sql"):
                 f"迁移文件名在两个载体目录里重复：{p.name}（{found[p.name]} / {p}）")
             found[p.name] = p
     return [found[k] for k in sorted(found)]
+
+def find_migration(filename: str) -> Path:
+    """按**文件名**在「归档 ∪ 活目录」里找一个迁移文件；两处都没有 ⇒ **fail-loud**。
+
+    给「判据要读某一条**具体**迁移」的测试用（issue #5243）：那些判据的**意图**
+    （这份迁移真的建了/回填了那个东西）在新制度下**一字不变**，只有**定位方式**变了 ——
+    绝不允许「路径不存在 ⇒ 静默跳过」（那会让判据变成空断言）。
+    """
+    for d in MIGRATION_DIRS:
+        p = d / filename
+        if p.is_file():
+            return p
+    raise AssertionError(
+        f"迁移文件不存在（归档 ∪ 活目录都找不到）：{filename}\n"
+        f"  已查：{', '.join(str(d) for d in MIGRATION_DIRS)}\n"
+        f"  ⇒ 若它确实被删了，请把判据改成断言它的**效果**（而不是删掉判据）。")

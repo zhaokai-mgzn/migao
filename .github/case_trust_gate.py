@@ -61,6 +61,7 @@ python3 .github/case_trust_gate.py --no-issue-check   # 跳过追踪单状态查
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -848,6 +849,61 @@ def _read_text_or_none(p: Path) -> str | None:
         return None
 
 
+
+_PURE_RENAME_CACHE: dict = {}
+
+
+def _git_show_bytes(rev: str, path: str) -> bytes | None:
+    """`git show <rev>:<path>` 的**原始字节**（不存在 → None）—— 逐字节比对用，不走文本解码。"""
+    r = subprocess.run(["git", "-C", str(REPO_ROOT), "show", f"{rev}:{path}"],
+                       capture_output=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _pure_rename_map(base: str = "origin/main") -> dict:
+    """`{新路径: 旧路径}` —— 本次 diff 里**内容逐字节相同**的纯改名（issue #5243）。
+
+    ## 为什么需要它（实测，不是推断）
+
+    规则 G 的降噪纪律①（只扫本次新增/改动行）取「旧内容」的方式是
+    `git show <base>:<同路径>`。对**改名**而言那个路径在 base 上不存在 ⇒ `old_lines` 为空 ⇒
+    **整个文件的行都被当成「本 PR 新增」** ⇒ 文件里**存量**的过期行号引用会算到本 PR 头上。
+    实测：迁移链整链归档（116 个 `R100` 纯搬家）让 `db/migration-archive/V81__…sql` 里一条
+    2026 年就存在的裸 `schema.sql:2456` 变成 **blocking**，而本 PR 一个字节都没改那个文件。
+
+    ## 判据（两条都要；**不含相似度分数** —— 分数是 git 的启发式，内容哈希才是事实）
+
+      ① `git diff -M --name-status <base>...HEAD` 把它报成 `R100`；
+      ② 新路径当前内容的 sha256 == `git show <base>:<旧路径>` 的 sha256（**自己算**）。
+
+    ⇒ **内容真变过的改名不在表里**（那条路径照旧整份扫）；git 调不动 / 解析失败 ⇒ 返回 `{}`
+    （=「不知道有改名」⇒ 退回旧行为）。**两种失败方向都只会更严，不会更松。**
+    """
+    if base in _PURE_RENAME_CACHE:
+        return _PURE_RENAME_CACHE[base]
+    mapping: dict = {}
+    try:
+        r = subprocess.run(["git", "-C", str(REPO_ROOT), "diff", "-M", "--name-status",
+                            f"{base}...HEAD"], capture_output=True, text=True)
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                parts = line.split("\t")
+                if len(parts) != 3 or not parts[0].startswith("R100"):
+                    continue
+                old_rel, new_rel = parts[1], parts[2]
+                old_bytes = _git_show_bytes(base, old_rel)
+                new_file = REPO_ROOT / new_rel
+                if old_bytes is None or not new_file.is_file():
+                    continue
+                if hashlib.sha256(new_file.read_bytes()).hexdigest() == \
+                        hashlib.sha256(old_bytes).hexdigest():
+                    mapping[new_rel] = old_rel
+    except Exception:  # noqa: BLE001 —— 取证失败 ⇒ 退回旧行为（判据不变松）
+        mapping = {}
+    _PURE_RENAME_CACHE[base] = mapping
+    return mapping
+
+
 def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main") -> dict:
     """规则 G：扫本次 diff 新增/修改的 `path:NNN` 引用，核 `origin/main` 是否命中。
 
@@ -880,8 +936,14 @@ def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main
             # 二进制（不可 UTF-8 解码）：不可能含 `path:NNN` 文本引用 ⇒ 跳过并**登记**
             skipped_binary.append(rel)
             continue
-        old = _git_show(base, rel) or ""
-        old_lines = set(old.splitlines())
+        old = _git_show(base, rel)
+        if old is None:
+            # 纯改名（内容逐字节相同，issue #5243）：旧内容在**另一个路径**上 ⇒ 用它判
+            # 「哪些行是本 PR 新增的」。**不是放宽**：内容真变过的文件照旧按旧口径整份扫。
+            old_path = _pure_rename_map(base).get(rel)
+            if old_path:
+                old = _git_show(base, old_path)
+        old_lines = set((old or "").splitlines())
         for ln in text.splitlines():
             if ln in old_lines and ln.strip():
                 continue
