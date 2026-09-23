@@ -517,7 +517,7 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
     elif tool_name == "batch_stock_query":
         # 批次账 / 省料度量卡（issue #5188）。工具返回的 `data` 就是卡载荷：
         # 四个 action 各自带 `action` 判别键 + **服务端读面原样透传**
-        # （batches/dispatcher：批次行；distribution：四档；saving_board / saving_trend：
+        # （batches：批次行；distribution：四档；saving_board / saving_trend：
         # 省料度量），前端按 `action` 分支渲染，不重算任何米数/金额/占比。
         return "batch_stock"
     return None

@@ -41,8 +41,8 @@ VALID_ACTIONS = ("batches", "distribution", "saving_board", "saving_trend")
 #: 截断时 `matched_count` 仍回真实匹配数，并显式告知被截断）。
 MAX_BATCH_ROWS = 50
 
-#: admin-api 失败时的兜底建议（
-#: 授权类失败的**可执行**建议由共享映射点 `admin_api_failure` 按码顶掉，不在这里写）。
+#: admin-api 失败时的兜底建议（授权类失败的**可执行**建议由共享映射点
+#: `admin_api_failure` 按码顶掉，不会用到这里这句话）。
 _FAIL_SUGGESTION = (
     "先确认筛选条件（商品/批次号/缸号/时间粒度）是否有效；"
     "仍查不到时如实告知用户暂时查不到，不要自行估算米数或金额"
