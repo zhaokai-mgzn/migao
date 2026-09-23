@@ -1,0 +1,154 @@
+✅ 登录成功
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height_threshold":4.000}},"requestId":"req_9857bae5b8044053","timestamp":1790178362}
+  [net] 200 /api/admin/production/craft-calc-config :: {"success":true,"data":{"source":"stored","config":{"per_fold_single":0.250,"per_fold_mixed_times":{"1":0.65,"2":1.2},"margin_single":0.200,"margin_multi":0.300,"min_fullness":1.500,"tiers":{"economy":{"label":"经济工艺","fullness":1.8},"standard":{"label":"标准工艺","fullness":2.0}},"default_formula":"pleat","hem_margin":0.300,"meters_rounding_step":0.100,"oversize_width_threshold":6.000,"oversize_height_threshold":4.000}},"requestId":"req_d780a3e4fa66450a","timestamp":1790178362}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.1,"meters":13.3,"auto":true,"reason":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fi
+✅ 已建行：遮光窗帘 / 浅灰 / 6.6×2.6
+  [shot] /tmp/ua5255/r3-ua2/10-baseline-推导面板.png
+
+===== S0 基线（全自动推导，未手工改任何项） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n系统推导\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.1 米\n接宽 — 米\n用料 13.3 米\n\n依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "系统推导"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.1 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = []
+  [DOM] meters_manual_line = null
+  [DOM] cutting_mode_checked = []
+  [DOM] plan_override_splice_checked = []
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3}
+✅ 已展开「改工艺参数 / 人工加接高接宽拼接」
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.05,"meters":13.3,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米
+  [shot] /tmp/ua5255/r3-ua2/11-手工改接高.png
+
+===== S1 手工改接高 = 0.05 米（加工类型此时仍是自动推导值） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.05 米\n接宽 — 米\n用料 13.3 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.05 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["人工指定（不再被自动改判）","依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接高（米，≤ 0.1）"]
+  [DOM] meters_manual_line = null
+  [DOM] cutting_mode_checked = ["定高买宽"]
+  [DOM] plan_override_splice_checked = ["由推导决定"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"join_height_m":0.05,"meters":13.3,"fabric_meters":13.3}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.1,"meters":13.3,"auto":true,"reason":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fi
+  ✅ 已清空接高（回到「由推导决定」）
+  加工类型档位 = ["未指定","定高买宽","定宽买高"]
+  当前选中档 = "定高买宽"
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":14.5,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_width_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 14.5米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判","plan":{"cutting_mode":"定宽买高","door_width":2.8,"panels":5,"splice_times":4,"meters":14.5,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判","candidates":[{"key":"fixed_height
+  [shot] /tmp/ua5255/r3-ua2/12-手工改加工类型.png
+
+===== S2 手工改加工类型："定高买宽" → "定宽买高" =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 5\n拼接 拼接 4 次（系统未登记该拼次选项，需人工处理）\n接高 — 米\n接宽 — 米\n用料 14.5 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼接 4 次（系统未登记该拼次选项，需人工处理）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = null
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["人工指定（不再被自动改判）","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接宽（米，≤ 0.1）"]
+  [DOM] meters_manual_line = null
+  [DOM] cutting_mode_checked = ["定宽买高"]
+  [DOM] plan_override_splice_checked = ["由推导决定"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":4,"meters":14.5,"fabric_meters":14.5}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":5.8,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_width_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 5.8米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次","plan":{"cutting_mode":"定宽买高","door_width":2.8,"panels":2,"splice_times":1,"splice_option":"拼1次","meters":5.8,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 
+  [shot] /tmp/ua5255/r3-ua2/13-手工加拼次.png
+
+===== S3 手工加拼次 = 拼1次 =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 2\n拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 5.8 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次\n\n「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["人工指定（不再被自动改判）","依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接宽（米，≤ 0.1）"]
+  [DOM] meters_manual_line = null
+  [DOM] cutting_mode_checked = ["定宽买高"]
+  [DOM] plan_override_splice_checked = ["拼1次"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":1,"splice_option":"拼1次","meters":5.8,"fabric_meters":5.8}
+  [shot] /tmp/ua5255/r3-ua2/14a-手工改用料米数.png
+
+===== S4a 手工改用料米数 = 7.7（尚未改宽高 ⇒ 签名未变） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 2\n拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 5.8 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次\n\n「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["人工指定（不再被自动改判）","依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接宽（米，≤ 0.1）"]
+  [DOM] meters_manual_line = "人工指定恢复按公式计算"
+  [DOM] cutting_mode_checked = ["定宽买高"]
+  [DOM] plan_override_splice_checked = ["拼1次"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":1,"splice_option":"拼1次","meters":5.8,"fabric_meters":5.8}
+  [shot] /tmp/ua5255/r3-ua2/14b-未跟随告知.png
+
+===== S4b 手工改用料后再改净窗宽 → 7（触发「未跟随」告知） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 2\n拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 5.8 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次\n\n「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次"
+  [DOM] notice_meters_manual_stale = "用料已人工指定（7.7 米）—— 宽 / 高 / 门幅或工艺改动后系统未跟随重算（不会静默覆盖你手填的数）；点上方「恢复按公式计算」 按新参数重算。"
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["未跟随","人工指定（不再被自动改判）","依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工指定拼 1 次","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接宽（米，≤ 0.1）"]
+  [DOM] meters_manual_line = "人工指定恢复按公式计算"
+  [DOM] cutting_mode_checked = ["定宽买高"]
+  [DOM] plan_override_splice_checked = ["拼1次"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":1,"splice_option":"拼1次","meters":5.8,"fabric_meters":5.8}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":5.8,"pleat_count":56,"per_panel_pleats":14,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.04,"formula_used":"fixed_width_pleats","formula_text":"韩褶公式：(7+0.3)×2 → 56折 → 0.25×56+0.3 = 5.8米","source":"formula","craft_tier":"standard","warning":"褶数 55 无法被开数 4 整除，已取最近可行 56 折 **人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 14.3 米），系统不再自动改判；人工指定拼 1 次","plan":{"cutting_mode":"定宽买高","door_width":2.8,"panels":2,"splice_times":1,"splice_option":"拼1次","meters":5.8,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用
+  [shot] /tmp/ua5255/r3-ua2/15-恢复按公式计算.png
+
+===== S5 点「恢复按公式计算」（告知里的出口）之后 =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 2\n拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 5.8 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 14.3 米），系统不再自动改判；人工指定拼 1 次\n\n「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 14.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 17.4 米 · 拼接 5 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 14.3 − 5×2.8 = 0.3 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼1次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼1次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 14.3 米），系统不再自动改判；人工指定拼 1 次"
+  [DOM] notice_meters_manual_stale = null
+  [DOM] notice_meters_source_line = null
+  [DOM] notice_craft_plan_unavailable = null
+  [DOM] notice_craft_plan_meters_mismatch = null
+  [DOM] notice_craft_plan_join_error = null
+  [DOM] texts_with_manual_wording = ["人工指定（不再被自动改判）","依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 14.3 米），系统不再自动改判；人工指定拼 1 次","人工加 / 改（改过的项不再被自动推导覆盖）","人工加接宽（米，≤ 0.1）"]
+  [DOM] meters_manual_line = null
+  [DOM] cutting_mode_checked = ["定宽买高"]
+  [DOM] plan_override_splice_checked = ["拼1次"]
+  [server] 末次 craft-calc 读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":1,"splice_option":"拼1次","meters":5.8,"fabric_meters":5.8}

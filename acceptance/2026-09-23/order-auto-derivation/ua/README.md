@@ -45,8 +45,39 @@
 
 ```bash
 cd acceptance/2026-09-23/order-auto-derivation/ua
-shasum -a 256 probe-orders-new.mjs probe-typing-zero.mjs run.txt *.png
+# 第一批（§0 上表那 11 个文件；**逐字列出** —— 别用 `*.png` 通配，
+# 它现在会把 §0.1 第二批的 png 一起卷进来，输出与上表对不上）
+shasum -a 256 probe-orders-new.mjs probe-typing-zero.mjs run.txt run-splice.txt \
+  00-登录页.png 01-orders-new-初始.png 02-选完商品.png 02b-选完颜色.png 03-填完宽高.png \
+  04-推导面板.png 05-逐字符输0.5.png 06-推导面板-倒幅候选7次拼接.png
+# 第二批（§0.1 下表）
+shasum -a 256 probe-ua2-manual-override.mjs probe-typing-zero-sites.mjs probe-plan-unavailable.mjs \
+  run-ua2-manual-override.txt run-typing-zero-sites.txt run-plan-unavailable.txt \
+  ua2-*.png sites-*.png degraded-*.png
 ```
+
+### 0.1 第二批归档（issue #5255：UA-2 判定 + 四站点逐字符 + 降级提示对照）
+
+本批由**独立验收包**（worktree `../migao-wt/5255-ua-realbrowser-extension`，分支
+`test/5255-ua-realbrowser-extension`）在同一套本地栈上产出；被测 commit =
+`df88e4f6922ad4b37e7c27a8e82ba98baf23be21`（= `origin/main` 起点）。逐字清单与 `sha256` 见
+[../report.md](../report.md) §12.4（**不在此重复**，避免两处各写一份会漂移）。
+
+| 文件 | 是什么 |
+|---|---|
+| `probe-ua2-manual-override.mjs` | UA-2 探针：`S0` 基线 → 手工改接高 → 手工改加工类型 → 手工加拼次 → 手工改用料 + 改宽（未跟随）→ 点「恢复按公式计算」 |
+| `run-ua2-manual-override.txt` | 上述探针的 stdout（含逐条 `[DOM] notice_*` 逐字与 `[server]` 引擎 plan 读数） |
+| `probe-typing-zero-sites.mjs` | 四站点逐字符探针（`'0'`→`'.'`→`'5'` 每击读 DOM + 抓提交载荷 + `'0'` 一击 + 各站点守卫） |
+| `run-typing-zero-sites.txt` | 上述探针的 stdout |
+| `probe-plan-unavailable.mjs` | 降级提示探针（issue #5255 §A 判据 3 的**对照件**：让 `data.plan` 真的缺席） |
+| `run-plan-unavailable.txt` | 上述探针的 stdout |
+| `ua2-10…ua2-15`（7 张 png） | UA-2 每个状态的**同帧截图**（含 `ua2-14b-未跟随告知.png`） |
+| `sites-b1…sites-b4`（8 张 png） | 四站点提交前/提交后的同帧截图 |
+| `degraded-推导服务未就绪.png` | 「推导服务未就绪」真实触发现场的截图 |
+
+> **与本目录第一批的关系**：第一批（§0）只覆盖一条「全自动推导」旅程，**UA-2 与多站点逐字符都不在里面**；
+> 第二批**不改**第一轮的任何读数（两份 stdout 各自独立、可分别复算）。
+> ⚠️ **本目录两批都仍然不是自动化测试**（无 `# case_ids:`、不进 CI 判据面）。
 
 ## 1. 「读数 → 结论」的对应关系
 
@@ -155,6 +186,30 @@ AI_AGENT_SERVICE_TOKEN=<ai-agent 的 .env 里的 SERVICE_TOKEN 值>
 > （`.env.example` 默认 `http://localhost:8080`；本次实测的 web 指向 `http://localhost:8090`，
 > 见 `run.txt` 里 `[reqfail]`/`[net]` 前缀 —— **端口本身不是判据，两处一致即可**）。
 
+**第二批（#5255）实测补齐的 4 件事**（缺任一条：要么起不来、要么**登录不上**，且形态都像产品 bug）：
+
+```bash
+# ① 先打包（worktree 里没有 target/ ⇒ 没有 jar 可跑）
+./mvnw -q -DskipTests -Dmaven.test.skip=true package     # 在 <worktree>/backend/admin-api
+
+# ② 万能验证码**默认是关的**（`sms.bypass-code: ${SMS_BYPASS_CODE:}`，空 = fail-closed）⇒ 必须显式给。
+#    不给的后果：点「获取验证码」被 60s 防刷拦下、登录返回 401「短信验证码错误或已过期」——
+#    看上去像账号/权限问题，实际是没启用 bypass。
+SMS_BYPASS_CODE=123456
+
+# ③ Redis 要**可达**（验证码/令牌走它）：本机 6379 是别人带密码的实例（`NOAUTH Authentication required`）
+#    ⇒ 起一个自己的空密码实例最省事：redis-server --port 6380 --save '' --appendonly no
+REDIS_HOST=127.0.0.1 REDIS_PORT=6380 REDIS_PASSWORD=
+
+# ④ JWT RSA：worktree 的 `rsa/private.pem` 是 **gitignored**（只有 public.pem 入库）
+#    ⇒ `java -jar` 直接 `JWT RSA 密钥加载失败`（fail-fast，不回退 HS256）。用 PEM 内容注入最省事：
+JWT_PRIVATE_KEY_PEM="$(cat <主仓>/backend/admin-api/src/main/resources/rsa/private.pem)" \
+JWT_PUBLIC_KEY_PEM="$(cat <主仓>/backend/admin-api/src/main/resources/rsa/public.pem)" \
+java -jar target/admin-api-1.0.0-SNAPSHOT.jar
+#    （另一条路 = 把 private.pem 拷进 worktree 的 `src/main/resources/rsa/` —— 但**必须在 `mvn package` 之前**拷，
+#      先打包后拷 ⇒ jar 里没有它，照样起不来。）
+```
+
 ### ⑥ 起 ai-agent（:8001）
 
 ```bash
@@ -217,6 +272,55 @@ PHONE=13600136000 BASE_URL=http://localhost:3001 \
 > （`/tmp` 是跨会话共享写路径）。
 > 它不落任何日志文件，读数只在 stdout（形如 `窗宽（米）逐字符：'0'→"0"  '.'→"0."  '5'→"0.5"  终值 = "0.5"`）。
 
+### ⑩（第二批）先做**两处数据准备**（否则站点②/站点④ 的读数会被业务校验污染）
+
+```bash
+# ④ 退款站点的提交值：种子里 8 张单 actual_amount 全是 0.00 ⇒ 提交必 422「退款金额不能超过实收款 0.00」
+psql -h 127.0.0.1 -p 5432 -U migao_admin -d ai_customer_service -c "UPDATE orders SET actual_amount = 100.00;"
+```
+
+```sql
+-- 判据 3 的对照态（「推导服务未就绪」）需要该行的 SKU **解析不出正数门幅**：
+--   door_width 是 NOT NULL ⇒ 置 NULL 会报 `null value in column "door_width" … violates not-null constraint`；
+--   且唯一约束是 (product_id, color_id, door_width) ⇒ 同一 product+color 的两行**不能同时**改成同一个值
+--   （`重复键违反唯一约束 uq_product_skus_combination`）⇒ 一个置 ''、另一个置非数字文案，两行都解析不出数。
+UPDATE product_skus SET door_width = ''      WHERE id = 1;   -- prod_eval_summer
+UPDATE product_skus SET door_width = '未维护' WHERE id = 6;   -- 同一 product+color 的另一行
+```
+
+### ⑪（第二批）跑 UA-2 探针（手工改 ⇒ 「未跟随 / 人工锁定」告知）
+
+**同一套栈**（①–⑦ 照旧；登录手机号 `13600136000`、`BASE_URL=http://localhost:3001` 也都照旧）：
+
+```bash
+PHONE=13600136000 BASE_URL=http://localhost:3001 OUT_DIR=<某空目录> CUT_TO=定宽买高 \
+  node acceptance/2026-09-23/order-auto-derivation/ua/probe-ua2-manual-override.mjs
+```
+
+> ⚠️ **顺序不能随意换**：探针按 `S0→S1(接高)→S1b(清空接高)→S2(加工类型→定宽买高)→S3(拼1次)→S4(用料 7.7 + 改宽)→S5(恢复按公式)`
+> 推进。**合法组合**是前提：`定高买宽` 下拼次只能是 0、`倒幅` 下不能接高 —— 顺序错了会拿到引擎的 400/422
+> （见 §3 末行），读数会被「算料失败」污染。
+> ⚠️ `CUT_TO` 必须是**真实存在的另一档**（`定宽买高`）；档位表里第一项是「未指定」，
+> 按 index 盲选会点到「未指定」（= 清掉人工覆盖，**不产生**「人工指定」读数）—— 第一轮就这么错过一次。
+
+### ⑫（第二批）跑四站点逐字符探针 + 降级提示探针
+
+```bash
+# 四站点：① /products/<id> 行内改价 ② /inbound-orders 数量/单价/卷长 ③ /finance 金额 ④ /orders 处理退款
+PHONE=13600136000 BASE_URL=http://localhost:3001 OUT_DIR=<另一个空目录> PRODUCT_ID=prod_eval_dark_green \
+  node acceptance/2026-09-23/order-auto-derivation/ua/probe-typing-zero-sites.mjs
+
+# 降级提示（判据 3 的对照件；前置 = §2 ⑩ 的第二段 SQL）
+PHONE=13600136000 BASE_URL=http://localhost:3001 OUT_DIR=<再一个空目录> PRODUCT=夏日清风窗帘 COLOR=米白色 \
+  node acceptance/2026-09-23/order-auto-derivation/ua/probe-plan-unavailable.mjs
+```
+
+> ⚠️ `probe-typing-zero-sites.mjs` **必须换 `OUT_DIR`**（截图名固定，同目录重跑会静默覆盖）。
+> ⚠️ 它会在本地库里**留下痕迹**（SKU 改价、入库草稿、财务流水、一笔退款）—— 一次性库无所谓，
+> 但若要在同一库上跑别的旅程，先跑别的再跑它。
+> ⚠️ 站点② 的建单按钮文案是「**新建入库单**」（不含连续子串「建单」）⇒ 选择器写 `/建单/` 会 30s 超时。
+> ⚠️ 站点④ 需要 `orders.actual_amount > 0`（§2 ⑩）。
+
 ## 3. 四个坑速查（症状 → 根因）
 
 | 症状 | 根因 | 处置 |
@@ -229,6 +333,13 @@ PHONE=13600136000 BASE_URL=http://localhost:3001 \
 | 工作区软链的 `node_modules` 起不来 | Turbopack 拒软链（issue #5241） | `npm ci` 真装（§2 ⑦） |
 | `/orders/new` 显示「缺少权限 `order:list`」 | 用了 `13800138000`（顾客账号） | 用 `13600136000`（评测管理员）（§2 ⑧） |
 | 换个尺寸重跑后，上一轮的截图**不见了** | 探针截图名固定（`00-`…`04-`），同一 `OUT_DIR` 会被静默覆盖 | **每轮换 `OUT_DIR`**（§2 ⑧）—— 源目录就是这么丢的第①轮 `04-推导面板.png` |
+| 点「获取验证码」返回「发送过于频繁，请 60 秒后重试」，登录 401「短信验证码错误或已过期」 | `sms.bypass-code` **默认空 = fail-closed**（没用 `SMS_BYPASS_CODE` 启用万能码） | 起 admin-api 时给 `SMS_BYPASS_CODE=123456`（§2 ⑤ 第二批 ②） |
+| `java -jar` 启动即 `JWT RSA 密钥加载失败，无法启用 RS256 签名` | worktree 的 `rsa/private.pem` 是 gitignored（只有 public.pem 入库） | `JWT_PRIVATE_KEY_PEM`/`JWT_PUBLIC_KEY_PEM` 注入 PEM 内容（或**打包前**拷 private.pem）（§2 ⑤ 第二批 ④） |
+| admin-api 连不上 Redis（`NOAUTH Authentication required`） | 本机 6379 是**别人**带密码的实例 | 起自己的 `redis-server --port 6380`（§2 ⑤ 第二批 ③） |
+| 站点④ 退款提交必 `422 退款金额不能超过实收款 0.00` | 种子里 8 张单 `actual_amount` 全是 `0.00` | 先把某张单调大（§2 ⑩）—— 否则会把**业务校验**误读成**解析口径**问题 |
+| 想造「门幅未维护 ⇒ `plan` 缺席」的降级态，`UPDATE … door_width = NULL` 却报 not-null | `door_width` 是 `NOT NULL`；且唯一约束 `uq_product_skus_combination` = `(product_id, color_id, door_width)` ⇒ 同一 product+color 的两行不能改成同一个值 | 一行置 `''`、另一行置非数字文案（§2 ⑩ 的 SQL） |
+| 探针选 `getByRole('button', { name: /建单/ })` 30 秒超时 | 站点② 的按钮文案是「**新建入库单**」（不含连续子串「建单」） | 选择器用 `/新建入库单/`（§2 ⑫） |
+| 手工加「拼2次」后 craft-calc 稳定 `422 CRAFT_CALC_UNAVAILABLE`（引擎原文「加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0」） | **不是缺陷**，是引擎的合法性判据：`定高买宽` 下拼次只能是 0、`倒幅` 下不能接高 | 探针按**合法组合**排序（§2 ⑪）—— 否则读数会被「算料失败」污染 |
 
 ## 4. 本目录的边界（照实登记，不许读成"UA 全做完"）
 
@@ -237,8 +348,20 @@ PHONE=13600136000 BASE_URL=http://localhost:3001 \
 - §11.6 的逐字符读数**只覆盖一个站点**（下单页「窗宽（米）」）。
   **不许**把它推广成「全仓 6 个数字输入站点都已真浏览器验证」—— 其余站点的护栏在 #5228 / #5237，
   本次**一个都没跑**。
+  > ⚠️ **本条已被 §0.1 第二批部分补上**（issue #5255 §B 的**四个站点 5 个字段**：商品详情行内改价 /
+  > 入库单 数量·单价·卷长 / 财务 金额 / 退款金额 —— 读数见 `run-typing-zero-sites.txt`）。
+  > 但**仍然不是"全仓数字输入都过了"**：其余站点（`SkuMatrix` / 算料配置 / 工人工端 等）**依旧没跑**，
+  > 护栏仍在 #5228 / #5237。原文保留以留痕。
 - 本旅程**没有**覆盖「商家手工改加工类型 / 拼次后被判『未跟随』」这条路径 ⇒
   **UA-2 仍未做**（§11.4），本目录里**没有任何**可支撑它的读数。
+  > ⚠️ **本条已由 §0.1 第二批补上**（issue #5255 §A：手工改接高 / 加工类型 / 拼次 / 用料四条路径 +
+  > 「推导服务未就绪」降级提示的对照读数 ⇒ 读数见 `run-ua2-manual-override.txt`、`run-plan-unavailable.txt`，
+  > 判定见 `../report.md` §12.1）。**判定结论不是"全绿"**：判据 2 判「**半满足**」（可改进点、非缺陷 ——
+  > 告知缺「推导值 / 差多少米」这个量，已在 §12.3 登记为待裁定），本单**只回报、未改实现**。
+  > 原文保留以留痕。
 - **未做**：`bmini-app` 真机、多租户切换、「不采纳推导项」后的组合键核对（§11.5）。
+- **第二批仍**未覆盖 / 未跑的（照实登记，详见 `../report.md` §12.3）：真变异红证（本单禁改 `frontend/**`）、
+  UA-2 的**订单落库后核对**（只到界面告知 + 引擎响应）、降级态里 `size-door-width-missing` 徽标**未出现**的归因、
+  以及两条观察项（只改接高却把加工类型标成「人工指定」；`定高买宽 + 拼2次` 的 422 与「已并入特殊选项」并存）。
 - 本目录**不是**自动化测试：没有 `# case_ids:` 声明，不进 CI 判据面；它是**人可复算的验收证据**。
   要把它变成防回退判据，应另立用例（`#5218`/`#5228` 家族已有同类做法）。
