@@ -300,15 +300,15 @@ describe('OrderCraftFields', () => {
   it('款式 = 拼色 ⇒ 出现配布边米数（默认显示主布米数）与配布边单价', () => {
     render(<Harness mainMeters={3} />)
     fireEvent.click(chip('款式', '拼色'))
-    expect(inputByName('配布边米数')).toHaveValue(3)
-    expect(inputByName('配布边单价')).toHaveValue(null)
+    expect(inputByName('配布边米数')).toHaveValue('3')
+    expect(inputByName('配布边单价')).toHaveValue('')
   })
 
   it('配布边米数可编辑 ⇒ onEdgeMetersChange 收到新米数', () => {
     render(<Harness mainMeters={3} />)
     fireEvent.click(chip('款式', '拼色'))
     fireEvent.change(inputByName('配布边米数'), { target: { value: '2.5' } })
-    expect(inputByName('配布边米数')).toHaveValue(2.5)
+    expect(inputByName('配布边米数')).toHaveValue('2.5')
   })
 
   it('配布边米数提示「默认 = 主布米数，可编辑」', () => {
@@ -331,7 +331,67 @@ describe('OrderCraftFields', () => {
     fireEvent.change(inputByName('配布边米数'), { target: { value: '2' } })
     fireEvent.change(inputByName('配布边米数'), { target: { value: '' } })
     expect(screen.getByText('配布边米数来源：跟随主布')).toBeInTheDocument()
-    expect(inputByName('配布边米数')).toHaveValue(3)
+    expect(inputByName('配布边米数')).toHaveValue('3')
+  })
+
+  // ── issue #5218（独立复核推翻「其余站点已核无缺陷」后的收口）────────────────────
+  //
+  // 花距 / 配布边这两个框旧形态都是 `type="number"` + `numberOrNull`（`parsed > 0 ? parsed : null`）：
+  // 0 被判成「空」⇒ 占位符自己写着「米，如 0.6」却连 "0." 都打不出来。
+
+  it('判据 3（红证·issue #5218 #2）：花距逐键 0 → . → 6 ⇒ DOM "0"/"0."/"0.6"，且 0 是合法值', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} />)
+    fireEvent.click(chip('是否对花', '是'))
+    const el = inputByName('花距')
+
+    fireEvent.change(el, { target: { value: '0' } })
+    // 红证（单点变异，实测）：把接线改回 `numberOrNull(e.target.value) ?? undefined` ⇒
+    // 0 被归 null ⇒ 父组件 prop 变 '' ⇒ 本断言收到 ''（框当场清空）
+    expect(el).toHaveValue('0')
+    expect(spy).toHaveBeenLastCalledWith({ patternRepeat: 0 })
+
+    fireEvent.change(el, { target: { value: '0.' } })
+    expect(el).toHaveValue('0.')
+
+    fireEvent.change(el, { target: { value: '0.6' } })
+    expect(el).toHaveValue('0.6')
+    expect(spy).toHaveBeenLastCalledWith({ patternRepeat: 0.6 })
+    fireEvent.blur(el)
+    expect(el).toHaveValue('0.6')
+  })
+
+  it('判据 4（红证·issue #5218 #3）：配布边米数输入 0 ⇒ 不落 0（仍跟随主布）+ **显式告知**（不再无声跳回）', () => {
+    render(<Harness mainMeters={3} />)
+    fireEvent.click(chip('款式', '拼色'))
+    const el = inputByName('配布边米数')
+
+    fireEvent.change(el, { target: { value: '0' } })
+    // 商家敲的 0 留在框里（不被静默改写），但**不落库**：来源仍是「跟随主布」
+    expect(el).toHaveValue('0')
+    expect(screen.getByText('配布边米数来源：跟随主布')).toBeInTheDocument()
+    // 红证（单点变异，实测）：去掉 `craft-edge-meters-zero-rejected` 这块告知 ⇒ 本断言必红
+    expect(screen.getByTestId('craft-edge-meters-zero-rejected')).toHaveTextContent(
+      '不支持 0（0 米配布边 = 没有配布边）：已按主布米数 3 米计算'
+    )
+
+    // 0 被拒不影响中间态：还能接着打 0.5
+    fireEvent.change(el, { target: { value: '0.' } })
+    expect(el).toHaveValue('0.')
+    fireEvent.change(el, { target: { value: '0.5' } })
+    expect(el).toHaveValue('0.5')
+    expect(screen.getByText('配布边米数来源：人工指定')).toBeInTheDocument()
+    expect(screen.queryByTestId('craft-edge-meters-zero-rejected')).toBeNull()
+  })
+
+  it('配布边单价 0：不落 0（后端单价必须 > 0）但**框里保留**输入，填 12.5 才生效', () => {
+    render(<Harness mainMeters={3} />)
+    fireEvent.click(chip('款式', '拼色'))
+    const el = inputByName('配布边单价')
+    fireEvent.change(el, { target: { value: '0' } })
+    expect(el).toHaveValue('0')
+    fireEvent.change(el, { target: { value: '12.5' } })
+    expect(el).toHaveValue('12.5')
   })
 
   // ── issue #4566：「工艺」/「是否定型」已搬出本组件 ──────────────────────────────

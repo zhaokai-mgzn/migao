@@ -70,7 +70,8 @@
  * ④ **纱帘子块删除**（帘体已无「布帘+纱帘」档）。
  */
 
-import { useId } from 'react'
+import { useId, useState } from 'react'
+import NumberInput from '@/components/ui/NumberInput'
 import {
   CUTTING_MODE_OPTIONS,
   METERS_SOURCE_FOLLOW,
@@ -239,12 +240,9 @@ export default function OrderCraftFields({
   const uid = useId().replace(/:/g, '')
   const fieldId = (name: string) => `craft-${uid}-${name}`
 
-  /** 数字输入：空串 / 非法 ⇒ `null`（键不落库）；否则正有限数 */
-  const numberOrNull = (raw: string): number | null => {
-    if (raw.trim() === '') return null
-    const parsed = Number(raw)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-  }
+  /** 数字输入（issue #5218）：一律走共享 `NumberInput`（`type="text"` + 字符串草稿）——
+   *  它自己区分「空」（`null`）与「0」（`0`），本组件不再需要 `numberOrNull` 那层
+   *  「`> 0` 才算数」的强转（那层正是 **0 打不进去 / 中间的 "0." 被吞** 的来源）。 */
 
   const inputClass =
     'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
@@ -252,6 +250,9 @@ export default function OrderCraftFields({
   const isMixed = value.style === STYLE_MIXED
   const edgeSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
   const effectiveEdgeMeters = edgeMeters ?? (Number(mainMeters) || 0)
+  /** 用户显式填了 0 米配布边（= 没有配布边）：**不落库**（`null` = 跟随主布，算料口径不变）
+   *  但**不许无声跳回** —— 显式告知（issue #5218 #3）。空框 = 跟随主布，不算「被拒」。 */
+  const [edgeMetersZeroRejected, setEdgeMetersZeroRejected] = useState(false)
 
   /** 公式 chips 的候选（值域 = `CRAFT_CALC_FORMULAS`，与算料引擎逐字同源；文案只有一份） */
   const formulaOptions: ReadonlyArray<ChipOption<string>> = CRAFT_CALC_FORMULAS.map((formula) => ({
@@ -328,14 +329,16 @@ export default function OrderCraftFields({
             <label htmlFor={fieldId('patternRepeat')} className={LABEL_CLASS}>
               花距
             </label>
-            <input
+            {/* issue #5218 #2：旧形态 `numberOrNull` 的 `parsed > 0 ? parsed : null` 把 **0 判成空**
+                ⇒ 占位符写着「米，如 0.6」却连 "0." 都打不出来（0 是 falsy 被归 null，框当场清空），
+                且旧框是 `type="number"`（中间态在浏览器层就丢）。改用 NumberInput：
+                0 是**合法值**（对花 + 花距 0 = 无花距），空才是「不落库」（`undefined`）。 */}
+            <NumberInput
               id={fieldId('patternRepeat')}
-              type="number"
               min={0}
-              step={0.01}
               placeholder="米，如 0.6"
-              value={value.patternRepeat ?? ''}
-              onChange={(e) => onChange({ patternRepeat: numberOrNull(e.target.value) ?? undefined })}
+              value={value.patternRepeat ?? null}
+              onChange={(v) => onChange({ patternRepeat: v ?? undefined })}
               className={inputClass}
             />
           </div>
@@ -395,16 +398,30 @@ export default function OrderCraftFields({
               <label htmlFor={fieldId('edgeMeters')} className={LABEL_CLASS}>
                 配布边米数
               </label>
-              <input
+              {/* issue #5218 #3：配布边米数「`null` = 跟随主布」是**有意设计**（算料口径，本包不动）——
+                  但 0 与「清空」此前**无声跳回**主布米数：0 被 `numberOrNull` 归 null，
+                  `effectiveEdgeMeters` 立刻换成主布米数，商家看不出发生了什么。
+                  现在：框里保留商家敲的内容、**显式告知** 0 不被接受、并按主布米数计算。 */}
+              <NumberInput
                 id={fieldId('edgeMeters')}
-                type="number"
                 min={0}
-                step={0.01}
                 value={effectiveEdgeMeters}
-                onChange={(e) => onEdgeMetersChange(numberOrNull(e.target.value))}
+                onChange={(v) => {
+                  setEdgeMetersZeroRejected(v === 0)
+                  onEdgeMetersChange(v === 0 ? null : v)
+                }}
                 className={inputClass}
               />
               <p className="mt-1 text-xs text-neutral-400">默认 = 主布米数，可编辑</p>
+              {edgeMetersZeroRejected && (
+                <p
+                  data-testid="craft-edge-meters-zero-rejected"
+                  className="mt-1 text-xs text-amber-600"
+                >
+                  配布边米数不支持 0（0 米配布边 = 没有配布边）：已按主布米数 {effectiveEdgeMeters} 米计算；
+                  留空即「跟随主布」
+                </p>
+              )}
               <p className="mt-0.5 text-xs text-neutral-500">
                 配布边米数来源：{edgeSource}
               </p>
@@ -413,14 +430,12 @@ export default function OrderCraftFields({
               <label htmlFor={fieldId('edgeUnitPrice')} className={LABEL_CLASS}>
                 配布边单价
               </label>
-              <input
+              <NumberInput
                 id={fieldId('edgeUnitPrice')}
-                type="number"
                 min={0}
-                step={0.01}
                 placeholder="¥ / 米"
-                value={edgeUnitPrice ?? ''}
-                onChange={(e) => onEdgeUnitPriceChange(numberOrNull(e.target.value))}
+                value={edgeUnitPrice ?? null}
+                onChange={(v) => onEdgeUnitPriceChange(v === 0 ? null : v)}
                 className={inputClass}
               />
               <p className="mt-1 text-xs text-neutral-400">
