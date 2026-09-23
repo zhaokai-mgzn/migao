@@ -4,8 +4,9 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 35 张）：
---     client_request_keys, craft_calc_configs, daily_briefings, finance_transactions,
+--   本文件缺失（schema.sql 已有，共 40 张）：
+--     client_request_keys, craft_calc_configs, daily_briefings, fabric_remnants,
+--     finance_transactions,
 --     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
 --     processing_orders, processing_order_sets, processing_position_operations,
@@ -18,7 +19,7 @@
 --     production_option_routings, production_route_rules, production_route_signals,
 --     production_route_templates, production_routing_versions,
 --     production_routings,
---     production_work_logs, role_permissions,
+--     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
 --     inbound_orders, inbound_order_items, stock_batches
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；

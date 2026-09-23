@@ -3291,3 +3291,115 @@ export interface PoolDispatchResult {
   code?: string | null
   suggestion?: string | null
 }
+
+// ── 余料成本回收（V122，issue #5146）：**非资产**余料台账 + 可配小件尺寸 + 回收记账 + 报废留痕 ──
+// 🔴 这一组类型里**没有**「余料值多少钱」的字段（除 recoveredAmount —— 它是**用它的那张单**的
+//    内部成本冲减量，不是余料的资产属性）。余料不计价、不进库存金额（用户裁定）。
+
+/** 余料台账一行（`GET /api/admin/production/remnants`） */
+export interface RemnantLine {
+  id: number
+  /** 排料清单里的确定序号（同一份排料结果两遍同一组序号） */
+  pieceSeq: number
+  /** `width` 门幅余料 / `end` 端部余料 */
+  pieceKind: string
+  /** 沿**卷长**方向的长度（米） */
+  lengthM: number
+  /** 沿**门幅**方向的可用宽度（米） */
+  widthM: number
+  /** 面积（派生 = lengthM × widthM，不落库） */
+  areaM2?: number | null
+  sourceOrderNo: string
+  sourceProcessingOrderNo: string
+  sourceBatchNo: string
+  dyeLot?: string | null
+  productId: string
+  skuCode?: string | null
+  /** `customer_taken` 客户带走 / `available` 可用 / `used` 已用 / `scrapped` 已报废 */
+  status: string
+  usedByOrderNo?: string | null
+  usedByOrderItemId?: string | null
+  usedByItemKey?: string | null
+  recoveredMeters?: number | null
+  recoveredUnitCost?: number | null
+  recoveredAmount?: number | null
+  recoveredAt?: string | null
+  recoveredBy?: string | null
+  scrapReason?: string | null
+  scrappedAt?: string | null
+  scrappedBy?: string | null
+  createdAt?: string | null
+}
+
+/** 回收/报废度量（`余料回收率` 与 `报废率`；分母为零 ⇒ 比率 **null**，不是 0） */
+export interface RemnantSummary {
+  availableCount: number
+  usedCount: number
+  scrappedCount: number
+  customerTakenCount: number
+  availableMeters: number
+  recoveredMetersTotal: number
+  scrappedMetersTotal: number
+  recoveredAmountTotal: number
+  issuedCostTotal: number
+  recoveryRate?: number | null
+  scrapRate?: number | null
+}
+
+/** 台账读面（列表 + 汇总一次回） */
+export interface RemnantLedgerView {
+  page: PageResponse<RemnantLine>
+  summary: RemnantSummary
+}
+
+/** 小件用料尺寸表一行（**可配参数**；`itemKey` = 该小件对应的**工序名**） */
+export interface RemnantSpecLine {
+  itemKey: string
+  lengthM: number
+  widthM: number
+  note?: string | null
+  updatedBy?: string | null
+  updatedAt?: string | null
+}
+
+/** 小件用料尺寸表读面；`configured=false` ⇒ `notice` **非空**说明「未启用」（§22 P3，不静默） */
+export interface RemnantSpecsView {
+  configured: boolean
+  items: RemnantSpecLine[]
+  notice?: string | null
+}
+
+/** 一条匹配建议（命中同缸号余料 ⇒ 该小件不新领料） */
+export interface RemnantMatchRecommendation {
+  itemKey: string
+  optionNames: string[]
+  remnantId: number
+  remnantLengthM: number
+  remnantWidthM: number
+  sourceBatchNo: string
+  dyeLot?: string | null
+  /** 是否**同缸号**（false 且 sameSku=true ⇒ 同色不同缸，有色差风险，读面标出来） */
+  sameDyeLot: boolean
+  sameSku: boolean
+  unitCost?: number | null
+  recoverableMeters?: number | null
+  recoverableAmount?: number | null
+  reason: string
+}
+
+/** 一条**没有**建议的小件需求（`reason` 必须能读 —— 不静默） */
+export interface RemnantMatchUnmatched {
+  itemKey: string
+  optionNames: string[]
+  reason: string
+}
+
+/** 匹配读面：四个字段一起回答「为什么没有建议」 */
+export interface RemnantMatchView {
+  configured: boolean
+  notice?: string | null
+  requiredItems: string[]
+  recommendations: RemnantMatchRecommendation[]
+  unmatched: RemnantMatchUnmatched[]
+  unconfiguredItems: string[]
+}

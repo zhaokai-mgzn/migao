@@ -65,6 +65,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // `/production` 会抢走它 ⇒ 面包屑退化成「生产看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
   { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '生产管理' }, { label: '省料看板' }] },
+  // 余料台账（issue #5146）：入口在「企业参数中心 → 余料回收」域（**有意不进侧边栏** ——
+  // 它是参数中心那个域的下钻页，不是新的功能模块；本节只保证它有真面包屑，
+  // 不落兜底分支的「工作台 > 经营看板」）。⚠️ 同样必须排在下面的 `/production` 之前。
+  { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '生产管理' }, { label: '余料台账' }] },
   // issue #4490（含同日规格修订）：加工项 + 加工费合并为 /production/processing（两个 tab），
   // 按用户裁定归**商品管理**组 ⇒ 面包屑写「商品管理 / 加工项管理」（#4542 改名后与服务端同名）。
   // 前缀同时覆盖旧路径 /production/processing-fees（它重定向到 ?tab=fees）⇒ 旧深链的面包屑也写该名。

@@ -1734,6 +1734,121 @@ CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_sku
 COMMENT ON TABLE stock_batch_consumptions IS
     '批次消耗台账（V116，issue #5145 阶段 1）：一行 = 一次批次余量变更。余量 = stock_batches.quantity + Σ(delta)；批次行不可改（V111）⇒ 冲销走新单据（新增一行反向 delta）';
 
+-- ── 余料成本回收（V122，issue #5146）：**非资产**余料台账 + 小件用料尺寸表（可配参数）──
+-- 🔴 余料不是资产（用户裁定「这个废布不算在企业资产了」）：fabric_remnants **没有任何计价列**，
+--    不计价、不进库存金额、不出现在任何库存/资产读面。
+--    判据 = 加余料登记前后 Σ product_skus.cost_amount 与 Σ product_skus.stock **逐值不变**（真库）
+--    + 两张表在库存/资产读面里的引用数为零（静态守卫）。
+-- 小件用料尺寸表 = **企业可配参数**（用户裁定「可以整个参数配置，未来让企业自定义」）；
+--    缺行 = 未配置 = 未启用（默认值为空，不编业务数值）⇒ 匹配不产生任何推荐且读面显式说明。
+-- 回收与报废为什么是同一行的列：一块余料只能被用掉一次（1:1）⇒ 用列比新开一张表少一层 join、
+--    少一个「两表不一致」的失效形态；代价 = 将来做「部分使用」需扩表（本单不做）。
+
+-- 小件用料尺寸表（一行 = 一个小件需要多大一块布）
+-- 「缺行 = 用默认值」而本参数的默认值**就是空** ⇒ 没配就是没启用。
+CREATE TABLE IF NOT EXISTS remnant_small_item_specs (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    -- 小件配置键 = 该小件对应的**工序名**（逐字同 production_operations.name 与
+    -- routing.py::SPECIAL_OPTION_ROUTINGS 的 operation，如 绑带-布 / 帘头制作 / 抱枕）；
+    -- 不另造「小件名」= 不造第二份会漂移的口径。
+    item_key VARCHAR(64) NOT NULL,
+    length_m NUMERIC(8,2) NOT NULL,                  -- 这块布沿**卷长**方向需要的长度（米）
+    width_m NUMERIC(8,2) NOT NULL,                   -- 这块布沿**门幅**方向需要的宽度（米）
+    note VARCHAR(255),
+    operator VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_remnant_spec_size CHECK (length_m > 0 AND width_m > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_remnant_spec_item
+    ON remnant_small_item_specs (tenant_id, item_key) WHERE deleted = 0;
+
+-- 余料台账（一行 = 一块实物余料；**非资产**：只记实物可用性）
+CREATE TABLE IF NOT EXISTS fabric_remnants (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    piece_seq INTEGER NOT NULL,                      -- 排料清单里的确定序号（幂等闸的键之一）
+    source_order_no VARCHAR(32) NOT NULL,
+    source_processing_order_no VARCHAR(32) NOT NULL,
+    source_batch_id BIGINT REFERENCES stock_batches(id),
+    source_batch_no VARCHAR(32) NOT NULL,
+    dye_lot VARCHAR(64),                             -- 缸号**快照**（源 stock_batches.dye_lot；同缸号优先匹配防色差）
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    piece_kind VARCHAR(16) NOT NULL,                 -- width 门幅余料 / end 端部余料
+    length_m NUMERIC(12,2) NOT NULL,                 -- 沿**卷长**方向（米）
+    width_m NUMERIC(12,2) NOT NULL,                  -- 沿**门幅**方向可用宽度（米）
+    -- 状态机：customer_taken 客户带走（不进可用池、不参与匹配、不计回收）
+    --        / available 可用 / used 已用 / scrapped 已报废
+    status VARCHAR(16) NOT NULL,
+    -- ── 回收记账（status='used' 时全非空；**只**在此时非空）──
+    -- 这四列记的是「这块布被哪张单用掉、冲减多少」= **用它的那张单**的内部成本口径，
+    -- 不是余料的资产属性（本表**没有**「余料值多少钱」的列）。
+    used_by_order_no VARCHAR(32),
+    used_by_order_item_id VARCHAR(36),
+    used_by_item_key VARCHAR(64),
+    recovered_meters NUMERIC(12,2),                  -- 用掉米数 = 该余料沿卷长方向的长度
+    recovered_unit_cost NUMERIC(12,4),               -- **当时**该批次均价快照（源 stock_batches.unit_cost）
+    -- 精度 6 位 = NUMERIC(12,2) × NUMERIC(12,4) 的**精确**积 ⇒ 约束可以写「逐值相等」
+    recovered_amount NUMERIC(20,6),
+    recovered_at TIMESTAMP WITH TIME ZONE,
+    recovered_by VARCHAR(64),
+    -- ── 报废留痕（status='scrapped' 时全非空；与回收**互斥**）──
+    scrap_reason VARCHAR(255),
+    scrapped_at TIMESTAMP WITH TIME ZONE,
+    scrapped_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_fabric_remnant_status
+        CHECK (status IN ('customer_taken', 'available', 'used', 'scrapped')),
+    CONSTRAINT ck_fabric_remnant_piece_kind CHECK (piece_kind IN ('width', 'end')),
+    CONSTRAINT ck_fabric_remnant_size CHECK (length_m > 0 AND width_m > 0),
+    CONSTRAINT ck_fabric_remnant_amount
+        CHECK (recovered_amount IS NULL
+               OR (recovered_meters IS NOT NULL AND recovered_unit_cost IS NOT NULL
+                   AND recovered_meters > 0 AND recovered_unit_cost >= 0
+                   AND recovered_amount = recovered_meters * recovered_unit_cost)),
+    -- 生命周期一致性（判据「报废留痕 / 账实一致」的机械落点）：状态与留痕列必须互相解释得通
+    CONSTRAINT ck_fabric_remnant_lifecycle
+        CHECK (
+            (status = 'used'
+                AND used_by_order_no IS NOT NULL
+                AND recovered_meters IS NOT NULL AND recovered_unit_cost IS NOT NULL
+                AND recovered_amount IS NOT NULL AND recovered_at IS NOT NULL
+                AND scrapped_at IS NULL AND scrap_reason IS NULL)
+            OR (status = 'scrapped'
+                AND scrap_reason IS NOT NULL AND scrapped_at IS NOT NULL
+                AND recovered_meters IS NULL AND recovered_unit_cost IS NULL
+                AND recovered_amount IS NULL AND recovered_at IS NULL
+                AND used_by_order_no IS NULL)
+            OR (status IN ('available', 'customer_taken')
+                AND recovered_meters IS NULL AND recovered_unit_cost IS NULL
+                AND recovered_amount IS NULL AND recovered_at IS NULL
+                AND used_by_order_no IS NULL
+                AND scrap_reason IS NULL AND scrapped_at IS NULL)
+        )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_fabric_remnants_piece
+    ON fabric_remnants (tenant_id, source_processing_order_no, piece_seq) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_fabric_remnants_recovery
+    ON fabric_remnants (tenant_id, used_by_order_item_id, used_by_item_key)
+    WHERE deleted = 0 AND status = 'used';
+CREATE INDEX IF NOT EXISTS idx_fabric_remnants_tenant_status
+    ON fabric_remnants (tenant_id, status, id);
+CREATE INDEX IF NOT EXISTS idx_fabric_remnants_tenant_batch
+    ON fabric_remnants (tenant_id, source_batch_no, id);
+CREATE INDEX IF NOT EXISTS idx_fabric_remnants_tenant_dye_lot
+    ON fabric_remnants (tenant_id, dye_lot);
+CREATE INDEX IF NOT EXISTS idx_fabric_remnants_tenant_order
+    ON fabric_remnants (tenant_id, source_order_no, id);
+COMMENT ON TABLE fabric_remnants IS
+    '余料台账（V122，issue #5146）—— **非资产**：一行 = 一块实物余料，只记实物可用性（尺寸 / 来源订单 / 来源批次 / 缸号 / 状态），不计价、不进库存金额。余料 = 门幅余料（piece_kind=width）+ 端部余料（end），随排料/派工结果自动产生。状态机：customer_taken / available / used / scrapped';
+COMMENT ON TABLE remnant_small_item_specs IS
+    '小件用料尺寸表（V122，issue #5146）：一行 = 一个小件需要的一块布有多大。**企业可配参数**；缺行 = 未配置（不编默认数值）⇒ 余料匹配不产生任何推荐且读面显式说明，不静默';
+
 -- ================================================
 -- 10. 审计日志表
 -- ================================================

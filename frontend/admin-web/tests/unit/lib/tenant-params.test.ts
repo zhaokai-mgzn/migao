@@ -155,14 +155,17 @@ describe('判据 6：P3「默认值可见」的租户级判据', () => {
 })
 
 describe('判据 7：域结构（§22 P1 分组）', () => {
-  it('四个域按序、key 唯一、label/summary 非空；算料域计数 = 引擎键数', () => {
-    expect(PARAM_DOMAINS.map((d) => d.key)).toEqual(['calc', 'ai', 'fee', 'craft'])
+  it('五个域按序、key 唯一、label/summary 非空；算料域计数 = 引擎键数', () => {
+    // issue #5146：新增「余料回收」域（小件用料尺寸表的**唯一**配置入口，§22 P1）——
+    // 插在 AI 客服之后、加工费之前（标量域相邻，行式配置域在后）。
+    expect(PARAM_DOMAINS.map((d) => d.key)).toEqual(['calc', 'ai', 'remnant', 'fee', 'craft'])
     expect(new Set(PARAM_DOMAINS.map((d) => d.key)).size).toBe(PARAM_DOMAINS.length)
     for (const d of PARAM_DOMAINS) {
       expect(d.label.trim().length).toBeGreaterThan(0)
       expect(d.summary.trim().length).toBeGreaterThan(0)
     }
     expect(scalarCountOf(calcDomain())).toBe(CALC_SCALAR_KEYS.length)
-    expect(scalarCountOf(PARAM_DOMAINS[2])).toBe(0)
+    // 行式配置域（加工费）没有标量参数 —— 按键取，不靠位置（#5146 插入新域后就踩过这一格）
+    expect(scalarCountOf(PARAM_DOMAINS.find((d) => d.key === 'fee')!)).toBe(0)
   })
 })
