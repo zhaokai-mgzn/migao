@@ -2028,7 +2028,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（16 case）
+## 杂项域（17 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2215,6 +2215,18 @@
 跳过: [backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证） ｜ tags: ci, deploy, worker-h5, hosting
+
+### MC-017. 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增） 🔵
+```
+你: scripts/*-red-proof.py 六个红证机具所守卫的源码 / 判据 / 机具自身被改动后，门禁必须真的调用它们（而不是只靠人手跑）
+期望: direct_reply
+数据: verify-all.sh 的 gate 档命中红证面时把 redproof_preflight() 作为独立检查项真跑、未命中时显式声明「未跑」（不许静默通过）；redproof 实跑档对每个机具都有实跑调用（不带 --check）—— 红证：把派发 / 调用 / 未跑声明删掉 ⇒ 同名守卫变红
+数据: 每个机具 python3 scripts/<机具> --check 真跑（子进程）退出 0，并打印统一报告行「前提自检：跑了 N 条 / 未跑 M 条（腐烂）｜实跑未跑 K 条（原因：需 <heavy>；入口 ./verify-all.sh redproof）」—— 「没跑」必须长得像「没跑」
+数据: 四类腐烂逐机具各有注入式红证：① 被守卫文件消失；② 被守卫源码标识符改名（注入锚点失配）；③ 判据方法改名 / 判据文件消失；④ 从机具里删掉一条变异 ⇒ 登记表下限判据红（issue #5193 判据 1 的形态）。注入前后按 sha256 自证、finally 逐字节还原、还原后复跑必须回到绿（对照组）
+数据: 三态退出码：0 = 全部前提成立 / 1 = 有腐烂（具名报出哪条变异烂在哪）/ 3 = 无法判定（无声明）；实跑腿在桩仓库（无 scripts/*-red-proof.py，如 tests/unit_ci_workflows 复制本脚本的最小仓库）里必须显式「未跑」且不红
+跳过: [backend-contract] 门禁接线与机具前提自检由 pytest 单测 + 真跑子进程验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5193）：六个红证机具此前无任何 CI/门禁调用（会静默腐烂）—— 接进 verify-all.sh（gate 条件腿 + redproof 实跑腿）+ 每个机具新增 --check 前提自检面（零 Maven/npm/PG） ｜ tags: ci, red-proof, gate, mutation_testing
 
 ## 商家入驻域（5 case）
 
@@ -6175,7 +6187,7 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：16
+- 杂项域：17
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：46
@@ -6216,6 +6228,7 @@
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 - MC-016: 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）
+- MC-017: 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

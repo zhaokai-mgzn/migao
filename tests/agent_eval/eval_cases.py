@@ -3255,6 +3255,24 @@ _CASE_MC_016 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-017 [NORMAL] 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）（源: cases/misc.yml）──
+_CASE_MC_017 = EvalCase(
+    id='MC-017',
+    legacy_id='',
+    title='六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['scripts/*-red-proof.py 六个红证机具所守卫的源码 / 判据 / 机具自身被改动后，门禁必须真的调用它们（而不是只靠人手跑）'],
+    expectations=['direct_reply'],
+    data_checks=['verify-all.sh 的 gate 档命中红证面时把 redproof_preflight() 作为独立检查项真跑、未命中时显式声明「未跑」（不许静默通过）；redproof 实跑档对每个机具都有实跑调用（不带 --check）—— 红证：把派发 / 调用 / 未跑声明删掉 ⇒ 同名守卫变红', '每个机具 python3 scripts/<机具> --check 真跑（子进程）退出 0，并打印统一报告行「前提自检：跑了 N 条 / 未跑 M 条（腐烂）｜实跑未跑 K 条（原因：需 <heavy>；入口 ./verify-all.sh redproof）」—— 「没跑」必须长得像「没跑」', '四类腐烂逐机具各有注入式红证：① 被守卫文件消失；② 被守卫源码标识符改名（注入锚点失配）；③ 判据方法改名 / 判据文件消失；④ 从机具里删掉一条变异 ⇒ 登记表下限判据红（issue #5193 判据 1 的形态）。注入前后按 sha256 自证、finally 逐字节还原、还原后复跑必须回到绿（对照组）', '三态退出码：0 = 全部前提成立 / 1 = 有腐烂（具名报出哪条变异烂在哪）/ 3 = 无法判定（无声明）；实跑腿在桩仓库（无 scripts/*-red-proof.py，如 tests/unit_ci_workflows 复制本脚本的最小仓库）里必须显式「未跑」且不红'],
+    skip_reason='[backend-contract] 门禁接线与机具前提自检由 pytest 单测 + 真跑子进程验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'red-proof', 'gate', 'mutation_testing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -8807,6 +8825,7 @@ ALL_CASES = (
     _CASE_MC_014,
     _CASE_MC_015,
     _CASE_MC_016,
+    _CASE_MC_017,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
