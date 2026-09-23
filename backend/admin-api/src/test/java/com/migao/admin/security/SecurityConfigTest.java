@@ -168,6 +168,19 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
 
+    /**
+     * 余料两表（V122 / issue #5146）：与上面几个 mapper 同款 —— 本上下文排除了
+     * {@code MybatisPlusAutoConfiguration} ⇒ 新 Mapper 没有 {@code sqlSessionFactory}，
+     * **不顶替就整个上下文起不来**（实测：`Error creating bean with name 'fabricRemnantMapper':
+     * Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`，42 条用例全 ERROR）。
+     *
+     * <p>⚠️ 只 mock 服务**不够**（实测踩过）：mapper 是**独立**的单例，不因消费者被 mock 而不创建。</p>
+     */
+    @MockBean
+    private com.migao.admin.mapper.FabricRemnantMapper fabricRemnantMapper;
+    @MockBean
+    private com.migao.admin.mapper.RemnantItemSizeMapper remnantItemSizeMapper;
+
     /** 批次账服务（#5145）：StockBatchController 的构造依赖 ⇒ 本上下文必须能装配它 */
     @MockBean
     private com.migao.admin.service.StockBatchConsumptionService stockBatchConsumptionService;
