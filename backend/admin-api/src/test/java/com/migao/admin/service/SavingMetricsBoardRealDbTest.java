@@ -19,7 +19,6 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -76,7 +75,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 不再复制第三份），schema 取自 {@code docs/sql/schema.sql}（bootstrap 终态，
  * **不手抄列清单** ⇒ 列名/约束漂移会被抓），并**装上与生产同源的多租户拦截器**
  * （少了它就只测了 mapper 原文 —— 而本单新增的三条 SQL 全带 join 与子查询，
- * 正是拦截器重写的受力面）。本机没有 PG 二进制 ⇒ <b>显式 skip</b>（「没跑」必须长得像「没跑」）。
+ * 正是拦截器重写的受力面）。缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
+ * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。
  */
 @DisplayName("#5159 真库守卫：省料度量 L2/L3 汇总读面（汇总一致 / 存量单列 / 空数据不冒充 0）")
 class SavingMetricsBoardRealDbTest {
@@ -104,10 +104,7 @@ class SavingMetricsBoardRealDbTest {
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
-        cluster = PgCluster.start();
-        if (cluster == null) {
-            Assumptions.abort("本机没有 PG 二进制（initdb/pg_ctl）⇒ 真库判据**未跑**（不是通过）");
-        }
+        cluster = PgCluster.startOrAbort();
         dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());

@@ -68,12 +68,9 @@ public final class RemnantTestDb {
         this.remnantService = remnantService;
     }
 
-    /** 本机没有 PG 二进制 ⇒ 返回 {@code null}（调用方 {@code Assumptions.abort} —— 没跑 ≠ 通过）。 */
+    /** 缺 PG 二进制 ⇒ 收口在 {@link PgCluster#startOrAbort()}（CI fail-closed 判红 / 本机显式 skip）。 */
     public static RemnantTestDb start() throws Exception {
-        PgCluster cluster = PgCluster.start();
-        if (cluster == null) {
-            return null;
-        }
+        PgCluster cluster = PgCluster.startOrAbort();
         DataSource dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());

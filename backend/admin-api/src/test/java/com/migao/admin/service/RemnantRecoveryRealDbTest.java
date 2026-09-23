@@ -27,7 +27,6 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -89,7 +88,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * <h2>环境</h2>
  * 一次性真 PG 集群（{@code initdb} + {@code pg_ctl}，随机端口、跑完即停），schema 取自
  * {@code docs/sql/schema.sql}（bootstrap 终态，**不手抄列清单** ⇒ 列名/约束漂移会被抓）。
- * 本机没有 PG 二进制 ⇒ <b>显式 skip</b>（「没跑」必须长得像「没跑」，不是通过）。
+ * 缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
+ * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。
  *
  * <p>范式与 {@code PgCluster}（#5167 提取的共用件）同款 —— 复用既有 PG 装配，不复制第二份。</p>
  */
@@ -115,10 +115,7 @@ class RemnantRecoveryRealDbTest {
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
-        cluster = PgCluster.start();
-        if (cluster == null) {
-            Assumptions.abort("本机没有 PG 二进制（initdb/pg_ctl）⇒ 真库判据**未跑**（不是通过）");
-        }
+        cluster = PgCluster.startOrAbort();
         dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());

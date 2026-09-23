@@ -27,7 +27,6 @@ import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -75,8 +74,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>环境</h2>
  * 本类**自建一次性 PG 集群**（{@code initdb} + {@code pg_ctl}，随机端口、跑完即停），
- * 与 {@code tests/unit_ci_workflows/test_v9x_*.py} 的真库判据同款；本机没有 PG 二进制 ⇒
- * **显式 skip**（"没跑"必须长得像"没跑"，不是通过）。schema 取自 {@code docs/sql/schema.sql}
+ * 与 {@code tests/unit_ci_workflows/test_v9x_*.py} 的真库判据同款；缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：
+ * CI（{@code MIGAO_REQUIRE_REALDB=1}）⇒ 判红；本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。schema 取自 {@code docs/sql/schema.sql}
  * （= docker 栈的 bootstrap 终态，含 V92/V99 的列）—— **不手抄列清单**（手抄会漂移）。
  */
 @DisplayName("#4865 真库×真映射守卫：实例化 ⇒ processing_set_part_tokens 有行且 short_code 非空")
@@ -99,10 +98,7 @@ class ProductionPartCodeRealMappingTest {
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
-        cluster = PgCluster.start();
-        if (cluster == null) {
-            Assumptions.abort("本机没有 PG 二进制（initdb/pg_ctl）⇒ 真库判据**未跑**（不是通过）");
-        }
+        cluster = PgCluster.startOrAbort();
         dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());
@@ -470,113 +466,4 @@ class ProductionPartCodeRealMappingTest {
         return Files.readString(root.resolve("docs/sql/schema.sql"));
     }
 
-    // ────────────────────────────────────────────── 一次性 PG 集群
-
-    /** 一次性 PG 集群（{@code initdb} + {@code pg_ctl}；随机端口、跑完即停、不留残留）。 */
-    private static final class PgCluster {
-
-        private static final List<String> BIN_DIRS = List.of(
-                "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/usr/lib/postgresql/16/bin",
-                "/usr/lib/postgresql/15/bin", "/usr/lib/postgresql/14/bin");
-
-        private final Path dataDir;
-        private final Path sockDir;
-        private final Path logFile;
-        private final int port;
-        private final String binDir;
-
-        private PgCluster(String binDir, Path dataDir, Path sockDir, Path logFile, int port) {
-            this.binDir = binDir;
-            this.dataDir = dataDir;
-            this.sockDir = sockDir;
-            this.logFile = logFile;
-            this.port = port;
-        }
-
-        static PgCluster start() throws Exception {
-            String binDir = findBinDir();
-            if (binDir == null) {
-                return null;
-            }
-            Path base = Files.createTempDirectory("migao4865pg");
-            Path dataDir = base.resolve("data");
-            Path sockDir = Files.createTempDirectory("pg4865"); // socket 路径有 ~104 字节上限
-            Path logFile = base.resolve("pg.log");
-            int port = freePort();
-            run(binDir, List.of("initdb", "-D", dataDir.toString(), "-U", "postgres", "-A", "trust"));
-            run(binDir, List.of("pg_ctl", "-D", dataDir.toString(), "-l", logFile.toString(), "-o",
-                    "-p " + port + " -c listen_addresses=127.0.0.1 -k " + sockDir, "start"));
-            return new PgCluster(binDir, dataDir, sockDir, logFile, port);
-        }
-
-        DataSource dataSource() {
-            DriverManagerDataSource ds = new DriverManagerDataSource(
-                    "jdbc:postgresql://127.0.0.1:" + port + "/postgres?stringtype=unspecified",
-                    "postgres", "");
-            ds.setDriverClassName("org.postgresql.Driver");
-            return ds;
-        }
-
-        void stop() {
-            try {
-                run(binDir, List.of("pg_ctl", "-D", dataDir.toString(), "-m", "immediate", "stop"));
-            } catch (Exception ignored) {
-                // 停机失败不影响判据；临时目录随后清理
-            }
-            deleteRecursively(sockDir);
-            deleteRecursively(dataDir.getParent());
-        }
-
-        private static String findBinDir() {
-            List<String> candidates = new ArrayList<>(BIN_DIRS);
-            String path = System.getenv("PATH");
-            if (path != null) {
-                candidates.addAll(0, List.of(path.split(":")));
-            }
-            for (String dir : candidates) {
-                if (dir.isBlank()) {
-                    continue;
-                }
-                Path initdb = Paths.get(dir, "initdb");
-                Path pgCtl = Paths.get(dir, "pg_ctl");
-                if (Files.isExecutable(initdb) && Files.isExecutable(pgCtl)) {
-                    return dir;
-                }
-            }
-            return null;
-        }
-
-        private static int freePort() throws IOException {
-            try (ServerSocket socket = new ServerSocket(0)) {
-                return socket.getLocalPort();
-            }
-        }
-
-        private static void run(String binDir, List<String> args) throws Exception {
-            List<String> command = new ArrayList<>(args);
-            command.set(0, Paths.get(binDir, args.get(0)).toString());
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String output = new String(process.getInputStream().readAllBytes());
-            int exit = process.waitFor();
-            assertThat(exit).as("`" + String.join(" ", args) + "` 必须成功（PG 临时集群）：\n" + output)
-                    .isZero();
-        }
-
-        private static void deleteRecursively(Path dir) {
-            if (dir == null || !Files.exists(dir)) {
-                return;
-            }
-            try (Stream<Path> walk = Files.walk(dir)) {
-                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-                    try {
-                        Files.deleteIfExists(p);
-                    } catch (IOException ignored) {
-                        // 尽力而为
-                    }
-                });
-            } catch (IOException ignored) {
-                // 尽力而为
-            }
-        }
-    }
 }

@@ -4060,7 +4060,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（90 case）
+## 商品域（92 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -5198,6 +5198,30 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-23 新增（issue #5188）：省料度量接入米宝（PR-102）—— 判据 2「逐值相等」由「同夹具、读面 vs 工具」钉住；判据 4/5 同批覆盖 ｜ tags: mibao, batch-ledger, saving-metrics, agent-tool
 
+### PR-103. CI 上缺 PG 二进制 ⇒ 真库判据判 **FAIL**（不是 skip）：本机开发友好 + CI fail-closed 🔵
+```
+你: （非 LLM 面）runner 镜像换代 / 换 runner / 自建 runner ⇒ admin-api-test 上找不到 PG 二进制（initdb/pg_ctl）时，真库判据的结果必须与「通过」可区分
+期望: direct_reply
+数据: 收口点唯一：缺 PG 的处置**只许**在 `backend/admin-api/src/test/java/com/migao/admin/service/PgCluster.java` 的 `startOrAbort()` 里有一份 —— 未设 `MIGAO_REQUIRE_REALDB` ⇒ `Assumptions.abort`（本机 `mvnw test` 不因没装 PG 变红）；设了 ⇒ `Assertions.fail`（**红**）。全仓真库测试类**零** `Assumptions.*` 副本
+数据: CI 侧两道锁同时在位：`pr-check.yml` 的 `admin-api-test` job 有「PG 二进制前置断言（缺失 ⇒ 独立一行 `exit 1`）」+「`mvnw test` 那步注入 `MIGAO_REQUIRE_REALDB`（值非空且非 0/false）」，且注入键名与 `PgCluster.REQUIRE_REALDB_ENV` 常量**逐字一致**
+数据: 红证 A（真跑，2026-09-23 本机，判据 = `mvnw -o test -Dtest=OrderUrgencyRealDbTest -Dmigao.pg.bin.dirs=<空目录>`）：**带** `MIGAO_REQUIRE_REALDB=1` ⇒ `AssertionFailedError: 缺 PG 二进制…本判据判 FAIL（不是 skip）` / `BUILD FAILURE` / EXIT=1；**不带** ⇒ `Tests run: 0 … Skipped: 0` / `BUILD SUCCESS` / EXIT=0（= 静默绿的形态，两者真的不同）
+数据: 对照组（无覆盖孔、无标记）：`Tests run: 7, Failures: 0, Skipped: 0` —— 本机真库判据**真跑**（不是靠 skip 冒充）
+跳过: [backend-contract] CI workflow 结构 + Java 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5192）：真库判据 CI fail-closed —— 缺 PG 从「静默 skip 成绿」改为「判红」，本机仍保持开发友好。取号 PR-103/104（开工时 main 最高 PR-102） ｜ tags: realdb, ci, fail-closed, evidence-strength
+
+### PR-104. 真库判据的类集合冻结 + 单一收口点（删掉/改名一份判据即红） 🔵
+```
+你: （非 LLM 面）有人删掉 / 改名一份真库判据，或新写一份绕过收口方法的真库判据 ⇒ 门禁必须当场变红
+期望: direct_reply
+数据: 判据① 冻结常量：测试树里「需要真 PG」的类集合 == `test_realdb_failclosed.py` 登记的 `REALDB_FILES` + 夹具 `RemnantTestDb`（按「谁真去连真 PG」定义，**不靠 `*RealDbTest` 通配** —— `ProductionPartCodeRealMappingTest` 这类不含 `RealDb` 的判据同样在集合里）
+数据: 判据② 单一收口：每个真库测试类要么直接调 `PgCluster.startOrAbort()`、要么经共用夹具 `RemnantTestDb`（夹具内部收口，三个余料消费类是本表**显式登记**的例外）；`Assumptions.abort(` 在 admin-api 测试树里**只许有一处**（PgCluster 的本机分支）
+数据: 判据④ 顺序即语义：`PgCluster` 里 `Assertions.fail(` 必须**排在** `Assumptions.abort(` 之前（挪到后面 = 永不执行，而「代码里有 fail」这种弱断言照样绿）。所有 Java 侧断言先剥注释与字符串字面量 ⇒ 注释里提一句喂不绿
+数据: 红证 B（真跑，2026-09-23 本机，7 个单点变异各**单独**变红后复原并核 sha256）：① 改名 `SkuBatchGuardRealDbTest.java` ⇒ 判据① 红；② 裸 `PgCluster.start()` / ③ 重写 `Assumptions.abort` 副本 ⇒ 判据② 红；④ 去掉前置断言那句 `exit 1` / ⑤ 删掉标记注入 / ⑥ 值改 `0` / ⑦ 键改名 ⇒ 判据③ 红；⑧ 删掉 `Assertions.fail` / ⑨ 把它挪到 abort 之后 ⇒ 判据④ 红
+跳过: [backend-contract] 静态守卫由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5192）：真库判据集合冻结 + 单一收口点守卫 —— 「判据存在」≠「判据在门禁里真的跑」，删掉/改名/绕过收口即红 ｜ tags: realdb, ci, guard, evidence-strength
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -6093,8 +6117,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：448（活跃 159，跳过 289）
-- tier 分布：smoke 10 / normal 407 / adversarial 31
+- 用例总数：450（活跃 159，跳过 291）
+- tier 分布：smoke 10 / normal 409 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6114,7 +6138,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：90
+- 商品域：92
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -6224,6 +6248,8 @@
 - PR-083: 渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）
 - PR-084: 渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）
 - PR-085: 渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）
+- PR-103: CI 上缺 PG 二进制 ⇒ 真库判据判 **FAIL**（不是 skip）：本机开发友好 + CI fail-closed
+- PR-104: 真库判据的类集合冻结 + 单一收口点（删掉/改名一份判据即红）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序不上表，由 `matrix-orphan-hint` 报数不静默）
