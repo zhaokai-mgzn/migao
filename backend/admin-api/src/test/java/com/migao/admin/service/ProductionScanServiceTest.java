@@ -111,12 +111,16 @@ class ProductionScanServiceTest {
         TenantContext.setTenantId(TENANT);
         productionService = new ProductionService(processingOrderMapper, positionOperationMapper,
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
+        // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper）——
+        // stalled 键的口径必须走**同一份**实现，mock 掉它等于把被测口径换成桩。
+        ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
+                productionService, positionOperationMapper, orderSetMapper, 4.0);
+        // 套件读面（issue #5247）：**真实对象**（只 mock Mapper）—— `set_overview` 的
+        // 单一口径聚合已搬进它（与商家/agent 套件读面同一份），mock 掉它等于把被测口径换成桩。
         service = new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
-                positionOperationMapper, orderItemMapper, operationQueryService, productionService,
-                // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper）——
-                // stalled 键的口径必须走**同一份**实现，mock 掉它等于把被测口径换成桩。
-                new ProductionStuckPointService(productionService, positionOperationMapper,
-                        orderSetMapper, 4.0));
+                operationQueryService, productionService, stuckPointService,
+                new ProcessingSetReadService(orderSetMapper, positionOperationMapper, orderItemMapper,
+                        processingOrderMapper, orderMapper, productionService));
         when(operationQueryService.operationsByName(TENANT)).thenReturn(catalog());
     }
 

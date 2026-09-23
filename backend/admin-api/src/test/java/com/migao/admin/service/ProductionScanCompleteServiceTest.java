@@ -124,12 +124,15 @@ class ProductionScanCompleteServiceTest {
         TenantContext.setTenantId(TENANT);
         productionService = new ProductionService(processingOrderMapper, positionOperationMapper,
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
+        // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper），与生产装配同源
+        ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
+                productionService, positionOperationMapper, orderSetMapper, 4.0);
+        // 套件读面（issue #5247）：与生产装配同源（真实对象，只 mock Mapper）——
+        // `set_overview` 的聚合已搬进它，与商家/agent 读面共用同一份。
         scanService = new ProductionScanService(setPartTokenMapper, orderSetMapper,
-                processingOrderMapper, positionOperationMapper, orderItemMapper, operationQueryService,
-                productionService,
-                // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper），与生产装配同源
-                new ProductionStuckPointService(productionService, positionOperationMapper,
-                        orderSetMapper, 4.0));
+                processingOrderMapper, operationQueryService, productionService, stuckPointService,
+                new ProcessingSetReadService(orderSetMapper, positionOperationMapper, orderItemMapper,
+                        processingOrderMapper, orderMapper, productionService));
         service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService);
 
         // 幂等占位：默认「首次」（claim=true）。重复提交的用例单独把它改成 false。

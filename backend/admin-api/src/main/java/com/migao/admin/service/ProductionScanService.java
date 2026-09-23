@@ -2,16 +2,13 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.Order;
-import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.exception.BusinessException;
-import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingOrderSetMapper;
-import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +19,6 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -84,6 +80,14 @@ import java.util.regex.Pattern;
  *       {@link ProductionStuckPointService}（A 模式只判「没开工」那一种；「卡了多久」取前道
  *       {@code done_at}）—— 本类只把该键**加**进响应（既有键一字不动）。</li>
  * </ul>
+ *
+ * <p><b>issue #5247 的搬移登记（结构性判据的落点）</b>：本类的 {@code set_overview} 聚合、
+ * 部位整形（{@code positionEntry} / {@code positionView} / {@code productNameOf}）、
+ * 套内/单内工序查询（{@code listSetOperations} / {@code listOrderOperations}）、{@code completedAt}
+ * 与 {@code requireProcessingOrder} **原样搬到</b> {@link ProcessingSetReadService}（全仓唯一一份聚合），
+ * 本类改为反向依赖它 ⇒「工人扫码面」与「商家/agent 套件读面」的两处 {@code set_overview}
+ * **结构性同源**（改一处 ⇒ 两侧同变；红证见 {@code ProcessingSetReadServiceTest}）。
+ * 本单**不改**本类任何对外键/值 —— 既有扫码响应一字未动。</p>
  */
 @Slf4j
 @Service
@@ -120,8 +124,6 @@ public class ProductionScanService {
     private final ProcessingSetPartTokenMapper setPartTokenMapper;
     private final ProcessingOrderSetMapper orderSetMapper;
     private final ProcessingOrderMapper processingOrderMapper;
-    private final ProcessingPositionOperationMapper positionOperationMapper;
-    private final OrderItemMapper orderItemMapper;
     /** 工序库（判「部位级 / 套级」的**唯一**来源：实例行不带 scope，逐字取库、不硬编码工序名）。 */
     private final ProductionOperationQueryService operationQueryService;
     /**
@@ -137,6 +139,16 @@ public class ProductionScanService {
      * 「没开工 / 上道完成时刻 / 等超阈值」就是第二份口径（两处迟早不同）。</p>
      */
     private final ProductionStuckPointService stuckPointService;
+
+    /**
+     * 套件读面（issue #5247 的 admin-api 半边）：本类的 {@code set_overview} 聚合、部位整形、
+     * 套内/单内工序查询、{@code completedAt} 与加工单归属校验**全部**由它提供
+     * （那是**唯一一份**实现 —— 原本长在本类里，本单**原样搬走**并由本类反向依赖）。
+     *
+     * <p>🔴 <b>不得在本类再写第二份</b>：「这一套还有哪几道没做」若有两份实现，工人屏与商家/agent
+     * 读面迟早不同 —— 而工人据此领活、系统据此计件（设计 §4.1 单一口径）。</p>
+     */
+    private final ProcessingSetReadService processingSetReadService;
 
     // ============================================================ 解析入口
 
@@ -330,7 +342,7 @@ public class ProductionScanService {
     private Map<String, Object> setPositionView(ProcessingSetPartToken partToken, String operationId,
                                                 Long tenantId) {
         ProcessingOrderSet set = requireSet(partToken, tenantId);
-        ProcessingOrder po = requireProcessingOrder(set.getProcessingOrderId(), tenantId);
+        ProcessingOrder po = processingSetReadService.requireProcessingOrder(set.getProcessingOrderId(), tenantId);
         return setPositionView(po, set, partToken.getOrderItemId(), partToken.getPositionKind(),
                 operationId, tenantId);
     }
@@ -345,7 +357,7 @@ public class ProductionScanService {
                                                 String orderItemId, String positionKind,
                                                 String operationId, Long tenantId) {
         List<ProcessingPositionOperation> setOperations =
-                listSetOperations(po.getId(), set.getId(), tenantId);
+                processingSetReadService.listSetOperations(po.getId(), set.getId(), tenantId);
         Map<String, Map<String, Object>> catalog = operationQueryService.operationsByName(tenantId);
 
         // ── ① 部位级：扫到的那个部位的未完成工序 ──────────────────────────────
@@ -398,12 +410,15 @@ public class ProductionScanService {
         result.put("processing_order_no", po.getProcessingOrderNo());
         result.put("set_no", set.getSetNo());
         result.put("set_index", set.getSetIndex());
-        result.put("position", positionView(orderItemId, positionKind, setOperations, tenantId));
+        result.put("position",
+                processingSetReadService.positionView(orderItemId, positionKind, setOperations, tenantId));
         // ⑤ 本套工序总览（issue #4967 交付物 2，**只加一个键**，既有键一字不动）：
         //    工人扫一次就要看到「这一套还有哪几道没做」⇒ 本套 → 部位 → 工序明细，
         //    全部来自**同一份** `setOperations`（与上面的推断/进度/卡点同源）
-        //    ⇒ 页面不再另写一份聚合（第二份口径）。
-        result.put("set_overview", setOverview(set, setOperations, tenantId));
+        //    ⇒ 页面不再另写一份聚合（第二份口径）。🔴 实现自 issue #5247 起在
+        //    `ProcessingSetReadService`（全仓唯一一份），与商家/agent 套件读面**同一份**。
+        result.put("set_overview",
+                processingSetReadService.setOverview(set, setOperations, tenantId));
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
@@ -416,7 +431,7 @@ public class ProductionScanService {
         result.put("stalled", stuckPointService.stalledView(setOperations, chosen));
         // ③ 本套无活可做 ⇒ 「本套已完成」（含完成时刻），不报错（设计 §3.2）
         result.put("completed", chosen == null);
-        result.put("completed_at", completedAt(setOperations));
+        result.put("completed_at", processingSetReadService.completedAt(setOperations));
         result.put("needs_selection", List.of());
         return result;
     }
@@ -430,15 +445,6 @@ public class ProductionScanService {
             throw BusinessException.notFound("套", "该码指向的套不存在或已作废，请重新打印任务卡");
         }
         return set;
-    }
-
-    private ProcessingOrder requireProcessingOrder(String processingOrderId, Long tenantId) {
-        ProcessingOrder po = processingOrderMapper.selectById(processingOrderId);
-        if (po == null || !tenantId.equals(po.getTenantId())
-                || !Integer.valueOf(0).equals(po.getDeleted())) {
-            throw BusinessException.notFound("加工单");
-        }
-        return po;
     }
 
     // ============================================================ 旧码：降级形态（强制选部位）
@@ -503,7 +509,7 @@ public class ProductionScanService {
                     "所选的套（" + setId + "）不属于本次扫码的加工单 ⇒ 拒绝记账", 422,
                     "请重新扫码，并从本单返回的 selections 清单里选择套号");
         }
-        List<ProcessingPositionOperation> setOperations = listSetOperations(po.getId(), set.getId(), tenantId);
+        List<ProcessingPositionOperation> setOperations = processingSetReadService.listSetOperations(po.getId(), set.getId(), tenantId);
         if (setOperations.stream().noneMatch(op -> orderItemId.equals(op.getOrderItemId()))) {
             throw new BusinessException("SCAN_SELECTION_NOT_IN_ORDER",
                     "所选的部位（" + orderItemId + "）不属于该套 ⇒ 拒绝记账", 422,
@@ -531,7 +537,7 @@ public class ProductionScanService {
                         .eq(ProcessingOrderSet::getTenantId, tenantId)
                         .eq(ProcessingOrderSet::getDeleted, 0)
                         .orderByAsc(ProcessingOrderSet::getSetIndex));
-        List<ProcessingPositionOperation> operations = listOrderOperations(po.getId(), tenantId);
+        List<ProcessingPositionOperation> operations = processingSetReadService.listOrderOperations(po.getId(), tenantId);
 
         List<Map<String, Object>> views = new ArrayList<>();
         for (ProcessingOrderSet set : sets == null ? List.<ProcessingOrderSet>of() : sets) {
@@ -542,7 +548,7 @@ public class ProductionScanService {
                         || !seen.add(op.getOrderItemId())) {
                     continue;
                 }
-                positions.add(positionEntry(op.getOrderItemId(), op.getPositionKind(),
+                positions.add(ProcessingSetReadService.positionEntry(op.getOrderItemId(), op.getPositionKind(),
                         op.getPositionName()));
             }
             Map<String, Object> view = new LinkedHashMap<>();
@@ -557,96 +563,7 @@ public class ProductionScanService {
 
     // ============================================================ 整形
 
-    private Map<String, Object> positionView(String orderItemId, String positionKind,
-                                             List<ProcessingPositionOperation> setOperations,
-                                             Long tenantId) {
-        String positionName = setOperations.stream()
-                .filter(op -> orderItemId.equals(op.getOrderItemId()))
-                .map(ProcessingPositionOperation::getPositionName)
-                .filter(StringUtils::hasText)
-                .findFirst()
-                .orElseGet(() -> productNameOf(orderItemId, tenantId));
-        return positionEntry(orderItemId, positionKind, positionName);
-    }
-
-    private static Map<String, Object> positionEntry(String orderItemId, String positionKind,
-                                                     String positionName) {
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("order_item_id", orderItemId);
-        view.put("position_kind", positionKind);
-        view.put("position_name", positionName);
-        return view;
-    }
-
-    /**
-     * 本套工序总览（issue #4967 交付物 2；设计 {@code docs/design/set-code-and-scan-loop.md} §4.1）。
-     *
-     * <p><b>为什么在解析响应里（而不是让页面自己聚合）</b>：工人端「按套展示工序细节」若由页面
-     * 另拉 {@code GET /orders/{orderId}/operations} 再按套重排，就会出现**第二份聚合口径**
-     * （部位名怎么取、算不算已完成的道、按什么排序 —— 两处迟早不同）。本方法把这件事收在
-     * **解析面这一处**：数据源就是本次解析已经读到的 {@code setOperations}（与推断「下一道」、
-     * {@code set_progress}、{@code stalled} **逐字同源**）⇒ 一次请求拿到全部，单一口径。</p>
-     *
-     * <p><b>形状</b>：{@code {set_no, set_index, positions: [{order_item_id, position_kind,
-     * position_name, operations: [{operation_id, logical_name, position, seq, qty, unit,
-     * unit_price, status, done_qty}]}]}}。</p>
-     *
-     * <p><b>口径</b>：① 列**全部**工序（不只是待做）—— 工人要一眼看到「这一套还有哪几道没做」
-     * ⇒ 已完成的道必须也在（{@code status} / {@code done_qty} 让页面自己区分）；
-     * ② {@code unit_price} 为 {@code null} = <b>未定价</b>（≠ 0 元，V90 / #4696），读面**不折 0**；
-     * ③ 排序沿用 {@link #listSetOperations} 的既有读面序（部位名 → seq），**不另排**；
-     * ④ 工序按 {@code order_item_id} 分组（缺值落「未归属部位」一组，**不丢行**）。</p>
-     */
-    private Map<String, Object> setOverview(ProcessingOrderSet set,
-                                            List<ProcessingPositionOperation> setOperations,
-                                            Long tenantId) {
-        Map<String, List<ProcessingPositionOperation>> byItem = new LinkedHashMap<>();
-        for (ProcessingPositionOperation op : setOperations) {
-            byItem.computeIfAbsent(op.getOrderItemId(), key -> new ArrayList<>()).add(op);
-        }
-        List<Map<String, Object>> positions = new ArrayList<>();
-        for (Map.Entry<String, List<ProcessingPositionOperation>> entry : byItem.entrySet()) {
-            List<ProcessingPositionOperation> ops = entry.getValue();
-            ProcessingPositionOperation head = ops.get(0);
-            Map<String, Object> view = new LinkedHashMap<>();
-            view.put("order_item_id", entry.getKey());
-            view.put("position_kind", head.getPositionKind());
-            view.put("position_name", positionView(entry.getKey(), head.getPositionKind(),
-                    setOperations, tenantId).get("position_name"));
-            view.put("operations", ops.stream().map(ProductionScanService::overviewOperationView).toList());
-            positions.add(view);
-        }
-        Map<String, Object> overview = new LinkedHashMap<>();
-        overview.put("set_no", set.getSetNo());
-        overview.put("set_index", set.getSetIndex());
-        overview.put("positions", positions);
-        return overview;
-    }
-
-    /**
-     * 总览里的一道工序（{@link #setOverview} 的元素）。
-     *
-     * <p>{@code logical_name} / {@code position} 与 {@code alternatives}、一屏上的 {@code operation}
-     * **同一份**读时派生（{@code ProductionOperationQueryService} 的两个静态方法）—— 在这里再拼一份
-     * 显示名就是第二份口径（#4621 / #4630 同族纪律）。</p>
-     */
-    private static Map<String, Object> overviewOperationView(ProcessingPositionOperation op) {
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("operation_id", op.getId());
-        view.put("logical_name",
-                ProductionOperationQueryService.logicalOperationName(op.getOperationName()));
-        view.put("position", ProductionOperationQueryService.displayPosition(
-                op.getOperationName(), op.getPositionKind()));
-        view.put("seq", op.getSeq());
-        view.put("qty", nz(op.getQty()));
-        view.put("unit", op.getUnit());
-        view.put("unit_price", op.getUnitPrice());
-        view.put("status", op.getStatus());
-        view.put("done_qty", nz(op.getDoneQty()));
-        return view;
-    }
-
-    /**
+            /**
      * 一屏上的「这次报哪一道」。
      *
      * <p>{@code unit_price} 为 {@code null} = <b>未定价</b>（≠ 0 元，V90 / issue #4696）——
@@ -671,7 +588,7 @@ public class ProductionScanService {
         view.put("determined_by", determinedBy);
         view.put("rerouted", rerouted);
         if (rerouted) {
-            view.put("carrier", positionEntry(op.getOrderItemId(), op.getPositionKind(),
+            view.put("carrier", ProcessingSetReadService.positionEntry(op.getOrderItemId(), op.getPositionKind(),
                     op.getPositionName()));
         }
         return view;
@@ -701,42 +618,6 @@ public class ProductionScanService {
 
     // ============================================================ 查询 / 纯函数
 
-    private List<ProcessingPositionOperation> listSetOperations(String processingOrderId, String setId,
-                                                                Long tenantId) {
-        List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
-                new LambdaQueryWrapper<ProcessingPositionOperation>()
-                        .eq(ProcessingPositionOperation::getProcessingOrderId, processingOrderId)
-                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
-                        .eq(ProcessingPositionOperation::getSetId, setId)
-                        .eq(ProcessingPositionOperation::getDeleted, 0)
-                        .orderByAsc(ProcessingPositionOperation::getPositionName)
-                        .orderByAsc(ProcessingPositionOperation::getSeq));
-        return rows == null ? List.of() : rows;
-    }
-
-    private List<ProcessingPositionOperation> listOrderOperations(String processingOrderId, Long tenantId) {
-        List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
-                new LambdaQueryWrapper<ProcessingPositionOperation>()
-                        .eq(ProcessingPositionOperation::getProcessingOrderId, processingOrderId)
-                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
-                        .eq(ProcessingPositionOperation::getDeleted, 0)
-                        .orderByAsc(ProcessingPositionOperation::getPositionName)
-                        .orderByAsc(ProcessingPositionOperation::getSeq));
-        return rows == null ? List.of() : rows;
-    }
-
-    private String productNameOf(String orderItemId, Long tenantId) {
-        if (orderItemId == null) {
-            return null;
-        }
-        OrderItem item = orderItemMapper.selectById(orderItemId);
-        if (item == null || !tenantId.equals(item.getTenantId())
-                || Integer.valueOf(1).equals(item.getDeleted())) {
-            return null;
-        }
-        return item.getProductName();
-    }
-
     private List<ProcessingPositionOperation> pending(List<ProcessingPositionOperation> operations,
                                                       Predicate<ProcessingPositionOperation> match) {
         return operations.stream()
@@ -764,21 +645,7 @@ public class ProductionScanService {
         return scope == null ? null : String.valueOf(scope);
     }
 
-    /** 本套完成时刻 = **已完成**工序里最晚的 `done_at`（切片 ② 才写入；无 ⇒ null，不猜）。 */
-    private OffsetDateTime completedAt(List<ProcessingPositionOperation> operations) {
-        OffsetDateTime latest = null;
-        for (ProcessingPositionOperation op : operations) {
-            if (op.getDoneAt() == null || !productionService.isDone(op)) {
-                continue;
-            }
-            if (latest == null || op.getDoneAt().isAfter(latest)) {
-                latest = op.getDoneAt();
-            }
-        }
-        return latest;
-    }
-
-    private static BigDecimal nz(BigDecimal value) {
+        private static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
 }
