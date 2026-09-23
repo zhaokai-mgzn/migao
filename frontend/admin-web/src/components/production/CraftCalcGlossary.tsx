@@ -31,6 +31,7 @@ import {
   type GlossaryTerm,
 } from '@/lib/craft-calc-glossary'
 import { CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH } from '@/lib/craft-auto-features'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import { autoFeaturesApi } from '@/lib/api'
 import type { CraftCalcConfig } from '@/types'
 
@@ -51,14 +52,30 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
       data-testid={id}
       className="space-y-0.5 border-b border-neutral-100 py-2 last:border-b-0"
     >
-      <p className="font-medium text-neutral-800">{term.name}</p>
-      <p className="text-neutral-600">{term.definition}</p>
-      {meta !== undefined && <p className="text-neutral-500">{meta}</p>}
-      {term.criterion !== undefined && (
-        <p className="text-neutral-500">判定：{term.criterion}</p>
+      <p className="font-medium text-neutral-800">
+        <InlineMarkdown text={term.name} />
+      </p>
+      <p className="text-neutral-600">
+        <InlineMarkdown text={term.definition} />
+      </p>
+      {meta !== undefined && (
+        <p className="text-neutral-500">
+          <InlineMarkdown text={meta} />
+        </p>
       )}
-      <p className="text-neutral-600">{term.impact}</p>
-      {term.boundary !== undefined && <p className="text-amber-700">{term.boundary}</p>}
+      {term.criterion !== undefined && (
+        <p className="text-neutral-500">
+          判定：<InlineMarkdown text={term.criterion} />
+        </p>
+      )}
+      <p className="text-neutral-600">
+        <InlineMarkdown text={term.impact} />
+      </p>
+      {term.boundary !== undefined && (
+        <p className="text-amber-700">
+          <InlineMarkdown text={term.boundary} />
+        </p>
+      )}
     </div>
   )
 }
@@ -123,8 +140,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
     >
       <h2 className="text-base font-medium text-neutral-900">算料口径与术语说明</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        上面的参数回答「我这家的口径是多少」；这里回答「系统怎么判、拿哪些参数判」。
-        下面的数值都按当前配置渲染 —— 改完参数保存后，这里的数字会跟着变。
+        <InlineMarkdown text="上面的参数回答「我这家的口径是多少」；这里回答「系统怎么判、拿哪些参数判」。下面的数值都按**当前配置**渲染 —— 改完参数保存后，这里的数字会跟着变。" />
       </p>
 
       <details
@@ -137,9 +153,15 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         <ol className="mt-2 space-y-2 text-sm">
           {GLOSSARY_FORMULAS.map((f) => (
             <li key={f.name} data-testid={`glossary-formula-${f.name}`}>
-              <p className="font-medium text-neutral-700">{f.name}</p>
-              <p className="text-neutral-600">{f.formula}</p>
-              <p className="text-xs text-neutral-500">{f.note}</p>
+              <p className="font-medium text-neutral-700">
+                <InlineMarkdown text={f.name} />
+              </p>
+              <p className="text-neutral-600">
+                <InlineMarkdown text={f.formula} />
+              </p>
+              <p className="text-xs text-neutral-500">
+                <InlineMarkdown text={f.note} />
+              </p>
             </li>
           ))}
         </ol>
@@ -154,7 +176,9 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
                 data-testid={`glossary-param-${key}`}
                 className="border-b border-neutral-100 last:border-b-0"
               >
-                <td className="py-1.5 pr-3 align-top text-neutral-700">{CALC_PARAM_COPY[key].label}</td>
+                <td className="py-1.5 pr-3 align-top text-neutral-700">
+                  <InlineMarkdown text={CALC_PARAM_COPY[key].label} />
+                </td>
                 <td
                   className="py-1.5 pr-3 align-top text-neutral-900"
                   data-testid={`glossary-value-${key}`}
@@ -162,7 +186,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
                   {valueOf(config, key)}
                 </td>
                 <td className="py-1.5 align-top text-xs text-neutral-500">
-                  {CALC_PARAM_COPY[key].impact}
+                  <InlineMarkdown text={CALC_PARAM_COPY[key].impact} />
                 </td>
               </tr>
             ))}
@@ -197,7 +221,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
                     data-testid={`glossary-example-${e.name}`}
                     className="mb-2 text-xs text-neutral-500"
                   >
-                    {e.given} ⇒ 系统判：{e.reason}
+                    <InlineMarkdown text={`${e.given} ⇒ 系统判：${e.reason}`} />
                   </p>
                 ))}
             </div>
@@ -224,8 +248,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
             （用料 / 工序 / 对客价 / 计件），所以与上面三组分开列 */}
         <h3 className="mt-4 text-sm font-medium text-neutral-700">特殊选项（下单时勾选）</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          这六项影响的东西各不相同 —— 有的改用料、有的加一道工序、有的只影响计件历史口径。
-          工序映射逐值取自生产真值源（不是这里自己编的）。
+          <InlineMarkdown text="这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件历史口径。工序映射逐值取自生产真值源（不是这里自己编的）。" />
         </p>
         <div className="mt-1">
           {SPECIAL_OPTION_TERMS.map((term) => (

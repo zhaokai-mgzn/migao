@@ -228,6 +228,31 @@ describe('判据 8：内联参数（余料回收域）在本页内渲染（issue
     expect(screen.getByTestId('param-row-/production/remnants')).toBeInTheDocument()
   })
 
+  it('域摘要与余料术语的 markdown 强调**渲染成元素**、裸标记不上屏（issue #5194 改判）', async () => {
+    render(<TenantParamsPanel />)
+    await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())
+    // 算料域摘要（`本域**每一项都直接改米数 = 改钱**`）+ 参数三件套里的 `` `HEM_MARGIN` ``
+    const calcText = screen.getByTestId('tenant-params-panel').textContent ?? ''
+    expect(calcText).not.toContain('**')
+    expect(calcText).not.toContain('`')
+    // 正控：强调必须以元素形态呈现（把标记删掉也能让「不含 **」变绿 ⇒ 必须另有这条）
+    expect(
+      Array.from(document.querySelectorAll('strong')).map((el) => el.textContent)
+    ).toContain('每一项都直接改米数 = 改钱')
+    expect(
+      Array.from(document.querySelectorAll('code')).map((el) => el.textContent)
+    ).toContain('HEM_MARGIN')
+
+    // 余料回收域：术语表（`但还**能再用**的布`）
+    fireEvent.click(screen.getByTestId('param-domain-remnant'))
+    await waitFor(() => expect(screen.getByTestId('param-remnant-specs')).toBeInTheDocument())
+    const remnant = screen.getByTestId('param-remnant-specs')
+    expect(remnant.textContent ?? '').not.toContain('**')
+    expect(
+      Array.from(remnant.querySelectorAll('strong')).map((el) => el.textContent)
+    ).toContain('能再用')
+  })
+
   it('红证：内联面板**不出现**在别的域里（防止把面板挂到算料域 = 入口分裂）', async () => {
     render(<TenantParamsPanel />)
     await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())

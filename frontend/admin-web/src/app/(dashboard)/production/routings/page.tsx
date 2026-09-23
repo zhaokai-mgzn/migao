@@ -19,6 +19,7 @@ import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
 import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf, type CalcScalarKey } from '@/lib/craft-calc-glossary'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
@@ -2924,7 +2925,9 @@ export default function ProcessConfigPage() {
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {CALC_SCALAR_FIELDS.map((f) => (
                           <label key={f.key} className="block">
-                            <span className="mb-1 block text-neutral-600">{f.label}</span>
+                            <span className="mb-1 block text-neutral-600">
+                              <InlineMarkdown text={f.label} />
+                            </span>
                             {/* issue #5198：改用 NumberInput（旧形态 `value={String(v ?? '')}` 在清空时
                                 渲染成字面量 `NaN`；`type="number"` 还会把 "0." 中间态吞掉） */}
                             <NumberInput
@@ -2934,7 +2937,7 @@ export default function ProcessConfigPage() {
                               onChange={(v) => setCalcNumber(f.key, v)}
                             />
                             <span className="mt-1 block text-xs text-neutral-400">
-                              {f.hint}{' '}
+                              <InlineMarkdown text={f.hint} />{' '}
                               {/* 参数旁锚点（issue #4975）：跳到同 tab 的「术语与口径说明」对应条目 */}
                               <a
                                 href={`#${f.anchor}`}
@@ -3328,7 +3331,7 @@ export default function ProcessConfigPage() {
                   ⚠️ 这道工序有
                   <strong className="mx-1">{manageUnlinked.length}</strong>
                   条设置<strong>没有关联到它</strong>（价目行指向的不是这道工序）——
-                  下面带「这些行指向的不是这道工序」标记的行不提供设置（改它们就是改另一道工序）；
+                  下面带「这些行指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
                   点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
                 </p>
               )}

@@ -144,7 +144,7 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
   {
     key: 'calc',
     label: '算料',
-    summary: '用布量公式与余量口径 —— 本域每一项都直接改米数 = 改钱',
+    summary: '用布量公式与余量口径 —— 本域**每一项都直接改米数 = 改钱**',
     common: CALC_SCALAR_KEYS.filter((k) => !CALC_ADVANCED_KEYS.includes(k)).map((key) => ({
       key,
       copy: CALC_PARAM_COPY[key],

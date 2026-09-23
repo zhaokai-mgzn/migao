@@ -1141,7 +1141,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).not.toHaveTextContent('下一步')
   })
 
-  it('算料配置面板的说明文案**不得漏出 markdown 星号**（issue #5033 顺手修 → #5194 收口存量）', async () => {
+  it('算料配置面板的说明文案：markdown 强调渲染成元素、裸标记不上屏（issue #5033 → #5194 改判）', async () => {
     // 红证：把 `保存后<strong>新</strong>的算料` 改回 `保存后**新**的算料` ⇒ 下面两条断言红
     //（用户截图实证：JSX 纯文本里的 `**` 会**原样渲染**成字面星号，不是加粗）。
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
@@ -1155,12 +1155,22 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(panel).getByText('新', { selector: 'strong' })).toBeInTheDocument()
     expect(panel).toHaveTextContent('保存后新的算料按当前配置计算')
 
-    // 🔴 issue #5194 起**不再只钉这一句**：本面板（含术语说明区）的文案已全量去掉 `**`
-    // ⇒ 那条「整块断言会假红」的自我豁免**已失效**，改判为整块回归锁。
-    // 红证：把任一术语的 `impact` 塞回 `**` ⇒ 本条判红（改前实测：术语说明区 51 处文案带 `**`）。
+    // 🔴 issue #5194 **改判**（用户 2026-09-23 裁定）：本面板（含术语说明区）的 51 处文案里
+    // **保留** `**强调**` / `` `键名` `` 标记，由渲染层解析成 `<strong>` / `<code>` ——
+    // 而不是把标记删掉（删掉 = 丢掉强调，商家看到的是没有层级的散文）。
+    // 红证（改前实测 = 本条判红）：渲染层不做解析 ⇒ 整块 `textContent` 里出现字面 `**` 与反引号。
     const text = panel.textContent ?? ''
     expect(text).toContain('术语怎么判') // 自证非空：空面板上的「不含 **」恒真
     expect(text).not.toContain('**')
+    expect(text).not.toContain('`')
+    // 正控：强调必须以元素形态呈现（删标记也能让「不含 **」变绿 ⇒ 必须另有这条）
+    // ⚠️ 用 `getAllBy*`：同一句强调在术语区与参数表里各出现一次（计数比抓单个更稳）
+    expect(
+      within(panel).getAllByText('净窗高', { selector: 'strong' }).length
+    ).toBeGreaterThan(0)
+    expect(
+      within(panel).getAllByText('oversize_width_threshold', { selector: 'code' }).length
+    ).toBeGreaterThan(0)
   })
 
   it('就绪度第 4 步「算料配置」：本租户无配置行（source=default）⇒ todo + 指向「算料配置」tab', async () => {
