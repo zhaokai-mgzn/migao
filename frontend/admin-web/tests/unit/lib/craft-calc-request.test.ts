@@ -30,10 +30,16 @@ import {
   craftPlanCandidateLabel,
   craftPlanHasSplice,
   craftPlanSpliceText,
+  derivedJoinHeightOptionOf,
+  derivedSpliceOptionOf,
+  derivedSpecialOptionsOf,
+  effectiveSpecialOptionsOf,
   isAutoCalcUnavailable,
   joinGapOf,
+  spliceOptionNameOf,
+  JOIN_HEIGHT_OPTION_NAME,
 } from '@/lib/craft-calc-request'
-import { CURTAIN_TYPE_SHEER } from '@/lib/order-craft-fields'
+import { CURTAIN_TYPE_SHEER, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 
 const line = (over: Partial<Parameters<typeof craftCalcParamsOf>[0]> = {}) => ({
   width: 6.6,
@@ -374,5 +380,99 @@ describe('#5202 推导方案（`data.plan`）的**展示**口径 —— 前端�
 
   it('工艺默认名与映射表同源（工艺**不在** `plan` 里，页面只能标「系统默认 · 可改」）', () => {
     expect(CRAFT_CALC_MOUNTING_BY_CRAFT[DEFAULT_CRAFT_NAME]).toBe(CRAFT_CALC_MOUNTING)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// issue #5211（母单 #5200 集成复核）：推导出的特殊选项**必须落到订单**
+// —— `specialOptions` 的下游是**插工序**（`拼2次-布` / `接高-布`）与**计件**（拼次 0.8/1.2/1.6、
+// 接高 1.0 元/幅）⇒ 只显示不落地 = 工人不报工、计件少发钱，且**不报错**。
+// ⚠️ 落点是 `specialOptions`（工序 + 计件），**不是** `processingItems`（加工费组合键 —— 顾客侧价格，
+// 是另一条通路；「拼接要不要进组合键」不在本单，见 issue #5211 的订正段与 #5214）。
+// ══════════════════════════════════════════════════════════════════════════
+describe('#5211 推导出的特殊选项（拼N次 / 接高）—— 名字在册 + 单点合成', () => {
+  it('拼次 → 选项名：**从 `SPECIAL_OPTIONS` 读**（1/2/3）；0 / ≥4 / 非整数 ⇒ null（不发明「拼4次」）', () => {
+    expect(spliceOptionNameOf(1)).toBe('拼1次')
+    expect(spliceOptionNameOf(2)).toBe('拼2次')
+    expect(spliceOptionNameOf(3)).toBe('拼3次')
+    expect(spliceOptionNameOf(0)).toBeNull()
+    expect(spliceOptionNameOf(4)).toBeNull()
+    expect(spliceOptionNameOf(1.5)).toBeNull()
+    // 名字**必须在册**：不在 `SPECIAL_OPTIONS` 里 ⇒ 服务端插不了工序、计件也认不出它
+    expect((SPECIAL_OPTIONS as readonly string[]).includes(spliceOptionNameOf(1) ?? '')).toBe(true)
+    expect((SPECIAL_OPTIONS as readonly string[]).includes(spliceOptionNameOf(2) ?? '')).toBe(true)
+    expect((SPECIAL_OPTIONS as readonly string[]).includes(spliceOptionNameOf(3) ?? '')).toBe(true)
+  })
+
+  it('接高名**必须在册**（不在册 = 给订单塞一个没人认识的选项）', () => {
+    expect((SPECIAL_OPTIONS as readonly string[]).includes(JOIN_HEIGHT_OPTION_NAME)).toBe(true)
+  })
+
+  it('拼次同源：服务端的 `splice_option` 是唯一真值；**人工加优先**（不得面板拼2次、订单拼1次）', () => {
+    expect(derivedSpliceOptionOf({ plan: { splice_times: 2, splice_option: '拼2次' } })).toBe(
+      '拼2次'
+    )
+    expect(
+      derivedSpliceOptionOf({
+        plan: { splice_times: 2, splice_option: '拼2次' },
+        spliceTimesOverride: 1,
+      })
+    ).toBe('拼1次')
+    // 人工加「不拼接」（0）⇒ 无选项（不是"拼0次"）
+    expect(
+      derivedSpliceOptionOf({
+        plan: { splice_times: 2, splice_option: '拼2次' },
+        spliceTimesOverride: 0,
+      })
+    ).toBeNull()
+    // N≥4 / 0 / 无 plan ⇒ 不发明
+    expect(derivedSpliceOptionOf({ plan: { splice_times: 4, splice_option: null } })).toBeNull()
+    expect(derivedSpliceOptionOf({ plan: { splice_times: 0, splice_option: null } })).toBeNull()
+    expect(derivedSpliceOptionOf({})).toBeNull()
+  })
+
+  it('接高：**缺口合法**（0 < x ≤ 0.1）才并入；null / 0 / 超限 ⇒ 不并入（防「恒加」）', () => {
+    expect(derivedJoinHeightOptionOf({ plan: { join_height_m: 0.08 } })).toBe(
+      JOIN_HEIGHT_OPTION_NAME
+    )
+    expect(derivedJoinHeightOptionOf({ joinHeightOverride: 0.1 })).toBe(JOIN_HEIGHT_OPTION_NAME)
+    expect(derivedJoinHeightOptionOf({ plan: { join_height_m: null } })).toBeNull()
+    expect(derivedJoinHeightOptionOf({ plan: { join_height_m: 0 } })).toBeNull()
+    expect(derivedJoinHeightOptionOf({ plan: { join_height_m: 0.25 } })).toBeNull()
+    // 人工加超限：请求面都拒发（fail-closed），更不该并入 —— 否则"缺口 0.15 米"也插一道接高工序
+    expect(derivedJoinHeightOptionOf({ joinHeightOverride: 0.15 })).toBeNull()
+  })
+
+  it('生效特殊选项 = 手工勾选 ∪ 推导项 − 不采纳；**无推导 ⇒ 逐值等于手工勾选**（不是常开）', () => {
+    const manual = ['加铅块']
+    expect(effectiveSpecialOptionsOf({ manualOptions: manual })).toEqual(['加铅块'])
+    expect(
+      effectiveSpecialOptionsOf({
+        manualOptions: manual,
+        plan: { splice_times: 2, splice_option: '拼2次' },
+      })
+    ).toEqual(['加铅块', '拼2次'])
+    expect(
+      effectiveSpecialOptionsOf({
+        manualOptions: manual,
+        plan: { splice_times: 2, splice_option: '拼2次' },
+        rejectedOptions: ['拼2次'],
+      })
+    ).toEqual(['加铅块'])
+    // 商家手工勾过同一个名字 ⇒ 不重复（同一个选项不会进两次）
+    expect(
+      effectiveSpecialOptionsOf({
+        manualOptions: ['拼2次'],
+        plan: { splice_times: 2, splice_option: '拼2次' },
+      })
+    ).toEqual(['拼2次'])
+    // 拼次 + 接高同时推导 ⇒ 两项都进（顺序稳定：拼次 → 接高）
+    expect(
+      derivedSpecialOptionsOf({
+        plan: { splice_times: 1, splice_option: '拼1次', join_height_m: 0.05 },
+      })
+    ).toEqual(['拼1次', JOIN_HEIGHT_OPTION_NAME])
+    // 空串 / 非字符串不进（`buildCraftSpec` 的过滤口径同源）
+    expect(effectiveSpecialOptionsOf({ manualOptions: ['', '  '] })).toEqual([])
   })
 })
