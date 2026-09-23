@@ -86,6 +86,12 @@ public class CraftCalcController {
         data.put("source", result.source());
         data.put("craft_tier", result.craftTier());
         data.put("warning", result.warning());
+        // 自动推导的工艺配置（issue #5201 = 母单 #5200 子单 A，契约 §四）：**原样搬出**。
+        // 键**恒在**：`null` = 本次调用没走三项输入通路（未接线调用方口径逐值不变）。
+        // ⚠️ 本层**不复制第二份算料逻辑**：不重算米数、不补默认值、不改判 `cutting_mode` ——
+        // 尤其**不得**拿 `plan.meters` 去覆盖 `fabric_meters`（或反之）：两者在引擎里就是**同一个
+        // 变量**（唯一进位出口之后回填），此处再算一次 = 契约判据 10 要红的形态。
+        data.put("plan", result.plan());
         log.info("算料试算: width={} openCount={} tier={} => {}米/{}折",
                 width, request.get("open_count"), request.get("craft_tier"),
                 result.fabricMeters(), result.pleatCount());

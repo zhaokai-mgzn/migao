@@ -118,6 +118,54 @@ class CraftCalcClientTest {
         assertThat(result.source()).isEqualTo("formula");
         assertThat(result.craftTier()).isEqualTo("standard");
         assertThat(result.warning()).isEmpty();
+        // issue #5201：响应没有 `plan` 键 ⇒ `null`（= 本次没走三项输入通路），**不补默认值**
+        assertThat(result.plan()).isNull();
+    }
+
+    @Test
+    @DisplayName("#5201 plan 原样搬运：契约 §四 的键值与 candidates 数组逐值解析（Java 侧不重算）")
+    void parsesAutoPlanVerbatim() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"success":true,"data":{
+                          "fabric_meters":14.0,"pleat_count":52,"per_panel_pleats":26,"open_count":2,
+                          "margin":0.3,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.12,
+                          "formula_used":"fixed_width_pleats",
+                          "formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                          "source":"formula","craft_tier":"standard","warning":"已按定宽布（买高）计算",
+                          "plan":{"cutting_mode":"定宽买高","door_width":3.2,"panels":5,
+                            "splice_times":4,"splice_option":null,
+                            "join_height_m":null,"join_width_m":null,
+                            "meters":14.0,"auto":true,"reason":"倒幅 5 幅 × 幅长 2.8 米",
+                            "candidates":[
+                              {"key":"fixed_height","meters":13.3,"feasible":true,"splice_times":0,"reason":"…"},
+                              {"key":"fixed_width","meters":14.0,"feasible":true,"splice_times":4,"reason":"…"}]}},
+                         "requestId":"req_1","timestamp":1758100000}
+                        """));
+
+        CraftCalcClient.CraftCalcResult result = client.calc(request());
+
+        Map<String, Object> plan = result.plan();
+        assertThat(plan).containsEntry("cutting_mode", "定宽买高")
+                .containsEntry("door_width", 3.2)
+                .containsEntry("panels", 5)
+                .containsEntry("splice_times", 4)
+                .containsEntry("auto", true)
+                .containsEntry("reason", "倒幅 5 幅 × 幅长 2.8 米");
+        // 契约 §四：`splice_option` / `join_*` 可以是 JSON null —— 键**必须在**（搬运不得丢键，
+        // 丢了调用方分不清「无接高」与「端点没说」）
+        assertThat(plan).containsKeys("splice_option", "join_height_m", "join_width_m");
+        assertThat(plan.get("splice_option")).isNull();
+        assertThat(plan.get("join_height_m")).isNull();
+        assertThat(plan.get("join_width_m")).isNull();
+        // 判据 10（单点）：`plan.meters` 与 `fabric_meters` 逐值相等 —— Java 侧只搬运，绝不自算
+        assertThat(plan.get("meters")).isEqualTo(14.0);
+        assertThat(result.fabricMeters()).isEqualByComparingTo("14.0");
+        // candidates 是**数组**（用户裁定 3：系统逐个再算一遍并把依据给出来）—— 不得被压成字符串
+        Object candidates = plan.get("candidates");
+        assertThat(candidates).isInstanceOf(List.class);
+        assertThat((List<?>) candidates).hasSize(2);
+        assertThat(((Map<?, ?>) ((List<?>) candidates).get(0)).get("key")).isEqualTo("fixed_height");
     }
 
     @Test

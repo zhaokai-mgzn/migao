@@ -154,6 +154,31 @@ class CraftCalcRequest(BaseModel):
             "用户 2026-09-20 裁定：「定高买宽的话就不用算超宽，定宽买高就不用算超高」。"
         ),
     )
+    splice_times: Optional[int] = Field(
+        None,
+        description=(
+            "**人工覆盖**拼次（0~3，issue #5201 = 母单 #5200 子单 A，契约 R7）：给 ⇒ `plan.auto=false`、"
+            "**逐字采用**、不再自动改判。⚠️ 契约判据 8（回归不变量）：不传 `splice_times` / "
+            "`join_height_m` / `join_width_m` 这三个键时，本端点口径与改动前**逐值一致** —— "
+            "三项输入的自动推导只在至少传了其中一个时才启用（`fabric_width` 单独传**不**启用）。"
+            "取值表外（≥4 / 负数）⇒ 422（**不发明「拼4次」**，R5）。"
+        ),
+    )
+    join_height_m: Optional[float] = Field(
+        None,
+        description=(
+            "**人工加接高**（米，`0 < x ≤ 0.1`，issue #5201 / 裁定 5）：超 0.1 米 ⇒ 422 fail-closed。"
+            "⚠️ **不参与算料**（R2）：不另买布、不改米数。只适用于「定高买宽」（倒幅高方向无缺口）。"
+        ),
+    )
+    join_width_m: Optional[float] = Field(
+        None,
+        description=(
+            "**人工加接宽**（米，`0 < x ≤ 0.1`，issue #5201 / 裁定 5）：超 0.1 米 ⇒ 422 fail-closed。"
+            "⚠️ **不参与算料**（R2）：接宽那条 ≤0.1 米的布条来自边角料、不另买布 ⇒ 用料只算 `P−1` 幅。"
+            "只适用于「定宽买高」（倒幅）。"
+        ),
+    )
 
 
 @router.post("/tools/execute")
@@ -434,6 +459,23 @@ async def craft_calc(
     入参补充（issue #4976 包 1a）：`fabric_width`（**SKU 门幅**；缺省 ⇒ 本端点既有常量）与
     `cutting_mode`（加工类型：`定高买宽` ⇒ 只判超高 / `定宽买高` ⇒ 超宽 + 倒幅；缺省 ⇒ 都不判）。
 
+    **自动推导的工艺配置 `plan`**（issue #5201 = 母单 #5200 子单 A，契约 §四）：
+    三项输入（商品颜色 ⇒ SKU 门幅、净窗宽、净窗高）⇒ 全部工艺配置，规则唯一实现在
+    `curtain_calc.derive_plan`（5 候选枚举 + 「用料最少 → 拼接最少 → 接高接宽最少 → 表序」选优）。
+
+    - **开关 = 请求里真有 `fabric_width` 这个键**（缺省 ⇒ `plan` 为 `null`，且结果与改动前
+      **逐值一致** —— 契约判据 8 的回归不变量）。为什么不用「引擎内 `fabric_width is not None`」：
+      本端点为了「缺省 ⇒ 既有常量」会**总是**把门幅传下去，函数内分不清「真传了」与「端点补的常量」，
+      拿它当开关会把存量调用方一起改掉。
+    - `cutting_mode` 单独传**不**开推导（下单页今天就在传它做自动特征提示）；人工覆盖需与
+      `fabric_width` 同传。
+    - 人工 `join_height_m` / `join_width_m` 超 **0.1 米** ⇒ **422**（裁定 5，不截断）。
+    - `splice_times` 越界（≥4 / 负数）⇒ 400（**不发明「拼4次」**，R5）。
+    - ⚠️ `style=拼色` **不走**单色自动推导（拼色的每折吃布是另一套系数，塞进单色候选表 = 改已裁定的
+      拼色米数 = 改钱）⇒ `plan.auto=false` + R4 冲突告知，米数逐值不变。
+    - ⚠️ **单点口径**（判据 10）：`plan.meters` **就是** `fabric_meters`（同源同一变量，在引擎的
+      唯一那个进位出口之后回填）—— 本端点不得再算一份。
+
     fail-closed（三处，均**不静默**）：
     ① `mounting` 非韩褶（褶数法不适用）⇒ 400；
     ② 档位低于行业下限 ⇒ 400；
@@ -452,6 +494,26 @@ async def craft_calc(
             status_code=400,
             detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
         ) from e
+    # ── 人工接高 / 接宽的上限（issue #5201，契约 R1 + 裁定 5）────────────────────
+    # 契约判据 9：人工传 `join_height_m=0.2` ⇒ **422**（不是 400）—— 「入参非法」与
+    # 「算料口径拒答」在既有端点上就是两个码（422 = pydantic 形态校验，400 = 引擎口径），
+    # 本处按契约取 422。**fail-closed**：超限**不静默截断到 0.1**（截断 = 悄悄改商家的工艺配置）。
+    for _label, _value in (("join_height_m", request.join_height_m), ("join_width_m", request.join_width_m)):
+        if _value is not None and not (_value > 0 and _value <= curtain_calc.MAX_JOIN_GAP_M):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "CRAFT_CALC_JOIN_OVER_LIMIT",
+                        "message": (
+                            f"{_label} = {_value} 米超出上限 {curtain_calc.MAX_JOIN_GAP_M} 米"
+                            f"（用户 2026-09-22 裁定 5：接高和接宽都只能最多接 "
+                            f"{curtain_calc.MAX_JOIN_GAP_M} 米，且不参与算料）—— 不截断、不静默兜底"
+                        ),
+                    },
+                },
+            )
     # 拼色缺口判定**先于**算料：纸表只有「1个折 0.65 / 2个折 1.2」两行，
     # `拼3次` 是表外项 ⇒ 不猜、不插值，显式报缺口（issue #4421 边界）。
     # ⚠️ 传 `config`（issue #4528）：已登记档位由**该租户的配置**决定，不是模块常量。
@@ -487,8 +549,18 @@ async def craft_calc(
             has_pattern=request.has_pattern,
             pattern_repeat=request.pattern_repeat,
             config=config,
+            # 三项输入自动推导（issue #5201 = 母单 #5200 子单 A）：**显式开关**。
+            # ⚠️ 不能用「`fabric_width is not None`」当开关：本端点为了契约 §四「缺省 ⇒ 引擎既有
+            # 常量 `_FABRIC_WIDTH`」会**总是**把门幅传下来，引擎内分不清「调用方真传了」与
+            # 「端点补的常量」⇒ 拿它当开关会把**存量调用方**的报价一起改掉（实测经济档
+            # 11.8 → 11.2 米 = 改钱且无人知道，正是判据 8 要防的）。开关 = **请求里真有
+            # `fabric_width` 这个键**；`cutting_mode` 单独传**不**开（前端今天就在传它）。
+            derive_plan_config=request.fabric_width is not None,
+            splice_times=request.splice_times,
+            join_height_m=request.join_height_m,
+            join_width_m=request.join_width_m,
         )
-    except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）/ 未知公式名等入参非法
+    except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）/ 未知公式名 / 人工接高超 0.1 米上限等入参非法
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
@@ -536,6 +608,12 @@ async def craft_calc(
         # 空列表 = 不判（净窗宽/净窗高都未超过各自的企业阈值）。由引擎产出 ⇒ 与 `fabric_meters` 同源。
         # ⚠️ issue #5130：判定面已改为与**企业阈值参数**比（与门幅 / 褶倍 / 加工类型分流全无关）。
         "auto_features": quote["auto_features"],
+        # 自动推导的工艺配置（issue #5201 = 母单 #5200 子单 A）：**键恒在**。
+        # `None` = 本次调用没走三项输入通路（未接线调用方口径逐值不变）；
+        # 非空 = 契约 §四 的 `plan` 对象（**原样搬运**，本端点不补默认值、不重算）。
+        # ⚠️ 单一真值（契约判据 10）：`plan.meters` **就是** `fabric_meters` —— 两者同源同一变量，
+        # 由引擎在**唯一那个进位出口**之后回填 ⇒ 不可能分叉。本端点不得再算一份。
+        "plan": quote["plan"],
     }
     logger.info(
         f"Craft calc: width={request.width} open_count={request.open_count} "

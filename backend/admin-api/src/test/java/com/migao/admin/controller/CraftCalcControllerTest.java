@@ -62,7 +62,9 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 new BigDecimal("2.0"), new BigDecimal("2.02"),
                 "fixed_height_pleats",
                 "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
-                "formula", "standard", "");
+                "formula", "standard", "",
+                // issue #5201：未走三项输入通路 ⇒ `plan` 为 null（键恒在，值缺省）
+                null);
     }
 
     /** 褶倍数公式（issue #4527）冻结样例：5.5m / 双开 / 2.0 倍 ⇒ 11.0 米（ERP 实证锚点）。 */
@@ -72,7 +74,34 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 new BigDecimal("2.0"), null,
                 "fixed_height_fullness",
                 "褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米",
-                "formula", "standard", "");
+                "formula", "standard", "",
+                null);
+    }
+
+    /** 自动推导 `plan`（issue #5201，契约 §四）冻结样例：倒幅 5 幅 / 拼 4 次 / 14.0 米。 */
+    private static CraftCalcClient.CraftCalcResult frozenWithPlan() {
+        Map<String, Object> plan = new java.util.LinkedHashMap<>();
+        plan.put("cutting_mode", "定宽买高");
+        plan.put("door_width", 3.2);
+        plan.put("panels", 5);
+        plan.put("splice_times", 4);
+        plan.put("splice_option", null);
+        plan.put("join_height_m", null);
+        plan.put("join_width_m", null);
+        plan.put("meters", 14.0);
+        plan.put("auto", true);
+        plan.put("reason", "自动推导：倒幅 5 幅 × 幅长 2.8 米");
+        plan.put("candidates", java.util.List.of(
+                Map.of("key", "fixed_height", "meters", 13.3, "feasible", true,
+                        "splice_times", 0, "reason", "成品高 2.8 ≤ 门幅 3.2"),
+                Map.of("key", "fixed_width", "meters", 14.0, "feasible", true,
+                        "splice_times", 4, "reason", "倒幅 5 幅")));
+        return new CraftCalcClient.CraftCalcResult(
+                new BigDecimal("14.0"), 52, 26, new BigDecimal("0.25"),
+                new BigDecimal("2.0"), new BigDecimal("2.12"),
+                "fixed_width_pleats",
+                "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                "formula", "standard", "", plan);
     }
 
     @Test
@@ -223,5 +252,72 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .getMethod("craftCalc", Map.class).getAnnotation(RequirePermission.class);
         assertThat(annotation).isNotNull();
         assertThat(annotation.value()).isEqualTo("order:list");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 自动推导的 `plan`（issue #5201 = 母单 #5200 子单 A，契约 §四 / 判据 10）
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#5201 plan 原样搬出（含 candidates 数组）+ 键恒在；控制器不重算、不补默认值")
+    void planIsPassedThroughVerbatim() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozenWithPlan());
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("{\"width\":6.6}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.plan.cutting_mode").value("定宽买高"))
+                .andExpect(jsonPath("$.data.plan.door_width").value(3.2))
+                .andExpect(jsonPath("$.data.plan.panels").value(5))
+                .andExpect(jsonPath("$.data.plan.splice_times").value(4))
+                .andExpect(jsonPath("$.data.plan.splice_option").doesNotExist())   // JSON null ⇒ jsonPath 视为不存在
+                .andExpect(jsonPath("$.data.plan.auto").value(true))
+                .andExpect(jsonPath("$.data.plan.candidates.length()").value(2))
+                .andExpect(jsonPath("$.data.plan.candidates[0].key").value("fixed_height"))
+                // 单点口径（判据 10）：plan.meters 与 data.fabric_meters **必须相等**
+                // （两者在引擎里是同一个变量；控制器若自己再算一份，这里就会分叉）
+                .andExpect(jsonPath("$.data.plan.meters").value(14.0))
+                .andExpect(jsonPath("$.data.fabric_meters").value(14.0));
+    }
+
+    @Test
+    @DisplayName("#5201 plan 键恒在：未走三项输入通路时为 null（调用方可区分「没走」与「走了」）")
+    void planKeyIsAlwaysPresent() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozen());
+
+        String body = mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("{\"width\":6.6}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        // 键恒在（`null` 也是键）；反证：键缺席 ⇒ 前端无法区分「没走推导」与「端点没实现」
+        assertThat(body).contains("\"plan\"");
+        // 🔴 红证形态：把控制器改成「`plan == null` ⇒ 塞一个假方案」（如 `Map.of("meters", 0)`）
+        // ⇒ 下面两条必红。为什么必须钉死 `null` 语义：`plan` 为 null = **本次调用没走三项输入通路**
+        // （契约 §四），前端据此走「推导服务未就绪」的降级通路；换成 `{meters: 0}` 会绕过降级、
+        // 直接渲染「用料 0 米」——0 不得当「未知」的替身（同族纪律：判据 10 与「不给估算值」）。
+        assertThat(body).contains("\"plan\":null");
+        assertThat(body).doesNotContain("\"meters\":0");
+    }
+
+    @Test
+    @DisplayName("#5201 新入参（fabric_width/cutting_mode/splice_times/join_*）原样透传给 ai-agent，控制器不改写")
+    @SuppressWarnings("unchecked")
+    void planInputsArePassedThroughVerbatim() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozenWithPlan());
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("""
+                        {"width":6.6,"height":2.5,"fabric_width":3.2,"cutting_mode":"定宽买高",
+                         "splice_times":2,"join_height_m":0.05,"join_width_m":0.1}
+                        """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(craftCalcClient).calc(captor.capture());
+        Map<String, Object> sent = captor.getValue();
+        // 缺省值/校验都在 ai-agent（契约 §四）：本层只搬运 ⇒ 收到什么发什么
+        assertThat(sent).containsEntry("fabric_width", 3.2)
+                .containsEntry("cutting_mode", "定宽买高")
+                .containsEntry("splice_times", 2)
+                .containsEntry("join_height_m", 0.05)
+                .containsEntry("join_width_m", 0.1);
     }
 }

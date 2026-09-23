@@ -225,6 +225,386 @@ _POSITIVE_CONFIG_KEYS = (
 )
 
 
+# ── 自动推导：接高 / 接宽（issue #5201 = 母单 #5200 子单 A；用户 2026-09-22 裁定）──
+#
+# 用户裁定逐字留档：
+#   5「**接高和接宽都只能最多接 0.1 米，且不参与算料**」
+#   3「优先倒幅，如果倒幅后仍然无法满足，那么再重算是接高，还是接宽，还是倒幅后接宽接高，
+#      可以多自动化推算出一个最优结果」
+#   2「这里的**拼几次和拼色是不同的概念**，拼几次默认都按**单色**韩折公式或者倍数公式算」
+#   1「如果出现要拼几次的情况，那只能单色」
+#
+# ⚠️ **旧口径留档（本单来源处，已按用户 2026-09-22 裁定替换）** ——
+# 本模块另有一处「接高」实现在 `resolve_fabric_plan._splice()`（issue #5013/#5043 的通路，
+# 服务 `/production/door-width-plan` 与 `build_quote(fabric_widths=...)`），它的口径是
+# **「缺口多大都行」+「加高条按片宽另买布」**（`meters = T + 段数 × 片宽`）。
+# 用户 2026-09-22 裁定 5 **替换**了这个口径：缺口上限 0.1 米、且**不参与算料**。
+# 两者**刻意并存**（旧通路服务既有 `door_widths` 端点，仍逐值不变 ⇒ 回归不变量）；
+# **新的三项输入推导只走本节的 `derive_plan`** —— 不得把 `_splice()` 的旧口径搬进来
+# （那是把用户已裁定的口径回退）。
+#: 接高 / 接宽缺口的**上限**（米）—— 裁定 5。缺口 > 上限 ⇒ 该候选**不可行**，不得判接高/接宽。
+MAX_JOIN_GAP_M = 0.1
+
+#: 拼次（数字）→ 特殊选项名。**值域恰为 {1,2,3}**（R5）——`0` 与 `≥4` ⇒ `None`。
+#: 选项名是**冻结的 join key**（进工序与计件，`app/production/routing.py::SPECIAL_OPTION_ROUTINGS`），
+#: 差一个字 ⇒ 拼次工序与计件**静默失效**（少发工人钱）⇒ 有守卫单测逐字比对。
+#: ⚠️ **不得**在这里补「拼4次」：纸表与工序库都没有这一项，发明它就是发明口径（R5）。
+SPLICE_OPTION_BY_TIMES: Dict[int, str] = {1: "拼1次", 2: "拼2次", 3: "拼3次"}
+
+#: 候选表顺序（契约 §三 的表序）—— 也是选优的第 ④ 顺位（前三位全并列时按它取）。
+_PLAN_CANDIDATE_KEYS = (
+    "fixed_height",
+    "fixed_height_join_height",
+    "fixed_width",
+    "fixed_width_join_width",
+    "fixed_width_join_height",
+)
+
+#: 接高 / 接宽的浮点比较容差（米）。`0.3 − 0.2 = 0.09999999999999998` 这类二进制误差
+#: 会让「恰好 0.1」被误判超限 ⇒ 用容差吸收，但**判定口径不变**（上限仍是 0.1 米）。
+_JOIN_EPS = 1e-9
+
+
+def _join_gap_ok(gap: float) -> bool:
+    """缺口是否在上限内（`0 < gap ≤ 0.1`）—— **R1 的唯一判定点**。"""
+    return _JOIN_EPS < gap <= MAX_JOIN_GAP_M + _JOIN_EPS
+
+
+def splice_option_for(times: Optional[int]) -> Optional[str]:
+    """拼次 → 特殊选项名（R5）：`1/2/3` ⇒ `拼1次/拼2次/拼3次`；其余 ⇒ `None`。
+
+    **不发明「拼4次」**：`4` 及以上的选项名在工序库与纸表里都不存在。
+    """
+    return SPLICE_OPTION_BY_TIMES.get(times) if times is not None else None
+
+
+def derive_plan(
+    *,
+    window_height: float,
+    fixed_height_meters: float,
+    door_width: float,
+    config: Optional[Dict[str, Any]] = None,
+    cutting_mode: Optional[str] = None,
+    splice_times: Optional[int] = None,
+    join_height_m: Optional[float] = None,
+    join_width_m: Optional[float] = None,
+    style: Optional[str] = None,
+) -> Dict[str, Any]:
+    """**自动推导工艺配置**（issue #5201 = 母单 #5200 子单 A，用户 2026-09-22 裁定）。
+
+    规格书 = 母单 #5200 的**冻结契约 v1.1** §三（候选枚举表 / R1~R7 / 选优顺序）。
+    三项输入（商品颜色 ⇒ 门幅 D、净窗宽、净窗高）⇒ **全部工艺配置**，且每一项都可人工改（裁定 6）。
+
+    定义（逐字取自契约）：
+        `T` = **单色**定高买宽单幅用料（米）= 现有单色公式值（调用方按选定用料公式算好传入）；
+        `need_h` = `H + hem`；`P` = `ceil(T / D)`。
+
+    | # | key | 可行条件 | 用料 | 拼接 | 接高/接宽 |
+    |---|---|---|---|---|---|
+    | 1 | `fixed_height` | `need_h ≤ D` | `T` | 0 | — |
+    | 2 | `fixed_height_join_height` | `0 < need_h − D ≤ 0.1` | `T` | 0 | 接高 gap = `need_h − D` |
+    | 3 | `fixed_width` | 恒可行 | `P × need_h` | `P − 1` | — |
+    | 4 | `fixed_width_join_width` | `T − (P−1)×D ≤ 0.1` 且 `P ≥ 2` | `(P−1) × need_h` | `P − 2` | 接宽 gap = `T − (P−1)×D` |
+    | 5 | `fixed_width_join_height` | **恒不可行** | — | `P − 1` | — |
+
+    Args:
+        window_height: 净窗高（米）—— 成品高 = 净窗高（用户 2026-09-21 裁定 #5030）
+        fixed_height_meters: **单色**定高买宽用料 `T`（米）—— 由调用方按选定用料公式算好（本函数**不改公式**）
+        door_width: 所用门幅 `D`（米，来自所选颜色的 SKU `door_width`）
+        config: 算料配置（读 `hem_margin`；**不新造第二份常量**）
+        cutting_mode: **人工覆盖**加工类型（`定高买宽` / `定宽买高`）；给 ⇒ `auto=false`
+        splice_times: **人工覆盖**拼次（0~3）；给 ⇒ `auto=false`
+        join_height_m / join_width_m: **人工加**接高/接宽（`0 < x ≤ 0.1`；超限 ⇒ ValueError）
+        style: 款式（`拼色` 且出现拼接 ⇒ 冲突告知，R4；**不静默改款式**）
+
+    Returns:
+        契约 §四 的 `plan` 对象：`cutting_mode` / `door_width` / `panels` / `splice_times` /
+        `splice_option` / `join_height_m` / `join_width_m` / `meters` / `auto` / `reason` /
+        `candidates` / `notices`。
+
+    Raises:
+        ValueError: 门幅非正 / 加工类型表外 / 人工拼次越界 / 人工接高接宽超 0.1 米上限
+            或与加工类型矛盾（**fail-closed，不静默兜底**）
+    """
+    cfg = resolve_craft_calc_config(config)
+    hem_margin = cfg["hem_margin"]
+
+    door = float(door_width)
+    if not (door > 0):
+        raise ValueError(f"门幅 door_width 必须大于 0（收到 {door_width!r}）—— 不按缺省门幅推算")
+    total = float(fixed_height_meters)
+    need_h = round(float(window_height) + hem_margin, 3)
+    panels = max(1, -(-_mm(total) // max(1, _mm(door))))
+    notices: List[str] = []
+
+    if cutting_mode not in (None, CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
+        raise ValueError(
+            f"加工类型必须是 {CUTTING_MODE_FIXED_HEIGHT} / {CUTTING_MODE_FIXED_WIDTH} 之一"
+            f"（收到 {cutting_mode!r}）—— 「接高」不是加工类型的取值（ERP 加工类型只有两项）"
+        )
+
+    def _fixed_height() -> Dict[str, Any]:
+        feasible = need_h <= door + _JOIN_EPS
+        return {
+            "key": "fixed_height", "feasible": feasible,
+            "meters": total if feasible else None, "splice_times": 0,
+            "join_height_m": None, "join_width_m": None,
+            "reason": (
+                f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_h} 米 ≤ 门幅 {door} 米"
+                f" ⇒ 定高买宽单幅可做，用料 {round(total, 3)} 米（买宽订单，零拼接）"
+                if feasible else
+                f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_h} 米 > 门幅 {door} 米"
+                f" ⇒ 定高买宽单幅装不下（缺口 {round(need_h - door, 3)} 米）"
+            ),
+        }
+
+    def _fixed_height_join_height() -> Dict[str, Any]:
+        gap = round(need_h - door, 3)
+        feasible = _join_gap_ok(gap)
+        return {
+            "key": "fixed_height_join_height", "feasible": feasible,
+            # R2：接高**不参与算料** ⇒ 可行时用料仍是 `T`（不加加高条、不改米数、不改加工费米数）
+            "meters": total if feasible else None, "splice_times": 0,
+            "join_height_m": gap if feasible else None, "join_width_m": None,
+            "reason": (
+                f"缺口 {gap} 米 ≤ 上限 {MAX_JOIN_GAP_M} 米 ⇒ 定高买宽 + 接高；"
+                f"接高不参与算料 ⇒ 用料仍 {round(total, 3)} 米（与不接高逐值相等，裁定 5）"
+                if feasible else
+                f"缺口 {gap} 米 > 上限 {MAX_JOIN_GAP_M} 米（裁定 5）⇒ 不得判接高"
+                if gap > 0 else
+                f"成品高 {need_h} 米 ≤ 门幅 {door} 米 ⇒ 无缺口，无需接高"
+            ),
+        }
+
+    def _fixed_width() -> Dict[str, Any]:
+        return {
+            "key": "fixed_width", "feasible": True,
+            "meters": panels * need_h, "splice_times": panels - 1,
+            "join_height_m": None, "join_width_m": None,
+            "reason": (
+                f"倒幅（定宽买高）：用料 {round(total, 3)} 米 ÷ 门幅 {door} 米"
+                f" ⇒ {panels} 幅 × 幅长 {need_h} 米 = {round(panels * need_h, 3)} 米，"
+                f"拼接 {panels - 1} 次"
+            ),
+        }
+
+    def _fixed_width_join_width() -> Dict[str, Any]:
+        gap = round(total - (panels - 1) * door, 3)
+        feasible = panels >= 2 and _join_gap_ok(gap)
+        return {
+            "key": "fixed_width_join_width", "feasible": feasible,
+            # 接宽那条 ≤0.1 米的布条来自**边角料、不另买布** ⇒ 用料只算 P−1 幅（裁定 5）
+            "meters": (panels - 1) * need_h if feasible else None,
+            # `max(0, …)`：P=1 时该候选本就不可行，拼接数只作**可读信息** —— 不得给出负数
+            # （负数会污染选优排序，也会让契约订正 v1.2 的不变量在不可行候选上看起来自相矛盾）。
+            "splice_times": max(0, panels - 2),
+            "join_height_m": None, "join_width_m": gap if feasible else None,
+            "reason": (
+                f"倒幅 + 接宽：最后需要的一幅只差 {gap} 米 ≤ 上限 {MAX_JOIN_GAP_M} 米（门幅 {door} 米）"
+                f" ⇒ 用 {panels - 1} 整幅 + 一条接宽布条顶掉第 {panels} 幅"
+                f" ⇒ 省一整幅，用料 {round((panels - 1) * need_h, 3)} 米"
+                if feasible else
+                "倒幅 + 接宽不可行："
+                + ("幅数 P=1，无第 P 幅可省" if panels < 2 else
+                   f"T − (P−1)×D = {round(total, 3)} − {panels - 1}×{door}"
+                   f" = {gap} 米 > 上限 {MAX_JOIN_GAP_M} 米（裁定 5）")
+            ),
+        }
+
+    def _fixed_width_join_height() -> Dict[str, Any]:
+        # 契约订正 v1.1 ②：倒幅下每幅**幅长按米购买、不受门幅上限约束** ⇒ 高方向不存在缺口，
+        # 既不需要也无法接高 ⇒ **恒不可行**（保留在候选表里，用户裁定 3 要求系统逐个再算一遍）。
+        # **不得**给它编一个用料公式。
+        return {
+            "key": "fixed_width_join_height", "feasible": False, "meters": None,
+            "splice_times": panels - 1, "join_height_m": None, "join_width_m": None,
+            "reason": (
+                "倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高"
+                f"（对比：定高买宽受门幅 {door} 米约束才有缺口）"
+            ),
+        }
+
+    candidates = [
+        _fixed_height(), _fixed_height_join_height(), _fixed_width(),
+        _fixed_width_join_width(), _fixed_width_join_height(),
+    ]
+    order = {key: i for i, key in enumerate(_PLAN_CANDIDATE_KEYS)}
+    manual = any(v is not None for v in (cutting_mode, splice_times, join_height_m, join_width_m))
+    join_h = join_w = None
+    win_panels: Optional[int] = None
+    win_splice: Optional[int] = None
+    win_key: Optional[str] = None
+
+    def _auto_mode() -> str:
+        """自动推导的加工类型（没显式给加工类型时沿用它）。"""
+        feasible = [c for c in candidates if c["feasible"]]
+        if not feasible:
+            raise ValueError("没有任何候选方案可行（fail-closed，不给估算值）")
+        return (
+            CUTTING_MODE_FIXED_HEIGHT
+            if min(feasible, key=lambda c: (round(c["meters"], 3), c["splice_times"], order[c["key"]]))["key"]
+            .startswith("fixed_height") else CUTTING_MODE_FIXED_WIDTH
+        )
+
+    def _implied_mode() -> str:
+        """没显式给加工类型时，人工值**蕴含**的加工类型。
+
+        ① 人工接宽 ⇒ 倒幅（定高买宽按宽买米、宽方向无缺口）；
+        ② 人工接高 ⇒ 定高买宽（倒幅幅长按米买、高方向无缺口）；
+        ③ **人工拼次 ≥ 1 ⇒ 倒幅** —— 零拼接的定高买宽**根本拼不起来**（买宽订单是一整幅布），
+           故拼次 ≥ 1 已把加工类型蕴含为倒幅（这是#5200 裁定 4「拼接也允许人工加」的落点，
+           不是另立口径）。只在**真的拼得起来**时这么定；`splice_times=0` 仍走自动择路。
+        """
+        if join_width_m is not None:
+            return CUTTING_MODE_FIXED_WIDTH
+        if join_height_m is not None:
+            return CUTTING_MODE_FIXED_HEIGHT
+        if splice_times is not None and splice_times >= 1:
+            return CUTTING_MODE_FIXED_WIDTH
+        return cutting_mode or _auto_mode()
+
+    if manual:
+        # ── R7 人工覆盖：**逐字采用**，不再自动改判（裁定 4/6）──────────────────
+        # 人工加 = 恒可行，但仍受 R1 的 0.1 上限与 R2 的零用料约束。
+        for label, value in (("join_height_m", join_height_m), ("join_width_m", join_width_m)):
+            if value is not None and not _join_gap_ok(round(float(value), 3)):
+                raise ValueError(
+                    f"人工 {label} = {value} 米超出上限 {MAX_JOIN_GAP_M} 米"
+                    f"（裁定 5：接高/接宽都只能最多接 {MAX_JOIN_GAP_M} 米）"
+                )
+        if join_height_m is not None and cutting_mode == CUTTING_MODE_FIXED_WIDTH:
+            raise ValueError(
+                "人工接高（join_height_m）只适用于「定高买宽」—— 倒幅下幅长按米购买、高方向无缺口，"
+                "定宽买高 + 接高 是矛盾输入（不静默丢弃）"
+            )
+        if join_width_m is not None and cutting_mode == CUTTING_MODE_FIXED_HEIGHT:
+            raise ValueError(
+                "人工接宽（join_width_m）只适用于「定宽买高」（倒幅）—— 定高买宽按宽买米、宽方向无缺口，"
+                "定高买宽 + 接宽 是矛盾输入（不静默丢弃）"
+            )
+        if join_width_m is not None:
+            effective_mode = CUTTING_MODE_FIXED_WIDTH
+        elif join_height_m is not None:
+            effective_mode = CUTTING_MODE_FIXED_HEIGHT
+        else:
+            effective_mode = _implied_mode()
+        if effective_mode == CUTTING_MODE_FIXED_HEIGHT:
+            if splice_times:
+                raise ValueError(
+                    f"加工类型「{CUTTING_MODE_FIXED_HEIGHT}」是买宽订单、零拼接 ⇒ 拼次只能是 0"
+                    f"（收到 {splice_times}）"
+                )
+            win_splice = 0
+            win_meters = total
+        else:
+            if splice_times is not None and not 0 <= splice_times <= 3:
+                raise ValueError(
+                    f"人工拼次 splice_times 必须在 0~3 之间（收到 {splice_times}）"
+                    "—— 工序库与纸表没有「拼4次」（R5，不发明口径）"
+                )
+            win_splice = panels - 1 if splice_times is None else int(splice_times)
+            win_panels = win_splice + 1
+            win_meters = win_panels * need_h
+        join_h = None if join_height_m is None else round(float(join_height_m), 3)
+        join_w = None if join_width_m is None else round(float(join_width_m), 3)
+    else:
+        # ── 选优（裁定 3）：① 用料最少 → ② 拼接最少 → ③ 接高/接宽最少 → ④ 候选表顺序 ──
+        feasible = [c for c in candidates if c["feasible"]]
+        if not feasible:
+            # R6：全部候选不可行 ⇒ fail-closed，不静默兜底、不给估算值
+            return {
+                "cutting_mode": None, "door_width": door, "panels": None, "splice_times": None,
+                "splice_option": None, "join_height_m": None, "join_width_m": None,
+                "meters": None, "auto": True,
+                "reason": (
+                    f"全部候选不可行（门幅 {door} 米 / 成品高 {need_h} 米 / 用料 T {round(total, 3)} 米）"
+                    f" ⇒ fail-closed，不给估算值（裁定 5 / R6）"
+                ),
+                "candidates": candidates, "notices": notices,
+            }
+
+        def _rank(c: Dict[str, Any]):
+            joins = sum(1 for k in ("join_height_m", "join_width_m") if c[k] is not None)
+            return (round(c["meters"], 3), c["splice_times"], joins, order[c["key"]])
+
+        win = min(feasible, key=_rank)
+        win_key = win["key"]
+        # `panels`（契约 §四）= 倒幅分幅数 P；定高买宽 ⇒ null。
+        # `splice_times` = **实际拼接次数** = `panels − 1`（契约 §四 的顶格定义）；接宽方案少拼一次
+        # （接宽那条布条顶掉了第 P 幅与前面几幅之间的**一次**拼接）⇒ `P − 2`。
+        effective_mode, win_panels, win_splice = {
+            "fixed_height": (CUTTING_MODE_FIXED_HEIGHT, None, 0),
+            "fixed_height_join_height": (CUTTING_MODE_FIXED_HEIGHT, None, 0),
+            "fixed_width": (CUTTING_MODE_FIXED_WIDTH, panels, panels - 1),
+            # 契约订正 v1.2：`panels` **恒等于「实际买布幅数」** —— 接宽方案下第 P 幅被一条
+            # ≤0.1 米的接宽布条顶掉 ⇒ 实际只买 `P − 1` 幅（不得写成几何 `P`：界面会显示「P 幅」
+            # 而商家只为 `P−1` 幅付钱 = 同一件事两处口径）。
+            # ⇒ 不变量：`splice_times == panels − 1` 对**任何**返回值都成立。
+            "fixed_width_join_width": (CUTTING_MODE_FIXED_WIDTH, panels - 1, panels - 2),
+        }[win_key]
+        win_meters = win["meters"]
+        join_h, join_w = win["join_height_m"], win["join_width_m"]
+
+    # ── 拼N次（R3/R5）：N = 实际拼接次数，**用单色公式**（调用方传进来的 T 本就是单色口径）──
+    # ⚠️ `MIXED_COLOR_PER_FOLD_BY_TIMES` 是**拼色款式**的每折吃布系数，与「拼N次」**是两件事**
+    # （用户 2026-09-22 裁定 2 逐字区分）⇒ 这里**一个字都不加**。
+    splice_option = splice_option_for(win_splice)
+    if win_splice is not None and win_splice >= 4:
+        notices.append(
+            f"拼接 {win_splice} 次：工序库与纸表只登记到「拼3次」⇒ splice_option 为 null，"
+            f"该单需人工处理（R5，不发明「拼{win_splice}次」）"
+        )
+    if style == STYLE_MIXED and (win_splice or 0) >= 1:
+        # R4（裁定 1）：「如果出现要拼几次的情况，那只能单色」⇒ 显式冲突告知，**不静默改款式**。
+        notices.append(
+            f"款式为「{STYLE_MIXED}」但本次需要拼接 {win_splice} 次 —— 出现拼接时款式只能是**单色**"
+            f"（用户 2026-09-22 裁定 1）⇒ 请人工裁定改款式或改门幅；系统不静默改款式（款式影响钱）。"
+        )
+
+    if manual:
+        reason = (
+            f"**人工覆盖**（裁定 4/6）：加工类型按人工值「{effective_mode}」逐字采用"
+            f"（门幅 {door} 米 / 成品高 {need_h} 米 / 用料 T {round(total, 3)} 米），系统不再自动改判"
+        )
+        if join_h is not None:
+            reason += f"；人工加接高 {join_h} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，**不参与算料**）"
+        if join_w is not None:
+            reason += (
+                f"；人工加接宽 {join_w} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，**不参与算料**）"
+                f"—— ⚠️ **人工接宽不自动省幅**（R7 逐字采用人工值）：本次用料 = "
+                f"{win_panels} 幅 × 幅长 {need_h} 米；若要按「省一整幅」算，"
+                f"请把拼次显式改为 {max(0, (win_panels or 0) - 1)} 次"
+            )
+        if cutting_mode == CUTTING_MODE_FIXED_WIDTH and splice_times is not None:
+            reason += f"；人工指定拼 {win_splice} 次"
+        if cutting_mode is None and splice_times is not None and splice_times >= 1:
+            reason += (
+                f"；未显式给加工类型，但人工拼 {win_splice} 次 ⇒ 蕴含**倒幅**"
+                f"（零拼接的定高买宽拼不起来）"
+            )
+    else:
+        reason = (
+            "自动推导（候选按「用料最少 → 拼接最少 → 接高接宽最少 → 表序」选优）："
+            f"选定 **{win_key}** —— "
+            + next(c for c in candidates if c["key"] == win_key)["reason"]
+        )
+
+    return {
+        "cutting_mode": effective_mode,
+        "door_width": door,
+        "panels": win_panels,
+        "splice_times": win_splice,
+        "splice_option": splice_option,
+        "join_height_m": join_h,
+        "join_width_m": join_w,
+        "meters": round(win_meters, 3) if win_meters is not None else None,
+        "auto": not manual,
+        "reason": reason,
+        "candidates": candidates,
+        "notices": notices,
+    }
+
+
 def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """配置对象 → 校验后的完整配置（缺省键回落到 `DEFAULT_CRAFT_CALC_CONFIG`）。
 
@@ -904,6 +1284,23 @@ def resolve_fabric_plan(
         }
 
     def _splice() -> Dict[str, Any]:
+        """接高 —— ⚠️ **这是旧口径，只在一条既有通路上生效**（issue #5201 复核发现的口径分裂）。
+
+        **触达条件**（谁能走到它）：`resolve_fabric_plan` 由 `build_quote(fabric_widths=[...])`
+        （`/production/door-width-plan` 端点与显式候选门幅集）或显式 `cutting_mode="接高"` 调用时。
+
+        **旧口径**（本函数据以实现，**本单未改**）：**缺口多大都行** + **加高条按片宽另买布**
+        （`meters = T + 段数 × 片宽`）。
+
+        ⚠️ **三项输入通路（下单页）不走这里** —— 它走 `derive_plan()`，口径是
+        **「缺口 ≤ 0.1 米（`MAX_JOIN_GAP_M`）+ 接高不参与算料」**（用户 2026-09-22 裁定 5）。
+        ⇒ **同一个「接高」在本模块有**两**份口径**，按**通路**分流：
+        `fabric_widths` / 显式 `接高` ⇒ 旧口径（本函数）；`fabric_width` 三项输入 ⇒ 新口径。
+
+        **为什么不统一**（照实登记，不是遗漏）：统一会把 ai-agent **报价侧**的既有结果静默改掉
+        （blast radius 超出 #5201 范围），且用户 2026-09-22 的裁定只针对**下单链路**。
+        ⇒ 留作**跟随 issue**（需用户裁定，因为它会改 agent 报价）。见 #5201 PR body 的「未实装 / 边界」。
+        """
         gap = round(need_height - widest_eff, 3)
         gap_eff = round(gap + repeat, 3)  # 对花：每条加高条 +1 个花距
         # 一段布（长 = 片宽）能在门幅内**并排**裁出几条加高条 —— 毫米整数除，避免浮点 floor 少算一条
@@ -1090,6 +1487,10 @@ def build_quote(
     config: Optional[Dict[str, Any]] = None,
     cutting_mode: Optional[str] = None,
     fabric_widths: Optional[List[float]] = None,
+    splice_times: Optional[int] = None,
+    join_height_m: Optional[float] = None,
+    join_width_m: Optional[float] = None,
+    derive_plan_config: bool = False,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -1183,11 +1584,60 @@ def build_quote(
     # 口径真值源 = `docs/design/door-width-auto-selection.md`。
     plan_state: Dict[str, Any] = {
         "door_width": fabric_width, "cutting_mode": None, "splice": False, "reason": "",
+        "plan": None,
     }
+    # ⚠️ **三项输入自动推导（issue #5201）是另一条通路**，且它有一个**显式开关** —— 不能拿
+    # `fabric_width is not None` 当开关：端点为了「缺省 ⇒ 既有常量 `_FABRIC_WIDTH`」（契约 §四）
+    # 会**总是**把 `fabric_width` 传下来，函数内**分不清**「调用方真传了」与「端点补的常量」
+    # ⇒ 用 `fabric_width is not None` 当开关会把**存量调用方**的报价一起改掉（实测：经济档
+    # 11.8 → 11.2 米，那是改钱且无人知道）。故由**调用方显式声明**：
+    # `derive_plan_config=True` = 走三项输入自动推导；默认 `False` = 既有口径逐值不变。
+    # ⚠️ `cutting_mode` **不进开关**（实测核定）：下单页今天就在传它（自动特征提示位 #4976），
+    # 把它当开关会让现有调用改变结果 ⇒ 人工覆盖加工类型需与 `derive_plan_config` 同开。
+    _plan_inputs = bool(derive_plan_config) and any(
+        v is not None for v in (fabric_width, splice_times, join_height_m, join_width_m)
+    )
+    # ⚠️ **拼色款式把推导关掉**（`style=拼色`）：它的每折吃布是**另一套系数**
+    # （`MIXED_COLOR_PER_FOLD_BY_TIMES`，纸表表头，用户 2026-09-19 裁定），塞进单色候选表会改已裁定的
+    # 拼色米数（**改钱**）。而契约 R4（裁定 1）本来就规定「出现拼接时款式只能是单色」⇒
+    # 拼色行的正确处置是**告知冲突 + 不自动推导**（下面按 `fabric_meters` 回填结构化 `plan`，
+    # `auto=False` + R4 告知），**不是**静默按单色重算。
+    _plan_inputs_asked = bool(derive_plan_config) and any(
+        v is not None for v in (fabric_width, splice_times, join_height_m, join_width_m)
+    )
+    _plan_inputs = _plan_inputs_asked and style != STYLE_MIXED
 
     def _resolve_plan(meters_fixed_height: float, suffix: str):
         """定高买宽用料 T ⇒（幅数, 最终米数, formula_used, 超限/规则告警）；并写 `plan_state`。"""
         nonlocal fabric_width
+        if _plan_inputs and not fabric_widths:
+            # ── 三项输入 ⇒ **自动推导**（issue #5201 = 母单 #5200 子单 A）────────────
+            # 优先级（写死在一处，别处不再判）：`fabric_widths`（复数候选集，既有通路，自己选门幅）
+            # **优先** ⇒ 否则 `_plan_inputs`（门幅已定）⇒ 否则**既有单门幅口径**（逐值不变）。
+            # 口径真值源 = `derive_plan`（契约 §三 候选枚举表 + 选优顺序 + R1~R7）。
+            # ⚠️ `T` 就是上方按**选定用料公式 + 单色口径**算出的 `meters_fixed_height`
+            # （R3：拼N次 ≠ 拼色 ⇒ 这里**不加** `MIXED_COLOR_PER_FOLD_BY_TIMES` 的任何系数）——
+            # 候选表与最终米数**同源同一变量** ⇒ `plan.meters` 与 `fabric_meters` 不可能分叉。
+            # ⚠️ **拼色款式不走这里**（见下方 `_effective_plan_inputs`）：拼色的每折吃布系数是
+            # **另一套用料**（纸表表头，用户 2026-09-19 裁定），把它当单色 `T` 塞进候选表会
+            # **静默改已裁定的拼色米数**（实测 34.1 → 30.8 米，那是改钱）。
+            plan = derive_plan(
+                window_height=window_height,
+                fixed_height_meters=meters_fixed_height,
+                door_width=fabric_width,
+                config=cfg,
+                cutting_mode=cutting_mode,
+                splice_times=splice_times,
+                join_height_m=join_height_m,
+                join_width_m=join_width_m,
+                style=style,
+            )
+            plan_state.update(plan=plan)
+            tail = "width" if plan["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH else "height"
+            # 只有「真的换了做法」（倒幅 / 接高 / 接宽）才告警 —— 定高买宽单幅是**正常路径**，不 nag。
+            over = plan["reason"] if (plan["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+                                      or plan["join_height_m"] is not None) else ""
+            return plan["panels"], plan["meters"], f"fixed_{tail}{suffix}", over
         if fabric_widths:
             plan = resolve_fabric_plan(
                 window_height=window_height,
@@ -1224,6 +1674,11 @@ def build_quote(
         plan_state.update(cutting_mode=CUTTING_MODE_FIXED_HEIGHT)
         return None, meters_fixed_height, f"fixed_height{suffix}", ""
 
+    #: 本次算料的**单色**用料估算（米）—— 只给拼色行的结构化 `plan` 用（见下方回填段）。
+    #: 拼色的每折吃布是**另一套系数**（纸表表头），要塞进「单色候选表」就得先按单色口径算一遍；
+    #: 这里**只算一次**、且**不回写**任何金额字段（真正的用料永远是 `meters` 那一支）。
+    estimate: Dict[str, Any] = {"single_color_meters": None}
+
     if selected_formula == FORMULA_FULLNESS:
         # 褶倍数公式（倍数法，issue #4527）：逐片表达，数值 = 成品宽 × 褶倍（**与开数无关**）
         meters, _pp_meters, _pp_width = _per_panel_fullness_meters(
@@ -1244,6 +1699,11 @@ def build_quote(
         # ⚠️ 褶数**仍按单色系数反算**（`derive_pleat_count`，既有口径）：拼色只改「每折吃布」这一项
         # ⇒ 52 折双开拼1次 = 0.65×52+0.3 = 34.1 米（改褶数就是改既有的拼色数值，不在本包）。
         per_fold = resolve_per_fold(style, special_options, cfg)
+        # 单色口径的同一批褶数/余量 ⇒ 单色用料（**只读**计算，不进任何金额字段）：
+        # 拼色行的结构化 `plan` 需要「若按单色算会是多少」来做候选可行性判断（见回填段）。
+        estimate["single_color_meters"] = (
+            cfg["per_fold_single"] * pleat_count + margin_for_open_count(open_count, cfg)
+        )
         meters, pleat_warning, info = calculate_fabric_by_pleats(
             pleat_count, open_count, source=source, width=window_width,
             per_fold=per_fold, config=cfg,
@@ -1289,7 +1749,31 @@ def build_quote(
             has_pattern=has_pattern,
             pattern_repeat=pattern_repeat,
         )
-        if fabric_widths and _fu != "roman_panel":
+        if _plan_inputs and not fabric_widths:
+            plan = derive_plan(
+                window_height=window_height,
+                fixed_height_meters=_t,
+                door_width=fabric_width,
+                config=cfg,
+                cutting_mode=cutting_mode,
+                splice_times=splice_times,
+                join_height_m=join_height_m,
+                join_width_m=join_width_m,
+                style=style,
+            )
+            plan_state.update(cutting_mode=plan["cutting_mode"], plan=plan)
+            panels, meters, formula_used = (
+                plan["panels"],
+                plan["meters"],
+                # `formula_used` 的词表是**既有契约**（`fixed_height` / `fixed_width` 前缀 +
+                # 用料公式后缀）：三条算料路径共用它。自动推导不新造取值，照既有词表给。
+                f"fixed_{'width' if plan['cutting_mode'] == CUTTING_MODE_FIXED_WIDTH else 'height'}",
+            )
+            warning = plan["reason"] if (
+                plan["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+                or plan["join_height_m"] is not None
+            ) else ""
+        elif fabric_widths and _fu != "roman_panel":
             panels, meters, formula_used, warning = _resolve_plan(_t, "")
         else:
             meters, formula_used, warning = _t, _fu, _w
@@ -1305,6 +1789,50 @@ def build_quote(
                 "fixed_height": CUTTING_MODE_FIXED_HEIGHT,
                 "fixed_width": CUTTING_MODE_FIXED_WIDTH,
             }.get(formula_used)
+        if _plan_inputs_asked and not _plan_inputs and style == STYLE_MIXED:
+            # ── 拼色行的结构化 `plan`（issue #5201）────────────────────────────────
+            # ⚠️ **米数一个字不动**（走上面的既有拼色口径）：这里是**回填**，不是重算。
+            # 为什么不能复用上面自动推导那条分支：`derive_plan` 的 `T` 是**单色**口径
+            # （每折 0.25 / 0.65 那套是**拼色款式**的系数，用户 2026-09-19 裁定）——
+            # 把拼色的米数当成单色 `T` 塞进候选表会**改已裁定的拼色用料**
+            # （实测 `拼1次` 34.1 → 30.8 米，那是改钱）。
+            # `auto=False`：它不是系统推导出来的，且契约 R4（裁定 1「出现拼接时款式只能是单色」）
+            # 本就要求人工裁定 ⇒ 附上告知。
+            # ⚠️ 判据 10 仍由**下面唯一那个进位出口**保证：`plan.meters` 回填的就是同一个 `meters`。
+            _mode = plan_state["cutting_mode"] or cutting_mode or CUTTING_MODE_FIXED_HEIGHT
+            _p = derive_plan(
+                window_height=window_height,
+                fixed_height_meters=estimate["single_color_meters"],
+                door_width=fabric_width,
+                config=cfg,
+                style=style,
+            )
+            _splice = (
+                0 if _mode == CUTTING_MODE_FIXED_HEIGHT
+                else max(0, (panels if panels is not None else _p["panels"] or 1) - 1)
+            )
+            plan_state["plan"] = {
+                **_p,
+                "cutting_mode": _mode,
+                "panels": None if _mode == CUTTING_MODE_FIXED_HEIGHT else _splice + 1,
+                "splice_times": _splice,
+                "splice_option": splice_option_for(_splice),
+                "join_height_m": None,
+                "join_width_m": None,
+                "meters": None,   # ← 由下面唯一那个进位出口回填（与 `fabric_meters` 同源同一变量）
+                "auto": False,    # 拼色行：系统**没有**自动推导（款式与拼接冲突，需人工裁定）
+                "reason": (
+                    f"款式为「{STYLE_MIXED}」⇒ 本次用料按**拼色**每折吃布系数算"
+                    f"（纸表表头，用户 2026-09-19 裁定），**未走单色自动推导**；"
+                    f"按契约 R4（用户 2026-09-22 裁定 1「出现拼接时款式只能是单色」）"
+                    f"需人工裁定款式或门幅 —— 系统不静默改款式（款式影响钱）。"
+                ),
+                "notices": [
+                    *_p["notices"],
+                    f"款式为「{STYLE_MIXED}」：系统**不静默改款式**（款式影响钱）——"
+                    f"若确认要做拼接，请把款式改为单色后重算（R4）。",
+                ],
+            }
         if mounting == "s_hook":
             # issue #4118 ⑤-B：韩褶（s_hook）的**标准档口径是褶数法**，但褶数法只在显式传
             # `craft_tier` / `pleat_count` 时触发（`pleat_mode` 判据）⇒ 两者都缺时这里**静默**
@@ -1332,6 +1860,13 @@ def build_quote(
     #    由 tests 的值级锚点守卫（有意保留的口径缺口，非静默回落）。
     if formula_used != "roman_panel":
         meters = ceil_to_step(meters, cfg["meters_rounding_step"])
+
+    # ── 自动推导的 `plan`（issue #5201）：**米数单点** ──────────────────────────────
+    # 契约判据 10：`data.plan.meters` **必须等于** `data.fabric_meters`。
+    # 治法不是「两处各算一份再比对」（那正是判据要红的形态），而是**让它就是同一个变量** ——
+    # `plan.meters` 由上面**唯一那个进位出口**之后的值回填，`fabric_meters` 直接读它。
+    if plan_state["plan"] is not None:
+        plan_state["plan"]["meters"] = round(meters, 2)
 
     # 拼色**报价加价**（用户 2026-09-21 裁定，真值源 §10/§11）：`款式=拼色` ⇒ 该款**面料米数** × 单价。
     # ⚠️ 只在 `style == 拼色` 时计（**显式入参触发**）⇒ 不传 `style` 的既有调用/历史报价**逐值不变**
@@ -1446,6 +1981,12 @@ def build_quote(
         "cutting_mode": plan_state["cutting_mode"] or cutting_mode,
         "splice": plan_state["splice"],
         "door_width_reason": plan_state["reason"],
+        # ── 自动推导的工艺配置（issue #5201 = 母单 #5200 子单 A）：**键恒在** ──────────
+        # `None` = 本次调用**没走**三项输入通路（未接线口径逐值不变 ⇒ 回归不变量）；
+        # 非空时它是一个完整对象（契约 §四）：`cutting_mode` / `door_width` / `panels` /
+        # `splice_times` / `splice_option` / `join_height_m` / `join_width_m` / `meters` /
+        # `auto` / `reason` / `candidates` / `notices`。
+        "plan": plan_state["plan"],
         "auto_features": detect_auto_features(
             window_width=window_width,
             window_height=window_height,
