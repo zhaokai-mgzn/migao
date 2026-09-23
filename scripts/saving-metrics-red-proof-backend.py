@@ -3,16 +3,28 @@
 
 判据自身没有判别力（改了实现也不红）= 空断言。本脚本逐条注入、逐条复跑、逐条恢复，
 输出 `变异 → 预期红的用例 → 实测结果`。
+
+## 用法
+    python3 scripts/saving-metrics-red-proof-backend.py           # 实跑（需 Maven + JDK + PG 二进制）
+    python3 scripts/saving-metrics-red-proof-backend.py --check   # 前提自检（门禁调用的面；零副作用）
+
+退出码（实跑面）：`0` = 全部变异都被对应判据抓到且恢复后全绿；`1` = 有判据没有判别力 / 恢复不干净。
+退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 """
 import pathlib
 import shutil
 import subprocess
 import sys
+from functools import partial
+
+import red_proof_harness as h  # noqa: E402  #5193 门禁调用的是 --check 面（零 Maven/零副作用）
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAPPER = ROOT / "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java"
 DTO = ROOT / "backend/admin-api/src/main/java/com/migao/admin/dto/SavingMetricViews.java"
 SVC = ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java"
+TOOL_REL = "scripts/saving-metrics-red-proof-backend.py"
+TEST_DIR = "backend/admin-api/src/test/java/com/migao/admin/service/"
 
 MUTATIONS = [
     (
@@ -56,6 +68,23 @@ MUTATIONS = [
 ]
 
 
+def _probe(path, old: str, test: str, title: str) -> None:
+    """一条变异的前提探针（**只读**）：注入锚点命中 1 次 + 目标判据方法存在。"""
+    rel = path.relative_to(ROOT).as_posix()
+    h.require_anchor(h.read_source(rel, what=f"变异 [{title}] 的被测源码"), old,
+                     what=f"变异 [{title}] 的注入锚点")
+    cls, method = test.split("#")
+    h.require_method(h.read_source(f"{TEST_DIR}{cls}.java", what=f"变异 [{title}] 的判据源码"),
+                     method, what=f"变异 [{title}] 的目标判据")
+
+
+def check() -> int:
+    """前提自检（`--check`）：不注入、不跑判据、不写任何文件。"""
+    decls = [h.declare(title, test, partial(_probe, path, old, test, title))
+             for title, path, old, _new, test in MUTATIONS]
+    return h.report_and_exit(TOOL_REL, decls)
+
+
 def run(test):
     proc = subprocess.run(
         ["./mvnw", "-o", "-q", "test", "-Dtest=" + test, "-DfailIfNoTests=false"],
@@ -68,6 +97,8 @@ def run(test):
 
 
 def main():
+    if "--check" in sys.argv:
+        sys.exit(check())
     failures = []
     for title, path, old, new, test in MUTATIONS:
         original = path.read_text(encoding="utf8")

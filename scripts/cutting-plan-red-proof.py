@@ -10,6 +10,10 @@
 ## 用法
     python3 scripts/cutting-plan-red-proof.py            # 默认：跑全部变异，逐条打印
     python3 scripts/cutting-plan-red-proof.py --keep     # 保留变异后的源码（人工复核用）
+    python3 scripts/cutting-plan-red-proof.py --check    # 前提自检（门禁调用这个面；零 Maven/零副作用）
+
+退出码（实跑面）：`0` = 每条判据都「该条红、其余绿」；`1` = 有判据没有判别力；`2` = 被测文件有未提交改动。
+退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 
 ⚠️ 本脚本**只允许在 git 干净的工作区**跑（它写被测源码再还原）；`git status` 不干净时直接拒绝
 （防止把别人的未提交改动还原掉）。还原 = 写回原文，跑完自校验（`git diff` 必须为空）。
@@ -21,13 +25,19 @@ import re
 import shutil
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
+
+import red_proof_harness as h  # noqa: E402  #5193 门禁调用的是 --check 面（零 Maven/零副作用）
 
 REPO = Path(__file__).resolve().parents[1]
 JAVA_DIR = REPO / "backend" / "admin-api"
 SRC = JAVA_DIR / "src/main/java/com/migao/admin/service/CuttingPlanCalculator.java"
 TEST_CLASS = "CuttingPlanCalculatorTest"
 TEST_FQN = f"com.migao.admin.service.{TEST_CLASS}"
+TOOL_REL = "scripts/cutting-plan-red-proof.py"
+SRC_REL = SRC.relative_to(REPO).as_posix()
+TEST_REL = "backend/admin-api/src/test/java/com/migao/admin/service/CuttingPlanCalculatorTest.java"
 
 #: 判据方法 → 它钉的那一格（打印用）
 CRITERIA = {
@@ -99,6 +109,23 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
 ]
 
 
+def _probe(before: str, expect_red: set, name: str) -> None:
+    """一条变异的前提探针（**只读**）：注入锚点命中 1 次 + 每条期望判据都真的存在。"""
+    src = h.read_source(SRC_REL, what=f"变异 [{name}] 的被测源码")
+    test = h.read_source(TEST_REL, what=f"变异 [{name}] 的判据源码")
+    h.require_anchor(src, before, what=f"变异 [{name}] 的注入锚点")
+    for method in sorted(expect_red):
+        h.require_method(test, method, what=f"变异 [{name}] 的期望判据")
+
+
+def check() -> int:
+    """前提自检（`--check`）：不注入、不跑判据、不删编译产物、不写任何文件。"""
+    decls = [h.declare(name, "、".join(sorted(expect_red)),
+                       partial(_probe, before, expect_red, name))
+             for name, before, _after, expect_red, _sem in MUTATIONS]
+    return h.report_and_exit(TOOL_REL, decls)
+
+
 def run_git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True,
                           check=True).stdout
@@ -137,7 +164,11 @@ def run_test(method: str | None) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true", help="保留最后一次变异（人工复核）")
+    parser.add_argument("--check", action="store_true",
+                        help="只做前提自检（#5193 门禁调用的面）：零 Maven、零副作用、不注入")
     args = parser.parse_args()
+    if args.check:
+        return check()
 
     # 只关心**被测那两个文件**干不干净：本仓工作区常有与它无关的未跟踪文件
     # （PR body 草稿、构建产物），一刀切要求「整棵树干净」会让机具没法用。
