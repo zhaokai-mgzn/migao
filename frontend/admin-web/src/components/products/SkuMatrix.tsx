@@ -283,7 +283,9 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   const [batchScope, setBatchScope] = useState<BatchScope>('all')
   const [batchTarget, setBatchTarget] = useState<string>('')
   const [batchPrice, setBatchPrice] = useState('')
-  const [batchStock, setBatchStock] = useState('')
+  // issue #5237：库存草稿由共享 NumberInput 直接给 `number | null`（价格那条仍是 `string` +
+  // parseFloat，本单**不动**它 —— 它的精度本来就是对的，见测试「价格框逐值不变」）。
+  const [batchStock, setBatchStock] = useState<number | null>(null)
 
   const handleBatchFill = () => {
     if (skus.length === 0) {
@@ -291,7 +293,11 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const priceNum = batchPrice === '' ? null : parseFloat(batchPrice)
-    const stockNum = batchStock === '' ? null : parseInt(batchStock, 10)
+    // issue #5237：旧形态 `parseInt(batchStock, 10)` 把 `60.5` **静默截成 `60`** —— 丢 0.5 米，
+    // 无报错、无提示、无痕迹（截断发生在提交之前 ⇒ 后端收到的就是 `60`，无从察觉）。
+    // 库存值现在由共享 `NumberInput` 给：`decimals={1}` ⇒ 失焦按 1 位小数归一，
+    // 与列口径 `NUMERIC(12,1)`（V115 / #5063）同源。此处**不再自行解析**。
+    const stockNum = batchStock
     if (priceNum === null && stockNum === null) {
       toast.warning('请填写价格或数量')
       return
@@ -545,13 +551,17 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             </span>
           </div>
           <div className="relative">
-            <input
-              type="number"
+            {/* issue #5237：旧形态是裸 `<input type="number" step="1">` + `parseInt` ⇒ 输入
+                `60.5` 静默变 `60`。改用共享 NumberInput（`type="text"` + 字符串草稿，与 #5218
+                的订正段口径一致），`decimals={1}` 对齐列口径 `NUMERIC(12,1)` = 0.1 米粒度。
+                ⚠️ 单位文案仍是「件」：#5237 已把「库存到底按米还是按件」登记为**待用户裁定**项
+                （`docs/sql/schema.sql` 的列注释口径写的是「米」）⇒ 本单**只落数值精度、不擅改文案**。 */}
+            <NumberInput
+              min={0}
+              decimals={1}
               placeholder="数量"
-              min="0"
-              step="1"
               value={batchStock}
-              onChange={(e) => setBatchStock(e.target.value)}
+              onChange={setBatchStock}
               className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
@@ -688,9 +698,15 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                         <td className="px-3 py-2">
                           {/* issue #5198：同族形态（`sku?.stock || ''` + `parseInt(raw) || 0`）——
                               库存 0（无库存）是合法值，改前敲 "0" 会被清空。
-                              issue #5218 #2：`sku?.stock ? sku.stock : null` 同为新形态（0 falsy）⇒ 拆掉。 */}
+                              issue #5218 #2：`sku?.stock ? sku.stock : null` 同为新形态（0 falsy）⇒ 拆掉。
+                              issue #5237：缺 `decimals` ⇒ 取默认 2 位，而库存列口径是
+                              `stock NUMERIC(12,1)`（1 位 = 0.1 米粒度）⇒ 输入框邀请了一个后端
+                              `StockQuantity.requireOneDecimalOrNull` **必拒**（422）的值 ⇒ 补
+                              `decimals={1}`。同排价格格是 `decimals={2}`（对齐 `price DECIMAL(10,2)`）
+                              —— 两格**各按自己的列精度**，不互相「顺手统一」。 */}
                           <NumberInput
                             min={0}
+                            decimals={1}
                             placeholder="0"
                             value={
                               typeof sku?.stock === 'number' && Number.isFinite(sku.stock) ? sku.stock : null
