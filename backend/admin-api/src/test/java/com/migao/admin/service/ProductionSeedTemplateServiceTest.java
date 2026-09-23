@@ -9,14 +9,10 @@ import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionCraft;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionRouteTemplate;
-import com.migao.admin.entity.ProductionOptionFactor;
-import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
-import com.migao.admin.mapper.ProductionOptionFactorMapper;
-import com.migao.admin.mapper.ProductionOptionRoutingMapper;
 import com.migao.admin.mapper.ProductionRoutingMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,10 +66,6 @@ class ProductionSeedTemplateServiceTest {
     private ProductionOperationMapper productionOperationMapper;
     @Mock
     private ProductionRoutingMapper productionRoutingMapper;
-    @Mock
-    private ProductionOptionRoutingMapper productionOptionRoutingMapper;
-    @Mock
-    private ProductionOptionFactorMapper productionOptionFactorMapper;
     @Mock
     private ProductionOperationPriceVersionMapper priceVersionMapper;
     // ── 新结构（P2b，issue #4459 §1④）：开租必须种「默认路线 + 默认工艺」 ──
@@ -190,7 +182,7 @@ class ProductionSeedTemplateServiceTest {
         @BeforeEach
         void resetMappers() {
             reset(productionOperationMapper, productionRoutingMapper,
-                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper,
+                    priceVersionMapper,
                     productionRouteTemplateMapper, productionOperationPositionMapper,
                     productionRouteRuleMapper, productionCraftMapper);
             stubEmptyNewStructure();
@@ -284,10 +276,9 @@ class ProductionSeedTemplateServiceTest {
                     .toList())
                     .as("恰 3 条 processing_item 规则（花边/扣环/接高），`拼接`/`双眼皮` 刻意不建行")
                     .containsExactly("花边→花边@三边", "扣环→扣环@三边", "接高→接高@精裁");
-            // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删）
+            // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删；#5245 A4 起**表已 DROP**
+            // ⇒ 连可写入的对象都没有 —— 实体与 Mapper 已删，这条「不写」由编译期保证）
             verify(productionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionRouting>any());
-            verify(productionOptionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
-            verify(productionOptionFactorMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionFactor>any());
         }
 
         @Test
@@ -449,13 +440,9 @@ class ProductionSeedTemplateServiceTest {
                     org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
             verify(productionCraftMapper, times(1)).insert(
                     org.mockito.ArgumentMatchers.<ProductionCraft>any());
-            // 旧两表**不再写入**（P2b 起已退场）
+            // 旧两表**不再写入**（P2b 起已退场；#5245 A4 起表已 DROP、实体与 Mapper 已删）
             verify(productionRoutingMapper, never()).insert(
                     org.mockito.ArgumentMatchers.<ProductionRouting>any());
-            verify(productionOptionRoutingMapper, never()).insert(
-                    org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
-            verify(productionOptionFactorMapper, never()).insert(
-                    org.mockito.ArgumentMatchers.<ProductionOptionFactor>any());
         }
 
         @Test
@@ -490,7 +477,7 @@ class ProductionSeedTemplateServiceTest {
             // ② 复用跨租户的确定性 id（如 op-t42-1）⇒ 第二个租户的 id 与第一个相交（红）。
             GlobalKeyFakeStore store = new GlobalKeyFakeStore();
             store.wire(productionOperationMapper, productionRoutingMapper,
-                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper,
+                    priceVersionMapper,
                     productionRouteTemplateMapper, productionOperationPositionMapper,
                     productionRouteRuleMapper, productionCraftMapper);
 
@@ -547,8 +534,6 @@ class ProductionSeedTemplateServiceTest {
                     .contains(IndustryCodes.OTHER);
             verifyNoInteractions(productionOperationMapper);
             verifyNoInteractions(productionRoutingMapper);
-            verifyNoInteractions(productionOptionRoutingMapper);
-            verifyNoInteractions(productionOptionFactorMapper);
         }
 
         @Test
@@ -608,7 +593,6 @@ class ProductionSeedTemplateServiceTest {
 
         @SuppressWarnings("unchecked")
         void wire(ProductionOperationMapper opMapper, ProductionRoutingMapper rtMapper,
-                  ProductionOptionRoutingMapper optionMapper, ProductionOptionFactorMapper factorMapper,
                   ProductionOperationPriceVersionMapper priceMapper,
                   com.migao.admin.mapper.ProductionRouteTemplateMapper templateMapper,
                   com.migao.admin.mapper.ProductionOperationPositionMapper positionMapper,
@@ -682,8 +666,6 @@ class ProductionSeedTemplateServiceTest {
                 routings.put(rt.getId(), rt);
                 return 1;
             });
-            lenient().when(optionMapper.insert(any(ProductionOptionRouting.class))).thenReturn(1);
-            lenient().when(factorMapper.insert(any(ProductionOptionFactor.class))).thenReturn(1);
             when(priceMapper.insert(any(ProductionOperationPriceVersion.class))).thenReturn(1);
         }
 
@@ -755,27 +737,8 @@ class ProductionSeedTemplateServiceTest {
         return rows;
     }
 
-    private static List<ProductionOptionRouting> existingOptionRoutings() {
-        List<ProductionOptionRouting> rows = new ArrayList<>();
-        int i = 0;
-        for (String[] key : templateOptionRoutingKeys()) {
-            rows.add(ProductionOptionRouting.builder().id("opt-rt-" + (++i)).tenantId(TENANT)
-                    .optionName(key[0]).operationName(key[1]).afterOperation(key[2])
-                    .status("active").deleted(0).build());
-        }
-        return rows;
-    }
-
-    private static List<ProductionOptionFactor> existingOptionFactors() {
-        List<ProductionOptionFactor> rows = new ArrayList<>();
-        int i = 0;
-        for (String[] key : templateOptionFactorKeys()) {
-            rows.add(ProductionOptionFactor.builder().id("opt-fa-" + (++i)).tenantId(TENANT)
-                    .optionName(key[0]).operationName("NULL".equals(key[1]) ? null : key[1])
-                    .factor(new BigDecimal("1.7")).deleted(0).build());
-        }
-        return rows;
-    }
+    // （原 `existingOptionRoutings()` / `existingOptionFactors()` 两个夹具已随到期对象删除：
+    //   issue #5245 A4 把两张表连同实体一起退场，服务侧也不再写它们 ⇒ 夹具无对象可造。）
 
     /**
      * 模板里的工序名 / 路线键（**读真实模板文件**，不写死第二份清单 ——
@@ -803,19 +766,4 @@ class ProductionSeedTemplateServiceTest {
         return keys;
     }
 
-    private static List<String[]> templateOptionRoutingKeys() {
-        List<String[]> keys = new ArrayList<>();
-        templateJson().path("option_routings").forEach(node -> keys.add(new String[]{
-                node.path("option_name").asText(), node.path("operation_name").asText(),
-                node.path("after_operation").asText()}));
-        return keys;
-    }
-
-    private static List<String[]> templateOptionFactorKeys() {
-        List<String[]> keys = new ArrayList<>();
-        templateJson().path("option_factors").forEach(node -> keys.add(new String[]{
-                node.path("option_name").asText(),
-                node.path("operation_name").isNull() ? "NULL" : node.path("operation_name").asText()}));
-        return keys;
-    }
 }

@@ -121,11 +121,7 @@ class ProductionControllerTest {
     private ProductionOperationMapper productionOperationMapper;
     @Mock
     private ProductionRoutingMapper productionRoutingMapper;
-    /** 特殊选项两张表（issue #4230，V59）。 */
-    @Mock
-    private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
-    @Mock
-    private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    // （原「特殊选项两张表」的 @Mock 已随到期对象删除，issue #5245 A4。）
     @Mock
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @Mock

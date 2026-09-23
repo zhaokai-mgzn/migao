@@ -56,6 +56,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>红证（issue #4389）：把 V65 从迁移目录里挪走 / 把任一条 UPDATE 的旧名写错 ⇒
  * {@code erpRenamePatchIsLoadBearing} 红（有效状态与真值源不等）；把 {@code routing.py} 的键
  * 改回旧名而不动另两源 ⇒ 判据 1/3 红。</p>
+ *
+ * <p>🔴 <b>issue #5245 A4（2026-09-23 用户裁定）改判 —— 判据对象不变、断言不删</b>：
+ * 两张表已**物理删除**（{@code V126__drop_zombie_db_objects.sql}），建库脚本不再建表、
+ * 不再种子，Java 实体与 Mapper 一并退场。⇒ 本文件的「终态面」从 `schema.sql` 改判为
+ * <b>归档载体 + 已退场</b>（同 #5243 对守卫的改判口径），逐条：</p>
+ * <ol>
+ *   <li><b>迁移侧照旧</b>：{@code V59 ∪ V65}（归档、逐字节冻结）↔ {@code routing.py} 真值源
+ *       **逐行逐值**——这一半的承重判据一字未动；</li>
+ *   <li><b>bootstrap 终态</b>：「三源相等」→「两张表在**可执行 SQL** 里已不存在
+ *       （注释里的历史说明不算）+ 特殊选项规则的终态载体是 {@code production_route_rules}」；</li>
+ *   <li><b>结构判据</b>（{@code operation_name} 可空 / {@code COALESCE} 表达式索引 / 列齐备）
+ *       改判为对**归档的 V59** 成立；</li>
+ *   <li><b>实体 / Mapper</b>：改判为「**已删**」（本单「删干净」三面证明的第 ③ 面）。</li>
+ * </ol>
  */
 @DisplayName("特殊选项迁移契约 + 三源防漂移（V59 ∪ V65，issue #4230 / #4389）")
 class ProductionOptionRoutingMigrationTest {
@@ -97,6 +111,24 @@ class ProductionOptionRoutingMigrationTest {
     private static String read(String relative) throws Exception {
         return Files.readString(repoRoot().resolve(relative), StandardCharsets.UTF_8);
     }
+
+    /** 剥掉 `--` 行注释后的 SQL 正文（issue #5245 A4）。
+     *
+     * <p>终态判据必须看**可执行语句**：建库脚本里仍有大量注释在**说明**这两张表的历史
+     * （为什么删、谁在读），把注释算成「表还在」会得到一条**永远红**的判据（比没有守卫更糟）。</p>
+     */
+    private static String sqlCode(String sql) {
+        return sql.replaceAll("(?m)--[^\n]*", " ");
+    }
+
+    /** 已退场的两张表的建表/种子/实体/Mapper（issue #5245 A4 的「三面证明」③面）。 */
+    private static final List<String> RETIRED_TABLES =
+            List.of("production_option_routings", "production_option_factors");
+    private static final List<String> RETIRED_FILES = List.of(
+            "backend/admin-api/src/main/java/com/migao/admin/entity/ProductionOptionRouting.java",
+            "backend/admin-api/src/main/java/com/migao/admin/entity/ProductionOptionFactor.java",
+            "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionOptionRoutingMapper.java",
+            "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionOptionFactorMapper.java");
 
     // ── 改名补丁（issue #4389：按内容发现，新增改名迁移无需改本文件）──────────────────
 
@@ -292,30 +324,37 @@ class ProductionOptionRoutingMigrationTest {
     // ── 判据 ─────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("判据 1：迁移种子（V59 ∪ V65 改名）↔ bootstrap 终态 ↔ routing.py 三源逐行相等")
-    void seedMatchesTruthSourceAndBootstrap() throws Exception {
+    @DisplayName("判据 1：迁移种子（V59 ∪ V65 改名）↔ routing.py 逐行相等 + 终态「两表已退场」")
+    void seedMatchesTruthSourceAndTerminalState() throws Exception {
         Map<String, String[]> truth = truthRoutings();
         assertThat(truth).as("自检：真值源解析必须非空（否则本判据空转 = 假绿）").isNotEmpty();
 
         Map<String, String[]> migration = sqlRoutings(
                 read(MIGRATION), optionRenames().get("production_option_routings"));
-        Map<String, String[]> bootstrap = sqlRoutings(read(SCHEMA));
 
         assertThat(migration.keySet()).as("迁移种子必须与真值源**同一批选项**（改名/加减即红）")
                 .containsExactlyInAnyOrderElementsOf(truth.keySet());
-        assertThat(bootstrap.keySet()).as("bootstrap 终态必须与迁移同批").containsExactlyInAnyOrderElementsOf(truth.keySet());
 
         int order = 1;
         for (Map.Entry<String, String[]> entry : truth.entrySet()) {
             String option = entry.getKey();
             String[] expected = entry.getValue();
-            for (Map<String, String[]> source : List.of(migration, bootstrap)) {
-                assertThat(source.get(option)[0]).as("「%s」的条件工序", option).isEqualTo(expected[0]);
-                assertThat(source.get(option)[1]).as("「%s」的锚点工序", option).isEqualTo(expected[1]);
-            }
+            assertThat(migration.get(option)[0]).as("「%s」的条件工序", option).isEqualTo(expected[0]);
+            assertThat(migration.get(option)[1]).as("「%s」的锚点工序", option).isEqualTo(expected[1]);
             assertThat(migration.get(option)[2]).as("「%s」的 sort_order = 真值源字典序", option)
                     .isEqualTo(String.valueOf(order++));
         }
+
+        // ── 终态面（#5245 A4 改判）：建库脚本不再建表、不再种子；规则真值源已收口到规则表 ──
+        String code = sqlCode(read(SCHEMA));
+        for (String table : RETIRED_TABLES) {
+            assertThat(code).as("建库脚本仍建 %s —— #5245 A4 已裁定删表（V126 幂等 DROP）", table)
+                    .doesNotContain("CREATE TABLE IF NOT EXISTS " + table);
+            assertThat(code).as("建库脚本仍种 %s —— 种子必须随表退场（A4 明文）", table)
+                    .doesNotContain("INSERT INTO " + table);
+        }
+        assertThat(code).as("特殊选项规则的终态载体必须是 production_route_rules（P2b 收口）")
+                .contains("INSERT INTO production_route_rules");
     }
 
     @Test
@@ -367,13 +406,18 @@ class ProductionOptionRoutingMigrationTest {
         Set<String> pending = truthPendingOptions();
         assertThat(pending).as("自检：routing.py 必须显式登记待确认选项（否则判据空转）").isNotEmpty();
 
-        for (String sql : List.of(read(MIGRATION), read(SCHEMA))) {
-            for (String option : concat(nonPiecework, pending)) {
-                assertThat(sqlRoutings(sql)).as("「%s」不得落条件工序表", option)
-                        .doesNotContainKey(option);
-                assertThat(sqlFactorScopes(sql)).as("「%s」不得落系数表", option)
-                        .noneSatisfy(row -> assertThat(row[0]).isEqualTo(option));
-            }
+        // 迁移侧（归档载体，逐字节冻结）—— 判据一字未动
+        String migration = read(MIGRATION);
+        for (String option : concat(nonPiecework, pending)) {
+            assertThat(sqlRoutings(migration)).as("「%s」不得落条件工序表", option)
+                    .doesNotContainKey(option);
+            assertThat(sqlFactorScopes(migration)).as("「%s」不得落系数表", option)
+                    .noneSatisfy(row -> assertThat(row[0]).isEqualTo(option));
+        }
+        // 终态面（#5245 A4 改判）：两表在**可执行 SQL** 里已不存在 ⇒ 「落表」在终态上不可能发生
+        String code = sqlCode(read(SCHEMA));
+        for (String table : RETIRED_TABLES) {
+            assertThat(code).as("终态里仍有 %s ⇒ 退场没做完（#5245 A4）", table).doesNotContain(table);
         }
     }
 
@@ -389,10 +433,11 @@ class ProductionOptionRoutingMigrationTest {
         List<String[]> truth = truthFactorScopes();
         assertThat(truth).as("自检：真值源解析必须非空").isNotEmpty();
 
-        // 迁移侧：V59 的种子 + V65 的改名补丁（issue #4389）；bootstrap 侧是终态 ⇒ 不加补丁
+        // 迁移侧（归档 V59 ∪ V65 改名）：判据一字未动。
+        // 终态面（#5245 A4 改判）：表已退场 ⇒ 终态不再有该表的种子（系数档自 #4589 起本就已退场，
+        // 故终态**没有** `action='factor'` 的活跃行 —— 建库脚本只保留把它软删的收口语句）。
         List<List<String[]>> sources = List.of(
-                sqlFactorScopes(read(MIGRATION), optionRenames().get("production_option_factors")),
-                sqlFactorScopes(read(SCHEMA)));
+                sqlFactorScopes(read(MIGRATION), optionRenames().get("production_option_factors")));
         for (List<String[]> rows : sources) {
             assertThat(rows).as("系数行数必须与真值源档数相等").hasSameSizeAs(truth);
             for (int i = 0; i < truth.size(); i++) {
@@ -403,6 +448,11 @@ class ProductionOptionRoutingMigrationTest {
                         .isEqualByComparingTo(truth.get(i)[2]);
             }
         }
+        String code = sqlCode(read(SCHEMA));
+        assertThat(code).as("终态仍有 production_option_factors 的可执行引用 ⇒ 退场没做完")
+                .doesNotContain("production_option_factors");
+        assertThat(code).as("终态不得再种 `action='factor'` 行（#4589 起系数档已退场）")
+                .doesNotContain("'factor',");
         // §2.4 的逐工序细算档（车位 ×2.0 / 后道 ×1.0 / 裁剪 ×1.2）是**纯推算** ⇒ 不得出现在种子里。
         // 判据只看**解析出的种子行**（不看注释文本：注释里引用这些数字是为了说明"为什么不种"）。
         for (List<String[]> rows : sources) {
@@ -413,29 +463,29 @@ class ProductionOptionRoutingMigrationTest {
     }
 
     @Test
-    @DisplayName("判据 4：结构 —— operation_name 可空 + 唯一性走 COALESCE 表达式索引 + 三源列齐备")
+    @DisplayName("判据 4：结构对**归档 V59** 成立（operation_name 可空 + COALESCE 索引 + 列齐备）+ 终态「表与实体已删」")
     void tableShapeGuardsNullFlatScope() throws Exception {
+        // 结构判据改判为对**归档载体**（V59，逐字节冻结）成立 —— 断言一条不删
         String migration = read(MIGRATION);
-        String schema = read(SCHEMA);
-
-        for (String sql : List.of(migration, schema)) {
-            int at = sql.indexOf("CREATE TABLE IF NOT EXISTS production_option_factors");
-            assertThat(at).as("两张表都必须建出").isGreaterThanOrEqualTo(0);
-            String body = sql.substring(sql.indexOf('(', at), sql.indexOf("\n);", at));
-            assertThat(Pattern.compile("(?m)^\\s*operation_name\\s+VARCHAR\\(64\\),").matcher(body).find())
-                    .as("operation_name 必须**可空**（NULL = 该部位全部工序的平摊档）")
-                    .isTrue();
-            assertThat(body).as("列齐备：选项/工序/系数/来源").contains("option_name").contains("factor")
-                    .contains("source");
-        }
+        int at = migration.indexOf("CREATE TABLE IF NOT EXISTS production_option_factors");
+        assertThat(at).as("归档 V59 必须建出该表（历史的冻结证据）").isGreaterThanOrEqualTo(0);
+        String body = migration.substring(migration.indexOf('(', at), migration.indexOf("\n);", at));
+        assertThat(Pattern.compile("(?m)^\\s*operation_name\\s+VARCHAR\\(64\\),").matcher(body).find())
+                .as("operation_name 必须**可空**（NULL = 该部位全部工序的平摊档）")
+                .isTrue();
+        assertThat(body).as("列齐备：选项/工序/系数/来源").contains("option_name").contains("factor")
+                .contains("source");
         assertThat(migration).as("唯一性必须用 COALESCE 表达式索引（否则多行同平摊档 ⇒ 取值不确定）")
                 .contains("COALESCE(operation_name, '')");
-        // 三源列名收敛（Java 实体字段 ↔ 迁移列）
-        String routingEntity = read("backend/admin-api/src/main/java/com/migao/admin/entity/ProductionOptionRouting.java");
-        String factorEntity = read("backend/admin-api/src/main/java/com/migao/admin/entity/ProductionOptionFactor.java");
-        assertThat(routingEntity).contains("private String optionName;").contains("private String operationName;")
-                .contains("private String afterOperation;").contains("private Integer sortOrder;");
-        assertThat(factorEntity).contains("private String optionName;").contains("private String operationName;")
-                .contains("private BigDecimal factor;").contains("private String source;");
+
+        // 终态面（#5245 A4 改判）：建库脚本不再建表；实体与 Mapper 已删（「删干净」三面证明的第 ③ 面）
+        String code = sqlCode(read(SCHEMA));
+        for (String table : RETIRED_TABLES) {
+            assertThat(code).as("建库脚本仍有 %s 的可执行定义 ⇒ 退场没做完", table).doesNotContain(table);
+        }
+        for (String rel : RETIRED_FILES) {
+            assertThat(Files.exists(repoRoot().resolve(rel)))
+                    .as("%s 必须随表退场（#5245 A4：删实体/Mapper）", rel).isFalse();
+        }
     }
 }

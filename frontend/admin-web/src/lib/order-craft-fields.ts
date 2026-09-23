@@ -177,8 +177,10 @@ export function createDefaultCraftSpec(): CraftSpecInput {
  *
  * ⚠️ **选项名 = ERP 名，且它是 join key**（issue #4389 裁定 R-e）：本清单是**写侧** ——
  * 用户勾选的值经 `buildCraftSpec` 落进 `processingInfo.specialOptions`，服务端拿它去
- * `production_option_routings` / `production_option_factors.option_name` **逐字**匹配。
+ * `production_route_rules.trigger_value` **逐字**匹配（`trigger_kind='option'`）。
  * 与库侧差一个字 ⇒ 条件工序不加（**少做工**）。
+ * ⚠️ issue #5245 A4：旧载体 `production_option_routings` / `production_option_factors`
+ * 已**物理删除**（清僵尸对象）—— 别再按旧表名核对清单。
  * ⚠️ 其中「计件系数」那半已退场（issue #4589 用户裁定）：计件工资 = 数量 × 计件单价，
  * `OPTION_FACTOR_SCOPES` 自该单起**零消费**（保留仅为已发布迁移种子的真值源镜像）
  * ⇒ 选项名对不上**不再**影响工人到手金额。

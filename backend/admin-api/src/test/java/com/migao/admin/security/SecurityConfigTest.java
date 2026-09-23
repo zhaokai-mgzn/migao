@@ -361,11 +361,9 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProductionOperationMapper productionOperationMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionRoutingMapper productionRoutingMapper;
-    // 特殊选项两张表（issue #4230，V59）：同族 —— 没有 sqlSessionFactory，必须在此 mock
-    @MockBean
-    private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
-    @MockBean
-    private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    // （原「特殊选项两张表」的 @MockBean 已随到期对象删除：issue #5245 A4 把
+    //  `production_option_routings` / `production_option_factors` 连同实体与 Mapper 一起退场，
+    //  `@MapperScan` 再也扫不到它们 ⇒ 不必 mock。）
     @MockBean
     private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
     @MockBean

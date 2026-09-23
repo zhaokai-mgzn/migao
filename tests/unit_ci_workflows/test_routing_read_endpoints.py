@@ -42,6 +42,11 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+
+# 共享解析件（issue #5245）：建库脚本 DDL 解析**只有一份实现**（`_sql_schema.py`）
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._sql_schema import parse_created_tables  # noqa: E402
 CONTROLLER = REPO / "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java"
 SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java"
 #: 收敛实现的**唯一**出处（issue #4883 去部位化）：读面 / 实例化 / 补价三处共用它。
@@ -474,6 +479,15 @@ def test_never_reads_retired_rule_tables():
     src = _java_code(SERVICE)
     for table in ("production_option_routings", "production_option_factors"):
         assert table not in src, f"服务层出现了旧表名 `{table}`（只读新表）"
+    # 🔴 判据升级（issue #5245 A4，**语义变强不是放宽**）：改前是「旧两表已退役（软删、无读）」，
+    # 现在是「**已不存在**（物理删）+ 仍然零读」—— 表都没了还读它，是编译不过 / 运行时
+    # `relation does not exist`；而「不读」也不再依赖人记得（对象已不存在）。
+    # 判据三件套（由 `tests/unit_ci_workflows/test_dropped_db_objects.py` 独立复核）：
+    tables = parse_created_tables()
+    for table in ("production_option_routings", "production_option_factors"):
+        assert table not in tables, (
+            f"建库脚本仍在建 `{table}` ⇒ issue #5245 A4 的删表没做完"
+            f"（注释里提到不算：本判据看**解析后的 DDL**）")
 
 
 # ══════════════════════════════════════════════════════════════════════════════════

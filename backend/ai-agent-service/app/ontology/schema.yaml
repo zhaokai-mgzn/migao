@@ -375,11 +375,20 @@ objects:
         required: false
         source: "AfterSalesTicket.ticketType"
         description: 售后工单类型（合法值 refund/exchange/repair/complaint/other；DB 列 ticket_type）
+      # 🔴 2026-09-23 改判（issue #5245 B7 的机械对账**当场照出的第 4 处幽灵挂载点**，
+      # B1/B2/B3 逐条清漂移时漏了它）：原 `source: "AfterSalesTicket.reason"` **不成立** ——
+      # `AfterSalesTicket.java` 没有 `reason` 字段、`after_sales_tickets` 表也没有 `reason` 列。
+      # 真实载体 = **`description`**（Java `AfterSalesTicket.description` ↔ DB
+      # `after_sales_tickets.description`；写路径见 `AfterSalesTicketService` 的
+      # `setDescription(request.getReason())`）—— Agent/DTO 侧参数叫 `reason`，实体列叫
+      # `description`，两者**不是**同一个词，这正是它容易被写错的原因。
+      # 属性名保留 `reason`：`PropertyDef.name` 的口径是「对齐 Agent 侧语义」，而 Agent 侧
+      # （app/tools/after_sales_manage.py 的必填参数）逐字就是 `reason`；本处只改**挂载点**。
       reason:
         type: string
         required: false
-        source: "AfterSalesTicket.reason"
-        description: 售后原因
+        source: "AfterSalesTicket.description"
+        description: 售后原因（Agent/DTO 参数名 reason；真实载体是实体字段 description / DB 列 description）
       refund_amount:
         type: decimal
         required: false

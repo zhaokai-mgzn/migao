@@ -8,7 +8,7 @@ import com.migao.admin.entity.FabricRemnant;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProductionOperation;
-import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.RemnantItemSize;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
@@ -17,7 +17,7 @@ import com.migao.admin.mapper.FabricRemnantMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
-import com.migao.admin.mapper.ProductionOptionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -134,7 +134,7 @@ public class RemnantService {
     private final StockBatchMapper stockBatchMapper;
     private final StockBatchConsumptionMapper consumptionMapper;
     private final ProductionOperationMapper operationMapper;
-    private final ProductionOptionRoutingMapper optionRoutingMapper;
+    private final ProductionRouteRuleMapper routeRuleMapper;
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
 
@@ -301,7 +301,7 @@ public class RemnantService {
                         "小件 " + key + " 的用料尺寸必须为正数（length_m / width_m 都要填）");
             }
             // 🔴 键必须是**本租户工序库里真有的工序名**：匹配的触发链是
-            // 「特殊选项 → 条件工序（production_option_routings）→ 按工序名查尺寸表」，
+            // 「特殊选项 → 条件工序（production_route_rules，`trigger_kind='option'`）→ 按工序名查尺寸表」，
             // 打错一个字 ⇒ 这张尺寸行**永远不会被命中**（静默失效 —— 配了却像没配）。
             // 在这里当场拒绝，是把「配了不生效」变成「配的时候就告诉你」的唯一便宜办法。
             String operationName = operationNameOf(tenantId, key);
@@ -349,9 +349,14 @@ public class RemnantService {
      * 为一张订单明细行里的**小件需求**匹配可用余料。
      *
      * <p>小件需求**不另造口径**：来自该行勾选的特殊选项，经
-     * {@code production_option_routings}（特殊选项 → 条件工序的**既有唯一真值源**，
-     * 与工序实例化读的是同一张表）解析成工序名集合；再用工序名去查小件尺寸表
-     * （「配置即启用」：有尺寸行 ⇒ 该小件启用余料匹配）。</p>
+     * {@code production_route_rules}（`trigger_kind='option'` + `action='insert'` —— 特殊选项 →
+     * 条件工序的**唯一真值源**，与工序实例化读的是同一张表）解析成工序名集合；再用工序名去查
+     * 小件尺寸表（「配置即启用」：有尺寸行 ⇒ 该小件启用余料匹配）。</p>
+     *
+     * <p><b>issue #5245 A4 改判（修一个静默失效）</b>：本方法原读旧表
+     * {@code production_option_routings}，而自 V73（#4459 P2b）起该表活跃行已软删为 0
+     * ⇒ 这里**恒返回空集合** ⇒ 余料小件匹配静默失效（配了等于没配）。改读规则表后，
+     * 「选项 → 工序」与工序实例化**同源**；旧两表已由 `V126__drop_zombie_db_objects.sql` 删除。</p>
      *
      * @param batchNo 该行实际领料的批次号（决定缸号与颜色）；为空 ⇒ 从**批次消耗台账**里按
      *                {@code order_item_id} 反查最近一次扣减（台账本来就记着「这一行从哪一批裁」）
@@ -476,19 +481,48 @@ public class RemnantService {
                 .last("LIMIT 1"));
     }
 
-    /** 该行的小件需求：特殊选项 → 工序名（既有唯一真值源 {@code production_option_routings}），保序去重。 */
+    /** 该行的小件需求：特殊选项 → 工序名（唯一真值源 {@code production_route_rules}），保序去重。
+     *
+     * <p>过滤条件与工序实例化同口径：{@code trigger_kind='option'}（特殊选项触发）、
+     * {@code action='insert'}（插入工序；{@code remove}/{@code factor} 不是小件需求）、
+     * {@code status='active'} + {@code deleted = 0}（**显式**写「不限软删行」——与全局
+     * {@code logic-delete-field: deleted} 的 {@code @TableLogic} 双保险，同
+     * `ProductionRoutingReadService` 的读面口径：判据要能脱离框架配置被静态断言/真库行使）；
+     * 顺序取 {@code priority}
+     * <b>升序</b>（= 规则生效顺序）—— 旧表靠 DB 返回序，那是不确定顺序。</p>
+     *
+     * <p><b>🔴 issue #5245 A4：这里修的是一个「自 P2b 起静默失效」，不是一次口径创新。</b>
+     * 原实现读 {@code production_option_routings}（{@code status='active'}）。而
+     * {@code V73__retire_legacy_option_rule_tables.sql} 把该表活跃行**全部软删**，且它的头部
+     * 逐字写明了本仓的设计规则：<i>「软删必须与『消费路径切到新结构』同一 PR 原子发布」</i>
+     * —— 否则「条件工序不会插入 / 计件系数退回 1.0」。P2b（#4459）切换了三个消费服务、
+     * <b>漏了本类</b> ⇒ 自 V73 起 {@code selectList} 恒返回空集合 ⇒ 余料小件匹配
+     * {@link #match} 一直匹配不到任何需求项（配了等于没配，且不报错 —— 最难发现的失效形态）。
+     * 改读规则表 = 把 #4459 漏掉的那一处补齐，与工序实例化**同源**；
+     * 旧两表随后由 {@code V126__drop_zombie_db_objects.sql} 物理删除。</p>
+     *
+     * <p>⚠️ 残留问题（不在本单射程，已登记）：{@code production_route_rules} 是否就是「小件需求」的
+     * <b>终态</b>真值源（是否还有第三处历史语义需要合并）见 <b>issue #5274</b>。</p>
+     */
     private Map<String, List<String>> requiredItems(Long tenantId, List<String> options) {
         Map<String, List<String>> byItemKey = new LinkedHashMap<>();
         if (options.isEmpty()) {
             return byItemKey;
         }
-        for (ProductionOptionRouting routing : optionRoutingMapper.selectList(
-                new LambdaQueryWrapper<ProductionOptionRouting>()
-                        .eq(ProductionOptionRouting::getTenantId, tenantId)
-                        .eq(ProductionOptionRouting::getStatus, "active")
-                        .in(ProductionOptionRouting::getOptionName, options))) {
-            byItemKey.computeIfAbsent(routing.getOperationName(), k -> new ArrayList<>())
-                    .add(routing.getOptionName());
+        for (ProductionRouteRule rule : routeRuleMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouteRule>()
+                        .eq(ProductionRouteRule::getTenantId, tenantId)
+                        .eq(ProductionRouteRule::getDeleted, 0)
+                        .eq(ProductionRouteRule::getStatus, "active")
+                        .eq(ProductionRouteRule::getTriggerKind, "option")
+                        .eq(ProductionRouteRule::getAction, "insert")
+                        .in(ProductionRouteRule::getTriggerValue, options)
+                        .orderByAsc(ProductionRouteRule::getPriority))) {
+            if (!StringUtils.hasText(rule.getOperation())) {
+                continue;   // `insert` 行按 CHECK 必有 operation；空值只可能来自坏数据 ⇒ 不造 null 键
+            }
+            byItemKey.computeIfAbsent(rule.getOperation(), k -> new ArrayList<>())
+                    .add(rule.getTriggerValue());
         }
         return byItemKey;
     }

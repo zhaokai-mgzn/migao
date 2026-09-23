@@ -186,12 +186,16 @@ SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
 # 用户裁定（2026-09-19，issue #4589）：「计件工资 = **数量 × 计件单价**，不需要考虑系数」
 # ⇒ `factor_for()` 已删除、工序实例**不再带 `factor` 键**，本表**没有任何读者**。
 #
-# ⚠️ **为什么不连表一起删**：本表是 **V59/V72 已发布迁移种子**（`production_option_factors`
-# 的「一分为二 ⇒ ×1.7」，V72 搬进 `production_route_rules` 的 `action='factor'` 行）与
-# `backend/admin-api/src/main/resources/db/init/schema.sql` bootstrap 终态的**真值源镜像** —— 三源收敛守卫
-# （`tests/unit_ci_workflows/test_production_catalog_seed.py`）按它逐值比对**已发布**迁移。
-# 删表 = 删守卫（守卫只能靠删断言才绿 ⇒ 停手信号）。数据侧由新迁移**软删**那批活跃行
-# （`deleted=1`，留痕），列本身保留（历史工序实例快照 / 历史报工上的值是当时工资的证据）。
+# 🔴 **2026-09-23 改判（issue #5245 A4，用户裁定）**：原句「为什么不连表一起删」（理由是
+# 「删表 = 删守卫」）已**不成立** —— 承载它的 `production_option_factors` 表与
+# `production_option_routings` 表已由 `V126__drop_zombie_db_objects.sql` **物理删除**
+# （清僵尸对象：V73 只软删了行、表仍在，那是「历史行 + 零消费者」的形态）。
+# 本表**保留**，身份随之改判：它是**历史真值源镜像**（V59/V72 已发布迁移种子的逐值来源），
+# 不再与任何终态表比对 —— 收敛守卫已改判到**归档载体**（V59 ∪ V65，逐字节冻结）+
+# 终态「两表已不存在」（`tests/unit_ci_workflows/test_production_catalog_seed.py` 的
+# 「已退场收敛面」段与 `tests/unit_ci_workflows/test_dropped_db_objects.py`）。
+# 系数本身自 #4589 起已从算法里退场（计件工资 = 数量 × 计件单价），列
+# `production_route_rules.factor` 与历史快照列保留（当时工资的证据）。
 #
 # 档位字段（仅历史语义）：`factor` 系数 / `operation_name` 限定工序（`None` = 全部工序）/
 # `curtain_type` 限定部位（`None` = 不限）/ `source` 实证·推算。
