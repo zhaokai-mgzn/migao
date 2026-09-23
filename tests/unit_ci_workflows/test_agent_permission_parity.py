@@ -516,6 +516,13 @@ TOOL_MENU_NODE: dict[str, str] = {
     "production_worklog_query": "生产看板",
     "piecework_query": "计件工资",
     "knowledge_search": "知识库",
+    # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
+    "stock_ledger_query": "商品列表",            # product:list
+    "inbound_order_query": "入库单",             # inbound:view
+    "operation_catalog_query": "工艺配置",       # 端点方法级 processing:manage（#5247 新增，收窄）
+    "briefing_query": "每日简报",                # dashboard:view
+    "craft_calc_config_query": "工艺配置",       # processing:manage（生产域无专属读码）
+    "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
 }
 
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：
@@ -539,7 +546,10 @@ PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
 #: 纯本地工具（**无任何 admin-api HTTP 调用点** ⇒ 没有可对账的端点码）。
 #: 与「实际解析出的无调用点工具集」必须**双向相等**（陈旧条目也红）。
 LOCAL_ONLY_TOOLS: dict[str, str] = {
-    "validate_input": "纯本地入参校验：不读库不写库；双端都要用（#4147 G1b 的 `allowed_roles=[\"*\"]`）",
+    # issue #5247：`validate_input` **退出本表** —— 它是写操作的前置校验，B 端只读化后
+    # 已从全部 8 个 skill 解绑（绑着它就会把「skill 校验自己执行不了的写工具」重新引入，
+    # 正是 A5 账本要治的形态）⇒ 它不再是「B 端可达且无调用点」的工具（C 端仍绑，见
+    # `tests/test_skill_tool_reachability.py` 的 A5 域闸门）。
     "interact": "纯本地交互卡构造（confirm/choice/form 的载荷生成）：无 admin-api 调用点",
 }
 
@@ -548,7 +558,15 @@ READ_CODE_ACTIONS = frozenset({"view", "list", "detail", "session"})
 
 #: 读写码冲突的**具名例外**（判据 5）：每条必须带理由 + 建议修法；条目陈旧（不再冲突）也红。
 READ_WRITE_EXCEPTIONS: dict[str, str] = {
-    # ⚠️ 只读工具却持**管理码**的**唯一**残留：生产域**没有可用的读码** ——
+    # issue #5247（B 端只读化）：两个工具只读化后**新进入**本表 —— 它们是「域内没有读码」
+    # 的同一个病（读端点与写端点同码），不是本单新造的粒度债，逐条登记 + 建议修法：
+    "category_manage": "只读化后只剩 `tree`（`GET /api/admin/categories/tree`），而商品域**没有分类读码** —— "
+                       "`CategoryController` 整类（含读端点）都是 `@RequirePermission(\"product:category\")`。"
+                       "建议：新增分类读码并把读端点迁过去（产品裁定，本单不动节点/岗位矩阵）。",
+    "role_manage": "只读化后只剩 list/all/detail/list_permissions，而 `GET /api/admin/permissions`（权限目录）"
+                   "挂在 `system:manage` 上 —— 岗位权限域**没有读码**。"
+                   "建议：为权限目录新增读码（如 `system:view`）并与「岗位权限」节点同批迁移。",
+    # ⚠️ 只读工具却持**管理码**的**既有**残留：生产域**没有可用的读码** ——
     # `processing:view` 在任一处菜单源里都没有节点（「生产看板/计件工资/工艺配置」的节点码
     # 都是 `processing:manage`）⇒ 若让工具持 `processing:view`，就等于允许"页面里看不到、
     # Agent 却查得到"（用户裁定禁止）。用户裁定：**不得改节点码、不得给岗位新增权限**
@@ -561,6 +579,12 @@ READ_WRITE_EXCEPTIONS: dict[str, str] = {
     "production_progress_query": "同『生产看板』节点码。建议：同上",
     "production_worklog_query": "同『生产看板』节点码。建议：同上",
     "piecework_query": "节点『计件工资』= `processing:manage`。建议：同上",
+    "operation_catalog_query": "工序库/路线读端点（`ProductionController` 的方法级 `processing:manage`）所在域无读码 ⇒ "
+                                "只读工具持管理码；与生产域其它读工具同因。建议：为生产域设计真读码",
+    "processing_order_set_query": "加工套件读面（`ProcessingOrderSetController` 三个读端点）与加工单读面同码"
+                                "`processing:manage`（生产域无专属读码）。建议：为生产域设计真读码",
+    "craft_calc_config_query": "算料配置读端点（`CraftCalcConfigController` 类级 `processing:manage`）所在域无读码 ⇒ "
+                               "只读工具持管理码；与生产域同因（#5247 新增只读面时一并登记）。建议：为生产/算料域设计真读码",
 }
 
 #: 未注解端点的**显式登记**（判据 8；键 = `verb 归一化路径` 或 `verb /前缀*`）。
@@ -1268,14 +1292,25 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _add_allowed_roles(s, '["admin", "customer"]'),
             problems_role_list_hygiene,
         ),
-        "③ 岗位拿到写码却没有该页读码（finance += employee:create）⇒ 判据 4 红": (
+        "③ 岗位拿到页内写码却没有该页读码（finance += product:category）⇒ 判据 4 红": (
+            # 锚点口径（issue #5247 改判）：注入的码**必须是「某个 B 端可达工具仍声明的码」**
+            # —— 判据 4 只看 `declared`（B 端工具声明的码）∩ 岗位权限。
+            # 原锚 `employee:create` 在 #5247 收窄 `employee_manage` 后**不再被任何 B 端工具声明**
+            # ⇒ 判据 4 恒不报（红证空转，由 `test_every_judgement_can_go_red` 抓到，故改锚）。
+            # 现锚 `product:category`：由只读工具 `category_manage` 声明，且经 `PAGE_WRITE_CODES`
+            # 归属「商品列表」页 —— 财务岗没有 `product:list`（该页读码）⇒ 「拿得到、看不见」成立。
             "java:service/RegistrationService.java",
-            lambda s: _add_role_code(s, "financeRole", "employee:create"),
+            lambda s: _add_role_code(s, "financeRole", "product:category"),
             problems_leakage,
         ),
         "③b 码没有任何菜单节点（改掉『售后工单』节点码）⇒ 判据 4 红": (
+            # 锚点口径（issue #5247 改判）：**被改的节点码必须是「某个 B 端可达工具仍声明的码」**，
+            # 否则判据 4 连这个码都不看（原锚改成的 `order:refund` 随 `after_sales_manage`
+            # 收窄而退出 B 端声明面 ⇒ 注入变空断言）。现锚改成的 `order:list` 仍是 B 端声明码
+            # （`order_query`/`logistics_track`），且改完后 `after_sales:view` 在四处菜单源里
+            # **一个节点都没有** ⇒ 「Agent 查得到、页面里看不到」成立。
             "menu:frontend",
-            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:refund'", 1),
+            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:list'", 1),
             problems_leakage,
         ),
         "④ 只改一处菜单源的节点码 ⇒ 判据 3 红": (
@@ -1317,13 +1352,21 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: s.replace('"knowledge:view"', '"knowledge:view-typo"', 1),
             problems_self_checks,
         ),
-        "⑩ 写端点退回读码（order:update → order:list）⇒ 判据 2 红": (
-            # issue #5246 第二批的回归形态：把拆出来的写码改回读码 ⇒ 工具码与端点码立刻不等
-            # 必须挑**工具真调用的那个端点**：`order_manage` 只调 `AgentOrderController.PATCH /{id}`
-            # （改 `OrderController` 的注解不会碰到任何工具的端点 ⇒ 判据 2 依然绿 = 红证空转）。
-            "java:controller/agent/AgentOrderController.java",
-            lambda s: s.replace('@RequirePermission("order:update")',
-                                '@RequirePermission("order:list")', 1),
+        "⑩ 读端点被改挂写码（after_sales:view → order:refund）⇒ 判据 2 红": (
+            # 唯一口径（issue #5247 改判）：**必须挑「某个 B 端可达工具真调用的端点」** ——
+            # 判据 2 只对 `_coded_b_end`（B 端 skill 并集里的已编码工具）生效，挑一个
+            # **没有任何 B 端 skill 绑定**的工具的端点 ⇒ 判据 2 依然绿 = 红证空转。
+            # 实测踩过（同一处注入、两次失效）：
+            #   ① 改 `OrderController`（人工表单端点）⇒ 不是任何工具的端点；
+            #   ② 改 `AgentOrderController.PATCH /{id}`（issue #5246 的原锚，当时 `order_manage`
+            #      还在 B 端）⇒ **#5247 把 `order_manage` 从 B 端解绑后本注入随即变成空断言**
+            #      （`test_every_judgement_can_go_red` 立刻抓到，故本次改锚）。
+            # 现锚 = `AfterSalesController` 的**读**端点 `GET /api/admin/after-sales`
+            # （`after_sales_manage` 仍绑 B 端且仍调它）；把它的码改成写码后
+            # 「工具码 ≡ 端点生效码」立刻不等 —— 形态 = 读面被挂写码（持读码者被假拒绝）。
+            "java:controller/AfterSalesController.java",
+            lambda s: s.replace('@RequirePermission("after_sales:view")',
+                                '@RequirePermission("order:refund")', 1),
             problems_endpoint_parity,
         ),
         "⑪ 目录删掉新写码（customer:create）⇒ 两处目录不同步 ⇒ 判据 9 红": (
@@ -1331,9 +1374,15 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: s.replace('"customer:create"', '"customer:create-typo"', 1),
             problems_self_checks,
         ),
-        "⑫ 岗位只拿到写码、没有该页读码（operator 去掉 customer:view）⇒ 判据 4 红": (
+        "⑫ 岗位只拿到页内写码、没有该页读码（operator 去掉 product:list）⇒ 判据 4 红": (
+            # 锚点口径（issue #5247 改判）：被删的**读**码必须与一个**仍在 B 端声明面里**的
+            # 页内写码同页 —— 原锚删 `customer:view` 靠的是 `customer:create`（随
+            # `customer_manage` 收窄退出声明面 ⇒ 注入变空断言）。
+            # 现锚：operator 同时持 `product:list`（读）与 `product:category`（页内写码）
+            # ⇒ 删掉读码后它仍能用 `category_manage` 查分类，但「商品列表」页要的
+            # `product:list` 它没有 = 「Agent 做得到、页面里看不到」。
             "java:service/RegistrationService.java",
-            lambda s: _drop_role_code(s, "operatorRole", "customer:view"),
+            lambda s: _drop_role_code(s, "operatorRole", "product:list"),
             problems_leakage,
         ),
         "⑨ 有人删掉一个 @RequirePermission ⇒ 端点变成未登记的无码端点 ⇒ 判据 8 红": (

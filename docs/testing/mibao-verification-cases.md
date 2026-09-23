@@ -2028,7 +2028,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（20 case）
+## 杂项域（21 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2269,6 +2269,20 @@
 跳过: [backend-contract] 红证机具的判决语义由 pytest 静态判据 + 注入式红证（含真跑 run_evidence 夹具）验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5242，P1，与 #5216 同族的另一半）：机具用裸退出码判「判据有判别力」⇒ 编译失败 / 环境事故被读成「变异被抓到了」。修法 = 证据闸（stdout 面，`-q` 会吞掉证据故一并去掉）+ 三态出口（exit 3 = 无法判定），并把「不许只用裸 returncode 判判别力」做成机械判据（四条注入式红证 + 对 run_evidence 喂夹具真跑）。同批修 web（npm/vitest）那半。取号 MC-020：main 上 MC-001~MC-019 已占用，MC-020 在 main 与全部在飞分支上均未占用。 ｜ tags: ci, red-proof, mutation_testing, fail-closed
+
+### MC-021. B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动 🔵
+```
+你: 把 order_create / product_manage / validate_input 等写工具重新绑回任一 B 端 skill，或把某个 B 端工具的 read_only 改回 False，或让 mibao 的能力文案重新承诺「创建商品」时，必须有东西变红
+期望: direct_reply
+数据: 判据 1（L0）：mibao 的 skill 并集（`skill_names` + `fallback_skill`）里**每个**工具都必须 `read_only = True`，且不得有悬空绑定（绑了不存在的工具名 ⇒ 红）
+数据: 判据 2（L0）：写能力工具**一个都不得绑在 B 端**——具名清单 11 个（order_create / order_manage / product_manage / product_update / sku_update / processing_item_manage / processing_order_generate / processing_order_update / settings_manage / notification_manage / validate_input）
+数据: 判据 3（L0）：B 端可达工具的 `VALID_ACTIONS` ⊆ 其 `read_only_actions`；另有**写 action 闭词表**兜底（把写 action 挪进 read_only_actions 洗白也红）
+数据: 判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「米宝不做这类操作」不算谎报）
+数据: 判据 5（边界）：与 C 端共享的 8 个工具（order_create / validate_input / interact / knowledge_search / processing_item_query / product_search / product_detail / production_progress_query）必须**仍然存在**且**仍被 C 端 skill 绑定** —— 「只解绑 B 端、绝不删除、C 端零改动」是用户裁定的硬边界
+数据: 红证（九条注入**各能单独变红**）：① order_create 绑回 order skill ①b settings_manage 绑回 product skill ② 工具 read_only 改回 False ②b 悬空绑定 ③ 塞回写 action ③b 把写 action 挪进 read_only_actions 洗白 ④ capabilities 注入「我可以帮您创建商品」④b greeting 注入写能力承诺 ⑤ 摘掉共享工具的 C 端绑定 ⇒ 对应判据逐条变红
+跳过: [backend-contract] B 端只读化是源码静态事实（工具声明 / skill 绑定 / 能力文案），由零依赖 pytest 静态判据 + 九条注入式红证验证（tests/unit_ci_workflows/test_mibao_b_end_readonly.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-24 新增（issue #5247，P4，用户裁定 2026-09-23 B 端只读化）：三处文件族的联合事实此前无人对账（工具 read_only / skill 绑定 / 能力文案），任一处回退都静默。落码 = 五条判据 + 九条注入式红证；同时登记「共享工具只解绑不删除」「C 端零改动」两条硬边界。取号 MC-021：main 上 MC-001~MC-020 已占用。 ｜ tags: ci, permission, readonly, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -6251,8 +6265,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：459（活跃 159，跳过 300）
-- tier 分布：smoke 10 / normal 418 / adversarial 31
+- 用例总数：460（活跃 159，跳过 301）
+- tier 分布：smoke 10 / normal 419 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6266,7 +6280,7 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：20
+- 杂项域：21
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：46
@@ -6311,6 +6325,7 @@
 - MC-018: 红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因）
 - MC-019: 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）
 - MC-020: 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）
+- MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

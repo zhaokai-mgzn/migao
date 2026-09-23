@@ -74,6 +74,12 @@ from app.tools.piecework_query import PieceworkQueryTool
 from app.tools.production_worklog_query import ProductionWorklogQueryTool
 from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
 from app.tools.batch_stock_query import BatchStockQueryTool
+from app.tools.stock_ledger_query import StockLedgerQueryTool
+from app.tools.inbound_order_query import InboundOrderQueryTool
+from app.tools.operation_catalog_query import OperationCatalogQueryTool
+from app.tools.briefing_query import BriefingQueryTool
+from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 
 __all__ = [
     # 基础设施 + 注册器

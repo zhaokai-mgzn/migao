@@ -102,15 +102,21 @@ intent_ownership:
   # ── 设置域 ──
   system_settings:
     route_key: settings
-    agents: [mibao, xiaobu]
+    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    agents: [xiaobu]
     description: 系统设置
   ai_config:
     route_key: settings
-    agents: [mibao, xiaobu]
+    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    agents: [xiaobu]
     description: AI 配置
   notification:
     route_key: settings
-    agents: [mibao, xiaobu]
+    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    agents: [xiaobu]
     description: 通知管理
   # ── 数据域 ──
   dashboard:

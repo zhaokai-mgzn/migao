@@ -12,7 +12,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"list", "detail", "update", "add_tag", "remove_tag", "list_tags", "create_tag", "update_tag", "delete_tag"}
+VALID_ACTIONS = {"list", "detail", "list_tags"}
 
 # 客户档案可写字段（单一事实源 = admin-api CustomerProfile 列 ∩ CustomerService.updateCustomer
 # 的非空拷贝白名单）。写路径只允许下发这些 key，其余一律显式报错——禁止原样透传后由 admin-api
@@ -78,20 +78,19 @@ class CustomerManageTool(BaseTool):
     name = "customer_manage"
     description = (
         "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。"
-        "【参数】action 必填：list/detail/list_tags 只读；update/add_tag/remove_tag/create_tag/"
-        "update_tag/delete_tag 为写操作。list 可按 keyword(名称/手机号) 搜索；"
-        "detail/update/打标签需 customer_id（32 位 UUID，先 list 查出真实 UUID，禁止传手机号）；"
-        "update 的 data 只接受客户档案真实字段（见 schema）。"
+        "【参数】action 必填：**只有 list / detail / list_tags 三个只读 action**（B 端已只读化，issue #5247）。"
+        "list 可按 keyword(名称/手机号) 搜索；detail 需 customer_id（32 位 UUID，先 list 查出真实 UUID，"
+        "禁止传手机号）；list_tags 列出全店客户标签。"
         "【反例】查客户的历史订单用 order_query(keyword=XX)，不要用本工具；"
         "员工账号用 employee_manage，角色权限用 role_manage。"
-        "【标注】WRITE|DESTRUCTIVE — 写操作需确认，删除标签/客户前必须二次确认"
+        "【反例】改客户资料/打标签/删标签**不在本工具能力内**——引导用户到后台「客户管理」页面自行操作。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：issue #5246 起 `CustomerController` 的读面 `customer:view`、
     # 写面（改/删客户、标签增删）`customer:create`（此前整类挂在读码上，只读持有者能删客户）。
-    required_permissions = ["customer:view", "customer:create"]
+    required_permissions = ["customer:view"]  # B 端只读化（#5247）：写码 customer:create 已随写 action 一并移除
 
-    read_only = False
-    destructive = True   # 可删除客户/标签
+    read_only = True
     read_only_actions = {"list", "detail", "list_tags"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
@@ -100,8 +99,8 @@ class CustomerManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（客户列表）/ detail（客户详情）/ update（更新档案）/ add_tag（添加标签）/ remove_tag（移除标签）/ list_tags（标签列表）/ create_tag（创建标签）/ update_tag（更新标签）/ delete_tag（删除标签）",
-                "enum": ["list", "detail", "update", "add_tag", "remove_tag", "list_tags", "create_tag", "update_tag", "delete_tag"],
+                "description": "操作类型：list（客户列表）/ detail（客户详情）/ list_tags（标签列表）—— 均为只读",
+                "enum": ["list", "detail", "list_tags"],
             },
             "customer_id": {
                 "type": "string",
@@ -128,28 +127,6 @@ class CustomerManageTool(BaseTool):
             "vip_level": {
                 "type": "string",
                 "description": "VIP等级筛选（list 时可选）",
-            },
-            "data": {
-                "type": "object",
-                "description": (
-                    "更新数据（update 时必填），key 必须是客户档案真实可写字段："
-                    "wechatNickname（客户姓名）/ phone / gender / regionProvince / regionCity / "
-                    "regionDistrict / vipLevel / customerStatus / agentNotes（备注）/ tags / customFields。"
-                    "客户实体没有 name 列，严禁下发 name/nickname/realName（工具会翻成 wechatNickname）；"
-                    "其它字段一律报错不落库"
-                ),
-            },
-            "tag_id": {
-                "type": "string",
-                "description": "标签 ID（add_tag/remove_tag/update_tag/delete_tag 时必填）",
-            },
-            "name": {
-                "type": "string",
-                "description": "标签名称（create_tag/update_tag 时必填）",
-            },
-            "color": {
-                "type": "string",
-                "description": "标签颜色（create_tag/update_tag 时可选）",
             },
         },
         "required": ["action"],
@@ -195,20 +172,8 @@ class CustomerManageTool(BaseTool):
                 return await self._list_customers(context, page, size, keyword, source_channel, vip_level)
             elif action == "detail":
                 return await self._detail_customer(context, customer_id)
-            elif action == "update":
-                return await self._update_customer(context, customer_id, data)
-            elif action == "add_tag":
-                return await self._add_tag(context, customer_id, tag_id)
-            elif action == "remove_tag":
-                return await self._remove_tag(context, customer_id, tag_id)
             elif action == "list_tags":
                 return await self._list_tags(context)
-            elif action == "create_tag":
-                return await self._create_tag(context, name, color)
-            elif action == "update_tag":
-                return await self._update_tag(context, tag_id, name, color)
-            elif action == "delete_tag":
-                return await self._delete_tag(context, tag_id)
             else:
                 return ToolResult(
                     success=False,
@@ -341,177 +306,9 @@ class CustomerManageTool(BaseTool):
             data=data,
             message=f"客户【{display_name}】的详细信息",
         )
-
-    async def _update_customer(
-        self,
-        context: ToolContext,
-        customer_id: Optional[str],
-        data: Optional[Dict[str, Any]],
-    ) -> ToolResult:
-        """更新客户档案"""
-        if not customer_id:
-            return ToolResult(
-                success=False,
-                error="缺少客户 ID",
-                message="更新客户档案时必须提供客户 ID（customer_id）",
-                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作确认客户后再重试",
-            )
-
-        if not data:
-            return ToolResult(
-                success=False,
-                error="缺少更新数据",
-                message="更新客户档案时必须提供更新数据（data）",
-                suggestion="缺少 data，请把要修改的字段（如 remark、phone）放进 data 中重试",
-            )
-
-        # 归一化为实体真实列名 + 白名单校验：不可写字段显式报错，绝不静默忽略/部分写入（#3551）
-        payload, rejected = normalize_update_data(data)
-        if rejected:
-            return ToolResult(
-                success=False,
-                error=f"不支持的更新字段: {'、'.join(rejected)}",
-                message=f"客户档案未做任何修改：{'、'.join(rejected)} 不是可更新字段",
-                suggestion=(
-                    f"客户档案可更新字段：{'、'.join(sorted(WRITABLE_FIELDS))}"
-                    "（客户姓名字段名为 wechatNickname）"
-                ),
-            )
-
-        # craftMode 是枚举列：非法值服务端会 400 拒绝（#4115），本层提前拦下并给出可行动提示
-        # （不发起注定失败的写请求，也不让用户看到「更新失败」这种无信息量的回执）
-        craft_mode = payload.get("craftMode")
-        if craft_mode is not None and craft_mode not in CRAFT_MODES:
-            return ToolResult(
-                success=False,
-                error=f"无效的 craftMode: {craft_mode}",
-                message=f"客户档案未做任何修改：craftMode={craft_mode!r} 不是合法值",
-                suggestion=(
-                    "craftMode 只能是 standard（跟随企业固定工艺）/ economy（主动省料）/ "
-                    "self_quoted（自报用料）之一；请改用合法值重试，其余字段可同时提交"
-                ),
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/customers/{customer_id}",
-            json_data=payload,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"客户档案更新失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 detail 操作读取当前档案，核对字段后再重试；不要改成其它客户",
-            )
-
-        updated_fields = sorted(payload.keys())
-        logger.info(
-            f"[customer-manage] Updated customer_id={customer_id} fields={updated_fields} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        return ToolResult(
-            success=True,
-            data={"customer_id": customer_id, "updated_fields": updated_fields},
-            message=f"客户档案已更新：{'、'.join(updated_fields)}",
-        )
-
-    async def _add_tag(
-        self,
-        context: ToolContext,
-        customer_id: Optional[str],
-        tag_id: Optional[str],
-    ) -> ToolResult:
-        """给客户添加标签"""
-        if not customer_id:
-            return ToolResult(
-                success=False,
-                error="缺少客户 ID",
-                message="添加标签时必须提供客户 ID（customer_id）",
-                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作搜到客户后重试",
-            )
-        if not tag_id:
-            return ToolResult(
-                success=False,
-                error="缺少标签 ID",
-                message="添加标签时必须提供标签 ID（tag_id）",
-                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.post(
-            f"/api/admin/customers/{customer_id}/tags/{tag_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "操作失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"添加标签失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行添加标签",
-            )
-
-        logger.info(f"[customer-manage] Added tag {tag_id} to customer {customer_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"customer_id": customer_id, "tag_id": tag_id},
-            message="标签已添加",
-        )
-
-    async def _remove_tag(
-        self,
-        context: ToolContext,
-        customer_id: Optional[str],
-        tag_id: Optional[str],
-    ) -> ToolResult:
-        """移除客户标签"""
-        if not customer_id:
-            return ToolResult(
-                success=False,
-                error="缺少客户 ID",
-                message="移除标签时必须提供客户 ID（customer_id）",
-                suggestion="缺少 customer_id，请先用 customer_manage 的 list 操作搜到客户后重试",
-            )
-        if not tag_id:
-            return ToolResult(
-                success=False,
-                error="缺少标签 ID",
-                message="移除标签时必须提供标签 ID（tag_id）",
-                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/customers/{customer_id}/tags/{tag_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "操作失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"移除标签失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 detail 操作确认该客户确实带有此标签，再重新执行移除",
-            )
-
-        logger.info(f"[customer-manage] Removed tag {tag_id} from customer {customer_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"customer_id": customer_id, "tag_id": tag_id},
-            message="标签已移除",
-        )
-
     async def _list_tags(self, context: ToolContext) -> ToolResult:
         """查询所有客户标签"""
+
         client = get_admin_api_client()
         response = await client.get(
             "/api/admin/customer-tags",
@@ -534,139 +331,4 @@ class CustomerManageTool(BaseTool):
             success=True,
             data={"tags": data, "count": len(data)},
             message=f"共 {len(data)} 个客户标签",
-        )
-
-    async def _create_tag(
-        self,
-        context: ToolContext,
-        name: Optional[str],
-        color: Optional[str],
-    ) -> ToolResult:
-        """创建客户标签"""
-        if not name:
-            return ToolResult(
-                success=False,
-                error="缺少标签名称",
-                message="创建标签时必须提供标签名称（name）",
-                suggestion="缺少标签名称 name，请向用户询问要创建的标签名称后重试",
-            )
-
-        json_data: Dict[str, Any] = {"name": name}
-        if color:
-            json_data["color"] = color
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/customer-tags",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "创建失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"创建标签失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 list_tags 操作确认是否已有同名标签，再改用 update_tag 或换一个名称",
-            )
-
-        data = response.get("data", {})
-        logger.info(f"[customer-manage] Created tag: name={name} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data=data,
-            message=f"标签【{name}】已创建",
-        )
-
-    async def _update_tag(
-        self,
-        context: ToolContext,
-        tag_id: Optional[str],
-        name: Optional[str],
-        color: Optional[str],
-    ) -> ToolResult:
-        """更新客户标签"""
-        if not tag_id:
-            return ToolResult(
-                success=False,
-                error="缺少标签 ID",
-                message="更新标签时必须提供标签 ID（tag_id）",
-                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
-            )
-
-        json_data: Dict[str, Any] = {}
-        if name:
-            json_data["name"] = name
-        if color:
-            json_data["color"] = color
-
-        if not json_data:
-            return ToolResult(
-                success=False,
-                error="缺少更新内容",
-                message="更新标签时必须提供名称（name）或颜色（color）",
-                suggestion="缺少更新内容，请让用户给出新的标签名称或颜色后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/customer-tags/{tag_id}",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新标签失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 list_tags 操作确认标签仍在，再重新执行更新",
-            )
-
-        logger.info(f"[customer-manage] Updated tag {tag_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"tag_id": tag_id},
-            message="标签已更新",
-        )
-
-    async def _delete_tag(
-        self,
-        context: ToolContext,
-        tag_id: Optional[str],
-    ) -> ToolResult:
-        """删除客户标签"""
-        if not tag_id:
-            return ToolResult(
-                success=False,
-                error="缺少标签 ID",
-                message="删除标签时必须提供标签 ID（tag_id）",
-                suggestion="缺少 tag_id，请先用 customer_manage 的 list_tags 操作取到标签 ID 后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/customer-tags/{tag_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除标签失败：{error_msg}",
-                suggestion="请先用 customer_manage 的 list_tags 操作确认该标签未被其它客户占用，再重新执行删除",
-            )
-
-        logger.info(f"[customer-manage] Deleted tag {tag_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"tag_id": tag_id},
-            message="标签已删除",
         )

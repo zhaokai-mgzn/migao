@@ -1,44 +1,48 @@
 """
-售后 Skill 节点
+售后 Skill 节点（B 端米宝，**只读**，issue #5247）
 
-处理售后服务,投诉处理,转人工等操作。
+处理售后工单的查询与状态解读（另含投诉语义的安抚与引导）。
+🔴 建单 / 改状态（关闭、拒绝）已按用户裁定 2026-09-23 从 B 端移除：本 skill 不绑任何写工具。
+
+⚠️ `route_keys` / `intents` 有意保持不变（`after_sales_create` intent 仍由本 skill 声明，
+理由见 order_skill：全局 intent→route_key 映射影响小布路由，删 intent 属 C 端改动）。
+商家说「帮我建个售后单」→ 路由仍落到本 skill，由提示词如实说明并引导去页面。
 """
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-# 售后 Skill 可用的 Tool 列表
-# 售后场景需要查询订单(了解问题订单)+ 订单管理(退款等操作)+ 售后工单管理
-# [RAG 禁用] 移除 knowledge_search,原用于查询售后政策
-# product_search/product_detail（只读）：换货/维修要先看**目标商品档案**（规格/SKU/计价方式），
-# 才能在换货工单确认卡之前主动问清加工项（issue #3033 + 用例 AS-007）。此前
-# prompts/aftersales.md 与 EXAMPLES-aftersales.md 都点名这两个工具，但工具集没绑定
-# → 「提示词承诺了做不到的事」，模型只会撞 tool_not_found（issue #3569 的静态不变式
-# TestLayerPromptToolWhitelist 抓到）。同型先例 customer_order（#3365），修法同为补工具。
-# processing_item_query（issue #4371）：加工项与商品**解耦** ⇒ product_detail 不再返回
-# processing_items，加工项事实源改为**店铺级目录**。prompt 已改为「先 processing_item_query
-# 拿目录再问」⇒ 必须绑定本工具（同 #3365 的「提示词承诺 ⇒ 工具集必须真绑」口径）。
-AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage",
-    "product_search",  # 换货选目标商品：按名称定位
+# 售后域只读工具
+# [RAG 禁用] 移除 knowledge_search，原用于查询售后政策
+# product_search/product_detail（只读）：维修/换货咨询要先看**目标商品档案**（规格/计价方式）
+# 才能如实回答（issue #3033 + 用例 AS-007）。此前 prompts/aftersales.md 点名这两个工具而工具集
+# 没绑定 → 「提示词承诺了做不到的事」（issue #3569 的 TestLayerPromptToolWhitelist 抓到）。
+# processing_item_query（issue #4371）：加工项与商品**解耦** ⇒ 加工项事实源是**店铺级目录**。
+AFTERSALES_TOOLS = ["order_query", "after_sales_manage",
+    "product_search",  # 定位目标商品
     "product_detail",  # 取目标商品档案（规格/SKU/计价方式）
-    "processing_item_query",  # 店铺加工项目录（与商品无关）—— 换货问加工项的事实源
-    "validate_input",  # 写操作前置校验
-    "interact",        # 交互卡片：写操作 confirm、售后类型/原因 choice
+    "processing_item_query",  # 店铺加工项目录（与商品无关）—— 加工费口径的事实源
+    "interact",        # 交互卡片：售后类型/原因等**消歧** choice（不再发写确认卡）
 ]
 
 # 售后 Skill 专用 System Prompt
-AFTERSALES_SYSTEM_PROMPT = """## 售后工单枚举（英文仅内部传值，回复用户必须用中文）
+AFTERSALES_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
+
+`after_sales_manage` **只剩 list / detail**。建工单、关闭/拒绝工单**不在能力内**：
+如实说明「米宝在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页（/after-sales）处理，
+**不得**承诺代办、不得发写确认卡。
+
+## 售后工单枚举（英文仅内部传值，回复用户必须用中文）
 
 ticket_type: refund=退款/exchange=换货/repair=维修/complaint=投诉/other=其他
 priority: normal=普通/urgent=紧急/critical=严重
 status: pending=待处理/processing=处理中/resolved=已解决/rejected=已拒绝/closed=已关闭
-必填: description(问题描述)
-可选: images(凭证), refund_amount(退款金额)
 
 ## 售后原则
 
-- 复杂投诉(赔偿/法律)建议转人工
+- 先查工单（list/detail）与关联订单（order_query），再解读现状与下一步
+- 复杂投诉(赔偿/法律)建议商家线下处理或走人工客服渠道
 - 从对话历史追踪已收集信息，不重复询问
 - 专业高效，有同理心的语气
 
@@ -46,8 +50,8 @@ status: pending=待处理/processing=处理中/resolved=已解决/rejected=已�
 
 - 售后工单 refund/return 完结（已退款/已退货）后，**不回补商品库存、不引导重新上架**
 - 窗帘为定制商品，按客户尺寸裁剪后退货无法再次出售——库存加回会造成"假可售"误导销售
-- 商品允许退货回补需商家在商品设置显式开启开关；开关未开启时不得主动调库存调整工具
-- 用户要求"把库存加回去/重新上架"时，说明定制退货不回补库存，引导商家确认商品开关后手动处理
+- 商品允许退货回补需商家在商品设置显式开启开关；本域**没有**库存调整工具，
+  商家要求"把库存加回去"时说明定制退货不回补库存，引导商家自行到商品页处理
 
 ## 回复语言要求（禁止英文枚举）
 

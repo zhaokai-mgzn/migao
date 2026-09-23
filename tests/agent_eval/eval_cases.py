@@ -3327,6 +3327,24 @@ _CASE_MC_020 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-021 [NORMAL] B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动（源: cases/misc.yml）──
+_CASE_MC_021 = EvalCase(
+    id='MC-021',
+    legacy_id='',
+    title='B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把 order_create / product_manage / validate_input 等写工具重新绑回任一 B 端 skill，或把某个 B 端工具的 read_only 改回 False，或让 mibao 的能力文案重新承诺「创建商品」时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（L0）：mibao 的 skill 并集（`skill_names` + `fallback_skill`）里**每个**工具都必须 `read_only = True`，且不得有悬空绑定（绑了不存在的工具名 ⇒ 红）', '判据 2（L0）：写能力工具**一个都不得绑在 B 端**——具名清单 11 个（order_create / order_manage / product_manage / product_update / sku_update / processing_item_manage / processing_order_generate / processing_order_update / settings_manage / notification_manage / validate_input）', '判据 3（L0）：B 端可达工具的 `VALID_ACTIONS` ⊆ 其 `read_only_actions`；另有**写 action 闭词表**兜底（把写 action 挪进 read_only_actions 洗白也红）', '判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「米宝不做这类操作」不算谎报）', '判据 5（边界）：与 C 端共享的 8 个工具（order_create / validate_input / interact / knowledge_search / processing_item_query / product_search / product_detail / production_progress_query）必须**仍然存在**且**仍被 C 端 skill 绑定** —— 「只解绑 B 端、绝不删除、C 端零改动」是用户裁定的硬边界', '红证（九条注入**各能单独变红**）：① order_create 绑回 order skill ①b settings_manage 绑回 product skill ② 工具 read_only 改回 False ②b 悬空绑定 ③ 塞回写 action ③b 把写 action 挪进 read_only_actions 洗白 ④ capabilities 注入「我可以帮您创建商品」④b greeting 注入写能力承诺 ⑤ 摘掉共享工具的 C 端绑定 ⇒ 对应判据逐条变红'],
+    skip_reason='[backend-contract] B 端只读化是源码静态事实（工具声明 / skill 绑定 / 能力文案），由零依赖 pytest 静态判据 + 九条注入式红证验证（tests/unit_ci_workflows/test_mibao_b_end_readonly.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'permission', 'readonly', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -8919,6 +8937,7 @@ ALL_CASES = (
     _CASE_MC_018,
     _CASE_MC_019,
     _CASE_MC_020,
+    _CASE_MC_021,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

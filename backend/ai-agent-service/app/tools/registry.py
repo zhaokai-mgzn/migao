@@ -604,6 +604,14 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.production_worklog_query import ProductionWorklogQueryTool
     from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
     from app.tools.batch_stock_query import BatchStockQueryTool
+    # B 端只读模块覆盖（issue #5247）：库存台账 / 入库单·批次 / 工序库·路线 / 经营日报 / 算料配置。
+    # 五个都是**纯只读**工具（`read_only=True`），端点与权限码逐条写在各文件头部注释里。
+    from app.tools.stock_ledger_query import StockLedgerQueryTool
+    from app.tools.inbound_order_query import InboundOrderQueryTool
+    from app.tools.operation_catalog_query import OperationCatalogQueryTool
+    from app.tools.briefing_query import BriefingQueryTool
+    from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+    from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 
     registry = ToolRegistry()
     
@@ -666,6 +674,14 @@ def create_default_registry() -> ToolRegistry:
     # 只读、仅 B 端（批次成本与省料金额是内部口径）；可达性由 persona 的 skill 工具集决定
     # （米宝 general / product）。
     registry.register(BatchStockQueryTool())
+    # B 端只读模块覆盖（issue #5247）：同样只决定「工具存在」，可达性由 persona 的 skill 工具集
+    # 决定（米宝 product / data / order；C 端一律不绑）。
+    registry.register(StockLedgerQueryTool())
+    registry.register(InboundOrderQueryTool())
+    registry.register(OperationCatalogQueryTool())
+    registry.register(BriefingQueryTool())
+    registry.register(CraftCalcConfigQueryTool())
+    registry.register(ProcessingOrderSetQueryTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry
