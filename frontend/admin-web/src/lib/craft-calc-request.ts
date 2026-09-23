@@ -214,7 +214,14 @@ function joinWidthHappens(input: {
 
 /** 本行**推导出的**应并入特殊选项的项（issue #5211；顺序稳定：拼N次 → 接高） */
 export function derivedSpecialOptionsOf(input: {
-  plan?: { splice_times?: number | null; splice_option?: string | null; join_height_m?: number | null } | null
+  // ⚠️ `join_width_m` **不在**推导里（接宽无选项出口，issue #5230 v2）：列出来只是为了让调用方
+  // 能整份传服务端 `data.plan`（类型与契约同形，不另造一个「少一个键」的影子类型）。
+  plan?: {
+    splice_times?: number | null
+    splice_option?: string | null
+    join_height_m?: number | null
+    join_width_m?: number | null
+  } | null
   spliceTimesOverride?: number | null
   joinHeightOverride?: number | null
 }): string[] {
@@ -239,7 +246,13 @@ export function derivedSpecialOptionsOf(input: {
  */
 export function effectiveSpecialOptionsOf(input: {
   manualOptions?: string[]
-  plan?: { splice_times?: number | null; splice_option?: string | null; join_height_m?: number | null } | null
+  // 同上：`join_width_m` 只是「服务端 `data.plan` 的完整形态」的一部分，**不参与**推导。
+  plan?: {
+    splice_times?: number | null
+    splice_option?: string | null
+    join_height_m?: number | null
+    join_width_m?: number | null
+  } | null
   spliceTimesOverride?: number | null
   joinHeightOverride?: number | null
   rejectedOptions?: string[]
