@@ -676,18 +676,36 @@ class TestPlanAutoDerivation:
         assert plan["join_height_m"] == 0.05
         assert data["fabric_meters"] == 13.3, "R2：接高不进算料 ⇒ 用料仍是 T（不加加高条）"
 
-    def test_auto_plan_join_width_saves_one_panel(self, client):
-        # 门幅 4.4 ⇒ P = ceil(13.3 / 4.4) = 4；T − (P−1)×D = 13.3 − 13.2 = 0.1 ≤ 0.1 ⇒ 候选 4 可行
-        # 用料 (P−1) × need_h = 3 × 2.8 = 8.4 < 纯倒幅 4 × 2.8 = 11.2 ⇒ 选优必须选它（**省一整幅**）
-        data = _data(client, {**PLAN, "fabric_width": 4.4})   # 纯自动推导
+    def test_candidate4_saves_one_panel_on_the_candidate_table(self, client):
+        """候选 4 的「省一整幅」在**候选表**上逐值可核（v1.2：panels = P − 1）。
+
+        ⚠️ 为什么不用「自动推导选它」来证：按 **v1.3 选优序**（拼接最少优先），
+        门幅 4.4 这个算例的胜者是**零拼接的定高买宽**（13.3），不是候选 4（8.4 / 拼 2 次）——
+        候选 4 只在**没有零拼接候选可行**时才会自动胜出。故这里核**候选表本身**的数
+        （契约 §三 的用料列 + v1.2 的 panels 口径），不拿选优结论去核候选。
+        """
+        data = _data(client, {**PLAN, "fabric_width": 4.4, "splice_times": 0, "join_width_m": 0.1})
         plan = data["plan"]
-        assert plan["join_width_m"] == pytest.approx(0.1)
-        assert plan["panels"] == 3, "v1.2：`panels` = 实际买布幅数 = P − 1"
-        assert plan["splice_times"] == 2, "接宽方案拼接 P−2 = 2 次（= panels − 1）"
-        assert plan["splice_option"] == "拼2次"
-        assert plan["auto"] is True
-        assert data["fabric_meters"] == 8.4, "省一整幅：3 幅 × 2.8 米"
-        assert plan["meters"] == data["fabric_meters"]
+        c4 = [c for c in plan["candidates"] if c["key"] == "fixed_width_join_width"][0]
+        assert c4["feasible"] is True
+        assert c4["meters"] == pytest.approx(8.4), "（P−1）幅 × need_h = 3 × 2.8 ⇒ 省一整幅"
+        assert c4["splice_times"] == 2, "P − 2 = 2（与 panels = P − 1 自洽）"
+        # 纯倒幅对照：P 幅 × need_h = 4 × 2.8 = 11.2（差一整幅）
+        c3 = [c for c in plan["candidates"] if c["key"] == "fixed_width"][0]
+        assert c3["meters"] == pytest.approx(11.2)
+
+    def test_auto_over_limit_gap_falls_back_to_pure_rotated(self, client):
+        """订正 v1.3 的连带效果：**纯倒幅只在没有零拼接候选可行时才自动胜出**。
+
+        门幅 3.1 / 窗高 2.95 ⇒ need_h 3.25 > 3.1（定高买宽不可行）、缺口 0.15 > 0.1（接高不可行）、
+        remainder = 13.3 − 2×3.1 = 7.1 > 0.1（接宽不可行）⇒ 只剩倒幅 ⇒ 5 幅 × 3.25 = 16.25 → 16.3。
+        """
+        data = _data(client, {**PLAN, "fabric_width": 3.1, "height": 2.95})
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定宽买高"
+        assert plan["panels"] == 5 and plan["splice_times"] == 4
+        assert plan["join_height_m"] is None and plan["join_width_m"] is None
+        assert data["fabric_meters"] == 16.3
 
     def test_manual_join_width_alone_does_not_save_a_panel(self, client):
         """人工接宽（未给拼次）⇒ **不自动省幅**（R7）：用料 = P × need_h = 4 × 2.8 = 11.2。

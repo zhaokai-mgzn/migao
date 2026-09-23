@@ -299,6 +299,10 @@ def derive_plan(
         `T` = **单色**定高买宽单幅用料（米）= 现有单色公式值（调用方按选定用料公式算好传入）；
         `need_h` = `H + hem`；`P` = `ceil(T / D)`。
 
+    **选优顺序**（用户 2026-09-22 裁定，契约 **v1.3** 订正段）：
+    **① 拼接次数最少 → ② 用料最少 → ③ 接高/接宽最少 → ④ 候选表顺序**
+    （v1.1 曾把「用料最少」放第 ①，**已按用户裁定对调** —— 见 `_rank` 的 docstring）。
+
     | # | key | 可行条件 | 用料 | 拼接 | 接高/接宽 |
     |---|---|---|---|---|---|
     | 1 | `fixed_height` | `need_h ≤ D` | `T` | 0 | — |
@@ -320,7 +324,12 @@ def derive_plan(
     Returns:
         契约 §四 的 `plan` 对象：`cutting_mode` / `door_width` / `panels` / `splice_times` /
         `splice_option` / `join_height_m` / `join_width_m` / `meters` / `auto` / `reason` /
-        `candidates` / `notices`。
+        `candidates` / **`notices`（⚠️ 契约 §四 键清单之外的**新增键**）**。
+
+        `notices`（list[str]）：R4（`style=拼色` 且出现拼接 ⇒ 冲突告知，不静默改款式）与
+        R5（`N ≥ 4` ⇒ 无选项名、需人工处理）的**机器可读载体** —— 契约要求「显式告知」但未规定
+        载体，散文 `reason` 不适合前端条件渲染，故单列此键。**前端不读它**（前端按自己的字段
+        渲染告知），两侧不冲突；若母单裁定改名/并入 `reason`，改本函数一处即可。
 
     Raises:
         ValueError: 门幅非正 / 加工类型表外 / 人工拼次越界 / 人工接高接宽超 0.1 米上限
@@ -435,15 +444,31 @@ def derive_plan(
     win_splice: Optional[int] = None
     win_key: Optional[str] = None
 
+    def _rank(c: Dict[str, Any]):
+        """选优排序键（**本函数是唯一一份** —— `_auto_mode()` 与下方选优都必须调它）。
+
+        顺位（用户 2026-09-22 裁定，母单 #5200 **契约 v1.3** 订正段）：
+        **① 拼接次数最少 → ② 用料最少 → ③ 接高/接宽最少 → ④ 候选表顺序**。
+
+        ⚠️ v1.1 曾把「用料最少」放在第 ①（**已按用户裁定对调**）：那会让
+        「定高买宽可行、但倒幅用料更少」的算例去选倒幅 —— 省 0.6 米布却多 3 道**可见**拼缝
+        + 3 道工序/计件（实证 `economy / D=3.2 / 宽 6.6 双开 / need_h=2.8`：
+        旧序 ⇒ 倒幅 11.2 米拼 3 次；新序 ⇒ 定高买宽 11.8 米**零拼接**）。
+        用户裁定原话：「**无拼接优先：定高买宽可行就用它**（与仓库既有自动规则一致）」
+        —— 与 `resolve_fabric_plan`（issue #5013「定高买宽可行 ⇒ 用它」）同口径。
+        """
+        joins = sum(1 for k in ("join_height_m", "join_width_m") if c[k] is not None)
+        return (c["splice_times"], round(c["meters"], 3), joins, order[c["key"]])
+
     def _auto_mode() -> str:
-        """自动推导的加工类型（没显式给加工类型时沿用它）。"""
+        """自动推导的加工类型（没显式给加工类型时沿用它）—— 与选优**同一份** `_rank`。"""
         feasible = [c for c in candidates if c["feasible"]]
         if not feasible:
             raise ValueError("没有任何候选方案可行（fail-closed，不给估算值）")
         return (
             CUTTING_MODE_FIXED_HEIGHT
-            if min(feasible, key=lambda c: (round(c["meters"], 3), c["splice_times"], order[c["key"]]))["key"]
-            .startswith("fixed_height") else CUTTING_MODE_FIXED_WIDTH
+            if min(feasible, key=_rank)["key"].startswith("fixed_height")
+            else CUTTING_MODE_FIXED_WIDTH
         )
 
     def _implied_mode() -> str:
@@ -508,7 +533,7 @@ def derive_plan(
         join_h = None if join_height_m is None else round(float(join_height_m), 3)
         join_w = None if join_width_m is None else round(float(join_width_m), 3)
     else:
-        # ── 选优（裁定 3）：① 用料最少 → ② 拼接最少 → ③ 接高/接宽最少 → ④ 候选表顺序 ──
+        # ── 选优：**① 拼接次数最少 → ② 用料最少 → ③ 接高/接宽最少 → ④ 候选表顺序**（v1.3）──
         feasible = [c for c in candidates if c["feasible"]]
         if not feasible:
             # R6：全部候选不可行 ⇒ fail-closed，不静默兜底、不给估算值
@@ -522,10 +547,6 @@ def derive_plan(
                 ),
                 "candidates": candidates, "notices": notices,
             }
-
-        def _rank(c: Dict[str, Any]):
-            joins = sum(1 for k in ("join_height_m", "join_width_m") if c[k] is not None)
-            return (round(c["meters"], 3), c["splice_times"], joins, order[c["key"]])
 
         win = min(feasible, key=_rank)
         win_key = win["key"]
@@ -584,7 +605,7 @@ def derive_plan(
             )
     else:
         reason = (
-            "自动推导（候选按「用料最少 → 拼接最少 → 接高接宽最少 → 表序」选优）："
+            "自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）："
             f"选定 **{win_key}** —— "
             + next(c for c in candidates if c["key"] == win_key)["reason"]
         )

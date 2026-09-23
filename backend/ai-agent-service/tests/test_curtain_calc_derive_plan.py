@@ -400,9 +400,10 @@ class TestSingleSourceOfMeters:
                        {"window_height": 1.0, "fixed_height_meters": 2.0}):
             p = plan(**kwargs)
             feasible = [c for c in p["candidates"] if c["feasible"]]
+            # v1.3 选优序（用户 2026-09-22 裁定）：拼接最少 → 用料最少 → 接高接宽最少 → 表序
             best = min(
                 feasible,
-                key=lambda c: (c["meters"], c["splice_times"], _joins(c)),
+                key=lambda c: (c["splice_times"], c["meters"], _joins(c)),
             )
             assert p["meters"] == pytest.approx(best["meters"]), (
                 f"plan.meters 必须**就是**胜出候选的用料（{kwargs}）"
@@ -431,6 +432,42 @@ def _joins(candidate):
         1 for k in ("join_height_m", "join_width_m")
         if candidate.get(k) is not None
     )
+
+
+# ── 用户裁定（2026-09-22，契约 v1.3）：选优 = **拼接次数优先** ───────────────────
+class TestV13SpliceFirstRanking:
+    """选优顺位 = **① 拼接次数最少 → ② 用料最少**（用户裁定：「无拼接优先：定高买宽可行就用它」）。
+
+    为什么这条重要：v1.1 把「用料最少」放第 ① ⇒ 会为了省 0.6 米布去选**多 3 道可见拼缝**的倒幅
+    （实证 `economy / 门幅 3.2 / 宽 6.6 双开 / need_h 2.8`：倒幅 11.2 米拼 3 次 vs 定高买宽
+    11.8 米零拼接）—— 省的是布，付的是**工序与计件**，且拼缝是**可见**的。
+
+    红证形态：把 `_rank` 换回 `(round(c["meters"],3), c["splice_times"], joins, order[key])`
+    ⇒ 下面两条必红（第 ① 条返回 11.2/拼3次，第 ② 条 winner 变成 8.4）。
+    """
+
+    def test_adjudicated_case_picks_fixed_height_over_cheaper_rotated(self):
+        """用户裁定原文算例：`economy / 门幅 3.2 / 宽 6.6 双开 / need_h 2.8`。"""
+        # T（经济档 46 折）= 0.25×46 + 0.3 = 11.8；门幅 3.2 ⇒ need_h 2.8 ≤ 3.2 ⇒ 候选 1 可行且零拼接
+        p = derive_plan(window_height=2.5, fixed_height_meters=11.8, door_width=3.2)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT, "无拼接优先 ⇒ 定高买宽可行就用它"
+        assert p["splice_times"] == 0 and p["panels"] is None
+        assert p["meters"] == pytest.approx(11.8), "既有断言 11.8 不必改（这正是裁定要的效果）"
+        # 对照：倒幅更省布（4 幅 × 2.8 = 11.2）但拼 3 次 ⇒ 必须**不选**它
+        c3 = by_key(p, "fixed_width")
+        assert c3["feasible"] is True and c3["meters"] == pytest.approx(11.2)
+        assert c3["splice_times"] == 3
+        assert p["meters"] > c3["meters"], "新增了 0.6 米布，换来零拼接（用户裁定的取向）"
+
+    def test_zero_splice_candidate_beats_cheaper_multi_splice_candidate(self):
+        """顺位 ① 的**判别性**：存在「用料更少但带拼接」的可行候选时，仍选零拼接那条。"""
+        # 门幅 4.4 ⇒ 接宽候选可行且最省布（3 幅 × 2.8 = 8.4，拼 2 次），但候选 1 零拼接（13.3）
+        p = plan(door_width=4.4)
+        feasible = [c for c in p["candidates"] if c["feasible"]]
+        cheaper = [c for c in feasible if c["meters"] < p["meters"]]
+        assert p["splice_times"] == 0, "winner 必须是零拼接那条"
+        assert cheaper, "本算例**必须**存在「用料更少但带拼接」的候选（否则这条断言无判别力）"
+        assert all(c["splice_times"] >= 1 for c in cheaper), "更省的那些都带拼接（正是被顺位①淘汰的）"
 
 
 # ── 判据 8：回归不变量（derive_plan 是纯函数，不改既有调用口径） ────────────────
@@ -562,6 +599,24 @@ class TestManualSpliceTimesWithoutCuttingMode:
         assert p["panels"] == 3 and p["splice_times"] == 2
         assert p["meters"] == pytest.approx(3 * NEED_H)
         assert "蕴含" in p["reason"], "理由要说明「为什么走了倒幅」（不静默改判）"
+
+    def test_implied_mode_uses_the_same_ranking_as_selection(self):
+        """**`_implied_mode()`（只给拼次不给加工类型时用）必须与选优同一份 `_rank`**。
+
+        判别性算例：`T=13.3 / D=4.4` ⇒ 倒幅 3 幅 × 2.8 = **11.2**（拼 2 次）比定高买宽 **13.3**
+        （零拼接）更省布 ⇒ 「用料优先」的 key 会推出**定宽买高**，与本实现的选优**结论不一致**
+        （同一条口径两份实现 = 本仓最忌的形态）。
+
+        红证形态：把 `_auto_mode()` 里的 `min(feasible, key=_rank)` 换回
+        `key=lambda c: (round(c["meters"], 3), c["splice_times"])` ⇒ 本条必红（返回定宽买高）。
+        """
+        p = plan(door_width=4.4, fixed_height_meters=13.3, splice_times=0)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT, (
+            "拼次优先：零拼接的定高买宽（13.3）胜过拼 2 次的倒幅（11.2）"
+        )
+        assert p["meters"] == pytest.approx(13.3)
+        # 对照：被顺位 ① 淘汰的那条确实更省布（否则本条无判别力）
+        assert by_key(p, "fixed_width")["meters"] == pytest.approx(11.2)
 
     def test_splice_times_zero_still_auto_picks(self):
         # `splice_times=0` 不蕴含倒幅 ⇒ 仍走自动择路（本几何选定高买宽）
