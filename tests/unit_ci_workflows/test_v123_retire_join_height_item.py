@@ -79,14 +79,15 @@ def _strip_comments(sql: str) -> str:
 # ══════════════════════════ ① 静态形态判据 ══════════════════════════
 
 
-def test_migration_file_exists_and_is_the_next_version():
+def test_migration_file_exists():
+    """迁移文件在。
+
+    ⚠️ **刻意不写「V123 必须是最新迁移」**（曾经写成 `versions[-1] == 123`）：那是**自毁式真值主张** ——
+    下一号迁移一落库，这条断言必红，而修它的活会落到来加 V124 的人头上（`test_self_destruct_assert_guard.py`
+    的 `eq_rhs_const` 判据直接判红，CI `ci workflow helper unit tests` 已实证一次）。
+    版本唯一性由 `test_migration_immutability.py` 的指纹账本管，不需要在本文件再主张一次。
+    """
     assert V123.exists(), f"缺少撤出迁移：{V123.name}"
-    versions = sorted(
-        int(m.group(1))
-        for p in MIGRATION_DIR.glob("V*.sql")
-        if (m := re.match(r"V(\d+)__", p.name))
-    )
-    assert versions[-1] == 123, f"V123 不是最新迁移（实测最大 = V{versions[-1]}）—— 合并前先 rebase 核对版本号"
 
 
 def test_explicit_transaction_and_columns():
