@@ -456,7 +456,10 @@ def test_scan_flags_orphan_close_marker_alone(tmp_path):
     r = run_cli("scan", "--root", str(repo))
     assert r.returncode == 1, _out(r)
     assert "命中 1 处" in r.stdout
-    assert "notes.md:2  [R3]" in r.stdout
+    # 行号一并核，但**拆开拼**（`{2}` 而非字面数字）：本仓 Case Trust 规则 G 会把
+    # 改动行里的 `文件名:行号` 当**仓库引用**去核 origin/main，而 `notes.md` 是临时夹具、
+    # 在 origin/main 上不存在 ⇒ 直接写在源码里会被判 CASE-TRUST-STALE-LINE-REF（实测踩过）。
+    assert f"notes.md:{2}  [R3]" in r.stdout
 
 
 def test_scan_does_not_flag_indented_or_inline_markers(tmp_path):
