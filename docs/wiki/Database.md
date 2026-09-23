@@ -64,10 +64,11 @@ Flyway 已移除（与 PG 18 不兼容），替换为自定义 `MigrationRunner`
 `tests/unit_ci_workflows/test_migration_immutability.py::test_live_dir_holds_only_migrations_after_the_cut_point`
 （含注入式自证：把归档里任一条复制回活目录 ⇒ 必红）。
 
-> ⚠️ 活目录**当前非空**是**有意登记**的，不是遗漏：`V123__retire_join_height_processing_item.sql`
-> 是纯数据迁移（建库脚本里没有这一笔，复算 `grep -c join_height backend/admin-api/src/main/resources/db/init/schema.sql`
-> → `0`）⇒ 归档它会让每个新建环境上「接高」重新活跃。理由全文见
-> `backend/admin-api/src/main/resources/db/migration/README.md`。
+> ⚠️ 活目录**非空**是**有意登记**的，不是遗漏：留在里面的是**切点之后的纯数据迁移**
+> （撤种子行 / 改存量数据 —— 建库脚本体现不出来）⇒ 归档它会让每个新建环境**少跑那一笔**。
+> **判据不是「活目录必须为空」，而是 `min(活目录) > max(归档目录)`** ⇒ 活目录里会有**若干条**
+> 这类迁移，随产品演进增减 —— 所以**本页不抄数量与版本号**（会腐烂，复算用下面那条命令）。
+> 逐条理由与登记格式见 `backend/admin-api/src/main/resources/db/migration/README.md`。
 
 清单以**目录**为单一源（**别在本页抄文件数/版本号 —— 会腐烂**）：
 
@@ -103,7 +104,8 @@ ls backend/admin-api/src/main/resources/db/migration{,-archive} \
 - 所有 SQL 必须幂等 (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS)；
 - 内容类失败**只跳过该条**、继续执行其余迁移（一条坏迁移不得冻结整个 schema）；
 - 已知存量非幂等迁移的降级名单 `KNOWN_BENIGN_LEGACY`（`MigrationRunner` 内）**保留**：
-  其中的文件名如今全在**归档链**里、活目录为空 ⇒ 该名单**当前不会被命中**。
+  其中那些文件名如今全在**归档链**里、且**都不在活目录** ⇒ 该名单**当前不会被命中**
+  （注意：判定依据是「那些文件名在不在活目录」，**不是**「活目录是否为空」—— 活目录本来就会有切点之后的迁移）。
   留着的理由（不静默删诊断）：它是**单一事实源**，由 L0 测试
   （`tests/unit_ci_workflows/test_migration_idempotency.py` 的 `TestKnownBenignLegacyRegistry`）
   与 Java 侧键集合逐条锁死；将来若把迁移放回活目录，语义逐字不变。
