@@ -252,7 +252,7 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         ))}
         {rows.length === 0 && !loading && (
           <p data-testid="remnant-specs-empty" className="text-xs text-neutral-500">
-            本企业还没有配置任何小件的用料尺寸 ⇒ 余料匹配**不会**产生建议（默认值为空 = 未启用）。
+            本企业还没有配置任何小件的用料尺寸 ⇒ 余料匹配不会产生建议（默认值为空 = 未启用）。
           </p>
         )}
       </div>

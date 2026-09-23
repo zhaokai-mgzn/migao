@@ -278,4 +278,7 @@ vi.mock('lucide-react', () => ({
   Route: iconStub('route'),
   // issue #4386: 「加工费管理」菜单项新增图标
   BadgeDollarSign: iconStub('badge-dollar-sign'),
+  // issue #5191: 「余料台账」菜单项新增图标（漏登记 ⇒ 任何渲染 Sidebar 的用例当场抛
+  // `No "Recycle" export is defined on the "lucide-react" mock`，不是静默）
+  Recycle: iconStub('recycle'),
 }))

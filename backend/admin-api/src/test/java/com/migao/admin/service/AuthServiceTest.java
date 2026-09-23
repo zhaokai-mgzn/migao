@@ -457,7 +457,8 @@ class AuthServiceTest {
      * 「勾了权限却看不到菜单」/「菜单点不进」。schema 见 issue #4203 交付面表格。</p>
      */
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资（processing:manage）+ 与 MenuController/menu.ts 同构（issue #4440）")
+    @DisplayName("生产管理组：生产看板/池看板/省料看板/余料台账/工艺配置/计件工资（processing:manage）"
+            + " + 与 MenuController/menu.ts 同构（issue #4440/#5191）")
     void currentUserMenusExposeProductionGroup() {
         authenticateAs("user-001", 1L);
         when(userService.getUserById("user-001")).thenReturn(testUser);
@@ -481,13 +482,16 @@ class AuthServiceTest {
         // `processing:manage`（池化派单的决策屏，与生产看板同权）。
         // issue #5159：「省料看板」(/production/saving-board) 接在其后，同权 processing:manage
         // （省料度量看板也是生产管理动作；三处同构见 tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
+        // issue #5191：「余料台账」(/production/remnants) 接在「省料看板」之后 —— 它此前只能从
+        // 「企业参数中心 → 余料回收」下钻进入，与同期新页（池看板 / 省料看板）入口口径不一致；
+        // 权限码沿用 processing:manage（= RemnantController 的 @RequirePermission，门禁不放宽）。
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "池看板", "省料看板", "工艺配置", "计件工资");
+                .containsExactly("生产看板", "池看板", "省料看板", "余料台账", "工艺配置", "计件工资");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
                 .containsExactly("/production", "/production/pool", "/production/saving-board",
-                        "/production/routings", "/production/piecework");
+                        "/production/remnants", "/production/routings", "/production/piecework");
 
         clearAuthentication();
     }

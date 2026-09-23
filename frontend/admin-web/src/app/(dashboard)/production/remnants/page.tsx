@@ -1,7 +1,9 @@
 'use client'
 
 /**
- * 余料台账 /production/remnants（V122，issue #5146）—— 「企业参数中心 → 余料回收」域的**下钻页**。
+ * 余料台账 /production/remnants（V122，issue #5146）—— 「企业参数中心 → 余料回收」域的**下钻页**，
+ * 且自 issue #5191 起**同时是侧边栏入口**（生产管理组「余料台账」；同批新页口径对齐 —— 池看板 /
+ * 省料看板都有菜单项；权限码 processing:manage，与类级 `@RequirePermission` 同码）。
  *
  * ## 它是什么 / 不是什么
  *
@@ -161,7 +163,7 @@ export default function RemnantLedgerPage() {
           <p className="text-sm text-neutral-500 mt-1">
             裁剪剩下的布：尺寸、来源订单与批次、缸号、状态。
             <span className="ml-1 text-neutral-600">
-              余料**不是资产** —— 只记实物可用性，不计价、不进库存金额。
+              余料不是资产 —— 只记实物可用性，不计价、不进库存金额。
             </span>
           </p>
         </div>
@@ -194,7 +196,7 @@ export default function RemnantLedgerPage() {
             </div>
           ))}
           <div className="col-span-2 sm:col-span-4 text-xs text-neutral-600 bg-white border border-neutral-200 rounded-lg p-3">
-            余料回收额合计 {money(summary.recoveredAmountTotal)}（冲减**用它的那些单**的面料成本，
+            余料回收额合计 {money(summary.recoveredAmountTotal)}（冲减用它的那些单的面料成本，
             只进内部成本口径 —— 对客售价与加工费一字不动）；领料成本合计 {money(summary.issuedCostTotal)}；
             余料回收率 {summary.recoveryRate === null || summary.recoveryRate === undefined
               ? '—（还没有可算的数据）'
@@ -211,7 +213,7 @@ export default function RemnantLedgerPage() {
         <div className="text-sm font-medium text-neutral-900">小件优先匹配</div>
         <p className="text-xs text-neutral-500">
           填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求，
-          再从**可用池**里挑装得下的余料（同缸号优先、其次同色）；找到就不新领料。
+          再从可用池里挑装得下的余料（同缸号优先、其次同色）；找到就不新领料。
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

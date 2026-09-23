@@ -107,6 +107,14 @@ export const menuGroups: MenuGroup[] = [{
       // 静态权限树、AuthService.buildMenusByPermissions **三处同构**
       // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
       { key: 'production-saving-board', name: '省料看板', icon: 'BarChart3', path: '/production/saving-board', permissionCode: 'processing:manage' },
+      // 余料台账（issue #5146 建页 / issue #5191 进侧边栏）：原先是「企业参数中心 → 余料回收」域的
+      // **域内下钻页**，而同期新增的「池看板」「省料看板」都有菜单项 ⇒ 同批新页入口口径不一致
+      // （用户裁定：补菜单，不登记成「有意不进侧边栏」）。
+      // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission("processing:manage")`
+      // 逐字同码（**不放宽也不收紧**既有门禁；新开权限码反而会让既有 operator 岗位凭空多一处授权缺口）。
+      // 必须与 `MenuController` 的静态权限树、`AuthService.buildMenusByPermissions` **三处同构**
+      // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+      { key: 'production-remnants', name: '余料台账', icon: 'Recycle', path: '/production/remnants', permissionCode: 'processing:manage' },
       // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。

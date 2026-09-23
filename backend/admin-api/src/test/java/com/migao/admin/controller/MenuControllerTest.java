@@ -99,7 +99,8 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 + 入库单（issue #4203/#4205/#4440/#5045）")
+    @DisplayName("生产管理组：生产看板/池看板/省料看板/余料台账/工艺配置/计件工资 + 入库单"
+            + "（issue #4203/#4205/#4440/#5045/#5177/#5159/#5191）")
     void productionGroupIsExposedWithUnifiedPermissionCode() throws Exception {
         String body = mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
@@ -122,8 +123,9 @@ class MenuControllerTest {
             childLabels.add(child.path("label").asText());
             childCodes.add(child.path("code").asText());
         });
-        // 六节点（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；issue #5045 新增「入库单」；
-        // issue #5177 新增「池看板」；issue #5159 新增「省料看板」；issue #4440 把本树同步到前端 IA）。
+        // 七节点（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；issue #5045 新增「入库单」；
+        // issue #5177 新增「池看板」；issue #5159 新增「省料看板」；issue #5191 新增「余料台账」；
+        // issue #4440 把本树同步到前端 IA）。
         // 精确断言（不是 contains）：漏加菜单项 ⇒ 岗位权限页勾得动、侧边栏看不到（#4203 同族坑）。
         org.junit.jupiter.api.Assertions.assertEquals(
                 // issue #4440：节点名与前端 config/menu.ts 同步 —— 「工序库」+「工艺路线」
@@ -134,7 +136,11 @@ class MenuControllerTest {
                 // issue #5159：「省料看板」(/production/saving-board) 接在「池看板」之后 ——
                 // 同属生产管理动作、同权 processing:manage（三处同构守卫见
                 // tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
-                java.util.List.of("生产看板", "池看板", "省料看板", "工艺配置", "计件工资", "入库单"), childLabels);
+                // issue #5191：「余料台账」(/production/remnants) 接在「省料看板」之后 ——
+                // 与前端 config/menu.ts、AuthService.buildMenusByPermissions 三处同构
+                // （守卫 tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
+                java.util.List.of("生产看板", "池看板", "省料看板", "余料台账", "工艺配置", "计件工资", "入库单"),
+                childLabels);
         // 加工三项共用 processing:manage（岗位权限页勾一处 = 那三项可见）；
         // 「入库单」是**仓储**动作、权限码独立为 inbound:view（issue #5045）——
         // 并进 processing:manage 会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单。
@@ -144,6 +150,7 @@ class MenuControllerTest {
         // ⇒ admin-api unit tests 判红 expected 5 vs actual 4）。
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("processing:manage", "processing:manage", "processing:manage",
-                        "processing:manage", "processing:manage", "inbound:view"), childCodes);
+                        "processing:manage", "processing:manage", "processing:manage", "inbound:view"),
+                childCodes);
     }
 }

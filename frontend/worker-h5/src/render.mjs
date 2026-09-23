@@ -238,7 +238,7 @@ function selectView(state) {
     <div class="wh5-group"><span class="wh5-group-label">选套</span>${setsHtml}</div>
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
-    <p class="wh5-sub" id="wh5-legacy-hint">选完套 + 部位即可报工 —— 该做哪道工序由**系统**推断（不用你找）。</p>
+    <p class="wh5-sub" id="wh5-legacy-hint">选完套 + 部位即可报工 —— 该做哪道工序由系统推断（不用你找）。</p>
   </section>`
 }
 

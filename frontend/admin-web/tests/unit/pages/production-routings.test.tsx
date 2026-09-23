@@ -1,4 +1,4 @@
-// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048, UI-049, UI-050, UI-051, UI-052
+// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048, UI-049, UI-050, UI-051, UI-052, PR-105
 // ⚠️ issue #4962（「什么时候」加回**部位**维 / `production_route_rules.position`）：本文件新增的 **⑱′ 组**
 // 由上面**已声明**的 `PG-053` 承载（该用例钉的就是这个「添加条件」表单 ——
 // `.github/cases/processing-order.yml` 的 PG-053 注释块与判据 9，触发维闭词表本次加第 4 档 `position`）。
@@ -1141,7 +1141,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).not.toHaveTextContent('下一步')
   })
 
-  it('算料配置面板的说明文案**不得漏出 markdown 星号**（issue #5033 顺手修）', async () => {
+  it('算料配置面板的说明文案**不得漏出 markdown 星号**（issue #5033 顺手修 → #5194 收口存量）', async () => {
     // 红证：把 `保存后<strong>新</strong>的算料` 改回 `保存后**新**的算料` ⇒ 下面两条断言红
     //（用户截图实证：JSX 纯文本里的 `**` 会**原样渲染**成字面星号，不是加粗）。
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
@@ -1151,11 +1151,16 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
 
     const panel = screen.getByTestId('craft-calc-config-panel')
-    // ⚠️ 只钉**这一句**：面板里其它区（术语说明）的散文仍带 markdown `**`（**已知的更大问题**，
-    // 见 issue #5033 的登记）⇒ 断言整块 textContent 不含 `**` 会因那些存量而红（**假红**）。
     expect(panel.textContent).not.toContain('保存后**新**')
     expect(within(panel).getByText('新', { selector: 'strong' })).toBeInTheDocument()
     expect(panel).toHaveTextContent('保存后新的算料按当前配置计算')
+
+    // 🔴 issue #5194 起**不再只钉这一句**：本面板（含术语说明区）的文案已全量去掉 `**`
+    // ⇒ 那条「整块断言会假红」的自我豁免**已失效**，改判为整块回归锁。
+    // 红证：把任一术语的 `impact` 塞回 `**` ⇒ 本条判红（改前实测：术语说明区 51 处文案带 `**`）。
+    const text = panel.textContent ?? ''
+    expect(text).toContain('术语怎么判') // 自证非空：空面板上的「不含 **」恒真
+    expect(text).not.toContain('**')
   })
 
   it('就绪度第 4 步「算料配置」：本租户无配置行（source=default）⇒ todo + 指向「算料配置」tab', async () => {

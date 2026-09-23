@@ -1,4 +1,4 @@
-// case_ids: PP-006, PG-040
+// case_ids: PP-006, PG-040, PR-106
 // PP-006（加工项目录 CRUD / 计价方式）+ PG-040（加工费**组合**定价）在 issue #4490 合并后的**单页形态**：
 // 「加工项管理」(/processing) 与「加工费管理」(/production/processing-fees) 合并为单一菜单入口
 // /production/processing（用户 2026-09-19 **规格修订**后归**商品管理**组；#4542 起菜单名 =「加工项管理」）。
@@ -107,12 +107,14 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     const productionPaths = productionGroup()!.children.map((c) => c.path)
     // issue #5034（V111）新增「入库单」（/inbound-orders）⇒ 本组三项 → 四项。
     // issue #5177 新增「池看板」（/production/pool，紧跟「生产看板」）⇒ 本组四项 → 五项。
-    // issue #5159 新增「省料看板」（/production/saving-board，紧跟「池看板」）⇒ 本组五项 → **六项**。
+    // issue #5159 新增「省料看板」（/production/saving-board，紧跟「池看板」）⇒ 本组五项 → 六项。
+    // issue #5191 新增「余料台账」（/production/remnants，紧跟「省料看板」）⇒ 本组六项 → **七项**。
     // 断言的是**路径清单**（顺序敏感）：合并项仍不在其中，这是本用例真正守的东西。
     expect(productionPaths).toEqual([
       '/production',
       '/production/pool',
       '/production/saving-board',
+      '/production/remnants',
       '/production/routings',
       '/production/piecework',
       '/inbound-orders',
@@ -120,8 +122,10 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     expect(productionPaths).not.toContain('/production/processing')
     // 加工项权限码仍统一 processing:manage（组内一致，无分叉；#5177 的「池看板」与「生产看板」同权；
     // #5159 的「省料看板」同理 —— 省料度量看板也是生产管理动作）；
+    // issue #5191：「余料台账」的权限码与页面端点同码（RemnantController 类级 @RequirePermission）。
     // 「入库单」是仓储动作、权限码独立（inbound:view，issue #5034）—— 不得并进 processing:manage。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
+      'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',
