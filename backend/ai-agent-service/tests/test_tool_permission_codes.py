@@ -106,29 +106,39 @@ PERMISSION_CATALOG = frozenset({
     "employee:list",
     "employee:create",
     "system:manage",
+    # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
+    # 此前写动作挂在读码上（只读持有者因此拿到写能力，端点层也拦不住）。
+    "order:update",
+    "order:create",
+    "customer:create",
+    "finance:create",
+    "agent:session:manage",
 })
 
 #: 商户角色的默认权限码（DB seed 口径；`admin` 运行时恒为 `*`）
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset({"*"}),
     "operator": frozenset({
-        "after_sales:view", "agent:session", "customer:view", "dashboard:view",
-        "employee:list", "finance:view", "inbound:create", "inbound:view",
-        "knowledge:view", "order:detail", "order:list", "order:refund",
+        "after_sales:view", "agent:session", "agent:session:manage",
+        "customer:create", "customer:view", "dashboard:view",
+        "employee:list", "finance:create", "finance:view",
+        "inbound:create", "inbound:view", "knowledge:view",
+        "order:create", "order:detail", "order:list", "order:refund", "order:update",
         "processing:manage", "processing:update", "processing:view",
         "product:category", "product:create", "product:list",
     }),
     "customer_service": frozenset({
-        "after_sales:view", "agent:session", "customer:view", "dashboard:view",
-        "inbound:view", "knowledge:view", "order:detail", "order:list", "processing:view",
+        "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
+        "dashboard:view", "inbound:view", "knowledge:view",
+        "order:detail", "order:list", "processing:view",
     }),
     "sales": frozenset({
         "customer:view", "dashboard:view", "inbound:view", "order:detail", "order:list",
         "processing:view", "product:list",
     }),
     "finance": frozenset({
-        "dashboard:view", "finance:view", "inbound:view", "order:detail", "order:list",
-        "processing:view",
+        "dashboard:view", "finance:create", "finance:view", "inbound:view",
+        "order:detail", "order:list", "processing:view",
     }),
     "product_manager": frozenset({
         "dashboard:view", "processing:manage", "product:category",
@@ -151,10 +161,10 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # `tests/test_batch_stock_query.py::TestPermissionAlignment`）。
     "batch_stock_query": ("product:list",),
     "category_manage": ("product:category",),
-    "customer_manage": ("customer:view",),
+    "customer_manage": ("customer:view", "customer:create"),
     "dashboard_stats": ("dashboard:view",),
     "employee_manage": ("employee:list", "employee:create"),
-    "finance_api": ("finance:view",),
+    "finance_api": ("finance:view", "finance:create"),
     # issue #5246：库存读（query/low_stock_alert）= product:list、写（adjust）= product:create。
     "inventory_manage": ("product:list", "product:create"),
     # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
@@ -163,8 +173,8 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5246：本工具调**两类端点** ⇒ 码集必须覆盖每一个 —— 通知端点（create/delete）
     # = system:manage，`GET /api/admin/users`（create 解析接收人）= employee:list。
     "notification_manage": ("system:manage", "employee:list"),
-    "order_create": ("order:list", "product:list"),
-    "order_manage": ("order:list",),
+    "order_create": ("order:create", "product:list"),
+    "order_manage": ("order:update",),
     "order_query": ("order:list",),
     # issue #5246 改判：计件/报工/加工单读面取**加工面读码** processing:manage
     # （ProductionController 的方法级注解；原 order:list / processing:view 与端点生效码不符）。
@@ -181,7 +191,7 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "production_progress_query": ("processing:manage",),
     "production_worklog_query": ("processing:manage",),
     "role_manage": ("system:manage",),
-    "session_manage": ("agent:session",),
+    "session_manage": ("agent:session", "agent:session:manage"),
     "settings_manage": ("system:manage",),
     "sku_update": ("product:create",),
 }
@@ -207,10 +217,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "logistics_track": frozenset({"customer_service", "finance", "operator", "sales"}),
     # issue #5246：通知 = `system:manage` + `employee:list`（解析接收人）⇒ 仅运营持后一码。
     "notification_manage": frozenset({"operator"}),
-    "order_create": frozenset({
-        "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
-    }),
-    "order_manage": frozenset({"customer_service", "finance", "operator", "sales"}),
+    "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
     # issue #5246 改判：计件/报工/加工单读面 = `processing:manage` ⇒ 运营 + 商品主管。
     "piecework_query": frozenset({"operator", "product_manager"}),
@@ -637,7 +645,9 @@ _ROLE_SERVICE = (
 )
 
 #: Java 权限目录行：`{"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},`
-_JAVA_CATALOG_ROW_RE = re.compile(r'\{"[^"]+",\s*"([a-z][a-z_]*:[a-z_]+)"')
+_JAVA_CATALOG_ROW_RE = re.compile(r'\{"[^"]+",\s*"([a-z][a-z_]*(?::[a-z_]+)+)"')
+# ⚠️ 段数：权限码允许 **≥2 段**（`agent:session:manage` 是 issue #5246 引入的第一个三段码）；
+# 旧正则 `[a-z_]+:[a-z_]+` 只认两段 ⇒ 三段码被静默漏掉（「镜像多码」假红，实测踩过）。
 #: `Role <var> = Role.builder() … .code("<role_code>") … .build();`
 _JAVA_ROLE_BUILDER_RE = re.compile(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', re.S)
 _JAVA_ROLE_CODE_RE = re.compile(r'\.code\("([a-z_]+)"\)')

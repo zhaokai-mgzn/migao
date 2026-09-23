@@ -3139,6 +3139,16 @@ PERMISSION_LABELS = {
     "inbound:view": "入库单查看",
     "inbound:create": "入库单操作",
     "knowledge:manage": "知识库管理",
+    # issue #5246：售后 / 知识库拆出**读**码 —— 镜像必须与 admin-api 权限目录逐码对齐
+    # （判据：tests/test_permission_scope_injection.py 的两条「目录 ⊆ 标签」）。
+    "after_sales:view": "售后查看",
+    "knowledge:view": "知识库查看",
+    # issue #5246 第二批：把「写动作挂在读码上」的四个域拆出写码（用户裁定本轮一并收口）
+    "order:update": "订单操作",
+    "order:create": "新增订单",
+    "customer:create": "客户维护",
+    "finance:create": "财务操作",
+    "agent:session:manage": "会话操作",
     "order:list": "订单列表",
     "order:detail": "订单详情",
     "order:refund": "订单退款",

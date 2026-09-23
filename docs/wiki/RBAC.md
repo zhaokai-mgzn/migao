@@ -9,10 +9,10 @@
 |------|------|---------|
 | 管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
 | 平台管理员 | super_admin | 全部权限（在 `platform_admins` 表，走 `PermissionInterceptor` 直通） |
-| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经米宝查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）。**仍无** `order:refund`（售后**写**面） |
-| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**（后两码 issue #5246 新增） |
+| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经米宝查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）, **`agent:session:manage`**（会话转接/结束写码，issue #5246 第二批）。**仍无** `order:refund`（退款写面）与 `order:update`（改单写面） |
+| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增） |
 | 销售 | sales | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `product:list`, `order:list`, `order:detail`, `customer:view`, `processing:view` |
-| 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view` |
+| 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
 > 新租户注册初始化五岗种子（管理员/客服/运营/销售/财务）+ role_permissions 预置（V29 为存量租户补齐）。
@@ -124,8 +124,23 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 >   写（建单/改状态）→ 保留 `order:refund`；`KnowledgeCard` / `KnowledgeCandidate` / `KnowledgeTemplate`
 >   的类级 `knowledge:manage` 同样拆分（读 → **新码 `knowledge:view`**，写 → 保留）；
 >   `AgentProductController` 的商品/库存/SKU 写端点从 `product:list` 拆到 `product:create`。
-> · **唯一一次可见性变化**：『知识库』菜单节点码 `knowledge:manage` → `knowledge:view`
->   ⇒ 客服 / 运营现在能看到该菜单项（用户明确要求非管理员可读知识卡片）。其余节点码一个未动。
+> · **可见性变化（两处节点）**：『知识库』节点码 `knowledge:manage` → `knowledge:view`
+>   ⇒ 客服 / 运营现在能看到该菜单项；『售后工单』节点码 `order:refund` → `after_sales:view`
+>   ⇒ **客服**新看到该菜单项（运营原本就有）。其余节点码一个未动。
+>
+> **issue #5246 第二批（同日，用户裁定「本轮一并收口」）：拆出真写码，写动作不再挂在读码上**
+> —— 新增 `order:update` / `order:create` / `customer:create` / `finance:create` /
+> `agent:session:manage` 五个**写**码（目录两处、岗位矩阵、V124 迁移、端点注解同批落地）：
+> · `OrderController` 的 `PUT /{id}/status|payment|cancel|remark|follow-status|logistics` 与
+>   `DELETE /{id}` → `order:update`；`POST /` → `order:create`（`PUT /{id}/refund` 仍是 `order:refund`）；
+> · `AgentOrderController`：`POST /` → `order:create`、`PATCH /{id}` → `order:update`
+>   （退款 action 的 `requirePermission("order:refund")` 复检保留）；
+> · `CustomerController` 的写面（改/删客户与标签）→ `customer:create`；
+> · `FinanceController` 的 `POST /transactions` → `finance:create`；
+> · `AgentSessionController` 的 `assign/end/messages` → `agent:session:manage`。
+> **有意收窄（能力增量表见 PR）**：`customer_service` / `sales` / `finance` 此前**因写动作挂在
+> 读码上**而能改单、删客户、登记收支；现在不能（各自只保留读面）。**没有给任何岗位新增权限**：
+> 新写码只授给原本就用这些写面工作的岗位（operator，及 finance / customer_service 各自那一个）。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）

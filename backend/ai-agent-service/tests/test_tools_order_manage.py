@@ -134,6 +134,10 @@ class TestOrderRefundPermissionScope:
     （`customer_service` / `sales` / `finance` 三个内置岗位）可借米宝越权退款。
     表单路径 `OrderController` 的退款路由用的是 `order:refund` —— 两条路径口径不一致。
 
+    issue #5246 追加收口：工具层粗筛码已从读码 `order:list` 换成**写码 `order:update`**
+    （`AgentOrderController.PATCH /{id}` 同批拆码）⇒ 「只持读码就能改单」这条也被关掉；
+    退款仍需 `order:refund`（`ACTION_PERMISSIONS` 的 action 级复检，口径不变）。
+
     本类锁两半（缺任一半都成缺陷）：
     ① 越权必须在**工具层**就被挡住（admin-api 的 403 是第二道防线，不是唯一一道）；
     ② 其余 action 不得被顺带收窄（正向对照，防「顺手把 order_manage 全改成 order:refund」）。
@@ -141,18 +145,23 @@ class TestOrderRefundPermissionScope:
 
     @pytest.fixture
     def list_only_context(self):
-        """只持 `order:list` 的商户员工 —— `customer_service` 岗位的真实权限集（内置角色口径）。"""
+        """持写码 `order:update`、但**没有** `order:refund` 的商户员工。
+
+        issue #5246 前这对应「只持 order:list」的客服/销售/财务；拆码后能改单的门槛是
+        `order:update`（只有 operator 有）⇒ 本夹具用 operator 形状但**剔掉** `order:refund`，
+        继续单独钉住「退款必须另行持有 order:refund」这条不变式。
+        """
         return ToolContext(
             tenant_id=1, user_id="staff_cs", session_id="sess_cs",
-            role="customer_service", permissions=["order:list"],
+            role="operator", permissions=["order:update"],
         )
 
     @pytest.fixture
     def refund_context(self):
-        """持 `order:refund` 的商户员工（`operator` 岗位的真实权限集）。"""
+        """持 `order:refund` 的商户员工（`operator` 岗位的真实权限集：写码 + 退款码）。"""
         return ToolContext(
             tenant_id=1, user_id="staff_op", session_id="sess_op",
-            role="operator", permissions=["order:list", "order:refund"],
+            role="operator", permissions=["order:update", "order:refund"],
         )
 
     @patch("app.tools.order_manage.get_admin_api_client")
@@ -178,9 +187,9 @@ class TestOrderRefundPermissionScope:
         {"action": "update_logistics", "logistics_company": "顺丰", "tracking_number": "SF1"},
     ])
     @patch("app.tools.order_manage.get_admin_api_client")
-    async def test_other_actions_keep_order_list_only(
+    async def test_other_actions_keep_the_write_code_only(
             self, mock_get_client, tool, list_only_context, kwargs):
-        """正向对照：只持 `order:list` 时，其余四个 action 必须照旧可用（不得过度收窄）。"""
+        """正向对照：只持 `order:update` 时，其余四个 action 必须照旧可用（不得过度收窄）。"""
         mock_client = AsyncMock()
         mock_client.patch = AsyncMock(return_value={"success": True, "data": {}})
         mock_get_client.return_value = mock_client
@@ -188,7 +197,7 @@ class TestOrderRefundPermissionScope:
         result = await tool.execute(
             context=list_only_context, order_id="order-1", **kwargs)
 
-        assert result.success is True, f"{kwargs['action']} 只持 order:list 时应照旧放行"
+        assert result.success is True, f"{kwargs['action']} 只持 order:update 时应照旧放行"
         assert mock_client.patch.call_args.kwargs["json_data"]["action"] == kwargs["action"]
 
     @patch("app.tools.order_manage.get_admin_api_client")
@@ -222,7 +231,7 @@ class TestRefundGuardIsNotVacuous:
         mock_get_client.return_value = mock_client
         list_only = ToolContext(
             tenant_id=1, user_id="staff_cs", session_id="sess_cs",
-            role="customer_service", permissions=["order:list"])
+            role="operator", permissions=["order:update"])
 
         result = await tool.execute(
             context=list_only, action="refund", order_id="order-1", refund_amount=299.0)

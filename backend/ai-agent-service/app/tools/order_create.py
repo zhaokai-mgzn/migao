@@ -469,13 +469,14 @@ class OrderCreateTool(BaseTool):
         "【标注】WRITE — 下单即与顾客达成交易合同，必须先出确认卡并取得明确确认"
     )
 
-    # 权限码（admin-api 目录）：AgentOrderController 类级 `@RequirePermission("order:list")`
-    # ＋下单取 `product:list`（商品/库存校验面）——与 controller 同码。
+    # 权限码（admin-api 目录）：issue #5246 起下单走**写码** `order:create`
+    # （`AgentOrderController.POST /` 同批拆码；此前挂在读码 `order:list` 上）
+    # ＋`product:list`（商品/库存校验面）——与 controller 同码。
     # 本工具**双端**（C 端小布下单 + B 端代客下单）⇒ 声明 c_end_reachable：C 端 JWT 没有
     # permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
     # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`；且权限码在场时角色白名单
     # 本就不生效＝第二份会漂的假门禁，#4106 F4）。
-    required_permissions = ["order:list", "product:list"]
+    required_permissions = ["order:create", "product:list"]
     c_end_reachable = True
 
     read_only = False

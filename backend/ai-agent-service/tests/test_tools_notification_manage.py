@@ -67,13 +67,13 @@ class TestNotificationPermission:
         assert result.success is False
         assert "权限" in result.error
 
-    async def test_agent_allowed(self, tool, agent_tool_context):
-        with patch("app.tools.notification_manage.get_admin_api_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
-            mock_get_client.return_value = mock_client
-            result = await tool.execute(context=agent_tool_context, action="list")
-            assert result.success is True
+    async def test_agent_role_denied(self, tool, agent_tool_context):
+        """issue #5246：`agent` 是 **C 端角色**，且 `notification_manage` 现强调权限码
+        （`system:manage` + `employee:list`）⇒ 旧的「C 端角色放行」被移除（横向越权修复）。
+        通知域的日常读取归持码的商户员工（运营/管理员），C 端没有这条能力。"""
+        result = await tool.execute(context=agent_tool_context, action="list")
+        assert result.success is False
+        assert "权限" in result.error
 
     async def test_invalid_action(self, tool, admin_tool_context):
         result = await tool.execute(context=admin_tool_context, action="broadcast")

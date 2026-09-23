@@ -422,7 +422,10 @@ class TestMissingParamsAreStructured:
     def test_backend_role_failure_has_no_missing_sms_code(self):
         """R2：B 端（admin）不需要 sms_code —— 失败面不得凭空报「缺 sms_code」。"""
         tool = OrderCreateTool()
-        ctx = ToolContext(tenant_id=1, user_id="u-test", role="admin", session_id="s-test")
+        # admin 恒为全权：`order_create` 现强调权限码（order:list/product:list），
+        # 空的 permissions 会被工具层判「权限不足」而不是走到契约失败面（issue #5246）。
+        ctx = ToolContext(tenant_id=1, user_id="u-test", role="admin", session_id="s-test",
+                          permissions=["*"])
 
         result = asyncio.run(tool.execute(
             ctx, customer_name="张三", customer_phone="13800138000", items=None))

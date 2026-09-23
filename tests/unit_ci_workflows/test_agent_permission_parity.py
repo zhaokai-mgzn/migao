@@ -475,9 +475,14 @@ TOOL_MENU_NODE: dict[str, str] = {
 #: 页面读码 → 从该页发起的写动作所用的码。
 PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
     "product:list": frozenset({"product:create", "product:category", "product:manage"}),
-    "order:list": frozenset({"order:refund", "order:detail"}),
+    # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
+    # 此前写动作挂在读码上（只读持有者因此拿到写能力）。写码**没有菜单节点**（按钮级），
+    # 故在此登记「它属于哪个页」；判据 4 会按所属页的读码反查岗位可见性。
+    "order:list": frozenset({"order:refund", "order:detail", "order:update", "order:create"}),
     "after_sales:view": frozenset({"order:refund"}),
-    "customer:view": frozenset(),
+    "customer:view": frozenset({"customer:create"}),
+    "finance:view": frozenset({"finance:create"}),
+    "agent:session": frozenset({"agent:session:manage"}),
     "processing:manage": frozenset({"processing:update"}),
     "employee:list": frozenset({"employee:create"}),
     "knowledge:view": frozenset({"knowledge:manage"}),
@@ -496,29 +501,19 @@ READ_CODE_ACTIONS = frozenset({"view", "list", "detail", "session"})
 
 #: 读写码冲突的**具名例外**（判据 5）：每条必须带理由 + 建议修法；条目陈旧（不再冲突）也红。
 READ_WRITE_EXCEPTIONS: dict[str, str] = {
-    "processing_item_query": "节点『加工项管理』的码就是 `processing:manage`（该域没有可用读码："
-                             "`processing:view` 在任一处菜单源里都没有节点）⇒ 只读工具不得不持管理码。"
-                             "建议：新开 `processing:item:view` 一类读码并把节点与端点同批迁过去",
-    "processing_order_query": "节点『生产看板』= `processing:manage`（加工单列表已并入该页）；"
-                              "端点同批收窄为 `processing:manage` 以保证「工具码 ≡ 端点码」。"
-                              "建议：为生产域引入真正的读码",
-    "production_progress_query": "同『生产看板』节点码（`processing:manage`）。"
-                                 "建议：同上（生产域读码）",
-    "production_worklog_query": "同『生产看板』节点码（`processing:manage`）。建议：同上",
+    # ⚠️ 只读工具却持**管理码**的**唯一**残留：生产域**没有可用的读码** ——
+    # `processing:view` 在任一处菜单源里都没有节点（「生产看板/计件工资/工艺配置」的节点码
+    # 都是 `processing:manage`）⇒ 若让工具持 `processing:view`，就等于允许"页面里看不到、
+    # Agent 却查得到"（用户裁定禁止）。用户裁定：**不得改节点码、不得给岗位新增权限**
+    # ⇒ 唯一可行方向是工具码对齐节点码（收窄），读写粒度债如实登记。
+    # 建议（未实装）：为生产域引入真正的读码（如 `production:view`）并把节点与端点同批迁过去。
+    "processing_item_query": "节点『加工项管理』= `processing:manage`（该域无读节点）⇒ 只读工具不得不持管理码。"
+                             "建议：新开生产域读码并把节点/端点/工具同批迁移",
+    "processing_order_query": "节点『生产看板』= `processing:manage`（加工单列表已并入该页），端点同批收窄为同码。"
+                              "建议：同上",
+    "production_progress_query": "同『生产看板』节点码。建议：同上",
+    "production_worklog_query": "同『生产看板』节点码。建议：同上",
     "piecework_query": "节点『计件工资』= `processing:manage`。建议：同上",
-    "order_manage": "**写工具但目录里没有订单写码**（`order:list`/`order:detail`/`order:refund` 之外无码），"
-                    "且其端点 `PATCH /api/admin/agent/orders/{}` 的生效码就是 `order:list`。"
-                    "建议：新增 `order:update` 并同批改端点注解与工具码",
-    "customer_manage": "**写工具但目录里没有客户写码**（只有 `customer:view`），"
-                       "`CustomerController` 的 PUT/DELETE 生效码也是 `customer:view`。"
-                       "建议：新增 `customer:create` 并把写端点拆到该码",
-    "finance_api": "**写工具但目录里没有财务写码**（只有 `finance:view`），"
-                   "`POST /api/admin/finance/transactions` 生效码也是 `finance:view`。"
-                   "建议：新增 `finance:create` 并把该端点拆过去",
-    "session_manage": "**写工具但 `agent:session` 是会话模块唯一的码**（`AgentSessionController` 的"
-                      "assign/end/messages 全在同一码下）。建议：新增 `agent:session:manage`",
-    "order_create": "**写工具但目录里没有订单写码**，且它调用的 `POST /api/admin/agent/orders` 生效码为 "
-                    "`order:list`。建议：同 `order_manage`（`order:update`）",
 }
 
 #: 未注解端点的**显式登记**（判据 8；键 = `verb 归一化路径` 或 `verb /前缀*`）。
@@ -589,11 +584,13 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
         "where": "实测（`tool_http_attribution.JavaEndpointIndex`）逐端点生效码可复算；去向：#5236",
     },
     "端点层写挂读码（非 Agent 可达）": {
-        "what": "`ProductionController`（36 端点，类级 `order:list` 下混着 `POST /ship`、`/instantiate`、"
-                "`/operations/{}/report` 等写端点）、`CustomerController` 的 PUT/DELETE、"
-                "`FinanceController` 的 `POST /transactions`、`UploadController` 的 DELETE 挂 `dashboard:view` 等",
-        "why": "这些端点**没有任何 Agent 工具调用**（工具侧已全部对账）；修它们要么新增写码（产品裁定），"
-               "要么改前端调用口径 —— 均超出本单授权",
+        "what": "`ProductionController`（类级 `order:list` 下仍混着 `POST /orders/{}/ship`、"
+                "`/instantiate`、`/operations/{}/report`、`/print` 等写端点）与 `UploadController` 的 "
+                "`DELETE /files/{}`、`DELETE /upload/image`（挂 `dashboard:view`）",
+        "why": "这些端点**没有任何 Agent 工具调用**（工具侧已全部对账）；订单/客户/财务/会话四域已在 "
+               "issue #5246 追加单里拆出真写码（`order:update`/`order:create`/`customer:create`/"
+               "`finance:create`/`agent:session:manage`），剩下这两处要么新增生产域写码/上传域码"
+               "（产品裁定），要么改前端调用口径 —— 超出本单授权",
         "where": "`UNANNOTATED_ENDPOINTS` 只管「无码」；本项是「有码但码粒度错」，逐条记在这里；去向：#5236",
     },
     "第四处菜单源（遗留树）": {
@@ -1218,6 +1215,25 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: s.replace('"knowledge:view"', '"knowledge:view-typo"', 1),
             problems_self_checks,
         ),
+        "⑩ 写端点退回读码（order:update → order:list）⇒ 判据 2 红": (
+            # issue #5246 第二批的回归形态：把拆出来的写码改回读码 ⇒ 工具码与端点码立刻不等
+            # 必须挑**工具真调用的那个端点**：`order_manage` 只调 `AgentOrderController.PATCH /{id}`
+            # （改 `OrderController` 的注解不会碰到任何工具的端点 ⇒ 判据 2 依然绿 = 红证空转）。
+            "java:controller/agent/AgentOrderController.java",
+            lambda s: s.replace('@RequirePermission("order:update")',
+                                '@RequirePermission("order:list")', 1),
+            problems_endpoint_parity,
+        ),
+        "⑪ 目录删掉新写码（customer:create）⇒ 两处目录不同步 ⇒ 判据 9 红": (
+            "java:service/PermissionService.java",
+            lambda s: s.replace('"customer:create"', '"customer:create-typo"', 1),
+            problems_self_checks,
+        ),
+        "⑫ 岗位只拿到写码、没有该页读码（operator 去掉 customer:view）⇒ 判据 4 红": (
+            "java:service/RegistrationService.java",
+            lambda s: _drop_role_code(s, "operatorRole", "customer:view"),
+            problems_leakage,
+        ),
         "⑨ 有人删掉一个 @RequirePermission ⇒ 端点变成未登记的无码端点 ⇒ 判据 8 红": (
             # 为什么不用「改路径名」来造这个红：`UNANNOTATED_ENDPOINTS` 里有 `GET /api/admin/notifications*`
             # 这类前缀口径 ⇒ 改个后缀仍会被前缀命中（实测：那样注入**不会**变红）。
@@ -1246,6 +1262,19 @@ def _diverge_shared_node(text: str) -> str:
 
 def test_every_judgement_can_go_red() -> None:
     """**每条**判据都要有能单独变红的注入（改坏必红、还原必绿）。"""
+    # 判据表 ↔ 注入表**一一对应**（防「新增判据忘了补注入」⇒ 该判据永远不会红 = 空断言；
+    # 反向也防：注入指向已删判据 ⇒ 红证无从归因）。放在循环**之前**：这是纯表校验，
+    # 失败时只报表差集，不与"哪条判据红了"混在一起。
+    _covered = {fn for _key, _mutate, fn in _injections().values()}
+    _missing = sorted(label for label, fn in JUDGEMENTS.items() if fn not in _covered)
+    _orphan = sorted(label for label, (key, _m, fn) in _injections().items() if fn not in JUDGEMENTS.values())
+    assert not _missing and not _orphan, (
+        "判据表与注入表必须**互相覆盖**：缺注入 ⇒ 该判据永远不会红（空断言）；"
+        "注入指向已删判据 ⇒ 红证无从归因。"
+        f"\n  仅有判据、无注入：{_missing}"
+        f"\n  注入指向未登记的判据：{_orphan}"
+        "\n  （一条判据允许多个注入 —— 但每条判据至少要有一个。）"
+    )
     base_sources = _source_map()
     base_world = build_world(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}

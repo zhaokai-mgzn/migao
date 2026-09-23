@@ -276,7 +276,14 @@ class TestExceptionBoundaryChain:
         admin-api 不可用时 AI 服务优雅降级：
         1. ProductSearchTool: HTTP 连接失败 → 返回友好错误消息
         2. LogisticsTrackTool: HTTP 连接失败 → 降级到 mock 数据
+
+        issue #5246：两个工具现都强调权限码（`product:list` / `order:list`）⇒ 用**持码的
+        商户员工**上下文（本文件测的是降级面，不是角色面）。
         """
+        ctx_tenant_a = ToolContext(
+            tenant_id=TENANT_A_ID, user_id=USER_A, session_id=SESSION_A,
+            role="operator", permissions=["product:list", "order:list"],
+        )
         with patch.object(AdminApiClient, '_get_client') as mock_get_client:
             mock_http = AsyncMock()
             # 模拟 admin-api 完全不可用

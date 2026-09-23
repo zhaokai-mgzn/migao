@@ -30,6 +30,11 @@ public class FinanceController {
 
     private final FinanceService financeService;
 
+    // issue #5246 追加单：写面（登记收支流水）用方法级 finance:create 覆盖类级读码 ——
+    // PermissionInterceptor 的解析顺序是**方法级优先、其次类级**，故 GET 三个读面仍吃 finance:view，
+    // 而记账不再需要把 finance:view 当写权用（原形态：能看账 = 能记账）。
+    // 有意**不**新造 finance:update：财务域目前只有「登记流水」这一个写动作，多造一个码没有持有者。
+
     /**
      * 收支汇总
      *
@@ -71,8 +76,11 @@ public class FinanceController {
      * 手动登记一笔收支（线下收款/退款）
      *
      * POST /api/admin/finance/transactions
+     *
+     * issue #5246 追加单：登记流水是**写** ⇒ finance:create（覆盖类级读码 finance:view）。
      */
     @PostMapping("/transactions")
+    @RequirePermission("finance:create")
     public ApiResponse<FinanceTransactionListResponse> createTransaction(
             @Valid @RequestBody FinanceTransactionCreateRequest request) {
         log.info("登记资金流水: type={}, amount={}, paymentMethod={}", request.getType(), request.getAmount(), request.getPaymentMethod());

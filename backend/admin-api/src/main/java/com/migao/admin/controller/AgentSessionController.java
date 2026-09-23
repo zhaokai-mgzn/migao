@@ -79,8 +79,13 @@ public class AgentSessionController {
      * 手动分配会话给客服员工
      *
      * POST /api/admin/agent-sessions/{id}/assign
+     *
+     * issue #5246 追加单：转接是**写** ⇒ 方法级 agent:session:manage 覆盖类级读码 agent:session
+     * （解析顺序 = 方法级优先，见 PermissionInterceptor.resolveRequirePermission）。
+     * 原形态下「能看会话监控」=「能替客服转接」，客服岗位靠一个读码就拿到了操作权。
      */
     @PostMapping("/{id}/assign")
+    @RequirePermission("agent:session:manage")
     public ApiResponse<Void> assignSession(
             @PathVariable String id,
             @Valid @RequestBody AgentSessionAssignRequest request) {
@@ -95,6 +100,7 @@ public class AgentSessionController {
      * POST /api/admin/agent-sessions/{id}/end
      */
     @PostMapping("/{id}/end")
+    @RequirePermission("agent:session:manage")  // issue #5246：结束会话是写
     public ApiResponse<Void> endSession(@PathVariable String id) {
         log.info("结束会话: sessionId={}", id);
         agentSessionService.endSession(id);
@@ -127,6 +133,7 @@ public class AgentSessionController {
      * POST /api/admin/agent-sessions/{id}/messages
      */
     @PostMapping("/{id}/messages")
+    @RequirePermission("agent:session:manage")  // issue #5246：以客服身份发言是写
     public ApiResponse<AgentMessageResponse> sendMessage(
             @PathVariable String id,
             @Valid @RequestBody AgentMessageSendRequest request) {

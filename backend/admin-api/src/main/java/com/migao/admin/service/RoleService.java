@@ -301,7 +301,14 @@ public class RoleService {
                     // issue #5246：与 RegistrationService 的 operator 默认权限表同步 ——
                     // 无 role_permissions 记录（历史/内置角色回退路径）时，运营也要有这两个**读**码，
                     // 否则回退路径下「侧边栏节点可见」与「DB 岗位默认」两套口径不一致。
-                    "after_sales:view", "knowledge:view"
+                    "after_sales:view", "knowledge:view",
+                    // issue #5246 追加单（写码）：同样与种子矩阵逐值同步 —— 回退路径若不跟上，
+                    // 「老员工（无权限快照）改不了单、新员工能改」会成为只在一部分账号上出现的怪状。
+                    // ⚠️ 本 switch 只有 admin/operator/product_manager/knowledge_editor 四个 case：
+                    // finance 与 customer_service **没有**硬编码回退（落 default ⇒ 空表），
+                    // 故本单对这两个岗位的写码只在种子矩阵与 V124 迁移里落地（如实登记，非静默遗漏）。
+                    "order:update", "order:create", "customer:create", "finance:create",
+                    "agent:session:manage"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );
             case "product_manager" -> List.of(

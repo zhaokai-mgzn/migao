@@ -30,7 +30,6 @@ import java.util.Map;
  * - DELETE /api/admin/customer-tags/{id}     → deleteCustomerTag
  */
 @Slf4j
-@RequirePermission("customer:view")
 @RestController
 @RequiredArgsConstructor
 public class CustomerController {
@@ -43,8 +42,14 @@ public class CustomerController {
      * 分页查询客户列表
      *
      * GET /api/admin/customers?page=1&size=10&keyword=xxx&sourceChannel=wechat_mini&vipLevel=vip1
+     *
+     * issue #5246 追加单：类级 customer:view 已移除 ⇒ **逐端点**标注（读 customer:view /
+     * 写 customer:create）。原形态下「能看客户」=「能改档案、删客户、增删标签」—— 只读持有者
+     * 被动拿到写能力（本单要关掉的那一类）。逐端点标注（而非保留类级 + 覆盖写面）是为了让
+     * **日后新增的端点不会静默继承读码**。
      */
     @GetMapping("/api/admin/customers")
+    @RequirePermission("customer:view")
     public ApiResponse<PageResponse<CustomerProfile>> getCustomers(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size,
@@ -63,6 +68,7 @@ public class CustomerController {
      * GET /api/admin/customers/{id}
      */
     @GetMapping("/api/admin/customers/{id}")
+    @RequirePermission("customer:view")
     public ApiResponse<Map<String, Object>> getCustomer(@PathVariable String id) {
         log.info("查询客户详情: id={}", id);
         Map<String, Object> detail = customerService.getCustomerDetail(id);
@@ -75,6 +81,7 @@ public class CustomerController {
      * PUT /api/admin/customers/{id}
      */
     @PutMapping("/api/admin/customers/{id}")
+    @RequirePermission("customer:create")
     public ApiResponse<CustomerProfile> updateCustomer(
             @PathVariable String id,
             @RequestBody CustomerProfile profile) {
@@ -89,6 +96,7 @@ public class CustomerController {
      * DELETE /api/admin/customers/{id}
      */
     @DeleteMapping("/api/admin/customers/{id}")
+    @RequirePermission("customer:create")
     public ApiResponse<Void> deleteCustomer(@PathVariable String id) {
         log.info("删除客户档案: id={}", id);
         customerService.removeById(id);
@@ -101,6 +109,7 @@ public class CustomerController {
      * POST /api/admin/customers/{customerId}/tags/{tagId}
      */
     @PostMapping("/api/admin/customers/{customerId}/tags/{tagId}")
+    @RequirePermission("customer:create")
     public ApiResponse<Void> addTagToCustomer(
             @PathVariable String customerId,
             @PathVariable String tagId) {
@@ -115,6 +124,7 @@ public class CustomerController {
      * DELETE /api/admin/customers/{customerId}/tags/{tagId}
      */
     @DeleteMapping("/api/admin/customers/{customerId}/tags/{tagId}")
+    @RequirePermission("customer:create")
     public ApiResponse<Void> removeTagFromCustomer(
             @PathVariable String customerId,
             @PathVariable String tagId) {
@@ -131,6 +141,7 @@ public class CustomerController {
      * GET /api/admin/customer-tags
      */
     @GetMapping("/api/admin/customer-tags")
+    @RequirePermission("customer:view")
     public ApiResponse<List<CustomerTag>> getCustomerTags() {
         Long tenantId = TenantContext.getTenantId();
         log.info("查询客户标签列表: tenantId={}", tenantId);
@@ -144,6 +155,7 @@ public class CustomerController {
      * POST /api/admin/customer-tags
      */
     @PostMapping("/api/admin/customer-tags")
+    @RequirePermission("customer:create")
     public ApiResponse<CustomerTag> createCustomerTag(@RequestBody CustomerTag tag) {
         Long tenantId = TenantContext.getTenantId();
         tag.setTenantId(tenantId);
@@ -158,6 +170,7 @@ public class CustomerController {
      * PUT /api/admin/customer-tags/{id}
      */
     @PutMapping("/api/admin/customer-tags/{id}")
+    @RequirePermission("customer:create")
     public ApiResponse<CustomerTag> updateCustomerTag(
             @PathVariable String id,
             @RequestBody CustomerTag tag) {
@@ -172,6 +185,7 @@ public class CustomerController {
      * DELETE /api/admin/customer-tags/{id}
      */
     @DeleteMapping("/api/admin/customer-tags/{id}")
+    @RequirePermission("customer:create")
     public ApiResponse<Void> deleteCustomerTag(@PathVariable String id) {
         log.info("删除客户标签: id={}", id);
         customerService.deleteTag(id);

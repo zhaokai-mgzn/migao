@@ -1107,8 +1107,10 @@ class TestErrorHandlingAndDegradation:
     async def test_tool_execution_exception_returns_safe_message(self, fresh_registry):
         """Tool 执行抛异常时 registry 返回泛化错误消息（不暴露内部细节）"""
         ctx = ToolContext(
+            # admin 恒为全权（permissions=["*"]）：`notification_manage` 现强调权限码
+            # （system:manage/employee:list），空 permissions 会在工具层被拒 ⇒ 走不到被测的异常面。
             tenant_id=TENANT_A, user_id=ADMIN_USER_ID,
-            session_id="s_err", role="admin",
+            session_id="s_err", role="admin", permissions=["*"],
         )
         target = fresh_registry.get_tool("notification_manage")
         with patch.object(target, "execute", side_effect=RuntimeError("Internal Admin API 500")):

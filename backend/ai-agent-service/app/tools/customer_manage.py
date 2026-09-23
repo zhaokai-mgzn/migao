@@ -86,9 +86,9 @@ class CustomerManageTool(BaseTool):
         "员工账号用 employee_manage，角色权限用 role_manage。"
         "【标注】WRITE|DESTRUCTIVE — 写操作需确认，删除标签/客户前必须二次确认"
     )
-    # 权限码（admin-api 目录）：CustomerController 类级 `@RequirePermission("customer:view")`
-    # （客户读/写/标签同码）。
-    required_permissions = ["customer:view"]
+    # 权限码（admin-api 目录）：issue #5246 起 `CustomerController` 的读面 `customer:view`、
+    # 写面（改/删客户、标签增删）`customer:create`（此前整类挂在读码上，只读持有者能删客户）。
+    required_permissions = ["customer:view", "customer:create"]
 
     read_only = False
     destructive = True   # 可删除客户/标签

@@ -190,11 +190,19 @@ public class PermissionService {
                 {"知识库查看", "knowledge:view", "knowledge", "view", "查看知识卡片"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
+                // 订单写码（issue #5246 追加单）—— 与 RegistrationService 的目录**逐行同源同序**：
+                // 存量租户的角色管理页若不补这两行，就勾不到 order:update/order:create，
+                // 而端点已改用写码 ⇒ 老租户的运营岗位**改不了单**（新租户能、老租户不能）。
+                {"订单操作", "order:update", "order", "update", "改订单状态/物流/备注/跟进/取消"},
+                {"新增订单", "order:create", "order", "create", "创建订单"},
                 {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
                 {"售后查看", "after_sales:view", "after-sales", "view", "查看售后工单"},
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
+                {"客户维护", "customer:create", "customer", "create", "编辑/删除客户与标签"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
+                {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}

@@ -40,9 +40,10 @@ class FinanceApiTool(BaseTool):
         "【反例】查订单金额/明细用 order_query；看经营看板/趋势用 dashboard_stats。"
         "【标注】WRITE — get_* 只读；create_transaction 登记前必须二次确认"
     )
-    # 权限码（admin-api 目录）：FinanceController 类级 `@RequirePermission("finance:view")`。
-    # 旧白名单里的 `operation_manager` 在 admin-api 里根本不存在（角色码漂移）。
-    required_permissions = ["finance:view"]
+    # 权限码（admin-api 目录）：读面 `finance:view`；issue #5246 起 `POST /finance/transactions`
+    # （登记收支）走写码 `finance:create`（此前挂在读码上）。旧白名单里的 `operation_manager`
+    # 在 admin-api 里根本不存在（角色码漂移）。
+    required_permissions = ["finance:view", "finance:create"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
