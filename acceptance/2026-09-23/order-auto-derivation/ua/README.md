@@ -11,7 +11,7 @@
 
 | 文件 | 是什么 | 字节 | sha256 |
 |---|---|---|---|
-| `probe-orders-new.mjs` | 探针源码：登录 → `/orders/new` → 选商品 → 选颜色 → 填净窗宽/净高 → 抓推导面板 | 6281 | `d87953b9dc6aeb65ced8c147683676668927f15ec6500cb04d20c1e5ac82107d` |
+| `probe-orders-new.mjs` | 探针源码（**已参数化** `WIDTH_M` / `HEIGHT_M`，默认 `6.6` / `2.6` ⇒ 不带参数即复现第一条旅程）：登录 → `/orders/new` → 选商品 → 选颜色 → 填净窗宽/净高 → 抓推导面板 | 6354 | `539f281d1bddd98af5a850d88d1becfd7ba8b639982930fb9afda19adbf9806b` |
 | `run.txt` | 上述探针**一次完整成功运行**的 stdout，末行 `PROBE_DONE_OK` | 7582 | `705faff5bf4a68c5927f4b776e29595e9dd43395113fcf0004a56ac7b4d820ac` |
 | `00-登录页.png` | 旅程①：登录页（`title="米高 - AI电商管理系统"`） | 375819 | `8b5c2b68bdc431116a7c8cf93bb605e885e156a97006d8abad8569330a16e58f` |
 | `01-orders-new-初始.png` | 旅程②：`/orders/new` 初始态 | 199541 | `01d362147f468f8d38e7a5dcdf4d75c59447e341400bb43c6e7d390816965f1b` |
@@ -21,9 +21,19 @@
 | `04-推导面板.png` | 旅程⑥：推导面板读数现场（§11.3 的截图证据） | 336045 | `0d65dccfad2a4ecd69e0783d3f7a31d4a9e95ce853a2c165a5eaf6cd00ba4c24` |
 | `probe-typing-zero.mjs` | **第二条探针**：在同一套栈上逐字符敲 `0` `.` `5` / `0` `.` `6`，每一击读 DOM 值（§11.6） | 3441 | `3099d6afddd6ae44ffcbb342011d1113fb543cd4dfffefdea1fa6266ad8ba865` |
 | `05-逐字符输0.5.png` | 上述探针跑完后的现场截图：`窗宽（米）` = **`0.6`**（第二轮终值，同帧可见 窗高 2.6 / 用料 1 / 商品「遮光窗帘 浅灰」） | 264835 | `c006bd11b714a6adf5311aa842519643ccd7aec0b0b59b0f0340bf4415b810c0` |
+| `run-splice.txt` | **第三轮运行**（`WIDTH_M=10 HEIGHT_M=2.6`）的 stdout：候选表带出**每个候选的拼接次数**（§11.7） | 7852 | `aba25cf581ca03d5b0fa558bba73f0b4d5c1eca797e046620ac59c85d457612d` |
+| `06-推导面板-倒幅候选7次拼接.png` | 该轮现场截图：窗宽 **10** / 高 2.6 / 用料 **20.3 米**，候选里「倒幅（定宽买高）：可行 · 用料 23.2 米 · **拼接 7 次**」 | 334066 | `eada674ad4c47d3c2ffe0d01b372b74dbb0f8352c6da2077753caea541855c6b` |
 
-两条探针是**两次独立运行**（不是一次）：`probe-orders-new.mjs` 的 stdout = `run.txt`（有归档，末行 `PROBE_DONE_OK`）；
-`probe-typing-zero.mjs` 的 stdout **未作为文件归档**，其读数见 §11.6（按 §2 ⑨ 重跑即可拿到）。
+本目录的读数是**三轮独立运行**（不是一次）：
+① `probe-orders-new.mjs`（默认 `6.6` × `2.6`）⇒ stdout = `run.txt`（末行 `PROBE_DONE_OK`）；
+② `probe-typing-zero.mjs`（逐字符输 `0.5`）⇒ stdout **未作为文件归档**，读数见 §11.6（按 §2 ⑨ 重跑即可拿到）；
+③ `probe-orders-new.mjs`（`WIDTH_M=10 HEIGHT_M=2.6`）⇒ stdout = `run-splice.txt`，截图 = `06-…png`（见 §11.7）。
+
+> ⚠️ **源目录 `/tmp/ua-evidence/` 在第③轮之后已被改写**（如实登记，因为它影响「去哪找原始件」）：
+> `probe-orders-new.mjs` 已被换成参数化版；`02-选完商品` / `02b-选完颜色` / `03-填完宽高` 三张 png 被第③轮覆盖
+> （字节数已变）；第①轮的 `04-推导面板.png` **在源目录里已不存在** ⇒ 本目录的这份（sha256 `0d65dccf…`）
+> 是**归档时刻的原始字节**，也是**现存唯一副本**。第①轮的 `run.txt` 未受影响（仍 7582 字节）。
+> ⇒ 上表各文件的 sha256 以**归档时刻**为准，不随后续源目录覆盖而变；核对归档用下面那条命令即可。
 
 > ⚠️ **归档名是 `run.txt` 而不是 `run.log`**（源文件名是 `run.log`）：仓库 `.gitignore` 有 `*.log`，
 > 且**全仓 tracked 的 `.log` 文件数为 0** —— 证据一律按既有先例存 `.txt`
@@ -52,7 +62,8 @@ shasum -a 256 probe-orders-new.mjs probe-typing-zero.mjs run.txt *.png
 | L37–L46 `craft-plan-*` 十个读数 | §11.3 逐条判据（加工类型 / 接高 / 拼接 / 用料） |
 | L47 `candidates(5)` | §11.3：5 个候选连同**每个的可行性理由**全部上屏 |
 | L49 `PROBE_DONE_OK` | 该次运行**完整跑完**（不是中途截断的读数） |
-| （第二条探针，见 `05-逐字符输0.5.png`）`窗宽（米）` = `0.6` | §11.6：`0.` 中间态未被吞、`0.5`/`0.6` 打得出来 |
+| （第二轮，见 `05-逐字符输0.5.png`）`窗宽（米）` = `0.6` | §11.6：`0.` 中间态未被吞、`0.5`/`0.6` 打得出来 |
+| （第三轮，见 `run-splice.txt`）`candidates(5)` 里两条可行候选 = `拼接 0 次` / `拼接 7 次`；`倒幅 + 接宽` 的理由带真实数字 `20.3 − 7×2.8 = 0.7 米 > 上限 0.1 米` | §11.7：候选级拼接次数上屏 + 契约公式与上屏文案同源 |
 
 ⚠️ `run.txt` L4–L15 的 `[reqfail] …:: net::ERR_ABORTED` 与 L16/L17 的 `craft-calc-config` 是
 **本旅程之外**的背景噪声（dashboard 轮询在页面跳转时被取消），**不影响** L31/L32 两条目标端点读数为 200。
@@ -169,9 +180,18 @@ npm run dev       # 监听 3001
 ### ⑧ 跑探针
 
 ```bash
+# 默认尺寸（6.6 × 2.6）⇒ 复现 run.txt
 PHONE=13600136000 BASE_URL=http://localhost:3001 OUT_DIR=<某空目录> \
   node acceptance/2026-09-23/order-auto-derivation/ua/probe-orders-new.mjs
+
+# 换尺寸（10 × 2.6）⇒ 复现 run-splice.txt（候选表会带出每个候选的拼接次数，见 §11.7）
+PHONE=13600136000 BASE_URL=http://localhost:3001 OUT_DIR=<另一个空目录> WIDTH_M=10 HEIGHT_M=2.6 \
+  node acceptance/2026-09-23/order-auto-derivation/ua/probe-orders-new.mjs
 ```
+
+> 🔴 **每轮必须换一个 `OUT_DIR`**：该探针的截图名是**固定的**（`00-登录页` … `04-推导面板`），
+> 同一个 `OUT_DIR` 跑第二轮会**静默覆盖**第一轮的截图 —— 这正是源目录 `/tmp/ua-evidence/`
+> 丢掉第①轮 `04-推导面板.png` 的原因（见 §0 的登记）。
 
 > 🔴 **登录手机号是 `13600136000`（`debug_admin_eval` / 评测管理员）**，
 > **不是**冒烟脚本默认的 `13800138000` —— 后者在本种子里是**顾客** `debug_customer_1`，
@@ -208,6 +228,7 @@ PHONE=13600136000 BASE_URL=http://localhost:3001 \
 | 页面永远「加载中...」 | `BASE_URL` 用了 `127.0.0.1:3001` ⇒ hydration 不接管 | 改 `http://localhost:3001`（§2 ⑦） |
 | 工作区软链的 `node_modules` 起不来 | Turbopack 拒软链（issue #5241） | `npm ci` 真装（§2 ⑦） |
 | `/orders/new` 显示「缺少权限 `order:list`」 | 用了 `13800138000`（顾客账号） | 用 `13600136000`（评测管理员）（§2 ⑧） |
+| 换个尺寸重跑后，上一轮的截图**不见了** | 探针截图名固定（`00-`…`04-`），同一 `OUT_DIR` 会被静默覆盖 | **每轮换 `OUT_DIR`**（§2 ⑧）—— 源目录就是这么丢的第①轮 `04-推导面板.png` |
 
 ## 4. 本目录的边界（照实登记，不许读成"UA 全做完"）
 

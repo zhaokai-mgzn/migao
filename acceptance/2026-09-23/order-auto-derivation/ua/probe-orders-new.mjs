@@ -6,6 +6,8 @@ const { chromium } = require('playwright')
 
 const BASE = process.env.BASE_URL || 'http://localhost:3001'
 const OUT = process.env.OUT_DIR || '/tmp/ua-verify'
+const W = process.env.WIDTH_M || '6.6'
+const H = process.env.HEIGHT_M || '2.6'
 const PHONE = process.env.PHONE || '13800138000'
 const SMS = process.env.SMS_CODE || '123456'
 
@@ -82,8 +84,8 @@ try {
   // 5) 填净窗宽 / 净窗高
   const w = page.getByLabel('窗宽 (米)').first()
   const hgt = page.getByLabel('窗高 (米)').first()
-  if (await w.count()) { await w.fill('6.6'); console.log('✅ 已填 窗宽 6.6') } else { console.log('⚠️ 未找到 窗宽 (米) 输入框') }
-  if (await hgt.count()) { await hgt.fill('2.6'); console.log('✅ 已填 窗高 2.6') } else { console.log('⚠️ 未找到 窗高 (米) 输入框') }
+  if (await w.count()) { await w.fill(W); console.log(`✅ 已填 窗宽 ${W}`) } else { console.log('⚠️ 未找到 窗宽 (米) 输入框') }
+  if (await hgt.count()) { await hgt.fill(H); console.log(`✅ 已填 窗高 ${H}`) } else { console.log('⚠️ 未找到 窗高 (米) 输入框') }
   await page.waitForTimeout(3500)
   await dumpTestIds('填完宽高')
   await shot('03-填完宽高')
