@@ -429,29 +429,25 @@ def test_require_realdb_flag_is_fail_closed(monkeypatch):
     monkeypatch.setattr(funnel, "missing", lambda: list(funnel.PG_BINARIES))
 
     monkeypatch.delenv(funnel.ENV_REQUIRE_REALDB, raising=False)
-    try:
+    # 无标记 ⇒ 必须 `Skipped`（本机开发友好）。若改判成 `Failed`，异常逃出上下文管理器 ⇒ 红。
+    with pytest.raises(pytest.skip.Exception):
         funnel.require_pg()
-    except pytest.skip.Exception:
-        pass
-    else:
-        raise AssertionError("无标记且缺 PG 时应**显式 skip**（本机开发友好）")
 
     monkeypatch.setenv(funnel.ENV_REQUIRE_REALDB, "1")
+    # ⚠️ 这里**不能**用 `pytest.raises(pytest.fail.Exception)`：真回归（改回纯 skip）抛的是
+    # `Skipped`，它会**逃出**上下文管理器被 pytest 记成「跳过」—— 判据自己变成静默绿。
+    # 故显式捕获后**断言异常类型**（「抛了别的」与「什么都没抛」都判红）。
+    captured: BaseException | None = None
     try:
         funnel.require_pg()
-    except pytest.fail.Exception:
-        pass
     except BaseException as exc:  # noqa: BLE001 —— 含 pytest.skip.Exception（最危险的回归形态）
-        raise AssertionError(
-            f"带 `{funnel.ENV_REQUIRE_REALDB}=1` 且缺 PG 时，`require_pg()` 抛的是 "
-            f"{type(exc).__name__}（{exc}）—— 必须判 **FAIL**（`pytest.fail`）而不是 skip："
-            "CI 上「真库判据没跑」绝不能是绿（issue #5203）。"
-        ) from None
-    else:
-        raise AssertionError(
-            f"带 `{funnel.ENV_REQUIRE_REALDB}=1` 且缺 PG 时 `require_pg()` **什么都没抛** —— "
-            "静默通过是本 issue 最坏的形态（issue #5203）。"
-        )
+        captured = exc
+    assert isinstance(captured, pytest.fail.Exception), (
+        f"带 `{funnel.ENV_REQUIRE_REALDB}=1` 且缺 PG 时，`require_pg()` 的结果是 "
+        f"{type(captured).__name__ + '（' + str(captured) + '）' if captured else '**什么都没抛**'} "
+        "—— 必须判 **FAIL**（`pytest.fail`），不是 skip、更不是静默通过："
+        "CI 上「真库判据没跑」绝不能是绿（issue #5203）。"
+    )
 
 
 # ────────────────────────────────────────────── 判据⑧ CI fail-closed（Python 侧）
