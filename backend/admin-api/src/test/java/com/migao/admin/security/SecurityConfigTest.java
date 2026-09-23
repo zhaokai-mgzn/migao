@@ -172,6 +172,19 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.StockBatchConsumptionService stockBatchConsumptionService;
 
+    /**
+     * 余料回收服务（#5146）：`RemnantController` 与 `StockBatchConsumptionService` 的构造依赖
+     * ⇒ 本上下文必须能装配它。
+     *
+     * <p>⚠️ **不 mock 就会红**（实测）：本类 `@EnableAutoConfiguration(exclude = {…,
+     * MybatisPlusAutoConfiguration.class, …})` ⇒ 上下文里**没有** `SqlSessionFactory`，
+     * 于是任何一个「真的去造 mapper」的服务都会在启动时炸
+     * （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）。
+     * 本类对全部服务一律 `@MockBean`，这条与其余同款 —— 不是放宽，是**保持装配面可启动**。</p>
+     */
+    @MockBean
+    private com.migao.admin.service.RemnantService remnantService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 

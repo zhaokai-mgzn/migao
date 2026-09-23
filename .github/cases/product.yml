@@ -3484,6 +3484,8 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoveryRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantNonAssetGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/FabricRemnantMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/RemnantItemSizeMapperTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -3518,6 +3520,9 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoveryRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/FabricRemnantMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/RemnantItemSizeMapperTest.java"
         - "frontend/admin-web/tests/unit/lib/remnant-params.test.ts"
         - "frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx"
         - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
@@ -3554,6 +3559,7 @@ cases:
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoveryRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/RemnantControllerTest.java"
       ci:
         - pr-check.yml
       verifies: []
