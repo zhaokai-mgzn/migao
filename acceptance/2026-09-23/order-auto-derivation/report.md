@@ -271,3 +271,22 @@ PR #5222 的 CI 红在 `OversizeThresholdPreview.test.tsx`，根因是 `expect(a
 ⚠️ **不许推广**：本轮**只换了净窗宽一个维度**（10 米）—— 净窗高仍 2.6、商品/颜色仍是同一条；
 `拼接 7 次` 是**该尺寸下**的读数，**不是**"任意尺寸都推 7 次"。
 「候选级拼接次数」在本次**只有这一个尺寸**的读数。
+
+**⚠️ 顺带发现（不在本单范围，需人工确认）：自称「单一真值源」的那页仍写着<u>旧</u>的选优顺序**
+
+核对「契约 → 上屏文案同源」时撞见一处**口径漂移**。只登记，**不改任何 `docs/**` / `backend/**`**：
+
+| 位置 | 写的选优顺序 |
+|---|---|
+| `docs/design/order-auto-derivation.md` §3「选优顺序」——该页页头**自称「本页是单一真值源…不得各自解释口径」** | **① 用料最少 → ② 拼接次数最少** → …（**旧序**） |
+| `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `_rank` docstring 与上屏 `warning` 文案 | **① 拼接次数最少 → ② 用料最少** → …（**新序**），且注明「v1.1 曾把『用料最少』放第 ①，**已按用户裁定对调**」 |
+| `backend/ai-agent-service/app/api/internal.py` 的 docstring | **旧序** |
+| `backend/ai-agent-service/tests/test_curtain_calc_derive_plan.py`：模块 docstring vs 同文件另一处注释 | **旧序 vs 新序（同一文件内自相矛盾）** |
+
+- 那一页**没有任何「订正 / 对调 / v1.x」段落**：`grep -n "v1\.\|订正\|对调" docs/design/order-auto-derivation.md` **只命中「选优顺序」本身**
+  ⇒ 引擎所引的「契约 **v1.3** 订正段」**不在**这页（也不在本仓其它 docs 里，见下）。
+- ⇒ **「单一真值源」这个声明现在不成立**（三处旧序 vs 引擎新序）。**谁对谁错需人工裁定**：本单不下判决、不改任何一页。
+- ⚠️ **本节的读数与这个分歧无关**：10 米这一例里两种顺序**都**会选中候选 ②（它拼接**更少且**用料**更少**）
+  ⇒ **本节的真浏览器读数不能用来判定该顺序分歧**（别把"选对了"当成"顺序对"）。
+- 复核口径（可复算，只读）：`git grep -n "拼接次数最少\|拼接最少" origin/main` —— 旧序出现在契约页、`app/api/internal.py`、
+  测试模块 docstring；新序出现在 `curtain_calc.py`（实现 + 上屏文案）与 `CHANGELOG.md` 的 #5201 条目。
