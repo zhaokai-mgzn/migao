@@ -98,7 +98,12 @@ describe('判据 2：每参数三件套上屏（§22 P2）', () => {
     await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())
     const row = screen.getByTestId('param-hem_margin')
     expect(row).toHaveTextContent('改它会怎样：')
-    expect(screen.getByTestId('param-value-hem_margin')).toHaveTextContent('0.4')
+    // ⚠️ 值断言必须**等**读面回来：`param-hem_margin` 在 loading 期就已渲染（值是占位「…」）
+    // ⇒ 上面那条 waitFor 会立刻返回，紧接着断言值就是**竞态**（全量跑时实测偶发红，issue #5146 复现）。
+    // 这不是放宽断言：断言的**内容一字未改**，只是等到它成立。
+    await waitFor(() =>
+      expect(screen.getByTestId('param-value-hem_margin')).toHaveTextContent('0.4')
+    )
   })
 
   it('切到「加工费」域 ⇒ 行式配置**只给入口**（含「钱在哪」），不做列表编辑', async () => {
