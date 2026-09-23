@@ -5272,7 +5272,7 @@
 数据: 红证 A（真跑，2026-09-23 本机，覆盖孔 `MIGAO_PG_BIN_DIRS` 指向空目录）：**带**标记 ⇒ EXIT=1、`缺 PG 二进制 … ⇒ 本判据判 FAIL（不是 skip）`（88 条判据红）；**不带**标记（对照组）⇒ EXIT=0、88 skipped 且**逐条 nodeid + 原因**上屏 —— 两者真的不同（改前两者都是静默绿）
 数据: 红证 B / C（真跑，注入后复原并核 sha256 逐字节相同）：① 改名 `test_v93_route_rules_backfill.py` ⇒ 判据⑤（冻结常量）红；② 把 PG 相关的 `pytest.skip` 塞回夹具本体 ⇒ 判据⑥（单一收口）红
 数据: 正证（CI，`ci workflow helper unit tests`）：终端摘要的 `[realdb-summary]` 显示真库(PG)族「**执行 = N / skip = 0**」，且全部 skip 只剩本仓正当项（本分支尚未提交基线 / V83 尚未落地 / 浅检出无 origin/main 等）
-跳过: [backend-contract] CI workflow 结构 + Python 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py 判据⑤~⑧ + tests/unit_ci_workflows/pg_cluster.py），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] CI workflow 结构 + Python 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py 的判据⑤~⑧，含对收口件的按路径加载断言），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5203，P0）。病灶（**已实测**，非风险预测）：13 个真库模块的 PG 探测只认 `PATH`（`shutil.which`），而 runner 的二进制在 `/usr/lib/postgresql/16/bin` ⇒ CI 上 83 条真库判据**一直静默 skip 成绿**（四条独立证据：探测口径 / runner 上 `command -v initdb` 找不到 / 受控实验「只藏 PG 三个二进制」精确复现 83 条 / CI 实测 87 skip）。修复 = ① 兜底搜索路径与 Java 侧 `PgCluster.BIN_DIRS` 同源 + 单一收口（**含 2 处隐藏副本**：`test_schema_bootstrap_order.py` 与 `test_v81_compensating_backfill.py` 各自那份不同源的 `_which()`，后者正是「有兜底所以能跑」的那份 ⇒ 漏掉它就等于没修）；② CI 两道锁（前置断言 + 标记注入，缺 PG 判红）；③ skip 逐条可见 + `[realdb-summary]` 正证锚点；④ 4 条静态守卫（各带能单独变红的红证）。本机实测：14 个真库模块 **201 passed / 0 skipped = 127.2s**。取号 PR-107（开工时 main 最高 PR-106；在飞 PR #5226 / #5222 未占号）。 ｜ tags: realdb, ci, fail-closed, evidence-strength
 
