@@ -140,7 +140,7 @@ position.put("operations", …);      // [{operation, unit, unit_price, qty, don
 | 2 | `ProcessingOrderService` 三方法 | `buildPositionPayload` / `resolveRoute` / `deriveRouteKey` 改读新结构；**规则应用语义与 `routing.py::build_route_v2` 逐字一致**（remove / insert after 锚点 / 锚点不在 ⇒ 追加末尾 / 部位适用性过滤） |
 | 3 | 路线写面 | `ProductionRoutingCommandService` + `ProductionController` 改模板表；新增 `DELETE /routings/{id}`；`PUT` body 扩展 `{name?, is_default?, mainline?}` |
 | 4 | 开租播种 | `ProductionSeedTemplateService.applyTemplate` 写新三表 + **默认路线 + 默认工艺** |
-| 5 | **软删旧规则表** | `production_option_routings` / `production_option_factors` 软删为 0 活跃行；**表不 DROP** |
+| 5 | **软删旧规则表** | `production_option_routings` / `production_option_factors` 软删为 0 活跃行（**表 DROP 见文末 §7：已由 issue #5245 A4 定案，执行待 #5243 的 DB 面归属**） |
 | 6 | 测试适配 | `findRouting` 24 / `routingView` 3 / `routingKeys` 6 / `optionRoutings` 5 / `optionFactors` 5 / `operationsByName` 4 = **47 处调用点** |
 
 **🔴 铁律：软删必须与消费切换同一 PR。**
@@ -275,7 +275,11 @@ P3（#4433）前端 —— P2b 之后
 - **不合并** `精裁` 与 `裁剪`（两道，待确认）；**不合并** 布帘车被 与 纱帘车被（按 `applicable` 表达）。
 - **不改**「1 订单 1 加工单」与快照机制（`domain-model-review` §2.1 判定动它是净损失）。
 - **不改** `production_work_logs`；**不删** `production_route_signals`（#4385 存量单兜底）。
-- **不 DROP** 旧两表（另单，须先确认零消费者）。
+- ~~**不 DROP** 旧两表（另单，须先确认零消费者）。~~ → 🔴 **2026-09-23 改判（issue #5245 A4）**：
+  零消费者**已核**（Java 实体 + Mapper 仍在但生产代码零读，仅测试引用）⇒
+  `production_option_routings` / `production_option_factors` **两表定案 DROP**（#5245 冻结清单 A4）。
+  ⚠️ **DB 面待 #5243 合入后执行**（删表 + 去掉初始化建库脚本里的 CREATE 与「播种为活跃行」），
+  本单不改 `db/**` 与初始化脚本。
 - **不做**拼色**计价**（#4341 待客户裁定；动它 = 改钱）。
 - **不做**订单详情页明细行编辑（引入编辑契约，与「加工单快照不可变」相邻，需单独设计）。
 - **不做**路线跨租户复制 / 拖拽编排（#4308 YAGNI 清单不变）。

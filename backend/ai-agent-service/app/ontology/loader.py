@@ -42,7 +42,12 @@ STATUS_LEXICON: Dict[str, List[str]] = {
     "employee.status": ["online", "offline", "busy"],
     "processing_item.status": ["active", "inactive"],
     "category.status": ["active", "inactive"],
-    "knowledge_document.status": ["processed", "processing", "failed"],
+    # 🔴 2026-09-23 删除 `knowledge_document.status`（issue #5245 B4）：该对象已随旧 RAG
+    # 知识库退场 —— `V36__drop_rag_knowledge_tables.sql` DROP 掉 knowledge_documents 等表，
+    # 本体侧 knowledge_document 对象亦已移除（现存 7 对象）。留着它是**死条目**：
+    # 词表里再也没有对象能命中它（loader 按 `<对象名>.status` 取值），却让「词表 =
+    # 三端真契约清单」这句话失真。词表与 schema 的双向一致性由
+    # backend/ai-agent-service/tests/test_ontology_schema.py（ON-001）机械判据钉住。
 }
 
 
@@ -79,8 +84,49 @@ def load_ontology(path: Optional[Path | str] = None) -> Ontology:
     objects: Dict[str, OntologyObject] = {}
     for name, obj_raw in data["objects"].items():
         objects[name] = _parse_object(name, obj_raw)
+    external_targets = _parse_external_targets(data.get("external_targets"))
+    _validate_relation_targets(objects, external_targets)
     intent_ownership = _parse_intent_ownership(data.get("intent_ownership"))
-    return Ontology(version=version, objects=objects, intent_ownership=intent_ownership)
+    return Ontology(
+        version=version,
+        objects=objects,
+        intent_ownership=intent_ownership,
+        external_targets=external_targets,
+    )
+
+
+def _parse_external_targets(raw: object) -> Dict[str, str]:
+    """解析 external_targets 段 → {外部概念名: 登记理由}（issue #5245 B6）。"""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise _schema_error("external_targets 必须为映射（外部概念名: 登记理由）")
+    return {str(k): str(v) for k, v in raw.items()}
+
+
+def _validate_relation_targets(
+    objects: Dict[str, OntologyObject], external_targets: Dict[str, str]
+) -> None:
+    """relations[].target 必须落在 objects 或 external_targets（issue #5245 B6，fail-closed）。
+
+    改前 `order_item` / `product` / `processing_category` / `agent_session` / `tenant`
+    五个悬空目标**无人校验**：本体可以引用一个不存在的对象而永不报错（同一形态的另一半
+    是 `source:` 从未与 Java 实体/DB 列对账，见 #5245 B7「待办」）。
+    错误消息同时给出两个登记处，避免"红却指不出怎么修"。
+    """
+    overlap = sorted(set(objects) & set(external_targets))
+    if overlap:
+        raise _schema_error(
+            f"关系目标同时登记为本体对象与外部概念: {overlap} —— 只能选一处"
+            f"（两处都有 ⇒ 无从判定谁是真值源）"
+        )
+    for obj_name, obj in objects.items():
+        for rel in obj.relations:
+            if rel.target not in objects and rel.target not in external_targets:
+                raise _schema_error(
+                    f"对象 {obj_name} 的关系 {rel.name} 指向未登记目标 '{rel.target}'："
+                    f"要么在本体 objects 建对象，要么在 external_targets 显式登记为外部概念"
+                )
 
 
 def _parse_object(name: str, obj_raw: object) -> OntologyObject:

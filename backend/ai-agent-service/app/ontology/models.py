@@ -108,10 +108,13 @@ class Ontology:
     四对象（order / product_sku / aftersales / customer）作为切片 1 范围；
     objects 为 name → OntologyObject 映射。
     intent_ownership: intent → IntentOwnership 归属表（切片 3）。
+    external_targets: 外部概念名 → 登记理由（关系目标可指向的本体切片范围外承载者，
+        issue #5245 B6；loader 加载时校验 relations[].target ∈ objects ∪ external_targets）。
     """
     version: str
     objects: Dict[str, OntologyObject] = field(default_factory=dict)
     intent_ownership: Dict[str, IntentOwnership] = field(default_factory=dict)
+    external_targets: Dict[str, str] = field(default_factory=dict)
 
     def get_object(self, name: str) -> Optional[OntologyObject]:
         return self.objects.get(name)
