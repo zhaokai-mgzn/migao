@@ -153,7 +153,17 @@ public class CraftCalcClient {
                     data.path("formula_text").asText(null),
                     data.path("source").asText(null),
                     data.path("craft_tier").asText(null),
-                    data.path("warning").asText(""));
+                    data.path("warning").asText(""),
+                    // 自动推导的工艺配置（issue #5201 = 母单 #5200 子单 A）：**原样搬运**。
+                    // 键**缺席或为 null** ⇒ `null`（= 本次调用没走三项输入通路）；
+                    // 非空 ⇒ 契约 §四 的完整对象（含 `candidates` 数组）。
+                    // ⚠️ 本类**不读它的内部键、不补默认值、不重算** —— Java 侧复制第二份算料逻辑
+                    // 就是判据 10（`plan.meters == data.fabric_meters` 单点）要红的形态。
+                    data.path("plan").isObject()
+                            ? objectMapper.convertValue(data.path("plan"),
+                                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+                                    })
+                            : null);
         } catch (BusinessException e) {
             throw e; // fail-closed 原样上抛（不吞、不降级）
         } catch (Exception e) {
@@ -367,6 +377,9 @@ public class CraftCalcClient {
      * @param source 取值来源（{@code formula} / 人工指定 / 客户自报）
      * @param craftTier 工艺档位
      * @param warning 非阻塞告警（如转定宽买高）
+     * @param plan 自动推导的工艺配置（issue #5201 = 母单 #5200 子单 A；契约 §四）。
+     *             {@code null} = 本次调用没走三项输入通路（未接线调用方口径逐值不变）；
+     *             非空 = 引擎给的完整对象，**原样搬运**（本类不读内部键、不补默认值、不重算）。
      */
     public record CraftCalcResult(BigDecimal fabricMeters,
                                   int pleatCount,
@@ -378,6 +391,7 @@ public class CraftCalcClient {
                                   String formulaText,
                                   String source,
                                   String craftTier,
-                                  String warning) {
+                                  String warning,
+                                  Map<String, Object> plan) {
     }
 }

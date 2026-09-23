@@ -445,6 +445,10 @@ class TestResponseShape:
         # 该键**恒在**（空列表 = 不判，不是「没算」）。契约在此**有意识**长大一处：
         # admin-api 侧的解析要跟着加（包 2）；本断言是「出参形态」的唯一冻结点。
         "auto_features",
+        # issue #5201 = 母单 #5200 子单 A：自动推导的工艺配置。**键恒在**，
+        # `null` = 本次调用没走三项输入通路（未接线调用方口径逐值不变 —— 契约判据 8）。
+        # 契约在此**有意识**长大一处：admin-api 侧的 `CraftCalcResult` 与控制器要跟着搬 `plan`。
+        "plan",
     }
 
     def test_data_has_frozen_keys(self, client):
@@ -527,3 +531,279 @@ class TestAuthAndValidation:
         data = _data(client, {**FROZEN, "open_count": 4})
         assert data["pleat_count"] % 4 == 0
         assert data["per_panel_pleats"] == data["pleat_count"] // 4
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 自动推导的工艺配置 `plan`（issue #5201 = 母单 #5200 子单 A，契约判据 8/9/10）
+#
+# 契约 §四：`data` 新增 `plan` 对象（**只增键不删键**）。三项输入自动推导只在
+# `splice_times` / `join_height_m` / `join_width_m` **至少传一个**时启用；
+# 全不传 ⇒ 与改动前**逐值一致**（判据 8 的回归不变量）。
+# ══════════════════════════════════════════════════════════════════════════
+
+#: 门幅 3.2 的算例（FROZEN 的 T = 13.3）：倒幅 P = ceil(13.3 / 3.2) = 5 幅
+PLAN = {**FROZEN, "fabric_width": 3.2}
+
+
+class TestPlanRegressionInvariantWhenNoNewKeys:
+    """判据 8：**不传**新键 ⇒ 结果与本次改动前逐值一致（回归不变量）。
+
+    判别性：把 `plan` 分支的开关改成「恒开」⇒ 本条红（`fabric_meters` 会从 13.3 变 14.0）。
+    """
+
+    def test_without_fabric_width_values_are_unchanged(self, client):
+        data = _data(client, FROZEN)   # 不含 fabric_width ⇒ 引擎常量 3.2
+        assert data["fabric_meters"] == 13.3
+        assert data["pleat_count"] == 52
+        assert data["formula_used"] == "fixed_height_pleats"
+        assert data.get("plan") is None, "没走三项输入通路 ⇒ plan 为 null（不发明一个假方案）"
+
+    def test_explicit_fabric_width_alone_does_not_switch_path(self, client):
+        """单独传 `fabric_width`（**既有**键，前端今天就在传）不得改变口径。
+
+        判别性：把开关写成「传了 fabric_width 就启用推导」⇒ 本条红（13.3 → 14.0）。
+        """
+        data = _data(client, {**FROZEN, "fabric_width": 3.2})
+        assert data["fabric_meters"] == 13.3
+        assert data["formula_used"] == "fixed_height_pleats"
+
+    def test_cutting_mode_alone_does_not_switch_path(self, client):
+        """单独传 `cutting_mode`（既有键）同理 —— 它今天是**自动特征**的提示位（#4976 包 1a）。"""
+        data = _data(client, {**FROZEN, "cutting_mode": "定高买宽"})
+        assert data["fabric_meters"] == 13.3
+        assert data["formula_used"] == "fixed_height_pleats"
+
+    def test_baseline_is_the_same_number_as_before(self, client):
+        """两条通路**互不影响**：开推导的那一次与不开的那一次各给各的数。"""
+        plain = _data(client, FROZEN)
+        assert plain["fabric_meters"] == 13.3, "未传 fabric_width ⇒ 既有单门幅口径（判据 8）"
+        assert plain.get("plan") is None, "未开推导 ⇒ `plan` 为 null（不发明一个假方案）"
+
+        switched = _data(client, PLAN)   # 传了 fabric_width ⇒ 开推导
+        assert switched["fabric_meters"] == 13.3, (
+            "本几何（need_h 2.8 ≤ 门幅 3.2）下推导结论 = 定高买宽 ⇒ 用料 = T = 13.3（与既有同值）"
+        )
+        assert switched["plan"]["cutting_mode"] == "定高买宽"
+        assert switched["plan"]["auto"] is True
+        assert switched["plan"]["meters"] == switched["fabric_meters"]
+
+    def test_manual_splice_zero_keeps_the_derived_cutting_mode(self, client):
+        """人工 `splice_times=0` 是**人工覆盖**（R7）：只锁定拼次，不翻转加工类型。
+
+        为什么不是「倒幅 5 幅 × 2.8 = 14.0」：`splice_times=0` 表达的是「不拼」，
+        它不蕴含倒幅（`_implied_mode` 只在 `splice_times ≥ 1` 时蕴含倒幅 —— 零拼接的
+        定高买宽**本来就不拼**）；加工类型仍按自动推导的结论（本几何 = 定高买宽）。
+        """
+        data = _data(client, {**PLAN, "splice_times": 0})
+        assert data["plan"]["auto"] is False
+        assert data["plan"]["cutting_mode"] == "定高买宽"
+        assert data["plan"]["splice_times"] == 0
+        assert data["fabric_meters"] == 13.3
+
+
+class TestPlanAutoDerivation:
+    """自动推导（契约 §三 候选枚举 + 选优）。"""
+
+    def test_auto_plan_derives_fixed_height_when_it_fits(self, client):
+        # need_h = 2.5 + 0.3 = 2.8 ≤ 3.2 ⇒ 候选 1 可行且最省（13.3 < 14.0）⇒ 定高买宽
+        data = _data(client, PLAN)   # 只传 fabric_width ⇒ 纯自动推导
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定高买宽", (
+            "成品高 + 卷边 2.8 ≤ 门幅 3.2 ⇒ 定高买宽；它是可行集里用料最少的候选"
+        )
+        assert plan["auto"] is True, "只传 fabric_width ⇒ 系统推导（人工值一个都没给）"
+        assert plan["panels"] is None and plan["splice_times"] == 0
+        assert plan["join_height_m"] is None
+        assert plan["door_width"] == 3.2
+        assert data["fabric_meters"] == 13.3
+        assert plan["meters"] == data["fabric_meters"]
+
+    def test_fabric_width_alone_is_enough_to_reach_derivation(self, client):
+        """**可达性判据**（母单 P0）：只传 `fabric_width` ⇒ 响应 `data.plan` 非空。
+
+        光有 `derive_plan` 函数不算交付 —— 必须证明它被**端点触达**。
+        """
+        data = _data(client, PLAN)
+        assert data["plan"]["door_width"] == 3.2, "门幅取自请求（SKU 门幅），不是引擎常量兜底"
+        assert len(data["plan"]["candidates"]) == 5, "候选表必须真的被算出来（不是空壳）"
+
+    def test_auto_plan_derives_rotated_when_height_exceeds_door_width(self, client):
+        # 门幅 3.1 ⇒ need_h = 3.25 > 3.1 ⇒ 定高买宽不可行；缺口 0.15 > 0.1 ⇒ 接高也不可行
+        # ⇒ 只剩倒幅：ceil(13.3 / 3.1) = 5 幅 × 3.25 = 16.25 → **进位 16.3**
+        data = _data(client, {**PLAN, "fabric_width": 3.1, "height": 2.95})
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定宽买高"
+        assert plan["panels"] == 5
+        assert plan["splice_times"] == 4, "5 幅 ⇒ 拼 4 次（splice_times == panels − 1 不变量）"
+        assert plan["splice_option"] is None, "R5：N ≥ 4 ⇒ null（不发明「拼4次」）"
+        assert plan["notices"], "R5：N ≥ 4 必须显式告知需人工处理"
+        assert data["fabric_meters"] == 16.3
+        assert plan["meters"] == data["fabric_meters"]
+
+    def test_auto_plan_prefers_join_height_over_rotated(self, client):
+        """缺口恰 0.05 ≤ 0.1 ⇒ 接高可行，且定高买宽（13.3）比倒幅（5 × 3.25 = 16.25）省 ⇒ 选它。
+
+        ⚠️ 这条同时钉住「接高只出现在**定高买宽**」（契约订正 v1.1 ③）：倒幅下高方向无缺口。
+        """
+        data = _data(client, {**PLAN, "height": 2.95})   # 门幅 3.2 ⇒ need_h 3.25 ⇒ 缺口 0.05
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定高买宽"
+        assert plan["join_height_m"] == pytest.approx(0.05)
+        assert plan["panels"] is None and plan["splice_times"] == 0
+        assert data["fabric_meters"] == 13.3, "R2：接高不参与算料 ⇒ 用料仍是 T"
+
+    def test_gap_over_limit_falls_back_to_rotated(self, client):
+        """门幅 3.25 ⇒ 零缺口（不接高）；门幅 3.1 ⇒ 缺口 0.15 > 0.1 ⇒ 接高不可行、只剩倒幅。
+
+        红证形态：把上限从 0.1 改成 0.25 ⇒ 门幅 3.1 的算例会判接高可行 ⇒ 本条红（判据 4）。
+        """
+        wide = _data(client, {**PLAN, "fabric_width": 3.25, "height": 2.95})
+        assert wide["plan"]["join_height_m"] is None, "need_h == 门幅 3.25 ⇒ 零缺口，无需接高"
+        assert wide["plan"]["cutting_mode"] == "定高买宽"
+
+        narrow = _data(client, {**PLAN, "fabric_width": 3.1, "height": 2.95})
+        assert narrow["plan"]["join_height_m"] is None, "缺口 0.15 > 0.1 ⇒ 不得判接高（R1）"
+        assert narrow["plan"]["cutting_mode"] == "定宽买高"
+
+    def test_join_height_candidate_is_chosen_when_it_is_the_only_one(self, client):
+        # 窗高 3.0 ⇒ need_h = 3.3；门幅 3.25 ⇒ 缺口 0.05 ≤ 0.1 ⇒ 候选 2 可行（T = 13.3）
+        # 纯倒幅 = ceil(13.3/3.25) = 5 幅 × 3.3 = 16.5 > 13.3 ⇒ 选优选候选 2
+        data = _data(client, {**FROZEN, "fabric_width": 3.25, "height": 3.0, "join_height_m": 0.05})
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定高买宽"
+        assert plan["panels"] is None
+        assert plan["splice_times"] == 0
+        assert plan["join_height_m"] == 0.05
+        assert data["fabric_meters"] == 13.3, "R2：接高不进算料 ⇒ 用料仍是 T（不加加高条）"
+
+    def test_candidate4_saves_one_panel_on_the_candidate_table(self, client):
+        """候选 4 的「省一整幅」在**候选表**上逐值可核（v1.2：panels = P − 1）。
+
+        ⚠️ 为什么不用「自动推导选它」来证：按 **v1.3 选优序**（拼接最少优先），
+        门幅 4.4 这个算例的胜者是**零拼接的定高买宽**（13.3），不是候选 4（8.4 / 拼 2 次）——
+        候选 4 只在**没有零拼接候选可行**时才会自动胜出。故这里核**候选表本身**的数
+        （契约 §三 的用料列 + v1.2 的 panels 口径），不拿选优结论去核候选。
+        """
+        data = _data(client, {**PLAN, "fabric_width": 4.4, "splice_times": 0, "join_width_m": 0.1})
+        plan = data["plan"]
+        c4 = [c for c in plan["candidates"] if c["key"] == "fixed_width_join_width"][0]
+        assert c4["feasible"] is True
+        assert c4["meters"] == pytest.approx(8.4), "（P−1）幅 × need_h = 3 × 2.8 ⇒ 省一整幅"
+        assert c4["splice_times"] == 2, "P − 2 = 2（与 panels = P − 1 自洽）"
+        # 纯倒幅对照：P 幅 × need_h = 4 × 2.8 = 11.2（差一整幅）
+        c3 = [c for c in plan["candidates"] if c["key"] == "fixed_width"][0]
+        assert c3["meters"] == pytest.approx(11.2)
+
+    def test_auto_over_limit_gap_falls_back_to_pure_rotated(self, client):
+        """订正 v1.3 的连带效果：**纯倒幅只在没有零拼接候选可行时才自动胜出**。
+
+        门幅 3.1 / 窗高 2.95 ⇒ need_h 3.25 > 3.1（定高买宽不可行）、缺口 0.15 > 0.1（接高不可行）、
+        remainder = 13.3 − 2×3.1 = 7.1 > 0.1（接宽不可行）⇒ 只剩倒幅 ⇒ 5 幅 × 3.25 = 16.25 → 16.3。
+        """
+        data = _data(client, {**PLAN, "fabric_width": 3.1, "height": 2.95})
+        plan = data["plan"]
+        assert plan["cutting_mode"] == "定宽买高"
+        assert plan["panels"] == 5 and plan["splice_times"] == 4
+        assert plan["join_height_m"] is None and plan["join_width_m"] is None
+        assert data["fabric_meters"] == 16.3
+
+    def test_manual_join_width_alone_does_not_save_a_panel(self, client):
+        """人工接宽（未给拼次）⇒ **不自动省幅**（R7）：用料 = P × need_h = 4 × 2.8 = 11.2。
+
+        原因见 R7 段与 `reason`：人工值是**逐字采用**的，系统的「省一整幅」是自动候选 4 的行为，
+        不会替商家推断。`reason` 里必须写明，否则商家会以为省了一幅（错钱且无感）。
+        """
+        data = _data(client, {**PLAN, "fabric_width": 4.4, "join_width_m": 0.1})
+        plan = data["plan"]
+        assert plan["auto"] is False, "给了人工值 ⇒ auto=false（R7）"
+        assert plan["panels"] == 4 and plan["splice_times"] == 3
+        assert data["fabric_meters"] == 11.2, "人工路径不省幅：4 幅 × 2.8 米"
+        assert "不自动省幅" in plan["reason"]
+
+    def test_candidates_are_all_reported_with_reasons(self, client):
+        plan = _data(client, {**PLAN, "splice_times": 0})["plan"]
+        assert [c["key"] for c in plan["candidates"]] == [
+            "fixed_height", "fixed_height_join_height", "fixed_width",
+            "fixed_width_join_width", "fixed_width_join_height",
+        ], "契约 §三 的表序（也是选优第 ④ 顺位）"
+        assert all(c["reason"] for c in plan["candidates"]), "每条候选都要说清依据（裁定 3）"
+        infeasible = [c for c in plan["candidates"] if not c["feasible"]]
+        assert infeasible, "本算例必须有不可行候选（否则候选表退化成装饰）"
+        assert all(c["meters"] is None for c in infeasible), "不可行候选不得给估算值（R6）"
+
+
+class TestPlanManualOverride:
+    """判据 9（R7）：人工覆盖 ⇒ `auto=false` 且逐字采用；超上限 ⇒ 422。"""
+
+    def test_manual_cutting_mode_is_adopted_verbatim(self, client):
+        data = _data(client, {**PLAN, "cutting_mode": "定宽买高"})
+        plan = data["plan"]
+        assert plan["auto"] is False
+        assert plan["cutting_mode"] == "定宽买高", "人工值逐字采用（R7），即使自动结论是定高买宽"
+        assert "人工" in plan["reason"]
+        assert plan["panels"] == 5 and plan["splice_times"] == 4
+        assert data["fabric_meters"] == 14.0, "倒幅 5 幅 × 幅长 2.8 米（R7 逐字采用人工加工类型）"
+        assert data["fabric_meters"] == plan["meters"]
+
+    def test_manual_splice_times_drives_panels_and_meters(self, client):
+        data = _data(client, {**PLAN, "cutting_mode": "定宽买高", "splice_times": 2})
+        plan = data["plan"]
+        assert plan["auto"] is False
+        assert plan["splice_times"] == 2
+        assert plan["panels"] == 3
+        assert plan["splice_option"] == "拼2次"
+        assert data["fabric_meters"] == 8.4, "3 幅 × 2.8 米（人工拼 2 次）"
+
+    def test_manual_splice_times_over_three_is_rejected(self, client):
+        """R5：不得发明「拼4次」⇒ 人工传 4 必须 fail-closed（400），不是静默接受。"""
+        resp = _post(client, {**PLAN, "cutting_mode": "定宽买高", "splice_times": 4})
+        assert resp.status_code == 400, resp.text
+        assert "拼4次" in resp.text or "0~3" in resp.text
+
+    def test_manual_join_height_over_limit_is_422(self, client):
+        """判据 9：人工传 `join_height_m=0.2`（> 0.1）⇒ **422** fail-closed。"""
+        resp = _post(client, {**PLAN, "join_height_m": 0.2})
+        assert resp.status_code == 422, resp.text
+        assert "0.1" in resp.text
+
+    def test_manual_join_width_over_limit_is_422(self, client):
+        resp = _post(client, {**PLAN, "join_width_m": 0.2})
+        assert resp.status_code == 422, resp.text
+
+    def test_manual_join_height_does_not_change_meters(self, client):
+        """R2 红证形态：把加高条米数（旧口径 `T + 段数 × 片宽`）加回去 ⇒ 本条红。"""
+        with_join = _data(client, {**PLAN, "join_height_m": 0.05})
+        assert with_join["fabric_meters"] == 13.3
+        assert with_join["plan"]["join_height_m"] == 0.05
+        assert with_join["plan"]["meters"] == 13.3
+
+
+class TestPlanSingleSourceOfMeters:
+    """判据 10：`data.plan.meters` **必须等于** `data.fabric_meters`（单点口径）。"""
+
+    PAYLOADS = [
+        {**PLAN, "join_height_m": 0.05},
+        {**PLAN, "splice_times": 0},
+        {**PLAN, "splice_times": 2},
+        {**PLAN, "fabric_width": 4.4, "join_width_m": 0.1},
+        {**FROZEN, "fabric_width": 3.25, "height": 3.0, "join_height_m": 0.05},
+    ]
+
+    def test_plan_meters_equals_fabric_meters(self, client):
+        """判别性：两处各算一份（端点自己 round 一份）⇒ 本条红。"""
+        for payload in self.PAYLOADS:
+            data = _data(client, payload)
+            assert data["plan"]["meters"] == data["fabric_meters"], f"分叉：{payload}"
+
+    def test_plan_meters_equals_engine_quote_meters(self, client):
+        """再与**直调引擎**的 `fabric_meters` 比对：端点不得自己再算一份。"""
+        payload = {**PLAN, "splice_times": 2}
+        data = _data(client, payload)
+        quote = curtain_calc.build_quote(
+            window_width=payload["width"], window_height=payload["height"],
+            mounting="s_hook", open_count=2, craft_tier="standard",
+            fabric_width=payload["fabric_width"], cutting_mode=payload.get("cutting_mode"),
+            splice_times=2, derive_plan_config=True,
+        )
+        assert data["plan"]["meters"] == quote["fabric_meters"]
+        assert data["fabric_meters"] == quote["fabric_meters"]
