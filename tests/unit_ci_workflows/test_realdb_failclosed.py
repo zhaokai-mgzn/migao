@@ -1,4 +1,4 @@
-# case_ids: PR-103, PR-104, PR-107
+# case_ids: PR-103, PR-104, PR-107, PG-062
 """真库判据「缺 PG ⇒ 静默变绿」的防回退锁（issue #5192 Java 侧 / #5203 Python 侧）。
 
 ## 病灶（2026-09-23 复核后的剩余风险，非推断）
@@ -76,6 +76,7 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "AutoBatchDueScanRealDbTest.java": "direct",
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
+    _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
     # 类名不含 `RealDb`（`*RealMappingTest`）—— 判据①**不能**只扫 `*RealDbTest` 通配，
