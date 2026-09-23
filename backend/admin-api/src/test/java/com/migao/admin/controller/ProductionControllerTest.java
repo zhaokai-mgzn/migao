@@ -42,6 +42,7 @@ import com.migao.admin.service.ProductionInstanceRepricingService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.ProcessingSetReadService;
 import com.migao.admin.service.ProductionStuckPointService;
 import com.migao.admin.service.RoutingModelFixture;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -208,8 +209,11 @@ class ProductionControllerTest {
                 service, positionOperationMapper, orderSetMapper, 4.0);
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionScanService",
                 new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
-                        positionOperationMapper, orderItemMapper, queryService, service,
-                        stuckPointService));
+                        queryService, service, stuckPointService,
+                        // 套件读面（issue #5247）：真实对象（只 mock Mapper）—— 与商家/agent
+                        // 套件读面共用同一份 `set_overview` 聚合。
+                        new ProcessingSetReadService(orderSetMapper, positionOperationMapper,
+                                orderItemMapper, processingOrderMapper, orderMapper, service)));
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionStuckPointService",
                 stuckPointService);
         // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
