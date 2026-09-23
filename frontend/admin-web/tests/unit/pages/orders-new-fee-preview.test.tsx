@@ -4,6 +4,10 @@
  * 下单页「加工费计价预览」接线（issue #4450 · 前置 #4406）。
  *
  * 这一组判据守的是**拒单**：本页此前本地自算（Σ 加工项），而服务端创建订单按**选配组合取价**
+// ⚠️ issue #5202（下单页数字输入框修「打不出 `0.`」）：改用保留原始文本的实现
+// （`page.tsx::NumberField`，`type="number"` → `type="text" inputMode="decimal"` 才会留住 `0.` 这种中间态）
+// ⇒ 本文件里针对这些框的 `toHaveValue(<数字>)` 期望值改为**字符串形**。
+// **断言强度一字未变**（还是同一个值），改的只是 jest-dom 对文本输入框的类型口径。
  * ⇒ 页面总额 ≠ 服务端总额 ⇒ 命中「实收金额与应收不一致」校验 ⇒ **带加工项的订单提交被拒**。
  *
  * 四条判据：
@@ -142,7 +146,7 @@ async function setupLine() {
   fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
   // 帘行米数输入框（issue #4598 起 label = 「用料米数」，旧文案「数量」）—— 它就是加工费米数
-  await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
+  await waitFor(() => expect(inputOf('用料米数')).toHaveValue('13.3'))
   expandProcessing()
   fireEvent.click(screen.getByRole('checkbox'))
 }
@@ -356,7 +360,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     await screen.findByText('窗宽 (米)')
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-    await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue('13.3'))
     expandProcessing()
     fireEvent.click(screen.getAllByRole('checkbox')[0])
 

@@ -309,6 +309,69 @@ export interface CraftCalcParams {
   has_pattern?: boolean
   /** 花距（米），仅 `has_pattern=true` 时有意义；行业常见 0.3~0.6 */
   pattern_repeat?: number
+  /**
+   * **门幅**（米，> 0）—— issue #5202（契约 #5200 §四）：试算必须按**该行所选 SKU 的门幅**
+   * 算分幅与「定高买宽是否可行」，否则同尺寸下单会按引擎常量算出**另一个**米数。
+   *
+   * 缺省 ⇒ 引擎既有常量 `_FABRIC_WIDTH`（**回归不变量**：未接线调用方口径逐值不变）；
+   * 取不到 SKU 门幅 ⇒ **不发该键**（#4877：没有缺省门幅，不猜）。
+   */
+  fabric_width?: number
+  /**
+   * **人工覆盖**加工类型（`定高买宽` / `定宽买高`）—— issue #5202（契约 #5200 §四 R7）。
+   *
+   * ⚠️ **只传商家显式选的**：传「自动推导出来的那一档」等于把它声明成**人工覆盖**
+   * （响应 `plan.auto=false`、候选枚举不再选优）⇒ 推导从这一刻起恒不生效。
+   */
+  cutting_mode?: string
+  /** **人工覆盖**拼次（0~3）—— 契约 #5200 §四 R7 / R5（不发明「拼4次」） */
+  splice_times?: number
+  /** **人工加**接高缺口（米，`0 < x ≤ 0.1`；超限 ⇒ 后端 422 fail-closed）—— 契约 #5200 §三 R1/R2 */
+  join_height_m?: number
+  /** **人工加**接宽缺口（米，`0 < x ≤ 0.1`）—— 契约 #5200 §三 R1/R2 */
+  join_width_m?: number
+}
+
+/**
+ * **推导方案**（`data.plan`，契约 #5200 §四）—— 唯一真值在算料引擎 `curtain_calc.derive_plan()`，
+ * 前端**只读展示**（不实现第二份推导：候选枚举 / 选优 / 接高接宽上限全在服务端）。
+ *
+ * 键名 **snake_case**（与既有响应键口径一致）；本类型是**只增不删**的读面契约。
+ */
+export interface CraftCalcPlanCandidate {
+  /** 候选键：`fixed_height` / `fixed_height_join_height` / `fixed_width` / `fixed_width_join_width` / `fixed_width_join_height` */
+  key: string
+  /** 该候选的用料（米）；不可行 ⇒ `null`（**不给估算值**） */
+  meters: number | null
+  feasible: boolean
+  splice_times?: number
+  /** 可读依据（哪几个数比出来的）—— 商家要能核对判定 */
+  reason: string
+}
+
+export interface CraftCalcPlan {
+  /** 生效加工类型（`定高买宽` / `定宽买高`） */
+  cutting_mode: string
+  /** **所用**门幅（米） */
+  door_width: number | null
+  /** 倒幅分幅数；定高买宽 ⇒ `null`（幅数无定义） */
+  panels: number | null
+  /** = `panels - 1`；定高买宽 ⇒ 0 */
+  splice_times: number
+  /** 1/2/3 ⇒ `拼1次`/`拼2次`/`拼3次`；0 或 ≥4 ⇒ `null`（**不得发明「拼4次」**） */
+  splice_option: string | null
+  /** 接高缺口（米）；无 ⇒ `null`（接高只出现在定高买宽） */
+  join_height_m: number | null
+  /** 接宽缺口（米）；无 ⇒ `null`（接宽只出现在倒幅） */
+  join_width_m: number | null
+  /** 最终用料（米）—— **必须等于** {@link CraftCalcResult.fabric_meters}（单点口径） */
+  meters: number
+  /** `true` = 系统推导 / `false` = 人工覆盖（契约 §四 R7） */
+  auto: boolean
+  /** 可读依据 */
+  reason: string
+  /** 全部候选（**含不可行**的 —— 裁定 3 要系统逐个「再算一遍」，界面照实展示） */
+  candidates?: CraftCalcPlanCandidate[]
 }
 
 /** 试算结果 —— 算料输出子集（§4.5 snake_case） */
@@ -336,6 +399,14 @@ export interface CraftCalcResult {
   source?: string
   craft_tier?: string
   warning?: string
+  /**
+   * **推导方案**（issue #5202；契约 #5200 §四）—— 加工类型 / 分幅 / 拼接 / 接高接宽 / 用料的**推导结果**。
+   *
+   * ⚠️ 缺省（键整个不在）⇒ 后端还没接线（子单 A / #5201 未合并）⇒ 页面**显式降级**：
+   * 「推导服务未就绪」+ 工艺参数默认展开供人工兜底，**不**在前端自己推导一份（= 第二份口径）。
+   * 类型上给 `| null` 是照实登记：老响应里这个键**不存在**。
+   */
+  plan?: CraftCalcPlan | null
 }
 
 export const craftCalcApi = {

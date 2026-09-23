@@ -18,13 +18,20 @@ import {
   // ⇒ 别名进来，避免两个来源的常量在同一文件里撞名（tsc 会直接报 duplicate identifier）。
   METERS_SOURCE_MANUAL as LINE_METERS_SOURCE_MANUAL,
   CRAFT_CALC_FORMULA_PLEAT,
+  DEFAULT_CRAFT_NAME,
+  JOIN_GAP_MAX_METERS,
   craftCalcErrorText,
   craftCalcParamsOf,
   craftCalcSignature,
+  craftPlanCandidateLabel,
+  craftPlanHasSplice,
+  craftPlanSpliceText,
   defaultCraftCalcFormula,
   defaultCraftCalcTier,
   effectiveCraftCalcFormula,
   isAutoCalcUnavailable,
+  joinGapOf,
+  type CraftPlanOverrides,
 } from '@/lib/craft-calc-request'
 import {
   COMPONENT_ROLE_EDGE,
@@ -60,6 +67,9 @@ import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
 import {
   AUTO_FEATURE_NAMES,
+  CUTTING_MODE_FIXED_HEIGHT,
+  CUTTING_MODE_FIXED_WIDTH,
+  effectiveCuttingModeOf,
   parseDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
@@ -195,6 +205,31 @@ interface OrderLineItem {
    * `人工指定` = 商家手改过 ⇒ **试算不得静默改回**（只有显式「恢复按公式计算」才切回）。
    */
   metersSource: string
+  /**
+   * 「人工指定」**生效时**的试算入参签名（issue #5202 · 根因 2）。
+   *
+   * 与**当前**签名不一致 ⇒ 说明商家手填的米数**没有跟随**这次改动（宽/高/门幅/工艺变了）。
+   * 页面据此**显式告知**「已人工指定，未跟随」+ 一键恢复 —— **不得静默覆盖商家手填的数**
+   * （真值源 §8：用料必须带来源），也**不得**让商家自己猜为什么数没变（用户第 8 点的病灶）。
+   */
+  metersManualSignature?: string
+  /**
+   * **人工加 / 改的推导项**（issue #5202 · 裁定 4/6）—— `undefined` = 没改过（由推导决定）。
+   *
+   * 一旦有值 ⇒ 随试算请求**显式下发**（契约 #5200 §四 R7：`auto=false`，**逐字采用**、不再自动改判）。
+   * 与既有「手改留痕」纪律同族（`openCountTouched` / `shapedItemTouched` / `craft.cuttingMode` 的有无）。
+   */
+  planOverrides?: CraftPlanOverrides
+  /**
+   * 商家**手改过加工类型**（issue #5202 · 裁定 6）—— 落在**行状态**里（同 `openCountTouched` /
+   * `shapedItemTouched`，收起/展开重挂不丢）。
+   *
+   * 为什么必须有一位：`createDefaultCraftSpec()` 也写 `craft.cuttingMode = 定高买宽`（默认档），
+   * 只按「有值」判「人工覆盖」⇒ 默认档会**恒顶掉**服务端推导（三项输入收敛当场失效），
+   * 而且 `data.plan.auto` 会永远显示「人工指定」（假话）。点过（含点「未指定」）⇒ 人工锁定，
+   * 此后**不再被推导覆盖**。
+   */
+  cuttingModeTouched: boolean
   /** 最近一次算料试算结果（含**后端产出**的公式串）—— `null` = 还没算过 */
   calc: CraftCalcResult | null
   /** 试算失败原因（行内显式提示；**不退回任何估算值**） */
@@ -229,13 +264,6 @@ function genId(): string {
     return crypto.randomUUID()
   }
   return `li_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-/** 正小数输入：空串 / 非法 / 非正 ⇒ `null`（宽高必填由提交校验拦，不在这里造 0） */
-function decimalOrNull(raw: string): number | null {
-  if (raw.trim() === '') return null
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 /**
@@ -411,11 +439,19 @@ function derivedCraftSpec(line: OrderLineItem, calcConfig: CraftCalcConfig | nul
  * `openCountTouched` 的留痕精神）⇒ 无需第二个布尔位，也不会出现「两位不同步」。
  */
 function cuttingModeOf(line: OrderLineItem): string | undefined {
-  const explicit = line.craft.cuttingMode
-  if (explicit) return explicit
-  // **门幅规则**（**服务端**，issue #5043 包 2b）：缺省 ⇒ 用服务端自动推导出的那一档。
-  // 规则还没到 / 判不了（缺尺寸 / 缺门幅 / 表外）⇒ `undefined`（chips 停在「未指定」，**不猜**）。
-  return line.doorWidthPlan?.effective_cutting_mode ?? undefined
+  // **单点收敛**（issue #5202）：优先级 = 商家显式选过（**留痕位** `cuttingModeTouched`）
+  // → `data.plan.cutting_mode`（算料引擎推导）→ `door-width-plan` 的 `effective_cutting_mode`
+  // （几何规则面）→ 默认档兜底 → 不猜。
+  // ⚠️ 判「显式」必须看留痕位：`createDefaultCraftSpec()` 也会写 `craft.cuttingMode = 定高买宽`，
+  // 只按「有值」判断 ⇒ 默认档恒顶掉服务端推导（三项收敛当场失效）。
+  // 实现落在 `lib/craft-auto-features.ts::effectiveCuttingModeOf`（页面**只此一处**读加工类型，
+  // chips / 判定面 / 试算面 / 落库四处共用 ⇒ 不会各读各的）。
+  return effectiveCuttingModeOf({
+    explicit: line.cuttingModeTouched ? line.craft.cuttingMode : undefined,
+    plan: line.calc?.plan,
+    doorWidthPlan: line.doorWidthPlan,
+    defaultValue: line.craft.cuttingMode,
+  })
 }
 
 /**
@@ -902,6 +938,106 @@ function deriveOpenCount(width: number): number {
   return 1
 }
 
+/**
+ * **人工加拼次**的取值（issue #5202 · 裁定 4）：`由推导决定` + `0~3`。
+ *
+ * 值域 = 契约 #5200 §四 的 `splice_times`（人工覆盖 0~3）；`≥ 4` **不得发明「拼4次」**（R5），
+ * 那属于「需人工处理」，不是下单页能填的一档。
+ */
+const SPLICE_OVERRIDE_OPTIONS: Array<{ label: string; value: number | undefined }> = [
+  { label: '由推导决定', value: undefined },
+  { label: '不拼接', value: 0 },
+  { label: '拼1次', value: 1 },
+  { label: '拼2次', value: 2 },
+  { label: '拼3次', value: 3 },
+]
+
+/**
+ * 人工加 / 改推导项的状态合并（issue #5202）：`null` / `undefined` = **清掉该项**（回到由推导决定）；
+ * 数字 ⇒ 原样留在状态里（**越界的也要留** —— 留了页面才报得出「超限」，请求面由 `joinGapOf` 拒发）。
+ */
+function mergePlanOverrides(
+  prev: CraftPlanOverrides | undefined,
+  patch: { spliceTimes?: number | null; joinHeightM?: number | null; joinWidthM?: number | null }
+): CraftPlanOverrides {
+  const next: Record<string, number> = { ...(prev ?? {}) } as Record<string, number>
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === undefined) delete next[key]
+    else next[key] = value
+  }
+  return next as CraftPlanOverrides
+}
+
+/**
+ * 正数 ⇒ 原样；其余（空 / 0 / 负数 / 非数）⇒ `null` —— **数字输入框的提交口径**
+ * （原 `decimalOrNull(raw: string)` 的等价物：`NumberField` 已经把文本解析成数字，故这里收数字）。
+ */
+function positiveOrNull(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null
+}
+
+/**
+ * 本页私有的**数字输入框**（issue #5202 · 用户第 7 点「不能直接输入 0，所以导致无法输入 0.？」）。
+ *
+ * 病根：受控数字框把值经 `Number` 承载（`value={qty || ''}` / `Number(raw)`）⇒
+ * 输入 `0` 被渲染成空串、输入 `0.` 被 `Number('0.') = 0` 顶掉 ⇒ **永远打不出 `0.5`**（窄窗真实存在）。
+ * 修法两条：① 保留**正在输入的原始文本**（`draft`，失焦后回到真值渲染）；
+ * ② 输入框收敛为 `type="text"` + `inputMode="decimal"` —— `type="number"` 对 `0.` 这种
+ * **中间态**会被 UA 直接清空（react-aria / antd 同款处置）。
+ *
+ * ⚠️ 它**只做「文本 ⇄ 数字」与字符合法性过滤**，不含任何算料口径（口径一律在服务端）。
+ * ⚠️ 子单 B（#5201 包 B）的 `components/ui/NumberInput.tsx` 合并后，由母单统一替换本实现。
+ */
+function NumberField({
+  value,
+  onCommit,
+  testId,
+  ariaLabel,
+  placeholder,
+  className,
+}: {
+  value: number | null
+  /** 提交**合法数字**；清空 / 非法 ⇒ `null`（由调用方决定语义：宽高落 `null`、米数落 0） */
+  onCommit: (next: number | null) => void
+  testId?: string
+  ariaLabel?: string
+  placeholder?: string
+  className?: string
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  /**
+   * 草稿只在**仍代表当前值**时保留（`''` 与 `0` 视为同义：两者在下游分别是「清空」与「被拒」）。
+   * 外部改值（算料预填 / 「恢复按公式计算」写回）⇒ 草稿让位 —— 否则页面显示的还是商家敲的半截旧文本
+   * （实测：手改 20 → 点恢复 ⇒ 值已变 9.8，输入框却还写着 20）。
+   */
+  const draftAlive = draft !== null && Number(draft === '' ? 0 : draft) === (value ?? 0)
+  const shown =
+    draftAlive && draft !== null
+      ? draft
+      : value === null || value === undefined || !Number.isFinite(Number(value))
+        ? ''
+        : String(value)
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      data-testid={testId}
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+      value={shown}
+      onChange={(e) => {
+        const raw = e.target.value
+        // 非法字符忽略（防 NaN）；空串 ⇒ `null`（清空是合法输入态，最终由提交校验兜底）
+        if (!/^\d*\.?\d*$/.test(raw)) return
+        setDraft(raw)
+        onCommit(raw === '' ? null : Number(raw))
+      }}
+      onBlur={() => setDraft(null)}
+      className={className}
+    />
+  )
+}
+
 function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
   return {
     id: genId(),
@@ -933,6 +1069,8 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     processingFeeOverride: null,
     openCountTouched: false,
     shapedItemTouched: false,
+    // issue #5202：默认档**不是**商家的选择（`cuttingModeTouched=false` ⇒ 加工类型按服务端推导/规则）
+    cuttingModeTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
     calc: null,
     calcError: null,
@@ -981,6 +1119,16 @@ function calcInputOf(line: OrderLineItem, calcConfig: CraftCalcConfig | null) {
     curtainType: curtainTypeOfBody(line.curtainBody),
     formula: craft.formula,
     craftTier: craft.craftTier,
+    // **门幅**（issue #5202 · 根因 1）：该行所选 SKU 的门幅 —— 唯一解析点仍是
+    // `parseDoorWidth`（#4877：没有缺省门幅，解析不到 ⇒ 不发该键、不猜）。
+    fabricWidth: parseDoorWidth(line.selectedSku?.doorWidth),
+    // **加工类型**：**只带商家显式选过的**（契约 #5200 §四 R7 的「人工覆盖」）。
+    // ⚠️ 判「显式」看**留痕位**（`cuttingModeTouched`）—— `createDefaultCraftSpec()` 也写
+    // `craft.cuttingMode = 定高买宽`，按「有值」判断 ⇒ 默认档被当成人工覆盖（`auto=false`）⇒
+    // 推导从第一笔单起就恒不生效（静默失效）。传 `cuttingModeOf(line)` 同理更糟。
+    cuttingModeOverride: line.cuttingModeTouched ? line.craft.cuttingMode : undefined,
+    // 人工加（裁定 4）：拼次 / 接高 / 接宽 —— 越界值由 `craftCalcParamsOf` 拒发（fail-closed）
+    planOverrides: line.planOverrides ?? null,
   }
 }
 
@@ -1512,18 +1660,25 @@ export default function NewOrderPage() {
 
   // 行商品数量（面料米数）**手工改**（issue #4434）：
   // ① 标记来源「人工指定」⇒ 后续算料试算**不得静默改回**（真值源 §8：褶数/用料必须带来源）；
-  // ② 已选中加工项数量联动重算（per_meter=面料米数，其余=1）（issue #3005 回滚 #2986）。
+  // ② 已选中加工项数量联动重算（per_meter=面料米数，其余=1）（issue #3005 回滚 #2986）；
+  // ③ **记下改这一笔时的入参签名**（issue #5202 · 根因 2）：此后宽/高/门幅/工艺若变 ⇒
+  //    页面显式告知「已人工指定，未跟随」+ 一键恢复（**不静默覆盖**，也不让商家自己猜）。
   const handleLineQtyChange = (line: OrderLineItem, qty: number) => {
     updateLineItem(line.id, {
       quantity: qty,
       metersSource: LINE_METERS_SOURCE_MANUAL,
+      metersManualSignature: craftCalcSignature(craftCalcParamsOf(calcInputOf(line, calcConfig))),
       selectedProcessing: requantifyProcessing(line, qty),
     })
   }
 
-  /** 「恢复按公式计算」（issue #4434）：显式切回 ⇒ 下一次试算重新预填数量 */
+  /** 「恢复按公式计算」（issue #4434）：显式切回 ⇒ 下一次试算重新预填数量（并清掉「未跟随」告知） */
   const restoreFormulaMeters = (line: OrderLineItem) => {
-    updateLineItem(line.id, { metersSource: METERS_SOURCE_FORMULA, calcError: null })
+    updateLineItem(line.id, {
+      metersSource: METERS_SOURCE_FORMULA,
+      calcError: null,
+      metersManualSignature: undefined,
+    })
   }
 
   // ===== 算料试算（issue #4434 · 前置 #4421）=====
@@ -2187,6 +2342,9 @@ export default function NewOrderPage() {
                             ...(patch.openCount !== undefined
                               ? { openCountTouched: true }
                               : {}),
+                            // 加工类型**点过就是人工覆盖**（issue #5202 · 裁定 6）：连点「未指定」
+                            // 也算点过 —— 否则默认档会继续替商家说话（默认档 ≠ 他的选择）。
+                            ...('cuttingMode' in patch ? { cuttingModeTouched: true } : {}),
                           })
                           // 加工类型（定高买宽 / 定宽买高）变了 ⇒ 规则解可能变 ⇒ 未选门幅时补默认
                           autoSelectSkuByRuleForGroup(line.groupId, {
@@ -2207,6 +2365,12 @@ export default function NewOrderPage() {
                             : feePreview?.items[feeIndexByLineId.get(line.id)!] ?? null
                         }
                         calcConfig={calcConfig}
+                        // 人工加 / 改推导项（issue #5202 · 裁定 4/6）：`null` = 清掉该项（回到由推导决定）
+                        onChangePlanOverrides={(patch) =>
+                          updateLineItem(line.id, (it) => ({
+                            planOverrides: mergePlanOverrides(it.planOverrides, patch),
+                          }))
+                        }
                         onProcessingFeeOverrideChange={(p) =>
                           updateLineItem(line.id, { processingFeeOverride: p })
                         }
@@ -2658,10 +2822,9 @@ export default function NewOrderPage() {
                     优惠金额 (¥)
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     id="discountAmount"
-                    min={0}
-                    step={0.01}
                     value={discountAmount}
                     onChange={(e) => setDiscountAmount(e.target.value)}
                     onBlur={commitDiscount}
@@ -2675,10 +2838,9 @@ export default function NewOrderPage() {
                     实收款 (¥)
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     id="actualAmount"
-                    min={0}
-                    step={0.01}
                     value={actualAmount}
                     onChange={(e) => setActualAmount(e.target.value)}
                     onBlur={commitActual}
@@ -2886,6 +3048,15 @@ interface LineItemBlockProps {
   feeRow: FeePreviewRow | null
   /** 租户算料配置（issue #4874）：公式缺省 + 档位 chips 的值域与文案都取自它 */
   calcConfig: CraftCalcConfig | null
+  /**
+   * **人工加 / 改推导项**（issue #5202 · 裁定 4/6）：拼次 / 接高 / 接宽 ——
+   * `null` / `undefined` = 清掉该项（回到由推导决定）。
+   */
+  onChangePlanOverrides: (patch: {
+    spliceTimes?: number | null
+    joinHeightM?: number | null
+    joinWidthM?: number | null
+  }) => void
   /** 「改单价」（元/米，issue #4874）：`null` = 清空（回到未改过） */
   onProcessingFeeOverrideChange: (price: number | null) => void
 }
@@ -2918,28 +3089,22 @@ function FabricRow({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label required>数量</Label>
-          <input
-            type="number"
-            min={1}
+          {/* 布料行的数字框同样换掉（issue #5202）：吞键缺陷与帘行同源 */}
+          <NumberField
+            value={line.quantity}
+            onCommit={(next) => onChangeQty(next ?? 0)}
             placeholder="米"
-            value={line.quantity || ''}
-            onChange={(e) => {
-              const raw = e.target.value
-              if (raw === '') onChangeQty(0)
-              else if (/^\d*\.?\d*$/.test(raw)) onChangeQty(Number(raw))
-            }}
+            ariaLabel="数量"
             className={inputClass}
           />
           {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
         </div>
         <div>
           <Label required>单价 (¥/米)</Label>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
+          <NumberField
             value={line.unitPrice}
-            onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
+            onCommit={(next) => onChangePrice(next ?? 0)}
+            ariaLabel="单价 (¥/米)"
             className={inputClass}
           />
           {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
@@ -3462,6 +3627,7 @@ function LineItemBlock({
   onEdgeUnitPriceChange,
   feeRow,
   calcConfig,
+  onChangePlanOverrides,
   onProcessingFeeOverrideChange,
 }: LineItemBlockProps) {
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
@@ -3599,6 +3765,51 @@ function LineItemBlock({
   /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
+  // ===== 推导方案（issue #5202；契约 #5200 §四）=====
+  /**
+   * **推导方案**：加工类型 / 分幅 / 拼次 / 接高 / 接宽 / 用料 —— 全部由服务端给，页面**只读展示**
+   * （前端不实现第二份推导：候选枚举、选优、0.1 米上限都在算料引擎）。
+   * ⚠️ `plan` **不含工艺**（工艺没有几何依据，见 `lib/craft-calc-request.ts::DEFAULT_CRAFT_NAME`）。
+   */
+  const plan = line.calc?.plan ?? null
+  /** 算料回来了但响应里**没有** `plan` ⇒ 后端未接线（显式降级，不崩、不猜） */
+  const planUnavailable = line.calc !== null && plan === null
+  /**
+   * 「改」入口的展开态（issue #5202）：`null` = **跟随默认** —— 推导没就绪（`plan === null`）时
+   * **默认展开**（人工兜底是唯一出路，收起会让商家无从下手），推导就绪后默认收起（三项输入收敛）。
+   * 商家点过之后就按他点的来（不再被推导到达 / 消失牵动）。
+   */
+  const [craftEditTouched, setCraftEditTouched] = useState<boolean | null>(null)
+  const craftEditOpen = craftEditTouched ?? plan === null
+  /**
+   * **生效加工类型**（**单点**：`lib/craft-auto-features.ts::effectiveCuttingModeOf`）——
+   * 人工加的入口按它分档（契约订正 v1.1 ③：接高只在「定高买宽」、接宽只在「倒幅」）。
+   */
+  const effectiveCuttingMode = cuttingModeOf(line)
+  const canJoinHeight = effectiveCuttingMode === CUTTING_MODE_FIXED_HEIGHT
+  const canJoinWidth = effectiveCuttingMode === CUTTING_MODE_FIXED_WIDTH
+  /** 当前生效的那一档的人工缺口 + **就地报错**（超限 ⇒ 请求面拒发该键，且**不静默截断**） */
+  const joinGapRaw = canJoinHeight
+    ? line.planOverrides?.joinHeightM
+    : canJoinWidth
+      ? line.planOverrides?.joinWidthM
+      : undefined
+  const joinGapOverLimit =
+    joinGapRaw !== undefined &&
+    joinGapRaw !== null &&
+    Number.isFinite(Number(joinGapRaw)) &&
+    Number(joinGapRaw) > JOIN_GAP_MAX_METERS
+  /**
+   * **人工指定的米数没有跟随本次改动**（issue #5202 · 根因 2）—— 判据 = 手改那一刻的入参签名
+   * 与**当前**签名不同。刻意做成**派生值**（不落状态）：落状态就要再维护一份同步逻辑，
+   * 而「同步逻辑没跑到」正是单向棘轮的来源。
+   */
+  const metersStale =
+    line.metersSource === LINE_METERS_SOURCE_MANUAL &&
+    line.metersManualSignature !== undefined &&
+    line.metersManualSignature !==
+      craftCalcSignature(craftCalcParamsOf(calcInputOf(line, calcConfig)))
+
   /**
    * **加工费取价明细**（issue #4874）—— 键名冻结于后端 `ProcessingFeeCalculator.detail`：
    * `composition`（归一化组合键）/ `items`（展示用加工项名，与「加工费组合」页同源）/
@@ -3715,26 +3926,24 @@ function LineItemBlock({
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <Label required>窗宽 (米)</Label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                  {/* 三项输入之一（issue #5202）；数字框能打出 `0.`（如 0.5 米窄窗） */}
+                  <NumberField
+                    value={line.width}
+                    onCommit={(next) => onChangeWidth(positiveOrNull(next))}
                     placeholder="如 6.6"
-                    value={line.width ?? ''}
-                    onChange={(e) => onChangeWidth(decimalOrNull(e.target.value))}
+                    ariaLabel="窗宽 (米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
                 </div>
                 <div>
                   <Label required>窗高 (米)</Label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                  {/* 三项输入之一（issue #5202） */}
+                  <NumberField
+                    value={line.height}
+                    onCommit={(next) => onChangeHeight(positiveOrNull(next))}
                     placeholder="如 2.6"
-                    value={line.height ?? ''}
-                    onChange={(e) => onChangeHeight(decimalOrNull(e.target.value))}
+                    ariaLabel="窗高 (米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
@@ -3745,22 +3954,13 @@ function LineItemBlock({
                       而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几套」。
                       ⚠️ 布料行（`FabricRow`）**不改**：布料按 `sellingMethod` 卖布，不是同一个业务。 */}
                   <Label required>用料米数</Label>
-                  <input
-                    type="number"
-                    min={1}
+                  {/* issue #5202：换成保留原始文本的数字框 —— 改前 `value={line.quantity || ''}`
+                      + `Number(raw)` 会把 `0` 渲染成空串（输入 "0" 当场清空 ⇒ 打不出 "0.5"）。 */}
+                  <NumberField
+                    value={line.quantity}
+                    onCommit={(next) => onChangeQty(next ?? 0)}
                     placeholder="米"
-                    value={line.quantity || ''}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      // #2987：允许清空输入（空态传 0 显示为空，不再被强制弹回默认 1）；
-                      // 仅接受合法数字（含按米小数如 2.5），非法字符忽略防 NaN；
-                      // 最终由提交校验「数量须大于 0」兜底
-                      if (raw === '') {
-                        onChangeQty(0)
-                      } else if (/^\d*\.?\d*$/.test(raw)) {
-                        onChangeQty(Number(raw))
-                      }
-                    }}
+                    ariaLabel="用料米数"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
@@ -3771,16 +3971,27 @@ function LineItemBlock({
                       不自动算料 / 没有公式可恢复」的专属分支已删除（两种帘体走同一条渲染路径：
                       公式串 /「人工指定 + 恢复按公式计算」/ 算料错误提示一律一视同仁）。 */}
                   {line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
-                    <p className="mt-1 text-xs text-amber-600">
-                      人工指定
-                      <button
-                        type="button"
-                        onClick={onRestoreFormula}
-                        className="ml-1.5 underline hover:text-amber-700"
-                      >
-                        恢复按公式计算
-                      </button>
-                    </p>
+                    <>
+                      <p className="mt-1 text-xs text-amber-600">
+                        人工指定
+                        <button
+                          type="button"
+                          onClick={onRestoreFormula}
+                          className="ml-1.5 underline hover:text-amber-700"
+                        >
+                          恢复按公式计算
+                        </button>
+                      </p>
+                      {/* **显式告知**（issue #5202 · 根因 2）：人工指定的数**没跟随**这次改动 ——
+                          不静默覆盖商家手填的数，也不让商家自己猜为什么数没变（一键恢复就在上面）。 */}
+                      {metersStale && (
+                        <p data-testid="meters-manual-stale" className="mt-1 text-xs text-amber-700">
+                          用料已人工指定（{line.quantity} 米）—— 宽 / 高 / 门幅或工艺改动后系统
+                          <strong>未跟随</strong>重算（不会静默覆盖你手填的数）；点上方「恢复按公式计算」
+                          按新参数重算。
+                        </p>
+                      )}
+                    </>
                   ) : line.calc?.formula_text ? (
                     <p className="mt-1 text-xs text-neutral-400 break-words">
                       {line.calc.formula_text}
@@ -3801,12 +4012,10 @@ function LineItemBlock({
                 </div>
                 <div>
                   <Label required>单价 (¥/米)</Label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                  <NumberField
                     value={line.unitPrice}
-                    onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
+                    onCommit={(next) => onChangePrice(next ?? 0)}
+                    ariaLabel="单价 (¥/米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
@@ -3814,8 +4023,135 @@ function LineItemBlock({
               </div>
             </div>
 
-              {/* 工艺规格（原 ②，已并入区块 1）—— §4.2 字段表 A + §4.8 双拼 */}
+              {/* ===== 推导结果（issue #5202；契约 #5200 §四）=====
+                  商家**主动填的只有三项**（颜色 + 净窗宽 + 净窗高）⇒ 加工类型 / 分幅 / 拼接 /
+                  接高 / 接宽 / 用料一律**只读展示**服务端推导（`data.plan`）；要改走下面「改工艺参数」
+                  入口（裁定 6：自动推导的工艺配置仍然能人工修改，改过留痕、不再被覆盖）。
+                  `reason` 与**候选逐条**（含不可行的）都摆出来：裁定 3 要系统逐个「再算一遍」，
+                  商家要能核对判定。 */}
+              {!isFabricLine && line.calc && (
+                <div
+                  data-testid="craft-plan"
+                  className="mt-3 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
+                >
+                  {plan ? (
+                    <>
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+                        <span className="font-medium text-neutral-600">用料方案（系统推导）</span>
+                        <span data-testid="craft-plan-mode" className="text-neutral-900">
+                          加工类型：{plan.cutting_mode}
+                        </span>
+                        <span data-testid="craft-plan-source" className="text-neutral-500">
+                          {plan.auto ? '系统推导' : '人工指定（不再被自动改判）'}
+                        </span>
+                        {/* 工艺**不在** `plan` 里（没有几何依据）：一律「系统默认 · 可改」—— 
+                            真值路径 = ③加工项里勾带 `craft_hint` 的工艺项（#4566）。 */}
+                        <span data-testid="craft-plan-craft" className="text-neutral-500">
+                          工艺 {lineCraft ?? `${DEFAULT_CRAFT_NAME}（系统默认，可在③加工项改）`}
+                        </span>
+                        <span data-testid="craft-plan-door-width" className="text-neutral-500">
+                          门幅 {plan.door_width ?? '—'} 米
+                        </span>
+                        <span data-testid="craft-plan-panels" className="text-neutral-500">
+                          分幅 {plan.panels ?? '—'}
+                        </span>
+                        <span data-testid="craft-plan-splice" className="text-neutral-500">
+                          拼接 {craftPlanSpliceText(plan)}
+                        </span>
+                        <span data-testid="craft-plan-join-height" className="text-neutral-500">
+                          接高 {plan.join_height_m ?? '—'} 米
+                        </span>
+                        <span data-testid="craft-plan-join-width" className="text-neutral-500">
+                          接宽 {plan.join_width_m ?? '—'} 米
+                        </span>
+                        <span
+                          data-testid="craft-plan-meters"
+                          className="font-medium text-neutral-900"
+                        >
+                          用料 {plan.meters} 米
+                        </span>
+                      </div>
+                      <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
+                        依据：{plan.reason}
+                      </p>
+                      {/* R4（裁定 1：出现拼几次就只能是单色）—— **显式冲突告知**，绝不替商家改款式 */}
+                      {craftPlanHasSplice(plan) && line.craft.style === STYLE_MIXED && (
+                        <p
+                          data-testid="craft-plan-style-conflict"
+                          className="mt-1 text-xs text-amber-700"
+                        >
+                          系统推导出「{craftPlanSpliceText(plan)}」⇒ 款式只能是单色（拼N次 ≠ 拼色）；
+                          当前款式是「{STYLE_MIXED}」—— 请自行改回「单色」（系统不会替你改款式）。
+                        </p>
+                      )}
+                      {/* R5：`splice_option=null` 且 N ≥ 4 ⇒ 明说「需人工处理」（**不发明「拼4次」**） */}
+                      {plan.splice_option === null && Number(plan.splice_times) >= 4 && (
+                        <p
+                          data-testid="craft-plan-splice-manual"
+                          className="mt-1 text-xs text-amber-700"
+                        >
+                          拼 {plan.splice_times} 次没有对应的特殊选项（只有 拼1次 / 拼2次 / 拼3次）
+                          ⇒ 需人工处理。
+                        </p>
+                      )}
+                      {/* 单点口径（契约 #5200 判据 10）：`plan.meters` 必须等于 `fabric_meters`
+                          —— 不等就摆到台面上（数量一律按算料结果，不显示成一个"看起来对"的两个数） */}
+                      {Number(plan.meters) !== Number(line.calc?.fabric_meters) && (
+                        <p
+                          data-testid="craft-plan-meters-mismatch"
+                          className="mt-1 text-xs text-amber-700"
+                        >
+                          推导用料 {plan.meters} 米 ≠ 算料结果 {line.calc?.fabric_meters} 米 ——
+                          数量按算料结果（单一来源），请核对。
+                        </p>
+                      )}
+                      <ul data-testid="craft-plan-candidates" className="mt-1.5 space-y-0.5">
+                        {(plan.candidates ?? []).map((candidate) => (
+                          <li
+                            key={candidate.key}
+                            data-testid={`craft-plan-candidate-${candidate.key}`}
+                            className="text-[11px] text-neutral-500"
+                          >
+                            <span className="text-neutral-600">
+                              {craftPlanCandidateLabel(candidate.key)}
+                            </span>
+                            {candidate.feasible ? (
+                              <span className="text-neutral-700">
+                                ：可行 · 用料 {candidate.meters ?? '—'} 米 · 拼接{' '}
+                                {candidate.splice_times ?? 0} 次
+                              </span>
+                            ) : (
+                              <span className="text-neutral-400">
+                                ：不可行 —— {candidate.reason}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p data-testid="craft-plan-unavailable" className="text-xs text-amber-700">
+                      推导服务未就绪：算料响应没有返回推导方案（`data.plan`）—— 加工类型 / 拼接 /
+                      接高接宽请人工确认（系统不会自行猜一个方案）。
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 工艺参数（原 ②，已并入区块 1）—— §4.2 字段表 A + §4.8 双拼
+                  + **就地「改」入口**（issue #5202 · 裁定 6）：默认收起，推导结果在上一块只读展示 */}
               <div className="pt-4 mt-4 border-t border-neutral-100">
+                <button
+                  type="button"
+                  data-testid="craft-plan-edit"
+                  aria-expanded={craftEditOpen}
+                  onClick={() => setCraftEditTouched(!craftEditOpen)}
+                  className="h-8 px-3 rounded border border-neutral-300 bg-white text-xs text-neutral-600 hover:border-neutral-400 transition-colors"
+                >
+                  {craftEditOpen ? '收起工艺参数' : '改工艺参数 / 人工加接高接宽拼接'}
+                </button>
+                {craftEditOpen && (
+                  <div className="mt-3">
                 <OrderCraftFields
                   value={derivedCraftSpec(line, calcConfig)}
                   onChange={onChangeCraft}
@@ -3985,6 +4321,89 @@ function LineItemBlock({
                   )}
                 </div>
               )}
+
+                    {/* ===== 人工加 / 改（issue #5202 · 裁定 4/6）=====
+                        自动推导的工艺配置**仍能人工修改**；人工改过的项随请求**显式下发**
+                        （契约 #5200 §四 R7 ⇒ `auto=false`，此后不再被推导改判）。
+                        上限（裁定 5）：接高 / 接宽缺口 ≤ 0.1 米；接高只在「定高买宽」下成立、
+                        接宽只在「倒幅」下成立（契约订正 v1.1 ③）。 */}
+                    <div
+                      data-testid="craft-plan-manual"
+                      className="rounded border border-neutral-200 bg-white px-3 py-2"
+                    >
+                      <div className="text-xs font-medium text-neutral-600">
+                        人工加 / 改（改过的项不再被自动推导覆盖）
+                      </div>
+                      <div
+                        className="mt-2 flex flex-wrap items-center gap-1.5"
+                        role="radiogroup"
+                        aria-label="拼接（人工加）"
+                      >
+                        <span className="text-xs text-neutral-500">拼接</span>
+                        {SPLICE_OVERRIDE_OPTIONS.map((option) => {
+                          const active =
+                            (line.planOverrides?.spliceTimes ?? null) ===
+                            (option.value ?? null)
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => onChangePlanOverrides({ spliceTimes: option.value })}
+                              className={
+                                'h-8 px-3 rounded-full border text-xs transition-colors ' +
+                                (active
+                                  ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                  : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-400')
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {canJoinHeight || canJoinWidth ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span className="text-neutral-500">
+                            人工加{canJoinHeight ? '接高' : '接宽'}（米，≤ {JOIN_GAP_MAX_METERS}）
+                          </span>
+                          <NumberField
+                            testId={
+                              canJoinHeight
+                                ? 'craft-plan-join-height-input'
+                                : 'craft-plan-join-width-input'
+                            }
+                            ariaLabel={`人工加${canJoinHeight ? '接高' : '接宽'}（米）`}
+                            value={
+                              (canJoinHeight
+                                ? line.planOverrides?.joinHeightM
+                                : line.planOverrides?.joinWidthM) ?? null
+                            }
+                            onCommit={(next) =>
+                              onChangePlanOverrides(
+                                canJoinHeight ? { joinHeightM: next } : { joinWidthM: next }
+                              )
+                            }
+                            className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                          />
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-neutral-400">
+                          加工类型未定 ⇒ 无法人工加接高 / 接宽（接高只在「定高买宽」下成立、
+                          接宽只在「倒幅」下成立）
+                        </p>
+                      )}
+                      {joinGapOverLimit && (
+                        <p data-testid="craft-plan-join-error" className="mt-1 text-xs text-red-600">
+                          缺口 {String(joinGapRaw)} 米超出上限 {JOIN_GAP_MAX_METERS} 米 ⇒ 不可加
+                          （上限是硬规则；系统不会替你截断成 {JOIN_GAP_MAX_METERS} 米，
+                          也不会把这个数发出去）
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </WizardStep>
 
@@ -4161,17 +4580,12 @@ function LineItemBlock({
                            而那会连带清空尺寸/工艺）。⇒ **override 是商家输的，入口就一直在**。 */}
                     {(feeIsUnpriced && canOverrideFee) || line.processingFeeOverride != null ? (
                       <span className="inline-flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          data-testid="fee-unit-price-override"
-                          aria-label="改单价（元/米）"
+                        <NumberField
+                          testId="fee-unit-price-override"
+                          ariaLabel="改单价（元/米）"
                           placeholder="元/米"
-                          value={line.processingFeeOverride ?? ''}
-                          onChange={(e) =>
-                            onProcessingFeeOverrideChange(decimalOrNull(e.target.value))
-                          }
+                          value={line.processingFeeOverride}
+                          onCommit={(next) => onProcessingFeeOverrideChange(positiveOrNull(next))}
                           className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                         />
                         <span className="text-neutral-500">元/米</span>
