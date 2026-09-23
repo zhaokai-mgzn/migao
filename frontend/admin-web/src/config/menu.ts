@@ -100,6 +100,13 @@ export const menuGroups: MenuGroup[] = [{
       // 且必须与 MenuController 的静态权限树、AuthService.buildMenusByPermissions
       // **三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
       { key: 'production-pool', name: '池看板', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:manage' },
+      // 省料看板（issue #5159）：L2 批次余量分档聚合 + L3 单位产出的面料消耗。
+      // 一屏同时给两条指标（①「剩余 ≤0.2m 的批次占比」②「入库/采购总米数」）并把
+      // 「单看①会被排料省料误导」写在页面上；存量导入批次单独成组、不与切换后混算。
+      // 权限码沿用 processing:manage（与「生产看板」「池看板」同权），且必须与 MenuController 的
+      // 静态权限树、AuthService.buildMenusByPermissions **三处同构**
+      // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+      { key: 'production-saving-board', name: '省料看板', icon: 'BarChart3', path: '/production/saving-board', permissionCode: 'processing:manage' },
       // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。

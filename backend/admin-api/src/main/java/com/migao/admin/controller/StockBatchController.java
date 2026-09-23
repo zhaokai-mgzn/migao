@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.PageResponse;
+import com.migao.admin.dto.SavingMetricViews;
 import com.migao.admin.entity.StockBatchConsumption;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.StockBatchConsumptionService;
@@ -125,5 +126,44 @@ public class StockBatchController {
                 batchNo, processingOrderNo, orderNo, page, size, tenantId);
         return ApiResponse.success(stockBatchConsumptionService.consumptionPage(
                 tenantId, batchNo, processingOrderNo, orderNo, page, size));
+    }
+
+    /**
+     * **省料度量看板**（L2 批次结构性 + L1 汇总，issue #5159）。
+     *
+     * <p>聚合面 = <b>（时间桶 × 来源组 × 物料）</b>：分档 `≤0.2m / 0.2~0.5 / 0.5~1 / &gt;1`
+     * 按批次**余量**四档统计；来源组 = {@code inbound_orders.source}。
+     * 🔴 <b>存量导入（{@code opening}）恒为独立分组</b>：混进「切换后」的分子分母 ⇒
+     * 历史包袱把改善吃掉，看板永远看不出变化。</p>
+     *
+     * GET /api/admin/batch-stock/saving-board?productId=xxx&amp;granularity=month
+     *
+     * @param granularity `month`（缺省，{@code YYYY-MM}）/ `week`（ISO 周，{@code YYYY-Www}）；
+     *                    未知取值 ⇒ <b>400 显式拒绝</b>（不静默回落 month：静默回落会让看板显示的
+     *                    口径与请求的不是一回事）
+     */
+    @RequirePermission("product:list")
+    @GetMapping("/saving-board")
+    public ApiResponse<SavingMetricViews.Board> savingBoard(
+            @RequestParam(required = false) String productId,
+            @RequestParam(required = false) String granularity) {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(
+                stockBatchConsumptionService.savingBoard(tenantId, productId, granularity));
+    }
+
+    /**
+     * **省料趋势**（L3 采购/财务口径，issue #5159）：逐周/月的
+     * 入库/采购总米数（**不含存量导入**）、存量导入入库米数（单列）、消耗米数、
+     * 产出面积与**单位产出的面料消耗**（米/㎡）。
+     *
+     * GET /api/admin/batch-stock/saving-trend?granularity=month
+     */
+    @RequirePermission("product:list")
+    @GetMapping("/saving-trend")
+    public ApiResponse<SavingMetricViews.Trend> savingTrend(
+            @RequestParam(required = false) String granularity) {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(stockBatchConsumptionService.savingTrend(tenantId, granularity));
     }
 }

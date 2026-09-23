@@ -39,6 +39,10 @@ public class MenuController {
         // 前端 config/menu.ts 的 `production-pool` **三处同构**（漏一处 = 「岗位权限页勾得动、
         // 侧边栏看不到」）；权限码沿用 processing:manage（不新造权限码）。
         MenuNode prPool = new MenuNode("processing:manage", "池看板");
+        // 省料看板（issue #5159）：与 AuthService.buildMenusByPermissions 的侧边栏节点、
+        // 前端 config/menu.ts 的 `production-saving-board` **三处同构**
+        // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）；权限码沿用 processing:manage。
+        MenuNode prSaving = new MenuNode("processing:manage", "省料看板");
         // 🔴 「工艺配置」= issue #4416 把「工序库」+「工艺路线」**合并为单一入口**后的名称
         // （工序库半边 = 该页左栏；旧路径 /production/operations 保留为重定向）。
         // issue #4440：本树此前仍是**合并前**的两个节点（工序库 / 工艺路线）⇒ 与前端 config/menu.ts 漂移，
@@ -61,7 +65,7 @@ public class MenuController {
             new MenuNode("dashboard", "工作台", List.of(d1)),
             new MenuNode("orders", "订单管理", List.of(o1, o2, o3)),
             new MenuNode("products", "商品管理", List.of(p1, p2, p3, p4)),
-            new MenuNode("production", "生产管理", List.of(pr1, prPool, pr2, pr3, i1)),
+            new MenuNode("production", "生产管理", List.of(pr1, prPool, prSaving, pr2, pr3, i1)),
             new MenuNode("agent", "客服工作台", List.of(a1)),
             new MenuNode("employees", "员工管理", List.of(e1, e2)),
             new MenuNode("customers", "客户管理", List.of(c1)),
