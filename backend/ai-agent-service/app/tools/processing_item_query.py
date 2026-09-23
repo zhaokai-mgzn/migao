@@ -33,15 +33,23 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "查询店铺加工项目录（**店铺维度，与具体商品无关**，无商品/分类过滤）。"
-        "【触发】用户问'有哪些加工项''加工项列表/分类'时；"
-        "或**向顾客提供加工项选择前**（建品与下单两条流程的唯一事实源，issue #4371："
-        "加工项不再挂在商品上，必须先用本工具拿目录，再发 interact(choice, multiSelect=true)）。"
-        "【参数】keyword/category_id/status 均可选；只取全部目录时传空参数。"
+        "【触发】用户问'有哪些加工项''加工项列表/分类'时；或**向顾客提供加工项选择前**"
+        "（建品与下单两条流程的唯一事实源，issue #4371：加工项不再挂在商品上，"
+        "必须先用本工具拿目录，再发 interact(choice, multiSelect=true)）——"
+        "查的是**店铺维度**目录，与具体商品无关、无商品/分类过滤。"
+        "【参数】id / keyword / category_id / status 均可选；只取全部目录时传空参数。"
         "【反例】查商品详情用 product_detail（不返回加工项）；"
-        "创建/修改/删除加工项用 processing_item_manage。"
+        "创建/修改/删除加工项用 processing_item_manage；选规格/色号用 product_detail 的 skus[]。"
         "【标注】READONLY"
     )
+
+    # 权限码（admin-api 目录）：加工项/加工分类的读端点取加工面码 `processing:manage`
+    # （与 ProcessingItemController 的 `@RequirePermission` 同码）。
+    # 本工具**双端**（C 端小布下单前拿目录 + B 端建品/下单）⇒ c_end_reachable=True：
+    # C 端 JWT 没有 permissions claim，C 端按角色层放行（零回归）。
+    required_permissions = ["processing:manage"]
+    c_end_reachable = True
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {
         "type": "object",

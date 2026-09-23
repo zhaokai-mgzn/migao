@@ -96,7 +96,7 @@ class LogisticsTrackTool(BaseTool):
     
     name = "logistics_track"
     description = (
-        "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【前置】必须提供 order_id（真实订单号）。"
+        "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【参数】必须提供 order_id（真实订单号）。"
         "用户只说'查物流'但没提供订单号时，先问订单号，不要空调。"
         "【链条】顾客要物流时**交付物是轨迹**：订单号只是入参——你用 order_query 查到订单号后"
         "**必须继续调用本工具**（order_id=该订单号）把轨迹/状态交付给顾客；"
@@ -105,7 +105,12 @@ class LogisticsTrackTool(BaseTool):
         "运单号只能由系统从订单详情中读取。"
         "【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
     )
-    
+
+    # 权限码（admin-api 目录）：AgentOrderController 的物流/轨迹端点 `@RequirePermission("order:list")`
+    # （物流是订单读面的一部分）⇒ 与 controller 同码。
+    required_permissions = ["order:list"]
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
+
     parameters = {
         "type": "object",
         "properties": {

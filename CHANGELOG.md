@@ -52,6 +52,16 @@
   `acceptance/2026-09-23/order-auto-derivation/ua/README.md`（含四个会把环境问题伪装成产品 bug 的坑）。
 - **边界（如实登记）**：本次未做 `bmini-app` 真机、多租户切换、「不采纳推导项」后的组合键核对；
   数字输入的逐字符读数**只覆盖「窗宽（米）」这一个站点**，其余站点的护栏仍在 #5228 / #5237，未随之翻案。
+### Agent 的功能权限与页面权限对齐：售后/知识库新增只读码，生产域向页面码收窄，写端点不再挂在读码下（2026-09-23，issue #5246）
+
+- **用户裁定**：「Agent 的功能权限必须与页面权限保持一致，不得造成权限泄露」。
+- **新增两个只读码**：`after_sales:view`（售后工单读面）、`knowledge:view`（知识卡片读面）—— 权限目录、岗位默认矩阵（**含客服岗位**）、四处菜单源、端点注解**四处同批**落地 ⇒ **客服经米宝查售后不再 403**（此前的缺口见 #4104）。
+- **可见面变化（两处节点，逐岗位列清）**：①「售后工单」节点码 `order:refund` → `after_sales:view`（读面与写面拆码）⇒ **客服**新看到该菜单项，运营原本就有；②「知识库」节点码 `knowledge:manage` → `knowledge:view` ⇒ **客服 / 运营**新看到该菜单项（用户明确要求非管理员也能读知识卡片）。其余菜单节点码**一个未动**，也没有给任何岗位新增写权限。
+- **存量自定义岗位的边界（如实登记）**：只勾了 `order:refund` / `knowledge:manage` 的**自定义岗位**，拆分后**不再**自动获得售后 / 知识库的**读**列表 —— 需商家在「岗位权限」页补勾新读码（该码已由迁移补进存量租户目录）。内置岗位不受影响。
+- **能力收窄（有意，逐项登记）**：`processing_order_query` / `piecework_query` / `production_worklog_query` / `production_progress_query` 的权限码从 `processing:view` / `order:list` **对齐到页面节点的 `processing:manage`** ⇒ 客服 / 销售 / 财务不再能经米宝查生产看板与计件数据（这些菜单他们本来也看不到）。
+- **写端点不再挂在读码下**：`AgentProductController` 的商品/库存/SKU 写端点从类级 `product:list` 拆到 `product:create`；`AgentProductionController` 的三个 agent 端点统一 `processing:manage`；`ProcessingOrderController` 读端点收窄为 `processing:manage`；`POST /api/admin/notifications` 补 `system:manage`（**与 ai-agent 侧 `notification_manage` 同批**，避免单边改动砍掉运营经米宝发通知的能力）。
+- **机械判据**：新增守卫 `tests/unit_ci_workflows/test_agent_permission_parity.py` —— 工具 / 端点 / 菜单 / 岗位四集合互相对账，九条判据各带注入式红证。
+- **边界（如实登记）**：两个「死工具」登记项**都未删除** —— ① `confirm_value` 不是死工具（`confirm_value.py` 里没有工具类，它是 `interact.py` / `base_skill.py` 共用的派生契约模块，删了会破共用派生）；② `human_handoff` 仍是「未注册 + `deprecated = True`」的阶段一形态（模型不可达、零能力面），阶段二删文件**未在本单执行**：它有 5 个测试模块的活依赖（幂等键接线锁 / 行为映射规则 / 能力拒绝守卫 / 直测单测 / 用例 `covered_by`），须与用例、文档同批做（已作为 #5247 的输入登记）。订单/客户/财务/会话域**没有写码**导致的读写粒度残留，逐条登记在守卫的 `READ_WRITE_EXCEPTIONS` 里（含建议码名）。
 
 ### 批量填写库存不再把 `60.5` 静默存成 `60`，SKU 库存格也只接受 1 位小数（2026-09-23，issue #5237）
 

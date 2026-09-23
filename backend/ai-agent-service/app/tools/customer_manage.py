@@ -77,7 +77,14 @@ class CustomerManageTool(BaseTool):
 
     name = "customer_manage"
     description = (
-        "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。【前置】支持 action: list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/delete_tag。list 可按 keyword 搜索。detail 需要 customer_id。写操作需确认。【反例】查客户的历史订单用 order_query(customer_phone=XX)，不要用本工具。【标注】WRITE(update/add_tag/remove_tag) — 删除标签/合并客户需二次确认"
+        "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。"
+        "【参数】action 必填：list/detail/list_tags 只读；update/add_tag/remove_tag/create_tag/"
+        "update_tag/delete_tag 为写操作。list 可按 keyword(名称/手机号) 搜索；"
+        "detail/update/打标签需 customer_id（32 位 UUID，先 list 查出真实 UUID，禁止传手机号）；"
+        "update 的 data 只接受客户档案真实字段（见 schema）。"
+        "【反例】查客户的历史订单用 order_query(keyword=XX)，不要用本工具；"
+        "员工账号用 employee_manage，角色权限用 role_manage。"
+        "【标注】WRITE|DESTRUCTIVE — 写操作需确认，删除标签/客户前必须二次确认"
     )
     # 权限码（admin-api 目录）：CustomerController 类级 `@RequirePermission("customer:view")`
     # （客户读/写/标签同码）。

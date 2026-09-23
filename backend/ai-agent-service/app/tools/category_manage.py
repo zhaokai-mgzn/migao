@@ -29,9 +29,13 @@ class CategoryManageTool(BaseTool):
 
     name = "category_manage"
     description = (
-        "【触发】查分类/新建/删除分类。action=tree 返回分类列表（扁平结构，无父子概念），"
-        "每个分类的 id（长字符串如 88b6c50fbc...）直接用作 product_manage 的 category_id 参数。"
-        "tree 是只读安全的。create 只需 name，无需指定父分类。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
+        "【触发】用户问'有哪些分类''分类列表''新建分类''删除分类'时调用；"
+        "建品/查商品需要分类 id 时也用 tree。"
+        "【参数】action 必填：tree 只读（返回扁平分类列表，无父子概念）/ create（必填 name）/ "
+        "update（category_id + name）/ delete（category_id）—— create/update/delete 为写操作。"
+        "tree 返回的分类 id（长字符串如 88b6c50fbc...）直接用作 product_manage 的 category_id 参数。"
+        "【反例】查商品/库存用 product_search / product_detail；分类 id ≠ 商品 id，不要混用。"
+        "【标注】WRITE|DESTRUCTIVE — tree 只读；create/update/delete 前必须二次确认"
     )
     # 权限码（admin-api 目录）：CategoryController 类级 `@RequirePermission("product:category")`。
     # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。

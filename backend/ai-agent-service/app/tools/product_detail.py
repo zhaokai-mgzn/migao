@@ -29,8 +29,16 @@ class ProductDetailTool(BaseTool):
     
     name = "product_detail"
     description = (
-        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id（支持名称/序号/UUID）。【下单前必调】创建订单前必须先调本工具查看 SKU 列表（颜色×门幅），让用户选择规格后再下单。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
+        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【参数】需要 product_id（支持名称/序号/UUID）。【下单前必调】创建订单前必须先调本工具查看 SKU 列表（颜色×门幅），让用户选择规格后再下单。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
     )
+
+    # 权限码（admin-api 目录）：商品**读**码 `product:list`（ProductController / AgentProductController
+    # 的详情端点 `@RequirePermission("product:list")`）。
+    # 本工具**双端**（C 端顾客看商品 + B 端看商品）⇒ c_end_reachable=True：C 端 JWT 没有
+    # permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
+    required_permissions = ["product:list"]
+    c_end_reachable = True
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
     
     parameters = {
         "type": "object",

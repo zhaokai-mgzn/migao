@@ -12,8 +12,10 @@ class SkuUpdateTool(BaseTool):
     name = "sku_update"
     description = (
         "【触发】用户说'白色改成XX元''散剪太贵了''XX颜色的调成XX'时直接调用。"
-        "【前置】product_detail 返回的 SKU 列表中有颜色/门幅，选一个填入。"
-        "color/door_width 都是可选的，至少填一个来定位 SKU（SKU 组合 = 颜色 × 门幅，V111）。"
+        "【参数】product_id + price 必填；color/door_width 都是可选的，至少填一个来定位 SKU"
+        "（SKU 组合 = 颜色 × 门幅，V111）；取值须来自 product_detail 的 skus[] 原值。"
+        "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架用 product_manage；"
+        "加工项不在本工具范围。"
         "【标注】WRITE|IDEMPOTENT"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。")
     # 权限码（admin-api 目录）：SKU 改价/改库存属商品写 ⇒ 写码 `product:create`

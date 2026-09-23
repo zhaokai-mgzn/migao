@@ -2191,8 +2191,8 @@ class CurtainCalcTool(BaseTool):
 
     name = "curtain_calc"
     description = (
-        "计算窗帘用布量与报价。用户询问窗帘需要多少布、多少钱、怎么算料时调用。"
-        "【前置】需要窗宽(米)、窗高(米)；面料单价可通过 product_detail 查询得到。"
+        "【触发】用户问'窗帘需要多少布''多少钱''怎么算料'且给的是**窗户尺寸**（窗宽/窗高）时调用。"
+        "【参数】需要窗宽(米)、窗高(米)；面料单价可通过 product_detail 查询得到。"
         "【门幅】顾客**没指定**门幅时，把 product_detail 的 SKU 列表里的门幅**去重**后传 "
         "fabric_widths（如 [2.8,3.2]）—— 系统会自动选门幅、并自动决定定高买宽/定宽买高"
         "（无需你判断朝向）；顾客**明确指定**了门幅才传 fabric_width。"
@@ -2210,12 +2210,15 @@ class CurtainCalcTool(BaseTool):
         "顾客被多收 2~3 倍钱（issue #3395 实证：3 米→9 米）。"
         "只有顾客给的是**窗户尺寸**（窗宽/窗高）且要问「需要多少布/多少钱」时才调用；"
         "尺寸不全时先问齐（本工具必须同时有窗宽与窗高）。"
-        "READONLY"
+        "【标注】READONLY"
     )
     read_only = True
     destructive = False
     idempotent = True
     allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
+    # 无权限码：纯本地算料工具（不调 admin-api，只读算料口径）且**双端都要用** ——
+    # C 端 JWT 没有 permissions claim（加码会让小布全量失效）⇒ 保留角色层把关。
+    required_permissions = []
 
     parameters = {
         "type": "object",

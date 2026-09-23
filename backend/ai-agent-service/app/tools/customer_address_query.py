@@ -25,9 +25,9 @@ class CustomerAddressQueryTool(BaseTool):
 
     description = (
         "【触发】C 端顾客下单/购买时，查询其历史收货地址用于预填：'帮我下单''我要买''地址是多少'等下单意图。"
-        "【前置】无参数。查询当前登录顾客最近一笔有收货地址的订单，返回收货人/手机号/地址。"
+        "【参数】无参数。查询当前登录顾客最近一笔有收货地址的订单，返回收货人/手机号/地址。"
         "【使用】命中后把收货信息作为 interact(component=form) 的预填 value 展示给顾客确认/修改；未命中则按原流程询问收货信息。"
-        "【何时不用】查询订单列表/物流用 customer_order_query / customer_logistics_track；商户员工管理订单用 order_query/order_manage。"
+        "【反例】查询订单列表/物流用 customer_order_query / customer_logistics_track；商户员工管理订单用 order_query / order_manage。"
         "【标注】READONLY — 仅查当前登录顾客自己的历史订单收货信息，结果由系统强制按用户过滤"
     )
 
@@ -38,6 +38,9 @@ class CustomerAddressQueryTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 order_query）
     allowed_roles = ["customer"]
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    required_permissions = []
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 
     async def execute(self, context: ToolContext, **kwargs) -> ToolResult:
         """查询最近一笔有收货地址的订单收货信息（强制按当前用户过滤）"""

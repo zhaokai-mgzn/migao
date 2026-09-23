@@ -51,19 +51,26 @@ def seller_context():
 class TestMetadataContract:
     """Tool 元数据：LLM 选择工具时只读 description，触发/前置/反例/标注必须自带"""
 
-    def test_read_only_and_role_metadata(self, tool):
+    def test_read_only_and_permission_metadata(self, tool):
         assert tool.name == "production_progress_query"
         assert tool.read_only is True
         assert tool.destructive is False
         assert tool.idempotent is True
-        # 两端可用：顾客查自己的单、商户员工查任意单
-        for role in ("customer", "admin", "agent", "tenant_admin"):
-            assert role in tool.allowed_roles, f"{role} 应可查生产进度"
+        # 两端可用：顾客查自己的单、商户员工查任意单。issue #5246 起口径 =
+        # 权限码（= 页面节点『生产看板』的 processing:manage）+ 双端标记，**不再**手写角色白名单
+        # （手写清单必然与 admin-api 目录漂移，且会把 C 端角色写进 B 端独占工具）。
+        assert tool.required_permissions == ["processing:manage"]
+        assert tool.c_end_reachable is True, "C 端 JWT 没有权限码 ⇒ 必须显式标记双端，否则顾客查进度全量失效"
+        assert "allowed_roles" not in type(tool).__dict__, (
+            "声明了权限码的工具不得再声明 allowed_roles（第二份不生效的假门禁）"
+        )
+        ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
+        assert tool.check_permission(ctx) is True, "C 端可达（双端工具）⇒ 顾客必须能查自己的进度"
 
     def test_description_carries_trigger_prereq_counterexample(self, tool):
         desc = tool.description
         assert "【触发】" in desc and "生产进度" in desc
-        assert "【前置】" in desc and "order_no" in desc
+        assert "【参数】" in desc and "order_no" in desc
         assert "【反例】" in desc and "logistics_track" in desc
         assert "READONLY" in desc
 

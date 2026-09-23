@@ -27,6 +27,10 @@ public class AdminRoleController {
 
     private final RoleService roleService;
 
+    // issue #5246（审计裁定「该放行」）：下方三个 GET（/ 、/all 、/{id}）**有意不加权限注解** ——
+    // 「员工管理」页的岗位下拉读的就是 /roles/all，加码会让「有员工管理权、无 system:manage」的人
+    // 建不了员工（岗位下拉空白）。写面（POST/PUT/DELETE）才是 system:manage。
+
     /**
      * 分页查询角色列表
      *

@@ -474,9 +474,21 @@ class BaseTool(ABC):
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]
     # 细粒度权限码（**权威层**）：非空 ⇒ 由 JWT permissions claim 决定访问，
     # 空列表 ⇒ 回落到 allowed_roles 粗筛。码取自 admin-api 权限目录
-    # （`RegistrationService.initializeDefaultRolesAndPermissions` 的 18 码），
-    # 端点对应关系取各 controller 的 `@RequirePermission`。
+    # （`RegistrationService.initializeDefaultRolesAndPermissions` 的目录），
+    # 端点对应关系取各 controller 的 `@RequirePermission`（方法级优先于类级）。
     required_permissions: list[str] = []
+
+    # C 端可达标记（**双端工具**，issue #5246）：权限码是**商户员工概念** —— C 端 JWT
+    # （`customer` / `agent`）里没有 `permissions` claim（`UserIdentity.permissions` 默认空、
+    # admin-api 的 `RoleService` 对这两个角色返回空集）。⇒ 声明了 `required_permissions`
+    # 的工具若**同时**被 C 端 skill（小布）绑定，必须显式声明本标记：C 端请求此时按**角色层**
+    # 放行（= 与「加码前」逐字一致的行为）；**未声明**的工具维持既有 C 端硬闸（拒绝）。
+    # 取值不得手写：`tests/unit_ci_workflows/test_agent_permission_parity.py` 机械核对
+    # 「`c_end_reachable` == 该工具是否被 C 端 skill 绑定」（从 `app/graph/skills/*.py` 推导）。
+    # 另一条边界（不在本字段射程内）：C 端经 `X-User-Id=customer/agent` 调 admin-api 时，
+    # `ServiceTokenFilter` 回退成 `service` 权威、`PermissionInterceptor.hasBypassRole` 直通
+    # ⇒ **admin-api 侧对 C 端没有权限码校验**，C 端的隔离靠业务层的 `X-User-Id` 过滤。
+    c_end_reachable: bool = False
     
     def __init__(self):
         """初始化 Tool"""
@@ -532,13 +544,18 @@ class BaseTool(ABC):
 
         # 细粒度层（权威）：权限码说了算，角色白名单不参与
         if self.required_permissions:
-            # C 端硬闸（**两端隔离不变式**，不是第二套授权表）：`customer`/`agent` 永不执行
-            # 商户管理类工具。C 端 JWT 本就没有权限码（`UserIdentity.permissions` 默认空、
-            # `RoleService` 对 customer/agent 返回空集）⇒ 生产不可达，这里是纵深防御；
+            # C 端硬闸（**两端隔离不变式**，不是第二套授权表）：权限码是**商户员工概念**，
+            # C 端 JWT 本就没有权限码（`UserIdentity.permissions` 默认空、`RoleService` 对
+            # customer/agent 返回空集）⇒ 对 C 端来说这一层**不可判**。处置：
+            #   ① 未声明 `c_end_reachable` ⇒ **拒绝**（既有语义，纵深防御 —— 商户管理类工具
+            #      即使被人加回 C 端 skill 也执行不了）；
+            #   ② 声明了 `c_end_reachable`（**双端工具**，如 `product_search` / `order_create`）
+            #      ⇒ 落到角色层，与「该工具还没有权限码时」逐字一致（C 端零回归，用户裁定
+            #      「C 端暂时不动」）。
             # 沿用既有单点常量 `CUSTOMER_ONLY_ROLES`，不新增任何角色清单。
             # 既有守卫先例：tests/test_tools_base.py 的「customer + `*` 通配 → 拒绝」。
             if context.role in CUSTOMER_ONLY_ROLES:
-                return False
+                return self.c_end_reachable and self._role_layer_allows(context)
             permissions = context.permissions or []
             if "*" in permissions:
                 return True
@@ -555,10 +572,19 @@ class BaseTool(ABC):
         # ③ 真正的授权在**目标写工具自己的 `required_permissions`** 上（本工具不读库不写库）。
         # 复用权限层的既有 `"*"` = 全量 语义（`admin` 的 `permissions == ["*"]`），不另造概念。
         # `require_auth` 仍然生效：这一支的语义是「角色不设限」，不是「无需认证」。
+        return self._role_layer_allows(context)
+
+    def _role_layer_allows(self, context: ToolContext) -> bool:
+        """角色层（粗筛）判定 —— 未声明权限码的工具、以及**双端工具**的 C 端请求走这里。
+
+        抽成方法只为一处口径（issue #5246）：C 端在权限码层不可判（C 端 JWT 没有码），
+        双端工具的 C 端请求必须与「该工具还没有权限码时」**逐字一致**，
+        复制一份 `if "*" in self.allowed_roles` 就是第二份会漂移的口径。
+        """
         if "*" in self.allowed_roles:
             return True
         return context.role in self.allowed_roles
-    
+
     def get_schema(self) -> Dict[str, Any]:
         """获取 LangChain/OpenAI 兼容的 function schema
 

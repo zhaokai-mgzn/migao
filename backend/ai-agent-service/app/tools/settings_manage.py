@@ -35,7 +35,12 @@ class SettingsManageTool(BaseTool):
 
     name = "settings_manage"
     description = (
-        "【触发】用户问'系统设置''配置''AI配置''模型''问候语''改密码''登录日志'时调用。【前置】get_settings/get_ai_config/login_logs 是查询。update_settings/update_ai_config/change_password 需确认。【反例】通知管理用 notification_manage。【标注】WRITE|DESTRUCTIVE — 修改全局配置/密码需二次确认"
+        "【触发】用户问'系统设置''配置''AI配置''模型''问候语''改密码''登录日志'时调用。"
+        "【参数】action 必填：get_settings/get_ai_config/login_logs 只读；"
+        "update_settings（name/industry 等）/update_ai_config（greeting_template 等）/"
+        "change_password（old_password + new_password）为写操作。"
+        "【反例】通知管理用 notification_manage；角色权限用 role_manage。"
+        "【标注】WRITE|DESTRUCTIVE — 修改全局配置/密码前必须二次确认"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
     # 权限码（admin-api 目录）：SettingsController 类级 `@RequirePermission("system:manage")`。

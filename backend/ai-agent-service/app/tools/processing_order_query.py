@@ -27,15 +27,16 @@ class ProcessingOrderQueryTool(BaseTool):
     name = "processing_order_query"
     description = (
         "【触发】用户问'加工单到哪了''JG-xxx 什么状态''这个订单的加工单'时调用。"
-        "【前置】可选 keyword（加工单号 JG-xxx / 订单号 ORD-xxx）或 status 筛选。"
+        "【参数】可选 keyword（加工单号 JG-xxx / 订单号 ORD-xxx）或 status 筛选。"
         "【反例】生成加工单用 processing_order_generate；改加工单状态用 processing_order_update。"
-        "【标注】READ — 只读查询"
+        "【标注】READONLY — 只读查询"
     )
 
-    # 权限码（admin-api 目录）：加工单**查看** = `processing:view`
-    # （ProcessingOrderController 的 `GET /{id}`；目录里 customer_service/sales/finance/operator 持有）。
+    # 权限码（admin-api 目录）：加工单**查看**取加工面读码 `processing:manage`
+    # （ProcessingOrderController 的查询端点 `GET /api/admin/processing-orders` 生效码 = `processing:manage`；
+    # #5246 改判：原 `processing:view` 与之不符，且没有任何菜单节点用该码）。
     # 旧白名单里的 knowledge_editor 在目录里只有 dashboard:view + product:list ⇒ 不再放行（收窄）。
-    required_permissions = ["processing:view"]
+    required_permissions = ["processing:manage"]
     read_only = True
     # 已恢复接入（issue #4196：反转 #3917 的下线决策）：registry 注册 + order skill 工具绑定
     # + prompts/order.md 操作指引三处齐备；概念区分口径仍在（防混淆守则）。

@@ -610,9 +610,17 @@ public class RegistrationService {
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
+                // 知识库查看（issue #5246）：知识库的**读**码。此前读（列表/搜索/待确认队列/模板）
+                // 与写（增删改/发布/归档/采纳/提炼）共用 knowledge:manage ⇒ 只想看看知识卡片的
+                // 客服/运营必须被授予写权才进得去。本次按读写拆开：读 = knowledge:view，写仍 = knowledge:manage。
+                {"知识库查看", "knowledge:view", "knowledge", "view", "查看知识卡片"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
                 {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
+                // 售后查看（issue #5246）：售后工单的**读**码。此前工单列表/详情与建单/改状态
+                // 同用 order:refund，而 order:refund 是**处理退款**（写）语义 ⇒ 拆出读码后
+                // 「能看工单」与「能退款/建单」成为两件事（侧边栏节点也改用本码，见 config/menu.ts）。
+                {"售后查看", "after_sales:view", "after-sales", "view", "查看售后工单"},
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
@@ -637,17 +645,21 @@ public class RegistrationService {
         }
 
         // 岗位默认权限（role_permissions 预置）：
-        // 管理员=全部；客服=会话+客户+订单查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
+        // 管理员=全部；客服=会话+客户+订单查看+售后/知识库查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
+        // issue #5246：客服与运营加授两个**读**码（after_sales:view / knowledge:view）——
+        // 两者本就是售后工单与知识库的日常使用方，此前因读写同码只能靠 order:refund / knowledge:manage
+        // 才能看到菜单（= 顺带拿到写权）⇒ 本次给读码即恢复「看得见」，写权不再被动外溢。
         attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
         attachDefaultPermissions(tenantId, csRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
-                "processing:view", "inbound:view"), permissionByCode);
+                "processing:view", "inbound:view", "after_sales:view", "knowledge:view"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "processing:manage",
                 "processing:view", "processing:update", "inbound:view", "inbound:create",
-                "customer:view", "finance:view", "agent:session", "employee:list"), permissionByCode);
+                "customer:view", "finance:view", "agent:session", "employee:list",
+                "after_sales:view", "knowledge:view"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
                 "processing:view", "inbound:view"), permissionByCode);

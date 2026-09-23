@@ -34,9 +34,10 @@ def tool():
 
 
 #: 商户员工 JWT 的 `permissions` claim（#4106 F3：工具层细粒度门禁按权限码判定）。
-#: 计件端点 `/api/admin/agent/production/piecework` 的 `@RequirePermission("order:list")`
-#: （AgentProductionController 类级）⇒ 运营岗持码。
-SELLER_PERMISSIONS = ["order:list"]
+#: issue #5246：计件端点的码从 `order:list` **对齐到页面节点『计件工资』的 `processing:manage`**
+#: （`AgentProductionController` 同批改为方法级 processing:manage）—— 此前持 `order:list` 的
+#: 客服/销售/财务能经 Agent 查到页面里看不到的生产数据（用户裁定禁止）。
+SELLER_PERMISSIONS = ["processing:manage"]
 
 
 @pytest.fixture
@@ -69,14 +70,16 @@ class TestMetadataContract:
         #4106 后判据不再是角色白名单（会与 admin-api 目录漂移），而是权限码 +
         C 端硬闸。
         """
-        assert tool.required_permissions == ["order:list"], "计件端点 = AgentProductionController 的 order:list"
+        assert tool.required_permissions == ["processing:manage"], (
+            "计件端点 = AgentProductionController 的 processing:manage，且与菜单节点『计件工资』同码（issue #5246）"
+        )
         customer = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
         assert tool.check_permission(customer) is False, "C 端顾客必须被拒（工人工资不对顾客开放）"
 
     def test_description_carries_trigger_prereq_counterexample(self, tool):
         desc = tool.description
         assert "【触发】" in desc and "计件" in desc
-        assert "【前置】" in desc and "worker_name" in desc
+        assert "【参数】" in desc and "worker_name" in desc
         assert "【反例】" in desc and "dashboard_stats" in desc
         assert "READONLY" in desc
 
@@ -194,17 +197,29 @@ class TestPermission:
         assert result.message == "您没有权限查询计件"
         assert result.suggestion
 
-    def test_seller_roles_allowed(self, tool):
-        """持 `order:list` 的商户角色（含 admin 通配）应可查计件。"""
-        for role in ("admin", "operator", "customer_service", "sales", "finance"):
-            perms = ["*"] if role == "admin" else list(SELLER_PERMISSIONS)
+    def test_operator_allowed_others_denied_after_node_alignment(self, tool):
+        """issue #5246 的**有意收窄**：码对齐到页面节点『计件工资』的 `processing:manage`。
+
+        只有运营岗（+ admin 通配）能查；客服 / 销售 / 财务**被拒** —— 他们在页面里本来就
+        看不到『计件工资』菜单（节点码 processing:manage），此前却能经 Agent 查到同样的数据
+        （用户裁定：Agent 功能权限必须与页面权限一致，不得泄露）。
+        """
+        ctx = ToolContext(
+            tenant_id=1, user_id="u_001", session_id="s", role="operator",
+            permissions=list(SELLER_PERMISSIONS),
+        )
+        assert tool.check_permission(ctx) is True, "operator 持 processing:manage，应可查计件"
+        for role in ("customer_service", "sales", "finance"):
             ctx = ToolContext(
-                tenant_id=1, user_id="u_001", session_id="s", role=role, permissions=perms,
+                tenant_id=1, user_id="u_002", session_id="s", role=role,
+                permissions=["order:list", "processing:view"],   # 岗位真实默认码（不含 processing:manage）
             )
-            assert tool.check_permission(ctx) is True, f"{role} 持 order:list，应可查计件"
+            assert tool.check_permission(ctx) is False, (
+                f"{role} 没有 processing:manage（看不见『计件工资』菜单）⇒ 经 Agent 也不得查"
+            )
 
     def test_role_without_the_code_is_denied(self, tool):
-        """负向：真实商户角色但不持 `order:list` ⇒ 拒绝。"""
+        """负向：真实商户角色但不持 `processing:manage` ⇒ 拒绝。"""
         ctx = ToolContext(
             tenant_id=1, user_id="u_002", session_id="s",
             role="product_manager", permissions=["product:list"],

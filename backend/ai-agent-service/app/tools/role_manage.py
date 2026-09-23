@@ -32,7 +32,11 @@ class RoleManageTool(BaseTool):
 
     name = "role_manage"
     description = (
-        "【触发】用户问'角色''权限''管理员''有哪些角色''创建角色''分配权限'时调用。【前置】list/all 可查询。create/update 需要 name + permission_ids。delete 需二次确认。【反例】管理员工账号用 employee_manage。查系统配置用 settings_manage。【标注】WRITE|DESTRUCTIVE — 删除角色/修改权限需二次确认"
+        "【触发】用户问'角色''权限''管理员''有哪些角色''创建角色''分配权限'时调用。"
+        "【参数】action 必填：list/all/detail/list_permissions 只读；create（name + code + permission_ids）/"
+        "update（role_id + name/permission_ids）/delete（role_id）为写操作。"
+        "【反例】管理员工账号用 employee_manage；查系统配置用 settings_manage。"
+        "【标注】WRITE|DESTRUCTIVE — 删除角色/修改权限前必须二次确认"
     )
     # 权限码（admin-api 目录）：AdminRoleController 类级 `@RequirePermission("system:manage")`。
     # 该码在目录里只有 admin（RoleService 第 301 行「不含 system:manage —— 归 admin 专属（越权守卫）」）

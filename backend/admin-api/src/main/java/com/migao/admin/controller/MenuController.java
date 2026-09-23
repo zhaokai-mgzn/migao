@@ -12,6 +12,11 @@ import java.util.List;
 
 /**
  * 菜单权限控制器 — 返回一级+二级菜单树，供前端权限多选用
+ *
+ * <p>issue #5246（审计裁定「该放行」）：{@code GET /api/admin/menus} **有意不加权限注解** ——
+ * 本类是**静态常量目录**（{@link #MENU_TREE}，不含任何租户数据），且「员工管理」页的权限树
+ * （frontend/admin-web/src/app/(dashboard)/employees/page.tsx）必须能读到它才能勾选岗位权限；
+ * 加码会让「有员工管理权、无 system:manage」的人勾不动权限树。</p>
  */
 @Slf4j
 @RestController
@@ -26,7 +31,10 @@ public class MenuController {
         MenuNode d1 = new MenuNode("dashboard:view", "经营看板");
         MenuNode o1 = new MenuNode("order:list", "订单列表");
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
-        MenuNode o3 = new MenuNode("order:refund", "退换货");
+        // 售后工单（issue #5246）：节点码由 order:refund（写码）改为读码 after_sales:view ——
+        // 与前端 config/menu.ts 的 `after-sales` 节点、AuthService.buildMenusByPermissions 同源同码
+        // （本树被前端「岗位权限」页消费 ⇒ 不同码 = 勾了却看不到）。标签沿用历史名「退换货」。
+        MenuNode o3 = new MenuNode("after_sales:view", "退换货");
         MenuNode p1 = new MenuNode("product:list", "商品列表");
         MenuNode p2 = new MenuNode("product:create", "新增商品");
         MenuNode p3 = new MenuNode("product:category", "商品分类管理");

@@ -448,7 +448,11 @@ class ValidateInputTool(BaseTool):
 
     name = "validate_input"
     description = (
-        "【触发】调用 product_manage、order_create、order_manage 等写操作前，先调用本工具校验参数完整性。【前置】需要 target_tool + target_action + params。校验通过返回 success=true。【反例】不要跳过校验直接调写操作。查询操作不需要校验。【标注】READONLY — 纯本地校验，不调用外部API"
+        "【触发】调用 product_manage、order_create、order_manage 等**写工具**前，先调用本工具校验参数完整性。"
+        "【参数】需要 target_tool + target_action + params（要传给目标工具的完整参数）。校验通过返回 success=true。"
+        "【反例】查询类工具（product_search / product_detail / order_query）不需要校验，不要传它们；"
+        "也不要跳过校验直接调写操作。"
+        "【标注】READONLY — 纯本地校验，不调用外部API"
     )
     # ⚠️ 角色层**不适用**（`["*"]`）—— 本工具是**双端 + 全岗位**的前置校验器，
     # 不是一份会漂移的角色清单（issue #4147 G1(b)）。三条理由：
@@ -466,6 +470,11 @@ class ValidateInputTool(BaseTool):
     #    `app/tools/base.py::check_permission`）上，放开这里不构成越权。
     # `require_auth` 仍为 True：这一支的语义是「角色不设限」，不是「无需认证」。
     allowed_roles = ["*"]
+
+    # 无权限码：纯本地校验工具（不读库/不写库/不调外部服务）且**双端 + 全岗位**都要用 ——
+    # 真正的授权在目标写工具自己的 required_permissions 上，故取空列表 + 角色层 `["*"]`。
+    required_permissions = []
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {
         "type": "object",

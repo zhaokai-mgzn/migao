@@ -44,17 +44,22 @@ class AfterSalesManageTool(BaseTool):
 
     name = "after_sales_manage"
     description = (
-        "创建/查询售后工单。用户说退货/退款/换货/投诉时，先 order_query 确认订单，"
-        "然后直接调此工具创建工单，不要只查订单就停住。"
-        "create 必填: ticket_type(退款/换货/维修/投诉/其他) + order_id + reason。"
-        "update_status: 关闭(closed)/拒绝(rejected)必须带 reason（写入关闭留痕 closeReason，"
-        "缺原因会被本工具拒绝——先问用户原因再调用）。"
-        "可选: refund_amount, priority, images。仅查工单用 list/detail action。WRITE"
+        "【触发】用户说'退货''退款''换货''投诉''查售后工单''工单进度'时调用；"
+        "创建工单前先 order_query 确认订单，不要只查订单就停住。"
+        "【参数】action 必填：list/detail 只读，create/update_status 为写操作。"
+        "create 必填 ticket_type(退款/换货/维修/投诉/其他) + order_id + reason；"
+        "update_status 置 closed(关闭)/rejected(拒绝) 时同样必填 reason（写入关闭留痕 closeReason，"
+        "缺原因会被本工具拒绝——先问用户原因再调用）；detail 需 ticket_id；"
+        "可选 refund_amount / priority / images。"
+        "【反例】只查订单本身（金额/明细/状态）用 order_query；顾客本人查自己的工单用 aftersale_query。"
+        "【标注】WRITE|DESTRUCTIVE — 关闭/拒绝工单不可逆，create/update_status 前必须二次确认"
     )
     # 权限码（admin-api 目录）：AfterSalesController / AgentAfterSalesController 类级
     # `@RequirePermission("order:refund")`（售后工单 = 退款处理）。
     # 不再用 allowed_roles —— 手写角色白名单会与目录漂移（#4106 F4）。
-    required_permissions = ["order:refund"]
+    # 读码 after_sales:view（issue #5246）：与 `AfterSalesController` 的读端点
+    # `@RequirePermission("after_sales:view")` 同码（列表/详情）；写端点仍为 order:refund。
+    required_permissions = ["after_sales:view", "order:refund"]
 
     read_only = False
     destructive = True   # 可关闭/拒绝工单（不可逆）

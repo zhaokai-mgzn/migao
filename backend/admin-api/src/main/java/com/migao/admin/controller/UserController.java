@@ -53,6 +53,11 @@ public class UserController {
      *     ]
      *   }
      * }
+     *
+     * <p>issue #5246（审计裁定「该放行」）：本端点**有意不加权限注解** —— 它是登录后首屏的
+     * 自助接口，返回的只有**调用方自己**的 roles / permissions / menus（全部按 {@code userId}
+     * 现算，无任何跨用户入参）；加码会让「没有任何菜单权限」的员工连首屏都拿不到，
+     * 前端无法渲染 403/空态。</p>
      */
     @GetMapping("/info")
     public ApiResponse<UserInfoResponse> getUserInfo() {
@@ -154,6 +159,12 @@ public class UserController {
     private List<UserInfoResponse.MenuItem> generateMenus(List<String> permissions, List<String> roles) {
         List<UserInfoResponse.MenuItem> menus = new ArrayList<>();
 
+        // ⚠️ issue #5246 登记（**残留，不是静默**）：本方法是菜单的**第 4 处（legacy）来源**，
+        // 只有 5 个一级节点，**没有** after-sales（售后工单）节点 —— 故本单的读码拆分
+        // （after_sales:view）在本文件**无对应节点可改**；知识库节点在本文件改用读码
+        // knowledge:view（下方）。真正下发给侧边栏的是 AuthService.buildMenusByPermissions
+        // 与前端 config/menu.ts（本方法的产物仅作 /user/info 的兼容字段）。
+
         // 检查是否为管理员（拥有所有权限）
         boolean isAdmin = roles.contains("admin") || permissions.contains("*");
 
@@ -184,8 +195,11 @@ public class UserController {
                     .build());
         }
 
-        // 知识库管理菜单 - 需要 knowledge:manage 权限或者是管理员
-        if (isAdmin || permissions.contains("knowledge:manage")) {
+        // 知识库管理菜单 - 需要 knowledge:view 权限或者是管理员
+        // issue #5246：本处由 knowledge:manage 改为**读**码 knowledge:view —— 与前端
+        // config/menu.ts 的 `knowledge` 节点、AuthService.buildMenusByPermissions 同码
+        // （否则「登录下发菜单」与真实侧边栏对不上）。
+        if (isAdmin || permissions.contains("knowledge:view")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("knowledge")
                     .name("知识库管理")

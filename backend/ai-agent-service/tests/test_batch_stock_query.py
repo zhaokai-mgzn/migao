@@ -295,7 +295,7 @@ class TestMetadataContract:
     def test_description_carries_trigger_prereq_counterexample(self, tool):
         desc = tool.description
         assert "【触发】" in desc and "批次" in desc and "省料" in desc
-        assert "【前置】" in desc
+        assert "【参数】" in desc
         assert "【反例】" in desc and "inventory_manage" in desc
         assert "READONLY" in desc
 

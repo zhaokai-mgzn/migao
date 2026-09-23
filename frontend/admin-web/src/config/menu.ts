@@ -45,7 +45,11 @@ export const menuGroups: MenuGroup[] = [{
     icon: 'MessageSquare',
     children: [
       { key: 'human-sessions', name: '在线接待', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
-      { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:manage' },
+      // issue #5246：知识库节点由 knowledge:manage 改为**读**码 knowledge:view ——
+      // 读写拆码后「看知识库」与「改知识库」是两件事；节点仍用写码会让只读角色
+      // （客服/运营）看不到菜单。后端已同源改码（AuthService.buildMenusByPermissions /
+      // MenuController.MENU_TREE），页面侧守卫见 app/(dashboard)/layout.tsx。
+      { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:view' },
     ],
   },
   
@@ -86,7 +90,10 @@ export const menuGroups: MenuGroup[] = [{
       // 且与「生产看板」**合并为单一入口**（原列表页 /processing-orders 改为重定向）。
       // #3340 的「置于订单列表正下方」与 #4305 的「发加工唯一入口 = 订单详情页」约束的是**动作入口**，
       // 不约束**台账归属** —— 从订单发起加工、到生产管理看进度与计件，本来就是两条动线。
-      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'order:refund' },
+      // issue #5246：售后工单节点由 order:refund 改为**读**码 after_sales:view ——
+      // order:refund 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。
+      // 后端两处菜单源已同源改码（AuthService / MenuController），页面守卫见 layout.tsx。
+      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'after_sales:view' },
     ],
   },
   // #2969: 客户管理组（客户列表 + 财务对账，财务由独立菜单并入）

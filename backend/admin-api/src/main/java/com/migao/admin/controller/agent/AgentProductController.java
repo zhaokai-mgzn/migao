@@ -26,9 +26,12 @@ import java.util.Map;
  *
  * <p>加工项解耦（issue #4371）：商品不再持有加工项，故本控制器**没有**加工项增删端点；
  * 加工项是店铺全目录，按加工项自己的 API 管理。</p>
+ *
+ * <p>issue #5246：类级 {@code @RequirePermission("product:list")} 已移除 —— 本控制器**每个端点都是写**
+ * （建品/改品/改库存/改 SKU 价），却被一个**读**码守着 ⇒ 「只看商品列表」的角色顺带拿到改库存/改价的写权。
+ * 现按写码 {@code product:create}（目录里的商品写码）逐端点标注。</p>
  */
 @Slf4j
-@RequirePermission("product:list")
 @RestController
 @RequestMapping("/api/admin/agent/products")
 @RequiredArgsConstructor
@@ -41,6 +44,7 @@ public class AgentProductController {
      * POST /api/admin/agent/products
      */
     @PostMapping
+    @RequirePermission("product:create")
     public ApiResponse<ProductResponse> createProduct(@RequestBody AgentProductCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 创建商品: name={}, tenantId={}", request.getName(), tenantId);
@@ -59,6 +63,7 @@ public class AgentProductController {
      * null 字段不修改，无 @NotBlank 限制。
      */
     @PatchMapping("/{id}")
+    @RequirePermission("product:create")
     public ApiResponse<ProductResponse> updateProduct(@PathVariable String id,
                                                        @RequestBody AgentProductUpdateRequest request) {
         Long tenantId = TenantContext.getTenantId();
@@ -84,6 +89,7 @@ public class AgentProductController {
      * 返回更新后的商品详情，data.stock 为 SKU 汇总值，供 agent 读回校验。
      */
     @PatchMapping("/{id}/stock")
+    @RequirePermission("product:create")
     public ApiResponse<ProductResponse> adjustStock(
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
@@ -123,6 +129,7 @@ public class AgentProductController {
      * PATCH /api/admin/agent/products/{productId}/skus/price
      */
     @PatchMapping("/{productId}/skus/price")
+    @RequirePermission("product:create")
     public ApiResponse<ProductResponse> updateSkuPrice(
             @PathVariable String productId,
             @RequestBody Map<String, Object> body) {
@@ -159,6 +166,7 @@ public class AgentProductController {
      * 本端点校验 skuId 属于该商品，供前端拿到 sku.id 后直接调用。
      */
     @PatchMapping("/{productId}/skus/{skuId}")
+    @RequirePermission("product:create")
     public ApiResponse<ProductSkuResponse> updateSkuPriceById(
             @PathVariable String productId,
             @PathVariable Long skuId,

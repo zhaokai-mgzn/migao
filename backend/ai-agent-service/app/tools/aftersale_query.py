@@ -32,11 +32,17 @@ class AftersaleQueryTool(BaseTool):
     name = "aftersale_query"
     description = (
         "【触发】客户说'查看售后''我的工单''退款进度''投诉处理得怎么样了'时调用。"
-        "【前置】list: 无需参数，可传status筛选。detail: 需要ticket_id。"
+        "【参数】action 必填：list 无需额外参数（可传 status 筛选）/ detail 需 ticket_id。"
         "【安全】只能查询当前客户自己的工单。"
+        "【反例】查订单本身（金额/明细/状态）用 order_query（顾客本人用 customer_order_query）；"
+        "创建/更新工单用 aftersale_create（商户端用 after_sales_manage）。"
         "【标注】READONLY — 纯查询，无需确认"
     )
     allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
+
+    # 无权限码：C 端专属查询工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）；
+    # 结果由系统按 tenant_id + user_id 强制隔离，故保留角色层把关。
+    required_permissions = []
 
     read_only = True
     destructive = False

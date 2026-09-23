@@ -22,19 +22,25 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/knowledge/templates")
 @RequiredArgsConstructor
-@RequirePermission("knowledge:manage")
 public class KnowledgeTemplateController {
 
     private final KnowledgeTemplateService knowledgeTemplateService;
 
-    /** 平台预置模板目录 */
+    /**
+     * 平台预置模板目录
+     *
+     * issue #5246：类级 knowledge:manage 已移除 ⇒ 看模板目录是**读**，用读码 knowledge:view
+     * （套用模板才是写）。
+     */
     @GetMapping
+    @RequirePermission("knowledge:view")
     public ApiResponse<List<KnowledgeTemplateInfo>> list() {
         return ApiResponse.success(knowledgeTemplateService.listTemplates());
     }
 
-    /** 一键套用模板到当前租户 */
+    /** 一键套用模板到当前租户 —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{templateId}/apply")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<Map<String, Object>> apply(@PathVariable String templateId) {
         return ApiResponse.success(knowledgeTemplateService.applyTemplate(templateId));
     }

@@ -13,7 +13,9 @@ import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
 // 顺序敏感：更具体的子路径放在前面。
 const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/chat', code: 'agent:session' },
-  { prefix: '/after-sales', code: 'order:refund' },
+  // issue #5246：售后工单页是**读**页（建单/改状态是页内动作，后端按写码 order:refund 拦截）
+  // ⇒ 页面守卫改用读码 after_sales:view，与 config/menu.ts 的节点码、后端 @RequirePermission 同源。
+  { prefix: '/after-sales', code: 'after_sales:view' },
   { prefix: '/orders', code: 'order:list' },
   { prefix: '/products', code: 'product:list' },
   { prefix: '/categories', code: 'product:category' },
@@ -28,7 +30,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/finance', code: 'finance:view' },
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
-  { prefix: '/knowledge', code: 'knowledge:manage' },
+  // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
+  // （增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。
+  { prefix: '/knowledge', code: 'knowledge:view' },
   { prefix: '/roles', code: 'system:manage' },
   { prefix: '/briefing', code: 'dashboard:view' },
   { prefix: '/dashboard', code: 'dashboard:view' },

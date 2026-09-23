@@ -33,7 +33,12 @@ class FinanceApiTool(BaseTool):
 
     name = "finance_api"
     description = (
-        "【触发】用户说'登记收款''登记退款''记一笔账''资金流水''收支''对账''净额''收入''进账''收了多少''赚了多少'时调用。【何时用】任何资金/财务/对账类查询或登记。【何时不用】查订单金额（用 order_query）、看经营看板（用 dashboard_stats）。【前置】action: create_transaction(登记收支,需type+amount)/get_summary(收支汇总)/get_transactions(资金流水)/get_reconciliation(应收对账)。【标注】create_transaction 为 WRITE — 登记前需确认"
+        "【触发】用户说'登记收款''登记退款''记一笔账''资金流水''收支''对账''净额''收入''进账'"
+        "'收了多少''赚了多少'时调用（任何资金/财务/对账类查询或登记）。"
+        "【参数】action 必填：get_summary(收支汇总)/get_transactions(资金流水)/"
+        "get_reconciliation(应收对账) 只读；create_transaction(登记收支) 为写操作，需 type+amount。"
+        "【反例】查订单金额/明细用 order_query；看经营看板/趋势用 dashboard_stats。"
+        "【标注】WRITE — get_* 只读；create_transaction 登记前必须二次确认"
     )
     # 权限码（admin-api 目录）：FinanceController 类级 `@RequirePermission("finance:view")`。
     # 旧白名单里的 `operation_manager` 在 admin-api 里根本不存在（角色码漂移）。

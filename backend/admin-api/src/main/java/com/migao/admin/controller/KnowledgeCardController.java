@@ -30,13 +30,18 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/knowledge/cards")
 @RequiredArgsConstructor
-@RequirePermission("knowledge:manage")
 public class KnowledgeCardController {
 
     private final KnowledgeCardService knowledgeCardService;
 
-    /** 分页查询知识卡片列表 */
+    /**
+     * 分页查询知识卡片列表
+     *
+     * issue #5246：类级 knowledge:manage 已移除 ⇒ 读面用读码 knowledge:view（此前读写同码，
+     * 只想想看卡片的客服/运营必须被授予「增删改/发布/归档」的写权才进得来）。
+     */
     @GetMapping
+    @RequirePermission("knowledge:view")
     public ApiResponse<PageResponse<KnowledgeCard>> page(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size,
@@ -47,8 +52,13 @@ public class KnowledgeCardController {
         return ApiResponse.success(knowledgeCardService.page(page, size, keyword, category, sourceType, status));
     }
 
-    /** 知识卡片检索（仅本租户 published 知识卡片，供 Agent knowledge_search 与管理后台） */
+    /**
+     * 知识卡片检索（仅本租户 published 知识卡片，供 Agent knowledge_search 与管理后台）
+     *
+     * issue #5246：检索是**读** ⇒ knowledge:view（与列表同码）。
+     */
     @GetMapping("/search")
+    @RequirePermission("knowledge:view")
     public ApiResponse<List<KnowledgeCard>> search(
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String productId,
@@ -56,33 +66,38 @@ public class KnowledgeCardController {
         return ApiResponse.success(knowledgeCardService.search(query, productId, category));
     }
 
-    /** 创建知识卡片 */
+    /** 创建知识卡片 —— issue #5246：写面保留写码 knowledge:manage */
     @PostMapping
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> create(@RequestBody KnowledgeCard body) {
         return ApiResponse.success(knowledgeCardService.create(body));
     }
 
-    /** 编辑知识卡片（version+1） */
+    /** 编辑知识卡片（version+1） —— issue #5246：写面保留 knowledge:manage */
     @PutMapping("/{id}")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> update(@PathVariable String id, @RequestBody KnowledgeCard body) {
         return ApiResponse.success(knowledgeCardService.update(id, body));
     }
 
-    /** 删除知识卡片（逻辑删除） */
+    /** 删除知识卡片（逻辑删除） —— issue #5246：写面保留 knowledge:manage */
     @DeleteMapping("/{id}")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<Void> delete(@PathVariable String id) {
         knowledgeCardService.delete(id);
         return ApiResponse.success();
     }
 
-    /** 发布知识卡片：draft/pending_review → published */
+    /** 发布知识卡片：draft/pending_review → published —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{id}/publish")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> publish(@PathVariable String id) {
         return ApiResponse.success(knowledgeCardService.publish(id));
     }
 
-    /** 归档知识卡片：published → archived */
+    /** 归档知识卡片：published → archived —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{id}/archive")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> archive(@PathVariable String id) {
         return ApiResponse.success(knowledgeCardService.archive(id));
     }

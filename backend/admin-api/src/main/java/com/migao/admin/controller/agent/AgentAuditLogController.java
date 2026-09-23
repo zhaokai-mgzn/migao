@@ -27,6 +27,9 @@ import java.util.Map;
  * <p>为什么身份不从 body 取：{@code audit_logs} 是取证材料，调用方自报身份等于可伪造；
  * tenant 取 {@link TenantContext}（X-Tenant-Id 解析）、user 取认证主体的 userId
  * （ServiceTokenFilter 已把 ai-agent 的 X-User-Id 透传进来）。</p>
+ *
+ * <p>issue #5246（审计裁定「该放行」）：本控制器**有意不加权限注解** —— 它是**内部审计回写**通道，
+ * 被 gating 会让「权限受限的员工」触发的写工具**静默丢审计行**（取证材料不能因为调用人权限低就缺失）。</p>
  */
 @Slf4j
 @RestController

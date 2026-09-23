@@ -62,10 +62,13 @@ class ProductManageTool(BaseTool):
 
     name = "product_manage"
     description = (
-        "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。"
-        "update 需 product_id（支持名称/序号/UUID，服务端自动解析），只传要改的字段。"
-        "toggle_status 需 product_id+status(on_sale/off_sale)。"
-        "【标注】WRITE|DESTRUCTIVE"
+        "【触发】用户说'创建商品''新建商品''修改商品''上架''下架'时调用。"
+        "【参数】action 必填：create（必填 name+price，收集→分类确认→货号→汇总确认卡→执行）/ "
+        "update（必传 product_id，只传要改的字段）/ toggle_status（必传 product_id + status(on_sale/off_sale)）。"
+        "product_id 必须传 32 位真实 UUID（禁止传商品名称）。"
+        "【反例】只查商品用 product_search / product_detail；单独调某个 SKU 的价格用 sku_update；"
+        "加工项是店铺级目录、与商品无关（用 processing_item_manage / processing_item_query）。"
+        "【标注】WRITE|DESTRUCTIVE — create/update/toggle_status 均为写操作，必须先出确认卡"
         "【铁律】用户明确要求写操作（禁用/调整/删除/上下架/重置等**单步写**）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
         "【铁律】写工具返回 success 后复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作（#3899）。"
         "【铁律】状态变更（上/下架）必须用 action=toggle_status 单独调用：update 不处理 status（状态走状态机端点，Java updateProduct 刻意恢复原状态），把 status 放进 update 会被显式拒绝（#3899）。"

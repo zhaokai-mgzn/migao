@@ -297,7 +297,11 @@ public class RoleService {
                     "customer:view",
                     "finance:view",
                     "agent:session",
-                    "employee:list"
+                    "employee:list",
+                    // issue #5246：与 RegistrationService 的 operator 默认权限表同步 ——
+                    // 无 role_permissions 记录（历史/内置角色回退路径）时，运营也要有这两个**读**码，
+                    // 否则回退路径下「侧边栏节点可见」与「DB 岗位默认」两套口径不一致。
+                    "after_sales:view", "knowledge:view"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );
             case "product_manager" -> List.of(

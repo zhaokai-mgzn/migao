@@ -74,7 +74,7 @@ class BatchStockQueryTool(BaseTool):
     description = (
         "【触发】商家问'哪些批次快用尽了''这批还剩多少米''某个批次/缸号还有多少''剩料分布/有多少料剩着'"
         "'这个月省了多少料/省了多少钱''省料趋势/单位产出用多少料'时调用。"
-        "【前置】action 四选一：batches（批次余量，可按 product_id / batch_no / dye_lot 查，"
+        "【参数】action 四选一：batches（批次余量，可按 product_id / batch_no / dye_lot 查，"
         "nearly_used_up=true 只看快用尽的批次）/ distribution（剩余量四档分布）/ "
         "saving_board（省料度量汇总：逐单省料 + 剩余量分档，按来源组分开）/ "
         "saving_trend（入库/消耗/单位产出消耗的趋势）。查具体商品时先 product_search 取真实 UUID。"

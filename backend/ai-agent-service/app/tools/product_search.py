@@ -46,7 +46,7 @@ class ProductSearchTool(BaseTool):
     name = "product_search"
     description = (
         "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX''XX元左右的商品'或提到商品关键词/分类时调用。"
-        "【前置】keyword 可选，缺关键词时列出全部。"
+        "【参数】keyword 可选，缺关键词时列出全部。"
         "stock_status 支持 low_stock（" + low_stock_phrase() + "）/out_of_stock（库存≤0）；"
         "min_price/max_price（元）为本地过滤（后端不支持价格筛选），只作用于本次返回的 size 条，"
         "需更大范围请调大 size。"
@@ -54,9 +54,16 @@ class ProductSearchTool(BaseTool):
         "【标注】READONLY — 放心调用，无需确认"
     )
 
-    # 含 operator：admin-api 员工角色（RoleService operator 有 product:list 权限码，
-    # 角色码漂移修复 POC-2761 D 项）。customer 保留（C 端商品搜索）。
-    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：商品**读**码 `product:list`（ProductController / AgentProductController
+    # 的列表端点 `@RequirePermission("product:list")`）。含 operator：operator 持有该码
+    # （角色码漂移修复 POC-2761 D 项）。
+    # 本工具**双端**（C 端商品搜索 + B 端商品搜索）⇒ c_end_reachable=True：C 端 JWT 没有
+    # permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
+    # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`/`agent`；且权限码在场时
+    # 角色白名单本就不生效＝第二份会漂的假门禁，#4106 F4）。
+    required_permissions = ["product:list"]
+    c_end_reachable = True
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
     
     parameters = {
         "type": "object",

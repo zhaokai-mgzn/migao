@@ -25,12 +25,18 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/knowledge/candidates")
 @RequiredArgsConstructor
-@RequirePermission("knowledge:manage")
 public class KnowledgeCandidateController {
 
     private final KnowledgeCandidateService knowledgeCandidateService;
 
+    /**
+     * 待确认队列分页
+     *
+     * issue #5246：类级 knowledge:manage 已移除 ⇒ 查看队列是**读**，用读码 knowledge:view
+     * （采纳/拒绝才是写，见下方三个 POST）。
+     */
     @GetMapping
+    @RequirePermission("knowledge:view")
     public ApiResponse<PageResponse<KnowledgeCandidate>> page(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") long page,
@@ -38,22 +44,30 @@ public class KnowledgeCandidateController {
         return ApiResponse.success(knowledgeCandidateService.page(status, page, size));
     }
 
+    /** 待确认数量角标 —— issue #5246：同为**读**（侧边栏/知识库页角标）⇒ knowledge:view */
     @GetMapping("/pending-count")
+    @RequirePermission("knowledge:view")
     public ApiResponse<Map<String, Long>> pendingCount() {
         return ApiResponse.success(Map.of("pending", knowledgeCandidateService.pendingCount()));
     }
 
+    /** 采纳候选 → 建卡 —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{id}/adopt")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> adopt(@PathVariable String id) {
         return ApiResponse.success(knowledgeCandidateService.adopt(id));
     }
 
+    /** 采纳并改写 → 建卡 —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{id}/adopt-edited")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<KnowledgeCard> adoptEdited(@PathVariable String id, @RequestBody KnowledgeCandidate patch) {
         return ApiResponse.success(knowledgeCandidateService.adoptEdited(id, patch));
     }
 
+    /** 拒绝候选 —— issue #5246：写面保留 knowledge:manage */
     @PostMapping("/{id}/reject")
+    @RequirePermission("knowledge:manage")
     public ApiResponse<Void> reject(@PathVariable String id, @RequestBody(required = false) RejectRequest body) {
         knowledgeCandidateService.reject(id, body == null ? null : body.getNote());
         return ApiResponse.success();
