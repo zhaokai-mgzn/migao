@@ -42,7 +42,7 @@
    **版本行**都不会被种回来）· 三张快照表一字不动；
 5. **守卫能抓「条数不足」**：删掉一行版本账 ⇒ 派生真值差集非空 ⇒ 必红（注入式红证）。
 
-## 真库判据（本机 PG 二进制；缺则**显式 skip**，不伪装成通过）
+## 真库判据（临时 PG 集群；缺 PG 的处置收口在 `pg_cluster.py`：CI 判**红** / 本机显式 skip，issue #5203）
 
 `test_v96_*` 用 `initdb`/`pg_ctl`/`psql` 起**临时集群**真跑迁移 —— 静态文本判据不够
 （V83 的教训：文本守卫全绿而真库整份回滚）。
@@ -324,9 +324,8 @@ class TestBootstrapOrdering:
             "schema.sql 出现了第二段单价版本回填 —— 会造出第二份会漂移的口径")
 
 
-# ══════════════════════ 真库判据（本机 PG 二进制；缺则显式 skip） ══════════════════════
+# ══════════════════════ 真库判据（临时 PG 集群；缺 PG ⇒ CI 判红 / 本机 skip，收口在 pg_cluster.py） ══════════════════════
 
-_PG_BINARIES = ("initdb", "pg_ctl", "psql")
 
 
 def _free_port() -> int:
@@ -338,12 +337,15 @@ def _free_port() -> int:
 class _Pg:
     """临时集群句柄：`sql()` 严格跑单条；`strict_file()` 严格跑整份文件（`ON_ERROR_STOP=1`）。"""
 
-    def __init__(self, sockdir, port):
+    def __init__(self, sockdir, port, bins: dict[str, str]):
         self.sockdir, self.port = sockdir, port
+        #: 收口件给的**绝对路径**（argv 里写 `"psql"` 要靠 PATH 解析 ⇒ runner 上必然
+        #: `FileNotFoundError`：PG 不在 PATH，issue #5203）
+        self.bins = bins
 
     def sql(self, text: str) -> str:
         proc = subprocess.run(
-            ["psql", "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
+            [self.bins["psql"], "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
              "-d", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
             input=text, text=True, capture_output=True)
         assert proc.returncode == 0, f"psql 失败：\n{proc.stdout}\n{proc.stderr}"
@@ -356,7 +358,7 @@ class _Pg:
         （那正是**吞掉错误**的原因：越序时 psql 仍 exit=0、脚本「看起来成功」）。
         """
         proc = subprocess.run(
-            ["psql", "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
+            [self.bins["psql"], "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
              "-d", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-f", str(path)],
             text=True, capture_output=True)
         assert proc.returncode == 0, (
@@ -366,28 +368,25 @@ class _Pg:
 
 
 @pytest.fixture
-def pg(tmp_path):
-    missing = [b for b in _PG_BINARIES if shutil.which(b) is None]
-    if missing:
-        pytest.skip(f"本机没有 PG 二进制 {missing} ⇒ 真库判据未跑（不是通过）")
+def pg(tmp_path, realdb_binaries):
     datadir = tmp_path / "pgdata"
     # ⚠️ socket 目录必须**短**：unix socket 路径有 ~104 字节上限（实测：tmp_path 太长 ⇒ `pg_ctl start` 失败）。
     sockdir = Path(tempfile.mkdtemp(prefix="pg4741-"))
     log = tmp_path / "pg.log"
-    subprocess.run(["initdb", "-D", str(datadir), "-U", "postgres", "-A", "trust"],
+    subprocess.run([realdb_binaries["initdb"], "-D", str(datadir), "-U", "postgres", "-A", "trust"],
                    check=True, capture_output=True)
     port = _free_port()
     started = subprocess.run(
-        ["pg_ctl", "-D", str(datadir), "-l", str(log), "-o",
+        [realdb_binaries["pg_ctl"], "-D", str(datadir), "-l", str(log), "-o",
          f"-k {sockdir} -p {port} -c listen_addresses=''", "start"],
         capture_output=True, text=True)
     assert started.returncode == 0, (
         f"临时集群起不来：{started.stdout}\n{started.stderr}\n"
         f"{log.read_text(encoding='utf-8') if log.exists() else ''}")
     try:
-        yield _Pg(sockdir, port)
+        yield _Pg(sockdir, port, realdb_binaries)
     finally:
-        subprocess.run(["pg_ctl", "-D", str(datadir), "-m", "immediate", "stop"],
+        subprocess.run([realdb_binaries["pg_ctl"], "-D", str(datadir), "-m", "immediate", "stop"],
                        capture_output=True)
         shutil.rmtree(sockdir, ignore_errors=True)
 

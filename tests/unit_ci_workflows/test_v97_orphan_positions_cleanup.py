@@ -44,7 +44,7 @@
 7. **不动历史**：`processing_position_operations` / `production_work_logs` 逐字节指纹前后相同
    （本迁移只写矩阵表的 `deleted` / `updated_at` 两列）。
 
-## 真库判据（本机 PG 二进制；缺则**显式 skip**，不伪装成通过）
+## 真库判据（临时 PG 集群；缺 PG 的处置收口在 `pg_cluster.py`：CI 判**红** / 本机显式 skip，issue #5203）
 
 `test_v97_*` 用 `initdb` / `pg_ctl` / `psql` 起**临时集群**真跑迁移 —— 静态文本判据不够
 （V83 的教训：文本守卫全绿而真库整份回滚）。
@@ -490,9 +490,8 @@ def test_guard_detects_injected_drift():
         "删掉帘头条目后 `三边 × 帘头` 竟仍解析得到 ⇒ 判据对真缺口无判别力")
 
 
-# ══════════════════════ 真库判据（本机 PG 二进制；缺则显式 skip） ══════════════════════
+# ══════════════════════ 真库判据（临时 PG 集群；缺 PG ⇒ CI 判红 / 本机 skip，收口在 pg_cluster.py） ══════════════════════
 
-_PG_BINARIES = ("initdb", "pg_ctl", "psql")
 
 #: 与 V71 同形的**最小** DDL（本单触碰的两张表 + 那条部分唯一索引 + 两张历史快照表）。
 _DDL = """
@@ -566,20 +565,17 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-def psql(tmp_path):
+def psql(tmp_path, realdb_binaries):
     """临时 PG 集群（unix socket，不占 TCP 端口）；退出时停库删目录。"""
-    missing = [b for b in _PG_BINARIES if shutil.which(b) is None]
-    if missing:
-        pytest.skip(f"本机没有 PG 二进制 {missing} ⇒ 真库判据未跑（不是通过）")
     datadir = tmp_path / "pgdata"
     # ⚠️ socket 目录必须**短**：unix socket 路径有 ~104 字节上限。
     sockdir = Path(tempfile.mkdtemp(prefix="pg4672-"))
     log = tmp_path / "pg.log"
-    subprocess.run(["initdb", "-D", str(datadir), "-U", "postgres", "-A", "trust"],
+    subprocess.run([realdb_binaries["initdb"], "-D", str(datadir), "-U", "postgres", "-A", "trust"],
                    check=True, capture_output=True)
     port = _free_port()
     started = subprocess.run(
-        ["pg_ctl", "-D", str(datadir), "-l", str(log), "-o",
+        [realdb_binaries["pg_ctl"], "-D", str(datadir), "-l", str(log), "-o",
          f"-k {sockdir} -p {port} -c listen_addresses=''", "start"],
         capture_output=True, text=True)
     assert started.returncode == 0, (
@@ -594,7 +590,7 @@ def psql(tmp_path):
     def psql_raw(sql: str):
         """不抛异常的入口（红证要断言「迁移**确实**失败并回滚」）。"""
         return subprocess.run(
-            ["psql", "-h", str(sockdir), "-p", str(port), "-U", "postgres", "-d", "postgres",
+            [realdb_binaries["psql"], "-h", str(sockdir), "-p", str(port), "-U", "postgres", "-d", "postgres",
              "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
             input=sql, text=True, capture_output=True)
 
@@ -603,7 +599,7 @@ def psql(tmp_path):
     try:
         yield run
     finally:
-        subprocess.run(["pg_ctl", "-D", str(datadir), "-m", "immediate", "stop"],
+        subprocess.run([realdb_binaries["pg_ctl"], "-D", str(datadir), "-m", "immediate", "stop"],
                        capture_output=True)
         shutil.rmtree(sockdir, ignore_errors=True)
 
