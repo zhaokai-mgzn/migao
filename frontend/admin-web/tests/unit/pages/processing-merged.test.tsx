@@ -85,13 +85,14 @@ beforeEach(() => {
   mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combinations: [], unpriced_combination_total: 0 }))
 })
 
-const productionGroup = () => menuGroups.find((g) => g.key === 'production')
+const productionGroup = () => menuGroups.find((g) => g.key === 'production-center')
+const inventoryGroup = () => menuGroups.find((g) => g.key === 'inventory-center')
 const productGroup = () => menuGroups.find((g) => g.key === 'product-center')
 
 // ────────────────────────── ① 菜单结构（侧边栏 IA） ──────────────────────────
 
-describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商品管理**组）', () => {
-  it('商品管理组含合并项「加工项管理」（#4542 改名后与服务端同名）→ /production/processing', () => {
+describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商品与加工项**组，issue #5271 改判组名）', () => {
+  it('商品与加工项组含合并项「加工项管理」（#4542 改名后与服务端同名）→ /production/processing', () => {
     const entry = productGroup()?.children.find((c) => c.key === 'processing')
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项管理')
@@ -103,35 +104,37 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     expect(entry!.icon).toBe('Scissors')
   })
 
-  it('生产管理组**不含**合并项；全站不再有独立的「加工费管理」项', () => {
-    const productionPaths = productionGroup()!.children.map((c) => c.path)
-    // issue #5034（V111）新增「入库单」（/inbound-orders）⇒ 本组三项 → 四项。
-    // issue #5177 新增「池看板」（/production/pool，紧跟「生产看板」）⇒ 本组四项 → 五项。
-    // issue #5159 新增「省料看板」（/production/saving-board，紧跟「池看板」）⇒ 本组五项 → 六项。
-    // issue #5191 新增「余料台账」（/production/remnants，紧跟「省料看板」）⇒ 本组六项 → **七项**。
+  it('生产管理组**不含**合并项；面料三项已拆到「仓储与物料」组（issue #5271）', () => {
+    // issue #5271：生产管理组**由 7 项降到 4 项** —— 只留「加工执行 + 工艺配置 + 结算」；
+    // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到**新组**「仓储与物料」。
     // 断言的是**路径清单**（顺序敏感）：合并项仍不在其中，这是本用例真正守的东西。
+    const productionPaths = productionGroup()!.children.map((c) => c.path)
     expect(productionPaths).toEqual([
       '/production',
       '/production/pool',
-      '/production/saving-board',
-      '/production/remnants',
       '/production/routings',
       '/production/piecework',
-      '/inbound-orders',
     ])
     expect(productionPaths).not.toContain('/production/processing')
-    // 加工项权限码仍统一 processing:manage（组内一致，无分叉；#5177 的「池看板」与「生产看板」同权；
-    // #5159 的「省料看板」同理 —— 省料度量看板也是生产管理动作）；
-    // issue #5191：「余料台账」的权限码与页面端点同码（RemnantController 类级 @RequirePermission）。
-    // 「入库单」是仓储动作、权限码独立（inbound:view，issue #5034）—— 不得并进 processing:manage。
+    // 加工项权限码仍统一 processing:manage（组内一致，无分叉）
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',
-      'processing:manage',
-      'processing:manage',
+    ])
+    // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
+    // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage），
+    // 余料台账 / 省料看板 = processing:manage（与各自页面的类级 @RequirePermission 同码）。
+    expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
+      '/inbound-orders',
+      '/production/remnants',
+      '/production/saving-board',
+    ])
+    expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
+      'processing:manage',
+      'processing:manage',
     ])
     // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
     // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。
@@ -144,6 +147,9 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
     expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
     expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
+    // 一项不少不减：21 项（20 个组内项 + 1 个独立项）
+    expect(allNames).toHaveLength(20)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(20)
   })
 })
 
@@ -273,31 +279,51 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
 
 // ────────────────────────── 顶层分组顺序（issue #4510） ──────────────────────────
 
-describe('顶层分组顺序（issue #4510：用户裁定）', () => {
-  it('完整序列 = 工作台 → 智能客服 → 商品管理 → 订单管理 → 生产管理 → 客户管理 → 组织管理', () => {
+describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动线重排）', () => {
+  it('完整序列 = 工作台 → 智能客服 → 商品与加工项 → 交易管理 → 生产管理 → 仓储与物料 → 组织管理', () => {
     // ⚠️ 断言**完整序列**，不是只断言相邻两项 —— 否则「把生产管理挪到别处」这类改动会漏网。
     // （实测：本单只做重排时，全量 157 文件 2092 条**一条都没红** ⇒ 顺序此前**无人守**，
     //   这条判据是本单新加的承重面。）
+    // issue #5271 变化：组 key `production` → `production-center`；「商品管理」→「商品与加工项」；
+    // 「订单管理」+「客户管理」→「交易管理」（`customer-center` 组消失）；**新建** `inventory-center`。
     expect(menuGroups.map((g) => g.key)).toEqual([
       'workspace',
       'smart-customer-service',
       'product-center',
       'trade-center',
-      'production',      // ④ 移到「订单管理」之下、「客户管理」之上
-      'customer-center',
-      'org-center',      // ② 移到最后
+      'production-center',
+      'inventory-center',
+      'org-center',
     ])
+    expect(menuGroups.map((g) => g.name)).toEqual([
+      '工作台',
+      '智能客服',
+      '商品与加工项',
+      '交易管理',
+      '生产管理',
+      '仓储与物料',
+      '组织管理',
+    ])
+    // 旧 IA 的三处钉子（防止把旧组名/旧 key 再写回来）
+    expect(menuGroups.map((g) => g.key)).not.toContain('customer-center')
+    expect(menuGroups.map((g) => g.key)).not.toContain('production')
+    expect(menuGroups.map((g) => g.name)).not.toContain('商品管理')
+    expect(menuGroups.map((g) => g.name)).not.toContain('订单管理')
+    expect(menuGroups.map((g) => g.name)).not.toContain('客户管理')
   })
 
-  it('三条相对位置关系（②③④ 的显式钉子）', () => {
+  it('相对位置关系（承重面：拆组与并组后的三处相邻约束）', () => {
     const keys = menuGroups.map((g) => g.key)
-    // ④ 在订单管理之下、客户管理之上
-    expect(keys.indexOf('production')).toBeGreaterThan(keys.indexOf('trade-center'))
-    expect(keys.indexOf('production')).toBeLessThan(keys.indexOf('customer-center'))
-    // ③ 生产管理在组织管理上面（② 把 org 挪回中间时这条会红）
-    expect(keys.indexOf('production')).toBeLessThan(keys.indexOf('org-center'))
-    // ② 组织管理是**最后一个分组**
+    // 生产管理在交易管理之下（动线：谁下单 → 单到哪 → 售后 → 收款 → 加工执行）
+    expect(keys.indexOf('production-center')).toBeGreaterThan(keys.indexOf('trade-center'))
+    // 仓储与物料紧随生产管理之后（面料进出从生产管理拆出，紧挨着放）
+    expect(keys.indexOf('inventory-center')).toBe(keys.indexOf('production-center') + 1)
+    // 组织管理仍是**最后一个分组**
     expect(menuGroups[menuGroups.length - 1].key).toBe('org-center')
+    // 商品与加工项在交易管理之上（先有货 → 再卖）
+    expect(keys.indexOf('product-center')).toBeLessThan(keys.indexOf('trade-center'))
+    // 面非空自检：7 组（不是解析失灵造成的空序列）
+    expect(menuGroups).toHaveLength(7)
   })
 
   it('通知中心仍是 `standaloneItems`（渲染在分组之后）—— 「最下面」= 最后一个**分组**', () => {

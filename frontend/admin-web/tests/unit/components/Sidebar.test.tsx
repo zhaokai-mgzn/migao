@@ -1,6 +1,23 @@
-// case_ids: HR-001, DF-007, UI-005, UI-011, UI-028
+// case_ids: HR-001, DF-007, UI-005, UI-011, UI-028, PR-038, PR-106
+/**
+ * 侧边栏（`Sidebar.tsx`）——**既有能力不许退化**的判据（issue #5271 按新 IA 重写期望文案）。
+ *
+ * ## 与 `SidebarRedesign.test.tsx` 的分工
+ *
+ * 本文件守**能力面**：21 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
+ * 图标、`bg-primary-600` 高亮与互斥单高亮、权限过滤正负控、空组整组隐藏、
+ * 折叠态不渲染组名。新交互面（默认展开态 / 路由联动 / 折叠态分组锚点 / 移动端抽屉 / ⌘K 入口）
+ * 在 `tests/unit/components/SidebarRedesign.test.tsx`。
+ *
+ * ## ⚠️ 重设计带来的一处**结构性**变化（不是判据放宽）
+ *
+ * 新 IA 下**分组默认只展开当前路由所在组** ⇒ 想断言「其它组的项在不在」就必须
+ * **先展开该组**（`data-testid="sidebar-group-toggle-<key>"`）。因此下列用例里凡断言
+ * 非当前组项的，都先调 `expandGroups(...)` / `expandAll()` —— 断言本身**一条没删、没放宽**
+ * （有 `expect(links).toHaveLength(21)` 这类**更强**的新钉子作反向证明）。
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock useAuthStore
@@ -29,7 +46,69 @@ vi.mock('@/components/ui/Logo', () => ({
   default: (props: any) => <span data-testid="logo" {...props} />,
 }))
 
+// 简报企业开关（issue #3468）：显式 mock ⇒ 「开关开/关」两种可见性都可判（不再依赖真实网络失败）
+let mockBriefingEnabled = false
+vi.mock('@/lib/api', () => ({
+  briefingApi: { getConfig: () => Promise.resolve({ data: { data: { enabled: mockBriefingEnabled } } }) },
+}))
+
 import Sidebar from '@/components/layout/Sidebar'
+
+/** issue #5271 新 IA：7 组（key / 组名 / 组内项顺序） */
+const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
+  { key: 'workspace', name: '工作台', items: [['dashboard', '经营看板'], ['briefing', '每日简报']] },
+  { key: 'smart-customer-service', name: '智能客服', items: [['human-sessions', '在线接待'], ['knowledge', '知识库']] },
+  { key: 'product-center', name: '商品与加工项', items: [['products', '商品列表'], ['processing', '加工项管理']] },
+  {
+    key: 'trade-center',
+    name: '交易管理',
+    items: [['orders', '订单列表'], ['after-sales', '售后工单'], ['customers', '客户列表'], ['finance', '财务对账']],
+  },
+  {
+    key: 'production-center',
+    name: '生产管理',
+    items: [
+      ['production-board', '生产看板'],
+      ['production-pool', '池看板'],
+      ['production-process', '工艺配置'],
+      ['production-piecework', '计件工资'],
+    ],
+  },
+  {
+    key: 'inventory-center',
+    name: '仓储与物料',
+    items: [
+      ['inbound-orders', '入库单'],
+      ['production-remnants', '余料台账'],
+      ['production-saving-board', '省料看板'],
+    ],
+  },
+  {
+    key: 'org-center',
+    name: '组织管理',
+    items: [['employees', '员工管理'], ['roles', '岗位权限'], ['settings', '企业基础信息']],
+  },
+]
+const GROUP_KEYS = GROUPS.map((g) => g.key)
+/** 展开全部组后应渲染的 21 项（分组项在前、独立项在后） */
+const ALL_MENU_KEYS = [...GROUPS.flatMap((g) => g.items.map(([k]) => k)), 'notifications']
+
+const groupButton = (key: string) => screen.getByTestId(`sidebar-group-toggle-${key}`)
+/** 展开指定组（幂等：已展开则不点）—— 新 IA 默认只展开当前路由所在组 */
+function expandGroups(...keys: string[]) {
+  for (const key of keys) {
+    const btn = groupButton(key)
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  }
+}
+const expandAll = () => expandGroups(...GROUP_KEYS)
+const menuKeys = () =>
+  Array.from(document.querySelectorAll('[data-menu-key]')).map((el) => el.getAttribute('data-menu-key'))
+const activeKeys = () =>
+  Array.from(document.querySelectorAll('nav a'))
+    .filter((a) => a.className.includes('bg-primary-600'))
+    .map((a) => a.getAttribute('data-menu-key'))
+const linkFor = (name: string) => screen.getByText(name).closest('a')!
 
 describe('Sidebar', () => {
   const user = userEvent.setup()
@@ -37,6 +116,7 @@ describe('Sidebar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockBriefingEnabled = false
     mockUsePathname.mockReturnValue('/dashboard')
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
@@ -74,66 +154,114 @@ describe('Sidebar', () => {
     expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
-  it('should render all menu items', () => {
+  it('should render all menu items（issue #5271 新 IA：7 组 21 项）', async () => {
+    mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 分组标题（#2969 七大组）
+    // 分组标题（#5271 重排后七大组：商品与加工项 / 交易管理 / 生产管理 / 仓储与物料）
     expect(screen.getByText('工作台')).toBeInTheDocument()
     expect(screen.getByText('智能客服')).toBeInTheDocument()
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
-    expect(screen.getByText('订单管理')).toBeInTheDocument()
-    expect(screen.getByText('客户管理')).toBeInTheDocument() // 客户管理组（客户列表+财务对账）
-    expect(screen.getByText('组织管理')).toBeInTheDocument()  // 组织管理组（员工+岗位权限+企业信息）
-    // 子菜单项
-    expect(screen.getByText('经营看板')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('组织管理')).toBeInTheDocument()
+    // 旧组名不再出现（#5271：商品管理 → 商品与加工项；订单管理/客户管理 → 交易管理）
+    expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('订单管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+
+    // 非当前组（/dashboard ⇒ 只展开工作台）的项必须先展开该组才可见
+    // （简报开关是**异步 effect**：先等它落地，否则下面那条 21 项断言会因时序而假红）
+    await waitFor(() => expect(screen.getByText('每日简报')).toBeInTheDocument())
+    expandAll()
+    // 子菜单项：21 项**一项不少不减**
+    expect(menuKeys()).toEqual(ALL_MENU_KEYS)
+    for (const [, name] of GROUPS.flatMap((g) => g.items)) {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    }
     // UI-005/UI-011: 智能客服分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    expect(screen.getByText('在线接待')).toBeInTheDocument()
-    expect(screen.getByText('知识库')).toBeInTheDocument()
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    // 每日简报由企业开关控制（#3468）：开关开 ⇒ 可见
+    expect(screen.getByText('每日简报')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
     expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
-    // issue #4490：「加工项管理」与「加工费管理」合并为单一入口（issue #4542 起菜单名 =「加工项管理」，
-    // 与服务端同名），归入商品管理组
-    expect(screen.getByText('加工项管理')).toBeInTheDocument()
     // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再出现在侧边栏（issue #4542 改名）
     expect(screen.queryByText('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')).not.toBeInTheDocument()
-    // #2969: 岗位权限（原角色权限）归入组织管理组，入口应显示（system:manage 权限，admin 全权限）
-    expect(screen.getByText('岗位权限')).toBeInTheDocument()
-    // 通知中心（全员）入口可见
-    expect(screen.getByText('通知中心')).toBeInTheDocument()
-    expect(screen.getByText('订单列表')).toBeInTheDocument()
-    expect(screen.getByText('售后工单')).toBeInTheDocument()
-    // 客户管理组子项（#2969：客户列表 + 财务对账）
-    expect(screen.getByText('客户列表')).toBeInTheDocument()
-    expect(screen.getByText('财务对账')).toBeInTheDocument()
-    // 组织管理组子项
-    expect(screen.getByText('员工管理')).toBeInTheDocument()
-    expect(screen.getByText('企业基础信息')).toBeInTheDocument()
     // UI-005: 「机器人设置」已更名为「AI 客服配置」，不再出现旧名
     expect(screen.queryByText('机器人设置')).not.toBeInTheDocument()
     // #2969: 「角色权限」已改名「岗位权限」，旧名不再出现
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('should render navigation links with correct paths', () => {
+  it('21 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（分组项在前、独立项在后）', async () => {
+    mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.getByText('经营看板').closest('a')).toHaveAttribute('href', '/dashboard')
-    expect(screen.getByText('商品列表').closest('a')).toHaveAttribute('href', '/products')
-    expect(screen.getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
+    await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
+    expandAll()
+    expect(menuKeys()).toEqual([
+      'dashboard', 'briefing',
+      'human-sessions', 'knowledge',
+      'products', 'processing',
+      'orders', 'after-sales', 'customers', 'finance',
+      'production-board', 'production-pool', 'production-process', 'production-piecework',
+      'inbound-orders', 'production-remnants', 'production-saving-board',
+      'employees', 'roles', 'settings',
+      'notifications',
+    ])
+    expect(menuKeys()).toHaveLength(21)
+  })
+
+  it('简报开关关 ⇒ 恰少「每日简报」（briefingToggle 过滤条件独立于权限码）', async () => {
+    mockBriefingEnabled = false
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expandAll()
+    expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
+    expect(menuKeys()).toEqual(ALL_MENU_KEYS.filter((k) => k !== 'briefing'))
+  })
+
+  it('should render navigation links with correct paths', async () => {
+    mockBriefingEnabled = true
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    await waitFor(() => expect(screen.getByText('每日简报')).toBeInTheDocument())
+    expandAll()
+    expect(linkFor('经营看板')).toHaveAttribute('href', '/dashboard')
+    expect(linkFor('每日简报')).toHaveAttribute('href', '/briefing')
+    expect(linkFor('商品列表')).toHaveAttribute('href', '/products')
+    expect(linkFor('加工项管理')).toHaveAttribute('href', '/production/processing')
+    expect(linkFor('订单列表')).toHaveAttribute('href', '/orders')
+    expect(linkFor('售后工单')).toHaveAttribute('href', '/after-sales')
+    expect(linkFor('客户列表')).toHaveAttribute('href', '/customers')
+    expect(linkFor('财务对账')).toHaveAttribute('href', '/finance')
+    expect(linkFor('生产看板')).toHaveAttribute('href', '/production')
+    expect(linkFor('池看板')).toHaveAttribute('href', '/production/pool')
+    expect(linkFor('工艺配置')).toHaveAttribute('href', '/production/routings')
+    expect(linkFor('计件工资')).toHaveAttribute('href', '/production/piecework')
+    // issue #5271：面料进出与消耗移入新组「仓储与物料」（原生产管理组）
+    expect(linkFor('入库单')).toHaveAttribute('href', '/inbound-orders')
+    expect(linkFor('余料台账')).toHaveAttribute('href', '/production/remnants')
+    expect(linkFor('省料看板')).toHaveAttribute('href', '/production/saving-board')
+    expect(linkFor('员工管理')).toHaveAttribute('href', '/employees')
+    expect(linkFor('岗位权限')).toHaveAttribute('href', '/roles')
+    expect(linkFor('企业基础信息')).toHaveAttribute('href', '/settings')
     // #3094: 米宝 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    expect(screen.getByText('在线接待').closest('a')).toHaveAttribute('href', '/agent-workspace/human-sessions')
-    expect(screen.getByText('知识库').closest('a')).toHaveAttribute('href', '/knowledge')
-    expect(screen.getByText('通知中心').closest('a')).toHaveAttribute('href', '/notifications')
+    expect(linkFor('在线接待')).toHaveAttribute('href', '/agent-workspace/human-sessions')
+    expect(linkFor('知识库')).toHaveAttribute('href', '/knowledge')
+    expect(linkFor('通知中心')).toHaveAttribute('href', '/notifications')
   })
 
   // ── 折叠状态 ──
 
   it('should hide text labels when collapsed', () => {
     render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
-    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+    for (const g of GROUPS) {
+      expect(screen.queryByText(g.name)).not.toBeInTheDocument()
+    }
     expect(screen.queryByText('米高')).not.toBeInTheDocument()
-    expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+    // 菜单名文本同样不渲染（此态下只有图标）
+    expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
+    expect(screen.queryByText('经营看板')).not.toBeInTheDocument()
   })
 
   it('should show expand button when collapsed', () => {
@@ -161,35 +289,38 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /dashboard', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('经营看板').closest('a')!
+    const link = linkFor('经营看板')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
   it('should highlight active menu item for /products', () => {
     mockUsePathname.mockReturnValue('/products')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('商品列表').closest('a')!
+    // /products 是「商品与加工项」组 ⇒ 该组默认展开（新交互 ①②）
+    const link = linkFor('商品列表')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
   it('should not highlight inactive menu items', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('商品列表').closest('a')!
+    // 非当前组默认收起 ⇒ 先展开「商品与加工项」再断言它**不高亮**（断言强度不变）
+    expandGroups('product-center')
+    const link = linkFor('商品列表')
     expect(getActiveClass(link)).not.toContain('bg-primary-600')
   })
 
   it('should highlight nested route for /products/123', () => {
     mockUsePathname.mockReturnValue('/products/123')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('商品列表').closest('a')!
+    const link = linkFor('商品列表')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
   it('should highlight for root path as dashboard', () => {
     mockUsePathname.mockReturnValue('/')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('经营看板').closest('a')!
+    const link = linkFor('经营看板')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
@@ -199,57 +330,79 @@ describe('Sidebar', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-    const humanLink = screen.getByText('在线接待').closest('a')!
+    // /chat 不属于任何菜单项 ⇒ 无组可展开；展开智能客服后「在线接待」仍在 DOM 且不得高亮
+    expandGroups('smart-customer-service')
+    const humanLink = linkFor('在线接待')
     expect(getActiveClass(humanLink)).not.toContain('bg-primary-600')
   })
 
-  it('/chat 时侧边栏无高亮菜单项（#3094 米宝入口已移除）', () => {
+  it('/chat 时侧边栏无高亮菜单项（#3094 米宝入口已移除）', async () => {
+    mockBriefingEnabled = true
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const links = Array.from(document.querySelectorAll('nav a'))
-    const activeLinks = links.filter((a) => a.className.includes('bg-primary-600'))
-    expect(activeLinks).toHaveLength(0)
+    // /chat 不属于任何菜单项 ⇒ **全部组默认收起**（这本身就是「无高亮」的一种形态）；
+    // 展开全部组后再断言「21 项都在 DOM 里，仍然一个都不高亮」
+    expandAll()
+    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(21))
+    expect(activeKeys()).toEqual([])
   })
 
   it('/orders/new 时「订单列表」高亮（嵌套路由前缀匹配回归保护）', () => {
     mockUsePathname.mockReturnValue('/orders/new')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const ordersLink = screen.getByText('订单列表').closest('a')!
-    const afterSalesLink = screen.getByText('售后工单').closest('a')!
+    const ordersLink = linkFor('订单列表')
+    const afterSalesLink = linkFor('售后工单')
     expect(getActiveClass(ordersLink)).toContain('bg-primary-600')
     expect(getActiveClass(afterSalesLink)).not.toContain('bg-primary-600')
+  })
+
+  it('前缀同时命中（/production/pool ↔ /production）时**只有一项**高亮 —— 最长前缀胜出', () => {
+    mockUsePathname.mockReturnValue('/production/pool')
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expect(activeKeys()).toEqual(['production-pool'])
+    expect(getActiveClass(linkFor('池看板'))).toContain('bg-primary-600')
+    expect(getActiveClass(linkFor('生产看板'))).not.toContain('bg-primary-600')
   })
 
   // ── 分组折叠/展开 ──
 
   it('should toggle group expansion when clicking group header', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
-
-    await user.click(screen.getByText('商品管理'))
+    // /dashboard ⇒ 「商品与加工项」默认**收起**（新交互 ①），故先点开、再点收
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
+    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('false')
+
+    await user.click(screen.getByText('商品与加工项'))
+    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('true')
+
+    await user.click(screen.getByText('商品与加工项'))
+    expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
+    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('false')
   })
 
   // ── 独立菜单项 ──
 
   it('should render standalone items exactly once each', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // #2969: 客户管理已从独立菜单改为客户管理组标题（仍唯一）
-    expect(screen.getAllByText('客户管理').length).toBe(1)
+    // #5271: 交易管理是**唯一**的合并组（原「订单管理」+「客户管理」组的客户列表/财务对账）
+    expect(screen.getAllByText('交易管理').length).toBe(1)
+    expect(screen.getAllByText('商品与加工项').length).toBe(1)
     // #3081: AI 客服配置已移除（合并进企业基础信息），不再渲染
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
-    // #2969: 岗位权限归入组织管理组（唯一），通知中心仍为独立菜单（唯一）
+    // #2969: 岗位权限归入组织管理组（唯一）—— 该组默认收起，先展开；通知中心仍为独立菜单（唯一）
+    expandGroups('org-center')
     expect(screen.getAllByText('岗位权限').length).toBe(1)
     expect(screen.getAllByText('通知中心').length).toBe(1)
   })
 
   // ── UI-005: 智能客服大类分组与图标 ──
 
-  it('「智能客服」大类位于「工作台」之后、「商品管理」之前', () => {
+  it('「智能客服」大类位于「工作台」之后、「商品与加工项」之前', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const workspace = screen.getByText('工作台')
     const smartCs = screen.getByText('智能客服')
-    const productCenter = screen.getByText('商品管理')
+    const productCenter = screen.getByText('商品与加工项')
     const follows = (a: HTMLElement, b: HTMLElement) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     expect(follows(workspace, smartCs)).toBe(true)
@@ -258,7 +411,8 @@ describe('Sidebar', () => {
 
   it('「智能客服」下子菜单顺序：在线接待 在前、知识库次之（#2969/#3081/#3094 米宝·在线对话 入口已移除）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const groupContainer = screen.getByText('智能客服').closest('.mb-4') as HTMLElement
+    expandGroups('smart-customer-service')
+    const groupContainer = screen.getByText('智能客服').closest('[data-group-key]') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
     expect(links.length).toBe(2)
     expect(links[0].textContent).toContain('在线接待')
@@ -267,26 +421,32 @@ describe('Sidebar', () => {
 
   it('「在线接待」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const workspaceGroup = screen.getByText('工作台').closest('.mb-4') as HTMLElement
+    const workspaceGroup = screen.getByText('工作台').closest('[data-group-key]') as HTMLElement
     expect(within(workspaceGroup).getByText('经营看板')).toBeInTheDocument()
     expect(within(workspaceGroup).queryByText('在线接待')).not.toBeInTheDocument()
+    // 工作台组内一个链接都没有 /chat 或在线接待（组内项**只有**经营看板，开关关时）
+    expect(Array.from(workspaceGroup.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual([
+      '/dashboard',
+    ])
     // 在线接待整体仍存在（移入智能客服分组）
+    expandGroups('smart-customer-service')
     expect(screen.getByText('在线接待')).toBeInTheDocument()
   })
 
   it('「在线接待」渲染 Headphones 图标，与「经营看板」BarChart3 图标明确区分', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const humanLink = screen.getByText('在线接待').closest('a')!
+    expandGroups('smart-customer-service')
+    const humanLink = linkFor('在线接待')
     expect(within(humanLink).getByTestId('icon-headphones')).toBeInTheDocument()
     expect(within(humanLink).queryByTestId('icon-bar-chart3')).not.toBeInTheDocument()
-    const dashboardLink = screen.getByText('经营看板').closest('a')!
+    const dashboardLink = linkFor('经营看板')
     expect(within(dashboardLink).getByTestId('icon-bar-chart3')).toBeInTheDocument()
   })
 
   it('「智能客服」大类渲染 MessageSquare 图标（#3081 AI 客服配置菜单已移除）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const groupButton = screen.getByText('智能客服').closest('button')!
-    expect(within(groupButton).getByTestId('icon-message-square')).toBeInTheDocument()
+    const groupButtonEl = screen.getByText('智能客服').closest('button')!
+    expect(within(groupButtonEl).getByTestId('icon-message-square')).toBeInTheDocument()
   })
 
   it('「米宝·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
@@ -297,30 +457,28 @@ describe('Sidebar', () => {
   // ── 权限过滤 ──
 
   describe('Permission-based menu filtering', () => {
-    it('should show all menu items for admin user with * permission', () => {
+    it('should show all menu items for admin user with * permission', async () => {
+      mockBriefingEnabled = true
       mockUseAuthStore.mockReturnValue({
         user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
       expect(screen.getByText('工作台')).toBeInTheDocument()
-      expect(screen.getByText('商品列表')).toBeInTheDocument()
+      // 七大组头（含 #5271 新增的「仓储与物料」）
+      for (const g of GROUPS) {
+        expect(screen.getByText(g.name)).toBeInTheDocument()
+      }
+      expandAll()
+      for (const [, name] of GROUPS.flatMap((g) => g.items)) {
+        expect(screen.getByText(name)).toBeInTheDocument()
+      }
       // #1403: 商品分类管理已移出侧边栏
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
-      // #2969: 客户管理组子项与组织管理组子项均可见
-      expect(screen.getByText('客户管理')).toBeInTheDocument()
-      expect(screen.getByText('客户列表')).toBeInTheDocument()
-      expect(screen.getByText('财务对账')).toBeInTheDocument()
-      expect(screen.getByText('组织管理')).toBeInTheDocument()
-      expect(screen.getByText('员工管理')).toBeInTheDocument()
-      expect(screen.getByText('岗位权限')).toBeInTheDocument()
-      expect(screen.getByText('企业基础信息')).toBeInTheDocument()
-      expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 米宝·在线对话 入口已移除）
-      expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(screen.getByText('在线接待')).toBeInTheDocument()
+      expect(menuKeys()).toHaveLength(21)
     })
 
     it('should filter out items user has no permission for', () => {
@@ -328,26 +486,37 @@ describe('Sidebar', () => {
         user: { id: '2', username: 'operator', name: '运营', permissions: ['dashboard:view', 'order:list', 'product:list'], roles: ['operator'] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 有权限的
+      // 有权限的（组头恒在；项要先展开该组）
       expect(screen.getByText('工作台')).toBeInTheDocument()
+      expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+      expect(screen.getByText('交易管理')).toBeInTheDocument()
+      expandGroups('product-center', 'trade-center')
       expect(screen.getByText('商品列表')).toBeInTheDocument()
       expect(screen.getByText('订单列表')).toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // #2969: 客户管理组（客户列表+财务对账）整组隐藏
-      expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+      // #5271: 客户列表/财务对账与订单列表**同组**（交易管理）⇒ 无码时只有它们从组内消失，组本身仍在
       expect(screen.queryByText('客户列表')).not.toBeInTheDocument()
       expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
+      // 旧「客户管理」组已不存在（#5271 并入交易管理）
+      expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
       // #2969: 组织管理组（员工+岗位权限+企业信息）整组隐藏
       expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       expect(screen.queryByText('岗位权限')).not.toBeInTheDocument()
       expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
+      // #5271: 生产管理 / 仓储与物料整组隐藏（无 processing:manage / inbound:view）
+      expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('仓储与物料')).not.toBeInTheDocument()
+      expect(screen.queryByText('入库单')).not.toBeInTheDocument()
+      expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
+      // 可见项**精确**清单：经营看板（无码）+ 商品列表 + 订单列表 + 通知中心
+      expect(menuKeys()).toEqual(['dashboard', 'products', 'orders', 'notifications'])
       // UI-005/UI-011: 无 agent:session / knowledge:view → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
@@ -360,18 +529,18 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('工作台')).toBeInTheDocument()
-      // 分组标题应该都不在
-      expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
-      expect(screen.queryByText('订单管理')).not.toBeInTheDocument()
-      expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      // #2969: 客户管理组/组织管理组也不在（整组权限过滤）
-      expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
-      expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
+      expect(screen.getByText('经营看板')).toBeInTheDocument()
+      // 分组标题应该都不在（除工作台外六组全空 ⇒ 整组剔除）
+      for (const name of ['商品与加工项', '交易管理', '订单管理', '智能客服', '生产管理', '仓储与物料', '组织管理', '客户管理']) {
+        expect(screen.queryByText(name)).not.toBeInTheDocument()
+      }
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
-      // 零权限也可见：通知中心（无权限码，全员）
+      // 零权限也可见：通知中心（无权限码，全员）；经营看板同理
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 零权限不可见：知识库（需 knowledge:view —— issue #5246 起节点用读码）
+      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
+      // 零权限不可见：知识库（需 knowledge:view —— issue #5246 起节点用读码）、每日简报（需 dashboard:view + 开关）
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
+      expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
     })
 
     it('有 agent:session → 保留「在线接待」（#3094 米宝·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
@@ -380,22 +549,27 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('智能客服')).toBeInTheDocument()
+      expandGroups('smart-customer-service')
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
+      // 组内**只有**在线接待（知识库要 knowledge:view —— issue #5246 起节点用读码）
+      expect(menuKeys()).toEqual(['dashboard', 'human-sessions', 'notifications'])
     })
 
     it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
-      // issue #5246：『知识库』节点码从写码 `knowledge:manage` 换成**读码** `knowledge:view`
-      // （拆读写：只想看知识卡片的岗位不该被授予增删改发布权）⇒ 「谁能看到入口」按读码判。
+      // issue #5246（已合入 main）：『知识库』节点码从写码 `knowledge:manage` 换成**读码**
+      // `knowledge:view`（拆读写：只想看知识卡片的岗位不该被授予增删改发布权）⇒ 入口可见性按读码判。
       mockUseAuthStore.mockReturnValue({
         user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:view'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('智能客服')).toBeInTheDocument()
+      expandGroups('smart-customer-service')
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['dashboard', 'knowledge', 'notifications'])
     })
 
     it('仅 knowledge:manage（**写**码、无读码）→ 知识库入口隐藏（issue #5246 的读写分权口径）', () => {
@@ -408,6 +582,31 @@ describe('Sidebar', () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
+      // 组内两项都不可见 ⇒ 智能客服**整组剔除**（空组不渲染）
+      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
+    })
+
+    it('售后工单走**读**码 after_sales:view；只持写码 order:refund ⇒ 入口隐藏（issue #5246）', () => {
+      // 同族反面钉法在交易管理组上取一次：『售后工单』节点码 = `after_sales:view`（读码），
+      // `order:refund` 是不挂在菜单节点上的**写**码 ⇒ 它不进可见性判定（否则「能退款」被当成「该看到入口」）。
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '8', username: 'as', name: '售后', permissions: ['after_sales:view'], roles: [] },
+      })
+      const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expandGroups('trade-center')
+      expect(screen.getByText('售后工单')).toBeInTheDocument()
+      expect(screen.queryByText('订单列表')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['dashboard', 'after-sales', 'notifications'])
+      unmount()
+
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '9', username: 'asw', name: '售后写', permissions: ['order:refund'], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
+      // 组内无可见项 ⇒ 交易管理整组剔除
+      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
     })
 
     it('两个子菜单均不可见时「智能客服」大类整组隐藏（#3094）', () => {
@@ -435,13 +634,52 @@ describe('Sidebar', () => {
         user: { id: '4', username: 'partial', name: '部分权限', permissions: ['dashboard:view', 'order:list'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 订单管理 group should show (has order:list)
-      expect(screen.getByText('订单管理')).toBeInTheDocument()
+      // 交易管理 group should show (has order:list)
+      expect(screen.getByText('交易管理')).toBeInTheDocument()
+      expandGroups('trade-center')
       expect(screen.getByText('订单列表')).toBeInTheDocument()
       // 但售后工单不应该出现
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // 商品管理 group should be completely hidden
-      expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+      // 商品与加工项 group should be completely hidden（无 product:list / processing:manage）
+      expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['dashboard', 'orders', 'notifications'])
+    })
+
+    // ── #5271 新组的权限边界（正负控：菜单可见性与页面门禁同码，不互相顶替）──
+
+    it('入库单（inbound:view）与余料台账（processing:manage）**互不顶替**：正负控双向', async () => {
+      // ① 只有 inbound:view ⇒ 仓储与物料组仍在（入库单可见），余料台账/省料看板不在
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '8', username: 'wh', name: '仓管', permissions: ['inbound:view'], roles: [] },
+      })
+      const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+      expandGroups('inventory-center')
+      expect(screen.getByText('入库单')).toBeInTheDocument()
+      expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
+      expect(screen.queryByText('省料看板')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['dashboard', 'inbound-orders', 'notifications'])
+      unmount()
+
+      // ② 只有 processing:manage ⇒ 入库单**不在**（独立门禁，不因同组而放行），余料台账/省料看板在
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '9', username: 'op', name: '生产', permissions: ['processing:manage'], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expandGroups('inventory-center', 'production-center')
+      expect(screen.getByText('余料台账')).toBeInTheDocument()
+      expect(screen.getByText('省料看板')).toBeInTheDocument()
+      expect(screen.queryByText('入库单')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual([
+        'dashboard',
+        'production-board',
+        'production-pool',
+        'production-process',
+        'production-piecework',
+        'production-remnants',
+        'production-saving-board',
+        'notifications',
+      ])
     })
   })
 })
