@@ -189,6 +189,12 @@ export const SPECIAL_OPTIONS = [
   '加花边', '拼1次', '拼2次', '拼3次', '加铅块', '接高', '双眼皮接高',
   '扣环', '抱枕', '防翘扣', '一分为二', '余料做绑带', '余料做帘头',
 ] as const
+// ⚠️ **`接宽` 不在本清单里**（issue #5230 v2，用户 2026-09-23 裁定「**移除接宽逻辑，接高在特殊选项中
+//    选择，但是仍然得自动推导**」）：接宽保持「算料 + 面板提示」概念，**没有**选项 / 工序 / 计件出口
+//    ⇒ 它进不了 `processingInfo.specialOptions`（选项名是 join key：清单里没有的名字插不了工序、
+//    计件也认不出，后端会按「缺工序」fail-closed 422）。
+//    企业侧与它相关的唯一落点 = **派生的「拼接」加工项**（走 `processingItems[]`，见
+//    `lib/craft-calc-request.ts::derivedJoinSpliceItemOf`）。
 
 /** 明细行角色（§4.8）：主布 / 配布边 */
 export const COMPONENT_ROLE_MAIN = '主布'

@@ -84,6 +84,8 @@ REALDB_TEST_MODULES: frozenset[str] = frozenset({
     "test_v93_route_rules_backfill.py",
     "test_v96_operation_price_versions_backfill.py",
     "test_v97_orphan_positions_cleanup.py",
+    # issue #5230：「接高」撤出加工项目录项（V123）—— 真库两遍幂等 + 存量组合不静默变价
+    "test_v123_retire_join_height_item.py",
 })
 
 #: 标记的**假值**（与 Java 侧同款口径：非空且非 0/false 才算「要求真库」）

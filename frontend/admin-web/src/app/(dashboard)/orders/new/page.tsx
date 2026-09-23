@@ -29,12 +29,15 @@ import {
   defaultCraftCalcFormula,
   defaultCraftCalcTier,
   derivedJoinHeightOptionOf,
+  derivedJoinSpliceItemOf,
   derivedSpliceOptionOf,
   derivedSpecialOptionsOf,
   effectiveCraftCalcFormula,
+  effectiveJoinSourceNamesOf,
   effectiveSpecialOptionsOf,
   isAutoCalcUnavailable,
   joinGapOf,
+  SPLICE_ITEM_NAME,
   type CraftPlanOverrides,
 } from '@/lib/craft-calc-request'
 import {
@@ -704,7 +707,13 @@ function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
  * 本行多了 `手动加`（商家强制加、系统没推）这一档 —— 它只在**页面侧**有意义。
  */
 interface SystemAutoFeatureRow {
-  name: AutoFeatureName
+  /**
+   * 特征 / 加工项名 —— **不再是** `AutoFeatureName`（issue #5230）：这一块除了服务端推算的
+   * 超高 / 超宽 / 倒幅与商家强制加的项，还要承载**派生加工项**「拼接」
+   * （它不在 `AUTO_FEATURE_NAMES` 里 —— 那一份清单是**手选控件要滤掉**的名字，
+   * 而拼接**必须留在手选列表**里：裁定 4「接高、拼接也允许人工加」）。
+   */
+  name: string
   source: '推算' | '手动加'
   reason: string
   /** 系统推算过、但被商家**不采纳** ⇒ **不在**生效值里（只作留痕展示） */
@@ -718,11 +727,50 @@ type AutoFeatureDecision = 'adopt' | 'reject' | 'add'
 const MANUAL_ADD_REASON = '系统未推算，商家手动加'
 
 /**
- * 系统识别块的**展示行** —— 系统推算的（含被不采纳的）+ 商家强制加的。
+ * 该行**推导项裁决 / 落库 / 拼接派生**的**同一份**入参（issue #5230 收敛）——
+ * 面板显示、`processingInfo.specialOptions`、**拼接派生**三处都经它 ⇒ 不可能各说各话。
+ *
+ * ⚠️ `joinWidthOverride`（人工加接宽）也要在场：它**不进** `specialOptions`（接宽没有选项出口，
+ * 用户 2026-09-23 裁定「移除接宽逻辑」），但它是**拼接派生**的判据之一 ——
+ * 漏一处就会出现「商家人工加了接宽、拼接却没进组合键」。
+ */
+function derivedOptionInputOf(line: OrderLineItem) {
+  return {
+    manualOptions: line.craft.specialOptions,
+    plan: line.calc?.plan,
+    spliceTimesOverride: line.planOverrides?.spliceTimes,
+    joinHeightOverride: line.planOverrides?.joinHeightM,
+    joinWidthOverride: line.planOverrides?.joinWidthM,
+    rejectedOptions: line.rejectedDerivedOptions,
+  }
+}
+
+/** 该行**手选控件**里是否勾了某个名字的加工项（手选优先：同一名字不得在组合键里算两次） */
+function isHandPickedProcessingItem(line: OrderLineItem, name: string): boolean {
+  return line.processingItems.some(
+    (pi) => pi.name === name && line.selectedProcessing[pi.id]?.selected === true
+  )
+}
+
+/**
+ * 派生加工项「拼接」那一行的**依据文案**（issue #5230）—— 说清是**接高还是接宽**带来的接缝，
+ * 并照实写明「拼N次不派生」（商家核对判定时要看得见边界）。
+ */
+function joinSpliceReasonOf(line: OrderLineItem): string {
+  const names = effectiveJoinSourceNamesOf(derivedOptionInputOf(line))
+  return `${names.join(' / ')}发生 ⇒ 一幅帘由多块布接成，需拼接工序（派生自接高/接宽；拼N次不派生）`
+}
+
+/**
+ * 系统识别块的**展示行** —— 系统推算的（含被不采纳的）+ 商家强制加的 + **派生加工项**。
  *
  * 单一真值：推算一律走 {@link autoFeaturesOf}（**服务端判定**，issue #4976 包 2b ——
  * 用户裁定 B「判定移到服务端」）—— **本页不得出现第二份推导**
  * （静态判据钉住：页面里不得再出现本地判特征调用 `detectAutoFeatures(…)`）。
+ *
+ * ⚠️ **「拼接」是唯一走这一块的派生加工项**（issue #5230）：它进的是 `processingItems[]`
+ * （顾客侧加工费组合键）而不是 `specialOptions` —— 与接高 / 接宽那两条**工序 + 计件**的通路
+ * **并行且互斥**（同一件事的两笔账）。它同样可**不采纳**（`rejectedAutoFeatures` 按名留痕）。
  */
 function autoFeatureRowsOf(line: OrderLineItem): SystemAutoFeatureRow[] {
   const rejected = line.rejectedAutoFeatures ?? []
@@ -741,6 +789,18 @@ function autoFeatureRowsOf(line: OrderLineItem): SystemAutoFeatureRow[] {
       source: '手动加',
       reason: MANUAL_ADD_REASON,
       rejected: false,
+    })
+  }
+  // 派生「拼接」（issue #5230 口径 3 / 判据 3、4、5、6、8）：
+  // 接高**生效**（在生效特殊选项里）或 接宽**发生**（缺口合法）⇒ 派生；两者都没有 / 接高被不采纳
+  // ⇒ 不派生；**拼N次不派生**（裁定边界）。商家已手工勾了拼接 ⇒ 不重复派生（同一名字只出现一次）。
+  const spliceItem = derivedJoinSpliceItemOf(derivedOptionInputOf(line))
+  if (spliceItem !== null && !isHandPickedProcessingItem(line, spliceItem)) {
+    rows.push({
+      name: spliceItem,
+      source: '推算',
+      reason: joinSpliceReasonOf(line),
+      rejected: rejected.includes(spliceItem),
     })
   }
   return rows
@@ -3843,18 +3903,8 @@ function LineItemBlock({
    * ⚠️ 面板那一行必须读 `effectiveOptions`（**不是** `plan.splice_option`）—— 读 plan 就会在
    * 「人工加 / 不采纳 / 手工勾过」三种情形下与订单内容不一致（#5211 要收口的正是这个）。
    */
-  const derivedOptions = derivedSpecialOptionsOf({
-    plan,
-    spliceTimesOverride: line.planOverrides?.spliceTimes,
-    joinHeightOverride: line.planOverrides?.joinHeightM,
-  })
-  const effectiveOptions = effectiveSpecialOptionsOf({
-    manualOptions: line.craft.specialOptions,
-    plan,
-    spliceTimesOverride: line.planOverrides?.spliceTimes,
-    joinHeightOverride: line.planOverrides?.joinHeightM,
-    rejectedOptions: line.rejectedDerivedOptions,
-  })
+  const derivedOptions = derivedSpecialOptionsOf(derivedOptionInputOf(line))
+  const effectiveOptions = effectiveSpecialOptionsOf(derivedOptionInputOf(line))
   /** 一个推导项在本行的**状态**（面板与落库共用同一判定 ⇒ 不可能各说各话） */
   const derivedOptionState = (name: string): 'manual' | 'merged' | 'rejected' =>
     (line.craft.specialOptions ?? []).includes(name)

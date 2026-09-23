@@ -31,13 +31,17 @@ import {
   craftPlanHasSplice,
   craftPlanSpliceText,
   derivedJoinHeightOptionOf,
+  derivedJoinSpliceItemOf,
   derivedSpliceOptionOf,
   derivedSpecialOptionsOf,
+  effectiveJoinSourceNamesOf,
   effectiveSpecialOptionsOf,
   isAutoCalcUnavailable,
   joinGapOf,
   spliceOptionNameOf,
   JOIN_HEIGHT_OPTION_NAME,
+  JOIN_WIDTH_SOURCE_NAME,
+  SPLICE_ITEM_NAME,
 } from '@/lib/craft-calc-request'
 import { CURTAIN_TYPE_SHEER, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 
@@ -474,5 +478,87 @@ describe('#5211 推导出的特殊选项（拼N次 / 接高）—— 名字在�
     ).toEqual(['拼1次', JOIN_HEIGHT_OPTION_NAME])
     // 空串 / 非字符串不进（`buildCraftSpec` 的过滤口径同源）
     expect(effectiveSpecialOptionsOf({ manualOptions: ['', '  '] })).toEqual([])
+  })
+})
+
+/**
+ * issue #5230（用户 2026-09-23 裁定 v2）—— 派生加工项「**拼接**」的纯函数半边。
+ *
+ * | 触发 | 是否派生拼接 |
+ * |---|---|
+ * | `接高` 生效（推导并入 / 手工勾） | ✅ |
+ * | `接宽` 发生（缺口合法） | ✅（接宽**没有**选项出口，只走这条派生） |
+ * | `拼N次`（几何分幅） | ❌ 判据 8 |
+ * | `超高` / `超宽` / `倒幅`（自动特征） | ❌ 判据 9/10/11（**判据在页面侧**：本函数根本不接收特征，故那三条只能断言组合键） |
+ * | 两个 join 都为空 | ❌ 判据 5（不得恒加） |
+ * | 接高被**不采纳** | ❌ 判据 6（接缝不存在） |
+ *
+ * ⚠️ 为什么 `超高` / `超宽` / `倒幅` 不能派生：它们**本身**已经进顾客侧加工费组合键
+ * （组合键 = `processingItems[].name` 的集合）⇒ 再多派生一个「拼接」，**每一个**判了超高的订单
+ * 组合键都会多一项 ⇒ 匹配不到商家配的组合价或落到别的档 = **静默改钱**（同族事故：`正幅` 被推导进
+ * 组合键 ⇒ 默认订单加工费恒 ¥0.00，issue #4592）。
+ */
+describe('#5230 派生「拼接」加工项 —— 接高/接宽发生才进组合键（拼N次 / 自动特征都不派生）', () => {
+  it('接宽**没有**选项出口（v2 裁定「移除接宽逻辑」）：清单里没有它，也不产生任何选项名', () => {
+    expect((SPECIAL_OPTIONS as readonly string[]).includes(JOIN_WIDTH_SOURCE_NAME)).toBe(false)
+    // 有接宽缺口也**不并入** `specialOptions`（选项名是 join key：清单里没有 ⇒ 后端按缺工序 422）
+    expect(effectiveSpecialOptionsOf({ plan: { join_width_m: 0.05 } })).toEqual([])
+    expect(derivedSpecialOptionsOf({ plan: { join_width_m: 0.05 } })).toEqual([])
+  })
+
+  it('接高发生 ⇒ 派生拼接；**接高被不采纳 ⇒ 不派生**（判据 6；红证：去掉不采纳判据 ⇒ 必红）', () => {
+    expect(derivedJoinSpliceItemOf({ plan: { join_height_m: 0.08 } })).toBe(SPLICE_ITEM_NAME)
+    expect(derivedJoinSpliceItemOf({ joinHeightOverride: 0.1 })).toBe(SPLICE_ITEM_NAME)
+    // 商家在②特殊选项里手工勾的接高 = 同一件事 ⇒ 同样派生
+    expect(derivedJoinSpliceItemOf({ manualOptions: [JOIN_HEIGHT_OPTION_NAME] })).toBe(
+      SPLICE_ITEM_NAME
+    )
+    // 不采纳接高 ⇒ 接缝不存在 ⇒ 不派生（也不产生别的名字）
+    expect(
+      derivedJoinSpliceItemOf({
+        plan: { join_height_m: 0.08 },
+        rejectedOptions: [JOIN_HEIGHT_OPTION_NAME],
+      })
+    ).toBeNull()
+    // 缺省 / 越界（>0.1 上限）⇒ 不算发生
+    expect(derivedJoinSpliceItemOf({ plan: { join_height_m: null } })).toBeNull()
+    expect(derivedJoinSpliceItemOf({ plan: { join_height_m: 0.25 } })).toBeNull()
+  })
+
+  it('接宽发生 ⇒ 派生拼接（无选项通路，只有人工加 / 服务端推导两个来源）；越界 ⇒ 不派生', () => {
+    expect(derivedJoinSpliceItemOf({ plan: { join_width_m: 0.05 } })).toBe(SPLICE_ITEM_NAME)
+    expect(derivedJoinSpliceItemOf({ joinWidthOverride: 0.1 })).toBe(SPLICE_ITEM_NAME)
+    expect(derivedJoinSpliceItemOf({ plan: { join_width_m: null } })).toBeNull()
+    // 人工加超限：请求面都拒发（fail-closed）⇒ 更不该派生拼接
+    expect(derivedJoinSpliceItemOf({ joinWidthOverride: 0.15 })).toBeNull()
+  })
+
+  it('判据 8：`拼N次`（几何分幅）**不**派生拼接；两个 join 都为空 ⇒ 不派生（判据 5）', () => {
+    expect(derivedJoinSpliceItemOf({ plan: { splice_times: 2, splice_option: '拼2次' } })).toBeNull()
+    expect(derivedJoinSpliceItemOf({ plan: { splice_times: 3, splice_option: '拼3次' } })).toBeNull()
+    expect(derivedJoinSpliceItemOf({ spliceTimesOverride: 1 })).toBeNull()
+    expect(
+      derivedJoinSpliceItemOf({ plan: { splice_times: 2, splice_option: '拼2次' } })
+    ).toBeNull()
+  })
+
+  it('依据文案的来源名与派生**同源**（接高 → 接宽，顺序稳定）；不采纳后同样为空', () => {
+    expect(
+      effectiveJoinSourceNamesOf({ plan: { join_height_m: 0.05, join_width_m: 0.05 } })
+    ).toEqual([JOIN_HEIGHT_OPTION_NAME, JOIN_WIDTH_SOURCE_NAME])
+    expect(effectiveJoinSourceNamesOf({ plan: { join_width_m: 0.05 } })).toEqual([
+      JOIN_WIDTH_SOURCE_NAME,
+    ])
+    expect(
+      effectiveJoinSourceNamesOf({
+        plan: { join_height_m: 0.05 },
+        rejectedOptions: [JOIN_HEIGHT_OPTION_NAME],
+      })
+    ).toEqual([])
+    // 「有来源名」与「派生拼接」必须同真同假（两处不同源 ⇒ 界面说 A、组合键算 B）
+    const withJoin = { plan: { join_width_m: 0.05 } }
+    expect(effectiveJoinSourceNamesOf(withJoin).length > 0).toBe(
+      derivedJoinSpliceItemOf(withJoin) !== null
+    )
   })
 })
