@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Input, Select, Modal, Loading } from '@/components/ui'
+import { Button, Input, Loading, Modal, NumberInput, Select } from '@/components/ui'
 import ImageUploader from './ImageUploader'
 import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
@@ -608,18 +608,13 @@ export default function ProductForm({
           <FieldRow label="1 卷 = 多少米" alignTop>
             <div id={ANCHORS.rollLengthM} data-testid="pf-roll-length">
               <div className="relative w-44">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                {/* issue #5218 #4：旧形态 `type="number"` + `Number(e.target.value)` 往返 ⇒
+                    "0." 这类中间态在浏览器层就丢（受控回写把小数点吞掉）。改用共享 NumberInput。 */}
+                <NumberInput
+                  min={0}
                   placeholder="未配置"
-                  value={form.rollLengthM ?? ''}
-                  onChange={(e) =>
-                    updateField(
-                      'rollLengthM',
-                      e.target.value === '' ? null : Number(e.target.value)
-                    )
-                  }
+                  value={form.rollLengthM ?? null}
+                  onChange={(v) => updateField('rollLengthM', v)}
                   className="w-full h-9 px-3 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">

@@ -312,8 +312,9 @@ describe('售卖方式与卷长：商品基础属性（PR-042 / PR-043）', () =
     // 勾「整卷」（商品级基础属性，多选）
     fireEvent.click(screen.getByLabelText('整卷'))
     // 填「1 卷 = 多少米」
+    // issue #5218 #4：卷长改用 NumberInput（`type="text"` + 字符串草稿）⇒ role 由 spinbutton 变 textbox
     const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole(
-      'spinbutton'
+      'textbox'
     ) as HTMLInputElement
     fireEvent.change(rollInput, { target: { value: '60' } })
     expect(rollInput.value).toBe('60')
@@ -350,14 +351,34 @@ describe('售卖方式与卷长：商品基础属性（PR-042 / PR-043）', () =
     render(<ProductForm initialData={validInitialData} onSubmit={onSubmit} />)
 
     fireEvent.click(screen.getByLabelText('整卷'))
+    // issue #5218 #4：卷长改用 NumberInput（`type="text"` + 字符串草稿）⇒ role 由 spinbutton 变 textbox
     const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole(
-      'spinbutton'
+      'textbox'
     ) as HTMLInputElement
     fireEvent.change(rollInput, { target: { value: '0' } })
     fireEvent.click(screen.getByText('提交并上架'))
 
     expect(await screen.findByText('卷长必须大于 0 米')).toBeTruthy()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  // issue #5218 #4：旧形态 `type="number"` + `Number(e.target.value)` 往返 ⇒ "0." 中间态被吃掉。
+  it('卷长逐键 0 → . → 5 打出 "0.5"（issue #5218 #4 红证）', async () => {
+    render(<ProductForm initialData={validInitialData} onSubmit={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('整卷'))
+    const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole(
+      'textbox'
+    ) as HTMLInputElement
+
+    fireEvent.change(rollInput, { target: { value: '0' } })
+    expect(rollInput.value).toBe('0')
+    fireEvent.change(rollInput, { target: { value: '0.' } })
+    // 红证（单点变异）：把本格改回 `type="number"` + `Number(...)` ⇒ 本断言收到 ''（中间态被吞）
+    expect(rollInput.value).toBe('0.')
+    fireEvent.change(rollInput, { target: { value: '0.5' } })
+    expect(rollInput.value).toBe('0.5')
+    fireEvent.blur(rollInput)
+    expect(rollInput.value).toBe('0.5')
   })
 
   it('PR-043: 售卖方式一项都没勾 ⇒ 校验拦下（沿用原规则，只是位置变了）', async () => {

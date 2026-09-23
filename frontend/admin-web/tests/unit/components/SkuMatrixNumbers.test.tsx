@@ -74,15 +74,79 @@ describe('SkuMatrix 数字输入：0 打不进去（issue #5198 红证）', () =
   })
 })
 
+describe('SkuMatrix 数字输入：编辑**既有值**方向（issue #5218 判据 1/2 红证）', () => {
+  // 为什么单开一组：issue #5198 的夹具从 `price=0 / stock=0` 起步 ⇒ 外部 prop 恒为「空」⇒
+  // **结构性覆盖不到「编辑既有值」这条最常见的路径**，于是 `x ? x : null` 这个新形态漏网。
+  it('判据 1（红证）：价格已是 12.5 ⇒ 全选输入 "0" ⇒ DOM 仍为 "0"', () => {
+    const { container } = render(<Harness price={12.5} />)
+    const price = cells(container)[0]
+    expect(price.value).toBe('12.5')
+    fireEvent.change(price, { target: { value: '0' } })
+    // 红证（单点变异，实测）：把接线改回 `value={sku?.price ? sku.price : null}` ⇒
+    // 0 是 falsy ⇒ 外部值变 null ⇒ 草稿被洗成 '' ⇒ 本断言收到 ''（框当场清空）
+    expect(price.value).toBe('0')
+  })
+
+  it('判据 2（红证）：库存已是 30 ⇒ 输入 "0" ⇒ DOM 仍为 "0"', () => {
+    const { container } = render(<Harness price={12.5} stock={30} />)
+    const stock = cells(container)[1]
+    expect(stock.value).toBe('30')
+    fireEvent.change(stock, { target: { value: '0' } })
+    // 红证：同上（`sku?.stock ? sku.stock : null`）
+    expect(stock.value).toBe('0')
+  })
+
+  it('编辑既有值 ⇒ 逐键 0 → . → 5 打出 "0.5"（价格 12.5 改成 0.5 的真实路径）', () => {
+    const { container } = render(<Harness price={12.5} />)
+    const price = cells(container)[0]
+    fireEvent.change(price, { target: { value: '0' } })
+    expect(price.value).toBe('0')
+    fireEvent.change(price, { target: { value: '0.' } })
+    expect(price.value).toBe('0.')
+    fireEvent.change(price, { target: { value: '0.5' } })
+    expect(price.value).toBe('0.5')
+    fireEvent.blur(price)
+    expect(price.value).toBe('0.5')
+  })
+
+  it('既有值可直接改大改小（12.5 ⇒ 7.25 / 30 ⇒ 12），不留旧值残影', () => {
+    const { container } = render(<Harness price={12.5} stock={30} />)
+    const [price, stock] = cells(container)
+    fireEvent.change(price, { target: { value: '7.25' } })
+    expect(price.value).toBe('7.25')
+    fireEvent.change(stock, { target: { value: '12' } })
+    expect(stock.value).toBe('12')
+  })
+})
+
 describe('SkuMatrix 数字输入：原行为回归护栏（issue #5198）', () => {
-  it('价格/库存仍是每行两个输入框，且空值仍显示占位符（不是 0）', () => {
-    const { container } = render(<Harness />)
+  it('矩阵未重建（该行**没有** SKU）⇒ 显示占位符 0.00 / 0（缺行才是空）', () => {
+    const { container } = render(
+      <SkuMatrix value={{ colors: COLORS, doorWidths: WIDTHS, skus: [] }} onChange={vi.fn()} />
+    )
     expect(container.querySelectorAll('tbody tr')).toHaveLength(1)
     const [price, stock] = cells(container)
     expect(price.value).toBe('')
     expect(price.getAttribute('placeholder')).toBe('0.00')
     expect(stock.value).toBe('')
     expect(stock.getAttribute('placeholder')).toBe('0')
+  })
+
+  // issue #5218 #1 的可见面变化（如实登记）：`rebuildSkus` 给新行落的是 `price: 0 / stock: 0`，
+  // 而旧接线 `sku?.price || ''` 把 0 当成「空」渲染成占位符。拆掉这层伪装后，**未填的行显示 0**
+  // ——「0 = 未填写」由既有校验（价格必须 > 0 + 标红 + 计数横幅）表达，不再由输入框替商家隐藏。
+  it('已存在的行 price=0/stock=0（未填写）⇒ 显示 "0"（不再冒充占位符），校验标红仍生效', () => {
+    const { container } = render(
+      <SkuMatrix
+        value={{ colors: COLORS, doorWidths: WIDTHS, skus: [skuOf(0, 0)] }}
+        onChange={vi.fn()}
+        errors={{ skus: '请完整填写所有 SKU 的价格与库存' }}
+      />
+    )
+    const [price, stock] = cells(container)
+    expect(price.value).toBe('0')
+    expect(stock.value).toBe('0')
+    expect(price.className).toContain('border-red-400')
   })
 
   it('已填值回显正常（价格 12.5 / 库存 30）', () => {

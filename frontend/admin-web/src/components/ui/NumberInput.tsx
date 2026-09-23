@@ -64,12 +64,18 @@ const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(function Numb
   const lastValidRef = useRef<number | null>(typeof value === 'number' ? value : null)
   draftRef.current = draft
 
-  // 外部 value 变化 ⇒ 同步草稿；但**正在输入的中间态优先**，不覆盖（否则又是吞键）：
-  // ① 草稿现有解析值恰等于外部值（"0" 对 0）⇒ 保留；② 外部值就是我们刚回调出去的值（含 null，
-  //    如草稿 "0." 回调 null 后外部仍是 null）⇒ 保留。
+  // 外部 value 变化 ⇒ 同步草稿；但**自己刚回调出去的值**（含「空」）不得顶掉正在输入的草稿：
+  // 草稿是 "0." 时回调的是 null，父组件把 null 原样回传（外部值由 12.5 变 null）——
+  // 若照单覆盖，用户刚敲的那个小数点就被抹掉（= issue #5198 那族「吞键」的新入口）。
+  //
+  // ⚠️ 这条守卫是**唯一**承重的守卫（issue #5218 发现 #7）：早先还有一条
+  // `if (parseComplete(draft) === value) return`，它**删掉也不会有任何测试变红**
+  // （「草稿解析值 === 外部值」的场景，被本条守卫或 effect 的 `[value]` 依赖一并覆盖）
+  // ⇒ 按「假红证比没有红证更坏」+ 最少代码阶梯**删掉它**。本条守卫的红证见
+  // tests/unit/components/NumberInput.test.tsx「⑤c 外部回传「空」不得吞掉正在输入的中间态」
+  // （红证：删掉这一行 ⇒ 该条必红，实测）。
   useEffect(() => {
     if (typeof value === 'number') lastValidRef.current = value
-    if (parseComplete(draftRef.current) === value) return
     if (editingRef.current && value === lastEmittedRef.current) return
     setDraft(formatDraft(value))
   }, [value])

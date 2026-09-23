@@ -116,6 +116,26 @@ describe('NumberInput 中间态不吞键（issue #5198，用户原始 bug 的红
     expect(input().value).toBe('2.')
   })
 
+  it('⑤c 外部回传「空」不得吞掉正在输入的中间态（issue #5218 #7：唯一承重守卫的红证）', () => {
+    // 受控夹具：**已有值 12.5**，用户全选改写。敲 "0." 时回调的是 null（不完整草稿），
+    // 父组件把 null 原样回传（外部值由 12.5 变成 null）——若照单覆盖草稿，
+    // 用户刚敲的小数点就没了。这是 #5198 那族「吞键」在 #5218 里的新入口。
+    function Echo() {
+      const [v, setV] = useState<number | null>(12.5)
+      return <NumberInput data-testid="ni" value={v} onChange={setV} />
+    }
+    render(<Echo />)
+    expect(input().value).toBe('12.5')
+    fireEvent.change(input(), { target: { value: '0' } })
+    expect(input().value).toBe('0')
+    fireEvent.change(input(), { target: { value: '0.' } })
+    // 红证（单点变异，实测）：删掉 NumberInput.tsx 里
+    // `if (editingRef.current && value === lastEmittedRef.current) return` 这一行 ⇒ 本断言必红（收到 ''）
+    expect(input().value).toBe('0.')
+    fireEvent.change(input(), { target: { value: '0.6' } })
+    expect(input().value).toBe('0.6')
+  })
+
   it('⑥ 负号中间态 "-" 不被吞（DOM 保持 "-"，回调 null）', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)

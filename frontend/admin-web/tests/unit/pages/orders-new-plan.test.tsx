@@ -431,6 +431,10 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await waitFor(() => expect(qtyInput()).toHaveValue('9.8'))
   })
 
+  // 红证留痕（issue #5218 #9 复核，2026-09-23 实测）：删掉 `orders/new/page.tsx` 里的
+  // `if (line.metersSource !== METERS_SOURCE_FORMULA) continue`（算料 effect 的过滤守卫）
+  // ⇒ **本条红**（`Tests 1 failed | 23 passed`，失败即本条）；同批另一条「自动态下改宽 ⇒ 用料自动跟着变」保持绿。
+  // ⇒ 本条的「（红证）」标注**属实**，不需要降级声明。
   it('根因 2（红证）：人工指定后改宽/高 ⇒ 数量**不被静默覆盖** + 「未跟随」告知 + 一键恢复', async () => {
     render(<NewOrderPage />)
     await pickProduct()

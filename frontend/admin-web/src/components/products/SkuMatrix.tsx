@@ -656,13 +656,20 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                         </td>
                         <td className="px-3 py-2 border-r border-neutral-100">
                           {/* issue #5198：旧形态 `value={sku?.price || ''}` + `parseFloat(raw) || 0`
-                              会把合法的 0 与空值混为一谈 ⇒ 用户敲下 "0" 的当刻输入框被清空，
-                              "0.5" 永远打不出来。改用 NumberInput（内部字符串草稿，0 原样回调）。 */}
+                              会把合法的 0 与空值混为一谈 ⇒ 用户敲下 "0" 的当刻输入框被清空。
+                              issue #5218 #1：`sku?.price ? sku.price : null` 是**同一个 bug 的新形态**
+                              （0 是 falsy ⇒ 外部值 12.5 → null ⇒ 外部同步把正在输入的草稿洗掉）——
+                              改成「只有真缺值（undefined/NaN）才映射成空」，0 原样喂给输入框。
+                              ⚠️ 可见面后果：未填的行（`rebuildSkus` 落 `price: 0`）现在显示 `0`
+                              而不是占位符 `0.00` —— 「0 = 未填写」由既有校验（`price > 0` + 标红 +
+                              计数横幅）表达，输入框不再替商家把它藏起来。 */}
                           <NumberInput
                             min={0}
                             decimals={2}
                             placeholder="0.00"
-                            value={sku?.price ? sku.price : null}
+                            value={
+                              typeof sku?.price === 'number' && Number.isFinite(sku.price) ? sku.price : null
+                            }
                             onChange={(v) =>
                               handleSkuChange(
                                 color.id,
@@ -680,11 +687,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                         </td>
                         <td className="px-3 py-2">
                           {/* issue #5198：同族形态（`sku?.stock || ''` + `parseInt(raw) || 0`）——
-                              库存 0（无库存）是合法值，改前敲 "0" 会被清空。 */}
+                              库存 0（无库存）是合法值，改前敲 "0" 会被清空。
+                              issue #5218 #2：`sku?.stock ? sku.stock : null` 同为新形态（0 falsy）⇒ 拆掉。 */}
                           <NumberInput
                             min={0}
                             placeholder="0"
-                            value={sku?.stock ? sku.stock : null}
+                            value={
+                              typeof sku?.stock === 'number' && Number.isFinite(sku.stock) ? sku.stock : null
+                            }
                             onChange={(v) =>
                               handleSkuChange(
                                 color.id,
