@@ -1,41 +1,53 @@
 // case_ids: PR-105
 /**
- * 商家可见文案**不得漏出 markdown 强调标记 `**`**（issue #5194，承 issue #5033）。
+ * 商家可见文案的 markdown 强调：**准写，但必须经 `@/lib/inline-markdown` 上屏**
+ * （issue #5194 **改判** —— 用户 2026-09-23 裁定「渲染」，本文件原判据「源码零 `**`」= #5206 的
+ * 「去掉标记」方案，同日被本条改判；`#5206` 只留其对菜单/余料台账那部分）。
  *
- * ## 病根（这类缺陷为什么以前没有任何东西会变红）
+ * ## 为什么改判（不是口味问题）
  *
- * 这些文案的渲染层是**纯文本插值、零 markdown 解析**（`{term.definition}` / `{p.copy.hint}` /
- * JSX 文本 / `toast.error('…')`）⇒ 文案里的 `**想加粗**` 会被**原样**印成字面星号，
- * 商家看到的是 `本域**每一项都直接改米数 = 改钱**` 这种噪声。
- * 而**静态测试发现不了**：DOM 里确实「含该串」，任何「含某文案」的断言照样绿
- * —— 属「判据看不见的用户可见缺陷」。
+ * 去标记能让星号消失，但**强调本身也没了** —— 商家看到的是没有层级的长散文；
+ * 而这些文案（算料口径 / 术语 / 余料口径）正是「哪几个字是重点」最需要被看见的地方。
+ * ⇒ 保留标记 + 渲染层解析成 `<strong>` / `<code>`（`@/lib/inline-markdown`，只认这两种行内标记）。
  *
- * 更早的实证（issue #5033）：只在**一处**面板顺手修掉、其余存量留在注释里（「断言整块
- * `textContent` 不含 `**` 会因那些存量而红（假红）」就是这个形态的**自我豁免**）。
- * 本守卫把「不变量」落到**全量源码面**上，替代那份口头登记。
+ * ## 判据分工（**DOM 面在别处**，本文件管**源码面**）
  *
- * ## 判据（三条，各自能单独变红）
+ * - **DOM 面**：`tests/unit/components/CraftCalcGlossary.test.tsx` /
+ *   `tests/unit/components/TenantParamsPanel.test.tsx` /
+ *   `tests/unit/pages/production-routings.test.tsx` —— 渲染后整块 `textContent` 不含 `**` 与反引号，
+ *   **且** `<strong>` / `<code>` 真的出现。🔴 两条必须同时有：只判「不含 `**`」的话，
+ *   把标记删掉（= #5206 的形态）同样绿 ⇒ 那是个**看不见强调丢失**的空判据。
+ * - **源码面（本文件）**：① 带标记的文件**必须登记**；② 登记项**必须接线**（消费它的渲染点 import
+ *   了渲染器）；③ 两边**陈旧即红**。⇒ 「新写一处带 `**` 的文案却忘了接渲染器」不会静默溜过，
+ *   而「把标记删回纯文本」会因 DOM 面的正控判红。
  *
- * ① **正控**：检测器对合成的坏样本（成对 `**x**` / 未闭合 `**x`）**必须报出** ——
- *    没有这条，「零违规」可能只是检测器瞎了（**空断言**）；
- * ② **负控**：手机号掩码 `'****'`、注释 / JSX 注释里的 `**` **不得**被判违规 ——
- *    面**不是**全文 grep 而是 AST（字符串字面量 / 模板静态段 / JSX 文本），注释天然在面外；
- * ③ **零违规**：`frontend/admin-web/src` + `frontend/worker-h5/src` 的真实源码零命中；
- *    另有一张**登记表**（掩码字面量），且**陈旧即红**（登记项在源码里消失 ⇒ 红，要求删条目）。
+ * ## 判据（各自能单独变红）
+ *
+ * ① **正控**：检测器对合成坏样本（成对 `**x**` / 未闭合 `**x` / JSX 文本 / 模板 head+tail）**必须报出**
+ *    —— 没有这条，「零未登记」可能只是检测器瞎了（**空断言**）；
+ * ② **负控**：手机号掩码 `'****'`、行/块/JSX 注释里的 `**` **不得**被判违规
+ *    （面是 AST 而非全文 grep：本仓注释惯例就是 markdown 写法，全文 grep 在 `frontend/` 报 500+ 命中）；
+ * ③ **未登记即红**：`frontend/admin-web/src` + `frontend/worker-h5/src` 里出现 `**` 的文件必须都在
+ *    登记表内 —— 新文件命中 ⇒ 红，逼你**当场决定**（接渲染器 + 登记，或把标记删掉再登记说明）；
+ * ④ **登记陈旧即红**：登记过的文件里若已无 `**` ⇒ 红（留着会让判据悄悄放宽）；
+ * ⑤ **接线即红/绿**：每个渲染点必须 `import … from '@/lib/inline-markdown'`（漏接 ⇒ 标记原样上屏）；
+ * ⑥ **掩码登记陈旧即红**（原 ④ 保留）。
  *
  * ## 红证（实测，非推理）
  *
- * 往 `src/lib/craft-calc-glossary.ts` 的一句 `impact` 里塞回 `**` ⇒ ③ 判红并打印
- * `文件:行` + 原文；删掉登记表里那一项所对应的掩码用法 ⇒ ④ 判红。见 PR body。
+ * - ③：往 `src/lib/inbound-orders`（**未登记**）的任一句文案塞 `**` ⇒ 判红并打印 `文件:行`；
+ * - ④：把 `src/lib/tenant-params.ts` 的 `**每一项都直接改米数 = 改钱**` 标记删掉 ⇒ 判红（登记陈旧）；
+ * - ⑤：从 `src/components/settings/RemnantItemSizesPanel.tsx` 删掉 `inline-markdown` 那行 import ⇒ 判红。
  *
  * ## 边界（如实登记）
  *
- * - 本守卫扫的是**源码字面量**，**不**判反射面：服务端下发的字符串（如余料 `notice`）
- *   若含 `**` 仍会上屏 —— 那一面不在本单范围（issue #5194 的穷举面就是 `frontend/`）；
+ * - 本守卫扫的是**源码字面量**，**不**判反射面：服务端下发的字符串（如余料 `notice`、
+ *   后端错误 message）若含 `**` 仍会上屏 —— 那一面不在本单范围（issue #5194 的穷举面 = `frontend/`）；
  * - 检测面**不含** `frontend/mini-app`：C 端助手消息经 `frontend/mini-app/src/utils/richText.ts`
- *   的 `parseRichText` **真的解析** `**x**`（那是既有渲染约定，不是泄漏），
- *   一律禁 `**` 会误伤它的掩码与正则字面量。
- * - 检测面**不含**各包的 `tests/`：用例标题里写 `**强调**` 是**自述**，不上屏。
+ *   的 `parseRichText` **真的解析** `**x**`（那是既有渲染约定，不是泄漏）；
+ * - 检测面**不含**各包的 `tests/`：用例标题里写 `**强调**` 是**自述**，不上屏；
+ * - **未实装**：不做「文案 source → 消费方」的静态映射（那要手写一张易腐的映射表）——
+ *   端到端上屏由 DOM 面的三处判据覆盖（覆盖的是本单改到的「算料 / 余料 / 参数总览」面）。
  */
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -45,8 +57,38 @@ import ts from 'typescript'
 /** 掩码字面量（**不是** markdown）：全星号串 —— 客户手机号脱敏用 */
 const MASK_ONLY = /^\*+$/
 
-/** 登记表：允许出现的 `**`（**逐字相等**，不是模式）—— 每一项都必须仍在源码里（陈旧即红，见 ④） */
+/** 掩码登记表：允许出现的 `**`（**逐字相等**，不是模式）—— 每一项都必须仍在源码里（陈旧即红，见 ⑥） */
 const REGISTERED = ['****'] as const
+
+/**
+ * **登记表**：允许在用户可见文案里写 markdown 标记的源文件（相对 `frontend/admin-web` 的路径）。
+ * 新文件命中 ③ ⇒ 要么接渲染器并登记，要么把标记删掉（并在此说明为什么不渲染）。
+ */
+const REGISTERED_MARKER_FILES = [
+  'src/lib/craft-calc-glossary.ts',
+  'src/lib/tenant-params.ts',
+  'src/components/production/CraftCalcGlossary.tsx',
+  'src/components/settings/TenantParamsPanel.tsx',
+  'src/components/settings/RemnantItemSizesPanel.tsx',
+  'src/components/settings/OversizeThresholdPreview.tsx',
+  'src/app/(dashboard)/production/remnants/page.tsx',
+  'src/app/(dashboard)/production/routings/page.tsx',
+] as const
+
+/**
+ * **接线表**：必须 import `@/lib/inline-markdown` 的渲染点（相对 `frontend/admin-web`）。
+ *
+ * 上面两个 `src/lib/*.ts` 是**数据模块**（没有 JSX），标记的渲染由消费它的这几个组件/页面负责
+ * ⇒ 漏接线 = 标记原样上屏（正是本单要修的缺陷形态）。
+ */
+const WIRED_FILES = [
+  'src/components/production/CraftCalcGlossary.tsx',
+  'src/components/settings/TenantParamsPanel.tsx',
+  'src/components/settings/RemnantItemSizesPanel.tsx',
+  'src/components/settings/OversizeThresholdPreview.tsx',
+  'src/app/(dashboard)/production/remnants/page.tsx',
+  'src/app/(dashboard)/production/routings/page.tsx',
+] as const
 
 interface Leak {
   file: string
@@ -124,8 +166,8 @@ function sourceFiles(dir: string): string[] {
   return out
 }
 
-describe('商家可见文案不得漏出 markdown 强调标记（issue #5194 / §22）', () => {
-  it('① 正控：检测器对成对与未闭合的 `**` 都必须报出（否则「零违规」是空断言）', () => {
+describe('文案里的 markdown 强调必须经渲染器上屏（issue #5194 改判 / §22）', () => {
+  it('① 正控：检测器对成对与未闭合的 `**` 都必须报出（否则「零未登记」是空断言）', () => {
     const src = [
       "const a = '有明细行未通过校验，**未建账**（一行都没写）'",
       "const b = '未闭合的 **星号也要报（商家照样看得见）'",
@@ -155,32 +197,42 @@ describe('商家可见文案不得漏出 markdown 强调标记（issue #5194 / �
     expect(findEmphasisLeaks('negative-control.tsx', src)).toEqual([])
   })
 
-  it('③ 真实源码面：零违规（红证 = 塞回一处 `**` ⇒ 本条判红并打印文件:行）', () => {
-    const files = SRC_DIRS.flatMap((d) => {
-      expect(
-        (() => {
-          try {
-            return readdirSync(d).length > 0
-          } catch {
-            return false
-          }
-        })(),
-        `扫描面不存在或为空：${d} —— 面消失时报绿等于判据失效（fail-closed）`,
-      ).toBe(true)
-      return sourceFiles(d)
-    })
-    // 实测 191 个文件（admin-web/src 185 + worker-h5/src 6，2026-09-23）；写 150 留余量，
-    // 但**不允许解析失灵 ⇒ 骤降**（面消失时报绿等于判据失效）。
-    expect(files.length, '扫描面文件数异常 ⇒ 判据在空集上恒真').toBeGreaterThan(150)
-
+  it('③ 未登记即红：带 `**` 的源文件必须都在登记表里（新命中 ⇒ 当场决定接渲染器还是删标记）', () => {
+    const files = scanFiles()
     const leaks = files.flatMap((f) => findEmphasisLeaks(relative(process.cwd(), f), readFileSync(f, 'utf-8')))
+    const unregistered = Array.from(new Set(leaks.map((l) => l.file))).filter(
+      (f) => !(REGISTERED_MARKER_FILES as readonly string[]).includes(f)
+    )
     expect(
-      leaks.map((l) => `${l.file}:${l.line} [${l.kind}] ${l.text}`),
-      '商家可见文案里仍有 markdown 强调标记 `**`（纯文本插值 ⇒ 原样上屏成字面星号）',
+      unregistered,
+      '这些文件的文案里出现了 markdown 标记 `**` 但**没有登记**：要么接 `@/lib/inline-markdown` 并登记，' +
+        '要么把标记删掉（删标记会丢掉强调 ⇒ 须在文件里说明理由）',
+    ).toEqual([])
+    // 自证非空：面里**确实**有带标记的文件（否则本条在空集上恒真）
+    expect(leaks.length).toBeGreaterThan(0)
+  })
+
+  it('④ 登记陈旧即红：登记过的文件里必须仍有 `**`（否则请删条目）', () => {
+    const sources = scanFiles().map((f) => ({ file: relative(process.cwd(), f), src: readFileSync(f, 'utf-8') }))
+    const stale = REGISTERED_MARKER_FILES.filter(
+      (f) => findEmphasisLeaks(f, sources.find((s) => s.file === f)?.src ?? '').length === 0
+    )
+    expect(
+      stale,
+      '登记表里的文件已不含 `**` ⇒ 条目陈旧（留着会让判据悄悄放宽），请从 REGISTERED_MARKER_FILES 删掉',
     ).toEqual([])
   })
 
-  it('④ 登记表陈旧即红：登记过的掩码字面量必须仍在源码里（否则请删条目）', () => {
+  it('⑤ 接线：每个渲染点都必须 import `@/lib/inline-markdown`（漏接 ⇒ 标记原样上屏）', () => {
+    const missing = WIRED_FILES.filter((f) => {
+      const src = readFileSync(join(process.cwd(), f), 'utf-8')
+      // 位置性证据：只看 import 语句（正文注释里提到模块名不算接线 —— 免得判据被自己的文案喂绿）
+      return !/^\s*import\s+\{[^}]*InlineMarkdown[^}]*\}\s+from\s+'@\/lib\/inline-markdown'/m.test(src)
+    })
+    expect(missing, '这些渲染点没接 `InlineMarkdown` ⇒ 文案里的标记会原样上屏').toEqual([])
+  })
+
+  it('⑥ 掩码登记表陈旧即红：登记过的掩码字面量必须仍在源码里（否则请删条目）', () => {
     const all = SRC_DIRS.flatMap((d) => sourceFiles(d).map((f) => readFileSync(f, 'utf-8'))).join('\n')
     const missing = REGISTERED.filter((m) => !all.includes(`'${m}'`))
     expect(
@@ -189,3 +241,24 @@ describe('商家可见文案不得漏出 markdown 强调标记（issue #5194 / �
     ).toEqual([])
   })
 })
+
+/** 扫描面（含 fail-closed 自检：面消失时报绿等于判据失效） */
+function scanFiles(): string[] {
+  const files = SRC_DIRS.flatMap((d) => {
+    expect(
+      (() => {
+        try {
+          return readdirSync(d).length > 0
+        } catch {
+          return false
+        }
+      })(),
+      `扫描面不存在或为空：${d} —— 面消失时报绿等于判据失效（fail-closed）`,
+    ).toBe(true)
+    return sourceFiles(d)
+  })
+  // 实测 191 个文件（admin-web/src 185 + worker-h5/src 6，2026-09-23）；写 150 留余量，
+  // 但**不允许解析失灵 ⇒ 骤降**（面消失时报绿等于判据失效）。
+  expect(files.length, '扫描面文件数异常 ⇒ 判据在空集上恒真').toBeGreaterThan(150)
+  return files
+}

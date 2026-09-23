@@ -30,6 +30,7 @@ import { AlertCircle, Check, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { remnantApi } from '@/lib/api'
 import { REMNANT_TERMS, glossaryRemnantAnchorOf } from '@/lib/craft-calc-glossary'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import type { ParamCopy } from '@/lib/tenant-params'
 import type { RemnantSpecsView } from '@/types'
 
@@ -128,7 +129,9 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-neutral-900">{copy.label}</span>
+            <span className="text-sm font-medium text-neutral-900">
+              <InlineMarkdown text={copy.label} />
+            </span>
             {!loading && !configured && (
               <span
                 data-testid="remnant-specs-unset"
@@ -146,7 +149,9 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
               </span>
             )}
           </div>
-          <p className="text-xs text-neutral-500 mt-1">{copy.hint}</p>
+          <p className="text-xs text-neutral-500 mt-1">
+            <InlineMarkdown text={copy.hint} />
+          </p>
         </div>
       </div>
 
@@ -252,7 +257,7 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         ))}
         {rows.length === 0 && !loading && (
           <p data-testid="remnant-specs-empty" className="text-xs text-neutral-500">
-            本企业还没有配置任何小件的用料尺寸 ⇒ 余料匹配不会产生建议（默认值为空 = 未启用）。
+            <InlineMarkdown text="本企业还没有配置任何小件的用料尺寸 ⇒ 余料匹配**不会**产生建议（默认值为空 = 未启用）。" />
           </p>
         )}
       </div>
@@ -289,7 +294,7 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
 
       {/* §22 P4 的护栏文案：本参数**不改钱** —— 明确说出来，而不是让商家猜 */}
       <p className="text-xs text-neutral-600 pt-2 border-t border-neutral-100">
-        改它会怎样：{copy.impact}
+        改它会怎样：<InlineMarkdown text={copy.impact} />
       </p>
 
       {/* ── §22 P5 术语说明（**就地**：锚点就在本面板里）── */}
@@ -304,10 +309,20 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
           >
             <span className="font-medium text-neutral-900">{term.name}</span>
             <span className="mx-1">·</span>
-            {term.definition}
-            {term.criterion && <span className="block text-neutral-500">判据：{term.criterion}</span>}
-            <span className="block text-neutral-500">影响：{term.impact}</span>
-            {term.boundary && <span className="block text-neutral-400">边界：{term.boundary}</span>}
+            <InlineMarkdown text={term.definition} />
+            {term.criterion && (
+              <span className="block text-neutral-500">
+                判据：<InlineMarkdown text={term.criterion} />
+              </span>
+            )}
+            <span className="block text-neutral-500">
+              影响：<InlineMarkdown text={term.impact} />
+            </span>
+            {term.boundary && (
+              <span className="block text-neutral-400">
+                边界：<InlineMarkdown text={term.boundary} />
+              </span>
+            )}
           </div>
         ))}
       </div>

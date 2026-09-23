@@ -144,14 +144,23 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     expect(container.querySelectorAll('summary').length).toBe(details.length)
   })
 
-  it('渲染结果里没有 markdown 强调标记 `**`（issue #5194：渲染层是纯文本插值 ⇒ 星号原样上屏）', () => {
+  it('文案里的 markdown 强调**渲染成元素**（加粗 / 等宽），裸标记不上屏（issue #5194 改判）', () => {
     const { container } = render(<CraftCalcGlossary config={CONFIG} />)
     const text = container.textContent ?? ''
     // 自证非空：空 DOM 上的「不含 **」是恒真断言（什么也没测）
     expect(text).toContain('术语怎么判')
     expect(text.length).toBeGreaterThan(200)
-    // 红证：把任一句 `definition` / `impact` / `boundary` 里的文案塞回 `**` ⇒ 本条判红
-    //（改前实测：本区块的 51 处文案里带 `**`，商家看到的是字面星号，不是加粗）
+    // 红证（改前实测 = 本条判红）：渲染层是纯文本插值 ⇒ `**净窗高**` 与 `` `oversize_height_threshold` ``
+    // 原样上屏成字面星号 / 反引号，商家看到的是噪声而不是加粗。
     expect(text).not.toContain('**')
+    expect(text).not.toContain('`')
+    // 🔴 **正控（必须与上一条同时成立）**：删掉文案里的标记同样能让「不含 **」变绿 ——
+    // 那是**丢掉强调**（#5206 的做法），不是本判据要的形态 ⇒ 必须另判「强调真的以元素呈现」。
+    const strong = Array.from(container.querySelectorAll('strong')).map((el) => el.textContent)
+    expect(strong).toContain('净窗高') // AUTO_FEATURE_TERMS.超高.definition
+    expect(strong).toContain('不改用料米数、也不改加工类型') // 同条 impact
+    const code = Array.from(container.querySelectorAll('code')).map((el) => el.textContent)
+    expect(code).toContain('oversize_height_threshold') // 超高 criterion
+    expect(code).toContain('HEM_MARGIN') // 标量参数表 impact
   })
 })

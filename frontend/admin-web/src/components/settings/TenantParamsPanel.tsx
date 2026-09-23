@@ -46,6 +46,7 @@ import {
 import type { AiConfig, CraftCalcConfigResponse } from '@/types'
 import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 
 export function TenantParamsPanel() {
   const [activeKey, setActiveKey] = useState<string>(PARAM_DOMAINS[0].key)
@@ -112,7 +113,9 @@ export function TenantParamsPanel() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-neutral-900">{p.copy.label}</span>
+            <span className="text-sm font-medium text-neutral-900">
+              <InlineMarkdown text={p.copy.label} />
+            </span>
             {usingDefault && (
               <span
                 data-testid={`param-unset-${p.key}`}
@@ -145,7 +148,9 @@ export function TenantParamsPanel() {
                 )
               })()}
           </div>
-          <p className="text-xs text-neutral-500 mt-1">{p.copy.hint}</p>
+          <p className="text-xs text-neutral-500 mt-1">
+            <InlineMarkdown text={p.copy.hint} />
+          </p>
         </div>
         <div className="text-right flex-shrink-0">
           <div data-testid={`param-value-${p.key}`} className="text-sm font-mono text-neutral-900">
@@ -155,7 +160,7 @@ export function TenantParamsPanel() {
         </div>
       </div>
       <p className="text-xs text-neutral-600 mt-2 pt-2 border-t border-neutral-100">
-        改它会怎样：{p.copy.impact}
+        改它会怎样：<InlineMarkdown text={p.copy.impact} />
       </p>
     </div>
   )
@@ -189,7 +194,7 @@ export function TenantParamsPanel() {
                     : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
                 }`}
               >
-                {d.label}
+                <InlineMarkdown text={d.label} />
                 {scalarCountOf(d) > 0 && (
                   <span className="ml-1 text-[11px] text-neutral-400">{scalarCountOf(d)}</span>
                 )}
@@ -200,8 +205,12 @@ export function TenantParamsPanel() {
 
         <div className="flex-1 min-w-0 space-y-4">
           <div className="bg-white border border-neutral-200 rounded-lg p-6">
-            <h3 className="text-base font-semibold text-neutral-900">{domain.label}</h3>
-            <p className="text-sm text-neutral-600 mt-1">{domain.summary}</p>
+            <h3 className="text-base font-semibold text-neutral-900">
+              <InlineMarkdown text={domain.label} />
+            </h3>
+            <p className="text-sm text-neutral-600 mt-1">
+              <InlineMarkdown text={domain.summary} />
+            </p>
 
             {domain.key === 'calc' && calcError && (
               <div
@@ -218,7 +227,7 @@ export function TenantParamsPanel() {
                 data-testid="param-calc-using-default"
                 className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2"
               >
-                本企业尚未保存过算料口径 —— 下表全部为算料引擎默认值。
+                <InlineMarkdown text="本企业尚未保存过算料口径 —— 下表**全部**为算料引擎默认值。" />
               </div>
             )}
 
@@ -229,8 +238,7 @@ export function TenantParamsPanel() {
                 data-testid="param-defaults-unavailable"
                 className="mt-3 text-xs text-neutral-600 bg-neutral-50 border border-neutral-200 rounded p-2"
               >
-                引擎默认值本次取不到 ⇒ 无法判断哪些参数被你改过。这不等于「都是默认值」，
-                也不影响你的配置本身（稍后重新打开本页即可再试）。
+                <InlineMarkdown text="引擎默认值本次取不到 ⇒ **无法判断哪些参数被你改过**。这不等于「都是默认值」，也不影响你的配置本身（稍后重新打开本页即可再试）。" />
               </div>
             )}
 
@@ -276,10 +284,14 @@ export function TenantParamsPanel() {
                     className="block border border-neutral-200 rounded-lg p-4 hover:border-primary-300"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-neutral-900">{r.label}</span>
+                      <span className="text-sm font-medium text-neutral-900">
+                        <InlineMarkdown text={r.label} />
+                      </span>
                       <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
                     </div>
-                    <p className="text-xs text-neutral-500 mt-1">{r.hint}</p>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      <InlineMarkdown text={r.hint} />
+                    </p>
                     <p className="text-xs text-neutral-600 mt-1">钱在哪：{r.money}</p>
                   </Link>
                 ))}
@@ -308,7 +320,7 @@ export function TenantParamsPanel() {
                   data-testid={`param-edit-${domain.key}`}
                   className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline"
                 >
-                  {domain.edit.label}
+                  <InlineMarkdown text={domain.edit.label} />
                   <ExternalLink className="w-3.5 h-3.5" />
                 </Link>
               </div>
