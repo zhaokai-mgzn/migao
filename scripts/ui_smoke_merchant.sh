@@ -9,16 +9,20 @@
 #   ./scripts/ui_smoke_merchant.sh --keep     # 跑完保留服务（排查用）
 #   ./scripts/ui_smoke_merchant.sh --group 0  # 只跑指定前缀旅程（如 --group 16-）
 # 环境：
-#   REPO_ROOT   仓库根（默认本仓库）；MAIN_REPO  主仓库（提供 node_modules/.venv，默认 ../migao）
+#   REPO_ROOT   仓库根（默认本仓库）；MAIN_REPO  主仓库（提供 .venv/.env/rsa 等 worktree 缺件，默认 ../migao）
 #   OUT_DIR     截图/报告输出（默认 <repo>/acceptance/2026-09-14/merchant-ui-smoke/out）
 #   PHONE/SMS_CODE  登录手机号/万能码（默认 13800138000/123456）
 # 服务：admin-api(:8090) + admin-web(:3001) + ai-agent(:8001，可选) —— 端口与 §2.3 隔离
+# 注意：本脚本需兼容 macOS 自带 bash 3.2 —— `$var` 后紧跟非 ASCII 字符会被并入变量名
+# （如 `$path（` → `path<0xE3>` 报 unbound variable，本机实测 exit 127），因此所有后跟中文的
+# 变量一律用 ${var} 显式包裹（同 scripts/dev-worktree.sh、scripts/sync-main.sh 的既有约定；
+# 判据 = tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py 的类级回归锁）。
 # ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-# 主仓库（有 node_modules/.venv）：默认取兄弟目录 migao（worktree 部署形态）
+# 主仓库（有 .venv、gitignored 的 .env/rsa 等）：默认取兄弟目录 migao（worktree 部署形态）
 MAIN_REPO="${MAIN_REPO:-$(dirname "$REPO_ROOT")/migao}"
 [ -d "$MAIN_REPO" ] || MAIN_REPO="$REPO_ROOT"
 
@@ -43,14 +47,34 @@ mkdir -p "$OUT_DIR"
 echo "==> MIGAO 商家后端冒烟（31 旅程）"
 echo "    repo=$REPO_ROOT main=$MAIN_REPO out=$OUT_DIR"
 
-# ── 1. 依赖准备：worktree 形态下 node_modules/.venv 不在本仓库 → 软链主仓库 ──
-if [ ! -e "$REPO_ROOT/frontend/admin-web/node_modules" ] && [ -d "$MAIN_REPO/frontend/admin-web/node_modules" ]; then
-  ln -sfn "$MAIN_REPO/frontend/admin-web/node_modules" "$REPO_ROOT/frontend/admin-web/node_modules"
-  echo "  [prep] admin-web node_modules -> $MAIN_REPO/frontend/admin-web/node_modules"
+# ── 1. 依赖准备：worktree 形态下 node_modules/.venv 不在本仓库 → 真装（禁止软链）──
+# ⚠️ 不得把主仓库的 node_modules 软链进来（issue #5241）：Next 16 的 dev 默认走 Turbopack，
+#    它拒绝指向**项目根之外**的 node_modules 软链 ⇒ `next dev` 先打印 `✓ Ready` 再 FATAL：
+#      Error [TurbopackInternalError]: Symlink [project]/node_modules is invalid,
+#      it points out of the filesystem root
+#    而下面的健康检查是 curl :3001/login（45×2s）⇒ 90s 后才报「admin-web 启动失败（见日志）」：
+#    文案把人指向日志，根因却在 bundler。⇒ worktree 形态**真装**（复用 npm 全局缓存：--prefer-offline），
+#    与 CI / 生产同一条 Turbopack 路径 —— 不用 `--webpack` 绕（那是另一条 bundler，保真度不同）。
+NPM_BIN="${NPM_BIN:-npm}"
+ADMIN_WEB_DIR="$REPO_ROOT/frontend/admin-web"
+# 旧版脚本留在存量 worktree 里的根外软链：Turbopack 照样判死 ⇒ 先摘掉（自愈）再真装。
+# `rm -f` 只摘软链本身、不跟随目标（主仓库 node_modules 不受影响）。
+if [ -L "$ADMIN_WEB_DIR/node_modules" ]; then
+  echo "  [prep] 摘除 node_modules 软链（-> $(readlink "$ADMIN_WEB_DIR/node_modules")；Turbopack 拒绝根外软链）"
+  rm -f "$ADMIN_WEB_DIR/node_modules"
 fi
-if [ ! -e "$REPO_ROOT/frontend/mini-app/node_modules" ] && [ -d "$MAIN_REPO/frontend/mini-app/node_modules" ]; then
-  ln -sfn "$MAIN_REPO/frontend/mini-app/node_modules" "$REPO_ROOT/frontend/mini-app/node_modules"
+if [ ! -d "$ADMIN_WEB_DIR/node_modules" ]; then
+  echo "  [prep] admin-web 依赖缺失 → 真装（$NPM_BIN ci --prefer-offline；首次几分钟，之后命中 npm 缓存）"
+  if ! ( cd "$ADMIN_WEB_DIR" && "$NPM_BIN" ci --no-audit --no-fund --prefer-offline ); then
+    echo "  ✗ admin-web 依赖安装失败：${ADMIN_WEB_DIR}（${NPM_BIN} ci）"
+    echo "    ⇒ 不要退回「软链主仓库 node_modules」：Turbopack 必 FATAL（issue #5241）"
+    echo "      Symlink [project]/node_modules is invalid, it points out of the filesystem root"
+    exit 1
+  fi
 fi
+# 注：本脚本不碰 frontend/mini-app 的依赖 —— 本冒烟只跑 admin-web 的 31 旅程（spec.mjs 无 mini-app
+#     消费方），旧版这里也给 mini-app 软链主仓库 node_modules，属同形态的死代码（issue #5241）⇒ 删除。
+#     将来真要在 worktree 里跑 mini-app，按上面 admin-web 同法真装（Taro 不走 Turbopack，但软链同样无收益）。
 # admin-api 本地密钥/gitignored 文件补齐（worktree 形态）
 if [ ! -f "$REPO_ROOT/backend/admin-api/.env" ] && [ -f "$MAIN_REPO/backend/admin-api/.env" ]; then
   cp "$MAIN_REPO/backend/admin-api/.env" "$REPO_ROOT/backend/admin-api/.env"
@@ -133,7 +157,7 @@ PHONE="$PHONE" SMS_CODE="$SMS_CODE" \
 node "$SCRIPT_DIR/ui-smoke-merchant/spec.mjs" "${EXTRA_ARGS[@]}" 2>&1 | tee "$LOG"
 EXIT=${PIPESTATUS[0]}
 set -e
-echo "==> spec 退出码: $EXIT（0=全绿；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
+echo "==> spec 退出码: ${EXIT}（0=全绿；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
 
 # ── 5. 停栈（默认）──
 if [ "$KEEP" = "1" ]; then
