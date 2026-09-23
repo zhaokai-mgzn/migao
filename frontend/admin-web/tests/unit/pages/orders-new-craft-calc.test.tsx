@@ -4,6 +4,10 @@
 // （下单页算料试算接线：褶数法自动算 + 公式串 + 四条 fail-closed）。
 // 改用 **OR-036**（本 PR 新增，判据即本文件 + craft-calc-request.test.ts）。
 // @vitest-environment jsdom
+// ⚠️ issue #5202（下单页数字输入框修「打不出 `0.`」）：改用保留原始文本的实现
+// （`page.tsx::NumberField`，`type="number"` → `type="text" inputMode="decimal"` 才会留住 `0.` 这种中间态）
+// ⇒ 本文件里针对这些框的 `toHaveValue(<数字>)` 期望值改为**字符串形**。
+// **断言强度一字未变**（还是同一个值），改的只是 jest-dom 对文本输入框的类型口径。
 /**
  * 下单页「算料试算」接线（issue #4434 · 前置 #4421）。
  *
@@ -178,7 +182,7 @@ describe('下单页算料试算接线（#4434）', () => {
       craft_tier: 'standard',
     })
 
-    await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
     // 公式串**原样渲染后端产出**（前端不得自拼）
     expect(screen.getByText(/0\.25×52\+0\.3 = 13\.3米/)).toBeInTheDocument()
   })
@@ -188,7 +192,7 @@ describe('下单页算料试算接线（#4434）', () => {
     await pickProduct()
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-    await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
     mockCraftCalcPreview.mockResolvedValue({
       data: {
@@ -202,7 +206,7 @@ describe('下单页算料试算接线（#4434）', () => {
     })
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
 
-    await waitFor(() => expect(qtyInput()).toHaveValue(9.8))
+    await waitFor(() => expect(qtyInput()).toHaveValue('9.8'))
     expect(screen.getByText(/= 9\.8米/)).toBeInTheDocument()
   })
 
@@ -211,11 +215,11 @@ describe('下单页算料试算接线（#4434）', () => {
     await pickProduct()
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-    await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
     // 商家手改（真值源 §8：用料必须带来源）
     fireEvent.change(qtyInput(), { target: { value: '20' } })
-    expect(qtyInput()).toHaveValue(20)
+    expect(qtyInput()).toHaveValue('20')
     expect(screen.getByText('人工指定')).toBeInTheDocument()
 
     // 再改宽：**不得**触发试算覆盖手工值
@@ -223,7 +227,7 @@ describe('下单页算料试算接线（#4434）', () => {
     // 负向断言没有可等的元素 ⇒ 等一个短窗口后确认请求数没涨、值没被改
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1)
-    expect(qtyInput()).toHaveValue(20)
+    expect(qtyInput()).toHaveValue('20')
   })
 
   it('判据 4：点「恢复按公式计算」⇒ 显式切回并重新预填（唯一的回切通道）', async () => {
@@ -231,13 +235,13 @@ describe('下单页算料试算接线（#4434）', () => {
     await pickProduct()
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-    await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
     fireEvent.change(qtyInput(), { target: { value: '20' } })
     fireEvent.click(screen.getByRole('button', { name: '恢复按公式计算' }))
 
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
   })
 
   it('判据 5（红证）：试算失败 ⇒ 行内显式提示，数量保持原样（不退回估算值）', async () => {
@@ -255,7 +259,7 @@ describe('下单页算料试算接线（#4434）', () => {
       expect(screen.getByText(/算料试算失败.*拼3次/)).toBeInTheDocument()
     )
     // 数量保持原样（默认 1）—— **绝不**静默估一个米数
-    expect(qtyInput()).toHaveValue(1)
+    expect(qtyInput()).toHaveValue('1')
   })
 
   it('判据 6：参数不全（只有宽没有高）⇒ **不发请求**（不得用默认窗宽猜米数）', async () => {
@@ -265,7 +269,7 @@ describe('下单页算料试算接线（#4434）', () => {
     // 负向断言：等过防抖窗口后确认一次请求都没发
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).not.toHaveBeenCalled()
-    expect(qtyInput()).toHaveValue(1)
+    expect(qtyInput()).toHaveValue('1')
   })
 
   it('#4527 打孔 ⇒ **照常发请求**且走倍数法（eyelet + fullness）——「打孔按倍数法算布料」必须在页面上真的发生', async () => {
@@ -354,7 +358,7 @@ describe('下单页算料试算接线（#4434）', () => {
       await pickProduct()
       fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
       fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-      await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+      await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
       await submitOrder()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
 

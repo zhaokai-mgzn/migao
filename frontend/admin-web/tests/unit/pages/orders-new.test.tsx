@@ -1,6 +1,10 @@
 // case_ids: OR-009, OR-014, UI-038, CU-009, OR-038, OR-035
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
+// ⚠️ issue #5202（下单页数字输入框修「打不出 `0.`」）：改用保留原始文本的实现
+// （`page.tsx::NumberField`，`type="number"` → `type="text" inputMode="decimal"` 才会留住 `0.` 这种中间态）
+// ⇒ 本文件里针对这些框的 `toHaveValue(<数字>)` 期望值改为**字符串形**。
+// **断言强度一字未变**（还是同一个值），改的只是 jest-dom 对文本输入框的类型口径。
 // OR-035（工艺规格写侧录入）：#4566 起 `craft` / `isShaped` 的写侧真值来源搬到**加工项**
 // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态）⇒ 本文件的 #4566 组
 // 即该用例「写侧录入」判据的新承载（原「工艺 / 是否定型 chips」判据随控件退场改判）。
@@ -243,7 +247,7 @@ describe('NewOrderPage', () => {
     openWizardStep('尺寸与数量')
     const qtyLabel = await screen.findByText('用料米数')
     const qtyInput = qtyLabel.closest('div')!.querySelector('input') as HTMLInputElement
-    expect(qtyInput).toHaveValue(1)
+    expect(qtyInput).toHaveValue('1')
 
     // 清空 → 输入框为空（不再被强改回 1）
     fireEvent.change(qtyInput, { target: { value: '' } })
@@ -251,11 +255,11 @@ describe('NewOrderPage', () => {
 
     // 重新输入整数
     fireEvent.change(qtyInput, { target: { value: '3' } })
-    expect(qtyInput).toHaveValue(3)
+    expect(qtyInput).toHaveValue('3')
 
     // 按米销售支持小数（2.5 米）
     fireEvent.change(qtyInput, { target: { value: '2.5' } })
-    expect(qtyInput).toHaveValue(2.5)
+    expect(qtyInput).toHaveValue('2.5')
   })
 
   // ===== OR-014：加工项数量自动推导 =====

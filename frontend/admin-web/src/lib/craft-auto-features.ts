@@ -122,6 +122,45 @@ export function parseDoorWidth(doorWidth: unknown): number | null {
 }
 
 /**
+ * **生效加工类型的单点**（issue #5202 收敛；契约 #5200 §四）—— 优先级：
+ * ① **商家显式选过**（`explicit` 有值 ⇒ 人工覆盖优先，规则永不改判）
+ * → ② **`data.plan.cutting_mode`**（算料引擎的推导 —— 新管线的唯一真值面）
+ * → ③ `door-width-plan` 的 `effective_cutting_mode`（几何规则面 —— 老端点，
+ *    **不删不改口径**：它另有无头消费者；这里只是把它降到 plan 之后）
+ * → ④ `defaultValue`（**默认档兜底**：`createDefaultCraftSpec()` 写的 `定高买宽` ——
+ *    它**不是**商家的选择，只是一个兜底值；旧行为里它直接进落库，故保留为**最弱**一档，
+ *    否则「没有任何推导可用」时落库会从「定高买宽」变成「不写该键」= 静默回归）
+ * → ⑤ `undefined`（**不猜**）。
+ *
+ * 🔴 **为什么必须收敛成一个取值点**：加工类型有四处消费者 ——
+ * 页面 chips 显示 / `/auto-features` 的「倒幅」判定 / `/craft-calc` 的用料 / 落库
+ * `processingInfo.cuttingMode`。四处各读各的 ⇒ 会出现「界面写着倒幅、用料按定高买宽算、
+ * 库里落另一个」（本仓反复复发的形态；同族守卫 = 门幅真值源 `tests/unit_ci_workflows/
+ * test_fabric_width_truth_source.py`）。下单页只经 `cuttingModeOf()` 调用本函数。
+ *
+ * ⚠️ `explicit` 必须由调用方用**留痕位**（下单页 `cuttingModeTouched`）给出：默认档也在
+ * `craft.cuttingMode` 里，只按「有值」判断会把它误当人工选择 ⇒ 推导被默认档恒顶掉。
+ */
+export function effectiveCuttingModeOf(input: {
+  explicit?: string | null
+  plan?: { cutting_mode?: string | null } | null
+  doorWidthPlan?: { effective_cutting_mode?: string | null } | null
+  defaultValue?: string | null
+}): string | undefined {
+  const ordered = [
+    input.explicit,
+    input.plan?.cutting_mode,
+    input.doorWidthPlan?.effective_cutting_mode,
+    input.defaultValue,
+  ]
+  for (const candidate of ordered) {
+    const value = typeof candidate === 'string' ? candidate.trim() : ''
+    if (value !== '') return value
+  }
+  return undefined
+}
+
+/**
  * 加工类型 `定高买宽`
  *
  * 🔴 **原注释「**高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高`」已于 2026-09-22

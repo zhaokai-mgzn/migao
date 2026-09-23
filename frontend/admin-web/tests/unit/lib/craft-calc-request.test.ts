@@ -17,13 +17,21 @@ import {
   CRAFT_CALC_FORMULA_FULLNESS,
   CRAFT_CALC_FORMULA_PLEAT,
   CRAFT_CALC_MOUNTING,
+  CRAFT_CALC_MOUNTING_BY_CRAFT,
   CRAFT_CALC_TIER,
+  CRAFT_PLAN_CANDIDATE_LABELS,
+  DEFAULT_CRAFT_NAME,
+  JOIN_GAP_MAX_METERS,
   METERS_SOURCE_FORMULA,
   METERS_SOURCE_MANUAL,
   craftCalcErrorText,
   craftCalcParamsOf,
   craftCalcSignature,
+  craftPlanCandidateLabel,
+  craftPlanHasSplice,
+  craftPlanSpliceText,
   isAutoCalcUnavailable,
+  joinGapOf,
 } from '@/lib/craft-calc-request'
 import { CURTAIN_TYPE_SHEER } from '@/lib/order-craft-fields'
 
@@ -254,5 +262,117 @@ describe('对花 / 花距进算料入参（issue #4572）', () => {
     const off = craftCalcSignature(craftCalcParamsOf(line({ craft: {} })))
     expect(base).not.toBe(other)
     expect(base).not.toBe(off)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// issue #5202（母单 #5200 子单 C）：门幅 / 人工覆盖 / 人工加（拼次·接高·接宽）与推导方案展示
+// ══════════════════════════════════════════════════════════════════════════
+describe('#5202 门幅进试算入参（根因 1：签名漏项 ⇒ effect 不触发 ⇒ 静默停在旧数）', () => {
+  it('带 `fabricWidth` ⇒ 请求带 `fabric_width`（引擎按 SKU 门幅算分幅与定高可行性）', () => {
+    expect(craftCalcParamsOf(line({ fabricWidth: 2.8 }))?.fabric_width).toBe(2.8)
+  })
+
+  it('门幅解析不到（`null`）/ 非正数 ⇒ **不发该键**（#4877 没有缺省门幅，不猜）', () => {
+    expect(craftCalcParamsOf(line({ fabricWidth: null }))?.fabric_width).toBeUndefined()
+    expect(craftCalcParamsOf(line({ fabricWidth: 0 }))?.fabric_width).toBeUndefined()
+    expect(craftCalcParamsOf(line({ fabricWidth: Number.NaN }))?.fabric_width).toBeUndefined()
+  })
+
+  it('改门幅 / 改加工类型 ⇒ **签名必须变**（否则改了它不重算 —— 这就是用户报的「联动死板」）', () => {
+    const base = craftCalcSignature(craftCalcParamsOf(line({ fabricWidth: 2.8 })))
+    const wider = craftCalcSignature(craftCalcParamsOf(line({ fabricWidth: 3.2 })))
+    const mode = craftCalcSignature(
+      craftCalcParamsOf(line({ fabricWidth: 2.8, cuttingModeOverride: '定宽买高' }))
+    )
+    expect(base).not.toBe(wider)
+    expect(base).not.toBe(mode)
+  })
+
+  it('加工类型是**人工覆盖**语义：只在显式传入时才带（自动档不带 ⇒ 服务端才能给 `auto=true` 的推导）', () => {
+    expect(craftCalcParamsOf(line())?.cutting_mode).toBeUndefined()
+    expect(craftCalcParamsOf(line({ cuttingModeOverride: '定宽买高' }))?.cutting_mode).toBe(
+      '定宽买高'
+    )
+    // 空串 / 纯空白 = 未指定（不落一个空键）
+    expect(craftCalcParamsOf(line({ cuttingModeOverride: '  ' }))?.cutting_mode).toBeUndefined()
+  })
+})
+
+describe('#5202 人工加接高 / 接宽：0 < x ≤ 0.1（契约 #5200 §三 R1），越界一律不发', () => {
+  it('上限内 ⇒ 发对应键；等于上限（0.1）⇒ 也算合法（「最多 0.1 米」含 0.1）', () => {
+    const params = craftCalcParamsOf(
+      line({ planOverrides: { joinHeightM: 0.1, joinWidthM: 0.05 } })
+    )
+    expect(params?.join_height_m).toBe(0.1)
+    expect(params?.join_width_m).toBe(0.05)
+  })
+
+  it('超限 / 0 / 负数 / 非数 ⇒ **不发该键**（fail-closed：不发必然 422 的值，也**不静默截断成上限**）', () => {
+    expect(joinGapOf(0.2)).toBeNull()
+    expect(joinGapOf(JOIN_GAP_MAX_METERS + 0.0001)).toBeNull()
+    expect(joinGapOf(0)).toBeNull()
+    expect(joinGapOf(-0.05)).toBeNull()
+    expect(joinGapOf('')).toBeNull()
+    expect(joinGapOf(undefined)).toBeNull()
+    const params = craftCalcParamsOf(
+      line({ planOverrides: { joinHeightM: 0.2, joinWidthM: -1 } })
+    )
+    expect(params?.join_height_m).toBeUndefined()
+    expect(params?.join_width_m).toBeUndefined()
+  })
+
+  it('拼次人工覆盖：0~3 才发（R5：≥4 **不发明**「拼4次」，超范围一律不发）', () => {
+    expect(craftCalcParamsOf(line({ planOverrides: { spliceTimes: 2 } }))?.splice_times).toBe(2)
+    expect(craftCalcParamsOf(line({ planOverrides: { spliceTimes: 0 } }))?.splice_times).toBe(0)
+    expect(
+      craftCalcParamsOf(line({ planOverrides: { spliceTimes: 4 } }))?.splice_times
+    ).toBeUndefined()
+    expect(
+      craftCalcParamsOf(line({ planOverrides: { spliceTimes: -1 } }))?.splice_times
+    ).toBeUndefined()
+  })
+
+  it('人工加也进签名（改了它必须重算，否则页面停在旧米数）', () => {
+    const base = craftCalcSignature(craftCalcParamsOf(line()))
+    const spliced = craftCalcSignature(
+      craftCalcParamsOf(line({ planOverrides: { spliceTimes: 1 } }))
+    )
+    const joined = craftCalcSignature(
+      craftCalcParamsOf(line({ planOverrides: { joinHeightM: 0.1 } }))
+    )
+    expect(base).not.toBe(spliced)
+    expect(base).not.toBe(joined)
+  })
+})
+
+describe('#5202 推导方案（`data.plan`）的**展示**口径 —— 前端只渲染，不推导', () => {
+  it('拼次文案：1/2/3 ⇒ 服务端选项名；0 ⇒ 不拼接；≥4 ⇒ 数字 + 需人工处理（**不发明「拼4次」**）', () => {
+    expect(craftPlanSpliceText({ splice_times: 2, splice_option: '拼2次' })).toBe('拼2次')
+    expect(craftPlanSpliceText({ splice_times: 0, splice_option: null })).toBe('不拼接')
+    expect(craftPlanSpliceText({ splice_times: 3, splice_option: null })).toBe('拼3次')
+    const many = craftPlanSpliceText({ splice_times: 4, splice_option: null })
+    expect(many).toContain('4')
+    expect(many).toContain('人工处理')
+    expect(many).not.toContain('拼4次')
+    // 缺 plan ⇒ 不拼（不是「未知」）
+    expect(craftPlanSpliceText(null)).toBe('不拼接')
+  })
+
+  it('R4 判据（有没有拼接）：`≥1` ⇒ true（款式冲突由页面按 `STYLE_MIXED` 判定，本函数不碰款式真值）', () => {
+    expect(craftPlanHasSplice({ splice_times: 1 })).toBe(true)
+    expect(craftPlanHasSplice({ splice_times: 0 })).toBe(false)
+    expect(craftPlanHasSplice(null)).toBe(false)
+  })
+
+  it('候选方案名：**键名冻结于契约 #5200 §三**；未登记的键原样显示键名（不编中文名）', () => {
+    expect(craftPlanCandidateLabel('fixed_width_join_width')).toBe('倒幅 + 接宽')
+    expect(craftPlanCandidateLabel('fixed_width_join_height')).toBe('倒幅 + 接高')
+    expect(craftPlanCandidateLabel('brand_new_key')).toBe('brand_new_key')
+    expect(Object.keys(CRAFT_PLAN_CANDIDATE_LABELS)).toHaveLength(5)
+  })
+
+  it('工艺默认名与映射表同源（工艺**不在** `plan` 里，页面只能标「系统默认 · 可改」）', () => {
+    expect(CRAFT_CALC_MOUNTING_BY_CRAFT[DEFAULT_CRAFT_NAME]).toBe(CRAFT_CALC_MOUNTING)
   })
 })
