@@ -8,6 +8,7 @@ import LogisticsCard from '../cards/LogisticsCard'
 import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
 import ProductionProgressCard from '../cards/ProductionProgressCard'
+import BatchStockCard from '../cards/BatchStockCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -110,6 +111,12 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     case 'production_progress': {
       // 生产进度卡（#4016 P14，用户 2026-09-18 裁定补发射点；与 C 端同族组件）
       return <ProductionProgressCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'batch_stock': {
+      // 批次账 / 省料度量卡（issue #5188）。该工具只绑米宝 Skill（`product:list` 门禁 ⇒
+      // C 端恒不可达）⇒ 按 persona 推导只需 B 端两端渲染（本端 + admin-web 桌面）。
+      return <BatchStockCard key={`card-${idx}`} data={data} />
     }
 
     default:

@@ -7241,6 +7241,63 @@ _CASE_PR_099 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-100 [NORMAL] 米宝查批次余量 / 「快用尽」批次（按物料 / 批次号 / 缸号）（源: cases/product.yml）──
+_CASE_PR_100 = EvalCase(
+    id='PR-100',
+    legacy_id='',
+    title='米宝查批次余量 / 「快用尽」批次（按物料 / 批次号 / 缸号）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['哪些批次快用尽了？还剩多少米'],
+    expectations=['batch_stock_query'],
+    data_checks=['商家问「哪些批次快用尽了」→ batch_stock_query(action=batches, nearly_used_up=true) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）', '口径同源·档位：「快用尽」= 服务端剩余量分布**第一档**（`le_0_2`），工具不得自定阈值；**负余量（超扣）也在该档内**，不得用 `onlyAvailable` 把它剔掉（剔掉就是第二份口径）。同夹具判据：工具回的行集 == `distribution` 第一档的 `batchCount`', '读数一律取 `/api/admin/batch-stock/batches` 读面（余量是服务端派生值 = 入库量 + Σ消耗）；agent 侧不得自己算「入库 − 消耗」', '空结果如实回「**无数据**」（不得回 0、不得编造批次号）；缺 `product:list` 时如实说明「这是权限限制、不要重试」并指向管理后台授权路径'],
+    skip_reason='',
+    tags=['mibao', 'batch-ledger', 'saving-metrics', 'agent-tool'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'batch_stock_query'}],
+)
+
+# ── PR-101 [NORMAL] 米宝查剩余量四档分布（档位文案取服务端 label，不自写数字）（源: cases/product.yml）──
+_CASE_PR_101 = EvalCase(
+    id='PR-101',
+    legacy_id='',
+    title='米宝查剩余量四档分布（档位文案取服务端 label，不自写数字）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现在剩料是什么分布？有多少批次快用完了'],
+    expectations=['batch_stock_query'],
+    data_checks=['商家问剩料分布 → batch_stock_query(action=distribution) 被调用且**成功**返回（`must_succeed`）', '四档（`le_0_2` / `b0_2_0_5` / `b0_5_1` / `gt_1`）的 key / label / batchCount / share **全部原样透传**服务端 `GET /api/admin/batch-stock/distribution`（工具只做选择性透传，不重新分档）', '档位文案**取自服务端 `buckets[].label`**（§22 基线纪律①：文案里不出现数字，数值由真值渲染）；工具与前端都不得硬编码「≤0.2 米」这类档位文字', '空数据（`totalBatches = 0`）⇒ 文案回「**无数据**」；计数 0 是事实可保留，但**不得**把读不出的比率说成 0'],
+    skip_reason='',
+    tags=['mibao', 'batch-ledger', 'saving-metrics', 'agent-tool'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'batch_stock_query'}],
+)
+
+# ── PR-102 [NORMAL] 米宝答「这个月省了多少料 / 省了多少钱」—— 🔴 与省料看板读面逐值相等（不另算一份）（源: cases/product.yml）──
+_CASE_PR_102 = EvalCase(
+    id='PR-102',
+    legacy_id='',
+    title='米宝答「这个月省了多少料 / 省了多少钱」—— 🔴 与省料看板读面逐值相等（不另算一份）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我这个月省了多少料？省了多少钱'],
+    expectations=['batch_stock_query'],
+    data_checks=['商家问省料 → batch_stock_query(action=saving_board) 被调用且**成功**返回（`must_succeed`）', '🔴 判据 2·**口径同源（逐值相等）**：工具回的 `savedMeters` / `savedAmount` / `formulaMeters` / `plannedMeters` / `le0_2Share` / `remainingMeters` 与 `GET /api/admin/batch-stock/saving-board` 的读数**逐值相等**（逐来源组 + 逐分组 + total 三处都比）。**红证 = 在 agent 侧重算**：夹具刻意取「逐行取整再求和 ≠ 整段求和再取整」的账（读面 24.68，朴素重算 24.67）⇒ 重算实现当场红', '存量导入**单列**：`opening` 组的省料/余量与「切换后（采购入库）」**并列而不相加**（工具沿用服务端 `cohortLabel`，不自造分组文案）', '判据 5·**空数据不冒充 0**：`lineCount = 0` 的组与空租户 ⇒ `savedMeters` / `savedAmount` / `le0_2Share` 一律 `null`，文案回「**无数据**」、**不得出现 `0%` / `0 米`**（0 会被读成「没有浪费」）；未记均价的行数以「另有 N 行没有均价」显式说明', '判据 4·**只读无副作用**：工具源码里没有任何写调用（无 `post/put/patch/delete`），运行期四个 action 各跑一次后写方法**零调用**；不改任何对客金额/售价/成品口径（判据 6）'],
+    skip_reason='',
+    tags=['mibao', 'batch-ledger', 'saving-metrics', 'agent-tool'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'batch_stock_query'}],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8867,6 +8924,9 @@ ALL_CASES = (
     _CASE_PR_097,
     _CASE_PR_098,
     _CASE_PR_099,
+    _CASE_PR_100,
+    _CASE_PR_101,
+    _CASE_PR_102,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

@@ -1,0 +1,64 @@
+.batch-stock-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 8px;
+    font-size: 22px;
+    color: #9ca3af;
+  }
+
+  &__group {
+    display: block;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  &__group-title {
+    display: block;
+    font-size: 24px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+  }
+
+  &__label {
+    font-size: 24px;
+    color: #6b7280;
+  }
+
+  &__value {
+    font-size: 24px;
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  &__empty {
+    display: block;
+    margin-top: 16px;
+    font-size: 24px;
+    color: #9ca3af;
+  }
+}

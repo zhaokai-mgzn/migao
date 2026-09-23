@@ -514,6 +514,12 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         # 裁定走「补发射点」：`payment_qrcode_query` 返回的 `data` 正是卡载荷
         # （{"payment_qrcodes": {"wechat": {...}, "alipay": {...}}}，见该工具 execute 返回段）。
         return "payment"
+    elif tool_name == "batch_stock_query":
+        # 批次账 / 省料度量卡（issue #5188）。工具返回的 `data` 就是卡载荷：
+        # 四个 action 各自带 `action` 判别键 + **服务端读面原样透传**
+        # （batches：批次行；distribution：四档；saving_board / saving_trend：
+        # 省料度量），前端按 `action` 分支渲染，不重算任何米数/金额/占比。
+        return "batch_stock"
     return None
 
 
@@ -583,6 +589,14 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "payment_qrcode_query":
         data = result.get("data", {})
         return isinstance(data, dict) and len(data) > 0
+
+    # 批次 / 省料卡（issue #5188 补发射点）
+    # 判据 = **工具契约事实**：`batch_stock_query` 成功时 `data` 必带 `action` 判别键
+    # （四个 action 都有；失败走 success=False，见该工具 execute）——**空结果也要发卡**：
+    # 「无数据」是合法答案，且必须看得见（判据 5：无数据不冒充 0，也不许静默什么都不显示）。
+    if tool_name == "batch_stock_query":
+        data = result.get("data", {})
+        return isinstance(data, dict) and bool(data.get("action"))
 
     return False
 

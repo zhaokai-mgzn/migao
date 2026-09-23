@@ -177,10 +177,10 @@ class TestPersonaBoundaryIsHard:
         assert not leaks, "persona 硬边界被只读共享打破：\n  " + "\n  ".join(leaks)
 
     def test_witness_b_end_only_readonly_tools_never_reach_c_end_domains(self):
-        """见证（现算，不抄清单）：B 端专属**只读**工具 **6** 把，C 端域一个都不许有。
+        """见证（现算，不抄清单）：B 端专属**只读**工具 **7** 把，C 端域一个都不许有。
 
-        这 6 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
-        全局并只读 ⇒ C 端当场多出这 6 个越权查询面。
+        这 7 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
+        全局并只读 ⇒ C 端当场多出这 7 个越权查询面。
 
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
@@ -191,17 +191,25 @@ class TestPersonaBoundaryIsHard:
         **判据由 `<=` 收紧为 `==`**（增强，不是放宽）：原 `<=` 只要求「清单里那几把都在」，
         于是**清单写错（多写一把已共有的工具）时它照样绿** —— 本次实测的漂移正是这种形态。
         改为**集合相等**后，任何一把进出都必须在本见证里显式留痕。
+
+        🔴 **2026-09-23 改判（issue #5188 进场，实测）**：新增 `batch_stock_query`
+        （批次余量 / 剩余量分布 / 省料度量；声明 `product:list` ⇒ C 端恒不可达，
+        且批次成本与省料金额是内部口径）⇒ 6 → **7**。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
             f"persona 家族集不含 mibao/xiaobu（实测 {sorted(by_persona)}）—— 见证指错对象")
         b_only_readonly = (by_persona["mibao"] - by_persona["xiaobu"]) & _read_only_names()
         assert b_only_readonly == {
+            # issue #5188：批次账 / 省料度量（声明 `product:list` ⇒ C 端恒不可达；
+            # 含批次成本与省料金额，属内部口径）
+            "batch_stock_query",
             "dashboard_stats", "logistics_track", "order_query", "piecework_query",
             "processing_order_query", "production_worklog_query",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（6 把）不等，口径漂移"
-            "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 改判说明）")
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（7 把）不等，口径漂移"
+            "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 改判说明"
+            "与 2026-09-23 的 #5188 进场改判）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue

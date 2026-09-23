@@ -90,6 +90,9 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # （核过：那集合是「写用例必须有效果层断言」的判据源，read_only=True 的工具不该出现；
     #  本条只同步注册表真值 —— 本守卫失败信息里的「① 工具真的增删了」正是这条路径）
     "payment_qrcode_query",
+    # 批次账 / 省料度量只读查询（issue #5188）：`read_only=True` ⇒ 同样**不进** taxonomy 的
+    # `WRITE_TOOLS`（该集合是「写用例必须有效果层断言」的判据源）；本条只同步注册表真值。
+    "batch_stock_query",
 })
 
 

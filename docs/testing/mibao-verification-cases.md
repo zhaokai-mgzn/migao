@@ -4060,7 +4060,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（87 case）
+## 商品域（90 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -5158,6 +5158,46 @@
 真值: remnant-recovery.non-asset-ledger, remnant-recovery.match-and-recovery
 溯源: 2026-09-23 新增（issue #5146）：客户带走排除 + 报废留痕 + DB 约束级账实一致。取号 PR-099。 ｜ tags: remnant, customer-taken, scrap-trace, real-db, backend-contract
 
+### PR-100. 米宝查批次余量 / 「快用尽」批次（按物料 / 批次号 / 缸号） 🔵
+```
+你: 哪些批次快用尽了？还剩多少米
+期望: batch_stock_query
+数据: 商家问「哪些批次快用尽了」→ batch_stock_query(action=batches, nearly_used_up=true) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
+数据: 口径同源·档位：「快用尽」= 服务端剩余量分布**第一档**（`le_0_2`），工具不得自定阈值；**负余量（超扣）也在该档内**，不得用 `onlyAvailable` 把它剔掉（剔掉就是第二份口径）。同夹具判据：工具回的行集 == `distribution` 第一档的 `batchCount`
+数据: 读数一律取 `/api/admin/batch-stock/batches` 读面（余量是服务端派生值 = 入库量 + Σ消耗）；agent 侧不得自己算「入库 − 消耗」
+数据: 空结果如实回「**无数据**」（不得回 0、不得编造批次号）；缺 `product:list` 时如实说明「这是权限限制、不要重试」并指向管理后台授权路径
+必须成功: batch_stock_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-23 新增（issue #5188）：批次/省料数据接入米宝 —— 批次余量与「快用尽」（PR-100）。取号 PR-100（本单开工时 main 最高 PR-096，PR-097~099 属并行的 #5146 包） ｜ tags: mibao, batch-ledger, saving-metrics, agent-tool
+
+### PR-101. 米宝查剩余量四档分布（档位文案取服务端 label，不自写数字） 🔵
+```
+你: 现在剩料是什么分布？有多少批次快用完了
+期望: batch_stock_query
+数据: 商家问剩料分布 → batch_stock_query(action=distribution) 被调用且**成功**返回（`must_succeed`）
+数据: 四档（`le_0_2` / `b0_2_0_5` / `b0_5_1` / `gt_1`）的 key / label / batchCount / share **全部原样透传**服务端 `GET /api/admin/batch-stock/distribution`（工具只做选择性透传，不重新分档）
+数据: 档位文案**取自服务端 `buckets[].label`**（§22 基线纪律①：文案里不出现数字，数值由真值渲染）；工具与前端都不得硬编码「≤0.2 米」这类档位文字
+数据: 空数据（`totalBatches = 0`）⇒ 文案回「**无数据**」；计数 0 是事实可保留，但**不得**把读不出的比率说成 0
+必须成功: batch_stock_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-23 新增（issue #5188）：剩余量分布四档（PR-101）—— 复用 #5145 的分档口径，工具不另定档、前端不写死文案 ｜ tags: mibao, batch-ledger, saving-metrics, agent-tool
+
+### PR-102. 米宝答「这个月省了多少料 / 省了多少钱」—— 🔴 与省料看板读面逐值相等（不另算一份） 🔵
+```
+你: 我这个月省了多少料？省了多少钱
+期望: batch_stock_query
+数据: 商家问省料 → batch_stock_query(action=saving_board) 被调用且**成功**返回（`must_succeed`）
+数据: 🔴 判据 2·**口径同源（逐值相等）**：工具回的 `savedMeters` / `savedAmount` / `formulaMeters` / `plannedMeters` / `le0_2Share` / `remainingMeters` 与 `GET /api/admin/batch-stock/saving-board` 的读数**逐值相等**（逐来源组 + 逐分组 + total 三处都比）。**红证 = 在 agent 侧重算**：夹具刻意取「逐行取整再求和 ≠ 整段求和再取整」的账（读面 24.68，朴素重算 24.67）⇒ 重算实现当场红
+数据: 存量导入**单列**：`opening` 组的省料/余量与「切换后（采购入库）」**并列而不相加**（工具沿用服务端 `cohortLabel`，不自造分组文案）
+数据: 判据 5·**空数据不冒充 0**：`lineCount = 0` 的组与空租户 ⇒ `savedMeters` / `savedAmount` / `le0_2Share` 一律 `null`，文案回「**无数据**」、**不得出现 `0%` / `0 米`**（0 会被读成「没有浪费」）；未记均价的行数以「另有 N 行没有均价」显式说明
+数据: 判据 4·**只读无副作用**：工具源码里没有任何写调用（无 `post/put/patch/delete`），运行期四个 action 各跑一次后写方法**零调用**；不改任何对客金额/售价/成品口径（判据 6）
+必须成功: batch_stock_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-23 新增（issue #5188）：省料度量接入米宝（PR-102）—— 判据 2「逐值相等」由「同夹具、读面 vs 工具」钉住；判据 4/5 同批覆盖 ｜ tags: mibao, batch-ledger, saving-metrics, agent-tool
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -6053,8 +6093,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：445（活跃 156，跳过 289）
-- tier 分布：smoke 10 / normal 404 / adversarial 31
+- 用例总数：448（活跃 159，跳过 289）
+- tier 分布：smoke 10 / normal 407 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6074,7 +6114,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：87
+- 商品域：90
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

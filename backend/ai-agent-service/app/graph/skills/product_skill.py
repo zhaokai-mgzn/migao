@@ -18,6 +18,9 @@ PRODUCT_TOOLS = [
     "product_manage",               # 商品 CRUD（create/update/toggle_status）
     "processing_item_manage",       # 加工项 CRUD（create_processing_item/update/delete）— 用户说新增加工项/改加工项/删加工项时调用（PP-006：曾缺此工具 → agent 误宣「只有查询能力」）
     "inventory_manage",
+    "batch_stock_query",            # 批次账 / 省料度量只读（issue #5188）：商品/库存域的
+                                    # 「哪些批次快用尽了 / 剩料分布 / 省了多少料」——只读、
+                                    # 声明 `product:list`（仅 B 端）
     "processing_item_query",        # 店铺加工项目录（与商品无关）— 用户问加工项列表/单价时调用
     "category_manage",
     "validate_input",

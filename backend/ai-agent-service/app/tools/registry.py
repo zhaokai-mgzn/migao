@@ -603,6 +603,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.piecework_query import PieceworkQueryTool
     from app.tools.production_worklog_query import ProductionWorklogQueryTool
     from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
+    from app.tools.batch_stock_query import BatchStockQueryTool
 
     registry = ToolRegistry()
     
@@ -660,6 +661,11 @@ def create_default_registry() -> ToolRegistry:
     # （allowed_roles=["customer"]），可达性仍由 persona 的 skill 工具集决定
     # （小布 customer_order；商家设置端走 SettingsController，不经 Agent）。
     registry.register(PaymentQrcodeQueryTool())
+    # 批次账 / 省料度量只读查询（issue #5188；数据面 #5145 / #5158 / #5159）：四个端点
+    # 全部挂 `@RequirePermission("product:list")` ⇒ 工具声明同一码（不加角色白名单）。
+    # 只读、仅 B 端（批次成本与省料金额是内部口径）；可达性由 persona 的 skill 工具集决定
+    # （米宝 general / product）。
+    registry.register(BatchStockQueryTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry
