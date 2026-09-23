@@ -217,7 +217,7 @@ grep -oE "\b(4967|5146|5147|5158|5159|5167|5169|5174|5177|5182|5184)\b" /tmp/job
 
 `PR #5199`（→ `f273adcb5`）：`PgCluster.startOrAbort()` 单一收口 + `MIGAO_REQUIRE_REALDB=1` 时缺 PG **判 FAIL 而非 skip** + CI 前置断言 + 静态守卫。
 **红证 A 的对照组成立**：不带标记 + 搜索路径指空 ⇒ `Tests run: 0 / BUILD SUCCESS / EXIT=0`（这才是「静默绿」的确切读数，surefire 把 aborted 容器记成 `Tests run: 0`、`Skipped: 0`）；带标记 ⇒ `AssertionFailedError` + `EXIT=1`。
-该包还**主动纠正了本报告 §1 的使用点清单**：`ProductionScanClaimRealDbTest.java:294` 与 `ProductionPartCodeRealMappingTest.java:476` 各藏一份**嵌套 `PgCluster` 副本**（遮蔽共用件）⇒ 只改包级共用件时这两条真库判据照旧静默 skip。已删并收口（15 个使用点）。
+该包还**主动纠正了本报告 §1 的使用点清单**：`ProductionScanClaimRealDbTest` 与 `ProductionPartCodeRealMappingTest` **各藏一份嵌套 `PgCluster` 副本**（遮蔽包级共用件；按文本锚点 `private static final class PgCluster` 检索 —— **故意不写行号**：行号会随这两份副本被删掉而失效，`#5199` 正是把它们删了）⇒ 只改包级共用件时这两条真库判据照旧静默 skip。已删并收口（15 个使用点）。
 
 ### 10.2 🔴 新增 P0 `#5203`：**Python 侧的真库判据一直在 CI 上静默 skip**（本报告 §7 未覆盖）
 
