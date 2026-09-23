@@ -152,10 +152,13 @@ class InteractTool(BaseTool):
 
     name = "interact"
     description = (
-        "向用户展示交互式选择卡片、确认卡片或内联表单，让用户通过点击/填写代替文本输入。"
-        "当需要用户从固定选项中选择（如加工项、分类、色号）、"
-        "或需要在执行写操作前确认信息时使用。"
+        "【触发】需要用户从固定选项中选择（如加工项、分类、色号/规格）、"
+        "需要在执行写操作前展示确认卡、或需要一次性收集多个信息（表单）时调用；"
         "使用后对话暂停等待用户操作，不要再继续生成文本。"
+        "【参数】component 必填：choice（选项卡片，需 options）/ confirm（确认卡片，需 fields）/ "
+        "form（内联表单，需 formFields）；multiSelect 场景（建品选加工项、选多个规格/色号）必须传 multiSelect=true。"
+        "【反例】查数据一律用对应查询工具（product_search / processing_item_query / order_query 等），"
+        "本工具只负责把选项/确认项渲染给用户，不查数据、不写业务数据。"
         "【重要】confirm 组件的 confirmValue 必须包含上下文（如'确认创建商品'而非'确认'），以便系统正确路由后续消息。"
         "【重要】multiSelect 场景（如建品选加工项、选多个规格/色号）必须传 multiSelect=true，"
         "禁止省略——漏传会变成单选，用户无法连续选择/翻页（PR-014 漏传实拍）。"
@@ -164,10 +167,15 @@ class InteractTool(BaseTool):
         "禁止自造代码（如 '张三_1391111'）、禁止用姓名/手机号/展示文本/序号——"
         "用户点击后系统把该 value 作为下一轮输入路由，必须是可被 detail/update/add_tag"
         "直接解析的真实 ID。展示内容放 label。value 拿不到真实 ID 时不得臆造，应回查上游工具。"
+        "【标注】READONLY — 纯本地渲染交互组件，不写业务数据"
     )
 
-    # 所有角色可用
+    # 所有角色可用（双端）+ 保留角色层
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
+    # 无权限码：纯本地渲染工具（不调 admin-api）且**双端都要用** ——
+    # C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    required_permissions = []
+    read_only = True   # 只读渲染（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {
         "type": "object",

@@ -75,6 +75,9 @@ const PERMISSION_CATALOG = [
   { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },
   { id: 'p-processing', name: '加工管理', code: 'processing:manage', resource: 'processing', action: 'manage', description: '管理加工项' },
   { id: 'p-knowledge', name: '知识库管理', code: 'knowledge:manage', resource: 'knowledge', action: 'manage', description: '管理知识库' },
+  // issue #5246：知识库/售后拆出**读**码（菜单节点改用读码；写码仍在目录里，落「操作权限」节）
+  { id: 'p-knowledge-view', name: '知识库查看', code: 'knowledge:view', resource: 'knowledge', action: 'view', description: '查看知识卡片' },
+  { id: 'p-after-sales-view', name: '售后查看', code: 'after_sales:view', resource: 'after-sales', action: 'view', description: '查看售后工单' },
   { id: 'p-order-list', name: '订单列表', code: 'order:list', resource: 'order', action: 'list', description: '查看订单列表' },
   { id: 'p-order-detail', name: '订单详情', code: 'order:detail', resource: 'order', action: 'detail', description: '查看订单详情' },
   { id: 'p-order-refund', name: '订单退款', code: 'order:refund', resource: 'order', action: 'refund', description: '处理退款/售后工单' },
@@ -175,7 +178,11 @@ describe('RolesPage', () => {
     expect(tree.queryByText('会话监控')).not.toBeInTheDocument()
     expect(tree.queryByText('快捷回复')).not.toBeInTheDocument()
     expect(tree.queryByText('AI 客服配置')).not.toBeInTheDocument()
-    expect(tree.queryByText('订单退款')).not.toBeInTheDocument()
+    // issue #5246 契约翻转：`order:refund` 不再是「售后工单」节点的码（节点改用读码
+    // `after_sales:view`）⇒ 它成了**没有菜单节点的写码**，按既有规则落进「操作权限」节
+    // （该节位于本容器内）。「不出现在菜单树」这半条仍成立 —— 见下一行的计数断言。
+    expect(within(screen.getByTestId('perm-extra-section')).getByText('订单退款')).toBeInTheDocument()
+    expect(tree.queryAllByText('订单退款')).toHaveLength(1)
     expect(tree.queryByText('系统管理')).not.toBeInTheDocument()
     expect(tree.queryByText('dashboard')).not.toBeInTheDocument()
     expect(tree.queryByText('order')).not.toBeInTheDocument()
@@ -237,7 +244,8 @@ describe('RolesPage', () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    // 智能客服组含 agent:session（2 个菜单项）+ knowledge:manage（#3081 已移除 agent:quickreply）
+    // 智能客服组含 agent:session（在线接待）+ **knowledge:view**（知识库；issue #5246 起读码，
+    // 写码 knowledge:manage 不再挂在菜单节点上）（#3081 已移除 agent:quickreply）
     const groupHeader = (await screen.findByText('智能客服')).closest('div')!
     fireEvent.click(groupHeader.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
@@ -246,7 +254,7 @@ describe('RolesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     await waitFor(() => {
       expect(mockCreateRole).toHaveBeenCalledWith(expect.objectContaining({
-        permissionIds: expect.arrayContaining(['p-agent-session', 'p-knowledge']),
+        permissionIds: expect.arrayContaining(['p-agent-session', 'p-knowledge-view']),
       }))
     })
     // #3081: agent:quickreply 权限已随快捷回复功能下线，不再授予

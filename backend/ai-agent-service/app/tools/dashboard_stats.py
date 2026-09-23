@@ -38,11 +38,20 @@ class DashboardStatsTool(BaseTool):
 
     name = "dashboard_stats"
     description = (
-        "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话''哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。【何时用】任何看板/趋势/分布/概览类查询。【何时不用】查某个具体订单（用 order_query）、查客服会话详情（用 session_manage）。【前置】action: overview(今日概览)/order_trend(趋势,需days)/order_status(状态分布)/recent_orders(最近,需limit)/active_sessions(活跃,需limit)/product_ranking(商品销量排行,period=day近7天|month近30天,需limit)。days默认7,limit默认5。【标注】READONLY — 经营分析专用，不查具体记录"
+        "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话'"
+        "'哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。"
+        "【参数】action 必填：overview(今日概览) / order_trend(趋势,需 days) / order_status(状态分布) / "
+        "recent_orders(最近,需 limit) / active_sessions(活跃,需 limit) / "
+        "product_ranking(商品销量排行,period=day 近7天|month 近30天,需 limit)；days 默认 7、limit 默认 5。"
+        "【反例】查某个具体订单/订单列表用 order_query；查客服会话详情用 session_manage；"
+        "查加工单用 processing_order_query。"
+        "【标注】READONLY — 经营分析专用，不查具体记录、不改动任何数据"
     )
     # 权限码（admin-api 目录）：DashboardController 类级 `@RequirePermission("dashboard:view")`。
     # 目录里 6 个商户角色都持此码 ⇒ 不再按角色名硬编码（#4106 F4）。
     required_permissions = ["dashboard:view"]
+
+    read_only = True   # 只读看板（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {
         "type": "object",

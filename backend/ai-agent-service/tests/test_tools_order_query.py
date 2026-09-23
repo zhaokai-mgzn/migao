@@ -138,6 +138,20 @@ class TestFormatOrders:
 # ============================================================
 
 class TestOrderQueryCustomerIsolation:
+    @pytest.fixture
+    def sample_tool_context(self):
+        """本类覆盖 conftest 的 customer 上下文（issue #5246）。
+
+        `order_query` 现在强调权限码 `order:list`，且它**不是** C 端可达工具
+        （C 端 skill 绑的是 `customer_order_query`）⇒ customer 上下文会被工具层拒绝。
+        本类测的是「不伪造客户侧过滤 / 只透传租户头」这条 payload 契约，
+        与调用者是不是顾客无关 ⇒ 给持码的商户员工上下文。
+        """
+        return ToolContext(
+            tenant_id=1, user_id="user_001", session_id="sess_test_001",
+            role="operator", permissions=["order:list"],
+        )
+
     """订单查询隔离：依赖后端租户隔离（TenantLineInnerInterceptor 自动注入 tenant_id）。
 
     后端 OrderListResponse 无 tenantId/customerId 字段，客户端读这些字段做
@@ -280,8 +294,14 @@ class TestOrderQueryCustomerIsolation:
 
     @patch("app.tools.order_query.get_admin_api_client")
     async def test_order_query_missing_customer_id_rejected(self, mock_get_client, sample_tool_context):
-        """customer 角色但 context.user_id 为空 → 验证拒绝执行，不发起 API 调用"""
+        """customer 角色但 context.user_id 为空 → 验证拒绝执行，不发起 API 调用。
+
+        issue #5246：`order_query` 现强调权限码且**不是** C 端可达工具 ⇒ 真跑到 `execute()`
+        里时 customer 会先被权限闸拦下（那条分支因此走不到）。这里用 patch 绕过权限闸，
+        为的是继续**单独**钉住「customer + 空 user_id 必须拒绝且不发请求」这条安全分支。
+        """
         from app.tools.base import ToolContext
+        from unittest.mock import patch as _patch
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock()
@@ -295,10 +315,11 @@ class TestOrderQueryCustomerIsolation:
         )
 
         tool = OrderQueryTool()
-        result = await tool.execute(
-            context=no_user_context,
-            action="list",
-        )
+        with _patch.object(OrderQueryTool, "check_permission", return_value=True):
+            result = await tool.execute(
+                context=no_user_context,
+                action="list",
+            )
 
         assert result.success is False
         error_text = (result.error or "") + (result.message or "")

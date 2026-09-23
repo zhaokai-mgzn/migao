@@ -30,6 +30,14 @@ import org.springframework.web.bind.annotation.*;
  * <p>类级 {@code @RequirePermission("order:list")} 覆盖全部 action；**退款**是唯一的例外：
  * 它额外要求 {@code order:refund}（见 {@link #updateOrder}），与表单路径
  * {@code OrderController} 的退款路由同码。</p>
+ *
+ * <p>issue #5246 追加单（读写拆码）：上面那段**只对读面成立**了 —— 本类两个写端点改用方法级写码
+ * （{@code POST} = {@code order:create}、{@code PATCH /{id}} = {@code order:update}，
+ * 方法级优先于类级，见 {@link PermissionInterceptor#resolveRequirePermission}），
+ * 类级 {@code order:list} 从此**只覆盖两个 GET**（{@code /resolve}、{@code /mine}）。
+ * 保留类级而不是逐端点标注，是为了让「本类新增的读端点」仍默认吃读码、不会静默变成无码放行。
+ * {@code PATCH} 里的 {@code order:refund} 复检**原样保留**（退款是 update 之上的额外要求，
+ * 与表单路径 {@code OrderController} 的 {@code /{id}/refund} 同口径）。</p>
  */
 @Slf4j
 @RequirePermission("order:list")
@@ -62,6 +70,7 @@ public class AgentOrderController {
      * **缺省不报错**（向后兼容未升级的调用方，走原路径）。</p>
      */
     @PostMapping
+    @RequirePermission("order:create")  // issue #5246：建单写码（覆盖类级读码）
     public ApiResponse<OrderDetailResponse> createOrder(
             @Valid @RequestBody AgentOrderCreateRequest request,
             @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
@@ -88,14 +97,15 @@ public class AgentOrderController {
      * PATCH /api/admin/agent/orders/{id}
      * id 可为 UUID 或订单号（ORD-xxx），服务端自动解析。
      *
-     * <p><b>action 级权限复检（issue #4148）</b>：本类只有类级 {@code order:list}，而这一个
-     * 入口覆盖 status/logistics/payment/cancel/<b>refund</b> ⇒ 不复检就等于「仅持 order:list 的
-     * 商户员工（内置岗位 customer_service/sales/finance 都没有 order:refund）可借米宝退款」，
-     * 与表单路径 {@code OrderController} 的 {@code order:refund} 口径不一致。
-     * 判据与类级注解**同一处**（{@link PermissionInterceptor#requirePermission(String)}）：
+     * <p><b>action 级权限复检（issue #4148）</b>：本入口覆盖 status/logistics/payment/cancel/<b>refund</b>
+     * 五个 action。issue #5246 起本端点的**门槛码**是写码 {@code order:update}（不再是读码
+     * {@code order:list}），但「能改单」**不等于**「能退款」 ⇒ 不复检就等于「持有 order:update 的
+     * 商户员工可借米宝退款」，与表单路径 {@code OrderController} 的 {@code order:refund} 口径不一致。
+     * 判据与注解**同一处**（{@link PermissionInterceptor#requirePermission(String)}）：
      * 旁路角色（平台管理员/内部服务）、{@code *} 通配、取码来源逐条一致；其余 action 不收窄。</p>
      */
     @PatchMapping("/{id}")
+    @RequirePermission("order:update")  // issue #5246：改单写码；退款在其上**额外**复检 order:refund
     public ApiResponse<OrderDetailResponse> updateOrder(@PathVariable String id,
                                                          @RequestBody AgentOrderUpdateRequest request) {
         if ("refund".equals(request.getAction())) {

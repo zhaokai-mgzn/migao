@@ -40,7 +40,7 @@ class ProductionProgressQueryTool(BaseTool):
 
     description = (
         "【触发】用户问'订单做到哪了''生产进度''还要多久能好''卡在哪道工序''排产了吗/什么时候发货'时调用。"
-        "【前置】需要订单号 order_no；用户没给订单号时**先查订单拿号**"
+        "【参数】需要订单号 order_no；用户没给订单号时**先查订单拿号**"
         "（商户端用 order_query，顾客本人订单用 customer_order_query），不要猜号。"
         "【反例】查物流/快递用 logistics_track（顾客本人用 customer_logistics_track）；"
         "查订单金额/状态/明细用 order_query（C 端 customer_order_query）；"
@@ -63,8 +63,13 @@ class ProductionProgressQueryTool(BaseTool):
         "required": ["order_no"],
     }
 
-    # 双端：顾客查自己的单（C 端），商户员工/管理员查任意单（B 端）
-    allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
+    # 权限码（admin-api 目录）：生产进度端点取**加工面读码** `processing:manage`
+    # （ProductionController 的 /progress、/piecework 等方法级 `@RequirePermission("processing:manage")`）。
+    # 本工具**双端**（顾客查自己的单 + 商户员工查任意单）⇒ c_end_reachable=True：
+    # C 端 JWT 没有 permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
+    # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`，横向越权，issue #5246 判据 6）。
+    required_permissions = ["processing:manage"]
+    c_end_reachable = True
     read_only = True
     destructive = False
     idempotent = True

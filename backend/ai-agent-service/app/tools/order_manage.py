@@ -29,15 +29,15 @@ class OrderManageTool(BaseTool):
     name = "order_manage"
     description = (
         "【触发】用户说'取消订单''退款''修改订单''标记发货''更新物流''确认支付'时调用。"
-        "【前置】需要 action + order_id。cancel/refund 是破坏性操作，必须二次确认。"
+        "【参数】需要 action + order_id（订单 ID 或订单号 ORD-xxx）。cancel/refund 是破坏性操作，必须二次确认。"
         "【反例】仅查看订单用 order_query。创建新订单用 order_create。"
         "【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
 
-    # 权限码（admin-api 目录）：AgentOrderController 类级 `@RequirePermission("order:list")`
-    # （状态/物流/取消都挂 order:list）⇒ 粗筛码取 order:list；**退款单独 order:refund**，
-    # 由 execute 里的 `ACTION_PERMISSIONS` 复检（与 OrderController 的退款路由同码）。
-    required_permissions = ["order:list"]
+    # 权限码（admin-api 目录）：issue #5246 起 `AgentOrderController.PATCH /{id}` 走**写码**
+    # `order:update`（此前挂在读码 `order:list` 上 —— 只读持有者因此拿到写能力）；
+    # **退款仍是 `order:refund`**，由 execute 里的 `ACTION_PERMISSIONS` 复检（同 `OrderController`）。
+    required_permissions = ["order:update"]
     read_only = False
     destructive = True
     idempotent = False
@@ -88,9 +88,11 @@ class OrderManageTool(BaseTool):
             )
 
         # 细粒度复检（与 employee_manage 同款两段式：粗筛 + action 级细粒度）——
-        # 粗筛只看 order:list，而**退款**要 order:refund。建议文案复用 base 的权限拒绝措辞
-        # （单一来源：说清缺哪个码 + 不要重试 + 管理后台开通路径），不另写一套话术。
-        required = ACTION_PERMISSIONS.get(action, "order:list")
+        # 粗筛看**写码 `order:update`**（issue #5246 从读码拆出），而**退款**要 order:refund。
+        # 缺省值必须跟粗筛码一致：写死 `order:list` 会让「只持读码」的岗位重新满足 action 级
+        # 复检（拆码白拆）。建议文案复用 base 的权限拒绝措辞（单一来源：说清缺哪个码 +
+        # 不要重试 + 管理后台开通路径），不另写一套话术。
+        required = ACTION_PERMISSIONS.get(action, self.required_permissions[0])
         if "*" not in (context.permissions or []) and required not in (context.permissions or []):
             return ToolResult(success=False,
                 error="权限不足",

@@ -12,15 +12,15 @@ class ProductUpdateTool(BaseTool):
 
     name = "product_update"
     description = (
-        "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
-        "【触发】用户说'改价格''改名称''价格改成XX''改名'时**直接调用**，无需 validate_input。"
-        "只传要改的字段，其他字段保持不变。product_id 支持名称/序号/UUID。"
+        "【触发】用户说'改价格''改名称''价格改成XX''改名''设置退货回补库存''上架/下架'时**直接调用**，无需 validate_input。"
+        "【参数】product_id 必填（支持名称/序号/UUID，服务端自动解析）；只传要改的字段，其他字段保持不变。"
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
         "【反例】单独 SKU 调价本工具不支持（用 sku_update）；加工项与商品无关，不在本工具范围。"
         "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
-        "【标注】WRITE|IDEMPOTENT"
+        "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"
+        "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
     )
     # 权限码（admin-api 目录）：商品写取写码 `product:create`（ProductController 的 PUT/PATCH）。
     # 该 agent 端点自身只挂类级读码 `product:list` —— 按读码放行会让只读持有者拿到写权限。

@@ -274,6 +274,10 @@ public class SettingsController {
      * 修改当前用户密码
      *
      * PUT /api/admin/settings/password
+     *
+     * issue #5246（审计裁定「该放行」）：本端点**有意不加权限注解** —— 自助改密只作用于
+     * **调用方自己**（userId 取自 SecurityContext，无 userId 入参），任何「有 system:manage
+     * 才能改自己密码」的口径都会让普通员工永远改不了密码。
      */
     @PutMapping("/api/admin/settings/password")
     public ApiResponse<Void> changePassword(@RequestBody ChangePasswordRequest request) {

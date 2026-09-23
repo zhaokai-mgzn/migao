@@ -39,13 +39,18 @@ class AftersaleCreateTool(BaseTool):
     name = "aftersale_create"
     description = (
         "【触发】客户说'退货''换货''退款''维修''投诉'且有订单号时调用。"
-        "【前置】必填: order_id + ticket_type + reason。缺信息时先收集，不要直接调。"
+        "【参数】必填 order_id + ticket_type + reason。缺信息时先收集，不要直接调；"
         "收集流程: 问订单号→问售后类型→问原因→展示汇总→用户确认→调用。"
-        "【反例】用户只说'不满意'没提订单号时不要调，先问订单号。"
         "ticket_type: refund(退款), exchange(换货), repair(维修), complaint(投诉), other(其他)。"
+        "【反例】用户只说'不满意'没提订单号时不要调，先问订单号；只查已有工单用 aftersale_query，"
+        "商户端建/改工单用 after_sales_manage。"
         "【标注】WRITE|NON_IDEMPOTENT — 先确认再执行"
     )
     allowed_roles = ["customer"]
+
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（`RoleService` 对
+    # customer/agent 返回空集），加码会让小布全量失效 ⇒ 保留角色层 ["customer"]。
+    required_permissions = []
 
     read_only = False
     destructive = False

@@ -269,10 +269,10 @@ class TestInventoryCustomerRestriction:
         assert result.success is False
         assert "权限不足" in result.error
 
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_customer_query_allowed(self, mock_get_client, tool, sample_tool_context):
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={"success": True, "data": {"name": "窗帘", "stock": 10}})
-        mock_get_client.return_value = mock_client
+    async def test_customer_query_denied(self, tool, sample_tool_context):
+        """issue #5246：`inventory_manage` 是**B 端独占**工具（它的 `allowed_roles` 曾含 C 端
+        角色 `customer`，属已确认的横向越权隐患）⇒ 现强调权限码 `product:list`/`product:create`，
+        C 端角色的查询一律拒绝。"""
         result = await tool.execute(context=sample_tool_context, action="query", product_id="p1")
-        assert result.success is True
+        assert result.success is False
+        assert "权限" in result.error

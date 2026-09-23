@@ -41,20 +41,27 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/agent/production")
 @RequiredArgsConstructor
-@RequirePermission("order:list")
 public class AgentProductionController {
 
     private final ProductionService productionService;
 
-    /** 订单生产进度（按订单号，租户隔离） */
+    /**
+     * 订单生产进度（按订单号，租户隔离）
+     *
+     * issue #5246：类级 {@code @RequirePermission("order:list")} 已移除 —— 本控制器是
+     * 生产看板 / 计件工资侧边栏节点的 agent 侧数据面，而那两个节点由 {@code processing:manage} 守着
+     * ⇒ 继续用 order:list 会让「无 processing:manage、有 order:list」的角色绕过菜单直达生产数据。
+     */
     @GetMapping("/progress")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> progress(
             @RequestParam(value = "order_no", required = false) String orderNo) {
         return ApiResponse.success(productionService.progress(orderNo, TenantContext.getTenantId()));
     }
 
-    /** 工人计件（按人 + 期间 YYYY-MM） */
+    /** 工人计件（按人 + 期间 YYYY-MM）—— issue #5246：同 processing:manage（计件工资节点同码） */
     @GetMapping("/piecework")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> piecework(
             @RequestParam(value = "worker_name", required = false) String workerName,
             @RequestParam(value = "period", required = false) String period) {
@@ -67,8 +74,11 @@ public class AgentProductionController {
      *
      * <p>订单解析与 {@code /progress} 同口径（{@code resolveOrder} 四形态：内部 order_id /
      * 订单号 / 加工单 qr_token / 加工单号），租户隔离同口径。**只读**。</p>
+     *
+     * <p>issue #5246：同 {@code /progress} —— 生产看板数据面，码 = processing:manage。</p>
      */
     @GetMapping("/worklog")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> worklog(
             @RequestParam(value = "order_no", required = false) String orderNo) {
         return ApiResponse.success(productionService.worklog(orderNo, TenantContext.getTenantId()));

@@ -45,7 +45,7 @@ class CustomerLogisticsTrackTool(BaseTool):
 
     description = (
         "【触发】C 端顾客问'物流''快递''到哪了''发货了吗''配送''签收'时调用。"
-        "【前置】无需任何参数，默认列出顾客本人所有在途（已发货）订单的物流；"
+        "【参数】无需任何参数，默认列出顾客本人所有在途（已发货）订单的物流；"
         "可选 order_id 缩小到某一笔在途订单。"
         "【铁律】本工具只查顾客本人已发货订单的物流——顾客提供快递单号要求直接查询时，"
         "礼貌拒绝并解释只能查其名下订单的物流，不要调用本工具也不要编造物流信息。"
@@ -71,6 +71,8 @@ class CustomerLogisticsTrackTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 logistics_track）
     allowed_roles = ["customer"]
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    required_permissions = []
     read_only = True
     read_only_actions = frozenset({"list"})
 

@@ -345,10 +345,10 @@ describe('Sidebar', () => {
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       expect(screen.queryByText('岗位权限')).not.toBeInTheDocument()
       expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
-      // 无 knowledge:manage → 知识库入口隐藏；通知中心全员可见
+      // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // UI-005/UI-011: 无 agent:session / knowledge:manage → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
+      // UI-005/UI-011: 无 agent:session / knowledge:view → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
@@ -370,7 +370,7 @@ describe('Sidebar', () => {
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       // 零权限也可见：通知中心（无权限码，全员）
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 零权限不可见：知识库（需 knowledge:manage）
+      // 零权限不可见：知识库（需 knowledge:view —— issue #5246 起节点用读码）
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })
 
@@ -385,15 +385,29 @@ describe('Sidebar', () => {
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
     })
 
-    it('仅 knowledge:manage → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
+    it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
+      // issue #5246：『知识库』节点码从写码 `knowledge:manage` 换成**读码** `knowledge:view`
+      // （拆读写：只想看知识卡片的岗位不该被授予增删改发布权）⇒ 「谁能看到入口」按读码判。
       mockUseAuthStore.mockReturnValue({
-        user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:manage'], roles: [] },
+        user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:view'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
+    })
+
+    it('仅 knowledge:manage（**写**码、无读码）→ 知识库入口隐藏（issue #5246 的读写分权口径）', () => {
+      // 反面钉法：节点码是读码 ⇒ 只持写码的岗位看不到页面（内置岗位无人如此：admin 走 `*`，
+      // 客服/运营持读码）。这与后端「写端点仍要 knowledge:manage」并不矛盾：写权限 ≠ 页面可见性；
+      // 自定义岗位若只勾写码，需商家同时勾读码才能看到入口（已在 CHANGELOG/RBAC 登记）。
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '7', username: 'kbw', name: '知识编辑', permissions: ['knowledge:manage'], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.queryByText('知识库')).not.toBeInTheDocument()
+      expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
     })
 
     it('两个子菜单均不可见时「智能客服」大类整组隐藏（#3094）', () => {

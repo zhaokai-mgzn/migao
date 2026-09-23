@@ -137,12 +137,21 @@ class PermissionServiceTest {
 
         int inserted = permissionService.ensureFullPermissionCatalog(1L);
 
-        // 目录 16 码 - 已有 1 码 = 应补 15 码（#3081 快捷回复权限 agent:quickreply 已随功能下线移除）
-        assertThat(inserted).isEqualTo(15);
+        // 目录 27 码 - 已有 1 码 = 应补 26 码（#3081 快捷回复权限 agent:quickreply 已随功能下线移除）。
+        // issue #5246 两批共加 7 码：2 个读码（after_sales:view / knowledge:view）
+        // + 5 个写码（order:update / order:create / customer:create / finance:create / agent:session:manage）。
+        // 数字**故意写死**：本方法正是「**存量**租户拿新码」的路径 ⇒ 目录少一行/多一行都必须让本用例红
+        // （否则「新租户有、老租户没有」会静默复发）。
+        assertThat(inserted).isEqualTo(26);
         // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
+        // + 本单的读码与写码（存量租户的运营/客服/财务要靠它们才能改单、转接会话、记账）
         verify(permissionMapper, atLeastOnce()).insert(argThat((Permission p) ->
                 "order:list".equals(p.getCode()) || "employee:create".equals(p.getCode())
-                        || "finance:view".equals(p.getCode()) || "customer:view".equals(p.getCode())));
+                        || "finance:view".equals(p.getCode()) || "customer:view".equals(p.getCode())
+                        || "after_sales:view".equals(p.getCode()) || "knowledge:view".equals(p.getCode())
+                        || "order:update".equals(p.getCode()) || "order:create".equals(p.getCode())
+                        || "customer:create".equals(p.getCode()) || "finance:create".equals(p.getCode())
+                        || "agent:session:manage".equals(p.getCode())));
     }
 }
 

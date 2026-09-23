@@ -41,7 +41,7 @@ class PieceworkQueryTool(BaseTool):
 
     description = (
         "【触发】商家问'某工人这个月计件多少''XX 师傅的计件工资''计件明细''某单人工成本'时调用。"
-        "【前置】需要 worker_name（工人/师傅姓名）；period 为统计月份（YYYY-MM，如 2026-09），"
+        "【参数】需要 worker_name（工人/师傅姓名）；period 为统计月份（YYYY-MM，如 2026-09），"
         "用户没说月份时不传，由服务端按当月统计（不要自己编月份）。"
         "【反例】查订单金额/货款用 order_query；查经营汇总（营收/看板）用 dashboard_stats；"
         "查员工账号用 employee_manage。"
@@ -67,9 +67,9 @@ class PieceworkQueryTool(BaseTool):
     }
 
     # 仅 B 端：工人工资/人工成本不对 C 端顾客开放 —— C 端 JWT 没有权限码，天然被挡。
-    # 权限码（admin-api 目录）：AgentProductionController / ProductionController 类级
-    # `@RequirePermission("order:list")`。
-    required_permissions = ["order:list"]
+    # 权限码（admin-api 目录）：计件/报工属**加工面读码** `processing:manage`（issue #5246 改判：
+    # 原取 order:list 是订单读码，与计件端点的 `@RequirePermission("processing:manage")` 不符）。
+    required_permissions = ["processing:manage"]
     read_only = True
     destructive = False
     idempotent = True

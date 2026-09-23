@@ -66,7 +66,7 @@ public class OrderController {
      *
      * POST /api/admin/orders
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:create")  // issue #5246 追加单：建单与改单是两种授权粒度
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@Valid @RequestBody OrderCreateRequest request) {
         log.info("创建订单: customerName={}", request.getCustomerName());
@@ -122,8 +122,11 @@ public class OrderController {
      * 更新订单状态
      *
      * PUT /api/admin/orders/{id}/status
+     *
+     * issue #5246 追加单：改状态是**写** ⇒ order:update（原挂在读码 order:list 上，
+     * 于是「能看订单列表」=「能改状态/取消/删除」，只读持有者被动拿到写能力）。
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")
     @PutMapping("/{id:[0-9a-fA-F-]+}/status")
     public ApiResponse<Void> updateOrderStatus(
             @PathVariable String id,
@@ -138,7 +141,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/payment
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")
     @PutMapping("/{id:[0-9a-fA-F-]+}/payment")
     public ApiResponse<Void> confirmPayment(@PathVariable String id) {
         log.info("确认支付: orderId={}", id);
@@ -152,7 +155,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/cancel
      * Body: { "closeReason": "缺货" } (可选)
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")  // issue #5246：取消是写（同 status/payment）
     @PutMapping("/{id:[0-9a-fA-F-]+}/cancel")
     public ApiResponse<Void> cancelOrder(
             @PathVariable String id,
@@ -169,7 +172,7 @@ public class OrderController {
      * POST /api/admin/orders/{id}/remark
      * Body: { "content": "备注内容" }
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")  // issue #5246：写备注是写
     @PostMapping("/{id:[0-9a-fA-F-]+}/remark")
     public ApiResponse<Void> addRemark(
             @PathVariable String id,
@@ -233,7 +236,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/follow-status
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")  // issue #5246：改跟进状态是写（其 GET 仍是 order:list）
     @PutMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<Void> updateFollowStatus(
             @PathVariable String id,
@@ -254,7 +257,9 @@ public class OrderController {
      * <p>🔴 两个字段**各自**遵循「不传 = 不改」；{@code requiredDeliveryDate} 传**空串**才表示
      * 清空（见 {@link OrderUrgencyUpdateRequest} 的三态语义）。</p>
      */
-    @RequirePermission("order:list")
+    // issue #5246 追加单：第 8 个写动作（加急 + 到货日，V120）此前也挂在读码 `order:list` 上
+    // —— 与 status/logistics/cancel 同类，一并收口到写码 `order:update`。
+    @RequirePermission("order:update")
     @PutMapping("/{id:[0-9a-fA-F-]+}/urgency")
     public ApiResponse<Void> updateUrgency(
             @PathVariable String id,
@@ -270,7 +275,7 @@ public class OrderController {
      *
      * DELETE /api/admin/orders/{id}
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")  // issue #5246：删除订单是写
     @DeleteMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<Void> deleteOrder(@PathVariable String id) {
         log.info("删除订单: id={}", id);
@@ -283,7 +288,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/logistics
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:update")  // issue #5246：改物流是写
     @PutMapping("/{id:[0-9a-fA-F-]+}/logistics")
     public ApiResponse<Void> updateLogistics(
             @PathVariable String id,

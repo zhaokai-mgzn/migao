@@ -171,6 +171,10 @@ public class PermissionService {
      */
     public int ensureFullPermissionCatalog(Long tenantId) {
         // 与 RegistrationService.initializeDefaultRolesAndPermissions 的目录保持一致
+        // 🔴 issue #5246：此前本目录**漏了 4 个码**（processing:view / processing:update / inbound:view /
+        // inbound:create），而 RegistrationService 有 ⇒ 存量租户的角色管理页勾不到这 4 个码
+        // （新租户能勾、老租户不能 = 「同一份目录两处漂移」）。本次补齐 + 加两个读码，
+        // 两处数组的**码列现已逐值相等**（守卫方式：按行抽第 2 列 diff）。
         String[][] catalog = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
                 {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
@@ -178,16 +182,30 @@ public class PermissionService {
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
+                {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
+                {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
+                {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
+                {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
+                {"知识库查看", "knowledge:view", "knowledge", "view", "查看知识卡片"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
+                // 订单写码（issue #5246 追加单）—— 与 RegistrationService 的目录**逐行同源同序**：
+                // 存量租户的角色管理页若不补这两行，就勾不到 order:update/order:create，
+                // 而端点已改用写码 ⇒ 老租户的运营岗位**改不了单**（新租户能、老租户不能）。
+                {"订单操作", "order:update", "order", "update", "改订单状态/物流/备注/跟进/取消"},
+                {"新增订单", "order:create", "order", "create", "创建订单"},
                 {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
+                {"售后查看", "after_sales:view", "after-sales", "view", "查看售后工单"},
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
+                {"客户维护", "customer:create", "customer", "create", "编辑/删除客户与标签"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
+                {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
-                {"系统管理", "system:manage", "system", "manage", "企业信息/角色管理/系统设置"}
+                {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
         };
 
         // 查询当前租户已有码

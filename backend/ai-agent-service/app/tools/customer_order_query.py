@@ -37,8 +37,8 @@ class CustomerOrderQueryTool(BaseTool):
 
     description = (
         "【触发】C 端顾客查询自己的订单时调用：'我的订单''查订单''订单到哪了''ORD-单号'。"
-        "【前置】action: list(分页)。【参数】list 支持 status(状态筛选)/page(页码)/page_size(每页数量)。"
-        "【何时不用】顾客问物流用 customer_logistics_track；商户员工查询/管理订单用 order_query/order_manage。"
+        "【参数】action 必填（唯一取值 list，分页）；list 支持 status(状态筛选)/page(页码)/page_size(每页数量)。"
+        "【反例】顾客问物流/快递用 customer_logistics_track；商户员工查询/管理订单用 order_query / order_manage。"
         "【标注】READONLY — 仅查询当前登录顾客自己的订单，结果由系统强制按用户过滤，无需也无法传用户标识"
     )
 
@@ -71,6 +71,9 @@ class CustomerOrderQueryTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 order_query）
     allowed_roles = ["customer"]
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    required_permissions = []
+    read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 
     async def execute(
         self,

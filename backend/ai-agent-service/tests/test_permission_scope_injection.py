@@ -287,11 +287,16 @@ class TestTheActionLevelClaimIsBackedByTheMechanism:
             "（旧 #4197 的形态：处方与机制不一致）")
 
     def test_order_manage_refund_needs_a_stricter_code_than_list(self):
-        """`order_manage`：只有 `refund` 要 `order:refund`，其余（含改单）只要 `order:list`。"""
+        """`order_manage`：只有 `refund` 要 `order:refund`，其余（含改单）只要**写码**。
+
+        issue #5246：粗筛码已从读码 `order:list` 换成写码 `order:update`
+        （`AgentOrderController.PATCH /{id}` 同批拆码）—— 「同一工具不同 action」这条对照
+        仍然成立（退款比改单更严），但基准码变了。
+        """
         src = self._src("app/tools/order_manage.py")
         assert '"refund": "order:refund"' in src, (
             "order_manage 的 action→码映射变了 ⇒ 处方里「退款 vs 改单」的例子失去事实基础")
-        assert 'required_permissions = ["order:list"]' in src, (
+        assert 'required_permissions = ["order:update"]' in src, (
             "order_manage 的粗筛码变了 ⇒ 上面的 action 级差异不再是「同一工具不同 action」"
         )
 
@@ -401,7 +406,7 @@ class TestWiredIntoTheRealPromptAssembly:
 # ════════════════════════════════════════════════════════════════════════════
 
 #: Java 权限目录行形态：`{"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},`
-_JAVA_CATALOG_ROW_RE = re.compile(r'\{"([^"]+)",\s*"([a-z][a-z_]*:[a-z_]+)"')
+_JAVA_CATALOG_ROW_RE = re.compile(r'\{"([^"]+)",\s*"([a-z][a-z_]*(?::[a-z_]+)+)"')  # ≥2 段（三段码见 agent:session:manage）
 
 
 def java_catalog_rows(text: str) -> dict:

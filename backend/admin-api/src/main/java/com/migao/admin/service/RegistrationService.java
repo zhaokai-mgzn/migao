@@ -610,12 +610,34 @@ public class RegistrationService {
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
+                // 知识库查看（issue #5246）：知识库的**读**码。此前读（列表/搜索/待确认队列/模板）
+                // 与写（增删改/发布/归档/采纳/提炼）共用 knowledge:manage ⇒ 只想看看知识卡片的
+                // 客服/运营必须被授予写权才进得去。本次按读写拆开：读 = knowledge:view，写仍 = knowledge:manage。
+                {"知识库查看", "knowledge:view", "knowledge", "view", "查看知识卡片"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
+                // 订单写码（issue #5246 追加单）：把「改订单」从读码 order:list 上摘下来 ——
+                // 此前状态/物流/支付/取消/备注/跟进/删除全挂在 order:list 上 ⇒ **只读持有者拿到写能力**
+                // （表单路径与 agent 路径同一形态）。order:create 与 order:update 分列：
+                // 建单与改单是两种授权粒度（先下单 vs 改既有单）。
+                {"订单操作", "order:update", "order", "update", "改订单状态/物流/备注/跟进/取消"},
+                {"新增订单", "order:create", "order", "create", "创建订单"},
                 {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
+                // 售后查看（issue #5246）：售后工单的**读**码。此前工单列表/详情与建单/改状态
+                // 同用 order:refund，而 order:refund 是**处理退款**（写）语义 ⇒ 拆出读码后
+                // 「能看工单」与「能退款/建单」成为两件事（侧边栏节点也改用本码，见 config/menu.ts）。
+                {"售后查看", "after_sales:view", "after-sales", "view", "查看售后工单"},
                 {"客户管理", "customer:view", "customer", "view", "查看客户"},
+                // 客户写码（issue #5246 追加单）：编辑/删除客户与标签此前挂在读码 customer:view 上。
+                {"客户维护", "customer:create", "customer", "create", "编辑/删除客户与标签"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
+                // 财务写码（issue #5246 追加单）：登记收支流水此前挂在读码 finance:view 上
+                // ⇒ 「能看账」等于「能记账」。
+                {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
                 {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                // 会话写码（issue #5246 追加单）：转接/结束/发消息此前挂在读码 agent:session 上
+                // ⇒ 只看会话的人能替客服转接与发言。
+                {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
@@ -637,23 +659,39 @@ public class RegistrationService {
         }
 
         // 岗位默认权限（role_permissions 预置）：
-        // 管理员=全部；客服=会话+客户+订单查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
+        // 管理员=全部；客服=会话+客户+订单查看+售后/知识库查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
+        // issue #5246：客服与运营加授两个**读**码（after_sales:view / knowledge:view）——
+        // 两者本就是售后工单与知识库的日常使用方，此前因读写同码只能靠 order:refund / knowledge:manage
+        // 才能看到菜单（= 顺带拿到写权）⇒ 本次给读码即恢复「看得见」，写权不再被动外溢。
+        // issue #5246 追加单（写码落地）：**有意收窄**——写码只给「岗位职责本来就包含它」的岗位，
+        // 且逐项登记（不多授一个）：
+        //   · operator（运营）：order:update / order:create / customer:create / finance:create /
+        //     agent:session:manage —— 运营本就是「改单、建单、维护客户、记账、转接会话」的执行方；
+        //   · finance（财务）：finance:create —— 只有**登记流水**是财务本职（其余写码不给）；
+        //   · customer_service（客服）：agent:session:manage —— 客服本就是转接/结束会话的**唯一**执行方
+        //     （此前它靠 agent:session 这个**读**码就能转接，正是本次要关掉的口子）。
+        //   · sales：**一个写码都不给**（有意：销售的动线是看，改单/记账归运营与财务）。
+        // 收窄方向可复算：`git diff` 里 finance/sales 列表**没有新增任何码**。
         attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
         attachDefaultPermissions(tenantId, csRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
-                "processing:view", "inbound:view"), permissionByCode);
+                "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
+                "agent:session:manage"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "processing:manage",
                 "processing:view", "processing:update", "inbound:view", "inbound:create",
-                "customer:view", "finance:view", "agent:session", "employee:list"), permissionByCode);
+                "customer:view", "finance:view", "agent:session", "employee:list",
+                "after_sales:view", "knowledge:view",
+                "order:update", "order:create", "customer:create", "finance:create",
+                "agent:session:manage"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
                 "processing:view", "inbound:view"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "finance:view",
-                "processing:view", "inbound:view"), permissionByCode);
+                "processing:view", "inbound:view", "finance:create"), permissionByCode);
 
         log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
     }

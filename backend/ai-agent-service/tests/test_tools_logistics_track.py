@@ -11,6 +11,23 @@ from unittest.mock import patch, AsyncMock
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.base import ToolContext, ToolResult
 
+import pytest
+
+
+@pytest.fixture
+def sample_tool_context():
+    """本文件覆盖 conftest 的 `sample_tool_context`（role=customer）。
+
+    issue #5246：`logistics_track` 现在强调权限码 `order:list`（与 `OrderController` 的
+    `@RequirePermission("order:list")` 同码）⇒ 用 customer 上下文会在**工具层**被拒
+    （C 端订单/物流的真值工具是 `customer_order_query` / `customer_logistics_track`）。
+    本文件测的是工具自身的 payload/降级/校验行为 ⇒ 给持码的商户员工上下文。
+    """
+    return ToolContext(
+        tenant_id=1, user_id="user_001", session_id="sess_test_001",
+        role="operator", permissions=["order:list"],
+    )
+
 
 @pytest.fixture
 def tool():

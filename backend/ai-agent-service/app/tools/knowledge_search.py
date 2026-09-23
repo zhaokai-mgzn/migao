@@ -21,7 +21,7 @@ class KnowledgeSearchTool(BaseTool):
     name = "knowledge_search"
     description = (
         "【触发】顾客问本店知识类问题（面料特性/清洗保养/尺寸测量/价格政策/售后规则/加工计价等）时调用，"
-        "检索本店已发布的知识卡片。【前置】query 传顾客问题的关键词。【行为】命中→基于卡片内容回答并注明"
+        "检索本店已发布的知识卡片。【参数】query 传顾客问题的关键词（必填）；category 可选。【行为】命中→基于卡片内容回答并注明"
         "「📖 来自本店知识库」；未命中→如实告知知识库暂无收录，可用通用行业知识谨慎回答（注明通用建议）。"
         "【来源标注边界】📖 标注仅覆盖卡片原文内容；自补的通用常识/经验性建议必须与标注段分离"
         "（置于标注之前并注明「通用参考」）；禁止把卡片未提及的内容放进来源标注范围，"
@@ -29,11 +29,16 @@ class KnowledgeSearchTool(BaseTool):
         "【反例】实时价格/库存/订单仍用 product_search/order_query 等工具；不得编造卡片之外的本店事实。"
         "【标注】READONLY — 放心调用，无需确认"
     )
-    # 双端覆盖（issue #3059 B 端启用）：xiaobu(customer) + 米宝商户员工角色
+    # 权限码（admin-api 目录）：知识卡片的**读**码 `knowledge:view`（issue #5246 按读写拆码，
+    # 与 KnowledgeController 的读端点同码；写/发布/归档仍为 knowledge:manage）——
+    # 此前读也要求 knowledge:manage，只想看卡片的客服/运营必须被授予写权才进得去。
+    # 本工具**双端覆盖**（issue #3059 B 端启用）：xiaobu(customer) + 米宝商户员工角色
     # （admin/operator/product_manager/knowledge_editor/customer_service 等均可能问本店知识）
-    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator",
-                     "product_manager", "knowledge_editor", "customer_service",
-                     "operation_manager", "support_supervisor", "support_agent"]
+    # ⇒ 声明 c_end_reachable（C 端 JWT 没有 permissions claim，C 端按角色层放行，零回归）。
+    # 声明了权限码 ⇒ 不再声明 allowed_roles（第二份会漂的假门禁，#4106 F4）。
+    required_permissions = ["knowledge:view"]
+    c_end_reachable = True
+    read_only = True   # 只读检索（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {
         "type": "object",

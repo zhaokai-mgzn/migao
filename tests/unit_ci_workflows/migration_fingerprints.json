@@ -118,6 +118,8 @@
     "V120__order_urgency_and_required_delivery_date.sql": "sha256:7a8564867450c9644d325e61b703b6fe10bb717638a30c021e43d92dcb3e050e",
     "V121__fix_batch_consumption_reversal_check.sql": "sha256:0c561b3053a09c410ed5af7cc20fd1c86f9e3b5f7edae9da6caedf7c673c6418",
     "V122__create_fabric_remnants.sql": "sha256:044d529c5618c44f86b11de49fc9000f893e55874b7157bcf45f509066587264",
-    "V123__retire_join_height_processing_item.sql": "sha256:002893d66f6685ce5cc4de6e3d7da9fd36eafe7ecb1721607ce0d19ab7d9a73c"
+    "V123__retire_join_height_processing_item.sql": "sha256:002893d66f6685ce5cc4de6e3d7da9fd36eafe7ecb1721607ce0d19ab7d9a73c",
+    "V124__backfill_read_permissions.sql": "sha256:05204e9bd9e282c0bb8acc62ff09c45eae6b3f4c5efc27f30d6733d99b7d5120",
+    "V125__backfill_write_permissions.sql": "sha256:1aa690d54a7b12d54dd5882fbef3bcbb887ef3066ef54437d6ac698879be2dd1"
   }
 }

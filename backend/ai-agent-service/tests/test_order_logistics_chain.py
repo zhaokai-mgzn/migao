@@ -232,7 +232,8 @@ class TestChainContractSurfaces:
     def test_missing_order_id_refusal_points_to_next_step(self):
         """拿不到订单号时的建议也必须指向下一步（模型在这一刻才知道要订单号）。"""
         tool = LogisticsTrackTool()
-        ctx = ToolContext(tenant_id=1, user_id="u1", session_id="s1", role="agent")
+        ctx = ToolContext(tenant_id=1, user_id="u1", session_id="s1",
+                          role="operator", permissions=["order:list"])
         res = asyncio.run(tool.execute(ctx, order_id=None))
         assert res.success is False
         s = res.suggestion or ""
@@ -367,7 +368,10 @@ class TestTrackingNumberSafetyPreserved:
 
     @staticmethod
     def _ctx():
-        return ToolContext(tenant_id=1, user_id="u1", session_id="s1", role="agent")
+        # issue #5246：`logistics_track` 现持权限码 `order:list`；role="agent" 是 **C 端角色**
+        # （两端隔离硬闸会拒绝）⇒ 用持码的商户员工上下文（本类测的是安全铁律，不是角色）。
+        return ToolContext(tenant_id=1, user_id="u1", session_id="s1",
+                           role="operator", permissions=["order:list"])
 
     def test_direct_tracking_number_query_is_refused(self):
         res = asyncio.run(LogisticsTrackTool().execute(self._ctx(), tracking_number=TRACKING_NO))

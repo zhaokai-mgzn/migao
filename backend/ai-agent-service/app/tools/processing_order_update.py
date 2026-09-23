@@ -29,7 +29,7 @@ class ProcessingOrderUpdateTool(BaseTool):
     name = "processing_order_update"
     description = (
         "【触发】用户说'发加工''加工好了''开始加工''取消加工单'时调用。"
-        "【前置】需要 id（加工单号 JG-xxx / 订单号 / UUID）+ action。"
+        "【参数】需要 id（加工单号 JG-xxx / 订单号 / UUID）+ action。"
         "【语义】issue 可填加工方 processor 与交期 expectedDeliveryDate（yyyy-MM-dd，手工填）；"
         "cancel 必填 reason；取消已发加工及以上的加工单需人工确认（填原因）。"
         "【反例】查询用 processing_order_query；生成用 processing_order_generate。"

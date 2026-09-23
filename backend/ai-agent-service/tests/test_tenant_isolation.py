@@ -349,6 +349,18 @@ class TestLogisticsTrackTenantValidation:
     def tool(self):
         return LogisticsTrackTool()
 
+    # issue #5246：`logistics_track` 现持权限码 `order:list` ⇒ 本类用**持码的商户员工**
+    # 上下文（模块级 ctx_* 是 role=customer，那会被工具层拒绝；本类测的是租户隔离，不是角色）。
+    @pytest.fixture
+    def ctx_tenant_a(self):
+        return ToolContext(tenant_id=TENANT_A, user_id=USER_A, session_id="sess_a",
+                           role="operator", permissions=["order:list"])
+
+    @pytest.fixture
+    def ctx_tenant_b(self):
+        return ToolContext(tenant_id=TENANT_B, user_id=USER_B, session_id="sess_b",
+                           role="operator", permissions=["order:list"])
+
     @patch("app.tools.logistics_track.get_admin_api_client")
     async def test_rejects_other_tenant_order(
         self, mock_get_client, tool, ctx_tenant_a

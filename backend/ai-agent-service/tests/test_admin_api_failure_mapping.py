@@ -800,12 +800,13 @@ class TestMapperGuardIsNotVacuous:
 # ⑥ 真实 403 响应体穿过**曾被漏掉的两条分支**（#4149 G4 的后果闭环）
 # ──────────────────────────────────────────────────────────────────────────────
 
-REQUIRED_PERMISSION = "order:list"
+# issue #5246：计件/进度端点已对齐到页面节点码 `processing:manage`（AgentProductionController）
+REQUIRED_PERMISSION = "processing:manage"
 
 #: 两条漏检分支的宿主：`(模块, 工具类, 会话上下文, 调用参数, 该分支调用方的套话文案)`。
-#: 权限码恒为 `order:list`：`AgentProductionController` 类级 `@RequirePermission("order:list")`
-#: 同时覆盖 `/production/progress` 与 `/production/piecework`。两工具的**授权层不同**
-#: （计件声明权限码 `order:list`、仅 B 端；进度是双端角色白名单，B 端角色码是 `agent`）
+#: issue #5246 起两工具都对齐到页面节点码 `processing:manage`（`AgentProductionController`
+#: 已由类级 `order:list` 改为方法级 `processing:manage`）。两工具的**可达面不同**：
+#: 计件仅 B 端（持码的商户员工），进度是**双端**（`c_end_reachable` ⇒ C 端角色按角色层放行）
 #: ⇒ 上下文各给一份，免得把「工具层拒绝」误当成「admin-api 拒绝」。
 _DENIAL_BRANCHES = [
     ("app.tools.piecework_query", PieceworkQueryTool,

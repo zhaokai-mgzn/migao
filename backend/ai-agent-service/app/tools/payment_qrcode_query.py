@@ -42,7 +42,7 @@ class PaymentQrcodeQueryTool(BaseTool):
 
     description = (
         "【触发】顾客问'怎么付款''在哪付钱''收款码/付款码''扫码支付''付给谁'时调用。"
-        "【前置】无需参数（系统按当前租户自动取商家自己的收款码）。"
+        "【参数】无需参数（系统按当前租户自动取商家自己的收款码）。"
         "【反例】查订单金额/状态用 customer_order_query；查物流用 customer_logistics_track。"
         "【标注】READONLY — 只读查询商家收款二维码，不改动任何数据；"
         "查询结果里的收款码图片地址必须原样使用，禁止编造或改写"
@@ -53,6 +53,8 @@ class PaymentQrcodeQueryTool(BaseTool):
 
     # C 端专用：顾客可用；商户员工侧有独立的设置端（SettingsController），不共用本工具
     allowed_roles = ["customer"]
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    required_permissions = []
     read_only = True
     destructive = False
     idempotent = True

@@ -30,11 +30,15 @@ class SessionManageTool(BaseTool):
 
     name = "session_manage"
     description = (
-        "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。【前置】list/monitor/detail 查。assign 需 session_id+agent_id。end 需确认。【何时不用】经营概况用 dashboard_stats。查客服员工用 employee_manage。【标注】WRITE(assign/end) — 查询安全，写需确认"
+        "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。"
+        "【参数】action 必填：list/monitor/detail 只读；assign（需 session_id + employee_id）/end（需 session_id）为写操作。"
+        "【反例】经营概况/活跃会话统计用 dashboard_stats；查客服员工账号用 employee_manage。"
+        "【标注】WRITE — list/monitor/detail 只读；assign/end 需确认"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
-    # 权限码（admin-api 目录）：AgentSessionController 类级 `@RequirePermission("agent:session")`。
-    required_permissions = ["agent:session"]
+    # 权限码（admin-api 目录）：读面 `agent:session`；issue #5246 起转接/结束会话/发消息三条
+    # 写端点走 `agent:session:manage`（此前挂在会话读码上）。
+    required_permissions = ["agent:session", "agent:session:manage"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认

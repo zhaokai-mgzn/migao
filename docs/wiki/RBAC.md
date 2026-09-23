@@ -9,10 +9,10 @@
 |------|------|---------|
 | 管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
 | 平台管理员 | super_admin | 全部权限（在 `platform_admins` 表，走 `PermissionInterceptor` 直通） |
-| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`（**无** `order:refund`；见下方「权限码矩阵与已知缺口」） |
-| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `customer:view`, `finance:view`, `agent:session`, `employee:list` |
+| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经米宝查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）, **`agent:session:manage`**（会话转接/结束写码，issue #5246 第二批）。**仍无** `order:refund`（退款写面）与 `order:update`（改单写面） |
+| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增） |
 | 销售 | sales | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `product:list`, `order:list`, `order:detail`, `customer:view`, `processing:view` |
-| 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view` |
+| 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
 > 新租户注册初始化五岗种子（管理员/客服/运营/销售/财务）+ role_permissions 预置（V29 为存量租户补齐）。
@@ -51,7 +51,16 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
   只允许纯本地校验类工具声明（当前唯一 `validate_input`）—— 商户角色码是**开放集合**
   （「岗位权限」页可创建任意岗位码），任何手写清单都会把持码员工判成「权限不足」；
   ② 工具层 `check_permission` 的拒绝必须带 `error_code ∈ NON_RETRYABLE_ERROR_CODES`
-  （当前 `PERMISSION_DENIED`），否则授权失败会进自修复重试的参数改写重放。
+  （当前 `PERMISSION_DENIED`），否则授权失败会进自修复重试的参数改写重放；
+  ③ **权限码是「商户员工」概念（issue #5246）**：C 端（`customer`/`agent`）JWT 里没有 `permissions`
+  claim ⇒ 对 C 端而言细粒度层**不可判**。⇒ 声明了权限码的**双端工具**（同时被小布 skill 绑定：
+  `product_search` / `product_detail` / `processing_item_query` / `order_create` / `knowledge_search` /
+  `production_progress_query`）必须在类上显式写 `c_end_reachable = True`，C 端才按**角色层**放行
+  （= 与加码前逐字一致，C 端零回归）；**未声明**该标记的工具对 C 端一律拒绝（既有 C 端硬闸）。
+  取值不得手写：`tests/unit_ci_workflows/test_agent_permission_parity.py` 按 skill 绑定机械核对。
+  另一条边界：C 端经 `X-User-Id=customer/agent` 调 admin-api 时 `ServiceTokenFilter` 回退成
+  `service` 权威、`PermissionInterceptor.hasBypassRole` 直通 ⇒ **admin-api 侧对 C 端没有权限码校验**，
+  C 端的隔离靠业务层的 `X-User-Id` 过滤（`/api/customer/**`、`/api/admin/agent/**` 各自过滤）。
 
 ## 全链路现状（员工管理权限）
 
@@ -74,7 +83,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | 门禁 | `SecurityConfig.adminApiAuthorizationManager`：`/api/admin/**` 允许平台管理员/内部服务/商户员工角色；**拒绝集合** `ADMIN_API_REJECTED_ROLES` = 小程序/B2C 用户（customer/agent）+ **工人端身份（worker，issue #4727 按 #4716 设计 C11 预留）** 一律 403 |
 | Controller | `@RequirePermission("模块:操作")` + `PermissionInterceptor` AOP 切面（方法级 + 类级）；平台管理员(super_admin) 直通。内部服务(service) **不再无条件直通**：service token 请求带 `X-User-Id` 且该用户解析为**同租户商户员工**（role ∉ {customer, agent}）时，改以该员工的真实角色进入 `PermissionInterceptor` 做细粒度强控（#4105，`ServiceTokenFilter`）；无 `X-User-Id` / C 端顾客 / 非本租户 / 查库异常时**保持原直通语义**（零回归）。403 响应保留所需权限码并附可执行 suggestion（`GlobalExceptionHandler` + `SecurityConfig.accessDeniedHandler` 同构） |
 | Service | MyBatis 拦截器自动注入 `WHERE tenant_id = ?` |
-| AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。覆盖范围随 #4106 铺开：此前仅 `employee_manage` 声明，其余工具只有 `allowed_roles` 角色粗筛 |
+| AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。**#4106 铺开 + #5246 收口**：`app/tools/*.py` 里每个 B 端可达工具都声明了码（纯本地工具走显式白名单），且与端点生效码/菜单节点码/岗位矩阵**四方对账** —— 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py`（九条，各带注入式红证） |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
 
 ## `/api/admin/**` 放行策略现状（issue #4727 实测，2026-09-20）
@@ -102,6 +111,44 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 
 审计口径：扫描 `backend/admin-api/src/main/java/com/migao/admin/controller/**`（**含 `agent/` 子目录**）全部端点，
 按「方法级注解优先、其次类级」解析每个端点的**生效权限码**。
+
+> **issue #5246 落地状态（2026-09-23）** —— 上表逐条结论已落地，**没有一条留在沉默里**：
+> · **该补的补了**：第 1/2/3 行（`AdminPermissionController` / `NotificationRule` / `NotificationTemplate`）
+>   已是 `system:manage`；第 5 行 `POST /api/admin/notifications` 补 `system:manage`，
+>   **同批**给 ai-agent 的 `notification_manage` 声明同一码（单边改动会砍掉运营经米宝发通知的能力）。
+> · **该放行的登记为「有意放行」**：第 4/6/7/8/9/10/11 行 + 部分覆盖表的读面，逐条登记在守卫
+>   `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `UNANNOTATED_ENDPOINTS`（每条含理由）；
+>   判据 8 会因「新增了未登记的无码端点」或「登记项已陈旧」而变红 ⇒ 沉默放行不再可能。
+> · **读写拆分（同批）**：`AfterSalesController` / `agent/AgentAfterSalesController` 的类级
+>   `order:refund` 拆成方法级 —— 读（GET 列表/详情、`/agent/after-sales/mine`）→ **新码 `after_sales:view`**，
+>   写（建单/改状态）→ 保留 `order:refund`；`KnowledgeCard` / `KnowledgeCandidate` / `KnowledgeTemplate`
+>   的类级 `knowledge:manage` 同样拆分（读 → **新码 `knowledge:view`**，写 → 保留）；
+>   `AgentProductController` 的商品/库存/SKU 写端点从 `product:list` 拆到 `product:create`。
+> · **可见性变化（两处节点）**：『知识库』节点码 `knowledge:manage` → `knowledge:view`
+>   ⇒ 客服 / 运营现在能看到该菜单项；『售后工单』节点码 `order:refund` → `after_sales:view`
+>   ⇒ **客服**新看到该菜单项（运营原本就有）。其余节点码一个未动。
+>
+> **issue #5246 第二批（同日，用户裁定「本轮一并收口」）：拆出真写码，写动作不再挂在读码上**
+> —— 新增 `order:update` / `order:create` / `customer:create` / `finance:create` /
+> `agent:session:manage` 五个**写**码（目录两处、岗位矩阵、V124 迁移、端点注解同批落地）：
+> · `OrderController` 的 `PUT /{id}/status|payment|cancel|remark|follow-status|logistics` 与
+>   `DELETE /{id}` → `order:update`；`POST /` → `order:create`（`PUT /{id}/refund` 仍是 `order:refund`）；
+> · `AgentOrderController`：`POST /` → `order:create`、`PATCH /{id}` → `order:update`
+>   （退款 action 的 `requirePermission("order:refund")` 复检保留）；
+> · `CustomerController` 的写面（改/删客户与标签）→ `customer:create`；
+> · `FinanceController` 的 `POST /transactions` → `finance:create`；
+> · `AgentSessionController` 的 `assign/end/messages` → `agent:session:manage`。
+> **有意收窄（能力增量表见 PR）**：`customer_service` / `sales` / `finance` 此前**因写动作挂在
+> 读码上**而能改单、删客户、登记收支；现在不能（各自只保留读面）。**没有给任何岗位新增权限**：
+> 新写码只授给原本就用这些写面工作的岗位（operator，及 finance / customer_service 各自那一个）。
+>
+> ⚠️ **`processing:view` 的现状（如实登记）**：它仍留在四个岗位的默认权限里，但**在四处菜单源里
+> 没有任何节点**，且已不再是任何**工具**可达读面的门槛 —— 读端点的码统一对齐到节点码
+> `processing:manage`（`ProcessingOrderController` 的 GET、`AgentProductionController` 的三个
+> GET，以及**跟随兄弟锚点**同批改码的 `ProcessingOrderSetController` 三个读端点）。
+> 现存唯一仍用 `processing:view` 的端点是 `ProductionPoolController` 的两个读端点
+> （无 Agent 工具调用，已登记为残留）。**方向只收窄**：只持 `processing:view` 的岗位失去这几处
+> 生产读面，与「不得泄露页面看不到的数据」的裁定一致。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）
@@ -154,19 +201,22 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
   `error.message` 含缺失权限码、`error.details[0]={field:"requiredPermission"}`，并带
   **LLM 可执行 `suggestion`**（说明这是角色/权限限制、不是参数问题、不要重试同一工具、请管理员在「岗位权限」中授权）。
 
-> ⚠️ 内置岗位默认权限存在缺口（如 `customer_service` 默认权限不含 `order:refund`，而售后接口类级要求它）：
-> 此前被服务间旁路掩盖，F2 生效后客服驱动米宝处理售后会被 403。属**岗位权限矩阵**问题，见 #4104 后续修复；
-> `operator` 已有 `order:refund`，运营驱动的 B 端链路不受影响。
+> ✅ **该缺口已于 issue #5246 关闭**：售后接口不再用类级 `order:refund` 覆盖只读端点 ——
+> 读面改为 `after_sales:view` 并授给客服/运营，写面保留 `order:refund` ⇒
+> 客服驱动米宝**查**售后不再 403；客服仍**不能**退款/建工单（无 `order:refund`）—— 这是有意的读写分权。
 
 ## 写越权用例时的取值纪律（#4104 登记）
 
-岗位权限矩阵的存量缺口（如 `customer_service` 默认权限不含 `order:refund`，而 `AfterSalesController` /
-`agent/AgentAfterSalesController` 是**类级** `@RequirePermission("order:refund")`，连只读端点一并覆盖，
-详见上方缺口说明与 #4104）修复本轮刻意不做（用户裁定，超出 #4103 范围）。
+> ✅ **#4104 登记的这一格已随 issue #5246 关闭**：`AfterSalesController` /
+> `agent/AgentAfterSalesController` 的类级 `order:refund` 已拆成方法级（读 → `after_sales:view`，
+> 写 → `order:refund`），客服岗位默认权限已含读码 ⇒ 「客服查售后」现在**应该成功**。
+> 评测用例可以正常使用这一格，但**必须写清是读还是写**：
+> · 「客服查售后**成功**」= 正向对照（持 `after_sales:view`）；
+> · 「客服**退款/建工单被拒**」= 负向（无 `order:refund`）。
 
-⇒ 编写"越权被拒"类评测用例时请**避开售后这一格**：它同时受"岗位矩阵缺口"影响，拒绝语义有歧义。
-用角色**从来就没有**的权限码（如 `employee:create` / `system:manage`）才能得到无歧义的"拒绝"语义，
-并且必须配一条**正向对照**用例（持该码时同一诉求应成功），否则无法区分"正确拒绝"与"整条链路坏了”。
+⇒ 写"越权被拒"类用例的取值纪律不变：优先用角色**从来就没有**的权限码（如 `employee:create` /
+`system:manage`）得到无歧义的"拒绝"语义，并配一条**正向对照**（持该码时同一诉求应成功），
+否则无法区分"正确拒绝"与"整条链路坏了"。
 
 
 ## 菜单过滤

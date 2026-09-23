@@ -1101,7 +1101,11 @@ public class AuthService {
         if (isAll || permissions.contains("agent:session")) {
             csChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
         }
-        if (isAll || permissions.contains("knowledge:manage")) {
+        // issue #5246：知识库节点由 knowledge:manage 改为**读**码 knowledge:view ——
+        // 读写拆码后「看知识库」不再需要写权；本处与前端 config/menu.ts 的 `knowledge` 节点、
+        // MenuController.MENU_TREE 三处必须同码（否则岗位权限页勾得动、侧边栏看不到）。
+        // 这是**已批准的可见性变更**：customer_service / operator 由此首次看到「知识库」菜单项。
+        if (isAll || permissions.contains("knowledge:view")) {
             csChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
         }
         if (!csChildren.isEmpty()) {
@@ -1168,7 +1172,9 @@ public class AuthService {
         if (isAll || permissions.contains("order:list")) {
             tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
         }
-        if (isAll || permissions.contains("order:refund")) {
+        // issue #5246：售后工单节点由 order:refund（写码）改为读码 after_sales:view ——
+        // 与前端 config/menu.ts 的 `after-sales` 节点、MenuController.MENU_TREE 同源同码。
+        if (isAll || permissions.contains("after_sales:view")) {
             tradeChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
         }
         if (!tradeChildren.isEmpty()) {

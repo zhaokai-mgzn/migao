@@ -135,11 +135,20 @@ class NotificationManageTool(BaseTool):
 
     name = "notification_manage"
     description = (
-        "【触发】用户问'通知''消息''未读''有没有通知''发送通知''标记已读'时调用。【前置】list/unread_count 可查询。mark_read 需要通知ID。create 需要标题+内容+接收人。【反例】系统配置用 settings_manage。【标注】WRITE(create/delete) — 发送/删除通知需确认。"
+        "【触发】用户问'通知''消息''未读''有没有通知''发送通知''标记已读'时调用。"
+        "【参数】action 必填：list/unread_count 只读；mark_read（需 notification_id）/read_all/"
+        "delete（需 notification_id）/create（需 title+content+recipient_id）为写操作。"
+        "【反例】系统配置/AI 配置用 settings_manage；查会话用 session_manage。"
+        "【标注】WRITE — list/unread_count 只读；mark_read/read_all/delete/create 需确认。"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
         "【铁律】用户说标为已读/把XX通知标为已读时：先 list 拿通知 ID，必须立即调 mark_read（单条）或 read_all（全部已读）执行，禁止只展示未读列表就停（ST-005 实拍：只 list 不 mark_read 判失败）。"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
+    # 权限码（admin-api 目录）：本工具调**两类端点**，码集必须覆盖每一个（#5246 判据 2）——
+    # ① 通知端点（create/delete 等）`@RequirePermission("system:manage")`；
+    # ② `GET /api/admin/users`（create 解析接收人）的生效码为 `employee:list`。
+    # 声明了权限码 ⇒ **删除** allowed_roles：它含 C 端角色 `agent` 与幽灵角色 `tenant_admin`
+    # （admin-api 里不存在该角色），属横向越权/跨服务口径断裂（#5246 判据 6）。
+    required_permissions = ["system:manage", "employee:list"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认

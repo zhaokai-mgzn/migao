@@ -27,6 +27,7 @@
 import ast
 import importlib
 import re
+import sys
 from pathlib import Path
 
 from app.tools.registry import get_tool_registry
@@ -150,21 +151,60 @@ def test_action_description_covers_every_enum_member():
     assert not failures, "action 描述缺分支语义：\n" + "\n".join(failures)
 
 
+def _dead_tool_classes(defined: dict, registered: set) -> dict:
+    """判据内核（**抽出来供注入式红证驱动同一份本体**）：未注册且未标 deprecated 的工具类。"""
+    return {name: f for name, f in defined.items() if name not in registered}
+
+
 def test_every_tool_class_is_registered_or_marked_deprecated():
     """app/tools/ 下每个 BaseTool 子类必须已注册（或显式 deprecated=True）
 
     死工具形态（本次实证 #3574）：类写好了、没人注册 → LLM 永远看不到它，
     但 fallback 文案/测试还在引用，静态看像"活的能力"，实际是死代码。
+
+    issue #5246 的核查结论（两个「死工具」登记项都**未删除**，各带实测理由）：
+    · `confirm_value` **不是**死工具 —— `confirm_value.py` 里根本没有工具类，它是
+      `interact.py` / `base_skill.py` 共用的派生契约模块；
+    · `human_handoff` 仍是「未注册 + 显式 `deprecated = True`」的**阶段一**形态（模型不可达、
+      零能力面）；阶段二（删文件）有 5 个测试模块的活依赖（幂等键接线锁 / 行为映射规则 /
+      能力拒绝守卫 / 直测单测 / 用例 covered_by），须与用例文档同批做。
     """
     registered = set(get_tool_registry().get_tool_names())
     defined = _tool_classes_in_source()
 
     assert len(defined) >= 30, f"只扫到 {len(defined)} 个工具类，AST 扫描可能失效：{sorted(defined)}"
 
-    dead = {name: f for name, f in defined.items() if name not in registered}
+    dead = _dead_tool_classes(defined, registered)
     assert not dead, (
         f"app/tools/ 存在未注册的死工具（注册到 create_default_registry()，"
         f"或删除代码/加 `deprecated = True` 显式弃用）：{dead}"
+    )
+
+
+def test_dead_tool_judgement_still_has_teeth(tmp_path, monkeypatch):
+    """**L0 判据仍有牙**（issue #5246 的验收要求）：植入一个未注册且未标 deprecated 的工具类 ⇒ 必报。
+
+    为什么必须钉这一条：删掉两个死工具后，`_tool_classes_in_source()` 的扫描面小了，
+    若不核对「判据本体还能不能报」，这条不变式可能已经退化成恒绿（`migao-acceptance` §19.1
+    「不会红的断言 = 空断言」）。注入点 = 沙箱目录，**不动真实 `app/tools/`**。
+    """
+    (tmp_path / "zz_injected_dead_tool.py").write_text(
+        "from app.tools.base import BaseTool\n\n\n"
+        "class ZzInjectedDeadTool(BaseTool):\n"
+        '    name = "zz_injected_dead_tool"\n'
+        '    description = "红证夹具"\n\n'
+        "    async def execute(self, context, **kwargs):\n"
+        "        raise NotImplementedError\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "TOOLS_DIR", tmp_path)
+    defined = _tool_classes_in_source()
+    assert defined == {"zz_injected_dead_tool": "zz_injected_dead_tool.py"}, (
+        f"注入夹具没有被扫描器看见（判据失效）：{defined}"
+    )
+    dead = _dead_tool_classes(defined, set(get_tool_registry().get_tool_names()))
+    assert "zz_injected_dead_tool" in dead, (
+        "未注册且未标 `deprecated = True` 的工具类没有被判成死工具 ⇒ L0 不变式已退化成空断言"
     )
 
 

@@ -454,8 +454,10 @@ class TestDenialsCarryANonRetryableCode:
     async def test_registry_execution_path_carries_the_code(self):
         """第二个共享入口：`ToolRegistry.execute_tool` 的拒绝同样必须带码。"""
         registry = get_tool_registry()
+        # issue #5246：`logistics_track` 现持 `order:list`，而 OPERATOR **正好持有该码**
+        # ⇒ 它不再是「被拒绝的工具」。改用 operator 确实无码的工具（`system:manage` 归 admin 专属）。
         result = await registry.execute_tool(
-            "logistics_track", OPERATOR, order_id=_UUIDISH,
+            "role_manage", OPERATOR, action="list",
         )
         assert result.success is False
         assert result.error_code == PERMISSION_DENIED_CODE, (
@@ -464,14 +466,15 @@ class TestDenialsCarryANonRetryableCode:
 
     async def test_denied_idempotent_tool_no_longer_enters_the_retry_replay(self):
         """病灶效果层：被拒绝的幂等工具**不得**再被参数改写重放（llm 一次都不许调）。"""
-        tool = get_tool_registry().get_tool("logistics_track")
+        # 同上：operator 已持 `order:list` ⇒ 改用无码的 `role_manage`（system:manage 归 admin）
+        tool = get_tool_registry().get_tool("role_manage")
         llm = _FakeLLM({"order_id": _UUIDISH})
         with patch("app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",
                    return_value=llm) as factory:
             _, result_dict = await _execute_tool_safe(
-                tool, {"order_id": _UUIDISH}, OPERATOR, dict(STATE),
+                tool, {"action": "list"}, OPERATOR, dict(STATE),
             )
-            effective = await _retry(tool, {"order_id": _UUIDISH}, result_dict)
+            effective = await _retry(tool, {"action": "list"}, result_dict)
         assert result_dict["success"] is False
         assert result_dict["error_code"] in NON_RETRYABLE_ERROR_CODES
         assert factory.call_count == 0, "权限拒绝不得触发 suggestion_llm（重试入口必须关闭）"

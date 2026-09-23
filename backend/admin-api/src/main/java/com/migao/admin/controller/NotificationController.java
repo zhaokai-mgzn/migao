@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.NotificationService;
 import jakarta.validation.Valid;
@@ -23,6 +24,12 @@ import org.springframework.web.bind.annotation.*;
  * - PUT    /api/admin/notifications/read-all      → 全部已读
  * - DELETE /api/admin/notifications/{id}          → 删除通知
  * - POST   /api/admin/notifications               → 创建通知
+ *
+ * <p>issue #5246（审计裁定「该放行」+ 唯一的写面收口）：本控制器**只有** POST 加权限码
+ * {@code system:manage}（管理员手动发通知 = 管理动作，会给**别人**推消息）。其余五个端点
+ * **有意不加注解**：它们是**自助**面 —— 收件人恒取 {@code SecurityContext}（见
+ * {@link #getCurrentUserId()}），**从不**取 body 里的 recipientId ⇒ 任何人都只能读写
+ * **自己**的通知，加码反而会让「通知中心」菜单（对全员可见）点开就 403。issues #4727 / #5236。</p>
  */
 @Slf4j
 @RestController
@@ -119,8 +126,12 @@ public class NotificationController {
      * 创建通知（管理员手动发送）
      *
      * POST /api/admin/notifications
+     *
+     * issue #5246：本端点是「给**别人**发通知」的写面（recipientId 取自 body）⇒ 与其余五个
+     * 自助端点不同，必须挂 system:manage（系统管理 = 企业信息/岗位权限/系统设置那一档的管理动作）。
      */
     @PostMapping
+    @RequirePermission("system:manage")
     public ApiResponse<NotificationDTO> createNotification(@Valid @RequestBody CreateNotificationRequest request) {
         Long tenantId = TenantContext.getTenantId();
         log.info("创建通知: recipientId={}, title={}", request.getRecipientId(), request.getTitle());

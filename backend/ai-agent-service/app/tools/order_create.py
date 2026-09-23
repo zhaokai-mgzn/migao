@@ -144,6 +144,8 @@ CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id"
 
 #: 幂等键的**操作维度**取值（issue #4212）。改这些值 = 部署窗口内同一次重试的键轮换
 #: （旧 pod 与新 pod 算出不同键 ⇒ 灰度期间那一笔可能重复落库）——不是随手可改的字面量。
+#: ⚠️ `HUMAN_HANDOFF_OP` 的调用点已随 `human_handoff` 退场（模型不可达）不再产生流量，
+#: 但常量**保留**：issue #5246 未执行阶段二删文件（它有 5 个测试模块的活依赖，须与用例/文档同批）。
 ORDER_CREATE_OP = "order"
 AFTERSALE_CREATE_OP = "aftersale"
 HUMAN_HANDOFF_OP = "handoff"
@@ -358,7 +360,7 @@ class OrderCreateTool(BaseTool):
     name = "order_create"
     description = (
         "【触发】创建订单。用户说'创建订单''下单'时调用。"
-        "【前置】必须先调 product_detail 查 SKU，多 SKU 必须让用户选规格（颜色/售卖方式/门幅）。单 SKU 直接用。"
+        "【参数】必须先调 product_detail 查 SKU，多 SKU 必须让用户选规格（颜色/售卖方式/门幅）。单 SKU 直接用。"
         "必填: customer_name + customer_phone + items(product_name+quantity+unit_price+subtotal)。"
         # 契约面必须与运行时判据一致（issue #4011）：运行时对「商品有多个不同 SKU 价」要求
         # 指定规格，而 schema 只声明 4 个必填、描述也没说 ⇒ LLM 无从知道 ⇒ 死锁
@@ -463,9 +465,19 @@ class OrderCreateTool(BaseTool):
         "processingItems**；漏算/算错加工费时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
         "臆造规格键（如自己编 colorId/skuId）或只给颜色不给门幅就下单（服务端无法定位 SKU ⇒ 拒绝）；"
-        "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。修改订单用 order_manage。WRITE"
+        "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。修改订单用 order_manage。"
+        "【标注】WRITE — 下单即与顾客达成交易合同，必须先出确认卡并取得明确确认"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
+
+    # 权限码（admin-api 目录）：issue #5246 起下单走**写码** `order:create`
+    # （`AgentOrderController.POST /` 同批拆码；此前挂在读码 `order:list` 上）
+    # ＋`product:list`（商品/库存校验面）——与 controller 同码。
+    # 本工具**双端**（C 端小布下单 + B 端代客下单）⇒ 声明 c_end_reachable：C 端 JWT 没有
+    # permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
+    # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`；且权限码在场时角色白名单
+    # 本就不生效＝第二份会漂的假门禁，#4106 F4）。
+    required_permissions = ["order:create", "product:list"]
+    c_end_reachable = True
 
     read_only = False
     destructive = False

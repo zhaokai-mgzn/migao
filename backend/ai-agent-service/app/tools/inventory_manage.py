@@ -79,12 +79,19 @@ class InventoryManageTool(BaseTool):
     
     name = "inventory_manage"
     description = (
-        "【触发】用户问'库存''还有多少''缺货''低库存''出库''入库''调整库存'时调用。【前置】query: 需要 product_id。adjust: product_id+adjustment+reason。low_stock_alert: 可选 threshold。customer 角色仅允许 query，adjust 和 low_stock_alert 仅限管理员/客服。【反例】查商品详情(含库存字段)用 product_detail，不要混淆。【标注】WRITE(adjust) — query是安全的，adjust需确认"
+        "【触发】用户问'库存''还有多少''缺货''低库存''出库''入库''调整库存'时调用。"
+        "【参数】action 必填：query（需 product_id）/ low_stock_alert（可选 threshold）只读；"
+        "adjust（product_id + adjustment + reason）为写操作——调整数量按 0.1 米粒度、超 1 位小数会被拒。"
+        "【反例】查商品详情（含库存字段）用 product_detail；查批次余量/剩料分布用 batch_stock_query。"
+        "【标注】WRITE — query/low_stock_alert 只读；adjust 前必须二次确认"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
     )
     
-    # admin、agent、customer、tenant_admin 可使用（customer 仅限 query 操作）
-    allowed_roles = ["admin", "agent", "customer", "tenant_admin"]
+    # 权限码（admin-api 目录）：ProductController / AgentProductController 的库存端点 ——
+    # 读（query/low_stock_alert）= `product:list`、写（adjust）= `product:create`，与 controller 同码。
+    # 声明了权限码 ⇒ **删除** allowed_roles：它含 C 端角色 `customer`（横向越权，issue #5246 判据 6），
+    # 且权限码在场时角色白名单本就不生效＝第二份会漂的假门禁（#4106 F4）。
+    required_permissions = ["product:list", "product:create"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认

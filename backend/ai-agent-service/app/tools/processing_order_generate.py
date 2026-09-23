@@ -18,7 +18,7 @@ class ProcessingOrderGenerateTool(BaseTool):
     name = "processing_order_generate"
     description = (
         "【触发】用户说'生成加工单''把这几单发加工''今天确认的订单都生成加工单'时调用。"
-        "【前置】需要 order_ids（订单 ID 或订单号列表）。"
+        "【参数】需要 order_ids（订单 ID 或订单号列表）。"
         "【语义】仅已确认且含加工项的订单可生成；生成后订单进入生产中（producing）。"
         "【反例】查询加工单用 processing_order_query；更新加工单状态用 processing_order_update。"
         "【标注】WRITE — 批量生成前必须列出订单清单并二次确认"

@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.*;
  * - 订单所有权校验内置（仅 customer 角色需要）
  */
 @Slf4j
-@RequirePermission("order:refund")
 @RestController
 @RequestMapping("/api/admin/agent/after-sales")
 @RequiredArgsConstructor
@@ -63,6 +62,7 @@ public class AgentAfterSalesController {
      * 「正在处理中」的 fail-closed 409（不重复建单）；执行失败由 {@code discard} 释放占位。</p>
      */
     @PostMapping
+    @RequirePermission("order:refund")
     public ApiResponse<AfterSalesDetailResponse> createTicket(
             @RequestBody AgentAfterSalesCreateRequest request,
             @RequestHeader(value = CLIENT_HEADER, required = false) String clientSource,
@@ -110,8 +110,12 @@ public class AgentAfterSalesController {
      * 数据隔离强制点：无论调用方传什么参数，都只返回「当前登录用户订单上的
      * 售后工单」（X-User-Id 透传 → SecurityUser.userId）。缺省 userId（内部
      * 服务占位）时直接拒绝，避免跨用户数据泄露。
+     *
+     * issue #5246：类级 order:refund 已移除，本端点是**读**（只查当前登录用户自己的工单）
+     * ⇒ 用读码 after_sales:view；建单那条仍是写码 order:refund（读写分离后各归其位）。
      */
     @GetMapping("/mine")
+    @RequirePermission("after_sales:view")
     public ApiResponse<com.migao.admin.dto.PageResponse<com.migao.admin.dto.AfterSalesListResponse>> getMyTickets(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {

@@ -56,7 +56,7 @@ class ProductionWorklogQueryTool(BaseTool):
     description = (
         "【触发】商家问'这单下料/裁剪做到哪了''谁报的''合格多少''返工报废多少''过程明细'"
         "'每道工序谁在做''报工记录'时调用。"
-        "【前置】需要订单号 order_no；用户没给时**先查订单拿号**"
+        "【参数】需要订单号 order_no；用户没给时**先查订单拿号**"
         "（商户端用 order_query），不要猜号。"
         "【反例】只问'做到哪道工序/还要多久'用 production_progress_query（订单级进度，不发明细）；"
         "问'某师傅这个月计件多少钱'用 piecework_query（按人×月）；"
@@ -81,9 +81,10 @@ class ProductionWorklogQueryTool(BaseTool):
     }
 
     # 仅 B 端：报工明细含报工人与计件金额（工资面）⇒ 不对 C 端顾客开放。
-    # 权限码（admin-api 目录）：AgentProductionController 类级 `@RequirePermission("order:list")`
-    # —— 与 /progress、/piecework **同一授权面**，本工具不新增权限码。
-    required_permissions = ["order:list"]
+    # 权限码（admin-api 目录）：报工明细属**加工面读码** `processing:manage`（issue #5246 改判：
+    # 原取 order:list 是订单读码，与 ProductionController 报工/计件端点的
+    # `@RequirePermission("processing:manage")` 不符）。
+    required_permissions = ["processing:manage"]
     read_only = True
     destructive = False
     idempotent = True

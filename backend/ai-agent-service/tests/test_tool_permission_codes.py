@@ -69,14 +69,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import CUSTOMER_ONLY_ROLES, BaseTool, ToolContext, ToolResult
 from app.tools.registry import create_default_registry
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 真值表（判据的唯一来源 —— 测试与红证夹具共用这一处，不写第二份）
 # ──────────────────────────────────────────────────────────────────────────────
 
-#: admin-api 权限目录（20 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
+#: admin-api 权限目录（22 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
 #: 该判据按**集合**比对 ⇒ 新增码必须同批落在这里，否则「镜像腐烂 ⇒ 工具层按错码授权」判红）
 PERMISSION_CATALOG = frozenset({
     "dashboard:view",
@@ -91,29 +91,45 @@ PERMISSION_CATALOG = frozenset({
     "inbound:view",
     "inbound:create",
     "knowledge:manage",
+    # 知识库**读**码（issue #5246）：读（卡片列表/搜索）与写（增删改/发布/归档）此前同用
+    # `knowledge:manage` ⇒ 只想看看卡片的客服/运营必须被授予写权才进得去；本次按读写拆开。
+    "knowledge:view",
     "order:list",
     "order:detail",
     "order:refund",
+    # 售后工单**读**码（issue #5246）：此前列表/详情与建单/改状态同用 `order:refund`
+    # （**处理退款**的写语义）⇒ 客服岗位默认权限不含它 ⇒ 客服经米宝查售后必 403。
+    "after_sales:view",
     "customer:view",
     "finance:view",
     "agent:session",
     "employee:list",
     "employee:create",
     "system:manage",
+    # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
+    # 此前写动作挂在读码上（只读持有者因此拿到写能力，端点层也拦不住）。
+    "order:update",
+    "order:create",
+    "customer:create",
+    "finance:create",
+    "agent:session:manage",
 })
 
 #: 商户角色的默认权限码（DB seed 口径；`admin` 运行时恒为 `*`）
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset({"*"}),
     "operator": frozenset({
-        "agent:session", "customer:view", "dashboard:view", "employee:list",
-        "finance:view", "inbound:create", "inbound:view",
-        "order:detail", "order:list", "order:refund",
+        "after_sales:view", "agent:session", "agent:session:manage",
+        "customer:create", "customer:view", "dashboard:view",
+        "employee:list", "finance:create", "finance:view",
+        "inbound:create", "inbound:view", "knowledge:view",
+        "order:create", "order:detail", "order:list", "order:refund", "order:update",
         "processing:manage", "processing:update", "processing:view",
         "product:category", "product:create", "product:list",
     }),
     "customer_service": frozenset({
-        "agent:session", "customer:view", "dashboard:view", "inbound:view",
+        "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
+        "dashboard:view", "inbound:view", "knowledge:view",
         "order:detail", "order:list", "processing:view",
     }),
     "sales": frozenset({
@@ -121,8 +137,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "processing:view", "product:list",
     }),
     "finance": frozenset({
-        "dashboard:view", "finance:view", "inbound:view", "order:detail", "order:list",
-        "processing:view",
+        "dashboard:view", "finance:create", "finance:view", "inbound:view",
+        "order:detail", "order:list", "processing:view",
     }),
     "product_manager": frozenset({
         "dashboard:view", "processing:manage", "product:category",
@@ -137,27 +153,45 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 
 #: 工具 → 应声明的权限码（下表的「工具 × 角色」放行集由它推导，不手写第二遍）
 TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
-    "after_sales_manage": ("order:refund",),
+    # issue #5246：读（list/detail）取新增的售后读码 `after_sales:view`，写（create/update_status）
+    # 保留 `order:refund` —— 与 `AfterSalesController` 的方法级 `@RequirePermission` 同码。
+    "after_sales_manage": ("after_sales:view", "order:refund"),
     # 批次账 / 省料读面（issue #5188）：码与 `StockBatchController` 各端点的
     # `@RequirePermission("product:list")` **逐字一致**（判据见
     # `tests/test_batch_stock_query.py::TestPermissionAlignment`）。
     "batch_stock_query": ("product:list",),
     "category_manage": ("product:category",),
-    "customer_manage": ("customer:view",),
+    "customer_manage": ("customer:view", "customer:create"),
     "dashboard_stats": ("dashboard:view",),
     "employee_manage": ("employee:list", "employee:create"),
-    "finance_api": ("finance:view",),
-    "order_manage": ("order:list",),
-    "piecework_query": ("order:list",),
-    "production_worklog_query": ("order:list",),
+    "finance_api": ("finance:view", "finance:create"),
+    # issue #5246：库存读（query/low_stock_alert）= product:list、写（adjust）= product:create。
+    "inventory_manage": ("product:list", "product:create"),
+    # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
+    "knowledge_search": ("knowledge:view",),
+    "logistics_track": ("order:list",),
+    # issue #5246：本工具调**两类端点** ⇒ 码集必须覆盖每一个 —— 通知端点（create/delete）
+    # = system:manage，`GET /api/admin/users`（create 解析接收人）= employee:list。
+    "notification_manage": ("system:manage", "employee:list"),
+    "order_create": ("order:create", "product:list"),
+    "order_manage": ("order:update",),
+    "order_query": ("order:list",),
+    # issue #5246 改判：计件/报工/加工单读面取**加工面读码** processing:manage
+    # （ProductionController 的方法级注解；原 order:list / processing:view 与端点生效码不符）。
+    "piecework_query": ("processing:manage",),
     "processing_item_manage": ("processing:manage",),
+    "processing_item_query": ("processing:manage",),
     "processing_order_generate": ("processing:update",),
-    "processing_order_query": ("processing:view",),
+    "processing_order_query": ("processing:manage",),
     "processing_order_update": ("processing:update",),
+    "product_detail": ("product:list",),
     "product_manage": ("product:create",),
+    "product_search": ("product:list",),
     "product_update": ("product:create",),
+    "production_progress_query": ("processing:manage",),
+    "production_worklog_query": ("processing:manage",),
     "role_manage": ("system:manage",),
-    "session_manage": ("agent:session",),
+    "session_manage": ("agent:session", "agent:session:manage"),
     "settings_manage": ("system:manage",),
     "sku_update": ("product:create",),
 }
@@ -165,34 +199,50 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
 #: 每个工具**必须**放行的商户角色（除恒放行的 admin 外）—— 显式写死，
 #: 映射一变本表就得跟着改，diff 里看得见「谁新拿到/谁被收回」。
 EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
-    "after_sales_manage": frozenset({"operator"}),
+    # issue #5246：售后**读**码 `after_sales:view` 已授予客服/运营 ⇒ 客服经米宝查售后不再 403。
+    "after_sales_manage": frozenset({"customer_service", "operator"}),
     # 批次/省料读面（issue #5188）：`product:list` 的持有角色（目录推导，不手抄）
-    "batch_stock_query": frozenset({"operator", "sales", "product_manager", "knowledge_editor"}),
+    "batch_stock_query": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "category_manage": frozenset({"operator", "product_manager"}),
-    "customer_manage": frozenset({"operator", "customer_service", "sales"}),
+    "customer_manage": frozenset({"customer_service", "operator", "sales"}),
     "dashboard_stats": frozenset({
-        "operator", "customer_service", "sales", "finance",
-        "product_manager", "knowledge_editor",
+        "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
     }),
     "employee_manage": frozenset({"operator"}),
-    "finance_api": frozenset({"operator", "finance"}),
-    "order_manage": frozenset({"operator", "customer_service", "sales", "finance"}),
-    "piecework_query": frozenset({"operator", "customer_service", "sales", "finance"}),
-    "production_worklog_query": frozenset({"operator", "customer_service", "sales", "finance"}),
+    "finance_api": frozenset({"finance", "operator"}),
+    # issue #5246：库存读 = `product:list`、写 = `product:create` ⇒ 持有任一码者放行（目录推导）。
+    "inventory_manage": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #5246：知识库**读**码下发给客服 + 运营（本次新授予的两个岗位）。
+    "knowledge_search": frozenset({"customer_service", "operator"}),
+    "logistics_track": frozenset({"customer_service", "finance", "operator", "sales"}),
+    # issue #5246：通知 = `system:manage` + `employee:list`（解析接收人）⇒ 仅运营持后一码。
+    "notification_manage": frozenset({"operator"}),
+    "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    "order_manage": frozenset({"operator"}),
+    "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
+    # issue #5246 改判：计件/报工/加工单读面 = `processing:manage` ⇒ 运营 + 商品主管。
+    "piecework_query": frozenset({"operator", "product_manager"}),
     "processing_item_manage": frozenset({"operator", "product_manager"}),
+    "processing_item_query": frozenset({"operator", "product_manager"}),
     "processing_order_generate": frozenset({"operator"}),
-    "processing_order_query": frozenset({"operator", "customer_service", "sales", "finance"}),
+    "processing_order_query": frozenset({"operator", "product_manager"}),
     "processing_order_update": frozenset({"operator"}),
+    "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
+    "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_update": frozenset({"operator", "product_manager"}),
+    "production_progress_query": frozenset({"operator", "product_manager"}),
+    "production_worklog_query": frozenset({"operator", "product_manager"}),
     "role_manage": frozenset(),
-    "session_manage": frozenset({"operator", "customer_service"}),
+    "session_manage": frozenset({"customer_service", "operator"}),
     "settings_manage": frozenset(),
     "sku_update": frozenset({"operator", "product_manager"}),
 }
 
-#: 仍由角色层把关的 B 端工具（目录里没有对应权限码）—— 任何新增都必须显式登记在此
-ROLE_GATED_B_SIDE_TOOLS = frozenset({"notification_manage"})
+#: 仍由角色层把关的 B 端工具（目录里没有对应权限码）—— 任何新增都必须显式登记在此。
+#: issue #5246 后为**空集**：最后一个成员 `notification_manage` 已取得端点生效码
+#: （`system:manage` + `employee:list`），不再靠角色白名单。
+ROLE_GATED_B_SIDE_TOOLS = frozenset()
 
 #: **未注册但类仍在**的工具（issue #3917：加工单工具暂不接入，类文件保留并直测）。
 #: 类里的 `allowed_roles` 同样是 F4 病灶 —— 恢复注册时不得把假拒绝一起带回来。
@@ -347,6 +397,13 @@ class TestPermissionCodeIsTheGate:
             for role in ROLE_PERMISSIONS:
                 if role == "admin" or role in EXPECTED_ALLOWED_ROLES[name]:
                     continue
+                # C 端**双端工具**（issue #5246）：声明了 `c_end_reachable` 的工具，权限码层对
+                # C 端**不可判**（C 端 JWT 没有 permissions claim）⇒ 按 `base.py` 的既定语义落到
+                # 角色层，与「该工具还没有权限码时」逐字一致（零回归）。这一支在
+                # `test_customer_without_codes_is_denied_on_every_coded_tool` 里单独钉住
+                # （两方向都断言：非双端工具必须拒、双端工具必须放行）。
+                if role in CUSTOMER_ONLY_ROLES and tool.c_end_reachable:
+                    continue
                 if role_allowed(tool, role) is not False:
                     failures.append(f"{name} × {role}: 无权限码却被放行（越权）")
         assert failures == [], "权限码门禁与目录不符：\n  " + "\n  ".join(failures)
@@ -384,13 +441,30 @@ class TestPermissionCodeIsTheGate:
         assert tool.check_permission(ctx) is True, "持码的自定义角色必须放行（角色名不在任何白名单里）"
 
     def test_customer_without_codes_is_denied_on_every_coded_tool(self):
-        """C 端顾客 JWT 没有权限码 ⇒ 管理类工具一律拒绝（不因改码而开口子）。"""
+        """C 端顾客 JWT 没有权限码 ⇒ 非双端的管理类工具一律拒绝（不因改码而开口子）。
+
+        issue #5246：声明了 `c_end_reachable` 的**双端工具**（被小布 skill 绑定）是**唯一**例外 ——
+        权限码层对 C 端不可判，按 `base.py` 的既定语义落到角色层（= 加码前的行为，零回归）。
+        例外集合在这里**逐字**钉住（它的取值由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
+        从 `app/graph/skills/*.py` 机械推导），两个方向都要成立：非双端工具拒 + 双端工具放行。
+        """
         tools = all_checked_tools()
         leaked = sorted(
             name for name in TOOL_PERMISSION_CODES
-            if role_allowed(tools[name], "customer") is not False
+            if not tools[name].c_end_reachable
+            and role_allowed(tools[name], "customer") is not False
         )
         assert leaked == [], f"以下工具对 C 端顾客放行（越权）：{leaked}"
+
+        c_end = sorted(n for n in TOOL_PERMISSION_CODES if tools[n].c_end_reachable)
+        assert c_end == [
+            "knowledge_search", "order_create", "processing_item_query",
+            "product_detail", "product_search", "production_progress_query",
+        ], f"双端工具集合变了（须与 skills 推导逐字同步）：{c_end}"
+        for name in c_end:
+            assert role_allowed(tools[name], "customer") is True, (
+                f"{name}: 双端工具对 C 端顾客必须放行（按角色层）"
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -571,7 +645,9 @@ _ROLE_SERVICE = (
 )
 
 #: Java 权限目录行：`{"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},`
-_JAVA_CATALOG_ROW_RE = re.compile(r'\{"[^"]+",\s*"([a-z][a-z_]*:[a-z_]+)"')
+_JAVA_CATALOG_ROW_RE = re.compile(r'\{"[^"]+",\s*"([a-z][a-z_]*(?::[a-z_]+)+)"')
+# ⚠️ 段数：权限码允许 **≥2 段**（`agent:session:manage` 是 issue #5246 引入的第一个三段码）；
+# 旧正则 `[a-z_]+:[a-z_]+` 只认两段 ⇒ 三段码被静默漏掉（「镜像多码」假红，实测踩过）。
 #: `Role <var> = Role.builder() … .code("<role_code>") … .build();`
 _JAVA_ROLE_BUILDER_RE = re.compile(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', re.S)
 _JAVA_ROLE_CODE_RE = re.compile(r'\.code\("([a-z_]+)"\)')
