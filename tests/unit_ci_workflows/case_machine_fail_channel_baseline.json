@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 80
+    "backend_contract_scoring_zero": 83
   },
   "history": [
     {
@@ -72,6 +72,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 80,
       "note": "issue #5159（省料度量 L2/L3 汇总读面与看板）新增 4 条 `[backend-contract]` 用例（PR-093 汇总一致与单价口径 / PR-094 存量导入单列成组 / PR-095 空数据不冒充 0 与文案不写死数字 / PR-096 两条指标并用与不损失客户）。取号区间 PR-093~PR-096 为本单硬分配（#5184 的 PR-090~PR-092 已先取，本单 rebase 后以 main 侧为基追加，**未越界、未占用他人号**）。机器判红通道 = `traces.tests` 里的真 PG Java 判据 `backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java`（非空且真实存在，6 条真库断言）与 admin-web vitest `frontend/admin-web/tests/unit/components/SavingBoard.test.tsx` / `frontend/admin-web/tests/unit/lib/saving-board.test.ts`（均非空且真实存在，17 条断言）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内重锚（本行在 rebase 到含 #5184/#5186 的 main 之后**实测重跑**得出，非按号推算）。注：本单 10 处注入式红证全部实测变红（后端 5 + 前端 5），其中「单价口径」一条**首轮实测假绿**（MyBatis 一级缓存按 SqlSession ⇒ 复读拿到改前值 = 空断言），已在判据里补 `session.clearCache()` 并复测变红。"
+    },
+    {
+      "sha": "pending-pr-5146",
+      "date": "2026-09-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 83,
+      "note": "issue #5146（余料成本回收：非资产台账 + 可配小件尺寸 + 优先匹配 + 回收记账 + 报废留痕）新增 3 条 `[backend-contract]` 用例（PR-097 非资产守门 / PR-098 优先匹配与未配置不静默 / PR-099 客户带走与报废留痕）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 真 PG 单测（RemnantRecoveryRealDbTest 8 条 / RemnantNonAssetGuardTest 2 条 / RemnantServiceTest 7 条 / FabricRemnantMapperTest 3 条 / RemnantItemSizeMapperTest 3 条 / RemnantControllerTest 4 条，均非空且真实存在、本机全绿）与 admin-web vitest（remnant-params / RemnantItemSizesPanel / TenantParamsPanel，共 35 条全绿）⇒ 读数为**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` **实测重锚**（rebase 到含 #5185 的 main 之后实测读数即为 83）。"
     }
   ]
 }

@@ -7187,6 +7187,60 @@ _CASE_PR_096 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-097 [NORMAL] 🔴 真库 + 静态：余料台账**不算资产** —— Σ库存金额逐值不变，且余料两表不出现在任何库存/资产读面里（红证：动一下库存金额 ⇒ 读数必变）（源: cases/product.yml）──
+_CASE_PR_097 = EvalCase(
+    id='PR-097',
+    legacy_id='',
+    title='🔴 真库 + 静态：余料台账**不算资产** —— Σ库存金额逐值不变，且余料两表不出现在任何库存/资产读面里（红证：动一下库存金额 ⇒ 读数必变）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['裁剪产生的余料是否会被计成企业资产（非 LLM 行为，由真 PG Java 判据 + 静态守卫覆盖）'],
+    expectations=[],
+    data_checks=['🔴 判据·**不算资产**：派工/排料结果**自动**登记余料（不需要人手工登记）前后，`Σ product_skus.cost_amount` 与 `Σ product_skus.stock` **逐值不变**（真库直读 SQL；夹具的库存金额取**非零**真值 —— 全 0 上的「逐值不变」是空断言）。', '🔴 **同判据红证**：手动 `UPDATE product_skus SET cost_amount = cost_amount + 1` ⇒ 同一个读数**必须变**（证明上面那条不是恒真）。', '🔴 **结构性判据**（真库覆盖不到的另一半）：生产代码里出现 `fabric_remnants` / `remnant_small_item_specs` 这两个**表名**的地方，只允许是余料功能自己的取数面（两张实体 + 两个 mapper）—— 反面形态是「某天有人给库存读面加一条 join」（读面而已，金额不会变 ⇒ 真库判据照绿）。扫描面非空且真看得见两个 mapper（否则「零违规」可能只是扫描失灵），并带注入式红证（把余料表 join 进库存 mapper ⇒ 必须判红）。', '**边界（如实登记）**：本判据判的是「余料**不参与**库存金额」，不判「余料有没有被浪费」—— 后者是报废率/回收率读数（PR-098），不是资产口径。'],
+    skip_reason='[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配）+ 源码静态扫描，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['remnant', 'non-asset', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-098 [NORMAL] 🔴 真库 + 渲染：小件优先匹配真的省料（同缸号优先、批次数不变、回收额 = 米数 × 当时均价）+ **未配置不静默** + 不凭空推荐（源: cases/product.yml）──
+_CASE_PR_098 = EvalCase(
+    id='PR-098',
+    legacy_id='',
+    title='🔴 真库 + 渲染：小件优先匹配真的省料（同缸号优先、批次数不变、回收额 = 米数 × 当时均价）+ **未配置不静默** + 不凭空推荐',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['余料能不能拿来做绑带/帘头/抱枕、以及未配置尺寸时会不会静默（非 LLM 行为，由真 PG Java 判据 + 前端渲染守卫覆盖）'],
+    expectations=[],
+    data_checks=['🔴 判据·**优先匹配真的省料**：三块余料里**故意**让「异缸号的那块最小」⇒ 命中同缸号那块（`sameDyeLot=true`、来源批次 = 同缸号批次）—— 「同缸号优先」**优先于**「先用小块」。用掉之后 `stock_batch_consumptions` 的**行数与 Σdelta 逐值不变**（判据原话「该小件不产生新的批次消耗（批次数不变）」），`product_skus.stock` 同样不碰。', '判据·**回收额口径**：`recovered_amount = 用掉米数 × 该批次当时均价`（真库逐值），`recovered_unit_cost` 是**回收那一刻**的快照；**改价后历史读数一字不变**；来源批次没记均价 ⇒ **拒绝回收**（宁可为失败，不许估）。', '🔴 判据·**未配置不静默**：清空尺寸表 ⇒ 匹配 `configured=false`、**推荐为空**、`notice` **非空**（含「未配置」）；配置读面同样显式说明「未启用」。**红证**：配一行 ⇒ `configured=true` 且 `notice` 消失、**真的开始匹配**（同一份夹具 ⇒ 差别只在配置）。渲染面同判据：未配置 ⇒ 面板显式徽标「未配置（正在用默认值：空 ⇒ 未启用）」+ 服务端说明**原样**上屏；已配置 ⇒ 两个「未配置」信号都不许出现。', '判据·**不凭空推荐**：余料宽 / 长任一不足 ⇒ **无推荐**且给出可读原因；同夹具把需求改小 ⇒ 必须命中（正向对照，证明「空」是因为尺寸而不是别的原因）。', '判据·**配置面合规**（`migao-dev-flow` §22）：小件尺寸表挂在**既有企业参数中心**的「余料回收」域**页内**（不新造第二个配置入口）、三件套齐全且**文案里不出现数字**、术语**就地**可查（独立锚点命名空间，与算料域不抢 id）、`impact` 明确写出「不改对客价 / 不改加工费 / 不改成品尺寸」（用户裁定「不能损失客户」）。'],
+    skip_reason='[backend-contract] 真 PG 判据 + admin-web vitest 渲染/静态守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['remnant', 'small-item-match', 'configurable-param', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-099 [NORMAL] 🔴 真库：客户带走的余料不入可用池 + 报废留痕 + 账实一致由 DB 约束钉住（红证：混入可用池 ⇒ 立刻命中；抹掉原因 ⇒ 23514）（源: cases/product.yml）──
+_CASE_PR_099 = EvalCase(
+    id='PR-099',
+    legacy_id='',
+    title='🔴 真库：客户带走的余料不入可用池 + 报废留痕 + 账实一致由 DB 约束钉住（红证：混入可用池 ⇒ 立刻命中；抹掉原因 ⇒ 23514）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客户带走的余料会不会被拿来匹配、报废有没有留痕（非 LLM 行为，由真 PG Java 判据覆盖）'],
+    expectations=[],
+    data_checks=['🔴 判据·**客户带走不入可用池**：订单勾了 `余料带回-布` ⇒ 余料**仍然登记**（账要平）但状态 = `customer_taken`、`available` 计数为 **0**；匹配**不命中**、回收与报废都被**显式拒绝**。**红证**：手动把它改成 `available` ⇒ 匹配**立刻命中**（证明「不参与匹配」的原因就是那个状态）。', '判据·**报废留痕**：报废后状态 / 原因 / 操作人 / 时刻都可读（真库逐列），按 `scrapped` 状态查得回来；重复报废被拒（否则报废率失真）；报废件不得带回收额。', '🔴 判据·**账实一致不是靠读面自觉**：绕过服务层直接注销报废原因 / 写错回收额 ⇒ V122 的生命周期与算术约束**当场拒绝**（SQLSTATE 23514）—— 证明约束真的钉住了，而不是只写在注释里。', '**边界（如实登记）**：余料尺寸取自排料块清单 ⇒ 排不出料的订单行**不产生**余料（那些行的布没有排料结果可依据）；同缸号匹配在缸号为空时只按同色判定（空缸号既不算相同也不算不同）。'],
+    skip_reason='[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['remnant', 'customer-taken', 'scrap-trace', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8810,6 +8864,9 @@ ALL_CASES = (
     _CASE_PR_094,
     _CASE_PR_095,
     _CASE_PR_096,
+    _CASE_PR_097,
+    _CASE_PR_098,
+    _CASE_PR_099,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
