@@ -1310,7 +1310,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
     const input = screen.getByTestId('route-rule-price-input-21')
     // 初值 = 当前价（不是 0）
-    expect(input).toHaveValue(12.5)
+    expect(input).toHaveValue('12.5')
     await userEvent.clear(input)
     await userEvent.type(input, '6')
     await userEvent.click(screen.getByTestId('route-rule-price-save-21'))
@@ -1388,6 +1388,31 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       expect(await screen.findByTestId('route-rule-price-reasons-21')).toHaveTextContent('两位小数')
       await userEvent.click(screen.getByTestId('route-rule-price-cancel-21'))
     }
+  })
+
+  // issue #5218 #6：本格旧形态 `type="number"` ⇒ 中间态被浏览器吃掉（jsdom 同样按非法浮点数清空），
+  // 而提示自己写着「填 0 表示真 0 元」⇒ 0 与 0.x 必须打得出来。
+  it('规则区单价：逐键 0 → . → 5 打出 "0.5"，三位小数中间态不丢（issue #5218 #6 红证）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    await openConditions('韩褶')
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
+    const input = screen.getByTestId('route-rule-price-input-21') as HTMLInputElement
+    await userEvent.clear(input)
+
+    await userEvent.type(input, '0')
+    expect(input.value).toBe('0')
+    await userEvent.type(input, '.')
+    // 红证（单点变异）：把本格改回 `type="number"` ⇒ 本断言收到 ''（小数点被吃掉）
+    expect(input.value).toBe('0.')
+    await userEvent.type(input, '5')
+    expect(input.value).toBe('0.5')
+
+    // 三位小数的中间态也逐字保留（本地预检要**拒绝**它，不能被静默四舍五入成合法值）
+    await userEvent.clear(input)
+    await userEvent.type(input, '6.005')
+    expect(input.value).toBe('6.005')
   })
 
   it('规则区单价：**非 option 行没有编辑入口**（工艺变体不按套收费，服务端也会 422）', async () => {

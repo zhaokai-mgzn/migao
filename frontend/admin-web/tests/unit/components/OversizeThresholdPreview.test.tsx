@@ -50,9 +50,28 @@ describe('判据 1：初值取自租户配置，且两个口径各试算一次',
   it('阈值输入框的初值 = 读面原文；两个口径列都渲染', async () => {
     render(<OversizeThresholdPreview config={CONFIG} />)
     await waitFor(() => expect(preview).toHaveBeenCalledTimes(2))
-    expect(screen.getByTestId('preview-threshold-width')).toHaveValue(6)
-    expect(screen.getByTestId('preview-threshold-height')).toHaveValue(4)
+    expect(screen.getByTestId('preview-threshold-width')).toHaveValue('6')
+    expect(screen.getByTestId('preview-threshold-height')).toHaveValue('4')
     expect(await screen.findByTestId('preview-current')).toHaveTextContent('超宽')
+  })
+})
+
+// issue #5218 #5：四个框旧形态都是 `type="number"` + `Number()` 往返 ⇒ "0." 中间态被吃掉。
+describe('阈值/试算窗逐键录入（issue #5218 #5 红证）', () => {
+  it('超宽阈值逐键 3 → . → 5 打出 "3.5"（中间态不丢）', async () => {
+    render(<OversizeThresholdPreview config={CONFIG} />)
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(2))
+    const el = screen.getByTestId('preview-threshold-width') as HTMLInputElement
+
+    fireEvent.change(el, { target: { value: '3' } })
+    expect(el.value).toBe('3')
+    fireEvent.change(el, { target: { value: '3.' } })
+    // 红证（单点变异）：把本框改回 `type="number"` + `Number(...)` ⇒ 本断言收到 ''
+    expect(el.value).toBe('3.')
+    fireEvent.change(el, { target: { value: '3.5' } })
+    expect(el.value).toBe('3.5')
+    fireEvent.blur(el)
+    expect(el.value).toBe('3.5')
   })
 })
 

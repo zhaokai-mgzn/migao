@@ -345,10 +345,16 @@ function RulePriceCell({
         '—'
       ) : editing ? (
         <span className="flex items-center gap-1.5">
+          {/* issue #5218 #6：本页其余 5 处已迁 `NumberInput`，此格漏网仍是 `type="number"`
+              ⇒ "0." / "6.005" 这类中间态在浏览器层就被吃掉（提示自己写着「填 0 表示真 0 元」，
+              0 必须打得出来）。这里**故意不用 `NumberInput`** 而用「等效的保留原始文本」实现
+              （issue #5218 要求里明确允许）——因为本格的本地预检要**拒绝**三位小数并给理由，
+              而 `NumberInput` 失焦会按 `decimals` 归一化（`6.005` ⇒ `6.01`），
+              正好把该拒绝的输入**静默改成合法值**（实测：改成 NumberInput 后
+              「三位小数 ⇒ 不发请求」那条判据直接红）。父组件的字符串草稿本就是原文。 */}
           <input
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             aria-label={`${rule.trigger_value ?? ''} 单价（元/套）`}
             data-testid={`route-rule-price-input-${rule.id}`}
             value={draft}

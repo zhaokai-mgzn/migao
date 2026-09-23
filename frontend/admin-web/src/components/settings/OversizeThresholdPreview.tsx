@@ -23,6 +23,8 @@ import { AlertCircle } from 'lucide-react'
 import { autoFeaturesApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import type { CraftCalcConfig } from '@/types'
+// issue #5218 #5：数字输入统一走共享组件（`type="text"` + 字符串草稿，中间态不丢）
+import NumberInput from '@/components/ui/NumberInput'
 
 /** 一个示例窗（默认值只是**举例**，商家可改；它是值、不是文案） */
 const EXAMPLE = { width: 5.5, height: 3.2 } as const
@@ -142,12 +144,12 @@ export function OversizeThresholdPreview({ config }: Props) {
         ).map(([label, testid, value, setter]) => (
           <label key={testid} className="block">
             <span className="block text-xs text-neutral-600 mb-1">{label}</span>
-            <input
-              type="number"
-              step="0.1"
+            {/* issue #5218 #5：同 #4 —— `type="number"` + `Number()` 往返吞中间态（"0."）；
+                `''` 与本组件的 `number | null` 语义一一对应（空 = 不试算）。 */}
+            <NumberInput
               data-testid={testid}
-              value={value}
-              onChange={(e) => (setter as (v: number | '') => void)(e.target.value === '' ? '' : Number(e.target.value))}
+              value={value === '' ? null : value}
+              onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
               className="w-full h-8 px-2 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500"
             />
           </label>
