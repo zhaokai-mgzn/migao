@@ -52,7 +52,9 @@ describe('判据 1：初值取自租户配置，且两个口径各试算一次',
     await waitFor(() => expect(preview).toHaveBeenCalledTimes(2))
     expect(screen.getByTestId('preview-threshold-width')).toHaveValue('6')
     expect(screen.getByTestId('preview-threshold-height')).toHaveValue('4')
-    expect(await screen.findByTestId('preview-current')).toHaveTextContent('超宽')
+    // 竞态修复（issue #5218 CI 红）：`findByTestId` 只等**元素出现**，而本组件在数据回来前
+    // 就已渲染 `preview-current` 容器（占位符 `—`）⇒ 必须等**文本**，不能只等元素。
+    await waitFor(() => expect(screen.getByTestId('preview-current')).toHaveTextContent('超宽'))
   })
 })
 
@@ -78,8 +80,11 @@ describe('阈值/试算窗逐键录入（issue #5218 #5 红证）', () => {
 describe('判据 2：判定依据逐字来自服务端', () => {
   it('reason 原文上屏（本组件不拼文案）', async () => {
     render(<OversizeThresholdPreview config={CONFIG} />)
-    expect(await screen.findByTestId('preview-current')).toHaveTextContent(
-      '净窗宽 5.5 米 > 超宽阈值 6 米'
+    // 竞态修复（同上，本条是 CI 实测红的那条）：期望内容**一字未改**，只把「等元素」改成「等文本」。
+    await waitFor(() =>
+      expect(screen.getByTestId('preview-current')).toHaveTextContent(
+        '净窗宽 5.5 米 > 超宽阈值 6 米'
+      )
     )
   })
 })
