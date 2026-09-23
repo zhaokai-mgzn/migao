@@ -112,13 +112,59 @@ jobs:
     # 2026-09-20 提升（#4793）：套件已涨到 ~178s（实测 job 172~174s），原上限 3 分钟（180s）
     # 余量只剩 ~2s ⇒ runner 负载抖动即被自身 job 超时 CANCELLED（无任何断言失败、但 required check 卡合）。
     # 改为 8 分钟：对当前 ~188s 有 2.5× 余量，与仓内其它 job 的 5~15 分钟一致。
-    timeout-minutes: 8
+    # 2026-09-23 再上调（#5203）：新增的**真库判据真跑**成本**不可压**（本机实测：14 个真库模块
+    # 201 passed / 0 skipped = **127.2s**；单次 `initdb` ≈1.25s，且无集群可复用 —— 夹具的 DDL 是非幂等
+    # 建表，本来就必须 function 级；`initdb -N` / `fsync=off` 实测无收益：1.26s → 1.20s）。
+    # 改前 CI 该 job = **279s**（真库族 87 条全 skip）⇒ 按「非真库部分 CI/本机 ≈0.64×」投影
+    # ≈ 279 + 127×0.64 ≈ **360s**，对 480s 只剩 1.33× 余量（本仓对 <1.5× 余量有过被 CANCELLED 的前科）
+    # ⇒ 8 → 12 分钟（对 360s 有 ≈2× 余量）。**这不是「靠抬 timeout 掩盖变慢」**：变慢的正是本单要修的
+    # 东西（真跑 vs 假绿），且已实测不可压（依据如上）；若此后该 job 逼近 12 分钟，应先查**新增**开销。
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+
+      # ── 为什么这两步不能省（issue #5203）─────────────────────────────────────
+      # 本 job 也**不装 PG 服务**：13 个真库判据模块各自起一次性 `initdb` + `pg_ctl` 集群，
+      # 要的是**二进制**而不是服务 —— 二进制是 `ubuntu-latest`（24.04）镜像**恰好自带**的
+      # （`/usr/lib/postgresql/16/bin`，与 tests/unit_ci_workflows/pg_cluster.py 的 BIN_DIRS 同源）。
+      # 改前 Python 侧探测**只认 PATH**（`shutil.which`）⇒ 该目录不在 PATH ⇒ 83 条真库判据
+      # 每次 CI 都 `pytest.skip` 成**绿**（实测：CI 87 skip；「只藏 PG 三个二进制」精确复现 83 条）。
+      # ⇒ 两道锁：① 下面这道**前置断言**（找不到二进制即红，并打印实际解析到的路径，便于区分
+      #   「镜像换代」与「搜索路径变了」）；② pytest 那步注入 `MIGAO_REQUIRE_REALDB=1`，
+      #   `pg_cluster.require_pg()` 据此把「缺 PG」判成 **FAIL** 而不是 skip。
+      # 两道锁的防回退守卫 = tests/unit_ci_workflows/test_realdb_failclosed.py（判据⑤~⑧）。
+      - name: Assert PostgreSQL binaries exist (fail-closed 前置，issue #5203)
+        run: |
+          # 判据源与 tests/unit_ci_workflows/pg_cluster.py 的 BIN_DIRS 同源：
+          # PATH + Debian 的 /usr/lib/postgresql/{14,15,16}/bin
+          initdb="$(command -v initdb || true)"
+          pg_ctl="$(command -v pg_ctl || true)"
+          psql="$(command -v psql || true)"
+          for d in /usr/lib/postgresql/16/bin /usr/lib/postgresql/15/bin /usr/lib/postgresql/14/bin; do
+            [ -n "$initdb" ] || [ ! -x "$d/initdb" ] || initdb="$d/initdb"
+            [ -n "$pg_ctl" ] || [ ! -x "$d/pg_ctl" ] || pg_ctl="$d/pg_ctl"
+            [ -n "$psql" ] || [ ! -x "$d/psql" ] || psql="$d/psql"
+          done
+          echo "runner 镜像 = ${ImageOS:-?} / ${ImageVersion:-?}"
+          echo "initdb = ${initdb:-<缺失>}"
+          echo "pg_ctl = ${pg_ctl:-<缺失>}"
+          echo "psql   = ${psql:-<缺失>}"
+          if [ ! -x "${initdb:-/nonexistent}" ] || [ ! -x "${pg_ctl:-/nonexistent}" ] || [ ! -x "${psql:-/nonexistent}" ]; then
+            echo "::error::找不到 PG 二进制（initdb/pg_ctl/psql）⇒ Python 侧真库判据无法执行。"
+            echo "本 job 不装 PG 服务，二进制靠 runner 镜像自带（理由见本 job 上方注释，issue #5203）。"
+            echo "镜像换代请在此处补装 PostgreSQL —— 不要删掉本前置断言，"
+            echo "否则「缺 PG」会退回成静默 skip（绿）而无人发现（这正是 issue #5203 的病灶）。"
+            exit 1
+          fi
+          echo "✅ PG 二进制存在 —— Python 侧真库判据能真跑"
+
       - name: Run ci workflow helper tests
+        env:
+          # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
+          MIGAO_REQUIRE_REALDB: "1"
         run: |
           pip install -q pytest pyyaml
           python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider

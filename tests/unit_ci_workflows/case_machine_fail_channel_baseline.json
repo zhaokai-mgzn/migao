@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 85
+    "backend_contract_scoring_zero": 86
   },
   "history": [
     {
@@ -86,6 +86,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 85,
       "note": "issue #5194 + #5191（同一 PR）新增 2 条 `[backend-contract]` 用例（PR-105 商家可见文案 `**` 收口 / PR-106 余料台账进侧边栏）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = admin-web vitest 的 AST 静态守卫 + 组件渲染断言（`copy-no-markdown-emphasis.test.ts` 4 条 / `CraftCalcGlossary.test.tsx` 渲染面整块断言 / `production-routings.test.tsx` 面板整块断言）与 Java 节点表（`MenuControllerTest` / `AuthServiceTest`）与三源同构守卫（`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`），逐条 `traces.tests` 非空且真实存在。⚠️ 本次同时修掉一处**真实缺漏**：PR-105 原本没有 `traces.ci`（豁免通道不健全 ⇒ I2 判红「走了豁免通道却没指明哪个 CI job 跑它」），已补 `pr-check.yml`（其在 `admin-web typecheck + unit tests` 里真跑 vitest）。⇒ 读数 83 → 85 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（rebase 到含 #5207/#5208/#5209/#5215 的 main 之后实测读数即为 85）。"
+    },
+    {
+      "sha": "pending-pr-5203",
+      "date": "2026-09-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 86,
+      "note": "2026-09-23 新增 1 条 `[backend-contract]` 用例（PR-107 Python 侧真库判据 fail-closed / skip 可见性，issue #5203）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_realdb_failclosed.py`（判据⑤~⑧，真实存在、本机 9 passed）与 `traces.ci` 的 `pr-check.yml`（`ci workflow helper unit tests` 真跑该文件）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（`render_cases.py` 连跑两次逐字节相同后，由 `test_i3_*` 实测读数 = 86）。"
     }
   ]
 }

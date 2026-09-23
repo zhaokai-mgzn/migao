@@ -35,10 +35,13 @@
 且本迁移的射程只有 `products.status` / `users.position` / `users.role`）。
 跑完即 `pg_ctl stop` + 删临时目录。
 
-⚠️ **环境边界（如实登记，不粉饰）**：CI 的 `ci workflow helper unit tests` job
-（`ubuntu-latest`）**不装 postgres server** ⇒ 该 job 里本文件的真库判据会**显式 skip**
-（`test_real_db_harness_actually_ran` 会红着报「未跑」的形态见下）。真库判据的权威执行点是
-**本地/有 postgres 的机器**（本机已实跑，红证见 PR body）。文本判据在所有环境都跑。
+⚠️ **环境边界（2026-09-23 改判，issue #5203）**：原口径「CI 的 `ci workflow helper unit tests`
+job（`ubuntu-latest`）**不装 postgres server** ⇒ 本文件的真库判据会**显式 skip**、权威执行点是本地」
+**已失效且正是病灶本身** —— 该 job 不装 PG **服务**，但 runner 镜像**自带 PG 二进制**
+（`/usr/lib/postgresql/16/bin`，本文件起的是**一次性集群**、要的正是二进制）；
+改前只有**硬编码兜底路径**的少数模块（含本文件）能跑起来，其余模块探测只认 `PATH` ⇒ 静默 skip 成绿。
+现在发现与处置都收口在 `tests/unit_ci_workflows/pg_cluster.py`：CI 上缺 PG 判**红**、本机 skip。
+文本判据在所有环境都跑。
 """
 from __future__ import annotations
 
@@ -143,18 +146,6 @@ CREATE TABLE users (id VARCHAR(64) PRIMARY KEY, role VARCHAR(64), position VARCH
 """
 
 
-def _which(name: str) -> str | None:
-    found = shutil.which(name)
-    if found:
-        return found
-    for prefix in ("/opt/homebrew/opt/postgresql@16/bin", "/usr/lib/postgresql/16/bin",
-                   "/usr/local/opt/postgresql@16/bin", "/usr/pgsql-16/bin"):
-        candidate = Path(prefix) / name
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -216,20 +207,14 @@ class _Db:
 
 
 @pytest.fixture(scope="module")
-def db():
-    """真库夹具；本机没有 postgres server ⇒ **显式 skip**（不静默通过）。"""
-    initdb, pg_ctl, psql = _which("initdb"), _which("pg_ctl"), _which("psql")
-    if not all((initdb, pg_ctl, psql)):
-        pytest.skip(
-            "本机没有 postgres server（initdb/pg_ctl/psql）⇒ 真库语义判据未跑。"
-            "CI 的 ci-workflow-tests job 同样不装 postgres ⇒ 权威执行点是本地/有 pg 的机器。"
-        )
+def db(realdb_binaries):
+    """真库夹具；缺 PG 的处置收口在 `pg_cluster.py`（CI 判**红** / 本机显式 skip，issue #5203）。"""
     with tempfile.TemporaryDirectory(prefix="migao-v81-pg-") as td:
-        database = _Db(Path(td), initdb, pg_ctl, psql)
-        try:
-            database.start()
-        except Exception as e:  # noqa: BLE001 —— 起不来就如实报「未跑」，不假装绿
-            pytest.skip(f"临时 postgres 集群起不来 ⇒ 真库语义判据未跑：{e}")
+        database = _Db(Path(td), realdb_binaries["initdb"],
+                       realdb_binaries["pg_ctl"], realdb_binaries["psql"])
+        # 集群起不来 = **红**（不是「未跑」）：CI 上「真库判据没跑」绝不能是绿（issue #5203）。
+        # 与其余真库模块同款（那里的 `assert started.returncode == 0` 同样是红）。
+        database.start()
         try:
             yield database
         finally:

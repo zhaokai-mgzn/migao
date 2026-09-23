@@ -30,7 +30,7 @@
 2. **注入式红证**（`test_injected_wrong_order_is_detected`）：把本段移回租户种子**之前**
    ⇒ 判据 1 必红；移回**之后** ⇒ 绿。两条方向都断言，防「判据恒红」与「判据恒绿」；
 3. **真库判据**（`test_schema_sql_builds_with_on_error_stop_1`）：`ON_ERROR_STOP=1` 跑**全文**
-   **exit 0** + **零 ERROR**。本机无 PG 二进制 ⇒ **显式 skip**（不伪装成通过）；
+   **exit 0** + **零 ERROR**。缺 PG 的处置收口在 `pg_cluster.py`（CI 判**红** / 本机显式 skip，issue #5203）；
 4. **目标段落真跑到**：`production_route_signals` 行数 == schema.sql **自己给的行数**
    （**不写死数字**，数字从文件现场派生）且 V63 终态（`四爪钩/四叉钩` → `韩褶`）真的生效
    —— **不把「没跑到」读成「没问题」**（否则行数判据退化成空断言）。
@@ -415,22 +415,9 @@ def test_compose_initdb_mount_name_is_still_the_documented_one():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
-# ② 真库判据（本机 PG 二进制；缺则**显式 skip**，不伪装成通过）
+# ② 真库判据（临时 PG 集群；缺 PG 的处置收口在 `pg_cluster.py`：CI 判**红** / 本机 skip）
 # ══════════════════════════════════════════════════════════════════════════════════════
 
-_PG_BINARIES = ("initdb", "pg_ctl", "psql")
-
-
-def _which(name: str) -> str | None:
-    found = shutil.which(name)
-    if found:
-        return found
-    for prefix in ("/opt/homebrew/opt/postgresql@16/bin", "/usr/lib/postgresql/16/bin",
-                   "/usr/local/opt/postgresql@16/bin", "/usr/pgsql-16/bin"):
-        candidate = Path(prefix) / name
-        if candidate.exists():
-            return str(candidate)
-    return None
 
 
 def _free_port() -> int:
@@ -442,12 +429,13 @@ def _free_port() -> int:
 class _Pg:
     """临时集群句柄：`query()` 严格跑单条；`run_file()` 复刻 docker entrypoint 的 `-f` + `ON_ERROR_STOP=1`。"""
 
-    def __init__(self, sockdir: Path, port: int):
+    def __init__(self, sockdir: Path, port: int, bins: dict[str, str]):
         self.sockdir, self.port = sockdir, port
+        self.bins = bins  # 收口件给的**绝对路径**（issue #5203）
 
     def _psql(self, args: list[str], **kw) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["psql", "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
+            [self.bins["psql"], "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
              "-d", "postgres", "-X", "-q", *args],
             text=True, capture_output=True, **kw,
         )
@@ -463,21 +451,19 @@ class _Pg:
 
 
 @pytest.fixture(scope="module")
-def pg():
-    """真库夹具；本机没有 postgres server ⇒ **显式 skip**（不静默通过）。"""
-    if not all(_which(b) for b in _PG_BINARIES):
-        pytest.skip(f"本机没有 PG 二进制 {_PG_BINARIES} ⇒ 真库判据未跑（不是通过）")
+def pg(realdb_binaries):
+    """真库夹具；缺 PG 的处置收口在 `pg_cluster.py`（CI 判**红** / 本机显式 skip，issue #5203）。"""
     with tempfile.TemporaryDirectory(prefix="migao4762-") as td:
         tmp = Path(td)
         datadir = tmp / "pgdata"
         # ⚠️ socket 目录必须**短**：unix socket 路径有 ~104 字节上限（tmp_path 太长 ⇒ pg_ctl start 失败）。
         sockdir = Path(tempfile.mkdtemp(prefix="pg4762-"))
         log = tmp / "pg.log"
-        subprocess.run([_which("initdb"), "-D", str(datadir), "-U", "postgres", "-A", "trust"],
+        subprocess.run([realdb_binaries["initdb"], "-D", str(datadir), "-U", "postgres", "-A", "trust"],
                        check=True, capture_output=True)
         port = _free_port()
         started = subprocess.run(
-            [_which("pg_ctl"), "-D", str(datadir), "-l", str(log), "-o",
+            [realdb_binaries["pg_ctl"], "-D", str(datadir), "-l", str(log), "-o",
              f"-k {sockdir} -p {port} -c listen_addresses=''", "start"],
             capture_output=True, text=True,
         )
@@ -485,9 +471,9 @@ def pg():
             f"临时集群起不来：{started.stdout}\n{started.stderr}\n"
             f"{log.read_text(encoding='utf-8') if log.exists() else ''}")
         try:
-            yield _Pg(sockdir, port)
+            yield _Pg(sockdir, port, realdb_binaries)
         finally:
-            subprocess.run([_which("pg_ctl"), "-D", str(datadir), "-m", "immediate", "stop"],
+            subprocess.run([realdb_binaries["pg_ctl"], "-D", str(datadir), "-m", "immediate", "stop"],
                            capture_output=True)
             shutil.rmtree(sockdir, ignore_errors=True)
 

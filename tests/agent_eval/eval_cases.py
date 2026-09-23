@@ -7388,6 +7388,24 @@ _CASE_PR_106 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-107 [NORMAL] Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见（源: cases/product.yml）──
+_CASE_PR_107 = EvalCase(
+    id='PR-107',
+    legacy_id='',
+    title='Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（非 LLM 面）runner 的 PG 二进制在 /usr/lib/postgresql/16/bin（**不在 PATH**）时，Python 侧 13 个真库模块必须**真的执行**，不得静默 skip 成绿'],
+    expectations=[],
+    data_checks=['收口唯一：PG 二进制发现（候选目录 = PATH + /usr/lib/postgresql/{16,15,14}/bin，与 `backend/admin-api/src/test/java/com/migao/admin/service/PgCluster.java` 的 `BIN_DIRS` **同源**）与「缺 PG」处置只许在 `tests/unit_ci_workflows/pg_cluster.py` 有一份；13+1 个真库模块**零** `pytest.skip`、**零** `shutil.which`，一律经收口夹具 `realdb_binaries`，且 argv 用**绝对路径**（按名调用在 runner 上必然 `FileNotFoundError` —— 只修探测不修调用等于没修）', '冻结登记表：依赖真 PG 的测试模块集合 == `pg_cluster.REALDB_TEST_MODULES`（14 个 = 13 个真库模块 + v81），删 / 改名 / 新增未登记 ⇒ 红。**判据建在 AST 上**（只在注释 / 文档串里提 `initdb` 的 7 个 `docker-entrypoint-initdb.d` 一族**不算**真库判据）—— 防裸子串判据被文案喂绿 / 误红', 'CI 两道锁同时在位：`pr-check.yml` 的 `ci-workflow-tests` job 有「PG 二进制前置断言（initdb/pg_ctl/psql，缺失 ⇒ **独立一行** `exit 1`）」+「pytest 那步注入 `MIGAO_REQUIRE_REALDB`（真值 = 非空且非 0/false，键名与 `pg_cluster.ENV_REQUIRE_REALDB` 逐字一致）」；两处判定都先**剥注释**（注释与 `echo` 文案喂不绿）', '红证 A（真跑，2026-09-23 本机，覆盖孔 `MIGAO_PG_BIN_DIRS` 指向空目录）：**带**标记 ⇒ EXIT=1、`缺 PG 二进制 … ⇒ 本判据判 FAIL（不是 skip）`（88 条判据红）；**不带**标记（对照组）⇒ EXIT=0、88 skipped 且**逐条 nodeid + 原因**上屏 —— 两者真的不同（改前两者都是静默绿）', '红证 B / C（真跑，注入后复原并核 sha256 逐字节相同）：① 改名 `test_v93_route_rules_backfill.py` ⇒ 判据⑤（冻结常量）红；② 把 PG 相关的 `pytest.skip` 塞回夹具本体 ⇒ 判据⑥（单一收口）红', '正证（CI，`ci workflow helper unit tests`）：终端摘要的 `[realdb-summary]` 显示真库(PG)族「**执行 = N / skip = 0**」，且全部 skip 只剩本仓正当项（本分支尚未提交基线 / V83 尚未落地 / 浅检出无 origin/main 等）'],
+    skip_reason='[backend-contract] CI workflow 结构 + Python 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py 的判据⑤~⑧，含对收口件的按路径加载断言），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['realdb', 'ci', 'fail-closed', 'evidence-strength'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -9041,6 +9059,7 @@ ALL_CASES = (
     _CASE_PR_104,
     _CASE_PR_105,
     _CASE_PR_106,
+    _CASE_PR_107,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

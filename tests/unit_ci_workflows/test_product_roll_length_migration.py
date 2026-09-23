@@ -22,7 +22,7 @@
 `ADD COLUMN IF NOT EXISTS` 与既有列的交互、`pg_constraint` 判据、`DELETE ... USING` 自连接的去重
 幂等性、`DO $$ … $$` 里 `RAISE EXCEPTION` 的回滚半径 —— 都是**运行期**语义。
 
-## 真库判据（本机 PG 二进制；缺则**显式 skip**，不伪装成通过）
+## 真库判据（临时 PG 集群；缺 PG 的处置收口在 `pg_cluster.py`：CI 判**红** / 本机显式 skip，issue #5203）
 
 照 `tests/unit_ci_workflows/test_must_finish_retire_migration.py` 的范式：`initdb` / `pg_ctl` / `psql`
 起**临时集群**真跑 —— 静态文本判据不够。
@@ -179,7 +179,6 @@ def test_bootstrap_schema_mirrors_the_v111_end_state():
 
 # ══════════════════════════ ③ 真库两遍幂等（临时 PG 集群） ══════════════════════════
 
-_PG_BINARIES = ("initdb", "pg_ctl", "psql")
 
 #: 与 V113 触碰的三张表同形的**最小** DDL（含**旧**唯一键 + 同色同门幅的重复行）
 _DDL = """
@@ -241,10 +240,6 @@ INSERT INTO product_skus (id, tenant_id, product_id, color_id, selling_method, d
 """
 
 
-def _pg_available() -> bool:
-    return all(shutil.which(b) for b in _PG_BINARIES)
-
-
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -265,7 +260,8 @@ class _PgCluster:
     3. **`-l <logfile>`** 落日志，起不来时能把 postgres 的原文打出来（否则只有「起不来」）。
     """
 
-    def __init__(self, tmp_path: Path):
+    def __init__(self, tmp_path: Path, bins: dict[str, str]):
+        self.bins = bins  # 收口件给的**绝对路径**（runner 的 PG 不在 PATH，issue #5203）
         self.datadir = tmp_path / "pgdata"
         self.log = tmp_path / "pg.log"
         # ⚠️ 短前缀（见类注释 ①）
@@ -273,10 +269,10 @@ class _PgCluster:
         self.port = _free_port()
 
     def __enter__(self):
-        subprocess.run(["initdb", "-D", str(self.datadir), "-U", "postgres", "-A", "trust"],
+        subprocess.run([self.bins["initdb"], "-D", str(self.datadir), "-U", "postgres", "-A", "trust"],
                        check=True, capture_output=True, timeout=120)
         started = subprocess.run(
-            ["pg_ctl", "-D", str(self.datadir), "-l", str(self.log), "-o",
+            [self.bins["pg_ctl"], "-D", str(self.datadir), "-l", str(self.log), "-o",
              f"-k {self.sockdir} -p {self.port} -c listen_addresses=''", "start"],
             capture_output=True, text=True, timeout=120)
         assert started.returncode == 0, (
@@ -292,14 +288,14 @@ class _PgCluster:
         return self
 
     def __exit__(self, *exc):
-        subprocess.run(["pg_ctl", "-D", str(self.datadir), "-m", "immediate", "stop"],
+        subprocess.run([self.bins["pg_ctl"], "-D", str(self.datadir), "-m", "immediate", "stop"],
                        capture_output=True, timeout=120)
         shutil.rmtree(self.sockdir, ignore_errors=True)
 
     def _raw(self, sql: str) -> subprocess.CompletedProcess:
         """不抛异常的 psql 入口（红证要断言「迁移**确实**失败并回滚」）。"""
         return subprocess.run(
-            ["psql", "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
+            [self.bins["psql"], "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
              "-d", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
             input=sql, text=True, capture_output=True, timeout=120)
 
@@ -316,15 +312,13 @@ class _PgCluster:
 
 
 @pytest.fixture
-def pg(tmp_path):
+def pg(tmp_path, realdb_binaries):
     """**函数级**临时集群：每条用例一个干净库。
 
     ⚠️ 不能用 module 级：`_DDL` 是**非幂等**建表（`CREATE TABLE products` 无 IF NOT EXISTS，
     照真库形态写）⇒ 同一个库里跑第二条用例会因「表已存在」而红，而那红与被测行为无关。
     """
-    if not _pg_available():
-        pytest.skip("本机缺 initdb/pg_ctl/psql ⇒ 真库判据显式 skip（不伪装成通过）")
-    with _PgCluster(tmp_path) as cluster:
+    with _PgCluster(tmp_path, realdb_binaries) as cluster:
         yield cluster
 
 
