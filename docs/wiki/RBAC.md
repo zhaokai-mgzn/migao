@@ -221,7 +221,7 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
 
 ## 菜单过滤
 
-前端侧边栏（#2969 重构七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(含财务对账) / 组织管理(员工+岗位权限+企业信息) / 通知中心）根据 `permissions` 动态渲染（`Sidebar.tsx`），
+前端侧边栏（#2969 建立七大组；**#5271 按业务动线重排**：工作台 / 智能客服 / **商品与加工项** / **交易管理**（订单列表+售后工单+客户列表+财务对账）/ 生产管理 / **仓储与物料**（入库单+余料台账+省料看板）/ 组织管理 / 通知中心（独立项）—— 组 key / 组名 / 组顺序在 `frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions` **三处逐值同构**，判据见 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`）根据 `permissions` 动态渲染（`Sidebar.tsx`），
 `admin`/`super_admin`/`*` 显示全部菜单；
 `/api/auth/me` 的 `buildMenusByPermissions` 与侧边栏口径一致。
 

@@ -1090,21 +1090,36 @@ public class AuthService {
 
         List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
 
-        // 工作台（所有人可见）
-        menus.add(menuItem("dashboard", "工作台", "/dashboard"));
+        // 🔴 issue #5271 菜单重设计：本方法**逐组、逐项镜像**前端
+        // `frontend/admin-web/src/config/menu.ts` 的 `menuGroups` + `standaloneItems`
+        // —— 组 key / 组名 / 组顺序 / 组内 key / name / path / 顺序全一致，权限判定与 `permissionCode` 同码。
+        // 本列表是登录后下发的侧边栏菜单面（`UserInfoResponse.menus`），与 `MenuController.MENU_TREE`
+        // （岗位权限/员工权限页消费）、前端 `config/menu.ts`（真实侧边栏）**三处同构**；
+        // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
+        // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— `menuItem` 只有 key/name/path。
 
-        // 智能客服分组（米宝·在线对话 / 在线接待 / 知识库；#3081 AI 客服配置已合并进企业基础信息）
-        List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
-        if (isAll || permissions.contains("agent:session")) {
-            csChildren.add(menuItem("chat", "米宝 · 在线对话", "/chat"));
+        // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
+        List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
+        // 经营看板：全员可见（无权限码，与 menu.ts 一致）
+        workspaceChildren.add(menuItem("dashboard", "经营看板", "/dashboard"));
+        // 每日简报（issue #3468）：按 dashboard:view 判定（与 menu.ts 的 permissionCode 同码）。
+        // ⚠️ **企业开关有意不在此实现** —— 服务端拿不到该开关；开关由前端按 `menu.ts` 的
+        // `briefingToggle` 读取后过滤显隐，服务端只负责权限这一维。
+        if (isAll || permissions.contains("dashboard:view")) {
+            workspaceChildren.add(menuItem("briefing", "每日简报", "/briefing"));
         }
+        if (!workspaceChildren.isEmpty()) {
+            menus.add(menuGroup("workspace", "工作台", workspaceChildren));
+        }
+
+        // 智能客服分组（在线接待 / 知识库；#3081 AI 客服配置已合并进企业基础信息）。
+        // 🔴 #5271 收口：旧实现多一个 `chat`「米宝 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）——
+        // 本次删除，本组与前端 menu.ts 一致为 2 项。
+        List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {
             csChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
         }
-        // issue #5246：知识库节点由 knowledge:manage 改为**读**码 knowledge:view ——
-        // 读写拆码后「看知识库」不再需要写权；本处与前端 config/menu.ts 的 `knowledge` 节点、
-        // MenuController.MENU_TREE 三处必须同码（否则岗位权限页勾得动、侧边栏看不到）。
-        // 这是**已批准的可见性变更**：customer_service / operator 由此首次看到「知识库」菜单项。
+        // issue #5246（已合入 main）：知识库节点用**读**码 `knowledge:view`。
         if (isAll || permissions.contains("knowledge:view")) {
             csChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
         }
@@ -1112,85 +1127,79 @@ public class AuthService {
             menus.add(menuGroup("smart-customer-service", "智能客服", csChildren));
         }
 
-        // 商品管理分组
+        // 商品与加工项分组（#5271：组名由「商品管理」改判；组 key `product-center` 不变）
         List<UserInfoResponse.MenuItem> productChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("product:list")) {
             productChildren.add(menuItem("products", "商品列表", "/products"));
         }
         if (isAll || permissions.contains("processing:manage")) {
-            productChildren.add(menuItem("processing", "加工项管理", "/processing"));
+            // #4490/#4542：加工项管理与加工费管理**合并为单一入口**（该页两个 tab）；
+            // 路径 = `/production/processing`（旧 `/processing`、`/production/processing-fees`
+            // 由前端重定向兜底）—— 逐字镜像 menu.ts（本处此前是 `/processing`，属三源路径漂移，本次收口）。
+            productChildren.add(menuItem("processing", "加工项管理", "/production/processing"));
         }
         if (!productChildren.isEmpty()) {
-            menus.add(menuGroup("product-center", "商品管理", productChildren));
+            menus.add(menuGroup("product-center", "商品与加工项", productChildren));
         }
 
-        // 生产管理分组（issue #4203/#4205 后端半边）：生产看板 / 工艺配置 / 计件工资（权限码统一
-        // processing:manage）+ 入库单（权限码独立 inbound:view，见下）。四个节点**必须与 MenuController
-        // 的静态权限树同构**（岗位权限页勾选与真实侧边栏的单一真相），也与前端 config/menu.ts 同构 ——
-        // 漏一处就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
-        // 🔴 issue #4440：本条注释此前写「工序库 / 工艺路线 / 计件工资 …… 四个节点」—— issue #4416
-        // 已把前两者**合并为单一入口「工艺配置」**（旧路径 /production/operations 是重定向）⇒ 注释
-        // 与代码漂移（**代码是对的、注释在说谎**）。改判后与 `config/menu.ts` 的 production 组逐字一致。
+        // 交易管理分组（#5271：原「订单管理」+ 原「客户管理」组的客户列表 / 财务对账 → 一条动线：
+        // 谁下单 → 单到哪 → 售后 → 收款对账）。组 key `trade-center` 不变；
+        // 「客户管理」组（`customer-center`）**不再存在**。
+        List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("order:list")) {
+            tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
+        }
+        // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view`（原写码 `order:refund`）。
+        if (isAll || permissions.contains("after_sales:view")) {
+            tradeChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
+        }
+        if (isAll || permissions.contains("customer:view")) {
+            tradeChildren.add(menuItem("customers", "客户列表", "/customers"));
+        }
+        if (isAll || permissions.contains("finance:view")) {
+            tradeChildren.add(menuItem("finance", "财务对账", "/finance"));
+        }
+        if (!tradeChildren.isEmpty()) {
+            menus.add(menuGroup("trade-center", "交易管理", tradeChildren));
+        }
+
+        // 生产管理分组（issue #4203/#4205 后端半边）：#5271 起**由 7 项降到 4 项** ——
+        // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组；
+        // 本组只留「加工执行 + 工艺配置 + 结算」，四项权限码统一 processing:manage。
+        // 四个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
+        // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("processing:manage")) {
-            productionChildren.add(menuItem("production", "生产看板", "/production"));
-            // 池看板（issue #5177）：id/名称/路径必须与前端
-            // `frontend/admin-web/src/config/menu.ts` 的 `production-pool` 与
-            // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
-            // 权限码沿用 processing:manage —— 与「生产看板」同权（都是加工/生产管理动作）。
+            // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
+            productionChildren.add(menuItem("production-board", "生产看板", "/production"));
+            // 池看板（issue #5177）：池化派单的决策屏，与「生产看板」同权（processing:manage）
             productionChildren.add(menuItem("production-pool", "池看板", "/production/pool"));
-            // 省料看板（issue #5159）：id/名称/路径必须与前端
-            // `frontend/admin-web/src/config/menu.ts` 的 `production-saving-board` 与
-            // `MenuController` 的静态权限树**三处同构**；权限码沿用 processing:manage。
-            productionChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
-            // 余料台账（issue #5191）：id/名称/路径必须与前端
-            // `frontend/admin-web/src/config/menu.ts` 的 `production-remnants` 与
-            // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
-            // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission` 同码。
-            productionChildren.add(menuItem("production-remnants", "余料台账", "/production/remnants"));
-            // 🔴 issue #4440：id/名称/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
-            // `production-process` **逐字一致**（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；
-            // 本处此前仍是合并前的两个节点 ⇒ 「岗位权限」页（消费本列表）与真实侧边栏漂移）。
+            // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
+            // （旧路径 /production/operations 是重定向）—— 服务端此前仍是合并前的两个节点。
             productionChildren.add(menuItem("production-process", "工艺配置", "/production/routings"));
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
-        }
-        // 入库单（V111，issue #5034）：生产管理组**第四项**（#4440 改判：合并后本组已回落到三项，
-        // 入库单接在其后），但**权限码独立**（inbound:view）——
-        // 入库是仓储动作，不是加工动作：仓管/财务要看入库单，却不需要 processing:manage。
-        // 若把它塞进上面那个 `processing:manage` 的 if 里，「有 inbound:view、没有 processing:manage」
-        // 的人就看不到菜单（权限页勾得动、侧边栏看不到 = #4203 点名的同族坑）。
-        // ⚠️ 本节点必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构。
-        if (isAll || permissions.contains("inbound:view")) {
-            productionChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
         if (!productionChildren.isEmpty()) {
             menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }
 
-        // 订单管理分组
-        List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
-        if (isAll || permissions.contains("order:list")) {
-            tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
+        // 仓储与物料分组（#5271 **新组**）：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，
+        // 与「生产管理」组拆开（一个仓管找「入库单」时不该在「生产看板」旁边找）。
+        // 🔴 入库单（V111，issue #5034）权限码**独立**（inbound:view）且必须落在**自己的 if** 里：
+        // 入库是仓储动作、不是加工动作 —— 塞进下面 processing:manage 的判定会让
+        // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 同族坑）。
+        List<UserInfoResponse.MenuItem> inventoryChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("inbound:view")) {
+            inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
-        // issue #5246：售后工单节点由 order:refund（写码）改为读码 after_sales:view ——
-        // 与前端 config/menu.ts 的 `after-sales` 节点、MenuController.MENU_TREE 同源同码。
-        if (isAll || permissions.contains("after_sales:view")) {
-            tradeChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
+        // 余料台账（issue #5191）/ 省料看板（issue #5159）：权限码沿用 processing:manage ——
+        // 与各自页面的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
+        if (isAll || permissions.contains("processing:manage")) {
+            inventoryChildren.add(menuItem("production-remnants", "余料台账", "/production/remnants"));
+            inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
         }
-        if (!tradeChildren.isEmpty()) {
-            menus.add(menuGroup("trade-center", "订单管理", tradeChildren));
-        }
-
-        // 客户管理分组（客户列表 / 财务对账）
-        List<UserInfoResponse.MenuItem> customerChildren = new java.util.ArrayList<>();
-        if (isAll || permissions.contains("customer:view")) {
-            customerChildren.add(menuItem("customers", "客户列表", "/customers"));
-        }
-        if (isAll || permissions.contains("finance:view")) {
-            customerChildren.add(menuItem("finance", "财务对账", "/finance"));
-        }
-        if (!customerChildren.isEmpty()) {
-            menus.add(menuGroup("customer-center", "客户管理", customerChildren));
+        if (!inventoryChildren.isEmpty()) {
+            menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));
         }
 
         // 组织管理分组（员工管理 / 岗位权限 / 企业基础信息）

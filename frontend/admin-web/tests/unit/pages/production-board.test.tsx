@@ -1,4 +1,4 @@
-// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106
+// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021
 //
 // PP-014（issue #4307 前端半边）：菜单组第 4 项「工艺路线」—— 页面存在但侧边栏进不去等于没交付；
 //   本文件的链接清单 + 权限码断言随加项改判（红证：加项后旧断言即红）。
@@ -26,7 +26,7 @@
 //   （如实登记在本行上方）⇒ 本 PR 新增 **PG-041** 承载该行为（判据 = HTTP 调用次数），
 //   并在此声明。用例 ID 与断言一一对应，不再是"断言无处挂载"。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within, act } from '@testing-library/react'
+import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockList = vi.fn()
@@ -131,77 +131,113 @@ const tableText = () => screen.getByRole('table').textContent ?? ''
 const statusSelect = () => screen.getByRole('combobox', { name: '状态筛选' })
 
 describe('生产管理菜单入口（侧边栏）', () => {
-  it('侧边栏出现「生产管理」组与**七个**节点，路径与权限码正确', () => {
+  /** 展开指定组（issue #5271：分组默认只展开当前路由所在组 = /production ⇒ 生产管理组） */
+  const expandGroup = (key: string) => {
+    const btn = screen.getByTestId(`sidebar-group-toggle-${key}`)
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  }
+
+  it('侧边栏出现「生产管理」组与**四个**节点，路径与权限码正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
-    const group = screen.getByText('生产管理').closest('.mb-4') as HTMLElement
+    const group = screen.getByText('生产管理').closest('[data-group-key]') as HTMLElement
     expect(group).toBeTruthy()
     const links = group.querySelectorAll('a')
-    // 6 项：生产看板 / 池看板（issue #5177）/ 省料看板（issue #5159）
-    //      / 工艺配置（issue #4416：工序库 + 工艺路线**合并**为单入口）/ 计件工资 / 入库单（issue #5034，V111）。
+    // issue #5271 重排后本组**由 7 项降到 4 项**：只留「加工执行 + 工艺配置 + 结算」。
+    // 拆出去的是面料进出与消耗三项（入库单 / 余料台账 / 省料看板）⇒ 新组「仓储与物料」。
     // ⚠️ issue #4416 把原第 2 项「工序库」与第 3 项「工艺路线」合并为「工艺配置」⇒ 项数 5 → 4；
     //    issue #4490（含同日**规格修订**）把「加工费管理」与「加工项管理」合并为单一入口
-    //    （#4542 起菜单名 =「加工项管理」），并按用户裁定**归入商品管理组** ⇒ 本组 4 → 3；
-    //    issue #5034 新增「入库单」⇒ 本组 3 → 4；issue #5177 新增「池看板」⇒ 本组 4 → 5；
-    //    issue #5159 新增「省料看板」（接在「池看板」之后）⇒ 本组 5 → 6；
-    //    issue #5191 新增「余料台账」（接在「省料看板」之后）⇒ 本组 6 → **7**。
-    expect(links).toHaveLength(7)
+    //    （#4542 起菜单名 =「加工项管理」），并按用户裁定**归入商品与加工项组**；
+    //    issue #5034 / #5177 / #5159 / #5191 先后往本组加过 4 项，**#5271 把它们中的 3 项搬走**。
+    expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('池看板')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
-    expect(links[2].textContent).toContain('省料看板')
-    expect(links[2]).toHaveAttribute('href', '/production/saving-board')
-    expect(links[3].textContent).toContain('余料台账')
-    expect(links[3]).toHaveAttribute('href', '/production/remnants')
-    expect(links[4].textContent).toContain('工艺配置')
-    expect(links[4]).toHaveAttribute('href', '/production/routings')
-    expect(links[5].textContent).toContain('计件工资')
-    expect(links[5]).toHaveAttribute('href', '/production/piecework')
-    expect(links[6].textContent).toContain('入库单')
-    expect(links[6]).toHaveAttribute('href', '/inbound-orders')
+    expect(links[2].textContent).toContain('工艺配置')
+    expect(links[2]).toHaveAttribute('href', '/production/routings')
+    expect(links[3].textContent).toContain('计件工资')
+    expect(links[3]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
-    // 合并项**不在本组**（归商品管理组；它的结构/图标断言在 processing-merged.test.tsx）
+    // 合并项**不在本组**（归商品与加工项组；它的结构/图标断言在 processing-merged.test.tsx）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('加工项管理')
+    // issue #5271：面料三项也不在本组（移入「仓储与物料」组）
+    const productionText = Array.from(links).map((a) => a.textContent).join('|')
+    expect(productionText).not.toContain('入库单')
+    expect(productionText).not.toContain('余料台账')
+    expect(productionText).not.toContain('省料看板')
   })
 
-  it('「加工单」不再是独立菜单项：订单管理组只余订单列表/售后工单（issue #4357）', () => {
+  it('面料三项落在「仓储与物料」组（issue #5271 新组），点得到且 href 正确', () => {
+    render(<Sidebar collapsed={false} onToggle={() => {}} />)
+    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    // 当前路由是 /production ⇒ 该组默认收起，先展开再断言（断言强度不变）
+    expandGroup('inventory-center')
+    const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
+    const links = group.querySelectorAll('a')
+    expect(links).toHaveLength(3)
+    expect(links[0].textContent).toContain('入库单')
+    expect(links[0]).toHaveAttribute('href', '/inbound-orders')
+    expect(links[1].textContent).toContain('余料台账')
+    expect(links[1]).toHaveAttribute('href', '/production/remnants')
+    expect(links[2].textContent).toContain('省料看板')
+    expect(links[2]).toHaveAttribute('href', '/production/saving-board')
+  })
+
+  it('「加工单」不再是独立菜单项：交易管理组只余四个业务项（issue #4357；#5271 组名改判）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
-    // 订单管理组：加工单已并入生产管理组（issue #4357 —— 与生产看板合并为单一入口）
-    const tradeGroup = screen.getByText('订单管理').closest('.mb-4') as HTMLElement
+    // 交易管理组：加工单已并入生产管理组（issue #4357 —— 与生产看板合并为单一入口）
+    // issue #5271：原「订单管理」组 + 原「客户管理」组的客户列表/财务对账**并为一组** ⇒ 4 项
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expandGroup('trade-center')
+    const tradeGroup = screen.getByText('交易管理').closest('[data-group-key]') as HTMLElement
     expect(within(tradeGroup).queryByText('加工单')).not.toBeInTheDocument()
     expect(within(tradeGroup).getByText('订单列表')).toBeInTheDocument()
     expect(within(tradeGroup).getByText('售后工单')).toBeInTheDocument()
-    expect(tradeGroup.querySelectorAll('a')).toHaveLength(2)
+    expect(within(tradeGroup).getByText('客户列表')).toBeInTheDocument()
+    expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
+    expect(tradeGroup.querySelectorAll('a')).toHaveLength(4)
 
-    // 全站不再有指向 /processing-orders 的菜单项（旧入口收敛到 /production）
+    // 全站不再有指向 /processing-orders 的菜单项（旧入口收敛到 /production）——
+    // 展开**全部**组后再查全站 href，避免「因为收起所以查不到」的恒真断言
+    for (const key of [
+      'workspace',
+      'smart-customer-service',
+      'product-center',
+      'production-center',
+      'inventory-center',
+      'org-center',
+    ]) {
+      expandGroup(key)
+    }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+    expect(hrefs).toHaveLength(20) // 简报开关关 ⇒ 20 项（21 - 每日简报）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径：生产管理组前六项 processing:manage，入库单**独立**为 inbound:view', () => {
+  it('权限码口径：生产管理组四项全部 processing:manage；入库单的独立码随组走（inbound:view）', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
-    const group = menuGroups.find((g) => g.key === 'production')
+    const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
-    // issue #4416：工序库 + 工艺路线合并为「工艺配置」⇒ 5 项 → 4 项，权限码口径不变；
-    // issue #4490 规格修订：「加工项管理」归商品管理组 ⇒ 本组 4 → 3 项，口径仍不变。
-    // issue #5034（V111）：「入库单」是**仓储**动作，权限码独立（inbound:view）——
-    //   塞进 processing:manage 会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单。
-    // issue #5177：「池看板」与「生产看板」同权（都是加工/生产管理动作）⇒ 仍 processing:manage。
-    // issue #5159：「省料看板」同理（省料度量看板也是生产管理动作）⇒ 仍 processing:manage。
-    // issue #5191：「余料台账」的权限码**必须与页面端点同码**（`RemnantController` 的类级
-    //   `@RequirePermission("processing:manage")`）⇒ 仍 processing:manage（**不放宽也不收紧**）。
+    // #5271：本组 4 项**同码**（都是加工/生产管理动作）；
+    // 原先「入库单是仓储动作、权限码独立（inbound:view，issue #5034）」的口径**不变**，
+    // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
       'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',
-      'processing:manage',
-      'processing:manage',
-      'inbound:view',
     ])
+    const inventory = menuGroups.find((g) => g.key === 'inventory-center')
+    expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
+      'inbound:view',
+      'processing:manage',
+      'processing:manage',
+    ])
+    // 反恒真：本组 4 项全部与页面门禁同码（processing:manage 是加工/生产动作的统一码）
+    expect(new Set(group!.children.map((c) => c.permissionCode))).toEqual(new Set(['processing:manage']))
   })
 })
 

@@ -92,30 +92,32 @@ describe('Header', () => {
     expect(screen.getByText('经营看板')).toBeInTheDocument()
   })
 
-  it('/products 路径应显示"商品管理 > 商品列表"面包屑', async () => {
+  // issue #5271：组名「商品管理」→「商品与加工项」（组内第二项「加工项管理」本身是加工定价资料）
+  it('/products 路径应显示"商品与加工项 > 商品列表"面包屑', async () => {
     mockPathname = '/products'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('商品列表')).toBeInTheDocument()
   })
 
-  it('/orders 路径应显示"订单管理 > 订单列表"面包屑', async () => {
+  // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
+  it('/orders 路径应显示"交易管理 > 订单列表"面包屑', async () => {
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('订单管理')).toBeInTheDocument()
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
     expect(screen.getByText('订单列表')).toBeInTheDocument()
   })
 
-  it('/customers 路径应显示"客户管理 > 客户列表"面包屑（#2969 客户管理组）', async () => {
+  it('/customers 路径应显示"交易管理 > 客户列表"面包屑（#2969 建组；#5271 并入交易管理）', async () => {
     mockPathname = '/customers'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客户管理')).toBeInTheDocument()
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
     expect(screen.getByText('客户列表')).toBeInTheDocument()
   })
 
@@ -150,7 +152,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('商品列表')).toBeInTheDocument()
   })
 
@@ -409,7 +411,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('商品分类管理')).toBeInTheDocument()
   })
 
@@ -421,7 +423,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再渲染（issue #4542 改名）
     expect(screen.queryByText('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')).not.toBeInTheDocument()
@@ -433,7 +435,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     // 不得回落到 /production 的「生产看板」；也不得写成「生产管理」（分组已按裁定改）
     expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
@@ -445,7 +447,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
   })
@@ -487,15 +489,79 @@ describe('Header', () => {
 
   // 入库单（issue #5071）：V111（#5034）新增该菜单项时**漏了 Header 的匹配表** ⇒ 该页面包屑
   // 落兜底分支、**只剩「工作台」一项**（实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
-  it('/inbound-orders 路径面包屑（生产管理 > 入库单，issue #5071 补）', async () => {
+  // issue #5271：随「面料进出与消耗」动线**移入新组「仓储与物料」**（原生产管理组）。
+  it('/inbound-orders 路径面包屑（仓储与物料 > 入库单，issue #5071 补 / #5271 改判组名）', async () => {
     mockPathname = '/inbound-orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('入库单')).toBeInTheDocument()
     // 不得回落成兜底（兜底只有「工作台」一项）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+  })
+
+  // ── issue #5271 新 IA 的面包屑改判（组名跟着菜单走，§15.2）──
+
+  it('/production/remnants 路径面包屑（仓储与物料 > 余料台账，issue #5271 改判组名；原生产管理）', async () => {
+    mockPathname = '/production/remnants'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('余料台账')).toBeInTheDocument()
+    // 不得退化成父路径的「生产看板」（本表 `find` 取首个命中 ⇒ 顺序敏感）
+    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
+  })
+
+  it('/production/saving-board 路径面包屑（仓储与物料 > 省料看板，issue #5271 改判组名）', async () => {
+    mockPathname = '/production/saving-board'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('省料看板')).toBeInTheDocument()
+    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+  })
+
+  it('/production/pool 路径面包屑仍是「生产管理 > 池看板」（不随面料动线搬家）', async () => {
+    mockPathname = '/production/pool'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('池看板')).toBeInTheDocument()
+    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+  })
+
+  // ── issue #5271 移动端抽屉入口（Header 侧）──
+
+  it('传 onOpenMobileNav 时渲染 `mobile-nav-trigger`，点击调该回调', async () => {
+    const onOpenMobileNav = vi.fn()
+    let container!: HTMLElement
+    await act(async () => {
+      container = render(<Header onOpenMobileNav={onOpenMobileNav} />).container
+    })
+    const trigger = screen.getByTestId('mobile-nav-trigger')
+    // ⚠️ 必须是 <button>：本页首个 <nav> 仍须是面包屑容器
+    //（menu-breadcrumb-coverage.test.tsx 靠 container.querySelector('nav') 取面包屑）
+    expect(trigger.tagName).toBe('BUTTON')
+    expect(trigger.getAttribute('aria-label')).toBe('打开菜单')
+    expect(container.querySelectorAll('nav')).toHaveLength(1)
+    expect(container.querySelector('nav')!.textContent).toContain('工作台')
+
+    await user.click(trigger)
+    expect(onOpenMobileNav).toHaveBeenCalledTimes(1)
+  })
+
+  it('未传 onOpenMobileNav 时不渲染该按钮（可选 prop，桌面端无汉堡）', async () => {
+    let container!: HTMLElement
+    await act(async () => {
+      container = render(<Header />).container
+    })
+    expect(screen.queryByTestId('mobile-nav-trigger')).toBeNull()
+    expect(container.querySelectorAll('nav')).toHaveLength(1)
   })
 
   // 每日简报（issue #5071 同批实测发现的**同类第二例**）：与入库单同一形态 —— 菜单有、匹配表无。
@@ -535,7 +601,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('订单管理')).toBeInTheDocument()
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
   })
 
@@ -564,7 +630,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客户管理')).toBeInTheDocument()
+    expect(screen.getByText('交易管理')).toBeInTheDocument()
     expect(screen.getByText('财务对账')).toBeInTheDocument()
   })
 

@@ -251,7 +251,9 @@ export default function OrderDetailPage() {
           首页
         </button>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span>订单管理</span>
+        {/* issue #5271：组名随侧边栏 IA 改判（原「订单管理」→「交易管理」）—— 页内面包屑必须
+            与 Header 的 `ROUTE_BREADCRUMB_MAP`、与真实侧边栏组名一致，否则同屏出现两个组名 */}
+        <span>交易管理</span>
         <ChevronRight className="w-3.5 h-3.5" />
         <button onClick={() => router.push('/orders')} className="hover:text-primary-600 transition-colors">
           订单列表

@@ -601,10 +601,14 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
         "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236",
     },
     "MenuController 省略的节点": {
-        "what": "`MenuController.MENU_TREE` 不含 知识库/在线接待/岗位权限/企业基础信息/通知中心 等节点；"
-                "前端含 每日简报/在线接待/通知中心 而服务端两处均无",
-        "why": "同上（全树统一是 #5236）",
-        "where": "交集口径已覆盖共同节点；去向：#5236",
+        "what": "**只剩「通知中心」**：它不在 `MenuController.MENU_TREE`（该树每个节点都必须有权限码，"
+                "而通知中心是全员可见项）—— 但它在 `AuthService` 的下发面里。"
+                "issue #5271 起服务端两处已镜像侧边栏全部 7 组（含 在线接待/知识库/岗位权限/"
+                "企业基础信息/每日简报），本条残留原先列的其它节点**均已消除**",
+        "why": "通知中心无权限码 ⇒ 结构上不进权限树（不是漏改）；三处菜单源（前端 / `MenuController` / "
+               "`AuthService`）现已是**全树同构**，判据见 `test_menu_three_sources_are_isomorphic.py`"
+               "（#5271 升级）；第四处源的全树统一是 #5236 的产品裁定",
+        "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236（第四处源）",
     },
     "权限码零消费": {
         "what": "`order:detail` / `product:manage` 在目录里且被岗位授予/菜单使用，但没有任何 "

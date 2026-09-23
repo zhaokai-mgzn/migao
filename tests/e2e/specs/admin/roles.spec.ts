@@ -106,10 +106,12 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
     const tree = await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null)
     expect(tree).not.toBeNull()
-    // 菜单组名 = 侧边栏菜单组（智能客服/商品管理/订单管理/客户管理/组织管理）
+    // 菜单组名 = 侧边栏菜单组（issue #5271 新 IA：智能客服 / 商品与加工项 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
     await expect(page.permissionTree.getByText('智能客服', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('订单管理', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('客户管理', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('商品与加工项', { exact: true })).toBeVisible()
+    // issue #5271：原「订单管理」+「客户管理」两组**并为一组**「交易管理」（客户列表 / 财务对账并入）
+    await expect(page.permissionTree.getByText('交易管理', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('仓储与物料', { exact: true })).toBeVisible()
     await expect(page.permissionTree.getByText('组织管理', { exact: true })).toBeVisible()
     // 菜单项名 = 侧边栏菜单项
     await expect(page.permissionTree.getByText('在线接待', { exact: true })).toBeVisible()

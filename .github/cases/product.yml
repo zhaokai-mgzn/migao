@@ -1660,9 +1660,9 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage"
+      - "三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage —— 🔴 **2026-09-23 补判据（issue #5271 拆组）**：该节点必须落在 **`inventory-center`「仓储与物料」组**内（组名逐字、组 key 与组顺序三源一致），**不在** `production-center`「生产管理」组内（#5271 前它挂在生产管理组 ⇒ 旧散文与 `List.of(...)` 里指向 `production` 组的组断言**已作废**）；同组另两项 = 余料台账 `/production/remnants`、省料看板 `/production/saving-board`（均 `processing:manage`）。红证：把入库单节点挪回生产管理组 / 组 key 只改一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（#5271 起比对**全树**：组 key + 组名 + 组顺序 + 导航型节点名）与 `MenuControllerTest`（仓储与物料组 = 入库单 / 余料台账 / 省料看板 三项，codes = `inbound:view` / `processing:manage` / `processing:manage`）判红；`inbound-menu-isomorphic.test.ts` 的组断言（② 的 `List.of(...)` 所在组）**须为** `inventory-center` —— 仍指 `production` 即红"
     skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
+    merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-23（issue #5271 用例库同步）：**组归属补判据**（原文只写「真的挂进菜单树」、**没写挂哪一组** ⇒ #5271 拆组后「挂生产管理组」这一隐含事实已成假）—— 断言升级为「落在 `inventory-center`『仓储与物料』组、**不在** `production-center` 组、组内三项顺序 = 入库单 → 余料台账 → 省料看板」，并点明 #5271 后 `inbound-menu-isomorphic.test.ts` 的 `List.of(...)` 组断言须指向 `inventory-center`（仍指 `production` 即红）。**判据只增不减**：原五条（三源存在 / path / 权限码 / 图标 / 不挪用 processing:manage）一条未删。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/inbound-menu-isomorphic.test.ts"
@@ -3795,7 +3795,7 @@ cases:
   # ── issue #5191：余料台账页入口 —— 补侧边栏菜单（与同期新页口径对齐）──────────────────
   - id: PR-106
     legacy_id: ""
-    title: "余料台账进侧边栏 —— 生产管理组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页）"
+    title: "余料台账进侧边栏 —— **仓储与物料**（`inventory-center`）组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页；#5271 拆组后本项归「仓储与物料」，原写「生产管理组」）"
     domains:
       - product
       - remnant
@@ -3810,18 +3810,18 @@ cases:
       - static-guard
     truths_ref: []
     user_inputs:
-      - "登录后打开侧边栏：生产管理组里能看到「余料台账」，点进去到 /production/remnants（与池看板 / 省料看板口径一致）"
+      - "登录后打开侧边栏：生产管理组里能看到「余料台账」，点进去到 /production/remnants（与池看板 / 省料看板口径一致）（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起「余料台账」在**「仓储与物料」（`inventory-center`）**组，与入库单/省料看板同组；组归属以本用例 `data_checks` 为准，本句只作历史留痕）"
     expectations: []
     data_checks:
-      - "判据 1·**三处同构**（漏任一处 = 「岗位权限页勾得动、侧边栏看不到」或反之）：`frontend/admin-web/src/config/menu.ts`（真实侧边栏单一来源）/ `MenuController.MENU_TREE`（`GET /api/admin/menus`，岗位权限页消费）/ `AuthService.buildMenusByPermissions`（登录下发）的**生产管理组**都含「余料台账」，节点名 / 路径 / 图标逐字一致且**顺序一致**。红证 A（实测）：只改 `menu.ts` 一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 判红（三份源逐值相等）；红证 B：删掉 `menu.ts` 里该节点 ⇒ `remnants-menu-isomorphic.test.ts` 判据 ① 与 PG-038 的面包屑覆盖同时判红。"
+      - "判据 1·**三处同构**（漏任一处 = 「岗位权限页勾得动、侧边栏看不到」或反之）：`frontend/admin-web/src/config/menu.ts`（真实侧边栏单一来源）/ `MenuController.MENU_TREE`（`GET /api/admin/menus`，岗位权限页消费）/ `AuthService.buildMenusByPermissions`（登录下发）的**「仓储与物料」组（`inventory-center`；#5271 拆组前本项挂在「生产管理」组 —— 该表述已作废）**都含「余料台账」，节点名 / 路径 / 图标逐字一致且**顺序一致**（组内三项顺序 = 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`），组名逐字「仓储与物料」、组 key 三源一致）。红证 A（实测）：只改 `menu.ts` 一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 判红（#5271 起比对**全树**：组 key + 组名 + 组顺序 + 导航型节点名）；红证 B：删掉 `menu.ts` 里该节点 ⇒ `remnants-menu-isomorphic.test.tsx` 判据 ① 与 PG-038 的面包屑覆盖同时判红。"
       - "判据 2·**权限不放宽**（issue #5191 明写的判据）：菜单权限码 == `RemnantController` 类级 `@RequirePermission(「processing:manage」)` 的码**逐字相同**，且该节点确实落在 `permissions.contains(「processing:manage」)` 的 if 块内（测试取「该 add 之前最近的权限判定」，与注释长度无关 ⇒ 不假红）。**负控**：权限集只有 `order:list` 时渲染真实 `<Sidebar />` ⇒ 「余料台账」**不出现**（开菜单没有顺手把门禁放宽成「人人可见」）。"
       - "判据 3·**真的点得到**（不是只断言常量表里有这行）：以 `processing:manage` 权限渲染**真实** `<Sidebar />` ⇒ 出现名为「余料台账」的 link 且 `href == /production/remnants`。"
-      - "判据 4·**面包屑（§15.2）**：`Header.tsx` 的 `/production/remnants` 条目 label == 菜单名「余料台账」，且该条**排在** `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）；对**每一个**菜单项的通用判据由既有的 PG-038（`menu-breadcrumb-coverage.test.tsx`）自动覆盖新增项。"
+      - "判据 4·**面包屑（§15.2）**：`Header.tsx` 的 `/production/remnants` 条目 label == 菜单名「余料台账」，首项 == **「仓储与物料」**（#5271 拆组 —— 该组是面包屑首项的真值源，改前写「生产管理」），且该条**排在** `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）；对**每一个**菜单项的通用判据由既有的 PG-038（`menu-breadcrumb-coverage.test.tsx`）自动覆盖新增项。"
       - "判据 5·**图标注册不是静默的**：`Sidebar.tsx` 的 `iconMap` 注册 `Recycle`（漏注册只会静默回落 `BarChart3`，不会有任何东西变红）；测试替身 `tests/setup.ts` 的 lucide 清单同步登记（漏登记则任何渲染 Sidebar 的用例当场抛错）。"
       - "判据 6·**不损失客户**：纯入口变更 —— 不改任何端点、权限语义与金额/口径（对客金额、售价、成品口径逐值不变）。"
       - "**边界（如实登记）**：① 未新增真实浏览器点击 E2E（本单以「渲染真实 Sidebar 组件 + 三源静态守卫 + Java 节点表断言」覆盖；e2e 旅程未加）；② 原先「企业参数中心 → 余料回收」域的下钻入口**保留**（两处入口并存，不删下钻）；③ 后端 Java 侧的 `MenuControllerTest` / `AuthServiceTest` 的节点表已同步（否则实现与测试漂移）。"
     skip_reason: "[backend-contract] 菜单 IA / 前端入口（admin-web + 服务端菜单树），由 vitest 单测（三源同构 + 真实 Sidebar 渲染 + 面包屑覆盖）+ Java 单测（MenuControllerTest / AuthServiceTest 节点表）执行，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5191）。用户裁定走**补菜单**那条路（同批新页口径统一），不登记成「有意不进侧边栏」。实现：三处菜单源各加 `production-remnants` / 「余料台账」/ `/production/remnants` / `Recycle`（权限码沿用 `processing:manage` = `RemnantController` 类级 `@RequirePermission`，**不放宽门禁**）+ `Sidebar.tsx` 的 `iconMap` + 测试替身 lucide 清单 + `Header.tsx` 那条「有意不进侧边栏」的注释改判（菜单进来后它已失效 = 注释漂移）+ 页面头注释同步。取号 PR-106。"
+    merge_log: "2026-09-23 新增（issue #5191）。用户裁定走**补菜单**那条路（同批新页口径统一），不登记成「有意不进侧边栏」。实现：三处菜单源各加 `production-remnants` / 「余料台账」/ `/production/remnants` / `Recycle`（权限码沿用 `processing:manage` = `RemnantController` 类级 `@RequirePermission`，**不放宽门禁**）+ `Sidebar.tsx` 的 `iconMap` + 测试替身 lucide 清单 + `Header.tsx` 那条「有意不进侧边栏」的注释改判（菜单进来后它已失效 = 注释漂移）+ 页面头注释同步。取号 PR-106。 ｜ 2026-09-23（issue #5271 用例库同步）：**归属改判** —— 本项随 #5271「面料进出与消耗」动线**移入新组「仓储与物料」（`inventory-center`）**，与入库单 / 省料看板同组（组内三项、顺序 = 入库单 → 余料台账 → 省料看板）；标题、判据 1 的组名与三源同构面、判据 4 的面包屑首项同步改判为「仓储与物料」。⚠️ **`user_inputs` 按硬约束一字未动**（其首句仍写「生产管理组」—— 属被冻结的历史请求原文，**不得**据以行事；真值以本条 title / data_checks 为准，残句已如实上报集成方）。**判据一格不放宽**：只增不减 —— 新增组内三项顺序、组名逐字、组 key 三源一致与面包屑首项四条断言。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/remnants-menu-isomorphic.test.tsx"

@@ -38,14 +38,20 @@ describe('入库单菜单三处同构（PR-038 / issue #5034）', () => {
 
   it('② MenuController 的权限树有 inbound:view 节点（岗位权限页勾得动）', () => {
     expect(MENU_CONTROLLER).toContain('new MenuNode("inbound:view", "入库单")')
-    // 必须真的挂进「生产管理」组（只声明不挂 = 页面上看不到）。
+    // 必须真的挂进「仓储与物料」组（只声明不挂 = 页面上看不到）。
     // issue #4440：判据**只钉本用例真正关心的事**（入库单 i1 挂在该组内），**不**把整张节点表抄进来 ——
     // 抄整表会让任何**与本用例无关**的组内增删（如 #4416「工序库」+「工艺路线」合并为「工艺配置」）
     // 都把这条例红，报出的是**假回归**（本 PR 首轮 CI 实测：`List.of(pr1, pr2, pr3, pr4, i1)` 判红）。
     // 节点表的**逐一精确性**另有置信来源：Java `MenuControllerTest`（labels + codes 双列表精确断言）、
     // `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（三份源逐值相等）。
+    // issue #5271：面料进出与消耗拆成**新组**「仓储与物料」⇒ 本节点随动线搬家
+    //（`production-center` 组由 7 项降到 4 项）。
     expect(MENU_CONTROLLER).toMatch(
-      /new MenuNode\("production", "生产管理", List\.of\([^)]*\bi1\b[^)]*\)\)/,
+      /new MenuNode\("inventory-center", "仓储与物料", List\.of\([^)]*\bi1\b[^)]*\)\)/,
+    )
+    // 负控：不得**同时**留在生产管理组（两边都挂 = 菜单里出现两项，或岗位权限页勾了没用）
+    expect(MENU_CONTROLLER).not.toMatch(
+      /new MenuNode\("production-center", "生产管理", List\.of\([^)]*\bi1\b[^)]*\)\)/,
     )
   })
 

@@ -293,13 +293,15 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：**商品管理组**含合并项「加工项管理」（#4542）→ /production/processing（权限码 processing:manage）', async () => {
+  it('侧边栏：**商品与加工项组**含合并项「加工项管理」（#4542 名 / #5271 组名）→ /production/processing（权限码 processing:manage）', async () => {
     const { menuGroups } = await import('@/config/menu')
     // issue #4490（含同日**规格修订**：「合并后的菜单放入到商品管理大菜单下」）：
     // 「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为单一入口，
-    // 归**商品管理**组（取代原「加工项管理」的位置），权限码不变；#4542 起菜单名 =「加工项管理」
+    // 归该组（取代原「加工项管理」的位置），权限码不变；#4542 起菜单名 =「加工项管理」
+    // issue #5271：组名「商品管理」→「商品与加工项」（key 仍是 `product-center`）
     const product = menuGroups.find((g) => g.key === 'product-center')
     expect(product).toBeDefined()
+    expect(product!.name).toBe('商品与加工项')
     const entry = product!.children.find((c) => c.path === '/production/processing')
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项管理')
@@ -309,11 +311,14 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）
     // ⚠️ issue #4416：原第 2 项「工序库」与第 3 项「工艺路线」已合并为「工艺配置」⇒
     //    /production/operations **不再是**菜单项（页面改为重定向，旧深链仍可达）
-    const production = menuGroups.find((g) => g.key === 'production')
+    // issue #5271：组 key `production` → `production-center`（且面料三项拆到「仓储与物料」）
+    const production = menuGroups.find((g) => g.key === 'production-center')
     expect(production!.children.map((c) => c.path)).toContain('/production/routings')
     expect(production!.children.map((c) => c.name)).toContain('工艺配置')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/operations')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/processing-fees')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/processing')
+    // 旧 key 不再存在（`MenuController` 侧同步改了才叫三源同构）
+    expect(menuGroups.map((g) => g.key)).not.toContain('production')
   })
 })

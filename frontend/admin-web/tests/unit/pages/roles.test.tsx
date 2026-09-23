@@ -75,7 +75,8 @@ const PERMISSION_CATALOG = [
   { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },
   { id: 'p-processing', name: '加工管理', code: 'processing:manage', resource: 'processing', action: 'manage', description: '管理加工项' },
   { id: 'p-knowledge', name: '知识库管理', code: 'knowledge:manage', resource: 'knowledge', action: 'manage', description: '管理知识库' },
-  // issue #5246：知识库/售后拆出**读**码（菜单节点改用读码；写码仍在目录里，落「操作权限」节）
+  // issue #5246（已合入 main）：知识库/售后拆出**读**码（菜单节点改用读码；写码仍在目录里，
+  // 落「操作权限」节）
   { id: 'p-knowledge-view', name: '知识库查看', code: 'knowledge:view', resource: 'knowledge', action: 'view', description: '查看知识卡片' },
   { id: 'p-after-sales-view', name: '售后查看', code: 'after_sales:view', resource: 'after-sales', action: 'view', description: '查看售后工单' },
   { id: 'p-order-list', name: '订单列表', code: 'order:list', resource: 'order', action: 'list', description: '查看订单列表' },
@@ -152,17 +153,29 @@ describe('RolesPage', () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const tree = within(await screen.findByTestId('perm-menu-sections'))
-    // 菜单组头 = 侧边栏菜单组名
+    // 菜单组头 = 侧边栏菜单组名（issue #5271 新 IA：7 组，逐组点名）
+    expect(tree.getByText('工作台')).toBeInTheDocument()
     expect(tree.getByText('智能客服')).toBeInTheDocument()
-    expect(tree.getAllByText('商品管理').length).toBeGreaterThanOrEqual(1) // 组头；操作权限节另有同名项
-    expect(tree.getByText('订单管理')).toBeInTheDocument()
-    expect(tree.getByText('客户管理')).toBeInTheDocument()
+    expect(tree.getByText('商品与加工项')).toBeInTheDocument()
+    expect(tree.getByText('交易管理')).toBeInTheDocument()
+    expect(tree.getByText('生产管理')).toBeInTheDocument()
+    expect(tree.getByText('仓储与物料')).toBeInTheDocument()
     expect(tree.getByText('组织管理')).toBeInTheDocument()
+    // 旧组名不再作为**组头**：issue #5271 三处改判（商品管理 → 商品与加工项；
+    // 订单管理 + 客户管理 → 交易管理；`customer-center` 组消失）。
+    // ⚠️ 「商品管理」还会出现**一次** —— 那是「操作权限」节里的同名权限项（product:manage，非菜单码）
+    expect(tree.getAllByText('商品与加工项')).toHaveLength(1)
+    expect(tree.getAllByText('商品管理')).toHaveLength(1)
+    expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
+    expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
     // 菜单项 = 侧边栏菜单项名
     // #3094: 米宝 · 在线对话 菜单入口已移除，权限树不再渲染该菜单项
     expect(tree.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
+    // 工作台组只含带权限码的项（经营看板无码、全员可见 ⇒ 不进权限树；每日简报要 dashboard:view）
+    expect(tree.getByText('每日简报')).toBeInTheDocument()
+    expect(tree.queryByText('经营看板')).not.toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
     // issue #4490：「加工项管理」+「加工费管理」合并为单一入口；#4542 起菜单名 =「加工项管理」
     // （权限树与真实侧边栏同源）
@@ -171,6 +184,14 @@ describe('RolesPage', () => {
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
     expect(tree.getByText('财务对账')).toBeInTheDocument()
+    // issue #5271：生产管理组 4 项 + 新组「仓储与物料」3 项都要在权限树里（否则「勾得动/看不到」漂移）
+    expect(tree.getByText('生产看板')).toBeInTheDocument()
+    expect(tree.getByText('池看板')).toBeInTheDocument()
+    expect(tree.getByText('工艺配置')).toBeInTheDocument()
+    expect(tree.getByText('计件工资')).toBeInTheDocument()
+    expect(tree.getByText('入库单')).toBeInTheDocument()
+    expect(tree.getByText('余料台账')).toBeInTheDocument()
+    expect(tree.getByText('省料看板')).toBeInTheDocument()
     expect(tree.getByText('员工管理')).toBeInTheDocument()
     expect(tree.getByText('岗位权限')).toBeInTheDocument()
     expect(tree.getByText('企业基础信息')).toBeInTheDocument()

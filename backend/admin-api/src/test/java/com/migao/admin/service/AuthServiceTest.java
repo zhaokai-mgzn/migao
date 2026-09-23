@@ -447,69 +447,210 @@ class AuthServiceTest {
         verify(customerService).createFromSession(eq(1L), eq("openid_existing"), any(), eq("wechat_mini"));
     }
 
-    // ======================== 生产管理菜单（issue #4203/#4205 后端半边） ========================
+    // ======================== 菜单 IA（issue #5271 七大组重排） ========================
 
     /**
-     * 商户管理员菜单里的「生产管理」组（真值源 §2/§4 的商家入口）。
-     *
-     * <p>为什么必须在**后端**锁：侧边栏由 {@code AuthService.buildMenusByPermissions} 生成，
-     * 而「岗位权限」页读的是 {@code MenuController} 的静态树 —— 两边不同构就会出现
-     * 「勾了权限却看不到菜单」/「菜单点不进」。schema 见 issue #4203 交付面表格。</p>
+     * 商户管理员菜单的**真值源**是前端 `frontend/admin-web/src/config/menu.ts` ——
+     * 侧边栏由 {@code AuthService.buildMenusByPermissions} 生成，而「员工/岗位权限」页读的是
+     * {@code MenuController} 的静态树；两边不同构就会出现「勾了权限却看不到菜单」/「菜单点不进」
+     * （issue #4203 交付面表格）。本批用例把 menu.ts 的新 IA **逐组逐项抄成 Java 侧精确期望**。
      */
-    @Test
-    @DisplayName("生产管理组：生产看板/池看板/省料看板/余料台账/工艺配置/计件工资（processing:manage）"
-            + " + 与 MenuController/menu.ts 同构（issue #4440/#5191）")
-    void currentUserMenusExposeProductionGroup() {
+
+    /** 以指定权限集取回「商户管理员」的菜单面（即 buildMenusByPermissions 的输出）。 */
+    private List<com.migao.admin.dto.UserInfoResponse.MenuItem> menusForPermissions(String... permissions) {
         authenticateAs("user-001", 1L);
         when(userService.getUserById("user-001")).thenReturn(testUser);
-        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("processing:manage"));
-
+        when(roleService.getUserPermissions("user-001")).thenReturn(List.of(permissions));
         com.migao.admin.dto.UserInfoResponse info = authService.getCurrentUser();
-
-        com.migao.admin.dto.UserInfoResponse.MenuItem production = info.getMenus().stream()
-                .filter(menu -> "生产管理".equals(menu.getName()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("菜单缺少「生产管理」组："
-                        + info.getMenus().stream().map(com.migao.admin.dto.UserInfoResponse.MenuItem::getName).toList()));
-        // 组 key 沿用既有侧边栏约定（product-center / trade-center / customer-center 同族），
-        // 与前端 config/menu.ts 的 MenuGroup.key 对齐
-        assertThat(production.getKey()).isEqualTo("production-center");
-        // 🔴 issue #4440：节点名/路径与前端 `frontend/admin-web/src/config/menu.ts` 的
-        // `production-process` 逐字一致 —— issue #4416 已把「工序库」+「工艺路线」合并为
-        // 单入口「工艺配置」（`/production/routings`；旧路径 `/production/operations` 是重定向）。
-        // ⚠️ 「入库单」不在此列表内：它的权限码是 `inbound:view`（本用例只给 `processing:manage`）。
-        // issue #5177：「池看板」在列表内且紧跟在「生产看板」之后 —— 它同样只要求
-        // `processing:manage`（池化派单的决策屏，与生产看板同权）。
-        // issue #5159：「省料看板」(/production/saving-board) 接在其后，同权 processing:manage
-        // （省料度量看板也是生产管理动作；三处同构见 tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
-        // issue #5191：「余料台账」(/production/remnants) 接在「省料看板」之后 —— 它此前只能从
-        // 「企业参数中心 → 余料回收」下钻进入，与同期新页（池看板 / 省料看板）入口口径不一致；
-        // 权限码沿用 processing:manage（= RemnantController 的 @RequirePermission，门禁不放宽）。
-        assertThat(production.getChildren())
-                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "池看板", "省料看板", "余料台账", "工艺配置", "计件工资");
-        assertThat(production.getChildren())
-                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
-                .containsExactly("/production", "/production/pool", "/production/saving-board",
-                        "/production/remnants", "/production/routings", "/production/piecework");
-
         clearAuthentication();
+        return info.getMenus();
+    }
+
+    private static com.migao.admin.dto.UserInfoResponse.MenuItem groupByKey(
+            List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus, String key) {
+        return menus.stream()
+                .filter(m -> key.equals(m.getKey()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("菜单缺少组 key = " + key + "（实得 keys = "
+                        + menus.stream()
+                        .map(com.migao.admin.dto.UserInfoResponse.MenuItem::getKey).toList() + "）"));
+    }
+
+    private static List<String> keysOf(List<com.migao.admin.dto.UserInfoResponse.MenuItem> items) {
+        return items.stream().map(com.migao.admin.dto.UserInfoResponse.MenuItem::getKey).toList();
+    }
+
+    private static List<String> namesOf(List<com.migao.admin.dto.UserInfoResponse.MenuItem> items) {
+        return items.stream().map(com.migao.admin.dto.UserInfoResponse.MenuItem::getName).toList();
+    }
+
+    private static List<String> pathsOf(List<com.migao.admin.dto.UserInfoResponse.MenuItem> items) {
+        return items.stream().map(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath).toList();
+    }
+
+    /** 组名 + 全部子项名的扁平表 —— 负控必须看扁平表（只看顶层名会漏掉「组还在、项没了」）。 */
+    private static List<String> allNames(List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus) {
+        List<String> out = new java.util.ArrayList<>();
+        for (com.migao.admin.dto.UserInfoResponse.MenuItem m : menus) {
+            out.add(m.getName());
+            if (m.getChildren() != null) {
+                m.getChildren().forEach(c -> out.add(c.getName()));
+            }
+        }
+        return out;
     }
 
     @Test
-    @DisplayName("无 processing:manage 权限 ⇒ 生产管理组整组不出现（权限门控不得漏）")
-    void currentUserMenusHideProductionGroupWithoutPermission() {
-        authenticateAs("user-001", 1L);
-        when(userService.getUserById("user-001")).thenReturn(testUser);
-        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("order:list"));
+    @DisplayName("全权账号：七个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
+    void currentUserMenusMirrorFrontendIaForAllPermissions() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
-        com.migao.admin.dto.UserInfoResponse info = authService.getCurrentUser();
+        assertThat(keysOf(menus)).containsExactly(
+                "workspace", "smart-customer-service", "product-center", "trade-center",
+                "production-center", "inventory-center", "org-center", "notifications");
+        assertThat(namesOf(menus)).containsExactly(
+                "工作台", "智能客服", "商品与加工项", "交易管理",
+                "生产管理", "仓储与物料", "组织管理", "通知中心");
 
-        assertThat(info.getMenus())
-                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .doesNotContain("生产管理");
+        // 工作台（#5271 由「独立项」改为组）
+        var workspace = groupByKey(menus, "workspace");
+        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板", "每日简报");
+        assertThat(pathsOf(workspace.getChildren())).containsExactly("/dashboard", "/briefing");
 
-        clearAuthentication();
+        var cs = groupByKey(menus, "smart-customer-service");
+        assertThat(keysOf(cs.getChildren())).containsExactly("human-sessions", "knowledge");
+        assertThat(pathsOf(cs.getChildren()))
+                .containsExactly("/agent-workspace/human-sessions", "/knowledge");
+
+        var product = groupByKey(menus, "product-center");
+        assertThat(keysOf(product.getChildren())).containsExactly("products", "processing");
+        assertThat(namesOf(product.getChildren())).containsExactly("商品列表", "加工项管理");
+        // #4490/#4542：加工项管理与加工费管理合并为单入口，路径 /production/processing
+        assertThat(pathsOf(product.getChildren())).containsExactly("/products", "/production/processing");
+
+        var trade = groupByKey(menus, "trade-center");
+        assertThat(keysOf(trade.getChildren()))
+                .containsExactly("orders", "after-sales", "customers", "finance");
+        assertThat(pathsOf(trade.getChildren()))
+                .containsExactly("/orders", "/after-sales", "/customers", "/finance");
+
+        var production = groupByKey(menus, "production-center");
+        assertThat(keysOf(production.getChildren())).containsExactly(
+                "production-board", "production-pool", "production-process", "production-piecework");
+        assertThat(pathsOf(production.getChildren())).containsExactly(
+                "/production", "/production/pool", "/production/routings", "/production/piecework");
+
+        var inventory = groupByKey(menus, "inventory-center");
+        assertThat(keysOf(inventory.getChildren())).containsExactly(
+                "inbound-orders", "production-remnants", "production-saving-board");
+        assertThat(pathsOf(inventory.getChildren())).containsExactly(
+                "/inbound-orders", "/production/remnants", "/production/saving-board");
+
+        var org = groupByKey(menus, "org-center");
+        assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
+        assertThat(pathsOf(org.getChildren())).containsExactly("/employees", "/roles", "/settings");
+
+        // #3094/#5271：旧 `chat`「米宝 · 在线对话」节点已删除；「会话监控」从来不在侧边栏里
+        assertThat(allNames(menus)).doesNotContain("米宝 · 在线对话", "会话监控");
+        // #5271：旧「客户管理」组不再存在（其两项已并入交易管理组）
+        assertThat(keysOf(menus)).doesNotContain("customer-center");
+        assertThat(allNames(menus)).doesNotContain("客户管理");
+    }
+
+    @Test
+    @DisplayName("生产管理组：生产看板/池看板/工艺配置/计件工资（processing:manage）；物料三项已拆出本组")
+    void currentUserMenusExposeProductionGroup() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("processing:manage");
+
+        var production = groupByKey(menus, "production-center");
+        assertThat(production.getName()).isEqualTo("生产管理");
+        assertThat(namesOf(production.getChildren()))
+                .containsExactly("生产看板", "池看板", "工艺配置", "计件工资");
+        assertThat(pathsOf(production.getChildren())).containsExactly(
+                "/production", "/production/pool", "/production/routings", "/production/piecework");
+
+        // 同一份权限下「仓储与物料」组只含 processing:manage 的两项：入库单（inbound:view）不出现
+        // —— 证明入库单确实挂在**独立的**权限判定上，而不是被并进了 processing:manage。
+        var inventory = groupByKey(menus, "inventory-center");
+        assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账", "省料看板");
+        assertThat(allNames(menus)).doesNotContain("入库单");
+    }
+
+    @Test
+    @DisplayName("工作台组：经营看板（全员）+ 每日简报（dashboard:view）")
+    void currentUserMenusGateBriefingByDashboardView() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("dashboard:view");
+
+        var workspace = groupByKey(menus, "workspace");
+        assertThat(workspace.getName()).isEqualTo("工作台");
+        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板", "每日简报");
+        assertThat(pathsOf(workspace.getChildren())).containsExactly("/dashboard", "/briefing");
+        // 除工作台外只有独立项「通知中心」（dashboard:view 不点亮任何其它组）
+        assertThat(keysOf(menus)).containsExactly("workspace", "notifications");
+    }
+
+    @Test
+    @DisplayName("负控：无 dashboard:view ⇒ 每日简报不出现（经营看板仍在）；无权限的组整组不出现")
+    void currentUserMenusHideGroupsWithoutPermission() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("order:list");
+
+        // 顶层只有「工作台 + 交易管理 + 通知中心」
+        assertThat(keysOf(menus)).containsExactly("workspace", "trade-center", "notifications");
+        // 无 dashboard:view ⇒ 每日简报隐藏（但工作台组因经营看板仍在）
+        var workspace = groupByKey(menus, "workspace");
+        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板");
+        // 负控（整组不出现，不得漏权限门控）
+        assertThat(allNames(menus)).doesNotContain(
+                "每日简报", "生产管理", "智能客服", "商品与加工项", "仓储与物料", "组织管理");
+        assertThat(keysOf(menus)).doesNotContain(
+                "production-center", "smart-customer-service", "product-center",
+                "inventory-center", "org-center", "customer-center");
+    }
+
+    @Test
+    @DisplayName("仓储与物料组：入库单落在**独立的** inbound:view 判定里（不得塞进 processing:manage）")
+    void currentUserMenusGateInboundOrdersIndependently() {
+        // 只有 inbound:view、没有 processing:manage ⇒ 入库单必须可见（否则仓管看不到菜单），
+        // 且该组只含它一项
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("inbound:view");
+
+        assertThat(keysOf(menus)).containsExactly("workspace", "inventory-center", "notifications");
+        var inventory = groupByKey(menus, "inventory-center");
+        assertThat(inventory.getName()).isEqualTo("仓储与物料");
+        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单");
+        assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders");
+        // 自证渲染面非空 + 反向：processing:manage 的两项确实被门控挡在外面
+        assertThat(allNames(menus)).contains("经营看板");
+        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "生产看板");
+    }
+
+    @Test
+    @DisplayName("交易管理组吸收客户列表/财务对账；「客户管理」组（customer-center）不再存在")
+    void currentUserMenusAbsorbCustomerCenterIntoTrade() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
+                menusForPermissions("customer:view", "finance:view");
+
+        assertThat(keysOf(menus)).containsExactly("workspace", "trade-center", "notifications");
+        var trade = groupByKey(menus, "trade-center");
+        assertThat(trade.getName()).isEqualTo("交易管理");
+        assertThat(namesOf(trade.getChildren())).containsExactly("客户列表", "财务对账");
+        assertThat(pathsOf(trade.getChildren())).containsExactly("/customers", "/finance");
+        assertThat(keysOf(menus)).doesNotContain("customer-center", "customers", "finance");
+    }
+
+    @Test
+    @DisplayName("智能客服组：只剩在线接待 + 知识库（旧「米宝 · 在线对话」节点已删除，无权限则整组不出现）")
+    void currentUserMenusDropRemovedChatEntry() {
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
+                // issue #5246（已合入 main）：知识库节点码 = 读码 knowledge:view
+                menusForPermissions("agent:session", "knowledge:view");
+
+        var cs = groupByKey(menus, "smart-customer-service");
+        assertThat(cs.getName()).isEqualTo("智能客服");
+        assertThat(namesOf(cs.getChildren())).containsExactly("在线接待", "知识库");
+        assertThat(pathsOf(cs.getChildren()))
+                .containsExactly("/agent-workspace/human-sessions", "/knowledge");
+        assertThat(allNames(menus)).doesNotContain("米宝 · 在线对话", "会话监控");
     }
 
     private void authenticateAs(String userId, Long tenantId) {

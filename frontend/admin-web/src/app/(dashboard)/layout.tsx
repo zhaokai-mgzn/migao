@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
+import CommandPalette from '@/components/layout/CommandPalette'
 import { usePermission } from '@/lib/permission'
 import { cn } from '@/lib/utils'
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
@@ -31,7 +32,7 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
-  // （增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。
+  //（增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。
   { prefix: '/knowledge', code: 'knowledge:view' },
   { prefix: '/roles', code: 'system:manage' },
   { prefix: '/briefing', code: 'dashboard:view' },
@@ -47,6 +48,10 @@ export default function DashboardLayout({
   const { has: hasPermission } = usePermission()
   const [collapsed, setCollapsed] = useState(false)
   const manualToggle = useRef(false)
+  // 移动端抽屉（issue #5271）：小屏下侧边栏是浮层，默认收起
+  const [mobileOpen, setMobileOpen] = useState(false)
+  // 命令面板（⌘K，issue #5271）
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // 路由权限校验：无权限时展示 403 提示（不重定向，避免无 dashboard 权限时循环跳转）
   const requiredPermission = ROUTE_PERMISSION_MAP.find((r) => pathname.startsWith(r.prefix))?.code
@@ -61,6 +66,25 @@ export default function DashboardLayout({
     } else if (!manualToggle.current) {
       setCollapsed(false)
     }
+  }, [pathname])
+
+  // 命令面板快捷键：⌘K / Ctrl+K（issue #5271）
+  // 用 window 级监听（不是输入框内）—— 侧边栏与 Header 都可能不在视口内（移动端抽屉收起时）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // 跳页后收掉浮层（移动端抽屉 / 命令面板），否则新页面顶上还挂着旧浮层
+  useEffect(() => {
+    setMobileOpen(false)
+    setPaletteOpen(false)
   }, [pathname])
 
   const handleToggle = () => {
@@ -85,18 +109,33 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      {/* 侧边栏 */}
-      <Sidebar collapsed={collapsed} onToggle={handleToggle} />
+      {/* 侧边栏（issue #5271：桌面端常驻栏 / 移动端抽屉） */}
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={handleToggle}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+        onOpenSearch={() => setPaletteOpen(true)}
+      />
 
-      {/* 主内容区 */}
+      {/* 移动端抽屉遮罩：点击关闭（z 低于侧边栏、高于内容与 Header） */}
+      {mobileOpen && (
+        <div
+          data-testid="sidebar-mask"
+          className="fixed inset-0 z-[45] bg-black/45 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* 主内容区 —— ⚠️ 边距只在 lg+ 生效：小屏侧边栏是浮层，不占内容宽度（issue #5271） */}
       <div
         className={cn(
           'transition-all duration-300 min-h-screen flex flex-col',
-          collapsed ? 'ml-16' : 'ml-60'
+          collapsed ? 'lg:ml-16' : 'lg:ml-60'
         )}
       >
         {/* 顶部 Header */}
-        <Header />
+        <Header onOpenMobileNav={() => setMobileOpen(true)} />
 
         {/* 页面内容 — pb-24 底部预留空间，卡片 min-h 联动：内容不足一屏时
             底部锚定内容（如分页）不被右下角米宝浮动按钮（FAB）遮挡（#3070）。
@@ -107,6 +146,9 @@ export default function DashboardLayout({
           </div>
         </main>
       </div>
+
+      {/* 菜单命令面板（⌘K，issue #5271） */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
       {/* AI 助手悬浮组件 — 聊天相关页面不显示（已有完整对话界面） */}
       {!pathname.startsWith('/chat') && <FloatingAssistant />}

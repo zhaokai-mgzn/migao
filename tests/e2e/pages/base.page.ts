@@ -35,23 +35,43 @@ import {
   waitForToast as _waitForToast,
 } from '../helpers/wait.helper'
 
-/** Sidebar menu path → display name mapping (from Sidebar.tsx menuGroups) */
+/** Sidebar menu path → display name mapping (from Sidebar.tsx menuGroups)
+ *
+ *  ⚠️ 本表是**手维护的重复表**（不 import `@/config/menu`）⇒ 菜单改名/换组时必须同批改。
+ *  issue #5271 重设计：全表按新 IA 校正（原名多为**组名而非菜单名**，如 `/products` 写「商品管理」、
+ *  `/employees` 写「客服团队」—— 那些名字在侧边栏里根本点不到，属既有 stale）。 */
 const SIDEBAR_MENU: Record<string, string> = {
+  // 工作台
   '/dashboard': '经营看板',
-  '/products': '商品管理',
-  // issue #4490：「加工项管理」+「加工费管理」合并为单一入口 /production/processing（商品管理组）；
+  '/briefing': '每日简报',
+  // 智能客服
+  '/agent-workspace/human-sessions': '在线接待',
+  '/knowledge': '知识库',
+  // 商品与加工项
+  '/products': '商品列表',
+  // issue #4490：「加工项管理」+「加工费管理」合并为单一入口 /production/processing（商品与加工项组）；
   // issue #4542：菜单名 =「加工项管理」（与服务端同名，页面仍是两个 tab）
   '/production/processing': '加工项管理',
-  '/orders': '订单管理',
-  '/after-sales': '售后管理',
-  '/customers': '客户管理',
-  '/agent-workspace': '客服工作台',
-  '/agent-workspace/sessions': '会话监控',
-  '/agent-workspace/quick-replies': '快捷回复',
-  '/employees': '客服团队',
+  // 交易管理（issue #5271：原「订单管理」+「客户列表/财务对账」并为一行）
+  '/orders': '订单列表',
+  '/after-sales': '售后工单',
+  '/customers': '客户列表',
+  '/finance': '财务对账',
+  // 生产管理
+  '/production': '生产看板',
+  '/production/pool': '池看板',
+  '/production/routings': '工艺配置',
+  '/production/piecework': '计件工资',
+  // 仓储与物料（issue #5271 新组）
+  '/inbound-orders': '入库单',
+  '/production/remnants': '余料台账',
+  '/production/saving-board': '省料看板',
+  // 组织管理
+  '/employees': '员工管理',
   '/roles': '岗位权限',
+  '/settings': '企业基础信息',
+  // 独立项
   '/notifications': '通知中心',
-  '/settings': '系统设置',
 }
 
 export class BasePage {
@@ -112,6 +132,24 @@ export class BasePage {
    *
    * Active item has class `bg-primary-600 text-white`.
    */
+  /**
+   * 展开侧边栏里**所有被收起的分组**（issue #5271）。
+   *
+   * 重设计后分组默认**只展开当前路由所在组** ⇒ 直接点别的组的链接会因「元素不可见」超时。
+   * 本方法把 `aria-expanded="false"` 的组标题逐个点开，直到没有收起的组。
+   * 用「每次重新取第一个」而不是「先 count 再按序号点」—— 点开后该元素即从选择器里消失，
+   * 按序号会漏点（实测形态：只展开了奇数个组）。guard 上限防死循环。
+   */
+  async expandAllSidebarGroups(): Promise<void> {
+    for (let guard = 0; guard < 20; guard++) {
+      const collapsed = this.sidebar.locator(
+        '[data-testid^="sidebar-group-toggle"][aria-expanded="false"]',
+      )
+      if ((await collapsed.count()) === 0) return
+      await collapsed.first().click()
+    }
+  }
+
   async navigateToSidebar(path: string): Promise<void> {
     const menuName = SIDEBAR_MENU[path]
     if (!menuName) {
@@ -119,6 +157,9 @@ export class BasePage {
         `Unknown sidebar path: ${path}. Known: ${Object.keys(SIDEBAR_MENU).join(', ')}`,
       )
     }
+
+    // issue #5271：目标项可能落在被收起的分组里 ⇒ 先展开
+    await this.expandAllSidebarGroups()
 
     // Sidebar links are rendered as <a> tags by Next.js <Link>
     const navLink = this.sidebar.getByRole('link', { name: menuName })
@@ -133,6 +174,8 @@ export class BasePage {
    * Click a sidebar navigation link by its display name text.
    */
   async navigateToSidebarByName(name: string): Promise<void> {
+    // issue #5271：同上 —— 目标项可能在被收起的分组里
+    await this.expandAllSidebarGroups()
     const navLink = this.sidebar.getByRole('link', { name })
     await navLink.click()
     await this.page.waitForLoadState('networkidle').catch(() => {})

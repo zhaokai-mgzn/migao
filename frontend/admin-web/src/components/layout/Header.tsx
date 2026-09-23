@@ -9,6 +9,7 @@ import {
   Phone,
   Briefcase,
   Building2,
+  Menu,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -17,9 +18,15 @@ import NotificationBell from './NotificationBell'
 interface HeaderProps {
   title?: string
   breadcrumbs?: { label: string; href?: string }[]
+  /** 移动端抽屉开关（issue #5271）；未传则按钮是空动作（不影响桌面端） */
+  onOpenMobileNav?: () => void
 }
 
-// 路由 → 面包屑映射（与侧边栏菜单结构对齐 — #2969 七大组）
+// 路由 → 面包屑映射（与侧边栏菜单结构对齐）
+// 🔴 issue #5271 重设计后，本表的**组名**必须与 `config/menu.ts` 的 `MenuGroup.name` 逐字一致：
+//    商品管理 → **商品与加工项**；订单管理/客户管理 → **交易管理**（客户列表、财务对账并入）；
+//    入库单/余料台账/省料看板 → **仓储与物料**（新组，原在生产管理组）。
+//    判据：tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038，逐菜单项断言末项 == 菜单名）。
 // 顺序敏感：更具体的子路径放在前面，避免被父路径前缀匹配
 const ROUTE_BREADCRUMB_MAP: Array<{
   match: (path: string) => boolean
@@ -39,9 +46,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '智能客服' }, { label: '客服工作台' }] },
   { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '智能客服' }, { label: '知识库' }] },
 
-  // 商品管理（与侧边栏"商品管理"分组对齐）
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品列表' }] },
-  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
+  // 商品与加工项组（issue #5271 组名：原「商品管理」→「商品与加工项」）
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品与加工项' }, { label: '商品列表' }] },
+  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品与加工项' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
   { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '生产管理' }, { label: '生产明细' }] },
@@ -50,7 +57,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // §15.2「面包屑与侧边栏菜单名一致」不成立。本路径现为重定向，这里保留一条同口径的兜底。
   // issue #4542：菜单名 = 「加工项管理」（与服务端 `MenuController`/`AuthService` 同名）；
   // 该页仍是两个 tab（加工项 / 加工费组合），改名不减功能。
-  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品管理' }, { label: '加工项管理' }] },
+  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品与加工项' }, { label: '加工项管理' }] },
 
   // 生产管理组（与侧边栏"生产管理"分组对齐，issue #4357 补 —— 此前本组**无任何面包屑条目**
   // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立）
@@ -64,30 +71,31 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
   // `/production` 会抢走它 ⇒ 面包屑退化成「生产看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
-  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '生产管理' }, { label: '省料看板' }] },
+  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料看板' }] },
   // 余料台账（issue #5146 建页 / issue #5191 **进侧边栏**）：菜单项名 = 「余料台账」，
   // 与 `config/menu.ts` 的 `production-remnants`、服务端两处菜单节点**逐字一致**
   // （§15.2「面包屑末项 == 侧边栏菜单名」；守卫 tests/unit/lib/menu-breadcrumb-coverage.test.tsx）。
   // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）。
-  { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '生产管理' }, { label: '余料台账' }] },
+  // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
+  { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
   // issue #4490（含同日规格修订）：加工项 + 加工费合并为 /production/processing（两个 tab），
   // 按用户裁定归**商品管理**组 ⇒ 面包屑写「商品管理 / 加工项管理」（#4542 改名后与服务端同名）。
   // 前缀同时覆盖旧路径 /production/processing-fees（它重定向到 ?tab=fees）⇒ 旧深链的面包屑也写该名。
-  { match: (p) => p.startsWith('/production/processing'), crumbs: [{ label: '商品管理' }, { label: '加工项管理' }] },
+  { match: (p) => p.startsWith('/production/processing'), crumbs: [{ label: '商品与加工项' }, { label: '加工项管理' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
-  // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders`（生产管理组）逐字一致。
-  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '生产管理' }, { label: '入库单' }] },
+  // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
+  // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
+  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '入库单' }] },
 
-  // 订单管理（与侧边栏"订单管理"分组对齐）
-  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '订单管理' }, { label: '订单列表' }] },
-  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '订单管理' }, { label: '售后工单' }] },
-
-  // 客户管理组（与侧边栏"客户管理"分组对齐，#2969 财务对账归入本组）
-  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '客户管理' }, { label: '客户列表' }] },
-  { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '客户管理' }, { label: '财务对账' }] },
+  // 交易管理组（issue #5271：原「订单管理」+ 原「客户管理」的客户列表/财务对账**并为一组** ——
+  // 一条动线：谁下单 → 单到哪 → 售后 → 收款对账）
+  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '订单列表' }] },
+  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '交易管理' }, { label: '售后工单' }] },
+  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '交易管理' }, { label: '客户列表' }] },
+  { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '交易管理' }, { label: '财务对账' }] },
 
   // 组织管理组（与侧边栏"组织管理"分组对齐，#2969 员工/岗位权限/企业信息归入本组）
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },
@@ -104,7 +112,7 @@ function resolveBreadcrumbs(pathname: string | null): { label: string; href?: st
   return matched ? matched.crumbs : [{ label: '工作台', href: '/dashboard' }]
 }
 
-export default function Header({ title, breadcrumbs }: HeaderProps) {
+export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout } = useAuthStore()
@@ -127,6 +135,20 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200/80 bg-white/85 px-6 backdrop-blur-sm">
       {/* 左侧：面包屑 / 页面标题 */}
       <div className="flex items-center">
+        {/* 移动端抽屉开关（issue #5271）：小屏下侧边栏是浮层（默认藏在屏外），需要一个入口。
+            ⚠️ 用 <button> 而不是 <nav> —— 本页首个 <nav> 必须仍是面包屑容器
+            （menu-breadcrumb-coverage.test.tsx 靠 container.querySelector('nav') 取面包屑）。 */}
+        {onOpenMobileNav && (
+          <button
+            type="button"
+            aria-label="打开菜单"
+            data-testid="mobile-nav-trigger"
+            onClick={onOpenMobileNav}
+            className="mr-2 flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         {resolvedBreadcrumbs ? (
           <nav className="flex items-center text-sm">
             {resolvedBreadcrumbs.map((crumb, index) => {
