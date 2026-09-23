@@ -26,8 +26,10 @@
 
 ## ⚠️ 文档里引用旧位置的说明（有意为之，不是遗漏）
 
-`docs/design/**` 等**历史设计文档**与 `.github/cases/**` 用例文本里的
-`backend/admin-api/src/main/resources/db/migration/V*.sql` 引用，指的是 **#5243 之前的旧位置**
-—— 内容是这些文件，逐字节未变。那些文档是**历史证据**，批量改写会把证据链改花，
+`docs/design/**` 等**历史设计文档**、`.github/cases/**` 用例文本、以及**建库脚本
+`../init/schema.sql` 内部注释**里的 `backend/admin-api/src/main/resources/db/migration/V*.sql`
+引用，指的是 **#5243 之前的旧位置** —— 内容是这些文件，逐字节未变
+（建库脚本整份与 `origin/main:docs/sql/schema.sql` **逐字节相同**：「搬动不改内容」这条性质
+要机械可验；其注释里的旧路径因此**有意**留在原样）。那些文档是**历史证据**，批量改写会把证据链改花，
 故**有意保留**；新写的文档请指向本目录（`migration-archive/`）或建库脚本
 （`db/init/schema.sql`）。

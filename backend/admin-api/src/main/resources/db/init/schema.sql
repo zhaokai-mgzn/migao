@@ -1272,7 +1272,7 @@ COMMENT ON COLUMN production_work_logs.unit_price IS '计件单价快照（元/�
 COMMENT ON COLUMN production_work_logs.factor IS '计件系数快照（V61，issue #4351）：与 unit_price 同一次报工写入、同一口径；NULL=存量行';
 COMMENT ON COLUMN production_work_logs.price_state IS '计件单价三态标记（V90，issue #4696）：priced=有价（含显式定价 0 元）；unpriced=未定价（unit_price 为 NULL，聚合不得按 0 计件）；NULL=本列引入前的存量行';
 COMMENT ON COLUMN processing_position_operations.unit_price IS '实例快照单价（元/单位）：NULL=未定价（≠ 0 元，0 是显式定价为 0 元）；实例化侧不得回落工序库行价（V90，issue #4696）';
--- 套号 + 扫码闭环数据层（V92，issue #4698）：迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V92__add_processing_order_sets_and_scan_loop.sql
+-- 套号 + 扫码闭环数据层（V92，issue #4698）：迁移链同款见 backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql
 COMMENT ON TABLE processing_order_sets IS '套号载体（V92，issue #4698 / 设计 §2.2）：一个加工单 × 一套 = 一行。一套 = 一樘窗（= 一个 craftLineId 组 / 一个窗的全部部位合计一套，用户裁定 2026-09-20）';
 COMMENT ON COLUMN processing_order_sets.set_index IS '一樘窗在本加工单里的次序（1 起，3 位零填充进 set_no）。只增不复用：软删行仍占号（MAX 查询不带 deleted=0）⇒ 重排/改名/删窗都不改已有套号';
 COMMENT ON COLUMN processing_order_sets.set_no IS '可读套号 = {processing_order_no}-{pad3(set_index)}（落库冗余）：码里印的是它，扫码解析按文本查唯一索引；冗余不漂移的条件 = 单号与 set_index 一经分配不变';
@@ -1292,7 +1292,7 @@ COMMENT ON COLUMN processing_position_operations.started_at IS '开工时刻（V
 COMMENT ON COLUMN processing_position_operations.status IS 'pending 待做 / in_progress 进行中（C 模式预留，V92 只扩取值域、零行为变化）/ done 已报工';
 
 -- 工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照。
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V55__create_production_operation_price_versions.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql
 CREATE TABLE IF NOT EXISTS production_operation_price_versions (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1307,7 +1307,7 @@ CREATE INDEX IF NOT EXISTS idx_op_price_versions_operation
 COMMENT ON TABLE production_operation_price_versions IS '工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照，改价不影响既有实例与历史报工';
 
 -- 部位价目矩阵格的计件单价版本（V86，issue #4587 = 母单 #4586 包A）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V86__create_operation_position_price_versions.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V86__create_operation_position_price_versions.sql
 -- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
 -- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
 -- 口径（与 V55 同范式，唯一差别 = unit_price **可空**）：一行 = 一次**真的变了**的矩阵格单价变更；
@@ -1328,7 +1328,7 @@ COMMENT ON TABLE production_operation_position_price_versions IS '部位价目�
 COMMENT ON COLUMN production_operation_position_price_versions.unit_price IS '本次变更后的**计件**单价（元/单位，付工人）；NULL = 未定价或明确不做（≠ 0 元，0 是定价为 0 元）';
 
 -- 未定价实例的**显式补价**动作账（V94，issue #4709 C）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V94__create_instance_repricing_logs.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V94__create_instance_repricing_logs.sql
 -- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
 -- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
 -- 用途：商家事后在部位价目矩阵补价时，把**已实例化**的 `unit_price IS NULL` 行补成当前矩阵价
@@ -1356,7 +1356,7 @@ COMMENT ON COLUMN production_instance_repricing_logs.new_unit_price IS '本次�
 COMMENT ON COLUMN production_instance_repricing_logs.rolled_back_at IS '回滚时刻（NULL = 未回滚）；回滚只还原 unit_price → NULL，不碰 factor / done_qty / status / 报工历史';
 
 -- 特殊选项 → 条件工序 / 计件系数（V59，issue #4230 Java 侧 v1a）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V59__create_production_option_tables.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql
 -- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
 -- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
 -- 真值源 = ai-agent app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS / OPTION_FACTOR_SCOPES
@@ -1399,7 +1399,7 @@ COMMENT ON TABLE production_option_routings IS '特殊选项 → 条件工序（
 COMMENT ON TABLE production_option_factors IS '特殊选项 → 计件系数（V59，issue #4230）：operation_name NULL = 该部位全部工序（平摊档），非空 = 逐工序例外档（例外档盖住平摊档）';
 
 -- 信号 → 路线键 + 路线版本账（V60，issue #4308「工艺路线商家可配」）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V60__create_routing_customization_tables.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql
 -- （为什么两处都要：本文件是**全新库的一次性 bootstrap**，bootstrap 路径**不跑迁移链** ⇒
 --  只存在于迁移里的表在建库后并不存在，admin-api 查询 500，见 issue #3270 形态。）
 -- 唯一性**按用途拆**（帘种行 / 工艺行各一条唯一索引）：迁移前的常量表里「帘头」出现两次且
@@ -1456,7 +1456,7 @@ COMMENT ON TABLE production_routing_versions IS
     '工艺路线版本账（V60，issue #4308）：每次改序列追加一行；路线是计件工资与完工判定的唯一输入，改动必须留痕';
 
 -- 加工费组合定价 + 版本账（V68，issue #4386「加工费管理模块」）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration-archive/V68__create_processing_fee_combinations.sql
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V68__create_processing_fee_combinations.sql
 -- （为什么两处都要：本文件是**全新库的一次性 bootstrap**，该路径**不跑迁移链** ⇒ 只存在于迁移里的表
 --  在建库后并不存在，admin-api 查询 500，形态见 issue #3270。）
 -- 用户裁定（2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」「选配完的一个商品
@@ -3149,7 +3149,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(12,2) DEFAULT 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_at TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS close_reason VARCHAR(500);
 
--- 员工岗位/权限点（docs/sql/archive/legacy-scripts/V2026/V20260614、V1）
+-- 员工岗位/权限点（docs/sql/migrations/V20260614、V1）
 ALTER TABLE users ADD COLUMN IF NOT EXISTS position VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;
 
@@ -3191,7 +3191,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_applications_company_norm
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tool_name VARCHAR(64);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_tool_name ON audit_logs(tool_name);
 
--- C 端长期记忆表（docs/sql/archive/legacy-scripts/V2026/V20260608 + V20260904）
+-- C 端长期记忆表（docs/sql/migrations/V20260608 + V20260904）
 CREATE TABLE IF NOT EXISTS user_memories (
     id          VARCHAR(32) PRIMARY KEY,
     tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
