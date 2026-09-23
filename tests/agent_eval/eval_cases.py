@@ -7334,6 +7334,42 @@ _CASE_PR_104 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-105 [NORMAL] 🔴 商家可见文案不得漏出 markdown 强调标记 `**`（纯文本插值 ⇒ 原样上屏成字面星号）：全 frontend 面穷举收口 + AST 静态守卫（承 issue #5033 的存量登记）（源: cases/product.yml）──
+_CASE_PR_105 = EvalCase(
+    id='PR-105',
+    legacy_id='',
+    title='🔴 商家可见文案不得漏出 markdown 强调标记 `**`（纯文本插值 ⇒ 原样上屏成字面星号）：全 frontend 面穷举收口 + AST 静态守卫（承 issue #5033 的存量登记）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开「工艺配置 → 算料口径与术语说明」/「参数总览 → 余料回收」/「入库单 → 批量导入」的说明文案：不该看到字面 `**`'],
+    expectations=[],
+    data_checks=['判据 1·**穷举面与收口**（origin/main 实测，命令可复算：`git archive origin/main frontend | tar -x -C <tmp>` 后对 `frontend/` 跑 AST 扫描 —— 面 = 字符串字面量 / 模板静态段（head+span）/ JSX 文本，**注释天然不在面内**）：命中 89 处 ⇒ ① **71 处是用户可见文案**（12 个文件：`craft-calc-glossary.ts` 51、`OversizeThresholdPreview.tsx` 4、`production/remnants/page.tsx` 3、`inbound-orders/page.tsx` 3、`TenantParamsPanel.tsx` 2、`CraftCalcGlossary.tsx` 2、`tenant-params.ts` / `RemnantItemSizesPanel.tsx` / `production/routings/page.tsx` / `processing-orders/[id]/production/page.tsx` / `orders/new/page.tsx` / `worker-h5/src/render.mjs` 各 1）**全部去掉标记**；② **18 处排除并逐条点名**：12 处构建工具 glob（`eslint.config.mjs` 4 / `tailwind.config.ts` 4 / `vitest.config.ts` 4）、6 处手机号掩码 `****`（admin-web `customers/page.tsx` 1、mini-app `utils/mask.ts` 2 + `profile/index` 替换串 1、bmini-app `utils/mask.ts` 2）。排除项**不静默放过**（见判据 4 的负控）。', '判据 2·**红证**（实测）：往 `frontend/admin-web/src/lib/craft-calc-glossary.ts` 任一句 `impact` 塞回 `**` ⇒ `copy-no-markdown-emphasis.test.ts` 判据 ③ 判红并打印 `文件:行 [AST 种类] 原文`；复原后绿（对照组）。', '判据 3·**反恒真（正控，注入式）**：守卫自带合成坏样本（成对 `**x**`、未闭合 `**x`、JSX 文本、无插值模板、有插值模板 head/tail）⇒ 检测器必须**逐条**报出（断言 AST 种类 + 行号）。这不是装饰：**改前实测**正是这条抓出检测器的两个静默漏检盲点 —— ① `ts.SyntaxKind[node.kind]` 反查名字对无插值模板返回的是别名 `FirstTemplateToken`（字符串判等恒假）；② 模板 **head** 段未扫。', "判据 4·**不误伤（负控）**：掩码 `'****'`、行注释 / 块注释 / JSX 注释里的 `**` 一律**不**判违规 —— 判定面是 AST 而非全文 grep（本仓注释惯例就是 markdown 写法：全文 grep 在 `frontend/` 会报 **500+** 命中，其中绝大多数是注释 ⇒ 那种判据只会被当成噪音关掉）；登记表（掩码字面量）**陈旧即红**（源码里没了必须删条目）。", '判据 5·**渲染面同源（DOM 级）**：`CraftCalcGlossary.test.tsx` 新增「整块 textContent 不含 `**`」+ 自证非空（面板必须含「术语怎么判」）；`production-routings.test.tsx` 原先因**存量**而只敢钉一句（注释自陈「断言整块会假红」= 自我豁免），#5194 收口后**改判为整块回归锁**（判据只增不减）。', '判据 6·**不损失客户**：本单只改文案字符串里的标记字符，不动任何数值 / 口径 / 端点 / 权限（对客金额、售价、成品口径逐值不变）。', '**边界（如实登记）**：① 服务端下发的字符串（如余料 `notice`、后端错误 message）不在本单扫描面内（issue #5194 的穷举面 = `frontend/`）；② `frontend/mini-app` **有意**不在守卫面内 —— C 端助手消息经 `frontend/mini-app/src/utils/richText.ts` 的 `parseRichText` **真的解析** `**x**`（那是既有渲染约定，不是泄漏），一律禁 `**` 会误伤它的掩码与正则字面量；③ 同一批文案里还有**反引号代码片段**（如 `` `HEM_MARGIN` ``）同样原样上屏 —— 同类但**另一件事**，本单不修（另单登记）。'],
+    skip_reason='[backend-contract] 前端文案 / 静态源码守卫（admin-web + worker-h5），由 vitest 单测（AST 静态守卫 + 组件渲染断言）执行，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui-copy', 'admin_web', 'worker-h5', 'static-guard', 'config-ux'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-106 [NORMAL] 余料台账进侧边栏 —— 生产管理组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页）（源: cases/product.yml）──
+_CASE_PR_106 = EvalCase(
+    id='PR-106',
+    legacy_id='',
+    title='余料台账进侧边栏 —— 生产管理组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['登录后打开侧边栏：生产管理组里能看到「余料台账」，点进去到 /production/remnants（与池看板 / 省料看板口径一致）'],
+    expectations=[],
+    data_checks=['判据 1·**三处同构**（漏任一处 = 「岗位权限页勾得动、侧边栏看不到」或反之）：`frontend/admin-web/src/config/menu.ts`（真实侧边栏单一来源）/ `MenuController.MENU_TREE`（`GET /api/admin/menus`，岗位权限页消费）/ `AuthService.buildMenusByPermissions`（登录下发）的**生产管理组**都含「余料台账」，节点名 / 路径 / 图标逐字一致且**顺序一致**。红证 A（实测）：只改 `menu.ts` 一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 判红（三份源逐值相等）；红证 B：删掉 `menu.ts` 里该节点 ⇒ `remnants-menu-isomorphic.test.ts` 判据 ① 与 PG-038 的面包屑覆盖同时判红。', '判据 2·**权限不放宽**（issue #5191 明写的判据）：菜单权限码 == `RemnantController` 类级 `@RequirePermission(「processing:manage」)` 的码**逐字相同**，且该节点确实落在 `permissions.contains(「processing:manage」)` 的 if 块内（测试取「该 add 之前最近的权限判定」，与注释长度无关 ⇒ 不假红）。**负控**：权限集只有 `order:list` 时渲染真实 `<Sidebar />` ⇒ 「余料台账」**不出现**（开菜单没有顺手把门禁放宽成「人人可见」）。', '判据 3·**真的点得到**（不是只断言常量表里有这行）：以 `processing:manage` 权限渲染**真实** `<Sidebar />` ⇒ 出现名为「余料台账」的 link 且 `href == /production/remnants`。', '判据 4·**面包屑（§15.2）**：`Header.tsx` 的 `/production/remnants` 条目 label == 菜单名「余料台账」，且该条**排在** `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）；对**每一个**菜单项的通用判据由既有的 PG-038（`menu-breadcrumb-coverage.test.tsx`）自动覆盖新增项。', '判据 5·**图标注册不是静默的**：`Sidebar.tsx` 的 `iconMap` 注册 `Recycle`（漏注册只会静默回落 `BarChart3`，不会有任何东西变红）；测试替身 `tests/setup.ts` 的 lucide 清单同步登记（漏登记则任何渲染 Sidebar 的用例当场抛错）。', '判据 6·**不损失客户**：纯入口变更 —— 不改任何端点、权限语义与金额/口径（对客金额、售价、成品口径逐值不变）。', '**边界（如实登记）**：① 未新增真实浏览器点击 E2E（本单以「渲染真实 Sidebar 组件 + 三源静态守卫 + Java 节点表断言」覆盖；e2e 旅程未加）；② 原先「企业参数中心 → 余料回收」域的下钻入口**保留**（两处入口并存，不删下钻）；③ 后端 Java 侧的 `MenuControllerTest` / `AuthServiceTest` 的节点表已同步（否则实现与测试漂移）。'],
+    skip_reason='[backend-contract] 菜单 IA / 前端入口（admin-web + 服务端菜单树），由 vitest 单测（三源同构 + 真实 Sidebar 渲染 + 面包屑覆盖）+ Java 单测（MenuControllerTest / AuthServiceTest 节点表）执行，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['menu', 'ia', 'admin_web', 'remnant', 'static-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8984,6 +9020,8 @@ ALL_CASES = (
     _CASE_PR_102,
     _CASE_PR_103,
     _CASE_PR_104,
+    _CASE_PR_105,
+    _CASE_PR_106,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

@@ -218,7 +218,7 @@ export function TenantParamsPanel() {
                 data-testid="param-calc-using-default"
                 className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2"
               >
-                本企业尚未保存过算料口径 —— 下表**全部**为算料引擎默认值。
+                本企业尚未保存过算料口径 —— 下表全部为算料引擎默认值。
               </div>
             )}
 
@@ -229,7 +229,7 @@ export function TenantParamsPanel() {
                 data-testid="param-defaults-unavailable"
                 className="mt-3 text-xs text-neutral-600 bg-neutral-50 border border-neutral-200 rounded p-2"
               >
-                引擎默认值本次取不到 ⇒ **无法判断哪些参数被你改过**。这不等于「都是默认值」，
+                引擎默认值本次取不到 ⇒ 无法判断哪些参数被你改过。这不等于「都是默认值」，
                 也不影响你的配置本身（稍后重新打开本页即可再试）。
               </div>
             )}

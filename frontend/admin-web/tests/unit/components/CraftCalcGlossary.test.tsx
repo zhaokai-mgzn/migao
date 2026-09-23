@@ -1,4 +1,4 @@
-// case_ids: OR-040, OR-041
+// case_ids: OR-040, OR-041, PR-105
 /**
  * 「算料口径与术语说明」区块（issue #4975）—— 渲染面。
  *
@@ -142,5 +142,16 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     // 注入：改成受控 div + 自绘开关 ⇒ 红（键盘可达性随之丢失）
     expect(details.length).toBeGreaterThan(1)
     expect(container.querySelectorAll('summary').length).toBe(details.length)
+  })
+
+  it('渲染结果里没有 markdown 强调标记 `**`（issue #5194：渲染层是纯文本插值 ⇒ 星号原样上屏）', () => {
+    const { container } = render(<CraftCalcGlossary config={CONFIG} />)
+    const text = container.textContent ?? ''
+    // 自证非空：空 DOM 上的「不含 **」是恒真断言（什么也没测）
+    expect(text).toContain('术语怎么判')
+    expect(text.length).toBeGreaterThan(200)
+    // 红证：把任一句 `definition` / `impact` / `boundary` 里的文案塞回 `**` ⇒ 本条判红
+    //（改前实测：本区块的 51 处文案里带 `**`，商家看到的是字面星号，不是加粗）
+    expect(text).not.toContain('**')
   })
 })

@@ -361,7 +361,7 @@ export default function InboundOrdersPage() {
         // 幂等命中：这次运行早已建过账 —— 不是失败，但也**没有**再动库存
         toast.success('这次导入运行已经建过账（幂等命中，未重复加库存）')
       } else {
-        toast.error('有明细行未通过校验，**未建账**（一行都没写）—— 请按报告修改后重跑')
+        toast.error('有明细行未通过校验，未建账（一行都没写）—— 请按报告修改后重跑')
       }
     } catch {
       // 拦截器已提示
@@ -712,7 +712,7 @@ export default function InboundOrdersPage() {
                 </tbody>
               </table>
               <p className="text-xs text-neutral-400 mt-2">
-                数量按 0.1 米粒度、**大于 0** 即可（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
+                数量按 0.1 米粒度、大于 0 即可（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
                 超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
                 缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
               </p>
@@ -730,7 +730,7 @@ export default function InboundOrdersPage() {
         footer={
           <div className="flex items-center justify-between w-full">
             <span className="text-sm text-neutral-500">
-              一行 = 一个批次；整份文件**全或无** —— 有 1 行不通过就一行都不建账
+              一行 = 一个批次；整份文件全或无 —— 有 1 行不通过就一行都不建账
             </span>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setImportOpen(false)}>

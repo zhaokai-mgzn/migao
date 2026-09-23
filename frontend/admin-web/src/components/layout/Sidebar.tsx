@@ -37,6 +37,8 @@ import {
   PackageOpen,
   // 池看板菜单项图标（issue #5177）
   Layers,
+  // 余料台账菜单项图标（issue #5191）
+  Recycle,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -77,6 +79,8 @@ const iconMap: Record<string, LucideIcon> = {
   PackageOpen,
   // 池看板菜单项图标（issue #5177）：不在 iconMap 里会静默回落到 BarChart3（不报错、只是图标不对）
   Layers,
+  // 余料台账菜单项图标（issue #5191）：同前 —— 漏注册只会「图标不对」，不会有任何东西变红
+  Recycle,
 }
 
 interface SidebarProps {

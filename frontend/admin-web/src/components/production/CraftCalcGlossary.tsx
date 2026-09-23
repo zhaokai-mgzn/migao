@@ -124,7 +124,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
       <h2 className="text-base font-medium text-neutral-900">算料口径与术语说明</h2>
       <p className="mt-1 text-sm text-neutral-500">
         上面的参数回答「我这家的口径是多少」；这里回答「系统怎么判、拿哪些参数判」。
-        下面的数值都按**当前配置**渲染 —— 改完参数保存后，这里的数字会跟着变。
+        下面的数值都按当前配置渲染 —— 改完参数保存后，这里的数字会跟着变。
       </p>
 
       <details
@@ -224,7 +224,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
             （用料 / 工序 / 对客价 / 计件），所以与上面三组分开列 */}
         <h3 className="mt-4 text-sm font-medium text-neutral-700">特殊选项（下单时勾选）</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件历史口径。
+          这六项影响的东西各不相同 —— 有的改用料、有的加一道工序、有的只影响计件历史口径。
           工序映射逐值取自生产真值源（不是这里自己编的）。
         </p>
         <div className="mt-1">

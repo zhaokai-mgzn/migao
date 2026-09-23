@@ -87,7 +87,7 @@ export function OversizeThresholdPreview({ config }: Props) {
       const now = pick(nowRes)
       const adj = pick(adjRes)
       if (now === null || adj === null) {
-        setError('试算失败（服务端判定不可用）—— 请稍后重试；**这不影响已下的单**')
+        setError('试算失败（服务端判定不可用）—— 请稍后重试；这不影响已下的单')
         setCurrent(null)
         setAdjusted(null)
         return
@@ -128,7 +128,7 @@ export function OversizeThresholdPreview({ config }: Props) {
       <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看，不保存</h4>
       <p className="text-xs text-neutral-500 mt-1">
         超高 / 超宽会进加工费组合键（命中不到组合就收不到价）。改阈值前先在这里试一扇窗，
-        看看判定会不会变。判定由服务端给，本页**不保存任何改动**。
+        看看判定会不会变。判定由服务端给，本页不保存任何改动。
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
@@ -166,11 +166,11 @@ export function OversizeThresholdPreview({ config }: Props) {
 
       <div className="grid sm:grid-cols-2 gap-3 mt-3">
         <div className="bg-white border border-neutral-200 rounded p-3">
-          <div className="text-xs font-medium text-neutral-700 mb-2">按**当前**口径</div>
+          <div className="text-xs font-medium text-neutral-700 mb-2">按当前口径</div>
           {renderRows(current, 'preview-current')}
         </div>
         <div className="bg-white border border-neutral-200 rounded p-3">
-          <div className="text-xs font-medium text-neutral-700 mb-2">按**你改的**阈值</div>
+          <div className="text-xs font-medium text-neutral-700 mb-2">按你改的阈值</div>
           {renderRows(adjusted, 'preview-adjusted')}
         </div>
       </div>

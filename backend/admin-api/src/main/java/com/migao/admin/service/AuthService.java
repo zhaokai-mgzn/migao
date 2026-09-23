@@ -1129,6 +1129,11 @@ public class AuthService {
             // `frontend/admin-web/src/config/menu.ts` 的 `production-saving-board` 与
             // `MenuController` 的静态权限树**三处同构**；权限码沿用 processing:manage。
             productionChildren.add(menuItem("production-saving-board", "省料看板", "BarChart3", "/production/saving-board"));
+            // 余料台账（issue #5191）：id/名称/图标/路径必须与前端
+            // `frontend/admin-web/src/config/menu.ts` 的 `production-remnants` 与
+            // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+            // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission` 同码。
+            productionChildren.add(menuItem("production-remnants", "余料台账", "Recycle", "/production/remnants"));
             // 🔴 issue #4440：id/名称/图标/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
             // `production-process` **逐字一致**（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；
             // 本处此前仍是合并前的两个节点 ⇒ 「岗位权限」页（消费本列表）与真实侧边栏漂移）。
