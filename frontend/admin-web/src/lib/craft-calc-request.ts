@@ -174,8 +174,9 @@ export const JOIN_HEIGHT_OPTION_NAME = '接高'
  * ② 否则服务端 `plan.join_height_m` 合法 ⇒ 并入；
  * ③ 都没有（`null` / 0 / 超限）⇒ `null`（**不得常开** —— 没接高却插一道接高工序 = 多算计件钱）。
  *
- * ⚠️ **接宽不在本单**（issue #5214）：它全仓连特殊选项 / 工序出口都没有（V83 目录 0 处命中）
- * ⇒ 「要不要为它新增工艺」是待用户裁定的**新增工艺**问题，本函数**不给它造出口**。
+ * ⚠️ **接宽没有特殊选项出口**（issue #5230 v2，用户 2026-09-23 原话：「**移除接宽逻辑，接高在特殊选项中
+ * 选择，但是仍然得自动推导**」）：接宽保持「算料 + 面板提示」概念 —— 它**不并入 `specialOptions`**
+ * （⇒ 不插工序、不计件），只在「接缝是否发生」这一层参与派生（见 {@link derivedJoinSpliceItemOf}）。
  */
 export function derivedJoinHeightOptionOf(input: {
   plan?: { join_height_m?: number | null } | null
@@ -184,6 +185,31 @@ export function derivedJoinHeightOptionOf(input: {
   const manual = joinGapOf(input.joinHeightOverride)
   if (manual !== null) return JOIN_HEIGHT_OPTION_NAME
   return joinGapOf(input.plan?.join_height_m) === null ? null : JOIN_HEIGHT_OPTION_NAME
+}
+
+/**
+ * 「接宽」的**展示名**（issue #5230 v2）—— ⚠️ 它**不是特殊选项名**：接宽没有选项出口
+ * （`SPECIAL_OPTIONS`（前端清单）与引擎 `routing.SPECIAL_OPTION_ROUTINGS` **都不得**出现它，
+ * 用户 2026-09-23 裁定「移除接宽逻辑」）⇒ 它**进不了** `specialOptions`，也就插不了工序、算不了计件。
+ *
+ * 只用于拼接那一行的**可读依据**（「因接宽 ⇒ 需拼接」）—— 与面板上那行
+ * 「接宽 0.05 米」同字面。由 `tests/unit/lib/craft-calc-request.test.ts` 钉住它**不在册**。
+ */
+export const JOIN_WIDTH_SOURCE_NAME = '接宽'
+
+/**
+ * **接宽缺口是否发生**（issue #5230 v2）—— 判据与接高**同一条**（`0 < 缺口 ≤ {@link JOIN_GAP_MAX_METERS}`，
+ * 契约 #5200 §三 R1），但**不产生任何选项名**：接宽在本版没有选项 / 工序 / 计件出口。
+ *
+ * 它唯一的用途 = 参与派生 {@link SPLICE_ITEM_NAME}（接缝 ⇒ 顾客侧加工费组合键）——
+ * 「接高 / 接宽 只要有一件真的发生，那幅帘就是两块布接成的」。
+ * ⚠️ 取值一律经 {@link joinGapOf}（越界 / 非数 / 缺省 ⇒ **不算发生**），不在这里再写一份判据。
+ */
+function joinWidthHappens(input: {
+  plan?: { join_width_m?: number | null } | null
+  joinWidthOverride?: number | null
+}): boolean {
+  return joinGapOf(input.joinWidthOverride) !== null || joinGapOf(input.plan?.join_width_m) !== null
 }
 
 /** 本行**推导出的**应并入特殊选项的项（issue #5211；顺序稳定：拼N次 → 接高） */
@@ -227,6 +253,79 @@ export function effectiveSpecialOptionsOf(input: {
     options.push(name)
   }
   return options
+}
+
+/**
+ * **拼接**加工项名（`processing_items` 目录 V83 第 10 项）—— 单一字面量声明点。
+ *
+ * ⚠️ 它**必须已在目录里**（issue #5230 口径 3：**不发明**新目录项）：这个名字进的是
+ * `processingInfo.processingItems[]`，而服务端 `ProcessingFeeQueryService.featureNames()`
+ * 只读该数组的 `name` 去组**顾客侧加工费组合键** ⇒ 目录里没有的名字 = 组合键永远匹配不到价
+ * （#4592 的 P0 形态：默认订单加工费恒 ¥0.00）。
+ */
+export const SPLICE_ITEM_NAME = '拼接'
+
+/**
+ * 本行**系统推导出的「拼接」加工项**（issue #5230，用户裁定 2026-09-23 原话：
+ * 「**接高在特殊选项中选择，但是仍然得自动推导**」+「会派生出拼接加工项」）。
+ *
+ * 判据 = **接缝真的发生**，两个来源各按自己的通路判：
+ * ① **接高**：在**生效**特殊选项里（含商家手工勾的 / 系统推导并入的）—— 被**不采纳** ⇒ 不发生；
+ * ② **接宽**：缺口合法即发生（`plan.join_width_m` 或人工加 `joinWidthOverride`）——
+ *    接宽**没有**选项通路（用户裁定「移除接宽逻辑」）⇒ 它没有「不采纳」这一档，
+ *    商家要撤它只能撤人工加的缺口本身、或直接**不采纳拼接**。
+ * ③ 两者都没发生 ⇒ `null`（**不得恒加**）；**`拼N次` 不派生**（裁定边界：几何分幅 ≠ 接缝）。
+ *
+ * 物理依据：一幅帘由两块布接成 —— 正是「拼接」这道工序的由来 ⇒ 它与接高 / 接宽同生共死。
+ *
+ * ⚠️ **两条通路各司其职、不得互串**（issue #5211 的订正段）：
+ * 接高 → `specialOptions`（**工序 + 计件**）；**拼接** → `processingItems[]`（**顾客侧加工费组合键**）；
+ * 接宽 → 只进算料与展示，两条通路都不进。
+ * 本函数是**派生**（可被商家不采纳 / 手工删），与既有自动特征（超高 / 超宽 / 倒幅）同纪律。
+ */
+export function derivedJoinSpliceItemOf(input: {
+  manualOptions?: string[]
+  plan?: {
+    splice_times?: number | null
+    splice_option?: string | null
+    join_height_m?: number | null
+    join_width_m?: number | null
+  } | null
+  spliceTimesOverride?: number | null
+  joinHeightOverride?: number | null
+  joinWidthOverride?: number | null
+  rejectedOptions?: string[]
+}): string | null {
+  const joinHeight = effectiveSpecialOptionsOf(input).includes(JOIN_HEIGHT_OPTION_NAME)
+  return joinHeight || joinWidthHappens(input) ? SPLICE_ITEM_NAME : null
+}
+
+/**
+ * 「接缝」的来源名（顺序稳定：接高 → 接宽）—— 拼接那一行的**可读依据**用
+ * （商家要能核对「为什么判它拼接」）。
+ *
+ * ⚠️ 与 {@link derivedJoinSpliceItemOf} **同一份判据**：这里多出来的名字若与实际派生不一致，
+ * 就是「界面说 A、组合键算 B」的形态 ⇒ 两处必须同源（本文件是唯一实现点）。
+ */
+export function effectiveJoinSourceNamesOf(input: {
+  manualOptions?: string[]
+  plan?: {
+    splice_times?: number | null
+    splice_option?: string | null
+    join_height_m?: number | null
+    join_width_m?: number | null
+  } | null
+  spliceTimesOverride?: number | null
+  joinHeightOverride?: number | null
+  joinWidthOverride?: number | null
+  rejectedOptions?: string[]
+}): string[] {
+  const names: string[] = []
+  if (effectiveSpecialOptionsOf(input).includes(JOIN_HEIGHT_OPTION_NAME)) {
+    names.push(JOIN_HEIGHT_OPTION_NAME)
+  }
+  if (joinWidthHappens(input)) names.push(JOIN_WIDTH_SOURCE_NAME)
+  return names
 }
 
 /**

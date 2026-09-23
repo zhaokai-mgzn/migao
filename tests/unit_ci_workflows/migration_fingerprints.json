@@ -117,6 +117,7 @@
     "V119__add_cutting_plan_meters_to_batch_consumptions.sql": "sha256:79f001539a0485553a6f7517b7997826922487f41a4619809eba8900f2fc648f",
     "V120__order_urgency_and_required_delivery_date.sql": "sha256:7a8564867450c9644d325e61b703b6fe10bb717638a30c021e43d92dcb3e050e",
     "V121__fix_batch_consumption_reversal_check.sql": "sha256:0c561b3053a09c410ed5af7cc20fd1c86f9e3b5f7edae9da6caedf7c673c6418",
-    "V122__create_fabric_remnants.sql": "sha256:044d529c5618c44f86b11de49fc9000f893e55874b7157bcf45f509066587264"
+    "V122__create_fabric_remnants.sql": "sha256:044d529c5618c44f86b11de49fc9000f893e55874b7157bcf45f509066587264",
+    "V123__retire_join_height_processing_item.sql": "sha256:002893d66f6685ce5cc4de6e3d7da9fd36eafe7ecb1721607ce0d19ab7d9a73c"
   }
 }

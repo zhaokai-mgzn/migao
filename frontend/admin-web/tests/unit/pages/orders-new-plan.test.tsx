@@ -1,4 +1,4 @@
-// case_ids: OR-036, OR-035
+// case_ids: OR-036, OR-035, OR-040
 // @vitest-environment jsdom
 /**
  * 新增订单页：**三项输入收敛 + 用料联动自动重算**（issue #5202 —— 母单 #5200 子单 C）。
@@ -765,6 +765,19 @@ describe('#5211 推导出的拼N次并入生效特殊选项（工序 / 计件 / 
     return (info.specialOptions ?? []) as string[]
   }
 
+  /**
+   * 同一次提交的 **`processingItems[].name`**（顾客侧加工费组合键的真值源，
+   * `ProcessingFeeQueryService.featureNames()` 只读这个数组）——
+   * issue #5230 判据 2/3/4/5/8 的观测点。
+   */
+  const submitAndGetProcessingItemNames = async () => {
+    await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
+    await submitOrder()
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+    const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+    return ((info.processingItems ?? []) as Array<{ name: string }>).map((i) => i.name)
+  }
+
   it('判据 1（红证）：推导出 `拼2次` ⇒ 提交 payload 的 `specialOptions` **含 `拼2次`**', async () => {
     render(<NewOrderPage />)
     await pickProduct()
@@ -946,20 +959,37 @@ describe('#5211 推导出的拼N次并入生效特殊选项（工序 / 计件 / 
     )
   })
 
-  it('判据 8（红证）：`join_height_m = null` ⇒ **不得**并入 `接高`（防「为过判据 6 而恒加」）；接宽不并入（#5214 不在本单）', async () => {
+  it('判据 8（红证）：`join_height_m` / `join_width_m` 都为 `null` ⇒ **不得**并入 `接高` / `接宽`（防「为过判据 6 而恒加」）', async () => {
     render(<NewOrderPage />)
     await pickProduct()
     await fillThreeInputs({ sku: '2\\.8米' })
-    // 本 describe 的默认 fixture = 拼2次、无接高
+    // 本 describe 的默认 fixture = 拼2次、两个 join 都为 null
     await screen.findByTestId('craft-plan-splice')
     expect(screen.queryByTestId('craft-plan-derived-option-接高')).toBeNull()
+    expect(screen.queryByTestId('craft-plan-derived-option-接宽')).toBeNull()
 
-    let options = await submitAndGetSpecialOptions()
+    const options = await submitAndGetSpecialOptions()
     expect(options).not.toContain('接高')
+    expect(options).not.toContain('接宽')
+    // 拼N次**不**派生拼接（issue #5230 口径 4：裁定不含「拼N次也算」那一档）——
+    // 把 `derivedJoinSpliceItemOf` 改成「只看 splice_times ≥ 1」⇒ 本行必红
+    expect(await submitAndGetProcessingItemNames()).not.toContain('拼接')
+  })
 
-    // 接宽有值（0.05）也**不并入** —— 它全仓连选项 / 工序出口都没有（issue #5214），
-    // 给它造一个名字进 `specialOptions` 就是**发明口径**（顾客侧/工序侧都无人认识它）
-    mockCreateOrder.mockClear()
+  // ── issue #5230（用户裁定 2026-09-23 v2，逐字：「**移除接宽逻辑，接高在特殊选项中选择，
+  //    但是仍然得自动推导**」+「会派生出拼接加工项」）──────────────────────────────────────
+  // 三条通路各司其职、不得互串：
+  //   ① `接高` → `processingInfo.specialOptions`（**插工序 + 计件**，issue #5211 现状即正确）；
+  //   ② `接宽` → **只进算料与面板提示**（无选项 / 工序 / 计件出口）；
+  //   ③ `接高` 或 `接宽` **发生** ⇒ 派生 `拼接` → `processingInfo.processingItems[]`
+  //      （**顾客侧加工费组合键**）；`拼N次` **不**派生（裁定边界，见判据 8）。
+  // ⚠️ 判据 1 是**口径反转**：本文件原「判据 8」曾断言「接宽有值也不并入」（issue #5214 ——
+  //    当时全仓无接宽的选项 / 工序出口）。#5230 v1 曾为该缺口补出口，**v2 又按用户指示撤回**
+  //    （「移除接宽逻辑」）⇒ 判据 1 的**形态**回到「不并入」，但**判据不放宽**：
+  //    新增了拼接派生（判据 3/4/5/6/8）这一整组断言。
+
+  /** 倒幅 + 接宽缺口 0.05 米（≤0.1 上限）⇒ 服务端给 `join_width_m`（也是人工加的那一档） */
+  const withJoinWidth = () =>
     mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
       Promise.resolve(
         calcResponse(params, {
@@ -967,17 +997,178 @@ describe('#5211 推导出的拼N次并入生效特殊选项（工序 / 计件 / 
           panels: 3,
           splice_times: 0,
           splice_option: null,
-          join_width_m: 0.05,
+          join_width_m: params.join_width_m === undefined ? 0.05 : Number(params.join_width_m),
           meters: 17.4,
           fabric_meters: 17.4,
         })
       )
     )
-    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
-    await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ width: 5 }))
 
-    options = await submitAndGetSpecialOptions()
+  it('判据 1（红证）：`plan.join_width_m` 非空 ⇒ **不并入** `specialOptions`（接宽无选项出口，v2 裁定）', async () => {
+    withJoinWidth()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    // 面板照旧只有**只读**那一行（算料结果），没有「已并入特殊选项」的派生行
+    expect(await screen.findByTestId('craft-plan-join-width')).toHaveTextContent('0.05')
+    expect(screen.queryByTestId('craft-plan-derived-option-接宽')).toBeNull()
+
+    const options = await submitAndGetSpecialOptions()
+    // 接宽**不进** `specialOptions`：选项名是 join key，清单里没有它 ⇒ 后端会按「缺工序」422
+    // （不是静默少一道）；红证：给它造一个名字并入 ⇒ 本行必红
     expect(options).not.toContain('接宽')
+    expect(options.filter((o) => /^拼\d次$/.test(o))).toEqual([])
     expect(options).not.toContain('接高')
+  })
+
+  it('判据 2（红证）：`接宽` / `接高` **都不得**进 `processingItems[]`（工序通路 ≠ 顾客侧组合键通路）', async () => {
+    withJoinWidth()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-join-width')
+
+    const items = await submitAndGetProcessingItemNames()
+    expect(items).not.toContain('接宽')
+    expect(items).not.toContain('接高')
+    // 但派生项**要**在（否则本用例会给「什么都不加」放行 —— 空断言）
+    expect(items).toContain('拼接')
+  })
+
+  it('判据 4（红证）：`plan.join_width_m` 非空 ⇒ `processingItems[]` **含 `拼接`**（可采纳 / 不采纳）', async () => {
+    withJoinWidth()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-join-width')
+    openCraftParams()
+
+    const row = await screen.findByTestId('auto-feature-拼接')
+    expect(row).toHaveTextContent('拼接')
+    expect(row).toHaveTextContent('接宽')
+    expect(await submitAndGetProcessingItemNames()).toContain('拼接')
+  })
+
+  it('判据 3（红证）：`plan.join_height_m` 非空 ⇒ `processingItems[]` **含 `拼接`**', async () => {
+    withJoinHeight()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    // 「系统识别」块挂在「改工艺参数」展开态里（默认收起；`craft-plan-*` 只读面板证明推导已就绪）
+    await screen.findByTestId('craft-plan-join-height')
+    openCraftParams()
+
+    const row = await screen.findByTestId('auto-feature-拼接')
+    expect(row).toHaveTextContent('接高')
+    expect(await submitAndGetProcessingItemNames()).toContain('拼接')
+  })
+
+  it('判据 6（红证·接高被不采纳）：`join_height_m` 非空 **且** 商家不采纳 `接高` ⇒ **不派生** `拼接`', async () => {
+    withJoinHeight()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-derived-option-接高')
+
+    // 先证明「不采纳之前**确实**派生了拼接」（否则下面那条「不含」是空断言）
+    openCraftParams()
+    expect(await screen.findByTestId('auto-feature-拼接')).toHaveTextContent('接高')
+
+    fireEvent.click(await screen.findByTestId('craft-plan-derived-reject-接高'))
+    expect(await screen.findByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已忽略')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options).not.toContain('接高')
+    // 接缝不存在 ⇒ 拼接也不该收钱（红证：把「不采纳」判据从拼接派生里去掉 ⇒ 本行必红）
+    expect(await submitAndGetProcessingItemNames()).not.toContain('拼接')
+    // 面板上那条派生行也要消失（不是只在 payload 里消失）
+    expect(screen.queryByTestId('auto-feature-拼接')).toBeNull()
+  })
+
+  it('判据 6（红证·拼接侧）：不采纳「拼接」⇒ `processingItems[]` 不含 `拼接`，且可采纳回来（不留暗箱）', async () => {
+    withJoinHeight()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-join-height')
+    openCraftParams()
+    await screen.findByTestId('auto-feature-拼接')
+
+    fireEvent.click(await screen.findByTestId('auto-feature-reject-拼接'))
+    expect(await screen.findByTestId('auto-feature-rejected-拼接')).toHaveTextContent('已忽略')
+
+    const items = await submitAndGetProcessingItemNames()
+    expect(items).not.toContain('拼接')
+    // 接高那条通路**不受牵连**（两条账分开：不采纳拼接 ≠ 不插接高工序）
+    expect(await submitAndGetSpecialOptions()).toContain('接高')
+
+    fireEvent.click(screen.getByTestId('auto-feature-adopt-拼接'))
+    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-拼接')).toBeNull())
+  })
+
+  it('判据 5（红证）：两个 join 都为 `null` ⇒ `processingItems[]` **不含 `拼接`**（不得恒加）', async () => {
+    // 本 describe 默认 fixture = 拼2次、无接高、无接宽
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    // 面板上**没有**拼接那一行派生行（只有真正发生时才有）—— 先证明「展开后能看见这块」
+    openCraftParams()
+    expect(await screen.findByTestId('auto-detected-features')).toBeInTheDocument()
+    expect(screen.queryByTestId('auto-feature-拼接')).toBeNull()
+    const items = await submitAndGetProcessingItemNames()
+    expect(items).not.toContain('拼接')
+  })
+
+  // ── 判据 9 / 10 / 11（用户 2026-09-23 逐字：「**超高不用派生出拼接加工项**」）──────────────
+  // 为什么必须钉死（不是抠字眼）：超高 / 超宽 / 倒幅 都**会进顾客侧加工费组合键**
+  // （组合键 = `processingItems[].name` 的集合）—— 若它们也派生拼接，**每一个**判了超高的订单
+  // 组合键都会多一项 ⇒ 匹配不到商家配的组合价（或落到别的档）⇒ **静默改钱**，界面还看不出原因。
+  // 本仓已有同类事故先例：`正幅` 被推导进组合键 ⇒ 默认订单加工费恒 ¥0.00（issue #4592）。
+  // ⇒ 拼接的**唯一触发** = `join_height_m` 非空 **或** `join_width_m` 非空（接高 / 接宽生效）。
+
+  /** 只让服务端判出某一个自动特征（两个 join 都留 `null`） */
+  const onlyAutoFeature = (name: string, reason: string) =>
+    mockAutoFeatures.mockResolvedValue({
+      data: { data: { auto_features: [{ name, reason }], door_width: null, notices: [] } },
+    })
+
+  it('判据 9（红证）：只判了 `超高` ⇒ `processingItems[]` **含 `超高`、不含 `拼接`**', async () => {
+    onlyAutoFeature('超高', '净窗高 4.5 米 > 超高阈值 4 米')
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    const items = await submitAndGetProcessingItemNames()
+    // 必须同时断言「含超高」：否则把整个自动特征都关掉也能让下面那条绿（假红证）
+    expect(items).toContain('超高')
+    expect(items).not.toContain('拼接')
+  })
+
+  it('判据 10（红证）：只判了 `超宽` ⇒ `processingItems[]` **含 `超宽`、不含 `拼接`**', async () => {
+    onlyAutoFeature('超宽', '净窗宽 7.2 米 > 超宽阈值 6 米')
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    const items = await submitAndGetProcessingItemNames()
+    expect(items).toContain('超宽')
+    expect(items).not.toContain('拼接')
+  })
+
+  it('判据 11（红证）：只判了 `倒幅` ⇒ `processingItems[]` **含 `倒幅`、不含 `拼接`**', async () => {
+    onlyAutoFeature('倒幅', '加工类型 = 定宽买高 ⇒ 倒幅')
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    const items = await submitAndGetProcessingItemNames()
+    expect(items).toContain('倒幅')
+    expect(items).not.toContain('拼接')
   })
 })
