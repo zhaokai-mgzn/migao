@@ -30,7 +30,8 @@
     # ③ 写完**回读校验**（从 GitHub 读回 body 与本地比对：内容哈希 + 首行）
     python3 scripts/pr_body_guard.py verify 4232 "$BODY"
 
-    # ④ 静态守卫（机器可判的那半）：仓内被跟踪文件里不得有「共享固定名承载 PR body」形态
+    # ④ 静态守卫（机器可判的那半）：仓内被跟踪文件里不得有「共享固定名承载 PR body」形态，
+    #    也不得有**行首的 Git 合并冲突标记**（R3，issue #5239）
     python3 scripts/pr_body_guard.py scan
 
 `new` 的落点规则（**fail-closed**）：必须 ① 在**本工作区内** ② 被 `.gitignore` 覆盖
@@ -64,18 +65,36 @@ macOS 是 `/var/folders/…/T`、Linux 常是 `/tmp`）—— 不硬编码 `/pri
 
 ## `scan` 的判据与**边界**（照实登记，别把「登记了」读成「治住了」）
 
-只扫 **`git ls-files` 的被跟踪文本文件**，两条规则：
+只扫 **`git ls-files` 的被跟踪文本文件**，三条规则：
 
 - **R1**：同一逻辑行（含 `\\` 续行）里既有 `gh pr create|edit`，又有 `--body-file <共享临时根下的固定路径>`
   （路径含 `$`/反引号/`%`/`<(`/`mktemp` 视为「计算出来的」⇒ 不判）；
 - **R2**：共享临时根下、文件名词干是 `pr-body` / `pr_body` 族的**任何**出现（如 `cat > …/pr-body.md`）。
+- **R3**（issue #5239）：**行首**的 Git 合并冲突标记（开 / 分隔 / 闭三种，见 `CONFLICT_*_RE`）。
+  实测病灶两处：① `CHANGELOG.md` 在 `origin/main` 上带着**已提交的冲突块**（三行，且分隔与闭合之间**为空**
+  ⇒ 无损修法 = 只删标记行）；② `docs/design/agent-production-gap-analysis.md` 的 **4 行孤立闭合标记**
+  （当年解冲突删了两兄弟、漏删闭合）。R3 **走物理行** —— Git 写出的标记就是物理行，而 R1/R2 的
+  `\\` 续行拼接会把它并进上一行 ⇒ 漏判。
+
+**R3 的收紧（分隔标记是判决点：它同时是 markdown setext H1 下划线，后者合法）**
+
+- 开 / 闭标记 ⇒ **无条件判**；但只认**行首**（缩进 / 行中 / 行尾出现的一律不判 —— 那不是 Git 会写出的
+  形态，判它即假红）；
+- 分隔标记 ⇒ 收紧两层：① 行首锚定且**恰好 7 个 `=`**（`==========` 那种长下划线不判）；
+  ② **同文件另有**行首开标记与行首闭标记（= 该文件确实含一个冲突块）。
+- **登记边界（有意不判，不是"忘了"）**：**孤立**分隔标记（兄弟标记都被删）与合法 setext 下划线
+  **静态不可区分** ⇒ 不判。它**不构成漏网面**：实测发生过的残留形态是**孤立闭合**（本单那 4 行）
+  与**孤立开标记**，两者都**无条件判**。
 
 **边界**：① 只覆盖**仓内文本**，**覆盖不到 agent 在 shell 里临时敲的命令**（本单的原始形态）；
 ② 变量/拼接/间接赋值（先 `BODY=/tmp/<固定名>`、再 `gh pr create --body-file "$BODY"`）**不可判**；
 ③ 非 PR body 的普通临时文件（如 workflow 里给 issue comment 用的 `--body-file`）**不判**（CI runner 内的
 `/tmp` 不跨会话，且改 `.github/**` 不属本包所有权）；④ 引用/否定式说明文字**照样命中**（与 §2.2 同族，
-不区分语义）。本脚本**未接 CI required check** —— 现为人工/流程调用 + 单测守卫
-（`tests/unit_ci_workflows/test_pr_body_guard.py`）。
+不区分语义）；⑤ R3 的边界见上（孤立分隔标记与合法 setext 静态不可区分 ⇒ 有意不判；缩进/行中的标记不判）。
+⚠️ **R3 与 R1/R2 的门禁档位不同**：R3 是**全仓面**，且单测
+`tests/unit_ci_workflows/test_pr_body_guard.py` 跑在 `ci workflow helper unit tests`
+（**required 集合里**）⇒ R3 判红**卡合并**；R1/R2 仍是人工/流程调用
+（本脚本**未接 CI required check** —— 靠那条单测守卫代跑）。
 
 退出码汇总：`0` 正常（`check` 亦可为「命中数 = `--expect`」）；`1` 检出问题；`3` 无法判定。
 """
@@ -115,6 +134,15 @@ COMPUTED_MARKERS = ("$", "`", "%", "<(", "mktemp", "*")
 
 MAX_SCAN_BYTES = 512 * 1024
 DEFAULT_DIR_CANDIDATES = (".dsh-tmp", "tests/tmp")
+
+# ── R3（issue #5239）：Git 合并冲突标记 ──────────────────────────────────────
+# **行首锚定**：Git 只会把标记写在行首；缩进 / 行中 / 行尾出现的一律不判（判它即假红，判据 3 的负例）。
+# 开 / 闭标记**无条件判**（孤立闭合标记是实测形态，见脚本 docstring）。
+CONFLICT_OPEN_RE = re.compile(r"^<{7}(?: |$)")
+CONFLICT_CLOSE_RE = re.compile(r"^>{7}(?: |$)")
+# 分隔标记**同时是 markdown setext H1 下划线**（合法）⇒ 两层收紧：① 行首锚定且**恰好 7 个 `=`**；
+# ② 仅当同文件另有开标记与闭标记（= 确实含一个冲突块）时才判 —— 见 `scan_text` 的 `conflict_block`。
+CONFLICT_MID_RE = re.compile(r"^={7}$")
 
 
 # ── 路径/作用域判定（纯函数，单测直调）────────────────────────────────────────
@@ -174,7 +202,11 @@ def is_shared_fixed_path(token: str) -> bool:
 
 
 def scan_text(rel: str, text: str) -> "list[dict]":
-    """按 R1/R2 扫一份文本，返回 `[{file, line, rule, excerpt, token}]`（同一行同一 token 只记一次）。"""
+    """按 R1/R2/R3 扫一份文本，返回 `[{file, line, rule, excerpt, token}]`（同一行同一 token 只记一次）。
+
+    R1/R2 走**逻辑行**（`\\` 续行拼接 —— shell 命令会跨行）；R3 走**物理行**（冲突标记是物理行上的事实，
+    拼接会把它并进上一行 ⇒ 漏判，且 Git 从不续行写标记）。
+    """
     findings: dict[tuple[int, str], dict] = {}
     logical = []            # (起始行号, 拼接后的逻辑行)
     buf, start = "", 0
@@ -205,6 +237,21 @@ def scan_text(rel: str, text: str) -> "list[dict]":
                     "file": rel, "line": no, "rule": "R2",
                     "excerpt": line.strip()[:200], "token": tok,
                 })
+
+    # R3：行首冲突标记。`conflict_block` = 同文件里同时存在**行首**开标记与闭标记 ⇒
+    # 该文件确实含一个冲突块，此时分隔标记才判（否则分隔标记与合法 setext 下划线不可区分）。
+    lines = text.splitlines()
+    conflict_block = (any(CONFLICT_OPEN_RE.match(l) for l in lines)
+                      and any(CONFLICT_CLOSE_RE.match(l) for l in lines))
+    for no, raw in enumerate(lines, 1):
+        m = (CONFLICT_OPEN_RE.match(raw) or CONFLICT_CLOSE_RE.match(raw)
+             or (CONFLICT_MID_RE.match(raw) if conflict_block else None))
+        if m is None:
+            continue
+        findings.setdefault((no, m.group(0)), {
+            "file": rel, "line": no, "rule": "R3",
+            "excerpt": raw.strip()[:200], "token": m.group(0),
+        })
     return sorted(findings.values(), key=lambda f: (f["line"], f["rule"]))
 
 
@@ -226,6 +273,35 @@ def resolve_root(explicit) -> "Path | None":
     if proc is None or proc.returncode != 0 or not proc.stdout.strip():
         return None
     return Path(proc.stdout.strip())
+
+
+def tracked_text(root: "Path") -> "tuple[list[str], list[tuple[str, str]]] | None":
+    """被 git 跟踪的**文本**文件 ⇒ `(rels, [(rel, text), …])`；拿不到清单 ⇒ `None`（调用方判 3）。
+
+    **跳过规则**（静态判据只覆盖仓内文本，写清才不是"假绿")：
+    ① **未跟踪文件天然不在样本里** —— 样本 = `git ls-files -z`，故 `node_modules/` / `target/` /
+       `.next/` 这些工作区里存在但不在 git 里的目录**从不出现在清单中**（不靠 glob 扫工作区）；
+        `.git/` 本身也不在 `ls-files` 里。
+    ② 读不出来的（`UnicodeDecodeError` = 二进制）与 `OSError` ⇒ 跳过；
+    ③ 单文件 `> MAX_SCAN_BYTES` ⇒ 跳过。
+
+    **单一源**：`cmd_scan` 与「样本集非空 + 覆盖 `CHANGELOG.md`」判据（issue #5239 判据 2）共用
+    —— 判据若自己另抄一份枚举，扫描器坏了它照样绿（`migao-acceptance` 的「空跑」）。
+    """
+    proc = git(["ls-files", "-z"], cwd=root)
+    if proc is None or proc.returncode != 0:
+        return None
+    rels = [r for r in proc.stdout.split("\0") if r]
+    files: list[tuple[str, str]] = []
+    for rel in rels:
+        f = root / rel
+        try:
+            if f.stat().st_size > MAX_SCAN_BYTES:
+                continue
+            files.append((rel, f.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
+            continue                      # 二进制/不可读 ⇒ 跳过（静态判据只覆盖仓内文本）
+    return rels, files
 
 
 def is_git_ignored(path: Path, cwd: Path) -> bool:
@@ -414,32 +490,25 @@ def cmd_scan(args) -> int:
         print(f"无法判定：{args.root or os.getcwd()} 不是 git 工作区 ⇒ 扫不到被跟踪文件（exit 3）。",
               file=sys.stderr)
         return EXIT_UNKNOWN
-    proc = git(["ls-files", "-z"], cwd=root)
-    if proc is None or proc.returncode != 0:
+    scanned = tracked_text(root)
+    if scanned is None:
         print("无法判定：`git ls-files` 取不到被跟踪文件清单 ⇒ exit 3。", file=sys.stderr)
         return EXIT_UNKNOWN
-    rels = [r for r in proc.stdout.split("\0") if r]
+    rels, files = scanned
 
-    findings, scanned = [], 0
-    for rel in rels:
-        f = root / rel
-        try:
-            if f.stat().st_size > MAX_SCAN_BYTES:
-                continue
-            text = f.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue                      # 二进制/不可读 ⇒ 跳过（静态判据只覆盖仓内文本）
-        scanned += 1
-        findings.extend(scan_text(rel, text))
+    findings = [f for rel, text in files for f in scan_text(rel, text)]
 
-    print(f"── 静态守卫：扫描仓内被跟踪文件（{scanned}/{len(rels)} 个文本文件）──")
-    print(f"命中 {len(findings)} 处「共享固定名临时文件承载 PR body」形态"
+    print(f"── 静态守卫：扫描仓内被跟踪文件（{len(files)}/{len(rels)} 个文本文件；"
+          f"二进制 / 不可解码 / >{MAX_SCAN_BYTES // 1024}KB 跳过）──")
+    print(f"命中 {len(findings)} 处「仓内被跟踪文本文件的卫生形态」"
           f"{'：' if findings else ' ✅'}")
     for f in findings:
         print(f"  {f['file']}:{f['line']}  [{f['rule']}] {f['token']}")
         print(f"      {f['excerpt']}")
     if findings:
-        print("🔴 改用 `python3 scripts/pr_body_guard.py new --issue <N>`（会话/工作区作用域唯一名）。")
+        print("🔴 处置按规则分：**R1/R2** ⇒ 改用 `python3 scripts/pr_body_guard.py new --issue <N>`"
+              "（会话/工作区作用域唯一名）；"
+              "**R3** ⇒ **只删标记行**（正文一字不动），且三行要删全 —— 只删一半会留下孤立标记。")
     print("边界：只覆盖**仓内文本**，覆盖不到 agent 在 shell 里临时敲的命令；"
           "变量/拼接式路径不可判；非 PR body 的普通临时文件不判（详见脚本 docstring）。")
     return EXIT_FOUND if findings else EXIT_OK
