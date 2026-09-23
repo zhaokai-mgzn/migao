@@ -551,7 +551,7 @@ def test_ref_freshness_allows_sha_qualified(tmp_path):
 # ⚠️ 夹具里的引用字面量必须**拼出来**：本文件自己就在受管引用面里（`tests/unit_ci_workflows/**`），
 # 直接写 `路径:行号` 会被模式扫描当成残留引用（dev-flow §18.1；同本文件顶部的 `_PY` / `_NOWHERE`）。
 # ─────────────────────────────────────────────────────────────────────────────
-_MIG_DIR = "backend/admin-api/src/main/resources/db/migration-archive/"
+_MIG_DIR = "backend/admin-api/src/main/resources/db/migration/"
 _SQL_REF = "scripts/fixture_surface" + ".py" + ":" + "1"
 
 
