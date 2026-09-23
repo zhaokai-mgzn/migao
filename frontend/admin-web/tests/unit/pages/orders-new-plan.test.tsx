@@ -696,3 +696,284 @@ describe('#5202 加工类型单点取值 + 数字输入框', { timeout: 20000 },
     await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ width: 0.5 }))
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// issue #5211（母单 #5200 集成复核发现的 P1 缺口）：推导出的「拼N次」**必须落到订单**。
+//
+// 只显示不落地的三条后果（都是**静默少东西**）：① 加工单没有拼接工序 ⇒ 工人不报工、计件不含它；
+// ② 加工费组合键少 `拼2次` ⇒ 商家为「韩折+超宽+拼2次」配的价**永远匹配不到**；
+// ③ 面板说拼2次、订单里却没有 —— 同一件事两处不一致。
+//
+// 口径与既有自动识别特征（超高/超宽/倒幅）**同族**：进组合键 ⇒ 判定即钱 ⇒ 必须可采纳 / 不采纳。
+// ══════════════════════════════════════════════════════════════════════════
+describe('#5211 推导出的拼N次并入生效特殊选项（工序 / 计件 / 组合键）', { timeout: 20000 }, () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+    })
+    mockGetProduct.mockResolvedValue({ data: { data: PRODUCT } })
+    mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
+    mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
+    mockAutoFeatures.mockResolvedValue({
+      data: { data: { auto_features: [], door_width: null, notices: [] } },
+    })
+    mockDoorWidthPlan.mockResolvedValue({
+      data: {
+        data: {
+          state: 'undecidable',
+          code: 'missing-cutting-mode',
+          effective_cutting_mode: null,
+          door_width: null,
+          panels: null,
+          splice: false,
+          verdict: 'unknown',
+          suggestion: null,
+          reason: '（替身）',
+        },
+      },
+    })
+    // 服务端替身：**按请求回显拼次**（R7 人工覆盖 ⇒ 逐字采用；R5 ⇒ 1/2/3 才有选项名，≥4 ⇒ null）。
+    // 刻意让「人工加拼1次」时 `splice_option` 跟着变 —— 否则「面板拼1次、组合键拼2次」这类
+    // 不同源缺陷在测试里看不出来（真实服务端就是这么回显的）。
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) => {
+      const times = params.splice_times === undefined ? 2 : Number(params.splice_times)
+      const option = times >= 1 && times <= 3 ? `拼${times}次` : null
+      return Promise.resolve(
+        calcResponse(params, {
+          cutting_mode: '定宽买高',
+          panels: times + 1,
+          splice_times: times,
+          splice_option: option,
+          meters: 17.4,
+          fabric_meters: 17.4,
+        })
+      )
+    })
+  })
+
+  /** 等计价就绪 → 提交 → 取该行落库的 `specialOptions`（工序/计件/组合键的**唯一**输入） */
+  const submitAndGetSpecialOptions = async () => {
+    await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
+    await submitOrder()
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+    const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+    return (info.specialOptions ?? []) as string[]
+  }
+
+  it('判据 1（红证）：推导出 `拼2次` ⇒ 提交 payload 的 `specialOptions` **含 `拼2次`**', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    // 面板先看到推导（改前：**只有这一行字**，订单里什么都没有 ⇒ 下面必红）
+    expect(await screen.findByTestId('craft-plan-splice')).toHaveTextContent('拼2次')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options).toContain('拼2次')
+  })
+
+  it('判据 2（红证）：点「不采纳」⇒ payload **不含** `拼2次`，且界面留痕（谁剔除的看得见）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    fireEvent.click(await screen.findByTestId('craft-plan-derived-reject-拼2次'))
+    expect(await screen.findByTestId('craft-plan-derived-option-拼2次')).toHaveTextContent('拼2次')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options).not.toContain('拼2次')
+  })
+
+  it('判据 3（红证）：人工加拼 1 次 ⇒ payload 含 `拼1次` **且不含** `拼2次`（面板与落库同源）', async () => {
+    // 🔴 这条刻意用**只按 plan 回显**的替身（`splice_option` 恒 = 拼2次）：
+    // 真实世界里响应有防抖延迟、也可能还没跟着请求变 ⇒ 「人工加」必须**本地优先**，
+    // 否则就会「商家点了拼1次、订单里还是拼2次」（= 两处各写一份的形态）。
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(
+        calcResponse(params, {
+          cutting_mode: '定宽买高',
+          panels: 3,
+          splice_times: 2,
+          splice_option: '拼2次',
+          meters: 17.4,
+          fabric_meters: 17.4,
+        })
+      )
+    )
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    openCraftParams()
+    pickChip('拼接（人工加）', '拼1次')
+    // 面板显示也要跟着变成 `拼1次`（不得停在推导的 `拼2次`）
+    await waitFor(() => expect(screen.getByTestId('craft-plan-splice')).toHaveTextContent('拼1次'))
+    // 请求面同步（人工加随试算请求下发：R7 人工覆盖）
+    await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ splice_times: 1 }))
+
+    const options = await submitAndGetSpecialOptions()
+    // 红证：实现若「只看 plan 回显」（人工加不优先）⇒ 这里是 `拼2次` ⇒ 必红
+    expect(options).toContain('拼1次')
+    expect(options).not.toContain('拼2次')
+  })
+
+  it('判据 4：`splice_times = 4`（无对应选项名）⇒ payload 不含任何 `拼N次`，但有「需人工处理」告知', async () => {
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(
+        calcResponse(params, {
+          cutting_mode: '定宽买高',
+          panels: 5,
+          splice_times: 4,
+          splice_option: null,
+          meters: 20,
+          fabric_meters: 20,
+        })
+      )
+    )
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    // 不发明「拼4次」：只告知需人工处理
+    expect(await screen.findByTestId('craft-plan-splice-manual')).toHaveTextContent('人工处理')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options.filter((o) => /^拼\d次$/.test(o))).toEqual([])
+  })
+
+  it('判据 5（单点口径）：面板显示的拼接名 === payload 里的 `拼N次`（采纳态与不采纳态都逐值一致）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    const splicePanel = await screen.findByTestId('craft-plan-splice')
+    const panelBefore = splicePanel.textContent ?? ''
+    let options = await submitAndGetSpecialOptions()
+    // 面板说 `拼2次` ⇒ 落库就得是 `拼2次`（**逐值**，不是"包含关系"）
+    expect(options.filter((o) => /^拼\d次$/.test(o))).toEqual(['拼2次'])
+    expect(panelBefore).toContain('拼2次')
+
+    // 不采纳后重来一次：面板改成「已忽略」，payload 也随之消失（同一函数，两处不可能不一致）
+    mockCreateOrder.mockClear()
+    fireEvent.click(await screen.findByTestId('craft-plan-derived-reject-拼2次'))
+    const rejectedNote = await screen.findByTestId('craft-plan-derived-option-拼2次')
+    expect(rejectedNote).toHaveTextContent('拼2次')
+    expect(rejectedNote).toHaveTextContent('已忽略')
+    options = await submitAndGetSpecialOptions()
+    expect(options.filter((o) => /^拼\d次$/.test(o))).toEqual([])
+  })
+
+  it('R4 冲突（本单裁定）：款式=拼色 且推导出拼接 ⇒ **仍并入**（几何事实必须进工序/计件/组合键），但**不替商家改款式**', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-splice')
+
+    openCraftParams()
+    pickChip('款式', '拼色')
+    // 只告知（不静默改款式）
+    expect(await screen.findByTestId('craft-plan-style-conflict')).toHaveTextContent('单色')
+    expect(checkedChips('款式')).toEqual(['拼色'])
+
+    const options = await submitAndGetSpecialOptions()
+    // 拼接是**几何事实**（布真的拼了）⇒ 工序/计件一处都不能少；冲突由告知 + 一键不采纳兜底
+    expect(options).toContain('拼2次')
+    expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.style).toBe('拼色')
+  })
+
+  // ── 追加范围（issue #5211 第二次扩范围）：**接高**与拼N次**同构**，同样只显示没落单 ──────
+  // `接高` 在册：`routing.SPECIAL_OPTION_ROUTINGS["接高"] = {operation: '接高-布'}`、计件 1.0 元/幅
+  // ⇒ 推导出的接高到不了工序与计件（工人不报工、少发工钱），与拼N次完全相同。
+
+  /** 定高买宽 + 缺口 0.08 米（≤0.1 上限）⇒ 服务端给 `join_height_m`（也是人工加的那一档） */
+  const withJoinHeight = () =>
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(
+        calcResponse(params, {
+          cutting_mode: '定高买宽',
+          panels: null,
+          splice_times: 0,
+          splice_option: null,
+          join_height_m: params.join_height_m === undefined ? 0.08 : Number(params.join_height_m),
+          meters: 13.3,
+          fabric_meters: 13.3,
+        })
+      )
+    )
+
+  it('判据 6（红证）：`plan.join_height_m` 非空 ⇒ payload 的 `specialOptions` **含 `接高`**', async () => {
+    withJoinHeight()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    expect(await screen.findByTestId('craft-plan-join-height')).toHaveTextContent('0.08')
+    // 面板看得到「已并入」（改前：只有一行「接高 0.08 米」的展示，订单里什么都没有 ⇒ 下面必红）
+    expect(await screen.findByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已并入')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options).toContain('接高')
+    // 串味检查：没拼接就不能凭空多一个拼次项
+    expect(options.filter((o) => /^拼\d次$/.test(o))).toEqual([])
+  })
+
+  it('判据 7（红证）：不采纳「接高」⇒ payload **不含 `接高`**，界面留痕 + 可采纳回来', async () => {
+    withJoinHeight()
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await screen.findByTestId('craft-plan-join-height')
+
+    fireEvent.click(await screen.findByTestId('craft-plan-derived-reject-接高'))
+    const note = await screen.findByTestId('craft-plan-derived-option-接高')
+    expect(note).toHaveTextContent('已忽略')
+    expect(note).toHaveTextContent('接高')
+
+    const options = await submitAndGetSpecialOptions()
+    expect(options).not.toContain('接高')
+
+    // 恢复采纳 ⇒ 又回进 payload（不是单向棘轮）
+    fireEvent.click(screen.getByTestId('craft-plan-derived-adopt-接高'))
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已并入')
+    )
+  })
+
+  it('判据 8（红证）：`join_height_m = null` ⇒ **不得**并入 `接高`（防「为过判据 6 而恒加」）；接宽不并入（#5214 不在本单）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    // 本 describe 的默认 fixture = 拼2次、无接高
+    await screen.findByTestId('craft-plan-splice')
+    expect(screen.queryByTestId('craft-plan-derived-option-接高')).toBeNull()
+
+    let options = await submitAndGetSpecialOptions()
+    expect(options).not.toContain('接高')
+
+    // 接宽有值（0.05）也**不并入** —— 它全仓连选项 / 工序出口都没有（issue #5214），
+    // 给它造一个名字进 `specialOptions` 就是**发明口径**（顾客侧/工序侧都无人认识它）
+    mockCreateOrder.mockClear()
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(
+        calcResponse(params, {
+          cutting_mode: '定宽买高',
+          panels: 3,
+          splice_times: 0,
+          splice_option: null,
+          join_width_m: 0.05,
+          meters: 17.4,
+          fabric_meters: 17.4,
+        })
+      )
+    )
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
+    await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ width: 5 }))
+
+    options = await submitAndGetSpecialOptions()
+    expect(options).not.toContain('接宽')
+    expect(options).not.toContain('接高')
+  })
+})

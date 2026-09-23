@@ -11,7 +11,7 @@
 
 import type { CraftCalcParams, CraftCalcPlan } from './api'
 import type { CraftCalcConfig } from '@/types'
-import type { CraftSpecInput } from './order-craft-fields'
+import { SPECIAL_OPTIONS, type CraftSpecInput } from './order-craft-fields'
 
 /** 用料来源（真值源 §8：褶数/用料**必须带来源**，防止多渠道不一致） */
 export const METERS_SOURCE_FORMULA = '公式计算'
@@ -93,6 +93,140 @@ export function craftPlanHasSplice(
 ): boolean {
   const times = Number(plan?.splice_times ?? 0)
   return Number.isFinite(times) && times >= 1
+}
+
+/**
+ * 拼次 → **特殊选项名**（`1..3` ⇒ `拼1次` / `拼2次` / `拼3次`；其余 ⇒ `null`）。
+ *
+ * ⚠️ 名字**从特殊选项清单里读**（`lib/order-craft-fields.ts::SPECIAL_OPTIONS`；服务端
+ * `routing.SPECIAL_OPTION_ROUTINGS` 与它同值域），**不写死字面量** —— 写死一份 = 第二份会漂移的口径：
+ * 清单里没有的名字插不了工序（`拼2次-布`），计件也认不出它。
+ * ⚠️ `0` 与 `≥ 4` ⇒ `null`（契约 #5200 §三 R5：**不得发明「拼4次」**）。
+ */
+const SPLICE_OPTION_BY_TIMES: Record<number, string> = Object.fromEntries(
+  SPECIAL_OPTIONS.flatMap((name) => {
+    const match = /^拼(\d)次$/.exec(name)
+    return match ? [[Number(match[1]), name] as const] : []
+  })
+)
+
+/** 特殊选项清单里的「拼N次」名字集合（用于判「商家是否手工勾过拼次」） */
+export const SPLICE_OPTION_NAMES = new Set(Object.values(SPLICE_OPTION_BY_TIMES))
+
+export function spliceOptionNameOf(times: unknown): string | null {
+  const parsed = Number(times)
+  if (!Number.isInteger(parsed)) return null
+  return SPLICE_OPTION_BY_TIMES[parsed] ?? null
+}
+
+/**
+ * 本行**系统推导出的**拼N次选项名（issue #5211）—— 单点：面板显示与落库
+ * `processingInfo.specialOptions` **都经它**（否则会出现「面板拼2次、订单里拼1次 / 什么都没有」）。
+ *
+ * 同源优先级：**人工加**（`planOverrides.spliceTimes`，裁定 4）⇒ 服务端推导
+ * （`plan.splice_option`，R5 归一后的选项名）⇒ 都没有 ⇒ `null`。
+ * `0` / `≥ 4` / 人工加越界 ⇒ `null`（R5：不发明选项名；`≥4` 由页面显式告知「需人工处理」）。
+ *
+ * ⚠️ 落点是 `specialOptions`（**工序插入 + 计件**两条通路），**不是** `processingItems`
+ * （加工费组合键 —— 那是顾客侧价格，属另一条通路，见 issue #5211 的订正段）。
+ */
+export function derivedSpliceOptionOf(input: {
+  plan?: { splice_times?: number | null; splice_option?: string | null } | null
+  spliceTimesOverride?: number | null
+}): string | null {
+  const manual = input.spliceTimesOverride
+  if (manual !== undefined && manual !== null) return spliceOptionNameOf(manual)
+  const times = Number(input.plan?.splice_times ?? 0)
+  if (!Number.isFinite(times) || times < 1) return null
+  const option =
+    typeof input.plan?.splice_option === 'string' ? input.plan.splice_option.trim() : ''
+  if (option !== '') return option
+  // 服务端只给了次数、没给名字（R5 下 `splice_option=null` 只在 `0` / `≥4` 出现）⇒ 按清单兜底；
+  // 清单里没有的（含 ≥4）⇒ `null`（**不发明**）
+  return spliceOptionNameOf(times)
+}
+
+/**
+ * 本行**生效的**拼次选项（issue #5211 · **唯一**取值点）—— 优先级：
+ * ① 商家在 **②特殊选项**里**手工勾过**的 `拼N次`（人工优先：那是他显式选的，本来就进工序/计件）
+ * → ② {@link derivedSpliceOptionOf}（人工加 ⇒ 服务端推导）
+ * → ③ 被商家**不采纳**（`rejectedOptions` 同名）⇒ `null`。
+ *
+ * ⚠️ 面板与落库**必须都经** {@link effectiveSpecialOptionsOf}：任何一处各读各的（例如面板读
+ * `plan.splice_option`、落库读别处）就会出现「面板说拼2次、订单里是拼1次 / 什么都没有」
+ * ——这正是 #5211 要收口的形态。
+ */
+
+/**
+ * **接高**的特殊选项名（issue #5211）—— 单一字面量声明点。
+ *
+ * ⚠️ 它必须**在册**：`SPECIAL_OPTIONS`（前端清单）与引擎 `routing.SPECIAL_OPTION_ROUTINGS`
+ * （`"接高": {"operation": "接高-布", …}`）两边都要有这个选项，否则并入进不了工序、计件也认不出。
+ * 由 `tests/unit/lib/craft-calc-request.test.ts` **钉住它在册**（清单里没有 ⇒ 红）。
+ */
+export const JOIN_HEIGHT_OPTION_NAME = '接高'
+
+/**
+ * 本行**系统推导出的「接高」**（issue #5211）—— 判据同拼次：**缺口合法才并入**。
+ *
+ * 合法性 = `0 < 缺口 ≤ {@link JOIN_GAP_MAX_METERS}`（契约 #5200 §三 R1 的上限）：
+ * ① 人工加接高（`planOverrides.joinHeightM`）合法 ⇒ 并入（人工优先）；
+ * ② 否则服务端 `plan.join_height_m` 合法 ⇒ 并入；
+ * ③ 都没有（`null` / 0 / 超限）⇒ `null`（**不得常开** —— 没接高却插一道接高工序 = 多算计件钱）。
+ *
+ * ⚠️ **接宽不在本单**（issue #5214）：它全仓连特殊选项 / 工序出口都没有（V83 目录 0 处命中）
+ * ⇒ 「要不要为它新增工艺」是待用户裁定的**新增工艺**问题，本函数**不给它造出口**。
+ */
+export function derivedJoinHeightOptionOf(input: {
+  plan?: { join_height_m?: number | null } | null
+  joinHeightOverride?: number | null
+}): string | null {
+  const manual = joinGapOf(input.joinHeightOverride)
+  if (manual !== null) return JOIN_HEIGHT_OPTION_NAME
+  return joinGapOf(input.plan?.join_height_m) === null ? null : JOIN_HEIGHT_OPTION_NAME
+}
+
+/** 本行**推导出的**应并入特殊选项的项（issue #5211；顺序稳定：拼N次 → 接高） */
+export function derivedSpecialOptionsOf(input: {
+  plan?: { splice_times?: number | null; splice_option?: string | null; join_height_m?: number | null } | null
+  spliceTimesOverride?: number | null
+  joinHeightOverride?: number | null
+}): string[] {
+  return [
+    derivedSpliceOptionOf({ plan: input.plan, spliceTimesOverride: input.spliceTimesOverride }),
+    derivedJoinHeightOptionOf({ plan: input.plan, joinHeightOverride: input.joinHeightOverride }),
+  ].filter((name): name is string => name !== null)
+}
+
+/**
+ * 本行**生效的特殊选项**（issue #5211）＝ 商家手工勾选（`craft.specialOptions`）
+ * ∪ **推导出的项**（{@link derivedSpecialOptionsOf}）− 商家**不采纳**的那些（`rejectedOptions`）。
+ *
+ * 下游：`lib/order-craft-fields.ts::buildCraftSpec` ⇒ `processingInfo.specialOptions`
+ * ⇒ 服务端**插工序**（`SPECIAL_OPTION_ROUTINGS`：`拼2次` → `拼2次-布`、`接高` → `接高-布`）
+ * 与**计件**（拼次 0.8 / 1.2 / 1.6 元/幅、接高 1.0 元/幅）。
+ * ⇒ 「推导了但没落地」在结构上不可能：面板显示、计价预览入参、提交 payload **三者同源**。
+ *
+ * ⚠️ **不回写** `line.craft.specialOptions`（那是②特殊选项选择器的勾选态，改它就是替商家勾选）；
+ * 也**不进算料请求**（拼次/接高不参与算料：契约 #5200 §三 R2/R3 —— 送进去反而会在拼色款式下走
+ * `MIXED_COLOR_PER_FOLD_BY_TIMES`）。生效值只在**落库 / 计价**这一侧合成。
+ */
+export function effectiveSpecialOptionsOf(input: {
+  manualOptions?: string[]
+  plan?: { splice_times?: number | null; splice_option?: string | null; join_height_m?: number | null } | null
+  spliceTimesOverride?: number | null
+  joinHeightOverride?: number | null
+  rejectedOptions?: string[]
+}): string[] {
+  const options = (input.manualOptions ?? []).filter(
+    (option): option is string => typeof option === 'string' && option.trim() !== ''
+  )
+  const rejected = input.rejectedOptions ?? []
+  for (const name of derivedSpecialOptionsOf(input)) {
+    if (rejected.includes(name) || options.includes(name)) continue
+    options.push(name)
+  }
+  return options
 }
 
 /**

@@ -28,7 +28,11 @@ import {
   craftPlanSpliceText,
   defaultCraftCalcFormula,
   defaultCraftCalcTier,
+  derivedJoinHeightOptionOf,
+  derivedSpliceOptionOf,
+  derivedSpecialOptionsOf,
   effectiveCraftCalcFormula,
+  effectiveSpecialOptionsOf,
   isAutoCalcUnavailable,
   joinGapOf,
   type CraftPlanOverrides,
@@ -220,6 +224,14 @@ interface OrderLineItem {
    * 与既有「手改留痕」纪律同族（`openCountTouched` / `shapedItemTouched` / `craft.cuttingMode` 的有无）。
    */
   planOverrides?: CraftPlanOverrides
+  /**
+   * 商家**不采纳**的「推导出的特殊选项」名（issue #5211）—— 记的是**选项名**（不是布尔位）：
+   * 推导换成别的项（`拼2次` → `拼3次`）时，不对新的那一项继续生效（同 `rejectedAutoFeatures`）。
+   *
+   * 为什么不采纳必须有出口：这些项的下游是**工序插入 + 计件**（`拼2次` → 插 `拼2次-布`、计件
+   * 0.8/1.2/1.6 元/幅；`接高` → 插 `接高-布`、计件 1.0 元/幅）⇒ 推导错 = 多插一道工序、多算工钱。
+   */
+  rejectedDerivedOptions?: string[]
   /**
    * 商家**手改过加工类型**（issue #5202 · 裁定 6）—— 落在**行状态**里（同 `openCountTouched` /
    * `shapedItemTouched`，收起/展开重挂不丢）。
@@ -822,7 +834,24 @@ function buildLineProcessingInfo(
     ? {}
     : {
         // `craft` / `isShaped` 由**加工项**派生（#4566）⇒ 走唯一派生点，不读 `line.craft` 的那两个键
-        ...buildCraftSpec(derivedCraftSpec(line, calcConfig)),
+        ...buildCraftSpec({
+          ...derivedCraftSpec(line, calcConfig),
+          // **推导出的项并入生效特殊选项**（issue #5211：拼N次 / 接高）—— 单点：面板显示、
+          // 计价预览入参、提交 payload 三者同源（`effectiveSpecialOptionsOf` =
+          // 手工勾选 ∪ 推导项 − 不采纳）。接宽**不在本单**（issue #5214：全仓无该选项/工序出口）。
+          // 为什么必须落地：`processingInfo.specialOptions` 的下游是**插工序**（`拼2次-布` /
+          // `接高-布`）与**计件**（拼次 0.8/1.2/1.6、接高 1.0 元/幅）⇒ 只显示不落地 = 工人不报工、
+          // 计件少发钱，而且**不报错**（静默少东西）。
+          // ⚠️ 落点是 `specialOptions`（工序 + 计件）**不是** `processingItems`（加工费组合键，
+          //    那是顾客侧价格的另一条通路 —— 见 issue #5211 的订正段）。
+          specialOptions: effectiveSpecialOptionsOf({
+            manualOptions: line.craft.specialOptions,
+            plan: line.calc?.plan,
+            spliceTimesOverride: line.planOverrides?.spliceTimes,
+            joinHeightOverride: line.planOverrides?.joinHeightM,
+            rejectedOptions: line.rejectedDerivedOptions,
+          }),
+        }),
         ...(curtainType ? { curtainType } : {}),
         ...(isPaired ? buildMainLineGroupKeys(line.id) : {}),
       }
@@ -1312,6 +1341,27 @@ export default function NewOrderPage() {
         return {
           rejectedAutoFeatures: without(it.rejectedAutoFeatures),
           manualAutoFeatures: without(it.manualAutoFeatures),
+        }
+      })
+    },
+    [updateLineItem]
+  )
+
+  /**
+   * 「推导出的特殊选项」的**裁决**（issue #5211：拼N次 / 接高）—— 与 {@link decideAutoFeature}
+   * 同族纪律：这些项会进 `processingInfo.specialOptions`（**插工序 + 计件**）⇒ 推导错 = 多插一道
+   * 工序、多算工钱 ⇒ 商家必须能**不采纳** / **恢复采纳**。
+   *
+   * 按**选项名**留痕（不是布尔位）：日后推导换成别的项时，对新的那一项不作废
+   * （同 `rejectedAutoFeatures` 的按名裁决）。
+   */
+  const decideDerivedOption = useCallback(
+    (lineId: string, name: string, decision: 'adopt' | 'reject') => {
+      updateLineItem(lineId, (it) => {
+        const without = (it.rejectedDerivedOptions ?? []).filter((n) => n !== name)
+        return {
+          rejectedDerivedOptions:
+            decision === 'adopt' ? without : [...new Set([...without, name])],
         }
       })
     },
@@ -2371,6 +2421,11 @@ export default function NewOrderPage() {
                             planOverrides: mergePlanOverrides(it.planOverrides, patch),
                           }))
                         }
+                        // 推导出的特殊选项的裁决（issue #5211）：不采纳 ⇒ 该项不进 specialOptions
+                        // （不插工序、不计件）
+                        onDerivedOptionDecision={(name, decision) =>
+                          decideDerivedOption(line.id, name, decision)
+                        }
                         onProcessingFeeOverrideChange={(p) =>
                           updateLineItem(line.id, { processingFeeOverride: p })
                         }
@@ -3057,6 +3112,11 @@ interface LineItemBlockProps {
     joinHeightM?: number | null
     joinWidthM?: number | null
   }) => void
+  /**
+   * 「推导出的特殊选项」的**裁决**（issue #5211：拼N次 / 接高）—— `reject` 不采纳（该项不进
+   * `specialOptions`）· `adopt` 恢复推导。与自动识别特征的 `onAutoFeatureDecision`（#4657）同族。
+   */
+  onDerivedOptionDecision: (name: string, decision: 'adopt' | 'reject') => void
   /** 「改单价」（元/米，issue #4874）：`null` = 清空（回到未改过） */
   onProcessingFeeOverrideChange: (price: number | null) => void
 }
@@ -3628,6 +3688,7 @@ function LineItemBlock({
   feeRow,
   calcConfig,
   onChangePlanOverrides,
+  onDerivedOptionDecision,
   onProcessingFeeOverrideChange,
 }: LineItemBlockProps) {
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
@@ -3774,6 +3835,45 @@ function LineItemBlock({
   const plan = line.calc?.plan ?? null
   /** 算料回来了但响应里**没有** `plan` ⇒ 后端未接线（显式降级，不崩、不猜） */
   const planUnavailable = line.calc !== null && plan === null
+  /**
+   * 「推导出的特殊选项」（拼N次 / 接高；issue #5211）的**单点取值** —— 面板显示与落库
+   * `specialOptions` 用**同一对函数**（`derivedSpecialOptionsOf` / `effectiveSpecialOptionsOf`）：
+   * `derivedOptions` = 系统推导出的项；`effectiveOptions` = 实际生效的（= 落库值）。
+   *
+   * ⚠️ 面板那一行必须读 `effectiveOptions`（**不是** `plan.splice_option`）—— 读 plan 就会在
+   * 「人工加 / 不采纳 / 手工勾过」三种情形下与订单内容不一致（#5211 要收口的正是这个）。
+   */
+  const derivedOptions = derivedSpecialOptionsOf({
+    plan,
+    spliceTimesOverride: line.planOverrides?.spliceTimes,
+    joinHeightOverride: line.planOverrides?.joinHeightM,
+  })
+  const effectiveOptions = effectiveSpecialOptionsOf({
+    manualOptions: line.craft.specialOptions,
+    plan,
+    spliceTimesOverride: line.planOverrides?.spliceTimes,
+    joinHeightOverride: line.planOverrides?.joinHeightM,
+    rejectedOptions: line.rejectedDerivedOptions,
+  })
+  /** 一个推导项在本行的**状态**（面板与落库共用同一判定 ⇒ 不可能各说各话） */
+  const derivedOptionState = (name: string): 'manual' | 'merged' | 'rejected' =>
+    (line.craft.specialOptions ?? []).includes(name)
+      ? 'manual' // 商家在②特殊选项里手工勾过 ⇒ 人工优先
+      : effectiveOptions.includes(name)
+        ? 'merged'
+        : 'rejected'
+  /** 面板「拼接」那一行显示的拼次名（生效值；没有 ⇒ 回落 `craftPlanSpliceText` 的不拼接 / N≥4 文案） */
+  const spliceOption = derivedSpliceOptionOf({
+    plan,
+    spliceTimesOverride: line.planOverrides?.spliceTimes,
+  })
+  /** 接高（issue #5211；接宽不在本单，见 #5214） */
+  const joinHeightOption = derivedJoinHeightOptionOf({
+    plan,
+    joinHeightOverride: line.planOverrides?.joinHeightM,
+  })
+  const canRejectJoinHeight = joinHeightOption !== null && derivedOptionState(joinHeightOption) === 'merged'
+  const canRejectSplice = spliceOption !== null && derivedOptionState(spliceOption) === 'merged'
   /**
    * 「改」入口的展开态（issue #5202）：`null` = **跟随默认** —— 推导没就绪（`plan === null`）时
    * **默认展开**（人工兜底是唯一出路，收起会让商家无从下手），推导就绪后默认收起（三项输入收敛）。
@@ -4056,7 +4156,14 @@ function LineItemBlock({
                           分幅 {plan.panels ?? '—'}
                         </span>
                         <span data-testid="craft-plan-splice" className="text-neutral-500">
-                          拼接 {craftPlanSpliceText(plan)}
+                          拼接 {spliceOption ?? craftPlanSpliceText(plan)}
+                          {spliceOption !== null
+                            ? derivedOptionState(spliceOption) === 'merged'
+                              ? '（已并入特殊选项 ⇒ 插工序 + 计件）'
+                              : derivedOptionState(spliceOption) === 'manual'
+                                ? '（你在②特殊选项里手工勾过 ⇒ 人工优先）'
+                                : '（已忽略：不插工序、不计件）'
+                            : ''}
                         </span>
                         <span data-testid="craft-plan-join-height" className="text-neutral-500">
                           接高 {plan.join_height_m ?? '—'} 米
@@ -4074,6 +4181,52 @@ function LineItemBlock({
                       <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
                         依据：{plan.reason}
                       </p>
+                      {/* **推导出的特殊选项**（拼N次 / 接高；issue #5211）—— 它们会进
+                          `processingInfo.specialOptions` ⇒ 服务端**插工序**（`拼2次-布` / `接高-布`）
+                          + **计件**（0.8/1.2/1.6、1.0 元/幅）⇒ 推导错 = 多插一道工序、多算工钱
+                          ⇒ 必须**可见可撤**（同自动识别特征的 #4657 纪律：推导可裁决，不留暗箱）。
+                          ⚠️ 接宽不在此列（issue #5214：全仓无该选项/工序出口，不给它造口径）。 */}
+                      {derivedOptions.length > 0 && (
+                        <div data-testid="craft-plan-derived-options" className="mt-1.5 space-y-0.5">
+                          {derivedOptions.map((name) => {
+                            const state = derivedOptionState(name)
+                            return (
+                              <p
+                                key={name}
+                                data-testid={`craft-plan-derived-option-${name}`}
+                                className="text-[11px] text-neutral-500"
+                              >
+                                「{name}」
+                                {state === 'manual'
+                                  ? '：你在②特殊选项里手工勾过 ⇒ 人工优先'
+                                  : state === 'merged'
+                                    ? '：已并入特殊选项（⇒ 插工序 + 计件）'
+                                    : '：已忽略（手工剔除）—— 不插工序、不计件'}
+                                {state === 'merged' && (
+                                  <button
+                                    type="button"
+                                    data-testid={`craft-plan-derived-reject-${name}`}
+                                    onClick={() => onDerivedOptionDecision(name, 'reject')}
+                                    className="ml-1.5 text-neutral-500 underline hover:text-neutral-700"
+                                  >
+                                    不采纳
+                                  </button>
+                                )}
+                                {state === 'rejected' && (
+                                  <button
+                                    type="button"
+                                    data-testid={`craft-plan-derived-adopt-${name}`}
+                                    onClick={() => onDerivedOptionDecision(name, 'adopt')}
+                                    className="ml-1.5 text-primary-600 underline hover:text-primary-700"
+                                  >
+                                    采纳
+                                  </button>
+                                )}
+                              </p>
+                            )
+                          })}
+                        </div>
+                      )}
                       {/* R4（裁定 1：出现拼几次就只能是单色）—— **显式冲突告知**，绝不替商家改款式 */}
                       {craftPlanHasSplice(plan) && line.craft.style === STYLE_MIXED && (
                         <p
