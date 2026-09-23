@@ -3221,3 +3221,108 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-090
+    legacy_id: ""
+    title: "🔴 真库：到点自愈 —— **一个业务事件都不发生**时，已过最晚派单日的单由到期扫描腿在真库被派出（痕迹 auto:due_scan:fifo）"
+    domains:
+      - product
+      - inventory
+      - processing-order
+    tier: normal
+    tags:
+      - batch-ledger
+      - dispatch-pool
+      - auto-dispatch
+      - due-scan
+      - real-db
+      - backend-contract
+    truths_ref:
+      - batch-ledger.auto-batch-due-scan
+    user_inputs:
+      - "周末 / 假期 / 淡季里没有新单、没有入库、也没人改单，已经过了最晚派单日的单会不会一直被压着（非 LLM 行为，由真 PG Java 判据覆盖）"
+    expectations: []
+    data_checks:
+      - "🔴 判据 1·**到点自愈**：夹具里**没有发布任何业务事件**（订单不被确认支付 / 没有入库过账 / 没有改单取消），只调一次到期扫描腿 ⇒ 客户要求到货日 = **今天**的那张单（最晚派单日 = 今天 − 标准生产周期 = 今天 − 7 天 ⇒ **已过**）在真库被派出：`processing_orders.deleted = 0` 的行数 = **1**、`generated_by` = `auto:due_scan:fifo`（**来源可区分**：与事件腿的 `auto:<事件原因>:<规则>` 同形态、不同触发原因）、批次台账 `Σ(−delta)` = 3、余量 90 → **87**。"
+      - "🔴 判据 1·**扫描腿不制造业务事件**：订单侧指纹（`status` / `is_urgent` / `required_delivery_date` / `created_at` 逐值拼接）在扫描前后**逐字相同** ⇒ 「它被派出去」不是靠偷偷改单或补发事件。"
+      - "🔴 **同夹具红证（停掉兜底 ⇒ 同一池一张都不派）**：同一个批次、同一张到期单 + 另加一张到货日在 **3650 天后**的单 —— ①把标准生产周期设成 **0**（`latestDispatchDate` 返回 `null` = 无从判定 ⇒ 没有兜底可言）⇒ **一张都不派**、`reasons` 为空；②兜底开着时**只有到期的那张**被派（`order_no` = `ORD-5184-A`，远到货日那张不派）、批次只扣一张单的量 ⇒ 派单的原因就是**业务约束**，不是别的什么。"
+      - "判据 6·**不损失客户**：`product_skus.stock` 与 `stock_ledger_entries` 行数**一字不动**（派单只动批次实物账）；真库读数与断言同源（不手抄列清单，schema 取 `docs/sql/schema.sql`）。"
+      - "**与 PR-089 的分工（如实登记）**：PR-089 覆盖「无到货日 ⇒ 进池日 + 标准生产周期」那一支；本判据覆盖「**有客户到货日 ⇒ 到货日 − 周期**」这一支；本判据的判别力另有注入式红证（`scripts/auto-batch-due-scan-red-proof.py` 的 `realdb_no_business_due`：去掉兜底判据 ⇒ 本判据红）。"
+    skip_reason: "[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5184）：到点自愈的真库判据 + 同夹具红证 + 订单侧指纹 + 对客口径。取号 PR-090（本单硬分配区间 PR-090~PR-092）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-091
+    legacy_id: ""
+    title: "🔴 真库/单测：扫描腿与事件触发**并发** ⇒ 不重复派、不重复扣（沿用三道闸）+ 逐租户隔离与上下文还原"
+    domains:
+      - product
+      - inventory
+      - processing-order
+    tier: normal
+    tags:
+      - batch-ledger
+      - dispatch-pool
+      - auto-dispatch
+      - due-scan
+      - idempotency
+      - real-db
+      - backend-contract
+    truths_ref:
+      - batch-ledger.auto-batch-due-scan
+      - batch-ledger.auto-batch-dispatch
+      - batch-ledger.remaining-derived
+    user_inputs:
+      - "定时兜底与事件触发同时抢同一张单会不会重复派、重复扣（非 LLM 行为，由真 PG Java 判据覆盖）"
+    expectations: []
+    data_checks:
+      - "🔴 判据 3·**并发不重复**：定时腿（`AutoBatchDueScanService`，**自带一条连接**）与事件腿（`autoBatchDispatch(order_confirmed)`）用两个线程 + 同一道发令闸同时触发同一张到期单 ⇒ 真库不变量在**任意交错**下成立：`processing_orders`（`deleted = 0`）= **1**（`uk_processing_orders_active` 挡住第二张）、`stock_batch_consumptions` = **1** 行（`uk_batch_consumption_line`）、`Σ(−delta)` = **3**（只扣一次）、余量只减一次（87）；胜者的 `generated_by` 只可能是两条腿之一（`auto:due_scan:fifo…` / `auto:order_confirmed:fifo…`，三级降级会追加 `:single`/`:plain`）⇒ 不出现「第三张单」或「同一单两张加工单」。"
+      - "🔴 判据 3·**幂等（重复触发不重复派/不重复扣）**：并发之后**再扫一轮** ⇒ 派过的单已有活跃加工单 ⇒ 池里看不见它 ⇒ `dispatchedOrderNos` 为空，加工单行数、台账行数、余量与并发的结论**逐值相同**；对客口径同样不变。"
+      - "判据 3·**逐租户隔离（单测面）**：候选租户里一个租户的扫描抛异常 ⇒ **不影响**其余租户（fail-soft，留 `INCIDENT_PRODUCTION_AUTO_BATCH_DUE_SCAN_FAILED`），且失败也落在心跳的 `last_error` 上；每个租户的**池读都发生在该租户的上下文里**（#3957 的生产事故形态：漏了这一步则每轮调度整体夭折），且**退出时还原**调度线程进来的上下文（线程复用，不许漏给下一个任务）。"
+      - "**边界（如实登记）**：并发用例的**线程交错不可强制**（两条腿各自读池 → 各自尝试派单），断言写的是**不变量** ⇒ 即使某次跑成串行，它仍是「与事件腿并发/重复触发都不重复派」的有效观测；本判据**没有**注入式红证（拆库层闸门的变异是非确定的：`selectActiveByOrderId` 会在插入前就把第二路短掉）—— 该边界已登记在 `scripts/auto-batch-due-scan-red-proof.py` 的文件头。"
+    skip_reason: "[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配）+ Java 单测，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5184）：并发/幂等 + 逐租户隔离与上下文还原的真库与单测判据。取号 PR-091。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-092
+    legacy_id: ""
+    title: "🔴 扫描腿**只查业务约束**（无池化窗口参数）+ **默认关零动作** + 心跳可见 + 载体独立于事件链"
+    domains:
+      - product
+      - processing-order
+    tier: normal
+    tags:
+      - dispatch-pool
+      - auto-dispatch
+      - due-scan
+      - backend-contract
+    truths_ref:
+      - batch-ledger.auto-batch-due-scan
+    user_inputs:
+      - "定时腿会不会变成「窗口到点就派」，以及不启用时它会不会偷偷动数据（非 LLM 行为，由 Java 判据覆盖）"
+    expectations: []
+    data_checks:
+      - "🔴 判据 2·**只查业务约束（不得引入池化窗口参数）**：① 池内等了 **30 小时**（超过看板 24 小时上限 ⇒ 池看板会告警）但客户到货日在 30 天后（**未到期**）⇒ 扫描腿**不派**（红证：把等待上限当死线的变异 `window_as_deadline` ⇒ 本判据红）；② 进池才 **1 小时**（远未到上限）但已过最晚派单日 ⇒ **照派**；③ 把等待上限调成 `0.001h` / `9999h` ⇒ 派单结果与 `reasons` 文案**逐值相同**（派不派与该参数无关）；④ 结构性：策略记录 `AutoBatchPolicy` 的入参集合**逐个钉死**（只有既有的看板告警上限 `maxWaitHours`，**没有任何**新增的窗口/超时参数）。"
+      - "🔴 判据 2·**定时腿是兜底、不是第二条主触发**：满足成批条件③（需求 ≥ 最小批量）但**未到期**的单 ⇒ 扫描腿一张都不派；**同一份池**走事件腿（`order_confirmed`）⇒ 当场按条件③成批 ⇒ 「什么时候成批」仍由业务事件决定，扫描腿只判业务约束。"
+      - "🔴 判据 4·**默认关**：自动成批未启用（`AUTO_BATCH_DEFAULT_ENABLED = false`）⇒ 扫描腿**零读零写**：连「有哪些租户」都不查（`orderMapper` / `itemMapper` / `processingOrderMapper` 零交互）、**零日志**、**零轮数**（心跳的 `rounds` 仍为 0）⇒ 记录期基线零污染。"
+      - "🔴 判据 5·**心跳可见**：`/actuator/health` 的 `autoBatchDueScanHealth` details 给出 `enabled` / `rounds` / `last_success_at` / `last_failure_at` / `last_scanned_tenants` / `last_dispatched` / `last_error`（跑过一轮后轮数与最近成功时刻必须变；未跑过时为 `null` = 「没跑」长得像「没跑」），状态**恒 UP**（同 `MigrationHealthIndicator`：让扫描腿把整环境打成 DOWN 比原问题更糟）⇒ 停摆有可观测面（红证：`heartbeat_not_exposed` ⇒ 本判据红）。"
+      - "**载体结构性（+ 边界）**：`@Scheduled` 只出现在**独立**的薄壳 `AutoBatchDueScanScheduler` 上（cron 可配 `migao.production.auto-batch.due-scan-cron`，缺省 `0 */5 * * * *` = 约定窗口 = 一个扫描周期 + 单轮耗时），事件链三类（监听器 / 通知点 / `ProcessingOrderService`）**仍无任何计时器**（#5182 判据 2 继续成立）；触发原因 `due_scan` **不是**事件四类之一。**约定窗口与多实例**：扫描周期只决定「多久看一眼」，到期判定是**日粒度** ⇒ 周期远小于一天即可；多实例部署时每个实例都会各自扫（本单**不做分布式锁**），安全由库层三道闸承担（见 PR-091）。"
+    skip_reason: "[backend-contract] Java 判据（Mockito 真链路装配 + 反射/记录组件结构性断言），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5184）：只查业务约束 / 默认关零动作 / 心跳可见 / 载体独立性的判据。取号 PR-092。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
