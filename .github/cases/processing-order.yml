@@ -2268,3 +2268,48 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-062（issue #5190，P2）：#5145 批次消耗台账的**真库**守卫（对齐 #5158 起的 RealDbTest 范式）。
+  # 为什么必须真库：账实一致（`quantity + Σdelta`）、唯一闸 `uk_batch_consumption_line` 的原子性、
+  # V121 的符号约束、对账恒等式 —— 这四件事在 mock 面**结构上不可见**（#5141 / #5148 同族教训：
+  # Mockito 测不出约束）。与 #5158（排料口径怎么落账）/ #5174（快照读侧取哪个键）**分工不重复**：
+  # 本条钉的是**台账本身**（写面两段 + 反向 + 两个读面 + 约束面）。
+  # 复用 #5167 提取的共用件 `PgCluster` 与 #5192 的 `MIGAO_REQUIRE_REALDB` fail-closed，不造第二份装配。
+  # ==========================================================================
+  - id: PG-062
+    legacy_id: ""
+    title: "批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production
+      - stock-batch
+      - ledger
+      - real-db
+    truths_ref: []
+    # ⚠️ 真值暂缺：批次台账的**真库**语义（非 LLM/业务真值），由 BatchConsumptionLedgerRealDbTest 验证。
+    user_inputs:
+      - "派工扣批次 / 加工单作废回补 / 文员选错 SKU 的批次之后，批次账（实物账）与消耗台账必须逐值自洽，且口径由数据库当场执行（不是应用层自觉）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据1 账实一致（**读回真库的列**，不是「调了某个方法」）：plan/apply 之后 `stock_batches.quantity + Σ(delta)` 与读面余量**逐值相等**、逐行 `after_qty − before_qty == delta`、逐行 `planned_meters == −delta`、逐行「变更前余量」对得上链条（60 → 57.3 → 54.6，含小数）；批次行 `quantity` 一字不动（V111 批次行不可改）。红证 = 手动改一行 `delta` ⇒ **同一个读数函数**必须报出不一致"
+      - "判据2 V121 的符号约束**真的钉住了**（不是写在注释里）：故意写一行 `abs(planned_meters) > abs(formula_meters)` 的自相矛盾数据 ⇒ 数据库当场拒绝（SQLSTATE **23514**）；两列符号打架（`formula_meters * planned_meters < 0`）同样被拒。红证 A = 事务内换回 V119 的旧表达式（`planned_meters <= formula_meters`）⇒ 合法的**回补行**（两列都负，正是 V121 修的那一格）当场被拒 ⇒ 修法有载荷；红证 B = 事务内摘掉约束 ⇒ 同一行自相矛盾数据**写得进去** ⇒ 拦住它的是约束本身（两处 DDL 都在**回滚事务**里做 ⇒ 零残留）"
+      - "判据3 reverse 逐值对称 / 幂等 / 对不存在的东西：60 → 57.3 → **60**（逐值回到派工前，含小数）；回补行是配对扣减行的**相反数**（`delta` 与两个米数）、均价原样搬运 ⇒ 整单 `Σdelta` 归零、`saved_meters` 相加归零（**作废不冒功**）；再撤一次 ⇒ 返回 0、行数与余量一字不动；撤销一个从未扣过批次的加工单 ⇒ 返回 0、零落账、余量不动（不抛错、不静默造行）。红证 = 手动抹掉一行回补 ⇒ 同一读数必须报「净额不为零」"
+      - "判据4 跨 SKU 拒绝（**真库 + 真快照路径**）：同一货号、错 SKU 的批次 ⇒ `BATCH_SKU_MISMATCH` + 400 + 可行动文案，且**该批次一行台账都没落**、余量一字不动。红证 = 同参数但 `skuCode` 传 null（= #5174 修前读侧必然产出的值，护栏恒 no-op）⇒ **静默扣账**（1 行台账 / 余量 60 → 57）—— 两个读数在同一测试里对照打印"
+      - "判据5 重复落账被唯一闸挡下：同一加工单再 apply ⇒ SQLSTATE **23505**、台账行数不变、批次余量不变。红证 = 事务内摘掉 `uk_batch_consumption_line` ⇒ **同一个元组**的裸 INSERT 能落库 ⇒ 拦住它的是那个索引（不是应用层先查后写）"
+      - "判据6 余量分布四档**逐值可复算**：7 个批次（0.2 / 0.1 / 0.3 / 0.8 / 1.5 ×3）⇒ 四档批次数 [2,1,1,3]、占比 [0.2857,0.1429,0.1429,0.4286]、四档 key 恒在（空档也回 0）。红证 = 手动把一个批次数量改大（跨档）⇒ 同一读数的档位计数必须变"
+      - "判据7 对账恒等式在「**已售未派** + **排料节省**」两项**并存**的夹具上逐值成立：同一夹具放①一笔销售（销售账扣 10 米、加工单还没派）②一次并排省料（公式 6 米 / 排料 3 米）⇒ `diff`(7) == 已售未派(4) + 排料节省(3)、`reconciled=true`、`unreconciledCount=0`，且两项**都非零**（否则恒等式退化成单项、测不出耦合）。红证 = 手动改 `stock_batches.quantity`（批次腿与销售台账腿被掰开）⇒ 同一读数必须报 `reconciled=false` + `unreconciledCount=1`、`diff` 7 → 17"
+      - "边界（如实登记）：① 判据 4 与 `SkuBatchGuardRealDbTest`（#5174）在「跨 SKU 拒绝」上**有意部分重合**（本条多钉一条「拒绝时零落账」），不当成新覆盖；② 判据只跑**真 PG**（`PgCluster.startOrAbort()` 单一收口）：CI 注入 `MIGAO_REQUIRE_REALDB=1` ⇒ 缺 PG 二进制判**红**（不是 skip），本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）；③ **只补判据、不改口径**：#5145 的 API 与落账语义一字未动，也未放宽任何门禁"
+    skip_reason: "[backend-contract] 真库（真 PG）后端契约用例：断言全部由 BatchConsumptionLedgerRealDbTest 执行（7 条判据，每条各带一个能单独变红的红证），写路径无 LLM 环节 ⇒ 不进 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5190，P2）：#5145 的批次消耗台账此前只有 mock / 控制器层测试，而这四件事（账实一致 / 唯一闸原子性 / V121 符号约束 / 对账恒等式）在 mock 面结构上不可见（Mockito 测不出约束）。本单复用 #5167 提取的共用件 PgCluster 与 #5199 已修好并在 CI 真跑的真库基础设施（MIGAO_REQUIRE_REALDB fail-closed），只补判据、不改口径。取号 PG-062：PG-059/060/061 已被 #5145/#5142 占用，PG-062 在 main 与全部在飞分支上均未占用（`git for-each-ref` 逐 ref 核过）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchConsumptionLedgerRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

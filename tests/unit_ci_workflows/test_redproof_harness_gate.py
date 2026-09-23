@@ -1,4 +1,4 @@
-# case_ids: MC-017, MC-018
+# case_ids: MC-017, MC-018, MC-020
 """六个红证机具必须**真的有人调用**，且「腐烂」必须能被检出（issue #5193，L0 零 LLM、零网络）。
 
 ## 缺陷（issue #5193，独立验收锚 `c5adc883d`，非推断）
@@ -40,6 +40,16 @@ CI / 门禁调用它们** ⇒ 「每条断言都要有红证」落地成了**手
    比没有红证更危险**（它会让人相信一条判据有判别力）。判据只对**真的读报告**的机具施加
    （由**代码里的字符串常量**判定，注释/docstring 提及不算），不读报告的机具 = **不适用**。
    红证 = 删掉 `unlink` / 把 fail-closed 削成 `return ""` ⇒ 同名判据必须变红。
+
+8. **判别力判定的证据闸（issue #5242，P1 —— 与 #5216 同族的另一半）**：「用退出码判判别力」的机具
+   （由 **AST** 的 `.returncode` 属性 + 「渲染『判据有判别力』这个判决」共同决定，注释/docstring 喂不动）
+   必须**先区分「跑起来了没有」再谈判别力**：编译失败 / 环境事故同样 `rc != 0`，而那时测试一行没跑
+   ⇒ 只看退出码会把事故读成「变异被抓到了」（**错误归因比没有红证更危险**）。两条等价路线**取其一**：
+   ① **报告面**（#5216）读 surefire 报告 + 跑前 `unlink` + 缺失即 `raise`（判定见第 7 条，本判据不重复）；
+   ② **stdout 面**（#5242）输出里必须有「测试真的跑起来了」的证据，且**闸在判决点之前**、
+   取不到证据时走**三态出口** `sys.exit(UNKNOWN)`（= 3 = 无法判定，**不得**回落到「有判别力」）。
+   红证 = 删掉证据闸 / 削掉三态出口 / 把 `run_evidence()` 换成「永远说有证据」/ 把闸写到判决之后
+   ⇒ 同名判据必须变红；判据还对 `run_evidence()` **喂三组夹具真跑**（负向夹具 = 编译失败 / 收集失败）。
 
 ## 为什么不是「实跑」在 CI 里（边界，如实登记）
 
@@ -606,6 +616,280 @@ class TestSurefireReportHygiene:
         problems = _hygiene_problems(REPORT_READERS[0], fake)
         assert problems, "修复前的形态（无 unlink + `else \"\"` 回落）必须被判红 —— 否则判据是空断言"
         assert any("fail-closed" in p or "空串" in p for p in problems), repr(problems)
+
+
+# ══════════════════ ⑧ 判别力判定的证据闸：先区分「跑起来了没有」再谈判别力（issue #5242） ══════════════════
+#
+# issue #5242（P1，**与 #5216 同族的另一半**）：`saving-metrics-red-proof-backend.py` 用
+# **`proc.returncode != 0`** 判「判据有判别力」—— 而**编译失败 / 环境事故同样 `rc != 0`**
+# （Maven 在编译期就退出 ⇒ 测试**一行都没跑**）⇒ 事故被读成「变异被抓到了」。
+# 与 #5216 的区别只是**载体**：那边是「**读陈旧报告**」，这边是「**不用报告、只看退出码**」；
+# 病根同一个 —— **把环境事故误读成判据有效**（错误归因比没有红证更危险：它让人相信一条判据有判别力）。
+#
+# 本判据只对「**用退出码判判别力**」的机具施加（适用面由 **AST 里的 `.returncode` 属性访问** +
+# 「渲染『判据有判别力』这个判决」共同决定 ⇒ 注释 / docstring 喂不动它），并接受**两条等价路线**之一：
+#   * **路线 A**（#5216，报告面）= 读 surefire 报告 + 跑前 `unlink` + 缺失即 `raise`
+#     ⇒ 判定落在上面的 `_hygiene_problems()`，本判据**不重复施加**（同一口径只放一处）；
+#   * **路线 B**（#5242，stdout 面）= 输出里必须有「测试真的跑起来了」的证据，且**证据闸在判决点之前**、
+#     取不到证据时走**三态出口**（`sys.exit(UNKNOWN)` = 3 = 无法判定，**不得**回落到「有判别力」）。
+# 两条都没有 ⇒ **判红**。
+#
+# 🔴 **判据自己会被「喂绿」的两个陷阱**（本仓已踩 4 次）：
+# ① 注释 / docstring 里「提及」 `BUILD SUCCESS` 或 `判据有判别力` **不算证据** ⇒ 本判据一律走 AST，
+#    并把 docstring 常量排除（`_docstring_constants`）；
+# ② 「源码里有一个证据字面量」≠「判决真的受它约束」 ⇒ 除字面量外**另判两条**：
+#    (a) **位置性事实** —— 证据闸（`if run_evidence(...) is None:`）的行号必须**小于**判决点的行号
+#        （「先区分跑起来了没有，**再**谈判别力」就是这一条）；
+#    (b) **行为事实** —— 把机具自己的 `run_evidence()` **抽出来喂三组夹具真跑**（见
+#        `_evidence_verdicts`），确认它真的把「编译失败 / 收集失败」判成**拿不到证据**。
+
+_VERDICT_MARK = "判据有判别力"
+#: 路线 B 的**契约入口**：模块级函数 `run_evidence(<输出文本>) -> 证据字符串 | None`。
+#: 有名字才判得动「闸在判决之前」这条位置性事实 —— 名字是代码，不是文案。
+_EVIDENCE_FN = "run_evidence"
+#: **负向夹具**：编译失败（Maven）/ 变换·收集失败（vitest）—— 测试**一行没跑**，两种机具都必须判「没证据」。
+_EVIDENCE_NEGATIVE = ("[ERROR] COMPILATION ERROR :\n[INFO] BUILD FAILURE\n"
+                      "FAIL tests/unit/lib/saving-board.test.ts [ tests/unit/lib/saving-board.test.ts ]\n"
+                      "Test Files  1 failed (1)\n     Tests  no tests\n")
+#: **正向夹具**：判据真的被执行并失败 —— 两种机具都必须判「跑起来了」（判据要的是「跑过」，不是「通过」）。
+_EVIDENCE_POSITIVE = ("Tests run: 5, Failures: 1, Errors: 0, Skipped: 0\n[INFO] BUILD FAILURE\n"
+                      "Test Files  1 failed (1)\n     Tests  1 failed (1)\n")
+
+
+def _uses_returncode_verdict(tree: ast.AST) -> bool:
+    """该机具是否「用退出码判判别力」：AST 里有 `.returncode` **且**渲染「判据有判别力」这个判决。
+
+    两条都走 AST（`.returncode` 是属性访问、判决是**非 docstring** 字符串常量）⇒
+    注释里写「不要只看 returncode」不会把它喂绿，docstring 里提「判据有判别力」也不会。
+    """
+    if not any(isinstance(n, ast.Attribute) and n.attr == "returncode" for n in ast.walk(tree)):
+        return False
+    docs = _docstring_constants(tree)
+    return any(isinstance(n, ast.Constant) and isinstance(n.value, str)
+               and _VERDICT_MARK in n.value and id(n) not in docs for n in ast.walk(tree))
+
+
+def _needs_evidence_gate(tool_rel: str, text: str) -> bool:
+    """路线 B 的**适用面**：机具「用退出码判判别力」**且**没有走路线 A（#5216 报告面 + 卫生）。
+
+    路线 A 的机具（`auto-batch` / `auto-batch-due-scan` / `pool-board`）**也**渲染「判据有判别力」、
+    源码里**也**有 `.returncode`，但它们读 surefire 报告且已有「跑前 unlink + 缺失即 raise」——
+    对它们再施加路线 B 就是**同一口径两处判**（两处必然漂移），故在此显式排除；
+    排除是**条件性**的：一旦那台机具的报告卫生被拆掉，`_hygiene_problems` 非空 ⇒ 它立刻落回本判据管。
+    """
+    tree = ast.parse(text)
+    if not _uses_returncode_verdict(tree):
+        return False
+    return not (_reads_surefire_report(tree) and not _hygiene_problems(tool_rel, text))
+
+
+def _verdict_tools() -> list[str]:
+    """适用面（由机具自身源码决定 ⇒ 不另立登记表，避免与实现漂移）。"""
+    return [tool for tool in TOOL_RELS
+            if _needs_evidence_gate(tool, (REPO_ROOT / tool).read_text(encoding="utf-8"))]
+
+
+RETURNCODE_VERDICT_TOOLS = _verdict_tools()
+
+
+def _evidence_fn_span(text: str) -> tuple[int, int]:
+    """模块级 `run_evidence()` 的起止行号（1-based，含）—— 注入「机具被削弱」用。"""
+    for node in ast.parse(text).body:
+        if isinstance(node, ast.FunctionDef) and node.name == _EVIDENCE_FN:
+            return node.lineno, node.end_lineno
+    raise AssertionError(f"找不到模块级 {_EVIDENCE_FN}() —— 结构变了就同步本守卫")
+
+
+def _evidence_verdicts(text: str) -> tuple[str, bool]:
+    """抽出机具的 `run_evidence()` 源码，喂三组夹具**真跑** ⇒ `(读数, 是否合格)`。
+
+    这是本判据里唯一「不看结构、看行为」的一条：它回答的是
+    **「这个证据闸真的会把编译失败判成拿不到证据吗」**，而不是「源码里有没有那句话」。
+    """
+    try:
+        span = _evidence_fn_span(text)
+    except AssertionError as exc:
+        return str(exc), False
+    lines = text.splitlines(keepends=True)
+    source = "".join(lines[span[0] - 1:span[1]])
+    namespace: dict = {"re": re}
+    try:
+        exec(compile(source, f"<evidence-gate:{_EVIDENCE_FN}>", "exec"), namespace)  # noqa: S102
+    except Exception as exc:  # noqa: BLE001 —— 抽出来的片段跑不起来本身就是腐烂
+        return f"{_EVIDENCE_FN}() 抽出来的源码跑不起来：{exc!r}", False
+    probe = namespace.get(_EVIDENCE_FN)
+    if not callable(probe):
+        return f"{_EVIDENCE_FN}() 抽出来后不可调用", False
+    negative = probe(_EVIDENCE_NEGATIVE)
+    positive = probe(_EVIDENCE_POSITIVE)
+    if negative is not None:
+        return f"编译失败 / 收集失败的输出被判成「跑起来了」（证据={negative!r}）", False
+    if not positive:
+        return "判据真的跑了并失败的输出被判成「没跑起来」⇒ 正常路径会被误判成无法判定", False
+    return f"负向夹具 → None；正向夹具 → {positive!r}", True
+
+
+def _exits_undecidable(node: ast.AST) -> bool:
+    """闸里是否有三态出口：`sys.exit(UNKNOWN)` / `sys.exit(h.UNKNOWN)` / `sys.exit(3)`。"""
+    for call in ast.walk(node):
+        if not (isinstance(call, ast.Call) and getattr(call.func, "attr", None) == "exit"):
+            continue
+        for arg in call.args:
+            if isinstance(arg, ast.Name) and arg.id == "UNKNOWN":
+                return True
+            if isinstance(arg, ast.Attribute) and arg.attr == "UNKNOWN":
+                return True
+            if isinstance(arg, ast.Constant) and arg.value == 3:
+                return True
+    return False
+
+
+def _verdict_problems(tool_rel: str, text: str | None = None) -> list[str]:
+    """判据（**纯函数** ⇒ 可对源码注入验证判别力，见 `TestReturncodeVerdictGate`）。"""
+    text = (REPO_ROOT / tool_rel).read_text(encoding="utf-8") if text is None else text
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        return [f"源码解析失败：{exc}"]
+    # 适用面：不用退出码判判别力、或已走路线 A（#5216 报告面）⇒ **不适用**（由 `_hygiene_problems` 判）。
+    if not _needs_evidence_gate(tool_rel, text):
+        return []
+    problems: list[str] = []
+    state, ok = _evidence_verdicts(text)
+    if not ok:
+        problems.append(f"「跑起来了没有」的证据闸不合格：{state}")
+    gates = [n for n in ast.walk(tree) if isinstance(n, ast.If)
+             and any(isinstance(c, ast.Call) and getattr(c.func, "id", None) == _EVIDENCE_FN
+                     for c in ast.walk(n.test))]
+    if not gates:
+        problems.append(f"判决点没有任何 `if {_EVIDENCE_FN}(...)` 证据闸 ⇒ 判决仍由裸退出码决定"
+                        f"（编译失败 `rc != 0` 会被读成「判据有判别力」）")
+        return problems
+    verdict = min(n.lineno for n in ast.walk(tree)
+                  if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                  and _VERDICT_MARK in n.value and id(n) not in _docstring_constants(tree))
+    if not any(gate.lineno < verdict for gate in gates):
+        problems.append("证据闸出现在判决点**之后** ⇒ 顺序反了：必须**先**区分「跑起来了没有」"
+                        "再谈判别力（否则闸形同虚设）")
+    if not any(_exits_undecidable(gate) for gate in gates):
+        problems.append("证据闸拿不到证据时没有三态出口（`sys.exit(UNKNOWN)` = 3 = 无法判定）"
+                        "⇒ 会回落到「有判别力」")
+    return problems
+
+
+def _drop_evidence_gate(text: str) -> str:
+    """注入①：把证据闸的判定换成 `if False:`（保持语法合法）—— 模拟「删掉证据闸」。"""
+    mutated = text.replace(f"if {_EVIDENCE_FN}(out) is None:", "if False:  # [RED-PROOF]")
+    assert mutated != text, f"找不到 `if {_EVIDENCE_FN}(out) is None:` ⇒ 注入无从进行（同步本守卫）"
+    return mutated
+
+
+def _weaken_tri_state(text: str) -> str:
+    """注入②：把三态出口削成 `sys.exit(1)` —— 模拟「无法判定被降级成普通失败」。"""
+    mutated = text.replace("sys.exit(h.UNKNOWN)", "sys.exit(1)  # [RED-PROOF]")
+    assert mutated != text, "找不到 `sys.exit(h.UNKNOWN)` ⇒ 注入无从进行（同步本守卫）"
+    return mutated
+
+
+def _stub_evidence_fn(text: str) -> str:
+    """注入③：把 `run_evidence()` 换成**永远说有证据** —— 等价于退回「只看退出码」的语义。"""
+    span = _evidence_fn_span(text)
+    stub = f"def {_EVIDENCE_FN}(out):\n    return 'always'  # [RED-PROOF] 等于只看退出码\n"
+    return _replace_span(text, span, stub)
+
+
+class TestReturncodeVerdictGate:
+    """issue #5242：用退出码判判别力的机具，必须先有「跑起来了没有」的 fail-closed 证据闸。"""
+
+    def test_returncode_verdict_set_is_exactly_the_saving_metrics_tools(self):
+        """适用面本身必须**非空且具名** —— 否则下面的参数化用例在空集上**恒真**（vacuous）。
+
+        「恰好这两个」是结构性主张（不是「仓库应有该缺陷」那种自毁断言）：将来某台机具改成
+        用退出码判判别力 ⇒ 它会进这个集合、进而被下面的判据管住；本断言随之需要同步（有意）。
+        """
+        assert RETURNCODE_VERDICT_TOOLS == [
+            "scripts/saving-metrics-red-proof-backend.py",
+            "scripts/saving-metrics-red-proof-web.py",
+        ], (f"「用退出码判判别力」的机具集合变了（实得 {RETURNCODE_VERDICT_TOOLS}）—— "
+            f"新机具要么补齐证据闸，要么同步本守卫；本判据不得被静默放宽")
+
+    @pytest.mark.parametrize("tool", RETURNCODE_VERDICT_TOOLS)
+    def test_real_tools_do_not_fall_back_to_a_bare_return_code(self, tool):
+        assert _verdict_problems(tool) == [], (
+            f"{tool} 的判别力判定缺证据闸（issue #5242）：" + repr(_verdict_problems(tool)))
+
+    @pytest.mark.parametrize("tool", RETURNCODE_VERDICT_TOOLS)
+    def test_compilation_failure_is_not_read_as_a_caught_mutation(self, tool):
+        """🔴 本单的核心判据：证据闸必须把「编译失败」判成**拿不到证据**（不是「判据有判别力」）。
+
+        判据不只读源码结构 —— 它把机具自己的 `run_evidence()` 抽出来**喂夹具真跑**：
+        负向夹具（编译失败 / 收集失败）必须得 `None`，正向夹具（判据跑了并失败）必须得证据。
+        """
+        state, ok = _evidence_verdicts((REPO_ROOT / tool).read_text(encoding="utf-8"))
+        assert ok, f"{tool} 的证据闸读不出「没跑起来」：{state}"
+
+    @pytest.mark.parametrize("tool", RETURNCODE_VERDICT_TOOLS)
+    def test_dropping_the_evidence_gate_is_caught(self, tool):
+        """红证①（#5242 判据 3 的形态）：改回「判决不受证据约束」⇒ 判据必须红。"""
+        text = (REPO_ROOT / tool).read_text(encoding="utf-8")
+        mutated = _drop_evidence_gate(text)
+        assert mutated != text, f"{tool}：注入没生效 —— 同步本守卫"
+        assert _verdict_problems(tool, mutated), (
+            f"{tool}：删掉证据闸后判据没有变红 ⇒ 它是空断言")
+
+    @pytest.mark.parametrize("tool", RETURNCODE_VERDICT_TOOLS)
+    def test_weakened_tri_state_is_caught(self, tool):
+        """红证②：三态出口被削成 `exit(1)`（无法判定降级成普通失败）⇒ 判据必须红。"""
+        text = (REPO_ROOT / tool).read_text(encoding="utf-8")
+        mutated = _weaken_tri_state(text)
+        assert mutated != text, f"{tool}：注入没生效 —— 同步本守卫"
+        assert _verdict_problems(tool, mutated), (
+            f"{tool}：三态出口被削后判据没有变红 ⇒ 它是空断言")
+
+    @pytest.mark.parametrize("tool", RETURNCODE_VERDICT_TOOLS)
+    def test_always_yes_evidence_fn_is_caught(self, tool):
+        """红证③：证据读取被换成「永远说有证据」（= 退回只看退出码）⇒ 判据必须红。
+
+        这一条专治「有一个证据字面量 ≠ 判决真的受它约束」：结构（闸 / 三态出口）**一字未动**，
+        只有 `run_evidence()` 的行为坏掉 ⇒ 红只能来自**行为判据**。
+        """
+        text = (REPO_ROOT / tool).read_text(encoding="utf-8")
+        mutated = _stub_evidence_fn(text)
+        assert mutated != text, f"{tool}：注入没生效 —— 同步本守卫"
+        problems = _verdict_problems(tool, mutated)
+        assert problems, f"{tool}：证据闸退化成恒真后判据没有变红 ⇒ 它是空断言"
+        assert any("证据闸不合格" in p for p in problems), repr(problems)
+
+    def test_verdict_before_the_gate_is_red(self):
+        """红证④（回归锚，**逐字节内联片段**，不读可变引用）：闸写在判决**之后** ⇒ 必须判红。
+
+        这条钉的是「**顺序**」——「先区分跑起来了没有，**再**谈判别力」里的那个「先」。
+        """
+        fake = ("import subprocess\nimport sys\nimport red_proof_harness as h\n"
+                "def run_evidence(out):\n"
+                "    return 'BUILD SUCCESS' if 'BUILD SUCCESS' in out else None\n"
+                "def main():\n"
+                "    rc = subprocess.run(['./mvnw']).returncode\n"
+                "    red = rc != 0\n"
+                "    print('✅ 红（判据有判别力）' if red else '❌ 绿（空断言！）')\n"
+                "    if run_evidence('') is None:\n"
+                "        sys.exit(h.UNKNOWN)\n")
+        problems = _verdict_problems(RETURNCODE_VERDICT_TOOLS[0], fake)
+        assert problems, "闸在判决之后的形态必须被判红 —— 否则「顺序」这条判据是空断言"
+        assert any("之后" in p for p in problems), repr(problems)
+
+    def test_report_route_tool_is_not_double_judged(self):
+        """路线 A（#5216 报告面）的机具由 `_hygiene_problems()` 判 ⇒ 本判据**不重复施加**。
+
+        实证它是真的会判：把报告的 fail-closed 削成 `return ""` ⇒ `_hygiene_problems` 必须红，
+        而 `_verdict_problems` 对它始终为「不适用」——两条路线分工明确、不互相冒充。
+        """
+        report_tools = [t for t in REPORT_READERS if t not in RETURNCODE_VERDICT_TOOLS]
+        assert report_tools, ("报告面机具应至少有一台不是「用退出码判判别力」（否则路线 A/B 无从区分）"
+                              "—— 集合变了就同步本守卫")
+        for tool in report_tools:
+            assert _verdict_problems(tool) == [], (
+                f"{tool} 走报告面 ⇒ 本判据不应施加（避免同一口径两处判、两处漂移）")
 
 
 # ══════════════════ ④ 接线腿的三态 + 不吞退出码（真跑 shell） ══════════════════

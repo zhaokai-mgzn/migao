@@ -4,14 +4,34 @@
 判据自身没有判别力（改了实现也不红）= 空断言。本脚本逐条注入、逐条复跑、逐条恢复，
 输出 `变异 → 预期红的用例 → 实测结果`。
 
+## 🔴 先区分「跑起来了没有」再谈判别力（issue #5242，P1）
+
+本脚本原来用 **`proc.returncode != 0`** 判「判据有判别力」—— 而**编译失败 / 环境事故同样 `rc != 0`**
+（Maven 在编译期就退出时，测试**一行都没跑**）⇒ 事故被读成「变异被抓到了」。
+**错误归因比没有红证更危险**：它让一条判据看起来有判别力，而实际上什么都没验证。
+
+修法（与同族机具同款，不新发明）：
+① **证据闸**：Maven 输出里必须出现「测试真的跑起来了」的证据（`BUILD SUCCESS` 或 `Tests run: N`）
+   **才**进入判别力判定。⚠️ `-q` 会把这两样一起吞掉（实测：`-q` 下逐字节搜 `Tests run` /
+   `BUILD SUCCESS` 在 125 行输出里**零命中**）⇒ 本脚本**不再带 `-q`** 跑 Maven
+   （`cutting-plan-red-proof.py` 同款做法）；
+② **判不出来就判「无法判定」**（`exit 3`，与 `#5216` / `#5193` 的三态同款语义），
+   **不得**回落到「有判别力」；恢复后的复跑同样受这道闸约束（否则编译失败会被读成「恢复不干净」）。
+
+同族对照：`auto-batch-red-proof.py` / `auto-batch-due-scan-red-proof.py` 走 **surefire 报告面**
+（跑前 `unlink` + 报告缺失 ⇒ 无法判定，`#5216`）；`pool-board-red-proof.py` 同理；
+`cutting-plan-red-proof.py` 走 **stdout 面**（缺 `BUILD SUCCESS` ⇒ fail-closed）。本脚本走 stdout 面。
+
 ## 用法
     python3 scripts/saving-metrics-red-proof-backend.py           # 实跑（需 Maven + JDK + PG 二进制）
     python3 scripts/saving-metrics-red-proof-backend.py --check   # 前提自检（门禁调用的面；零副作用）
 
-退出码（实跑面）：`0` = 全部变异都被对应判据抓到且恢复后全绿；`1` = 有判据没有判别力 / 恢复不干净。
+退出码（实跑面）：`0` = 全部变异都被对应判据抓到且恢复后全绿；`1` = 有判据没有判别力 / 恢复不干净；
+`3` = 无法判定（编译失败 / 环境事故 ⇒ 既不是「有判别力」也不是「没有判别力」）。
 退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 """
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -85,15 +105,31 @@ def check() -> int:
     return h.report_and_exit(TOOL_REL, decls)
 
 
+def run_evidence(out: str):
+    """本次 Maven 调用「**测试真的跑起来了**」的证据；`None` = 没跑起来（⇒ **无法判定**）。
+
+    issue #5242：编译失败 / 环境事故**同样** `rc != 0`，而那时测试一行都没跑 ——
+    只看退出码会把事故读成「变异被抓到了」（**错误归因比没有红证更危险**）。
+    与同族机具同款判据：`cutting-plan-red-proof.py` 缺 `BUILD SUCCESS` ⇒ fail-closed。
+    """
+    if "BUILD SUCCESS" in out:
+        return "BUILD SUCCESS"
+    match = re.search(r"Tests run: \d+", out)
+    return match.group(0) if match else None
+
+
 def run(test):
+    # ⚠️ **不带 `-q`**（issue #5242）：`-q` 会把 `BUILD SUCCESS` 与 `Tests run: N` 一起吞掉
+    # （实测零命中）⇒ 证据闸永远取不到证据 ⇒ 会把正常路径也判成「无法判定」。
     proc = subprocess.run(
-        ["./mvnw", "-o", "-q", "test", "-Dtest=" + test, "-DfailIfNoTests=false"],
+        ["./mvnw", "-o", "test", "-Dtest=" + test, "-DfailIfNoTests=false"],
         cwd=ROOT / "backend/admin-api", capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
     tail = "\n".join(
         line for line in proc.stdout.splitlines()
         if "Tests run" in line or "AssertionFailedError" in line or "expected" in line
         or "but was" in line or "ERROR]   " in line)
-    return proc.returncode, tail
+    return proc.returncode, tail, out
 
 
 def main():
@@ -109,10 +145,19 @@ def main():
                 continue
             # 变异：write_text 会把 mtime 刷新到「现在」⇒ Maven 增量编译一定会重编
             path.write_text(original.replace(old, new, 1), encoding="utf8")
-            rc, tail = run(test)
+            rc, tail, out = run(test)
+            # 🔴 issue #5242 的证据闸：**先区分跑起来了没有，再谈判别力**。
+            # 拿不到证据（编译失败 / 环境事故）⇒ 三态里的「无法判定」，**不得**回落到「有判别力」。
+            if run_evidence(out) is None:
+                print(f"❓ 无法判定（编译失败 / 环境事故 ⇒ 测试一行都没跑）"
+                      f" | {title} | {test} | rc={rc}", flush=True)
+                print("    （末尾输出如下 —— 不得据此判「判据有判别力」）", flush=True)
+                print("    " + "\n    ".join(out.strip().splitlines()[-8:]), flush=True)
+                sys.exit(h.UNKNOWN)
             red = rc != 0
             print(f"{'✅ 红（判据有判别力）' if red else '❌ 绿（空断言！）'} | {title} | {test} | rc={rc}",
                   flush=True)
+            print(f"      跑起来了（证据：{run_evidence(out)}）", flush=True)
             if red and tail:
                 print("      实测红读数: " + tail.replace("\n", " | ")[:400], flush=True)
             if not red:
@@ -123,7 +168,13 @@ def main():
             # 第一版就踩了这个坑：第 4 条因此假绿、最后一条全量复跑假红）
             path.write_text(original, encoding="utf8")
     print("\n=== 恢复后复跑全量（必须全绿）===", flush=True)
-    rc, tail = run("SavingMetricsBoardRealDbTest")
+    rc, tail, out = run("SavingMetricsBoardRealDbTest")
+    if run_evidence(out) is None:
+        # issue #5242：这里的形态与上面同源 —— 编译失败同样 rc != 0，
+        # 若不加闸就会被读成「恢复不干净」（错误归因），而真相是「这次根本没跑」。
+        print(f"❓ 无法判定（恢复后复跑没跑起来：编译失败 / 环境事故）rc={rc}", flush=True)
+        print("    " + "\n    ".join(out.strip().splitlines()[-8:]), flush=True)
+        sys.exit(h.UNKNOWN)
     print(f"恢复后 rc={rc} ({'全绿' if rc == 0 else '仍有红 ⇒ 恢复不干净'}）{tail}")
     if failures or rc != 0:
         sys.exit(1)

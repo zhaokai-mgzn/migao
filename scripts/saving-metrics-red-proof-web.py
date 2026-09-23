@@ -3,14 +3,24 @@
 
 与 `scripts/saving-metrics-red-proof-backend.py`（后端真库）同理：判据没有判别力 = 空断言。
 
+## 🔴 先区分「跑起来了没有」再谈判别力（issue #5242，P1 —— 与后端那半同源）
+
+本脚本原来用 **`proc.returncode != 0`** 判「判据有判别力」—— 而 `npm test` 的 `rc != 0` 有**两种**来源：
+① 判据真的红了（测试被执行并失败）；② **测试根本没跑起来**（变换 / 收集失败、依赖缺失、npm 事故）。
+只读退出码会把 ② 读成 ① ⇒ **错误归因**（比没有红证更危险：它让人相信一条判据有判别力）。
+判据 = vitest 的 `Tests` 汇总行**带计数**才算「跑起来了」（收集失败时 vitest 打 `Tests  no tests`）；
+取不到证据 ⇒ **无法判定**（`exit 3`，三态同款语义），**不得**回落到「有判别力」。
+
 ## 用法
     python3 scripts/saving-metrics-red-proof-web.py           # 实跑（需 node + npm，admin-web 已装依赖）
     python3 scripts/saving-metrics-red-proof-web.py --check   # 前提自检（门禁调用的面；零副作用）
 
-退出码（实跑面）：`0` = 全部变异都被对应判据抓到且恢复后全绿；`1` = 有判据没有判别力 / 恢复不干净。
+退出码（实跑面）：`0` = 全部变异都被对应判据抓到且恢复后全绿；`1` = 有判据没有判别力 / 恢复不干净；
+`3` = 无法判定（测试没跑起来 ⇒ 既不是「有判别力」也不是「没有判别力」）。
 退出码（`--check` 面）：`0` = 全部前提成立；`1` = 有腐烂（**具名**）；`3` = 无法判定。
 """
 import pathlib
+import re
 import subprocess
 import sys
 from functools import partial
@@ -79,11 +89,26 @@ def check() -> int:
     return h.report_and_exit(TOOL_REL, decls)
 
 
+def run_evidence(out: str):
+    """本次 `npm test`（vitest）「**测试真的跑起来了**」的证据；`None` = 没跑起来（⇒ **无法判定**）。
+
+    issue #5242（同族另一半在 `saving-metrics-red-proof-backend.py`）：`rc != 0` 有两种来源 ——
+    ① 判据真的红了（测试被执行并失败）；② **测试根本没跑起来**（被测 / 判据文件变换失败、
+    依赖缺失、npm 自身报错）。只读退出码会把 ② 读成 ① （**错误归因比没有红证更危险**）。
+
+    判据 = vitest 的 **Tests 汇总行里带计数**（`Tests  1 failed (1)` / `Tests  5 passed (5)`）；
+    收集 / 变换失败时 vitest 打的是 `Tests  no tests`（**没有计数**）⇒ 取不到证据 ⇒ 无法判定。
+    """
+    match = re.search(r"^\s*Tests\s+.*\d.*$", out, re.M)
+    return match.group(0).strip() if match else None
+
+
 def run():
     proc = subprocess.run(["npm", "test", "--", *TESTS], cwd=WEB, capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
     tail = "\n".join(l for l in proc.stdout.splitlines()
                      if "Tests " in l or "Test Files" in l or "FAIL " in l)
-    return proc.returncode, tail
+    return proc.returncode, tail, out
 
 
 def main():
@@ -98,9 +123,17 @@ def main():
             continue
         try:
             path.write_text(original.replace(old, new, 1), encoding="utf8")
-            rc, tail = run()
+            rc, tail, out = run()
+            # 🔴 issue #5242 的证据闸：**先区分跑起来了没有，再谈判别力**。
+            if run_evidence(out) is None:
+                print(f"❓ 无法判定（测试没跑起来：变换 / 收集失败或 npm 事故）"
+                      f" | {title} | rc={rc}", flush=True)
+                print("    （末尾输出如下 —— 不得据此判「判据有判别力」）", flush=True)
+                print("    " + "\n    ".join(out.strip().splitlines()[-8:]), flush=True)
+                sys.exit(h.UNKNOWN)
             red = rc != 0
             print(f"{'✅ 红（判据有判别力）' if red else '❌ 绿（空断言！）'} | {title} | rc={rc}", flush=True)
+            print(f"      跑起来了（证据：{run_evidence(out)}）", flush=True)
             if red:
                 print("      实测红读数: " + tail.replace("\n", " | ")[:300], flush=True)
             else:
@@ -108,7 +141,12 @@ def main():
         finally:
             path.write_text(original, encoding="utf8")
     print("\n=== 恢复后复跑（必须全绿）===", flush=True)
-    rc, tail = run()
+    rc, tail, out = run()
+    if run_evidence(out) is None:
+        # 与上面同源：没跑起来同样 rc != 0，不加闸就会被读成「恢复不干净」（错误归因）。
+        print(f"❓ 无法判定（恢复后复跑没跑起来）rc={rc}", flush=True)
+        print("    " + "\n    ".join(out.strip().splitlines()[-8:]), flush=True)
+        sys.exit(h.UNKNOWN)
     print(f"rc={rc} ({'全绿' if rc == 0 else '仍有红 ⇒ 恢复不干净'}）{tail}")
     if bad or rc != 0:
         sys.exit(1)

@@ -3309,6 +3309,24 @@ _CASE_MC_019 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-020 [NORMAL] 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）（源: cases/misc.yml）──
+_CASE_MC_020 = EvalCase(
+    id='MC-020',
+    legacy_id='',
+    title='红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['红证机具所守卫的源码被改坏、或构建环境出事故（编译失败 / 测试收集失败）之后，机具给出的「判据有判别力」结论必须仍然可信 —— 拿不到「测试真的跑起来了」的证据时，结论只能是「无法判定」'],
+    expectations=['direct_reply'],
+    data_checks=['适用面（由 **AST** 决定，注释 / docstring 喂不动）：「用退出码判判别力」= 源码里有 `.returncode` 属性访问 **且** 渲染「判据有判别力」这个判决（非 docstring 字符串常量）⇒ 恰为 `saving-metrics-red-proof-backend.py` 与 `saving-metrics-red-proof-web.py` 两台；该集合本身被断言钉住（不得静默放宽，也不得在空集上恒真）', '证据闸（路线 B，stdout 面）：机具必须提供模块级 `run_evidence(out)`，输出里出现「测试真的跑起来了」的证据（`BUILD SUCCESS` / `Tests run: N` / vitest 带计数的 `Tests` 汇总行）才算跑过；判据把该函数**抽出来喂三组夹具真跑** —— 负向夹具（编译失败 / 变换·收集失败）必须得 None，正向夹具（判据真的被执行并失败）必须得证据', '位置性事实：证据闸（`if run_evidence(...) is None:`）的行号必须**小于**判决点行号（「先区分跑起来了没有，**再**谈判别力」的那个「先」）；闸里必须有三态出口 `sys.exit(UNKNOWN)`（= 3 = 无法判定），**不得**回落到「有判别力」；恢复后的复跑同样受这道闸约束（否则编译失败会被读成「恢复不干净」）', '红证（四条注入**各能单独变红**）：① 删掉证据闸 ② 三态出口削成 `sys.exit(1)` ③ `run_evidence()` 换成「永远说有证据」（= 退回只看退出码的语义；结构一字未动 ⇒ 红只能来自行为判据）④ 把闸写到判决**之后** ⇒ 同名判据逐条变红', '路线 A（#5216 报告面）的机具**不重复施加**本判据（同一口径只放一处，两处必然漂移）：`auto-batch-red-proof.py` / `auto-batch-due-scan-red-proof.py` / `pool-board-red-proof.py` 读 surefire 报告且已有「跑前 unlink + 缺失即 raise」⇒ 由同文件的 `_hygiene_problems()` 判；排除是**条件性**的 —— 那台机具的报告卫生一旦被拆掉，它立刻落回本判据管', '现状读数（**已复核，真跑贴原始输出**）：干净树上注入语法错误造一次编译失败 ⇒ **改前**机具对 5 条变异**全部**打印「✅ 红（判据有判别力）」、末行还打印「恢复后 rc=1（仍有红 ⇒ 恢复不干净）」（**两处错误归因**）；**改后**同一次注入 ⇒ 首条即「❓ 无法判定（编译失败 / 环境事故 ⇒ 测试一行都没跑）」+ 退出码 **3**。对照组 = 真变异 + 正常编译 ⇒ 判决行与改前**逐字一致**'],
+    skip_reason='[backend-contract] 红证机具的判决语义由 pytest 静态判据 + 注入式红证（含真跑 run_evidence 夹具）验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'red-proof', 'mutation_testing', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -5416,6 +5434,24 @@ _CASE_PG_060 = EvalCase(
     data_checks=['判据 1·**派工即扣且顺序正确**：生成加工单时先 `plan`（**只读**校验）→ 插加工单 → `apply` 扣减（同一事务）——顺序即「不重复扣」的结构性保证（重复生成在插入处被幂等闸拒）。红证：把 apply 挪到 insert 之前 ⇒ InOrder 断言红。', '判据 2·**不重复扣**：同一订单第二次生成被既有幂等闸拒（`请勿重复生成`），`plan`/`apply`/`insert` 各只发生 1 次。红证：去掉 `selectActiveByOrderId` 前置判断 ⇒ 第二次插入抛 DuplicateKeyException 或发生二次扣减，必红。', '判据 3·**缺料不静默、不留半成品**：`plan` 抛 `BATCH_STOCK_INSUFFICIENT` ⇒ 逐单结果 `success=false` 且带 `code` + 可行动 `suggestion`，**加工单不插入**、台账不扣减。红证：把 `plan` 挪到 insert 之后 ⇒ `never().insert(...)` 断言红。', '判据 4·**不指派 ⇒ 行为与今天逐字相同**（本阶段的定义特征）：不传 batches ⇒ 台账服务**零交互**，且加工单快照里**不出现** `batchNo` 键。红证：无条件写 `batchNo` ⇒ `doesNotContainKey` 断言红。', '判据 5·**指派必须能落到具体行**：指派的行不在该订单加工单快照里 ⇒ 显式拒绝（不静默忽略）；指派里的 orderId 不在本次生成范围 ⇒ 整批拒绝且**任何写库之前**中止。红证：改成 `continue` 跳过未知行 ⇒ 两条断言红。', '判据 6·**作废同事务回补**：`generated → cancelled` 调用台账 `reverse(租户, 加工单号, 订单号, 原因)`（挂点 = 既有取消副作用处；订单取消自动作废那条路在 OrderService 接同一句话）。红证：删掉 reverse 调用 ⇒ 本断言红。', '判据 7·**不损失客户**：本单不改 `OrderService.confirmPayment` 的扣减路径（路线 A 的命门）与任何金额/售价/成品尺寸计算 —— 对客金额逐值不变由既有回归用例覆盖。'],
     skip_reason='[backend-contract] 加工单生成/作废的装配与顺序契约（Java 单测，非 LLM 行为）：由 ProcessingOrderServiceTest 执行',
     tags=['processing-order', 'stock', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-062 [NORMAL] 批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算（源: cases/processing-order.yml）──
+_CASE_PG_062 = EvalCase(
+    id='PG-062',
+    legacy_id='',
+    title='批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['派工扣批次 / 加工单作废回补 / 文员选错 SKU 的批次之后，批次账（实物账）与消耗台账必须逐值自洽，且口径由数据库当场执行（不是应用层自觉）'],
+    expectations=['direct_reply'],
+    data_checks=['判据1 账实一致（**读回真库的列**，不是「调了某个方法」）：plan/apply 之后 `stock_batches.quantity + Σ(delta)` 与读面余量**逐值相等**、逐行 `after_qty − before_qty == delta`、逐行 `planned_meters == −delta`、逐行「变更前余量」对得上链条（60 → 57.3 → 54.6，含小数）；批次行 `quantity` 一字不动（V111 批次行不可改）。红证 = 手动改一行 `delta` ⇒ **同一个读数函数**必须报出不一致', '判据2 V121 的符号约束**真的钉住了**（不是写在注释里）：故意写一行 `abs(planned_meters) > abs(formula_meters)` 的自相矛盾数据 ⇒ 数据库当场拒绝（SQLSTATE **23514**）；两列符号打架（`formula_meters * planned_meters < 0`）同样被拒。红证 A = 事务内换回 V119 的旧表达式（`planned_meters <= formula_meters`）⇒ 合法的**回补行**（两列都负，正是 V121 修的那一格）当场被拒 ⇒ 修法有载荷；红证 B = 事务内摘掉约束 ⇒ 同一行自相矛盾数据**写得进去** ⇒ 拦住它的是约束本身（两处 DDL 都在**回滚事务**里做 ⇒ 零残留）', '判据3 reverse 逐值对称 / 幂等 / 对不存在的东西：60 → 57.3 → **60**（逐值回到派工前，含小数）；回补行是配对扣减行的**相反数**（`delta` 与两个米数）、均价原样搬运 ⇒ 整单 `Σdelta` 归零、`saved_meters` 相加归零（**作废不冒功**）；再撤一次 ⇒ 返回 0、行数与余量一字不动；撤销一个从未扣过批次的加工单 ⇒ 返回 0、零落账、余量不动（不抛错、不静默造行）。红证 = 手动抹掉一行回补 ⇒ 同一读数必须报「净额不为零」', '判据4 跨 SKU 拒绝（**真库 + 真快照路径**）：同一货号、错 SKU 的批次 ⇒ `BATCH_SKU_MISMATCH` + 400 + 可行动文案，且**该批次一行台账都没落**、余量一字不动。红证 = 同参数但 `skuCode` 传 null（= #5174 修前读侧必然产出的值，护栏恒 no-op）⇒ **静默扣账**（1 行台账 / 余量 60 → 57）—— 两个读数在同一测试里对照打印', '判据5 重复落账被唯一闸挡下：同一加工单再 apply ⇒ SQLSTATE **23505**、台账行数不变、批次余量不变。红证 = 事务内摘掉 `uk_batch_consumption_line` ⇒ **同一个元组**的裸 INSERT 能落库 ⇒ 拦住它的是那个索引（不是应用层先查后写）', '判据6 余量分布四档**逐值可复算**：7 个批次（0.2 / 0.1 / 0.3 / 0.8 / 1.5 ×3）⇒ 四档批次数 [2,1,1,3]、占比 [0.2857,0.1429,0.1429,0.4286]、四档 key 恒在（空档也回 0）。红证 = 手动把一个批次数量改大（跨档）⇒ 同一读数的档位计数必须变', '判据7 对账恒等式在「**已售未派** + **排料节省**」两项**并存**的夹具上逐值成立：同一夹具放①一笔销售（销售账扣 10 米、加工单还没派）②一次并排省料（公式 6 米 / 排料 3 米）⇒ `diff`(7) == 已售未派(4) + 排料节省(3)、`reconciled=true`、`unreconciledCount=0`，且两项**都非零**（否则恒等式退化成单项、测不出耦合）。红证 = 手动改 `stock_batches.quantity`（批次腿与销售台账腿被掰开）⇒ 同一读数必须报 `reconciled=false` + `unreconciledCount=1`、`diff` 7 → 17', '边界（如实登记）：① 判据 4 与 `SkuBatchGuardRealDbTest`（#5174）在「跨 SKU 拒绝」上**有意部分重合**（本条多钉一条「拒绝时零落账」），不当成新覆盖；② 判据只跑**真 PG**（`PgCluster.startOrAbort()` 单一收口）：CI 注入 `MIGAO_REQUIRE_REALDB=1` ⇒ 缺 PG 二进制判**红**（不是 skip），本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）；③ **只补判据、不改口径**：#5145 的 API 与落账语义一字未动，也未放宽任何门禁'],
+    skip_reason='[backend-contract] 真库（真 PG）后端契约用例：断言全部由 BatchConsumptionLedgerRealDbTest 执行（7 条判据，每条各带一个能单独变红的红证），写路径无 LLM 环节 ⇒ 不进 agent-eval 冒烟',
+    tags=['processing-order', 'production', 'stock-batch', 'ledger', 'real-db'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -8882,6 +8918,7 @@ ALL_CASES = (
     _CASE_MC_017,
     _CASE_MC_018,
     _CASE_MC_019,
+    _CASE_MC_020,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -8990,6 +9027,7 @@ ALL_CASES = (
     _CASE_PG_056,
     _CASE_PG_057,
     _CASE_PG_060,
+    _CASE_PG_062,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

@@ -2028,7 +2028,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（19 case）
+## 杂项域（20 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2252,6 +2252,20 @@
 跳过: [backend-contract] 图标归属裁决由纯函数判据 + 五条注入式红证验证（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5217）：既有守卫只比名字/路径/顺序、不比图标 ⇒ 图标维度纸面同构、实测已漂移（production-piecework Calculator/Coins）。按实测证据选方案 2（服务端不下发图标 ⇒ 删字段），并把裁决做成机械判据 + 五条注入式红证 ｜ tags: ci, menu, criteria
+
+### MC-020. 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」） 🔵
+```
+你: 红证机具所守卫的源码被改坏、或构建环境出事故（编译失败 / 测试收集失败）之后，机具给出的「判据有判别力」结论必须仍然可信 —— 拿不到「测试真的跑起来了」的证据时，结论只能是「无法判定」
+期望: direct_reply
+数据: 适用面（由 **AST** 决定，注释 / docstring 喂不动）：「用退出码判判别力」= 源码里有 `.returncode` 属性访问 **且** 渲染「判据有判别力」这个判决（非 docstring 字符串常量）⇒ 恰为 `saving-metrics-red-proof-backend.py` 与 `saving-metrics-red-proof-web.py` 两台；该集合本身被断言钉住（不得静默放宽，也不得在空集上恒真）
+数据: 证据闸（路线 B，stdout 面）：机具必须提供模块级 `run_evidence(out)`，输出里出现「测试真的跑起来了」的证据（`BUILD SUCCESS` / `Tests run: N` / vitest 带计数的 `Tests` 汇总行）才算跑过；判据把该函数**抽出来喂三组夹具真跑** —— 负向夹具（编译失败 / 变换·收集失败）必须得 None，正向夹具（判据真的被执行并失败）必须得证据
+数据: 位置性事实：证据闸（`if run_evidence(...) is None:`）的行号必须**小于**判决点行号（「先区分跑起来了没有，**再**谈判别力」的那个「先」）；闸里必须有三态出口 `sys.exit(UNKNOWN)`（= 3 = 无法判定），**不得**回落到「有判别力」；恢复后的复跑同样受这道闸约束（否则编译失败会被读成「恢复不干净」）
+数据: 红证（四条注入**各能单独变红**）：① 删掉证据闸 ② 三态出口削成 `sys.exit(1)` ③ `run_evidence()` 换成「永远说有证据」（= 退回只看退出码的语义；结构一字未动 ⇒ 红只能来自行为判据）④ 把闸写到判决**之后** ⇒ 同名判据逐条变红
+数据: 路线 A（#5216 报告面）的机具**不重复施加**本判据（同一口径只放一处，两处必然漂移）：`auto-batch-red-proof.py` / `auto-batch-due-scan-red-proof.py` / `pool-board-red-proof.py` 读 surefire 报告且已有「跑前 unlink + 缺失即 raise」⇒ 由同文件的 `_hygiene_problems()` 判；排除是**条件性**的 —— 那台机具的报告卫生一旦被拆掉，它立刻落回本判据管
+数据: 现状读数（**已复核，真跑贴原始输出**）：干净树上注入语法错误造一次编译失败 ⇒ **改前**机具对 5 条变异**全部**打印「✅ 红（判据有判别力）」、末行还打印「恢复后 rc=1（仍有红 ⇒ 恢复不干净）」（**两处错误归因**）；**改后**同一次注入 ⇒ 首条即「❓ 无法判定（编译失败 / 环境事故 ⇒ 测试一行都没跑）」+ 退出码 **3**。对照组 = 真变异 + 正常编译 ⇒ 判决行与改前**逐字一致**
+跳过: [backend-contract] 红证机具的判决语义由 pytest 静态判据 + 注入式红证（含真跑 run_evidence 夹具）验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5242，P1，与 #5216 同族的另一半）：机具用裸退出码判「判据有判别力」⇒ 编译失败 / 环境事故被读成「变异被抓到了」。修法 = 证据闸（stdout 面，`-q` 会吞掉证据故一并去掉）+ 三态出口（exit 3 = 无法判定），并把「不许只用裸 returncode 判判别力」做成机械判据（四条注入式红证 + 对 run_evidence 喂夹具真跑）。同批修 web（npm/vitest）那半。取号 MC-020：main 上 MC-001~MC-019 已占用，MC-020 在 main 与全部在飞分支上均未占用。 ｜ tags: ci, red-proof, mutation_testing, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -3411,7 +3425,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## 加工单域（53 case）
+## 加工单域（54 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4097,6 +4111,22 @@
 ```
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
+
+### PG-062. 批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算 🔵
+```
+你: 派工扣批次 / 加工单作废回补 / 文员选错 SKU 的批次之后，批次账（实物账）与消耗台账必须逐值自洽，且口径由数据库当场执行（不是应用层自觉）
+期望: direct_reply
+数据: 判据1 账实一致（**读回真库的列**，不是「调了某个方法」）：plan/apply 之后 `stock_batches.quantity + Σ(delta)` 与读面余量**逐值相等**、逐行 `after_qty − before_qty == delta`、逐行 `planned_meters == −delta`、逐行「变更前余量」对得上链条（60 → 57.3 → 54.6，含小数）；批次行 `quantity` 一字不动（V111 批次行不可改）。红证 = 手动改一行 `delta` ⇒ **同一个读数函数**必须报出不一致
+数据: 判据2 V121 的符号约束**真的钉住了**（不是写在注释里）：故意写一行 `abs(planned_meters) > abs(formula_meters)` 的自相矛盾数据 ⇒ 数据库当场拒绝（SQLSTATE **23514**）；两列符号打架（`formula_meters * planned_meters < 0`）同样被拒。红证 A = 事务内换回 V119 的旧表达式（`planned_meters <= formula_meters`）⇒ 合法的**回补行**（两列都负，正是 V121 修的那一格）当场被拒 ⇒ 修法有载荷；红证 B = 事务内摘掉约束 ⇒ 同一行自相矛盾数据**写得进去** ⇒ 拦住它的是约束本身（两处 DDL 都在**回滚事务**里做 ⇒ 零残留）
+数据: 判据3 reverse 逐值对称 / 幂等 / 对不存在的东西：60 → 57.3 → **60**（逐值回到派工前，含小数）；回补行是配对扣减行的**相反数**（`delta` 与两个米数）、均价原样搬运 ⇒ 整单 `Σdelta` 归零、`saved_meters` 相加归零（**作废不冒功**）；再撤一次 ⇒ 返回 0、行数与余量一字不动；撤销一个从未扣过批次的加工单 ⇒ 返回 0、零落账、余量不动（不抛错、不静默造行）。红证 = 手动抹掉一行回补 ⇒ 同一读数必须报「净额不为零」
+数据: 判据4 跨 SKU 拒绝（**真库 + 真快照路径**）：同一货号、错 SKU 的批次 ⇒ `BATCH_SKU_MISMATCH` + 400 + 可行动文案，且**该批次一行台账都没落**、余量一字不动。红证 = 同参数但 `skuCode` 传 null（= #5174 修前读侧必然产出的值，护栏恒 no-op）⇒ **静默扣账**（1 行台账 / 余量 60 → 57）—— 两个读数在同一测试里对照打印
+数据: 判据5 重复落账被唯一闸挡下：同一加工单再 apply ⇒ SQLSTATE **23505**、台账行数不变、批次余量不变。红证 = 事务内摘掉 `uk_batch_consumption_line` ⇒ **同一个元组**的裸 INSERT 能落库 ⇒ 拦住它的是那个索引（不是应用层先查后写）
+数据: 判据6 余量分布四档**逐值可复算**：7 个批次（0.2 / 0.1 / 0.3 / 0.8 / 1.5 ×3）⇒ 四档批次数 [2,1,1,3]、占比 [0.2857,0.1429,0.1429,0.4286]、四档 key 恒在（空档也回 0）。红证 = 手动把一个批次数量改大（跨档）⇒ 同一读数的档位计数必须变
+数据: 判据7 对账恒等式在「**已售未派** + **排料节省**」两项**并存**的夹具上逐值成立：同一夹具放①一笔销售（销售账扣 10 米、加工单还没派）②一次并排省料（公式 6 米 / 排料 3 米）⇒ `diff`(7) == 已售未派(4) + 排料节省(3)、`reconciled=true`、`unreconciledCount=0`，且两项**都非零**（否则恒等式退化成单项、测不出耦合）。红证 = 手动改 `stock_batches.quantity`（批次腿与销售台账腿被掰开）⇒ 同一读数必须报 `reconciled=false` + `unreconciledCount=1`、`diff` 7 → 17
+数据: 边界（如实登记）：① 判据 4 与 `SkuBatchGuardRealDbTest`（#5174）在「跨 SKU 拒绝」上**有意部分重合**（本条多钉一条「拒绝时零落账」），不当成新覆盖；② 判据只跑**真 PG**（`PgCluster.startOrAbort()` 单一收口）：CI 注入 `MIGAO_REQUIRE_REALDB=1` ⇒ 缺 PG 二进制判**红**（不是 skip），本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）；③ **只补判据、不改口径**：#5145 的 API 与落账语义一字未动，也未放宽任何门禁
+跳过: [backend-contract] 真库（真 PG）后端契约用例：断言全部由 BatchConsumptionLedgerRealDbTest 执行（7 条判据，每条各带一个能单独变红的红证），写路径无 LLM 环节 ⇒ 不进 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5190，P2）：#5145 的批次消耗台账此前只有 mock / 控制器层测试，而这四件事（账实一致 / 唯一闸原子性 / V121 符号约束 / 对账恒等式）在 mock 面结构上不可见（Mockito 测不出约束）。本单复用 #5167 提取的共用件 PgCluster 与 #5199 已修好并在 CI 真跑的真库基础设施（MIGAO_REQUIRE_REALDB fail-closed），只补判据、不改口径。取号 PG-062：PG-059/060/061 已被 #5145/#5142 占用，PG-062 在 main 与全部在飞分支上均未占用（`git for-each-ref` 逐 ref 核过）。 ｜ tags: processing-order, production, stock-batch, ledger, real-db
 
 ## 商品域（95 case）
 
@@ -6214,8 +6244,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：457（活跃 159，跳过 298）
-- tier 分布：smoke 10 / normal 416 / adversarial 31
+- 用例总数：459（活跃 159，跳过 300）
+- tier 分布：smoke 10 / normal 418 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6229,12 +6259,12 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：19
+- 杂项域：20
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：46
 - 加工项域：13
-- 加工单域：53
+- 加工单域：54
 - 商品域：95
 - 工具注册器域：1
 - 设置域：10
@@ -6273,6 +6303,7 @@
 - MC-017: 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）
 - MC-018: 红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因）
 - MC-019: 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）
+- MC-020: 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
@@ -6337,6 +6368,7 @@
 - PG-054: `GET /operation-layers` 的【打包发货】段：行不依赖矩阵格——零矩阵格 + `scope='set'` 的工序仍有行，价态 `unpriced`（🔴 2026-09-21 事实订正：这是**后端读面契约**，该页前端消费者已随【打包发货】区块删除而退场；🔴 同日再订正（issue #4939 配套 #4951）：第 4 态 `no_applicable_position` **退场** ⇒ 零格与「一格未定价」同判 `unpriced`，`applicable_positions` **键保留但恒 `[]`**）
 - PG-055: 价目**写面**字段契约（🔴 2026-09-21 改判，issue #4939 配套 #4951）：`PUT /operation-positions/{id}` **只收** `unit_price`；收到 `applicable` ⇒ 422 + 可行动 hint（拒绝，不静默忽略）；价的两态与调价留痕不变（原 #4798 的「`applicable=true` 必须解析得到变体」护栏**随字段退场而退休**）
 - PG-056: 正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效
+- PG-062: 批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
