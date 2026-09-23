@@ -206,3 +206,57 @@ grep -cF "本机没有 PG 二进制" /tmp/job.log
 grep -oE "\[#[0-9]{4} [^]]{0,30}\]" /tmp/job.log | sort | uniq -c
 grep -oE "\b(4967|5146|5147|5158|5159|5167|5169|5174|5177|5182|5184)\b" /tmp/job.log | sort | uniq -c
 ```
+
+---
+
+## 10. 验收后订正与新增发现（2026-09-23 追加，锚 `5229a73d4` 之后）
+
+> 本报告的正文是**锚 `b43a6cb29` 的快照**，一字未改。本节记录**验收结束后**才取得的读数 —— 其中一条**改变了 §7 的口径**。
+
+### 10.1 ✅ C1 已定案：#5192 的 Java 侧已修并落库
+
+`PR #5199`（→ `f273adcb5`）：`PgCluster.startOrAbort()` 单一收口 + `MIGAO_REQUIRE_REALDB=1` 时缺 PG **判 FAIL 而非 skip** + CI 前置断言 + 静态守卫。
+**红证 A 的对照组成立**：不带标记 + 搜索路径指空 ⇒ `Tests run: 0 / BUILD SUCCESS / EXIT=0`（这才是「静默绿」的确切读数，surefire 把 aborted 容器记成 `Tests run: 0`、`Skipped: 0`）；带标记 ⇒ `AssertionFailedError` + `EXIT=1`。
+该包还**主动纠正了本报告 §1 的使用点清单**：`ProductionScanClaimRealDbTest` 与 `ProductionPartCodeRealMappingTest` **各藏一份嵌套 `PgCluster` 副本**（遮蔽包级共用件；按文本锚点 `private static final class PgCluster` 检索 —— **故意不写行号**：行号会随这两份副本被删掉而失效，`#5199` 正是把它们删了）⇒ 只改包级共用件时这两条真库判据照旧静默 skip。已删并收口（15 个使用点）。
+
+### 10.2 🔴 新增 P0 `#5203`：**Python 侧的真库判据一直在 CI 上静默 skip**（本报告 §7 未覆盖）
+
+**这条改变了 §7 的口径**：§7 把 `#5192` 当作「真库判据」相关的唯一项，但**真正在发生的失效在 Python 侧** —— 与 `#5192`（Java）**不同源**，`#5199` 治不到。
+
+| 证据 | 读数 |
+|---|---|
+| 口径不对称 | Java `PgCluster.BIN_DIRS` 有硬编码兜底 `/usr/lib/postgresql/{16,15,14}/bin`；Python `_pg_available()` = `all(shutil.which(b) …)` —— **只认 PATH**，无兜底 |
+| runner 上取到的读数 | job `107186750040` 打印 `initdb = /usr/lib/postgresql/16/bin/initdb` —— 该步先 `command -v initdb`、**找不到才回落** ⇒ PATH 里没有 initdb |
+| 受控实验（猴补丁只藏三个二进制） | 本机全量 `3691 passed / 1 skipped` → **`3609 passed / 83 skipped`**；那 13 个模块 `190 passed` → `79 skipped` |
+| CI 实测 | `3561 passed / 87 skipped`；扣掉新增 44 条守卫后投影 ≈ `3565 / 83` ⇒ **83 条被精确复现**，残差 4 |
+
+⇒ **同一台 runner 上 Java 真库判据在跑、Python 在 skip**；被跳过的正是**迁移/回填/库存/幂等**这一族「钱与账」读数。
+⇒ 且**无人会知道**：`[backend-contract]` 的 `traces.ci` 只被校验「引用的 workflow 文件存在」，**没有任何东西校验「那条通道真的执行了」**。
+
+**方法论留档（我自己的两次仪器错误）**：
+1. 第一次对照实验用「改 PATH」⇒ 把本机 `python3` 一起藏掉、29 个收集错误 ⇒ **无效实验**；换成只猴补丁 `shutil.which` 三处才成立。
+2. 早前 `gh run view --log-failed` 返回空输出**不是**「没有失败信息」，而是 macOS **没有 `timeout` 命令**、命令根本没跑起来。
+⇒ 两条都提醒：**「取到空/取到异常」先怀疑仪器，别先写结论**（与 §6.1 的「把没有 A 当成没有 B」同族）。
+
+### 10.3 验收后新立的跟随 issue
+
+| issue | 级别 | 内容 |
+|---|---|---|
+| `#5203` | **P0** | Python 侧 13 个真库判据在 CI 静默 skip（上文 10.2） |
+| `#5216` | P1 | `auto-batch` / `due-scan` 红证机具**不删旧 surefire 报告** ⇒ 运行被打断时给出**错误归因**（同族 `pool-board` 有这道卫生） |
+| `#5217` | P2 | 菜单**三源同构**守卫只比名字**不比图标** ⇒ 图标漂移无人抓（实证 `production-piecework` 前端 `Calculator` / 服务端 `Coins`） |
+
+### 10.4 验收后落库的 PR
+
+| PR | issue | merge | 说明 |
+|---|---|---|---|
+| `#5199` | `#5192` | `f273adcb5` | Java 侧真库 fail-closed（10.1） |
+| `#5206` | `#5194`+`#5191` | `d3761834a` | 商家可见文案 `**` 泄漏收口（AST 守卫，含正控/负控）+ 余料台账进侧边栏（三源同构 + 权限同码，**未放宽**） |
+| `#5212` | `#5193` | *(armed)* | 六个红证机具接入门禁：`--check` 前提自检面进 required job（**未改 workflow**，靠既有 `tests/unit_ci_workflows` 收集面）+ 本地 `verify-all.sh redproof` 实跑档 |
+
+**过程中被门禁抓到的真缺陷（值得留档）**：`#5206` 首轮被 required 门禁判红 —— 新用例走了 `[backend-contract]` 豁免通道却**没给 `traces.ci`**，且没按基线 `_how_to_regen` **重锚**（读数 83 → 85 必须在同一 PR 内追加 history 行）。⇒ **门禁有效**，且该缺陷是「通道存在但没指明谁跑它」的同族形态。
+
+### 10.5 §0 判定摘要的口径更正
+
+- 「未闭环 7 项」⇒ 现为 **10 项**（原 7 项 + `#5203` P0 + `#5216` + `#5217`）；其中 **`#5203` 是唯一影响「本批真库判据可信度」的一项**。
+- **§7 的读法更正**：`#5192`（Java）已闭环；**Python 侧的真库判据在 `#5203` 修好之前，其 CI 通道是「绿着没跑」** ⇒ 引用这些判据作为「最强证据层」时，**必须区分是 Java 还是 Python**，不可笼统写「真库判据已在 CI 跑」。
