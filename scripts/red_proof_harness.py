@@ -73,6 +73,13 @@ class ToolSpec:
 
 
 TOOLS: dict[str, ToolSpec] = {
+    "scripts/order-urgency-red-proof.py": ToolSpec(
+        floor=5,
+        heavy="Maven + JDK（admin-api 单测；5 条变异实测 570s≈9.5min）",
+        impl=(_AAPI_MAIN + "service/OrderService.java",
+              _AAPI_MAIN + "dto/OrderDetailResponse.java"),
+        criteria=(_AAPI_TEST + "service/OrderUrgencyFieldsTest.java",),
+    ),
     "scripts/pool-board-red-proof.py": ToolSpec(
         floor=5,
         heavy="Maven + JDK（admin-api 单测；5 条变异实测 107s）",

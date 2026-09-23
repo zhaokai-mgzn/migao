@@ -30,8 +30,15 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }))
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import ProductionPoolPage from '@/app/(dashboard)/production/pool/page'
-import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview } from '@/types'
+import {
+  batchCandidateOrderIds,
+  batchGroups,
+  mustSurfaceDispatchError,
+} from '@/lib/pool-board'
+import type { PoolBoard, PoolDispatchResult, PoolGroup, PoolLine, PoolPreview } from '@/types'
 
 const ok = (data: unknown) => ({ data: { data } })
 
@@ -93,6 +100,78 @@ const board = (over: Partial<PoolBoard> = {}): PoolBoard => ({
     },
   ],
   ...over,
+})
+
+/**
+ * 🔴 **散文主张 → 可执行夹具**（issue #5195，PR-080 `data_checks` 第 1/2 条）：
+ *
+ * > ①「加急单**不出现在任何** `groups[].lines`……**红证 = 让加急单照旧进池 ⇒ 该断言红**」
+ * > ②「整批显式拒绝……**文案必须看得见**（不静默少派）」
+ *
+ * 这两条此前在本文件里**没有负向夹具**（`红证` 命中 = 0）⇒ 判别力只存在于措辞里。
+ * 本 describe 用本仓既有范式（`tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的正控/负控
+ * + `tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `TestInjectionRedProofs`）
+ * 把它们落成**能单独变红**的注入式夹具：**同一个判据**分别跑真实实现与变异体。
+ */
+describe('🔴 红证夹具：「加急不进池」与「拒绝文案看得见」的注入式负控（issue #5195）', () => {
+  /** 加急单的订单 id（来自本文件的真实看板夹具 `board()`） */
+  const URGENT_IDS = ['u1', 'u2']
+
+  /** **变异体**：让加急单照旧进池（把 `urgentLines` 并进第一个物料组）—— 单点「缺陷」形态 */
+  const mergeUrgentIntoGroups = (b: PoolBoard): PoolBoard => ({
+    ...b,
+    groups: batchGroups(b).map((g: PoolGroup, i: number) =>
+      i === 0 ? { ...g, lines: [...(g.lines ?? []), ...(b.urgentLines ?? [])] } : g
+    ),
+  })
+
+  it('① 正控：变异体「加急单照旧进池」⇒ 成批候选里**当场**出现加急单号（该断言必红）', () => {
+    const leaked = batchCandidateOrderIds(mergeUrgentIntoGroups(board()))
+    expect(URGENT_IDS.filter((id) => leaked.includes(id))).toEqual(URGENT_IDS)
+  })
+
+  it('② 负控（对照组）：真实看板夹具下加急单**零进池** —— 红是变异体造成的，不是判据本来就红', () => {
+    const candidates = batchCandidateOrderIds(board())
+    expect(URGENT_IDS.filter((id) => candidates.includes(id))).toEqual([])
+    // 自证非空：成批候选确实有内容（空集上「没有加急单」恒真 = 空断言）
+    expect(candidates).toEqual(['o1'])
+  })
+
+  /** 被拒绝的文案（= 本文件第 3 条 DOM 判据里服务端回的那句） */
+  const REJECTION = '加急订单不能混入池化批次，请单独派单（加急插队）'
+
+  /** **判据本体**（正控与负控跑同一份）：被拒绝 ⇒ 必须有可见文案，否则 = 静默少派 */
+  const silentViolations = (surfaces: (m: string) => boolean, message: string) =>
+    surfaces(message) ? [] : ['被拒绝却没有可见文案（静默少派）']
+
+  it('③ 正控：把失败面静默吞掉（`() => false`）⇒ 「拒绝文案看得见」判据当场报出静默违规', () => {
+    expect(silentViolations(() => false, REJECTION)).toEqual(['被拒绝却没有可见文案（静默少派）'])
+  })
+
+  it('④ 负控（对照组）：真实口径下零静默违规，且空白文案**不算**上屏', () => {
+    expect(silentViolations(mustSurfaceDispatchError, REJECTION)).toEqual([])
+    expect(silentViolations(mustSurfaceDispatchError, '   ')).toEqual([
+      '被拒绝却没有 visible 文案（静默少派）',
+    ].map(() => '被拒绝却没有可见文案（静默少派）'))
+  })
+
+  it('⑤ 接线：前端两条红证必须与页面**同源**（页面真的用这三个口径）', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/app/(dashboard)/production/pool/page.tsx'),
+      'utf-8'
+    )
+    const problems: string[] = []
+    if (!/^\s*import\s+\{[^}]*batchGroups[^}]*\}\s+from\s+'@\/lib\/pool-board'/m.test(src)) {
+      problems.push('页面没有 import batchGroups ⇒ 「成批候选」口径与红证脱钩')
+    }
+    if (!src.includes('batchGroups(board)')) {
+      problems.push('页面没有用 batchGroups(board) 取成批候选（自己又写了一份 board?.groups ?? []）')
+    }
+    if (!src.includes('mustSurfaceDispatchError(dispatchError)')) {
+      problems.push('失败红条的渲染条件没有走 mustSurfaceDispatchError ⇒ 「文案看得见」判据与页面脱钩')
+    }
+    expect(problems).toEqual([])
+  })
 })
 
 describe('池看板 · 加急插队区（PR-080）', () => {

@@ -1375,6 +1375,144 @@ class TestDegenerateGuardRails:
 # 四、基线清单与「只许缩短」
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 散文点名的测试通道必须真实存在（#5196）—— 注入式红证 + 读数不静默
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestProseTestRefChannel:
+    """`[backend-contract]` 用例的 `data_checks` 是**散文**（不计分、永不执行，计分通道在
+    `traces.tests`）⇒ 它声称的「证据在哪条测试里」此前**没有任何判据**（#5196）。
+
+    口径**有意收窄**（宁可少判也不要假红）：只判「点名的名字解析不到任何真实文件」
+    （= 散文声称了一个**不存在**的通道）；「不在 `traces.tests` 里」本身**不**判违规
+    —— 实测全库 22 条是合法**跨引用**，一律判违规 = 22 条假红。该子口径落成
+    `prose_test_ref_stats` 的**可见读数**。
+    """
+
+    def test_named_test_not_in_traces_and_not_in_repo_is_blocked(self):
+        """红证 ①：散文点名一个**仓库里根本没有**的测试 ⇒ 判红并点名该名字。"""
+        case = fixture_backend_contract_case(data_checks=[
+            "判据① 冻结常量：由 GhostChannelTest 逐值断言（**红证** = 改常量即红）",
+        ])
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" in codes(v), (
+            f"散文点名了不存在的测试通道却未被判违规，实际={v}"
+        )
+        hit = [x for x in v if x["code"] == "CASE-TRUST-PROSE-TEST-REF-GHOST"][0]
+        assert "GhostChannelTest" in hit["detail"], f"失败信息必须点名具体名字，实际={hit['detail']}"
+        assert hit["fix"], "失败信息必须带「怎么改」"
+
+    def test_trace_file_named_by_prose_must_exist(self):
+        """红证 ②：散文点名的名字解析进了 `traces.tests`，但那个 trace 文件**不存在** ⇒ 也红。"""
+        case = fixture_backend_contract_case(
+            data_checks=["判据②：由 PhantomRealDbTest 真库断言（红证 = 摘掉守卫即红）"],
+            traces={"tests": ["backend/admin-api/src/test/java/com/migao/admin/service/"
+                              "PhantomRealDbTest.java"],
+                    "ci": ["pr-check.yml"], "verifies": []},
+        )
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" in codes(v), (
+            f"`traces.tests` 点名的文件不存在却未被判违规，实际={v}"
+        )
+        hit = [x for x in v if x["code"] == "CASE-TRUST-PROSE-TEST-REF-GHOST"][0]
+        assert "PhantomRealDbTest" in hit["detail"] and "不存在" in hit["detail"], hit["detail"]
+
+    def test_cross_reference_to_a_real_test_is_not_blocked(self):
+        """**负控（对照）**：点名**真实存在**的别的用例/套件的测试 ⇒ **不得**判红。
+
+        这就是全库 22 条合法跨引用的口径（「拦截器语义见 PermissionInterceptorTest/DF-007」
+        「这两条等价断言落在 tests/unit/pages/orders-new.test.tsx」）—— 判红会逼出
+        「删散文」的纸面修复（`migao-dev-flow` §19.1 明令禁止）。
+        """
+        case = fixture_backend_contract_case(data_checks=[
+            "判据①：由 test_migration_immutability.py 逐条断言（判据本体，不新写第二份）",
+            "判据②：等价断言落在 test_case_trust_gate.py（跨引用，不是本用例的通道）",
+            "判据③：本用例自己的通道 = tests/test_chat.py（在 traces.tests 里）",
+        ])
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" not in codes(v), (
+            f"合法跨引用被误判为幽灵名（假红），实际={v}"
+        )
+        audit = tax.prose_test_ref_audit(case, REPO_ROOT)
+        assert len(audit["cross_refs"]) == 2, f"跨引用必须被识别并计数，实际={audit}"
+        assert audit["ghosts"] == [], f"对照组不得有幽灵名，实际={audit['ghosts']}"
+
+    def test_extension_family_typo_is_not_a_ghost(self):
+        """**负控**：散文把 `x.test.tsx` 写成 `x.test.ts`（同族扩展名笔误）⇒ **不**判红。
+
+        实测依据：全库唯一一处「幽灵名」就是这类笔误（PR-106）—— 通道是存在的，
+        判红会逼出「改措辞消红」的纸面修复。
+        """
+        case = fixture_backend_contract_case(
+            data_checks=["判据①：由 remnants-menu-isomorphic.test.ts 的判据 ① 断言"],
+            traces={"tests": ["frontend/admin-web/tests/unit/lib/remnants-menu-isomorphic.test.tsx"],
+                    "ci": ["pr-check.yml"], "verifies": []},
+        )
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" not in codes(v), f"笔误被误判成幽灵名，实际={v}"
+
+    def test_prose_without_any_named_test_is_unjudgeable_not_a_violation(self):
+        """**判不了 ≠ 违规 ≠ 通过**：散文没点名任何可识别测试 ⇒ 判据**判不了**，
+        必须进「不可判」读数（可见信号），**不得**判违规（那是假红），也**不得**静默当通过。
+        """
+        case = fixture_backend_contract_case(data_checks=[
+            "close/reopen/delete/history 对不存在会话返回 404 SESSION_NOT_FOUND",
+        ])
+        assert tax.prose_test_refs(case) == [], "本夹具的散文确实没有点名任何测试"
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" not in codes(v), f"判不了被当成违规（假红），实际={v}"
+        audit = tax.prose_test_ref_audit(case, REPO_ROOT)
+        assert audit["judgeable"] is False, "判不了的条目必须自报「判不了」"
+        stats = tax.prose_test_ref_stats([case], REPO_ROOT)
+        assert stats == {"backend_contract": 1, "judgeable": 0, "unjudgeable": 1,
+                         "cross_ref": 0, "ghost": 0}, f"不可判必须进读数，实际={stats}"
+
+    def test_no_repo_root_is_unjudgeable_rather_than_blocked(self):
+        """退化守卫：不传 `repo_root` ⇒ **判不了**（不是违规、也不是通过）—— 防「假红」。"""
+        case = fixture_backend_contract_case(data_checks=["判据①：由 GhostChannelTest 断言"])
+        v = tax.judge_case(case, catalog=_seed_catalog())  # 不传 repo_root
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" not in codes(v), (
+            f"没有索引时把「没去看」判成「不存在」= 假红，实际={v}"
+        )
+        assert tax.prose_test_ref_audit(case, None)["judgeable"] is False
+
+    def test_non_backend_contract_cases_are_out_of_scope(self):
+        """口径边界：本规则只判 `[backend-contract]` 用例（它们才是「散文 = 文档」的那批）。"""
+        case = fixture_backend_contract_case(
+            skip_reason="runner 计分（非 backend-contract）",
+            data_checks=["判据①：由 GhostChannelTest 断言"],
+        )
+        assert tax.prose_test_refs(case) == []
+        v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
+        assert "CASE-TRUST-PROSE-TEST-REF-GHOST" not in codes(v), f"面外用例被误判，实际={v}"
+
+    def test_real_library_readout_is_self_consistent_and_ghost_free(self):
+        """真库读数（**对照组的原始读数**）：可判 + 不可判 == `[backend-contract]` 总数，
+        且收窄口径下幽灵名 = 0 —— 这就是本单落库时的实测规模（写进 PR 报告）。"""
+        cases = tax_all_cases()
+        stats = tax.prose_test_ref_stats(cases, REPO_ROOT)
+        assert stats["backend_contract"] > 0, "判据面为空 ⇒ 本组判据是空断言（面消失）"
+        assert stats["judgeable"] > 0, "可判条数为 0 ⇒ 判据在空集上恒真"
+        assert stats["judgeable"] + stats["unjudgeable"] == stats["backend_contract"], stats
+        assert stats["ghost"] == 0, f"真库出现幽灵名（应被门禁阻塞）：{stats}"
+
+    def test_gate_report_prints_the_unjudgeable_count(self):
+        """**不得静默**：门禁报告必须打印「可判 / 不可判」读数（`skip ≠ pass` 同族）。"""
+        gate = _gate_module()
+        text = gate.render_report([], [], [], set(), list(tax.UNIMPLEMENTED),
+                                  prose_refs={"backend_contract": 290, "judgeable": 63,
+                                              "unjudgeable": 227, "cross_ref": 22, "ghost": 0})
+        assert "不可判 227 条" in text, f"报告没有打印不可判条数（静默）：{text[-800:]}"
+        assert "可判 63 条" in text, f"报告没有打印可判条数：{text[-800:]}"
+        assert "不得读成通过" in text, "读数必须自陈「不可判 ≠ 通过」"
+
+
+
+def tax_all_cases() -> list:
+    """真库用例（与门禁同源加载：`case_trust_gate.load_cases_from_dir`）。"""
+    gate = _gate_module()
+    return gate.load_cases_from_dir()
+
 def _assert_baseline_is_not_a_shell(data: dict) -> None:
     """**单一实现**：基线不得是「空壳」—— 计数全 0 却还有条目 = 派生读数撒谎。
 

@@ -7,6 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { orderApi } from '@/lib/api'
 import { Badge, Button, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import type { Order } from '@/types'
 
 /**
@@ -74,10 +75,10 @@ export default function OrderUrgencyPanel({
           </div>
           {/* 徽标 = 库里的事实（服务端值），不是本地草稿 */}
           <span data-testid="order-urgency-badge">
-            {order.isUrgent ? (
-              <Badge variant="warning">加急</Badge>
+            {isUrgentFlag(order) ? (
+              <Badge variant="warning">{urgentBadgeText(order)}</Badge>
             ) : (
-              <span className="text-xs text-neutral-400">不加急</span>
+              <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
             )}
           </span>
         </div>

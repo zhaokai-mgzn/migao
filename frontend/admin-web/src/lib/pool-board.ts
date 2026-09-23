@@ -11,7 +11,7 @@
  * - **不算米数**：`savedMeters` / `poolingGainMeters` / `perOrderPlannedMeters` 全部原样渲染
  *   服务端值 —— 要求是「口径必须与落账逐值相等」，前端重算就是那类「两套语义」的 bug。
  */
-import type { PoolDispatchRequest, PoolPreview } from '@/types'
+import type { PoolBoard, PoolDispatchRequest, PoolGroup, PoolPreview } from '@/types'
 
 /**
  * 池化派单请求体（`/preview` 与 `/dispatch` **同体**，冻结契约逐字给出四个键）。
@@ -20,6 +20,35 @@ import type { PoolDispatchRequest, PoolPreview } from '@/types'
  */
 export function buildPoolRequest(orderIds: string[], pooled: boolean): PoolDispatchRequest {
   return { orderIds, batches: [], assignmentRule: null, pooled }
+}
+
+/**
+ * **成批候选**的唯一取值口径：`groups[].lines`。
+ *
+ * 🔴 加急行在 `urgentLines`（插队区），**不是**成批候选 —— 把两处合并
+ * （「让加急单照旧进池」这个缺陷形态）会让 `pool-groups-section` 里出现加急单号，
+ * 而商家一旦勾上它就必然拿到 422。红证见
+ * `frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx` 的注入式正控。
+ */
+export function batchGroups(board: PoolBoard | null | undefined): PoolGroup[] {
+  return board?.groups ?? []
+}
+
+/** 成批候选的订单 id（「加急单不进池」的机器面读数：成批候选 ∩ 加急单 = 空集） */
+export function batchCandidateOrderIds(board: PoolBoard | null | undefined): string[] {
+  return batchGroups(board).flatMap((g) => (g.lines ?? []).map((l) => l.orderId))
+}
+
+/**
+ * 派单**失败面**是否必须上屏（唯一口径）。
+ *
+ * 被拒绝的每一次都必须留下**看得见**的文案（PR-080 判据 3「整批显式拒绝，不静默少派」）：
+ * 空白 / 缺省的文案**不算上屏** —— 那正是「静默吞掉失败」这一缺陷形态的判据。
+ * 红证 = 把它改成 `() => false` ⇒ `production-pool-urgent.test.tsx` 的
+ * `pool-dispatch-error` 断言当场红。
+ */
+export function mustSurfaceDispatchError(message: string | null | undefined): boolean {
+  return typeof message === 'string' && message.trim() !== ''
 }
 
 /** 等待时长的可读文案（入参 = 服务端 `waitHours`，**不重算**） */

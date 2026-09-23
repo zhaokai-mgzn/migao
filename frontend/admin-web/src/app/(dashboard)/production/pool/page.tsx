@@ -8,13 +8,16 @@ import { poolBoardApi } from '@/lib/api'
 import { Badge, Button, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
+  batchGroups,
   buildPoolRequest,
   formatDeliveryDaysLeft,
   formatMeters,
   formatRequiredDeliveryDate,
   formatWaitHours,
+  mustSurfaceDispatchError,
   previewSummaryRows,
 } from '@/lib/pool-board'
+import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview } from '@/types'
 
 /** 池化的等待阈值（小时）—— 传给服务端，服务端回显在 `maxWaitHours` */
@@ -92,7 +95,7 @@ export default function ProductionPoolPage() {
       } catch (e) {
         if (cancelled) return
         setPreview(null)
-        setPreviewError(errorText(e, '成批预览失败'))
+        setPreviewError(dispatchErrorText(e, '成批预览失败'))
       }
     })()
     return () => {
@@ -129,7 +132,7 @@ export default function ProductionPoolPage() {
         toast.error(rows[0]?.message || '加急插队派单失败')
       }
     } catch (e) {
-      const text = errorText(e, '加急插队派单失败')
+      const text = dispatchErrorText(e, '加急插队派单失败')
       setDispatchError(text)
       setResults(null)
       toastRequestError(e, text)
@@ -156,7 +159,7 @@ export default function ProductionPoolPage() {
       }
     } catch (e) {
       // 加急单混进池化批 ⇒ 422 VALIDATION_ERROR（整批拒绝）—— 文案必须看得见
-      const text = errorText(e, '成批派单失败')
+      const text = dispatchErrorText(e, '成批派单失败')
       setDispatchError(text)
       setResults(null)
       toastRequestError(e, text)
@@ -166,7 +169,7 @@ export default function ProductionPoolPage() {
   }
 
   const urgentLines = board?.urgentLines ?? []
-  const groups = board?.groups ?? []
+  const groups = batchGroups(board)
   const warnings = board?.warnings ?? []
 
   /**
@@ -271,7 +274,7 @@ export default function ProductionPoolPage() {
       )}
 
       {/* 全量请求失败（403 / 422 等）的文案（不只靠 toast） */}
-      {dispatchError && (
+      {mustSurfaceDispatchError(dispatchError) && (
         <div
           data-testid="pool-dispatch-error"
           className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700"
@@ -336,8 +339,8 @@ export default function ProductionPoolPage() {
                             {formatWaitHours(line.waitHours)}
                           </td>
                           <td className="px-4 py-2.5">
-                            {line.isUrgent ? <Badge variant="warning">加急</Badge> : (
-                              <span className="text-xs text-neutral-400">不加急</span>
+                            {isUrgentFlag(line) ? <Badge variant="warning">{urgentBadgeText(line)}</Badge> : (
+                              <span className="text-xs text-neutral-400">{urgentBadgeText(line)}</span>
                             )}
                           </td>
                           <td
@@ -457,8 +460,8 @@ export default function ProductionPoolPage() {
                                   {formatWaitHours(line.waitHours)}
                                 </td>
                                 <td className="px-3 py-2">
-                                  {line.isUrgent ? <Badge variant="warning">加急</Badge> : (
-                                    <span className="text-xs text-neutral-400">不加急</span>
+                                  {isUrgentFlag(line) ? <Badge variant="warning">{urgentBadgeText(line)}</Badge> : (
+                                    <span className="text-xs text-neutral-400">{urgentBadgeText(line)}</span>
                                   )}
                                 </td>
                                 <td
@@ -567,8 +570,14 @@ export default function ProductionPoolPage() {
   )
 }
 
-/** 请求级失败的文案（拦截器已把服务端 message 装进 Error；这里再兜一层） */
-function errorText(e: unknown, fallback: string): string {
+/**
+ * 请求级失败的文案（拦截器已把服务端 message 装进 Error；这里再兜一层）。
+ *
+ * 🔴 与 `src/lib/pool-board.ts` 的 `mustSurfaceDispatchError` 是**同一格的另一半**：
+ * 本函数负责「拿到文案」，那个函数负责「非空就必须上屏」。两者都不得被静默吞掉
+ * （「整批显式拒绝，不静默少派」—— PR-080 判据 3）。
+ */
+function dispatchErrorText(e: unknown, fallback: string): string {
   if (e instanceof Error && e.message) return e.message
   if (typeof e === 'string' && e) return e
   return fallback
