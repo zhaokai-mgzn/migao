@@ -7298,6 +7298,42 @@ _CASE_PR_102 = EvalCase(
     must_succeed=[{'tool': 'batch_stock_query'}],
 )
 
+# ── PR-103 [NORMAL] CI 上缺 PG 二进制 ⇒ 真库判据判 **FAIL**（不是 skip）：本机开发友好 + CI fail-closed（源: cases/product.yml）──
+_CASE_PR_103 = EvalCase(
+    id='PR-103',
+    legacy_id='',
+    title='CI 上缺 PG 二进制 ⇒ 真库判据判 **FAIL**（不是 skip）：本机开发友好 + CI fail-closed',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（非 LLM 面）runner 镜像换代 / 换 runner / 自建 runner ⇒ admin-api-test 上找不到 PG 二进制（initdb/pg_ctl）时，真库判据的结果必须与「通过」可区分'],
+    expectations=['direct_reply'],
+    data_checks=['收口点唯一：缺 PG 的处置**只许**在 `backend/admin-api/src/test/java/com/migao/admin/service/PgCluster.java` 的 `startOrAbort()` 里有一份 —— 未设 `MIGAO_REQUIRE_REALDB` ⇒ `Assumptions.abort`（本机 `mvnw test` 不因没装 PG 变红）；设了 ⇒ `Assertions.fail`（**红**）。全仓真库测试类**零** `Assumptions.*` 副本', 'CI 侧两道锁同时在位：`pr-check.yml` 的 `admin-api-test` job 有「PG 二进制前置断言（缺失 ⇒ 独立一行 `exit 1`）」+「`mvnw test` 那步注入 `MIGAO_REQUIRE_REALDB`（值非空且非 0/false）」，且注入键名与 `PgCluster.REQUIRE_REALDB_ENV` 常量**逐字一致**', '红证 A（真跑，2026-09-23 本机，判据 = `mvnw -o test -Dtest=OrderUrgencyRealDbTest -Dmigao.pg.bin.dirs=<空目录>`）：**带** `MIGAO_REQUIRE_REALDB=1` ⇒ `AssertionFailedError: 缺 PG 二进制…本判据判 FAIL（不是 skip）` / `BUILD FAILURE` / EXIT=1；**不带** ⇒ `Tests run: 0 … Skipped: 0` / `BUILD SUCCESS` / EXIT=0（= 静默绿的形态，两者真的不同）', '对照组（无覆盖孔、无标记）：`Tests run: 7, Failures: 0, Skipped: 0` —— 本机真库判据**真跑**（不是靠 skip 冒充）'],
+    skip_reason='[backend-contract] CI workflow 结构 + Java 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['realdb', 'ci', 'fail-closed', 'evidence-strength'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-104 [NORMAL] 真库判据的类集合冻结 + 单一收口点（删掉/改名一份判据即红）（源: cases/product.yml）──
+_CASE_PR_104 = EvalCase(
+    id='PR-104',
+    legacy_id='',
+    title='真库判据的类集合冻结 + 单一收口点（删掉/改名一份判据即红）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（非 LLM 面）有人删掉 / 改名一份真库判据，或新写一份绕过收口方法的真库判据 ⇒ 门禁必须当场变红'],
+    expectations=['direct_reply'],
+    data_checks=['判据① 冻结常量：测试树里「需要真 PG」的类集合 == `test_realdb_failclosed.py` 登记的 `REALDB_FILES` + 夹具 `RemnantTestDb`（按「谁真去连真 PG」定义，**不靠 `*RealDbTest` 通配** —— `ProductionPartCodeRealMappingTest` 这类不含 `RealDb` 的判据同样在集合里）', '判据② 单一收口：每个真库测试类要么直接调 `PgCluster.startOrAbort()`、要么经共用夹具 `RemnantTestDb`（夹具内部收口，三个余料消费类是本表**显式登记**的例外）；`Assumptions.abort(` 在 admin-api 测试树里**只许有一处**（PgCluster 的本机分支）', '判据④ 顺序即语义：`PgCluster` 里 `Assertions.fail(` 必须**排在** `Assumptions.abort(` 之前（挪到后面 = 永不执行，而「代码里有 fail」这种弱断言照样绿）。所有 Java 侧断言先剥注释与字符串字面量 ⇒ 注释里提一句喂不绿', '红证 B（真跑，2026-09-23 本机，7 个单点变异各**单独**变红后复原并核 sha256）：① 改名 `SkuBatchGuardRealDbTest.java` ⇒ 判据① 红；② 裸 `PgCluster.start()` / ③ 重写 `Assumptions.abort` 副本 ⇒ 判据② 红；④ 去掉前置断言那句 `exit 1` / ⑤ 删掉标记注入 / ⑥ 值改 `0` / ⑦ 键改名 ⇒ 判据③ 红；⑧ 删掉 `Assertions.fail` / ⑨ 把它挪到 abort 之后 ⇒ 判据④ 红'],
+    skip_reason='[backend-contract] 静态守卫由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['realdb', 'ci', 'guard', 'evidence-strength'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8927,6 +8963,8 @@ ALL_CASES = (
     _CASE_PR_100,
     _CASE_PR_101,
     _CASE_PR_102,
+    _CASE_PR_103,
+    _CASE_PR_104,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

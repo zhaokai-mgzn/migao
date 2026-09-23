@@ -65,8 +65,44 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # ── 为什么这两步不能省（issue #5192）─────────────────────────────────────
+      # 本 job **没有 `services:`**、也不装 PG：真库判据（`*RealDbTest` 等 14 个类）各自跑
+      # 一次性 `initdb` + `pg_ctl` 集群，需要的是**二进制**而不是服务 —— 而二进制是
+      # `ubuntu-latest`（24.04）镜像**恰好自带**的（`/usr/lib/postgresql/16/bin`，
+      # `PgCluster.BIN_DIRS` 那几条 Debian 绝对路径命中，非显式安装）。
+      # ⇒ 镜像换代 / 换 runner / 自建 runner 时命中失败，若无人拦，`Assumptions.abort`
+      #   会让「缺 PG」与「通过」在结果列上**长得一样（都绿）**：全体真库判据**静默腐烂**，
+      #   且**没有任何东西会变红**（本仓点名的形态）。
+      # ⇒ 两道锁：① 下面这道**前置断言**（找不到二进制即红，并打印它找到的路径，
+      #   便于事后判断是「镜像换代」还是「搜索路径变了」）；② `Run unit tests` 注入
+      #   `MIGAO_REQUIRE_REALDB=1`，`PgCluster.startOrAbort()` 据此把「缺 PG」判成 **FAIL**
+      #   而不是 skip。两道锁的防回退守卫 = tests/unit_ci_workflows/test_realdb_failclosed.py。
+      - name: Assert PostgreSQL binaries exist (fail-closed 前置，issue #5192)
+        run: |
+          # 判据源与 `PgCluster.BIN_DIRS` 同源：PATH + Debian 的 /usr/lib/postgresql/{14,15,16}/bin
+          initdb="$(command -v initdb || true)"
+          pg_ctl="$(command -v pg_ctl || true)"
+          for d in /usr/lib/postgresql/16/bin /usr/lib/postgresql/15/bin /usr/lib/postgresql/14/bin; do
+            [ -n "$initdb" ] || [ ! -x "$d/initdb" ] || initdb="$d/initdb"
+            [ -n "$pg_ctl" ] || [ ! -x "$d/pg_ctl" ] || pg_ctl="$d/pg_ctl"
+          done
+          echo "runner 镜像 = ${ImageOS:-?} / ${ImageVersion:-?}"
+          echo "initdb = ${initdb:-<缺失>}"
+          echo "pg_ctl = ${pg_ctl:-<缺失>}"
+          if [ ! -x "${initdb:-/nonexistent}" ] || [ ! -x "${pg_ctl:-/nonexistent}" ]; then
+            echo "::error::找不到 PG 二进制（initdb/pg_ctl）⇒ 真库判据无法执行。"
+            echo "本 job 不装 PG，二进制靠 runner 镜像自带（理由见本 job 上方注释，issue #5192）。"
+            echo "镜像换代请在此处补装 PostgreSQL —— **不要**删掉本前置断言，"
+            echo "否则「缺 PG」会退回成静默 skip（绿）而无人发现。"
+            exit 1
+          fi
+          echo "✅ PG 二进制存在 —— 真库判据能真跑"
+
       - name: Run unit tests
         working-directory: backend/admin-api
+        env:
+          # 缺 PG ⇒ `PgCluster.startOrAbort()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
+          MIGAO_REQUIRE_REALDB: "1"
         run: ./mvnw test -q
 
   # ============ CI workflow 辅助工具单测（CI workflow 逻辑，曾长期无人运行）============

@@ -6,7 +6,6 @@ import com.migao.admin.entity.FabricRemnant;
 import com.migao.admin.entity.RemnantItemSize;
 import com.migao.admin.exception.BusinessException;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,9 +48,6 @@ class RemnantServiceTest {
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
         db = RemnantTestDb.start();
-        if (db == null) {
-            Assumptions.abort("本机没有 PG 二进制（initdb/pg_ctl）⇒ 真库判据**未跑**（不是通过）");
-        }
         service = db.remnantService();
     }
 
