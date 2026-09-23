@@ -141,6 +141,14 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > **有意收窄（能力增量表见 PR）**：`customer_service` / `sales` / `finance` 此前**因写动作挂在
 > 读码上**而能改单、删客户、登记收支；现在不能（各自只保留读面）。**没有给任何岗位新增权限**：
 > 新写码只授给原本就用这些写面工作的岗位（operator，及 finance / customer_service 各自那一个）。
+>
+> ⚠️ **`processing:view` 的现状（如实登记）**：它仍留在四个岗位的默认权限里，但**在四处菜单源里
+> 没有任何节点**，且已不再是任何**工具**可达读面的门槛 —— 读端点的码统一对齐到节点码
+> `processing:manage`（`ProcessingOrderController` 的 GET、`AgentProductionController` 的三个
+> GET，以及**跟随兄弟锚点**同批改码的 `ProcessingOrderSetController` 三个读端点）。
+> 现存唯一仍用 `processing:view` 的端点是 `ProductionPoolController` 的两个读端点
+> （无 Agent 工具调用，已登记为残留）。**方向只收窄**：只持 `processing:view` 的岗位失去这几处
+> 生产读面，与「不得泄露页面看不到的数据」的裁定一致。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）

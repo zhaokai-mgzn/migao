@@ -81,7 +81,11 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
     private static final String ITEM_CLOTH = "oi-cloth";
     private static final String ITEM_GAUZE = "oi-gauze";
     /** 锚定码：加工套件无菜单节点 ⇒ 取兄弟读端点的生效码（{@code ProcessingOrderController} 的 GET）。 */
-    private static final String ANCHOR_PERMISSION = "processing:view";
+    // issue #5246：兄弟锚点（`ProcessingOrderController` 的 GET）从 processing:view 收窄为
+    // processing:manage（processing:view 在四处菜单源里没有任何节点 ⇒ 持它的岗位能读到页面里
+    // 看不到的生产数据，用户裁定禁止）⇒ 本控制器的锚**同步跟随**（方向只收窄）。
+    // 本常量仍与两端点断言并用：兄弟再动 ⇒ 必红。
+    private static final String ANCHOR_PERMISSION = "processing:manage";
 
     private static final List<String> PAGE_KEYS = List.of("total", "page", "size", "items");
     private static final List<String> LIST_ROW_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",

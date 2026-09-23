@@ -38,10 +38,13 @@ import java.util.Map;
  * （{@code permissionCode: 'processing:manage'}，路径 {@code /production}），而**加工套件本身零菜单项**。
  * 因此按锚定规则退到第二档：<b>锚「最接近的兄弟读端点」的既有生效码</b>——
  * 兄弟 = {@link ProcessingOrderController} 的 {@code GET /api/admin/processing-orders} 与
- * {@code GET /api/admin/processing-orders/{id}}（同一实体族、同一张表族），其生效码 = {@code processing:view}。</p>
- * <p>⇒ 本控制器三个端点的方法级 {@code @RequirePermission("processing:view")}。
- * <b>不新造权限码</b>（未新增 {@code processing_set:view} 之类），也**不放权**到 {@code processing:manage}
- * （那会让只持 {@code processing:view} 的客服/销售岗位看不到本该只读可见的套件）。
+ * {@code GET /api/admin/processing-orders/{id}}（同一实体族、同一张表族）。</p>
+ * <p>⚠️ <b>issue #5246 把兄弟端点的生效码从 {@code processing:view} 改成了 {@code processing:manage}</b>
+ * ——理由：{@code processing:view} 在**四处菜单源里没有任何节点**（「生产看板/计件工资/工艺配置」的节点码
+ * 都是 {@code processing:manage}）⇒ 持它的客服/销售/财务能经 API 读到页面里看不到的生产数据，
+ * 用户裁定「Agent/接口不得泄露页面看不到的数据」。⇒ 本控制器**跟随兄弟锚点**同步改为
+ * {@code processing:manage}（方向**只收窄**：只持 {@code processing:view} 的岗位失去这份只读套件面，
+ * 与「本轮不给任何岗位新增权限」的裁定一致）。<b>不新造权限码</b>（未新增 {@code processing_set:view} 之类）。
  * 「加工套件在侧边栏无入口」这一事实已在 PR 报告里显式登记为 residual
  * （⇒ UI 与 agent 之间不存在可见性分歧可保护：没有任何页面按菜单码渲染这份数据）。</p>
  *
@@ -70,7 +73,7 @@ public class ProcessingOrderSetController {
      * 「还没生产就是 0」同口径）；按加工单号时点名即须存在 ⇒ 404。</p>
      */
     @GetMapping("/scan-progress")
-    @RequirePermission("processing:view")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> scanProgress(
             @RequestParam(value = "orderNo", required = false) String orderNo,
             @RequestParam(value = "processingOrderNo", required = false) String processingOrderNo) {
@@ -88,7 +91,7 @@ public class ProcessingOrderSetController {
      * {@code size} 上限 100（超出按上限收敛，不报错）。过滤条件命中但该订单没有加工单 ⇒ 空页（200）。</p>
      */
     @GetMapping
-    @RequirePermission("processing:view")
+    @RequirePermission("processing:manage")
     public ApiResponse<PageResponse<Map<String, Object>>> list(
             @RequestParam(value = "orderNo", required = false) String orderNo,
             @RequestParam(value = "processingOrderNo", required = false) String processingOrderNo,
@@ -109,7 +112,7 @@ public class ProcessingOrderSetController {
      * 跨租户 / 已软删 / 不存在 ⇒ 404（fail-closed）。</p>
      */
     @GetMapping("/{id}")
-    @RequirePermission("processing:view")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> detail(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();
         return ApiResponse.success(processingSetReadService.setDetail(id, tenantId));
