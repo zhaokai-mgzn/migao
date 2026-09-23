@@ -4073,7 +4073,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（94 case）
+## 商品域（95 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -5263,6 +5263,19 @@
 ```
 溯源: 2026-09-23 新增（issue #5191）。用户裁定走**补菜单**那条路（同批新页口径统一），不登记成「有意不进侧边栏」。实现：三处菜单源各加 `production-remnants` / 「余料台账」/ `/production/remnants` / `Recycle`（权限码沿用 `processing:manage` = `RemnantController` 类级 `@RequirePermission`，**不放宽门禁**）+ `Sidebar.tsx` 的 `iconMap` + 测试替身 lucide 清单 + `Header.tsx` 那条「有意不进侧边栏」的注释改判（菜单进来后它已失效 = 注释漂移）+ 页面头注释同步。取号 PR-106。 ｜ tags: menu, ia, admin_web, remnant, static-guard
 
+### PR-107. Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见 🔵
+```
+你: （非 LLM 面）runner 的 PG 二进制在 /usr/lib/postgresql/16/bin（**不在 PATH**）时，Python 侧 13 个真库模块必须**真的执行**，不得静默 skip 成绿
+数据: 收口唯一：PG 二进制发现（候选目录 = PATH + /usr/lib/postgresql/{16,15,14}/bin，与 `backend/admin-api/src/test/java/com/migao/admin/service/PgCluster.java` 的 `BIN_DIRS` **同源**）与「缺 PG」处置只许在 `tests/unit_ci_workflows/pg_cluster.py` 有一份；13+1 个真库模块**零** `pytest.skip`、**零** `shutil.which`，一律经收口夹具 `realdb_binaries`，且 argv 用**绝对路径**（按名调用在 runner 上必然 `FileNotFoundError` —— 只修探测不修调用等于没修）
+数据: 冻结登记表：依赖真 PG 的测试模块集合 == `pg_cluster.REALDB_TEST_MODULES`（14 个 = 13 个真库模块 + v81），删 / 改名 / 新增未登记 ⇒ 红。**判据建在 AST 上**（只在注释 / 文档串里提 `initdb` 的 7 个 `docker-entrypoint-initdb.d` 一族**不算**真库判据）—— 防裸子串判据被文案喂绿 / 误红
+数据: CI 两道锁同时在位：`pr-check.yml` 的 `ci-workflow-tests` job 有「PG 二进制前置断言（initdb/pg_ctl/psql，缺失 ⇒ **独立一行** `exit 1`）」+「pytest 那步注入 `MIGAO_REQUIRE_REALDB`（真值 = 非空且非 0/false，键名与 `pg_cluster.ENV_REQUIRE_REALDB` 逐字一致）」；两处判定都先**剥注释**（注释与 `echo` 文案喂不绿）
+数据: 红证 A（真跑，2026-09-23 本机，覆盖孔 `MIGAO_PG_BIN_DIRS` 指向空目录）：**带**标记 ⇒ EXIT=1、`缺 PG 二进制 … ⇒ 本判据判 FAIL（不是 skip）`（88 条判据红）；**不带**标记（对照组）⇒ EXIT=0、88 skipped 且**逐条 nodeid + 原因**上屏 —— 两者真的不同（改前两者都是静默绿）
+数据: 红证 B / C（真跑，注入后复原并核 sha256 逐字节相同）：① 改名 `test_v93_route_rules_backfill.py` ⇒ 判据⑤（冻结常量）红；② 把 PG 相关的 `pytest.skip` 塞回夹具本体 ⇒ 判据⑥（单一收口）红
+数据: 正证（CI，`ci workflow helper unit tests`）：终端摘要的 `[realdb-summary]` 显示真库(PG)族「**执行 = N / skip = 0**」，且全部 skip 只剩本仓正当项（本分支尚未提交基线 / V83 尚未落地 / 浅检出无 origin/main 等）
+跳过: [backend-contract] CI workflow 结构 + Python 真库装配由 pytest 单测验证（tests/unit_ci_workflows/test_realdb_failclosed.py 判据⑤~⑧ + tests/unit_ci_workflows/pg_cluster.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-23 新增（issue #5203，P0）。病灶（**已实测**，非风险预测）：13 个真库模块的 PG 探测只认 `PATH`（`shutil.which`），而 runner 的二进制在 `/usr/lib/postgresql/16/bin` ⇒ CI 上 83 条真库判据**一直静默 skip 成绿**（四条独立证据：探测口径 / runner 上 `command -v initdb` 找不到 / 受控实验「只藏 PG 三个二进制」精确复现 83 条 / CI 实测 87 skip）。修复 = ① 兜底搜索路径与 Java 侧 `PgCluster.BIN_DIRS` 同源 + 单一收口（**含 2 处隐藏副本**：`test_schema_bootstrap_order.py` 与 `test_v81_compensating_backfill.py` 各自那份不同源的 `_which()`，后者正是「有兜底所以能跑」的那份 ⇒ 漏掉它就等于没修）；② CI 两道锁（前置断言 + 标记注入，缺 PG 判红）；③ skip 逐条可见 + `[realdb-summary]` 正证锚点；④ 4 条静态守卫（各带能单独变红的红证）。本机实测：14 个真库模块 **201 passed / 0 skipped = 127.2s**。取号 PR-107（开工时 main 最高 PR-106；在飞 PR #5226 / #5222 未占号）。 ｜ tags: realdb, ci, fail-closed, evidence-strength
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -6176,8 +6189,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：454（活跃 159，跳过 295）
-- tier 分布：smoke 10 / normal 413 / adversarial 31
+- 用例总数：455（活跃 159，跳过 296）
+- tier 分布：smoke 10 / normal 414 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6197,7 +6210,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：94
+- 商品域：95
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -6312,6 +6325,7 @@
 - PR-104: 真库判据的类集合冻结 + 单一收口点（删掉/改名一份判据即红）
 - PR-105: 🔴 商家可见文案里的 markdown 强调不得漏出字面标记：**保留标记 + 渲染层解析**（`**x**` ⇒ 加粗、反引号 ⇒ 等宽）—— DOM 级判据（渲染后无裸标记 ∧ 强调真的以元素呈现）+ 源码面登记/接线守卫（承 issue #5033；2026-09-23 由「去掉标记」改判为「渲染」）
 - PR-106: 余料台账进侧边栏 —— 生产管理组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页）
+- PR-107: Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序不上表，由 `matrix-orphan-hint` 报数不静默）
