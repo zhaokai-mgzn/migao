@@ -120,12 +120,65 @@ export interface OrderPrefill {
   customerPhone?: string
   customerAddress?: string
   remark?: string
-  /** 实际预填的**页面字段名**（`customerName` / …），供 `recognized-marker-*` 徽标 */
+  /**
+   * **帘宽 / 帘高**（米；issue #5349）—— 推导链的**原始输入**，进的是明细行的宽 / 高。
+   * `undefined` = 没识别到 / 认不出（**不填**，不做任何默认）。
+   * ⚠️ 落点是**哪一行**由 {@link sizeTargetLineIndex} 定（只填空尺寸行）——
+   * 本函数不碰行状态，"不覆盖已填尺寸"由页面按那个纯函数执行。
+   */
+  curtainWidth?: number
+  curtainHeight?: number
+  /** 实际预填的**页面字段名**（`customerName` / `curtain_width` / …），供 `recognized-marker-*` 徽标 */
   recognizedFields: string[]
 }
 
-/** 明细/数量/规格 —— 本包**不进 lineItems**（要选真 SKU，超出包 1 范围）⇒ 拼一行进备注 */
-const ORDER_DETAIL_KEYS = ['items', 'quantity', 'spec'] as const
+/** 明细/数量 —— 尺寸之外的明细信息**不进 lineItems**（要选真 SKU，超出本包范围）⇒ 拼一行进备注 */
+const ORDER_DETAIL_KEYS = ['items', 'quantity'] as const
+
+/**
+ * **推导链输入 → 识别字段键**的接线登记（issue #5349）—— 键名真值锚在识别内核
+ * `backend/ai-agent-service/app/vision/targets.py` 的 `DERIVATION_INPUT_KEYS`
+ * （由 `tests/unit/lib/image-recognize-derivation-equivalence.test.ts` 的「类级元守卫」逐条钉住：
+ * 两端改名漂移 ⇒ 红；声明了却没接线 ⇒ 红）。
+ *
+ * 左边 = `OrderLineItem` 上**推导入参**的键（`orders/new/page.tsx::calcInputOf` 读的就是它们），
+ * 右边 = 识别响应的字段键。**识别只提供输入，推导照旧跑在页面 / 算料引擎** ——
+ * 本文件不得出现任何推导（判据 2，机械判据见同一个测试文件的扫描判据）。
+ */
+export const ORDER_DERIVATION_INPUT_KEYS = {
+  width: 'curtain_width',
+  height: 'curtain_height',
+} as const
+
+/**
+ * 尺寸值 → 数（米）。**只收能直接进数字框的值**：非数 / 非正 ⇒ `undefined`（不填，交给商家手填）。
+ *
+ * 为什么必须在这里拦（而不是"交给数字框兜底"）：`Number('2.8米')` 是 `NaN` ⇒
+ * 宽或高成了 `NaN` ⇒ 推导链 fail-closed **静默不发试算**（页面看着格子填上了、实际一个推导项都不产出）。
+ * 与商品侧门幅的 `normalizedDoorWidth` 同一口径（只收数字，不编维度）。
+ */
+function metersOf(fields: RecognizedField[], key: string): number | undefined {
+  const raw = valueOf(fields, key)
+  if (raw === '') return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
+ * 尺寸预填**落到哪一行**（issue #5349）—— 纯函数半边（与 `craft-calc-request.ts::craftCalcParamsOf`
+ * 拆出页面同一条理由：判据要能脱离 5000 行的建单页断言）。
+ *
+ * 规则：**第一行「宽与高都还空着」的行**（`null` = 还没填）；没有这样的行 ⇒ `-1`（一行都不动）。
+ * ⚠️ **不覆盖**：一行只要已经填了宽**或**高，就是「这一行已经有尺寸主张」⇒ 跳过它
+ * （把识别值塞进已有尺寸的行 = 用图上尺寸覆盖商家敲进去的数 ⇒ 米数错 ⇒ 钱错）。
+ * ⚠️ **边界（有意保守）**：只剩一行「填了宽、缺高」时不补高（会落到 `-1`）—— 宁可少填一格，
+ * 也不赌"识别出来的高属于哪一行"。
+ */
+export function sizeTargetLineIndex(
+  lines: ReadonlyArray<{ width: number | null; height: number | null }>,
+): number {
+  return lines.findIndex((line) => line.width === null && line.height === null)
+}
 
 /**
  * 订单侧映射。
@@ -133,8 +186,9 @@ const ORDER_DETAIL_KEYS = ['items', 'quantity', 'spec'] as const
  * 🔴 **只在字段当前为空时才填**（不覆盖用户已输入的内容）：订单侧填错收货信息
  * = 货发到错的人手上 ⇒ 「宁可不填」优于「覆盖」；填过的字段配 `[图片识别]` 徽标提醒复核。
  * `customer_phone` **原样使用**（内核已归一为 11 位）。
- * `items` / `quantity` / `spec` **不动 lineItems**，拼一行 `[图片识别] 商品明细：…；数量：…；规格：…`
- * 追加进备注（已有同一行则不重复追加）。
+ * `items` / `quantity` **不动 lineItems**，拼一行 `[图片识别] 商品明细：…；数量：…` 追加进备注
+ * （已有同一行则不重复追加）；**帘宽 / 帘高**（issue #5349）按
+ * {@link ORDER_DERIVATION_INPUT_KEYS} 映射成**数**回传，落点见 {@link sizeTargetLineIndex}。
  */
 export function buildOrderPrefill(
   fields: RecognizedField[],
@@ -157,7 +211,20 @@ export function buildOrderPrefill(
   fillBlank('customer_phone', 'customerPhone', current.customerPhone)
   fillBlank('customer_address', 'customerAddress', current.customerAddress)
 
-  // 明细 / 数量 / 规格：标签取响应里的 `label`（口径由内核给，前端不另写一份文案）
+  // 尺寸（推导链的原始输入，issue #5349）：**只回传能被页面数字框直接吃下的数**
+  // —— 认不出 / 非数 ⇒ 该键不出现（不填 0、不填默认值：缺输入时推导链自己会 fail-closed）
+  const curtainWidth = metersOf(fields, ORDER_DERIVATION_INPUT_KEYS.width)
+  if (curtainWidth !== undefined) {
+    prefill.curtainWidth = curtainWidth
+    prefill.recognizedFields.push(ORDER_DERIVATION_INPUT_KEYS.width)
+  }
+  const curtainHeight = metersOf(fields, ORDER_DERIVATION_INPUT_KEYS.height)
+  if (curtainHeight !== undefined) {
+    prefill.curtainHeight = curtainHeight
+    prefill.recognizedFields.push(ORDER_DERIVATION_INPUT_KEYS.height)
+  }
+
+  // 明细 / 数量：标签取响应里的 `label`（口径由内核给，前端不另写一份文案）
   const parts: string[] = []
   for (const key of ORDER_DETAIL_KEYS) {
     const hit = pickField(fields, key)
