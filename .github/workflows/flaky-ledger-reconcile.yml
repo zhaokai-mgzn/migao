@@ -74,6 +74,28 @@ name: Flaky Ledger Reconcile (台账落仓对账兜底)
 #   ③ 本兜底原先只补 approve/arm、**不读失败原因**。
 # ⇒ 新增「台账欠账可见性」步骤：把**欠账清单 + 可直接复制的回填命令**（由
 # `flaky_ledger.py reconcile --branch …` 渲染，措辞只有一处事实源）写进 job summary 并 `::error::`。
+#
+# ─── #5301 判据②：台账分支的失败 job **必须有自动重跑**（本文件补上） ────────────────
+# 「**可见 ≠ 有救援**」：#5307 只补了**可见性**，而台账分支的 CI 失败**没有任何自动重跑路径** ——
+#   ① `flaky-triage.yml` 按**自指守卫**跳过该分支：判据在 `flaky_ledger.py` 的 `decide()`，
+#      逐字 `head_branch == LEDGER_BRANCH` ⇒ `skip`（「防自指递归：台账 PR 又被分流」）
+#      ⇒ 那条路**结构上**不救它（这也是本兜底存在的理由：独立于 flaky-triage 的触发面）；
+#   ② 本兜底原先只补 approve + arm、**不读失败原因更不重跑**。
+#   实证：台账 PR #5139 的 required 测试 4 次尝试同形失败（7m32s~8m16s）⇒ 台账停摆约 40 小时，
+#   解阻靠**人工** `gh run rerun <id> --failed`。
+# ⇒ 新增「台账失败 job 兜底重跑」步骤（判据与动作都在 `flaky_ledger.py`，本文件只做编排）：
+#   · **上限 1 次**（`MAX_LEDGER_RERUNS = MAX_ATTEMPTS - 1`，与 flaky-triage 同口径），且上限的
+#     **事实源是 GitHub 的 `run_attempt`**（重跑一次必 +1）⇒ 本 workflow 每 20 分钟触发一轮也
+#     **不会**重复重跑（自带幂等；自己记计数器迟早变成无限重跑）；
+#   · **只作用于台账分支**（调用侧 `--branch "$LEDGER_BRANCH"` + 纯函数里的 `head_branch` 硬过滤），
+#     且只作用于**分支 tip** 的 run（陈旧 push 的 run 重跑对「PR 能否合并」零贡献，却真烧 CI 分钟）；
+#   · **如实记账**：job summary + `::notice::`，重跑后**回读** `run_attempt`（「我以为重跑了」不算读数）；
+#     额度用尽仍失败 ⇒ `::error::` + 人工出口（**可见**，不许静默降级成「没事」）；
+#   · 只在**有漂移**时动手（无事可做 ⇒ 零动作，与既有两条同口径）。
+# **残余风险（照实登记，不粉饰）**：① 本兜底最多救**一次**（上限即 1）—— 第二次仍失败属**确定性失败**，
+#   只能人工（或等 `flaky-triage.yml` 下一轮追加推送带来的**新 run**：新 run 的 attempt=1 ⇒ 额度重置）；
+#   ② 引导期：`rerun-failed` 随本 PR 落地，main 尚未包含它 ⇒ 本步骤显式**跳过 + 告警**（跳过 ≠ 通过）；
+#   ③ 本兜底自身停摆时仍无人救（与 #4825 的既有残余同族）—— 该形态**可见**（job 红），不是静默失效。
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -294,3 +316,39 @@ jobs:
             echo "::error::兜底已发出但台账 PR 仍 **0 个 check**、已无待批准 run、且分支 HEAD 已 ${AGE} 分钟（≥${STALE_MINUTES}）⇒ 台账仍落不到 main（不再静默）"
             exit 1
           fi
+
+      - name: 台账失败 job 兜底重跑（#5301：台账分支不许留白）
+        if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 为什么需要这一步（#5301 判据②，**实测**）：台账分支的失败 job 此前**没有任何自动重跑路径**
+          #   —— `flaky-triage.yml` 按**自指守卫**跳过该分支（`decide()` 逐字
+          #   `head_branch == LEDGER_BRANCH` ⇒ skip「防自指递归：台账 PR 又被分流」），
+          #   而本兜底原先只补 approve/arm、**不重跑** ⇒ 台账 PR 撞一次确定性失败就只能人工救
+          #   （实证：4 次尝试同形失败、台账停摆约 40 小时）。
+          # 上限 **1 次**（`MAX_LEDGER_RERUNS`，与 `flaky-triage` 的 `MAX_ATTEMPTS` 同口径）：上限的
+          #   事实源是 GitHub 的 `run_attempt`（重跑一次必 +1）⇒ 本 workflow 每 20 分钟触发一轮也
+          #   **不会**重复重跑（自带幂等）。
+          # 作用域：只作用于**台账分支**（调用侧 --branch，判据侧是纯函数里的硬过滤）＋只作用于分支 tip
+          #   的 run（陈旧 push 的 run 重跑对「PR 能否合并」零贡献，却真烧 CI 分钟）。
+          # 记账：清单 + 回读结果落进 job summary（`tee`）与 `::notice::`；额度用尽或动作失败 ⇒ 红。
+          set -uo pipefail
+          # 引导期（同 `ledger-drift` 的既有形态）：子命令随本 PR 落地，main 尚未包含它 ⇒ 显式跳过 +
+          # 告警。**必须**有这道探测：旧脚本的 argparse 遇未知子命令退 2，会被下面的 `case *)` 读成
+          # 「兜底失败」⇒ 每个触发档都假红（跳过 ≠ 通过）。
+          if ! python3 .github/scripts/flaky_ledger.py rerun-failed --help >/dev/null 2>&1; then
+            echo "::warning::main 的 flaky_ledger.py 还没有 \`rerun-failed\` 子命令（引导期：本步骤随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"
+            exit 0
+          fi
+          set +e
+          python3 .github/scripts/flaky_ledger.py rerun-failed \
+            --repo "$GITHUB_REPOSITORY" --branch "$LEDGER_BRANCH" \
+            --json-out /tmp/rerun.json | tee -a "$GITHUB_STEP_SUMMARY"
+          RC=${PIPESTATUS[0]}
+          set -e
+          case "$RC" in
+            0) echo "::notice::🔁 台账失败 job 兜底重跑完成（上限 1 次；**绝不无限重跑**）—— 记账见 job summary" ;;
+            3) echo "::error::无法判定台账分支的失败 run（rerun-failed 退 3）⇒ **未跑 ≠ 通过**，不得当成「没有失败」"; exit 1 ;;
+            *) echo "::error::台账失败 job 兜底重跑失败（rc=${RC}）⇒ 台账分支的确定性失败仍**无人救**（fail-closed，不静默）"; exit 1 ;;
+          esac

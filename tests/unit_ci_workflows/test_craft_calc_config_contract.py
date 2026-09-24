@@ -48,6 +48,11 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 收敛：唯一取值口径）
+    assigned_mapping_keys,
+    java_code,
+    java_literals,
+)
 
 
 
@@ -151,20 +156,54 @@ def _migration_config_columns() -> set:
     return cols - STRUCTURAL_COLUMNS
 
 
+def _engine_config_keys_of(src: str) -> list:
+    """**纯函数**：引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的键（按源码顺序）。
+
+    `#5323` 第 3 条（**涉钱面**）：旧口径
+    `re.search(r"DEFAULT_CRAFT_CALC_CONFIG[^=]*=\\s*MappingProxyType\\(\\{(.*?)\\n\\}\\)")`
+    + `re.findall(r'"(\\w+)":')` 在**原文**上取键 ⇒ 该 dict 的**注释**里写一行
+    `# "old_key": 弃用` 就被执行成「引擎有该键」⇒ 与 DB 列集对账时**假红**
+    （"引擎有键、库里没列"）。现口径 = `ast` 读 dict 字面量键 —— 注释不是 AST 节点。
+    """
+    return list(assigned_mapping_keys(
+        src, "DEFAULT_CRAFT_CALC_CONFIG", "backend/ai-agent-service/app/tools/curtain_calc.py"))
+
+
 def _engine_config_keys() -> list:
     """引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的键（**真值源**；按源码顺序）。"""
-    src = ENGINE.read_text(encoding="utf-8")
-    m = re.search(
-        r"DEFAULT_CRAFT_CALC_CONFIG[^=]*=\s*MappingProxyType\(\{(.*?)\n\}\)", src, re.S)
-    assert m, "引擎里找不到 DEFAULT_CRAFT_CALC_CONFIG（改名？那是本守卫的定位锚点）"
-    return re.findall(r'"(\w+)":', m.group(1))
+    return _engine_config_keys_of(ENGINE.read_text(encoding="utf-8"))
+
+
+def _java_list_of(src: str, name: str) -> tuple:
+    """**纯函数**：Java `name = List.of(…)` 里的字符串字面量（按源码顺序）；**未声明 ⇒ `()`**。
+
+    先剥 Java 注释（`java_code`，**引号感知**）再取字面量（`java_literals` 词法走查）——
+    注释里出现引号键不再被读成声明（`#5323` 第 3 条的 Java 侧，方向同 Python 侧）。
+    取字面量**不用**「按引号扫原文」的正则：那种 pattern 本身在注释 / 文档字符串语料上就会命中
+    （元守卫 `test_guard_parsing_is_comment_aware.py` 按 **pattern 形态**判，不看它被套在什么文本上）。
+    """
+    code = java_code(src)
+    m = re.search(name + r"\s*=\s*List\.of\(([^;]*?)\);", code, re.S)
+    if not m:
+        return ()
+    return tuple(value for _pos, value in java_literals(m.group(1)))
 
 
 def _java_service_list(name: str) -> list:
-    src = SERVICE.read_text(encoding="utf-8")
-    m = re.search(name + r"\s*=\s*List\.of\(([^;]*?)\);", src, re.S)
-    assert m, f"Java 里找不到 {name}"
-    return re.findall(r'"(\w+)"', m.group(1))
+    found = _java_list_of(SERVICE.read_text(encoding="utf-8"), name)
+    assert found, f"Java 里找不到 {name}（未声明，或只在注释里声明）"
+    return list(found)
+
+
+def _config_put_keys(method_body: str) -> list:
+    """**纯函数**：Java `config.put("k", …)` 的键（按源码顺序）。
+
+    `#5323` 第 3 条：旧口径 `re.findall(r'config\\.put\\("(\\w+)"', body)` 按引号扫原文
+    ⇒ 注释里的 `config.put("ghost", …)` 被读成「实体真的发了这个键」（发往引擎的键集**涉钱**）。
+    现口径 = 先剥注释（`java_code`）+ 词法取字面量并按**前缀**归属到 `config.put(`。
+    """
+    return [value for pos, value in java_literals(method_body)
+            if method_body[:pos].rstrip().endswith("config.put(")]
 
 
 def _java_entity_config_fields() -> set:
@@ -269,10 +308,10 @@ def test_formula_enum_matches_engine():
         vm = re.search(rf"^{name}\s*=\s*\"(\w+)\"", engine_src, re.M)
         assert vm, f"引擎里找不到 {name} 的字面量"
         values.add(vm.group(1))
-    service_src = SERVICE.read_text(encoding="utf-8")
+    service_src = java_code(SERVICE.read_text(encoding="utf-8"))
     sm = re.search(r"FORMULAS\s*=\s*Set\.of\(([^)]*)\)", service_src)
     assert sm, "Java 里找不到 FORMULAS"
-    java_formulas = set(re.findall(r'"(\w+)"', sm.group(1)))
+    java_formulas = {value for _pos, value in java_literals(sm.group(1))}
     assert java_formulas == values, (
         f"公式枚举漂移：Java {sorted(java_formulas)} vs 引擎 {sorted(values)}"
     )
@@ -300,10 +339,10 @@ def test_java_to_config_map_matches_engine_keys():
 
     ⚠️ **这条判据此前不存在**（#4528 只钉了 `CONFIG_KEYS`）⇒ 上面那种漏法不会被任何门禁抓到。
     """
-    src = ENTITY.read_text(encoding="utf-8")
+    src = java_code(ENTITY.read_text(encoding="utf-8"))
     m = re.search(r"toConfigMap\(\)\s*\{(.*?)\n    \}", src, re.S)
     assert m, "实体里找不到 toConfigMap()（改名？那是本判据的定位锚点）"
-    keys = re.findall(r'config\.put\("(\w+)"', m.group(1))
+    keys = _config_put_keys(m.group(1))
     assert keys == _engine_config_keys(), (
         f"toConfigMap 的键与引擎配置键不一致（顺序也须一致）：{keys} vs {_engine_config_keys()}"
     )
@@ -382,3 +421,71 @@ def test_alter_migrations_are_idempotent():
             assert "IF NOT EXISTS" in m.group(1).upper(), (
                 f"{path.name} 的 ADD COLUMN 不是幂等的（缺 IF NOT EXISTS）：{m.group(0)}"
             )
+
+
+class TestMoneyFacingParsingIsSyntaxBased:
+    """`#5323` 第 3 条（**涉钱面**）成对红证：配置键 / 公式串只认**代码里**的声明。"""
+
+    #: 引擎配置字典的真声明（`MappingProxyType({…})` 形态；键顺序 = 源码顺序）。
+    REAL_ENGINE = (
+        "DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({\n"
+        '    "per_fold_single": 2.0,\n'
+        '    "tiers": 1,\n'
+        "})\n"
+    )
+
+    #: 旧口径会读成「引擎有该键」的两个陷阱：dict 内注释 + 模块文档字符串举例（**代码零改动**）。
+    COMMENTED_ENGINE = (
+        '# "ghost_key": 1,  ← 留档注释：该键已弃用（这不是声明）\n'
+        '"""示例（说明文字，不是代码）：\n'
+        'DEFAULT_CRAFT_CALC_CONFIG = MappingProxyType({"ghost_key": 1})\n'
+        '"""\n' + REAL_ENGINE
+    )
+
+    def test_comment_and_docstring_keys_are_not_engine_keys(self):
+        """负例：注释 / 文档字符串里的键 ⇒ **不得**被读成引擎配置键（修前此断言必红）。"""
+        keys = _engine_config_keys_of(self.COMMENTED_ENGINE)
+        assert keys == ["per_fold_single", "tiers"], keys
+        assert "ghost_key" not in keys, "注释里的键被读成引擎配置键 ⇒ 与库列集对账假红（涉钱面）"
+
+    def test_real_key_drift_still_reds(self):
+        """正例（防修过头）：把键**真**写进 dict ⇒ 读到，且「逐键相等」判据照旧红。"""
+        real = set(_engine_config_keys_of(self.REAL_ENGINE))
+        assert real == {"per_fold_single", "tiers"}, sorted(real)
+        drifted = set(_engine_config_keys_of(
+            self.REAL_ENGINE.replace('    "tiers": 1,\n', '    "ghost_key": 1,\n')))
+        assert drifted == {"per_fold_single", "ghost_key"}, sorted(drifted)
+        assert drifted != real, (
+            "真写进 dict 的键读数不变 ⇒ 判据恒真；判据 2（迁移列 == 引擎键）也不会报这次漂移")
+
+    def test_java_comment_declarations_are_not_read(self):
+        """负例（Java 侧）：注释里的 `List.of("…")` / `config.put("…")` 不算声明。"""
+        commented = (
+            "public class S {\n"
+            '    // static final List<String> CONFIG_KEYS = List.of("ghost_key");  ← 留档注释\n'
+            "    static final List<String> CONFIG_KEYS = List.of(\n"
+            '        "per_fold_single",\n'
+            '        "tiers");\n'
+            "}\n"
+        )
+        assert _java_list_of(commented, "CONFIG_KEYS") == ("per_fold_single", "tiers")
+        assert _java_list_of('    // CONFIG_KEYS = List.of("ghost_key");\n', "CONFIG_KEYS") == (), (
+            "只在注释里的 Java 声明被读成了真声明"
+        )
+        assert _config_put_keys('    // config.put("ghost_key", 1);\n') == [], (
+            "注释里的 config.put 被读成了「实体真的发了这个键」（发往引擎的键集涉钱）"
+        )
+
+    def test_real_java_declaration_is_read(self):
+        """正例（防修过头）：Java 真声明 ⇒ 读到；真删一个键 ⇒ 读数跟着变。"""
+        src = (
+            "public class S {\n"
+            '    static final List<String> CONFIG_KEYS = List.of("per_fold_single", "tiers");\n'
+            '    void toConfigMap() { config.put("per_fold_single", a); config.put("tiers", b); }\n'
+            "}\n"
+        )
+        assert _java_list_of(src, "CONFIG_KEYS") == ("per_fold_single", "tiers")
+        assert _config_put_keys(src) == ["per_fold_single", "tiers"]
+        assert _config_put_keys(src.replace('config.put("tiers", b); ', "")) == ["per_fold_single"], (
+            "真删一个 config.put ⇒ 读数不变 ⇒ 判据恒真（空断言）"
+        )
