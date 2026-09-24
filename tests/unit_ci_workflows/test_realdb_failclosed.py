@@ -72,6 +72,9 @@ _MAP = "backend/admin-api/src/test/java/com/migao/admin/mapper/"
 #                         issue #5146）—— 夹具内部收口，故这三个类**不直接**出现 `PgCluster`，
 #                         这就是本表要**显式登记**的例外（不登记 = 判据②会把它判红）。
 REALDB_FILES: dict[str, str] = {
+    # issue #5327：批量批次（agent_batches / agent_batch_items）的跨租户隔离判据 ——
+    # 起一次性真 PG 集群、用**生产拦截器 bean** 装配，逐条走收口方法 `PgCluster.startOrAbort()`。
+    _SVC + "AgentBatchCrossTenantRealDbTest.java": "direct",
     _SVC + "AutoBatchDispatchRealDbTest.java": "direct",
     _SVC + "AutoBatchDueScanRealDbTest.java": "direct",
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
