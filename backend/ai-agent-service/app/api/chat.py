@@ -1820,7 +1820,9 @@ async def _handle_page_ctx_request(
 ):
     """处理 `page_context` 字段：**按角色裁剪** → 登记 route 才注入 → 复算本轮用户消息。
 
-    入参形态：`ChatSendRequest.page_context = {"route": "/orders/new", "entityId": "<uuid>"}`
+    入参形态：`ChatSendRequest.page_context = {"route": "<当前页路径>", "entityId": "<uuid>"}`
+    （**路径字面量不写在本文件** —— `app/context/page_registry.py` 的登记表才是它唯一落点；
+    路由由各端自己拼，见 `tests/test_card_type_cross_end_contract.py` 的 L0 约束）
 
     设计（`docs/agent-feature-design.md` §三 族 4 / issue #5371）：
     - **只认路径与 id**：查询串在前端就丢、服务端再丢一次；payload 里的其它键（含

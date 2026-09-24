@@ -115,6 +115,10 @@ MERCHANT_PERMISSIONS = ("order:list", "order:detail", "product:list", "processin
 _INJECTION_KEYS = ("role", "permissions", "entitySnapshot", "snapshot", "data", "customerName", "phone")
 _QUESTION = "这单为什么是这个价？"
 
+#: C 端角色语料（**冻结在判据文件里**，值域与 `app/tools/base.py` 的 `CUSTOMER_ONLY_ROLES` 相同；
+#: 判据逐条断言两侧集合相等 ⇒ 实现增删角色而不改本语料 = 红）。
+C_END_ROLES: tuple[str, ...] = ("customer", "agent")
+
 
 def _merchant(role: str = "product_manager", permissions=MERCHANT_PERMISSIONS) -> UserIdentity:
     return UserIdentity(
@@ -258,6 +262,33 @@ def problems_route_no_query() -> list[str]:
     return bad
 
 
+def problems_c_end_gate() -> list[str]:
+    """类级：**每一条**登记 route 在 C 端角色下都必须拿不到上下文（逐条穷举，一个洞都不许有）。
+
+    为什么这是**类级**判据：登记表是 agent 侧唯一按**前端路由**登记知识的模块，而既有 L0 约束
+    （`tests/test_card_type_cross_end_contract.py::TestAgentSideCarriesNoRoutes`，射程 = `chat.py`）
+    给出的理由正是「路由必须由各端自己拼，否则 **C 端会拿到 B 端路径**」。那张守卫**不覆盖**本模块
+    —— 于是「本模块也不能对 C 端生效」这个理由必须在这里被机械钉住（§23 G5：面外不是安全区）。
+    """
+    bad: list[str] = []
+    if not PR.PAGE_REGISTRY:
+        return ["登记表为空 ⇒ 判据会空跑（fail-closed）"]
+    # 🔴 语料**冻结在本文件**，不取 `PR.CUSTOMER_ONLY_ROLES`（§23.8 B1：判据语料不得取自被测对象
+    # —— 否则「硬闸被摘掉」会让语料同时变空，判据**空跑成绿**，红证当场失效）。
+    if set(C_END_ROLES) != set(PR.CUSTOMER_ONLY_ROLES):
+        bad.append(
+            f"C 端角色语料与实现不同源（增删 C 端角色必须同批改本语料）："
+            f"语料={sorted(C_END_ROLES)} 实现={sorted(PR.CUSTOMER_ONLY_ROLES)}"
+        )
+    for entry in PR.PAGE_REGISTRY:
+        sample = entry.route[:-1] + "12345" if entry.route.endswith("/*") else entry.route
+        for role in C_END_ROLES:
+            context = PR.build_page_context(sample, "12345", role=role, permissions=["*"])
+            if context is not None:
+                bad.append(f"C 端角色 `{role}` 拿到了 B 端页面上下文：{sample} → {context.to_payload()}")
+    return bad
+
+
 def _permission_catalog() -> frozenset[str]:
     """权限目录（**复用既有守卫的解析器**，不造第二套）。"""
     import sys
@@ -331,6 +362,7 @@ PROBLEM_SETS: dict[str, Callable[[], list[str]]] = {
     "route_no_query": problems_route_no_query,
     "permission_codes": problems_permission_codes,
     "cross_language_form": problems_cross_language_form,
+    "c_end_gate": problems_c_end_gate,
 }
 
 
@@ -472,6 +504,16 @@ def _mutant_widen_context_fields(monkeypatch) -> Callable[[], list[str]]:
     return problems_injection_surface
 
 
+def _mutant_drop_c_end_gate(monkeypatch) -> Callable[[], list[str]]:
+    """把 C 端硬闸摘掉（`CUSTOMER_ONLY_ROLES` 清空）⇒ 逐条穷举判据必须变红。"""
+    baseline = PR.CUSTOMER_ONLY_ROLES
+    monkeypatch.setattr(PR, "CUSTOMER_ONLY_ROLES", frozenset())
+    assert PR.CUSTOMER_ONLY_ROLES != baseline, "注入未生效（自证）"
+    assert PR.build_page_context("/orders/123", "12345", role="customer", permissions=["*"]) is not None, \
+        "注入未生效（自证）：C 端仍被拦住"
+    return problems_c_end_gate
+
+
 @pytest.mark.parametrize("mutate", [
     _mutant_default_allow,
     _mutant_ignore_permissions,
@@ -479,6 +521,7 @@ def _mutant_widen_context_fields(monkeypatch) -> Callable[[], list[str]]:
     _mutant_keep_query,
     _mutant_ghost_permission_code,
     _mutant_widen_context_fields,
+    _mutant_drop_c_end_gate,
 ])
 def test_every_judgement_can_go_red(monkeypatch, mutate) -> None:
     problems_fn = mutate(monkeypatch)
