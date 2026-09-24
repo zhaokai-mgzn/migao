@@ -268,7 +268,10 @@ def start_cluster(bins: dict, datadir, *, sockdir, port: int, log,
 # 宿主 = `scripts/pg_orphan_sweep.py`；判据文件 = `tests/unit_ci_workflows/test_pg_orphan_sweep.py`
 # ══════════════════════════════════════════════════════════════════════════════════════
 #: 取数口径（`ps` 的参数与解析**同处** —— 分开放会各自演化）。
-PS_ARGS: tuple[str, ...] = ("-A", "-o", "pid=,ppid=,etime=,command=")
+#: ⚠️ `-ww`（**不限宽**，BSD 与 procps 都认：BSD 单 `-w` 只到 132 列、`-ww` 不限；procps `-w` 加倍 = 不限）：
+#: Linux procps 在**非 tty** 下默认按 ~80 列**截断 `command`** ⇒ 数据目录会被切掉尾部 ⇒ 清点**漏判真孤儿**
+#: （本单 CI 实测踩过：`ci workflow helper unit tests` 里真残留被判成「无残留」）。**不许**去掉这个 `-ww`。
+PS_ARGS: tuple[str, ...] = ("-A", "-ww", "-o", "pid=,ppid=,etime=,command=")
 
 #: 数据目录落在这些根下 = 「临时区」。`/private/tmp` 是 macOS `/tmp` 的真实路径；
 #: macOS 的 `$TMPDIR` 在 `/var/folders/**/T` 下。pytest 的 tmp 根（`pytest-of-<user>`）通常就在其中。

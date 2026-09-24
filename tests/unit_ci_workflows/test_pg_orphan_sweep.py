@@ -323,6 +323,35 @@ def test_inventory_lists_orphans_and_excludes_everything_else(tmp_path):
     assert "孤儿集群 = 2" in proc.stdout, proc.stdout
 
 
+def width_problems(pg_module) -> list[str]:
+    """`ps` 取数是否**不限宽**（issue #5263 的 CI 实测病灶：procps 非 tty 下按 `$COLUMNS`/80 列
+    **截断 `command`** ⇒ 数据目录被切掉尾部 ⇒ 真孤儿被判成「无残留」= **假绿**）。
+    """
+    wide = [arg for arg in pg_module.PS_ARGS if arg.startswith("-w")]
+    if wide:
+        return []
+    return [f"`PS_ARGS` 没有「不限宽」开关（{pg_module.PS_ARGS}）—— Linux procps 非 tty 下会截断 "
+            f"`command`，清点会把真孤儿判成「无残留」（本单 CI 实测：真残留被判成无残留）"]
+
+
+def test_ps_args_request_unlimited_width():
+    """判据②的前提：`ps` 取数必须**不限宽**（否则清点在 Linux runner 上静默漏判 —— 详见上方红证）。"""
+    problems = width_problems(_load(FUNNEL, "_pg_cluster_width"))
+    assert problems == [], "\n  ".join(problems)
+
+
+def test_red_proof__dropping_the_wide_ps_flag_is_caught(tmp_path):
+    """红证 Ⅸ：把收口件 `PS_ARGS` 的 `-ww` 摘掉 ⇒ 上面的宽度判据**必红**。"""
+    mutated = _mutate(FUNNEL.read_text(encoding="utf-8"), [(
+        'PS_ARGS: tuple[str, ...] = ("-A", "-ww", "-o", "pid=,ppid=,etime=,command=")',
+        'PS_ARGS: tuple[str, ...] = ("-A", "-o", "pid=,ppid=,etime=,command=")  # 变异⑤：摘掉不限宽',
+    )], "红证Ⅸ")
+    path = tmp_path / "pg_cluster_narrow.py"
+    path.write_text(mutated, encoding="utf-8")
+    problems = width_problems(_load(path, "_pg_cluster_narrow"))
+    assert problems != [], "摘掉 `-ww` 后宽度判据仍绿 ⇒ 该判据没有判别力"
+
+
 def test_inventory_prints_a_count_of_zero_instead_of_silence(tmp_path):
     """判据②：**无残留时必须打印计数 0**（静默无输出 = 红 —— 「没扫到」要长得像「没扫到」）。"""
     ps_bin = _fake_ps(tmp_path / "ps", [PS_LIVE, PS_UNRELATED])
@@ -485,22 +514,55 @@ def _run_synthetic(module: Path) -> subprocess.CompletedProcess:
         capture_output=True, text=True, cwd=str(REPO_ROOT))
 
 
+def _raw_ps(pg) -> str:
+    """真 `ps` 原文（诊断用：读数是空时要能看见**为什么**空）。"""
+    return subprocess.run([pg.which("ps") or "ps", *pg.PS_ARGS],
+                          capture_output=True, text=True).stdout
+
+
 def _clusters_for(pg, datadir: Path) -> list:
     """真 `ps` 里数据目录 == `datadir` 的 postmaster 行（按**内容**判，不按进程名猜）。"""
-    proc = subprocess.run([pg.which("ps") or "ps", *pg.PS_ARGS], capture_output=True, text=True)
     target = os.path.realpath(str(datadir))
-    return [row for row in pg.parse_pg_processes(proc.stdout)
+    return [row for row in pg.parse_pg_processes(_raw_ps(pg))
             if os.path.realpath(row.datadir) == target]
 
 
-def _wait_gone(pg, datadir: Path, timeout: float = 20.0) -> list:
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _postmaster_pid(datadir: Path) -> int | None:
+    """`postmaster.pid` 首行 = postmaster 的 pid（**与 `ps` 的列宽/解析无关**的第二条信号）。"""
+    try:
+        return int((datadir / "postmaster.pid").read_text(encoding="utf-8").splitlines()[0])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _residual(pg, datadir: Path) -> tuple[list, int | None]:
+    """残留读数 = (`ps` 数据目录匹配的行, 仍存活的 postmaster pid)。
+
+    ⚠️ 两条信号**都要**（本单 CI 实测踩过）：`ps` 那条给出 `ppid` / 存活时长（判据②的分类证据），
+    但它依赖 `command` 列的**完整宽度** —— Linux procps 在非 tty 下按 `$COLUMNS`（未设 ⇒ 80 列）
+    **截断**，数据目录会被切掉尾部 ⇒ 光靠 `ps` 会把真残留判成「无残留」（**假绿**）。
+    `postmaster.pid` 那条与 `ps` 无关 ⇒ 任一条命中都算残留。
+    """
+    pid = _postmaster_pid(datadir)
+    return _clusters_for(pg, datadir), (pid if (pid is not None and _pid_alive(pid)) else None)
+
+
+def _wait_residual(pg, datadir: Path, timeout: float = 20.0) -> tuple[list, int | None]:
     """等残留消失（有界轮询：`-m immediate` 停止是异步的，返回不等于已退干净）。"""
     deadline = time.monotonic() + timeout
-    rows = _clusters_for(pg, datadir)
-    while rows and time.monotonic() < deadline:
+    rows, alive = _residual(pg, datadir)
+    while (rows or alive is not None) and time.monotonic() < deadline:
         time.sleep(0.2)
-        rows = _clusters_for(pg, datadir)
-    return rows
+        rows, alive = _residual(pg, datadir)
+    return rows, alive
 
 
 def test_a_failing_case_stops_its_cluster(tmp_path, realdb_binaries):
@@ -520,8 +582,10 @@ def test_a_failing_case_stops_its_cluster(tmp_path, realdb_binaries):
             f"合成的失败用例没有失败 ⇒ 本判据没验到「失败路径」：\n{proc.stdout}\n{proc.stderr}")
         assert (tmp_path / "started.marker").exists() is True, (
             f"集群压根没起来 ⇒ 本判据是空断言：\n{proc.stdout}\n{proc.stderr}")
-        assert _wait_gone(pg, datadir) == [], (
-            f"用例失败后集群仍在 ⇒ 失败路径没停库（issue #5263 判据①）：\n{proc.stdout}")
+        rows, alive = _wait_residual(pg, datadir)
+        assert rows == [] and alive is None, (
+            f"用例失败后集群仍在（`ps` 数据目录匹配行 = {[(r.pid, r.ppid, r.datadir) for r in rows]} / "
+            f"`postmaster.pid` 存活 pid = {alive}）⇒ 失败路径没停库（issue #5263 判据①）：\n{proc.stdout}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -543,22 +607,25 @@ def test_red_proof__a_real_leftover_is_classified_as_orphan_and_cleaned(tmp_path
         proc = _run_synthetic(module)
         assert proc.returncode != 0, f"合成的失败用例没有失败：\n{proc.stdout}\n{proc.stderr}"
 
-        leftovers = _clusters_for(pg, datadir)
+        rows, alive = _residual(pg, datadir)
         try:
-            assert leftovers != [], (
+            assert rows != [] or alive is not None, (
                 "去掉夹具 teardown 的 stop 后竟无残留 ⇒ 判据①的「无残留」断言没有判别力"
                 f"（本红证退化）：\n{proc.stdout}")
             deadline = time.monotonic() + 20.0
-            orphans = pg.orphan_postmasters(leftovers)
+            orphans = pg.orphan_postmasters(rows)
             while not orphans and time.monotonic() < deadline:
                 time.sleep(0.2)
-                leftovers = _clusters_for(pg, datadir)
-                orphans = pg.orphan_postmasters(leftovers)
+                rows, alive = _residual(pg, datadir)
+                orphans = pg.orphan_postmasters(rows)
             assert orphans != [], (
                 "真残留没被判成孤儿（ppid==1 且数据目录在临时区）⇒ 判据②的分类器在真现场不成立："
-                f"{[(r.pid, r.ppid, r.datadir) for r in leftovers]}")
+                f"rows={[(r.pid, r.ppid, r.datadir) for r in rows]} / postmaster.pid 存活 pid={alive}"
+                f"\n--- ps {' '.join(pg.PS_ARGS)} 原文 ---\n{_raw_ps(pg)}")
         finally:
             pg.stop_cluster(realdb_binaries["pg_ctl"], datadir)      # 自己造的残留自己收
-        assert _wait_gone(pg, datadir) == [], "红证自己留下了孤儿集群 —— 比原病灶更糟"
+        rows, alive = _wait_residual(pg, datadir)
+        assert rows == [] and alive is None, (
+            f"红证自己留下了孤儿集群 —— 比原病灶更糟：rows={rows} / pid={alive}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
