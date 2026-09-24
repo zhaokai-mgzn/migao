@@ -85,6 +85,48 @@ WORKFLOW_SUFFIXES = (".yml", ".yaml")
 
 SECRET_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
 
+
+def strip_comment(line):
+    """剥离 YAML / shell 的**行内注释**，返回该行的「代码部分」（issue #5268）。
+
+    根因（本函数存在的唯一理由）：secrets 判据原先有两把**不同源**的尺子 ——
+    前置筛选用子串 `"secrets." in l`、真正判定用 `SECRET_REF_RE`。注释里写通配点
+    `secrets.*`（或完整 secret 名）时子串命中、正则不命中 ⇒ `_truly_new_secret_lines()`
+    里 `added_refs` 为空集，而旧条件 `if added_refs and added_refs <= removed_refs`
+    因**左侧空集短路为假** ⇒ 该注释行被当成「真新增」⇒ BLOCK 合并。
+    现场（PR #5266 / commit f472f5fa1）：那句注释本身在说明「没有新增 secrets」。
+    owner 裁定：**注释里写完整 secret 名也不算风险** ⇒ 判据一律建立在剥掉注释后的代码文本上。
+
+    启发式（与边界，逐条写明）：
+      · `#` 在**行首**（允许前导空白）或**前面是空白字符**时 = 注释起点，其后整体丢弃 ——
+        与 YAML / shell 的实际规则同形（`foo#bar`（`#` 前无空白）两门语言都不算注释起点；
+        shell 的参数展开 `${VAR#prefix}` 同理不会被误剥）。
+      · **引号内**（单/双引号）的 `#` **不是**注释起点：`run: echo "#${{ secrets.X }}"` 的 `#`
+        在双引号内 ⇒ 该行的真引用**必须仍然被检出**（朴素 `line.split("#")[0]` 会把这一行
+        剥成 `run: echo "` ⇒ 真引用漏检，属**放宽真检**，判据④用注入式红证钉住）。
+      · 双引号内 `\\` 转义下一个字符（YAML / shell 同此）；单引号内 `\\` 是字面量、不转义。
+      · **边界（有意取舍，不是完整 YAML 解析）**：① 不做块标量（`|` / `>`）状态机 ——
+        块标量正文里的 `#` 按同一条空白规则处理；② 引号未闭合（如正文里的孤立单引号 `it's`）
+        ⇒ 保守地**不剥**该行 ⇒ 判定偏严；③ 只处理单行注释，不做跨行字符串判定。
+        ①②③ 全都朝向「不放宽真检」（多看一眼 vs. 漏检），与门禁 fail-closed 的方向一致。
+    """
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if quote == '"' and ch == "\\":
+                i += 2  # 双引号内转义下一个字符
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#" and (i == 0 or line[i - 1].isspace()):
+            return line[:i]
+        i += 1
+    return line
+
 # ── 删除 workflow 的确认 marker（#4295）────────────────────────────────────────
 # 判据必须落在**这个纯函数**上，而不是 workflow 里的字符串匹配：
 # 首版把判据写成「脚本里含 user.login 且含 DANGER_OWNER」—— 红证实测**不红**
@@ -442,18 +484,29 @@ def _truly_new_secret_lines(added_lines, removed_lines):
     git diff 显示为「删除一行 + 新增一行」，但引用的 secrets 标识符集合相同——
     这是移动而非新增，不应 BLOCK 合并。
 
-    判定：某新增行引用的每个 secret 名都已在删除行中出现过 → 移动，跳过；
-    若引用了删除行中不存在的 secret 名（或删除行无 secret）→ 真新增，保留。
+    修复（issue #5268，owner 裁定「注释一律不算风险，哪怕写了完整 secret 名」）：判据一律
+    建立在 `strip_comment()` 剥掉注释后的**代码文本**上，且与前置筛选
+    （`_secret_ref_diff_lines`）**同源**（都用 `SECRET_REF_RE`）。修前两把尺子不同源
+    （筛选=子串 / 判定=正则）⇒ 注释里的 `secrets.*` 通过了筛选却拿不到 added_refs，
+    而 `if added_refs and added_refs <= removed_refs` 因左侧空集短路为假 ⇒ 注释行进 blockers。
+
+    判定（剥注释后）：
+      · `added_refs` 为空集 ⇒ **跳过**（注释行 / 无真引用 ⇒ 注释一律不进 blockers，#5268）；
+      · 某新增行引用的每个 secret 名都已在删除行中出现过 → 移动，跳过（#2949 口径**一字未动**）；
+      · 若引用了删除行中不存在的 secret 名（或删除行无 secret）→ 真新增，保留。
     保守策略：新增行若混入一个真新 secret（其余为移动），整行保留待人工审查。
+    返回值给的是**原始 diff 行**（含注释），保证 blocker 文案里的证据不被改写。
     """
     removed_refs = set()
     for line in removed_lines:
-        removed_refs.update(SECRET_REF_RE.findall(line))
+        removed_refs.update(SECRET_REF_RE.findall(strip_comment(line)))
     truly_new = []
     for line in added_lines:
-        added_refs = set(SECRET_REF_RE.findall(line))
-        if added_refs and added_refs <= removed_refs:
-            continue  # 引用的 secret 都是移动过来的，非新增
+        added_refs = set(SECRET_REF_RE.findall(strip_comment(line)))
+        if not added_refs:
+            continue  # 剥注释后没有真引用 ⇒ 注释行不算新增（issue #5268）
+        if added_refs <= removed_refs:
+            continue  # 引用的 secret 都是移动过来的，非新增（issue #2949）
         truly_new.append(line)
     return truly_new
 
@@ -688,6 +741,20 @@ def _workflow_changes():
     return [(s, p) for s, p in changes if p.endswith(WORKFLOW_SUFFIXES)]
 
 
+def _secret_ref_diff_lines(diff_lines):
+    """从 `git diff` 输出里挑出「**代码文本**含 secrets 引用」的增/删行（纯函数）。
+
+    前置筛选与判定**同源**（issue #5268）：都先 `strip_comment()`、再走 `SECRET_REF_RE`。
+    修前筛选用子串 `"secrets." in l`，与判定用的正则**不是一把尺子** —— 注释里的
+    `secrets.*`（子串命中、正则不命中）因此能溜进判定面，被当作「真新增」。
+    抽成纯函数的理由：这行就是「同源」判据的落点，而 `_workflow_new_secrets()` 要跑
+    `git diff` ⇒ 判据必须能**直测**，否则它在单测里不可达（等于没判据）。
+    """
+    added = [l for l in diff_lines if l.startswith("+") and SECRET_REF_RE.search(strip_comment(l))]
+    removed = [l for l in diff_lines if l.startswith("-") and SECRET_REF_RE.search(strip_comment(l))]
+    return added, removed
+
+
 def _workflow_new_secrets(paths):
     """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）。
 
@@ -711,8 +778,7 @@ def _workflow_new_secrets(paths):
                       f"{out.returncode}）", file=sys.stderr)
                 return None
             lines = out.stdout.splitlines()
-            added = [l for l in lines if l.startswith("+") and "secrets." in l]
-            removed = [l for l in lines if l.startswith("-") and "secrets." in l]
+            added, removed = _secret_ref_diff_lines(lines)
             truly_new = _truly_new_secret_lines(added, removed)
             if truly_new:
                 secrets_by_path[path] = truly_new
