@@ -4,13 +4,13 @@
 两处缺口的共同形态：**核对器认不出真实 payload 形状** → 用例要么照抄即**永久假红**，
 要么写着"有覆盖"实际核对的是**另一条记录**（假绿）。两组红证分别锁住：
 
-| 缺口 | 真实形状（file:line 已核） | 旧行为 | 红证 |
+| 缺口 | 真实形状（**符号 / 文本锚**已核，不写行号 —— dev-flow §16.7） | 旧行为 | 红证 |
 |---|---|---|---|
-| ② `after_sales_ticket` 只认 `ticket_id`/`ticketId` | create 路径 payload 键是 **`id`**（`app/tools/after_sales_manage.py:359` 用 `data.get("id")`、`:369` 原样返回 `AfterSalesDetailResponse`；`AfterSalesDetailResponse.java:16-17,24` 有 `id`/`ticketNo`/`status`、**无 `ticket_id`**） | `create -> (None, {})` → AS-007 的 `db_verify` 一加就**恒红**（"找不到成功调用，判失败而非跳过"） | 合成 create payload → 必须取到引用 |
-| ③ `db_verify[product_by_name]` 只按 keyword 取**首条** | 本次 create 返回 `data={"product_id":…}`（`app/tools/product_manage.py:245`）；PR-019 的商品名与种子 `prod_eval_2699` 同名同价（`fixtures/mibao_eval_seed.sql:30`） | 种子恒在 ⇒ **不管本次 create 成没成功都绿**（假绿）；`_fetch_product_configs`（`:1905`）拿不到本次新建的 id | 声明 `source` 后必须按**本次新建的 id** 回读 |
+| ② `after_sales_ticket` 只认 `ticket_id`/`ticketId` | 工单类 payload 的键是 **`id`**：`backend/ai-agent-service/app/tools/after_sales_manage.py` 的 `_get_detail` 透传 admin-api 的 `AfterSalesDetailResponse`（该 DTO 声明 `id`/`ticketNo`/`status`、**无 `ticket_id`**）；原 `create` 写路径（admin-api `AfterSalesController.createTicket` → `AfterSalesTicketService.createTicket`，返回同一 DTO）已随 B 端只读化**整条下线**（issue #5247 / #5285），存活的一侧只剩只读 `detail` | `create -> (None, {})` → AS-007 的 `db_verify` 一加就**恒红**（"找不到成功调用，判失败而非跳过"） | 合成 create payload → 必须取到引用 |
+| ③ `db_verify[product_by_name]` 只按 keyword 取**首条** | 本次 create 返回 `data={"product_id":…}`（`backend/ai-agent-service/app/tools/product_manage.py` 的 `_create_product`）；PR-019 的商品名与种子 `prod_eval_2699` 同名同价（`tests/agent_eval/fixtures/mibao_eval_seed.sql` 里 `prod_eval_2699` 那一行） | 种子恒在 ⇒ **不管本次 create 成没成功都绿**（假绿）；`local_runner` 的 `_fetch_product_configs` 拿不到本次新建的 id | 声明 `source` 后必须按**本次新建的 id** 回读 |
 
-口径与已修好的同族能力**同源**（复用而非另写一套）：`_first_successful_payload`（`:3044`）
-的 action 对齐 + `db_verify[processing_order]`（`:3270-3309`）的"回读键取自成功 payload，
+口径与已修好的同族能力**同源**（复用而非另写一套）：`local_runner` 的 `_first_successful_payload`
+的 action 对齐 + `db_verify[processing_order]` 分支的"回读键取自成功 payload，
 取不到就判失败而非跳过"。
 
 **fail-closed 是硬要求**：声明了 `source` 却找不到成功写调用 / payload 里没有回读键
@@ -50,7 +50,7 @@ lr = _load_runner()
 
 PRODUCT_NAME = "2699系列雪尼尔窗帘面料"
 CREATED_PRODUCT_ID = "prod_new_2699"      # 本次 create 返回的 id
-SEED_PRODUCT_ID = "prod_eval_2699"        # 种子里的同名单（fixtures/mibao_eval_seed.sql:30）
+SEED_PRODUCT_ID = "prod_eval_2699"        # 种子里的同名单（tests/agent_eval/fixtures/mibao_eval_seed.sql 的 prod_eval_2699 行）
 
 
 def _round(rnd, calls, results):
@@ -100,7 +100,7 @@ class TestTicketPayloadShapeRecognition:
     def test_payload_with_bare_id_and_no_ticket_marker_is_not_a_ticket(self):
         """**假绿防线**：只有 `id` 但没有工单特征键的载荷**不得**被当成工单。
 
-        `list` 载荷是 `{items,total,page,size}`（`after_sales_manage.py:238`）——若将来出现
+        `list` 载荷是 `{items,total,page,size}`（`after_sales_manage.py` 的 `_list_tickets`）——若将来出现
         「带 id 的非工单载荷」，只认 `id` 会把核对指向一个根本不是工单的对象（"核对了错的调用"）。
         """
         r = _round(1, [("after_sales_manage", {"action": "list"})],
