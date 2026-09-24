@@ -469,6 +469,15 @@ def judge_watchdog(registry: dict, observations: dict[str, dict]) -> Report:
         lines = list(obs.get("annotations") or [])
         readings = parse_readings(lines, eid)
         if not readings:
+            skipped_job = _mechanism_job_skipped(registry, eid, obs)
+            if skipped_job:
+                # 「job 被跳过」≠「跑了没出声」：前者是机制**本轮没执行**（多 job workflow 的合法形态），
+                # 后者才是缺陷。⚠️ 若**连续多轮**都被跳过 ⇒ 属另一族（需多 run 取数，见残余登记）。
+                rep.note(
+                    f"{eid}: 最近一次已完成的 run（{run_id}）上，本机制的 job（`{skipped_job}`）"
+                    f"结论 = **skipped** ⇒ 本轮机制**未执行**（≠「跑了没出声」）⇒ 不计 finding"
+                )
+                continue
             rep.add(
                 f"watchdog-no-reading:{eid}",
                 f"最近一次已完成的 run（{run_id}，结论 {obs.get('conclusion')}）**没有**该机制的存活读数"
@@ -543,6 +552,41 @@ def _annotations_of_run(repo_slug: str, run_id: int) -> list[str]:
         return []
 
 
+def _job_conclusions_of_run(repo_slug: str, run_id: int) -> dict[str, str]:
+    """该 run 里每个 job 的结论（**归一化键**：小写、非字母数字→`-`）。
+
+    用途：区分「**job 被跳过** ⇒ 本轮机制根本没跑」与「机制跑了但**没出声**」—— 两者在
+    「读数为空」上长得一样，但归因完全不同（§23 G3）。首发日实测：`automerge` 的 run 里
+    `Enable auto-merge` 两个 job 按事件条件**合法跳过**，只有 `detect-dangling-prs` 跑了。
+    ⚠️ GitHub 只给 job 的**显示名**（YAML 里的 `name:`）⇒ 用归一化键与登记册的 `job` id 比对；
+    对不上就**当作非跳过**（fail-closed：宁可判红让人看，也不静默豁免）。
+    """
+    try:
+        jobs = _gh_json(["api", f"/repos/{repo_slug}/actions/runs/{run_id}/jobs"])
+    except (Undecidable, json.JSONDecodeError):
+        return {}
+    out: dict[str, str] = {}
+    for job in (jobs or {}).get("jobs", []):
+        key = _normalize_job(str(job.get("name") or ""))
+        if key:
+            out[key] = str(job.get("conclusion") or "")
+    return out
+
+
+def _normalize_job(name: str) -> str:
+    return "-".join("".join(c if c.isalnum() else " " for c in name.lower()).split())
+
+
+def _mechanism_job_skipped(registry: dict, eid: str, obs: dict) -> str:
+    """该 run 上**这个机制的 job** 是否被跳过 ⇒ 返回 job id（被跳过）或空串。"""
+    entry = next((m for m in registry.get("mechanisms", []) if str(m.get("id")) == eid), None)
+    job = str((entry or {}).get("job") or "").strip()
+    if not job:
+        return ""
+    conclusions = obs.get("job_conclusions") or {}
+    return job if str(conclusions.get(_normalize_job(job)) or "").lower() == "skipped" else ""
+
+
 def _workflow_has_emitter_at(repo_slug: str, workflow_rel: str, sha: str) -> bool:
     """该 run 的 commit 上，这个 workflow **是否已含**读数发射器（用于 pending-instrumentation）。"""
     try:
@@ -576,6 +620,7 @@ def observe_via_gh(repo_slug: str, registry: dict) -> dict[str, dict]:
                 repo_slug, str(entry["workflow"]), str(newest.get("headSha") or "")
             ),
             "annotations": _annotations_of_run(repo_slug, int(newest["databaseId"])),
+            "job_conclusions": _job_conclusions_of_run(repo_slug, int(newest["databaseId"])),
         }
     return out
 
