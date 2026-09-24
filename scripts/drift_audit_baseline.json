@@ -56,8 +56,7 @@
       "tests/unit_ci_workflows/test_case_trust_gate.py|docs/testing/eval-environments.md#86|bare": 1,
       "tests/unit_ci_workflows/test_case_trust_gate.py|local_runner.py#2000|bare": 2,
       "tests/unit_ci_workflows/test_case_trust_gate.py|no/such/file.py#10|dangling": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|tests/agent_eval/local_runner.py#999999|oor": 1,
-      "tests/unit_ci_workflows/test_eval_preclean_seed_parity.py|AfterSalesTicketService.java#103|bare": 1
+      "tests/unit_ci_workflows/test_case_trust_gate.py|tests/agent_eval/local_runner.py#999999|oor": 1
     },
     "regression-guard": {},
     "skill-anchor": {},

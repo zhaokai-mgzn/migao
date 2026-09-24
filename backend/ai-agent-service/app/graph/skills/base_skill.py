@@ -248,6 +248,14 @@ _THINKING_INTENTS = frozenset({
 # 这些意图的工具结果可能驱动新一轮规划（如「订单查不到 → 换方式重查」），
 # 迭代 2+ 轮仍需深度思考，避免提前停止或漏调工具。
 # 单步检索意图（order_query 等）仅首轮思考（决定调什么工具），后续轮关闭以节省延迟。
+#
+# ⚠️ **同名不同义**（issue #5331 判据 3 的同族登记）：本集合与上面的 `_THINKING_INTENTS`
+# 里 6 个**意图名**（order_query / order_create / category_manage / customer_manage /
+# employee_manage / role_manage）与**工具名逐字同形**，但它们是**意图**不是工具引用
+# —— 任何「扫工具名引用」的判据都必须把它们当同名不同义处置（否则假红/假绿都从这里来）。
+# 另一条同族登记：本文件的 `_named_tools()` 用**子串**匹配工具名 ⇒ `product_manage` 会被
+# 角色名 `product_manager` 命中（今天被守卫的四段文本不含该角色名 ⇒ fail-safe 未触发，
+# 属**假红**方向、不是假绿）；修法 = 改成 ASCII 词边界匹配，owner = 商品图片守卫面。
 _MULTI_TURN_THINKING_INTENTS = frozenset({
     "order_create",       # 订单创建——多SKU+加工项+价格计算，常需多步
     "after_sales",        # 售后处理——退款/换货/维修逻辑，工具结果驱动下一步

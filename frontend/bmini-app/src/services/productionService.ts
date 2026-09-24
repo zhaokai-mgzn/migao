@@ -16,6 +16,22 @@ import { workerSessionHeaders } from '../utils/workerSession'
 export interface ProductionOperation {
   id: string
   seq: number
+  /**
+   * **快照/变体名**（如 `精裁-布`）—— `operationDisplayName(op)` 的兜底分支取的就是
+   * `op.operation`（`logical_name` 缺 ⇒ 显示本字段原文）。
+   *
+   * ⚠️ issue #5003② 在此登记**同名不同义**：本仓 `operation` 这一个键名有**三处**语义，
+   * 读代码时不得互相顶替 ——
+   * ① 本字段 = **快照/变体名**（`ProductionOperation` 的元素；`positions[].operations[]` 下发）；
+   * ② `WorkLogRow.operation_name` = 报工流水的**读面键名**（注意它**不叫** `operation`；
+   *    消费点自己做了显式映射：`frontend/bmini-app/src/pages/production/index/index.tsx`
+   *    里 `operation: row.operation_name`）；
+   * ③ `per_operation[].operation` = **逻辑名**（计件查找键；#4963 已修「拿快照名比逻辑名 ⇒
+   *    累计计件静默消失」—— 显示名与查找键是**两件事**）。
+   *
+   * 未固化（本 PR 未做，如实登记在 PR body 残余）：键名统一 / helper 显式映射 /
+   * `frontend/shared/operation-display.mjs` 的 C7 逐值表随键名改动扩表。
+   */
   operation: string
   /**
    * 逻辑工序名（后端读时派生，如 `精裁`；issue #4621）。
