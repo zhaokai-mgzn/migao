@@ -36,9 +36,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -336,3 +338,21 @@ class TestSweepItselfCannotDieSilently:
         assert "redproof_sweep.py" in text, (
             "verify-all.sh 的 redproof 档没有接线到 `scripts/redproof_sweep.py`")
         logging.getLogger(__name__).info("入口 = ./verify-all.sh redproof")
+
+def test_red_form_matching_strips_ansi_escapes():
+    """红形态匹配**必须先剥 ANSI**（巡检首发日 2026-09-24 实测的误报根因）。
+
+    `npx vitest` 的输出**带颜色码**：转义序列把 `Tests\s+\d+ failed \(\d+\)` 这类**精确**
+    期望形态打散 ⇒ 判据**其实红了**却被判成 `red_form_mismatch`（误报"红证不成立"）。
+    归因方向必须准（§23 G3）：病根在**读法**（颜色码），不在判据。
+
+    **行为级判据**（走 `red_evidence` 的真实匹配路径，不是只测 helper）：
+    把引擎里任一处 `strip_ansi(...)` 去掉 ⇒ 本判据**必红**。
+    """
+    raw = "\x1b[31mTests\x1b[39m \x1b[31m1 failed\x1b[39m (1)\n"
+    entry = {"id": "ansi-probe", "criteria": {"kind": "stdout", "red_text": r"Tests\s+\d+ failed \(\d+\)"}}
+    run = SimpleNamespace(rc=1, out=raw, timed_out=False)
+    state, detail = rs.red_evidence(entry, Path("."), run)
+    assert state == "red", (
+        "未剥 ANSI ⇒ 精确期望形态被打散、误报 red_form_mismatch"
+        f"（实测 state={state}：{detail}）")
