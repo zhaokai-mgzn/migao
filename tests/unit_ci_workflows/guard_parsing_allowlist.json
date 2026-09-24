@@ -13,43 +13,8 @@
     {
       "path": "tests/unit_ci_workflows/test_agent_permission_parity.py",
       "rule": "quote-parse",
-      "hits": 4,
-      "reason": "#5323 第 1 条（#5272 同款现场）：仍按双引号字面量扫源码原文取权限码 / 角色码 / 菜单节点 ⇒ 注释里写个码即被当声明（假红），注释提到某码又会喂绿「每个码都声明了」。修法 = 改走 ast / tokenize（同文件 `parse_agent_skills` 已是范式）。",
-      "issue": "#5323"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_assertion_specs_wellformed.py",
-      "rule": "quote-parse",
-      "hits": 3,
-      "reason": "#5323 第 2 条：按引号扫 actions 名（`VALID_ACTIONS` / `name=\"…\"`）⇒ 注释或 docstring 里的同形文本即可喂中。",
-      "issue": "#5323"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
-      "rule": "quote-parse",
-      "hits": 4,
-      "reason": "#5323 第 3 条：按引号扫**算料配置键**与 Java 公式串（涉钱面）⇒ 注释即可喂中，方向为假红兼假绿。",
-      "issue": "#5323"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_eval_case_asset_truth.py",
-      "rule": "quote-parse",
-      "hits": 1,
-      "reason": "#5323 第 4 条：按引号扫 actions 名。",
-      "issue": "#5323"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_eval_debug_permissions_precondition.py",
-      "rule": "quote-parse",
-      "hits": 1,
-      "reason": "#5323 第 5 条：按引号扫动作名。",
-      "issue": "#5323"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_eval_product_name_pollution.py",
-      "rule": "quote-parse",
-      "hits": 1,
-      "reason": "#5323 第 6 条：按引号扫 runner 集合。",
+      "hits": 2,
+      "reason": "#5323 第 1 条**已收口**：`parse_role_defaults`（`attachDefaultPermissions` 的 `List.of(...)` 参数区 + `var_to_code` 的 `code(\"…\")`）与 `parse_role_fallback` 三处改走共享剥离器（`_source_parsing.java_code`，引号感知）+ 词法取字面量。**残余 2 处**（本单未收口，见 #5323 收口 PR 的「未收口项」）：① `_iter_menu_ts` —— 前端 `menu.ts` 按单引号扫 `key:` 取值（TS 侧是否收口不在本单清单内）；② `_legacy_quote_scan` —— #5272 旧口径的**有意复刻**，只作负控夹具的前提断言，不是被测解析器。",
       "issue": "#5323"
     },
     {
@@ -170,13 +135,6 @@
       "hits": 1,
       "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
       "issue": "#5325"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_mixed_color_surcharge_cross_side.py",
-      "rule": "naive-hash-cut",
-      "hits": 1,
-      "reason": "#5323 第 7 条：`_python_code_only()` 未先清空字符串就按 `#` 截断 ⇒ 字符串里的 `#`（如 `'#FF0000'`）把该行后半截吃掉，方向是**假绿（漏检）**；待判定、未收口。",
-      "issue": "#5323"
     },
     {
       "path": "tests/unit_ci_workflows/test_realdb_failclosed.py",
