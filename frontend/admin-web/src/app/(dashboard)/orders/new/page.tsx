@@ -9,6 +9,11 @@ import { toastRequestError } from '@/lib/api-error'
 import { urgencyRequestFields } from '@/lib/order-urgency'
 import { buildOrderPrefill, ORDER_DERIVATION_INPUT_KEYS, sizeTargetLineIndex } from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
+import {
+  PAGE_FILL_SOURCE_RECOGNIZED,
+  fieldsOfSource,
+  subscribePageFill,
+} from '@/lib/agent-page-fill'
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow, type RecognizedField } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
@@ -1282,6 +1287,19 @@ export default function NewOrderPage() {
       setRecognizedFields((prev) => Array.from(new Set([...prev, ...pageKeys])))
     },
     [customerName, customerPhone, customerAddress, remark]
+  )
+
+  // 深通道（issue #5368 包 2）：米宝识别结果经 **SSE → store → 浏览器内存事件**推到本页
+  // （浮动面板在建单页上就在表单上方，不需要跳转；走内存通道 ⇒ 收货信息不进 URL / 日志 / 历史）。
+  // 🔴 订单侧**只收识别来源**（`[图片识别]`）：米宝的解读在订单侧**只解释、一格都不填**
+  // （客户信息错 ⇒ 货发错人）—— 内核已保证这类格子 `value` 为空，这里因此自然排除。
+  // 填表口径与快通道**完全同一条**（复用 `handleRecognized`：只填空字段、不覆盖已输入内容）。
+  useEffect(
+    () =>
+      subscribePageFill('order', (plan) => {
+        handleRecognized(fieldsOfSource(plan, PAGE_FILL_SOURCE_RECOGNIZED))
+      }),
+    [handleRecognized]
   )
 
   // ===== 客户选择弹窗（#3102：选已有客户快捷回填收货信息，保留手动兜底）=====

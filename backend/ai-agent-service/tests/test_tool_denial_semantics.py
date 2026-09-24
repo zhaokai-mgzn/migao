@@ -343,23 +343,43 @@ class TestValidateInputGateIsNotARoleList:
         ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s1", role="customer")
         assert ValidateInputTool().check_permission(ctx) is True
 
+    #: `allowed_roles = ["*"]`（**角色层不适用**）的**具名台账** —— 每个成员逐条评审，
+    #: 集合相等（新增/退场都必须改判）。准入三条（下面逐条断言，不是散文）：
+    #: ① `read_only is True`；② `required_permissions == []`；③ **无 admin-api 调用点**
+    #: （纯本地：角色层管不到跨服务能力，也不会因此开出任何数据面）。
+    #: 为什么需要通配（而不是手写角色清单）：商户侧角色码是**开放集合**
+    #: （admin-api「角色管理」可建任意岗位码，`_to_agent_role` 明确保留原角色码）——
+    #: 任何手写清单都必然把持码员工判成「权限不足」（issue #4106 F4 的同款病根）。
+    WILDCARD_PURE_LOCAL_TOOLS: dict[str, str] = {
+        "validate_input": "纯本地参数校验（双端都要用；自身不读也不写业务数据）",
+        # issue #5368 包 2（Agent 深通道）：图 → 同页填充计划。只调 vision 模型与
+        # `app/vision/**` 的纯函数，**无 admin-api 调用点**；B 端两个 skill（product/order）
+        # 可达，小布不绑 ⇒ C 端拿不到它。
+        "image_recognize": "纯本地图片识别 + 同页填充计划构造（无 admin-api 调用点、不读写业务数据）",
+    }
+
     def test_wildcard_is_declared_by_exactly_one_pure_validator(self):
-        """越界红证：`"*"` 只能出现在**纯本地校验类**工具上（当前唯一 = validate_input）。
+        """越界红证：`"*"` 只能出现在**纯本地（无特权）**工具上 —— 台账逐条评审。
 
         否则「通配」就成了给特权工具开后门的通用口令（审核时看不出来的提权面）。
+        ⚠️ 方法名保留（回归坐标稳定）；口径由「恰好一个」改为**具名台账 + 集合相等**：
+        issue #5368 包 2 新增 `image_recognize`（纯本地、只读、无调用点），
+        **不是放宽** —— 台账里的每个成员都要过下面三条逐条断言，且多一个/少一个都红。
         """
         registry = get_tool_registry()
-        wildcard = [name for name in registry.get_tool_names()
-                    if "*" in (registry.get_tool(name).allowed_roles or [])]
-        assert wildcard == ["validate_input"], (
+        wildcard = sorted(name for name in registry.get_tool_names()
+                          if "*" in (registry.get_tool(name).allowed_roles or []))
+        assert wildcard == sorted(self.WILDCARD_PURE_LOCAL_TOOLS), (
             f"声明角色通配的工具集合变了（实际 {wildcard!r}）—— 每个都必须单独评审"
         )
-        tool = registry.get_tool("validate_input")
-        assert tool.read_only is True, "通配只允许给只读工具"
-        assert tool.required_permissions == [], "通配只允许给不声明权限码的工具"
+        for name in wildcard:
+            tool = registry.get_tool(name)
+            assert tool.read_only is True, f"{name}：通配只允许给只读工具"
+            assert tool.required_permissions == [], f"{name}：通配只允许给不声明权限码的工具"
         assets = [p.read_text(encoding="utf-8")
-                  for p in sorted(TOOLS_DIR.glob("validate_input.py"))]
-        assert assets, "validate_input 的源码必须可读（判据不得空转）"
+                  for name in wildcard for p in sorted(TOOLS_DIR.glob(f"{name}.py"))]
+        assert len(assets) == len(wildcard), (
+            "台账里每个工具的源码都必须可读（判据不得空转）")
 
     def test_the_role_layer_still_denies_elsewhere(self):
         """反向证据：通配**没有**泄漏到基类语义 —— 其它工具的角色粗筛原样生效。"""
