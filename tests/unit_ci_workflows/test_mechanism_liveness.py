@@ -112,11 +112,19 @@ def _run_emitter(script: Path, args: list[str], tmp_path: Path, **env_extra: str
 
 
 def _mutate_emitter(tmp_path: Path, old: str, new: str, label: str) -> Path:
-    """对发射器做**单点变异**（变异点必须是源码里的**唯一**片段，否则夹具自身不可信）。"""
+    """对发射器做**单点变异**，并**自证注入生效**（G7 / G10）。
+
+    三层自证，缺一层这个红证就不成立：
+      ① 变异锚点在源码里**唯一**（否则改了别处也说得通）；
+      ② `old != new` 且落盘文本**确实与原文件不同**（注入真的写进去了）；
+      ③ 调用方断言**行为变了**（读数消失 / 解析失败）—— 只判"锚点可命中"是**弱前提**。
+    """
     text = EMITTER.read_text(encoding="utf-8")
+    assert old != new, f"[{label}] 变异前后文本相同 ⇒ 什么也没注入"
     assert text.count(old) == 1, f"[{label}] 变异锚点必须唯一，实测 {text.count(old)} 处：{old!r}"
     target = tmp_path / f"mutant-{label}.sh"
     target.write_text(text.replace(old, new), encoding="utf-8")
+    assert target.read_text(encoding="utf-8") != text, f"[{label}] 注入未落盘 ⇒ 红证不成立"
     return target
 
 
@@ -807,3 +815,69 @@ def test_red_proof_breaking_the_inline_grammar_is_detected(tmp_path):
     assert ML.parse_readings(proc.stdout.splitlines(), entry["id"]) == [], (
         f"字段名漂移后仍能解析 ⇒ 内联与发射器不同源。实测 stdout={proc.stdout!r}"
     )
+
+
+def test_injection_helper_self_proves_it_took_effect(tmp_path):
+    """**G7 的自证**：注入辅助函数必须拒绝「没注入」与「锚点不唯一」两种假红证。"""
+    unique = 'MECHANISM_LIVENESS_MARKER="MECHANISM-LIVENESS"'
+    assert EMITTER.read_text(encoding="utf-8").count(unique) == 1, "夹具前置：该锚点本该唯一"
+    _mutate_emitter(tmp_path, unique, 'MECHANISM_LIVENESS_MARKER="MUTATED"', "self-proof-ok")
+    for old, new, why in (
+        (unique, unique, "前后相同（什么也没注入）"),
+        ("不存在的锚点（故意）", "x", "锚点不存在"),
+        ('  printf \'%s\\n\' "$line"', '  printf \'%s\\n\' "$line"', "锚点重复出现且未变"),
+    ):
+        try:
+            _mutate_emitter(tmp_path, old, new, "should-fail")
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"注入辅助函数放行了「{why}」⇒ 红证可能是空红证")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判据 5 的**燃尽靶子**（§23 G2）：未固化条数**只许缩短**
+# ══════════════════════════════════════════════════════════════════════════
+def test_unfixed_ledger_only_shrinks():
+    """未固化条数**现取**并对着预算比对 —— 预算只许缩短（涨了就是判红，不是"多登记一条"）。"""
+    registry = _registry_data()
+    budget = registry.get("unfixed_budget")
+    assert isinstance(budget, dict) and isinstance(budget.get("max_items"), int), (
+        "登记数据缺 `unfixed_budget` ⇒ 未固化条数可以无限增长而无处可见（G2 的靶子没了）"
+    )
+    live_items = sum(len(e.get("unfixed") or []) for e in registry["mechanisms"])
+    live_mech = sum(1 for e in registry["mechanisms"] if e.get("reading") != "instrumented")
+    print(f"[燃尽靶子] 未固化：机制 {live_mech}/{budget.get('max_mechanisms')} · "
+          f"子项 {live_items}/{budget['max_items']}（**只许缩短**；冻结于 {budget.get('frozen_at')}）")
+    assert live_items <= budget["max_items"], f"现取 {live_items} > 预算 {budget['max_items']} —— 债务涨了"
+    assert live_mech <= budget.get("max_mechanisms", live_mech), "未固化机制数涨了"
+
+
+def test_red_proof_unfixed_budget_growth_is_red(tmp_path):
+    """**注入式红证（G2）**：往台账里**多塞一条**未固化条目 ⇒ 预算判红（不是"登记完就没事"）。"""
+    repo = _mini_repo(tmp_path)
+    path = repo / "scripts" / "mechanism-registry.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    victim = next(e for e in data["mechanisms"] if e.get("unfixed"))
+    victim["unfixed"].append({
+        "what": "夹具：故意多塞一条未固化条目，验证燃尽靶子会拦",
+        "reason": "夹具：验证「把新债务登记进 unfixed」不是出口（预算只许缩短）",
+        "issue": "#5326",
+        "consumer": "夹具：验证 G2 靶子生效",
+    })
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    keys = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
+    assert "unfixed-budget-exceeded" in keys, (
+        f"未固化条数超出预算必须判红（否则「登记」就是绕过判据 5 的口子）：{sorted(keys)}"
+    )
+
+
+def test_red_proof_removing_the_burn_down_target_is_red(tmp_path):
+    """**注入式红证（G2）**：把 `unfixed_budget` 抹掉 ⇒ 判红（靶子不在 = 债务无处可见）。"""
+    repo = _mini_repo(tmp_path)
+    path = repo / "scripts" / "mechanism-registry.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.pop("unfixed_budget", None)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    keys = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
+    assert "unfixed-budget-missing" in keys, f"缺燃尽靶子必须判红，实测 {sorted(keys)}"

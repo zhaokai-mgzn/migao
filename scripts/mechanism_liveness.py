@@ -243,6 +243,34 @@ def check_registration(repo: Path, registry: dict) -> tuple[Report, dict[str, di
             "registration",
         )
 
+    # ── ①b 判据 5 的**燃尽靶子**（G2）：未固化条数**只许缩短**，现取比对预算 ──
+    budget = registry.get("unfixed_budget")
+    live_sites = sum(1 for e in registry["mechanisms"] if e.get("reading") != "instrumented")
+    live_items = sum(len(e.get("unfixed") or []) for e in registry["mechanisms"])
+    rep.evaluated["unfixed_mechanisms"] = live_sites
+    rep.evaluated["unfixed_items"] = live_items
+    if not isinstance(budget, dict) or not isinstance(budget.get("max_items"), int):
+        rep.add(
+            "unfixed-budget-missing",
+            f"`{REGISTRY_REL}` 缺 `unfixed_budget`（未固化条数的**燃尽靶子**）⇒ 「未固化」可以无限增长而无处可见；"
+            f"现取：未固化机制 {live_sites} 个 / 子项 {live_items} 条",
+            "registration",
+        )
+    else:
+        if live_items > int(budget["max_items"]):
+            rep.add(
+                "unfixed-budget-exceeded",
+                f"未固化子项**涨了**：现取 {live_items} 条 > 预算 {budget['max_items']} 条 "
+                f"（靶子只许缩短 —— 修好一处就下调预算；把新债务登记进 `unfixed` 不是出口）",
+                "registration",
+            )
+        if live_sites > int(budget.get("max_mechanisms", live_sites)):
+            rep.add(
+                "unfixed-mechanisms-exceeded",
+                f"未固化的**机制数**涨了：现取 {live_sites} > 预算 {budget.get('max_mechanisms')}",
+                "registration",
+            )
+
     # ── ② 登记条目自身合规 ──
     for entry in registry["mechanisms"]:
         eid = str(entry.get("id") or "<缺 id>")
@@ -579,6 +607,7 @@ def run(repo: Path, watchdog: bool, readings: Path | None, repo_slug: str | None
         "registry": registry,
         "discovered": discovered,
         "burn_down": {
+            "unfixed_budget": registry.get("unfixed_budget") or {},
             "mechanisms": len(registry["mechanisms"]),
             "instrumented": sum(1 for e in registry["mechanisms"] if e.get("reading") == "instrumented"),
             "unfixed": sum(1 for e in registry["mechanisms"] if e.get("reading") != "instrumented"),
@@ -596,7 +625,8 @@ def render(rep: Report, meta: dict) -> str:
         "",
         f"- 发现面（无人值守 × 写作用域）：**{len(meta['discovered'])}** 个维护类机制",
         f"- 登记面：**{bd['mechanisms']}** 条（instrumented **{bd['instrumented']}** / unfixed **{bd['unfixed']}**，"
-        f"未固化子项 **{bd['unfixed_items']}** 条；豁免 **{bd['exempt']}** 条）",
+        f"未固化子项 **{bd['unfixed_items']}** 条（预算 "
+        f"{(bd.get('unfixed_budget') or {}).get('max_items', '缺')} 条，**只许缩短**）；豁免 **{bd['exempt']}** 条）",
         f"- 判定面：{rep.evaluated}",
         "",
     ]

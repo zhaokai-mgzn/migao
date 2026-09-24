@@ -159,5 +159,11 @@
     }
   ],
   "exempt": [],
-  "reading_sites": "`emitter` = 调共享发射器（常规）；`inline` = 内联**同一语法**（唯一合法场景：本 job **不得 checkout** ⇒ 取不到发射器文件）—— 内联必须带 `reading_site_reason`，且由 tests/unit_ci_workflows/test_mechanism_liveness.py 的`test_inline_emission_is_grammar_equivalent_to_the_emitter` **真跑内联文本**并逐字段比对。"
+  "reading_sites": "`emitter` = 调共享发射器（常规）；`inline` = 内联**同一语法**（唯一合法场景：本 job **不得 checkout** ⇒ 取不到发射器文件）—— 内联必须带 `reading_site_reason`，且由 tests/unit_ci_workflows/test_mechanism_liveness.py 的`test_inline_emission_is_grammar_equivalent_to_the_emitter` **真跑内联文本**并逐字段比对。",
+  "unfixed_budget": {
+    "max_mechanisms": 1,
+    "max_items": 6,
+    "frozen_at": "PR #5326 首版（燃尽锚点现取见 `python3 scripts/mechanism_liveness.py --check`）",
+    "rule": "**只许缩短**（G2）：现取的「未固化机制数 / 未固化子项数」**不得超过**本预算；修好一处 ⇒ 同 PR 下调本预算（涨跌都要在 diff 里看得见）。⇒ 想靠「多登记几条未固化」蒙过判据 5 的口子被封死（那只把债务搬进台账）。"
+  }
 }
