@@ -315,7 +315,10 @@ public class DailyBriefingService {
         Map<String, Number> metrics = extractMetrics(snapshot);
 
         // 2) LLM 组织层
-        JsonNode briefing = briefingGenerateClient.generate(tenantId, snapshot);
+        // 🔴 提示词只喂**聚合指标 + 脱敏事实**：行级数组是规则引擎 / 按需视图的输入（族 3），
+        // 不进 LLM 上下文 —— 否则每条简报都要把上千行 JSON 塞进去（ai-agent 侧虽有 6000 字符预算，
+        // 那也只会把它截成半截 JSON：既涨成本，又给模型一堆与组织简报无关的行）。
+        JsonNode briefing = briefingGenerateClient.generate(tenantId, promptSnapshot(snapshot));
 
         DailyBriefing record = DailyBriefing.builder()
                 .tenantId(tenantId)
@@ -669,6 +672,20 @@ public class DailyBriefingService {
             }
         }
         return metrics;
+    }
+
+    /**
+     * LLM 提示词用的快照视图：**只含** `metrics` + `facts`（红线 4 的「纯数字 + 脱敏事实」口径）。
+     *
+     * <p>行级数组（`orders` / `skus` / `returns` 与 `row_fields` / `row_meta`）**出提示词**：它们是
+     * 规则引擎与按需视图的输入，落库快照里在、提示词里不在 —— 两件事各取所需，不是两份口径
+     * （提示词视图是落库快照的**子集**，唯一来源仍是 {@link #aggregateSnapshot}）。</p>
+     */
+    static Map<String, Object> promptSnapshot(Map<String, Object> snapshot) {
+        Map<String, Object> prompt = new LinkedHashMap<>();
+        prompt.put("metrics", snapshot.get("metrics"));
+        prompt.put("facts", snapshot.get("facts"));
+        return prompt;
     }
 
     // ==================== 数字回填校验层（红线 4）====================

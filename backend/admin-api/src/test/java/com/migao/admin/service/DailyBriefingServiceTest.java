@@ -891,6 +891,30 @@ class DailyBriefingServiceTest {
         }
 
         @Test
+        @DisplayName("行级数组**不进 LLM 提示词**（提示词只喂 metrics + facts）")
+        void rowArraysStayOutOfThePrompt() throws Exception {
+            stubRows();
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            JsonNode parsed = objectMapper.readTree("""
+                    {"summary": "x",
+                     "todo": [{"priority": "high", "title": "t", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                     "risks": [], "suggestions": []}
+                    """);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            service.generateForTenant(1L);
+
+            ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+            verify(briefingGenerateClient).generate(eq(1L), captor.capture());
+            // 提示词视图 = 落库快照的**子集**（唯一来源仍是 aggregateSnapshot）
+            assertThat(captor.getValue()).containsOnlyKeys("metrics", "facts");
+            // 落库快照里行级数组照旧在（两件事各取所需）
+            Map<String, Object> stored = service.aggregateSnapshot(1L);
+            assertThat(stored).containsKeys("orders", "skus", "returns", "row_fields", "row_meta");
+        }
+
+        @Test
         @DisplayName("结构性不可达如实登记：orders 无 cost_amount、price_changes 不入册")
         void structuralGapsAreDeclared() {
             // 谁把成本价/改价流水接上（另立数据模型后），这两条会红 ⇒ 逼他同步改引擎的逐规则接线判据。
