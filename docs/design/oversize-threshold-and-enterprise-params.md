@@ -234,7 +234,10 @@ bootstrap 终态同步在 `docs/sql/schema.sql`）。**9 个配置键**：
 
 ✅ `docs/design/door-width-auto-selection.md` §6 与 issue #5040 复核结论：
 
-- 引擎里**有**接高口径（`CUTTING_MODE_SPLICE`，口径 A：加高条按**片宽**另买、同一段布内并排裁），
+- 引擎里**有**接高口径（`CUTTING_MODE_SPLICE`，**现行口径**：缺口 ≤ 上限 0.1 米（真值源 = 引擎常量
+  `MAX_JOIN_GAP_M`；`resolve_fabric_plan._splice()` 复用 `_join_gap_ok()` 判定）⇒ **接高且不参与算料**
+  （`meters == T`、不另买加高条）；缺口超限 ⇒ **回落倒幅**），
+  旧口径 A「加高条按**片宽**另买、同一段布内并排裁」**已被用户 2026-09-23 裁定取代**（乙+B，issue #5213），
   但**只在引擎 API 层可达** —— 工具 schema（`CurtainCalcTool.parameters`）、
   `CurtainCalcTool.execute` 签名、admin-web 的加工类型 chips **都没有**「接高」这一档。
 - 因此 §2.5 的「接高退为人工覆盖项」**今天没有用户入口**（**不得**写成「可覆盖成接高」）。

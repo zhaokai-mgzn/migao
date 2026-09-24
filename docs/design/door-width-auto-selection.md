@@ -211,11 +211,6 @@ d     = H + HEM_MARGIN − g_max           # 缺口（米）—— **判定只�
 
 ## §6 未裁定 / 缺口（照实登记）
 
-- 🔴 **本文件的口径 vs 实现落地状态（issue #5290 登记，dated）**：本文件 §1/§2.2/§3/§4 已按
-  **用户 2026-09-23 裁定（乙+B / issue #5213）**改写 —— 那是**生效规格**；而该裁定的**落码 PR
-  （issue #5213）在本文件写作时（2026-09-24）尚未合并** ⇒ 若有人读到
-  `resolve_fabric_plan._splice()` 仍是旧口径，那是**实现落后于本文件**，不是本文件写错。
-  落码合并后本行即可删（届时口径与实现同源）。
 - 🔴 **接高当前「无活入口」**（issue #5040 复核，本单只把可达性写成实情）：
   工具 schema（`backend/ai-agent-service/app/tools/curtain_calc.py` 的 `CurtainCalcTool.parameters`）
   与 `CurtainCalcTool.execute` 签名**都没有** `cutting_mode` 入参；admin-web 的加工类型 chips 只有
