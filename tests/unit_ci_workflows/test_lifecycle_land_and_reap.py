@@ -147,6 +147,24 @@ def _wiring_problems(body: str) -> list[str]:
     return problems
 
 
+def _mutate_module(dest_dir: Path, anchor: str, replacement: str) -> Path:
+    """把真源码里的 `anchor` **逐字**替换成 `replacement`，落成一份可独立运行的副本。
+
+    自证三件（§23 G7「红证前提要自证」）：① 锚点**恰好命中 1 次**（宽松锚会注入到别处）
+    ② 替换后源码确实变了 ③ 变异后仍是**合法 Python**（否则"红"来自语法错，不来自判据）。
+    """
+    src = MODULE.read_text(encoding="utf-8")
+    assert src.count(anchor) == 1, f"注入锚点必须恰好命中 1 次（源码漂移 ⇒ 红证失效）：{anchor!r}"
+    mutated = src.replace(anchor, replacement)
+    assert mutated != src, "变异没落到源码上"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target = dest_dir / "issue_lifecycle.py"
+    target.write_text(mutated, encoding="utf-8")
+    shutil.copy(GUARD_MODULE, dest_dir / "agent-presets-guard.py")
+    compile(mutated, str(target), "exec")
+    return target
+
+
 # ── 夹具：真 git 仓库 + 真 bare origin + 替身 CLI ──────────────────────────────
 
 _GH_STUB = r'''#!/usr/bin/env python3
@@ -281,6 +299,10 @@ class Fixture:
         path = (base or self.wt_base) / (name or branch.split("/", 1)[-1])
         _git(self.repo, "branch", branch, "main")
         _git(self.repo, "worktree", "add", "-q", str(path), branch)
+        # 自证夹具真的造出了形态：否则后续那些「**不在** worktree list 里」的断言会变成**空断言**
+        # （路径字符串两边对不上时就恒绿 —— 实测：`tempfile` 的 `/var` 与 git 报的 `/private/var`
+        #  就是这种失配。pytest 的 tmp_path 已 resolve，本条把该前提钉死）。
+        assert str(path) in _worktree_paths(self.repo), f"夹具没造出 worktree：{path}"
         return path
 
     def push_branch(self, branch: str) -> None:
@@ -568,6 +590,65 @@ def test_reap_merged_keeps_branch_with_open_pr(fx: Fixture):
     assert REAP_BRANCH in _remote_branches(fx.repo), "有 open PR 却删了远程分支"
     assert "有 open PR" in proc.stdout, f"必须点明拒绝原因：\n{proc.stdout}"
     assert "零动作" in proc.stdout, f"零动作必须出声（G6）：\n{proc.stdout}"
+
+
+def test_open_pr_guard_is_red_when_that_check_is_removed(tmp_path: Path):
+    """**红证（差分）**：把 `classify_candidate` 里的 open PR 闸摘掉 ⇒ 同一条判据必红。
+
+    基线（真实现）= 有 open PR ⇒ 不删；变异 = 同一个形态会被删掉 ⇒ 判据「必须保留」在变异体上失败。
+    """
+    open_merged_rows = [_open_row(REAP_BRANCH), _merged_row(REAP_BRANCH)]
+    mutant = _mutate_module(
+        tmp_path / "mutated-open-pr",
+        anchor=('    if c.branch in open_nums:\n'
+                '        return False, "有 open PR", f"有 open PR（#{open_nums[c.branch]}）⇒ 在飞，不动"\n'),
+        replacement="",
+    )
+    assert 'return False, "有 open PR"' not in mutant.read_text(encoding="utf-8"), "注入未生效（闸还在）"
+
+    green = Fixture(tmp_path / "green")
+    green_wt = _mk(green, REAP_BRANCH)
+    green.set_state(rows=open_merged_rows)
+    green.run("reap-merged", "--apply")
+    assert str(green_wt) in _worktree_paths(green.repo), "基线：有 open PR 必须保留（这一条不能红）"
+
+    red = Fixture(tmp_path / "red")
+    red_wt = _mk(red, REAP_BRANCH)
+    red.set_state(rows=open_merged_rows)
+    red.run_module(mutant, "reap-merged", "--apply")
+    assert str(red_wt) not in _worktree_paths(red.repo), (
+        "摘掉 open PR 闸后竟然还是没删 ⇒ 这条判据没有判别力（红证失效）")
+    assert REAP_BRANCH not in _branches(red.repo), "摘掉闸后本地分支也应被删（差分读数）"
+
+
+def test_anchor_guard_is_red_when_that_check_is_removed(tmp_path: Path):
+    """**红证（差分）**：把活锚保护那两行摘掉 ⇒ 同一条判据必红（活锚目标真的会被删）。
+
+    与 `test_reap_merged_anchor_protection_is_negative_controlled` 互补：负控证明"没有活锚时会删"，
+    本条证明"**判据的判别力来自那两行本身**"（摘掉就守不住）。
+    """
+    mutant = _mutate_module(
+        tmp_path / "mutated-anchor",
+        anchor=('        if why:\n'
+                '            return False, "活锚保护", "**活锚保护**：" + why\n'),
+        replacement="",
+    )
+    assert 'return False, "活锚保护"' not in mutant.read_text(encoding="utf-8"), "注入未生效（保护还在）"
+
+    green = Fixture(tmp_path / "green")
+    green_wt = _mk(green, REAP_BRANCH)
+    green.anchor_link(green_wt)
+    green.set_state(rows=[_merged_row(REAP_BRANCH)])
+    green.run("reap-merged", "--apply")
+    assert str(green_wt) in _worktree_paths(green.repo), "基线：活锚目标必须保留（这一条不能红）"
+
+    red = Fixture(tmp_path / "red")
+    red_wt = _mk(red, REAP_BRANCH)
+    red.anchor_link(red_wt)
+    red.set_state(rows=[_merged_row(REAP_BRANCH)])
+    red.run_module(mutant, "reap-merged", "--apply")
+    assert str(red_wt) not in _worktree_paths(red.repo), (
+        "摘掉活锚保护后竟然还是没删 ⇒ 这条判据没有判别力（红证失效）")
 
 
 def test_reap_merged_keeps_unmerged_branch(fx: Fixture):
