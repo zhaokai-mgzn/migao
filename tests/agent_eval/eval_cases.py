@@ -1801,7 +1801,7 @@ _CASE_CU_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['看张三的客户档案'],
     expectations=['customer_manage(action=detail)'],
-    data_checks=['profile.totalOrders / totalConsumption 为数值', 'orders.length <= 10 AND sessions.length <= 10'],
+    data_checks=['profile.totalOrders / totalConsumption 为**数值或 null**：这两个字段属「无真值」声明面（issue #5362）⇒ 修后一律 null（未知），不得把 DB 列默认值 0 / 30 或建档种子常量当成真值', 'orders.length <= 10 AND sessions.length <= 10', '档案里「有真值」的字段（vipLevel / customerStatus / sourceChannel / phone / wechatNickname / tags / craftMode / defaultReceiver* 等）照常返回、**不得被遮蔽**（同一张表有真值/无真值并存，不是整表一刀切）', '字段级声明与源码写入点的一致性由确定性判据强制（零 LLM）：CustomerProfileFieldTruthGateTest 断言「声明有真值 ⇒ 源码里存在真值级写入点」与「声明无真值 ⇒ 必在读面遮蔽清单里」（改判任一字段即红，且带注入式红证）；CustomerProfileTruthExposureTest 断言四条读路径（列表 / 详情 / PUT / 分群成员）与序列化后的响应体里无真值字段为 null；FieldTruthMetaGuardTest 对同域表逐条对账（未登记即红、台账只许缩短）'],
     skip_reason='',
     tags=['query', 'detail'],
     persona='',
