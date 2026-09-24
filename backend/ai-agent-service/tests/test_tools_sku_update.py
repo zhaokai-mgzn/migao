@@ -63,11 +63,12 @@ class TestExecute:
         # V108：SKU 组合只有 颜色 × 门幅 ⇒ payload 不得再带 `selling_method`
         # （接收端 /skus/price 不读该键 ⇒ 下发=静默丢弃；判据见
         #  tests/test_tool_payload_backend_contract.py）
-        # issue #5303：`before_price` 同理**不得下发**（它是改前价的预览声明，
-        # 端点只读 price/color/door_width）。
+        # issue #5317 改判：`before_price` 从「预览声明、不下发」变为**必须下发** ——
+        # 服务端（`/skus/price` 读 body 的 `before_price`）拿它与匹配到的 SKU 当前价按值核对，
+        # 不符即 422（口径与批次 oldValue 同一实现）。不下发 ⇒ 服务端无从回查。
         client.patch.assert_awaited_once_with(
             "/api/admin/agent/products/prod-001/skus/price",
-            json_data={"price": 9.9, "color": "白色", "door_width": "2.8米"},
+            json_data={"price": 9.9, "color": "白色", "door_width": "2.8米", "before_price": 9.9},
             tenant_id=1, user_id="admin_001",
         )
         assert "selling_method" not in tool.parameters["properties"], (

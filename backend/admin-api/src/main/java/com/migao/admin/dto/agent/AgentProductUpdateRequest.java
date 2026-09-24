@@ -25,6 +25,16 @@ public class AgentProductUpdateRequest {
     /** 基础价格，null = 不修改 */
     private BigDecimal basePrice;
 
+    /**
+     * **改前价**（issue #5317，涉钱面）：模型从 {@code product_detail} 带回的"改前是多少"声明。
+     *
+     * <p>只用于**服务端回查**，<b>从不落库</b>：服务端拿它与 DB 当前 {@code base_price}
+     * 按值核对（{@link com.migao.admin.service.AgentWriteValues#sameValue}，与批次
+     * {@code oldValue} 同一实现），不符即 422 拒绝。缺席 = 调用方没声明改前价 ⇒ 不核对
+     * （工具层 {@code price_preview_required} 已 fail-closed 挡住"无预览直接写"）。</p>
+     */
+    private BigDecimal beforePrice;
+
     /** 货号，null = 不修改 */
     private String skuCode;
 

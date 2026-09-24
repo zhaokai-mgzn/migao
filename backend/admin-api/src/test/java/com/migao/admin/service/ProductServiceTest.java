@@ -1588,7 +1588,7 @@ class ProductServiceTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
-        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), null, 1L);
 
         // Then: 原地改价命中该行
         ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
@@ -1619,7 +1619,7 @@ class ProductServiceTest {
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         // When
-        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), null, 1L);
 
         // Then: 兜底命中并原地改价（不新建行、不改库里的门幅写法）
         ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
@@ -1637,7 +1637,7 @@ class ProductServiceTest {
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         // When
-        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), null, 1L);
 
         // Then
         verify(productSkuMapper, times(1)).selectList(any(LambdaQueryWrapper.class));
@@ -1652,7 +1652,7 @@ class ProductServiceTest {
 
         // When & Then: 与线上指纹一致（sku_update!SKU不存在）——message=SKU不存在，suggestion 供 agent 自修复
         assertThatThrownBy(() ->
-                productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L))
+                productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), null, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("SKU不存在")
                 .satisfies(ex -> {
@@ -1771,7 +1771,7 @@ class ProductServiceTest {
         ProductSku stored = storedSku(2001L, "2.8");
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(stored));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
-        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), null, 1L);
         verify(productSkuMapper).updateById(any(ProductSku.class));
         assertThat(stored.getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
 

@@ -34,6 +34,7 @@ from app.graph.skills.base_skill import (
     _relock_order_skill, _remember_known_value, _remember_raw_phones, _remember_sms_code,
     _registry_has_confirm_write_tool, _registry_has_tool,
     _requires_confirmation, _self_correct_retry, _stall_has_progress, _stored_sms_code,
+    _card_only_confirmation,
     _track_llm_cost, _write_input_recovery_block, capability_denial_text_hit, card_fingerprint,
     extract_pending, extract_product_keyword, extract_sms_code, is_pending_for,
     llm_breaker_name, llm_incident_id, raw_phones_in,
@@ -995,6 +996,11 @@ async def react_turn(
                             f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
                             f"interact(component=confirm, fields=[…]) "
                             f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                            # 涉钱面（issue #5317）：改价**只认卡值** —— 商家打字「确认」不算。
+                            # 不写这句，模型会拿"顾客已经说过确认"当放行条件反复重试同一个调用。
+                            + ("⚠️ 本次是**涉钱面（改价）**：确认形态**只认卡片点击**，"
+                               "商家打字「确认」不算（改价门禁只认卡值，issue #5317）。"
+                               if _card_only_confirmation(tool, args) else "")
                             + _confirm_card_fields_hint(args)
                             + _pending_hint
                         )

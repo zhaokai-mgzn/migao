@@ -141,15 +141,26 @@ public class AgentProductController {
             throw BusinessException.validationError("缺少 price 字段");
         }
         java.math.BigDecimal price = new java.math.BigDecimal(priceObj.toString());
-        log.info("[Agent] SKU调价: product={}, color={}, width={}, price={}",
-                productId, color, doorWidth, price);
+        // 改前价（issue #5317）：随请求下发，由 ProductService 与匹配到的 SKU 当前价**按值核对**，
+        // 不符即 422。可选 —— 缺席 = 调用方没声明改前价（前端行内改价端点不走这里）。
+        Object beforeObj = body.get("before_price");
+        BigDecimal beforePrice = null;
+        if (beforeObj != null) {
+            try {
+                beforePrice = new BigDecimal(beforeObj.toString().trim());
+            } catch (NumberFormatException e) {
+                throw BusinessException.validationError("before_price 必须为数字");
+            }
+        }
+        log.info("[Agent] SKU调价: product={}, color={}, width={}, price={}, before_price={}",
+                productId, color, doorWidth, price, beforePrice);
         try {
             String resolvedId = productService.resolveProductId(productId, tenantId);
             if (resolvedId == null) {
                 throw BusinessException.notFound("商品（" + productId + "）",
                         "请先用 product_search 查出正确 ID");
             }
-            productService.updateSkuPrice(resolvedId, color, doorWidth, price, tenantId);
+            productService.updateSkuPrice(resolvedId, color, doorWidth, price, beforePrice, tenantId);
             ProductResponse result = productService.getProductById(resolvedId, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {

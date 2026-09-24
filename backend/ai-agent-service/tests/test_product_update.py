@@ -49,8 +49,9 @@ class TestProductUpdateRequestField:
     async def test_price_sent_as_base_price(self, tool):
         """改价请求体必须用 basePrice 字段（对齐 admin-api AgentProductUpdateRequest）
 
-        issue #5303：改价必须带 `before_price`（改前价预览声明）才能执行 ⇒ 夹具同步带上，
-        并反向钉住「预览声明**不进请求体**」（否则又是一处"下发即静默丢弃"）。
+        issue #5303：改价必须带 `before_price`（改前价预览声明）才能执行 ⇒ 夹具同步带上。
+        issue #5317 改判：`before_price` 从「预览声明、不进请求体」变为**必须下发**
+        （字段名 `beforePrice`，服务端据此与 DB 当前值按值核对，不符即 422）。
         """
         ctx = _admin_ctx()
         patched = AsyncMock(return_value={"success": True, "data": {}})
@@ -63,8 +64,11 @@ class TestProductUpdateRequestField:
         assert "basePrice" in body, f"请求体应含 basePrice 字段（而非 price）: {body}"
         assert body["basePrice"] == 200.0
         assert "price" not in body, f"请求体不应再含 price 字段: {body}"
-        assert "before_price" not in body and "beforePrice" not in body, (
-            f"before_price 是**预览声明**，不得进请求体（DTO 里没有这个字段）: {body}"
+        assert body.get("beforePrice") == 168.0, (
+            f"改前价必须**下发**（服务端靠它回查，不下发就只能证明「模型声称」）: {body}"
+        )
+        assert "before_price" not in body, (
+            f"字段名必须逐字等于 DTO 字段 beforePrice（snake_case 会被 Jackson 静默丢弃）: {body}"
         )
 
     @pytest.mark.asyncio
@@ -77,7 +81,7 @@ class TestProductUpdateRequestField:
             await tool.execute(ctx, product_id="p1", price=88.8, before_price=88.8)
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}
-        assert set(body.keys()) == {"basePrice"}, f"只应传 basePrice: {body}"
+        assert set(body.keys()) == {"basePrice", "beforePrice"}, f"只应传 basePrice + 改前价: {body}"
 
     @pytest.mark.asyncio
     async def test_denied_role_rejected_before_api_call(self, tool):
@@ -164,19 +168,17 @@ class TestStatusContractWithAdminApiDto:
         camel = {k: re.sub(r"_(\w)", lambda m: m.group(1).upper(), k) for k in body_props}
         # price 是工具入参名，请求体实际下发 basePrice（见 TestProductUpdateRequestField）
         camel["price"] = "basePrice"
-        # ⚠️ issue #5303：`before_price` 是**预览声明**（改前价），**有意不下发** ——
-        # 它不是 DTO 字段，也不该是；「确实没下发给 admin-api」由
-        # `TestProductUpdateRequestField::test_price_sent_as_base_price` 与
-        # `tests/test_price_preview_guard.py` 反向钉住（排除 ≠ 放宽）。
-        PREVIEW_ONLY_PARAMS = {"before_price"}
-        camel = {k: v for k, v in camel.items() if k not in PREVIEW_ONLY_PARAMS}
+        # ⚠️ issue #5317 改判：`before_price` 此前是**预览声明、有意不下发**（本处曾以
+        # `PREVIEW_ONLY_PARAMS` 显式排除）；现在它**必须下发**（服务端据此与 DB 当前值按值核对，
+        # 不符即 422）⇒ 排除面删除，`before_price → beforePrice` 走**同一套** DTO 字段核对
+        # （下发即被静默丢弃的形态由本测试与 tests/test_tool_payload_backend_contract.py 双重钉住）。
 
         missing = {k: v for k, v in camel.items() if v not in dto_fields}
         assert not missing, (
             f"schema 字段在 admin-api AgentProductUpdateRequest 中不存在 → 会被 Jackson 静默丢弃：{missing}"
         )
-        assert PREVIEW_ONLY_PARAMS <= set(body_props), (
-            "预览声明参数消失了 ⇒ 本测试的排除面在空转（该改名/删除这条豁免）"
+        assert "beforePrice" in dto_fields, (
+            "DTO 缺 beforePrice ⇒ 改前价回查链路断了（服务端无从核对，护栏只防漏填不防填错）"
         )
 
     def test_status_declared_on_both_sides(self, tool):
