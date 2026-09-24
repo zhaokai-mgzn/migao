@@ -230,19 +230,21 @@ def test_identical_to_ref_passes(fixture_repo: Path):
     assert "❌" not in proc.stdout
 
 
-def test_same_version_different_content_warns_but_passes(fixture_repo: Path):
-    """同版本但内容不同（**分叉**，不是升级）⇒ 告警，但不非零退出。
+def test_same_version_different_content_is_rejected(fixture_repo: Path):
+    """同号不同内容 ⇒ **非零退出**（跨包撞车；issue #5425 改判 —— 原先只告警、exit 0）。
 
-    分叉多为「在旧快照上改了预设」；本判据的职责是报出来，不是替人决定要不要提交。
+    形态与「两个并行包各自只抬一格、撞到同一个号」（2026-09-24 一晚 2 次）逐字相同
+    ⇒ 撞车必须当场可见，出口 = 抬号到「基准版本 + 1」。
+    5 种形态的完整判据在 `tests/unit_ci_workflows/test_preset_version_collision.py`（本文件不再重复）。
     """
     _aligned_to_ref(fixture_repo)
     _write_skill(fixture_repo, "1.28.0", filler=99)   # 版本不变，正文变了
 
     proc = _run_guard(fixture_repo, "check", "--ref", "main")
 
-    assert proc.returncode == 0, proc.stdout
-    assert "分叉" in proc.stdout
-    assert "不是升级" in proc.stdout
+    assert proc.returncode != 0, proc.stdout
+    assert "同号不同内容 = 跨包撞车" in proc.stdout
+    assert "抬号到 `1.29.0`" in proc.stdout
 
 
 def test_non_versioned_preset_file_is_reported_not_judged(fixture_repo: Path):
