@@ -1,0 +1,263 @@
+name: Mechanism Liveness (机制存活看门人)
+
+# ── 这是什么（issue #5326：「机制静默失效」这一**类别**的固化）─────────────────
+# 一个自动化机制**停摆或瞎了**，但**没有任何读数会因此改变** ⇒ 只能靠人偶然发现。
+# 今晚两例各藏约 40 小时：
+#   · **#5264**：台账 `approve` 因分页缺陷**一次都没发出去** —— 机制「跑了」且每次都**成功退出**，
+#     打印的 ✅ 读数**与事实相反**；
+#   · **#5307**：台账分支 required 测试**恒红**，**没有任何消费面**看得到（不在 required +
+#     `flaky-triage` 的自指守卫跳过该分支 + reconcile 只补 approve/arm、不读失败原因）。
+#
+# ── 已有一半、本 workflow **不重做** ────────────────────────────────────────
+# `scripts/drift_audit.py::check_heartbeat()` 判的是「`schedule:` 存在且没被注释停用」
+# = **调度存在**。它答不了「**最近一次真的干成过事**没有」。本 workflow 判的是**执行成果**。
+#
+# ── 两条腿（判定方式**不同**，故分开成两个 job）──────────────────────────────
+#  · `registry`（**PR 腿 + 定时腿**）：登记完整性 + 读数落点。**离线、确定性**（不连网、不依赖
+#    时间窗）⇒ 新 PR **新增一个维护类机制却不登记**、或**删掉某机制的读数步**，本 job 判红
+#     ⇒ 打 `block/merge`（`automerge.yml` 跳过带该标签的 PR）+ 评论修复指引。
+#  · `watchdog`（**只跑定时腿**，`github.event_name != 'pull_request'`）：沿用既有通道 ——
+#    失败 ⇒ **开/更 P1 值班 issue**。
+#    ⚠️ **它不是 required，也不许翻 required**：它的判定含**时间窗 / run 归属**依赖
+#    （最近一次已完成的 run 是哪一个，取决于 GitHub 的 cron 节流 —— 本仓实测节流到 2~5.5h）
+#    ⇒ 判定**不确定**。本仓裁定：翻 required 的两条前置之一是「判定方式必须确定」
+#    （`migao-dev-flow` §2.2「把一条 job 翻成 required 有两条前置」）。**报告型 + 判红落闸**
+#    （打 `block/merge` + 值班 issue）才是正确形态。
+#
+# ── 判据本体（单一实现，本机可复跑）────────────────────────────────────────
+# `scripts/mechanism_liveness.py` + 登记数据 `scripts/mechanism-registry.json`；
+# 判据 = `tests/unit_ci_workflows/test_mechanism_liveness.py`（各带注入式红证）。
+# 读数语法与发射器：`.github/scripts/mechanism_liveness.sh`（`::notice::MECHANISM-LIVENESS …`）。
+#
+# ── 边界（照实登记，勿当成"已覆盖"）────────────────────────────────────────
+#  · 只看**执行成果的出声**，**不**验证机制自身的正确性（#5264 那句与事实相反的 ✅ 是机制
+#    **自己**打的 —— 那归各机制自己的判据）。读数 `rc` 与 run 结论**矛盾**时判红，这是本
+#    workflow 能覆盖的那一半。
+#  · 读数取自 GitHub **注解**（`::notice::` 的结构化形态）：注解有 per-step/per-job 上限，
+#    故读数步被要求**独立成 step**（`test_reading_step_is_its_own_step`）；注解取不到时退化为
+#    `gh run view --log` 抓取（**同一语法**，两条腿判定一致）。
+#  · 首发日：main 上还没有「已完成的 run」时记 `pending-first-run` **备注**（**不是** finding）
+#    —— 与 `check_heartbeat()` 的 `pending-merge` 同族：**监控自己不得自造假红**。
+#  · 未固化的机制逐条登记在 `scripts/mechanism-registry.json` 的 `unfixed`（判据 5，**不许留白**）。
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 每日 04:37 CST（UTC+8）= UTC 20:37，避开整点与 drift-audit（21:17 UTC）的 CI 高峰
+    - cron: '37 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read          # 读 run 列表 / 注解（存活看门人）
+  issues: write          # 定时腿失败 ⇒ 开/更 P1 值班 issue
+  pull-requests: write   # PR 腿失败 ⇒ 打 `block/merge` + 评论修复指引
+
+concurrency:
+  group: mechanism-liveness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  registry:
+    name: Mechanism Liveness Registry (登记完整性 + 读数落点)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 显式装依赖：本脚本按**真 YAML 结构**判 `on:` / `permissions:`（不用正则扫 YAML ——
+      # 那正是本仓 #5323 清扫过的形态）⇒ 缺 PyYAML 时它**必须**以退出码 3 报「无法判定」，
+      # 而不是退化成扫文本（#5170 ①：渲染腿的 job 不能裸 `import yaml`）。
+      - name: Install deps
+        run: pip install pyyaml
+
+      - name: 机制登记 + 读数落点（离线、确定性）
+        id: check
+        run: |
+          set +e
+          python3 scripts/mechanism_liveness.py --check --json mechanism-liveness-report.json \
+            > /tmp/mechanism-liveness.txt 2>&1
+          RC=$?
+          set -e
+          cat /tmp/mechanism-liveness.txt
+          echo "exit_code=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "## 机制存活看门人 —— 登记 + 读数落点"
+            echo ''
+            echo '```'
+            cat /tmp/mechanism-liveness.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
+      - name: Upload 机器可读报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mechanism-liveness-report
+          path: mechanism-liveness-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── fail-closed 的执行闸：auto-merge 会跳过带 `block/merge` 的 PR ──────────
+      - name: 判红 ⇒ 打 block/merge + 贴修复指引（PR 腿）
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          BODY=$(mktemp)
+          {
+            echo "❌ **Mechanism Liveness 未通过 —— 本 PR 让某个维护类机制**不再出声**（或新增了未登记的机制）。**"
+            echo ''
+            echo '```'
+            cat /tmp/mechanism-liveness.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+            echo ''
+            echo "**这不是风格问题**：机制停摆/瞎了而**没有任何读数会因此改变**，是本仓实测藏了 **约 40 小时**"
+            echo "的缺陷类别（issue #5264 的台账 \`approve\` 一次都没发出去，却每轮打印与事实相反的 ✅；"
+            echo "issue #5307 的台账分支 required 测试恒红而没有一个消费面看得到）。"
+            echo ''
+            echo "**怎么改**：按上面逐条 finding 的『修法』；新增维护类机制 ⇒ 在"
+            echo "\`scripts/mechanism-registry.json\` 登记（机制名 / 工作流 / 期望可观测 / 判据 / 谁看）"
+            echo "并加读数步；确实无法产出读数 ⇒ 写进该登记的 \`unfixed\`（**原因 + 谁看**，不许留白）。"
+            echo ''
+            echo "复算（本机、零成本）：\`python3 scripts/mechanism_liveness.py --check\`"
+          } > "$BODY"
+          gh pr comment "$PR" --body-file "$BODY" \
+            || echo "::warning::无法在 PR 上贴修复指引（限流/权限）—— **不影响判红结论**，请直接读本 run 的 step summary"
+          gh pr edit "$PR" --add-label block/merge \
+            || echo "::warning::无法打 block/merge（限流/权限）—— **判红结论不变**，但 auto-merge 不会被本标签拦住，请人工确认"
+          exit 0
+
+      - name: 通过 ⇒ 摘 block/merge（PR 腿）
+        if: success() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+          if echo "$LABELS" | grep -qx 'block/merge'; then
+            gh pr edit "$PR" --remove-label block/merge \
+              || echo "::warning::无法摘 block/merge（限流/权限）—— 它是**恢复态**的收尾动作，请人工确认"
+          fi
+          exit 0
+
+  watchdog:
+    name: Mechanism Liveness Watchdog (最近一次成功处置是否新鲜)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # **只在定时腿/手动腿跑**：它的判定依赖「最近一次已完成的 run」——PR 上跑没有意义，
+    # 且会把 PR 的 CI 时间浪费在拉别人的 run 历史上。
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install pyyaml
+
+      - name: 机制存活看门人（判据 2）
+        id: watchdog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          python3 scripts/mechanism_liveness.py --check --watchdog \
+            --json mechanism-liveness-watchdog.json > /tmp/mechanism-liveness-watchdog.txt 2>&1
+          RC=$?
+          set -e
+          cat /tmp/mechanism-liveness-watchdog.txt
+          echo "exit_code=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "## 机制存活看门人 —— 存活读数新鲜度"
+            echo ''
+            echo '```'
+            cat /tmp/mechanism-liveness-watchdog.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
+      - name: Upload 机器可读报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mechanism-liveness-watchdog-report
+          path: mechanism-liveness-watchdog.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: 看门人判红 ⇒ 开/更 P1 值班 issue（**值班口径**：本通道不拦合并）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          TITLE="[liveness] 有维护类机制**不再出声**（机制存活看门人）"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          BODY=$(mktemp)
+          {
+            echo "机制存活看门人未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ''
+            echo '```'
+            cat /tmp/mechanism-liveness-watchdog.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+            echo ''
+            echo "### 这条通道拦不拦合并（**别读成「已拦」**）"
+            echo ''
+            echo "- **定时腿没有 PR** ⇒ \`block/merge\` 无处施加。给「相关 PR」打标会把**修这条的人自己**拦死"
+            echo "  （修复要等合并后才生效 ⇒ 标签永远摘不掉）= 本仓 \`#5075\` 同款自锁。"
+            echo "- **替代拦截点**：① **PR 腿**（本 workflow 的 \`registry\` job）：**新增未登记机制 / 删掉读数步**"
+            echo "  ⇒ 给该 PR 打 \`block/merge\`（未 arm 的 PR 被拦；已 arm 的用 \`gh pr merge --disable-auto\`，见 \`#4248\`）；"
+            echo "  ② **本 issue（P1 值班）** 承接**定时腿**才发现的那一半（如"某个机制在 main 上停摆了"）。"
+            echo "- **为什么本 job 不翻 required**：判定含**时间窗 / run 归属**依赖（最近一次已完成的 run 是哪个，"
+            echo "  取决于 GitHub 对 cron 的节流 —— 本仓实测 2~5.5h）⇒ **判定不确定**，而本仓裁定翻 required 的"
+            echo "  两条前置之一是「判定方式必须确定」（\`migao-dev-flow\` §2.2）。故**报告型 + 判红落闸**。"
+            echo "- **清零判据**：\`python3 scripts/mechanism_liveness.py --check --watchdog\` 退出 0 ⇒ 本 issue 可关。"
+            echo "- **处置归属**：按 finding 的 \`mech=\` 归属到该机制的文件所有者（登记见 \`scripts/mechanism-registry.json\`）。"
+          } > "$BODY"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --body-file "$BODY" \
+              || echo "::warning::无法在值班 issue #$EXIST 上追加本轮证据（限流/权限）"
+            gh issue edit "$EXIST" --add-label priority/P1 \
+              || echo "::warning::无法给值班 issue #$EXIST 打 priority/P1（限流/权限）"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+              || echo "::warning::无法创建 P1 值班 issue（限流/权限）—— 请人工按本 run 的 step summary 建单"
+          fi
+          exit 0
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # 看门人**自己也受同一语法约束**：一个不给自己出声的看门人，正是本单要消灭的形态。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不让读数步判红**
+          # （报告者不改变机制结论；判「静默」的地方是看门人自己的定时腿）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit mechanism-liveness \
+              --outcome "$OUTCOME" \
+              --why "看门人本轮判定面见上（登记完整性由 registry job 承担）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=mechanism-liveness）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

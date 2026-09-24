@@ -1,0 +1,228 @@
+name: Red Proof Live Sweep (红证实跑巡检)
+
+# ── 这是什么（issue #5328：**红证退化**这一类的固化）─────────────────────────────
+# 本仓已有红证机具（`scripts/*-red-proof.py`）与它们的**前提自检**（"注入锚点可命中 + 期望判据
+# 方法存在"，`scripts/red_proof_harness.py --check`，**每个 PR 都跑**）。但
+# **「期望判据方法**存在**」≠「注入之后它**会红**」** —— 今晚 3 例退化（#5268 判据 4 / #5286
+# 判据 4 / #5272 既有红证）都是「注入生效了，判据却不动」，全靠**人手工跑了一次变异**才发现。
+# 本 workflow 把那一次「人手工跑」变成**每轮真跑**：按登记册（`scripts/redproof_registry.json`）
+# 逐条在**临时副本**上做「注入 → 断言必红 → 还原」，失败即具名报出（含 `该红证已退化`）。
+#
+# ── 为什么**必须**留在报告型（不翻 required）——`migao-dev-flow` §19 表第 16 条的两条前置 ──
+# 第 16 条的判据是「**两条都满足才翻**」：
+#   ① `on.pull_request` 不得有 `paths:` 过滤 —— 本腿**根本没有 `pull_request` 触发**
+#      （巡检要 JDK + npm + PG 二进制，且单条判据实测分钟级）⇒ 它**不会在每个 PR 上报**
+#      ⇒ 翻 required 会让所有 PR 永久 `BLOCKED`（GitHub 报
+#      "Expected — waiting for status to be reported"，而**永远不会有人来报**）。
+#   ② 先读判据实现确认**判定确定** —— 本腿的判定含**注入 / 还原 / 子进程时序**与工具链就绪度
+#      ⇒ 判定**不确定**（同一份代码在不同机器上「跳过」的条目可以不同）。
+# ⇒ 两条前置**都不满足** ⇒ 留在报告型：判红走**值班 issue**（下面的失败钩子），**不翻 required**。
+#
+# ── 判红走哪条既有通道（照实登记，勿读成"已拦"）───────────────────────────────
+#   · **定时腿没有 PR 对象** ⇒ `block/merge` **无处施加**；给"相关 PR"打标会把**修这条红证的
+#     那个 PR 自己**拦死（修复要等合并后才生效 ⇒ 标签永远摘不掉）= #5075 同款自锁
+#     （先例与措辞同 `.github/workflows/drift-audit.yml` 头部）。
+#   · **值班 issue**（本文件末尾的失败钩子）= 定时腿的拦截点，`priority/P1`。
+#   · `workflow_dispatch` 带 `pr` 输入时（人工定向复跑某个 PR）**才**给该 PR 打 `block/merge`
+#     + 评论 —— 那是"人点名要拦"，不是"自动拦"。
+#
+# ── 巡检自己停摆要能被看见（§23 G6）─────────────────────────────────────────
+# 本文件带 `schedule:` ⇒ 合并后**自动落进** `scripts/drift_audit.py` 的 `heartbeat` 判定面
+# （零成功 / 从未跑过 / 超过 3×cron 周期 ⇒ 漂移 ⇒ PR 腿 `block/merge` / 定时腿 P1 值班 issue）。
+# **不另立心跳表**（复用既有机制；判据 `tests/unit_ci_workflows/test_redproof_live_sweep.py`
+# 的 `test_new_scheduled_workflow_falls_into_the_heartbeat_judgment`）。
+#
+# ── 成本与读数（§23 G8：不拿挂钟当判据）──────────────────────────────────────
+# 巡检自己报告的是「登记 / 真跑 / 跳过（逐条原因）/ 注入 / 还原 / 退化」这些**与负载无关**的
+# 读数；`--timeout` 是单次判据运行的**超时上限**，`--budget` 是本轮总预算（**只用来止损**，
+# 不参与任何判定）。job 的 `timeout-minutes` 同样是上限，不作为「快 = 好」的结论。
+
+on:
+  schedule:
+    # 每日 03:40 CST（UTC+8）= UTC 19:40，避开整点 CI 高峰
+    - cron: '40 19 * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: '（可选）把判红结果定向施加到该 PR：打 block/merge + 评论'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+  # 失败钩子要开/更值班 issue（缺它 = 钩子自己崩溃、红而不留痕，见 issue #3834）
+  issues: write
+  # workflow_dispatch 带 pr 时打 block/merge + 评论
+  pull-requests: write
+
+concurrency:
+  group: redproof-sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sweep-live:
+    name: 红证实跑巡检（注入 → 断言必红 → 还原）
+    runs-on: ubuntu-latest
+    # 上限（不是判据）：多条真栈判据 × (基线 + 注入 + 还原)，逐条超时由 --timeout 兜底
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 巡检对象 = HEAD 的树（`git archive HEAD`），不需要历史
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: 安装巡检需要的 python 依赖（pytest 面：登记册里有 pytest 级的红证）
+        run: pip install pytest pyyaml
+
+      - name: Setup JDK 21（Maven 面：机具的被守卫源码 + 判据都在 admin-api）
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Setup Node 20（web 面：admin-web 的 vitest 判据）
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/admin-web/package-lock.json
+
+      - name: 让 PG 二进制进 PATH（真库判据各自起一次性 initdb + pg_ctl 集群；判据源同 pr-check.yml）
+        run: |
+          initdb="$(command -v initdb || true)"
+          pg_ctl="$(command -v pg_ctl || true)"
+          for d in /usr/lib/postgresql/16/bin /usr/lib/postgresql/15/bin /usr/lib/postgresql/14/bin; do
+            [ -n "$initdb" ] || [ ! -x "$d/initdb" ] || { initdb="$d/initdb"; echo "$d" >> "$GITHUB_PATH"; }
+            [ -n "$pg_ctl" ] || [ ! -x "$d/pg_ctl" ] || pg_ctl="$d/pg_ctl"
+          done
+          echo "initdb = ${initdb:-<缺失>}"
+          echo "pg_ctl = ${pg_ctl:-<缺失>}"
+          if [ ! -x "${initdb:-/nonexistent}" ] || [ ! -x "${pg_ctl:-/nonexistent}" ]; then
+            echo "::warning::找不到 PG 二进制（initdb/pg_ctl）⇒ 真库那几条会被巡检**具名跳过**（跳过 ≠ 通过，读数里会显示）"
+          fi
+
+      - name: 预热 Maven 本地仓（机具的判据用 `-o` 离线跑；冷缓存下离线必失败）
+        continue-on-error: true
+        run: |
+          # 必须**跑到 `test` 阶段**（`test-compile` 不装 surefire 的 provider ⇒ 离线仍会失败）：
+          # 用一个真判据类把依赖装齐，之后巡检的临时副本才能离线复算。
+          cd backend/admin-api
+          ./mvnw -q test -Dtest=PoolBoardUrgencyTest -DfailIfNoTests=false \
+            || echo "::warning::Maven 预热失败 —— 巡检会把它报成「基线不绿」（具名），不会当成通过"
+
+      - name: 安装 admin-web 依赖（web 面判据需要；依赖会被**只读软链**进巡检的临时副本）
+        continue-on-error: true
+        run: |
+          cd frontend/admin-web
+          npm ci --no-audit --no-fund || echo "::warning::npm ci 失败 ⇒ web 那条会被巡检按「缺目录」**具名跳过**（跳过 ≠ 通过）"
+
+      - name: 红证实跑巡检（登记册逐条：注入 → 断言必红 → 还原）
+        id: sweep
+        run: |
+          set +e
+          # 不用管道：把输出落盘再 cat（管道会吞掉退出码，是本仓库已踩过的坑）
+          python3 scripts/redproof_sweep.py --timeout 900 --budget 4200 \
+            --json redproof-sweep-report.json > /tmp/redproof-sweep.txt 2>&1
+          RC=$?
+          set -e
+          cat /tmp/redproof-sweep.txt
+          echo "exit_code=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "## 红证实跑巡检（#5328）"
+            echo ''
+            echo '```'
+            cat /tmp/redproof-sweep.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 「一条都没真跑」不是通过：把三态口径抬到控制台（§19.1 三态 0/1/3）
+          if [ "$RC" = "3" ]; then
+            echo "::warning::红证实跑巡检**无法判定**：一条红证都没真跑（工具链缺失 / 登记册不可读）—— 这不是「通过」"
+          fi
+          exit $RC
+
+      - name: Upload 机器可读报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: redproof-sweep-report
+          path: redproof-sweep-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── 人工定向腿：dispatch 带了 pr 才拦那个 PR（定时腿无 PR 对象，见文件头登记）──────
+      - name: 判红 + dispatch 指定了 PR ⇒ 打 block/merge + 贴修复指引
+        if: failure() && inputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          set +e
+          BODY=$(mktemp)
+          {
+            echo "❌ **红证实跑巡检未通过**（${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}）"
+            echo ''
+            echo '```'
+            cat /tmp/redproof-sweep.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+            echo ''
+            echo "**怎么修**：上面每条都具名报出了「注入点失配 / 该红证已退化 / 未还原 / 基线不绿」；"
+            echo "本地复跑同一条：\`python3 scripts/redproof_sweep.py --entry <id>\`；"
+            echo "登记册与扩展口径见 \`scripts/redproof_registry.json\` 的 \`_how_to_extend\`。"
+            echo ''
+            echo "（已按人工定向请求打上 \`block/merge\`——定时腿**不会**自动打标，见 workflow 头部登记。）"
+          } > "$BODY"
+          gh pr comment "$PR" --body-file "$BODY" || true
+          gh pr edit "$PR" --add-label block/merge || true
+          exit 0
+
+      # ── 报告型的拦截点：值班 issue（定时腿没有 PR ⇒ block/merge 无处施加）──────────
+      - name: 判红 ⇒ 开/更 P1 值班 issue（**值班口径**：本通道不拦合并，见文件头登记）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          TITLE="[red-proof] 红证实跑巡检未通过（注入 ⇒ 判据不红 ⇔ 红证已退化）"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          BODY=$(mktemp)
+          {
+            echo "红证实跑巡检未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ''
+            echo '```'
+            cat /tmp/redproof-sweep.txt 2>/dev/null || echo "(报告缺失)"
+            echo '```'
+            echo ''
+            echo "### 三类形态怎么读（读数里的具名结论）"
+            echo ''
+            echo "- **\`该红证已退化\`**：注入**已生效**（fingerprint 差异是证据）而判据**没有变红** ⇒"
+            echo "  这条红证是空的（= #5268 判据 4 / #5286 判据 4 / #5272 既有红证的形态）；"
+            echo "- **\`注入点失配\`**：被守卫源码漂移了 ⇒ 按报告重取锚点并**更新登记册**（不许删条目换绿）；"
+            echo "- **\`基线不绿\` / \`测试没跑起来\`**：工具链事故（Maven 冷缓存 / PG 二进制 / npm 依赖）——"
+            echo "  本工作流会把它报成**基线不绿**而不是「通过」，先按 job 日志修环境；"
+            echo "- **\`跳过 N 条\`**：缺工具链的条目**没跑**（跳过 ≠ 通过），读数里逐条给了原因。"
+            echo ''
+            echo "### 谁被拦（本通道的语义 —— 别当成\"已覆盖\"，见 \`.github/workflows/redproof-sweep.yml\` 头部）"
+            echo ''
+            echo "- **本定时腿不拦合并**：定时腿没有 PR ⇒ \`block/merge\` 无处施加；给\"相关 PR\"打标会把"
+            echo "  修这条红证的那个 PR 自己拦死 = \`#5075\` 同款自锁。"
+            echo "- **替代拦截点**：① \`workflow_dispatch\` 带 \`pr\` 输入 ⇒ 定向打 \`block/merge\`；"
+            echo "  ② 本 issue（**P1 值班**）；③ PR 面的**前提自检**（\`red_proof_harness.py --check\`，"
+            echo "  每个 PR 都跑）继续管「机具的声明还在不在」。"
+            echo "- **清零判据**：\`python3 scripts/redproof_sweep.py\` 退出 0（全部登记且可跑的条目真跑且真红）"
+            echo "  ⇒ 本 issue 可关。"
+            echo "- **谁看**：按条目归属分流（登记册 \`entries[].tool\` 的机具 owner；未固化项见"
+            echo "  \`scripts/redproof_registry.json\` 的 \`unfixed[].owner\`）。"
+          } > "$BODY"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --body-file "$BODY" || true
+            gh issue edit "$EXIST" --add-label priority/P1 || true
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 || true
+          fi
+          exit 0

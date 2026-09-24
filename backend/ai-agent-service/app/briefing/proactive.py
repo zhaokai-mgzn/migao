@@ -22,6 +22,7 @@
   "config":   {...},          # 选填：阈值覆盖（租户级配置的落点），键同 ProactiveConfig
   "row_fields": {...},        # 装配层**自描述**：本次真的给出了哪些行数组、每个数组有哪些字段
   "row_meta": {...},          # 每个行数组的元信息：{"limit": 500, "count": 500, "truncated": true}
+  "cost_accounting": true,    # 租户级**事实**（issue #5348）：该租户是否存在 avg_cost IS NOT NULL 的 SKU
   "orders":   [{"order_no", "status", "customer_id", "created_at", "shipped_at",
                 "sale_amount", "cost_amount"}],              # 低于成本价 / 超 N 天未发货
   "skus":     [{"sku_id", "product_id", "product_name", "stock"}],  # 库存告急（stock ≤ 阈值）
@@ -34,21 +35,31 @@
 行数组缺省 = 该规则无输入 ⇒ **不命中**。这与「命中 0 条」在输出上等价，但语义不同：
 **「没数据」不等于「没问题」** —— 调用方不得把空命中读成「今天一切正常」。
 
-⇒ 那个语义差别由 `proactive_status()` 落成**数据层可分**（逐规则 `wired` / `not_wired` / `incomplete` + 原因）：
-判据 = 「规则声明的输入」（`RuleSpec.requires` / `dimensions`）×「装配层声明的产出」（`row_fields` / `row_meta`），
+⇒ 那个语义差别由 `proactive_status()` 落成**数据层可分**（逐规则 `wired` / `not_wired` /
+`not_enabled` / `incomplete` + 原因）：
+判据 = 「规则声明的输入」（`RuleSpec.requires` / `dimensions` / `judgeable_fields` / `enabled_by`）
+×「装配层声明的产出」（`row_fields` / `row_meta` / 租户级事实），
 **两侧各只有一份声明**，没有第二份口径；老快照没有自描述时按实际行的字段并集兜底
 （滚动升级期不至于把已接线的规则读成未接线）。
 
 🔴 **加有界（热路径必须）会新开一个静默面**：截断的行「看不见」，规则照旧不命中 ⇒ 又被读成「没问题」。
 故装配层的 `row_meta.truncated` **必须显式**，且**只有** `wired`（= 已接入**且本次完整**）才允许把空命中
-读成「这方面没问题」；`not_wired` 与 `incomplete` 都带 `reason`。
+读成「这方面没问题」；`not_wired` / `not_enabled` / `incomplete` 都带 `reason`。
 
 数据来源：admin-api 聚合层（`DailyBriefingService.aggregateSnapshot`）落库的 `source_snapshot`
 —— 与经营日报**同源**，故两个入口口径一致（设计文档 §三 族 3 末「同一内核、两种消费形态」）。
 快照内的行级数组（orders / skus / returns）由跨域视图内核（族 3 · 包 1，issue #5358）装配，
-本模块只消费。两条**结构性不可达**（如实登记，不是静默失效）：全仓无改价流水表 ⇒ `price_changes`
-永不出现；`orders` 表无成本列 ⇒ `orders` 行**没有 `cost_amount`** ⇒ `below_cost_price` 接不通
-—— 两条都在未接线清单里（**不是「命中 0 条」**）。
+本模块只消费。**结构性不可达**（如实登记，不是静默失效）：全仓无改价流水表 ⇒ `price_changes`
+永不出现 ⇒ `price_change_over` 接不通（在未接线清单里，**不是「命中 0 条」**）。
+
+🔴 **成本价（issue #5348）**：成本不在 `orders` 表上，而在 `product_skus.avg_cost`（移动加权）。
+装配层**逐行解析 SKU**（① `processing_info.skuId` → ② 该商品**唯一** SKU → ③ 不可解析）后给出
+`cost_amount = Σ(行数量 × 该行 avg_cost)`；**任一行不可解析、或该行 `avg_cost IS NULL` ⇒ 整单
+`cost_amount = None`（整单不可判定）—— 不出部分和**（部分和把未知行当 0，沿用 `avg_cost` 既有口径
+「不猜 0」）。两条与之配套的纪律：① **行级三态** —— 成本未知的行**不得**被当成「没低于成本」
+（落 `incomplete` + `gaps` 点名，见 `judgeable_fields`）；② **`not_enabled`** —— 成本价字段在
+（系统有），但该租户没有任何 `avg_cost IS NOT NULL` 的 SKU（= 没做成本核算）⇒ 与 `not_wired`
+**并列、不可合并**：`not_wired` 不可行动（系统没做），`not_enabled` 可行动（用户能去开）。
 """
 
 from __future__ import annotations
@@ -65,6 +76,7 @@ __all__ = [
     "UNSHIPPED_STATUSES",
     "WIRED",
     "NOT_WIRED",
+    "NOT_ENABLED",
     "INCOMPLETE",
     "ProactiveConfig",
     "DEFAULT_CONFIG",
@@ -223,6 +235,14 @@ class RuleSpec:
     #: 用于**分组**的维度字段（缺值的行走不到该维度上）：不登记的话，「客户 × 商品」这种双维度规则
     #: 会被读成两个维度都接上了 —— 实际上缺商品的行只参与客户维度（本次不完整，见 `INCOMPLETE`）。
     dimensions: Tuple[str, ...] = ()
+    #: **行级可判定性**（「没数据 ≠ 没问题」的**行级**版本，issue #5348）：`requires` 里这些字段在
+    #: **本行**为空 ⇒ 该行落「**未判定**」（既不进命中、也不算「没问题」）。不登记 ⇒ 只按整数组/整字段判定。
+    judgeable_fields: Tuple[str, ...] = ()
+    #: **租户级前置**（`not_enabled` 的判据源，issue #5348）：`(快照键, 能力名, 开启指引)`。
+    #: 快照键取值为布尔，由装配层**从事实推出**（不是人工配置项）：`False` ⇒「系统**有**这个能力，
+    #: 是**该租户没开**」⇒ 落 `not_enabled`（带可行动的 `reason`）。键缺省/非布尔 ⇒ **不宣称**
+    #: 「没开」（看不见的事实不是 `False`：滚动升级期的老快照按未知处理）。
+    enabled_by: Optional[Tuple[str, str, str]] = None
 
 
 # ── 五条首批规则 ────────────────────────────────────────────────────────────
@@ -382,8 +402,12 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"below_cost_tolerance": cfg.below_cost_tolerance},
         title=lambda hit, cfg: f"{hit.count} 单成交价低于成本，合计亏损 {hit.amount:.2f} 元",
         detect=_detect_below_cost,
-        # 🔴 成本价：`orders` 表**无成本列** ⇒ 该规则结构性接不通（未接线清单，不是「命中 0 条」）
+        # 🔴 成本价来自 `product_skus.avg_cost`（#5348）—— 装配层逐行解析 SKU 后给出 Σ 行成本；
+        # 租户级前置与行级可判定性各只有一份声明（`enabled_by` / `judgeable_fields`）。
         requires=("orders", ("order_no", "sale_amount", "cost_amount")),
+        judgeable_fields=("cost_amount",),
+        enabled_by=("cost_accounting", "成本核算",
+                    "在商品入库时录入单价（系统按移动加权算出成本价）"),
     ),
     RuleSpec(
         rule_id="unshipped_overdue",
@@ -459,10 +483,13 @@ RULES: Tuple[RuleSpec, ...] = (
 #: 接线状态的取值（逐规则）：
 #: · `wired` = 输入已接入**且本次完整** ⇒ 空命中才等于「这方面没问题」；
 #: · `not_wired` = 该能力**尚未接入**（结构性缺数组/字段）；
-#: · `incomplete` = 接上了但**本次不完整**（行数被上限截断 / 分组维度在部分行上缺值）
+#: · `not_enabled` = 系统**有**这个能力，但**该租户没开**（issue #5348：如未做成本核算）
+#:   ⇒ 空命中**不可**读成「没问题」，但它是**可行动**的（去开启），与 `not_wired`（不可行动）不可合并；
+#: · `incomplete` = 接上了但**本次不完整**（行数被上限截断 / 分组维度在部分行上缺值 / 有行未判定）
 #:   ⇒ 空命中仍**不可**读成「没问题」（「截断必须显式」—— 有界不许变成静默少报）。
 WIRED = "wired"
 NOT_WIRED = "not_wired"
+NOT_ENABLED = "not_enabled"
 INCOMPLETE = "incomplete"
 
 
@@ -496,18 +523,33 @@ def _row_meta(snapshot: Any, key: str) -> Dict[str, Any]:
     return entry if isinstance(entry, dict) else {}
 
 
+def _tenant_fact(snapshot: Any, key: str) -> Optional[bool]:
+    """快照里的**租户级事实**（布尔）：`True` / `False`；缺省或非布尔 ⇒ `None`（**未知**）。
+
+    🔴 未知**不**当作 `False` —— 看不见的事实不是「该租户没开」：老快照（滚动升级期）没有这个键，
+    读成 `False` 会把**已开启**的租户误报成「你还没开启」（正是本单要治的
+    「不同性质的『没有』不能共用一个说法」）。
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    value = snapshot.get(key)
+    return value if isinstance(value, bool) else None
+
+
 def proactive_status(
     snapshot: Any, rules: Sequence[RuleSpec] = RULES
 ) -> Dict[str, Dict[str, Any]]:
-    """**逐规则**接线状态 + 未接线/不完整原因（issue #5358）—— 治「两种空在输出上等价」（#5348）。
+    """**逐规则**接线状态 + 不可用/不完整原因（issue #5358/#5348）—— 治「两种空在输出上等价」（#5348）。
 
-    为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 3 条能接、2 条结构上
+    为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 4 条能接、1 条结构上
     接不通），整体布尔到了调用方还是分不出「哪一条没接线」——那就又变回「空命中 = 今天没问题」。
 
     返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps"}}`：
-    `status` ∈ {`wired`（本次完整可用）, `not_wired`（未接入）, `incomplete`（本次不完整）}；
-    不变式：**`reason is None` ⟺ `status == wired`** —— 调用方只要看这一条，就知道空命中能不能
-    读成「没问题」。`missing` = 缺的数组/字段；`gaps` = 不完整的具体原因（截断 / 维度缺值）。
+    `status` ∈ {`wired`（本次完整可用）, `not_wired`（系统未实现）, `not_enabled`（系统有、该租户没开）,
+    `incomplete`（本次不完整）}；
+    不变式：**`reason is None` ⟺ `status == wired`**（`not_enabled` **不开例外**）—— 调用方只要看这一条，
+    就知道空命中能不能读成「没问题」。`missing` = 缺的数组/字段；`gaps` = 不完整的具体原因
+    （截断 / 维度缺值 / **有行未判定**）。
 
     纯函数、只读：同一 `(snapshot, rules)` ⇒ 同一结果，与命中集合互不影响
     （接线状态不改判据、不改命中）。
@@ -525,8 +567,18 @@ def proactive_status(
             if missing:
                 value = NOT_WIRED
                 reason = f"快照 {key} 行缺字段 {'、'.join(missing)}（数据层无此来源）"
+            elif spec.enabled_by and _tenant_fact(snapshot, spec.enabled_by[0]) is False:
+                # 🔴 系统**有**这个能力，是**该租户没开**（issue #5348）：与 `not_wired` **并列、不可合并**
+                # —— not_wired 不可行动（系统没做），这里可行动（用户能去开），reason 本身就是那句引导。
+                fact_key, ability, guidance = spec.enabled_by
+                missing = []
+                value = NOT_ENABLED
+                reason = (
+                    f"你还没开启{ability}（快照 {fact_key}=false）⇒ {spec.rule_name}本次未判定；"
+                    f"{guidance}后即可开启"
+                )
             else:
-                # 接上了也可能**本次不完整**：行数被上限截断、或分组维度在部分行上缺值。
+                # 接上了也可能**本次不完整**：行数被上限截断、分组维度在部分行上缺值、或**有行未判定**。
                 # 🔴 不显式登记的话，「有界」（热路径必须）就变成了新的静默少报面。
                 meta = _row_meta(snapshot, key)
                 if meta.get("truncated"):
@@ -540,6 +592,14 @@ def proactive_status(
                     if blank:
                         gaps.append(
                             f"{key} 行有 {blank} 行缺 {name}（那些行只参与其它维度的判定）"
+                        )
+                for name in spec.judgeable_fields:
+                    # 🔴 「没数据 ≠ 没问题」的**行级**版本：字段本行为空的行**未判定** ——
+                    # 既不进命中，也**不许**被当成「没命中（= 没问题）」。
+                    unknown = sum(1 for row in rows if row.get(name) is None)
+                    if unknown:
+                        gaps.append(
+                            f"{key} 行有 {unknown} 行的 {name} 为空（**未判定**，不得读成「没命中」）"
                         )
                 value = INCOMPLETE if gaps else WIRED
                 reason = "；".join(gaps) if gaps else None
