@@ -7,17 +7,18 @@
     "     ⇒ 修好一处必须**同 PR 删除对应条目**；登记**新债务**必须同 PR 显式上调 `anchor`（一次可评审的动作）—— 不许把它当豁免用。",
     "  ③ `anchor` = 冻结时刻的条数与命中数（§23 G2：**现取打印**，不写死解释性上限）。",
     "  ④ `scopes` = 能力谓词的**声明作用域**（守卫面判「该作用域内引用的工具是否全部不可达」）；作用域必须点名真实存在的 persona（fail-closed）。",
-    "现状：本文件只记录**已有债务**；本轮（#5331）**只登记不修实例** —— 改工具 description / prompt = 改注入模型的文本 = 行为变更，走另一单。"
+    "现状：ref 面（工具 description 点名零绑定工具）9 条已由 issue #5400 **全部销账** ⇒ 现取应为 0，锚点同步下调到 0（再出现即红：未登记 + 超锚点双闸）。guard / bind 两面仍为 #5331 登记的在册债务。"
   ],
   "anchor": {
-    "ref": 9,
-    "ref_hits": 9,
+    "ref": 0,
+    "ref_hits": 0,
     "guard": 3,
     "guard_hits": 3,
     "bind": 1,
     "bind_hits": 1,
     "frozen_at": "2026-09-24",
-    "issue": "#5331"
+    "issue": "#5331",
+    "note": "ref 面 9 条于 2026-09-24 **全量销账**（issue #5400：逐条改成可达工具 / 改成引导后台页面）⇒ 锚点同步下调到 0；guard / bind 两面仍是 #5331 的冻结读数。"
   },
   "scopes": {
     "base_skill.py::_b_create_flow_confirm_eligible": {
@@ -29,78 +30,6 @@
     }
   },
   "entries": [
-    {
-      "face": "ref",
-      "key": "tool:customer_address_query::order_manage",
-      "hits": 1,
-      "reason": "#5315 description 面残留（C 端只读工具的描述里写「商户员工管理订单用 order_query / order_manage」）：`order_manage` 自 #5247 起已从**全部** skill 解绑 ⇒ 任何会话调它都必然 tool_not_found。销账方向 = 删掉该点名，或改成「商户员工请到后台订单页处理」。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:customer_order_query::order_manage",
-      "hits": 1,
-      "reason": "同 #5315 残留形态（C 端订单查询工具的描述里点名 `order_manage`）：该工具已被 #5247 解绑至**零绑定** ⇒ 描述在把模型推向一次注定失败的调用。销账方向 = 删点名 / 改为引导后台页面。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:order_create::order_manage",
-      "hits": 1,
-      "reason": "C 端下单工具的描述写「修改订单用 order_manage」，而 `order_manage` 已零绑定（#5247）⇒ 死引用。销账方向 = 改成「如需修改订单，请引导顾客联系商家后台」。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:order_query::order_manage",
-      "hits": 1,
-      "reason": "B 端订单查询工具的描述写「修改订单用 order_manage」（#5247 已解绑该写工具）⇒ 死引用。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:processing_item_query::processing_item_manage",
-      "hits": 1,
-      "reason": "加工项目录查询工具的描述写「创建/修改/删除加工项用 processing_item_manage」，而该写工具自 #5247 起零绑定 ⇒ 死引用。销账方向 = 改成「加工项增删改请到后台商品管理页」。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:processing_order_query::processing_order_generate",
-      "hits": 1,
-      "reason": "加工单查询工具的描述写「生成加工单用 processing_order_generate」，而该写工具自 #5247 起零绑定 ⇒ 死引用。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:processing_order_query::processing_order_update",
-      "hits": 1,
-      "reason": "加工单查询工具的描述写「改加工单状态用 processing_order_update」，而该写工具自 #5247 起零绑定 ⇒ 死引用。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:validate_input::order_manage",
-      "hits": 1,
-      "reason": "校验器描述写「调用 product_manage、order_create、order_manage 等写工具前先调用本工具校验」——其中 `order_manage` 已零绑定（#5247）⇒ 死引用。销账方向 = 描述里的**写工具名单**必须与真实可达集一致（或改成不点名）。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
-    {
-      "face": "ref",
-      "key": "tool:validate_input::product_manage",
-      "hits": 1,
-      "reason": "同上：`product_manage` 已零绑定（#5247）却仍被校验器描述当成「可调用的写工具」点名 ⇒ 死引用。",
-      "issue": "#5331",
-      "origin": "#5247"
-    },
     {
       "face": "guard",
       "key": "base_skill.py::B_CREATE_PENDING_TOOL",

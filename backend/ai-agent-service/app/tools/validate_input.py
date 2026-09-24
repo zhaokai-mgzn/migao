@@ -472,7 +472,7 @@ class ValidateInputTool(BaseTool):
 
     name = "validate_input"
     description = (
-        "【触发】调用 product_manage、order_create、order_manage 等**写工具**前，先调用本工具校验参数完整性。"
+        "【触发】调用 order_create 等**本域可达的写工具**前，先调用本工具校验参数完整性。"
         "【参数】需要 target_tool + target_action + params（要传给目标工具的完整参数）。校验通过返回 success=true。"
         "【反例】查询类工具（product_search / product_detail / order_query）不需要校验，不要传它们；"
         "也不要跳过校验直接调写操作。"
@@ -505,7 +505,7 @@ class ValidateInputTool(BaseTool):
         "properties": {
             "target_tool": {
                 "type": "string",
-                "description": "要校验的目标写工具，如 product_manage、order_create",
+                "description": "要校验的目标写工具，如 order_create",
             },
             "target_action": {
                 "type": "string",
