@@ -43,6 +43,22 @@
   config:
     maxBytes: 65536
 
+# ── clock ───────────────────────────────────────────────────────────────────
+
+# 给模型一个**本机时区**的时钟（issue #5352 修法乙 / #5354）。
+# 为什么需要（实测）：本 preset 原先**未接线任何时钟插件** ⇒ 模型每轮没有时间采样，只能拿手上
+# 唯一的 **UTC** 读数（GitHub / CI 的 `…T05:13:59Z`）当「现在」⇒ 把用户的白天说成「今晚」。
+# 口径：**浏览器时区优先**（Web 客户端每条提示词带 Host 校验过的 `clientTimeZone`）；
+# `timeZone` 只在「本次请求的浏览器时区缺失 / 混合」时作 fallback ⇒ 显式写成本机时区，别回退到别处。
+# `refreshIntervalMs=60000`：一分钟最多一条读数（README 推荐用法），避免每步都注入。
+# ⚠️ 依赖：`@deepseek-ai/dsh-time-context` 必须**已安装**（`apps/cli` 已声明该 workspace 依赖；
+# 本次 `pnpm install` 才把它链上）—— 未安装时加这一行会让 preset **挂载失败**。
+- id: time-context
+  name: '@deepseek-ai/dsh-time-context'
+  config:
+    timeZone: Asia/Shanghai
+    refreshIntervalMs: 60000
+
 # ── shell ───────────────────────────────────────────────────────────────────
 
 # `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
