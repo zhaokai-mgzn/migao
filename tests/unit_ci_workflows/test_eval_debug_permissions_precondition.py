@@ -54,6 +54,10 @@ sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 from render_cases import load_case_dicts  # noqa: E402
 
 import assertion_taxonomy as tax  # noqa: E402
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import assigned_strings  # noqa: E402  （#5323 收敛：唯一取值口径）
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 TARGET_CASES = ("HR-009", "HR-010")
@@ -61,17 +65,27 @@ AI_AGENT = REPO_ROOT / "backend" / "ai-agent-service"
 EMPLOYEE_TOOL_SRC = "backend/ai-agent-service/app/tools/employee_manage.py"
 
 
+def _action_enum_of(src: str, where: str) -> set:
+    """**纯函数**：一份工具源码的 action 枚举（唯一取值口径见 `tests/unit_ci_workflows/_source_parsing.py`）。
+
+    `#5323` 第 5 条（本轮收口）：旧口径在**原文**上跑 `re.search(r"VALID_ACTIONS\\s*=…")` +
+    按引号 `findall` ⇒ **注释 / 文档字符串**里一句同形文本即被读成声明（枚举被喂大
+    ⇒「声明的 action 还在枚举里」被喂绿 = 死引用被放过）。现口径 = `ast` 读字面量声明。
+    """
+    actions = set(assigned_strings(src, "VALID_ACTIONS", where))
+    assert actions, f"{where} 的 VALID_ACTIONS 解析为空（口径漂移？）"
+    return actions
+
+
 def _tool_action_enum(rel_path: str) -> set:
     """工具源码里 `VALID_ACTIONS = {...}` 的 action 枚举 —— **源码即真值**，不另列清单。
 
-    与 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（AST 解析）同款口径。
+    与 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（AST 解析）同款口径
+    （`#5323` 收口后两处都调 `_source_parsing.assigned_strings`）。
     HR-009 的改判判据用它回答一个机械问题：「用例声明的那个 action，**工具现在还有吗**？」
     （#5247 删掉写 action 后，任何仍指向 `create` 的声明都是死引用 ⇒ 恒真空的断言）。
     """
-    src = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
-    m = re.search(r"VALID_ACTIONS\s*=\s*[\{\[](.*?)[\}\]]", src, re.S)
-    assert m, f"{rel_path} 里找不到 `VALID_ACTIONS = {{...}}`（判据失去目标）"
-    return set(re.findall(r'"([^"]+)"', m.group(1)))
+    return _action_enum_of((REPO_ROOT / rel_path).read_text(encoding="utf-8"), rel_path)
 
 
 def _dead_must_fail_declarations(case: dict, source_actions: set) -> list:
@@ -1054,3 +1068,38 @@ class TestSentinelBoundary:
         lr = _runner()
         assert lr._PERMISSION_PROBE_TOOLS, "探针表为空 ⇒ 判据失去目标"
         assert lr.permission_probe_expectation("employee:list")[1] == lr._PERMISSION_PROBE_TOOLS[0][1]
+
+
+class TestActionEnumParsingIsSyntaxBased:
+    """`#5323` 第 5 条成对红证：动作枚举只认**代码里**的声明（且死引用判据照旧红）。"""
+
+    #: 旧口径会读成声明的两个位置：`#` 注释行 + 模块文档字符串举例（**代码零改动**）。
+    COMMENTED = (
+        '# VALID_ACTIONS = {"create"}  ← 留档注释：写 action 已删（这不是声明）\n'
+        '"""示例（说明文字，不是代码）：\n'
+        'VALID_ACTIONS = {"create"}\n'
+        '"""\n'
+        'VALID_ACTIONS = {"list", "detail"}\n'
+    )
+
+    #: 真声明（值**真**写在代码里）。
+    REAL = 'VALID_ACTIONS = {"list", "detail"}\n'
+
+    def test_comment_and_docstring_are_not_declarations(self):
+        """负例：注释 / 文档字符串里的同形文本 ⇒ **不得**被读成动作（修前此断言必红）。"""
+        got = _action_enum_of(self.COMMENTED, "fixture")
+        assert got == {"list", "detail"}, f"注释 / 文档字符串被读成声明：{sorted(got)}"
+        assert "create" not in got, "写 action 只在注释里出现，却被读成了「枚举里还有它」"
+
+    def test_real_declaration_is_read_and_dead_reference_still_reds(self):
+        """正例（防修过头）：值**真**写进声明 ⇒ 读到；`must_fail` 指向枚举外的 action ⇒ 照旧红。"""
+        real = _action_enum_of(self.REAL, "fixture")
+        assert real == {"list", "detail"}, f"真声明没被读到（修过头）：{sorted(real)}"
+        dead = {"must_fail": [{"tool": "employee_manage", "action": "create"}]}
+        assert _dead_must_fail_declarations(dead, real) == ["employee_manage(create)"], (
+            "真·死引用没被抓 ⇒ HR-009 的改判判据被喂绿（空断言）"
+        )
+        alive = {"must_fail": [{"tool": "employee_manage", "action": "detail"}]}
+        assert _dead_must_fail_declarations(alive, real) == [], (
+            "枚举里真有的 action 被判死引用 ⇒ 判据恒红（修过头）"
+        )

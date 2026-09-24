@@ -72,6 +72,25 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CASES_DIR = REPO_ROOT / ".github" / "cases"
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import assigned_strings  # noqa: E402  （#5323 收敛：唯一取值口径）
+
+#: runner 源码（`_PRECLEAN_CLEANUP_TYPES` 的真值源）。
+RUNNER_SRC = REPO_ROOT / "tests" / "agent_eval" / "local_runner.py"
+
+
+def _runner_cleanup_types(src: str) -> set:
+    """**纯函数**：runner 的 `_PRECLEAN_CLEANUP_TYPES` 集合（唯一取值口径见 `_source_parsing.py`）。
+
+    `#5323` 第 6 条（本轮收口）：旧口径
+    `re.search(r"_PRECLEAN_CLEANUP_TYPES\\s*=\\s*frozenset\\(\\{(.*?)\\}\\)")` + 按引号 `findall`
+    是在**原文**上取值 ⇒ 注释 / 文档字符串里一句同形文本即被读成集合成员。现口径 = `ast`。
+    """
+    members = assigned_strings(src, "_PRECLEAN_CLEANUP_TYPES", "tests/agent_eval/local_runner.py")
+    assert members, "取不到 runner 的 `_PRECLEAN_CLEANUP_TYPES` 定义（判据锚点漂移了？）"
+    return set(members)
 
 #: 种子商品名 = 两个评测栈 seed **实际 INSERT 的商品名**的并集
 #: （`tests/agent_eval/fixtures/xiaobu_eval_seed.sql` + `mibao_eval_seed.sql`）。
@@ -607,10 +626,7 @@ class TestCleanupTargetResolvabilityScope:
         两处漂移会让本判据的适用域静默走偏（runner 把某类型当清理型、门禁当准备型，
         或反之）—— 与 `test_case_trust_gate.py` 锁 marker 一致性的同款做法。
         """
-        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
-        m = re.search(r"_PRECLEAN_CLEANUP_TYPES\s*=\s*frozenset\(\{(.*?)\}\)", src, re.S)
-        assert m, "取不到 runner 的 `_PRECLEAN_CLEANUP_TYPES` 定义（判据锚点漂移了？）"
-        runner_set = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+        runner_set = _runner_cleanup_types(RUNNER_SRC.read_text(encoding="utf-8"))
         tax = _taxonomy()
         assert runner_set == set(tax.CLEANUP_PRECLEAN_TYPES), (
             f"清理族集合不一致：runner={sorted(runner_set)} "
@@ -824,3 +840,36 @@ class TestPreconditionDriftCheckIsFailClosed:
         assert src.count("_list_products_matching(") >= 4, (
             "`product_remove` / `product_dedupe` / `_probe_product_count` 未共用同一份"
             "「怎么算命中」的定义 ⇒ 会出现「清理按子串、计数按模糊」的口径漂移")
+
+
+class TestRunnerCleanupTypeParsingIsSyntaxBased:
+    """`#5323` 第 6 条成对红证：集合成员只认**代码里**的声明（且主判据照旧会红）。"""
+
+    #: 旧口径会读成成员的三个位置：`#` 注释行 + 模块文档字符串举例 + 真声明（**前两个是陷阱**）。
+    COMMENTED = (
+        '# _PRECLEAN_CLEANUP_TYPES = frozenset({"ghost_cleanup"})  ← 留档注释（这不是声明）\n'
+        '"""示例（说明文字，不是代码）：\n'
+        '_PRECLEAN_CLEANUP_TYPES = frozenset({"ghost_cleanup"})\n'
+        '"""\n'
+        '_PRECLEAN_CLEANUP_TYPES = frozenset({\n'
+        '    "product_remove",\n'
+        '    "customer_tag_remove",\n'
+        '    "employee_remove",\n'
+        '})\n'
+    )
+
+    def test_comment_and_docstring_are_not_members(self):
+        """负例：注释 / 文档字符串里的同形文本 ⇒ **不得**被读成成员（修前此断言必红）。"""
+        got = _runner_cleanup_types(self.COMMENTED)
+        assert got == {"product_remove", "customer_tag_remove", "employee_remove"}, sorted(got)
+        assert "ghost_cleanup" not in got, "只在注释/文档字符串里出现的类型被读成了集合成员"
+
+    def test_real_member_is_read_and_set_drift_still_reds(self):
+        """正例（防修过头）：真写在代码里的成员 ⇒ 读到；集合漂移 ⇒ 主判据照旧红。"""
+        real = _runner_cleanup_types(self.COMMENTED)
+        drifted = _runner_cleanup_types(self.COMMENTED.replace('"customer_tag_remove",\n', ""))
+        assert drifted == real - {"customer_tag_remove"}, sorted(drifted)
+        assert drifted != real, "真声明的成员删掉后读数不变 ⇒ 判据恒真（空断言）"
+        assert drifted != set(_taxonomy().CLEANUP_PRECLEAN_TYPES), (
+            "漂移后的集合仍与 taxonomy 相等 ⇒ 主判据的「同集合」判据没有判别力"
+        )
