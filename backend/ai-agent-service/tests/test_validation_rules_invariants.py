@@ -25,7 +25,7 @@ schema 里当然不存在 —— 那是**收窄的预期结果**，不是"字段
 
 处置（不是放宽）：F8 方向 A 的判据域收窄到**工具 action 枚举里仍然存在的 action**
 （`live_rule_table`），被排除的规则键**逐条**与 `tests/test_tools_validate_input.py` 的
-`RETIRED_RULE_KEYS_5247` **单一台账**比对（**无静默豁免**：裁剪口径与台账不等即红）。
+`RETIRED_RULE_KEYS_B_END_READONLY` **单一台账**比对（**无静默豁免**：裁剪口径与台账不等即红）。
 "死键"本身的判据（含新死键必红、陈旧台账必红）也只在那一处，本文件不抄第二份。
 活动 action 的判据强度**一字未减**（红证见 `TestSchemaConsistencyDetectorIsNotVacuous`）。
 
@@ -507,11 +507,15 @@ def test_every_write_action_is_deterministically_gated():
     这个**静默重现**：旧语义下是 `skipped=True` 假绿，A4 之后是 fail-closed 拦死合法调用 ——
     两种都不会自己变红。
 
-    反例输入（红证 F6）：删掉任一写 action 的规则（`employee_manage.update` /
-    `finance_api.create_transaction` / `settings_manage.change_password` / **无参的
-    `notification_manage.read_all`**）⇒ 必红。`read_all` 那次注入在**真实注册表**上
-    由 `test_deleting_a_write_action_rule_turns_f6_red` 实际执行（不是手写样例）。
-    """
+    反例输入（红证 F6）：删掉任一**仍在判据域里**的写 action 的规则（如
+    `order_manage.cancel` / `finance_api.create_transaction` / 参数化写工具的任一 action）⇒ 必红。
+    那次注入在**真实注册表**上由 `test_deleting_a_write_action_rule_turns_f6_red` 实际执行
+    （不是手写样例）。
+
+    🔴 **#5302 改判（不是放宽）**：原举的 `settings_manage.change_password` /
+    `notification_manage.read_all` 已**不在判据域里**（settings 域只读化 ⇒ 它们不再是写 action，
+    规则块虽在表里但已登记进退役台账）⇒ 举例改为「域内活 action」，且红证锚点整体改为**现算**
+    （见 `test_deleting_a_write_action_rule_turns_f6_red`）。"""
     views = _registry_write_action_views()
     violations = coverage_violations(views)
     print(
@@ -531,15 +535,21 @@ def test_every_write_action_is_deterministically_gated():
 
 
 def test_deleting_a_write_action_rule_turns_f6_red():
-    """**:red_circle: 红证 ③**：把 `read_all` 的规则从**真实注册表 + 真实规则表**上删掉 ⇒ F6 必红。
+    """**:red_circle: 红证 ③**：删掉**某个真实写 action 的规则**（真实注册表 + 真实规则表副本）⇒ F6 必红。
 
     为什么不用手写样例：手写样例只能证明「判据对样例敏感」，证明不了「对**被测的那份
     真相源**敏感」。本用例拿真实工具集（`get_tool_registry()`）+ 真实规则表的**副本**
-    （删掉一个键）跑同一条判据内核，注入的就是 issue #4047 的那个键。
+    （删掉一个锚点键）跑同一条判据内核。
     同时**负例 ④**：不删的真值 ⇒ 判据必须不报（防恒红）。
 
-    （运行期那一半——「删掉规则 ⇒ 合法 read_all 被 fail-closed 拦住」——由
-    `test_registered_read_all_is_not_blocked` 的反例方向覆盖：把规则删掉，它必红。
+    🔴 **#5302 改判（不是放宽）**：原锚点写死 `notification_manage.read_all` —— settings 域
+    只读化后它**已不在 F6 的判据域里**（规则块仍在表里，但该 action 不再是写 action）⇒
+    继续拿它当锚点 = 「拿一个不在域里的键去证明域敏感」（判据失去判别力）。改为**现算**：
+    从 F6 判据域里挑一个「**已配规则**的多动作写 action」当锚点 —— 锚点不再腐烂
+    （规则表/枚举任何一侧变化都由本函数现算吸收）；挑不到 ⇒ **fail-closed 判红**。
+
+    （运行期那一半——「删掉规则 ⇒ 合法调用被 fail-closed 拦住」——由
+    `test_no_rule_read_actions_are_blocked_at_runtime` 的反例方向覆盖。
     此处**不再造第二套运行期注入机制**：红证要证明的是本判据对真值敏感，
     而 monkeypatch 式注入是另一个实现，留着就是第二份口径。）
     """
@@ -549,23 +559,28 @@ def test_deleting_a_write_action_rule_turns_f6_red():
     from app.tools.validate_input import _VALIDATION_RULES
 
     tools = list(get_tool_registry().get_all_tools())
+    gated = [v for v in write_action_views(tools, _VALIDATION_RULES) if v.gated and v.action]
+    assert gated, (
+        "F6 判据域里没有一个「已配规则」的多动作写 action —— 本红证无从成立（fail-closed）")
+    target = gated[0]
 
     def _violations_for(table: dict) -> list[str]:
         return [
             v for v in coverage_violations(write_action_views(tools, table))
-            if v.startswith("notification_manage.read_all ")
+            if v.startswith(f"{target.tool}.{target.action} ")
         ]
 
     assert _violations_for(_VALIDATION_RULES) == [], (
-        "负例 ④：`read_all` **有规则**（真值）却被判红 —— 判据误伤合法输入（R2）"
+        f"负例 ④：`{target.tool}.{target.action}` **有规则**（真值）却被判红 —— "
+        "判据误伤合法输入（R2）"
     )
 
     injected = copy.deepcopy(_VALIDATION_RULES)
-    del injected["notification_manage"]["read_all"]
+    del injected[target.tool][target.action]
     violations = _violations_for(injected)
-    print(f"\n[#4047 红证 ③] 删掉 read_all 规则后的判据输出：{violations}")
+    print(f"\n[#4047 红证 ③] 删掉 {target.tool}.{target.action} 规则后的判据输出：{violations}")
     assert violations, (
-        "红证 ③：删掉 `notification_manage.read_all` 的规则后 F6 **没有报** —— "
+        f"红证 ③：删掉 `{target.tool}.{target.action}` 的规则后 F6 **没有报** —— "
         "「已登记可写的 action 必须有规则」这条判据是空的（#4047 会静默复发）"
     )
 
@@ -858,7 +873,7 @@ def live_rule_table(table: dict, tools: dict) -> dict:
     裁剪**不是豁免**：
       · 只裁 action 已不在枚举里的规则（单动作工具无枚举 ⇒ 原样保留）；
       · 未注册工具的规则原样保留（由既有 L0 守卫判红，见 `undeclared_rule_fields`）；
-      · 被裁掉的键由调用方与 `RETIRED_RULE_KEYS_5247`（**单一台账**，
+      · 被裁掉的键由调用方与 `RETIRED_RULE_KEYS_B_END_READONLY`（**单一台账**，
         在 `tests/test_tools_validate_input.py`）逐条比对 —— 口径不等即红。
     """
     out: dict = {}
@@ -883,24 +898,24 @@ def test_rule_fields_exist_in_tool_schema():
     反例输入（红证 F8）：把某条规则的 `required` 改成 schema 里不存在的字段
     （如 `order_manage.cancel` 的 `order_id` → `order_idd`）⇒ 必红。
 
-    🔴 **#5247 判据域改判**：域 = **活 action** 的规则（`live_rule_table`），
-    并**逐条**核对被裁掉的键等于 `RETIRED_RULE_KEYS_5247`（单一台账，无静默豁免）。
+    🔴 **#5247 / #5302 判据域改判**：域 = **活 action** 的规则（`live_rule_table`），
+    并**逐条**核对被裁掉的键等于 `RETIRED_RULE_KEYS_B_END_READONLY`（单一台账，无静默豁免）。
     活动 action 的判据强度不变（红证 `test_undeclared_field_is_reported` 一字未改）。
     """
     from app.tools.registry import get_tool_registry
     from app.tools.validate_input import _VALIDATION_RULES
-    from tests.test_tools_validate_input import RETIRED_RULE_KEYS_5247
+    from tests.test_tools_validate_input import RETIRED_RULE_KEYS_B_END_READONLY
 
     tools = {t.name: t for t in get_tool_registry().get_all_tools()}
     live = live_rule_table(_VALIDATION_RULES, tools)
     all_keys = {(t, a) for t, actions in _VALIDATION_RULES.items() for a in actions}
     kept_keys = {(t, a) for t, actions in live.items() for a in actions}
     dropped = all_keys - kept_keys
-    assert dropped == set(RETIRED_RULE_KEYS_5247), (
-        f"F8-A 的判据域裁剪了 {sorted(dropped)} —— 与 #5247 退役台账 "
-        f"{sorted(RETIRED_RULE_KEYS_5247)} 不等。\n"
+    assert dropped == set(RETIRED_RULE_KEYS_B_END_READONLY), (
+        f"F8-A 的判据域裁剪了 {sorted(dropped)} —— 与本轮 B 端只读化退役台账 "
+        f"{sorted(RETIRED_RULE_KEYS_B_END_READONLY)} 不等。\n"
         "  裁剪只允许发生在台账登记的键上（台账 = tests/test_tools_validate_input.py 的"
-        " RETIRED_RULE_KEYS_5247，唯一一份）；\n"
+        " RETIRED_RULE_KEYS_B_END_READONLY，唯一一份）；\n"
         "  多裁 ⇒ 有活动 action 的规则被静默放过（判据被掏空）；\n"
         "  少裁 ⇒ 台账陈旧（那条判据会把「该裁没裁」报红），请同步销账"
     )

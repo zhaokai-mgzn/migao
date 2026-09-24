@@ -13,6 +13,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 改 AI 服务/Tool/Skill | [AI-Agent](AI-Agent.md) |
 | **Skill/Tool 设计范式** | **[Agent-Design-Standard](agent-design-standard.md)** |
 | **B 端 Agent 写操作边界（去留清单 / 补回前提）** | **[agent-write-boundary](agent-write-boundary.md)** |
+| **B 端 Agent 功能设计（能力地图 / 判据来源）** | **[agent-feature-design](../agent-feature-design.md)** |
 | 改架构/数据模型/路由 | [Architecture](Architecture.md) |
 | 改数据库/查表结构 | [Database](Database.md) |
 | 改权限/认证 | [RBAC](RBAC.md) |

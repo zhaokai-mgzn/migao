@@ -44,7 +44,7 @@ from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
 # 工具被判定为「写工具」的**唯一**依据（与 registry 的执行分支同一字段）
 _WRITE_MARKER = "read_only = False"
 
-#: 写工具**名册**（源码真值：`app/tools/*.py` 里带 `read_only = False` 的工具）—— #5247 后 **12** 把。
+#: 写工具**名册**（源码真值：`app/tools/*.py` 里带 `read_only = False` 的工具）—— #5302 后 **10** 把。
 #:
 #: 为什么把原来的「`len(tools) >= 15` 下限」换成**名册相等**（增强，不是收紧到过不去）：
 #: 下限只防"扫到空集"，扫到 11 把时它照样绿 —— 而 #5247 恰好把写工具集从 20 缩到 12，
@@ -56,12 +56,15 @@ _WRITE_MARKER = "read_only = False"
 #: `tests/test_readonly_cross_domain_sharing.py` 的 B-only 只读见证）：
 #:   `after_sales_manage` / `category_manage` / `customer_manage` / `employee_manage` /
 #:   `finance_api` / `inventory_manage` / `role_manage` / `session_manage`
+#: 🔴 **# [RETIRED #5302]** 另 2 把（`notification_manage` / `settings_manage`）也收窄为只读 ——
+#: 写 action（`mark_read` / `read_all` / `delete` / `create` / `update_settings` /
+#: `update_ai_config` / `change_password`）已从源码删除 ⇒ 从名册移除（#5302 = #5247 的 settings 域
+#: 整域漏网收口；它们的只读面见 `tests/test_readonly_cross_domain_sharing.py` 的 B-only 见证）。
 #: （`human_handoff` 仍在名册里：它 `deprecated = True`、不在注册表，但**源码仍是写工具形态**
 #:  —— 本扫描的口径是源码面；它的退场由 `tests/unit_ci_workflows/test_human_handoff_retired.py` 管。）
 WRITE_TOOL_INVENTORY: frozenset = frozenset({
     "aftersale_create",
     "human_handoff",
-    "notification_manage",
     "order_create",
     "order_manage",
     "processing_item_manage",
@@ -69,7 +72,6 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     "processing_order_update",
     "product_manage",
     "product_update",
-    "settings_manage",
     "sku_update",
 })
 # 留痕标记（判据引用的字面量必须在实现里真出现，见 test_*_markers_exist_in_source）
@@ -144,6 +146,8 @@ class TestActionMappingIsComplete:
         ⇒ 只降阈值等于把判据的牙拔掉（再收窄一把也不红）。改为**名册集合相等**：
         多一把（新写工具）⇒ 红（必须登记 + 确认审计动作动词）；少一把（收窄为只读/删文件）
         ⇒ 也红（必须从名册移除并留痕）。
+        🔴 #5302 改判（settings 域收口，**同一口径不改**）：写工具集 12 → **10**（名册同步，
+        见 `WRITE_TOOL_INVENTORY` 的 `# [RETIRED #5302]` 段）——「集合相等」这条强度一字未减。
         """
         tools = _write_tools()
         scanned = set(tools)

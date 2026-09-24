@@ -11,6 +11,7 @@ QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
 用法:
   python3 growth_gate.py --files f1 f2 --json            # CI：手动指定变更文件
   python3 growth_gate.py --base origin/main --json        # 本地：git diff
+  python3 growth_gate.py --render-pr-comment growth-gate-result.json   # CI：结果对象 → PR 评论正文
   TECH_STACK_FILE=.github/tech-stack.yml python3 growth_gate.py --json
 """
 import argparse
@@ -880,6 +881,107 @@ def _render_markdown(results, blockers, warnings):
     return md
 
 
+# ── PR 评论渲染（issue #5292：判红必须可归因，且不得诱导扩豁免）──
+#
+# 病灶（实测 PR #5285，评论正文只有标题 +「Blockers: 6」，**看不到是哪 6 条**）：
+# `Post PR comment` step 读的是**它自己那一步**的 `$GITHUB_STEP_SUMMARY` —— 该变量是
+# **逐步**文件（每步一个 uuid），而 markdown 是本脚本在 `check` step 里写进**那一步**的
+# summary ⇒ 读到的永远是空文件（`readFileSync` 不抛，只是空串 ⇒ 正文那一块留白）。
+# 于是「清单不可见」+ 末尾「或在 qa-exemptions.yml 中添加合法豁免项」= **诱导扩豁免**
+# （本仓口径：豁免面只许缩短）。数据一直都在 `--json-file` 里（同一 job 的同一工作区），
+# 丢的只是「渲染进评论」这一步。修法：正文**只**从那份 JSON 渲染（单一数据源），逐条列出。
+
+# 「结果文件不可用」的正文明细前缀 —— 计数与清单自相矛盾 / 结果文件读不到时**唯一**的
+# 合规正文形态（fail-closed）：此时**不得**渲染成「看起来正常」的评论，更不得提豁免。
+_RESULT_UNUSABLE_PREFIX = "## ❌ QA Growth Gate — 结果文件不可用（fail-closed）"
+
+
+def result_mismatch(payload):
+    """结果对象**自相矛盾**的说明（计数 ≠ 清单条数）；一致 → None。
+
+    为什么必须判：`blocker_count` 驱动 job 判红（`Fail on blocking violations` 读它），
+    清单驱动「是哪几条」。两者不一致时两条渲染路都不许静默：
+    - 按计数渲染 ⇒ 「6 处缺测（清单 0 条）」= issue #5292 的现网形态（不可归因、且诱导加豁免）；
+    - 按清单渲染 ⇒ 6 处**真实**阻塞被渲染成「0 条 / 全部通过」= 假绿（更危险）。
+    ⇒ fail-closed：显式报「结果文件不可用」（同「扫描空转 ≠ 无发现」的既有口径，issue #3631）。
+    """
+    b = int(payload.get("blocker_count") or 0)
+    w = int(payload.get("warning_count") or 0)
+    n_b = len(payload.get("blockers") or [])
+    n_w = len(payload.get("warnings") or [])
+    if b != n_b:
+        return f"blocker_count={b} 与 blockers 清单 {n_b} 条不一致"
+    if w != n_w:
+        return f"warning_count={w} 与 warnings 清单 {n_w} 条不一致"
+    return None
+
+
+def _blocker_entry(index, blocker):
+    """单条 blocker 的**条目行**：`file` + 可操作说明（缺测清单 / G5 的 reason）。
+
+    条目格式就是判据的载体（`tests/unit_ci_workflows/test_growth_gate_pr_comment.py`
+    按「序号 + `. `」逐条解析、数条目并与 `blocker_count` 比对）。
+    **不得**改成摘要式输出（如「6 处缺测」）—— 那正是 issue #5292 的现网形态：
+    实施方看不到是哪几条，只能本地复跑才拿到清单。
+    """
+    req = [t for t in (blocker.get("required_tests") or []) if t]
+    if req:
+        action = "补 " + "、".join(f"`{t}`" for t in req)
+    else:
+        action = blocker.get("reason") or "缺配套测试（结果文件未给出清单）"
+    return f"{index}. `{blocker.get('file', '?')}` — {action}（模块：{blocker.get('module') or '—'}）"
+
+
+def render_pr_comment(payload):
+    """把 `--json-file` 写出的**那一份**结果对象渲染成 PR 评论正文（**唯一数据源**）。
+
+    输入必须是结果 JSON 解析出的对象本身：本函数**不**读文件、不读环境变量、不读
+    `$GITHUB_STEP_SUMMARY`（结构性判据钉在 tests/unit_ci_workflows/test_growth_gate_pr_comment.py
+    的 AST 面：函数体内不得出现 `open()` / `os.environ`）—— 另起一套渲染数据源必然与 JSON 漂移，
+    而漂移的两处会让「job 为什么红」和「评论说了什么」各说各话。
+
+    判据（issue #5292）：
+    - `blocker_count > 0` ⇒ **逐条**列出每个 blocker 的 `file` + 缺测清单（`required_tests`）
+      / G5 的 `reason`，条目数 == `blocker_count`（摘要式输出 = 不可归因）；
+    - `blocker_count == 0` ⇒ 维持既有形态（`✅ 所有检查通过！`），**不加**清单噪音；
+    - 末尾建议**不诱导加豁免**：只有在**已列出清单**时才提豁免，并写明「豁免面只许缩短」。
+    """
+    mismatch = result_mismatch(payload)
+    if mismatch:
+        return (_RESULT_UNUSABLE_PREFIX + "\n\n"
+                f"> {mismatch}\n"
+                "> ⇒ 门禁结论**不可归因**（不得据此判断通过与否）。请重跑本 job；"
+                "若复现，请修 `.github/growth_gate.py` 的结果写出。\n")
+
+    blockers = list(payload.get("blockers") or [])
+    b = int(payload.get("blocker_count") or 0)
+    w = int(payload.get("warning_count") or 0)
+
+    if b > 0:
+        icon, verdict = "❌", "BLOCKED"
+        blocks = [f"### ❌ {b} 处缺测（阻塞合并）—— 逐条如下", ""]
+        blocks += [_blocker_entry(i, bl) for i, bl in enumerate(blockers, 1)]
+        blocks.append("")
+        detail = [
+            "",
+            f"> ❌ **合并被阻塞**。请先按上面 {b} 条清单补齐缺失的测试。",
+            "> 仅当**确有正当理由**时才走豁免（`.github/qa-exemptions.yml`）"
+            "—— 本仓口径：**豁免面只许缩短**。",
+            "> 详见 [docs/wiki/Testing.md](docs/wiki/Testing.md)",
+        ]
+    elif w > 0:
+        icon, verdict = "⚠️", "WARNINGS"
+        blocks = []
+        detail = ["> ⚠️ 有警告但不阻塞合并。请尽快补充测试。"]
+    else:
+        icon, verdict = "✅", "PASSED"
+        blocks = []
+        detail = ["> ✅ 所有检查通过！"]
+
+    return "\n".join([f"## {icon} QA Growth Gate — {verdict}", "", *blocks, "---",
+                      f"**Blockers**: {b} | **Warnings**: {w}", *detail]) + "\n"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="QA Growth Gate（数据驱动）")
     parser.add_argument("--base", default="origin/main")
@@ -911,7 +1013,35 @@ def main(argv=None):
                         help=f"锚点账本路径（默认 {WEAK_BASELINE_DEFAULT}）")
     parser.add_argument("--check-cases",
                         help="用例库目录（cases/*.yml）——启用 G5 用例追溯链：测试文件 ↔ 行为用例")
+    parser.add_argument("--render-pr-comment", metavar="RESULT_JSON",
+                        help="把 --json-file 写出的结果对象渲染成 PR 评论正文（stdout）——"
+                             "CI 的 PR 评论**只**走这一条渲染路（单一数据源，issue #5292）；"
+                             "结果文件缺失/损坏/自相矛盾 ⇒ 仍打印可发布的正文 + ::error:: + 退 2")
     args = parser.parse_args(argv)
+
+    if args.render_pr_comment:
+        # 结果对象 → PR 评论正文（issue #5292）。**唯一数据源 = 结果文件本身**：
+        # 渲染不出正文时绝不允许退化成「发一条空评论」（那正是本 issue 的现网形态）
+        # ⇒ 打印可发布的「结果文件不可用」正文 + `::error::` + 非零退出（fail-closed）。
+        path = args.render_pr_comment
+        try:
+            with open(path, encoding="utf-8") as f:
+                payload = json.load(f)
+            if not isinstance(payload, dict):
+                raise ValueError("结果文件不是对象")
+        except (OSError, ValueError) as e:
+            print(_RESULT_UNUSABLE_PREFIX + "\n\n"
+                  f"> 无法读取结果文件 `{path}`（{e.__class__.__name__}）——"
+                  "门禁脚本未成功产出结果。\n"
+                  "> ⇒ 门禁结论**不可归因**（不得据此判断通过与否）。请查看本 job 日志。\n")
+            print(f"::error:: PR 评论渲染失败：无法读取结果文件 {path}（{e}）", file=sys.stderr)
+            return 2
+        print(render_pr_comment(payload))
+        mismatch = result_mismatch(payload)
+        if mismatch:
+            print(f"::error:: PR 评论渲染：{mismatch}（结果文件不可用，见上）", file=sys.stderr)
+            return 2
+        return 0
 
     if args.check_weak_baseline or args.write_weak_baseline:
         # 存量锚点（issue #5080 盲区②）：`--check-weak` 只扫**新增**文件 ⇒ 存量永久免疫、

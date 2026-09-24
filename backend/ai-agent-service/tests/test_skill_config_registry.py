@@ -474,6 +474,9 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
     "role_manage": "写 action（create/update/delete）全删 ⇒ 收窄为 list/all/detail/list_permissions",
     "finance_api": "写 action（create_transaction）删除 ⇒ 收窄为三个 get_*",
     "session_manage": "写 action（assign/end）删除 ⇒ 收窄为 list/monitor/detail",
+    # ── # [RETIRED #5302] 最后两把（settings 域整域收口）──────────────────────────
+    "settings_manage": "写 action（update_settings/update_ai_config/change_password）全删 ⇒ 收窄为三个只读 action",
+    "notification_manage": "写 action（mark_read/read_all/delete/create）全删 ⇒ 收窄为 list/unread_count",
 }
 
 #: 仍绑定「需确认写工具」的 Skill 名册（#5247 后 3 个 → **#5303 后 4 个**）—— 由
@@ -492,8 +495,11 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
 #: `product_update` / `sku_update`（均 `requires_confirmation=True`）⇒ 名册**加回 `product`**。
 #: ⚠️ 这正是本条不变式的价值所在：**多出来 ⇒ 有 Skill 重新绑了写工具**（要登记，并确认它绑了
 #: `interact` —— product 已绑）。判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
+#: 🔴 **issue #5302（settings 域收口）再改判**：`settings` 的两把工具（`settings_manage` /
+#: `notification_manage`）也收窄为只读 ⇒ 它不再走得到确认门禁 ⇒ 从名册删除（名册 4 → 3）。
+#: 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
 _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
-    "settings", "customer_order", "customer_aftersales", "product",
+    "customer_order", "customer_aftersales", "product",
 })
 
 # 显式豁免台账（键 = Skill 名，值 = 不绑 `interact` 的理由）：**没绑 `interact` 的 Skill 必须
@@ -700,11 +706,17 @@ def test_issue_3317_six_bindings_now_expose_interact():
                 f"（安全语义不得为交互话术让路）"
             )
 
-    # 厚度守卫：写侧的判据面必须非空（否则本用例退化成"只断言一批只读工具"= 空判据）
+    # 厚度守卫（#5302 改判：**判据面已整体收窄为只读**，如实登记而不是留一条恒真空判据）：
+    # #3317 的 6 处（staff/settings/data 各 2）**全部**随 B 端只读化收窄为只读 ⇒
+    # 「禁止 B 路径」在写侧的活见证为**空集**。此时正确的守住方式是**把空集断言出来**：
+    # 谁把其中任何一把改回写工具，`_ISSUE_3317_RETIRED_READ_ONLY` 的只读断言（上面那个分支）
+    # **和**本条同时红 —— 后者会逼他把该工具移出退役子集并恢复 `destructive`/`requires_confirmation`
+    # 的判据面（否则就是「写操作没有确认门禁」= 被禁止的 B 路径）。
     live_writes = sorted(all_bound - set(_ISSUE_3317_RETIRED_READ_ONLY))
-    assert live_writes, (
-        "「禁止 B 路径」的判据面已空（6 处全被收窄为只读）—— 请为写工具另找见证，"
-        "或把本用例按 #5247 的台账纪律整体退役（不许留一条恒真的空判据）"
+    assert live_writes == [], (
+        f"「禁止 B 路径」的写侧判据面不再是空集：{live_writes} —— 说明有工具被改回写工具"
+        "（那就要把它从 `_ISSUE_3317_RETIRED_READ_ONLY` 移出，并恢复 `destructive`/"
+        "`requires_confirmation` 的逐条断言）"
     )
 
 

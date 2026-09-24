@@ -1,0 +1,245 @@
+{
+  "_doc": [
+    "判据面「原文口径」元守卫（issue #5325 类别 1）的**豁免台账** —— 数据文件，判据只读它、不读注释。",
+    "纪律（机械执行，见 tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py）：",
+    "  ① 每条必须有 `reason` + 单号 `issue`；缺任一项 ⇒ 该测试必红。",
+    "  ② 台账**只许缩短**：未登记的命中 ⇒ 红；已登记文件的命中数涨或跌 ⇒ 红；条目陈旧（该文件已无命中）⇒ 红。",
+    "     ⇒ 新增原文口径解析**不许**靠往这里加条目吸收 —— 必须改走语法单元（ast/tokenize）或先剥注释与字符串。",
+    "  ③ `hits` 是**现取条数**（不写死解释性上限）；燃尽锚点 = 条目数与 `hits` 之和，由测试每次打印。",
+    "  ④ `issue` = 该豁免的**登记来源单号**：#5323 = 同族清扫的冻结清单条目；#5325 = 冻结清单之外的同类存量。",
+    "现状：本文件只记录**已有债务**，不含任何兜底/通配条目。"
+  ],
+  "entries": [
+    {
+      "path": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "rule": "quote-parse",
+      "hits": 4,
+      "reason": "#5323 第 1 条（#5272 同款现场）：仍按双引号字面量扫源码原文取权限码 / 角色码 / 菜单节点 ⇒ 注释里写个码即被当声明（假红），注释提到某码又会喂绿「每个码都声明了」。修法 = 改走 ast / tokenize（同文件 `parse_agent_skills` 已是范式）。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_assertion_specs_wellformed.py",
+      "rule": "quote-parse",
+      "hits": 3,
+      "reason": "#5323 第 2 条：按引号扫 actions 名（`VALID_ACTIONS` / `name=\"…\"`）⇒ 注释或 docstring 里的同形文本即可喂中。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
+      "rule": "quote-parse",
+      "hits": 4,
+      "reason": "#5323 第 3 条：按引号扫**算料配置键**与 Java 公式串（涉钱面）⇒ 注释即可喂中，方向为假红兼假绿。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_case_asset_truth.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "#5323 第 4 条：按引号扫 actions 名。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_debug_permissions_precondition.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "#5323 第 5 条：按引号扫动作名。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_product_name_pollution.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "#5323 第 6 条：按引号扫 runner 集合。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_fabric_route_seed.py",
+      "rule": "quote-parse",
+      "hits": 3,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_inbound_order_idempotency.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py",
+      "rule": "quote-parse",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mibao_case_invariants.py",
+      "rule": "quote-parse",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_migration_idempotency.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_precondition_count_types.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_production_catalog_seed.py",
+      "rule": "quote-parse",
+      "hits": 3,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_public_ops_v88_migration.py",
+      "rule": "quote-parse",
+      "hits": 3,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_routing_model_p2_consumers.py",
+      "rule": "quote-parse",
+      "hits": 3,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_routing_read_endpoints.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_schema_bootstrap_order.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_xiaobu_case_set.py",
+      "rule": "quote-parse",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_xiaobu_coverage.py",
+      "rule": "quote-parse",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：按引号扫 SQL/Java 原文取值 —— 注释或文档字符串里出现同形文本即可喂中该判据。收口方向 = 改走语法单元，或先剥注释与字符串再取。",
+      "issue": "#5325"
+    },
+    {
+      "path": ".github/cases_yaml.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "#5323 第 9 条：块标量头识别这一**窄用途**的 `split('#')[0]`；本单只登记、未收口（如需收口请另立包，勿在本台账加条目）。",
+      "issue": "#5323"
+    },
+    {
+      "path": "scripts/agent-presets-guard.py",
+      "rule": "naive-hash-cut",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "scripts/saving-metrics-red-proof-backend.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_append_selfheal.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mixed_color_surcharge_cross_side.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "#5323 第 7 条：`_python_code_only()` 未先清空字符串就按 `#` 截断 ⇒ 字符串里的 `#`（如 `'#FF0000'`）把该行后半截吃掉，方向是**假绿（漏检）**；待判定、未收口。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_realdb_failclosed.py",
+      "rule": "naive-hash-cut",
+      "hits": 2,
+      "reason": "#5323 第 8 条：**已核为非缺陷** —— `_py_code_only()` 先整段清空 `\"\"\"…\"\"\"` / `\"…\"` / `'…'` 再剥 `#`（顺序保护，理由已写在 docstring）。登记的是「形态相同但顺序已保护」，不重复劳动。",
+      "issue": "#5323"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_redproof_harness_gate.py",
+      "rule": "naive-hash-cut",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_render_cases_domain_map.py",
+      "rule": "naive-hash-cut",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_step_exit_code_propagation.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_all_gate_parity.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_all_log_scope.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_all_quick_scope.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_all_tri_state_noop.py",
+      "rule": "naive-hash-cut",
+      "hits": 1,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_worker_h5_hosting.py",
+      "rule": "naive-hash-cut",
+      "hits": 2,
+      "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
+      "issue": "#5325"
+    }
+  ]
+}

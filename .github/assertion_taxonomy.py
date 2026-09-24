@@ -89,6 +89,18 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    判据面为什么必须跟着回（病根）：本表是「写用例必须有效果层断言 / 必须声明自清理」
     #    的**唯一判据源** —— 工具重新可达而名字不在表里，含它们期望的用例就**不再被分类为
     #    写用例** ⇒ 效果层/自清理规则对它们**静默失效**（且不会让任何东西变红）。
+    #    ⚠️ #5247 移出的其余 4 个（`order_manage` / `product_manage` /
+    #    `processing_order_generate` / `processing_order_update`）**未改判、仍不可达** ⇒
+    #    不得回表（见上方 #5247 注释）。
+    "product_update",              # WRITE|IDEMPOTENT（商品级 base_price；#5303 回绑）
+    "sku_update",                  # WRITE|IDEMPOTENT（SKU 价；#5303 回绑）
+    # ⚠️ 2026-09-24（issue #5303，**改判** #5247 的一半）：`product_update` / `sku_update`
+    #    **补回本表** —— 二者是 #5285「B 端米宝只读化」后**唯一回绑的两个 A 档可逆写工具**
+    #    （product_skill 重新绑定：前者写商品级 `products.base_price`，后者写
+    #    `product_skus.price`；都带工具级预览闸 + 用例侧 `post_clean` 复位）⇒ **重新可达**。
+    #    判据面为什么必须跟着回（病根）：本表是「写用例必须有效果层断言 / 必须声明自清理」
+    #    的**唯一判据源** —— 工具重新可达而名字不在表里，含它们期望的用例就**不再被分类为
+    #    写用例** ⇒ 效果层/自清理规则对它们**静默失效**（且不会让任何东西变红）。
     #    这与 #5247 的「幽灵写工具」是同一病根的两面：**本表必须与真实可达面逐字一致**
     #    （多一个 = 判据按旧地图判；少一个 = 判据静默放过）。
     #    ⚠️ #5247 移出的其余 4 个（`order_manage` / `product_manage` /
@@ -124,18 +136,24 @@ WRITE_TOOLS: frozenset[str] = frozenset({
 #   · 且 `processing_item_manage`（加工项写工具）已从 B 端解绑 ⇒ 两侧都不可达（幽灵工具）。
 # 留在表里 = 判据源与实际枚举脱节（声明那些写 action 的用例会先被 coverage 判悬空阻塞，
 # 而本表却仍把它们算作"写用例"）。真值以各工具源码的 `VALID_ACTIONS` / `read_only_actions` 为准。
-WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
-    "notification_manage": frozenset({
-        "mark_read", "create", "delete", "mark_all_read",
-    }),
-    "settings_manage": frozenset({
-        "update_settings", "update_ai_config", "change_password",
-    }),
-}
+# ⚠️ **2026-09-25（issue #5302，settings 域整域收口）⇒ 本表归零（`{}`）**：
+# 本表最后的两个成员（`notification_manage` / `settings_manage`）也收窄为纯只读 ——
+# 写 action（`mark_read` / `read_all` / `delete` / `create` / `update_settings` /
+# `update_ai_config` / `change_password`）已从源码删除 ⇒ 它们不再是「部分写」工具。
+# 🔴 **口径不改**：本表的语义仍是「工具级 read_only=False、但只有部分 action 是写」；
+# 当前**没有任何工具**属这一档（B 端只读化把最后两把收掉了）。
+# 归零**不是门禁空壳**：写用例的判据源还剩 `WRITE_TOOLS`（C 端 `order_create` /
+# `aftersale_create`）；而「action 级读写分支仍分得清」由
+# `tests/unit_ci_workflows/test_case_trust_gate.py` 的**注入式自证**承担
+# （用合成「部分写」工具证明 `is_write_expectation` 的 action 分支仍然有效）。
+# 一旦重新引入"部分写"工具 ⇒ 必须填回本表 + 恢复那里 ≥1 的下界断言。
+WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {}
 
-# 安全护栏：集合不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。
+# 安全护栏：写工具的判据面不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。
+# ⚠️ #5302：`WRITE_TOOL_ACTIONS` 归零是**事实**（见上），故护栏守**两者之和**而不是逐个守。
 assert WRITE_TOOLS, "WRITE_TOOLS 不得为空 —— 空集会让写用例全部漏判（门禁空壳）"
-assert WRITE_TOOL_ACTIONS, "WRITE_TOOL_ACTIONS 不得为空 —— 同上"
+assert WRITE_TOOLS or WRITE_TOOL_ACTIONS, (
+    "写工具与写 action 两个集合**都**为空 ⇒ 所有写用例都会被判成读用例（门禁空壳）")
 
 _ALL_WRITE_TOOLS: frozenset[str] = WRITE_TOOLS | frozenset(WRITE_TOOL_ACTIONS)
 

@@ -31,6 +31,28 @@
 不卸 auto-merge、但**仍然记账**）—— 宁可漏标一条 flaky（可见、可补），
 不可把 infra 抖动记成 flaky（那会把台账本身变成噪音源）。
 
+#5307：回填路径**曾经不存在** ⇒ 台账自我死锁（本单修）
+-------------------------------------------------------
+台账 schema 逐字写着 `follow_up`「CI 生成时为 null，由**分诊方**回填」，但**回填路径不存在**：
+`append_entries` 对同幂等键**跳过**（幂等：重复追加是**无副作用**的空操作）⇒ 用 append 回填 = 无效；
+CLI 又没有回填子命令 ⇒ 回填变成「**文档要求做、却没有合法工具做**」的动作。而 **required** 测试
+`tests/unit_ci_workflows/test_flaky_triage.py::TestReconcile::test_shipped_ledger_reconciles_clean`
+判「台账必须 reconcile 干净」⇒ 只要存在一条 `kind=flaky` / `status=open` / `follow_up=null`，
+**台账分支永远绿不了** ⇒ **台账永远落不了 main**（实测：分支 4 条欠账 ⇒ 4 次尝试同形确定性失败、
+台账停摆约 40 小时且**无人发现**）。
+⇒ ① 新增 `follow-up` 子命令（**字段级**回填：只改 `follow_up`(/`status`/`fixed_by`)，
+**不**新增/删除/重排条目）；② 欠账清单 + **可直接复制**的回填命令落进 `reconcile` 输出与
+`flaky-ledger-reconcile.yml` 的 job summary（可见性：那条红此前**没有任何消费面**）。
+
+#5310：判据不许跨时刻读数（本单修）
+----------------------------------
+`ledger-drift` 的 main 侧旧口径 = `--main-file`（= 工作区 = **job 启动时的检出快照**），
+而 PR 侧是**实时** `gh pr list` ⇒ 台账 PR 在这个窗口里被合并，就得到「落后 N 条 + 无 PR」的**假红**
+（实测 run `35951257498`：启动 03:23:37、报错 03:23:55，而台账 PR #5139 在 03:23:46 合并；
+它报「24 条未落仓」= 分支 72 − **旧快照** main 48，而真实 key 差 = **ahead 0 / behind 0**）。
+⇒ main 侧改**实时**读（`--main-live`：`gh api` 取 `main` 上的该文件）；`ahead == 0` ⇒ **零动作**
+（与既有的「无漂移 ⇒ 零动作」同一条），报错文案给**真能改变结果**的出口。
+
 退出码（三态，照本仓库 `merge_gate.py` / `llm_sink_check.py` 口径）
 ------------------------------------------------------------------
 `0` = 正常；`1` = 违规（台账不自洽 / 参数非法）；`3` = **无法判定**（取不到事实）。
@@ -41,6 +63,7 @@ import argparse
 import copy
 import json
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -49,6 +72,9 @@ from pathlib import Path
 # ── 常量（单一事实源；workflow 侧只引用，不复制） ───────────────────────────────
 
 LEDGER_PATH = Path(__file__).resolve().parents[1] / "flaky-ledger.json"
+#: 台账在仓库里的**相对**路径（git / `gh api` 侧按相对路径取分支与 main 副本；由 LEDGER_PATH 派生，
+#: 不写死副本）。定义在常量区（不是 #4825 节里）：`render_reconcile_report` 的默认参数要用它。
+LEDGER_REL = "/".join(LEDGER_PATH.parts[-2:])
 LEDGER_BRANCH = "chore/flaky-ledger"
 FLAKY_LABEL = "flaky/rerun-green"
 BLOCK_LABEL = "block/merge"
@@ -117,6 +143,19 @@ ENTRY_STATUSES = ("open", "fixed")
 RERUN_RESULTS = ("success", "failure", "not_rerun")
 #: 台账里**禁止**出现的顶层键：硬编码计数会随追加而腐烂（#4701/#4714/#4742 纪律）。
 FORBIDDEN_LEDGER_KEYS = ("count", "total", "entries_count", "n_entries", "num_entries")
+
+#: 「**怎么回填** `follow_up`」的权威口径（#5307）。台账 schema 原话只写「由分诊方回填」、
+#: **没说用哪个命令** —— 那正是死锁的一半（另一半 = 台账分支的确定性失败没有消费面）。
+#: 单一事实源在这里：CLI 的 `--help` epilog、`reconcile` 的欠账报告、required 测试的失败消息
+#: 都从它取值（**不复制第二份措辞**）。
+FOLLOW_UP_HOWTO = (
+    "回填跟踪单号（**字段级**：只改 `follow_up`(/`status`/`fixed_by`)，不新增/删除/重排条目）："
+    "`python3 .github/scripts/flaky_ledger.py follow-up "
+    "--ledger .github/flaky-ledger.json --run-id <run_id> --issue <跟踪单号>`；"
+    "同一 run 有多个 job 时加 `--job '<job>'`；销账加 `--status fixed --fixed-by '<PR/run/用例>'`。"
+    "`run_id` 不在台账里 / 单号非正整数 / 命中多条却不给 `--job` ⇒ **非零退出**（fail-closed，"
+    "绝不静默无操作）；重复回填同一值 = **无副作用**（幂等）。"
+)
 
 #: 每个 kind 的**可行动**说明（生成时即写入，读的人不必回查脚本）。
 KIND_REASON = {
@@ -524,6 +563,156 @@ def reconcile(ledger: dict) -> dict:
             "fixed_not_deducted": fixed_not_deducted}
 
 
+# ── #5307：`follow_up` 的**回填路径**（字段级；不破坏「条目只追加」） ─────────────
+
+
+class FollowUpError(Exception):
+    """回填的 fail-closed 出口（CLI 捕获它 ⇒ 非零退出 + 明确报错，**绝不**静默无操作）。"""
+
+
+def _positive_int(value, what: str) -> int:
+    """正整数解析（fail-closed：`0` / 负数 / 非数字 ⇒ 抛 `ValueError`，**不**静默取默认值）。"""
+    try:
+        num = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"{what}={value!r} 不是整数")
+    if num <= 0:
+        raise ValueError(f"{what}={value!r} 不是正整数")
+    return num
+
+
+def follow_up_index(ledger, run_id: int, job=None) -> list:
+    """**定位**要回填的条目下标（只定位，不改任何东西）。任一条 fail-closed ⇒ 抛 `FollowUpError`。
+
+    幂等键是 `(workflow, run_id, job)`，而 CLI 按 `run_id`(+`job`) 定位 ⇒ 同一 run 有**多个**
+    job 的条目时会命中多条：此时**必须**由人给 `--job`，本函数**不猜**（猜错 = 把单号回填到
+    另一个 job 上，比不回填更坏）。
+    """
+    entries = (ledger or {}).get("entries") or []
+    hits = [i for i, e in enumerate(entries)
+            if e.get("run_id") == run_id and (job is None or e.get("job") == job)]
+    if not hits:
+        where = f"run_id={run_id}" + (f" job={job!r}" if job is not None else "")
+        recent = sorted({str(e.get("run_id")) for e in entries})[-5:]
+        raise FollowUpError(
+            f"{where} 不在台账里（台账共 {len(entries)} 条）⇒ **拒绝回填** —— 本命令只回填"
+            f"**已存在条目**（不新增条目；新增走 `append`）。最近几条 run_id："
+            f"{'、'.join(recent) if recent else '（空台账）'}")
+    if len(hits) > 1 and job is None:
+        lines = [f"run_id={run_id} 命中 {len(hits)} 条（同一 run 的**不同 job**）⇒ 必须用 "
+                 f"`--job` 指定（本命令不猜：回填到错的 job 上比不回填更坏）："]
+        for i in hits:
+            lines.append(f"   · --job {shlex.quote(str(entries[i].get('job')))}"
+                         f"（entries[{i}] kind={entries[i].get('kind')}）")
+        raise FollowUpError("\n".join(lines))
+    return hits
+
+
+def apply_follow_up(ledger, indices, *, issue=None, status=None, fixed_by=None) -> dict:
+    """把跟踪单号（及可选的 `status=fixed` + `fixed_by`）回填到**已存在条目**上。
+
+    **只改指定条目的这三个字段** —— 不新增、不删除、不重排条目。「条目只追加」的语义由
+    `append_entries` 承担，本函数是唯一的**字段级**例外（#5307 的验收判据明确要求它只改字段）。
+
+    返回 `{"changed": [...], "idempotent": bool}`；每个 change 带 `index / key / before / after`
+    （逐字记录 ⇒ 可审计，也是「条目数与顺序不变」的取证材料）。
+
+    fail-closed（抛 `FollowUpError`，全部**不写盘**）：
+      · 不给 `--issue` 且该条目 `follow_up` 本就为空 ⇒ 拒绝（本命令不替它编单号）；
+      · `--status fixed` 却不给 `--fixed-by` ⇒ 拒绝（否则 `reconcile` 判「销账不成立」）；
+      · 只给 `--fixed-by` 不给 `--status fixed` ⇒ 拒绝（那会写出无凭据的销账）。
+    """
+    entries = (ledger or {}).get("entries") or []
+    changed = []
+    for i in indices:
+        entry = entries[i]
+        before = {k: entry.get(k) for k in ("follow_up", "status", "fixed_by")}
+        target = dict(before)
+        if issue is not None:
+            target["follow_up"] = issue
+        elif not isinstance(before["follow_up"], int) or before["follow_up"] <= 0:
+            raise FollowUpError(
+                f"entries[{i}]（run_id={entry.get('run_id')} job={entry.get('job')!r}）的 "
+                f"follow_up={before['follow_up']!r} ⇒ 必须显式给 `--issue <跟踪单号>`"
+                f"（本命令不替它编单号）")
+        if status == "fixed":
+            if not str(fixed_by or "").strip():
+                raise FollowUpError(
+                    "`--status fixed` 必须同时给 `--fixed-by '<PR / run / 用例>'` ⇒ 否则会写出"
+                    "**无凭据的销账**（`reconcile` 判「销账不成立」，比不改更坏）")
+            target["status"] = "fixed"
+            target["fixed_by"] = str(fixed_by).strip()
+        elif fixed_by:
+            raise FollowUpError("`--fixed-by` 只能与 `--status fixed` 一起用"
+                                "（否则会写出无凭据的销账）")
+        if target == before:
+            continue
+        for field in ("follow_up", "status", "fixed_by"):
+            if target[field] != before[field]:
+                entry[field] = target[field]
+        changed.append({"index": i, "key": list(entry_key(entry)),
+                        "before": before, "after": target})
+    return {"changed": changed, "idempotent": not changed}
+
+
+def render_reconcile_report(ledger, result, ledger_path: str = LEDGER_REL) -> str:
+    """把 `reconcile` 的欠账渲染成**可行动**清单 + **可直接复制**的回填命令（#5307 判据②）。
+
+    为什么必须有它（本单病灶的权利人一侧）：required 测试
+    `test_shipped_ledger_reconciles_clean` 失败时输出只有 `assert {...} == {...}` 的 diff，
+    读的人**不知道下一步做什么**；而台账 schema 只写「由分诊方回填」、没写**用哪个命令**
+    ⇒ 回填是「文档要求做、却没有合法工具做」的动作（死锁的一半）。
+
+    每条欠账都给出 `workflow` / `run_id` / `job` **三个定位键**，再给一条可复制的命令
+    （命令口径 = `FOLLOW_UP_HOWTO`，单一事实源，不在这里另写一套措辞）。
+    """
+    entries = (ledger or {}).get("entries") or []
+
+    def entry_at(row) -> dict:
+        i = row.get("index")
+        return entries[i] if isinstance(i, int) and 0 <= i < len(entries) else {}
+
+    def where(entry) -> str:
+        return (f"{entry.get('workflow')} / run {entry.get('run_id')} / "
+                f"job `{entry.get('job')}`")
+
+    def cmd(entry, extra: str = "") -> str:
+        return (f"python3 .github/scripts/flaky_ledger.py follow-up --ledger {ledger_path} "
+                f"--run-id {entry.get('run_id')} "
+                f"--job {shlex.quote(str(entry.get('job')))}{extra}")
+
+    lines = ["❌ 台账欠账（#5307）—— 每条都给出 `workflow` / `run_id` / `job` 与**可直接复制**的回填命令："]
+    for row in result.get("new_events") or []:
+        entry = entry_at(row)
+        lines += [
+            f"  · [未登记修复路径] {where(entry)}"
+            f"（kind={entry.get('kind')} · status={entry.get('status')} · "
+            f"follow_up={entry.get('follow_up')!r}）",
+            f"    ⇒ {cmd(entry, ' --issue <跟踪单号>')}",
+        ]
+    for row in result.get("fixed_not_deducted") or []:
+        entry = entry_at(row)
+        if "fixed_by" in str(row.get("why") or ""):
+            hint = "    ⇒ " + cmd(entry, " --status fixed --fixed-by '<修复凭据：PR / run / 用例>'")
+        else:
+            hint = (f"    ⇒ 该 (workflow, job) 之后**又出现 flaky 事件**（修复不成立）："
+                    f"先按条目 `remedy` 重新定位机制并给红证，**不许**只改 status")
+        lines += [f"  · [已修未销账] {where(entry)}（{row.get('why')}）", hint]
+    for row in result.get("duplicates") or []:
+        entry = entry_at(row)
+        lines += [
+            f"  · [重复记账] {where(entry)}（幂等键重复 ⇒ 同一次失败记了多条）",
+            f"    ⇒ **无对应子命令**（本命令只回填已存在条目、不删条目）：需人工核对该键的重复项后"
+            f"手工删除多余条目（台账「只追加」的语义由人核账兜底）",
+        ]
+    lines += [
+        f"回填口径（单一事实源）：{FOLLOW_UP_HOWTO}",
+        "回填位置 = **持有该条目的那份台账**（同幂等键以 main 为准 ⇒ 已落 main 的条目要在 main 的"
+        "副本上改；分支台账上的条目在台账分支上改）；回填后 `reconcile` 与本清单应归零。",
+    ]
+    return "\n".join(lines)
+
+
 def aggregate(ledger: dict) -> dict:
     """按 `(workflow, job)` 聚合 —— **计数一律现取**（台账里不存任何计数，故不会腐烂）。
 
@@ -720,8 +909,7 @@ def approve_runs(repo: str, run_ids) -> list:
 # 本节的判据只看**状态**（分支内容 vs main 内容），不看事件 ⇒ 与 `workflow_run` 触发面正交，
 # 故可作为独立兜底（形态照抄 `.github/workflows/deploy-reconcile.yml` 的「独立对账」先例）。
 
-#: 台账在仓库里的**相对**路径（git 侧按相对路径取分支副本；由 LEDGER_PATH 派生，不写死副本）
-LEDGER_REL = "/".join(LEDGER_PATH.parts[-2:])
+#: 台账的**相对**路径见常量区（`LEDGER_REL`；`read_main_ledger_live` / `read_branch_ledger` 都用它）
 
 
 def _key_str(key) -> str:
@@ -781,6 +969,33 @@ def read_branch_ledger(branch: str = LEDGER_BRANCH):
         raise RuntimeError(
             f"读不到 {branch}:{LEDGER_REL}：{(show.stderr or '').strip()[:200]}")
     return json.loads(show.stdout)
+
+
+def read_main_ledger_live(repo: str, rel: str = LEDGER_REL) -> dict:
+    """**实时**读 `main` 上的台账内容（API），而不是 job 启动时的**检出快照**（#5310 判据①）。
+
+    病根（**实测**，不是推断）：`ledger-drift` 的 main 侧旧口径 = `--main-file`（= 工作区
+    = **job 启动时的检出快照**），而 PR 侧是**实时** `gh pr list` ⇒ 两个读数跨了两个时刻：
+    台账 PR 只要在这个窗口里被合并，就会得到「落后 N 条 + 无 PR」的**假红**。
+    实测 run `35951257498`：启动 **03:23:37**、报错 **03:23:55**，而台账 PR #5139 在
+    **03:23:46** 合并 ⇒ 它报「**24 条未落仓**」= 分支 72 − **旧快照** main 48，
+    而真实 key 差（事后用 `ledger_drift` 复算）= **ahead 0 / behind 0**。
+
+    判据读的都必须是「**现在**」：main 侧改实时读，与本 workflow 里 PR 侧的实时查询同源。
+    fail-closed：取不到 / 不是 JSON ⇒ 抛 `RuntimeError`（调用方退 `3`，**不得**当「无漂移」读）。
+    """
+    proc = subprocess.run(
+        ["gh", "api", "-H", "Accept: application/vnd.github.raw",
+         f"repos/{repo}/contents/{rel}?ref=main"],
+        capture_output=True, text=True)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError(
+            f"取不到 main 上的台账（repos/{repo}/contents/{rel}?ref=main）："
+            f"{(proc.stderr or '空内容').strip()[:200]}")
+    try:
+        return json.loads(proc.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"main 上的台账不是合法 JSON（实时读，`?ref=main`）：{exc}")
 
 
 def branch_head_age_minutes():
@@ -931,10 +1146,27 @@ def main(argv=None) -> int:
     p = sub.add_parser("ledger-drift",
                        help="台账落仓对账（#4825 兜底判据）：台账分支是否领先 main")
     p.add_argument("--branch", default=LEDGER_BRANCH, help="台账分支名")
-    p.add_argument("--main-file", default=str(LEDGER_PATH), help="main 侧台账（工作区 = main 检出）")
+    p.add_argument("--main-file", default=str(LEDGER_PATH),
+                   help="main 侧台账（**检出快照**；生产请用 `--main-live` —— #5310 判据①）")
+    p.add_argument("--main-live", action="store_true",
+                   help="#5310：main 侧台账**实时**读（`gh api` 取 main 上该文件），"
+                        "而不是 job 启动时的检出快照（判据与 PR 侧查询必须同一时刻）")
+    p.add_argument("--repo", help="`--main-live` 需要（`owner/repo`）")
     p.add_argument("--branch-file", help="离线：直接读该文件当分支台账（测试 / 本地复跑）")
     p.add_argument("--json-out")
     p.add_argument("--gh-output")
+
+    p = sub.add_parser("follow-up",
+                       help="回填**已存在条目**的 follow_up（跟踪单号）/ status=fixed + fixed_by（#5307）",
+                       epilog=FOLLOW_UP_HOWTO,
+                       formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--ledger", default=str(LEDGER_PATH))
+    p.add_argument("--run-id", required=True, type=int,
+                   help="**已存在条目**的 run_id（不存在 ⇒ 非零退出，绝不静默无操作）")
+    p.add_argument("--job", help="同一 run 有多个 job 的条目时用它定位（缺省且命中多条 ⇒ 非零退出）")
+    p.add_argument("--issue", help="跟踪单号（必须**正整数**；条目 follow_up 已非空时可省略）")
+    p.add_argument("--status", choices=["fixed"], help="可选：同时销账（必须配 `--fixed-by`）")
+    p.add_argument("--fixed-by", help="销账凭据（PR / run / 用例），仅 `--status fixed` 需要")
 
     p = sub.add_parser("append", help="只追加 + 幂等地写入台账（`--align-main`：推前先与 main 对齐）")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
@@ -954,6 +1186,9 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("reconcile", help="三态对账：新事件 / 重复计数 / 已修未销账（0/1）")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
+    p.add_argument("--branch",
+                   help="#5307：改为对账**台账分支**上的台账（那份 CI 不在 required 集合、"
+                        "欠账此前没有任何消费面）；读不到分支 ⇒ 退 3（未跑 ≠ 通过）")
 
     args = ap.parse_args(argv)
 
@@ -1035,8 +1270,18 @@ def main(argv=None) -> int:
 
     if args.cmd == "ledger-drift":
         age = None
+        if args.main_live and not args.repo:
+            print("⛔ `--main-live` 必须同时给 `--repo owner/repo`（否则无从实时读 main）"
+                  "⇒ 参数非法，本轮**零动作**（未跑 ≠ 通过）", file=sys.stderr)
+            return 1
         try:
-            main_ledger = load_ledger(Path(args.main_file))
+            if args.main_live:
+                # #5310 判据①：判据（main 侧）与本 workflow 里 PR 侧的**实时**查询同一时刻。
+                main_ledger = read_main_ledger_live(args.repo)
+                main_source = f"live:{args.repo}@main"
+            else:
+                main_ledger = load_ledger(Path(args.main_file))
+                main_source = f"snapshot:{args.main_file}"
             if args.branch_file:
                 branch_ledger = load_ledger(Path(args.branch_file))
             else:
@@ -1058,10 +1303,12 @@ def main(argv=None) -> int:
             state = "drift" if drift["ahead"] else "in-sync"
         drift["state"] = state
         drift["age_minutes"] = age
+        drift["main_source"] = main_source
         print(f"📒 台账对账（{args.branch}）：main {drift['main_total']} 条 · "
               f"分支 {drift['branch_total']} 条 ⇒ **领先 main {len(drift['ahead'])} 条** / "
               f"落后 {len(drift['behind'])} 条"
-              f"（分支 HEAD {age if age is not None else '—'} 分钟前；状态 {state}）")
+              f"（分支 HEAD {age if age is not None else '—'} 分钟前；状态 {state}；"
+              f"main 侧 = {main_source}）")
         for key in drift["ahead"]:
             print(f"   ⏳ 已记账但未落 main：{key}")
         for key in drift["behind"]:
@@ -1075,6 +1322,7 @@ def main(argv=None) -> int:
                 fh.write(f"behind={len(drift['behind'])}\n")
                 fh.write(f"state={state}\n")
                 fh.write(f"age_minutes={age if age is not None else ''}\n")
+                fh.write(f"main_source={main_source}\n")
         return 0
 
     if args.cmd == "append":
@@ -1112,6 +1360,53 @@ def main(argv=None) -> int:
               f"（幂等跳过 {len(skipped)} 条）→ {args.ledger}")
         return 0
 
+    if args.cmd == "follow-up":
+        # #5307：**回填路径**（此前不存在 ⇒ 台账自我死锁）。全部 fail-closed：任一项不成立
+        # ⇒ 非零退出 + 明确报错，**绝不**静默无操作（静默无操作正是本单要治的形态）。
+        try:
+            run_id = _positive_int(args.run_id, "--run-id")
+            issue = None if args.issue is None else _positive_int(args.issue, "--issue")
+        except ValueError as exc:
+            print(f"⛔ {exc} ⇒ 拒绝回填（fail-closed：非零退出，不静默无操作）", file=sys.stderr)
+            return 1
+        ledger = load_ledger(args.ledger)
+        bad = ledger_violations(ledger)
+        if bad:
+            print("⛔ 台账自身不合规，拒绝回填（先 `selftest`）：\n  - " + "\n  - ".join(bad),
+                  file=sys.stderr)
+            return 1
+        try:
+            indices = follow_up_index(ledger, run_id, args.job)
+            result = apply_follow_up(ledger, indices, issue=issue, status=args.status,
+                                     fixed_by=args.fixed_by)
+        except FollowUpError as exc:
+            print(f"⛔ {exc}", file=sys.stderr)
+            print(f"   （回填口径：{FOLLOW_UP_HOWTO}）", file=sys.stderr)
+            return 1
+        if result["idempotent"]:
+            print(f"⏭️ 幂等：run {run_id} 的 {len(indices)} 条已是目标值 ⇒ 台账未改动"
+                  f"（重复回填 = 无副作用）")
+            return 0
+        bad_after = ledger_violations(ledger)
+        if bad_after:
+            print("⛔ 回填会把台账改成不合规 ⇒ 拒绝写入：\n  - " + "\n  - ".join(bad_after),
+                  file=sys.stderr)
+            return 1
+        save_ledger(args.ledger, ledger)
+        for change in result["changed"]:
+            diffs = " · ".join(
+                f"{field} {change['before'][field]!r} → {change['after'][field]!r}"
+                for field in ("follow_up", "status", "fixed_by")
+                if change["before"][field] != change["after"][field])
+            print(f"📒 entries[{change['index']}] {_key_str(change['key'])}：{diffs}")
+        left = reconcile(ledger)
+        print(f"✅ 已回填 {len(result['changed'])} 条（条目数现取 = {len(ledger.get('entries') or [])}，"
+              f"**只改字段、未新增/删除/重排条目**）→ {args.ledger}")
+        print(f"   回填后 reconcile：new_events={len(left['new_events'])} "
+              f"duplicates={len(left['duplicates'])} "
+              f"fixed_not_deducted={len(left['fixed_not_deducted'])}")
+        return 0
+
     if args.cmd == "selftest":
         ledger = load_ledger(args.ledger)
         bad = ledger_violations(ledger)
@@ -1142,7 +1437,20 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "reconcile":
-        ledger = load_ledger(args.ledger)
+        if args.branch:
+            # #5307 可见性：对账**台账分支**上那份台账 —— 它的 required 测试判红**没有任何人看**
+            # （不在 required 集合 + flaky-triage 按自指守卫跳过该分支 + 兜底原先只补 approve/arm）。
+            try:
+                ledger = read_branch_ledger(args.branch)
+            except (RuntimeError, ValueError) as exc:
+                print(f"⛔ 读不到台账分支 `{args.branch}` 的台账（{exc}）⇒ **无法判定**"
+                      f"（未跑 ≠ 通过 ⇒ 退 3）", file=sys.stderr)
+                return 3
+            if ledger is None:
+                print(f"ℹ️ 台账分支 `{args.branch}` 不存在 ⇒ 没有可对账的台账（非欠账）")
+                return 0
+        else:
+            ledger = load_ledger(args.ledger)
         bad = ledger_violations(ledger)
         if bad:
             print("⛔ 台账不合规（先 `selftest`）：\n  - " + "\n  - ".join(bad), file=sys.stderr)
@@ -1159,6 +1467,8 @@ def main(argv=None) -> int:
         if dirty == 0:
             print("✅ 三态对账干净（无未登记修复路径 / 无重复计数 / 无已修未销账）")
             return 0
+        # #5307 判据②：欠账必须**可行动** —— 清单（workflow / run_id / job）+ 可直接复制的回填命令。
+        print(render_reconcile_report(ledger, result))
         print("⚠️ 本命令**未接 required 门禁**（照实登记）：它是**消费接口**，"
               "由后续单 / agent 按需调用 —— 判红不等于阻塞合并。")
         return 1

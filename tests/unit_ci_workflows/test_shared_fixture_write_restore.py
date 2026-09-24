@@ -206,6 +206,29 @@ def _all_cases() -> list:
 WRITE_TOOL_SURFACE: frozenset = (
     frozenset(_taxonomy().WRITE_TOOLS) | frozenset(_taxonomy().WRITE_TOOL_ACTIONS))
 
+
+def _with_synthetic_action_writer(monkeypatch, tool: str = "zzz_partial_write",
+                                  action: str = "write_x") -> tuple:
+    """把**合成**「部分写」工具临时填进扫描面（返回 `(tool, action)`）。
+
+    🔴 **为什么需要（#5302）**：settings 域收口让 taxonomy 的 `WRITE_TOOL_ACTIONS` **归零**
+    （最后一个"部分写"工具也没了）⇒ 真实用例库里**再无 action 级写方** ⇒ 本文件那几条
+    「action 级写方」红证若继续锚在真值上会**静默失去判别力**（夹具不再是写用例 = 恒真断言）。
+    故按仓内既有做法改成**注入式自证**：合成一个 `zzz_partial_write(write_x)`，机制本身
+    （保守判写 / 未归类即红 / 台账路径）仍逐条被覆盖。
+
+    注入必须走**两份真值**（本文件的判据同时读它们）：
+      · `WRITE_TOOL_SURFACE`（本模块的扫描面，模块级常量）—— 直接替换该全局；
+      · `is_write_expectation`（taxonomy 的判定）—— 注意 `_taxonomy()` 每次调用都**重新载入
+        模块实例**，所以"改返回值里的字典"是无效的（实测：`WRITE_TOOL_ACTIONS` 仍是 `{}`）⇒
+        必须把 `_taxonomy` 本身替换成返回**已打好补丁的那一份实例**（`monkeypatch` 退出时自动还原）。
+    """
+    tax = _taxonomy()
+    monkeypatch.setattr(tax, "WRITE_TOOL_ACTIONS", {tool: frozenset({action})})
+    monkeypatch.setitem(globals(), "_taxonomy", lambda: tax)
+    monkeypatch.setitem(globals(), "WRITE_TOOL_SURFACE", WRITE_TOOL_SURFACE | {tool})
+    return tool, action
+
 #: `(tool, action)` → **属性键**（`""` = 是写方但**不改共享夹具的属性** ⇒ 判据 ②③ 都不适用）。
 #: `action` 取 `""` 表示期望里没声明 action（`is_write_expectation` 对 action 级写工具**保守判写**）。
 #: ⚠️ 只登记**库里真实出现**的活写方 key —— 每个 key 都要有人回答「它改的是不是共享夹具」；
@@ -226,17 +249,15 @@ PRODUCT_ATTR_WRITERS: dict = {
     ("product_update", ""): "base_price",     # PR-009 / PR-010 的写方
     # 单规格调价（`product_skus.price`；PATCH `…/skus/price`）—— PR-021 的写方。
     ("sku_update", ""): "sku_price",
-    # ── action 级写方（taxonomy 的 `WRITE_TOOL_ACTIONS`）────────────────────
-    # 改密码：写的是**账号设置**，不触达商品属性（库里唯一在册的 settings 写方 = ST-003）。
-    ("settings_manage", "change_password"): "",
-    # 未声明 action 的 action 级写工具：taxonomy **保守判写**，但"改的是哪个属性"**不可判定**
-    # ⇒ 单列 `unknown`（走台账路径 = 可见），而不是被静默当成"不改共享夹具"。
-    # 判别力自证见 test_unknown_action_attr_lands_in_the_ledger_path。
-    ("settings_manage", ""): "unknown",
-    ("notification_manage", ""): "unknown",
-    # ⚠️ **故意**不登记 notification_manage 的**具体**写 action（`mark_read` / `create` /
-    #    `delete` / `mark_all_read`）：它们一出现在用例里就是"新写方"⇒ 判据 ① 先红、逼人判定
-    #    （红证 test_red_proof_unclassified_action_is_caught 用的就是 `mark_read`）。
+    # ── # [RETIRED #5302] action 级写方（`WRITE_TOOL_ACTIONS`）**整体退场**────────────
+    # settings 域收口把该表**归零**（`notification_manage` / `settings_manage` 也收窄为只读）
+    # ⇒ 下面三条不再是活写方（工具仍是活工具，但**没有**写 action 了），从表里删除
+    # （留着 = 对不存在的能力做归类）：
+    #   ("settings_manage", "change_password") → ""        （ST-003 已改判为能力下线的如实告知）
+    #   ("settings_manage", "")               → "unknown"   （该工具不再有写 action）
+    #   ("notification_manage", "")           → "unknown"   （同上）
+    # action 级写的判别力**没有丢**：三条红证改用**合成「部分写」工具**注入（见
+    # `_with_synthetic_action_writer`），机制仍逐条被覆盖。
 }
 
 #: **留档**（#4075 / #4128 时代的商品属性写方 → 属性键），**已不是活写方**。
@@ -501,7 +522,7 @@ class TestSeedTruthAndScanSurface:
                      "processing_item_manage"} & WRITE_TOOL_SURFACE), (
             "#5247 已退场、且 #5303 **未**回绑的写工具仍在扫描面里 ⇒ 判据按旧地图判（幽灵写方）")
 
-    def test_scan_surface_covers_the_known_writers(self):
+    def test_scan_surface_covers_the_known_writers(self, monkeypatch):
         """**扫描面自证**：当前**存在**的写方必须被 `live_write_expectations` 认出来。
 
         否则判据恒绿（`migao-acceptance`「绿了但没跑」）。
@@ -511,8 +532,10 @@ class TestSeedTruthAndScanSurface:
         新口径（三类都钉住，取**真实用例库**）：
           ① 整工具写 —— `CH-009` 的 ` or ` 形态字符串期望里必须析出 `order_create`；
           ② 整工具写 —— `AS-003` 的 `after_sales_manage or aftersale_create` 里析出 `aftersale_create`；
-          ③ action 级写 —— `ST-003` 的 `settings_manage(action=change_password)`；
-          ④ action 级写（库内暂无该写法）—— 合成 `notification_manage(mark_read)` 必须被认出；
+          ③ 🔴 **#5302 改判**：原第 ③ 条（`ST-003` 的 `settings_manage(action=change_password)`）随
+             settings 域只读化**消失**（该用例已改判为「能力下线的如实告知」）⇒ 改成断言**新真值**：
+             真实用例库里**不再有任何 action 级写方**（若又出现，说明有写 action 复活 —— 这里先红）；
+          ④ action 级写的**识别力**由**合成注入**自证（见 `_with_synthetic_action_writer`）；
           ⑤ **防空转下界**：从真实库解析出的活写方集合必须非空（解析失效 ⇒ 红）。
         """
         by = {c["id"]: c for c in _all_cases()}
@@ -520,16 +543,21 @@ class TestSeedTruthAndScanSurface:
             f"判据认不出 CH-009 的整工具写（` or ` 没拆？）：{live_write_expectations(by['CH-009'])}")
         assert ("aftersale_create", "") in live_write_expectations(by["AS-003"]), (
             f"判据认不出 AS-003 的整工具写：{live_write_expectations(by['AS-003'])}")
-        assert ("settings_manage", "change_password") in live_write_expectations(by["ST-003"]), (
-            "判据认不出 ST-003 的 action 级写"
-            f"（写 action 集合没读对？）：{live_write_expectations(by['ST-003'])}")
+        corpus_action_level = sorted(k for k in live_writer_keys(_all_cases()) if k[1])
+        assert corpus_action_level == [], (
+            f"真实用例库里又出现了 action 级写方 {corpus_action_level} —— taxonomy 的 "
+            "`WRITE_TOOL_ACTIONS` 现为空集（#5302 后无「部分写」工具）⇒ 要么有人把写 action "
+            "加回了工具源码（那是能力复活，先改判 taxonomy 与判据），要么用例锚点已过期"
+        )
+        tool, action = _with_synthetic_action_writer(monkeypatch)
         fake = {"id": "FAKE-SCAN", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
-                "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}
-        assert ("notification_manage", "mark_read") in live_write_expectations(fake), (
-            f"判据认不出 action 级写方：{live_write_expectations(fake)}")
+                "expectations": [{"tool": tool, "args": {"action": action}}]}
+        assert (tool, action) in live_write_expectations(fake), (
+            f"判据认不出 action 级写方（合成注入后仍不认）：{live_write_expectations(fake)}")
         live = live_writer_keys(_all_cases())
         assert live, "从真实用例库解析不到任何活写方 —— 扫描面失效（判据会静默空跑）"
-        assert {k[0] for k in live} >= {"order_create", "aftersale_create", "settings_manage"}, (
+        assert {k[0] for k in live} >= {"order_create", "aftersale_create", "product_update",
+                                        "sku_update"}, (
             f"真实库的活写方没被认全：{sorted(live)}")
 
     def test_rebound_writers_are_seen_by_the_surface(self):
@@ -592,16 +620,17 @@ class TestWriteSurfaceIsClassified:
     def test_red_proof_unclassified_action_is_caught(self, monkeypatch):
         """**红证 ①（action 级写方）**：没归类的写 action ⇒ 判据必红。
 
-        原口径用 `product_manage(action=delete)`；**#5247 证伪**：该工具已不是写工具
-        （扫描面看不见它）⇒ 换成当前可达的 action 级写方 `notification_manage(mark_read)`
-        （taxonomy 认它是写 action，分类表**故意**不登记具体 action）。
+        🔴 **#5302 改判**：原锚点（`notification_manage(mark_read)`）随 settings 域只读化失效
+        （`WRITE_TOOL_ACTIONS` 归零 ⇒ 真实库里再无 action 级写方）⇒ 换成**合成注入**
+        （`_with_synthetic_action_writer`），缺陷形态（"未归类的写 action"）逐字保留。
         """
+        tool, action = _with_synthetic_action_writer(monkeypatch)
         fake = [{"id": "FAKE-1", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
-                 "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}]
-        assert unclassified_live_writes(fake) == {"notification_manage(mark_read)": ["FAKE-1"]}, (
+                 "expectations": [{"tool": tool, "args": {"action": action}}]}]
+        assert unclassified_live_writes(fake) == {f"{tool}({action})": ["FAKE-1"]}, (
             "未归类的 action 被放过了 —— 新写方会悄悄出现（判据变空壳）")
         # 负例（证明上面那声红来自"未归类"，不是判据恒红）：登记后即绿
-        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("notification_manage", "mark_read"), "")
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, (tool, action), "")
         assert unclassified_live_writes(fake) == {}, "已归类的写方仍被判红 ⇒ 判据恒红"
 
     def test_red_proof_unclassified_action_of_a_whole_tool_writer_is_caught(self):
@@ -702,13 +731,13 @@ class TestSharedFixtureWritersDeclareRestore:
     def test_red_proof_action_level_writer_without_post_clean_is_caught(self, monkeypatch):
         """**红证 ②（action 级写方 / 状态侧）**：action 级写方触达 `status` 且无复位声明 ⇒ 必红。
 
-        原口径：`PR-025` / `PR-007` 去掉 `post_clean` ⇒ 红（写方是
-        `product_manage(toggle_status)`）。**#5247 证伪**：该工具已解绑 ⇒ 换成当前可达的
-        action 级写方 `notification_manage(mark_read)`，缺陷形态原样保留。
+        🔴 **#5302 改判**：原锚点（`notification_manage(mark_read)`）随 settings 域只读化失效
+        ⇒ 换成**合成注入**（`_with_synthetic_action_writer`），缺陷形态原样保留。
         """
+        tool, action = _with_synthetic_action_writer(monkeypatch)
         fake = [{"id": "FAKE-11", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
-                 "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}]
-        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("notification_manage", "mark_read"), "status")
+                 "expectations": [{"tool": tool, "args": {"action": action}}]}]
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, (tool, action), "status")
         assert missing_restores(fake) == {"FAKE-11": ["status"]}, (
             f"off_sale/状态污染形态未被判红（#4075 的另一半病灶）：{missing_restores(fake)}")
 
@@ -939,17 +968,22 @@ class TestUnrestorableWritersAreRegisteredGaps:
         assert ledger_new_entries(fake) == ["FAKE-16"], (
             "新缺口没进红名单 ⇒ 台账的 fail-closed 语义失效")
 
-    def test_unknown_action_attr_lands_in_the_ledger_path(self):
+    def test_unknown_action_attr_lands_in_the_ledger_path(self, monkeypatch):
         """`action` 未声明的 action 级写工具走台账路径（可见），不被当成"不改夹具"。
 
         taxonomy 对 action 级写工具**缺 action 时保守判写**（见 `is_write_expectation` 的
         docstring）⇒ 分类表把这种 key 记为 `unknown`（"改的是哪个属性"不可判定）。它必须进台账
         （可见、要跟随 issue），而不是被静默当成 `""` —— 否则"未定型写方"会从判据 ②③ 里同时消失。
-        判别力：合成一条裸 `notification_manage` + 点名种子商品的用例 ⇒ touched = `{"unknown"}`。
+        🔴 **#5302 改判**：真实库里再无 action 级写方（`WRITE_TOOL_ACTIONS` 归零）⇒ 换成
+        **合成注入**（`_with_synthetic_action_writer` 的裸工具名形态），判别力原样保留。
         """
+        tool, _action = _with_synthetic_action_writer(monkeypatch)
+        # 归类的**真值**：action 未声明的「部分写」写方 = 属性不可判定 ⇒ 必须记 `unknown`
+        # （这正是本条要证的"走台账路径"，不是为了让断言变绿的补丁）。
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, (tool, ""), "unknown")
         fake = [{"id": "FAKE-10", "user_inputs": ["处理一下遮光窗帘的通知"],
-                 "expectations": [{"tool": "notification_manage"}]}]
-        assert live_write_expectations(fake[0]) == [("notification_manage", "")], (
+                 "expectations": [{"tool": tool}]}]
+        assert live_write_expectations(fake[0]) == [(tool, "")], (
             "缺 action 的 action 级写方没被保守判写（taxonomy 口径变了？）")
         assert touched_attrs(fake[0]) == {"unknown"}, (
             "未定型写方被当成「不改共享夹具」⇒ 它会从两个判据里同时消失（静默）")

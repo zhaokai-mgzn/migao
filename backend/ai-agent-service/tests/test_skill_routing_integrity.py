@@ -305,15 +305,20 @@ class TestWriteSkillInteractInvariant:
         ]
 
     # ── 方向 1：不变式必须真的会红（防空转）──
-    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales", "settings"])
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales"])
     def test_invariant_catches_skill_that_lost_interact(self, skill_name):
         """变验验证：拿掉某写 skill 的 `interact` → 派生必须把它报为违规。
 
         issue #5247 重新锚定：原参数含 `settings`（用户点名的回归场景）、`staff` / `data`
         （#3577 补绑的三处）与 `general`（兜底也持写工具）—— 后三个在 B 端只读后**不再持有
         任何需确认写工具**，拿掉它们的 `interact` 不再产生违规（不是写 skill 了）⇒ 旧参数
-        恒红。改用**确实持有需确认写工具**的 skill：C 端 `customer_order` /
-        `customer_aftersales` + `settings`。判据本身仍覆盖全部已注册 skill（一处未漏）。
+        恒红。改用**确实持有需确认写工具**的 skill：C 端 `customer_order` / `customer_aftersales`。
+        判据本身仍覆盖全部已注册 skill（一处未漏）。
+
+        🔴 **#5302 再次改判（判据面收窄，不是放宽）**：`settings` 的两把工具也收窄为只读
+        （settings 域整域收口）⇒ 它不再是写 skill ⇒ 参数里去掉 `settings`（真值面只剩 C 端两个）。
+        "派生 ≠ 抄清单"的判别力改由 `test_derivation_discovers_a_skill_outside_any_enumeration`
+        的**合成注入**承担（见下）。
         """
         write_skills, violations = _write_skills_missing_interact(
             self._without_interact(skill_name), get_tool_registry()
@@ -334,28 +339,61 @@ class TestWriteSkillInteractInvariant:
 
     # ── 方向 2：收敛不得过窄（防漏检）──
     def test_derived_skills_strictly_exceed_legacy_enumeration(self):
-        """派生集必须**严格超出**旧枚举 —— 旧枚举漏掉的 skill 必须有人检查。
+        """派生集必须**覆盖并超出**旧枚举 —— 旧枚举漏掉的 skill 必须有人检查。
 
         这条同时是防回退闸门：谁把判据改回硬编码 4 元组（或其等价物），这里就红。
-        issue #5247：锚点从 B 端 4 元组改为 C 端 2 元组（见 `LEGACY_ENUMERATION` 注释），
-        判据方向不变 —— `settings` 仍不在任何人工枚举里，是"派生真的在派生"的证据。
+        issue #5247：锚点从 B 端 4 元组改为 C 端 2 元组（见 `LEGACY_ENUMERATION` 注释）。
+
+        🔴 **#5302 改判（不是放宽）**：原形式是 `derived > legacy`（**严格超出**），其唯一
+        证据是 `settings` —— 它不在任何人工枚举里。本单把 settings 的两把工具也收窄为只读
+        ⇒ 派生集与旧枚举**重合**（都是 C 端两个）⇒ "严格超出"不再可满足（拿它断言就是恒红）。
+        处置：① 改成 `derived >= legacy` + **非空**（枚举里的 skill 一个都不许漏检）；
+        ② "派生 ≠ 抄清单"的判别力**不因此消失** —— 改由
+        `test_derivation_discovers_a_skill_outside_any_enumeration` 的**合成注入**承担
+        （造一个名字不在任何枚举里的写 skill，派生必须认出来）。
         """
         derived = set(self._derived_write_skills())
-        assert derived > set(self.LEGACY_ENUMERATION), (
-            f"派生集 {sorted(derived)} 未超出旧枚举 {sorted(self.LEGACY_ENUMERATION)} —— "
-            f"枚举漏掉的 skill 仍无人检查（#3624 的缺陷形态）"
+        assert derived >= set(self.LEGACY_ENUMERATION), (
+            f"派生集 {sorted(derived)} 未覆盖旧枚举 {sorted(self.LEGACY_ENUMERATION)} —— "
+            f"枚举里的 skill 无人检查（#3624 的缺陷形态）"
         )
+        assert derived, "派生集为空 ⇒ 本判据对空集恒真（空壳）"
 
-    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales", "settings"])
+    def test_derivation_discovers_a_skill_outside_any_enumeration(self):
+        """**注入式自证（#5302 新增）**：派生必须能发现「不在任何人工枚举里」的写 skill。
+
+        为什么必须补：`settings` 曾是不在任何枚举里、却持有需确认写工具的 skill（= "派生真的
+        在派生"的活证据）。#5302 后它不再持有 ⇒ 该证据消失 ⇒ 若不补注入式自证，
+        `test_derived_skills_strictly_exceed_legacy_enumeration` 会退化成"比对两个固定清单"
+        （谁把判据改回硬编码，也没有任何东西会红）。
+        红证：把 `_write_skills_missing_interact` 改成读硬编码清单 ⇒ 本用例立刻红。
+        """
+        gated = [t for t in get_tool_registry().get_all_tools()
+                 if getattr(t, "destructive", False) or getattr(t, "requires_confirmation", False)]
+        assert gated, "注册表里没有任何「需确认写工具」—— 本自证无从成立（fail-closed）"
+        synthetic = dataclasses.replace(
+            get_skill_registry().get_all()[0],
+            name="zzz_synth_write", tool_names=[gated[0].name],
+        )
+        write_skills, violations = _write_skills_missing_interact(
+            [synthetic], get_tool_registry())
+        assert write_skills == ["zzz_synth_write"], (
+            f"派生没认出合成写 skill（判据疑似读硬编码清单）：{write_skills}")
+        assert violations and violations[0].startswith("zzz_synth_write "), violations
+        assert "zzz_synth_write" not in self.LEGACY_ENUMERATION, (
+            "合成名撞进了旧枚举 —— 本自证失去判别力（换一个名字）")
+
+    @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales"])
     def test_real_write_skills_are_all_covered(self, skill_name):
         """真实写 skill 全部进入判据（防收敛过窄导致漏检）。
 
         名单 = **注册表派生**的写 skill（持有需确认写工具者）。issue #5247：原名单
         （旧枚举 ∪ #3577 补绑 interact 的 staff/settings/data ∪ 兜底 general）随 B 端
         只读失效 —— B 端 skill 已不持有任何需确认写工具，按本条既定口径（"若某个 skill
-        **合法地**不再持有任何需确认写工具，应连同本条一起删掉该参数"）删去 B 端参数；
-        `settings` 保留：它仍注册、仍持有 `settings_manage` / `notification_manage`，
-        且**不在任何人工枚举里** —— "派生结果不得缩水"的锚点。
+        **合法地**不再持有任何需确认写工具，应连同本条一起删掉该参数"）删去 B 端参数。
+        🔴 **#5302**：`settings` 也按同一口径删除（它的两把工具收窄为只读 ⇒ 不再是写 skill）
+        —— "派生结果不得缩水"的锚点改由 `test_derivation_discovers_a_skill_outside_any_enumeration`
+        的合成注入承担。
         """
         assert skill_name in self._derived_write_skills(), (
             f"{skill_name} 持有需确认写工具却不在判据内 —— 收敛过窄"

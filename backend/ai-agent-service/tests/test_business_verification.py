@@ -902,7 +902,9 @@ class TestEnumAlignment:
 
     @pytest.mark.parametrize("tool_name,field,expected", [
         ("notification_manage", "action",
-         {"list", "unread_count", "mark_read", "read_all", "delete", "create"}),
+         # 🔴 issue #5302（settings 域只读化收口）：写 action（mark_read/read_all/delete/create）
+         # 已从工具源码删除 ⇒ 期望集收窄为 {list, unread_count}（枚举若被搬回写 action，本用例立刻红）。
+         {"list", "unread_count"}),
         ("notification_manage", "channel",
          {"system", "email", "sms", "wechat"}),
         ("notification_manage", "status",

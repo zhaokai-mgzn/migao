@@ -61,10 +61,19 @@
   `test_customer_without_codes_is_denied_on_every_coded_tool` 的 `c_end_reachable` 清单）。
   「双端」的机械口径自 #5246 起是工具自述的 `c_end_reachable`，**不是** `allowed_roles` 里
   有没有 `customer`（后者是 `BaseTool` 默认值，对每个未覆写 `allowed_roles` 的工具都成立）。
-- `notification_manage`：`NotificationController` 全类**无** `@RequirePermission`
+- `notification_manage`：`NotificationController` 的两个**读**端点（`GET /notifications` /
+  `GET /notifications/unread-count`）**都没有** `@RequirePermission`（读面是自助语义）
   ⇒ 目录里没有对应码，角色层是**真正需要**的（工具层唯一保留角色白名单的 B 端工具）。
-- `role_manage` / `settings_manage` 的码是 `system:manage`；`notification_manage` 取
-  `system:manage` + `employee:list`（解析接收人）。
+  🔴 **issue #5302 改判（settings 域收口）**：该工具**重新回到**角色层 ——
+  它原来取的 `["system:manage", "employee:list"]` 全是**写路径的码**（前者 = `POST` 建通知，
+  后者 = `create` 解析收件人用的 `GET /api/admin/users`）⇒ 写 action 删除后两个码都失去
+  调用点（留着 = `employee:list` 把「通知中心」这个后台全员可见页收窄成"只有持码岗位可用"）。
+  ⇒ `required_permissions = []` + 类体显式 `allowed_roles`（不含 C 端/幽灵角色），
+  并登记进 `ROLE_GATED_B_SIDE_TOOLS`。
+- `role_manage` / `settings_manage` 的码是 `system:manage`；对 `settings_manage` 而言
+  该码是**读码**（三个读端点都是它）⇒ #5302 收窄为只读后**码不变**（无写码可去，
+  该域读写同码的粒度债见 `tests/unit_ci_workflows/test_agent_permission_parity.py`
+  的 `REGISTERED_RESIDUALS`「settings 域写面未注解」）。
 - 🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）**：下列 8 把工具的写 action
   被删除 ⇒ 它们各自只保留**读码**（`after_sales_manage` / `category_manage` /
   `customer_manage` / `employee_manage` / `finance_api` / `inventory_manage` /
@@ -205,9 +214,10 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
     "knowledge_search": ("knowledge:view",),
     "logistics_track": ("order:list",),
-    # issue #5246：本工具调**两类端点** ⇒ 码集必须覆盖每一个 —— 通知端点（create/delete）
-    # = system:manage，`GET /api/admin/users`（create 解析接收人）= employee:list。
-    "notification_manage": ("system:manage", "employee:list"),
+    # 🔴 issue #5302 改判：`notification_manage` 从本表**移出**（settings 域收口）——
+    # 它的两个读端点都没有生效码 ⇒ 工具不持码、回到角色层（见 `ROLE_GATED_B_SIDE_TOOLS`
+    # 与文件头 `notification_manage` 段）。原码 `["system:manage", "employee:list"]`
+    # 全是写路径的码（create 端点 + create 的收件人解析）。
     "order_create": ("order:create", "product:list"),
     "order_manage": ("order:update",),
     "order_query": ("order:list",),
@@ -273,8 +283,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # issue #5246：知识库**读**码下发给客服 + 运营（本次新授予的两个岗位）。
     "knowledge_search": frozenset({"customer_service", "operator"}),
     "logistics_track": frozenset({"customer_service", "finance", "operator", "sales"}),
-    # issue #5246：通知 = `system:manage` + `employee:list`（解析接收人）⇒ 仅运营持后一码。
-    "notification_manage": frozenset({"operator"}),
+    # 🔴 issue #5302 改判：`notification_manage` 从本表**移出**（无码 ⇒ 回到角色层，
+    # 放行集由类体 `allowed_roles` 决定，不再由权限码目录推导）。
     "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
@@ -304,9 +314,11 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
 }
 
 #: 仍由角色层把关的 B 端工具（目录里没有对应权限码）—— 任何新增都必须显式登记在此。
-#: issue #5246 后为**空集**：最后一个成员 `notification_manage` 已取得端点生效码
-#: （`system:manage` + `employee:list`），不再靠角色白名单。
-ROLE_GATED_B_SIDE_TOOLS = frozenset()
+#: 🔴 **issue #5302 改判**：`notification_manage` **回归本表**（settings 域只读化收口）——
+#: 它剩下的两个 action（list / unread_count）对应的端点在 `NotificationController` 里
+#: **没有** `@RequirePermission` ⇒ 目录里没有对应码，角色层是**真正需要**的；
+#: 类体必须显式声明 `allowed_roles`（判据 `test_role_gated_tools_still_declare_their_role_list`）。
+ROLE_GATED_B_SIDE_TOOLS = frozenset({"notification_manage"})
 
 #: **未注册但类仍在**的工具（issue #3917：加工单工具暂不接入，类文件保留并直测）。
 #: 类里的 `allowed_roles` 同样是 F4 病灶 —— 恢复注册时不得把假拒绝一起带回来。

@@ -5,8 +5,8 @@
 
 | 缺陷 | 证据 |
 |---|---|
-| `_processing_ask_in_round` **两条分支口径不一致**（假红温床）：卡片分支接受「加工项」**或「加工」**（OR-017 run 34670989760 修过），文本分支却**必须**出现字面「加工项」三字 → agent 用文本主动询问加工项（「刺绣工艺（按面积）需要选哪种？」）被误判"没问" → `order_before[processing_ask …]` 判「全程未调用」→ **整例 score 0** | 归因报告 G2 §3.3（`acceptance/2026-09-15/agent-gap-triage/REPORT.md`）：AS-007 `data_checks` 自己写着「文本询问亦可，语义由 order_before 保证」（`.github/cases/aftersales.yml:346`）⇒ **用例声明与检测实现不一致**。AS-007 真实波动 run `34812509606`（0.75）与该假红同形 |
-| `check_must_succeed` / `check_must_fail` 声明 `action` 时**同轮不精确**（假绿）：`tool_result` 事件不带 args，旧实现只按**工具名**取该轮全部结果 → 同一轮里**别的 action 成功**也能让 `must_succeed[action=X]` 通过 | 同族先例：#3667 为 `_first_successful_payload` 做的同轮 payload 对齐（PR #3673）；PG-016 的 `must_succeed[action=complete]`（`.github/cases/processing-order.yml:512`）正处这个形态 |
+| `_processing_ask_in_round` **两条分支口径不一致**（假红温床）：卡片分支接受「加工项」**或「加工」**（OR-017 run 34670989760 修过），文本分支却**必须**出现字面「加工项」三字 → agent 用文本主动询问加工项（「刺绣工艺（按面积）需要选哪种？」）被误判"没问" → `order_before[processing_ask …]` 判「全程未调用」→ **整例 score 0** | 归因报告 G2 §3.3（`acceptance/2026-09-15/agent-gap-triage/REPORT.md`）：AS-007 `data_checks` 自己写着「文本询问亦可，语义由 order_before 保证」（`.github/cases/aftersales.yml` 的 AS-007 用例）⇒ **用例声明与检测实现不一致**。AS-007 真实波动 run `34812509606`（0.75）与该假红同形 |
+| `check_must_succeed` / `check_must_fail` 声明 `action` 时**同轮不精确**（假绿）：`tool_result` 事件不带 args，旧实现只按**工具名**取该轮全部结果 → 同一轮里**别的 action 成功**也能让 `must_succeed[action=X]` 通过 | 同族先例：#3667 为 `_first_successful_payload` 做的同轮 payload 对齐（PR #3673）；PG-016 的 `must_succeed[action=complete]`（`.github/cases/processing-order.yml` 的 PG-016 用例）正处这个形态 |
 
 为什么必须由**单测**锁住：两条都是"取错证据/口径不一致"型缺陷，症状是假红/假绿，
 **假绿在评测报告里看不出来**（报告一片全绿），假红则会让正确行为被记为"没做到"。
@@ -127,7 +127,7 @@ _TOOL = "processing_order_update"
 class TestMustSucceedActionSameRoundPrecision:
     """声明 `action` 时，成功必须是**那次调用**的成功（同轮别的 action 不许顶替）。
 
-    证据：PG-016 的 `must_succeed[action=complete]`（`.github/cases/processing-order.yml:512`）——
+    证据：PG-016 的 `must_succeed[action=complete]`（`.github/cases/processing-order.yml` 的 PG-016 用例）——
     状态机三步（issue → start → complete）走的是**同一个** `processing_order_update`。
     """
 
