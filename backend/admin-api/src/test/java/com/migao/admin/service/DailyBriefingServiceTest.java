@@ -959,12 +959,16 @@ class DailyBriefingServiceTest {
             assertThat(limit.getValue())
                     .as("分母查询必须有界（取数上限 = 上限 + 1）")
                     .isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
-            Object returnsWindow = capturedWrapper(afterSalesTicketMapper).getParamNameValuePairs()
-                    .values().stream().filter(value -> value instanceof OffsetDateTime)
-                    .findFirst().orElseThrow();
+            java.util.List<Object> returnsWindows = capturedWrappers(afterSalesTicketMapper).stream()
+                    .flatMap(wrapper -> wrapper.getParamNameValuePairs().values().stream())
+                    .filter(value -> value instanceof OffsetDateTime)
+                    .toList();
+            assertThat(returnsWindows)
+                    .as("退货行查询本次应恰好带一个时刻参数（窗口）—— 多个说明口径已开始分叉")
+                    .hasSize(1);
             assertThat(window.getValue())
                     .as("分子与分母必须同窗口（两处各算一次就会漂）")
-                    .isEqualTo(returnsWindow);
+                    .isEqualTo(returnsWindows.get(0));
         }
 
         @Test
