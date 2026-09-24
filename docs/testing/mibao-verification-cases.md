@@ -1520,13 +1520,13 @@
 ### DA-016. 跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358） 🔵
 ```
 你: 经营日报数据快照装配自检
-数据: 快照带 orders/skus/returns 三个行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；sku_id/product_id/product_name/stock；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）
+数据: 快照带 orders/skus/product_return_stats/returns **四个**行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；sku_id/product_id/product_name/stock/sales_count/price/avg_cost；product_id/return_tickets/order_lines；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）
 数据: **结构性缺口只剩一条**：`price_changes` **数组不存在**（全仓无改价流水表）⇒ 改价幅度规则接不通，显式登记而不是「装配了但命中 0 条」；orders 行的 **`cost_amount` 已装配**（issue #5348 接通成本价 join = Σ 行数量 × 该行 SKU 的 `avg_cost`）—— 🔴 该键**恒在**、值可为 **NULL**：NULL = **成本未知（整单不可判定）**，**不是**「缺字段」（缺字段会被引擎读成「系统没接线」，那是另一回事），也**不出部分和**（任一行不可解析、或该行 `avg_cost` 为空 ⇒ 整单 NULL）
 数据: 每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）
 跳过: [backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.proactive-deterministic, dashboard-jump.low-stock
-溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配；2026-09-24 文本刷新（issue #5387）：orders 行新增 `cost_amount`（#5348 接通成本价 join）⇒ 契约键清单补该键、旧口径「orders 行没有 cost_amount」整条退场，**结构性缺口只剩 `price_changes` 一条** ｜ tags: proactive, briefing, snapshot
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配；2026-09-24 文本刷新（issue #5387）：orders 行新增 `cost_amount`（#5348 接通成本价 join）⇒ 契约键清单补该键、旧口径「orders 行没有 cost_amount」整条退场，**结构性缺口只剩 `price_changes` 一条**；2026-09-24 契约键清单补 **#5369**（族 3 包 2 商品健康度视图）新增的行数组与字段：`skus` 补 `sales_count`/`price`/`avg_cost`、**新增 `product_return_stats` 数组**（`product_id`/`return_tickets`/`order_lines`）⇒ 行数组由三个变**四个**（#5387 的元守卫 C3 在两者合并后判红才发现 —— 两个并行包各自绿、组合起来红） ｜ tags: proactive, briefing, snapshot
 
 ### DA-017. 跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358） 🔵
 ```
