@@ -179,6 +179,7 @@
       "accessor": "FieldTruthRegistry.customerProfile()",
       "declaration": "backend/admin-api/src/main/java/com/migao/admin/support/fieldtruth/CustomerProfileFieldTruth.java",
       "criterion": [
+        "backend/admin-api/src/test/java/com/migao/admin/controller/CustomerProfileWireKeyParityTest.java::everySurfaceCarriesTheDeclaredFieldNames",
         "backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java::payload_is_rendered_from_the_registry_declaration",
         "backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java::snapshot_shape_and_row_keys_follow_the_declaration"
       ],
