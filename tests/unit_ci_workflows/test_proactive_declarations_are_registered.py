@@ -742,6 +742,21 @@ def problems_fetched_legs(registry: dict, sources: dict[str, str],
     return out
 
 
+def problems_ledger_census_disagreement(registry: dict, sites: list[dict]) -> list[str]:
+    """**关系式**判据：台账声称的现取式腿 ⟺ 产出层普查看得见的现取式腿（两向都要一致）。
+
+    刻意**不**写成「仓库当下必须有一条现取式腿」（那是**自毁式真值主张**：哪天那条腿被合法改写成
+    字面量式，判据会挡住正确的改动）。这里判的是两侧**是否互相印证** ——
+    台账有而普查看不见 = 普查失效（或条目没销账）；普查看得见而台账没有 = 未登记（另一种判据也会红）。
+    """
+    fetched = [site for site in sites if effective_kind(site) == SOURCE_FETCHED]
+    if bool(registry["fetched_arrays"]) == bool(fetched):
+        return []
+    return [f"台账与产出层普查**不一致**：台账声称 {len(registry['fetched_arrays'])} 条现取式腿 / "
+            f"产出层看得见 {len(fetched)} 条 ⇒ 要么普查失效（看不见真腿）、要么台账陈旧（条目没销账），"
+            f"两者都不许（fail-closed）"]
+
+
 def fetched_legs_reading(registry: dict, sources: dict[str, str]) -> str:
     sites = fetched_leg_sites(sources)
     kinds = [effective_kind(site) for site in sites]
@@ -828,16 +843,18 @@ def test_fetched_assembly_legs_are_registered():
 
 
 def test_fetched_leg_census_is_not_vacuous():
-    """反空跑：产出层普查必须**看得见**现取式腿（「扫不到」不许长得像「通过」）。"""
+    """反空跑：台账与普查必须**一致**（「扫不到」不许长得像「通过」）。
+
+    ⚠️ 判据形态是**关系式**（台账声称的腿数 ⟺ 产出层看得见的腿数），不是「仓库当下必须有一条现取式腿」
+    —— 后者是**自毁式真值主张**：哪天那条腿被合法改写成字面量式，判据会挡住正确的改动。
+    普查**能不能看见新腿**另由注入式红证证明（`TestFetchedLegRedProofs` 的前提自证），与仓库真值无关。
+    """
     registry, sources = load_registry(), java_main_sources()
     reading = fetched_legs_reading(registry, sources)
     print(reading)
-    fetched = [site for site in fetched_leg_sites(sources)
-               if effective_kind(site) == SOURCE_FETCHED]
-    if not fetched:
-        raise AssertionError(f"{reading} ⇒ 普查不到任何现取式腿 ⇒ 本判据会空跑（fail-closed）")
-    if not registry["fetched_arrays"]:
-        raise AssertionError(f"{reading} ⇒ 现取式台账为空 ⇒ 燃尽靶子（#5461 判据 3）没落地")
+    problems = problems_ledger_census_disagreement(registry, fetched_leg_sites(sources))
+    if problems:
+        raise AssertionError("台账与产出层普查不一致：\n  - " + "\n  - ".join(problems))
     declared = sum(len(c["fields"]) for c in declaration_index(sources).values())
     if declared < 5:
         raise AssertionError(f"{reading} ⇒ 声明字段读数只有 {declared} ⇒ 契约判据无从判别（fail-closed）")
@@ -1150,6 +1167,16 @@ class TestFetchedLegRedProofs:
         problems = problems_fetched_legs(load_registry(), sources)
         if not any("读不出来" in problem for problem in problems):
             raise AssertionError(f"读不出来的产出形态未红 ⇒ 面外又成了免检区：{problems}")
+
+    def test_ledger_census_disagreement_is_red(self):
+        """关系式判据的红证：台账清空（普查仍看得见腿）或普查失效（台账仍有条目）⇒ 必须判红。"""
+        sites = fetched_leg_sites(java_main_sources())
+        if not [site for site in sites if effective_kind(site) == SOURCE_FETCHED]:
+            raise AssertionError("前提不成立：产出层看不见现取式腿 ⇒ 该红证无判别力（注入未生效）")
+        if not problems_ledger_census_disagreement(_registry(fetched_arrays={}), sites):
+            raise AssertionError("台账清空而普查仍看得见腿 ⇒ 两侧不一致却未判红（关系式是空判据）")
+        if not problems_ledger_census_disagreement(load_registry(), []):
+            raise AssertionError("普查失效（0 条产出点）而台账仍有条目 ⇒ 未判红（关系式是空判据）")
 
     def test_literal_and_fetched_legs_for_same_array_is_red(self):
         """⑭ 同一数组既有字面量腿又有现取式腿 ⇒ 红（两份投影必然分叉）。"""
