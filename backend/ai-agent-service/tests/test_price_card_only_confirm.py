@@ -256,6 +256,73 @@ class TestClassLevelMetaGuard:
         assert "product_update" in scanned and "sku_update" in scanned, scanned
 
 
+class TestTextConfirmDoesNotRecordPriceWrite:
+    """判据 A·补口：文本确认**不得**给涉钱面记「已确认」。
+
+    否则 `react_turn` 的 `_write_was_confirmed`（读 `confirmed_write_tool`）会拿这条记录
+    放行一次改价 —— 那条路径上**没有任何点击**，② 就等于没做。
+    """
+
+    class _FakeStore:
+        def __init__(self, state: dict):
+            self.state = dict(state)
+
+        async def load(self, session_id):
+            return dict(self.state)
+
+        async def commit(self, session_id, full):
+            self.state = dict(full)
+
+    def _pending(self, params: dict) -> dict:
+        return {"target_tool": "product_update", "target_action": "", "params": params}
+
+    def test_pending_card_only_predicate(self):
+        assert base_skill._pending_card_only(self._pending(PRICE_ARGS)) is True
+        assert base_skill._pending_card_only(
+            self._pending({"product_id": "p1", "name": "新名"})) is False
+        # 工具查不到（陈旧/拼错的 target_tool）⇒ 不入面（无法判定该工具是否改价）
+        assert base_skill._pending_card_only(
+            {"target_tool": "不存在的工具", "params": PRICE_ARGS}) is False
+
+    @pytest.mark.asyncio
+    async def test_text_confirm_does_not_record_price_write(self, monkeypatch):
+        from app.graph.pending_validated import PENDING_KEY
+
+        store = self._FakeStore({PENDING_KEY: self._pending(PRICE_ARGS)})
+        monkeypatch.setattr("app.memory.session_state_store.SessionStateStore", lambda: store)
+
+        await base_skill._inject_pending_validated("SYS", {"session_id": "s1"}, "确认")
+
+        assert "confirmed_write_tool" not in store.state, (
+            "文本确认给改价记了「已确认」⇒ 下一次调用无需点卡就能放行")
+
+    @pytest.mark.asyncio
+    async def test_card_click_still_records_price_write(self, monkeypatch):
+        """点卡（卡值逐字匹配）仍照旧记「已确认」—— 收窄的是文本，不是卡片。"""
+        from app.graph.pending_validated import PENDING_KEY
+
+        card = _card_value_of_card_for(PRICE_ARGS)
+        store = self._FakeStore({PENDING_KEY: self._pending(PRICE_ARGS),
+                                 "last_confirm_value": card})
+        monkeypatch.setattr("app.memory.session_state_store.SessionStateStore", lambda: store)
+
+        await base_skill._inject_pending_validated("SYS", {"session_id": "s1"}, card)
+
+        assert store.state.get("confirmed_write_tool") == "product_update"
+
+    @pytest.mark.asyncio
+    async def test_text_confirm_still_records_non_price_write(self, monkeypatch):
+        """非涉钱面照旧：文本确认仍记「已确认」（口径只对改价收窄）。"""
+        from app.graph.pending_validated import PENDING_KEY
+
+        store = self._FakeStore({PENDING_KEY: self._pending({"product_id": "p1", "name": "新名"})})
+        monkeypatch.setattr("app.memory.session_state_store.SessionStateStore", lambda: store)
+
+        await base_skill._inject_pending_validated("SYS", {"session_id": "s1"}, "确认")
+
+        assert store.state.get("confirmed_write_tool") == "product_update"
+
+
 class TestPromptsTellTheModelCardOnly:
     """话术面：模型必须知道「改价只认点卡」——否则它会拿文本确认当放行条件反复重试。"""
 

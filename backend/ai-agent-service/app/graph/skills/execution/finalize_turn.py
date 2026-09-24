@@ -116,9 +116,8 @@ async def finalize_turn(
                 # 这张卡是代码刚补的、商家还没点，记「已确认」等于让下一次改价调用
                 # 无需任何点击就放行（护栏退化成"只证明补过卡"）⇒ 改价一律不记。
                 if (_no_card_blocked_tool
-                        and not _base._card_only_confirmation(
-                            skill_registry.get_tool(_no_card_blocked_tool),
-                            _no_card_blocked_args or {})):
+                        and not _base._card_only_confirmation_by_name(
+                            _no_card_blocked_tool, _no_card_blocked_args or {})):
                     _bfull["confirmed_write_tool"] = _no_card_blocked_tool
                 if _no_card_blocked_facts:
                     _bfull[_base.CONFIRMED_ORDER_FACTS_KEY] = _no_card_blocked_facts

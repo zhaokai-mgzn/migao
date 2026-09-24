@@ -938,14 +938,23 @@ def _card_only_confirmation(tool, tool_args: dict) -> bool:
     return args.get("price") is not None or args.get("before_price") is not None
 
 
-def _pending_card_only(pending: dict) -> bool:
-    """「已校验待执行」的目标工具是否属涉钱面（issue #5317）：文本确认不得记为「已确认」。"""
+def _card_only_confirmation_by_name(tool_name: str, tool_args: dict) -> bool:
+    """按**工具名**判涉钱面（取**全局**工具表：待执行/刚被拦的工具可能不在当前 skill 域内）。
+
+    与 `_card_only_confirmation` 只是取件口径差异，**不是第二套判据**。
+    """
     try:
-        from app.graph.skills.skill_registry import get_skill_registry
-        tool = get_skill_registry().get_tool(str((pending or {}).get("target_tool") or ""))
+        from app.tools.registry import get_tool_registry
+        tool = get_tool_registry().get_tool(str(tool_name or ""))
     except Exception:
         tool = None
-    return _card_only_confirmation(tool, (pending or {}).get("params") or {})
+    return _card_only_confirmation(tool, tool_args)
+
+
+def _pending_card_only(pending: dict) -> bool:
+    """「已校验待执行」的目标工具是否属涉钱面（issue #5317）：文本确认不得记为「已确认」。"""
+    return _card_only_confirmation_by_name(
+        (pending or {}).get("target_tool"), (pending or {}).get("params") or {})
 
 
 def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
