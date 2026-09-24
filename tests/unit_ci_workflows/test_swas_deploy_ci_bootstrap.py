@@ -37,6 +37,17 @@ rm -rf /tmp/migao-src && mkdir -p /tmp/migao-src && curl … -o /tmp/migao-src.t
    把 `curl` 换成喂本地 tar 的桩）在**共享 TMPDIR** 下并发跑两次 —— 旧写法**必踩**、新写法**不踩**；
 5. **原子替换的判别力**：读者并发读 `deploy.sh` 时，`cp` 形态**必见撕裂**、`mv` 形态**必不见**。
 
+## 夹具自己的命名空间（#5344）
+
+第 4 条（并发复现）必须构造"另一个 run 删掉共享目录"。旧实现直接操作**机器级**固定路径
+`/tmp/migao-src*` ⇒ **并发跑同一文件的另一个 pytest 会话**就是那个"另一个 run"：
+它的清理会落进本会话 victim 的 `curl → tar` 窗口（`curl` 刚写下 tar、`tar` 还没读），
+victim 的 `&&` 链当场断掉、`cp` 窗口永不出现 ⇒ 判据红在**夹具失效**上
+（本机 3 并发 ×3 轮实测 **6/9 红**，形态恒为 `断言 mark.exists()`）。
+那是**测试工装自己的竞态**，不是被测对象 ⇒ 夹具改用**按进程隔离**的命名空间
+（`NS_SRC` / `NS_TAR`，`-<pid>` 后缀），且**清理前先等产生方退出**（`_clean_shared_namespace`）。
+被判的脚本文本仍按**字面**判 `/tmp/migao-src*`（静态判据一格未松）。
+
 判据本体读的是**脚本当前文本**，不是"与某个历史版本等值"（§18.3：不读可变引用）。
 """
 import os
@@ -53,9 +64,66 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
 
-# 旧写法的两处共享固定路径（issue #4625 现象的直接来源）
+# 旧写法的两处共享固定路径（issue #4625 现象的直接来源）——**静态判据按字面读真脚本**，不要改。
 SHARED_SRC = "/tmp/migao-src"
 SHARED_TAR = "/tmp/migao-src.tar.gz"
+
+# ── 碰撞夹具自己的命名空间（#5344）────────────────────────────────────────────
+# 病根（本机 3 并发 ×3 轮实测 6/9 红）：夹具直接操作**机器级**固定路径 ⇒ **并发跑同一文件的
+# 另一个 pytest 会话**（别的 worktree、或还在跑旧版代码的会话）就是那个"另一个 run"，
+# 它的 `rm -rf` / `unlink` 会落进本会话 victim 的 `curl → tar` 窗口 ⇒ victim 的 `&&` 链断掉、
+# `cp` 窗口永不出现 ⇒ 判据红在**夹具失效**上。**这是工装自己的竞态**，修法三条：
+#   ① **命名空间按进程隔离**（`-<pid>`）⇒ 非协作的并发会话根本碰不到它（锁做不到这点：
+#      别的 worktree 里的旧版代码不会来抢锁）；
+#   ② **清理前先等产生方退出**（`_clean_shared_namespace` ⇒ `_wait_for_producers`）——
+#      不许"删完再让子进程写"；
+#   ③ victim 无论成败都先等/杀干净（`_terminate_producer`），不泄漏产生方。
+NS_SRC = f"{SHARED_SRC}-{os.getpid()}"
+NS_TAR = f"{SHARED_SRC}-{os.getpid()}.tar.gz"
+
+_PRODUCERS: list = []          # 本进程向该命名空间写入过的产生方（Popen）
+
+
+def _localize(cmd: str) -> str:
+    """把**夹具构造出来的命令串**里的机器级固定路径重写到本进程唯一的命名空间。
+
+    只重写夹具造的命令（`check_bootstrap` / `inject_old_bootstrap` 判的仍是**脚本文本**原文，
+    其中的 `/tmp/migao-src*` 照旧按字面判红）。形态一格未改：旧写法仍是"跨 run 共享的**固定**
+    路径"、新写法仍是 `mktemp -d` —— 只是不再与**别的 pytest 会话**抢同一个目录。
+    """
+    return cmd.replace(SHARED_SRC, NS_SRC)
+
+
+def _wait_for_producers(timeout: float = 60.0) -> list:
+    """**清理命名空间之前**必须等所有产生方退出（#5344 判据 1）。
+
+    返回"实际等了谁"（pid 列表；空 = 当时确实没有活着的产生方）—— 留这个返回值是为了让
+    "等过"与"没等"**长得不一样**（零动作也要能自证）。
+    """
+    waited = []
+    for p in list(_PRODUCERS):
+        if p.poll() is None:
+            waited.append(p.pid)
+            p.wait(timeout=timeout)
+    _PRODUCERS.clear()
+    return waited
+
+
+def _clean_shared_namespace() -> list:
+    """清掉本进程命名空间的残留：**先等产生方退出，再删**（顺序就是判据本身）。"""
+    waited = _wait_for_producers()
+    shutil.rmtree(NS_SRC, ignore_errors=True)
+    Path(NS_TAR).unlink(missing_ok=True)
+    return waited
+
+
+def _terminate_producer(p) -> None:
+    """确保产生方退出（失败路径也要）—— 超时先 `kill` 再 `wait`，不留活着的写者。"""
+    try:
+        p.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait(timeout=10)
 
 # 旧 bootstrap（**逐字内联**，取自 issue #4625 与本 PR 之前的脚本；内联而不是
 # `git show origin/main:…` —— 后者会随合并变成"修复后"文本 ⇒ 判据自红，§18.3）
@@ -397,41 +465,48 @@ def _spawn(run: dict, command: str, shared_tmp: Path):
         "CP_WINDOW_MARK": str(run["dir"] / "cp-window"),
         "GO": str(run["dir"] / "go"),
     }
-    return subprocess.Popen(
+    p = subprocess.Popen(
         # ⚠️ 必须显式给 `$0`：`bash -c <cmd>` 会把命令串的**第一个词**当成 `$0`
         # ⇒ `SRC=$(mktemp -d) && …` 的首词被吃掉，报 `bash: SRC=/tmp/…: No such file or directory`
         # （实测踩到：夹具失效会伪装成"新写法也失败"，红证方向正好反过来）。
-        ["bash", "-c", _build_like_ci(run, command), "migao-bootstrap"],
+        # `_localize`：共享固定路径重写到**本进程唯一**命名空间（#5344，见文件头）。
+        ["bash", "-c", _localize(_build_like_ci(run, command)), "migao-bootstrap"],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
+    _PRODUCERS.append(p)          # 登记产生方：清理命名空间前必须等它退出（#5344）
+    return p
 
 
 def _run_with_collision(tmp_path: Path, command: str, tag: str):
     """跑一个 run，并**在它的 `cp` 窗口中间**制造「另一个 run 删掉源码目录」这一步。
 
     步骤（确定化，不依赖时序巧合）：
-      1. 启动 victim，等它进入 `cp` 窗口（`cp-window` 出现 ⇒ `cp` 已开始、源码此刻**在**）；
-      2. 删掉**另一个 run 会删的那个目录**：旧写法 = 共享 `/tmp/migao-src`（真实竞态），
-         新写法 = 它自己的 `mktemp -d` 目录（`_run_with_collision` 的调用方传入）；
-      3. 放行 `cp`（`go`）⇒ 旧写法必然读不到 `deploy.sh`、新写法读自己的目录不受影响。
+      1. **先等本进程此前的产生方退出**，再清本进程命名空间的残留（#5344：清理与产生方串行）；
+      2. 启动 victim，等它进入 `cp` 窗口（`cp-window` 出现 ⇒ `cp` 已开始、源码此刻**在**）；
+      3. 删掉**另一个 run 会删的那个目录**：旧写法 = 跨 run 共享的固定路径（真实竞态窗口），
+         新写法 = 它自己的 `mktemp -d` 目录（两者都不受 `_localize` 影响）;
+      4. 放行 `cp`（`go`）⇒ 旧写法必然读不到 `deploy.sh`、新写法读自己的目录不受影响。
     """
     shared_tmp = tmp_path / f"shared-{tag}"
     shared_tmp.mkdir()
-    shutil.rmtree(SHARED_SRC, ignore_errors=True)      # 清掉上一次残留（否则新写法会被毒化）
-    Path(SHARED_TAR).unlink(missing_ok=True)
+    _clean_shared_namespace()      # 清掉上一次残留（**先等产生方退出** —— 见 #5344）
     victim = _mkrun(tmp_path, f"{tag}-run", slow_cp=True)
     p = _spawn(victim, command, shared_tmp)
     mark = victim["dir"] / "cp-window"
     deadline = time.monotonic() + 60.0
-    while time.monotonic() < deadline and p.poll() is None:
-        if mark.exists():
-            break
-        time.sleep(0.01)
-    assert mark.exists(), "等不到 victim 进入 `cp` 窗口 —— 复现夹具失效，不得据此宣称新写法更安全"
-    # 「另一个 run 的 rm -rf」：旧写法删的就是这个共享目录（这就是 issue #4625 的竞态窗口）
-    shutil.rmtree(SHARED_SRC, ignore_errors=True)
-    (victim["dir"] / "go").touch()
-    out, _ = p.communicate(timeout=60)
+    try:
+        while time.monotonic() < deadline and p.poll() is None:
+            if mark.exists():
+                break
+            time.sleep(0.01)
+        assert mark.exists(), "等不到 victim 进入 `cp` 窗口 —— 复现夹具失效，不得据此宣称新写法更安全"
+        # 「另一个 run 的 rm -rf」：旧写法删的就是这个共享目录（这就是 issue #4625 的竞态窗口）
+        shutil.rmtree(NS_SRC, ignore_errors=True)
+        (victim["dir"] / "go").touch()
+        out, _ = p.communicate(timeout=60)
+    finally:
+        # victim 无论成败都不得留成活产生方（否则下一次清理就是"删完再让子进程写"）
+        _terminate_producer(p)
     return p.returncode, out
 
 
@@ -446,7 +521,10 @@ def test_old_bootstrap_loses_source_when_another_run_rm_rf(tmp_path):
     # 判据钉**机制**（`cp` 读不到共享源码目录里的 deploy.sh）而不是某个平台的措辞：
     # GNU coreutils（线上 Ubuntu）= `cp: cannot stat '<path>': No such file or directory`，
     # macOS BSD cp（本地跑测试）= `cp: <path>: No such file or directory` —— 两者都命中下式。
-    assert SHARED_SRC + "/deploy/swas/deploy.sh" in out and "No such file or directory" in out, (
+    # ⚠️ 路径取**夹具命名空间** `NS_SRC`（#5344 的按进程隔离）：判据是"失败的正是旧写法用的
+    # 那个共享源码目录"，与它叫什么名字无关；`/tmp/migao-src` 这个**字面**仍由静态判据钉住
+    # （`check_bootstrap` / `test_bootstrap_has_no_shared_fixed_path`）。
+    assert f"{NS_SRC}/deploy/swas/deploy.sh" in out and "No such file or directory" in out, (
         f"旧写法的报错未复现线上形态：{out[-400:]}"
     )
 
@@ -461,6 +539,58 @@ def test_new_bootstrap_survives_another_run_rm_rf(tmp_path):
     assert rc == 0, f"新写法仍失败（rc={rc}）：{out[-600:]}"
     assert "No such file or directory" not in out, f"新写法出现 `cp` 找不到文件：{out[-400:]}"
     assert "stub-deploy sha-testtag" in out, f"新写法的 deploy.sh 没有被执行：{out[-400:]}"
+
+
+def test_shared_namespace_is_process_local():
+    """**类级元守卫（#5344 / §23 G1）**：碰撞夹具的共享路径必须**与本进程绑定**。
+
+    病根 = 夹具操作**机器级**固定路径 ⇒ 并发跑同一文件的另一个 pytest 会话就是"另一个 run"
+    （实测 3 并发 ×3 轮 **6/9 红**，形态恒为 `断言 mark.exists()` 失败）。
+    注入式红证：把 `NS_SRC` / `NS_TAR` 注回 `SHARED_SRC` / `SHARED_TAR` ⇒ 本判据**必红**。
+    """
+    assert NS_SRC != SHARED_SRC and NS_TAR != SHARED_TAR, (
+        f"夹具又用回了机器级固定路径（NS_SRC={NS_SRC!r}）—— 并发会话会互相 rm -rf（#5344）"
+    )
+    assert NS_SRC.endswith(f"-{os.getpid()}") and NS_TAR.endswith(f"-{os.getpid()}.tar.gz"), (
+        f"命名空间没绑到本进程：NS_SRC={NS_SRC!r} / NS_TAR={NS_TAR!r}"
+    )
+
+
+def test_namespace_cleanup_waits_for_a_live_producer():
+    """**类级元守卫（#5344 判据 1）**：清理夹具命名空间必须**先等产生方退出**。
+
+    形态 = "不许删完再让子进程写"：产生方**真在写**（32MB，写完才退出）+ 显式握手
+    （`started` 落盘 ⇒ "已开始写且还没退出"在**结构上**确定，余量约 10⁴ 倍 —— 不是用
+    `sleep` 凑时序、也不是重试掩盖）。
+    注入式红证：把 `_clean_shared_namespace()` 里的 `_wait_for_producers()` 注回"直接 rm -rf"
+    ⇒ 第一条断言**必红**（`waited == []`，而当时产生方仍然活着）。
+    """
+    src = Path(NS_SRC)
+    src.parent.mkdir(parents=True, exist_ok=True)
+    payload = 32 * 1024 * 1024      # 与 `_torn_trials` 的 FILLER 同款：把"仍在写"放大到稳定可观测
+    p = subprocess.Popen(
+        ["bash", "-c", f'mkdir -p "{src}" && : > "{src}/started" && '
+                       f'head -c {payload} /dev/zero > "{src}/payload"'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    _PRODUCERS.append(p)
+    try:
+        deadline = time.monotonic() + 10.0
+        while not (src / "started").exists() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert (src / "started").exists(), "产生方没起来 ⇒ 夹具失效，不得据此判绿"
+        assert p.poll() is None, "产生方已退出 ⇒ 「等它退出」的前提不成立（夹具失效）"
+        waited = _clean_shared_namespace()
+        assert waited == [p.pid], (
+            f"清理没有等产生方退出：waited={waited}，而 pid={p.pid} 当时仍在写 —— "
+            "这正是 #5344 的竞态形态（删完再让子进程写）"
+        )
+        assert p.poll() is not None, "声明等了，却没等到它退出"
+        assert not src.exists(), "命名空间没被清掉（清理入口失效）"
+    finally:
+        p.kill()
+        p.wait(timeout=10)
+        _PRODUCERS.clear()
 
 
 def test_bootstrap_per_run_dirs_are_unique(tmp_path):

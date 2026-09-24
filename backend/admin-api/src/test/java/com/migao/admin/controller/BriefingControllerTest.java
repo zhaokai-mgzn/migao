@@ -103,6 +103,29 @@ class BriefingControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/admin/briefing/snapshot")
+    class GetSnapshot {
+
+        @Test
+        @DisplayName("确定性快照按需取（族 3 按需消费入口，issue #5369）：不依赖当日简报是否已生成")
+        void returnsSnapshotForCurrentTenant() throws Exception {
+            when(dailyBriefingService.aggregateSnapshot(eq(1L))).thenReturn(Map.of(
+                    "row_fields", Map.of("skus", java.util.List.of("sku_id", "stock")),
+                    "skus", java.util.List.of(Map.of(
+                            "sku_id", "S-1", "stock", new java.math.BigDecimal("20.5")))));
+
+            mockMvc.perform(get("/api/admin/briefing/snapshot"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.skus[0].sku_id").value("S-1"))
+                    .andExpect(jsonPath("$.data.row_fields.skus[0]").value("sku_id"));
+
+            // 租户必须来自会话上下文（多租户隔离的关口），不得由请求参数指定
+            verify(dailyBriefingService).aggregateSnapshot(eq(1L));
+        }
+    }
+
+    @Nested
     @DisplayName("GET/PUT /api/admin/briefing/config")
     class Config {
 

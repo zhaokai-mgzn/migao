@@ -303,6 +303,20 @@ def surefire_case(copy: Path, crit: dict) -> tuple[dict | None, str]:
                   f"⇒ 测试**没跑起来**（报告里出现过的方法：{sorted(set(seen))[:8]}）")
 
 
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """剥掉 ANSI 转义序列再匹配红形态。
+
+    **为什么必须有**（2026-09-24 巡检首发日实测）：`npx vitest` 的输出**带颜色** ⇒
+    转义码把 `Tests\s+\d+ failed \(\d+\)` 这类**精确**期望形态打散 ⇒ 判据**其实红了**
+    却被判成 `red_form_mismatch`（"红证不成立"的误报）。归因方向必须准（§23 G3）：
+    病根在**读法**（颜色码），不在判据。
+    """
+    return _ANSI_ESCAPE.sub("", text)
+
+
 def red_evidence(entry: dict, copy: Path, run: Run) -> tuple[str, str]:
     """注入后那一次运行的红形态判定 ⇒ `(state, detail)`。
 
@@ -321,14 +335,14 @@ def red_evidence(entry: dict, copy: Path, run: Run) -> tuple[str, str]:
             return "not_running", f"测试没跑起来：{why}"
         if not case["failed"]:
             return "degenerate", f"判据方法 {crit.get('method')} 在报告里**没有失败**（rc={run.rc}）"
-        if frag and not re.search(frag, case["text"] + run.out):
+        if frag and not re.search(frag, strip_ansi(case["text"] + run.out)):
             return "red_form_mismatch", (f"判据方法 {crit.get('method')} 已红，但失败文本与登记册的"
                                          f"期望不符（期望 /{frag}/；实测：{_snippet(case['text'])}）")
         return "red", (f"surefire：{crit.get('method')} 失败"
                        f"（逐字形态：{_snippet(case['text'])}）；期望 /{frag}/ 命中")
     if run.rc == 0:
         return "degenerate", "退出码 0（判据没有红）"
-    if frag and not re.search(frag, run.out):
+    if frag and not re.search(frag, strip_ansi(run.out)):
         return "red_form_mismatch", (f"判据已红（rc={run.rc}），但输出里没有登记册声明的红形态"
                                      f"（期望 /{frag}/；实测：{_snippet(run.out)}）")
     return "red", f"rc={run.rc} 且输出命中期望形态 /{frag}/"
