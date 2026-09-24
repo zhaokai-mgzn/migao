@@ -22,7 +22,7 @@
 
 | 面 | 判据 | 落点 |
 |---|---|---|
-| 引用面 | 模型可见文本点名不可达工具（死引用）/ skill 自述面点名域外工具 | **本文件** `problems_dead_refs` |
+| 引用面 | 模型可见文本点名不可达工具（死引用）/ skill 自述面点名域外工具。**射程面（issue #5437 扩面后）**＝ ① 工具**类级** `description` ② schema **参数 `description`** ③ 运行期 **`suggestion` / `message`** ④ prompt / references / agent 直答 | **本文件** `problems_dead_refs`（①②③④ **共用同一个判据本体与同一档不判表** —— 不另立第二套） |
 | 守卫面 | 门条件引用的能力标志必须**可能为真**（恒假 = 死标志 / 死守卫） | **本文件** `problems_dead_guards` |
 | 绑定面 | skill 绑的工具必须**在该域内有可用 action**（只读域不绑写校验器） | **本文件** `problems_dead_bindings` |
 | 射程面 | 守卫射程必须覆盖「处置会实际产生的状态」（含**已解绑孤儿**） | 🔴 **复用** `test_mibao_b_end_readonly.py` 的**判据 7** —— 本文件**有意不建第二套**（`problems_range_face_is_reused` 既判它在上游**注册且带注入式红证**，又**直接调用**它） |
@@ -46,18 +46,42 @@
 - **ref 面已销账**（issue #5400）：9 条「工具 description 点名零绑定工具」逐条改成可达工具 / 改成
   「如实说明不在能力内 + 引导后台页面」，台账条目**同 PR 删除**、`anchor.ref` 下调到 0
   ⇒ 再出现即红（**未登记 + 超现取锚点**双闸，后者不依赖台账条目存在）；
-- **射程边界（面外，有意不判）**：本判据扫的是**工具类级 `description`** 与 prompt / references / agent 直答面。
-  同属「注入模型的文本」的**参数 description**（函数调用 schema 的一部分）与运行期
-  `suggestion=` / `message=` 反馈文本**不在射程内** —— #5400 顺手收口了实测的 2 处残点
-  （`validate_input` 的 `target_tool` 参数描述、`order_create` 的数量校验建议），
-  但**没有任何机械锁**拦住新增（宁可如实登记，不假装覆盖）；
+- **射程已扩（issue #5437）**：引用面自本单起覆盖**同属「注入模型的文本」**的三层 ——
+  ① 工具**类级** `description`；② 工具 schema 的**参数 `description`**（`validate_input` 的
+  `target_tool` 描述这类，函数调用 schema 的一部分）；③ 运行期 `suggestion=` / `message=`
+  回灌文本（`order_create` 的数量校验建议这类）。扩面时**存量现取为 0 处** ——
+  #5400 已把那 2 处**人工收口**（此前它们不在任何判据射程内，正是本单立案的原因）
+  ⇒ 台账 `anchor.ref` **保持 0**、无需新增条目；**再出现即在两个闸上都红**（未登记 + 超锚点）。
+  扩面后现取读数（`-s` 打印）：参数 description **255 条**、运行期文本 **82 个构造点 / 675 处**；
+- **新面自带的两个防「静默免检」装置（照实登记）**：
+  ① **射程元守卫** `problems_unregistered_hint_builders` —— `suggestion=` 出现在
+  `MODEL_VISIBLE_BUILDERS`（`ToolResult` / `admin_api_failure` / `permission_denied`）**之外**
+  的构造点上 ⇒ 红（否则加个包装器就能把文本挪到面外）；
+  ② **冻结账户** `UNRESOLVED_RUNTIME_SITES` —— 运行期**拼装**（`"\n".join(构建中的列表)`）
+  取不到字面量的站点登记在册，**只许缩短**（新增即红、能取到文本的陈旧条目也红）。
+  现取仅 **1 条**（`validate_input.message`，位置见判红文案）—— 登记 = **可见欠账，不是豁免**；
+- **仍未覆盖（照实登记）**：`app/tools/base.py` 等**非工具模块**的文本不在面内
+  （MC-021 的 `_source_map` 有意不含它们；本单不擅自改上游读源）。**实测读数**：该文件里带
+  工具名的字符串**全在 24 条 docstring 内**（docstring 不进模型），而**真正回灌**的模板
+  （`_args_error` 构造的 `message` / `suggestion`）文本由**工具模块的调用点**传入 ⇒
+  那些调用点都在面内、当前**无漏项**；但**将来**若有人直接在 `base.py` 里写一个点名工具的
+  字面量并回灌，本判据看不见它 —— **已知射程边界**（不假装覆盖）；
 - **「不可达」口径 = 「不被任何 skill 绑定」**（静态事实）。运行期还有一层 persona 家族**只读共享**
   （`base_skill._family_read_only_tool_names`）已按同口径复算进「允许集」；`skill_names` 解绑但文件保留的
   **孤儿工具**（6 个，`test_burn_down_anchor_is_printed` 打印）**有意不删**、**不入燃尽靶**
   （MC-021 判据 5 的「只解绑、绝不删除」）；
-- **工具 description 的「域外点名」不判**（显式不判表，读数打印）：description 由**多个域共享**，
-  且本仓有**跨 persona「反例式指路」**的既定文风（如 B 端工具写「商户员工查用 order_query」），
-  一刀切会把**正确文本**判红 —— 只判「点名**全局不可达**工具」这一档（必然 `tool_not_found`）。
+- **否定过滤的已知假阴性（登记，本单不改）**：`_negated` 按**整句**取否定标记 ⇒ 同句内
+  **前一个子句的否定**会遮蔽**后面的正向指路**。活例（#5400 **人工**发现并改掉的那 1 处；
+  把树退到 #5400 的父提交即可复现）：`app/tools/order_create.py` 的数量校验 suggestion 原文是
+  「不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）」——
+  「不要」挂在**前半句**上，括号里其实是**正向指路**，但整句判定 ⇒ 该点名被当反例跳过。
+  ⇒ **该形态仍是盲区**；修它要动 #5331 的过滤器本体（会波及本仓「反例式指路」文风），
+  **不属本单**（本单只扩面、只处理「全局不可达」这一档）；
+- **「域外点名」档不判**（显式不判表，读数打印）：工具 description / 参数 description / 运行期文本
+  都由**多个域共享**一份，且本仓有**跨 persona「反例式指路」**的既定文风（如 B 端工具写
+  「商户员工查用 `order_query`」），一刀切会把**正确文本**判红 ——
+  只判「点名**全局不可达**工具」这一档（必然 `tool_not_found`）。本单扩面**继承同一条收窄**
+  （新面走同一个 `not_judged` 通道），并有**注入式负控**钉住（`test_out_of_domain_mentions_are_not_judged`）。
 
 复算（零依赖、秒级）：
 `python3 -m pytest tests/unit_ci_workflows/test_dead_capability_meta_guard.py -q -s`
@@ -89,6 +113,22 @@ NEGATION_MARKERS = ("不得", "不要", "禁止", "勿", "无", "没有", "不�
 #: 工具名最短长度（更短的名会与自然语言碰撞 ⇒ 只做**全词边界**匹配并设下限）。
 MIN_TOOL_NAME_LEN = 4
 
+#: **模型可见文本的构造点**：只有这三个上报点会把文本回灌给模型（issue #5437）。
+#: `message=` 是通用名（`logger.*` 也用得起）⇒ `message` 只按本集合收；`suggestion=` 罕见
+#: ⇒ 另有 `problems_unregistered_hint_builders` 钉住（出现在别处 = 该文本在面外）。
+MODEL_VISIBLE_BUILDERS = ("ToolResult", "admin_api_failure", "permission_denied")
+
+#: **运行期回灌**的关键字：`suggestion` = 可行动建议；`message` = 主提示文本。二者都注入模型。
+RUNTIME_KWARGS = ("suggestion", "message")
+
+#: **取不到字面量的运行期文本站点**（冻结账户，**只许缩短**：新增即红、能取到文本的陈旧条目也红）。
+#: 键 = `「工具.关键字」`（**不含行号** —— 无关改动挪动行号不该把账户判成陈旧，§23.5）。
+#: ⚠️ 登记 = **可见欠账，不是豁免**：销账方向 = 把文案改成**可静态取到**的形态（或扩展本判据的解析）。
+UNRESOLVED_RUNTIME_SITES: tuple[str, ...] = (
+    # `message=summary`，而 `summary = "\n".join(summary_lines)` 是**运行期拼装**（逐行 append）⇒ 静态取不到
+    "validate_input.message",
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、读源（注入式红证 = 替换这里的某一项文本后重建 Scan）
@@ -104,21 +144,239 @@ def surface_sources() -> dict[str, str]:
     return out
 
 
+def _string_value(node: ast.AST, table: dict[str, str] | None = None) -> str | None:
+    """赋值右值的**静态文本**：字面量 / f-string 的静态片段 / `+` 拼接 / 已解析的同作用域变量。
+
+    ⚠️ **不能**用 `ast.literal_eval` 一刀切：f-string 会被它判非法 ⇒ 本仓 `suggestion = f"..."`
+    这类赋值取不到，文本**静默留在面外**（实测 9 处）。也**不能**放宽成「节点里有没有字符串常量」
+    —— dict / list 常量会被误当文本，判红文案就会指向**无关对象**。取不到 ⇒ `None`（保守）。
+    """
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.JoinedStr):
+        return "".join(v.value for v in ast.walk(node)
+                       if isinstance(v, ast.Constant) and isinstance(v.value, str))
+    if isinstance(node, ast.Name):
+        return (table or {}).get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _string_value(node.left, table)
+        right = _string_value(node.right, table)
+        if left is None or right is None:
+            return None
+        return left + right
+    return None
+
+
+def _scope_consts(body: list) -> dict[str, str]:
+    """一个作用域内的字符串赋值（`NAME = ...` / `NAME += ...`）：**按源码顺序**、**不下潜嵌套函数**。
+
+    ⚠️ 走**函数局部**不是可选项：本仓有 `suggestion = f"..."` 再 `suggestion=suggestion` 的写法
+    （`app/tools/order_create.py`）—— 只认字面量/模块常量会把这类文本**静默留在面外**，
+    而那正是 issue #5437 要治的病（判据射程 ≠ 注入面）。顺序必须按源码（`+=` 依赖前一次赋值）。
+    """
+    out: dict[str, str] = {}
+
+    def visit(stmts) -> None:
+        for node in stmts:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                    and isinstance(node.targets[0], ast.Name):
+                text = _string_value(node.value, out)
+                if text is not None:
+                    out[node.targets[0].id] = text
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                text = _string_value(node.value, out) if node.value is not None else None
+                if text is not None:
+                    out[node.target.id] = text
+            elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) \
+                    and isinstance(node.target, ast.Name):
+                text = _string_value(node.value, out)
+                if text is not None:
+                    out[node.target.id] = out.get(node.target.id, "") + text
+            visit(list(ast.iter_child_nodes(node)))
+
+    visit(body)
+    return out
+
+
 def _module_consts(text: str) -> dict[str, str]:
     """模块级字符串常量（`NAME = 「...」` / 带注解）——prompt 常以**常量名**传入 `SkillConfig`。"""
-    out: dict[str, str] = {}
-    for node in ast.parse(text).body:
-        tgt = None
-        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            tgt = node.targets[0].id
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            tgt = node.target.id
-        if tgt is None or node.value is None:
-            continue
-        value = mc._literal(node.value)
-        if isinstance(value, str):
-            out[tgt] = value
+    return _scope_consts(ast.parse(text).body)
+
+
+def _text_of(node: ast.AST, consts: dict[str, str], local: dict[str, str] | None = None) -> str:
+    """节点的**注入文本**：字面量 / 隐式拼接 / f-string 的静态片段（含常量名与函数局部变量名）。
+
+    f-string 只取**静态片段**（`f"请改用 {VAR}"` 取不到插值）⇒ 这是**保守**方向：取不到就不会误判红。
+    """
+    if isinstance(node, ast.Name):
+        return (local or {}).get(node.id) or consts.get(node.id) or ""
+    return "".join(v.value for v in ast.walk(node)
+                   if isinstance(v, ast.Constant) and isinstance(v.value, str))
+
+
+def _module_functions(sources: dict[str, str], include_methods: bool = False) -> dict[str, list]:
+    """函数索引：参数 schema 常由**共享工厂函数**造 ⇒ 必须能追进去（否则新面自带静默空洞）。
+
+    `include_methods=False` 只收模块级函数（schema 工厂的形态）；`True` 连**方法**一起收
+    （运行期文本有 `message=self._build_message(...)` 这种同模块方法拼装）。
+    """
+    out: dict[str, list] = {}
+    for key, text in sorted(sources.items()):
+        if not key.startswith(("tool:", "skill:", "agent:")):
+            continue  # `ref:` 是 markdown（不是 Python）—— 直接 parse 会炸
+        tree = ast.parse(text)
+        nodes = ast.walk(tree) if include_methods else [n for n in tree.body]
+        for node in nodes:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                out.setdefault(node.name, []).append(node)
     return out
+
+
+def _callee_text(node: ast.AST, funcs: dict[str, list]) -> str:
+    """值是**调用**时，取被调函数**函数体里的字符串字面量**（运行期文案由它拼出来 = 单点来源）。
+
+    命中本仓三种真实写法：`message=self._build_message(...)`（同模块方法）、
+    `message=_model_message(plan)`（同模块函数）、`message=no_sku_stock_note(...)`
+    （`app/tools/stock_semantics.py` 的共享函数）。它们把文案**在函数体里拼**再返回，
+    只取 `return` 的值会得到 `"\\n".join(lines)` 这种**空文本** ⇒ 必须取整个函数体。
+    """
+    if not isinstance(node, ast.Call):
+        return ""
+    name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+    out = []
+    for fn in (funcs.get(name) or ()) if isinstance(name, str) else ():
+        out.append("".join(v.value for v in ast.walk(fn)
+                           if isinstance(v, ast.Constant) and isinstance(v.value, str)))
+    return "".join(out)
+
+
+def _call_scopes(tree: ast.Module) -> dict[int, dict[str, str]]:
+    """`{构造点(Call) 的节点 id: 它所在函数作用域的局部常量表}`（模块级 ⇒ `{}`）。
+
+    局部表按**最近的外层函数**归属（`ast.walk` 自外向内 ⇒ `setdefault` 不被内层覆盖）
+    ⇒ 同名局部变量不跨函数串味（判红文案必须指向**真对象**）。
+    """
+    out: dict[int, dict[str, str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        table = _scope_consts(node.body)
+        for sub in ast.walk(node):
+            out.setdefault(id(sub), table)
+    return out
+
+
+def _collect_schema_desc(node: ast.AST, path: str, consts: dict[str, str], funcs: dict[str, list],
+                         out: dict[str, str], depth: int = 0) -> None:
+    """递归取 JSON-schema 形状 dict 里 `description` 的文本；`path` = **参数键路径**。
+
+    · `properties` 这一层**不进路径**（它的子键就是参数名）⇒ 键形如 `target_tool` / `pageMeta.type`；
+    · `Call` 追进**模块级工厂函数**：`app/tools/inventory_manage.py` 的 `threshold` 由
+      `app/tools/stock_semantics.py` 的 `low_stock_alert_threshold_schema()` 造（参数 schema 的
+      共享单点来源）—— 只扫字面量会给新面自带一个静默空洞，而那正是本单要治的病。
+    """
+    if isinstance(node, ast.Dict):
+        for k, v in zip(node.keys, node.values):
+            key = mc._literal(k)
+            if key == "description":
+                text = _text_of(v, consts)
+                if text:
+                    out[path] = out.get(path, "") + text
+            elif key == "properties":
+                _collect_schema_desc(v, path, consts, funcs, out, depth)
+            elif isinstance(key, str):
+                _collect_schema_desc(v, f"{path}.{key}" if path else key, consts, funcs, out, depth)
+            else:
+                _collect_schema_desc(v, path, consts, funcs, out, depth)
+    elif isinstance(node, ast.Call):
+        if depth < 1:
+            name = getattr(node.func, "id", None)
+            for fn in (funcs.get(name) or ()) if isinstance(name, str) else ():
+                for sub in ast.walk(fn):
+                    if isinstance(sub, ast.Return):
+                        _collect_schema_desc(sub.value, path, consts, funcs, out, depth + 1)
+    else:
+        for sub in ast.iter_child_nodes(node):
+            _collect_schema_desc(sub, path, consts, funcs, out, depth)
+
+
+def _param_descriptions(sources: dict[str, str]) -> dict[str, str]:
+    """`param:<工具>.<参数路径>` → **注入模型的 schema 参数 description** 文本（issue #5437）。
+
+    与类级 `description` **同属注入模型的文本**（函数调用 schema 的一部分），但 #5331 的
+    `_descriptions` 只取**类级** ⇒ 之前**没有任何判据**看得见它（#5400 才发现，且是**人工普查**所得）。
+    """
+    funcs = _module_functions(sources)
+    out: dict[str, str] = {}
+    for key, text in sorted(sources.items()):
+        if not key.startswith("tool:"):
+            continue
+        consts = _module_consts(text)
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            name = mc._class_literal(node, "name")
+            if not isinstance(name, str):
+                continue
+            for st in node.body:
+                if not (isinstance(st, ast.Assign) and len(st.targets) == 1
+                        and getattr(st.targets[0], "id", None) == "parameters"):
+                    continue
+                found: dict[str, str] = {}
+                _collect_schema_desc(st.value, "", consts, funcs, found)
+                for path, body in found.items():
+                    out[f"param:{name}.{path}"] = body
+    return out
+
+
+def _runtime_texts(sources: dict[str, str]) -> tuple[dict[str, str], dict[str, int], dict[str, str]]:
+    """`sugg:<工具>` / `msg:<工具>` → 运行期**回灌给模型**的提示文本。
+
+    返回 `(文本, 处数, 取不到字面量的站点)`；末项 `{「工具.关键字」: 位置}` 是**冻结账户**
+    `UNRESOLVED_RUNTIME_SITES`（**只许缩短**）的现取面 —— 按「工具.关键字」而非行号做键，
+    免得**无关改动挪动行号**就把账户判成陈旧（§23.5 坐标漂移）。
+
+    · 只收 `MODEL_VISIBLE_BUILDERS`（`message=` 是通用名，`logger.*` 也用得起 —— 不限定会把无关文本
+      拖进判定面：**面取宽了比取窄了更危险**，判红文案会指向无关对象）；
+    · 按 `(关键字, 工具)` 聚合而不按站点编号：键必须**稳定**（插一条 suggestion 不该让别的键改号）；
+    · ⚠️ 站点之间必须用 `"\n"` 拼（`_negated` 把换行当句界）—— 直接首尾相接会让**上一条文本的
+      「不要…」越界否定下一条的点名**（实测踩到：`sugg:order_create` 的注入式红证被邻条吞掉）；
+    · ⚠️ 一个模块**声明多个工具类**时无法归因主体 ⇒ 不猜、跳过（`validator_tools` 同口径）。
+    """
+    out: dict[str, str] = {}
+    sites: dict[str, int] = {}
+    unresolved: dict[str, str] = {}
+    funcs = _module_functions(sources, include_methods=True)
+    for key, text in sorted(sources.items()):
+        if not key.startswith("tool:"):
+            continue
+        fname = key.split(":", 1)[1]
+        tree = ast.parse(text)
+        consts = _module_consts(text)
+        scopes = _call_scopes(tree)
+        declared = [mc._class_literal(n, "name") for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        owner = declared[0] if len(declared) == 1 and isinstance(declared[0], str) else None
+        if owner is None:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if called not in MODEL_VISIBLE_BUILDERS:
+                continue
+            for kw in node.keywords:
+                if kw.arg not in RUNTIME_KWARGS:
+                    continue
+                body = _text_of(kw.value, consts, scopes.get(id(node))) or _callee_text(kw.value, funcs)
+                surface = f"{'sugg' if kw.arg == 'suggestion' else 'msg'}:{owner}"
+                if not body:
+                    unresolved[f"{owner}.{kw.arg}"] = f"app/tools/{fname}:{kw.value.lineno}"
+                    continue
+                out[surface] = out.get(surface, "") + "\n" + body
+                sites[surface] = sites.get(surface, 0) + 1
+    return out, sites, unresolved
 
 
 def _resolve_text(node: ast.AST, consts: dict[str, str]) -> str | None:
@@ -312,6 +570,17 @@ class Scan:
         self.vocab = tool_vocab(sources)
         self.prompts = prompt_texts(sources)
         self.descriptions = self._descriptions(sources)
+        #: issue #5437 扩进来的两个**注入模型的文本面**（只收**被绑定**的工具 —— 零绑定工具的文件
+        #: 从不注入，与 `_descriptions` 同口径：面取宽了会把文本判红在无关对象上）。键前缀：
+        #: `param:` = 工具 schema 的参数 description（函数调用 schema 的一部分）；
+        #: `sugg:` / `msg:` = 运行期回灌给模型的 suggestion / message 文本。
+        self.params = {k: v for k, v in _param_descriptions(sources).items()
+                       if k.split(":", 1)[1].split(".", 1)[0] in self.binders}
+        live_runtime, sites, unresolved = _runtime_texts(sources)
+        self.runtime = {k: v for k, v in live_runtime.items() if k.split(":", 1)[1] in self.binders}
+        self.runtime_sites = {k: n for k, n in sites.items() if k.split(":", 1)[1] in self.binders}
+        self.unresolved_runtime = {k: v for k, v in unresolved.items()
+                                   if k.split(".", 1)[0] in self.binders}
         self.flags = tool_flags(sources, self.vocab)
         self.flags_by_symbol: dict[str, dict] = {}
         for meta in self.flags.values():
@@ -348,6 +617,13 @@ class Scan:
         for skill in skills:
             out |= set(self.allowed_for_skill(skill))
         return frozenset(out)
+
+    def _allowed_of_tool(self, tool: str) -> frozenset:
+        """该工具**被绑定到的那些域**里可达的工具并集 —— 模型可见文本由这些域**共享**一份。"""
+        allowed: set = set()
+        for skill in self.binders.get(tool, ()):
+            allowed |= set(self.allowed_for_skill(skill))
+        return frozenset(allowed)
 
     def reachable_in_scope(self, personas, skills) -> frozenset:
         """声明作用域内**可达**的工具（personas ⇒ 该 persona 可达的 skill 并集，∪ 显式点名的 skills）。"""
@@ -411,10 +687,15 @@ class Scan:
             for reply_key, body in sorted(replies.items()):
                 rows.append((f"agent:{agent}::{reply_key}", allowed, body, "agent"))
         for tool in sorted(self.binders):
-            allowed: set = set()
-            for skill in self.binders[tool]:
-                allowed |= set(self.allowed_for_skill(skill))
-            rows.append((f"tool:{tool}", frozenset(allowed), self.descriptions.get(tool, ""), "tool"))
+            rows.append((f"tool:{tool}", self._allowed_of_tool(tool),
+                         self.descriptions.get(tool, ""), "tool"))
+        # issue #5437：射程从**类级 description** 扩到**同属注入模型的文本** —— schema 参数
+        # description 与运行期 suggestion / message。复用**同一套 `allowed`**、**同一档不判表**
+        # （`kind="tool"` ⇒ 域外点名进 `not_judged`）与**同一个判据本体** `_scan_refs`，
+        # 不另立第二套（§17.3「同一真值两处投影」）。
+        for surface, text in sorted({**self.params, **self.runtime}.items()):
+            rows.append((surface, self._allowed_of_tool(surface.split(":", 1)[1].split(".", 1)[0]),
+                         text, "tool"))
         return rows
 
     def _scan_refs(self, sources: dict[str, str]):
@@ -554,7 +835,12 @@ def _count_mismatch(face: str, live: dict, book: dict) -> list[str]:
 
 
 def problems_dead_refs(sc: Scan) -> list[str]:
-    """**引用面**：模型可见文本点名不可达工具 / skill 自述面点名域外工具 ⇒ **未登记即红**。"""
+    """**引用面**：模型可见文本点名不可达工具 / skill 自述面点名域外工具 ⇒ **未登记即红**。
+
+    射程（issue #5437 扩面后）＝ ① 工具**类级** `description`；② 工具 schema 的**参数 description**；
+    ③ 运行期 `suggestion=` / `message=` 回灌文本；④ prompt / references / agent 直答面。
+    ②③ 与 ① **同属注入模型的文本**，且共用同一个判据本体（不另立第二套）。
+    """
     bad = _unledgered("ref", sc.ref_hits, sc.ledger)
     if not bad:
         return []
@@ -644,6 +930,31 @@ def problems_ledger_only_shrinks(sc: Scan) -> list[str]:
             + "\n（修好一处 ⇒ **同 PR 删除/下调对应条目**；台账不是豁免，是欠账清单。）\n" + _REPRO]
 
 
+def problems_unregistered_hint_builders(sources: dict[str, str]) -> list[str]:
+    """**新面的射程元守卫**（issue #5437）：`suggestion=` 只应出现在**模型可见的上报点**上。
+
+    射程 = `MODEL_VISIBLE_BUILDERS`。若有人新造一个包装器（`my_hint(suggestion=...)`）而该
+    `suggestion` 又**真的注入模型**，它就落在面外 ⇒ 本判据判红、逼作者**登记那个构造点**
+    （而不是让文本静默免检 —— §23 G5「判定面之外 = 永久免检」）。
+    """
+    out: list[str] = []
+    for key, text in sorted(sources.items()):
+        if not key.startswith("tool:"):
+            continue
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.Call):
+                continue
+            if not any(kw.arg == "suggestion" for kw in node.keywords):
+                continue
+            called = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if called not in MODEL_VISIBLE_BUILDERS:
+                out.append(
+                    f"`app/tools/{key.split(':', 1)[1]}` 的 `{called}(suggestion=...)` 不在射程声明 "
+                    f"{list(MODEL_VISIBLE_BUILDERS)} 里 ⇒ 该 suggestion 文本**不在引用面射程内**。"
+                    "出口：把该构造点加进 `MODEL_VISIBLE_BUILDERS`（那是射程声明），或改走已登记的构造点")
+    return out
+
+
 def problems_range_face_is_reused(judgements: dict, injections: dict, own_ledger: dict) -> list[str]:
     """**射程面不得重造**（验收判据 4）：上游 `MC-021 判据 7` 必须**在位且带注入式红证**，
     且本文件的判据表 / 台账**都不含射程面**。
@@ -693,7 +1004,9 @@ def test_surfaces_are_fail_closed() -> None:
     sc = scan()
     readout = {
         "工具类": len(sc.tools), "skill 绑定": len(sc.skills),
-        "注入模型的 prompt 文本": len(sc.prompts), "工具 description": len(sc.descriptions),
+        "注入模型的 prompt 文本": len(sc.prompts), "工具 description（类级）": len(sc.descriptions),
+        "schema 参数 description": len(sc.params),
+        "运行期 suggestion / message 文本": sum(sc.runtime_sites.values()),
         "references md": len([k for k in surface_sources() if k.startswith("ref:")]),
         "工具名常量（能力标志）": len(sc.flags), "能力谓词": len(sc.predicates),
         "校验器类工具": len(sc.validators),
@@ -706,6 +1019,25 @@ def test_surfaces_are_fail_closed() -> None:
         "prompt 经**模块常量名**传入时必须走 `_resolve_text`，否则得到 0 条而判据全绿"
     )
     assert len(sc.descriptions) >= 40, f"工具 description 只解析出 {len(sc.descriptions)} 条（<40）⇒ 射程不足"
+    assert len(sc.params) >= 200, (
+        f"schema 参数 description 只解析出 {len(sc.params)} 条（<200）⇒ **新面空跑成绿**："
+        "`parameters` 字面量**和它调用的模块级工厂函数**（`app/tools/stock_semantics.py` 的 "
+        "`low_stock_alert_threshold_schema`，参数 schema 的共享单点来源）都要走到"
+    )
+    assert sum(sc.runtime_sites.values()) >= 250, (
+        f"运行期 suggestion / message 只解析出 {sum(sc.runtime_sites.values())} 处（<250）⇒ 新面空跑成绿："
+        "文本常经**局部变量**传入（`suggestion=suggestion`）⇒ 必须按所在函数作用域解析"
+    )
+    frozen = set(UNRESOLVED_RUNTIME_SITES)
+    live = set(sc.unresolved_runtime)
+    assert live <= frozen, (
+        "有运行期文本取不到字面量 ⇒ 判据看不见它（**静默免检**）："
+        f"{sorted(live - frozen)}（位置 { {k: sc.unresolved_runtime[k] for k in sorted(live - frozen)} }）"
+        " —— 出口：把文本**内联**到构造点，或扩展本判据的解析（**不要**登记豁免）"
+    )
+    assert frozen <= live, (
+        f"冻结账户已**陈旧**（这些站点现在能取到文本了）⇒ 只许缩短，删掉 {sorted(frozen - live)}"
+    )
 
 
 def test_burn_down_anchor_is_printed() -> None:
@@ -716,9 +1048,21 @@ def test_burn_down_anchor_is_printed() -> None:
         print(f"[燃尽锚点 {face}] 台账条数={len(_ledger_of(sc.ledger, face))} / "
               f"台账命中数={sum(int(e['hits']) for e in _ledger_of(sc.ledger, face).values())} / "
               f"现取条数={len(live)} / 现取命中数={sum(live_hit_counts(face, live).values())}")
+    print("[引用面 · 各文本面现取读数] " + str({
+        "tool.description（类级，注入模型）": len(sc.descriptions),
+        "param.description（schema 注入）": len(sc.params),
+        "runtime.suggestion / message（运行期回灌）": f"{len(sc.runtime)} 个构造点 / "
+                                                     f"{sum(sc.runtime_sites.values())} 处",
+        "skill.prompt（各 persona）": len(sc.prompts),
+        "skill.references（md）": len([k for k in surface_sources() if k.startswith("ref:")]),
+    }))
     print("[死工具（全局不可达；**有意保留文件**，不入燃尽靶）] " + str(sorted(sc.dead_tools)))
-    print("[显式不判表 · 工具 description 的域外点名（跨 persona 反例文风）] "
-          f"{len(sc.ref_not_judged)} 条")
+    by_face: dict[str, int] = {}
+    for key in sc.ref_not_judged:
+        by_face[key.split(":", 1)[0]] = by_face.get(key.split(":", 1)[0], 0) + 1
+    print("[显式不判表 · 域外点名（域内可达但不在本工具作用域；跨 persona 反例文风 / 多域共享文本）] "
+          f"{len(sc.ref_not_judged)} 条："
+          + " / ".join(f"{k}={v}" for k, v in sorted(by_face.items())))
     for key in sorted(sc.ref_not_judged):
         print(f"    - {key} × {len(sc.ref_not_judged[key])}")
     assert len(sc.dead_tools) >= 1, (
@@ -853,6 +1197,21 @@ def _injections() -> dict[str, tuple]:
             "stale", "ref", "tool:order_query::order_manage",
             lambda book: _with_ref_entry(book, "tool:order_query::order_manage", hits=1),
         ),
+        "⑥ **schema 参数 description** 点名 `order_manage`（本单新面）⇒ 引用面红": (
+            "tool:validate_input.py",
+            lambda s: _point_at("tool:validate_input.py", s, "要校验的目标写工具，如 order_create"),
+            "new", "ref", "param:validate_input.target_tool::order_manage",
+        ),
+        "⑦ 运行期 **suggestion** 点名 `order_manage`（本单新面）⇒ 引用面红": (
+            "tool:order_create.py",
+            lambda s: _point_at("tool:order_create.py", s, "请向顾客确认单价后填写大于 0 的金额（如 168）"),
+            "new", "ref", "sugg:order_create::order_manage",
+        ),
+        "⑦b 运行期 **message**（提示文本，与 suggestion 同面）点名 `order_manage` ⇒ 引用面红": (
+            "tool:order_create.py",
+            lambda s: _point_at("tool:order_create.py", s, "服务端要求单价必须大于 0 元"),
+            "new", "ref", "msg:order_create::order_manage",
+        ),
     }
 
 
@@ -931,4 +1290,57 @@ def test_negation_filter_is_discriminating() -> None:
     assert "tool:briefing_query::order_manage" not in mutated.ref_keys, (
         "被否定的点名进了现取集 ⇒ 否定过滤失效（会把反例文风整片判红）"
     )
+
+
+def test_suggestion_kwarg_is_only_on_registered_builders() -> None:
+    """**射程元守卫 + 负控**：新造一个带 `suggestion=` 的构造点 ⇒ 必须判红。
+
+    没有它，新面的射程可以被**静默缩小**（有人加个包装器把 suggestion 挪到面外 ⇒ 判据不再看得见它）。
+    """
+    sources = surface_sources()
+    problems = problems_unregistered_hint_builders(sources)
+    assert not problems, "有 `suggestion=` 落在**未登记**的构造点上：\n" + "\n".join(f"  - {p}" for p in problems)
+    key = "tool:order_create.py"
+    mutated = dict(sources)
+    mutated[key] = sources[key] + (
+        "\n\ndef _unregistered_hint(text: str):\n"
+        "    return my_hint(suggestion=text)\n")
+    assert mutated[key] != sources[key], "负控注入没生效（锚点失配）"
+    red = problems_unregistered_hint_builders(mutated)
+    assert any("my_hint" in p for p in red), (
+        f"未登记的 `suggestion=` 构造点没判红 ⇒ 射程元守卫是空断言：{red}")
+
+
+def test_out_of_domain_mentions_are_not_judged() -> None:
+    """**验收判据 5（不误伤「域外点名」档）**：域内**可达**但不在本工具作用域的点名 ⇒ 进**显式不判表**，不判红。
+
+    本仓有跨 persona「反例式指路」的既定文风，且**注入模型的文本多域共享**（工具 description /
+    `parameters` 的参数描述 / 运行期 suggestion 都由多个域共用一份）⇒ 一刀切会把**正确文本**整片喂红
+    （§17.3「判据被自己的文案喂红」）。故 #5331 有意**只判「全局不可达」这一档**（点了必然 `tool_not_found`）；
+    本单把射程扩到参数 description 与运行期文本时**继承同一条收窄**，不另立第二套口径。
+    """
+    base_sources = surface_sources()
+    base = scan(base_sources, ledger())
+    # 活例取 #5400 / PR #5435 明写「**一字未动**」的那一档（C 端只读工具描述里的 `order_query`）
+    live = "tool:customer_address_query::order_query"
+    assert live in base.ref_not_judged, (
+        f"活例 `{live}` 不在显式不判表里 ⇒ 域外点名档被误判红"
+        f"（现取不判表={sorted(base.ref_not_judged)}）"
+    )
+    assert live not in base.ref_keys, "活例进了判红集 ⇒ 域外点名被一刀切"
+    assert problems_dead_refs(base) == [], "域外点名被误判红（本仓反例文风会被整片喂红）"
+    # 注入式负控（**本单新面**）：往**参数 description** 里再加一个「可达但域外」的工具 ⇒ 仍不判红，只是不判表多一条
+    key = "tool:validate_input.py"
+    phrase = "要校验的目标写工具，如 order_create"
+    assert phrase in base_sources[key], "负控注入锚点失配（同步本判据）"
+    sources = dict(base_sources)
+    sources[key] = sources[key].replace(phrase, f"{phrase}，或 sku_update", 1)
+    assert sources[key] != base_sources[key], "负控注入没生效（锚点失配）"
+    mutated = scan(sources, ledger())
+    added = set(mutated.ref_not_judged) - set(base.ref_not_judged)
+    assert added == {"param:validate_input.target_tool::sku_update"}, (
+        f"新增的域外点名没进**不判表**（现取新增={sorted(added)}）⇒ 收窄档被破坏"
+    )
+    assert not (mutated.ref_keys & added), "域外点名进了判红集 ⇒ 会喂红正确文本"
+    assert problems_dead_refs(mutated) == [], "域外点名让引用面判红 ⇒ 判据 5 失守"
     assert not problems_dead_refs(mutated), "被否定的点名让引用面判红 ⇒ 同上"
