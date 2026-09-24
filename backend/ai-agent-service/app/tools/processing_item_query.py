@@ -39,7 +39,8 @@ class ProcessingItemQueryTool(BaseTool):
         "查的是**店铺维度**目录，与具体商品无关、无商品/分类过滤。"
         "【参数】id / keyword / category_id / status 均可选；只取全部目录时传空参数。"
         "【反例】查商品详情用 product_detail（不返回加工项）；"
-        "创建/修改/删除加工项用 processing_item_manage；选规格/色号用 product_detail 的 skus[]。"
+        "创建/修改/删除加工项**不在能力内**——如实说明并引导商家到后台「商品管理」页(/products)操作；"
+        "选规格/色号用 product_detail 的 skus[]。"
         "【标注】READONLY"
     )
 

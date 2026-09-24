@@ -465,7 +465,8 @@ class OrderCreateTool(BaseTool):
         "processingItems**；漏算/算错加工费时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
         "臆造规格键（如自己编 colorId/skuId）或只给颜色不给门幅就下单（服务端无法定位 SKU ⇒ 拒绝）；"
-        "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。修改订单用 order_manage。"
+        "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。"
+        "修改订单**不在本工具能力内**——如实说明并引导顾客联系商家到后台订单页处理。"
         "【标注】WRITE — 下单即与顾客达成交易合同，必须先出确认卡并取得明确确认"
     )
 
@@ -839,7 +840,8 @@ class OrderCreateTool(BaseTool):
                     f"请把 quantity 改成**不少于 1** 的数（可为小数，如 1、2.5、8.4）；"
                     + (
                         f"负数请改为正数 —— 顾客想要 {abs(value):g} 米就填 {abs(value):g}，"
-                        "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）。"
+                        "不要用 -1 之类的占位值表示退款或扣减"
+                        "（退款**不在 Agent 能力内**——如实说明并引导商家到后台订单页发起退款）。"
                         if negative else
                         "若顾客确实只要不到 1 米/件，请先与顾客确认数量后再下单"
                         "（系统按下单数量扣减整件库存，无法受理小于 1 的订单数量）。"

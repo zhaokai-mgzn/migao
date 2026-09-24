@@ -27,7 +27,8 @@ class CustomerAddressQueryTool(BaseTool):
         "【触发】C 端顾客下单/购买时，查询其历史收货地址用于预填：'帮我下单''我要买''地址是多少'等下单意图。"
         "【参数】无参数。查询当前登录顾客最近一笔有收货地址的订单，返回收货人/手机号/地址。"
         "【使用】命中后把收货信息作为 interact(component=form) 的预填 value 展示给顾客确认/修改；未命中则按原流程询问收货信息。"
-        "【反例】查询订单列表/物流用 customer_order_query / customer_logistics_track；商户员工管理订单用 order_query / order_manage。"
+        "【反例】查询订单列表/物流用 customer_order_query / customer_logistics_track；"
+        "商户员工查询订单用 order_query（管理/改单等写操作**不在 Agent 能力内**，引导其到商家后台订单页处理）。"
         "【标注】READONLY — 仅查当前登录顾客自己的历史订单收货信息，结果由系统强制按用户过滤"
     )
 
