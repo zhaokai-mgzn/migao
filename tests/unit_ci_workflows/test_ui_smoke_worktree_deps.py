@@ -236,8 +236,12 @@ def test_var_expansions_are_braced_before_multibyte_chars():
 
     `set -u` 下这是**整个脚本当场死**（不是那句 echo 少印点东西）—— 本文件正是撞出来的：
     新写的 fail-closed 分支 `$ADMIN_WEB_DIR（` 一进就 unbound variable，根因文案根本没机会打印。
-    同族既有约定见 `scripts/dev-worktree.sh`、`scripts/sync-main.sh` 的“注意”段（那两个脚本显式
-    登记了这条）。本判据只锁本文件（另有两处同族存量在别的脚本里，已在 PR 里显式登记、未越界改动）。
+    同族既有约定见 `scripts/dev-worktree.sh`、`scripts/sync-main.sh` 的“注意”段；**存量已清零**：
+    `#5260` 修掉 `scripts/sync-main.sh` / `scripts/batch-integrate-check.sh` 那两处，**`#5284` 把类级
+    守卫的射程从 `scripts/**` 扩到全仓**（含仓库根 —— 那是本条遗漏的覆盖面，issue #5283 残余②同批收口）
+    ⇒ 全仓受控 `*.sh` 的同族存量 12 处全部修完，守卫见
+    `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py`；「**声称的射程 == 实际扫描集**」由
+    `tests/unit_ci_workflows/test_guard_scope_declaration.py` 常驻钉住。本判据只锁**本文件**自己。
     """
     src = _effective_code(SMOKE.read_text(encoding="utf-8"))
     bad = [
