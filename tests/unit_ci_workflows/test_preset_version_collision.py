@@ -270,6 +270,26 @@ def test_preset_guard_cli_carries_the_collision_verdict(repo: Path):
     )
 
 
+def test_staged_collision_is_caught_and_deduped(repo: Path):
+    """暂存态（已 `git add` 的同号不同内容）也必须红；两来源命中同一条 ⇒ **只报一次**（读数不翻倍）。
+
+    `preset-guard` 的真实用法是**提交前**跑 ⇒ 形态通常已进索引（索引与工作区同时命中）。
+    去重是读数可信的前提：重复计数会让「命中几条」翻倍，读起来像两个问题。
+    """
+    _write_skill(repo, BASE_VERSION, 99)
+    _git(repo, "add", "-A")
+
+    proc = _run(repo)
+
+    assert proc.returncode != 0, proc.stdout
+    assert proc.stdout.count("同号不同内容 = 跨包撞车") == 1, (
+        "同一条撞车在两来源被报了两遍（读数翻倍）：\n" + proc.stdout
+    )
+    assert "已在另一来源报出，不重复列" in proc.stdout
+    assert "命中 1 条（降级 0 / 同号撞车 1）" in proc.stdout
+    assert "跳过 1 条（无 `version:` 字段 0 / 另一来源已报 1）" in proc.stdout
+
+
 def test_collision_branch_injection_reds(repo: Path, tmp_path: Path):
     """判据 ① 的**判别力自证**：摘掉撞车分支（临时副本）⇒ 同一形态不再红 ⇒ 判据 ① 变红。"""
     _write_skill(repo, BASE_VERSION, 99)
