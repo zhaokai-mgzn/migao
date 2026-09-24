@@ -552,6 +552,26 @@ class TestRedProofs:
         assert executed == [], (
             f"记录侧不载荷（只落工具名）却仍放行 ⇒ 值事实这层没用（executed={executed}）")
 
+    def test_no_op_clear_turns_the_clear_criterion_red(self):
+        """注入：把「写成功后的清除」改成空操作 ⇒ 清除那层必须真的载荷（记录会留下）。
+
+        与 `test_successful_write_clears_both_the_name_and_the_values` 配对：那条证明
+        「清除会发生」，本条证明「不清除时记录真的会留下」—— 两层读数都指向同一层闸。
+        """
+        api = _new_api()
+        card = confirm_value_for_fields(confirm_card_fields(PRICE_A))
+        with patch.object(base_skill, "clear_confirmed_write",
+                          lambda state, tool_name: state):
+            h = _TurnHarness({"last_confirm_value": card})
+            executed = h.turn(card, [("product_update", dict(PRICE_A))], tool_ok=True)
+            assert executed == ["product_update"], (
+                f"点卡轮没放行 ⇒ 前置不成立（executed={executed}）")
+            # 前提自证（G7）：注入生效 ⇒ 工具名与值事实**都**留着
+            assert h.store.get("confirmed_write_tool") == "product_update", \
+                "注入没生效：工具名仍被清掉了 ⇒ 本红证无效"
+            assert api["KEY"] in h.store, \
+                "注入没生效：值事实仍被清掉了 ⇒ 本红证无效"
+
     def test_static_guard_can_go_red(self, monkeypatch):
         """注入：在 `app/**` 里塞一处按工具名放行 ⇒ 静态判据**必须**报出这条旁路。"""
         real = Path.read_text
