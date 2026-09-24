@@ -285,6 +285,75 @@ def test_blinding_the_gate_turns_this_file_red(tmp_path, monkeypatch):
         raise AssertionError("把判定改瞎之后判据**没红** ⇒ 这条判据读的不是 strict_error（空断言）")
 
 
+def test_both_backends_agree_on_the_real_corpus(tmp_path):
+    """判据 6（**CI 的真实配置**）：真库在**零依赖后端**（无 PyYAML = 渲染腿在 CI 走的那条）下的
+    判决，必须与后端①（本进程，有 PyYAML）**逐文件一致**。
+
+    ⚠️ 只测后端① = **没测到 CI 上真正跑的那条腿**：`.github/cases_yaml.py` 模块头记着
+    `case-truth-check` job **没有 PyYAML**，而"两条腿判决分歧"正是 #5147 / #4265 的病根
+    ⇒ 这条判据把"分歧"本身钉住（真库现取 25 文件、0 分歧）。
+    """
+    import json
+    env = _no_pyyaml_env(tmp_path / "no_pyyaml")
+    code = ("import sys, json, glob; sys.path.insert(0, '.github'); import cases_yaml as c;"
+            "print('BACKEND=' + c.strict_loader_name());"
+            "print(json.dumps({f: c.strict_error(f) for f in sorted(glob.glob('.github/cases/*.yml'))},"
+            " ensure_ascii=False))")
+    proc = subprocess.run([sys.executable, "-c", code], cwd=str(REPO_ROOT),
+                          capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        raise AssertionError(f"零依赖腿探针跑不起来（不可判，不许当通过读）：{proc.stderr[-300:]}")
+    lines = proc.stdout.strip().splitlines()
+    if len(lines) < 2 or lines[0].strip() != "BACKEND=<无 PyYAML>":
+        raise AssertionError(f"没跑到零依赖后端 ⇒ 本判据会静默空跑：{lines[:1]}")
+    zero_dep = json.loads(lines[1])
+    if len(zero_dep) != len(CASE_FILES):
+        raise AssertionError(
+            f"零依赖腿只判了 {len(zero_dep)} 个文件（真库 {len(CASE_FILES)} 个）⇒ 有文件没进判据")
+    bad = [(Path(f).name, cases_yaml.strict_error(f), zero_dep[f])
+           for f in zero_dep
+           if (cases_yaml.strict_error(f) is None) != (zero_dep[f] is None)]
+    if bad:
+        raise AssertionError(
+            "两后端在真库上判决不一致（文件, 后端①, 后端②）—— CI 的渲染腿走的是后端②：\n  "
+            + "\n  ".join(map(str, bad)))
+
+
+def test_registered_backend_divergence_is_still_a_divergence(tmp_path):
+    """登记（**未固化**）：`k: v` + 更深一行的 `k2: v2` 上**两个后端判决分歧**。
+
+    实测（本次现取）：后端① `2:5: mapping values are not allowed in this context（标准 YAML 解析失败）`；
+    后端② `None` ⇒ CI 的渲染腿（**没有 PyYAML**）会把这种文件**照旧渲染出来**，而判据腿报错
+    —— 与 #5147 / #4265 是**同一形态**，只是换了个形状（"假真值"仍有一处开口）。
+
+    **为什么不修（照实）**：补它要让零依赖腿判红这个形态，而该形态的**行级**判据会连带把
+    `tests/unit_ci_workflows/test_render_cases_yaml_fail_closed.py` 的
+    `NOT_COVERED["tab_indent"]`（制表符缩进让行级缩进失真）**顶成非 None** ⇒ 那条既有登记
+    当场变红，而**本包不许改那个文件**（§23.5：改被测对象 = 让别人的红证变空断言）。
+
+    **谁看**：判据面 owner（两条登记必须**一起**改：给零依赖腿补该形态 + 处置 `tab_indent` 登记）。
+
+    **死亡条件**：谁把零依赖腿补上了 ⇒ 本判据当场红，逼他同时处置那两条登记。
+    """
+    sample = tmp_path / "backend_divergence.yml"
+    sample.write_text("k: v\n  k2: v2\n", encoding="utf-8")
+    if _pyyaml_ok(sample):
+        raise AssertionError("样本被标准 YAML 接受了 ⇒ 这条登记过期（该形态已不构成分歧）")
+    env = _no_pyyaml_env(tmp_path / "no_pyyaml")
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, '.github'); import cases_yaml as c;"
+         f"print('VERDICT:', c.strict_error({str(sample)!r}))"],
+        cwd=str(REPO_ROOT), capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        raise AssertionError(f"探针跑不起来（不可判，不许当通过读）：{proc.stderr[-300:]}")
+    if "VERDICT: None" not in proc.stdout:
+        raise AssertionError(
+            "零依赖腿**已经**抓到该形态了（好消息）⇒ 请把这条登记从本文件与 `.github/cases_yaml.py` "
+            "模块头删掉，并**同时**处置 `NOT_COVERED[\"tab_indent\"]`（同一处改动会让它变红）。"
+            f"实测：{proc.stdout.strip()}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 判据 7：#4291 判据 3② —— 模板断言"源 == 装载"（现取）
 # ─────────────────────────────────────────────────────────────────────────────
