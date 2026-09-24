@@ -26,8 +26,10 @@
    （`2.8×2.4` 这种没写明宽高方向的写法**不猜顺序**，一格都不填）。
 3. 🔴 **不落库、不提交**：本模块不 import 任何写入缝（会话记忆 / DB / admin-api），
    `recognize()` 的返回体只有「填哪几格」——**提交永远是人的动作**。
-   机械判据：`backend/ai-agent-service/tests/test_vision_recognize.py::TestNoWriteBoundary`
+   机械判据：`backend/ai-agent-service/tests/test_vision/test_recognizer.py::TestNoWriteBoundary`
    （静态扫描 + 扫描器判别力红证 + 端点返回体恰好三个键）。
+   ⚠️ 该路径 2026-09-24 顺手订正（issue #5349）：识别内核测试随 #5321 迁进了 `tests/test_vision/`，
+   旧写法 `tests/test_vision_recognize.py` 已不存在 —— 引用一个不存在的路径会让下一个人白找一轮。
 """
 import asyncio
 import json
