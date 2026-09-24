@@ -884,3 +884,143 @@ def test_red_proof_removing_the_burn_down_target_is_red(tmp_path):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     keys = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
     assert "unfixed-budget-missing" in keys, f"缺燃尽靶子必须判红，实测 {sorted(keys)}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 元守卫：**本包自己踩过的两处缺陷形态**，让它们进不来（§23 G1「实例判据 + 类级元守卫成对」）
+# ══════════════════════════════════════════════════════════════════════════
+def _outcome_binding_problems(repo: Path) -> tuple[int, list[str]]:
+    """读数步的 `env.OUTCOME` 必须是 ``${{ job.status }}`` —— 返回 (现取数, 逐条问题)。
+
+    定位口径与判定本体**同源**（`reading_site` 分派：`emitter` 按 `emit <id>`，`inline` 按 `mech=<id>`）
+    —— 否则「元守卫扫 0 个 step 却报绿」这种空跑会自己发生。
+    """
+    registry = json.loads((repo / "scripts" / "mechanism-registry.json").read_text(encoding="utf-8"))
+    problems: list[str] = []
+    checked = 0
+    for entry in registry["mechanisms"]:
+        site = entry.get("reading_site", "emitter")
+        needle = f"emit {entry['id']}" if site == "emitter" else f"mech={entry['id']}"
+        for step in ML._job_steps(repo, entry["workflow"], entry["job"]):
+            run = str(step.get("run") or "")
+            if needle not in run:
+                continue
+            if site == "inline" and ML.MECHANISM_MARKER not in run:
+                continue
+            checked += 1
+            env = step.get("env")
+            bound = env.get("OUTCOME") if isinstance(env, dict) else None
+            if bound != "${{ job.status }}":
+                problems.append(f"{entry['id']}：读数步的 `env.OUTCOME` = {bound!r}")
+            elif "$OUTCOME" not in run:
+                # 只要求 `run:` **真的用到** `$OUTCOME`（把 env 绑定交给机制体）；
+                # 内联落点（close-linked-issues）用 `case "$OUTCOME"`，同样是合法用法。
+                problems.append(f"{entry['id']}：`run:` 里没用到 `$OUTCOME`（env 绑了个没人读的值）")
+    return checked, problems
+
+
+def test_reading_step_binds_outcome_to_the_github_expression():
+    """读数步的 `OUTCOME` 必须绑定 ``${{ job.status }}`` —— **不许是字面量 / 被吃掉花括号的残骸**。
+
+    这是本包**自己踩过**的缺陷：生成读数步时用 `str.format()` 拼模板 ⇒ ``${{ job.status }}``
+    被吃成 `${ job.status }`，GitHub 不再解析它 ⇒ `--outcome` 落到 `rc=?`，
+    **每一轮读数都变成 `::warning::`**（机制看着像永久失败）。**6 个 workflow 同时中招**，
+    而当时的判据一条都没红 ⇒ 正是「判据没覆盖到的地方 = 永久免检」。
+    """
+    checked, problems = _outcome_binding_problems(REPO_ROOT)
+    print(f"[元守卫] 读数步现取 = {checked} 个（全部绑定 job.status）")
+    assert checked >= 8, f"读数步现取 {checked} 个 ⇒ 判据面过小（元守卫失效）"
+    assert not problems, "读数步的 OUTCOME 绑定不合规（GitHub 不解析 ⇒ 每轮读数都像失败）：\n" + "\n".join(
+        f"  {x}" for x in problems
+    )
+
+
+def test_red_proof_unbound_outcome_expression_is_red(tmp_path):
+    """**注入式红证**：把 `env.OUTCOME` 换成被吃花括号的残骸 `${ job.status }` ⇒ **必红**。"""
+    repo = _mini_repo(tmp_path)
+    assert _outcome_binding_problems(repo)[1] == [], "夹具前置不成立：副本本该是合规的"
+    victim = repo / ".github" / "workflows" / "stale.yml"
+    text = victim.read_text(encoding="utf-8")
+    good = "          OUTCOME: ${{ job.status }}\n"
+    assert text.count(good) == 1, "夹具前置：该绑定本该唯一"
+    victim.write_text(text.replace(good, "          OUTCOME: ${ job.status }\n"), encoding="utf-8")
+    checked, problems = _outcome_binding_problems(repo)
+    assert checked >= 8, f"现取读数步 {checked} 个 ⇒ 元守卫扫漏了（空跑会报绿）"
+    assert any("stale" in x for x in problems), (
+        f"被吃花括号的 `OUTCOME` 绑定没有让元守卫判红 ⇒ 该缺陷形态仍能溜过。实测 {problems}"
+    )
+
+
+def _shell_syntax_problems(repo: Path) -> tuple[int, list[str]]:
+    """扫该仓库所有 workflow 的 `run:` 块做 `bash -n`（**纯语法**）—— 返回 (现取数, 逐条问题)。"""
+    import yaml
+
+    checked = 0
+    broken: list[str] = []
+    for path in sorted((repo / ".github" / "workflows").glob("*.yml")):
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job_name, job in ((doc or {}).get("jobs") or {}).items():
+            if not isinstance(job, dict):
+                continue
+            for step in job.get("steps") or []:
+                if not isinstance(step, dict) or not isinstance(step.get("run"), str):
+                    continue
+                shell = str(step.get("shell") or "bash")
+                if "bash" not in shell and shell not in ("sh", ""):
+                    continue
+                checked += 1
+                proc = subprocess.run(
+                    ["bash", "-n", "/dev/stdin"], input=step["run"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if proc.returncode != 0:
+                    first = proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else "?"
+                    broken.append(f"{path.name} / job={job_name} / step={step.get('name')!r}：{first}")
+    return checked, broken
+
+
+def test_every_workflow_run_block_is_shell_valid():
+    """**元守卫**：每个 workflow 的每个 `run:` 块都必须通过 `bash -n`（纯语法）。
+
+    这也是本包**自己踩过**的缺陷：分段 patch 把 `fixture-record.yml` 的 run 块拼成
+    `if … then` 没配平的 `fi`，**YAML 照样合法、当时全部判据都绿**，而该机制在 runner 上会直接语法错
+    ⇒ 一次运行都不出声（正是本单要消灭的「静默失效」）。⇒ 把「run 块能跑」本身做成判据。
+
+    边界（照实登记）：只做**语法**检查，不做语义检查；`shell:` 非 bash/sh 的步骤跳过。
+    """
+    checked, broken = _shell_syntax_problems(REPO_ROOT)
+    print(f"[元守卫] 现取 run 块 = {checked} 个（全部通过 bash -n）")
+    assert checked >= 150, f"判据面过小（现取 {checked} 个 run 块）⇒ 元守卫可能静默空跑成绿"
+    assert not broken, "workflow 的 run 块有 shell 语法错（YAML 合法 ⇒ 不会有别的判据发现）：\n" + "\n".join(
+        f"  {b}" for b in broken
+    )
+
+
+def test_red_proof_shell_broken_run_block_is_red(tmp_path):
+    """**注入式红证**：把某个 run 块改成 `if … then` 不配平 ⇒ **必红**（而 YAML 仍合法）。
+
+    这是本包真踩过的形态（`fixture-record.yml`），所以红证必须证明它**真的会被抓到**。
+    """
+    repo = _mini_repo(tmp_path)
+    assert _shell_syntax_problems(repo)[1] == [], "夹具前置不成立：副本本该是合规的"
+    victim = repo / ".github" / "workflows" / "fixture-record.yml"
+    text = victim.read_text(encoding="utf-8")
+    good = "            mechanism_liveness_declare --seen 1 --acted 0"
+    assert text.count(good) == 1, "夹具前置：注入点本该唯一"
+    # 注入一个 **`if` 没配平** 的块（这是真踩过的形态：分段 patch 少了一个 `fi`）
+    victim.write_text(text.replace(good, "          if true; then\n" + good), encoding="utf-8")
+    import yaml as _yaml
+    _yaml.safe_load(victim.read_text(encoding="utf-8"))  # YAML 仍必须合法 ⇒ 别的判据发现不了
+    checked, broken = _shell_syntax_problems(repo)
+    assert checked >= 150, "判据面过小"
+    assert any("fixture-record" in b for b in broken), (
+        f"注入不配平的 `if` 后元守卫没有判红 ⇒ 该红证没有判别力。实测 {broken}"
+    )
+
+
+def test_red_proof_injection_helper_self_proves_in_shell_guard(tmp_path):
+    """**负控**：合规副本上元守卫**不得**判红（否则它是「永远红」的空判据）。"""
+    repo = _mini_repo(tmp_path)
+    checked, broken = _shell_syntax_problems(repo)
+    assert checked >= 150 and broken == [], f"合规副本被判红 ⇒ 空判据：checked={checked} broken={broken}"
+    assert _outcome_binding_problems(repo)[1] == [], "合规副本的 OUTCOME 绑定被判红 ⇒ 空判据"

@@ -232,5 +232,5 @@ jobs:
       - name: 存活读数（本轮做了什么 / 为什么零动作）
         if: always()
         env:
-          OUTCOME: ${ job.status }
+          OUTCOME: ${{ job.status }}
         run: bash .github/scripts/mechanism_liveness.sh emit drift-audit --outcome "$OUTCOME"

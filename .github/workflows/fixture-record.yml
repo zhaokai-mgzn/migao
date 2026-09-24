@@ -48,21 +48,19 @@ jobs:
       - name: Open PR if fixtures changed
         if: success()
         run: |
-          # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
+          # 存活读数（issue #5326 判据 1）：把本轮的**计数类**读数交出来（看门人**不读挂钟时长**）。
+          # 发射器是**报告者**：它不可用（本机 harness / 浅检出取不到文件）**绝不**得让机制本身失败
+          # ⇒ 取不到就装一个空实现（读数步仍会出声，只是 `why=no-declaration`）。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-          if [ -z "$(git status --porcelain -- tests/e2e/fixtures/)" ]; then
-            echo "✅ fixtures 无变化，无需更新"
-            # 零动作**也必须出声**（issue #5326 判据 1）：本步原先是整个 job 里最静默的一条路径
-            # （月度跑一次、多数月份零动作）⇒ 现在它明确说「我看了、没变化、所以没动」。
-              if [ -f .github/scripts/mechanism_liveness.sh ]; then
-              source .github/scripts/mechanism_liveness.sh
-              mechanism_liveness_declare --seen 1 --acted 0 --why "fixtures 无变化（零动作，不是没跑）" || true
-            fi
           else
+            mechanism_liveness_declare() { :; }
           fi
           if [ -z "$(git status --porcelain -- tests/e2e/fixtures/)" ]; then
             echo "✅ fixtures 无变化，无需更新"
+            # 零动作**也必须出声**（issue #5326 判据 1 / 4）：本步原先是整个 job 里最静默的一条路径
+            # （月度跑一次、多数月份零动作）⇒ 现在它明确说「我看了、没变化、所以没动」。
+            mechanism_liveness_declare --seen 1 --acted 0 --why "fixtures 无变化（零动作，不是没跑）" || true
           else
             git config user.name "migao-fixture-bot"
             git config user.email "fixture-bot@users.noreply.github.com"
@@ -74,6 +72,7 @@ jobs:
             gh pr create --title "chore(e2e): 重录 API fixtures（月度自动）" \
               --body "月度 fixture 重录，保持 quality 测试数据新鲜。录制即脱敏（手机号确定性掩码）。" \
               --base main
+            mechanism_liveness_declare --seen 1 --acted 1 --why "fixtures 有变化 ⇒ 已开重录 PR（${BRANCH}）" || true
           fi
 
       - name: Notify on failure (dedup guard)
@@ -115,5 +114,5 @@ jobs:
       - name: 存活读数（本轮做了什么 / 为什么零动作）
         if: always()
         env:
-          OUTCOME: ${ job.status }
+          OUTCOME: ${{ job.status }}
         run: bash .github/scripts/mechanism_liveness.sh emit fixture-record --outcome "$OUTCOME"
