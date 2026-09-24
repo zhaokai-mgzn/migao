@@ -37,6 +37,8 @@ from app.agents.customer_service_agent import (
 )
 from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import CUSTOMER_ONLY_ROLES, ToolContext  # 角色口径单点（#4013 A10）
+# 页面上下文（issue #5371 族 4）：route→真值源登记表 + **默认拒绝**的注入面
+from app.context.page_registry import build_page_context, render_page_context
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
 # 图片管线（URL 校验 / CDN 重写 / 文本提示）的**单一事实源**（issue #5321 包 1）：
@@ -1807,6 +1809,71 @@ async def _handle_form_request(
     return await send_message(injected_request, current_user)
 
 
+# ============ 页面上下文（issue #5371 族 4）============
+
+
+async def _handle_page_ctx_request(
+    request: "ChatSendRequest",
+    tenant_id: int,
+    user_id: str,
+    current_user,
+):
+    """处理 `page_context` 字段：**按角色裁剪** → 登记 route 才注入 → 复算本轮用户消息。
+
+    入参形态：`ChatSendRequest.page_context = {"route": "/orders/new", "entityId": "<uuid>"}`
+
+    设计（`docs/agent-feature-design.md` §三 族 4 / issue #5371）：
+    - **只认路径与 id**：查询串在前端就丢、服务端再丢一次；payload 里的其它键（含
+      `role` / 实体快照）**一律忽略** —— 上下文注入是新的越权面，客户端说了不算；
+    - **角色/权限只从服务端会话取**（`current_user.role` / `.permissions`）；
+    - 🔴 **未登记的 route ⇒ 不注入**（默认拒绝）：只注入**常量**降级提示，
+      route / id **一个字都不进 LLM**（「猜错页面比不猜更烦」）。
+    """
+    from app.memory.session_service import SessionService
+    from app.utils.log_sanitizer import LogSanitizer
+
+    # ── 安全校验：与 send_message 共用统一守卫（存在/租户/用户/closed + 刷新 last_activity）──
+    session_memory = SessionMemory()
+    session_service = SessionService(session_memory)
+    session_id = request.session_id
+    if not session_id:
+        session_id = await session_memory.create_session(
+            tenant_id=tenant_id, customer_id=user_id, title=None,
+        )
+    else:
+        _session, _gate_error = await session_service.send_gate(
+            session_id, tenant_id=tenant_id, user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
+
+    payload = request.page_context if isinstance(request.page_context, dict) else {}
+
+    # 角色 / 权限**只从服务端会话取**；payload 里的 role / permissions / 实体快照一律不读
+    context = build_page_context(
+        payload.get("route"),
+        payload.get("entityId"),
+        role=current_user.role,
+        permissions=getattr(current_user, "permissions", None),
+    )
+
+    # 留痕只记「登记与否」，不记 route 原文 / id（防 PII 与路径进日志）；问题文本脱敏
+    logger.info(
+        f"[page-ctx] route={'registered' if context is not None else 'unregistered'} "
+        f"| tenant={tenant_id} user={user_id} session={session_id} "
+        f"msg={LogSanitizer.mask_text(request.message[:80])}"
+    )
+
+    injected_request = ChatSendRequest(
+        session_id=session_id,
+        message=render_page_context(request.message, context),
+        images=request.images,
+        ignored_suggestions=request.ignored_suggestions,
+        # page_context 不再下发（本轮已消费：防重复注入，也防入口再分派成自递归）
+    )
+    return await send_message(injected_request, current_user)
+
+
 # ============ API 路由 ============
 
 @router.post("/send")
@@ -1838,6 +1905,10 @@ async def send_message(
     # ── __FORM__ 表单协议：解析字段注入 LLM 上下文（C 端表单化交互）──
     if request.message.startswith("__FORM__|"):
         return await _handle_form_request(request, tenant_id, user_id, current_user)
+
+    # ── 页面上下文（issue #5371 族 4）：未登记 route ⇒ 不注入（默认拒绝）──
+    if request.page_context is not None:
+        return await _handle_page_ctx_request(request, tenant_id, user_id, current_user)
 
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
