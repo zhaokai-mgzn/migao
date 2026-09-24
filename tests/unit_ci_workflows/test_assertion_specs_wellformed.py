@@ -19,8 +19,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
 
 from render_cases import load_case_dicts  # noqa: E402
+from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 收敛：唯一取值口径）
+    assigned_strings,
+    declared_strings,
+    nested_string_members,
+)
+
+#: 工具类名必须是**纯小写标识符**（与旧口径 `"([a-z_][a-z0-9_]*)"` 同一个过滤口径，只是不再扫原文）。
+_PLAIN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
+
+#: schema 里动作枚举的**结构化路径**（`parameters.properties.action.enum`）。
+#: 旧口径用 `"action"\s*:\s*\{[^}]*?"enum"\s*:\s*\[([^\]]*)\]` 扫**全文原文**，注释里一句同形文本即可喂中。
+_ACTION_ENUM_PATH = ("properties", "action", "enum")
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
@@ -39,6 +53,20 @@ def _specs(case, field):
         yield s if isinstance(s, dict) else {"tool": s}
 
 
+def _multi_action_actions(src: str, where: str) -> set:
+    """**纯函数**：一份工具源码的动作集（唯一取值口径见 `tests/unit_ci_workflows/_source_parsing.py`）。
+
+    `#5323` 第 2 条（本轮收口）：旧口径在**原文**上跑
+    `re.search(r"VALID_ACTIONS\\s*=\\s*[\\{\\[](.*?)[\\}\\]]")` + 按引号 `findall`，
+    且用 `"action"\\s*:\\s*\\{[^}]*?"enum"…` 扫**全文** ⇒ 注释或文档字符串里一句同形文本
+    就能把动作集**喂大**（假绿：多 action 工具被读成别的形状 ⇒ 判据失去判别力）。
+    现口径 = `ast` 读字面量声明（注释不是 AST 节点）+ 按 `parameters.properties.action.enum` 结构化下钻。
+    """
+    acts = set(assigned_strings(src, "VALID_ACTIONS", where))
+    acts |= set(nested_string_members(src, "parameters", _ACTION_ENUM_PATH, where))
+    return acts
+
+
 def _multi_action_tools() -> dict:
     """从 tool 源码解析**多 action 工具** → {工具名: 动作集合}（单一源 = 工具源码）。
 
@@ -48,25 +76,20 @@ def _multi_action_tools() -> dict:
     可能核对到**别的 action** 的 payload：字段名不撞 = **假红**（PP-006 实证），
     撞上 = **假绿**。故「多 action 工具必须显式声明 `action`」必须左移成 L0 不变式。
 
-    判定信号（纯文本解析，CI helper job 无 app 依赖）：
-      ① `VALID_ACTIONS = {...}` 且动作数 ≥2；或
-      ② schema 里 `"action": {..., "enum": [a, b, ...]}` 且 ≥2。
+    判定信号（**AST 读字面量声明**，CI helper job 无 app 依赖）：
+      ① `VALID_ACTIONS = {...} / [...] / (...)` 且动作数 ≥2；或
+      ② schema 里 `parameters.properties.action.enum` 且 ≥2。
     """
     out = {}
     for f in sorted(TOOLS_DIR.glob("*.py")):
         src = f.read_text(encoding="utf-8")
-        m = re.search(r'^\s*name\s*=\s*"([a-z_][a-z0-9_]*)"', src, re.M)
-        if not m:
+        where = f"tools/{f.name}"
+        names = [n for n in declared_strings(src, "name", where) if _PLAIN_NAME_RE.fullmatch(n)]
+        if not names:
             continue
-        acts = set()
-        va = re.search(r"VALID_ACTIONS\s*=\s*[\{\[](.*?)[\}\]]", src, re.DOTALL)
-        if va:
-            acts |= set(re.findall(r'"([a-z_]+)"', va.group(1)))
-        en = re.search(r'"action"\s*:\s*\{[^}]*?"enum"\s*:\s*\[([^\]]*)\]', src, re.DOTALL)
-        if en:
-            acts |= set(re.findall(r'"([a-z_]+)"', en.group(1)))
+        acts = _multi_action_actions(src, where)
         if len(acts) >= 2:
-            out[m.group(1)] = acts
+            out[names[0]] = acts
     return out
 
 
@@ -409,3 +432,58 @@ class TestAssertionVocabularyIsExercised:
         assert not stale, (
             f"这些字段已有用例使用，却还挂在 UNUSED_ALLOWED 里：{stale} —— 请移除以保持豁免表真实"
         )
+
+
+class TestActionSetParsingIsSyntaxBased:
+    """`#5323` 第 2 条成对红证：动作集只认**代码里**的声明（且检测器仍能认出真工具）。"""
+
+    #: 真声明（值**真**写在代码里）。
+    REAL = (
+        "class DemoTool(BaseTool):\n"
+        '    name = "demo_tool"\n'
+        "    parameters = {\n"
+        '        "properties": {"action": {"enum": ["list", "detail"]}},\n'
+        "    }\n"
+        "\n"
+        'VALID_ACTIONS = {"list", "detail"}\n'
+    )
+
+    #: 旧口径会读成声明的两个陷阱：`#` 注释行 + 模块文档字符串举例（**代码零改动**）。
+    COMMENTED = (
+        '# VALID_ACTIONS = {"ghost_a", "ghost_b"}  ← 留档注释（这不是声明）\n'
+        '"""示例（说明文字，不是代码）：\n'
+        'VALID_ACTIONS = {"ghost_a", "ghost_b"}\n'
+        '    "enum": ["ghost_a", "ghost_b"]\n'
+        '"""\n'
+        "class DemoTool(BaseTool):\n"
+        '    name = "demo_tool"\n'
+        "    parameters = {\n"
+        '        # "action": {"enum": ["ghost_a", "ghost_b"]},\n'
+        '        "properties": {"action": {"enum": ["list", "detail"]}},\n'
+        "    }\n"
+        "\n"
+        'VALID_ACTIONS = {"list", "detail"}\n'
+    )
+
+    def test_comment_and_docstring_are_not_declarations(self):
+        """负例：注释 / 文档字符串里的同形文本 ⇒ **不得**被读成动作（修前此断言必红）。"""
+        acts = _multi_action_actions(self.COMMENTED, "fixture")
+        assert acts == {"list", "detail"}, f"注释 / 文档字符串被读成声明：{sorted(acts)}"
+        assert not {"ghost_a", "ghost_b"} & acts, "幽灵动作被读进了动作集"
+
+    def test_real_declarations_are_read(self):
+        """正例（防修过头）：两处真声明都读到 + 改真值 ⇒ 读数跟着变（判据不是恒真）。"""
+        assert _multi_action_actions(self.REAL, "fixture") == {"list", "detail"}
+        mutated = self.REAL.replace('["list", "detail"]', '["list", "ghost"]')
+        assert _multi_action_actions(mutated, "fixture") == {"list", "detail", "ghost"}, (
+            "真声明改值后读数不跟 ⇒ 判据恒真（空断言）"
+        )
+
+    def test_tuple_and_indirect_enum_are_read(self):
+        """**增强**读数（本 PR 修掉的一处漏检）：`batch_stock_query` 的声明是**元组**
+        `VALID_ACTIONS = ("batches", …)` 且 schema 写 `"enum": list(VALID_ACTIONS)`
+        ⇒ 旧口径两个正则都读不到（一个真·多 action 工具被漏检）；现口径读到 4 个动作。"""
+        multi = _multi_action_tools()
+        assert multi.get("batch_stock_query") == {
+            "batches", "distribution", "saving_board", "saving_trend"}, (
+            f"元组形态的 VALID_ACTIONS / 一层回指的 enum 未被读到：{multi.get('batch_stock_query')}")

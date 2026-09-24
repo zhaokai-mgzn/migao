@@ -123,6 +123,14 @@ def _load_attribution():
 
 ATTR = _load_attribution()
 
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 第 1 条：Java 剥注释的唯一实现）
+    java_code,
+    java_literals,
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 二、读源（**全部走源码文本**，便于注入式红证：改一处文本 ⇒ 判据必红）
@@ -399,15 +407,40 @@ def parse_catalog(reg_text: str, perm_text: str) -> tuple[tuple[str, ...], tuple
     return reg, perm
 
 
+def _java_string_arg(body: str, callee: str) -> str:
+    """Java 片段里 `callee("字面量")` 的**字面量值**（按**词法**定位；取不到 ⇒ `""`）。
+
+    `#5323` 第 1 条：旧口径 `re.search(r'code\\("([^"]+)"\\)', body)` 在**原文**上搜 ⇒
+    注释里写一行 `// .code("ghost")` 就被读成该岗位的角色码（首命中即取）。现口径 = 剥注释
+    （`java_code`）+ 词法取字面量（`java_literals`）并按**前缀**归属到 `callee`。
+    """
+    for pos, value in java_literals(body):
+        if body[:pos].rstrip().endswith(callee):
+            return value
+    return ""
+
+
 def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
-    """S4：内置岗位默认权限（`Role.builder()...code("x")` 变量 + `attachDefaultPermissions` 列表）。"""
-    var_to_code = dict(re.findall(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', reg_text, re.S))
-    var_to_code = {v: re.search(r'code\("([^"]+)"\)', body).group(1) for v, body in var_to_code.items()
-                   if re.search(r'code\("([^"]+)"\)', body)}
+    """S4：内置岗位默认权限（`Role.builder()...code("x")` 变量 + `attachDefaultPermissions` 列表）。
+
+    `#5323` 第 1 条（required 判据）：三处取值**一律先剥 Java 注释**（共享实现
+    `_source_parsing.java_code`，**引号感知** ⇒ 字符串里的 `//`（`"http://x"`）不会被截断），
+    再按**词法**取字面量（`java_literals`）—— 注释里写一个 `code("x")` 或 `"x"` 不再被读成声明。
+    旧口径在**原文**上跑 `re.findall(r'"([^"]+)"', …)`：注释里的码被当成「真的挂了这个码」
+    （假绿：漏检「该挂没挂」；兼假红：判禁用码 / 多余码时）。
+    """
+    code = java_code(reg_text)
+    var_to_code: dict[str, str] = {}
+    for var, body in dict(
+        re.findall(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', code, re.S)
+    ).items():
+        role_code = _java_string_arg(body, "code(")
+        if role_code:
+            var_to_code[var] = role_code
     out: dict[str, frozenset[str]] = {}
     for m in re.finditer(
         r"attachDefaultPermissions\(tenantId,\s*(\w+),\s*(List\.of\(([^)]*)\)|permissionByCode\.keySet\(\))",
-        reg_text,
+        code,
         re.S,
     ):
         var, arg, codes = m.group(1), m.group(2), m.group(3)
@@ -416,17 +449,24 @@ def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
         if arg.startswith("permissionByCode"):
             out[role] = frozenset({"*"})       # admin 恒为全部权限
         else:
-            out[role] = frozenset(re.findall(r'"([^"]+)"', codes or ""))
+            out[role] = frozenset(value for _pos, value in java_literals(codes or ""))
     assert len(out) >= 5, f"内置岗位解析出 {len(out)} 个 ⇒ 判据会空跑（fail-closed）：{sorted(out)}"
     return out
 
 
 def parse_role_fallback(role_text: str) -> dict[str, frozenset[str]]:
-    """S4（回退口径）：`RoleService.getPermissionCodesForRole` 的硬编码 `case "x" -> List.of(...)`。"""
-    body = role_text[role_text.find("getPermissionCodesForRole(String roleCode)"):]
-    assert body, "`RoleService.getPermissionCodesForRole` 找不到（解析失配 ⇒ 红）"
+    """S4（回退口径）：`RoleService.getPermissionCodesForRole` 的硬编码 `case "x" -> List.of(...)`。
+
+    口径同 `parse_role_defaults`（`#5323` 第 1 条）：先剥注释再按**词法**取字面量 ——
+    注释里的 `case "x" -> List.of("y");` 不算回退分支。方法找不到 ⇒ 红（fail-closed；
+    旧版这里 `find()` 返回 -1 时静默切片，会让回退表**空表恒绿**）。
+    """
+    code = java_code(role_text)
+    start = code.find("getPermissionCodesForRole(String roleCode)")
+    assert start != -1, "`RoleService.getPermissionCodesForRole` 找不到（解析失配 ⇒ 红）"
+    body = code[start:]
     return {
-        m.group(1): frozenset(re.findall(r'"([^"]+)"', m.group(2)))
+        m.group(1): frozenset(value for _pos, value in java_literals(m.group(2)))
         for m in re.finditer(r'case\s+"([^"]+)"\s*->\s*List\.of\(([^;]*?)\);', body, re.S)
     }
 
@@ -1847,3 +1887,101 @@ def test_every_judgement_can_go_red() -> None:
         assert sources[key] != base_sources[key], f"{label}：注入没生效（锚点失配）—— 同步本判据"
         mutated = build_world(sources)
         assert judgement(mutated), f"{label}：判据没有变红 ⇒ 它是空断言"
+
+
+# ── issue #5323 第 1 条：岗位默认权限 / 角色码的**取值口径**（注释不是代码）───────────────
+
+
+def _comment_only_attach_code(text: str, role_fragment: str, code: str) -> str:
+    """在 `attachDefaultPermissions(...List.of(` 的**参数区里**插一行注释（**代码零改动**）。
+
+    注入的码只出现在注释里 ⇒ 任何读数都不得变化（旧口径会把它读成「该岗位挂了这个码」）。
+    """
+    anchor = f"attachDefaultPermissions(tenantId, {role_fragment}, List.of("
+    idx = text.find(anchor)
+    assert idx != -1, f"注入锚点失配：找不到 `{anchor}`（同步本夹具）"
+    end = text.find("permissionByCode)", idx)
+    assert end != -1, "注入锚点失配：找不到该岗位列表的结尾"
+    block = text[idx:end]
+    injected = block.replace(
+        "List.of(",
+        f'List.of(\n                // 留档注释（代码零改动）："{code}" 已随 issue #5247 解绑，曾在此列表里\n                ',
+        1,
+    )
+    assert injected != block, "注入没生效（锚点失配）"
+    return text[:idx] + injected + text[end:]
+
+
+def _comment_only_role_code(text: str, role_fragment: str, code: str) -> str:
+    """在 `Role.builder()` 身体里插一行注释，其中写着 `code("…")`（**代码零改动**）。"""
+    anchor = f"Role {role_fragment} = Role.builder()\n"
+    idx = text.find(anchor)
+    assert idx != -1, f"注入锚点失配：找不到 `{anchor}`（同步本夹具）"
+    at = idx + len(anchor)
+    return text[:at] + f'                // 留档注释（代码零改动）：曾写 code("{code}")\n' + text[at:]
+
+
+def _comment_only_fallback_case(text: str, code: str) -> str:
+    """在 `RoleService` 的 switch 里插一行注释，写着 `case "…" -> List.of("…");` 形态。"""
+    anchor = 'case "admin" -> List.of("*");'
+    idx = text.find(anchor)
+    assert idx != -1, '注入锚点失配：找不到 `case "admin" -> List.of("*");`（同步本夹具）'
+    line_start = text.rfind("\n", 0, idx) + 1
+    inject = f'// 留档注释（代码零改动）：case "{code}" -> List.of("ghost:code");\n            '
+    return text[:line_start] + inject + text[line_start:]
+
+
+class TestRolePermissionParsingIsCommentAware:
+    """`#5323` 第 1 条成对红证：权限码 / 角色码只认**代码**里的声明（required 判据）。"""
+
+    def test_comment_only_injections_do_not_move_any_reading(self):
+        """负例：三处各注入一行**注释**（代码零改动）⇒ 读数**逐值不变**（差分为零）。"""
+        base = _source_map()
+        reg = base["java:service/RegistrationService.java"]
+        role_text = base["java:service/RoleService.java"]
+        baseline_roles = parse_role_defaults(reg)
+        baseline_fallback = parse_role_fallback(role_text)
+        assert baseline_fallback, "前提：回退表解析非空（否则下面的负控是空跑）"
+
+        injected = _comment_only_attach_code(reg, "financeRole", "ghost:code")
+        assert injected != reg, "注入没生效（锚点失配）"
+        assert parse_role_defaults(injected) == baseline_roles, (
+            "`List.of(...)` 参数区里的**注释**被读成了「该岗位挂了这个码」")
+
+        with_comment_code = _comment_only_role_code(reg, "financeRole", "ghost_role")
+        assert with_comment_code != reg, "注入没生效（锚点失配）"
+        assert parse_role_defaults(with_comment_code) == baseline_roles, (
+            "`Role.builder()` 身体里注释中的 `code(\"…\")` 被读成了角色码")
+
+        injected_role = _comment_only_fallback_case(role_text, "ghost")
+        assert injected_role != role_text, "注入没生效（锚点失配）"
+        assert parse_role_fallback(injected_role) == baseline_fallback, (
+            "注释里的 `case \"…\" -> List.of(…)` 被读成了回退分支")
+
+    def test_real_code_injection_does_move_the_reading(self):
+        """正例（防修过头）：把码**真**写进 `List.of(...)` ⇒ 读数跟着变（判据照旧被行使）。"""
+        reg = _source_map()["java:service/RegistrationService.java"]
+        baseline = parse_role_defaults(reg)
+        mutated = parse_role_defaults(_add_role_code(reg, "financeRole", "product:category"))
+        assert mutated["finance"] == baseline["finance"] | {"product:category"}, sorted(mutated["finance"])
+
+    def test_synthetic_comment_payloads_read_nothing(self):
+        """负例（合成载荷）：三处都**只**在注释里声明 ⇒ 一个都不被读到；真写则读到。"""
+        assert _java_string_arg('// .code("ghost_role")\n.code("finance")\n', "code(") == "finance"
+        assert _java_string_arg('// .code("ghost_role")\n', "code(") == ""
+        role_text = (
+            "class S {\n"
+            "    private List<String> getPermissionCodesForRole(String roleCode) {\n"
+            "        return switch (roleCode) {\n"
+            '            // case "ghost" -> List.of("ghost:code");\n'
+            '            case "operator" -> List.of("order:list");\n'
+            "        };\n"
+            "    }\n"
+            "}\n"
+        )
+        assert parse_role_fallback(role_text) == {"operator": frozenset({"order:list"})}
+        real = role_text.replace('// case "ghost"', 'case "ghost"')
+        assert parse_role_fallback(real) == {
+            "ghost": frozenset({"ghost:code"}), "operator": frozenset({"order:list"})}, (
+            "真写进 switch 的分支没被读到 ⇒ 判据恒绿（空断言）"
+        )

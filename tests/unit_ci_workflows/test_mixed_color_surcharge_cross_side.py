@@ -43,9 +43,17 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 第 7 条：剥注释的唯一实现）
+    code_without_comments,
+    java_code,
+)
 
 #: 真值源（报价侧）：算料引擎常量
 CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
@@ -66,8 +74,6 @@ VECTORS: tuple[tuple[float, str], ...] = ((34.1, "81.84"), (62.7, "150.48"))
 
 _NUM = re.compile(r"^\s*(?:static\s+final\s+)?(?:public\s+|private\s+)?(?:BigDecimal\s+)?" + CONST
                   + r"\s*=\s*(?:new\s+BigDecimal\(\s*)?\"?([0-9]+(?:\.[0-9]+)?)\"?", re.M)
-_JAVA_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-_JAVA_LINE_COMMENT = re.compile(r"//[^\n]*")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -75,13 +81,25 @@ _JAVA_LINE_COMMENT = re.compile(r"//[^\n]*")
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _java_code_only(text: str) -> str:
-    """去掉 Java 注释后的源码（**注释里提到常量名不算消费** —— 否则 G2 会退化成恒真）。"""
-    return _JAVA_LINE_COMMENT.sub("", _JAVA_BLOCK_COMMENT.sub("", text))
+    """去掉 Java 注释后的源码（**注释里提到常量名不算消费** —— 否则 G2 会退化成恒真）。
+
+    走共享实现 `_source_parsing.java_code`（**引号感知**）：字符串里的 `//`
+    （如 `isEqualByComparingTo("a//b")`）不得被当成注释起点 —— 旧口径按 `//` 截断会把
+    该行后半截一起吃掉（同行的断言随之消失）。
+    """
+    return java_code(text)
 
 
 def _python_code_only(text: str) -> str:
-    """去掉 Python `#` 注释后的源码（同因：注释里的数字/常量名不得充当判据 —— §19.2 ③）。"""
-    return re.sub(r"#[^\n]*", "", text)
+    """去掉 Python `#` 注释后的源码（同因：注释里的数字/常量名不得充当判据 —— §19.2 ③）。
+
+    `#5323` 第 7 条：旧口径 `re.sub(r"#[^\\n]*", "", text)` **未先清空字符串**就按 `#` 截断
+    ⇒ 字符串里的 `#`（`"#FF0000"`）把**该行后半截**一起吃掉 ⇒ 同一行的期望值断言**漏检**。
+    现口径 = 共享实现 `_source_parsing.code_without_comments`（`tokenize`：只丢 `COMMENT`、
+    **保留** `STRING`）⇒ `#` 落在字符串里由**词法**保证它不是注释
+    （本判据要读的正是字符串里的断言形态，故**不能**用「先清空字符串」那种修法）。
+    """
+    return code_without_comments(text, "拼色加价算例测试")
 
 
 def _asserted_expectation(text: str, expected: str, *, java: bool) -> bool:
@@ -372,3 +390,45 @@ class TestGuardSelfProof:
         assert vector_defects(2.4, 2.4, py_test.replace("== 81.84", "== 99.99"), java_test), \
             "只改一侧期望值没报 ⇒ G5 是空断言"
         assert vector_defects(2.4, 2.5, py_test, java_test), "只改一侧常量没报 ⇒ G5 是空断言"
+
+
+class TestCommentStrippingIsLexicalNotTextual:
+    """`#5323` 第 7 条：剥注释必须按**词法**（`tokenize` / 引号感知），不是按 `#` / `//` 截断。
+
+    ⚠️ 这条**不能**用「先清空字符串、再剥 `#`」的修法：本判据要读的正是**字符串里**的断言形态
+    （G5 的 Java 侧就是 `isEqualByComparingTo("81.84")`），清空字符串 = 判据失去被测对象
+    ⇒ 必须走 `tokenize`（丢 `COMMENT`、保留 `STRING`）。
+    """
+
+    #: **防假绿**载荷：字符串里含 `#`，且**同一行**后面就是算例期望值的断言。
+    #: 旧口径从 `#` 截到行尾 ⇒ `== 81.84` 一起消失 ⇒ 期望值**漏检**。
+    PY_HASH_IN_STRING = 'assert q["color_hex"] == "#FF0000"; assert q["mixed_color_surcharge"] == 81.84\n'
+
+    #: 旧口径在该载荷上的产物（逐字留档）：截断后 `81.84` 已不在该行里。
+    PY_NAIVE_CUT = 'assert q["color_hex"] == "'
+
+    def test_comment_only_expectation_is_dropped(self):
+        """前提自证：期望值只在**注释**里 ⇒ 剥注释后读不到（剥注释这一层真的在起作用）。"""
+        assert _asserted_expectation(_python_code_only("# 期望 81.84\nx = 1\n"), "81.84",
+                                     java=False) is False
+        assert _asserted_expectation(_java_code_only("// 期望 81.84\nx();\n"), "81.84",
+                                     java=True) is False
+
+    def test_hash_inside_a_string_does_not_eat_the_line(self):
+        """**防假绿红证**：字符串里的 `#` ⇒ 修前漏检（留档产物读不到）、修后必须检出。"""
+        assert _asserted_expectation(self.PY_NAIVE_CUT, "81.84", java=False) is False, (
+            "留档的旧口径产物竟能读到期望值 ⇒ 本红证失去判别力（同步它）"
+        )
+        stripped = _python_code_only(self.PY_HASH_IN_STRING)
+        assert "81.84" in stripped, f"字符串里的 `#` 吃掉了行尾：{stripped!r}"
+        assert _asserted_expectation(stripped, "81.84", java=False), (
+            "同一行、字符串里含 `#` 的期望值断言被漏检（旧口径的假绿形态）"
+        )
+
+    def test_slash_slash_inside_a_java_string_does_not_cut(self):
+        """Java 侧同理：字符串里的 `//` 不得截断（否则同一行的断言一起消失）。"""
+        java = ('assertThat(x).isEqualByComparingTo("a//b");'
+                ' assertThat(y).isEqualByComparingTo("81.84");\n')
+        stripped = _java_code_only(java)
+        assert "81.84" in stripped, f"字符串里的 `//` 吃掉了行尾：{stripped!r}"
+        assert _asserted_expectation(stripped, "81.84", java=True)
