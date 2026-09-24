@@ -82,13 +82,23 @@
       "replacement": "        // [RED-PROOF] 闸被摘掉\n",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=PoolBoardUrgencyTest#pooledBatchContainingUrgentOrderIsRejectedFailClosed", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=PoolBoardUrgencyTest#pooledBatchContainingUrgentOrderIsRejectedFailClosed",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.PoolBoardUrgencyTest",
         "method": "pooledBatchContainingUrgentOrderIsRejectedFailClosed",
         "red_text": "Expecting code to raise a throwable"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3（基线 / 注入 / 还原），Maven 离线增量"
     },
     {
@@ -101,13 +111,23 @@
       "replacement": "                    // [RED-PROOF] 撤销依据不再落库\n                    .oldValue(null)\n",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AgentBatchServiceTest", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AgentBatchServiceTest",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AgentBatchServiceTest",
         "method": "persistsPreviewWithOldValueCollectedFromDb",
         "red_text": "撤销的唯一依据"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3"
     },
     {
@@ -120,13 +140,23 @@
       "replacement": "        update.set(Order::getUpdatedAt, OffsetDateTime.now());\n        // [RED-PROOF] 顺手把订单状态也同步一行\n        update.set(Order::getStatus, order.getStatus());\n        orderMapper.update(null, update);",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=OrderUrgencyFieldsTest#updateUrgencyWritesOnlyTheTwoOwnColumns", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=OrderUrgencyFieldsTest#updateUrgencyWritesOnlyTheTwoOwnColumns",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.OrderUrgencyFieldsTest",
         "method": "updateUrgencyWritesOnlyTheTwoOwnColumns",
         "red_text": "零联动 / 不损失客户"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3"
     },
     {
@@ -139,13 +169,23 @@
       "replacement": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true; // [RED-PROOF]",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AutoBatchDispatchTest#defaultOffDoesNothingAtAll", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AutoBatchDispatchTest#defaultOffDoesNothingAtAll",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AutoBatchDispatchTest",
         "method": "defaultOffDoesNothingAtAll",
         "red_text": "缺省 = 关"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3"
     },
     {
@@ -158,13 +198,23 @@
       "replacement": "        if (false) { // [RED-PROOF] 缺省关的闸被拆掉",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AutoBatchDueScanServiceTest#defaultOffMeansZeroAction", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AutoBatchDueScanServiceTest#defaultOffMeansZeroAction",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AutoBatchDueScanServiceTest",
         "method": "defaultOffMeansZeroAction",
         "red_text": "没有扫 ⇒ enabled=false"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3"
     },
     {
@@ -177,13 +227,23 @@
       "replacement": "            if (true) {",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=CuttingPlanCalculatorTest#fixedHeightTallWindowsPairIntoOneRow", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=CuttingPlanCalculatorTest#fixedHeightTallWindowsPairIntoOneRow",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.CuttingPlanCalculatorTest",
         "method": "fixedHeightTallWindowsPairIntoOneRow",
         "red_text": "必须并排成一行"
       },
-      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3（该类逐条判据强制重编译，机具全量实测约半小时）"
     },
     {
@@ -196,13 +256,25 @@
       "replacement": "ROUND(SUM((c.formula_meters - c.planned_meters) * c.unit_cost), 2)",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=SavingMetricsBoardRealDbTest#boardTotalsEqualPerLineSum", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=SavingMetricsBoardRealDbTest#boardTotalsEqualPerLineSum",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.SavingMetricsBoardRealDbTest",
         "method": "boardTotalsEqualPerLineSum",
         "red_text": "看板合计 == Σ 逐单 saved_amount"
       },
-      "requires": ["cmd:java", "cmd:initdb", "cmd:pg_ctl", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "cmd:initdb",
+        "cmd:pg_ctl",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类单方法 ×3（真库判据：一次性 initdb + pg_ctl 集群）"
     },
     {
@@ -215,12 +287,22 @@
       "replacement": "  if (n === null) return '0'\n  return digits === 0 ? String(Math.round(n)) : trimTrailingZeros(n.toFixed(digits))",
       "criteria": {
         "cwd": "frontend/admin-web",
-        "cmd": ["npx", "vitest", "run", "tests/unit/lib/saving-board.test.ts"],
+        "cmd": [
+          "npx",
+          "vitest",
+          "run",
+          "tests/unit/lib/saving-board.test.ts"
+        ],
         "kind": "stdout",
-        "red_text": "Tests\\s+\\d+ failed \\(\\d+\\)"
+        "red_text": "Tests\\s+\\d+ failed"
       },
-      "requires": ["cmd:npm", "dir:frontend/admin-web/node_modules"],
-      "link_deps": ["frontend/admin-web/node_modules"],
+      "requires": [
+        "cmd:npm",
+        "dir:frontend/admin-web/node_modules"
+      ],
+      "link_deps": [
+        "frontend/admin-web/node_modules"
+      ],
       "cost": "单文件 vitest ×3（依赖只读软链进副本；机具全量实测 12s）"
     },
     {
@@ -233,11 +315,19 @@
       "replacement": "SECRETS_RE.search(text)",
       "criteria": {
         "cwd": ".",
-        "cmd": ["python3", "-m", "pytest", "tests/unit_ci_workflows/test_automerge_bot_safe_path.py", "-q"],
+        "cmd": [
+          "python3",
+          "-m",
+          "pytest",
+          "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+          "-q"
+        ],
         "kind": "stdout",
         "red_text": "FAILED .*TestCriterion9SecretsCommentOnlyArms"
       },
-      "requires": ["cmd:python3"],
+      "requires": [
+        "cmd:python3"
+      ],
       "cost": "单个 pytest 文件 ×3（零 Maven / 零 npm / 零 PG）",
       "note": "**这一条就是类别里那两例（#5268 判据 4 / #5286 判据 4）的现行形态**：注释里的 `secrets.*` 一旦被当引用，判据 9 必红；反之（例如尺子被抽走）巡检报「该红证已退化」。"
     }

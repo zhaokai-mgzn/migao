@@ -306,6 +306,12 @@ def surefire_case(copy: Path, crit: dict) -> tuple[dict | None, str]:
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
+def _tail(text: str, limit: int = 1200) -> str:
+    """取输出**尾部**：测试摘要（`Tests N failed` / `Test Files N failed`）都打在最后几行 ——
+    只报头部会让「红了但形态不符」不可归因（§23 G3）。"""
+    return text[-limit:] if len(text) > limit else text
+
+
 def strip_ansi(text: str) -> str:
     """剥掉 ANSI 转义序列再匹配红形态。
 
@@ -344,7 +350,8 @@ def red_evidence(entry: dict, copy: Path, run: Run) -> tuple[str, str]:
         return "degenerate", "退出码 0（判据没有红）"
     if frag and not re.search(frag, strip_ansi(run.out)):
         return "red_form_mismatch", (f"判据已红（rc={run.rc}），但输出里没有登记册声明的红形态"
-                                     f"（期望 /{frag}/；实测：{_snippet(run.out)}）")
+                                     f"（期望 /{frag}/；**尾部**（摘要常在此）：{_snippet(_tail(run.out))}；"
+                                     f"头部：{_snippet(run.out)}）")
     return "red", f"rc={run.rc} 且输出命中期望形态 /{frag}/"
 
 
