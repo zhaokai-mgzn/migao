@@ -1,11 +1,22 @@
-// case_ids: DA-001, DA-002, ST-001
+// case_ids: DA-001, DA-002, ST-001, DA-016
 
 package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.migao.admin.config.MybatisPlusConfig;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.DailyBriefing;
+import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.Tenant;
 import com.migao.admin.mapper.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -25,11 +37,15 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +80,12 @@ class DailyBriefingServiceTest {
     private AfterSalesTicketMapper afterSalesTicketMapper;
     @Mock
     private OrderItemMapper orderItemMapper;
+    @Mock
+    private OrderLogisticsMapper orderLogisticsMapper;
+    @Mock
+    private ProductSkuMapper productSkuMapper;
+    @Mock
+    private ProductMapper productMapper;
     @Mock
     private ProductService productService;
     @Mock
@@ -110,6 +132,14 @@ class DailyBriefingServiceTest {
 
     @BeforeEach
     void setUp() {
+        // MyBatis-Plus 实体 lambda 缓存：行数组装配（issue #5358）用 LambdaQueryWrapper，
+        // 判据要读 wrapper 的 SQL 段与参数对 ⇒ 需先注册 TableInfo（同 OrderServiceTest 的做法）。
+        MybatisConfiguration conf = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
+        for (Class<?> entity : List.of(Order.class, OrderItem.class, OrderLogistics.class,
+                ProductSku.class, Product.class, AfterSalesTicket.class)) {
+            TableInfoHelper.initTableInfo(assistant, entity);
+        }
         // 聚合快照默认 stub
         stubAggregations();
         // 分布式生成锁（issue #3957）：默认视为获取成功，既有生成用例语义不变；
@@ -571,6 +601,230 @@ class DailyBriefingServiceTest {
             assertThat(facts).isNotNull();
             String json = snapshot.toString();
             assertThat(json).doesNotContain("phone", "手机号", "nickname", "customerName", "地址");
+        }
+    }
+
+    @Nested
+    @DisplayName("行级快照装配（族 3 跨域视图内核，issue #5358）")
+    class SnapshotRows {
+
+        private Map<String, Object> orderRow() {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("order_no", "SO-1");
+            row.put("status", "confirmed");
+            row.put("customer_id", "C-1");
+            row.put("created_at", OffsetDateTime.parse("2026-09-12T10:00:00+08:00"));
+            row.put("shipped_at", null);          // 真实 MyBatis Map 结果里 NULL 列可能整键缺席
+            row.put("sale_amount", new BigDecimal("1200.00"));
+            return row;
+        }
+
+        private Map<String, Object> skuRow() {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("sku_id", 1L);
+            row.put("product_id", "P-1");
+            row.put("product_name", "雪尼尔-米白");
+            row.put("stock", new BigDecimal("20.0"));
+            return row;
+        }
+
+        private AfterSalesTicket returnTicket(String ticketNo, String orderId) {
+            return AfterSalesTicket.builder()
+                    .tenantId(1L).ticketNo(ticketNo).ticketType("return").orderId(orderId)
+                    .customerId("C-1").refundAmount(new BigDecimal("100.00"))
+                    .createdAt(OffsetDateTime.parse("2026-09-22T10:00:00+08:00"))
+                    .build();
+        }
+
+        private OrderItem orderItem(String orderId, String productId) {
+            return OrderItem.builder().tenantId(1L).orderId(orderId).productId(productId).build();
+        }
+
+        private Order order(String orderNo) {
+            return Order.builder().id("O-1").tenantId(1L).orderNo(orderNo).status("confirmed")
+                    .userId("C-1").createdAt(OffsetDateTime.parse("2026-09-12T10:00:00+08:00"))
+                    .actualAmount(new BigDecimal("1200.00")).totalAmount(new BigDecimal("1500.00"))
+                    .build();
+        }
+
+        private ProductSku sku() {
+            return ProductSku.builder().id(7L).tenantId(1L).productId("P-1")
+                    .stock(new BigDecimal("20.0")).build();
+        }
+
+        private Product product() {
+            return Product.builder().id("P-1").tenantId(1L).name("雪尼尔-米白").status("on_sale").build();
+        }
+
+        /** 标准行级 stub：一张单商品订单的退货 + 一张多商品订单的退货；SKU 库存 20（在售商品下） */
+        private void stubRows() {
+            when(orderMapper.selectList(any())).thenReturn(List.of(order("SO-1")));
+            when(orderLogisticsMapper.selectList(any())).thenReturn(List.of());   // 未发货
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(sku()));
+            when(productMapper.selectList(any())).thenReturn(List.of(product()));
+            when(afterSalesTicketMapper.selectList(any())).thenReturn(List.of(
+                    returnTicket("RT-1", "O-1"), returnTicket("RT-2", "O-2")));
+            when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                    orderItem("O-1", "P-1"), orderItem("O-2", "P-2"), orderItem("O-2", "P-3")));
+        }
+
+        /** 某个 Mapper 收到的查询 wrapper（行数组装配的入参，用来钉「有界 + 租户」） */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private AbstractWrapper<?, ?, ?> capturedWrapper(Object mapper) {
+            ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+            if (mapper == orderMapper) {
+                verify(orderMapper).selectList(captor.capture());
+            } else if (mapper == orderLogisticsMapper) {
+                verify(orderLogisticsMapper).selectList(captor.capture());
+            } else if (mapper == productSkuMapper) {
+                verify(productSkuMapper).selectList(captor.capture());
+            } else if (mapper == productMapper) {
+                verify(productMapper).selectList(captor.capture());
+            } else {
+                verify(afterSalesTicketMapper).selectList(captor.capture());
+            }
+            AbstractWrapper<?, ?, ?> wrapper = (AbstractWrapper<?, ?, ?>) captor.getValue();
+            wrapper.getSqlSegment();   // 触发条件解析：参数对（paramNameValuePairs）在解析时才填充
+            return wrapper;
+        }
+
+        @SuppressWarnings("unchecked")
+        private Set<Object> rowKeys(Map<String, Object> snapshot, String array) {
+            Set<Object> keys = new LinkedHashSet<>();
+            ((List<Map<String, Object>>) snapshot.get(array)).forEach(row -> keys.addAll(row.keySet()));
+            return keys;
+        }
+
+        @Test
+        @DisplayName("契约三数组装配；price_changes **不存在**（不是「命中 0 条」）")
+        void assemblesTheThreeContractArrays() {
+            stubRows();
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat((List<?>) snapshot.get("orders")).hasSize(1);
+            assertThat((List<?>) snapshot.get("skus")).hasSize(1);
+            assertThat((List<?>) snapshot.get("returns")).hasSize(2);
+            assertThat(snapshot).doesNotContainKey("price_changes");
+            assertThat(snapshot.get("row_fields")).isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FIELDS);
+        }
+
+        @Test
+        @DisplayName("orders 行按契约字段装配：成交金额实付优先、customer_id 取下单用户、shipped_at 来自物流")
+        void orderRowsFollowTheContract() {
+            stubRows();
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = ((List<Map<String, Object>>) snapshot.get("orders")).get(0);
+            assertThat(row.get("order_no")).isEqualTo("SO-1");
+            assertThat(row.get("status")).isEqualTo("confirmed");
+            assertThat(row.get("customer_id")).isEqualTo("C-1");
+            assertThat(row.get("shipped_at")).isNull();
+            assertThat(row.get("sale_amount")).isEqualTo(new BigDecimal("1200.00"));   // 实付优先，不是 1500
+        }
+
+        @Test
+        @DisplayName("已发货（物流有 shipped_at）⇒ 行里带上发货时刻，引擎据此不再当未发货")
+        void shippedAtIsCarriedFromLogistics() {
+            stubRows();
+            when(orderLogisticsMapper.selectList(any())).thenReturn(List.of(
+                    OrderLogistics.builder().tenantId(1L).orderId("O-1")
+                            .shippedAt(OffsetDateTime.parse("2026-09-13T10:00:00+08:00")).build()));
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = ((List<Map<String, Object>>) snapshot.get("orders")).get(0);
+            assertThat(row.get("shipped_at"))
+                    .isEqualTo(OffsetDateTime.parse("2026-09-13T10:00:00+08:00"));
+        }
+
+        @Test
+        @DisplayName("退货行的 product_id：订单商品唯一才给，多商品订单给 null（不猜）")
+        void returnProductIdIsNotGuessed() {
+            stubRows();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("returns");
+
+            assertThat(rows).extracting(r -> r.get("product_id")).containsExactly("P-1", null);
+            assertThat(rows).extracting(r -> r.get("return_no")).containsExactly("RT-1", "RT-2");
+        }
+
+        @Test
+        @DisplayName("下架商品下的 SKU 不进快照（与 low_stock_items 同口径）")
+        void skusOfOffSaleProductsAreDropped() {
+            stubRows();
+            when(productMapper.selectList(any())).thenReturn(List.of());   // 商品已下架/删除
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat((List<?>) snapshot.get("skus")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("有界：四条行数组查询都带行数上限（不得全表拖）")
+        void rowQueriesAreBounded() {
+            stubRows();
+
+            service.aggregateSnapshot(1L);
+
+            for (Object mapper : List.of(orderMapper, orderLogisticsMapper, productSkuMapper,
+                    productMapper, afterSalesTicketMapper)) {
+                assertThat(capturedWrapper(mapper).getSqlSegment())
+                        .as("行数组查询必须有界")
+                        .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            }
+        }
+
+        @Test
+        @DisplayName("租户隔离：行数组查询一律显式带 tenantId；装配用的表都在拦截器覆盖范围内")
+        void rowsAreTenantScoped() throws Exception {
+            stubRows();
+
+            service.aggregateSnapshot(1L);
+
+            for (Object mapper : List.of(orderMapper, orderLogisticsMapper, productSkuMapper,
+                    productMapper, afterSalesTicketMapper)) {
+                assertThat(capturedWrapper(mapper).getParamNameValuePairs().values())
+                        .as("行数组查询必须显式带 tenantId（拦截器之外的第二道）")
+                        .contains(1L);
+            }
+
+            // orders/product_skus/products/order_logistics 的 tenant_id 还由 TenantLineInnerInterceptor 注入
+            // ⇒ 这几张表**不得**出现在忽略清单里（否则行数组会跨租户）
+            Field field = MybatisPlusConfig.class.getDeclaredField("IGNORE_TENANT_TABLES");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            List<String> ignored = (List<String>) field.get(null);
+            assertThat(ignored).doesNotContain(
+                    "orders", "order_logistics", "product_skus", "products", "after_sales_tickets");
+        }
+
+        @Test
+        @DisplayName("行键集 = 装配层自描述（键名与声明不许各写一份）")
+        void declaredFieldsMatchWhatIsActuallyAssembled() {
+            stubRows();
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            for (String array : DailyBriefingService.SNAPSHOT_ROW_FIELDS.keySet()) {
+                assertThat(rowKeys(snapshot, array))
+                        .as(array + " 行的键集必须逐字等于 row_fields 的声明")
+                        .isEqualTo(new LinkedHashSet<>(DailyBriefingService.SNAPSHOT_ROW_FIELDS.get(array)));
+            }
+        }
+
+        @Test
+        @DisplayName("结构性不可达如实登记：orders 无 cost_amount、price_changes 不入册")
+        void structuralGapsAreDeclared() {
+            // 谁把成本价/改价流水接上（另立数据模型后），这两条会红 ⇒ 逼他同步改引擎的逐规则接线判据。
+            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS).doesNotContainKey("price_changes");
+            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS.get("orders")).doesNotContain("cost_amount");
+            assertThat(DailyBriefingService.orderRow(order("SO-1"), null)).doesNotContainKey("cost_amount");
         }
     }
 }

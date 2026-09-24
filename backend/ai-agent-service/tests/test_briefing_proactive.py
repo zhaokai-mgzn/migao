@@ -15,7 +15,7 @@
 ⚠️ 这些断言会红吗：改掉任一条规则的判据、去掉 `action` 过滤、让 `daily_findings` 不过日期、
 把阈值写死成字面量（不读 `config`）—— 都会红（每条断言盯的都是一个**会变的**真值）。
 """
-# case_ids: DA-011, DA-012, DA-013, DA-014, DA-015
+# case_ids: DA-011, DA-012, DA-013, DA-014, DA-015, DA-017
 import copy
 import json
 import random
@@ -25,9 +25,12 @@ import pytest
 
 from app.briefing.proactive import (
     DEFAULT_CONFIG,
+    NOT_WIRED,
     RULES,
+    WIRED,
     ProactiveConfig,
     daily_findings,
+    proactive_status,
     scan_snapshot,
 )
 
@@ -318,3 +321,147 @@ class TestThresholdsAreConfigurable:
             ProactiveConfig(unshipped_days=0)
         with pytest.raises(ValueError):
             ProactiveConfig(price_change_pct=-1.0)
+
+
+#: 装配后的快照（族 3 跨域视图内核，issue #5358）—— 与 admin-api
+#: `DailyBriefingService.aggregateSnapshot` 的产物**同形**：
+#: · 行级数组 orders/skus/returns + 装配层自描述 `row_fields`（它真的给了哪些字段）
+#: · orders 行**没有 `cost_amount`**（`orders` 表无成本列）⇒ `below_cost_price` 仍接不通
+#: · **没有 `price_changes`**（全仓无改价流水表）⇒ `price_change_over` 接不通
+ASSEMBLED = {
+    "biz_date": BIZ_DATE,
+    "row_fields": {
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at", "sale_amount"],
+        "skus": ["sku_id", "product_id", "product_name", "stock"],
+        "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
+    },
+    "orders": [
+        # 超 N 天未发货（09-12 下单 ⇒ 10 天）
+        {"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
+         "created_at": "2026-09-12T10:00:00+08:00", "shipped_at": None, "sale_amount": 1200.0},
+    ],
+    "skus": [
+        # stock ≤ 100（含上界）
+        {"sku_id": "SKU-1", "product_id": "P-1", "product_name": "雪尼尔-米白", "stock": 20.0},
+    ],
+    "returns": [
+        # 同一客户 7 天内 3 次退货（09-18/09-20/09-22）
+        {"return_no": "RT-1", "customer_id": "C-1", "product_id": "P-9",
+         "returned_at": "2026-09-18T10:00:00+08:00", "amount": 100.0},
+        {"return_no": "RT-2", "customer_id": "C-1", "product_id": "P-9",
+         "returned_at": "2026-09-20T10:00:00+08:00", "amount": 120.0},
+        {"return_no": "RT-3", "customer_id": "C-1", "product_id": "P-9",
+         "returned_at": "2026-09-22T10:00:00+08:00", "amount": 130.0},
+    ],
+}
+
+#: 装配后**当天一条都没命中**、但三条规则确实已接线的快照 ——
+#: 「两种空」里「真的没问题」的那一种（对照 `price_changes` 那种「没接线」的空）。
+ASSEMBLED_QUIET = dict(
+    ASSEMBLED,
+    orders=[],
+    skus=[{"sku_id": "SKU-9", "product_id": "P-9", "product_name": "绒布-蓝", "stock": 500.0}],
+    returns=[],
+)
+
+#: 已接线的三条（本单接上的）/ 未接线的两条（结构性不可达）—— 逐规则，不是整体
+WIRED_RULES = frozenset({"unshipped_overdue", "low_stock", "repeat_returns"})
+NOT_WIRED_RULES = frozenset({"below_cost_price", "price_change_over"})
+
+
+def _two_kinds_of_empty_are_separable(status):
+    """**判据本体**（issue #5358 判据 2）：未接线 与 已接线但当天无命中 必须可分。
+
+    可分 = ① 两类同时存在（否则本判据是空跑）② 未接线带原因 ③ 已接线不带原因。
+    返回 True 只是为了让调用处能写成断言；真正的判别力在三条 assert 上。
+    """
+    unwired = {r for r, s in status.items() if s.get("status") == NOT_WIRED}
+    wired = {r for r, s in status.items() if s.get("status") == WIRED}
+    assert unwired and wired, f"必须同时存在两类规则（实得 wired={sorted(wired)} unwired={sorted(unwired)}）"
+    assert all(status[r].get("reason") for r in unwired), "未接线规则必须给出原因（否则与「无命中」不可分）"
+    assert not any(status[r].get("reason") for r in wired), "已接线规则不得带未接线原因"
+    return True
+
+
+class TestWiringStatusIsPerRule:
+    """判据 1/2/3/6（issue #5358）：逐规则接线状态 ——「没数据」≠「没问题」的数据层可分。
+
+    对照判据（会红吗）：把 `orders`/`skus`/`returns` 任一数组从装配产物里去掉 ⇒ 对应规则
+    变成 not_wired（本类第 1 条会红）；让 `proactive_status` 只返回一个整体状态 ⇒ 逐规则断言会红；
+    抹掉 status 字段 ⇒ 两种空的判别函数会红（注入式红证）。
+    """
+
+    def test_assembled_snapshot_unlocks_the_three_wired_rules(self):
+        """判据 1：装配行级数组后，3 条规则**真的命中**（同 (snapshot, as_of, config) ⇒ 同一命中列表）"""
+        daily = daily_findings(ASSEMBLED)
+        assert {f["rule_id"] for f in daily} == WIRED_RULES
+        assert _digest(daily_findings(ASSEMBLED)) == _digest(daily), "同一快照两次扫描必须逐字一致"
+
+    def test_unlocking_does_not_depend_on_the_rule_registry_being_replaced(self):
+        """三条规则的命中来自**数组内容**，不是「接了哪几条规则」的声明：清空数组即无命中"""
+        assert daily_findings(ASSEMBLED_QUIET) == []
+
+    def test_status_is_per_rule_not_whole(self):
+        """判据 3：接线状态**逐规则**（部分接线是可能的：本单接 3 条、2 条结构性不可达）"""
+        status = proactive_status(ASSEMBLED)
+        assert {r for r, s in status.items() if s["status"] == WIRED} == set(WIRED_RULES)
+        assert {r for r, s in status.items() if s["status"] == NOT_WIRED} == set(NOT_WIRED_RULES)
+
+    def test_below_cost_stays_unwired_even_though_orders_are_assembled(self):
+        """风险不对称（#5348）：`orders` 装配好了，`below_cost_price` 仍接不通 —— 缺的是成本价"""
+        entry = proactive_status(ASSEMBLED)["below_cost_price"]
+        assert entry["status"] == NOT_WIRED
+        assert entry["missing"] == ["cost_amount"]
+        assert "cost_amount" in entry["reason"]
+
+    def test_price_changes_rule_is_not_wired_not_silently_empty(self):
+        """判据 6：`price_changes` 数组**不存在**，且其规则在未接线清单里（不是「命中 0 条」）"""
+        assert "price_changes" not in ASSEMBLED
+        assert "price_changes" not in ASSEMBLED["row_fields"]
+        entry = proactive_status(ASSEMBLED)["price_change_over"]
+        assert entry["status"] == NOT_WIRED
+        assert entry["missing"] == ["price_changes"]
+        assert "price_changes" in entry["reason"]
+
+    def test_two_kinds_of_empty_are_distinguishable(self):
+        """判据 2：五条规则「一条都没命中」，但数据层能分出哪两条是**没接线**"""
+        assert daily_findings(ASSEMBLED_QUIET) == []
+        assert _two_kinds_of_empty_are_separable(proactive_status(ASSEMBLED_QUIET)) is True
+
+    def test_red_proof_status_field_is_load_bearing(self):
+        """**注入式红证**：抹掉 status 字段 ⇒ 上面的判别函数必须变红（否则它是空断言）"""
+        stripped = {
+            rule: {k: v for k, v in entry.items() if k != "status"}
+            for rule, entry in proactive_status(ASSEMBLED_QUIET).items()
+        }
+        with pytest.raises(AssertionError):
+            _two_kinds_of_empty_are_separable(stripped)
+
+    def test_red_proof_wired_reason_is_load_bearing(self):
+        """**注入式红证**：给已接线规则补一个「原因」⇒ 判别函数必须变红（两类不许长得一样）"""
+        polluted = {
+            rule: dict(entry, reason="随便一个原因") if entry["status"] == WIRED else entry
+            for rule, entry in proactive_status(ASSEMBLED_QUIET).items()
+        }
+        with pytest.raises(AssertionError):
+            _two_kinds_of_empty_are_separable(polluted)
+
+    def test_declared_fields_are_authoritative_over_rows(self):
+        """装配层的自描述是权威：声明里没给 `created_at` ⇒ 该规则未接线（不靠「行里碰巧有」）"""
+        weakened = dict(
+            ASSEMBLED,
+            row_fields={**ASSEMBLED["row_fields"], "orders": ["order_no", "status"]},
+        )
+        entry = proactive_status(weakened)["unshipped_overdue"]
+        assert entry["status"] == NOT_WIRED
+        assert "created_at" in entry["missing"]
+
+    def test_legacy_snapshot_without_row_fields_falls_back_to_rows(self):
+        """滚动升级口径：老快照没有 `row_fields` 自描述 ⇒ 按实际行的字段并集判定（否则会把已接线读成未接线）"""
+        status = proactive_status(SNAPSHOT)          # 老 SNAPSHOT：无 row_fields，行里带 cost_amount 与 price_changes
+        assert {r for r, s in status.items() if s["status"] == WIRED} == {r.rule_id for r in RULES}
+
+    def test_rule_with_no_array_at_all_is_not_wired(self):
+        """断言言快照（只有聚合指标）⇒ 三条规则全部 not_wired（不是「今天没异常」）"""
+        status = proactive_status({"metrics": {"today_orders": 3}})
+        assert {r for r, s in status.items() if s["status"] == NOT_WIRED} == {r.rule_id for r in RULES}

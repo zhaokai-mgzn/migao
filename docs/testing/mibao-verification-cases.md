@@ -1347,7 +1347,7 @@
 真值: customer-crm.receiver-address
 溯源: 2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 米宝写白名单同集合 ｜ tags: customer, ui, logistics, receiver-address, admin-web
 
-## 数据域（15 case）
+## 数据域（18 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -1514,6 +1514,39 @@
 ```
 真值: dashboard-jump.proactive-deterministic, dashboard-jump.low-stock
 溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 阈值可配 + 边界判据 ｜ tags: proactive, briefing, threshold
+
+### DA-016. 跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358） 🔵
+```
+你: 经营日报数据快照装配自检
+数据: 快照带 orders/skus/returns 三个行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount；sku_id/product_id/product_name/stock；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）
+数据: **price_changes 数组不存在**（全仓无改价流水表）、orders 行**没有 cost_amount**（orders 表无成本列）—— 两条结构性缺口显式登记，而不是「装配了但命中 0 条」
+数据: 每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）
+跳过: [backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-deterministic, dashboard-jump.low-stock
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配 ｜ tags: proactive, briefing, snapshot
+
+### DA-017. 跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358） 🔵
+```
+你: 主动发现接线状态自检
+数据: 接线状态**逐规则**输出（rule_id → status + 未接线原因 + 缺哪个数组/字段）：装配行级数组后三条规则 wired、两条结构性不可达（below_cost_price 缺 cost_amount、price_change_over 缺 price_changes）为 not_wired —— 部分接线场景有断言，不是整体一个布尔
+数据: **两种空可分**：五条规则当天一条都没命中时，未接线（带原因）与已接线但无命中（不带原因）在输出上必须不同 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红
+数据: 装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）
+跳过: [backend-contract] 逐规则接线状态由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestWiringStatusIsPerRule），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-wiring-status
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 逐规则接线状态（治 #5348 的语义空转） ｜ tags: proactive, briefing, wiring
+
+### DA-018. 未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358） 🔵
+```
+你: 今天有什么异常
+数据: 工具消息逐条点名未接线的能力（规则名）并给出「尚未接入」的明确措辞；当天 0 条命中时也不得出现「今日无异常 / 无异常 / 一切正常 / 未发现异常」这类表述（消息是模型的唯一输入源，消息里没有的兜底模型编不出来）
+数据: 逐规则状态进 data（`proactive_status`），调用方自己可分「未接线」与「已接线但无命中」；全部接线时**不得**出现未接线措辞（披露不能因为总是出现而失去信息量）
+数据: 注入式红证：从消息里抹掉某条未接线能力的名字、或往消息里塞「今日无异常」⇒ 同一判据必须变红
+跳过: [backend-contract] 未接线话术由 ai-agent 单测验证（tests/test_tools_briefing_query.py 的 TestNotWiredDisclosure），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-unwired-disclosure
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 未接线如实说明 ｜ tags: proactive, briefing, honest-empty
 
 ## 防御域（22 case）
 
@@ -6313,8 +6346,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：467（活跃 119，跳过 348）
-- tier 分布：smoke 10 / normal 427 / adversarial 30
+- 用例总数：470（活跃 119，跳过 351）
+- tier 分布：smoke 10 / normal 430 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6323,7 +6356,7 @@
 - 对话边界域：43
 - 跨域：3
 - 客户域：9
-- 数据域：15
+- 数据域：18
 - 防御域：22
 - 财务对账域：4
 - 人事域：10

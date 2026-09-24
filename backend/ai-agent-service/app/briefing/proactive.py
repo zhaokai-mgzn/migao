@@ -20,6 +20,7 @@
 {
   "biz_date": "2026-09-22",   # 扫描基准日（「当天」）；缺省时须由调用方传 as_of
   "config":   {...},          # 选填：阈值覆盖（租户级配置的落点），键同 ProactiveConfig
+  "row_fields": {...},        # 装配层**自描述**：本次真的给出了哪些行数组、每个数组有哪些字段
   "orders":   [{"order_no", "status", "customer_id", "created_at", "shipped_at",
                 "sale_amount", "cost_amount"}],              # 低于成本价 / 超 N 天未发货
   "skus":     [{"sku_id", "product_id", "product_name", "stock"}],  # 库存告急（stock ≤ 阈值）
@@ -32,10 +33,17 @@
 行数组缺省 = 该规则无输入 ⇒ **不命中**。这与「命中 0 条」在输出上等价，但语义不同：
 **「没数据」不等于「没问题」** —— 调用方不得把空命中读成「今天一切正常」。
 
+⇒ 那个语义差别由 `proactive_status()` 落成**数据层可分**（逐规则 `wired` / `not_wired` + 原因）：
+判据 = 「规则声明的输入」（`RuleSpec.requires`）×「装配层声明的产出」（`row_fields`），
+**两侧各只有一份声明**，没有第二份口径；老快照没有 `row_fields` 时按实际行的字段并集兜底
+（滚动升级期不至于把已接线的规则读成未接线）。
+
 数据来源：admin-api 聚合层（`DailyBriefingService.aggregateSnapshot`）落库的 `source_snapshot`
 —— 与经营日报**同源**，故两个入口口径一致（设计文档 §三 族 3 末「同一内核、两种消费形态」）。
-快照内的行级数组（orders/skus/returns/price_changes）由跨域视图内核（族 3）装配，
-本模块只消费；本轮快照尚未带行级数组时，对应规则自然不命中（**未实装项，非静默失效**）。
+快照内的行级数组（orders / skus / returns）由跨域视图内核（族 3 · 包 1，issue #5358）装配，
+本模块只消费。两条**结构性不可达**（如实登记，不是静默失效）：全仓无改价流水表 ⇒ `price_changes`
+永不出现；`orders` 表无成本列 ⇒ `orders` 行**没有 `cost_amount`** ⇒ `below_cost_price` 接不通
+—— 两条都在未接线清单里（**不是「命中 0 条」**）。
 """
 
 from __future__ import annotations
@@ -50,10 +58,13 @@ from app.tools.stock_semantics import LOW_STOCK_THRESHOLD
 __all__ = [
     "MAX_EVIDENCE_ROWS",
     "UNSHIPPED_STATUSES",
+    "WIRED",
+    "NOT_WIRED",
     "ProactiveConfig",
     "DEFAULT_CONFIG",
     "RuleSpec",
     "RULES",
+    "proactive_status",
     "scan_snapshot",
     "daily_findings",
 ]
@@ -199,6 +210,9 @@ class RuleSpec:
     thresholds: Callable[[ProactiveConfig], Dict[str, Any]]
     title: Callable[[_Hit, ProactiveConfig], str]
     detect: Callable[[Any, _dt.date, ProactiveConfig], List[_Hit]]
+    #: 规则的**输入契约**：`(快照行数组键, 必需行字段)`。接线状态的判据源就是它 ——
+    #: 规则自己声明「读什么」，装配层声明「给什么」（`row_fields`），两边一比即知接没接上。
+    requires: Tuple[str, Tuple[str, ...]]
 
 
 # ── 五条首批规则 ────────────────────────────────────────────────────────────
@@ -358,6 +372,8 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"below_cost_tolerance": cfg.below_cost_tolerance},
         title=lambda hit, cfg: f"{hit.count} 单成交价低于成本，合计亏损 {hit.amount:.2f} 元",
         detect=_detect_below_cost,
+        # 🔴 成本价：`orders` 表**无成本列** ⇒ 该规则结构性接不通（未接线清单，不是「命中 0 条」）
+        requires=("orders", ("order_no", "sale_amount", "cost_amount")),
     ),
     RuleSpec(
         rule_id="unshipped_overdue",
@@ -370,6 +386,7 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"unshipped_days": cfg.unshipped_days},
         title=lambda hit, cfg: f"{hit.count} 单已超 {cfg.unshipped_days} 天未发货",
         detect=_detect_unshipped,
+        requires=("orders", ("order_no", "status", "created_at", "shipped_at")),
     ),
     RuleSpec(
         rule_id="low_stock",
@@ -382,6 +399,7 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"low_stock_threshold": cfg.low_stock_threshold},
         title=lambda hit, cfg: f"{hit.count} 个 SKU 库存告急（≤ {cfg.low_stock_threshold}）",
         detect=_detect_low_stock,
+        requires=("skus", ("sku_id", "stock")),
     ),
     RuleSpec(
         rule_id="repeat_returns",
@@ -403,6 +421,7 @@ RULES: Tuple[RuleSpec, ...] = (
             f"{cfg.repeat_return_count} 次）"
         ),
         detect=_detect_repeat_returns,
+        requires=("returns", ("return_no", "customer_id", "product_id", "returned_at")),
     ),
     RuleSpec(
         rule_id="price_change_over",
@@ -415,11 +434,70 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"price_change_pct": cfg.price_change_pct},
         title=lambda hit, cfg: f"{hit.count} 笔改价幅度超 {cfg.price_change_pct:g}%",
         detect=_detect_price_change,
+        # 🔴 全仓无改价流水表 ⇒ `price_changes` 数组永不装配 ⇒ 该规则结构性接不通（同上）
+        requires=("price_changes", ("change_no", "original_price", "new_price", "changed_at")),
     ),
 )
 
 
 # ── 装配与扫描 ──────────────────────────────────────────────────────────────
+
+
+#: 接线状态的取值（逐规则）：`wired` = 该规则的输入已接入本次快照；`not_wired` = 该能力**尚未接入**
+#: （⇒ 空命中**不代表**这方面没问题）；已接线但当天无命中仍是 `wired` —— 两类在数据层可分。
+WIRED = "wired"
+NOT_WIRED = "not_wired"
+
+
+def _declared_fields(snapshot: Any, key: str) -> Optional[set]:
+    """装配层声明的行字段集；`None` = 该数组未接入本次快照。
+
+    `row_fields` 是装配层的**自描述**（它真的产出了哪些字段），显式声明**优先**（声明里没有的字段
+    就是没有，不靠「某一行碰巧带上」）；没有自描述时（滚动升级期老快照 / 手工快照）退回**实际行的
+    字段并集** —— 否则已接线的规则会被读成未接线。
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    declared = snapshot.get("row_fields")
+    if isinstance(declared, dict):
+        fields_ = declared.get(key)
+        return {str(name) for name in fields_} if isinstance(fields_, (list, tuple)) else None
+    rows = _rows(snapshot, key)
+    return {str(name) for row in rows for name in row} if rows else None
+
+
+def proactive_status(
+    snapshot: Any, rules: Sequence[RuleSpec] = RULES
+) -> Dict[str, Dict[str, Any]]:
+    """**逐规则**接线状态 + 未接线原因（issue #5358）—— 治「两种空在输出上等价」（#5348）。
+
+    为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 3 条能接、2 条结构上
+    接不通），整体布尔到了调用方还是分不出「哪一条没接线」——那就又变回「空命中 = 今天没问题」。
+
+    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing"}}`：
+    `status` ∈ {`wired`, `not_wired`}；`not_wired` 必带 `reason` 与 `missing`（缺哪个数组/字段），
+    `wired` 的 `reason` 恒为 `None`。纯函数、只读：同一 `(snapshot, rules)` ⇒ 同一结果，
+    与命中集合互不影响（接线状态不改判据、不改命中）。
+    """
+    status: Dict[str, Dict[str, Any]] = {}
+    for spec in rules:
+        key, needed = spec.requires
+        available = _declared_fields(snapshot, key)
+        if available is None:
+            value, missing = NOT_WIRED, [key]
+            reason = f"快照未提供 {key} 行数组（装配层未接线）"
+        else:
+            missing = [name for name in needed if name not in available]
+            value = NOT_WIRED if missing else WIRED
+            reason = f"快照 {key} 行缺字段 {'、'.join(missing)}（数据层无此来源）" if missing else None
+        status[spec.rule_id] = {
+            "rule_id": spec.rule_id,
+            "rule_name": spec.rule_name,
+            "status": value,
+            "reason": reason,
+            "missing": missing,
+        }
+    return status
 
 
 def _resolve_config(snapshot: Any, config: Optional[ProactiveConfig]) -> ProactiveConfig:
