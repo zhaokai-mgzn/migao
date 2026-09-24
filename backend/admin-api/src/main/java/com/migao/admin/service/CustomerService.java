@@ -5,6 +5,8 @@ import com.migao.admin.entity.*;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.*;
 import com.migao.admin.support.fieldtruth.CustomerProfileTruthMask;
+import com.migao.admin.support.fieldtruth.FieldTruth;
+import com.migao.admin.support.fieldtruth.FieldTruthRegistry;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -652,5 +655,101 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(),
                 resultPage.getSize(), resultPage.getRecords());
+    }
+
+    // ==================== 具名跨域视图 · 客户画像（族 3 · 包 3，issue #5456）====================
+
+    /**
+     * 客户画像视图的**装配腿**（按需消费入口：{@code GET /api/admin/customers/profile-view}，
+     * 权限码 {@code customer:view}）。
+     *
+     * <p>产出与族 3 跨域视图内核**同一形状**的确定性快照（自描述 + 有界 + 行数组），外加本单新增的
+     * **真值声明运输**：</p>
+     *
+     * <ul>
+     *   <li><b>字段集与真值侧现取</b>：{@link FieldTruthRegistry#customerProfile()} —— 装配与消费两侧
+     *       都不持有第二份真值判断（哪些字段有真值由 issue #5362 的声明说了算，这里只做运输）；</li>
+     *   <li><b>值与页面同源</b>：{@link CustomerProfileTruthMask#apply}（读面遮蔽的唯一实现）
+     *       + 与客户列表同一套标签解析 ⇒ 同一实体走哪条读路径都是同一个形态；</li>
+     *   <li><b>有界 + 截断显式</b>：多取一行只用于判定截断（与简报表快照同口径，行数上限复用
+     *       {@code DailyBriefingService.SNAPSHOT_ROW_LIMIT}）；</li>
+     *   <li><b>租户隔离</b>：显式带 tenantId（叠加 TenantLineInnerInterceptor 的 tenant_id 注入）。</li>
+     * </ul>
+     *
+     * <p>🔴 <b>为什么这条腿不并进简报表快照</b>（{@code DailyBriefingService.aggregateSnapshot}）：
+     * 那边的权限码是 {@code dashboard:view}，而客户档案含联系方式等 PII ⇒ 并进去等于让「看板」权限
+     * 读到客户 PII。本腿与客户列表/详情同码（{@code customer:view}）—— Agent 能力 ≡ 页面权限
+     * （issue #5246）。判据见
+     * {@code backend/ai-agent-service/tests/test_briefing_customer_profile.py} 的
+     * `TestFieldLedgerIsNotOwnedByTheView::test_dashboard_snapshot_stays_free_of_customer_rows`。</p>
+     *
+     * @param tenantId 租户（隔离关口；每条查询显式带它）
+     * @param limit    行数上限（&lt;1 收敛到 1、超过内核上限收敛到内核上限）
+     */
+    public Map<String, Object> profileViewSnapshot(Long tenantId, int limit) {
+        FieldTruth.Declaration declaration = FieldTruthRegistry.customerProfile();
+        int bound = Math.max(1, Math.min(limit, DailyBriefingService.SNAPSHOT_ROW_LIMIT));
+
+        List<CustomerProfile> profiles = customerProfileMapper.selectList(
+                new LambdaQueryWrapper<CustomerProfile>()
+                        .eq(CustomerProfile::getTenantId, tenantId)
+                        .orderByDesc(CustomerProfile::getCreatedAt)
+                        .orderByDesc(CustomerProfile::getId)
+                        // 多取一行只为判定截断（多出来的那行不进快照）——与简报表快照同一口径
+                        .last("LIMIT " + (bound + 1)));
+        boolean truncated = profiles.size() > bound;
+        if (truncated) {
+            profiles = profiles.subList(0, bound);
+        }
+
+        Map<Long, List<CustomerTag>> tenantTagCache = new HashMap<>();
+        List<Map<String, Object>> rows = new ArrayList<>(profiles.size());
+        for (CustomerProfile profile : profiles) {
+            profile.setTags(resolveCustomerTags(profile, tenantTagCache));
+            // 🔴 值的单点来源：无真值的字段在读面一律 null（未知），不得让 DB 默认值流出去
+            CustomerProfileTruthMask.apply(profile);
+            rows.add(profileRow(profile, declaration));
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("limit", bound);
+        meta.put("count", rows.size());
+        meta.put("truncated", truncated);
+
+        String array = declaration.table();
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("row_fields", Map.of(array, declaration.declaredFields()));
+        snapshot.put("row_meta", Map.of(array, meta));
+        // 🔴 真值声明的**运输**（issue #5456 判据 4 的机械形态）：由声明现取，这里不写任何字段名
+        snapshot.put("field_truth", Map.of(array, declaration.payload()));
+        snapshot.put(array, rows);
+        return snapshot;
+    }
+
+    /**
+     * 一行客户档案：**按声明的字段名逐字段取值**（`{@code 字段名 → 值}`）。
+     *
+     * <p>🔴 为什么不用 Jackson 的 Bean 名：{@code getRScore()} 这类「前两个字母都大写」的 getter 会被
+     * Jackson 的默认命名策略折叠成全小写（{@code rscore}），而 #5362 的声明用的是**实体字段名**
+     * （{@code rScore}）⇒ 键集对不上时，视图侧会把这些字段永远读成「整行缺键」（落 `incomplete`）。
+     * 实测形态见 {@code CustomerProfileViewSnapshotTest} 的「行键集 ≡ 声明字段集」这条判据
+     * （它在改成本实现前**真的红过**：实得 {@code fscore / mscore / rscore}）。</p>
+     *
+     * <p>按声明遍历 + 反射读字段 ⇒ 键集**由构造保证**等于声明的字段集（不手写映射表、不另造 DTO）。</p>
+     */
+    private static Map<String, Object> profileRow(CustomerProfile profile,
+                                                  FieldTruth.Declaration declaration) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (String field : declaration.declaredFields()) {
+            try {
+                Field declared = declaration.entity().getDeclaredField(field);
+                declared.setAccessible(true);
+                row.put(field, declared.get(profile));
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                // 声明与实体漂移 ⇒ 显式失败（不静默少一个键：那会让视图把该字段读成「缺键」）
+                throw new IllegalStateException("实体字段读不出（声明与实体漂移）：" + field, e);
+            }
+        }
+        return row;
     }
 }

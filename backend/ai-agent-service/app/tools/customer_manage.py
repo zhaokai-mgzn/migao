@@ -7,12 +7,19 @@ AI 智能客服系统 - 客户管理 Tool
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
+from app.briefing.customer_profile import HAS_TRUTH, MAX_VIEW_ROWS, customer_profile
+from app.briefing.proactive import INCOMPLETE, NOT_WIRED, WIRED
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"list", "detail", "list_tags"}
+VALID_ACTIONS = {"list", "detail", "list_tags", "profile_view"}
+
+#: 具名跨域视图 `customer_profile`（族 3 · 包 3，issue #5456，**按需**消费）的端点。
+#: 与 `CustomerController` 的 `@GetMapping("/api/admin/customers/profile-view")` 逐字相同，
+#: 权限码同为 `customer:view`（与客户列表/详情同码）—— 一致性由单测机械钉住，不许凭语义推测。
+PROFILE_VIEW_ENDPOINT = "/api/admin/customers/profile-view"
 
 # 客户档案可写字段（单一事实源 = admin-api CustomerProfile 列 ∩ CustomerService.updateCustomer
 # 的非空拷贝白名单）。写路径只允许下发这些 key，其余一律显式报错——禁止原样透传后由 admin-api
@@ -78,9 +85,11 @@ class CustomerManageTool(BaseTool):
     name = "customer_manage"
     description = (
         "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。"
-        "【参数】action 必填：**只有 list / detail / list_tags 三个只读 action**（B 端已只读化，issue #5247）。"
+        "【参数】action 必填：**只有 list / detail / list_tags / profile_view 四个只读 action**（B 端已只读化，issue #5247）。"
         "list 可按 keyword(名称/手机号) 搜索；detail 需 customer_id（32 位 UUID，先 list 查出真实 UUID，"
-        "禁止传手机号）；list_tags 列出全店客户标签。"
+        "禁止传手机号）；list_tags 列出全店客户标签；"
+        "profile_view = 客户画像视图（逐字段告诉你**哪些字段有真值、哪些没有** —— 没有真值的字段一律「未知」，"
+        "不得读成 0 元/从未发生；问「客户画像 / 这个客户消费多少 / 复购率 / RFM 评分 / 流失风险」时用它）。"
         "【反例】查客户的历史订单用 order_query(keyword=XX)，不要用本工具；"
         "员工账号用 employee_manage，角色权限用 role_manage。"
         "【反例】改客户资料/打标签/删标签**不在本工具能力内**——引导用户到后台「客户管理」页面自行操作。"
@@ -91,7 +100,7 @@ class CustomerManageTool(BaseTool):
     required_permissions = ["customer:view"]  # B 端只读化（#5247）：写码 customer:create 已随写 action 一并移除
 
     read_only = True
-    read_only_actions = {"list", "detail", "list_tags"}  # 只读 action 免确认拦截
+    read_only_actions = {"list", "detail", "list_tags", "profile_view"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {
@@ -99,8 +108,8 @@ class CustomerManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（客户列表）/ detail（客户详情）/ list_tags（标签列表）—— 均为只读",
-                "enum": ["list", "detail", "list_tags"],
+                "description": "操作类型：list（客户列表）/ detail（客户详情）/ list_tags（标签列表）/ profile_view（客户画像视图，逐字段标注真值来源）—— 均为只读",
+                "enum": ["list", "detail", "list_tags", "profile_view"],
             },
             "customer_id": {
                 "type": "string",
@@ -174,6 +183,8 @@ class CustomerManageTool(BaseTool):
                 return await self._detail_customer(context, customer_id)
             elif action == "list_tags":
                 return await self._list_tags(context)
+            elif action == "profile_view":
+                return await self._profile_view(context)
             else:
                 return ToolResult(
                     success=False,
@@ -306,6 +317,72 @@ class CustomerManageTool(BaseTool):
             data=data,
             message=f"客户【{display_name}】的详细信息",
         )
+    async def _profile_view(self, context: ToolContext) -> ToolResult:
+        """客户画像视图（具名跨域视图 `customer_profile` 的**按需**消费，issue #5456）。
+
+        披露纪律与族 3 包 2（`briefing_query` 的 `product_health`）同一份 —— 消息是模型的**唯一**
+        输入源，消息里没有的兜底模型编不出来：
+
+        1. 🔴 **「未知」≠「0」**：声明无真值的字段**逐条点名**，并说清它们一律是「未知」（不是 0、
+           不是「从未发生」、不是默认值）—— 不说这句，模型会把 `null` 讲成「消费 0 元」；
+        2. **未接线 / 本次不完整**各自点名 + 原因（本次没检查 / 不完整 ⇒ 不许读成「没问题」）；
+        3. **有界不静默**：输出被上限截断时点出「只列前 N 位，共 M 位」。
+        """
+        client = get_admin_api_client()
+        response = await client.get(
+            # 🔴 端点字面量必须留在**调用点**：静态归属机具只认调用点的字符串字面量（写成模块常量会让
+            # 本工具被判成「无 admin-api 调用点」⇒ 权限对账两条判据一起红）；常量与调用点字面量的一致性
+            # 由单测机械钉住（`tests/test_customer_manage.py`）。
+            "/api/admin/customers/profile-view",
+            params={"limit": MAX_VIEW_ROWS},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "查询失败")
+            return admin_api_failure(
+                response,
+                error=error_msg,
+                message="客户画像查询失败",
+                suggestion="请稍后重试；若持续失败，可先用 customer_manage 的 list 操作查看客户列表",
+            )
+
+        snapshot = response.get("data") or {}
+        result = customer_profile(snapshot, tenant_id=context.tenant_id)
+        fields = result["fields"]
+        no_truth = result["no_truth_fields"]
+        # 「声明无真值」（系统没有这项能力）与「本次未接线」（装配层没给数据）是**两回事** ⇒ 分开点名
+        unwired = [name for name, entry in fields.items()
+                   if entry["status"] == NOT_WIRED and entry["truth"] == HAS_TRUTH]
+        incomplete = [(name, entry["reason"]) for name, entry in fields.items()
+                      if entry["status"] == INCOMPLETE]
+        logger.info(
+            "[customer-manage] profile_view rows={} total={} no_truth={} not_wired={} incomplete={}",
+            result["count"], result["rows_total"], len(no_truth), len(unwired), len(incomplete))
+
+        message = f"客户画像视图：{result['count']} 位客户"
+        if result["truncated"]:
+            message += f"（视图只列前 {result['count']} 位，共 {result['rows_total']} 位）"
+        if no_truth:
+            # 关键口径：无真值**不是** 0 元 / 从未发生 —— 不许让模型把「读不到」讲成「就是 0」
+            message += (
+                f"。⚠️ 其中 {len(no_truth)} 个字段**没有真值来源**（系统没有采集/计算逻辑）"
+                f"⇒ 这些字段一律为「未知」，**不是 0、不是「从未发生」、不是默认值**："
+                f"{'、'.join(no_truth)}"
+            )
+        if result["declaration"]["status"] != WIRED:
+            message += f"。⚠️ {result['declaration']['reason']}"
+        if unwired:
+            message += (f"。⚠️ 以下字段本次未接线：{'、'.join(unwired)}"
+                        " —— 这些方面本次没有数据，请勿理解为均为 0")
+        if incomplete:
+            detail = "；".join(f"{name}：{reason}" for name, reason in incomplete if reason)
+            message += (f"。⚠️ 以下字段本次数据不完整，其结论不可当作「没问题」："
+                        f"{'、'.join(name for name, _ in incomplete)} —— {detail}")
+        # data 就是**视图本体**（有界：≤ MAX_VIEW_ROWS 行）—— 不再包一层，也不回灌原始快照
+        return ToolResult(success=True, data=dict(result), message=message)
+
     async def _list_tags(self, context: ToolContext) -> ToolResult:
         """查询所有客户标签"""
 
