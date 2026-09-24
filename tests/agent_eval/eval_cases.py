@@ -1947,6 +1947,42 @@ _CASE_CU_009 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CU-010 [NORMAL] 客户画像视图：逐字段三态 +「未知」≠「0」（具名跨域视图 customer_profile 的按需消费，issue #5456 族 3 · 包 3）（源: cases/customer.yml）──
+_CASE_CU_010 = EvalCase(
+    id='CU-010',
+    legacy_id='',
+    title='客户画像视图：逐字段三态 +「未知」≠「0」（具名跨域视图 customer_profile 的按需消费，issue #5456 族 3 · 包 3）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客户画像视图语义自检'],
+    expectations=[],
+    data_checks=['快照契约（GET /api/admin/customers/profile-view?limit=N，权限码 customer:view）：返回跨域视图内核**同一形状**的确定性快照 —— row_fields（自描述，customer_profiles 的字段集 ≡ #5362 声明的字段集）＋ row_meta（limit / count / truncated）＋ field_truth（真值声明的**运输**，由 FieldTruthRegistry.customerProfile() **现取** —— 装配与消费两侧都不持有第二份真值判断）＋ customer_profiles 行数组（显式租户过滤 + createdAt 倒序，行键集 ≡ 声明字段集、含**线上 JSON 形态**）。⚠️ 行键集 ≡ 声明字段集这条**实测红过一次**（把实体直接交给 Jackson 时 getRScore 这类 getter 被折叠成 rscore ⇒ 键集对不上）', '🔴「未知」≠「0」（本视图的核心口径）：「无真值」在行的值域里**只可能是 null**（不得回填 0 / DB 列默认值 0.00 / 30 / 建档种子常量），「有真值」的字段**照实返回**（值就是 0 / 空照原样保留 —— 那是真结论）；两侧**逐字段区分**，既不许给默认值、也不许把有真值的字段抹成 null（**不得整表一刀切**）。注入式红证：把取值处换成「无真值当 0」⇒ 同一断言必红；换成「整表一刀切置 null」⇒ 保真断言必红', '逐字段三态（视图侧）：每个被声明字段输出 status ∈ wired / not_wired / incomplete，不变式 reason is None ⟺ status == wired；声明「无真值」⇒ not_wired + 证据化原因（来自 #5362 的登记）；装配层未接线（快照无行数组 / 该字段不在行里）⇒ not_wired + 点名缺什么；行数被上限截断或有行**整行缺键** ⇒ incomplete + 原因（**有界不许变成静默少报**）', '口径同源（真值判断只有一份）：视图模块内**不出现任何被声明字段的名字**（自带字段清单 = 第二份真值判断）；把运输来的 field_truth 声明改掉，视图的逐字段分类必须跟着变。类级元守卫覆盖 app/briefing/** 全部模块：自带字段台账 ⇒ 未登记即红，台账**只许缩短**', 'fail-closed（没带声明就不猜）：快照未携带 field_truth.customer_profiles ⇒ 视图**一个字段都不产出**（declaration.status=not_wired + 原因），且不得退化成「都当有真值」（会把 DB 默认值当真值下发）或「都当无真值」（会把真值抹成 null）；声明块另带 fields_total / has_truth_count / no_truth_count', '有界 + 租户 + 确定性：Agent 侧请求恒为 limit=50（MAX_VIEW_ROWS），装配层上限收敛到 SNAPSHOT_ROW_LIMIT；视图输出被截断 ⇒ 每个「有真值」字段落 incomplete（带可归因读数：上限多少行 / 给出多少行 / 共多少行）；租户由调用方传入并**原样回显**（不由行数据反推 —— 隔离关口在装配层，每条查询显式带 tenantId）；同一快照 ⇒ 逐字相同输出（纯函数、不联网、不读挂钟），行序 = 装配层 SQL 口径（视图不改行序）', '字段级声明与源码写入点的一致性（零 LLM，判据 = traces.tests 点名的四条确定性测试）：声明「有真值」⇒ 源码里存在真值级写入点；声明「无真值」⇒ 必在读面遮蔽清单里；四条读路径（列表 / 详情 / PUT / 分群成员）与序列化后的响应体里无真值字段为 null；同域表逐条对账（未登记即红、台账只许缩短）'],
+    skip_reason='[backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_customer_profile.py 的三态 / 未知≠0 / 口径同源 / 五条注入式红证），装配腿由 admin-api 单测验证（CustomerProfileViewSnapshotTest 的装配契约、CustomerProfileTruthExposureTest 的读面遮蔽、CustomerProfileFieldTruthGateTest 的声明对账），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['query', 'briefing', 'view', 'field-truth'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── CU-011 [NORMAL] 客户画像 action：customer_manage(profile_view) 的按需消费与披露纪律（issue #5456）（源: cases/customer.yml）──
+_CASE_CU_011 = EvalCase(
+    id='CU-011',
+    legacy_id='',
+    title='客户画像 action：customer_manage(profile_view) 的按需消费与披露纪律（issue #5456）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['看一下客户画像'],
+    expectations=['customer_manage(action=profile_view)'],
+    data_checks=['只读且免确认：profile_view 在 VALID_ACTIONS 与 read_only_actions 里（与 list / detail / list_tags 同列），工具 read_only=True ⇒ 不弹确认卡（_requires_confirmation 为 False）', '端点与参数：GET /api/admin/customers/profile-view 的字面量留在**调用点**（静态归属机具只认调用点的字符串字面量；常量与调用点字面量的一致性由单测机械钉住），参数恒为 limit=MAX_VIEW_ROWS（50）并带 tenant_id / user_id；该端点与客户列表/详情**同权限码** customer:view（不并入 dashboard:view 的简报表快照 —— 客户档案含 PII，Agent 能力 ≡ 页面权限）', '🔴「未知」≠「0」的披露：快照里声明「无真值」的字段**逐条点名**，并说清它们一律为「未知」—— **不是 0、不是「从未发生」、不是默认值**（消息是模型的唯一输入源，不写这句模型会把 null 讲成「消费 0 元」）', '三类「没有数据」**各自点名、不合并**：① 声明「无真值」（系统没有这项能力）；② 声明「有真值」但**本次未接线**的字段单独点名（+ 请勿理解为均为 0）；③ **本次不完整**的字段点名 + 原因（不许读成「没问题」）；全部 wired 时不得出现未接线措辞（披露不能因为总是出现而失去信息量）', '有界不静默：输出被上限截断时消息点出「视图只列前 N 位，共 M 位」；data 就是**视图本体**（有界 ≤ MAX_VIEW_ROWS 行），不再包一层、也不回灌原始快照', '失败可归因：admin-api 返回 success=false 时走 admin_api_failure（带 error + message + 可行动 suggestion 指向 customer_manage 的 list），不是空壳失败；快照未携带真值声明时把 declaration.reason 说出来（fail-closed 的说明面）'],
+    skip_reason='[backend-contract] action 的披露与端点契约由 pytest 单测验证（backend/ai-agent-service/tests/test_customer_manage.py 的 profile_view 三条：未知≠0 披露 / 缺声明披露 / 失败可归因），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['query', 'tool', 'disclosure', 'field-truth'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -9009,6 +9045,8 @@ ALL_CASES = (
     _CASE_CU_007,
     _CASE_CU_008,
     _CASE_CU_009,
+    _CASE_CU_010,
+    _CASE_CU_011,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
