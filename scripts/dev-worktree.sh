@@ -18,15 +18,21 @@
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
 #   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像 → origin/main（自检转绿）
 #
-# 预设快照地雷与两层防线（v1.8，2026-09-15 新增，issue #3851）：
-#   worktree 的 `.agent-presets/**` 是**创建时刻快照**；此后 main 上预设再推进，
-#   工作区不会自动跟上 ⇒ 这些文件相对 origin/main 就是「改动」（内容在**回退**），
-#   一条 `git add -A` + push 就提交一个把研发模式回退若干版本的 PR，
-#   而 **CI 不看 `.agent-presets/**` 的版本 ⇒ 不红**（静默）。
-#   ① 创建路径（本脚本）：`add` 建完工作区后**自动**把 `.agent-presets/**` 刷新到 origin/main；
-#   ② 提交路径（本脚本 preset-guard）：判定暂存/工作区是否构成**版本下降**，命中即 fail-closed；
+# 预设快照地雷与**四个面**（v1.8，2026-09-15 新增，issue #3851；v1.11 按事实改判，issue #4350）：
+#   worktree 的 `.agent-presets/**` 是**创建时刻快照**（看着像普通代码路径，实际是 fork 那一刻的副本）
+#   ⇒ 这些文件相对 origin/main 就是「改动」（内容在**回退**），一条 `git add -A` + push 就提交
+#   一个把研发模式回退若干版本的 PR，而 **CI 不看 `.agent-presets/**` 的版本 ⇒ 不红**（静默）。
+#   ⚠️ 别再拿「一句话说清快照之后怎么走」的旧口径概括它（本文件 v1.11 前的写法已作废）——
+#   **分四个面看，结论各不相同**：
+#   ① 创建路径（本脚本 `add`）：**已自动刷新** —— 建完工作区即把 `.agent-presets/**` 对齐 origin/main
+#      （`refresh_presets()`，v1.8 / issue #3851）⇒ 这个面**不需要**人工再刷一遍；
+#   ② 提交路径（本脚本 `preset-guard`）：判定暂存/工作区是否构成**版本下降**，命中即 fail-closed；
 #      **合法升级放行**（改研发模式本身不能被堵死），同版本内容不同 = 分叉 → 告警；
-#   ③ 机械安全网（别处，互补）：#3843 的统一审计 `drift_audit --check` 将加
+#   ③ 加载点（活锚 `~/.dsh/.agent-presets/migao`）：**必须自愈** —— `./scripts/preset-anchor-refresh.sh`
+#      把专职只读镜像刷到 origin/main（`preset-guard` 同时判活锚新鲜度，落后/悬空即非零退出）；
+#   ④ 清理半径：`rm` / `prune` **会命中** worktree 的预设快照 ⇒ 清理前先 `readlink` 活锚目标并排除它
+#      （issue #3956 实证：软链目标被删 ⇒ DSH 静默加载不到研发模式）。
+#   另：机械安全网（别处，互补）—— #3843 的统一审计 `drift_audit --check` 将加
 #      「`.agent-presets/**` 版本单调性」守卫（全库/定时对账；本脚本管增量/贴合工作区）。
 #   v1.9（issue #3972）：刷新后工作区相对**本分支 HEAD** 就是「改动」，`git rebase origin/main`
 #   会被 git 拒绝（未跟踪快照挡 checkout / 已跟踪但版本旧= unstaged changes）⇒ 新增 `rebase`
@@ -186,7 +192,10 @@ refresh_presets() {
   local n
   n="$(git -C "$wt" ls-tree -r --name-only origin/main -- .agent-presets/ | wc -l | tr -d ' ')"
   echo "✅ 已把 .agent-presets/**（${n} 个文件）刷新到 origin/main —— 开局即不是「相对 main 的改动」。"
-  echo "   理由：worktree 的 .agent-presets/** 是**创建时刻快照**，main 推进后不自动跟上；"
+  echo "   理由（issue #4350 改判后的口径）：快照是**创建时刻**的副本，而 main 上的预设会继续推进"
+  echo "         ⇒ **本步骤（add 路径）就是替你补齐的地方**，不需要事后再手动刷一遍；"
+  echo "         真正需要人工**自愈**的是**活锚**：./scripts/preset-anchor-refresh.sh"
+  echo "         （另注：rm/prune 会命中 worktree 的预设快照 —— 清理前先 readlink 活锚目标）。"
   echo "         不刷新则一条 \`git add -A\` 就会把研发模式**静默回退**（CI 不看预设版本 ⇒ 不红）。"
   echo "   你自己要改研发模式：直接在工作区改 + 升 version（提交前跑 preset-guard，升级放行）。"
 }
@@ -440,12 +449,21 @@ case "${1:-}" in
     # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定 .agent-presets/** 是否构成版本下降。
     # v1.10（issue #4026）：同一守卫同时判**活锚新鲜度**（内容 + sha；落后/悬空即非零退出）
     #   —— 「仓库内容全对但改进到不了加载点」也是静默失效的一种，光看仓库内容查不出来。
-    # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）。
+    # v1.11（issue #4350）：本分支提示按**四个面**说清（旧口径「快照建好之后就不再跟随」已在
+    #   v1.35 的技能里改判 ⇒ 脚本侧同步；照旧口径写会让人白刷一遍预设）：
+    #     ① 创建路径 `add`：**已自动刷新**（refresh_presets()，v1.8 / #3851）⇒ 不需要人工再刷；
+    #     ② 提交路径：**就是本子命令**（判版本下降，命中即 fail-closed；合法升级放行）；
+    #     ③ 加载点（活锚）：**必须自愈** —— ./scripts/preset-anchor-refresh.sh（落后/悬空本命令同样非零退出）；
+    #     ④ 清理半径：rm / prune **会命中** worktree 的预设快照（清理前先 readlink 活锚目标）。
+    # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）—— 本分支只负责提示与出口。
     shift
     PY="$(command -v python3.11 || command -v python3 || true)"
     if [ -z "${PY}" ]; then
       echo "❌ 找不到 python3 —— 无法判定 .agent-presets/** 版本单调性（fail-closed）："
       echo "   worktree 的 .agent-presets/** 是创建时刻快照，未判定前不得提交它。"
+      echo "   四个面：① add 路径**已自动刷新**（不需要人工再刷）；② 本守卫 = 提交路径（判版本下降）；"
+      echo "           ③ 活锚**必须自愈**：./scripts/preset-anchor-refresh.sh；"
+      echo "           ④ rm/prune 会命中 worktree 快照（清理前先 readlink 活锚目标）。"
       echo "   兜底修法：git checkout origin/main -- .agent-presets/"
       exit 1
     fi

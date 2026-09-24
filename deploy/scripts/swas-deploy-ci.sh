@@ -413,7 +413,7 @@ deploy_attempt() {
   baseline=$(render_bootstrap "$IMAGE_TAG") || baseline=""
   baseline=${baseline//__ALLOW_DOWNGRADE__/$allow}
   if [ "$tag" != "$IMAGE_TAG" ] && [ "$bootstrap" = "$baseline" ]; then
-    echo "❌ 回滚 tag 替换未生效：BOOTSTRAP 里找不到当前 tag（$IMAGE_TAG）—— 拒绝用错 tag 部署"
+    echo "❌ 回滚 tag 替换未生效：BOOTSTRAP 里找不到当前 tag（${IMAGE_TAG}）—— 拒绝用错 tag 部署"
     DEPLOY_RC=3
     return 0
   fi

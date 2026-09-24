@@ -1,0 +1,51 @@
+{
+  "note": "守卫「声称的射程」台账（issue #5284）。判据 = tests/unit_ci_workflows/test_guard_scope_declaration.py；语料定义（根/glob/剪枝）由该判据冻结，台账只做登记；未登记即红、已登记而不再引用亦红。",
+  "corpora": {
+    "*.sh": {
+      "issue": "#5284",
+      "reason": "受控 shell 脚本语料：射程 = 全仓（剪枝 = .git / node_modules / .venv 等，见判据里的 CENSUS_EXCLUDE_DIRS）"
+    }
+  },
+  "guards": {
+    "tests/unit_ci_workflows/test_scripts_bash32_var_brace.py": {
+      "kind": "scans",
+      "issue": "#5284",
+      "reason": "`$VAR` 紧跟非 ASCII 的类级锁（#5260 起，射程由 #5284 从 scripts/** 扩到全仓）",
+      "declaration": {
+        "roots": [
+          "."
+        ],
+        "glob": "*.sh",
+        "exclude_dirs": [
+          ".git",
+          "node_modules",
+          ".venv",
+          "venv",
+          "site-packages",
+          ".next",
+          "dist",
+          "build",
+          "coverage"
+        ],
+        "enumerator": "scanned_shell_files",
+        "uncovered_faces": []
+      },
+      "uncovered_faces_frozen": 0
+    },
+    "tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py": {
+      "kind": "mentions",
+      "issue": "#5325",
+      "reason": "「原文口径」元守卫：它的射程是 Python 正则取值面（4 个目录），其 docstring 用 `scripts/*.sh` 说明「shell 面不在我射程内」⇒ 只**点名**语料、不扫描它；shell 语料的射程守卫 = test_scripts_bash32_var_brace.py"
+    },
+    "tests/unit_ci_workflows/test_guard_scope_declaration.py": {
+      "kind": "mentions",
+      "issue": "#5284",
+      "reason": "本判据自身：用 `*.sh` 语料 glob 做普查与闭包，不扫描脚本内容 ⇒ 按 mentions 入册（自登记，证明「引用语料即须登记」这条对新建模块同样生效）"
+    },
+    "tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py": {
+      "kind": "mentions",
+      "issue": "#5283",
+      "reason": "单文件锁（只锁 test_ui_smoke_worktree_deps.py 自己的变量展开形态）：docstring 用 `*.sh` 记明「全仓受控 shell 语料」的同族存量已清零、类级守卫在 test_scripts_bash32_var_brace.py ⇒ 只点名语料、不扫描它（#5283 残余① 的过期 docstring 由本 PR 改准）"
+    }
+  }
+}
