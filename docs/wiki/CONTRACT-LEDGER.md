@@ -112,6 +112,7 @@
 | 售后工单完结 → 库存（issue #2991） | refund/return 工单 resolved：**按商品「退货回补库存」开关 `products.allow_return_restock`（默认 false）决定**——窗帘行业定制退货不可再售，默认不回补；订单**全部**商品开启才整单回补（复用 `OrderService.restoreStockForReturn`）；任一商品关闭则整单跳过（宁可少回补不过回补） | 定制退货误入可售库存 → 假可售/误导销售 |
 | 订单 → 财务流水 | confirmPayment 记 income；cancel/refund 记 refund | 对账不平 |
 | 下单 → 客户建档 | 老客户只刷新 lastActiveAt（不累计） | 画像失真（已知，勿重复实现） |
+| 客户画像字段真值（issue #5362） | `customer_profiles` 的 RFM / 统计 / 生命周期预测 16 列（`r_score`/`f_score`/`m_score`/`rfm_total_score`/`total_orders`/`total_consumption`/`total_refund_amount`/`avg_order_value`/`repurchase_rate`/`lifecycle_stage`/`churn_risk_score`/`next_purchase_prediction_days`/`first_order_at`/`last_order_at`/`wechat_unionid`/`avatar_url`）**全仓无计算逻辑** ⇒ 字段级真值声明（Java 侧 `com.migao.admin.support.fieldtruth.CustomerProfileFieldTruth`，注册表 `FieldTruthRegistry`；机械判据 = 静态扫描「声明有真值 ⇒ 源码必须有真值级写入点」+ 类级元守卫逐条对账） | **API 读面一律回 `null`（未知）**（`GET /api/admin/customers` 列表、`GET /api/admin/customers/{id}` 的 `data.profile`、`PUT /api/admin/customers/{id}` 响应体）：不得把 DB 列默认值 0 / 30 或建档种子常量当成真值（口径同 `product_skus.avg_cost` 的「NULL = 未知，不猜 0」）；**有真值字段同表并存、照常返回**（`vip_level`/`customer_status`/`source_channel`/`registered_at`/`last_active_at`/`phone`/`wechat_nickname`/`tags`/`craft_mode`/`default_*` 等）；DB 列默认值与存量行**仍是 0**（列默认值/回填口径属补计算那一单） |
 | C 端查物流 | `customer_logistics_track`（仅本人已发货订单，拒绝快递单号直查）↔ B 端 `logistics_track`（仅 order_id，拒绝 tracking_number） | 用户/LLM 传快递单号直查必须拒绝；快递单号只能由系统从订单详情读取后内部查询轨迹 |
 
 ## 五、验收前必跑

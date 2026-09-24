@@ -585,8 +585,25 @@ jobs:
         uses: actions/checkout@v7
 
       - name: "Scan open PRs (悬空 ⇒ ::error:: + 非零退出)"
+        # `if: always()`：本步是 job 的**最后一步**，它同时承担**存活读数**（issue #5326 判据 1 / 4）
+        # —— 于是「悬空 ⇒ 判红」与「每轮必出声」由同一步保证，且**不新加一步**（既有红证
+        # `tests/unit_ci_workflows/test_dangling_pr_scan.py` 的 `test_host_workflow_wiring_guard_is_not_vacuous`
+        # 以「最后一步 = 跑判据脚本的那一步」为前提，加一步会把它变成空断言）。
+        if: always()
         run: |
           # 判据与动作都在 scripts/dangling_pr_scan.py（单一实现，本机可复跑）。
           # 退出码三态：0 = 无悬空；1 = **有**悬空（本行让 job 判红）；3 = 无法判定（不得当 0 读）。
+          set +e
           python3 scripts/dangling_pr_scan.py \
             --repo "$GITHUB_REPOSITORY" --minutes "$DANGLING_MINUTES"
+          RC=$?
+          set -e
+          # 存活读数（issue #5326 判据 1 / 4）：`rc≠0` 也必须出声（「我有事要说」≠「我没跑」）。
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不**让读数把机制判红。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit automerge --rc "$RC" \
+              --why "悬空 PR 扫描：退出码 ${RC}（0=无悬空 / 1=有悬空 / 3=无法判定）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=automerge）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
+          exit $RC
