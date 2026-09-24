@@ -19,6 +19,7 @@ from app.knowledge.distill import distill
 from app.briefing.generator import generate_briefing
 from app.production.routing import qty_and_source
 from app.tools import curtain_calc
+from app.vision.recognizer import recognize as recognize_image_fields
 
 router = APIRouter()
 
@@ -48,6 +49,21 @@ class BriefingGenerateRequest(BaseModel):
     """
     tenant_id: int = Field(..., description="租户 ID")
     snapshot: Dict[str, Any] = Field(..., description="聚合指标快照 {metrics: {key: value}, facts: [...]}")
+
+
+class VisionRecognizeRequest(BaseModel):
+    """图片识别请求（issue #5321 包 1 · 页面快通道）
+
+    `target_type` 区分**两个不同的识别 target**（商品 / 订单）—— 字段 schema 与消歧规则
+    不同，**不是**「一套字段两个页面填」。订单侧风险更高（客户信息错 ⇒ 货发错人）
+    ⇒ 采纳阈值更严，见 `backend/ai-agent-service/app/vision/targets.py`。
+    """
+    tenant_id: int = Field(..., description="租户 ID")
+    target_type: str = Field(..., description="识别 target：product（商品）/ order（订单）")
+    images: List[str] = Field(
+        default_factory=list,
+        description="已上传的图片 URL 列表（https:// 或 /api/files 开头；1~3 张）",
+    )
 
 
 class OperationQtyPosition(BaseModel):
@@ -304,6 +320,38 @@ async def distill_knowledge(
     )
     candidates = await distill(request.conversation_text, max_candidates=request.max_candidates, mode=request.mode)
     return make_response(True, data={"candidates": candidates})
+
+
+@router.post("/vision/recognize")
+async def vision_recognize(
+    request: VisionRecognizeRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """图片 → 结构化字段（issue #5321 包 1 · 页面快通道）。
+
+    调用路径：`admin-web 建品/建单页` → `admin-api AgentVisionController`
+    （JWT + 端点权限码）→ **本端点**（Service Token）。与 `BriefingGenerateClient` /
+    `CraftCalcClient` 等 AI 能力同一条既有内部范式，不另立第二套约定。
+
+    🔴 **不落库**：本端点只回「填哪几格」，**提交永远是人的动作**。
+    返回体恰好三个键（`target_type` / `fields` / `degraded`）—— 没有任何 id / 落库痕迹，
+    机械判据见 `backend/ai-agent-service/tests/test_vision_recognize.py::TestNoWriteBoundary`。
+
+    识别失败 / 一格都没认出来 ⇒ `degraded=True` + 空字段表（**不编造、不半填**），
+    由前端提示「请手工填写或换一张更清晰的图片」—— 与简报/知识提炼的降级口径一致。
+    入参非法（未知 target / 没有可用图片）是**调用方 bug** ⇒ 400，不降级掩盖。
+    """
+    logger.info(
+        f"[vision] recognize triggered: tenant_id={request.tenant_id}, "
+        f"target_type={request.target_type}, images={len(request.images or [])}"
+    )
+    try:
+        data = await recognize_image_fields(
+            request.target_type, request.images, tenant_id=request.tenant_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return make_response(True, data=data)
 
 
 @router.post("/briefing/generate")

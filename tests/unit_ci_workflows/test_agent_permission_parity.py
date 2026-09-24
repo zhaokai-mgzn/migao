@@ -674,6 +674,21 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
     "POST /api/admin/agent/audit-logs": "内部服务**取证上报**面：加码会让受限岗位的写操作审计被 403（#4727 第 11 行，"
                                         "取证缺口不可接受 —— 这是审计明说该放行的一条）",
+    "POST /api/admin/image-recognition": "图片识别（issue #5321 包 1）—— ⚠️ **本条不是「有意放行」**："
+                                        "权限**有**，只是取不到静态注解上。语义 = 一个入口覆盖两个模块、"
+                                        "两种写码（建品页 `product:create` / 建单页 `order:create`），"
+                                        "`@RequirePermission` 只能声明**端点级静态码**，表达不了这种分叉 "
+                                        "⇒ 控制器内用 `PermissionInterceptor.requirePermission(...)` "
+                                        "**命令式断言**动态校验（issue #4148 的既有机制，与 AOP 拦截走**同一份**判定："
+                                        "未认证拒绝 / 旁路角色 / `*` 通配 / 细粒度查询）；**未知 target ⇒ 400 且不发起远端调用**"
+                                        "（fail-closed，没有可用码就不放行）。"
+                                        "⚠️ **本守卫看不到动态调用**（它只读注解）⇒ 登记项与被登记端点之间的"
+                                        "「动态校验真的存在」由 `backend/admin-api/src/test/java/com/migao/admin/"
+                                        "controller/ImageRecognitionControllerTest.java` 机械兜住："
+                                        "逐 target 断言 `requirePermission(\"product:create\")` / "
+                                        "`requirePermission(\"order:create\")`，并断言未知 target 时"
+                                        "`never()` 调客户端与权限判定。同族形态见 `AgentOrderController` "
+                                        "的退款 action 复检（类级读码 + 命令式 `order:refund`）。",
     "GET /api/customer/*": "C 端人工会话面：不走 `/api/admin/**` 门禁，隔离靠业务层 `X-User-Id` 过滤",
     "POST /api/customer/*": "同上",
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",

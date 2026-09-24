@@ -245,7 +245,9 @@ class TestConvertHistory:
         # issue #3046：_image_url_hint 供当前消息与历史消息共用——
         # 无效 URL 过滤、CDN 域名重写、无图片返回空串
         from app.api.chat import _image_url_hint
-        with patch("app.api.chat.settings") as mock_settings:
+        # issue #5321：图片管线已抽到 app/vision/pipeline.py 成为两入口共用的单一事实源
+        # ⇒ 配置读取点随实现一起搬家，打桩目标须同步（断言/期望值一字未改，改的只是接缝地址）
+        with patch("app.vision.pipeline.settings") as mock_settings:
             mock_settings.IMAGE_URL_REWRITE_FROM = "cdn.a.com"
             mock_settings.IMAGE_URL_REWRITE_TO = "oss.a.com"
             hint = _image_url_hint([
@@ -281,13 +283,13 @@ class TestConvertHistory:
 
 
 class TestRewriteImageUrl:
-    @patch("app.api.chat.settings")
+    @patch("app.vision.pipeline.settings")
     def test_rewrite(self, mock_settings):
         mock_settings.IMAGE_URL_REWRITE_FROM = "cdn.a.com"
         mock_settings.IMAGE_URL_REWRITE_TO = "oss.a.com"
         assert _rewrite_image_url("https://cdn.a.com/x.jpg") == "https://oss.a.com/x.jpg"
 
-    @patch("app.api.chat.settings")
+    @patch("app.vision.pipeline.settings")
     def test_no_rewrite_config(self, mock_settings):
         mock_settings.IMAGE_URL_REWRITE_FROM = ""
         mock_settings.IMAGE_URL_REWRITE_TO = ""

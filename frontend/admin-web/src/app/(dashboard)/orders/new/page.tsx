@@ -7,7 +7,9 @@ import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Rec
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { urgencyRequestFields } from '@/lib/order-urgency'
-import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
+import { buildOrderPrefill } from '@/lib/image-recognize'
+import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
+import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow, type RecognizedField } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal, NumberInput } from '@/components/ui'
@@ -1222,6 +1224,28 @@ export default function NewOrderPage() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
   const [remark, setRemark] = useState('')
+  // 图片识别预填过的字段（issue #5321 包 1）：只驱动 `[图片识别]` 徽标，提醒商家复核
+  const [recognizedFields, setRecognizedFields] = useState<string[]>([])
+
+  // 图片识别预填（issue #5321 包 1）——**只在字段为空时才填**（不覆盖用户已输入的内容：
+  // 收货信息填错 = 货发错人）；明细/数量/规格不进 lineItems，拼一行进备注。
+  // 徽标只增不减：同一字段被识别填过就一直提醒复核。
+  const handleRecognized = useCallback(
+    (fields: RecognizedField[]) => {
+      const prefill = buildOrderPrefill(fields, {
+        customerName,
+        customerPhone,
+        customerAddress,
+        remark,
+      })
+      if (prefill.customerName !== undefined) setCustomerName(prefill.customerName)
+      if (prefill.customerPhone !== undefined) setCustomerPhone(prefill.customerPhone)
+      if (prefill.customerAddress !== undefined) setCustomerAddress(prefill.customerAddress)
+      if (prefill.remark !== undefined) setRemark(prefill.remark)
+      setRecognizedFields((prev) => Array.from(new Set([...prev, ...prefill.recognizedFields])))
+    },
+    [customerName, customerPhone, customerAddress, remark]
+  )
 
   // ===== 客户选择弹窗（#3102：选已有客户快捷回填收货信息，保留手动兜底）=====
   const [customerModalOpen, setCustomerModalOpen] = useState(false)
@@ -2485,34 +2509,53 @@ export default function NewOrderPage() {
                   选择客户
                 </button>
               </div>
+              {/* 图片识别快通道（issue #5321 包 1）：拍照/上传 → 预填收货信息 + 备注 */}
+              <div className="mb-4">
+                <ImageRecognizeButton targetType="order" onRecognized={handleRecognized} />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="收货人姓名"
-                  placeholder="请输入收货人姓名"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  error={errors.customerName}
-                  required
-                />
-                <Input
-                  label="手机号"
-                  placeholder="请输入 11 位手机号"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  error={errors.customerPhone}
-                  maxLength={11}
-                  required
-                />
+                <div className="flex items-start gap-2">
+                  <Input
+                    label="收货人姓名"
+                    placeholder="请输入收货人姓名"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    error={errors.customerName}
+                    required
+                  />
+                  {recognizedFields.includes('customerName') && (
+                    <RecognizedBadge fieldKey="customerName" />
+                  )}
+                </div>
+                <div className="flex items-start gap-2">
+                  <Input
+                    label="手机号"
+                    placeholder="请输入 11 位手机号"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    error={errors.customerPhone}
+                    maxLength={11}
+                    required
+                  />
+                  {recognizedFields.includes('customerPhone') && (
+                    <RecognizedBadge fieldKey="customerPhone" />
+                  )}
+                </div>
               </div>
               <div className="mt-4">
-                <Input
-                  label="收货地址"
-                  placeholder="请输入详细收货地址"
-                  value={customerAddress}
-                  onChange={(e) => setCustomerAddress(e.target.value)}
-                  error={errors.customerAddress}
-                  required
-                />
+                <div className="flex items-start gap-2">
+                  <Input
+                    label="收货地址"
+                    placeholder="请输入详细收货地址"
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    error={errors.customerAddress}
+                    required
+                  />
+                  {recognizedFields.includes('customerAddress') && (
+                    <RecognizedBadge fieldKey="customerAddress" />
+                  )}
+                </div>
               </div>
               {/* **常用物流 / 快递** + **常用物流公司**（issue #4874，用户 2026-09-21：
                   「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）
@@ -2568,7 +2611,10 @@ export default function NewOrderPage() {
                 </div>
               </div>
               <div className="mt-4">
-                <label className="block text-sm font-medium text-neutral-700 mb-1.5">备注</label>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  备注
+                  {recognizedFields.includes('remark') && <RecognizedBadge fieldKey="remark" />}
+                </label>
                 <textarea
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}

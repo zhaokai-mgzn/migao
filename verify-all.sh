@@ -563,6 +563,10 @@ case "$MODE" in
     report_env admin-api-pg "红证机具 auto-batch-due-scan 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-due-scan-red-proof.py'"
     report_env admin-api-pg "红证机具 saving-metrics-backend 实跑（真库判据）" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-backend.py'"
     report_env admin-web-vitest "红证机具 saving-metrics-web 实跑" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-web.py'"
+    # 批量更新（issue #5314）：old_value 持久化 ↔ 逐条还原 / 部分失败逐条报告 / 不可撤销闸
+    # ⚠️ issue 号写在本**注释**行、不写在下面那条的被引号包住的步骤名里：门禁 `_code_of()`
+    #    按行首个 `#` 截断（剥注释），写在引号内会把该行从「调用」截成「半句」⇒ 判成「没接线」。
+    report_env admin-api "红证机具 product-batch 实跑" bash -c "python3 '$ROOT/scripts/product-batch-red-proof.py'"
     ;;
   *)
     echo "用法: $0 {quick|full|frontend|backend|agent|gate|redproof}"

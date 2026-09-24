@@ -121,6 +121,14 @@ modules:
         tests:
           - 'tests/test_clarification/test_{1}.py'
           - 'tests/test_clarification/{1}.py'
+      # 图片识别内核（issue #5321 包 1）：测试放 tests/test_vision/test_<模块>.py
+      # （与上面 production / clarification **同因**：pytest.ini 只收 test_*.py，
+      #  通用规则会要求 tests/test_vision/<源文件名>.py —— 那样不可被 pytest 收集，
+      #  门禁会「绿」而测试从不运行 = 本仓库最忌的静默失效，故显式登记本规则）
+      - pattern: 'backend/ai-agent-service/app/vision/(.+)\.py'
+        tests:
+          - 'tests/test_vision/test_{1}.py'
+          - 'tests/test_vision/{1}.py'
       # 提问引导模块（issue #5329）：模糊输入的「可点击猜测」投影
       # （通用规则会要求 tests/test_suggestions/<源文件名>.py —— 不带 test_ 前缀 ⇒
       #  pytest.ini 只收 test_*.py ⇒ **不可被收集**，门禁会「绿」而测试从不运行；

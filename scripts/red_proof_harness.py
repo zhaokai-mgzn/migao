@@ -145,6 +145,12 @@ TOOLS: dict[str, ToolSpec] = {
             "frontend/admin-web/tests/unit/lib/saving-board.test.ts",
         ),
     ),
+    "scripts/product-batch-red-proof.py": ToolSpec(
+        floor=4,
+        heavy="Maven + JDK（admin-api 单测；4 条变异 + 基线实测 189s）",
+        impl=(_AAPI_MAIN + "service/AgentBatchService.java",),
+        criteria=(_AAPI_TEST + "service/AgentBatchServiceTest.java",),
+    ),
 }
 
 

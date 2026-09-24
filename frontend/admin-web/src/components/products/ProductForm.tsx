@@ -11,9 +11,10 @@ import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
 import CategoryTree from './CategoryTree'
 import CategoryDialog from './CategoryDialog'
+import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { categoryApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
-import { toChineseSpecKeys } from '@/lib/attribute-keys'
+import { toChineseSpecKeys, SPEC_EN_TO_CN } from '@/lib/attribute-keys'
 import type {
   ProductFormData,
   ProductStatus,
@@ -33,6 +34,11 @@ interface ProductFormProps {
    */
   onSubmit: (data: ProductFormData, targetStatus: ProductStatus) => Promise<void>
   submitText?: string
+  /**
+   * 已被**图片识别**预填的字段键（issue #5321 包 1）—— **可选**，只影响渲染：
+   * 在对应字段旁显示 `[图片识别]` 徽标提醒商家复核，**不参与提交**（不新增/不改任何载荷字段）。
+   */
+  recognizedFields?: string[]
 }
 
 // 字段在 DOM 中的可滚动锚点 ID
@@ -108,6 +114,7 @@ export default function ProductForm({
   initialData,
   onSubmit,
   submitText,
+  recognizedFields,
 }: ProductFormProps) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState<ProductStatus | null>(null)
@@ -115,6 +122,10 @@ export default function ProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
   const isEdit = !!initialData
+
+  // 图片识别预填的字段键（issue #5321）——只驱动 `[图片识别]` 徽标；规格属性用表单内部的英文 key
+  const recognized = recognizedFields || []
+  const recognizedSpecKeys = Object.keys(SPEC_EN_TO_CN).filter((k) => recognized.includes(k))
 
   // #1403: 管理分类弹窗状态
   const [catModalOpen, setCatModalOpen] = useState(false)
@@ -509,7 +520,11 @@ export default function ProductForm({
           </FieldRow>
 
           {/* 商品标题 */}
-          <FieldRow label="商品标题" required>
+          <FieldRow
+            label="商品标题"
+            required
+            badge={recognized.includes('name') ? <RecognizedBadge fieldKey="name" /> : undefined}
+          >
             <div id={ANCHORS.name} className="relative max-w-3xl">
               <Input
                 maxLength={TITLE_MAX}
@@ -549,8 +564,14 @@ export default function ProductForm({
             </div>
           </FieldRow>
 
-          {/* 商品属性 */}
-          <FieldRow label="商品属性" alignTop>
+          {/* 商品属性（材质 / 工艺 可由图片识别预填） */}
+          <FieldRow
+            label="商品属性"
+            alignTop
+            badge={recognizedSpecKeys.map((k) => (
+              <RecognizedBadge key={k} fieldKey={k} />
+            ))}
+          >
             <ProductAttributes
               value={{
                 skuCode: form.skuCode || '',
@@ -647,6 +668,7 @@ export default function ProductForm({
                 doorWidths: errors.doorWidths,
                 skus: errors.skus,
               }}
+              recognizedFields={recognized}
             />
           </div>
 
@@ -889,11 +911,14 @@ function FieldRow({
   label,
   required,
   alignTop,
+  badge,
   children,
 }: {
   label: string
   required?: boolean
   alignTop?: boolean
+  /** 标签旁的来源徽标（如 `[图片识别]`，issue #5321） */
+  badge?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -905,6 +930,7 @@ function FieldRow({
       >
         {required && <span className="text-red-500 mr-0.5">*</span>}
         {label}
+        {badge}
       </label>
       <div className="flex-1 min-w-0">{children}</div>
     </div>

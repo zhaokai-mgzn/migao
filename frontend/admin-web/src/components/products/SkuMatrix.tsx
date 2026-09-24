@@ -6,6 +6,7 @@ import { Plus, Trash2, GripVertical, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, NumberInput, Select } from '@/components/ui'
 import type { ProductColor, ProductSku } from '@/types'
+import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
 
 interface SkuMatrixProps {
@@ -24,6 +25,13 @@ interface SkuMatrixProps {
     doorWidths?: string
     skus?: string
   }
+  /**
+   * 已被**图片识别**预填的字段键（issue #5321 包 1）—— **可选**，只影响渲染：
+   * 在「颜色分类」/「规格尺寸」两处标题旁显示 `[图片识别]` 徽标提醒商家复核。
+   * 颜色与门幅都是**列表字段**（没有单一输入框可挂），故徽标挂在区块标题上 ——
+   * 商家据此知道这两列是识别来的、要逐行核对（价格 / 库存不预填，仍由商家填）。
+   */
+  recognizedFields?: string[]
 }
 
 // 门幅选项（值 canonical 裸数值 / 显示带单位）见 @/lib/sku-utils 的 DOOR_WIDTH_OPTIONS
@@ -65,8 +73,10 @@ type BatchScope = 'all' | 'color' | 'width'
  * ⚠️ 「售卖方式（整卷 / 散剪）」**不在这里** —— 它是商品级基础属性
  * （`ProductForm` 的基础属性区，请求体顶层 `sellingMethods`），不是 SKU 的组合项。
  */
-export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
+export default function SkuMatrix({ value, onChange, errors, recognizedFields }: SkuMatrixProps) {
   const { colors, doorWidths, skus } = value
+  // 图片识别预填的响应字段键（issue #5321）——只驱动 `[图片识别]` 徽标，不参与提交
+  const recognized = recognizedFields || []
 
   // ========== 颜色管理 ==========
   const handleAddColor = () => {
@@ -363,6 +373,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <span className="text-sm text-neutral-700">
               颜色分类
               <span className="ml-1 text-neutral-400">({colors.length})</span>
+              {recognized.includes('color') && <RecognizedBadge fieldKey="color" />}
             </span>
             <span className="text-xs text-neutral-400">
               最多新增 {MAX_COLORS} 个颜色分类，每种颜色分类最多可输入 {COLOR_NAME_MAX} 字符。
@@ -469,6 +480,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         onAdd={handleAddDoorWidth}
         canAdd={doorWidths.length < DOOR_WIDTH_OPTIONS.length}
         error={errors?.doorWidths}
+        badge={recognized.includes('door_width') ? <RecognizedBadge fieldKey="door_width" /> : undefined}
       >
         {doorWidths.map((w, idx) => (
           <div key={`dw-${idx}`} className="flex items-center gap-2">
@@ -751,6 +763,8 @@ interface RowSelectorSectionProps {
   children: React.ReactNode
   /** 排序按钮虽出现在 PRD 但 MVP 可暂时占位（保持视觉一致） */
   sortableHidden?: boolean
+  /** 标题旁的来源徽标（如 `[图片识别]`，issue #5321） */
+  badge?: React.ReactNode
 }
 
 function RowSelectorSection({
@@ -760,6 +774,7 @@ function RowSelectorSection({
   canAdd,
   error,
   children,
+  badge,
 }: RowSelectorSectionProps) {
   return (
     <div>
@@ -767,6 +782,7 @@ function RowSelectorSection({
         <span className="text-sm text-neutral-700">
           {title}
           <span className="ml-1 text-neutral-400">({count})</span>
+          {badge}
         </span>
         <span className="text-sm text-primary-500 cursor-default select-none">排序</span>
       </div>
