@@ -4138,7 +4138,7 @@
 ```
 溯源: 2026-09-23 新增（issue #5190，P2）：#5145 的批次消耗台账此前只有 mock / 控制器层测试，而这四件事（账实一致 / 唯一闸原子性 / V121 符号约束 / 对账恒等式）在 mock 面结构上不可见（Mockito 测不出约束）。本单复用 #5167 提取的共用件 PgCluster 与 #5199 已修好并在 CI 真跑的真库基础设施（MIGAO_REQUIRE_REALDB fail-closed），只补判据、不改口径。取号 PG-062：PG-059/060/061 已被 #5145/#5142 占用，PG-062 在 main 与全部在飞分支上均未占用（`git for-each-ref` 逐 ref 核过）。 ｜ tags: processing-order, production, stock-batch, ledger, real-db
 
-## 商品域（95 case）
+## 商品域（97 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -5343,6 +5343,47 @@
 ```
 溯源: 2026-09-23 新增（issue #5203，P0）。病灶（**已实测**，非风险预测）：13 个真库模块的 PG 探测只认 `PATH`（`shutil.which`），而 runner 的二进制在 `/usr/lib/postgresql/16/bin` ⇒ CI 上 83 条真库判据**一直静默 skip 成绿**（四条独立证据：探测口径 / runner 上 `command -v initdb` 找不到 / 受控实验「只藏 PG 三个二进制」精确复现 83 条 / CI 实测 87 skip）。修复 = ① 兜底搜索路径与 Java 侧 `PgCluster.BIN_DIRS` 同源 + 单一收口（**含 2 处隐藏副本**：`test_schema_bootstrap_order.py` 与 `test_v81_compensating_backfill.py` 各自那份不同源的 `_which()`，后者正是「有兜底所以能跑」的那份 ⇒ 漏掉它就等于没修）；② CI 两道锁（前置断言 + 标记注入，缺 PG 判红）；③ skip 逐条可见 + `[realdb-summary]` 正证锚点；④ 4 条静态守卫（各带能单独变红的红证）。本机实测：14 个真库模块 **201 passed / 0 skipped = 127.2s**。取号 PR-107（开工时 main 最高 PR-106；在飞 PR #5226 / #5222 未占号）。 ｜ tags: realdb, ci, fail-closed, evidence-strength
 
+### PR-108. 批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销 🔵
+```
+你: 把遮光窗帘和北欧风窗帘的价格都改成 155
+你: 已选商品：遮光窗帘、北欧风窗帘
+你: [🤖 按上一轮卡片作答]
+你: 撤销刚才那个批量改价
+你: [🤖 按上一轮卡片作答]
+期望: interact(component=choice, multiSelect=True)
+期望: product_batch_update(action=preview, batch_type=product_price)
+期望: interact(component=confirm)
+期望: product_batch_update(action=execute)
+数据: success=true
+数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
+数据: 逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py
+数据: 撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）
+数据: 部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）
+数据: 阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）
+复位: product_price_restore(product_keyword=遮光窗帘、price=168)
+复位: product_price_restore(product_keyword=北欧风窗帘、price=128)
+必填: product_batch_update(preview) 字段 batch_type, items
+必填: product_batch_update(execute) 字段 batch_id
+必填: product_batch_update(revert) 字段 batch_id
+必须成功: product_batch_update
+```
+溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm
+
+### PR-109. 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面） 🔵
+```
+你: （非 LLM 面）一次提交 51 条批量改价 ⇒ 必须拒绝并提示分批；batch_type 传 product_name ⇒ 必须拒绝；execute/revert 不带 batch_id ⇒ 必须拒绝；preview 必须逐条给出「改前 → 改后」
+数据: 判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）
+数据: 判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）
+数据: 判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）
+数据: 判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）
+数据: 判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）
+数据: 判据⑥ 权限码与逐条写**同码**：`required_permissions == ["product:create"]`（= `product_update` 的写码；契约正文本写的 `product:update` 在权限目录里**零命中**，用了会永久 403）
+数据: 判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）
+数据: 红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红
+跳过: [backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ tags: batch, threshold, static-guard, evidence-strength
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -6272,8 +6313,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：465（活跃 118，跳过 347）
-- tier 分布：smoke 10 / normal 425 / adversarial 30
+- 用例总数：467（活跃 119，跳过 348）
+- tier 分布：smoke 10 / normal 427 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6293,7 +6334,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：54
-- 商品域：95
+- 商品域：97
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -6414,6 +6455,8 @@
 - PR-105: 🔴 商家可见文案里的 markdown 强调不得漏出字面标记：**保留标记 + 渲染层解析**（`**x**` ⇒ 加粗、反引号 ⇒ 等宽）—— DOM 级判据（渲染后无裸标记 ∧ 强调真的以元素呈现）+ 源码面登记/接线守卫（承 issue #5033；2026-09-23 由「去掉标记」改判为「渲染」）
 - PR-106: 余料台账进侧边栏 —— **仓储与物料**（`inventory-center`）组新增「余料台账」(/production/remnants)：三处菜单源同构 + 权限码与页面门禁同码（用户裁定「补菜单」而非登记为域内下钻页；#5271 拆组后本项归「仓储与物料」，原写「生产管理组」）
 - PR-107: Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见
+- PR-108: 批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销
+- PR-109: 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序不上表，由 `matrix-orphan-hint` 报数不静默）

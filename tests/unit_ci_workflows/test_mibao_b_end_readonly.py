@@ -86,6 +86,7 @@ C 端（小布）**零改动**。
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path
 
@@ -116,10 +117,16 @@ WRITE_TOOLS_UNBOUND_FROM_B_END: dict[str, str] = {
 
 #: **A 档可逆写白名单**（issue #5303，用户裁定 2026-09-24）：B 端**允许**存在的 `read_only=False` 工具。
 #: 入册判据（缺一不可）：`WRITE|IDEMPOTENT`（重放安全）+ 可逆 + 非对外承诺 + 不绕过审核门禁。
-#: ⚠️ 只许这两条：新增成员 = 改产品能力边界，必须显式改判本常量（判据 1 会立刻红）。
+#: ⚠️ 新增成员 = 改产品能力边界，必须显式改判本常量（判据 1 会立刻红）。
+#: ⚠️ 2026-09-24 第二次改判（issue #5314「批量更新能力」）：`product_batch_update` 入册 ——
+#: 它写的是**绝对目标值**（价格 / 上架状态，重放收敛 ⇒ 幂等），且带**撤销入口**
+#: （`action=revert` 逐条还原 `old_value`，契约 §一 把撤销定为批量的**准入前置**）；
+#: 两段确认（勾选集合 → 逐条「改前 → 改后」预览）+ 工具级 `requires_confirmation=True`
+#: ⇒ 不绕过审核门禁。批量不是"新的写能力面"，而是把 N 次单条写压成一次意图。
 A_TIER_REVERSIBLE_WRITES: frozenset = frozenset({
-    "product_update",   # 商品级统一定价（PATCH /api/admin/agent/products/{id} → basePrice）
-    "sku_update",       # 单规格调价（PATCH …/skus/price）
+    "product_update",        # 商品级统一定价（PATCH /api/admin/agent/products/{id} → basePrice）
+    "sku_update",            # 单规格调价（PATCH …/skus/price）
+    "product_batch_update",  # 批量改价 / 批量上下架 + revert 撤销（issue #5314，# 见上）
 })
 
 #: A 档工具**必须**绑在的 skill（补回域唯一；漂移到别的域即红 —— 判据 1）
@@ -460,16 +467,31 @@ def problems_write_tools_bound(w: World) -> list[str]:
 
 
 def problems_action_sets(w: World) -> list[str]:
-    """判据 3：B 端可达工具的 action 集合 ⊆ 只读 action 集合（+ 写 action 闭词表）。"""
+    """判据 3：B 端可达工具的 action 集合 ⊆ 只读 action 集合（+ 写 action 闭词表）。
+
+    ⚠️ 2026-09-24（issue #5314，随 A 档白名单第二次扩容同步）：A 档白名单成员**有意**
+    拥有写 action（这正是它入册的原因）⇒ 对它们改判为判据 3 的**另一半**（反洗白）：
+    写动作名不得被声明进 `read_only_actions`（那会借只读豁免绕开确认门禁）。
+    其余工具**一条不放宽**：`actions ⊆ read_only_actions` 与闭词表兜底都照旧
+    （判据自身的两条红证仍打在非白名单工具 `category_manage` 上，未改锚点）。
+    """
     out: list[str] = []
     for name in sorted(w.b_end_tools):
         decl = w.tools.get(name)
         if decl is None or decl["valid_actions"] is None:
             continue
         actions = set(decl["valid_actions"])
-        roa = decl["read_only_actions"]
-        if roa is not None:
-            extra = sorted(actions - set(roa))
+        roa = set(decl["read_only_actions"] or [])
+        if name in A_TIER_REVERSIBLE_WRITES:
+            hidden = sorted(a for a in (actions & roa) if a in WRITE_ACTION_WORDS)
+            if hidden:
+                out.append(
+                    f"`{name}`：把写动作名 {hidden} 声明进 `read_only_actions` ⇒ "
+                    "借只读豁免绕开确认门禁（闭词表兜底）"
+                )
+            continue
+        if decl["read_only_actions"] is not None:
+            extra = sorted(actions - roa)
             if extra:
                 out.append(
                     f"`{name}`：B 端可达的 action {extra} 不在它声明的只读 action "
@@ -704,9 +726,13 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             problems_shared_tools_intact,
         ),
         # ── #5303 新增（判据 6）：A 档能力「文案 ↔ 绑定」双向 ──
+        # ⚠️ #5314：解绑面**从白名单现算**（原来逐字写死两条 ⇒ 白名单扩容后注入不再生效，
+        #    红证会退化成"判据没有变红"）。口径不变：全部 A 档工具被解绑 + 文案仍承诺改价。
         "⑥ A 档工具**全部**被解绑、文案仍承诺改价 ⇒ 判据 6 红（谎报方向）": (
             "skill:product_skill.py",
-            lambda s: _unbind_from_c_skill(_unbind_from_c_skill(s, "product_update"), "sku_update"),
+            lambda s: functools.reduce(
+                lambda acc, tool: _unbind_from_c_skill(acc, tool),
+                sorted(A_TIER_REVERSIBLE_WRITES), s),
             problems_a_tier_capability_parity,
         ),
         "⑥b 文案抹掉改价承诺、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (

@@ -7528,6 +7528,47 @@ _CASE_PR_107 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-108 [NORMAL] 批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销（源: cases/product.yml）──
+_CASE_PR_108 = EvalCase(
+    id='PR-108',
+    legacy_id='',
+    title='批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把遮光窗帘和北欧风窗帘的价格都改成 155', '已选商品：遮光窗帘、北欧风窗帘', {'auto_respond': {'fallback': '确认'}}, '撤销刚才那个批量改价', {'auto_respond': {'fallback': '确认'}}],
+    expectations=['interact(component=choice, multiSelect=True)', 'product_batch_update(action=preview, batch_type=product_price)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
+    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py', '撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）'],
+    skip_reason='',
+    tags=['batch', 'multi_turn', 'write', 'undo', 'two_stage_confirm'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'product_batch_update', 'action': 'preview', 'fields': ['batch_type', 'items']}, {'tool': 'product_batch_update', 'action': 'execute', 'fields': ['batch_id']}, {'tool': 'product_batch_update', 'action': 'revert', 'fields': ['batch_id']}],
+    must_succeed=[{'tool': 'product_batch_update'}],
+    post_clean=[{'type': 'product_price_restore', 'product_keyword': '遮光窗帘', 'price': 168}, {'type': 'product_price_restore', 'product_keyword': '北欧风窗帘', 'price': 128}],
+    namespaces=['product_name:遮光窗帘', 'product_name:北欧风窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '北欧风窗帘', 'expect': 1}],
+)
+
+# ── PR-109 [NORMAL] 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）（源: cases/product.yml）──
+_CASE_PR_109 = EvalCase(
+    id='PR-109',
+    legacy_id='',
+    title='批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（非 LLM 面）一次提交 51 条批量改价 ⇒ 必须拒绝并提示分批；batch_type 传 product_name ⇒ 必须拒绝；execute/revert 不带 batch_id ⇒ 必须拒绝；preview 必须逐条给出「改前 → 改后」'],
+    expectations=[],
+    data_checks=['判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）', '判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）', '判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）', '判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）', '判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）', '判据⑥ 权限码与逐条写**同码**：`required_permissions == ["product:create"]`（= `product_update` 的写码；契约正文本写的 `product:update` 在权限目录里**零命中**，用了会永久 403）', "判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）", '红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红'],
+    skip_reason='[backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['batch', 'threshold', 'static-guard', 'evidence-strength'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -9192,6 +9233,8 @@ ALL_CASES = (
     _CASE_PR_105,
     _CASE_PR_106,
     _CASE_PR_107,
+    _CASE_PR_108,
+    _CASE_PR_109,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

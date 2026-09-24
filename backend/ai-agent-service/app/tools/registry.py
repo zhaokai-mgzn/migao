@@ -595,6 +595,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.product_update import ProductUpdateTool
+    from app.tools.product_batch_update import ProductBatchUpdateTool
     from app.tools.sku_update import SkuUpdateTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
@@ -651,6 +652,10 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
     registry.register(ProductUpdateTool())
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销，走冻结契约的
+    # `/api/admin/agent/batches` 四个端点。注册表只决定「工具存在」；可达性由 persona 的
+    # skill 工具集决定（米宝 product；C 端一律不绑 —— 批量写是商户员工能力）。
+    registry.register(ProductBatchUpdateTool())
     registry.register(SkuUpdateTool())
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())

@@ -65,6 +65,7 @@ from app.tools.session_manage import SessionManageTool
 from app.tools.category_manage import CategoryManageTool
 from app.tools.processing_item_manage import ProcessingItemManageTool
 from app.tools.product_update import ProductUpdateTool
+from app.tools.product_batch_update import ProductBatchUpdateTool
 from app.tools.sku_update import SkuUpdateTool
 from app.tools.interact import InteractTool
 from app.tools.validate_input import ValidateInputTool
@@ -99,6 +100,10 @@ __all__ = [
     "NotificationManageTool", "SettingsManageTool",
     "SessionManageTool", "CategoryManageTool", "ProcessingItemManageTool",
     "ProductUpdateTool", "SkuUpdateTool",
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销；
+    # 与逐条写同码（product:create），登记形态与其余写工具一致（注册集双向核对 =
+    # tests/test_tools_registry.py::TestToolsFacadeCompleteness）
+    "ProductBatchUpdateTool",
     "InteractTool", "ValidateInputTool", "CurtainCalcTool",
     "ProductionProgressQueryTool", "PieceworkQueryTool",
     "ProductionWorklogQueryTool",

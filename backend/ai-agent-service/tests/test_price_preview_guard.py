@@ -46,8 +46,13 @@ from app.tools.confirm_value import (
 from app.tools.product_update import ProductUpdateTool
 from app.tools.sku_update import SkuUpdateTool
 
-#: B 端商品域**允许**存在的写工具（#5303 的补回范围，白名单只许这两条）
-ALLOWED_B_END_WRITES = frozenset({"product_update", "sku_update"})
+#: B 端商品域**允许**存在的写工具（#5303 的补回范围 → #5314 增补批量形态）。
+#: ⚠️ 2026-09-24（issue #5314）：`product_batch_update` 入册 —— 它的改价预览**复用本文件的
+#: 同一套单一源**（`confirm_value.price_preview_missing` / `confirm_card_fields`，逐条
+#: 「改前价 → 改后价」），且 `execute` 结构上必须带 `preview` 产生的 batch_id（两段确认）。
+#: 新增成员 = 改 B 端写能力边界，必须显式改判本常量（与
+#: tests/unit_ci_workflows/test_mibao_b_end_readonly.py 的 A 档白名单同步）。
+ALLOWED_B_END_WRITES = frozenset({"product_update", "sku_update", "product_batch_update"})
 
 
 def _unexpected_writes_in(tools) -> list[str]:
@@ -222,11 +227,12 @@ class TestGateHintTellsTheNextStep:
 
 
 class TestBinding:
-    """判据 5：绑定面 = 这两条（且只有这两条）写工具。"""
+    """判据 5：绑定面 = 白名单这三条（且只有这三条）写工具。"""
 
     def test_price_tools_are_bound(self):
         assert "product_update" in PRODUCT_TOOLS
         assert "sku_update" in PRODUCT_TOOLS
+        assert "product_batch_update" in PRODUCT_TOOLS
 
     def test_only_the_two_reversible_writes_are_bound(self):
         assert _unexpected_writes_in(PRODUCT_TOOLS) == []

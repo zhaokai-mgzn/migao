@@ -82,6 +82,11 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    （`order_create` / `aftersale_create`）。
     "aftersale_create",            # WRITE|NON_IDEMPOTENT
     "order_create",                # WRITE
+    # issue #5314（批量更新能力，Agent 侧）：`product_batch_update` 是**整工具写**
+    # （`read_only=False`；`preview` 虽免确认门禁但仍是"创建批次"这一写调用的一部分，
+    #  `execute`/`revert` 直接改商品）⇒ 必须进本表，否则含它期望的用例**不被分类为写用例**
+    # ⇒ 效果层断言 / 自清理规则对它**静默失效**（这正是 #5303 那条注释记的病根）。
+    "product_batch_update",        # WRITE（两段确认 + batch_id 结构锁；绝对目标值 ⇒ 幂等）
     # ⚠️ 2026-09-24（issue #5303，**改判** #5247 的一半）：`product_update` / `sku_update`
     #    **补回本表** —— 二者是 #5285「B 端米宝只读化」后**唯一回绑的两个 A 档可逆写工具**
     #    （product_skill 重新绑定：前者写商品级 `products.base_price`，后者写

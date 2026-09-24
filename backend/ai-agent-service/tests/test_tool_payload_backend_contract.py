@@ -230,6 +230,13 @@ ENDPOINT_ALLOWLIST: dict[tuple[str, str, str], dict[str, str]] = {
     # 这两个 agent 生产端点**尚未合入** ⇒ 曾**临时**登记两条条目（路径见对应工具文件与
     # `AgentProductionController`）。#3995（M4-G-2，PR #3998）合入控制器、端点到齐后，两条条目已按
     # 「白名单修好即销账」纪律**删除**（test_endpoint_allowlist_entries_are_current 不再命中陈旧条目）。
+    #
+    # ── 销账留档（issue #5314，2026-09-24）：同一形态**再次出现**并按同一纪律登记过 ───────
+    # 批量更新的 Agent 侧按 #5314 冻结契约先行编码时，服务端 `/api/admin/agent/batches*`
+    # 尚未合入 ⇒ 曾**临时**登记三条（创建批次 / execute / revert）。
+    # 服务端包（PR #5339，`AgentBatchController`，类级 `@RequirePermission("product:create")`）
+    # 落地后，三条已按「白名单修好即销账」纪律**删除** —— `test_endpoint_allowlist_entries_are_current`
+    # 不再命中陈旧条目，判据回到「拿真实端点对账」。
 }
 
 # ── 白名单：存量缺陷工作清单（每条必须带 reason + owner + issue）─────────────
