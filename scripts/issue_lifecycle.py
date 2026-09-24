@@ -128,6 +128,7 @@ VERIFY_ENV = "MIGAO_VERIFY_BIN"
 PRESET_REFRESH_ENV = "MIGAO_PRESET_REFRESH_BIN"
 WT_BASE_ENV = "MIGAO_WT_BASE"
 DEFAULT_CI_TIMEOUT = 1800
+PR_LIMIT = 500  # 一次取数的上限（与 GUARD._pr_merged_branches 同量级；截断后果见 read_pr_rows 调用点）
 
 # ── `land` 的**顺序即安全顺序**（唯一顺序源：执行体 `for` 遍历它，不手写第二套）────────
 # 把 `ready` 提到 `gate` 之前 ⇒ 把「gate 这道闸」摘掉（`ready` 自己没有前置判据）。
@@ -604,7 +605,7 @@ def wt_base_dir(cwd: Path) -> Path:
 
 def read_pr_rows(cwd: Path) -> list[dict] | None:
     """**一次**取全量 PR（`--state all`）⇒ 行列表；取不到 ⇒ None（无法判定，不得当 0 读）。"""
-    proc = _run([gh_bin(), "pr", "list", "--state", "all", "--limit", "500",
+    proc = _run([gh_bin(), "pr", "list", "--state", "all", "--limit", str(PR_LIMIT),
                  "--json", "number,state,headRefName,baseRefName"], cwd=cwd, timeout=120)
     if proc.returncode != 0:
         return None
@@ -713,6 +714,10 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     if not rows:
         print("⏭️  gh 可用但**一条 PR 都取不到**（空结果）⇒ 无法判定 ⇒ 一个都不删（exit 3）。", file=sys.stderr)
         return EXIT_UNKNOWN
+    if len(rows) >= PR_LIMIT:
+        print(f"⚠️  读数可能被 `--limit {PR_LIMIT}` **截断**（本次恰好拿到 {PR_LIMIT} 条）⇒ 更老的已合并 PR "
+              "可能不在读数里。后果是**漏收**（fail-closed 方向：判不出「已合并」就不动），**不会误删**；"
+              "要全量需分页，本单未做（如实登记为边界）。")
 
     merged, open_nums, open_bases = classify_rows(rows)
     protected = anchor_protected_paths()
