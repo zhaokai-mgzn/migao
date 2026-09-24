@@ -19,6 +19,11 @@ VALID_ACTIONS = {
     "recent_orders",
     "active_sessions",
     "product_ranking",
+    # issue #5247（B 端只读模块覆盖：看板补全）：三个**只读**待办/发货计数端点此前没有任何
+    # 工具绑定（DashboardController 类级 `dashboard:view`，与既有 action 同码）。
+    "pending_tasks",
+    "pending_shipment_count",
+    "processing_shipment_count",
 }
 
 
@@ -42,7 +47,9 @@ class DashboardStatsTool(BaseTool):
         "'哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。"
         "【参数】action 必填：overview(今日概览) / order_trend(趋势,需 days) / order_status(状态分布) / "
         "recent_orders(最近,需 limit) / active_sessions(活跃,需 limit) / "
-        "product_ranking(商品销量排行,period=day 近7天|month 近30天,需 limit)；days 默认 7、limit 默认 5。"
+        "product_ranking(商品销量排行,period=day 近7天|month 近30天,需 limit) / "
+        "pending_tasks(待办任务) / pending_shipment_count(待发货单数) / "
+        "processing_shipment_count(加工中待发货单数)；days 默认 7、limit 默认 5。"
         "【反例】查某个具体订单/订单列表用 order_query；查客服会话详情用 session_manage；"
         "查加工单用 processing_order_query。"
         "【标注】READONLY — 经营分析专用，不查具体记录、不改动任何数据"
@@ -65,16 +72,12 @@ class DashboardStatsTool(BaseTool):
                     "order_status（订单状态分布饼图数据） / "
                     "recent_orders（最近订单列表，需配合 limit） / "
                     "active_sessions（当前活跃客服会话列表，需配合 limit） / "
-                    "product_ranking（商品销量排行，需配合 period 与 limit，适用于“哪个商品卖得最好”场景）"
+                    "product_ranking（商品销量排行，需配合 period 与 limit，适用于“哪个商品卖得最好”场景） / "
+                    "pending_tasks（待办任务清单） / "
+                    "pending_shipment_count（待发货单数） / "
+                    "processing_shipment_count（加工中待发货单数）"
                 ),
-                "enum": [
-                    "overview",
-                    "order_trend",
-                    "order_status",
-                    "recent_orders",
-                    "active_sessions",
-                    "product_ranking",
-                ],
+                "enum": ["overview", "order_trend", "order_status", "recent_orders", "active_sessions", "product_ranking", "pending_tasks", "pending_shipment_count", "processing_shipment_count"],
             },
             "days": {
                 "type": "integer",
@@ -154,6 +157,12 @@ class DashboardStatsTool(BaseTool):
                 return await self._active_sessions(context, limit)
             elif action == "product_ranking":
                 return await self._product_ranking(context, period, limit)
+            elif action == "pending_tasks":
+                return await self._pending_tasks(context)
+            elif action == "pending_shipment_count":
+                return await self._pending_shipment_count(context)
+            elif action == "processing_shipment_count":
+                return await self._processing_shipment_count(context)
             else:
                 return ToolResult(
                     success=False,
@@ -409,3 +418,49 @@ class DashboardStatsTool(BaseTool):
             message="商品销量排行数据已获取",
             summary=summary,
         )
+
+    async def _pending_tasks(self, context: ToolContext) -> ToolResult:
+        """待办任务（GET /api/admin/dashboard/pending-tasks，dashboard:view）"""
+        client = get_admin_api_client()
+        # ⚠️ 端点路径必须**字面量写在调用点**（静态归属门禁 + 权限守卫的端点对账都靠静态可渲染）
+        response = await client.get(
+            "/api/admin/dashboard/pending-tasks",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        return self._dashboard_map_result(response, "待办任务", "pending_tasks")
+
+    async def _pending_shipment_count(self, context: ToolContext) -> ToolResult:
+        """待发货单数（GET /api/admin/dashboard/pending-shipment-count，dashboard:view）"""
+        client = get_admin_api_client()
+        response = await client.get(
+            "/api/admin/dashboard/pending-shipment-count",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        return self._dashboard_map_result(response, "待发货单数", "pending_shipment_count")
+
+    async def _processing_shipment_count(self, context: ToolContext) -> ToolResult:
+        """加工中待发货单数（GET /api/admin/dashboard/processing-shipment-count，dashboard:view）"""
+        client = get_admin_api_client()
+        response = await client.get(
+            "/api/admin/dashboard/processing-shipment-count",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        return self._dashboard_map_result(response, "加工中待发货单数", "processing_shipment_count")
+
+    def _dashboard_map_result(self, response, label: str, action: str) -> ToolResult:
+        """三处「计数/待办」只读端点的共用**结果形态**（错误处理只写一份，路径各自字面量）。"""
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "查询失败")
+            return admin_api_failure(response,
+                error=error_msg,
+                message=f"{label}查询失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
+            )
+        data = response.get("data", {})
+        logger.info(f"[dashboard-stats] {action} fetched")
+        return ToolResult(success=True, data=data, message=f"{label}已获取")

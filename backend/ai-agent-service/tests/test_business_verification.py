@@ -907,8 +907,10 @@ class TestEnumAlignment:
          {"system", "email", "sms", "wechat"}),
         ("notification_manage", "status",
          {"unread", "read"}),
+        # issue #5247（B 端只读化）：`after_sales_manage` 的 create / update_status 已删除
+        # ⇒ 期望集收窄为 {list, detail}（枚举若被搬回写 action，本用例立刻红）。
         ("after_sales_manage", "action",
-         {"list", "detail", "create", "update_status"}),
+         {"list", "detail"}),
         ("after_sales_manage", "ticket_type",
          {"refund", "exchange", "repair", "complaint", "other"}),
         ("after_sales_manage", "status",

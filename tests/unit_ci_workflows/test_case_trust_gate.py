@@ -1,3 +1,4 @@
+# case_ids: MC-012, PG-013, PR-021, CU-003
 """
 断言可信度门禁的 L0 防复发守卫（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）。
 
@@ -21,7 +22,9 @@ PR 门禁外壳。两者若只被「真实用例库」间接覆盖，就有典�
 见本文件末尾 `TestRedProofRecord.test_red_proof_before_gate_is_documented` 锁定的
 `.github/case-trust-redproof.md`：**补前必红 / 补后绿**的原文逐字留档，防止红证被事后改写。
 """
-# case_ids: CU-003, PG-013, PR-021, CH-009, CH-016, OR-012, CH-011, PR-008, CH-005
+# 夹具溯源（**非声明行**：真声明只有文件第 1 行那一处 —— `growth_gate.extract_case_ids`
+# 取首个命中即停，第二处声明会被遮蔽，故这里只留可读的溯源信息）：
+# CU-003 / PG-013 / PR-021 / CH-009 / CH-016 / OR-012 / CH-011 / PR-008 / CH-005。
 import copy
 import json
 import subprocess
@@ -61,7 +64,7 @@ def fixture_cu_003() -> dict:
     """CU-003「给客户打标签」—— 物理不可满足（#3832）。
 
     载荷逐字取自 `.github/cases/customer.yml` 的 CU-003（**报缺陷/未修时的形态**）：
-      · expectations: customer_manage(action=add_tag)  ← 写
+      · expectations: notification_manage(action=mark_read)  ← 写（**action 级**写分类）
       · pre_clean[].tag_name = "VIP2活跃"；种子里只有 `VIP2` / `活跃`
       · pre_clean[].customer_index = 0 —— **按列表位置定位客户**（规则 e 的红证载荷；
         列表按 `created_at DESC` 排序 ⇒ 重名时点中的是别人中途造的那个客户）
@@ -70,11 +73,22 @@ def fixture_cu_003() -> dict:
     ⚠️ 上游已在 #3832 修好（`tag_name` 改 `VIP2`、`customer_keyword` 改手机号并去掉
     `customer_index`）—— 本夹具**刻意保留修前形态**以维持判据的判别力（新形态的回归
     由 `test_concurrent_fix_shapes_pass` 锁定）。
+
+    ⚠️ 工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」）：原载荷的
+    `customer_manage(action=add_tag)` 已随本次只读化**从源码删除写 action**（现只剩
+    list/detail/list_tags）⇒ 它不再是写工具，本夹具承载的
+    `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE`
+    两条规则同时落空（负例断言变成恒真）。改用**当前可达**的 action 级写工具
+    `notification_manage` + `action: mark_read`（`WRITE_TOOL_ACTIONS` 成员）。
+    **缺陷形态一字未动**：客户域的 `pre_clean` 自清理载荷（不可解析的 `VIP2活跃` +
+    按位置的 `customer_index: 0`）与纯散文 `data_checks` 原样保留 —— 它们才是
+    「目标不可解析」「按位置定位」「散文充当效果层」三个缺陷的载体
+    （`CASE-TRUST-VOLATILE-LOCATOR` 不依赖写分类，判别力未受影响）。
     """
     return {
         "id": "CU-003",
         "title": "给客户打标签",
-        "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
+        "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
         "data_checks": ["add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过"],
         "pre_clean": [{
             "type": "customer_tag_remove",
@@ -106,12 +120,21 @@ def fixture_pg_013() -> dict:
     A13 的修复），夹具不再是「写用例」，本夹具承载的三条规则同时失去判别力。
     换用在册写工具 `order_manage`（同为订单域 WRITE|DESTRUCTIVE），**缺陷形态不变**
     （只证明「调用了」+ 全程禁令 + 无自清理 + 无前置自断言）。
+
+    ⚠️ **再次重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」）：`order_manage`
+    已从 B 端全部 skill 解绑 ⇒ 连 C 端也没绑定 ⇒ **两侧工具集都不可达**（= 幽灵写工具，
+    判据从「真实可达」退化成「曾经可达」）⇒ 它从 `WRITE_TOOLS` 移出后，上面那段 #4010/A13
+    的失效形态**原样复发**（本夹具承载的四条规则同时落空）。改用**当前可达**的整工具写
+    工具 `order_create`（`WRITE_TOOLS` 成员，C 端小布；`required_args` 同步换成
+    `order_create` 的真实参数形态），**缺陷形态不变**（只证明「调用了」+ 全程禁令 +
+    无自清理 + 无前置自断言）。
     """
     return {
         "id": "PG-013",
         "title": "米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）",
-        "expectations": [{"tool": "order_query"}, {"tool": "order_manage"}],
-        "required_args": [{"tool": "order_manage", "fields": ["order_no"]}],
+        "expectations": [{"tool": "order_query"}, {"tool": "order_create"}],
+        "required_args": [{"tool": "order_create",
+                           "fields": ["items[].processing_info.sellingMethod"]}],
         "forbidden_text": [
             "暂不支持", "功能不存在", "没有这个功能", "无加工项",
             "生成未成功", "生成失败", "无法生成加工单", "系统判定为",
@@ -129,15 +152,20 @@ def fixture_pr_021() -> dict:
     """PR-021「单独 SKU 调价」—— 假绿：`data_checks` 无 `success=true` ⇒ 不计分（#3559）。
 
     载荷逐字取自 `.github/cases/product.yml` 的 PR-021：
-      · expectations 只有 `sku_update`（无 args）→ 只证明「调用了」
-      · data_checks =「sku_update 成功（价格落库）」—— **没有 `success=true` 关键词**
+      · expectations 只有 `order_create`（无 args）→ 只证明「调用了」
+      · data_checks =「order_create 成功（订单落库）」—— **没有 `success=true` 关键词**
         ⇒ runner 的 `scoring_checks` 不收它 ⇒ 该条**不计分**（用例作者以为写了落库断言）
+
+    ⚠️ 工具槽已**重新锚定**（#5247，B 端只读化）：原载荷的 `sku_update` 已从 B 端全部
+    skill 解绑 ⇒ 不再是可达写工具（幽灵写工具）⇒ 「写用例无效果层断言」这条判据落空。
+    改用**当前可达**的整工具写工具 `order_create`（`WRITE_TOOLS` 成员），
+    **缺陷形态不变**（写期望只有工具名 + 散文 data_checks 充当落库断言）。
     """
     return {
         "id": "PR-021",
         "title": "单独 SKU 调价 - 修改某规格价格",
-        "expectations": [{"tool": "sku_update"}],
-        "data_checks": ["sku_update 成功（价格落库）"],
+        "expectations": [{"tool": "order_create"}],
+        "data_checks": ["order_create 成功（订单落库）"],
         "pre_clean": [],
         "forbidden_text": [],
         "persona": "",
@@ -200,9 +228,16 @@ def fixture_single_leg_unmarked() -> dict:
 def fixture_shared_tool_unmarked() -> dict:
     """**共享工具**用例缺 persona —— 旧判据的**假阳性**（#4356，反例方向的红证）。
 
-    载荷逐字取自 `OR-008`（`.github/cases/order.yml`，`persona: mibao`）：
-    `product_detail` 与 `order_create` **两端都有**（都在
+    载荷取自 `OR-008`（`.github/cases/order.yml`，`persona: mibao`）：
+    `product_detail` 与 `validate_input` **两端都有**（都在
     `eval_case_filter.mibao_real_toolset()` 里）⇒ 本用例两条腿都跑得动。
+
+    ⚠️ 第二条共享工具已**重新锚定**（#5247，B 端只读化）：原载荷的 `order_create` 已从
+    B 端全部 skill 解绑 ⇒ 只剩 C 端可达 ⇒ 本夹具会被判成「只能跑小布」（上面那条
+    #4356 假阳性重新回流，本测试随之失去判别力）。改用同属**两端共享工具集**的
+    `validate_input`（`OR-008` 用例本身也已随 #5247 退役、`expectations` 改判为
+    `product_detail`，见 `.github/cases/order.yml`）——「两条 expectations 都是两端共享
+    工具」这一前提不变，判别力不变。
 
     ⇒ 判据**必须不报**：它若报，消红的省事写法就是 `persona: xiaobu`，而
     `render_cases.filter_by_persona` 跑米宝腿时会跳过 `persona == "xiaobu"`
@@ -213,10 +248,9 @@ def fixture_shared_tool_unmarked() -> dict:
         "title": "（注入夹具）共享工具用例未标注 persona",
         "expectations": [
             {"tool": "product_detail", "args": {"product_id": "遮光窗帘"}},
-            {"tool": "order_create"},
+            {"tool": "validate_input"},
         ],
-        "required_args": [{"tool": "order_create",
-                           "fields": ["items[].processing_info.sellingMethod"]}],
+        "required_args": [{"tool": "validate_input", "fields": ["items"]}],
         "data_checks": ["data.order_id.length > 0"],
         "persona": "",
     }
@@ -264,6 +298,20 @@ def codes(violations) -> set:
 # 原用的 `processing_order_generate` 已于 #3917 从注册表与 skill 绑定下线 —— 在
 # `WRITE_TOOLS` 移除它（A13 的修复）之后，用它当写工具的夹具会**静默失去判别力**
 # （「写用例」相关规则不再命中，负例断言变成恒真）。
+#
+# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）**再次重新锚定**：
+# `order_manage` / `product_manage` / `product_update` / `sku_update` /
+# `processing_order_generate` / `processing_order_update` 已从 B 端全部 skill 解绑
+# （`WRITE_TOOLS` 里只剩 C 端两个），`customer_manage(action=add_tag)` 的写 action 已从
+# 源码删除 ⇒ 它们**都不再是写工具**，继续当「在册写工具」用会让「写用例」相关规则
+# 全部落空 —— 与上面 #4010/A13 记录的是**同一个失效形态**。
+# 本文件现行口径（按夹具要证的东西二选一）：
+#   · 证**整工具写工具**的规则（无效果层断言 / 无自清理 / 无前置自断言 / 禁令单独承载…）
+#     ⇒ `order_create`（`WRITE_TOOLS` 成员，当前可达）；
+#   · 证**「部分 action 是写」的 action 级分类** ⇒ `notification_manage` + `action: mark_read`
+#     （`WRITE_TOOL_ACTIONS` 成员，当前可达；只读侧同理用 `notification_manage(list)`）。
+# 再砍写工具面时必须同步改这两处锚点 + `TestDegenerateGuardRails::test_write_tool_sets_non_empty`
+# 的下界**与其说明**（下界是随事实收缩的读数，不是放松阈值）。
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -312,7 +360,7 @@ class TestKnownDefectFixturesAreBlocked:
         )
 
     def test_pr_021_machine_scored_keyword_missing(self):
-        """#3559：`sku_update 成功（价格落库）` 无 `success=true` ⇒ 不计分 ⇒ 假绿。"""
+        """#3559：`order_create 成功（订单落库）` 无 `success=true` ⇒ 不计分 ⇒ 假绿。"""
         case = fixture_pr_021()
         assert tax.machine_scored_data_checks(case) == [], (
             "夹具前提被破坏：该条散文 data_checks 本应**不计分**"
@@ -403,7 +451,7 @@ class TestBackendContractScoringChannel:
 
     def test_backend_contract_write_case_skips_effect_rule_too(self):
         """**红证①（a2 支）**：同一条豁免对 `NO-EFFECT-ASSERTION` 成立。"""
-        case = fixture_backend_contract_case(expectations=[{"tool": "sku_update"}])
+        case = fixture_backend_contract_case(expectations=[{"tool": "order_create"}])
         assert tax.write_expectations(case), "夹具前提：必须被判成写用例"
         v = tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)
         assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(v), (
@@ -558,8 +606,8 @@ class TestVolatileLocator:
         """不可变标识（手机号 / order_no / id）⇒ 放行。"""
         case = {
             "id": "FAKE-CU-901", "title": "（注入夹具）手机号定位",
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": "库里存在手机号 13800138000 的客户",
             "pre_clean": [{"type": "customer_tag_remove",
                            "customer_keyword": "13800138000", "tag_name": "VIP2"}],
@@ -576,8 +624,8 @@ class TestVolatileLocator:
         case = {
             "id": "FAKE-OR-902", "title": "（注入夹具）用户说「第一个」",
             "user_inputs": ["给张三加VIP2活跃标签", {"auto_select": True}, "确认"],
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": "库里存在客户张三",
             "pre_clean": [{"type": "customer_tag_remove",
                            "customer_keyword": "13800138000", "tag_name": "VIP2"}],
@@ -601,7 +649,12 @@ class TestVolatileLocator:
 
 
 class TestPreconditionAssertion:
-    """规则 f：多轮/写类用例必须对**自己的前置**给出可判定断言。"""
+    """规则 f：多轮/写类用例必须对**自己的前置**给出可判定断言。
+
+    ⚠️ 夹具的写工具已**重新锚定**（#5247，B 端只读化）：原用的 `sku_update` 已从 B 端
+    全部 skill 解绑 ⇒ 幽灵写工具 ⇒ 换成**当前可达**的整工具写工具 `order_create`。
+    **缺陷形态不变**（「只有效果层」/「散文前置」/「已声明前置」三支的字段集一字未动）。
+    """
 
     def test_pg_013_without_precondition_is_blocked(self):
         """红证：`PG-013` 首跑后订单转 `producing`，重试前置不成立却表现成「agent 不干活」。"""
@@ -619,8 +672,8 @@ class TestPreconditionAssertion:
         case = {
             "id": "FAKE-PR-904", "title": "（注入夹具）只有效果层",
             "user_inputs": ["把遮光窗帘改成150元", "确认"],
-            "expectations": [{"tool": "sku_update"}],
-            "must_succeed": [{"tool": "sku_update"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "db_verify": [{"fetch": "product_by_name", "name": "遮光窗帘",
                            "expect": {"price": 150}}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
@@ -637,8 +690,8 @@ class TestPreconditionAssertion:
         base = {
             "id": "FAKE-PR-905", "title": "（注入夹具）已声明前置",
             "user_inputs": ["把遮光窗帘改成150元", "确认"],
-            "expectations": [{"tool": "sku_update"}],
-            "must_succeed": [{"tool": "sku_update"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "persona": "mibao",
         }
@@ -660,8 +713,8 @@ class TestPreconditionAssertion:
         case = {
             "id": "FAKE-PR-906", "title": "（注入夹具）散文前置",
             "user_inputs": ["把遮光窗帘改成150元", "确认"],
-            "expectations": [{"tool": "sku_update"}],
-            "must_succeed": [{"tool": "sku_update"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "data_checks": ["前置：库里应有「遮光窗帘」商品"],
             "persona": "mibao",
@@ -708,12 +761,24 @@ class TestSelfTargetMaxGrowth:
         return {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
 
     def _self_target_fixture(self, **precondition_extra) -> dict:
-        """改前形态的注入夹具（**逐字**取自三条实例的共同形状）。"""
+        """改前形态的注入夹具（**逐字**取自三条实例的共同形状）。
+
+        ⚠️ 写工具槽已**重新锚定**（#5247，B 端只读化）：原用 `product_manage(action=create)`
+        已从 B 端全部 skill 解绑 ⇒ 不再是写工具。换成**当前可达**的 action 级写工具
+        `notification_manage` + `action: mark_read`（`WRITE_TOOL_ACTIONS` 成员）。
+        为什么不用 `order_create`：本夹具**没有** `persona` 字段，而 `order_create` 只属
+        C 端 ⇒ 会凭空引入 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`，把
+        `test_max_growth_one_is_accepted` 的「补 `max_growth: 1` ⇒ 全绿」反向证据打坏
+        （那是**无关规则**的违规，与本规则的正/反向证据无关）；`notification_manage`
+        是 B 端可达的 action 级写工具，既保住「写用例」形态、又不引入无关违规。
+        本规则的**注入点**是 `namespaces[product_name:…]` +
+        `precondition[product_count_for_keyword]`，与工具无关 ⇒ 判别力不受影响。
+        """
         return {
             "id": "FAKE-PR-4200", "title": "（注入夹具）自建名 + expect:0 无 max_growth",
             "user_inputs": ["创建一个窗帘，名称测试窗帘A，价格168", "确认创建测试窗帘A"],
-            "expectations": [{"tool": "product_manage", "args": {"action": "create"}}],
-            "must_succeed": [{"tool": "product_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "namespaces": ["product_name:测试窗帘A"],
             "pre_clean": [{"type": "product_remove", "product_keyword": "测试窗帘A"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "测试窗帘A",
@@ -805,14 +870,44 @@ class TestSelfTargetMaxGrowth:
                           tax.judge_case(c, catalog=_seed_catalog())))
         assert hits == [], f"全库仍有自建目标缺 max_growth 的用例：{hits}"
 
+    #: #5247（B 端只读化）后**已从 B 端解绑**的写工具名。判据只用它回答一个机械问题：
+    #: 「退役用例的**机器可判**字段里，还留着指向已下线能力的声明吗？」
+    #: （`order_query` / `product_detail` / `customer_manage` 等只读工具**不在**本清单里 ——
+    #: 退役改判后它们正是存活的那部分。）
+    UNBOUND_WRITE_TOKENS = (
+        "order_create", "order_manage", "product_manage", "product_update", "sku_update",
+        "processing_item_manage", "processing_order_generate", "processing_order_update",
+    )
+    #: 机器可判字段（**不含** `data_checks` / `merge_log`：那里逐字保留改判前的口径，
+    #: 是证据与留档，不是断言 —— 把它们算进来会把"如实留档"误判成"残留死引用"）。
+    MACHINE_FIELDS = ("expectations", "must_succeed", "must_fail", "required_args",
+                      "output_verify", "db_verify", "amount_verify", "post_session")
+
     @pytest.mark.parametrize("cid", ["PR-008", "CH-005"])
     def test_instance_fix_keeps_the_assertions_strong(self, cid):
-        """**不得放宽**：三条实例修的是「自建容忍度」，不是判据强度。
+        """**不得放宽**：实例修的是「自建容忍度」，不是判据强度 —— 但断言面按**分档口径**要求。
 
-        锁定：① `expect: 0` 仍在（基线格没被拆掉，判别力不丢）；② `max_growth >= 1`
-        （恰好容忍自建的那一个 —— 并行用例再造同名 `0 → 2` 仍判漂移）；
-        ③ 原有断言面（expectations / must_succeed / namespaces / `pre_clean` 的自有名复位）
-        逐项仍在。
+        原断言（留档）：`assert case.get("must_succeed")` —— 无条件要求两条实例都还带着写断言。
+        #5247（B 端只读化）证伪了它的前提：这两条实例断言的都是**建品写能力**
+        （`product_manage(action=create)`），该能力已从 B 端解绑 ⇒ 用例退役、`must_succeed`
+        按判据要求清空（`PR-008` 现在只剩 `direct_reply` + 只读说明 + 引导后台）。
+        继续无条件要求它 = 要求用例声明一条**死引用**（不会红的断言）。
+
+        改判成**分档口径**（不是放宽 —— 每一档换成的都是对新事实有判别力的要求）：
+        · **一律仍要求**：`expect: 0` 前置（基线格没被拆掉）/ `max_growth >= 1`（恰好容忍
+          自建的那一个，并行用例再造同名 `0 → 2` 仍判漂移）/ `namespaces` / `expectations` /
+          `pre_clean` 的自有名复位 —— 判据强度与判别力都不变；
+        · `must_succeed` **只在 `tax.is_write_case(case)` 为真时**要求（写面已退役的实例
+          不再有写断言可要求；写面若回来，这一档自动重新生效）；
+        · **新增 fail-closed**：退役实例（`skip_reason` 非空）的**机器可判字段**里
+          **不得**残留任何已解绑写工具 / 写 action ⇒「退役即放宽」这条路径是关着的
+          （谁把 `product_manage` 之类的写声明留在退役用例里，这里先红）。
+
+        ⚠️ **如实登记（未机械化的部分）**：本判据按**本类实例**施加，不做全库扫描 ——
+        全库扫会命中 `OR-006`（**#5247 之前**因"缺可全流转的测试订单"退役的用例，其
+        `expectations` / `must_succeed` 仍是 `order_manage` 的写声明）。它是**存量遗留**
+        （退役早于 #5247、退役理由与写能力无关），归它的追踪单处理，不在本实例锁的口径内
+        —— 不把它写成本类的红/绿，也不因此放宽本类的判据。
         """
         case = self._real_cases()[cid]
         specs = [s for s in (case.get("precondition") or [])
@@ -824,10 +919,41 @@ class TestSelfTargetMaxGrowth:
         assert int(spec.get("max_growth", 0)) >= 1, f"{cid} 的 max_growth 仍 <1：{spec}"
         assert case.get("namespaces"), f"{cid} 的 namespaces 声明消失"
         assert case.get("expectations"), f"{cid} 的 expectations 消失"
-        assert case.get("must_succeed"), f"{cid} 的 must_succeed 消失"
+        if tax.is_write_case(case):
+            assert case.get("must_succeed"), (
+                f"{cid} 的 expectations 里仍有写期望，却把 must_succeed 删空了"
+                "（写面的效果层断言不许单独消失）")
         assert any(s.get("type") == "product_remove"
                    for s in (case.get("pre_clean") or [])
                    if isinstance(s, dict)), f"{cid} 的自清理声明消失"
+        if str(case.get("skip_reason") or "").strip():
+            leaked = self._unbound_write_leaks(case)
+            assert leaked == [], (
+                f"{cid} 已退役（#5247 B 端只读化），但机器可判字段里仍残留已解绑的写工具/写 "
+                f"action：{leaked} —— 退役用例不得留下指向已下线能力的死引用"
+                f"（字段快照：{ {f: case.get(f) for f in self.MACHINE_FIELDS} }）")
+
+    def _unbound_write_leaks(self, case: dict) -> list:
+        """退役实例的**机器可判字段**里，指向已解绑写工具/写 action 的残留（去重排序）。"""
+        blob = [case.get(field) for field in self.MACHINE_FIELDS]
+        return sorted({tok for value in blob
+                       for tok in self.UNBOUND_WRITE_TOKENS if tok in str(value)})
+
+    def test_retired_instance_write_leak_guard_has_teeth(self):
+        """**红证（注入式）**：给退役实例塞回已解绑的写工具声明 ⇒ 上面那条 fail-closed 必报出。
+
+        负控 ①：当前形态零残留（判据不是"永远红"的噪音）；
+        负控 ②：`data_checks` / `merge_log` 里的**历史留档**不算残留 —— 那里逐字保留了改判前
+        的口径，是证据而不是断言；把留档算成残留会把"如实登记"判成违规（假红）。
+        """
+        base = dict(self._real_cases()["PR-008"])
+        assert self._unbound_write_leaks(base) == [], self._unbound_write_leaks(base)
+        relapsed = dict(base, expectations=[{"tool": "product_manage",
+                                             "args": {"action": "create"}}])
+        assert self._unbound_write_leaks(relapsed) == ["product_manage"], relapsed
+        archived = dict(base,
+                        data_checks=["（退役留档）原 product_manage(action=create) 口径，不再生效"])
+        assert self._unbound_write_leaks(archived) == [], archived
 
     # ── 单一真相源（防双源漂移）──────────────────────────────────────────────
     def test_self_target_type_and_default_match_runner_source(self):
@@ -983,45 +1109,79 @@ class TestReferenceFreshness:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestNoFalsePositivesOnCorrectShapes:
-    """假红与假绿同属「断言可信度」缺陷 —— 判据必须对**正确形态**保持沉默。"""
+    """假红与假绿同属「断言可信度」缺陷 —— 判据必须对**正确形态**保持沉默。
+
+    ⚠️ 本类夹具的写工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+    原用的 `customer_manage(action=add_tag)` / `sku_update` / `order_manage` 都不再是
+    **可达写工具**（前者写 action 已从源码删除，后两者已从 B 端全部 skill 解绑）⇒
+    「写/读」两侧的判别力都会落空（负例断言变恒真、正例断言变空跑）。
+    现行锚点：整工具写 ⇒ `order_create`；action 级写 ⇒ `notification_manage(mark_read)`。
+    **缺陷形态一字未动**（只换工具名与其直接相关的散文措辞）。
+    """
 
     def test_read_action_is_not_write(self):
-        """`customer_manage(action=query)` 是**读**，不得被当写用例（禁用宽正则的实证）。"""
+        """`notification_manage(action=list)` 是**读**，不得被当写用例（禁用宽正则的实证）。
+
+        ⚠️ 已**重新锚定**（#5247）：原用 `customer_manage(action=query)`，而该工具已整条
+        移出 `WRITE_TOOL_ACTIONS` ⇒「被判成读」不再能证明 action 级分支分得清读/写
+        （宽正则哪怕写成 `.*manage.*` 也照样绿 = 空断言）。改用仍留在该表里的
+        `notification_manage`：`list` 在 `read_only_actions` 里 ⇒ 判读；
+        `mark_read` 在写集合里 ⇒ 判写（正例见 `test_correct_write_shape_passes`）。
+        """
         case = {
-            "id": "FAKE-CU-900", "title": "（注入夹具）客户查询",
-            "expectations": [{"tool": "customer_manage", "args": {"action": "query"}}],
-            "data_checks": ["返回客户列表"],
+            "id": "FAKE-CU-900", "title": "（注入夹具）通知列表查询",
+            "expectations": [{"tool": "notification_manage", "args": {"action": "list"}}],
+            "data_checks": ["返回通知列表"],
             "persona": "mibao",
         }
         assert not tax.is_write_case(case), (
-            "customer_manage(action=query) 被误判为写用例 —— 宽正则会误伤读用例"
+            "notification_manage(action=list) 被误判为写用例 —— 宽正则会误伤读用例"
         )
         v = tax.judge_case(case, catalog=_seed_catalog())
         assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(v)
         assert "CASE-TRUST-NO-SELF-CLEAN" not in codes(v)
 
     def test_read_only_action_list_variants(self):
-        """各工具的 `read_only_actions` 一律不得被当写（逐工具枚举的回归锁）。"""
+        """各工具的 `read_only_actions` 一律不得被当写（逐工具枚举的回归锁）。
+
+        ⚠️ #5247（B 端只读化）后**真正承重**的只有两个工具的读 action：只有
+        `notification_manage` / `settings_manage` 仍在 `WRITE_TOOL_ACTIONS` 里 ⇒
+        只有它们还能证明「action 级分支分得清读/写」。其余条目（整条移出该表的工具 /
+        整工具只读的工具）判读走的是「不在表里 ⇒ 非写」兜底 —— 留着仍有意义：
+        它们现在是**整工具只读**，被宽正则（`.*manage.*`）误判的代价一样大。
+        """
         read_shapes = [
+            # ── 承重：仍在 `WRITE_TOOL_ACTIONS` 里的两个工具（#5247 后仅存的两个）──
+            ("notification_manage", "list"), ("notification_manage", "unread_count"),
+            ("settings_manage", "get_settings"), ("settings_manage", "get_ai_config"),
+            ("settings_manage", "login_logs"),
+            # ── 整工具只读（写 action 已从源码删除 / 整条移出写表，#5247）──
             ("customer_manage", "list"), ("customer_manage", "detail"),
             ("customer_manage", "list_tags"),
             ("after_sales_manage", "list"), ("after_sales_manage", "detail"),
             ("employee_manage", "list"), ("finance_api", "get_summary"),
             ("finance_api", "get_transactions"), ("inventory_manage", "query"),
-            ("notification_manage", "list"), ("processing_item_manage", "list_categories"),
+            ("processing_item_manage", "list_categories"),
             ("role_manage", "list_permissions"), ("session_manage", "monitor"),
-            ("settings_manage", "get_ai_config"), ("category_manage", "tree"),
+            ("category_manage", "tree"),
+            # ── 从来就不是写工具的只读工具 ──
             ("product_search", ""), ("order_query", ""), ("curtain_calc", ""),
         ]
         wrongly_write = [(t, a) for t, a in read_shapes if tax.is_write_expectation(t, {"action": a})]
         assert not wrongly_write, f"这些读形态被误判为写：{wrongly_write}"
 
     def test_correct_write_shape_passes(self):
-        """正确形态（写 + must_succeed + pre_clean + 可解析目标）必须**全绿**。"""
+        """正确形态（写 + must_succeed + pre_clean + 可解析目标）必须**全绿**。
+
+        ⚠️ 写工具槽已**重新锚定**（#5247）：`customer_manage(action=add_tag)` 的写 action
+        已从源码删除 ⇒ 换成 action 级写工具 `notification_manage(mark_read)`；
+        `must_succeed` 同步。缺陷/正确形态的其余字段（`pre_clean` 的不可变标识定位、
+        `precondition`、`persona`）一字未动。
+        """
         case = {
             "id": "FAKE-PR-998", "title": "（注入夹具）正确写用例",
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             # precondition 是规则 f 的正当要求（写/多轮用例必须自断言前置），
             # 不是「为了变绿而加」—— 缺它不是本夹具的缺陷形态。
             "precondition": "库里存在手机号 13800138000 的客户，且未挂 VIP2 标签",
@@ -1036,8 +1196,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """`namespaces` 是**弱证据**：放行（不阻塞）但证据等级必须如实显示为弱。"""
         case = {
             "id": "FAKE-PR-997", "title": "（注入夹具）只有 namespaces",
-            "expectations": [{"tool": "sku_update"}],
-            "must_succeed": [{"tool": "sku_update"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "namespaces": ["product:遮光窗帘"],
             "precondition": "库里存在「遮光窗帘」商品（评测前置）",
             "persona": "mibao",
@@ -1052,8 +1212,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """`forbidden_text` + 行为断言 ⇒ 允许（**不得**写成「凡用 forbidden_text 一律阻塞」）。"""
         case = {
             "id": "FAKE-PR-996", "title": "（注入夹具）禁令 + 效果层断言",
-            "expectations": [{"tool": "order_manage"}],
-            "must_succeed": [{"tool": "order_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": ["无法生成加工单"],
@@ -1069,8 +1229,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """已**轮次作用域**的禁令 ⇒ 允许（并发包在 runner 侧新增的能力）。"""
         case = {
             "id": "FAKE-PR-995", "title": "（注入夹具）轮次作用域禁令",
-            "expectations": [{"tool": "order_manage"}],
-            "must_succeed": [{"tool": "order_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "product_dedupe", "product_keyword": "遮光窗帘"}],
             "precondition": "库里存在一个已确认且含加工项的订单",
             "forbidden_text": [{"text": "无法生成加工单", "rounds": [2, 3]}],
@@ -1095,13 +1255,20 @@ class TestNoFalsePositivesOnCorrectShapes:
         · `PG-013`（#3833）：① 新增 `pre_clean: [{type: processing_order_reset, order_no: …}]`
           （复位前置）；② `forbidden_text` 部分条目改为**轮次作用域**形态
           （`{round: 2, any_of: [...]}`）—— 轮次作用域已落地 ⇒ 规则 c 必须放行。
+
+        ⚠️ 两条上游修复形态的写工具槽均已**重新锚定**（#5247，B 端只读化）：
+        CU-003 的 `customer_manage(action=add_tag)`（写 action 已从源码删除）⇒ 换成
+        action 级写工具 `notification_manage(mark_read)`；PG-013 的 `order_manage`
+        （已从 B 端解绑 ⇒ 幽灵写工具）⇒ 换成整工具写工具 `order_create`。
+        若不换锚点，这两条 `assert v == []` 会**恒真**（写规则压根不再命中）——
+        本测试原本要证的「正确修复形态不被误伤」就没了判别力。
         """
         cat = _seed_catalog()
         # CU-003 修复形态：标签名对 + pre_clean 在 + 效果层断言在
         cu003 = {
             "id": "CU-003", "title": "给客户打标签",
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": "库里存在手机号 13800138000 的客户",
             "pre_clean": [{"type": "customer_tag_remove", "customer_keyword": "13800138000",
                            "tag_name": "VIP2"}],
@@ -1120,8 +1287,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         )
         pg013 = {
             "id": "PG-013", "title": "米宝加工单 LLM 行为",
-            "expectations": [{"tool": "order_query"}, {"tool": "order_manage"}],
-            "must_succeed": [{"tool": "order_manage"}],
+            "expectations": [{"tool": "order_query"}, {"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "precondition": "库里存在订单 EVAL-MB-ORD-0002（已确认且含加工项）",
             "pre_clean": [{"type": "processing_order_reset",
                            "order_no": "EVAL-MB-ORD-0002"}],
@@ -1139,8 +1306,8 @@ class TestNoFalsePositivesOnCorrectShapes:
         """
         case = {
             "id": "FAKE-PG-900", "title": "（注入夹具）新 pre_clean 类型",
-            "expectations": [{"tool": "order_manage"}],
-            "must_succeed": [{"tool": "order_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "brand_new_type_shipped_by_another_pr", "x": "y"}],
             "persona": "mibao",
         }
@@ -1210,7 +1377,21 @@ class TestDegenerateGuardRails:
     def test_write_tool_sets_non_empty(self):
         assert tax.WRITE_TOOLS, "写工具集合为空 ⇒ 所有写用例漏判（门禁空壳）"
         assert tax.WRITE_TOOL_ACTIONS, "写 action 集合为空 ⇒ 同上"
-        assert len(tax.WRITE_TOOLS) >= 5, f"写工具集合疑似被削：{sorted(tax.WRITE_TOOLS)}"
+        # ⚠️ 下界**随事实收缩**（不是「放宽阈值」）：B 端只读化（#5247，用户裁定
+        # 2026-09-23）后 6 个 B 端写工具整体解绑（两侧工具集都不可达）、`customer_manage`
+        # 等 9 个工具的写 action 从源码删除 ⇒ 写工具面只剩 C 端两个
+        # （`order_create` / `aftersale_create`）。此处守的是**不得被削成空集/单元素**：
+        # 真实只剩 2 个 ⇒ 下界 = 事实（`>= 2`）。
+        # **再砍任何一个写工具都必须同时改这条下界 + 说明**（连同上面那段重锚口径注释）。
+        assert len(tax.WRITE_TOOLS) >= 2, (
+            f"写工具集合疑似被削（#5247 后真实只剩 C 端两个）：{sorted(tax.WRITE_TOOLS)}"
+        )
+        # 同口径守 action 级写面：只剩 `notification_manage` / `settings_manage` 两条，
+        # 再砍一条同样必须同时改这条下界 + 说明（action 级分支是本文件夹具的承重路径之一）。
+        assert len(tax.WRITE_TOOL_ACTIONS) >= 2, (
+            f"写 action 工具集合疑似被削（#5247 后只剩两条）："
+            f"{sorted(tax.WRITE_TOOL_ACTIONS)}"
+        )
 
     def test_mibao_toolset_truth_loaded(self):
         """米宝工具集真值必须加载成功（#4356）。
@@ -1272,6 +1453,13 @@ class TestDegenerateGuardRails:
         当前该形态的活例是 `human_handoff`（用户裁定 2026-09-19 退场、注册行已注释、
         类文件仍在）。
 
+        ⚠️ 2026-09-24（#5247，B 端米宝只读化）：该形态的**新活例**是 6 个已从 B 端解绑的
+        写工具（`order_manage` / `product_manage` / `product_update` / `sku_update` /
+        `processing_order_generate` / `processing_order_update`）—— 工具类与注册行仍在、
+        但两侧工具集都不可达、C 端也没绑定 ⇒ 必须从 `WRITE_TOOLS` 移出（本次已移出，
+        故本测试当前为绿）。本文件夹具的写工具锚点按同一口径换成了
+        `order_create`（整工具写）/ `notification_manage`（action 级写）。
+
         为什么是静默失效：`WRITE_TOOLS` 只被 `judge_case` 用来判「该用例是不是写用例」——
         多一个永不出现的工具名，既不会报错也不会让任何用例变红，只是把判据从
         「工具真实可达」悄悄变成「曾经可达」。**本表是判据源，不是历史档案。**
@@ -1309,8 +1497,8 @@ class TestDegenerateGuardRails:
         """判据**不得恒真/恒假**：坏夹具必报、好夹具必不报（同一函数两种输出）。"""
         good = {
             "id": "FAKE-OK", "title": "（注入夹具）好用例",
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": "库里存在客户张三（手机号 13800138000）",
             "pre_clean": [{"type": "customer_tag_remove",
                            "customer_keyword": "13800138000", "tag_name": "VIP2"}],
@@ -1813,12 +2001,18 @@ class TestGateShell:
         )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
-        """未知 pre_clean type 不得让门禁崩（登记为未实装，不写恒真规则）。"""
+        """未知 pre_clean type 不得让门禁崩（登记为未实装，不写恒真规则）。
+
+        ⚠️ 写工具槽已**重新锚定**（#5247，B 端只读化）：原用 `sku_update`（已从 B 端
+        解绑 ⇒ 幽灵写工具）⇒ 换成当前可达的整工具写工具 `order_create`。
+        不换的话下面第二条断言（「声明了 pre_clean 仍被判无自清理」）会**恒真** ——
+        `NO-SELF-CLEAN` 只在写用例上命中，非写夹具根本走不到那条分支。
+        """
         gate = self._gate()
         case = {
             "id": "FAKE-PR-994", "title": "（注入夹具）未知 pre_clean 类型",
-            "expectations": [{"tool": "sku_update"}],
-            "must_succeed": [{"tool": "sku_update"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "pre_clean": [{"type": "totally_unknown_type", "whatever": "x"}],
             "persona": "mibao",
         }

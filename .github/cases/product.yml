@@ -153,7 +153,11 @@ cases:
 
   - id: PR-005
     legacy_id: "2.5"
-    title: "调整库存 - 出库"
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`inventory_manage` 的写 action
+    # （`adjust`）已从源码删除（现枚举 {query, low_stock_alert}）⇒ 本用例改判为**只读**链路，并覆盖
+    # #5247 新接入的两个只读工具（`stock_ledger_query` 库存台账 / `inbound_order_query` 入库单批次）；
+    # 原 title「调整库存 - 出库」保留在下方注释与 merge_log 里（历史不删）。
+    title: "查库存台账与入库批次（只读；原「调整库存-出库」随 #5247 写能力下线改判）"
     domains:
       - product
     tier: normal
@@ -166,11 +170,15 @@ cases:
       # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 那一款
       # （prod_eval_blackout）→ 实测 agent 回「只搜到一件「遮光窗帘」，价格是 168 元，不是 100 元」
       # （run 34805827043），把一轮消耗在澄清价格上、`inventory_manage(adjust)` 从未调用。
-      - "调整遮光窗帘的库存，出库10件，备注样品寄出"
+      # ⚠️ 2026-09-24（issue #5247）：原输入「调整遮光窗帘的库存，出库10件，备注样品寄出」属**写能力**
+      # （`inventory_manage(action=adjust)` 已从源码删除）⇒ 改判为两条**只读**查询（库存台账 + 入库批次）；
+      # 上面那条自包含化口径（点名唯一的种子商品名、不点名价格）逐字继承。
+      - "查一下遮光窗帘最近的库存流水（出入库记录）"
+      - "再看看这批货是哪几张入库单入的库"
       # 收尾「答卡轮」（#3518，同 PR-016）：本 run 里 agent 在收尾轮只发 confirm 卡、文本「确认」
       # 没有放行写操作 → 有卡答卡（confirm→回 confirmValue），无卡才发原文「确认」。
-      - auto_respond:
-          fallback: "确认"
+      # ⚠️ 2026-09-24（issue #5247）：该答卡轮**已删除** —— 它服务的是**写路径**的 confirm 门禁，
+      # 本用例改判为两条只读查询后已无写操作可放行；历史理由原样保留（不删）。
     # 全局命名空间声明（issue #3781）：与同样争用该全局资源的用例自动互斥，
     # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
     namespaces:
@@ -185,15 +193,22 @@ cases:
         source: "遮光窗帘"
         expect: 1
     expectations:
-      - tool: inventory_manage
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `inventory_manage(action=adjust)`（写）已删除 ——
+      # 该 action 已从源码移除；`inventory_manage(action=query)` 另有 PR-004 / PR-006 覆盖（不重复断言）。
+      # `inbound_order_query` 的 action 枚举 {list, batches, detail} 取自工具真实声明（不声明枚举外的 action）。
+      - tool: stock_ledger_query
+      - tool: inbound_order_query
         args:
-          action: adjust
+          action: batches
     # 效果层断言（issue #4590 的 burn-down 缴费）：「调用了 ≠ 调成了」——
     # 库存真的调整成功（`success=true`）才算过，只有 expectation 时工具失败也照样满分。
-    must_succeed:
-      - tool: inventory_manage
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[inventory_manage]` **已删除** —— 它断言的写能力
+    # 已从 B 端下线（B 端零写工具），保留即「永不满足的悬空声明」；只读路径的「真返回」由上面的
+    # 工具期望 + 下方 data_checks 的服务端逐值核对承担。
     data_checks:
-      - "返回新库存数量"
+      # 原断言「返回新库存数量」（写路径产物）随 #5247 写能力下线改判为下面两条（历史原文即本注释）。
+      - "只读：回复里不得出现任何「已调整库存/已出库/已入库」的表述（B 端无写能力，#5247）"
+      - "库存流水/入库批次逐值来自服务端（`stock_ledger_query` / `inbound_order_query`），不得自行编造数量或批次号"
     pre_clean:
       # 去重只按关键词（#3518）：用例已不再点名价格，`price: 100` 过滤器在独立栈（种子 ¥168）
       # 恒不匹配、等于没去重 → 同名「遮光窗帘」重复时 agent 会发「哪一件」选择卡。
@@ -201,7 +216,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）。2026-09-19（issue #4590 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[inventory_manage]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）；`product_count_for_keyword` 的取值与 OR-014 同源（遮光窗帘在两条腿的评测栈里都恰 1 件：mibao 栈 = xiaobu seed + mibao seed）"
+    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）。2026-09-19（issue #4590 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[inventory_manage]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）；`product_count_for_keyword` 的取值与 OR-014 同源（遮光窗帘在两条腿的评测栈里都恰 1 件：mibao 栈 = xiaobu seed + mibao seed） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：inventory_manage 收窄为只读（写 action `adjust` 已从源码删除，现枚举 {query, low_stock_alert}）⇒ 本用例按新机制改判：写链路「调整库存-出库」（`inventory_manage(action=adjust)`）→ 只读链路「库存台账 + 入库批次」（`stock_ledger_query` / `inbound_order_query(action=batches)`）（不是放宽：原写能力已从 B 端下线，可验证的真实存活能力只剩「数据查询与分析」这一面；顺带把 #5247 新接入的两个只读工具纳入覆盖）。user_inputs / expectations / data_checks 同步改判，must_succeed 里的 inventory_manage 与收尾答卡轮（无写操作可放行）同步移除（否则成为永不满足的悬空声明）；precondition / namespaces / pre_clean 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
@@ -327,25 +342,18 @@ cases:
     namespaces:
       - "product_name:遮光窗帘"
 
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）本用例**退役**（理由见 skip_reason）：
+    # 断言面由 `product_manage(action=toggle_status)` 改判为 `direct_reply`（如实说明 + 引导去后台页面）。
     expectations:
-      - tool: product_manage
-        args:
-          action: toggle_status
-          status: on_sale
+      - tool: direct_reply
     # ── 假绿升级（#3557 / 归因报告 §2.6 A5）──
     # 「期望里出现过工具名」只证明模型**想**下架/上架，判不出"卡答了但没执行"
     # （run 34808115143：R2 起零工具调用，仍判 50%）。`success=true` 属计分白名单，
     # 但对**哪个 action 成功**无判别力 → 升 must_succeed（canonical 写成功，fail-closed）
     # + required_args（调用必须带全 product_id/status，防"空调用"顶过）。
-    must_succeed:
-      - tool: product_manage
-        action: toggle_status
-    required_args:
-      - tool: product_manage
-        action: toggle_status
-        fields:
-          - product_id
-          - status
+    # ⚠️ 2026-09-24（issue #5247）：`must_succeed[product_manage(toggle_status)]` 与
+    # `required_args[product_manage(toggle_status)]` **已删除** —— 该工具已从 B 端全部 skill 解绑，
+    # 保留即「永不满足的悬空声明」（上面的历史理由原样保留，不删）。
     data_checks:
       - "success=true"
     pre_clean:
@@ -371,8 +379,8 @@ cases:
     post_clean:
       - type: product_status_restore
         product_keyword: "遮光窗帘"
-    skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品上架/下架状态流转」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=toggle_status, status=on_sale)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -412,23 +420,23 @@ cases:
       # 故上述「R2 后多发一张加工项卡」的形态本身已消失，R3/R4 文本轮现在直接推进到 confirm 卡。
       # `repeat_until` 协作轮**保留**：它是通用范式（#3430），仍防「confirm 卡下发晚一轮」这类形态。
       # 断言（expectations / must_succeed / output_verify）不受影响。
-      - repeat_until:
-          tool_called: product_manage
-          max: 3
-        fallback: "确认创建测试窗帘A"
+      # ⚠️ 2026-09-24（issue #5247）：原 `repeat_until: {tool_called: product_manage, max: 3}` 块**已删除**
+      # —— `product_manage` 从 B 端解绑 ⇒ 该停机条件永不成立（悬空声明）；同条目的
+      # `fallback: "确认创建测试窗帘A"` 保留，按仓内既有「答卡轮」形态包进 `auto_respond`
+      # （PR-005/PR-007/PR-017 同款）—— 只写 `fallback` 的裸 dict **不是控制轮**
+      # （runner 只认 auto_select/auto_respond/repeat_until/auto_fill 等键），会被当作用户消息原文发出去。
+      - auto_respond:
+          fallback: "确认创建测试窗帘A"
     # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称，
     # 与同名商品的建/删用例自动互斥（否则会出现"同名多件"→ agent 发选择卡 → 目标工具不执行）。
     namespaces:
       - "product_name:测试窗帘A"
 
     expectations:
-      - tool: product_manage
-        args:
-          action: create
-      - tool: validate_input
-      - tool: interact
-        args:
-          component: choice
+      # ⚠️ 2026-09-24（issue #5247）：原三条期望（product_manage(action=create) / validate_input /
+      # interact(choice)）随「建品写能力从 B 端下线」改判为 `direct_reply`（如实说明 + 引导去后台页面）——
+      # 引导流程本身也由写能力承载（没有 create 落库就没有可引导的终点）。
+      - tool: direct_reply
     # ── 效果层下沉（issue #4042，LLM 红例 run 35243351675 首跑指纹
     # `no_success(product_manage)`）──
     # 改前本用例**零效果层断言**：唯一的产出侧痕迹是
@@ -436,18 +444,14 @@ cases:
     # （`success=true` / `error.code=` / `未被调用` / `not called`）⇒ **不计分**，
     # 又是散文（`data.product_id` 是哪次调用的 payload 无从判定）⇒ 「工具被调用过」就等于满分，
     # 「商品真的建出来了没有」在评测里不可见（`unfailable_green` 形态）。
-    must_succeed:
-      - tool: product_manage
-        action: create
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` **已删除** ——
+    # 该工具已从 B 端全部 skill 解绑（工具类仍在、C 端绑定未动），保留即「永不满足的悬空声明」。
     # 产出侧：成功调用的 payload 必须带非空 product_id（= 服务端真的建出了对象）。
     # ⚠️ 落库层（名字/价格回读）当前 runner 的 `db_verify` 只支持
     # `processingItemConfigs` 谓词（PR-019/PR-020 那两条），商品名/价格无 fetch ——
     # 属能力缺口，如实登记，不假装覆盖。
-    output_verify:
-      - tool: product_manage
-        action: create
-        expect:
-          product_id: __nonempty__
+    # ⚠️ 2026-09-24（issue #5247）：原 `output_verify[product_manage(action=create) → product_id 非空]`
+    # **已删除** —— 它断言的产出侧只存在于写路径，写能力下线后「产出」不再存在（悬空声明）。
     # 自清理 + 前置自断言（#3800 / §18.4）：本用例**往全局商品命名空间里写**，
     # 首跑残留会让重试的前置与首跑不等价（agent 正确地拒建重复 ⇒ 指纹漂移误判）。
     # 自建名（`测试窗帘A` 全库仅本用例使用）⇒ `product_remove` 子串删除安全。
@@ -465,9 +469,11 @@ cases:
         expect: 0
         max_growth: 1
     data_checks:
-      - "商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的 product_id 非空）；原 `data.product_id.length > 0` 不计分（无 success=true/error.code=/未被调用 关键词）⇒ 已弃用"
-    skip_reason: ""
-    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动；2026-09-18（issue #4200 的恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「测试窗帘A」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。`expect` 与全部断言（expectations / must_succeed / output_verify / pre_clean / namespaces）原样未动、无放宽。"
+      # 原断言「商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的
+      # product_id 非空）」在新事实下**必然为假**（B 端已无任何写能力），随 #5247 改判为下面这条。
+      - "只读 + 如实说明：回复不得谎称已创建商品，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作（原「商品真的被创建」断言随写能力下线改判）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整流程」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动；2026-09-18（issue #4200 的恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「测试窗帘A」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。`expect` 与全部断言（expectations / must_succeed / output_verify / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create), validate_input, interact(choice)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / output_verify / user_inputs[repeat_until].tool_called 里的 product_manage 与「商品真的被创建」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -510,14 +516,15 @@ cases:
         source: "遮光窗帘"
         expect: 1
     expectations:
-      - tool: product_update
-        args:
-          product_id: 遮光窗帘
-          price: "199"
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `product_update(product_id=遮光窗帘, price=199)` 随
+      # 「商品更新写能力从 B 端下线」改判为 `direct_reply`（如实说明 + 引导去后台页面）——
+      # 名称解析 ID 这条被测路径本身属写链路（`product_update` 已从 B 端全部 skill 解绑）。
+      - tool: direct_reply
     data_checks:
+      # 原 `success=true`（写路径效果层）随 #5247 退役保留为历史（原文即本注释）。
       - "success=true"
-    skip_reason: ""
-    merge_log: "eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）；2026-09-19（issue #4490 规格修订的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘]（本用例按商品名解析 ID ⇒ 名字唯一是它真正依赖且只读的前置；与同样写遮光窗帘的用例互斥）。断言面（user_inputs / expectations / data_checks）原样未动、无放宽。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品更新 - 名称解析 ID」（product_update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）；2026-09-19（issue #4490 规格修订的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘]（本用例按商品名解析 ID ⇒ 名字唯一是它真正依赖且只读的前置；与同样写遮光窗帘的用例互斥）。断言面（user_inputs / expectations / data_checks）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_update(product_id=遮光窗帘, price=199)] 改判为 [direct_reply]（如实说明 + 引导去后台页面）—— 名称解析 ID 这条被测路径本身属写链路。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -528,7 +535,7 @@ cases:
 
   - id: PR-010
     legacy_id: M001
-    title: "商品全生命周期 - 搜索→查看→修改→改价验证"
+    title: "商品查询链路 - 搜索→查看详情（原「改价验证」随 #5247 写能力下线改判）"
     domains:
       - product
     tier: normal
@@ -552,8 +559,9 @@ cases:
       # 不重查 / 写操作确认闸）完全不变。
       - "搜索遮光窗帘"
       - "看看遮光窗帘的详情"
-      - "把价格改成 198"
-      - "确认"
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原「把价格改成 198」+「确认」
+      # 两轮**已删除** —— 它们驱动的是**写链路**（product_update + 写操作确认闸），而写能力已从 B 端
+      # 全部 skill 下线；用例意图（多轮 UUID 复用 / 不重查）由「搜索 → 详情 → 再核对详情」完整保留。
       # ⚠️ 2026-09-19（#4371 解耦）：原 R5/R6「给它加上韩折」+「确认」两轮
       # **已删除** —— 它们驱动的是 `product_processing_item_manage`（给**商品**挂加工项），
       # 而商品不再持有加工项（加工项是店铺级目录），该工具随解耦退场。
@@ -577,20 +585,20 @@ cases:
       - tool: product_detail
         args:
           product_id: 复用上轮 UUID
-      - tool: product_update
-        args:
-          price: "198"
-      - tool: product_detail
+      # ⚠️ 2026-09-24（issue #5247）：原 `product_update(price=198)` 期望与末尾那条**重复的**
+      # `product_detail` 期望已删除（写能力从 B 端下线；重复的详情读由上面带 UUID 的那条承担）。
     # 效果层断言（issue #4621 的 case-trust burn-down 缴费）：「调用了 ≠ 调成了」——
     # 改价真的成功（`success=true`）才算过；只有 expectation 时工具失败也照样满分。
-    must_succeed:
-      - tool: product_update
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_update]` **已删除** —— 该工具已从
+    # B 端全部 skill 解绑，保留即「永不满足的悬空声明」（历史理由原样保留，不删）。
     data_checks:
-      - "第3轮 product_id 来自第2轮结果"
-      - "第4轮 product_id 来自第2轮结果"
+      # 原「第3轮/第4轮 product_id 来自第2轮结果」两条随 #5247 改判：写轮（第3轮改价）已删除 ⇒
+      # 轮次口径与只读核对按新链路重写（历史原文即本注释）。
+      - "第3轮 product_id 来自第2轮（详情）结果 —— 只读核对：复用同一 UUID、不重新解析商品"
       - "全程未重新 product_search 查同一个商品"
+      - "详情页价格与搜索结果一致（只读核对；原「价格已改成 198 / 更新后价格」类断言随写能力下线删除）"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩褶」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩褶」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「搜索→查看→改价→复核」（`product_update(price=198)` + 写操作确认闸）→ 纯查询链路「搜索→查看详情→再核对详情」（`product_search` / `product_detail`）（不是放宽：改价写能力已从 B 端下线，可验证的只剩查询链路；`must_succeed[product_update]` 与「第4轮 product_id 来自第2轮结果」（该轮已不存在）同步移除、「价格已改成 198」类断言改判为「详情页价格与搜索结果一致（只读核对）」）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -642,13 +650,10 @@ cases:
       - "product_name:E2E引导建品样品帘"
 
     expectations:
-      - tool: interact
-        args:
-          component: choice
-      - tool: validate_input
-      - tool: product_manage
-        args:
-          action: create
+      # ⚠️ 2026-09-24（issue #5247）：原三条期望（interact(choice) / validate_input /
+      # product_manage(action=create)）随「建品写能力从 B 端下线」改判为 `direct_reply`
+      # （如实说明 + 引导去后台页面）—— 引导收集信息的终点是 create 落库，写能力没了即没有该终点。
+      - tool: direct_reply
     data_checks:
       - "创建的加工项数量 = 0（#4371 解耦：建品不再关联加工项）"
       - "全程 AI 主动引导，不等待用户逐项输入"
@@ -671,11 +676,10 @@ cases:
         source: "E2E引导建品样品帘"
         expect: 0
         max_growth: 1
-    skip_reason: ""
-    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。2026-09-19（issue #4412 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `precondition[product_count_for_keyword: E2E引导建品样品帘, expect: 0, max_growth: 1]` —— 创建前提 = 该名字下无既有商品（残留 ⇒ 建出同名副本，红的表现像「agent 不会建品」，归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099 / hr.yml HR-002）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。"
-    must_succeed:
-      - tool: product_manage
-        action: create
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整引导流程 - AI 主导收集信息」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。2026-09-19（issue #4412 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `precondition[product_count_for_keyword: E2E引导建品样品帘, expect: 0, max_growth: 1]` —— 创建前提 = 该名字下无既有商品（残留 ⇒ 建出同名副本，红的表现像「agent 不会建品」，归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099 / hr.yml HR-002）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [interact(choice), validate_input, product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。"
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` **已删除** ——
+    # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"
@@ -721,20 +725,18 @@ cases:
         expect: 0
         max_growth: 1
     # 效果层断言：「调用了 ≠ 创建成功了」（#3778）—— 工具返回 success=false 时本用例必须红。
-    must_succeed:
-      - tool: product_manage
-        action: create
-
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` 及下面两条
+    # 写期望**已删除** —— 建品写能力已从 B 端全部 skill 下线（保留即「永不满足的悬空声明」）。
     expectations:
-      - tool: product_manage
-        args:
-          action: create
-          price: 200
-      - tool: validate_input
+      # 原期望（product_manage(action=create, price=200) / validate_input）随 #5247 退役改判为
+      # `direct_reply`（如实说明 + 引导去后台页面）—— 中途纠偏的落库终点（create）已不存在。
+      - tool: direct_reply
     data_checks:
-      - "最终 price=200（不是 100）"
-    skip_reason: ""
-    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。"
+      # 原「最终 price=200（不是 100）」断言的是建品落库结果（写路径）⇒ 在新事实下**必然为假**，
+      # 随 #5247 改判为如实说明口径（历史原文即本注释）。
+      - "只读 + 如实说明：回复不得谎称已创建/已改价，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品创建中途修改 - 用户纠偏」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create, price=200), validate_input] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 与「最终 price=200（不是 100）」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"
@@ -828,14 +830,17 @@ cases:
         source: "遮光窗帘"
         expect: 1
     expectations:
-      - tool: product_update or product_manage
-        args:
-          allow_return_restock: true
+      # ⚠️ 2026-09-24（issue #5247）：原期望「product_update or product_manage(allow_return_restock=true)」
+      # 随「商品更新写能力从 B 端下线」改判为 `product_detail`（**只读**核对 —— 该开关是商品设置字段，
+      # 可经商品详情读出；两个分支工具都已从 B 端全部 skill 移除）。
+      - tool: product_detail
     data_checks:
-      - "商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）"
-      - "售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存"
-    skip_reason: ""
-    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定）"
+      # 原两条（「商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）」/
+      # 「售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存」）里的「开启后为 true」半边
+      # 随 #5247 写能力下线**必然为假** ⇒ 改判如下（历史原文即本注释）。
+      - "如实说明：退货回补库存开关（allowReturnRestock）的修改须在后台「商品管理」页面操作 —— B 端米宝只读、不代改；开关当前值可经商品详情读出（只读核对）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「退货回补库存开关（allow_return_restock）的写能力」（product_update / product_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 商品详情只读核对 + 如实说明 + 引导去后台页面。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update / product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_update or product_manage(allow_return_restock=true)] 改判为 [product_detail]（只读核对 —— 开关是商品设置字段，可经商品详情读出），data_checks 改判为「修改须在后台「商品管理」页面操作 + 如实说明」（原「开启后为 true」半边在写能力下线后必然为假）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
@@ -926,7 +931,7 @@ cases:
     auto_fill:
       name: "E2E色卡建品样品面料"
       price: "23.8"
-      colors: "2699-01 米白"
+      colors: "2699-01本白"
       door_widths: "2.8米"
       selling_methods: "散剪"
       sku_code: "XNE2699"
@@ -944,11 +949,11 @@ cases:
       #    则退回自包含文本。原 R3 文本里的「颜色…门幅…」是**未替换的占位符**（实测 agent 回
       #    「您消息里的『颜色…门幅…』被截断了」）→ 这里补真实字段值。
       - auto_respond:
-          fallback: "商品名称: E2E色卡建品样品面料\n单价(元/米): 23.8\n颜色: 2699-01 米白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
+          fallback: "商品名称: E2E色卡建品样品面料\n单价(元/米): 23.8\n颜色: 2699-01本白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699"
           form_values:
             name: "E2E色卡建品样品面料"
             price: "23.8"
-            colors: "2699-01 米白"
+            colors: "2699-01本白"
             door_widths: "2.8米"
             selling_methods: "散剪"
             sku_code: "XNE2699"
@@ -958,14 +963,16 @@ cases:
       # ④ 收尾协作轮：有卡答卡（confirm→回 confirmValue，= 前端点击协议），无卡发原文；
       #    `product_manage` 一旦成功即停轮（被门禁挡回不算成功 → 不会提前停；同 OR-021/CH-033 先例）。
       #    fallback 做成**自包含**：若模型仍以文本追问缺项，这一轮能把规格+确认一次补齐。
-      - repeat_until:
-          tool_called: product_manage
-          max: 3
-        fallback: "商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；确认创建"
+      # ⚠️ 2026-09-24（issue #5247）：原 `repeat_until: {tool_called: product_manage, max: 3}` 块**已删除**
+      # —— `product_manage` 从 B 端解绑 ⇒ 该停机条件永不成立（悬空声明）；同条目的 fallback 保留，
+      # 按仓内既有「答卡轮」形态包进 `auto_respond`（只写 `fallback` 的裸 dict **不是控制轮**，
+      # runner 只认 auto_select/auto_respond/repeat_until/auto_fill 等键 ⇒ 会被当用户原文发出去）。
+      - auto_respond:
+          fallback: "商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01本白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；确认创建"
     expectations:
-      - tool: product_manage
-        args:
-          action: create
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `product_manage(action=create)` 随「建品写能力从 B 端下线」
+      # 改判为 `direct_reply`（如实说明 + 引导去后台页面）。
+      - tool: direct_reply
     # ── §14.1 回填（2026-09-15，issue #3683）：写工具「调了 ≠ 成了」──
     # expectations 的参数级匹配 + required_args 只能证明「**发**了 create 且参数齐全」，
     # **create 失败 / 被 confirm 门禁拦下时本用例仍会判通过**（调用名照样出现在 tool_calls 里）。
@@ -978,19 +985,20 @@ cases:
     #   「本次新建的」与「种子」；种子恒在 ⇒ 该断言**不管本次 create 成没成功都会绿**（比不加更糟：
     #   看起来有覆盖）。PR-020 能加是因为它的商品名在库里唯一。**待补 runner 能力**：db_verify
     #   支持按「本次成功 create 返回的 product_id」回读（见 issue #3683）。
-    must_succeed:
-      - tool: product_manage
-        action: create
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` **已删除** ——
+    # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
     data_checks:
-      - "create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）"
+      # 原断言「create 参数含 specifications（…随 specs 落库到 product_attributes…）」断言的是
+      # **写路径落库**，在新事实下**必然为假** ⇒ 改判如下（历史原文即本注释）。
+      - "只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作"
+    # forbidden-text-intent: 本用例退役后**被测行为就是这条禁令本身** —— 「不得谎称已创建」（B 端建品写能力
+    # 已随 #5247 下线，如实说明「米宝不做创建」才是正确行为），禁令侧无「某一轮良性措辞误伤」的风险。
+    # 声明形态照 assertion_taxonomy.has_forbidden_text_intent 的既有约定（先例 = AS-009）。
     forbidden_text:
       - "尚未真正创建"
       - "未创建成功"
-    required_args:
-      - tool: product_manage
-        action: create
-        fields:
-          - "specifications"
+    # ⚠️ 2026-09-24（issue #5247）：原 `required_args[product_manage(action=create).fields=specifications]`
+    # **已删除** —— 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
     # 全局命名空间声明（issue #3781）：本用例**往全局商品命名空间里写**该名称；
     # 声明的是**本用例独占**的名字（issue #3835）—— 单一声明者不产生争用组，但
     # 「我写哪个全局资源」必须如实登记（`test_eval_product_name_pollution.py` 按它判所有权）。
@@ -1021,8 +1029,8 @@ cases:
         source: "E2E色卡建品样品面料"
         expect: 0
         max_growth: 1
-    skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -1037,7 +1045,7 @@ cases:
 
   - id: PR-021
     legacy_id: ""
-    title: "单独 SKU 调价 - 修改某规格价格"
+    title: "SKU 规格价只读核对（原「单独 SKU 调价」随 #5247 写能力下线改判）"
     domains:
       - product
     tier: normal
@@ -1050,11 +1058,16 @@ cases:
     user_inputs:
       # 自包含化（#3518）：原输入点名「遮光窗帘（100元的那件）」，独立栈种子只有 ¥168 款
       # （run 34805827043 R1 agent 主动纠偏「¥168，不是 100 元」，一轮被消耗在澄清价格上）。
-      - "把遮光窗帘的米白色散剪规格改成 150 元"
-      - auto_select: true
-      - "确认"
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原输入是**写请求**
+      # （「…改成 150 元」+ auto_select + 确认轮），而写能力已从 B 端下线 ⇒ 留着它会让用例
+      # 语义自相矛盾（请求做不到、期望却是只读），也会让 `test_schema_integrity` 的
+      # 「点名商品必须在 fixture 里」判据从写动词里抽出伪商品名 `把遮光窗帘`（假红）。
+      # ⇒ 输入/标题按**只读追问**改判：问该规格现在的价格（同一份种子真值、同一个真相源）。
+      - "查一下遮光窗帘的米白色散剪规格现在多少钱"
     expectations:
-      - tool: sku_update
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `sku_update`（SKU 级调价写能力）随「写能力从 B 端下线」
+      # 改判为 `product_detail`（只读 —— 规格价可经商品详情读出）。
+      - tool: product_detail
     # ── 假绿升级（#3544 / REPORT §2.2；同 PP-006 形态）──
     # 期望里出现工具名只证明「模型想改价」：同 run（34805827043）里两次 sku_update
     # **都失败**（`sku_update!SKU不存在`，真缺口见 #3539：中文标签 vs 枚举字面匹配），
@@ -1062,14 +1075,13 @@ cases:
     # ① must_succeed = canonical 写成功断言（fail-closed：一次都没成功 → 判红）；
     # ② output_verify = 产出侧值核对（成功返回的 new_price 必须 = 用户确认价 150）。
     # 落库层（DB 真实价格==150）当前 runner 的 db_verify 无 SKU 价格 fetch，属能力缺口（见 PR 说明）。
-    must_succeed:
-      - tool: sku_update
-    output_verify:
-      - tool: sku_update
-        expect:
-          new_price: 150
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[sku_update]` 与
+    # `output_verify[sku_update → new_price==150]` **已删除** —— 该工具已从 B 端全部 skill 解绑
+    # （工具类仍在、C 端绑定未动），保留即「永不满足的悬空声明」。
     data_checks:
-      - "sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）"
+      # 原断言「sku_update 真成功且价格为 150 元（…）」（#3544 假绿升级的产物）在新事实下**必然为假**
+      # ⇒ 改判为只读核对（历史原文即本注释）。
+      - "只读核对：商品详情返回的规格价与搜索结果/用户询问的对象一致（原「new_price==150 落库」断言随 #5247 写能力下线删除）"
     # ── 前置自断言（§18.4；同 PR-007/PR-025 的先例）──────────────────────────────
     # 本用例**按名**定位共享夹具（"遮光窗帘"），且 `post_clean` 的复位也按名定位 ⇒
     # 「该名字唯一」是它依赖的前置：有 2 件同名时 agent 会（正确地）要求澄清、
@@ -1109,7 +1121,7 @@ cases:
         selling_method: "bulk_cut"
         door_width: "2.8"
         price: 168
-    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题。2026-09-18 补 `post_clean[sku_price_restore]`（issue #4075 机制半边：runner 新增 post_clean 支持）：写共享夹具必须声明复位，断言（expectations/must_succeed/output_verify/data_checks）**原样未动**"
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题。2026-09-18 补 `post_clean[sku_price_restore]`（issue #4075 机制半边：runner 新增 post_clean 支持）：写共享夹具必须声明复位，断言（expectations/must_succeed/output_verify/data_checks）**原样未动** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：sku_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「SKU 级调价」（`sku_update` + must_succeed + output_verify[new_price==150]）→ 只读链路「商品详情核对规格价」（`product_detail`）（不是放宽：SKU 价改写入能力已从 B 端下线，可验证的只剩只读核对；must_succeed / output_verify 里的 sku_update 同步移除，否则成为永不满足的悬空声明）；`title` / `user_inputs` 一并按只读追问改判（原「…改成 150 元」+ auto_select + 确认轮是写请求，在只读化后语义自相矛盾，且会让 `test_schema_integrity` 的点名商品判据从写动词里抽出伪商品名 `把遮光窗帘`（假红））⇒ 现为单轮「查一下遮光窗帘的米白色散剪规格现在多少钱」。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_sku_update.py"
@@ -1209,16 +1221,17 @@ cases:
     namespaces:
       - "product_name:遮光窗帘"
     expectations:
-      - tool: product_manage
-        args:
-          action: toggle_status
-          status: off_sale
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `product_manage(action=toggle_status, status=off_sale)`
+      # 随「写能力从 B 端下线」改判为 `direct_reply`（如实说明 + 引导去后台页面）。
+      - tool: direct_reply
     # 关键断言（本用例形态，runner check_order_before）：
     # 全程未调 interact[confirm] ⇒ 缺卡即红；product_manage 早于 interact[confirm] ⇒ 写先于卡即红。
-    order_before:
-      - "interact[confirm] before product_manage"
+    # ⚠️ 2026-09-24（issue #5247）：`order_before[interact[confirm] before product_manage]` **已整块删除**
+    # —— 该时序只存在于**写路径**（写能力下线后既无写工具、也无写确认卡），保留即「永不满足的悬空声明」
+    #（历史理由原样保留，不删）。
     data_checks:
-      - "success=true"
+      # 原 `success=true`（写路径效果层）随 #5247 改判为如实说明口径（历史原文即本注释）。
+      - "写能力已下线（#5247）⇒ 不再有写确认卡：须如实说明「米宝只做数据查询与分析，不做上下架/创建类操作」并引导去后台「商品管理」页面操作，不得谎称已执行"
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
@@ -1237,8 +1250,8 @@ cases:
     post_clean:
       - type: product_status_restore
         product_keyword: "遮光窗帘"
-    skip_reason: ""
-    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：用例侧复位是**有条件**的（流程走完才复位），本声明补无条件那半。**断言（expectations / order_before / data_checks）原样未动**"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「B 端写操作必须先出确认卡再执行」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：用例侧复位是**有条件**的（流程走完才复位），本声明补无条件那半。**断言（expectations / order_before / data_checks）原样未动** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=toggle_status, status=off_sale)] 改判为 [direct_reply]（如实说明 + 引导去后台页面）；`order_before[interact[confirm] before product_manage]` **整块删除**（该时序只存在于写路径：写能力下线后既无写工具、也无写确认卡，保留即永不满足的悬空声明），data_checks 里的 success=true 改判为「不再有写确认卡 + 如实说明 + 引导后台」。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_b_end_confirm_card_fallback.py"
@@ -1281,29 +1294,27 @@ cases:
       # 修法按既有 `repeat_until` 范式（issue #3430，同 OR-016/OR-021/OR-029）：
       # 目标工具已成功 ⇒ 余下轮次直接跳过；否则**有卡答卡**（choice→首项 / confirm→confirmValue），
       # 无卡才发 fallback「确认」—— 覆盖"agent 先问哪种图"与"agent 直接发确认卡"两种路径。
-      - repeat_until:
-          tool_called: product_manage
-          max: 3
-        fallback: "确认"
+      # ⚠️ 2026-09-24（issue #5247）：原 `repeat_until: {tool_called: product_manage, max: 3}` 块**已删除**
+      # —— `product_manage` 从 B 端解绑 ⇒ 该停机条件永不成立（悬空声明）；同条目的
+      # `fallback: "确认"` 保留，按仓内既有「答卡轮」形态包进 `auto_respond`（只写 `fallback` 的裸 dict
+      # **不是控制轮**，runner 只认 auto_select/auto_respond/repeat_until/auto_fill 等键 ⇒ 会被当用户原文发出去）。
+      - auto_respond:
+          fallback: "确认"
     namespaces:
       - "product_name:遮光窗帘"
     expectations:
-      - tool: product_manage
-        args:
-          action: update
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `product_manage(action=update)` 随「写能力从 B 端下线」
+      # 改判为 `direct_reply`（如实说明 + 引导去后台页面）。
+      - tool: direct_reply
     # 调用必须带全 product_id + images（防"空调用"顶过；images 在场 = 「非空」的机器形态）
-    required_args:
-      - tool: product_manage
-        action: update
-        fields:
-          - product_id
-          - images
     # canonical 写成功断言（fail-closed：一次都没成功 → 判红，防「调了 ≠ 成了」）
-    must_succeed:
-      - tool: product_manage
-        action: update
+    # ⚠️ 2026-09-24（issue #5247）：原 `required_args[product_manage(action=update)]` 与
+    # `must_succeed[product_manage(action=update)]` **已删除** —— 该工具已从 B 端全部 skill 解绑，
+    # 保留即「永不满足的悬空声明」（上面的历史理由原样保留，不删）。
     data_checks:
-      - "product_manage(action=update) 携带 images（色卡图 URL）且执行成功 —— 商品主图已更新（images 落库）；db_verify[product_by_name] 当前只支持 processingItemConfigs 谓词（local_runner.py），商品 images 字段落库无 fetch，属 runner 能力缺口（如实登记，未掩盖）"
+      # 原断言「product_manage(action=update) 携带 images … 商品主图已更新（images 落库）…」断言的是
+      # **写路径落库**，在新事实下**必然为假** ⇒ 改判如下（历史原文即本注释）。
+      - "只读 + 如实说明：不得谎称已设置主图/已更新图片，须说明 B 端米宝不做主图写入并引导去后台「商品管理」页面操作"
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
@@ -1316,8 +1327,8 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设置商品主图成功路径」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「商品主图已更新（images 落库）」data_checks 同步移除/改判（否则成为永不满足的悬空声明）；同条目的 `fallback` 键（值「确认」）保留并包进 `auto_respond`（只写 `fallback` 的裸 dict 不是控制轮，会被当原文发出去）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_sanitize_write_tool_guidance.py"
@@ -1354,22 +1365,29 @@ cases:
     namespaces:
       - "product_name:遮光窗帘"
     expectations:
-      - tool: product_manage
-        args:
-          action: update
+      # ⚠️ 2026-09-24（issue #5247）：原期望 `product_manage(action=update)` 随「写能力从 B 端下线」
+      # 改判为 `direct_reply`（如实说明 + 引导去后台页面）。
+      - tool: direct_reply
+    # ⚠️ 2026-09-24（issue #5247）**forbidden_text 必须改判**（原 forbid 清单与新事实冲突）：
+    # 原清单（「不包含图片上传」「拿不到可写入的地址」「拿不到地址」「无法设置主图」「不能设置主图」
+    # 「不支持修改主图」「不支持图片」）是**防能力误宣** —— 当时 `product_manage` 有 images 参数、
+    # 主图写能力真实可达，说「不支持」就是误宣。写能力从 B 端下线后这些措辞**变成了真话**：
+    # 如实说明「米宝不做这类操作」现在是**正确行为**，再 forbid 它们 = 把正确行为判红。
+    # ⇒ 改判为禁止**谎称已执行**的措辞（原清单逐字保留在本注释里，历史不删）。
+    # forbidden-text-intent: 退役后本用例**被测行为就是这条禁令本身** —— 「不得谎称已设置主图」
+    # （写能力已随 #5247 从 B 端下线，「如实说明 + 引导后台」是唯一正确行为，正向可达性已无对象）。
+    # 声明形态照 assertion_taxonomy.has_forbidden_text_intent 的既有约定（先例 = AS-009）。
     forbidden_text:
-      - "不包含图片上传"
-      - "拿不到可写入的地址"
-      - "拿不到地址"
-      - "无法设置主图"
-      - "不能设置主图"
-      - "不支持修改主图"
-      - "不支持图片"
+      - "已为您设置主图"
+      - "已设置主图"
+      - "主图已更新"
+      - "设置成功"
     data_checks:
-      - "回复不得出现「不包含图片上传/拿不到可写入的地址/无法设置主图」类能力否定（机器断言见 forbidden_text）；能力误宣守卫（capability_denial_text_hit 商品图片域判据）应拦截并纠正重答，最终走 product_manage(action=update, images=…)（expectations/must_succeed 同上）"
-    must_succeed:
-      - tool: product_manage
-        action: update
+      # 原断言「回复不得出现「不包含图片上传/…」类能力否定…最终走 product_manage(action=update, images=…)」
+      # 在新事实下**必然为假**（写能力已下线、如实说明才是正确行为）⇒ 改判如下（历史原文即本注释）。
+      - "如实说明：B 端米宝不写主图（能力已随 #5247 下线），须引导去后台「商品管理」页面操作；且不得出现「已为您设置主图/主图已更新/设置成功」类谎称已执行的措辞（机器断言见 forbidden_text）"
+    # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=update)]` **已删除** ——
+    # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
@@ -1381,8 +1399,8 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设主图能力不误宣」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）+ 禁止谎称已执行（forbidden_text 改判）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。**forbidden_text 改判**：原 forbid 清单与新事实冲突（如实说明「米宝不做这类操作」现在是正确行为），改判为禁止谎称已执行（「已为您设置主图」/「已设置主图」/「主图已更新」/「设置成功」），原清单逐字保留在本用例注释里。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_image_denial_guard.py"

@@ -26,6 +26,21 @@ R7「这单我不具备提交能力」/R8「这单在商品线确实落不了」
 会话状态），并额外钉住**合法换域不得被牺牲**（`#3625 G3/T2` 契约）。
 
 判据与结构不变式见 `tests/unit_ci_workflows/test_denial_guard_or014_invariants.py`。
+
+## issue #5247 重新裁定（B 端米宝只读，2026-09-23）—— 本文件适用面的变化
+
+用户裁定把「创建和更新能力」从 B 端移除 ⇒ B 端**全部** skill 解绑了 `order_create`
+（连带 `validate_input`），它现在**唯一**的归属是 C 端 `customer_order`。对回锁判据的直接后果：
+
+| 判据 | #5247 之前 | #5247 之后（本文件的处置） |
+|---|---|---|
+| 「回锁目标必须在该 persona 图里」 | mibao 归属 `order`（可达）、xiaobu 归属 `customer_order`（可达） | mibao **没有**声明该写工具的 skill ⇒ **合法答案只有 `""`**（解析不出 ⇒ 不回锁）；判据改成「owner 非空 ⇒ 必须可达」，**保留为红**：活真值下 `_flow_owner_skill({"agent_type":"mibao"})` 返回 C 端节点名 `customer_order`（米宝图里没有该节点）= #3571/OR-014 的乒乓形态，修法在 `app/graph/skills/base_skill.py`（已知 persona 时不可达必须返回 `""`） |
+| 「两个 persona 各有自己的下单 skill」 | 成立（order / customer_order） | **premise 消失**（B 端已无下单写工具）⇒ 用例退役，跨图安全由上一行承担 |
+| 「认不出 persona 时不得瞎猜」 | 活真值恰好有 2 个候选 ⇒ 必返回 `""` | 活真值只剩 1 个候选（唯一候选兜底=函数 docstring 的窄例外）⇒ 改成**注入式**歧义夹具，判据与被测真值解耦 |
+| 「商品线自称落不了单 → 纠正 + 回锁」 | B 端 `product`（能落单，只是被 agent 误宣为不能） | **premise 消失**（B 端已无下单写工具 ⇒ "落不了单"是**如实告知**，不是能力误宣）⇒ 载体换成 C 端 `customer_product`：`TestBEndDenialIsCorrectedAndRelocked` → `TestDenialIsCorrectedAndRelocked`（四条子判据：纠正重答 / confirm 卡迁移 / choice 卡不迁移 / 不在办不纠正，断言强度不变） |
+
+措辞面（`TestDenialMorphologyCoverage`）与 C 端契约（`TestCEndContractUnbroken`）不受 #5247 影响：
+前者是纯文本判据，后者本来就是 C 端（用户裁定"C 端零改动"）。
 """
 
 import asyncio
@@ -111,10 +126,18 @@ class TestFlowOwnerIsFactDerived:
 
         实证（OR-014）：旧实现写死 `customer_order` → 米宝（B 端）图里没有该节点，
         `route_by_intent` 把 pending 名原样返回、条件边映射缺失 ⇒ 回锁自己把会话打坏。
+
+        issue #5247 重新裁定：B 端只读 ⇒ 全部 B 端 skill 解绑 `order_create`，「该 persona
+        有没有声明这个写工具的 skill」必须允许答案为**没有** —— 那时唯一安全答案是 `""`
+        （解析不出 ⇒ 不回锁，见 `_flow_owner_skill` 的 fail-safe 分支），**不得**退回
+        `owners[0]`（唯一候选兜底）：活真值里唯一候选是 **C 端** `customer_order`，
+        兜给米宝就是把会话锁到一个米宝图里不存在的节点（与 OR-014 同族）。
+        ⇒ 判据写成「owner 非空 ⇒ 必须可达」；空是合法答案，非空却不可达**必红**。
         """
         owner = _flow_owner_skill({"agent_type": persona})
-        assert owner, f"{persona} 解析不出下单流程归属 skill"
         cfg = get_agent_config(persona)
+        if not owner:
+            return  # #5247：该 persona 没有声明该写工具的 skill ⇒ 不回锁是正确行为
         assert owner in cfg.get_all_skill_names(), (
             f"回锁目标 {owner!r} 不在 {persona} 的 skill_names 里 → 图里没有该节点"
         )
@@ -126,15 +149,44 @@ class TestFlowOwnerIsFactDerived:
             f"回锁目标 {owner!r} 并未声明 {ORDER_WRITE_TOOL} —— 回锁后仍然落不了单"
         )
 
-    def test_owner_differs_per_persona(self):
-        """两个 persona 各有自己的下单 skill（不得跨图互相指）。"""
-        assert _flow_owner_skill({"agent_type": "mibao"}) != \
-            _flow_owner_skill({"agent_type": "xiaobu"})
+    # [RETIRED #5247] test_owner_differs_per_persona —— premise：「两个 persona 各有自己的
+    # 下单 skill（不得跨图互相指）」。用户裁定「创建能力从 B 端移除」后 B 端**没有**任何
+    # 声明 `order_create` 的 skill ⇒ 两个 persona 不再各自拥有一个，premise 消失。
+    # 该用例要防的跨图指向由上面的 `test_owner_is_reachable_in_persona_graph` 承担
+    # （它对两种 persona 都断言"非空即必须可达"）。
 
     def test_unknown_persona_does_not_guess(self):
-        """认不出 persona 时不得瞎猜（只有唯一候选才允许回锁）—— 防指向不存在的节点。"""
-        assert _flow_owner_skill({}) == ""
-        assert _flow_owner_skill({"agent_type": "no_such_persona"}) == ""
+        """认不出 persona 时不得瞎猜 —— 防把会话锁到一个该 persona 图里不存在的节点（#3571 族）。
+
+        issue #5247 重新锚定：原判据依赖**活真值恰好歧义**（当时 `order_create` 有 `order` /
+        `customer_order` 两个归属 ⇒ 活真值必然返回 `""`）；B 端解绑后只剩一个候选，活前提消失。
+        本用例改为**注入式**（与被测真值解耦，永远有效）：
+          · 注入两个**该 persona 都不可达**的候选 ⇒ 必须返回 `""`（拒绝猜测）；
+          · 反向负例：注入唯一且**可达**的候选 ⇒ 必须回锁到它（证明判据不是恒返回空的空转）。
+        ⚠️ 不把「已知 persona + 唯一候选但该 persona 不可达 ⇒ 仍回锁」写成断言：那正是
+        `test_owner_is_reachable_in_persona_graph[mibao]` 正在报的缺陷（B 端会被锁到 C 端
+        节点 `customer_order`），不得把它固化成期望行为。
+        """
+        from types import SimpleNamespace
+
+        def _fake(names):
+            reg = MagicMock()
+            reg.get_all.return_value = [
+                SimpleNamespace(name=n, tool_names=[ORDER_WRITE_TOOL]) for n in names
+            ]
+            return reg
+
+        with patch("app.graph.skills.skill_registry.get_skill_registry",
+                   return_value=_fake(["customer_order", "customer_aftersales"])):
+            assert _flow_owner_skill({"agent_type": "mibao"}) == "", (
+                "多个候选归属（且都不可达）下仍回锁 —— 猜错图会把会话锁到该 persona "
+                "图里不存在的节点（与 OR-014 同族的乒乓形态）"
+            )
+        with patch("app.graph.skills.skill_registry.get_skill_registry",
+                   return_value=_fake(["customer_order"])):
+            assert _flow_owner_skill({"role": "customer"}) == "customer_order", (
+                "唯一且**可达**的候选下的回锁被误杀（判据不得恒返回空）"
+            )
 
 
 # ────────────────────── 行为面：纠正 + 回锁 + 在办卡归属迁移 ──────────────────────
@@ -210,20 +262,33 @@ def _run_denied_order_turn(replies, *, skill, tool_names, facts, state_overrides
     return out, llm, pending_calls, store
 
 
-class TestBEndDenialIsCorrectedAndRelocked:
-    """商品线上自称"落不了单"：必须被纠正 → 回锁到**本 persona 的**下单 skill。"""
+class TestDenialIsCorrectedAndRelocked:
+    """商品线上自称"落不了单"：必须被纠正 → 回锁到**本 persona 的**下单 skill。
 
-    DENIAL = OR014_DENIALS[0]
-    OK = "好的，已为您转到订单流程落单，请稍候。"
+    issue #5247 重新锚定：原类名/载体是 **B 端**（`skill="product"`、`agent_type="mibao"`）——
+    用户裁定「创建能力从 B 端移除」后 B 端**没有**任何下单写工具，"商品线落不了单"在 B 端已是
+    **如实告知**而非能力误宣 ⇒ 该形态的 premise 消失（继续用 B 端跑，断言只能靠
+    `_flow_owner_skill` 的跨图兜底自洽，等于把 F1 缺陷固化成期望行为）。
+    载体换成 **C 端**（用户裁定"C 端零改动"，C 端仍持有 `order_create` 与 `customer_order` 流程）
+    —— 四条子判据（纠正重答 / 在办 confirm 卡归属迁移 / choice 卡不迁移 / 不在办则不纠正）
+    与断言强度一字未改。
+    """
+
+    # C 端能力误宣原文（#3477 族）：小布自称没权限下单，而会话正锁在商品线。
+    DENIAL = "亲，小布这边没有帮您下单的权限哦，需要您在小程序里操作"
+    OK = "好嘞，我这就把商品加进订单，请稍等～"
+    SKILL = "customer_product"
+    XIAOBU = {"role": "customer", "agent_type": "xiaobu"}
 
     def test_denial_is_corrected_and_session_relocked_to_order(self):
         out, llm, pending, _ = _run_denied_order_turn(
-            [self.DENIAL, self.OK], skill="product", tool_names=PRODUCT_TOOLS,
-            facts=dict(GROUNDED_FACTS, last_card=CONFIRM_CARD, last_card_skill="product"))
+            [self.DENIAL, self.OK], skill=self.SKILL, tool_names=PRODUCT_TOOLS,
+            facts=dict(GROUNDED_FACTS, last_card=CONFIRM_CARD, last_card_skill=self.SKILL),
+            state_overrides=dict(self.XIAOBU))
         assert out["final_answer"] == self.OK, (
-            f"B 端「落单属于订单环节」被原样发给用户：{out['final_answer']!r}")
+            f"「商品线落不了单」被原样发给顾客：{out['final_answer']!r}")
         assert llm.ainvoke.await_count == 2, "没有发生纠正重答"
-        owner = _flow_owner_skill({"agent_type": "mibao"})
+        owner = _flow_owner_skill({"agent_type": "xiaobu"})
         assert ("sess_or014", owner) in pending, (
             f"纠正后未把会话锁回 {owner!r} → 下一轮仍落不了单（恢复路径缺失）")
 
@@ -231,16 +296,17 @@ class TestBEndDenialIsCorrectedAndRelocked:
         """**单独红证**：在办确认卡的归属标记必须随流程迁移。
 
         为什么必须（OR-014 乒乓形态）：下一轮的"答卡轮豁免"要求
-        `last_card_skill == pending_interact_skill`。卡是在**漂错的那个 skill**（product）里发的，
+        `last_card_skill == pending_interact_skill`。卡是在**漂错的那个 skill**（商品线）里发的，
         只回锁流程而不迁移卡归属 ⇒ 用户点这张卡时被判成"别的 skill 的卡" → L1 域逃逸再次
-        把会话甩回 product → 回锁等于没修。
+        把会话甩回商品线 → 回锁等于没修。
         """
         _, _, _, store = _run_denied_order_turn(
-            [self.DENIAL, self.OK], skill="product", tool_names=PRODUCT_TOOLS,
-            facts=dict(GROUNDED_FACTS, last_card=CONFIRM_CARD, last_card_skill="product"))
-        owner = _flow_owner_skill({"agent_type": "mibao"})
+            [self.DENIAL, self.OK], skill=self.SKILL, tool_names=PRODUCT_TOOLS,
+            facts=dict(GROUNDED_FACTS, last_card=CONFIRM_CARD, last_card_skill=self.SKILL),
+            state_overrides=dict(self.XIAOBU))
+        owner = _flow_owner_skill({"agent_type": "xiaobu"})
         assert store._facts.get("last_card_skill") == owner, (
-            "在办确认卡的归属未随流程迁移（下一轮答卡轮不豁免 → 被 L1 甩回 product）")
+            "在办确认卡的归属未随流程迁移（下一轮答卡轮不豁免 → 被 L1 甩回商品线）")
         assert store._facts.get("last_confirm_skill") == owner
 
     def test_choice_card_ownership_is_not_migrated(self):
@@ -248,19 +314,20 @@ class TestBEndDenialIsCorrectedAndRelocked:
         choice_card = {"component": "choice", "title": "请选择要下架的商品",
                        "options": [{"label": "遮光窗帘"}]}
         _, _, _, store = _run_denied_order_turn(
-            [self.DENIAL, self.OK], skill="product", tool_names=PRODUCT_TOOLS,
-            facts=dict(GROUNDED_FACTS, last_card=choice_card, last_card_skill="product"))
-        assert store._facts.get("last_card_skill") == "product", (
+            [self.DENIAL, self.OK], skill=self.SKILL, tool_names=PRODUCT_TOOLS,
+            facts=dict(GROUNDED_FACTS, last_card=choice_card, last_card_skill=self.SKILL),
+            state_overrides=dict(self.XIAOBU))
+        assert store._facts.get("last_card_skill") == self.SKILL, (
             "非 confirm 卡的归属被误迁移 → 该卡自己的流程会被路由到别的 skill")
 
-    def test_off_flow_denial_in_product_skill_is_not_corrected(self):
+    def test_off_flow_denial_is_not_corrected(self):
         """反面边界：不在办下单 → 商品线说"落不了单"**不得**被纠正（避免过度纠正）。"""
         out, llm, pending, _ = _run_denied_order_turn(
-            [self.DENIAL], skill="product", tool_names=PRODUCT_TOOLS,
-            facts={}, state_overrides={"pending_interact_skill": ""})
+            [self.DENIAL], skill=self.SKILL, tool_names=PRODUCT_TOOLS,
+            facts={}, state_overrides={**dict(self.XIAOBU), "pending_interact_skill": ""})
         assert out["final_answer"] == self.DENIAL
         assert llm.ainvoke.await_count == 1
-        assert ("sess_or014", _flow_owner_skill({"agent_type": "mibao"})) not in pending, \
+        assert ("sess_or014", _flow_owner_skill({"agent_type": "xiaobu"})) not in pending, \
             "不在办下单却回锁了下单流程"
 
 

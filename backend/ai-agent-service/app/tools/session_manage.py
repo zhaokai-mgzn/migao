@@ -12,7 +12,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"list", "monitor", "detail", "assign", "end"}
+VALID_ACTIONS = {"list", "monitor", "detail"}
 
 
 class SessionManageTool(BaseTool):
@@ -31,28 +31,25 @@ class SessionManageTool(BaseTool):
     name = "session_manage"
     description = (
         "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。"
-        "【参数】action 必填：list/monitor/detail 只读；assign（需 session_id + employee_id）/end（需 session_id）为写操作。"
+        "【参数】action 必填：**只有 list / monitor / detail 三个只读 action**（B 端已只读化，issue #5247）。"
         "【反例】经营概况/活跃会话统计用 dashboard_stats；查客服员工账号用 employee_manage。"
-        "【标注】WRITE — list/monitor/detail 只读；assign/end 需确认"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【反例】分配/结束会话**不在本工具能力内**——引导用户到后台「在线接待」页操作。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：读面 `agent:session`；issue #5246 起转接/结束会话/发消息三条
     # 写端点走 `agent:session:manage`（此前挂在会话读码上）。
-    required_permissions = ["agent:session", "agent:session:manage"]
+    required_permissions = ["agent:session"]  # B 端只读化（#5247）：写码 agent:session:manage 已随写 action 移除
 
-    read_only = False
-    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only = True
     read_only_actions = {"list", "monitor", "detail"}  # 只读 action 免确认
-    destructive = False  # 分配/结束会话非破坏性（可重新分配）
-    idempotent = False   # 分配/结束非幂等
 
     parameters = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（会话列表）/ monitor（监控面板）/ detail（会话详情）/ assign（分配会话）/ end（结束会话）",
-                "enum": ["list", "monitor", "detail", "assign", "end"],
+                "description": "操作类型：list（会话列表）/ monitor（监控面板）/ detail（会话详情）—— 均为只读",
+                "enum": ["list", "monitor", "detail"],
             },
             "session_id": {
                 "type": "string",
@@ -121,10 +118,6 @@ class SessionManageTool(BaseTool):
                 return await self._get_monitor(context)
             elif action == "detail":
                 return await self._get_detail(context, session_id)
-            elif action == "assign":
-                return await self._assign_session(context, session_id, employee_id)
-            elif action == "end":
-                return await self._end_session(context, session_id)
             else:
                 return ToolResult(
                     success=False,
@@ -255,83 +248,4 @@ class SessionManageTool(BaseTool):
             success=True,
             data=response.get("data", {}),
             message="已获取会话详情",
-        )
-
-    async def _assign_session(
-        self, context: ToolContext, session_id: Optional[str], employee_id: Optional[str]
-    ) -> ToolResult:
-        """手动分配会话"""
-        if not session_id:
-            return ToolResult(
-                success=False,
-                error="缺少会话 ID",
-                message="分配会话时必须提供 session_id",
-                suggestion="缺少 session_id，请先用 session_manage 的 list 操作取到会话 ID 后重试",
-            )
-        if not employee_id:
-            return ToolResult(
-                success=False,
-                error="缺少客服员工 ID",
-                message="分配会话时必须提供 employee_id",
-                suggestion="缺少 employee_id，请先用 employee_manage 的 list 操作选取在职客服后重试",
-            )
-
-        logger.info(
-            f"[session-manage] Assign: session_id={session_id}, employee_id={employee_id} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        client = get_admin_api_client()
-        response = await client.post(
-            f"/api/admin/agent-sessions/{session_id}/assign",
-            json_data={"employeeId": employee_id},
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "分配失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"分配会话失败：{error_msg}",
-                suggestion="请先用 session_manage 的 detail 操作确认该会话处于待分配状态，再重新执行分配",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"session_id": session_id, "employee_id": employee_id},
-            message=f"会话已分配给客服 {employee_id}",
-        )
-
-    async def _end_session(self, context: ToolContext, session_id: Optional[str]) -> ToolResult:
-        """结束会话"""
-        if not session_id:
-            return ToolResult(
-                success=False,
-                error="缺少会话 ID",
-                message="结束会话时必须提供 session_id",
-                suggestion="缺少 session_id，请先用 session_manage 的 list 操作取到会话 ID 后重试",
-            )
-
-        logger.info(f"[session-manage] End: session_id={session_id} | tenant={context.tenant_id}")
-
-        client = get_admin_api_client()
-        response = await client.post(
-            f"/api/admin/agent-sessions/{session_id}/end",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "结束失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"结束会话失败：{error_msg}",
-                suggestion="请先用 session_manage 的 detail 操作确认该会话仍在进行中（已结束的无需再结束）后重试",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"session_id": session_id},
-            message="会话已结束",
         )

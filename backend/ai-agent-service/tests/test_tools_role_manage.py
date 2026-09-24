@@ -1,4 +1,7 @@
-"""RoleManageTool 单元测试 — 角色/权限 CRUD。"""
+"""RoleManageTool 单元测试 — 角色/权限查询（只读）。
+
+B 端只读化（issue #5247）：role_manage（角色与权限） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+"""
 # case_ids: HR-004, HR-005
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -103,75 +106,13 @@ class TestRoleDetail:
         assert mock_client.get.call_args[0][0] == "/api/admin/roles/r1"
 
 
-class TestRoleCreate:
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_create_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="create", code="op")
-        assert r1.success is False and "缺少角色名称" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="create", name="运营")
-        assert r2.success is False and "缺少角色编码" in r2.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_create_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "r-new"}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create", name="运营", code="operator", permission_ids=["p1"])
-        assert result.success is True
-        json_data = mock_client.post.call_args[1]["json_data"]
-        assert json_data["permissionIds"] == ["p1"]
-        assert mock_client.post.call_args[0][0] == "/api/admin/roles"
+# [RETIRED #5247] TestRoleCreate（2 例） 已退休：建角色（create）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestRoleUpdate:
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_update_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", name="新名")
-        assert result.success is False
-        assert "缺少角色 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_update_no_content(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", role_id="r1")
-        assert result.success is False
-        assert "缺少更新内容" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_update_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", role_id="r1", name="新名", permission_ids=["p1", "p2"])
-        assert result.success is True
-        assert mock_client.put.call_args[0][0] == "/api/admin/roles/r1"
-        assert mock_client.put.call_args[1]["json_data"] == {"name": "新名", "permissionIds": ["p1", "p2"]}
+# [RETIRED #5247] TestRoleUpdate（3 例） 已退休：改角色（update）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestRoleDelete:
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_delete_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete")
-        assert result.success is False
-        assert "缺少角色 ID" in result.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.role_manage.get_admin_api_client")
-    async def test_delete_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete", role_id="r1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/roles/r1"
+# [RETIRED #5247] TestRoleDelete（2 例） 已退休：删角色（delete）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
 class TestRolePermissions:

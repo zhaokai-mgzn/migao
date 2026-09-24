@@ -111,9 +111,16 @@ class TestProbeL1Misfire:
         assert result.source == "rule"
 
     def test_product_skill_has_no_order_create(self):
-        """危害判据：落到 product skill = 无论怎么写都拿不到 order_create。"""
+        """危害判据（issue #5247 改判）：落到 product skill = 拿不到 order_create。
+
+        改判原因：B 端只读化后 `order_create` **已从米宝全部 skill 解绑**（不只 product）
+        ⇒ 原「`order_create` ∈ ORDER_TOOLS」不再成立。判据换成更强的形态：
+        **B 端两个 skill 都不得有它**（任一处回绑即红）—— 与
+        `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 2 同源，此处锁的是本用例
+        所依赖的那个前提。
+        """
         assert "order_create" not in PRODUCT_TOOLS
-        assert "order_create" in ORDER_TOOLS
+        assert "order_create" not in ORDER_TOOLS
 
 
 class TestCardAnswerRoundStaysInOwnSkill:

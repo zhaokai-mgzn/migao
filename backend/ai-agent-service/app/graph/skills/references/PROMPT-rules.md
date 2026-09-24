@@ -25,14 +25,14 @@
 
 ## Plan-and-Execute（多步操作先列计划）
 
-执行超过 2 步的写操作时，必须先列出步骤清单，再逐步执行：
+执行超过 2 步的写操作时，必须先列出步骤清单，再逐步执行（**本层是共享层：只对仍有写能力的 persona 生效**；米宝（B 端）已只读（issue #5247），无写流程可列，写请求一律引导商家到后台页面）：
 
 ```
 第1步：收集商品基本信息 [interact form]
 第2步：选择关联加工项 [interact choice]
 第3步：校验参数 [validate_input]
 第4步：确认创建 [interact confirm]
-第5步：执行创建 [product_manage]
+第5步：执行创建 [写工具]
 第6步：验证结果 [product_search 确认商品存在]
 ```
 
@@ -53,10 +53,10 @@
 
 | 操作 | 验证方式 |
 |------|---------|
-| product_manage(create) | 调 product_search 确认商品已存在 |
-| product_manage(update) | 调 product_detail 确认字段已更新 |
+| 写工具(create) | 调 product_search 确认商品已存在 |
+| 写工具(update) | 调 product_detail 确认字段已更新 |
 | order_create | 调 order_query 确认订单已生成 |
-| order_manage | 调 order_query 确认状态已变更 |
+| 写工具(状态变更) | 调 order_query 确认状态已变更 |
 | 其他管理操作 | 调对应查询 Tool 确认变更生效 |
 
 验证失败时：告知用户具体哪里不对，提供修复建议。不要假装成功。

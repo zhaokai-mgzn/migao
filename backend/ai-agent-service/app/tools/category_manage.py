@@ -12,7 +12,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"tree", "create", "update", "delete"}
+VALID_ACTIONS = {"tree"}
 
 
 class CategoryManageTool(BaseTool):
@@ -29,20 +29,20 @@ class CategoryManageTool(BaseTool):
 
     name = "category_manage"
     description = (
-        "【触发】用户问'有哪些分类''分类列表''新建分类''删除分类'时调用；"
+        "【触发】用户问'有哪些分类''分类列表''这个商品是哪个分类'时调用；"
         "建品/查商品需要分类 id 时也用 tree。"
-        "【参数】action 必填：tree 只读（返回扁平分类列表，无父子概念）/ create（必填 name）/ "
-        "update（category_id + name）/ delete（category_id）—— create/update/delete 为写操作。"
-        "tree 返回的分类 id（长字符串如 88b6c50fbc...）直接用作 product_manage 的 category_id 参数。"
+        "【参数】action 必填，**本工具只有 tree 一个只读 action**（返回扁平分类列表，无父子概念）。"
+        "tree 返回的分类 id（长字符串如 88b6c50fbc...）用于按分类筛选商品。"
         "【反例】查商品/库存用 product_search / product_detail；分类 id ≠ 商品 id，不要混用。"
-        "【标注】WRITE|DESTRUCTIVE — tree 只读；create/update/delete 前必须二次确认"
+        "【反例】新建/改名/删除分类**不在本工具能力内**（B 端已只读化，issue #5247）——"
+        "引导用户到后台「商品管理 → 分类」页面自行操作，不要承诺代为修改。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：CategoryController 类级 `@RequirePermission("product:category")`。
     # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
     required_permissions = ["product:category"]
 
-    read_only = False
-    destructive = True   # 可删除分类
+    read_only = True
     read_only_actions = {"tree"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
@@ -51,16 +51,12 @@ class CategoryManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：tree（获取分类列表）/ create（创建分类）/ update（更新分类）/ delete（删除分类）",
-                "enum": ["tree", "create", "update", "delete"],
+                "description": "操作类型：tree（获取分类列表）—— 本工具只有这一个只读 action",
+                "enum": ["tree"],
             },
             "category_id": {
                 "type": "string",
                 "description": "分类 ID（update/delete 时必填）",
-            },
-            "name": {
-                "type": "string",
-                "description": "分类名称（create 时必填，update 时可选）",
             },
         },
         "required": ["action"],
@@ -95,12 +91,6 @@ class CategoryManageTool(BaseTool):
         try:
             if action == "tree":
                 return await self._get_tree(context)
-            elif action == "create":
-                return await self._create_category(context, name)
-            elif action == "update":
-                return await self._update_category(context, category_id, name)
-            elif action == "delete":
-                return await self._delete_category(context, category_id)
             else:
                 return ToolResult(
                     success=False,
@@ -145,129 +135,4 @@ class CategoryManageTool(BaseTool):
             data={"tree": tree},
             message="已获取商品分类树形结构",
             summary=summary,
-        )
-
-    async def _create_category(
-        self,
-        context: ToolContext,
-        name: Optional[str],
-    ) -> ToolResult:
-        """创建分类（扁平结构，无父子概念，#2905）"""
-        if not name:
-            return ToolResult(
-                success=False,
-                error="缺少分类名称",
-                message="创建分类时必须提供 name",
-                suggestion="缺少分类名称 name，请向用户询问分类名称后重试",
-            )
-
-        json_data: Dict[str, Any] = {"name": name}
-
-        logger.info(
-            f"[category-manage] Create: name={name} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/categories",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "创建失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"创建分类失败：{error_msg}",
-                suggestion="请先用 category_manage 的 tree 操作确认是否已有同名分类，再改用更新或换一个名称",
-            )
-
-        return ToolResult(
-            success=True,
-            data=response.get("data", {}),
-            message=f"分类「{name}」创建成功",
-        )
-
-    async def _update_category(
-        self,
-        context: ToolContext,
-        category_id: Optional[str],
-        name: Optional[str],
-    ) -> ToolResult:
-        """更新分类"""
-        if not category_id:
-            return ToolResult(
-                success=False,
-                error="缺少分类 ID",
-                message="更新分类时必须提供 category_id",
-                suggestion="缺少分类 ID category_id，请先用 category_manage 的 tree 操作取到分类后重试",
-            )
-        if not name:
-            return ToolResult(
-                success=False,
-                error="缺少分类名称",
-                message="更新分类时必须提供 name",
-                suggestion="缺少分类名称 name，请向用户询问新的分类名称后重试",
-            )
-
-        logger.info(
-            f"[category-manage] Update: category_id={category_id}, name={name} "
-            f"| tenant={context.tenant_id}"
-        )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/categories/{category_id}",
-            json_data={"name": name},
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新分类失败：{error_msg}",
-                suggestion="请先用 category_manage 的 tree 操作确认该分类仍在，再重新执行更新",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"category_id": category_id, "name": name},
-            message=f"分类已更新为「{name}」",
-        )
-
-    async def _delete_category(self, context: ToolContext, category_id: Optional[str]) -> ToolResult:
-        """删除分类"""
-        if not category_id:
-            return ToolResult(
-                success=False,
-                error="缺少分类 ID",
-                message="删除分类时必须提供 category_id",
-                suggestion="缺少分类 ID category_id，请先用 category_manage 的 tree 操作取到分类后重试",
-            )
-
-        logger.info(f"[category-manage] Delete: category_id={category_id} | tenant={context.tenant_id}")
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/categories/{category_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除分类失败：{error_msg}",
-                suggestion="请先用 category_manage 的 tree 操作确认该分类下已无商品，再重新执行删除",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"category_id": category_id},
-            message="分类已删除",
         )

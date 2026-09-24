@@ -122,8 +122,8 @@ class TestNoJsonKwargInTools:
         assert "finance_api.py" in files, f"工具目录扫描异常: {files[:5]}"
 
 
-@pytest.mark.parametrize("module_name", ["finance_api"])
-def test_finance_tool_source_uses_json_data(module_name):
-    """FN-001 定点回归：finance_api 的登记收支必须传 json_data=payload"""
-    source = (TOOLS_DIR / f"{module_name}.py").read_text(encoding="utf-8")
-    assert "json_data=payload" in source
+# [RETIRED #5247] FN-001 定点回归已退休：`finance_api.create_transaction`（该工具**唯一**的
+#   POST 调用点）随 B 端只读化（用户裁定 2026-09-23）删除 ⇒ 「finance_api 必须传 json_data=payload」
+#   的断言无对象（全仓现存 `json_data=payload` 只在已退场的 human_handoff 里）。
+#   该守卫的**通用扫描**仍在且更强：`test_app_tools_have_no_admin_api_json_kwarg` 扫全部工具源，
+#   `test_tools_dir_actually_scanned` 防扫描面塌陷。

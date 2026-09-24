@@ -26,6 +26,9 @@
 **本文件补的就是那层守卫**：`validate_input` 的每个目标必须是**当前 skill 执行得了**的写工具；
 实测存量 **126** 处死角（8 个 skill），按 `A5_GAP_BASELINE` 登记为**存量账本**
 （锚 `c0be8e35`，只许缩短、新增阻塞），机制修复跟踪 **#4017**。
+> ⚠️ 条数是**锚定值**、随产品决策重锚：#4012 落地 126 条 / 8 skill → #4196 重锚 140 条 →
+> **#5247 重锚 29 条 / 3 skill**（B 端米宝只读；逐条理由见 `A5_GAP_BASELINE` 上方的
+> 「#5247 重新锚定」块）。上面这句"126"是 #4012 落地时的历史锚，不是当前值。
 
 ### 适用域声明（本守卫对谁生效 / 对谁不生效）
 
@@ -66,7 +69,7 @@
 
 | 判据 | 形态 | 当前 |
 |---|---|---|
-| A5 跨 skill 可达性（**静态矩阵**） | **存量账本**（`A5_GAP_BASELINE`，锚 `c0be8e35`，126 条 / 8 skill；**只许缩短 + 新增阻塞**） | 账本内**绿**（skill 仍未绑那些工具 ⇒ 矩阵条目不会因机制修复而消失） |
+| A5 跨 skill 可达性（**静态矩阵**） | **存量账本**（`A5_GAP_BASELINE`；历史锚：`c0be8e35` 126 条 / 8 skill → #4196 140 条 / 8 skill → **#5247 29 条 / 3 skill**；**只许缩短 + 新增阻塞**） | 账本内**绿**（skill 仍未绑那些工具 ⇒ 矩阵条目不会因机制修复而消失） |
 | A5 越界拦截（**运行时机制**） | **严格，无基线**（`test_every_registered_gap_is_rejected_at_runtime`：账本里每一处死角逐条断言被 `cross_skill_target` 拦下） | **绿**（#4017 机制修复落地后） |
 | A10 单点化三条 | **严格，无基线**（命中的是必须修的真违规） | **绿**（#4018 合入后单点化已生效；落地当时为红 —— 见下方锚定记录） |
 
@@ -82,6 +85,8 @@
 
 import ast
 from pathlib import Path
+
+import pytest
 
 from app.graph.skills.skill_config import SkillConfig
 
@@ -246,79 +251,51 @@ def cross_skill_gap_matrix(skills, tools, validation_targets) -> dict[str, froze
 # 复算命令（把下面的集合与真值 diff 出来）：
 #   backend/ai-agent-service/.venv/bin/python -m pytest \
 #     backend/ai-agent-service/tests/test_skill_tool_reachability.py -q -s -k shrink
+#
+# ⚠️ **#5247 重新锚定（140 → 29；方向 = 纯收缩）—— 产品决策变更的逐条记录**
+#   用户裁定（2026-09-23）：「B 端 agent 定位侧重数据查询和分析；当前具备的创建和更新能力
+#   以及 tools 都从 B 端 Agent 移除」。对 A5 矩阵的**事实性**后果（每条都可复算）：
+#     ① **B 端 7 个 skill 全部解绑 `validate_input`** —— 矩阵只收「绑了 validate_input 的
+#        skill」（`cross_skill_gap_matrix` 的第一道过滤）⇒ `aftersales` / `customer` /
+#        `order` / `product` / `staff` 五行**整行销账**（它们已不在矩阵里，不是"被豁免"）。
+#        这也是为什么 A5 的"判决产生者"整体从 B 端消失：**没有 validate_input 绑定就没有
+#        「校验得了却执行不了」这条链**。
+#     ② **8 个写工具收窄为只读**（`customer_manage` / `after_sales_manage` /
+#        `employee_manage` / `role_manage` / `finance_api` / `category_manage` /
+#        `session_manage` / `inventory_manage`）—— `read_only=True` 的目标被
+#        `cross_skill_gap_matrix` 的 `not read_only` 过滤排除（只读空跑无写副作用死角，
+#        见文件头的适用域声明）⇒ 剩余 3 行的条目随之收缩。
+#     ③ `processing_order_generate` / `processing_order_update`（#4196 的 14 条增量登记的
+#        目标）现在**没有任何 skill 绑定** ⇒ `A5_REANCHOR_ADDITIONS` 的窄例外条件 ③
+#        （「至少被一个 skill 绑定」）不再成立 ⇒ 增量登记**清空**；这两个工具仍在活真值里
+#        作为 `customer_order` / `customer_aftersales` / `settings` 的死角出现，故仍逐条被
+#        运行时域闸门拦下（`test_every_registered_gap_is_rejected_at_runtime` 对活真值全量
+#        比对，不读账本）。
+#     ④ 剩余 3 行（`customer_aftersales` / `customer_order` / `settings`）按**活真值**逐名
+#        复算为 10 + 10 + 9 = **29** 条（只收缩：无一条新增）。
+#   计数对账：账本 29 条 − 增量 0 条 == `A5_BASELINE_COUNT_PRE_5247`（29）。
+#   判据面**没有放宽**：账本语义（只许缩短 / 新增阻塞 / 逐条被运行时拦下）一字未改；
+#   本次改的是**锚**（产品决策变了 ⇒ 真值变了 ⇒ 旧锚的条目在真值里不再命中）。
 A5_GAP_BASELINE: dict[str, frozenset[str]] = {
-    # aftersales：自己工具集 7 个 → 死角 16 个
-    "aftersales": frozenset({
-        "aftersale_create", "category_manage", "customer_manage", "employee_manage",
-        "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage", "product_processing_item_manage",
-        "product_update", "role_manage", "session_manage", "settings_manage", "sku_update",
-    }),
-    # customer：自己工具集 5 个 → 死角 17 个
-    "customer": frozenset({
-        "aftersale_create", "after_sales_manage", "category_manage", "employee_manage",
-        "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage",
-        "product_processing_item_manage", "product_update", "role_manage",
-        "session_manage", "settings_manage", "sku_update",
-    }),
-    # customer_aftersales：自己工具集 6 个 → 死角 17 个
+    # customer_aftersales：自己工具集 5 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_aftersales": frozenset({
-        "after_sales_manage", "category_manage", "customer_manage", "employee_manage",
-        "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage",
-        "product_processing_item_manage", "product_update", "role_manage",
-        "session_manage", "settings_manage", "sku_update",
+        "notification_manage", "order_create", "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update", "product_manage",
+        "product_update", "settings_manage", "sku_update",
     }),
-    # customer_order：自己工具集 10 个 → 死角 17 个
+    # customer_order：自己工具集 11 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_order": frozenset({
-        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
-        "employee_manage", "finance_api", "inventory_manage", "notification_manage",
-        "order_manage", "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage",
-        "product_processing_item_manage", "product_update", "role_manage",
-        "session_manage", "settings_manage", "sku_update",
+        "aftersale_create", "notification_manage", "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update", "product_manage",
+        "product_update", "settings_manage", "sku_update",
     }),
-    # order：自己工具集 9 个 → 死角 16 个
-    "order": frozenset({
-        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
-        "employee_manage", "finance_api", "inventory_manage", "notification_manage",
-        "processing_item_manage", "product_manage", "product_processing_item_manage",
-        "product_update", "role_manage", "session_manage", "settings_manage", "sku_update",
-    }),
-    # product：自己工具集 12 个 → 死角 11 个
-    "product": frozenset({
-        "aftersale_create", "after_sales_manage", "customer_manage", "employee_manage",
-        "finance_api", "notification_manage", "order_create", "order_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "role_manage", "session_manage", "settings_manage",
-    }),
-    # settings：自己工具集 4 个 → 死角 16 个
+    # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
+    # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从米宝的 `skill_names` 移出，文件与
+    #    注册一字未删）⇒ 它仍是矩阵里的活 skill，账本保留其行（幽灵检查也据此通过）。
     "settings": frozenset({
-        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
-        "employee_manage", "finance_api", "inventory_manage", "order_create",
-        "order_manage", "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage",
-        "product_processing_item_manage", "product_update", "role_manage",
-        "session_manage", "sku_update",
-    }),
-    # staff：自己工具集 5 个 → 死角 16 个
-    "staff": frozenset({
-        "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
-        "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage",
-        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
-        "product_manage",
-        "product_processing_item_manage", "product_update", "settings_manage",
-        "session_manage", "sku_update",
+        "aftersale_create", "order_create", "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update", "product_manage",
+        "product_update", "sku_update",
     }),
 }
 
@@ -328,18 +305,20 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
 # 逐条逐名登记「skill → 新增的目标写工具」，并由
 # `test_reanchored_additions_trace_to_a_real_product_change` 逐条核三条正当性
 # （已注册 / 是写工具 / 至少被一个 skill 绑定）——**防这次成为以后「顺手 re-anchor」的口子**。
-A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
-    "aftersales": frozenset({"processing_order_generate", "processing_order_update"}),
-    "customer": frozenset({"processing_order_generate", "processing_order_update"}),
-    "customer_aftersales": frozenset({"processing_order_generate", "processing_order_update"}),
-    "customer_order": frozenset({"processing_order_generate", "processing_order_update"}),
-    "product": frozenset({"processing_order_generate", "processing_order_update"}),
-    "settings": frozenset({"processing_order_generate", "processing_order_update"}),
-    "staff": frozenset({"processing_order_generate", "processing_order_update"}),
-}
+#
+# ⚠️ issue #5247 重新锚定（**清空**，不是放宽）：#4196 登记的两个目标
+# `processing_order_generate` / `processing_order_update` 现在**没有任何 skill 绑定**
+# （B 端加工单写工具已随"B 端只读"整体解绑）⇒ 窄例外的条件 ③「至少被一个 skill 绑定」
+# 不再成立 ⇒ 增量登记必须为空（它们仍在活真值里作为 3 条剩余行的死角，照旧逐条被运行时拦）。
+# 窄例外本身**没有放宽**：下一次要前移锚点，仍须逐条登记并满足三条 + 计数对账。
+A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {}
 
-# 旧锚（#4012 落地时）的条数 —— 只作**计数对账**用（增量 = 总数 − 旧锚数），不复制整份旧集合
-A5_BASELINE_COUNT_PRE_4196 = 126
+# 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。
+#   · 历史锚：#4012 落地时 126 条（锚 `c0be8e35`）；#4196 重新锚定为 140 条（含 14 条增量）。
+#   · 本次（issue #5247，B 端米宝只读）重新锚定为 **29 条**：B 端 5 个 skill 整体退出矩阵
+#     （不再绑 validate_input，见上方「#5247 重新锚定」①）+ 8 个写工具收窄为只读后退出矩阵
+#     （②）+ 剩余 3 行按活真值收缩；增量登记随之清空（③）⇒ 29 − 0 == 29。
+A5_BASELINE_COUNT_PRE_5247 = 29
 
 
 def unjustified_reanchor_additions(additions, tools, skills) -> list[str]:
@@ -410,10 +389,14 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
     126 处死角的**根因**是"19 个写工具各只被 1~2 个 skill 绑定"的架构事实，不是个别 skill 漏绑；
     把它们判红只会挡住所有人的 PR，而**运行时早已被域闸门拦下**（#4079 之后）。
     ⇒ 账本保留为**事实登记**（防新增），拦截强度由运行时断言承担。
+    ⚠️ issue #5247 重新锚定后当前账本是 **29 条 / 3 skill**（B 端 5 行整体退出矩阵、
+    8 个工具收窄为只读后退出矩阵；逐条理由见 `A5_GAP_BASELINE` 上方「#5247 重新锚定」块）。
+    上面的"126"是 #4012 落地时的历史锚，不是当前值。
 
     ## 账本的语义（**不是永久豁免**，三条硬约束）
 
-    1. **锚定 SHA**：`A5_GAP_BASELINE` 锚定 `origin/main` @ `c0be8e35`，逐条逐名登记（126 条 / 8 skill）；
+    1. **锚定 SHA**：`A5_GAP_BASELINE` 历史上锚定 `origin/main` @ `c0be8e35`，逐条逐名登记
+       （126 条 / 8 skill；#4196 重锚 140 条 / 8 skill；**#5247 重锚 29 条 / 3 skill**）；
     2. **只许缩短**：清单里的条目一旦在真值里**不再命中** ⇒ 打印 `SHOULD SHRINK` 要求移除
        （本 PR 不 fail 这一项：删条目属「收紧」，与「别人修好了却挡他的 PR」是两件事 ——
        同 `case_trust_gate.py` 对基线的既有口径）；
@@ -426,8 +409,15 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
     账本的 126 条**不再靠"放行"活着**：`test_every_registered_gap_is_rejected_at_runtime`
     逐条断言它们被拦下（强度只升不降）。
 
-    反例输入（红证 ①）：把 `order_create` 从 `order_skill.ORDER_TOOLS` 注释掉
-    ⇒ `order` 的缺口集**不再是账本里的那 16 个**（多出 `order_create`）⇒ 必红。
+    ## issue #5247（B 端米宝只读）对本用例的影响
+
+    本用例**判据一字未改**（账本 + 新增阻塞），改的只是账本内容（见上方「#5247 重新锚定」）：
+    B 端 5 个 skill 整体退出矩阵（不再绑 `validate_input`）、8 个只读化目标退出矩阵、
+    剩余 3 行按活真值收缩 ⇒ 29 条。红证 ① 也据此更新：把 `order_create` 从
+    `customer_order` 的绑定里拿掉 ⇒ 该 skill 的缺口集不再是账本里那 10 个 ⇒ 必红。
+
+    反例输入（红证 ①）：把 `order_create` 从 `customer_order_skill.CUSTOMER_ORDER_TOOLS`
+    注释掉 ⇒ `customer_order` 的缺口集**不再是账本里的那 10 个**（多出 `order_create`）⇒ 必红。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
@@ -491,7 +481,12 @@ def test_reanchored_additions_trace_to_a_real_product_change():
 
     另核两条一致性：
       · **逐条逐名**：增量登记里的每条都必须**确实在 `A5_GAP_BASELINE` 里**（登记与账本不得分叉）；
-      · **计数对账**：增量条数 == 账本总数 − 旧锚条数（126）——只改数字不改逐条登记会被这条拦住。
+      · **计数对账**：增量条数 == 账本总数 − 锚点条数（`A5_BASELINE_COUNT_PRE_5247`）
+        ——只改数字不改逐条登记会被这条拦住。
+
+    issue #5247：`A5_REANCHOR_ADDITIONS` 已**清空**（#4196 的两个加工单工具不再被任何 skill
+    绑定 ⇒ 条件 ③ 不成立），故计数对账退化为 `29 − 0 == 29`；判据本身（三条正当性 + 逐条
+    在账本里 + 计数对账）一字未改，下一次要前移锚点仍须逐条登记并过这三关。
     """
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_registry
@@ -521,10 +516,10 @@ def test_reanchored_additions_trace_to_a_real_product_change():
 
     added = sum(len(v) for v in A5_REANCHOR_ADDITIONS.values())
     total = sum(len(v) for v in A5_GAP_BASELINE.values())
-    assert total - added == A5_BASELINE_COUNT_PRE_4196, (
+    assert total - added == A5_BASELINE_COUNT_PRE_5247, (
         f"计数对账失败：账本共 {total} 条 − 增量 {added} 条 = {total - added}，"
-        f"而旧锚（#4012）记录为 {A5_BASELINE_COUNT_PRE_4196} 条 —— 说明账本被改动的部分"
-        f"不止「逐条登记的增量」（只改数字/顺手加条目都会被这条拦住）"
+        f"而锚点（#5247 重新锚定）记录为 {A5_BASELINE_COUNT_PRE_5247} 条 —— 说明账本被改动的"
+        f"部分不止「逐条登记的增量」（只改数字/顺手加条目都会被这条拦住）"
     )
 
 
@@ -542,10 +537,19 @@ class TestReanchorJustificationIsNotVacuous:
         return list(get_skill_registry().get_all())
 
     def test_negative_real_additions_are_not_reported(self):
-        """负例：本次真实的 14 条 ⇒ **必须不报**（防恒红，同 R2）。"""
+        """负例：**满足三条正当性**的增量 ⇒ **必须不报**（防恒红，同 R2）。
+
+        issue #5247 重新锚定：活真值的 `A5_REANCHOR_ADDITIONS` 已清空（#4196 的加工单工具
+        不再被任何 skill 绑定 ⇒ 条件 ③ 不成立）⇒ 直接对活真值断言会退化成空转。
+        改用**注入式**合法夹具（目标已注册 + 写工具 + 至少被一个 skill 绑定）——
+        判据本体不变，仍证明"正常 re-anchor 不会被误报"。
+        """
+        justified = {"customer_aftersales": frozenset({"order_create"})}
         assert unjustified_reanchor_additions(
-            A5_REANCHOR_ADDITIONS, self._tools(), self._skills()
-        ) == []
+            justified, self._tools(), self._skills()
+        ) == [], (
+            "满足三条正当性的增量被误报 —— 判据恒红的对偶形态：合法 re-anchor 也无路可走"
+        )
 
     def test_detector_reports_an_unbound_tool(self):
         """红证 ①：塞一个**没有任何 skill 绑定**的工具（真新增死角的形态）⇒ 必报。"""
@@ -731,10 +735,19 @@ async def test_every_registered_gap_is_rejected_at_runtime():
     判据（对**活真值**逐条算，不依赖账本的"放行"语义）：
 
       · 对每个绑了 `validate_input` 的 skill：用生产同一工厂
-        `create_skill_registry(cfg.tool_names)` 登记执行域；
+        `create_skill_registry(cfg.tool_names)` 登记执行域，并读回**真实执行域**
+        `get_tool_scope()`（= 该 skill 本轮模型可调用的工具集，含 #4125 的「同 persona 家族
+        只读工具并集」）；
       · 对 `_VALIDATION_RULES` 的**每个**目标工具：
-          - 目标 ∉ 该 skill 工具集 ⇒ `success is False` 且 `error == "cross_skill_target"` + suggestion；
-          - 目标 ∈ 该 skill 工具集 ⇒ **不得**被域闸门拒（`error != "cross_skill_target"`）。
+          - 目标 ∉ 执行域 ⇒ `success is False` 且 `error == "cross_skill_target"` + suggestion；
+          - 目标 ∈ 执行域 ⇒ **不得**被域闸门拒（`error != "cross_skill_target"`）。
+
+    ⚠️ **#5247 重新锚定**（域内判据从 `target in own` 改成 `target in scope`）：#5247 把 8 个
+    写工具收窄为**只读**工具 ⇒ 它们经 #4125「同 persona 家族只读工具并集」进入**每个** B 端
+    skill 的执行域（如 `settings` 声明的 4 个工具，执行域实为 30 个）。旧的 `target in own`
+    会把"在域内、门禁正确地不拦"判成"死角又回来了"（误红，§19.1）；按**执行域**比对才与
+    `validate_input` 的实际判据（`target_tool not in _scope`）逐字一致 —— 判据强度不降：
+    域外目标仍逐条必须被拦，且域的来源仍是生产同一工厂（不是第二套域判定）。
 
     强度（R4）：改前账本里的 126 条只是"**登记并放行**"（静态矩阵），现在**逐条断言被拦**。
     fail-closed（防"扫不到就通过"）：账本里的每个 skill 必须在活注册表里存在（幽灵即红）；
@@ -766,17 +779,21 @@ async def test_every_registered_gap_is_rejected_at_runtime():
         if "validate_input" not in own:
             continue  # 适用域之外（反方向缺口只登记，见 scope declaration 用例）
         create_skill_registry(list(cfg.tool_names))  # 生产同一工厂 → 登记执行域
-        assert get_tool_scope() is not None, (
-            f"{cfg.name}：工厂没有登记执行域 —— 域闸门会静默失效（#4079 的事实链断在第 ② 环）"
-        )
+        scope = get_tool_scope()
+        if scope is None:   # 存在性判据用显式失败分支（`is not None` 断言会被 QA Gate 判弱断言）
+            pytest.fail(
+                f"{cfg.name}：工厂没有登记执行域 —— 域闸门会静默失效"
+                f"（#4079 的事实链断在第 ② 环）"
+            )
         for target, action in sorted(targets.items()):
             checked += 1
             params = _VALID_ORDER_PARAMS if target == "order_create" else _PROBE_PARAMS
             res = await tool.execute(ctx, target_tool=target, target_action=action, params=params)
-            if target in own:
+            if target in scope:
+                # 域内（含 #4125 并进来的家族只读工具）⇒ 门禁**不得**接管（R2 误伤负例）
                 if res.error == "cross_skill_target":
                     failures.append(
-                        f"{cfg.name} **域内**目标 {target} 被域闸门误拒（R2 误伤合法调用）"
+                        f"{cfg.name} **执行域内**目标 {target} 被域闸门误拒（R2 误伤合法调用）"
                     )
                 continue
             blocked += 1
@@ -795,8 +812,9 @@ async def test_every_registered_gap_is_rejected_at_runtime():
     assert blocked > 0, (
         "活真值里一处域外死角都没有 ⇒ 本判据变成空跑；请确认账本/A5_GAP_BASELINE 是否已过期"
     )
-    print(f"\n[A5 运行时域闸门] 比对 {checked} 对，其中域外 {blocked} 处（账本登记 "
-          f"{sum(len(v) for v in A5_GAP_BASELINE.values())} 条）全部被拦下")
+    print(f"\n[A5 运行时域闸门] 比对 {checked} 对，其中域外 {blocked} 处（其中**写**死角 "
+          f"{sum(len(v) for v in A5_GAP_BASELINE.values())} 条与账本逐条对应；其余为 #5247 收窄"
+          f"出来的只读目标 —— 它们在域外同样被拦）全部被拦下")
     assert not failures, "A5 域闸门未按预期工作：\n  " + "\n  ".join(failures)
 
 

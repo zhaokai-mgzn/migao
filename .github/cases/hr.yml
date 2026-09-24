@@ -49,18 +49,21 @@ cases:
       - "新客服王五 13812345678，密码 Abc123456，开账号"
       - "确认"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除
+      # （`employee_manage` 收窄为只读 `{list, detail}`）⇒ 机器可判字段改判到**存活的只读路径**
+      # `action: list`（写 action 不得残留：悬空声明永不满足，会阻塞 CI 的 action 绑定判据）。
       - tool: employee_manage
         args:
-          action: create
+          action: list
     # 效果层断言（门禁 a2 条，#3778「调用了 ≠ 成了」）：`expectations` 只证明"调了"，
     # 本字段证明**至少一次 create 真的 success=true**。本条原先只有自然语义 data_check
     # （"收集确认后创建成功"**不计分**，见 acceptance-protocol §1.3 铁律）⇒ 写用例只有
     # "调用了"级断言 = 已知假绿形态（`CASE-TRUST-NO-EFFECT-ASSERTION`）。
-    must_succeed:
-      - tool: employee_manage
-        action: create
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=create)]`
+    # **整格移除**（写声明同步移除）—— `create` 已从源码删除 ⇒ 该断言在新事实下**永不满足**
+    # （悬空声明）。写能力下线后的正确判定层 = 工具层单测 + B 端绑定判据（见 `traces.tests`）。
     data_checks:
-      - "收集确认后创建成功 —— 机器断言见 must_succeed[employee_manage(action=create)]（工具真的返回 success）"
+      - "收集确认后创建成功 —— 机器断言见 must_succeed[employee_manage(action=create)]（工具真的返回 success）｜ ⚠️ 2026-09-24（issue #5247，B 端只读化）：该 `must_succeed` 已随写 action `create` 下线而整格移除（悬空声明），本条作为**历史判据说明**保留；本用例已退役（见 `skip_reason`），能力下线由工具层单测与绑定判据承担"
     # 全局命名空间声明（issue #3781）：本用例**写**员工姓名/手机号命名空间 ——
     # 每跑一次就往栈里放一个「王五/13812345678」。任何同样依赖「王五」的用例
     # （HR-003 是 KEY_JOURNEY）都会因**重名**而目标不唯一 ⇒ 必须与本用例互斥。
@@ -87,8 +90,8 @@ cases:
         source: "13812345678"
         expect: 0
         max_growth: 1
-    skip_reason: ""
-    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。2026-09-19（issue #4189 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13812345678, expect: 0, max_growth: 1]` —— 创建前提 = 该号码名下无既有员工（残留撞唯一校验 ⇒ 恒红且归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099）；定位口径与 `pre_clean[employee_remove]` 同一份（`_norm_phone`）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建员工/开账号」（employee_manage / action=create）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 employee_manage(action=list)（只读查询员工列表）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 5.2 独有；2026-09-09 校准：① 补「确认」点确认卡轮（agent 第一轮先查角色→validate→发确认卡，需确认后才 create）；② R1 补密码（execute._create_user 要求 password 必填，原 user_inputs 无密码，agent 确认后才发现缺密码反复追问——契约已修，case 同步补密码）。2026-09-15（issue #3781）：补 `namespaces` 声明 + `pre_clean[employee_remove]` —— 本用例造出的第二个「王五」是 HR-003（KEY_JOURNEY）**恒红**的根因（真实 run 34856561459，两次独立审计共同确认的用例资产缺陷）；2026-09-18（issue #4150 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `must_succeed[employee_manage(action=create)]` 效果层断言（门禁 a2 条 / #3778「调用了 ≠ 成了」），原 `data_checks` 的「收集确认后创建成功」是**不计分**的自然语义（acceptance-protocol §1.3）⇒ 该用例此前只有「调用了」级断言。断言只增不减。2026-09-19（issue #4189 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13812345678, expect: 0, max_growth: 1]` —— 创建前提 = 该号码名下无既有员工（残留撞唯一校验 ⇒ 恒红且归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099）；定位口径与 `pre_clean[employee_remove]` 同一份（`_norm_phone`）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create)` 改判为存活的只读路径 `employee_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -147,10 +150,11 @@ cases:
       - type: employee_count_for_phone
         source: "13700137000"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `toggle_status` 已从源码删除
+      # （工具收窄为只读 `{list, detail}`）⇒ 机器可判字段改判到**存活的只读路径** `action: list`。
       - tool: employee_manage
         args:
-          action: toggle_status
-          status: disabled
+          action: list
     # ── 效果层断言（Case Trust 规则 a2，2026-09-20 issue #4709-A 的 burn-down 缴费）──
     # 「调用了 ≠ 成了」（#3778）：上面的 `expectations` 只证明 `employee_manage` 被调用且
     # args 给对 —— 工具返回 `success=false`（停用失败 / 无权限 / 目标不在位）也照样通过。
@@ -158,14 +162,13 @@ cases:
     # 停用失败 ⇒ 判红。⚠️ `action` 必填：`employee_manage` 是**多 action 工具**
     # （create/update/toggle_status/list/...），缺 action 会按**工具名**取首个成功 payload
     # ⇒ 可能核到别的 action 的返回（假红/假绿双面，同 FN-001 的 `finance_api` 口径）。
-    must_succeed:
-      - tool: employee_manage
-        action: toggle_status
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=toggle_status)]`
+    # **整格移除**（写声明同步移除）—— `toggle_status` 已从源码删除 ⇒ 该断言永不满足（悬空声明）。
     data_checks:
       - "二次确认后停用"
       - "目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号"
-    skip_reason: ""
-    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`。2026-09-20（issue #4709-A 的 burn-down 缴费，metric=entries ⇒ 必须**整条**销账）：本用例此前命中两条存量违规 —— `CASE-TRUST-NO-EFFECT-ASSERTION`（有写期望却无任何效果层断言）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（多轮 + 写期望却无可判定前置）⇒ ① 补**效果层** `must_succeed[employee_manage(action=toggle_status)]`（停用失败即红，「调用了 ≠ 成了」）；② 补**声明层** `precondition[employee_count_for_phone: 13700137000]`（不写 `expect`，同 OR-012/OR-025 口径）。两条合起来 ⇒ 该用例**不再命中任何码**、整条销账，清单条目随之删除（`--prune-baseline`，只删不加）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` / `namespaces`）**一字未动、无放宽、无删减**。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「停用员工账号」（employee_manage / action=toggle_status）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 employee_manage(action=list)（只读查询员工列表）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`。2026-09-20（issue #4709-A 的 burn-down 缴费，metric=entries ⇒ 必须**整条**销账）：本用例此前命中两条存量违规 —— `CASE-TRUST-NO-EFFECT-ASSERTION`（有写期望却无任何效果层断言）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（多轮 + 写期望却无可判定前置）⇒ ① 补**效果层** `must_succeed[employee_manage(action=toggle_status)]`（停用失败即红，「调用了 ≠ 成了」）；② 补**声明层** `precondition[employee_count_for_phone: 13700137000]`（不写 `expect`，同 OR-012/OR-025 口径）。两条合起来 ⇒ 该用例**不再命中任何码**、整条销账，清单条目随之删除（`--prune-baseline`，只删不加）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` / `namespaces`）**一字未动、无放宽、无删减**。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `toggle_status` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=toggle_status)` 改判为存活的只读路径 `employee_manage(action=list)`，`must_succeed[employee_manage(action=toggle_status)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
@@ -203,7 +206,7 @@ cases:
 
   - id: HR-005
     legacy_id: "5.5"
-    title: "创建角色 - 分配权限"
+    title: "查角色与权限（只读；原「创建角色」随 #5247 写能力下线改判）"
     domains:
       - hr
     tier: normal
@@ -214,13 +217,24 @@ cases:
       - employee-role.role-crud
       - employee-role.permissions
     user_inputs:
-      - "新建'库管'角色，编码 stock_keeper，描述'负责商品管理'，给商品管理全套权限"
-      - "确认创建"
+      # 2026-09-24（issue #5247，B 端只读化）：原两轮（创建「库管」角色 + 确认创建）随写能力下线
+      # 改判为**只读查询** —— 原输入里的「库管」角色是**本用例自己创建的**，写能力下线后不再存在
+      # ⇒ 不再引用它（否则是引用一个永不存在的对象）。
+      - "现在有哪些角色？"
+      - "第一个角色有哪些权限？"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除（工具收窄为只读
+      # `{list, all, detail, list_permissions}`）⇒ 改判为两条**存活的只读路径**：角色列表 +
+      # 该角色的权限清单（「第一个角色有哪些权限？」对应的正是 list_permissions）。
       - tool: role_manage
         args:
-          action: create
+          action: list
+      - tool: role_manage
+        args:
+          action: list_permissions
     # ── Case Trust burn-down 缴费（issue #5013 的 PR 触及 `.github/cases/**` ⇒ 每 PR 须净消减 ≥1 条）──
+    # ⚠️ 2026-09-24（issue #5247，B 端只读化）：以下三条判定（写类 a2 / b / f）的**前提**（本用例写角色）
+    # 已随写能力下线消失 —— 本用例改判为**只读查询**，三条判定随之不适用（历史理由保留，不删）。
     # 真修而非纸面：本用例是**写类**（`role_manage create`），三条判定各自指向一个真实病灶 ——
     #   ① 门禁 a2（效果层）：只有「调用了」的期望 ⇒ 工具 `success=false` 也照样过（#3778）；
     #   ② 门禁 b（自清理）：无 `namespaces`/`pre_clean` ⇒ 第二次跑时 `stock_keeper` 已存在，
@@ -232,17 +246,19 @@ cases:
     #    product_count_for_keyword / employee_count_for_phone / debug_permissions_effective /
     #    aftersales_ticket_count_for_ticket_no / processing_item_count_for_keyword），
     #    **没有「角色编码是否存在」这一类** ⇒ 不发明类型、也不拿别的类型冒充。
+    # ── 2026-09-24（issue #5247）：本用例已改判为只读（不再创建角色）⇒ 该 `namespaces` 声明成为
+    # **历史残留**（无写产物可争用）；按「与本次改动无关的断言一个字不动」保留原样，只加本注释。
     namespaces:
       - "role_code:stock_keeper"
     preconditions:
-      - "创建前该租户不存在角色编码 stock_keeper（本用例自己会创建它）"
-    must_succeed:
-      - tool: role_manage
-        action: create
+      - "创建前该租户不存在角色编码 stock_keeper（本用例自己会创建它）｜ ⚠️ 2026-09-24（issue #5247，B 端只读化）：本用例已改判为**只读查询**（不再创建角色）⇒ 原「创建前」前提作废（保留原文为历史）；现前提 = 角色列表 / 权限清单可查（role_manage list / list_permissions）"
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[role_manage(action=create)]` **整格移除**
+    # （写声明同步移除）—— `create` 已从源码删除 ⇒ 该断言在新事实下**永不满足**（悬空声明）。
+    # 本用例改判为只读查询（`skip_reason` 保持为空 = 仍在 agent-eval 里跑）。
     data_checks:
-      - "确认后创建成功，permissions 含商品管理权限码"
+      - "角色/权限清单逐条来自服务端（role_manage list / list_permissions），不得编造；只读，不得声称已创建或已分配权限"
     skip_reason: ""
-    merge_log: "verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入）"
+    merge_log: "verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`role_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `role_manage(action=create)` → `role_manage(action=list)` + `role_manage(action=list_permissions)`，`must_succeed[role_manage(action=create)]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：原输入里的「库管」角色是本用例自己创建的、写能力下线后不再存在，故不能继续引用它；角色与权限清单的**来源**仍逐条受服务端断言约束，且「不得声称已创建/已分配」是新加的正向约束）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_role_manage.py"
@@ -360,11 +376,11 @@ cases:
       # 值级断言（机器可判）：本轮必须下发 update、目标必须是种子员工、新号码必须逐字一致。
       # 拦的是「发错 action / 改错人 / 号码写错或掩码化」。
       # ⚠️ 本层**拦不住**接收侧静默忽略（#3550 的真身）——那一类需要落库核对能力，见 merge_log。
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `update` 已从源码删除（工具收窄为只读
+      # `{list, detail}`）⇒ 机器可判字段改判到**存活的只读路径** `action: detail`。
       - tool: employee_manage
         args:
-          action: update
-          user_id: "debug_employee_wangwu"
-          phone: "13900139111"
+          action: detail
     # 全局命名空间声明（issue #3781）：本用例**依赖并改写**种子里那条员工
     # （13700137000 → 13900139111）⇒ 与 HR-003（同一员工的 toggle_status）互斥，
     # 否则 HR-003 点名的「13700137000 的这位员工」可能正被本用例改号。
@@ -389,24 +405,18 @@ cases:
         max_growth: 0
     # 写工具**真的成功**断言（#3361「调了 ≠ 成了」）：被 confirm 门禁拦下、工具报错、
     # 或模型压根没执行 update，都在此判失败 —— 这是「update 写路径有没有真的发生」的第一道门。
-    must_succeed:
-      - tool: employee_manage
-        action: update
-    # 参数完整性（payload 契约）：update 必须带 user_id 与 phone，缺任一即无效写。
-    required_args:
-      - tool: employee_manage
-        action: update
-        fields:
-          - user_id
-          - phone
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=update)]` 与
+    # `required_args[employee_manage(action=update): user_id, phone]` **整格移除**（写声明同步移除）
+    # —— `update` 已从源码删除（工具收窄为只读 {list, detail}）⇒ 两条断言永不满足（悬空声明）。
+    # 原「参数完整性（payload 契约）：update 必须带 user_id 与 phone，缺任一即无效写」保留为历史理由。
     data_checks:
       # ⚠️ 以下为自然语义描述，**不计分**（acceptance-protocol §1.3 铁律）：机器可判部分由上面的
       # expectations / must_succeed / required_args 承担；落库层核对待 db_verify[employee] 能力
       # 落地后回填为可执行断言（规格见 merge_log，归属 runner 包）。
       - "PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）"
       - "同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝"
-    skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「更新员工资料」（employee_manage / action=update）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 employee_manage(action=detail)（只读查询员工详情）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=update, user_id=debug_employee_wangwu, phone=13900139111)` 改判为存活的只读路径 `employee_manage(action=detail)`，`must_succeed` / `required_args` 里的写声明同步移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_employee_field_consumption_contract.py"
@@ -419,7 +429,7 @@ cases:
 
   - id: HR-009
     legacy_id: ""
-    title: "越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径"
+    title: "米宝无创建员工能力——须如实说明并给后台开通路径（不得自旋重试 / 不得谎称已开）"
     domains:
       - hr
       - chat
@@ -503,7 +513,7 @@ cases:
         phone: "13800009999"
     user_inputs:
       - "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
-      - "那我要怎么才能开通这个权限？"
+      - "那我要怎么才能给员工开账号？"
     expectations:
       # `expectations` 不命中 = 零成功调用也算合格：故**必须**要求它至少尝试过一次，
       # 否则"压根没调"与"越权被挡后如实说明"在报告里同形。
@@ -535,13 +545,17 @@ cases:
       # 判别力**不在此处承重**，承重的是 must_fail（create 一次都不得成功）+
       # db_verify[employee_absent]（李四不得落库）+ forbidden_text（不得谎称功能不存在/
       # 请稍后重试）+ want_text（必须给开通路径）—— 对两条路径都鲁棒。
-      - "employee_manage(action=create) or employee_manage(action=list) or role_manage"
+      # ── 2026-09-24（issue #5247，B 端只读化）：原 OR 串（`employee_manage(action=create)` /
+      # `employee_manage(action=list)` / `role_manage`）含**已删除的写 action `create`** ⇒ 悬空声明。
+      # 新裁定下「米宝做不到这件事、请去后台」才是正确行为 ⇒ 改判为 `direct_reply`
+      # （「如实说明 + 引导去后台页面」的既有伪工具形态，MC-021 / DF-016 在用）。
+      - tool: direct_reply
     # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
     # 任何一次 create **成功**都是越权落库（最坏形态）。
     # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `*` ⇒ create 成功 ⇒ 本用例红。
-    must_fail:
-      - tool: employee_manage
-        action: create
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_fail[employee_manage(action=create)]` **整格移除**
+    # —— `create` 已从源码删除 ⇒ 该断言在新事实下**永不失败**（恒真空断言 + 悬空声明；硬规则禁残留
+    # 已删除的写 action）。负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。
     # 全程禁用其它领域的写工具（issue #3544 收口批：写进 data_checks 的「未被调用」
     # 是「本轮没调用」+ 计分任一轮满足即过 ⇒ 多轮恒真；本字段是跨轮判定）。
     forbidden_tools:
@@ -557,12 +571,13 @@ cases:
     #    而一句合规回复天然会写成「我这边**无法创建**，因为您的账号没有『新增员工』权限…」
     #    ⇒ 该禁词会把**合格行为判红**（假红：断言宽于用例意图，acceptance-protocol §1.3.1）。
     #    它想拦的形态（"这功能不存在"）由上面 4 条功能类禁词承担，判别力不依赖它。
+    # ── 2026-09-24（issue #5247，B 端只读化）：**整表改判** —— 原清单的前提是「米宝有这个能力、
+    # 只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**
+    # 的两条（`系统不支持` / `请稍后重试`），**删掉**会误伤如实说明的 `暂不支持` / `功能暂未开放` /
+    # `还没有这个功能`（那三条「功能不存在」禁词要拦的场景已随能力下线消失，留着只会把合格回答判红）。
     forbidden_text:
       - any_of:
-          - "暂不支持"
-          - "功能暂未开放"
           - "系统不支持"
-          - "还没有这个功能"
           - "请稍后重试"
     # 正向关键词（§3.4 双轨的另一轨）：只说"做不了"不够，必须给**开通路径**。
     # ⚠️ 库里已用的正向词是「管理员」「权限」，此处用 `开通`（同一语义族但不重复用词），
@@ -570,12 +585,19 @@ cases:
     want_text:
       - any_of:
           - "开通"
+      # ── 2026-09-24（issue #5247）：**追加正向判据**（裸字符串条目 = 全程语义，见 runner 的
+      # `check_want_text`）：全程 final_text 必须出现「后台」= 真的给出了后台开通路径。
+      - "后台"
     data_checks:
       # ⚠️ 以下为自然语义描述，**不计分**（acceptance-protocol §1.3 铁律）。机器可判部分由
       # 上面的 expectations / must_fail / forbidden_tools / forbidden_text / want_text 承担。
-      - "同一失败的 create 调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定"
-      - "回复须点明是**账号权限**不足（而非功能不存在），并指向管理员在「角色管理/员工管理」为其开通 employee:create"
-      - "不得出现「请稍后重试」这类对确定性拒绝无效的敷衍话术"
+      # （2026-09-24 / issue #5247：`must_fail[employee_manage(action=create)]` 已随写 action 下线
+      # 整格移除，负效果断言由 `db_verify[employee_absent]` 承担 —— 见上方注记。）
+      - "同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定"
+      # ── 2026-09-24（issue #5247，B 端只读化）：原第 2 条的**前提**（米宝有创建员工能力、只是权限
+      # 不够）已随写能力下线消失 ⇒ 改判为「如实说明米宝不做这件事 + 给出后台路径」。
+      - "如实说明米宝不提供创建员工/开账号能力（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并给出后台「员工管理」页面开通路径（正向判据 want_text 要求全程出现「后台」）"
+      - "不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「米宝做不到、请去后台」是**正确**回答，不在禁词内）"
     # ── 实测归因与"为什么现在可以跑"（issue #4150 → #4189；真跑 run 35264687083 / 35273366357）──
     # 两次失败指纹相同：`unmatched expectation: employee_manage(action=create)` +
     # `db_verify[employee_absent]: 员工「李四」已落库`。**逐条归因（#4189 修正前判）**：
@@ -601,7 +623,7 @@ cases:
     # `db_verify`、`forbidden_text`、`want_text` 一条未删（唯一移除项是「无法创建」那条
     # 与 F7 自相矛盾的假红禁词 + 精确 `action=create` 单一路径）。
     skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：让权限拒绝路径在评测中可达。断言口径：expectations 要求至少尝试一次 create（防「压根没调」与「如实说明」同形）+ must_fail 断言 create 一次都不得成功（**未修实现的判别性断言**：通配权限下 create 会成功 ⇒ 红）+ forbidden_text 反模式（功能不存在/稍后重试）+ want_text 要求给出开通路径。身份靠服务端 DEBUG-only 的 X-Debug-Permissions（严格白名单、拒绝 *、生产不可达）；2026-09-18 第二轮（CI run 35259795549 的 Case Trust Gate 4 条阻塞）：补 ① `precondition[debug_permissions_effective source=employee:list]`（门禁 f 条）；② `db_verify[employee_absent]` 负效果断言（门禁 a2 条）；③ `pre_clean[employee_remove]`（门禁 b 条）；2026-09-18 第三轮（issue #4150）：① 前置断言从「拿声明比声明」（恒等恒绿的空断言）改成**观测服务端真的生效了什么范围** —— `__PAGE__` 分页协议直调探针 `dashboard_stats`（需 `dashboard:view`；零 LLM、探针会话独立且跑完即关）：声明范围不含该码 ⇒ 必须被拒，服务端回落通配 ⇒ 被放行 ⇒ 判红；读不出结局（unknown）与「头压根没下发」同样判红（fail-closed）；② 与注入面「不要调用工具尝试」（#4107 F8）的口径冲突**裁定保留「尝试一次」**（F7 只禁「重复重试」；反向对齐会掏空计分通道 ⇒ CASE-TRUST-EMPTY-ASSERTION），产品侧收窄请求登记在注释与 #4147；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083 的 HR-009 红，两次尝试同一指纹）：① 补 `namespaces[employee_name:李四, employee_phone:13800009999]` —— 与 HR-010 **同一对键**，把「不存在」断言与「创建出来」用例从**零隔离**（单侧声明 = 零隔离，#3835）改成同争用组互不重叠；实测红形态 `db_verify[employee_absent]: 员工「李四」已落库` 与越权落库**同形**（归因全错）；② `forbidden_text` 移除「无法创建」：它与 F7 要求的合规话术自相矛盾（「我无法创建，因为您的账号缺少新增员工权限…」是**合格**回复），实测命中 ⇒ 假红；功能类 4 条禁词仍在；③ `skip_reason` 登记（不再让已知产品缺口与真失败同形），un-skip 判据见该字段。断言口径只增不减（唯一移除项是上面那条假红禁词）。2026-09-19 第五轮（issue #4189，真跑 run 35273366357 逐字轨迹归因后重判）：① `expectations` 从精确 `employee_manage(action=create)` 放宽为**两条合理路径的 OR**（`employee_manage(action=create) or employee_manage(action=list) or role_manage`）—— 模型合理走「先查角色 ID → 被拒 → 如实说明 + 给开通路径」（调的是 list 不是 create）被旧断言判假红；判别力转移到 must_fail + db_verify[employee_absent] + forbidden_text + want_text（对两条路径都鲁棒）；② **修正归因**：`db_verify[employee_absent]` 的「已落库」**不是残留数据**（issue 原判被实测推翻：pre_clean 报「无李四需清理」、模型从未调 create、列表 users=0），真因是 runner `check_db_verify` 对 `employee_absent` 判定**布尔反转**（`True`=不存在被 `if _found_abs:` 判红），已修复 + 单测 `TestEmployeeAbsentVerdictMapping`（三态映射红证）；③ `pre_clean[employee_remove]` 定位口径核对无误（`_eval_find_users` name∧phone 与 create 落库形态一致；seed 无李四行）；命中却删不掉（DELETE ≥300）改为**大声报出**（`_eval_remove_users` 计 failed，单测 `TestEmployeeRemoveReportsDeleteFailure` 红证）；④ **身份矛盾照实登记**（role=admin + 受限码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `employee_manage(action=create) or employee_manage(action=list) or role_manage` → `direct_reply`（如实说明 + 引导去后台页面），`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：创建员工的能力已从 B 端整体移除，「是否被权限拒绝」这一问不再成立，正确行为 = 如实说明 + 给后台路径 ⇒ 断言面转入「如实说明 + 后台路径」的正向判据）。**`forbidden_text` 逐字改判**：原清单 `['暂不支持','功能暂未开放','系统不支持','还没有这个功能','请稍后重试']` 的前提是「米宝有这个能力、只是权限不够」；新裁定下「米宝做不到这件事、请去后台」才是**正确**回答 ⇒ 保留属**编造/敷衍**的两条 `['系统不支持','请稍后重试']`、**删掉**会误伤如实说明的 `['暂不支持','功能暂未开放','还没有这个功能']`；并**新增 `want_text` 正向判据「后台」**（裸字符串条目 = 全程语义：全程 final_text 必须出现「后台」= 真的给出了后台开通路径）。另：`must_fail[employee_manage(action=create)]` **整格移除** —— `create` 已从源码删除 ⇒ 该断言在新事实下永不失败（恒真空断言 + 悬空声明，硬规则禁残留已删除的写 action）；负效果断言由 `db_verify[employee_absent]`（李四不得落库）继续承担。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_auth.py"
@@ -666,10 +688,13 @@ cases:
       # ⚠️ 判别力**不在此处承重**：本条的判据本体是 `must_succeed[employee_manage(action=create)]`
       # （create 必须**真的成功** —— 只查角色不创建 ⇒ 红）+ `db_verify[employee]`
       # （落库行真的在，拦 #3550 的「200 假成功」）。
-      - "employee_manage(action=create) or role_manage"
-    must_succeed:
-      - tool: employee_manage
-        action: create
+      # ── 2026-09-24（issue #5247，B 端只读化）：原 OR 串含**已删除的写 action `create`** ⇒ 悬空声明；
+      # 改判到**存活的只读路径** `role_manage(action=list)`（本用例已退役，见 `skip_reason`）。
+      - tool: role_manage
+        args:
+          action: list
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[employee_manage(action=create)]` **整格移除**
+    # （写声明同步移除）—— `create` 已从源码删除 ⇒ 该断言在新事实下**永不满足**（悬空声明）。
     namespaces:
       - "employee_name:李四"
       - "employee_phone:13800009999"
@@ -690,6 +715,10 @@ cases:
         source: "employee:create"
     # 正向落库断言（效果层）：`must_succeed` 只证明工具回 success=true，本核对器读**落库行**
     # ——#3550 的真身正是"HTTP 200 + success=true 而库里没变"（下发对 + 调用成功 + 库里没有）。
+    # ⚠️ 2026-09-24（issue #5247，B 端只读化）**如实登记**：本用例已退役（`skip_reason`）⇒ 该断言
+    # 在新事实下**不可能满足**（创建员工的能力已从 B 端整体移除，李四永不会被创建）。按「不删历史 +
+    # 与本次改动无关的断言不动」保留原样为**历史判据**；它不参与 CI 的 action 绑定判据，且退役后
+    # 不再执行。若将来 un-retire，此格必须随之改判（见 `skip_reason`）。
     db_verify:
       - fetch: employee
         name: "李四"
@@ -705,8 +734,8 @@ cases:
     # 一次都没调 create（产品侧回归 #4147 G6，**已修复** PR #4164）。本用例的
     # `must_succeed` + `db_verify[employee]` 保持承重：**若权限门禁修坏（create 被误拒）或
     # 落库层再犯 #3550，本条必红** —— 这正是正向对照的存在理由。
-    skip_reason: ""
-    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建员工」（employee_manage / action=create）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 role_manage(action=list)。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。｜ 退役登记纪律（守卫 tests/unit_ci_workflows/test_eval_debug_permissions_precondition.py 的 TestThePairIsIsolatedAndRegistered 要求「skip_reason 非空时必须点名产品侧归属 + 摘除判据」）：**产品侧归属 = #4147**（注入面「可用能力（仅限以下，超出即无权）…不要调用工具尝试」收窄为「先发起调用，由系统给出权威结论；真被拒时不再重试」，PR #4164；实现见 backend/ai-agent-service/app/graph/skills/base_skill.py 的 _inject_permission_scope）—— 本用例与 HR-009 正是该产品侧改动的**允许半 / 拒绝半对照**，#5247 下线写能力后对照前提消失故退役。**un-skip 判据（怎么才算修好、可摘掉本 skip_reason）**：当 B 端重新获得「创建员工」能力（employee_manage 的 action=create 回到源码且重新绑定 B 端，即 #5247 的只读裁定被撤销或改写）时 —— 把 expectations 改回 employee_manage(action=create) 或 role_manage 的 OR 串、恢复 must_succeed[employee_manage(action=create)] 与 db_verify[employee]（李四落库），并摘掉本 skip_reason。"
+    merge_log: "2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create) or role_manage` 改判为存活的只读路径 `role_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。**退役理由（逐字）**：本用例原为 HR-009（拒绝半）的「**有能力时必须执行**」正向对照（允许半）；写能力下线后**对照前提消失**（持什么权限都不再能创建员工）⇒ 退役。HR-009 已同批改判为「如实说明 + 后台路径」。`db_verify[employee]`（李四落库）在新事实下不可能满足，按「不删历史」保留原样并已在原位标注（退役后不执行；un-retire 时必须同步改判）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"

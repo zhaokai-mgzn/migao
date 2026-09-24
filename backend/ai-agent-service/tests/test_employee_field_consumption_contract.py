@@ -111,47 +111,7 @@ def test_create_phone_and_role_ids_still_consumed():
 
 
 # ---------------- 下发给控制器的字段集合（字段名驱动，非硬编码） ------------------
-
-@pytest.mark.asyncio
-async def test_employee_manage_update_payload_keys_are_all_consumed():
-    """端到端字段级契约：employee_manage(update) 实际构造的 json_data 每个 key 都被消费。
-
-    与上面静态断言互补——这里走真实 Tool 代码路径（mock HTTP client），
-    断言「工具**实际**发出去的字段名」而不是「工具源码里出现的字符串」。
-    """
-    from unittest.mock import AsyncMock, patch
-
-    from app.tools.base import ToolContext
-    from app.tools.employee_manage import EmployeeManageTool
-
-    client = AsyncMock()
-    client.put = AsyncMock(return_value={"success": True, "data": {}})
-
-    tool = EmployeeManageTool()
-    ctx = ToolContext(tenant_id=1, user_id="agent_001", session_id="sess", role="admin",
-                      permissions=["*"])
-
-    with patch("app.tools.employee_manage.get_admin_api_client", return_value=client):
-        result = await tool.execute(
-            context=ctx,
-            action="update",
-            user_id="e1",
-            name="张三",
-            phone="13900000002",
-            password="newpass",
-            avatar="https://example.com/a.png",
-            role_ids=["role-manager"],
-        )
-
-    assert result.success is True, result.message
-    payload = client.put.call_args[1]["json_data"]
-    assert payload.get("phone") == "13900000002"
-    assert payload.get("roleIds") == ["role-manager"]
-    assert "role" not in payload, "role_ids 存在时不应再下发 role（与 createUser 语义一致）"
-
-    consumed = _read_keys(_update_user_body())
-    dropped = sorted(k for k in payload if k not in consumed)
-    assert not dropped, (
-        f"employee_manage(update) 下发了控制器不读取的字段 {dropped} —— "
-        "这些字段会被静默忽略并造成 200 假成功（issue #3550）"
-    )
+# [RETIRED #5247] employee_manage(update) 的端到端字段消费契约已退休：
+#   `update` action 随 B 端只读化（用户裁定 2026-09-23）从 employee_manage 删除 ⇒
+#   该用例驱动的写路径不再存在（断言无对象）。同族的 **create** 契约与静态字段断言仍保留，
+#   读路径（list/detail）契约由 tests/test_tools_employee_manage.py 覆盖。

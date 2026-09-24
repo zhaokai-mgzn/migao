@@ -1,4 +1,7 @@
-"""SessionManageTool 单元测试 — 会话管理（列表/监控/详情/分配/结束）"""
+"""SessionManageTool 单元测试 — 会话查询（列表/监控/详情）
+
+B 端只读化（issue #5247）：session_manage（客服会话） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+"""
 # case_ids: DA-004
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -73,35 +76,7 @@ class TestSessionDetail:
         assert result.success is False
 
 
-class TestSessionWrite:
-    @patch("app.tools.session_manage.get_admin_api_client")
-    async def test_assign(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="assign",
-            session_id="s1",
-            employee_id="emp-1",
-        )
-
-        assert result.success is True
-
-    @patch("app.tools.session_manage.get_admin_api_client")
-    async def test_end(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context,
-            action="end",
-            session_id="s1",
-        )
-
-        assert result.success is True
+# [RETIRED #5247] TestSessionWrite（2 例） 已退休：分配/结束会话（assign/end）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
 class TestSessionInvalidAction:

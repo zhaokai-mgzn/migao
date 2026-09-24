@@ -156,11 +156,24 @@ def test_order_prompt_issue_line_declares_optional_contract():
     检查器凭据（`test_checker_flags_pre_fix_prompt_verbatim` 仍会证明它会红）。
     """
     text = read_prompt()
-    assert optional_contract_violations(text) == [], (
-        "order.md 的发加工行不满足「可选性口径」—— processor/交期在工具 schema"
-        "（required=['id','action']）、validate_input（issue.required=['id']）、服务端 DTO/Service"
-        "四处均为可选，prompt 必须同口径标注「可选」并给出「缺字段也可推进」的出路；"
-        "否则模型会自造必填、反复索要（PG-016 首跑 run 34908262839 的病灶形态）"
+    # 🔴 **第三次翻转**（issue #5247，用户裁定 2026-09-23 B 端只读化）：写路径整体退场 ⇒
+    # `order.md` **不得**再出现 `processing_order_update` 的发加工操作行（含「可选」标注的那一行）。
+    # 与前两次翻转（#3917 下线 → #4196 恢复）同一口径：改的是**真值**（B 端已无写能力），
+    # **不是**放宽断言 —— 检查器 `optional_contract_violations` 与其红证
+    # （`test_checker_flags_pre_fix_prompt_verbatim`）**原样保留**，本断言换成更强的形态：
+    # 不再要求「该行合规」，而是要求「该行不存在」（写流程回归即红）。
+    # 口径：**提到发加工/加工单写动作的每一行都必须是「不可用/已下线」的如实告知行**
+    # （B 端只读化后正确形态里仍有 ❌ 否定行）；只要出现一行**没有**否定标记的写指令
+    # （= 又教模型走写路径，必然撞 tool_not_found），本用例即红。
+    write_lines = [l for l in text.splitlines() if "发加工" in l]
+    assert write_lines, "order.md 连「发加工」这个词都没有了 —— 如实告知口径缺失（本判据会空转）"
+    offenders = [
+        l for l in write_lines
+        if not any(marker in l for marker in ("不在能力内", "不可用", "已下线", "❌"))
+    ]
+    assert not offenders, (
+        "order.md 出现**未标记为不可用**的发加工写指令行 —— B 端只读化（#5247）后"
+        "该写流程已从 B 端退场，提示词只能如实告知 + 引导后台页面：\n  " + "\n  ".join(offenders)
     )
     # 配套锁：恢复接入后该工具**确实**回到 agent 可达面 —— 防「只改 prompt 没恢复绑定」
     from app.tools.registry import get_tool_registry
@@ -230,9 +243,17 @@ def _round(round_no: int) -> dict:
 def test_case_expectation_still_reds_when_complete_never_called():
     """用**用例自己声明的** must_succeed × **runner 自己的**断言跑合成轨迹。
 
-    这条是「不许为了让用例变绿而删写操作期望」的机械守卫：
-    真的没调 `action=complete` ⇒ `check_must_succeed` 必须报违规；
-    真的调成功 ⇒ 必须放行。两侧都断言，防止断言退化成恒真/恒假。
+    ⚠️ **2026-09-24 改判（issue #5247，用户裁定 2026-09-23 B 端只读化）**：本守卫原先钉
+    `PG-016.must_succeed == [processing_order_update(complete)]`，并把「期望被改成别的」
+    一律判为违规。而 #5247 按裁定把写工具 `processing_order_update` 从 B 端**全部 skill 解绑**
+    ⇒ 该期望在 B 端**已不可满足**，用例随之改判为「查加工单状态」（其 title 已写明
+    「原『更新状态-完成』随 #5247 写能力下线改判」）。
+
+    ⇒ 改判的是**期望对象**，不是「放宽」。本测试仍守住四件事：
+      ① 期望**非空**且**逐字**等于用例声明（不许清空、不许静默换成别的工具）；
+      ② 从未调用 ⇒ 必须红；③ 成功调用 ⇒ 必须放行（两侧都断言，防退化成恒真/恒假）；
+      ④ **写照期望**的合成轨迹仍必须红 —— 「写期望不得被删/放宽」这条口径对**任何仍然
+         声明写期望的用例**依然有效（`action` 过滤不得被子串顶替）。
     """
     lr = _runner()
     matching = [c for c in lr.ALL_CASES if c.id == "PG-016"]
@@ -240,16 +261,33 @@ def test_case_expectation_still_reds_when_complete_never_called():
         f"ALL_CASES 里 PG-016 应有且仅有 1 条（实为 {len(matching)}）⇒ 本守卫失锚"
     )
     case = matching[0]
-    assert case.must_succeed == [{"tool": "processing_order_update", "action": "complete"}], (
-        f"PG-016 的 must_succeed 被改动了（现为 {case.must_succeed}）"
-        "—— 写操作期望不得放宽/删除"
+
+    # ① 改判后的期望：非空 + 逐字钉死（再改必须同时写明理由，不得静默放宽）
+    assert case.must_succeed == [{"tool": "processing_order_query"}], (
+        f"PG-016 的 must_succeed 现为 {case.must_succeed} —— 只读化改判后应为「查加工单状态」；"
+        "若再被改动，必须在用例 title/skip_reason 与本守卫里写明理由（不得静默放宽/清空）"
     )
 
-    # 真失败形态：全程没调过 processing_order_update ⇒ 必须红
+    # ② 真失败形态：全程没调过期望工具 ⇒ 必须红
     never_called = lr.check_must_succeed([_round(i) for i in range(1, 9)], case.must_succeed)
-    assert never_called, "从未调用写工具却放行 ⇒ 反向守卫失效"
+    assert never_called, "从未调用期望工具却放行 ⇒ 反向守卫失效"
 
-    # 仅发过 issue/start、从未 complete ⇒ 也必须红（action 过滤不得被子串顶替）
+    # ③ 真成功形态：期望工具成功一次 ⇒ 必须放行（防"恒红"）
+    satisfied = [
+        {
+            "__round": 6,
+            "tool_calls": [{"name": "processing_order_query",
+                            "args": {"action": "detail", "id": "JG-1"}}],
+            "tool_results": [{"tool": "processing_order_query", "result": {"success": True}}],
+        }
+    ]
+    assert lr.check_must_succeed(satisfied, case.must_succeed) == [], (
+        "期望的工具成功调用却仍报违规 ⇒ 断言退化成恒红"
+    )
+
+    # ④ 写期望口径仍承重：仅发过 issue/start、从未 complete ⇒ 必须红
+    #    （对**任何仍然声明**写期望的用例都成立；`action` 过滤不得被子串顶替）
+    legacy_write_expectation = [{"tool": "processing_order_update", "action": "complete"}]
     partial = [
         {
             "__round": 6,
@@ -257,9 +295,9 @@ def test_case_expectation_still_reds_when_complete_never_called():
             "tool_results": [{"tool": "processing_order_update", "result": {"success": True}}],
         }
     ]
-    assert lr.check_must_succeed(partial, case.must_succeed), "只 issue 没 complete 却放行"
+    assert lr.check_must_succeed(partial, legacy_write_expectation), "只 issue 没 complete 却放行"
 
-    # 真成功形态：complete 成功一次 ⇒ 必须放行（防"恒红"）
+    # ⑤ 同上期望的真成功形态仍必须放行（写期望一侧也防"恒红"）
     completed = [
         {
             "__round": 6,
@@ -267,4 +305,4 @@ def test_case_expectation_still_reds_when_complete_never_called():
             "tool_results": [{"tool": "processing_order_update", "result": {"success": True}}],
         }
     ]
-    assert lr.check_must_succeed(completed, case.must_succeed) == []
+    assert lr.check_must_succeed(completed, legacy_write_expectation) == []

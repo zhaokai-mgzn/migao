@@ -343,13 +343,14 @@ cases:
       - "确认"
     expectations:
       - tool: order_query
-      - tool: processing_order_generate
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原第二条期望
+      # `processing_order_generate`（生成加工单）已从 B 端全部 skill 解绑 ⇒ 期望面按存活的
+      # 只读路径改判为仅 order_query（用例条目保留、不删除；退役理由见 skip_reason / merge_log）。
     order_before:
       - "order_query before processing_order_generate"
-    required_args:
-      - tool: processing_order_generate
-        fields:
-          - "order_ids"
+    required_args: []
+    # （#5247 退役）原必填参数断言 = processing_order_generate 的 order_ids —— 载体已从 B 端解绑
+    # ⇒ 清空（否则成为永不满足的悬空声明；原值登记在 merge_log）。
     # pre_clean（issue #3833，#3800 同族的**新实例**）：本用例是写类用例 —— 首跑把
     # `EVAL-MB-ORD-0002` 生成一张加工单行（**订单状态不变**，issue #4305；见下方 data_checks），
     # 而 `_reset_for_retry` 按 `pre_clean` **opt-in** ⇒ 原来没声明 = 重试前不复位
@@ -422,13 +423,14 @@ cases:
     # 形态同 PG-015/PG-016 的既有写法（两条一直有 must_succeed，本用例独缺）。
     # ⚠️ 这是**加强**不是放宽：expectations / required_args / forbidden_text / pre_clean
     # 一字未动（见 merge_log）。
-    must_succeed:
-      - tool: processing_order_generate
+    must_succeed: []
+    # （#5247 退役）原写成功断言 = processing_order_generate（#4196 补的效果层断言）——
+    # 载体已从 B 端解绑 ⇒ 清空（否则成为永不满足的悬空声明；原值登记在 merge_log）。
     data_checks:
       - "前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据"
-      - "生成后 processing_orders 落新行（status=generated）；**订单状态保持 confirmed**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」—— 机器判据 = ProcessingOrderServiceTest 断言生成路径 never updateOrderStatus(producing)）；验收以 GET /api/admin/processing-orders?keyword=<订单号> 复核加工单行"
-    skip_reason: ""
-    merge_log: "2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。"
+      - "如实说明米宝不做生成加工单（B 端米宝只做数据查询与分析）、引导用户去后台「生产管理」页面生成；不得声称已生成 —— #5247 改判（原断言「生成后 processing_orders 落新行（status=generated）、订单状态保持 confirmed」随 processing_order_generate 从 B 端解绑而失去对象，不是放宽：编造生成/编造落库仍必红）；issue #4305 的时点事实保留在此（订单进入 producing 的时点已从「生成加工单」挪到「发加工」，机器判据 = ProcessingOrderServiceTest 断言生成路径 never updateOrderStatus(producing)）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「生成加工单（processing_order_generate）」已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 order_query（订单查询）+ 如实说明米宝不做生成加工单 + 引导去后台生产管理页面。"
+    merge_log: "2026-09-12 新增（验收缺口 #3348）：米宝加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, processing_order_generate] 改判为 [order_query]，must_succeed(processing_order_generate) / required_args(order_ids) 两条写声明同步移除（否则成为永不满足的悬空声明），data_checks 第 2 条由「生成后 processing_orders 落新行（status=generated）；订单状态保持 confirmed」改判为「如实说明米宝不做生成加工单、引导后台生产管理页面；不得声称已生成」；pre_clean(processing_order_reset EVAL-MB-ORD-0002) 与 precondition(order_count_for_phone 13800138000) 按处置表**保留不动**（夹具/漂移检测，不是工具引用），order_before(order_query before processing_order_generate) 亦保留（runner 语义：B 未调用则不判时序 ⇒ 不构成悬空声明）；forbidden_text（含 R2/R3 轮次限定条目）/ user_inputs 一字未动。"
     traces:
       tests:
         - "tests/agent_eval/local_runner.py"
@@ -473,7 +475,7 @@ cases:
 
   - id: PG-015
     legacy_id: ""
-    title: "米宝加工单 LLM 行为：查询加工单（生成 → 按订单号回查状态）"
+    title: "米宝加工单 LLM 行为：查询加工单状态（只读；原「生成→回查」随 #5247 写能力下线改判）"
     domains:
       - processing-order
       - order
@@ -495,17 +497,23 @@ cases:
       # 0002/0003/0004 分别归 PG-013/015/016，此前三条共用 0002，并发跑只有一个
       # 能生成成功，run 34820346966 实测 PG-013/016 吃「订单已生产中」假红）。
       - "把订单 EVAL-MB-ORD-0003 生成加工单"
-      - repeat_until:
-          tool_called: processing_order_generate
-          max: 3
-        fallback: "确认"
+      # ⚠️ 2026-09-24（issue #5247）：本轮原挂 `repeat_until{tool_called: processing_order_generate}`
+      # （停条件 = 生成加工单被成功调用）；该工具已从 B 端全部 skill 解绑 ⇒ 停条件悬空
+      # （永不满足）⇒ 整块移除，`fallback` 按处置表保留。
+      # ⚠️ 保留后本轮只剩 fallback 键：runner 只把带 repeat_until / auto_respond / auto_select /
+      # new_session 的 dict 轮当控制轮，其余 dict 轮取 `msg.get("text", "")` ⇒ 会发**空文本**；
+      # 本用例已退役（skip_reason 写明理由）故不影响当前评测，**若将来解退役，本轮必须改成
+      # 纯文本** `- "确认"`（否则静默发空消息 = 声明无消费）。
+      - fallback: "确认"
       - "订单 EVAL-MB-ORD-0003 的加工单现在什么状态？"
       - repeat_until:
           tool_called: processing_order_query
           max: 3
         fallback: "确认"
     expectations:
-      - tool: processing_order_generate
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原写期望
+      # `processing_order_generate`（生成加工单）已从 B 端全部 skill 解绑 ⇒ 期望面按存活的
+      # 只读路径改判为仅 processing_order_query（用例条目保留、不删除；理由见 skip_reason / merge_log）。
       - tool: processing_order_query
     must_succeed:
       # 守卫口径已按 persona 收窄（#3580 修 `test_must_succeed_tools_are_customer_capabilities`
@@ -513,7 +521,8 @@ cases:
       # 由 `test_mibao_case_invariants.py` 负责）→ B 端专属工具可以声明 must_succeed。
       # 这是比 `success=true` **更强**的断言：`must_succeed` 是「调了 ≠ 成了」的机器防线，
       # 会把每次尝试的轮次+错误码写进失败详情（工具层失败与模型层漏调可一行区分）。
-      - tool: processing_order_generate
+      # （#5247 退役）原第一条写成功断言 = processing_order_generate —— 载体已从 B 端解绑
+      # ⇒ 移除（否则成为永不满足的悬空声明；原值登记在 merge_log）。
       - tool: processing_order_query
     required_args:
       - tool: processing_order_query
@@ -529,7 +538,7 @@ cases:
       # 计入评分；**同时**在 `must_succeed` 里声明工具（更强：把每次尝试的轮次+错误码
       # 写进失败详情）。两条并存不冲突（前者计入 expectations 评分，后者独立核验）。
       - "success=true"
-      - "回查结果 grounded 到刚生成的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）"
+      - "查询结果 grounded 到库里实有的加工单（status ∈ generated/issued/in_processing/completed/cancelled，不得编造）—— #5247 改判：B 端米宝只做只读查询，「刚生成的加工单」这个前提随 processing_order_generate 从 B 端解绑而不再成立（不是放宽：编造状态仍必红）"
     # pre_clean（issue #4196 补，**去 skip 后门禁判出的存量缺陷，非新增豁免**）：
     # `CASE-TRUST-NO-SELF-CLEAN`（#3800 前置等价性）—— 本用例 R1 就是**写**（对
     # `EVAL-MB-ORD-0003` 生成加工单 ⇒ 落一张加工单行（订单状态不变，issue #4305）），却**未声明自清理**；
@@ -561,8 +570,8 @@ cases:
       - type: order_count_for_phone
         source: "13900139000"
         expect: 1
-    skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0003)`**（去 skip 后全量对账判出的存量缺陷 `CASE-TRUST-NO-SELF-CLEAN`：#3800 前置等价性 —— 本用例 R1 就是写（0003 转 producing）却未声明自清理，重试前置与首跑不等价。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；形态与 PG-013（0002）/ PG-016（0004）完全同构，0003 由 #3658 拆给本用例独占；这是**加强**不是放宽，其余断言一字未动）；2026-09-18（issue #4246 的 burn-down 缴费）：补 `precondition[order_count_for_phone: 13900139000, expect: 1]` —— 本用例按订单号点名生成加工单，依赖种子里那张专用订单 EVAL-MB-ORD-0003（李四/13900139000）还在；手机号是这条依赖在 runner 里唯一可观测的不可变键（种子只给该号码一张单 ⇒ 基线恰为 1）。判据清零 CASE-TRUST-NO-PRECONDITION-ASSERTION（整条销账，burn-down）。**行为层修复**（不是纸面）：runner 真在尝试前后各取一次基线、漂移即记一条 `precondition[order_count_for_phone]` 断言级失败（#3781/#3835 的失败关闭路径），把「前置不成立」与「agent 不干活」在报告里分开。边界如实登记：钉的是「该号码名下恰好一张单」这个代理判据，不直接核 order_no/status/明细（需新 precondition type，本单不新增 runner 能力）。expectations / must_succeed / required_args / forbidden_text / pre_clean 一字未动。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「生成加工单」（processing_order_generate）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_order_query（加工单查询）+ 如实说明 + 引导去后台页面。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_query 此前**零用例覆盖**（scripts/mibao_coverage.py --check 在 pristine main 上 exit 2 报出的结构性缺失）。形态 =「先对种子订单生成加工单 → 按订单号回查」（干净栈无加工单 seed，直接「查一下」会假绿）。断言机器可判：must_succeed ×2 + required_args[keyword] + forbidden_text。2026-09-14 首次真重放（run 34820346966，issue #3658）：✅ **通过（score=100%）—— PG-015 的第一次真实执行证据**。目标订单由 0002 改为 0003（独立订单竞态修复，见 user_inputs 注释）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0003)`**（去 skip 后全量对账判出的存量缺陷 `CASE-TRUST-NO-SELF-CLEAN`：#3800 前置等价性 —— 本用例 R1 就是写（0003 转 producing）却未声明自清理，重试前置与首跑不等价。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；形态与 PG-013（0002）/ PG-016（0004）完全同构，0003 由 #3658 拆给本用例独占；这是**加强**不是放宽，其余断言一字未动）；2026-09-18（issue #4246 的 burn-down 缴费）：补 `precondition[order_count_for_phone: 13900139000, expect: 1]` —— 本用例按订单号点名生成加工单，依赖种子里那张专用订单 EVAL-MB-ORD-0003（李四/13900139000）还在；手机号是这条依赖在 runner 里唯一可观测的不可变键（种子只给该号码一张单 ⇒ 基线恰为 1）。判据清零 CASE-TRUST-NO-PRECONDITION-ASSERTION（整条销账，burn-down）。**行为层修复**（不是纸面）：runner 真在尝试前后各取一次基线、漂移即记一条 `precondition[order_count_for_phone]` 断言级失败（#3781/#3835 的失败关闭路径），把「前置不成立」与「agent 不干活」在报告里分开。边界如实登记：钉的是「该号码名下恰好一张单」这个代理判据，不直接核 order_no/status/明细（需新 precondition type，本单不新增 runner 能力）。expectations / must_succeed / required_args / forbidden_text / pre_clean 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；title 由「查询加工单（生成 → 按订单号回查状态）」改判为「查询加工单状态（只读；原「生成→回查」随 #5247 写能力下线改判）」，expectations 由 [processing_order_generate, processing_order_query] 改判为 [processing_order_query]，must_succeed 由 [processing_order_generate, processing_order_query] 改判为 [processing_order_query]，user_inputs 第 2 轮的 repeat_until{tool_called: processing_order_generate} 整块移除（fallback 保留），data_checks 第 2 条由「回查结果 grounded 到**刚生成的**加工单」改判为「查询结果 grounded 到库里**实有的**加工单」（不是放宽：编造状态仍必红）；required_args(keyword) / pre_clean / precondition / forbidden_text / data_checks 第 1 条（success=true）一字未动。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
@@ -572,7 +581,7 @@ cases:
 
   - id: PG-016
     legacy_id: ""
-    title: "米宝加工单 LLM 行为：更新加工单状态（完成加工，产出核到 completed）"
+    title: "米宝加工单 LLM 行为：查加工单状态（只读；原「更新状态-完成」随 #5247 写能力下线改判）"
     domains:
       - processing-order
       - order
@@ -599,10 +608,14 @@ cases:
       # `complete` 幂等（重复调用仍为 completed），不污染后续跑（cancel 非幂等且需 reason，
       # 故不用它做正向用例）。
       - "把订单 EVAL-MB-ORD-0004 生成加工单"
-      - repeat_until:
-          tool_called: processing_order_generate
-          max: 3
-        fallback: "确认"
+      # ⚠️ 2026-09-24（issue #5247）：本轮原挂 `repeat_until{tool_called: processing_order_generate}`
+      # （停条件 = 生成加工单被成功调用）；该工具已从 B 端全部 skill 解绑 ⇒ 停条件悬空
+      # （永不满足）⇒ 整块移除，`fallback` 按处置表保留。
+      # ⚠️ 保留后本轮只剩 fallback 键：runner 只把带 repeat_until / auto_respond / auto_select /
+      # new_session 的 dict 轮当控制轮，其余 dict 轮取 `msg.get("text", "")` ⇒ 会发**空文本**；
+      # 本用例已退役（skip_reason 写明理由）故不影响当前评测，**若将来解退役，本轮必须改成
+      # 纯文本** `- "确认"`（否则静默发空消息 = 声明无消费）。
+      - fallback: "确认"
       - "这笔加工单发加工，交期下周三"
       - auto_respond:
           fallback: "确认"
@@ -613,17 +626,22 @@ cases:
       - auto_respond:
           fallback: "确认"
     expectations:
-      - tool: processing_order_update
-        args:
-          action: complete
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原写期望
+      # `processing_order_update(action=complete)` 已从 B 端全部 skill 解绑 ⇒ 期望面按存活的
+      # 只读路径改判为 processing_order_query（用例条目保留、不删除；理由见 skip_reason / merge_log）。
+      - tool: processing_order_query
     must_succeed:
       # 守卫口径已按 persona 收窄（#3580）→ B 端专属工具可声明，理由同 PG-015。
-      - tool: processing_order_update
-        action: complete
+      # （#5247 退役）原写成功断言 = processing_order_update(action=complete) —— 载体已从 B 端
+      # 解绑 ⇒ 改判为存活的只读工具 processing_order_query（原值登记在 merge_log）。
+      - tool: processing_order_query
     required_args:
-      - tool: processing_order_update
+      # （#5247 退役）原必填参数断言 = processing_order_update 的 id（写操作定位键）；载体已从
+      # B 端解绑 ⇒ 改判为存活的只读工具 processing_order_query 的 keyword（与 PG-015 同口径；
+      # `fields` 必须写实 —— 空 fields 会被 runner 判 config_error(required_args)，见 #3367）。
+      - tool: processing_order_query
         fields:
-          - id
+          - keyword
     # pre_clean（§18.4 前置等价性；同 #3833 给 PG-013 的修法，能力已在 runner 就位）：
     # 本用例是**写**用例且**首跑就改变自己的前置** —— R2 对 `EVAL-MB-ORD-0004` 生成加工单
     # ⇒ 落一张加工单行（订单状态不变，issue #4305）。而 `_reset_for_retry` 按 `pre_clean` **opt-in** ⇒ 原来没声明 =
@@ -653,7 +671,7 @@ cases:
       - type: order_count_for_phone
         source: "13700137000"
         expect: 1
-    output_verify:
+    output_verify: []
       # ⚠️ `action` 必写（本工具多 action：issue/start/complete/cancel）—— 不写限定
       # 时核对器会取**首个成功调用**的 payload，可能核到别的 action 上（假绿/假红）。
       # ⚠️ 只写**扁平顶层键**：runner 的 check_output_verify 按字面 key 查顶层 payload，
@@ -662,10 +680,10 @@ cases:
       #    状态到达 completed 已由 must_succeed(action=complete) 机器兜底（服务端状态机
       #    校验，complete 幂等）—— output_verify 这里核对「complete 调用成功且 action
       #    确实是 complete」（防多 action 工具核到别的调用）。
-      - tool: processing_order_update
-        action: complete
-        expect:
-          action: complete
+      # （#5247 退役）原产出侧核对 = processing_order_update(action=complete) 的 payload 里
+      # action=complete（防多 action 工具核到别的调用）—— 载体已从 B 端解绑（agent 不再流转
+      # 加工单状态）⇒ 清空（原值登记在 merge_log）。上方原判据说明逐字保留（判读知识仍适用于
+      # 存活的多 action 工具：`action` 必写、只写扁平顶层键）。
     forbidden_text:
       - "暂不支持"
       - "功能不存在"
@@ -675,9 +693,9 @@ cases:
     data_checks:
       # 同 PG-015：`success=true` 计入评分，**并**在 `must_succeed` 声明工具（更强）。
       - "success=true"
-      - "结论 grounded 到刚更新的加工单（订单联动状态见加工单设计决策 3：complete 不回退订单）"
-    skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。2026-09-14 第三轮验证重放（run 34822527203，PG-016-only）：状态机全走位成功（issue→start→complete 各成功，工具 14 调 0 失败），仅剩 output_verify 假红——`expect: result.status: completed` 用了**点号路径**，而 runner 的 check_output_verify 只按字面扁平 key 查顶层 payload（不支持嵌套路径，run 34822527203 实证「结果里没有字段 'result.status'」）。修复：expect 收敛为扁平键 `action: complete`（状态到达 completed 由 must_succeed + 服务端状态机兜底）。2026-09-15 第四轮归因（issue #3856，承接 #3835 的 PG-016 条目）：首跑指纹 `no_success(processing_order_update)` 在 4 个 run 复发（34873715194 / 34865780382 / 34856561459 / 34908262839）⇒ 复核后判**产品侧**：agent 把「加工方」当发加工必填 （34908262839 首跑 R5/R6 两次文本索要、R8/R10 两次 form 卡，`processing_order_update` 一次都没调用）。复核证据：processor/交期在工具 schema（`required=['id','action']`）、`validate_input`（`issue.required=['id']`）、服务端 DTO/Service **四处均为可选**——唯独 LLM 面对的口径 `prompts/order.md` 的「发加工」行把 `processor=加工方` 写进签名且不带「可选」标注（同行 `cancel(reason=必填)` 却标注）⇒ 口径不一致。**反证**：同 run 重试里 agent 未带 processor 直接 issue 成功（服务端接受）。修复 = 该行标注可选 + 禁止为可选字段索要/阻塞/重复发卡（不是静默默认值：缺省即不传该字段）。另一支机制（写落库后同 session 再读仍旧状态，34873715194/34865780382）**证据不足**：能排除「写没落库」（重试 R4 报「不允许从 [加工中] 变更」，证明首跑 issue+start 已落库），但读陈旧 vs 同轮并发竞态分不清 —— 缺 `#3823` 的 tool args/响应体 + DB 时序。本单同时补 `pre_clean: processing_order_reset{order_no: EVAL-MB-ORD-0004}`（§18.4：原先重试前置与首跑不等价，重试块 R1 实测「已经生成过加工单了」）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）。2026-09-18 burn-down 缴费（issue #4299）：补 `precondition[order_count_for_phone(13700137000)=1]`，修 CASE-TRUST-NO-PRECONDITION-ASSERTION（此前多轮 + 写用例却无可判定前置断言 ⇒ 前置不成立时会伪装成「agent 不干活」）；**这是行为层修复、不是纸面修复**（`skip_reason: \"\"` ⇒ 真会跑；`order_count_for_phone` 是 runner 已实现的前置类型，基线在尝试前捕获、尝试后回读，不一致即折成 `precondition_not_applied`）；定位键用不可变标识（该号码在种子里只有这一笔订单）；断言只增不减（未改 expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 任何一条）"
+      - "结论 grounded 到库里实有的加工单（只读查询口径；订单联动状态见加工单设计决策 3：complete 不回退订单）—— #5247 改判：B 端米宝不再更新加工单状态，「刚更新的加工单」这个前提随 processing_order_update 从 B 端解绑而不再成立（不是放宽：编造状态仍必红）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「更新加工单状态（processing_order_update action=complete）」（processing_order_update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_order_query（加工单查询）+ 如实说明 + 引导去后台页面。"
+    merge_log: "2026-09-14 新增（issue #3568 / #3592）：processing_order_update 此前**零用例覆盖**（同 PG-015 的结构性缺失）。断言机器可判：expectations(action=complete) + must_succeed(action=complete) + required_args[id] + output_verify（**显式声明 action**，防多 action 工具核到别的 payload 造成假绿）。2026-09-14 首次真重放（run 34820346966，issue #3658）：❌ 失败 → 归因**用例资产缺陷**（非 agent 能力缺口）：① 与 PG-013/015 抢同一种子订单 EVAL-MB-ORD-0002（并发生成只有一方成功，实测生成被拒「订单已生产中」后 agent 转向 issue 流，complete 期望永不满足）；② 输入跳步（生成后直接「标记完成」违反状态机 generated→completed 非法迁移，PG-006 铁律）。修复：独立订单 0004 + 完整状态机走位。2026-09-14 第二轮验证重放（run 34821647043）：❌ 再失败 → 新发现**用例设计缺陷**：状态机三步全用 `repeat_until{tool_called: processing_order_update}`，而 runner 停条件是**工具级**（issue #3430）——issue 成功（R6）后 start/complete 的 repeat 轮被整体跳过（开始加工确认卡无人答）。修复：每步确认卡改用 `auto_respond`（有卡答卡、无停条件跳过），生成步保留 repeat_until（工具唯一）。2026-09-14 第三轮验证重放（run 34822527203，PG-016-only）：状态机全走位成功（issue→start→complete 各成功，工具 14 调 0 失败），仅剩 output_verify 假红——`expect: result.status: completed` 用了**点号路径**，而 runner 的 check_output_verify 只按字面扁平 key 查顶层 payload（不支持嵌套路径，run 34822527203 实证「结果里没有字段 'result.status'」）。修复：expect 收敛为扁平键 `action: complete`（状态到达 completed 由 must_succeed + 服务端状态机兜底）。2026-09-15 第四轮归因（issue #3856，承接 #3835 的 PG-016 条目）：首跑指纹 `no_success(processing_order_update)` 在 4 个 run 复发（34873715194 / 34865780382 / 34856561459 / 34908262839）⇒ 复核后判**产品侧**：agent 把「加工方」当发加工必填 （34908262839 首跑 R5/R6 两次文本索要、R8/R10 两次 form 卡，`processing_order_update` 一次都没调用）。复核证据：processor/交期在工具 schema（`required=['id','action']`）、`validate_input`（`issue.required=['id']`）、服务端 DTO/Service **四处均为可选**——唯独 LLM 面对的口径 `prompts/order.md` 的「发加工」行把 `processor=加工方` 写进签名且不带「可选」标注（同行 `cancel(reason=必填)` 却标注）⇒ 口径不一致。**反证**：同 run 重试里 agent 未带 processor 直接 issue 成功（服务端接受）。修复 = 该行标注可选 + 禁止为可选字段索要/阻塞/重复发卡（不是静默默认值：缺省即不传该字段）。另一支机制（写落库后同 session 再读仍旧状态，34873715194/34865780382）**证据不足**：能排除「写没落库」（重试 R4 报「不允许从 [加工中] 变更」，证明首跑 issue+start 已落库），但读陈旧 vs 同轮并发竞态分不清 —— 缺 `#3823` 的 tool args/响应体 + DB 时序。本单同时补 `pre_clean: processing_order_reset{order_no: EVAL-MB-ORD-0004}`（§18.4：原先重试前置与首跑不等价，重试块 R1 实测「已经生成过加工单了」）。2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）。2026-09-18 burn-down 缴费（issue #4299）：补 `precondition[order_count_for_phone(13700137000)=1]`，修 CASE-TRUST-NO-PRECONDITION-ASSERTION（此前多轮 + 写用例却无可判定前置断言 ⇒ 前置不成立时会伪装成「agent 不干活」）；**这是行为层修复、不是纸面修复**（`skip_reason: \"\"` ⇒ 真会跑；`order_count_for_phone` 是 runner 已实现的前置类型，基线在尝试前捕获、尝试后回读，不一致即折成 `precondition_not_applied`）；定位键用不可变标识（该号码在种子里只有这一笔订单）；断言只增不减（未改 expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 任何一条） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_update 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；title 由「更新加工单状态（完成加工，产出核到 completed）」改判为「查加工单状态（只读；原「更新状态-完成」随 #5247 写能力下线改判）」，expectations 由 [processing_order_update(action=complete)] 改判为 [processing_order_query]，must_succeed 由 [processing_order_update(action=complete)] 改判为 [processing_order_query]，required_args 由 processing_order_update(id) 改判为 processing_order_query(keyword)，output_verify(action=complete 的产出核对) 与 user_inputs 第 2 轮的 repeat_until{tool_called: processing_order_generate} 整块移除（fallback 保留），data_checks 第 2 条由「结论 grounded 到**刚更新的**加工单」改判为「结论 grounded 到库里**实有的**加工单」（不是放宽：编造状态仍必红）；pre_clean / precondition / forbidden_text / data_checks 第 1 条（success=true）一字未动。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"

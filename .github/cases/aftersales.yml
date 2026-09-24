@@ -150,7 +150,7 @@ cases:
 
   - id: AS-004
     legacy_id: "3.4"
-    title: "更新工单状态 - 关闭"
+    title: "查看售后工单（只读；原「更新工单状态-关闭」随 #5247 写能力下线改判）"
     domains:
       - aftersales
     tier: normal
@@ -173,8 +173,10 @@ cases:
       # 点名后「落库 closeReason == 用户点名的原因」才有可判定谓词（同 §13.5 自包含化）。
       # ⚠️ 两条并行线的**叠加**（#3568 输入侧确定性 + #3544 机器断言），互不覆盖：
       # 点名工单号消除顺序依赖，点名原因给 db_verify 提供真值。
-      - "把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」"
-      - "确认"
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原两轮
+      # 「把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」」+「确认」**已删除** ——
+      # after_sales_manage 收窄为只读（写 action update_status 已从源码删除）⇒ 关闭能力改判为
+      # 「如实说明 + 引导后台」；上面两段历史注释（顺序依赖 / 点名原因给 db_verify 真值）保留为记录。
     # ── 前置自断言（issue #4527 的 burn-down 缴费）────────────────────────────────
     # 本用例命中的唯一一条存量违规是 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（metric=entries
     # ⇒ 必须**整条销账**）。它的**真前置**是「被点名的 seed 工单 `AS-20260914-9001` 在库里」
@@ -193,27 +195,34 @@ cases:
     pre_clean:
       - type: aftersales_ticket_prepare
     expectations:
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为
+      # 只读（写 action update_status 已从源码删除）⇒ 本用例按新机制改判为「查售后工单」（list）。
       - tool: after_sales_manage
         args:
-          action: update_status
-          status: closed
+          action: list
     # 落库层「真的关闭了」（#3544 假绿升级 / 同 PP-006·PR-021 形态）：工具回显
     # `success=true` 只证明调用没报错，证明不了工单状态与关闭字段真的落库。
     # ⚠️ 依赖两条并行线（各自独立）：① admin-api 放宽 pending→closed（#3541，产品已裁定）；
     # ② 状态变更原因字段名对齐（#3540：工具下发 `reason` 而 DTO 只接 `remark`
     # → closeReason 静默不落库）。两条合入前本用例为**真红**（期望行为，非回归）。
-    db_verify:
-      - fetch: after_sales_ticket
-        expect_status: "closed"
-        expect_fields_nonempty:
-          - closedAt
-          - closeReason
-        expect_close_reason_contains: "协商一致"
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：上面这条
+    # `db_verify[after_sales_ticket, expect_status=closed]` **已整条退役**（不是放宽 —— 它在
+    # 新事实下**必然为假**，留着就是「永久假红」，见 merge_log 的逐条理由）：
+    #   · 关闭能力（写 action update_status）已从 after_sales_manage 源码删除 ⇒ B 端米宝不再发
+    #     任何写调用 ⇒ 「工单落库 status=closed + closedAt/closeReason 非空」永不成立；
+    #   · 核对器 `check_db_verify[after_sales_ticket]` 取工单引用的入口是
+    #     `_first_successful_ticket_payload`（只认带 `ticket_id`/`ticketId`，或 `id` + 工单特征键
+    #     的**成功调用 payload**）；本用例改判后唯一的调用是 `list`（payload = {items,total}，
+    #     无工单引用）⇒ 核对器必然报「找不到 after_sales_manage(status=closed) 的成功调用
+    #     （无工单可核对）—— 判失败而非跳过」（fail-closed）= 每次跑都固定的红。
+    #   ⇒ 机器判据改由 `expectations[after_sales_manage(action=list)]` + `data_checks` 的
+    #     「如实说明 + 不得声称已关闭」承载；`precondition`（点名工单存在）与
+    #     `pre_clean`（复位回 pending）**原样保留** —— 它们仍钉住「查工单」这件事的前置。
     data_checks:
       - "success=true"
-      - "closedAt/closeReason 写入 —— 机器断言见 db_verify[after_sales_ticket]（落库 status=closed + closedAt/closeReason 非空 + closeReason 与用户点名原因一致）"
+      - "如实说明工单状态变更（关闭）须在后台「售后」页面操作，并引导顾客去那里处理；**不得声称已关闭**（原「工单已关闭 / 状态已更新」的机器断言 db_verify[after_sales_ticket] 已随 #5247 写能力下线退役，理由见上方注释）"
     skip_reason: ""
-    merge_log: "verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）；与 #3544 叠加不覆盖——点名工单号消除顺序依赖，点名原因给 db_verify 提供真值"
+    merge_log: "verification 3.4 独有；2026-09-14 校准（#3544）：① 「closedAt/closeReason 写入」原是自然语义、不计分（runner 计分白名单只认 success=true / error.code= / 未被调用）→ 升级为 db_verify[after_sales_ticket] 落库断言（新增核对器，见 tests/agent_eval/local_runner.py）；② 用户点名的关闭原因补进输入（工具 reason 仅 create 必填，用户不说原因则 closeReason 无真值可判）；③ 关闭态字段缺失/状态未落地即判红（fail-closed，不空转通过）。2026-09-14 消除顺序依赖（issue #3568）：「第一张未处理的工单」→ 点名 seed 工单号 AS-20260914-9001（列表顺序依赖：多张 pending 时关闭对象不确定）；与 #3544 叠加不覆盖——点名工单号消除顺序依赖，点名原因给 db_verify 提供真值 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为只读（写 action update_status 已删除）⇒ 本用例按新机制改判为「查售后工单」（list）；关闭能力改判为「如实说明 + 引导后台」。不是放宽：只读查询仍有机器断言。逐项：title / user_inputs（删关闭轮与确认轮，只留「查看最近的售后工单」）/ expectations 同步改判；db_verify[after_sales_ticket, expect_status=closed] 整条退役 —— 它在解绑后必然为假，且 list 载荷无工单引用 ⇒ 核对器 fail-closed 恒报「找不到成功调用」= 永久假红（data_checks 第 2 条同批改判为「如实说明 + 不得声称已关闭」）；precondition / pre_clean / traces 原样保留。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
@@ -295,10 +304,12 @@ cases:
     user_inputs:
       - "AS-20260701-0002 退款工单已处理完，完成"
     expectations:
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为
+      # 只读（写 action update_status / create 已从源码删除）⇒ 原写声明（update_status/resolved）
+      # 改判为存活的只读 action `detail`；本用例保持退役（skip_reason 见下）。
       - tool: after_sales_manage
         args:
-          action: update_status
-          status: resolved
+          action: detail
     # ── 前置自断言 + 自清理 + 效果层（issue #4947 的 case-trust burn-down 缴费）─────────────
     # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**，只收窄多码条目不算）：
     #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-SELF-CLEAN  ③ CASE-TRUST-NO-EFFECT-ASSERTION
@@ -326,13 +337,14 @@ cases:
       - type: aftersales_ticket_count_for_ticket_no
         source: "AS-20260701-0002"
         expect: 1
-    must_succeed:
-      - tool: after_sales_manage
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：
+    # `must_succeed[after_sales_manage]` **已删除** —— 按上面的注释它是「完结（写）真的成功」的
+    # 效果层，而写 action 已从源码删除 ⇒ 该声明指向的写能力不存在（本用例保持退役，见 skip_reason）。
     data_checks:
       - "refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）"
       - "allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架"
-    skip_reason: "依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）"
-    merge_log: "issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ 2026-09-21（issue #4947 的 case-trust burn-down 缴费）：补 **`precondition[aftersales_ticket_count_for_ticket_no: AS-20260701-0002, expect: 1]`**（真前置 = 点名工单存在，否则「完结」没有对象、红的表现像「米宝不会完结工单」）+ **`pre_clean[aftersales_ticket_prepare]`**（重试前置等价性，同 AS-004）+ **`must_succeed[after_sales_manage]`**（效果层：「调用了 ≠ 成了」，#3778）—— 三格**全部复用既有已登记类型**，不新增 type、不改探针；`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动、无放宽**。本条 `skip_reason` 非空 ⇒ 三格当前不进运行期（先例：OR-006 那类 skip 用例）。"
+    skip_reason: "依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为只读（写 action update_status / create 已删除）⇒ 写声明改判为 detail；must_succeed（指向写能力）删除；本用例保持退役。"
+    merge_log: "issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ 2026-09-21（issue #4947 的 case-trust burn-down 缴费）：补 **`precondition[aftersales_ticket_count_for_ticket_no: AS-20260701-0002, expect: 1]`**（真前置 = 点名工单存在，否则「完结」没有对象、红的表现像「米宝不会完结工单」）+ **`pre_clean[aftersales_ticket_prepare]`**（重试前置等价性，同 AS-004）+ **`must_succeed[after_sales_manage]`**（效果层：「调用了 ≠ 成了」，#3778）—— 三格**全部复用既有已登记类型**，不新增 type、不改探针；`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动、无放宽**。本条 `skip_reason` 非空 ⇒ 三格当前不进运行期（先例：OR-006 那类 skip 用例）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为只读（写 action update_status / create 已删除）⇒ expectations 的写声明（update_status/resolved）改判为 detail；must_succeed（指向写能力的效果层）整条删除 —— 该声明在新事实下永不满足；pre_clean / precondition / data_checks / traces 原样保留，本用例保持退役。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"
@@ -411,12 +423,12 @@ cases:
         source: "2699系列雪尼尔窗帘面料"
         expect: 1
     expectations:
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原
+      # `- tool: after_sales_manage(args.action=create, ticket_type=exchange)`（换货写面）已移除
+      # —— after_sales_manage 收窄为只读（写 action create 已从源码删除）⇒ 保留 = 永不满足的
+      # 悬空声明；断言面按 A 类模板改判为存活的只读路径 order_query + product_detail。
       - tool: order_query
       - tool: product_detail
-      - tool: after_sales_manage
-        args:
-          action: create
-          ticket_type: exchange
     # ── 断言可执行化（2026-09-15，issue #3683；归因报告 §G2：能力缺口已被否证，属断言侧）──
     # 「调了 ≠ 成了」（issue #3361 口径）：expectations 参数级匹配只能证明「模型想建工单」，
     # 证明不了「工单真做出来了」（写工具被 confirm 门禁拦下 / 后端报错时，调用名照样出现在
@@ -428,9 +440,9 @@ cases:
     # 校验、B 端工具声明即打红。该守卫**已按 persona 收窄**（`case_persona(c) != "xiaobu"` → skip，
     # issue #3544/#3580），B 端对称面见 `test_mibao_case_invariants.py::TestBendWriteToolSuccessAssertions`
     # （after_sales_manage ∈ 米宝工具集 → 合法）。
-    must_succeed:
-      - tool: after_sales_manage
-        action: create
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：
+    # `must_succeed[after_sales_manage(action=create)]` 已**整条移除** —— 写 action create 已从
+    # 源码删除，该效果层声明永不满足（不是放宽：用例已退役，见 skip_reason）。
     # ⚠️ 报告 §3.4-M2 要求的 `db_verify: [{fetch: after_sales_ticket, expect_status: pending}]`
     #   **本次未加**——不是遗漏，是加了会**恒红**（零 LLM 确定性探针实测，issue #3683）：
     #   · `check_db_verify` 的 after_sales_ticket 分支取工单引用走
@@ -474,8 +486,8 @@ cases:
       - "用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过"
       - "店铺加工项目录为空时才如实告知『暂无可用加工项』后继续，不强求"
       - "换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）"
-    skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`backend/ai-agent-service/app/graph/skills/references/prompts/aftersales.md` 的「换货/维修流程（选目标商品后必须确认加工项）」小节有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；2026-09-19（#4371 商品↔加工项解耦）：加工项事实源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query` ⇒ `data_checks` 前三条同步改判（含「product_detail 返回 processing_items」的措辞与空态文案）；`expectations` / `must_succeed` / `order_before`（`processing_ask` 时序）/ `precondition` / merge_log 原有结论原样未动。② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail`；2026-09-18（issue #4196 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]` —— 本用例按商品名定位换货目标、且 `pre_clean[product_dedupe]` 已按同名去重 ⇒「该名唯一」是可判定的前置（同 OR-014 先例 #3835）；并行用例造出同名副本 ⇒ 判**前置不成立**（不可归因于 agent），不再伪装成 `no_success(after_sales_manage)`（该首跑指纹在 35268148590 / 35295494688 各复发一次，归因长期停在「待查」）。断言只增不减：未改 expectations / must_succeed / order_before / data_checks / pre_clean 任何一条"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「换货（after_sales_manage 写面）」（after_sales_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单 + 查商品详情（order_query / product_detail）+ 如实说明换货须在后台「售后」页面操作」。"
+    merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4。2026-09-14 自包含化（issue #3568）：原单轮输入缺「先定位订单」轮 → 用例恒不可达被 skip（**从未执行**）→ 补 order_query 定位轮 + 答卡轮（repeat_until max=5），断言加两条 order_query 时序 + success=true，解 skip。**两次真 LLM 重放驱动迭代**：① run 34809750975 得 75% 且首版「静态文本选单轮」对不上 agent 的 choice 选单卡（该客户名下 6 笔订单）→ 改答卡轮；② run 34812509606 得 75% 且**换货工单已真实创建**（`ticketNo=AS-20260914-9002`）→ 首版 fallback「需要打孔加工」**替 agent 把加工项说了出来**、把缺口掩盖成「卡里有加工项」→ 改中性「好的」。③ run 34815074088（中性 fallback）得 0%，trace 显示**流程本身完全正确**：R2 product_detail（发现 2 条同名）→ 选品卡 → R3 **agent 主动发加工项 choice 卡** → R5 order_query → R8 after_sales_manage 建单成功；唯一失败项是我自己加的 `order_before[order_query before product_detail]`（**业务上不成立的过度约束**）→ 已删除该条，保留 `order_query before after_sales_manage` 与两条 `processing_ask` 时序。2026-09-15 断言侧升级（issue #3683，归因报告 §G2：能力缺口已被三条独立证据否证——`backend/ai-agent-service/app/graph/skills/references/prompts/aftersales.md` 的「换货/维修流程（选目标商品后必须确认加工项）」小节有规则 / run 34815074088 R3 agent 主动发加工项 choice 卡 / run 34817668476 最终断言集 1.00 pass）：① `data_checks: success=true` → `must_succeed:[after_sales_manage(action=create)]`（canonical 写成功断言；旧「C 端守卫全库校验」的阻塞理由已随 #3544/#3580 的 persona 收窄失效）；2026-09-19（#4371 商品↔加工项解耦）：加工项事实源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query` ⇒ `data_checks` 前三条同步改判（含「product_detail 返回 processing_items」的措辞与空态文案）；`expectations` / `must_succeed` / `order_before`（`processing_ask` 时序）/ `precondition` / merge_log 原有结论原样未动。② 报告要求的 `db_verify[after_sales_ticket,expect_status=pending]` **未加**——create 路径 payload 键是 `id` 而核对器只认 `ticket_id`（探针 `create 形态 -> (None, {})`），照抄即永久假红，已登记为待补 runner 能力；③ 未放宽 `processing_ask` 时序、未回加已删的 `order_query before product_detail`；2026-09-18（issue #4196 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]` —— 本用例按商品名定位换货目标、且 `pre_clean[product_dedupe]` 已按同名去重 ⇒「该名唯一」是可判定的前置（同 OR-014 先例 #3835）；并行用例造出同名副本 ⇒ 判**前置不成立**（不可归因于 agent），不再伪装成 `no_success(after_sales_manage)`（该首跑指纹在 35268148590 / 35295494688 各复发一次，归因长期停在「待查」）。断言只增不减：未改 expectations / must_succeed / order_before / data_checks / pre_clean 任何一条 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：after_sales_manage 收窄为只读（写 action create 已从源码删除）⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, product_detail, after_sales_manage(action=create)] 改判为 [order_query, product_detail]，must_succeed 里的 after_sales_manage(action=create) 同步移除（否则成为永不满足的悬空声明）；user_inputs / pre_clean / precondition / data_checks / truths_ref 原样未动。⚠️ 如实登记（本包不动的残留）：`order_before` 的三条时序判据（`order_query before after_sales_manage` / `processing_ask before after_sales_manage` / `processing_ask before interact[confirm]`）仍点名 after_sales_manage 的**写面**时间线 —— 在只读化后它们与写能力一样不可能被满足；本用例已退役（不进运行期），故本条未随本包改判，留给集成方决定（改判 / 随用途重写 / 保持历史）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"

@@ -401,6 +401,7 @@ public class ProductionController {
      * GET /api/admin/production/operations-catalog
      */
     @GetMapping("/operations-catalog")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> operationsCatalog() {
         return ApiResponse.success(
                 productionOperationQueryService.catalog(TenantContext.getTenantId()));
@@ -415,6 +416,7 @@ public class ProductionController {
      * —— 前端由 P3（#4433）适配。</p>
      */
     @GetMapping("/routings")
+    @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> routings() {
         return ApiResponse.success(
                 productionOperationQueryService.routings(TenantContext.getTenantId()));

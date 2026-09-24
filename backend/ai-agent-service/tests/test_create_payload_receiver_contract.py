@@ -1,5 +1,7 @@
 """
 新建类写工具的 payload 键 ↔ admin-api 接收端读取点契约（建角色 / 建员工 / 建售后工单）
+
+B 端只读化（issue #5247）：role_manage / employee_manage / after_sales_manage（建角色 / 建员工 / 建售后工单） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
 # case_ids: HR-005, HR-002, AS-007
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、零网络。
@@ -17,11 +19,14 @@
 无该字段 → Spring 默认忽略未知属性 → 静默丢弃；且来源由服务端固化（`AfterSalesTicketService`
 在 `createTicket` 内 `ticket.setSource("agent")`，两个创建入口都经过它）⇒ 客户端不该指定。
 
-本文件做两件事：
-1. **锁**（防误报再次误导 + 防真回归）：把「建角色 / 建员工 create 侧」的
-   `payload 键 ⊆ 接收端读取点` 变成机器可验证的不变式；
-2. **红→绿**：`after_sales_manage` create 的 payload 键 ⊆ `AgentAfterSalesCreateRequest`
-   已声明字段 —— 删除 `source` 前必红，删除后绿。
+本文件原本做两件事（**第 1 条与第 2 条的 create 侧用例已随 B 端只读化退休，见文件内
+[RETIRED #5247] 标记**）：
+1. ~~**锁**：把「建角色 / 建员工 create 侧」的 `payload 键 ⊆ 接收端读取点` 变成不变式~~
+   —— role_manage / employee_manage 的 create action 已从 B 端移除，工具不再下发 create payload；
+2. ~~**红→绿**：`after_sales_manage` create 的 payload 键 ⊆ `AgentAfterSalesCreateRequest`~~
+   —— 同因退休。
+**仍生效**：服务端侧不变量（来源由 `AfterSalesTicketService.createTicket` 写库、不得硬编码）——
+该断言的对象是 admin-api 源码，不依赖 B 端建单工具是否存在。
 
 解析器**复用**既有两套口径（不造第四套）：
 - Java 接收类型字段：`tests/test_tool_field_name_contract.py::_receiver_fields_from_java`（#3562 口径）；
@@ -30,11 +35,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 # 单一事实源复用：既有跨端契约测试的解析器（同正则 / 同口径）
-from tests.test_employee_field_consumption_contract import _method_body, _read_keys
-from tests.test_tool_field_name_contract import _receiver_fields_from_java
+# （`_read_keys` / `_receiver_fields_from_java` 的调用方是本次退休的三条 create 侧用例，
+#   故不再导入；重新登记 create 侧契约时按 test_tool_field_name_contract 文件头的方式接回）
+from tests.test_employee_field_consumption_contract import _method_body
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _JAVA_CONTROLLER = _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/controller"
@@ -54,128 +59,19 @@ def _dropped_keys(payload: dict, consumed: frozenset[str] | set[str], receiver: 
 # ── 建角色（POST /api/admin/roles）——门禁误报的机器化反证 + 防回归 ────────────
 
 
-async def test_role_manage_create_payload_keys_are_read_by_create_role(admin_tool_context):
-    """role_manage(create) 实际下发的 4 个键，`createRole` 必须逐个读取（issue #3605）。
-
-    修复前（门禁误报）：报告称整条 payload 无人接收；实测接收端 4 个键全读。
-    """
-    from app.tools.role_manage import RoleManageTool
-
-    client = AsyncMock()
-    client.post = AsyncMock(return_value={"success": True, "data": {"id": "role-new"}})
-
-    with patch("app.tools.role_manage.get_admin_api_client", return_value=client):
-        result = await RoleManageTool().execute(
-            context=admin_tool_context,
-            action="create",
-            name="库管",
-            code="stock_keeper",
-            description="负责商品管理",
-            permission_ids=["perm-1", "perm-2"],
-        )
-
-    assert result.success is True, f"{result.error} / {result.message}"
-    assert client.post.call_args.args[0] == "/api/admin/roles"
-
-    payload = client.post.call_args.kwargs["json_data"]
-    # payload 必须四个键都在（少一个 = 建角色信息不完整，属另一类真缺陷）
-    assert set(payload) == {"name", "code", "description", "permissionIds"}, payload
-
-    consumed = _read_keys(
-        _handler_body(_JAVA_CONTROLLER / "AdminRoleController.java",
-                      "public ApiResponse<Role> createRole(")
-    )
-    dropped = _dropped_keys(payload, consumed, "AdminRoleController.createRole")
-    assert not dropped, (
-        f"role_manage(create) 下发 {dropped}，但 AdminRoleController.createRole 未读取 —— "
-        f"Spring 对 Map body 不存在的键静默忽略 + HTTP 200『角色已创建』= 假成功。"
-        f"接收端实际读取的键：{sorted(consumed)}"
-    )
+# [RETIRED #5247] test_role_manage_create_payload_keys_are_read_by_create_role 已退休：建角色（role_manage create）已从 B 端移除（B 端只读化）：create 侧 payload 不再存在，接收端读取点断言无对象。
 
 
 # ── 建员工（POST /api/admin/users，create 侧）——同族误报反证 + 防回归 ─────────
 
 
-async def test_employee_manage_create_payload_keys_are_read_by_create_user(admin_tool_context):
-    """employee_manage(create) 实际下发的 4 个键，`createUser` 必须逐个读取（issue #3605）。
-
-    #3561 只补了 update 侧；本条覆盖 create 侧（同族漏网面复核结论：create 侧本就读取）。
-    """
-    from app.tools.employee_manage import EmployeeManageTool
-
-    client = AsyncMock()
-    client.post = AsyncMock(return_value={"success": True, "data": {"id": "user-new"}})
-
-    with patch("app.tools.employee_manage.get_admin_api_client", return_value=client):
-        result = await EmployeeManageTool().execute(
-            context=admin_tool_context,
-            action="create",
-            phone="13900000002",
-            password="init-pass-123",
-            name="张三",
-            role_ids=["role-manager"],
-        )
-
-    assert result.success is True, f"{result.error} / {result.message}"
-    assert client.post.call_args.args[0] == "/api/admin/users"
-
-    payload = client.post.call_args.kwargs["json_data"]
-    assert set(payload) == {"phone", "password", "name", "roleIds"}, payload
-
-    consumed = _read_keys(
-        _handler_body(_JAVA_CONTROLLER / "AdminUserController.java",
-                      "public ApiResponse<User> createUser(")
-    )
-    dropped = _dropped_keys(payload, consumed, "AdminUserController.createUser")
-    assert not dropped, (
-        f"employee_manage(create) 下发 {dropped}，但 AdminUserController.createUser 未读取 —— "
-        f"静默忽略 + HTTP 200『创建成功』= 假成功（issue #3550 同族）。"
-        f"接收端实际读取的键：{sorted(consumed)}"
-    )
+# [RETIRED #5247] test_employee_manage_create_payload_keys_are_read_by_create_user 已退休：建员工（employee_manage create）已从 B 端移除（B 端只读化）：create 侧 payload 不再存在，接收端读取点断言无对象。
 
 
 # ── 建售后工单（POST /api/admin/agent/after-sales）——真缺陷（红→绿） ──────────
 
 
-async def test_after_sales_manage_create_payload_keys_are_declared_in_agent_dto(admin_tool_context):
-    """after_sales_manage(create) 下发的每个键必须在 `AgentAfterSalesCreateRequest` 中声明。
-
-    修复前（issue #3605 真缺陷）：payload 含 `"source": "agent"`，DTO 无该字段 →
-    Spring 默认 `FAIL_ON_UNKNOWN_PROPERTIES=false` → 静默丢弃、HTTP 200、工具 success=True。
-    """
-    from app.tools.after_sales_manage import AfterSalesManageTool
-
-    client = AsyncMock()
-    client.post = AsyncMock(return_value={"success": True, "data": {"id": "t-new"}})
-
-    with patch("app.tools.after_sales_manage.get_admin_api_client", return_value=client):
-        result = await AfterSalesManageTool().execute(
-            context=admin_tool_context,
-            action="create",
-            order_id="ORD-20250425-001",
-            ticket_type="refund",
-            reason="尺寸不符要求退款",
-            priority="urgent",
-            images=["https://example.com/evidence.jpg"],
-            refund_amount=199.0,
-        )
-
-    assert result.success is True, f"{result.error} / {result.message}"
-    assert client.post.call_args.args[0] == "/api/admin/agent/after-sales"
-
-    payload = client.post.call_args.kwargs["json_data"]
-    # 业务内容必须落在已声明字段上（禁止「多发一个别名字段」凑数）
-    assert payload["description"] == "尺寸不符要求退款"
-
-    declared = _receiver_fields_from_java("AgentAfterSalesCreateRequest")
-    dropped = _dropped_keys(payload, declared, "AgentAfterSalesCreateRequest")
-    assert not dropped, (
-        f"after_sales_manage(create) 下发 {dropped}，但 AgentAfterSalesCreateRequest 未声明 —— "
-        f"Spring 静默丢弃该键（HTTP 200 + 工具 success=True）。"
-        f"DTO 已声明字段：{sorted(declared)}。"
-        f"若该键确需客户端指定，请先在 DTO 补字段并接线落库；"
-        f"若来源类信息由服务端决定，则删除该键（不得新增别名）。"
-    )
+# [RETIRED #5247] test_after_sales_manage_create_payload_keys_are_declared_in_agent_dto 已退休：建售后工单（after_sales_manage create）已从 B 端移除（B 端只读化）：create 侧 payload 不再存在，DTO 声明断言无对象。
 
 
 def test_agent_ticket_source_is_assigned_by_server_not_client():

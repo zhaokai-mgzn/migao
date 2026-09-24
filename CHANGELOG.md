@@ -40,6 +40,32 @@
 - **未覆盖（照实登记，不算通过）**：订单**提交后**的工序 / 计件落库核对、其余商品 / 颜色 / 尺寸组合、
   以及「显式加工类型被蕴含口径静默改写」这条相邻发现的定性（登记为待裁定，report §13.3）。
 
+### B 端米宝收窄为「只读 + 数据分析」：创建/更新能力全部下线，接入商家后端只读模块（2026-09-24，issue #5247）
+
+- **改后的形态（用户裁定 2026-09-23）**：米宝**只做查询与数据分析** —— 下单/改单/发货/退款、
+  建品/改价/上下架/调库存、分类与加工项增删改、建售后单/改工单状态、建账号/改岗位/重置密码、
+  登记收支、分配或结束会话、改系统设置与通知配置**全部下线**；对话里如实说明并引导商家到后台
+  对应页面，**不得**承诺代办。交互卡只保留 **choice 消歧**，不再发写确认卡。
+- **写工具处置**：8 个工具**收窄为只读**（`customer_manage` / `after_sales_manage` /
+  `employee_manage` / `role_manage` / `finance_api` / `category_manage` / `session_manage` /
+  `inventory_manage`：删写 action、`read_only=True`、权限码改读码）；
+  11 个写能力工具从 B 端**解绑**（`order_create` / `order_manage` / `product_manage` /
+  `product_update` / `sku_update` / `processing_item_manage` / `processing_order_generate` /
+  `processing_order_update` / `settings_manage` / `notification_manage` / `validate_input`）。
+- **C 端（小布）零改动**：与 C 端共享的工具（`order_create` / `validate_input` / `interact` /
+  `knowledge_search` / `processing_item_query` / `product_search` / `product_detail` /
+  `production_progress_query`）**只解绑 B 端，不删文件、不改 C 端行为**。
+- **新接入的商家后端只读面**：库存台账、入库单/批次、工序库与工艺路线、算料配置、经营日报
+  （`stock_ledger_query` / `inbound_order_query` / `operation_catalog_query` /
+  `craft_calc_config_query` / `briefing_query`）。**门宽方案**只有计算型 POST、无
+
+  可查对象 ⇒ 用户裁定跳过，登记为已知缺口。
+- **系统设置与通知配置**退出 B 端对话面（`settings` skill 从米宝解绑）。
+- **机械判据**：新增 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（五条判据 + 九条注入式红证：
+  工具并集只读 / 写工具零绑定 / action 集 ⊆ 只读集 / 能力文案不谎报 / 共享工具与 C 端零改动）；
+  「工具码 ≡ 端点码 ≡ 菜单节点码」由 `test_agent_permission_parity.py` 继续把关
+  （本次为两个只读工具登记读写粒度例外，并把 `GET /api/admin/production/{operations-catalog,routings}`
+  收窄到方法级 `processing:manage`）。
 ### 左侧菜单重新设计：信息架构按业务动线重排（7 组 / 21 项）+ 菜单可搜（⌘K）、分组默认只展开当前组、折叠态不丢分组、小屏改抽屉（2026-09-23，issue #5271）
 
 - **改了什么（商家可见面）**：侧边栏**组名与归属**变了，**菜单项一项不少不减（21 项）**：

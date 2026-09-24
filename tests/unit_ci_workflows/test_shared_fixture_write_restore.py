@@ -26,32 +26,56 @@
 
 ## 判据三条（各自都有红证）
 
-1. **写面必须归类（fail-closed）**：用例库里凡是"写**商品实体**"的期望
+1. **写面必须归类（fail-closed）**：写工具扫描面 = **当前可达**的写工具（从
+   `.github/assertion_taxonomy.py` 推导，见 `WRITE_TOOL_SURFACE`），库里凡落在该面上的期望
    （`(tool, action)` 组合）都必须在 `PRODUCT_ATTR_WRITERS` 里显式归类 ——
-   新增工具/新增 action **未归类即红**。防的是"新写方悄悄出现、判据还是旧地图"
+   新增工具 / 新增写 action **未归类即红**。防的是"新写方悄悄出现、判据还是旧地图"
    （`migao-dev-flow` §19.1：基于错误真相模型写出的护栏 = 永远红 / 永远被豁免的空判据）。
 2. **可复位属性必须声明复位**：用例 `user_inputs` 点名种子商品（名字**现读 fixtures**）
    且写了**已有复位类型**的属性（属性↔类型的关系**现读 runner**）⇒ 必须声明该复位
    （`post_clean`，或裁定允许的 `pre_clean` 等价复位）。
-3. **尚无复位类型的属性必须登记为缺口（只许缩短）**：写这些属性的用例必须出现在
+3. **尚无复位类型的属性必须登记为缺口（双向相等，只许缩短）**：写这些属性的用例必须出现在
    `REGISTERED_RESTORE_GAPS` 里，且每条带跟随 issue 号（R4 的两个出口：
    本次修掉 / 开独立 issue）——**不是白名单**：新增一条即红，修好一条未同步台账也红。
 
 ## 为什么口径是"属性写方"而不是"带写期望"
 
 裁定的原文是「凡 `user_inputs` 点名种子商品且带写期望的用例」。直接按
-`assertion_taxonomy.is_write_case` 取"写期望"会得到 **49 条**用例，其中绝大多数是
-`order_create`（**下单**不改商品属性，它只是**引用**该商品）—— 对它们要求"复位"是无对象的
-假红（R2：判据不得拦掉原本合法的输入）。故按**结构性**三层收窄，且每层都可复算：
+`assertion_taxonomy.is_write_case` 取"写期望"（#5247 前 **49 条**、#5247 后 **15 条**），
+其中绝大多数是 `order_create`（**下单**不改商品属性，它只是**引用**该商品）—— 对它们要求
+"复位"是无对象的假红（R2：判据不得拦掉原本合法的输入）。故按**结构性**三层收窄，每层都可复算：
 
 ```
 种子商品名（fixtures/*.sql 现算）
   ∩ user_inputs（点名了它）
-  ∩ 写**商品实体**的期望（tool ∈ 5 个商品写工具，拆 ` or ` 与 runner 同口径）
+  ∩ **活写方**的期望（tool ∈ 写工具扫描面；拆 ` or `，与 runner 同口径）
   → 属性（(tool, action) → 属性键，显式登记）
 ```
-⇒ 12 条（复算命令与逐条结论见 PR body 的存量穷举表）。**不适用域负例**见
-`test_order_only_cases_are_not_in_scope`（`order_create` / 建自有名商品**不得**被判红）。
+⇒ 收窄后**命中 0 条**（活写方 = `order_create` / `aftersale_create` / `notification_manage` /
+`settings_manage`，都不触达商品属性）。**不适用域负例**见 `test_order_only_cases_are_not_in_scope`
+（`order_create` 用例**不得**被判红 —— 库里 13 条点名种子商品的下单用例靠这条口径不被假红）。
+
+## #5247 改判（2026-09-23 用户裁定「B 端米宝只读化」）：真值面为什么变了
+
+**原口径**：第 3 层手抄「5 个商品写工具」（`product_manage` / `product_update` / `sku_update` /
+`inventory_manage(adjust)` …），据此命中 **12 条**「写共享夹具属性」的用例。
+
+**前提被证伪**：这几个工具在 #5247 里**全部退场** —— `product_manage` / `product_update` /
+`sku_update` 从 B 端全部 skill 解绑（工具类与注册行仍在、C 端绑定未动，但两侧工具集都不可达
+⇒ 幽灵写工具，**不再是写方**），`inventory_manage` 收窄为只读 `{query, low_stock_alert}`、
+写 action `adjust` 已从源码删除。对应用例也已改判 / 退役：`PR-005` 改判为「只读库存台账 +
+入库批次」（不再写 stock）；`PR-009` / `PR-010` / `PR-017` / `PR-026` / `PR-027` / `CH-006` 退役
+（写商品属性的断言已删）⇒ 那 12 条的写方**在新事实下不存在**。
+
+**新口径**：① 扫描面**不再手抄**，从 `assertion_taxonomy.WRITE_TOOLS` / `WRITE_TOOL_ACTIONS`
+（本仓"写"判定的唯一源，且自身只列**当前可达**的工具）推导；② `PRODUCT_ATTR_WRITERS` 只登记
+库里真实出现的活写方 key；③ 判据 ②③ 在真实库上命中 **0 条** ⇒ 台账置 `{}`
+（7 条旧条目的逐条留档写在该常量的 docstring 里）。
+
+**为什么不是放宽**：判据机制一条没删 —— 扫描面非空（防空转下界）、未归类的活写方即红、
+触达可复位属性却未声明复位即红、无复位类型的属性未登记即红、台账有陈旧条目即红，
+每条都有**能真的变红**的红证，且红证已重新锚定到当前可达的写方（整工具写 = `order_create`，
+action 级写 = `notification_manage(mark_read)`）。消失的是"写方本身"这个被测对象，不是判别力。
 
 ## 为什么不能只靠"读方止血"（#4078 已做）
 
@@ -129,96 +153,127 @@ def _all_cases() -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 一、写面登记表（**显式枚举**，同 `assertion_taxonomy.WRITE_TOOLS` 的做法）
+# 一、写面登记表（**扫描面从单一真相源推导**；分类表只登记库里出现的活写方）
 # ══════════════════════════════════════════════════════════════════════════════
 
-#: 写**商品实体**（商品 / 其 SKU / 其库存 / 其加工项关联）的工具。
-#: 真值锚点 = `backend/ai-agent-service/app/tools/` 里 `read_only = False` 且动作落在商品上的
-#: 那 5 个工具（按工具名检索即可复算）。**其余写工具写的是别的实体**
-#: （`order_create`=订单 / `customer_manage`=客户 / `after_sales_manage`=工单 / …），
-#: 它们不改共享夹具 ⇒ 不适用本判据（不适用域负例见本文件末尾）。
-#: ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`（给**商品**
-#: 增删加工项）已随「商品不再持有加工项」退场（工具文件与注册行都删）⇒ 从本集合移除。
-#: 移除**不是**放宽：该工具已不可能出现在任何用例的期望里（其 3 条用例已整条删除）。
-PRODUCT_ENTITY_TOOLS: frozenset = frozenset({
-    "product_manage",
-    "product_update",
-    "sku_update",
-    "inventory_manage",
-})
+#: **写工具扫描面** = 当前**可达**的写工具集合。
+#: 真值锚点 = `.github/assertion_taxonomy.py` 的 `WRITE_TOOLS`（整工具即写）∪
+#: `WRITE_TOOL_ACTIONS`（工具级写、只有部分 action 是写）—— 该模块是**本仓"写"判定的唯一源**
+#: （`is_write_expectation` 与它同源），且它自己只列当前可达的工具（幽灵写工具由
+#: `test_case_trust_gate.py::test_write_tool_sets_only_name_reachable_tools` 兜底）。
+#: ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：**原口径**是本地手抄
+#: 一份「5 个商品写工具」（`product_manage` / `product_update` / `sku_update` /
+#: `inventory_manage` / …）。那份清单已被 #5247 证伪：前三个从 B 端全部 skill 解绑
+#: （两侧工具集都不可达 ⇒ 不是写方），`inventory_manage` 收窄为只读（写 action `adjust`
+#: 从源码删除）⇒ 手抄清单**全部失真**（第二份地图必然漂移）。
+#: **新口径**：一律从 taxonomy 推导。**判别力为什么还在**：扫描面**非空**（防空转下界见
+#: `test_scan_surface_covers_the_known_writers`）+ "新写方出现 ⇒ 必须归类"这条闸仍由判据 ①
+#: 把着（活写方的新 action 未归类即红，红证见 `TestWriteSurfaceIsClassified`）。
+WRITE_TOOL_SURFACE: frozenset = (
+    frozenset(_taxonomy().WRITE_TOOLS) | frozenset(_taxonomy().WRITE_TOOL_ACTIONS))
 
-#: `(tool, action)` → **属性键**（`""` = 写商品实体但**不改共享夹具的属性**）。
-#: `action` 取 `""` 表示期望里没声明 action（`is_write_expectation` 对此**保守判写**）。
-#: ⚠️ 新增工具 / 新增 action **必须在此显式归类** —— 未归类 ⇒ 判据 ① 直接红
-#: （这就是"新写方不会悄悄出现"的那道闸）。
+#: `(tool, action)` → **属性键**（`""` = 是写方但**不改共享夹具的属性** ⇒ 判据 ②③ 都不适用）。
+#: `action` 取 `""` 表示期望里没声明 action（`is_write_expectation` 对 action 级写工具**保守判写**）。
+#: ⚠️ 只登记**库里真实出现**的活写方 key（当前 3 条具体 action + 2 条"未声明 action"）——
+#: 每个 key 都要有人回答"它改的是不是共享夹具"；**未在此归类 ⇒ 判据 ① 直接红**。
+#: 为什么不把这张表也整体推导：推导出来等于"永远已归类"= 判据 ① 变空壳 ——
+#: "这个新写方改不改共享夹具"必须由人判定，只能显式登记。
 PRODUCT_ATTR_WRITERS: dict = {
-    ("sku_update", ""): "sku_price",
-    ("product_manage", "toggle_status"): "status",
-    ("product_update", ""): "product_attr",                 # base_price / allow_return_restock / …
-    ("product_manage", "update"): "product_attr",           # images / 字段级更新
-    ("inventory_manage", "adjust"): "stock",
-    # ⚠️ `("product_processing_item_manage", "add"/"")`: "processing_items" 两条已随
-    # #4371 解耦移除（工具退场；`processing_items` 这一「属性键」也不再有写方）。
-    # 期望里没声明 action 的裸 `product_manage`：**改哪个属性不可判定** ⇒ 单列 `unknown`，
-    # 让"未定型"这件事在台账里可见（而不是被当成"不改共享夹具"）。
-    ("product_manage", ""): "unknown",
-    # 建品：写的是**新对象**，不触达共享夹具的属性；"造出同名副本"由 #3835 的守卫
-    # （`test_eval_product_name_pollution.py`）单独治 —— 两条判据的适用域不重叠。
-    ("product_manage", "create"): "",
+    # ── 整工具写方（taxonomy 的 `WRITE_TOOLS`）──────────────────────────────
+    # 下单：**引用**商品，不改商品属性（不适用域负例见 test_order_only_cases_are_not_in_scope）。
+    ("order_create", ""): "",
+    # 建售后工单：写的是**工单实体**，不触达商品属性。
+    ("aftersale_create", ""): "",
+    # ── action 级写方（taxonomy 的 `WRITE_TOOL_ACTIONS`）────────────────────
+    # 改密码：写的是**账号设置**，不触达商品属性（库里唯一在册的 settings 写方 = ST-003）。
+    ("settings_manage", "change_password"): "",
+    # 未声明 action 的 action 级写工具：taxonomy **保守判写**，但"改的是哪个属性"**不可判定**
+    # ⇒ 单列 `unknown`（走台账路径 = 可见），而不是被静默当成"不改共享夹具"。
+    # 判别力自证见 test_unknown_action_attr_lands_in_the_ledger_path。
+    ("settings_manage", ""): "unknown",
+    ("notification_manage", ""): "unknown",
+    # ⚠️ **故意**不登记 notification_manage 的**具体**写 action（`mark_read` / `create` /
+    #    `delete` / `mark_all_read`）：它们一出现在用例里就是"新写方"⇒ 判据 ① 先红、逼人判定
+    #    （红证 test_red_proof_unclassified_action_is_caught 用的就是 `mark_read`）。
 }
 
-#: **存量**「写共享夹具属性、但当前没有复位类型」的缺口台账（**只许缩短**）。
-#: 出口两个（`migao-dev-flow` §20 R4）：本次修掉 / 开独立 issue —— 本台账对应
-#: **#4128**（五类属性无复位动作），故每条都带该 issue 号。
-#: ⚠️ 这不是白名单：**新增**一条缺口即红（判据 ③），修好一条未删台账也红。
-REGISTERED_RESTORE_GAPS: dict = {
-    "PR-005": "stock（`inventory_manage(adjust)` 出库 10 件）—— 无 stock 复位类型（#4128）",
-    "PR-009": "product_attr / base_price —— 复位由 #3807 的 tag 式快照承担（非声明式），"
-              "无声明式复位类型（#4128）",
-    "PR-010": "product_attr / base_price（同上）+ processing_items（`add`，无复位类型）（#4128）",
-    "PR-017": "product_attr / allow_return_restock —— 无复位类型（#4128）",
-    "PR-026": "product_attr / images（主图）—— 无复位类型（#4128）",
-    "PR-027": "product_attr / images（主图）—— 无复位类型（#4128）",
-    "CH-006": "product_attr（改价 199，且**不在** #3807 的快照 tag 覆盖面内）"
-              "+ processing_items —— 无复位类型（#4128）",
+#: **留档**（#4075 / #4128 时代的商品属性写方 → 属性键），**已不是活写方**。
+#: 为什么留：runner 的 `RESTORE_TYPES_BY_ATTR`（`status` / `sku_price`）与用例库里仍在的
+#: 3 条 `post_clean` 声明（PR-007 / PR-025 / PR-021）指向这些属性 —— 本表是
+#: 「runner 新增复位类型 ⇒ 必须在写面词表里有出处」这条**反向判据**的锚点
+#: （见 `test_runner_restore_attrs_have_a_known_writer_surface`）。
+#: ⚠️ 它**不参与**判据 ① 的活写方归类（扫描面不看它），也**不得**再往里加东西 ——
+#: 新增写方一律走「taxonomy → `WRITE_TOOL_SURFACE` → `PRODUCT_ATTR_WRITERS`」这条链。
+RETIRED_ATTR_WRITERS: dict = {
+    ("sku_update", ""): "sku_price",                  # 单独 SKU 调价（PR-021 的写方）
+    ("product_manage", "toggle_status"): "status",    # 上下架（PR-007 / PR-025 的写方）
+    ("product_update", ""): "product_attr",           # base_price / allow_return_restock / …
+    ("product_manage", "update"): "product_attr",     # images / 字段级更新
+    ("inventory_manage", "adjust"): "stock",          # 出库（PR-005 的写方）
+    ("product_manage", "create"): "",     # 建品：写**新对象**，不触达共享夹具属性（#3835 守卫单独治）
+    # ⚠️ 随 #4371（商品↔加工项解耦）退场的两条：`("product_processing_item_manage",
+    #    "add"/"")` → `processing_items` —— 工具退场、该属性键也不再有写方，故不留条目。
 }
+
+#: **存量**「写共享夹具属性、但当前没有复位类型」的缺口台账（**双向相等**：新增即红、陈旧即红）。
+#: 出口两个（`migao-dev-flow` §20 R4）：本次修掉 / 开独立 issue —— 台账条目必须带 issue 号。
+#: ⚠️ 2026-09-24（#5247）：**本台账现为空**，这是真值面**复算**的结果（不是清空销账）。
+#: 原 7 条逐条留档 —— 它们各自为什么不再在册：
+#:   · `PR-005` —— 已改判为「只读库存台账 + 入库批次」（`stock_ledger_query` /
+#:     `inbound_order_query(batches)`），**不再写 stock**（写 action `adjust` 已从源码删除）；
+#:   · `PR-009` —— 已随 #5247 退役：`product_update`（改 base_price）从 B 端解绑，写商品属性的断言已删；
+#:   · `PR-010` —— 已随 #5247 退役（同上，`product_update` 写面）；其 processing_items 一侧
+#:     早在 #4371 就随「商品不再持有加工项」退场；
+#:   · `PR-017` —— 已随 #5247 退役（`product_update` / `product_manage` 写 allow_return_restock
+#:     的断言已删）；
+#:   · `PR-026` / `PR-027` —— 已随 #5247 退役（`product_manage(action=update, images)` 写主图
+#:     的断言已删）；
+#:   · `CH-006` —— 已随 #5247 退役（改价 199 的断言改成 `product_search` / `product_detail` 只读核对）。
+#: 证据链（不是"清空即销账"）：复算双向相等 + 新增缺口红证 + 陈旧条目红证 +
+#: `test_retired_writers_are_no_longer_seen_as_writers`（留档的写方真的不再被判据看见）。
+REGISTERED_RESTORE_GAPS: dict = {}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 二、纯函数判据（每条都能被合成用例直接喂 —— 红证不依赖真实用例库）
 # ══════════════════════════════════════════════════════════════════════════════
 
-def product_write_expectations(case: dict) -> list:
-    """用例里**写商品实体**的期望 → `[(tool, action)]`（排序去重，纯函数）。
+def live_write_expectations(case: dict) -> list:
+    """用例里**当前可达写方**的写期望 → `[(tool, action)]`（排序去重，纯函数）。
 
-    ⚠️ 拆 ` or `：`expectations: [{tool: "product_update or product_manage", …}]` 是既有用例
-    的现实形态（`PR-017` 就是它），而 **runner 的 `check_expectation` 会拆**
-    （`expectation.split(" or ")`，见该函数）；若本守卫不拆，`PR-017` 这个**真实**的
-    共享夹具写方就会从扫描面里消失（判据漏掉病灶 = 假绿）。
+    扫描面 = `WRITE_TOOL_SURFACE`（从 `assertion_taxonomy` 推导，见其 docstring）。
+    ⚠️ 拆 ` or `：字符串形态的期望（`["direct_reply or order_create or interact"]`，`CH-009`
+    就是它）由 `expectation_tools` 拆过一次，而 dict 形态里的 ` or `（旧形态
+    `{"tool": "product_update or product_manage"}`）由本函数拆 —— 与 runner 的
+    `check_expectation` 同口径；不拆的话真实写方会从扫描面里消失（判据漏掉病灶 = 假绿）。
     """
     out = set()
     tax = _taxonomy()
     for tool, args in tax.expectation_tools(case):
         for part in str(tool).split(" or "):
             t = part.strip()
-            # ① 只算**商品实体**工具；② 只算**写** —— `inventory_manage(query)` /
-            #    `low_stock_alert` 是 read_only action（PR-004/PR-006 就是它们），
-            #    判据复用 taxonomy 的 `is_write_expectation`，不自己再写一份
-            #    "哪些 action 算写"（两份口径必然漂移）。
-            if t in PRODUCT_ENTITY_TOOLS and tax.is_write_expectation(t, args or {}):
+            # ① 只算**当前可达的写工具**（扫描面，见 WRITE_TOOL_SURFACE）；② 只算**写** ——
+            #    `inventory_manage(query)` 这类只读 action 由 taxonomy 的
+            #    `is_write_expectation` 判定，不自己再写一份"哪些 action 算写"（两份口径必然漂移）。
+            if t in WRITE_TOOL_SURFACE and tax.is_write_expectation(t, args or {}):
                 out.add((t, str(((args or {}).get("action")) or "")))
     return sorted(out)
 
 
-def unclassified_product_writes(cases: list) -> dict:
+def live_writer_keys(cases: list) -> set:
+    """**防空转下界**：全库解析出的活写方 `(tool, action)` 集合（空 = 判据在静默空跑）。"""
+    return {k for c in cases or [] for k in live_write_expectations(c)}
+
+
+def unclassified_live_writes(cases: list) -> dict:
     """**判据 ①**：未归类的 `tool(action)` → 声明它的用例（fail-closed）。
 
-    扫描面 = **全库**（不限点名种子商品的用例）：新工具/新 action 一出现就得归类，
+    扫描面 = **全库**（不限点名种子商品的用例）：新工具/新写 action 一出现就得归类，
     否则"它改的是不是共享夹具"这件事无人回答，判据 ②/③ 也就无从适用。
     """
     out: dict = {}
     for c in cases or []:
-        for key in product_write_expectations(c):
+        for key in live_write_expectations(c):
             if key not in PRODUCT_ATTR_WRITERS:
                 label = f"{key[0]}({key[1] or '无 action'})"
                 out.setdefault(label, []).append(str(c.get("id") or "?"))
@@ -237,14 +292,15 @@ def named_seed_products(case: dict, names=None) -> set:
 
 
 def touched_attrs(case: dict, names=None) -> set:
-    """本用例在**共享夹具**上触达的属性集合（点名种子商品 ∧ 写商品实体）。
+    """本用例在**共享夹具**上触达的属性集合（点名种子商品 ∧ 活写方）。
 
-    `""`（不改共享夹具属性）与 `"unknown"`（action 未定型）都**不是**"可复位属性"，
-    但两者处置不同：前者无事可做，后者进台账（可见）。
+    `""`（不改共享夹具属性）与 `"unknown"`（action 未定型 ⇒ 改哪个属性不可判定）都**不是**
+    "可复位属性"，但两者处置不同：前者无事可做，后者进台账（可见）—— 属性键的定义见
+    `PRODUCT_ATTR_WRITERS`。
     """
     if not named_seed_products(case, names):
         return set()
-    return {PRODUCT_ATTR_WRITERS[k] for k in product_write_expectations(case)} - {""}
+    return {PRODUCT_ATTR_WRITERS[k] for k in live_write_expectations(case)} - {""}
 
 
 def runner_restore_map() -> dict:
@@ -293,6 +349,36 @@ def unregistered_restore_gaps(cases: list, names=None) -> dict:
     return out
 
 
+def _writer_attr_vocabulary() -> set:
+    """写面**属性词表** = 活写方分类值 ∪ 留档词表（去掉 `""`）—— 反向判据的比对面。"""
+    return {a for a in (*PRODUCT_ATTR_WRITERS.values(), *RETIRED_ATTR_WRITERS.values()) if a}
+
+
+def orphan_restore_attrs() -> list:
+    """runner 里**没有写面出处**的复位属性（反向漏判：要求声明会指向没人能声明的目标）。"""
+    vocab = _writer_attr_vocabulary()
+    return sorted(a for a in runner_restore_map() if a not in vocab)
+
+
+def ledger_new_entries(cases: list, names=None) -> list:
+    """台账的**新增方向**红名单：复算出的缺口没登记在册（fail-closed）。"""
+    live = unregistered_restore_gaps(cases, names)
+    return sorted(set(live) - set(REGISTERED_RESTORE_GAPS))
+
+
+def ledger_stale_entries(cases: list, names=None) -> list:
+    """台账的**陈旧方向**红名单：登记在册却已不复现（只许缩短，防债务僵化）。"""
+    live = unregistered_restore_gaps(cases, names)
+    return sorted(set(REGISTERED_RESTORE_GAPS) - set(live))
+
+
+def entries_without_issue(ledger: dict) -> list:
+    """没有跟随 issue 号的台账条目（R4：登记不得变成静默出口）。"""
+    import re
+    return sorted(cid for cid, why in (ledger or {}).items()
+                  if not re.search(r"#\d{3,}", str(why)))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 三、判据 ⓪：种子真值 + 扫描面自证（防"绿了但没跑"）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -320,21 +406,55 @@ class TestSeedTruthAndScanSurface:
             f"本文件（现算 fixtures）={sorted(seed_product_names())} / "
             f"#3835 守卫（硬编码）={sorted(mod.SEED_PRODUCT_NAMES)}")
 
-    def test_scan_surface_covers_the_known_writers(self):
-        """**扫描面自证**：已知的共享夹具写方必须被 `product_write_expectations` 认出来。
+    def test_write_tool_surface_is_derived_from_the_taxonomy(self):
+        """**扫描面必须来自单一真相源**（不是本地手抄的第二份清单）。
 
-        否则判据恒绿（`migao-acceptance`「绿了但没跑」）：这里用**改前形态**（本单的三条
-        病灶用例仍在库里）+ `PR-017` 的 ` or ` 形态作为"识别力"证据。
+        原口径（#4075）：本地手抄「5 个商品写工具」。**#5247 证伪**：那 5 个里
+        `product_manage` / `product_update` / `sku_update` 已从 B 端全部 skill 解绑、
+        `inventory_manage` 收窄为只读 ⇒ 手抄清单与实际写方**全部脱节**。
+        新口径：扫描面 == `assertion_taxonomy.WRITE_TOOLS ∪ WRITE_TOOL_ACTIONS`（唯一真相源）。
+        判别力：谁把扫描面改回手抄清单（或往 taxonom 之外加料）⇒ 本条立刻红。
+        """
+        tax = _taxonomy()
+        assert WRITE_TOOL_SURFACE == (
+            frozenset(tax.WRITE_TOOLS) | frozenset(tax.WRITE_TOOL_ACTIONS)), (
+            f"扫描面与 taxonomy 不一致：{sorted(WRITE_TOOL_SURFACE)}")
+        assert {"order_create", "aftersale_create"} <= WRITE_TOOL_SURFACE, (
+            "整工具写方（C 端下单 / 建工单）不在扫描面里 —— 判据 ① 会漏掉它们")
+        assert not ({"product_manage", "product_update", "sku_update", "inventory_manage",
+                     "order_manage", "processing_item_manage"} & WRITE_TOOL_SURFACE), (
+            "#5247 已退场的写工具仍在扫描面里 ⇒ 判据会按**旧地图**判（幽灵写方）")
+
+    def test_scan_surface_covers_the_known_writers(self):
+        """**扫描面自证**：当前**存在**的写方必须被 `live_write_expectations` 认出来。
+
+        否则判据恒绿（`migao-acceptance`「绿了但没跑」）。
+        原口径：拿 PR-021 / PR-025 / PR-007 / PR-017 / PR-005 的写期望当"识别力证据"。
+        **#5247 证伪**：那 5 条的写工具已全部退场（PR-017/PR-005 改判为只读、
+        PR-021/PR-025/PR-007 的写 action 已从源码删除）⇒ 它们不再是写方证据。
+        新口径（三类都钉住，取**真实用例库**）：
+          ① 整工具写 —— `CH-009` 的 ` or ` 形态字符串期望里必须析出 `order_create`；
+          ② 整工具写 —— `AS-003` 的 `after_sales_manage or aftersale_create` 里析出 `aftersale_create`；
+          ③ action 级写 —— `ST-003` 的 `settings_manage(action=change_password)`；
+          ④ action 级写（库内暂无该写法）—— 合成 `notification_manage(mark_read)` 必须被认出；
+          ⑤ **防空转下界**：从真实库解析出的活写方集合必须非空（解析失效 ⇒ 红）。
         """
         by = {c["id"]: c for c in _all_cases()}
-        for cid, want in (("PR-021", ("sku_update", "")),
-                          ("PR-025", ("product_manage", "toggle_status")),
-                          ("PR-007", ("product_manage", "toggle_status")),
-                          ("PR-017", ("product_update", "")),      # dict 形态的 ` or ` 必须拆开
-                          ("PR-005", ("inventory_manage", "adjust"))):
-            got = product_write_expectations(by[cid])
-            assert want in got, (
-                f"判据认不出 {cid} 的写期望 {want}（扫描面失效，本文件会静默空跑）：{got}")
+        assert ("order_create", "") in live_write_expectations(by["CH-009"]), (   # 字符串 ` or ` 必须拆开
+            f"判据认不出 CH-009 的整工具写（` or ` 没拆？）：{live_write_expectations(by['CH-009'])}")
+        assert ("aftersale_create", "") in live_write_expectations(by["AS-003"]), (
+            f"判据认不出 AS-003 的整工具写：{live_write_expectations(by['AS-003'])}")
+        assert ("settings_manage", "change_password") in live_write_expectations(by["ST-003"]), (
+            "判据认不出 ST-003 的 action 级写"
+            f"（写 action 集合没读对？）：{live_write_expectations(by['ST-003'])}")
+        fake = {"id": "FAKE-SCAN", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
+                "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}
+        assert ("notification_manage", "mark_read") in live_write_expectations(fake), (
+            f"判据认不出 action 级写方：{live_write_expectations(fake)}")
+        live = live_writer_keys(_all_cases())
+        assert live, "从真实用例库解析不到任何活写方 —— 扫描面失效（判据会静默空跑）"
+        assert {k[0] for k in live} >= {"order_create", "aftersale_create", "settings_manage"}, (
+            f"真实库的活写方没被认全：{sorted(live)}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -342,35 +462,74 @@ class TestSeedTruthAndScanSurface:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestWriteSurfaceIsClassified:
-    def test_every_product_write_is_classified(self):
-        """**核心**：商品实体的每个 `tool(action)` 写期望都已归类。"""
-        bad = unclassified_product_writes(_all_cases())
+    def test_every_live_write_is_classified(self):
+        """**核心**：活写方的每个 `tool(action)` 写期望都已归类（fail-closed）。
+
+        #5247 后真实库里的活写方 key 只有 3 个具体写 + 2 个"未声明 action"的保守判写口子
+        （见 `PRODUCT_ATTR_WRITERS`）—— 少，但**每一个都必须有人回答**"改不改共享夹具"。
+        """
+        bad = unclassified_live_writes(_all_cases())
         assert bad == {}, (
-            "出现**未归类**的商品实体写方 —— 它改的是不是共享夹具没人回答，"
+            "出现**未归类**的活写方 —— 它改的是不是共享夹具没人回答，"
             "判据 ②③（要不要复位）因此无从适用。请在 PRODUCT_ATTR_WRITERS 显式归类：\n  "
             + "\n  ".join(f"{k} ← {v}" for k, v in sorted(bad.items())))
 
-    def test_red_proof_unclassified_action_is_caught(self):
-        """**红证**：给商品工具加一个没归类的 action（如 `delete`）⇒ 判据必红。"""
-        fake = [{"id": "FAKE-1", "user_inputs": ["把遮光窗帘删掉"],
-                 "expectations": [{"tool": "product_manage", "args": {"action": "delete"}}]}]
-        assert unclassified_product_writes(fake) == {"product_manage(delete)": ["FAKE-1"]}, (
-            "未归类的 action 被放过了 —— 新写方会悄悄出现（判据变空壳）")
+    def test_red_proof_unclassified_action_is_caught(self, monkeypatch):
+        """**红证 ①（action 级写方）**：没归类的写 action ⇒ 判据必红。
 
-    def test_red_proof_unclassified_tool_is_caught(self):
-        """**红证**：新增一个商品写工具（未登记）⇒ 判据必红（判据①对"新工具"同样生效）。"""
+        原口径用 `product_manage(action=delete)`；**#5247 证伪**：该工具已不是写工具
+        （扫描面看不见它）⇒ 换成当前可达的 action 级写方 `notification_manage(mark_read)`
+        （taxonomy 认它是写 action，分类表**故意**不登记具体 action）。
+        """
+        fake = [{"id": "FAKE-1", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
+                 "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}]
+        assert unclassified_live_writes(fake) == {"notification_manage(mark_read)": ["FAKE-1"]}, (
+            "未归类的 action 被放过了 —— 新写方会悄悄出现（判据变空壳）")
+        # 负例（证明上面那声红来自"未归类"，不是判据恒红）：登记后即绿
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("notification_manage", "mark_read"), "")
+        assert unclassified_live_writes(fake) == {}, "已归类的写方仍被判红 ⇒ 判据恒红"
+
+    def test_red_proof_unclassified_action_of_a_whole_tool_writer_is_caught(self):
+        """**红证 ①（整工具写方）**：整工具写方带一个未归类的 action ⇒ 判据必红。
+
+        原口径用 `sku_update(action=bulk)`；**#5247 证伪**：`sku_update` 已解绑、
+        不在扫描面里 ⇒ 换成当前可达的整工具写方 `order_create`（同一缺陷形态：
+        "已登记写工具出现新 action 必须被拦"）。
+        """
+        fake = [{"id": "FAKE-3", "user_inputs": ["把遮光窗帘下单"],
+                 "expectations": [{"tool": "order_create", "args": {"action": "bulk"}}]}]
+        assert unclassified_live_writes(fake) == {"order_create(bulk)": ["FAKE-3"]}, (
+            "已登记写工具的新 action 没被拦（判据 ① 只对新工具生效？）")
+
+    def test_red_proof_ghost_tool_is_invisible_by_design(self):
+        """**留档 / 边界**：已退场的写工具**不被**扫描面看见 —— 这是有意的口径。
+
+        扫描面 = **当前可达**的写方（见 `WRITE_TOOL_SURFACE` 的 docstring）。#5247 把
+        `product_manage` / `product_update` / `sku_update` 从 B 端解绑（两侧工具集都不可达）
+        ⇒ 它们不再是写方，本判据看不见它们（这就是本文件在真实库上"少了几条"的原因）。
+        口径的另一半由 taxonomy 的 `test_write_tool_sets_only_name_reachable_tools` 兜底：
+        新增写工具必须先在 taxonomy 里登记，否则它**不是**"可达写方"。
+        判别力没有丢：**活**写方的新 action 仍会被判据 ① 拦住（见上面两条红证）。
+        """
         fake = [{"id": "FAKE-2", "user_inputs": ["改价"],
                  "expectations": [{"tool": "product_price_bulk_update"}]}]
-        assert unclassified_product_writes(fake) == {}, (
-            "未登记的工具**不在** `PRODUCT_ENTITY_TOOLS` 里 ⇒ 本判据看不见它。"
-            "这是**有意**的口径（本判据的面 = 已知商品写工具），但它意味着："
-            "新增商品写工具时必须同时更新 PRODUCT_ENTITY_TOOLS —— 由"
-            "`test_write_tool_sets_only_name_reachable_tools`（taxonomy）与人工评审兜底。")
-        # 负例的另一半：把工具登记进来、action 未归类 ⇒ 立刻红
-        fake2 = [{"id": "FAKE-3", "user_inputs": ["改价"],
-                  "expectations": [{"tool": "sku_update", "args": {"action": "bulk"}}]}]
-        assert unclassified_product_writes(fake2) == {"sku_update(bulk)": ["FAKE-3"]}, (
-            "已登记工具的新 action 必须被拦（否则判据①只对新工具生效）")
+        assert live_write_expectations(fake[0]) == [], (
+            "taxonomy 之外的未知工具被当成写方了（扫描面漂移？）")
+        ghost = [{"id": "FAKE-2b", "user_inputs": ["把遮光窗帘删掉"],
+                  "expectations": [{"tool": "product_manage", "args": {"action": "delete"}}]}]
+        assert live_write_expectations(ghost[0]) == [], (
+            "已解绑的工具仍被算成写方 ⇒ 判据按旧地图判（幽灵写方）")
+
+    def test_red_proof_real_library_loses_a_row_and_goes_red(self, monkeypatch):
+        """**红证 ①（真实用例库）**：把 `order_create` 那一行从分类表里删掉 ⇒ 真实库立刻红。
+
+        证明分类表**确实**覆盖着库里的活写方（不是只在合成用例上有效）：库里有 13 条点名
+        种子商品的下单用例 + CH-009/CH-012 等 —— 删一行就成串报红。
+        """
+        monkeypatch.delitem(PRODUCT_ATTR_WRITERS, ("order_create", ""))
+        bad = unclassified_live_writes(_all_cases())
+        assert "order_create(无 action)" in bad and len(bad["order_create(无 action)"]) >= 5, (
+            f"分类表少一行，真实库却没红 ⇒ 扫描面没扫到真实库？{bad}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -378,8 +537,20 @@ class TestWriteSurfaceIsClassified:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestSharedFixtureWritersDeclareRestore:
+    """判据 ②：写共享夹具**可复位属性**的活写方必须声明复位。
+
+    ⚠️ 2026-09-24（#5247）：本判据在**真实库上命中 0 条** —— 活写方（`order_create` /
+    `aftersale_create` / `notification_manage` / `settings_manage`）都不触达商品属性
+    ⇒ 没有"必须声明复位"的对象。**这不是放宽**：机制照旧可红，只是被测对象（商品属性写方）
+    已被 #5247 删除。为了证明机制仍活着，下面的红证把"触达可复位属性"这一格**注入**到
+    当前可达的写方上（原口径直接拿 PR-021 / PR-025 / PR-007 当写方，那三个写工具已解绑
+    ⇒ 前提消失，红证会变成"永远不可能红"的假证）。
+    """
+
     def test_no_shared_fixture_writer_lacks_a_restore(self):
-        """**主判据**：写可复位属性的用例都声明了复位（改前：PR-021/PR-025/PR-007 ⇒ 红）。"""
+        """**主判据**：写可复位属性的用例都声明了复位（#5247 前：PR-021/PR-025/PR-007 ⇒ 红）。"""
+        assert live_writer_keys(_all_cases()), (
+            "全库解析不到任何活写方 ⇒ 本判据与判据 ③ 会静默空跑（fail-closed 下界）")
         miss = missing_restores(_all_cases())
         assert miss == {}, (
             "这些用例写了**共享夹具**的可复位属性却没声明复位手段 ⇒ 跑完把世界留给"
@@ -388,55 +559,117 @@ class TestSharedFixtureWritersDeclareRestore:
             + "\n修法：加 `post_clean: [{type: product_status_restore|sku_price_restore, …}]`"
               "（类型↔属性的关系见 local_runner._CLEAN_TYPES[*].attr）")
 
-    def test_red_proof_pr021_without_post_clean_is_caught(self):
-        """**红证 ①**：把 `PR-021` 的 `post_clean` **去掉** ⇒ 判据必红（本单的原话）。"""
-        real = next(c for c in _all_cases() if c["id"] == "PR-021")
-        assert "post_clean" in real and real["post_clean"], (
-            "PR-021 已声明 post_clean（本 PR 修的）—— 若这里为空说明修复被回退了")
-        stripped = {k: v for k, v in real.items() if k != "post_clean"}
-        assert missing_restores([stripped]) == {"PR-021": ["sku_price"]}, (
-            "去掉写方的 post_clean 之后判据没红 —— 守卫对**本单的原始缺陷**没有判别力")
+    def test_red_proof_whole_tool_writer_without_post_clean_is_caught(self, monkeypatch):
+        """**红证 ②（整工具写方）**：整工具写方触达可复位属性、用例又没声明复位 ⇒ 必红。
 
-    def test_red_proof_pr025_and_pr007_without_post_clean_are_caught(self):
-        """**红证 ①（状态侧）**：`PR-025` / `PR-007` 去掉 `post_clean` ⇒ 判据必红。"""
-        by = {c["id"]: c for c in _all_cases()}
-        for cid in ("PR-025", "PR-007"):
-            stripped = {k: v for k, v in by[cid].items() if k != "post_clean"}
-            assert missing_restores([stripped]) == {cid: ["status"]}, (
-                f"{cid} 的 off_sale 污染形态未被判红（#4075 的另一半病灶）")
-
-    def test_red_proof_synthetic_writer_is_caught(self):
-        """**红证**：合成一条"点名种子商品 + `sku_update`、无复位"的用例 ⇒ 判据必红。"""
+        原口径：`PR-021` 去掉 `post_clean` ⇒ 红（写方是 `sku_update`）。**#5247 证伪**：
+        `sku_update` 已解绑、不再是写方 ⇒ 那声红不再可能出现。新口径：把同一**缺陷形态**
+        （写方可复位属性 + 无复位声明）搬到当前可达的整工具写方 `order_create` 上。
+        判别力自证：把同一 key 判回"不触达夹具"（= 新真值）⇒ 同一条用例**不红**
+        （若这里也红，说明判据恒红 = 空壳）。
+        """
         fake = [{"id": "FAKE-4", "user_inputs": ["把遮光窗帘的米白散剪改成 150 元"],
-                 "expectations": [{"tool": "sku_update"}], "must_succeed": [{"tool": "sku_update"}]}]
+                 "expectations": [{"tool": "order_create"}]}]
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "sku_price")
         assert missing_restores(fake) == {"FAKE-4": ["sku_price"]}, missing_restores(fake)
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "")
+        assert missing_restores(fake) == {}, (
+            "同一用例在「不触达共享夹具」的新真值下也红 ⇒ 判据恒红（判别力失效）")
+
+    def test_red_proof_action_level_writer_without_post_clean_is_caught(self, monkeypatch):
+        """**红证 ②（action 级写方 / 状态侧）**：action 级写方触达 `status` 且无复位声明 ⇒ 必红。
+
+        原口径：`PR-025` / `PR-007` 去掉 `post_clean` ⇒ 红（写方是
+        `product_manage(toggle_status)`）。**#5247 证伪**：该工具已解绑 ⇒ 换成当前可达的
+        action 级写方 `notification_manage(mark_read)`，缺陷形态原样保留。
+        """
+        fake = [{"id": "FAKE-11", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
+                 "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}]}]
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("notification_manage", "mark_read"), "status")
+        assert missing_restores(fake) == {"FAKE-11": ["status"]}, (
+            f"off_sale/状态污染形态未被判红（#4075 的另一半病灶）：{missing_restores(fake)}")
+
+    def test_red_proof_real_library_is_scanned(self, monkeypatch):
+        """**红证 ②（真实用例库）**：把整工具写方判成触达 `status` ⇒ 真实库里点名种子商品的
+        下单用例**成串**进红名单 —— 扫描面确实扫着真实库，而不是只在合成用例上有效。
+
+        判别力：扫描面若解析不到写方（判据空跑），这里会得到空集合 ⇒ 必红。
+        """
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "status")
+        miss = missing_restores(_all_cases())
+        assert len(miss) >= 5 and "OR-014" in miss, (
+            f"真实库里的活写方没被扫到（判据空跑？）：{sorted(miss)}")
+
+    def test_retired_writers_are_no_longer_seen_as_writers(self):
+        """**改判留档**：`REGISTERED_RESTORE_GAPS` 那 7 条的写方在新真值下**不存在**。
+
+        逐条留档（为什么不再在册）见 `REGISTERED_RESTORE_GAPS` 的 docstring；
+        这里把"它们真的不再被判据看见"变成机器可判：9 条改判/退役用例的期望里
+        **不得**再有活写方。判别力：谁要是把写方加回这些用例（例如重新声明
+        `product_manage` 之外的某个活写工具），判据 ①（未归类即红）/②（未声明复位即红）
+        会立刻响 —— 台账的"留档"结论随之必须重算。
+        """
+        by = {c["id"]: c for c in _all_cases()}
+        for cid in ("PR-005", "PR-009", "PR-010", "PR-017", "PR-021",
+                    "PR-025", "PR-026", "PR-027", "CH-006"):
+            got = live_write_expectations(by[cid])
+            assert got == [], (
+                f"{cid} 仍带着活写方期望 {got} —— 「已改判为只读/已退役」这条留档不再成立，"
+                "台账（现为空）必须按新真值重算")
 
     # ── 不适用域负例（R2：判据不得拦掉原本合法的输入）────────────────────────
     def test_order_only_cases_are_not_in_scope(self):
-        """**负例**：`order_create` 用例（点名了种子商品）**不得**被判红。"""
+        """**负例**：`order_create` 用例（点名了种子商品）**不得**被判红。
+
+        #5247 后 `order_create` 是本判据面里唯一的"整工具写"活写方，也是**主要**的不适用域
+        （下单只引用商品、不改属性）—— 库里 13 条点名种子商品的下单用例都靠这条口径不被假红。
+        """
         fake = [{"id": "FAKE-5", "user_inputs": ["我想买一件遮光窗帘，下单"],
                  "expectations": [{"tool": "order_create"}], "must_succeed": [{"tool": "order_create"}]}]
+        assert live_write_expectations(fake[0]) == [("order_create", "")], (
+            "下单用例没被认成写方 ⇒ 本负例变成空断言（判据面漏了整工具写方）")
         assert touched_attrs(fake[0]) == set(), (
             "下单用例被算成「写共享夹具」了 —— 它会白要求一份无对象的复位（R2 假红）")
         assert missing_restores(fake) == {} and unregistered_restore_gaps(fake) == {}
 
     def test_create_own_name_case_is_not_in_scope(self):
-        """**负例**：建**自有名**商品的用例不得被判红（同名污染属 #3835 的守卫）。"""
+        """**负例（改判）**：建**自有名**商品的用例不得被判红。
+
+        原口径用 `product_manage(action=create)`；#5247 后该工具已从 B 端解绑（不可达）
+        ⇒ 它在扫描面外，本判据看不见它 —— 同名污染由 #3835 的
+        `test_eval_product_name_pollution.py` 单独治（两条判据的适用域不重叠）。
+        保留的是这条**不适用域**本身：写自有名对象 ≠ 写共享夹具 ⇒ 判据 ②③ 都不适用。
+        """
         fake = [{"id": "FAKE-6", "user_inputs": ["创建商品，名称E2E建品流程样品帘，价格 100"],
                  "namespaces": ["product_name:E2E建品流程样品帘"],
                  "expectations": [{"tool": "product_manage", "args": {"action": "create"}}]}]
+        assert live_write_expectations(fake[0]) == [], (
+            "已解绑的建品工具被算成活写方了（扫描面漂移？）")
         assert missing_restores(fake) == {} and unregistered_restore_gaps(fake) == {}
 
-    def test_case_not_naming_a_seed_product_is_not_in_scope(self):
-        """**负例**：写自有商品属性的用例（不点名种子商品）不在本判据的面内。"""
-        fake = [{"id": "FAKE-7", "user_inputs": ["把 E2E建品流程样品帘 的价格改成 199"],
-                 "expectations": [{"tool": "product_update", "args": {"price": "199"}}]}]
-        assert touched_attrs(fake[0]) == set()
+    def test_case_not_naming_a_seed_product_is_not_in_scope(self, monkeypatch):
+        """**负例**：写自有对象的用例（不点名种子商品）不在本判据的面内。
 
-    def test_pre_clean_equivalent_restore_is_accepted(self):
-        """裁定允许的等价形态：复位声明在 `pre_clean` 里也算"有复位手段"。"""
+        原口径用已解绑的 `product_update`；新口径改用**活写方** `order_create`，
+        并把"触达可复位属性"注入进去（`sku_price`）—— 这样这条负例只由**一层**决定
+        （`user_inputs` 没点名种子商品），而不是"写方本来就不触达夹具"顺带通过（那会变空断言）。
+        """
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "sku_price")
+        fake = [{"id": "FAKE-7", "user_inputs": ["把 E2E建品流程样品帘 的价格改成 199"],
+                 "expectations": [{"tool": "order_create"}]}]
+        assert live_write_expectations(fake[0]) == [("order_create", "")], "写方没被认出来"
+        assert touched_attrs(fake[0]) == set(), "不点名种子商品的用例竟被判成写共享夹具（层收窄失效）"
+        assert missing_restores(fake) == {}
+
+    def test_pre_clean_equivalent_restore_is_accepted(self, monkeypatch):
+        """裁定允许的等价形态：复位声明在 `pre_clean` 里也算"有复位手段"。
+
+        用当前可达的整工具写方 + 注入"触达 `status`"（原口径用已解绑的
+        `product_manage(toggle_status)`）—— 缺陷形态与判决口径原样保留。
+        """
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "status")
         fake = [{"id": "FAKE-8", "user_inputs": ["把遮光窗帘下架"],
-                 "expectations": [{"tool": "product_manage", "args": {"action": "toggle_status"}}],
+                 "expectations": [{"tool": "order_create"}],
                  "pre_clean": [{"type": "product_status_restore", "product_keyword": "遮光窗帘"}]}]
         assert missing_restores(fake) == {}, (
             "裁定原文允许 `pre_clean` 的等价复位 —— 判据把它判红 = 与裁定不符")
@@ -447,38 +680,77 @@ class TestSharedFixtureWritersDeclareRestore:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestUnrestorableWritersAreRegisteredGaps:
+    """判据 ③：写"尚无复位类型"的属性的用例必须登记台账（**双向相等**，只许缩短）。
+
+    ⚠️ 2026-09-24（#5247）：台账**现为空**（真值面复算的结果，7 条旧条目的逐条留档见
+    `REGISTERED_RESTORE_GAPS` 的 docstring）。空台账不等于判据空壳：下面两条红证分别证明
+    "新增缺口即红"与"陈旧条目即红"仍能触发，且 `test_gap_ledger_matches_the_library_exactly`
+    里还带一条"复算真的跑过"的防空转下界。
+    """
+
     def test_gap_ledger_matches_the_library_exactly(self):
         """存量缺口必须与台账**逐条相等**：新增即红、修好未删也红（清单只许缩短）。"""
-        live = unregistered_restore_gaps(_all_cases())
-        new = sorted(set(live) - set(REGISTERED_RESTORE_GAPS))
+        new = ledger_new_entries(_all_cases())
         assert new == [], (
             "出现**未登记**的共享夹具属性缺口（无复位类型）—— 出口只有两个："
             "本次补复位类型并声明 / 开独立 issue 后登记进台账（R4）：\n  "
-            + "\n  ".join(f"{cid}: {live[cid]}" for cid in new))
-        stale = sorted(set(REGISTERED_RESTORE_GAPS) - set(live))
+            + "\n  ".join(f"{cid}: {unregistered_restore_gaps(_all_cases())[cid]}" for cid in new))
+        stale = ledger_stale_entries(_all_cases())
         assert stale == [], (
             "台账里的缺口已不复现 ⇒ 必须删除该条（清单只许缩短，防债务僵化）："
             f"{stale}")
+        assert live_writer_keys(_all_cases()), (
+            "全库解析不到活写方 ⇒ 上面两条断言是因为「什么都没扫到」而空绿（空跑，不是真值）")
 
     def test_every_gap_entry_names_a_follow_up_issue(self):
-        """台账条目**必须带 issue 号** —— 否则"登记"就变成新的静默出口（R4）。"""
-        import re
-        bad = [cid for cid, why in REGISTERED_RESTORE_GAPS.items()
-               if not re.search(r"#\d{3,}", str(why))]
-        assert bad == [], f"缺口台账条目没有跟随 issue（将来无人处理）：{bad}"
+        """台账条目**必须带 issue 号** —— 否则"登记"就变成新的静默出口（R4）。
 
-    def test_red_proof_new_gap_is_caught(self):
-        """**红证**：合成一条"写 stock、未登记"的用例 ⇒ 判据必红。"""
+        台账现为空（#5247）⇒ 纯遍历会退化成空断言；故同时用一条合成条目自证判据仍可红
+        （判别力：只要 `entries_without_issue` 失效，第二句立刻红）。
+        """
+        assert entries_without_issue(REGISTERED_RESTORE_GAPS) == []
+        assert entries_without_issue({**REGISTERED_RESTORE_GAPS, "FAKE-CID": "没有 issue 号"}) == \
+            ["FAKE-CID"], "无 issue 号的条目没被认出来 ⇒ 本判据在空台账下变空壳（假绿）"
+
+    def test_red_proof_new_gap_is_caught(self, monkeypatch):
+        """**红证 ③**：活写方触达"无复位类型"的属性、又未登记台账 ⇒ 判据必红。
+
+        原口径用 `inventory_manage(adjust)`（写 `stock`）；**#5247 证伪**：该写 action 已从
+        源码删除、工具收窄为只读 ⇒ 换成当前可达的整工具写方 `order_create` 承接同一缺陷形态
+        （`stock` 这一属性键不在 runner 的复位族里 ⇒ 走台账路径）。
+        """
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "stock")
         fake = [{"id": "FAKE-9", "user_inputs": ["调整遮光窗帘的库存，出库 3 件"],
-                 "expectations": [{"tool": "inventory_manage", "args": {"action": "adjust"}}]}]
+                 "expectations": [{"tool": "order_create"}]}]
         assert unregistered_restore_gaps(fake) == {"FAKE-9": ["stock"]}, unregistered_restore_gaps(fake)
+        assert ledger_new_entries(fake) == ["FAKE-9"], (
+            "新缺口没进红名单 ⇒ 台账的 fail-closed 语义失效")
+
+    def test_red_proof_stale_ledger_entry_is_caught(self, monkeypatch):
+        """**红证 ③（反方向）**：台账里留着一条已不复现的条目 ⇒ 判据必红（双向相等）。
+
+        台账现为空，若无这条红证，"陈旧条目即红"这半条语义就是没人跑过的死代码。
+        """
+        monkeypatch.setitem(REGISTERED_RESTORE_GAPS, "PR-005", "（红证用的合成留档条目 #4128）")
+        assert ledger_stale_entries(_all_cases()) == ["PR-005"], (
+            "陈旧条目没被认出来 ⇒ 台账会僵化（「只许缩短」这条语义失效）")
 
     def test_unknown_action_attr_lands_in_the_ledger_path(self):
-        """`action` 未定型的裸 `product_manage` 走台账路径（可见），不被当成"不改夹具"。"""
-        fake = [{"id": "FAKE-10", "user_inputs": ["处理一下遮光窗帘"],
-                 "expectations": [{"tool": "product_manage"}]}]
+        """`action` 未声明的 action 级写工具走台账路径（可见），不被当成"不改夹具"。
+
+        taxonomy 对 action 级写工具**缺 action 时保守判写**（见 `is_write_expectation` 的
+        docstring）⇒ 分类表把这种 key 记为 `unknown`（"改的是哪个属性"不可判定）。它必须进台账
+        （可见、要跟随 issue），而不是被静默当成 `""` —— 否则"未定型写方"会从判据 ②③ 里同时消失。
+        判别力：合成一条裸 `notification_manage` + 点名种子商品的用例 ⇒ touched = `{"unknown"}`。
+        """
+        fake = [{"id": "FAKE-10", "user_inputs": ["处理一下遮光窗帘的通知"],
+                 "expectations": [{"tool": "notification_manage"}]}]
+        assert live_write_expectations(fake[0]) == [("notification_manage", "")], (
+            "缺 action 的 action 级写方没被保守判写（taxonomy 口径变了？）")
         assert touched_attrs(fake[0]) == {"unknown"}, (
             "未定型写方被当成「不改共享夹具」⇒ 它会从两个判据里同时消失（静默）")
+        assert unregistered_restore_gaps(fake) == {"FAKE-10": ["unknown"]}, (
+            "未定型写方没进台账路径（可见性失效）")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -504,17 +776,20 @@ class TestRunnerRegistryIsTheSingleSource:
         assert {"order_status_restore", "customer_profile_restore"} <= lr._PRECLEAN_TYPES
 
     def test_runner_restore_attrs_have_a_known_writer_surface(self):
-        """runner 里的复位属性必须能在**本守卫的写面表**里找到对应写方。
+        """runner 里的复位属性必须能在**写面词表**里找到出处（反向漏判的堵法）。
 
-        反向漏判的堵法：runner 新增一个复位类型（比如 `product_stock_restore`，attr=`stock`）
-        而写面表还没把 `inventory_manage(adjust)` 归到 `stock` ⇒ "要求声明"会指向一个
-        没人能声明的目标。
+        **原口径**：值域取 `PRODUCT_ATTR_WRITERS`（活写方分类表）。**#5247 证伪**：活写方
+        只剩订单 / 工单 / 通知 / 设置四类、**都不触达商品属性** ⇒ 活写方值域恒为 `""`，
+        按原值域比对会把 runner 的 `status` / `sku_price` 全判成孤儿（满屏假红）。
+        **新口径**：值域 = 活写方分类值 ∪ **退场写方留档词表**（`RETIRED_ATTR_WRITERS` ——
+        它与仍在库里的 3 条 `post_clean` 声明（PR-007 / PR-025 / PR-021）、runner 的复位族同源）。
+        **判别力为什么还在**：runner 新增一个复位类型（比如 `stock`）而词表里没有出处 ⇒ 依旧红
+        （红证见 `test_red_proof_orphan_restore_attr_is_caught`）。
         """
-        attrs_in_writers = {a for a in PRODUCT_ATTR_WRITERS.values() if a}
-        orphans = sorted(a for a in runner_restore_map() if a not in attrs_in_writers)
+        orphans = orphan_restore_attrs()
         assert orphans == [], (
-            f"runner 的复位属性 {orphans} 在写面表里没有对应写方 ⇒ 判据②无从适用"
-            f"（写面表见 PRODUCT_ATTR_WRITERS）")
+            f"runner 的复位属性 {orphans} 在写面词表里没有对应写方 ⇒ 判据②无从适用"
+            f"（词表见 PRODUCT_ATTR_WRITERS / RETIRED_ATTR_WRITERS）")
 
     def test_registry_is_one_table_shared_by_both_phases(self):
         """**不复制第二套**：`pre`/`post` 的合法类型集合都由 `_CLEAN_TYPES` 派生。"""
@@ -541,10 +816,14 @@ class TestRunnerRegistryIsTheSingleSource:
         assert bad == {}, f"用例声明了未登记的 post_clean 类型：{bad}"
 
     def test_red_proof_orphan_restore_attr_is_caught(self, monkeypatch):
-        """**红证**：给 runner 加一个"没有写方"的复位属性 ⇒ 判据必红。"""
+        """**红证**：给 runner 加一个"没有写面出处"的复位属性 ⇒ 判据必红。
+
+        （原口径只断言"该属性不在写面表里"，从不真的让判据红 —— 是空断言；本单补齐。）
+        """
         monkeypatch.setitem(lr.RESTORE_TYPES_BY_ATTR, "ghost_attr", "ghost_restore")
-        attrs_in_writers = {a for a in PRODUCT_ATTR_WRITERS.values() if a}
-        assert "ghost_attr" not in attrs_in_writers
+        assert "ghost_attr" not in _writer_attr_vocabulary()
+        assert orphan_restore_attrs() == ["ghost_attr"], (
+            f"没有写面出处的复位属性没被认出来：{orphan_restore_attrs()}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

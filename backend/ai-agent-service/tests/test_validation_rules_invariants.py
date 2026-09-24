@@ -17,6 +17,18 @@
 | **F6** | 缺全域不变式「注册表里每个写 action 必须有规则」 | P2 把 A4 的写路径缺口补全后**没有留下任何门**：下次新增写工具/写 action 又忘补规则 ⇒ 要么假绿（旧语义）要么拦住合法调用，**没有任何测试会红** | 当前**绿**（P2 补齐 + issue #4047 把「无参写 action」也收进"必须有规则"） |
 | **F8** | `required` 与**工具 schema** 之间无一致性检查 | 规则写错字段名（schema 里不存在）⇒ 闸门永远要求一个模型给不出的参数；规则**漏**掉工具 schema 的必填 ⇒ 闸门放行注定 422 的调用。两种都**照样返回 `validated=True`** | 当前**绿**（逐条核对过，见 `test_rule_fields_exist_in_tool_schema` / `test_tool_required_fields_are_gated`） |
 
+## 🔴 issue #5247 边界（B 端米宝只读化，用户裁定 2026-09-23）：F8 方向 A 的判据域 = **活 action**
+
+本单把 8 把 B 端写工具的写 action 全部删除，而它们的规则块仍在 `_VALIDATION_RULES` 里
+（app 侧未同批清理）⇒ 规则里那些字段（`adjustment` / `tag_id` / `code` …）在**收窄后的**
+schema 里当然不存在 —— 那是**收窄的预期结果**，不是"字段名写错"。
+
+处置（不是放宽）：F8 方向 A 的判据域收窄到**工具 action 枚举里仍然存在的 action**
+（`live_rule_table`），被排除的规则键**逐条**与 `tests/test_tools_validate_input.py` 的
+`RETIRED_RULE_KEYS_5247` **单一台账**比对（**无静默豁免**：裁剪口径与台账不等即红）。
+"死键"本身的判据（含新死键必红、陈旧台账必红）也只在那一处，本文件不抄第二份。
+活动 action 的判据强度**一字未减**（红证见 `TestSchemaConsistencyDetectorIsNotVacuous`）。
+
 **F5 为什么必须用 AST**：`_VALIDATION_RULES` 是模块级字面量，Python 在**编译期**就把
 重复键折叠掉（后者胜），`import` 之后拿到的 dict 里**只剩一个键** —— 用运行时对象
 永远查不出这件事（这正是它能静默到今天的原因）。
@@ -51,9 +63,12 @@
 ## 为什么 F6 的域要按「可证明无参」而不是「名字像读操作」来划
 
 `notification_manage` 的 `read_all`（全部标为已读）**名字**像读，实际是写
-（`read_only_actions` 只声明了 `list`/`unread_count`）；反过来 `inventory_manage.adjust`
-名字像写也确实是写。**按名字/中文措辞判读写 = 判据建在语料上**（R5 禁止，且宽正则实测会误伤：
-`customer_manage` 同时有 `update`（写）与 `list`/`detail`（读））。
+（`read_only_actions` 只声明了 `list`/`unread_count`）；反过来 `product_manage.update`
+名字像写也确实是写（#5247 前这里举的例子是 `inventory_manage.adjust` —— 该写 action 已随
+B 端只读化删除，故换成仍活着的 `product_manage.update`）。
+**按名字/中文措辞判读写 = 判据建在语料上**（R5 禁止，且宽正则实测会误伤：
+#5247 前 `customer_manage` 同时有 `update`（写）与 `list`/`detail`（读）；
+收窄后它只剩读 action，读写分类的**活**例子改由 `product_manage` 承担）。
 故本文件只用**代码真值**两类：① 工具自述的 `read_only_actions`；② `execute()` 里该 action
 分派分支**实际接收的参数**（AST 读出）——两者都在类定义里，改名/加减 action 都会跟着动。
 
@@ -833,17 +848,63 @@ def ungated_schema_required(table: dict, tools: dict) -> list[str]:
     return problems
 
 
+def live_rule_table(table: dict, tools: dict) -> dict:
+    """**判据域裁剪**（issue #5247）：只保留 action **仍在工具 action 枚举里** 的规则。
+
+    为什么必须裁：写 action 被删除后（B 端只读化），规则块里那些业务字段在收窄后的 schema
+    里当然不存在 —— 那是**收窄的预期结果**，不是"字段名写错"。不裁的话判据会把预期结果
+    报成缺陷（假红），而"把断言放宽"（例如允许全部字段缺失）才是真错。
+
+    裁剪**不是豁免**：
+      · 只裁 action 已不在枚举里的规则（单动作工具无枚举 ⇒ 原样保留）；
+      · 未注册工具的规则原样保留（由既有 L0 守卫判红，见 `undeclared_rule_fields`）；
+      · 被裁掉的键由调用方与 `RETIRED_RULE_KEYS_5247`（**单一台账**，
+        在 `tests/test_tools_validate_input.py`）逐条比对 —— 口径不等即红。
+    """
+    out: dict = {}
+    for tool_name, actions in table.items():
+        tool = tools.get(tool_name)
+        enum = None
+        if tool is not None:
+            enum = ((tool.parameters or {}).get("properties") or {}).get("action") or {}
+            enum = enum.get("enum")
+        if not enum:
+            out[tool_name] = dict(actions)
+            continue
+        keep = {a: r for a, r in actions.items() if a in set(enum)}
+        if keep:
+            out[tool_name] = keep
+    return out
+
+
 def test_rule_fields_exist_in_tool_schema():
     """**F8 方向 A 不变式**：规则里的每个字段名必须是工具 schema 声明的参数。
 
     反例输入（红证 F8）：把某条规则的 `required` 改成 schema 里不存在的字段
     （如 `order_manage.cancel` 的 `order_id` → `order_idd`）⇒ 必红。
+
+    🔴 **#5247 判据域改判**：域 = **活 action** 的规则（`live_rule_table`），
+    并**逐条**核对被裁掉的键等于 `RETIRED_RULE_KEYS_5247`（单一台账，无静默豁免）。
+    活动 action 的判据强度不变（红证 `test_undeclared_field_is_reported` 一字未改）。
     """
     from app.tools.registry import get_tool_registry
     from app.tools.validate_input import _VALIDATION_RULES
+    from tests.test_tools_validate_input import RETIRED_RULE_KEYS_5247
 
     tools = {t.name: t for t in get_tool_registry().get_all_tools()}
-    problems = undeclared_rule_fields(_VALIDATION_RULES, tools)
+    live = live_rule_table(_VALIDATION_RULES, tools)
+    all_keys = {(t, a) for t, actions in _VALIDATION_RULES.items() for a in actions}
+    kept_keys = {(t, a) for t, actions in live.items() for a in actions}
+    dropped = all_keys - kept_keys
+    assert dropped == set(RETIRED_RULE_KEYS_5247), (
+        f"F8-A 的判据域裁剪了 {sorted(dropped)} —— 与 #5247 退役台账 "
+        f"{sorted(RETIRED_RULE_KEYS_5247)} 不等。\n"
+        "  裁剪只允许发生在台账登记的键上（台账 = tests/test_tools_validate_input.py 的"
+        " RETIRED_RULE_KEYS_5247，唯一一份）；\n"
+        "  多裁 ⇒ 有活动 action 的规则被静默放过（判据被掏空）；\n"
+        "  少裁 ⇒ 台账陈旧（那条判据会把「该裁没裁」报红），请同步销账"
+    )
+    problems = undeclared_rule_fields(live, tools)
     assert problems == [], (
         "闸门规则声明了工具 schema 里**不存在**的字段（字段名写错 ⇒ 合法调用必被拦，"
         "且错误信息把排查引向不存在的参数）：\n  " + "\n  ".join(problems)

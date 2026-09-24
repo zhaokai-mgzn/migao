@@ -66,16 +66,33 @@ python3 .github/llm_sink_check.py --json                          # 机读输出
 
 ## 4. 范例：P5 的标准下沉形态（证流程可操作）
 
-**issue #4014（P5）/ PR #4021** 把三条 B 端下单用例从「工具被**调用过**」升级为**效果层断言**：
+### 4.1 当前存活的标准形态（照抄这个）
 
-| 用例 | 原来（看不到失败） | 下沉后 |
+**issue #4042（case_assertion 通道）** 的存活落点仍是标准形态 —— 三条都在**活跃**用例上、
+字段非空且过 `has_effect_assertion`：
+`OR-002.output_verify` / `OR-014.amount_verify` / `CU-008.must_succeed`
+（`python3 .github/llm_sink_check.py --issue 4042` 返回 **0**，台账 `status=sunk`）。
+另有 **#4093** 的 `PR-018`（`product_search`，只读面）同形保留。
+
+### 4.2 历史范例 #4014：**已随 #5247 改判为 `unsunk`**（保留作病史）
+
+**issue #4014（P5）/ PR #4021** 当年把三条 B 端下单用例从「工具被**调用过**」升级为**效果层断言**：
+
+| 用例 | 原来（看不到失败） | 下沉后（**当时**） |
 |---|---|---|
 | `OR-009` | 只有裸工具名 `expectations`（`order_create` 出现过即 100%） | `must_succeed: [order_create]` |
 | `OR-010` | 同上（真实 run 的首跑红指纹里就有 `no_success(order_create)`，**断言看不见**） | `must_succeed: [order_create]` |
 | `OR-011` | 同上 | `must_succeed: [order_create]` + `db_verify`（`order_items` 明细/数量、`order_phone` 落库号） |
 
-三条用例的 `merge_log` 均回填 `issue #4014` ⇒ `python3 .github/llm_sink_check.py --issue 4014`
-返回 **0**（台账里 `status=sunk`，`evidence` 指向 PR #4021）。**这就是新红例应照抄的形态。**
+⚠️ **2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）之后，上面这张表不再是可照抄的形态**：
+`order_create` 已从 B 端全部 skill 解绑、下单写链路整体下线 ⇒ `OR-009` / `OR-010` / `OR-011` **退役**
+（`skip_reason` 写明理由，条目不删除），上表那四处落点（三条 `must_succeed` + OR-011 的 `db_verify`）
+按判据要求**清空**（否则是永不满足的悬空声明）⇒ 台账把 **#4014 改判为 `status: unsunk`**
+（`reason` 保留 P5 溯源 + `follow_up: 4009`），`--issue 4014` 现在返回 **1**。
+
+**这条改判本身就是本文档要教的判别力的实例**：sink 落点消失后，「已下沉」必须**撤回**而不是留着
+—— 留着就是「看起来有确定性断言、其实空壳」的假绿（#3778 家族）。
+`merge_log` 里的 `#4014` 字样**保留**（可追溯），但台账状态以 `unsunk` 为准。
 
 ## 5. 未机械化 / 边界（照实登记，不写恒真判据凑数）
 

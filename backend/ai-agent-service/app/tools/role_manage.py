@@ -12,7 +12,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"list", "all", "detail", "create", "update", "delete", "list_permissions"}
+VALID_ACTIONS = {"list", "all", "detail", "list_permissions"}
 
 
 class RoleManageTool(BaseTool):
@@ -33,28 +33,27 @@ class RoleManageTool(BaseTool):
     name = "role_manage"
     description = (
         "【触发】用户问'角色''权限''管理员''有哪些角色''创建角色''分配权限'时调用。"
-        "【参数】action 必填：list/all/detail/list_permissions 只读；create（name + code + permission_ids）/"
-        "update（role_id + name/permission_ids）/delete（role_id）为写操作。"
-        "【反例】管理员工账号用 employee_manage；查系统配置用 settings_manage。"
-        "【标注】WRITE|DESTRUCTIVE — 删除角色/修改权限前必须二次确认"
+        "【参数】action 必填：**只有 list / all / detail / list_permissions 四个只读 action**"
+        "（B 端已只读化，issue #5247）。detail 需 role_id（来自 list/all）。"
+        "【反例】管理员工账号用 employee_manage；查系统配置请引导用户到后台页面。"
+        "【反例】建/改/删岗位**不在本工具能力内**——引导用户到后台「组织管理 → 岗位权限」页操作。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：AdminRoleController 类级 `@RequirePermission("system:manage")`。
     # 该码在目录里只有 admin（RoleService 第 301 行「不含 system:manage —— 归 admin 专属（越权守卫）」）
     # ⇒ 实际放行面不变，只是不再靠角色名硬编码。
     required_permissions = ["system:manage"]
 
-    read_only = False
-    destructive = True   # 可删除角色、修改权限
+    read_only = True
     read_only_actions = {"list", "all", "detail", "list_permissions"}  # 只读 action 免确认拦截
-    idempotent = False   # 创建/删除非幂等
 
     parameters = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（角色列表分页）/ all（所有角色）/ detail（角色详情）/ create（创建角色）/ update（更新角色）/ delete（删除角色）/ list_permissions（所有权限）",
-                "enum": ["list", "all", "detail", "create", "update", "delete", "list_permissions"],
+                "description": "操作类型：list（角色列表分页）/ all（所有角色）/ detail（角色详情）/ list_permissions（所有权限）—— 均为只读",
+                "enum": ["list", "all", "detail", "list_permissions"],
             },
             "role_id": {
                 "type": "string",
@@ -73,23 +72,6 @@ class RoleManageTool(BaseTool):
             "keyword": {
                 "type": "string",
                 "description": "搜索关键词（list 时可选）",
-            },
-            "name": {
-                "type": "string",
-                "description": "角色名称（create/update 时使用）",
-            },
-            "code": {
-                "type": "string",
-                "description": "角色编码（create 时使用）",
-            },
-            "description": {
-                "type": "string",
-                "description": "角色描述（create/update 时可选）",
-            },
-            "permission_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "权限 ID 列表（create/update 时可选）",
             },
         },
         "required": ["action"],
@@ -135,12 +117,6 @@ class RoleManageTool(BaseTool):
                 return await self._all_roles(context)
             elif action == "detail":
                 return await self._detail_role(context, role_id)
-            elif action == "create":
-                return await self._create_role(context, name, code, description, permission_ids)
-            elif action == "update":
-                return await self._update_role(context, role_id, name, description, permission_ids)
-            elif action == "delete":
-                return await self._delete_role(context, role_id)
             elif action == "list_permissions":
                 return await self._list_permissions(context)
             else:
@@ -282,161 +258,9 @@ class RoleManageTool(BaseTool):
             data=data,
             message=f"角色【{data.get('name', '')}】的详细信息",
         )
-
-    async def _create_role(
-        self,
-        context: ToolContext,
-        name: Optional[str],
-        code: Optional[str],
-        description: Optional[str],
-        permission_ids: Optional[List[str]],
-    ) -> ToolResult:
-        """创建角色"""
-        if not name:
-            return ToolResult(
-                success=False,
-                error="缺少角色名称",
-                message="创建角色时必须提供角色名称（name）",
-                suggestion="缺少角色名称 name，请向用户询问角色名称后重试",
-            )
-        if not code:
-            return ToolResult(
-                success=False,
-                error="缺少角色编码",
-                message="创建角色时必须提供角色编码（code）",
-                suggestion="缺少角色编码 code，请向用户确认角色编码（英文标识）后重试",
-            )
-
-        json_data: Dict[str, Any] = {
-            "name": name,
-            "code": code,
-        }
-        if description:
-            json_data["description"] = description
-        if permission_ids:
-            json_data["permissionIds"] = permission_ids
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/roles",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "创建失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"创建角色失败：{error_msg}",
-                suggestion="请先用 role_manage 的 list 操作确认角色名称或编码未被占用，再换一个后重试",
-            )
-
-        data = response.get("data", {})
-        logger.info(f"[role-manage] Created role: name={name}, code={code} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data=data,
-            message=f"角色【{name}】已创建",
-        )
-
-    async def _update_role(
-        self,
-        context: ToolContext,
-        role_id: Optional[str],
-        name: Optional[str],
-        description: Optional[str],
-        permission_ids: Optional[List[str]],
-    ) -> ToolResult:
-        """更新角色"""
-        if not role_id:
-            return ToolResult(
-                success=False,
-                error="缺少角色 ID",
-                message="更新角色时必须提供角色 ID（role_id）",
-                suggestion="缺少 role_id，请先用 role_manage 的 list 操作取到角色 ID 后重试",
-            )
-
-        json_data: Dict[str, Any] = {}
-        if name:
-            json_data["name"] = name
-        if description:
-            json_data["description"] = description
-        if permission_ids is not None:
-            json_data["permissionIds"] = permission_ids
-
-        if not json_data:
-            return ToolResult(
-                success=False,
-                error="缺少更新内容",
-                message="更新角色时必须提供至少一个字段（name/description/permission_ids）",
-                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/描述/权限）后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/roles/{role_id}",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新角色失败：{error_msg}",
-                suggestion="请先用 role_manage 的 detail 操作确认该角色属于当前租户、且未被停用后再重试",
-            )
-
-        logger.info(f"[role-manage] Updated role_id={role_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"role_id": role_id},
-            message="角色已更新",
-        )
-
-    async def _delete_role(
-        self,
-        context: ToolContext,
-        role_id: Optional[str],
-    ) -> ToolResult:
-        """删除角色"""
-        if not role_id:
-            return ToolResult(
-                success=False,
-                error="缺少角色 ID",
-                message="删除角色时必须提供角色 ID（role_id）",
-                suggestion="缺少 role_id，请先用 role_manage 的 list 操作取到角色 ID 后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/roles/{role_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除角色失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 list 操作确认没有员工在用该角色（内置角色不可删），再重试",
-            )
-
-        logger.info(f"[role-manage] Deleted role_id={role_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"role_id": role_id},
-            message="角色已删除",
-        )
-
     async def _list_permissions(self, context: ToolContext) -> ToolResult:
         """查询所有可用权限"""
+
         client = get_admin_api_client()
         response = await client.get(
             "/api/admin/permissions",

@@ -1,5 +1,7 @@
 """
 工具下发字段名 ↔ admin-api 请求类型字段契约（跨服务写请求边界）
+
+B 端只读化（issue #5247）：after_sales_manage / customer_manage（写契约登记 REGISTRY） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
 # case_ids: AS-004, CU-004, CU-008, CU-009
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、
@@ -347,87 +349,15 @@ class WriteContract:
     unmapped_key_allowlist: Mapping[str, str] = field(default_factory=dict)
 
 
-REGISTRY: tuple[WriteContract, ...] = (
-    # AS-004「更新工单状态 - 关闭」：关闭原因必须经 `remark` 下发
-    # （Java 侧 `updateTicketStatus` 用 request.getRemark() 写入 closeReason）——issue #3540
-    # 落库判据用 request-read：该路径是**条件写入 + 字段改名**（remark → closeReason/internalNotes），
-    # 「字段名 = 实体 setter」的集合表达不出来（口径见 _persisted_keys_via_request_read）。
-    WriteContract(
-        tool_module="app.tools.after_sales_manage",
-        tool_kwargs={
-            "action": "update_status",
-            "ticket_id": "t1",
-            "status": "closed",
-            "reason": "客户取消订单",
-        },
-        client_method="put",
-        endpoint="/api/admin/after-sales/t1/status",
-        receiver_type="AfterSalesStatusUpdateRequest",
-        content_value="客户取消订单",
-        persist_source="java-service-request-read",
-        persist_target="AfterSalesTicketService#updateTicketStatus",
-    ),
-    # CU-004「更新客户资料」：姓名必须经 `wechatNickname` 下发
-    # （`CustomerProfile` 无 `name` 列 → 下发 `name` 被静默丢弃 = 米宝谎报「已更新客户姓名」，issue #3551）
-    WriteContract(
-        tool_module="app.tools.customer_manage",
-        tool_kwargs={
-            "action": "update",
-            "customer_id": "c1",
-            "data": {"name": "李四", "phone": "13900001111"},
-        },
-        client_method="put",
-        endpoint="/api/admin/customers/c1",
-        receiver_type="CustomerProfile",
-        content_value="李四",
-        persist_source="java-service-null-copy",
-        persist_target="CustomerService#updateCustomer",
-    ),
-    # M2-D「更新客户工艺画像与常用物流」（issue #3984，V47）：
-    # craftMode/craftProfile/defaultLogisticsType/defaultLogisticsCompany 为 CustomerProfile 新列。
-    # **issue #4115**：这 4 列此前「实体已声明 + 工具可写 + 服务层拷贝白名单漏了」⇒
-    # 下发即静默丢弃 + 工具谎报成功；本契约的服务层判据就是把它钉死的（修前本用例必须红）。
-    WriteContract(
-        tool_module="app.tools.customer_manage",
-        tool_kwargs={
-            "action": "update",
-            "customer_id": "c1",
-            "data": {
-                "craftMode": "economy",
-                "craftProfile": {"openCount": 2, "isShaped": True},
-                "defaultLogisticsType": "logistics",
-                "defaultLogisticsCompany": "四季安",
-            },
-        },
-        client_method="put",
-        endpoint="/api/admin/customers/c1",
-        receiver_type="CustomerProfile",
-        content_value="economy",
-        persist_source="java-service-null-copy",
-        persist_target="CustomerService#updateCustomer",
-    ),
-    # 客户默认收货信息（issue #4419，V70）：defaultReceiverName/Phone/Address 为 CustomerProfile 新列。
-    # 与 #4115 同形的护栏：工具可写 + 实体有列，但服务层非空拷贝白名单漏了 ⇒ 下发即静默丢弃 +
-    # 工具谎报「已更新收货地址」。本契约的服务层判据（java-service-null-copy）把它钉死。
-    WriteContract(
-        tool_module="app.tools.customer_manage",
-        tool_kwargs={
-            "action": "update",
-            "customer_id": "c1",
-            "data": {
-                "defaultReceiverName": "李四",
-                "defaultReceiverPhone": "13900139000",
-                "defaultReceiverAddress": "浙江省杭州市西湖区文三路1号1幢101室",
-            },
-        },
-        client_method="put",
-        endpoint="/api/admin/customers/c1",
-        receiver_type="CustomerProfile",
-        content_value="浙江省杭州市西湖区文三路1号1幢101室",
-        persist_source="java-service-null-copy",
-        persist_target="CustomerService#updateCustomer",
-    ),
-)
+# [RETIRED #5247] 原 4 条写契约登记全部退休（B 端只读化，issue #5247 用户裁定 2026-09-23）：
+#   · after_sales_manage:update_status —— 关闭工单（AfterSalesStatusUpdateRequest，AS-004）；
+#   · customer_manage:update ×3 —— 改客户资料姓名/电话（CU-004）、工艺画像与常用物流（#3984）、
+#     默认收货信息（#4419）。
+# 它们驱动的正是**已被删除的写 action**（update_status / update）⇒ 写能力不再存在，断言无对象。
+# 参数化用例因此收不到契约（下方 skipif 给出显式跳过理由，不是静默假绿）。
+# 解析器与牙口判据（`_receiver_fields_from_java` / `find_unpersisted_keys` / 继承链负控）一律保留：
+# 任一端重新获得写能力时，按文件头「如何新增一个域」重新登记即可。
+REGISTRY: tuple[WriteContract, ...] = ()
 
 
 def _tool_instance(module_name: str) -> BaseTool:
@@ -445,8 +375,16 @@ def _tool_instance(module_name: str) -> BaseTool:
     raise AssertionError(f"{module_name} 未定义有效的 BaseTool 子类")
 
 
+@pytest.mark.skipif(
+    not REGISTRY,
+    reason="[RETIRED #5247] REGISTRY 写契约登记已全部退休（B 端只读化）：无写 payload 可比对"
+           "（产品裁定，非放宽门禁；判据与解析器保留，重新登记即恢复）",
+)
 @pytest.mark.parametrize(
-    "contract", REGISTRY, ids=lambda c: f"{c.tool_module.split('.')[-1]}:{c.tool_kwargs['action']}"
+    # ids 对空登记容错：空 REGISTRY 时 pytest 传的占位值是 NotSet（无 tool_module 属性）
+    "contract", REGISTRY,
+    ids=lambda c: f"{getattr(c, 'tool_module', '?').split('.')[-1]}:"
+                  f"{getattr(c, 'tool_kwargs', {}).get('action', '?')}",
 )
 async def test_write_payload_keys_declared_in_api_dto(contract, admin_tool_context):
     """工具写请求 body 的字段名 ⊆ 接收类型字段名 **且** ⊆ 服务层真正落库的字段集合。

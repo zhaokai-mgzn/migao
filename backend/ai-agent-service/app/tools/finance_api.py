@@ -16,7 +16,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"create_transaction", "get_summary", "get_transactions", "get_reconciliation"}
+VALID_ACTIONS = {"get_summary", "get_transactions", "get_reconciliation"}
 
 
 class FinanceApiTool(BaseTool):
@@ -35,18 +35,18 @@ class FinanceApiTool(BaseTool):
     description = (
         "【触发】用户说'登记收款''登记退款''记一笔账''资金流水''收支''对账''净额''收入''进账'"
         "'收了多少''赚了多少'时调用（任何资金/财务/对账类查询或登记）。"
-        "【参数】action 必填：get_summary(收支汇总)/get_transactions(资金流水)/"
-        "get_reconciliation(应收对账) 只读；create_transaction(登记收支) 为写操作，需 type+amount。"
+        "【参数】action 必填：**只有 get_summary(收支汇总) / get_transactions(资金流水) / "
+        "get_reconciliation(应收对账) 三个只读 action**（B 端已只读化，issue #5247）。"
         "【反例】查订单金额/明细用 order_query；看经营看板/趋势用 dashboard_stats。"
-        "【标注】WRITE — get_* 只读；create_transaction 登记前必须二次确认"
+        "【反例】登记收支**不在本工具能力内**——引导用户到后台「财务对账」页登记。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：读面 `finance:view`；issue #5246 起 `POST /finance/transactions`
     # （登记收支）走写码 `finance:create`（此前挂在读码上）。旧白名单里的 `operation_manager`
     # 在 admin-api 里根本不存在（角色码漂移）。
-    required_permissions = ["finance:view", "finance:create"]
+    required_permissions = ["finance:view"]  # B 端只读化（#5247）：写码 finance:create 已随 create_transaction 移除
 
-    read_only = False
-    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only = True
     destructive = False
     read_only_actions = frozenset({"get_summary", "get_transactions", "get_reconciliation"})
     idempotent = False
@@ -56,35 +56,8 @@ class FinanceApiTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": (
-                    "操作类型：create_transaction（登记收支，需 type+amount）/ "
-                    "get_summary（收支汇总）/ get_transactions（资金流水）/ "
-                    "get_reconciliation（应收对账）"
-                ),
-                "enum": ["create_transaction", "get_summary", "get_transactions", "get_reconciliation"],
-            },
-            "type": {
-                "type": "string",
-                "description": "收支类型，仅 create_transaction 时必填：income（收款）/ refund（退款）",
-                "enum": ["income", "refund"],
-            },
-            "amount": {
-                "type": "number",
-                "description": "金额（元），仅 create_transaction 时必填，必须大于 0",
-                "minimum": 0.01,
-            },
-            "payment_method": {
-                "type": "string",
-                "description": "支付方式（create_transaction 可选）：wechat / alipay / cash / bank_transfer",
-                "enum": ["wechat", "alipay", "cash", "bank_transfer"],
-            },
-            "order_id": {
-                "type": "string",
-                "description": "关联订单号或订单 UUID（create_transaction 可选）",
-            },
-            "remark": {
-                "type": "string",
-                "description": "备注（create_transaction 可选）",
+                "description": "操作类型：get_summary（收支汇总）/ get_transactions（资金流水）/ get_reconciliation（应收对账）—— 均为只读",
+                "enum": ["get_summary", "get_transactions", "get_reconciliation"],
             },
             "keyword": {
                 "type": "string",
@@ -133,9 +106,7 @@ class FinanceApiTool(BaseTool):
             )
 
         try:
-            if action == "create_transaction":
-                return await self._create_transaction(context, **kwargs)
-            elif action == "get_summary":
+            if action == "get_summary":
                 return await self._get_summary(context, **kwargs)
             elif action == "get_transactions":
                 return await self._get_transactions(context, **kwargs)
@@ -156,85 +127,6 @@ class FinanceApiTool(BaseTool):
                 message="财务操作失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
             )
-
-    async def _create_transaction(self, context: ToolContext, **kwargs) -> ToolResult:
-        """登记一笔线下收支（FN-001）"""
-        # 校验必填：type + amount
-        txn_type = kwargs.get("type")
-        amount = kwargs.get("amount")
-        if not txn_type or txn_type not in ("income", "refund"):
-            return ToolResult(
-                success=False,
-                error="参数不完整",
-                message="登记收支需要提供收支类型（income 收款 / refund 退款）",
-                suggestion="请说明是收款还是退款，以及具体金额，例如：登记一笔线下收款 500 元",
-            )
-        if amount is None:
-            return ToolResult(
-                success=False,
-                error="参数不完整",
-                message="登记收支需要提供金额",
-                suggestion="请提供具体金额，例如：登记一笔线下收款 500 元",
-            )
-        try:
-            amount = float(amount)
-        except (TypeError, ValueError):
-            return ToolResult(
-                success=False,
-                error="参数无效",
-                message="金额格式不正确",
-                suggestion="请输入数字金额，例如：500 或 500.00",
-            )
-        if amount <= 0:
-            return ToolResult(
-                success=False,
-                error="参数无效",
-                message="金额必须大于 0",
-                suggestion="请输入大于 0 的金额",
-            )
-
-        payload: Dict[str, Any] = {
-            "type": txn_type,
-            "amount": amount,
-        }
-        if kwargs.get("payment_method"):
-            payload["paymentMethod"] = kwargs["payment_method"]
-        if kwargs.get("order_id"):
-            payload["orderId"] = kwargs["order_id"]
-        if kwargs.get("remark"):
-            payload["remark"] = kwargs["remark"]
-
-        client = get_admin_api_client()
-        # 自研客户端（app/utils/http_client.py::AdminApiClient.post）只接受 json_data，
-        # 且无 **kwargs —— 用 httpx 风格的 json= 会 TypeError（issue #3548，FN-001 曾恒失败）
-        response = await client.post(
-            "/api/admin/finance/transactions",
-            json_data=payload,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-        if not isinstance(response, dict):
-            response = {"data": response} if isinstance(response, list) else {}
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "登记失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message="收支登记失败",
-                suggestion="请检查参数后重试，或联系技术支持",
-            )
-
-        data = response.get("data", {})
-        txn_no = data.get("transactionNo") or data.get("transaction_no") or "已生成"
-        type_label = "收款" if txn_type == "income" else "退款"
-        logger.info(f"[finance-api] Transaction created | tenant={context.tenant_id} type={txn_type} amount={amount}")
-        return ToolResult(
-            success=True,
-            data=data,
-            message=f"{type_label}登记成功，流水号：{txn_no}",
-            summary=f"已登记{type_label}{amount}元，流水号{txn_no}",
-        )
-
     async def _get_summary(self, context: ToolContext, **kwargs) -> ToolResult:
         """收支汇总（FN-002）"""
         params: Dict[str, Any] = {}

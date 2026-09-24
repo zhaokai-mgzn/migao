@@ -12,10 +12,15 @@
 ## 为什么是「persona 家族」而不是「全局」（R2 ③ 的判据就在这）
 
 `xiaobu`（C 端顾客）与 `mibao`（B 端商家）的可达集是**硬边界**。实测**只被 B 端绑定**的只读
-工具**5 个**（`dashboard_stats` / `logistics_track` / `order_query` / `piecework_query` /
-`processing_item_query`）⇒ "全局并入只读"会让 C 端当场看见 B 端工具（越权面），故必须按
-persona 家族切。家族由 `SkillConfig.system_prompts` 的 key **derive**（不写死 persona 字面量），
-且**歧义即 fail-closed 不并**（宁可少共享，也不跨 persona 泄露）。
+工具截至 issue #5247 为 **20 个**（= 7 把存量 B-only 只读 + #5247 收窄为只读的 **8** 把
+（`after_sales_manage` / `category_manage` / `customer_manage` / `employee_manage` /
+`finance_api` / `inventory_manage` / `role_manage` / `session_manage`）+ #5247 新增的 **6** 把
+（`briefing_query` / `craft_calc_config_query` / `inbound_order_query` /
+`operation_catalog_query` / `processing_order_set_query` / `stock_ledger_query`）；
+**唯一口径以 `test_witness_b_end_only_readonly_tools_never_reach_c_end_domains` 的见证集为准**
+（本段数量只作导读，抄错即由那条判据报红）⇒ "全局并入只读"会让 C 端当场看见这 20 个 B 端工具
+（越权面），故必须按 persona 家族切。家族由 `SkillConfig.system_prompts` 的 key **derive**（不写死
+persona 字面量），且**歧义即 fail-closed 不并**（宁可少共享，也不跨 persona 泄露）。
 
 **口径（复算命令，PR 里同款）**：
 `persona 可达集 = ∪{cfg.tool_names : cfg.system_prompts ∋ persona}`；B-only = 两集合之差。
@@ -65,6 +70,33 @@ def _family_cfgs(cfg) -> list:
     assert personas, f"{cfg.name} 没声明任何 persona —— 家族无从 derive"
     return [c for c in get_skill_registry().get_all()
             if personas & set(c.system_prompts or {})]
+
+
+#: 🔴 **#5247 孤儿台账**（键 = Skill 名，值 = 退场理由）：注册表里**声明了 persona、
+#: 却不在该 persona 的 `AgentConfig.skill_names` 里**的 Skill。
+#: #5247 把 `settings` 从 `mibao.py` 的 `skill_names` 移出（B 端米宝只读化：它绑的两把
+#: `settings_manage` / `notification_manage` 都是写工具），但配置文件与注册关系**保留**
+#: ⇒ 两个来源在「工具集」上必然分叉。
+#: 台账由 `test_persona_family_agrees_with_agent_config_reachability` 机械校验：
+#: 理由必须非空、且与实际孤儿集**双向相等**（新增孤儿 ⇒ 红；陈旧条目 ⇒ 红）。
+_ORPHANED_SKILLS: dict = {
+    "settings": (
+        "issue #5247：B 端米宝只读化 —— 该 Skill 只绑写工具（settings_manage / "
+        "notification_manage），已从 mibao 的 skill_names 移出；配置与注册关系保留"
+        "（类文件不删、C 端绑定不受影响）"
+    ),
+}
+
+
+def _unreachable_declared_skills() -> set:
+    """注册表里「声明了 persona、但该 persona 的 `AgentConfig` 够不到它」的 Skill 名集。"""
+    out: set = set()
+    for cfg in get_skill_registry().get_all():
+        for persona in (cfg.system_prompts or {}):
+            agent = get_agent_config(persona)
+            if cfg.name not in set(agent.get_all_skill_names()):
+                out.add(cfg.name)
+    return out
 
 
 def _scope_after(tool_names):
@@ -177,10 +209,10 @@ class TestPersonaBoundaryIsHard:
         assert not leaks, "persona 硬边界被只读共享打破：\n  " + "\n  ".join(leaks)
 
     def test_witness_b_end_only_readonly_tools_never_reach_c_end_domains(self):
-        """见证（现算，不抄清单）：B 端专属**只读**工具 **7** 把，C 端域一个都不许有。
+        """见证（现算，不抄清单）：B 端专属**只读**工具 **20** 把，C 端域一个都不许有。
 
-        这 7 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
-        全局并只读 ⇒ C 端当场多出这 7 个越权查询面。
+        这 20 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
+        全局并只读 ⇒ C 端当场多出这 20 个越权查询面。
 
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
@@ -195,21 +227,40 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-09-23 改判（issue #5188 进场，实测）**：新增 `batch_stock_query`
         （批次余量 / 剩余量分布 / 省料度量；声明 `product:list` ⇒ C 端恒不可达，
         且批次成本与省料金额是内部口径）⇒ 6 → **7**。
+
+        🔴 **2026-09-24 改判（issue #5247 进场，实测；B 端米宝只读化，用户裁定 2026-09-23）**：
+        7 → **20**，两个来源都是本单的正面事实（不是口径漂移）：
+        ① **8 把写工具收窄为只读**（写 action 删除 + `read_only = True`）⇒ 它们从"B 端写工具"
+           变成"B 端专属只读工具"，**全部进场**：`after_sales_manage` / `category_manage` /
+           `customer_manage` / `employee_manage` / `finance_api` / `inventory_manage` /
+           `role_manage` / `session_manage`；
+        ② #5247 新增 **6** 把只读工具（C 端 skill 一个都没绑 ⇒ B-only）：`briefing_query` /
+           `craft_calc_config_query` / `inbound_order_query` / `operation_catalog_query` /
+           `processing_order_set_query` / `stock_ledger_query`。
+        ⇒ 本见证同时是 #5247「B 端只读面**没有**渗到 C 端」的量化判据：这 20 把只要有一把
+        出现在任一 C 端域的 `set_tool_scope` 里，本用例红（越权面）。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
             f"persona 家族集不含 mibao/xiaobu（实测 {sorted(by_persona)}）—— 见证指错对象")
         b_only_readonly = (by_persona["mibao"] - by_persona["xiaobu"]) & _read_only_names()
         assert b_only_readonly == {
+            # ── 存量 7 把（#4125 见证起点；`batch_stock_query` 见 #5188 改判）───────────
             # issue #5188：批次账 / 省料度量（声明 `product:list` ⇒ C 端恒不可达；
             # 含批次成本与省料金额，属内部口径）
             "batch_stock_query",
             "dashboard_stats", "logistics_track", "order_query", "piecework_query",
             "processing_order_query", "production_worklog_query",
+            # ── #5247 ① 收窄为只读的 8 把（写 action 已删除，见各工具文件的 #5247 注释）──
+            "after_sales_manage", "category_manage", "customer_manage", "employee_manage",
+            "finance_api", "inventory_manage", "role_manage", "session_manage",
+            # ── #5247 ② 新增的 6 把只读工具 ────────────────────────────────────────
+            "briefing_query", "craft_calc_config_query", "inbound_order_query",
+            "operation_catalog_query", "processing_order_set_query", "stock_ledger_query",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（7 把）不等，口径漂移"
-            "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 改判说明"
-            "与 2026-09-23 的 #5188 进场改判）")
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（20 把）不等，口径漂移"
+            "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
+            "2026-09-24 三次改判说明）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue
@@ -221,8 +272,27 @@ class TestPersonaBoundaryIsHard:
         """两个**独立来源**必须一致：`SkillConfig.system_prompts` vs `AgentConfig.skill_names`。
 
         家族派生若只信一处，配置漂移会静默改变边界（"写完没人会因为这件事变红"）。
+
+        🔴 **issue #5247 改判（不是放宽：把分叉显式化，且台账双向相等）**：本单把
+        `settings` 从 `mibao.py` 的 `skill_names` 里移出（它只绑写工具，B 端只读化后无理由留在
+        米宝的可达集），但**注册关系与配置文件保留** ⇒ 两个来源在"工具集"上必然分叉。
+        判据仍然成立、且**比原来更严**：分叉只允许发生在 `_ORPHANED_SKILLS` 逐条登记的
+        Skill 上，且台账与实际孤儿集**双向相等** ——
+        ① 新增孤儿（有人再摘掉一个 Skill）⇒ 红（原来也会红）；
+        ② 台账陈旧（孤儿已归队 / 已从注册表删除）⇒ 红（原来无此判据）。
         """
         by_persona = _tools_by_persona()
+        orphans = _unreachable_declared_skills()
+        for name, reason in _ORPHANED_SKILLS.items():
+            assert isinstance(reason, str) and reason.strip(), (
+                f"孤儿台账里的 {name} 没写理由 —— 无理由的豁免等于宽泛 skip")
+        assert orphans == set(_ORPHANED_SKILLS), (
+            f"注册表里的『声明了 persona 却不在该 persona 的 AgentConfig.skill_names 里』"
+            f"Skill 集实测 {sorted(orphans)} —— 与台账 {sorted(_ORPHANED_SKILLS)} 不等：\n"
+            "  新增孤儿 ⇒ 要么把它接回 skill_names，要么在 _ORPHANED_SKILLS 里写明理由；\n"
+            "  台账陈旧（已归队/已删）⇒ 从 _ORPHANED_SKILLS 删除该条（陈旧台账 = 永久后门）"
+        )
+
         mismatches = []
         for persona in sorted(by_persona):
             agent = get_agent_config(persona)
@@ -231,10 +301,19 @@ class TestPersonaBoundaryIsHard:
                 cfg = get_skill_registry().get(name)
                 if cfg is not None:
                     reachable.update(cfg.tool_names or [])
-            if reachable != by_persona[persona]:
+            # 孤儿 Skill 贡献的只是「仅 skill 配置」一侧的工具 —— 逐条在台账里登记过才允许扣除
+            orphan_tools = {
+                t
+                for cfg in get_skill_registry().get_all()
+                if cfg.name in _ORPHANED_SKILLS and persona in (cfg.system_prompts or {})
+                for t in (cfg.tool_names or [])
+            }
+            left = by_persona[persona] - reachable
+            only_agent = reachable - by_persona[persona]
+            if (left - orphan_tools) or only_agent:
                 mismatches.append(
-                    f"{persona}: 仅 skill 配置有 {sorted(by_persona[persona] - reachable)}；"
-                    f"仅 AgentConfig 有 {sorted(reachable - by_persona[persona])}")
+                    f"{persona}: 仅 skill 配置有 {sorted((left - orphan_tools))}；"
+                    f"仅 AgentConfig 有 {sorted(only_agent)}")
         assert not mismatches, "persona 家族的两个来源分叉：\n  " + "\n  ".join(mismatches)
 
 

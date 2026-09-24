@@ -19,8 +19,10 @@ F7 —— `references/base/principles.md` 第 22 行只写了「模块不符不�
     名称不一致都红），并有"处方码"负例证明该守卫真的会红；
   · F7 的两半各有**负例夹具**（旧文案 / 砍掉前半的文案）证明判据会红，而不是永远绿。
 """
+import ast
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -265,6 +267,104 @@ class TestByteIdenticalWhenNothingToSay:
 #    —— 分权一旦消失（工具改成整工具一个码），处方就又变成假真值（反向的 #4197）
 # ════════════════════════════════════════════════════════════════════════════
 
+#: 提供「action 级权限码」的工具台账（工具文件 stem → 该模块里的映射常量名）。
+#: 口径（#5247 收敛后，**唯一**）：粗筛 `required_permissions` + 一份 action→更严码的覆盖表，
+#: 且覆盖表只覆盖**部分** action —— 这就是注入块那句「同一工具的不同 action 权限可能不同
+#: （换 action 可以再试一次）」的全部事实基础。进出都必须显式改判（多一个 ⇒ 登记，
+#: 少一个 ⇒ 先确认处方是否还成立）。
+_ACTION_LEVEL_CODE_TOOLS: dict = {"order_manage": "ACTION_PERMISSIONS"}
+
+#: 改前（#5247 之前）`employee_manage` 的分权形态夹具 —— 供退役用例做**红证**（判据不恒假）。
+_PRE_5247_EMPLOYEE_MANAGE_SNIPPET = '''
+class EmployeeManageTool(BaseTool):
+    read_only_actions = {"list", "detail"}
+    required_permissions = ["employee:list", "employee:create"]
+
+    async def execute(self, context, action=None, **kwargs):
+        required = "employee:list" if action in self.read_only_actions else "employee:create"
+        if required not in (context.permissions or []):
+            return "权限不足"
+'''
+
+#: 「按 action 分读/写码」的形态正则（`<读码> if action in self.read_only_actions else <写码>`）。
+#: 与 #4197 原用例逐字引用的那句同口径，但不写死具体码、且引号形态不敏感（`ast.unparse`
+#: 会把引号统一成单引号）⇒ 换码/换引号都不影响判据的形态识别力。
+_SPLITS_CODES_BY_ACTION_RE = re.compile(
+    r"""['"][a-z_]+:[a-z_]+['"]\s+if\s+action\s+in\s+self\.read_only_actions\s+else\s+"""
+    r"""['"][a-z_]+:[a-z_]+['"]"""
+)
+
+
+def _code_only(src: str) -> str:
+    """源码的**代码面**视图（`ast` 往返 ⇒ 注释被去掉）。
+
+    判据必须落在代码面上：本仓踩过「断言命中注释」的假绿（把被禁的口径写进注释就满足判据），
+    也踩过反向的假红（#5247 的收窄把 `写码 X 已移除` 写进注释，若按裸文本匹配会被判违规）。
+    """
+    return ast.unparse(ast.parse(src))
+
+
+def _splits_codes_by_action(src: str) -> bool:
+    """源码**代码面**是否按 action 分读/写码（#4197 / #5247 共用的**唯一**形态口径）。"""
+    return _SPLITS_CODES_BY_ACTION_RE.search(_code_only(src)) is not None
+
+
+def _action_level_code_maps() -> dict:
+    """源码真值：`app/tools/*.py` 里的模块级 `*ACTION_PERMISSIONS*` 字典 → {工具名: 映射}。"""
+    found: dict = {}
+    for path in sorted((_SERVICE_DIR / "app" / "tools").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not any(n.endswith("ACTION_PERMISSIONS") for n in names):
+                continue
+            assert isinstance(node.value, ast.Dict), (
+                f"{path.name}: {names[0]} 不是字典字面量 ⇒ 判据解析失效（不许静默跳过）")
+            found[path.stem] = ast.literal_eval(node.value)
+    return found
+
+
+def _action_level_witness_problems(maps: dict, tools: dict) -> list[str]:
+    """判据内核（纯函数）：每个 action 级码映射必须是**真的对照**。
+
+    「真的对照」= ① 见证集非空；② 工具在注册表里；③ 映射非空；④ 映射是 action 枚举的
+    **真子集**（覆盖全部 action ⇒ 不存在"不同 action 权限不同"这回事）；⑤ 映射的码与粗筛码
+    不同（相同 ⇒ 该 action 并没有更严的码）。注入式红证见
+    `test_witness_detector_catches_the_premise_going_away`。
+    """
+    problems: list[str] = []
+    if not maps:
+        problems.append(
+            "没有任何工具提供 action 级权限码 ⇒ 注入块的「换 action 可以再试一次」"
+            "失去事实基础（#4197 的假真值形态：处方与机制不一致）")
+    for name, mapping in sorted(maps.items()):
+        tool = tools.get(name)
+        if tool is None:
+            problems.append(f"{name}: 提供 action 级码映射的工具不在注册表里（判据指错对象）")
+            continue
+        enum = set(
+            ((tool.parameters.get("properties") or {}).get("action") or {}).get("enum") or ()
+        )
+        if not mapping:
+            problems.append(f"{name}: 映射为空 —— 不构成「不同 action 权限不同」")
+            continue
+        if not enum:
+            problems.append(f"{name}: 工具没有 action 枚举 ⇒ 无从证明「不同 action 权限不同」")
+            continue
+        if not set(mapping) < enum:
+            problems.append(
+                f"{name}: 映射 {sorted(mapping)} 不是 action 枚举 {sorted(enum)} 的**真子集**"
+                "（覆盖全部 action ⇒ 对照不存在）")
+        coarse = set(getattr(tool, "required_permissions", None) or ())
+        if coarse and set(mapping.values()) == coarse:
+            problems.append(
+                f"{name}: 映射的码与粗筛码同为 {sorted(coarse)} ⇒ 该 action 并没有更严的码"
+                "（不构成「权限不同」）")
+    return problems
+
+
 class TestTheActionLevelClaimIsBackedByTheMechanism:
     """注入块的因果句「同一工具的不同 action 权限可能不同」的事实基础。
 
@@ -272,19 +372,27 @@ class TestTheActionLevelClaimIsBackedByTheMechanism:
     机制却按 action 分权）。文案改对了但机制变了（例：employee_manage 改成整工具一个码），
     处方会**重新变成假真值**，而没有任何东西会因此变红。故这里把两个引用点钉在工具源码上
     （与 `_JAVA_CATALOGS` 的读源纪律同口径；漂移即红，处置 = 要么改机制、要么改处方）。
+
+    ## 🔴 issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 见证集**收窄**，判据**加强**
+
+    本单把 8 把 B 端写工具收窄为只读，`employee_manage` 是其中之一：写 action
+    （create/update/delete/reset_password/toggle_status）全部删除 ⇒ 「读 action 要
+    `employee:list`、写 action 要 `employee:create`」这条**对照不存在了**
+    ⇒ 原用例 `test_employee_manage_splits_read_and_write_codes_by_action` 的**前提消失**，
+    按「前提没了不许悄悄放宽阈值」的纪律**退役**为
+    `test_employee_manage_no_longer_splits_codes_by_action`（`# [RETIRED #5247]`：
+    把"前提的消失"本身钉成判据 —— 工具确实只读、写码确实不再出现、且不再按 action 分权）。
+
+    退役之后本类的**判别力来源**只剩 `order_manage`（退款要 `order:refund`，其余 action 只要
+    写码 `order:update`）⇒ 新增一条**机制见证**判据
+    （`test_the_action_level_claim_has_a_live_witness`）：从 `app/tools/*.py` **现算**
+    「哪些工具提供 action 级码映射」，要求它非空、且每条映射都是**真的对照**
+    （部分覆盖 + 码与粗筛码不同）。若哪天连 `order_manage` 的映射也没了，注入块那句话
+    就重新变成 #4197 的假真值 —— 届时**这条会红**，而不是无声退化。
     """
 
     def _src(self, rel):
         return (_SERVICE_DIR / rel).read_text(encoding="utf-8")
-
-    def test_employee_manage_splits_read_and_write_codes_by_action(self):
-        """`employee_manage`：读 action 要 `employee:list`、写 action 要 `employee:create`。"""
-        src = self._src("app/tools/employee_manage.py")
-        assert 'required_permissions = ["employee:list", "employee:create"]' in src, (
-            "employee_manage 的权限码变了 ⇒ HR-009/HR-010 的「权限即差异」对照失效")
-        assert '"employee:list" if action in self.read_only_actions else "employee:create"' in src, (
-            "employee_manage 不再按 action 分权 ⇒ 注入块的「换 action 可能成功」变成假真值"
-            "（旧 #4197 的形态：处方与机制不一致）")
 
     def test_order_manage_refund_needs_a_stricter_code_than_list(self):
         """`order_manage`：只有 `refund` 要 `order:refund`，其余（含改单）只要**写码**。
@@ -299,6 +407,87 @@ class TestTheActionLevelClaimIsBackedByTheMechanism:
         assert 'required_permissions = ["order:update"]' in src, (
             "order_manage 的粗筛码变了 ⇒ 上面的 action 级差异不再是「同一工具不同 action」"
         )
+
+    def test_employee_manage_no_longer_splits_codes_by_action(self):
+        """`# [RETIRED #5247]` 原「employee_manage 按 action 分读/写码」的判据 —— 前提消失。
+
+        退役形态（**不是删用例、也不是把断言放松**）：把"前提的消失"本身钉成三条判据，
+        任何一条被反向改动（把写 action/写码加回来）都会红：
+          ① 工具确实是只读（收窄落地）；
+          ② 声明里只剩读码 `employee:list`，写码 `employee:create` **不再出现在源码任何位置**；
+          ③ 它**不再**按 action 分权（`_splits_codes_by_action` 为假）。
+        并附**红证夹具**：同一判据在改前（#5247 之前）的源码形态上必须为真 ——
+        证明 ③ 不是恒假断言。
+        """
+        src = self._src("app/tools/employee_manage.py")
+        assert "read_only = True" in src, (
+            "employee_manage 重新变回写工具 ⇒ #5247 的收窄被回退（本用例的前提也就回来了："
+            "请恢复 `test_employee_manage_splits_read_and_write_codes_by_action` 并重跑 HR-009/HR-010）")
+        assert 'required_permissions = ["employee:list"]' in src, (
+            "employee_manage 的权限码变了（本次收窄后应为**单一读码** `employee:list`）")
+        assert "employee:create" not in _code_only(src), (
+            "写码 `employee:create` 又出现在 employee_manage 的**代码面**（注释里说明「已移除」不算）"
+            "—— 写 action 已被删除，只读工具挂写码会让「权限即差异」的对照重新自相矛盾")
+        assert _splits_codes_by_action(src) is False, (
+            "employee_manage 又开始按 action 分权 —— 请把本用例改回 `test_…_splits_read_and_write_codes_by_action`"
+            "（前提回来了，判据必须回到原形态），并同步 `_ACTION_LEVEL_CODE_TOOLS` 台账")
+        # 红证（判据自身不恒假）：改前形态夹具必须被判为「按 action 分权」
+        assert _splits_codes_by_action(_PRE_5247_EMPLOYEE_MANAGE_SNIPPET) is True, (
+            "红证夹具失效：改前形态没被 `_splits_codes_by_action` 认出来 ⇒ 上面那条是空断言")
+
+    def test_the_action_level_claim_has_a_live_witness(self):
+        """**机制见证（#5247 新增）**：注入块的处方必须有活的 action 级分权机制。
+
+        `order_manage` 是本单后**唯一**的见证（`employee_manage` 已随收窄退役）——
+        它一旦消失，「同一工具的不同 action 权限可能不同（换 action 可以再试一次）」
+        就变回 #4197 的假真值，而文案测试全绿。故这里从源码**现算**见证集：
+        ① 见证集必须非空；② 必须逐条等于 `_ACTION_LEVEL_CODE_TOOLS` 台账（进出都要显式留痕）；
+        ③ 每条映射必须是**真的对照**（部分覆盖 action 枚举 + 码与粗筛码不同）——见纯函数内核。
+        """
+        from app.tools.registry import get_tool_registry
+
+        maps = _action_level_code_maps()
+        tools = {t.name: t for t in get_tool_registry().get_all_tools()}
+        assert set(maps) == set(_ACTION_LEVEL_CODE_TOOLS), (
+            f"提供 action 级码映射的工具实测 {sorted(maps)} —— 与台账 "
+            f"{sorted(_ACTION_LEVEL_CODE_TOOLS)} 不等。\n"
+            "  新增/删除都必须在本台账与 `_action_level_witness_problems` 的判据面里显式改判：\n"
+            "  多出来 ⇒ 注入块的处方多了一个事实基础（好消息，但要登记）；\n"
+            "  少掉 ⇒ 处方可能重新变成假真值（若一个都不剩，必须改处方或补回机制）"
+        )
+        problems = _action_level_witness_problems(maps, tools)
+        assert not problems, (
+            "action 级分权机制不再支撑注入块的处方：\n  " + "\n  ".join(problems)
+        )
+
+    def test_witness_detector_catches_the_premise_going_away(self):
+        """红证（注入式，判据内核）：机制消失的三种形态都必须被报出（防恒绿空判据）。"""
+        good_tool = SimpleNamespace(
+            name="order_manage",
+            required_permissions=["order:update"],
+            parameters={"properties": {"action": {"enum": ["update_status", "refund"]}}},
+        )
+        cases = {
+            "见证集为空（处方失去全部事实基础）": ({}, {"order_manage": good_tool}),
+            "映射为空": ({"order_manage": {}}, {"order_manage": good_tool}),
+            "映射覆盖了全部 action（不存在对照）": (
+                {"order_manage": {"update_status": "order:update", "refund": "order:refund"}},
+                {"order_manage": good_tool},
+            ),
+            "映射值与粗筛码相同（没有更严的码）": (
+                {"order_manage": {"refund": "order:update"}}, {"order_manage": good_tool},
+            ),
+            "映射指向不存在的工具（判据指错对象）": (
+                {"ghost_manage": {"refund": "order:refund"}}, {"order_manage": good_tool},
+            ),
+        }
+        for why, (maps, tools) in cases.items():
+            assert _action_level_witness_problems(maps, tools), (
+                f"判据内核漏报「{why}」—— 这正是本用例要防的静默退化")
+        # 负例（R2）：真值形态必须不报（防恒红）
+        assert _action_level_witness_problems(
+            {"order_manage": {"refund": "order:refund"}}, {"order_manage": good_tool}
+        ) == [], "判据内核把合法形态报成违规（恒红）"
 
 
 # ════════════════════════════════════════════════════════════════════════════

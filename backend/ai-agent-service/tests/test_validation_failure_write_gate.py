@@ -28,8 +28,15 @@
 / `tests/test_capability_denial_guard.py`），`_execute_tool_safe` 换成记账假实现 ——
 断言落在"这个写到底有没有被执行"上（效果层），不是"某个函数被调用过"。
 `case_ids` 选 OR-009：本闸门拦的写调用里，`validate_input` 已注册规则且失败面最完整的
-就是**下单**流程（`order_create` + `inventory_manage` 等写工具共用同一处执行路径），
+就是**下单**流程（`order_create` 等写工具共用同一处执行路径），
 OR-009 正是该写路径的用例，故挂它。（闸门本身**不绑 skill**，见 `react_turn.py` 的注释。）
+
+🔴 **#5247 边界（B 端米宝只读化，用户裁定 2026-09-23）**：本闸门只拦**写工具**
+（`react_turn` 的 `if not getattr(tool, "read_only", False)`）—— 8 把 B 端工具收窄为只读后
+（写 action 删除），它们**按设计不再进本闸门**；原先拿 `inventory_manage.adjust` 当见证的
+R1 用例已改用仍是写工具的 `product_manage.update`（见该用例的改判说明）。
+⚠️ 失败账（`validation_failure`）的**记录与清除机制**未变：它按「目标工具 + action」记，
+与目标工具当前是不是写工具无关（纯函数层的夹具因此仍用旧字符串当**惰性标签**）。
 """
 
 import asyncio
@@ -54,7 +61,10 @@ _ORDER_ITEMS = [{
 
 # 校验失败形态（真实 validate_input 的产物形状）：缺必填字段 ⇒ success=False + 可执行 suggestion
 _BAD_ORDER_ARGS = {"action": "create", "customer_name": "赵凯"}     # 缺 phone/items
-_BAD_INVENTORY_ARGS = {"product_id": "p1", "reason": "盘亏"}        # 缺 adjustment
+# #5247 改判：原夹具是 `inventory_manage.adjust`（缺 adjustment）—— 该写 action 已随
+# B 端只读化删除（工具 `read_only = True`）⇒ 闸门对它**不再适用**（前提消失）。
+# 换成仍是写工具、且 `_VALIDATION_RULES` 里有规则的 `product_manage.update`（缺 product_id）。
+_BAD_PRODUCT_ARGS = {"action": "update"}                            # 缺 product_id
 _BAD_AFTERSALE_ARGS = {"ticket_type": "exchange"}                  # 缺 order_id
 
 _FAILURE_RESULT = {
@@ -261,21 +271,28 @@ class TestValidationFailureBlocksWrite:
     def test_gate_is_not_skill_specific(self):
         """R1 机制级：**不是**给某个 skill 打补丁 —— 换个 skill/工具同样被拦。
 
-        `product` skill + `inventory_manage(adjust)`（校验失败：缺 adjustment）⇒ 同样拦下。
+        `product` skill + `product_manage(update)`（校验失败：缺 product_id）⇒ 同样拦下。
+
+        🔴 **#5247 改判（前提换了，判据一字未改）**：原见证是 `inventory_manage(adjust)`，
+        而本单把该工具的写 action 删除、`read_only = True` ⇒ 闸门对它按设计**不适用**
+        （闸门只拦写工具，见 `react_turn` 的 `if not getattr(tool, "read_only", False)`）。
+        换成的 `product_manage` 仍是写工具、且 `_VALIDATION_RULES["product_manage"]["update"]`
+        仍要求 `product_id` ⇒ 「换工具/换 skill 同样拦」这条机制级主张照旧成立。
+        （本用例的 `tool_names` 是显式注入的：skill 名在这里只是夹具标签，
+        被判的是**共享执行路径**，与工具当前绑在哪个 skill 上无关。）
         """
         replies = [
             _ai(tool_calls=[_tc("validate_input", {
-                "target_tool": "inventory_manage", "target_action": "adjust",
-                "params": _BAD_INVENTORY_ARGS}, "c1")]),
-            _ai(tool_calls=[_tc("inventory_manage", {
-                "action": "adjust", "product_id": "p1", "adjustment": -3,
-                "reason": "盘亏"}, "c2")]),
-            _ai("已调整库存。"),
+                "target_tool": "product_manage", "target_action": "update",
+                "params": _BAD_PRODUCT_ARGS}, "c1")]),
+            _ai(tool_calls=[_tc("product_manage", {
+                "action": "update", "product_id": "prod_1", "price": 198.0}, "c2")]),
+            _ai("已更新商品。"),
         ]
         _, _, executed, _ = _run(
-            replies, tool_names=("validate_input", "inventory_manage"),
-            skill_name="product", intent="inventory_manage")
-        assert "inventory_manage" not in [n for n, _ in executed], (
+            replies, tool_names=("validate_input", "product_manage"),
+            skill_name="product", intent="product_manage")
+        assert "product_manage" not in [n for n, _ in executed], (
             f"闸门只对某个 skill 生效（本包要求共享执行路径）：executed={[n for n, _ in executed]}")
 
     def test_untouched_other_target_is_not_collateral_damage(self):
@@ -283,6 +300,10 @@ class TestValidationFailureBlocksWrite:
 
         与下面 R2 ① 的区别：这里**有一条**失败账，只是目标不同 —— 证明拦截判据是
         「同 tool + 同 action」而不是"有失败账就全拦"。
+
+        ⚠️ #5247：`after_sales_manage` 已收窄为只读（写 action 删除）⇒ 它自己不会再被拦，
+        但**留痕机制与目标无关**（`validate_input` 的失败一律落账）⇒ 本用例判别力不变：
+        它证明的是"别人的账不会误伤 order_create"。
         """
         replies = [
             _ai(tool_calls=[_tc("validate_input", {
@@ -398,7 +419,12 @@ class TestNoLegitimateWriteIsBlocked:
 # ────────────────────── 清除点（写成功 / 事务终态）──────────────────────
 
 class TestFailureLedgerClearPoints:
-    """交付形态 2 的三个清除点里，行为面能钉住的两个（第 2 个已在 R2 ③ 钉住）。"""
+    """交付形态 2 的三个清除点里，行为面能钉住的两个（第 2 个已在 R2 ③ 钉住）。
+
+    ⚠️ 夹具里的 `inventory_manage::adjust` 是**惰性标签**（#5247 后该写 action 已删除）：
+    清除点的口径是「账按**目标**逐条对」，与那个目标现在还是不是写工具无关 ——
+    换任意 (工具, action) 字符串都不影响这三条判据的判别力。
+    """
 
     def test_write_success_clears_that_targets_ledger(self):
         """清除点①：目标写工具**成功**执行 → 该目标的校验失败账闭环（且**只清这一个**）。

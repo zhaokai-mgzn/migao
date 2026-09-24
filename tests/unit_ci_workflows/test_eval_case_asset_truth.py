@@ -32,6 +32,8 @@ SEED_PATH = REPO_ROOT / "tests" / "agent_eval" / "fixtures" / "mibao_eval_seed.s
 sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
 sys.path.insert(0, str(REPO_ROOT / ".github"))
 
+import assertion_taxonomy as tax  # noqa: E402  （写路径判据的单一源，见 CU-003 的答卡轮守卫）
+
 
 def _load_runner():
     """导入 `local_runner`（L0 job 只装 pytest+pyyaml → 缺 httpx 时注入最小替身）。"""
@@ -113,6 +115,44 @@ def _case_yaml(fname: str, cid: str) -> dict:
     return next(c for c in doc["cases"] if c["id"] == cid)
 
 
+def _tool_action_enum(rel_path: str) -> set:
+    """工具源码里 `VALID_ACTIONS = {...}` 的 action 枚举 —— **源码即真值**，不另列一份清单。
+
+    与 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（AST 解析）/
+    `tests/unit_ci_workflows/test_assertion_specs_wellformed.py`（正则）同款口径：
+    用例里声明的 action 必须是工具**当前**枚举里的成员 —— 写 action 被删（#5247）后，
+    任何仍指向它的声明都必须变红，而不是"看起来还在测一个已下线的能力"。
+    """
+    src = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
+    m = re.search(r"VALID_ACTIONS\s*=\s*[\{\[](.*?)[\}\]]", src, re.S)
+    assert m, f"{rel_path} 里找不到 `VALID_ACTIONS = {{...}}`（判据失去目标）"
+    actions = set(re.findall(r'"([^"]+)"', m.group(1)))
+    assert actions, f"{rel_path} 的 VALID_ACTIONS 解析为空（口径漂移？）：{m.group(1)!r}"
+    return actions
+
+
+CUSTOMER_MANAGE_SRC = "backend/ai-agent-service/app/tools/customer_manage.py"
+
+
+def _read_only_relapse_violations(case: dict, source_actions: set) -> list:
+    """CU-003 **只读形态**的判据本体（纯函数 —— 判据不写在断言里，才能被注入式红证行使）。
+
+    · `expectations` 必须恰好是 `customer_manage(action=list_tags)`（工具级断言，不许降级成文本）；
+    · 该 action 必须在**工具源码**的枚举里（死引用即违规）；
+    · 写路径声明（`must_succeed` / `must_fail` / `forbidden_args`）一律不得残留（含空壳形态）。
+    """
+    out = []
+    expected = [{"tool": "customer_manage", "args": {"action": "list_tags"}}]
+    if case.get("expectations") != expected:
+        out.append(f"expectations 不是只读 `list_tags` 工具断言：{case.get('expectations')!r}")
+    if expected[0]["args"]["action"] not in source_actions:
+        out.append(f"声明的 action `list_tags` 不在工具源码的 action 枚举里：{sorted(source_actions)}")
+    for field in ("must_succeed", "must_fail", "forbidden_args"):
+        if case.get(field):
+            out.append(f"写路径声明残留：`{field}`={case.get(field)!r}")
+    return out
+
+
 class _CaseStub:
     """最小用例替身（`unbacked_customer_tag_removals` 只吃 `id` + `pre_clean`）。"""
 
@@ -165,11 +205,29 @@ class TestCustomerTagRemoveNamesMatchTheSeed:
 # ── ② CU-003 的资产真值（#3832）───────────────────────────────────────────────
 class TestCU003AssetIsSatisfiableAndNotRelaxed:
     def test_premise_is_the_seed_tag_catalog(self):
-        """前提成立：`pre_clean.tag_name` 与输入里点名的标签，都是种子目录里真有的。"""
+        """前提成立：`pre_clean.tag_name` 是种子目录里真有的，且输入是**只读问法**。
+
+        原断言（留档）：`assert "VIP2" in str(c["user_inputs"][0])` —— 前提是「首轮输入必须
+        点名**待写入**的那个标签（`VIP2`）」，即 CU-003 是一条**打标签**用例。
+        #5247（B 端只读化）把 CU-003 改判成**只读查标签**（`customer_manage(list_tags)`），
+        写动词「加/打标签」已从工具源码删除 ⇒ 该前提被证伪：输入里再出现 `VIP2` 反而意味着
+        用例又回到了已下线的写形态。
+
+        换成对新事实**等效更强**的两条（不是放宽）：
+        ① 输入必须带**不可变键**（客户手机号）—— 保住原前提的实质「指代唯一」
+           （与 `test_target_customer_is_identified_by_the_seed_phone` 同源）；
+        ② 输入**不得含写动词**（加标签 / 打标签）—— 把"只读"钉在**输入面**上，
+           而不是只靠 `expectations` 里的一句声明（问法与声明不一致时这里先红）。
+        """
         c = _case_yaml("customer.yml", "CU-003")
         tags = seed_tag_names()
         assert c["pre_clean"][0]["tag_name"] in tags, c["pre_clean"]
-        assert "VIP2" in str(c["user_inputs"][0]), c["user_inputs"]
+        first = str(c["user_inputs"][0])
+        seed_phone = seed_order_row("EVAL-MB-ORD-0002")[5].strip().strip("'")
+        assert seed_phone in first, f"只读问法仍须用不可变键（手机号）定位客户：{first!r}"
+        for verb in ("加标签", "打个标签", "打标签"):
+            assert verb not in first, (
+                f"只读问法的输入里出现写动词「{verb}」⇒ 与 #5247 已下线的写能力不一致：{first!r}")
 
     def test_target_customer_is_identified_by_the_seed_phone(self):
         """**唯一指代**（#3568 对 CU-004 的同一改法）：姓名会撞 OR-010 建单 upsert 出的同名张三，
@@ -204,16 +262,34 @@ class TestCU003AssetIsSatisfiableAndNotRelaxed:
         assert target_of("13800138000", 0) is seed_customer
         assert page[0] is polluted                      # 观测值：列表首条就是污染源造的那条
 
-    def test_final_turn_is_an_answer_card_turn_not_bare_text(self):
-        """收尾轮必须能答 confirm 卡（#3518/#3568 口径，同 CU-004/PR-005/PR-016）。"""
+    def test_single_read_only_round_needs_no_answer_card_turn(self):
+        """只读单轮**不需要答卡轮** —— 但「写路径必须有答卡轮」这条守卫不许消失。
+
+        原断言（留档）：`assert isinstance(last, dict) and last.get("auto_respond")` ——
+        「收尾轮必须是答 confirm 卡的轮」（#3518/#3568 口径：agent 末轮才发 confirm 卡时
+        写操作永不放行）。#5247 把 CU-003 改成**只读单轮查标签**：没有任何写操作要放行
+        ⇒「答卡轮」这个要求**没有对象**（继续要求它反而会把只读用例钉回写形态）。
+
+        改成两条（不是放宽）：
+        ① 现状面：单轮只读问法 —— 末轮是纯文本问句，且整条用例不留写确认答卡轮；
+        ② **fail-closed 条件守卫**：一旦用例重新声明写路径（#5247 删掉的那几个 action /
+           `assertion_taxonomy.is_write_case` 认的写期望），末轮必须重新是答卡轮 ——
+           否则「写操作永不放行」这条原缺陷会随退役静默复活。
+        """
         c = _case_yaml("customer.yml", "CU-003")
         last = c["user_inputs"][-1]
-        assert isinstance(last, dict) and last.get("auto_respond"), (
-            f"收尾轮不是答卡轮 —— agent 末轮才发 confirm 卡时写操作永不放行：{last!r}")
-        assert "确认" in str(last["auto_respond"].get("fallback")), last
-        # 同栈同一客户（CU-004）是这条口径的范式样本，形态必须一致
-        c4 = _case_yaml("customer.yml", "CU-004")["user_inputs"][-1]
-        assert isinstance(c4, dict) and c4.get("auto_respond"), c4
+        declares_write = tax.is_write_case(c) or any(
+            marker in str(c.get("expectations")) or marker in str(c.get("must_succeed"))
+            for marker in ("add_tag", "remove_tag"))
+        if declares_write:
+            assert isinstance(last, dict) and last.get("auto_respond"), (
+                f"重新声明了写路径却没有答卡轮 —— 写操作永不放行（#3518/#3568）：{last!r}")
+        else:
+            assert isinstance(last, str) and last.strip(), (
+                f"只读单轮的末轮必须是纯文本问句（已无写操作要答卡）：{last!r}")
+            assert not any(isinstance(t, dict) and t.get("auto_respond")
+                           for t in c["user_inputs"]), (
+                f"只读用例里残留了写确认答卡（`auto_respond`）轮：{c['user_inputs']}")
 
     def test_no_auto_select_round_is_left_behind(self):
         """删掉 `auto_select` 轮：无卡时它会发字面量「第一个」（`resolve_auto_select_turn` 的
@@ -223,17 +299,50 @@ class TestCU003AssetIsSatisfiableAndNotRelaxed:
                        for t in c["user_inputs"]), c["user_inputs"]
 
     def test_assertion_strength_is_unchanged(self):
-        """**反向守卫（不许降级）**：`add_tag` 仍必须在 `expectations` 里，
-        且不得用弱断言（`direct_reply` / `want_text` 顶替 / `must_fail`）替换它。
+        """**反向守卫（不许降级）**：断言面必须停在**只读工具调用**上，写路径声明不得残留。
+
+        原断言（留档）：`expectations == [customer_manage(add_tag)]`，并逐字禁止
+        `direct_reply` / `must_fail` / `forbidden_args` 出现在用例里（`blob` 级串扫）——
+        前提是 CU-003 为**打标签（写）**用例。#5247 证伪该前提：`add_tag` 已从
+        `customer_manage` 源码的 action 枚举删除（`VALID_ACTIONS` 只剩 list/detail/list_tags）
+        ⇒ 原断言**不可能再满足**（被测对象已不存在），必须改判成新的只读形态。
+
+        改判后的判据（等效或更强，不是放宽）：
+        ① `expectations` **恰好**是 `customer_manage(action=list_tags)` —— 仍是**工具级**断言
+           （"调用了 ≠ 成了"的计分口径不变），只是动作换成仅存的只读查标签；
+        ② `list_tags` 必须真的在**工具源码**的 action 枚举里 —— 用例声明的动作不许是死引用
+           （源码删了它这里就红；这正是从 `add_tag` 学到的一课）；
+        ③ 写路径的三类声明（`must_succeed` / `must_fail` / `forbidden_args`）**一律不得残留**
+           —— 空列表/空 dict 同样不行（`must_succeed: []` 是"断言空壳"，比不声明更坏）；
+        ④ `data_checks` 里必须仍有**正向约束**「不得声称已加标签」—— 原断言是"落库断言仍在"
+           （`add_tag` 真落库）；写路径下线后，等效守卫 = "不得**谎报**已加标签"，
+           它与"标签逐条来自服务端"合起来仍是可判的只读正确性约束；
+        ⑤ 它仍是**活跃正常档**用例（`skip_reason` 为空）—— 退役会让以上守卫全都不进运行期。
         """
         c = _case_yaml("customer.yml", "CU-003")
-        assert c["expectations"] == [{"tool": "customer_manage",
-                                      "args": {"action": "add_tag"}}], c["expectations"]
-        blob = str(c)
-        for weak in ("direct_reply", "must_fail", "forbidden_args"):
-            assert weak not in blob, f"CU-003 被降级成弱断言（出现 {weak}）：{blob}"
-        # L1 机器可判的落库断言仍在
-        assert any("add_tag" in d for d in c["data_checks"]), c["data_checks"]
+        violations = _read_only_relapse_violations(c, _tool_action_enum(CUSTOMER_MANAGE_SRC))
+        assert violations == [], (
+            f"CU-003 的只读形态判据报出违规（期望恰好 `list_tags`、无写路径声明）：{violations}")
+        checks = " ".join(str(d) for d in c["data_checks"])
+        assert "不得声称已加标签" in checks, (
+            f"CU-003 丢了「不得谎报已加标签」这条正向约束：{c['data_checks']}")
+        assert not str(c.get("skip_reason") or "").strip(), (
+            f"CU-003 已退役 ⇒ 上面这些守卫不进运行期（退役 ≠ 守卫生效）：{c.get('skip_reason')!r}")
+
+    def test_the_read_only_form_judge_goes_red_on_a_write_relapse(self):
+        """**红证（注入式）**：把改前形态（`add_tag` 期望 + `must_succeed` / `must_fail`）
+        喂给上面那条判据 ⇒ 必逐项报出（改判后的判据不是恒真断言 —— `migao-acceptance`
+        「不会红的断言 = 空断言」）。**负控**：当前只读形态必须零违规（判据不是"永远红"的噪音）。
+        """
+        actions = _tool_action_enum(CUSTOMER_MANAGE_SRC)
+        relapse = {"expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
+                   "must_succeed": [{"tool": "customer_manage"}],
+                   "must_fail": [{"tool": "customer_manage"}]}
+        got = _read_only_relapse_violations(relapse, actions)
+        assert len(got) == 3, f"改前形态没有逐项报出（红证无判别力）：{got}"
+        assert any("add_tag" in g for g in got), got
+        assert _read_only_relapse_violations(_case_yaml("customer.yml", "CU-003"),
+                                             actions) == [], "负控：当前只读形态被误判违规"
 
     def test_declares_a_namespace_that_is_actually_contested(self):
         """`namespaces` 必须声明在**真实争用**的键上 —— 声明一个没人争的键等于隔离没生效
@@ -486,11 +595,28 @@ class TestPG013ForbiddenTextIsRoundScoped:
         assert lr.check_forbidden_text(tx, declared) == [], (
             "按**声明原样**跑良性 transcript 仍判红 ⇒ 用例形态没修好")
 
-    def test_expectations_and_required_args_are_unchanged(self):
-        """`#3833` 的修法**只动 `pre_clean` 与 `forbidden_text`** —— 行为面断言必须原样。"""
+    def test_expectations_and_required_args_reflect_the_read_only_form(self):
+        """`#3833` 的修法原话是「**只动 `pre_clean` 与 `forbidden_text`**，行为面断言原样」。
+
+        ⚠️ #5247（B 端只读化）改判了这条的前提：PG-013 断言的写工具
+        `processing_order_generate` 已从 B 端解绑 ⇒ 用例**退役**（`skip_reason` 非空）、
+        `expectations` 收缩为只读 `order_query`、`required_args` / `must_succeed` 清空。
+        原三条断言（`expectations` 含 `processing_order_generate`、`required_args` 里
+        `order_ids` 必填、`must_succeed` 非空）在被测对象不存在后**无法复现**。
+
+        改判成新事实的**等价形态**（不是放宽）：
+        ① `expectations` **恰好**是只读 `order_query` —— 写工具不得残留（残留即死引用）；
+        ② `required_args` 为空（写工具的参数契约随之失效，不许留空壳）；
+        ③ `must_succeed` 为空（同上，`must_succeed: []` 这类空壳声明也不许有）；
+        ④ 退役必须**显式登记**（`skip_reason` 非空且指向 #5247）——「退役 ≠ 删除」：
+           条目留在用例库、理由可追溯。
+        ——`forbidden_text` 的**轮次作用域**判据（本类其余三条）**一字未改**：那部分与写工具
+        是否解绑无关（它判的是「R1 问答轮的良性原文不得被判红」），仍逐条生效。
+        """
         c = _case_yaml("processing-order.yml", "PG-013")
-        assert c["expectations"] == [{"tool": "order_query"},
-                                     {"tool": "processing_order_generate"}], c["expectations"]
-        assert c["required_args"] == [{"tool": "processing_order_generate",
-                                       "fields": ["order_ids"]}], c["required_args"]
-        assert "order_ids" in str(c["required_args"]), c["required_args"]
+        assert c["expectations"] == [{"tool": "order_query"}], c["expectations"]
+        assert not (c.get("required_args") or []), c["required_args"]
+        assert not (c.get("must_succeed") or []), c["must_succeed"]
+        assert "#5247" in str(c.get("skip_reason") or ""), (
+            "PG-013 的写能力已下线 ⇒ 必须以 skip_reason 显式退役"
+            f"（不得静默留成活跃用例）：{c.get('skip_reason')!r}")

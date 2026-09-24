@@ -25,6 +25,24 @@ skill（`_relocked_this_round`）」契约。本文件把它扩到 `cross_skill_
 域外目标**仍被拒**（`success=False` / `error=cross_skill_target`）：本包只加"路由"，
 **不**改成 `success=True`（#3976 的空头承诺形态——本轮 `bind_tools` 已定，目标工具本轮不可执行）。
 `#4017` 的逐条死角拦截判据在 `tests/test_skill_tool_reachability.py`，本文件不复制、不放宽。
+
+## issue #5247 重新锚定（B 端米宝只读，用户裁定 2026-09-23）—— 载体从 B 端换成 C 端
+
+本文件的判据前提是「某流程**绑了 `validate_input`**，且它校验的目标写工具归属**别的**流程」。
+用户裁定把创建/更新能力从 B 端移除后：B 端**全部** skill 解绑 `validate_input`（判决的
+**产生者**），`order_manage` / `processing_order_*` 也不再被任何 skill 绑定（判决的**目标**）
+⇒ 该前提在 B 端整体消失（旧用例里 `product`/`order` 两条腿全部 premise-void）。
+
+判据本身一字未改，改的是**载体**（用户裁定"C 端零改动"，C 端持有全部剩余写绑定）：
+
+| 角色 | 旧（B 端） | 新（C 端，见 `CARRIER_SKILL` / `CARRIER_TARGET`） |
+|---|---|---|
+| 发判决的流程 | `product`（绑 `validate_input`） | `customer_aftersales`（绑 `validate_input`） |
+| 被拒的域外目标 | `order_manage`（归属 `order`） | `order_create`（唯一归属 `customer_order`，xiaobu 图内可达） |
+| 域内负例所在流程 | `order`（绑 `order_manage`） | `customer_order`（绑 `order_create`） |
+
+「归属 derive 不出 ⇒ 不改状态、退回既有劝导语」这条负例改用**无归属的目标**
+（`order_manage`：B 端解绑后没有任何 skill 声明它）触发，理由见该用例 docstring。
 """
 
 import json
@@ -40,13 +58,30 @@ from app.graph.skills.skill_registry import get_skill_registry
 
 SID = "sess_4124_cross_skill"
 
+# ── #5247 重新锚定后的载体（判据不变，只换 premise 的落点）──────────────────────
+#: 发判决的流程：**绑了** `validate_input`、且**绑不了** `CARRIER_TARGET`（#5247 后 B 端
+#: 全族都不绑 validate_input ⇒ 载体只能落在 C 端；用户裁定"C 端零改动"）。
+CARRIER_SKILL = "customer_aftersales"
+#: 被拒的域外目标：其唯一归属是 C 端 `customer_order`（xiaobu 图里可达的节点）
+CARRIER_TARGET = "order_create"
+#: C 端 persona 事实（`agent_type` 定 persona，`role` 与该 persona 的 allowed_roles 一致）
+XIAOBU_STATE = {"agent_type": "xiaobu", "role": "customer"}
+#: 合法下单参数（域内负例必须**真通过**校验，见 `_VALID_ORDER_PARAMS` 同源口径）
+VALID_ORDER_PARAMS = {
+    "customer_name": "张三",
+    "customer_phone": "13800138000",
+    "items": [{"product_id": "p1", "quantity": 1}],
+}
+#: 无归属的目标（#5247 后没有任何 skill 声明它）—— 用于"归属 derive 不出"的负例
+OWNERLESS_TARGET = "order_manage"
+
 # AS-003 形态：agent 所在流程已发过确认卡（点卡那一轮才发现目标工具属于别的流程）。
 AS003_FACTS = {
-    "last_card": {"component": "confirm", "title": "请确认取消订单",
-                  "confirmValue": "确认：取消订单 20260910619250007"},
-    "last_card_skill": "product",
-    "last_confirm_skill": "product",
-    "last_confirm_value": "确认：取消订单 20260910619250007",
+    "last_card": {"component": "confirm", "title": "请确认下单",
+                  "confirmValue": "确认：下单 遮光窗帘 米白 3 米"},
+    "last_card_skill": CARRIER_SKILL,
+    "last_confirm_skill": CARRIER_SKILL,
+    "last_confirm_value": "确认：下单 遮光窗帘 米白 3 米",
 }
 
 
@@ -90,11 +125,11 @@ def _ai(content: str = "", tool_calls=None):
     return m
 
 
-def _validate_input_call(target_tool="order_manage", target_action="cancel", params=None):
+def _validate_input_call(target_tool=CARRIER_TARGET, target_action="create", params=None):
     return _ai(tool_calls=[{
         "name": "validate_input",
         "args": {"target_tool": target_tool, "target_action": target_action,
-                 "params": {"order_id": "20260910619250007"} if params is None else params},
+                 "params": dict(VALID_ORDER_PARAMS) if params is None else params},
         "id": "tc_validate_input",
     }])
 
@@ -198,25 +233,29 @@ async def _run_turn(*, skill, tool_names, replies, facts=None, state_overrides=N
 
 
 class TestCrossSkillTargetIsRouted:
-    """红证：改前**只有劝导语**（`pending_interact_skill` 不变）；改后回锁到归属流程且指引点名它。"""
+    """红证：改前**只有劝导语**（`pending_interact_skill` 不变）；改后回锁到归属流程且指引点名它。
+
+    issue #5247：载体从 B 端 `product`（已解绑 `validate_input`）换成 C 端 `CARRIER_SKILL`
+    —— 判据与断言强度不变，只换 premise 的落点（见模块 docstring 的对照表）。
+    """
 
     async def test_out_of_domain_target_relocks_and_guidance_names_owner(self):
-        skill = "product"
+        skill = CARRIER_SKILL
         tool_names = _declared_tools(skill)
         # 前置自断言（§18.4）：判据前提不成立时宁可红，不要空跑
-        if "order_manage" in tool_names:
-            pytest.fail("前提不成立：AS-003 形态要求 agent 所在流程**不含** order_manage")
+        if CARRIER_TARGET in tool_names:
+            pytest.fail(f"前提不成立：AS-003 形态要求 agent 所在流程**不含** {CARRIER_TARGET}")
         if "validate_input" not in tool_names:
             pytest.fail("前提不成立：该流程必须绑了 validate_input（判决的产生者）")
-        state = _base_state(skill)
-        owner = _flow_owner_skill(state, "order_manage")
+        state = _base_state(skill, **XIAOBU_STATE)
+        owner = _flow_owner_skill(state, CARRIER_TARGET)
         if not owner or owner == skill:
-            pytest.fail(f"前提不成立：order_manage 的归属流程应为**别的**流程，实得 {owner!r}")
+            pytest.fail(f"前提不成立：{CARRIER_TARGET} 的归属流程应为**别的**流程，实得 {owner!r}")
 
         result, rec, env = await _run_turn(
             skill=skill, tool_names=tool_names,
             replies=[_validate_input_call(), _ai("抱歉，这个操作需要在对应流程里办理。")],
-            facts=AS003_FACTS)
+            facts=AS003_FACTS, state_overrides=XIAOBU_STATE)
 
         payloads = _validate_payloads(result)
         if not payloads:
@@ -233,7 +272,7 @@ class TestCrossSkillTargetIsRouted:
         combined = f"{p.get('message') or ''}\n{p.get('suggestion') or ''}"
         assert "本会话已切到" in combined and owner in combined, (
             f"指引没有点名归属流程 {owner!r}：{combined!r}")
-        assert "下一轮" in combined and "order_manage" in combined, (
+        assert "下一轮" in combined and CARRIER_TARGET in combined, (
             f"指引没说清「下一轮可用」这件事：{combined!r}")
         assert "不要再调用" in combined and "确认" in combined, (
             f"指引没说清「本轮该做什么」（不重试 / 向用户要一次确认）：{combined!r}")
@@ -256,16 +295,17 @@ class TestCrossSkillTargetIsRouted:
     async def test_round_end_keeps_relocked_pending_not_this_skill(self):
         """#3976 P3 同款：轮末跨轮持久化**不得**把回锁结果覆盖回本轮流程。
 
-        为什么必须（`product` 就在 `CREATION_SKILL_NAMES` 里）：下一轮的路由取
-        `SessionMemory.get_pending_skill`；被覆盖回 product ⇒ "下一轮即可执行"是空头承诺。
+        为什么必须（`CARRIER_SKILL` 与 `product` 一样在 `CREATION_SKILL_NAMES` 里）：
+        下一轮的路由取 `SessionMemory.get_pending_skill`；被覆盖回本轮流程 ⇒
+        "下一轮即可执行"是空头承诺。
         """
-        skill = "product"
-        state = _base_state(skill)
-        owner = _flow_owner_skill(state, "order_manage")
+        skill = CARRIER_SKILL
+        state = _base_state(skill, **XIAOBU_STATE)
+        owner = _flow_owner_skill(state, CARRIER_TARGET)
         result, rec, env = await _run_turn(
             skill=skill, tool_names=_declared_tools(skill),
             replies=[_validate_input_call(), _ai("抱歉，这个操作需要在对应流程里办理。")],
-            facts=AS003_FACTS)
+            facts=AS003_FACTS, state_overrides=XIAOBU_STATE)
         assert owner, "前提不成立：归属流程解析不出"
         assert rec["calls"], "本轮没有任何 pending_skill 落点 —— 本用例会是空跑"
         assert rec["calls"][-1][1] == owner, (
@@ -276,13 +316,13 @@ class TestCrossSkillTargetIsRouted:
 
     async def test_inflight_confirm_card_ownership_follows_the_route(self):
         """AS-003 正是"已发过确认卡"的形态：卡归属不迁移 ⇒ 下一轮答卡豁免失效（乒乓）。"""
-        skill = "product"
-        state = _base_state(skill)
-        owner = _flow_owner_skill(state, "order_manage")
+        skill = CARRIER_SKILL
+        state = _base_state(skill, **XIAOBU_STATE)
+        owner = _flow_owner_skill(state, CARRIER_TARGET)
         await _run_turn(
             skill=skill, tool_names=_declared_tools(skill),
             replies=[_validate_input_call(), _ai("抱歉，这个操作需要在对应流程里办理。")],
-            facts=AS003_FACTS)
+            facts=AS003_FACTS, state_overrides=XIAOBU_STATE)
         facts = _FakeStateStore._states.get(SID) or {}
         assert facts.get("last_card_skill") == owner, (
             f"在办确认卡的归属未随流程迁移（下一轮答卡轮不豁免）：{facts.get('last_card_skill')!r}")
@@ -290,17 +330,22 @@ class TestCrossSkillTargetIsRouted:
 
 
 class TestNegativePaths:
-    """R2：四条阴性负例 —— 证明没有拦掉/改写原本合法的输入，也没有把会话打坏。"""
+    """R2：四条阴性负例 —— 证明没有拦掉/改写原本合法的输入，也没有把会话打坏。
+
+    issue #5247：载体换成 C 端（见模块 docstring 对照表）。域内负例所在流程 =
+    `customer_order`（绑 `validate_input` **且**绑 `order_create`）。
+    """
 
     async def test_in_domain_success_path_is_untouched(self):
         """① 域**内**目标的校验成功路径完全不受影响。"""
-        skill = "order"
+        skill = "customer_order"
         tool_names = _declared_tools(skill)
-        if "order_manage" not in tool_names:
-            pytest.fail("前提不成立：order 流程应声明 order_manage")
+        if CARRIER_TARGET not in tool_names:
+            pytest.fail(f"前提不成立：{skill} 流程应声明 {CARRIER_TARGET}")
         result, rec, env = await _run_turn(
             skill=skill, tool_names=tool_names,
-            replies=[_validate_input_call(), _ai("已核对，请确认。")])
+            replies=[_validate_input_call(), _ai("已核对，请确认。")],
+            state_overrides=XIAOBU_STATE)
         payloads = _validate_payloads(result)
         if not payloads:
             pytest.fail("validate_input 没有被真的执行过 —— 本用例会是空跑")
@@ -314,14 +359,15 @@ class TestNegativePaths:
     async def test_other_validation_failures_do_not_relock(self):
         """② 非 `cross_skill_target` 的失败（缺参等）不触发回锁。
 
-        形态刻意选**域内**目标 + **域闸门之后**才失败（缺 status）：证明"判决不是
+        形态刻意选**域内**目标 + **域闸门之后**才失败（缺必填字段）：证明"判决不是
         `cross_skill_target`"这一条是回锁的**唯一**触发条件，而不是"校验失败就回锁"。
         """
-        skill = "order"
+        skill = "customer_order"
         result, rec, env = await _run_turn(
             skill=skill, tool_names=_declared_tools(skill),
-            replies=[_validate_input_call(target_action="update_status"),
-                     _ai("请补充要改成哪个状态。")])
+            replies=[_validate_input_call(params={"customer_name": "张三"}),
+                     _ai("请补充客户手机号与商品明细。")],
+            state_overrides=XIAOBU_STATE)
         payloads = _validate_payloads(result)
         if not payloads:
             pytest.fail("validate_input 没有被真的执行过 —— 本用例会是空跑")
@@ -335,12 +381,27 @@ class TestNegativePaths:
         assert "本会话已切到" not in combined, f"非跨域失败被写成跨域指路：{combined!r}"
 
     async def test_underivable_owner_changes_nothing_and_keeps_the_advice(self):
-        """③ 归属 derive 不出（persona 不可达）⇒ 不改任何状态，退回既有劝导语（fail-safe）。"""
-        skill = "product"
+        """③ 归属 derive 不出 ⇒ 不改任何状态，退回既有劝导语（fail-safe）。
+
+        issue #5247 重新锚定：原用例靠"persona 不可达 + 目标有归属"触发，而唯一候选兜底
+        （`owners[0] if len(owners) == 1`）在活真值下**会**回锁 ⇒ 该触发形态已不再能证明
+        fail-safe。改用**无归属的目标**（`OWNERLESS_TARGET`：B 端解绑后没有任何 skill 声明它）
+        —— 与 persona 不可达同属"derive 不出归属"这一判据分支，且前提在真值里稳定成立。
+        ⚠️「已知 persona + 唯一候选但不可达 ⇒ 仍回锁」是另一处**真缺陷**
+        （`tests/test_or014_flow_owner_guard.py::TestFlowOwnerIsFactDerived` 正在报它），
+        不在本用例里固化成期望行为。
+        """
+        skill = CARRIER_SKILL
+        state = _base_state(skill, **XIAOBU_STATE)
+        if _flow_owner_skill(state, OWNERLESS_TARGET):
+            pytest.fail(
+                f"前提不成立：{OWNERLESS_TARGET} 现在有归属了（本用例要的是 derive 不出的形态）")
         result, rec, env = await _run_turn(
             skill=skill, tool_names=_declared_tools(skill),
-            replies=[_validate_input_call(), _ai("抱歉，这个操作需要在对应流程里办理。")],
-            state_overrides={"agent_type": "no_such_persona"})
+            replies=[_validate_input_call(target_tool=OWNERLESS_TARGET, target_action="cancel",
+                                         params={"order_id": "20260910619250007"}),
+                     _ai("抱歉，这个操作需要在对应流程里办理。")],
+            state_overrides={**XIAOBU_STATE, "agent_type": "no_such_persona"})
         payloads = _validate_payloads(result)
         if not payloads:
             pytest.fail("validate_input 没有被真的执行过 —— 本用例会是空跑")
@@ -356,11 +417,11 @@ class TestNegativePaths:
 
     async def test_missing_session_does_not_break(self):
         """④ 无 session（单测直调形态）不炸：判决照旧、状态无从改。"""
-        skill = "product"
+        skill = CARRIER_SKILL
         result, rec, env = await _run_turn(
             skill=skill, tool_names=_declared_tools(skill),
             replies=[_validate_input_call(), _ai("抱歉，这个操作需要在对应流程里办理。")],
-            state_overrides={"session_id": ""})
+            state_overrides={**XIAOBU_STATE, "session_id": ""})
         payloads = _validate_payloads(result)
         if not payloads:
             pytest.fail("validate_input 没有被真的执行过 —— 本用例会是空跑")
@@ -374,16 +435,28 @@ class TestNegativePaths:
 
 
 class TestRouteTargetIsFactDerived:
-    """回锁目标必须**真的**在该 persona 的图里、且真的声明了被拒工具（不得写死 skill 名）。"""
+    """回锁目标必须**真的**在该 persona 的图里、且真的声明了被拒工具（不得写死 skill 名）。
 
-    @pytest.mark.parametrize("tool", ["order_manage", "order_create"])
-    def test_owner_declares_the_tool_and_is_reachable(self, tool):
-        owner = _flow_owner_skill({"agent_type": "mibao"}, tool)
+    issue #5247：参数从 B 端的 `order_manage` / `order_create` 换成 C 端仍绑定的写工具
+    （B 端已整体解绑 ⇒ 旧参数要么无归属、要么归属落在 C 端节点上，premise 不再成立）。
+    """
+
+    @pytest.mark.parametrize("persona,tool", [
+        ("xiaobu", "order_create"),
+        ("xiaobu", "aftersale_create"),
+        # [RETIRED #5247] ("mibao", "order_create") —— premise 是 B 端流程声明该写工具；
+        #   用户裁定「创建能力从 B 端移除」后它唯一归属 = C 端 `customer_order` ⇒ 对 mibao
+        #   该判据无对象（同一判据保留在上面的 C 端参数上）。
+        # [RETIRED #5247] ("mibao", "order_manage") —— `order_manage` 现在**没有任何 skill
+        #   声明** ⇒ 归属恒解析不出，回锁无从谈起（判据无对象）。
+    ])
+    def test_owner_declares_the_tool_and_is_reachable(self, persona, tool):
+        owner = _flow_owner_skill({"agent_type": persona}, tool)
         if not owner:
-            pytest.fail(f"mibao 解析不出 {tool} 的归属流程")
-        cfg = get_agent_config("mibao")
+            pytest.fail(f"{persona} 解析不出 {tool} 的归属流程")
+        cfg = get_agent_config(persona)
         assert owner in cfg.get_all_skill_names(), (
-            f"回锁目标 {owner!r} 不在 mibao 的 skill_names 里 → 图里没有该节点（#3571 族教训）")
+            f"回锁目标 {owner!r} 不在 {persona} 的 skill_names 里 → 图里没有该节点（#3571 族教训）")
         declared = get_skill_registry().get(owner)
         if declared is None:   # 显式失败分支（弱断言门禁）
             pytest.fail(f"回锁目标 {owner!r} 不在 skill 注册表里")

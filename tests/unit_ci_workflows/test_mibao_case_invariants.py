@@ -91,16 +91,35 @@ class TestMibaoToolsetTruth:
     """B 端工具集真值：与 skill 源码一致，且不含 C 端专属工具（镜像 C 端真值测试）"""
 
     def test_mibao_toolset_contains_bend_admin_tools(self):
-        """B 端管理工具必须全部在源码工具集内（防解析漏文件/漏常量）。"""
+        """B 端管理工具必须全部在源码工具集内（防解析漏文件/漏常量）。
+
+        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：名单已按新事实
+        改判 —— 写工具（`order_create` / `order_manage` / `product_manage`）**不再属于** B 端
+        工具集（下方反向断言钉住这条硬边界），取而代之的是 6 个新接入的**只读**查询工具。
+        """
         real = _mibao_real_toolset()
         must_have = {
-            "order_query", "order_manage", "order_create", "product_manage",
-            "after_sales_manage", "customer_manage", "employee_manage",
-            "role_manage", "dashboard_stats", "finance_api", "settings_manage",
-            "category_manage", "inventory_manage", "knowledge_search",
+            "order_query", "product_search", "product_detail", "after_sales_manage",
+            "customer_manage", "employee_manage", "role_manage", "dashboard_stats",
+            "finance_api", "settings_manage", "category_manage", "inventory_manage",
+            "knowledge_search",
+            # #5247 新接入的只读面（写能力下线后的替代查询面）：解析漏文件/漏常量会让
+            # 覆盖体检把「零覆盖」误当成「没有这个能力」，故在此显式登记。
+            "stock_ledger_query", "inbound_order_query", "operation_catalog_query",
+            "craft_calc_config_query", "briefing_query", "processing_order_set_query",
         }
         missing = must_have - real
         assert not missing, f"B 端工具集缺 {sorted(missing)}（skill 源码解析不完整）"
+        # 反向硬边界（#5247）：已从 B 端解绑的写工具**不得**回到 B 端工具集。
+        # （MC-021 的九条注入式红证是同一事实的完整判据；此处只做本真值测试的定点核对，
+        #   防止「漏解绑一个 skill」在工具集真值这一层静默通过。）
+        unbound_write_tools = {
+            "order_create", "order_manage", "product_manage", "product_update",
+            "sku_update", "processing_item_manage", "processing_order_generate",
+            "processing_order_update",
+        }
+        leaked = real & unbound_write_tools
+        assert not leaked, f"B 端工具集混入已解绑的写工具（#5247）: {sorted(leaked)}"
 
     def test_every_declared_skill_file_is_parseable(self):
         """米宝**声明**的每个 skill 都必须存在且解析出工具（issue #3555 防假绿）。

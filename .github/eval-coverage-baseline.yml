@@ -38,20 +38,45 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 1 条阻塞（order_manage/missing_positive）+ 3 条薄覆盖（validate_input / session_manage / sku_update），全部有归属；customer_manage 的 action_dangling 条目已于 2026-09-15（issue #3683/#3669）销账删除；order_query 的 action_dangling 条目已于 2026-09-15（issue #3702）销账删除（OR-006 的 order_query(action=detail) 已按真实语义改为 action=list）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 3 条阻塞（#5247 新接入的 3 个 B 端只读工具 craft_calc_config_query / briefing_query / processing_order_set_query 暂无评测用例，跟踪 #3592）+ 2 条薄覆盖（validate_input / session_manage），全部有归属。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
+  # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：下列 3 条是**新接入**的
+  #    只读工具首次登记 —— 它们替代了 B 端下线的写能力（库存台账/入库批次/工序库分别由
+  #    PR-005、PP-002 两条**改判**用例覆盖；这三条暂无用例）。登记 = 让缺口**可见且可收缩**
+  #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
+  #    销账归属 = #3592（B 端剩余覆盖缺口销账）。
+  - tool: briefing_query
+    kind: uncovered
+    persona: mibao
+    issue: "#3592"
+    reason: "#5247 新接入的经营日报只读工具，尚无评测用例（评测栈简报开关可能关闭 ⇒ 场景待定，不先写不可跑的用例）"
+    added: "2026-09-24"
+
+  - tool: craft_calc_config_query
+    kind: uncovered
+    persona: mibao
+    issue: "#3592"
+    reason: "#5247 新接入的算料配置只读工具（褶数法档位/工艺档位），尚无评测用例；销账方式 = 补一条「查算料配置」正常档用例"
+    added: "2026-09-24"
+
+  - tool: processing_order_set_query
+    kind: uncovered
+    persona: mibao
+    issue: "#3592"
+    reason: "#5247 新接入的加工套件/扫码循环只读工具，尚无评测用例；B 端已不能生成加工单 ⇒ 套件数据依赖种子，场景待定"
+    added: "2026-09-24"
+
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
   #    `processing_order_update` 的 uncovered 条目**已删除** —— 配套正向用例
   #    **PG-015**（查询）/ **PG-016**（更新状态）在**同一个 PR** 里补上（processing-order.yml）。
   #    补用例与删条目必须同 PR：分开做会出现「main 带陈旧登记」或「main 带零覆盖缺口」的红窗口。
-  - tool: order_manage
-    kind: missing_positive
-    persona: mibao
-    issue: "#3603"
-    reason: 仅 OR-007/CU-005 两条 adversarial —— 正常档的改状态/发货路径无评测证据
-    added: "2026-09-14"
+  # ✅ 销账（2026-09-24，issue #5247）：`order_manage` 的 **missing_positive** 条目**已删除** ——
+  #    该工具已从 B 端解绑（不再是 B 端工具 ⇒ 条目被判「登记无效」并阻塞门禁）。原登记
+  #    「仅 OR-007/CU-005 两条 adversarial」的两个用例亦已随 #5247 退役并改判为只读查询
+  #    （见 .github/cases/order.yml / customer.yml 的 skip_reason）。跟踪单 #3603 随之失去对象
+  #    （order_manage 不再有 B 端正常档用例可补）——如实登记在此，供收口时关闭该 issue。
 
   # ✅ 销账（2026-09-15，issue #3702）：`order_query` 的 **action_dangling** 条目**已删除** ——
   #    OR-006 的 `order_query(action=detail)` 已按真实语义改为 `action: list`
@@ -79,12 +104,10 @@ entries:
     reason: 仅 DA-004 一条（正向）；在线会话/排队/历史会话其它动作无覆盖（#3592 跟踪）
     added: "2026-09-14"
 
-  - tool: sku_update
-    kind: thin_positive
-    persona: mibao
-    issue: "#3559"
-    reason: 仅 PR-021 一条（正向）；假绿口径已由 #3544 升级为 must_succeed+output_verify，仍需补第 2 条加厚
-    added: "2026-09-14"
+  # ✅ 销账（2026-09-24，issue #5247）：`sku_update` 的 **thin_positive** 条目**已删除** ——
+  #    该工具已从 B 端解绑（不再是 B 端工具 ⇒ 条目被判「登记无效」并阻塞门禁）；其唯一用例
+  #    PR-021 亦已退役并改判为 `product_detail` 只读核对（见 .github/cases/product.yml）。
+  #    跟踪单 #3559 随之失去对象（sku_update 不再有 B 端用例可加厚）——如实登记在此。
 
   # ✅ 销账（2026-09-15，issue #3683 / #3669）：`customer_manage` 的 **action_dangling**
   #    条目**已删除** —— CU-005 的 `customer_manage(action=query)` 已按真实语义改为

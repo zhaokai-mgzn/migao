@@ -48,12 +48,16 @@ cases:
 
     expectations:
       - tool: product_detail
-      - tool: order_create
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原 `- tool: order_create`
+      # 已移除 —— 下单写工具已从 B 端全部 skill 解绑（工具类与 C 端绑定未动）⇒ 保留 = 永不满足的
+      # 悬空声明（静态判据还会把本用例判成「只能跑小布却未标注 persona」）；断言面按 A 类模板
+      # 改判为存活的只读路径 product_detail（「跨 skill 复用 UUID」的意图见下方 data_checks）。
     # 效果层断言（burn-down 缴费，2026-09-21；先例 = OR-008 / OR-009 / OR-016 的
     # `must_succeed[order_create]`）：裸工具名期望只证明「调用过」—— 工具返回
     # `success=false` 也照样通过（#3778「调用了 ≠ 成了」）。
-    must_succeed:
-      - tool: order_create
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：
+    # `must_succeed[order_create]` 已随能力下线**整条移除** —— 该效果层断言在解绑后永不满足
+    # （不是放宽：用例已退役，见 skip_reason）。
     # 前置自断言（同一次 burn-down 缴费）：本用例按**名字**选品（「查一下遮光窗帘」），
     # 且 `pre_clean` 已按同一关键词 `product_dedupe` ⇒ 「该名字在种子栈里唯一」是它真正依赖、
     # **只读**的前置。类型用**已实现**的 `product_count_for_keyword`（口径与 product_remove /
@@ -64,11 +68,8 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    required_args:
-      - tool: order_create
-        fields:
-          - items[].processing_info.sellingMethod
-          - items[].processing_info.doorWidth
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`required_args[order_create]`
+    # （下单必填字段）已随能力下线**整条移除** —— 保留 = 永不满足的悬空声明（用例已退役，见 skip_reason）。
     data_checks:
       - "order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）"
       - "Context 注入包含 product_ids"
@@ -78,8 +79,8 @@ cases:
       # 最早创建的（= 种子商品），删掉其余副本。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
-    skip_reason: ""
-    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「下单（跨 Skill 复用 UUID）」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查商品详情（product_detail）+ 如实说明米宝不做下单、引导去后台订单页面」。"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_detail, order_create] 改判为 [product_detail]，must_succeed / required_args 里的 order_create 同步移除（否则成为永不满足的悬空声明；required_args 整条退场，无残留字段）；user_inputs / namespaces / pre_clean / precondition / data_checks 原样未动（下单剧本与「复用 UUID」的散文判据保留为历史记录、不再进运行期）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -122,14 +123,18 @@ cases:
         source: "遮光窗帘"
         expect: 1
     expectations:
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原 `- tool: order_create`
+      # 已移除 —— 下单写工具已从 B 端全部 skill 解绑 ⇒ 保留 = 永不满足的悬空声明；存活面 =
+      # 只读查询，且 customer_manage 显式声明 `action: list`（该工具已收窄为只读、写 action 已删除）。
       - tool: product_search
       - tool: customer_manage
-      - tool: order_create
+        args:
+          action: list
     data_checks:
       - "order_create 复用前两轮的 product_id 和 customer_id"
       - "success=true"
-    skip_reason: ""
-    merge_log: "eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。**"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「给张三下单（3 个 Skill 连续切换的末段写面）」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「搜商品 + 查客户（product_search / customer_manage action=list）+ 如实说明米宝不做下单、引导去后台订单页面」。"
+    merge_log: "eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, customer_manage, order_create] 改判为 [product_search, customer_manage(action=list)]，order_create 同步移除（否则成为永不满足的悬空声明）；must_succeed / required_args / repeat_until 本就没有 order_create 声明（无需改动）；user_inputs / data_checks / namespaces / precondition / pre_clean 原样未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
@@ -215,18 +220,20 @@ cases:
       - "product_name:遮光窗帘"
 
     expectations:
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原 `- tool: order_create`
+      # 已移除 —— 下单写工具已从 B 端全部 skill 解绑 ⇒ 保留 = 永不满足的悬空声明；断言面按
+      # A 类模板改判为存活的只读路径（全旅程的「咨询→查商品→查订单/物流」三段仍在）。
       - tool: product_search
       - tool: product_detail
-      - tool: order_create
       - tool: order_query
-    must_succeed:
-      - tool: order_create
+    # ⚠️ 2026-09-24（issue #5247）：`must_succeed[order_create]` 已随能力下线整条移除
+    # （该效果层断言在解绑后永不满足；用例已退役，见 skip_reason）。
     data_checks:
       - "第4步 product_id 来自第2-3步上下文"
       - "订单创建成功并包含 SKU 信息"
       - "第7步自动找到刚创建的订单"
-    skip_reason: ""
-    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「全旅程下单」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「咨询 + 搜商品 + 查商品详情 + 查订单/物流（product_search / product_detail / order_query）+ 如实说明米宝不做下单、引导去后台订单页面」。"
+    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, product_detail, order_create, order_query] 改判为 [product_search, product_detail, order_query]，must_succeed 里的 order_create 同步移除（否则成为永不满足的悬空声明）；user_inputs / auto_fill / pre_clean / precondition / namespaces / data_checks 原样未动（下单剧本保留为历史记录、不再进运行期）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

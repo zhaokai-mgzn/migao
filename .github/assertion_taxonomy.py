@@ -74,61 +74,47 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    写工具口径）。工具类文件仍在 `app/tools/human_handoff.py`，但它只能被直测类
     #    单测实例化，用例断言它会永远失败 ⇒ 留在表里只会让"写用例"分类产生假红。
     #    工具文件删除（阶段二）时无本表改动。
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：`order_manage` /
+    #    `product_manage` / `product_update` / `sku_update` / `processing_order_generate` /
+    #    `processing_order_update` **已从 B 端全部 skill 解绑** —— 工具类与注册行仍在，
+    #    C 端绑定也未动，但**两侧工具集都不可达** ⇒ 它们是幽灵写工具（判据从「真实可达」
+    #    退化成「曾经可达」），必须从本表移除。剩余在册写工具只有 C 端两个
+    #    （`order_create` / `aftersale_create`）。
     "aftersale_create",            # WRITE|NON_IDEMPOTENT
     "order_create",                # WRITE
-    "order_manage",                # WRITE|DESTRUCTIVE
-    "product_manage",              # WRITE|DESTRUCTIVE
     # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`
     # （给**商品**增删加工项，WRITE|IDEMPOTENT）**已随解耦退场** —— 商品不再持有加工项
     # （加工项是店铺级目录），工具文件与注册行都删 ⇒ 从本表移除（同 `human_handoff` 退场处置）。
     # 留在表里会让「写工具集」出现不可达成员 ⇒ 门禁把不存在的工具的用例判成「写用例」
     # （`test_write_tool_sets_only_name_reachable_tools` 正是这条摩擦的守卫）。
-    "product_update",              # WRITE|IDEMPOTENT
-    "sku_update",                  # WRITE|IDEMPOTENT
-    # 加工单写工具（issue #4196 恢复接入 ⇒ 重新落回「当前可达」面，必须在此表态；
-    # #3917 下线期它们**不在**本表 —— 正是「已注册写工具必须显式表态」这条摩擦的实例）。
-    # 两者**整工具即写**：`processing_order_generate` 只有 `generate`（批量建单 + 订单
-    # confirmed→producing）；`processing_order_update` 的 `VALID_ACTIONS` 四个
-    # （issue/start/complete/cancel）**全是状态迁移**，类里没有 `read_only_actions`
-    # ⇒ 不存在只读 action ⇒ 进 `WRITE_TOOLS` 而非 `WRITE_TOOL_ACTIONS`。
-    "processing_order_generate",   # WRITE|NON_IDEMPOTENT
-    "processing_order_update",     # WRITE|DESTRUCTIVE|NON_IDEMPOTENT
+    # 加工单写工具（`processing_order_generate` / `processing_order_update`）与
+    # `product_update` / `sku_update` 同因（#5247）已移出本表，见上方注释。
 })
 
 # `WRITE_TOOL_ACTIONS`：工具级 read_only=False，但**只有部分 action 是写**
 # （值 = 该工具的写 action 集合；`read_only_actions` 里的 action 是读，**不算写**）。
 # 真值锚点 = 各工具类的 `read_only_actions`（按该文本检索）
-#   · customer_manage      read_only_actions = {"list","detail","list_tags"}
-#   · after_sales_manage   read_only_actions = {"list","detail"}
-#   · employee_manage      read_only_actions = {"list","detail"}
-#   · finance_api          read_only_actions = frozenset({"get_summary","get_transactions","get_reconciliation"})
-#   · inventory_manage     read_only_actions = {"query","low_stock_alert"}
 #   · notification_manage  read_only_actions = {"list","unread_count"}
-#   · processing_item_manage read_only_actions = {"list_categories","calculate_price"}
-#   · role_manage          read_only_actions = {"list","all","detail","list_permissions"}
-#   · session_manage       read_only_actions = {"list","monitor","detail"}
 #   · settings_manage      read_only_actions = {"get_settings","get_ai_config","login_logs"}
-#   · category_manage      read_only_actions = {"tree"}
+#
+# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：下列 9 条**已整条移出本表** ——
+# 写 action 已从工具源码删除（工具收窄为纯只读）+ 部分工具还从 B 端解绑：
+#   · 收窄为只读（写 action 已删除 ⇒ 不再是"部分写"工具）：
+#     customer_manage（现 {"list","detail","list_tags"}）/ after_sales_manage（{"list","detail"}）/
+#     employee_manage（{"list","detail"}）/ role_manage（{"list","all","detail","list_permissions"}）/
+#     finance_api（{"get_summary","get_transactions","get_reconciliation"}）/
+#     category_manage（{"tree"}）/ session_manage（{"list","monitor","detail"}）/
+#     inventory_manage（{"query","low_stock_alert"}）
+#   · 且 `processing_item_manage`（加工项写工具）已从 B 端解绑 ⇒ 两侧都不可达（幽灵工具）。
+# 留在表里 = 判据源与实际枚举脱节（声明那些写 action 的用例会先被 coverage 判悬空阻塞，
+# 而本表却仍把它们算作"写用例"）。真值以各工具源码的 `VALID_ACTIONS` / `read_only_actions` 为准。
 WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
-    "customer_manage": frozenset({
-        "update", "add_tag", "remove_tag", "create_tag", "update_tag", "delete_tag",
-    }),
-    "after_sales_manage": frozenset({"update_status"}),
-    "employee_manage": frozenset({
-        "create", "update", "delete", "reset_password", "toggle_status",
-    }),
-    "finance_api": frozenset({"create_transaction"}),
-    "inventory_manage": frozenset({"adjust"}),
     "notification_manage": frozenset({
         "mark_read", "create", "delete", "mark_all_read",
     }),
-    "processing_item_manage": frozenset({"create", "update", "delete"}),
-    "role_manage": frozenset({"create", "update", "delete", "assign_permissions"}),
-    "session_manage": frozenset({"assign", "end"}),
     "settings_manage": frozenset({
         "update_settings", "update_ai_config", "change_password",
     }),
-    "category_manage": frozenset({"create", "update", "delete"}),
 }
 
 # 安全护栏：集合不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。

@@ -52,12 +52,28 @@
 ## 明确不在本映射内的工具（对照，不是遗漏）
 
 - **C 端也在用的双端工具**（`allowed_roles` 含 `customer`，如 `product_search` /
-  `order_query` / `product_detail` / `inventory_manage` / `order_create` / `curtain_calc`
+  `order_query` / `product_detail` / `order_create` / `curtain_calc`
   / `interact` / `validate_input` / `knowledge_search` 等）：C 端 JWT 没有权限码
   （`UserIdentity.permissions` 默认空、`customer`/`agent` 不是 `roles` 表角色）
   ⇒ 加码会让 C 端全量失效。**保持角色层**，本次不动。
+  🔴 **issue #5247 改判**：`inventory_manage` 从本清单**移除** —— 它收窄为只读后不再是
+  双端工具（严格执行 `product:list`，C 端恒拒；判据见
+  `test_customer_without_codes_is_denied_on_every_coded_tool` 的 `c_end_reachable` 清单）。
+  「双端」的机械口径自 #5246 起是工具自述的 `c_end_reachable`，**不是** `allowed_roles` 里
+  有没有 `customer`（后者是 `BaseTool` 默认值，对每个未覆写 `allowed_roles` 的工具都成立）。
 - `notification_manage`：`NotificationController` 全类**无** `@RequirePermission`
   ⇒ 目录里没有对应码，角色层是**真正需要**的（工具层唯一保留角色白名单的 B 端工具）。
+- `role_manage` / `settings_manage` 的码是 `system:manage`；`notification_manage` 取
+  `system:manage` + `employee:list`（解析接收人）。
+- 🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）**：下列 8 把工具的写 action
+  被删除 ⇒ 它们各自只保留**读码**（`after_sales_manage` / `category_manage` /
+  `customer_manage` / `employee_manage` / `finance_api` / `inventory_manage` /
+  `role_manage` / `session_manage`），另进场 6 把新只读工具
+  （`briefing_query` / `craft_calc_config_query` / `inbound_order_query` /
+  `operation_catalog_query` / `processing_order_set_query` / `stock_ledger_query`）。**表是唯一真值**：任何码的进出都必须
+  在本表与 `EXPECTED_ALLOWED_ROLES` 里显式改判（判据见本文件 ①/②）。
+  被删除的写 action 留下的**规则/映射**不在这里治理 —— 见
+  `tests/test_tools_validate_input.py` 的 #5247 退役台账（单一台账，不抄第二份）。
 - `tenant_admin`：admin-api 里**不存在**该角色（无 seed、无权限映射，
   `UserService.java` 第 49 行注释「历史遗留管理角色」）。它在 ai-agent 的 27 个工具里
   被放行、在 admin-api 侧所有 `@RequirePermission` 接口 403 ⇒ 修掉这个**跨服务口径断裂**
@@ -153,20 +169,39 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 
 #: 工具 → 应声明的权限码（下表的「工具 × 角色」放行集由它推导，不手写第二遍）
 TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
-    # issue #5246：读（list/detail）取新增的售后读码 `after_sales:view`，写（create/update_status）
-    # 保留 `order:refund` —— 与 `AfterSalesController` 的方法级 `@RequirePermission` 同码。
-    "after_sales_manage": ("after_sales:view", "order:refund"),
+    # issue #5246：读（list/detail）取新增的售后读码 `after_sales:view`。
+    # 🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）**：写 action
+    # （create/update_status）已从工具删除 ⇒ 写码 `order:refund` 随之退场 —— 这是**收窄**，
+    # 不是放宽：工具自身再没有需要该码的调用面（残留的规则/映射由
+    # `tests/test_tools_validate_input.py` 的 #5247 退役台账治理）。
+    "after_sales_manage": ("after_sales:view",),
     # 批次账 / 省料读面（issue #5188）：码与 `StockBatchController` 各端点的
     # `@RequirePermission("product:list")` **逐字一致**（判据见
     # `tests/test_batch_stock_query.py::TestPermissionAlignment`）。
     "batch_stock_query": ("product:list",),
+    # issue #5247 进场：简报卡（读面）取 `dashboard:view` —— 与
+    # `DashboardController` 的 `@RequirePermission` 同码。
+    "briefing_query": ("dashboard:view",),
+    # issue #5247：码**未变**（`product:category`），变的只是工具本身收窄为只读（`tree`）。
     "category_manage": ("product:category",),
-    "customer_manage": ("customer:view", "customer:create"),
+    # issue #5247 进场：算料配置读面 —— 配置读写同用 `processing:manage`
+    # （`CraftCalcConfigController` 的 `@RequirePermission`），本工具只读、不写配置。
+    "craft_calc_config_query": ("processing:manage",),
+    # issue #5247 改判：写 action（create/update/打标签族）已删除 ⇒ 写码 `customer:create` 退场。
+    "customer_manage": ("customer:view",),
     "dashboard_stats": ("dashboard:view",),
-    "employee_manage": ("employee:list", "employee:create"),
-    "finance_api": ("finance:view", "finance:create"),
-    # issue #5246：库存读（query/low_stock_alert）= product:list、写（adjust）= product:create。
-    "inventory_manage": ("product:list", "product:create"),
+    # issue #5247 改判：写 action（create/update/delete/reset_password/toggle_status）已删除
+    # ⇒ 写码 `employee:create` 退场（`idempotent = False` 也随之移除，见
+    # `tests/test_tool_idempotent_retry_guard.py` 的抽样改判）。
+    "employee_manage": ("employee:list",),
+    # issue #5247 改判：写 action（create_transaction）已删除 ⇒ 写码 `finance:create` 退场。
+    "finance_api": ("finance:view",),
+    # issue #5247 进场：入库单读面（V111，issue #5034 的 `inbound:view`）—— 与
+    # `InboundOrderController` 各端点的 `@RequirePermission` 同码。
+    "inbound_order_query": ("inbound:view",),
+    # issue #5246：库存读（query/low_stock_alert）= product:list。
+    # 🔴 issue #5247 改判：写 action（adjust）已删除 ⇒ 写码 `product:create` 退场。
+    "inventory_manage": ("product:list",),
     # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
     "knowledge_search": ("knowledge:view",),
     "logistics_track": ("order:list",),
@@ -176,6 +211,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "order_create": ("order:create", "product:list"),
     "order_manage": ("order:update",),
     "order_query": ("order:list",),
+    # issue #5247 进场：加工项目录（店铺级）读面 —— 与 `ProcessingCatalogController` 同码
+    # （与 `category_manage` 的 `product:category` 无关：那是**商品分类**，不是加工项）。
+    "operation_catalog_query": ("processing:manage",),
     # issue #5246 改判：计件/报工/加工单读面取**加工面读码** processing:manage
     # （ProductionController 的方法级注解；原 order:list / processing:view 与端点生效码不符）。
     "piecework_query": ("processing:manage",),
@@ -183,6 +221,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "processing_item_query": ("processing:manage",),
     "processing_order_generate": ("processing:update",),
     "processing_order_query": ("processing:manage",),
+    # issue #5247 进场（加工套件 / 扫码循环，`ProcessingOrderSetController`）：三个端点均是
+    # 方法级 `@RequirePermission("processing:manage")` ⇒ 与加工面读码同源（生产域暂无专属读码）。
+    "processing_order_set_query": ("processing:manage",),
     "processing_order_update": ("processing:update",),
     "product_detail": ("product:list",),
     "product_manage": ("product:create",),
@@ -190,10 +231,17 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "product_update": ("product:create",),
     "production_progress_query": ("processing:manage",),
     "production_worklog_query": ("processing:manage",),
+    # issue #5247：码**未变**（`system:manage` = admin 专属越权守卫，本表不放松），
+    # 变的只是工具收窄为只读（list/all/detail/list_permissions）。
     "role_manage": ("system:manage",),
-    "session_manage": ("agent:session", "agent:session:manage"),
+    # issue #5247 改判：写 action（assign/end）已删除 ⇒ 写码 `agent:session:manage` 退场
+    # （读码 `agent:session` 不变）。
+    "session_manage": ("agent:session",),
     "settings_manage": ("system:manage",),
     "sku_update": ("product:create",),
+    # issue #5247 进场：库存台账（读面）取 `product:list` —— 与 `/api/admin/stock-ledger`
+    # 端点的生效码同源（存量余额/流水是可被商品读码持有者看到的口径）。
+    "stock_ledger_query": ("product:list",),
 }
 
 #: 每个工具**必须**放行的商户角色（除恒放行的 admin 外）—— 显式写死，
@@ -203,14 +251,24 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "after_sales_manage": frozenset({"customer_service", "operator"}),
     # 批次/省料读面（issue #5188）：`product:list` 的持有角色（目录推导，不手抄）
     "batch_stock_query": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #5247 进场：`dashboard:view` 的持有角色（目录推导，不手抄 —— 与 dashboard_stats 同集）。
+    "briefing_query": frozenset({
+        "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
+    }),
     "category_manage": frozenset({"operator", "product_manager"}),
+    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    "craft_calc_config_query": frozenset({"operator", "product_manager"}),
     "customer_manage": frozenset({"customer_service", "operator", "sales"}),
     "dashboard_stats": frozenset({
         "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
     }),
     "employee_manage": frozenset({"operator"}),
     "finance_api": frozenset({"finance", "operator"}),
-    # issue #5246：库存读 = `product:list`、写 = `product:create` ⇒ 持有任一码者放行（目录推导）。
+    # issue #5247 进场：`inbound:view` 的持有角色（目录推导）。
+    "inbound_order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
+    # issue #5246：库存读 = `product:list` ⇒ 持有该码者放行（目录推导）。
+    # 🔴 issue #5247 改判：写码 `product:create` 随 `adjust` 退场 ⇒ 放行集**不变**
+    # （`product:create` 的持有者恰好都持 `product:list`，diff 里看得见"没有谁被收回"）。
     "inventory_manage": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     # issue #5246：知识库**读**码下发给客服 + 运营（本次新授予的两个岗位）。
     "knowledge_search": frozenset({"customer_service", "operator"}),
@@ -220,12 +278,16 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
+    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    "operation_catalog_query": frozenset({"operator", "product_manager"}),
     # issue #5246 改判：计件/报工/加工单读面 = `processing:manage` ⇒ 运营 + 商品主管。
     "piecework_query": frozenset({"operator", "product_manager"}),
     "processing_item_manage": frozenset({"operator", "product_manager"}),
     "processing_item_query": frozenset({"operator", "product_manager"}),
     "processing_order_generate": frozenset({"operator"}),
     "processing_order_query": frozenset({"operator", "product_manager"}),
+    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    "processing_order_set_query": frozenset({"operator", "product_manager"}),
     "processing_order_update": frozenset({"operator"}),
     "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
@@ -237,6 +299,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "session_manage": frozenset({"customer_service", "operator"}),
     "settings_manage": frozenset(),
     "sku_update": frozenset({"operator", "product_manager"}),
+    # issue #5247 进场：`product:list` 的持有角色（目录推导）。
+    "stock_ledger_query": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
 }
 
 #: 仍由角色层把关的 B 端工具（目录里没有对应权限码）—— 任何新增都必须显式登记在此。

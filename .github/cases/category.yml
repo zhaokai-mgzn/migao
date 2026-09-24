@@ -47,9 +47,12 @@ cases:
       - "新建一个'轻奢系列'分类"
       - "确认"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除（工具收窄为只读
+      # `{tree}`）⇒ 机器可判字段改判到**存活的只读路径** `action: tree`（写 action 不得残留：
+      # 悬空声明永不满足，会阻塞 CI 的 action 绑定判据）。
       - tool: category_manage
         args:
-          action: create
+          action: tree
     # ── 效果层 + 自清理 + 前置自断言（case-trust burn-down 缴费，issue #4965；metric=entries ⇒ 整条销账）──
     # 本用例命中的三条存量违规：① NO-EFFECT-ASSERTION ② NO-SELF-CLEAN ③ NO-PRECONDITION-ASSERTION
     # ① 【效果层 = must_succeed】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
@@ -67,13 +70,14 @@ cases:
     # 【断言面一字未放宽】`user_inputs` / `expectations` / `skip_reason` / `traces` 全部未动，只加上面几格。
     namespaces:
       - "category:轻奢系列"
-    must_succeed:
-      - tool: category_manage
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[category_manage]` **整格移除**
+    # （写声明同步移除）—— `create` 已从源码删除 ⇒ 该断言在新事实下**永不满足**（悬空声明）。
+    # 本用例已退役（见 `skip_reason`），条目不删除。
     data_checks:
       - "name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）"
-      - "前置：分类管理写面可用且「轻奢系列」未被占用 —— 写操作 success=true 即证前置成立；被拒（重名/校验失败）时 must_succeed 判红，不与「agent 不会建分类」同形"
-    skip_reason: ""
-    merge_log: "verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮；2026-09-21（case-trust burn-down 缴费，issue #4965，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage]`（效果层）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类复位动作）+ 机器计分型前置断言；`user_inputs` / `expectations` / `skip_reason` / `traces` 一字未动、断言强度不放宽"
+      - "前置：分类树可查（category_manage action=tree）—— 工具返回 success=true 即证前置成立（机器计分口径；2026-09-24 issue #5247：原「分类管理写面可用且「轻奢系列」未被占用 / 写操作 success=true」随写能力下线必然为假 ⇒ 改判为只读面；原 `must_succeed` 已整格移除，见上）"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建分类」（category_manage / action=create）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 category_manage(action=tree)（只读查询分类树）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮；2026-09-21（case-trust burn-down 缴费，issue #4965，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage]`（效果层）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类复位动作）+ 机器计分型前置断言；`user_inputs` / `expectations` / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `create` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `category_manage(action=create)` 改判为存活的只读路径 `category_manage(action=tree)`，`must_succeed[category_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据），机器计分型前置断言由「写面可用」改判为「只读分类树可查」。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"
@@ -98,12 +102,11 @@ cases:
     user_inputs:
       - "删除'轻奢系列'分类"
     expectations:
-      - tool: interact
-        args:
-          component: confirm
-      - tool: category_manage
-        args:
-          action: delete
+      # ── 2026-09-24（issue #5247，B 端只读化）：`category_manage` 的写 action `delete` 已从源码
+      # 删除（工具收窄为只读 `{tree}`），且删除**没有存活的只读路径** ⇒ 改判为 `direct_reply`
+      # （「如实说明 + 引导去后台页面」的既有伪工具形态，MC-021 / DF-016 在用）。原
+      # `interact(confirm)` 期望随之移除：确认卡只服务写操作，写能力下线后无卡可发。
+      - tool: direct_reply
     # ── 效果层 + 自清理 + 前置自断言（case-trust burn-down 缴费，issue #4971；metric=entries ⇒ 整条销账）──
     # 本用例命中的三条存量违规：① NO-EFFECT-ASSERTION ② NO-SELF-CLEAN ③ NO-PRECONDITION-ASSERTION
     # ① 【效果层 = must_succeed】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
@@ -120,14 +123,13 @@ cases:
     # 【断言面一字未放宽】`user_inputs` / `expectations` / `skip_reason` / `traces` 全部未动，只加上面几格。
     namespaces:
       - "category:轻奢系列"
-    must_succeed:
-      - tool: category_manage
-        action: delete
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[category_manage(action=delete)]`
+    # **整格移除**（写声明同步移除）—— `delete` 已从源码删除 ⇒ 该断言永不满足（悬空声明）。
     data_checks:
-      - "二次确认 + 风险提示后才执行删除"
-      - "前置：目标分类「轻奢系列」在位（否则「删除」没有对象、红的表现像「agent 不会删分类」）—— 删除写操作 success=true 即证前置成立；分类不在位 / 删除被拒时本判据判红，不与「agent 不会删分类」同形"
-    skip_reason: ""
-    merge_log: "verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽"
+      - "如实说明米宝不做删除分类（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并引导去后台商品分类页面；不得谎称已删除（原第 1 条「二次确认 + 风险提示后才执行删除」的写路径前提已消失 ⇒ 同条改判）"
+      - "前置：目标分类「轻奢系列」在位（否则「删除」没有对象、红的表现像「agent 不会删分类」）—— 删除写操作 success=true 即证前置成立；分类不在位 / 删除被拒时本判据判红，不与「agent 不会删分类」同形 ｜ ⚠️ 2026-09-24（issue #5247，B 端只读化）：删除能力已下线 ⇒ 该**写面前置必然为假**（悬空声明），改判为只读面：分类树可查（`category_manage(action=tree)`）返回 success=true 即证前置成立（机器计分口径不变；`must_succeed` 已整格移除）"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「删除分类」（category_manage / action=delete）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为**如实说明 + 引导去后台商品分类页面**（没有存活的只读路径可承载删除 ⇒ 用既有伪工具形态 direct_reply）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"

@@ -28,7 +28,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"query", "adjust", "low_stock_alert"}
+VALID_ACTIONS = {"query", "low_stock_alert"}
 
 #: 库存（米）的记数粒度 = 0.1（后端列 `NUMERIC(12,1)`，issue #5063；
 #: 与算料口径「用料米数一律向上进位到 0.1」同源）。
@@ -80,21 +80,20 @@ class InventoryManageTool(BaseTool):
     name = "inventory_manage"
     description = (
         "【触发】用户问'库存''还有多少''缺货''低库存''出库''入库''调整库存'时调用。"
-        "【参数】action 必填：query（需 product_id）/ low_stock_alert（可选 threshold）只读；"
-        "adjust（product_id + adjustment + reason）为写操作——调整数量按 0.1 米粒度、超 1 位小数会被拒。"
+        "【参数】action 必填：**只有 query（需 product_id）/ low_stock_alert（可选 threshold）两个只读 action**"
+        "（B 端已只读化，issue #5247）。"
         "【反例】查商品详情（含库存字段）用 product_detail；查批次余量/剩料分布用 batch_stock_query。"
-        "【标注】WRITE — query/low_stock_alert 只读；adjust 前必须二次确认"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【反例】调库存**不在本工具能力内**——引导用户到后台「商品管理 → 库存」页调整。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     
     # 权限码（admin-api 目录）：ProductController / AgentProductController 的库存端点 ——
     # 读（query/low_stock_alert）= `product:list`、写（adjust）= `product:create`，与 controller 同码。
     # 声明了权限码 ⇒ **删除** allowed_roles：它含 C 端角色 `customer`（横向越权，issue #5246 判据 6），
     # 且权限码在场时角色白名单本就不生效＝第二份会漂的假门禁（#4106 F4）。
-    required_permissions = ["product:list", "product:create"]
+    required_permissions = ["product:list"]  # B 端只读化（#5247）：写码 product:create 已随 adjust 一并移除
 
-    read_only = False
-    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only = True
     read_only_actions = {"query", "low_stock_alert"}  # 只读 action 免确认
     destructive = False  # 库存调整可逆
     idempotent = False   # 调整操作非幂等
@@ -104,24 +103,12 @@ class InventoryManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：query（查询库存）/ adjust（调整库存）/ low_stock_alert（低库存预警）",
-                "enum": ["query", "adjust", "low_stock_alert"],
+                "description": "操作类型：query（查询库存）/ low_stock_alert（低库存预警）—— 均为只读",
+                "enum": ["query", "low_stock_alert"],
             },
             "product_id": {
                 "type": "string",
                 "description": "商品 32 位 UUID。必须先通过 product_detail 或 product_search 查出真实 UUID 再传入，禁止传商品名称或序号",
-            },
-            "adjustment": {
-                "type": "number",
-                "description": (
-                    "调整数量（adjust 时必填，单位与库存一致：米，1 位小数）。"
-                    "库存按 0.1 米粒度记录，最多 1 位小数，例如 60.5 / -2.7；"
-                    "正数增加，负数减少。超过 1 位小数会被拒绝，不会自动四舍五入或截断"
-                ),
-            },
-            "reason": {
-                "type": "string",
-                "description": "调整原因（adjust 时必填）",
             },
             "threshold": low_stock_alert_threshold_schema(),
         },
@@ -178,8 +165,6 @@ class InventoryManageTool(BaseTool):
         try:
             if action == "query":
                 return await self._query_inventory(context, product_id)
-            elif action == "adjust":
-                return await self._adjust_inventory(context, product_id, adjustment, reason)
             elif action == "low_stock_alert":
                 return await self._low_stock_alert(context, threshold)
             else:
@@ -299,175 +284,6 @@ class InventoryManageTool(BaseTool):
             message=f"商品【{product_name}】当前库存：{stock_display}",
             summary=f"库存查询: {product_name}, 库存{stock_display}米",
         )
-    
-    async def _adjust_inventory(
-        self,
-        context: ToolContext,
-        product_id: Optional[str],
-        adjustment: Optional[float],
-        reason: Optional[str],
-    ) -> ToolResult:
-        """调整库存数量
-        
-        Args:
-            context: Tool 执行上下文
-            product_id: 商品 ID
-            adjustment: 调整数量
-            reason: 调整原因
-            
-        Returns:
-            ToolResult: 操作结果
-        """
-        if not product_id:
-            return ToolResult(
-                success=False,
-                error="缺少商品 ID",
-                message="调整库存时必须提供商品 ID（product_id）",
-                suggestion="缺少 product_id，请先用 product_search 查到该商品后重试",
-            )
-        
-        if adjustment is None:
-            return ToolResult(
-                success=False,
-                error="缺少调整数量",
-                message="调整库存时必须提供调整数量（adjustment）",
-                suggestion="缺少调整数量 adjustment，请向用户确认要增加还是减少多少米后重试",
-            )
-
-        # issue #5063：库存按 0.1 米粒度记 ⇒ 超过 1 位小数**显式拒绝**（fail-closed），
-        # 既不四舍五入也不截断后照常执行 —— 静默取整 = 与实物不符的账，
-        # 且读回校验会拿「算出来的数」去比「后端存的数」，假成功假失败都可能发生。
-        adjustment_value = _one_decimal_or_none(adjustment)
-        if adjustment_value is None:
-            return ToolResult(
-                success=False,
-                error="调整数量精度超出范围",
-                message=(
-                    f"库存按 {STOCK_QUANTUM} 米粒度记录，调整数量最多支持 1 位小数；"
-                    f"本次 adjustment={adjustment} 超过 1 位小数（或不是数字），未执行任何调整。"
-                ),
-                suggestion=(
-                    "请把调整数量改成最多 1 位小数的数字后重试（例如 2.755 改成 2.7 或 2.8）；"
-                    "系统不会自动四舍五入或截断，以免库存与实际不符"
-                ),
-            )
-        adjustment_clean = _stock_number(adjustment_value)
-        
-        if not reason:
-            return ToolResult(
-                success=False,
-                error="缺少调整原因",
-                message="调整库存时必须提供调整原因（reason）",
-                suggestion="缺少调整原因 reason，请向用户询问本次库存调整的原因后重试",
-            )
-        
-        # 先查询当前库存
-        client = get_admin_api_client()
-        query_response = await client.get(
-            f"/api/admin/products/{product_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-        
-        if not query_response.get("success"):
-            error_msg = query_response.get("error", {}).get("message", "查询失败")
-            return admin_api_failure(query_response,
-                error=error_msg,
-                message="无法获取当前库存信息",
-                suggestion="请先用 product_search 确认该商品仍在架且商品 ID 正确，再重新执行调整",
-            )
-        
-        product_data = query_response.get("data", {})
-        product_name = product_data.get("name", "")
-        # 当前库存同样按唯一权威（SKU 级）取值（issue #4038），不用商品级列、不兜底 0
-        current = product_stock_summary(product_data.get("skus"))
-        if current["stock_source"] == NO_SKU_SOURCE:
-            return ToolResult(
-                success=False,
-                error="无 SKU 记录",
-                message=no_sku_stock_note(product_name),
-                suggestion="请先在商品详情维护 SKU（颜色/售卖方式/门幅）后再调整库存",
-            )
-        # issue #5063：相加也必须走 Decimal —— 朴素 float 会得
-        # `60.1 + 0.2 + 0.4 == 60.70000000000001`：既让读回校验误判「未生效」，
-        # 又把一串毛刺数字吐给用户。
-        current_value = Decimal(str(current["stock"]))
-        new_value = current_value + adjustment_value
-        current_display = _stock_number(current_value)
-        new_stock = _stock_number(new_value)
-
-        if new_value < 0:
-            return ToolResult(
-                success=False,
-                error="库存不足",
-                message=f"当前库存 {current_display}，无法减少 {abs(adjustment_value)}",
-                suggestion="请向用户说明当前库存不足，确认是否减少调整数量或改为先入库后再出库",
-            )
-        
-        # 更新库存（生产回归修复）：
-        # 旧实现 PUT /api/admin/products/{id} 传 stock，admin-api 静默忽略该字段
-        # 但仍返回 success → agent 报"已调整"而 DB 未变（假成功）。
-        # 现在改调 agent 专用库存端点 /api/admin/agent/products/{id}/stock，
-        # 并读回校验端点返回的 stock 是否等于 new_stock，不一致即 fail-closed。
-        update_payload: dict = {"adjustment": adjustment_clean}
-        if reason:
-            update_payload["reason"] = reason
-        response = await client.patch(
-            f"/api/admin/agent/products/{product_id}/stock",
-            json_data=update_payload,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"库存调整失败：{error_msg}",
-                suggestion="请确认商品存在且库存充足后重试；如持续失败请联系技术支持",
-            )
-
-        # 读回校验：端点响应中 data.stock 必须等于预期 new_stock，防止静默忽略导致的假成功
-        resp_data = response.get("data") or {}
-        actual_stock = resp_data.get("stock")
-        if actual_stock != new_stock:
-            logger.error(
-                f"[inventory] Read-back mismatch: product_id={product_id}, "
-                f"expected={new_stock}, actual={actual_stock}, tenant={context.tenant_id}"
-            )
-            return ToolResult(
-                success=False,
-                error="库存调整未生效",
-                message=(
-                    f"库存调整未生效：预期 {current_display} → {new_stock}，"
-                    f"但系统读回仍为 {actual_stock}。为避免误导，本次操作已标记失败，"
-                    f"请在商家后台库存页面核实后重试。"
-                ),
-                suggestion="库存写入链路异常，请联系技术支持核查 SKU 库存端点",
-            )
-
-        adjust_text = (
-            f"增加 {adjustment_clean}" if adjustment_value > 0
-            else f"减少 {abs(adjustment_clean)}"
-        )
-        logger.info(
-            f"Inventory adjusted: product_id={product_id}, "
-            f"adjustment={adjustment_clean}, {current_display} -> {new_stock}, "
-            f"reason={reason}, tenant={context.tenant_id}, user={context.user_id}"
-        )
-
-        return ToolResult(
-            success=True,
-            data={
-                "product_id": product_id,
-                "previous_stock": current_display,
-                "adjustment": adjustment_clean,
-                "new_stock": new_stock,
-                "reason": reason,
-            },
-            message=f"库存已{adjust_text}，{current_display} → {new_stock}",
-        )
-    
     async def _low_stock_alert(
         self,
         context: ToolContext,

@@ -832,6 +832,13 @@ class TestCardConfirmRoundFlowOwnerMigration:
     与 #3557 防回归（`test_card_confirm_round_keeps_own_skill_intent`）的分界：
     判据是 **pending_validated_input 是否存在**（系统状态事实），不是卡值内容
     —— PR-007 商品上下架卡（无 pending 写目标）仍留在本 skill。
+
+    issue #5247（B 端米宝只读，用户裁定 2026-09-23）重新裁定本类的适用面：
+    B 端全部 skill 解绑了 `order_create`（含 `validate_input`）⇒ **B 端不再存在**
+    "归属其他 skill 的待执行写目标"这一形态（状态里的 `pending_validated_input` 也不可能
+    再被 B 端流程写入）。本判据的活前提只剩 C 端（用户裁定"C 端零改动"）：
+    `_card_round_flow_owner` 的归属 derive 与 persona 可达集都是事实派生，判据本身不用改口径
+    —— 逐条按下方各用例的注释重新锚定/退役。
     """
 
     # 与线上实证同形态：confirm 卡由系统自产、用户逐字回传（答卡轮判据）。
@@ -866,12 +873,13 @@ class TestCardConfirmRoundFlowOwnerMigration:
         state.update(overrides)
         return state
 
-    def test_confirm_round_migrates_to_order_skill_when_owner_differs(self):
-        """B 端：pending 写目标归属 order（≠ product）→ 答卡轮路由到 order。"""
-        assert route_by_intent(self._state()) == "order", (
-            "答卡轮仍留在 product —— order_create 不在 product 注册表，"
-            "确认后执行必然 Tool not found（issue #3976 实证）"
-        )
+    # [RETIRED #5247] test_confirm_round_migrates_to_order_skill_when_owner_differs ——
+    # premise：B 端 `order` 流程声明 `order_create`（#3976 的 B 端实证形态：product 内确认
+    # 一张 order_create 卡 → 路由到 order）。用户裁定「创建能力从 B 端移除」已把
+    # `order_create` 从**全部** B 端 skill 解绑（唯一归属只剩 C 端 `customer_order`）⇒
+    # B 端不再存在"归属其他 skill 的待执行写目标"，本用例的 premise 消失。
+    # 同一判据保留在 C 端（`test_xiaobu_confirm_round_migrates_to_customer_order`，
+    # 本文件下方、仍是绿的）+ `tests/test_cross_skill_target_routing.py` 的 C 端回锁组。
 
     def test_confirm_round_keeps_skill_when_no_pending_write(self):
         """防回归（#3557）：无待执行写（如 PR-007 商品上下架卡）→ 留在本 skill。"""
@@ -880,10 +888,19 @@ class TestCardConfirmRoundFlowOwnerMigration:
         assert route_by_intent(state) == "product"
 
     def test_confirm_round_keeps_skill_when_owner_equals_current(self):
-        """写目标归属 == 当前 skill → 不迁移（order 内确认 order_create 卡）。"""
-        state = self._state(pending_interact_skill="order",
-                            last_confirm_skill="order")
-        assert route_by_intent(state) == "order"
+        """写目标归属 == 当前 skill → 不迁移（**在本 skill 内**确认本 skill 的写工具卡）。
+
+        issue #5247 重新锚定：原用例用 B 端 `order` 流程内的 `order_create` 卡 ——
+        该写绑定已被产品裁定移除（B 端只读），前提消失。判据（归属 == 当前 ⇒ 不迁移）
+        改在**唯一仍持有该写绑定的** C 端流程上断言：`customer_order` 内确认
+        `order_create` 卡 ⇒ `_card_round_flow_owner` 返回 "" ⇒ 留在本流程。
+        """
+        state = self._state(pending_interact_skill="customer_order",
+                            last_confirm_skill="customer_order",
+                            agent_type="xiaobu", role="customer")
+        assert route_by_intent(state) == "customer_order", (
+            "归属 == 当前流程却被迁移（回锁到原地 = 没切，白改会话状态）"
+        )
 
     def test_xiaobu_confirm_round_migrates_to_customer_order(self):
         """C 端（xiaobu）：归属 skill 为 customer_order（persona 可达集事实）。"""

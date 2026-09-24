@@ -18,7 +18,7 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"list", "detail", "create", "update", "delete", "reset_password", "toggle_status"}
+VALID_ACTIONS = {"list", "detail"}
 
 
 class EmployeeManageTool(BaseTool):
@@ -38,27 +38,28 @@ class EmployeeManageTool(BaseTool):
 
     name = "employee_manage"
     description = (
-        "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【参数】action 必填：list/detail 只读；create/update/delete/reset_password/toggle_status 为写操作。create 必填 name+phone+password（密码由用户提供或系统随机生成后告知，禁止不收集密码就创建）。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
-        "【铁律】用户说'确认''确认停用''确认删除'= 立即执行对应写 action（toggle_status/delete/reset_password），禁止收到确认后又 list 查询（HR-003 实拍：R2 确认后又 employee_manage(list) 判失败）。"
+        "【触发】用户问'员工''客服''账号''同事''有哪些人''谁在岗'时调用。"
+        "【参数】action 必填：**只有 list（可按 keyword/status/role 过滤 + 分页）/ detail（需 user_id）两个只读 action**"
+        "（B 端已只读化，issue #5247）。"
+        "【反例】管理角色权限用 role_manage；查客户用 customer_manage。"
+        "【反例】建账号/改资料/禁用/删除/重置密码**不在本工具能力内**——引导用户到后台「组织管理 → 员工管理」页操作。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：AdminUserController 类级 `@RequirePermission("employee:list")`，
     # 写操作（PUT/DELETE/reset-password/status）为 `employee:create`。
     # 具体 action 的权限在 execute 内二次校验，防止仅 employee:list 者执行写操作。
     # 不再用 allowed_roles —— 手写角色白名单会与目录漂移（#4106 F4）。
-    required_permissions = ["employee:list", "employee:create"]
-    read_only = False
-    destructive = True   # 可删除员工、重置密码、禁用账号
+    required_permissions = ["employee:list"]  # B 端只读化（#5247）：写码 employee:create 已随写 action 移除
+    read_only = True
     read_only_actions = {"list", "detail"}  # 只读 action 免确认拦截
-    idempotent = False   # 创建/删除非幂等
 
     parameters = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（员工列表）/ detail（员工详情）/ create（创建员工）/ update（更新员工）/ delete（删除员工）/ reset_password（重置密码）/ toggle_status（启用/禁用）",
-                "enum": ["list", "detail", "create", "update", "delete", "reset_password", "toggle_status"],
+                "description": "操作类型：list（员工列表）/ detail（员工详情）—— 均为只读",
+                "enum": ["list", "detail"],
             },
             "user_id": {
                 "type": "string",
@@ -86,31 +87,6 @@ class EmployeeManageTool(BaseTool):
             "role": {
                 "type": "string",
                 "description": "角色筛选（list 时可选）",
-            },
-            "phone": {
-                "type": "string",
-                "description": "手机号（create 必填；update 时可改登录手机号，需租户内未被占用）",
-            },
-            "password": {
-                "type": "string",
-                "description": "密码（create/update 时使用；create 必填——用户未提供时可用随机密码并在回复中告知，但必须传值）",
-            },
-            "name": {
-                "type": "string",
-                "description": "姓名（create/update 时使用）",
-            },
-            "role_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "角色 ID 列表（role_manage 列表里的角色 id 主键；create/update 时使用，update 时与 role 二选一）",
-            },
-            "avatar": {
-                "type": "string",
-                "description": "头像 URL（update 时可选）",
-            },
-            "new_password": {
-                "type": "string",
-                "description": "新密码（reset_password 时可选，不填则随机生成）",
             },
         },
         "required": ["action"],
@@ -147,7 +123,7 @@ class EmployeeManageTool(BaseTool):
         # 细粒度权限：查询类 action 需要 employee:list，写操作需要 employee:create。
         # 与后端 AdminUserController 的 @RequirePermission 口径一致，防止仅 employee:list
         # 的员工通过米宝执行创建/删除/重置密码等写操作。
-        required = "employee:list" if action in self.read_only_actions else "employee:create"
+        required = "employee:list"  # B 端只读化（issue #5247）：本工具只剩查询 action
         if "*" not in (context.permissions or []) and required not in (context.permissions or []):
             # 门禁**之外**的动作级拒绝 ⇒ 必须自己走共享构造点带码（issue #4147 G2；
             # 被 L0 静态锁 tests/test_tool_denial_semantics.py 覆盖）。
@@ -173,16 +149,6 @@ class EmployeeManageTool(BaseTool):
                 return await self._list_users(context, page, size, keyword, status, role)
             elif action == "detail":
                 return await self._detail_user(context, user_id)
-            elif action == "create":
-                return await self._create_user(context, phone, password, name, role_ids)
-            elif action == "update":
-                return await self._update_user(context, user_id, name, phone, password, avatar, role, role_ids)
-            elif action == "delete":
-                return await self._delete_user(context, user_id)
-            elif action == "reset_password":
-                return await self._reset_password(context, user_id, new_password)
-            elif action == "toggle_status":
-                return await self._toggle_status(context, user_id, status)
             else:
                 return ToolResult(
                     success=False,
@@ -301,261 +267,4 @@ class EmployeeManageTool(BaseTool):
             success=True,
             data=data,
             message=f"员工【{data.get('name', '')}】的详细信息",
-        )
-
-    async def _create_user(
-        self,
-        context: ToolContext,
-        phone: Optional[str],
-        password: Optional[str],
-        name: Optional[str],
-        role_ids: Optional[List[str]],
-    ) -> ToolResult:
-        """创建员工"""
-        if not phone:
-            return ToolResult(
-                success=False,
-                error="缺少手机号",
-                message="创建员工时必须提供手机号（phone）",
-                suggestion="缺少手机号 phone，请向用户询问员工手机号后重试",
-            )
-        if not password:
-            return ToolResult(
-                success=False,
-                error="缺少密码",
-                message="创建员工时必须提供密码（password）",
-                suggestion="缺少初始密码 password，请向用户询问或按公司规则生成初始密码后重试",
-            )
-        if not name:
-            return ToolResult(
-                success=False,
-                error="缺少姓名",
-                message="创建员工时必须提供姓名（name）",
-                suggestion="缺少员工姓名 name，请向用户询问员工姓名后重试",
-            )
-
-        json_data: Dict[str, Any] = {
-            "phone": phone,
-            "password": password,
-            "name": name,
-        }
-        if role_ids:
-            json_data["roleIds"] = role_ids
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/users",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "创建失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"创建员工失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 list 操作确认该手机号未被其它员工占用，再重新执行创建",
-            )
-
-        data = response.get("data", {})
-        logger.info(f"[employee-manage] Created user: name={name}, phone={phone} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data=data,
-            message=f"员工【{name}】已创建",
-        )
-
-    async def _update_user(
-        self,
-        context: ToolContext,
-        user_id: Optional[str],
-        name: Optional[str],
-        phone: Optional[str],
-        password: Optional[str],
-        avatar: Optional[str],
-        role: Optional[str],
-        role_ids: Optional[List[str]] = None,
-    ) -> ToolResult:
-        """更新员工信息"""
-        if not user_id:
-            return ToolResult(
-                success=False,
-                error="缺少员工 ID",
-                message="更新员工时必须提供员工 ID（user_id）",
-                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
-            )
-
-        json_data: Dict[str, Any] = {}
-        if name:
-            json_data["name"] = name
-        if phone:
-            json_data["phone"] = phone
-        if password:
-            json_data["password"] = password
-        if avatar:
-            json_data["avatar"] = avatar
-        if role_ids:
-            json_data["roleIds"] = role_ids
-        elif role:
-            json_data["role"] = role
-
-        if not json_data:
-            return ToolResult(
-                success=False,
-                error="缺少更新内容",
-                message="更新员工时必须提供至少一个字段（name/phone/password/avatar/role）",
-                suggestion="缺少更新内容，请让用户给出要修改的字段（姓名/手机号/角色等）后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/users/{user_id}",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新员工失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 detail 操作读取该员工当前信息，核对后再重试",
-            )
-
-        logger.info(f"[employee-manage] Updated user_id={user_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"user_id": user_id},
-            message="员工信息已更新",
-        )
-
-    async def _delete_user(
-        self,
-        context: ToolContext,
-        user_id: Optional[str],
-    ) -> ToolResult:
-        """删除员工"""
-        if not user_id:
-            return ToolResult(
-                success=False,
-                error="缺少员工 ID",
-                message="删除员工时必须提供员工 ID（user_id）",
-                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.delete(
-            f"/api/admin/users/{user_id}",
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "删除失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"删除员工失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 list 操作确认该员工存在且非当前登录账号，再重新执行删除",
-            )
-
-        logger.info(f"[employee-manage] Deleted user_id={user_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"user_id": user_id},
-            message="员工已删除",
-        )
-
-    async def _reset_password(
-        self,
-        context: ToolContext,
-        user_id: Optional[str],
-        new_password: Optional[str],
-    ) -> ToolResult:
-        """重置员工密码"""
-        if not user_id:
-            return ToolResult(
-                success=False,
-                error="缺少员工 ID",
-                message="重置密码时必须提供员工 ID（user_id）",
-                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
-            )
-
-        json_data: Dict[str, Any] = {}
-        if new_password:
-            json_data["newPassword"] = new_password
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/users/{user_id}/reset-password",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "重置失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"重置密码失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 list 操作确认该员工未被禁用，再重新执行重置密码",
-            )
-
-        logger.info(f"[employee-manage] Reset password for user_id={user_id} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"user_id": user_id},
-            message="密码已重置",
-        )
-
-    async def _toggle_status(
-        self,
-        context: ToolContext,
-        user_id: Optional[str],
-        status: Optional[str],
-    ) -> ToolResult:
-        """启用/禁用员工"""
-        if not user_id:
-            return ToolResult(
-                success=False,
-                error="缺少员工 ID",
-                message="切换状态时必须提供员工 ID（user_id）",
-                suggestion="缺少 user_id，请先用 employee_manage 的 list 操作查到该员工后再重试",
-            )
-        if not status or status not in ("active", "disabled"):
-            return ToolResult(
-                success=False,
-                error="无效的状态值",
-                message="切换状态时必须提供状态（status），可选：active / disabled",
-                suggestion="status 只支持 active / disabled，请按用户意图改传其中一个后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            f"/api/admin/users/{user_id}/status",
-            json_data={"status": status},
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "操作失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"切换员工状态失败：{error_msg}",
-                suggestion="请先用 employee_manage 的 detail 操作确认该员工当前状态（不可禁用自己/超管），再重试",
-            )
-
-        status_text = "启用" if status == "active" else "禁用"
-        logger.info(f"[employee-manage] Toggled user_id={user_id} to {status} | tenant={context.tenant_id}")
-
-        return ToolResult(
-            success=True,
-            data={"user_id": user_id, "status": status},
-            message=f"员工已{status_text}",
         )

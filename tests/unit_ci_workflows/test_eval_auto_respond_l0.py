@@ -134,12 +134,33 @@ def test_case_library_is_non_empty_and_has_payloads():
 
 
 def test_every_declared_payload_covers_the_last_answerable_round():
-    """**核心不变式**：载荷窗口不得在最后一个可作答轮次之前用尽（issue #3804）。"""
+    """**核心不变式**：载荷窗口不得在最后一个可作答轮次之前用尽（issue #3804）。
+
+    #5247 改判（B 端只读化）：写路径用例退役（`skip_reason` 非空）后**不进运行期**，
+    「最后一个可作答轮」这个判据对它们**没有对象** —— 退役时声明面被按判据要求清空
+    （如 OR-029 的 `repeat_until` 整块删除）会让 `payload_window_audit` 报出
+    「载荷窗口用尽」，那是**归因错人**（把"已退役"读成"载荷没交付"）。故只对**活用例**逐条判。
+
+    判据对**全部活用例**仍逐条生效（含 OR-014 的红证 `test_or014_regression_variant_is_red`）；
+    下面的下限守卫防止"跳过退役用例"把这条判据变成空转（跳过面一变宽，读数先掉下来）。
+    """
     bad = []
+    scanned = []
+    applicable = []
     for c in _cases():
+        if str(getattr(c, "skip_reason", "") or "").strip():
+            continue                      # 退役用例不进运行期 ⇒ 窗口判据无对象（见 docstring）
+        scanned.append(c.id)
         a = lr.payload_window_audit(_as_dict(c))
+        if a["applies"]:
+            applicable.append(c.id)
         if a["violation"]:
             bad.append(a["violation"])
+    assert len(scanned) >= 80, (
+        f"只扫到 {len(scanned)} 条**活用例** —— 用例库解析失效或退役面被误判宽，"
+        f"这条全库判据会静默空转（服役面读数：活用例 {len(scanned)} 条 / 判据适用 {len(applicable)} 条）")
+    assert len(applicable) >= 5, (
+        f"载荷窗口判据只适用于 {len(applicable)} 条活用例 —— 判据面塌成空转：{applicable}")
     assert bad == [], ("以下用例的表单载荷绑死在固定轮次上（agent 发卡时机一漂移就整场不可完成，"
                        "且失败串会写成『agent 没做』= 归因错人）：\n  " + "\n  ".join(bad))
 
@@ -390,7 +411,17 @@ def test_or026_offline_replay_delivers_corrected_phone():
 # 侧的裁决（卡型 / 字段名 / 码优先级）」。S1 = `repeat_until` 同时声明 `code` 与表单载荷
 # —— 与 OR-026 同族（同一处修复覆盖，故**不动任何用例 YAML**）。
 # 判据：声明的 `max` 轮窗口内 `__FORM__` 至少交付 1 次。改前全族 0 次（`0/7,0/8×5`）。
-S1_FAMILY = ("CH-010", "CH-025", "OR-021", "OR-023", "OR-026", "OR-028")
+S1_FAMILY = ("CH-010", "CH-025", "OR-021", "OR-023", "OR-026")
+
+#: 从 S1 族**移出**的成员（#5247 B 端只读化）：`OR-028` 断言的写工具（`order_create`）已从 B 端
+#: 解绑 ⇒ 用例退役，其 `repeat_until` 声明块已按判据要求整块删除 ⇒ `_replay_repeat_window`
+#: 连"协作窗口"都没有了（`__FORM__` 命中 0 不再意味着"载荷没交付"，而是**没有对象**）。
+#: 「退役 ≠ 删除」：条目仍在 `.github/cases/`，理由（含 issue 号）留在 `skip_reason` 里；
+#: 这里只把它移出**活跃族**，并由 `test_s1_family_exclusions_are_still_retired` 守着
+#: "移出即必须仍是退役用例，否则必须回表"。
+RETIRED_BY_5247 = {
+    "OR-028": "写工具 order_create 从 B 端解绑（#5247）⇒ repeat_until 声明面删除、用例退役",
+}
 
 _SOFT_CODE_MENTION = "亲，需要 11 位手机号哦（用来接收下单验证码）～ 我把信息表发给您，填一下就好"
 
@@ -422,9 +453,17 @@ def _replay_repeat_window(case):
 
 
 def test_s1_family_replay_ledger():
-    """**S1 全族**（同族脆弱清单）：6 条 `code + 载荷` 用例的载荷都必须在窗口内交付。
+    """**S1 活跃族**（同族脆弱清单）：5 条 `code + 载荷` 用例的载荷都必须在窗口内交付。
 
-    红证：改回旧优先级 ⇒ 全族 `__FORM__` 命中 **0**（`0/7,0/8×5`）⇒ 本用例红。
+    原断言（留档）：族成员 6 条（含 `OR-028`），对**全族**要求 `__FORM__` 命中 > 0。
+    #5247 证伪了 `OR-028` 那一格的前提：它的写工具（`order_create`）已从 B 端解绑
+    ⇒ 用例退役、`repeat_until` 声明块删除 ⇒ 窗口判据**无对象**（不是"载荷没交付"）。
+    故族成员从 6 条收缩到 5 条（退役理由见 `RETIRED_BY_5247`）；剩余成员的台账读数
+    **逐条不变**（`starved == {}` 仍是硬判据：任一活跃成员载荷交付 0 次即红）。
+
+    红证：改回旧优先级 ⇒ 活跃族 `__FORM__` 命中 **0** ⇒ 本用例红。
+    与 `test_every_declared_payload_covers_the_last_answerable_round` 同口径：
+    **退役用例不进运行期 ⇒ 不进判据**，但"移出"这条路径由下面那条 fail-closed 断言关着。
     """
     ledger = {}
     for cid in S1_FAMILY:
@@ -433,6 +472,29 @@ def test_s1_family_replay_ledger():
     assert starved == {}, (f"以下用例的整段协作窗口里 `__FORM__` 命中 0（载荷永不交付 ⇒ "
                            f"`order_create`/`validate_input` 必然不发生）：{starved}\n全族台账：{ledger}")
     assert len(ledger) == len(S1_FAMILY), ledger
+    assert ledger, "活跃族为空 ⇒ 本判据静默空转（退役面被误判宽？）"
+
+
+def test_s1_family_exclusions_are_still_retired():
+    """**fail-closed**：从 S1 族移出的用例必须仍是**退役**用例 —— 否则它必须回表。
+
+    病根形态（`migao-acceptance`「不会红的断言」）：把一条**会红**的活跃用例从族里删掉，
+    测试照样全绿 —— 「移出」于是成了绕过判据的后门。这条断言把那扇门关上：
+    · 移出者必须 `skip_reason` 非空（退役 ⇒ 不进运行期 ⇒ 窗口判据才真的无对象）；
+    · 退役理由必须可追溯（含 issue 号 `#5247`）；
+    · 移出理由必须是**真事实**：该用例的 `repeat_until` 声明面确已删除
+      —— 若它把 `repeat_until` 加回来（重新变成 S1 形态），本断言红 ⇒ 必须回表。
+    """
+    for cid, why in RETIRED_BY_5247.items():
+        case = _case(cid)
+        raw = _as_dict(case)
+        skip = str(raw.get("skip_reason") or "").strip()
+        assert skip, f"{cid} 从 S1 族移出但不是退役用例 ⇒ 它必须回表（移出 = 绕过判据）：{why}"
+        assert "#5247" in skip, f"{cid} 的退役理由缺 issue 号（不可追溯）：{skip!r}"
+        rep = [m for m in raw["user_inputs"] if isinstance(m, dict) and m.get("repeat_until")]
+        assert not rep, (
+            f"{cid} 又把 `repeat_until` 声明加回来了（重新成为 S1 形态）⇒ 必须回表，"
+            f"不能停在移出状态：{rep!r}")
 
 
 

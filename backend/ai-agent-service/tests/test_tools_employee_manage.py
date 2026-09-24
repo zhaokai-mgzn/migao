@@ -1,4 +1,7 @@
-"""EmployeeManageTool 单元测试 — 员工 CRUD、重置密码、启停。"""
+"""EmployeeManageTool 单元测试 — 员工查询（只读）。
+
+B 端只读化（issue #5247）：employee_manage（员工账号） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
+"""
 # case_ids: HR-001, HR-002, HR-003
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -27,29 +30,7 @@ def agent_tool_context():
     return ToolContext(tenant_id=1, user_id="agent_001", session_id="sess", role="agent")
 
 
-class TestCreateContract:
-    """create 的 description/schema 与 execute 必填契约一致（HR-002 回归防线）
-
-    背景：execute._create_user 要求 password 必填（缺则报错），但原 description 写
-    「create 必填 name+phone」（漏 password），schema password description 也未标必填，
-    LLM 按 description 不收集密码 → 创建失败或反复追问（HR-002 三测仍挂的根因）。
-    """
-
-    def test_description_mentions_password_required(self, tool):
-        assert "password" in tool.description
-        assert "name+phone+password" in tool.description
-
-    def test_schema_password_marked_required(self, tool):
-        pw = tool.parameters["properties"]["password"]["description"]
-        assert "必填" in pw
-
-    def test_execute_create_requires_password(self, tool, admin_tool_context):
-        import asyncio
-        r = asyncio.run(tool.execute(
-            context=admin_tool_context, action="create", name="王五", phone="13812345678"
-        ))
-        assert r.success is False
-        assert "密码" in (r.message or "")
+# [RETIRED #5247] TestCreateContract（3 例） 已退休：建员工（create）已从 B 端移除（B 端只读化）：password 必填契约随之消失，断言无对象。
 
 
 class TestEmployeePermission:
@@ -68,10 +49,11 @@ class TestEmployeePermission:
         assert result.success is False
         assert "无效的操作类型" in result.error
 
-    # ============ 员工权限全链路：employee:list / employee:create 细粒度控制 ============
+    # ============ 员工权限：employee:list 细粒度控制（B 端只读化后只剩查询面） ============
     # 与后端 AdminUserController 的 @RequirePermission 口径一致：
     # - 查询（list/detail）需 employee:list
-    # - 写操作（create/update/delete/reset_password/toggle_status）需 employee:create
+    # - 写操作（create/update/delete/reset_password/toggle_status）已随 B 端只读化（issue #5247）
+    #   全部移除：写码 employee:create 与其门禁用例见下方 [RETIRED #5247]
     # - admin(*) 全部放行
 
     @pytest.fixture
@@ -81,13 +63,6 @@ class TestEmployeePermission:
             permissions=["employee:list"],
         )
 
-    @pytest.fixture
-    def operator_write_context(self):
-        return ToolContext(
-            tenant_id=1, user_id="op_002", session_id="sess_op2", role="operator",
-            permissions=["employee:list", "employee:create"],
-        )
-
     @patch("app.tools.employee_manage.get_admin_api_client")
     async def test_operator_with_list_only_can_query(self, mock_get_client, tool, operator_list_only_context, mock_client):
         mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
@@ -95,25 +70,11 @@ class TestEmployeePermission:
         result = await tool.execute(context=operator_list_only_context, action="list")
         assert result.success is True
 
-    async def test_operator_with_list_only_cannot_create(self, tool, operator_list_only_context):
-        result = await tool.execute(context=operator_list_only_context, action="create", name="张", phone="13800000000")
-        assert result.success is False
-        assert "权限" in result.error
-        assert "管理员工" in result.suggestion
+    # [RETIRED #5247] test_operator_with_list_only_cannot_create 已退休：建员工（create）已从 B 端移除（B 端只读化）：employee:create 细粒度写门禁随写 action 一并消失。
 
-    async def test_operator_with_list_only_cannot_delete(self, tool, operator_list_only_context):
-        result = await tool.execute(context=operator_list_only_context, action="delete", user_id="e1")
-        assert result.success is False
-        assert "权限" in result.error
+    # [RETIRED #5247] test_operator_with_list_only_cannot_delete 已退休：删员工（delete）已从 B 端移除（B 端只读化）：employee:create 细粒度写门禁随写 action 一并消失。
 
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_operator_with_create_can_create(self, mock_get_client, tool, operator_write_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "e99"}})
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=operator_write_context, action="create",
-            name="张", phone="13800000000", password="Abc@123456", role="operator")
-        assert result.success is True
+    # [RETIRED #5247] test_operator_with_create_can_create 已退休：建员工（create）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
     async def test_operator_without_any_employee_permission_denied(self, tool):
         ctx = ToolContext(
@@ -176,134 +137,16 @@ class TestEmployeeDetail:
         assert mock_client.get.call_args[0][0] == "/api/admin/users/e1"
 
 
-class TestEmployeeCreate:
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_create_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="create", password="p", name="n")
-        assert r1.success is False and "缺少手机号" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="create", phone="139", name="n")
-        assert r2.success is False and "缺少密码" in r2.error
-        r3 = await tool.execute(context=admin_tool_context, action="create", phone="139", password="p")
-        assert r3.success is False and "缺少姓名" in r3.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_create_success_with_role_ids(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "e-new"}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create", phone="139", password="p", name="n", role_ids=["r1"])
-        assert result.success is True
-        assert mock_client.post.call_args[0][0] == "/api/admin/users"
-        assert mock_client.post.call_args[1]["json_data"]["roleIds"] == ["r1"]
+# [RETIRED #5247] TestEmployeeCreate（2 例） 已退休：建员工（create）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestEmployeeUpdate:
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_update_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", name="n")
-        assert result.success is False
-        assert "缺少员工 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_update_no_content(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="update", user_id="e1")
-        assert result.success is False
-        assert "缺少更新内容" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_update_role_ids_priority_over_role(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="update", user_id="e1", role_ids=["r1", "r2"], role="agent")
-        assert result.success is True
-        json_data = mock_client.put.call_args[1]["json_data"]
-        assert json_data["roleIds"] == ["r1", "r2"]
-        assert "role" not in json_data
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_update_role_fallback(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="update", user_id="e1", role="agent")
-        assert result.success is True
-        assert mock_client.put.call_args[1]["json_data"]["role"] == "agent"
+# [RETIRED #5247] TestEmployeeUpdate（4 例） 已退休：改员工（update）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestEmployeeDelete:
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_delete_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete")
-        assert result.success is False
-        assert "缺少员工 ID" in result.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_delete_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete", user_id="e1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/users/e1"
+# [RETIRED #5247] TestEmployeeDelete（2 例） 已退休：删员工（delete）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestEmployeeResetPassword:
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_reset_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="reset_password")
-        assert result.success is False
-        assert "缺少员工 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_reset_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="reset_password", user_id="e1", new_password="newpwd")
-        assert result.success is True
-        assert mock_client.put.call_args[0][0] == "/api/admin/users/e1/reset-password"
-        assert mock_client.put.call_args[1]["json_data"] == {"newPassword": "newpwd"}
+# [RETIRED #5247] TestEmployeeResetPassword（2 例） 已退休：重置密码（reset_password）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。
 
 
-class TestEmployeeToggleStatus:
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_toggle_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="toggle_status", status="disabled")
-        assert result.success is False
-        assert "缺少员工 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_toggle_invalid_status(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="toggle_status", user_id="e1", status="archived")
-        assert result.success is False
-        assert "无效的状态值" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.employee_manage.get_admin_api_client")
-    async def test_toggle_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="toggle_status", user_id="e1", status="disabled")
-        assert result.success is True
-        assert "已禁用" in result.message
-        assert mock_client.put.call_args[0][0] == "/api/admin/users/e1/status"
+# [RETIRED #5247] TestEmployeeToggleStatus（3 例） 已退休：启停员工（toggle_status）已从 B 端移除（B 端只读化）：写能力不再存在，断言无对象。

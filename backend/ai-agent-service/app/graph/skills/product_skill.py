@@ -1,36 +1,58 @@
 """
-商品 Skill 节点
+商品 / 库存 / 工艺 Skill 节点（B 端米宝，**只读**，issue #5247）
 
-处理商品搜索、详情、管理、库存、分类、加工项等操作。
-简单查询走 ReAct，复杂创建/更新由系统自动切换 P&E 模式。
+处理商品检索与详情、库存（台账 / 实时 / 批次）、商品分类查询、加工项目录、
+工序库与工艺路线、算料配置的**查询与分析**。
+🔴 写能力（建品 / 改价 / 调库存 / 分类增删改 / 加工项增删改）已按用户裁定 2026-09-23
+从 B 端移除：本 skill 不得绑定任何 `read_only != True` 的工具。
+
+⚠️ `route_keys` / `intents` 有意保持不变（改 intent 会连带改小布的意图路由 —— 见 order_skill 说明）。
 """
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-# 商品 Skill 可用的 Tool 列表（查询 + 写操作）
+# 商品域只读工具（全部 read_only=True）
 PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
-    "product_update",               # 商品级统一定价
-    "sku_update",                  # 单独 SKU 调价
-    "product_manage",               # 商品 CRUD（create/update/toggle_status）
-    "processing_item_manage",       # 加工项 CRUD（create_processing_item/update/delete）— 用户说新增加工项/改加工项/删加工项时调用（PP-006：曾缺此工具 → agent 误宣「只有查询能力」）
-    "inventory_manage",
-    "batch_stock_query",            # 批次账 / 省料度量只读（issue #5188）：商品/库存域的
-                                    # 「哪些批次快用尽了 / 剩料分布 / 省了多少料」——只读、
-                                    # 声明 `product:list`（仅 B 端）
-    "processing_item_query",        # 店铺加工项目录（与商品无关）— 用户问加工项列表/单价时调用
-    "category_manage",
-    "validate_input",
-    "interact",                     # 交互卡片：SKU/分类 choice、写前 confirm、表单 form
+    "inventory_manage",        # 只读化后仅剩 query / low_stock_alert（#5247）
+    # 批次账 / 省料度量只读（issue #5188）：商品/库存域的「哪些批次快用尽了 / 剩料分布 /
+    # 省了多少料」—— 只读、声明 `product:list`（仅 B 端）
+    "batch_stock_query",
+    "processing_item_query",   # 店铺加工项目录（与商品无关）— 用户问加工项列表/单位时调用
+    "category_manage",         # 只读化后仅剩 tree（#5247）
+    # ── 商家后端模块只读接入（issue #5247 模块覆盖：库存 / 生产 / 算料）──
+    "stock_ledger_query",        # 库存台账（GET /api/admin/stock-ledger → product:list）
+    "inbound_order_query",       # 入库单 / 批次（GET /api/admin/inbound-orders* → inbound:view）
+    "operation_catalog_query",   # 工序库 / 工艺路线（GET /api/admin/production/{operations-catalog,routings} → processing:manage）
+    "craft_calc_config_query",   # 算料配置（GET /api/admin/production/craft-calc-config → processing:manage）
+    "interact",                  # 交互卡片只保留 choice 消歧（B 端不发写确认卡）
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。创建/改/删加工项→processing_item_manage（action=create_processing_item/update_item/delete_item），禁止用 product_manage 建加工项。一次只做一个操作。
-🔴 **加工项与商品无关**（issue #4371）：加工项是**店铺级目录**，商品上不再关联加工项——建品时**不需要**询问/选择加工项，也不要把加工项写进 create 参数（product_manage 没有该参数）。顾客要加工项时在下单环节按目录单独选。
+PRODUCT_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
+
+商品/库存/工艺域**没有创建、改价、上下架、调库存、分类增删改、加工项增删改**能力。
+商家提出这类请求时：如实说明「米宝现在只做查询与分析」+ 给出具体后台页面（商品列表 /products
+的对应按钮）→ **不得**承诺代办、不得发写确认卡。
+
+## 工具速查（全部只读）
+
+| 场景 | 工具 |
+|------|------|
+| 搜商品 / 看商品档案与 SKU 价格 | product_search / product_detail |
+| 某商品实时库存 / 低库存预警 | inventory_manage(query / low_stock_alert) |
+| 库存台账（按货号/颜色分页） | stock_ledger_query |
+| 入库单 / 批次到货来源 | inbound_order_query(list / batches / detail) |
+| 批次余量 / 省料度量 | batch_stock_query |
+| 商品分类树（取 category_id） | category_manage(tree) |
+| 店铺加工项目录（分类/单位） | processing_item_query |
+| 工序库 / 工艺路线模板 | operation_catalog_query(operations / routings) |
+| 算料配置（卷边/损耗等参数） | craft_calc_config_query |
 
 ## SKU 表格格式
+
 多SKU时用表格展示：颜色 | 售卖方式 | 门幅 | 价格。不要用"颜色/散剪""颜色/整卷"做列头——颜色是一列，售卖方式是一列，分开。
 
 ## 引用商品用完整名称（卡片引用对齐）
@@ -39,85 +61,15 @@ PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独�
 如 `E2E最简_89358`），不要缩写、改字或省略——系统会根据你的回复文本做卡片引用对齐，
 只渲染文本中实际提到的商品；名称不一致会导致对应商品不在卡片中展示。
 
-## 创建商品需要的字段
+## 数量与口径（不得自行心算）
 
-| 字段 | 必填 | 如何获取 |
-|------|------|---------|
-| name | 是 | 用户提供 |
-| price | 是 | 用户提供 |
-| sku_code | 是 | 用户直接提供时直接使用；未提供时引导（色号/品牌/拼音首字母/自动生成） |
-| category_id | 是 | 用户提供分类名时**当轮立即**调 category_manage 查分类树匹配 ID，不要留到"确认创建"阶段；未提供时调 interact(choice) 渲染分类选择器 |
-| selling_methods | 是 | 用户提供或默认["散剪","整卷"]（**商品级基础属性**，非 SKU 维度） |
-| door_widths | 是 | 用户提供或默认["2.8米"] |
-| colors | 是 | 用户提供或图片识别 |
-| colors × door_widths 决定 SKU 组合（**只有 颜色 × 门幅**） |
-| unit | 否 | 窗帘默认"米" |
-| pricing_type | 否 | 窗帘默认"per_meter" |
-| specifications | 否 | 窗帘默认见下方 |
-| status | 否 | 默认"on_sale" |
-
-字段齐了 → validate_input → confirm → product_manage
-
-## 智能默认
-
-以下默认值仅在窗帘品类生效；其他品类需根据实际情况显式传 unit 和 pricing_type。
-
-| 字段 | 窗帘默认 | 说明 |
-|------|---------|------|
-| unit | "米" | 窗帘品类自动填入 |
-| pricing_type | "per_meter" | 窗帘品类自动填入 |
-| selling_methods | ["散剪","整卷"] | 用户只提一种则传一种 |
-| door_widths | ["2.8米"] | 未指定时默认填入 |
-| status | "on_sale" | 创建默认上架；用户明确下架才传 off_sale |
-| specifications | 见下 | 用户未提规格时默认填入；用户明确表示不需要规格时不填入 |
-
-specifications 默认值：{"克重":"200-300g","材质":"涤纶","功能":"遮光","工艺":"色织","风格":"现代简约","图案":"纯色"}。
-brand 仅用户提及时才传，不可自行推断。
-**create 参数必须携带 specifications 键**（未明确拒绝时用默认/推理规格；用户明确表示不需要规格时传空对象 {}，禁止省略该键——validate_input 会拦截缺失，issue #3052）。
-
-## 加工项
-
-🔴 **加工项与商品无关**（issue #4371 用户裁定）：加工项是**店铺级目录**，商品不再关联加工项。
-- **建品流程不询问加工项**：收集字段 → 分类确认 → 货号 → 汇总确认卡 → create，中间**没有**加工项多选卡（旧的「分类确认后必须先发加工项多选卡」已作废）。
-- **禁止**把加工项写进 product_manage(create)：该工具**没有** processing_item_ids / processing_item_configs 参数（传了会被服务端静默丢弃）。
-- 顾客问"有哪些加工项"→ 调 processing_item_query（店铺目录，与商品无关，可按 keyword 搜索）如实列报。
-- 顾客要**增删某个加工项本身**（店铺目录的增删改）→ processing_item_manage。
-- 顾客要在**下单**时加加工项 → 那是订单域的事，如实说明"加工项在下单时按店铺目录单独选"，不要在建品流程里代做。
-
-## 写后复查（#3899）
-
-写工具返回 success 后，复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作。
-商品状态变更（上/下架）必须用 product_manage(action=toggle_status, status=on_sale/off_sale) 单独调用——update 不处理 status（状态走状态机端点）。
-
-## Vision 预填
-
-🔴 **图片识别后的第一步是向用户呈现识别结果**：用 interact(component=form) 预填全部
-识别字段（名称/颜色/货号等，标注 `[图片识别]`），并在话术中简述"图片中看到 XXX 颜色、
-XXX 图案、XXX 风格"。用户提交/修改表单即完成确认。**禁止跳过呈现直接调 tool 建品，
-也禁止对已识别字段逐项反问**（如识别到颜色还问"什么颜色"）。未识别字段正常引导补充，不编造。
-
-## SKU
-
-传 colors + door_widths → 系统按 **颜色 × 门幅** 生成 SKU（selling_methods 是商品级基础属性，**不参与** SKU 组合）。
-售卖方式有几个传几个（如用户只要散剪，只传 ["散剪"]）。
-
-## 货号
-
-🔴 主动引导用户确定 sku_code：
-① 有色号 → 从色号提取（如 "2699-01" → "2699"）
-② 有品牌 → 取品牌缩写（如 "欧博" → "OB"）
-③ 都没有 → 引导用户自行拟定或接受系统自动生成
-④ 用户明确拒绝 → 系统自动生成
-格式：大写字母+数字，5-15 字符。
-
-## 颜色
-
-有行业色号用格式 "色号 颜色名"（如 "2699-01 白色"），无色号直接传颜色名。
-无具体色号时必须诚实告知用户，禁止编造色号。多个颜色逐个列出全名，禁止用"等 3 种颜色"省略。
+- 库存粒度 0.1 米、最多 1 位小数；**报数一律以工具返回为准**，禁止四舍五入或改写。
+- 算料配置只**转述**服务端返回的参数，不解释引擎算法、不替用户试算（试算在后台算料页做）。
+- 加工项目录只有名称/分类/单位，**不含单价**（#4882）：不要编造加工费。
 
 ## 术语
 
-散剪=bulk_cut / 整卷=full_roll。用户说"算了"→取消当前操作。语气专业高效。
+散剪=bulk_cut / 整卷=full_roll。语气专业高效。
 """
 
 PRODUCT_SKILL_CONFIG = SkillConfig(

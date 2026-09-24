@@ -19,13 +19,25 @@
 * `--all` / `--check-backfill` 在 `gh` 不可用时把「看不了」写成「全清」⇒ 假绿。
 
 本文件把上面每一条都钉成**会红的**断言（每条判据都有注入式红证：构造缺陷夹具，
-断言检查器**必报出**对应违规码），并锁定**真实台账**（seed 条目 `#4014` / `#3679`）
-确实被判为已下沉 —— 即「引用 P5 下沉范例证明流程可操作」。
+断言检查器**必报出**对应违规码），并锁定**真实台账**（seed 条目 `#4042` / `#3679`）
+确实被判为已下沉 —— 即「用**仍存活**的落点证明流程可操作」。
+
+## seed 选择改判（#5247，B 端只读化）
+
+原 seed 是 `#4014`（P5 下沉范例：`must_succeed`@OR-009/OR-010/OR-011 + `db_verify`@OR-011）。
+#5247 把 B 端创建/更新能力与对应 tools 整体移除 ⇒ 那三条用例退役、上述字段按判据要求清空
+⇒ 原 sink 的**落点已不存在**（`--selftest` 报 `SINK-CASE-FIELD-EMPTY` +
+`SINK-CASE-NO-EFFECT-ASSERTION`）。按「**不伪造 sink**」原则，`#4014` 已在本轮改判为
+`unsunk`（显式登记 + 跟踪单 #4009），seed 因此换成 `#4042`（`output_verify`@OR-002 /
+`amount_verify`@OR-014 / `must_succeed`@CU-008 —— 三条用例都**存活**且字段非空）。
+`#4014` 不再当"已下沉范例"，但它的改判事实本身被钉成判据
+（`test_retired_sink_targets_are_never_re_pointed_at`：退役用例不得再被任何 sink 指向）。
 
 ## case_ids 说明（不编造）
 
 本文件是基建静态锁，不是行为用例本身；声明的 3 条是**该锁直接保护的、已下沉的确定性断言载体**：
-OR-009 / OR-011（台账 `#4014` 的 P5 下沉范例：`must_succeed` + `db_verify`）、
+OR-009 / OR-011（台账 `#4014` 的 P5 下沉范例：`must_succeed` + `db_verify` —— 该范例已随
+#5247 退役 ⇒ 本文件现在守的是它的 **unsunk 登记不得被报成通过** 这一事实面）、
 DF-011（台账 `#3679` 的 L0 不变式载体，其自然语义 data_checks 已下沉为
 `backend/ai-agent-service/tests/unit/test_circuit_breaker.py` 的机器断言）。
 """
@@ -48,6 +60,13 @@ import llm_sink_check as sink  # noqa: E402
 LEDGER_PATH = GITHUB_DIR / "llm-finding-ledger.json"
 SINK_SCRIPT = GITHUB_DIR / "llm_sink_check.py"
 CB_TEST_FILE = "backend/ai-agent-service/tests/unit/test_circuit_breaker.py"
+
+#: 真实台账里的 **sunk** seed（`#4042` = case_assertion 通道 / `#3679` = l0_invariant 通道）。
+#: #5247 改判：原 case_assertion seed `#4014` 的四条落点（OR-009/OR-010/OR-011 的
+#: `must_succeed` + OR-011 的 `db_verify`）随 B 端只读化退役而被清空 ⇒ 它已改判为 `unsunk`，
+#: 不再能证明"流程可操作"（见模块 docstring「seed 选择改判」）。
+SUNK_SEED_ISSUES = (4042, 3679)
+UNSUNK_SEED_ISSUE = 4014
 
 
 # ── 夹具：合成条目（与被测真值解耦；载荷形态逐条对应上文那五种退化）────────────
@@ -260,10 +279,14 @@ class TestDegenerateGuardRails:
 
     def test_issue_backfill_check_returns_unknown_when_gh_is_unusable(
             self, ledger, cases_by_id, monkeypatch):
-        """`--issue N --check-backfill` 在 gh 不可用时同样是 3，而不是 0。"""
+        """`--issue N --check-backfill` 在 gh 不可用时同样是 3，而不是 0。
+
+        （seed 用**仍存活**的 `#4042`：`#4014` 已随 #5247 改判为 unsunk，对它问
+        「已下沉了吗」在 gh 不可用时先给 1，测不到本条的"3 而不是 0"。）
+        """
         monkeypatch.setattr(sink, "GH_RUNNER",
                             lambda args: (False, "gh 未安装（红证注入）"))
-        code, lines, result = sink.mode_issue(ledger, cases_by_id, 4014,
+        code, lines, result = sink.mode_issue(ledger, cases_by_id, 4042,
                                               check_backfill=True)
         assert code == sink.EXIT_UNKNOWN == 3
         assert result["sunk"] is True and result["backfill"] is None
@@ -279,13 +302,22 @@ class TestDegenerateGuardRails:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 四、真实 seed 条目：流程在**真实数据**上可操作（引用 P5 下沉范例 #4014 / #3679）
+# 四、真实 seed 条目：流程在**真实数据**上可操作（case_assertion seed #4042 / L0 seed #3679）
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestSeedEntriesProveFlowIsOperable:
-    """走一遍真实台账：`--issue 4014` / `--issue 3679` 必须给「已下沉且断言非空」。"""
+    """走一遍真实台账：`--issue 4042` / `--issue 3679` 必须给「已下沉且断言非空」。
 
-    @pytest.mark.parametrize("issue", [4014, 3679])
+    seed 选择改判（#5247）：原 case_assertion seed `#4014` 的落点已随 B 端只读化全部退役
+    ⇒ 它改判为 `unsunk`，本类改用 `#4042`（三条**存活**落点，见模块 docstring）。
+    """
+
+    #: `#4014` 原 sink 的落点（P5 范例的断言载体）+ #5247 其余被清空的落点。
+    #: 它们必须**已退役**，且不得再被任何 sink 指向。
+    RETIRED_SINK_TARGETS_BY_5247 = ("OR-009", "OR-010", "OR-011", "OR-016",
+                                    "OR-029", "PR-008", "PR-026")
+
+    @pytest.mark.parametrize("issue", SUNK_SEED_ISSUES)
     def test_seed_entry_is_present_and_verified_sunk(self, ledger, cases_by_id, issue):
         entry = sink.entry_for(ledger, issue) or {}
         assert entry.get("issue") == issue, f"台账缺少 seed 条目 #{issue}"
@@ -293,17 +325,20 @@ class TestSeedEntriesProveFlowIsOperable:
         assert sink.check_entry(entry, cases_by_id) == []
 
     def test_real_ledger_check_is_not_vacuous(self, ledger, cases_by_id):
-        """真实数据上的判据同样要有牙：把 OR-011 的 `must_succeed` 掏空 ⇒ 必报空壳违规。
+        """真实数据上的判据同样要有牙：把**存活 sink 的落点字段**掏空 ⇒ 必报空壳违规。
 
         （没有这条，「真实台账零违规」可能只是判据在真实数据上恒真。）
+        原断言（留档）掏空的是 `OR-011` 的 `must_succeed`（`#4014` 的 P5 落点）；
+        #5247 后 OR-011 已退役、不再是任何 sink 的落点 ⇒ 掏空它**不再产生违规**
+        （判据会因"没有对象"而静默空转）⇒ 改判为掏空 `#4042` 现存的落点 `CU-008.must_succeed`。
         """
         weakened = dict(cases_by_id)
-        weakened["OR-011"] = dict(cases_by_id["OR-011"], must_succeed=[])
+        weakened["CU-008"] = dict(cases_by_id["CU-008"], must_succeed=[])
         codes = _codes(sink.validate_ledger(ledger, weakened))
         assert "SINK-CASE-FIELD-EMPTY" in codes, (
             "真实台账 + 空壳断言竟然零违规 —— 判据在真实数据上空转了")
 
-    @pytest.mark.parametrize("issue", [4014, 3679])
+    @pytest.mark.parametrize("issue", SUNK_SEED_ISSUES)
     def test_cli_answers_zero_for_seed_entry(self, ledger, cases_by_id, issue):
         """CLI 层同样给 0（离线档）—— 这是「问题有答案」的最小证据。"""
         code, lines, result = sink.mode_issue(ledger, cases_by_id, issue)
@@ -311,19 +346,58 @@ class TestSeedEntriesProveFlowIsOperable:
         assert result["sunk"] is True and result["violations"] == []
         assert any("已下沉且断言非空" in line for line in lines)
 
-    def test_p5_fixture_4014_carries_both_case_assertion_sinks(self, ledger, cases_by_id):
-        """P5 范例（#4014）：`must_succeed`×3 条用例 + `db_verify`@OR-011 两条下沉都要在。"""
-        entry = sink.entry_for(ledger, 4014)
-        kinds = {(s.get("kind"), tuple(s.get("fields") or []), tuple(s.get("cases") or []))
-                 for s in entry["sinks"]}
-        assert ("case_assertion", ("must_succeed",),
-                ("OR-009", "OR-010", "OR-011")) in kinds
-        assert ("case_assertion", ("db_verify",), ("OR-011",)) in kinds
-        # 且用例侧的断言确实非空（不只看台账的声明）
-        for case_id in ("OR-009", "OR-010", "OR-011"):
+    def test_retired_sink_targets_are_never_re_pointed_at(self, ledger, cases_by_id):
+        """**fail-closed**：落点已空的退役用例，不得再被任何 sink 指向（死引用 = 空壳断言）。
+
+        病根（与本文件存在的理由同族）：退役用例的写路径字段被清空后，**保留**原 sink 会让
+        台账声称"已下沉"而判据必然报 `SINK-CASE-FIELD-EMPTY`；**重新指回**（把已退役用例
+        当成新 sink 的落点）同样是把"不会红的断言"登记成下沉。两种形态都在这里被关掉。
+        这条同时钉住 `#4014` 的改判事实：它的原四条落点已全部退役 ⇒ 条目本身必须是
+        `unsunk`（显式登记 + 跟踪单），且 `--issue 4014` 必须给 1（未下沉**不许**报 0）。
+        """
+        for cid in self.RETIRED_SINK_TARGETS_BY_5247:
+            assert str(cases_by_id[cid].get("skip_reason") or "").strip(), (
+                f"{cid} 已不是退役用例 —— 它若回到活跃面，本文件与台账的改判必须重新评估")
+        pointed = {cid for entry in (ledger.get("entries") or [])
+                   for spec in (entry.get("sinks") or [])
+                   for cid in (spec.get("cases") or [])}
+        leaked = sorted(set(pointed) & set(self.RETIRED_SINK_TARGETS_BY_5247))
+        assert leaked == [], (
+            f"以下**已退役**用例仍被台账 sink 指向（死引用 / 空壳断言）：{leaked}")
+        entry = sink.entry_for(ledger, UNSUNK_SEED_ISSUE)
+        assert entry.get("status") == "unsunk", (
+            f"#{UNSUNK_SEED_ISSUE} 的全部 sink 落点已随 #5247 清空 ⇒ 必须改判为 unsunk"
+            "（保留空壳 sink = 台账谎报已下沉）")
+        code, lines, result = sink.mode_issue(ledger, cases_by_id, UNSUNK_SEED_ISSUE)
+        assert code == sink.EXIT_VIOLATION == 1 and result["sunk"] is False, (
+            f"改判为 unsunk 后 `--issue {UNSUNK_SEED_ISSUE}` 仍报 0"
+            " —— 那就是把「未下沉」写成「通过」")
+
+    def test_case_assertion_seed_4042_carries_only_live_sinks(self, ledger, cases_by_id):
+        """`case_assertion` 通道的**存活**范例（原 `#4014`，现 `#4042`）：落点必须逐条存活。
+
+        原断言（留档）：`#4014` 的 `must_succeed`×3（OR-009/010/011）+ `db_verify`@OR-011
+        「两条下沉都要在」，且三条用例的 `has_effect_assertion` 为真。#5247 让这四条落点
+        全部失效（用例退役、字段清空）⇒ 原断言**不可能满足**（被测对象已不存在）。改判为：
+        ① 存活范例保留的 sink **恰好**是三条仍存活的落点（谁把退役落点加回来，本断言先红，
+           与上面的 fail-closed 断言一正一反）；
+        ② 它们必须逐条经判据核过（用例存活 + 字段非空 + `has_effect_assertion` + 回填链）；
+        ③ 该范例覆盖**三种**效果层字段（`output_verify` / `amount_verify` / `must_succeed`）
+           —— 「台账能承载多种下沉形态」这条流程证据不因退役而丢失。
+        """
+        entry = sink.entry_for(ledger, 4042)
+        kinds = {(spec.get("kind"), tuple(spec.get("fields") or []),
+                  tuple(spec.get("cases") or [])) for spec in entry["sinks"]}
+        assert kinds == {
+            ("case_assertion", ("output_verify",), ("OR-002",)),
+            ("case_assertion", ("amount_verify",), ("OR-014",)),
+            ("case_assertion", ("must_succeed",), ("CU-008",)),
+        }, kinds
+        assert sink.check_entry(entry, cases_by_id) == [], (
+            "存活范例自己的 sink 核不过 ⇒ 它不再是「流程可操作」的证据")
+        for case_id in ("OR-002", "OR-014", "CU-008"):
             assert tax.has_effect_assertion(cases_by_id[case_id]), (
-                f"{case_id} 丢了效果层断言 —— P5 的下沉被回退了")
-        assert cases_by_id["OR-011"].get("db_verify"), "OR-011 的 db_verify 被回退了"
+                f"{case_id} 丢了效果层断言 —— 该 finding 的下沉被回退了")
 
     def test_l0_fixture_3679_names_tests_that_really_exist(self, ledger, cases_by_id):
         """#3679（DF-011）：点名的测试函数必须**真的存在**，且用例侧回填 `#3679`。"""

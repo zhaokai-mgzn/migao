@@ -646,3 +646,45 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # MC-021（issue #5247，P4）：B 端米宝**只读化**。用户裁定 2026-09-23：
+  # 「B 端 agent 定位要求侧重数据查询和分析；创建和更新能力以及 tools 都从 B 端移除」。
+  # 病：只读化是**跨三个文件族的联合事实**（工具声明 `read_only`/`VALID_ACTIONS`、
+  # skill 绑定 `*_TOOLS`、能力文案）——任何一处改回去都不会有东西变红。
+  # ==========================================================================
+  - id: MC-021
+    legacy_id: ""
+    title: "B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - permission
+      - readonly
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），非 LLM/业务真值，
+    # 由 tests/unit_ci_workflows/test_mibao_b_end_readonly.py 验证（零依赖，仅标准库 ast + re）。
+    user_inputs:
+      - "把 order_create / product_manage / validate_input 等写工具重新绑回任一 B 端 skill，或把某个 B 端工具的 read_only 改回 False，或让 mibao 的能力文案重新承诺「创建商品」时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1（L0）：mibao 的 skill 并集（`skill_names` + `fallback_skill`）里**每个**工具都必须 `read_only = True`，且不得有悬空绑定（绑了不存在的工具名 ⇒ 红）"
+      - "判据 2（L0）：写能力工具**一个都不得绑在 B 端**——具名清单 11 个（order_create / order_manage / product_manage / product_update / sku_update / processing_item_manage / processing_order_generate / processing_order_update / settings_manage / notification_manage / validate_input）"
+      - "判据 3（L0）：B 端可达工具的 `VALID_ACTIONS` ⊆ 其 `read_only_actions`；另有**写 action 闭词表**兜底（把写 action 挪进 read_only_actions 洗白也红）"
+      - "判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「米宝不做这类操作」不算谎报）"
+      - "判据 5（边界）：与 C 端共享的 8 个工具（order_create / validate_input / interact / knowledge_search / processing_item_query / product_search / product_detail / production_progress_query）必须**仍然存在**且**仍被 C 端 skill 绑定** —— 「只解绑 B 端、绝不删除、C 端零改动」是用户裁定的硬边界"
+      - "红证（九条注入**各能单独变红**）：① order_create 绑回 order skill ①b settings_manage 绑回 product skill ② 工具 read_only 改回 False ②b 悬空绑定 ③ 塞回写 action ③b 把写 action 挪进 read_only_actions 洗白 ④ capabilities 注入「我可以帮您创建商品」④b greeting 注入写能力承诺 ⑤ 摘掉共享工具的 C 端绑定 ⇒ 对应判据逐条变红"
+    skip_reason: "[backend-contract] B 端只读化是源码静态事实（工具声明 / skill 绑定 / 能力文案），由零依赖 pytest 静态判据 + 九条注入式红证验证（tests/unit_ci_workflows/test_mibao_b_end_readonly.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-24 新增（issue #5247，P4，用户裁定 2026-09-23 B 端只读化）：三处文件族的联合事实此前无人对账（工具 read_only / skill 绑定 / 能力文案），任一处回退都静默。落码 = 五条判据 + 九条注入式红证；同时登记「共享工具只解绑不删除」「C 端零改动」两条硬边界。取号 MC-021：main 上 MC-001~MC-020 已占用。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_mibao_b_end_readonly.py"
+      ci:
+        - pr-check.yml
+      verifies: []

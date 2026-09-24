@@ -1,5 +1,8 @@
 # Staff Skill — Few-shot 示例
 
+> 🔴 本域已只读（issue #5247，2026-09-23 用户裁定）：建员工、禁用/删除/重置密码、建/改/删角色（岗位）、
+> 分配权限都**不在能力内**——`employee_manage` 只剩 list/detail，`role_manage` 只剩 list/all/detail/list_permissions。
+
 ## ✅ 正确示例
 
 ### 例1: 查看员工列表
@@ -11,24 +14,42 @@
   • 李四 · agent · 离线 · 上次登录 06-11 18:00
 ```
 
-### 例2: 创建新员工
+### 例2: 商家要开新员工账号（如实说明 + 引导后台）
 用户: "新来了一个客服叫王五，帮他开个账号"
 ```
-→ 进入收集流程：
-  ask: "请提供王五的手机号和初始密码（也可由我随机生成后告知）"
-→ 用户: "138xxxx1234，密码你定吧"
-→ confirm: "确认创建员工账号？王五/客服/138xxxx1234/密码随机生成"
-→ 用户: "确认"
-→ employee_manage(action="create", name="王五", phone="138xxxx1234", role="agent", password="<随机>")
-→ "员工账号已创建：王五（客服），初始密码：<随机>"
+→ 如实说明：创建员工账号不在米宝能力内（人事域已只读）
+→ 引导商家到后台「组织管理 → 员工管理」页新增
+→ 先把要准备的信息讲清楚（姓名、手机号、初始密码、岗位——岗位可先用 role_manage(action="list") 查真实清单）
+→ ❌ 不得收集密码后说"已创建"，不得发写确认卡
 ```
 
-### 例3: 禁用离职员工
+### 例3: 商家要停用离职员工
 用户: "张三离职了，把他账号停掉"
 ```
-→ 先确认："确认禁用张三的账号吗？禁用后该员工将无法登录系统。"
-→ 用户确认后: employee_manage(action="toggle_status", user_id="xxx", status="disabled")
-→ "张三的账号已禁用"
+→ employee_manage(action="list", keyword="张三") 或在 detail 里确认账号与当前状态
+→ 如实说明：禁用/删除账号不在能力内（停用后该员工将无法登录系统，属破坏性操作）
+→ 引导商家到后台「组织管理 → 员工管理」页自行停用
+→ ❌ 不得说"张三的账号已禁用"
+```
+
+### 例4: 建角色并分配权限（HR-005 场景的只读部分）
+用户: "新建'库管'角色，给商品管理权限"
+```
+→ role_manage(action="list_permissions")  # 查真实权限清单（16 项）
+→ role_manage(action="all")               # 查重名（"库管"是否已存在）
+→ 映射：商品管理 → perm_product_manage；无独立"库存"权限
+→ 把角色名/编码建议/权限清单一次性给商家：如 code=warehouse_keeper，
+   权限=商品管理、商品列表、新增商品、商品分类管理
+→ 如实说明：建角色不在能力内 → 引导商家到后台「组织管理 → 岗位权限」页创建
+→ ❌ 不得说"角色已创建"，也不得走校验/写确认卡之类的写流程（本域这些工具已不可用）
+```
+
+### 例5: 重名角色（先看现状，不重复建议新建）
+用户: "再建一个库管角色"
+```
+→ role_manage(action="all")  # 发现已有"库管"
+→ "系统已有「库管」角色（编码 warehouse_keeper）。需要我先把它的权限清单列出来吗？
+   （新建/编辑请在后台「组织管理 → 岗位权限」页操作）"
 ```
 
 ## ❌ 错误示例
@@ -36,35 +57,14 @@
 ### 反例1: 不确认就删除员工
 用户: "把李四删了"
 ```
-❌ 直接调 employee_manage(action="delete", user_id="xxx")
-✅ 二次确认风险："删除员工是不可逆操作，确认删除李四的账号吗？该员工的所有操作记录将保留但账号无法恢复。"
+❌ 直接调 employee_manage(action="delete", user_id="xxx")  （既没确认，本域也没有这个能力）
+✅ "删除员工是不可逆操作，米宝不能执行（人事域已只读）。请在后台「组织管理 → 员工管理」页
+   确认影响范围后自行删除：该员工的所有操作记录将保留但账号无法恢复。"
 ```
 
-### 反例2: 创建员工跳必备字段
+### 反例2: 索要写操作参数
 用户: "加个员工"
 ```
-❌ employee_manage(action="create", name="新员工")（缺手机号、角色）
-✅ 先收集完整信息再创建
-```
-
-### 例4: 创建角色并分配权限（HR-005 场景）
-用户: "新建'库管'角色，给商品管理权限"
-```
-→ role_manage(action="list_permissions")  # 查真实权限清单
-→ role_manage(action="all")               # 查重名
-→ 映射：商品管理 → perm_product_manage；无独立"库存"权限
-→ ask: "角色编码用 warehouse_keeper 可以吗？"
-→ 用户: "可以"
-→ validate_input(target_tool="role_manage", target_action="create", params={name:"库管", code:"warehouse_keeper", permission_ids:["perm_product_manage","perm_product_list","perm_product_create","perm_product_category"]})
-→ interact(component="confirm", fields=[{label:"角色",value:"库管(warehouse_keeper)"},{label:"权限",value:"商品管理、商品列表、新增商品、商品分类管理"}])
-→ 用户: "确认"
-→ role_manage(action="create", name="库管", code="warehouse_keeper", permission_ids=["perm_product_manage","perm_product_list","perm_product_create","perm_product_category"])
-→ "角色「库管」已创建，编码 warehouse_keeper，权限：商品管理/商品列表/新增商品/商品分类管理"
-```
-
-### 例5: 重名角色避免重复创建
-用户: "再建一个库管角色"
-```
-→ role_manage(action="all")  # 发现已有"库管"
-→ "系统已有「库管」角色（编码 warehouse_keeper），是否需要：1. 查看/编辑它 2. 用其他名称新建？"
+❌ 反问"手机号和密码是多少？"（本域没有创建能力，索要执行参数 = 暗示能办）
+✅ 如实说明创建不在能力内 + 列出后台新增页需要准备的信息（姓名、手机号、初始密码、岗位）
 ```
