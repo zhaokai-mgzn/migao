@@ -14,7 +14,9 @@ tool 模块要求 `tests/test_tools_<name>.py`）。断言分三面：
 ⚠️ 这些断言会红吗：把 `read_only` 改 False、把权限码改别的、去掉 `check_permission` 早返回、
 把端点换成别的路径、把 `except` 里的返回改成 `raise` —— 逐一都会红（每条断言都盯着一个**会变的**真值）。
 """
-# case_ids: DA-008, DA-009, DA-010
+# case_ids: DA-008, DA-009, DA-010, DA-014
+import json
+
 import pytest
 from unittest.mock import patch, AsyncMock
 
@@ -116,3 +118,74 @@ class TestFailureSurface:
 
         assert result.success is False
         assert result.error == "tool_execution_failed"
+
+
+PROACTIVE_BIZ_DATE = "2026-09-22"
+PROACTIVE_SNAPSHOT = {
+    "biz_date": PROACTIVE_BIZ_DATE,
+    "orders": [
+        # 当天异常：成交价 700 < 成本 1000
+        {"order_no": "SO-TODAY", "status": "confirmed", "customer_id": "C-1",
+         "created_at": "2026-09-22T09:00:00+08:00", "shipped_at": None,
+         "sale_amount": 700.0, "cost_amount": 1000.0},
+        # **历史**异常：同一条规则，但事件发生在 09-01
+        {"order_no": "SO-HISTORY", "status": "completed", "customer_id": "C-9",
+         "created_at": "2026-09-01T09:00:00+08:00", "shipped_at": "2026-09-02T09:00:00+08:00",
+         "sale_amount": 100.0, "cost_amount": 300.0},
+    ],
+    "skus": [],
+    "returns": [],
+    "price_changes": [],
+}
+
+
+class TestProactiveDailyFindings:
+    """主动发现（族 1 · 包 1，issue #5322）：日报只放**当天异常**，无快照不猜。
+
+    引擎侧的确定性 / 三件套 / 注入式红证 / 阈值边界判据见 `tests/test_briefing_proactive.py`；
+    本类只钉**集成面**：工具把 `sourceSnapshot` 喂给引擎、并把结果并进日报返回。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_today_anomalies_are_surfaced(self, mock_get_client):
+        """当天异常 ⇒ 进 `data.proactive`，且消息里点出条数（用户才知道要往下看）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": PROACTIVE_BIZ_DATE, "sourceSnapshot": PROACTIVE_SNAPSHOT,
+                     "content": {"summary": "昨日经营平稳"}}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert result.success is True
+        assert [f["rule_id"] for f in result.data["proactive"]] == ["below_cost_price"]
+        assert "SO-TODAY" in json.dumps(result.data["proactive"], ensure_ascii=False)
+        assert "1 项当天异常" in (result.message or "")
+        assert result.data["content"] == {"summary": "昨日经营平稳"}   # 日报主体不被改动
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_historical_anomaly_does_not_reach_the_daily_view(self, mock_get_client):
+        """**历史异常**（同规则、09-01 的事件）⇒ 不得出现在日报里（日报要窄）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": PROACTIVE_BIZ_DATE, "sourceSnapshot": PROACTIVE_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert "SO-HISTORY" not in json.dumps(result.data["proactive"], ensure_ascii=False)
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_without_snapshot_there_is_no_proactive_section(self, mock_get_client):
+        """后端未给快照（旧数据 / 未生成）⇒ 空集合：不得报错，也不得编造异常"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": SAMPLE})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert result.success is True
+        assert result.data["proactive"] == []
+        assert result.message == "今日经营日报如下"

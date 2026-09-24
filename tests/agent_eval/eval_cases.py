@@ -2127,6 +2127,96 @@ _CASE_DA_010 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-011 [NORMAL] 主动发现：规则引擎确定性扫描（同一快照逐字复现，issue #5322）（源: cases/data.yml）──
+_CASE_DA_011 = EvalCase(
+    id='DA-011',
+    legacy_id='',
+    title='主动发现：规则引擎确定性扫描（同一快照逐字复现，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现规则引擎行为自检'],
+    expectations=[],
+    data_checks=['给定固定数据快照 ⇒ 命中集合逐字可复现：两次扫描同摘要，且**打乱快照内行序**后结果不变（确定性来自内容而非输入顺序）', '全量命中集合（规则 id + 命中日期 + 排序）逐字钉住；排序 = 日期倒序 → 紧急度 → 规则注册序', '空快照/无扫描基准日 ⇒ 返回空集合（判不出「当天」时不猜）；规则 id 唯一、具名、5 条首批规则齐备'],
+    skip_reason='[backend-contract] 确定性由 ai-agent 单测验证（tests/test_briefing_proactive.py），触发用规则不用 LLM 自由发挥，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'rules'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-012 [NORMAL] 主动发现：每条命中带三件套（判据 / 影响面 / 处置入口，issue #5322）（源: cases/data.yml）──
+_CASE_DA_012 = EvalCase(
+    id='DA-012',
+    legacy_id='',
+    title='主动发现：每条命中带三件套（判据 / 影响面 / 处置入口，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现条目结构自检'],
+    expectations=[],
+    data_checks=['每条命中必含 criterion（规则表达式 + 阈值 + 逐条观测值 + observed_total）/ impact（count+unit+amount）/ action（label+url）', 'criterion.observed = 真命中行（订单号/商品号/退货号），不是「大概识别出异常」；非数值或缺字段的行一律跳过（不猜）', 'impact.amount 与观测行逐条金额自洽（如低于成本价的亏损额合计）'],
+    skip_reason='[backend-contract] 三件套结构由 ai-agent 单测验证（tests/test_briefing_proactive.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'rules'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-013 [NORMAL] 主动发现：无处置入口的条目不进日报（注入式红证，issue #5322）（源: cases/data.yml）──
+_CASE_DA_013 = EvalCase(
+    id='DA-013',
+    legacy_id='',
+    title='主动发现：无处置入口的条目不进日报（注入式红证，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现处置入口门禁自检'],
+    expectations=[],
+    data_checks=['注入一条无处置入口（action 为空）的候选 ⇒ 该条**必不出现**在扫描输出里', '同一快照上未注入时该条**必须**出现（否则注入断言是空跑：注入的压根不是候选）；注入只影响被注入的那条', '处置入口 url 必须是站内路由（以 / 开头），指向能真正处理该异常的页面（订单/商品/售后列表）'],
+    skip_reason='[backend-contract] 处置入口门禁由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestActionGate 注入式红证），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-014 [NORMAL] 主动发现：日报只放当天异常（历史异常不进日报，issue #5322）（源: cases/data.yml）──
+_CASE_DA_014 = EvalCase(
+    id='DA-014',
+    legacy_id='',
+    title='主动发现：日报只放当天异常（历史异常不进日报，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天有什么异常'],
+    expectations=['briefing_query'],
+    data_checks=['同一份快照里构造历史异常：全量扫描（scan_snapshot）里**在**、日报视图（daily_findings）里**必不在**（双侧断言，防「引擎完全不工作」也变绿）', '日报条目的 detected_on 全部等于扫描基准日（简报 bizDate 可由调用方钉住，不依赖机器当前时间）', 'briefing_query 集成面：data.proactive 只含当天异常、消息点出条数；无 sourceSnapshot ⇒ 空集合且不报错'],
+    skip_reason='[backend-contract] 日报窄口径由 ai-agent 单测验证（tests/test_briefing_proactive.py + tests/test_tools_briefing_query.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'narrow'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-015 [NORMAL] 主动发现：阈值可配且边界值有断言（N/N+1、含上界、恰等阈值，issue #5322）（源: cases/data.yml）──
+_CASE_DA_015 = EvalCase(
+    id='DA-015',
+    legacy_id='',
+    title='主动发现：阈值可配且边界值有断言（N/N+1、含上界、恰等阈值，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现阈值边界自检'],
+    expectations=[],
+    data_checks=['超 N 天未发货：恰 N 天不命中 / N+1 天命中（同一快照两侧断言）；库存告急口径 = stock ≤ 阈值（含上界），压阈值后恰等值落到界外', '连续退货：窗口内 ≥ N 次命中 / N+1 次不命中；改价幅度：恰等阈值不命中 / 超阈值命中（百分比保留 2 位小数后比较）', '阈值可由快照 config 下发（租户级配置落点），显式入参优先；非法阈值抛错（不得静默接受成「配了也不生效」）'],
+    skip_reason='[backend-contract] 阈值边界由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestThresholdsAreConfigurable），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'threshold'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -8816,6 +8906,11 @@ ALL_CASES = (
     _CASE_DA_008,
     _CASE_DA_009,
     _CASE_DA_010,
+    _CASE_DA_011,
+    _CASE_DA_012,
+    _CASE_DA_013,
+    _CASE_DA_014,
+    _CASE_DA_015,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

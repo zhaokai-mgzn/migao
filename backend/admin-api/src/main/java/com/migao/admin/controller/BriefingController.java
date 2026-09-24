@@ -50,6 +50,10 @@ public class BriefingController {
         resp.put("verifyStatus", briefing != null ? briefing.getVerifyStatus() : null);
         resp.put("content", briefing != null ? briefing.getContent() : null);
         resp.put("bizDate", briefing != null ? briefing.getBizDate().toString() : null);
+        // 主动发现（族 1 · 包 1，issue #5322）：把**聚合快照**（确定性层产出）一并返回，
+        // 供 ai-agent 侧 `briefing_query` 做确定性规则扫描 —— 与简报**同源** ⇒ 两个入口口径一致。
+        // 快照只含聚合数字 + 脱敏事实（无客户 PII，见 aggregateSnapshot）。
+        resp.put("sourceSnapshot", briefing != null ? briefing.getSourceSnapshot() : null);
         return ApiResponse.success(resp);
     }
 
