@@ -15,6 +15,7 @@ tool 模块要求 `tests/test_tools_<name>.py`）。断言分三面：
 把端点换成别的路径、把 `except` 里的返回改成 `raise` —— 逐一都会红（每条断言都盯着一个**会变的**真值）。
 """
 # case_ids: DA-008, DA-009, DA-010, DA-014, DA-018
+import ast
 import json
 from pathlib import Path
 
@@ -404,6 +405,30 @@ class TestOnDemandProductHealthView:
         assert paths == [ENDPOINT] == [TODAY_ENDPOINT], paths
         # 默认路径的 data 不得多出视图键（加数组/字段 = 隐式扩大所有消费方的输入，§17.3）
         assert "view" not in result.data
+
+    def test_call_site_literals_match_the_declared_endpoints(self):
+        """调用点的端点字面量必须 == 声明的端点常量（防「常量改了、调用点没改」的静默漂移）
+
+        为什么字面量必须留在调用点：静态归属机具只解析调用点的字符串字面量 /
+        f-string / 拼接（`tests/tool_http_attribution.py::_path_template`），
+        写成模块常量 ⇒ 本工具被判成「无 admin-api 调用点」⇒ 权限对账判红（本 PR 实测）。
+        """
+        tree = ast.parse(Path(__file__).with_name("test_tools_briefing_query.py")
+                         .parent.parent.joinpath("app/tools/briefing_query.py")
+                         .read_text(encoding="utf-8"))
+        literals = {
+            node.args[0].value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and node.args[0].value.startswith("/api")
+        }
+
+        assert literals == {TODAY_ENDPOINT, SNAPSHOT_ENDPOINT}, literals
 
     def test_endpoint_literals_match_the_backend_controller(self):
         """端点字面量必须真的在 Java 控制器里（不许凭语义推测 —— §17.3 ⑤）"""

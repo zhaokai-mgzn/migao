@@ -85,14 +85,25 @@ class BriefingQueryTool(BaseTool):
                 suggestion="请从工具说明里的可选视图里选一个后重试，不要自行改用其它 view",
             )
 
-        endpoint = SNAPSHOT_ENDPOINT if view else TODAY_ENDPOINT
         try:
             client = get_admin_api_client()
-            response = await client.get(
-                endpoint,
-                tenant_id=context.tenant_id,
-                user_id=context.user_id,
-            )
+            # 🔴 端点字面量必须留在**调用点**：静态归属机具（`tests/tool_http_attribution.py`
+            # 的 `_path_template`）只认调用点的字符串字面量 / f-string / 拼接 —— 写成模块常量
+            # 会让本工具被判成「无 admin-api 调用点」⇒ 权限对账（`ci workflow helper unit tests`）
+            # 两条判据一起红。常量与调用点字面量的一致性由单测机械钉住
+            #（`tests/test_tools_briefing_query.py` 的 `test_call_site_literals_match_the_declared_endpoints`）。
+            if view:
+                response = await client.get(
+                    "/api/admin/briefing/snapshot",
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+            else:
+                response = await client.get(
+                    "/api/admin/briefing/today",
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
         except Exception as e:
             logger.error(f"Briefing query error: {e}", exc_info=True)
             return ToolResult(
