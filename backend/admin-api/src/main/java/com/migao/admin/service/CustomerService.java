@@ -735,7 +735,10 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * 实测形态见 {@code CustomerProfileViewSnapshotTest} 的「行键集 ≡ 声明字段集」这条判据
      * （它在改成本实现前**真的红过**：实得 {@code fscore / mscore / rscore}）。</p>
      *
-     * <p>按声明遍历 + 反射读字段 ⇒ 键集**由构造保证**等于声明的字段集（不手写映射表、不另造 DTO）。</p>
+     * <p>按声明遍历 + 反射读字段 ⇒ 键集**由构造保证**等于声明的字段集（不手写映射表、不另造 DTO）。
+     * issue #5459 已把**实体侧**的线上键名统一到声明名（那三个缩写字段在 getter 上显式标注，
+     * 判据 {@code CustomerProfileWireKeyParityTest}），但本条腿**不依赖**那些注解 ——
+     * 实体的命名配置日后被改坏时，行键集仍由本构造保证，不会跟着漂移。</p>
      */
     private static Map<String, Object> profileRow(CustomerProfile profile,
                                                   FieldTruth.Declaration declaration) {
