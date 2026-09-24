@@ -555,6 +555,13 @@ case "$MODE" in
     ;;
   redproof)
     report "红证机具前提自检（前提能否成立）" redproof_preflight
+    # 红证**实跑**巡检（#5328）：按登记册（scripts/redproof_registry.json）逐条在**临时副本**上做
+    # 「注入 → 断言必红 → 还原」，具名报出「该红证已退化 / 注入点失配 / 未还原」。
+    # 三态口径原样带回：`0` = 登记且可跑的条目全部真跑且真红；`1` = 有退化/失配；`3` = **无法判定**
+    # （一条都没真跑 ⇒ 本机缺工具链）—— 「一条都没跑」不是「通过」，故这里不吞码、也不套
+    # `report_env`（它的就绪探测是**单一工具链**口径，与本巡检跨工具链不符；逐条跳过原因由巡检
+    # 自己的读数给出）。
+    report "红证实跑巡检（登记册逐条：注入 → 必红 → 还原）" bash -c "python3 '$ROOT/scripts/redproof_sweep.py'"
     echo "⏳ 以下为**实跑**腿（真注入 + 真跑判据），单机具实测 2~30 分钟 —— 工具链是否就绪由 report_env 的就绪探测判定（未就绪 = 跳过，既不是通过也不是失败）"
     report_env admin-api "红证机具 pool-board 实跑" bash -c "python3 '$ROOT/scripts/pool-board-red-proof.py'"
     report_env admin-api "红证机具 order-urgency 实跑" bash -c "python3 '$ROOT/scripts/order-urgency-red-proof.py'"
