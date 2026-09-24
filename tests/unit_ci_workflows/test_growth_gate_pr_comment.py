@@ -434,12 +434,34 @@ def test_meta_mismatched_result_cannot_be_rendered_as_blocked_or_passed():
 
 # ── M1 元判据（类级）：全仓「消费结果文件」的 job 只许走同一条渲染路 ──────────
 
+def _shared_strip_comment():
+    """**共享**剥注释实现（`.github/danger_scan.py::strip_comment`，issue #5268 的纯函数）。
+
+    为什么不用本地 `ln.split("#")[0]`：那是**朴素截断** —— 字符串里的 `#`（如 `echo "#x"`）
+    会把该行后半截一起吃掉 ⇒ 判据漏读代码，属**假绿**（`#5323` 第 7 类；判据 =
+    `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）。
+    也**不能**先把引号内容清空再剥 `#`：本判据要读的正是引号里的 `--render-pr-comment`
+    与文件名 ⇒ 清空字符串等于把判据弄空。
+    ⇒ 用那份**引号感知**的实现（`#` 在行首/前接空白才算注释起点；引号内的 `#` 不是注释）。
+    """
+    import importlib.util
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "migao_danger_scan_for_tests", root / ".github" / "danger_scan.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.strip_comment
+
+
 def _code_only(text, js):
     """剥掉注释后的代码面（#5118 ③：判据只读代码，不吃说明文字）。"""
     if js:
         text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         return "\n".join(ln.split("//")[0] for ln in text.splitlines())
-    return "\n".join(ln.split("#")[0] for ln in text.splitlines())
+    strip_comment = _shared_strip_comment()
+    return "\n".join(strip_comment(ln) for ln in text.splitlines())
 
 
 def assert_no_second_render_path(workflows):
