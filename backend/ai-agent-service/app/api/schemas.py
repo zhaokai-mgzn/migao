@@ -4,7 +4,7 @@ AI 智能客服系统 - API Schema 定义
 对话相关的 Pydantic 模型
 """
 
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +15,13 @@ class ChatSendRequest(BaseModel):
     images: Optional[List[str]] = Field(None, description="图片URL列表")
     ignored_suggestions: Optional[List[str]] = Field(
         None, description="用户忽略的上一轮建议列表（用于日志分析）"
+    )
+    # 页面上下文（issue #5371 族 4）：前端**只递交** `{"route": "<路径>", "entityId": "<id>"}`
+    # —— 路径不含查询串、实体只传 id 不传快照；**角色不在这里**（只从会话取，客户端说了不算）。
+    # 判定（哪一页能注入、按角色怎么裁剪）唯一真值在 `app/context/page_registry.py`：
+    # 未登记 route / 非商户员工 / 缺读码 ⇒ 不注入（默认拒绝）。
+    page_context: Optional[Dict[str, Any]] = Field(
+        None, description="页面上下文：{route, entityId}（可选；非法/未登记一律不注入）"
     )
 
 
