@@ -387,12 +387,10 @@ jobs:
           # G1: 单一规则源 tech-stack.yml modules，替代硬编码 case 矩阵
           git fetch origin main
           CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "✅ 无变更文件" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "BLOCKERS=0" >> "$GITHUB_OUTPUT"
-            echo "WARNINGS=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # ⚠️ 空变更集**不另开旁路**（issue #5292）：旧实现在这里直接 `echo BLOCKERS=0` + exit 0
+          # —— 那条路**不产出 growth-gate-result.json**，于是「job 判红/判绿」与「评论正文」各有
+          # 一个数据来源（双源）。现在 `--files` 为空时由 growth_gate.py 自己按同一 base 取变更集
+          # （同一份 git diff）⇒ 结果文件与 step 输出同源，评论渲染永远有数据可渲染。
           # growth_gate.py 读 .github/tech-stack.yml + .github/qa-exemptions.yml
           # 输出 markdown 到 $GITHUB_STEP_SUMMARY + JSON 到 growth-gate-result.json
           # 崩溃 → 非零退出 → set -e 让本 step 失败（fail-closed）；成功 → 退出 0，blocker 由 JSON 判定
@@ -435,10 +433,24 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "❌ QA Growth Gate 发现 ${{ steps.check.outputs.BLOCKERS }} 处缺测，阻塞合并。"
-          echo "请补充对应测试，或在 .github/qa-exemptions.yml 中添加合法豁免项。"
+          echo "请按下方 PR 评论里的清单（逐条 file + 缺测文件）补齐测试；"
+          echo "仅当确有正当理由时才走豁免（.github/qa-exemptions.yml），且豁免面只许缩短。"
           echo "详见 docs/wiki/Testing.md"
           gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
           exit 1
+
+      # 评论正文渲染：**唯一数据源 = 上一步写出的 growth-gate-result.json**（issue #5292）。
+      # 此前 `Post PR comment` 读的是**它自己那一步**的 `$GITHUB_STEP_SUMMARY` —— 该变量是
+      # **逐步**文件（每步一个 uuid），而 markdown 是 check step 里写进**那一步**的 summary
+      # ⇒ 评论 step 读到空串，正文只剩标题 +「Blockers: 6」+「或加豁免」（实测 PR #5285：
+      # **看不到是哪 6 条，却被引向加豁免**）。渲染失败（结果文件缺失/自相矛盾）⇒ 本 step
+      # 非零（fail-closed），但**仍写出可发布的正文** —— 绝不静默发一条空评论。
+      - name: Render PR comment from growth-gate-result.json
+        if: always()
+        run: |
+          python3 .github/growth_gate.py \
+            --render-pr-comment growth-gate-result.json \
+            > growth-gate-pr-comment.md
 
       # PR comment — 始终发布/更新（pass/fail/warn 都更新）
       - name: Post PR comment
@@ -447,48 +459,20 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const blockers = '${{ steps.check.outputs.BLOCKERS }}';
-            const warnings = '${{ steps.check.outputs.WARNINGS }}';
-
-            // 读取 step summary 并转为 PR comment 格式
-            let summary = '';
+            // 正文**只能**来自上一步渲染出的正文文件（其数据源 = growth-gate-result.json），
+            // 本步只负责发布/更新（issue #5292）。两件**禁止**的事：
+            // ① 读 `$GITHUB_STEP_SUMMARY` —— 逐步文件，这里读到的必然是空串（本 issue 的病根）；
+            // ② 在本步按 blocker 计数自建正文 —— 第二数据源，必然与结果 JSON 漂移。
+            let body = '';
             try {
-              summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
+              body = fs.readFileSync('growth-gate-pr-comment.md', 'utf8');
             } catch (e) {
-              summary = 'QA Growth Gate 运行异常，无法读取扫描结果。';
+              body = '';
             }
-
-            // PR comment 里标题降级（### 而非 ##，避免破坏页面结构）
-            const tableContent = summary
-              .replace(/^## /gm, '### ')
-              .replace(/^# /gm, '## ');
-
-            const b = parseInt(blockers) || 0;
-            const w = parseInt(warnings) || 0;
-
-            let icon, verdict, detail;
-            if (b > 0) {
-              icon = '❌';
-              verdict = 'BLOCKED';
-              detail = '> ❌ **合并被阻塞**。请补充缺失的测试，或在 `.github/qa-exemptions.yml` 中添加合法豁免项后重新请求 Review。\n> 详见 [docs/wiki/Testing.md](docs/wiki/Testing.md)';
-            } else if (w > 0) {
-              icon = '⚠️';
-              verdict = 'WARNINGS';
-              detail = '> ⚠️ 有警告但不阻塞合并。请尽快补充测试。';
-            } else {
-              icon = '✅';
-              verdict = 'PASSED';
-              detail = '> ✅ 所有检查通过！';
+            // 「渲染不出正文」绝不允许退化成「发一条空评论」—— 那正是本 issue 的现网形态。
+            if (!body.trim()) {
+              body = '## ❌ QA Growth Gate — 无法生成评论正文\n\n> 结果文件缺失/不可读或渲染失败（fail-closed）；详见本 job 日志。';
             }
-
-            const body = `## ${icon} QA Growth Gate — ${verdict}
-
-            ${tableContent}
-
-            ---
-            **Blockers**: ${b} | **Warnings**: ${w}
-            ${detail}
-            `;
 
             // 查找已有 QA Gate 评论 → 更新；否则创建
             const { data: comments } = await github.rest.issues.listComments({
