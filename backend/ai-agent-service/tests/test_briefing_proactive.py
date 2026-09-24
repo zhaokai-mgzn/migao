@@ -26,6 +26,7 @@ import pytest
 from app.briefing.proactive import (
     DEFAULT_CONFIG,
     INCOMPLETE,
+    NOT_ENABLED,
     NOT_WIRED,
     RULES,
     WIRED,
@@ -325,22 +326,26 @@ class TestThresholdsAreConfigurable:
             ProactiveConfig(price_change_pct=-1.0)
 
 
-#: 装配后的快照（族 3 跨域视图内核，issue #5358）—— 与 admin-api
+#: 装配后的快照（族 3 跨域视图内核，issue #5358 / #5348）—— 与 admin-api
 #: `DailyBriefingService.aggregateSnapshot` 的产物**同形**：
 #: · 行级数组 orders/skus/returns + 装配层自描述 `row_fields`（它真的给了哪些字段）
-#: · orders 行**没有 `cost_amount`**（`orders` 表无成本列）⇒ `below_cost_price` 仍接不通
+#: · orders 行带 `cost_amount`（#5348 接通：**Σ(行数量 × 该行 SKU 的 avg_cost)**；`null` = 成本未知）
+#: · 租户级事实 `cost_accounting`（该租户是否存在 `avg_cost IS NOT NULL` 的 SKU）
 #: · **没有 `price_changes`**（全仓无改价流水表）⇒ `price_change_over` 接不通
 ASSEMBLED = {
     "biz_date": BIZ_DATE,
+    "cost_accounting": True,
     "row_fields": {
-        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at", "sale_amount"],
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at",
+                   "sale_amount", "cost_amount"],
         "skus": ["sku_id", "product_id", "product_name", "stock"],
         "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
     },
     "orders": [
-        # 超 N 天未发货（09-12 下单 ⇒ 10 天）
+        # 超 N 天未发货（09-12 下单 ⇒ 10 天）；成本 1000 < 成交 1200 ⇒ **不**低于成本价
         {"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
-         "created_at": "2026-09-12T10:00:00+08:00", "shipped_at": None, "sale_amount": 1200.0},
+         "created_at": "2026-09-12T10:00:00+08:00", "shipped_at": None, "sale_amount": 1200.0,
+         "cost_amount": 1000.0},
     ],
     "skus": [
         # stock ≤ 100（含上界）
@@ -366,9 +371,11 @@ ASSEMBLED_QUIET = dict(
     returns=[],
 )
 
-#: 已接线的三条（本单接上的）/ 未接线的两条（结构性不可达）—— 逐规则，不是整体
-WIRED_RULES = frozenset({"unshipped_overdue", "low_stock", "repeat_returns"})
-NOT_WIRED_RULES = frozenset({"below_cost_price", "price_change_over"})
+#: `ASSEMBLED` 上**真的命中**的三条 / **已接线**的四条
+#: （多出来的那条 = `below_cost_price` 已接通，但该快照上成本 1000 ≥ 成交 1200 ⇒ 无命中）/ 未接线的一条
+HITTING_RULES = frozenset({"unshipped_overdue", "low_stock", "repeat_returns"})
+WIRED_RULES = HITTING_RULES | {"below_cost_price"}
+NOT_WIRED_RULES = frozenset({"price_change_over"})
 
 #: **被行数上限截断**的快照：`row_meta` 显式登记（截断不许静默 —— 有界是热路径必须，
 #: 但它会新开一个「看不见的行 ⇒ 不命中 ⇒ 被读成没问题」的面）。
@@ -418,10 +425,10 @@ class TestWiringStatusIsPerRule:
     抹掉 status 字段 ⇒ 两种空的判别函数会红（注入式红证）。
     """
 
-    def test_assembled_snapshot_unlocks_the_three_wired_rules(self):
-        """判据 1：装配行级数组后，3 条规则**真的命中**（同 (snapshot, as_of, config) ⇒ 同一命中列表）"""
+    def test_assembled_snapshot_unlocks_the_wired_rules(self):
+        """判据 1：装配行级数组后，接线的规则**真的命中**（同 (snapshot, as_of, config) ⇒ 同一命中列表）"""
         daily = daily_findings(ASSEMBLED)
-        assert {f["rule_id"] for f in daily} == WIRED_RULES
+        assert {f["rule_id"] for f in daily} == HITTING_RULES
         assert _digest(daily_findings(ASSEMBLED)) == _digest(daily), "同一快照两次扫描必须逐字一致"
 
     def test_unlocking_does_not_depend_on_the_rule_registry_being_replaced(self):
@@ -429,14 +436,26 @@ class TestWiringStatusIsPerRule:
         assert daily_findings(ASSEMBLED_QUIET) == []
 
     def test_status_is_per_rule_not_whole(self):
-        """判据 3：接线状态**逐规则**（部分接线是可能的：本单接 3 条、2 条结构性不可达）"""
+        """判据 3：接线状态**逐规则**（部分接线是可能的：本单接 4 条、1 条结构性不可达）"""
         status = proactive_status(ASSEMBLED)
         assert {r for r, s in status.items() if s["status"] == WIRED} == set(WIRED_RULES)
         assert {r for r, s in status.items() if s["status"] == NOT_WIRED} == set(NOT_WIRED_RULES)
 
-    def test_below_cost_stays_unwired_even_though_orders_are_assembled(self):
-        """风险不对称（#5348）：`orders` 装配好了，`below_cost_price` 仍接不通 —— 缺的是成本价"""
+    def test_below_cost_is_wired_once_cost_amount_is_assembled(self):
+        """#5348：`orders` 行带上 `cost_amount` ⇒ 低于成本价**接通**（从 not_wired 变 wired）"""
         entry = proactive_status(ASSEMBLED)["below_cost_price"]
+        assert entry["status"] == WIRED
+        assert entry["missing"] == []
+
+    def test_below_cost_stays_unwired_when_the_field_is_missing(self):
+        """反向：装配层**没给** `cost_amount` 字段（= 系统没实现）⇒ 仍是 not_wired（不是「命中 0 条」）"""
+        withoutCost = dict(
+            ASSEMBLED,
+            row_fields={**ASSEMBLED["row_fields"],
+                        "orders": [f for f in ASSEMBLED["row_fields"]["orders"]
+                                   if f != "cost_amount"]},
+        )
+        entry = proactive_status(withoutCost)["below_cost_price"]
         assert entry["status"] == NOT_WIRED
         assert entry["missing"] == ["cost_amount"]
         assert "cost_amount" in entry["reason"]
@@ -510,7 +529,7 @@ class TestWiringStatusIsPerRule:
                         for n, day in ((1, 18), (2, 20), (3, 24))],
         }
         findings = daily_findings(snapshot)
-        assert {f["rule_id"] for f in findings} == WIRED_RULES
+        assert {f["rule_id"] for f in findings} == HITTING_RULES
         assert _by_rule(findings, "unshipped_overdue")["criterion"]["observed"][0]["days"] == 12
         assert _by_rule(findings, "repeat_returns")["impact"]["count"] == 3
 
@@ -520,7 +539,8 @@ class TestWiringStatusIsPerRule:
         调用方只看这一条就能决定「空命中能不能读成没问题」—— 三类状态（wired / not_wired /
         incomplete）共用同一个不变式，不给第二套判断口径。
         """
-        for snapshot in (ASSEMBLED, ASSEMBLED_QUIET, TRUNCATED, DIMENSION_GAP, {"metrics": {}}):
+        for snapshot in (ASSEMBLED, ASSEMBLED_QUIET, TRUNCATED, DIMENSION_GAP, {"metrics": {}},
+                         COST_PARTIAL, NOT_ENABLED_SNAPSHOT):
             for rule_id, entry in proactive_status(snapshot).items():
                 assert (entry["reason"] is None) == (entry["status"] == WIRED), (rule_id, entry)
 
@@ -540,7 +560,9 @@ class TestTruncationAndGapsAreExplicit:
         status = proactive_status(TRUNCATED)
         assert status["low_stock"]["status"] == WIRED
         assert status["repeat_returns"]["status"] == WIRED
-        assert status["below_cost_price"]["status"] == NOT_WIRED
+        # 低于成本价读的是 `orders` 数组 ⇒ 同样被截断波及（#5348 接通后不再是 not_wired）
+        assert status["below_cost_price"]["status"] == INCOMPLETE
+        assert status["price_change_over"]["status"] == NOT_WIRED
 
     def test_red_proof_truncation_flag_is_load_bearing(self):
         """**注入式红证**：抹掉 `row_meta` ⇒ 截断判据必红（否则「显式」只是文案）"""
@@ -572,3 +594,143 @@ class TestTruncationAndGapsAreExplicit:
         narrow = ProactiveConfig(max_findings=2)
         assert len(daily_findings(SNAPSHOT, config=narrow)) == 2
         assert daily_findings_total(SNAPSHOT, config=narrow) == len(EXPECTED_DAILY) == 5
+
+
+#: **部分行成本未知**的快照（issue #5348 的行级三态）：装配层逐行解析 SKU，
+#: 任一行不可解析或该行 `avg_cost` 为 NULL ⇒ 该订单行 `cost_amount = null`（整单不可判定）。
+#: SO-A 可判定且确实低于成本；SO-B 成本未知 —— 后者**不得**被当成「没低于成本」。
+COST_PARTIAL = {
+    "biz_date": BIZ_DATE,
+    "cost_accounting": True,
+    "row_fields": {
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at",
+                   "sale_amount", "cost_amount"],
+    },
+    "orders": [
+        {"order_no": "SO-A", "status": "confirmed", "customer_id": "C-1",
+         "created_at": "2026-09-22T09:00:00+08:00", "shipped_at": None,
+         "sale_amount": 700.0, "cost_amount": 1000.0},
+        {"order_no": "SO-B", "status": "confirmed", "customer_id": "C-2",
+         "created_at": "2026-09-22T09:30:00+08:00", "shipped_at": None,
+         "sale_amount": 700.0, "cost_amount": None},
+    ],
+}
+
+#: 该租户**没开启成本核算**（快照事实 `cost_accounting=false` = 没有任何 SKU 有 `avg_cost`）——
+#: 系统**有**这个能力（`cost_amount` 字段在），是**该租户没开** ⇒ `not_enabled`（可行动：去开启）。
+NOT_ENABLED_SNAPSHOT = dict(
+    COST_PARTIAL, cost_accounting=False,
+    orders=[dict(row, cost_amount=None) for row in COST_PARTIAL["orders"]],
+)
+
+#: **系统没实现**的同一条规则（`orders` 行压根没有 `cost_amount` 字段）⇒ `not_wired`（不可行动）
+COST_UNWIRED_SNAPSHOT = {
+    "biz_date": BIZ_DATE,
+    "row_fields": {
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at", "sale_amount"],
+    },
+    "orders": [{"order_no": "SO-A", "status": "confirmed", "customer_id": "C-1",
+                "created_at": "2026-09-22T09:00:00+08:00", "shipped_at": None,
+                "sale_amount": 700.0}],
+}
+
+
+def _unknown_cost_rows_are_disclosed(status, rule_id="below_cost_price"):
+    """**判据本体**（#5348 判据 5）：成本未知的行必须**显式**登记为「未判定」。
+
+    不得静默跳过 —— 静默跳过 = 把「没数据」读成「没低于成本」（「没数据 ≠ 没问题」的**行级**版本）。
+    """
+    entry = status[rule_id]
+    assert entry["status"] == INCOMPLETE, f"有行未判定 ⇒ 本条本次不完整，实得 {entry['status']}"
+    assert entry["reason"], "不完整必须给出原因"
+    assert any("cost_amount" in gap for gap in entry["gaps"]), \
+        f"必须点名未判定的行，实得 {entry['gaps']}"
+    return True
+
+
+def _two_unavailable_kinds_are_separable(unwired, not_enabled):
+    """**判据本体**（#5348 判据 3）：**系统没实现**（`not_wired`）与**该租户没开**（`not_enabled`）必须可分。
+
+    可分 = ① 两态取值不同（不可合并成一个说法）② 都带原因（不变式：`reason is None` ⟺ `wired`）
+    ③ `not_wired` 缺的是**字段/数组**（系统没有），`not_enabled` 的字段**是有的**（系统有、租户没开）。
+    """
+    assert unwired["status"] == NOT_WIRED
+    assert not_enabled["status"] == NOT_ENABLED
+    assert unwired["status"] != not_enabled["status"], "两态不可合并"
+    assert unwired["reason"] and not_enabled["reason"], "两态都必须带原因（不变式不给 not_enabled 开例外）"
+    assert unwired["missing"] and not not_enabled["missing"], \
+        "not_wired 缺的是字段/数组；not_enabled 字段是有的（区别就在这）"
+    return True
+
+
+class TestCostJoinAndNotEnabled:
+    """判据 3/4/5（issue #5348）：成本 join 接通后的**行级三态** + **`not_enabled` 新态**。
+
+    对照判据（会红吗）：把未知行静默跳过（不登记 gaps）⇒ 判据 5 必红；把 `not_enabled` 并进 `not_wired`
+    （同一个说法/同一个取值）⇒ 判据 3 必红；把租户级事实当人工配置项（而不是从 `avg_cost` 推出）
+    ⇒ 判据 4 的两侧断言必红（见 `test_tenant_switch_is_the_derived_fact`）。
+    """
+
+    def test_unknown_cost_row_is_not_judged_but_is_disclosed(self):
+        """判据 5：成本未知的行**不进入**「低于成本」的判定，但也**不**等于「没低于成本」"""
+        below = _by_rule(daily_findings(COST_PARTIAL), "below_cost_price")["criterion"]["observed"]
+        assert [r["ref"] for r in below] == ["SO-A"], "SO-B 成本未知 ⇒ 不判定（既不入命中、也不算没问题）"
+        assert _unknown_cost_rows_are_disclosed(proactive_status(COST_PARTIAL)) is True
+
+    def test_the_unknown_row_is_a_real_candidate(self):
+        """红证前提：把 SO-B 的成本补上（成交 700、成本 800 ⇒ 亏损 100）⇒ 它**必须**进判定"""
+        filled = dict(COST_PARTIAL, orders=[
+            dict(row, cost_amount=800.0) if row["order_no"] == "SO-B" else row
+            for row in COST_PARTIAL["orders"]])
+        observed = _by_rule(daily_findings(filled), "below_cost_price")["criterion"]["observed"]
+        assert [r["ref"] for r in observed] == ["SO-A", "SO-B"]
+        assert proactive_status(filled)["below_cost_price"]["status"] == WIRED
+
+    def test_red_proof_unknown_rows_must_be_disclosed(self):
+        """**注入式红证**：把未知行静默丢掉（谎报 `wired`、不留 gaps）⇒ 判据 5 必红"""
+        silent = dict(proactive_status(COST_PARTIAL)["below_cost_price"],
+                      status=WIRED, reason=None, gaps=[])
+        with pytest.raises(AssertionError):
+            _unknown_cost_rows_are_disclosed({"below_cost_price": silent})
+
+    def test_not_enabled_and_not_wired_are_separable(self):
+        """判据 3：两态分别可测，且断言的是**两态之间**的差别（不是各自单独看一眼）"""
+        assert _two_unavailable_kinds_are_separable(
+            proactive_status(COST_UNWIRED_SNAPSHOT)["below_cost_price"],
+            proactive_status(NOT_ENABLED_SNAPSHOT)["below_cost_price"]) is True
+
+    def test_not_enabled_reason_is_actionable_guidance(self):
+        """判据 3：`not_enabled` 的 reason **非 None** 且要能渲染成**引导去开启**的话术"""
+        entry = proactive_status(NOT_ENABLED_SNAPSHOT)["below_cost_price"]
+        assert entry["status"] == NOT_ENABLED
+        assert "成本核算" in entry["reason"] and "开启" in entry["reason"]
+        assert daily_findings(NOT_ENABLED_SNAPSHOT) == [], "没开启 ⇒ 不判定（不是「命中 0 条 = 没问题」）"
+
+    def test_red_proof_merging_the_two_states_fails(self):
+        """**注入式红证**：把两态合并（`not_enabled` 谎报成 `not_wired`）⇒ 判据 3 必红"""
+        merged = dict(proactive_status(NOT_ENABLED_SNAPSHOT)["below_cost_price"],
+                      status=NOT_WIRED, missing=["cost_amount"])
+        with pytest.raises(AssertionError):
+            _two_unavailable_kinds_are_separable(
+                proactive_status(COST_UNWIRED_SNAPSHOT)["below_cost_price"], merged)
+
+    def test_tenant_switch_is_the_derived_fact(self):
+        """判据 4：开关判据 = 快照事实 `cost_accounting`（该租户是否存在 `avg_cost IS NOT NULL` 的 SKU）
+
+        两侧断言：`true` ⇒ 可判定（wired）；`false` ⇒ `not_enabled`。**缺省不宣称「没开」** ——
+        老快照看不见这个事实时，「看不见」不是「false」（否则滚动升级期会把已开启的租户误报成没开）。
+        """
+        assert proactive_status(dict(ASSEMBLED, cost_accounting=True))["below_cost_price"]["status"] == WIRED
+        assert proactive_status(
+            dict(ASSEMBLED, cost_accounting=False))["below_cost_price"]["status"] == NOT_ENABLED
+        legacy = {key: value for key, value in ASSEMBLED.items() if key != "cost_accounting"}
+        assert proactive_status(legacy)["below_cost_price"]["status"] == WIRED
+
+    def test_rule_declares_what_it_needs_for_the_new_state(self):
+        """注册表自身的不变式：低于成本价声明了租户级前置与行级可判定字段（判据源只有这一处）"""
+        spec = next(r for r in RULES if r.rule_id == "below_cost_price")
+        assert spec.requires == ("orders", ("order_no", "sale_amount", "cost_amount"))
+        assert spec.enabled_by == ("cost_accounting", "成本核算",
+                                   "在商品入库时录入单价（系统按移动加权算出成本价）")
+        assert spec.judgeable_fields == ("cost_amount",)
+        assert all(r.enabled_by is None for r in RULES if r.rule_id != "below_cost_price")

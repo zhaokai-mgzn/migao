@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-002, ST-001, DA-016
+// case_ids: DA-001, DA-002, ST-001, DA-016, DA-017
 
 package com.migao.admin.service;
 
@@ -637,7 +637,8 @@ class DailyBriefingServiceTest {
         }
 
         private OrderItem orderItem(String orderId, String productId) {
-            return OrderItem.builder().tenantId(1L).orderId(orderId).productId(productId).build();
+            return OrderItem.builder().tenantId(1L).orderId(orderId).productId(productId)
+                    .quantity(new BigDecimal("2")).build();
         }
 
         private Order order(String orderNo) {
@@ -649,7 +650,7 @@ class DailyBriefingServiceTest {
 
         private ProductSku sku() {
             return ProductSku.builder().id(7L).tenantId(1L).productId("P-1")
-                    .stock(new BigDecimal("20.0")).build();
+                    .stock(new BigDecimal("20.0")).avgCost(new BigDecimal("10.0000")).build();
         }
 
         private Product product() {
@@ -673,11 +674,13 @@ class DailyBriefingServiceTest {
             return (Map<String, Object>) ((Map<String, Object>) snapshot.get("row_meta")).get(array);
         }
 
-        /** 标准行级 stub：一张单商品订单的退货 + 一张多商品订单的退货；SKU 库存 20（在售商品下） */
+        /** 标准行级 stub：一张单商品订单的退货 + 一张多商品订单的退货；SKU 库存 20（在售商品下）、均价 10 */
         private void stubRows() {
             when(orderMapper.selectList(any())).thenReturn(List.of(order("SO-1")));
             when(orderLogisticsMapper.selectList(any())).thenReturn(List.of());   // 未发货
             when(productSkuMapper.selectList(any())).thenReturn(List.of(sku()));
+            // 租户在做成本核算（#5348 的租户级事实：存在 avg_cost IS NOT NULL 的 SKU）
+            when(productSkuMapper.selectCount(any())).thenReturn(1L);
             when(productMapper.selectList(any())).thenReturn(List.of(product()));
             when(afterSalesTicketMapper.selectList(any())).thenReturn(List.of(
                     returnTicket("RT-1", "O-1"), returnTicket("RT-2", "O-2")));
@@ -685,24 +688,31 @@ class DailyBriefingServiceTest {
                     orderItem("O-1", "P-1"), orderItem("O-2", "P-2"), orderItem("O-2", "P-3")));
         }
 
-        /** 某个 Mapper 收到的查询 wrapper（行数组装配的入参，用来钉「有界 + 租户」） */
+        /**
+         * 某个 Mapper 收到的**全部**查询 wrapper（行数组装配的入参，用来钉「有界 + 租户」）。
+         *
+         * <p>**全部**而不是第一条：同一 Mapper 上现在有多条装配查询（#5348 的成本 join 也要查
+         * `product_skus` / `order_items`）⇒ 只取第一条会让「有界 / 租户」这两条判据**只覆盖一半**
+         * （这正是「判据把嫌疑指向错误的对象」那类假绿）。</p>
+         */
         @SuppressWarnings({"unchecked", "rawtypes"})
-        private AbstractWrapper<?, ?, ?> capturedWrapper(Object mapper) {
+        private java.util.List<AbstractWrapper<?, ?, ?>> capturedWrappers(Object mapper) {
             ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
             if (mapper == orderMapper) {
-                verify(orderMapper).selectList(captor.capture());
+                verify(orderMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == orderLogisticsMapper) {
-                verify(orderLogisticsMapper).selectList(captor.capture());
+                verify(orderLogisticsMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == productSkuMapper) {
-                verify(productSkuMapper).selectList(captor.capture());
+                verify(productSkuMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == productMapper) {
-                verify(productMapper).selectList(captor.capture());
+                verify(productMapper, atLeastOnce()).selectList(captor.capture());
             } else {
-                verify(afterSalesTicketMapper).selectList(captor.capture());
+                verify(afterSalesTicketMapper, atLeastOnce()).selectList(captor.capture());
             }
-            AbstractWrapper<?, ?, ?> wrapper = (AbstractWrapper<?, ?, ?>) captor.getValue();
-            wrapper.getSqlSegment();   // 触发条件解析：参数对（paramNameValuePairs）在解析时才填充
-            return wrapper;
+            return captor.getAllValues().stream()
+                    .map(raw -> (AbstractWrapper<?, ?, ?>) raw)
+                    .peek(AbstractWrapper::getSqlSegment)   // 触发条件解析：参数对在解析时才填充
+                    .collect(java.util.stream.Collectors.toList());
         }
 
         @SuppressWarnings("unchecked")
@@ -809,14 +819,18 @@ class DailyBriefingServiceTest {
             service.aggregateSnapshot(1L);
 
             for (Object mapper : List.of(orderMapper, productSkuMapper, afterSalesTicketMapper)) {
-                assertThat(capturedWrapper(mapper).getSqlSegment())
-                        .as("行数组查询必须有界")
-                        .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
+                for (AbstractWrapper<?, ?, ?> wrapper : capturedWrappers(mapper)) {
+                    assertThat(wrapper.getSqlSegment())
+                            .as("行数组查询必须有界（逐条，不只第一条）")
+                            .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
+                }
             }
             for (Object mapper : List.of(orderLogisticsMapper, productMapper)) {
-                assertThat(capturedWrapper(mapper).getSqlSegment())
-                        .as("附带查询也有界（入参 id 有界 + 硬上限）")
-                        .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+                for (AbstractWrapper<?, ?, ?> wrapper : capturedWrappers(mapper)) {
+                    assertThat(wrapper.getSqlSegment())
+                            .as("附带查询也有界（入参 id 有界 + 硬上限）")
+                            .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+                }
             }
         }
 
@@ -861,9 +875,11 @@ class DailyBriefingServiceTest {
 
             for (Object mapper : List.of(orderMapper, orderLogisticsMapper, productSkuMapper,
                     productMapper, afterSalesTicketMapper)) {
-                assertThat(capturedWrapper(mapper).getParamNameValuePairs().values())
-                        .as("行数组查询必须显式带 tenantId（拦截器之外的第二道）")
-                        .contains(1L);
+                for (AbstractWrapper<?, ?, ?> wrapper : capturedWrappers(mapper)) {
+                    assertThat(wrapper.getParamNameValuePairs().values())
+                            .as("行数组查询必须显式带 tenantId（拦截器之外的第二道，逐条）")
+                            .contains(1L);
+                }
             }
 
             // orders/product_skus/products/order_logistics 的 tenant_id 还由 TenantLineInnerInterceptor 注入
@@ -915,12 +931,209 @@ class DailyBriefingServiceTest {
         }
 
         @Test
-        @DisplayName("结构性不可达如实登记：orders 无 cost_amount、price_changes 不入册")
+        @DisplayName("结构性不可达如实登记：price_changes 不入册（全仓仍无改价流水表）")
         void structuralGapsAreDeclared() {
-            // 谁把成本价/改价流水接上（另立数据模型后），这两条会红 ⇒ 逼他同步改引擎的逐规则接线判据。
+            // 改价面仍结构性接不通（另立 issue）⇒ 谁把改价流水接上，这两条会红，逼他同步改引擎接线判据。
+            // 🔴 成本面（原「orders 无成本列 ⇒ 接不通」）已由 #5348 接通：判据搬到 CostJoin 的正面断言。
             assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS).doesNotContainKey("price_changes");
-            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS.get("orders")).doesNotContain("cost_amount");
-            assertThat(DailyBriefingService.orderRow(order("SO-1"), null)).doesNotContainKey("cost_amount");
+        }
+    }
+
+    /**
+     * 订单成本 join（issue #5348）—— 低于成本价从「结构性不可达」变成「可判定」。
+     *
+     * <p>冻结判据（issue #5348 评论）：逐行解析 SKU（① `processing_info.skuId` → ② 该商品**唯一** SKU
+     * → ③ 不可解析）⇒ 行成本 = `quantity × avg_cost` ⇒ 订单成本 = **Σ 行成本**；
+     * 🔴 **任一行不可解析或该行 `avg_cost` 为 NULL ⇒ 整单未知（`cost_amount = NULL`），不出部分和**。</p>
+     */
+    @Nested
+    @DisplayName("订单成本 join（低于成本价，issue #5348）")
+    class CostJoin {
+
+        /** **判定本体**：`cost_amount` 是否为「整单不可判定」（NULL，而不是一个偏小的部分和）。 */
+        private boolean judgedAsUnknown(Object costAmount) {
+            return costAmount == null;
+        }
+
+        private Order order(String orderNo) {
+            return Order.builder().id("O-1").tenantId(1L).orderNo(orderNo).status("confirmed")
+                    .userId("C-1").createdAt(OffsetDateTime.parse("2026-09-22T09:00:00+08:00"))
+                    .actualAmount(new BigDecimal("1200.00")).totalAmount(new BigDecimal("1500.00"))
+                    .build();
+        }
+
+        private OrderItem line(String orderId, String productId, String quantity, Long skuId) {
+            Map<String, Object> info = new java.util.LinkedHashMap<>();
+            if (skuId != null) {
+                info.put("skuId", skuId);   // processingInfo 键族见 OrderService.matchSkuId
+            }
+            return OrderItem.builder().tenantId(1L).orderId(orderId).productId(productId)
+                    .quantity(quantity == null ? null : new BigDecimal(quantity))
+                    .processingInfo(info.isEmpty() ? null : info)
+                    .build();
+        }
+
+        private ProductSku costSku(long id, String productId, String avgCost) {
+            return ProductSku.builder().id(id).tenantId(1L).productId(productId)
+                    .stock(new BigDecimal("50")).salesCount(new BigDecimal("0"))
+                    .avgCost(avgCost == null ? null : new BigDecimal(avgCost)).build();
+        }
+
+        /** 一张单商品订单（O-1）+ 给定订单行 + 给定 SKU 集 ⇒ 完整快照（成本解析的两个输入都由参数给）。 */
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> snapshotWith(List<OrderItem> lines, List<ProductSku> skus) {
+            when(orderMapper.selectList(any())).thenReturn(List.of(order("SO-1")));
+            when(orderLogisticsMapper.selectList(any())).thenReturn(List.of());
+            when(orderItemMapper.selectList(any())).thenReturn(lines);
+            when(productSkuMapper.selectList(any())).thenReturn(skus);
+            when(productSkuMapper.selectCount(any())).thenReturn(2L);   // 租户在做成本核算
+            when(productMapper.selectList(any())).thenReturn(List.of());
+            when(afterSalesTicketMapper.selectList(any())).thenReturn(List.of());
+            return service.aggregateSnapshot(1L);
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> firstOrderRow(Map<String, Object> snapshot) {
+            return ((List<Map<String, Object>>) snapshot.get("orders")).get(0);
+        }
+
+        @Test
+        @DisplayName("判据 1：订单成本 = Σ(行数量 × 该行 SKU 的 avg_cost)（逐行求和，不是取某一行/取最贵）")
+        void orderCostIsTheSumOfLineCosts() {
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", 7L), line("O-1", "P-1", "3", 8L)),
+                    List.of(costSku(7L, "P-1", "10.5000"), costSku(8L, "P-1", "5.0000"))));
+
+            assertThat((BigDecimal) row.get("cost_amount"))
+                    .as("2 × 10.5 + 3 × 5 = 36")
+                    .isEqualByComparingTo(new BigDecimal("36.0000"));
+        }
+
+        @Test
+        @DisplayName("判据 1（解析优先级 ②）：行上没声明 skuId ⇒ 该商品**唯一** SKU 无歧义可用")
+        void uniqueSkuOfTheProductResolvesTheLine() {
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2.5", null)),
+                    List.of(costSku(7L, "P-1", "4.0000"))));
+
+            assertThat((BigDecimal) row.get("cost_amount")).isEqualByComparingTo(new BigDecimal("10.0000"));
+        }
+
+        @Test
+        @DisplayName("判据 1（解析优先级 ①）：声明的 skuId 优先于商品唯一 SKU")
+        void declaredSkuIdWinsOverTheOnlySku() {
+            // 商品只有一个 SKU(7)，但行上声明的是 8（同一商品的另一个 SKU 只能来自库里的真值）
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", 8L)),
+                    List.of(costSku(7L, "P-1", "10.0000"), costSku(8L, "P-1", "3.0000"))));
+
+            assertThat((BigDecimal) row.get("cost_amount"))
+                    .as("按声明的 skuId 取价（2 × 3），不是商品的第一个 SKU（2 × 10）")
+                    .isEqualByComparingTo(new BigDecimal("6.0000"));
+        }
+
+        @Test
+        @DisplayName("判据 1（解析优先级 ③）：商品多 SKU 且行上无 skuId ⇒ 不可解析 ⇒ 整单未知")
+        void ambiguousSkuIsUnresolvable() {
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", null)),
+                    List.of(costSku(7L, "P-1", "10.0000"), costSku(8L, "P-1", "20.0000"))));
+
+            assertThat(judgedAsUnknown(row.get("cost_amount"))).isTrue();
+        }
+
+        @Test
+        @DisplayName("🔴 判据 2：任一行成本未知 ⇒ 整单未知（**不出部分和**）")
+        void oneUnknownLineMakesTheWholeOrderUnknown() {
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", 7L),      // 可判定：2 × 10 = 20
+                            line("O-1", "P-9", "3", null)),    // P-9 没有 SKU ⇒ 该行不可解析
+                    List.of(costSku(7L, "P-1", "10.0000"))));
+
+            assertThat(judgedAsUnknown(row.get("cost_amount")))
+                    .as("部分和（20）会低估成本 ⇒ 宁可整单不判定")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("🔴 判据 2 红证：把判定喂成**部分和** ⇒ 同一判定必须变红（证明它不是恒真）")
+        void partialSumTurnsTheJudgementRed() {
+            // 注入：把「任一行未知 ⇒ 整单 NULL」改成「出部分和」（= 未知行当 0）⇒ 该单的 cost_amount 会是 20。
+            // 下面这条断言必须为 false —— 否则上面那条「整单未知」是空断言（判定对任何输入都返回 true）。
+            assertThat(judgedAsUnknown(new BigDecimal("20.0000")))
+                    .as("部分和**不得**被判为「整单未知」")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("判据 4/5：该行 SKU 的 avg_cost 为 NULL（成本未知）⇒ 整单未知，不得用 0 冒充")
+        void nullAvgCostMakesTheLineUnknown() {
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", null)),
+                    List.of(costSku(7L, "P-1", null))));
+
+            assertThat(judgedAsUnknown(row.get("cost_amount"))).isTrue();
+        }
+
+        @Test
+        @DisplayName("判据 2 边界：SKU 查询撞上行数上限 ⇒ 一律未知（截断会让「唯一 SKU」失真）")
+        void truncatedSkuQueryYieldsUnknownForAllOrders() {
+            List<ProductSku> tooMany = java.util.stream.IntStream
+                    .rangeClosed(1, DailyBriefingService.SNAPSHOT_ROW_LIMIT + 1)
+                    .mapToObj(i -> costSku(i, "P-1", "10.0000")).toList();
+
+            Map<String, Object> row = firstOrderRow(snapshotWith(
+                    List.of(line("O-1", "P-1", "2", null)), tooMany));
+
+            assertThat(judgedAsUnknown(row.get("cost_amount")))
+                    .as("截断后「该商品只有 1 个 SKU」不再可信 ⇒ 保守取未知")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("判据 3/5：orders 行自描述带上 cost_amount，且行里**恒有该键**（值可为 null）")
+        void costAmountIsDeclaredAndAlwaysPresentOnTheRow() {
+            Map<String, Object> snapshot = snapshotWith(
+                    List.of(line("O-1", "P-1", "2", 7L)), List.of(costSku(7L, "P-1", "10.0000")));
+
+            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS.get("orders")).contains("cost_amount");
+            assertThat(firstOrderRow(snapshot)).containsKey("cost_amount");
+            // 键集与声明逐字一致（既有判据）与「值可为 null」并不冲突：null 是「成本未知」，不是缺字段。
+            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS.get("orders"))
+                    .isEqualTo(List.of("order_no", "status", "customer_id", "created_at",
+                            "shipped_at", "sale_amount", "cost_amount"));
+        }
+
+        @Test
+        @DisplayName("判据 4：租户开关判据 = 是否存在 avg_cost IS NOT NULL 的 SKU（由事实推出，非人工配置项）")
+        void tenantCostAccountingFactIsDerivedFromSkusWithCost() {
+            when(productSkuMapper.selectCount(any())).thenReturn(0L);
+
+            assertThat(service.costsAreTracked(1L))
+                    .as("没有任何 SKU 有成本价 ⇒ 该租户没做成本核算")
+                    .isFalse();
+
+            when(productSkuMapper.selectCount(any())).thenReturn(3L);
+            assertThat(service.costsAreTracked(1L)).isTrue();
+
+            ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+            verify(productSkuMapper, atLeastOnce()).selectCount(captor.capture());
+            AbstractWrapper<?, ?, ?> wrapper = (AbstractWrapper<?, ?, ?>) captor.getValue();
+            assertThat(wrapper.getSqlSegment())
+                    .as("判据本体：数的是 avg_cost IS NOT NULL 的 SKU")
+                    .contains("avg_cost IS NOT NULL");
+            assertThat(wrapper.getParamNameValuePairs().values())
+                    .as("租户级事实也必须显式带 tenantId")
+                    .contains(1L);
+        }
+
+        @Test
+        @DisplayName("判据 4：该事实随快照下发（cost_accounting），引擎据此落 not_enabled")
+        void tenantFactIsCarriedInTheSnapshot() {
+            Map<String, Object> snapshot = snapshotWith(
+                    List.of(line("O-1", "P-1", "2", 7L)), List.of(costSku(7L, "P-1", "10.0000")));
+
+            assertThat(snapshot.get("cost_accounting")).isEqualTo(Boolean.TRUE);
         }
     }
 }

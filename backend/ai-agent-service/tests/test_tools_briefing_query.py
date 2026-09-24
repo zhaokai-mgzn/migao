@@ -393,3 +393,114 @@ class TestIncompleteDisclosure:
         message = "今日经营日报如下，另有 2 项当天异常待处理"
         with pytest.raises(AssertionError):
             assert "当天共 3 项" in message
+
+
+#: 该租户**没开启成本核算**的快照（#5348）：`orders` 行**有** `cost_amount` 字段（系统已接通，
+#: 与「系统没实现」不是一回事），但租户级事实 `cost_accounting=false`
+#: （= 该租户没有任何 `avg_cost IS NOT NULL` 的 SKU）⇒ 引擎落 `not_enabled`（**可行动**：去开启）。
+NOT_ENABLED_SNAPSHOT = {
+    "biz_date": "2026-09-22",
+    "cost_accounting": False,
+    "row_fields": {
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at",
+                   "sale_amount", "cost_amount"],
+        "skus": ["sku_id", "product_id", "product_name", "stock"],
+        "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
+    },
+    "orders": [{"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
+                "created_at": "2026-09-22T09:00:00+08:00", "shipped_at": None,
+                "sale_amount": 700.0, "cost_amount": None}],
+    "skus": [],
+    "returns": [],
+}
+
+
+def _not_enabled_segment(message):
+    """消息里「你还没开启…」那一段（`not_enabled` 的专用措辞）—— 按段断言，防止与 `not_wired` 串台。
+
+    两态**不可合并**（#5348 判据 3）：`not_wired` 不可行动（系统没做），`not_enabled` 可行动（用户能去开）。
+    混成一句，用户就不知道「没这个功能」还是「我没开」。
+    """
+    assert "你还没开启" in message, "`not_enabled` 必须单独成句（「你还没开启…」），不得并进「尚未接入」那句"
+    return message.split("你还没开启", 1)[1]
+
+
+def _assert_not_enabled_disclosure(message):
+    """**判据本体**（#5348）：没开启的能力必须**点名** + 说清「是**你**没开」+ 给出**可行动**的开启引导。"""
+    segment = _not_enabled_segment(message)
+    assert "低于成本价的订单" in segment, "必须点名是哪条能力没开启"
+    assert "成本核算" in segment, "必须说清没开的是什么（成本核算）"
+    assert "尚未接入" not in segment, "「没开启」不得用「系统尚未接入」的措辞（两态不可合并）"
+    for forbidden in ("今日无异常", "无异常", "一切正常", "没有异常", "未发现异常", "暂无异常"):
+        assert forbidden not in message, f"出现了「{forbidden}」类表述（会把空命中读成没问题）"
+    return True
+
+
+class TestNotEnabledDisclosure:
+    """判据 3（#5348）：**系统有、该租户没开** ⇒ `not_enabled`，话术必须与 `not_wired` 分得开。
+
+    对照判据（会红吗）：把工具消息里「你还没开启…」那段删掉、或把它并进「尚未接入」那句
+    ⇒ 本类第 2 条必红（见两条注入式红证）；把 reason（开启引导）抹掉 ⇒ 引导判据必红。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_message_guides_the_tenant_to_enable_cost_accounting(self, mock_get_client):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": NOT_ENABLED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert result.data["proactive_status"]["below_cost_price"]["status"] == "not_enabled"
+        assert _assert_not_enabled_disclosure(result.message or "") is True
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_the_two_unavailable_kinds_do_not_share_wording(self, mock_get_client):
+        """同一快照上两态并存：`price_change_over` 仍是 not_wired、`below_cost_price` 是 not_enabled
+
+        归因不许串台 —— 未接入那段点的是改价幅度，没开启那段点的是低于成本价。
+        """
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": NOT_ENABLED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        message = result.message or ""
+        assert result.data["proactive_status"]["price_change_over"]["status"] == "not_wired"
+        unwired_segment, _, not_enabled_segment = message.partition("你还没开启")
+        assert "尚未接入" in unwired_segment and "改价幅度超阈值" in unwired_segment
+        assert "低于成本价的订单" in not_enabled_segment and "尚未接入" not in not_enabled_segment
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_merging_the_two_wording_fails_the_judgement(self, mock_get_client):
+        """**注入式红证**：把两态合并成一句（没开启也写成「尚未接入」）⇒ 判据必红"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": NOT_ENABLED_SNAPSHOT}})
+        mock_get_client.return_value = client
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        merged = (result.message or "").replace("你还没开启成本核算", "尚未接入：成本核算")
+        assert merged != (result.message or ""), "被替换的措辞原本不在消息里 ⇒ 本红证是空跑"
+        with pytest.raises(AssertionError):
+            _assert_not_enabled_disclosure(merged)
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_missing_guidance_fails_the_judgement(self, mock_get_client):
+        """**注入式红证**：把开启引导抹掉 ⇒ 判据必红（否则「引导」只是文案）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": NOT_ENABLED_SNAPSHOT}})
+        mock_get_client.return_value = client
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert "成本核算" in (result.message or ""), "引导话术原本就在消息里（否则下一条是空跑）"
+        with pytest.raises(AssertionError):
+            _assert_not_enabled_disclosure((result.message or "").replace("成本核算", "这项能力"))
