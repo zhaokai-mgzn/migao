@@ -31,6 +31,7 @@
 **不做**的是「给它补 `case_ids:`」（那是假声明，且本判据的出口明写不许走这条路）。
 """
 import importlib.util
+import re
 import os
 from pathlib import Path
 
@@ -177,3 +178,28 @@ def test_census_detector_flags_new_source_file_on_mutated_tree(tmp_path):
     nested.parent.mkdir(parents=True)
     nested.write_text("export const y = 2\n", encoding="utf-8")
     assert census_source_files(tmp_path) == set(), "测试目录内的文件不属于「源码文件名陷阱」这一面"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 同源声明的**执行面**（#5007①；#5415 的常驻判据 `test_same_source_claims_have_criteria` 要求）
+# ══════════════════════════════════════════════════════════════════════════════
+def test_code_exts_match_growth_gate_implementation():
+    """`CODE_EXTS` 必须与 `.github/growth_gate.py::TEST_FILE_EXTS` **逐项同序相等**。
+
+    为什么必须有这条（#5007① 的形态：承诺写在注释里，删一侧实现不会红）：模块头注释声称
+    「与判据实现同源」，而在本判据落地前**没有任何判据承担它** —— 谁把实现侧的
+    `TEST_FILE_EXTS` 改一处、这里不动，本文件照样全绿。⇒ 本判据从**实现源码**读出该集合，
+    再与本文件的 `CODE_EXTS` 逐项同序比对（真值从源里读，不写死第二份清单）。
+    """
+    src = GROWTH_GATE.read_text(encoding="utf-8")
+    m = re.search(r"^TEST_FILE_EXTS\s*=\s*\(([^)]*)\)", src, re.M)
+    assert m, (
+        "`.github/growth_gate.py` 里读不到 `TEST_FILE_EXTS`（同源判据必须能读到真值）："
+        "若它被改名或改成非字面量集合，请同步本判据与模块头注释"
+    )
+    impl = tuple(re.findall(r"[\"']([^\"']+)[\"']", m.group(1)))
+    assert impl, f"`TEST_FILE_EXTS` 里没解析出任何扩展名（现取 {m.group(1)!r}）⇒ 判据会静默空跑"
+    assert impl == CODE_EXTS, (
+        f"扩展名集合已**不同源**：实现 {impl} vs 本文件 {CODE_EXTS} —— "
+        "两侧必须同序逐项相等（该同源声明由本判据承担，登记在 declaration_gate_registry.json）"
+    )
