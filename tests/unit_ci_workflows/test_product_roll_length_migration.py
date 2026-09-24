@@ -38,6 +38,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
@@ -269,27 +270,22 @@ class _PgCluster:
         self.port = _free_port()
 
     def __enter__(self):
-        subprocess.run([self.bins["initdb"], "-D", str(self.datadir), "-U", "postgres", "-A", "trust"],
-                       check=True, capture_output=True, timeout=120)
-        started = subprocess.run(
-            [self.bins["pg_ctl"], "-D", str(self.datadir), "-l", str(self.log), "-o",
-             f"-k {self.sockdir} -p {self.port} -c listen_addresses=''", "start"],
-            capture_output=True, text=True, timeout=120)
-        assert started.returncode == 0, (
-            f"临时集群起不来：{started.stdout}\n{started.stderr}\n"
-            f"{self.log.read_text(encoding='utf-8') if self.log.exists() else ''}")
-        # 就绪轮询（不加 -w 的代价；不用 sleep 盲等，直接问库）
+        # 起集群的**唯一实现**：`ready` 探测失败（含「起来了但连不上」）也**先停库再抛** ——
+        # `__enter__` 抛错时 `__exit__` **不会**被调用，清理只能由收口件负责（issue #5263 判据①）。
+        pg_cluster.start_cluster(self.bins, self.datadir, sockdir=self.sockdir, port=self.port,
+                                 log=self.log, ready=self._probe_ready)
+        return self
+
+    def _probe_ready(self) -> None:
+        """就绪轮询（不加 `-w` 的代价；不用 sleep 盲等，直接问库）。"""
         for _ in range(60):
             probe = self._raw("SELECT 1;")
             if probe.returncode == 0:
-                break
-        else:
-            raise AssertionError("临时集群起来了但连不上（60 次探测均失败）")
-        return self
+                return
+        raise AssertionError("临时集群起来了但连不上（60 次探测均失败）")
 
     def __exit__(self, *exc):
-        subprocess.run([self.bins["pg_ctl"], "-D", str(self.datadir), "-m", "immediate", "stop"],
-                       capture_output=True, timeout=120)
+        pg_cluster.stop_cluster(self.bins["pg_ctl"], self.datadir)
         shutil.rmtree(self.sockdir, ignore_errors=True)
 
     def _raw(self, sql: str) -> subprocess.CompletedProcess:

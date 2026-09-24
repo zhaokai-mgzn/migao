@@ -35,6 +35,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
@@ -223,16 +224,9 @@ def psql(tmp_path, realdb_binaries):
     # ⚠️ socket 目录必须**短**：unix socket 路径有 ~104 字节上限。
     sockdir = Path(tempfile.mkdtemp(prefix="pg5230-"))
     log = tmp_path / "pg.log"
-    subprocess.run([realdb_binaries["initdb"], "-D", str(datadir), "-U", "postgres", "-A", "trust"],
-                   check=True, capture_output=True)
     port = _free_port()
-    started = subprocess.run(
-        [realdb_binaries["pg_ctl"], "-D", str(datadir), "-l", str(log), "-o",
-         f"-k {sockdir} -p {port} -c listen_addresses=''", "start"],
-        capture_output=True, text=True)
-    assert started.returncode == 0, (
-        f"临时集群起不来：{started.stdout}\n{started.stderr}\n"
-        f"{log.read_text(encoding='utf-8') if log.exists() else ''}")
+    # 起集群的**唯一实现**（失败 / 中止路径也停库 —— issue #5263 判据①）
+    pg_cluster.start_cluster(realdb_binaries, datadir, sockdir=sockdir, port=port, log=log)
 
     def psql_raw(sql: str):
         """不抛异常的入口（红证要断言「迁移**确实**失败并回滚」）。"""
@@ -250,8 +244,7 @@ def psql(tmp_path, realdb_binaries):
     try:
         yield run
     finally:
-        subprocess.run([realdb_binaries["pg_ctl"], "-D", str(datadir), "-m", "immediate", "stop"],
-                       capture_output=True)
+        pg_cluster.stop_cluster(realdb_binaries["pg_ctl"], datadir)
         shutil.rmtree(sockdir, ignore_errors=True)
 
 
