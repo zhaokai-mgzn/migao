@@ -337,6 +337,30 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "product_id": {"type": str, "min_len": 1, "label": "商品 ID"},
         },
     },
+    # ── issue #5314：批量更新（两段确认 + 撤销）────────────────────────────────────
+    # 不变式（tests/test_validation_rules_invariants.py 的 F6）：**已登记可写的 action 必须有规则**
+    # —— 「没有规则」不等于"无需校验"：它会让闸门落进 fail-closed 分支，把**合法调用**拦死
+    # （#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
+    "product_batch_update": {
+        # 预演：真正的必填在工具本体（fail-closed）+ 确认门禁，这里是最外层的第一道
+        "preview": {
+            "required": ["batch_type", "items"],
+            "batch_type": {"type": str, "min_len": 1,
+                           "label": "批量类型（product_price / product_status）"},
+            "items": {"type": list, "min_len": 1,
+                      "label": "要改的条目（每项 resourceId/field/oldValue/newValue）"},
+        },
+        # 执行 / 撤销：业务参数只有**批次号**，而它只能来自 preview 的返回
+        # （「没给商家看过逐条预览就执行」由此在结构上不可达）
+        "execute": {
+            "required": ["batch_id"],
+            "batch_id": {"type": str, "min_len": 1, "label": "批次号（preview 返回）"},
+        },
+        "revert": {
+            "required": ["batch_id"],
+            "batch_id": {"type": str, "min_len": 1, "label": "批次号（preview 返回）"},
+        },
+    },
     "session_manage": {
         "assign": {
             "required": ["session_id", "employee_id"],

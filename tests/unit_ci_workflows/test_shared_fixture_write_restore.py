@@ -258,6 +258,24 @@ PRODUCT_ATTR_WRITERS: dict = {
     #   ("notification_manage", "")           → "unknown"   （同上）
     # action 级写的判别力**没有丢**：三条红证改用**合成「部分写」工具**注入（见
     # `_with_synthetic_action_writer`），机制仍逐条被覆盖。
+    # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──
+    # `preview` = 预演：只落一条 preview 批次，**不改商品属性**（判别维在场也只是把这条钉死）。
+    ("product_batch_update", "preview", "product_price"): "",
+    ("product_batch_update", "preview", "product_status"): "",
+    # `execute` = 真的落库：改价批次写 `products.base_price`、上下架批次写 `products.status`
+    # —— 两者都**已有**复位类型（`product_price_restore` / `product_status_restore`）
+    # ⇒ 走判据 ② 的"必须声明复位"出口。PR-108 是改价批量的写方。
+    ("product_batch_update", "execute", "product_price"): "base_price",
+    ("product_batch_update", "execute", "product_status"): "status",
+    # `revert` = 逐条还原为 `old_value`：还原的是**同一批**改过的属性 ⇒ 与 execute 同维。
+    ("product_batch_update", "revert", "product_price"): "base_price",
+    ("product_batch_update", "revert", "product_status"): "status",
+    # 用例**未声明** `batch_type` ⇒ 改哪个属性**不可判定** ⇒ `unknown`（走台账可见路径，
+    # 不静默当成"不改共享夹具"）；`preview` 不依赖判别维（它本就不改商品属性）。
+    ("product_batch_update", "preview"): "",
+    ("product_batch_update", "execute"): "unknown",
+    ("product_batch_update", "revert"): "unknown",
+    ("product_batch_update", ""): "unknown",
 }
 
 #: **留档**（#4075 / #4128 时代的商品属性写方 → 属性键），**已不是活写方**。
@@ -314,8 +332,38 @@ REGISTERED_RESTORE_GAPS: dict = {}
 # 二、纯函数判据（每条都能被合成用例直接喂 —— 红证不依赖真实用例库）
 # ══════════════════════════════════════════════════════════════════════════════
 
+#: **具名批量**工具（issue #5314）：它们的写 action 是 execute/revert，但**改的是哪个属性**
+#: 由 `batch_type` **参数**决定（`product_price` → `base_price` / `product_status` → `status`）
+#: ⇒ 归类键在 `(tool, action)` 之外**多带一维**。判别值取**用例级**（用例在任一期望里声明
+#: `batch_type` 即可，不必每次调用都带 —— 生产里 `execute`/`revert` 只带 `batch_id`）：
+#: 「这条用例驱动的是哪类批量」是用例的**意图**，逐调用去要参数会造出假红（模型合理地不重复传）。
+NAMED_BATCH_TOOLS = frozenset({"product_batch_update"})
+
+#: 具名批量的 `batch_type` **白名单**（与工具侧 `app/tools/product_batch_update.py` 同源口径）。
+NAMED_BATCH_TYPES = ("product_price", "product_status")
+
+
+def _case_batch_type(pairs) -> tuple:
+    """用例声明的批量类型（任一期望的 `args.batch_type`）→ 判别维元组；未声明 ⇒ `()`。
+
+    `pairs` = `taxonomy.expectation_tools(case)` 的结果（**由调用方传**：`_taxonomy()` 每次
+    调用都要重新 exec 模块，本文件在 460+ 条用例上跑 ⇒ 重复加载会把判据拖到分钟级）。
+
+    ⚠️ 多个**不同**取值 ⇒ 返回 `()`（不可判定 ⇒ 走 2 元组键的 `unknown` 口径，不猜）。
+    """
+    seen = set()
+    for tool, args in pairs or ():
+        for part in str(tool).split(" or "):
+            if part.strip() not in NAMED_BATCH_TOOLS:
+                continue
+            bt = str((args or {}).get("batch_type") or "").strip()
+            if bt:
+                seen.add(bt)
+    return (seen.pop(),) if len(seen) == 1 else ()
+
+
 def live_write_expectations(case: dict) -> list:
-    """用例里**当前可达写方**的写期望 → `[(tool, action)]`（排序去重，纯函数）。
+    """用例里**当前可达写方**的写期望 → `[(tool, action[, batch_type])]`（排序去重，纯函数）。
 
     扫描面 = `WRITE_TOOL_SURFACE`（从 `assertion_taxonomy` 推导，见其 docstring）。
     ⚠️ 2026-09-24（#5303）：`product_update` / `sku_update` 回绑 B 端 product skill ⇒ 它们
@@ -328,14 +376,19 @@ def live_write_expectations(case: dict) -> list:
     """
     out = set()
     tax = _taxonomy()
-    for tool, args in tax.expectation_tools(case):
+    pairs = list(tax.expectation_tools(case))
+    batch_dim = _case_batch_type(pairs)
+    for tool, args in pairs:
         for part in str(tool).split(" or "):
             t = part.strip()
             # ① 只算**当前可达的写工具**（扫描面，见 WRITE_TOOL_SURFACE）；② 只算**写** ——
             #    `inventory_manage(query)` 这类只读 action 由 taxonomy 的
             #    `is_write_expectation` 判定，不自己再写一份"哪些 action 算写"（两份口径必然漂移）。
             if t in WRITE_TOOL_SURFACE and tax.is_write_expectation(t, args or {}):
-                out.add((t, str(((args or {}).get("action")) or "")))
+                key = (t, str(((args or {}).get("action")) or ""))
+                if t in NAMED_BATCH_TOOLS:
+                    key += batch_dim
+                out.add(key)
     return sorted(out)
 
 

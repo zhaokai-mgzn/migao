@@ -49,11 +49,19 @@ _CONFIRM_FIELD_LABELS = {
     # 卡片上必须与人话标签成对出现 —— 否则商家看到的只是一个孤零零的"价格"，
     # 「改前 → 改后」的"改前"整个缺失（= 没有预览就让人确认改钱）。
     "before_price": "改前价",
+    # 批量上下架预览（issue #5314）：与 `before_price` **同一形态的镜像** ——
+    # 批量 `product_status` 的预览必须成对呈现「改前状态 → 改后状态」，
+    # 而 `old_value` 同时是撤销（revert）的唯一依据 ⇒ 卡片上不能只出现改后状态。
+    "before_status": "改前状态",
 }
 
 #: 改价预览里 `price` 的语义是**改后价**。仅在 `before_price` 在场时生效
 #: （其余工具如 `product_manage` 的 `price` 仍是「价格」—— 口径只对改价这一对收窄）。
 _PRICE_AFTER_LABEL = "改后价"
+
+#: 同款镜像（issue #5314 的批量上下架）：`status` 在 `before_status` 在场时读作**改后状态**。
+#: 判据必须在**本模块**（字段投影的单一源）里，否则批量预览就会另立第二份投影。
+_STATUS_AFTER_LABEL = "改后状态"
 
 
 def price_preview_missing(args: dict) -> str:
@@ -125,6 +133,7 @@ def confirm_card_fields(args: dict) -> list:
         # 未登记键回退原键名。改价（issue #5303）：`before_price` 在场 ⇒ `price`
         # 渲染成「改后价」，与「改前价」成对（单点口径，见 `_PRICE_AFTER_LABEL`）。
         _after_label = (_PRICE_AFTER_LABEL if a.get("before_price") is not None else None)
+        _status_after_label = (_STATUS_AFTER_LABEL if a.get("before_status") is not None else None)
         for key, value in a.items():
             if key in _CONFIRM_CARD_CONTROL_KEYS or value is None:
                 continue
@@ -135,6 +144,8 @@ def confirm_card_fields(args: dict) -> list:
             label = _CONFIRM_FIELD_LABELS.get(key, key)
             if key == "price" and _after_label:
                 label = _after_label
+            if key == "status" and _status_after_label:
+                label = _status_after_label
             fields.append({"label": label, "value": rendered})
     return fields
 

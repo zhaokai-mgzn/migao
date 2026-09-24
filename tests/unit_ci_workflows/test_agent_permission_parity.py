@@ -266,12 +266,22 @@ def _endpoint_index(sources: dict[str, str]):
 
 
 def endpoints_by_tool(index) -> dict[str, tuple[tuple[str, str, str | None], ...]]:
-    """S1×S2：每个工具文件的 HTTP 调用点 → 目标端点的**生效**权限码。"""
+    """S1×S2：每个工具文件的 HTTP 调用点 → 目标端点的**生效**权限码（含**在飞端点**登记）。"""
     out: dict[str, list[tuple[str, str, str | None]]] = {}
     for call in ATTR.tool_calls():
         eps = index.lookup(call.method, call.endpoint)
         for ep in eps:
             out.setdefault(call.file, []).append((call.method, ep.path, ep.permission))
+        if not eps:
+            # 契约先行（issue #5314）：Agent 侧按冻结契约先编码、服务端由另一个包并行实现
+            # ⇒ 端点暂时在 admin-api 里查不到。**必须**显式登记后才按契约码参与对账
+            # （否则本工具会被判据 1 读成「纯本地工具」、判据 2 拿空集比 codes ⇒ 两条红，
+            #   而它们与真漂移长得一模一样）；未登记 ⇒ 一律照旧红（判据 1/2 不静默放行）。
+            pending = PENDING_ENDPOINTS.get(f"{call.file}|{call.method} {call.endpoint}")
+            if pending:
+                out.setdefault(call.file, []).append(
+                    (call.method, call.endpoint, pending.get("code"))
+                )
     return {k: tuple(sorted(set(v))) for k, v in out.items()}
 
 
@@ -573,6 +583,8 @@ TOOL_MENU_NODE: dict[str, str] = {
     "product_manage": "商品列表",
     "product_update": "商品列表",
     "sku_update": "商品列表",
+    # issue #5314：批量改价 / 批量上下架（`product:create` = 商品列表页的写码）
+    "product_batch_update": "商品列表",
     "inventory_manage": "商品列表",
     "batch_stock_query": "商品列表",
     "category_manage": "商品列表",
@@ -654,6 +666,26 @@ READ_WRITE_EXCEPTIONS: dict[str, str] = {
                                 "`processing:manage`（生产域无专属读码）。建议：为生产域设计真读码",
     "craft_calc_config_query": "算料配置读端点（`CraftCalcConfigController` 类级 `processing:manage`）所在域无读码 ⇒ "
                                "只读工具持管理码；与生产域同因（#5247 新增只读面时一并登记）。建议：为生产/算料域设计真读码",
+}
+
+#: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
+#:
+#: 病根：`endpoints_by_tool` 只收录**能在 admin-api 源码里查到**的端点。契约先行
+#: （Agent 侧按冻结契约先编码、服务端由另一个包并行实现）时工具会暂时「一个端点都查不到」
+#: ⇒ 判据 1 把它读成**纯本地工具**（`LOCAL_ONLY_TOOLS` 双向核对 ⇒ 红）、判据 2 拿空集比
+#: `required_permissions`（⇒ 红）。这两条红**不是漂移**，是"服务端还没合入"——
+#: 但它与真漂移长得一模一样，故必须**显式登记**（未登记 ⇒ 一律照旧红，不静默放行）。
+#:
+#: 纪律（与 `backend/ai-agent-service/tests/test_tool_payload_backend_contract.py` 的
+#: `ENDPOINT_ALLOWLIST` 同族，逐条带 reason + owner + issue）：
+#: **端点一旦在 admin-api 里落地 ⇒ 本条目变陈旧 ⇒ 判据 8 红**，逼承接包删掉它
+#: （白名单即工作清单，不允许变成垃圾场）。
+PENDING_ENDPOINTS: dict[str, dict[str, str]] = {
+    # 当前为空：issue #5314 的两侧都已在 main 上（服务端端点由 #5339 合入
+    # `AgentBatchController`，类级 `@RequirePermission("product:create")`）⇒ 三条在飞登记
+    # 按本表纪律**已删除**（陈旧条目会被判据 8 判红），判据回到「拿真实端点的生效码对账」。
+    # 留档（#5314，2026-09-24）：曾临时登记 `POST /api/admin/agent/batches` 与
+    # `.../{}/execute`、`.../{}/revert` 三条（契约先行期，Agent 侧先编码、服务端未合入）。
 }
 
 #: 未注解端点的**显式登记**（判据 8；键 = `verb 归一化路径` 或 `verb /前缀*`）。
@@ -1201,6 +1233,20 @@ def problems_registered_decisions(w: World) -> list[str]:
     for pattern in UNANNOTATED_ENDPOINTS:
         if pattern not in hit:
             out.append(f"未注解端点登记项 `{pattern}` 已无对应端点（陈旧登记必须删除）")
+    # 在飞端点登记（#5314）：条目必须**真的还在飞** —— 端点已在 admin-api 落地 ⇒ 删除它，
+    # 让判据 1/2 回到「拿真实端点的生效码对账」（否则登记会静默盖住真实端点的码漂移）。
+    for key, entry in sorted(PENDING_ENDPOINTS.items()):
+        for field_name in ("code", "reason", "owner", "issue"):
+            if not str(entry.get(field_name, "")).strip():
+                out.append(f"在飞端点登记 `{key}` 缺 `{field_name}`（必须写清契约码与归属）")
+        call_file, _, call_key = key.partition("|")
+        verb, _, path = call_key.partition(" ")
+        if (verb, path) in w.all_eps:
+            out.append(
+                f"在飞端点登记 `{key}` 的端点**已在 admin-api 落地**"
+                f"（{call_file} 的 {verb} {path} 现在查得到）⇒ 陈旧登记必须删除，"
+                "改由真实端点的生效码对账"
+            )
     for name, entry in REGISTERED_RESIDUALS.items():
         for field_name in ("what", "why", "where"):
             if not entry.get(field_name, "").strip():
@@ -1477,6 +1523,28 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: s.replace(
                 '    @RequirePermission("product:list")\n    @GetMapping("/batches")',
                 '    @GetMapping("/batches")', 1),
+            problems_registered_decisions,
+        ),
+        "⑨b 在飞端点真的落地了 ⇒ 陈旧登记必须删除 ⇒ 判据 8 红（#5314）": (
+            # 在飞端点登记（`PENDING_ENDPOINTS`）的**自清**判据：服务端把端点合进来之后，
+            # 登记项就成了"静默盖住真实端点码漂移"的旧地图 ⇒ 必须变红逼人删掉。
+            # 注入形态：往某个 controller 源里**插一个同路径的控制器**（正则解析器按文本扫）。
+            # ⚠️ 插入点必须**早于原类的类级 `@RequestMapping`**：解析器的类级映射只认
+            # `_CLASS_MAPPING_RE.search(src)` 的**首个**命中（追加到文件末尾 / 插在原类
+            # 注解之后都会让注入变成空断言 —— 两种都实测踩过）。
+            "java:controller/StockBatchController.java",
+            lambda s: s.replace(
+                "@RestController",
+                '@RestController\n'
+                '@RequestMapping("/api/admin/agent/batches")\n'
+                "class AgentBatchesContractProbe {\n"
+                "    @PostMapping\n"
+                '    @RequirePermission("product:create")\n'
+                "    public Object create() { return null; }\n"
+                "}\n\n"
+                "@RestController",
+                1,
+            ),
             problems_registered_decisions,
         ),
     }

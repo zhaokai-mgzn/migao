@@ -70,6 +70,7 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     "processing_item_manage",
     "processing_order_generate",
     "processing_order_update",
+    "product_batch_update",   # issue #5314：批量更新（自带 action 参数）
     "product_manage",
     "product_update",
     "sku_update",

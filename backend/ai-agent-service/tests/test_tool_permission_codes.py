@@ -235,6 +235,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # 方法级 `@RequirePermission("processing:manage")` ⇒ 与加工面读码同源（生产域暂无专属读码）。
     "processing_order_set_query": ("processing:manage",),
     "processing_order_update": ("processing:update",),
+    # issue #5314：批量改价 / 批量上下架的端点码与**逐条写同码**（契约 §三「不新开权限面」；
+    # 契约正文括注的 `product:update` 在权限目录里不存在 ⇒ 取「同码」这条更硬的判据）。
+    "product_batch_update": ("product:create",),
     "product_detail": ("product:list",),
     "product_manage": ("product:create",),
     "product_search": ("product:list",),
@@ -299,6 +302,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
     "processing_order_set_query": frozenset({"operator", "product_manager"}),
     "processing_order_update": frozenset({"operator"}),
+    # issue #5314：与 `product_update` 同码 ⇒ 放行集**逐字相同**（目录推导，不额外授予）
+    "product_batch_update": frozenset({"operator", "product_manager"}),
     "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
     "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
