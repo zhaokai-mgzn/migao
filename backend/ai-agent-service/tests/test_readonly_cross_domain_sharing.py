@@ -276,6 +276,13 @@ class TestPersonaBoundaryIsHard:
         口径一字未改（仍是 `(mibao 可达 - xiaobu 可达) ∩ read_only`），进场是"工具面真的变成只读"
         的正面事实。**顺带订正**：本见证的散文原写「20 把」而集合实为 21 条（陈旧读数，
         集合相等断言不受影响）—— 本次一并订正为**实测值 23**。
+
+        🔴 **2026-09-24 改判（issue #5368 包 2 进场，实测；Agent 深通道）**：23 → **24**，
+        进场的是 `image_recognize`（图片识别 → **同页填充计划**：只调 vision 模型与
+        `app/vision/**` 的纯函数，**无 admin-api 调用点**、不读也不写业务数据）。
+        它绑在 B 端 `product` / `order` 两个 skill 上，**小布（C 端）一个都不绑**
+        ⇒ 按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场。
+        口径一字未改；「C 端零改动」由此**量化**：C 端域里出现本工具 ⇒ 本用例红。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
@@ -296,10 +303,12 @@ class TestPersonaBoundaryIsHard:
             "operation_catalog_query", "processing_order_set_query", "stock_ledger_query",
             # ── #5302 ① settings 域整域收窄为只读的 2 把（写 action 已删除）──────────
             "notification_manage", "settings_manage",
+            # ── #5368 包 2 进场（Agent 深通道：图 → 同页填充计划；纯本地只读）──────
+            "image_recognize",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（23 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（24 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
-            "2026-09-24 / 2026-09-25 四次改判说明）")
+            "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) 五次改判说明）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue

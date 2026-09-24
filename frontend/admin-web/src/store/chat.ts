@@ -4,6 +4,9 @@ import { useAuthStore } from '@/store/auth'
 import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction } from '@/types'
 import { toast } from 'sonner'
 import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
+// 同页填充（issue #5368 包 2）：SSE `page_fill` → **浏览器内存事件** → 当前页面表单。
+// 依赖方向单向：快通道不引用本通道（判据 5，见 lib/agent-page-fill.ts 文件头）。
+import { emitPageFill } from '@/lib/agent-page-fill'
 
 // 生成唯一 ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
@@ -728,6 +731,15 @@ function handleSSEEvent(
             },
           }))))
         }
+        break
+
+      case 'page_fill':
+        // Agent 深通道的同页填充（issue #5368 包 2）：识别结果推给**商家当前页面**的表单。
+        // 🔴 只走**浏览器内存事件**（`emitPageFill` → `CustomEvent`）：
+        //   不进 URL（access log / Referer）、不进历史、不进 localStorage、不写 console ——
+        //   载荷里有订单侧收货信息，落盘即 PII 泄露。
+        // ⚠️ 本分支**不改任何 message 状态**（它不是聊天消息的一部分：刷新即消失）。
+        emitPageFill(parsedData)
         break
 
       default:

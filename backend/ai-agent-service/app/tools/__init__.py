@@ -81,6 +81,8 @@ from app.tools.operation_catalog_query import OperationCatalogQueryTool
 from app.tools.briefing_query import BriefingQueryTool
 from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
 from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
+# Agent 深通道（issue #5368 包 2）：图 → 同页填充计划（纯本地只读；绑 B 端 product / order）
+from app.tools.image_recognize import ImageRecognizeTool
 
 __all__ = [
     # 基础设施 + 注册器
@@ -113,4 +115,6 @@ __all__ = [
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness 会双向核对）
     "StockLedgerQueryTool", "InboundOrderQueryTool", "OperationCatalogQueryTool",
     "BriefingQueryTool", "CraftCalcConfigQueryTool", "ProcessingOrderSetQueryTool",
+    # Agent 深通道（issue #5368 包 2）：同页填充计划的构造者（注册集双向核对同上）
+    "ImageRecognizeTool",
 ]

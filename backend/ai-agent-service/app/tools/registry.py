@@ -613,6 +613,10 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.briefing_query import BriefingQueryTool
     from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
     from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
+    # Agent 深通道（issue #5368 包 2）：图 → **同页填充计划**（填哪几格 + 候选 + 解读）。
+    # 纯本地（只调 vision + 纯函数，**无任何 admin-api 调用点**）+ 只读 ⇒ 登记在
+    # tests/unit_ci_workflows/test_agent_permission_parity.py 的 `LOCAL_ONLY_TOOLS`（判据 1）。
+    from app.tools.image_recognize import ImageRecognizeTool
 
     registry = ToolRegistry()
     
@@ -687,6 +691,10 @@ def create_default_registry() -> ToolRegistry:
     registry.register(BriefingQueryTool())
     registry.register(CraftCalcConfigQueryTool())
     registry.register(ProcessingOrderSetQueryTool())
+
+    # Agent 深通道（issue #5368 包 2）：可达性由 persona 的 skill 工具集决定
+    # （米宝 product / order 各绑一条；C 端一律不绑 ⇒ 小布零改动）。
+    registry.register(ImageRecognizeTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

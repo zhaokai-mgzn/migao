@@ -672,6 +672,12 @@ LOCAL_ONLY_TOOLS: dict[str, str] = {
     # 正是 A5 账本要治的形态）⇒ 它不再是「B 端可达且无调用点」的工具（C 端仍绑，见
     # `tests/test_skill_tool_reachability.py` 的 A5 域闸门）。
     "interact": "纯本地交互卡构造（confirm/choice/form 的载荷生成）：无 admin-api 调用点",
+    # issue #5368 包 2（Agent 深通道）：`image_recognize` 是**纯本地**能力 ——
+    # 调一次 vision 模型 + 跑 `app/vision/**` 的纯函数（识别 / 消歧 / 解读），
+    # 产出「同页填充计划」交给 `chat.py` 的瞬时 SSE 事件；**没有任何 admin-api HTTP 调用点**
+    # ⇒ 没有可对账的端点码（与 `interact` 同一豁免口径）。可达性只由 B 端两个 skill 的
+    # 工具集决定（`product` / `order`；小布不绑 ⇒ C 端零改动）。
+    "image_recognize": "纯本地图片识别 + 同页填充计划构造（只调 vision 模型与 app/vision 纯函数）：无 admin-api 调用点",
 }
 
 #: 读码后缀（判据 5 的机械口径）：`模块:动作` 的动作 ∈ 这些 ⇒ 读码，其余 ⇒ 写/管理码。

@@ -2335,7 +2335,7 @@ export interface ChatMessage {
 }
 
 // SSE 事件类型
-export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions' | 'interactive'
+export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions' | 'interactive' | 'page_fill'
 
 // 卡片类型
 // 卡型联合 = 后端 `_detect_card_type` **真实可产出**的集合（#4016 P14 收敛对齐）：
