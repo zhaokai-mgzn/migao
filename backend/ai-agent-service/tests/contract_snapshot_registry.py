@@ -125,7 +125,7 @@ def declared_wire_keys(dto: str) -> WireKeys:
         assert current not in seen, f"{dto} 的 extends 链成环：{' → '.join([*seen, current])}"
         seen.append(current)
         src = _sibling._source_of_receiver_type(current, _JAVA_MAIN)
-        assert src is not None, (
+        assert isinstance(src, str), (
             f"响应 DTO {current} 在 admin-api Java 源码树里找不到（既无 {current}.java，"
             f"也无同名内部类）—— {current} 疑似改名/删除/移出仓库；"
             f"REGISTRY 的契约登记已失效，请同步更新 {__file__} 的 REGISTRY"
