@@ -274,6 +274,10 @@ def cross_skill_gap_matrix(skills, tools, validation_targets) -> dict[str, froze
 #     ④ 剩余 3 行（`customer_aftersales` / `customer_order` / `settings`）按**活真值**逐名
 #        复算为 10 + 10 + 9 = **29** 条（只收缩：无一条新增）。
 #   计数对账：账本 29 条 − 增量 0 条 == `A5_BASELINE_COUNT_PRE_5247`（29）。
+#   ⚠️ **2026-09-24（issue #5314）再次前移锚点**：账本 29 → **32**（3 行各 +1），增量登记
+#      3 条（同上三行 → `product_batch_update`）⇒ 32 − 3 == 29（锚点常量不变）。逐条理由见
+#      `A5_REANCHOR_ADDITIONS` 的 #5314 段（形态与 #4196 同：新写工具回注册表 ⇒ 域无关的
+#      校验目标表 +1）。
 #   判据面**没有放宽**：账本语义（只许缩短 / 新增阻塞 / 逐条被运行时拦下）一字未改；
 #   本次改的是**锚**（产品决策变了 ⇒ 真值变了 ⇒ 旧锚的条目在真值里不再命中）。
 A5_GAP_BASELINE: dict[str, frozenset[str]] = {
@@ -282,12 +286,16 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "notification_manage", "order_create", "order_manage", "processing_item_manage",
         "processing_order_generate", "processing_order_update", "product_manage",
         "product_update", "settings_manage", "sku_update",
+        # issue #5314：批量更新（新 A 档写工具）⇒ 校验目标表新增一项，未绑它的 skill 各 +1
+        "product_batch_update",
     }),
     # customer_order：自己工具集 11 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_order": frozenset({
         "aftersale_create", "notification_manage", "order_manage", "processing_item_manage",
         "processing_order_generate", "processing_order_update", "product_manage",
         "product_update", "settings_manage", "sku_update",
+        # issue #5314：同上（各 +1）
+        "product_batch_update",
     }),
     # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
     # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从米宝的 `skill_names` 移出，文件与
@@ -296,6 +304,8 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "aftersale_create", "order_create", "order_manage", "processing_item_manage",
         "processing_order_generate", "processing_order_update", "product_manage",
         "product_update", "sku_update",
+        # issue #5314：同上（各 +1）
+        "product_batch_update",
     }),
 }
 
@@ -311,7 +321,19 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
 # （B 端加工单写工具已随"B 端只读"整体解绑）⇒ 窄例外的条件 ③「至少被一个 skill 绑定」
 # 不再成立 ⇒ 增量登记必须为空（它们仍在活真值里作为 3 条剩余行的死角，照旧逐条被运行时拦）。
 # 窄例外本身**没有放宽**：下一次要前移锚点，仍须逐条登记并满足三条 + 计数对账。
-A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {}
+A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
+    # ── issue #5314（批量更新，Agent 侧）────────────────────────────────────────
+    # 形态与窄例外逐条对上：产品决策**新增**了一个 A 档写工具（`product_batch_update`：
+    # 批量改价 / 批量上下架 + 撤销），它回注册表、被 `product` skill 绑定 ⇒ 按 F6 必须有
+    # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑着 `validate_input`
+    # 但执行不了它的 3 个 skill（customer_aftersales / customer_order / settings）各 +1 死角。
+    # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+    # ① 已注册 ② 写工具（read_only=False）③ 被 `product` skill 绑定。
+    # 计数对账：账本 32 − 增量 3 == `A5_BASELINE_COUNT_PRE_5247`（29）。
+    "customer_aftersales": frozenset({"product_batch_update"}),
+    "customer_order": frozenset({"product_batch_update"}),
+    "settings": frozenset({"product_batch_update"}),
+}
 
 # 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。
 #   · 历史锚：#4012 落地时 126 条（锚 `c0be8e35`）；#4196 重新锚定为 140 条（含 14 条增量）。

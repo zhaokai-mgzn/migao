@@ -596,12 +596,24 @@ class TestSeedTruthAndScanSurface:
             f"判据认不出 CH-009 的整工具写（` or ` 没拆？）：{live_write_expectations(by['CH-009'])}")
         assert ("aftersale_create", "") in live_write_expectations(by["AS-003"]), (
             f"判据认不出 AS-003 的整工具写：{live_write_expectations(by['AS-003'])}")
-        corpus_action_level = sorted(k for k in live_writer_keys(_all_cases()) if k[1])
+        # ⚠️ 2026-09-24（issue #5314）判据建面收窄：**必须看 `WRITE_TOOL_ACTIONS` 的成员关系**，
+        # 不能拿「key 的 action 分量非空」当代理 —— `WRITE_TOOLS`（整工具写）里也有**带
+        # `action` 参数**的工具（`product_batch_update` 的 preview/execute/revert；它是整工具写，
+        # 不是「部分写」）⇒ 用 action 分量当代理会把它误判成「写 action 复活」（假红）。
+        _action_level_tools = set(_taxonomy().WRITE_TOOL_ACTIONS)
+        corpus_action_level = sorted(
+            k for k in live_writer_keys(_all_cases()) if k[0] in _action_level_tools)
         assert corpus_action_level == [], (
             f"真实用例库里又出现了 action 级写方 {corpus_action_level} —— taxonomy 的 "
             "`WRITE_TOOL_ACTIONS` 现为空集（#5302 后无「部分写」工具）⇒ 要么有人把写 action "
             "加回了工具源码（那是能力复活，先改判 taxonomy 与判据），要么用例锚点已过期"
         )
+        # 判别力正控（issue #5314，同 `test_rebound_writers_are_seen_by_the_surface` 的形态）：
+        # 具名批量写方的 key 带**第三维判别值** ⇒ 它必须被认出，否则上面那条会因
+        # 「库里的 key 形状已变」而静默失守。
+        assert ("product_batch_update", "execute", "product_price") in live_writer_keys(_all_cases()), (
+            "具名批量写方（#5314）没被 `live_write_expectations` 认出 ⇒ 判据 ② 对 PR-108 静默失效"
+            f"（实际认到：{sorted(k for k in live_writer_keys(_all_cases()) if k[0] == 'product_batch_update')}）")
         tool, action = _with_synthetic_action_writer(monkeypatch)
         fake = {"id": "FAKE-SCAN", "user_inputs": ["遮光窗帘相关的通知都标成已读"],
                 "expectations": [{"tool": tool, "args": {"action": action}}]}
