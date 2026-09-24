@@ -451,6 +451,15 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.FinanceService financeService;
 
+    // 批量更新的批次资源（issue #5314 服务端包）：两个 Mapper 必须在这里被 mock ——
+    // 本上下文 `@EnableAutoConfiguration(exclude = {MybatisPlusAutoConfiguration})` ⇒ **真 Mapper 建不出来**
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来
+    // ⇒ 本类 43 条判据全变 error（实测形态）。Service 留真身：它只依赖这两个 Mapper + 已 mock 的 ProductService。
+    @MockBean
+    private com.migao.admin.mapper.AgentBatchMapper agentBatchMapper;
+    @MockBean
+    private com.migao.admin.mapper.AgentBatchItemMapper agentBatchItemMapper;
+
     // ======================== 公开端点测试 ========================
 
     @Test
