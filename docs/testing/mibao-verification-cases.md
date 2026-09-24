@@ -1155,13 +1155,14 @@
 期望: direct_reply
 数据: 候选门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 定高买宽取**最小可行门幅 3.2**（2.8 会判需接高）
 数据: 所有候选都不可行 ⇒ **倒幅**（分幅最少），**不自动选接高**（即使接高米数更省）
-数据: 人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp
-数据: 对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）
+数据: 人工覆盖选接高 ⇒ **现行为**（用户 2026-09-23 裁定「乙 = 统一到新口径」+「B = 回落倒幅」）：缺口 ≤ `MAX_JOIN_GAP_M`（与 `backend/ai-agent-service/app/tools/curtain_calc.py` 的常量**同源**）才成立，且**接高不参与算料** ⇒ `meters == T`、`splice_strips == 0`（不另买加高条、不改米数）
+数据: 人工覆盖选接高但缺口 > `MAX_JOIN_GAP_M` ⇒ **回落倒幅**（与自动路径同源）——硬闸：不放宽上限、不静默截断
+数据: 对花（`pattern_repeat`）**不进接高判定**（唯一判据 = 物理缺口；「加高条 × 片宽」那笔已随「接高不参与算料」退场）⇒ 缺口 0.1 + 花距 0.4 仍判**接高**；倒幅侧「每幅 +1 花距」口径一字未动
 数据: 自动结果可人工覆盖，覆盖后按所选口径算料并给出对比
 跳过: [backend-contract] 本条**只**登记「候选集内怎么选门幅 / 怎么自动定加工类型」这一层**确定性纯计算**（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py）⇒ 不进 agent-eval 冒烟（同 CH-036 惯例）。⚠️ 它**不覆盖**「模型会不会把 product_detail 的 SKU 门幅**去重**成候选集、填进 curtain_calc 的 fabric_widths」——那是**纯 LLM 行为**（确定性单测测不到，issue #5039），由 **CH-043** 覆盖（计分断言 = curtain_calc(fabric_widths=[2.8, 3.2])）。两条判据面不同、互不替代：本条管『给了候选集之后引擎算得对不对』，CH-043 管『模型给不给候选集』。
 ```
 真值: ai-chat.intent-tool-map
-溯源: 2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖。2026-09-21 改判（issue #5039）：`skip_reason` 措辞收窄 —— 原文「门幅/加工类型自动选择…非 LLM 行为」把**两件事**混成一件：引擎侧「怎么选」确是确定性计算（本条），但「模型会不会**填** `fabric_widths`」是纯 LLM 行为（本条测不到）⇒ 措辞明确本条只覆盖前者、后者由 CH-043 覆盖。**判据未放宽**：仍是 `[backend-contract]` 计分通道（`traces.tests` 非空且文件真实存在），断言面（expectations / data_checks）一字未动 ｜ tags: xiaobu, quote, curtain-calc, door-width
+溯源: 2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖。2026-09-21 改判（issue #5039）：`skip_reason` 措辞收窄 —— 原文「门幅/加工类型自动选择…非 LLM 行为」把**两件事**混成一件：引擎侧「怎么选」确是确定性计算（本条），但「模型会不会**填** `fabric_widths`」是纯 LLM 行为（本条测不到）⇒ 措辞明确本条只覆盖前者、后者由 CH-043 覆盖。**判据未放宽**：仍是 `[backend-contract]` 计分通道（`traces.tests` 非空且文件真实存在），断言面（expectations / data_checks）一字未动。2026-09-24 口径同步（issue #5290）：`data_checks` 第 3/4 条与上方覆盖说明里的**旧接高口径 A**（`M = T + ceil(k / floor(g_eff/d_eff)) × Wp`、「加高条按片宽另买布」、「对花时每条加高条 +1 个花距」）改成**用户 2026-09-23 裁定（乙+B）**的现行口径：缺口 ≤ `MAX_JOIN_GAP_M` ⇒ 接高且 **`meters == T`**（不参与算料）；缺口超限 ⇒ **回落倒幅**；**对花不进接高判定**。**判据未放宽**：仍是 `[backend-contract]` 计分通道，`expectations` / `traces` / `skip_reason` / `truths_ref` 一字未动，只换口径文字；生成物（`tests/agent_eval/eval_cases.py`、`docs/testing/mibao-verification-cases.md`）同批重渲染 ｜ tags: xiaobu, quote, curtain-calc, door-width
 
 ### CH-043. 窗帘算料 - 顾客没指定门幅 ⇒ 模型把商品 SKU 的门幅去重成候选集填进 curtain_calc（LLM 填参行为） 🔵
 ```
