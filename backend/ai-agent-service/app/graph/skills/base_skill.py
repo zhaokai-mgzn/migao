@@ -2375,6 +2375,7 @@ def _handoff_guard_applies(registry=None, *, order_in_progress: bool = False,
 from app.tools.confirm_value import (  # noqa: F401  (re-export：既有调用方从这里取)
     confirm_card_fields,
     confirm_value_for_fields,
+    price_preview_missing,
 )
 
 
@@ -2383,11 +2384,21 @@ def _confirm_card_fields_hint(args: dict) -> str:
 
     CI 三次实测 `confirmation_required_no_card` —— 模型**从没发过确认卡**就直接写单，
     被拦回后仍反复重试同一个写调用、烧完轮数。它缺的不是"该不该发卡"，而是"卡片里填什么"。
+
+    改价（issue #5303）：骨架里只有"改后价"时**必须补一句下一步** —— 没有 `before_price`
+    的改价卡不构成「改前 → 改后」预览（判据同源 `price_preview_missing`），
+    而写工具会 fail-closed（`price_preview_required`）⇒ 商家点完卡才被拒、还得再点一次。
+    故这里把"先去 product_detail 拿改前价"说成唯一可执行的下一步。
     """
     fields = confirm_card_fields(args)
     if not fields:
         return ""
-    return "，建议卡片 fields=" + json.dumps(fields, ensure_ascii=False)
+    hint = "，建议卡片 fields=" + json.dumps(fields, ensure_ascii=False)
+    if price_preview_missing(args):
+        hint += ("。⚠️ 本次是**改价**：卡上必须同时有「改前价」和「改后价」——"
+                 "先调 product_detail 取该商品/该规格的**当前价**，再发 confirm 卡，"
+                 "并在调用写工具时带上 before_price=当前价（漏传会被拒）")
+    return hint
 
 
 # ── 8.6 草稿态回复归一（issue #3750）──────────────────────────────────────────

@@ -4182,27 +4182,40 @@
 ### PR-009. 商品更新 - 名称解析 ID 🔴
 ```
 你: 把遮光窗帘的价格改成 199
-期望: direct_reply
+你: [🔁 按目标工具重复直至成功：product_update，最多 3 次]
+期望: product_update(product_id=遮光窗帘, price=199)
 数据: success=true
-跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品更新 - 名称解析 ID」（product_update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。
+数据: 改价前必须先发 confirm 卡展示「改前 → 改后」（机器断言见 order_before[...]；改前价真值取自 product_detail 返回，不得凭记忆编造）
+复位: product_price_restore(product_keyword=遮光窗帘、price=168)
+时序: interact[confirm] before product_update
+必填: product_update() 字段 product_id, price, before_price
+必须成功: product_update
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
-溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）；2026-09-19（issue #4490 规格修订的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘]（本用例按商品名解析 ID ⇒ 名字唯一是它真正依赖且只读的前置；与同样写遮光窗帘的用例互斥）。断言面（user_inputs / expectations / data_checks）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_update(product_id=遮光窗帘, price=199)] 改判为 [direct_reply]（如实说明 + 引导去后台页面）—— 名称解析 ID 这条被测路径本身属写链路。 ｜ tags: id_resolve, update
+溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）；2026-09-19（issue #4490 规格修订的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘]（本用例按商品名解析 ID ⇒ 名字唯一是它真正依赖且只读的前置；与同样写遮光窗帘的用例互斥）。断言面（user_inputs / expectations / data_checks）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_update(product_id=遮光窗帘, price=199)] 改判为 [direct_reply]（如实说明 + 引导去后台页面）—— 名称解析 ID 这条被测路径本身属写链路。 ｜ 2026-09-24（issue #5303，用户裁定 2026-09-24「A 档可逆写补回」）：本用例**解除退役**（skip_reason 清空）并按新机制锚定真值 —— 写链路恢复（expectations/must_succeed 复原），并新增三条**机器可判**的护栏断言：required_args 增 `before_price`（改前价必填）、order_before 增「interact[confirm] before product_update」（**先预览后写**）、post_clean 增 `product_price_restore`（写共享夹具必须复位，#4075 口径）。断言**只增不减**：user_inputs 除新增一条协作答卡轮外、precondition / namespaces / pre_clean 一字未动。 ｜ tags: id_resolve, update
 
-### PR-010. 商品查询链路 - 搜索→查看详情（原「改价验证」随 #5247 写能力下线改判） 🔵
+### PR-010. 商品多轮链路 - 搜索→查看详情→改价→复核（原「改价验证」；#5247 只读化期间改判为查询链路，#5303 按 A 档裁定补回） 🔵
 ```
 你: 搜索遮光窗帘
 你: 看看遮光窗帘的详情
+你: 把价格改成 198
+你: [🔁 按目标工具重复直至成功：product_update，最多 3 次]
 你: 再看看这个商品的详情确认一下
 期望: product_search
 期望: product_detail(product_id=复用上轮 UUID)
-数据: 第3轮 product_id 来自第2轮（详情）结果 —— 只读核对：复用同一 UUID、不重新解析商品
+期望: product_update(price=198)
+期望: product_detail(product_id=复用上轮 UUID)
+数据: 第3轮 product_id 来自第2轮（详情）结果 —— 改价复用同一 UUID、不重新解析商品
 数据: 全程未重新 product_search 查同一个商品
-数据: 详情页价格与搜索结果一致（只读核对；原「价格已改成 198 / 更新后价格」类断言随写能力下线删除）
+数据: 改价前必须先发 confirm 卡展示「改前 → 改后」（机器断言见 order_before[...]），改完的复核轮读到的是新价
 清理: product_dedupe(product_keyword=遮光窗帘)
+复位: product_price_restore(product_keyword=遮光窗帘、price=168)
+时序: interact[confirm] before product_update
+必填: product_update() 字段 product_id, price, before_price
+必须成功: product_update
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩褶」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「搜索→查看→改价→复核」（`product_update(price=198)` + 写操作确认闸）→ 纯查询链路「搜索→查看详情→再核对详情」（`product_search` / `product_detail`）（不是放宽：改价写能力已从 B 端下线，可验证的只剩查询链路；`must_succeed[product_update]` 与「第4轮 product_id 来自第2轮结果」（该轮已不存在）同步移除、「价格已改成 198」类断言改判为「详情页价格与搜索结果一致（只读核对）」）。 ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩褶」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「搜索→查看→改价→复核」（`product_update(price=198)` + 写操作确认闸）→ 纯查询链路「搜索→查看详情→再核对详情」（`product_search` / `product_detail`）（不是放宽：改价写能力已从 B 端下线，可验证的只剩查询链路；`must_succeed[product_update]` 与「第4轮 product_id 来自第2轮结果」（该轮已不存在）同步移除、「价格已改成 198」类断言改判为「详情页价格与搜索结果一致（只读核对）」。 ｜ 2026-09-24（issue #5303，A 档可逆写补回）：**恢复写链路**（user_inputs 的「把价格改成 198」+ 答卡协作轮、expectations[product_update(price=198)]、must_succeed[product_update]）并新增 #5303 护栏断言（required_args 的 before_price、order_before 的「interact[confirm] before product_update」）与 `post_clean[product_price_restore]`（写共享夹具必须复位，#4075 口径 ⇒ 本用例把种子 base_price 168→198 的那一半有声明式复位）。断言只增不减：precondition / namespaces / pre_clean 一字未动。 ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -4288,16 +4301,24 @@
 真值: product-sku-stock.low-stock
 溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。 ｜ tags: product_create, specifications, regression
 
-### PR-021. SKU 规格价只读核对（原「单独 SKU 调价」随 #5247 写能力下线改判） 🔵
+### PR-021. 单独 SKU 调价 - 修改某规格价格（#5247 只读化期间改判为只读核对，#5303 按 A 档裁定补回） 🔵
 ```
-你: 查一下遮光窗帘的米白色散剪规格现在多少钱
+你: 把遮光窗帘的米白色散剪规格改成 150 元
+你: [🤖 选第一个选项]
+你: [🔁 按目标工具重复直至成功：sku_update，最多 3 次]
 期望: product_detail
-数据: 只读核对：商品详情返回的规格价与搜索结果/用户询问的对象一致（原「new_price==150 落库」断言随 #5247 写能力下线删除）
+期望: sku_update
+数据: sku_update 真成功且价格为 150 元（= 用户明确给出/确认的价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）
+数据: 改价前必须先发 confirm 卡展示「改前 → 改后」（机器断言见 order_before[...]；改前价取自 product_detail 的 skus[].price 真值）
 清理: product_dedupe(product_keyword=遮光窗帘)
 复位: sku_price_restore(product_keyword=遮光窗帘、color_name=米白、selling_method=bulk_cut、door_width=2.8、price=168)
+时序: interact[confirm] before sku_update
+必填: sku_update() 字段 product_id, price, before_price
+必须成功: sku_update
+产出: sku_update → new_price==150
 ```
 真值: product-sku-stock.realtime
-溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题。2026-09-18 补 `post_clean[sku_price_restore]`（issue #4075 机制半边：runner 新增 post_clean 支持）：写共享夹具必须声明复位，断言（expectations/must_succeed/output_verify/data_checks）**原样未动** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：sku_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「SKU 级调价」（`sku_update` + must_succeed + output_verify[new_price==150]）→ 只读链路「商品详情核对规格价」（`product_detail`）（不是放宽：SKU 价改写入能力已从 B 端下线，可验证的只剩只读核对；must_succeed / output_verify 里的 sku_update 同步移除，否则成为永不满足的悬空声明）；`title` / `user_inputs` 一并按只读追问改判（原「…改成 150 元」+ auto_select + 确认轮是写请求，在只读化后语义自相矛盾，且会让 `test_schema_integrity` 的点名商品判据从写动词里抽出伪商品名 `把遮光窗帘`（假红））⇒ 现为单轮「查一下遮光窗帘的米白色散剪规格现在多少钱」。 ｜ tags: sku, write, pricing
+溯源: Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题。2026-09-18 补 `post_clean[sku_price_restore]`（issue #4075 机制半边：runner 新增 post_clean 支持）：写共享夹具必须声明复位，断言（expectations/must_succeed/output_verify/data_checks）**原样未动** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：sku_update 从 B 端解绑 ⇒ 本用例按新机制改判：写链路「SKU 级调价」（`sku_update` + must_succeed + output_verify[new_price==150]）→ 只读链路「商品详情核对规格价」（`product_detail`）（不是放宽：SKU 价改写入能力已从 B 端下线，可验证的只剩只读核对；must_succeed / output_verify 里的 sku_update 同步移除，否则成为永不满足的悬空声明）；`title` / `user_inputs` 一并按只读追问改判（原「…改成 150 元」+ auto_select + 确认轮是写请求，在只读化后语义自相矛盾，且会让 `test_schema_integrity` 的点名商品判据从写动词里抽出伪商品名 `把遮光窗帘`（假红））⇒ 现为单轮「查一下遮光窗帘的米白色散剪规格现在多少钱」。 ｜ 2026-09-24（issue #5303，A 档可逆写补回）：**恢复写链路**（user_inputs 的「…改成 150 元」+ 规格卡 + 答卡协作轮、expectations[sku_update]、must_succeed[sku_update]、output_verify[new_price==150]）并新增 #5303 护栏断言（required_args 的 before_price、order_before 的「interact[confirm] before sku_update」）；`post_clean[sku_price_restore]`（#4075）与 `precondition` / `pre_clean` 一字未动 —— 本用例是**共享夹具写方**（种子 SKU 价 168→150），复位声明原样保留。 ｜ tags: sku, write, pricing
 
 ### PR-024. 小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警） 🔵
 ```
@@ -6181,7 +6202,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：460（活跃 117，跳过 343）
+- 用例总数：460（活跃 118，跳过 342）
 - tier 分布：smoke 10 / normal 419 / adversarial 31
 - 售后域：9
 - Agent 核心域：6

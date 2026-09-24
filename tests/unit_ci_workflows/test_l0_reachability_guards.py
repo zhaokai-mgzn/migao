@@ -73,8 +73,11 @@ import eval_case_filter  # noqa: E402  （零依赖；可达面真值 = 两端 s
 UNREACHABLE_REGISTERED_WRITE_TOOLS: dict[str, str] = {
     "order_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端改状态/发货）；C 端从未绑定",
     "product_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端建品/上下架/改商品）",
-    "product_update": "#5247：从 B 端全部 skill 解绑（原为 B 端改商品字段）",
-    "sku_update": "#5247：从 B 端全部 skill 解绑（原为 B 端 SKU 调价）",
+    # ⚠️ 2026-09-24（issue #5303，A 档可逆写补回）：`product_update` / `sku_update`
+    # **已从本表移出** —— 它们被重新绑回 `product` skill ⇒ 回到**可达面**，因此必须在
+    # taxonomy 表态（已在 `assertion_taxonomy.WRITE_TOOLS`，同表 `test_every_..._declared`
+    # 的 `undeclared` 半边会检查）。本表是「不可达 ⇒ 登记」的 fail-closed 台账，
+    # 可达了却不移出会让**双向相等**判据红 —— 这次改判正是它按设计生效的形态。
     "processing_item_manage": "#5247：从 B 端全部 skill 解绑（原为 B 端增删改加工项）",
     "processing_order_generate": "#5247：从 B 端全部 skill 解绑（原为 B 端生成加工单）",
     "processing_order_update": "#5247：从 B 端全部 skill 解绑（原为 B 端加工单状态迁移）",
@@ -281,8 +284,12 @@ def test_every_registered_write_tool_is_declared():
     **收紧为「已注册 ∧ 两端可达」** —— 旧口径隐含「已注册 ⇒ 必然可达」，而 #5247 之后
     7 个写工具**仍注册**（类与注册行都在）却**绑不上任何 skill**（模型永远调不到）：
     要求它们表态 = 幽灵写工具（`test_write_tool_sets_only_name_reachable_tools` 会判红）。
-    收紧不是放宽：不可达的那 7 个必须**逐条登记**在 `UNREACHABLE_REGISTERED_WRITE_TOOLS`
+    收紧不是放宽：不可达的那些必须**逐条登记**在 `UNREACHABLE_REGISTERED_WRITE_TOOLS`
     （带理由），集合**双向相等**比对 ⇒ 新出现一个「已注册 ∧ 不可达」的写工具照样判红。
+
+    ⚠️ 2026-09-24 **第二次改判（issue #5303，A 档可逆写补回）**：`product_update` /
+    `sku_update` 重新绑回 `product` skill ⇒ 登记表**缩短**为 5 条（判据一字未动，是
+    **双向相等**这条设计让"回到可达面"必须显式改判 —— 这正是它该有的摩擦）。
 
     反例输入：① 新增一个 `read_only = False` 且**绑得上 skill** 的工具而不动 taxonomy ⇒ 必红；
     ② 把某个已解绑工具**重新绑回**任一 skill（变成可达）却仍不在 taxonomy 表态 ⇒ 必红；

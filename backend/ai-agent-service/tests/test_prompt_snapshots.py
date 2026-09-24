@@ -349,7 +349,7 @@ def test_snapshot_all_skills():
         "staff": 8800,    # +3100: 领域 prompt 补齐创建角色流程（HR-005 场景）+ EXAMPLES 补角色创建示例（Round 32）
         "settings": 7100, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         "data": 7600,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）
-        "general": 7400,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）
+        "general": 7600,  # 2026-09-24（issue #5303，A 档可逆写补回）：+200 —— 共享的「能力索引」块是**机械投影**（`域 → 该域写工具`），product 域新增两条写工具 ⇒ 每个同 persona 域的 prompt 都多一行 `- product: product_update sku_update`，**无可 trim**（实测 7415，按既有惯例「实测 +200、上取整到百位」）。沿革：+600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465；+200: 兜底库存查询改真实工具（issue #3569，达 5827）；+200: 面向用户一律中文（扩到 SKU/ID 等技术术语，达 6079）；+207（issue #3921）：加工单≠加工项兜底口径——问加工单不调 processing_item_query、解释概念并引导后台（达 6286）；+200（issue #4107 F7）：同上共享层权限归因规则补后半（达 6450）
         "knowledge": 7000,  # issue #3569：knowledge 域（B 端知识问答）补入厚度门禁，达 5032
     }
     for skill, max_len in expected_max.items():

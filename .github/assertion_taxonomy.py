@@ -82,13 +82,29 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    （`order_create` / `aftersale_create`）。
     "aftersale_create",            # WRITE|NON_IDEMPOTENT
     "order_create",                # WRITE
+    # ⚠️ 2026-09-24（issue #5303，**改判** #5247 的一半）：`product_update` / `sku_update`
+    #    **补回本表** —— 二者是 #5285「B 端米宝只读化」后**唯一回绑的两个 A 档可逆写工具**
+    #    （product_skill 重新绑定：前者写商品级 `products.base_price`，后者写
+    #    `product_skus.price`；都带工具级预览闸 + 用例侧 `post_clean` 复位）⇒ **重新可达**。
+    #    判据面为什么必须跟着回（病根）：本表是「写用例必须有效果层断言 / 必须声明自清理」
+    #    的**唯一判据源** —— 工具重新可达而名字不在表里，含它们期望的用例就**不再被分类为
+    #    写用例** ⇒ 效果层/自清理规则对它们**静默失效**（且不会让任何东西变红）。
+    #    这与 #5247 的「幽灵写工具」是同一病根的两面：**本表必须与真实可达面逐字一致**
+    #    （多一个 = 判据按旧地图判；少一个 = 判据静默放过）。
+    #    ⚠️ #5247 移出的其余 4 个（`order_manage` / `product_manage` /
+    #    `processing_order_generate` / `processing_order_update`）**未改判、仍不可达** ⇒
+    #    不得回表（见上方 #5247 注释）。
+    "product_update",              # WRITE|IDEMPOTENT（商品级 base_price；#5303 回绑）
+    "sku_update",                  # WRITE|IDEMPOTENT（SKU 价；#5303 回绑）
     # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`
     # （给**商品**增删加工项，WRITE|IDEMPOTENT）**已随解耦退场** —— 商品不再持有加工项
     # （加工项是店铺级目录），工具文件与注册行都删 ⇒ 从本表移除（同 `human_handoff` 退场处置）。
     # 留在表里会让「写工具集」出现不可达成员 ⇒ 门禁把不存在的工具的用例判成「写用例」
     # （`test_write_tool_sets_only_name_reachable_tools` 正是这条摩擦的守卫）。
     # 加工单写工具（`processing_order_generate` / `processing_order_update`）与
-    # `product_update` / `sku_update` 同因（#5247）已移出本表，见上方注释。
+    # `order_manage` / `product_manage` 同因（#5247）已移出本表，见上方注释。
+    # （同批移出的 `product_update` / `sku_update` 已按 **#5303** **补回** —— 它们重新绑定了
+    #  B 端 product skill（A 档可逆写），理由见上方 #5303 注释。）
 })
 
 # `WRITE_TOOL_ACTIONS`：工具级 read_only=False，但**只有部分 action 是写**

@@ -1,8 +1,11 @@
 """SKU 价格更新 Tool — 按颜色/门幅精确匹配（V111：SKU 组合只有 颜色 × 门幅）"""
 
+from typing import Optional
+
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.confirm_value import price_preview_missing
 from app.utils.http_client import get_admin_api_client
 
 
@@ -12,10 +15,13 @@ class SkuUpdateTool(BaseTool):
     name = "sku_update"
     description = (
         "【触发】用户说'白色改成XX元''散剪太贵了''XX颜色的调成XX'时直接调用。"
-        "【参数】product_id + price 必填；color/door_width 都是可选的，至少填一个来定位 SKU"
+        "【参数】product_id + price + before_price 必填（before_price = 改前价，取自 product_detail 的 skus[].price 真值）；"
+        "color/door_width 都是可选的，至少填一个来定位 SKU"
         "（SKU 组合 = 颜色 × 门幅，V111）；取值须来自 product_detail 的 skus[] 原值。"
         "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架用 product_manage；"
         "加工项不在本工具范围。"
+        "【必填·改价】漏传 before_price 一律被拒（price_preview_required，issue #5303）——"
+        "确认卡必须先呈现「改前 → 改后」。"
         "【标注】WRITE|IDEMPOTENT"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。")
     # 权限码（admin-api 目录）：SKU 改价/改库存属商品写 ⇒ 写码 `product:create`
@@ -47,6 +53,10 @@ class SkuUpdateTool(BaseTool):
                 "description": "门幅，从 product_detail skus[].door_width 原值获取（如'2.8'）。可选（服务端兼容'2.8米'写法）",
             },
             "price": {"type": "number", "description": "新价格（元）"},
+            "before_price": {
+                "type": "number",
+                "description": "改前价（元）必填：取自 product_detail 的 skus[].price **原值**（不得凭记忆或推算），用于确认卡展示「改前 → 改后」",
+            },
         },
         "required": ["product_id", "price"],
     }
@@ -56,6 +66,7 @@ class SkuUpdateTool(BaseTool):
         context: ToolContext,
         product_id: str,
         price: float,
+        before_price: Optional[float] = None,
         color: str = "",
         door_width: str = "",
     ) -> ToolResult:
@@ -74,12 +85,28 @@ class SkuUpdateTool(BaseTool):
                 suggestion="product_id 缺失或格式不合法，请先用 product_search 查到该商品后重试",
             )
 
+        # ── 改价必须先预览后写（issue #5303，A 档可逆写补回）──
+        # 判据单一源 = `confirm_value.price_preview_missing`（确认卡的「改前价 / 改后价」
+        # 字段由同一模块派生）：没有 `before_price` ⇒ "改前 → 改后"从未被展示过
+        # ⇒ **fail-closed**（禁止无预览直接写）。`before_price` 不进请求体
+        # （`/skus/price` 端点只读 price/color/door_width）。
+        _preview_err = price_preview_missing({"price": price, "before_price": before_price})
+        if _preview_err:
+            return ToolResult(
+                success=False,
+                error="price_preview_required",
+                message=f"SKU 调价被拒（缺改前价预览）：{_preview_err}",
+                suggestion=("先用 product_detail 取该 SKU 的**当前价**（= before_price），"
+                            "再发 interact(component=confirm) 把「改前价 → 改后价」展示给商家，"
+                            "商家点卡后带上 before_price 重试本工具"),
+            )
+
         client = get_admin_api_client()
         body: dict = {"price": price}
         if color: body["color"] = color
         if door_width: body["door_width"] = door_width
 
-        logger.info(f"[sku_update] product={product_id} color={color} width={door_width} price={price}")
+        logger.info(f"[sku_update] product={product_id} color={color} width={door_width} price={price} 改前价={before_price}")
 
         response = await client.patch(
             f"/api/admin/agent/products/{product_id}/skus/price",
