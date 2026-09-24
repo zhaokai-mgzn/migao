@@ -71,7 +71,7 @@ if grep -q "skus/{skuId}\|skus/\${skuId}\|skus/{sku" backend/admin-api/src/main/
 else
   # 宽松：查 PATCH 映射
   SKU_EP=$(grep -n "@PatchMapping.*skus" backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentProductController.java 2>/dev/null | head -2)
-  check "单 SKU 改价端点存在" 0 "$SKU_EP（含 /skus/price）"
+  check "单 SKU 改价端点存在" 0 "${SKU_EP}（含 /skus/price）"
 fi
 
 # ── 5. 前端退款 payload 蛇形契约 ──────────────────────────────
