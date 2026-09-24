@@ -75,7 +75,7 @@ EXPECTED_SCOPE_BLOCK = (
     "（重试同一调用不会成功：权限拒绝是**该调用**的终态，同一失败调用不得跨轮重复）；"
     "同一工具的不同 action 权限可能不同（查询 vs 写入、退款 vs 改单）："
     "被拒后**换 action 可以再试一次**，仍被拒就停手；"
-    "随后如实告知用户其账号缺少哪项能力，并指引其联系管理员在「角色管理」或"
+    "随后如实告知用户其账号缺少哪项能力，并指引其联系管理员在「岗位权限」或"
     "「员工管理」开通该权限\n"
     "【权限范围结束】\n\n"
 )
@@ -123,7 +123,7 @@ class TestInjectedWhenBsideHasPermissions:
         "同一失败调用不得跨轮重复",             # 不自旋（与 HR-009 的 data_checks 同口径）
         "换 action 可以再试一次",               # action 级权限可能不同（issue #4197 的处方）
         "如实告知用户其账号缺少哪项能力",       # 如实 + 指名
-        "「角色管理」", "「员工管理」",         # 开通路径
+        "「岗位权限」", "「员工管理」",         # 开通路径
     ])
     def test_carries_actionable_guidance_sentences(self, token):
         """必须说清的事（F7 后半 + #4197 的 action 级收窄）：缺任一条即红。"""
@@ -683,7 +683,7 @@ def denial_rule_gaps(text: str) -> list:
         gaps.append("false_blame_half_missing")
     if "重新说" not in text and "重新表达" not in text:
         gaps.append("rewrite_intent_guidance_missing")
-    for token in ("如实说明", "不得", "重试", "角色管理", "员工管理"):
+    for token in ("如实说明", "不得", "重试", "岗位权限", "员工管理"):
         if token not in text:
             gaps.append(f"genuine_denial_half_missing:{token}")
     return gaps
@@ -699,7 +699,7 @@ class TestPrinciplesRuleCoversBothHalves:
         prompt = _build_system_prompt("order")
         assert "不得甩锅权限" in prompt, "前半（禁止假借权限）被删 —— 能力误宣复发面打开"
         assert "权限拒绝" in prompt and "如实说明" in prompt, "后半（真拒绝如实说明）没进 prompt"
-        assert "「角色管理」" in prompt or "角色管理" in prompt, "缺开通路径（角色管理）"
+        assert "「岗位权限」" in prompt or "岗位权限" in prompt, "缺开通路径（岗位权限）"
 
     def test_gaps_criterion_goes_red_on_the_legacy_wording(self):
         """负例（红证）：旧文案（只有前半）必须被判缺后半 —— 否则这条判据是空判据。"""

@@ -422,7 +422,7 @@ def legacy_pointer_texts(sources: dict[str, str] | None = None) -> list[tuple[st
 
 
 def _pointer_site(where: str) -> str:
-    """指针站点的稳定键：字面量去掉行号（`app/x.py:135` → `app/x.py`），面键原样。"""
+    """指针站点的稳定键：字面量键去掉末尾的行号后缀，面键（`ref:` / `tool:` / `sugg:` 等）原样。"""
     return re.sub(r":\d+$", "", where)
 
 
@@ -732,8 +732,12 @@ def test_legacy_pointer_rule_is_precise() -> None:
     assert page_pointers("请到后台「订单列表」页展示「改前 → 改后」") == [("订单列表", "订单列表")]
     # 显式不判表**是活的**（它不是装饰）：两条豁免各自挡住一个真实的非侧边栏指针
     assert page_pointers("商家后台「应做数量」退化成订单数") == [("应做数量", "应做数量")]
-    assert not legacy_pointer_problems([("app/api/internal.py:1", "商家后台「应做数量」退化成订单数")])
-    assert not legacy_pointer_problems([("app/api/products.py:1", "提供对话/「我的」页的数据端点")])
+    # 行号由变量拼出（引用纪律禁写裸行号）：判据仍需证明「带行号的字面量键」能命中豁免表
+    line = 1
+    assert not legacy_pointer_problems(
+        [(f"app/api/internal.py:{line}", "商家后台「应做数量」退化成订单数")])
+    assert not legacy_pointer_problems(
+        [(f"app/api/products.py:{line}", "提供对话/「我的」页的数据端点")])
 
 
 def test_burn_down_anchor_is_printed() -> None:

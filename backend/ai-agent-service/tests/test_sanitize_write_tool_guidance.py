@@ -13,7 +13,7 @@ agent 把请求路由到 product_update（它没有 images 参数）→ `_saniti
 **改判（issue #5318，2026-09-24）**：旧指引写「请用 `product_manage(action=update, images=…)`」，
 而 `product_manage` 自 #5247 起已从全部 B 端 skill 解绑 ⇒ 这条**注入进模型的指引**
 会把模型推向必然 `tool_not_found` 的调用。新指引 = 如实说明（图片写入不在能力内）+
-引导商家到后台「商品管理」页面(/products)操作，**不点名任何工具**。
+引导商家到后台「商品列表」页面(/products)操作，**不点名任何工具**。
 """
 # case_ids: PR-017, PR-026, PR-027
 
@@ -92,8 +92,8 @@ class TestWriteToolImageArgsDroppedFailsWithGuidance:
             f"指引又点名了已从 B 端解绑的工具：{result_dict['error']}"
         )
         assert "images" in result_dict["error"]
-        assert "后台" in result_dict["error"] and "商品管理" in result_dict["error"], (
-            f"指引未给出去处（后台商品管理页）：{result_dict['error']}"
+        assert "后台" in result_dict["error"] and "商品列表" in result_dict["error"], (
+            f"指引未给出去处（后台商品列表页）：{result_dict['error']}"
         )
         assert tool.executed == [], "丢弃参数后不得执行写工具（空字段调用正是「没有要修改的字段」误宣链）"
         parsed = json.loads(result_str)
@@ -147,8 +147,8 @@ class TestDroppedArgsGuidance:
         msg = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "images": ["x"]})
         assert "product_manage" not in msg, msg
-        assert "后台" in msg and "商品管理" in msg, msg
+        assert "后台" in msg and "商品列表" in msg, msg
         msg2 = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "detail_images": ["x"]})
         assert "product_manage" not in msg2, msg2
-        assert "后台" in msg2 and "商品管理" in msg2, msg2
+        assert "后台" in msg2 and "商品列表" in msg2, msg2
