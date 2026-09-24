@@ -7,10 +7,21 @@
 | target | 图片常见形态 | 识别目标字段 |
 |---|---|---|
 | `product` | 色卡 / 布料实拍 / 供应商图 | 名称 / 颜色 / 材质 / 工艺 / 门幅 / 售价 |
-| `order` | 手写单 / 微信聊天截图 / 旧系统单据 | 客户名 / 电话 / 商品明细 / 数量 / 规格 |
+| `order` | 手写单 / 微信聊天截图 / 旧系统单据 | 客户名 / 电话 / 地址 / 商品明细 / 数量 / 帘宽 / 帘高 |
 
 **风险不对称**：订单侧客户信息错 ⇒ **货发错人** ⇒ 「不确定的宁可不填」的阈值更严
-（见 `TARGET_POLICY` 的 `min_confidence`，以及 `recognizer.py` 对手机号形状的硬校验）。
+（见 `TARGET_POLICY` 的 `min_confidence`，以及 `recognizer.py` 对手机号形状与尺寸的硬校验）。
+
+## 订单侧的字段为什么是「帘宽 / 帘高」而不是一个自由文本「规格」（issue #5349）
+
+用户裁定 2026-09-24：「创建订单功能，有自动化推导参数的能力，这个**通过图片创建订单时也要能自动推导**」。
+而推导链（`frontend/admin-web/src/lib/craft-calc-request.ts`）要的是**结构化数值输入** ——
+宽 / 高对它 fail-closed（缺任一个就不发试算）⇒ **自由文本进不了推导函数**，这才是"图片建单推不动"的
+**具体原因**（不是"推导没跑"）。
+
+⇒ 订单侧字段表带上**推导链的原始输入**（登记在 `DERIVATION_INPUT_KEYS`），
+推导照旧跑在页面 / 算料引擎 —— **识别侧不得出现第二份派生逻辑**
+（`frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 已明写：同一真值两处推导 = 页面显示 ≠ 落库）。
 """
 from dataclasses import dataclass
 from typing import Dict, Tuple
@@ -40,8 +51,40 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
         TargetField("customer_address", "地址", "收货地址；手写体潦草看不清就留空"),
         TargetField("items", "商品明细", "商品名称清单，多个用顿号分隔"),
         TargetField("quantity", "数量", "数量（米 / 套 / 件），保留图上的单位写法"),
-        TargetField("spec", "规格", "规格（宽×高 / 门幅 / 颜色等）"),
+        # 🔴 尺寸两格必须**分格**（issue #5349）：它们进的是页面的「窗宽 / 窗高」数字框 ⇒ 推导链
+        #    的原始输入。hint 写「只抄写明方向的数字 + 方向不明就留空」是**第一道**消歧
+        #    （手写单 `2.8×2.4` 的宽高顺序约定不统一 ⇒ 不猜顺序），`recognizer._normalise_size`
+        #    是**第二道**（模型没听劝也拦得住）。
+        TargetField(
+            "curtain_width", "帘宽",
+            "成品宽 / 窗宽（米）；**只抄图上写明「宽」的那个数字**（带单位也行）。"
+            "若图上只有 `2.8×2.4` 这种**没标方向**的写法 ⇒ 本格留空，并在 reason 里说明"
+            "「宽高方向不明、不猜顺序」",
+        ),
+        TargetField(
+            "curtain_height", "帘高",
+            "成品高 / 窗高（米）；**只抄图上写明「高」的那个数字**。"
+            "与帘宽同一条：**方向**不明 ⇒ 留空（宁可不填）",
+        ),
     ),
+}
+
+#: 「**驱动下游推导链的原始输入**」的登记表（issue #5349）—— 识别只产出推导的**输入**。
+#:
+#: 它是**双向判据的锚**（元守卫见 `frontend/admin-web/tests/unit/lib/image-recognize-derivation-equivalence.test.ts`
+#: 的「类级元守卫」组）：① 这里声明了的键必须在 `TARGET_FIELDS` 里存在；
+#: ② 声明了的键必须在页面侧**真接进了推导入参**（否则字段认出来也没人用）；
+#: ③ 既没登记、又不带推导输入的 target 必须显式进「不喂推导链」台账 ⇒ **新 target 想溜过去就是红**。
+#:
+#: 为什么 order 侧只有这两个键：
+#: - **宽 / 高**是推导链**唯一不可推导的原始输入**（`craftCalcParamsOf` 的 fail-closed 前置）；
+#: - **门幅不在其中**：`fabric_width` 的唯一来源是**所选 SKU**（`line.selectedSku.doorWidth`，
+#:   商品属性）⇒ 订单侧再放一个 `door_width` 既没有消费方、又会破坏「两个 target 零交集」的既有
+#:   机械判据（用户 2026-09-24 裁定「不要做成一套字段两个页面填」）；选品归 issue #5345；
+#: - **加工方式（`cuttingMode`）也不在其中**：它是 D6 **推导的产物**（倒幅 = `cuttingMode` 推导，
+#:   issue #4526/#4566/#4592），识别若把它当输入填回去 = 让识别替推导决定（判据 2 会红）。
+DERIVATION_INPUT_KEYS: Dict[str, Tuple[str, ...]] = {
+    "order": ("curtain_width", "curtain_height"),
 }
 
 # 每个 target 的消歧策略。

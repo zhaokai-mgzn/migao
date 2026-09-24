@@ -21,15 +21,20 @@
    这是用户判断「该信哪一格」的**唯一依据**（现有约定见
    `backend/ai-agent-service/app/graph/skills/product_skill.py`）。
 2. **不确定的宁可不填**：空值 / 置信度低于该 target 的阈值 ⇒ 留空**并给理由**，绝不猜。
+   订单侧另有两道**形状硬闸**（放在置信度闸之前 —— 形状错时置信度高只说明"抄得清楚"）：
+   手机号必须是 11 位有效号码；**尺寸**（帘宽 / 帘高，issue #5349）必须是**能直接进推导链的数**
+   （`2.8×2.4` 这种没写明宽高方向的写法**不猜顺序**，一格都不填）。
 3. 🔴 **不落库、不提交**：本模块不 import 任何写入缝（会话记忆 / DB / admin-api），
    `recognize()` 的返回体只有「填哪几格」——**提交永远是人的动作**。
-   机械判据：`backend/ai-agent-service/tests/test_vision_recognize.py::TestNoWriteBoundary`
+   机械判据：`backend/ai-agent-service/tests/test_vision/test_recognizer.py::TestNoWriteBoundary`
    （静态扫描 + 扫描器判别力红证 + 端点返回体恰好三个键）。
+   ⚠️ 该路径 2026-09-24 顺手订正（issue #5349）：识别内核测试随 #5321 迁进了 `tests/test_vision/`，
+   旧写法 `tests/test_vision_recognize.py` 已不存在 —— 引用一个不存在的路径会让下一个人白找一轮。
 """
 import asyncio
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage
 from loguru import logger
@@ -52,6 +57,17 @@ VISION_CALL_TIMEOUT_S = 60.0
 _THINK_RE = re.compile(r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>")
 _MOBILE_RE = re.compile(r"^1[3-9]\d{9}$")
 _NON_DIGIT_RE = re.compile(r"\D")
+
+#: 订单侧的**尺寸字段**（issue #5349）—— 推导链的原始输入。值必须能被前端 `Number()` 直接吃下：
+#: 填一个 `2.8米` 进数字框 = `NaN` ⇒ 推导链 fail-closed（页面看着"填了"，实际一个推导项都不产出）。
+_SIZE_FIELDS = frozenset({"curtain_width", "curtain_height"})
+
+#: 尺寸的合理量程（米）—— 越界即视为「认错了 / 图上根本不是尺寸」。
+#: 下限 0.2：比这更小的窗帘不存在；上限 20：家用 / 商用布艺的极端值，
+#: 同时能抓住「漏了小数点」的形态（`2.8` → `28`）。
+_SIZE_RANGE_M: Tuple[float, float] = (0.2, 20.0)
+
+_SIZE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 
 #: 留空理由：模型没给该字段 / 模型自己说看不清
 _NOT_RECOGNISED = "图片未给出该字段"
@@ -189,6 +205,15 @@ def _resolve(
             return None, f"手机号「{value}」不是 11 位有效号码，宁可不填"
         value = digits
 
+    # 订单侧的第二道硬闸（issue #5349）：**尺寸**必须是能直接进推导链的数。
+    # 同样放在置信度闸**之前**：一个「很自信地抄成 `2.8×2.4`」的尺寸，置信度再高也不能填
+    # —— 形状错 ⇒ 下游一定错（成品尺寸 ⇒ 米数 ⇒ 钱）。
+    if target_type == "order" and field.key in _SIZE_FIELDS:
+        size, size_reason = _normalise_size(value)
+        if size is None:
+            return None, size_reason
+        value = size
+
     min_confidence = policy["min_confidence"]
     if confidence < min_confidence:
         return None, (
@@ -196,6 +221,36 @@ def _resolve(
             f"{min_confidence}，宁可不填"
         )
     return value, None
+
+
+def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:
+    """尺寸原文 → `(规范十进制串, None)`；**不合法 ⇒ `(None, 留空理由)`**。
+
+    三条（issue #5349；每条都有会红的夹具，见 `tests/test_vision/test_recognizer.py`）：
+
+    1. 🔴 **没写明方向的成对写法**（`2.8×2.4` / `2.8*2.4`）⇒ 留空：手写单上「哪个是宽、哪个是高」
+       的**约定不统一** ⇒ 猜顺序 = 把宽当高用（成品尺寸反了 ⇒ 米数错 ⇒ 钱错）
+       ⇒ 按「不确定的宁可不填」**不猜**，请商家手工填；
+    2. 读不出**唯一一个**数（没有数字 / 两个以上）⇒ 留空；
+    3. 超出合理量程 ⇒ 留空（`28` 米不是窗帘，是漏了小数点）。
+
+    归一（`2.80 米` → `2.8`、`约 2.5 米左右` → `2.5`）不是锦上添花：页面的宽高是**数字框**
+    （`Number(value)`），原文带中文单位 ⇒ `NaN` ⇒ 推导链静默不发试算 —— 那比留空更糟
+    （商家看着格子是"填上了"的）。
+    """
+    numbers = _SIZE_NUMBER_RE.findall(value)
+    if len(numbers) >= 2:
+        return None, (
+            f"「{value}」没写明哪一个是宽、哪一个是高（手写单的宽高顺序约定不统一）"
+            "⇒ 宁可不填，请手工填「帘宽」「帘高」"
+        )
+    if not numbers:
+        return None, f"「{value}」里读不出尺寸数字 ⇒ 宁可不填"
+    metres = float(numbers[0])
+    low, high = _SIZE_RANGE_M
+    if not low <= metres <= high:
+        return None, f"「{value}」不在帘宽 / 帘高的合理量程（{low}~{high} 米）内 ⇒ 宁可不填"
+    return f"{metres:g}", None
 
 
 def _normalise_phone(value: str) -> str:

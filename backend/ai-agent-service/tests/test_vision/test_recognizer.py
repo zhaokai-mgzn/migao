@@ -17,6 +17,7 @@
 ⚠️ 本文件**不落库**：识别结果只描述「填哪几格」，提交永远是人的动作（包 2 的同页填充通道不在本包）。
 """
 import inspect
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -55,7 +56,8 @@ ORDER_VISION_FIXTURE = """```json
     "customer_address": {"value": "杭州市余杭区某小区", "confidence": 0.55},
     "items":            {"value": "雪尼尔遮光窗帘、纱帘", "confidence": 0.90},
     "quantity":         {"value": "3 套", "confidence": 0.88},
-    "spec":             {"value": null, "reason": "规格手写潦草，无法确认"}
+    "curtain_width":    {"value": "窗宽 2.8 米", "confidence": 0.92},
+    "curtain_height":   {"value": "2.40 米", "confidence": 0.90}
   }
 }
 ```"""
@@ -129,7 +131,8 @@ class TestExtractFieldsOrder:
             ("customer_address", "地址", None, None),
             ("items", "商品明细", "雪尼尔遮光窗帘、纱帘", FIELD_MARKER),
             ("quantity", "数量", "3 套", FIELD_MARKER),
-            ("spec", "规格", None, None),
+            ("curtain_width", "帘宽", "2.8", FIELD_MARKER),
+            ("curtain_height", "帘高", "2.4", FIELD_MARKER),
         ]
 
     def test_order_side_is_stricter_than_product_side_on_the_same_confidence(self):
@@ -171,6 +174,87 @@ class TestExtractFieldsOrder:
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. 逐字段 `[图片识别]` 标注
 # ══════════════════════════════════════════════════════════════════════════════
+class TestExtractFieldsOrderSize:
+    """订单侧尺寸字段（issue #5349）：**推导链的原始输入**必须结构化到「页面能直接用」。
+
+    判据（issue #5349 判据 3 + 「不确定的宁可不填」）：
+
+    1. 🔴 手写单常见的 `2.8×2.4` **没写明哪个是宽哪个是高**，而约定**不统一**
+       ⇒ **两个尺寸格都留空 + 给理由**，**不猜顺序**（猜错 = 成品尺寸反了 ⇒ 米数错 ⇒ 钱错）；
+    2. 值必须是**规范十进制串**（`2.80 米` → `2.8`）—— 前端数字框吃的是 `Number(value)`，
+       原文带中文单位 ⇒ `NaN` ⇒ 推导链 fail-closed（页面看着"填了"、实际不推）；
+    3. 读不出唯一一个数 / 超出合理量程 ⇒ 留空。
+
+    **注入式红证**（逐条可单独变红）：把 `recognizer.py` 的 `_normalise_size` 摘掉（或让
+    `_resolve` 不再调用它）⇒ 本类第 1 条的 `2.8×2.4` 会被原样填进「帘宽」⇒ 当场红；
+    把归一那步改成 `return value, None` ⇒ 第 2 条的长度 / `float()` 断言红。
+    """
+
+    @staticmethod
+    def _field(key: str, value, confidence: float = 0.95) -> dict:
+        payload = json.dumps(
+            {"fields": {key: {"value": value, "confidence": confidence}}}, ensure_ascii=False
+        )
+        return next(f for f in extract_fields("order", payload) if f["key"] == key)
+
+    @pytest.mark.parametrize("raw", ["2.8×2.4", "2.8*2.4", "2.8 x 2.4", "宽高 2.8/2.4"])
+    def test_undirected_pair_is_never_guessed_into_one_axis(self, raw):
+        """`2.8×2.4` ⇒ 两个尺寸格都留空（**不猜顺序**），理由必须说清是方向问题。"""
+        for key in ("curtain_width", "curtain_height"):
+            field = self._field(key, raw)
+            assert field["value"] is None
+            assert field["source"] is None
+            assert field["reason"] == (
+                f"「{raw}」没写明哪一个是宽、哪一个是高（手写单的宽高顺序约定不统一）"
+                "⇒ 宁可不填，请手工填「帘宽」「帘高」"
+            )
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("2.8", "2.8"),
+            ("2.80 米", "2.8"),
+            ("窗宽 2.8 米", "2.8"),
+            ("2.8m", "2.8"),
+            ("2.4 M", "2.4"),
+            ("约 2.5 米左右", "2.5"),
+            ("3", "3"),
+        ],
+    )
+    def test_size_is_normalised_to_a_plain_decimal_the_page_can_read(self, raw, expected):
+        field = self._field("curtain_width", raw)
+        assert field["value"] == expected
+        # 判据的牙齿：前端 `Number(value)` 必须吃下它（`2.8米` 会得到 NaN ⇒ 推导链静默不跑）
+        assert float(field["value"]) == float(expected)
+
+    @pytest.mark.parametrize("raw", ["看不清", "深灰色", "货到付款"])
+    def test_values_without_a_size_number_are_left_empty(self, raw):
+        field = self._field("curtain_height", raw)
+        assert field["value"] is None
+        assert field["reason"] == f"「{raw}」里读不出尺寸数字 ⇒ 宁可不填"
+
+    @pytest.mark.parametrize("raw", ["28", "0.05", "13800138000"])
+    def test_implausible_sizes_never_become_a_curtain_dimension(self, raw):
+        """`28` 米不是窗帘（漏了小数点）、`13800138000` 更不是尺寸。"""
+        field = self._field("curtain_width", raw)
+        assert field["value"] is None
+        assert field["reason"] == f"「{raw}」不在帘宽 / 帘高的合理量程（0.2~20.0 米）内 ⇒ 宁可不填"
+
+    def test_size_shape_gate_runs_before_the_confidence_gate(self):
+        """**很自信地**抄成对写法也要拦（与手机号闸同一个位置：置信度闸之前）。
+
+        理由：形状错 ⇒ 下游一定错（尺寸错 ⇒ 米数错 ⇒ 钱错），置信度高只说明"抄得清楚"。
+        """
+        field = self._field("curtain_width", "2.8×2.4", confidence=0.99)
+        assert field["value"] is None
+        assert "置信度" not in field["reason"]
+
+    def test_product_side_is_untouched_by_the_order_side_size_guard(self):
+        """商品侧的 `door_width` 不套这条闸（它的门幅是**商品属性**，不是窗帘成品尺寸）。"""
+        payload = '{"fields": {"door_width": {"value": "门幅2.8米", "confidence": 0.9}}}'
+        assert extract_fields("product", payload)[4]["value"] == "门幅2.8米"
+
+
 class TestMarker:
     def test_every_filled_field_carries_the_marker(self):
         for target_type, fixture in (("product", PRODUCT_VISION_FIXTURE),
