@@ -2082,6 +2082,69 @@ def _gate_module():
     return mod
 
 
+class _GateRun:
+    """`subprocess.run(..., capture_output=True, text=True)` 结果的**等价替身**。
+
+    只暴露调用点真正用到的三个字段（`returncode` / `stdout` / `stderr`）——
+    调用点的断言因此**一个字都不用改**。
+    """
+
+    __slots__ = ("returncode", "stdout", "stderr")
+
+    def __init__(self, returncode: int, stdout: str, stderr: str):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def run_gate(argv: list[str]) -> _GateRun:
+    """**进程内**真跑门禁，返回与 `python3 .github/case_trust_gate.py <argv>` 逐项等价的结果（#5365）。
+
+    削掉的只有三项**结构性开销**（issue #5365 卡点 ①，`migao-dev-flow` §23 G8 口径）：
+    解释器启动 + 冷导入 + **子进程侧没有语料 memo 的全量真解析**（conftest 的 sha256 内容缓存
+    `install_corpus_memo()` 只在本进程生效 ⇒ 每个子进程都要把 `.github/cases/**` 重解析一遍）。
+
+    ⛔ **这不是"缓存结论"**（那会供出过期结论，已被裁定不可接受）：每次调用都
+    ① **重新加载模块**（连模块级的 git 读缓存 `_ORIGIN_LINES_CACHE` / `_PURE_RENAME_CACHE`
+    都是新的，不跨次复用）② **重新真跑 `main(argv)`** 的完整判定链。
+    ⇒ 入参（argv 逐字相同 / `cwd=REPO_ROOT` / 继承同一环境）与副作用
+    （含 `--prune-baseline` 的写回）**逐次与子进程等价**；断言强度一格未降。
+
+    退出码折算与子进程**同形**：`main` 的返回值 = 子进程 `returncode`；argparse 的
+    `SystemExit` 按它的 code 折算；未捕获异常在子进程里表现为 `rc=1` + 回溯进 stderr
+    ⇒ 这里同样折算（诊断不丢，也不会把"脚本崩了"变成别的形态）。
+
+    ⚠️ **不要**把本文件最后那一次真子进程调用也改掉：它是 **CLI 外壳**（`__main__` 守卫 +
+    `sys.exit(main())` 接线 + 真退出码）在这个文件里的唯一真跑判据（见
+    `TestUnimplementedRegistrations::test_script_exits_1_on_missing_field_and_on_expired` 的负例）。
+    """
+    import contextlib
+    import importlib.util
+    import io
+    import os
+    import traceback
+
+    spec = importlib.util.spec_from_file_location("case_trust_gate", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    out, err = io.StringIO(), io.StringIO()
+    cwd = os.getcwd()
+    try:
+        os.chdir(REPO_ROOT)                 # 与子进程的 `cwd=str(REPO_ROOT)` 对齐
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                rc = int(mod.main(list(argv)))
+            except SystemExit as e:         # argparse 的用法错误 ⇒ 与子进程同码
+                rc = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+            except Exception:               # 子进程里 = rc 1 + 回溯进 stderr
+                traceback.print_exc(file=err)
+                rc = 1
+    finally:
+        os.chdir(cwd)
+    return _GateRun(rc, out.getvalue(), err.getvalue())
+
+
 # 预算配置夹具：与 `.github/case-trust-baseline.json` 的 `burn_down` 同形（日期是注入用的）
 # `metric=entries` = **本次收紧后的现行口径**（只认整条销账）；旧口径 `entries_or_codes`
 # 只在「改前/改后对照」的用例里显式构造。
@@ -2322,10 +2385,8 @@ def _stale_entry_probe(tmp_path, data: dict, contract_ids: list[str]):
     _recompute_derived_readings(data)
     tmp = tmp_path / "baseline.json"
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
-                        "--baseline", str(tmp)],
-                       capture_output=True, text=True, cwd=str(REPO_ROOT))
-    return sample, r
+        # 进程内真跑（#5365）：argv 逐字不变（`--base HEAD --baseline <tmp>`），副作用等价
+    return sample, run_gate(["--base", "HEAD", "--baseline", str(tmp)])
 
 
 class TestGateScriptEndToEnd:
@@ -2691,14 +2752,18 @@ class TestUnimplementedRegistrations:
             mutate(data["unimplemented"][0])
             tmp = tmp_path / f"unimpl-{i}.json"
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
-                                "--unimplemented", str(tmp), "--no-issue-check"],
-                               capture_output=True, text=True, cwd=str(REPO_ROOT))
+                        # 进程内真跑（#5365）：argv 逐字不变，含 `--unimplemented <tmp>`
+            r = run_gate(["--base", "HEAD", "--unimplemented", str(tmp), "--no-issue-check"])
             assert r.returncode == 1, (
                 f"「{name}」未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}"
             )
             assert needle in r.stdout, f"「{name}」的报错未指名：\n{r.stdout[-1500:]}"
         # 负例（R2）：原样清单 ⇒ 必须 exit 0（收紧不得把现行登记判红）
+        # ⚠️ **本文件有意保留的唯一一次真子进程调用**（#5365 削减后仍留作锚点）：
+        # 其余调用点都走进程内 `run_gate()`（同一次真执行，只省解释器启动 / 冷导入 /
+        # 子进程侧无 memo 的全量语料重解析），而 **CLI 外壳**本身
+        # （`__main__` 守卫 + `sys.exit(main())` 接线 + 真退出码）只有真起进程才判得到
+        # ⇒ 砍掉它 = 这一层判据变空断言。它也是最便宜的一格（`--no-issue-check`，无网络）。
         ok = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
                              "--unimplemented", str(UNIMPLEMENTED), "--no-issue-check"],
                             capture_output=True, text=True, cwd=str(REPO_ROOT))
@@ -2926,14 +2991,13 @@ class TestDerivedReadings:
         tmp = tmp_path / "baseline.json"
         before = self._corrupt_in_memory()
         tmp.write_text(json.dumps(before, ensure_ascii=False, indent=2), encoding="utf-8")
-        gate = [sys.executable, str(GATE), "--base", "HEAD", "--baseline", str(tmp),
-                "--no-issue-check"]
-        red = subprocess.run(gate, capture_output=True, text=True, cwd=str(REPO_ROOT))
+                # 进程内真跑（#5365）：argv 逐字不变；`--prune-baseline` 的**写回**在这一侧同样发生
+        gate = ["--base", "HEAD", "--baseline", str(tmp), "--no-issue-check"]
+        red = run_gate(gate)
         assert red.returncode == 1, f"派生读数漂移未判红：\n{red.stdout[-1200:]}"
         assert "账本不自洽" in red.stdout, red.stdout[-1200:]
 
-        fixed = subprocess.run([*gate, "--prune-baseline"], capture_output=True, text=True,
-                               cwd=str(REPO_ROOT))
+        fixed = run_gate([*gate, "--prune-baseline"])
         assert fixed.returncode == 0, f"修复入口自己失败了：\n{fixed.stdout}\n{fixed.stderr}"
         assert "已重算派生读数" in fixed.stdout, fixed.stdout
         after = json.loads(tmp.read_text(encoding="utf-8"))
@@ -2956,7 +3020,7 @@ class TestDerivedReadings:
             f"写回的键超出「纯派生字段」范围：{sorted(changed_keys)}"
         )
         assert "未改动 `burn_down` 与 `anchor_sha`" in fixed.stdout, fixed.stdout
-        green = subprocess.run(gate, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        green = run_gate(gate)
         assert green.returncode == 0, f"修好后门禁仍红：\n{green.stdout[-1200:]}"
 
     def test_prune_refuses_to_write_when_recompute_would_grow(self):
