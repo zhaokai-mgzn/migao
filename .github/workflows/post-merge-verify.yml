@@ -157,7 +157,7 @@ jobs:
               BASE_SOURCE="lookback(HEAD~${LOOKBACK})"
             fi
           fi
-          echo "窗口起点 = ${BASE:-HEAD~${LOOKBACK}}（来源：$BASE_SOURCE）"
+          echo "窗口起点 = ${BASE:-HEAD~${LOOKBACK}}（来源：${BASE_SOURCE}）"
           echo "触发事件 = $EVENT"
 
           set +e
@@ -186,7 +186,7 @@ jobs:
           {
             echo "## Post-Merge Verify（main 侧守护腿，issue #5423）"
             echo ''
-            echo "- 窗口起点：\`${BASE:-HEAD~${LOOKBACK}}\`（来源：$BASE_SOURCE）"
+            echo "- 窗口起点：\`${BASE:-HEAD~${LOOKBACK}}\`（来源：${BASE_SOURCE}）"
             echo "- 触发事件：\`$EVENT\`"
             echo "- 读数（与负载无关）：变更文件 \`$SEEN\` / 命中判据 \`$ACTED\`"
             echo ''
