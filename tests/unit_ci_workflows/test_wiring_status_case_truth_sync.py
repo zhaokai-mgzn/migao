@@ -32,13 +32,23 @@ r"""用例面文本 × 主干事实的**接线状态同步**守卫（issue #5387
 |---|---|---|---|
 | C0 | 引擎 `__all__` 里的**模块级字符串常量**必须恰好 = `STATUS_CONSTANTS` | `app/briefing/proactive.py`（AST） | 引擎新增第五态而不登记 ⇒ 红（逼同步真值面 + 本清单） |
 | C1 | 真值文本必须**逐字点名**每个接线状态 | 同上（值从源码读） | 删掉文本里的 `not_enabled` ⇒ 红 |
+| C1′ | **每一处**登记的真值/用例文本都必须点名全部态（登记处 = `STATUS_NAMING_TEXTS`） | 同上（面是显式登记的） | DA-018 或 `…unwired-disclosure` 真值漏一个态 ⇒ 红 |
 | C2 | 真值文本里「**N 态可分**」的 N == 现取状态数 | 同上（`len`） | 写回「**三**者可分」⇒ 3≠4 红；引擎加第五态 ⇒ 4≠5 红 |
 | C3 | 装配层声明的**每个行数组/行字段**必须逐字出现在 DA-016 的契约键清单里 | `DailyBriefingService.SNAPSHOT_ROW_FIELDS`（Java 原文） | 装配层加字段而不改 DA-016 ⇒ 红（**本单的历史形态**：`cost_amount`） |
 | C4 | **每条规则**必须被 DA-017 点名，且在**同一条 `data_checks`** 里点名它**全部可达状态** | 引擎 `RULES`（AST）× 装配层数组集 | 去掉 below_cost_price 的 `not_enabled`/`incomplete` ⇒ 红；引擎新增一条规则 ⇒ 红 |
 
-⇒ **燃尽锚点（现取，不是写死上限）**：状态 **N_STATES** / 装配数组 **N_ARRAYS** / 行字段 **N_FIELDS** /
-规则 **N_RULES** —— 任一面被收窄（少登记一个状态、少解析一个数组）都会让 C0/C3/C4 的覆盖度判据变红
-（见 `test_coverage_anchor_is_live_and_printed`）。
+⇒ **燃尽锚点（现取，不是写死上限）**：状态 **N_STATES** / 点名面 **N_TEXTS** / 装配数组 **N_ARRAYS** /
+行字段 **N_FIELDS** / 规则 **N_RULES** —— 任一面被收窄（少登记一个状态、少解析一个数组、少挂一处文本）
+都会让 C0/C1′/C3/C4 的覆盖度判据变红（见 `test_coverage_anchor_is_live_and_printed`）。
+
+## 容器核查（§23 G9）：同一类在容器里还有**第三处**
+
+本单的两条判据只点名了真值 `…proactive-wiring-status` 与 DA-016 / DA-017。按「关单前核容器里还有没有剩余项」
+把**同一类**（写死态数的陈旧枚举）在 `.github/` 全库扫了一遍，另有两处：
+① DA-018 的「调用方自己可分『未接线 / 本次不完整 / 已接入且完整但无命中』」（**三态枚举**）；
+② 它引用的真值 `dashboard-jump.proactive-unwired-disclosure` 只覆盖 `not_wired` 一态
+（而 `not_enabled` 需要**可行动**的措辞、与「尚未接入」分开说 —— #5385 已落工具侧，真值/用例未跟）。
+⇒ 两处**同批收口**并进 `STATUS_NAMING_TEXTS`（否则这是「修一处 = 没修」：第三、第四处照样静默腐烂）。
 
 ## 判据形态、自证与**残余**（照实登记，别把「登记了」读成「治住了」）
 
@@ -76,9 +86,23 @@ CASES_DIR = GITHUB / "cases"
 
 #: 真值 ID（真值面）
 WIRING_TRUTH_ID = "dashboard-jump.proactive-wiring-status"
-#: 用例 ID（用例面）：装配契约 / 逐规则接线状态
+DISCLOSURE_TRUTH_ID = "dashboard-jump.proactive-unwired-disclosure"
+#: 用例 ID（用例面）：装配契约 / 逐规则接线状态 / 非 wired 的披露
 SNAPSHOT_CASE_ID = "DA-016"
 WIRING_CASE_ID = "DA-017"
+DISCLOSURE_CASE_ID = "DA-018"
+
+#: **必须逐字点名全部接线状态**的文本面（登记处；状态值一律现取）。
+#: 本单的容器核查（§23 G9「关单前核容器里还有没有剩余项」）在**同一类**上又找到第三处陈旧口径
+#: —— DA-018 的「未接线 / 本次不完整 / 已接入且完整但无命中」三态枚举（连它引用的真值
+#: `proactive-unwired-disclosure` 也只覆盖 `not_wired` 一态）⇒ 一并收进本判据，别让它留在容器里。
+#: ⚠️ **登记是显式的**：新增一个「枚举态数」的真值/用例**不会**被自动纳入；登记项改名/删除 ⇒ 红。
+STATUS_NAMING_TEXTS = (
+    ("truth", WIRING_TRUTH_ID),
+    ("truth", DISCLOSURE_TRUTH_ID),
+    ("case", WIRING_CASE_ID),
+    ("case", DISCLOSURE_CASE_ID),
+)
 
 #: Java 侧锚点（**文本锚点，不写行号** —— 行号会随编辑腐烂；取不到 ⇒ 判红，不静默跳过）
 JAVA_FIELDS_ANCHOR = "private static Map<String, List<String>> snapshotRowFields()"
@@ -268,7 +292,7 @@ def unattested_states(truth_text: str, values: dict) -> str:
     missing = [f"{name}（`{value}`）" for name, value in values.items() if value not in truth_text]
     if not missing:
         return ""
-    return ("真值文本没有逐字点名接线状态：" + "、".join(missing)
+    return ("该文本面没有逐字点名接线状态：" + "、".join(missing)
             + " —— 枚举态是**单一源**（引擎 `__all__` 的字符串常量），真值面必须点名每一个，"
               "否则「系统有、该租户没开」与「系统没实现」在真值层面不可分（issue #5387）")
 
@@ -380,6 +404,23 @@ def test_truth_names_every_wiring_state():
     assert problem == "", problem
 
 
+def test_registered_texts_name_every_wiring_state():
+    """C1′（类级、容器收口）：**每条登记的真值/用例文本**都必须逐字点名全部现取状态。
+
+    登记处 = `STATUS_NAMING_TEXTS`（真值 2 条 + 用例 2 条）。本判据是 C1 的**面**，不是重复：
+    它把「枚举态数的每一处文本」都挂上同一条机械联系 —— 主干加一个态，这里逐条变红。
+    """
+    values = status_values()
+    problems = []
+    for kind, ident in STATUS_NAMING_TEXTS:
+        text = _truth(ident) if kind == "truth" else _case_text(ident)
+        problem = unattested_states(text, values)
+        if problem:
+            problems.append(f"{kind} {ident}：{problem}")
+    assert problems == [], (
+        "登记的文本面没点名全部接线状态（主干加了态而文本没跟）：\n  · " + "\n  · ".join(problems))
+
+
 def test_truth_state_count_matches_engine():
     """C2：真值文本的可分数必须是**四**（现取），写「三者可分」= 陈旧口径。"""
     problem = count_word_mismatch(_truth(WIRING_TRUTH_ID), len(status_values()))
@@ -408,6 +449,7 @@ def test_coverage_anchor_is_live_and_printed(capsys):
     declared = java_row_fields()
     counts = {
         "truths": 1,
+        "named_texts": len(STATUS_NAMING_TEXTS),
         "states": len(status_values()),
         "arrays": len(declared),
         "fields": sum(len(v) for v in declared.values()),
@@ -423,6 +465,10 @@ def test_coverage_anchor_is_live_and_printed(capsys):
     assert counts["rules"] >= 1, "引擎一条规则都没解析出来 —— 判据面已失真"
     assert counts["truths"] == 1 and counts["case_items"] >= 1, (
         "真值面或用例面的判据输入为空 —— 判据不得在「无输入」时静默通过（issue #5387）")
+    assert counts["named_texts"] >= 4, (
+        f"点名态集的文本面只剩 {counts['named_texts']} 处（< 4）—— 收窄覆盖面是**覆盖损失**，"
+        "会让「主干加态而某处文本没跟」重新变成静默失效；确需收窄请在本判据里说明并逐条登记"
+        "（issue #5387）")
     assert counts["fields"] >= counts["arrays"], "行字段数少于数组数 —— 解析器已失真"
 
 
