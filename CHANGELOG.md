@@ -42,6 +42,22 @@
   （另见 issue #5345）。② **「加工方式」不作为识别输入** —— `cuttingMode` 是 D6 **推导的产物**
   （倒幅 = 加工类型推导），识别把它填回去等于替推导决定；③ 原先只进备注的自由文本「规格」
   （颜色等）随本次替换退场。
+### 客户画像里没有真值的字段不再用「0 / 30」冒充真数据（2026-09-24，issue #5362）
+
+- **改了什么（商家与 Agent 同时可见）**：客户列表、客户详情、更新客户的响应里，**声明为「无真值」的字段一律回 `null`（= 未知）**
+  —— RFM 四列（`rScore`/`fScore`/`mScore`/`rfmTotalScore`）、统计五列（`totalOrders`/`totalConsumption`/
+  `totalRefundAmount`/`avgOrderValue`/`repurchaseRate`）、`lifecycleStage`/`churnRiskScore`/`nextPurchasePredictionDays`、
+  `firstOrderAt`/`lastOrderAt`、`wechatUnionid`/`avatarUrl`。修前这些字段读出来的是**数据库列默认值**
+  （`0` / `0.00` / `30`），看起来像「这个客户消费 0 元」「预计 30 天后复购」。口径与 `product_skus.avg_cost` 一致：
+  **未知就是未知，不猜 0**。
+- **为什么回 `null` 而不是删字段**：契约 key 一个不删（调用方不会因缺 key 崩），只是不再以数值形态冒充真值；
+  每个字段「有真值 / 无真值（+ 原因）」是**机器可读**的（`CustomerProfileFieldTruth` 声明）。
+- **机械判据（防复发）**：`FieldTruthSourceScan` 静态扫描 —— 声明「有真值」⇒ 源码里必须存在真值级写入点
+  （setter / builder / SQL `SET` / 框架生成注解）；声明「无真值」⇒ 必须进读面遮蔽清单（少一行/多一行都红）；
+  类级元守卫对全仓「列有常量默认值 ∧ 源码零写入」的病征逐条对账（**未登记即红**，台账只许缩短）。
+- **边界（照实登记）**：① **不补计算**（RFM / 消费额 / 客单价的计算属产品功能，另立单，且以本声明为前置）；
+  ② **DB 列默认值与存量行仍是 0**（列默认值 / 回填口径属补计算那一单）；③ 建档路径
+  （`createFromSession` / `createFromOrder`）的种子写入语义**一字未改**。
 
 ### 米宝的经营日报真的能看到异常了；做不到的能力如实说明「尚未接入」（2026-09-24，issue #5358）
 

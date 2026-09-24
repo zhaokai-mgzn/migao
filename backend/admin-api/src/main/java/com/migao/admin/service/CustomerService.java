@@ -4,6 +4,7 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.*;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.*;
+import com.migao.admin.support.fieldtruth.CustomerProfileTruthMask;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -93,6 +94,9 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         Map<Long, List<CustomerTag>> tenantTagCache = new HashMap<>();
         for (CustomerProfile record : resultPage.getRecords()) {
             record.setTags(resolveCustomerTags(record, tenantTagCache));
+            // 暴露面（issue #5362）：声明「无真值」的字段一律回 null（未知），
+            // 不得把 DB 列默认值 0 / 30 / 'new' 当成真数据下发（页面与 Agent 同受约束）
+            CustomerProfileTruthMask.apply(record);
         }
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(),
@@ -110,6 +114,9 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (profile == null) {
             throw BusinessException.notFound("客户");
         }
+
+        // 暴露面（issue #5362）：Agent 的 customer_manage(detail) 读的就是这份 profile
+        CustomerProfileTruthMask.apply(profile);
 
         Map<String, Object> detail = new HashMap<>();
         detail.put("id", profile.getId());
@@ -374,6 +381,8 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         }
 
         customerProfileMapper.updateById(existing);
+        // 暴露面（issue #5362）：PUT 的响应同样是「对外返回体」
+        CustomerProfileTruthMask.apply(existing);
         log.info("更新客户档案成功: id={}", customerId);
         return existing;
     }
@@ -637,6 +646,9 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
 
         Page<CustomerProfile> customerPage = new Page<>(page, size);
         Page<CustomerProfile> resultPage = customerProfileMapper.selectPage(customerPage, profileWrapper);
+
+        // 暴露面（issue #5362）：同一个实体走哪条读路径都要遮蔽
+        resultPage.getRecords().forEach(CustomerProfileTruthMask::apply);
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(),
                 resultPage.getSize(), resultPage.getRecords());
