@@ -1,0 +1,271 @@
+✅ 登录成功
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.1,"meters":13.3,"auto":true,"reason":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","ca
+✅ 已建行：遮光窗帘 / 浅灰 / 6.6×2.6
+  [shot] /tmp/ua5262/r3/5262-a1-S0c-面板收起.png
+
+===== S0c 面板**收起**（`craft-plan-edit` 未展开 ⇒ `OrderCraftFields` 不在 DOM） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n系统推导\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.1 米\n接宽 — 米\n用料 13.3 米\n\n依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "系统推导"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.1 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "false"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+✅ 已展开「改工艺参数 / 人工加接高接宽拼接」
+  [shot] /tmp/ua5262/r3/5262-a2-S0-展开后基线.png
+
+===== S0 展开后的全自动基线（未手工改任何项） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n系统推导\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.1 米\n接宽 — 米\n用料 13.3 米\n\n依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "系统推导"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.1 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["由推导决定"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.05,"meters":13.3,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","candidates":[{"key":"fixed_height","feasible":false,
+  [shot] /tmp/ua5262/r3/5262-a3-S1-只改接高0.05.png
+
+===== S1 **只**手工改接高 = 0.05 米（加工类型一个键都没点过） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.05 米\n接宽 — 米\n用料 13.3 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.05 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["由推导决定"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"splice_option":null,"join_height_m":0.05,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.1,"meters":13.3,"auto":true,"reason":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","ca
+  [shot] /tmp/ua5262/r3/5262-a4-S1b-清空接高.png
+
+===== S1b 清空接高 ⇒ 回到「由推导决定」（可逆性） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n系统推导\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.1 米\n接宽 — 米\n用料 13.3 米\n\n依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "系统推导"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.1 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["由推导决定"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.05,"meters":13.3,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）","candidates":[{"key":"fixed_height","feasible":false,
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+  [net] 422 /api/admin/orders/craft-calc :: {"success":false,"error":{"code":"CRAFT_CALC_UNAVAILABLE","message":"算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""},"requestId":"req_1623bc46038044d8","timestamp":1790208449,"suggestion":"请确认 ai-agent-service 已启动、且 ai-agent.base-url / ai-agent.service-token 配置正确（当前服务地址 http://127.0.0.1:8001/api/internal/production/craft-calc）；确认后重新试算。用料米数必须来自算料引擎（真值源 §8 褶数法），系统不会用 0 或前端自拼的公式顶替。"}
+  [shot] /tmp/ua5262/r3/5262-b1-S2-接高0.05+拼2次-422.png
+
+===== S2 人工接高 0.05 **+** 人工拼2次 ⇒ 预期引擎 422（面板同帧文案？） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 0.05 米\n接宽 — 米\n用料 13.3 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）\n\n「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 0.05 米"
+  [DOM] notice_craft_plan_derived_options = "「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳 「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["拼2次"]}]
+  [DOM] calc_error_red_texts = ["算料试算失败：算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""]
+  [DOM] calc_error_in_viewport = [true]
+  [DOM] calc_error_rects = [{"in_viewport":true,"top":273,"bottom":465}]
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":422,"cutting_mode":null,"auto":null,"splice_times":null,"splice_option":null,"join_height_m":null,"meters":null,"fabric_meters":null,"err_code":"CRAFT_CALC_UNAVAILABLE","err":"算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""}
+  [shot] /tmp/ua5262/r3/S2-错误行.png （错误行滚入视口后的同帧截图）
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":8.7,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_width_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 8.7米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）","plan":{"cutting_mode":"定宽买高","door_width":2.8,"panels":3,"splice_times":2,"splice_option":"拼2次","meters":8.7,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）","candidates":[{"key":"fixed_h
+  [shot] /tmp/ua5262/r3/5262-b2-S3-拼2次-合法对照.png
+
+===== S3 清空接高（拼2次保留）⇒ 预期 200「定宽买高 + 拼2次」（② 的对照） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 3\n拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 8.7 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）\n\n「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）"
+  [DOM] notice_craft_plan_meters = "用料 8.7 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定宽买高"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["拼2次"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计。请为下列加工项组合定价后再下单： 倒幅 + 定型 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null}
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":8.7,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_width_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 8.7米","source":"formula","craft_tier":"standard","warning":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判","plan":{"cutting_mode":"定宽买高","door_width":2.8,"panels":3,"splice_times":2,"splice_option":"拼2次","meters":8.7,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判","candidates":[{"key":"fixed_height","feasible":false,"splice_times":0,"reason":"成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8
+  [shot] /tmp/ua5262/r3/5262-b3-S4-显式定高买宽+拼2次.png
+
+===== S4 **正对照**：显式点加工类型「定高买宽」（拼2次保留） =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定宽买高\n人工指定（不再被自动改判）\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 3\n拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）\n接高 — 米\n接宽 — 米\n用料 8.7 米\n\n依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判\n\n「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "人工指定（不再被自动改判）"
+  [DOM] notice_craft_plan_mode = "加工类型：定宽买高"
+  [DOM] notice_craft_plan_splice = "拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）"
+  [DOM] notice_craft_plan_join_height = "接高 — 米"
+  [DOM] notice_craft_plan_derived_options = "「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：**人工覆盖**（裁定 4/6）：加工类型按人工值「定宽买高」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判"
+  [DOM] notice_craft_plan_meters = "用料 8.7 米"
+  [DOM] cutting_mode_auto_badge = null
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["拼2次"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计。请为下列加工项组合定价后再下单： 定型 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null}
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"meters":13.3,"auto":false,"reason":"**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判","candidates":[{"key":"fixed_height","feasible":false,"splice_times":0,"reason":"成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）"},{"key":"fixed_height_join_height","feasible":true,"meters":13.3,"splice_times":0,"
+  [req] craft-calc 请求（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [net] 200 /api/admin/orders/craft-calc :: {"success":true,"data":{"fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":13,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,"formula_used":"fixed_height_pleats","formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米","source":"formula","craft_tier":"standard","warning":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","plan":{"cutting_mode":"定高买宽","door_width":2.8,"splice_times":0,"join_height_m":0.1,"meters":13.3,"auto":true,"reason":"自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）","ca
+  [shot] /tmp/ua5262/r3/5262-b4-S5-恢复.png
+
+===== S5 拼次回「由推导决定」+ 加工类型回「未指定」⇒ 恢复 =====
+  [DOM] craft-plan 面板逐字："用料方案（系统推导）\n加工类型：定高买宽\n系统推导\n工艺 韩褶（系统默认，可在③加工项改）\n门幅 2.8 米\n分幅 —\n拼接 不拼接\n接高 0.1 米\n接宽 — 米\n用料 13.3 米\n\n依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）\n\n「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳\n\n定高买宽：不可行 —— 成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米 ⇒ 定高买宽单幅装不下（缺口 0.1 米）\n定高买宽 + 接高：可行 · 用料 13.3 米 · 拼接 0 次\n倒幅（定宽买高）：可行 · 用料 14.5 米 · 拼接 4 次\n倒幅 + 接宽：不可行 —— 倒幅 + 接宽不可行：T − (P−1)×D = 13.3 − 4×2.8 = 2.1 米 > 上限 0.1 米（裁定 5）\n倒幅 + 接高：不可行 —— 倒幅下每幅幅长按米购买、不受门幅上限约束 ⇒ 高方向无缺口，无需也不能接高（对比：定高买宽受门幅 2.8 米约束才有缺口）"
+  [DOM] panel_in_viewport = true
+  [DOM] notice_craft_plan_source = "系统推导"
+  [DOM] notice_craft_plan_mode = "加工类型：定高买宽"
+  [DOM] notice_craft_plan_splice = "拼接 不拼接"
+  [DOM] notice_craft_plan_join_height = "接高 0.1 米"
+  [DOM] notice_craft_plan_derived_options = "「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"
+  [DOM] notice_craft_plan_reason = "依据：自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）"
+  [DOM] notice_craft_plan_meters = "用料 13.3 米"
+  [DOM] cutting_mode_auto_badge = "自动"
+  [DOM] radiogroups = [{"label":"售卖形态","options":["成品帘","布料"],"checked":["成品帘"]},{"label":"帘体","options":["布帘","纱帘"],"checked":["布帘"]},{"label":"加工类型","options":["未指定","定高买宽","定宽买高"],"checked":["定高买宽"]},{"label":"打开方式","options":["未指定","单开","双开","三开","四开"],"checked":["四开"]},{"label":"款式","options":["未指定","单色","拼色"],"checked":["单色"]},{"label":"用料公式","options":["韩褶公式（褶数法）","褶倍数公式（倍数法）"],"checked":["韩褶公式（褶数法）"]},{"label":"是否对花","options":["未指定","是","否"],"checked":["否"]},{"label":"拼接（人工加）","options":["由推导决定","不拼接","拼1次","拼2次","拼3次"],"checked":["由推导决定"]}]
+  [DOM] calc_error_red_texts = []
+  [DOM] calc_error_in_viewport = []
+  [DOM] calc_error_rects = []
+  [DOM] unpriced_fee_alert = "有 1 行加工费未定价 —— 组合那半按 0 计；已定价的特殊选项照常计入（合计 ¥2.50）。请为下列加工项组合定价后再下单： 定型 + 拼接 + 超宽（1 行：遮光窗帘） 定价入口：「加工费组合」"
+  [DOM] craft_plan_unavailable = null
+  [DOM] craft_plan_meters_mismatch = null
+  [DOM] craft_plan_join_error = null
+  [DOM] craft_plan_style_conflict = null
+  [DOM] craft_plan_splice_manual = null
+  [DOM] craft_plan_edit_expanded = "true"
+  [req ] 末次 craft-calc **请求**（人工面）= {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+  [server] 末次 craft-calc **响应**读数 = {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+
+===== [diff] 逐帧「请求人工面 vs 引擎响应」对照 =====
+  S0c 面板**收起**（`craft-plan-edit` 未展开 ⇒ `OrderCraftFields` 不在 DOM）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  S0 展开后的全自动基线（未手工改任何项）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  S1 **只**手工改接高 = 0.05 米（加工类型一个键都没点过）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"splice_option":null,"join_height_m":0.05,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  S1b 清空接高 ⇒ 回到「由推导决定」（可逆性）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+  S2 人工接高 0.05 **+** 人工拼2次 ⇒ 预期引擎 422（面板同帧文案？）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":422,"cutting_mode":null,"auto":null,"splice_times":null,"splice_option":null,"join_height_m":null,"meters":null,"fabric_meters":null,"err_code":"CRAFT_CALC_UNAVAILABLE","err":"算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""}
+  S3 清空接高（拼2次保留）⇒ 预期 200「定宽买高 + 拼2次」（② 的对照）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null}
+  S4 **正对照**：显式点加工类型「定高买宽」（拼2次保留）
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null}
+  S5 拼次回「由推导决定」+ 加工类型回「未指定」⇒ 恢复
+    [req ] {"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}
+    [resp] {"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}
+
+  ── 观察项① 决定性对照（S0 全自动 vs S1 只改接高）──
+    req.cutting_mode: S0=null vs S1=null
+    req.cutting_mode_sent: S0=false vs S1=false
+    req.join_height_m: S0=null vs S1=0.05
+    req.splice_times: S0=null vs S1=null
+    resp.status: S0=200 vs S1=200
+    resp.cutting_mode: S0="定高买宽" vs S1="定高买宽"
+    resp.auto: S0=true vs S1=false
+    resp.splice_times: S0=0 vs S1=0
+    resp.join_height_m: S0=0.1 vs S1=0.05
+    resp.meters: S0=13.3 vs S1=13.3
+
+  [req] 全部请求人工面序列 = [{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":0.05,"join_height_m_sent":true,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":2,"splice_times_sent":true,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false},{"width":6.6,"height":2.6,"fabric_width":2.8,"craft":null,"craft_tier":"standard","formula":"pleat","cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}]
+  [server] 全部响应读数序列 = [{"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null},{"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"splice_option":null,"join_height_m":0.05,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null},{"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null},{"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"splice_option":null,"join_height_m":0.05,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null},{"status":422,"cutting_mode":null,"auto":null,"splice_times":null,"splice_option":null,"join_height_m":null,"meters":null,"fabric_meters":null,"err_code":"CRAFT_CALC_UNAVAILABLE","err":"算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""},{"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null},{"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","join_height_m":null,"meters":8.7,"fabric_meters":8.7,"err_code":null,"err":null},{"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"splice_option":null,"join_height_m":null,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null},{"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"splice_option":null,"join_height_m":0.1,"meters":13.3,"fabric_meters":13.3,"err_code":null,"err":null}]
