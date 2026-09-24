@@ -34,6 +34,21 @@ import pytest
 
 SCHEMA = Path(__file__).parent.parent.parent / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
+# ── 共享解析件（issue #5245）：DDL 列解析 / Java 实体列解析**只有一份实现** ──
+# 为什么抽出去：#3570 的教训 —— 同一件事有两套实现，两套门禁必然口径漂移
+# （本文件与 B7 守卫 `test_ontology_source_resolves.py`、三面证明
+# `test_dropped_db_objects.py` 现在共用 `tests/unit_ci_workflows/_sql_schema.py`）。
+# 本文件原来的 `_column_name_of_ddl_line` / `_schema_columns` / `_entities` **逐字搬迁**到那里，
+# 判据一字未改（只换成 import）。`tests/` 上 sys.path 才能按**包名**导入。
+_sys_path_root = Path(__file__).resolve().parent.parent
+if str(_sys_path_root) not in sys.path:
+    sys.path.insert(0, str(_sys_path_root))
+from unit_ci_workflows._sql_schema import (  # noqa: E402
+    column_name_of_ddl_line as _column_name_of_ddl_line,
+    entity_columns as _shared_entity_columns,
+    parse_schema_columns as _shared_schema_columns,
+)
+
 # 允许被引用但不由本文件创建的表（运行时扩展/外部扩展；当前为空）
 EXTERNAL_TABLES = set()
 
@@ -1209,22 +1224,8 @@ class TestSchemaFullDeprecation:
         )
 
 
-def _column_name_of_ddl_line(line: str):
-    """从 `CREATE TABLE` 体内的一行解析列名；非列定义返回 None。
-
-    ⚠️ 不能用"首词是关键字就跳过"的写法：`key` 既是 SQL 关键字又是合法列名
-    （`user_memories.key VARCHAR(128)`）。首版即因此把该列判为"不存在"，
-    产生假缺口。判据改为：**第二个词必须是类型名**，而 `PRIMARY KEY (...)` /
-    `UNIQUE (...)` / `CONSTRAINT ...` 的第二个词是 `KEY`/`(` 这类，自然被排除。
-    """
-    m = re.match(r'\s*"?(\w+)"?\s+(\w+)', line)
-    if not m:
-        return None
-    name, second = m.group(1).lower(), m.group(2).upper()
-    if second in {"KEY", "CONSTRAINT", "INDEX", "CHECK", "UNIQUE", "PRIMARY",
-                  "FOREIGN", "EXCLUDE", "LIKE", "AS"}:
-        return None
-    return name
+# `_column_name_of_ddl_line` 已搬到 `tests/unit_ci_workflows/_sql_schema.py`（issue #5245 抽共用件），
+# 由上面的 import 别名提供 —— 实现与 docstring 一字未改，判据不变。
 
 
 class TestSchemaCoversMigrationChainColumns:
@@ -1258,25 +1259,8 @@ class TestSchemaCoversMigrationChainColumns:
 
     @classmethod
     def _schema_columns(cls) -> dict:
-        src = _strip_sql_comments(SCHEMA.read_text(encoding="utf-8"))
-        tables: dict = {}
-        for m in re.finditer(
-                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?\s*\(([\s\S]*?)\n\)\s*;",
-                src, re.I):
-            name, body = m.group(1).lower(), m.group(2)
-            cols = set()
-            for line in body.splitlines():
-                col = _column_name_of_ddl_line(line)
-                if col:
-                    cols.add(col)
-            tables[name] = cols
-        for m in re.finditer(
-                r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?[\s\S]*?;", src, re.I):
-            t = m.group(1).lower()
-            for cm in re.finditer(
-                    r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(0), re.I):
-                tables.setdefault(t, set()).add(cm.group(1).lower())
-        return tables
+        """建库脚本 → `{表: {列}}`（**实现已搬到共享件** `_sql_schema.parse_schema_columns`）。"""
+        return _shared_schema_columns()
 
     @classmethod
     def _migration_requirements(cls) -> tuple:
@@ -1381,36 +1365,13 @@ class TestSchemaCoversEntityColumns:
     ENTITY_DIR = (Path(__file__).parent.parent.parent / "backend" / "admin-api"
                   / "src" / "main" / "java" / "com" / "migao" / "admin" / "entity")
 
-    # 非列字段（MyBatis-Plus 约定 / Java 常量）
-    _SKIP_FIELDS = {"serialVersionUID"}
-
-    @staticmethod
-    def _snake(name: str) -> str:
-        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    # 非列字段 / camel→snake 的口径都在共享件 `_sql_schema`（`SKIP_FIELDS` / `snake`）里，
+    # 本类不再自持第二份（issue #5245）。
 
     @classmethod
     def _entities(cls) -> dict:
-        """{表名: {列名: 'Entity.java#field'}}"""
-        out: dict = {}
-        for f in sorted(cls.ENTITY_DIR.glob("*.java")):
-            src = f.read_text(encoding="utf-8")
-            tm = re.search(r'@TableName\(\s*(?:value\s*=\s*)?"(\w+)"', src)
-            if not tm:
-                continue
-            table = tm.group(1).lower()
-            # 去掉 @TableField(exist = false) 标注的字段（非表列）
-            cleaned = re.sub(
-                r"@TableField\([^)]*exist\s*=\s*false[^)]*\)[\s\S]{0,120}?;", "", src)
-            cols = out.setdefault(table, {})
-            for fm in re.finditer(
-                    r'(?:@TableField\(\s*(?:value\s*=\s*)?"(\w+)"[^)]*\)\s*)?'
-                    r"private\s+[\w<>,\[\]\. ]+\s+(\w+)\s*;", cleaned):
-                explicit, field = fm.group(1), fm.group(2)
-                if field in cls._SKIP_FIELDS:
-                    continue
-                col = explicit.lower() if explicit else cls._snake(field)
-                cols.setdefault(col, f"{f.name}#{field}")
-        return out
+        """{表名: {列名: 'Entity.java#field'}}（**实现已搬到共享件** `_sql_schema.entity_columns`）。"""
+        return _shared_entity_columns()
 
     def test_entity_parse_is_non_trivial(self):
         """自检：确实解析出实体与列（否则本类测试空转 = 假绿）"""

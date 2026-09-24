@@ -550,6 +550,45 @@ def aggregate(ledger: dict) -> dict:
 # ── 网络薄封装（只取事实；判据不在这里） ────────────────────────────────────────
 
 
+def _merge_pages(pages) -> dict:
+    """**纯函数**：把 `gh api --paginate --slurp` 的多页浅合并成**一个**对象。
+
+    合并口径（按**值的形状**分派，不按字段名）：值是 `list` 的字段 ⇒ **跨页累加**；
+    标量（`total_count` 等，各页同值）⇒ **覆盖**。
+
+    🔴 **#5264 的病根就在这个函数的旧口径**（实测，别再重新猜）：旧实现写成
+    `merged.update({k: v for k, v in page.items() if k != "jobs"})` + **只**把 `jobs` 累加
+    ⇒ **列表字段被每页覆盖** ⇒ 分页后**只剩最后一页**。实测（2026-09-24，`gh` 复算）：
+
+        gh api "repos/zhaokai-mgzn/migao/actions/runs?event=pull_request\
+    &branch=chore/flaky-ledger&per_page=100" --paginate --slurp
+        ⇒ 3 页（100/100/11），total_count=211
+        而旧口径的 `_gh_api(同一 URL)` ⇒ **11** 条，且全是**最老**的
+        （created_at ≤ 2026-09-20T06:13:26Z）
+        ⇒ `runs_needing_approval()` 只看得到那 11 条早已作废的 run ⇒ 恒返回 `[]`
+        ⇒ `approve` 一次都没发出去 ⇒ 台账 PR #5139 的 run 永远停在 `action_required`
+        （0 个 job、0 条 check）⇒ auto-merge 永不触发 ⇒ 台账冻结。
+
+    ⚠️ 历史注记：**#4804 当年「实测有效」是真的** —— 那时该分支的 PR run 数 < 100 ⇒
+    `--slurp` 返回**单页** ⇒ 走 `_gh_api` 的「单页短路」分支（那条路径**正确**）。
+    **跨过一页之后**这个机制才**静默失效**（没有任何东西会因此变红）。⇒ 单页短路**保留**，
+    多页合并按上面的形状分派修好。
+
+    刻意**不**在标量冲突时报错：本函数只做浅合并（判据不在这里），且 `total_count` 各页必然同值。
+    """
+    merged: dict = {}
+    for page in pages or []:
+        if not isinstance(page, dict):
+            continue
+        for key, value in page.items():
+            if isinstance(value, list):
+                prev = merged.get(key)
+                merged[key] = (prev if isinstance(prev, list) else []) + list(value)
+            else:
+                merged[key] = value
+    return merged
+
+
 def _gh_api(path: str) -> dict:
     out = subprocess.run(
         ["gh", "api", "--paginate", "--slurp", path],
@@ -559,14 +598,7 @@ def _gh_api(path: str) -> dict:
     if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
         return data[0]
     if isinstance(data, list):
-        merged: dict = {}
-        items: list = []
-        for page in data:
-            if isinstance(page, dict):
-                merged.update({k: v for k, v in page.items() if k != "jobs"})
-                items.extend(page.get("jobs") or [])
-        merged["jobs"] = items
-        return merged
+        return _merge_pages(data)
     return data
 
 
@@ -620,6 +652,45 @@ def runs_needing_approval(runs, workflows=None) -> list:
         if isinstance(rid, int):
             out.append(rid)
     return sorted(out)
+
+
+def branch_tip(listing) -> str | None:
+    """**纯函数**：从 `GET /repos/{owner}/{repo}/branches/{branch}` 的响应里取分支 tip 的 sha。
+
+    **实测（2026-09-24，读源不是猜）**：`gh api repos/zhaokai-mgzn/migao/branches/chore/flaky-ledger`
+    ⇒ `{"name": "chore/flaky-ledger", "commit": {"sha": "519250fe9bf175bcf0a735a0b08969e376382409"}, …}`
+    —— 分支名里的 `/` **不编码也能用**（返回的 `name` 逐字就是 `chore/flaky-ledger`，证明它没被
+    解析成别的路径）；`chore%2Fflaky-ledger` 拿到**同一个** sha。本函数只认**响应形状**，
+    不管调用方的 URL 怎么拼（故两种写法都兼容）。
+
+    取不到 ⇒ `None`（调用方 **fail-closed**；**不许**退回「最新可见的待批准 run 的 sha」——
+    见 `runs_for_head` 的说明）。
+    """
+    if not isinstance(listing, dict):
+        return None
+    commit = listing.get("commit")
+    sha = commit.get("sha") if isinstance(commit, dict) else None
+    return sha if isinstance(sha, str) and sha else None
+
+
+def runs_for_head(runs, head_sha) -> list:
+    """**纯函数**：只保留 `head_sha == head_sha`（= **分支 tip 那一次推送**）的候选 run。
+
+    为什么必须收窄（**实测**）：分页修好后候选从 11 个涨到几十上百个 —— 实测该分支 211 个 run 里
+    白名单口径命中 **74** 个 ⇒ 全批准 = 74 个 workflow 真的跑起来（**CI 雪崩**），而**只有 tip 那一批**
+    的 check-run 能决定 PR 的 required 状态（陈旧 push 的 check 挂在旧 commit 上，required 判定看 head）。
+
+    为什么 tip 要**从分支事实**取（`branch_tip`），而不是「最新可见的待批准 run 的 sha」：
+    `flaky-triage.yml` 步骤④ **刚 push 完台账分支就立刻 approve**，而 GitHub 创建 run 是**异步**的 ⇒
+    此刻可见的「最新 run」可能还是**上一次**推送的 ⇒ 拿它当 tip 会把**陈旧 SHA** 的 run 批准起来，
+    且日志会把「批准了陈旧 SHA」说成「批准了本次推送」—— 正是本仓最忌的**读数与事实不一致**。
+
+    空/畸形输入（含 `head_sha` 为空）⇒ 空集（**不是**「通过」）。
+    """
+    if not head_sha:
+        return []
+    return [r for r in (runs or [])
+            if isinstance(r, dict) and r.get("head_sha") == head_sha]
 
 
 def approve_runs(repo: str, run_ids) -> list:
@@ -919,14 +990,38 @@ def main(argv=None) -> int:
         #    ⇒ 返回**全仓** 11867 个 run，而不是本分支的 13 个）。写错的失效形态 = 批准一堆无关 run。
         listing = _gh_api(f"repos/{args.repo}/actions/runs"
                           f"?event=pull_request&branch={args.head_branch}&per_page=100")
-        ids = runs_needing_approval(listing.get("workflow_runs") or [],
-                                    workflows=TRIAGED_WORKFLOWS)
-        if not ids:
+        all_runs = listing.get("workflow_runs") or []
+        needing = set(runs_needing_approval(all_runs, workflows=TRIAGED_WORKFLOWS))
+        if not needing:
+            # 快速路径：候选为空 ⇒ **不查 tip**（少一次 API 调用，且与既有读数逐字一致）。
             print("✅ 无 `action_required` 的 pull_request run（无需 approve —— 可能已批准或已被正常触发）")
             if args.json_out:
                 _write(args.json_out, json.dumps([], ensure_ascii=False))
             return 0
-        print(f"🔓 待 approve 的 run {len(ids)} 个（被 GITHUB_TOKEN 抑制 ⇒ 无 job ⇒ 无 check）：{ids}")
+        # #5264：候选**非空** ⇒ 只批准**分支 tip 那一次推送**的 run（收窄理由见 `runs_for_head`）。
+        # ⚠️ tip 必须从**分支事实**取：本步骤在 push 台账分支之后**立刻**执行，而 GitHub 创建 run 是
+        #    **异步**的 ⇒ 「此刻可见的最新 run」可能还是**上一次**推送的。拿它当 tip = 批准**陈旧 SHA**
+        #    却把日志说成「批准了本次推送」（读数与事实不一致）⇒ 故意**不**做这个退回：
+        #    解析不到 tip 就 fail-closed（非零退出，workflow 侧会 `::error::` 显性化）。
+        candidates = [r for r in all_runs if r.get("id") in needing]
+        tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
+        if not tip:
+            print(f"⛔ 无法确定台账分支 `{args.head_branch}` 的 tip（`GET /repos/{{repo}}/branches/…` "
+                  f"取不到 `commit.sha`）⇒ 不敢用「最新可见推送」代替 —— 那会把**陈旧 SHA** 的 run "
+                  f"批准起来、并把读数说成「批准了本次推送」。**本轮零动作、fail-closed**"
+                  f"（历史待批准 {len(needing)} 个一个不批；下一轮触发会重试）。", file=sys.stderr)
+            return 1
+        ids = sorted(r["id"] for r in runs_for_head(candidates, tip))
+        if not ids:
+            # 诚实读数：tip 上确实没有待批准 run（GitHub 尚未创建、或已批准）。
+            # **不许**在此时改去批准陈旧 SHA（见上）—— 它们对 required 判定零贡献。
+            print(f"ℹ️ tip={tip} 暂无待批准 run（尚未创建或已批准）⇒ 本轮零动作，下一轮触发会重试"
+                  f"（历史待批准 {len(needing)} 个均为**陈旧推送**，批准它们对 required 判定无贡献）")
+            if args.json_out:
+                _write(args.json_out, json.dumps([], ensure_ascii=False))
+            return 0
+        print(f"🔓 历史待批准 {len(needing)} 个，其中属于分支 tip={tip} 的 {len(ids)} 个"
+              f" ⇒ 只批准这 {len(ids)} 个（被 GITHUB_TOKEN 抑制 ⇒ 无 job ⇒ 无 check）：{ids}")
         try:
             approve_runs(args.repo, ids)
         except RuntimeError as exc:

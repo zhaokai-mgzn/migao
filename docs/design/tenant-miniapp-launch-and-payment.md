@@ -183,7 +183,7 @@ CREATE TABLE tenant_pay_configs (
 ```
 微信回调（SUCCESS）
   → 验签解密
-  → 支付状态落在既有订单 status / finance_transactions 面（`orders.payment_status` 定案删除：#5245 A3，不启用死列）
+  → 支付状态落在既有订单 status / finance_transactions 面（`orders.payment_status` **已删列**：#5245 A3 / V126，不启用死列）
   → 订单 status: pending → confirmed（原子流转，复用现有 transitionStatusAtomic）
   → 扣库存 + 增销量（复用现有 confirmPayment 逻辑）
   → 登记 finance_transactions：type=income, payment_method=wechat, order_id
@@ -191,10 +191,11 @@ CREATE TABLE tenant_pay_configs (
 ```
 
 - 现有「人工确认支付」保留为兜底（线下收款场景），回调驱动与人工驱动共用同一状态流转核心
-- 🔴 **2026-09-23 改判（issue #5245 A2/A3）**：`payment_status` 与 `stock_deducted` 两列
+- 🔴 **2026-09-23 改判并收口（issue #5245 A2/A3）**：`payment_status` 与 `stock_deducted` 两列
   确实在 DB（008 迁移）但**从未被实体映射、也无任何消费方** ⇒ 已冻结为**删除项**：
-  落地时**不补映射**（原文「落地时补上」**作废**）；删列（新迁移 + 初始化脚本同步）
-  **待 #5243 合入后执行**（本单 #5245 不动 DB 面）。支付状态改由订单 `status` + `finance_transactions` 承载。
+  落地时**不补映射**（原文「落地时补上」**作废**）；**删列已执行** ——
+  `V126__drop_zombie_db_objects.sql` 幂等 `DROP COLUMN IF EXISTS`，初始化建库脚本同步不再建列
+  （issue #5245 A2/A3，2026-09-23 用户裁定）。支付状态改由订单 `status` + `finance_transactions` 承载。
 
 **4.3.4 对账**
 
@@ -227,7 +228,7 @@ CREATE TABLE tenant_pay_configs (
 | 登录/租户 | wx.login→code→openid（按租户 appid/secret，mock 兜底）；5 层隔离 | —（已就绪） |
 | 品牌配置 | TenantAiConfig：botName/欢迎语/渠道话术/营业时间/转人工 | —（已就绪，全部服务端化） |
 | 入驻 | POST /api/auth/register + AI 合规甄别 | —（已就绪） |
-| 订单 | pending→confirmed 人工确认支付 + 扣库存；`payment_status` / `stock_deducted` 为死列（**#5245 A2/A3 已定案删除**，删列待 #5243） | 回调驱动改造（**不补**两列映射） |
+| 订单 | pending→confirmed 人工确认支付 + 扣库存；`payment_status` / `stock_deducted` 为死列（**#5245 A2/A3 已定案并已删列**：V126 + 建库脚本同步） | 回调驱动改造（**不补**两列映射） |
 | 财务 | finance_transactions 表已就绪 | 支付登记接入 |
 | 支付 | 无 | 租户支付配置表、统一支付服务、payment tool、支付卡片、对账 |
 | 部署 | 单套 SWAS compose，多租户共享 | 支付服务随 admin-api 部署，无需新组件 |
@@ -241,7 +242,7 @@ CREATE TABLE tenant_pay_configs (
 | M2 | 「企业设置 → 小程序发布」页（P7：密钥自助配置 + 升级包列表 + 确认升级 + 试传体验版）+ 升级包/版本矩阵模型（P4）+ 上架 SOP / 材料清单 / 隐私协议（P5）| M1 |
 | M3 | 租户支付配置表 + 统一支付服务（下单/查单/关单/退款/回调）+ mock 模式 | M0 并行 |
 | M4 | Agent payment tool + SSE pay 卡片 + 小程序 OrderPayCard + Taro.requestPayment | M3 |
-| M5 | 订单状态机衔接：回调驱动 pending→confirmed、finance 登记（~~payment_status 启用~~ —— 该列定案删除，见 §4.3.3 / #5245 A3） | M3 |
+| M5 | 订单状态机衔接：回调驱动 pending→confirmed、finance 登记（~~payment_status 启用~~ —— 该列已删列，见 §4.3.3 / #5245 A3 / V126） | M3 |
 | M6 | 试运行 1-2 家真实企业：走通「入驻→出包→上架→支付→对账」全链路 | M1-M5 |
 | M7 | 规模化评估：>20 家切换模式 B（第三方平台 + ext.json），支付层零改动 | M6 后 |
 

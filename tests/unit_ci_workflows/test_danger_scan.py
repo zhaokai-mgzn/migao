@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / ".github"))
 from danger_scan import (
     analyze,
     _truly_new_secret_lines,
+    _secret_ref_diff_lines,
+    strip_comment,
     parse_delete_acks,
     ack_env_lines,
     parse_migration_acks,
@@ -211,6 +213,94 @@ class TestMovedSecrets:
         added = ['+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login --password-stdin']
         removed = ['-          echo "${{ secrets.ACR_USERNAME }}" | docker login']
         assert _truly_new_secret_lines(added, removed) == added
+
+
+class TestSecretsCommentStripping:
+    """注释里的 secrets 文本不算风险（issue #5268 / owner 裁定：只判「代码里真引用」）。
+
+    根因：前置筛选用子串 `"secrets." in l`、判定用 `SECRET_REF_RE` —— 两把尺子**不同源** ⇒
+    注释里的 `secrets.*`（子串命中、正则不命中）让 added_refs 为空集，而旧条件
+    `if added_refs and added_refs <= removed_refs` 因左侧空集**短路为假** ⇒ 该注释行被当成
+    「真新增」⇒ BLOCK 合并。现场（PR #5266 / commit f472f5fa1）：那句注释本身在说明
+    「没有新增 secrets」，当时只能靠改写措辞解绑。
+    修法：判据一律建立在 `strip_comment()` 剥掉注释后的**代码文本**上，且前置筛选与判定同源。
+    """
+
+    WF = ".github/workflows/automerge.yml"
+    # 判据①：PR #5266 的**逐字原文**（含反引号）—— 当时被判「新增 1 处非内置 secrets 引用」
+    PR5266_COMMENT = '+      # 与既有 job 同一内置凭据（全文 `secrets.*` 引用仍只有既有那一处）'
+    # 判据②：注释里写了**完整** secret 名（裁定本体：不算风险）
+    COMMENTED_FULL_NAME = "+  # secrets.NEW_SECRET"
+    # 判据③：真新增 secrets 引用（必须照旧 BLOCK）
+    REAL_NEW = "+        FOO: ${{ secrets.NEW_SECRET }}"
+    # 判据④：引号内的 `#` + 真引用（不许被剥成注释）
+    HASH_IN_QUOTES = '+        run: echo "#${{ secrets.NEW_SECRET }}"'
+    # 判据⑤：移动/重排（#2949 口径）
+    MOVED_ADDED = '+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login'
+    MOVED_REMOVED = '-          echo "${{ secrets.ACR_PASSWORD }}" | docker login'
+
+    def _blocker(self, detail):
+        return f"{self.WF} 新增 1 处非内置 secrets 引用 —— 需人工审查：{detail}"
+
+    def _analyze_diff(self, hunk):
+        """按 main() 的真实链路判 BLOCK：diff 行 → 前置筛选（同源）→ 判定 → analyze。"""
+        added, removed = _secret_ref_diff_lines(hunk)
+        truly_new = _truly_new_secret_lines(added, removed)
+        blockers, _ = analyze(
+            workflow_changes=[("M", self.WF)],
+            wf_new_secrets={self.WF: truly_new} if truly_new else {},
+            deleted_files=[], deploy_files=[], migration_changes=[], schema_changes=[],
+        )
+        return blockers
+
+    def test_pr5266_verbatim_comment_not_counted(self):
+        """判据①：PR #5266 的逐字原文不得被判为新增（修前该行 = 1 blocker）。"""
+        assert _truly_new_secret_lines([self.PR5266_COMMENT], []) == []
+        assert self._analyze_diff([self.PR5266_COMMENT]) == []
+
+    def test_prefilter_same_source_drops_comment_keeps_real_ref(self):
+        """判据①（前置筛选层）：与判定同源 —— 注释行不进 added，同行里的真引用仍进。"""
+        assert _secret_ref_diff_lines([self.PR5266_COMMENT, self.REAL_NEW]) == ([self.REAL_NEW], [])
+
+    def test_commented_full_secret_name_not_blocked(self):
+        """判据②（裁定本体）：注释里写了完整 secret 名 ⇒ 不得 BLOCK。"""
+        assert strip_comment(self.COMMENTED_FULL_NAME) == "+" + " " * 2
+        assert _truly_new_secret_lines([self.COMMENTED_FULL_NAME], []) == []
+        assert self._analyze_diff([self.COMMENTED_FULL_NAME]) == []
+
+    def test_real_new_secret_still_blocks(self):
+        """判据③（防修过头）：真新增 `secrets.NEW_SECRET` 必须照旧 BLOCK。"""
+        assert _truly_new_secret_lines([self.REAL_NEW], []) == [self.REAL_NEW]
+        assert self._analyze_diff([self.REAL_NEW]) == [self._blocker(self.REAL_NEW)]
+
+    def test_hash_inside_quotes_is_not_comment(self):
+        """判据④（防把真引用当注释）：引号内的 `#` 不是注释起点 ⇒ 真引用必须仍被检出。"""
+        assert strip_comment(self.HASH_IN_QUOTES) == self.HASH_IN_QUOTES
+        assert self._analyze_diff([self.HASH_IN_QUOTES]) == [self._blocker(self.HASH_IN_QUOTES)]
+
+    def test_comment_marker_rules(self):
+        """剥注释规则本体：行首（允许前导空白）/ 前接空白才是注释起点；`foo#bar` 不是。"""
+        assert strip_comment("# secrets.A") == ""
+        assert strip_comment("  # secrets.A") == " " * 2
+        assert strip_comment("FOO: 1  # secrets.A") == "FOO: 1" + " " * 2
+        assert strip_comment("run: echo foo#bar${{ secrets.A }}") == "run: echo foo#bar${{ secrets.A }}"
+        assert strip_comment("run: echo '#${{ secrets.A }}'") == "run: echo '#${{ secrets.A }}'"
+
+    def test_moved_secret_still_not_new(self):
+        """判据⑤：#2949「移动/重排不算新增」口径一字未动。"""
+        assert _truly_new_secret_lines([self.MOVED_ADDED], [self.MOVED_REMOVED]) == []
+        assert self._analyze_diff([self.MOVED_ADDED, self.MOVED_REMOVED]) == []
+
+    def test_github_token_builtin_exemption_unchanged(self):
+        """内置凭据豁免口径未动：真引用 `secrets.GITHUB_TOKEN` 仍只 WARN、不 BLOCK。"""
+        line = "+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        assert _truly_new_secret_lines([line], []) == [line]
+        blockers, warnings = analyze(
+            workflow_changes=[("M", self.WF)], wf_new_secrets={self.WF: [line]},
+            deleted_files=[], deploy_files=[], migration_changes=[], schema_changes=[],
+        )
+        assert blockers == []
+        assert warnings == [f"修改 workflow {self.WF} —— 建议人工复核"]
 
 
 class TestTrustedActor:

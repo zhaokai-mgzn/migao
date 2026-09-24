@@ -12,8 +12,6 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
-import com.migao.admin.entity.ProductionOptionFactor;
-import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouteTemplate;

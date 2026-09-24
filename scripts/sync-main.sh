@@ -65,7 +65,7 @@ for arg in "$@"; do
     --rebase)   MODE="rebase" ;;
     --no-commit) AUTO_COMMIT=0 ;;
     -h|--help)  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^sync-main.sh/,/^===/p' | head -25; exit 0 ;;
-    *) echo "❌ 未知参数: $arg（支持 --rebase / --no-commit）" >&2; exit 1 ;;
+    *) echo "❌ 未知参数: ${arg}（支持 --rebase / --no-commit）" >&2; exit 1 ;;
   esac
 done
 

@@ -30,6 +30,29 @@
 新增一条判据、或某条被翻成 required，本脚本下次运行自动跟上。
 若改成硬编码，必须同时加一条「清单里的每个名字都真实存在于工作流里」的断言 —— 本实现不选这条路。
 
+## job 级 `if:` + 读数来源（关联 #5269，判据 1~4）
+
+「会判红的 job 集合」不能只看**文件级** `on:` —— job 级 `if:` 还能再排除。实测（#5269）：
+`automerge.yml:detect-dangling-prs` 的 `if:` 逐字是
+`github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'`
+⇒ 它**从不在任何 PR 事件上创建**，按文件级 `on:` 却会被算进去 ⇒ 裸判据清单**多报 1 条**
+（实测 15 → 14、job 30 → 29）。四条判据（各带能**单独**变红的红证）：
+
+| # | 判据 | 红证（只改一处即翻转） |
+|---|---|---|
+| 1 | job 级 `if:` **可证明排除** `pull_request*` ⇒ 不计入 | 不解析 job 级 `if:` ⇒ `Detect dangling PRs` 重新出现在裸判据清单里 |
+| 2 | **负例（防修过头）**：**没有**限制性 `if:`（或 `if:` 在 PR 事件下为真）⇒ **必须仍然计入** | 放宽成「任何 `if:` 都不计」⇒ `E2E quality gate` / `Enable auto-merge` 从清单里消失 |
+| 3 | 不可判的 `if:` **保守计入**，并登记「已知不覆盖」 | 把不可判也免计 ⇒ 判据 2 的负例必红 |
+| 4 | 输出**自报读数来源**（绝对路径 + git ref），让陈旧工作区读数可见 | 去掉该行 ⇒ 必红（否则"读的不是最新 main"永远没人发现） |
+
+**保守边界（`KNOWN_UNCOVERED_IF`，不假装覆盖）**：只解析 `github.event_name ==/!= '<字面量>'`
+（字面量在左亦可）的 `!` / `&&` / `||` / 括号组合，按三值（True/False/未知）Kleene 逻辑求值；
+**只有每个 PR 触发事件下都确定取 False 才免计**，其余（`contains(...)`、`github.event.action`
+等其它原子、非字符串 `if:`、解析不了的表达式）一律计入 ⇒ 清单**可能仍多报**
+（宁多勿少：**少报**才是危险的）。读数来源同理 —— 本脚本读的是**工作区本地文件**（不是 git 对象），
+而本仓主工作区常年落后 main 几十个提交 ⇒ 同一命令在不同工作区给出**不同清单**且**无人察觉**
+（实测：陈旧 checkout 报 14、当前 main 报 15）⇒ 该行必须能一眼看出「你读的不是最新 main」。
+
 ## 写操作边界（不得越级）
 
 - **默认 dry-run**：`--check` 只读，与 `scripts/delete_orders.py` / `resolve_stale_bot_threads.py` 同风格。
@@ -72,12 +95,17 @@ workflow 接线登记为**保留类**：
 （裸判据红 ⇒ 1 / 全绿 ⇒ 0 / required 红 ⇒ 0 / 三态 ⇒ 3 / 元判据三态 / 不硬编码 /
 写操作边界：默认 disarm + `--no-disarm-auto` 逃生口 + dry-run 零写），
 `gh` 用**替身可执行文件**注入（CLI 边界即注入点，`MG_GH_BIN`）。
+
+`tests/unit_ci_workflows/test_merge_gate_job_if.py`（case_ids: MC-012）：#5269 的四条判据 +
+**四条注入式红证**（对真脚本源码做单点变异后重跑，各自只翻转对应那条）+ 负控
+（证明判据 4 落在**行为面** stdout，不被脚本文案里的「读数来源」字样喂绿）。
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from collections import namedtuple
@@ -109,6 +137,9 @@ CheckVerdict = namedtuple(
 )
 DiffVerdict = namedtuple(
     "DiffVerdict", "code reason bare pr_job_count undecidable")
+# `scan_pr_jobs` 的读数：`jobs` = PR 事件会创建的 job（{检查名: "文件名:job_id"}）、
+# `excluded` = 被 job 级 `if:` **可证明排除**的（判据 1）、`uncovered` = `if:` 不可判的（判据 3，**已计入**）。
+PrJobScan = namedtuple("PrJobScan", "jobs excluded uncovered")
 
 
 class Undecidable(Exception):
@@ -252,10 +283,145 @@ def decide_check(snapshot):
                    "裸判据红且 PR 处于可合并态 ⇒ 判红**不拦**合并（auto-merge 只看 required）")
 
 
-def job_names_on_pull_requests(workflows_dir):
-    """`.github/workflows/*.y*ml` → {job 显示名: "文件名:job_id"}，只收 **PR 事件会跑**的 job。
+# ── job 级 `if:` 的保守解析 + 读数来源（关联 #5269 判据 1~4）───────────────────
 
-    检查名 = job 的 `name:`（缺省回落 job id）。读不到目录 / 没有可解析的工作流 ⇒ `Undecidable`。
+# 「已知不覆盖」的显式登记（判据 3）：静态不可能解析任意 GitHub 表达式 ⇒ 只对**可证明排除**的免计。
+KNOWN_UNCOVERED_IF = (
+    "job 级 if: 只解析 `github.event_name ==/!= '<字面量>'`（字面量在左亦可）的 "
+    "`!`/`&&`/`||`/括号组合；其余原子（`contains(...)`、`github.event.action` 等）、"
+    "非字符串 if: 与解析不了的表达式一律**保守计入** ⇒ 本清单**可能仍多报**（少报才是危险的）"
+)
+
+# 分割符：括号 / `&&` / `||` / 一元 `!`（**不**切 `!=` —— 它属于原子文本，不是一元取反）
+_TOKEN_RE = re.compile(r"(\|\||&&|\(|\)|!(?!=))")
+# `github.event_name == '<字面量>'` / `!=`，以及字面量在左的等价写法；**其余一律不算原子**（未知）。
+_ATOM_RE = re.compile(
+    r"""^\s*github\.event_name\s*(?P<op_a>==|!=)\s*(?P<q_a>['"])(?P<val_a>.*?)(?P=q_a)\s*$"""
+    r"""|^\s*(?P<q_b>['"])(?P<val_b>.*?)(?P=q_b)\s*(?P<op_b>==|!=)\s*github\.event_name\s*$""",
+    re.DOTALL,
+)
+
+
+class _Unparsable(Exception):
+    """表达式落在解析器覆盖范围之外 ⇒ 上层**保守计入**（既不是错误，也不退 3）。"""
+
+
+def _kand(a, b):
+    """Kleene 三值 `&&`：False 吸收、未知传染。"""
+    return False if a is False or b is False else (None if a is None or b is None else True)
+
+
+def _kor(a, b):
+    """Kleene 三值 `||`：True 吸收、未知传染。"""
+    return True if a is True or b is True else (None if a is None or b is None else False)
+
+
+def _atom_value(text, event):
+    """`github.event_name` 比较原子 → True/False；**其它一切原子 → None（未知）**。"""
+    match = _ATOM_RE.match(text)
+    if not match:
+        return None
+    if match.group("val_a") is not None:
+        value, op = match.group("val_a"), match.group("op_a")
+    else:
+        value, op = match.group("val_b"), match.group("op_b")
+    equal = value == event
+    return equal if op == "==" else not equal
+
+
+def _tokenize(expr):
+    """表达式 → `[("atom", 文本) | ("op", 运算符)]`（空白与空片段丢弃）。"""
+    tokens = []
+    for index, chunk in enumerate(_TOKEN_RE.split(expr)):
+        if index % 2:
+            tokens.append(("op", chunk))
+        elif chunk.strip():
+            tokens.append(("atom", chunk))
+    return tokens
+
+
+def _parse_unary(tokens, event):
+    if tokens and tokens[0] == ("op", "!"):
+        tokens.pop(0)
+        value = _parse_unary(tokens, event)
+        return None if value is None else (not value)
+    if not tokens:
+        raise _Unparsable("表达式不完整")
+    kind, token = tokens.pop(0)
+    if kind == "atom":
+        return _atom_value(token, event)
+    if token != "(":
+        raise _Unparsable(f"未预期的运算符 {token!r}")
+    value = _parse_or(tokens, event)
+    if not tokens or tokens.pop(0) != ("op", ")"):
+        raise _Unparsable("括号不配对")
+    return value
+
+
+def _parse_and(tokens, event):
+    value = _parse_unary(tokens, event)
+    while tokens and tokens[0] == ("op", "&&"):
+        tokens.pop(0)
+        value = _kand(value, _parse_unary(tokens, event))
+    return value
+
+
+def _parse_or(tokens, event):
+    """`&&` 优先于 `||`（GitHub 表达式口径）。
+
+    ⚠️ **优先级不能省**：三值逻辑下 `(A || B) && C` ≠ `A || (B && C)` ——
+    `A=True(可判) / B=未知 / C=False(可判)` 时前者 False、后者 True；
+    照前者实现会把**实际会跑**的 job 判成「不在 PR 事件上创建」= **少报**（危险方向）。
+    """
+    value = _parse_and(tokens, event)
+    while tokens and tokens[0] == ("op", "||"):
+        tokens.pop(0)
+        value = _kor(value, _parse_and(tokens, event))
+    return value
+
+
+def _condition_value(expr, event):
+    """job 级 `if:` 在**该事件名**下求三值：True / False / None（未知 ⇒ 上层计入）。"""
+    tokens = _tokenize(expr)
+    value = _parse_or(tokens, event)
+    if tokens:                       # 没被解析完（例：函数调用的括号、悬空运算符）⇒ 覆盖范围之外
+        raise _Unparsable(f"表达式没被解析完（剩余 {tokens!r}）")
+    return value
+
+
+def job_pr_reachability(job, pr_triggers):
+    """job 级 `if:` 对 PR 事件的可达性 → `"runs"` / `"excluded"` / `"uncovered"`。
+
+    判据 1：每个 PR 触发事件下都**可证明**取 False ⇒ `"excluded"`（不在 PR 事件上创建）；
+    判据 2：**没有**限制性 `if:`（或 `if:` 在 PR 事件下为真）⇒ `"runs"`（**必须仍然计入**）；
+    判据 3：解析不了 / 覆盖范围之外 ⇒ `"uncovered"`（**保守计入**，登记见 `KNOWN_UNCOVERED_IF`）。
+    """
+    condition = job.get("if")
+    if condition is None:
+        return "runs"
+    if not isinstance(condition, str):
+        return "uncovered"
+    if not pr_triggers:
+        return "runs"
+    expr = condition.strip()
+    if expr.startswith("${{") and expr.endswith("}}"):
+        expr = expr[3:-2]
+    try:
+        values = [_condition_value(expr, event) for event in pr_triggers]
+    except _Unparsable:
+        return "uncovered"
+    if all(value is False for value in values):
+        return "excluded"
+    return "uncovered" if any(value is None for value in values) else "runs"
+
+
+def scan_pr_jobs(workflows_dir):
+    """`.github/workflows/*.y*ml` → `PrJobScan(jobs, excluded, uncovered)`。
+
+    `jobs` 只收 **PR 事件会创建**的 job：检查名 = job 的 `name:`（缺省回落 job id），
+    值 = `"文件名:job_id"`。判据 1/3 的两个读数随扫描一并返回（`excluded` = 被 job 级 `if:`
+    可证明排除的、`uncovered` = `if:` 不可判因而**已保守计入**的）。
+    读不到目录 / 没有可解析的工作流 ⇒ `Undecidable`。
     """
     if yaml is None:
         raise Undecidable("环境缺 PyYAML（pip install pyyaml）—— 无法解析工作流")
@@ -266,7 +432,7 @@ def job_names_on_pull_requests(workflows_dir):
     if not files:
         raise Undecidable(f"工作流目录里没有 .yml/.yaml：{root}")
 
-    jobs, parsed = {}, 0
+    jobs, excluded, uncovered, parsed = {}, [], [], 0
     for path in files:
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -285,16 +451,66 @@ def job_names_on_pull_requests(workflows_dir):
             triggers = set(triggers)
         else:
             triggers = set()
-        if not (triggers & set(PR_TRIGGERS)):
+        pr_triggers = triggers & set(PR_TRIGGERS)
+        if not pr_triggers:
             continue
         for job_id, job in (data.get("jobs") or {}).items():
             if not isinstance(job, dict):
                 continue
-            name = job.get("name") or job_id
-            jobs[str(name)] = f"{path.name}:{job_id}"
+            where = f"{path.name}:{job_id}"
+            reachability = job_pr_reachability(job, pr_triggers)
+            if reachability == "excluded":
+                excluded.append(where)
+                continue
+            if reachability == "uncovered":
+                uncovered.append(where)
+            jobs[str(job.get("name") or job_id)] = where
     if not parsed:
         raise Undecidable(f"工作流目录里没有可解析的 YAML：{root}")
-    return jobs
+    return PrJobScan(jobs, tuple(excluded), tuple(uncovered))
+
+
+def job_names_on_pull_requests(workflows_dir):
+    """（既有入口，签名与返回值不变）`{job 显示名: "文件名:job_id"}`，只收 PR 事件会跑的 job。"""
+    return scan_pr_jobs(workflows_dir).jobs
+
+
+def _git(workflows_dir, *args):
+    """`git -C <dir> …` 只读读数（判据 4 用）；读不到（非 git 检出 / 无 git）⇒ None。"""
+    try:
+        proc = subprocess.run(["git", "-C", str(workflows_dir), *args],
+                              capture_output=True, text=True)
+    except OSError:
+        return None
+    return (proc.stdout or "").strip() if proc.returncode == 0 else None
+
+
+def describe_reading_source(workflows_dir):
+    """判据 4：**自报读数来源**（绝对路径 + git ref），让「陈旧工作区读数」可见。
+
+    本脚本读的是**工作区本地文件**（不是 git 对象），而本仓主工作区常年落后 main 几十个提交
+    ⇒ 同一命令在不同工作区给出**不同清单**、且**无任何提示**（实测：陈旧 checkout 报 14、
+    当前 main 报 15）。该行必须让人一眼看出「读的不是最新 main」。
+    """
+    root = Path(workflows_dir).resolve()
+    head = _git(root, "rev-parse", "--short", "HEAD")
+    if not head:
+        return f"{root}（**非 git 检出 / 读不到 git** ⇒ 无法核对是否等于 origin/main 的版本）"
+    origin = _git(root, "rev-parse", "--short", "origin/main")
+    behind = _git(root, "rev-list", "--count", "HEAD..origin/main")
+    ahead = _git(root, "rev-list", "--count", "origin/main..HEAD")
+    if origin is None or behind is None or ahead is None:
+        note = "读不到 origin/main（无远端 / 未 fetch）⇒ **无法核对**是否等于 main 的版本"
+    elif behind != "0":
+        note = (f"⚠️ HEAD 落后 origin/main {behind} 个提交 ⇒ **本清单可能过期**"
+                "（复算：`git archive origin/main -- .github/workflows | tar -x -C <临时目录>` "
+                "再 `--workflows-dir <临时目录>/.github/workflows`）")
+    elif ahead != "0":
+        note = f"⚠️ HEAD 领先 origin/main {ahead} 个提交 ⇒ 读数含**未合并**改动"
+    else:
+        note = "与 origin/main 同步 ✅（读数即 main 的 workflows）"
+    ref = f"git HEAD {head}" + (f" · origin/main {origin}" if origin else "")
+    return f"{root}（{ref} · {note}）"
 
 
 def bare_jobs(jobs, required):
@@ -455,16 +671,24 @@ def render_check(verdict, pr, repo, apply_label=False, no_disarm_auto=False):
     return "\n".join(lines)
 
 
-def render_required_diff(verdict, jobs, required, branch, repo):
+def render_required_diff(verdict, jobs, required, branch, repo, source="", scan=None):
     tag = {EXIT_OK: "✅ 差集为空", EXIT_HIT: "🎯 存在裸判据",
            EXIT_UNDECIDABLE: "⚠️ 无法判定"}[verdict.code]
-    lines = [f"=== 关联 #4248 元判据 · required 集合 vs 会判红的 job 集合（{repo}@{branch}）===",
-             f"判定：{tag} —— {verdict.reason}"]
+    lines = [f"=== 关联 #4248 元判据 · required 集合 vs 会判红的 job 集合（{repo}@{branch}）==="]
+    if source:
+        lines.append(f"读数来源：{source}")
+    lines.append(f"判定：{tag} —— {verdict.reason}")
     if verdict.undecidable:
         lines.append(f"原因：{verdict.undecidable}")
         return "\n".join(lines)
     lines.append(f"证据：分支保护 required {len(required)} 条 · PR 事件会跑的 job {verdict.pr_job_count} 条"
                  f" · 差集 {len(verdict.bare)} 条")
+    if scan is not None:
+        lines.append(f"job 级 if: 排除 {len(scan.excluded)} 条（可证明不在 PR 事件上创建）"
+                     f" · 不可判 {len(scan.uncovered)} 条（**已保守计入**）")
+        for where in scan.excluded:
+            lines.append(f"  · 排除 {where}")
+    lines.append(f"已知不覆盖（保守计入）：{KNOWN_UNCOVERED_IF}")
     if verdict.bare:
         lines.append("裸判据（**会判红但不拦合并** —— 别再以为它们在拦）：")
         for name in verdict.bare:
@@ -484,14 +708,16 @@ def main(argv=None):
         description="关联 #4248：裸判据差集元判据（--required-diff）+ 报告型判据判红时的合并闸门"
                     "（--check，默认 dry-run）")
     parser.add_argument("--required-diff", action="store_true",
-                        help="元判据：打印 required 集合与「会判红的 job」的差集（只读）")
+                        help="元判据：打印 required 集合与「会判红的 job」的差集（只读；"
+                             "job 级 if: 可证明排除 pull_request* 的不计入，读数来源会一并打印）")
     parser.add_argument("--check", type=int, metavar="PR", default=None,
                         help="合并闸门：判定该 PR 是否有「红了也照合」的裸判据")
     parser.add_argument("--repo", default=None, help="OWNER/NAME（默认取 gh repo view）")
     parser.add_argument("--branch", default="main", help="读哪条分支的分支保护（默认 main）")
     parser.add_argument("--workflows-dir", default=str(Path(__file__).resolve().parents[1]
                                                       / ".github" / "workflows"),
-                        help="工作流目录（默认仓库 .github/workflows）")
+                        help="工作流目录（默认仓库 .github/workflows）。⚠️ 读的是**工作区本地文件**"
+                             "（不是 git 对象）⇒ 陈旧工作区会给过期清单，输出里的「读数来源」行即为核对它")
     parser.add_argument("--apply-label", action="store_true",
                         help=f"落闸：打 {BLOCKING_LABEL} + **默认同时** `gh pr merge --disable-auto`"
                              "（默认只读；关联 #4334）")
@@ -508,16 +734,20 @@ def main(argv=None):
         return EXIT_UNDECIDABLE
 
     if args.required_diff:
+        # 判据 4：先取读数来源（即使随后读不到分支保护也要打印它，否则"读的是哪份文件"无从追溯）
+        source = describe_reading_source(args.workflows_dir)
         try:
             repo = args.repo or gh_repo(gh_bin)
             required = fetch_required(repo, args.branch, gh_bin)
-            jobs = job_names_on_pull_requests(args.workflows_dir)
+            scan = scan_pr_jobs(args.workflows_dir)
         except Undecidable as exc:
             verdict = DiffVerdict(EXIT_UNDECIDABLE, "无法判定", [], 0, str(exc))
-            print(render_required_diff(verdict, {}, set(), args.branch, args.repo or "(未知)"))
+            print(render_required_diff(verdict, {}, set(), args.branch, args.repo or "(未知)",
+                                       source=source))
             return verdict.code
-        verdict = decide_required_diff(jobs, required)
-        print(render_required_diff(verdict, jobs, required, args.branch, repo))
+        verdict = decide_required_diff(scan.jobs, required)
+        print(render_required_diff(verdict, scan.jobs, required, args.branch, repo,
+                                   source=source, scan=scan))
         return verdict.code
 
     try:
