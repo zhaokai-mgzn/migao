@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.49.0
+version: 1.50.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -1197,6 +1197,12 @@ cron 也已删除）承担。
 | **native auto-merge「秒合」吞掉后续 commit ⇒ 交付物与 PR 声明脱节**（v1.29 新增，2026-09-15 实证，同款第 2 次） | **新增规则**：① **auto-merge 生效后不得再往该分支推新 commit** —— 要推就**先关掉 auto-merge**（`gh api graphql` 的 `disablePullRequestAutoMerge` 或关 PR 上的 auto-merge），推完**确认 PR 未被合并**（`gh pr view <N> --json state,mergedAt`；`MERGED` ⇒ 你的新 commit **不在里面**）；② **不要赌"CI 还没跑完"** —— auto-merge 只等**必需**检查，且与你的本地时序无关（本 PR 实操：先把 auto-merge 关掉再补 commit）。**实证**：PR #3842 被秒级合并 ⇒ 其 **3 个 commit 搁浅**，main 上 `assertion_taxonomy.py` 只有 **6 条规则**、L0 守卫 **40 条**（PR 声称 9 条规则；`main` 上**没有** `CASE-TRUST-VOLATILE-LOCATOR` / `NO-PRECONDITION-ASSERTION` / `STALE-LINE-REF`）⇒ 靠**跟随 PR #3847** 补齐；更早同款：**#3819** 搁浅 commit 靠 **#3826** 收口（同款第 2 次，见该 PR body 原文「只收口 #3819 因 native auto-merge 秒合而**搁浅**的第二个 commit」）。**判据与核法见下方「三件事」** |
 | **在无 PyYAML 的 job 里硬 `import yaml`**（v1.48.0 新增，issue #5170；实测来自 #5151 / PR #5165） | 渲染腿所在的 `case-truth-check`（`Case Contract (truths_ref)`）**没有 `pip install`**，runner 镜像里**也没有系统 PyYAML**（镜像清单 `toolset-2404.json` 无 pip 段；yamllint/ansible 走 pipx 隔离 venv；apt 无 `python3-yaml`）⇒ `.github/` 下要在这种 job 里跑的脚本，**硬 `import yaml` = 每个 PR 常红**；而"显式装依赖"要改 workflow，又受 token **无 `workflow` scope** 限制（§7.3）⇒ 只剩**零依赖实现**一条路。**推论（有用）**：这类脚本的「严格校验」必须准备一条**零依赖退路**，且退路与主路**判决一致**要有判据钉住（#5151 已落 **9/9 语料一致性守卫**） |
 | **给某个 job 新增一次全量解析 ⇒ 撞该 job 自身超时，却想靠调 `timeout-minutes` 过关**（v1.48.0 新增，issue #5170；实测来自 #5151 / PR #5165） | 给 `load_case_dicts()` 新增一次严格解析 ⇒ `.github/cases`（**25 文件 / 1.05MB**）**0.063s → 0.726s（+0.66s/次）**；`ci workflow helper unit tests`（`timeout-minutes: 8`）实测 **253s（#5163）→ 357s → 522s** ⇒ **撞 8 分钟 job 超时被 `CANCELLED`**。⚠️ 该形态在 `gh pr checks` 里**显示成 "fail"**，但 `conclusion=cancelled` —— 与真正判红**长得一样**（本会话已因此误判过一次）。**修法（已验证，非权宜）**：① 严格解析换 C 加速 **`CSafeLoader`**（同一套安全构造规则；25 文件逐值深比较相同、`problem_mark` 行列相同；**快 ~11×**：0.626s → 0.055s；两条腿共用 `.github/cases_yaml.py` 的同一个 `_safe_load()`）；② 判定按**文件内容 sha256 缓存**（**不缓存解析结果**，避免共享可变对象；键是内容 ⇒ 不会过期）⇒ 额外开销 **0.66s → 0.01s**，该 job 由取消变 **223s success**（比基线 253s 还快）。🔴 **反模式**：**不要**靠调 `timeout-minutes` 过关（治症状；且属 workflow 改动 —— token 无 `workflow` scope） |
+| **PR 与 main 冲突时，GitHub 静默不创建 `pull_request` run**（v1.50.0 新增，本会话实测） | **现象**：PR 开了之后**只有 `pull_request_target` 的 workflow 起过**，所有 `on: pull_request` 的**一个都没起** —— 而同一时刻其它分支的 run 正常 ⇒ **没有任何东西变红，也没有任何东西在跑**。**真因**：`mergeable=CONFLICTING` / `mergeStateStatus=DIRTY` ⇒ GitHub **不为该 PR 创建 `on: pull_request` 的 run**（`pull_request_target` 不受影响）。**实测三种重投递均无效**：推空提交（`synchronize`）、close+reopen（`reopened`）—— **唯一解是先解冲突**。**判据**：**「PR 开了但 CI 一直不出现」先查 `gh pr view <N> --json mergeable,mergeStateStatus`**。⚠️ 与「CI 绿 ≠ 交付」**方向相反但同族**：不是"绿了不算数"，是"**根本没跑，而看起来像在排队**" |
+| **兜底规则会「教人建一个永不运行的测试」**（v1.50.0 新增，本会话实测；**同坑已独立踩中 ≥3 次**） | `diff_to_test` 的兜底（`.github/tech-stack.yml` 的 `app/(.+)\.py → tests/test_{1}.py`）里 `(.+)` **会捕获子目录** ⇒ 对 `app/suggestions/x.py` 产出 `tests/test_suggestions/x.py`（**子目录 + 无 `test_` 前缀**）⇒ 不匹配 `pytest.ini` 的 `python_files` ⇒ **永不收集**。🔴 **最危险的变体**：门禁判 `BLOCKED` 并**指示你去建那条路径** —— **照着建就得到「门禁绿 + 测试永不运行」，而建的人以为自己在修问题**。**规避**：**新增目录先查 `pytest.ini` 的 `python_files`**，并像 `production/` / `clarification/` / `vision/` 那样**显式登记可收集模板**。**边界（未实装）**：兜底规则本身**仍会**对未登记目录产出不可收集路径（#5353 在册） |
+| **同一真值两处投影 / 推导**（v1.50.0 新增，本会话实测两处） | ① `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 注释已明写：`lib/craft-calc-request.ts` **不得**再加第二份派生逻辑（**同一真值两处推导 = 页面显示 ≠ 落库**）；② 图片识别内核 `backend/ai-agent-service/app/vision/recognizer.py` 与对话路径 `backend/ai-agent-service/app/api/chat.py` 必须 **import 同一函数对象**（由 `is` 身份断言钉住），不是两份同源代码。**判据**：**投影同一份事实的两处，必须共享实现或由机械判据钉住等价** |
+| **局部绿 ≠ 整体绿**（v1.50.0 新增，本会话实测） | 新增 Mapper 漏登记到**全上下文测试**的 `@MockBean` 名单 ⇒ **43 条判据全 error**，而**单跑新写的那个测试文件全绿**。**规避**：**新增 Mapper / 依赖注入项 ⇒ 至少跑一次全上下文测试**，不能只跑新测试文件 |
+| **契约 / issue 里的端点、字段名、权限码凭语义推测**（v1.50.0 新增，本会话集成方实证） | 集成方在冻结契约里写「改价 `product:update`」—— **全仓 grep 零命中**（该权限码不存在，用了会在**所有角色上永久 403**）。交付方 grep 后发现，按契约**意图**（「与逐条写同码」）落 `product:create`，**并用测试钉死「两者逐字相等」**（把意图变成机械判据）。**规避**：契约里的**每一个技术字面量**（端点路径 / 字段名 / 权限码 / 枚举值）**必须逐条从代码取证**（§18.1 读源纪律），**不许凭语义推测** |
+| **多 PR 并发同向下降同一台账 ⇒「净消减」失真**（v1.50.0 新增，本会话实测） | 某包修掉 **6 处**真实裸 `path:NNN` 引用使台账 46→44，但同一窗口 main 自己也降到 44 ⇒ 本地读数「**净消减 0**」。**结论不变**（`新增漂移 0` / `归零未删 0` 始终干净），但**口径应改判为「绝对台账数 + 已修条目清单」**，而非相对差值 |
 
 > **⚠️ 「CI 绿」≠「auto-merge 就绪」≠「交付物在 main 上」—— 这是三件事**（v1.29 新增）：
 > ① **CI 绿**只说明**语义检查**过了（逻辑、测试、门禁）；② **auto-merge 成功**只说明**合并动作**发生了
@@ -2408,3 +2414,16 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   **峰值在陆续 push 的那一波**（当时 6 包中 3 包各有 1~3 个**未推送**提交、open PR 只有 1 个）。
   **未实装 / 边界（照实登记，§19.1）**：本单**只有纪律 + 指针，没有机械锁** ——
   **没有任何东西会拦住"一次派 8 个包"**；上限靠主会话自觉。
+
+- v1.50.0（2026-09-24 **本会话 6 条实测教训入册 §17.3**，本次，issue #5346）：
+  只在 §17.3 反模式表**加 6 行**，**不改任何门禁的通过条件、不新增豁免**。逐条都带现场证据 + 判据 / 规避：
+  ① **PR 与 main 冲突 ⇒ GitHub 静默不创建 `pull_request` run**（推空提交 / close+reopen 均无效，唯一解是先解冲突；
+  判据 = 先查 `mergeable`）—— 与「CI 绿 ≠ 交付」**方向相反但同族**；
+  ② **兜底规则会「教人建一个永不运行的测试」**（`(.+)` 捕获子目录 ⇒ 产出无 `test_` 前缀的路径 ⇒ 永不收集；
+  **最危险的变体是门禁主动指示你去建它**）；
+  ③ **同一真值两处投影 / 推导**（算料派生 + 识别内核两处实证，判据 = 共享实现或机械钉等价）；
+  ④ **局部绿 ≠ 整体绿**（`@MockBean` 漏登记 ⇒ 43 条全 error 而单跑新测试全绿）；
+  ⑤ **契约里的技术字面量凭语义推测**（集成方实证：`product:update` 全仓零命中）；
+  ⑥ **多 PR 并发同向下降同一台账 ⇒「净消减」失真**（口径改判为绝对台账数）。
+  **未实装 / 边界（照实登记，§19.1）**：本单**只有纪律 + 指针，没有任何机械锁**；
+  ① 的规避靠人记得先查 `mergeable`，② 的兜底规则**本身仍会**对未登记目录产出不可收集路径（**#5353 在册**）。
