@@ -656,6 +656,23 @@ class DailyBriefingServiceTest {
             return Product.builder().id("P-1").tenantId(1L).name("雪尼尔-米白").status("on_sale").build();
         }
 
+        private List<Order> orders(int n) {
+            return java.util.stream.IntStream.rangeClosed(1, n)
+                    .mapToObj(i -> order("SO-" + i)).toList();
+        }
+
+        private List<ProductSku> skus(int n) {
+            return java.util.stream.IntStream.rangeClosed(1, n)
+                    .mapToObj(i -> ProductSku.builder().id((long) i).tenantId(1L).productId("P-1")
+                            .stock(new BigDecimal(i)).build())
+                    .toList();
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> metaOf(Map<String, Object> snapshot, String array) {
+            return (Map<String, Object>) ((Map<String, Object>) snapshot.get("row_meta")).get(array);
+        }
+
         /** 标准行级 stub：一张单商品订单的退货 + 一张多商品订单的退货；SKU 库存 20（在售商品下） */
         private void stubRows() {
             when(orderMapper.selectList(any())).thenReturn(List.of(order("SO-1")));
@@ -707,6 +724,9 @@ class DailyBriefingServiceTest {
             assertThat((List<?>) snapshot.get("returns")).hasSize(2);
             assertThat(snapshot).doesNotContainKey("price_changes");
             assertThat(snapshot.get("row_fields")).isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FIELDS);
+            assertThat((Map<String, Object>) snapshot.get("row_meta"))
+                    .as("截断必须显式：三个行数组都要有 row_meta")
+                    .containsOnlyKeys("orders", "skus", "returns");
         }
 
         @Test
@@ -782,18 +802,54 @@ class DailyBriefingServiceTest {
         }
 
         @Test
-        @DisplayName("有界：四条行数组查询都带行数上限（不得全表拖）")
+        @DisplayName("有界：行数组查询一律带行数上限（取数上限 = 上限 + 1，那多的一行用来判定截断）")
         void rowQueriesAreBounded() {
             stubRows();
 
             service.aggregateSnapshot(1L);
 
-            for (Object mapper : List.of(orderMapper, orderLogisticsMapper, productSkuMapper,
-                    productMapper, afterSalesTicketMapper)) {
+            for (Object mapper : List.of(orderMapper, productSkuMapper, afterSalesTicketMapper)) {
                 assertThat(capturedWrapper(mapper).getSqlSegment())
                         .as("行数组查询必须有界")
+                        .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
+            }
+            for (Object mapper : List.of(orderLogisticsMapper, productMapper)) {
+                assertThat(capturedWrapper(mapper).getSqlSegment())
+                        .as("附带查询也有界（入参 id 有界 + 硬上限）")
                         .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_LIMIT);
             }
+        }
+
+        @Test
+        @DisplayName("截断必须显式：取到上限+1 行 ⇒ row_meta.truncated=true，且只留上限行数")
+        void truncationIsExplicit() {
+            stubRows();
+            when(orderMapper.selectList(any())).thenReturn(orders(DailyBriefingService.SNAPSHOT_ROW_LIMIT + 1));
+            when(productSkuMapper.selectList(any())).thenReturn(skus(DailyBriefingService.SNAPSHOT_ROW_LIMIT + 1));
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat(metaOf(snapshot, "orders"))
+                    .containsEntry("truncated", true)
+                    .containsEntry("limit", DailyBriefingService.SNAPSHOT_ROW_LIMIT)
+                    .containsEntry("count", DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            assertThat(metaOf(snapshot, "skus")).containsEntry("truncated", true);
+            assertThat((List<?>) snapshot.get("orders")).hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            assertThat((List<?>) snapshot.get("skus")).hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            // 逐数组：没越界的退货数组照旧 false（不许整体拉黑）
+            assertThat(metaOf(snapshot, "returns")).containsEntry("truncated", false);
+        }
+
+        @Test
+        @DisplayName("未越界 ⇒ 三个数组都报 truncated=false，count = 实际行数")
+        void noTruncationWhenWithinLimit() {
+            stubRows();
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat(metaOf(snapshot, "orders")).containsEntry("truncated", false).containsEntry("count", 1);
+            assertThat(metaOf(snapshot, "skus")).containsEntry("truncated", false).containsEntry("count", 1);
+            assertThat(metaOf(snapshot, "returns")).containsEntry("truncated", false).containsEntry("count", 2);
         }
 
         @Test

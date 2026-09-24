@@ -21,6 +21,7 @@
   "biz_date": "2026-09-22",   # 扫描基准日（「当天」）；缺省时须由调用方传 as_of
   "config":   {...},          # 选填：阈值覆盖（租户级配置的落点），键同 ProactiveConfig
   "row_fields": {...},        # 装配层**自描述**：本次真的给出了哪些行数组、每个数组有哪些字段
+  "row_meta": {...},          # 每个行数组的元信息：{"limit": 500, "count": 500, "truncated": true}
   "orders":   [{"order_no", "status", "customer_id", "created_at", "shipped_at",
                 "sale_amount", "cost_amount"}],              # 低于成本价 / 超 N 天未发货
   "skus":     [{"sku_id", "product_id", "product_name", "stock"}],  # 库存告急（stock ≤ 阈值）
@@ -33,10 +34,14 @@
 行数组缺省 = 该规则无输入 ⇒ **不命中**。这与「命中 0 条」在输出上等价，但语义不同：
 **「没数据」不等于「没问题」** —— 调用方不得把空命中读成「今天一切正常」。
 
-⇒ 那个语义差别由 `proactive_status()` 落成**数据层可分**（逐规则 `wired` / `not_wired` + 原因）：
-判据 = 「规则声明的输入」（`RuleSpec.requires`）×「装配层声明的产出」（`row_fields`），
-**两侧各只有一份声明**，没有第二份口径；老快照没有 `row_fields` 时按实际行的字段并集兜底
+⇒ 那个语义差别由 `proactive_status()` 落成**数据层可分**（逐规则 `wired` / `not_wired` / `incomplete` + 原因）：
+判据 = 「规则声明的输入」（`RuleSpec.requires` / `dimensions`）×「装配层声明的产出」（`row_fields` / `row_meta`），
+**两侧各只有一份声明**，没有第二份口径；老快照没有自描述时按实际行的字段并集兜底
 （滚动升级期不至于把已接线的规则读成未接线）。
+
+🔴 **加有界（热路径必须）会新开一个静默面**：截断的行「看不见」，规则照旧不命中 ⇒ 又被读成「没问题」。
+故装配层的 `row_meta.truncated` **必须显式**，且**只有** `wired`（= 已接入**且本次完整**）才允许把空命中
+读成「这方面没问题」；`not_wired` 与 `incomplete` 都带 `reason`。
 
 数据来源：admin-api 聚合层（`DailyBriefingService.aggregateSnapshot`）落库的 `source_snapshot`
 —— 与经营日报**同源**，故两个入口口径一致（设计文档 §三 族 3 末「同一内核、两种消费形态」）。
@@ -60,6 +65,7 @@ __all__ = [
     "UNSHIPPED_STATUSES",
     "WIRED",
     "NOT_WIRED",
+    "INCOMPLETE",
     "ProactiveConfig",
     "DEFAULT_CONFIG",
     "RuleSpec",
@@ -67,6 +73,7 @@ __all__ = [
     "proactive_status",
     "scan_snapshot",
     "daily_findings",
+    "daily_findings_total",
 ]
 
 #: 判据里逐条例出的观测值上限（超出以 `observed_total` 给全量计数）——防判据本身膨胀
@@ -213,6 +220,9 @@ class RuleSpec:
     #: 规则的**输入契约**：`(快照行数组键, 必需行字段)`。接线状态的判据源就是它 ——
     #: 规则自己声明「读什么」，装配层声明「给什么」（`row_fields`），两边一比即知接没接上。
     requires: Tuple[str, Tuple[str, ...]]
+    #: 用于**分组**的维度字段（缺值的行走不到该维度上）：不登记的话，「客户 × 商品」这种双维度规则
+    #: 会被读成两个维度都接上了 —— 实际上缺商品的行只参与客户维度（本次不完整，见 `INCOMPLETE`）。
+    dimensions: Tuple[str, ...] = ()
 
 
 # ── 五条首批规则 ────────────────────────────────────────────────────────────
@@ -422,6 +432,9 @@ RULES: Tuple[RuleSpec, ...] = (
         ),
         detect=_detect_repeat_returns,
         requires=("returns", ("return_no", "customer_id", "product_id", "returned_at")),
+        # 退货事实按「同一客户」或「同一商品」两个维度分组：缺 product_id 的行（多商品订单的退货）
+        # 只参与客户维度 ⇒ 必须显式登记为「本次不完整」，不许读成商品维度也接上了。
+        dimensions=("customer_id", "product_id"),
     ),
     RuleSpec(
         rule_id="price_change_over",
@@ -443,10 +456,14 @@ RULES: Tuple[RuleSpec, ...] = (
 # ── 装配与扫描 ──────────────────────────────────────────────────────────────
 
 
-#: 接线状态的取值（逐规则）：`wired` = 该规则的输入已接入本次快照；`not_wired` = 该能力**尚未接入**
-#: （⇒ 空命中**不代表**这方面没问题）；已接线但当天无命中仍是 `wired` —— 两类在数据层可分。
+#: 接线状态的取值（逐规则）：
+#: · `wired` = 输入已接入**且本次完整** ⇒ 空命中才等于「这方面没问题」；
+#: · `not_wired` = 该能力**尚未接入**（结构性缺数组/字段）；
+#: · `incomplete` = 接上了但**本次不完整**（行数被上限截断 / 分组维度在部分行上缺值）
+#:   ⇒ 空命中仍**不可**读成「没问题」（「截断必须显式」—— 有界不许变成静默少报）。
 WIRED = "wired"
 NOT_WIRED = "not_wired"
+INCOMPLETE = "incomplete"
 
 
 def _declared_fields(snapshot: Any, key: str) -> Optional[set]:
@@ -466,36 +483,73 @@ def _declared_fields(snapshot: Any, key: str) -> Optional[set]:
     return {str(name) for row in rows for name in row} if rows else None
 
 
+def _row_meta(snapshot: Any, key: str) -> Dict[str, Any]:
+    """装配层对该行数组的**元信息**（`row_meta`）：行数上限 / 实际行数 / 是否被截断。
+
+    缺省（老快照没有 `row_meta`）按「未截断」处理 —— 那是**未知**，不是「已确认完整」；
+    自描述的旧版字段（`row_fields`）同样是尽力而为，故两者都只用于**发现**问题，不用于宣称完整。
+    """
+    if not isinstance(snapshot, dict):
+        return {}
+    meta = snapshot.get("row_meta")
+    entry = meta.get(key) if isinstance(meta, dict) else None
+    return entry if isinstance(entry, dict) else {}
+
+
 def proactive_status(
     snapshot: Any, rules: Sequence[RuleSpec] = RULES
 ) -> Dict[str, Dict[str, Any]]:
-    """**逐规则**接线状态 + 未接线原因（issue #5358）—— 治「两种空在输出上等价」（#5348）。
+    """**逐规则**接线状态 + 未接线/不完整原因（issue #5358）—— 治「两种空在输出上等价」（#5348）。
 
     为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 3 条能接、2 条结构上
     接不通），整体布尔到了调用方还是分不出「哪一条没接线」——那就又变回「空命中 = 今天没问题」。
 
-    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing"}}`：
-    `status` ∈ {`wired`, `not_wired`}；`not_wired` 必带 `reason` 与 `missing`（缺哪个数组/字段），
-    `wired` 的 `reason` 恒为 `None`。纯函数、只读：同一 `(snapshot, rules)` ⇒ 同一结果，
-    与命中集合互不影响（接线状态不改判据、不改命中）。
+    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps"}}`：
+    `status` ∈ {`wired`（本次完整可用）, `not_wired`（未接入）, `incomplete`（本次不完整）}；
+    不变式：**`reason is None` ⟺ `status == wired`** —— 调用方只要看这一条，就知道空命中能不能
+    读成「没问题」。`missing` = 缺的数组/字段；`gaps` = 不完整的具体原因（截断 / 维度缺值）。
+
+    纯函数、只读：同一 `(snapshot, rules)` ⇒ 同一结果，与命中集合互不影响
+    （接线状态不改判据、不改命中）。
     """
     status: Dict[str, Dict[str, Any]] = {}
     for spec in rules:
         key, needed = spec.requires
         available = _declared_fields(snapshot, key)
+        gaps: List[str] = []
         if available is None:
             value, missing = NOT_WIRED, [key]
             reason = f"快照未提供 {key} 行数组（装配层未接线）"
         else:
             missing = [name for name in needed if name not in available]
-            value = NOT_WIRED if missing else WIRED
-            reason = f"快照 {key} 行缺字段 {'、'.join(missing)}（数据层无此来源）" if missing else None
+            if missing:
+                value = NOT_WIRED
+                reason = f"快照 {key} 行缺字段 {'、'.join(missing)}（数据层无此来源）"
+            else:
+                # 接上了也可能**本次不完整**：行数被上限截断、或分组维度在部分行上缺值。
+                # 🔴 不显式登记的话，「有界」（热路径必须）就变成了新的静默少报面。
+                meta = _row_meta(snapshot, key)
+                if meta.get("truncated"):
+                    gaps.append(
+                        f"{key} 数组已被行数上限截断（上限 {meta.get('limit')} 行，"
+                        f"本次给出 {meta.get('count')} 行）⇒ 结论不完整"
+                    )
+                rows = _rows(snapshot, key)
+                for name in spec.dimensions:
+                    blank = sum(1 for row in rows if row.get(name) in (None, ""))
+                    if blank:
+                        gaps.append(
+                            f"{key} 行有 {blank} 行缺 {name}（那些行只参与其它维度的判定）"
+                        )
+                value = INCOMPLETE if gaps else WIRED
+                reason = "；".join(gaps) if gaps else None
         status[spec.rule_id] = {
             "rule_id": spec.rule_id,
             "rule_name": spec.rule_name,
             "status": value,
             "reason": reason,
             "missing": missing,
+            "gaps": gaps,
         }
     return status
 
@@ -574,13 +628,40 @@ def daily_findings(
     """**日报视图**：只保留当天成立的异常，并按紧急度截断到 `max_findings`。
 
     与 `scan_snapshot` 同源同判据，唯一差别是「窄」：历史异常在全量视图里在、在这里必不在。
+    ⚠️ 这个截断是**展示口径**（「日报要窄」），不是「今天只有这么多」—— 真实条数见
+    `daily_findings_total()`（同一份当天过滤实现，不另写一份）。
     """
+    return _today_findings(snapshot, config, as_of, rules)[
+        : _resolve_config(snapshot, config).max_findings
+    ]
+
+
+def daily_findings_total(
+    snapshot: Any,
+    config: Optional[ProactiveConfig] = None,
+    as_of: Any = None,
+    rules: Sequence[RuleSpec] = RULES,
+) -> int:
+    """日报口径下**当天**成立的异常**真实条数**（未按 `max_findings` 截断）。
+
+    「日报要窄」不许变成「静默少报」：条数被上限截断时，调用方必须能说出真实条数
+    （工具消息据此点出「日报只列前 N 项，当天共 M 项」）。
+    """
+    return len(_today_findings(snapshot, config, as_of, rules))
+
+
+def _today_findings(
+    snapshot: Any,
+    config: Optional[ProactiveConfig],
+    as_of: Any,
+    rules: Sequence[RuleSpec],
+) -> List[Dict[str, Any]]:
+    """当天成立的异常（**唯一实现**：`daily_findings` 与 `daily_findings_total` 共用，不许各写一份）。"""
     day = _resolve_as_of(snapshot, as_of)
     if day is None:
         return []
     today = day.isoformat()
-    findings = [
+    return [
         f for f in scan_snapshot(snapshot, config=config, as_of=day, rules=rules)
         if f["detected_on"] == today
     ]
-    return findings[: _resolve_config(snapshot, config).max_findings]

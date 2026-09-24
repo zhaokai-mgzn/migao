@@ -89,6 +89,16 @@ public class DailyBriefingService {
      */
     static final int SNAPSHOT_ROW_LIMIT = 500;
 
+    /**
+     * 行数组的**取数**上限 = {@link #SNAPSHOT_ROW_LIMIT} + 1：多取一行只为**判定是否被截断**
+     * （多出来的那行不进快照）。
+     *
+     * <p>🔴 为什么要判定：有界是热路径必须的，但**静默截断会新开一个少报面** —— 看不见的行不会命中 ⇒
+     * 「没发现」被读成「没问题」，正是本单要治的形态（#5348）。截断事实经 `row_meta` 显式交给引擎，
+     * 由引擎落成规则的 `incomplete` 状态（空命中不得读成没问题）。</p>
+     */
+    static final int SNAPSHOT_ROW_FETCH_LIMIT = SNAPSHOT_ROW_LIMIT + 1;
+
     /** 退货行窗口（天）：覆盖连续退货规则的观察窗口（默认 7 天）并留足余量。 */
     static final int SNAPSHOT_RETURN_WINDOW_DAYS = 90;
 
@@ -121,6 +131,27 @@ public class DailyBriefingService {
         fields.put("skus", List.of("sku_id", "product_id", "product_name", "stock"));
         fields.put("returns", List.of("return_no", "customer_id", "product_id", "returned_at", "amount"));
         return fields;
+    }
+
+    /** 一批快照行 + 它**是否被行数上限截断**（截断必须显式：见 {@link #SNAPSHOT_ROW_FETCH_LIMIT}）。 */
+    record RowBatch(List<Map<String, Object>> rows, boolean truncated) {
+    }
+
+    /** 行数组的元信息（`row_meta`）：行数上限 / 实际行数 / 是否被截断 —— 引擎据此把「本次不完整」说出来。 */
+    static Map<String, Object> rowMeta(RowBatch orders, RowBatch skus, RowBatch returns) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("orders", rowMetaEntry(orders));
+        meta.put("skus", rowMetaEntry(skus));
+        meta.put("returns", rowMetaEntry(returns));
+        return meta;
+    }
+
+    private static Map<String, Object> rowMetaEntry(RowBatch batch) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("limit", SNAPSHOT_ROW_LIMIT);
+        entry.put("count", batch.rows().size());
+        entry.put("truncated", batch.truncated());
+        return entry;
     }
 
     // ==================== 企业开关（红线 3）====================
@@ -404,10 +435,15 @@ public class DailyBriefingService {
         // 行级数组（族 3 跨域视图内核，issue #5358）：有界 + 租户隔离（显式带 tenantId，
         // 叠加 TenantLineInnerInterceptor 的 tenant_id 注入 —— 与既有工单查询同口径）。
         // 🔴 `price_changes` **不装配**（全仓无改价流水表）⇒ 该数组不存在，见 SNAPSHOT_ROW_FIELDS。
+        RowBatch orders = assembleOrderRows(tenantId);
+        RowBatch skus = assembleSkuRows(tenantId);
+        RowBatch returns = assembleReturnRows(tenantId, todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS));
         snapshot.put("row_fields", SNAPSHOT_ROW_FIELDS);
-        snapshot.put("orders", assembleOrderRows(tenantId));
-        snapshot.put("skus", assembleSkuRows(tenantId));
-        snapshot.put("returns", assembleReturnRows(tenantId, todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS)));
+        // 截断必须显式（`row_meta`）：有界不许变成静默少报 —— 看不见的行不命中，会被读成「没问题」。
+        snapshot.put("row_meta", rowMeta(orders, skus, returns));
+        snapshot.put("orders", orders.rows());
+        snapshot.put("skus", skus.rows());
+        snapshot.put("returns", returns.rows());
         return snapshot;
     }
 
@@ -418,21 +454,26 @@ public class DailyBriefingService {
      * <p>`shipped_at` 取该订单物流记录里最晚的发货时刻：引擎把它当「已发货」的第二判据，
      * 状态漂移（状态还是待发货、物流其实已发出）时不至于误报。</p>
      */
-    List<Map<String, Object>> assembleOrderRows(Long tenantId) {
+    RowBatch assembleOrderRows(Long tenantId) {
         List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getTenantId, tenantId)
                 .in(Order::getStatus, UNSHIPPED_STATUSES)
                 .orderByAsc(Order::getCreatedAt)
-                .last("LIMIT " + SNAPSHOT_ROW_LIMIT));
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        // 多取的那一行只用来判定截断（见 SNAPSHOT_ROW_FETCH_LIMIT），不进快照
+        boolean truncated = orders.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            orders = orders.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
         if (orders.isEmpty()) {
-            return new ArrayList<>();
+            return new RowBatch(new ArrayList<>(), truncated);
         }
         Map<String, OffsetDateTime> shippedAt = shippedAtByOrder(tenantId, orders);
         List<Map<String, Object>> rows = new ArrayList<>(orders.size());
         for (Order order : orders) {
             rows.add(orderRow(order, shippedAt.get(order.getId())));
         }
-        return rows;
+        return new RowBatch(rows, truncated);
     }
 
     /**
@@ -493,14 +534,18 @@ public class DailyBriefingService {
      * 快照若按默认 100 截断，租户把阈值调高后就会**静默漏报** —— 那正是本单要治的
      * 「没数据被读成没问题」；阈值过滤留给引擎，装配层只负责把行按有界方式给全。</p>
      */
-    List<Map<String, Object>> assembleSkuRows(Long tenantId) {
+    RowBatch assembleSkuRows(Long tenantId) {
         List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
                 .eq(ProductSku::getTenantId, tenantId)
                 .ge(ProductSku::getStock, 0)
                 .orderByAsc(ProductSku::getStock)
-                .last("LIMIT " + SNAPSHOT_ROW_LIMIT));
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = skus.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            skus = skus.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
         if (skus.isEmpty()) {
-            return new ArrayList<>();
+            return new RowBatch(new ArrayList<>(), truncated);
         }
         Map<String, String> names = onSaleProductNames(tenantId, skus);
         List<Map<String, Object>> rows = new ArrayList<>(skus.size());
@@ -511,7 +556,7 @@ public class DailyBriefingService {
             }
             rows.add(skuRow(sku, productName));
         }
-        return rows;
+        return new RowBatch(rows, truncated);
     }
 
     /** SKU 行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
@@ -552,23 +597,27 @@ public class DailyBriefingService {
      * 多商品订单给 `null` ⇒ 那些行仍参与「同一客户」维度的连续退货判定，商品维度不可用
      * （如实登记，不假装全覆盖）。</p>
      */
-    List<Map<String, Object>> assembleReturnRows(Long tenantId, OffsetDateTime windowStart) {
+    RowBatch assembleReturnRows(Long tenantId, OffsetDateTime windowStart) {
         List<AfterSalesTicket> tickets = afterSalesTicketMapper.selectList(
                 new LambdaQueryWrapper<AfterSalesTicket>()
                         .eq(AfterSalesTicket::getTenantId, tenantId)
                         .eq(AfterSalesTicket::getTicketType, RETURN_TICKET_TYPE)
                         .ge(AfterSalesTicket::getCreatedAt, windowStart)
                         .orderByDesc(AfterSalesTicket::getCreatedAt)
-                        .last("LIMIT " + SNAPSHOT_ROW_LIMIT));
+                        .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = tickets.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            tickets = tickets.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
         if (tickets.isEmpty()) {
-            return new ArrayList<>();
+            return new RowBatch(new ArrayList<>(), truncated);
         }
         Map<String, String> singleProduct = singleProductByOrder(tenantId, tickets);
         List<Map<String, Object>> rows = new ArrayList<>(tickets.size());
         for (AfterSalesTicket ticket : tickets) {
             rows.add(returnRow(ticket, singleProduct.get(ticket.getOrderId())));
         }
-        return rows;
+        return new RowBatch(rows, truncated);
     }
 
     /** 退货行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */

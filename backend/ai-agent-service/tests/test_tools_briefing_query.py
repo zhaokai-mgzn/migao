@@ -225,6 +225,35 @@ def _assert_honest_about_unwired(message, names=UNWIRED_NAMES):
     return True
 
 
+#: 行数组被上限**截断**的快照（`row_truncated` 显式登记）：本次检查过，但**不完整** ——
+#: 空命中同样不得被读成「没问题」。
+TRUNCATED_SNAPSHOT = dict(UNWIRED_SNAPSHOT, row_meta={
+    "orders": {"limit": 500, "count": 500, "truncated": True},
+    "skus": {"limit": 500, "count": 0, "truncated": False},
+    "returns": {"limit": 500, "count": 0, "truncated": False},
+})
+
+#: 当天**真有** 3 项异常、但 `max_findings=2`（租户配置）把日报截成 2 条的快照。
+LIMITED_SNAPSHOT = {
+    "biz_date": "2026-09-22",
+    "config": {"max_findings": 2},
+    "row_fields": UNWIRED_SNAPSHOT["row_fields"],
+    "row_meta": {
+        "orders": {"limit": 500, "count": 1, "truncated": False},
+        "skus": {"limit": 500, "count": 2, "truncated": False},
+        "returns": {"limit": 500, "count": 3, "truncated": False},
+    },
+    "orders": [{"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
+                "created_at": "2026-09-12T10:00:00+08:00", "shipped_at": None,
+                "sale_amount": 1200.0}],
+    "skus": [{"sku_id": "SKU-1", "product_id": "P-1", "product_name": "雪尼尔-米白", "stock": 20.0},
+             {"sku_id": "SKU-2", "product_id": "P-2", "product_name": "棉麻-灰", "stock": 30.0}],
+    "returns": [{"return_no": f"RT-{n}", "customer_id": "C-1", "product_id": "P-9",
+                 "returned_at": f"2026-09-{day}T10:00:00+08:00", "amount": 100.0}
+                for n, day in ((1, 18), (2, 20), (3, 22))],
+}
+
+
 class TestNotWiredDisclosure:
     """#5358 判据 4：未接线的能力如实说明，不得用「今日无异常」覆盖。
 
@@ -302,3 +331,65 @@ class TestNotWiredDisclosure:
         with pytest.raises(AssertionError):
             _assert_honest_about_unwired(
                 f"以下能力尚未接入本次扫描：{'、'.join(UNWIRED_NAMES)}（今日无异常）")
+
+
+class TestIncompleteDisclosure:
+    """判据 7（「有界不许变成静默少报」）：**本次不完整**与**条数被截断**都必须显式。
+
+    对照判据（会红吗）：把 `row_meta` 抹掉 ⇒ 不完整披露判据必红；把真实条数改回被截断的条数
+    ⇒ 条数判据必红（两条都是「少报」形态）。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_truncated_rows_are_disclosed_as_incomplete(self, mock_get_client):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": TRUNCATED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        message = result.message or ""
+        assert "本次数据不完整" in message, "截断必须显式说出来（有界不许变成静默少报）"
+        assert "超 N 天未发货" in message, "点名的必须是**哪条**规则不完整"
+        for forbidden in ("今日无异常", "无异常", "一切正常", "未发现异常"):
+            assert forbidden not in message
+        assert result.data["proactive_status"]["unshipped_overdue"]["status"] == "incomplete"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_truncation_disclosure_is_load_bearing(self, mock_get_client):
+        """**注入式红证**：抹掉 `row_meta`（= 装作没截断）⇒ 上一条判据必红"""
+        plain = {key: value for key, value in TRUNCATED_SNAPSHOT.items() if key != "row_meta"}
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True, "data": {"bizDate": "2026-09-22", "sourceSnapshot": plain}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        with pytest.raises(AssertionError):
+            assert "本次数据不完整" in (result.message or "")
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_capped_daily_list_states_the_true_total(self, mock_get_client):
+        """日报条数被 `max_findings` 截断 ⇒ 消息必须点出**真实条数**（3 项，不是 2 项）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": LIMITED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        message = result.message or ""
+        assert len(result.data["proactive"]) == 2, "日报条数上限生效（max_findings=2）"
+        assert "另有 2 项当天异常待处理" in message
+        assert "当天共 3 项" in message, "被截断的条数必须点出真实总数"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_missing_total_is_load_bearing(self, mock_get_client):
+        """**注入式红证**：把真实条数改回被截断的条数（= 少报）⇒ 判据必红"""
+        message = "今日经营日报如下，另有 2 项当天异常待处理"
+        with pytest.raises(AssertionError):
+            assert "当天共 3 项" in message

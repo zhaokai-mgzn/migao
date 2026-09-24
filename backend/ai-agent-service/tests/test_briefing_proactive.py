@@ -25,11 +25,13 @@ import pytest
 
 from app.briefing.proactive import (
     DEFAULT_CONFIG,
+    INCOMPLETE,
     NOT_WIRED,
     RULES,
     WIRED,
     ProactiveConfig,
     daily_findings,
+    daily_findings_total,
     proactive_status,
     scan_snapshot,
 )
@@ -368,18 +370,43 @@ ASSEMBLED_QUIET = dict(
 WIRED_RULES = frozenset({"unshipped_overdue", "low_stock", "repeat_returns"})
 NOT_WIRED_RULES = frozenset({"below_cost_price", "price_change_over"})
 
+#: **被行数上限截断**的快照：`row_meta` 显式登记（截断不许静默 —— 有界是热路径必须，
+#: 但它会新开一个「看不见的行 ⇒ 不命中 ⇒ 被读成没问题」的面）。
+TRUNCATED = dict(ASSEMBLED, row_meta={
+    "orders": {"limit": 500, "count": 500, "truncated": True},
+    "skus": {"limit": 500, "count": 1, "truncated": False},
+    "returns": {"limit": 500, "count": 3, "truncated": False},
+})
+
+#: **分组维度缺值**的快照：退货行缺 `product_id`（多商品订单的退货）⇒ 商品维度走不到，
+#: 但客户维度照样命中 ⇒ 既不是「没数据」也不是「完整」。
+DIMENSION_GAP = dict(ASSEMBLED, returns=[
+    {"return_no": f"RT-{n}", "customer_id": "C-1", "product_id": None,
+     "returned_at": f"2026-09-{day}T10:00:00+08:00", "amount": 100.0}
+    for n, day in ((1, 16), (2, 18), (3, 22))     # 7 天窗口内 3 次 ⇒ 命中日 = 基准日 09-22
+])
+
+
+def _truncation_is_explicit(status):
+    """**判据本体**（「截断必须显式」）：被截断的数组所属规则必须落在 `incomplete` 且给出原因。"""
+    entry = status["unshipped_overdue"]
+    assert entry["status"] == INCOMPLETE, f"截断的规则必须落 incomplete，实得 {entry['status']}"
+    assert entry["gaps"], "截断必须给出具体原因（gaps）"
+    assert "截断" in entry["reason"]
+    return True
+
 
 def _two_kinds_of_empty_are_separable(status):
-    """**判据本体**（issue #5358 判据 2）：未接线 与 已接线但当天无命中 必须可分。
+    """**判据本体**（issue #5358 判据 2）：未接线 / 本次不完整 与「已接线且完整（当天无命中）」必须可分。
 
-    可分 = ① 两类同时存在（否则本判据是空跑）② 未接线带原因 ③ 已接线不带原因。
+    可分 = ① 两类同时存在（否则本判据是空跑）② 非 `wired` 的规则必带原因 ③ `wired` 不带原因。
     返回 True 只是为了让调用处能写成断言；真正的判别力在三条 assert 上。
     """
-    unwired = {r for r, s in status.items() if s.get("status") == NOT_WIRED}
+    unwired = {r for r, s in status.items() if s.get("status") != WIRED}
     wired = {r for r, s in status.items() if s.get("status") == WIRED}
-    assert unwired and wired, f"必须同时存在两类规则（实得 wired={sorted(wired)} unwired={sorted(unwired)}）"
-    assert all(status[r].get("reason") for r in unwired), "未接线规则必须给出原因（否则与「无命中」不可分）"
-    assert not any(status[r].get("reason") for r in wired), "已接线规则不得带未接线原因"
+    assert unwired and wired, f"必须同时存在两类规则（实得 wired={sorted(wired)} 非wired={sorted(unwired)}）"
+    assert all(status[r].get("reason") for r in unwired), "未接线/不完整必须给出原因（否则与「无命中」不可分）"
+    assert not any(status[r].get("reason") for r in wired), "已接线且完整的规则不得带原因"
     return True
 
 
@@ -486,3 +513,62 @@ class TestWiringStatusIsPerRule:
         assert {f["rule_id"] for f in findings} == WIRED_RULES
         assert _by_rule(findings, "unshipped_overdue")["criterion"]["observed"][0]["days"] == 12
         assert _by_rule(findings, "repeat_returns")["impact"]["count"] == 3
+
+    def test_only_fully_wired_rules_may_read_empty_as_fine(self):
+        """**不变式**：`reason is None` ⟺ `status == wired`（= 已接入**且本次完整**）。
+
+        调用方只看这一条就能决定「空命中能不能读成没问题」—— 三类状态（wired / not_wired /
+        incomplete）共用同一个不变式，不给第二套判断口径。
+        """
+        for snapshot in (ASSEMBLED, ASSEMBLED_QUIET, TRUNCATED, DIMENSION_GAP, {"metrics": {}}):
+            for rule_id, entry in proactive_status(snapshot).items():
+                assert (entry["reason"] is None) == (entry["status"] == WIRED), (rule_id, entry)
+
+
+class TestTruncationAndGapsAreExplicit:
+    """判据 7（「有界不许变成静默少报」）：截断与维度缺值都必须**显式**，且空命中不得被读成没问题。
+
+    对照判据（会红吗）：抹掉 `row_meta` ⇒ 截断判据必红；抹掉行的 `product_id` 缺失（补上一个值）
+    ⇒ 维度判据必红；把 `status` 直接塞成 `wired` ⇒ 不变式断言必红。
+    """
+
+    def test_truncated_array_is_incomplete_not_wired(self):
+        assert _truncation_is_explicit(proactive_status(TRUNCATED)) is True
+
+    def test_truncation_is_per_rule_again(self):
+        """逐规则：只有被截断的那条不完整，未被截断的照旧 `wired`（不许整体拉黑）"""
+        status = proactive_status(TRUNCATED)
+        assert status["low_stock"]["status"] == WIRED
+        assert status["repeat_returns"]["status"] == WIRED
+        assert status["below_cost_price"]["status"] == NOT_WIRED
+
+    def test_red_proof_truncation_flag_is_load_bearing(self):
+        """**注入式红证**：抹掉 `row_meta` ⇒ 截断判据必红（否则「显式」只是文案）"""
+        stripped = {key: value for key, value in TRUNCATED.items() if key != "row_meta"}
+        with pytest.raises(AssertionError):
+            _truncation_is_explicit(proactive_status(stripped))
+
+    def test_dimension_gap_is_incomplete_but_still_hits_on_the_other_dimension(self):
+        """退货行缺 `product_id`（多商品订单）⇒ 商品维度走不到：登记为不完整，但客户维度照样命中"""
+        findings = daily_findings(DIMENSION_GAP)
+        # 客户维度照样命中（09-18/09-20/09-24 同一客户 3 次）⇒ 这不是「没数据」，是「不完整」
+        assert "repeat_returns" in [f["rule_id"] for f in findings]
+        assert _by_rule(findings, "repeat_returns")["impact"]["count"] == 3
+        entry = proactive_status(DIMENSION_GAP)["repeat_returns"]
+        assert entry["status"] == INCOMPLETE
+        assert any("product_id" in gap for gap in entry["gaps"])
+        assert not entry["missing"], "字段本身是接了的（缺的是部分行的取值），不许记成 not_wired"
+
+    def test_red_proof_dimension_gap_is_load_bearing(self):
+        """**注入式红证**：把缺值补齐 ⇒ 维度判据必红（证明它盯的是真值）"""
+        filled = dict(DIMENSION_GAP, returns=[
+            dict(row, product_id="P-9") for row in DIMENSION_GAP["returns"]
+        ])
+        with pytest.raises(AssertionError):
+            assert proactive_status(filled)["repeat_returns"]["status"] == INCOMPLETE
+
+    def test_daily_total_is_not_capped_by_max_findings(self):
+        """「日报要窄」是**展示口径**：条数上限不许把「今天有几项」变成少报"""
+        narrow = ProactiveConfig(max_findings=2)
+        assert len(daily_findings(SNAPSHOT, config=narrow)) == 2
+        assert daily_findings_total(SNAPSHOT, config=narrow) == len(EXPECTED_DAILY) == 5
