@@ -123,6 +123,9 @@ class IntentRouter:
                     intent=IntentType.GENERAL,
                     confidence=confidence,
                     source="low_confidence",
+                    # 保留被改写掉的那个方向（issue #5329）：它是「猜测」的唯一来源，
+                    # 丢在这里就等于让引导退化成与用户输入无关的一张菜单。
+                    guessed_intent=intent.value,
                 ),
                 action="full_agent",
             )

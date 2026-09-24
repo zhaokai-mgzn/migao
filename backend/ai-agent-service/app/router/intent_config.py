@@ -106,6 +106,10 @@ class IntentResult:
     confidence: float
     source: str  # "rule" / "classifier" / "default"
     matched_keywords: list = field(default_factory=list)
+    # 低置信度被重写成 general 兜底时，**保留**分类器原本猜的那个方向（issue #5329）。
+    # 它就是要拿去当「我理解你想看 X，是这个吗」的材料：改前这个猜测被直接丢弃，
+    # 用户只拿到一句开放式反问。默认空串 ⇒ 其余所有构造点逐字不变。
+    guessed_intent: str = ""
 
 
 @dataclass

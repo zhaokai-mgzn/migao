@@ -9,13 +9,19 @@
 """
 
 import asyncio
+import json
 from typing import Union
+from uuid import uuid4
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from loguru import logger
 
 from app.graph.handoff_judge import is_explicit_handoff_request
 from app.graph.state import AgentState
+# 模糊输入 ⇒ 可点击的猜测（issue #5329）：投影函数在**模块级**导入 ——
+# 判据用 `patch("app.graph.nodes.build_guess_card")` 关掉它来证明接线是承重的
+# （模块级绑定才是可 patch 的接缝；函数内导入会把绑定冻在调用那一刻，见本仓 patch 接缝纪律）。
+from app.suggestions.vague_guess import build_guess_card
 
 
 # ── 业务领域关键词（单一来源）──
@@ -414,6 +420,124 @@ async def _build_entity_hint(session_id: str) -> str:
     return "[上下文实体] 之前对话已涉及：" + "、".join(parts)
 
 
+# ────────────────────── 模糊输入 ⇒ 可点击的猜测（issue #5329） ──────────────────────
+
+
+async def _claim_first_clarify_round(session_id: str) -> bool:
+    """本会话是否还是「第一次需要澄清」（是 ⇒ 记账并返回 True）。
+
+    猜测卡**就是**第一轮澄清（给猜测而不是空白反问），故与既有护栏
+    （`app/graph/clarify_guard.py`）**共用同一份计数**：发卡即 tick 一次 ⇒
+    后续模糊轮 `count > 0` 不再发卡，交还既有的升级链（上限后给示例兜底）
+    —— 不新增状态键、也不会变成"每轮都弹一张卡"的追问。
+
+    存储失败按无状态降级：**不发卡**（宁可退回原有路径，也不绕过澄清预算）。
+    无 session_id（单轮/无状态调用）⇒ 直接发卡（没有预算可记）。
+    """
+    if not session_id:
+        return True
+    try:
+        from app.graph.clarify_guard import CLARIFY_STATE_KEY, tick_clarify
+        from app.memory.session_state_store import SessionStateStore
+
+        store = SessionStateStore()
+        full_state = await store.load(session_id) or {}
+        clarify_state = full_state.get(CLARIFY_STATE_KEY) or {}
+        if int(clarify_state.get("count") or 0) > 0:
+            return False
+        full_state[CLARIFY_STATE_KEY] = tick_clarify(clarify_state, was_clarify_round=True)
+        await store.commit(session_id, full_state)
+        return True
+    except Exception as e:
+        logger.warning(f"[intent_router] 猜测卡记账失败（按无状态降级，不发卡）: {e}")
+        return False
+
+
+async def _vague_guess_route(state: AgentState, route_decision) -> dict | None:
+    """模糊轮 ⇒ 猜测卡路由；不符条件返回 None（交还原有路径）。
+
+    触发面（三条都是事实，不是文案判据）：
+    ① **米宝（B 端）**：本单的受众（issue #5329 判据来源是 B 端提问引导）；
+    ② **低置信模糊轮**：`source == "low_confidence"` = L2 分类器自己都不确定
+       （`IntentRouter.LOW_CONFIDENCE_THRESHOLD`）—— 正是「知道自己要什么但说不出来」；
+    ③ **本会话第一次需要澄清**（见 `_claim_first_clarify_round`）。
+
+    「猜测」= 分类器原本猜的那个方向（`guessed_intent`，低置信改写前保留），
+    交给 `app/suggestions/vague_guess.py` **从事实投影**成用户语言的选项。
+    """
+    if state.get("agent_type", "xiaobu") != "mibao":
+        return None
+    if state.get("pending_interact_skill"):
+        return None
+    intent_result = getattr(route_decision, "intent_result", None)
+    if intent_result is None:
+        return None
+    intent_value = getattr(intent_result.intent, "value", "")
+    if intent_value != "general" or getattr(intent_result, "source", "") != "low_confidence":
+        return None
+
+    # 用**运行时同一份路由事实**推出的 skill 名（不写死 "general"）
+    skill_name = _intent_to_route_key(intent_value, state.get("agent_type", "mibao"))
+    card = build_guess_card(
+        skill_name, guessed_intent=getattr(intent_result, "guessed_intent", "") or "")
+    if not card:
+        return None
+    if not await _claim_first_clarify_round(state.get("session_id", "")):
+        return None
+
+    logger.info(
+        f"[intent_router] 模糊输入 → 可点击的猜测 | skill={skill_name} "
+        f"guessed={getattr(intent_result, 'guessed_intent', '') or 'n/a'} "
+        f"options={[o['label'] for o in card['options']]} "
+        f"| session={state.get('session_id', '')}"
+    )
+    return {
+        "intent_result": {
+            "intent": intent_value,
+            "confidence": getattr(intent_result, "confidence", 0.0),
+            "source": getattr(intent_result, "source", "low_confidence"),
+        },
+        "route_decision": {
+            "action": "direct_reply",
+            "direct_reply": card["title"],
+            "tool_hint": None,
+            "guess_card": card,
+        },
+    }
+
+
+def _guess_card_messages(card: dict, reply: str) -> dict:
+    """把猜测卡落成 `interact` 卡片消息（与 `app/graph/handoff_offer.py` 同协议）。
+
+    复用既有卡片管道，不新造下发链路：`app/api/chat.py` 收到
+    `ToolMessage(name="interact")` → SSE `interactive` 事件 → 前端 ChoiceCard。
+    卡的 `value` 是**用户语言**，点选后按普通消息回流 ⇒ 下一轮走 L1 正常路由
+    （不是又一轮澄清，见 `tests/test_vague_guess.py` 的判据 4）。
+    """
+    tool_call_id = f"vague_guess_{uuid4().hex[:8]}"
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "interact", "args": card, "id": tool_call_id}],
+    )
+    tool_msg = ToolMessage(
+        name="interact",
+        tool_call_id=tool_call_id,
+        content=json.dumps(
+            {
+                "success": True,
+                "data": card,
+                "message": f"已展示{card.get('title', '')}交互组件，等待用户操作",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    return {
+        "messages": [ai_msg, tool_msg],
+        "final_answer": reply,
+        "skill_used": "vague_guess",
+    }
+
+
 # ────────────────────── 辅助节点 ──────────────────────
 
 
@@ -656,6 +780,14 @@ async def intent_router_node(state: AgentState) -> dict:
         f" | session={session_id}"
     )
 
+    # ── 模糊输入 ⇒ 可点击的猜测（issue #5329，提问引导「类型 2」）──
+    # 放在澄清护栏**之前**：猜测卡本身就是「第一轮澄清」的更好形态
+    # （给理解后的猜测 + 可点的方向，而不是把"你想查什么"原样丢回去）。
+    # 不符条件的模糊轮返回 None ⇒ 原样落到下面的既有护栏链。
+    vague_route = await _vague_guess_route(state, route_decision)
+    if vague_route is not None:
+        return vague_route
+
     # ── 澄清轮次护栏（issue #2796）──
     # 路由到 general（兜底澄清 skill）即澄清轮：连续 ≥N 轮仍无实质意图 →
     # 强制给具体示例兜底话术（防低学历用户被无限追问），而非继续追问。
@@ -770,6 +902,14 @@ async def direct_reply_node(state: AgentState) -> dict:
     intent = (state.get("intent_result") or {}).get("intent", "")
     reply = route_decision.get("direct_reply") or ""
     agent_type = state.get("agent_type", "xiaobu")
+
+    # ── 模糊输入的猜测卡（issue #5329）──
+    # 卡在 `intent_router_node` 里已按事实投影好；这里只负责发出去。
+    # **必须早于** AgentConfig 的直复模板：那张卡说的是「我理解你想看 X」，
+    # 被通用问候/兜底模板覆盖就退化成一句开放式反问（正是本单要治的形态）。
+    guess_card = route_decision.get("guess_card") or {}
+    if guess_card.get("component") == "choice" and (guess_card.get("options") or []):
+        return _guess_card_messages(guess_card, reply)
 
     # 优先从 AgentConfig 获取 direct_reply
     try:
