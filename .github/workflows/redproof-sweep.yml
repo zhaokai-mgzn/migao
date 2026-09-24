@@ -226,3 +226,15 @@ jobs:
             gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 || true
           fi
           exit 0
+
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          # 发射器**可能不在检出里**（固定 ref / 浅检出）⇒ 降级为 warning 标注，绝不让读数步把机制判红。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit redproof-sweep --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=redproof-sweep）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
