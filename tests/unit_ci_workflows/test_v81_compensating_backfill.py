@@ -54,6 +54,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
 
 REPO = Path(__file__).resolve().parent.parent.parent
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
@@ -176,18 +177,21 @@ class _Db:
         return proc.stdout.strip()
 
     def start(self) -> None:
-        subprocess.run([self.initdb, "-D", str(self.data), "-U", "migao", "--auth=trust",
-                        "-E", "UTF8", "--locale=C"], check=True, capture_output=True, text=True)
-        subprocess.run([self.pg_ctl, "-D", str(self.data),
-                        "-o", f"-p {self.port} -k {self.sock} -c listen_addresses=''",
-                        "-l", str(self.tmpdir / "pg.log"), "-w", "start"],
-                       check=True, capture_output=True, text=True)
+        # 起集群的**唯一实现**：`initdb` 带 `-E UTF8 --locale=C`、`pg_ctl start` 带 `-w`（历史形态），
+        # 就绪探测 = 连库 + 建库 —— 探测失败也**先停库再抛**（issue #5263 判据①）。
+        pg_cluster.start_cluster({"initdb": self.initdb, "pg_ctl": self.pg_ctl}, self.data,
+                                 sockdir=self.sock, port=self.port, log=self.tmpdir / "pg.log",
+                                 user="migao", auth="trust",
+                                 initdb_args=("-E", "UTF8", "--locale=C"), wait=True,
+                                 ready=self._bootstrap_once)
+
+    def _bootstrap_once(self) -> None:
+        """就绪探测：连得上 + 建库（起不来的形态在这里就变红，而不是后面 30 条假失败）。"""
         self._psql("SELECT 1", dbname="postgres")
         self._psql(f'CREATE DATABASE "{self.dbname}"', dbname="postgres")
 
     def stop(self) -> None:
-        subprocess.run([self.pg_ctl, "-D", str(self.data), "-m", "immediate", "-w", "stop"],
-                       capture_output=True, text=True)
+        pg_cluster.stop_cluster(self.pg_ctl, self.data)
 
     def setup_minimal_schema(self) -> None:
         self._psql(_MINIMAL_DDL)
