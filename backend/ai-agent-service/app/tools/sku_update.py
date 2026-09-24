@@ -21,7 +21,10 @@ class SkuUpdateTool(BaseTool):
         "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架不在 B 端能力内（不代做）；"
         "加工项不在本工具范围。"
         "【必填·改价】漏传 before_price 一律被拒（price_preview_required，issue #5303）——"
-        "确认卡必须先呈现「改前 → 改后」。"
+        "确认卡必须先呈现「改前 → 改后」；**服务端还会拿它与该 SKU 当前价按值核对，不符即拒**"
+        "（issue #5317）⇒ 编一个改前价只会白烧一轮。"
+        "【确认形态·改价】改价是**涉钱面**：只认**商家点确认卡**（卡值），商家打字「确认」**不算**"
+        "（issue #5317）—— 被拦时**不要再调本工具**，直接发 confirm 卡等商家点。"
         "【标注】WRITE|IDEMPOTENT"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。")
     # 权限码（admin-api 目录）：SKU 改价/改库存属商品写 ⇒ 写码 `product:create`
@@ -105,6 +108,9 @@ class SkuUpdateTool(BaseTool):
         body: dict = {"price": price}
         if color: body["color"] = color
         if door_width: body["door_width"] = door_width
+        # 改前价**随请求下发**（issue #5317）：`/skus/price` 端点据此与匹配到的 SKU 当前价
+        # 按值核对（同一实现 = `AgentWriteValues.sameValue`），不符即 422 拒绝。
+        if before_price is not None: body["before_price"] = before_price
 
         logger.info(f"[sku_update] product={product_id} color={color} width={door_width} price={price} 改前价={before_price}")
 

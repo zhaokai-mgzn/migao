@@ -1907,6 +1907,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         ProductUpdateRequest updateReq = new ProductUpdateRequest();
         boolean hasUpdate = false;
 
+        // ── 改前价**服务端回查**（issue #5317，口径照抄 #5314 的批次核对）──
+        // `before_price` 由模型从 product_detail 带回，此前服务端**从不核对** ⇒ 护栏证明的是
+        // 「模型**声称**改前是多少」，只防「漏填」不防「填错」。核对比对**同一实现**
+        // （`AgentWriteValues.sameValue`，批次 create 用的是它）⇒ 不存在"批次严、单条松"的漂移。
+        // 缺席不核对（口径与批次 `oldValue` 缺席一致）；一旦声明就必须为真。
+        if (request.getBasePrice() != null && request.getBeforePrice() != null
+                && !AgentWriteValues.sameValue(
+                        AgentWriteValues.FIELD_BASE_PRICE,
+                        request.getBeforePrice().toPlainString(),
+                        product.getBasePrice() == null
+                                ? null : product.getBasePrice().toPlainString())) {
+            throw BusinessException.validationError("改前价与商品当前价不符：" + id
+                    + " 当前 " + product.getBasePrice() + "，收到 " + request.getBeforePrice()
+                    + " —— 请先用 product_detail 取当前价，重新预览后再提交");
+        }
+
         // name: null = 不修改，传了就更新
         if (request.getName() != null) {
             updateReq.setName(request.getName());
@@ -2139,7 +2155,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 调用方若仍传售卖方式，它**不参与定位**（同色同门幅只有一行 SKU）。
      */
     public void updateSkuPrice(String productId, String color,
-                                String doorWidth, java.math.BigDecimal price, Long tenantId) {
+                                String doorWidth, java.math.BigDecimal price,
+                                java.math.BigDecimal beforePrice, Long tenantId) {
         java.util.List<ProductSku> candidates =
                 selectSkuCandidatesForPriceUpdate(productId, color, doorWidth, tenantId);
         if (candidates.isEmpty()) {
@@ -2150,6 +2167,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (candidates.size() > 1) {
             log.warn("SKU调价匹配到多个({})候选，取第一个: product={}, color={}",
                     candidates.size(), productId, color);
+        }
+        // ── 改前价**服务端回查**（issue #5317）：与匹配到的这一行 SKU 的当前价按值核对，
+        // 判据同一实现（`AgentWriteValues.sameValue`）—— 编一个改前价必被拒。缺席不核对。
+        if (beforePrice != null && !AgentWriteValues.sameValue(
+                AgentWriteValues.FIELD_BASE_PRICE, beforePrice.toPlainString(),
+                sku.getPrice() == null ? null : sku.getPrice().toPlainString())) {
+            throw BusinessException.validationError("改前价与 SKU 当前价不符：" + productId
+                    + "（" + color + " / " + doorWidth + "）当前 " + sku.getPrice()
+                    + "，收到 " + beforePrice + " —— 请先用 product_detail 取当前价后重试");
         }
         sku.setPrice(price);
         productSkuMapper.updateById(sku);

@@ -25,8 +25,10 @@
 
 ## 不属本判据（如实登记，不写成恒真判断凑数）
 
-- **改前价的服务端回查未实装**：`before_price` 是模型从 `product_detail` 带回的**声明**。
-  本判据保证"必须声明 + 必须成对展示"，不做 DB 级真值比对（残留登记见 PR 说明）。
+- **改前价的服务端回查**（issue #5317 已实装，判据已迁出本文件）：`before_price` 随请求下发，
+  服务端与 DB 当前值**按值核对**，不符即 422 —— 行为判据见
+  `backend/admin-api/src/test/java/com/migao/admin/service/AgentWriteValuesTest.java`，
+  工具侧"改前价确实下发了"见 `tests/test_price_card_only_confirm.py`。
 - LLM 是否**真的**先查再改、商家是否**真的**点了卡 ⇒ 属真实评测（`migao-dev-flow` §13
   默认不跑），本文件只锁**静态可判的事实**。
 """
@@ -136,9 +138,10 @@ class TestWriteToolsFailClosed:
             context, product_id="p1", price=199, before_price=168)
 
         assert result.success is True
-        # ⚠️ `before_price` 是**预览声明**，不得进请求体（后端 DTO 里没有这个字段；
-        # 传了就是"下发即静默丢弃"的第二份真相 —— 判据同 test_tool_payload_backend_contract）
-        assert client.patch.await_args.kwargs["json_data"] == {"basePrice": 199}
+        # ⚠️ `before_price` 现在是**下发给服务端回查**的（issue #5317）：服务端拿它与 DB 当前价
+        # 按值核对，不符即 422 —— 字段名必须逐字等于 DTO 字段 `beforePrice`
+        # （判据同 test_tool_payload_backend_contract）。
+        assert client.patch.await_args.kwargs["json_data"] == {"basePrice": 199, "beforePrice": 168}
 
     @pytest.mark.asyncio
     @patch("app.tools.sku_update.get_admin_api_client")
@@ -153,7 +156,7 @@ class TestWriteToolsFailClosed:
 
         assert result.success is True
         assert client.patch.await_args.kwargs["json_data"] == {
-            "price": 150, "color": "米白", "door_width": "2.8"}
+            "price": 150, "color": "米白", "door_width": "2.8", "before_price": 168}
 
     @pytest.mark.asyncio
     @patch("app.tools.product_update.get_admin_api_client")

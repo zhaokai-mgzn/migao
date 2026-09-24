@@ -65,9 +65,11 @@ public class AgentBatchService {
     public static final String TYPE_PRODUCT_PRICE = "product_price";
     public static final String TYPE_PRODUCT_STATUS = "product_status";
 
-    /** 两个具名批量各自的字段（field 与 batchType 必须配对）。 */
-    public static final String FIELD_BASE_PRICE = "basePrice";
-    public static final String FIELD_STATUS = "status";
+    /** 两个具名批量各自的字段（field 与 batchType 必须配对）。
+     *  ⚠️ 词表单一源 = {@link AgentWriteValues}（issue #5317）：单条改价的改前价核对
+     *  用的是**同一份字段词 + 同一套按值比对**，这里只是保留既有常量名（调用方零改动）。 */
+    public static final String FIELD_BASE_PRICE = AgentWriteValues.FIELD_BASE_PRICE;
+    public static final String FIELD_STATUS = AgentWriteValues.FIELD_STATUS;
 
     /** 批次状态机：preview → executing → done | partial → reverted | revert_partial。 */
     public static final String STATUS_PREVIEW = "preview";
@@ -147,7 +149,8 @@ public class AgentBatchService {
                 throw BusinessException.validationError("资源不可见或没有该字段，无法采集改前值："
                         + resourceId + "（请先用 product_search 查出本租户的商品 ID 后重试）");
             }
-            if (req.getOldValue() != null && !sameValue(req.getField(), req.getOldValue(), current)) {
+            if (req.getOldValue() != null
+                    && !AgentWriteValues.sameValue(req.getField(), req.getOldValue(), current)) {
                 throw BusinessException.validationError("oldValue 与当前值不符：" + resourceId
                         + " 当前 " + current + "，收到 " + req.getOldValue() + " —— 请重新预览后再提交");
             }
@@ -358,18 +361,9 @@ public class AgentBatchService {
         return product.getStatus();
     }
 
-    /** 按**值**比对（数字不比字符串写法：{@code 10.0} 与 {@code 10.00} 是同一个价）。 */
-    private boolean sameValue(String field, String given, String current) {
-        if (FIELD_BASE_PRICE.equals(field)) {
-            try {
-                return new BigDecimal(given).compareTo(new BigDecimal(current)) == 0;
-            } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-        return given.trim().equals(current);
-    }
-
+    /** 按**值**比对（数字不比字符串写法：{@code 10.0} 与 {@code 10.00} 是同一个价）。
+     *  ⚠️ 实现已**唯一化**到 {@link AgentWriteValues#sameValue}（issue #5317）：单条改价的
+     *  改前价核对是同一个语义 ⇒ 两处各写一份必然漂移（§17.3「同一真值两处投影」）。 */
     private void validateNewValue(String field, String resourceId, String value) {
         if (FIELD_BASE_PRICE.equals(field)) {
             try {

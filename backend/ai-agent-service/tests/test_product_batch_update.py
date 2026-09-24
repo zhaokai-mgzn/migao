@@ -462,7 +462,7 @@ class TestPermissionAndAnnotations:
 
         判据本体在 `base_skill._requires_confirmation`：`read_only_actions` 是**唯一**豁免口，
         而第二段确认卡的材料只能由 preview 产出 ⇒ preview 必须豁免；execute/revert 是真正的
-        商品写入 ⇒ 必须留在门禁内（用户点卡才放行）。
+        商品写入 ⇒ 必须留在门禁内，且（issue #5317，涉钱面）**只认卡值** —— 文本确认不放行。
         """
         from app.graph.skills.base_skill import _requires_confirmation
         assert set(tool.read_only_actions) == {"preview"}
@@ -472,8 +472,11 @@ class TestPermissionAndAnnotations:
         assert _requires_confirmation(tool, {"action": "preview"}, selection_msg) is False
         assert _requires_confirmation(tool, {"action": "execute"}, selection_msg) is True
         assert _requires_confirmation(tool, {"action": "revert"}, selection_msg) is True
-        # 用户点了确认卡（confirmValue 前缀确认词）⇒ 执行放行
-        assert _requires_confirmation(tool, {"action": "execute"}, "确认批量改价 2 条") is False
+        # 涉钱面（issue #5317 裁定）：execute/revert **只认卡值** —— 文本「确认」不再放行，
+        # 放行链只剩 `_is_card_confirm_value`（用户消息逐字等于系统自产的卡值 = 真的点了卡）。
+        # 判据本体见 tests/test_price_card_only_confirm.py。
+        assert _requires_confirmation(tool, {"action": "execute"}, "确认批量改价 2 条") is True
+        assert _requires_confirmation(tool, {"action": "revert"}, "确认") is True
 
     def test_description_answers_the_three_questions(self, tool):
         """设计范式（docs/wiki/agent-design-standard.md）：何时用 / 前置 / 与相似工具的区别。"""
