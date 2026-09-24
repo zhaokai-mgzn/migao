@@ -43,7 +43,18 @@ jobs:
           fi
           git fetch origin main --quiet
           CHANGED=$(git diff --name-only origin/main...HEAD)
-          HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/|\.github/|requirements.*\.txt$|pyproject\.toml$)' || true)
+          # ⚠️ 触发面**必须覆盖断言所读的对象面**（issue #4177）：本 job 的跨模块契约判据
+          # （`backend/ai-agent-service/tests/test_tool_payload_backend_contract.py` 起，现取 17 处见证）
+          # 直接用仓根拼路径读 `backend/admin-api/src/main/**`（Java DTO/Controller/Service **与**
+          # `src/main/resources/db/init/schema.sql`）—— 只改 Java DTO 的 PR 曾**零命中**：
+          # `Run unit tests` 整段 skipped 而 job 结论仍是 success，红只在**部署腿**爆
+          # （`deploy-ai-agent-service.yml` 无路径门控、命令逐字相同）。
+          # ⇒ 把**契约主体**（`backend/admin-api/src/main/**` = admin-api 真正发布出去的那一面）纳入触发面。
+          # 只加这一条：本 job 的测试读到的仓内目录就这几个（`frontend/**` / `docs/**` 见登记册的
+          # uncovered 条目，扩到它们会让每个前端 / 文档 PR 都跑本 job 的全量单测）。
+          # 判据（未登记即红 / 谓词必须与现取逐字相符且覆盖 gated 面）：
+          # tests/unit_ci_workflows/test_gate_coverage_and_same_source.py
+          HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/|\.github/|backend/admin-api/src/main/|requirements.*\.txt$|pyproject\.toml$)' || true)
           if [ -n "$HITS" ]; then
             echo "run_tests=true" >> "$GITHUB_OUTPUT"
             echo "✅ 检测到 ai-agent 相关变更，执行单测"
