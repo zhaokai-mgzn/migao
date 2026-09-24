@@ -2490,7 +2490,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（46 case）
+## 订单域（47 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3256,6 +3256,21 @@
 ```
 真值: product-sku-stock.decimal-1dp
 溯源: 2026-09-22 新增（#5063 点名的 `OrderService` 四处 `intValue()` 静默取整落点）。 ｜ tags: order, stock, ledger, decimal, backend_contract
+
+### OR-048. 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU 🔵
+```
+你: （无 LLM 环节：本用例的判据由前端 vitest 单测 + CI 守卫直接执行，见 traces.tests）
+数据: **判据 1·不猜商品**：识别出 N 条明细 ⇒ 先给「N 条待选」的选品面板（候选 + 恒在的「都不是」），**不直接建行**；匹配不到 / 未选 / 点「都不是」/ 选了**没给过该条目**的商品 ⇒ **一行都不建**（明细留在备注）。红证：注入「载入候选后自动选第一个」（= 识别即建行）⇒ 页面断言当场红（实测 4 条全红）。
+数据: **判据 2·候选可解释**：每个候选带**用户读得到的理由**（与商品名重合 N/M 字 / 名称包含 / 规格命中如「材质 雪尼尔」）并按分排序 —— 不是把目录原样倒给用户，也不是「AI 推荐」这类黑箱文案。
+数据: **判据 3·来源可区分**：识别建的行带 `recognizedLine` 标记 + `[图片识别]` 徽标（`recognized-marker-line-*`）；手填的行**没有**这个键（来源在数据上就分得开，不靠文案区分）。
+数据: **判据 4·🔴 不落库**：建行面（纯函数 + 选品组件）**零写端点调用**（结构化扫描 `orderApi.create*` / `request.post` / `.submit(` + 注入式红证）；页面测试全程 `orderApi.createOrder` 零调用 —— 本链路只填订单行，**提交永远是人的动作**（`docs/agent-feature-design.md` §四 + #5321 判据 3）。
+数据: **判据 5·🔴 门幅来自所选 SKU**：建行补丁**不含**任何门幅字段；门幅仍由页面经 `parseDoorWidth(line.selectedSku.doorWidth)` 取 ⇒ 推导入参 `fabric_width` 随所选 SKU 变化（2.8 → 1.4，证明它来自 SKU 而不是写死的数）；多规格（系统不猜）⇒ 不发该键（fail-closed）。红证（均已实跑）：识别面写死 `const fabricWidth = 2.8` ⇒ 类级守卫红；建行补丁塞门幅 ⇒ 判据 5 断言红。
+数据: **判据 6·🔴 单价来自目录 / SKU**：图上写「120元/米」⇒ 只作**复核提示**展示，行价 = SKU 价 88；无可用规格 ⇒ 单价 0（不猜价）。红证（已实跑）：`unitPrice` 改成识别价 120 ⇒ 判据 6 三条断言红。
+数据: **判据 7·用户复核**：选品前一行都不建；建行后数量 / 单价**可就地改**（改完仍是商家的值，不被推导静默改回）；每条明细的处置在面板上可见（已建行 / 已跳过），面板随时可关（未处理的明细只留在备注）。
+数据: **类级（铁律 8 / §23 G1·G2）**：识别字段 ⇄ 建行面 的**接线登记表**（`LINE_PATH_FIELD_KEYS`）—— 源码实际读取的键必须 ⊆ 声明、声明必须在后端 `targets.py` 的 order 字段表里（改名漂移 / 偷偷多读一个键 ⇒ 红）；**钱面类级守卫**：订单侧识别字段表里出现价格 / 门幅类键 ⇒ 红（注入 `price` / `door_width` 即红，已实跑）。
+跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含 4 条注入式红证实跑）
+```
+溯源:  ｜ tags: order, image_recognize, sku_select, craft_calc
 
 ## 加工项域（13 case）
 
@@ -6352,8 +6367,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：470（活跃 119，跳过 351）
-- tier 分布：smoke 10 / normal 430 / adversarial 30
+- 用例总数：471（活跃 119，跳过 352）
+- tier 分布：smoke 10 / normal 431 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6370,7 +6385,7 @@
 - 杂项域：21
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：46
+- 订单域：47
 - 加工项域：13
 - 加工单域：54
 - 商品域：97
@@ -6426,6 +6441,7 @@
 - OR-044: 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交
 - OR-045: 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）
 - OR-046: 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）
+- OR-048: 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
