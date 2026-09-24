@@ -206,8 +206,12 @@ const EMPTY_TREND: SavingTrend = {
 
 const renderPage = async () => {
   render(<SavingBoardPage />)
-  // 等首屏两次请求都落地（`Promise.all`）—— 用 findBy* 等待，不用定长 sleep
-  await screen.findByTestId('saving-metric-le-0-2')
+  // 等首屏两次请求都落地（`Promise.all`）—— 用 findBy* 等待，不用定长 sleep。
+  // ⚠️ 不能用指标卡当等待信号：`metricCards` **恒两条**、不等数据（`board = null` 时就已渲染，
+  // 只是值显示「无数据」）⇒ 它在「读面未落地 / 已落地」两态下**都成立**，等它等于没等
+  // （issue #5300 的「等 A 断言 B」，全文件共用这一处等待）⇒ 改等**只可能来自 board 读面**的来源组卡。
+  // 两条腿由同一个 `Promise.all` 落地（同一批 setState）⇒ 等它就同时覆盖了 trend 腿。
+  await screen.findByTestId('saving-cohort-purchase')
 }
 
 describe('#5159 省料看板页', () => {
@@ -252,7 +256,10 @@ describe('#5159 省料看板页', () => {
     expect(within(second).queryByText('0 米')).toBeNull()
 
     // 「来源未知」组的占比无数据（计数 0 照实显示 —— 计数为 0 是事实）
-    const unknown = screen.getByTestId('saving-cohort-unknown')
+    // ⚠️ 组卡来自 board 读面（`cohorts` 为空时整段不渲染）⇒ 对**异步渲染面**用同步 `getBy*`
+    // 会命中不了还没渲染的节点（issue #5300 实测红：`Unable to find
+    // [data-testid="saving-cohort-unknown"]`）。等**目标本身**出现，断言语义一字未改。
+    const unknown = await screen.findByTestId('saving-cohort-unknown')
     expect(within(unknown).getByTestId('saving-cohort-unknown-le-share').textContent).toBe('无数据')
     expect(within(unknown).getByTestId('saving-cohort-unknown-batch-count').textContent).toBe('0')
 
