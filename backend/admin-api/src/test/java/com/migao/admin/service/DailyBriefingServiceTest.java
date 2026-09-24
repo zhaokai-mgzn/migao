@@ -737,8 +737,24 @@ class DailyBriefingServiceTest {
 
             @SuppressWarnings("unchecked")
             Map<String, Object> row = ((List<Map<String, Object>>) snapshot.get("orders")).get(0);
-            assertThat(row.get("shipped_at"))
-                    .isEqualTo(OffsetDateTime.parse("2026-09-13T10:00:00+08:00"));
+            assertThat(row.get("shipped_at")).isEqualTo("2026-09-13T10:00+08:00");
+        }
+
+        @Test
+        @DisplayName("快照只放 JSON 原生类型：用**落库那个** ObjectMapper 能序列化（JSONB 不炸）")
+        void snapshotSerializesWithThePersistenceObjectMapper() throws Exception {
+            stubRows();
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            // `daily_briefings.source_snapshot` 走 MyBatis-Plus JacksonTypeHandler，其 ObjectMapper 是
+            // **裸 new ObjectMapper()（无 JavaTimeModule）** ⇒ 快照里混进 java.time/POJO 值会在 insert 时
+            // 抛 InvalidDefinitionException（本机实测：「Java 8 date/time type not supported by default」）。
+            // 这条判据就是那个形态的红证：把行里的 ISO 串改回 OffsetDateTime ⇒ 本断言必红。
+            String json = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler
+                    .getObjectMapper().writeValueAsString(snapshot);
+            assertThat(json).contains("\"order_no\":\"SO-1\"", "\"created_at\":\"2026-09-12T10:00+08:00\"");
+            assertThat(json).contains("\"returned_at\":\"2026-09-22T10:00+08:00\"");
         }
 
         @Test

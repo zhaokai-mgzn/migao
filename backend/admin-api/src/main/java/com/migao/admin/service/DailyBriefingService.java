@@ -435,14 +435,28 @@ public class DailyBriefingService {
         return rows;
     }
 
+    /**
+     * 行里的时刻一律落 **ISO-8601 字符串**。
+     *
+     * <p>🔴 快照最终落 `daily_briefings.source_snapshot`（JSONB），走的是 MyBatis-Plus
+     * `JacksonTypeHandler` —— 它的 ObjectMapper 是**裸 `new ObjectMapper()`（没有 JavaTimeModule）**：
+     * 快照里出现 `OffsetDateTime` 会在 insert 时抛 `InvalidDefinitionException`
+     * （「Java 8 date/time type not supported by default」，本机实测）。
+     * ⇒ 快照只放 JSON 原生类型（字符串 / 数字 / 布尔 / null / 列表 / 映射），时刻用 ISO 串；
+     * 引擎侧（`_day`）本来就按 ISO 串解析。</p>
+     */
+    static String iso(OffsetDateTime value) {
+        return value == null ? null : value.toString();
+    }
+
     /** 订单行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
     static Map<String, Object> orderRow(Order order, OffsetDateTime shippedAt) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("order_no", order.getOrderNo());
         row.put("status", order.getStatus());
         row.put("customer_id", order.getUserId());
-        row.put("created_at", order.getCreatedAt());
-        row.put("shipped_at", shippedAt);
+        row.put("created_at", iso(order.getCreatedAt()));
+        row.put("shipped_at", iso(shippedAt));
         // 成交金额：实付优先、缺省回落总额。**成本价刻意不给**（`orders` 表无成本列）——
         // 于是「低于成本价」在引擎侧落在未接线清单里，而不是表现为「命中 0 条」。
         row.put("sale_amount",
@@ -563,7 +577,7 @@ public class DailyBriefingService {
         row.put("return_no", ticket.getTicketNo());
         row.put("customer_id", ticket.getCustomerId());
         row.put("product_id", productId);
-        row.put("returned_at", ticket.getCreatedAt());
+        row.put("returned_at", iso(ticket.getCreatedAt()));
         row.put("amount", ticket.getRefundAmount());
         return row;
     }
