@@ -38,7 +38,8 @@ class CustomerOrderQueryTool(BaseTool):
     description = (
         "【触发】C 端顾客查询自己的订单时调用：'我的订单''查订单''订单到哪了''ORD-单号'。"
         "【参数】action 必填（唯一取值 list，分页）；list 支持 status(状态筛选)/page(页码)/page_size(每页数量)。"
-        "【反例】顾客问物流/快递用 customer_logistics_track；商户员工查询/管理订单用 order_query / order_manage。"
+        "【反例】顾客问物流/快递用 customer_logistics_track；"
+        "商户员工查询订单用 order_query（管理/改单等写操作**不在 Agent 能力内**，引导其到商家后台订单页处理）。"
         "【标注】READONLY — 仅查询当前登录顾客自己的订单，结果由系统强制按用户过滤，无需也无法传用户标识"
     )
 

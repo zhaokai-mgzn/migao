@@ -43,8 +43,14 @@
 
 ## 未固化的边界（照实登记，§19.1）
 
-- **本轮只登记、不修实例**：改写工具 description / prompt = 改**注入给模型的文本** = 行为变更，
-  需走行为面验证 ⇒ **另一单**（台账即那单的冻结清单）；
+- **ref 面已销账**（issue #5400）：9 条「工具 description 点名零绑定工具」逐条改成可达工具 / 改成
+  「如实说明不在能力内 + 引导后台页面」，台账条目**同 PR 删除**、`anchor.ref` 下调到 0
+  ⇒ 再出现即红（**未登记 + 超现取锚点**双闸，后者不依赖台账条目存在）；
+- **射程边界（面外，有意不判）**：本判据扫的是**工具类级 `description`** 与 prompt / references / agent 直答面。
+  同属「注入模型的文本」的**参数 description**（函数调用 schema 的一部分）与运行期
+  `suggestion=` / `message=` 反馈文本**不在射程内** —— #5400 顺手收口了实测的 2 处残点
+  （`validate_input` 的 `target_tool` 参数描述、`order_create` 的数量校验建议），
+  但**没有任何机械锁**拦住新增（宁可如实登记，不假装覆盖）；
 - **「不可达」口径 = 「不被任何 skill 绑定」**（静态事实）。运行期还有一层 persona 家族**只读共享**
   （`base_skill._family_read_only_tool_names`）已按同口径复算进「允许集」；`skill_names` 解绑但文件保留的
   **孤儿工具**（6 个，`test_burn_down_anchor_is_printed` 打印）**有意不删**、**不入燃尽靶**
@@ -776,13 +782,30 @@ def _point_at(surface_key: str, text: str, phrase: str) -> str:
     return text.replace(phrase, f"需要时用 order_manage 处理。{phrase}", 1)
 
 
+def _with_ref_entry(book: dict, key: str, hits: int) -> dict:
+    """**台账侧注入**：给 `key` 加一条格式合规的 `ref` 条目（只用于红证，**不写进真台账**）。
+
+    ⚠️ 为什么红证要能从**台账侧**造（issue #5400）：ref 面 9 条已**全量销账** ⇒
+    「条目陈旧 / 命中数涨」这两种红证**不能**再靠「现取的存量死引用」制造 ——
+    那样 red proof 与被测缺陷**同生共死**（缺陷修好 ⇒ 红证自己失效）。
+    台账侧注入把前提自证换成「台账变了 + 该键现取为 0」，与现取面是否干净无关。
+    """
+    out = json.loads(json.dumps(book, ensure_ascii=False))
+    out["entries"] = list(out["entries"]) + [{
+        "face": "ref", "key": key, "hits": hits,
+        "reason": "红证用条目（台账侧注入，不得写进真台账）", "issue": "#5400", "origin": "#5247",
+    }]
+    return out
+
+
 def _injections() -> dict[str, tuple]:
-    """`label` → (源键, 源内变异, 红证形态, 面, 现取键)。
+    """`label` → (源键, 源内变异, 红证形态, 面, 现取键[, 台账变异])。
 
     · 形态 `new`   = 判据必须在现取集里**看见新对象**并变红（面判据）；
-    · 形态 `stale` = 台账条目**已陈旧**（对象被修好/删除）⇒ 燃尽靶判据必须红；
-    · 形态 `grown` = 同一条目**命中数上涨** ⇒ 燃尽靶判据必须红。
+    · 形态 `stale` = 台账条目**已陈旧**（该键现取 0）⇒ 燃尽靶判据必须红；
+    · 形态 `grown` = 同一条目**命中数上涨**（台账记 1、现取 2）⇒ 燃尽靶判据必须红。
     「面 + 现取键」是红证**前提自证**比对的**不可变标识**（不看措辞、不看锚点是否存在）。
+    第 6 项（可选）= 台账变异：给了它 ⇒ 前提自证改为「台账确实变了」（见 `_with_ref_entry`）。
     """
     return {
         "① 工具 description 又点名 `order_manage`（死引用）⇒ 引用面红": (
@@ -817,15 +840,18 @@ def _injections() -> dict[str, tuple]:
             lambda s: s.replace('"validate_input", ', "", 1),
             "stale", "bind", "settings::validate_input",
         ),
-        "④b 台账命中数**涨**（不登记就多一处死引用）⇒ 燃尽靶红": (
+        "④b 台账命中数**涨**（台账记 1、现取 2）⇒ 燃尽靶红": (
             "tool:order_query.py",
-            lambda s: _point_at("tool:order_query.py", s, "【链条】"),
+            lambda s: _point_at(
+                "tool:order_query.py", _point_at("tool:order_query.py", s, "【链条】"), "【链条】"),
             "grown", "ref", "tool:order_query::order_manage",
+            lambda book: _with_ref_entry(book, "tool:order_query::order_manage", hits=1),
         ),
-        "④c 台账条目**陈旧**（死引用被修好，但条目没销账）⇒ 燃尽靶红": (
+        "④c 台账条目**陈旧**（ref 面已销账、条目还在）⇒ 燃尽靶红": (
             "tool:order_query.py",
-            lambda s: s.replace("修改订单用 order_manage。", "", 1),
+            lambda s: s,
             "stale", "ref", "tool:order_query::order_manage",
+            lambda book: _with_ref_entry(book, "tool:order_query::order_manage", hits=1),
         ),
     }
 
@@ -847,27 +873,37 @@ def test_every_judgement_can_go_red() -> None:
         "对照组：未注入时四条判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
-    covered = {_FACE_JUDGEMENT["ledger" if kind in ("stale", "grown") else face]
-               for _key, _mutate, kind, face, _live in _injections().values()}
+    covered = {_FACE_JUDGEMENT["ledger" if spec[2] in ("stale", "grown") else spec[3]]
+               for spec in _injections().values()}
     orphans = sorted(set(JUDGEMENTS) - covered)
     assert not orphans, f"判据表里有**没有红证**的判据（= 空断言）：{orphans}"
-    for label, (key, mutate, kind, face, live_key) in _injections().items():
+    for label, spec in _injections().items():
+        key, mutate, kind, face, live_key = spec[:5]
+        book_mutate = spec[5] if len(spec) > 5 else None
         sources = dict(base_sources)
         assert key in sources, f"{label}：源键 {key} 不在判据面内（注入打在面外 = 空注入）"
         sources[key] = mutate(sources[key])
-        assert sources[key] != base_sources[key], f"{label}：**注入没生效**（锚点失配）—— 同步本判据"
-        mutated = scan(sources, ledger())
+        book = book_mutate(ledger()) if book_mutate else ledger()
+        if book_mutate is None:
+            assert sources[key] != base_sources[key], f"{label}：**注入没生效**（锚点失配）—— 同步本判据"
+        else:
+            assert book != ledger(), f"{label}：**台账注入没生效**（锚点失配）—— 同步本判据"
+        mutated = scan(sources, book)
         if kind == "stale":
             assert live_key not in mutated.keys_of(face), (
                 f"{label}：期望 `{live_key}` 从现取集里**消失**（那才是陈旧），但它还在"
             )
-            assert problems_ledger_only_shrinks(mutated), f"{label}：陈旧条目没让燃尽靶判据变红 ⇒ 空断言"
+            problems = problems_ledger_only_shrinks(mutated)
+            assert any("陈旧" in p for p in problems), (
+                f"{label}：陈旧条目没让燃尽靶判据**按「陈旧」**判红 ⇒ 空断言：{problems}")
             continue
         if kind == "grown":
             assert len(mutated.ref_hits.get(live_key, ())) > 1, (
                 f"{label}：命中数没涨到 ≥2（现取 {len(mutated.ref_hits.get(live_key, ()))}）⇒ 注入是空的"
             )
-            assert problems_ledger_only_shrinks(mutated), f"{label}：命中数涨了但燃尽靶判据没红 ⇒ 空断言"
+            problems = problems_ledger_only_shrinks(mutated)
+            assert any("涨" in p for p in problems), (
+                f"{label}：命中数涨了但燃尽靶判据没**按「涨」**判红 ⇒ 空断言：{problems}")
             continue
         added = mutated.keys_of(face) - base.keys_of(face)
         assert live_key in added, (

@@ -28,7 +28,7 @@ class ProcessingOrderQueryTool(BaseTool):
     description = (
         "【触发】用户问'加工单到哪了''JG-xxx 什么状态''这个订单的加工单'时调用。"
         "【参数】可选 keyword（加工单号 JG-xxx / 订单号 ORD-xxx）或 status 筛选。"
-        "【反例】生成加工单用 processing_order_generate；改加工单状态用 processing_order_update。"
+        "【反例】生成加工单 / 改加工单状态**不在能力内**——如实说明并引导商家到后台「生产看板」页操作。"
         "【标注】READONLY — 只读查询"
     )
 
