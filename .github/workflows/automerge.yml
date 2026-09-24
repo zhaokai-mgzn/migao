@@ -29,7 +29,24 @@ name: Auto Merge
 # 两类都要求 required 检查未判红、且无 `block/merge` 标签。
 # **非 bot（人类 PR）路径的行为逐字不变** —— 既有 job 的 `if:` 与 steps 一个字未改（本文件
 # 从 `on:` 起的所有原文原样保留，新增内容只在文件头注释与文件末尾的新 job）。
-# 守卫：tests/unit_ci_workflows/test_automerge_bot_safe_path.py（8 条判据各带注入式红证）。
+# 守卫：tests/unit_ci_workflows/test_automerge_bot_safe_path.py（11 条判据各带注入式红证）。
+#
+# ── 2026-09-24：secrets 判据改为**同源**复用 danger_scan 的剥注释尺子（issue #5286）──────
+# 病灶：本 job 里的 `SECRETS_RE.search(原始行)`（子串口径、吃**含注释的整行**）与 `#5268`
+# 已修好的 `.github/danger_scan.py` 是**两把不同源的尺子** —— 一句说明性注释（如「全文
+# secrets.* 引用仍只有既有那一处」）即判 `SECRETS_ADDED` ⇒ bot PR 拿不到自动 arm。
+# 方向是 fail-closed（偏严、**不卡合并**），但与 #5077「移除 dependabot 全人工环节」的目标相抵：
+# 这类 PR 会**静默**停在「没人合」。
+# 修法（**不抄第三份判定**）：`load_strip_comment()` 经 `importlib` 从仓库加载
+# `.github/danger_scan.py` 的 `strip_comment()`（#5268 的纯函数），判据一律建立在**剥掉注释后**
+# 的代码文本上。**剥注释实现全仓只剩一份**（判据：`grep -rn --include="*.py" "def strip_comment" .github/`
+# ⇒ 恰好 1 行，即 `.github/danger_scan.py`；本文件里只有对它的**调用**，没有第二份实现）。
+# 为什么不是第三把尺子：① 实现只有一份，本文件只**调用**、不复制；② 加载的是
+# `.github/danger_scan.py`，而 `pull_request_target` 下 checkout 取 **base** ref ⇒ 尺子与定义
+# 本 job 的 workflow 属**同一信任域**，被评审的 PR 替换不了它；③ 取不到尺子 ⇒
+# `SECRETS_YARDSTICK_UNAVAILABLE` ⇒ **不 arm**（绝不把「量不出来」读成「没问题」）。
+# 判据强度**未放宽**：diff 里真新增 secrets 引用 ⇒ 照旧 `SECRETS_ADDED`、照旧不 arm。
+# 未改：两个安全类的口径、其余安全闸、非 bot 路径（逐字不变）。
 #
 # ── 2026-09-23 新增（issue #5235「PR 悬空但零信号」的两族）────────────────────────
 # 族 A（**arm 腿自己失败**）：PR 停在「required 全绿但永不合并」，不红、不通知。真因是
@@ -289,6 +306,7 @@ jobs:
           判定口径见本 workflow 头部注释；守卫见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py。
           任何一步「不确定」⇒ 不 arm（fail-closed），并把可行动的理由写进 step summary。
           """
+          import importlib.util
           import json
           import os
           import re
@@ -316,6 +334,7 @@ jobs:
               "NO_FILES": "PR 改动文件清单为空 ⇒ 无法判定安全类，保持人工",
               "FILE_ADDED_OR_REMOVED": "新增/删除/改名文件不在任何安全类内（workflow 可携带 secrets 执行）⇒ 人工审查",
               "SECRETS_ADDED": "diff 新增了 secrets 引用 ⇒ 人工安全审查",
+              "SECRETS_YARDSTICK_UNAVAILABLE": "取不到 .github/danger_scan.py 的 strip_comment（#5268 的剥注释尺子）⇒ 无法判定候选行是否真引用 ⇒ 保持人工（fail-closed）",
               "PATCH_UNAVAILABLE": "拿不到 patch（二进制/超大 diff）⇒ 无法逐行校验 ⇒ 人工",
               "NOT_USES_ONLY": "workflow 改动不止 uses 版本 tag（触发条件/权限/结构）⇒ 人工审查",
               "ACTION_NAME_CHANGED": "action 名变了（不只是 tag）⇒ 人工审查",
@@ -411,6 +430,30 @@ jobs:
               return True, "DEP_PATCH_OR_MINOR", "patch/minor 升级（%s → %s）且 diff 与标题一致" % (old_raw, new_raw)
 
 
+          def load_strip_comment():
+              """从仓库加载 `.github/danger_scan.py` 的 `strip_comment`（#5268 的纯函数）。
+
+              **同源**（issue #5286）：剥注释实现全仓只有那**一份**，本文件只调用、不复制
+              ⇒ 不会长出第三把尺子。路径取 checkout 根（`GITHUB_WORKSPACE`，Actions 预置；
+              本机复跑退化为 cwd）；`pull_request_target` 下 checkout 取 **base** ref ⇒ 尺子与
+              定义本 job 的 workflow 属**同一信任域**，被评审的 PR 替换不了它。
+              该模块只依赖标准库、且 `main()` 在 `if __name__ == "__main__"` 之后 ⇒ import 无副作用。
+              加载失败 / 没有这个函数 ⇒ 返回 None ⇒ 调用方 fail-closed（不 arm）。
+              """
+              root = os.environ.get("GITHUB_WORKSPACE") or os.getcwd()
+              path = os.path.join(root, ".github", "danger_scan.py")
+              try:
+                  spec = importlib.util.spec_from_file_location("migao_danger_scan", path)
+                  if spec is None or spec.loader is None:
+                      return None
+                  module = importlib.util.module_from_spec(spec)
+                  spec.loader.exec_module(module)
+              except Exception:  # 安全门禁：任何加载失败都不得被读成「没有风险」
+                  return None
+              fn = getattr(module, "strip_comment", None)
+              return fn if callable(fn) else None
+
+
           def classify():
               if "block/merge" in LABELS:
                   return False, "BLOCK_LABEL", "PR 带 block/merge 标签（人工闸）"
@@ -429,9 +472,22 @@ jobs:
               for f in files:
                   if f.get("status") != "modified":
                       return False, "FILE_ADDED_OR_REMOVED", "%s 状态=%s" % (f.get("filename", "?"), f.get("status"))
+              # #5286：判定必须建立在**剥掉注释后**的代码文本上（与 .github/danger_scan.py 同源）。
+              # 两段式：① 候选 = **超集**（含 `secrets.` 的新增行，注释里的也算候选）；
+              #         ② 判定才向仓库里的尺子要 —— 与 secrets 无关的 PR 不依赖那把尺子。
+              strip = None
               for f in files:
                   for line in (f.get("patch") or "").splitlines():
-                      if line.startswith("+") and not line.startswith("+++") and SECRETS_RE.search(line):
+                      if not line.startswith("+") or line.startswith("+++"):
+                          continue
+                      text = line[1:]  # diff 前缀 `+` 不是代码内容
+                      if not SECRETS_RE.search(text):
+                          continue
+                      if strip is None:
+                          strip = load_strip_comment()
+                      if strip is None:
+                          return False, "SECRETS_YARDSTICK_UNAVAILABLE", "%s：候选行 %s" % (f.get("filename", "?"), line.strip()[:120])
+                      if SECRETS_RE.search(strip(text)):
                           return False, "SECRETS_ADDED", "%s：%s" % (f.get("filename", "?"), line.strip()[:120])
               wf_files = [f for f in files if f.get("filename", "").startswith(WORKFLOW_DIR)]
               dep_files = [f for f in files if not f.get("filename", "").startswith(WORKFLOW_DIR)]
