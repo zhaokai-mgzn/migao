@@ -86,7 +86,7 @@ python3 .github/render_cases.py \
 | 旧用例预期 | 代码实际 | 校准去向 |
 |---|---|---|
 | escape hatch「输入长度>10」 | 域触发词（nodes.py 明确不用字符数） | CH-002 → ai-chat.escape-hatch |
-| 压缩「20 条/20 轮」 | max_recent=12（base_skill.py:819） | DF-004/DF-015 → ai-chat.compression |
+| 压缩「20 条/20 轮」 | max_recent=12（`app/memory/context_manager.py` 的 `compress_conversation` 形参默认 / `prepare_turn` 显式传值） | DF-004/DF-015 → ai-chat.compression |
 | 熔断「连续 5 次失败」 | failure_threshold=3（app/core） | DF-011 → defense.breaker-threshold |
 | 输出「<2000 字符」 | LLM max_tokens 默认 512 | DF-001 → defense.output-limit |
 | 速率限制「触发」 | 未实现（仅 key 前缀） | DF-004 → defense.rate-limit（不期待触发） |

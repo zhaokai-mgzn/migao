@@ -263,17 +263,17 @@ async def _end_session(token: str, session_id: str, debug_user: str = "",
 # ── 前置复位直连 DB（attempt 边界的 fixture 动作，issue #3751）─────────────────
 # 为什么需要 DB 直连：**"把被用例点名的对象复位回初始态"在现有 HTTP 面上做不到** ——
 #   admin-api `PUT /api/admin/after-sales/{id}/status` 的 `STATUS_TRANSITIONS` 把 `closed`
-#   设为**终态**（`AfterSalesTicketService.java:103-109`：`closed → Set.of()`），且关闭分支
-#   只 `setClosedAt/setCloseReason`（`:501-506`）、**没有清空路径** ⇒ 首跑关掉的工单在重试前
+#   设为**终态**（`AfterSalesTicketService` 的 `STATUS_TRANSITIONS`：`closed → Set.of()`），且关闭分支
+#   只 `setClosedAt/setCloseReason`（`AfterSalesTicketService.updateTicketStatus` 的关闭分支）、**没有清空路径** ⇒ 首跑关掉的工单在重试前
 #   无法复位 ⇒ 第 2 次尝试的前置 ≠ 第 1 次的前置（AS-004 实测：首跑已 closed + closeReason
 #   残留 ⇒ 重试 agent 合理地"不再关闭" ⇒ 必红，且与首跑成因不同 → 指纹漂移 → 误判）。
 #   故复位与 `scripts/eval_stack_seed.sh` 走**同一条 DB**（只是不经 psql）：seed 的初始态
-#   就是真值来源（`fixtures/mibao_eval_seed.sql:302`）。
+#   就是真值来源（`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `AS-20260914-9001` 工单行）。
 # ⚠️ 红线：复位**只允许发生在一次尝试开始之前**（attempt 边界，见 `run_suite` 的重试分支）。
 #   绝不能在断言/`db_verify` 之后调用 —— 那会把本次尝试的真实产物抹掉，把真失败洗成绿。
 _EVAL_DB_DSN_DEFAULT = "postgresql://app_user:%s@127.0.0.1:5432/ai_customer_service"
 
-# seed 工单：AS-004 点名的对象（`fixtures/mibao_eval_seed.sql:302` 的 'AS-20260914-9001'）
+# seed 工单：AS-004 点名的对象（`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 'AS-20260914-9001' 工单行）
 _SEED_AFTERSALES_TICKET_NO = "AS-20260914-9001"
 
 # 复位到 seed 初始态：状态回 pending + **清空关闭留痕**（closedAt/closeReason/internalNotes）。
@@ -1375,7 +1375,7 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
         # 清掉**上一轮会话**flush 落库的长期记忆（issue #3544 收口批）：
         # `post_session[user_memories]` 断言的是「用户级长期状态」，共享/复用栈上会被上轮
         # 残留满足（或反向：上一跑的残留让本跑的"新增"判定失真）→ 评测前先清干净。
-        # 端点已存在（`DELETE /api/chat/memories`，api/chat.py:2018，个保法删除权），
+        # 端点已存在（`DELETE /api/chat/memories`，见 `api/chat.py` 的 `delete_user_memories`，个保法删除权），
         # 无需新增 API/DB 直连。
         agent_type = str(spec.get("agent_type") or "xiaobu")
         async with httpx.AsyncClient() as c:
@@ -2080,7 +2080,7 @@ def _is_processing_items_card(args: dict) -> bool:
 # 为什么两条分支必须同口径（issue #3681 / 归因报告 G2 §3.3，先例 OR-017 run 34670989760）：
 #   `_is_processing_items_card` 早就接受「加工项」**或「加工」**（LLM 合法卡标题
 #   「这款窗帘支持**加工**哦，需要帮您加上吗？」不含三字），文本分支却要求**字面「加工项」三字**
-#   —— 而用例自己声明「文本询问亦可，语义由 order_before 保证」（`.github/cases/aftersales.yml:346`）
+#   —— 而用例自己声明「文本询问亦可，语义由 order_before 保证」（`.github/cases/aftersales.yml` 的 AS-007 `data_checks` 那一条）
 #   ⇒ agent 用自然表述问加工项（「刺绣工艺（按面积）需要选哪种？」）被判"没问" →
 #   `order_before[processing_ask …]` 报「全程未调用」→ **整例 score 0（假红温床）**。
 # 口径 = 卡片分支的对象词集合（「加工项」/「加工」）+ 同族对象词「工艺」（问加工工艺同样是
@@ -3876,10 +3876,10 @@ async def _fetch_product_configs(token: str, name: str = "", product_id: str = "
     两条定位路径（issue #3689 / PR-019）：
       · `product_id` 给定时**直查该商品**（`GET /api/admin/products/{id}`）——回读键来自
         **本次成功写调用**的 payload（`product_manage(action=create)` 回
-        `{"product_id":…}`，见 `app/tools/product_manage.py:245`）；
+        `{"product_id":…}`，见 `backend/ai-agent-service/app/tools/product_manage.py` 的 `_create_product`）；
       · 否则按 `name` 关键词搜（`page/size=1` 取**首条**）——存量语义，用于商品名在库里唯一时。
     ⚠️ 为什么必须支持第一种：PR-019 建的商品名与评测种子同名同价
-    （`fixtures/mibao_eval_seed.sql:30` 的 `prod_eval_2699`，¥23.80），keyword 首条命中的是
+    （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 `prod_eval_2699`，¥23.80），keyword 首条命中的是
     **种子** ⇒ 不管本次 create 成没成功都绿（假绿）。按 id 回读才能真正核对"本次新建的那条"。
     """
     async with httpx.AsyncClient() as c:
@@ -4043,12 +4043,15 @@ def _first_successful_ticket_payload(results: list, tool: str, expect_status: st
     带工单引用且（声明了 expect_status 时）`status` 相符 —— 后者能区分同一工单上的
     多次状态变更（如先 processing 后 closed），不会核对错那一次。
 
-    工单引用的键**按两条写路径的真实形状**认（issue #3689 / AS-007）：
-      · `update_status` 路径 → `ticket_id`（`app/tools/after_sales_manage.py:435`
-        `data={"ticket_id":…, "status":…}`）；
-      · `create` / `detail` 路径 → **`id`**（`:369`/`:281` 原样返回 admin-api 的
-        `AfterSalesDetailResponse`，其字段是 `id`/`ticketNo`/`status`，
-        **没有 `ticket_id`**）。旧实现只认 `ticket_id`/`ticketId` ⇒ create 形态恒返回
+    工单引用的键**按真实 payload 形状**认（issue #3689 / AS-007；引用锚点见 issue #5309）：
+      · **`id`**（存活的一侧）：`backend/ai-agent-service/app/tools/after_sales_manage.py`
+        的 `_get_detail` 原样透传 admin-api 的 `AfterSalesDetailResponse`（该 DTO 声明
+        `id`/`ticketNo`/`status`、**没有 `ticket_id`**）；
+      · `ticket_id`（兼容读法，**当前无存活生产者**）：原 `update_status` 写路径自拼
+        `data={"ticket_id":…, "status":…}` —— 该写 action 已随 B 端只读化
+        （issue #5247 / #5285）从 `after_sales_manage` 整条下线；本函数仍认它，
+        便于历史 run 重放，`_ticket_ref_of` 的读法**一格未放宽**。
+      旧实现只认 `ticket_id`/`ticketId` ⇒ create 形态恒返回
         `(None, {})` ⇒ AS-007 的 `db_verify[after_sales_ticket]` 一加就**永久假红**
         （"找不到成功调用（判失败而非跳过）"）。
     ⚠️ 裸 `id` **不算** 工单引用：必须同时带工单特征键（`ticketNo`/`ticketType`/`orderId`），

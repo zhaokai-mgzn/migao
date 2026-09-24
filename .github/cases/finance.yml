@@ -32,7 +32,7 @@ cases:
         args:
           action: get_transactions
     # ── 断言可执行化：堵住「工具失败 100%、用例仍 100% 绿」的假绿（issue #3558 / #3548）──
-    # 假绿实证（2026-09-14 云测试环境真实重放，缺陷部署期）：`finance_api.py:202` 用 `json=`
+    # 假绿实证（2026-09-14 云测试环境真实重放，缺陷部署期）：`finance_api.py` 用 `json=`
     # 调自研客户端（`AdminApiClient.post` 只收 `json_data`）→ 必抛 TypeError → 线下收支登记
     # **100% 失效**；而本用例照样 score=100%，同一次跑分还打印「工具失败率 100%」。
     # 三处漏点：① expectations 只断言「finance_api 被调用 + args」，不看 tool_result.success；

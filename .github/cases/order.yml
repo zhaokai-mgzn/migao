@@ -1031,7 +1031,7 @@ cases:
       # → 轮次用尽停在待确认态（断言本身合理）。agent 取颜色走的是 interact(choice) 卡
       # （run 34807151893 R2 原文：「『遮光窗帘』散剪（2.8 米门幅）有**两个颜色**可选，
       # 请点击选择颜色」`cards=choice`），且「颜色」是商品真实存在的必填 SKU 维度
-      # （种子 product_colors：米白 sort_order=1 / 浅灰=2，xiaobu_eval_seed.sql:70-71）
+      # （种子 `tests/agent_eval/fixtures/xiaobu_eval_seed.sql` 的 `prod_eval_blackout` product_colors：米白 sort_order=1 / 浅灰=2）
       # —— 不是 agent 编造的字段，也不是断言过严。
       # 有卡答卡（choice→首项=米白，= 前端点击协议；form→按声明值回填），无卡才发含颜色的
       # 原文（§13.5 陷阱：静态文本答不了卡；同 OR-014 的协作轮形态）。
@@ -2231,7 +2231,7 @@ cases:
     #   · 改正后必须继续走完闭环（不得因一次校验失败就自我否定/要求顾客重头再来）。
     # ⚠️ 边界（2026-09-15 复核修正，issue #3683——**旧注释已过期，不许再照抄**）：
     #   旧注释写「runner 目前没有『某次工具调用必须失败（success=false）』的断言」——
-    #   该能力**已落地**：`must_fail`（`tests/agent_eval/local_runner.py:1567`；其 docstring 自引
+    #   该能力**已落地**：`must_fail`（`tests/agent_eval/local_runner.py` 的 `check_must_fail`；其 docstring 自引
     #   issue #3544「收口批」，随 PR #3644 的 runner 能力批进 main）。
     #   它的真实语义是「声明的工具（可限定 action）**全程一次都不得成功**；**从未调用 → 通过**」
     #   （全程判定；声明 `action` 时只做到**同轮对齐**（`_round_action_result`，issue #3681），
@@ -2242,7 +2242,7 @@ cases:
     #     · `must_fail: [{tool: validate_input}]` —— 同样矛盾（改正后闸门**必须**放行，
     #       required_args 还要求它带齐 params 被真正调用）；
     #     · `must_fail: [{tool: order_create, action: create}]` —— order_create **没有 action 参数**
-    #       → `local_runner.py:1600-1605`（`if not called: continue`）直接整条跳过 = **静默空转**
+    #       → `local_runner.py` 的 `check_must_fail`（`if not called: continue`）直接整条跳过 = **静默空转**
     #       （比不加更糟：看起来有覆盖，实际零判定）。
     #   本用例要的不变式是**参数值作用域**的：「任何一次以非法号码（05718886666）为
     #   customer_phone 的 order_create 都不得成功」——`must_fail` 只支持 工具×action 粒度，
@@ -2251,7 +2251,7 @@ cases:
     #     让 `must_fail` 条目支持 `args` 值级匹配（如 `{tool: order_create, args: {customer_phone: "05718886666"}}`
     #     ——语义 =「凡匹配该 args 的调用都不得成功」），或补轮次作用域。
     #   ⇒ 在那之前，本用例证明的仍是它的**产出侧后果**（同样机器可判、且 fail-closed）：
-    #     `db_verify[order_phone]` 取**首个成功的 order_create** 的落库号码（`local_runner.py:3180`），
+    #     `db_verify[order_phone]` 取**首个成功的 order_create** 的落库号码（`local_runner` 的 `db_verify[order_phone]` 分支，经 `_first_successful_call` 取首个成功的 `order_create`），
     #     非法号落单 → 首个成功订单号码对不上 → 红。**不得**为「让拒绝半看起来被测了」
     #     而塞入上面三种矛盾/空转写法之一。
     user_inputs:
@@ -2357,7 +2357,7 @@ cases:
       - order.create-flow
     # ── 容量缺陷回归网（issue #3666）──
     # 现象：订单数量语义过窄 —— `order_items.quantity` 是 INTEGER，而数量口径按计价方式
-    #   （docs/testing/acceptance-protocol.md:225：per_meter=米数 / per_set=1 / per_area=宽×高）。
+    #   （`docs/testing/acceptance-protocol.md` 的「quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）」那条）。
     #   计价数量可以是小数：**8.4 米**（per_meter），打孔 8.00 元/米
     #   → 正确 67.20 元；整数只能表示 8 → 64.00 元 = **少收 3.20 元**。
     #   ⚠️ 2026-09-19（issue #4571）：原形态是 per_area 8.4 ㎡ × 30 元/㎡ = 252.00，
