@@ -41,6 +41,11 @@
 另有一条**负控**（注入一条**被否定**的死工具点名 ⇒ 键集**不**新增、判据**仍绿**）：证明否定过滤有判别力 ——
 本判据**不是**「见名就红」，否则会把本仓「反例式指路」文风整片喂红（§17.3「判据被自己的文案喂红」）。
 
+**否定过滤本身**另有四条判据（issue #5444，全部带前提自证）：`test_bracketed_positive_guidance_is_judged`
+（活例 + **改回整句判定即红**）、`test_every_clause_separator_cuts_negation_scope`（子句界只许扩大 +
+逐界行为证据 + 负控）、`test_mention_accounting_is_conserved`（三桶计数守恒）、
+`test_exemption_surface_only_shrinks`（豁免面冻结账户 + 变宽负控）。
+
 ## 未固化的边界（照实登记，§19.1）
 
 - **ref 面已销账**（issue #5400）：9 条「工具 description 点名零绑定工具」逐条改成可达工具 / 改成
@@ -70,13 +75,25 @@
   （`base_skill._family_read_only_tool_names`）已按同口径复算进「允许集」；`skill_names` 解绑但文件保留的
   **孤儿工具**（6 个，`test_burn_down_anchor_is_printed` 打印）**有意不删**、**不入燃尽靶**
   （MC-021 判据 5 的「只解绑、绝不删除」）；
-- **否定过滤的已知假阴性（登记，本单不改）**：`_negated` 按**整句**取否定标记 ⇒ 同句内
-  **前一个子句的否定**会遮蔽**后面的正向指路**。活例（#5400 **人工**发现并改掉的那 1 处；
-  把树退到 #5400 的父提交即可复现）：`app/tools/order_create.py` 的数量校验 suggestion 原文是
-  「不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）」——
-  「不要」挂在**前半句**上，括号里其实是**正向指路**，但整句判定 ⇒ 该点名被当反例跳过。
-  ⇒ **该形态仍是盲区**；修它要动 #5331 的过滤器本体（会波及本仓「反例式指路」文风），
-  **不属本单**（本单只扩面、只处理「全局不可达」这一档）；
+- **否定过滤已收窄到子句级（issue #5444，本单）**：`_negated` 原按**整句**取否定标记 ⇒ 同句内
+  **前一个子句的否定**会遮蔽**后面的正向指路** —— 这是**假阴性**（判据**看见命中却不判**），
+  比「射程窄」更隐蔽：**它看起来在判，而且给了绿**。活例（#5400 **人工**发现并改掉的那 1 处）：
+  `backend/ai-agent-service/app/tools/order_create.py` 的数量校验 suggestion 原文是
+  「不要用 -1 之类的占位值表示退款或扣减（退款请用 `order_manage` 的 refund）」——
+  「不要」挂在**前半句**，括号里其实是**正向指路**。现改为**子句级**判定（`CLAUSE_SEPARATORS`），
+  并落三条判据：① **实例**（`test_bracketed_positive_guidance_is_judged`，带「**改回整句 ⇒ 必红**」
+  的注入式红证）；② **子句界声明只许扩大 + 逐界可证有效**
+  （`test_every_clause_separator_cuts_negation_scope`）；③ **守恒律**
+  （`problems_mentions_are_all_accounted`：被判据**吞掉**的点名必须**留痕**，三桶计数不许对不上）；
+- **收窄的存量读数（现取，零成本复算）**：干净 `origin/main` 上收窄**不新增任何判红命中**
+  （`ref` 面 0 → 0）：45 处判决改变的**全是域内点名**（域内可达 ⇒ 既不判红、也不进不判表），
+  显式不判表 **9 条不变**。退到 `61326373`（#5400 收口前）复算：整句判定 10 处 vs 收窄后 **11** 处，
+  多出来的**正是**活例 `sugg:order_create::order_manage`（复算见 `LIVE_EXAMPLE` 注释）；
+- **残余（照实登记，未固化）**：否定标记与点名**同子句**、语义上却不支配它（中间无任何标点的长句）
+  仍会被吞 —— 那需要语义理解，机械判据做不到。守恒律只保证「被吞」**可见**（现取打印 + 计数守恒），
+  **不保证「吞得对」**；
+- **豁免面（显式不判表）只许缩短**（issue #5444 的硬口径「**不要为了降噪而放宽**」）：条数冻结在
+  `anchor.not_judged`，**涨跌都红** ⇒ 收窄过滤器**不许**换成「不判表悄悄多几条」的实现。
 - **「域外点名」档不判**（显式不判表，读数打印）：工具 description / 参数 description / 运行期文本
   都由**多个域共享**一份，且本仓有**跨 persona「反例式指路」**的既定文风（如 B 端工具写
   「商户员工查用 `order_query`」），一刀切会把**正确文本**判红 ——
@@ -106,9 +123,21 @@ MY_FACES = ("ref", "guard", "bind")
 #: 上游射程面判据的注册名（`test_mibao_b_end_readonly.py::JUDGEMENTS` 的键）。
 RANGE_FACE_LABEL = "7 · 声明 persona 的 skill 工具面受控"
 
-#: 否定标记（点名**之前**、**同一句内**命中任一 ⇒ 该点名是「禁止 / 反例」，不是指路）。
-#: ⚠️ 句界 = `。！？；` + 换行：本仓反例文风常把否定写在前半句（「不要拆解成 a + b」）。
+#: 否定标记（点名**之前**、**同一子句内**命中任一 ⇒ 该点名是「禁止 / 反例」，不是指路）。
 NEGATION_MARKERS = ("不得", "不要", "禁止", "勿", "无", "没有", "不在", "❌", "≠", "不是", "别", "不可", "不能")
+
+#: **子句界**（issue #5444）：否定标记**只作用于它所在的子句**。
+#: ⚠️ 句界（`。！？；` + 换行）**不足以**表达这一点：整句取面时**前一个子句的否定**会遮蔽
+#: **后面的正向指路** —— 活例「不要用 -1 之类的占位值表示退款或扣减（退款请用 `order_manage` 的 refund）」
+#: 里「不要」挂在**前半句**，括号里却是**正向指路** ⇒ 判据**看不见它**（假阴性：看起来在判，还给了绿）。
+#: ⇒ 子句界 = 句界 + **中文逗号** + **全/半角括号**（括号常是补充说明，语义与主句可能相反）。
+#: ⚠️ **只许扩大**这个集合（收窄它 = 把命中重新吞回去，且不会有东西变红）；
+#: `REQUIRED_CLAUSE_SEPARATORS` 钉住不可缩的下限，逐界**行为证据**见
+#: `test_every_clause_separator_cuts_negation_scope`。
+CLAUSE_SEPARATORS = "。！？；\n，（）()"
+
+#: 子句界里**必须**有的成员（不可缩的射程声明）：句界 + 中文逗号 + 全/半角括号。
+REQUIRED_CLAUSE_SEPARATORS = "。！？；\n，（）()"
 
 #: 工具名最短长度（更短的名会与自然语言碰撞 ⇒ 只做**全词边界**匹配并设下限）。
 MIN_TOOL_NAME_LEN = 4
@@ -536,7 +565,22 @@ def validator_tools(sources: dict[str, str], vocab: frozenset) -> dict[str, dict
 
 
 def _negated(text: str, start: int) -> bool:
-    """该点名**之前**（同一句内）是否出现否定标记。"""
+    """该点名**之前**（**同一子句内**）是否出现否定标记 —— 粒度 = 子句（issue #5444）。
+
+    ⚠️ 为什么不能按整句：整句判定会让**前一个子句的否定**遮蔽**后面的正向指路** ——
+    判据**看见了命中却不判**（活例见 `CLAUSE_SEPARATORS` 注释），且**没有任何读数**会因此异常。
+    """
+    cut = max(text.rfind(sep, 0, start) for sep in CLAUSE_SEPARATORS)
+    return any(marker in text[cut + 1:start] for marker in NEGATION_MARKERS)
+
+
+def _sentence_scoped_negation(text: str, start: int) -> bool:
+    """**#5444 之前的实现**（整句取否定标记，逐字来自本文件 30e2a1687 版 `_negated`）。
+
+    ⛔ **不是判据的一部分**，只作**注入式红证**用：把它换回 `_negated` ⇒ 活例必须从判红集里消失
+    （证明「收窄粒度」是承重的，而不是装饰）。实现不一致 ⇒ 红证是空注入 ⇒ 见
+    `test_bracketed_positive_guidance_is_judged` 的前提自证。
+    """
     cut = max(text.rfind(sep, 0, start) for sep in "。！？；\n")
     return any(marker in text[cut + 1:start] for marker in NEGATION_MARKERS)
 
@@ -591,7 +635,10 @@ class Scan:
             self.flags_by_symbol[meta["symbol"]] = meta
         self.predicates = capability_predicates(sources, self.vocab)
         self.validators = validator_tools(sources, self.vocab)
-        self.ref_hits, self.ref_not_judged = self._scan_refs(sources)
+        #: `ref_suppressed` = 被**否定过滤**判为「反例」而跳过的点名（issue #5444）：**必须留痕** ——
+        #: 否则「命中从不出现」这类假阴性在读数上完全不可见（守恒律见
+        #: `problems_mentions_are_all_accounted`）。
+        self.ref_hits, self.ref_not_judged, self.ref_suppressed, self.ref_clean = self._scan_refs(sources)
         self.guard_dead = self._scan_guards()
         self.bind_dead = self._scan_bindings()
 
@@ -701,23 +748,32 @@ class Scan:
     def _scan_refs(self, sources: dict[str, str]):
         """死引用：① 点名**全局不可达**工具（必然 `tool_not_found`）；② skill 自述面点名**域外**工具。
 
-        返回 `(hits, not_judged)`：`hits` = **未登记即红**的现取集；
-        `not_judged` = **显式不判表**（工具 description 的域外点名：由多域共享 + 反例文风，一刀切会喂红正确文本）。
+        返回 `(hits, not_judged, suppressed, clean)` —— **每个点名恰好落进一个桶**：
+        `hits` = **未登记即红**的现取集；`not_judged` = **显式不判表**（工具 description 的域外点名：
+        由多域共享 + 反例文风，一刀切会喂红正确文本）；`suppressed` = 被**否定过滤**跳过的点名
+        （issue #5444：**吞掉必须留痕** —— 否则「命中从不出现」在读数上完全不可见）；
+        `clean` = **域内可达、无异状**的点名**计数**（第 4 桶 —— 守恒律要拿它对总账，
+        缺了它「745 个点名只记了 48 个」会被误读成"有命中被丢弃"）。
         """
         hits: dict[str, list] = {}
         not_judged: dict[str, list] = {}
+        suppressed: dict[str, list] = {}
+        clean = 0
         for surface, allowed, text, kind in self._surfaces(sources):
             if not text:
                 continue
             for tool, pos, ctx in _mentions(text, self.tool_names):
                 if _negated(text, pos):
+                    suppressed.setdefault(f"{surface}::{tool}", []).append(ctx)
                     continue
                 if tool in self.dead_tools:
                     hits.setdefault(f"{surface}::{tool}", []).append(ctx)
                 elif tool not in allowed:
                     target = not_judged if kind == "tool" else hits
                     target.setdefault(f"{surface}::{tool}", []).append(ctx)
-        return hits, not_judged
+                else:
+                    clean += 1
+        return hits, not_judged, suppressed, clean
 
     # ── 守卫面：能力标志恒假 ⇒ 引用它的门条件恒不触发 ──
 
@@ -924,10 +980,54 @@ def problems_ledger_only_shrinks(sc: Scan) -> list[str]:
         if hits > int(anchor.get(f"{face}_hits", -1)):
             problems.append(
                 f"燃尽靶 [{face}]：现取命中数 **{hits} > 锚点 {anchor.get(f'{face}_hits')}** —— 现取涨了，先修再谈登记")
+    # 豁免面（**显式不判表**）**只许缩短**（issue #5444 的硬口径「不要为了降噪而放宽」）：
+    # 收窄过滤器会让更多文本进判定面 ⇒ 出口只能是「修文本」或「逐条登记」，⛔ **不是**把不判表悄悄加宽。
+    live_nj = len(sc.ref_not_judged)
+    frozen_nj = anchor.get("not_judged")
+    if not isinstance(frozen_nj, int):
+        problems.append("锚点缺 `not_judged`（豁免面 = 显式不判表条数的**冻结账户**）—— 不许用缺省值放行")
+    elif live_nj != frozen_nj:
+        direction = "涨" if live_nj > frozen_nj else "跌"
+        problems.append(
+            f"豁免面（显式不判表）条数**{direction}**了 —— 冻结账户记 {frozen_nj}，现取 {live_nj}："
+            f"{sorted(sc.ref_not_judged)}\n"
+            "      ⇒ 出口：① **改文本**（让点名落回域内）；② 删掉已不成立的不判事实；"
+            "③ 确属有意保留 ⇒ 同 PR 显式改 `dead_object_ledger.json` 的 `anchor.not_judged`"
+            "（一次可评审的动作）—— ⛔ 不许靠加宽过滤器降噪")
     if not problems:
         return []
     return ["燃尽靶（台账只许缩短，涨跌都红）：\n" + "\n".join(f"  - {p}" for p in problems)
             + "\n（修好一处 ⇒ **同 PR 删除/下调对应条目**；台账不是豁免，是欠账清单。）\n" + _REPRO]
+
+
+def problems_mentions_are_all_accounted(sources: dict[str, str], sc: Scan,
+                                        buckets: tuple | None = None) -> list[str]:
+    """**守恒律**（issue #5444）：每一个点名必须**恰好**落进一个桶 —— 判红 / 不判 / 抑制 / **域内无异状**。
+
+    立案理由：#5444 的病是「**命中从不出现**」—— 过滤器把候选吞掉，而**读数上没有任何痕迹**
+    （「它看起来在判，而且给了绿」）。只换一种过滤实现治不了这一类（下次换一种吞法照样静默）
+    ⇒ 本判据把「吞掉」变成**必须留痕**：四桶对总账 ≠ 点名总数 ⇒ 红（有点名被静默丢弃）。
+    `buckets` 可注入 ⇒ 负控见 `test_mention_accounting_can_go_red`。
+
+    ⚠️ 本条**第一次跑就红了**（745 个点名 vs 只记下 48 个）—— 红的是**作者自己漏掉的第 4 桶**
+    （域内可达、无异状的点名）。这正说明它判的是「有没有留痕」，不是「怎么判」。
+    """
+    hits, not_judged, suppressed, clean = buckets if buckets is not None else (
+        sc.ref_hits, sc.ref_not_judged, sc.ref_suppressed, sc.ref_clean)
+    total = sum(1 for _s, _a, text, _k in sc._surfaces(sources) if text
+                for _ in _mentions(text, sc.tool_names))
+    counted = sum(len(v) for v in (*hits.values(), *not_judged.values(), *suppressed.values())) + clean
+    keys = (set(hits), set(not_judged), set(suppressed))
+    overlap = (keys[0] & keys[1]) | (keys[0] & keys[2]) | (keys[1] & keys[2])
+    out = []
+    if counted != total:
+        out.append(
+            f"点名总数 {total} ≠ 四桶对总账 {counted}（判红 {len(hits)} / 不判 {len(not_judged)} / "
+            f"抑制 {len(suppressed)} 个键 / 域内无异状 {clean} 处）"
+            "⇒ 有点名被**静默丢弃**（既没判、也没留痕）")
+    if overlap:
+        out.append(f"同一个点名同时落进多个桶：{sorted(overlap)} ⇒ 三桶不是**划分**（读数失真）")
+    return out
 
 
 def problems_unregistered_hint_builders(sources: dict[str, str]) -> list[str]:
@@ -1061,7 +1161,8 @@ def test_burn_down_anchor_is_printed() -> None:
     for key in sc.ref_not_judged:
         by_face[key.split(":", 1)[0]] = by_face.get(key.split(":", 1)[0], 0) + 1
     print("[显式不判表 · 域外点名（域内可达但不在本工具作用域；跨 persona 反例文风 / 多域共享文本）] "
-          f"{len(sc.ref_not_judged)} 条："
+          f"{len(sc.ref_not_judged)} 条 / 冻结账户 {sc.ledger['anchor'].get('not_judged')} 条"
+          "（**豁免面只许缩短**，涨跌都红）："
           + " / ".join(f"{k}={v}" for k, v in sorted(by_face.items())))
     for key in sorted(sc.ref_not_judged):
         print(f"    - {key} × {len(sc.ref_not_judged[key])}")
@@ -1289,6 +1390,170 @@ def test_negation_filter_is_discriminating() -> None:
     mutated = scan(sources, ledger())
     assert "tool:briefing_query::order_manage" not in mutated.ref_keys, (
         "被否定的点名进了现取集 ⇒ 否定过滤失效（会把反例文风整片判红）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 六、否定过滤的**粒度**（issue #5444：假阴性 —— 判据看见命中却不判）
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: **活例**（issue #5444）：退到 `61326373`（#5400 收口前）时
+#: `backend/ai-agent-service/app/tools/order_create.py` 的数量校验 suggestion **逐字**如此 ——
+#: 「不要」在**前半句**，括号里却是**正向指路**。
+#: 复算（零成本、不用 checkout）：`git show 61326373:backend/ai-agent-service/app/tools/order_create.py | grep -n '占位值'`
+LIVE_EXAMPLE = "不要用 -1 之类的占位值表示退款或扣减（退款请用 order_manage 的 refund）"
+
+#: 活例对应的现取面键（`order_manage` 是**全局不可达**工具 ⇒ 被看见就该判红）。
+LIVE_EXAMPLE_SURFACE = "sugg:order_create::order_manage"
+
+#: 活例在**当前树**上的形态（#5400 人工收口后改成了「退款不在 Agent 能力内 …」）⇒
+#: 注入 = **改回**历史形态（这是该缺陷的真实回归形态，不是人造语料）。
+LIVE_EXAMPLE_ANCHOR = "（退款**不在 Agent 能力内**——如实说明并引导商家到后台订单页发起退款）"
+LIVE_EXAMPLE_REVERT = "（退款请用 order_manage 的 refund）"
+
+
+def test_bracketed_positive_guidance_is_judged() -> None:
+    """**实例判据**（验收判据 1）：括号里的**正向指路**必须被判据看见 —— 前提自证 + 注入式红证。
+
+    活例原文 = `LIVE_EXAMPLE`：「不要」挂在**前半句**，括号里是**正向指路**；整句判定 ⇒
+    该点名被当反例跳过 —— 判据**看见了命中却不判**（**假阴性**：看起来在判，而且给了绿）。
+    """
+    base_sources = surface_sources()
+    base = scan(base_sources, ledger())
+    key = "tool:order_create.py"
+    assert LIVE_EXAMPLE_SURFACE not in base.ref_keys, (
+        f"当前树上 `{LIVE_EXAMPLE_SURFACE}` 已在判红集 ⇒「收窄前看不见它」这个前提不成立（同步本判据）"
+    )
+    assert LIVE_EXAMPLE_ANCHOR in base_sources[key], (
+        "注入锚点失配（那处括号的措辞变了）—— 同步 `LIVE_EXAMPLE_ANCHOR`"
+    )
+    sources = dict(base_sources)
+    sources[key] = base_sources[key].replace(LIVE_EXAMPLE_ANCHOR, LIVE_EXAMPLE_REVERT, 1)
+    assert sources[key] != base_sources[key], "注入没生效（锚点失配）"
+    # 前提自证 ①：两个实现在**活例原文**上判决必须相反（否则红证是空注入）
+    pos = LIVE_EXAMPLE.index("order_manage")
+    assert _sentence_scoped_negation(LIVE_EXAMPLE, pos) and not _negated(LIVE_EXAMPLE, pos), (
+        "整句判定与子句判定在活例上判决相同 ⇒ 红证没有判别力（同步本判据）"
+    )
+    # 前提自证 ②：注入真的进了现取面（判据**看见了新对象** `LIVE_EXAMPLE_SURFACE`）
+    mutated = scan(sources, ledger())
+    added = mutated.ref_keys - base.ref_keys
+    assert LIVE_EXAMPLE_SURFACE in added, (
+        f"收窄后的判据**没看见**括号里的正向指路（现取新增={sorted(added)}）⇒ 假阴性仍在"
+    )
+    assert problems_dead_refs(mutated), "判据没按「未登记的死引用」判红 ⇒ 空断言"
+    # ③ **注入式红证**：换回**整句**判定 ⇒ 该命中必须**消失**
+    #    （= 谁把 `_negated` 改回整句，本条断言立刻变红 ⇒「收窄粒度」是承重的，不是装饰）
+    #    ⚠️ 走 `globals()` 而不是 `global` 声明：上面已经**用过** `_negated`，`global` 会 SyntaxError。
+    saved = globals()["_negated"]
+    globals()["_negated"] = _sentence_scoped_negation
+    try:
+        legacy = scan(sources, ledger())
+    finally:
+        globals()["_negated"] = saved
+    assert LIVE_EXAMPLE_SURFACE not in legacy.ref_keys, (
+        "整句判定下该命中仍在现取集 ⇒ 收窄粒度不是本判据的承重结构（红证无效）"
+    )
+    assert problems_dead_refs(legacy) == [], (
+        "整句判定下判据应当**看不见**活例（这正是被修的缺陷）；若它仍判红 ⇒ 本判据的归因是错的"
+    )
+    assert scan(sources, ledger()).ref_keys == mutated.ref_keys, "红证后必须还原判据实现（本体被改动）"
+
+
+def test_every_clause_separator_cuts_negation_scope() -> None:
+    """**类级元守卫**（§23 G1/G2）：子句界声明**只许扩大**，且**每个成员都必须真的切断**否定作用域。
+
+    没有它，收窄可以被**静默回退**：把 `（` 从声明里删掉 ⇒ 假阴性原样回来，而没有任何东西会红。
+    ① 声明必须包含不可缩的下限 `REQUIRED_CLAUSE_SEPARATORS`；
+    ② 每个声明成员都要有**行为证据**（`不要 x<界>y` 里 y 不被否定）+ **负控**（去掉界 ⇒ y 被否定）。
+    """
+    missing = sorted(set(REQUIRED_CLAUSE_SEPARATORS) - set(CLAUSE_SEPARATORS))
+    assert not missing, (
+        f"子句界声明被**收窄**（缺 {missing!r}）⇒ 被修掉的假阴性会静默回来（只许扩大）"
+    )
+    for sep in CLAUSE_SEPARATORS:
+        probe = f"不要 x{sep}y"
+        assert not _negated(probe, probe.index("y")), (
+            f"子句界 {sep!r} 没有切断否定作用域 ⇒ 它只是声明、不生效（同类假阴性原样存在）"
+        )
+    control = "不要 x y"
+    assert _negated(control, control.index("y")), (
+        "负控失败：无子句界时 y 竟未被否定 ⇒ 本判据恒绿（它没有判别力）"
+    )
+
+
+def test_mention_accounting_is_conserved() -> None:
+    """**守恒律**（issue #5444 的类级固化）：每个点名**恰好**落进「判红 / 不判 / 抑制」之一。
+
+    病根是「**命中从不出现**」：过滤器吞掉候选，而**读数上没有任何痕迹**。
+    只换一种过滤实现治不了这一类 ⇒ 本判据要求「吞掉」**必须留痕**（`ref_suppressed` 现取打印），
+    且三桶计数 = 点名总数（出现新桶 ⇒ 计数对不上 ⇒ 红）。
+    """
+    sources = surface_sources()
+    sc = scan(sources)
+    problems = problems_mentions_are_all_accounted(sources, sc)
+    print("[引用面 · 四桶守恒] " + str({
+        "判红": sum(live_hit_counts("ref", sc.ref_hits).values()),
+        "不判（显式不判表）": sum(live_hit_counts("ref", sc.ref_not_judged).values()),
+        "抑制（否定过滤）": sum(live_hit_counts("ref", sc.ref_suppressed).values()),
+        "域内无异状": sc.ref_clean,
+    }))
+    assert not problems, "点名没有被完整记账（有命中被静默丢弃）：\n" + "\n".join(f"  - {p}" for p in problems)
+    assert sc.ref_suppressed, (
+        "抑制桶现取为空 ⇒「否定过滤」这条读数是假的（过滤器失效或不再被调用），本守恒律会静默恒真"
+    )
+
+
+def test_mention_accounting_can_go_red() -> None:
+    """负控（**前提自证**）：把抑制桶整桶丢掉（= 点名被静默吞掉）⇒ 守恒律必须红。
+
+    ⚠️ 为什么不注入 `_negated`：那只会把点名从「判红」挪到「抑制」，**计数照样守恒** ——
+    这恰好说明本判据判的是「有没有留痕」，不是「怎么判」。
+    """
+    sources = surface_sources()
+    sc = scan(sources)
+    assert problems_mentions_are_all_accounted(sources, sc) == [], "对照组必须绿（否则红证无从归因）"
+    assert sc.ref_suppressed, "抑制桶本来就是空的 ⇒ 负控无从构造（同步本判据）"
+    assert problems_mentions_are_all_accounted(sources, sc, (sc.ref_hits, sc.ref_not_judged, {}, sc.ref_clean)), (
+        "把抑制桶丢掉（点名被静默吞掉）守恒律没红 ⇒ 它是空断言"
+    )
+    doubled = dict(sc.ref_not_judged)
+    doubled[next(iter(sorted(sc.ref_suppressed)))] = ["负控：同一个点名同时落进两个桶"]
+    assert problems_mentions_are_all_accounted(
+        sources, sc, (sc.ref_hits, doubled, sc.ref_suppressed, sc.ref_clean)), (
+        "同一个点名落进两个桶 ⇒ 守恒律必须红（三桶必须是**划分**）"
+    )
+
+
+def test_exemption_surface_only_shrinks() -> None:
+    """**豁免面（显式不判表）只许缩短**（issue #5444 🔴 第二条：不要为了降噪而放宽）。
+
+    收窄过滤器会让**更多文本进入判定面** ⇒ 出口只有「修文本」或「逐条登记」（登记 = 可见欠账），
+    ⛔ 不是「让不判表悄悄多几条」。⇒ 条数冻结在 `anchor.not_judged`，**涨跌都红**。
+    """
+    base_sources = surface_sources()
+    base = scan(base_sources, ledger())
+    live = len(base.ref_not_judged)
+    frozen = base.ledger["anchor"].get("not_judged")
+    assert isinstance(frozen, int), "台账锚点缺 `not_judged`（豁免面**冻结账户**）—— 不许用缺省值放行"
+    assert live == frozen, (
+        f"豁免面现取 {live} 条 ≠ 冻结账户 {frozen} 条 ⇒ 同 PR 显式改 `anchor.not_judged`"
+        f"（现取：{sorted(base.ref_not_judged)}）"
+    )
+    # 注入式负控：往参数 description 里加一个「**可达但域外**」的点名 ⇒ 不判表 +1 ⇒ 燃尽靶必须**按豁免面**判红
+    key = "tool:validate_input.py"
+    phrase = "要校验的目标写工具，如 order_create"
+    assert phrase in base_sources[key], "负控注入锚点失配（同步本判据）"
+    sources = dict(base_sources)
+    sources[key] = base_sources[key].replace(phrase, f"{phrase}，或 sku_update", 1)
+    assert sources[key] != base_sources[key], "负控注入没生效（锚点失配）"
+    mutated = scan(sources, ledger())
+    assert len(mutated.ref_not_judged) == live + 1, (
+        f"负控注入没让不判表 +1（现取 {len(mutated.ref_not_judged)}）⇒ 负控是空的"
+    )
+    problems = problems_ledger_only_shrinks(mutated)
+    assert any("豁免面" in p for p in problems), (
+        f"不判表变宽但燃尽靶没**按豁免面**判红 ⇒ 豁免面可以悄悄变宽：{problems}"
     )
 
 
