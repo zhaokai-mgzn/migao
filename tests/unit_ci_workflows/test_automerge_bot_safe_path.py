@@ -26,6 +26,20 @@
 | 6 | bot + required 检查判红 ⇒ 不 arm | `mergeStateStatus=BLOCKED` + 判红检查 ⇒ `CHECKS_FAILED` |
 | 7 | 非 bot（人类 PR）路径**逐字不变** | 删掉 bot 排除子句 ⇒ 该断言变红 |
 | 8 | 每条判据都能**单独**变红 | `TestGuardMutationsProveDiscriminatingPower`（6 个单点源码变异） |
+| 9 | diff **仅在注释里**含 `secrets.*` ⇒ arm（#5286） | `TestSecretsYardstickInjectionsProveDiscriminatingPower`（2 个变异：退回子串 / 退掉共享尺子） |
+| 10 | **真新增** secrets 引用 ⇒ 不 arm（语义不放宽） | 同上（放宽 secrets 闸即失配） |
+| 11 | 剥注释**只有一份实现**且分类器真去读它 | 尺子取不到 ⇒ `SECRETS_YARDSTICK_UNAVAILABLE`；`def strip_comment` 全仓只一处 |
+
+## 判据 9~11（#5286）：secrets 判据与 `danger_scan` **同源**
+
+病灶：bot 分类器用 `SECRETS_RE.search(原始行)`（子串口径、吃**含注释的整行**），而 `#5268` 已把
+`.github/danger_scan.py` 的 secrets 判据改成「剥掉注释后只判真引用」——**两把不同源的尺子**并存。
+一句说明性注释（`COMMENT_ONLY_SECRETS`）即判 `SECRETS_ADDED` ⇒ bot PR 拿不到自动 arm
+（fail-closed、**不卡合并**，但把该自动化的 PR 推回人工，与 #5077 的目标相抵）。
+
+修法：分类器经 `importlib` 加载 `.github/danger_scan.py` 的 `strip_comment()`，本文件不复制实现。
+判据 11 把「同源」钉成机械判据：仓库里 `def strip_comment` 只有一处 + 尺子取不到就不 arm
+（若有人把实现复制进分类器，`test_missing_yardstick_fails_closed` 立刻失去判别力而变红）。
 
 ## 判据 6 的口径（**实测证据，非推断**）
 
@@ -49,6 +63,7 @@ required 判定** `mergeStateStatus`：`UNSTABLE` = 「required 未判红、只�
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -66,6 +81,9 @@ BOT_JOB = "enable-auto-merge-bot-safe"
 NONBOT_JOB = "enable-auto-merge"
 MERGE_CMD = "pr merge 1 --auto --squash --delete-branch"
 WF_TITLE = "chore(deps): bump actions/download-artifact from 7 to 8"
+# #5286 的现场形态：一句**说明性注释**（在说明「没有新增 secrets」）。修前（子串口径）它必被判
+# `SECRETS_ADDED` ⇒ bot PR 拿不到 arm。同一份文本贯穿本文件的所有 #5286 夹具（单一事实源）。
+COMMENT_ONLY_SECRETS = "全文 `secrets.*` 引用仍只有既有那一处"
 
 # ── 判据 7：非 bot 路径的**逐字快照**（原文件文本，含 YAML 缩进）─────────────────
 # 这些片段必须**原样**留在文件里。改了它们 = 改了人类 PR 的既有行为。
@@ -340,7 +358,8 @@ class GuardRun:
 
 
 def run_guard(tmp_path, files, *, checks_json=None, checks_exit=None, merge_state="CLEAN",
-              title="", labels="", api_exit=0, checks_raw=None, script=None):
+              title="", labels="", api_exit=0, checks_raw=None, script=None, env_extra=None,
+              cwd=None):
     tmp_path.mkdir(parents=True, exist_ok=True)
     fx = tmp_path / "fixtures"
     fx.mkdir(exist_ok=True)
@@ -371,9 +390,15 @@ def run_guard(tmp_path, files, *, checks_json=None, checks_exit=None, merge_stat
         "PR_TITLE": title,
         "PR_LABELS": labels,
         "GITHUB_STEP_SUMMARY": str(summary_path),
+        # #5286：分类器从 checkout 根加载 `.github/danger_scan.py` 的剥注释尺子。这里把该输入
+        # **钉死**成本仓库（Actions 里它就是同一个值）⇒ 判据不随 cwd / CI 环境漂移；
+        # 单条用例可用 `env_extra={"GITHUB_WORKSPACE": ...}` 指向别的（临时）工作区做红证。
+        "GITHUB_WORKSPACE": str(REPO_ROOT),
     })
+    if env_extra:
+        env.update(env_extra)
     proc = subprocess.run([sys.executable, str(guard)], capture_output=True, text=True,
-                          env=env, timeout=120)
+                          env=env, timeout=120, cwd=cwd)
     calls_path = fx / "merge_calls.log"
     return GuardRun(proc, calls_path.read_text(encoding="utf-8") if calls_path.exists() else "",
                     summary_path.read_text(encoding="utf-8") if summary_path.exists() else "")
@@ -539,6 +564,164 @@ class TestCriterion4NewSecretsReference:
         run = run_guard(tmp_path, [f], title=WF_TITLE)
         assert not run.armed
         assert run.code() == "NOT_USES_ONLY"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 9~11（issue #5286）：注释里的 `secrets.` 不算新增 —— 判据与 danger_scan **同源**
+# ══════════════════════════════════════════════════════════════════════════════
+def wf_uses_with_comment_secrets(old="v7", new="v8"):
+    """安全类 1 的 #5286 夹具：`uses:` tag 变化 + **行尾 YAML 注释**里提到 `secrets.*`。
+
+    `USES_RE` 本就允许尾注释（`@<sha> # v4` 的 pin 形态）⇒ 它仍是合法的「只改 tag」改动。
+    """
+    return {"filename": ".github/workflows/xiaobu-acceptance.yml", "status": "modified",
+            "patch": ("@@ -1,7 +1,7 @@\n"
+                      " jobs:\n"
+                      "   build:\n"
+                      "     steps:\n"
+                      f"-      - uses: actions/download-artifact@{old}  # {COMMENT_ONLY_SECRETS}\n"
+                      f"+      - uses: actions/download-artifact@{new}  # {COMMENT_ONLY_SECRETS}\n"
+                      "       - run: echo hi\n")}
+
+
+def dep_file_with_comment_secrets(old="2.13.0", new="2.14.0"):
+    """安全类 2 的 #5286 夹具：版本升级行 + **行尾注释**里提到 `secrets.*`。"""
+    return dep_file(old=old, new=new, comment="  # " + COMMENT_ONLY_SECRETS)
+
+
+def _load_yardstick(path):
+    """把某个 `danger_scan.py` 的 `strip_comment` 载进来（红证里自证「变异真的生效了」）。"""
+    spec = importlib.util.spec_from_file_location("yardstick_under_test", str(path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.strip_comment
+
+
+class TestCriterion9SecretsCommentOnlyArms:
+    """判据 9（#5286 判据 1）：diff **仅在注释里**含 `secrets.*`、其余满足某一安全类 ⇒ 必须 arm。
+
+    修前（子串口径）两种夹具都判 `SECRETS_ADDED` ⇒ bot PR 拿不到 arm（该自动化的 PR 推回人工）。
+    """
+
+    @pytest.mark.parametrize("case,files,title", [
+        ("workflow-uses", [wf_uses_with_comment_secrets()], WF_TITLE),
+        ("dep-file", [dep_file_with_comment_secrets()], PATCH_TITLE),
+    ])
+    def test_comment_only_secrets_still_arms(self, tmp_path, case, files, title):
+        run = run_guard(tmp_path, files, title=title)
+        assert run.armed, f"[{case}] 注释里的 secrets.* 仍让 bot PR 拿不到 arm：{run.summary}"
+        assert run.code() == "ARMED"
+
+    def test_real_new_secrets_reference_still_does_not_arm(self, tmp_path):
+        """判据 10（#5286 判据 3，**防修过头**）：真新增 secrets 引用 ⇒ 照旧不 arm。
+
+        两个安全类各来一次（secrets 闸在安全类分派**之前** ⇒ 谁也绕不过）。
+        """
+        wf = wf_uses_with_comment_secrets()
+        wf["patch"] += "+          NEW_TOKEN: ${{ secrets.FOO }}\n"
+        run_wf = run_guard(tmp_path / "wf", [wf], title=WF_TITLE)
+        assert not run_wf.armed, "workflow 面上的真新增 secrets 被放行了（判据强度被放宽）"
+        assert run_wf.code() == "SECRETS_ADDED"
+        dep = dep_file_with_comment_secrets()
+        dep["patch"] += "+          NEW_TOKEN: ${{ secrets.FOO }}\n"
+        run_dep = run_guard(tmp_path / "dep", [dep], title=PATCH_TITLE)
+        assert not run_dep.armed, "非 workflow 面上的真新增 secrets 被放行了（判据强度被放宽）"
+        assert run_dep.code() == "SECRETS_ADDED"
+
+
+class TestCriterion11YardstickIsSingleSource:
+    """判据 11（#5286）：剥注释**只有一份实现**，且分类器真去读它（不是内联的第三把尺子）。"""
+
+    COMMENTED = "  # " + COMMENT_ONLY_SECRETS
+
+    def test_only_one_strip_comment_implementation_in_the_repo(self):
+        """仓库里 `def strip_comment` 只有 `.github/danger_scan.py` 一处，且分类器里没有副本。"""
+        hits = sorted(str(p.relative_to(REPO_ROOT))
+                      for p in (REPO_ROOT / ".github").rglob("*.py")
+                      if "def strip_comment" in p.read_text(encoding="utf-8"))
+        assert hits == [".github/danger_scan.py"], f"剥注释实现不止一处（= 又一把尺子）：{hits}"
+        assert "def strip_comment" not in bot_script(), "bot 分类器里复制了一份剥注释实现"
+
+    def test_yardstick_is_reachable_in_the_repo(self):
+        """接线存活：`.github/danger_scan.py` 必须真的导出可用的 `strip_comment`（判据来源）。"""
+        fn = _load_yardstick(REPO_ROOT / ".github" / "danger_scan.py")
+        assert fn(self.COMMENTED) == "  ", "剥注释行为漂移 ⇒ 分类器的判定会跟着漂"
+        assert fn('run: echo "#${{ secrets.X }}"') == 'run: echo "#${{ secrets.X }}"', \
+            "引号内的 `#` 不得被当注释（否则真引用会漏检）"
+
+    def test_missing_yardstick_fails_closed(self, tmp_path):
+        """**同源取证**：尺子取自 checkout 根下的 `.github/danger_scan.py` **这个文件**。
+
+        把 checkout 根指到一个**空**目录 ⇒ 拿不到尺子 ⇒ `SECRETS_YARDSTICK_UNAVAILABLE` +
+        **不 arm**。若有人把实现复制进分类器（副本不依赖那个文件），这条会失去判别力而变红。
+        """
+        empty = tmp_path / "empty-ws"
+        empty.mkdir()
+        run = run_guard(tmp_path / "run", [dep_file_with_comment_secrets()], title=PATCH_TITLE,
+                        env_extra={"GITHUB_WORKSPACE": str(empty)})
+        assert not run.armed, "取不到尺子还 arm ⇒ 「量不出来」被读成了「没问题」"
+        assert run.code() == "SECRETS_YARDSTICK_UNAVAILABLE"
+
+    def test_yardstick_not_needed_without_a_candidate_line(self, tmp_path):
+        """尺子**只在真有候选行**时才是必需的：与 secrets 无关的 PR 不因加载失败丢掉既有 arm 路径。"""
+        empty = tmp_path / "empty-ws"
+        empty.mkdir()
+        run = run_guard(tmp_path / "run", [dep_file(old="2.13.0", new="2.14.0")], title=PATCH_TITLE,
+                        env_extra={"GITHUB_WORKSPACE": str(empty)})
+        assert run.armed, f"无候选行的安全类 2 PR 不该受尺子加载影响：{run.summary}"
+
+    def test_cwd_fallback_when_workspace_is_unset(self, tmp_path):
+        """Actions 之外的退路：`GITHUB_WORKSPACE` 缺省/为空 ⇒ 按 cwd 找尺子（本机复跑同一判据）。"""
+        run = run_guard(tmp_path, [dep_file_with_comment_secrets()], title=PATCH_TITLE,
+                        env_extra={"GITHUB_WORKSPACE": ""}, cwd=str(REPO_ROOT))
+        assert run.armed, f"cwd 退路取不到尺子 ⇒ 本机复跑与 CI 判定不一致：{run.summary}"
+
+
+class TestSecretsYardstickInjectionsProveDiscriminatingPower:
+    """**注入式红证**（#5286 判据 2）：把剥注释退回**子串** ⇒ 判据 9 的用例**必红**。
+
+    变异只在**临时副本 / 源码文本**上做（`mutate()` 的返回值只喂给子进程），**不提交变异代码**。
+    """
+
+    def test_dropping_the_yardstick_in_the_guard_turns_criterion9_red(self, tmp_path):
+        """变异点（分类器源码文本）：`SECRETS_RE.search(strip(text))` → `SECRETS_RE.search(text)`。"""
+        src = mutate(bot_script(), "SECRETS_RE.search(strip(text))", "SECRETS_RE.search(text)")
+        run = run_guard(tmp_path, [dep_file_with_comment_secrets()], title=PATCH_TITLE, script=src)
+        assert not run.armed, "退回子串后仍 arm ⇒ 判据 9 没有判别力（本用例会空跑）"
+        assert run.code() == "SECRETS_ADDED"
+
+    def test_reverting_the_shared_yardstick_turns_criterion9_red(self, tmp_path):
+        """变异点：**共享尺子本体**（`.github/danger_scan.py::strip_comment`）退回「原样返回」。
+
+        两条对照（差异只能来自那份尺子文件 ⇒ 证明分类器真在读它，有副本/第三把尺子时这条会红）：
+        同一夹具 + 未变异的副本 ⇒ 照样 arm；同一夹具 + 变异副本 ⇒ `SECRETS_ADDED`。
+        """
+        pristine = REPO_ROOT / ".github" / "danger_scan.py"
+        original = pristine.read_text(encoding="utf-8")
+        mutated = mutate(original, "    quote = None\n",
+                         "    return line  # 红证：退回子串口径（仅临时副本，不提交）\n    quote = None\n")
+
+        def workspace(name, source):
+            ws = tmp_path / name
+            (ws / ".github").mkdir(parents=True)
+            (ws / ".github" / "danger_scan.py").write_text(source, encoding="utf-8")
+            return ws
+
+        mutated_ws, pristine_ws = workspace("mutated", mutated), workspace("pristine", original)
+        # 变异有效性自证（不靠文案）：变异副本对注释行原样返回，未变异副本会剥掉注释
+        assert _load_yardstick(mutated_ws / ".github" / "danger_scan.py")(self.ANCHOR) == self.ANCHOR
+        assert _load_yardstick(pristine_ws / ".github" / "danger_scan.py")(self.ANCHOR) == "  "
+
+        files = [dep_file_with_comment_secrets()]
+        ok = run_guard(tmp_path / "ok", files, title=PATCH_TITLE,
+                       env_extra={"GITHUB_WORKSPACE": str(pristine_ws)})
+        assert ok.armed, f"未变异副本下夹具没 arm ⇒ 本红证会空跑：{ok.summary}"
+        bad = run_guard(tmp_path / "bad", files, title=PATCH_TITLE,
+                        env_extra={"GITHUB_WORKSPACE": str(mutated_ws)})
+        assert not bad.armed, "共享尺子退回子串后仍 arm ⇒ 分类器没在读那份文件（= 有第三把尺子）"
+        assert bad.code() == "SECRETS_ADDED"
+
+    ANCHOR = "  # " + COMMENT_ONLY_SECRETS
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -721,14 +904,17 @@ class TestGuardMutationsProveDiscriminatingPower:
     def test_c4_removing_secrets_gate_kills_the_red_proof(self, tmp_path):
         """打掉 secrets 闸 ⇒ 判据 4 的 `SECRETS_ADDED` 红证变红。
 
-        夹具用**非 workflow 文件**（否则会先被 uses-only 判据拦下，无法证明 secrets 闸本身有判别力）。
+        夹具用**非 workflow 文件**（否则会先被 uses-only 判据拦下，无法证明 secrets 闸本身有判别力），
+        且 secrets 必须是**代码文本**里真新增 —— #5286 之后行尾注释里的 `secrets.` 不再触发该闸
+        （旧夹具正是那样写的 ⇒ 本红证会退化成空断言，故夹具随判据一起改）。
         """
-        src = mutate(bot_script(),
-                     'if line.startswith("+") and not line.startswith("+++") and SECRETS_RE.search(line):',
-                     "if False:")
-        run = run_guard(tmp_path,
-                        [dep_file(old="2.13.0", new="2.14.0", comment="  # ${{ secrets.FOO }}")],
-                        title=PATCH_TITLE, script=src)
+        files = [dep_file(old="2.13.0", new="2.14.0")]
+        files[0]["patch"] += "+          NEW_TOKEN: ${{ secrets.FOO }}\n"
+        baseline = run_guard(tmp_path / "baseline", files, title=PATCH_TITLE)
+        assert not baseline.armed and baseline.code() == "SECRETS_ADDED", (
+            f"夹具没触发 SECRETS_ADDED ⇒ 本红证会空跑：{baseline.summary}")
+        src = mutate(bot_script(), "if SECRETS_RE.search(strip(text)):", "if False:")
+        run = run_guard(tmp_path / "mutated", files, title=PATCH_TITLE, script=src)
         assert run.armed, "去掉 secrets 闸后仍不 arm ⇒ 该红证没有判别力"
 
     def test_c5_removing_label_gate_kills_the_red_proof(self, tmp_path):
@@ -805,7 +991,8 @@ class TestWorkflowStructureAndHardConstraints:
         """每个拒绝码都必须有「可行动」的处置文案（否则 summary 只是噪音）。"""
         action = guard_ns()["ACTION"]
         for required in ("BLOCK_LABEL", "GH_API_FAILED", "NO_FILES", "FILE_ADDED_OR_REMOVED",
-                         "SECRETS_ADDED", "PATCH_UNAVAILABLE", "NOT_USES_ONLY",
+                         "SECRETS_ADDED", "SECRETS_YARDSTICK_UNAVAILABLE", "PATCH_UNAVAILABLE",
+                         "NOT_USES_ONLY",
                          "ACTION_NAME_CHANGED", "NO_TAG_CHANGE", "MIXED_SURFACE",
                          "TITLE_UNPARSEABLE", "NO_VERSION_CHANGE", "VERSION_DOWNGRADE",
                          "VERSION_MAJOR", "TITLE_PATCH_MISMATCH", "CHECKS_UNREADABLE",
