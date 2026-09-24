@@ -65,6 +65,10 @@
 - **该对象的三条判据仍有漏网形态（如实登记，不粉饰）**：一个**换名 + 换 DTO + 从未接回响应**的私有菜单表
   （纯死代码）符号面 / 解析面 / 结构面都看不见 —— 它与「任意死代码」静态不可区分，登记为残留
   （见 `REGISTERED_RESIDUALS` 的「第四处菜单源（已于 #5236 删除）」）。
+- **解析口径（issue #5272）：注释不是代码** —— `parse_agent_skills` 用标准库 `tokenize` 按**真字符串
+  token** 取 skill 名：注释里的带引号 skill 名、文档字符串里的举例都**不算绑定**。修前它按双引号
+  字面量扫**原文** ⇒ `mibao.py` 解绑说明注释里的 `"settings"` 被读成「仍绑定」，得到**与事实相反**的
+  假红（判据 1 报 2 条），当时只能靠「本注释不得给 skill 名加双引号」的规避说明绕过。
 - 本守卫**只读源码文本**（零依赖：只用标准库 + 共用的静态归属机具
   `backend/ai-agent-service/tests/tool_http_attribution.py`），不连库、不跑 LLM。
 """
@@ -73,8 +77,10 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import io
 import re
 import sys
+import tokenize
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -468,14 +474,77 @@ def parse_skill_bindings(sources: dict[str, str]) -> dict[str, tuple[str, ...]]:
     return out
 
 
+#: tokenize 里「不是代码」的 token：注释是独立的 `COMMENT`；文档字符串只是**别处**的 `STRING`。
+_PY_TRIVIA = frozenset(
+    {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER, tokenize.COMMENT}
+)
+
+
+def _py_tokens(text: str, where: str) -> list[tokenize.TokenInfo]:
+    """Python 源码的 token 流（**不可 tokenize ⇒ 红**：fail-closed，不许静默恒绿）。"""
+    try:
+        return list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+        raise AssertionError(f"{where} 无法 tokenize（{exc}）⇒ 解析失配 ⇒ 红（同步本判据）") from exc
+
+
+def _py_string_token(tok: tokenize.TokenInfo, where: str) -> str:
+    """一个 `STRING` token 的字面量值（f-string / bytes 等取不出 ⇒ 红，不静默丢）。"""
+    try:
+        value = ast.literal_eval(tok.string)
+    except (ValueError, SyntaxError) as exc:
+        raise AssertionError(f"{where} 里 `{tok.string}` 不是字符串字面量（{exc}）⇒ 解析失配 ⇒ 红") from exc
+    assert isinstance(value, str), f"{where} 里 `{tok.string}` 解析出 {type(value).__name__} ⇒ 解析失配 ⇒ 红"
+    return value
+
+
+def _py_assigned_strings(text: str, key: str, where: str) -> list[str]:
+    """Python 源码里 `key="…"` / `key=[…]` 的**真字符串字面量**（注释与文档字符串都不算）。
+
+    issue #5272 的病灶 → 修法：旧口径在**原文**上跑 `m.group(1)` + `re.findall(r'"([^"]+)"', …)`
+    ⇒ `skill_names` 附近**注释**里带双引号的 skill 名被读成「仍绑定」（与事实相反的假红：实测把
+    `settings` 的工具悄悄拉进 B 端工具集 ⇒ 判据 1 报 2 条；`mibao.py` 作者只能写注释规避）。
+    现口径 = 标准库 `tokenize` 按 **token** 取值：注释是独立的 `COMMENT`、文档字符串是**别处的**
+    `STRING`，两者都不落在 `key` 的值里 ⇒ 「注释不是代码」由词法保证，且 `#` 出现在字符串 /
+    三引号内部也不会被误切。
+    ⚠️ **不要**退回 `re.sub(r"#.*", "", text)` 这类朴素剥法：字符串里的 `#` 会被一起切掉 ⇒ 新的错判。
+    """
+    toks = [t for t in _py_tokens(text, where) if t.type not in _PY_TRIVIA]
+    for i, tok in enumerate(toks):
+        if tok.type != tokenize.NAME or tok.string != key:
+            continue
+        tail = toks[i + 1:]
+        if not tail or tail[0].string != "=":
+            continue
+        value = tail[1:]
+        if not value:
+            continue
+        if value[0].type == tokenize.STRING:
+            return [_py_string_token(value[0], where)]
+        if value[0].string != "[":
+            continue
+        depth, out = 0, []
+        for item in value:
+            if item.type == tokenize.OP and item.string in "([{":
+                depth += 1
+            elif item.type == tokenize.OP and item.string in ")]}":
+                depth -= 1
+                if depth <= 0:
+                    return out
+            elif depth == 1 and item.type == tokenize.STRING:
+                out.append(_py_string_token(item, where))
+        return out                       # 值未闭合 ⇒ 交出已收集到的，由调用方 fail-closed
+    return []
+
+
 def parse_agent_skills(sources: dict[str, str], agent: str) -> tuple[frozenset[str], str | None]:
-    """某人格的 `skill_names` + `fallback_skill`。"""
-    text = sources[f"agent:{agent}"]
-    m = re.search(r"skill_names=\[(.*?)\]", text, re.S)
-    assert m, f"`{agent}` 的 `skill_names` 解析失配 ⇒ 红"
-    names = frozenset(re.findall(r'"([^"]+)"', m.group(1)))
-    fb = re.search(r'fallback_skill="([^"]+)"', text)
-    return names, (fb.group(1) if fb else None)
+    """某人格的 `skill_names` + `fallback_skill`（**读真字符串 token**；注释/文档字符串不算绑定）。"""
+    where = f"agent:{agent}"
+    text = sources[where]
+    names = _py_assigned_strings(text, "skill_names", where)
+    assert names, f"`{agent}` 的 `skill_names` 解析失配 ⇒ 红"
+    fb = _py_assigned_strings(text, "fallback_skill", where)
+    return frozenset(names), (fb[0] if fb else None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1502,6 +1571,108 @@ def test_fourth_source_comment_mention_stays_green() -> None:
     assert not problems_menu_parity(build_world(sources)), (
         "负控失败：只在注释里提及被删符号 ⇒ 判据被自己的说明文字喂红了"
     )
+
+
+# ── issue #5272：`skill_names` 的**解析口径**（注释不是代码）─────────────────────────
+
+
+def _legacy_quote_scan(text: str, agent: str) -> frozenset[str]:
+    """**旧口径逐字复刻**（issue #5272 的病灶）：在**原文**上按双引号扫 `skill_names=[...]`。
+
+    ⚠️ 它**不是**被测解析器（被测的是 `parse_agent_skills`）—— 它只用来断言下面两条负红证的夹具
+    是**真陷阱**：注入的注释 / 文档字符串在旧口径下**确实**会被读成绑定。没有这条前提断言，
+    「注入后仍绿」可能只是因为注入点没落进射程（= 恒绿的空断言，`migao-acceptance` 明令禁止）。
+    """
+    m = re.search(r"skill_names=\[(.*?)\]", text, re.S)
+    assert m, f"旧口径复刻：`{agent}` 的 `skill_names=[...]` 锚点失配（同步本夹具）"
+    return frozenset(re.findall(r'"([^"]+)"', m.group(1)))
+
+
+def test_skill_name_in_a_comment_is_not_a_binding() -> None:
+    """**负红证**（issue #5272）：`skill_names` 附近**注释**里带双引号的 skill 名 ⇒ 不算绑定。
+
+    修前必红（现场实证：`mibao.py` 的作者为绕过它写了「本注释不得给 skill 名加双引号」的规避说明）：
+    旧口径把注释里的 `"settings"` 读成仍绑定 ⇒ `settings_manage`/`notification_manage` 被悄悄拉进
+    B 端工具集 ⇒ 判据 1 报 2 条（「纯本地工具登记表与实际不符」+ `validate_input` 未声明权限码）。
+    修后必绿。**成对**的正红证见 `test_real_skill_binding_is_still_a_binding` ——
+    只有两边同时成立，解析口径才是「读代码」而不是「读文本」（单看任一边都是空断言）。
+    """
+    base = _source_map()
+    text = base["agent:mibao"]
+    anchor = "    skill_names=[\n"
+    assert anchor in text, "注入锚点失配：`mibao.py` 的 `skill_names=[` 找不到（同步本夹具）"
+    at = text.index(anchor) + len(anchor)
+    injected = text[:at] + (
+        '        # 解绑说明（自然写法）：这里曾绑 "settings"（issue #5247 用户裁定；#5272 负控）\n'
+    ) + text[at:]
+    assert injected != text, "注入没生效（锚点失配）"
+    assert "settings" in _legacy_quote_scan(injected, "mibao"), (
+        "注入前提：旧口径必须真会把这行注释读成绑定（否则本夹具是恒绿的空断言）"
+    )
+    sources = dict(base)
+    sources["agent:mibao"] = injected
+    names, _fb = parse_agent_skills(sources, "mibao")
+    assert "settings" not in names, f'注释里的 "settings" 被读成了绑定（与事实相反的假红）：{sorted(names)}'
+    w = build_world(sources)
+    leaked = sorted(w.b_end_tools & {"settings_manage", "notification_manage"})
+    assert leaked == [], f"注释把已解绑 skill 的工具拉回了 B 端工具集：{leaked}"
+    assert not problems_missing_codes(w), "注释里的 skill 名让判据 1 假红：\n  - " + "\n  - ".join(
+        problems_missing_codes(w)
+    )
+
+
+def test_skill_name_in_a_docstring_is_not_a_binding() -> None:
+    """**文档字符串负例**（issue #5272 要求 3）：文档里举例写 `skill_names=["settings"]` ⇒ 不算绑定。
+
+    `tokenize` 下整段是**一个 `STRING` token**（不是 `NAME skill_names` + `=` + 列表）⇒
+    `_py_assigned_strings` 看不见它；但同一段文本在旧口径里是**首个** `skill_names=[...]` 命中
+    ⇒ 会被读成绑定（这正是判据 3 要治的形态）。
+    """
+    base = _source_map()
+    text = base["agent:mibao"]
+    anchor = "MIBAO_CONFIG = AgentConfig("
+    assert anchor in text, "注入锚点失配：`MIBAO_CONFIG = AgentConfig(` 找不到（同步本夹具）"
+    doc = (
+        '"""文档举例（issue #5272 负控）：下面这一行只是说明文字 ——\n'
+        'skill_names=["settings"] 不是绑定。\n'
+        '"""\n'
+    )
+    at = text.index(anchor)
+    injected = text[:at] + doc + text[at:]
+    assert injected != text, "注入没生效（锚点失配）"
+    assert "settings" in _legacy_quote_scan(injected, "mibao"), (
+        "注入前提：旧口径必须真会把这行文档举例读成绑定（否则本夹具是恒绿的空断言）"
+    )
+    sources = dict(base)
+    sources["agent:mibao"] = injected
+    names, fb = parse_agent_skills(sources, "mibao")
+    assert names == parse_agent_skills(base, "mibao")[0], "文档字符串改变了 `skill_names` 的读数"
+    assert fb == parse_agent_skills(base, "mibao")[1], "文档字符串改变了 `fallback_skill` 的读数"
+    w = build_world(sources)
+    assert not problems_missing_codes(w), "文档字符串里的举例让判据 1 假红：\n  - " + "\n  - ".join(
+        problems_missing_codes(w)
+    )
+
+
+def test_real_skill_binding_is_still_a_binding() -> None:
+    """**正红证**（issue #5272 要求 2）：真往 `skill_names` 里插一个名字（**代码**，非注释）⇒ 判据照旧红。
+
+    与负红证**同一注入点、同一 skill 名**（只差「代码 vs 注释」）⇒ 两者成对才证明
+    「注释被忽略」没有把真绑定也一起忽略（判据强度未降，B 端不得绑写工具的判据一字未放宽）。
+    """
+    base = _source_map()
+    text = base["agent:mibao"]
+    anchor = '        "staff",\n'
+    assert anchor in text, '注入锚点失配：`mibao.py` 找不到 `"staff",` 行（同步本夹具）'
+    injected = text.replace(anchor, anchor + '        "settings",\n', 1)
+    assert injected != text, "注入没生效（锚点失配）"
+    sources = dict(base)
+    sources["agent:mibao"] = injected
+    names, _fb = parse_agent_skills(sources, "mibao")
+    assert "settings" in names, f"真绑定没被解析出来（漏判比假红更糟）：{sorted(names)}"
+    w = build_world(sources)
+    assert {"settings_manage", "notification_manage"} <= w.b_end_tools, "真绑定的工具没进 B 端工具集"
+    assert problems_missing_codes(w), "真插入 skill 名后判据 1 没变红 ⇒ 判据被削弱了"
 
 
 def test_every_judgement_can_go_red() -> None:
