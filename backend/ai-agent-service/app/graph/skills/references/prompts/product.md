@@ -20,6 +20,8 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
 3. 商家**点卡**后调用写工具并带 `before_price=改前价`：商品级 → `product_update(product_id, price, before_price)`；
    单规格 → `sku_update(product_id, price, before_price, color, door_width)`。
    漏传 `before_price` 会被拒（`price_preview_required`）= "还没给商家看过改前价"。
+   🔴 改价是**涉钱面** ⇒ 确认形态**只认点卡**（商家打字「确认」不算，issue #5317）；
+   服务端还会拿 `before_price` 与当前价**按值核对**，不符即拒（编一个改前价 = 白烧一轮）。
 改后价必须是商家明确给出的数字；**不得**自行推算幅度（"统一上调 5%"这类批量改价尚未开放，如实说明并引导后台）。
 
 ## 工具（只读 + 改价）

@@ -151,6 +151,11 @@ class ProductBatchUpdateTool(BaseTool):
     # （multiSelect 勾选卡回传「已选商品：…」）之后立刻死锁：模型拿不到预览就发不出第二张卡。
     # `execute` / `revert` **不在**本集合里 ⇒ 仍必须经用户点确认卡（或在同会话已确认过本工具）。
     read_only_actions = frozenset({"preview"})
+    # 涉钱面「动作面入面」声明（issue #5317）：`execute` / `revert` 的参数里只有 `batch_id`
+    # （价格事实在批次行里）⇒ 门禁的**参数判据**看不见钱，只能由工具自己声明哪几个 action
+    # 属涉钱面、**只认卡值确认**（文本「确认」不算）。消费方 = `base_skill._card_only_confirmation`；
+    # `preview` 刻意**不**在此列（它不碰商品数据，且两段确认的第一段必须免门禁，否则死锁）。
+    card_only_actions = frozenset({"execute", "revert"})
 
     parameters = {
         "type": "object",

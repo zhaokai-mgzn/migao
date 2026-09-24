@@ -920,6 +920,51 @@ def _is_card_confirm_value(message, card_confirm_value) -> bool:
     return str(message).strip() == str(card_confirm_value).strip()
 
 
+def _card_only_confirmation(tool, tool_args: dict) -> bool:
+    """本次写调用是否**只认卡值确认**（涉钱面 = 改价，issue #5317 裁定）。
+
+    两条入面口径，**同一个函数**（不另立第二份清单，判据可机械复算）：
+
+      · **声明入面**：工具 schema 声明了 `before_price`（= 走 #5303「改前 → 改后」预览契约的
+        改价工具）且本次调用带了价格事实（`price` / `before_price`）；
+      · **动作入面**：工具声明 `card_only_actions` 且本次 action 在其中 —— 参数里看不出钱的
+        动作（批量 `execute` / `revert` 只带 `batch_id`，价格事实在批次行里）只能由工具声明。
+
+    为什么必须只认卡值：护栏证明的东西必须与它声称证明的一致 —— 文本「确认」只能证明
+    "有过一次确认动作"，证明不了"确认卡已发出、卡上有改前价"。放行链因此只剩
+    `_is_card_confirm_value`（用户消息**逐字等于**系统自产的卡值 = 真的点了卡）与由**点卡**
+    记录下的 `confirmed_write_tool`。
+    """
+    args = tool_args or {}
+    declared = getattr(tool, "card_only_actions", frozenset()) or frozenset()
+    action = str(args.get("action") or args.get("operation") or args.get("op") or "")
+    if action and action in declared:
+        return True
+    props = ((getattr(tool, "parameters", None) or {}).get("properties") or {})
+    if "before_price" not in props:
+        return False
+    return args.get("price") is not None or args.get("before_price") is not None
+
+
+def _card_only_confirmation_by_name(tool_name: str, tool_args: dict) -> bool:
+    """按**工具名**判涉钱面（取**全局**工具表：待执行/刚被拦的工具可能不在当前 skill 域内）。
+
+    与 `_card_only_confirmation` 只是取件口径差异，**不是第二套判据**。
+    """
+    try:
+        from app.tools.registry import get_tool_registry
+        tool = get_tool_registry().get_tool(str(tool_name or ""))
+    except Exception:
+        tool = None
+    return _card_only_confirmation(tool, tool_args)
+
+
+def _pending_card_only(pending: dict) -> bool:
+    """「已校验待执行」的目标工具是否属涉钱面（issue #5317）：文本确认不得记为「已确认」。"""
+    return _card_only_confirmation_by_name(
+        (pending or {}).get("target_tool"), (pending or {}).get("params") or {})
+
+
 def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     """判断本次 tool 调用是否需要用户明确确认。
 
@@ -944,6 +989,10 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     # 写工具需确认：destructive 或显式标记 requires_confirmation（审计 07 P0-L1）
     if not getattr(tool, "destructive", False) and not getattr(tool, "requires_confirmation", False):
         return False
+    # 涉钱面（改价）只认卡值（issue #5317）：文本确认**恒不算** ⇒ 放行只剩 react_turn 的
+    # `_is_card_confirm_value`（点卡）与由点卡记录下的 `confirmed_write_tool`。
+    if _card_only_confirmation(tool, tool_args):
+        return True
     return not _is_explicit_confirmation(last_user_msg)
 
 
@@ -3904,8 +3953,12 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         #   而用例因老断言只看工具名而判通过（假绿）。修法不是放宽门禁，而是把
         #   「用户确认过」在确认轮就记住：安全性质不变（仍需用户明确确认 + 存在已校验的
         #   待执行目标工具，且写成功后清除）。
+        # 涉钱面（改价）例外（issue #5317）：文本确认**不得**记为「已确认」——
+        # 否则 `react_turn` 的 `_write_was_confirmed` 会拿它放行一次改价，
+        # 而那张卡可能从没发出去过（护栏又变成"只证明确认过"）。
         if pending and pending.get("target_tool") and (
-                is_card_confirm or _is_explicit_confirmation(last_user_msg or "")):
+                is_card_confirm or (_is_explicit_confirmation(last_user_msg or "")
+                                    and not _pending_card_only(pending))):
             _f = dict(full)
             # 与门禁同源记「已确认工具 + 被确认的订单金额事实」（issue #4037 / F22）：
             # 事实取自**已校验待执行的参数**（顾客确认的就是这一份）。

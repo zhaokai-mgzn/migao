@@ -112,7 +112,12 @@ async def finalize_turn(
                 _bfull["last_confirm_skill"] = skill_name
                 # 卡是**代码**补的（顾客点的就是它）⇒ 同处记下被拦调用的金额事实（F22）：
                 # 否则补的卡"只能点、无从核对"（issue #4037）。
-                if _no_card_blocked_tool:
+                # 涉钱面（改价）例外（issue #5317）：**补卡 ≠ 点卡** ——
+                # 这张卡是代码刚补的、商家还没点，记「已确认」等于让下一次改价调用
+                # 无需任何点击就放行（护栏退化成"只证明补过卡"）⇒ 改价一律不记。
+                if (_no_card_blocked_tool
+                        and not _base._card_only_confirmation_by_name(
+                            _no_card_blocked_tool, _no_card_blocked_args or {})):
                     _bfull["confirmed_write_tool"] = _no_card_blocked_tool
                 if _no_card_blocked_facts:
                     _bfull[_base.CONFIRMED_ORDER_FACTS_KEY] = _no_card_blocked_facts

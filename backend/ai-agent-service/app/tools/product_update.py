@@ -22,6 +22,9 @@ class ProductUpdateTool(BaseTool):
         "【反例】本工具不支持图片字段；设置/修改商品主图、详情图**不在 B 端能力内**（改图不代做）——如实说明并引导商家到后台「商品管理」页面(/products)操作。"
         "【必填·改价】传 price 时必须同时传 before_price（改前价，取自 product_detail 的真值）——"
         "确认卡据此呈现「改前 → 改后」；漏传一律被拒（price_preview_required，issue #5303）。"
+        "**服务端会拿 before_price 与当前价按值核对，不符即拒**（issue #5317）⇒ 编一个改前价只会白烧一轮。"
+        "【确认形态·改价】改价是**涉钱面**：只认**商家点确认卡**（卡值），商家打字「确认」**不算**"
+        "（issue #5317）—— 被拦时**不要再调本工具**，直接发 confirm 卡等商家点。"
         "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"
         "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
     )
@@ -102,6 +105,10 @@ class ProductUpdateTool(BaseTool):
         # Jackson 忽略未知字段，传 price 会被静默丢弃 → 价格更新无效（E2E Real 暴露）。
         json_data: Dict[str, Any] = {}
         if price is not None: json_data["basePrice"] = price
+        # 改前价**随请求下发**（issue #5317）：服务端据此与 DB 当前值按值核对，不符即 422 拒绝
+        # （口径与批次 `oldValue` 同一实现 = `AgentWriteValues.sameValue`）。不下发 ⇒ 服务端
+        # 无从回查，护栏只防「漏填」不防「填错」。字段名必须逐字等于 DTO 字段 `beforePrice`。
+        if before_price is not None: json_data["beforePrice"] = before_price
         if name: json_data["name"] = name
         if description: json_data["description"] = description
         if status: json_data["status"] = status
