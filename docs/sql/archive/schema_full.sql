@@ -4,7 +4,10 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 40 张）：
+--   本文件缺失（schema.sql 已有，共 42 张）：
+--     agent_batches, agent_batch_items
+--      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
+--      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
 --     client_request_keys, craft_calc_configs, daily_briefings, fabric_remnants,
 --     finance_transactions,
 --     knowledge_candidates,
