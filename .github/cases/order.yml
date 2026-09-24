@@ -1370,26 +1370,9 @@ cases:
     #   · `namespaces` = 本用例依赖的**不可变键**（手机号 / 商品名）—— 并行互斥；
     #   · `precondition` = 基线计数（`order_count_for_phone` 先例 = OR-016；
     #     `product_count_for_keyword` 先例 = OR-016 / OR-017）。
-    # `max_growth: 1` 是**必须**的（门禁规则 h）：本用例自己会写一单 ⇒ 不给容忍度的话
-    # `0 → 1 > 0` 恒判漂移、score 归零（实证判定跑 35295494688 的 PR-008/PR-016 形态）。
     # ⚠️ 值必须**带引号**：不带引号会被 YAML 读成 `{'customer_phone': None}`（字典），
     # 前缀分类守卫（`test_case_seed_truth.py::test_every_namespace_prefix_is_classified`）
     # 会把它判成「未分类前缀」而报红 —— 本文件其余用例一律是 `"键:值"` 字符串形态。
-    namespaces:
-      - "customer_phone:13800138000"
-      - "product_name:夏日清风窗帘"
-      - "product_name:遮光窗帘"
-    precondition:
-      - type: order_count_for_phone
-        source: "13800138000"
-        expect: 0
-        max_growth: 1
-      - type: product_count_for_keyword
-        source: "夏日清风窗帘"
-        expect: 1
-      - type: product_count_for_keyword
-        source: "遮光窗帘"
-        expect: 1
     # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
     # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
     # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
@@ -2181,12 +2164,6 @@ cases:
     skip_reason: ""
     merge_log: "2026-09-14 新增（#3494 覆盖审计）：OR-012 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖在途订单数据状态（诚实『暂无』回复不误伤，故不禁『暂无/无法查询』）"
     traces:
-      ci:
-        - xiaobu-acceptance.yml
-      verifies: []
-
-
-    traces:
       tests:
         # 身份透传接线（run_case → 请求头）+ 用例级断言
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -2433,25 +2410,6 @@ cases:
     data_checks:
       - "（退役，#5247）如实说明米宝只做数据查询与分析、**不提供经对话创建订单**，并引导去后台订单管理页面下单。改判前口径（留档，不再生效）—— 原三条的断言对象都是**建单产物**（金额与落库明细），随 order_create 从 B 端解绑而不成立：①「打孔 per_meter 数量 = 8.4 米，加工费 = 8.00 × 8.4 = 67.20 元（截断成 8 会变 64.00，少收 3.20）」②「订单总额 = 面料小计 23.80×3=71.40 + 加工费 67.20 = 138.60 元」③「订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义」"
       - "⚠️ 2026-09-19（issue #4571）：本用例原为 per_area（8.4 ㎡ × 30 元/㎡ = 252.00），接地夹具 `刺绣工艺` 按用户裁定真删 ⇒ 改判 per_meter 并逐值重算；**per_area 计价路径的评测覆盖随该夹具删除而移除**（如需恢复，须新增一个显式标注为评测夹具的 per_area 项）"
-    # 自清理 / 前置自断言（2026-09-19 issue #4431 的 burn-down 缴费）：
-    #   · namespaces：本用例**自己就会给 13800138000 建单**、且按**商品名**定位下单对象 ⇒
-    #     与同号码/同商品的建单用例并行互斥（形状与 OR-016 逐字一致 —— 同一商品、同一号码）。
-    #   · precondition 选**只读**靶子 `product_count_for_keyword: 2699系列雪尼尔窗帘面料` ——
-    #     R1 按**名字**选品，「该名字在种子栈里唯一」是它真正依赖且**不自己改写**的前置
-    #     （mibao_eval_seed.sql 恰 1 件 prod_eval_2699；口径与 OR-016 / OR-014 / OR-026 同一份
-    #     实现 `_list_products_matching`）。同名副本会让 agent **合理地**要求澄清「哪一件」
-    #     ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation`
-    #     （**看起来像 agent 不干活**）—— 正是本规则要治的归因错位。
-    #     ⚠️ **有意不声明 `order_count_for_phone: 13800138000`**：本用例自己就会给该号码建单
-    #     ⇒ `after - before = +1 > max_growth(缺省 0)` 会**恒判运行期漂移**（硬写一条注定红的守卫；
-    #     同 OR-026 / OR-019 的先例与理由）。商品维只读 ⇒ 漂移恒为 0，无需 `max_growth`。
-    namespaces:
-      - "customer_phone:13800138000"
-      - "product_name:2699系列雪尼尔窗帘面料"
-    precondition:
-      - type: product_count_for_keyword
-        source: "2699系列雪尼尔窗帘面料"
-        expect: 1
     skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「经对话创建订单（加工项按计价数量建单 + 金额/落库核对）」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为只读查询路径（product_detail）保留 + 如实说明「米宝不提供经对话创建订单」并引导去后台订单管理页面。"
     merge_log: "2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾。2026-09-19（issue #4431 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 整条销账，取优先档 OR-*）：本条命中的**两个码一起清零** —— 补 `namespaces[customer_phone:13800138000, product_name:2699系列雪尼尔窗帘面料]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条从豁免清单销账。形状与 OR-016 逐字一致（同商品、同号码）。**断言面（user_inputs / expectations / must_succeed / amount_verify / db_verify / data_checks）一字未动、无放宽。** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_detail, order_create] 改判为 [product_detail]，must_succeed[order_create] / amount_verify[order_create: unit_price, subtotal, processing_fee, total] / db_verify[order_items ← source=order_create] / user_inputs[2].repeat_until{tool_called: order_create, max: 8} 全部同步移除（否则成为永不满足的悬空声明 —— 它们都靠 order_create 的成功调用取数）；user_inputs[2] 的 `code` / `fallback` / `form_values` 三键**原样保留**（不属本包清理面）；data_checks 与新事实冲突（三条断言的对象都是建单产物：加工费/总额/落库数量）⇒ 合并改判为一条「如实说明 + 引导后台」并逐条留档原文，`#4571 per_area 覆盖损失登记` 那条**原样保留**（不属本次改动面）；namespaces / precondition / pre_clean / tags / title / truths_ref 均未动。"
     traces:
@@ -2710,19 +2668,6 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    data_checks:
-      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义"
-      - "（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码"
-    pre_clean:
-      - type: product_dedupe
-        product_keyword: "遮光窗帘"
-    skip_reason: ""
-    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言"
-    traces:
-      tests:
-        - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
-      ci:
-        - agent-eval.yml
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"

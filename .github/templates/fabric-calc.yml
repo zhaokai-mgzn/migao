@@ -32,11 +32,15 @@ primary_specs:
   - backend/ai-agent-service/tests/test_curtain_calc.py
 
 reviewer_asserts:
+  # ⚠️ 断言**一条一列**（`expect:` 是列表，不是同键重复 —— issue #4291）：
+  # 同一 mapping 里写 5 个 `expect:` 只会装载最后一个（PyYAML 与 yaml_light 同款行为），
+  # 前 4 条真值断言**静默消失**；判据 = `tests/unit_ci_workflows/test_cases_yaml_strictness.py`。
   - 工具: curtain_calc
-    expect: 定高布 3m×2.5m×2倍×2.8m门幅 → fabric_meters=6.0（W=净窗宽，宽方向无余量，issue #5030）
-    expect: 定宽布 3m×2.7m×2倍×2.8m门幅 → fabric_meters=9.0 且 warning 非空
-    expect: 打孔帘 3m×2.7m×2倍×3.0m门幅×30元/米 → accessory_cost=148.0（明细无「罗马圈」）、total=437.2
-    expect: 同上 + accessories=[{罗马圈,40,1.5}] → accessory_cost=208.0、total=497.2（数量原样、不推导）
-    expect: 报价 total = fabric_cost + processing_cost + accessory_cost + install_cost + mixed_color_surcharge（单色款 mixed_color_surcharge = 0.0；拼色款 = 面料米数 × 2.4）
+    expect:
+      - 定高布 3m×2.5m×2倍×2.8m门幅 → fabric_meters=6.0（W=净窗宽，宽方向无余量，issue #5030）
+      - 定宽布 3m×2.7m×2倍×2.8m门幅 → fabric_meters=9.0 且 warning 非空
+      - 打孔帘 3m×2.7m×2倍×3.0m门幅×30元/米 → accessory_cost=148.0（明细无「罗马圈」）、total=437.2
+      - 同上 + accessories=[{罗马圈,40,1.5}] → accessory_cost=208.0、total=497.2（数量原样、不推导）
+      - 报价 total = fabric_cost + processing_cost + accessory_cost + install_cost + mixed_color_surcharge（单色款 mixed_color_surcharge = 0.0；拼色款 = 面料米数 × 2.4）
   - 工具: curtain_calc
     expect: 韩褶 6.6m×2.6m 双开 + 客户自报 48 折 → fabric_meters=12.3、fullness=2.0（档位理论值）、fullness_actual=1.86（实际值，二者不得互相替代）

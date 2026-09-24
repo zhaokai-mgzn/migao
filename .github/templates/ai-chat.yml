@@ -36,9 +36,9 @@ reviewer_asserts:
     expect: 返回问候回复（greeting 意图，direct_reply）
   - API: POST /api/ai/chat {"message":"删除商品"}（destructive 工具场景）
     expect: 返回 confirm 卡片（不直接执行删除）
-  - 工具调用失败场景
+  - 场景: 工具调用失败场景
     expect: 返回 suggestion 字段非空 AND 提示用户如何修复
-  - 多轮：第 1 轮问"查我的订单"，第 2 轮问"第 3 个呢"
+  - 场景: 多轮：第 1 轮问"查我的订单"，第 2 轮问"第 3 个呢"
     expect: 保持订单查询上下文（state 在轮次间保持）
 
 common_pitfalls:
