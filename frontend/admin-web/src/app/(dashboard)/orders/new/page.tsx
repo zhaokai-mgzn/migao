@@ -26,6 +26,9 @@ import {
   craftCalcSignature,
   craftPlanCandidateLabel,
   craftPlanHasSplice,
+  craftPlanItemSourcesOf,
+  craftPlanSourceSummary,
+  craftPlanSourceText,
   craftPlanSpliceText,
   defaultCraftCalcFormula,
   defaultCraftCalcTier,
@@ -3905,13 +3908,32 @@ function LineItemBlock({
    */
   const derivedOptions = derivedSpecialOptionsOf(derivedOptionInputOf(line))
   const effectiveOptions = effectiveSpecialOptionsOf(derivedOptionInputOf(line))
+  /**
+   * **引擎拒绝了本行本次算料**（issue #5287 ②/③/④）—— `line.calcError` 就是引擎/后端给的那**一条**
+   * 错误原文（成功 ⇒ `null`；被拒 ⇒ 非空）。⚠️ 「某一项到底生没生效」**只许**读它：
+   * 前端**不得**自写一份「拼次是否合法 / 加工类型配不配」的判断（那是第二份引擎判定 —— 判据 4）。
+   */
+  const engineRejected = line.calcError !== null
   /** 一个推导项在本行的**状态**（面板与落库共用同一判定 ⇒ 不可能各说各话） */
-  const derivedOptionState = (name: string): 'manual' | 'merged' | 'rejected' =>
-    (line.craft.specialOptions ?? []).includes(name)
-      ? 'manual' // 商家在②特殊选项里手工勾过 ⇒ 人工优先
-      : effectiveOptions.includes(name)
-        ? 'merged'
-        : 'rejected'
+  const derivedOptionState = (
+    name: string
+  ): 'manual' | 'merged' | 'rejected' | 'engine-rejected' => {
+    const state =
+      (line.craft.specialOptions ?? []).includes(name)
+        ? 'manual' // 商家在②特殊选项里手工勾过 ⇒ 人工优先
+        : effectiveOptions.includes(name)
+          ? 'merged'
+          : 'rejected'
+    // 引擎拒绝了本次算料 ⇒ **「已并入」不成立**（并进去也插不了工序、计不了件）——
+    // 与错误态**同源**（同一份 `line.calcError`），不是前端自己判出来的「拼次不合法」（判据 3/4）。
+    return state === 'merged' && engineRejected ? 'engine-rejected' : state
+  }
+  /**
+   * **项级来源**（issue #5287 ①b · 用户裁定**甲**）—— 加工类型 / 拼次 / 接高 / 接宽**各带自己的来源**。
+   * 判据与**请求面同源**（键有没有真发给引擎，见 `lib/craft-calc-request.ts::craftPlanItemSourcesOf`）；
+   * 块级 `craft-plan-source` 退为**汇总**，不承担项级归属。
+   */
+  const planSources = craftPlanItemSourcesOf(craftCalcParamsOf(calcInputOf(line, calcConfig)))
   /** 面板「拼接」那一行显示的拼次名（生效值；没有 ⇒ 回落 `craftPlanSpliceText` 的不拼接 / N≥4 文案） */
   const spliceOption = derivedSpliceOptionOf({
     plan,
@@ -4190,9 +4212,14 @@ function LineItemBlock({
                         <span className="font-medium text-neutral-600">用料方案（系统推导）</span>
                         <span data-testid="craft-plan-mode" className="text-neutral-900">
                           加工类型：{plan.cutting_mode}
+                          {/* **项级**来源（甲，issue #5287 ①b）：这一档是商家自己点的、还是引擎替他定的 */}
+                          <span data-testid="craft-plan-mode-source" className="ml-1 text-neutral-500">
+                            （{craftPlanSourceText(planSources.cuttingMode)}）
+                          </span>
                         </span>
+                        {/* 块级**退为汇总**（甲）：只报「四项里各有几项是谁定的」，逐项归属在各项自己身上 */}
                         <span data-testid="craft-plan-source" className="text-neutral-500">
-                          {plan.auto ? '系统推导' : '人工指定（不再被自动改判）'}
+                          {craftPlanSourceSummary(planSources)}
                         </span>
                         {/* 工艺**不在** `plan` 里（没有几何依据）：一律「系统默认 · 可改」—— 
                             真值路径 = ③加工项里勾带 `craft_hint` 的工艺项（#4566）。 */}
@@ -4207,25 +4234,45 @@ function LineItemBlock({
                         </span>
                         <span data-testid="craft-plan-splice" className="text-neutral-500">
                           拼接 {spliceOption ?? craftPlanSpliceText(plan)}
+                          <span data-testid="craft-plan-splice-source" className="ml-1">
+                            （{craftPlanSourceText(planSources.spliceTimes)}）
+                          </span>
                           {spliceOption !== null
                             ? derivedOptionState(spliceOption) === 'merged'
                               ? '（已并入特殊选项 ⇒ 插工序 + 计件）'
-                              : derivedOptionState(spliceOption) === 'manual'
-                                ? '（你在②特殊选项里手工勾过 ⇒ 人工优先）'
-                                : '（已忽略：不插工序、不计件）'
+                              : derivedOptionState(spliceOption) === 'engine-rejected'
+                                ? '（未生效：引擎拒绝本次参数组合 ⇒ 不插工序、不计件；原因见上方红字）'
+                                : derivedOptionState(spliceOption) === 'manual'
+                                  ? '（你在②特殊选项里手工勾过 ⇒ 人工优先）'
+                                  : '（已忽略：不插工序、不计件）'
                             : ''}
                         </span>
                         <span data-testid="craft-plan-join-height" className="text-neutral-500">
                           接高 {plan.join_height_m ?? '—'} 米
+                          <span data-testid="craft-plan-join-height-source" className="ml-1">
+                            （{craftPlanSourceText(planSources.joinHeightM)}）
+                          </span>
                         </span>
                         <span data-testid="craft-plan-join-width" className="text-neutral-500">
                           接宽 {plan.join_width_m ?? '—'} 米
+                          <span data-testid="craft-plan-join-width-source" className="ml-1">
+                            （{craftPlanSourceText(planSources.joinWidthM)}）
+                          </span>
                         </span>
                         <span
                           data-testid="craft-plan-meters"
-                          className="font-medium text-neutral-900"
+                          className={
+                            engineRejected
+                              ? 'font-medium text-red-600'
+                              : 'font-medium text-neutral-900'
+                          }
                         >
-                          用料 {plan.meters} 米
+                          {/* 判据 5（issue #5287 ③）：引擎拒绝时这块显示的是**上一次成功试算的旧值**
+                              （失败分支只写 `calcError`、**不更新** `calc`）⇒ 必须标「已失效」，
+                              否则商家会把一个已不成立的数当成本次用料（而金额仍按它计）。 */}
+                          {engineRejected
+                            ? `用料 ${plan.meters} 米（已失效：本次算料被引擎拒绝，该值是上一次成功试算的旧值）`
+                            : `用料 ${plan.meters} 米`}
                         </span>
                       </div>
                       <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
@@ -4251,7 +4298,9 @@ function LineItemBlock({
                                   ? '：你在②特殊选项里手工勾过 ⇒ 人工优先'
                                   : state === 'merged'
                                     ? '：已并入特殊选项（⇒ 插工序 + 计件）'
-                                    : '：已忽略（手工剔除）—— 不插工序、不计件'}
+                                    : state === 'engine-rejected'
+                                      ? '：未生效（引擎拒绝本次参数组合 ⇒ 不插工序、不计件）'
+                                      : '：已忽略（手工剔除）—— 不插工序、不计件'}
                                 {state === 'merged' && (
                                   <button
                                     type="button"

@@ -29,6 +29,9 @@ import {
   craftCalcSignature,
   craftPlanCandidateLabel,
   craftPlanHasSplice,
+  craftPlanItemSourcesOf,
+  craftPlanSourceSummary,
+  craftPlanSourceText,
   craftPlanSpliceText,
   derivedJoinHeightOptionOf,
   derivedJoinSpliceItemOf,
@@ -560,5 +563,67 @@ describe('#5230 派生「拼接」加工项 —— 接高/接宽发生才进组�
     expect(effectiveJoinSourceNamesOf(withJoin).length > 0).toBe(
       derivedJoinSpliceItemOf(withJoin) !== null
     )
+  })
+})
+
+// ── issue #5287 ①b（用户裁定**甲**）：项级来源必须与**请求面**同源 ───────────────────────────
+describe('#5287 项级来源（甲）：每一项各带自己的来源，判据 = 该键有没有真发给引擎', () => {
+  it('判据 2（红证）：只人工加接高 ⇒ **接高**是人工指定，**加工类型 / 拼次**仍是系统推导', () => {
+    const params = craftCalcParamsOf(line({ planOverrides: { joinHeightM: 0.05 } }))!
+    // 请求面先自证：引擎**只**收到接高（`cutting_mode` 那个键根本不存在）
+    expect(params.join_height_m).toBe(0.05)
+    expect(params.cutting_mode).toBeUndefined()
+    expect(params.splice_times).toBeUndefined()
+
+    const sources = craftPlanItemSourcesOf(params)
+    expect(sources.joinHeightM).toBe('manual')
+    expect(sources.cuttingMode).toBe('derived')
+    expect(sources.spliceTimes).toBe('derived')
+    expect(sources.joinWidthM).toBe('derived')
+    // 商家从没点过加工类型 ⇒ 加工类型**不得**呈现为「人工指定」（#5287 ① 的原始投诉）
+    expect(craftPlanSourceText(sources.cuttingMode)).toBe('系统推导')
+  })
+
+  it('判据 2：显式点过加工类型 / 拼次 ⇒ 对应项各自变人工指定（互不牵连）', () => {
+    const params = craftCalcParamsOf(
+      line({ cuttingModeOverride: '定宽买高', planOverrides: { spliceTimes: 2 } })
+    )!
+    const sources = craftPlanItemSourcesOf(params)
+    expect(sources.cuttingMode).toBe('manual')
+    expect(sources.spliceTimes).toBe('manual')
+    expect(sources.joinHeightM).toBe('derived')
+    expect(sources.joinWidthM).toBe('derived')
+  })
+
+  it('判据 2：没发请求（`params === null`）⇒ 四项都是系统推导（不谎报人工）', () => {
+    expect(craftPlanItemSourcesOf(null)).toEqual({
+      cuttingMode: 'derived',
+      spliceTimes: 'derived',
+      joinHeightM: 'derived',
+      joinWidthM: 'derived',
+    })
+  })
+
+  it('判据 2：块级文案是**汇总**（数项），不是项级归属的载体', () => {
+    const one = craftPlanItemSourcesOf(
+      craftCalcParamsOf(line({ planOverrides: { joinHeightM: 0.05 } }))!
+    )
+    expect(craftPlanSourceSummary(one)).toBe('来源汇总：人工指定 1 项 · 系统推导 3 项（逐项见括号）')
+    const four = craftPlanItemSourcesOf(
+      craftCalcParamsOf(
+        line({
+          cuttingModeOverride: '定宽买高',
+          planOverrides: { spliceTimes: 2, joinHeightM: 0.05, joinWidthM: 0.05 },
+        })
+      )!
+    )
+    expect(craftPlanSourceSummary(four)).toBe('来源汇总：人工指定 4 项 · 系统推导 0 项（逐项见括号）')
+  })
+
+  it('越界的人工值不算「人工指定」（与请求面同源：`joinGapOf` 拒发 ⇒ 该项就是系统推导）', () => {
+    // 接高 0.15 > 上限 ⇒ `craftCalcParamsOf` **不发该键** ⇒ 引擎没收到 ⇒ 不得标人工指定
+    const params = craftCalcParamsOf(line({ planOverrides: { joinHeightM: 0.15 } }))!
+    expect(params.join_height_m).toBeUndefined()
+    expect(craftPlanItemSourcesOf(params).joinHeightM).toBe('derived')
   })
 })

@@ -96,6 +96,66 @@ export function craftPlanHasSplice(
 }
 
 /**
+ * **项级来源**（issue #5287 ①b · 用户裁定**甲**＝「把人工指定 / 系统推导标到**每一项**」）。
+ *
+ * 判据 = **该键有没有真的发给引擎**：本模块唯一的凑参出口是 {@link craftCalcParamsOf}，
+ * 而它**只带人工值**（加工类型带 `cuttingModeOverride`、拼次/接高/接宽带 `planOverrides`）
+ * ⇒ 「键在 `params` 里出现」⇔「引擎收到的 `cutting_mode_sent` / `splice_times_sent` /
+ * `join_height_m_sent` / `join_width_m_sent` 为真」。
+ *
+ * ⚠️ **不许**在页面里另写一份「商家点没点过这一项」的判断：那一份判据必然会与请求面漂开
+ * （页面说人工指定、引擎却从没收到该键 —— 正是 #5287 ① 的形态）。
+ */
+export type CraftPlanItemSource = 'manual' | 'derived'
+export const CRAFT_PLAN_SOURCE_MANUAL = '人工指定'
+export const CRAFT_PLAN_SOURCE_DERIVED = '系统推导'
+
+export function craftPlanSourceText(source: CraftPlanItemSource): string {
+  return source === 'manual' ? CRAFT_PLAN_SOURCE_MANUAL : CRAFT_PLAN_SOURCE_DERIVED
+}
+
+/** 四个**可人工改**的推导项，各自的来源（顺序稳定：加工类型 → 拼次 → 接高 → 接宽） */
+export interface CraftPlanItemSources {
+  cuttingMode: CraftPlanItemSource
+  spliceTimes: CraftPlanItemSource
+  joinHeightM: CraftPlanItemSource
+  joinWidthM: CraftPlanItemSource
+}
+
+/** {@link craftPlanItemSourcesOf} 的取值序列（`Object.values` 的稳定顺序靠它，不靠对象的枚举顺序） */
+export const CRAFT_PLAN_SOURCE_KEYS = [
+  'cuttingMode',
+  'spliceTimes',
+  'joinHeightM',
+  'joinWidthM',
+] as const satisfies readonly (keyof CraftPlanItemSources)[]
+
+/**
+ * **逐项**来源（见 {@link CraftPlanItemSources}）—— 入参 = **该行真正发出去的试算入参**
+ * （`craftCalcParamsOf(...)` 的结果；`null` = 没发请求 ⇒ 四项都还没有人工值）。
+ */
+export function craftPlanItemSourcesOf(params: CraftCalcParams | null): CraftPlanItemSources {
+  const of = (key: keyof CraftCalcParams): CraftPlanItemSource =>
+    params?.[key] === undefined ? 'derived' : 'manual'
+  return {
+    cuttingMode: of('cutting_mode'),
+    spliceTimes: of('splice_times'),
+    joinHeightM: of('join_height_m'),
+    joinWidthM: of('join_width_m'),
+  }
+}
+
+/**
+ * 块级**汇总**（甲：块级标签退为汇总）—— 只报「四项里各有几项是谁定的」，
+ * **不承担项级归属**（判据 2：块级不得单独承担项级归属 ⇒ 逐项标注在那一项自己身上）。
+ */
+export function craftPlanSourceSummary(sources: CraftPlanItemSources): string {
+  const manual = CRAFT_PLAN_SOURCE_KEYS.filter((key) => sources[key] === 'manual').length
+  const total = CRAFT_PLAN_SOURCE_KEYS.length
+  return `来源汇总：${CRAFT_PLAN_SOURCE_MANUAL} ${manual} 项 · ${CRAFT_PLAN_SOURCE_DERIVED} ${total - manual} 项（逐项见括号）`
+}
+
+/**
  * 拼次 → **特殊选项名**（`1..3` ⇒ `拼1次` / `拼2次` / `拼3次`；其余 ⇒ `null`）。
  *
  * ⚠️ 名字**从特殊选项清单里读**（`lib/order-craft-fields.ts::SPECIAL_OPTIONS`；服务端

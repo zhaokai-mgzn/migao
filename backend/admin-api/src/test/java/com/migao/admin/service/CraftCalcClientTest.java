@@ -14,6 +14,8 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.lang.reflect.Field;
@@ -554,5 +556,62 @@ class CraftCalcClientTest {
                 eq(String.class));
         // 无租户上下文 ⇒ 不查不注入（与 #4528 同口径：不猜一个租户去读别人的配置）
         assertThat(captor.getValue().getBody()).doesNotContainKey("config");
+    }
+
+    // ── issue #5287 ④：**参数校验类**拒绝不得复用「算料服务不可用」──────────────────────────
+    /**
+     * 被测读数 = `acceptance/2026-09-23/order-auto-derivation/report.md` §13.2 的 `S2` 帧**逐字**：
+     * 引擎答 **400** `CRAFT_CALC_INVALID_INPUT` + 「加工类型「定高买宽」是买宽订单、零拼接 ⇒
+     * 拼次只能是 0（收到 2）」，改前 Java 侧把它包成 **422 / `CRAFT_CALC_UNAVAILABLE`** +
+     * 「算料服务（ai-agent）不可用」⇒ **把病因指错**（商家会去查服务，而问题在自己的参数组合上）。
+     *
+     * <p>红证：把 {@code calc()} 的 {@code HttpStatusCodeException} 分支删掉（回到单一兜底 catch）
+     * ⇒ 本条必红（码变 `CRAFT_CALC_UNAVAILABLE`、状态变 422、原因里没有引擎那句话）。</p>
+     */
+    @Test
+    @DisplayName("#5287 ④ 引擎 400 参数校验拒绝 ⇒ CRAFT_CALC_INVALID_INPUT + 400 + **引擎说的原因**（不是「服务不可用」）")
+    void engineValidationRejectionIsNotReportedAsServiceUnavailable() {
+        String engineBody = """
+                {"detail":{"success":false,"error":{"code":"CRAFT_CALC_INVALID_INPUT",
+                 "message":"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）"}}}
+                """;
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenThrow(HttpClientErrorException.create(org.springframework.http.HttpStatus.BAD_REQUEST,
+                        "Bad Request", org.springframework.http.HttpHeaders.EMPTY,
+                        engineBody.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> client.calc(request()))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getCode()).isEqualTo(CraftCalcClient.ERR_CRAFT_CALC_INVALID_INPUT);
+                    assertThat(be.getHttpStatus()).isEqualTo(400);
+                    // 原因必须是**引擎给的那句**（不编一份自己的「参数不合法」）
+                    assertThat(be.getMessage()).contains("拼次只能是 0（收到 2）");
+                    assertThat(be.getMessage()).doesNotContain("算料服务（ai-agent）不可用");
+                    // 建议要指向**参数**，不得让商家去重启服务
+                    assertThat(be.getSuggestion()).contains("参数组合");
+                    assertThat(be.getSuggestion()).doesNotContain("请确认 ai-agent-service 已启动");
+                });
+    }
+
+    @Test
+    @DisplayName("#5287 ④ 反向护栏：真正的服务不可用（5xx）**仍然**用 CRAFT_CALC_UNAVAILABLE")
+    void realServiceFailuresStillUseUnavailableCode() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenThrow(HttpServerErrorException.create(
+                        org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Internal Server Error", org.springframework.http.HttpHeaders.EMPTY,
+                        "boom".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> client.calc(request()))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getCode()).isEqualTo(CraftCalcClient.ERR_CRAFT_CALC_UNAVAILABLE);
+                    assertThat(be.getHttpStatus()).isEqualTo(422);
+                });
     }
 }

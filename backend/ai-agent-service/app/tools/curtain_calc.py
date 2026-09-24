@@ -472,22 +472,39 @@ def derive_plan(
             else CUTTING_MODE_FIXED_WIDTH
         )
 
-    def _implied_mode() -> str:
-        """没显式给加工类型时，人工值**蕴含**的加工类型。
+    def _implied_mode() -> tuple[str, Optional[str]]:
+        """没显式给加工类型时，人工值**蕴含**的加工类型 + 该蕴含的**披露语**。
 
         ① 人工接宽 ⇒ 倒幅（定高买宽按宽买米、宽方向无缺口）；
         ② 人工接高 ⇒ 定高买宽（倒幅幅长按米买、高方向无缺口）；
         ③ **人工拼次 ≥ 1 ⇒ 倒幅** —— 零拼接的定高买宽**根本拼不起来**（买宽订单是一整幅布），
            故拼次 ≥ 1 已把加工类型蕴含为倒幅（这是#5200 裁定 4「拼接也允许人工加」的落点，
            不是另立口径）。只在**真的拼得起来**时这么定；`splice_times=0` 仍走自动择路。
+
+        返回 `(mode, note)`：`note` = 上面三支**各自**的披露语（**同族同模板**：每条都写成
+        「人工加了什么 ⇒ 蕴含哪个加工类型（为什么）」）；`None` ⇒ 没有被任何人工值蕴含
+        （走 `_auto_mode()` 或显式 `cutting_mode`）。
+
+        🔴 **issue #5287 ①a**：接高 / 接宽这两支**曾漏了披露**（只有拼次那支有 ⇒ `S1` 帧里
+        商家看到「加工类型按人工值「定高买宽」逐字采用」，而他从没点过加工类型）。
+        把披露与蕴含**放在同一支里一起返回**是**有意**的：两者同源 ⇒ 结构上不可能再出现
+        「蕴含了却没说」；也正因此**不许**在下游按 mode 再拼一份 if-else（那就是第二份归属逻辑）。
         """
         if join_width_m is not None:
-            return CUTTING_MODE_FIXED_WIDTH
+            return CUTTING_MODE_FIXED_WIDTH, (
+                f"人工加接宽 {round(float(join_width_m), 3)} 米 ⇒ 蕴含**倒幅**"
+                f"（定高买宽按宽买米、宽方向无缺口）"
+            )
         if join_height_m is not None:
-            return CUTTING_MODE_FIXED_HEIGHT
+            return CUTTING_MODE_FIXED_HEIGHT, (
+                f"人工加接高 {round(float(join_height_m), 3)} 米 ⇒ 蕴含**定高买宽**"
+                f"（倒幅幅长按米购买、高方向无缺口）"
+            )
         if splice_times is not None and splice_times >= 1:
-            return CUTTING_MODE_FIXED_WIDTH
-        return cutting_mode or _auto_mode()
+            return CUTTING_MODE_FIXED_WIDTH, (
+                f"人工拼 {splice_times} 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）"
+            )
+        return cutting_mode or _auto_mode(), None
 
     if manual:
         # ── R7 人工覆盖：**逐字采用**，不再自动改判（裁定 4/6）──────────────────
@@ -508,12 +525,10 @@ def derive_plan(
                 "人工接宽（join_width_m）只适用于「定宽买高」（倒幅）—— 定高买宽按宽买米、宽方向无缺口，"
                 "定高买宽 + 接宽 是矛盾输入（不静默丢弃）"
             )
-        if join_width_m is not None:
-            effective_mode = CUTTING_MODE_FIXED_WIDTH
-        elif join_height_m is not None:
-            effective_mode = CUTTING_MODE_FIXED_HEIGHT
-        else:
-            effective_mode = _implied_mode()
+        # 生效加工类型 + **它的来源**（显式 / 被哪个人工值蕴含 / 自动择路）—— 一次取全，
+        # 免得「算了归属却没告知」。`_implied_mode()` 的前两支与这里原先的 if-else 逐值等价
+        # （接宽 > 接高 > 拼次 ≥ 1 的优先级就是它的实现），故这不是口径变更、是**去掉第二份优先级**。
+        effective_mode, implied_note = _implied_mode()
         if effective_mode == CUTTING_MODE_FIXED_HEIGHT:
             if splice_times:
                 raise ValueError(
@@ -584,8 +599,19 @@ def derive_plan(
         )
 
     if manual:
+        # 🔴 **归属必须与事实一致**（issue #5287 ①a / 判据 1、2）：`cutting_mode` 为空时
+        # **不得**写出「加工类型按人工值「<推导值>」逐字采用」—— 那是把**引擎推导值**断言成
+        # **人工值**（`S1` / `S4` 两帧的形态）。三态各写各的：
+        # ① 显式给了 `cutting_mode` ⇒ 人工值就是它；② 未给、但被人工值蕴含 ⇒ 写清是**蕴含**的；
+        # ③ 未给、也没被蕴含（如只人工指定 `splice_times=0`）⇒ 沿用自动择路。
+        if cutting_mode is not None:
+            mode_clause = f"加工类型按人工值「{cutting_mode}」逐字采用"
+        elif implied_note is not None:
+            mode_clause = f"加工类型**未人工指定** ⇒ 由人工值蕴含为「{effective_mode}」"
+        else:
+            mode_clause = f"加工类型**未人工指定** ⇒ 沿用系统推导的「{effective_mode}」"
         reason = (
-            f"**人工覆盖**（裁定 4/6）：加工类型按人工值「{effective_mode}」逐字采用"
+            f"**人工覆盖**（裁定 4/6）：{mode_clause}"
             f"（门幅 {door} 米 / 成品高 {need_h} 米 / 用料 T {round(total, 3)} 米），系统不再自动改判"
         )
         if join_h is not None:
@@ -599,11 +625,22 @@ def derive_plan(
             )
         if cutting_mode == CUTTING_MODE_FIXED_WIDTH and splice_times is not None:
             reason += f"；人工指定拼 {win_splice} 次"
-        if cutting_mode is None and splice_times is not None and splice_times >= 1:
+        # ── 「未显式给加工类型，但人工值蕴含了它」**必须显式披露**（issue #5287 ①a / 判据 1）──
+        # 与上一支**同族同模板**：`未显式给加工类型，但<人工加了什么> ⇒ 蕴含<哪个加工类型>（为什么）`
+        # （逐字先例 = `S3` 帧那条「…人工拼 2 次 ⇒ 蕴含**倒幅**…」）。
+        # ⚠️ 只在**人工值真的决定了**加工类型时才说 —— `cutting_mode` 为空，或显式值**被蕴含值取代**
+        # （后者 = `S4` 帧：显式「定高买宽」+ 拼 2 次 ⇒ 实际按「定宽买高」算，原文却写「按人工值
+        # 「定宽买高」逐字采用」）。显式值恰好等于蕴含值时「人工值…」那句已经说清，不再重复。
+        if implied_note is not None and (cutting_mode is None or effective_mode != cutting_mode):
             reason += (
-                f"；未显式给加工类型，但人工拼 {win_splice} 次 ⇒ 蕴含**倒幅**"
-                f"（零拼接的定高买宽拼不起来）"
+                f"；未显式给加工类型，但{implied_note}"
+                if cutting_mode is None
+                else f"；{implied_note}"
             )
+            if cutting_mode is not None:
+                reason += (
+                    f" ⇒ 人工加工类型「{cutting_mode}」被蕴含值取代，实际按「{effective_mode}」算"
+                )
     else:
         reason = (
             "自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）："
