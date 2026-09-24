@@ -574,6 +574,8 @@ case "$MODE" in
     # ⚠️ issue 号写在本**注释**行、不写在下面那条的被引号包住的步骤名里：门禁 `_code_of()`
     #    按行首个 `#` 截断（剥注释），写在引号内会把该行从「调用」截成「半句」⇒ 判成「没接线」。
     report_env admin-api "红证机具 product-batch 实跑" bash -c "python3 '$ROOT/scripts/product-batch-red-proof.py'"
+    # 跨租户隔离（issue #5327）：表纳管 / 谓词注入 / 明细表列存在 —— 逐条注入 ⇒ 真库判据必红
+    report_env admin-api-pg "红证机具 agent-batch-tenant 实跑（真库判据）" bash -c "python3 '$ROOT/scripts/agent-batch-tenant-red-proof.py'"
     ;;
   *)
     echo "用法: $0 {quick|full|frontend|backend|agent|gate|redproof}"
