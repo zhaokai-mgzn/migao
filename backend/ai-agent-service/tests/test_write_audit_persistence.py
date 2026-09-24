@@ -304,11 +304,15 @@ class TestProductionWiring:
         assert admin_client.post.await_count == 0
 
 
-def _tools_declaring_before_price() -> set:
-    """AST 扫 `app/tools/*.py`：`read_only = False` 且 schema 里声明了 `before_price` 的工具名。
+def _tools_declaring_price() -> set:
+    """AST 扫 `app/tools/*.py`：`read_only = False` 且 schema 的 `properties` 里**有 `price` 键**的工具名。
 
-    **从源码推出**（不维护第二份手抄清单）：`before_price` = 改前价，issue #5303 起是
-    「传 price 就必须同时传」的必填预览字段 ⇒ 「声明了它」与「这个工具会改价」是同一件事。
+    **从源码推出**（不维护第二份手抄清单）：`price` 键 = 这个工具接受一个价格入参 ⇒ **它能改价**。
+
+    ⚠️ 判据**不是** `before_price`（本单复核的修正）：`product_manage` 也能改 `basePrice`，
+    却没有 before_price 预览约束（#5303 只覆盖 product_update / sku_update）⇒
+    「声明 before_price ⟺ 会改价」这个前提**已被证伪** —— 用它会把一条真实的改价路径静默放行。
+    只取 `properties` 下的**键**（不取描述文本）：描述里提一句 `price` 不算会改价。
     """
     import ast as _ast
     import pathlib as _pathlib
@@ -333,10 +337,17 @@ def _tools_declaring_before_price() -> set:
                         schema = stmt.value
             if not name or read_only is not False or schema is None:
                 continue
-            keys = {c.value for c in _ast.walk(schema)
-                    if isinstance(c, _ast.Constant) and isinstance(c.value, str)}
-            if "before_price" in keys:
+            keys = set()
+            for inner in _ast.walk(schema):
+                if not isinstance(inner, _ast.Dict):
+                    continue
+                for key, value in zip(inner.keys, inner.values):
+                    if (isinstance(key, _ast.Constant) and key.value == "properties"
+                            and isinstance(value, _ast.Dict)):
+                        keys |= {k.value for k in value.keys if isinstance(k, _ast.Constant)}
+            if "price" in keys:
                 found.add(name)
+    return found
     return found
 
 
@@ -397,18 +408,63 @@ class TestPriceChangeFactsAreRecorded:
         assert facts == {"price": 12.5, "product_id": "P-1"}
         assert "before_price" not in facts
 
-    def test_registry_covers_every_tool_declaring_before_price(self):
-        """**类级元守卫**（§23 G1/G2）：声明 `before_price` 的写工具集 == 登记集（双向）。
+    def test_registry_covers_every_tool_that_can_set_a_price(self):
+        """**类级元守卫**（§23 G1/G2）：会改价的写工具必须**要么登记、要么进例外台账**。
 
-        为什么需要它：病灶不是「漏了 `sku_update` 这一处」，而是
-        「**新增一个改价工具 ⇒ 它的改价在审计里不可判定，而不会有任何东西变红**」。
-        判据从源码推出（AST：`read_only` + schema 键），登记面漏一个/多一个都判红。
+        病灶不是「漏了 `sku_update` 这一处」，而是
+        「**新增一个改价工具 ⇒ 它的改价不会被任何规则发现，而不会有任何东西变红**」。
+        三条判据（判据源 = 源码 AST + 例外台账 + 引擎 caveats，不维护第二份手抄清单）：
+
+        ① 声明 `price` 的写工具必须被「登记集 ∪ 例外台账」覆盖（否则 ⇒ 红：静默改价路径）；
+        ② 登记面不得比现实宽（登记了却不声明 `price` ⇒ 红：口径漂移）；
+        ③ 每个例外必须在引擎 `price_change_over.caveats` 里**被点名**（缺口不许只活在代码里）。
+
+        ⚠️ 本判据的**前一版**用 `before_price` 当「会改价」的判据 —— 复核实测 `product_manage`
+        证伪了它（也能改价、却没有该字段）⇒ 判据改为 `price` + 例外台账（本单的实证修正）。
         """
-        declared = _tools_declaring_before_price()
+        from app.briefing.proactive import RULES
+
+        declared = _tools_declaring_price()
+        tracked = set(registry_module._PRICE_CHANGE_TOOLS)
+        untracked = set(registry_module._UNTRACKED_PRICE_TOOLS)
         assert declared, "一个都没解析出来 ⇒ 判据在空跑（锚点漂移，不是通过）"
-        assert declared == set(registry_module._PRICE_CHANGE_TOOLS), (
-            f"改了改价工具面而没同步登记：源码解析 {sorted(declared)} vs 登记 "
-            f"{sorted(registry_module._PRICE_CHANGE_TOOLS)} —— 漏登记的工具其改价不会被任何规则发现")
+        assert not (tracked & untracked), "同一工具不得既登记为「在射程」又登记为「已知缺口」"
+        assert not (declared - tracked - untracked), (
+            f"会改价却既未登记也未登记为已知缺口：{sorted(declared - tracked - untracked)}"
+            " —— 它的改价不会被任何规则发现，而没有任何东西会红")
+        assert tracked <= declared, (
+            f"登记面比现实宽：{sorted(tracked - declared)} 并未声明 `price` ⇒ 口径漂移（谁在改价？）")
+        caveats = "；".join(next(r for r in RULES if r.rule_id == "price_change_over").caveats)
+        for tool in sorted(untracked):
+            assert tool in caveats, f"例外 {tool} 未在引擎 caveats 里点名 ⇒ 那就是静默漏报"
+
+    def test_known_gap_tools_are_a_real_ledger_not_a_dumping_ground(self):
+        """例外台账的**只许缩短**那一半：每条例外必须真实存在（陈旧条目 ⇒ 红），且仍能改价。
+
+        判据 = 源码里真有一个 `read_only=False` 的工具类叫这个名字（否则台账就是在藏东西）。
+        """
+        import ast as _ast
+        import pathlib as _pathlib
+
+        tools_dir = _pathlib.Path(__file__).resolve().parents[1] / "app" / "tools"
+        write_tools = set()
+        for path in sorted(tools_dir.glob("*.py")):
+            tree = _ast.parse(path.read_text(encoding="utf-8"))
+            for node in _ast.walk(tree):
+                if not isinstance(node, _ast.ClassDef):
+                    continue
+                name = read_only = None
+                for stmt in node.body:
+                    if (isinstance(stmt, _ast.Assign) and len(stmt.targets) == 1
+                            and isinstance(stmt.targets[0], _ast.Name)):
+                        if stmt.targets[0].id == "name" and isinstance(stmt.value, _ast.Constant):
+                            name = stmt.value.value
+                        elif stmt.targets[0].id == "read_only" and isinstance(stmt.value, _ast.Constant):
+                            read_only = stmt.value.value
+                if name and read_only is False:
+                    write_tools.add(name)
+        stale = set(registry_module._UNTRACKED_PRICE_TOOLS) - write_tools
+        assert not stale, f"例外台账里的 {sorted(stale)} 在源码里已不存在（陈旧条目必须销账）"
 
     def test_batch_price_update_is_a_known_gap_not_a_silent_one(self):
         """已知缺口（照实登记）：批量改价**不在本项射程内**，但必须**披露**而不是静默漏掉。
@@ -422,3 +478,25 @@ class TestPriceChangeFactsAreRecorded:
         spec = next(r for r in RULES if r.rule_id == "price_change_over")
         assert "product_batch_update" in "；".join(spec.caveats), "已知缺口未披露 ⇒ 就是静默漏报"
         assert "product_batch_update" not in registry_module._PRICE_CHANGE_TOOLS
+
+    def test_python_and_java_price_tool_lists_agree(self):
+        """**跨模块字面量必须机械钉住**（复核 P2）：Python 侧与 Java 侧的工具表 / resource_type 逐字相等。
+
+        漂移方向是**静默漏报**（Python 加了工具、Java 没加 ⇒ 快照里那类改价永远不出现，
+        而两侧各自单测都绿）⇒ 判据读 Java 源码字面量比对，不靠「注释声称逐字相同」。
+        """
+        import pathlib as _pathlib
+        import re
+
+        java = (_pathlib.Path(__file__).resolve().parents[2] / "admin-api" / "src" / "main"
+                / "java" / "com" / "migao" / "admin" / "service" / "DailyBriefingService.java"
+                ).read_text(encoding="utf-8")
+        tools = re.search(r"PRICE_CHANGE_TOOLS = List\.of\(([^)]*)\)", java)
+        assert tools, "Java 侧找不到 PRICE_CHANGE_TOOLS 字面量 ⇒ 锚点漂移（判据不得静默通过）"
+        java_tools = set(re.findall(r'"([^"]+)"', tools.group(1)))
+        assert java_tools == set(registry_module._PRICE_CHANGE_TOOLS), (
+            f"两侧改价工具表漂移：Java {sorted(java_tools)} vs Python "
+            f"{sorted(registry_module._PRICE_CHANGE_TOOLS)} —— 漂移方向是静默漏报")
+        resource = re.search(r'AGENT_TOOL_RESOURCE_TYPE = "([^"]+)"', java)
+        assert resource, "Java 侧找不到 AGENT_TOOL_RESOURCE_TYPE 字面量 ⇒ 锚点漂移"
+        assert resource.group(1) == registry_module._WRITE_AUDIT_RESOURCE_TYPE

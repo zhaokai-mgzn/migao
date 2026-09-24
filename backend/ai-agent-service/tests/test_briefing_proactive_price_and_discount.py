@@ -332,13 +332,22 @@ class TestRegistrationAndInvariant:
         assert price.requires == ("price_changes",
                                   ("change_no", "before_price", "new_price", "changed_at"))
         assert price.judgeable_fields == ("before_price", "new_price")
-        assert price.enabled_by == ("audit_tool_logging", "写工具审计留痕",
-                                    "让米宝或员工通过 AI 助手执行一次写操作（如改价）以产生审计留痕")
+        assert price.enabled_by == (
+            "audit_tool_logging", "写工具审计留痕",
+            "让米宝或员工通过 AI 助手至少执行一次写操作（如改价）以产生审计留痕；"
+            "若你确实用过写操作而这里仍为空，说明审计上报没有在跑（该通道 fail-open、可能丢行），"
+            "请联系技术支持排查")
         assert price.caveats == (
-            "审计上报是 fail-open（3s 硬上限、允许丢行）⇒ 本项只会**漏报**、不会误报",
+            "审计上报是 fail-open（3s 硬上限、允许丢行）⇒ 本项**可能漏报**；审计只记「调用过」，"
+            "而 `success=false`（服务端拒绝 / 工具抛错）的调用**不算改价**（价根本没变）"
+            "⇒ 本项不会把失败的改价报成改价",
             "审计留痕自 #5303 起才带改价真值：更早的改价没有 before_price ⇒ 那类记录**不判定**（不是幅度 0）",
-            "批量改价（product_batch_update）**不在本项射程内**（本项只判逐条改价："
-            "product_update / sku_update）⇒ 批量降价不会被本项发现（已知缺口，照实登记）",
+            "覆盖面**窄于「所有改价」**：只覆盖经米宝执行的 product_update / sku_update"
+            "（后台页面直接改价**不写审计**）；product_manage（能改 basePrice，但无 before_price 预览约束）"
+            "与批量改价 product_batch_update（条目用 oldValue/newValue）同样**不在射程**"
+            " ⇒ 这些路径的改价不会被本项发现",
+            "改前价由模型据 product_detail 的当前价填写（#5303 起必填），服务端按值回查（#5317）**不符即拒**"
+            " ⇒ 被拒的调用不入本项；落库的幅度取自审计真值",
         )
         assert discount.requires == ("order_discounts",
                                      ("order_no", "total_amount", "discount_amount", "created_at"))

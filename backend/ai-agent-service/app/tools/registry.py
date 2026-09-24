@@ -158,10 +158,24 @@ def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
 # 记账面同理：`audit_logs.resource_id/resource_name` 对 AI 工具调用**恒为 null**
 # （`AgentAuditLogController.record` 传 null）⇒ 不留商品标识就连「哪个商品被改价」都无从取证。
 #
-# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫）：凡工具 schema 里
-# 声明了 `before_price`（改前价，issue #5303 的必填预览字段）的写工具**必须**登记在此 ——
-# 漏登记 ⇒ 该类工具的改价在审计里**不可判定**，而不会有任何东西变红。
+# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫，§23 G1/G2）：凡 schema 里
+# 声明了 **`price`** 的写工具必须**要么登记在此、要么登记进下面的例外台账** —— 两者都不在 ⇒ 红。
+# ⚠️ 判据是 **`price`**（会不会改价），**不是** `before_price`：本单复核实测 `product_manage`
+# 也能改 `basePrice` 却**没有** before_price 预览约束（#5303 只覆盖 product_update / sku_update）
+# ⇒ 旧前提「声明 before_price ⟺ 会改价」**已被证伪**（它会静默放行一条真实的改价路径）。
 _PRICE_CHANGE_TOOLS = frozenset({"product_update", "sku_update"})
+
+#: **已知不在射程**的可改价写工具（例外台账，只许缩短 —— §23 G2 燃尽靶）。
+#: 两条硬约束（元守卫逐条判）：① 例外必须真实存在且真的能改价（陈旧条目 ⇒ 红）；
+#: ② 每个例外必须在引擎 `price_change_over.caveats` 里**被点名**（缺口不许只活在代码注释里）。
+_UNTRACKED_PRICE_TOOLS = {
+    # 也能改 basePrice（`_update_product` 里 `json_data["basePrice"] = price`），但无 before_price
+    # 预览约束 ⇒ 改前价不可得 ⇒ 本项不判（已 caveats 点名）
+    "product_manage": "能改 basePrice，但无 before_price 预览约束（#5303 只覆盖 product_update/sku_update）",
+    # 批量改价：条目用 oldValue/newValue（族 2 / #5314 的批量写面），schema 里没有 price 键
+    "product_batch_update": "批量改价：条目用 oldValue/newValue，不产 price/before_price 真值",
+}
+
 #: 逐条改价的字段白名单（**加法即登记**：新增字段要在这里 + 快照契约同步）
 _PRICE_CHANGE_FACT_KEYS = ("price", "before_price", "product_id", "color", "door_width")
 

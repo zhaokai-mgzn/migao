@@ -132,6 +132,17 @@ class AuditLogPriceChangeRealDbTest {
             // ⑨ 只有人工审计的租户：`audit_tool_logging` 必须 false（否则「审计没在跑」读不出来）
             audit(st, "A-5388-9", MANUAL_ONLY_TENANT_ID, "product", null, "1 day",
                     "{\"action\": \"update\", \"params\": {\"name\": \"<str>\"}}");
+            // ⑩ **失败的改价**（服务端拒绝 / 工具抛错）：审计按既有口径照样留痕，但**价没变** ⇒
+            //    把它算进改价幅度就是**误报**（独立复核发现的 P0）⇒ 不得进数组
+            audit(st, "A-5388-10", TENANT_ID, "agent_tool", "product_update", "1 day",
+                    "{\"success\": false, \"params\": {\"price\": \"<float>\"},"
+                            + " \"priceChange\": {\"product_id\": \"P-10\", \"price\": 120.0,"
+                            + " \"before_price\": 200.0}}");
+            // ⑪ 取证键里是**脱敏占位串**（非数）：必须读成 null（未判定），**不是 0**
+            audit(st, "A-5388-11", TENANT_ID, "agent_tool", "product_update", "1 day",
+                    "{\"success\": true, \"params\": {\"price\": \"<float>\"},"
+                            + " \"priceChange\": {\"product_id\": \"<str>\", \"price\": \"<float>\","
+                            + " \"before_price\": \"<float>\"}}");
             // ── 订单（让利源）─────────────────────────────────────────────────
             order(st, "O-5388-1", TENANT_ID, "SO-5388-1", "1000.00", "400.00", "1 day");
             order(st, "O-5388-2", TENANT_ID, "SO-5388-2", "1000.00", "0.00", "1 day");      // 无让利 ⇒ 不进数组
@@ -202,8 +213,9 @@ class AuditLogPriceChangeRealDbTest {
     void priceRowsComeFromBothToolsWithRealValues() {
         List<Map<String, Object>> rows = priceRows();
 
-        // 对照读数（同一个测试里都在）：窗口内的 agent_tool 行 6 条，其中**改价**只有 3 条
-        // （A-1/A-2 带真值、A-3 是脱敏期历史行；A-4 只改名、A-5 是 order_create、A-6 窗口外）
+        // 对照读数（同一个测试里都在）：窗口内的 agent_tool 行 7 条，其中**改价**只有 4 条
+        // （A-1/A-2 带真值、A-3 与 A-11 读不出数 ⇒ 未判定；A-4 只改名、A-5 是 order_create、
+        //  A-6 窗口外、A-10 写失败）
         long agentToolRowsInWindow = auditLogMapper.selectCount(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AuditLog>()
                         .eq(AuditLog::getTenantId, TENANT_ID)
@@ -211,8 +223,8 @@ class AuditLogPriceChangeRealDbTest {
                         .ge(AuditLog::getCreatedAt, windowStart()));
         assertThat(agentToolRowsInWindow)
                 .as("窗口内 agent_tool 行数（对照读数：筛选必须是承重的，否则计数会等于它）")
-                .isEqualTo(5L);
-        assertThat(rows).hasSize(3);
+                .isEqualTo(7L);
+        assertThat(rows).hasSize(4);
 
         Map<String, Object> productRow = rows.stream()
                 .filter(r -> "A-5388-1".equals(r.get("change_no"))).findFirst().orElseThrow();
@@ -229,7 +241,37 @@ class AuditLogPriceChangeRealDbTest {
                 .containsEntry("before_price", 500.0)
                 .containsEntry("new_price", 250.0);
         assertThat(rows).extracting(r -> r.get("change_no"))
-                .doesNotContain("A-5388-4", "A-5388-5", "A-5388-6", "A-5388-7");
+                .doesNotContain("A-5388-4", "A-5388-5", "A-5388-6", "A-5388-7", "A-5388-10");
+    }
+
+    @Test
+    @DisplayName("🔴 失败的改价（success=false）**不是**改价 —— 误报面（复核 P0）")
+    void failedWriteIsNotAPriceChange() {
+        List<Map<String, Object>> rows = priceRows();
+
+        assertThat(rows).extracting(r -> r.get("change_no"))
+                .as("审计对失败/异常照样留痕（既有口径），但**价没变** ⇒ 算进来就是「报出一笔从未发生的改价」")
+                .doesNotContain("A-5388-10");
+        // 红证前提：把同一行改成 success=true ⇒ 它**必须**进数组（证明该行本来是候选）
+        AuditLog failed = AuditLog.builder().id("A-5388-10").tenantId(TENANT_ID)
+                .resourceType("agent_tool").toolName("product_update")
+                .createdAt(OffsetDateTime.now())
+                .actionDetails(Map.of("success", false,
+                        "priceChange", Map.of("product_id", "P-10",
+                                "price", 120.0, "before_price", 200.0)))
+                .build();
+        assertThat(DailyBriefingService.priceChangeRow(failed)).isNull();
+        AuditLog succeeded = AuditLog.builder().id("A-5388-10").tenantId(TENANT_ID)
+                .resourceType("agent_tool").toolName("product_update")
+                .createdAt(OffsetDateTime.now())
+                .actionDetails(Map.of("success", true,
+                        "priceChange", Map.of("product_id", "P-10",
+                                "price", 120.0, "before_price", 200.0)))
+                .build();
+        assertThat(DailyBriefingService.priceChangeRow(succeeded))
+                .as("同一行只是 success 翻面 ⇒ 必须进数组（否则上一条断言是空跑）")
+                .isNotNull()
+                .containsEntry("new_price", 120.0);
     }
 
     @Test
@@ -243,6 +285,15 @@ class AuditLogPriceChangeRealDbTest {
                 .containsEntry("before_price", null)
                 .containsEntry("new_price", null)
                 .containsEntry("product_id", null);   // "<str>" 占位串不得当取证文本
+        // 同形的第二种：**取证键在、但值是脱敏占位串**（`toDouble` 的「非数 ⇒ null」这一支；
+        // 复核实测：把它改成 `return 0.0` 时**单测 + 本判据原来全绿** ⇒ 这条夹具就是那个缺口）
+        Map<String, Object> placeholder = priceRows().stream()
+                .filter(r -> "A-5388-11".equals(r.get("change_no"))).findFirst().orElseThrow();
+        assertThat(placeholder)
+                .as("占位串是**非数** ⇒ null（不是 0：0 会把「未判定」静默变成「幅度 0 = 没问题」）")
+                .containsEntry("before_price", null)
+                .containsEntry("new_price", null)
+                .containsEntry("product_id", null);
     }
 
     /** 在「本会话租户 = {@code tenantId}」的上下文里跑一段断言（跑完复原 ⇒ 与测试顺序无关）。 */

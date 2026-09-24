@@ -766,5 +766,7 @@ class TestCostJoinAndNotEnabled:
         change = next(r for r in RULES if r.rule_id == "price_change_over")
         assert change.enabled_by == (
             "audit_tool_logging", "写工具审计留痕",
-            "让米宝或员工通过 AI 助手执行一次写操作（如改价）以产生审计留痕")
+            "让米宝或员工通过 AI 助手至少执行一次写操作（如改价）以产生审计留痕；"
+            "若你确实用过写操作而这里仍为空，说明审计上报没有在跑（该通道 fail-open、可能丢行），"
+            "请联系技术支持排查")
         assert change.judgeable_fields == ("before_price", "new_price")

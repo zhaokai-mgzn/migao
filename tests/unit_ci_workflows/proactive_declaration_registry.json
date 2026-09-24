@@ -118,14 +118,59 @@
       "nullable": false,
       "reason": "订单行数（#5369，退货率分母）：0 = 该商品当期没有订单行 ⇒ 比率**未知**（agent 侧不倒推 0）—— 0 有确定语义，不冒充未知",
       "issue": "#5369"
+    },
+    "price_changes.change_no": {
+      "nullable": false,
+      "reason": "改价流水号 = 审计行 id（PK，`IdType.ASSIGN_UUID`）；装配层 row.put(\"change_no\", log.getId())，detect 用它做 ref 与排序键",
+      "issue": "#5388"
+    },
+    "price_changes.tool_name": {
+      "nullable": false,
+      "reason": "工具名：**筛选条件本身就是它**（`tool_name ∈ {product_update, sku_update}`，issue #5388）⇒ 进数组的行该键必有值；detect 把它带进观测值（内控取证：是哪条改价路径）",
+      "issue": "#5388"
+    },
+    "price_changes.product_id": {
+      "nullable": true,
+      "reason": "商品标识：**只有新增的 `priceChange` 取证键能给**（审计行的 resourceId/resourceName 对 AI 工具调用恒为 null）；脱敏期历史行读不到 ⇒ null（**不是「没有商品」**）。当前无规则 requires 它（仅作观测值），故不登记 judgeable_fields",
+      "issue": "#5388"
+    },
+    "price_changes.before_price": {
+      "nullable": true,
+      "reason": "**已取证**：改前价取自审计 `action_details.priceChange`；**脱敏期历史行读不出数**（`params` 只记类型占位）+ **审计留痕自 #5303 起才带它** ⇒ null = 该行**未判定**（不是「幅度 0」）⇒ 故规则登记 `judgeable_fields`",
+      "issue": "#5388"
+    },
+    "price_changes.new_price": {
+      "nullable": true,
+      "reason": "**已取证**：改后价同上（同源同因）⇒ null = 该行**未判定**，不是「没改价」⇒ 故规则登记 `judgeable_fields`",
+      "issue": "#5388"
+    },
+    "price_changes.changed_at": {
+      "nullable": false,
+      "reason": "改价时刻 = 审计行 `created_at`（列 DEFAULT NOW() + `FieldFill.INSERT`；未逐列核对 DB NOT NULL）；detect 用它定命中日",
+      "issue": "#5388"
+    },
+    "order_discounts.order_no": {
+      "nullable": false,
+      "reason": "订单号：装配层逐行 row.put 自订单表列（未逐列核对 DB 约束）；detect 用它做 ref 与排序键",
+      "issue": "#5388"
+    },
+    "order_discounts.total_amount": {
+      "nullable": true,
+      "reason": "应收金额 = **让利幅度的分母**：列为空/为 0 时分母未知 ⇒ 该行**未判定**（**不是 100% 让利**）⇒ 故规则登记 `judgeable_fields`",
+      "issue": "#5388"
+    },
+    "order_discounts.discount_amount": {
+      "nullable": true,
+      "reason": "让利金额：列**默认 0**（建单录入的应收−实收差额）⇒ 值为空/缺席的行**未判定**（不得当成「没有让利」）⇒ 故规则登记 `judgeable_fields`",
+      "issue": "#5388"
+    },
+    "order_discounts.created_at": {
+      "nullable": false,
+      "reason": "下单时刻：装配层取自订单表（未逐列核对 DB 约束）；detect 用它定命中日（事件型规则按事件日分组）",
+      "issue": "#5388"
     }
   },
-  "unwired_arrays": {
-    "price_changes": {
-      "reason": "**刻意不装配**（全仓无改价流水表）⇒ price_change_over 规则结构上接不通；装配层 SNAPSHOT_ROW_FIELDS 的注释自陈此事，引擎侧按规则登记在此（不是「命中 0 条」）",
-      "issue": "#5358"
-    }
-  },
+  "unwired_arrays": {},
   "tenant_facts": {
     "cost_accounting": {
       "gates": [
@@ -134,6 +179,14 @@
       ],
       "reason": "装配层从事实推出（是否存在 avg_cost IS NOT NULL 的 SKU），不是人工配置项；False ⇒「系统有这能力、该租户没开」⇒ not_enabled（可行动），与 not_wired（不可行动）并列不可合并。gates 里加上 `skus.avg_cost`（#5369 起该 SKU 级列也进快照）：该事实**定义上**就是 avg_cost 的可空性，故任何读它的规则都必须声明 enabled_by，否则在未开启租户上静默落 wired",
       "issue": "#5348"
+    },
+    "audit_tool_logging": {
+      "gates": [
+        "price_changes.before_price",
+        "price_changes.new_price"
+      ],
+      "reason": "装配层从事实推出（窗口内是否存在**任意** `resource_type='agent_tool'` 的审计行 = 审计上报在该租户上确实在产出），不是人工配置项；False ⇒ 无法区分「该租户从没改过价」（正常的空）与「审计没在跑/丢行」（故障的空）⇒ not_enabled（可行动），与 not_wired 并列不可合并。gates = 该事实所 gate 的**判定字段**（改价的真值两列）：任何读它们的规则都必须声明 enabled_by，否则在「审计没在跑」的租户上会静默落 wired",
+      "issue": "#5388"
     }
   },
   "judgeable_exemptions": {},

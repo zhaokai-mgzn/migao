@@ -605,9 +605,17 @@ public class DailyBriefingService {
         return new RowBatch(rows, truncated);
     }
 
-    /** 一条审计行 ⇒ 一行 `price_changes`；**不是改价事件**（本次调用没带改价参数）⇒ `null`。 */
+    /** 一条审计行 ⇒ 一行 `price_changes`；**不是改价事件**（没带改价参数 / 写没成功）⇒ `null`。 */
     static Map<String, Object> priceChangeRow(AuditLog log) {
         Map<String, Object> details = asMap(log.getActionDetails());
+        // 🔴 **失败的写不是改价**（issue #5388 独立复核发现，可复现）：`audit_write_tool` 对
+        // 失败/异常**同样留痕**（那是审计的既有口径，本单不改），而 `success=false` 的调用
+        // **价根本没变**（服务端拒绝 / 工具抛错）⇒ 把它算进改价幅度就是**误报**
+        // （日报会报出一笔从未发生的改价），与本项声明的「只可能漏报、不会误报」直接矛盾。
+        // 审计只记「调用过」；**是否生效要看 `success`**（本条判据的单一源）。
+        if (details != null && Boolean.FALSE.equals(details.get("success"))) {
+            return null;
+        }
         Map<String, Object> facts = details == null ? null : asMap(details.get("priceChange"));
         Map<String, Object> params = details == null ? null : asMap(details.get("params"));
         if (facts == null && (params == null || !params.containsKey("price"))) {
