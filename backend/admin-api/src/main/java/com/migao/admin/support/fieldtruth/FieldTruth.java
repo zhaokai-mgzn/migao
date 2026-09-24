@@ -1,5 +1,6 @@
 package com.migao.admin.support.fieldtruth;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -35,6 +36,16 @@ public enum FieldTruth {
     HAS_TRUTH,
     /** 无真值：全仓没有任何计算逻辑；值只可能来自 DB 列默认值或建档种子常量。 */
     NO_TRUTH;
+
+    /**
+     * **跨端运输名**（装配层把它放进快照，消费方按它逐字段分类）—— 小写下划线形态。
+     *
+     * <p>消费方（如 ai-agent 侧的具名视图 `customer_profile`）**不持有**第二份真值判断：它只认运输来的
+     * 这个名字 ⇒ 两侧的词表必须逐字一致（{@code has_truth} / {@code no_truth}），改名时两侧一起红。</p>
+     */
+    public String wireName() {
+        return name().toLowerCase(java.util.Locale.ROOT);
+    }
 
     /** 单字段声明：真值状态 + 原因（原因 = 证据的落点，禁止「暂无」这类空话）。 */
     public record Entry(FieldTruth truth, String reason) {
@@ -80,6 +91,28 @@ public enum FieldTruth {
 
         public Set<String> hasTruthFields() {
             return of(FieldTruth.HAS_TRUTH);
+        }
+
+        /**
+         * **跨端运输形态**：`{字段: {"truth": "has_truth"|"no_truth", "reason": "…"}}`（issue #5456）。
+         *
+         * <p>按字段名**排序**输出（{@link #declaredFields()} 是 {@link TreeSet}）⇒ 同一份声明产出逐字节
+         * 相同的结果，消费方的「同一快照 ⇒ 逐字相同输出」判据因此可成立。</p>
+         *
+         * <p>🔴 字段集、真值侧与 {@code reason}（证据化原因）**全部现取**本声明 —— 装配层与消费方都不得
+         * 另写一份（那正是「同一真值两处投影」的病灶）。消费方对「为什么这个字段没有真值」的唯一说法
+         * 就是这里的 {@code reason}；而「哪些字段有真值」的唯一来源就是本声明。</p>
+         */
+        public Map<String, Object> payload() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (String field : declaredFields()) {
+                Entry entry = fields.get(field);
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("truth", entry.truth().wireName());
+                item.put("reason", entry.reason());
+                out.put(field, item);
+            }
+            return out;
         }
 
         private Set<String> of(FieldTruth wanted) {

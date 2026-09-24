@@ -63,6 +63,28 @@ public class CustomerController {
     }
 
     /**
+     * 客户画像视图（**按需**消费入口，族 3 · 包 3，issue #5456）
+     *
+     * GET /api/admin/customers/profile-view?limit=50
+     *
+     * 与客户列表/详情**同权限码**（`customer:view`）：返回的是跨域视图内核形状的确定性快照
+     * （自描述的行字段 + 有界行数 + 真值声明 + 客户档案行），供 ai-agent 侧的具名视图
+     * `customer_profile` 做逐字段三态与「未知 ≠ 0」判定。
+     *
+     * 🔴 客户档案含 PII ⇒ 本端点**不得**并入 `dashboard:view` 的简报表快照（Agent 能力 ≡ 页面权限，
+     * issue #5246）；路径是**字面量**，优先于 `/api/admin/customers/{id}` 这个模式
+     * （Spring 的字面量比通配更具体）⇒ 不会把 detail 请求抢过来。
+     */
+    @GetMapping("/api/admin/customers/profile-view")
+    @RequirePermission("customer:view")
+    public ApiResponse<Map<String, Object>> getProfileView(
+            @RequestParam(defaultValue = "50") int limit) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("查询客户画像视图: limit={}, tenantId={}", limit, tenantId);
+        return ApiResponse.success(customerService.profileViewSnapshot(tenantId, limit));
+    }
+
+    /**
      * 查询客户详情
      *
      * GET /api/admin/customers/{id}
