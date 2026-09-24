@@ -121,32 +121,32 @@
     },
     "price_changes.change_no": {
       "nullable": false,
-      "reason": "改价流水号 = 审计行 id（PK，`IdType.ASSIGN_UUID`）；装配层 row.put(\"change_no\", log.getId())，detect 用它做 ref 与排序键",
+      "reason": "改价流水号 = **审计腿**取审计行 id（PK，`IdType.ASSIGN_UUID`）、**批量腿**取 `ABI-<agent_batch_items.id>`（issue #5411；两腿共用同一个数组）；装配层 row.put 后 detect 用它做 ref 与排序键",
       "issue": "#5388"
     },
     "price_changes.tool_name": {
       "nullable": false,
-      "reason": "工具名：**筛选条件本身就是它**（`tool_name ∈ {product_update, sku_update}`，issue #5388）⇒ 进数组的行该键必有值；detect 把它带进观测值（内控取证：是哪条改价路径）",
+      "reason": "工具名：**筛选条件本身就是它**（审计腿 `tool_name ∈ {product_update, sku_update}`，issue #5388；批量腿恒为 `product_batch_update`，issue #5411）⇒ 进数组的行该键必有值；detect 把它带进观测值（内控取证：是哪条改价路径）",
       "issue": "#5388"
     },
     "price_changes.product_id": {
       "nullable": true,
-      "reason": "商品标识：**只有新增的 `priceChange` 取证键能给**（审计行的 resourceId/resourceName 对 AI 工具调用恒为 null）；脱敏期历史行读不到 ⇒ null（**不是「没有商品」**）。当前无规则 requires 它（仅作观测值），故不登记 judgeable_fields",
+      "reason": "商品标识：**只有 `priceChange` 取证键能给**（审计行的 resourceId/resourceName 对 AI 工具调用恒为 null）；脱敏期历史行读不到 ⇒ null（**不是「没有商品」**）；批量腿取 `agent_batch_items.resource_id`（批次条目必须精确可寻址 ⇒ 该腿恒有值，issue #5411）。当前无规则 requires 它（仅作观测值），故不登记 judgeable_fields",
       "issue": "#5388"
     },
     "price_changes.before_price": {
       "nullable": true,
-      "reason": "**已取证**：改前价取自审计 `action_details.priceChange`；**脱敏期历史行读不出数**（`params` 只记类型占位）+ **审计留痕自 #5303 起才带它** ⇒ null = 该行**未判定**（不是「幅度 0」）⇒ 故规则登记 `judgeable_fields`",
+      "reason": "**已取证**：改前价在**审计腿**取自 `action_details.priceChange`、在**批量腿**取自 `agent_batch_items.old_value`（issue #5411，同一个数组同一列）；**脱敏期历史行读不出数**（`params` 只记类型占位）+ **审计留痕自 #5303 起才带它** ⇒ null = 该行**未判定**（不是「幅度 0」）⇒ 故规则登记 `judgeable_fields`",
       "issue": "#5388"
     },
     "price_changes.new_price": {
       "nullable": true,
-      "reason": "**已取证**：改后价同上（同源同因）⇒ null = 该行**未判定**，不是「没改价」⇒ 故规则登记 `judgeable_fields`",
+      "reason": "**已取证**：改后价同上（审计腿 `priceChange.price` / 批量腿 `agent_batch_items.new_value`，issue #5411）⇒ null = 该行**未判定**，不是「没改价」⇒ 故规则登记 `judgeable_fields`",
       "issue": "#5388"
     },
     "price_changes.changed_at": {
       "nullable": false,
-      "reason": "改价时刻 = 审计行 `created_at`（列 DEFAULT NOW() + `FieldFill.INSERT`；未逐列核对 DB NOT NULL）；detect 用它定命中日",
+      "reason": "改价时刻：**审计腿** = 审计行 `created_at`（列 DEFAULT NOW() + `FieldFill.INSERT`；未逐列核对 DB NOT NULL）；**批量腿** = 批次 `agent_batches.executed_at`（预览时刻会把「还没改」报成改价，故不用 `created_at`，issue #5411）；detect 用它定命中日",
       "issue": "#5388"
     },
     "order_discounts.order_no": {

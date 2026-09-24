@@ -11,6 +11,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.MybatisPlusConfig;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.AfterSalesTicket;
+import com.migao.admin.entity.AgentBatch;
+import com.migao.admin.entity.AgentBatchItem;
 import com.migao.admin.entity.AuditLog;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.entity.Order;
@@ -90,6 +92,10 @@ class DailyBriefingServiceTest {
     @Mock
     private AuditLogMapper auditLogMapper;
     @Mock
+    private AgentBatchMapper agentBatchMapper;
+    @Mock
+    private AgentBatchItemMapper agentBatchItemMapper;
+    @Mock
     private ProductService productService;
     @Mock
     private BriefingGenerateClient briefingGenerateClient;
@@ -140,7 +146,8 @@ class DailyBriefingServiceTest {
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         for (Class<?> entity : List.of(Order.class, OrderItem.class, OrderLogistics.class,
-                ProductSku.class, Product.class, AfterSalesTicket.class, AuditLog.class)) {
+                ProductSku.class, Product.class, AfterSalesTicket.class, AuditLog.class,
+                AgentBatch.class, AgentBatchItem.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
         }
         // 聚合快照默认 stub
@@ -674,6 +681,27 @@ class DailyBriefingServiceTest {
                     .build();
         }
 
+        /**
+         * 一个**已执行**的批次（issue #5411）：`executed_at` 就是改价时刻。
+         *
+         * <p>`executedAt = null`（= `preview` 批次）在库里不可能有改价时刻 —— 装配层的
+         * `executed_at >= 窗口起点` 一并对它做排除（未执行 ⇒ 价根本没动）。</p>
+         */
+        private AgentBatch batch(String id, String batchType, String executedAt) {
+            return AgentBatch.builder().id(id).tenantId(1L).batchType(batchType)
+                    .status("done").itemCount(1).successCount(1).failCount(0)
+                    .executedAt(executedAt == null ? null : OffsetDateTime.parse(executedAt))
+                    .build();
+        }
+
+        /** 一条批次明细（`agent_batch_items`）：`oldValue` / `newValue` 在库里是**字符串**（TEXT）。 */
+        private AgentBatchItem batchItem(Long id, String batchId, String resourceId, String status,
+                                        String oldValue, String newValue) {
+            return AgentBatchItem.builder().id(id).batchId(batchId).tenantId(1L)
+                    .resourceId(resourceId).field("basePrice")
+                    .oldValue(oldValue).newValue(newValue).status(status).build();
+        }
+
         private ProductSku sku() {
             return ProductSku.builder().id(7L).tenantId(1L).productId("P-1")
                     .stock(new BigDecimal("20.0")).salesCount(new BigDecimal("120.0"))
@@ -731,6 +759,9 @@ class DailyBriefingServiceTest {
             when(auditLogMapper.selectList(any())).thenReturn(List.of(
                     priceAuditRow("product_update", 200.0, 120.0)));
             when(auditLogMapper.selectCount(any())).thenReturn(1L);
+            // 批量腿（issue #5411）：默认「本窗口内没有批量改价」⇒ 数组内容与 #5388 时逐字一致
+            when(agentBatchMapper.selectList(any())).thenReturn(List.of());
+            when(agentBatchItemMapper.selectList(any())).thenReturn(List.of());
         }
 
         /**
@@ -753,6 +784,10 @@ class DailyBriefingServiceTest {
                 verify(productSkuMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == productMapper) {
                 verify(productMapper, atLeastOnce()).selectList(captor.capture());
+            } else if (mapper == agentBatchMapper) {
+                verify(agentBatchMapper, atLeastOnce()).selectList(captor.capture());
+            } else if (mapper == agentBatchItemMapper) {
+                verify(agentBatchItemMapper, atLeastOnce()).selectList(captor.capture());
             } else {
                 verify(afterSalesTicketMapper, atLeastOnce()).selectList(captor.capture());
             }
@@ -865,6 +900,108 @@ class DailyBriefingServiceTest {
                     .containsEntry("truncated", true)
                     .containsEntry("limit", DailyBriefingService.SNAPSHOT_ROW_LIMIT);
             assertThat((List<?>) snapshot.get("price_changes"))
+                    .hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+        }
+
+        // ── 批量改价（issue #5411）：取数面 = 批次明细，**不是审计** ─────────────────────
+
+        @Test
+        @DisplayName("🔴 批量降价也进改价行（issue #5411）：取数面 = agent_batch_items 的 old/new 值")
+        @SuppressWarnings("unchecked")
+        void batchPriceRowsComeFromTheBatchItems() {
+            stubRows();
+            when(agentBatchMapper.selectList(any())).thenReturn(List.of(
+                    batch("B-1", "product_price", "2026-09-22T10:05:00+08:00")));
+            when(agentBatchItemMapper.selectList(any())).thenReturn(List.of(
+                    batchItem(9L, "B-1", "P-9", "success", "200", "120")));
+
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("price_changes");
+
+            Map<String, Object> batchRow = rows.stream()
+                    .filter(r -> DailyBriefingService.BATCH_PRICE_TOOL.equals(r.get("tool_name")))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "批量改价行没进 price_changes ⇒ 批量降价不会被 price_change_over 发现"
+                                    + "（现取行：" + rows + "）"));
+            assertThat(batchRow)
+                    .as("键名逐字 = 快照契约（与审计腿**同一形态**，不另立第二套）")
+                    .containsOnlyKeys("change_no", "tool_name", "product_id",
+                            "before_price", "new_price", "changed_at")
+                    .containsEntry("before_price", 200.0)
+                    .containsEntry("new_price", 120.0)
+                    .containsEntry("product_id", "P-9")
+                    .containsEntry("changed_at", "2026-09-22T10:05+08:00");
+            assertThat(batchRow.get("change_no")).isNotNull();
+            assertThat(rows).extracting(r -> r.get("tool_name"))
+                    .as("审计腿**不回退**（#5388/#5410 的成果必须保住）")
+                    .contains("product_update");
+        }
+
+        @Test
+        @DisplayName("批量腿的筛选是承重的：批次类型 / 字段 / 排除「从未生效」/ 窗口 / 有界")
+        @SuppressWarnings("rawtypes")
+        void batchPriceLegFiltersAreLoadBearing() {
+            stubRows();
+            when(agentBatchMapper.selectList(any())).thenReturn(List.of(
+                    batch("B-1", "product_price", "2026-09-22T10:05:00+08:00")));
+            when(agentBatchItemMapper.selectList(any())).thenReturn(List.of(
+                    batchItem(9L, "B-1", "P-9", "success", "200", "120")));
+
+            service.aggregateSnapshot(1L);
+
+            AbstractWrapper<?, ?, ?> batches = capturedWrappers(agentBatchMapper).get(0);
+            assertThat(batches.getSqlSegment())
+                    .as("批次腿：只取改价类型 + **已执行且在窗口内**（未执行的批次价没动）+ 有界")
+                    .contains("batch_type = #{")
+                    .contains("executed_at >= #{")
+                    .contains("LIMIT " + DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
+            assertThat(batches.getParamNameValuePairs().values())
+                    .contains(DailyBriefingService.BATCH_TYPE_PRICE);
+            AbstractWrapper<?, ?, ?> items = capturedWrappers(agentBatchItemMapper).get(0);
+            assertThat(items.getSqlSegment())
+                    .as("条目腿：字段 = basePrice（`status` 批次的 on_sale/off_sale **不是价**）"
+                            + " + 排除「从未生效」的状态（价根本没变 ⇒ 不是改价事件）")
+                    .contains("field = #{")
+                    .contains(" NOT IN (")
+                    .contains("batch_id IN (");
+            assertThat(items.getParamNameValuePairs().values())
+                    .contains(DailyBriefingService.BATCH_FIELD_BASE_PRICE)
+                    .containsAll(DailyBriefingService.BATCH_ITEM_NEVER_APPLIED);
+        }
+
+        @Test
+        @DisplayName("两腿**同数组合并**：按时刻倒序；批量腿被上限截断 ⇒ truncated 显式")
+        @SuppressWarnings("unchecked")
+        void batchRowsMergeWithAuditRowsAndTruncationIsExplicit() {
+            stubRows();   // 审计腿 1 行 @2026-09-22T09:30
+            when(agentBatchMapper.selectList(any())).thenReturn(List.of(
+                    batch("B-1", "product_price", "2026-09-22T10:05:00+08:00")));
+            when(agentBatchItemMapper.selectList(any())).thenReturn(List.of(
+                    batchItem(1L, "B-1", "P-9", "success", "200", "120")));
+
+            assertThat((List<Map<String, Object>>) service.aggregateSnapshot(1L).get("price_changes"))
+                    .as("最新在前（与审计腿同一排序口径）")
+                    .extracting(r -> r.get("tool_name"))
+                    .containsExactly(DailyBriefingService.BATCH_PRICE_TOOL, "product_update");
+
+            int n = DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT;
+            when(agentBatchMapper.selectList(any())).thenReturn(
+                    java.util.stream.IntStream.rangeClosed(1, n)
+                            .mapToObj(i -> batch("B-" + i, "product_price",
+                                    "2026-09-22T10:05:00+08:00")).toList());
+            when(agentBatchItemMapper.selectList(any())).thenReturn(
+                    java.util.stream.IntStream.rangeClosed(1, n)
+                            .mapToObj(i -> batchItem((long) i, "B-" + i, "P-" + i, "success",
+                                    "200", "120")).toList());
+
+            Map<String, Object> truncatedSnap = service.aggregateSnapshot(1L);
+
+            assertThat(metaOf(truncatedSnap, "price_changes"))
+                    .as("截断必须显式（批量腿与审计腿共用同一个上限口径）")
+                    .containsEntry("truncated", true)
+                    .containsEntry("limit", DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            assertThat((List<?>) truncatedSnap.get("price_changes"))
                     .hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
         }
 
