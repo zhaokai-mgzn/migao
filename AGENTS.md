@@ -18,7 +18,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
    先**冻结问题清单**（每条含证据 + 归因层级 + 验收判据）→ 按**文件所有权**切成互不冲突的任务包
    （同文件改动同包；改 `cases/*.yml` 的包独占生成物）→ 每包 = issue + 分支 + 独立 worktree +
    后台 subagent（§2.3 零共享写路径）→ **主会话只做集成与验证**。合并串行、验证收口；
-   评测型流水线同时 ≤3（runner 竞争 + 真实 LLM 成本）。全文与反模式见 `migao-dev-flow` 技能 §17。
+   **并发 ≤3** —— **评测型流水线与开发包同口径**（争用的两个阶段见 `migao-dev-flow` §17.2）。全文与反模式见 `migao-dev-flow` 技能 §17。
 7. **CHANGELOG 更新纪律**：**用户可见**的行为/口径变更（feat / fix 里改产品行为、算料口径、涉钱面、UI 可见面者）
    必须在 `CHANGELOG.md` 的 `## [Unreleased]` 补一条，标题形态 `### <一句话说清改后的形态>（<日期>，issue #NNNN）`
    （无关联 issue 时标 `PR #NNNN`）。
