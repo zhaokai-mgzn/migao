@@ -139,6 +139,29 @@ class SSEEvent:
         return f"event: interactive\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
     @staticmethod
+    def page_fill(data: dict) -> str:
+        """**同页填充**事件（issue #5368 包 2，Agent 深通道）。
+
+        形如 `event: page_fill` + `data: <计划 JSON>`：载荷**只在响应体**里 ——
+        不进 URL（因而不进 nginx access log / Referer）、不进浏览器历史、不进 localStorage。
+
+        ⚠️ 与 `interactive` 的**关键差别**：本事件**有意不落库**
+        （调用方 `app/api/chat.py` 不把它登记成交互卡的持久化槽位）——
+        计划里含订单侧收货信息，落进会话 metadata 就是 PII 落盘。
+        判据：`backend/ai-agent-service/tests/test_page_fill_channel.py`。
+
+        Args:
+            data: 同页填充计划（`app/vision/deep_channel.py::build_page_fill` 的出参）
+
+        Returns:
+            SSE 格式字符串
+        """
+        return (
+            "event: page_fill\n"
+            f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        )
+
+    @staticmethod
     def loading(content: str = "正在处理...") -> str:
         """
         加载状态事件

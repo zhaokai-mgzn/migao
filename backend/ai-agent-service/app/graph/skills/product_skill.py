@@ -42,6 +42,9 @@ PRODUCT_TOOLS = [
     "product_batch_update",      # **批量**改价 / 批量上下架 + 撤销（issue #5314；两段确认）
     "sku_update",                # 单规格调价（product_skus.price）
     "interact",                  # 交互卡：choice 消歧 + **改价确认卡**（before → after 预览）
+    # Agent 深通道（issue #5368 包 2）：图 → **同页填充计划**（识别 + 消歧候选 + 领域解读）。
+    # 只读、纯本地；可达性只给 B 端（小布不绑 ⇒ C 端零改动）。
+    "image_recognize",
 ]
 
 PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回 → issue #5314 批量更新）

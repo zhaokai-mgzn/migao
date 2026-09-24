@@ -38,7 +38,7 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 3 条阻塞（#5247 新接入的 3 个 B 端只读工具 craft_calc_config_query / briefing_query / processing_order_set_query 暂无评测用例，跟踪 #3592）+ 2 条薄覆盖（validate_input / session_manage），全部有归属。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 4 条阻塞（#5247 新接入的 3 个 B 端只读工具 craft_calc_config_query / briefing_query / processing_order_set_query + #5368 包 2 新增的 image_recognize，均暂无评测用例，跟踪 #3592）+ 2 条薄覆盖（validate_input / session_manage），全部有归属。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
@@ -66,6 +66,17 @@ entries:
     persona: mibao
     issue: "#3592"
     reason: "#5247 新接入的加工套件/扫码循环只读工具，尚无评测用例；B 端已不能生成加工单 ⇒ 套件数据依赖种子，场景待定"
+    added: "2026-09-24"
+
+  # ⚠️ 2026-09-24（issue #5368 包 2，Agent 深通道）第 4 条首次登记：登记 = 让缺口**可见且可收缩**
+  #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
+  #    销账归属 = #3592（B 端剩余覆盖缺口销账）—— 销账方式 = 补一条「发图让米宝识别并同页填表」
+  #    的 B 端用例（需真实 LLM + vision，属评测栈集中跑批次）。
+  - tool: image_recognize
+    kind: uncovered
+    persona: mibao
+    issue: "#3592"
+    reason: "#5368 包 2 新增的纯本地识别工具（图 → 同页填充计划），尚无评测用例；本包按用户裁定不派发真实 LLM 评测，且用例库（.github/cases/**）由并发包独占 ⇒ 待集中跑批时补用例"
     added: "2026-09-24"
 
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /

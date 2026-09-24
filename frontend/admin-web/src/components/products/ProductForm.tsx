@@ -12,6 +12,7 @@ import RichTextEditor from './RichTextEditor'
 import CategoryTree from './CategoryTree'
 import CategoryDialog from './CategoryDialog'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
+import { InterpretedBadge } from '@/components/image-recognize/InterpretedBadge'
 import { categoryApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import { toChineseSpecKeys, SPEC_EN_TO_CN } from '@/lib/attribute-keys'
@@ -39,6 +40,16 @@ interface ProductFormProps {
    * 在对应字段旁显示 `[图片识别]` 徽标提醒商家复核，**不参与提交**（不新增/不改任何载荷字段）。
    */
   recognizedFields?: string[]
+  /**
+   * 已被**米宝解读 / 推荐**预填的字段键（issue #5368 包 2 · Agent 深通道）—— **可选**，
+   * 只影响渲染：在对应字段旁显示 `[米宝解读]` 徽标。
+   *
+   * 🔴 与 {@link ProductFormProps.recognizedFields} **必须是两枚不同的徽标**：
+   * 「图上抄下来的」与「米宝推的」可信度不同，标注相同 ⇒ 商家无从判断该信哪一格
+   * （同一格只挂一枚：调用方把解读键从 `recognizedFields` 里摘掉后再传）。
+   * 同样**不参与提交**（不新增/不改任何载荷字段）。
+   */
+  interpretedFields?: string[]
 }
 
 // 字段在 DOM 中的可滚动锚点 ID
@@ -115,6 +126,7 @@ export default function ProductForm({
   onSubmit,
   submitText,
   recognizedFields,
+  interpretedFields,
 }: ProductFormProps) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState<ProductStatus | null>(null)
@@ -126,6 +138,9 @@ export default function ProductForm({
   // 图片识别预填的字段键（issue #5321）——只驱动 `[图片识别]` 徽标；规格属性用表单内部的英文 key
   const recognized = recognizedFields || []
   const recognizedSpecKeys = Object.keys(SPEC_EN_TO_CN).filter((k) => recognized.includes(k))
+  // 米宝解读来源的键（issue #5368 包 2）：另一枚徽标、另一套配色 —— 与识别徽标不可混同
+  const interpreted = interpretedFields || []
+  const interpretedSpecKeys = Object.keys(SPEC_EN_TO_CN).filter((k) => interpreted.includes(k))
 
   // #1403: 管理分类弹窗状态
   const [catModalOpen, setCatModalOpen] = useState(false)
@@ -523,7 +538,13 @@ export default function ProductForm({
           <FieldRow
             label="商品标题"
             required
-            badge={recognized.includes('name') ? <RecognizedBadge fieldKey="name" /> : undefined}
+            badge={
+              recognized.includes('name') ? (
+                <RecognizedBadge fieldKey="name" />
+              ) : interpreted.includes('name') ? (
+                <InterpretedBadge fieldKey="name" />
+              ) : undefined
+            }
           >
             <div id={ANCHORS.name} className="relative max-w-3xl">
               <Input
@@ -564,13 +585,14 @@ export default function ProductForm({
             </div>
           </FieldRow>
 
-          {/* 商品属性（材质 / 工艺 可由图片识别预填） */}
+          {/* 商品属性（材质 / 工艺 可由图片识别预填；米宝解读来源用另一枚徽标） */}
           <FieldRow
             label="商品属性"
             alignTop
-            badge={recognizedSpecKeys.map((k) => (
-              <RecognizedBadge key={k} fieldKey={k} />
-            ))}
+            badge={[
+              ...recognizedSpecKeys.map((k) => <RecognizedBadge key={`r-${k}`} fieldKey={k} />),
+              ...interpretedSpecKeys.map((k) => <InterpretedBadge key={`i-${k}`} fieldKey={k} />),
+            ]}
           >
             <ProductAttributes
               value={{
