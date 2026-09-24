@@ -29,8 +29,12 @@
 mtime/size），且注入走 `str.replace` 的**内容变异** ⇒ 无缓存可污染（纯文本，不 import 变异体）。
 """
 import importlib.util
+import io
 import json
 import re
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -964,8 +968,11 @@ class TestLedgerPrApproval:
 
     def test_approve_cli_returns_nonzero_when_approval_fails(self, monkeypatch, tmp_path):
         """CLI 层同样 fail-closed（三态：0 正常 / 1 违规）——空集才是 0。"""
-        listing = {"workflow_runs": [self._run(id=99)]}
-        monkeypatch.setattr(FL, "_gh_api", lambda path: listing)
+        # #5264：`approve` 还会解析**分支 tip**（第二次 API 调用）⇒ 桩按 path 分派（语义不变）
+        listing = {"workflow_runs": [self._run(id=99, head_sha="a" * 40)]}
+        monkeypatch.setattr(FL, "_gh_api",
+                            lambda path: ({"commit": {"sha": "a" * 40}}
+                                          if "/branches/" in path else listing))
 
         def boom(repo, ids):
             raise RuntimeError("run 99：HTTP 403")
@@ -994,3 +1001,413 @@ class TestLedgerPrApproval:
         assert "branch=chore/flaky-ledger" in seen[0], seen
         assert "head_branch=" not in seen[0], f"参数名写错会被 API 静默忽略：{seen[0]}"
         assert "event=pull_request" in seen[0], seen
+
+
+# ── ⑧ #5264：`_gh_api` 分页合并 + 「只批准分支 tip 那一批」（逐条注入式红证） ────────
+#
+# 病根（**实测读数**，别再重新猜）：`_gh_api` 走 `gh api --paginate --slurp`，多页合并时把
+# **列表字段**用 `dict.update` 覆盖（只累加 `jobs`）⇒ 分页后**只剩最后一页**。于是
+# `runs_needing_approval()` 只看得见最老那几条早已作废的 run ⇒ 恒返回 `[]` ⇒ `approve`
+# **一次都没发出去** ⇒ 台账 PR 的 run 永远停在 `action_required`（0 job / 0 check）⇒
+# auto-merge 永不触发 ⇒ 台账冻结。**跨过一页之后才静默失效**：落地时该分支 run 数 < 100
+# ⇒ `--slurp` 单页 ⇒ 走单页短路（**那条路径是对的**，不是"当年有效是错觉"）。
+#
+# 本节判据一律用**合成 fixture**（本文件既有口径：不写死任何线上条数/阈值 —— 那些数字会腐烂）。
+
+
+def _slurped_pages(sizes=(100, 100, 11)):
+    """`gh api --paginate --slurp` 的**真实形状**：`[{…}, {…}, {…}]`，每页一个 `workflow_runs`。"""
+    total, pages, rid = sum(sizes), [], 1
+    for size in sizes:
+        runs = []
+        for _ in range(size):
+            runs.append({"id": rid,
+                         "name": FL.TRIAGED_WORKFLOWS[rid % len(FL.TRIAGED_WORKFLOWS)],
+                         "event": "pull_request", "conclusion": "action_required",
+                         "head_sha": f"{rid:040d}",
+                         "created_at": f"2026-09-{rid % 28 + 1:02d}T00:00:00Z"})
+            rid += 1
+        pages.append({"total_count": total, "workflow_runs": runs})
+    return pages
+
+
+def pagination_violations(ns) -> list:
+    """**独立判据**（喂任意模块命名空间，含变异体）：多页 slurped 结构必须**跨页累加**列表字段。
+
+    两问缺一不可：① `_merge_pages` 纯 helper 直判；② `_gh_api` **端到端**（桩掉 `subprocess`，
+    **不真起 `gh`**）—— 只测 helper 会漏掉「helper 修了、调用点仍是旧口径」这种半修。
+    """
+    bad = []
+    pages = _slurped_pages()
+    expected = [r["id"] for p in pages for r in p["workflow_runs"]]  # 现取，不写死条数
+
+    merged = ns["_merge_pages"](json.loads(json.dumps(pages)))
+    got = [r["id"] for r in (merged.get("workflow_runs") or [])]
+    if got != expected:
+        bad.append(f"分页合并丢了条目：拿到 {len(got)} 条、应 {len(expected)} 条"
+                   f"（列表字段被每页覆盖 ⇒ 只剩最后一页）")
+    if merged.get("total_count") != pages[-1]["total_count"]:
+        bad.append(f"标量字段未覆盖：total_count={merged.get('total_count')!r}")
+
+    class _Proc:
+        returncode, stderr, stdout = 0, "", json.dumps(pages)
+
+    saved = ns["subprocess"].run
+    ns["subprocess"].run = lambda cmd, **kw: _Proc()
+    try:
+        via_api = ns["_gh_api"]("repos/o/r/actions/runs?event=pull_request&branch=b&per_page=100")
+    finally:
+        ns["subprocess"].run = saved
+    api_ids = [r["id"] for r in (via_api.get("workflow_runs") or [])]
+    if api_ids != expected:
+        bad.append(f"`_gh_api` 端到端仍丢条目：{len(api_ids)} 条、应 {len(expected)} 条"
+                   f"（helper 改对了但调用点没接上 = 没修）")
+    return bad
+
+
+def _push_runs(head_sha, first_id, day, names=None, conclusion="action_required"):
+    """**一次推送**（= 同一个 `head_sha`）产生的那一批 run（形状与 REST `/actions/runs` 同源）。"""
+    names = list(FL.TRIAGED_WORKFLOWS) if names is None else names
+    return [{"id": first_id + i, "name": name, "event": "pull_request",
+             "conclusion": conclusion, "status": "completed", "run_attempt": 1,
+             "head_branch": FL.LEDGER_BRANCH, "head_sha": head_sha,
+             "created_at": f"2026-09-{day:02d}T0{i}:00:00Z"}
+            for i, name in enumerate(names)]
+
+
+def _push_fixture():
+    """**真实形态**：多个**陈旧 sha**（各 4 条白名单 run，全 `action_required`，日期递增）+ 最新 sha
+    的 4 条（**最新日期** = 分支 tip；外加 `Drift Audit` / `PR Issue Link Check` 各 1 条 ——
+    白名单外，**不许**被批准）。
+
+    返回 `(runs, tip_sha, 陈旧 sha 的 run id 列表)`。
+    """
+    tip = "d" * 40
+    runs = []
+    for day, (sha, first_id) in enumerate((("a" * 40, 1000), ("b" * 40, 2000), ("c" * 40, 3000)),
+                                          start=20):
+        runs += _push_runs(sha, first_id, day)
+    runs += _push_runs(tip, 4000, 23)
+    runs += _push_runs(tip, 5000, 23, names=["Drift Audit (真相源契约)", "PR Issue Link Check"])
+    return runs, tip, [r["id"] for r in runs if r["head_sha"] != tip]
+
+
+def head_narrowing_violations(ns) -> list:
+    """**独立判据**：批准面必须收窄到**分支 tip 那一次推送**（陈旧 SHA 一个都不许批）。"""
+    bad = []
+    runs, tip, stale_ids = _push_fixture()
+    needing = set(ns["runs_needing_approval"](runs, workflows=ns["TRIAGED_WORKFLOWS"]))
+    candidates = [r for r in runs if r["id"] in needing]
+    selected = sorted(r["id"] for r in ns["runs_for_head"](candidates, tip))
+    expected = sorted(r["id"] for r in runs
+                      if r["head_sha"] == tip and r["name"] in ns["TRIAGED_WORKFLOWS"])
+    if selected != expected:
+        bad.append(f"tip 收窄结果不符：选中 {selected}、应恰为 tip 的候选 {expected}")
+    leaked = sorted(set(selected) & set(stale_ids))
+    if leaked:
+        bad.append(f"**陈旧 SHA** 的 run 被选中（批准它们对 required 判定零贡献、只会放大 CI）：{leaked}")
+    if selected and sorted(selected) == sorted(needing):
+        bad.append("收窄等于「全批准」口径 ⇒ 分页修好后会一次批准上百个 workflow（CI 雪崩）")
+    return bad
+
+
+def _run_approve(ns, *, runs, tip, json_out=None):
+    """桩掉 `_gh_api` / `approve_runs` 跑一次 `approve`（**绝不发真 POST**）。
+
+    返回 `(rc, stdout, stderr, 批准调用记录, 查询过的 path)`。`tip=None` ⇒ 分支接口取不到 sha。
+    """
+    seen, approved = [], []
+    saved = {k: ns[k] for k in ("_gh_api", "approve_runs")}
+
+    def fake_api(path):
+        seen.append(path)
+        if "/branches/" in path:
+            return {"commit": {"sha": tip}} if tip else {"name": ns["LEDGER_BRANCH"]}
+        return {"workflow_runs": runs}
+
+    def fake_approve(repo, ids):
+        approved.append(list(ids))
+        return list(ids)
+
+    ns["_gh_api"], ns["approve_runs"] = fake_api, fake_approve
+    argv = ["approve", "--repo", "o/r", "--head-branch", ns["LEDGER_BRANCH"]]
+    if json_out is not None:
+        argv += ["--json-out", str(json_out)]
+    out, err, old = io.StringIO(), io.StringIO(), (sys.stdout, sys.stderr)
+    sys.stdout, sys.stderr = out, err
+    try:
+        rc = ns["main"](argv)
+    finally:
+        sys.stdout, sys.stderr = old
+        ns.update(saved)
+    return rc, out.getvalue(), err.getvalue(), approved, seen
+
+
+def approve_cli_violations(ns) -> list:
+    """**独立判据**：`approve` 子命令的**四态**（喂任意模块命名空间 ⇒ 变异体也判）。
+
+    ① 候选为空 ⇒ 退出 0 且**不查 tip**（快速路径与既有读数一字不变）；
+    ② 候选非空但 tip 解析不到 ⇒ **fail-closed（非 0）**且**一个都不批**（不许退回「最新可见推送」）；
+    ③ tip 上没有待批准 run（尚未创建 / 已批准）⇒ 退出 0、**不许**改去批准陈旧 SHA；
+    ④ tip 上有候选 ⇒ **恰好**批 tip 那一批，且读数自洽（历史候选 N / tip / 本轮 M）+ `--json-out` 写本轮实际批准的 id。
+    """
+    bad = []
+    tmpdir = tempfile.mkdtemp(prefix="migao-5264-")
+    try:
+        # ① 候选为空 —— 快速路径
+        rc, out, _, approved, seen = _run_approve(ns, runs=[], tip="d" * 40)
+        if rc != 0:
+            bad.append(f"候选为空时退出码应为 0，实际 {rc}")
+        if approved:
+            bad.append(f"候选为空却仍发起 approve：{approved}")
+        if any("/branches/" in p for p in seen):
+            bad.append("候选为空时仍查询分支 tip ⇒ 快速路径退化（多一次无谓 API 调用）")
+        if "无需 approve" not in out:
+            bad.append(f"候选为空时的读数不再是既有那句：{out!r}")
+
+        runs, tip, stale_ids = _push_fixture()
+        needing = len(ns["runs_needing_approval"](runs, workflows=ns["TRIAGED_WORKFLOWS"]))
+
+        # ② tip 解析不到 ⇒ fail-closed，零动作
+        rc, out, err, approved, _ = _run_approve(ns, runs=runs, tip=None)
+        if rc == 0:
+            bad.append("tip 解析不到却退出 0 ⇒ 非 fail-closed（会把『无法判定』装成『已处理』）")
+        if approved:
+            bad.append(f"tip 解析不到却批准了 run：{approved}")
+        if "无法确定" not in err or "fail-closed" not in err:
+            bad.append(f"tip 解析不到时的报错没说清为什么不敢退回「最新可见推送」：{err!r}")
+
+        # ③-a tip 上根本没有 run（只有陈旧 SHA 有待批准）⇒ 零动作、诚实读数
+        rc, out, _, approved, _ = _run_approve(
+            ns, runs=[r for r in runs if r["head_sha"] != tip], tip=tip)
+        if rc != 0:
+            bad.append(f"tip 无待批准 run 时应零动作退出 0，实际 {rc}")
+        if approved:
+            bad.append(f"tip 无待批准 run 时却批准了**陈旧 SHA**：{approved}")
+        if "暂无待批准 run" not in out:
+            bad.append(f"tip 无待批准 run 时缺诚实读数（不许说成已批准）：{out!r}")
+
+        # ③-b tip 的 run **已批准**（conclusion=None）⇒ 幂等，不再命中
+        already = [dict(r, conclusion=None, status="queued", run_attempt=2, id=r["id"] + 90000)
+                   for r in runs if r["head_sha"] == tip] + \
+                  [r for r in runs if r["head_sha"] != tip]
+        rc, out, _, approved, _ = _run_approve(ns, runs=already, tip=tip)
+        if rc != 0 or approved:
+            bad.append(f"tip 已批准的 run 被重复批准（幂等失效）：rc={rc} approved={approved}")
+
+        # ④ tip 上有候选 ⇒ 恰好那一批 + 读数自洽 + json_out 写本轮实际批准
+        out_json = Path(tmpdir) / "approved.json"
+        rc, out, _, approved, _ = _run_approve(ns, runs=runs, tip=tip, json_out=out_json)
+        expected = sorted(r["id"] for r in runs
+                          if r["head_sha"] == tip and r["name"] in ns["TRIAGED_WORKFLOWS"])
+        if rc != 0:
+            bad.append(f"tip 有候选时退出码应为 0，实际 {rc}")
+        if approved != [expected]:
+            bad.append(f"批准集合不是「恰好 tip 那一批」：{approved}、应 {[expected]}")
+        if set(approved[0] if approved else []) & set(stale_ids):
+            bad.append("批准集合里混进了**陈旧 SHA** 的 run")
+        if json.loads(out_json.read_text(encoding="utf-8")) != expected:
+            bad.append("`--json-out` 写的不是本轮实际批准的 id 列表（workflow 侧据它读 PENDING）")
+        for frag in (f"历史待批准 {needing} 个", f"属于分支 tip={tip} 的 {len(expected)} 个"):
+            if frag not in out:
+                bad.append(f"读数与事实不自洽（缺 `{frag}`）：{out!r}")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    return bad
+
+
+def _mutant(*replacements):
+    """把真实脚本源码做**内容级单点变异**后 `exec` 成命名空间（不写盘、不留变异产物）。
+
+    `__file__` 指向真实路径 ⇒ 模块级 `LEDGER_PATH` 等派生量照旧可解析（本函数不落任何文件）。
+    注入锚点写错 ⇒ **立刻断言失败**（防止"锚点失效 ⇒ 变异体其实没变 ⇒ 红证假绿"）。
+    """
+    src = (SCRIPTS / "flaky_ledger.py").read_text(encoding="utf-8")
+    for old, new in replacements:
+        assert old in src, f"注入锚点失效（先修本测试）：{old!r}"
+        src = src.replace(old, new, 1)
+    ns = {"__name__": "migao_flaky_ledger_mutant", "__file__": str(SCRIPTS / "flaky_ledger.py")}
+    exec(compile(src, str(SCRIPTS / "flaky_ledger.py"), "exec"), ns)
+    return ns
+
+
+class TestApprovePaginationAndTipNarrowing:
+    """#5264：**分页必须跨页累加** + **只批准分支 tip 那一批**（每问都可单独变红）。"""
+
+    # ── ① 分页合并 ──────────────────────────────────────────────────────────
+
+    def test_merge_pages_accumulates_lists_and_overwrites_scalars(self):
+        pages = _slurped_pages()
+        merged = FL._merge_pages(pages)
+        assert [r["id"] for r in merged["workflow_runs"]] == \
+            [r["id"] for p in pages for r in p["workflow_runs"]], \
+            "列表字段必须**跨页累加**（旧口径 `update` 覆盖 ⇒ 只剩最后一页）"
+        assert len(merged["workflow_runs"]) == sum(len(p["workflow_runs"]) for p in pages)
+        assert merged["total_count"] == pages[-1]["total_count"], "标量字段取覆盖"
+
+    def test_merge_pages_does_not_mutate_the_input_pages(self):
+        pages = _slurped_pages((2, 3))
+        before = json.dumps(pages, sort_keys=True)
+        FL._merge_pages(pages)
+        assert json.dumps(pages, sort_keys=True) == before, "合并不许就地改输入（既有调用方可能复用）"
+
+    def test_gh_api_merges_end_to_end_and_keeps_single_page_shortcut(self):
+        """只测 helper 会漏掉「helper 修了、调用点还是旧口径」⇒ 端到端桩掉 subprocess（**不真起 gh**）。"""
+        def call(payload):
+            class _Proc:
+                returncode, stderr, stdout = 0, "", json.dumps(payload)
+
+            saved = FL.subprocess.run
+            FL.subprocess.run = lambda cmd, **kw: _Proc()
+            try:
+                return FL._gh_api("repos/o/r/x")
+            finally:
+                FL.subprocess.run = saved
+
+        pages = _slurped_pages()
+        merged = call(pages)
+        assert [r["id"] for r in merged["workflow_runs"]] == \
+            [r["id"] for p in pages for r in p["workflow_runs"]], "`_gh_api` 必须真的走修好的合并"
+        assert merged["total_count"] == pages[-1]["total_count"]
+        assert call([{"jobs": [{"name": "a"}]}, {"jobs": [{"name": "b"}]}])["jobs"] == \
+            [{"name": "a"}, {"name": "b"}], "`jobs` 的最终形态仍是**扁平累加**（不是分页嵌套）"
+        single = {"total_count": 1, "workflow_runs": [{"id": 7}], "jobs": [{"name": "j"}]}
+        assert call([single]) == single, "单页必须走**短路**（原样返回；那条路径本来就是对的）"
+
+    def test_real_flaky_ledger_satisfies_pagination_invariants(self):
+        assert pagination_violations(vars(FL)) == []
+
+    # ── ② 分支 tip 解析 + 收窄 ──────────────────────────────────────────────
+
+    def test_branch_tip_parses_commit_sha_and_rejects_malformed(self):
+        sha = "519250fe9bf175bcf0a735a0b08969e376382409"
+        assert FL.branch_tip({"name": FL.LEDGER_BRANCH, "commit": {"sha": sha}}) == sha
+        bads = [{}, {"commit": {}}, {"commit": {"sha": ""}}, {"commit": "not-a-dict"},
+                [{"commit": {"sha": sha}}], None, {"commit": {"sha": 42}}, {"name": "x", "commit": None}]
+        assert [FL.branch_tip(b) for b in bads] == [None] * len(bads), \
+            "畸形/取不到 ⇒ 必须显式 `None`（调用方据此 fail-closed，不许猜）"
+
+    def test_only_the_tip_push_is_selected(self):
+        runs, tip, stale_ids = _push_fixture()
+        needing = set(FL.runs_needing_approval(runs, workflows=FL.TRIAGED_WORKFLOWS))
+        candidates = [r for r in runs if r["id"] in needing]
+        selected = sorted(r["id"] for r in FL.runs_for_head(candidates, tip))
+        expected = sorted(r["id"] for r in runs
+                          if r["head_sha"] == tip and r["name"] in FL.TRIAGED_WORKFLOWS)
+        assert selected == expected, (selected, expected)
+        assert set(selected) & set(stale_ids) == set(), \
+            "**陈旧 SHA** 的 run 绝不许被批准（挂在旧 commit 上，对 required 判定零贡献）"
+        assert len(selected) < len(needing), \
+            "收窄必须真的窄于「全批准」口径（分页修好后候选是几十上百个 ⇒ 全批准 = CI 雪崩）"
+        unlisted = {r["id"] for r in runs if r["name"] not in FL.TRIAGED_WORKFLOWS}
+        assert set(selected) & unlisted == set(), "白名单外的 run 不许被批准（白名单一字未动）"
+
+    def test_real_flaky_ledger_satisfies_head_narrowing_invariants(self):
+        assert head_narrowing_violations(vars(FL)) == []
+
+    # ── ③ 幂等 / 边界 ──────────────────────────────────────────────────────
+
+    def test_already_approved_tip_runs_are_not_reselected(self):
+        """幂等沿用既有口径：批准后 `conclusion` 变 null、`run_attempt` +1 ⇒ 不再命中。"""
+        runs, tip, _ = _push_fixture()
+        already = [dict(r, conclusion=None, status="queued", run_attempt=2)
+                   for r in runs if r["head_sha"] == tip]
+        needing = set(FL.runs_needing_approval(already, workflows=FL.TRIAGED_WORKFLOWS))
+        assert needing == set(), "tip 上已批准的 run 不许再进候选"
+        assert FL.runs_for_head([r for r in already if r["id"] in needing], tip) == []
+
+    def test_runs_for_head_without_a_sha_selects_nothing(self):
+        runs, tip, _ = _push_fixture()
+        assert [FL.runs_for_head(runs, s) for s in ("", None)] == [[], []], \
+            "tip 为空 ⇒ 空集（**不是**「全批准」）"
+        assert FL.runs_for_head(None, tip) == []
+        assert FL.runs_for_head(["not-a-dict", 42], tip) == []
+
+    # ── ④ CLI 四态 ─────────────────────────────────────────────────────────
+
+    def test_cli_fast_path_when_nothing_is_suppressed(self):
+        rc, out, _, approved, seen = _run_approve(vars(FL), runs=[], tip="d" * 40)
+        assert (rc, approved) == (0, []), (rc, approved)
+        assert [p for p in seen if "/branches/" in p] == [], "候选为空时不该多查一次 tip"
+        assert "无需 approve" in out, out
+
+    def test_cli_is_fail_closed_when_branch_tip_cannot_be_resolved(self):
+        """**不许**退回「最新可见的待批准 run 的 sha」—— 那会把陈旧 SHA 当本次推送批准掉。"""
+        runs, _, stale_ids = _push_fixture()
+        rc, _, err, approved, _ = _run_approve(vars(FL), runs=runs, tip=None)
+        assert (rc, approved) == (1, []), (rc, approved)
+        assert len(stale_ids) > 0, "夹具前提：必须先存在陈旧 SHA 的待批准 run，否则本用例无意义"
+        assert "无法确定" in err and "fail-closed" in err, err
+
+    def test_cli_takes_zero_action_when_tip_has_no_pending_run(self):
+        runs, tip, _ = _push_fixture()
+        only_stale = [r for r in runs if r["head_sha"] != tip]
+        rc, out, _, approved, _ = _run_approve(vars(FL), runs=only_stale, tip=tip)
+        assert (rc, approved) == (0, []), (rc, approved)
+        assert f"tip={tip}" in out and "暂无待批准 run" in out, out
+
+    def test_cli_approves_exactly_the_tip_runs_with_self_consistent_readout(self, tmp_path):
+        runs, tip, stale_ids = _push_fixture()
+        out_json = tmp_path / "approved.json"
+        rc, out, _, approved, _ = _run_approve(vars(FL), runs=runs, tip=tip, json_out=out_json)
+        expected = sorted(r["id"] for r in runs
+                          if r["head_sha"] == tip and r["name"] in FL.TRIAGED_WORKFLOWS)
+        needing = len(FL.runs_needing_approval(runs, workflows=FL.TRIAGED_WORKFLOWS))
+        assert (rc, approved) == (0, [expected]), (rc, approved, expected)
+        assert set(approved[0]) & set(stale_ids) == set(), approved
+        assert json.loads(out_json.read_text(encoding="utf-8")) == expected
+        assert f"历史待批准 {needing} 个" in out and f"属于分支 tip={tip} 的 {len(expected)} 个" in out, out
+
+    def test_real_approve_cli_satisfies_all_four_states(self):
+        assert approve_cli_violations(vars(FL)) == []
+
+
+class TestApproveFixRedProofs:
+    """**红证**：把修复点**逐条单点变异**回去 ⇒ 对应判据必须红（不会红的判据 = 空断言）。
+
+    变异走**源码文本**（`_mutant`）而不是 import 变异体文件 ⇒ 无缓存可污染，也**不提交**变异代码。
+    """
+
+    def test_red_proof_reverting_the_merge_to_overwrite(self):
+        """变异点 ①：`_merge_pages` 的「列表 ⇒ 累加」退回旧口径（`update` 覆盖）⇒ 分页判据必红。"""
+        mutant = _mutant(("                merged[key] = (prev if isinstance(prev, list) else []) + list(value)",
+                          "                merged[key] = value"))
+        assert pagination_violations(vars(FL)) == [], "真实实现先要绿，红证才有意义"
+        violations = pagination_violations(mutant)
+        assert violations, "退回覆盖式合并后仍判绿 ⇒ 分页判据是**空断言**"
+        assert any("丢了条目" in v for v in violations), violations
+
+    def test_red_proof_dropping_the_head_narrowing(self):
+        """变异点 ②：`runs_for_head` 不再按 sha 过滤（= 退回「全批准」）⇒ 收窄判据必红。"""
+        mutant = _mutant(('if isinstance(r, dict) and r.get("head_sha") == head_sha]',
+                          'if isinstance(r, dict)]'))
+        assert head_narrowing_violations(vars(FL)) == []
+        violations = head_narrowing_violations(mutant)
+        assert violations, "去掉按 tip 收窄后仍判绿 ⇒ 收窄判据是**空断言**"
+        assert any("陈旧 SHA" in v for v in violations), violations
+
+    def test_red_proof_cli_dropping_the_narrowing_step(self):
+        """变异点 ③：CLI 里**不套用**收窄（直接批准全部候选）⇒ CLI 判据必红。"""
+        mutant = _mutant(('ids = sorted(r["id"] for r in runs_for_head(candidates, tip))',
+                          'ids = sorted(r["id"] for r in candidates)'))
+        assert approve_cli_violations(vars(FL)) == []
+        violations = approve_cli_violations(mutant)
+        assert violations, "CLI 不套用收窄后仍判绿 ⇒ 四态判据是**空断言**"
+        assert any("陈旧 SHA" in v for v in violations), violations
+
+    def test_red_proof_replacing_branch_tip_with_latest_visible_run(self):
+        """变异点 ④：tip 退回「最新**可见**的待批准 run 的 sha」（被明确禁止的退回）⇒ CLI 判据必红。"""
+        mutant = _mutant(
+            ('tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))',
+             'tip = max(candidates, key=lambda r: r.get("created_at") or "").get("head_sha")'))
+        violations = approve_cli_violations(mutant)
+        assert violations, "退回「最新可见推送」后仍判绿 ⇒ 该判据盖不住这个退回"
+        assert any("陈旧 SHA" in v or "fail-closed" in v for v in violations), violations
+
+    def test_red_proof_dropping_the_action_required_filter(self):
+        """变异点 ⑤：`runs_needing_approval` 去掉 `action_required` 判定 ⇒ 幂等判据必红。"""
+        mutant = _mutant(('if run.get("conclusion") != "action_required":', "if False:"))
+        assert approve_cli_violations(vars(FL)) == []
+        violations = approve_cli_violations(mutant)
+        assert violations, "去掉 `action_required` 判定后仍判绿 ⇒ 幂等判据是**空断言**"
+        assert any("幂等" in v for v in violations), violations
