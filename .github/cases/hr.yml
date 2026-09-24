@@ -113,7 +113,7 @@ cases:
     user_inputs:
       # 显式指代（#3568 范式，同 HR-008）：**以种子号码为主指代**，姓名只作补充。
       # 种子里 HR-003 点名的员工是 `debug_employee_wangwu / 13700137000`
-      # （`fixtures/mibao_eval_seed.sql:113-120`）；而 HR-002 会创建**另一个同名
+      # （`tests/agent_eval/fixtures/mibao_eval_seed.sql` 里 `debug_employee_wangwu / 13700137000` 那一行）；而 HR-002 会创建**另一个同名
       # 「王五」（13812345678）** ⇒ 只按姓名指代时目标不唯一，agent 给出**正确**的
       # 安全行为（「系统里有两个「王五」…我需要知道停用哪一个才能安全执行」），
       # 用例却因此恒红（真实 run 34856561459 的两次独立审计共同确认的用例资产缺陷）。

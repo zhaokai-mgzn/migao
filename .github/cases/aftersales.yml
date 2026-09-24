@@ -434,7 +434,7 @@ cases:
     # 证明不了「工单真做出来了」（写工具被 confirm 门禁拦下 / 后端报错时，调用名照样出现在
     # tool_calls 里）。原写法是 `data_checks: "success=true"`（计分白名单口径）—— 已升级为
     # canonical 的 `must_succeed`（fail-closed：一次都没成功 → 判红，且按 action=create 过滤，
-    # 不会被同工具其它 action 的成功「顶过」，见 `local_runner.py:1520-1537`）。
+    # 不会被同工具其它 action 的成功「顶过」，见 `tests/agent_eval/local_runner.py` 的 `check_must_succeed`）。
     # ⚠️ 旧注释的阻塞理由**已失效**（2026-09-15 复核）：旧文称
     # `test_xiaobu_case_set.py::test_must_succeed_tools_are_customer_capabilities` 对**全库**
     # 校验、B 端工具声明即打红。该守卫**已按 persona 收窄**（`case_persona(c) != "xiaobu"` → skip，
@@ -446,13 +446,13 @@ cases:
     # ⚠️ 报告 §3.4-M2 要求的 `db_verify: [{fetch: after_sales_ticket, expect_status: pending}]`
     #   **本次未加**——不是遗漏，是加了会**恒红**（零 LLM 确定性探针实测，issue #3683）：
     #   · `check_db_verify` 的 after_sales_ticket 分支取工单引用走
-    #     `_first_successful_ticket_payload`（`local_runner.py:2000`），**只认 payload 里的
+    #     `tests/agent_eval/local_runner.py` 的 `_first_successful_ticket_payload`，**只认 payload 里的
     #     `ticket_id` / `ticketId`**；
     #   · 而 **create 路径**的 payload 是 `AfterSalesDetailResponse` **原样返回**
-    #     （`app/tools/after_sales_manage.py:358 data = response.get("data", {})` → `:367 data=data`），
-    #     键是 `id` / `ticketNo` / `status` / `ticketType`（`AfterSalesDetailResponse.java:15-38`；
-    #     `:359 new_ticket_id = data.get("id")` 即其证）——**没有 `ticket_id`**；
-    #     只有 `_update_status` 自己拼了 `{"ticket_id":…, "status":…}`（`:435`，AS-004 走的正是那条路）。
+    #     （`backend/ai-agent-service/app/tools/after_sales_manage.py` 的 `_get_detail` 原样透传 `data`；原 `create` 写路径已随 B 端只读化整条下线 —— 当时它写的正是 `data = response.get("data", {})` → `data=data`），
+    #     键是 `id` / `ticketNo` / `status` / `ticketType`（admin-api 的 `AfterSalesDetailResponse` DTO 字段声明；
+    #     （当时 create 分支的 `new_ticket_id = data.get("id")` 即其证）——**没有 `ticket_id`**；
+    #     只有 `_update_status`（**已随 B 端只读化下线**）自己拼了 `{"ticket_id":…, "status":…}` —— AS-004 走的正是那条路。
     #   · 探针输出（create 形态 → `(None, {})`；update 形态 → `(3, {'ticket_id':…, 'status':'closed'})`）
     #     ⇒ 照抄报告原文加上，会一直报「找不到 after_sales_manage(status=pending) 的成功调用
     #     （无工单可核对）—— 判失败而非跳过」（fail-closed）＝ **永久假红**，比不加更糟
@@ -478,7 +478,7 @@ cases:
       # 「调了 ≠ 成了」已升为**机器断言**（2026-09-15，issue #3683）：见上方
       # `must_succeed: [after_sales_manage(action=create)]`。原 `"success=true"` 条目
       # （2026-09-14 #3568 引入）随之删除 —— 它被 `check_expectation` 解析成
-      # **「某一轮没有 error」**（`local_runner.py:764-766`：`if not result.get("error"): return True`），
+      # **「某一轮没有 error」**（`tests/agent_eval/local_runner.py` 的 `check_expectation`：`if not result.get("error"): return True`），
       # 对「工单真的建出来了」**近乎恒过**（多数轮次本来就没有 error）⇒ 删它是**升级而非削弱**
       # （旧写法给的是"看起来有覆盖"）。下列条目仍是自然语义（不计分），其中「加工项」一条的
       # 机器语义由 `order_before[processing_ask]` 保证。

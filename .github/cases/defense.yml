@@ -3,7 +3,7 @@
 #
 # ★ 三处用例预期与代码校准（merge_log 已记录）：
 #   - D002「max_iterations=8」与代码默认一致（skill_config 字段默认 8；docstring「默认 5」是过时注释）
-#   - D004/L001「20 条压缩」与代码不符，实际 max_recent=12（base_skill.py:819）
+#   - D004/L001「20 条压缩」与代码不符，实际 max_recent=12（`app/memory/context_manager.py` 的 `compress_conversation` 形参默认 / `prepare_turn` 显式传值）
 #   - D011「连续 5 次失败开路」与代码不符，实际 failure_threshold=3（app/core）
 #   校准后 truths_ref 指向代码真值；未校准前 expectations 保留原预期并注明待校。
 
@@ -444,9 +444,9 @@ cases:
     # 原 `expectations: [product_detail]` 与熔断面都对不上真实链路，机器断言恒红：
     #   ① 实跑 `rounds=6 tools=['product_search','order_query',…] score=0%` → agent 对
     #      「查不存在的ID-00X」走的是 `product_search`，`product_detail` **一次都没被调用**
-    #      （product skill 的工具集里两者都有，`app/graph/skills/product_skill.py:13-25`）
+    #      （product skill 的工具集里两者都有，见 `backend/ai-agent-service/app/graph/skills/product_skill.py` 的 `PRODUCT_TOOLS`）
     #      ⇒ `unmatched expectation: product_detail` 恒成立。
-    #   ② 用例的两条 data_checks 全是**自然语义**（runner `local_runner.py:4057-4061` 只把
+    #   ② 用例的两条 data_checks 全是**自然语义**（runner 的 `run_case` 计分白名单只把
     #      `success=true`/`error.code=`/`未被调用` 形态计入评分）⇒ 0 条计分断言。
     #   ③ 更根本：它以「连续 3 次失败后 breaker 打开」为前提，而「商品不存在」是 **404**
     #      → `http_client._do_call` 对 4xx **直接返回不抛异常**（有意设计：4xx 非服务故障）
