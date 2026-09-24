@@ -109,6 +109,9 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # 增删加工项）**已从注册表与工具文件删除** —— 商品不再持有加工项（加工项是店铺级目录）。
     # 本名单是「解析器没坏」的自证集合，工具删了就必须同步（这正是想要的摩擦）。
     "product_search", "product_update",
+    # 批量更新（issue #5314 的 Agent 侧）：写工具（`read_only=False`）⇒ 进 taxonomy 的
+    # `WRITE_TOOLS`（已同步，见该表 #5314 段）；可达性 = product skill 绑定。
+    "product_batch_update",
     "production_progress_query", "production_worklog_query",
     "role_manage", "session_manage", "settings_manage",
     "sku_update", "validate_input",
