@@ -169,9 +169,23 @@
 
 | 残留 | 记录 |
 |---|---|
-| `product_update` 的描述仍点名 `product_manage(action=update, images=…)`，而它自 #5247 起已不可达（模型照做即撞 `tool_not_found`） | issue **#5315** |
+| **图片指引面已修**（PR #5324）：`product_update` / `sku_update` 的图片反例不再点名不可达工具。**仍空着的是判据 2** —— 把既有 L0 不变式从「描述点名的工具必须**真实注册**」扩展到「必须**本 skill 可达**」；另注意 `base_skill.py` 新增的机械判据守的是**注入话术面**，两者是两个面 | issue **#5315**（**收窄，未收口**） |
 | `settings` 域只读化漏网（`settings_manage` / `notification_manage` / `settings_skill`） | issue **#5302**（收口进行中） |
 | 撤销入口未建 | issue **#5314** |
+
+---
+
+### 条件（2026-09-24）：图片写能力若被补回，两处话术须一并重新裁定
+
+`product_manage` 的 `update` 属 **A 档**（见 §二 按动作拆分）。但 **#5247 之后 B 端的图片写能力已不存在**，
+且 PR #5324 已把两处**注入模型上下文**的话术改判为「图片写入能力不在你的能力内」：
+
+- `backend/ai-agent-service/app/graph/skills/base_skill.py` 的 `_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE` 与 `_IMAGE_DROP_GUIDANCE`
+- `backend/ai-agent-service/app/graph/skills/execution/react_turn.py` 的两处事实门
+
+🔴 **若将来把图片写能力补回 B 端，这两处话术必须一并重新裁定** ——
+它们现在的写法**只在「能力确实不在手里」时成立**。能力回来了而话术不改，
+就从「否认自己**拥有**的能力」（#3931 原始病）翻成另一种误宣 ⇒ **同一个坑换个方向再踩一次**。
 
 ---
 
