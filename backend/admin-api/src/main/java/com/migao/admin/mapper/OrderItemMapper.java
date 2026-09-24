@@ -84,4 +84,28 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             @Param("productIds") List<String> productIds,
             @Param("prevStart") OffsetDateTime prevStart,
             @Param("periodStart") OffsetDateTime periodStart);
+
+    /**
+     * 商品订单行数（窗口内，**退货率的分母**，issue #5369 族 3 · 包 2）。
+     *
+     * <p>口径与 {@link #selectProductRanking} **同源**：#2984 的有效订单状态集（排除 pending 未付款 /
+     * cancelled 已取消）、#2989 排除 product_id 为 NULL/空 的幽灵明细 —— 两处各写一份状态集就会
+     * 「同一真值两处投影」，等价性由判据钉住
+     * （`backend/ai-agent-service/tests/test_briefing_product_health.py` 的同源守卫）。</p>
+     *
+     * <p>租户条件**显式带上**（拦截器之外的第二道，与 {@link #selectByOrderId} 同模式）；
+     * 有界（`LIMIT`）—— 有界必须显式，否则「看不见的商品」会被读成「没有退货」。</p>
+     */
+    @Select("SELECT oi.product_id AS product_id, COUNT(*) AS order_lines " +
+            "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+            "WHERE oi.tenant_id = #{tenantId} AND o.tenant_id = #{tenantId} " +
+            "AND oi.deleted = 0 AND o.deleted = 0 " +
+            "AND oi.product_id IS NOT NULL AND oi.product_id != '' " +
+            "AND o.status IN ('confirmed','producing','shipped','completed') " +
+            "AND oi.created_at >= #{windowStart} " +
+            "GROUP BY oi.product_id ORDER BY order_lines DESC LIMIT #{limit}")
+    List<Map<String, Object>> selectProductOrderLineCounts(
+            @Param("tenantId") Long tenantId,
+            @Param("windowStart") OffsetDateTime windowStart,
+            @Param("limit") int limit);
 }

@@ -650,7 +650,8 @@ class DailyBriefingServiceTest {
 
         private ProductSku sku() {
             return ProductSku.builder().id(7L).tenantId(1L).productId("P-1")
-                    .stock(new BigDecimal("20.0")).avgCost(new BigDecimal("10.0000")).build();
+                    .stock(new BigDecimal("20.0")).salesCount(new BigDecimal("120.0"))
+                    .price(new BigDecimal("168.00")).avgCost(new BigDecimal("10.0000")).build();
         }
 
         private Product product() {
@@ -675,6 +676,17 @@ class DailyBriefingServiceTest {
         }
 
         /** 标准行级 stub：一张单商品订单的退货 + 一张多商品订单的退货；SKU 库存 20（在售商品下）、均价 10 */
+        private Map<String, Object> countRow(String productId, long orderLines) {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("product_id", productId);
+            row.put("order_lines", orderLines);
+            return row;
+        }
+
+        private List<Map<String, Object>> countRows(int n) {
+            return java.util.stream.IntStream.rangeClosed(1, n)
+                    .mapToObj(i -> countRow("P-" + i, i)).toList();
+        }
         private void stubRows() {
             when(orderMapper.selectList(any())).thenReturn(List.of(order("SO-1")));
             when(orderLogisticsMapper.selectList(any())).thenReturn(List.of());   // 未发货
@@ -686,6 +698,9 @@ class DailyBriefingServiceTest {
                     returnTicket("RT-1", "O-1"), returnTicket("RT-2", "O-2")));
             when(orderItemMapper.selectList(any())).thenReturn(List.of(
                     orderItem("O-1", "P-1"), orderItem("O-2", "P-2"), orderItem("O-2", "P-3")));
+            // 退货率分母（族 3 · 包 2，issue #5369）：P-1 有 4 条订单行、P-2 有 2 条
+            when(orderItemMapper.selectProductOrderLineCounts(any(), any(), anyInt())).thenReturn(
+                    List.of(countRow("P-1", 4L), countRow("P-2", 2L)));
         }
 
         /**
@@ -735,8 +750,8 @@ class DailyBriefingServiceTest {
             assertThat(snapshot).doesNotContainKey("price_changes");
             assertThat(snapshot.get("row_fields")).isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FIELDS);
             assertThat((Map<String, Object>) snapshot.get("row_meta"))
-                    .as("截断必须显式：三个行数组都要有 row_meta")
-                    .containsOnlyKeys("orders", "skus", "returns");
+                    .as("截断必须显式：每个行数组（含退货率两端）都要有 row_meta")
+                    .containsOnlyKeys("orders", "skus", "returns", "product_return_stats");
         }
 
         @Test
@@ -855,6 +870,22 @@ class DailyBriefingServiceTest {
         }
 
         @Test
+        @DisplayName("退货率分母被上限截断 ⇒ row_meta 显式（看不见的商品不得读成「没有退货」）")
+        void returnStatsTruncationIsExplicit() {
+            stubRows();
+            when(orderItemMapper.selectProductOrderLineCounts(any(), any(), anyInt()))
+                    .thenReturn(countRows(DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT));
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat(metaOf(snapshot, "product_return_stats"))
+                    .containsEntry("truncated", true)
+                    .containsEntry("limit", DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            assertThat((List<?>) snapshot.get("product_return_stats"))
+                    .hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+        }
+
+        @Test
         @DisplayName("未越界 ⇒ 三个数组都报 truncated=false，count = 实际行数")
         void noTruncationWhenWithinLimit() {
             stubRows();
@@ -864,6 +895,80 @@ class DailyBriefingServiceTest {
             assertThat(metaOf(snapshot, "orders")).containsEntry("truncated", false).containsEntry("count", 1);
             assertThat(metaOf(snapshot, "skus")).containsEntry("truncated", false).containsEntry("count", 1);
             assertThat(metaOf(snapshot, "returns")).containsEntry("truncated", false).containsEntry("count", 2);
+            assertThat(metaOf(snapshot, "product_return_stats"))
+                    .containsEntry("truncated", false).containsEntry("count", 2);
+        }
+
+        @Test
+        @DisplayName("SKU 行带 SKU 级权威列（销量/售价/移动加权成本）；成本未知**原样 null**，不被 0 冒充")
+        void skuRowCarriesAuthorityColumns() {
+            stubRows();
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(
+                    ProductSku.builder().id(7L).tenantId(1L).productId("P-1")
+                            .stock(new BigDecimal("20.5")).salesCount(new BigDecimal("120.0"))
+                            .price(new BigDecimal("168.00")).avgCost(new BigDecimal("100.0000")).build(),
+                    ProductSku.builder().id(8L).tenantId(1L).productId("P-1")
+                            .stock(new BigDecimal("0.0")).salesCount(new BigDecimal("30.5"))
+                            .price(new BigDecimal("168.00")).avgCost(null).build()));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("skus");
+
+            assertThat(rows).hasSize(2);
+            assertThat(rows.get(0))
+                    .containsEntry("sales_count", new BigDecimal("120.0"))
+                    .containsEntry("price", new BigDecimal("168.00"))
+                    .containsEntry("avg_cost", new BigDecimal("100.0000"));
+            // 🔴 未知成本不得被 0 冒充（`schema.sql`：存量不回填、不猜 0）—— 视图侧据这个 null 判「未知」
+            assertThat(rows.get(1).get("avg_cost"))
+                    .as("成本未知必须是 null").isNull();
+            assertThat(rows.get(1).get("stock")).isEqualTo(new BigDecimal("0.0"));
+        }
+
+        @Test
+        @DisplayName("退货率两端：分子复用退货行的商品归属、分母来自订单行数；0 是**真 0**")
+        void productReturnStatsMergesBothEnds() {
+            stubRows();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = (List<Map<String, Object>>)
+                    service.aggregateSnapshot(1L).get("product_return_stats");
+
+            assertThat(rows).extracting(row -> row.get("product_id")).containsExactly("P-1", "P-2");
+            // RT-1 的订单只有 P-1（单商品 ⇒ 归属得到）；RT-2 的订单有两个商品 ⇒ 不猜、不进任何商品
+            assertThat(rows.get(0)).containsEntry("return_tickets", 1)
+                    .containsEntry("order_lines", 4L);
+            // P-2 当期 0 退货、2 条订单行 ⇒ 退货率**真 0**（有分母才算得出 0，不是未知）
+            assertThat(rows.get(1)).containsEntry("return_tickets", 0)
+                    .containsEntry("order_lines", 2L);
+        }
+
+        @Test
+        @DisplayName("退货率分母：显式租户 + 有界 + 与退货行**同一窗口**（issue #5369 的口径同源）")
+        void orderLineCountsAreTenantScopedBoundedAndSameWindow() {
+            stubRows();
+
+            service.aggregateSnapshot(1L);
+
+            ArgumentCaptor<OffsetDateTime> window = ArgumentCaptor.forClass(OffsetDateTime.class);
+            ArgumentCaptor<Integer> limit = ArgumentCaptor.forClass(Integer.class);
+            verify(orderItemMapper).selectProductOrderLineCounts(eq(1L), window.capture(),
+                    limit.capture());
+
+            assertThat(limit.getValue())
+                    .as("分母查询必须有界（取数上限 = 上限 + 1）")
+                    .isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT);
+            java.util.List<Object> returnsWindows = capturedWrappers(afterSalesTicketMapper).stream()
+                    .flatMap(wrapper -> wrapper.getParamNameValuePairs().values().stream())
+                    .filter(value -> value instanceof OffsetDateTime)
+                    .toList();
+            assertThat(returnsWindows)
+                    .as("退货行查询本次应恰好带一个时刻参数（窗口）—— 多个说明口径已开始分叉")
+                    .hasSize(1);
+            assertThat(window.getValue())
+                    .as("分子与分母必须同窗口（两处各算一次就会漂）")
+                    .isEqualTo(returnsWindows.get(0));
         }
 
         @Test
@@ -889,7 +994,8 @@ class DailyBriefingServiceTest {
             @SuppressWarnings("unchecked")
             List<String> ignored = (List<String>) field.get(null);
             assertThat(ignored).doesNotContain(
-                    "orders", "order_logistics", "product_skus", "products", "after_sales_tickets");
+                    "orders", "order_logistics", "product_skus", "products", "after_sales_tickets",
+                    "order_items");
         }
 
         @Test
