@@ -503,11 +503,6 @@ CREATE TABLE customer_profiles (
     source_channel VARCHAR(32) DEFAULT 'wechat_mini',  -- wechat_mini / h5 / web
 
     -- RFM 评分
-    -- 🔴 下面这批 RFM / 统计 / 生命周期预测列**全仓没有计算逻辑**（issue #5362 取证：setRScore 一类零命中），
-    --    列默认值 0 / 0.00 / 30 只是占位 —— 不是「这个客户消费 0 元」。字段级真值声明 = Java 侧
-    --    com.migao.admin.support.fieldtruth.CustomerProfileFieldTruth（每字段「有真值/无真值 + 原因」），
-    --    **API 读面一律回 null（未知）**，不得用 0 冒充真值（同 product_skus.avg_cost 的「NULL = 未知，不猜 0」）。
-    --    ⚠️ 列默认值与存量行回填口径属补计算那一单（另立），本处有意不动。
     r_score INTEGER DEFAULT 0,  -- 1-5 分
     f_score INTEGER DEFAULT 0,
     m_score INTEGER DEFAULT 0,
