@@ -167,6 +167,20 @@
       "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）+ PR 面判据（ci workflow helper unit tests）",
       "reading": "instrumented",
       "reading_site": "emitter"
+    },
+    {
+      "id": "post-merge-verify",
+      "name": "合并后 main 侧守护腿（把落入 main 并被判据引用的判据重跑一遍）",
+      "workflow": ".github/workflows/post-merge-verify.yml",
+      "job": "verify",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数，且**带与负载无关的计数**：`seen=<窗口内变更文件数>` / `acted=<命中判据数>`（由机制体在判定步 `declare`，同名字段也落在 `post-merge-verify-report.json` 里）；`why` 写明窗口起点与来源（水位 / lookback / 显式 `--base`）与 `rc`。**零动作**（窗口内无可判对象）时 `acted=0` 且 `why` 照旧出声 —— 「零动作」与「没跑」必须长得不一样（§23 G6）。**首发日**（判定本体尚未在判定基准 main 上落地 —— 引入本腿的那个 PR 上必然如此）⇒ 读数 `seen=unknown` / `acted=0` / `why=首发日 pending-merge…` 且**不判红**（与 `check_heartbeat` 的 `pending-merge`、本 workflow 的 `pending-first-run` 同族：**监控自己不得自造假红** —— 首轮实测没这道护栏时它当场开出一张假 P1 单）；但「**workflow 在、脚本不见了**」⇒ **判红**（`::error::`），否则「删掉判定本体」会退化成一条静默的绿。",
+      "criterion": "同 automerge：main 上**最近一次已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行（**非挂钟**）；读数 `rc` 与 run 结论**不得矛盾**（读数与事实相反正是 #5264 的形态）。本腿自身的判定力另由 `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的注入式红证钉住（判据改了 / 装配层改了 / 数据改了 ⇒ 各能单独变红）。",
+      "consumer": "值班（**mechanism-liveness.yml 的定时腿 ⇒ P1 值班 issue**；本腿自己的判红也走 P1 值班 issue，带 `priority/P1`）+ PR 面判据（`ci workflow helper unit tests` 跑 tests/unit_ci_workflows/test_post_merge_verify_leg.py）",
+      "reading": "instrumented",
+      "reading_site": "emitter",
+      "boundary": "**显式不判表**（§23 G5：面外不是安全区，必须写明）：判 = `tests/unit_ci_workflows/test_*.py`（`ci workflow helper unit tests` 的同一批）；**不判** = admin-web vitest / admin-api Java 单测 / ai-agent `tests/**`（各自有自己的 PR 面与四套工具链成本；跑全 = 每次合并 10 分钟级，与 §23 G8 的降成本口径冲突）。**可见性前提** = 既有引用纪律（`migao-dev-flow` §16.7）：判据要读某文件，其路径必须写成可静态解析的形态（仓库相对全路径 / `REPO / \"a\" / \"b\"` 链）；写在 docstring / 注释里的路径**有意不算引用**（§23.8 B1）⇒ 这类判据的输入对本腿**不可见**，但每次都会打印「未命中清单」（看不见 ≠ 没问题）。**触发面**：`push: [main]` 是必须的那一面，但它**会被吞**（实测 2026-09-24：近 ~15 次合并只有 2 次在 main 上产生 push run）⇒ 另挂 `pull_request: [opened, reopened]`（既有范式里已被证明可靠的补偿面）+ `schedule` + `workflow_dispatch`。",
+      "unfixed_note": "**未固化项刻意不写进 `unfixed`**：`unfixed_budget.max_items = 6` 已被既有 6 条占满，而规则是「**只许缩短**」⇒ 再加一条就等于把债务搬进台账（G2 封死的正是这条路）。⇒ 本机制的未固化项逐条登记在 `boundary` 字段与 `.github/workflows/post-merge-verify.yml` 头部：① 判定面外的测试面不判；② 散文式路径引用不可见；③ 水位依赖 `gh` 可达（取不到时退回固定窗口并打 `::warning::` —— 多验，不是少验）；④ 该腿**不翻 required**、不接进 `pr-check.yml`。",
+      "unfixed": []
     }
   ],
   "exempt": [],
