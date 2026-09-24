@@ -56,8 +56,11 @@ r"""用例面文本 × 主干事实的**接线状态同步**守卫（issue #5387
   Python 走 `ast`（语法单元）；Java 走「文本锚点 + 字面量切分」。**不按引号写取值正则** ——
   否则会落进 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`（issue #5325）的
   「原文口径」命中面（该文件要求「改走语法单元或先剥注释」）。
-- 每个判据都有**注入式自证**（`TestGuardSelfProof`）：在**构造的**缺陷载荷上必须报出问题，
-  同一载荷不注入 ⇒ 必须干净 —— 否则主测试的绿只是空跑（`migao-acceptance`「不会红的断言 = 空断言」）。
+- 判据内核（`registry_mismatch` / `unattested_states` / `count_word_mismatch` /
+  `missing_contract_entries` / `rules_without_named_states` / `parse_java_row_fields`）与
+  **登记面的 fail-closed**（登记项不存在、锚点取不到 ⇒ 判红）**各有注入式自证**
+  （`TestGuardSelfProof`）：在**构造的**缺陷载荷上必须报出问题，同一载荷不注入 ⇒ 必须干净
+  —— 否则主测试的绿只是空跑（`migao-acceptance`「不会红的断言 = 空断言」）。
 - **残余 ①**：C4 是**正向**判据（要求点名 + 点名全态）—— 它**不**机械禁止「再补一句矛盾的旧口径」，
   只要该条目仍同时点名了全部可达态；散文语义（否定/时序）不可机械判定，故此处**只做正向钉**。
 - **残余 ②**：C3 只判「数组名 / 字段名逐字出现」，**不判** DA-016 里三个数组的**分组归属**是否写对
@@ -287,6 +290,23 @@ def _case_items(case_id: str) -> tuple:
 
 # ── 判据（纯函数；`""` = 无问题，便于注入式自证不写弱断言形态）────────────────
 
+def registry_mismatch(consts: dict) -> str:
+    """C0：引擎导出的字符串常量集与登记集是否一致。空串 = 一致（燃尽靶：不许把差异藏进豁免清单）。"""
+    extra = sorted(set(consts) - set(STATUS_CONSTANTS))
+    missing = sorted(set(STATUS_CONSTANTS) - set(consts))
+    if not extra and not missing:
+        return ""
+    detail = []
+    if extra:
+        detail.append(f"引擎新增/改名而**未登记**：{extra}")
+    if missing:
+        detail.append(f"登记了但引擎里没有：{missing}")
+    return ("；".join(detail)
+            + " —— 接线状态集变了（新增/删除/改名）⇒ 必须同批同步："
+              f"①{ENGINE_PY.relative_to(REPO)} 的语义注释 ②真值面 ③DA-017 / DA-018 的文本 "
+              "④本守卫的 STATUS_CONSTANTS（issue #5387）")
+
+
 def unattested_states(truth_text: str, values: dict) -> str:
     """C1：真值文本里**没逐字点名**的状态（名字 + 值）。空串 = 全部点名。"""
     missing = [f"{name}（`{value}`）" for name, value in values.items() if value not in truth_text]
@@ -390,12 +410,8 @@ def rules_without_named_states(items, rules_, declared: dict, values: dict) -> s
 
 def test_status_constants_are_fully_registered():
     """C0（覆盖度 + 燃尽靶）：引擎导出的字符串常量集必须**恰好** = 本守卫登记的状态集。"""
-    consts = _exported_string_constants(_engine_tree())
-    assert set(consts) == set(STATUS_CONSTANTS), (
-        f"引擎 `__all__` 的字符串常量集 {sorted(consts)} != 本守卫登记的状态集 "
-        f"{sorted(STATUS_CONSTANTS)} —— 接线状态集变了（新增/删除/改名）⇒ 必须同批同步："
-        f"①{ENGINE_PY.relative_to(REPO)} 的语义注释 ②真值 `{WIRING_TRUTH_ID}` ③DA-017 的文本 "
-        f"④本守卫的 STATUS_CONSTANTS（这是燃尽靶：不许把差异藏进豁免清单，issue #5387）")
+    problem = registry_mismatch(_exported_string_constants(_engine_tree()))
+    assert problem == "", problem
 
 
 def test_truth_names_every_wiring_state():
@@ -476,6 +492,30 @@ def test_coverage_anchor_is_live_and_printed(capsys):
 
 class TestGuardSelfProof:
     """在**构造的**缺陷载荷上必须报出问题；同一载荷不注入 ⇒ 必须干净。"""
+
+    def test_registry_mismatch_detector_is_discriminating(self):
+        """C0 的判据内核：**登记面**与现取集合的差集两个方向都要判红。"""
+        real = _exported_string_constants(_engine_tree())
+        assert registry_mismatch(real) == "", "登记集与现取集合本应一致 ⇒ 判据在乱红"
+        grown = dict(real, FIFTH_STATE="fifth_state")
+        assert "FIFTH_STATE" in registry_mismatch(grown), \
+            "引擎新增一个态而没登记 ⇒ 必须判红且**点名**该常量（否则「加态」静默落地）"
+        shrunk = {k: v for k, v in real.items() if k != "INCOMPLETE"}
+        assert "INCOMPLETE" in registry_mismatch(shrunk), \
+            "引擎删掉一个登记过的态 ⇒ 必须判红（登记面不得比现实宽）"
+
+    def test_registered_entries_must_exist(self):
+        """登记项改名/删除 ⇒ fail-closed 判红，**不得**静默跳过（否则判据面会自己缩水）。"""
+        for kind, ident in (("truth", "dashboard-jump.no-such-truth-5387"),
+                            ("case", "ZZ-999")):
+            lookup = _truth if kind == "truth" else _case_text
+            try:
+                lookup(ident)
+            except AssertionError as exc:
+                assert ident in str(exc), f"{kind} {ident} 的不存在必须被点名报出，实测：{exc}"
+            else:
+                raise AssertionError(
+                    f"{kind} {ident} 在仓里不存在却没判红 —— 判据会退化成「无输入即通过」")
 
     def test_state_naming_detector_is_discriminating(self):
         values = {"WIRED": "wired", "NOT_WIRED": "not_wired",
