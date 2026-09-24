@@ -3799,10 +3799,6 @@ cases:
         - pr-check.yml
       verifies: []
 
-      ci:
-        - pr-check.yml
-      verifies: []
-
   # ── issue #5192：真库判据「缺 PG ⇒ 静默变绿」的收口（CI fail-closed + 判据不许悄悄消失）──
   # 取号：本单开工时 main 最高 = PR-102（#5188 已合入）⇒ 本单取 PR-103/PR-104（同名在飞分支零重叠，已自查）。
   # 背景（复核后的剩余风险，非推断）：真库判据在 CI 上**确实在跑**，但靠 `ubuntu-latest` 镜像

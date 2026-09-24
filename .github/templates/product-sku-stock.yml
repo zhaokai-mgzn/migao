@@ -40,30 +40,37 @@ primary_specs:
   - frontend/admin-web/tests/unit/pages/products
 
 reviewer_asserts:
+  # ⚠️ 断言**一条一列**（`expect:` 是列表，不是同键重复 —— issue #4291）：
+  # 同一 mapping 里写多个 `expect:` 只会装载最后一个（PyYAML 与 yaml_light 同款行为），
+  # 其余真值断言**静默消失**；判据 = `tests/unit_ci_workflows/test_cases_yaml_strictness.py`。
   # ── 商品列表与筛选 ──
   - API: GET /api/admin/products?page=1&size=5
-    expect: data.records 非空
-    expect: 每项 status != deleted
-    expect: 每项 status NOT IN (in_warehouse)
+    expect:
+      - data.records 非空
+      - 每项 status != deleted
+      - 每项 status NOT IN (in_warehouse)
   - API: GET /api/admin/products?page=1&size=50
     expect: 所有 item.status NOT IN (in_warehouse)
 
   # ── 商品详情与状态 ──
   - API: GET /api/admin/products/{id}
-    expect: data.status NOT IN (in_warehouse)
-    expect: data.status IN (on_sale, off_sale, draft, under_review)
+    expect:
+      - data.status NOT IN (in_warehouse)
+      - data.status IN (on_sale, off_sale, draft, under_review)
 
   # ── 状态流转：正向 ──
   - API: PUT /api/admin/products/{id}/status
-    expect: 允许 draft → on_sale
-    expect: 允许 draft → under_review
-    expect: 允许 on_sale → off_sale
-    expect: 允许 off_sale → on_sale
+    expect:
+      - 允许 draft → on_sale
+      - 允许 draft → under_review
+      - 允许 on_sale → off_sale
+      - 允许 off_sale → on_sale
 
   # ── 状态流转：禁止废弃状态 ──
   - API: PUT /api/admin/products/{id}/status?target=in_warehouse
-    expect: status >= 400
-    expect: error.message 包含 in_warehouse 或 IllegalStatus
+    expect:
+      - status >= 400
+      - error.message 包含 in_warehouse 或 IllegalStatus
 
   # ── 编辑表单：按钮校验 ──
   - API: GET /api/admin/products/{id}
