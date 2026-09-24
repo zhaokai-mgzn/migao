@@ -156,6 +156,17 @@
         }
       ],
       "reading_site": "emitter"
+    },
+    {
+      "id": "redproof-sweep",
+      "name": "红证实跑巡检（注入 → 断言必红 → 还原）",
+      "workflow": ".github/workflows/redproof-sweep.yml",
+      "job": "sweep-live",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（`rc` / 存在性；`seen`/`acted` = `unknown` —— 巡检**自己的**读数由它在 job summary 里打印的「巡检读数：登记 N / 真跑 N / 跳过 N / 注入 N / 还原 N / 退化 N」承担）。",
+      "criterion": "同 automerge：run 归属 + 结论（**非挂钟**）。另：读数 `rc` 与 run 结论**不得矛盾**（读数与事实相反正是 #5264 的形态）。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）+ PR 面判据（ci workflow helper unit tests）",
+      "reading": "instrumented",
+      "reading_site": "emitter"
     }
   ],
   "exempt": [],
