@@ -7,7 +7,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Rec
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { urgencyRequestFields } from '@/lib/order-urgency'
-import { buildOrderPrefill } from '@/lib/image-recognize'
+import { buildOrderPrefill, ORDER_DERIVATION_INPUT_KEYS, sizeTargetLineIndex } from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow, type RecognizedField } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
@@ -161,6 +161,16 @@ interface OrderLineItem {
    */
   width: number | null
   height: number | null
+  /**
+   * 这一行的宽 / 高是**图片识别预填**来的（issue #5349）—— 记的是**识别字段键**
+   * （`curtain_width` / `curtain_height`），用来渲染 `[图片识别]` 徽标。
+   *
+   * ⚠️ 为什么落在**行状态**里（而不是页面级 `recognizedFields`）：那个清单是一屏多行共用的，
+   * 拿它渲染宽高徽标 ⇒ **每一行**都会长出徽标，而识别只落在**一行**上（假标注比不标更糟：
+   * 商家会去核对一个不是识别来的格子）。与 `openCountTouched` / `shapedItemTouched` 同族
+   * ——留痕落在行状态里，收起/展开重挂不丢。
+   */
+  recognizedSizeKeys?: string[]
   processingItems: ProcessingItem[]
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
   /**
@@ -1242,7 +1252,34 @@ export default function NewOrderPage() {
       if (prefill.customerPhone !== undefined) setCustomerPhone(prefill.customerPhone)
       if (prefill.customerAddress !== undefined) setCustomerAddress(prefill.customerAddress)
       if (prefill.remark !== undefined) setRemark(prefill.remark)
-      setRecognizedFields((prev) => Array.from(new Set([...prev, ...prefill.recognizedFields])))
+
+      // 尺寸（帘宽 / 帘高，issue #5349）：**推导链的原始输入** —— 写进行状态后，既有推导链
+      // **自然生效**（试算 / 加工类型 / 分幅 / 拼接 / 接高 / 接宽 / 超高 / 超宽全是输入驱动的），
+      // 识别侧**一行推导都不写**（判据 2：同一真值两处推导 = 页面显示 ≠ 落库）。
+      // 落点由 `sizeTargetLineIndex` 定：**第一行宽高都还空着**的行；没有 ⇒ 一行都不动
+      // （不覆盖商家已经敲进去的尺寸 —— 尺寸错 ⇒ 米数错 ⇒ 钱错）。
+      const sizeKeys: string[] = Object.values(ORDER_DERIVATION_INPUT_KEYS).filter((key) =>
+        prefill.recognizedFields.includes(key)
+      )
+      if (sizeKeys.length > 0) {
+        // 先取成局部常量：`setLineItems` 的回调是**延迟执行**的，TS 对属性访问的收窄跨不过它
+        const curtainWidth = prefill.curtainWidth
+        const curtainHeight = prefill.curtainHeight
+        setLineItems((prev) => {
+          const index = sizeTargetLineIndex(prev)
+          if (index < 0) return prev
+          const next = [...prev]
+          next[index] = { ...next[index], recognizedSizeKeys: sizeKeys }
+          if (curtainWidth !== undefined) next[index].width = curtainWidth
+          if (curtainHeight !== undefined) next[index].height = curtainHeight
+          return next
+        })
+      }
+
+      // ⚠️ 尺寸键**不进**页面级 `recognizedFields`（那是一屏多行共用清单 ⇒ 会给每一行都打上徽标，
+      //    而识别只落在**一行**）：尺寸徽标走行状态 `recognizedSizeKeys`。
+      const pageKeys = prefill.recognizedFields.filter((key) => !sizeKeys.includes(key))
+      setRecognizedFields((prev) => Array.from(new Set([...prev, ...pageKeys])))
     },
     [customerName, customerPhone, customerAddress, remark]
   )
@@ -4133,6 +4170,12 @@ function LineItemBlock({
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <Label required>窗宽 (米)</Label>
+                  {/* 识别来的尺寸要**标出来**（issue #5349 判据 4：识别输入 `[图片识别]`
+                      ≠ 推导出的项「系统推导」—— 否则商家不知道这一格该不该信）。
+                      徽标只在**被识别填过的那一行**上（行状态 `recognizedSizeKeys`）。 */}
+                  {(line.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.width) && (
+                    <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.width} />
+                  )}
                   {/* 三项输入之一（issue #5202）；数字框能打出 `0.`（如 0.5 米窄窗） */}
                   <NumberInput
                     value={line.width}
@@ -4146,6 +4189,10 @@ function LineItemBlock({
                 </div>
                 <div>
                   <Label required>窗高 (米)</Label>
+                  {/* 同窗宽：识别预填的格子必须有来源标注（issue #5349 判据 4） */}
+                  {(line.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.height) && (
+                    <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.height} />
+                  )}
                   {/* 三项输入之一（issue #5202） */}
                   <NumberInput
                     value={line.height}

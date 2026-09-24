@@ -80,10 +80,63 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     const out: Record<string, string[]> = {}
     for (const target of ['product', 'order']) {
       const block = py.match(new RegExp(`"${target}": \\(([\\s\\S]*?)\\n    \\),`))?.[1] || ''
-      out[target] = [...block.matchAll(/TargetField\("([a-z_]+)"/g)].map((m) => m[1])
+      // ⚠️ `\s*` 不能省：字段是可以**折行**声明的（`TargetField(\n  "curtain_width", …`）——
+      // 旧正则要求 `TargetField("key"` 同行 ⇒ 折行字段**静默漏收**（守卫绿、而少读的键看不见）
+      const parsed = [...block.matchAll(/TargetField\(\s*"([a-z_]+)"/g)].map((m) => m[1])
+      // 漏收必须**变红**，不许静默（同族：判据自己静默失效）
+      const declared = [...block.matchAll(/TargetField\(/g)].length
+      if (parsed.length !== declared) {
+        throw new Error(
+          `TARGET_FIELDS["${target}"] 解析漏收：声明 ${declared} 个 TargetField，只解析出 ${parsed.length} 个`,
+        )
+      }
+      out[target] = parsed
     }
     return out
   }
+
+  /**
+   * 「前端声称要从**响应**里读」的 key —— **五种写法**都收。
+   *
+   * ⚠️ 这是本守卫的**扫描面**：新增一种读法而不补这里 ⇒ 那部分消费就是**盲区**
+   * （守卫绿、而"读了一个内核不返回的 key"照样溜过去）。判别力由下面的
+   * `扫描器对五种消费写法都有判别力` 逐条钉住（红证式自检）。
+   */
+  function consumedKeys(src: string): Set<string> {
+    const consumed = new Set<string>()
+    for (const m of src.matchAll(/(?:valueOf|pickField)\(fields,\s*'([a-z_]+)'\)/g)) consumed.add(m[1])
+    for (const m of src.matchAll(/for \(const key of \[([^\]]+)\]/g)) {
+      for (const k of m[1].matchAll(/'([a-z_]+)'/g)) consumed.add(k[1])
+    }
+    for (const m of src.matchAll(/fillBlank\('([a-z_]+)'/g)) consumed.add(m[1])
+    for (const m of src.matchAll(/ORDER_DETAIL_KEYS\s*=\s*\[([^\]]+)\]/g)) {
+      for (const k of m[1].matchAll(/'([a-z_]+)'/g)) consumed.add(k[1])
+    }
+    // ⑤ **常量引用式**消费（issue #5349）：按键走 `ORDER_DERIVATION_INPUT_KEYS` 的映射
+    //    （`metersOf(fields, ORDER_DERIVATION_INPUT_KEYS.width)`）—— 前四种写法都看不见它。
+    for (const m of src.matchAll(/ORDER_DERIVATION_INPUT_KEYS\s*=\s*\{([\s\S]*?)\n\}/g)) {
+      for (const k of m[1].matchAll(/:\s*'([a-z_]+)'/g)) consumed.add(k[1])
+    }
+    return consumed
+  }
+
+  it('扫描器对五种消费写法都有判别力（缺一种 ⇒ 那一种的消费是盲区）', () => {
+    const samples: Array<[string, string]> = [
+      ["const a = valueOf(fields, 'name')", 'name'],
+      ["for (const key of ['material']) { void key }", 'material'],
+      ["fillBlank('customer_name', 'customerName', current)", 'customer_name'],
+      ["const ORDER_DETAIL_KEYS = ['items'] as const", 'items'],
+      [
+        "const ORDER_DERIVATION_INPUT_KEYS = {\n  width: 'curtain_width',\n} as const",
+        'curtain_width',
+      ],
+    ]
+    for (const [src, key] of samples) {
+      expect({ src, hit: consumedKeys(src).has(key) }).toEqual({ src, hit: true })
+    }
+    // 不消费的源码不得凭空长出 key（否则守卫会被自己的文案喂绿）
+    expect([...consumedKeys('const x = 1 // valueOf(fields, ) 说明文字')]).toEqual([])
+  })
 
   it('内核两个 target 的字段表就是我们承诺的那两份（且两份不同 —— 不是一套字段两个页面填）', () => {
     const keys = targetKeys()
@@ -94,7 +147,8 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
       'customer_address',
       'items',
       'quantity',
-      'spec',
+      'curtain_width',
+      'curtain_height',
     ])
     const overlap = keys.product.filter((k) => keys.order.includes(k))
     expect(overlap).toEqual([])
@@ -104,22 +158,13 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     const known = new Set(Object.values(targetKeys()).flat())
     const front = read(PREFILL)
 
-    // 「前端声称要从**响应**里读」的 key —— 四种写法都收（键是变量/常量的写法也要覆盖，
-    // 否则守卫只看得见直写字符串的那几个，等于给了一半的盲区）。
-    const consumed = new Set<string>()
-    for (const m of front.matchAll(/(?:valueOf|pickField)\(fields,\s*'([a-z_]+)'\)/g)) consumed.add(m[1])
-    for (const m of front.matchAll(/for \(const key of \[([^\]]+)\]/g)) {
-      for (const k of m[1].matchAll(/'([a-z_]+)'/g)) consumed.add(k[1])
-    }
-    for (const m of front.matchAll(/fillBlank\('([a-z_]+)'/g)) consumed.add(m[1])
-    for (const m of front.matchAll(/ORDER_DETAIL_KEYS\s*=\s*\[([^\]]+)\]/g)) {
-      for (const k of m[1].matchAll(/'([a-z_]+)'/g)) consumed.add(k[1])
-    }
+    const consumed = consumedKeys(front)
 
     // 逐值钉住（不是"非空"）：少读一个键 / 多读一个键都要变红
     expect([...consumed].sort()).toEqual([
-      'color', 'craft', 'customer_address', 'customer_name', 'customer_phone',
-      'door_width', 'items', 'material', 'name', 'quantity', 'spec',
+      'color', 'craft', 'curtain_height', 'curtain_width', 'customer_address',
+      'customer_name', 'customer_phone', 'door_width', 'items', 'material',
+      'name', 'quantity',
     ])
     expect([...consumed].filter((k) => !known.has(k))).toEqual([])
   })

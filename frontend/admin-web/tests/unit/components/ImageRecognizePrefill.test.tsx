@@ -6,7 +6,9 @@
  * 三条口径（与内核冻结契约一致）：
  * ① `value: null` 的字段**绝不写进表单**（内核有意留空，不确定的宁可不填）；
  * ② 商品侧只映射能从既有代码论证的键（售价**有意不映射**）；
- * ③ 订单侧**只填当前为空的字段**（错收货信息 = 货发错人），明细/数量/规格进备注、不动 lineItems。
+ * ③ 订单侧**只填当前为空的字段**（错收货信息 = 货发错人），明细/数量进备注；
+ * ④ **尺寸（帘宽 / 帘高）进的是行状态**（issue #5349：推导链的原始输入）——
+ *    只收能直接进数字框的数，落点由 `sizeTargetLineIndex` 定（**空行**才填）。
  */
 import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -15,6 +17,7 @@ import {
   buildProductPrefill,
   filledFields,
   RECOGNIZE_SOURCE_TAG,
+  sizeTargetLineIndex,
 } from '@/lib/image-recognize'
 import type { RecognizedField } from '@/lib/api'
 import ProductForm from '@/components/products/ProductForm'
@@ -64,10 +67,11 @@ const ORDER_FIELDS: RecognizedField[] = [
   },
   { key: 'items', label: '商品明细', value: '遮光窗帘', source: TAG, reason: null },
   { key: 'quantity', label: '数量', value: '2', source: TAG, reason: null },
-  { key: 'spec', label: '规格', value: '门幅 2.8 米', source: TAG, reason: null },
+  { key: 'curtain_width', label: '帘宽', value: '2.8', source: TAG, reason: null },
+  { key: 'curtain_height', label: '帘高', value: '2.4', source: TAG, reason: null },
 ]
 
-const ORDER_REMARK_LINE = '[图片识别] 商品明细：遮光窗帘；数量：2；规格：门幅 2.8 米'
+const ORDER_REMARK_LINE = '[图片识别] 商品明细：遮光窗帘；数量：2'
 
 const EMPTY_ORDER = { customerName: '', customerPhone: '', customerAddress: '', remark: '' }
 
@@ -130,21 +134,43 @@ describe('图片识别 · 商品侧预填 (#5321)', () => {
 })
 
 describe('图片识别 · 订单侧预填 (#5321)', () => {
-  it('空表单：三个收货字段照填，明细/数量/规格拼一行进备注（不动 lineItems）', () => {
+  it('空表单：三个收货字段照填，明细/数量进备注，尺寸进**行状态**（推导链的原始输入）', () => {
     const prefill = buildOrderPrefill(ORDER_FIELDS, EMPTY_ORDER)
 
     expect(prefill.customerName).toBe('张伟')
     expect(prefill.customerPhone).toBe('13800138000')
     expect(prefill.customerAddress).toBe('浙江省杭州市余杭区仓前街道 1 号')
     expect(prefill.remark).toBe(ORDER_REMARK_LINE)
+    // issue #5349：帘宽 / 帘高是**数**（直接进数字框 ⇒ 推导链自然生效）
+    expect(prefill.curtainWidth).toBe(2.8)
+    expect(prefill.curtainHeight).toBe(2.4)
     expect(prefill.recognizedFields).toEqual([
       'customerName',
       'customerPhone',
       'customerAddress',
+      'curtain_width',
+      'curtain_height',
       'remark',
     ])
-    // 本包不选商品 SKU ⇒ 映射结果里**没有** lineItems（页面侧一行项都不动）
+    // 尺寸的落点由纯函数定（页面侧只填空行）⇒ 映射结果里**没有** lineItems（页面侧一行项都不动）
     expect('lineItems' in prefill).toBe(false)
+  })
+
+  it('尺寸只收**能直接进数字框**的值（非数 / 非正 ⇒ 不填，交给商家手填）', () => {
+    for (const raw of ['2.8米', '门幅2.8', '看不清', '0']) {
+      const prefill = buildOrderPrefill(
+        [{ key: 'curtain_width', label: '帘宽', value: raw, source: TAG, reason: null }],
+        EMPTY_ORDER,
+      )
+      expect(prefill.curtainWidth).toBeUndefined()
+      expect(prefill.recognizedFields).toEqual([])
+    }
+    // 内核归一后的规范十进制串照收（与 `recognizer._normalise_size` 同口径）
+    const ok = buildOrderPrefill(
+      [{ key: 'curtain_width', label: '帘宽', value: '2.8', source: TAG, reason: null }],
+      EMPTY_ORDER,
+    )
+    expect(ok.curtainWidth).toBe(2.8)
   })
 
   it('已有内容的字段**一律不覆盖**、也不打徽标（错收货信息 = 货发错人）', () => {
@@ -158,7 +184,13 @@ describe('图片识别 · 订单侧预填 (#5321)', () => {
     expect(prefill.customerName).toBeUndefined()
     expect(prefill.customerPhone).toBe('13800138000')
     expect(prefill.customerAddress).toBe('浙江省杭州市余杭区仓前街道 1 号')
-    expect(prefill.recognizedFields).toEqual(['customerPhone', 'customerAddress', 'remark'])
+    expect(prefill.recognizedFields).toEqual([
+      'customerPhone',
+      'customerAddress',
+      'curtain_width',
+      'curtain_height',
+      'remark',
+    ])
   })
 
   it('备注追加在原文之后（换行），重复识别同一张图不重复追加', () => {
@@ -172,7 +204,11 @@ describe('图片识别 · 订单侧预填 (#5321)', () => {
       remark: first.remark || '',
     })
     expect(replay.remark).toBeUndefined()
-    expect(replay.recognizedFields).toEqual([])
+    // 尺寸**不参与"当前值"比较**（行状态在页面侧）：重放仍会回传尺寸，
+    // 但页面侧的落点函数会返回 `-1` ⇒ 一行都不动（幂等由落点判据保证，见等价性测试）
+    expect(replay.curtainWidth).toBe(2.8)
+    expect(replay.recognizedFields).toEqual(['curtain_width', 'curtain_height'])
+    expect(sizeTargetLineIndex([{ width: 2.8, height: 2.4 }])).toBe(-1)
   })
 
   it('留空字段（value:null）既不填表也不进备注', () => {
