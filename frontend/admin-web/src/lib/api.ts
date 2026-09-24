@@ -711,6 +711,43 @@ export const orderApi = {
     request.delete<ApiResponse<void>>(`/api/admin/orders/${id}`),
 }
 
+/** 图片识别回传的**单个字段候选**（issue #5321 包 1）。 */
+export interface RecognizedField {
+  /** 字段键（product: name/color/material/craft/door_width/price；order: customer_name/…） */
+  key: string
+  /** 中文字段名（直接渲染，前端不另造一份文案） */
+  label: string
+  /** 识别到的值；`null` = 内核**有意留空**（不确定的宁可不填）⇒ 不得写进表单 */
+  value: string | null
+  /** 来源标记；有值时恒为 `[图片识别]` */
+  source: string | null
+  /** `value` 为空时的原因（如「图片未标注门幅」） */
+  reason: string | null
+}
+
+/** 图片识别响应体（`targetType` 回显 + 降级位 + 逐字段候选）。 */
+export interface ImageRecognizeResult {
+  targetType: 'product' | 'order'
+  /** `true` = 视觉链路失败 / 没有可用字段 ⇒ 前端弹错并**不预填任何值** */
+  degraded: boolean
+  fields: RecognizedField[]
+}
+
+/**
+ * 图片识别 API（issue #5321 包 1「页面快通道」）—— 建品页 / 建单页的「拍照 / 上传识别」。
+ *
+ * `images` = **已上传**的图片 URL（1..3 张，先走 `uploadApi.uploadImage`）。
+ * 🔴 **不落库**：本端点只回字段候选，识别结果**只填表**，提交永远是人的动作
+ * （前端不因它调用任何 create/update）。
+ */
+export const imageRecognizeApi = {
+  recognize: (targetType: 'product' | 'order', images: string[]) =>
+    request.post<ApiResponse<ImageRecognizeResult>>('/api/admin/image-recognition', {
+      targetType,
+      images,
+    }),
+}
+
 /**
  * 池看板 API（issue #5177；消费 #5169 已交付的三个端点）。
  *

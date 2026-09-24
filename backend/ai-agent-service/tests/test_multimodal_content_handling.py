@@ -255,7 +255,9 @@ class TestRewriteImageUrl:
     def test_rewrite_cdn_to_oss(self):
         """CDN 域名 URL 被重写为 OSS 公网 URL"""
         from app.api.chat import _rewrite_image_url
-        with patch("app.api.chat.settings") as mock_settings:
+        # issue #5321：图片管线已抽到 app/vision/pipeline.py 成为两入口共用的单一事实源
+        # ⇒ 配置读取点随实现一起搬家，打桩目标须同步（断言/期望值一字未改，改的只是接缝地址）
+        with patch("app.vision.pipeline.settings") as mock_settings:
             mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
             mock_settings.IMAGE_URL_REWRITE_TO = "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
             url = "https://admin.migaozn.com/chat/1/2026/06/04/abc.jpg"
@@ -265,7 +267,7 @@ class TestRewriteImageUrl:
     def test_no_rewrite_when_config_empty(self):
         """配置为空时不重写"""
         from app.api.chat import _rewrite_image_url
-        with patch("app.api.chat.settings") as mock_settings:
+        with patch("app.vision.pipeline.settings") as mock_settings:
             mock_settings.IMAGE_URL_REWRITE_FROM = ""
             mock_settings.IMAGE_URL_REWRITE_TO = ""
             url = "https://admin.migaozn.com/chat/1/abc.jpg"
@@ -275,7 +277,7 @@ class TestRewriteImageUrl:
     def test_no_rewrite_when_url_not_match(self):
         """URL 不匹配时不重写"""
         from app.api.chat import _rewrite_image_url
-        with patch("app.api.chat.settings") as mock_settings:
+        with patch("app.vision.pipeline.settings") as mock_settings:
             mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
             mock_settings.IMAGE_URL_REWRITE_TO = "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
             url = "https://other-domain.com/image.jpg"
@@ -285,7 +287,7 @@ class TestRewriteImageUrl:
     def test_rewrite_only_first_occurrence(self):
         """只替换第一次出现的 CDN 域名"""
         from app.api.chat import _rewrite_image_url
-        with patch("app.api.chat.settings") as mock_settings:
+        with patch("app.vision.pipeline.settings") as mock_settings:
             mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
             mock_settings.IMAGE_URL_REWRITE_TO = "https://oss.example.com"
             url = "https://admin.migaozn.com/path/admin.migaozn.com/file.jpg"
