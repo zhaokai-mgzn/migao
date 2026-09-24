@@ -1,0 +1,405 @@
+{
+  "schema": 1,
+  "issue": "#4177 + #5007",
+  "_what": "「声明 / 契约」与「门禁是否真的覆盖它」之间的登记册（#4177 触发面 / #5007 同源声明 + 冻结集合）。**未登记即红**；登记项必须与现取逐字相符（陈旧即红）。",
+  "_judged_by": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py",
+  "_invariants": [
+    "`gates`：凡会被路径门控的 PR 门禁（workflow 级 paths / 步骤级门控输出）必须在此登记；`trigger.predicate` 必须是 workflow 里的**现取原文**；`must_cover` 每一条都必须被该谓词覆盖；门禁测试源码读到的仓内路径（`auto_discover_root`）必须登记为 must_cover 或 uncovered。",
+    "`supplement_uncovered`：缺口必须带 reason + issue + owner —— 缺口不许匿名存在（§23 G5：面外不是安全区）。",
+    "`same_source_claims`：注释里声称「同源 / 一致」的声明必须有 criterion（`<测试文件>::<测试名>`，须真实存在 = 拦死判据）或 unfixed（理由 + 单号 + owner）。",
+    "`frozen_declarations`：凡「对模块级字面量集合只设 `len(...) >= N` 下界」的声明，必须**逐项**冻结成员 —— 多一个/少一个都红；下界数值还必须与成员数同步。",
+    "`unfixed`：结构上或所有权上未固化的项，逐条带原因 + 单号 + owner（照实登记，不粉饰）。"
+  ],
+  "_boundary": "本登记册机械保证的是「**每一个**面/声明都必须被显式裁定并写理由（未登记即红）」，**不保证裁定本身正确**（例如 must_cover 的粒度、uncovered 的成本取舍仍是人工判断）。",
+  "gates": [
+    {
+      "id": "ai-agent-service-unit-tests",
+      "workflow": "ai-agent-tests.yml",
+      "job": "ai-agent-service-test",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect ai-agent-related changes",
+        "emit_id": "detect",
+        "predicate": "^(backend/ai-agent-service/|tests/|\\.github/|backend/admin-api/src/main/|requirements.*\\.txt$|pyproject\\.toml$)"
+      },
+      "must_cover": [
+        {
+          "path": "backend/ai-agent-service",
+          "reason": "门禁自己住的模块（`Run unit tests` 跑的就是这里的 tests/）—— 原谓词已覆盖"
+        },
+        {
+          "path": "tests",
+          "reason": "跨模块夹具与评测判据（tests/agent_eval 等）被这些单测直接读 —— 原谓词已覆盖"
+        },
+        {
+          "path": ".github",
+          "reason": "用例库 `.github/cases/**` 被评测载荷判据读 —— 原谓词已覆盖"
+        },
+        {
+          "path": "backend/admin-api/src/main",
+          "reason": "**本门禁断言的契约主体**（#4177）：payload 键族 / DTO 形状判据用仓根拼路径读这些 Java 源码（自动发现现取 17 处见证），另有一处读 `src/main/resources/db/init/schema.sql`（表/列真值）⇒ 整个 `src/main/**`（admin-api 真正发布出去的那一面）必须触发本门禁"
+        }
+      ],
+      "uncovered": [
+        {
+          "path": "frontend/admin-web",
+          "issue": "#4177",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "有单测读它的 TS/TSX 源码做跨端卡片契约；**未纳入触发面**：扩到 frontend/** 会让每个前端 PR 都跑本 job 的 166s 全量（#4177 正文明确禁止）"
+        },
+        {
+          "path": "frontend/bmini-app",
+          "issue": "#4177",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "同上（跨端卡片契约读它的源码）；扩面代价相同 ⇒ 登记为缺口，不静默"
+        },
+        {
+          "path": "frontend/mini-app",
+          "issue": "#4177",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "同上（跨端卡片契约读它的源码，另有算料判据读它的常量）"
+        },
+        {
+          "path": "docs",
+          "issue": "#4177",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "`docs/curtain-*-rules.md` 被算料判据当**规则真值**读；未纳入：文档 PR 不跑后端单测（成本裁定）"
+        }
+      ],
+      "auto_discover_root": "backend/ai-agent-service/tests",
+      "check_name": "ai-agent-service unit tests",
+      "gated_steps": [
+        "Set up Python 3.11",
+        "Install dependencies",
+        "Run unit tests"
+      ]
+    },
+    {
+      "id": "bmini-app-typecheck-and-test",
+      "workflow": "bmini-app.yml",
+      "job": "typecheck-and-test",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect bmini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/bmini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/bmini-app",
+          "reason": "门禁自己住的模块（typecheck + 单测的对象）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "bmini-app typecheck + unit tests",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install dependencies",
+        "TypeScript type check",
+        "Run unit tests"
+      ]
+    },
+    {
+      "id": "mini-app-typecheck-and-test",
+      "workflow": "mini-app.yml",
+      "job": "typecheck-and-test",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect mini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/mini-app",
+          "reason": "门禁自己住的模块（typecheck + 单测的对象）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "mini-app typecheck + unit tests",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install dependencies",
+        "TypeScript type check",
+        "Run unit tests"
+      ]
+    },
+    {
+      "id": "mini-app-xiaobu-h5-visual",
+      "workflow": "mini-app.yml",
+      "job": "xiaobu-h5-visual",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect mini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/mini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/mini-app",
+          "reason": "视觉回归跑的就是它的 H5 构建产物"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "xiaobu H5 visual regression",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install mini-app deps",
+        "Install Playwright deps",
+        "Build H5 (test env overrides prod URL)",
+        "Run visual regression",
+        "Upload visual diff artifacts (failure)"
+      ]
+    },
+    {
+      "id": "pr-check-admin-web-build",
+      "workflow": "pr-check.yml",
+      "job": "admin-web-test",
+      "trigger": {
+        "kind": "step-detect-grep",
+        "step": "Detect admin-web changes",
+        "emit_id": "detect_aw",
+        "predicate": "^frontend/admin-web/"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/admin-web",
+          "reason": "被门控的**只有** `Production build (Next-only checks)` 这一步；typecheck / ESLint / 单测无条件跑"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "admin-web typecheck + unit tests",
+      "gated_steps": [
+        "Production build (Next-only checks)"
+      ]
+    },
+    {
+      "id": "demo-evidence-admin-web-demo-path",
+      "workflow": "demo-evidence.yml",
+      "job": "admin-web-demo-path",
+      "trigger": {
+        "kind": "pull_request_paths",
+        "where": "on.pull_request.paths",
+        "paths": [
+          "frontend/admin-web/**",
+          "frontend/mini-app/**",
+          "tests/e2e/**",
+          "tests/playwright.config.ts",
+          ".github/workflows/demo-evidence.yml"
+        ]
+      },
+      "must_cover": [
+        {
+          "path": "frontend/admin-web",
+          "reason": "演示旅程跑的就是它的页面（fixture 模式）"
+        },
+        {
+          "path": "tests/e2e",
+          "reason": "spec 与 `demo-path-specs.txt` 清单所在面（清单改了必须重跑本门禁）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "Demo path specs (admin-web, fixture mode)",
+      "gated_steps": []
+    },
+    {
+      "id": "demo-evidence-mini-app-e2e-preflight",
+      "workflow": "demo-evidence.yml",
+      "job": "mini-app-e2e-preflight",
+      "trigger": {
+        "kind": "pull_request_paths",
+        "where": "on.pull_request.paths",
+        "paths": [
+          "frontend/admin-web/**",
+          "frontend/mini-app/**",
+          "tests/e2e/**",
+          "tests/playwright.config.ts",
+          ".github/workflows/demo-evidence.yml"
+        ]
+      },
+      "must_cover": [
+        {
+          "path": "frontend/mini-app",
+          "reason": "静态契约校验断言的是它的选择器与 storage 注入键"
+        },
+        {
+          "path": "tests/e2e",
+          "reason": "校验脚本与红证夹具所在面"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "Mini-app e2e static contract preflight",
+      "gated_steps": []
+    },
+    {
+      "id": "worker-h5-unit-tests",
+      "workflow": "worker-h5-tests.yml",
+      "job": "worker-h5-test",
+      "trigger": {
+        "kind": "pull_request_paths",
+        "where": "on.pull_request.paths",
+        "paths": [
+          "frontend/worker-h5/**",
+          ".github/workflows/worker-h5-tests.yml"
+        ]
+      },
+      "must_cover": [
+        {
+          "path": "frontend/worker-h5",
+          "reason": "门禁自己住的模块（node --test 的对象）"
+        }
+      ],
+      "uncovered": [
+        {
+          "path": "frontend/shared",
+          "issue": "#4177",
+          "owner": "frontend/worker-h5 owner（+ CI 门禁 owner）",
+          "reason": "**本包扫描时发现的同族缺口**：worker-h5 的测试与 `src/render.mjs` 都 `import '../../shared/operation-display.mjs'`（现取见证：`frontend/worker-h5/tests/worker-h5-operation-display.test.mjs`），而本 workflow 的 `paths:` 只有 `frontend/worker-h5/**` ⇒ 改共享模块**不会触发**这条腿（它是 workflow 级 paths 过滤 ⇒ 整个 workflow 不跑，check 连出现都不出现）"
+        }
+      ],
+      "auto_discover_root": null,
+      "check_name": "worker-h5 unit tests (node --test)",
+      "gated_steps": [
+        "Run worker-h5 unit tests (node --test)"
+      ]
+    }
+  ],
+  "same_source_claims": [
+    {
+      "file": "tests/agent_eval/local_runner.py",
+      "symbol": "_BLOCKING_VERDICT_KEYS",
+      "issue": "#5007",
+      "criterion": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_blocking_verdict_keys_match_closeout_consumption",
+      "note": "注释声称与 `scripts/eval_closeout.py::blocking_buckets()` 的动态枚举同源 ⇒ 由该判据三条腿钉住（runner 真产出键集 − closeout 非阻塞键集 / 每个 return 点 / closeout 实调）"
+    },
+    {
+      "file": "tests/unit_ci_workflows/pg_cluster.py",
+      "symbol": "BIN_DIRS",
+      "issue": "#5007",
+      "criterion": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_pg_bin_dirs_match_java_side",
+      "note": "注释声称与 Java 侧 `PgCluster.BIN_DIRS` 同源 ⇒ 逐项同序比对"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_shared_fixture_write_restore.py",
+      "symbol": "NAMED_BATCH_TYPES",
+      "issue": "#5007",
+      "criterion": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_named_batch_types_match_tool_side",
+      "note": "注释声称与工具侧 `app/tools/product_batch_update.py` 同源口径 ⇒ 逐项比对 `BATCH_TYPES`"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_agent_eval_deployed_env_lock.py",
+      "symbol": "STACK_MARKERS",
+      "issue": "#5007",
+      "criterion": null,
+      "owner": "tests/unit_ci_workflows/test_eval_stack_seed_parity.py owner",
+      "unfixed_reason": "该处声称的是**语义**同源（「谁起栈谁登记」），两侧字面量**有意不同**（test_eval_stack_seed_parity.py 的 STACK_MARKERS 多一条 eval_stack_seed.sh）⇒ 不能钉字面量相等；语义由该文件的登记判据自己承担，本处只读它的一个子集"
+    },
+    {
+      "file": "tests/agent_eval/local_runner.py",
+      "symbol": "_EFFECT_LAYER_FIELDS",
+      "issue": "#5007",
+      "criterion": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_effect_layer_fields_are_a_subset_of_taxonomy",
+      "note": "注释声称与 `.github/assertion_taxonomy.py` 的 `EFFECT_FIELDS` 同源**子集** ⇒ 由该判据钉住包含关系（本包扫描时新发现的一处，原先是纯注释承诺）"
+    },
+    {
+      "file": "tests/agent_eval/local_runner.py",
+      "symbol": "_ORDER_STATUS_VALUES",
+      "issue": "#5007",
+      "criterion": null,
+      "owner": "tests/agent_eval/local_runner.py owner",
+      "unfixed_reason": "注释声称与 Java 侧 `OrderStatusUpdateRequest` 的 `@Pattern` **及** `OrderService.STATUS_TRANSITIONS` 的键集逐字一致。**本包未落地**（非结构不可机械化）：钉它要在 Java 源码里解析注解正则里的枚举与 `Map.of(...)` 的键集，属该文件 owner 的下一步；登记为未固化，不是已治"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py",
+      "symbol": "CODE_EXTS",
+      "issue": "#5007",
+      "criterion": "tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py::test_code_exts_match_growth_gate_implementation",
+      "note": "模块头注释声称与 `.github/growth_gate.py::TEST_FILE_EXTS` 同源 ⇒ 由该判据从**实现源码**读出该集合后**逐项同序**比对。⚠️ 本条目修的是 **main 侧的一处空承诺**：#5413 带进来的这个文件写了同源注释但没有判据承担它，#5415 的常驻判据（#5007①）上线后在任何 PR 上判红；因 `ci workflow helper unit tests` 在 required 集合里 ⇒ 会卡住所有 PR（AGENTS.md 铁律 9 的「main 侧没有守护」形态）。本条目只**补上执行面**，不改任何门禁的通过条件。"
+    }
+  ],
+  "frozen_declarations": [
+    {
+      "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
+      "symbol": "FACES",
+      "bound": 5,
+      "members": [
+        "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
+        "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
+        "frontend/admin-web/src/components/production/PieceworkTable.tsx",
+        "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
+        "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx"
+      ],
+      "issue": "#5007",
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
+      "symbol": "IMPLEMENTATIONS",
+      "bound": 4,
+      "members": [
+        "frontend/admin-web/src/lib/operation-display.ts",
+        "frontend/shared/operation-display.mjs",
+        "frontend/bmini-app/src/utils/operationDisplayName.ts",
+        "frontend/mini-app/src/components/cards/operationDisplayName.ts"
+      ],
+      "issue": "#5007",
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",
+      "symbol": "PORTALED_PRINT_DOCS",
+      "bound": 3,
+      "members": [
+        "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
+        "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
+        "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
+      ],
+      "issue": "#5007",
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+    }
+  ],
+  "unfixed": [
+    {
+      "what": "`deploy-ai-agent-service.yml` 的 `on.push.paths` 不含契约主体 `backend/admin-api/**`（#4177 第 2 项）",
+      "issue": "#4177",
+      "owner": "CI/CD owner（deploy 面）",
+      "reason": "纯 Java 合并**连部署腿都不触发** ⇒ 「部署验证」自身有盲区。PR 侧触发面已在 #4177 内补齐（断言在合并前就跑）⇒ 本项降级为「main 侧缺一条冗余信号」，本包不改 deploy 触发面（避免把部署腿扩成每个 Java PR 都跑）"
+    },
+    {
+      "what": "TS/JS 门禁（bmini-app / mini-app / worker-h5 / demo-evidence）的**断言面自动发现**未实装",
+      "issue": "#4177",
+      "owner": "CI 门禁 owner（前端面）",
+      "reason": "自动发现目前只解析 Python 源码的两种路径构造式；这四个门禁的 test_root 是 TS/TSX ⇒ 它们的 `must_cover` 仍是**人工声明**（判据 1/2/3/4 照旧生效：谓词逐字 + 覆盖 must_cover，但「有没有漏声明一个面」没有机械兜底）"
+    },
+    {
+      "what": "自动发现只认 `BASE / \"字面量\"` 链表与 `Path(\"字面量\")` 两种构造式",
+      "issue": "#4177",
+      "owner": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py owner",
+      "reason": "`os.path.join(_HERE, \"..\", \"..\")` 这类**构造式**拼出的仓内路径不在面内（**假绿方向**：漏发现的读取面不会报）；对称地，fixture 里当字符串传的路径按设计**不**算读取面（否则 test_behavior_mapping 的样例字符串会造成假红）"
+    },
+    {
+      "what": "同源声明只扫「`#` 注释块**紧邻**模块级字面量集合声明」这一形态",
+      "issue": "#5007",
+      "owner": "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py owner",
+      "reason": "docstring / 行内注释里的同源声明不在面内（全仓 `同源` 类措辞现取 253 行，多数是散文而非「同一集合两份实现」）；口径是**有意的窄**：宁可漏判散文，也不把散文喂成判据（本仓踩过多次「判据被自己的文案喂红」）"
+    },
+    {
+      "what": "`criterion` 只被核到「该测试真的存在」",
+      "issue": "#5007",
+      "owner": "各守卫 owner",
+      "reason": "它是否**真的钉住**那句声明，机械判据判不了 ⇒ **假判据**拦不住（能拦的是**死判据**：criterion 指向不存在的测试 ⇒ 红）"
+    },
+    {
+      "what": "`backend/ai-agent-service/tests/**` 自身的路径字面量形态未被覆盖",
+      "issue": "#4177",
+      "owner": "CI 门禁 owner（ai-agent 面）",
+      "reason": "自动发现扫的是**门禁的测试源码**（读它读到了什么仓内路径），不判定「这些读取本身该不该发生」；读取面本身是否合理是另一个问题（例如测试读 `docs/**` 当规则真值）"
+    }
+  ]
+}

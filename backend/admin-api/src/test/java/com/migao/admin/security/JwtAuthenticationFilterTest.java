@@ -5,6 +5,7 @@ package com.migao.admin.security;
 import com.migao.admin.config.TenantContext;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -50,6 +52,10 @@ class JwtAuthenticationFilterTest {
 
     @Mock
     private StringRedisTemplate redisTemplate;
+
+    /** 真注册表（不是 mock）：断言「吊销检查不可执行」确实留下了可观测读数（issue #4866）。 */
+    @Spy
+    private SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private JwtAuthenticationFilter filter;
@@ -271,8 +277,8 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    @DisplayName("Redis 黑名单检查抛异常 — 默认放行（不阻塞）")
-    void redisExceptionDuringBlacklistCheck_PassesThrough() throws ServletException, IOException {
+    @DisplayName("Redis 黑名单检查抛异常 — fail-closed：不建立认证 + 留下可观测读数（#4866）")
+    void redisExceptionDuringBlacklistCheck_FailsClosed() throws ServletException, IOException {
         Cookie[] cookies = {new Cookie("access_token", "valid.jwt")};
         when(request.getCookies()).thenReturn(cookies);
         when(jwtTokenProvider.validateToken("valid.jwt")).thenReturn(true);
@@ -284,6 +290,11 @@ class JwtAuthenticationFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
+        // 关键断言：吊销状态不可判定 ⇒ **不认证**（改回「异常 ⇒ 放行」时这里必红 —— 那时认证会被建立）
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        // 且必须留下可观测读数（不许静默降级）
+        assertThat(meterRegistry.counter(JwtAuthenticationFilter.BLACKLIST_CHECK_UNAVAILABLE_METRIC).count())
+                .isEqualTo(1.0);
     }
 
     // ======================== Token 无效/过期场景 ========================

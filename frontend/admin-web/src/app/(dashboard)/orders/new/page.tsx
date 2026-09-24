@@ -9,6 +9,18 @@ import { toastRequestError } from '@/lib/api-error'
 import { urgencyRequestFields } from '@/lib/order-urgency'
 import { buildOrderPrefill, ORDER_DERIVATION_INPUT_KEYS, sizeTargetLineIndex } from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
+// 识别到的明细 ⇒ 匹配候选 ⇒ **人选** ⇒ 建订单行（issue #5345）。纯函数在 `lib/order-line-match.ts`：
+// 排序 / 理由 / 不猜商品 / 单价只来自 SKU / 门幅既不在那里也不在这里（唯一来源 = 所选 SKU）。
+import OrderLinePicker, { type PickerEntryState } from '@/components/image-recognize/OrderLinePicker'
+import {
+  NO_MATCH_CHOICE,
+  NO_MATCH_LABEL,
+  buildableChoices,
+  parseDetailEntries,
+  pickerOptionsFor,
+  recognizedLinePatchOf,
+  type DetailEntry,
+} from '@/lib/order-line-match'
 import {
   PAGE_FILL_SOURCE_RECOGNIZED,
   fieldsOfSource,
@@ -176,6 +188,17 @@ interface OrderLineItem {
    * ——留痕落在行状态里，收起/展开重挂不丢。
    */
   recognizedSizeKeys?: string[]
+  /**
+   * 这一行是**图片识别建出来的**（issue #5345）—— 驱动行上的 `[图片识别]` 徽标（判据 3）。
+   *
+   * ⚠️ 与 `recognizedSizeKeys` 分开：那是「宽高这两**格**是识别来的」，这是「这**一行**是识别人选建的」。
+   * 手填的行没有这个键（`undefined`）⇒ 来源在数据上就分得开，不靠文案区分。
+   */
+  recognizedLine?: boolean
+  /** 图上写的价（复核提示：**行价取自目录/SKU**，识别的价格不是真值 —— issue #5345 判据 6） */
+  recognizedPriceHint?: string | null
+  /** 建行时系统要商家注意的一句话（多规格 / 数量未逐条对应）—— **不猜**就摆到台面上 */
+  recognizedNote?: string | null
   processingItems: ProcessingItem[]
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
   /**
@@ -1242,6 +1265,38 @@ export default function NewOrderPage() {
   // 图片识别预填过的字段（issue #5321 包 1）：只驱动 `[图片识别]` 徽标，提醒商家复核
   const [recognizedFields, setRecognizedFields] = useState<string[]>([])
 
+  // ===== 识别到的明细 ⇒ **选品**面板（issue #5345）=====
+  // 🔴 识别**不建行**：先给候选（名称/规格相似度 + 可读理由），商家选了才建行；「都不是」⇒ 不建行。
+  const [linePicker, setLinePicker] = useState<PickerEntryState[]>([])
+  /** 候选查询到的目录 —— 放行口 `buildableChoices` 用它复核「该商品在这个条目的候选里出现过」 */
+  const [lineCatalog, setLineCatalog] = useState<Product[]>([])
+
+  /**
+   * 按条目查目录（**复用既有商品搜索端点**，不另写一套匹配服务）⇒ 排序与理由由纯函数
+   * `pickerOptionsFor` 给（唯一实现，判据 2）。
+   * 查询失败 ⇒ **fail-closed**：该条目只剩「都不是」（宁可少给候选，也不猜商品）。
+   */
+  const loadLinePicker = useCallback(async (entries: DetailEntry[]) => {
+    setLinePicker(entries.map((entry) => ({ entry, options: [], loading: true, resolved: null })))
+    const loaded = await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const res = await productApi.getProducts({ keyword: entry.name, page: 1, size: 10 })
+          const items = (res.data?.data?.items || []) as Product[]
+          return { state: { entry, options: pickerOptionsFor(entry, items), loading: false, resolved: null }, catalog: items }
+        } catch {
+          return {
+            state: { entry, options: pickerOptionsFor(entry, []), loading: false, resolved: null },
+            catalog: [] as Product[],
+          }
+        }
+      })
+    )
+    // 面板可能已被商家关掉（`prev` 为空）⇒ **不复活它**（否则"关掉又跳出来"）
+    setLinePicker((prev) => (prev.length === 0 ? prev : loaded.map((l) => l.state)))
+    setLineCatalog(loaded.flatMap((l) => l.catalog))
+  }, [])
+
   // 图片识别预填（issue #5321 包 1）——**只在字段为空时才填**（不覆盖用户已输入的内容：
   // 收货信息填错 = 货发错人）；明细/数量/规格不进 lineItems，拼一行进备注。
   // 徽标只增不减：同一字段被识别填过就一直提醒复核。
@@ -1285,8 +1340,13 @@ export default function NewOrderPage() {
       //    而识别只落在**一行**）：尺寸徽标走行状态 `recognizedSizeKeys`。
       const pageKeys = prefill.recognizedFields.filter((key) => !sizeKeys.includes(key))
       setRecognizedFields((prev) => Array.from(new Set([...prev, ...pageKeys])))
+
+      // 明细 → 匹配候选 → **人选** → 建订单行（issue #5345）：识别到的明细**不自动建行**，
+      // 先按名称/规格给候选，等商家在面板上选（判据 1/7）；匹配不到 ⇒ 只剩「都不是」。
+      const entries = parseDetailEntries(fields)
+      if (entries.length > 0) void loadLinePicker(entries)
     },
-    [customerName, customerPhone, customerAddress, remark]
+    [customerName, customerPhone, customerAddress, remark, loadLinePicker]
   )
 
   // 深通道（issue #5368 包 2）：米宝识别结果经 **SSE → store → 浏览器内存事件**推到本页
@@ -1336,6 +1396,61 @@ export default function NewOrderPage() {
   // issue #4371：加工项与商品解耦 —— 目录只加载一次，商品选择不再过滤/触发加工项请求
   const [processingCatalog, setProcessingCatalog] = useState<ProcessingItem[]>([])
   const [processingCatalogLoading, setProcessingCatalogLoading] = useState(false)
+
+  /**
+   * 处理一条明细（选品面板的回调）—— **建行的唯一入口**（issue #5345 判据 1/7）。
+   *
+   * - 「都不是」/ 选了一个**没给过该条目**的商品 ⇒ 标记跳过，**不建行**（明细留在备注）；
+   * - 选到候选 ⇒ `buildableChoices` 复核（页面**不得**替用户挑一个没给过他的商品）⇒
+   *   取商品详情（含 SKU）⇒ 追加一行；来源标 `[图片识别]`，单价只来自所选 SKU（判据 6）。
+   * 🔴 **不落库**：这里只改页面行状态 —— 不调用任何建单 / 保存端点（提交永远是商家点按钮，判据 4）。
+   */
+  const handlePickEntry = useCallback(
+    async (entry: DetailEntry, productId: string) => {
+      const resolve = (resolved: { productId: string; label: string }) =>
+        setLinePicker((prev) =>
+          prev.map((it) => (it.entry === entry ? { ...it, resolved } : it))
+        )
+      const built = buildableChoices([{ entry, productId }], lineCatalog)
+      if (built.length === 0) {
+        // 没给过这个商品的候选（或点了「都不是」）⇒ 不建行 —— 与「都不是」同一条出口，不猜
+        resolve({ productId: NO_MATCH_CHOICE, label: NO_MATCH_LABEL })
+        return
+      }
+      const picked = built[0].product
+      // 详情才带 SKU（列表项可能没有）⇒ 取不到就退回列表项（与 `handlePickProduct` 同一处置）
+      let detail: ProductDetail
+      try {
+        const res = await productApi.getProduct(picked.id)
+        detail = (res.data?.data as unknown as ProductDetail) || (picked as unknown as ProductDetail)
+      } catch {
+        detail = picked as unknown as ProductDetail
+      }
+      // 行补丁：数量 / 单价（只来自 SKU）/ 唯一规格时的颜色与门幅；门幅**不在这里**（判据 5）
+      const patch = recognizedLinePatchOf(entry, detail.skus ?? [])
+      setLineItems((prev) => [
+        ...prev,
+        {
+          ...createEmptyLineItem(),
+          product: detail,
+          processingItems: processingCatalog,
+          skuAutoSelected: patch.selectedSku !== null,
+          ...patch,
+        },
+      ])
+      resolve({ productId: picked.id, label: picked.name })
+      // 全部处理完 ⇒ 关掉面板；还有待选的 ⇒ 留着让商家继续选
+      setLinePicker((prev) => (prev.every((it) => it.resolved !== null) ? [] : prev))
+      toast.success(`已建订单行：${picked.name} —— 请在行上核对数量 / 规格 / 单价`)
+    },
+    [lineCatalog, processingCatalog]
+  )
+
+  /** 「都不建行（跳过剩余）」：一次性放弃剩下的明细 —— **不建行**，它们只留在备注里（判据 1） */
+  const handleSkipAll = useCallback(() => {
+    setLinePicker([])
+    toast.success('已跳过识别到的明细：没有建任何订单行，明细只留在备注里')
+  }, [])
 
   /**
    * **算料配置**（issue #4874）—— 与「工艺配置 → 算料配置」**同源**：公式名与档位一律从
@@ -3049,6 +3164,14 @@ export default function NewOrderPage() {
         </div>
       </div>
 
+      {/* 识别到的明细 ⇒ 选品（issue #5345）：识别**不建行**，商家在面板上选了才建行 */}
+      <OrderLinePicker
+        entries={linePicker}
+        onPick={handlePickEntry}
+        onSkipAll={handleSkipAll}
+        onClose={() => setLinePicker([])}
+      />
+
       {/* 商品搜索弹窗 */}
       <Modal
         open={productModalOpen}
@@ -3602,10 +3725,19 @@ function ProductGroupBlock({
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-neutral-900 truncate">
                   {group.product.name}
+                  {/* 来源标注（issue #5345 判据 3）：这一行是**识别人选**建的 ⇒ 与手填的行长得不同 */}
+                  {first.recognizedLine && <RecognizedBadge fieldKey={`line-${first.id}`} />}
                 </div>
                 <div className="text-xs text-neutral-500 mt-0.5">
                   {group.product.categoryName || '-'} · 货号：{group.product.skuCode || '-'}
                 </div>
+                {first.recognizedLine && (first.recognizedPriceHint || first.recognizedNote) && (
+                  <div data-testid="recognized-line-note" className="text-xs text-amber-700 mt-0.5">
+                    {first.recognizedPriceHint
+                      ? `图上写「${first.recognizedPriceHint}」—— 行价取自目录 / SKU（识别的价格不是真值）`
+                      : first.recognizedNote}
+                  </div>
+                )}
               </div>
               <button
                 onClick={onPickProduct}

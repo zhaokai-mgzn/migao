@@ -25,12 +25,16 @@
    算例 #5043 包 2a 都搬到服务端）⇒ 取值点只剩规则面与下单页；**另加死亡条件**（判据 4）钉住它们不得回来；
 3. **反向守卫**（#4877）：缺省门幅**不得**回来（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` 出现即红）
    —— 解析不到 ⇒ 判定面**不判**并显式告知（`missing-door-width`）、规则面 `undecidable`。
+4. **识别 → 建行 面**（issue #5345，判据 5）：不得出现门幅标识符（`fabricWidth` / `fabric_width`）
+   —— 门幅的唯一来源是**所选 SKU**（`line.selectedSku.doorWidth`，页面经 `parseDoorWidth` 取）。
 
 ## 红证（注入式，逐条可注入）
 
 - 在 `craft-auto-features.ts` 里加 `const ENGINE_TRIAL_WIDTH = 3.2` ⇒ 判据 1 红；
 - 把 `door-width-plan.ts` 里的 `parseDoorWidth(...)` 换成写死的 `2.8` ⇒ 判据 2 红（⚠️ issue #5035：原先举的 `detectAutoFeatureNotices` 已退场，红证必须指向**还在的**取值点）；
 - 把缺省门幅写回去（`export const DEFAULT_DOOR_WIDTH = 2.8` / 解析回退到默认值）⇒ 判据 3 红。
+- 在识别/建行面（`lib/order-line-match.ts` / `lib/image-recognize.ts` / `components/image-recognize/**`）
+  写一句 `const fabricWidth = 2.8` ⇒ 判据 5 红（扫描器判别力见 `_fabric_width_identifiers` 的自证断言）。
 
 ⚠️ **本守卫不检查 ai-agent 侧**（分叉 #4652 未接线）—— 引擎端点何时改为**接收** SKU 门幅，
 由 #4652 收口；届时前端把该值随试算请求发出（今天发 = 静默无效：`CraftCalcRequest` 里没有该键）。
@@ -116,3 +120,77 @@ def test_door_width_has_single_value_source():
             f"`{gone}` 又回到了前端 —— issue #5019 / #5036 已把判定与提示搬到服务端；"
             "前端再持一份 = 第二份口径（与租户配置脱钩，商家改过配置后两边会算出不同的键）"
         )
+
+
+# ── 判据 5（issue #5345）· 识别 → 建行 面不得出现门幅标识符 ────────────────────
+#: 识别 → 「匹配候选 → 选品 → 建订单行」面（**glob 面**：新增识别 / 选品文件自动进扫描集，不需要登记）。
+#: ⚠️ **下单页不在面内**：它是门幅的**合法取值点**（`calcInputOf` 经 `parseDoorWidth` 从所选 SKU 取
+#: 后随试算请求下发）—— 页面侧由上面的判据 2 钉住「必须经 `parseDoorWidth()`」。
+RECOGNIZE_FACE_GLOBS = (
+    "frontend/admin-web/src/lib/image-recognize.ts",
+    "frontend/admin-web/src/lib/order-line-match.ts",
+    "frontend/admin-web/src/lib/agent-page-fill.ts",
+    "frontend/admin-web/src/components/image-recognize/*.tsx",
+)
+#: 豁免台账（**现取**：今天为空 ⇒ 面内任何一处出现门幅标识符都是红）；**只许缩短**（见下条断言）
+RECOGNIZE_FACE_FABRIC_WIDTH_EXEMPT: tuple = ()
+
+_FABRIC_WIDTH_IDENT = re.compile(r"\bfabricWidth\b|\bfabric_width\b")
+
+
+def _fabric_width_identifiers(src: str) -> list:
+    """面内**代码**里的门幅标识符（去注释后 —— 注释里解释纪律不算违规，§17.3 同族）。"""
+    return [m.group(0) for m in _FABRIC_WIDTH_IDENT.finditer(_strip_comments(src))]
+
+
+def _recognize_face_files() -> list:
+    files = []
+    for pattern in RECOGNIZE_FACE_GLOBS:
+        files.extend(sorted(REPO.glob(pattern)))
+    return files
+
+
+def test_recognition_to_line_face_has_no_fabric_width_identifier():
+    """判据 5（issue #5345）：识别 / 选品 / 建行面**不得**持有门幅。
+
+    #5349 的交付方登记的边界逐字：**门幅从图片到推导仍未接线 —— 唯一来源是所选 SKU**。
+    识别侧一旦出现门幅（识别值 / 写死 / 缺省），就造出了**第二个来源** ⇒ 与那条登记直接冲突
+    （同族：判据 1 的引擎端点硬编码、判据 3 的前端缺省门幅）。
+    """
+    face = _recognize_face_files()
+    assert face, "识别 → 建行 面的 glob 一条都没命中（面变了：本守卫必须能读到被测面）"
+    offenders = []
+    for path in face:
+        rel = str(path.relative_to(REPO))
+        hits = _fabric_width_identifiers(path.read_text(encoding="utf8"))
+        if hits and rel not in RECOGNIZE_FACE_FABRIC_WIDTH_EXEMPT:
+            offenders.append(f"{rel}: {hits}")
+    assert not offenders, (
+        "识别 → 建行 面里出现了门幅标识符：\n  " + "\n  ".join(sorted(offenders)) + "\n"
+        "门幅的**唯一来源**是所选 SKU（`line.selectedSku.doorWidth`，页面经 `parseDoorWidth` 取）——"
+        "识别侧再持一份（识别值 / 写死 / 缺省）= 第二个会漂移的来源（issue #5345 判据 5）。\n"
+        "复现命令：grep -nE 'fabricWidth|fabric_width' "
+        "frontend/admin-web/src/lib/{image-recognize,order-line-match,agent-page-fill}.ts "
+        "frontend/admin-web/src/components/image-recognize/*.tsx"
+    )
+
+
+def test_fabric_width_face_exemption_ledger_only_shrinks():
+    """豁免必带**死亡条件**：台账里点名的文件若已无命中 ⇒ 红（台账只许缩短，铁律 8 / §23 G2）。"""
+    stale = [
+        rel
+        for rel in RECOGNIZE_FACE_FABRIC_WIDTH_EXEMPT
+        if not _fabric_width_identifiers((REPO / rel).read_text(encoding="utf8"))
+    ]
+    assert stale == [], (
+        f"豁免台账里的文件已不再出现门幅标识符，必须从 `RECOGNIZE_FACE_FABRIC_WIDTH_EXEMPT` 删行：{stale}"
+        "（豁免没有死亡条件 ⇒ 台账只会变长，判据随之失效）"
+    )
+
+
+def test_fabric_width_face_scanner_has_discriminating_power():
+    """注入式红证：扫描器**真能**认出注入（且**不**被注释里的同名文案喂红 ⇒ 判据有判别力）。"""
+    assert _fabric_width_identifiers("const fabricWidth = 2.8\n") == ["fabricWidth"]
+    assert _fabric_width_identifiers("params.fabric_width = doorWidth\n") == ["fabric_width"]
+    assert _fabric_width_identifiers("// 门幅不经本面：fabricWidth 由页面从 SKU 取\n") == []
+    assert _fabric_width_identifiers("const width = 2.8\n") == []

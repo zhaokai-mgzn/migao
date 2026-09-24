@@ -12,6 +12,7 @@ import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.JwtTokenProvider;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -60,6 +62,10 @@ class AuthServiceTest {
 
     @Mock
     private StringRedisTemplate redisTemplate;
+
+    /** 真注册表（不是 mock）：断言「吊销检查不可执行」确实留下了可观测读数（issue #4866）。 */
+    @Spy
+    private SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -219,6 +225,31 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.refreshToken(refreshToken, response))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("Refresh Token 已吊销");
+    }
+
+    @Test
+    @DisplayName("Token 刷新失败 - Redis 不可用 ⇒ fail-closed 拒绝（503 + 可观测读数）(#4866)")
+    void refreshToken_RevocationCheckUnavailable_FailsClosed() {
+        // Given: 吊销检查（Redis hasKey）抛异常 ⇒ 吊销状态**不可判定**
+        String refreshToken = "valid-refresh-token";
+        when(jwtTokenProvider.validateToken(refreshToken)).thenReturn(true);
+        when(jwtTokenProvider.isRefreshToken(refreshToken)).thenReturn(true);
+
+        io.jsonwebtoken.Claims mockClaims = mock(io.jsonwebtoken.Claims.class);
+        when(mockClaims.getId()).thenReturn("jti-redis-down");
+        when(jwtTokenProvider.getClaimsFromToken(refreshToken)).thenReturn(mockClaims);
+        when(redisTemplate.hasKey("token:blacklist:jti-redis-down"))
+                .thenThrow(new RuntimeException("Redis down"));
+
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        // When & Then: 必须拒绝（改回「异常 ⇒ 放行」时本判据必红），且状态码/文案与实际「已吊销」不同
+        assertThatThrownBy(() -> authService.refreshToken(refreshToken, response))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AUTH_UNAVAILABLE")
+                .hasFieldOrPropertyWithValue("httpStatus", 503);
+        // 且必须留下可观测读数（不许静默）
+        assertThat(meterRegistry.counter(AuthService.BLACKLIST_CHECK_UNAVAILABLE_METRIC).count()).isEqualTo(1.0);
     }
 
     @Test
