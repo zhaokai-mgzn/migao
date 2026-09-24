@@ -5,7 +5,10 @@
     "nullable=true 的字段被某规则 requires ⇒ 该规则**必须**登记 judgeable_fields（或逐条豁免，带理由 + 单号）。漏登记 ⇒ 红（issue #5389 判据 1）。",
     "tenant_facts 的键集必须与装配层现取的 `snapshot.put(<key>, …)` 相等；enabled_by 指向的事实必须已登记且真的下发。",
     "tenant_facts[*].gates 列出的字段，被某规则 requires ⇒ 该规则必须声明 enabled_by（或逐条豁免）—— 否则该规则在未开启租户上**静默落 wired**。",
-    "两个豁免台账**今天为空**、只许缩短；每条必须带理由 + 单号。"
+    "两个豁免台账**今天为空**、只许缩短；每条必须带理由 + 单号。",
+    "fetched_arrays：**现取式**装配腿（字段集由 `FieldTruth` 声明运行时现取）的台账，键 = `<java 仓库相对路径>::<产出的数组名>`。产出层普查（谁把字段集放进快照 `row_fields`）到的现取式腿**未登记即红**；条目**陈旧**（该产出点已不存在）即红 ⇒ 只许缩短。",
+    "fetched_arrays 每条须给 accessor（`FieldTruthRegistry.<访问器>()`）+ declaration（声明载体路径）+ criterion（`<测试文件>::<测试名>`，**必须真实存在** = 拦死判据）+ reason + issue；声明的 `TABLE` 必须逐字等于数组名、声明必须已在 `FieldTruthRegistry` 注册、声明的字段集不得为空。",
+    "现取式腿的产出表达式里**不得**再出现字面量（第二份清单 = 两处投影必然分叉）；同一数组**不得**同时有字面量式腿与现取式腿；读不出来的产出形态 ⇒ fail-closed 红（面外不许永久免检）。"
   ],
   "_boundary": "nullable 是**显式裁定**（不是从代码自动派生）：本登记册机械保证的是「每新增/改动一个字段都必须显式裁定可空性并写理由（未登记即红）」，**不保证裁定一定正确** —— 从装配层 builder / DB 约束**派生**可空性是下一步（见 PR body 残余，owner = 简报装配层 owner）。",
   "row_fields": {
@@ -171,6 +174,18 @@
     }
   },
   "unwired_arrays": {},
+  "fetched_arrays": {
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerService.java::customer_profiles": {
+      "accessor": "FieldTruthRegistry.customerProfile()",
+      "declaration": "backend/admin-api/src/main/java/com/migao/admin/support/fieldtruth/CustomerProfileFieldTruth.java",
+      "criterion": [
+        "backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java::payload_is_rendered_from_the_registry_declaration",
+        "backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java::snapshot_shape_and_row_keys_follow_the_declaration"
+      ],
+      "reason": "**现取式**装配腿（#5456 的第二快照腿，即本单 #5461 的实测形态）：字段集不由字面量清单产出，而是运行时从 `FieldTruthRegistry.customerProfile()` 的声明现取 —— 产出的数组身份 = `declaration.table()`、字段集 = `declaration.declaredFields()`（产出集 ≡ 声明集**由构造保证**）。运行期的逐字相等由 criterion 点名的 Java 判据判（行键集 ≡ 声明字段集、payload 键集 ≡ 声明字段集）；本条目管的是「这条腿**存在且受管**」（#5461：新增同类腿未登记即红、条目陈旧即红）",
+      "issue": "#5461"
+    }
+  },
   "tenant_facts": {
     "cost_accounting": {
       "gates": [
