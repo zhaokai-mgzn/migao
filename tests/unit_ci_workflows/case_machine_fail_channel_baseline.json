@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 95
+    "backend_contract_scoring_zero": 96
   },
   "history": [
     {
@@ -121,6 +121,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 95,
       "note": "issue #5345（族 5 包 3：订单侧图片识别「明细 → 匹配候选 → 选品 → 建订单行」）新增 1 条 `[backend-contract]` 用例（OR-048）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的四个文件：`frontend/admin-web/tests/unit/lib/order-line-match.test.ts`（29 条：不猜商品 / 候选可解释 / 不落库 / 门幅只来自所选 SKU / 单价只来自 SKU ＋ 类级元守卫 ＋ 注入式红证）、`frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx`（4 条页面接线）、`frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx`（7 条组件面）与 `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（识别 → 建行 面零门幅标识符 ＋ 豁免台账只许缩短 ＋ 扫描器判别力自证），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-web typecheck + unit tests` 真跑前三个 vitest 文件、`ci workflow helper unit tests` 真跑最后一个）⇒ 读数 94 → 95 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 95：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 95}` vs 锚点 94，非按号推算）。本 PR 首轮 CI 正是被这条挡住才发现的。"
+    },
+    {
+      "sha": "pending-pr-5466",
+      "date": "2026-09-25",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 96,
+      "note": "issue #5462（用例面补录：#5456 / PR #5458 交付的 `customer_profile` 视图与 `customer_manage(profile_view)` action 此前没有专属用例条目 ⇒ 将来做行为改动算不出该跑哪几条）新增 2 条用例（CU-010 客户画像视图 / CU-011 画像 action）—— 其中 **CU-010 按设计不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1），CU-011 带 `expectations`（`customer_manage(action=profile_view)` ⇒ 计分断言 = 1）⇒ **不计入**本读数。机器判红通道 = `traces.tests`，逐条非空且真实存在：CU-010 = `backend/ai-agent-service/tests/test_briefing_customer_profile.py`（视图语义：逐字段三态 / 「未知」≠「0」/ 口径同源 / fail-closed ＋ 5 条注入式红证）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java`（装配契约：行键集 ≡ 声明字段集、读面遮蔽、有界截断）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileTruthExposureTest.java` ＋ `backend/admin-api/src/test/java/com/migao/admin/support/fieldtruth/CustomerProfileFieldTruthGateTest.java`；CU-011 = `backend/ai-agent-service/tests/test_customer_manage.py`（profile_view 三条：未知≠0 披露 / 缺声明披露 / 失败可归因）。`traces.ci` = `pr-check.yml`（`ai-agent-service unit tests` 与 `admin-api unit tests` 真跑上列文件）⇒ 读数 95 → 96 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变；本机实测：`scoring_zero = 96` / `no_channel = 0`）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 96：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 96}` vs 锚点 95，非按号推算）—— 本 PR 首轮 CI 正是被这条挡住才发现的。"
     }
   ]
 }

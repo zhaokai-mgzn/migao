@@ -1,10 +1,10 @@
 """CustomerManageTool 单元测试 — 客户档案 + 标签库查询（只读）。
 
 B 端只读化（issue #5247）：customer_manage（客户档案 / 标签库） 的写 action 已删除 ⇒ 本次退休写路径用例（产品裁定，非放宽门禁）。
-覆盖 list 脱敏/分页、detail 参数校验、标签库查询，
+覆盖 list 脱敏/分页、detail 参数校验、标签库查询、客户画像 action（profile_view）的披露与端点契约（CU-011），
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
-# case_ids: DF-008, CU-001, CU-002, CU-003, CU-004, CU-008
+# case_ids: DF-008, CU-001, CU-002, CU-003, CU-004, CU-008, CU-011
 import ast
 import re
 from pathlib import Path
