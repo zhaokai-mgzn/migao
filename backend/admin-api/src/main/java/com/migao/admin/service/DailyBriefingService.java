@@ -31,6 +31,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -121,6 +122,11 @@ public class DailyBriefingService {
      * ① `orders` 行没有 `cost_amount` —— `orders` 表无成本列（金额列只有 total/actual/discount/refund）
      * ⇒ 低于成本价规则接不通（成本价列属数据模型变更，另立 issue #5348）；
      * ② `price_changes` **整个数组不装配** —— 全仓无改价流水表 ⇒ 改价幅度规则接不通。</p>
+     *
+     * <p>族 3 · 包 2（issue #5369，具名视图 `product_health`）追加：`skus` 行补 `sales_count` /
+     * `price` / `avg_cost` 三个 **SKU 级权威列**（`#4038`；商品级同名列是派生冗余列，不进快照），
+     * 并新增 `product_return_stats` —— 退货率的**两端**（分子由 `returns` 行的商品归属复用而来、
+     * 分母 = 同窗口内的订单行数）。</p>
      */
     static final Map<String, List<String>> SNAPSHOT_ROW_FIELDS = snapshotRowFields();
 
@@ -128,7 +134,11 @@ public class DailyBriefingService {
         Map<String, List<String>> fields = new LinkedHashMap<>();
         fields.put("orders", List.of("order_no", "status", "customer_id", "created_at",
                 "shipped_at", "sale_amount"));
-        fields.put("skus", List.of("sku_id", "product_id", "product_name", "stock"));
+        fields.put("skus", List.of("sku_id", "product_id", "product_name", "stock",
+                "sales_count", "price", "avg_cost"));
+        // 商品健康度视图（族 3 · 包 2，issue #5369）的退货率两端：分子 = 归属到该商品的退货工单数
+        // （由 returns 行的 product_id 复用而来，不另算一遍），分母 = 同窗口内的订单行数。
+        fields.put("product_return_stats", List.of("product_id", "return_tickets", "order_lines"));
         fields.put("returns", List.of("return_no", "customer_id", "product_id", "returned_at", "amount"));
         return fields;
     }
@@ -138,11 +148,13 @@ public class DailyBriefingService {
     }
 
     /** 行数组的元信息（`row_meta`）：行数上限 / 实际行数 / 是否被截断 —— 引擎据此把「本次不完整」说出来。 */
-    static Map<String, Object> rowMeta(RowBatch orders, RowBatch skus, RowBatch returns) {
+    static Map<String, Object> rowMeta(RowBatch orders, RowBatch skus, RowBatch returns,
+                                      RowBatch productReturnStats) {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("orders", rowMetaEntry(orders));
         meta.put("skus", rowMetaEntry(skus));
         meta.put("returns", rowMetaEntry(returns));
+        meta.put("product_return_stats", rowMetaEntry(productReturnStats));
         return meta;
     }
 
@@ -352,7 +364,7 @@ public class DailyBriefingService {
      * 聚合经营指标快照：纯数字 + 脱敏事实（工单号/订单号），无客户 PII。
      * 复用看板聚合 SQL（selectDashboardOrderStats 等，租户由拦截器注入）。
      */
-    Map<String, Object> aggregateSnapshot(Long tenantId) {
+    public Map<String, Object> aggregateSnapshot(Long tenantId) {
         OffsetDateTime todayStart = LocalDate.now(CST).atStartOfDay().atOffset(CST_OFFSET);
         OffsetDateTime tomorrowStart = todayStart.plusDays(1);
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
@@ -440,13 +452,18 @@ public class DailyBriefingService {
         // 🔴 `price_changes` **不装配**（全仓无改价流水表）⇒ 该数组不存在，见 SNAPSHOT_ROW_FIELDS。
         RowBatch orders = assembleOrderRows(tenantId);
         RowBatch skus = assembleSkuRows(tenantId);
-        RowBatch returns = assembleReturnRows(tenantId, todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS));
+        // 退货率的**两端共用一个窗口变量**（issue #5369）：分子 90 天 / 分母 30 天这类「两处口径」
+        // 会让比率失真，且不会有任何东西变红 —— 故窗口只算一次，两处传同一个值（判据钉住逐值相等）。
+        OffsetDateTime returnWindowStart = todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS);
+        RowBatch returns = assembleReturnRows(tenantId, returnWindowStart);
+        RowBatch productReturnStats = assembleProductReturnStats(tenantId, returnWindowStart, returns);
         snapshot.put("row_fields", SNAPSHOT_ROW_FIELDS);
         // 截断必须显式（`row_meta`）：有界不许变成静默少报 —— 看不见的行不命中，会被读成「没问题」。
-        snapshot.put("row_meta", rowMeta(orders, skus, returns));
+        snapshot.put("row_meta", rowMeta(orders, skus, returns, productReturnStats));
         snapshot.put("orders", orders.rows());
         snapshot.put("skus", skus.rows());
         snapshot.put("returns", returns.rows());
+        snapshot.put("product_return_stats", productReturnStats.rows());
         return snapshot;
     }
 
@@ -569,6 +586,12 @@ public class DailyBriefingService {
         row.put("product_id", sku.getProductId());
         row.put("product_name", productName);
         row.put("stock", sku.getStock());
+        // 商品健康度视图（族 3 · 包 2，issue #5369）：销量 / 售价 / 移动加权成本 ——
+        // **SKU 级是唯一权威**（`#4038`；商品级同名列是派生冗余列）。`avg_cost` **原样透出 null**
+        //（存量不回填、不猜 0）⇒ 视图侧据此判「该行成本未知」，不得被 0 冒充成「成本为零」。
+        row.put("sales_count", sku.getSalesCount());
+        row.put("price", sku.getPrice());
+        row.put("avg_cost", sku.getAvgCost());
         return row;
     }
 
@@ -657,6 +680,59 @@ public class DailyBriefingService {
             }
         });
         return single;
+    }
+
+    /**
+     * `product_return_stats` 行：**商品级退货率的两端**（退货工单数 / 订单行数）—— issue #5369。
+     *
+     * <p>口径（本包定义，逐字进判据）：某商品的退货率 = 该商品归属到的退货工单数 ÷ 该商品的订单行数，
+     * 两端**同一窗口**（由调用方传入同一个 `windowStart`，本方法不自己再算一次）。</p>
+     *
+     * <p>分子直接**复用本次已装配的退货行**（`product_id` 的归属逻辑与退货行同一份实现
+     * —— `singleProductByOrder`，不另算一遍）；分母来自
+     * {@link OrderItemMapper#selectProductOrderLineCounts}。归属不到的退货行（多商品订单）**不进任何商品**
+     * ⇒ ai-agent 侧据 `returns` 行的空 `product_id` 把退货率落成 `incomplete`（如实登记，不假装全覆盖）。</p>
+     *
+     * <p>0 的语义：分子 0 = 该商品当期**真的**没有退货工单；分母 0 = 该商品当期没有订单行
+     * ⇒ 比率**未知**（agent 侧不倒推 0）。两侧的 0 都如实给出，判「能不能算」是消费方的事。</p>
+     */
+    RowBatch assembleProductReturnStats(Long tenantId, OffsetDateTime windowStart, RowBatch returns) {
+        Map<String, Integer> tickets = new LinkedHashMap<>();
+        for (Map<String, Object> row : returns.rows()) {
+            Object productId = row.get("product_id");
+            if (productId != null && StringUtils.hasText(String.valueOf(productId))) {
+                tickets.merge(String.valueOf(productId), 1, Integer::sum);
+            }
+        }
+        List<Map<String, Object>> counts = orderItemMapper.selectProductOrderLineCounts(
+                tenantId, windowStart, SNAPSHOT_ROW_FETCH_LIMIT);
+        boolean truncated = counts.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            counts = new ArrayList<>(counts.subList(0, SNAPSHOT_ROW_LIMIT));
+        }
+        Map<String, Object> orderLines = new LinkedHashMap<>();
+        for (Map<String, Object> row : counts) {
+            Object productId = row.get("product_id");
+            if (productId != null) {
+                orderLines.put(String.valueOf(productId), row.get("order_lines"));
+            }
+        }
+        // 确定性：商品 id 升序（两端并集 —— 只有退货没有订单行的商品也要出现，否则其退货凭空消失）
+        Set<String> productIds = new TreeSet<>(tickets.keySet());
+        productIds.addAll(orderLines.keySet());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String productId : productIds) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("product_id", productId);
+            row.put("return_tickets", tickets.getOrDefault(productId, 0));
+            row.put("order_lines", orderLines.getOrDefault(productId, 0L));
+            rows.add(row);
+        }
+        if (rows.size() > SNAPSHOT_ROW_LIMIT) {
+            rows = new ArrayList<>(rows.subList(0, SNAPSHOT_ROW_LIMIT));
+            truncated = true;
+        }
+        return new RowBatch(rows, truncated);
     }
 
     @SuppressWarnings("unchecked")

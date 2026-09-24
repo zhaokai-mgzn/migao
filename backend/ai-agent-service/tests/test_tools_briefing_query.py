@@ -16,15 +16,25 @@ tool 模块要求 `tests/test_tools_<name>.py`）。断言分三面：
 """
 # case_ids: DA-008, DA-009, DA-010, DA-014, DA-018
 import json
+from pathlib import Path
 
 import pytest
 from unittest.mock import patch, AsyncMock
 
-from app.tools.briefing_query import BriefingQueryTool
+from app.tools.briefing_query import (
+    SNAPSHOT_ENDPOINT,
+    TODAY_ENDPOINT,
+    VALUED_VIEWS,
+    BriefingQueryTool,
+)
 from app.tools.base import ToolContext
 
 ENDPOINT = "/api/admin/briefing/today"
 PERMISSION = "dashboard:view"
+
+#: 后端控制器源码（端点字面量的真值：Python 侧声明的路径必须真的在 Java 里 —— §17.3「不许凭语义推测」）
+CONTROLLER_SRC = (Path(__file__).resolve().parents[3]
+                  / "backend/admin-api/src/main/java/com/migao/admin/controller/BriefingController.java")
 
 ALLOWED = ToolContext(tenant_id=7, user_id="u-1", session_id="s-1", role="admin",
                       permissions=[PERMISSION])
@@ -49,10 +59,16 @@ class TestDeclaration:
         """工具名是 skill 绑定与判据的键，改名会静默解绑"""
         assert BriefingQueryTool().name == "briefing_query"
 
-    def test_takes_no_parameters(self):
-        """固定取当日简报 ⇒ 无参数（有参数会让模型有机会编造入参）"""
-        assert BriefingQueryTool().parameters == {
-            "type": "object", "properties": {}, "required": []}
+    def test_default_path_needs_no_required_parameters(self):
+        """默认路径（当日简报）**无必填参数**；`view` 是可选的**白名单**参数（issue #5369）
+
+        原判据「固定无参数」随族 3 包 2 的按需视图改判 —— 强度不降：默认路径的行为仍由
+        既有断言逐字承担（无 view ⇒ 只打 `/today`；消息主体「今日经营日报如下」不变）。
+        """
+        parameters = BriefingQueryTool().parameters
+        assert parameters["required"] == []
+        assert set(parameters["properties"]) == {"view"}
+        assert parameters["properties"]["view"]["enum"] == list(VALUED_VIEWS) == ["product_health"]
 
 
 class TestPermissionGate:
@@ -252,6 +268,151 @@ LIMITED_SNAPSHOT = {
                  "returned_at": f"2026-09-{day}T10:00:00+08:00", "amount": 100.0}
                 for n, day in ((1, 18), (2, 20), (3, 22))],
 }
+
+
+#: 按需视图的数据面：`GET /api/admin/briefing/snapshot` 的确定性装配结果（与 admin-api 同形）
+VIEW_SNAPSHOT = {
+    "row_fields": {
+        "skus": ["sku_id", "product_id", "product_name", "stock", "sales_count", "price", "avg_cost"],
+        "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
+        "product_return_stats": ["product_id", "return_tickets", "order_lines"],
+    },
+    "row_meta": {
+        "skus": {"limit": 500, "count": 2, "truncated": False},
+        "returns": {"limit": 500, "count": 1, "truncated": False},
+        "product_return_stats": {"limit": 500, "count": 1, "truncated": False},
+    },
+    "skus": [
+        {"sku_id": "SKU-1", "product_id": "P-1", "product_name": "雪尼尔-米白",
+         "stock": 20.5, "sales_count": 120.0, "price": 168.0, "avg_cost": 100.0},
+        # 🔴 存量不回填成本：该行**成本未知** ⇒ 毛利未知（不是 0）
+        {"sku_id": "SKU-2", "product_id": "P-1", "product_name": "雪尼尔-米白",
+         "stock": 0.0, "sales_count": 30.5, "price": 168.0, "avg_cost": None},
+    ],
+    "returns": [{"return_no": "RT-1", "customer_id": "C-1", "product_id": "P-1",
+                 "returned_at": "2026-09-22T10:00:00+08:00", "amount": 100.0}],
+    "product_return_stats": [{"product_id": "P-1", "return_tickets": 1, "order_lines": 4}],
+}
+
+
+class TestOnDemandProductHealthView:
+    """族 3 · 包 2（issue #5369）：具名视图 `product_health` 的**按需**消费入口。
+
+    与日报（主动消费，族 1）**同一份内核快照** —— 本类只钉消费面三件事：
+
+    ① 走**确定性快照端点**（零 LLM、不依赖当日简报是否已生成）；
+    ② 白名单之外的 view 一律拒绝且**不发请求**（越权/编造参数从这条路进来）；
+    ③ 消息如实说明：**成本未知 ≠ 毛利 0**、未接线 / 不完整逐字段点名（消息是模型唯一输入源）。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_view_hits_the_deterministic_snapshot_endpoint(self, mock_get_client):
+        """按需视图走 `/snapshot`（不是 `/today`）：租户来自 context，行是 SKU 级权威列"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": VIEW_SNAPSHOT})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+
+        assert result.success is True
+        paths = [c.args[0] if c.args else c.kwargs.get("path")
+                 for c in client.get.call_args_list]
+        assert paths == [SNAPSHOT_ENDPOINT] == ["/api/admin/briefing/snapshot"], paths
+        assert client.get.call_args_list[0].kwargs.get("tenant_id") == ALLOWED.tenant_id
+
+        assert result.data["view"] == "product_health"      # 视图标识（字符串 id）
+        assert result.data["tenant_id"] == ALLOWED.tenant_id
+        assert [row["sku_id"] for row in result.data["rows"]] == ["SKU-1", "SKU-2"]
+        first = result.data["rows"][0]
+        assert first["gross_margin"] == 68.0
+        assert first["stock"] == 20.5
+        assert first["sales_count"] == 120.0
+        assert first["low_stock"] is True
+        assert first["return_rate"] == 0.25
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_unknown_cost_is_disclosed_as_unknown_not_zero(self, mock_get_client):
+        """🔴 判据 2 的消费面：成本未知必须说成「未知」，消息里不得出现「毛利 0」类断言"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": VIEW_SNAPSHOT})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+        message = result.message or ""
+
+        assert result.data["rows"][1]["gross_margin"] is None
+        assert result.data["unknown_cost_rows"] == 1
+        assert "成本未知" in message, message
+        assert "无法给出" in message, message
+        for forbidden in ("毛利 0", "毛利为 0", "成本为 0", "毛利 0.0", "一切正常"):
+            assert forbidden not in message, f"消息出现「{forbidden}」（把未知说成了 0/没问题）"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_not_wired_fields_are_disclosed(self, mock_get_client):
+        """装配层没给 `skus` ⇒ 逐字段点名「未接线」，且不得改写成「均为 0」"""
+        snapshot = dict(VIEW_SNAPSHOT)
+        snapshot["row_fields"] = {k: v for k, v in VIEW_SNAPSHOT["row_fields"].items()
+                                  if k != "skus"}
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": snapshot})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+        message = result.message or ""
+
+        assert result.success is True
+        assert result.data["fields"]["stock"]["status"] == "not_wired"
+        assert result.data["fields"]["return_rate"]["status"] == "wired"
+        assert "未接线" in message, message
+        for label in ("销量", "库存", "成本毛利"):
+            assert label in message, f"未接线字段「{label}」未被点名"
+        # 反例：把「没有数据」说成「就是 0」的**断言式**表述一律不得出现
+        # （消息里「请勿理解为均为 0」是有意为之的否定式披露，不在反例之列）
+        for forbidden in ("一切正常", "库存为 0", "库存 0", "销量为 0", "毛利为 0"):
+            assert forbidden not in message, f"消息出现「{forbidden}」"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_invalid_view_is_rejected_without_request(self, mock_get_client):
+        """白名单之外（如尚未交付的 `customer_profile`）⇒ 拒绝 + 不发请求（不猜、不降级）"""
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="customer_profile")
+
+        assert result.success is False
+        assert "product_health" in (result.message or "")
+        assert "customer_profile" in (result.error or "")
+        mock_get_client.assert_not_called()
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_view_respects_the_permission_gate(self, mock_get_client):
+        """权限面与默认路径同一关口：无权限 ⇒ 拒绝且不发请求"""
+        result = await BriefingQueryTool().execute(context=DENIED, view="product_health")
+
+        assert result.success is False
+        assert "权限" in (result.message or "")
+        mock_get_client.assert_not_called()
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_default_path_still_hits_today(self, mock_get_client):
+        """缺省（不传 view）⇒ 仍旧是当日简报端点：新能力不得悄悄改掉老路径"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": SAMPLE})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        paths = [c.args[0] if c.args else c.kwargs.get("path")
+                 for c in client.get.call_args_list]
+        assert paths == [ENDPOINT] == [TODAY_ENDPOINT], paths
+        # 默认路径的 data 不得多出视图键（加数组/字段 = 隐式扩大所有消费方的输入，§17.3）
+        assert "view" not in result.data
+
+    def test_endpoint_literals_match_the_backend_controller(self):
+        """端点字面量必须真的在 Java 控制器里（不许凭语义推测 —— §17.3 ⑤）"""
+        java = CONTROLLER_SRC.read_text(encoding="utf-8")
+
+        assert '@GetMapping("/snapshot")' in java
+        assert '@GetMapping("/today")' in java
+        assert SNAPSHOT_ENDPOINT == "/api/admin/briefing/snapshot"
+        assert TODAY_ENDPOINT == "/api/admin/briefing/today"
 
 
 class TestNotWiredDisclosure:

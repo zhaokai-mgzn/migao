@@ -58,6 +58,23 @@ public class BriefingController {
     }
 
     /**
+     * 确定性快照（**按需**消费入口，族 3 · 包 2，issue #5369）。
+     *
+     * <p>与 `/today` 的区别：`/today` 返回**已生成**的简报（依赖 LLM 生成链路，未生成即空态），
+     * 本端点**不碰 LLM**、纯确定性装配 —— 供 ai-agent 侧「具名跨域视图」（如 `product_health`）
+     * 按需下钻：同一份内核快照 ⇒ 两个入口（主动日报 / 按需视图）口径一致。</p>
+     *
+     * <p>租户取会话上下文（`TenantContext`），权限码与 `/today` 同码（`dashboard:view`）；
+     * 行级数组有界（≤ {@code DailyBriefingService.SNAPSHOT_ROW_LIMIT}）且截断在 `row_meta` 里显式。</p>
+     */
+    @RequirePermission("dashboard:view")
+    @GetMapping("/snapshot")
+    public ApiResponse<Map<String, Object>> getSnapshot() {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(dailyBriefingService.aggregateSnapshot(tenantId));
+    }
+
+    /**
      * 简报配置（开关 + 生成时刻）。前端菜单显隐 = 开关 ∧ 角色权限。
      */
     @RequirePermission("dashboard:view")
