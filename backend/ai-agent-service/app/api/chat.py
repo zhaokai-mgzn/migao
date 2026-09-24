@@ -1754,7 +1754,9 @@ async def _handle_form_request(
     设计（docs/design/miniapp-multiturn-form-scenarios.md §4）：
     - 表单字段以可读文本注入本轮会话上下文（LLM 无感协议，兼容现有 flow，
       保留 LLM 确认/校验能力；区别于 __PAGE__ 的直调工具）
-    - payload 超限 / 非法 JSON / 非对象 → 回退为普通文本处理（不阻断对话）
+    - payload 超限 / 非法 JSON / 非对象 → **降级**到普通文本路径（`_send_plain_message`），
+      **不得**把原文交回分派入口 `send_message`（入口会按同一前缀再分派回本函数 ⇒ 互递归，
+      issue #5451 实测 315 层后 RecursionError）
     - 日志手机号/邮箱脱敏（LogSanitizer），防敏感信息泄露
     """
     from app.memory.session_service import SessionService
@@ -1777,20 +1779,29 @@ async def _handle_form_request(
 
     raw = request.message
 
+    def _degrade() -> "ChatSendRequest":
+        """回退用的请求：**换入口 + 带上已解析的 session_id**（出口必须真能改变结果）。
+
+        - **换入口**：交回分派入口 `send_message` 会被按 `__FORM__|` 前缀再分派回本函数 ⇒ 递归；
+        - **带上 session_id**：`session_id` 为空时上面已建好会话，交回原文会让普通路径再建一个
+          （旧形态实测：同一次坏请求建 328 个会话）。
+        """
+        return request.model_copy(update={"session_id": session_id})
+
     # 大小限制：超限回退普通文本（防超长注入）
     if len(raw) > _FORM_MAX_LEN:
         logger.warning(f"[form] __FORM__ payload too large ({len(raw)}B), fallback to plain text")
-        return await send_message(request, current_user)
+        return await _send_plain_message(_degrade(), current_user)
 
     try:
         payload = json.loads(raw[len("__FORM__|"):])
     except (ValueError, json.JSONDecodeError) as e:
         logger.warning(f"[form] Bad __FORM__ payload, fallback to plain text: {e}")
-        return await send_message(request, current_user)
+        return await _send_plain_message(_degrade(), current_user)
 
     if not isinstance(payload, dict):
         logger.warning("[form] __FORM__ payload not an object, fallback to plain text")
-        return await send_message(request, current_user)
+        return await _send_plain_message(_degrade(), current_user)
 
     logger.info(
         f"[form] Form submitted | tenant={tenant_id} user={user_id} session={session_id} "
@@ -1806,7 +1817,7 @@ async def _handle_form_request(
         images=request.images,
         ignored_suggestions=request.ignored_suggestions,
     )
-    return await send_message(injected_request, current_user)
+    return await _send_plain_message(injected_request, current_user)
 
 
 # ============ 页面上下文（issue #5371 族 4）============
@@ -1911,6 +1922,25 @@ async def send_message(
     # ── 页面上下文（issue #5371 族 4）：未登记 route ⇒ 不注入（默认拒绝）──
     if request.page_context is not None:
         return await _handle_page_ctx_request(request, tenant_id, user_id, current_user)
+
+    # 无前缀协议 ⇒ 普通文本路径。**回退/交接只能落到这个独立入口**，不得交回本函数：
+    # 本函数按**前缀**分派，交回（未改变状态的）原文 = 按同一前缀再分派回原处理器 ⇒ 递归（issue #5451）。
+    return await _send_plain_message(request, current_user)
+
+
+async def _send_plain_message(
+    request: ChatSendRequest,
+    current_user: UserIdentity,
+):
+    """普通文本路径：会话守卫 → 落库 → Agent 流式 SSE。**不含任何前缀分派**。
+
+    调用方两处：入口 `send_message` 在「无前缀协议」时进入；`_handle_form_request`
+    在 payload 非法/超限时**降级**到这里（issue #5451）。本函数**不是**分派入口，
+    因此降级路径结构上不可能再回到 `send_message`（类级判据见
+    `tests/test_form_fallback_degrade.py`）。
+    """
+    tenant_id = current_user.tenant_id
+    user_id = current_user.user_id
 
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"

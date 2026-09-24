@@ -5,7 +5,7 @@
 _convert_history_to_agent_format 多模态、suggestion-feedback、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
-# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-010, CH-011
+# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-009, CH-010, CH-011
 
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -843,67 +843,73 @@ class TestFormProtocol:
     """__FORM__ 表单提交：解析字段 → 注入 LLM 上下文 → 走正常 agent 流程。
 
     覆盖：合法 payload 注入、超限回退、非法 JSON 回退、非对象回退、入口委托、closed 拦截。
+
+    回退口径（issue #5451）：payload 非法时是**降级**到普通文本入口 `_send_plain_message`，
+    **不是**把原文交回分派入口 `send_message`（那会按同一 `__FORM__|` 前缀再分派回来 ⇒ 自递归）。
+    回退的完整判据（含类级元守卫）见 `tests/test_form_fallback_degrade.py`。
     """
 
-    @patch("app.api.chat.send_message")
+    @patch("app.api.chat._send_plain_message")
     @patch("app.api.chat.SessionMemory")
     @pytest.mark.asyncio
-    async def test_valid_payload_injects_context(self, MockSM, mock_send):
-        """合法 payload → 字段以（用户通过表单提交）注入，走 send_message"""
+    async def test_valid_payload_injects_context(self, MockSM, mock_plain):
+        """合法 payload → 字段以（用户通过表单提交）注入，落到普通文本入口"""
         from app.api.chat import _handle_form_request
         MockSM.return_value = _memory(get_session=_session(id="sess_1"))
-        mock_send.return_value = MagicMock()
+        mock_plain.return_value = MagicMock()
         req = ChatSendRequest(
             session_id="sess_1",
             message='__FORM__|{"customer_name":"张三","customer_phone":"13800138000","quantity":"3"}',
         )
         result = await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
-        assert result is mock_send.return_value
-        mock_send.assert_awaited_once()
-        injected = mock_send.call_args.args[0].message
+        assert result is mock_plain.return_value
+        mock_plain.assert_awaited_once()
+        injected = mock_plain.call_args.args[0].message
         assert injected.startswith("（用户通过表单提交）")
         assert "customer_name: 张三" in injected
         assert "quantity: 3" in injected
 
-    @patch("app.api.chat.send_message")
+    @patch("app.api.chat._send_plain_message")
     @patch("app.api.chat.SessionMemory")
     @pytest.mark.asyncio
-    async def test_oversized_payload_falls_back(self, MockSM, mock_send):
-        """payload 超限 → 回退为普通文本（原始消息直接交给 send_message）"""
+    async def test_oversized_payload_falls_back(self, MockSM, mock_plain):
+        """payload 超限 → **降级**为普通文本（换入口；已解析的 session_id 随降级请求带走）"""
         from app.api.chat import _handle_form_request, _FORM_MAX_LEN
         MockSM.return_value = _memory(get_session=_session(id="sess_1"))
-        mock_send.return_value = MagicMock()
+        mock_plain.return_value = MagicMock()
         big = "__FORM__|" + ("x" * (_FORM_MAX_LEN + 1))
         req = ChatSendRequest(session_id="sess_1", message=big)
         await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
-        mock_send.assert_awaited_once()
-        assert mock_send.call_args.args[0].message == big
+        mock_plain.assert_awaited_once()
+        degraded = mock_plain.call_args.args[0]
+        assert degraded.message == big
+        assert degraded.session_id == "sess_1"
 
-    @patch("app.api.chat.send_message")
+    @patch("app.api.chat._send_plain_message")
     @patch("app.api.chat.SessionMemory")
     @pytest.mark.asyncio
-    async def test_invalid_json_falls_back(self, MockSM, mock_send):
-        """非法 JSON → 回退为普通文本"""
+    async def test_invalid_json_falls_back(self, MockSM, mock_plain):
+        """非法 JSON → 降级为普通文本（换入口，不再交回分派入口）"""
         from app.api.chat import _handle_form_request
         MockSM.return_value = _memory(get_session=_session(id="sess_1"))
-        mock_send.return_value = MagicMock()
+        mock_plain.return_value = MagicMock()
         req = ChatSendRequest(session_id="sess_1", message="__FORM__|not-json")
         await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
-        mock_send.assert_awaited_once()
-        assert mock_send.call_args.args[0].message == "__FORM__|not-json"
+        mock_plain.assert_awaited_once()
+        assert mock_plain.call_args.args[0].message == "__FORM__|not-json"
 
-    @patch("app.api.chat.send_message")
+    @patch("app.api.chat._send_plain_message")
     @patch("app.api.chat.SessionMemory")
     @pytest.mark.asyncio
-    async def test_non_object_payload_falls_back(self, MockSM, mock_send):
-        """payload 非对象（数组/标量）→ 回退为普通文本"""
+    async def test_non_object_payload_falls_back(self, MockSM, mock_plain):
+        """payload 非对象（数组/标量）→ 降级为普通文本"""
         from app.api.chat import _handle_form_request
         MockSM.return_value = _memory(get_session=_session(id="sess_1"))
-        mock_send.return_value = MagicMock()
+        mock_plain.return_value = MagicMock()
         req = ChatSendRequest(session_id="sess_1", message='__FORM__|["a","b"]')
         await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
-        mock_send.assert_awaited_once()
-        assert mock_send.call_args.args[0].message == '__FORM__|["a","b"]'
+        mock_plain.assert_awaited_once()
+        assert mock_plain.call_args.args[0].message == '__FORM__|["a","b"]'
 
     @patch("app.api.chat._handle_form_request")
     @pytest.mark.asyncio
@@ -914,10 +920,10 @@ class TestFormProtocol:
         await send_message(req, current_user=_user())
         mock_form.assert_awaited_once()
 
-    @patch("app.api.chat.send_message")
+    @patch("app.api.chat._send_plain_message")
     @pytest.mark.asyncio
-    async def test_closed_session_blocked(self, mock_send):
-        """closed 会话提交表单 → 409（复用统一守卫）"""
+    async def test_closed_session_blocked(self, mock_plain):
+        """closed 会话提交表单 → 409（复用统一守卫）；守卫在前 ⇒ **不进**降级路径"""
         from app.api.chat import _handle_form_request
         with patch("app.api.chat.SessionMemory", return_value=_memory(get_session=_session(status="closed"))):
             req = ChatSendRequest(
@@ -928,7 +934,7 @@ class TestFormProtocol:
                 await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
             assert e.value.status_code == 409
             assert e.value.detail["error"]["code"] == "SESSION_CLOSED"
-        mock_send.assert_not_awaited()
+        mock_plain.assert_not_awaited()
 
 
 # ═══════════════════════════════════════════════
