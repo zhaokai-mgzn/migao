@@ -882,12 +882,40 @@ async def react_turn(
                                 # （如 customer 下单需 sms_code）不再重复要求确认。
                                 # CI 实证（run 34682324499 诊断）：confirmValue 点击在上一轮，
                                 # 本轮消息是验证码「123456」→ 未记录的话 order_create 被门禁拦。
-                                _full["confirmed_write_tool"] = tool_name
+                                #
+                                # 记的是**「工具名 + 被确认的值」**（issue #5414）：值优先取
+                                # **卡片来源**（`pending_validated_input.params` —— 门禁话术要求
+                                # "原样用作卡片 fields"，即商家在卡上看到的那一份）；没有 pending
+                                # 时退化为本次调用参数（价面卡由 `interact` 发出、系统无从机器判定
+                                # 卡上那个值：边界登记在 tests/test_price_confirm_value_fact.py）。
+                                # ⚠️ 值**不得**一律取自本次调用：那会让下面的核对退化成"自比自"
+                                # （把本单的嫌疑摘掉也不会红）。
+                                _clicksrc = args
+                                try:
+                                    from app.graph.pending_validated import PENDING_KEY as _PK5
+                                    _p5 = _full.get(_PK5) or {}
+                                    if (str(_p5.get("target_tool") or "") == str(tool_name)
+                                            and _p5.get("params")):
+                                        _clicksrc = _p5["params"]
+                                except Exception as _e5:
+                                    logger.warning(
+                                        f"[{skill_name}] 卡片来源取值失败（非致命）: {_e5}")
+                                _base.record_confirmed_write(_full, tool_name, _clicksrc)
                                 await _store.commit(session_id, _full)
-                                logger.info(
-                                    f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
-                                    f"{tool_name} | session={session_id}"
-                                )
+                                # 点卡只对**卡上那些值**有效（issue #5414）：本次调用带了别的值
+                                # ⇒ 这张卡的确认不成立（否则="点了价 A 的卡，放行价 B 的改动"）。
+                                if not _base.confirmed_write_release(_full, tool_name, args):
+                                    _card_confirmed = False
+                                    logger.warning(
+                                        f"[{skill_name}] 点卡的卡值与本次调用不符 → 视为未确认 "
+                                        f"{tool_name} | session={session_id} "
+                                        f"args={json.dumps(args, ensure_ascii=False, default=str)[:200]}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
+                                        f"{tool_name} | session={session_id}"
+                                    )
                         except Exception as e:
                             logger.warning(f"[{skill_name}] card-confirm check failed (non-fatal): {e}")
                     _write_was_confirmed = False
@@ -895,10 +923,19 @@ async def react_turn(
                         try:
                             from app.memory.session_state_store import SessionStateStore as _S3
                             _f3 = await _S3().load(session_id) or {}
-                            _write_was_confirmed = _f3.get("confirmed_write_tool") == tool_name
+                            # 唯一放行判据（issue #5414）：工具名对 **且** 被确认的值与本次 args
+                            # 逐值核对 —— 只比工具名就是本单的病灶（点过价 A 的卡放行价 B 的改动）。
+                            _write_was_confirmed = _base.confirmed_write_release(_f3, tool_name, args)
                             if _write_was_confirmed:
                                 logger.info(
-                                    f"[{skill_name}] 写工具 {tool_name} 前轮已确认 → 放行 | session={session_id}"
+                                    f"[{skill_name}] 写工具 {tool_name} 前轮已确认（值一致）→ 放行 "
+                                    f"| session={session_id}"
+                                )
+                            elif _f3.get("confirmed_write_tool"):
+                                logger.warning(
+                                    f"[{skill_name}] 前轮确认记录不覆盖本次调用（工具名或值不符）→ "
+                                    f"仍需新卡 | session={session_id} tool={tool_name} "
+                                    f"args={json.dumps(args, ensure_ascii=False, default=str)[:200]}"
                                 )
                         except Exception as _e3:
                             logger.warning(f"[{skill_name}] confirmed_write_tool check failed (non-fatal): {_e3}")
@@ -1353,9 +1390,16 @@ async def react_turn(
                         try:
                             from app.memory.session_state_store import SessionStateStore as _S4
                             _f4 = await _S4().load(session_id) or {}
-                            if _f4.get("confirmed_write_tool") == tool_name:
-                                _f4.pop("confirmed_write_tool", None)
+                            # 清除走**同一处**（issue #5414）：工具名与值事实必须一起清，
+                            # 否则会留下"名字没了、值还在"的半截记录（下一轮同价调用被旧记录放行）。
+                            _before4 = dict(_f4)
+                            _base.clear_confirmed_write(_f4, tool_name)
+                            if _f4 != _before4:
                                 await _S4().commit(session_id, _f4)
+                                logger.info(
+                                    f"[{skill_name}] 写成功后清除「已确认」记录（工具名 + 值事实）"
+                                    f" {tool_name} | session={session_id}"
+                                )
                         except Exception as _e4:
                             logger.warning(f"[{skill_name}] confirmed_write_tool clear failed (non-fatal): {_e4}")
                     # 注意：不能依赖 result_dict["terminal"] —— after_sales_manage(create) 等

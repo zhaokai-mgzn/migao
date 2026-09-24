@@ -4,6 +4,8 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
@@ -22,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -55,6 +58,10 @@ import static org.mockito.Mockito.when;
  *   <li><b>口径同源（L0 静态不变式）</b>：{@code sameValue} 在 admin-api main 源码里
  *       **只有一处定义**（{@code AgentWriteValues}），批次与单条两处调用点都引用它 ——
  *       防「批次严、单条松」的两处投影（{@code migao-dev-flow} §17.3）。</li>
+ *   <li><b>跨语言同口径（issue #5414）</b>：Agent 侧（Python）的按值核对与本类的
+ *       {@code sameValue} **跑同一份语料**
+ *       （{@code backend/admin-api/src/test/resources/agent-write-values-corpus.json}）——
+ *       两侧各自的测试都判它，任一侧改口径必有一侧红。</li>
  * </ol>
  *
  * <h2>边界（如实登记）</h2>
@@ -157,6 +164,39 @@ class AgentWriteValuesTest {
                     .isTrue();
             assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STATUS, "off_sale", "on_sale"))
                     .isFalse();
+        }
+
+        @Test
+        @DisplayName("判据 5·跨语言：与 Python 侧（Agent 确认面）**共用同一份语料**（issue #5414）")
+        void sharedCorpusWithThePythonSide() throws Exception {
+            JsonNode root;
+            try (InputStream in = getClass()
+                    .getResourceAsStream("/agent-write-values-corpus.json")) {
+                assertThat(in).as("跨语言语料缺失（Agent 侧与本类共用它，缺了判据就名不副实）")
+                        .isNotNull();
+                root = new ObjectMapper().readTree(in);
+            }
+            JsonNode cases = root.get("cases");
+            assertThat(cases).as("语料 cases 缺失").isNotNull();
+            assertThat(cases.size()).as("语料为空 ⇒ 判据空转，宁可红").isGreaterThanOrEqualTo(10);
+
+            List<String> mismatches = new ArrayList<>();
+            for (JsonNode c : cases) {
+                String field = c.get("field").asText();
+                String given = textOrNull(c.get("given"));
+                String current = textOrNull(c.get("current"));
+                boolean expected = c.get("expect").asBoolean();
+                boolean actual = AgentWriteValues.sameValue(field, given, current);
+                if (actual != expected) {
+                    mismatches.add(field + " given=" + given + " current=" + current
+                            + " 期望=" + expected + " 实测=" + actual);
+                }
+            }
+            assertThat(mismatches).as("与 Python 侧共用语料的判决不符（跨语言口径漂移）").isEmpty();
+        }
+
+        private static String textOrNull(JsonNode node) {
+            return node == null || node.isNull() ? null : node.asText();
         }
     }
 

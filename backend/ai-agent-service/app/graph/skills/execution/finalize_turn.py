@@ -118,7 +118,11 @@ async def finalize_turn(
                 if (_no_card_blocked_tool
                         and not _base._card_only_confirmation_by_name(
                             _no_card_blocked_tool, _no_card_blocked_args or {})):
-                    _bfull["confirmed_write_tool"] = _no_card_blocked_tool
+                    # 落账走**同一处**（issue #5414）：工具名与值事实成对落。
+                    # 涉钱面已在上面的判据里排除 ⇒ 这里算出的值事实必为空（非价面），
+                    # 语义与"只记工具名"一致，但不再有旁路直写该键。
+                    _base.record_confirmed_write(
+                        _bfull, _no_card_blocked_tool, _no_card_blocked_args or {})
                 if _no_card_blocked_facts:
                     _bfull[_base.CONFIRMED_ORDER_FACTS_KEY] = _no_card_blocked_facts
                 await _bstore.commit(session_id, _bfull)
@@ -219,7 +223,8 @@ async def finalize_turn(
     #      C 端里含 order_create 的只有 `customer_order`，等价。
     #   ② 存在「已校验待执行」的写（`validate_input` 通过后落库的 `pending_validated_input`，
     #      写成功后由本文件 `:3915` 清除 ⇒ 已闭环的轮次自动不在范围内）；
-    #   ③ 该写**还没被顾客确认**（`confirmed_write_tool != target`）。点卡/文本确认的轮次由
+    #   ③ 该写**还没被顾客确认**（`confirmed_write_tool != target`，且被确认的**值**与本次
+    #      待执行参数一致 —— issue #5414）。点卡/文本确认的轮次由
     #      `_inject_pending_validated`（`:2742-2751`）在**开轮前**就记下放行标记 ⇒
     #      "已确认、正在等验证码"这一正常形态**不会**被误归（否则会把"请输入短信验证码"
     #      这句**必要**引导也删掉，反倒造出真死锁）；
@@ -233,7 +238,10 @@ async def finalize_turn(
             _f9 = await _S9().load(session_id) or {}
             _pend9 = _f9.get(PENDING_KEY) or {}
             _target9 = str((_pend9 or {}).get("target_tool") or "")
-            if _target9 and _f9.get("confirmed_write_tool") != _target9:
+            # 判据与门禁**同源**（issue #5414）：记录覆盖本次要执行的值才算「顾客已确认」——
+            # 只比工具名会把"点过价 A 的卡"读成"价 B 已确认"（草稿态措辞就不归一了）。
+            if _target9 and not _base.confirmed_write_release(
+                    _f9, _target9, (_pend9.get("params") or {})):
                 _new9, _notes9 = normalize_draft_state_reply(final_content)
                 if _notes9 and _new9 != final_content:
                     logger.info(

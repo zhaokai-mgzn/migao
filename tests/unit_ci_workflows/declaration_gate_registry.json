@@ -64,6 +64,18 @@
           "issue": "#4177",
           "owner": "CI 门禁 owner（pr-check 面）",
           "reason": "`docs/curtain-*-rules.md` 被算料判据当**规则真值**读；未纳入：文档 PR 不跑后端单测（成本裁定）"
+        },
+        {
+          "path": "backend/admin-api/src/test/java/com/migao/admin/service",
+          "issue": "#5414",
+          "owner": "AI Agent 门禁 owner（pr-check 面）",
+          "reason": "改价确认的 Python 判据按仓根拼路径读 `AgentWriteValuesTest.java`，钉住「Java 侧**真的在读**那份跨语言语料」（两侧同口径不能只写在提交信息里）；**未纳入触发面**：`backend/admin-api/src/test/**` 不在本门禁谓词里，扩进去会让每个 admin-api 测试改动都跑本 job 的全量（#4177 的同款成本裁定）"
+        },
+        {
+          "path": "backend/admin-api/src/test/resources/agent-write-values-corpus.json",
+          "issue": "#5414",
+          "owner": "AI Agent 门禁 owner（pr-check 面）",
+          "reason": "跨语言「按值核对」语料（issue #5414）：两侧测试**共用同一份文件**，任一侧改口径必有一侧红。它落在 admin-api 测试树 ⇒ 改它必触发 admin-api 腿；**未纳入本门禁触发面**的原因同上（`src/test/**` 不在谓词里，扩面代价同 #4177 的裁定）"
         }
       ],
       "auto_discover_root": "backend/ai-agent-service/tests",
