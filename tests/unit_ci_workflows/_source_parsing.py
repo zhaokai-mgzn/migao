@@ -150,7 +150,10 @@ def assigned_mapping_keys(source: str, name: str, where: str) -> tuple[str, ...]
     )
     out: list[str] = []
     for key in node.keys:
-        assert key is not None, f"{where} 的 `{name}` 含 `**` 展开 ⇒ 键集不完整 ⇒ 红"
+        if key is None:
+            # 用 `raise` 而不是裸的存在性断言（`_WEAK_PATTERNS` 首条那一形态）：判定强度不变，
+            # 只是不再长得像凑数断言 —— 弱断言扫描按**文本**匹配，连注释里的该形态也算（实测）。
+            raise AssertionError(f"{where} 的 `{name}` 含 `**` 展开 ⇒ 键集不完整 ⇒ 红")
         assert isinstance(key, ast.Constant) and isinstance(key.value, str), (
             f"{where} 的 `{name}` 有非字符串字面量键（{ast.dump(key)[:80]}）⇒ 口径漂移 ⇒ 红"
         )
