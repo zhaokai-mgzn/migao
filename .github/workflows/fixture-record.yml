@@ -48,8 +48,19 @@ jobs:
       - name: Open PR if fixtures changed
         if: success()
         run: |
+          # 存活读数（issue #5326 判据 1）：把本轮的**计数类**读数交出来（看门人**不读挂钟时长**）。
+          # 发射器是**报告者**：它不可用（本机 harness / 浅检出取不到文件）**绝不**得让机制本身失败
+          # ⇒ 取不到就装一个空实现（读数步仍会出声，只是 `why=no-declaration`）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            source .github/scripts/mechanism_liveness.sh
+          else
+            mechanism_liveness_declare() { :; }
+          fi
           if [ -z "$(git status --porcelain -- tests/e2e/fixtures/)" ]; then
             echo "✅ fixtures 无变化，无需更新"
+            # 零动作**也必须出声**（issue #5326 判据 1 / 4）：本步原先是整个 job 里最静默的一条路径
+            # （月度跑一次、多数月份零动作）⇒ 现在它明确说「我看了、没变化、所以没动」。
+            mechanism_liveness_declare --seen 1 --acted 0 --why "fixtures 无变化（零动作，不是没跑）"
           else
             git config user.name "migao-fixture-bot"
             git config user.email "fixture-bot@users.noreply.github.com"
@@ -61,6 +72,7 @@ jobs:
             gh pr create --title "chore(e2e): 重录 API fixtures（月度自动）" \
               --body "月度 fixture 重录，保持 quality 测试数据新鲜。录制即脱敏（手机号确定性掩码）。" \
               --base main
+            mechanism_liveness_declare --seen 1 --acted 1 --why "fixtures 有变化 ⇒ 已开重录 PR（${BRANCH}）"
           fi
 
       - name: Notify on failure (dedup guard)
@@ -91,3 +103,24 @@ jobs:
                 labels: ['bug', 'role/qa'],
               })
             }
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**
+      # ⇒ 每轮必出一行 `::notice::MECHANISM-LIVENESS mech=<id> ...`（零动作 ⇒ `acted=0` + `why`）。
+      # 机制**停摆**（本步不再执行）⇒ **根本没有这一行**。看门人（`mechanism-liveness.yml` 的
+      # 定时腿）断言「main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的读数」，
+      # 缺失 / 绑定旧 run / **读数与 run 结论矛盾** ⇒ 判红（判据 2）。
+      # ⚠️ 判定只用 run 归属与结论，**不用挂钟时长**（判据 4：时长受 runner 负载污染）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          # 发射器**可能不在检出里**（本 job 若检出固定 `ref: main`，而发射器是本 PR 新增 ⇒ 合并前取不到；
+          # 浅检出同理）⇒ **降级为 warning 标注，绝不让读数步把机制判红**（报告者不改变机制结论）。
+          # 「本轮无声」由看门人（定时腿）承接 —— 判「静默」的地方是它，不是这里。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit fixture-record --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=fixture-record）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
