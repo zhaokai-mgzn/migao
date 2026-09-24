@@ -59,12 +59,27 @@ modules:
         tests:
           - 'tests/test_tools_{1}.py'
           - 'tests/test_{1}.py'
+      # 子目录（graph/skills/**，issue #5353）：父规则 `(.+)` **会跨 `/` 捕获子目录** ⇒ 对
+      # app/graph/skills/x.py 产出 tests/test_graph_skills/x.py（子目录 + 无 test_ 前缀）
+      # ⇒ 不匹配 pytest.ini 的 python_files ⇒ 不可被收集（且门禁会指示人去建它）。
+      # 故为嵌套层显式登记**全部可收集**的模板。
+      - pattern: 'backend/ai-agent-service/app/graph/skills/(?:.+/)?(\w+)\.py'
+        tests:
+          - 'tests/test_graph_skills.py'
+          - 'tests/test_skill_skills/test_{1}.py'
+          - 'tests/test_skill_config_registry.py'
       - pattern: 'backend/ai-agent-service/app/graph/(.+)\.py'
         tests:
           - 'tests/test_graph_{1}.py'
           - 'tests/test_skill_{1}.py'
           # skill 配置（tool_names/intents/route_keys）统一由 test_skill_config_registry 覆盖
           - 'tests/test_skill_config_registry.py'
+      # 子目录（agents/agents/**，issue #5353）：同 graph/skills —— 父规则的 `(.+)` 跨 `/` 捕获
+      # ⇒ 产出 tests/test_agent_agents/x.py（不可收集）。嵌套层显式登记可收集模板。
+      - pattern: 'backend/ai-agent-service/app/agents/agents/(\w+)\.py'
+        tests:
+          - 'tests/test_xiaobu.py'
+          - 'tests/test_tenant_config.py'
       - pattern: 'backend/ai-agent-service/app/agents/(.+)\.py'
         tests:
           - 'tests/test_agent_{1}.py'
@@ -88,6 +103,19 @@ modules:
         tests:
           - 'tests/test_{1}.py'
           - 'tests/test_api_coverage.py'
+      # 核心稳定性基础设施（熔断 / 降级 / 缓存，issue #5353）：既有测试在 tests/unit/
+      # （tests/unit/test_circuit_breaker.py · test_fallback.py · test_admin_api_cache.py）
+      - pattern: 'backend/ai-agent-service/app/core/(.+)\.py'
+        tests:
+          - 'tests/unit/test_{1}.py'
+          - 'tests/test_{1}.py'
+      # LLM 模型路由（issue #2546 / #5353）：select_model 由 test_vision_integration 的
+      # TestSelectModelWithVision 覆盖，故逐文件显式登记。
+      # ⚠️ **不得**写 tests/test_llm_pipeline.py —— 它在 pytest.ini 的 addopts `--ignore=` 里
+      # （永不收集），映射过去就是「门禁绿 + 测试从不运行」。
+      - pattern: 'backend/ai-agent-service/app/llm/router\.py'
+        tests:
+          - 'tests/test_vision_integration.py'
       - pattern: 'backend/ai-agent-service/app/llm/(.+)\.py'
         tests:
           - 'tests/test_llm_{1}.py'
@@ -109,35 +137,56 @@ modules:
       # 生产模块（issue #3993，M4-G）：测试放 tests/test_production/test_<模块>.py
       # （pytest.ini 只收 test_*.py，故镜像目录内保留 test_ 前缀；通用规则会要求
       #  tests/test_production/<源文件名>.py —— 那样不可被 pytest 收集，故显式登记本规则）
+      # ⚠️ 原来的第二条模板 tests/test_production/{1}.py 已按 issue #5353 删除：
+      # 它对任何源文件都展开成不带 test_ 前缀的路径（pytest 永不收集），而对
+      # app/production/__init__.py 更会命中 tests/test_production/__init__.py（磁盘上有、
+      # pytest 也不收集）⇒ **假的 pass**。现在 production 的配套测试必须带 test_ 前缀。
       - pattern: 'backend/ai-agent-service/app/production/(.+)\.py'
         tests:
           - 'tests/test_production/test_{1}.py'
-          - 'tests/test_production/{1}.py'
       # 澄清清单模块（issue #4362，S1）：测试放 tests/test_clarification/test_<模块>.py
       # （与上面 production 同因：pytest.ini 只收 test_*.py，通用规则会要求
       #  tests/test_clarification/<源文件名>.py —— 那样不可被 pytest 收集，
       #  门禁会「绿」而测试从不运行 = 本仓库最忌的静默失效，故显式登记本规则）
+      # ⚠️ 第二条模板 tests/test_clarification/{1}.py 已按 issue #5353 删除（同 production：
+      # 展开出 pytest 永不收集的路径，对 __init__.py 还会命中同名的 __init__.py 形成假 pass）。
       - pattern: 'backend/ai-agent-service/app/clarification/(.+)\.py'
         tests:
           - 'tests/test_clarification/test_{1}.py'
-          - 'tests/test_clarification/{1}.py'
       # 图片识别内核（issue #5321 包 1）：测试放 tests/test_vision/test_<模块>.py
       # （与上面 production / clarification **同因**：pytest.ini 只收 test_*.py，
       #  通用规则会要求 tests/test_vision/<源文件名>.py —— 那样不可被 pytest 收集，
       #  门禁会「绿」而测试从不运行 = 本仓库最忌的静默失效，故显式登记本规则）
+      # ⚠️ 第二条模板 tests/test_vision/{1}.py 已按 issue #5353 删除（同 production /
+      # clarification：展开出 pytest 永不收集的路径，对 __init__.py 形成假 pass）。
       - pattern: 'backend/ai-agent-service/app/vision/(.+)\.py'
         tests:
           - 'tests/test_vision/test_{1}.py'
-          - 'tests/test_vision/{1}.py'
       # 提问引导模块（issue #5329）：模糊输入的「可点击猜测」投影
       # （通用规则会要求 tests/test_suggestions/<源文件名>.py —— 不带 test_ 前缀 ⇒
       #  pytest.ini 只收 test_*.py ⇒ **不可被收集**，门禁会「绿」而测试从不运行；
       #  同 production / clarification 两处，故显式登记本规则，模板保持扁平可收集）
+      # 后续问题建议（issue #2575 / #5353）：既有测试名是 tests/test_follow_up_suggestions.py，
+      # 任何模板都命中不了它 —— 这正是该文件长期靠 .github/qa-exemptions.yml 豁免的原因
+      # ⇒ 逐文件显式登记，让门禁自己看得见（该豁免随之删除）。
+      - pattern: 'backend/ai-agent-service/app/suggestions/follow_up\.py'
+        tests:
+          - 'tests/test_follow_up_suggestions.py'
       - pattern: 'backend/ai-agent-service/app/suggestions/(.+)\.py'
         tests:
           - 'tests/test_suggestions_{1}.py'
           - 'tests/test_{1}.py'
-      - pattern: 'backend/ai-agent-service/app/(.+)\.py'
+      # ── 兜底规则（未显式登记目录里的源文件，issue #5353）──
+      # 🔴 只取 **basename**：`pytest.ini` 的 `python_files = test_*.py` ⇒ 本模板必须展开成
+      # `test_*.py`。旧写法 `app/(.+)\.py → tests/test_{1}.py` 的 `(.+)` **会捕获子目录**
+      # ⇒ 对 `app/core/x.py` 产出 `tests/test_core/x.py`（子目录 + 无 `test_` 前缀）
+      # ⇒ **永不收集**；而门禁判 `BLOCKED` 时还会**指示你去建它** ——
+      # 照着建就得到「门禁绿 + 测试永不运行」，建的人以为自己在修问题（本仓已独立踩中 ≥4 次）。
+      # 兜底压平后同名不同目录会指向同一测试名 ⇒ 「靠兜底」必须是一次**有意的**选择：
+      # 新目录请在 `.github/tech-stack.yml` 补显式规则（照 `app/core/` 的写法）。
+      # 守卫（含恢复旧兜底必红的注入式红证）：
+      # tests/unit_ci_workflows/test_diff_to_test_collectable.py
+      - pattern: 'backend/ai-agent-service/app/(?:.+/)?(\w+)\.py'
         tests:
           - 'tests/test_{1}.py'
   - service: admin-api

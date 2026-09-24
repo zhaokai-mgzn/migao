@@ -46,8 +46,11 @@ exemptions:
     reason: "#1483 纯新增 Agent BFF Controller，Service 端方法已合并在 main，单测覆盖 Service 层方法（AgentProductServiceTest 14 tests / AgentOrderServiceTest 5 tests），Controller 仅是薄包装"
 
   # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
-  - pattern: "backend/ai-agent-service/app/llm/router.py"
-    reason: "#2546: select_model 路由逻辑已由 tests/test_llm_pipeline.py TestSelectModel + tests/test_vision_integration.py TestSelectModelWithVision 覆盖（gate 模板要求独立 test_llm_router.py 不存在）"
+  # ⚠️ 本条原为 `app/llm/router.py` 的**冗余豁免**（issue #5353 落地时删）：成因 = 规则侧只能
+  # 猜 `tests/test_llm_router.py`（不存在），而它的真实覆盖名叫 `test_vision_integration.py`。
+  # #5353 在 `.github/tech-stack.yml` 为该文件逐条登记后规则侧判 **pass** ⇒ 豁免变成死条目，删除。
+  # 附带订正原 reason 的一半证据：`tests/test_llm_pipeline.py` 在 `pytest.ini` 的 `addopts --ignore=`
+  # 里（**永不收集**）⇒ 它不能充当任何映射目标（同 #5353 的第三形态）。
 
   - pattern: "frontend/admin-web/src/hooks/useVoiceRecorder.ts"
     reason: "#1720 语音录音 hook，浏览器 API 封装，依赖运行时环境"
@@ -55,21 +58,19 @@ exemptions:
   # WebM→opus 格式映射修复
 
   # ── 三大模块自洽性修复（fix/eval-case-role-compat #2575）──
-
-  - pattern: "backend/ai-agent-service/app/suggestions/follow_up.py"
-    reason: "新增 finance 意图预设建议：已有 tests/test_follow_up_suggestions.py + test_integration_multimodal.py 覆盖（含 finance 预设断言）。gate 模板要求 tests/test_suggestions/follow_up.py 命名不符"
+  # ⚠️ 本条原为 `app/suggestions/follow_up.py` 的**冗余豁免**（issue #5353 落地时删）：
+  # 它的配套测试名 `tests/test_follow_up_suggestions.py` 不符合任何模板 ⇒ 只能靠豁免绕开。
+  # #5353 为该文件逐条登记规则后规则侧判 **pass** ⇒ 豁免变成死条目，删除。
 
   # ── #3081 快捷回复功能下线：移除 quick_reply 兜底文案/意图标签（gate 模板命名不符，已有测试覆盖）──
-  - pattern: "backend/ai-agent-service/app/core/fallback.py"
-    reason: "移除 quick_reply_manage 兜底文案：已有 tests/unit/test_fallback.py 覆盖 TOOL_FALLBACK_MESSAGES（含各工具文案断言）。gate 模板要求 tests/test_core/fallback.py 命名不符"
-  # ⚠️ 本条原为 `app/suggestions/preference_tracker.py` 的**冗余豁免**（issue #5329 落地时删）：
-  # 那条豁免的成因是 `app/suggestions/(.+)\.py` **缺显式 diff_to_test 规则**，通用规则要求
-  # `tests/test_suggestions/<源文件名>.py`（不带 `test_` 前缀，pytest 收不到）⇒ 只能靠豁免绕开。
-  # #5329 就近补上该规则后，`preference_tracker.py` 走规则匹配到既有的
-  # `backend/ai-agent-service/tests/test_preference_tracker.py` ⇒ **pass**，豁免变成死条目。
-  # 按本文件抬头「减少能免检的面才是收紧」删除（守卫 test_qa_exemptions_liveness 会点名死条目）。
-  # 上一条 `app/suggestions/follow_up.py` 的豁免**仍然有效、保留**：它的配套测试名
-  #（`test_follow_up_suggestions.py`）不符合任何模板 ⇒ 不经豁免仍会被判缺测。
+  # ⚠️ 本条原为 `app/core/fallback.py` 的**冗余豁免**（issue #5353 落地时删）：成因 = `app/core/`
+  # 没有显式规则，兜底产出 `tests/test_core/fallback.py`（**不带 test_ 前缀 ⇒ pytest 永不收集**）。
+  # #5353 为 `app/core/` 补上显式规则（模板 `tests/unit/test_{1}.py`，命中既有的
+  # `tests/unit/test_fallback.py`）⇒ 规则侧判 **pass** ⇒ 豁免变成死条目，删除。
+  # ⚠️ 同一行历史上还替 `app/suggestions/preference_tracker.py` 挡过（issue #5329 删除），
+  # 两处的成因**同源**：都是「门禁看不见既有测试」，而不是「没有测试」。
+  # 另：`app/core/{circuit_breaker,admin_api_cache}.py` 也随 #5353 从 BLOCK 转 **pass**
+  # （它们此前**连豁免都没有**，改动即被要求去建 `tests/test_core/<name>.py`）。
 
   # ── 历史分支 UI 重设计组件 break-glass（#2575）——2026-09-18 用户裁定：**整块 19 条删除** ──
   # 被删范围（reason 统一为「#2575 随分支部署，本次未改其逻辑」）：chat 9 / dashboard 3 / ui 5 /
