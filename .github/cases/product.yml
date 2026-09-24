@@ -4012,13 +4012,13 @@ cases:
       # R2 答第一段多选卡（协议文本 = multiSelectSubmitPrefix + 勾选名，与前端点击同形）
       - "已选商品：遮光窗帘、北欧风窗帘"
       # R3 答第二段「逐条改前 → 改后」确认卡（点卡；无卡时发「确认」兜底）
-      - auto_respond: true
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
       # R4 撤销入口（用户只说「撤销」，批次号由会话上下文给出）
       - "撤销刚才那个批量改价"
       # R5 答撤销前的确认卡（若米宝先发卡）
-      - auto_respond: true
-        fallback: "确认"
+      - auto_respond:
+          fallback: "确认"
     namespaces:
       - "product_name:遮光窗帘"
       - "product_name:北欧风窗帘"
