@@ -465,3 +465,24 @@ class TestWiringStatusIsPerRule:
         """断言言快照（只有聚合指标）⇒ 三条规则全部 not_wired（不是「今天没异常」）"""
         status = proactive_status({"metrics": {"today_orders": 3}})
         assert {r for r, s in status.items() if s["status"] == NOT_WIRED} == {r.rule_id for r in RULES}
+
+    def test_java_emitted_timestamp_form_is_parsed(self):
+        """跨模块口径：admin-api 落的是 `OffsetDateTime.toString()`（**秒为 0 时省略秒**）⇒ 引擎必须认。
+
+        这与 `SNAPSHOT` 里的 `...T10:00:00+08:00` 是**两种串**，只测其中一种就是「两处投影只钉了一处」。
+        """
+        snapshot = {
+            "biz_date": "2026-09-24",
+            "row_fields": ASSEMBLED["row_fields"],
+            "orders": [{"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
+                        "created_at": "2026-09-12T10:00+08:00", "shipped_at": None,
+                        "sale_amount": 1200.0}],
+            "skus": [{"sku_id": 7, "product_id": "P-1", "product_name": "雪尼尔-米白", "stock": 20.0}],
+            "returns": [{"return_no": f"RT-{n}", "customer_id": "C-1", "product_id": "P-9",
+                         "returned_at": f"2026-09-{day}T10:00+08:00", "amount": 100.0}
+                        for n, day in ((1, 18), (2, 20), (3, 24))],
+        }
+        findings = daily_findings(snapshot)
+        assert {f["rule_id"] for f in findings} == WIRED_RULES
+        assert _by_rule(findings, "unshipped_overdue")["criterion"]["observed"][0]["days"] == 12
+        assert _by_rule(findings, "repeat_returns")["impact"]["count"] == 3
