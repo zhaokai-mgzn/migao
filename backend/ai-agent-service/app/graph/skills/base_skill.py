@@ -1437,6 +1437,12 @@ def _confirm_card_seen(messages, session_state: dict | None = None) -> bool:
 # ── 确认事实（issue #4037 / F22）：键名与 confirmed_write_tool 同族 ──
 CONFIRMED_ORDER_FACTS_KEY = "confirmed_order_facts"
 
+#: 「被确认的**值**」事实（issue #5414）：与 `confirmed_write_tool` **成对**落账、成对清除。
+#: 只有本文件的 `record_confirmed_write` / `clear_confirmed_write` 两处能写它 ——
+#: 旁路直写会让"名字在、值不在"，护栏就又退回"只证明确认过某个工具"
+#: （机械判据：tests/test_price_confirm_value_fact.py::TestMechanicalJudgments）。
+CONFIRMED_WRITE_VALUES_KEY = "confirmed_write_values"
+
 
 def confirmed_order_facts_of(tool_name: str, args: dict) -> str:
     """写调用参数 → 订单金额事实串（口径单点在 `order_create.order_facts_of`）。
@@ -1465,15 +1471,51 @@ def record_confirmed_write(state: dict, tool_name: str, args: dict) -> dict:
 
     事实的非空优先级：本次算得出就用本次；算不出（老形态写调用）保留已记的
     —— 不用空值覆盖已有快照（那等于把一道已生效的守护静默关掉）。
+
+    值事实（issue #5414）：同一次落账里记下**被确认的值**（`CARD_ONLY_VALUE_FIELDS` 里在场的
+    字段）。与上面的"非空优先级"**刻意相反** —— 值事实是"这次确认的内容是什么"的快照，
+    本次算不出就**清掉旧的**：留着旧价等于让这张卡"顺便确认"了另一个价（本单的病灶）。
     """
     _t = str(tool_name or "")
     if not _t:
         return state
     state["confirmed_write_tool"] = _t
+    _values = write_value_facts(args or {})
+    if _values:
+        state[CONFIRMED_WRITE_VALUES_KEY] = _values
+    else:
+        state.pop(CONFIRMED_WRITE_VALUES_KEY, None)
     _fresh = confirmed_order_facts_of(_t, args or {})
     if _fresh:
         state[CONFIRMED_ORDER_FACTS_KEY] = _fresh
     return state
+
+
+def clear_confirmed_write(state: dict, tool_name: str) -> dict:
+    """写成功后的清除（就地改 `state` 并返回它）：工具名与值事实**一起**清。
+
+    与 `record_confirmed_write` 同族、同一处写该键（机械判据钉住"只有这两处"）——
+    分开清会留下"名字没了、值还在"的半截记录。
+    """
+    if str((state or {}).get("confirmed_write_tool") or "") != str(tool_name or ""):
+        return state
+    state.pop("confirmed_write_tool", None)
+    state.pop(CONFIRMED_WRITE_VALUES_KEY, None)
+    return state
+
+
+def confirmed_write_release(full: dict, tool_name: str, args: dict) -> bool:
+    """跨轮放行判据（**全仓唯一实现**，issue #5414）：工具名对 **且** 值逐项核对通过。
+
+    为什么必须唯一：这判据一旦有第二处（只比工具名），护栏就退回"只证明确认过某个工具"
+    —— 商家点了价 A 的卡，写失败（记录未清），下一轮改价 B 照样放行。
+    fail-closed 方向：记录里没有值事实（旧形态记录 / 非价面记录）+ 本次带了价面值 ⇒ 不放行。
+    """
+    _f = full or {}
+    if str(_f.get("confirmed_write_tool") or "") != str(tool_name or ""):
+        return False
+    return values_match(_f.get(CONFIRMED_WRITE_VALUES_KEY) or {},
+                        write_value_facts(args or {}))
 
 
 def _confirmed_facts_reject(tool_name: str, args: dict, full: dict) -> Optional[str]:
@@ -2450,9 +2492,13 @@ def _handoff_guard_applies(registry=None, *, order_in_progress: bool = False,
 # 已随搬迁落进契约模块的同名函数（口径不变：末尾追加、金额算不出就不加）——
 # 故这里只需再导出，**不得**再写第二份投影（否则两张卡的钱各算各的）。
 from app.tools.confirm_value import (  # noqa: F401  (re-export：既有调用方从这里取)
+    CARD_ONLY_VALUE_FIELDS,
     confirm_card_fields,
     confirm_value_for_fields,
     price_preview_missing,
+    same_value,
+    values_match,
+    write_value_facts,
 )
 
 

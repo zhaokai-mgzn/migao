@@ -24,6 +24,7 @@ merge 后新增（F19/F22 侧，issue #4037）：`confirm_card_fields` 末尾追
 """
 
 import json
+from decimal import Decimal, InvalidOperation
 
 from loguru import logger
 
@@ -163,3 +164,72 @@ def confirm_value_for_fields(fields: list) -> str:
         else:
             facts.append(str(f))
     return ("确认：" + "；".join(sorted(facts))) if facts else ""
+
+
+# ══════════ 「被确认的值」的按值核对（issue #5414）══════════
+# 病根：确认记录此前只记**工具名**（`confirmed_write_tool`）⇒ 门禁证明的是"确认过某个工具"，
+# 不是"看过哪个价"：商家点了价 A 的卡，写失败（记录未清），下一轮模型改价 B 照样被放行。
+# 口径**不另立**：跨语言的唯一实现是 Java 侧 `AgentWriteValues.sameValue`（#5317 建），
+# 本模块是它在 Python 侧的同语义投影；两侧各自的测试跑**同一份语料**
+# `backend/admin-api/src/test/resources/agent-write-values-corpus.json` 钉住一致性。
+
+#: 涉钱面**值事实**的字段集：与 `base_skill._card_only_confirmation` 的入面口径同源 ——
+#: 声明 `before_price` 的改价工具取价对（`before_price` + `price`）；声明
+#: `card_only_actions` 的批量动作取 `batch_id`（钱在批次行里，参数里只有批号）。
+CARD_ONLY_VALUE_FIELDS = ("price", "before_price", "batch_id")
+
+#: **按值**比对（数字不比字符串写法）的字段词。工具参数用 `price` / `before_price`，
+#: 线上字段用 `basePrice`（Java `FIELD_BASE_PRICE`）—— 词不同、语义必须同一。
+PRICE_FIELD_WORDS = frozenset({"price", "before_price", "basePrice"})
+
+
+def same_value(field, given, current) -> bool:
+    """两侧是否**同一个值** —— 语义与 Java `AgentWriteValues.sameValue` 逐条对齐。
+
+      · 价格字段（`PRICE_FIELD_WORDS`）：按**值**比对（`10.0` 与 `10.00` 是同一个价）；
+        非法数字 / 带空白 / 非有限数 ⇒ `False`（Java `BigDecimal` 同样直接抛 ⇒ 口径一致）；
+      · 非价格字段：字面比对，**只 trim 左侧**（与 Java `given.trim().equals(current)` 一致）；
+      · 任一侧缺失 ⇒ `False` —— **fail-closed**：绝不为"没法比对"放行。
+    """
+    if given is None or current is None:
+        return False
+    if field in PRICE_FIELD_WORDS:
+        try:
+            raw_left, raw_right = str(given), str(current)
+            if any((ch.isspace() or ch == "_") for ch in raw_left + raw_right):
+                # Java `BigDecimal(String)` 对空白/下划线**直接抛**；而 Python `Decimal`
+                # 会**静默**吃掉它们（`Decimal(" 168") == Decimal("168")`）⇒ 不显式挡掉就是
+                # 跨语言口径漂移（本单实测到的第一处，由共享语料当场抓到）。
+                return False
+            left, right = Decimal(raw_left), Decimal(raw_right)
+        except (InvalidOperation, ValueError, TypeError):
+            return False
+        if not (left.is_finite() and right.is_finite()):
+            return False
+        return left == right
+    return str(given).strip() == str(current)
+
+
+def write_value_facts(args: dict) -> dict:
+    """写调用参数 → 「本次要执行的值」清单（只取 `CARD_ONLY_VALUE_FIELDS` 里在场的字段）。
+
+    缺字段**不进清单**（不是"记一个空值"）：是否构成不符由 `values_match` 判 ——
+    判定权只在一处，避免"两个函数各有一套缺失语义"。
+    """
+    a = args or {}
+    return {f: a[f] for f in CARD_ONLY_VALUE_FIELDS if a.get(f) is not None}
+
+
+def values_match(prior: dict, now: dict) -> bool:
+    """「被确认的值」×「本次调用的值」**逐值核对**（issue #5414，放行侧唯一判据）。
+
+    只核**本次调用带的值**：
+      · 本次带的值在记录里缺失或不等 ⇒ `False`（只记了工具名的旧形态记录 ⇒ 涉钱面调用
+        一律要求新卡 = fail-closed，不把"没法比对"当"对得上"）；
+      · 本次值面上什么都没有（改名/上下架等非涉钱面调用）⇒ 不构成不符，交回既有语义
+        （本单只收窄"值"这一维，不回退 #5317 的其它形态）。
+    """
+    for field, value in (now or {}).items():
+        if not same_value(field, (prior or {}).get(field), value):
+            return False
+    return True
