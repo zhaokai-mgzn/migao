@@ -160,7 +160,7 @@ class SettingsManageTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取系统设置失败：{error_msg}",
-                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「系统设置」页查看，或联系平台管理员",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础信息」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})
@@ -190,7 +190,7 @@ class SettingsManageTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取AI配置失败：{error_msg}",
-                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「AI 配置」页查看，或联系平台管理员",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础信息 → AI 客服设置」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})

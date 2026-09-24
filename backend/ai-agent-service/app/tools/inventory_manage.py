@@ -83,7 +83,7 @@ class InventoryManageTool(BaseTool):
         "【参数】action 必填：**只有 query（需 product_id）/ low_stock_alert（可选 threshold）两个只读 action**"
         "（B 端已只读化，issue #5247）。"
         "【反例】查商品详情（含库存字段）用 product_detail；查批次余量/剩料分布用 batch_stock_query。"
-        "【反例】调库存**不在本工具能力内**——引导用户到后台「商品管理 → 库存」页调整。"
+        "【反例】调库存**不在本工具能力内**——引导用户到后台「商品列表 → 编辑商品 → 库存」页调整。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
     

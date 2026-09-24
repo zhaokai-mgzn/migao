@@ -83,7 +83,7 @@ class CustomerManageTool(BaseTool):
         "禁止传手机号）；list_tags 列出全店客户标签。"
         "【反例】查客户的历史订单用 order_query(keyword=XX)，不要用本工具；"
         "员工账号用 employee_manage，角色权限用 role_manage。"
-        "【反例】改客户资料/打标签/删标签**不在本工具能力内**——引导用户到后台「客户管理」页面自行操作。"
+        "【反例】改客户资料/打标签/删标签**不在本工具能力内**——引导用户到后台「客户列表」页面自行操作。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：issue #5246 起 `CustomerController` 的读面 `customer:view`、

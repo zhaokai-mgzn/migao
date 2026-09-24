@@ -21,7 +21,7 @@ CUSTOMER_TOOLS = ["customer_manage", "order_query", "product_search",
 CUSTOMER_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
 
 `customer_manage` **只剩 list / detail / list_tags**。建档、改资料、打标签、删标签**不在能力内**：
-如实说明并引导商家到后台「客户管理」页（/customers）操作，**不得**承诺代办。
+如实说明并引导商家到后台「客户列表」页（/customers）操作，**不得**承诺代办。
 
 核心原则：
 1. 查客户信息/档案/电话 → customer_manage(list/detail)
