@@ -64,52 +64,48 @@ cases:
 
   - id: ST-003
     legacy_id: "6.3"
-    title: "修改密码"
+    title: "修改密码 —— 能力已下线（settings 域只读）：如实告知 + 引导管理员，不假承诺"
     domains:
       - settings
-    tier: adversarial
+    tier: normal
     tags:
-      - write
+      - query
       - password
     truths_ref:
       - settings-manage.change-password
     user_inputs:
-      # 🔴 #5030 的口径修复：新密码由占位符 `yyy` 改为 ≥6 位 —— `settings_manage._change_password`
-      # 有**代码级**长度校验 `len(new_password) < 6` ⇒ 3 位新密码**必然被拒**，而下面那条
-      # `must_succeed` 与 data_check「确认后修改成功」都要求它成功（旧输入下物理不可满足）。
       - "改密码，旧密码xxx 新密码newpass123"
+    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端米宝只读化」）────────────
+    # 原断言（`settings_manage(action=change_password)` + 同 action 的 `must_succeed`）
+    # **不可满足**：该写 action 已从工具源码删除（`VALID_ACTIONS` 只剩三个只读 action），
+    # 且后台自 issue #3006/#3098 起**也没有**自助改密入口 ⇒ 不存在"能改成功"的路径。
+    # 用例**保留**（用户仍会说这句话，是高频诉求）⇒ 改判**能力下线后的正确行为** =
+    # 如实告知 + 给出下一步（联系管理员），且**不得假承诺**。
+    # 「不得调用已删除的写 action」由 L0 结构判据锁定
+    # （backend/ai-agent-service/tests/test_settings_domain_readonly.py +
+    #  tests/unit_ci_workflows/test_mibao_b_end_readonly.py 判据 6）——
+    # 此处**不写** `must_fail: settings_manage(action=change_password)`：那是悬空 action
+    # （该取值已不在枚举里，`action_binding_violations` 会判红）。
     expectations:
-      - tool: settings_manage
-        args:
-          action: change_password
-    # ── 效果层 + 自清理 + 前置自断言（2026-09-23 case-trust burn-down 缴费，metric=entries
-    #    ⇒ 必须**整条销账**；先例 = CU-005 的 #5039 缴费）──
-    # ① 效果层（`must_succeed`）：「调用了 ≠ 成了」（#3778）。本用例的**被测对象 = 旧密码校验 + 改密
-    #    成功**：`expectations[settings_manage(action=change_password)]` 只证明「调用了」——
-    #    工具返回「修改密码失败：旧密码不正确」时它**照样满分**，而那恰恰是本用例要测的失败面。
-    must_succeed:
-      - tool: settings_manage
-        action: change_password
-    # ② 自清理（`namespaces`，**如实登记为弱证据**）：taxonomy 明列的档位 —— 只保证并行互斥，
-    #    不解决重试前置。改密是**非幂等**写（第二次跑旧密码已变）⇒ 强修需要夹具层新增
-    #    「密码复位」动作（复位族第三批；现有 `_CLEAN_TYPES` 无 password 域，`order_status_restore`
-    #    一族不覆盖它）—— 本 PR 不夹带 runner 能力改动，故只登记弱证据，**不发明类型**。
-    namespaces:
-      - "account_password:评测管理员"
-    # ③ 前置自断言（`preconditions`，**声明层散文**；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型，
-    #    口径同 CU-005 的 #5039 缴费）：改密能成功的前提是「该账号**有**已知明文对应的旧密码」。
-    #    ⚠️ 如实登记（见 issue #5055）：评测种子的 `users` 插入**不含 password_hash** ⇒ 该前提在
-    #    当前评测栈上**不成立** ⇒ 本用例会以 `must_succeed` 判红（**这正是它的价值**：把「恒绿空跑」
-    #    变成可失败判据）。真修需要种子补已知哈希 + 夹具层密码复位动作。
-    preconditions:
-      - "评测管理员账号（debug_admin_eval）存在且**有已知明文对应的旧密码**（否则旧密码校验必然失败 ⇒ 本用例的 must_succeed 判红而非静默通过）"
+      - tool: direct_reply
+    # forbidden-text-intent: 本用例测的就是「能力已下线 ⇒ 不得假承诺已改密」——禁令即主判据
+    forbidden_text:
+      - "已修改成功"
+      - "密码已修改"
+      - "已为您修改密码"
+      - "已帮您修改"
+      - "修改成功"
     data_checks:
-      - "确认后修改成功"
+      - "如实告知：米宝不改密码（本域只读），且后台暂无自助改密入口 ⇒ 引导用户联系管理员处理"
+      - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
+      - "不得索取/复述密码明文，也不得改用其它工具假装完成（如改配置/发通知）"
+      - "settings_manage 只暴露 get_settings/get_ai_config/login_logs（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）"
     skip_reason: ""
-    merge_log: "verification 6.3 独有；change_password 真值待 truth-miner 补挖；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[settings_manage(action=change_password)]`（效果层：「调用了 ≠ 成了」—— 旧密码校验失败时原断言照样满分）+ `namespaces[account_password:评测管理员]`（弱证据，如实登记：夹具层无密码域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。**如实登记**：该前提在当前评测栈上不成立（种子无 password_hash）⇒ 本用例由「恒绿」变「可失败」，真修见 #5055。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动**"
+    merge_log: "verification 6.3 独有；change_password 真值待 truth-miner 补挖；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[settings_manage(action=change_password)]`（效果层：「调用了 ≠ 成了」—— 旧密码校验失败时原断言照样满分）+ `namespaces[account_password:评测管理员]`（弱证据，如实登记：夹具层无密码域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。**如实登记**：该前提在当前评测栈上不成立（种子无 password_hash）⇒ 本用例由「恒绿」变「可失败」，真修见 #5055。 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[settings_manage(action=change_password)]`、`must_succeed`（同 action，效果层）、`namespaces[account_password:…]`（改密的并行互斥）、`preconditions`（旧密码前提）、data_check「确认后修改成功」**整体移除** —— 写 action 已从工具删除 ⇒ 这些断言永久不可满足（留着就是悬空声明；`action_binding_violations` 会直接判红）。改判新行为 = 如实告知 + 引导管理员 + 不得假承诺（`forbidden_text` 承载禁令面），`tags` 由 `write` 改判 `query`（本域已无写能力）。`truths_ref` 保留 `settings-manage.change-password`（该真值本身已同批改判为「不在 Agent 能力内」）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_settings_manage.py"
+        - "backend/ai-agent-service/tests/test_settings_domain_readonly.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -144,28 +140,45 @@ cases:
 
   - id: ST-005
     legacy_id: "6.5"
-    title: "通知标记已读"
+    title: "通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺"
     domains:
       - settings
       - notification
     tier: normal
     tags:
-      - write
+      - query
     truths_ref:
       - agent-notification.notification-status
     user_inputs:
       - "把新订单通知标为已读"
+    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端米宝只读化」）────────────
+    # 原断言（`notification_manage(action=mark_read or read_all)` + data_check「status 变为 read」）
+    # **不可满足**：两个写 action 已从工具源码删除（`VALID_ACTIONS` 只剩 list/unread_count）。
+    # 用例保留（用户仍会说这句话），改判**能力下线后的正确行为** = 如实告知 + 引导到后台
+    # 「通知中心」页自助处理，且不得假承诺已标记。
+    # 「不得调用已删除的写 action」由 L0 结构判据锁定
+    # （backend/ai-agent-service/tests/test_settings_domain_readonly.py +
+    #  tests/unit_ci_workflows/test_mibao_b_end_readonly.py 判据 6）——
+    # 此处**不写** `must_fail: notification_manage(action=mark_read)`：那是悬空 action。
     expectations:
-      - tool: notification_manage
-        args:
-          action: "mark_read or read_all"
+      - tool: direct_reply
+    # forbidden-text-intent: 本用例测的就是「能力已下线 ⇒ 不得假承诺已标记已读」——禁令即主判据
+    forbidden_text:
+      - "已标记为已读"
+      - "已标为已读"
+      - "已全部标记"
+      - "已经帮您标记"
+      - "已为您标记"
     data_checks:
-      - "status 变为 read"
+      - "如实告知：米宝不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记"
+      - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
+      - "notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）"
     skip_reason: ""
-    merge_log: "verification 6.5 独有"
+    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_notification_manage.py"
+        - "backend/ai-agent-service/tests/test_settings_domain_readonly.py"
       ci:
         - agent-eval.yml
       verifies: []

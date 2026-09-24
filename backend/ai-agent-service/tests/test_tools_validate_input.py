@@ -662,13 +662,18 @@ def _dead_rule_keys(rules_by_tool):
 
 
 #: 🔴 **#5247 退役台账**：`_VALIDATION_RULES` 里 **action 已从工具删除**的规则键
-#: （B 端米宝只读化：8 把工具的写 action 被删、规则块留在 app 侧未同批清理，共 23 条）。
+#: （B 端米宝只读化：#5247 的 8 把 + #5302 收口的 2 把（settings 域）工具的写 action 被删、
+#: 规则块留在 app 侧未同批清理，共 30 条）。
+#:
+#: ⚠️ 常量名**不再带单个 issue 号**（原 `RETIRED_RULE_KEYS_5247`）：#5302 是同一轮
+#:   「B 端只读化」的收口（settings 域漏网补齐），两批条目记在**同一张台账**上 ——
+#:   单一台账、不抄第二份（仓内纪律）。
 #:
 #: 这是**单次收窄的账**、不是通用豁免池：
 #:   · 判据是**集合相等**（见 `TestValidationRuleKeysAreLive`）⇒ 新死键照旧红、陈旧条目也红；
 #:   · **去向**：`app/tools/validate_input.py` 删除这些规则块后，本台账必须同批清空。
 #: 每个工具一条理由（`# [RETIRED #5247]`），避免"一堆元组说不清为什么"。
-RETIRED_RULE_KEYS_5247: frozenset = frozenset({
+RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     # [RETIRED #5247] after_sales_manage：收窄为 list/detail（写 action create/update_status 删除）
     ("after_sales_manage", "create"),
     ("after_sales_manage", "update_status"),
@@ -700,6 +705,16 @@ RETIRED_RULE_KEYS_5247: frozenset = frozenset({
     # [RETIRED #5247] session_manage：收窄为 list/monitor/detail（写 action assign/end 删除）
     ("session_manage", "assign"),
     ("session_manage", "end"),
+    # [RETIRED #5302] notification_manage：收窄为 list/unread_count（写 action 全删）
+    #   （settings 域整域收口 = #5247 的漏网补齐；同一轮 B 端只读化 ⇒ 记在同一张台账）
+    ("notification_manage", "create"),
+    ("notification_manage", "delete"),
+    ("notification_manage", "mark_read"),
+    ("notification_manage", "read_all"),
+    # [RETIRED #5302] settings_manage：收窄为 get_settings/get_ai_config/login_logs（写 action 全删）
+    ("settings_manage", "change_password"),
+    ("settings_manage", "update_ai_config"),
+    ("settings_manage", "update_settings"),
 })
 
 
@@ -710,7 +725,10 @@ class TestValidationRuleKeysAreLive:
 
     本单把 8 把 B 端写工具的**写 action 全部删除**（收窄为只读），而这些 action 的规则块
     留在 `app/tools/validate_input.py` 的 `_VALIDATION_RULES` 里未同批清理 ⇒ 检测器报出
-    **23 个死键**（见 `RETIRED_RULE_KEYS_5247`）。
+    **23 个死键**（见 `RETIRED_RULE_KEYS_B_END_READONLY`）。
+
+    🔴 **#5302 收口（同一轮 B 端只读化）**：settings 域的两把（`notification_manage` /
+    `settings_manage`）写 action 也全部删除 ⇒ 死键 23 → **30**，同一张台账（单一台账）。
 
     处置（按"前提没了不许悄悄放宽阈值"的纪律）：**退役台账 + 集合相等**，三个方向都有牙 ——
       ① 出现**台账之外**的死键（又有规则没人命中）⇒ 红（原判据的本意，一字未减）；
@@ -726,20 +744,20 @@ class TestValidationRuleKeysAreLive:
         from app.tools.validate_input import _VALIDATION_RULES
 
         dead = set(_dead_rule_keys(_VALIDATION_RULES))
-        unexpected = sorted(dead - RETIRED_RULE_KEYS_5247)
-        stale = sorted(RETIRED_RULE_KEYS_5247 - dead)
+        unexpected = sorted(dead - RETIRED_RULE_KEYS_B_END_READONLY)
+        stale = sorted(RETIRED_RULE_KEYS_B_END_READONLY - dead)
         assert not unexpected, (
             "闸门规则键与工具 action 枚举不一致 → 规则永不命中（破坏性操作不过闸门）：\n  "
             + "\n  ".join(f"{t}.{a}" for t, a in unexpected)
             + "\n→ 修法二选一：①该 action 仍应存在 ⇒ 把它加回工具的 action 枚举；"
-              "②action 已废弃 ⇒ 删除该规则块。**不许**把新死键塞进 #5247 退役台账"
-              "（那是单次收窄的账，不是通用豁免池）"
+              "②action 已废弃 ⇒ 删除该规则块。**不许**把新死键塞进本轮退役台账"
+              "（那是 B 端只读化（#5247 + #5302）的账，不是通用豁免池）"
         )
         assert not stale, (
-            "以下 #5247 退役台账条目已**不再是死键**（action 又存在了，或规则块已被清理）：\n  "
+            "以下本轮退役台账条目已**不再是死键**（action 又存在了，或规则块已被清理）：\n  "
             + "\n  ".join(f"{t}.{a}" for t, a in stale)
-            + "\n→ 台账是唯一真值，陈旧条目必须销账：从 RETIRED_RULE_KEYS_5247 删除这些元组"
-              "（若 app 侧已按 #5247 清完这 23 条规则，整张台账清空即可）"
+            + "\n→ 台账是唯一真值，陈旧条目必须销账：从 RETIRED_RULE_KEYS_B_END_READONLY 删除这些元组"
+              "（若 app 侧已把这些规则清完，整张台账清空即可）"
         )
 
     def test_detector_catches_dead_rule_key(self):

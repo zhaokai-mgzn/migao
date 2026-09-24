@@ -6,6 +6,33 @@
 
 ## [Unreleased]
 
+### 米宝不再能改系统设置 / AI 配置 / 密码，也不能标记已读 / 删除 / 发送站内通知 —— 改为如实告知并引导到后台页面（2026-09-25，issue #5302）
+
+- **改了什么（商家可见面 = 米宝对话）**：#5247「B 端米宝只读化」把 8 把写工具收窄为只读，
+  但 **settings 域整域漏网**（`settings_manage` / `notification_manage` / settings 域提示词
+  不在那次改动清单里）。本次收口：
+  ① `settings_manage` 只剩 `get_settings` / `get_ai_config` / `login_logs` 三个**只读** action
+  （`update_settings` / `update_ai_config` / `change_password` 的 action、写方法与写参数一并删除）；
+  ② `notification_manage` 只剩 `list` / `unread_count`（`mark_read` / `read_all` / `delete` / `create`
+  连同只服务 `create` 的收件人解析机具一并删除）；
+  ③ 域提示词改判为「本域已只读」+ 明确引导路径：调系统参数 / 改 AI 配置 →
+  后台「企业基础信息 → 基本设置 / AI 客服设置」；改密码 → 后台无自助改密入口（#3006/#3098）⇒ 引导联系管理员；
+  标记已读 / 删除 / 发通知 → 后台「通知中心」。
+- **为什么**：改前米宝仍能改全局配置、改 AI 配置、改密码、群发/删除通知（按
+  `docs/wiki/agent-write-boundary.md` 的分档属 **C 档「判定为不该给 Agent」**，而该文档的
+  「已知漏网」段点名的正是本单）。
+- **不改什么**：**读取面一字未变**（系统设置 / AI 配置 / 登录日志 / 通知列表与未读数照旧可查）；
+  C 端小布零改动；A 档可逆写（#5303 的两条改价）不受影响；工具文件与注册行均未删除（与 #5247 同口径）。
+- **已知边界（如实登记）**：`notification_manage` 的权限面回落到**角色层** —— 它剩下的两个读端点
+  在 admin-api 里本就没有权限码，原 `system:manage` + `employee:list` 是**写路径**的码
+  （`POST` 建通知 + `create` 解析收件人的 `GET /api/admin/users`）⇒ 随写 action 退场；
+  角色白名单在类体显式声明（`["admin","operator"]`，= 改前实际放行面，零回归）。
+  `read_only_actions` 声明保留（与 #5247 收窄的 8 把同形态）。
+  **存疑**：`docs/wiki/agent-write-boundary.md` 把「通知标记已读」列为 **A 档补回候选**
+  （可逆、无对外影响），而 issue #5302 的验收判据要求只留 `list` / `unread_count`
+  ⇒ 本单按 **issue 口径全部下线**；若日后按 A 档补回 `mark_read`，属另一单（须同时补
+  A 档准入的写前预览与判据改判）。
+
 ### 米宝遇「改主图 / 详情图」不再内部空转：如实说明该能力不在能力内 + 直接指到后台商品管理页（2026-09-24，issue #5318）
 
 - **改了什么（商家可见面 = 米宝对话）**：商家说「把这张色卡图设成主图」时，米宝此前会被一条

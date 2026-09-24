@@ -329,11 +329,9 @@ class TestIdempotencyClassificationLock:
             # 不在注册表）⇒ 从本抽样移除（抽样口径是「注册表里的非幂等写工具」）。
             # 它的 `idempotent = False` 声明**仍留在类上**（工具类保留），
             # 由 `tests/test_tools_human_handoff.py` 直测类覆盖 —— 不留判据真空。
-            "notification_manage",  # 发通知
             "product_manage",     # 建商品
             # ── #5247 补进的 4 把（本单未收窄，仍是写工具 + 非幂等）──────────────
             "order_manage",            # 改单 / 取消 / 退款（资金动作）
-            "settings_manage",         # 改设置 / 改 AI 配置 / 改密码
             "processing_item_manage",  # 加工项与分类的增删改
             "processing_order_update", # 加工单状态流转
             # ── # [RETIRED #5247] 4 把退场（收窄为只读 ⇒ 不再是"非幂等**写**工具"）──
@@ -341,6 +339,12 @@ class TestIdempotencyClassificationLock:
             # "finance_api"      （写 action 已删除，read_only = True）
             # "inventory_manage" （写 action 已删除，read_only = True）
             # "role_manage"      （写 action 已删除，read_only = True）
+            # ── # [RETIRED #5302] 2 把退场（settings 域收口：写 action 全部删除）────
+            # "notification_manage"（mark_read/read_all/delete/create 已删除，read_only = True）
+            # "settings_manage"    （update_settings/update_ai_config/change_password 已删除，read_only = True）
+            # ⚠️ 两把的 `idempotent = False` 行也一并删除（只读查询可安全重试 ⇒ 吃基类默认 True）——
+            #    它们不再是"写工具必须显式表态"的对象（判据：#5302 的
+            #    tests/test_settings_domain_readonly.py）。
         ):
             assert name in by_name, f"{name} 未注册"
             assert by_name[name].read_only is False, (

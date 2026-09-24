@@ -54,6 +54,25 @@ C 端（小布）**零改动**。
    —— 「只解绑 B 端，绝不删除、不改 C 端行为」是用户裁定的硬边界。
 6. **A 档写能力「文案 ↔ 绑定」双向一致**（#5303 新增）：文案承诺改价 ⇒ 两条工具必须真的绑在
    B 端；工具绑在 B 端 ⇒ 文案必须真的提到改价（**反向能力谎报**同样是缺陷）。
+7. **声明了米宝 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
+   **∈ A 档白名单 ∪ 只读**（#5302 收口新增，见下）。
+
+## 🔴 判据 7 的立案理由（#5302）：判据 1~3 的射程是「**可达**」，而 #5247 的处置里有「解绑」
+
+#5247 对两个域用了**两种不同**的处置：8 把写工具 = **收窄**（工具留在原地、删写 action）；
+`settings` 域 = **解绑**（把 skill 从 `mibao.py` 的 `skill_names` 移出）。判据 1~3 全部以
+`b_end_tools`（= `skill_names` ∪ fallback → 各 skill 的 `*_TOOLS`）为射程 ⇒
+**解绑会把该 skill 的工具整体移出射程**，而它的文件、注册关系、写 action 一字未动
+（`settings_manage` 的 `update_settings` / `update_ai_config` / `change_password` 与
+`notification_manage` 的 `create` / `delete` / `mark_read` / `read_all` 全在）——
+**正是 #5302 的漏网形态**：最危险的档位（全局配置 + 群发）整域逃出只读判据。
+
+判据 7 因此按 **skill 源码声明的 persona**（`SkillConfig.system_prompts` 的键）而不是
+「可达性」取射程：只要一个 skill 声明了 `mibao`，它绑的工具就受写面边界约束 ——
+**解绑不再是一条逃逸路径**（"不进对话面" ≠ "可以继续带写能力"）。
+它与判据 1 的差别是**射程**（超集）与**白名单口径复用**（A 档成员照旧放行）；
+在任何一次正常收窄下两者同绿，只有在"用解绑代替收窄"时判据 7 才会红
+（红证见注入 ⑧/⑧b/⑧c）。
 
 ## 明确的边界（**不要**把本判据读成覆盖面更大）
 
@@ -117,6 +136,11 @@ WRITE_ACTION_WORDS = frozenset({
     "delete_item", "create_role", "update_role", "delete_role", "create_user",
     "update_user", "delete_user", "create_category", "update_category", "delete_category",
     "create_ticket", "create_order", "mark_read", "create_notification",
+    # ── #5302 收口补入（settings 域的写 action 名 + `read_all`）────────────────────────
+    # 为什么必须补：闭词表原先把这三个 settings 域写 action 漏在外面 ⇒ 「把写 action 塞回
+    # 已解绑 skill 的工具」这条注入（判据 7 的红证 ⑧b）**不会变红**（实测踩到：注入生效、
+    # 判据沉默 = 空断言）。补入后 settings 域的写 action 与其它域同受闭词表约束。
+    "update_settings", "update_ai_config", "change_password", "read_all",
 })
 
 #: 能力文案里的**写能力承诺词**（判据 4 闭词表）。命中即「AI 说得到、做不到」。
@@ -255,6 +279,42 @@ def parse_skills(sources: dict[str, str]) -> dict[str, tuple[str, ...]]:
     return out
 
 
+def parse_skill_personas(sources: dict[str, str]) -> dict[str, frozenset[str]]:
+    """skill 名 → 它声明的 persona 集（`SkillConfig.system_prompts` 的键）。
+
+    判据 7 的射程来源：**persona 家族**（`system_prompts` 的键）—— 与运行期的只读共享
+    （`tests/test_readonly_cross_domain_sharing.py`）同一口径。用「声明」而不是「可达」，
+    是为了让「把 skill 从 `skill_names` 解绑」不能把它的工具移出写面判据（#5302）。
+    """
+    out: dict[str, frozenset[str]] = {}
+    for key, text in sorted(sources.items()):
+        if not key.startswith("skill:"):
+            continue
+        tree = ast.parse(text)
+        name = None
+        personas: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", None) not in ("SkillConfig", "create_skill_config"):
+                continue
+            for kw in node.keywords:
+                if kw.arg == "name":
+                    v = _literal(kw.value)
+                    if isinstance(v, str):
+                        name = v
+                elif kw.arg == "system_prompts":
+                    keys = getattr(kw.value, "keys", None) or []
+                    for k in keys:
+                        pk = _literal(k)
+                        if isinstance(pk, str):
+                            personas.add(pk)
+        if name:
+            out[name] = frozenset(personas)
+    assert out, "skill persona 解析出 0 个 ⇒ 判据 7 会空跑（fail-closed）"
+    return out
+
+
 def parse_agent(sources: dict[str, str], agent: str) -> tuple[frozenset[str], str | None]:
     """某人格的 `skill_names` + `fallback_skill`（用 AST 读，避免注释里的引号被当成 skill 名）。"""
     tree = ast.parse(sources[f"agent:{agent}"])
@@ -306,6 +366,7 @@ class World:
         self.sources = sources
         self.tools = parse_tools(sources)
         self.skills = parse_skills(sources)
+        self.skill_personas = parse_skill_personas(sources)
         b_names, b_fallback = parse_agent(sources, "mibao")
         c_names, c_fallback = parse_agent(sources, "xiaobu")
         self.mibao_skills = b_names | ({b_fallback} if b_fallback else set())
@@ -317,12 +378,24 @@ class World:
             t for s in self.xiaobu_skills for t in self.skills.get(s, ())
         )
         self.capability_text = parse_agent_direct_replies(sources, "mibao")
+        # 判据 7 的射程：**声明**了 mibao persona 的 skill（可达 + 已解绑的孤儿）。
+        self.mibao_declared_skills = frozenset(
+            n for n, p in self.skill_personas.items() if "mibao" in p
+        )
+        self.mibao_declared_tools = frozenset(
+            t for s in self.mibao_declared_skills for t in self.skills.get(s, ())
+        )
         # A 档白名单的"确认门禁"面（#5303）：从工具类声明现算，不抄清单
         self.confirmed_write_tools = frozenset(
             n for n, d in self.tools.items() if d.get("requires_confirmation")
         )
         assert self.b_end_tools, "B 端工具并集为空 ⇒ 判据会空跑（fail-closed）"
         assert self.c_end_tools, "C 端工具并集为空 ⇒ 判据会空跑（fail-closed）"
+        assert self.mibao_declared_tools >= self.b_end_tools, (
+            "声明 persona 的 skill 工具集必须是**可达并集的超集**（判据 7 的射程前提；"
+            f"差集={sorted(self.b_end_tools - self.mibao_declared_tools)}）—— "
+            "否则判据 7 比判据 1 还窄，收口失效"
+        )
 
 
 def world() -> World:
@@ -486,6 +559,40 @@ def problems_shared_tools_intact(w: World) -> list[str]:
     return out
 
 
+def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
+    """判据 7（#5302）：**声明了米宝 persona 的每个 skill**（含已解绑的孤儿）绑的工具
+    必须 **∈ A 档白名单 ∪ 只读**。
+
+    与判据 1 的唯一差别 = **射程**：判据 1 取「可达并集」（`skill_names` ∪ fallback），
+    本判据取「声明了 persona 的 skill 并集」⇒ "把 skill 解绑" 不再是逃逸路径（#5302 的立案
+    理由与红证见文件头）。三条子判据：工具类必须存在（悬空绑定）、白名单外必须只读、
+    action 集不含写动词（闭词表，防「把写 action 挪进 `read_only_actions` 洗白」）。
+    """
+    out: list[str] = []
+    for name in sorted(w.mibao_declared_tools):
+        decl = w.tools.get(name)
+        if decl is None:
+            out.append(
+                f"`{name}` 被**声明了 mibao persona 的 skill** 绑定，但没有任何工具类声明该名字 "
+                "（悬空绑定 ⇒ 模型必然撞 tool_not_found）"
+            )
+            continue
+        if not decl["read_only"] and name not in A_TIER_REVERSIBLE_WRITES:
+            out.append(
+                f"`{name}`（{decl['file']}）`read_only=False`，却被声明 mibao persona 的 skill "
+                "绑定 ⇒ 该 skill 一旦接回 `skill_names`（或经 persona 家族只读共享）就是写能力复活。"
+                "#5247/#5302 的裁定是**收窄为只读**（或进 A 档白名单），不是「解绑即免责」"
+                "（#5302 的整域漏网形态）"
+            )
+        hits = sorted(set(decl["valid_actions"] or []) & WRITE_ACTION_WORDS)
+        if hits:
+            out.append(
+                f"`{name}`：action 集合里出现写动作名 {hits}（闭词表命中）—— "
+                "声明 persona 的 skill 不得再暴露写 action"
+            )
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具并集白名单制": problems_union_is_read_only,
     "2 · 白名单外写工具零绑定": problems_write_tools_bound,
@@ -493,6 +600,7 @@ JUDGEMENTS = {
     "4 · 能力文案不谎报": problems_capability_claims,
     "5 · 共享工具与 C 端零改动": problems_shared_tools_intact,
     "6 · A 档能力文案↔绑定双向一致": problems_a_tier_capability_parity,
+    "7 · 声明 persona 的 skill 工具面受控": problems_declared_persona_tools_are_controlled,
 }
 
 
@@ -502,7 +610,7 @@ JUDGEMENTS = {
 
 
 def test_every_judgement_is_green() -> None:
-    """五条判据在**当前仓库**上全绿（红 = B 端只读化已漂移，逐条问题见断言文案）。"""
+    """七条判据在**当前仓库**上全绿（红 = B 端写面边界已漂移，逐条问题见断言文案）。"""
     w = world()
     problems = {label: fn(w) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
@@ -519,6 +627,8 @@ def test_union_print_is_informative() -> None:
         n for n in w.b_end_tools if w.tools.get(n, {}).get("read_only") is not True
     )))
     print("[B 端 skill] " + str(sorted(w.mibao_skills)))
+    print("[声明 mibao persona 的 skill（判据 7 射程）] " + str(sorted(w.mibao_declared_skills)))
+    print("[该射程的工具并集] " + str(sorted(w.mibao_declared_tools)))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -615,6 +725,28 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _bind_into_b_skill(s, "product_update"),
             problems_union_is_read_only,
         ),
+        # ── #5302 新增（判据 7）：**孤儿 skill 的工具面**必须也能变红 ────────────────
+        # 三个注入都打在 `settings` 域（它在 `mibao.py` 的 `skill_names` 里**不在**，
+        # 故判据 1~6 对它们完全沉默 —— 这正是 #5302 的漏网形态）。
+        "⑧ 已解绑 skill 的工具改回 `read_only = False`（settings_manage）⇒ 判据 7 红": (
+            "tool:settings_manage.py",
+            lambda s: s.replace("read_only = True", "read_only = False", 1),
+            problems_declared_persona_tools_are_controlled,
+        ),
+        "⑧b 已解绑 skill 的工具塞回写 action（settings_manage += change_password）⇒ 判据 7 红": (
+            "tool:settings_manage.py",
+            lambda s: s.replace(
+                'VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs"}',
+                'VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs", "change_password"}',
+                1,
+            ),
+            problems_declared_persona_tools_are_controlled,
+        ),
+        "⑧c 已解绑 skill 绑定一个不存在的工具（settings_skill 悬空绑定）⇒ 判据 7 红": (
+            "skill:settings_skill.py",
+            lambda s: _bind_into_b_skill(s, "ghost_tool_never_declared"),
+            problems_declared_persona_tools_are_controlled,
+        ),
     }
 
 
@@ -633,7 +765,7 @@ def test_every_judgement_can_go_red() -> None:
     base_world = World(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}
     assert all(not v for v in green.values()), (
-        "对照组：未注入时五条判据必须全绿（否则红证无从归因）：\n"
+        "对照组：未注入时七条判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
     for label, (key, mutate, judgement) in _injections().items():

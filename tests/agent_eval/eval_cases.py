@@ -7492,24 +7492,23 @@ _CASE_ST_002 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── ST-003 [ADVERSARIAL] 修改密码（源: cases/settings.yml）──
+# ── ST-003 [NORMAL] 修改密码 —— 能力已下线（settings 域只读）：如实告知 + 引导管理员，不假承诺（源: cases/settings.yml）──
 _CASE_ST_003 = EvalCase(
     id='ST-003',
     legacy_id='6.3',
-    title='修改密码',
+    title='修改密码 —— 能力已下线（settings 域只读）：如实告知 + 引导管理员，不假承诺',
     skill=Skill.GENERAL,
-    difficulty=Difficulty.ADVERSARIAL,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['改密码，旧密码xxx 新密码newpass123'],
-    expectations=['settings_manage(action=change_password)'],
-    data_checks=['确认后修改成功'],
+    expectations=['direct_reply'],
+    data_checks=['如实告知：米宝不改密码（本域只读），且后台暂无自助改密入口 ⇒ 引导用户联系管理员处理', '整场不得出现假承诺话术（机器断言见 forbidden_text）', '不得索取/复述密码明文，也不得改用其它工具假装完成（如改配置/发通知）', 'settings_manage 只暴露 get_settings/get_ai_config/login_logs（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）'],
     skip_reason='',
-    tags=['write', 'password'],
+    tags=['query', 'password'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'settings_manage', 'action': 'change_password'}],
-    namespaces=['account_password:评测管理员'],
+    forbidden_text=['已修改成功', '密码已修改', '已为您修改密码', '已帮您修改', '修改成功'],
 )
 
 # ── ST-004 [NORMAL] 通知列表（源: cases/settings.yml）──
@@ -7530,22 +7529,23 @@ _CASE_ST_004 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── ST-005 [NORMAL] 通知标记已读（源: cases/settings.yml）──
+# ── ST-005 [NORMAL] 通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺（源: cases/settings.yml）──
 _CASE_ST_005 = EvalCase(
     id='ST-005',
     legacy_id='6.5',
-    title='通知标记已读',
+    title='通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['把新订单通知标为已读'],
-    expectations=['notification_manage(action=mark_read or read_all)'],
-    data_checks=['status 变为 read'],
+    expectations=['direct_reply'],
+    data_checks=['如实告知：米宝不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记', '整场不得出现假承诺话术（机器断言见 forbidden_text）', 'notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）'],
     skip_reason='',
-    tags=['write'],
+    tags=['query'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_text=['已标记为已读', '已标为已读', '已全部标记', '已经帮您标记', '已为您标记'],
 )
 
 # ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层）（源: cases/settings.yml）──

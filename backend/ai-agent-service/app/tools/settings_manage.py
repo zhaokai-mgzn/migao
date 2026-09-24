@@ -1,56 +1,66 @@
 """
-AI 智能客服系统 - 系统设置管理 Tool
+AI 智能客服系统 - 系统设置管理 Tool（**只读**）
 
-管理系统设置，支持获取/更新系统设置、获取/更新AI配置、修改密码、查询登录日志。
+查询系统设置、AI 客服配置与登录日志。
+
+🔴 **B 端米宝只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
+写能力（`update_settings` / `update_ai_config` / `change_password`）**已从本工具删除**，
+对应写方法与**写参数**一并删除（不是"只从 description 里摘掉"）。
+⚠️ `VALID_ACTIONS` 是本工具 action 面的**唯一真值**：往这里加回写 action = 写能力复活
+（判据：`backend/ai-agent-service/tests/test_settings_domain_readonly.py` +
+`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 6 —— 后者按 **skill 声明的 persona**
+取射程，故「把 skill 从 skill_names 解绑」不能把本工具移出只读约束）。
 """
 
-from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
-# 操作类型
-VALID_ACTIONS = {
-    "get_settings", "update_settings",
-    "get_ai_config", "update_ai_config",
-    "change_password", "login_logs",
-}
+# 操作类型 —— **全部只读**（#5302）。三个 action 与 admin-api 读端点一对一：
+#   get_settings  → `GET /api/admin/settings`
+#   get_ai_config → `GET /api/admin/tenant/ai-config`
+#   login_logs    → `GET /api/admin/settings/login-logs`
+VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs"}
 
 
 class SettingsManageTool(BaseTool):
-    """系统设置管理 Tool
+    """系统设置查询 Tool（只读）
 
-    管理系统设置：获取/更新系统设置、获取/更新AI配置、修改密码、查询登录日志。
+    查询系统设置、AI 客服配置与登录日志。
 
     使用场景：
     - 获取当前系统设置（商户名称、行业等）
-    - 更新系统设置
-    - 获取AI客服配置（问候语模板、营业时间等）
-    - 更新AI客服配置
-    - 修改账户密码
+    - 获取 AI 客服配置（问候语模板、营业时间等）
     - 查看登录日志
+
+    **不提供**：调整系统参数 / 修改 AI 配置 / 修改密码 —— 引导用户到商户后台页面自助操作
+    （改密码在后台亦无自助入口，见 issue #3006/#3098 ⇒ 引导联系管理员）。
     """
 
     name = "settings_manage"
     description = (
-        "【触发】用户问'系统设置''配置''AI配置''模型''问候语''改密码''登录日志'时调用。"
-        "【参数】action 必填：get_settings/get_ai_config/login_logs 只读；"
-        "update_settings（name/industry 等）/update_ai_config（greeting_template 等）/"
-        "change_password（old_password + new_password）为写操作。"
-        "【反例】通知管理用 notification_manage；角色权限用 role_manage。"
-        "【标注】WRITE|DESTRUCTIVE — 修改全局配置/密码前必须二次确认"
-        "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
+        "【触发】用户问'系统设置''配置''AI配置''模型''问候语''登录日志'时调用。"
+        "【参数】action 必填：**只有 get_settings（获取设置）/ get_ai_config（获取AI配置）/ "
+        "login_logs（登录日志）三个只读 action**（B 端已只读化，issue #5247 / #5302）。"
+        "【反例】通知查询用 notification_manage；角色权限用 role_manage。"
+        "【反例】调整系统参数 / 修改 AI 配置**不在本工具能力内** —— 引导用户到商户后台"
+        "「企业基础信息 → 基本设置 / AI 客服设置」页自助修改。"
+        "【反例】修改密码**不在本工具能力内**（后台暂无自助改密入口）—— 如实告知，"
+        "并引导用户联系管理员处理，禁止承诺「已改好」。"
+        "【标注】READONLY — 纯查询，不含任何写 action"
     )
-    # 权限码（admin-api 目录）：SettingsController 类级 `@RequirePermission("system:manage")`。
-    # 该码在目录里只有 admin ⇒ 实际放行面不变，只是不再靠角色名硬编码。
+    # 权限码（admin-api 目录）：本工具**仍调用**的三个读端点都是
+    # `@RequirePermission("system:manage")`（`SettingsController`）⇒ 该码是**读码**，必须保留：
+    # 移除它会让三个读 action 全量 403。该域读写同码（写粒度债如实登记在
+    # `tests/unit_ci_workflows/test_agent_permission_parity.py` 的
+    # `REGISTERED_RESIDUALS`「settings 域写面未注解」）⇒ #5302 后本工具不再调用任何写端点，
+    # **没有**可移除的写码（不是漏删）。
     required_permissions = ["system:manage"]
 
-    read_only = False
-    destructive = True   # 可修改关键系统配置/AI配置/密码
+    read_only = True
     read_only_actions = {"get_settings", "get_ai_config", "login_logs"}  # 只读 action 免确认拦截
-    idempotent = False   # 配置修改非幂等
 
     parameters = {
         "type": "object",
@@ -58,43 +68,10 @@ class SettingsManageTool(BaseTool):
             "action": {
                 "type": "string",
                 "description": (
-                    "操作类型：get_settings（获取设置）/ update_settings（更新设置）/ "
-                    "get_ai_config（获取AI配置）/ update_ai_config（更新AI配置）/ "
-                    "change_password（修改密码）/ login_logs（登录日志）"
+                    "操作类型：get_settings（获取设置）/ get_ai_config（获取AI配置）/ "
+                    "login_logs（登录日志）—— 均为只读"
                 ),
-                "enum": [
-                    "get_settings", "update_settings",
-                    "get_ai_config", "update_ai_config",
-                    "change_password", "login_logs",
-                ],
-            },
-            "name": {
-                "type": "string",
-                "description": "商户名称（update_settings 时可选）",
-            },
-            "industry": {
-                "type": "string",
-                "description": "所属行业（update_settings 时可选）",
-            },
-            "greeting_template": {
-                "type": "string",
-                "description": "AI问候语模板（update_ai_config 时可选）",
-            },
-            "business_hours": {
-                "type": "string",
-                "description": "营业时间描述（update_ai_config 时可选）",
-            },
-            "ai_config": {
-                "type": "object",
-                "description": "其他AI配置字段，以字典形式传递（update_ai_config 时可选）",
-            },
-            "old_password": {
-                "type": "string",
-                "description": "旧密码（change_password 时必填）",
-            },
-            "new_password": {
-                "type": "string",
-                "description": "新密码（change_password 时必填）",
+                "enum": ["get_settings", "get_ai_config", "login_logs"],
             },
             "page": {
                 "type": "integer",
@@ -114,18 +91,11 @@ class SettingsManageTool(BaseTool):
         self,
         context: ToolContext,
         action: str,
-        name: Optional[str] = None,
-        industry: Optional[str] = None,
-        greeting_template: Optional[str] = None,
-        business_hours: Optional[str] = None,
-        ai_config: Optional[Dict[str, Any]] = None,
-        old_password: Optional[str] = None,
-        new_password: Optional[str] = None,
         page: int = 1,
         size: int = 10,
         **kwargs,
     ) -> ToolResult:
-        """执行系统设置管理操作"""
+        """执行系统设置**查询**操作"""
         # 权限检查
         if not self.check_permission(context):
             return ToolResult(
@@ -135,28 +105,25 @@ class SettingsManageTool(BaseTool):
                 suggestion="请联系管理员获取执行系统设置管理操作权限",
             )
 
-        # 参数校验
+        # 参数校验（写 action 在这里即被拒 —— 不是"描述里没写"，而是**不存在**）
         if action not in VALID_ACTIONS:
             return ToolResult(
                 success=False,
                 error=f"无效的操作类型: {action}",
-                message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
-                suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
+                message=f"不支持的操作类型，可选：{', '.join(sorted(VALID_ACTIONS))}",
+                suggestion=(
+                    "本工具只提供只读查询（get_settings / get_ai_config / login_logs）。"
+                    "调整系统参数 / 修改 AI 配置 / 修改密码不在本工具能力内 —— "
+                    "请如实告知用户，并引导其到商户后台「企业基础信息」页自助操作"
+                    "（改密码在后台无自助入口 ⇒ 引导联系管理员）"
+                ),
             )
 
         try:
             if action == "get_settings":
                 return await self._get_settings(context)
-            elif action == "update_settings":
-                return await self._update_settings(context, name, industry)
             elif action == "get_ai_config":
                 return await self._get_ai_config(context)
-            elif action == "update_ai_config":
-                return await self._update_ai_config(
-                    context, greeting_template, business_hours, ai_config
-                )
-            elif action == "change_password":
-                return await self._change_password(context, old_password, new_password)
             elif action == "login_logs":
                 return await self._login_logs(context, page, size)
             else:
@@ -206,53 +173,6 @@ class SettingsManageTool(BaseTool):
             message="系统设置已获取",
         )
 
-    async def _update_settings(
-        self,
-        context: ToolContext,
-        name: Optional[str],
-        industry: Optional[str],
-    ) -> ToolResult:
-        """更新系统设置"""
-        json_data: Dict[str, Any] = {}
-        if name:
-            json_data["name"] = name
-        if industry:
-            json_data["industry"] = industry
-
-        if not json_data:
-            return ToolResult(
-                success=False,
-                error="缺少更新参数",
-                message="更新设置时至少需要提供一个字段（name 或 industry）",
-                suggestion="缺少更新参数，请向用户确认要修改的是商户名称还是所属行业后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            "/api/admin/settings",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新系统设置失败：{error_msg}",
-                suggestion="请先用 settings_manage 的 get 操作读取当前设置，核对字段后再重试",
-            )
-
-        logger.info(
-            f"Settings updated: data={json_data}, tenant={context.tenant_id}"
-        )
-
-        return ToolResult(
-            success=True,
-            data=json_data,
-            message="系统设置已更新",
-        )
-
     async def _get_ai_config(
         self,
         context: ToolContext,
@@ -281,117 +201,6 @@ class SettingsManageTool(BaseTool):
             success=True,
             data=data,
             message="AI配置已获取",
-        )
-
-    async def _update_ai_config(
-        self,
-        context: ToolContext,
-        greeting_template: Optional[str],
-        business_hours: Optional[str],
-        ai_config: Optional[Dict[str, Any]],
-    ) -> ToolResult:
-        """更新AI配置"""
-        json_data: Dict[str, Any] = {}
-
-        if greeting_template:
-            json_data["greetingTemplate"] = greeting_template
-        if business_hours:
-            json_data["businessHours"] = business_hours
-        if ai_config and isinstance(ai_config, dict):
-            json_data.update(ai_config)
-
-        if not json_data:
-            return ToolResult(
-                success=False,
-                error="缺少更新参数",
-                message="更新AI配置时至少需要提供一个配置字段",
-                suggestion="缺少更新参数，请向用户确认要调整的 AI 配置项（如自动回复、营业时间）后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            "/api/admin/tenant/ai-config",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "更新失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"更新AI配置失败：{error_msg}",
-                suggestion="请先用 settings_manage 的 get_ai_config 操作读取当前 AI 配置，核对后再重试",
-            )
-
-        logger.info(
-            f"AI config updated: keys={list(json_data.keys())}, tenant={context.tenant_id}"
-        )
-
-        return ToolResult(
-            success=True,
-            data=json_data,
-            message="AI配置已更新",
-        )
-
-    async def _change_password(
-        self,
-        context: ToolContext,
-        old_password: Optional[str],
-        new_password: Optional[str],
-    ) -> ToolResult:
-        """修改密码"""
-        if not old_password:
-            return ToolResult(
-                success=False,
-                error="缺少旧密码",
-                message="修改密码时必须提供旧密码（old_password）",
-                suggestion="缺少旧密码，请向用户询问当前密码后重试（不要代替用户猜测或编造密码）",
-            )
-
-        if not new_password:
-            return ToolResult(
-                success=False,
-                error="缺少新密码",
-                message="修改密码时必须提供新密码（new_password）",
-                suggestion="缺少新密码，请向用户询问要设置的新密码后重试",
-            )
-
-        if len(new_password) < 6:
-            return ToolResult(
-                success=False,
-                error="新密码过短",
-                message="新密码长度不能少于 6 位",
-                suggestion="新密码不足 6 位，请让用户重新提供至少 6 位的新密码后重试",
-            )
-
-        client = get_admin_api_client()
-        response = await client.put(
-            "/api/admin/settings/password",
-            json_data={
-                "oldPassword": old_password,
-                "newPassword": new_password,
-            },
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "修改失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"修改密码失败：{error_msg}",
-                suggestion="请让用户确认旧密码是否正确；若用户已忘记密码，请引导其走找回密码流程或联系管理员",
-            )
-
-        logger.info(
-            f"Password changed: user={context.user_id}, tenant={context.tenant_id}"
-        )
-
-        return ToolResult(
-            success=True,
-            data={"status": "password_changed"},
-            message="密码已修改成功",
         )
 
     async def _login_logs(

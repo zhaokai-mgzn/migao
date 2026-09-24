@@ -1,44 +1,17 @@
-"""NotificationManageTool 单元测试 — 通知查询/标记已读/删除/创建。
+"""NotificationManageTool 单元测试 — 站内通知**查询**（列表 / 未读数）。
 
-issue #3567（HIGH）：`create` action 实际不可用 —— `_create_notification` 漏发
-`CreateNotificationRequest.recipientType`（DTO `@NotBlank`）→ admin-api 恒 400。
+B 端只读化（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
+`notification_manage` 的写 action（`mark_read` / `read_all` / `delete` / `create`）已从工具
+删除 ⇒ 本次退休写路径用例（**产品裁定，非放宽门禁**）。
+issue #3567 的收件人解析 / payload 契约机具（只服务 `create`）随写 action 一并从实现删除
+⇒ 对应断言无对象。写能力下线的判据在 `tests/test_settings_domain_readonly.py`。
 """
 # case_ids: ST-004, ST-005
-import re
-from pathlib import Path
-
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.tools.base import ToolContext
 from app.tools.notification_manage import NotificationManageTool
-
-# ── issue #3567：站内信按 recipientId 落库（无广播语义），故必须解析真实收件人 ──
-_ACTIVE_EMPLOYEE = {"id": "emp_001", "role": "operator", "status": "active"}
-
-
-def _mock_notify_client(post_responses, *, recipients=None):
-    """mock admin-api 客户端：GET /api/admin/users 解析收件人 + POST 按序返回。
-
-    recipients=None → 默认一位在职 B 端账号；recipients=[] → 租户内无在职 B 端账号。
-    """
-    client = AsyncMock()
-    items = (
-        [{"id": r, "role": "operator", "status": "active"} for r in recipients]
-        if recipients is not None
-        else [_ACTIVE_EMPLOYEE]
-    )
-    client.get = AsyncMock(return_value={"success": True, "data": {"items": items}})
-    client.post = AsyncMock(side_effect=post_responses)
-    return client
-
-
-def _notify_payloads(client):
-    """取实际发往 /api/admin/notifications 的 payload 列表。"""
-    return [
-        call[1]["json_data"] for call in client.post.call_args_list
-        if call[0][0] == "/api/admin/notifications"
-    ]
 
 
 @pytest.fixture
@@ -68,12 +41,29 @@ class TestNotificationPermission:
         assert "权限" in result.error
 
     async def test_agent_role_denied(self, tool, agent_tool_context):
-        """issue #5246：`agent` 是 **C 端角色**，且 `notification_manage` 现强调权限码
-        （`system:manage` + `employee:list`）⇒ 旧的「C 端角色放行」被移除（横向越权修复）。
-        通知域的日常读取归持码的商户员工（运营/管理员），C 端没有这条能力。"""
+        """C 端角色 `agent` 不得读站内通知。
+
+        🔴 #5302 改判（理由层，结论不变）：原措辞是「工具现强调权限码（system:manage +
+        employee:list）⇒ C 端角色被移除」——那两个码都是**写路径**的码（`POST` 建通知 +
+        create 解析收件人的 `GET /api/admin/users`），已随写 action 退场。现在本工具
+        **不持码**（两个读端点在 admin-api 里没有权限码）⇒ 角色层是**唯一**门禁，
+        `agent` 不在类体 `allowed_roles` 里 ⇒ 仍拒（C 端没有这条能力）。
+        """
         result = await tool.execute(context=agent_tool_context, action="list")
         assert result.success is False
         assert "权限" in result.error
+
+    async def test_merchant_employee_role_allowed(self, tool):
+        """改前实际放行面必须仍可用（#5302 的**零回归**口径）。
+
+        改前（权限码 `system:manage` + `employee:list`）实际只放行 admin（`*` 通配）
+        + operator（唯一持 `employee:list` 的商户岗位）⇒ 角色层按同一集合显式声明。
+        红证：把类体 `allowed_roles` 删掉（吃 `BaseTool` 默认值：含 C 端/幽灵角色）或收窄成
+        只剩 admin ⇒ 本用例红。
+        """
+        for role in ("admin", "operator"):
+            ctx = ToolContext(tenant_id=1, user_id=f"u_{role}", session_id="s_perf", role=role)
+            assert tool.check_permission(ctx) is True, f"{role} 被误拒（读取面被收窄）"
 
     async def test_invalid_action(self, tool, admin_tool_context):
         result = await tool.execute(context=admin_tool_context, action="broadcast")
@@ -129,232 +119,24 @@ class TestNotificationUnreadCount:
         assert mock_client.get.call_args[0][0] == "/api/admin/notifications/unread-count"
 
 
-class TestNotificationMarkRead:
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_mark_read_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="mark_read")
-        assert result.success is False
-        assert "缺少通知 ID" in result.error
-        mock_client.put.assert_not_called()
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_mark_read_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="mark_read", notification_id="n1")
-        assert result.success is True
-        assert mock_client.put.call_args[0][0] == "/api/admin/notifications/n1/read"
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_read_all(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="read_all")
-        assert result.success is True
-        assert mock_client.put.call_args[0][0] == "/api/admin/notifications/read-all"
+# [RETIRED #5302] TestNotificationMarkRead（3 例） 已退休：标记已读 / 全部已读
+#   （mark_read / read_all）已从工具删除（B 端只读化；settings 域整域收口）：
+#   写能力不再存在，断言无对象（下线判据见 tests/test_settings_domain_readonly.py）。
 
 
-class TestNotificationDelete:
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_delete_missing_id(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(context=admin_tool_context, action="delete")
-        assert result.success is False
-        assert "缺少通知 ID" in result.error
-        mock_client.delete.assert_not_called()
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_delete_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.delete = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(context=admin_tool_context, action="delete", notification_id="n1")
-        assert result.success is True
-        assert mock_client.delete.call_args[0][0] == "/api/admin/notifications/n1"
+# [RETIRED #5302] TestNotificationDelete（2 例） 已退休：删除通知（delete）已从工具删除（同上）。
 
 
-class TestNotificationCreate:
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_create_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="create", title="t", content="c")
-        assert r1.success is False and "缺少接收人 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="create", recipient_id="u1", content="c")
-        assert r2.success is False and "缺少通知标题" in r2.error
-        r3 = await tool.execute(context=admin_tool_context, action="create", recipient_id="u1", title="t")
-        assert r3.success is False and "缺少通知内容" in r3.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_create_invalid_channel(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="create", recipient_id="u1", title="t", content="c",
-            channel="carrier_pigeon")
-        assert result.success is False
-        assert "无效的通知渠道" in result.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_create_channel_mapping(self, mock_get_client, tool, admin_tool_context):
-        mock_client = _mock_notify_client([{"success": True, "data": {"id": "n-new"}}])
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create", recipient_id="emp_001", title="t", content="c",
-            channel="system")
-        assert result.success is True
-        assert result.data["id"] == "n-new"
-        payload = _notify_payloads(mock_client)[0]
-        assert payload["channel"] == "internal"
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_create_exception_generic(self, mock_get_client, tool, admin_tool_context):
-        """投递阶段抛异常 → 显式失败带错误码，且不把内部异常细节透给用户。"""
-        mock_client = _mock_notify_client(RuntimeError("boom"))
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create", recipient_id="emp_001", title="t", content="c")
-        assert result.success is False
-        assert result.error == "notification_send_failed"
-        assert result.suggestion
-        assert "boom" not in (result.message or "")
+# [RETIRED #5302] TestNotificationCreate（4 例） 已退休：创建/发送通知（create）已从工具删除
+#   （同上；issue #3567 的 `_mock_notify_client` / payload 机具随之一并退场）。
 
 
-class TestNotificationCreateRecipientContract:
-    """issue #3567（HIGH）：创建通知的 payload 必须满足 admin-api DTO 契约。
-
-    修复前必红：payload 无 `recipientType`（DTO L23-24 `@NotBlank`）→ admin-api 恒 400
-    → B 端「创建通知」能力实际不可用（success=False）。
-    """
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_payload_carries_required_fields(self, mock_get_client, tool, admin_tool_context):
-        """实际发出的 payload 必须含非空 recipientId/recipientType/title/content + 合法 channel。"""
-        mock_client = _mock_notify_client([{"success": True, "data": {"id": "n-001"}}])
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create",
-            recipient_id="emp_001", title="库存预警", content="A 款窗帘低于安全库存")
-
-        assert result.success is True, f"创建通知不得再因缺字段而失败: {result.error}"
-        payloads = _notify_payloads(mock_client)
-        assert len(payloads) == 1, f"应恰好一条通知: {mock_client.post.call_args_list}"
-        payload = payloads[0]
-
-        # DTO @NotBlank 字段（缺一即恒 400）
-        assert isinstance(payload.get("recipientId"), str) and payload["recipientId"].strip()
-        assert payload["recipientId"] == "emp_001"
-        # recipientType 口径与 NotificationService.triggerForTenantAdmins 一致（L366）
-        assert payload["recipientType"] == "employee"
-        assert payload["title"].strip() == "库存预警"
-        assert payload["content"].strip()
-        # channel 合法值只有 wechat/sms/email/internal（DTO L39-41，站内信 = internal）；
-        # tool schema 暴露的 "system" 是语义化别名，绝不可原样下发
-        assert payload["channel"] in {"wechat", "sms", "email", "internal"}
-        assert payload["channel"] == "internal"
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_payload_covers_all_dto_not_blank_fields(self, mock_get_client):
-        """契约（防再漏字段）：payload 覆盖 CreateNotificationRequest 全部 @NotBlank 字段。
-
-        issue #3567 的根因是「payload 与 DTO 契约脱节且无人校验」——本用例把 DTO 的
-        @NotBlank 字段集当单一事实源，直接解析 Java 源文件比对，漏字段必红。
-        """
-        from app.tools.notification_manage import _build_notification_payload
-
-        dto_path = (
-            Path(__file__).resolve().parents[2]
-            / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin"
-            / "dto" / "CreateNotificationRequest.java"
-        )
-        assert dto_path.is_file(), f"DTO 源文件不存在（契约测试前提被破坏）: {dto_path}"
-        dto_src = dto_path.read_text(encoding="utf-8")
-        required = set(re.findall(r"@NotBlank\b[^;]*?\bprivate\s+String\s+(\w+)\s*;", dto_src))
-        assert required == {"recipientId", "recipientType", "title", "content"}, (
-            f"DTO @NotBlank 字段集与预期不符（DTO 契约已变更，请同步本用例）: {sorted(required)}"
-        )
-
-        payload = _build_notification_payload(
-            recipient_id="emp_001", title="t", content="c", channel="system",
-        )
-        missing = required - set(payload)
-        assert not missing, f"通知 payload 漏发 DTO 必填字段: {sorted(missing)}"
-        blank = [k for k in required if not str(payload[k]).strip()]
-        assert not blank, f"通知 payload 的必填字段为空值: {sorted(blank)}"
+# [RETIRED #5302] TestNotificationCreateRecipientContract（2 例） 已退休：创建通知 payload 与
+#   `CreateNotificationRequest` DTO 的 @NotBlank 契约（issue #3567）随 create 与
+#   `_build_notification_payload` 一并删除 —— 被测机具不存在（契约面并入 admin-api 侧单测）。
 
 
-class TestNotificationCreateRecipientResolution:
-    """issue #3567：`POST /api/admin/notifications` 按收件人落库（无广播语义），
-    且**不允许兼容性猜测** —— 解析不到收件人时必须显式失败 / 显式带错误码，绝不静默成功。
-
-    分级语义（口径同 human_handoff #3553）：投递/解析失败 → `success=False`；
-    租户无人可通知 → `success=True` 但显式带 `error=` + `data.*=false`（绝不静默）。
-    """
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_recipient_not_found_is_explicit_failure(self, mock_get_client, tool, admin_tool_context):
-        """收件人不是租户内在职 B 端账号 → 显式失败（不得落一条谁也看不到的通知）。"""
-        mock_client = _mock_notify_client([{"success": True, "data": {"id": "n-002"}}])
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create",
-            recipient_id="not-a-real-user", title="t", content="c")
-
-        assert result.success is False, "解析不到收件人不得报成功（兼容性猜测）"
-        assert result.error == "notification_recipient_not_found"
-        assert _notify_payloads(mock_client) == [], "收件人未解析成功时不得发出通知请求"
-        assert result.suggestion, "必须给出可执行的 suggestion（改用真实收件人 ID）"
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_no_recipient_is_loud_not_silent(self, mock_get_client, tool, admin_tool_context):
-        """租户内无在职 B 端账号 → 显式带错误码 + data.*=false，绝不静默成功。"""
-        mock_client = _mock_notify_client([], recipients=[])
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create",
-            recipient_id="emp_001", title="t", content="c")
-
-        assert result.data.get("notificationSent") is False
-        assert result.error == "notification_skipped_no_recipient"
-        assert result.suggestion, "无收件人必须给出明确 suggestion（补 B 端账号）"
-        assert _notify_payloads(mock_client) == [], "无收件人时不得发出必被 400 拒绝的请求"
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_recipient_resolution_failure_not_reported_as_success(self, mock_get_client, tool, admin_tool_context):
-        """收件人解析本身失败（admin-api 不可用）→ 显式失败，不得静默成功。"""
-        mock_client = _mock_notify_client([{"success": True, "data": {"id": "n-003"}}])
-        mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create",
-            recipient_id="emp_001", title="t", content="c")
-
-        assert result.success is False
-        assert result.error == "notification_recipient_resolution_failed"
-        assert result.suggestion
-        assert _notify_payloads(mock_client) == []
-
-    @patch("app.tools.notification_manage.get_admin_api_client")
-    async def test_delivery_failure_not_reported_as_success(self, mock_get_client, tool, admin_tool_context):
-        """admin-api 拒绝投递 → 不得报成功（修复前漏字段导致恒 400，此处锁定不回归）。"""
-        mock_client = _mock_notify_client([
-            {"success": False, "error": {"message": "接收人类型不能为空"}},
-        ])
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="create",
-            recipient_id="emp_001", title="t", content="c")
-
-        assert result.success is False
-        assert result.error == "notification_send_failed"
-        assert result.suggestion
+# [RETIRED #5302] TestNotificationCreateRecipientResolution（4 例） 已退休：收件人解析的
+#   分级语义（recipient_not_found / skipped_no_recipient / resolution_failed / send_failed）
+#   随 create 与 `_resolve_tenant_recipients` 一并删除 —— 只读工具里留一套不可达的写机具，
+#   下一个人加一行 `VALID_ACTIONS` 就能把能力接回来（这正是 #5302 要拦的形态）。
