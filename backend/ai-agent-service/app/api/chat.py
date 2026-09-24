@@ -39,6 +39,15 @@ from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import CUSTOMER_ONLY_ROLES, ToolContext  # 角色口径单点（#4013 A10）
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
+# 图片管线（URL 校验 / CDN 重写 / 文本提示）的**单一事实源**（issue #5321 包 1）：
+# 这段规则原先是本文件的三个私有函数，页面入口（建品页 / 建单页）无法独立使用
+# ⇒ 抽到 `app/vision/pipeline.py`，对话路径改为**调用它**（下面保留同名别名，
+# 语义逐字不变、既有调用点与测试零改动）。两入口共用同一段代码 ⇒ 不会漂移。
+from app.vision.pipeline import (
+    image_url_hint as _image_url_hint,
+    rewrite_image_url as _rewrite_image_url,
+    validate_image_url as _validate_image_url,
+)
 
 
 def _to_agent_role(role: str) -> str:
@@ -454,34 +463,10 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
     return history
 
 
-def _image_url_hint(images) -> str:
-    """把用户上传图片 URL 转成文本提示，供 LLM 在工具调用中直接引用（issue #3046）。
-
-    仅做展示提示，不改变发送给 vision 的图像块；无效 URL 过滤、CDN 域名重写
-    与 _convert_history_to_agent_format / send_message 保持同一规则。
-    """
-    if not images:
-        return ""
-    valid = [url for url in images if _validate_image_url(url)]
-    if not valid:
-        return ""
-    joined = "；".join(_rewrite_image_url(url) for url in valid)
-    return f"\n\n[用户上传的图片（可直接引用 URL）：{joined}]"
-
-
-def _validate_image_url(url: str) -> bool:
-    """校验图片 URL 格式（必须是 https:// 或 /api/files 开头）"""
-    if not url or not isinstance(url, str):
-        return False
-    url = url.strip()
-    return url.startswith("https://") or url.startswith("/api/files")
-
-
-def _rewrite_image_url(url: str) -> str:
-    """将 CDN 域名图片 URL 重写为 OSS URL（由 IMAGE_URL_REWRITE_FROM/TO 配置）"""
-    if not settings.IMAGE_URL_REWRITE_FROM or not settings.IMAGE_URL_REWRITE_TO:
-        return url
-    return url.replace(settings.IMAGE_URL_REWRITE_FROM, settings.IMAGE_URL_REWRITE_TO)
+# `_image_url_hint` / `_validate_image_url` / `_rewrite_image_url` 三个名字**已上移**到
+# `app/vision/pipeline.py`（issue #5321 包 1，页面路径要复用同一段规则）——
+# 本模块在文件头把它们 import 成同名别名，调用点与测试都无需改动。
+# ⚠️ 不要再在本文件里重新实现一份：两入口各有一份必然漂移。
 
 
 def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:

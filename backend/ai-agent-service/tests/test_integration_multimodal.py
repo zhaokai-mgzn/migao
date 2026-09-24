@@ -335,7 +335,9 @@ class TestUrlRewriteIntegration:
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),
             patch("app.api.chat.get_tool_registry"),
-            patch("app.api.chat.settings"),
+            # issue #5321：图片管线已抽到 app/vision/pipeline.py 成为两入口共用的单一事实源
+            # ⇒ 配置读取点随实现一起搬家，打桩目标须同步（断言/期望值一字未改，改的只是接缝地址）
+            patch("app.vision.pipeline.settings"),
         ]
 
         with _apply_patches(patches) as mocks:
@@ -374,7 +376,7 @@ class TestUrlRewriteIntegration:
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),
             patch("app.api.chat.get_tool_registry"),
-            patch("app.api.chat.settings"),
+            patch("app.vision.pipeline.settings"),
         ]
 
         with _apply_patches(patches) as mocks:
@@ -408,7 +410,7 @@ class TestUrlRewriteIntegration:
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),
             patch("app.api.chat.get_tool_registry"),
-            patch("app.api.chat.settings"),
+            patch("app.vision.pipeline.settings"),
         ]
 
         with _apply_patches(patches) as mocks:
@@ -443,7 +445,7 @@ class TestUrlRewriteIntegration:
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),
             patch("app.api.chat.get_tool_registry"),
-            patch("app.api.chat.settings"),
+            patch("app.vision.pipeline.settings"),
         ]
 
         with _apply_patches(patches) as mocks:
