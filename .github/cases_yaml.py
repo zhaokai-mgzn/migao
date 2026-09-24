@@ -284,6 +284,29 @@ def _key_colon(text: str) -> int | None:
     return None
 
 
+def _cut_inline_comment(text: str) -> str:
+    """截到**行内注释**起点（行首或空白后的 `#`）；**引号内的 `#` 不算**。
+
+    ⚠️ 不许写裸 `split("#")` / `partition("#")` / `re.sub` 做这件事：本仓有一条**类级判据**
+    专治「朴素 `#` 截断」（`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的
+    `naive-hash-cut` + **只许缩短**的豁免台账）—— 新增解析代码必须走引号感知的剥离，
+    **不许**往台账里加条目（加了 = 新增债务 = 红）。
+    """
+    j = 0
+    while j < len(text):
+        ch = text[j]
+        if ch in ('"', "'"):
+            end = _find_close(text, j + 1, ch)
+            if end is None:
+                return text                            # 引号未闭合 ⇒ 交给语法闸，这里不猜
+            j = end + 1
+            continue
+        if ch == "#" and (j == 0 or text[j - 1].isspace()):
+            return text[:j]
+        j += 1
+    return text
+
+
 def _normalize_key(raw: str) -> str:
     """键的归一形态：**引号键去引号**（YAML 里 `"a": 1` 与 `a: 1` 是同一个键 ⇒ 必须归一，
     否则 `"a"` 与后文的 `a` 之间那次重复会被漏掉）。解码只做最小集（`\\"` / `\\\\` / `''`）。
@@ -362,7 +385,7 @@ def _scan_key_anomalies(text: str) -> list[str]:
             while stack and stack[-1][0] >= pos:      # 序列项 ⇒ 每次开新 mapping
                 stack.pop()
             if _key_colon(entry) is None:             # 标量项
-                if _BLOCK_SCALAR_HEAD.match(entry.split("#")[0].strip()):
+                if _BLOCK_SCALAR_HEAD.match(_cut_inline_comment(entry).strip()):
                     block_indent = indent             # `- |` 块标量项：更深行整段是**合法文本**
                 else:
                     cont = (indent, lineno)           # 标量项：更深行是它的续行，不是键
@@ -389,7 +412,7 @@ def _scan_key_anomalies(text: str) -> list[str]:
         stripped = rest.lstrip()
         if stripped[:1] in ("[", "{"):                # 值本身是 flow 集合 ⇒ **跨行**时跳过后续行
             flow_depth = max(0, _flow_delta(rest))    # （同行闭合 ⇒ 计 0，不影响下一个逻辑行）
-        elif _BLOCK_SCALAR_HEAD.match(stripped.split("#")[0].strip()):
+        elif _BLOCK_SCALAR_HEAD.match(_cut_inline_comment(stripped).strip()):
             block_indent = pos                        # 值本身是块标量头
         elif (stripped[:1] in ('"', "'")
                 and _find_close(rest, len(rest) - len(stripped) + 1, stripped[0]) is None):
