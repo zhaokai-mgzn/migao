@@ -1,0 +1,145 @@
+# B 端 Agent 写操作边界（去留清单）
+
+> **当前状态（已核实）**：B 端米宝只读化**已合并** —— PR **#5285** → merge commit `7a9a800da` → `origin/main`；issue **#5247** CLOSED；**C 端未动**（`customer_aftersales_skill` 仍持有 `aftersale_create`）。
+> **实现方式是「从 skill 解绑 + 收窄 action」，不是删代码**：`app/tools/` **0 删除 / 6 新增（只读面）/ 11 修改**；
+> 已下线的写工具（`order_create` / `product_manage` / `product_update` / `sku_update` 等）**实现零改动、文件仍在**。
+> ⇒ **补回成本远低于预期：重新绑定 skill + 改 prompt + 恢复用例即可，无需恢复代码。**
+>
+> 本文是**补回清单**。**移除是清扫态，不是终态。**
+
+> ⚠️ **已知漏网（待收口）**：`settings` 域**未被只读化** ——
+> `settings_manage.py` 仍标 `WRITE|DESTRUCTIVE`（`update_settings` / `update_ai_config` / `change_password`）、
+> `notification_manage.py` 仍标 `WRITE`（`create` / `delete` / `read_all`）、
+> `settings_skill.py` 未解绑且 prompt 未改判（仍在教 Agent「写操作必须先确认」）。
+> 这两个文件**不在** #5285 的改动清单里 —— 属**确定性漏网**，落在本表 **C 档（判定为不该给 Agent）**。
+
+## 为什么必须有这张表
+
+「先全砍干净，再按清单补回」这个策略的安全性**完全依赖这张表存在**。
+
+组织惯性是单向的：**砍掉的东西极少被主动加回**。若无人记得哪些写操作曾被判定为「可逆、该留」，
+米宝会永久停在一个「会聊天的搜索框」上 —— 那不是决策，那是遗忘。
+
+**用法**：任何一次「米宝能不能做 X」的讨论，先查本表 X 在哪一档；
+表里没有的，先按 §一 判据判定、**补进表里**，再动手。
+
+---
+
+## 一、分类判据（不是「读 vs 写」）
+
+| 维度 | 问法 | 偏向 |
+|---|---|---|
+| **可逆性** | 做错了能不能撤销？ | 可逆 → 可给 Agent；不可逆 → 不给 |
+| **审核门禁** | 是否绕过人工审核 / 审批链？ | 绕过 → 不给（`product_manage.py` 的最小权限判据，issue #3686 已确立） |
+| **批量收益** | 同一意图是否要操作 N 条？ | N 越大 → Agent 优势越大，优先补 |
+
+> 「读 vs 写」是**错的分类维度**：按它分，「改价」和「删员工」会归为一类 —— **风险差 100 倍**。
+
+---
+
+## 二、去留清单
+
+### A 档｜补回（可逆 + 可撤销 + 有批量收益）
+
+| 工具 | 为什么补回 |
+|---|---|
+| `product_update` | 商品级统一定价。`WRITE\|IDEMPOTENT`、可逆、**批量收益最高** |
+| `sku_update` | 单独 SKU 调价。同上 |
+| `inventory_manage` | 库存调整，可逆、日常高频 |
+| `product_manage(toggle_status)` | 上下架；反向再调一次即回滚 |
+| `customer_manage`（标签 / 备注类） | 可逆、高频 |
+| `notification_manage`（标记已读） | 可逆、无对外影响 |
+| `order_manage`（备注 / 地址类） | 可逆、不改订单对外承诺 |
+
+> **A 档补回的硬前提：撤销入口 + 审计日志。**
+> 一键确认 N 条 = 用户实际没看 = **盲签**；没有撤销与审计，出事时无法归因。
+> 条件不满足就**先别补** —— 半成品能力比没有能力伤害更大。
+
+### B 档｜降级为「草稿 + 跳页面」（不可逆但高频）
+
+| 工具 | 降级形态 |
+|---|---|
+| `order_create` | 出**草稿**（客户 / 明细 / 规格）→ 跳 admin-web 订单页补全并提交 |
+| `product_manage(create)` | 出**草稿**（名称 / 分类 / 价格）→ 跳建品页补全并提交（顺带**绕开 #3686 的审核门禁**） |
+| `aftersale_create` | 出草稿 → 跳售后页 |
+| `processing_order_generate` | 出草稿 → 确认后生成 |
+
+**B 档的技术前提（不是加个跳转链接那么简单）：**
+
+1. **「草稿」必须从「会话状态」升格为「可寻址的领域实体」。**
+   现状：草稿只是 session memory 里的状态（`context_manager.reset_domain()` 清「草稿 / 待确认」）——
+   **不可寻址、跨会话即失效、页面看不见**。页面要消费它，必须有一个服务端资源 ID。
+2. **PII 不能进 URL。** 裸 query 参数（`?phone=138…`）会进 nginx access log / 浏览器历史 / Referer。
+   正确形态：`POST /drafts` → `draft_id` → `/orders/new?draft=<uuid>`。
+   **已经吃过一次账**：`interact` form 卡预填手机号把完整手机号带进 `final_text`（issue #3379 P2-2 / CH-011）。
+3. **前端需新增 draft 消费入口** —— `frontend/admin-web` 目前没有 prefill / draft 通路。
+
+### C 档｜移除（不可逆 / 越权 / 低频）
+
+| 工具 | 移除理由 |
+|---|---|
+| `role_manage` | 权限变更，最严重的越权面 |
+| `employee_manage` | 人事账号，越权 + 不可逆 |
+| `settings_manage` | 全局配置，影响面不可控 |
+| `finance_api`（写动作） | 涉钱，不可逆 + 合规 |
+| `notification_manage`（群发） | 对外不可撤回 |
+| 各域 `delete` 动作 | 不可逆 |
+| `order_manage`（取消 / 发货等状态跃迁） | 对外承诺，不可逆 |
+
+> C 档**不是「以后再说」**，是判定为**不该给 Agent**。
+> 除有新的权限设计 + 责任归属（同 #3686 口径），**不复议**。
+
+### 按动作拆分（同一工具跨档）
+
+下列工具**不是单一档位**，补回时必须**按动作拆**，不能整个工具放行：
+
+| 工具 | 可给（A） | 不给（C） |
+|---|---|---|
+| `product_manage` | `update` / `toggle_status` | `create`（→ B 档）/ `delete` |
+| `category_manage` | `create` / `update` | `delete` |
+| `processing_item_manage` | `create` / `update` | `delete` |
+| `processing_order_update` | 进度更新 | `delete` |
+| `after_sales_manage` | 进度 / 备注 | 拒绝 / 关闭 |
+| `customer_manage` | 标签 / 备注 | `delete` |
+| `order_manage` | 备注 / 地址 | 取消 / 发货 |
+
+### D 档｜保留（本就不属写操作，勿因「砍写」误删）
+
+| 工具 | 说明 |
+|---|---|
+| `interact` | 交互卡（choice / confirm / form 复核）。**只读操作也依赖它** |
+| `validate_input` | 写前置校验，本身 `READONLY`。**A / B 档补回时的依赖，不要删** |
+| `human_handoff` | 转人工（`WRITE\|NON`，非业务写）。**客服系统的安全阀，永不砍** |
+| 全部 `READONLY` 工具 | 不动 |
+
+| `session_manage` | 会话接管 / 转接 | 结束 / 删除会话 |
+
+> `session_manage` 归属**已裁定**：面向客服 / 公司员工 / 管理人员的**内部管理写**，属 B 端（故不入 C 档）。
+
+---
+
+## 三、补回顺序（按 ROI）
+
+1. **`product_update` / `sku_update` + 批量** ← 最高 ROI：可逆、幂等，把 N 次页面操作压成 1 次意图。
+   **这是米宝唯一能碾压页面的地方。**
+2. **撤销入口 + 审计日志** ← A 档前置，先于 A 档其余项
+3. `inventory_manage`、`toggle_status`、标签 / 备注
+4. 草稿实体 + 前端 draft 消费入口 → 打通 B 档
+5. 跨域只读推理 + **对话外主动推送** ← 非写操作，但决定「智能程度」的实际体感
+
+---
+
+## 四、伴随动作（不同时做会让体验更差）
+
+- **同步改 prompt / 话术**：工具删了但 Agent 还说「我可以帮你操作」→ 用户经历
+  **发现 → 尝试 → 被拒**，**比没有这个功能更烦躁**。这是最容易漏、后果最直接的一项。
+- **用例库显式退役**：写路径上挂着 PP-006 / OR-014 / HR-003 等验收用例，删工具会让它们集体变红。
+  必须标记「**因产品决策退役**」，**不是让 CI 变绿了事** —— 否则半年后没人知道它们为什么没了。
+- **C 端不受牵连**：`order_create` / `after_sales_manage` 等工具 C / B 共用，
+  **C 端下单 / 售后是 Agent 替代人工客服的核心价值**，不能因「B 端不该写」被顺手删掉。
+
+---
+
+## 五、这张表存在的意义
+
+它不是「待办清单」，是**决策的存档**。判据可复算、档位可追溯、复议有门槛。
