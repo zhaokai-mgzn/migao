@@ -160,6 +160,28 @@ jobs:
           echo "窗口起点 = ${BASE:-HEAD~${LOOKBACK}}（来源：${BASE_SOURCE}）"
           echo "触发事件 = $EVENT"
 
+          # ── 首发日 / 引入本腿的 PR：判定本体尚未在**判定基准（main）**上落地 ─────────────
+          # `pull_request` 事件的 workflow 定义取自 **PR**，而判定基准是**显式 checkout 的 main**
+          # ⇒ 本 PR 刚打开的那一刻，main 上还没有 `scripts/post_merge_verify.py`（实测退出码 2）。
+          # 与 `drift_audit.check_heartbeat()` 的 `pending-merge`、`mechanism-liveness` 的
+          # `pending-first-run` **同族**：**监控自己不得自造假红** —— 本 PR 首轮实测：没有这道护栏时
+          # 它当场开出一张**假的 P1 值班单**（#5428）。这道护栏就是那次的注入点。
+          # ⚠️ 但「**workflow 在、脚本不见了**」是另一回事（机制被拆掉半截）⇒ **红**，不许当 pending；
+          #    否则「删掉判定本体」会退化成一条静默的绿。
+          if [ ! -f scripts/post_merge_verify.py ]; then
+            if [ -f .github/workflows/post-merge-verify.yml ]; then
+              echo "::error::判定本体 scripts/post_merge_verify.py 不在检出里，而 workflow 在 ⇒ 机制被拆掉半截（不是首发日）—— 判红"
+              exit 1
+            fi
+            echo "::notice::本腿的判定本体尚未在 main 上落地（首发日 pending-merge）⇒ 本轮**不判定**（不是「零动作」、也不是「通过」）；合并后自动生效"
+            if [ -f .github/scripts/mechanism_liveness.sh ]; then
+              source .github/scripts/mechanism_liveness.sh
+              mechanism_liveness_declare --seen unknown --acted 0 \
+                --why "首发日 pending-merge：判定本体尚未在 main 上落地 ⇒ 本轮不判定（非零动作）"
+            fi
+            exit 0
+          fi
+
           set +e
           if [ -n "$BASE" ]; then
             python3 scripts/post_merge_verify.py --base "$BASE" \

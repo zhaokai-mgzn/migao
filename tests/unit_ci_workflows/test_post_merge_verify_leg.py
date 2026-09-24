@@ -29,6 +29,7 @@ required 检查上，**卡住全队列**，最后由人花一整轮热修（`#54
 | 12 | **最小写权限**：唯一写作用域 = `issues`（本腿没有 PR 对象，不给它 PR 写权限） | 变异 `permissions` 加 `pull-requests: write` ⇒ 非空 |
 | 13 | **不许放宽既有门禁**（判据 6）：本腿**不得**出现在 `pr-check.yml` 里（报告型 ≠ required） | 变异：在文本里塞一处 ⇒ 非空 |
 | 14 | **禁挂钟**（§23 G8）：机器可读报告只报与负载无关的量，**不含**任何时长字段 | 变异：往报告里塞一个时长键 ⇒ 非空 |
+| 15 | **首发日护栏**：判定本体尚未在 main 上落地 ⇒ **出声但不判红**（不许自造假红）；「workflow 在、脚本没了」⇒ **红** | 变异四个要素（`[ ! -f scripts/post_merge_verify.py ]` / `pending-merge` / workflow 存在判据 / `::error::`）**各能单独变红** |
 
 ## 边界（照实登记，别读成「已覆盖」）
 
@@ -362,6 +363,28 @@ def _reading_step_problems(doc: dict) -> list[str]:
     return problems
 
 
+def _bootstrap_guard_problems(doc: dict) -> list[str]:
+    """判据 15：**首发日护栏**（`pending-merge`）—— 判定本体尚未在 main 上落地时不许自造假红。
+
+    本 PR 首轮实测的**真形态**：`pull_request` 事件的 workflow 定义取自 **PR**，而判定基准是显式
+    checkout 的 `main` ⇒ 本 PR 刚打开时 main 上还没有 `scripts/post_merge_verify.py` ⇒ 退出码 2 ⇒
+    失败钩子当场开出一张**假的 P1 值班单**。护栏要同时满足两件相反的事：
+    ① 本体缺席 + workflow 缺席（首发日）⇒ **出声但不判红**；
+    ② 本体缺席 + workflow 在（机制被拆掉半截）⇒ **红**（否则「删掉判定本体」= 一条静默的绿）。
+    """
+    text = "\n".join(str(s.get("run", "")) for s in _steps(doc))
+    problems = []
+    for needle, why in (
+        ("[ ! -f scripts/post_merge_verify.py ]", "缺「判定本体是否在检出里」的判据（首发日会当场假红）"),
+        ("pending-merge", "缺 `pending-merge` 口径（与 check_heartbeat 的同族约定）"),
+        ("[ -f .github/workflows/post-merge-verify.yml ]", "缺「机制被拆掉半截 ⇒ 红」那一支"),
+        ("::error::", "「拆掉半截」那一支必须是 error（不许静默 / 不许只 warning）"),
+    ):
+        if needle not in text:
+            problems.append(f"首发日护栏缺：{why}（未见 `{needle}`）")
+    return problems
+
+
 def _permission_problems(doc: dict) -> list[str]:
     problems = []
     perms = doc.get("permissions")
@@ -473,6 +496,26 @@ class TestWorkflowWiring:
         if not hit:
             raise AssertionError("变异点失配：找不到读数步")
         assert _reading_step_problems(doc) != [], "抹掉护栏之后判据没红 ⇒ 空断言"
+
+    def test_bootstrap_guard_prevents_self_inflicted_red(self):
+        """判据 15：首发日护栏 —— 判定本体尚未在 main 上落地 ⇒ 出声但**不判红**（不许自造假红）。"""
+        problems = _bootstrap_guard_problems(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+        assert problems == [], "\n".join(problems)
+
+    def test_mutating_bootstrap_guard_turns_it_red(self):
+        """判据 15 的红证：四个要素各删一次 ⇒ 各能单独变红。"""
+        for needle in ("[ ! -f scripts/post_merge_verify.py ]", "pending-merge",
+                       "[ -f .github/workflows/post-merge-verify.yml ]", "::error::"):
+            doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+            hit = False
+            for job in (doc.get("jobs") or {}).values():
+                for step in (job.get("steps") or []):
+                    if isinstance(step, dict) and needle in str(step.get("run", "")):
+                        step["run"] = str(step["run"]).replace(needle, "（已变异）")
+                        hit = True
+            if not hit:
+                raise AssertionError(f"变异点失配：找不到 `{needle}`（红证不得是空断言）")
+            assert _bootstrap_guard_problems(doc) != [], f"删掉 `{needle}` 之后判据没红 ⇒ 空断言"
 
     def test_write_scope_is_least_privilege(self):
         """判据 12：唯一写作用域 = `issues`（本腿没有 PR 对象 ⇒ 不给它 PR 写权限）。"""

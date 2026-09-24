@@ -173,7 +173,7 @@
       "name": "合并后 main 侧守护腿（把落入 main 并被判据引用的判据重跑一遍）",
       "workflow": ".github/workflows/post-merge-verify.yml",
       "job": "verify",
-      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数，且**带与负载无关的计数**：`seen=<窗口内变更文件数>` / `acted=<命中判据数>`（由机制体在判定步 `declare`，同名字段也落在 `post-merge-verify-report.json` 里）；`why` 写明窗口起点与来源（水位 / lookback / 显式 `--base`）与 `rc`。**零动作**（窗口内无可判对象）时 `acted=0` 且 `why` 照旧出声 —— 「零动作」与「没跑」必须长得不一样（§23 G6）。",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数，且**带与负载无关的计数**：`seen=<窗口内变更文件数>` / `acted=<命中判据数>`（由机制体在判定步 `declare`，同名字段也落在 `post-merge-verify-report.json` 里）；`why` 写明窗口起点与来源（水位 / lookback / 显式 `--base`）与 `rc`。**零动作**（窗口内无可判对象）时 `acted=0` 且 `why` 照旧出声 —— 「零动作」与「没跑」必须长得不一样（§23 G6）。**首发日**（判定本体尚未在判定基准 main 上落地 —— 引入本腿的那个 PR 上必然如此）⇒ 读数 `seen=unknown` / `acted=0` / `why=首发日 pending-merge…` 且**不判红**（与 `check_heartbeat` 的 `pending-merge`、本 workflow 的 `pending-first-run` 同族：**监控自己不得自造假红** —— 首轮实测没这道护栏时它当场开出一张假 P1 单）；但「**workflow 在、脚本不见了**」⇒ **判红**（`::error::`），否则「删掉判定本体」会退化成一条静默的绿。",
       "criterion": "同 automerge：main 上**最近一次已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行（**非挂钟**）；读数 `rc` 与 run 结论**不得矛盾**（读数与事实相反正是 #5264 的形态）。本腿自身的判定力另由 `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的注入式红证钉住（判据改了 / 装配层改了 / 数据改了 ⇒ 各能单独变红）。",
       "consumer": "值班（**mechanism-liveness.yml 的定时腿 ⇒ P1 值班 issue**；本腿自己的判红也走 P1 值班 issue，带 `priority/P1`）+ PR 面判据（`ci workflow helper unit tests` 跑 tests/unit_ci_workflows/test_post_merge_verify_leg.py）",
       "reading": "instrumented",
