@@ -245,9 +245,12 @@ class TestRepoActionLevelJudgement:
                          ("dashboard_stats", "pending_tasks")):
             assert expected in pairs, f"{expected} 未被报出 —— action 级判据没生效"
         # 下界随事实收缩（**不是**放宽阈值）：8 个工具收窄为纯只读（写 action 整批消失）+
-        # 44 条写路径用例退役 ⇒ 未覆盖对从 41 降到 21（实测 2026-09-24）。下界仍守
-        # 「解析口径没缩水」这条真实意图：再掉一截必须有人解释是哪些 action 真的没了。
-        assert len(pairs) >= 21, f"只报出 {len(pairs)} 处 action 缺口，疑似解析口径缩水"
+        # 44 条写路径用例退役 ⇒ 未覆盖对从 41 降到 21（实测 2026-09-24）。
+        # 🔴 **#5302 再次下调（同一口径）**：settings 域收口把最后两把工具的写 action 也删除
+        # （`notification_manage` 6→2、`settings_manage` 6→3），其中 4 条本就未覆盖
+        # ⇒ 未覆盖对 21 → **17**（实测）。下界仍守「解析口径没缩水」这条真实意图：
+        # 再掉一截必须有人解释是哪些 action 真的没了。
+        assert len(pairs) >= 15, f"只报出 {len(pairs)} 处 action 缺口，疑似解析口径缩水"
 
     def test_repo_check_is_green_with_baseline(self):
         for persona in ("mibao", "xiaobu"):
@@ -295,15 +298,16 @@ class TestRepoActionLevelJudgement:
         assert ("inventory_manage", "action_dangling") in rep2.blocking_gaps()
 
     def test_repo_uncovered_actions_alone_never_block(self):
-        """仓库里 21 处 action 未覆盖（#5247 后实测；改前 41），但（在清单下）不得产生任何阻塞项。
+        """仓库里 17 处 action 未覆盖（#5302 后实测；#5247 后 21、改前 41），但（在清单下）不得产生任何阻塞项。
 
-        下界随事实收缩（**不是**放宽）：写 action 整批消失 + 写路径用例退役 ⇒ 未覆盖对减少；
+        下界随事实收缩（**不是**放宽）：写 action 整批消失 + 写路径用例退役 ⇒ 未覆盖对减少
+        （#5302：`notification_manage` 6→2 / `settings_manage` 6→3，其中 4 条本就未覆盖）；
         它守的仍是「action 级报告没静默变空」这条意图，并且**只报告不阻塞**这一口径一字未动。
         """
         rep = _attach_baseline(
             _rep(self.cases, "mibao"),
             load_baseline(BASELINE_PATH, "mibao", toolset_for("mibao")))
-        assert len(rep.action_uncovered) >= 21
+        assert len(rep.action_uncovered) >= 15
         assert rep.check_problems() == []
 
     def test_xiaobu_has_no_action_dangling(self):

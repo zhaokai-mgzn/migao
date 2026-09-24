@@ -549,16 +549,20 @@ class TestNoAdminApiFailureBranchBypassesTheMapper:
             mapped += mapped_failure_returns(tree)
         # issue #5247 重新锚定（**下调**，故必须写明理由）：8 个 B 端工具收窄为只读、
         # 写 action 与其错误分支整批删除 ⇒ 源码里 `.get("success")` 判据由 100+ 降到 97。
-        # 该地板是「解析面没塌」的哨兵，不是覆盖率目标：留 2 个余量即可（仍是三位数级别）。
+        # 🔴 issue #5302 再次重新锚定（**下调**，理由同类，是本轮只读化的最后一批）：
+        # settings 域收口 ⇒ `settings_manage` 的 3 个写方法（update_settings / update_ai_config /
+        # change_password）与 `notification_manage` 的 4 个写方法（mark_read / read_all / delete /
+        # create）连同其错误分支整批删除 ⇒ 判据 97 → **89**、走映射点的失败返回 89 → **82**（实测值）。
+        # 该地板是「解析面没塌」的哨兵，不是覆盖率目标：留 2 个余量即可。
         # ⚠️ 只许因**真值减少**下调，并在此登记；不得为了过门禁随手改数字。
-        assert mentions >= 95, (
-            f"`app/tools/*.py` 只数出 {mentions} 个提到 `.get(\"success\")` 的判据（期望 ≥95）"
+        assert mentions >= 87, (
+            f"`app/tools/*.py` 只数出 {mentions} 个提到 `.get(\"success\")` 的判据（期望 ≥87）"
             "—— 真值源变了（工具被移动/重命名），分母口径会空转"
         )
-        # issue #5247 重新锚定（**下调**，理由同 mentions 地板）：写 action 与其失败分支
-        # 整批删除 ⇒ 走映射点的失败返回由 90+ 降到 89。地板是「解析面没塌」的哨兵，留余量即可。
-        assert mapped >= 85, (
-            f"`app/tools/*.py` 只解析出 {mapped} 个走映射点的失败分支（期望 ≥85）"
+        # issue #5247 / #5302 重新锚定（**下调**，理由同上）：写 action 与其失败分支整批删除
+        # ⇒ 走映射点的失败返回由 90+ 降到 **82**。地板是「解析面没塌」的哨兵，留余量即可。
+        assert mapped >= 80, (
+            f"`app/tools/*.py` 只解析出 {mapped} 个走映射点的失败分支（期望 ≥80）"
             f"（源码真值口径的分母 = {mentions} 条 success 判据）"
             "—— 判据口径已失效（守卫会空转通过），请核对工具是否被移动/重命名"
         )

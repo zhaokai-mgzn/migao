@@ -309,7 +309,7 @@ class TestWriterOwnsItsProductName:
           ① 退役登记**名副其实**：条目仍在库（退役 ≠ 删除）+ 确实带 `#5247` 退役理由 +
              不再带**任何写期望**、也不再是**建品写方形态**。两处判据源**都必须有**：
              `assertion_taxonomy.write_expectations`（当前可达写工具 ⇒ 堵住"塞回
-             `notification_manage(action=mark_read)` 之类的真写期望"）+ 本地
+             `order_create`（整工具写；#5302 后 action 级写方已归零） 之类的真写期望"）+ 本地
              `_is_create_case`（**建品写方形态**）—— 只靠前者会漏：`product_manage` 已随
              #5247 退出 `WRITE_TOOLS`（幽灵写工具处置），把
              `{"tool": "product_manage", "args": {"action": "create"}}` 塞回来
@@ -501,7 +501,7 @@ class TestCleanupTargetResolvabilityScope:
         """**改后绿**：清理自有名（名字来自本用例 `namespaces` 声明）⇒ 不判不可解析。
 
         ⚠️ 2026-09-24（#5247）夹具重锚：写工具槽由 `product_manage(action=create)` 换成
-        **当前可达**的写工具 `notification_manage(action=mark_read)` —— 否则夹具不被
+        **当前可达**的写工具 `order_create`（整工具写；#5302 后 action 级写方已归零） —— 否则夹具不被
         `judge_case` 认作写用例、规则 b2 根本不执行 ⇒ 本用例"不判不可解析"恒真（假绿）。
         缺陷形态（`pre_clean` 点名一个种子真值里解析不到的目标）逐字保留。
         """
@@ -509,8 +509,8 @@ class TestCleanupTargetResolvabilityScope:
             "id": "FAKE-OWN-1", "title": "（夹具）清自己的产物", "persona": "mibao",
             "user_inputs": ["录入这个商品，名称E2E建品流程样品帘，价格 100"],
             "namespaces": ["product_name:E2E建品流程样品帘"],
-            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
-            "must_succeed": [{"tool": "notification_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "product_remove",
                            "product_keyword": "E2E建品流程样品帘"}],
@@ -535,8 +535,8 @@ class TestCleanupTargetResolvabilityScope:
         ⚠️ 2026-09-24（#5247）夹具重锚（**根因**）：原写工具槽 `product_manage(action=create)`
         已从 B 端下线、且不再是 `WRITE_TOOLS` 成员 ⇒ 夹具不被认作写用例 ⇒ 规则 b2 不触发
         ⇒ 本红证**变成假绿**（改判前实测：`assert CODES in set()` 失败）。改用当前可达的写
-        工具 `notification_manage(action=mark_read)`（B 端可达；夹具自带 `persona: mibao`
-        故不引入双端 persona 违规）。**缺陷形态逐字保留**：`pre_clean[product_remove]
+        工具 `order_create`（整工具写；#5302 后 action 级写方已归零）（C 端单端工具；夹具自带 `persona: mibao`
+        只用于压掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`）。**缺陷形态逐字保留**：`pre_clean[product_remove]
         .product_keyword = '幽灵商品名'` 既不在种子（`catalog.products = {遮光窗帘}`）
         也不在本用例 `namespaces` 声明里 ⇒ 必须继续判 `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE`。
         """
@@ -544,8 +544,8 @@ class TestCleanupTargetResolvabilityScope:
             "id": "FAKE-OWN-2", "title": "（夹具）清别人的名字", "persona": "mibao",
             "user_inputs": ["录一个商品"],
             "namespaces": ["product_name:甲乙丙帘"],
-            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
-            "must_succeed": [{"tool": "notification_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "product_remove", "product_keyword": "幽灵商品名"}],
         }
@@ -561,7 +561,7 @@ class TestCleanupTargetResolvabilityScope:
         ⚠️ 2026-09-24（#5247）夹具重锚：写工具槽 `employee_manage(action=toggle_status)`
         已随"8 个工具收窄为只读"（写 action 从源码删除）退出 `WRITE_TOOL_ACTIONS` ⇒ 夹具
         不再被认作写用例、规则 b2 不触发（红证假绿）。改用当前可达的写工具
-        `notification_manage(action=mark_read)`。**缺陷形态逐字保留**：准备型
+        `order_create`（整工具写；#5302 后 action 级写方已归零）。**缺陷形态逐字保留**：准备型
         `pre_clean[employee_reactivate].employee_name = '李四'` 虽在 `namespaces` 里声明，
         仍必须按种子真值核对（种子里只有「王五」）⇒ 继续判红。
         """
@@ -569,8 +569,8 @@ class TestCleanupTargetResolvabilityScope:
             "id": "FAKE-OWN-3", "title": "（夹具）准备型不复位", "persona": "mibao",
             "user_inputs": ["恢复王五"],
             "namespaces": ["employee_name:李四"],
-            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
-            "must_succeed": [{"tool": "notification_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "employee_reactivate", "employee_name": "李四"}],
         }
@@ -584,7 +584,7 @@ class TestCleanupTargetResolvabilityScope:
         `customer_manage(action=add_tag)` 已随"8 个工具收窄为只读"删除（该工具现只有
         `{list, detail, list_tags}`）⇒ 夹具不被认作写用例、规则 b2 不触发（红证假绿：
         实测 `assert CODES in set()` 失败）。改用当前可达的写工具
-        `notification_manage(action=mark_read)`。**缺陷形态逐字保留**：`pre_clean`
+        `order_create`（整工具写；#5302 后 action 级写方已归零）。**缺陷形态逐字保留**：`pre_clean`
         `[customer_tag_remove].tag_name = 'VIP2活跃'` 在种子标签目录（`catalog
         .customer_tags = {VIP2}`）里解析不到，且它不在 `namespaces` 声明里（声明的只有
         手机号）⇒ 必须继续判红。
@@ -593,8 +593,8 @@ class TestCleanupTargetResolvabilityScope:
             "id": "FAKE-CU-003", "title": "（夹具）CU-003 形态", "persona": "mibao",
             "user_inputs": ["给张三加VIP2活跃标签", "确认"],
             "namespaces": ["customer_phone:13800138000"],
-            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
-            "must_succeed": [{"tool": "notification_manage"}],
+            "expectations": [{"tool": "order_create"}],
+            "must_succeed": [{"tool": "order_create"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "customer_tag_remove", "customer_keyword": "13800138000",
                            "tag_name": "VIP2活跃"}],

@@ -12,13 +12,14 @@
 ## 为什么是「persona 家族」而不是「全局」（R2 ③ 的判据就在这）
 
 `xiaobu`（C 端顾客）与 `mibao`（B 端商家）的可达集是**硬边界**。实测**只被 B 端绑定**的只读
-工具截至 issue #5247 为 **20 个**（= 7 把存量 B-only 只读 + #5247 收窄为只读的 **8** 把
+工具截至 issue #5302 为 **23 个**（= 7 把存量 B-only 只读 + #5247 收窄为只读的 **8** 把
 （`after_sales_manage` / `category_manage` / `customer_manage` / `employee_manage` /
 `finance_api` / `inventory_manage` / `role_manage` / `session_manage`）+ #5247 新增的 **6** 把
 （`briefing_query` / `craft_calc_config_query` / `inbound_order_query` /
-`operation_catalog_query` / `processing_order_set_query` / `stock_ledger_query`）；
+`operation_catalog_query` / `processing_order_set_query` / `stock_ledger_query`）
++ #5302 收窄为只读的 **2** 把（`notification_manage` / `settings_manage`）；
 **唯一口径以 `test_witness_b_end_only_readonly_tools_never_reach_c_end_domains` 的见证集为准**
-（本段数量只作导读，抄错即由那条判据报红）⇒ "全局并入只读"会让 C 端当场看见这 20 个 B 端工具
+（本段数量只作导读，抄错即由那条判据报红）⇒ "全局并入只读"会让 C 端当场看见这 23 个 B 端工具
 （越权面），故必须按 persona 家族切。家族由 `SkillConfig.system_prompts` 的 key **derive**（不写死
 persona 字面量），且**歧义即 fail-closed 不并**（宁可少共享，也不跨 persona 泄露）。
 
@@ -99,6 +100,24 @@ def _unreachable_declared_skills() -> set:
     return out
 
 
+def _a_family_with_out_of_domain_write() -> tuple:
+    """现算：**存在「域外写工具」的 persona 家族**（返回 `(该家族某 cfg, 域外写工具集)`）。
+
+    为什么要现算（#5302）：`mibao` 家族在 #5247 + #5302 之后**已无任何写工具** ——
+    写方向的域拦判据不能再锚在它身上（会退化成恒真空断言）。当前唯一命中的是 C 端家族
+    （`order_create` / `aftersale_create`）。**找不到任何这样的家族 ⇒ 由调用方 fail-closed 判红**，
+    不允许判据因"恰好没有写工具"而静默消失。
+    """
+    read_only = _read_only_names()
+    for cfg in sorted(get_skill_registry().get_all(), key=lambda c: c.name):
+        own = set(cfg.tool_names or [])
+        family_tools = {t for c in _family_cfgs(cfg) for t in (c.tool_names or [])}
+        kept_out = (family_tools - read_only) - own
+        if kept_out:
+            return cfg, kept_out
+    return None, set()
+
+
 def _scope_after(tool_names):
     """生产同一工厂造域 → 返回 `(registry, 校验域, 绑定给模型的工具名集)`。
 
@@ -128,9 +147,7 @@ class TestReadonlySharingWithinPersona:
         read_only = _read_only_names()
 
         gained = (family_tools & read_only) - own          # 只读共享应带来的增量
-        kept_out = (family_tools - read_only) - own        # 域外写工具应仍被拦
         assert gained, "同家族里没有『域外只读』可共享 —— 判据空跑（fail-closed）"
-        assert kept_out, "同家族里没有『域外写工具』—— R2 仅剩单向断言，判据退化"
 
         # 见证（现算集合的具体样本；产品域没有这两把查询工具，改前必然拿不到）
         assert {"order_query", "dashboard_stats"} <= gained, (
@@ -146,10 +163,23 @@ class TestReadonlySharingWithinPersona:
             f"只读跨域共享没落地（模型被拒时看不到别处的查询能力）"
         )
 
+        # ── 反方向：域外**写**工具必须仍被域拦（#4017 的 126 处死角判据不许放松）────
+        # 🔴 **#5302 改判（不是放宽）**：`mibao` 家族在 #5247 + #5302 之后**已无任何写工具**
+        #    （settings 域是本轮最后两把）⇒ 写方向不能在它身上测（那里没有域外写工具，
+        #    继续锚在它身上 = 恒真空断言）。改由**现算**找一个「家族内存在域外写工具」的域
+        #    （当前 = C 端家族）；**找不到任何这样的家族 ⇒ fail-closed 判红**。
+        write_cfg, kept_out = _a_family_with_out_of_domain_write()
+        # 用 `raise` 而非 `assert … is not None`：后者会被弱断言门禁登记为「空断言」
+        # （仓内先例：tests/test_skill_config_registry.py 的 fail-closed 前提自检）。
+        if write_cfg is None:
+            raise AssertionError(
+                "全仓没有任何 persona 家族存在『域外写工具』—— R2 的写方向判据无从成立"
+                "（fail-closed：判据不得静默退化）")
+        w_reg, w_scope, w_bound = _scope_after(write_cfg.tool_names)
         leaked_writes = sorted(n for n in kept_out if (
-            reg.get_tool(n) is not None or n in scope or n in bound))
+            w_reg.get_tool(n) is not None or n in w_scope or n in w_bound))
         assert not leaked_writes, (
-            f"域外**写**工具被放进了 {cfg.name} 域：{leaked_writes} —— "
+            f"域外**写**工具被放进了 {write_cfg.name} 域：{leaked_writes} —— "
             f"#4017 的域拦（126 处死角判据）被只读共享顺带放开了"
         )
 
@@ -209,10 +239,10 @@ class TestPersonaBoundaryIsHard:
         assert not leaks, "persona 硬边界被只读共享打破：\n  " + "\n  ".join(leaks)
 
     def test_witness_b_end_only_readonly_tools_never_reach_c_end_domains(self):
-        """见证（现算，不抄清单）：B 端专属**只读**工具 **20** 把，C 端域一个都不许有。
+        """见证（现算，不抄清单）：B 端专属**只读**工具 **23** 把，C 端域一个都不许有。
 
-        这 20 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
-        全局并只读 ⇒ C 端当场多出这 20 个越权查询面。
+        这 23 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
+        全局并只读 ⇒ C 端当场多出这 23 个越权查询面。
 
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
@@ -239,6 +269,13 @@ class TestPersonaBoundaryIsHard:
            `processing_order_set_query` / `stock_ledger_query`。
         ⇒ 本见证同时是 #5247「B 端只读面**没有**渗到 C 端」的量化判据：这 20 把只要有一把
         出现在任一 C 端域的 `set_tool_scope` 里，本用例红（越权面）。
+
+        🔴 **2026-09-25 改判（issue #5302 进场，实测；settings 域收口）**：见证集 21 → **23**，
+        进场的是 `settings_manage` / `notification_manage`（settings 域整域收窄为只读：
+        `read_only=False` → `True` ⇒ 它们从"B 端写工具"变成"B 端专属只读工具"）。
+        口径一字未改（仍是 `(mibao 可达 - xiaobu 可达) ∩ read_only`），进场是"工具面真的变成只读"
+        的正面事实。**顺带订正**：本见证的散文原写「20 把」而集合实为 21 条（陈旧读数，
+        集合相等断言不受影响）—— 本次一并订正为**实测值 23**。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
@@ -257,10 +294,12 @@ class TestPersonaBoundaryIsHard:
             # ── #5247 ② 新增的 6 把只读工具 ────────────────────────────────────────
             "briefing_query", "craft_calc_config_query", "inbound_order_query",
             "operation_catalog_query", "processing_order_set_query", "stock_ledger_query",
+            # ── #5302 ① settings 域整域收窄为只读的 2 把（写 action 已删除）──────────
+            "notification_manage", "settings_manage",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（20 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（23 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
-            "2026-09-24 三次改判说明）")
+            "2026-09-24 / 2026-09-25 四次改判说明）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue
