@@ -12,6 +12,20 @@ worktree 的 `.agent-presets/**` 是**创建时刻的快照**；此后 main 上�
 - **第一层防线（创建路径）**：`scripts/dev-worktree.sh add` 建完工作区后自动刷新到 `origin/main`。
 - **第二层防线（提交路径，本脚本 `check`）**：判定暂存/工作区的 `.agent-presets/**` 是否构成
   **版本下降** ⇒ 命中即**非零退出**（fail-closed）。**合法升级必须绿**（改研发模式本身不能被堵死）。
+
+**地雷 D：同号不同内容 = 跨包撞车（两个包同时抬号，各自只抬一格；issue #5425 新增判据）**
+
+**2026-09-24 实测（同一晚发生 2 次）**：两个并行开发包**同时**改同一个预设文件的 `version:` ——
+第一次双双写成 `1.56.0`、第二次一个 `1.56.0` 一个 `1.57.0` ⇒ 后果是**同号两条沿革 / 同号不同内容**；
+而当时的 `preset-guard` 只判**版本下降**、对「同版本」一律**放行** ⇒ 撞车**只能靠人肉发现**，
+发现后还要 rebase 解冲突 + 抬号 + **重跑整轮 CI**（每次 ≈ 一轮 CI + 若干次工具往返）——
+正是用户裁定要消掉的那类浪费（逐字：「避免『每天重做』」「不希望每天花 token 浪费在基建上」）。
+
+- **本判据（`check` 的第二层防线加固）**：候选与基准 **`version:` 相同、但文件内容不同** ⇒
+  **判红**（fail-closed），出口 = **抬号到「基准版本 + 1」**（本仓约定抬次版本：`1.56.0` → `1.57.0`）
+  + 指向本判据的出处单（`COLLISION_ISSUE`）。
+- **既有语义一字未动**：降级 ⇒ 红；升级 ⇒ 放行；无 `.agent-presets/**` 改动 ⇒ 放行；
+  **版本相同且内容逐字节相同 ⇒ 仍放行**（这是「与基准相同」的合法态）。
 - **第三层防线（机械安全网，别的单在做）**：`#3843` 的统一审计 `drift_audit --check` 将加
   「`.agent-presets/**` 版本单调性」守卫。本脚本与之**互补**：本脚本管**提交路径**（增量、贴合工作区），
   审计管**全库机械对账**（存量、定时）。详见 `docs/wiki/DEV-FLOW.md` 的「预设快照地雷」节。
@@ -37,7 +51,7 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
 
 ## 用法
 
-    # 提交路径守卫（默认同时看暂存区与工作区；有任何一处版本下降即 exit 1）
+    # 提交路径守卫（默认同时看暂存区与工作区；版本下降 / 同号不同内容（跨包撞车）即 exit 1）
     python3 scripts/agent-presets-guard.py check
     python3 scripts/agent-presets-guard.py check --source index     # 只看暂存区
     python3 scripts/agent-presets-guard.py check --source worktree  # 只看工作区文件
@@ -50,7 +64,14 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
     # 存量体检（只打印清单，绝不删除；--dry-run 必须显式给出）
     python3 scripts/agent-presets-guard.py prune --dry-run
 
-退出码：0 = 绿；1 = 判定为「版本下降 / 活锚落后 / 不可判定」（fail-closed）；2 = 用法错误。
+退出码：0 = 绿；1 = 判定为「版本下降 / 同号不同内容（跨包撞车）/ 活锚落后 / 不可判定」（fail-closed）；
+2 = 用法错误。
+
+## 成本口径与存活读数（§23 G8 / G6）
+
+`check` 每次运行都打印**与负载无关的工作量读数**（候选 / 判定 / 命中 / 跳过**及其原因**），
+**不用挂钟时长当判据**（同一套判据的墙钟在并行 CI 上会漂）。候选与基准都没有 `.agent-presets/**`
+变更时打印「**零动作 + 原因**」—— 「我没做事」与「我没跑」必须长得不一样，不得静默退出。
 
 ## 活锚段的三态（照实登记，别读成「有硬门禁」）
 
@@ -87,6 +108,10 @@ REFRESH_CMD = "./scripts/preset-anchor-refresh.sh"
 #: 其余预设文件（preset.yml / agent.cordis.yml / README.md）**无版本号**，不参与单调性判定，
 #: 只由创建路径的刷新负责带上 main 的最新内容。
 VERSION_FILE_RE = re.compile(r"/skills/[^/]+/SKILL\.md$")
+#: 本判据（同号不同内容 = 跨包撞车）的**出处单号** —— 红灯里必须给出可行动出口（§23 G3）。
+#: ⚠️ 改号纪律：单号一旦变化，这里与 `tests/unit_ci_workflows/test_preset_version_collision.py`
+#: 的 `COLLISION_ISSUE` **必须同 PR 一起改**（判据钉住两处一致，避免红灯指向一个已关掉的单）。
+COLLISION_ISSUE = "#5425"
 
 
 class GitError(RuntimeError):
@@ -145,6 +170,20 @@ def version_key(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def next_version(version: str) -> str:
+    """按本仓约定把版本号**抬一格**：`1.57.0` → `1.58.0`（次版本 +1，其后归零）。
+
+    为什么是次版本：本仓实测的取号形态就是抬次版本（`1.56.0` → `1.57.0`，见技能 §23 的版本沿革），
+    「同刻两包撞号」的处置也是「在其之上再抬一格」⇒ 出口给的号必须与这个约定同形，否则照着做会再撞。
+    """
+    parts = list(version_key(version))
+    while len(parts) < 2:
+        parts.append(0)
+    parts[1] += 1
+    parts[2:] = [0] * len(parts[2:])
+    return ".".join(str(p) for p in parts)
+
+
 def blobs_equal(ref: str, path: str, source: str, cwd: Path) -> bool | None:
     """ref 版内容 vs 被检内容是否逐字节相同。None = 不可判定（路径在 ref 侧不存在）。"""
     existed = git("cat-file", "-e", f"{ref}:{path}", cwd=cwd, check=False)
@@ -186,13 +225,18 @@ def changed_paths(ref: str, source: str, cwd: Path) -> list[str]:
     return [p for p in paths if p.startswith(PRESETS_DIR)]
 
 
-def check_source(ref: str, source: str, cwd: Path, out=sys.stdout, seen: dict | None = None) -> int:
+def check_source(ref: str, source: str, cwd: Path, out=sys.stdout, seen: dict | None = None,
+                 stats: dict | None = None) -> int:
     """单来源判定。返回 0（绿）/ 1（红）。
 
     `seen` 跨来源共享：同一路径在另一来源已被报过（如 `git checkout <sha> -- <path>` 会**同时**改
     工作区与索引）就**只报一次** —— 否则 `both` 模式把同一条降级打印两遍，读起来像两个问题。
+
+    `stats` 跨来源累加**工作量读数**（§23 G8：候选 / 判定 / 命中 / 跳过，**不含挂钟**），由
+    `cmd_check` 打印总读数；早退（fail-closed）的来源**不计入** `completed`（读数不得伪造）。
     """
     seen = {} if seen is None else seen
+    stats = {} if stats is None else stats
     try:
         paths = changed_paths(ref, source, cwd)
     except GitError as exc:
@@ -202,12 +246,18 @@ def check_source(ref: str, source: str, cwd: Path, out=sys.stdout, seen: dict | 
     label = {"index": "暂存区", "worktree": "工作区文件"}[source]
     downgrades: list[str] = []
     upgrades: list[str] = []
-    forks: list[str] = []
+    collisions: list[str] = []
     unchecked: list[str] = []
+    deduped = 0
+    same_count = 0
 
     for path in paths:
-        if seen.get(path, "").startswith("downgrade"):
-            print(f"  ℹ️  {path}：{label}同为此降级（已在另一来源报出，不重复列）", file=out)
+        already = seen.get(path, "")
+        # 跨来源去重：同一条只报一次，否则读数里的「命中几条」会被翻倍（读数必须可解释）。
+        if already.startswith("downgrade") or already == "collision":
+            deduped += 1
+            kind = "降级" if already.startswith("downgrade") else "同号撞车"
+            print(f"  ℹ️  {path}：{label}同为此{kind}（已在另一来源报出，不重复列）", file=out)
             continue
         if not VERSION_FILE_RE.search(path):
             if seen.get(path) != "unchecked":
@@ -247,21 +297,63 @@ def check_source(ref: str, source: str, cwd: Path, out=sys.stdout, seen: dict | 
         else:
             same = blobs_equal(ref, path, source, cwd)
             if same is False:
-                seen[path] = "fork"
-                forks.append(
-                    f"  ⚠️  {path}：版本同为 {new_v} 但**内容与 {ref} 不同**（分叉，不是升级；来源：{label}）\n"
-                    f"     多为「在旧快照上改了预设」⇒ 请 rebase 到最新 {ref} 后再改，避免把旧内容带回去"
+                # 🔴 同号不同内容 = **跨包撞车**（issue #5425 新增判据；2026-09-24 实测一晚撞 2 次）：
+                # 原先这里只**告警**（`分叉`）⇒ 撞车只能靠人肉发现，发现后还要 rebase + 抬号 + 重跑整轮 CI。
+                seen[path] = "collision"
+                collisions.append(
+                    f"  ❌ {path}\n"
+                    f"     同号不同内容：{ref} 侧与候选侧**同为 {new_v}**，但文件内容不同（来源：{label}）\n"
+                    f"     ⇒ **同号不同内容 = 跨包撞车**（今晚已发生 2 次：先双双写成 `1.56.0`，"
+                    f"再一个 `1.56.0` 一个 `1.57.0`）—— 既不是升级，也不是「与基准相同」\n"
+                    f"     出口（可行动）：**抬号到 `{next_version(base_v)}`**（= 基准版本 {base_v} + 1，"
+                    f"本仓约定抬次版本），再重跑本检查；本判据出处 {COLLISION_ISSUE}\n"
+                    f"     （若候选内容其实来自**旧快照**：先 `git checkout {ref} -- {PRESETS_DIR}` 再重改 + 抬号）"
                 )
             else:
                 seen[path] = "same"
-                print(f"  ✅ {path}：版本与 {ref} 相同（{new_v}）", file=out)
+                same_count += 1
+                print(f"  ✅ {path}：版本与 {ref} 相同（{new_v}）—— 内容也逐字节相同", file=out)
 
     for line in upgrades:
         print(line, file=out)
-    for line in forks:
-        print(line, file=out)
     for line in unchecked:
         print(f"  ℹ️  {line}：无 `version:` 字段，不参与单调性判定", file=out)
+
+    # §23 G8 成本口径：读数只报**与负载无关的工作量**（候选 / 判定 / 命中 / 跳过），**不报挂钟** ——
+    # 同一套判据的墙钟在并行 CI 上会漂（实测 72/57/62s），拿它当判据等于把噪声当结论。
+    # 跳过必须**逐类给出原因**（只报「跳过 N 条」而不给原因 = 读数不可解释）。
+    # 本来源没有候选时不重复出声（「⏭️ 本来源未跑判定」那行已经说明），总读数在 `cmd_check` 里给。
+    judged = len(paths) - len(unchecked) - deduped
+    if paths:
+        print(
+            f"  📊 [{label}] 读数（§23 G8：只报工作量，不报挂钟）："
+            f"候选 {len(paths)} 条 · 判定 {judged} 条 · "
+            f"命中 {len(downgrades) + len(collisions)} 条（降级 {len(downgrades)} / 同号撞车 {len(collisions)}）· "
+            f"放行 {len(upgrades) + same_count} 条（升级 {len(upgrades)} / 同号同内容 {same_count}）· "
+            f"跳过 {len(unchecked) + deduped} 条（无 `version:` 字段 {len(unchecked)} / 另一来源已报 {deduped}）",
+            file=out,
+        )
+    for key, value in (("candidates", len(paths)), ("judged", judged),
+                       ("downgrades", len(downgrades)), ("collisions", len(collisions)),
+                       ("upgrades", len(upgrades)), ("same", same_count),
+                       ("unchecked", len(unchecked)), ("deduped", deduped), ("completed", 1)):
+        stats[key] = stats.get(key, 0) + value
+
+    if collisions:
+        print(f"\n❌ 检出 {len(collisions)} 处 `.agent-presets/**` **同号不同内容**（跨包撞车）—— 拒绝提交：", file=out)
+        for line in collisions:
+            print(line, file=out)
+        print(
+            "\n根因：**两个包同时改同一个预设文件，各自只抬了一格** ⇒ 同一版本号下两套不同内容。\n"
+            "      实测（2026-09-24 一晚 2 次）：两个并行包同时改同一个 `SKILL.md` 的 `version:` ——\n"
+            "      第一次双双写成 `1.56.0`、第二次一个 `1.56.0` 一个 `1.57.0` ⇒ 同号两条沿革 / 同号不同内容；\n"
+            "      而当时的守卫对「同版本」一律**放行** ⇒ 撞车只能靠人肉发现，发现后还要 rebase 解冲突 + 抬号 + 重跑整轮 CI。\n"
+            "出口（可行动）：**抬号到「基准版本 + 1」**（本仓约定抬次版本：`1.56.0` → `1.57.0`）后重跑本检查；\n"
+            "      ⚠️ 同号不同内容 = **跨包撞车**，别把两处改成逐字节相同来「消红」（那是删掉别人的沿革）。\n"
+            f"      本判据出处：{COLLISION_ISSUE}",
+            file=out,
+        )
+        return 1
 
     if downgrades:
         print(f"\n❌ 检出 {len(downgrades)} 处 `.agent-presets/**` **版本下降**（相对 {ref}）—— 拒绝提交：", file=out)
@@ -573,16 +665,44 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     return 0
 
 
+def _print_reading(stats: dict, total_sources: int, out=sys.stdout) -> None:
+    """§23 G8 成本口径：只报**与负载无关的工作量读数**（判定 / 命中 / 跳过），**不用挂钟时长当判据**。
+
+    §23 G6 存活读数：「零动作」也必须出声 —— 候选 0 条 ⇒ 打印**零动作 + 原因**，不得静默退出；
+    「我没做事」（零动作）与「我没跑」（fail-closed 早退 ⇒ `完成来源` 不足）必须长得不一样。
+    """
+    hits = stats.get("downgrades", 0) + stats.get("collisions", 0)
+    skipped = stats.get("unchecked", 0) + stats.get("deduped", 0)
+    print(
+        f"  📊 本轮总读数（§23 G8：只报工作量，不报挂钟）：候选 {stats.get('candidates', 0)} 条 · "
+        f"判定 {stats.get('judged', 0)} 条 · 命中 {hits} 条"
+        f"（降级 {stats.get('downgrades', 0)} / 同号撞车 {stats.get('collisions', 0)}）· "
+        f"放行 {stats.get('upgrades', 0) + stats.get('same', 0)} 条 · 跳过 {skipped} 条"
+        f"（无 `version:` 字段 {stats.get('unchecked', 0)} / 另一来源已报 {stats.get('deduped', 0)}）· "
+        f"完成来源 {stats.get('completed', 0)}/{total_sources}",
+        file=out,
+    )
+    if not stats.get("candidates"):
+        print(
+            "  ⏭️ 零动作（原因：候选与基准都没有 `.agent-presets/**` 变更）—— 本判据**无对象可判**；"
+            "这与「判过且通过」必须区分开（§23 G6）",
+            file=out,
+        )
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     cwd = Path(args.repo).resolve()
     sources = [args.source] if args.source != "both" else ["index", "worktree"]
     print(f"🔎 `.agent-presets/**` 版本单调性守卫（基准 {args.ref}）")
     seen: dict = {}
+    stats: dict = {}
     rc = 0
     for source in sources:
-        rc |= check_source(args.ref, source, cwd, seen=seen)
+        rc |= check_source(args.ref, source, cwd, seen=seen, stats=stats)
+    _print_reading(stats, len(sources))
     if rc == 0:
-        print("✅ 通过：无 `.agent-presets/**` 版本下降（升级与「与基准相同」均放行）")
+        print("✅ 通过：无 `.agent-presets/**` 版本下降、无「同号不同内容」撞车"
+              "（升级与「与基准相同」均放行）")
 
     # 地雷 B（issue #4026）：仓库内容全对 ≠ 活锚新鲜 —— 活锚落后时改进到不了加载点。
     # 显式 `--anchor` 一律判定；默认活锚只在「与当前仓库同源」时判定（见 judge_anchor）。
