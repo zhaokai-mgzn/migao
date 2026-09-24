@@ -399,9 +399,12 @@ def _detect_repeat_returns(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig)
 def _detect_price_change(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -> List[_Hit]:
     """改价幅度（issue #5388）：行来自**审计日志**（`tool_name ∈ {product_update, sku_update}`）。
 
-    🔴 键名逐字 = 审计真值（`before_price` / `new_price`）：`before_price` 缺失的行
+    🔴 键名逐字 = 落库真值（`before_price` / `new_price`）：缺 `before_price` 的行
     （#5303 之前的改价、或脱敏期落库的历史行）在本层被跳过 —— 但**不是静默的**：
     `judgeable_fields` 把它们登记为「未判定」，`proactive_status` 据此落 `incomplete` + `gaps`。
+
+    行来自**两条腿、一个数组**（#5388 审计腿 + #5411 批量腿，装配层合并）⇒ 本层对 `tool_name`
+    **不设限**：谁在这里加「只认审计工具」这类过滤，批量降价就会重新变成发现不了的改价。
     """
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for row in _rows(snapshot, "price_changes"):
@@ -544,8 +547,11 @@ RULES: Tuple[RuleSpec, ...] = (
         thresholds=lambda cfg: {"price_change_pct": cfg.price_change_pct},
         title=lambda hit, cfg: f"{hit.count} 笔改价幅度超 {cfg.price_change_pct:g}%",
         detect=_detect_price_change,
-        # 🔴 数据源 = 审计日志（issue #5388）：装配层按 `resource_type='agent_tool'` +
-        # `tool_name ∈ {product_update, sku_update}` 装配 —— **两者都是改价**（只筛一个会漏一半）。
+        # 🔴 取数面**两条腿**（issue #5388 + #5411），行数组只有**一个**（不另立第二套）：
+        # · 审计腿：`resource_type='agent_tool'` + `tool_name ∈ {product_update, sku_update}`
+        #   （**两者都是改价**，只筛一个会漏一半）；
+        # · 批量腿：`agent_batches.batch_type='product_price'` × `agent_batch_items`
+        #   （`old_value`/`new_value`，按 V127 的字段/状态白名单筛）—— 批量执行时审计行里没有价格。
         requires=("price_changes", ("change_no", "before_price", "new_price", "changed_at")),
         # 行级可判定性：缺 before_price（#5303 之前的改价）/ 缺 new_price（脱敏期历史行）⇒ **未判定**
         judgeable_fields=("before_price", "new_price"),
@@ -560,12 +566,18 @@ RULES: Tuple[RuleSpec, ...] = (
             "而 `success=false`（服务端拒绝 / 工具抛错）的调用**不算改价**（价根本没变）"
             "⇒ 本项不会把失败的改价报成改价",
             "审计留痕自 #5303 起才带改价真值：更早的改价没有 before_price ⇒ 那类记录**不判定**（不是幅度 0）",
-            "覆盖面**窄于「所有改价」**：只覆盖经米宝执行的 product_update / sku_update"
-            "（后台页面直接改价**不写审计**）；product_manage（能改 basePrice，但无 before_price 预览约束）"
-            "与批量改价 product_batch_update（条目用 oldValue/newValue）同样**不在射程**"
-            " ⇒ 这些路径的改价不会被本项发现",
+            "批量改价（product_batch_update）**在射程内**，但取数面与审计腿不同：它走批次明细 "
+            "agent_batch_items 的 old_value / new_value（执行批量时参数只有 batch_id，审计行里没有价格可落）"
+            "；「从未生效」的条目（pending / failed / skipped）不算改价，**已撤销的批次仍算**（价确实动过）"
+            "；审计腿的租户级前置（audit_tool_logging）**只管审计腿** —— 它 false 时批量腿不受影响，"
+            "该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）",
+            "覆盖面仍窄于「所有改价」：只覆盖经米宝执行的 product_update / sku_update / "
+            "product_batch_update 三条路径；product_manage（能改 basePrice，但改前价不可得 ⇒ 幅度不可判定）"
+            "与后台页面直接改价（不经 Agent ⇒ 不写 agent_tool 审计）是本项**显式豁免**的两条路径"
+            "（豁免在册 + 理由，见 app/tools/registry.py 的 _UNTRACKED_PRICE_PATHS）",
             "改前价由模型据 product_detail 的当前价填写（#5303 起必填），服务端按值回查（#5317）**不符即拒**"
-            " ⇒ 被拒的调用不入本项；落库的幅度取自审计真值",
+            " ⇒ 被拒的调用不入本项；幅度取**落库真值**（审计腿 = action_details.priceChange，"
+            "批量腿 = agent_batch_items 的 old/new 值）",
         ),
     ),
     RuleSpec(

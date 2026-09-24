@@ -64,6 +64,9 @@ public class DailyBriefingService {
     private final AuditLogMapper auditLogMapper;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
+    /** 批量改价的取数面（issue #5411）：批次 + 逐条明细（`agent_batches` / `agent_batch_items`）。 */
+    private final AgentBatchMapper agentBatchMapper;
+    private final AgentBatchItemMapper agentBatchItemMapper;
 
     /** 数字对账容差：metrics value 与快照值之差绝对值 ≤ 容差即视为一致（浮点/舍入） */
     private static final double METRIC_TOLERANCE = 0.001;
@@ -132,6 +135,33 @@ public class DailyBriefingService {
      * （`app/tools/product_update.py` / `app/tools/sku_update.py`）—— 不许凭语义推测（§17.3 ⑤）。</p>
      */
     static final List<String> PRICE_CHANGE_TOOLS = List.of("product_update", "sku_update");
+
+    /**
+     * **批量改价**的取数面（issue #5411）—— 工具名 + 批次类型 / 字段 + 「从未生效」的条目状态。
+     *
+     * <p>🔴 批量改价**不在审计腿的射程**里：`product_batch_update` 执行时的参数只有 `batch_id`
+     * （价格事实在批次行里）⇒ `action_details.priceChange` 无值可放。而批量改价的「改前 / 改后」
+     * 落在 {@code agent_batch_items.old_value / new_value}（迁移 V127）—— 那张表**不是 fail-open**
+     * 旁路：撤销依据不允许丢行（丢弃即静默失去依据，见 `docs/wiki/agent-write-boundary.md` §五）。</p>
+     *
+     * <p>字面量与工具自身声明的 `name` / schema enum 逐字相同
+     * （`backend/ai-agent-service/app/tools/product_batch_update.py`）—— 不许凭语义推测（§17.3 ⑤）。
+     * 两侧的等价由判据机械钉住（Python 侧元守卫读本文件的字面量比对）。</p>
+     */
+    static final String BATCH_PRICE_TOOL = "product_batch_update";
+
+    /** 批量类型白名单里的**改价**那一支（V127 的 `ck_agent_batch_type`）与它的字段名（同表 CHECK）。 */
+    static final String BATCH_TYPE_PRICE = "product_price";
+    static final String BATCH_FIELD_BASE_PRICE = "basePrice";
+
+    /**
+     * 「**从未生效**」的条目状态（V127 的 `ck_agent_batch_item_status`）—— 用**排除**而不是白名单。
+     *
+     * <p>只有这三个意味着价从来没动过（`pending` 未执行 / `failed` 执行失败 / `skipped`
+     * 执行阶段就失败过）；`success` / `reverted` / `revert_failed` 都**动过价** —— 撤销过的批次
+     * 也是「有人动过价」（这正是本项要发现的事），故不能把它们读成「没发生」。</p>
+     */
+    static final List<String> BATCH_ITEM_NEVER_APPLIED = List.of("pending", "failed", "skipped");
 
     /**
      * 快照行数组的**自描述**：本次装配真的给出了哪些行数组、每个数组有哪些字段。
@@ -571,12 +601,21 @@ public class DailyBriefingService {
     }
 
     /**
-     * `price_changes` 行：**数据源 = 审计日志**（issue #5388 裁定 C —— 不建改价流水表）。
+     * `price_changes` 行：**两条腿、一个数组**（issue #5388 审计腿 + issue #5411 批量腿）——
+     * 用户裁定 C 是「**不建改价流水表**」，不是「只许一个数据源」；引擎侧只有一份行契约
+     * （`requires=("price_changes", …)`）⇒ 批量改价必须落进**同一个**数组，不许另立第二套。
      *
-     * <p>筛：`tenant_id` + `resource_type='agent_tool'` + `tool_name ∈ {@link #PRICE_CHANGE_TOOLS}`
-     * （两者**都是改价**，只筛一个会漏一半）+ 时间窗；按 `created_at` **倒序**取前
-     * {@link #SNAPSHOT_ROW_LIMIT} 条（近期优先 ⇒ 日报关心的「今天」不会被历史淹没），
-     * 多取一行只为判定截断（截断经 `row_meta` 显式交给引擎 ⇒ 落 `incomplete`，不静默少报）。</p>
+     * <p><b>审计腿</b>（#5388）：`tenant_id` + `resource_type='agent_tool'` + `tool_name ∈
+     * {@link #PRICE_CHANGE_TOOLS}`（两者**都是改价**，只筛一个会漏一半）+ 时间窗；
+     * 按 `created_at` 倒序取前 {@link #SNAPSHOT_ROW_LIMIT} 条，多取一行只为判定截断。</p>
+     *
+     * <p><b>批量腿</b>（#5411）：`agent_batches`（`batch_type=product_price` 且**已执行**
+     * —— `executed_at` 在窗口内）× `agent_batch_items`（`field=basePrice`、状态**不是**
+     * {@link #BATCH_ITEM_NEVER_APPLIED}）。🔴 为什么必须走这条腿：批量执行时的参数只有 `batch_id`
+     * ⇒ 审计行里**没有价格可落**（`priceChange` 无值可放），「批量降价不会被发现」就是这么来的。</p>
+     *
+     * <p>两腿**合并后**按 `changed_at` 倒序，共用同一个行数上限（任一腿被截断 ⇒ 显式
+     * `row_meta.truncated`）。</p>
      *
      * <p>🔴 只有**带了改价参数**的调用才是改价事件：`product_update` 也可能只是改名。判据 =
      * `action_details.priceChange` 在场（issue #5388 新增的取证键），**或** `params` 里有 `price` 键
@@ -595,14 +634,81 @@ public class DailyBriefingService {
         if (truncated) {
             logs = logs.subList(0, SNAPSHOT_ROW_LIMIT);
         }
-        List<Map<String, Object>> rows = new ArrayList<>(logs.size());
+        List<DatedRow> merged = new ArrayList<>(logs.size());
         for (AuditLog log : logs) {
             Map<String, Object> row = priceChangeRow(log);
             if (row != null) {
-                rows.add(row);
+                merged.add(new DatedRow(log.getCreatedAt(), row));
             }
         }
-        return new RowBatch(rows, truncated);
+        // 批量腿（issue #5411）：批次明细是**非 fail-open** 的真值源（撤销依据不允许丢行）
+        List<AgentBatch> batches = agentBatchMapper.selectList(new LambdaQueryWrapper<AgentBatch>()
+                .eq(AgentBatch::getTenantId, tenantId)
+                .eq(AgentBatch::getBatchType, BATCH_TYPE_PRICE)
+                // 已执行的批次才有 `executed_at`（`preview` 批次价根本没动）⇒ 它一并排除未执行
+                .ge(AgentBatch::getExecutedAt, windowStart)
+                .orderByDesc(AgentBatch::getExecutedAt)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean batchTruncated = batches.size() > SNAPSHOT_ROW_LIMIT;
+        if (batchTruncated) {
+            batches = batches.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        if (!batches.isEmpty()) {
+            List<String> batchIds = new ArrayList<>(batches.size());
+            Map<String, AgentBatch> byId = new HashMap<>(batches.size());
+            for (AgentBatch batch : batches) {
+                batchIds.add(batch.getId());
+                byId.put(batch.getId(), batch);
+            }
+            List<AgentBatchItem> items = agentBatchItemMapper.selectList(
+                    new LambdaQueryWrapper<AgentBatchItem>()
+                            .in(AgentBatchItem::getBatchId, batchIds)
+                            // 上下架批量的 field=status（on_sale/off_sale）**不是钱**
+                            .eq(AgentBatchItem::getField, BATCH_FIELD_BASE_PRICE)
+                            // 只有「从未生效」的状态意味着价没动过（排除口径，见常量注释）
+                            .notIn(AgentBatchItem::getStatus, BATCH_ITEM_NEVER_APPLIED)
+                            .orderByDesc(AgentBatchItem::getId)
+                            .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+            batchTruncated = batchTruncated || items.size() > SNAPSHOT_ROW_LIMIT;
+            for (AgentBatchItem item : items.size() > SNAPSHOT_ROW_LIMIT
+                    ? items.subList(0, SNAPSHOT_ROW_LIMIT) : items) {
+                AgentBatch batch = byId.get(item.getBatchId());
+                if (batch != null) {
+                    // 改价时刻 = 批次的**执行**时刻（预览时刻会把「还没改」报成改价）
+                    merged.add(new DatedRow(batch.getExecutedAt(), batchPriceChangeRow(item, batch)));
+                }
+            }
+        }
+        // 两腿合并后按时刻倒序（同一数组 ⇒ 同一个排序口径），超出上限 ⇒ 显式截断
+        merged.sort(java.util.Comparator.comparing(
+                (DatedRow row) -> row.at() == null ? OffsetDateTime.MIN : row.at()).reversed());
+        truncated = truncated || batchTruncated || merged.size() > SNAPSHOT_ROW_LIMIT;
+        if (merged.size() > SNAPSHOT_ROW_LIMIT) {
+            merged = merged.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        return new RowBatch(merged.stream().map(DatedRow::row).toList(), truncated);
+    }
+
+    /** 行 + 它的改价时刻（两腿合并排序用；`at` 只在本方法内消费，不进快照契约）。 */
+    private record DatedRow(OffsetDateTime at, Map<String, Object> row) {
+    }
+
+    /**
+     * 一条**批次明细** ⇒ 一行 `price_changes`（键名逐字 = 快照契约，与审计腿**同形**）。
+     *
+     * <p>`old_value` / `new_value` 在库里是 **TEXT**（V127）⇒ 经 {@link #toDouble} 转数：
+     * 读不出数（不该发生，但真发生了也不许猜）⇒ 落 **null** = 未判定（不是 0）。</p>
+     */
+    static Map<String, Object> batchPriceChangeRow(AgentBatchItem item, AgentBatch batch) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        // `change_no` = 批次明细主键（与审计行 id 同一用途：引擎按它做证据引用）
+        row.put("change_no", "ABI-" + item.getId());
+        row.put("tool_name", BATCH_PRICE_TOOL);
+        row.put("product_id", item.getResourceId());
+        row.put("before_price", toDouble(item.getOldValue()));
+        row.put("new_price", toDouble(item.getNewValue()));
+        row.put("changed_at", iso(batch.getExecutedAt()));
+        return row;
     }
 
     /** 一条审计行 ⇒ 一行 `price_changes`；**不是改价事件**（没带改价参数 / 写没成功）⇒ `null`。 */

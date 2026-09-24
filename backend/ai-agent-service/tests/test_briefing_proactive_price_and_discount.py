@@ -342,12 +342,18 @@ class TestRegistrationAndInvariant:
             "而 `success=false`（服务端拒绝 / 工具抛错）的调用**不算改价**（价根本没变）"
             "⇒ 本项不会把失败的改价报成改价",
             "审计留痕自 #5303 起才带改价真值：更早的改价没有 before_price ⇒ 那类记录**不判定**（不是幅度 0）",
-            "覆盖面**窄于「所有改价」**：只覆盖经米宝执行的 product_update / sku_update"
-            "（后台页面直接改价**不写审计**）；product_manage（能改 basePrice，但无 before_price 预览约束）"
-            "与批量改价 product_batch_update（条目用 oldValue/newValue）同样**不在射程**"
-            " ⇒ 这些路径的改价不会被本项发现",
+            "批量改价（product_batch_update）**在射程内**，但取数面与审计腿不同：它走批次明细 "
+            "agent_batch_items 的 old_value / new_value（执行批量时参数只有 batch_id，审计行里没有价格可落）"
+            "；「从未生效」的条目（pending / failed / skipped）不算改价，**已撤销的批次仍算**（价确实动过）"
+            "；审计腿的租户级前置（audit_tool_logging）**只管审计腿** —— 它 false 时批量腿不受影响，"
+            "该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）",
+            "覆盖面仍窄于「所有改价」：只覆盖经米宝执行的 product_update / sku_update / "
+            "product_batch_update 三条路径；product_manage（能改 basePrice，但改前价不可得 ⇒ 幅度不可判定）"
+            "与后台页面直接改价（不经 Agent ⇒ 不写 agent_tool 审计）是本项**显式豁免**的两条路径"
+            "（豁免在册 + 理由，见 app/tools/registry.py 的 _UNTRACKED_PRICE_PATHS）",
             "改前价由模型据 product_detail 的当前价填写（#5303 起必填），服务端按值回查（#5317）**不符即拒**"
-            " ⇒ 被拒的调用不入本项；落库的幅度取自审计真值",
+            " ⇒ 被拒的调用不入本项；幅度取**落库真值**（审计腿 = action_details.priceChange，"
+            "批量腿 = agent_batch_items 的 old/new 值）",
         )
         assert discount.requires == ("order_discounts",
                                      ("order_no", "total_amount", "discount_amount", "created_at"))
@@ -388,3 +394,59 @@ class TestRegistrationAndInvariant:
                          for spec in RULES)
         entry = proactive_status(_snapshot(price_changes=[_touch()]), rules=stripped)["price_change_over"]
         assert entry["caveats"] == []
+
+
+def _batch_touch(change_no="ABI-7", before=200.0, new=120.0, day=BIZ):
+    """一条**批次明细来源**的改价行（issue #5411）：键名逐字 = 快照契约（与审计腿**同形**）。
+
+    值来自 `agent_batch_items.old_value / new_value`（不是审计的 `action_details.priceChange`）——
+    **取数口径不同、行的形态相同**（复用同一个 `price_changes` 数组，不另立第二套）。
+    """
+    return {"change_no": change_no, "tool_name": "product_batch_update", "product_id": "P-9",
+            "before_price": before, "new_price": new, "changed_at": f"{day}T10:05:00+08:00"}
+
+
+class TestBatchPriceChangeIsInScope:
+    """🔴 issue #5411：**批量降价必须能被发现**（判据 1）。
+
+    ⚠️ **哪一层承重（别把这条读成空断言）**：让批量行进 `price_changes` 数组的是**装配层**
+    （`DailyBriefingService.assemblePriceChangeRows`）—— 引擎对 `tool_name` 不设限。所以
+    「装配真的产出了它」由 Java 判据承重（`DailyBriefingServiceTest::batchPriceRowsComeFromTheBatchItems`
+    + `AuditLogPriceChangeRealDbTest::batchPriceDropIsDiscoveredFromTheBatchItems`，真库注入式红证）；
+    **本类**承重的是「同形消费」：批量行按**同一形态**进来后，规则必须照常命中 ——
+    谁给 `_detect_price_change` 加上「只认审计工具」这类过滤，这里就红。
+    """
+
+    def test_batch_price_drop_is_discovered(self):
+        """批量降价（200 → 120 = 40% > 30%）⇒ 必须命中，且证据逐字给出批次来源的行"""
+        snapshot = _snapshot(price_changes=[_batch_touch()])
+        finding = next(f for f in scan_snapshot(snapshot) if f["rule_id"] == "price_change_over")
+
+        assert finding["impact"]["count"] == 1
+        row = finding["criterion"]["observed"][0]
+        assert row["ref"] == "ABI-7"
+        assert row["tool_name"] == "product_batch_update"
+        assert row["before_price"] == 200.0 and row["new_price"] == 120.0
+        assert row["pct"] == 40.0
+
+    def test_batch_row_shape_is_the_same_as_the_audit_row_shape(self):
+        """**不另立第二套**：批量行与审计行的键集**逐字相同**（规则只声明一份输入契约）"""
+        assert set(_batch_touch()) == set(_touch())
+        assert set(_batch_touch()) == set(PRICE_FIELDS)
+
+    def test_red_proof_batch_row_is_the_load_bearing_input(self):
+        """红证：把批次行从快照里摘掉 ⇒ 同一快照不再命中（证明上面那条断言吃的是这个输入）"""
+        without = _snapshot(price_changes=[])
+        assert [f for f in scan_snapshot(without) if f["rule_id"] == "price_change_over"] == []
+        with_row = _snapshot(price_changes=[_batch_touch()])
+        assert [f["rule_id"] for f in scan_snapshot(with_row)].count("price_change_over") == 1
+
+    def test_caveats_disclose_the_batch_leg_and_both_exempt_paths(self):
+        """披露面（判据 4）：批量腿的**取数口径不同**要说出 来，两条豁免路径也**不许静默**"""
+        caveats = "；".join(next(r for r in RULES if r.rule_id == "price_change_over").caveats)
+
+        assert "product_batch_update" in caveats, "批量改价的取数面不同 ⇒ 必须在 caveats 里说明"
+        assert "agent_batch_items" in caveats, "取数面要点名到表（否则「在射程内」只是一句宣称）"
+        assert "product_manage" in caveats, "显式豁免的路径必须点名（缺口不许只活在代码里）"
+        assert "后台页面直接改价" in caveats, (
+            "不经 Agent 的改价路径（后台页面）必须登记为显式豁免 + 理由，或指出它归哪个面")

@@ -158,22 +158,59 @@ def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
 # 记账面同理：`audit_logs.resource_id/resource_name` 对 AI 工具调用**恒为 null**
 # （`AgentAuditLogController.record` 传 null）⇒ 不留商品标识就连「哪个商品被改价」都无从取证。
 #
-# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫，§23 G1/G2）：凡 schema 里
-# 声明了 **`price`** 的写工具必须**要么登记在此、要么登记进下面的例外台账** —— 两者都不在 ⇒ 红。
-# ⚠️ 判据是 **`price`**（会不会改价），**不是** `before_price`：本单复核实测 `product_manage`
-# 也能改 `basePrice` 却**没有** before_price 预览约束（#5303 只覆盖 product_update / sku_update）
-# ⇒ 旧前提「声明 before_price ⟺ 会改价」**已被证伪**（它会静默放行一条真实的改价路径）。
-_PRICE_CHANGE_TOOLS = frozenset({"product_update", "sku_update"})
+# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫，§23 G1/G2）；
+# ⚠️ 射程按「**会改价的路径**」收口（issue #5411 定的，不是「声明 `price` 的工具」）：
+# 本仓库为此栽过两次 —— ① `before_price` 口径漏掉 `product_manage`（#5388 修）；
+# ② `price` 键口径漏掉**批量改价**（它的 schema 里没有 `price` 键，价格面在 `batch_type` /
+# `field` 的 **enum 取值**里）⇒ 元守卫现在认「键 ∪ enum 取值」，并**按取数面**分类登记。
+#
+# 取数面 id（新面要在这里加，并同步 Java 装配层 + 元守卫的 `PRICE_EVIDENCE_SOURCES`）。
+PRICE_EVIDENCE_AUDIT = "audit_price_change"
+PRICE_EVIDENCE_BATCH_ITEMS = "batch_items"
 
-#: **已知不在射程**的可改价写工具（例外台账，只许缩短 —— §23 G2 燃尽靶）。
-#: 两条硬约束（元守卫逐条判）：① 例外必须真实存在且真的能改价（陈旧条目 ⇒ 红）；
-#: ② 每个例外必须在引擎 `price_change_over.caveats` 里**被点名**（缺口不许只活在代码注释里）。
-_UNTRACKED_PRICE_TOOLS = {
-    # 也能改 basePrice（`_update_product` 里 `json_data["basePrice"] = price`），但无 before_price
-    # 预览约束 ⇒ 改前价不可得 ⇒ 本项不判（已 caveats 点名）
-    "product_manage": "能改 basePrice，但无 before_price 预览约束（#5303 只覆盖 product_update/sku_update）",
-    # 批量改价：条目用 oldValue/newValue（族 2 / #5314 的批量写面），schema 里没有 price 键
-    "product_batch_update": "批量改价：条目用 oldValue/newValue，不产 price/before_price 真值",
+#: 🔴 **凡会改价的路径必须在此登记**（未登记即红）：值是它「改前 / 改后」的**取数面**。
+PRICE_EVIDENCE_PATHS = {
+    "product_update": PRICE_EVIDENCE_AUDIT,
+    "sku_update": PRICE_EVIDENCE_AUDIT,
+    # 批量改价（#5411）：执行时参数只有 `batch_id` ⇒ 审计行里**没有价格可落**（`priceChange` 空）；
+    # 改前/改后落在批次明细 `agent_batch_items.old_value / new_value`（迁移 V127）——
+    # 那张表**不是 fail-open** 旁路：撤销依据不允许丢行 ⇒ 它比审计腿更适合当批量改价的真值源。
+    "product_batch_update": PRICE_EVIDENCE_BATCH_ITEMS,
+}
+
+#: **审计腿**的改价工具（**派生**，不手抄第二份）—— `price_change_facts` 只对它们发 `priceChange`。
+#: ⚠️ 判据是 **`price`**（会不会改价），**不是** `before_price`：复核实测 `product_manage`
+#: 也能改 `basePrice` 却**没有** before_price 预览约束（#5303 只覆盖 product_update / sku_update）
+#: ⇒ 旧前提「声明 before_price ⟺ 会改价」**已被证伪**（它会静默放行一条真实的改价路径）。
+#: 批量改价**不在此列**：它没有 `price` 入参 ⇒ 混进来会让「审计里有改价真值」变成一句假话。
+_PRICE_CHANGE_TOOLS = frozenset(
+    name for name, source in PRICE_EVIDENCE_PATHS.items() if source == PRICE_EVIDENCE_AUDIT)
+
+#: **显式豁免**的改价路径（例外台账，只许缩短 —— §23 G2 燃尽靶；冻结基线在元守卫里）。
+#: 每条硬约束（元守卫逐条判）：① `reason` + `issue` 不许留白；② **活体**（工具侧「改前价仍不可得」
+#: ／ HTTP 侧「锚点仍在且仍不写 agent_tool 审计」，过期 ⇒ 红）；
+#: ③ 必须在引擎 `price_change_over.caveats` 里**被点名**（`caveat_token`，缺口不许只活在代码注释里）。
+_UNTRACKED_PRICE_PATHS = {
+    "product_manage": {
+        "kind": "tool",
+        # 也能改 basePrice（`_update_product` 里 `json_data["basePrice"] = price`），但无 before_price
+        # 预览约束 ⇒ **改前价不可得** ⇒ 幅度不可判定（活体判据：schema 里的改前值词汇必须仍为空）
+        "reason": "能改 basePrice，但改前价不可得（无 before_price 预览约束 ⇒ 幅度不可判定）",
+        "issue": "#5388",
+        "caveat_token": "product_manage",
+    },
+    "http:admin-web-product-edit": {
+        "kind": "http",
+        # 路径维度（issue #5411 判据 4）：**不经 Agent** 的改价路径 ⇒ 本项取数面结构上覆盖不到。
+        # 显式登记为豁免 + 理由 + 归属面；它进了取数面（在该路径上写了 agent_tool 审计）⇒ 红。
+        "reason": "后台页面直接改价（PUT /api/admin/products/{id}）不经 Agent ⇒ 不写 agent_tool 审计；"
+                  "归属面 = 服务端商品编辑路径，要纳入需在那条路径上补审计",
+        "issue": "#5411",
+        "caveat_token": "后台页面直接改价",
+        "alive_anchor": (
+            "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java",
+            "public ApiResponse<ProductResponse> updateProduct("),
+    },
 }
 
 #: 逐条改价的字段白名单（**加法即登记**：新增字段要在这里 + 快照契约同步）

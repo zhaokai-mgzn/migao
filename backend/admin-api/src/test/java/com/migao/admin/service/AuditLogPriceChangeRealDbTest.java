@@ -6,7 +6,11 @@ import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.migao.admin.entity.AgentBatch;
+import com.migao.admin.entity.AgentBatchItem;
 import com.migao.admin.entity.AuditLog;
+import com.migao.admin.mapper.AgentBatchItemMapper;
+import com.migao.admin.mapper.AgentBatchMapper;
 import com.migao.admin.mapper.AuditLogMapper;
 import com.migao.admin.mapper.OrderMapper;
 import net.sf.jsqlparser.expression.Expression;
@@ -73,6 +77,9 @@ class AuditLogPriceChangeRealDbTest {
     private static DailyBriefingService service;
     private static AuditLogMapper auditLogMapper;
     private static OrderMapper orderMapper;
+    /** 批量改价的取数面（issue #5411）：真库里的 `agent_batches` / `agent_batch_items`。 */
+    private static AgentBatchMapper agentBatchMapper;
+    private static AgentBatchItemMapper agentBatchItemMapper;
 
     /**
      * 多租户拦截器当前注入的租户 —— **可切**（默认 {@link #TENANT_ID}）。
@@ -149,6 +156,30 @@ class AuditLogPriceChangeRealDbTest {
             order(st, "O-5388-3", TENANT_ID, "SO-5388-3", "1000.00", "400.00", "90 days");  // 窗口外
             order(st, "O-5388-4", TENANT_ID, "SO-5388-4", "1000.00", null, "1 day");        // NULL ≠ 让利
             order(st, "O-5388-5", OTHER_TENANT_ID, "SO-5388-5", "1000.00", "400.00", "1 day");
+            // ── 批量改价（issue #5411）：取数面 = `agent_batch_items`（**不是**审计）────────
+            // ⑫ **批量降价**（200 → 120）：本单的 P0 —— 它**必须**进数组（审计腿看不见它：
+            //    `product_batch_update` 执行时只带 batch_id，没有 priceChange 可落）
+            batch(st, "B-5411-1", TENANT_ID, "product_price", "1 day", "done", 2);
+            batchItem(st, "B-5411-1", TENANT_ID, "P-5411-A", "basePrice", "200.00", "120.00", "success");
+            // 同批里**执行失败**的条目：价根本没变 ⇒ 不是改价事件（把状态过滤摘掉 ⇒ 误报）
+            batchItem(st, "B-5411-1", TENANT_ID, "P-5411-B", "basePrice", "300.00", "150.00", "failed");
+            // ⑬ 已**撤销**的批次：条目 `reverted` —— 价确实动过（撤销不等于没发生）⇒ 仍在数组里；
+            //    同批的 `skipped` 条目（执行阶段就失败过）⇒ 从未生效 ⇒ 不在
+            batch(st, "B-5411-2", TENANT_ID, "product_price", "2 days", "reverted", 2);
+            batchItem(st, "B-5411-2", TENANT_ID, "P-5411-C", "basePrice", "400.00", "100.00", "reverted");
+            batchItem(st, "B-5411-2", TENANT_ID, "P-5411-D", "basePrice", "400.00", "100.00", "skipped");
+            // ⑭ **上下架批量**：`field=status`（on_sale/off_sale）**不是钱** ⇒ 不进改价数组
+            batch(st, "B-5411-3", TENANT_ID, "product_status", "1 day", "done", 1);
+            batchItem(st, "B-5411-3", TENANT_ID, "P-5411-E", "status", "on_sale", "off_sale", "success");
+            // ⑮ **只预览未执行**（`executed_at` 为 NULL）：价没动 ⇒ 不进数组
+            batch(st, "B-5411-4", TENANT_ID, "product_price", "1 day", "preview", 1);
+            batchItem(st, "B-5411-4", TENANT_ID, "P-5411-F", "basePrice", "500.00", "50.00", "pending");
+            // ⑯ 窗口外（90 天前）的批量改价：真的改过价，但不该进「近期」快照
+            batch(st, "B-5411-5", TENANT_ID, "product_price", "90 days", "done", 1);
+            batchItem(st, "B-5411-5", TENANT_ID, "P-5411-G", "basePrice", "600.00", "100.00", "success");
+            // ⑰ 跨租户：同窗口、同类型 ⇒ 租户过滤必须是承重的
+            batch(st, "B-5411-6", OTHER_TENANT_ID, "product_price", "1 day", "done", 1);
+            batchItem(st, "B-5411-6", OTHER_TENANT_ID, "P-5411-H", "basePrice", "700.00", "100.00", "success");
         }
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
@@ -172,17 +203,20 @@ class AuditLogPriceChangeRealDbTest {
             }
         }));
         configuration.addInterceptor(tenantLine);
-        for (Class<?> mapper : List.of(AuditLogMapper.class, OrderMapper.class)) {
+        for (Class<?> mapper : List.of(AuditLogMapper.class, OrderMapper.class,
+                AgentBatchMapper.class, AgentBatchItemMapper.class)) {
             configuration.addMapper(mapper);
         }
         SqlSessionFactory factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
         session = factory.openSession(true);
         auditLogMapper = session.getMapper(AuditLogMapper.class);
         orderMapper = session.getMapper(OrderMapper.class);
-        // 真装配的 DailyBriefingService（只喂本判据用到的两个 mapper；其余依赖不参与这两条读面）
+        agentBatchMapper = session.getMapper(AgentBatchMapper.class);
+        agentBatchItemMapper = session.getMapper(AgentBatchItemMapper.class);
+        // 真装配的 DailyBriefingService（只喂本判据用到的四个 mapper；其余依赖不参与这些读面）
         service = new DailyBriefingService(null, null, orderMapper, null, null, null, null, null,
                 null, null, null, null, auditLogMapper, new com.fasterxml.jackson.databind.ObjectMapper(),
-                null);
+                null, agentBatchMapper, agentBatchItemMapper);
     }
 
     @AfterAll
@@ -224,7 +258,7 @@ class AuditLogPriceChangeRealDbTest {
         assertThat(agentToolRowsInWindow)
                 .as("窗口内 agent_tool 行数（对照读数：筛选必须是承重的，否则计数会等于它）")
                 .isEqualTo(7L);
-        assertThat(rows).hasSize(4);
+        assertThat(rows).hasSize(6);   // 审计腿 4 条（#5388）+ 批量腿 2 条（#5411：B-5411-1 成功 / B-5411-2 撤销过）
 
         Map<String, Object> productRow = rows.stream()
                 .filter(r -> "A-5388-1".equals(r.get("change_no"))).findFirst().orElseThrow();
@@ -242,6 +276,68 @@ class AuditLogPriceChangeRealDbTest {
                 .containsEntry("new_price", 250.0);
         assertThat(rows).extracting(r -> r.get("change_no"))
                 .doesNotContain("A-5388-4", "A-5388-5", "A-5388-6", "A-5388-7", "A-5388-10");
+    }
+
+    @Test
+    @DisplayName("🔴 批量降价也能被发现（issue #5411）：取数面 = agent_batch_items（**非 fail-open**）")
+    void batchPriceDropIsDiscoveredFromTheBatchItems() {
+        List<Map<String, Object>> rows = priceRows();
+
+        Map<String, Object> batchRow = rows.stream()
+                .filter(r -> "P-5411-A".equals(r.get("product_id"))).findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "批量降价（200 → 120）没进改价行 ⇒ 批量降价不会被 price_change_over 发现"
+                                + "；现取行的 product_id=" + rows.stream()
+                                .map(r -> r.get("product_id")).toList()));
+        assertThat(batchRow)
+                .as("🔴 审计腿**看不见**这条（执行批量时只带 batch_id，没有 priceChange 可落）"
+                        + " ⇒ 批量降价只有走批次明细才会被发现")
+                .containsEntry("tool_name", DailyBriefingService.BATCH_PRICE_TOOL)
+                .containsEntry("before_price", 200.0)
+                .containsEntry("new_price", 120.0)
+                .containsEntry("product_id", "P-5411-A");
+        // 改价时刻 = 批次的 executed_at（**不是** created_at：预览时刻不是改价时刻）
+        AgentBatch executed = agentBatchMapper.selectById("B-5411-1");
+        assertThat(batchRow.get("changed_at"))
+                .as("时刻取自批次执行时刻（预览时刻会把「还没改」报成改价）")
+                .isEqualTo(executed.getExecutedAt().toString());
+        assertThat(batchRow.get("change_no")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("批量腿的射程：从未生效 / 预览未执行 / 上下架 / 窗口外 / 跨租户 都不进数组")
+    @SuppressWarnings("unchecked")
+    void batchLegScopeIsLoadBearing() {
+        List<Map<String, Object>> rows = priceRows();
+
+        // 对照读数（同一个测试里都在）：窗口内 product_price 批次 2 个（B-5411-5 在窗口外），
+        // 这 2 个批次共 4 条 basePrice 条目 ⇒ **生效的只有 2 条**（其余 2 条 failed / skipped）
+        assertThat(agentBatchMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AgentBatch>()
+                        .eq(AgentBatch::getBatchType, DailyBriefingService.BATCH_TYPE_PRICE)
+                        .ge(AgentBatch::getExecutedAt, windowStart())))
+                .as("对照读数：窗口内 product_price 批次（筛选必须承重，否则计数会等于结果行数）")
+                .isEqualTo(2L);
+        assertThat(agentBatchItemMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AgentBatchItem>()
+                        .in(AgentBatchItem::getBatchId, List.of("B-5411-1", "B-5411-2"))
+                        .eq(AgentBatchItem::getField, DailyBriefingService.BATCH_FIELD_BASE_PRICE)))
+                .as("对照读数：这 2 个批次的 basePrice 条目 4 条 ⇒ 未生效的 2 条必须被挡在数组外")
+                .isEqualTo(4L);
+        assertThat(rows).extracting(r -> r.get("product_id"))
+                .as("生效过的两条（success / reverted）在；失败 / 跳过 / 上下架 / 未执行 / 窗口外 / 别人的都不在")
+                .contains("P-5411-A", "P-5411-C")
+                .doesNotContain("P-5411-B", "P-5411-D", "P-5411-E", "P-5411-F",
+                        "P-5411-G", "P-5411-H");
+        // 租户过滤是同层对照（切租户上下文再读一次），不是「在别人租户上读不到」这种恒真的断言
+        withTenant(OTHER_TENANT_ID, () -> {
+            List<Map<String, Object>> other = (List<Map<String, Object>>) (List<?>) service
+                    .assemblePriceChangeRows(OTHER_TENANT_ID, windowStart()).rows();
+            assertThat(other).extracting(r -> r.get("product_id"))
+                    .as("反向着色：另一个租户看到的是**自己**那条批量改价")
+                    .contains("P-5411-H")
+                    .doesNotContain("P-5411-A", "P-5411-C");
+        });
     }
 
     @Test
@@ -347,6 +443,26 @@ class AuditLogPriceChangeRealDbTest {
                 + " action_details, created_at) VALUES ('" + id + "', " + tenantId + ", 'u-5388', 'update', '"
                 + resourceType + "', " + (toolName == null ? "NULL" : "'" + toolName + "'") + ", '"
                 + actionDetails + "'::jsonb, NOW() - INTERVAL '" + ago + "')");
+    }
+
+    /** 一个批次（issue #5411）：`preview` 状态**没有** `executed_at`（= 价还没动）。 */
+    private static void batch(Statement st, String id, Long tenantId, String batchType,
+                              String ago, String status, int itemCount) throws Exception {
+        st.execute("INSERT INTO agent_batches (id, tenant_id, batch_type, status, item_count,"
+                + " success_count, fail_count, created_by, created_at, executed_at)"
+                + " VALUES ('" + id + "', " + tenantId + ", '" + batchType + "', '" + status + "', "
+                + itemCount + ", 0, 0, 'u-5411', NOW() - INTERVAL '" + ago + "', "
+                + ("preview".equals(status) ? "NULL" : "NOW() - INTERVAL '" + ago + "'") + ")");
+    }
+
+    /** 一条批次明细：`old_value` / `new_value` 在库里是 **TEXT**（装配层负责转数）。 */
+    private static void batchItem(Statement st, String batchId, Long tenantId, String resourceId,
+                                  String field, String oldValue, String newValue, String status)
+            throws Exception {
+        st.execute("INSERT INTO agent_batch_items (batch_id, tenant_id, resource_id, field,"
+                + " old_value, new_value, status) VALUES ('" + batchId + "', " + tenantId + ", '"
+                + resourceId + "', '" + field + "', '" + oldValue + "', '" + newValue + "', '"
+                + status + "')");
     }
 
     private static void order(Statement st, String id, Long tenantId, String orderNo,
