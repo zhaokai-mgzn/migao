@@ -1347,7 +1347,7 @@
 真值: customer-crm.receiver-address
 溯源: 2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 米宝写白名单同集合 ｜ tags: customer, ui, logistics, receiver-address, admin-web
 
-## 数据域（10 case）
+## 数据域（15 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -1458,6 +1458,62 @@
 跳过: [backend-contract] PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-14 新增（issue #3468）：智能每日经营简报 MVP — 数据安全红线 1/2（PII 不进 prompt + RLS 租户隔离） ｜ tags: briefing, privacy, security
+
+### DA-011. 主动发现：规则引擎确定性扫描（同一快照逐字复现，issue #5322） 🔵
+```
+你: 主动发现规则引擎行为自检
+数据: 给定固定数据快照 ⇒ 命中集合逐字可复现：两次扫描同摘要，且**打乱快照内行序**后结果不变（确定性来自内容而非输入顺序）
+数据: 全量命中集合（规则 id + 命中日期 + 排序）逐字钉住；排序 = 日期倒序 → 紧急度 → 规则注册序
+数据: 空快照/无扫描基准日 ⇒ 返回空集合（判不出「当天」时不猜）；规则 id 唯一、具名、5 条首批规则齐备
+跳过: [backend-contract] 确定性由 ai-agent 单测验证（tests/test_briefing_proactive.py），触发用规则不用 LLM 自由发挥，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-deterministic
+溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 规则引擎确定性扫描 ｜ tags: proactive, briefing, rules
+
+### DA-012. 主动发现：每条命中带三件套（判据 / 影响面 / 处置入口，issue #5322） 🔵
+```
+你: 主动发现条目结构自检
+数据: 每条命中必含 criterion（规则表达式 + 阈值 + 逐条观测值 + observed_total）/ impact（count+unit+amount）/ action（label+url）
+数据: criterion.observed = 真命中行（订单号/商品号/退货号），不是「大概识别出异常」；非数值或缺字段的行一律跳过（不猜）
+数据: impact.amount 与观测行逐条金额自洽（如低于成本价的亏损额合计）
+跳过: [backend-contract] 三件套结构由 ai-agent 单测验证（tests/test_briefing_proactive.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-deterministic
+溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 每条条目三件套 ｜ tags: proactive, briefing, rules
+
+### DA-013. 主动发现：无处置入口的条目不进日报（注入式红证，issue #5322） 🔵
+```
+你: 主动发现处置入口门禁自检
+数据: 注入一条无处置入口（action 为空）的候选 ⇒ 该条**必不出现**在扫描输出里
+数据: 同一快照上未注入时该条**必须**出现（否则注入断言是空跑：注入的压根不是候选）；注入只影响被注入的那条
+数据: 处置入口 url 必须是站内路由（以 / 开头），指向能真正处理该异常的页面（订单/商品/售后列表）
+跳过: [backend-contract] 处置入口门禁由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestActionGate 注入式红证），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-action-required
+溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 没有处置入口的不发 ｜ tags: proactive, briefing, security
+
+### DA-014. 主动发现：日报只放当天异常（历史异常不进日报，issue #5322） 🔵
+```
+你: 今天有什么异常
+期望: briefing_query
+数据: 同一份快照里构造历史异常：全量扫描（scan_snapshot）里**在**、日报视图（daily_findings）里**必不在**（双侧断言，防「引擎完全不工作」也变绿）
+数据: 日报条目的 detected_on 全部等于扫描基准日（简报 bizDate 可由调用方钉住，不依赖机器当前时间）
+数据: briefing_query 集成面：data.proactive 只含当天异常、消息点出条数；无 sourceSnapshot ⇒ 空集合且不报错
+跳过: [backend-contract] 日报窄口径由 ai-agent 单测验证（tests/test_briefing_proactive.py + tests/test_tools_briefing_query.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-today-only
+溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 日报要窄（只放当天异常） ｜ tags: proactive, briefing, narrow
+
+### DA-015. 主动发现：阈值可配且边界值有断言（N/N+1、含上界、恰等阈值，issue #5322） 🔵
+```
+你: 主动发现阈值边界自检
+数据: 超 N 天未发货：恰 N 天不命中 / N+1 天命中（同一快照两侧断言）；库存告急口径 = stock ≤ 阈值（含上界），压阈值后恰等值落到界外
+数据: 连续退货：窗口内 ≥ N 次命中 / N+1 次不命中；改价幅度：恰等阈值不命中 / 超阈值命中（百分比保留 2 位小数后比较）
+数据: 阈值可由快照 config 下发（租户级配置落点），显式入参优先；非法阈值抛错（不得静默接受成「配了也不生效」）
+跳过: [backend-contract] 阈值边界由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestThresholdsAreConfigurable），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-deterministic, dashboard-jump.low-stock
+溯源: 2026-09-25 新增（issue #5322）：族 1 主动发现包 1 — 阈值可配 + 边界判据 ｜ tags: proactive, briefing, threshold
 
 ## 防御域（22 case）
 
@@ -6216,8 +6272,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：460（活跃 118，跳过 342）
-- tier 分布：smoke 10 / normal 420 / adversarial 30
+- 用例总数：465（活跃 118，跳过 347）
+- tier 分布：smoke 10 / normal 425 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6226,7 +6282,7 @@
 - 对话边界域：43
 - 跨域：3
 - 客户域：9
-- 数据域：10
+- 数据域：15
 - 防御域：22
 - 财务对账域：4
 - 人事域：10

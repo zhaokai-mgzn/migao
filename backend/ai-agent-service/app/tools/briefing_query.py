@@ -7,6 +7,7 @@ AI 智能客服系统 - 经营日报（每日简报）查询 Tool（issue #5247 
 from typing import Any, Dict
 from loguru import logger
 
+from app.briefing.proactive import daily_findings
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
@@ -77,5 +78,12 @@ class BriefingQueryTool(BaseTool):
                 data={},
                 message="今日暂无经营日报数据（简报按当日数据生成，数据为空时即为暂无）",
             )
-        logger.info("[briefing_query] done")
-        return ToolResult(success=True, data=data, message="今日经营日报如下")
+        # 主动发现（族 1 · 包 1，issue #5322）：对**同源聚合快照**做确定性规则扫描，
+        # 只把「当天异常」并进日报（全量视图留给按需查询，族 3）；无快照 ⇒ 空集合，不猜。
+        # 🔴 没有处置入口的条目在引擎装配期就被丢弃（`app/briefing/proactive.py::_assemble`）。
+        findings = daily_findings(data.get("sourceSnapshot"), as_of=data.get("bizDate"))
+        logger.info("[briefing_query] done proactive={}", len(findings))
+        message = "今日经营日报如下"
+        if findings:
+            message = f"今日经营日报如下，另有 {len(findings)} 项当天异常待处理"
+        return ToolResult(success=True, data=dict(data, proactive=findings), message=message)

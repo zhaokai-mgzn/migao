@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 86
+    "backend_contract_scoring_zero": 90
   },
   "history": [
     {
@@ -93,6 +93,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 86,
       "note": "2026-09-23 新增 1 条 `[backend-contract]` 用例（PR-107 Python 侧真库判据 fail-closed / skip 可见性，issue #5203）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_realdb_failclosed.py`（判据⑤~⑧，真实存在、本机 9 passed）与 `traces.ci` 的 `pr-check.yml`（`ci workflow helper unit tests` 真跑该文件）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（`render_cases.py` 连跑两次逐字节相同后，由 `test_i3_*` 实测读数 = 86）。"
+    },
+    {
+      "sha": "pending-pr-5322",
+      "date": "2026-09-24",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 90,
+      "note": "issue #5322（族 1 主动发现包 1：规则引擎确定性扫描 + 日报集成）新增 5 条用例（DA-011 确定性 / DA-012 三件套 / DA-013 无处置入口不发（注入式红证）/ DA-014 日报只含当天异常 / DA-015 阈值可配 + 边界值）—— 其中 4 条按设计**不进 agent-eval**（DA-011/012/013/015 的 `expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +4；DA-014 带 `expectations` 的 briefing_query 契约 ⇒ 不计入本读数）。机器判红通道 = `traces.tests` 的 `backend/ai-agent-service/tests/test_briefing_proactive.py`（引擎五条验收判据：确定性双侧、三件套、注入式红证、历史异常双侧、阈值边界两侧）与 `backend/ai-agent-service/tests/test_tools_briefing_query.py`（集成面），逐条非空且真实存在；`traces.ci` = pr-check.yml（`ai-agent-service unit tests` 真跑这两个文件）⇒ 读数 86 → 90 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 90，非按号推算）。"
     }
   ]
 }

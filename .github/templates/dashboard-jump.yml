@@ -11,6 +11,11 @@ business_truths:
   - [dashboard-jump.overview] dashboard_stats(action=overview)：经营概览（订单数/销售额）
   - [dashboard-jump.order-trend] dashboard_stats(action=order_trend)：订单趋势
   - [dashboard-jump.recent-orders] dashboard_stats(action=recent_orders)：最近订单
+
+  # 主动发现（族 1 · 包 1，issue #5322）—— 日报的异常条目由**确定性规则**产生，不由 LLM 自由发挥
+  - [dashboard-jump.proactive-deterministic] 同一数据快照 ⇒ 逐字可复现的命中集合（规则具名、阈值可复算）
+  - [dashboard-jump.proactive-action-required] 无处置入口的条目不进日报（只报问题不给出口＝制造焦虑）
+  - [dashboard-jump.proactive-today-only] 日报只放当天成立的异常，历史异常留给全量视图按需查询
 primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
   - tests/e2e/specs/orders/order-list.spec.ts

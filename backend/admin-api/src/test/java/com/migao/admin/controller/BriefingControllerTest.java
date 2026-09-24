@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-002, ST-001
+// case_ids: DA-001, DA-002, ST-001, DA-014
 
 package com.migao.admin.controller;
 
@@ -75,6 +75,7 @@ class BriefingControllerTest {
                     .bizDate(LocalDate.now())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "昨日经营平稳"))
+                    .sourceSnapshot(Map.of("metrics", Map.of("today_orders", 3)))
                     .build();
             when(dailyBriefingService.getTodayBriefing(eq(1L))).thenReturn(briefing);
 
@@ -83,7 +84,10 @@ class BriefingControllerTest {
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.generated").value(true))
                     .andExpect(jsonPath("$.data.verifyStatus").value("verified"))
-                    .andExpect(jsonPath("$.data.content.summary").value("昨日经营平稳"));
+                    .andExpect(jsonPath("$.data.content.summary").value("昨日经营平稳"))
+                    // 主动发现（族 1 · 包 1，issue #5322）：聚合快照随响应返回，
+                    // 供 ai-agent 侧 briefing_query 做确定性规则扫描（同源 ⇒ 口径一致）
+                    .andExpect(jsonPath("$.data.sourceSnapshot.metrics.today_orders").value(3));
         }
 
         @Test
