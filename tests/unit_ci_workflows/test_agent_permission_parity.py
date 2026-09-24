@@ -1525,28 +1525,6 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 '    @GetMapping("/batches")', 1),
             problems_registered_decisions,
         ),
-        "⑨b 在飞端点真的落地了 ⇒ 陈旧登记必须删除 ⇒ 判据 8 红（#5314）": (
-            # 在飞端点登记（`PENDING_ENDPOINTS`）的**自清**判据：服务端把端点合进来之后，
-            # 登记项就成了"静默盖住真实端点码漂移"的旧地图 ⇒ 必须变红逼人删掉。
-            # 注入形态：往某个 controller 源里**插一个同路径的控制器**（正则解析器按文本扫）。
-            # ⚠️ 插入点必须**早于原类的类级 `@RequestMapping`**：解析器的类级映射只认
-            # `_CLASS_MAPPING_RE.search(src)` 的**首个**命中（追加到文件末尾 / 插在原类
-            # 注解之后都会让注入变成空断言 —— 两种都实测踩过）。
-            "java:controller/StockBatchController.java",
-            lambda s: s.replace(
-                "@RestController",
-                '@RestController\n'
-                '@RequestMapping("/api/admin/agent/batches")\n'
-                "class AgentBatchesContractProbe {\n"
-                "    @PostMapping\n"
-                '    @RequirePermission("product:create")\n'
-                "    public Object create() { return null; }\n"
-                "}\n\n"
-                "@RestController",
-                1,
-            ),
-            problems_registered_decisions,
-        ),
     }
 
 
@@ -1804,6 +1782,41 @@ def test_real_skill_binding_is_still_a_binding() -> None:
     w = build_world(sources)
     assert {"settings_manage", "notification_manage"} <= w.b_end_tools, "真绑定的工具没进 B 端工具集"
     assert problems_missing_codes(w), "真插入 skill 名后判据 1 没变红 ⇒ 判据被削弱了"
+
+
+def test_pending_endpoint_registry_is_self_clearing(monkeypatch) -> None:
+    """**在飞端点登记的自清判据**（#5314）：端点一落地，登记项必须被报成「陈旧」⇒ 逼人删除。
+
+    为什么单独成例（而不是源文本注入）：登记表**当前为空**（服务端 #5339 已把
+    `/api/admin/agent/batches*` 合入 `AgentBatchController`）—— 源注入的注入点已不存在，
+    而「陈旧即红」这条判据仍必须**有能单独变红的证据**（否则它是空断言）。
+    故用 monkeypatch 合成登记表：**正控** = 合成一条**端点真实存在**的登记 ⇒ 必须报；
+    **负控** = 合成一条端点不存在的登记 ⇒ 不得报（否则任何人加条目都恒红）。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    w = world()
+    real_key = "app/tools/product_batch_update.py|POST /api/admin/agent/batches"
+    assert ("POST", "/api/admin/agent/batches") in w.all_eps, (
+        "前提失效：该端点已不在 admin-api 源码里（本判据的正控就没有对象了）—— 同步本判据")
+    entry = {"code": "product:create", "reason": "红证夹具（端点已落地）",
+             "owner": "本判据", "issue": "#5314"}
+
+    monkeypatch.setattr(mod, "PENDING_ENDPOINTS", {real_key: dict(entry)})
+    hits = problems_registered_decisions(w)
+    assert any("陈旧登记必须删除" in h for h in hits), (
+        f"端点已落地却未报「陈旧登记」⇒ 自清判据失效（hits={hits}）")
+
+    ghost_key = "app/tools/product_batch_update.py|POST /api/admin/agent/ghost-endpoint"
+    monkeypatch.setattr(mod, "PENDING_ENDPOINTS", {ghost_key: dict(entry)})
+    hits = problems_registered_decisions(w)
+    assert not any("陈旧登记必须删除" in h for h in hits), (
+        f"端点**不存在**的登记被判陈旧 ⇒ 负控失败（恒红，无法登记任何在飞端点）：hits={hits}")
+
+    monkeypatch.setattr(mod, "PENDING_ENDPOINTS", {real_key: {"code": "product:create"}})
+    hits = problems_registered_decisions(w)
+    assert any("缺 `reason`" in h or "缺 `owner`" in h or "缺 `issue`" in h for h in hits), (
+        f"登记项缺必填字段却未报 ⇒ 登记表会退化成垃圾场（hits={hits}）")
 
 
 def test_every_judgement_can_go_red() -> None:
