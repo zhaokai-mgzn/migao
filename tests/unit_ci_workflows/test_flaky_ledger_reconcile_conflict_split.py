@@ -22,8 +22,10 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -290,3 +292,245 @@ def test_each_criterion_can_be_injected_red(tmp_path):
         injected = run_repair(tmp_path / f"inj{i}", mutated, **scn)
         assert injected.returncode == 0, (
             f"{label}：打掉该判据后仍判红 ⇒ 这条判据不是独立可判的\n{injected.stdout}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# #5301 判据②：台账分支的失败 job 必须有**自动重跑**路径（行为级；真的调 `gh run rerun`）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 为什么必须**执行**、不能只做正则：本单的判据是「兜底能**重跑并记账**」，而「重跑」是**动作** ——
+# 只有把这一步真的跑起来（PATH 里塞 `gh` 桩、桩把每次 argv 逐条记下来）才能证明：
+#   ① **真的**调了 `gh run rerun <id> --failed`（命令 + 参数逐字）；
+#   ② **上限 1 次**（事实源 = GitHub 的 `run_attempt`：已重跑过 ⇒ 一次也不再重跑）；
+#   ③ 只作用于**台账分支**（`branch=chore/flaky-ledger` 筛选 + 纯函数里的硬过滤，别的分支一次不碰）；
+#   ④ **退回现状（去掉重跑）⇒ 判据必红**（红证：同一夹具下 `gh run rerun` 调用数 1 → 0）。
+# 被测脚本本体 = 仓库里**真的** `flaky_ledger.py`（拷进工作目录；红证 = 拷**变异体**）⇒
+# 「上限」「作用域」这类判据是在**真实现**上验证的，而不是对桩断言（对桩断言 = 空断言）。
+
+REPO_SCRIPT = REPO_ROOT / ".github" / "scripts" / "flaky_ledger.py"
+REAL_LEDGER_SCRIPT = REPO_SCRIPT.read_text(encoding="utf-8")
+RERUN_STEP_PREFIX = "台账失败 job 兜底重跑"
+TIP = "f265e0cc9a1b2c3d4e5f60718293a4b5c6d7e8f9"
+
+#: `gh` 桩：只回答被测步骤会问的问题，并**把每次 argv 逐条记进 `$STUB_LOG`**（不假装成功）。
+GH_API_STUB = r'''#!{python}
+import json
+import os
+import sys
+
+argv = sys.argv[1:]
+with open(os.environ["STUB_LOG"], "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(argv, ensure_ascii=False) + "\n")
+
+
+def emit(payload):
+    print(json.dumps(payload, ensure_ascii=False))
+    sys.exit(0)
+
+
+if argv[:2] == ["run", "rerun"]:
+    sys.exit(int(os.environ.get("STUB_RERUN_RC", "0")))
+
+if argv[:1] == ["api"]:
+    path = argv[-1]
+    if "/actions/runs?" in path:
+        emit([{{"workflow_runs": json.loads(os.environ.get("STUB_RUNS", "[]"))}}])
+    if path.endswith("/jobs"):
+        rid = path.split("/actions/runs/")[-1].split("/")[0]
+        jobs = json.loads(os.environ.get("STUB_JOBS", "{{}}"))
+        emit([{{"jobs": jobs.get(rid, [])}}])
+    if "/actions/runs/" in path:
+        rid = path.rsplit("/", 1)[-1]
+        emit([{{"id": int(rid), "run_attempt": int(os.environ.get("STUB_ATTEMPT_AFTER", "2"))}}])
+    if "/branches/" in path:
+        emit([{{"name": os.environ.get("LEDGER_BRANCH", ""),
+                "commit": {{"sha": os.environ.get("STUB_TIP", "")}}}}])
+
+print("stub: unexpected args: " + repr(argv), file=sys.stderr)
+sys.exit(1)
+'''
+
+
+def rerun_step_body(src: str = SRC) -> str:
+    """取出「台账失败 job 兜底重跑」步骤的 `run`（= 被测脚本本体）。"""
+    wf = yaml.safe_load(src) or {}
+    for step in (wf.get("jobs") or {}).get("reconcile", {}).get("steps", []):
+        if str(step.get("name") or "").startswith(RERUN_STEP_PREFIX):
+            return str(step.get("run") or "")
+    raise AssertionError("找不到「台账失败 job 兜底重跑」步骤 ⇒ 本守卫的定位方式已失效（先修本测试）")
+
+
+def gh_run(rid, *, branch="chore/flaky-ledger", sha=TIP, attempt=1, conclusion="failure",
+           name="PR Check", event="pull_request"):
+    """`/actions/runs` 列表项的**真实形状**（只列被测步骤会用到的字段）。"""
+    return {"id": rid, "name": name, "head_branch": branch, "head_sha": sha, "event": event,
+            "conclusion": conclusion, "run_attempt": attempt, "status": "completed"}
+
+
+def failed_job(name="ci workflow helper unit tests"):
+    return {"name": name, "conclusion": "failure"}
+
+
+class RerunRound:
+    """一次「兜底重跑步骤」的执行结果 + `gh` 调用台账。"""
+
+    def __init__(self, proc, log: str, summary: str):
+        self.returncode = proc.returncode
+        self.stdout = proc.stdout + proc.stderr
+        self.log = log
+        self.summary = summary
+
+    @property
+    def calls(self):
+        return [json.loads(ln) for ln in
+                Path(self.log).read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+    @property
+    def reruns(self):
+        return [c for c in self.calls if c[:2] == ["run", "rerun"]]
+
+    def rerun_ids(self):
+        return [c[2] for c in self.reruns]
+
+
+def run_rerun(tmp_path: Path, *, src: str = SRC, script: str | None = None,
+              runs=(), jobs=None, tip: str = TIP, attempt_after: int = 2, rerun_rc: int = 0):
+    """把「兜底重跑」步骤**真的执行一遍**（`bash -e`，与 GitHub 默认 shell 同形态）。
+
+    `script` = 工作目录里那份 `flaky_ledger.py` 的内容（缺省 = 仓库**真**脚本；红证传**变异体**）。
+    """
+    work = tmp_path / "repo"
+    (work / ".github" / "scripts").mkdir(parents=True, exist_ok=True)
+    (work / ".github" / "scripts" / "flaky_ledger.py").write_text(
+        REAL_LEDGER_SCRIPT if script is None else script, encoding="utf-8")
+    bindir = tmp_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    gh = bindir / "gh"
+    gh.write_text(GH_API_STUB.format(python=sys.executable), encoding="utf-8")
+    gh.chmod(0o755)
+    # 步骤正文用的是字面 `python3`（与生产一致）⇒ 桩一个 `python3` 指向本解释器（不依赖宿主 PATH）
+    py3 = bindir / "python3"
+    if not py3.exists():
+        py3.symlink_to(sys.executable)
+    log = tmp_path / "gh-calls.jsonl"
+    log.write_text("", encoding="utf-8")
+    summary = tmp_path / "gh-summary.md"
+    summary.write_text("", encoding="utf-8")
+    out = tmp_path / "gh-output.txt"
+    out.write_text("", encoding="utf-8")
+    env = dict(os.environ)
+    env.update({
+        "PATH": f"{bindir}{os.pathsep}{env.get('PATH', '')}",
+        "GH_TOKEN": "stub",
+        "GITHUB_REPOSITORY": "owner/repo",
+        "LEDGER_BRANCH": "chore/flaky-ledger",
+        "GITHUB_OUTPUT": str(out),
+        "GITHUB_STEP_SUMMARY": str(summary),
+        "STUB_LOG": str(log),
+        "STUB_RUNS": json.dumps(list(runs), ensure_ascii=False),
+        "STUB_JOBS": json.dumps({str(k): v for k, v in (jobs or {}).items()}, ensure_ascii=False),
+        "STUB_TIP": tip,
+        "STUB_ATTEMPT_AFTER": str(attempt_after),
+        "STUB_RERUN_RC": str(rerun_rc),
+    })
+    proc = subprocess.run(["bash", "-e", "-c", rerun_step_body(src)],
+                          cwd=work, env=env, capture_output=True, text=True)
+    return RerunRound(proc, str(log), str(summary))
+
+
+# ── 判据本体（行为级）：真的重跑 / 上限 1 次 / 只作用于台账分支 / 如实记账 ──────────
+
+def test_first_failure_really_reruns_the_failed_job(tmp_path):
+    """判据②：台账分支上首次失败的 run ⇒ **真的**调 `gh run rerun <id> --failed`（恰好一次）。"""
+    st = run_rerun(tmp_path, runs=[gh_run(35943682164)], jobs={35943682164: [failed_job()]})
+    assert st.returncode == 0, st.stdout
+    assert st.reruns == [["run", "rerun", "35943682164", "--failed", "--repo", "owner/repo"]], st.reruns
+    assert "上限 1 次" in st.stdout, st.stdout
+    assert "35943682164" in st.stdout and "run_attempt" in st.stdout, "重跑结果必须**回读**并如实记账"
+    summary = Path(st.summary).read_text(encoding="utf-8")
+    assert "35943682164" in summary, f"记账没落进 job summary：{summary!r}"
+
+
+def test_scope_is_the_ledger_branch_only(tmp_path):
+    """判据④：筛选条件必须是**台账分支** —— 别的分支的失败 run 一次也不许重跑。"""
+    st = run_rerun(tmp_path, runs=[gh_run(1, branch="fix/5301-other"), gh_run(2)],
+                   jobs={1: [failed_job()], 2: [failed_job()]})
+    assert st.returncode == 0, st.stdout
+    assert st.rerun_ids() == ["2"], st.reruns
+    urls = [c[-1] for c in st.calls if c[:1] == ["api"] and "/actions/runs?" in c[-1]]
+    assert any("branch=chore/flaky-ledger" in u for u in urls), urls
+
+
+def test_cap_is_one_rerun_then_it_is_human_only(tmp_path):
+    """判据③：上限 **1 次** —— `run_attempt≥2`（已重跑过）⇒ 一次也不再重跑，且必须报红 + 给人工出口。"""
+    st = run_rerun(tmp_path, runs=[gh_run(3, attempt=2)], jobs={3: [failed_job()]})
+    assert st.reruns == [], st.reruns
+    assert st.returncode == 1, st.stdout
+    assert "已重跑过" in st.stdout and "人工出口" in st.stdout, st.stdout
+
+
+def test_stale_push_is_not_rerun(tmp_path):
+    """只救**分支 tip** 的 run：陈旧 push 的 run 重跑对「PR 能否合并」零贡献，却真烧 CI 分钟。"""
+    st = run_rerun(tmp_path, runs=[gh_run(4, sha="0" * 40)], jobs={4: [failed_job()]})
+    assert st.reruns == [], st.reruns
+    assert st.returncode == 0, st.stdout
+
+
+def test_run_without_failed_jobs_is_not_rerun(tmp_path):
+    """`conclusion=failure` 但**没有任何失败 job**（workflow 级失败）⇒ 无 job 可重跑（与 `decide()` 同口径）。"""
+    st = run_rerun(tmp_path, runs=[gh_run(5)], jobs={5: [{"name": "x", "conclusion": "success"}]})
+    assert st.reruns == [], st.reruns
+    assert "workflow 级失败" in st.stdout, st.stdout
+
+
+def test_unresolvable_tip_is_red_not_silently_green(tmp_path):
+    """三态：确定不了分支 tip ⇒ CLI 退 **3**、workflow 步骤必须**红**（未跑 ≠ 通过），一次也不重跑。"""
+    st = run_rerun(tmp_path, runs=[gh_run(6)], jobs={6: [failed_job()]}, tip="")
+    assert st.reruns == [], st.reruns
+    assert st.returncode == 1, st.stdout
+    assert "退 3" in st.stdout, st.stdout
+
+
+def test_rerun_failure_is_fail_closed(tmp_path):
+    """动作失败（配额/权限/run 状态）⇒ **红**（不许静默 —— 否则「兜底没生效」会装成「没有失败」）。"""
+    st = run_rerun(tmp_path, runs=[gh_run(7)], jobs={7: [failed_job()]}, rerun_rc=1)
+    assert st.returncode == 1, st.stdout
+    assert "::error::" in st.stdout, st.stdout
+
+
+# ── 红证：判据必须会红（不会红的断言 = 空断言） ────────────────────────────────────
+
+def test_red_proof_removing_the_rerun_is_detected(tmp_path):
+    """**红证**（判据②）：退回现状（摘掉重跑调用）⇒ 同一夹具下一次 `gh run rerun` 都没有 ⇒ 判据必红。"""
+    mutated = SRC.replace('          python3 .github/scripts/flaky_ledger.py rerun-failed \\\n',
+                          '          true \\\n', 1)
+    assert mutated != SRC, "注入锚点失效（先修本测试）"
+    base = run_rerun(tmp_path / "base", runs=[gh_run(11)], jobs={11: [failed_job()]})
+    assert base.rerun_ids() == ["11"], base.reruns
+    injected = run_rerun(tmp_path / "inj", src=mutated, runs=[gh_run(11)], jobs={11: [failed_job()]})
+    assert injected.rerun_ids() == [], "摘掉重跑后本该不再调用 `gh run rerun`"
+
+
+def test_red_proof_unlimited_rerun_injection(tmp_path):
+    """**红证**（判据③）：打掉 `run_attempt` 上限（= 允许无限重跑）⇒ 已重跑过的 run 又被重跑。"""
+    mutant_script = REAL_LEDGER_SCRIPT.replace(
+        '(out["rerun"] if entry["attempt"] <= max_reruns else out["exhausted"])',
+        '(out["rerun"] if entry["attempt"] >= 0 else out["exhausted"])', 1)
+    assert mutant_script != REAL_LEDGER_SCRIPT, "注入锚点失效（先修本测试）"
+    runs, jobs = [gh_run(12, attempt=2)], {12: [failed_job()]}
+    base = run_rerun(tmp_path / "base", runs=runs, jobs=jobs)
+    assert base.rerun_ids() == [], base.reruns
+    injected = run_rerun(tmp_path / "inj", script=mutant_script, runs=runs, jobs=jobs)
+    assert injected.rerun_ids() == ["12"], "打掉上限后本该重复重跑（⇒ 上限判据确有判别力）"
+
+
+def test_red_proof_scope_widened_touches_other_branches(tmp_path):
+    """**红证**（判据④）：打掉 `head_branch` 硬过滤（= 放宽到别的分支）⇒ 别的分支的 run 被重跑。"""
+    mutant_script = REAL_LEDGER_SCRIPT.replace(
+        '        if str(run.get("head_branch") or "") != head_branch:\n', '        if False:\n', 1)
+    assert mutant_script != REAL_LEDGER_SCRIPT, "注入锚点失效（先修本测试）"
+    runs, jobs = [gh_run(13, branch="fix/5301-other")], {13: [failed_job()]}
+    base = run_rerun(tmp_path / "base", runs=runs, jobs=jobs)
+    assert base.rerun_ids() == [], base.reruns
+    injected = run_rerun(tmp_path / "inj", script=mutant_script, runs=runs, jobs=jobs)
+    assert injected.rerun_ids() == ["13"], "放宽作用域后本该重跑别的分支的 run"
