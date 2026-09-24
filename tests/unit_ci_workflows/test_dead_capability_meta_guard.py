@@ -716,8 +716,9 @@ def test_burn_down_anchor_is_printed() -> None:
     for key in sorted(sc.ref_not_judged):
         print(f"    - {key} × {len(sc.ref_not_judged[key])}")
     assert len(sc.dead_tools) >= 1, (
-        "「全局不可达工具」现取为 0 ⇒ 引用面 / 守卫面的前提消失（被人全部绑回去了？）"
-        "—— 那时应同步清理台账条目，而不是让判据空跑"
+        "「全局不可达工具」现取为 0 ⇒ 引用面 / 守卫面的**前提**消失（读源坏了？还是全被绑回去了？）。"
+        "出口（二选一，都是显式动作）：① 若绑回是**真的**（产品能力回来了）⇒ 同 PR 清空台账的 ref / guard 条目"
+        "+ 删除本断言（判据已无对象）；② 否则先修读源 —— 不要靠加台账条目吸收"
     )
 
 
