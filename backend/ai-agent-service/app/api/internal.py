@@ -774,6 +774,13 @@ async def door_width_plan(
     `resolve_fabric_plan`）；裁决只在 `curtain_calc.judge_door_width_choice` 一处 ——
     本端点只做「入参归一 + 组装」，**不复制任何规则**（第二份规则 = 与引擎算料脱钩）。
 
+    ⚠️ **接高口径**（用户 2026-09-23 裁定「乙 = 统一到新口径」+ 回落路线「B」，issue #5213）：
+    接高只在**缺口 ≤ `MAX_JOIN_GAP_M`**（0.1 米）时成立，且**不参与算料**（`splice_strips = 0`、
+    米数 = 定高买宽用料 `T`）；缺口超限 ⇒ **回落倒幅**（与自动路径、与 `derive_plan` 一致）
+    ⇒ 此时 `state` 是 `single_panel` 而 `effective_cutting_mode` 是 `定宽买高`。
+    ⇒ **同一输入下本端点的 `state` / `effective_cutting_mode` 可能与改动前不同**（显式 `接高` /
+    `定高买宽` 且缺口 > 0.1 米的那些算例）—— 这是裁定要的效果（读面建议随引擎口径变），不是缺陷。
+
     返回 `data`：`state`（`single_panel` / `needs_splice` / `undecidable`）/ `code`（undecidable 原因）/
     `effective_cutting_mode` / `door_width` / `panels` / `splice` / `verdict` / `suggestion` / `reason`。
     **不含任何金额字段**（只读规则面）。

@@ -234,14 +234,15 @@ _POSITIVE_CONFIG_KEYS = (
 #   2「这里的**拼几次和拼色是不同的概念**，拼几次默认都按**单色**韩折公式或者倍数公式算」
 #   1「如果出现要拼几次的情况，那只能单色」
 #
-# ⚠️ **旧口径留档（本单来源处，已按用户 2026-09-22 裁定替换）** ——
-# 本模块另有一处「接高」实现在 `resolve_fabric_plan._splice()`（issue #5013/#5043 的通路，
-# 服务 `/production/door-width-plan` 与 `build_quote(fabric_widths=...)`），它的口径是
-# **「缺口多大都行」+「加高条按片宽另买布」**（`meters = T + 段数 × 片宽`）。
-# 用户 2026-09-22 裁定 5 **替换**了这个口径：缺口上限 0.1 米、且**不参与算料**。
-# 两者**刻意并存**（旧通路服务既有 `door_widths` 端点，仍逐值不变 ⇒ 回归不变量）；
-# **新的三项输入推导只走本节的 `derive_plan`** —— 不得把 `_splice()` 的旧口径搬进来
-# （那是把用户已裁定的口径回退）。
+# ✅ **旧口径已按用户 2026-09-23 裁定统一（「乙」+ 回落路线「B」，issue #5213）** ——
+# 本模块另一处「接高」实现 `resolve_fabric_plan._splice()`（issue #5013/#5043 的通路，
+# 服务 `/production/door-width-plan` 与 `build_quote(fabric_widths=...)`）**曾**是
+# **「缺口多大都行」+「加高条按片宽另买布」**（`meters = T + 段数 × 片宽`）。用户裁定「乙 = 统一到新口径」
+# ⇒ 裁定 5（缺口上限 `MAX_JOIN_GAP_M`、且**不参与算料**）**同时适用于那条通路**，两条通路**同一真值一份口径**：
+#   · 缺口 ≤ `MAX_JOIN_GAP_M` ⇒ **接高**，`meters = T`（不另买加高条）、`splice_strips = 0`；
+#   · 缺口 > `MAX_JOIN_GAP_M` ⇒ **回落倒幅**（B：与 auto 路径、与本节 `derive_plan` 的候选选择一致）。
+#     ⚠️ **已知并接受**：显式要求「接高」而缺口超限 ⇒ 会被**静默改成倒幅**（B 的固有代价，用户已选）。
+# 判定阈值**复用同一处**（`_join_gap_ok` / `MAX_JOIN_GAP_M`）—— 不得再各写一份 `0.1`。
 #: 接高 / 接宽缺口的**上限**（米）—— 裁定 5。缺口 > 上限 ⇒ 该候选**不可行**，不得判接高/接宽。
 MAX_JOIN_GAP_M = 0.1
 
@@ -1242,11 +1243,15 @@ def resolve_fabric_plan(
         fixed_height_meters: **定高买宽用料 T**（米）—— 由调用方按选定用料公式算好（本函数**不改公式**）。
             倒幅分幅数与接高片宽**都由它派生** ⇒ 两者同源，不会各算一份。
         door_widths: 候选门幅（米，来自该颜色的 SKU）；非法值**剔除**，不默认成任何值
-        has_pattern / pattern_repeat: 对花 —— 倒幅「每幅 +1 花距」、接高「每条加高条 +1 花距」同口径
+        has_pattern / pattern_repeat: 对花 —— 倒幅「每幅 +1 花距」（**接高侧已退场**：加高条不再另买布，
+            见 `_splice()` 的「对花不进判定」）
         allowance: 门幅**有效余量**（米：缩水/边损/对花回）；缺省 `0`（= 与标称同值）
-        open_count: 开数（接高的片宽与加高条段数需要）
+        open_count: 开数 —— ⚠️ **接高口径统一后本函数不再读它**（issue #5213：旧口径用它算
+            「加高条片宽 / 段数」，那笔另买布已随「接高不参与算料」退场）。入参**保留**是因为
+            删签名会波及既有调用方（`build_quote` / `door-width-plan` 端点）—— 不是遗漏。
         cutting_mode: `None` ⇒ **自动**；也可显式传 `定高买宽` / `定宽买高` / `接高`（人工覆盖）。
-            显式 `定高买宽` 而高度超限 ⇒ **接高**（= #4877 的旧语义，本单保留为人工覆盖路径）。
+            显式 `定高买宽` / `接高` 而高度超限 ⇒ 缺口 ≤ `MAX_JOIN_GAP_M` 时**接高**，否则**回落倒幅**
+            （#4877 的「超限即接高」旧语义已按用户 2026-09-23 裁定收敛，issue #5213）。
         config: 算料配置（读 `hem_margin`；**不新造第二份常量**）
 
     Returns:
@@ -1278,7 +1283,6 @@ def resolve_fabric_plan(
         raise ValueError("候选门幅为空或全部无效 —— 不按缺省门幅推算（fail-closed）")
 
     total = float(fixed_height_meters)
-    pieces = max(1, int(open_count))
     repeat = float(pattern_repeat) if has_pattern else 0.0
     need_height = round(float(window_height) + hem_margin, 3)
     feasible = [(g, ge) for g, ge in candidates if need_height <= ge]
@@ -1305,30 +1309,26 @@ def resolve_fabric_plan(
         }
 
     def _splice() -> Dict[str, Any]:
-        """接高 —— ⚠️ **这是旧口径，只在一条既有通路上生效**（issue #5201 复核发现的口径分裂）。
+        """接高 —— **已按用户 2026-09-23 裁定统一到新口径**（「乙 = 统一到新口径」+ 回落路线「B」，issue #5213）。
 
         **触达条件**（谁能走到它）：`resolve_fabric_plan` 由 `build_quote(fabric_widths=[...])`
-        （`/production/door-width-plan` 端点与显式候选门幅集）或显式 `cutting_mode="接高"` 调用时。
+        （`/production/door-width-plan` 端点与显式候选门幅集）或显式 `cutting_mode="接高"` /
+        `"定高买宽"` 调用时；且**所有候选门幅都装不下成品高**（否则调用方直接走 `_fixed_height()`）。
 
-        **旧口径**（本函数据以实现，**本单未改**）：**缺口多大都行** + **加高条按片宽另买布**
-        （`meters = T + 段数 × 片宽`）。
-
-        ⚠️ **三项输入通路（下单页）不走这里** —— 它走 `derive_plan()`，口径是
-        **「缺口 ≤ 0.1 米（`MAX_JOIN_GAP_M`）+ 接高不参与算料」**（用户 2026-09-22 裁定 5）。
-        ⇒ **同一个「接高」在本模块有**两**份口径**，按**通路**分流：
-        `fabric_widths` / 显式 `接高` ⇒ 旧口径（本函数）；`fabric_width` 三项输入 ⇒ 新口径。
-
-        **为什么不统一**（照实登记，不是遗漏）：统一会把 ai-agent **报价侧**的既有结果静默改掉
-        （blast radius 超出 #5201 范围），且用户 2026-09-22 的裁定只针对**下单链路**。
-        ⇒ 留作**跟随 issue**（需用户裁定，因为它会改 agent 报价）。见 #5201 PR body 的「未实装 / 边界」。
+        **口径**（与 `derive_plan` 的 `fixed_height_join_height` **同一真值**，阈值**复用** `_join_gap_ok`）：
+          · 缺口 ≤ `MAX_JOIN_GAP_M`（0.1 米）⇒ **接高**：`splice=True`、`splice_gap` = 物理缺口、
+            `splice_strips=0`、**`meters = T`** —— 裁定 5「接高**不参与算料**」⇒ 不另买加高条、不改米数；
+          · 缺口 > 上限 ⇒ **回落倒幅** `_fixed_width()`（B：与 auto 路径、与 `derive_plan` 在新口径下的
+            候选选择一致）。⚠️ **已知并接受**：显式要求「接高」而缺口超限 ⇒ 会被**静默改成倒幅**（B 的固有代价）。
+          · 对花（`pattern_repeat`）**不进判定**：它过去只服务于「加高条段数 × 片宽」那笔另买布，
+            该笔随「接高不参与算料」退场 ⇒ 唯一判据 = 物理缺口 `need_height − 有效门幅` ≤ `MAX_JOIN_GAP_M`
+            （与 `derive_plan` 的 `_fixed_height_join_height` 同源；若把 `+ 花距` 加回判定，
+            缺口 0.1 + 花距 0.4 的算例会从「接高」翻成「倒幅」，判据必红）。
         """
         gap = round(need_height - widest_eff, 3)
-        gap_eff = round(gap + repeat, 3)  # 对花：每条加高条 +1 个花距
-        # 一段布（长 = 片宽）能在门幅内**并排**裁出几条加高条 —— 毫米整数除，避免浮点 floor 少算一条
-        per_piece = max(1, _mm(widest_eff) // max(1, _mm(gap_eff)))
-        strips = max(1, -(-pieces // per_piece))
-        piece_width = total / pieces
-        meters = total + strips * piece_width
+        if not _join_gap_ok(gap):
+            # 缺口超上限 ⇒ 接高不成立 ⇒ 回落倒幅（乙 + B）；文案与米数由 `_fixed_width()` 出
+            return _fixed_width()
         return {
             "cutting_mode": CUTTING_MODE_FIXED_HEIGHT,
             "door_width": widest_width,
@@ -1336,15 +1336,14 @@ def resolve_fabric_plan(
             "panels": None,
             "splice": True,
             "splice_gap": gap,
-            "splice_strips": strips,
-            "meters": meters,
+            "splice_strips": 0,
+            "meters": total,
             "auto": auto,
             "reason": (
                 f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 > 最宽门幅 "
-                f"{widest_width} 米（有效 {widest_eff} 米）⇒ 缺口 {gap} 米"
-                + (f" + 花距 {repeat} 米（对花对齐）" if repeat else "")
-                + f" ⇒ 接高：加高条 {strips} 段 × 片宽 {round(piece_width, 3)} 米，共 "
-                f"{round(meters, 3)} 米（**加高条按片宽另买**，不从缺口面积折料）"
+                f"{widest_width} 米（有效 {widest_eff} 米）⇒ 缺口 {gap} 米 ≤ 上限 {MAX_JOIN_GAP_M} 米"
+                f" ⇒ 接高（取**最宽**门幅使缺口最小）：接高**不参与算料** ⇒ 用料仍 "
+                f"{round(total, 3)} 米（不另买加高条，裁定 5）"
             ),
         }
 

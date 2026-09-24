@@ -18,6 +18,20 @@
 本类读**共享 golden 算例表**（`tests/fixtures/panels-cross-language-golden.json`）逐值比对 ——
 与静态腿（`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`）、
 前端腿（`frontend/admin-web/tests/unit/lib/door-width-plan.test.ts`）**共读同一张表**。
+
+
+## issue #5213：接高口径**已统一**（用户 2026-09-23 裁定「乙 = 统一到新口径」+ 回落路线「B」）
+
+`resolve_fabric_plan` 的接高分支（`_splice()`）曾与 `derive_plan()` 是**两份口径**（旧：「缺口多大都行」
++「加高条按片宽另买布」）。已统一为**同一真值一份口径**：缺口 ≤ `MAX_JOIN_GAP_M` ⇒ 接高且
+**`meters = T`**（不另买加高条、`splice_strips = 0`）；缺口 > 上限 ⇒ **回落倒幅**。
+⇒ 本文件里所有「接高 = `T + 段数 × 片宽`」的期望值随之改钉；四条判据 + 注入式红证见
+`test_curtain_calc_join_height_unified.py`。
+
+**不变量（没被这次统一动到）**：① agent 报价侧两条通路（`fabric_widths=…` / `fabric_width=…`，
+**都不传 `cutting_mode`**）逐值不变；② 单一门幅既有路径逐值不变；③ 定高买宽**可行**时
+`_fixed_height()` 逐值不变。⚠️ **不是**不变量：缺口 ≤ 0.1 的算例 —— 它们的 `meters` 从
+`T + 加高条` 变成 `T`，**这正是裁定要的效果**。
 """
 import json
 from pathlib import Path
@@ -28,6 +42,7 @@ from app.tools.curtain_calc import (
     CUTTING_MODE_FIXED_HEIGHT,
     CUTTING_MODE_FIXED_WIDTH,
     CUTTING_MODE_SPLICE,
+    MAX_JOIN_GAP_M,
     build_quote,
     resolve_craft_calc_config,
     resolve_fabric_plan,
@@ -96,94 +111,117 @@ class TestFallsBackToRotated:
 # ── 判据 3：**不自动选接高**（接高米数更省也不选） ───────────────────────────
 class TestSpliceIsNeverChosenAutomatically:
     def test_four_open_splice_is_cheaper_but_rotated_still_wins(self):
-        # 四开：接高（口径 A）= 6.6 + ceil(4/32) × (6.6/4) = 8.25 米
-        #       倒幅          = ceil(6.6/3.2) × 3.3 = 9.9 米
+        # 四开：接高（#5213 统一后口径）= T = 6.6 米
+        #       倒幅                        = ceil(6.6/3.2) × 3.3 = 9.9 米
         # 接高**更省**，但行业口径（竖缝藏进褶皱 vs 可见横缝）⇒ **仍选倒幅**
         p = plan(window_height=3.0, open_count=4)
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH, "接高不参与自动比较（裁定 4）"
         assert p["meters"] == pytest.approx(9.9)
 
     def test_narrow_window_splice_is_cheaper_but_rotated_still_wins(self):
-        # 窄窗：T = (0.5 + 0.3) × 2 = 1.6 ⇒ 接高 3.2 米 < 倒幅 3.3 米，仍选倒幅
+        # 窄窗：T = (0.5 + 0.3) × 2 = 1.6 ⇒ 接高 1.6 米 < 倒幅 3.3 米，仍选倒幅
         p = plan(window_height=3.0, fixed_height_meters=1.6)
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
         assert p["meters"] == pytest.approx(3.3)
 
 
-# ── 判据 4：人工覆盖选接高 ⇒ 按**口径 A** 算料 ──────────────────────────────
-class TestSpliceBasisA:
-    def test_explicit_splice_uses_strip_length_not_area(self):
-        # 口径 A：M = T + 段数 × Wp = 6.6 + ceil(2 / floor(3.2/0.1)) × 3.3 = 9.9
+# ── 判据 4：人工覆盖选接高 ⇒ **接高不参与算料**（#5213 统一后口径）──────────────
+class TestManualSpliceDoesNotBuyFabric:
+    """缺口 ≤ `MAX_JOIN_GAP_M` 的显式「接高」：`splice=True`、`meters = T`、`splice_strips = 0`。
+
+    红证：把米数改回旧口径「`T` + 段数 × 片宽」⇒ 本类 5 条里除门幅那条外全红。
+    """
+
+    def test_explicit_splice_keeps_meters_equal_to_fixed_height_total(self):
+        # H=3.0 ⇒ need 3.3 > 最宽 3.2 ⇒ 缺口 0.1 ≤ 上限 ⇒ 接高；接高不参与算料 ⇒ meters = T
         p = plan(window_height=3.0, open_count=2, cutting_mode=CUTTING_MODE_SPLICE)
         assert p["splice"] is True
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT
-        assert p["splice_gap"] == pytest.approx(0.1)
-        assert p["splice_strips"] == 1
-        assert p["meters"] == pytest.approx(9.9)
+        assert p["splice_gap"] == pytest.approx(MAX_JOIN_GAP_M)
+        assert p["splice_strips"] == 0, "接高不参与算料 ⇒ 不另买加高条（裁定 5）"
+        assert p["meters"] == pytest.approx(T)
 
-    def test_area_based_basis_is_rejected(self):
-        # 红证：若实现改成「按缺口面积折料」T × (1 + d/g) = 6.6 × 1.03125 ≈ 6.81 ⇒ 本断言红
+    def test_extra_strips_are_not_charged(self):
+        # 红证：若把加高条加回米数（旧口径 6.6 + 1 × 3.3 = 9.9）⇒ 本断言红
         p = plan(window_height=3.0, open_count=2, cutting_mode=CUTTING_MODE_SPLICE)
-        assert p["meters"] != pytest.approx(6.81, abs=0.05), "口径 A 不得退回面积折料"
+        assert p["meters"] != pytest.approx(9.9), "接高不得再另买加高条（乙 + 裁定 5）"
 
-    def test_explicit_fixed_height_over_limit_falls_to_splice(self):
-        # 显式「定高买宽」而高度超限 ⇒ 接高（#4877 的旧语义，本单保留为人工覆盖路径）
+    def test_explicit_fixed_height_over_limit_joins_within_limit(self):
+        # 显式「定高买宽」而高度超限、缺口 ≤ 上限 ⇒ 接高（人工覆盖路径保留）
         p = plan(window_height=3.0, open_count=2, cutting_mode=CUTTING_MODE_FIXED_HEIGHT)
         assert p["splice"] is True
-        assert p["meters"] == pytest.approx(9.9)
+        assert p["meters"] == pytest.approx(T)
 
     def test_splice_uses_widest_width_to_minimize_gap(self):
         p = plan(window_height=3.0, cutting_mode=CUTTING_MODE_SPLICE)
         assert p["door_width"] == 3.2, "接高取**最宽**门幅（缺口最小）"
-        assert p["splice_gap"] == pytest.approx(0.1)
+        assert p["splice_gap"] == pytest.approx(MAX_JOIN_GAP_M)
 
-    def test_splice_single_open_is_two_piece_widths(self):
-        # 单开：Wp = T = 6.6 ⇒ 段数 1 ⇒ M = 13.2（加高条整幅另买）
+    def test_single_open_is_not_charged_a_whole_piece(self):
+        # 旧口径单开会把整幅片宽当加高条另买（13.2 米）—— 统一后与**开数无关**：meters = T
         p = plan(window_height=3.0, open_count=1, cutting_mode=CUTTING_MODE_SPLICE)
-        assert p["meters"] == pytest.approx(13.2)
+        assert p["meters"] == pytest.approx(T)
 
 
-# ── 判据 5：对花 ⇒ d_eff = d + 花距 ────────────────────────────────────────
-class TestSplicePattern:
-    def test_pattern_widens_strip_so_fewer_fit_side_by_side(self):
-        # d = 0.1，花距 0.4 ⇒ d_eff = 0.5 ⇒ floor(3.2/0.5) = 6 条/段
-        p = plan(
-            window_height=3.0,
-            open_count=2,
-            cutting_mode=CUTTING_MODE_SPLICE,
-            has_pattern=True,
-            pattern_repeat=0.4,
-        )
-        assert p["meters"] == pytest.approx(9.9)  # ceil(2/6) = 1 段
+# ── 判据 5：缺口 > 上限 ⇒ **回落倒幅**（不再「缺口多大都行」）────────────────────
+class TestSpliceOverLimitFallsBackToRotated:
+    """issue #5213（乙 + 回落 B）：缺口 > `MAX_JOIN_GAP_M` ⇒ 显式「接高」也走**倒幅**。
 
-    def test_pattern_never_shrinks_the_strip(self):
-        # 红证：把 d_eff 写成 d（忽略花距）⇒ 缺口少算 ⇒ 本断言在窄门幅下红
-        p = plan(
-            window_height=3.0,
-            open_count=8,
-            cutting_mode=CUTTING_MODE_SPLICE,
-            has_pattern=True,
-            pattern_repeat=0.4,
-        )
-        # d_eff = 0.5 ⇒ 6 条/段 ⇒ 8 片要 2 段 ⇒ 6.6 + 2 × (6.6/8) = 8.25
-        assert p["meters"] == pytest.approx(8.25)
+    红证：去掉 `_splice()` 里的 `_join_gap_ok` 闸门（= 恢复「缺口多大都行」）⇒ 本类前两条红。
+    """
 
-
-# ── 判据 7：缺口大到一段裁不完 ⇒ 段数递增 ─────────────────────────────────
-class TestSpliceStripCountIncrements:
-    def test_gap_too_wide_for_one_piece(self):
-        # H = 3.9 ⇒ need 4.2 > 3.2 ⇒ d = 1.0 ⇒ floor(3.2/1.0) = 3 条/段
-        # 四开 ⇒ 段数 = ceil(4/3) = 2 ⇒ M = 6.6 + 2 × 1.65 = 9.9
+    def test_gap_over_limit_rotates_instead_of_joining(self):
+        # H=3.9 ⇒ need 4.2、最宽 3.2 ⇒ 缺口 1.0 > 0.1 ⇒ 倒幅（ceil(6.6/3.2) = 3 幅 × 4.2 = 12.6）
         p = plan(window_height=3.9, open_count=4, cutting_mode=CUTTING_MODE_SPLICE)
-        assert p["splice_gap"] == pytest.approx(1.0)
-        assert p["splice_strips"] == 2
-        assert p["meters"] == pytest.approx(9.9)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        assert p["splice"] is False
+        assert p["splice_gap"] == 0.0
+        assert p["splice_strips"] == 0
+        assert p["panels"] == 3
+        assert p["meters"] == pytest.approx(12.6)
 
-    def test_floor_is_exact_at_millimetre_precision(self):
-        # 3.2 / 0.1 在二进制浮点下可能是 31.999… ⇒ 浮点 floor 会算成 31 条/段（少一条、料变贵）。
-        # 本实现按**毫米整数**除 ⇒ 恰好 32 条/段 ⇒ 双开只需 1 段。
-        p = plan(window_height=3.0, open_count=2, cutting_mode=CUTTING_MODE_SPLICE)
-        assert p["splice_strips"] == 1
+    def test_explicit_fixed_height_over_limit_also_rotates(self):
+        p = plan(window_height=3.9, cutting_mode=CUTTING_MODE_FIXED_HEIGHT)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        assert p["splice"] is False
+
+    def test_boundary_exactly_at_the_limit_still_joins(self):
+        # 缺口恰为 0.1（上限本身）⇒ 接高 —— 与 `derive_plan._join_gap_ok` 同源（含 `_JOIN_EPS` 容差）
+        p = plan(window_height=3.0, cutting_mode=CUTTING_MODE_SPLICE)
+        assert p["splice"] is True
+        assert p["splice_gap"] == pytest.approx(MAX_JOIN_GAP_M)
+
+    def test_rotated_result_equals_the_auto_path_result(self):
+        # B 的定义：缺口超限时旧通路与**自动路径**同一输入给同一结果（同一真值一份口径）
+        explicit = plan(window_height=3.9, open_count=4, cutting_mode=CUTTING_MODE_SPLICE)
+        auto = plan(window_height=3.9, open_count=4)
+        assert ({k: v for k, v in explicit.items() if k != "auto"}
+                == {k: v for k, v in auto.items() if k != "auto"}), (
+            "显式接高在缺口超限时回落倒幅 ⇒ 除 `auto` 标志外与自动解**逐键相等**"
+        )
+
+
+# ── 判据 6：对花**不进接高判定**（它只服务过那笔已退场的「另买加高条」）──────────
+class TestPatternNoLongerWidensTheJoinGap:
+    """接高不参与算料 ⇒ 对花不再加宽「缺口」；唯一判据 = 物理缺口 ≤ `MAX_JOIN_GAP_M`。
+
+    红证：把旧口径的 `d_eff = 缺口 + 花距` 加回判定 ⇒ 0.1 + 0.4 = 0.5 > 0.1 ⇒ 本类第一条
+    从「接高」翻成「倒幅」⇒ 必红。
+    """
+
+    def test_pattern_does_not_widen_the_join_gap(self):
+        p = plan(window_height=3.0, open_count=2, cutting_mode=CUTTING_MODE_SPLICE,
+                 has_pattern=True, pattern_repeat=0.4)
+        assert p["splice"] is True, "对花不得把 0.1 的物理缺口算成 0.5 ⇒ 不该翻成倒幅"
+        assert p["splice_gap"] == pytest.approx(MAX_JOIN_GAP_M), "报的是**物理**缺口"
+        assert p["meters"] == pytest.approx(T)
+
+    def test_pattern_still_adds_one_repeat_per_panel_when_rotated(self):
+        # 倒幅侧的对花口径**一字未动**（每幅 +1 花距）：3 幅 × (4.2 + 0.4) = 13.8
+        p = plan(window_height=3.9, has_pattern=True, pattern_repeat=0.4,
+                 cutting_mode=CUTTING_MODE_SPLICE)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        assert p["meters"] == pytest.approx(3 * (4.2 + 0.4))
 
 
 # ── 边界：fail-closed，不静默回退 ─────────────────────────────────────────
@@ -259,8 +297,9 @@ class TestBuildQuoteWiring:
             open_count=2, fabric_widths=[2.8, 3.2], cutting_mode=CUTTING_MODE_SPLICE,
         )
         assert q["splice"] is True
-        # 接高 = T + 段数 × 每片宽 = 6.0 + 1 × 3.0 = 9.0（T 随 #5030 由 6.6 → 6.0）
-        assert q["fabric_meters"] == pytest.approx(9.0)
+        # 缺口 0.1 ≤ 上限 ⇒ 接高；**接高不参与算料** ⇒ 米数 = T = 3.0 × 2 = 6.0（issue #5213 统一口径；
+        # 旧口径会再另买 1 段加高条 ⇒ 9.0）
+        assert q["fabric_meters"] == pytest.approx(6.0)
 
     def test_without_candidates_single_width_behaviour_is_unchanged(self):
         # 回归不变量：**不传候选集** ⇒ 既有单一门幅口径一字不变（2.75 + 0.3 > 2.8 ⇒ 倒幅）

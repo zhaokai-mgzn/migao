@@ -627,39 +627,40 @@ class TestManualSpliceTimesWithoutCuttingMode:
         assert p["meters"] == pytest.approx(T)
 
 
-# ── 口径分裂的**登记守卫**：旧通路（`resolve_fabric_plan`）仍是旧口径 ─────────────
-class TestLegacySplicePathStaysLegacy:
-    """把「旧通路仍是旧口径」钉住（issue #5201 复核要求，防将来有人顺手改了却没人知道）。
+# ── 口径**已统一**的守卫：旧通路（`resolve_fabric_plan`）与 `derive_plan` 同一真值 ─────────
+class TestLegacySplicePathIsUnified:
+    """把「两条通路口径一致」钉住（用户 2026-09-23 裁定「乙 = 统一到新口径」+ 回落路线「B」，issue #5213）。
 
-    ## 分裂事实（**照实登记，不是遗漏**）
+    ## 统一前后（**照实登记**）
 
     | 通路 | 触达条件 | 「接高」口径 |
     |---|---|---|
-    | `resolve_fabric_plan._splice()` | `build_quote(fabric_widths=[...])`（`/production/door-width-plan`）或显式 `cutting_mode="接高"` | **旧**：缺口多大都行 + 加高条按片宽另买布 |
-    | `derive_plan()` | 三项输入（`fabric_width` 通路）—— 下单页 | **新**：缺口 ≤0.1 米 + **不参与算料**（裁定 5） |
+    | `resolve_fabric_plan._splice()` | `build_quote(fabric_widths=[...])`（`/production/door-width-plan`）或显式 `cutting_mode="接高"` | **统一后**：缺口 ≤0.1 米 + **不参与算料**（`meters = T`）；缺口超限 ⇒ **回落倒幅** |
+    | `derive_plan()` | 三项输入（`fabric_width` 通路）—— 下单页 | 同上（裁定 5，本来就是新口径） |
 
-    **为什么不统一**：统一会把 ai-agent **报价侧**的既有结果静默改掉（blast radius 超出本单范围），
-    且用户 2026-09-22 的裁定只针对**下单链路** ⇒ 留作跟随 issue（需用户裁定）。
+    **统一前**：旧通路是「缺口多大都行 + 加高条按片宽另买布」⇒ 同一几何上两条通路**结论相反**。
+    ⇒ 本节由此从「分裂登记」改判为「一致守卫」。
 
-    红证形态：把 `_splice()` 换成新口径（上限 0.1 米 / 不另买布）⇒ 本条必红。
+    红证形态：去掉 `_splice()` 的 `_join_gap_ok` 闸门（恢复「缺口多大都行」）⇒
+    `test_over_limit_gap_no_longer_joins` 必红；把米数改回 `T + 段数 × 片宽` ⇒
+    `test_within_limit_both_paths_charge_only_the_fixed_height_total` 必红。
     """
 
-    def test_legacy_splice_has_no_gap_limit_and_buys_extra_strips(self):
+    def test_over_limit_gap_no_longer_joins(self):
         from app.tools.curtain_calc import CUTTING_MODE_SPLICE, resolve_fabric_plan
 
         plan = resolve_fabric_plan(
             window_height=3.0, fixed_height_meters=1.6, door_widths=[2.8],
             open_count=1, cutting_mode=CUTTING_MODE_SPLICE,
         )
-        assert plan["splice"] is True
-        # 旧口径 ①：**缺口 0.5 米也照接**（新口径下 > 0.1 米即不可行 —— 两个口径在此**结论相反**）
-        assert plan["splice_gap"] == pytest.approx(0.5)
-        # 旧口径 ②：加高条**按片宽另买布**（1 段 × 片宽 1.6 米 = 3.2 米总料）
-        assert plan["splice_strips"] == 1
-        assert plan["meters"] == pytest.approx(3.2)
+        # 缺口 0.5 > 0.1（上限）⇒ **不再照接**（旧口径「缺口多大都行」在此结论相反）
+        assert plan["splice"] is False
+        assert plan["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        # 倒幅：ceil_mm(1.6 / 2.8) = 1 幅 × (3.0 + 0.3) = 3.3 米（= 下方 derive_plan 的同一个数）
+        assert plan["meters"] == pytest.approx(3.3)
 
-    def test_same_inputs_diverge_between_the_two_paths(self):
-        """同一几何下两条通路**结论不同** —— 这就是被登记的分裂（不是 bug 被藏起来）。"""
+    def test_same_inputs_agree_between_the_two_paths(self):
+        """同一几何下两条通路**结论一致** —— 这就是统一（不是两份口径各说各话）。"""
         from app.tools.curtain_calc import CUTTING_MODE_SPLICE, resolve_fabric_plan
 
         legacy = resolve_fabric_plan(
@@ -667,7 +668,22 @@ class TestLegacySplicePathStaysLegacy:
             open_count=1, cutting_mode=CUTTING_MODE_SPLICE,
         )
         modern = derive_plan(window_height=3.0, fixed_height_meters=1.6, door_width=2.8)
-        assert legacy["meters"] == pytest.approx(3.2), "旧口径：T + 加高条 1.6"
         assert modern["join_height_m"] is None, "新口径：缺口 0.5 > 0.1 ⇒ 不得判接高"
+        assert legacy["meters"] == pytest.approx(3.3), "旧通路（统一后）：缺口超限 ⇒ 倒幅 3.3 米"
         assert modern["meters"] == pytest.approx(3.3), "新口径：倒幅（P=1）按幅长 3.3 米买 ⇒ 1 幅"
-        assert modern["meters"] != legacy["meters"], "两条通路在同一几何上给出**不同**的用料"
+        assert legacy["meters"] == modern["meters"], "两条通路在同一几何上给出**同一**用料"
+
+    def test_within_limit_both_paths_charge_only_the_fixed_height_total(self):
+        """缺口 ≤ 0.1：两条通路都判接高，且**都只算 `T`**（接高不参与算料 ⇒ 与不接高逐值相等）。"""
+        from app.tools.curtain_calc import CUTTING_MODE_SPLICE, resolve_fabric_plan
+
+        legacy = resolve_fabric_plan(
+            window_height=2.6, fixed_height_meters=1.6, door_widths=[2.8],
+            open_count=1, cutting_mode=CUTTING_MODE_SPLICE,
+        )
+        modern = derive_plan(window_height=2.6, fixed_height_meters=1.6, door_width=2.8)
+        assert legacy["splice"] is True, "缺口 0.1 ≤ 0.1 ⇒ 接高"
+        assert legacy["meters"] == pytest.approx(1.6), "接高不参与算料 ⇒ 仍是 T"
+        assert modern["join_height_m"] == pytest.approx(0.1)
+        assert modern["meters"] == pytest.approx(1.6)
+        assert legacy["meters"] == modern["meters"]
