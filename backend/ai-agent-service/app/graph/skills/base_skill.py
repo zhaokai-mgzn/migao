@@ -1709,11 +1709,15 @@ _NON_SELF_SUBJECT_WORDS = ("顾客", "客户", "您", "买家", "用户", "商�
 _CLAUSE_SPLIT_RE = re.compile(r"[。！？；\n，,、]+")
 
 
-# ── 商品图片域的能力自我否定（issue #3931）──────────────────────────────────
+# ── 商品图片域的能力自我否定（issue #3931 → #5318 改判）────────────────────
 # 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
 # agent 拒绝「我这个商品管理入口只能改价格、名称、描述、状态、回补库存开关这些字段，
-# 不包含图片上传……拿不到可写入的地址」—— 而 product_manage(action=update, images=…)
+# 不包含图片上传……拿不到可写入的地址」—— 当时 product_manage(action=update, images=…)
 # 真实可达（同回合 tool_calls 就有 images URL，19:49 改用 product_manage 后成功）。
+# ⚠️ #5318：该工具自 #5247（PR #5285）起已从**全部 B 端 skill 解绑**（#5303 只补回两条改价）
+# ⇒ 同一句话现在是**真话**，命中后的纠正方向随之改判为「如实说明这条边界 + 引导商家到后台
+# 商品管理页面」（见 `_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE`）；**判据本身一字未动** ——
+# 它认的仍是同一类形态（AI 自我否定 × 图片域锚点）。
 # 判据与下单域同构（`capability_denial_text_hit` 的第二条正交判据）：**小句 × 图片锚点 ×
 # 否定形态 × 自我主体**，缺一不可 —— 单看「主图/图片」是中性词（「主图还是空的，建议上传」
 # 不得误报），必须与否定形态 + 自我主体共现。
@@ -2192,15 +2196,23 @@ _TEXT_DENIAL_CORRECTIVE_BIZ = (
     "只有用户**显式**要求人工、或诉求真的超出能力时才允许引导人工。"
 )
 
-# B 端商品域纠正话术（issue #3931）：与下单域同一条「纠正重答」路径 ——
-# AI 说「该入口不支持图片/拿不到地址」，而 product_manage(action=update, images=…) 真实可达。
+# B 端商品域纠正话术（issue #3931 → **#5318 改判**）：与下单域同一条「纠正重答」路径 ——
+# AI 在图片域自我否定时，注入这条纠正让它**重新给出回复**。
+# ⚠️ #5318：`product_manage` 自 #5247 起已从**全部 B 端 skill 解绑** ⇒ 「该入口不支持图片」
+# 是**事实**，纠正方向随之改判为「如实说明这条能力边界 + 引导商家到后台商品管理页面」。
+# 旧话术（「主图/图片更新能力在 product_manage(action=update, images=…) 里，**你可以真实设置
+# 主图**，立即调用它执行」）是**系统主动注入的、指向不可达工具的指令**：模型必然
+# `tool_not_found`，且每次命中都多烧一次重答 —— 守卫从纠错器变成 bug 制造器（#5318 病根）。
+# 🔴 **本话术不得点名任何工具**（点名 = 把模型推向一次注定失败的调用）；
+# 机械判据见 tests/test_product_image_denial_guard.py 的 TestProductImageCorrectiveAdjudication。
 _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE = (
-    "你刚才的回复以「该入口不支持图片/拿不到地址」为由拒绝了用户，但事实相反："
-    "主图/图片更新能力在 `product_manage(action=update, images=…/detail_images=…)` 里，"
-    "**你可以真实设置主图**。请**重新给出回复**：不要再出现「不包含图片上传 / "
-    "拿不到可写入的地址 / 无法设置主图」这类话术；先 `product_detail`/`product_search` "
-    "拿真实商品 UUID，发 `interact(component=confirm)` 确认后立即调用 "
-    "`product_manage(action=update, product_id=<UUID>, images=[色卡图URL])` 执行。"
+    "你刚才的回复以「该入口不支持图片 / 拿不到可写入的地址」为由把设主图的请求推走了。"
+    "这条边界**是真的**：管理后台的商品图片写入（主图 / 详情图）当前**不在你的能力内** —— "
+    "相关写工具没有绑定给你，点名调用只会失败。但光说做不到不算交付，请**重新给出回复**，"
+    "两件事都要有：① 如实说明「米宝在商品域现在只做查询与改价，改图不在能力内」；"
+    "② 给出去处 —— 请商家到后台「商品管理」页面（商品列表 /products 的图片按钮）自行操作。"
+    "**禁止**承诺代办、发写确认卡，或出现「已为您设置主图 / 主图已更新 / 设置成功」这类"
+    "谎称已执行的措辞；也**不要**为此转人工（这是产品边界，不是人工能代的活）。"
 )
 
 
@@ -2305,6 +2317,11 @@ def _order_capability_available(registry=None, *, order_in_progress: bool = Fals
     return bool(order_in_progress) and _tool_registered_globally(ORDER_WRITE_TOOL)
 
 
+# 图片写入能力**曾经**的工具名（issue #3931）。⚠️ #5318：自 #5247（PR #5285）起它已从
+# **全部 B 端 skill 解绑**（#5303 只补回 `product_update` / `sku_update` 两条改价）
+# ⇒ 生产里 `_product_image_capability_available` 恒为 False、「该入口不支持图片」就是**事实**。
+# 本常量只用于**读这个事实**，绝不出现在任何注入给模型的话术里（点名 = 把模型推向
+# 一次注定失败的调用）。
 PRODUCT_IMAGE_WRITE_TOOL = "product_manage"
 
 
@@ -2314,6 +2331,9 @@ def _product_image_capability_available(registry=None) -> bool:
     判据取自**工具注册表事实**（issue #3931）：当前 skill 的工具子集里有
     `product_manage` 且其参数 schema 含 images/detail_images —— 与
     `_order_capability_available` 同源的事实驱动（不写死 skill 名/工具清单）。
+
+    ⚠️ #5318 后的用法 = **取反**：能力**确实不在手里**（今天恒真）才是注入纠正的前提，
+    且纠正内容是「如实说明 + 引导商家到后台商品管理页面」，不是把模型推向已解绑的工具。
     """
     tool = None
     if registry is not None:
@@ -3314,15 +3334,20 @@ def _sanitize_tool_args(tool, tool_args: dict) -> dict:
 # 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
 # agent 把请求路由到 product_update（它没有 images 参数）→ _sanitize_tool_args 静默丢弃
 # images → 空字段调用 → 「没有要修改的字段」→ 模型外推「该入口不支持图片」→ 编造性否定出站。
-# 修复：写工具丢弃**图片类**未知参数时不再静默 —— 直接失败 + 正确工具指引（不执行），
-# 让模型改走 product_manage(action=update, images=…)。
+# 修复：写工具丢弃**图片类**未知参数时不再静默 —— 直接失败 + 指引（不执行），误宣链源头切断。
+# ⚠️ #5318 改判：指引**不再点名 product_manage**（它自 #5247 起已从 B 端全部 skill 解绑
+# ⇒ 点名就是把模型推向必然 tool_not_found 的调用）；改为「如实说明图片写入不在能力内 +
+# 引导商家到后台「商品管理」页面(/products)」。
 # ⚠️ 只对图片类参数生效：非图片类未知参数维持 issue #3361 的静默净化（存量用例依赖，
 # 见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）；只读工具永远静默
 # （查询类模型爱带多余参数，不能因此失败）。
 _IMAGE_DROP_GUIDANCE = {
-    "images": "设置/修改商品主图请用 product_manage(action=update, images=…)",
-    "detail_images": "设置/修改商品详情图请用 product_manage(action=update, detail_images=…)",
-    "main_image": "设置/修改商品主图请用 product_manage(action=update, images=…)",
+    "images": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+              "后台「商品管理」页面(/products)操作",
+    "detail_images": "商品详情图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+                     "后台「商品管理」页面(/products)操作",
+    "main_image": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+                  "后台「商品管理」页面(/products)操作",
 }
 
 

@@ -325,10 +325,14 @@ async def react_turn(
                         final_content = "抱歉，我暂时无法生成回复，请换个方式描述您的需求。"
                     break
 
-                # ── 商品图片域能力误宣（issue #3931，迭代3 #3940）──
-                # 与下单域同一条「纠正重答」路径：AI 说「该入口不支持图片/拿不到地址」，
-                # 而 product_manage(action=update, images=…) 在**本 skill 工具子集**里真实可达
-                # （判据 = `_product_image_denial_hit`（图片域文本）× 注册表事实）。
+                # ── 商品图片域能力误宣（issue #3931，迭代3 #3940；**#5318 改判**）──
+                # 与下单域同一条「纠正重答」路径，但纠正方向由**能力事实**决定：
+                # `_product_image_capability_available`（注册表事实）为假 ⇒「该入口不支持图片」
+                # 是**真话**，纠正 = 如实说明这条边界 + 引导商家到后台商品管理页面。
+                # ⚠️ #5318 病根：旧实现把门写成 `..._available(...)` 为**真**才纠正 —— 而该能力
+                # 自 #5247 起已不在任何 B 端 skill 手上，且旧话术还逐字要求「立即调用
+                # product_manage(…)」，等于**系统主动把模型推向一个不可达工具**（必然
+                # tool_not_found + 每次命中多烧一次重答）。话术与门同批改判。
                 # ⚠️ 迭代3 关键修正（PR-026/027 复现 run 34978506935）：**不 gate
                 # tool_calls** —— flash 常把拒绝文本与查询工具调用**同回合**生成
                 # （transcript：`text「换主图这个动作我这边做不了」+ product_detail 调用
@@ -336,7 +340,7 @@ async def react_turn(
                 # 命中即丢弃本轮查询调用、带纠正话术重答（正是期望行为）。
                 _image_denial_hit = _product_image_denial_hit(new_text)
                 if (_image_denial_hit and not _denial_corrected
-                        and _product_image_capability_available(skill_registry)):
+                        and not _product_image_capability_available(skill_registry)):
                     _denial_corrected = True
                     logger.warning(
                         f"[{skill_name}] 拦截商品图片域能力误宣并重答 | session={session_id} "
@@ -607,9 +611,14 @@ async def react_turn(
                         if _denial and not has_escalation_signal(last_user_msg):
                             # 能力误宣分域给话术（issue #3931）：商品图片域的理由用商品域纠正话术，
                             # 否则会把「设主图」诉求错引向 order_create（消息按域区分）。
+                            # ⚠️ #5318：本支**必须**与上面文本级守卫用同一个**事实门**（图片写能力
+                            # 是否真的不在手里）—— 旧实现漏了这道门，于是这条被注入的纠正话术
+                            # 把模型推向已从 B 端解绑的 product_manage。若该能力将来被补回
+                            # （属另一次产品裁定），本支的话术要一并重新裁定。
                             _reason_img = (_product_image_denial_hit(str(args.get("reason") or ""))
                                            or _product_image_denial_hit(str(args.get("summary") or "")))
-                            if _reason_img:
+                            if (_reason_img
+                                    and not _product_image_capability_available(skill_registry)):
                                 logger.warning(
                                     f"[{skill_name}] 拦截商品图片域能力误宣式转人工 | "
                                     f"session={session_id} reason={_reason_img!r}")

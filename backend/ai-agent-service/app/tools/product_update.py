@@ -19,7 +19,7 @@ class ProductUpdateTool(BaseTool):
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
         "【反例】单独 SKU 调价本工具不支持（用 sku_update）；加工项与商品无关，不在本工具范围。"
-        "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
+        "【反例】本工具不支持图片字段；设置/修改商品主图、详情图**不在 B 端能力内**（改图不代做）——如实说明并引导商家到后台「商品管理」页面(/products)操作。"
         "【必填·改价】传 price 时必须同时传 before_price（改前价，取自 product_detail 的真值）——"
         "确认卡据此呈现「改前 → 改后」；漏传一律被拒（price_preview_required，issue #5303）。"
         "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"

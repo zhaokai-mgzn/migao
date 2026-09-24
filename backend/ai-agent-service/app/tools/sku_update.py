@@ -18,7 +18,7 @@ class SkuUpdateTool(BaseTool):
         "【参数】product_id + price + before_price 必填（before_price = 改前价，取自 product_detail 的 skus[].price 真值）；"
         "color/door_width 都是可选的，至少填一个来定位 SKU"
         "（SKU 组合 = 颜色 × 门幅，V111）；取值须来自 product_detail 的 skus[] 原值。"
-        "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架用 product_manage；"
+        "【反例】改商品统一定价（影响所有 SKU）用 product_update；改图片/上下架不在 B 端能力内（不代做）；"
         "加工项不在本工具范围。"
         "【必填·改价】漏传 before_price 一律被拒（price_preview_required，issue #5303）——"
         "确认卡必须先呈现「改前 → 改后」。"
