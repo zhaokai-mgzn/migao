@@ -563,6 +563,7 @@ case "$MODE" in
     report_env admin-api-pg "红证机具 auto-batch-due-scan 实跑（含真库判据）" bash -c "python3 '$ROOT/scripts/auto-batch-due-scan-red-proof.py'"
     report_env admin-api-pg "红证机具 saving-metrics-backend 实跑（真库判据）" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-backend.py'"
     report_env admin-web-vitest "红证机具 saving-metrics-web 实跑" bash -c "python3 '$ROOT/scripts/saving-metrics-red-proof-web.py'"
+    report_env admin-api "红证机具 product-batch 实跑（#5314 批量更新的撤销依据）" bash -c "python3 '$ROOT/scripts/product-batch-red-proof.py'"
     ;;
   *)
     echo "用法: $0 {quick|full|frontend|backend|agent|gate|redproof}"

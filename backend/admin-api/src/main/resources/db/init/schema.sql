@@ -1817,6 +1817,60 @@ COMMENT ON TABLE remnant_small_item_specs IS
     '小件用料尺寸表（V122，issue #5146）：一行 = 一个小件需要的一块布有多大。**企业可配参数**；缺行 = 未配置（不编默认数值）⇒ 余料匹配不产生任何推荐且读面显式说明，不静默';
 
 -- ================================================
+-- 9b. 批量更新的批次资源（V127，issue #5314 服务端包）
+-- 一行批次 + 逐条明细；明细的 old_value 是**撤销的唯一依据**（预览阶段就落库）。
+-- ⚠️ 不得改用 audit_logs：审计是有界 fail-open（3s 丢行允许），当撤销依据会静默失去依据。
+-- ================================================
+
+CREATE TABLE IF NOT EXISTS agent_batches (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    batch_type VARCHAR(32) NOT NULL,                 -- product_price / product_status（白名单）
+    status VARCHAR(16) NOT NULL DEFAULT 'preview',   -- preview → executing → done | partial → reverted | revert_partial
+    item_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    fail_count INTEGER NOT NULL DEFAULT 0,
+    created_by VARCHAR(64),                          -- 发起人 userId（认证上下文；批量 = 盲签，必须留痕）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    executed_at TIMESTAMP WITH TIME ZONE,
+    reverted_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT ck_agent_batch_type
+        CHECK (batch_type IN ('product_price', 'product_status')),
+    CONSTRAINT ck_agent_batch_status
+        CHECK (status IN ('preview', 'executing', 'done', 'partial', 'reverted', 'revert_partial')),
+    CONSTRAINT ck_agent_batch_counts
+        CHECK (item_count >= 0 AND success_count >= 0 AND fail_count >= 0
+               AND success_count + fail_count <= item_count)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_batches_tenant_created
+    ON agent_batches (tenant_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_batch_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_id VARCHAR(64) NOT NULL REFERENCES agent_batches(id) ON DELETE CASCADE,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),  -- 契约之外追加：租户插件会注入该列谓词
+    resource_id VARCHAR(64) NOT NULL,                  -- 商品 ID（逐字定位，不做名称解析）
+    field VARCHAR(32) NOT NULL,                        -- basePrice / status
+    old_value TEXT,                                    -- 🔴 撤销的唯一依据（DB 当前值，预览阶段采集）
+    new_value TEXT,                                    -- 执行时写入的值
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',     -- pending/success/failed/reverted/revert_failed/skipped
+    error VARCHAR(500),                                -- 逐条失败原因（部分失败逐条报告的载体）
+    CONSTRAINT ck_agent_batch_item_field
+        CHECK (field IN ('basePrice', 'status')),
+    CONSTRAINT ck_agent_batch_item_status
+        CHECK (status IN ('pending', 'success', 'failed', 'reverted', 'revert_failed', 'skipped'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_batch_items_batch
+    ON agent_batch_items (batch_id, id);
+CREATE INDEX IF NOT EXISTS idx_agent_batch_items_tenant
+    ON agent_batch_items (tenant_id, batch_id);
+
+COMMENT ON TABLE agent_batches IS
+    '批量更新的批次（V127，issue #5314）—— 状态机 preview → executing → done | partial → reverted | revert_partial；不可撤销 = 状态非 done/partial 或已 reverted';
+COMMENT ON TABLE agent_batch_items IS
+    '批量更新的逐条明细（V127，issue #5314）—— old_value = 撤销的唯一依据；逐条 status/error = 部分失败逐条报告的载体，不做整体回滚';
+
+-- ================================================
 -- 10. 审计日志表
 -- ================================================
 
@@ -2255,6 +2309,15 @@ CREATE POLICY tenant_isolation_notifications ON notifications
 
 ALTER TABLE daily_briefings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_daily_briefings ON daily_briefings
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 批量更新的批次资源（V127，issue #5314）—— 跨租户不可见是契约判据之一
+ALTER TABLE agent_batches ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_agent_batches ON agent_batches
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+ALTER TABLE agent_batch_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_agent_batch_items ON agent_batch_items
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================
