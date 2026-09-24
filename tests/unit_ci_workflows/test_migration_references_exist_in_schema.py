@@ -54,12 +54,16 @@ from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, 
 
 SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
-# 这些是**故意**指向历史/临时对象的引用，不在终态 schema 里（逐条给理由）
+# 这些是**故意**指向历史/临时对象的引用，不在终态 schema 里（逐条给理由）。
+#
+# 🔴 **issue #5245：本清单由 4 条缩短为 2 条** —— 原 `product_processing_items`（V66 DROP）
+# 与 `knowledge_entries`（V37 RENAME）两条是**派生面能自己算出来**的
+# （见 `_superseded_tables()`）⇒ 它们成了死条目（豁免只许缩短，不许留）。两条的删除各由
+# `test_superseded_tables_derivation_is_load_bearing` 反向钉住（被 DROP/RENAME 的事实仍在，
+# 只是不再靠人工清单记住）。
 ALLOWLIST_TABLES = {
-    # 迁移会改「历史上存在、后来被 DROP / 改名」的表 ⇒ 终态 schema 里没有，属正常
-    "schema_migrations",           # 迁移台账本身（由 MigrationRunner 建，不在 schema.sql）
-    "product_processing_items",    # V33/V34/V41 用；V66（#4371）已把它彻底解耦/删除 ⇒ 终态无
-    "knowledge_entries",           # V37/V42 用；V37 已改名 knowledge_cards ⇒ 终态无
+    "schema_migrations",           # 迁移台账本身（由 MigrationRunner 建，不在 schema.sql）——
+                                   # **无 DROP/RENAME 可派生** ⇒ 必须留在这里
     # ⚠️ **不是「豁免一条真缺陷」，而是判据的**已知假阳性形态**（issue #4937 实测）：
     # 合并后的 `V102__retire_applicability_flag.sql` 里
     # `CREATE TEMP TABLE _v102_survivors ON COMMIT DROP AS …` 是**会话级临时表**
@@ -72,6 +76,108 @@ ALLOWLIST_TABLES = {
     # 换到 `V102` 的 `_v102_survivors`（那两条迁移已合并为一条，`V104` 文件已删除）。
     "_v102_survivors",
 }
+
+
+#: 迁移链里「先建后删 / 改名」的表 → 首次处置它的迁移文件名（**派生**，非人工清单）。
+#:
+#: 为什么必须有它（issue #5245 A 组实测）：判据 1 原先只看「终态 schema 有哪些表」，
+#: 而迁移链里**合法地**存在「先建后删」（V59 建 `production_option_routings` → V126 DROP）
+#: 与「改名」（V37 `knowledge_entries` → `knowledge_cards`）⇒ 那些引用会被判成缺陷，
+#: 逼人往 `ALLOWLIST_TABLES` 里加条目（**豁免增长**）。
+#: 派生口径与 `tests/unit_ci_workflows/test_schema_integrity.py::_migration_requirements`
+#: 的 `superseded` **同一件事、同一口径**（两套实现必然漂移，故这里按同一形态写、由
+#: `test_superseded_tables_derivation_is_load_bearing` 与它交叉钉住）。
+_VERSION_RE = re.compile(r"^V(\d+)__")
+
+
+def _version_of(name: str) -> int:
+    """迁移文件名 → 版本号（**数值**序，与 `MigrationRunner` 同款；不是字典序）。"""
+    m = _VERSION_RE.match(Path(name).name)
+    return int(m.group(1)) if m else 1 << 30
+
+
+_CREATE_OR_DROP_TABLE_RE = re.compile(
+    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?([a-z_][a-z0-9_]*)\"?"
+    r"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?([a-z_][a-z0-9_]*)\"?", re.I)
+_RENAME_TO_RE = re.compile(
+    r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?([a-z_][a-z0-9_]*)\"?[\s\S]*?RENAME\s+TO\s+", re.I)
+_ADD_DROP_COLUMN_RE = re.compile(
+    r"\b(ADD|DROP)\s+COLUMN\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?\"?([a-z_][a-z0-9_]*)\"?", re.I)
+
+
+def _superseded_tables() -> dict:
+    """被迁移链 DROP / 改名、且**终态未重建**的表 → `{表名: [处置它的迁移文件名, …]}`。
+
+    记**列表**而不是单个（实测：`knowledge_entries` 被 V37 改名、V42 又对账一次）——
+    判据要用**最早**的那次做版本序比较；断言要能看到全部处置点。
+
+    ⚠️ 必须**按版本号顺序单遍扫**（issue #5245 实测踩到）：`V29__rebuild_notification_tables.sql`
+    先 `DROP TABLE notifications, …` 再 `CREATE TABLE notifications` —— 只按集合取 DROP 会把它
+    判成「已处置」，而终态 schema 里它好端端地在（假绿：真缺陷会被派生放行）。
+    """
+    out: dict = {}
+    for path in sorted(_migration_files("V*.sql"), key=lambda q: _version_of(q.name)):
+        src = _strip_comments(path.read_text(encoding="utf-8"))
+        for m in _CREATE_OR_DROP_TABLE_RE.finditer(src):   # 文件内**按出现顺序**
+            if m.group(1):                                  # CREATE ⇒ 重建 ⇒ 不再是被处置的表
+                out.pop(m.group(1).lower(), None)
+            else:
+                out.setdefault(m.group(2).lower(), []).append(path.name)
+        for m in _RENAME_TO_RE.finditer(src):
+            out.setdefault(m.group(1).lower(), []).append(path.name)
+    return out
+
+
+def _superseded_columns() -> dict:
+    """被迁移链删掉、且**终态**不存在的列 → `{(表, 列): [删它的迁移文件名, …]}`（同款派生）。
+
+    为什么列也要派生（issue #5245 A 组实测）：`V51` 有一条
+    `COMMENT ON COLUMN orders.stock_deducted IS …`，而该列由本单的 V126 删除 ——
+    **V51 < V126** ⇒ 它在删列之前执行，合法。按「不在终态 = 缺陷」判会误伤合规迁移，
+    而误伤的修法只能是往 `ALLOWLIST_DROPPED_COLUMNS` 加条目 = **豁免增长**（本仓禁止）。
+    """
+    out: dict = {}
+    for path in sorted(_migration_files("V*.sql"), key=lambda q: _version_of(q.name)):
+        src = _strip_comments(path.read_text(encoding="utf-8"))
+        for stmt in [x for x in src.split(";") if x.strip()]:
+            tm = re.match(r"\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\"?([a-z_][a-z0-9_]*)\"?",
+                          stmt, re.I)
+            if not tm:
+                continue
+            table = tm.group(1).lower()
+            for m in _ADD_DROP_COLUMN_RE.finditer(stmt):    # 语句内按出现顺序
+                verb, col = m.group(1).upper(), m.group(2).lower()
+                if verb == "DROP":
+                    out.setdefault((table, col), []).append(path.name)
+                else:
+                    out.pop((table, col), None)
+    # 终态存在的列 ⇒ 后来又被加回来（或从未真删）⇒ 不是「已被处置」
+    return {k: v for k, v in out.items() if k[1] not in _columns_of(_schema_text(), k[0])}
+
+
+def test_superseded_tables_derivation_is_load_bearing():
+    """派生面**承重**（否则它只是「把判据放宽」的漂亮说法）+ 两条豁免的**死亡条件**。
+
+    ① 两条被缩短的豁免所对应的表确实在派生集里，且点名了处置它的迁移（V66 DROP / V37 RENAME）；
+    ② 派生集里**不得**出现终态仍存在的表（那是真缺陷，不许被派生放行）；
+    ③ `ALLOWLIST_TABLES` 里每一条都**不得**被派生覆盖（被覆盖 ⇒ 死条目 ⇒ 删掉它）。
+    """
+    superseded = _superseded_tables()
+    assert superseded, "派生集为空 ⇒ 本判据与豁免缩短都成了空话（解析疑似失效）"
+    for table, mig in (("product_processing_items", "V66"), ("knowledge_entries", "V37")):
+        assert table in superseded, (
+            f"{table} 不在派生集里 ⇒ 它的豁免条目不是死条目，不该被删（回滚本单的缩短）")
+        assert any(f.startswith(mig) for f in superseded[table]), (
+            f"{table} 的处置迁移里应有 {mig}，实测 {superseded[table]} —— 派生口径变了，请同步")
+    tables = _tables_in_schema(_schema_text())
+    alive = sorted(t for t in superseded if t in tables)
+    assert not alive, (
+        f"这些表在终态 schema 里**仍然存在**，却被派生集当成「已被处置」：{alive} —— "
+        f"派生会把真缺陷放行（假绿），必须先修派生口径")
+    dead = sorted(t for t in ALLOWLIST_TABLES if t in superseded)
+    assert not dead, (
+        f"`ALLOWLIST_TABLES` 里的这些条目已被派生覆盖 ⇒ 是死条目，请删掉：{dead}"
+        f"（豁免只许缩短 —— issue #5245）")
 
 
 def test_temp_table_allowlist_entry_is_load_bearing():
@@ -202,11 +308,15 @@ def test_migration_referenced_tables_exist():
     """判据 1：迁移里 `UPDATE/INSERT INTO/ALTER TABLE/DELETE FROM/FROM` 的表必须在 schema 里存在。"""
     schema = _schema_text()
     tables = _tables_in_schema(schema)
+    superseded = _superseded_tables()
     missing = []
     for p in sorted(_migration_files("V*.sql")):
         for t in _referenced_tables(p.read_text(encoding="utf-8")):
             if t in ALLOWLIST_TABLES or t in tables:
                 continue
+            superseded_by = superseded.get(t) or []
+            if any(_version_of(p.name) <= _version_of(f) for f in superseded_by):
+                continue      # 本条**在处置（DROP/RENAME）之前**执行 ⇒ 引用合法（issue #5245）
             missing.append(f"{p.name}: 表 `{t}` 在 schema.sql 里不存在")
     assert not missing, (
         "这些迁移引用了 schema 里**不存在**的表：\n  " + "\n  ".join(sorted(set(missing)))
@@ -243,17 +353,22 @@ def test_migration_referenced_columns_exist():
     """
     schema = _schema_text()
     tables = _tables_in_schema(schema)
+    superseded_cols = _superseded_columns()
     missing = []
     for p in sorted(_migration_files("V*.sql")):
         sql = p.read_text(encoding="utf-8")
         self_added = _columns_added_by(sql)
+        v_self = _version_of(p.name)
         for t, c in _referenced_columns(sql):
             if t in ALLOWLIST_TABLES or t not in tables:
                 continue          # 表不存在由判据 1 负责报
             if (t, c) in self_added:
                 continue          # 本迁移自己建的列（ADD COLUMN + COMMENT ON 同文件）
             if (t, c) in ALLOWLIST_DROPPED_COLUMNS:
-                continue          # 本迁移自己 DROP 的列（先回填再删；见该集合的说明与死亡条件）
+                continue          # 历史豁免面（issue #5245 起为空集，见其说明与死亡条件）
+            superseded_by = superseded_cols.get((t, c)) or []
+            if any(v_self <= _version_of(f) for f in superseded_by):
+                continue          # 本条**在删列之前**（或同文件先读后删）执行 ⇒ 引用合法
             if c not in _columns_of(schema, t):
                 missing.append(f"{p.name}: `{t}.{c}` —— `{t}` 表没有列 `{c}`")
     assert not missing, (
@@ -278,24 +393,62 @@ def test_migration_referenced_columns_exist():
 #: （SQL 失败 → 被跳过 → 部署 success 但回填从未发生）。「本文件自己 DROP 的列」与那种缺陷
 #: **静态不可区分**（都表现为「schema 里没有该列」）⇒ 只能登记，且**必须有死亡条件**：
 #: 一旦 V113 不再引用它（改写成 CTE / 不再回填）⇒ 该条目就是死条目 ⇒ 下面那条反向断言判红。
-ALLOWLIST_DROPPED_COLUMNS = {
-    ("product_skus", "selling_method"),
-}
+#: 🔴 **issue #5245：本豁免已缩短为空集** —— 原登记的 `("product_skus", "selling_method")`
+#: （V113 先回填读它、再 DROP 它）已被 `_superseded_columns()` 派生覆盖 ⇒ 成了**死条目**。
+#: 保留这个空集合本身（而不是删掉变量）是为了让「豁免只许缩短」这条纪律有落点：
+#: 空集是它现在的正确取值，任何新增条目都必须先过下面那条死亡条件测试。
+ALLOWLIST_DROPPED_COLUMNS = set()
 
 
 def test_dropped_column_allowlist_entry_is_load_bearing():
-    """上一条豁免的**死亡条件**（豁免不许变成永久条目）。
+    """豁免面的**死亡条件**（issue #5245 起：`ALLOWLIST_DROPPED_COLUMNS` = 空集）。
 
-    反向断言：V113 **真的**既引用 `product_skus.selling_method`（回填读它）
-    又 DROP 它（同一文件）；一旦它不再这么做 ⇒ 该条目已死 ⇒ 本条判红，要求删掉豁免。
+    改判（**不是放宽，是收紧**）：原条目 `("product_skus", "selling_method")` 已被
+    `_superseded_columns()` **派生**覆盖（V113 先回填读它、再 DROP 它，终态无该列）⇒ 死条目。
+    本判据双向钉住：
+      ① 豁免面**必须是空集**（有一条例外 ⇒ 有人又想靠加豁免过关 ⇒ 红）；
+      ② 那条被删掉的豁免所对应的事实**仍然成立**（V113 既引用又 DROP）—— 只是现在由**派生**
+         而不是人工清单记住它。
     """
+    assert ALLOWLIST_DROPPED_COLUMNS == set(), (
+        f"`ALLOWLIST_DROPPED_COLUMNS` 应为空集（issue #5245 已把死条目删掉）；"
+        f"实际：{sorted(ALLOWLIST_DROPPED_COLUMNS)}")
     v113 = MIGRATION_DIR / "V113__product_roll_length_and_selling_method_base_attribute.sql"
-    assert v113.exists(), "V113 不见了 ⇒ 上面的 allowlist 条目已成死条目，删掉它"
+    assert v113.exists(), "V113 不见了 ⇒ 下面的反向断言失去对象，请同步本判据"
     body = v113.read_text(encoding="utf-8")
     assert ("product_skus", "selling_method") in _referenced_columns(body), (
-        "V113 不再引用 `product_skus.selling_method` ⇒ 请把 ALLOWLIST_DROPPED_COLUMNS 里的该条目删掉")
+        "V113 不再引用 `product_skus.selling_method` ⇒ 派生面的事实变了，请同步")
     assert re.search(r"ALTER TABLE product_skus\s+DROP COLUMN IF EXISTS selling_method", body), (
-        "V113 不再 DROP 该列 ⇒ 该条目已不是「自己 DROP 的列」这一形态 ⇒ 删掉豁免")
+        "V113 不再 DROP 该列 ⇒ 派生面的事实变了，请同步")
+    assert v113.name in (_superseded_columns().get(("product_skus", "selling_method")) or []), (
+        "派生面没有覆盖 `product_skus.selling_method` ⇒ 删掉豁免后这条引用会变成漏网之鱼"
+        "（豁免只许缩短的前提 = 派生真的接得住）")
+
+
+def test_superseded_columns_derivation_is_load_bearing():
+    """列派生**承重** + 三条「本单亲手删掉的列」在派生集里点名 V126。
+
+    ① 三条被删列都在派生集、且点名 V126（A1/A2/A3 的落地证据面）；
+    ② 派生集里**不得**出现终态仍存在的列（否则真缺陷会被派生放行）；
+    ③ 前提：`V51` 的 `COMMENT ON COLUMN orders.stock_deducted`（**先于** V126）必须早于 V126
+       —— 这正是「按版本序比较」而不是「按存在性比较」的理由（否则只能靠加豁免过关）。
+    """
+    superseded = _superseded_columns()
+    assert superseded, "列派生集为空 ⇒ 本判据与豁免缩短都成了空话（解析疑似失效）"
+    for col in (("processing_items", "per_meter_quantity"),
+                ("orders", "stock_deducted"),
+                ("orders", "payment_status")):
+        assert col in superseded, f"{col} 不在列派生集里（V126 的删列没被派生看到）"
+        assert "V126__drop_zombie_db_objects.sql" in superseded[col], (
+            f"{col} 的处置迁移里应有 V126，实测 {superseded[col]}")
+    schema = _schema_text()
+    alive = sorted(f"{t}.{c}" for (t, c) in superseded if c in _columns_of(schema, t))
+    assert not alive, (
+        f"这些列在终态 schema 里**仍然存在**，却被派生集当成「已被处置」：{alive} —— "
+        f"派生会把真缺陷放行（假绿），必须先修派生口径")
+    v51 = MIGRATION_DIR / "V51__product_stock_single_authority.sql"
+    assert _version_of(v51.name) < _version_of("V126__drop_zombie_db_objects.sql"), \
+        "前提变了：V51 必须**早于** V126（否则它的 COMMENT 就是真缺陷，不该被版本序放行）"
 
 
 def test_self_added_columns_are_excluded():

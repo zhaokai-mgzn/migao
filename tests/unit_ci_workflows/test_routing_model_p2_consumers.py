@@ -26,9 +26,14 @@ P2 一旦把消费路径切到新表，`defaultRouteTemplate(tenantId)` 对**任
 from __future__ import annotations
 
 import re
+import sys as _sys
 from pathlib import Path
 
 import pytest
+
+# 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from unit_ci_workflows._migration_paths import LIVE_DIR as LIVE_MIGRATION_DIR  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
@@ -46,11 +51,17 @@ V73 = MIGRATION_DIR / V73_NAME
 NEW_TABLES = ("production_operation_positions", "production_route_templates", "production_route_rules")
 #: 旧规则表（本单软删退场；**表先不 DROP**，可回滚）。
 RETIRED_TABLES = ("production_option_routings", "production_option_factors")
-#: 旧规则表的读取点所在服务（issue #4432 §六·补：这三处必须全部改读 production_route_rules）。
+#: 旧规则表的读取点所在服务（issue #4432 §六·补：这些必须全部改读 production_route_rules）。
+#:
+#: 🔴 issue #5245 A4 补全第 4 个：`RemnantService.java` —— 它是 P2b 切换时**漏掉**的那一处
+#: （V73 的头部注释写明「软删必须与消费切换同一 PR 原子发布」，而 #4459 只切了三个服务），
+#: 于是它的读自 V73 起恒为空（余料小件匹配静默休眠）。本单把它改读到规则表 ⇒ 补进本清单，
+#: 让「漏切」这个形态下次自己变红。
 RETIRED_READER_SERVICES = (
     "ProductionOperationQueryService.java",
     "ProcessingOrderService.java",
     "ProductionSeedTemplateService.java",
+    "RemnantService.java",
 )
 #: 退场后**唯一**的规则真值源。
 RULE_TABLE = "production_route_rules"
@@ -292,13 +303,34 @@ def test_v73_migration_exists():
 
 
 def test_old_rule_tables_not_dropped(sql: str | None = None):
-    """判据 C-2：**表先不 DROP**（可回滚）；DROP 留待后续独立迁移。"""
+    """判据 C-2（**改判，issue #5245 A4**）：DROP **不在 V72/V73**，而在确认零消费者后的独立迁移。
+
+    改前口径：「表先不 DROP（可回滚），DROP 留待后续独立迁移」—— 那个「后续独立迁移」
+    就是本单的 `V126__drop_zombie_db_objects.sql`（用户裁定清僵尸对象：V73 只软删了行、
+    表仍留着 = 「历史行 + 零消费者」）。⇒ 判据**对象不变**（DROP 该由谁做），只是后半句
+    从「留待将来」变成「已由 V126 落地」，并新增「表**确实**已不存在」这一面。
+
+    注：V72/V73 是**已发布、逐字节冻结**的归档迁移 ⇒ 它们「不 DROP」这一事实永远为真，
+    判据继续承重（防止有人把 DROP 塞回这两个文件 —— 那对存量库无效）。
+    """
     body = _v72_body(sql) + _v73_body()
     for table in RETIRED_TABLES:
         assert not re.search(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?" + table + r"\b", body, re.I), (
-            f"V72 直接 DROP 了 {table} —— 规格明文「表本身先不 DROP」（可回滚），"
-            f"DROP 留待后续独立迁移（届时须确认零消费者）"
+            f"V72/V73 里出现了 DROP {table} —— 已发布迁移不可改（台账按文件名整份跳过），"
+            f"DROP 只能由新迁移做"
         )
+    # 新面（#5245 A4）：DROP **已**由 V126 幂等落地，且建库脚本不再建这两张表
+    v126 = _read(LIVE_MIGRATION_DIR / "V126__drop_zombie_db_objects.sql")
+    v126 = _strip_comments(v126)
+    for table in RETIRED_TABLES:
+        assert re.search(r"DROP\s+TABLE\s+IF\s+EXISTS\s+" + table + r"\b", v126, re.I), (
+            f"V126 没有幂等 DROP {table} —— 旧规则表在存量库里继续活着"
+            f"（零消费者的僵尸表；issue #5245 A4 用户裁定删除）")
+    schema_code = _strip_comments(_read(SCHEMA))
+    for table in RETIRED_TABLES:
+        assert not re.search(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + table + r"\b",
+                             schema_code, re.I), (
+            f"建库脚本仍在建 {table} ⇒ 新建库照样有僵尸表（注释里提到不算：已剥注释）")
 
 
 def test_rule_table_gains_factor_column_and_relaxed_action(sql: str | None = None):
@@ -334,8 +366,27 @@ def test_option_factor_rules_migrated_into_rule_table(sql: str | None = None):
     )
 
 
+def retired_type_hits(src: str) -> set:
+    """源码里出现的旧表 entity/mapper 类型名（读表必然经它们）—— 抽出来供注入式自证复用。"""
+    return set(re.findall(r"ProductionOption(?:Routing|Factor)", src))
+
+
+def test_retired_type_scanner_can_go_red():
+    """注入式自证（issue #5245 A4）：扫描器**能**照出读点（否则上面那条是空断言）。
+
+    形态（本单要挡的正是它）：源码里出现 `ProductionOptionRoutingMapper` 之类的类型名 ⇒
+    必须命中；而「已删的表名只出现在注释里」不得命中（判据看类型名，不看散文）。
+    """
+    fake = ("private final ProductionOptionRoutingMapper optionRoutingMapper;\n"
+            "for (ProductionOptionRouting r : optionRoutingMapper.selectList(null)) {}\n")
+    assert retired_type_hits(fake) == {"ProductionOptionRouting"}, \
+        f"读点没被扫出来 ⇒ C-5 是空断言（实测 {retired_type_hits(fake)}）"
+    assert retired_type_hits("// 曾经读 production_option_routings，现已改读规则表\n") == set(), \
+        "散文提及被当成读点 ⇒ 判据会把历史记录判成残留"
+
+
 def test_no_reader_of_retired_rule_tables_in_consumer_services():
-    """判据 C-5：三个消费服务的 Java 源码里**零**读取点（旧表已退场，判据 12）。
+    """判据 C-5：消费服务的 Java 源码里**零**读取点（旧表已**物理删除**，判据 12 + #5245 A4）。
 
     读取点的机械判据 = 这些文件里不再出现旧表的 **entity / mapper** 类型
     （`ProductionOptionRouting` / `ProductionOptionFactor`）—— 读表必然经它们。
@@ -344,7 +395,7 @@ def test_no_reader_of_retired_rule_tables_in_consumer_services():
     for name in RETIRED_READER_SERVICES:
         path = JAVA_SERVICE_DIR / name
         assert path.exists(), f"规格锚点变了：找不到 {path}"
-        hits = sorted(set(re.findall(r"ProductionOption(?:Routing|Factor)", _read(path))))
+        hits = sorted(retired_type_hits(_read(path)))
         if hits:
             offenders[name] = hits
     assert not offenders, (

@@ -25,13 +25,19 @@ min(本目录的版本号) > max(../migration-archive/ 的版本号)
 判据落点 = `tests/unit_ci_workflows/test_migration_immutability.py::test_live_dir_holds_only_migrations_after_the_cut_point`
 （纯函数 `cut_point_violations()`，带注入式自证：把归档里任一条复制回本目录 ⇒ 必红）。
 
-### 当前为什么有一条留在这里（**显式登记，勿当遗漏「顺手归档」**）
+### 当前活目录里有哪些（**逐条登记，勿当遗漏「顺手归档」**）
 
-`V123__retire_join_height_processing_item.sql`（#5230 / #5231 裁定的落地）是**纯数据迁移**：
-它软删 + 停用仍然活跃的 `processing_items` 里名为「接高」的行，**不动任何表/列**，
-而建库脚本里**没有**这一笔（复算：`grep -c join_height ../init/schema.sql` → `0`）。
-⇒ 归档它会让**每个新建环境**上「接高」重新变成活跃项 —— 本仓称之为「CI 全绿、功能静默缺失」。
-故它**有意留在活目录**，由基线上的正常迁移路径执行。
+| 文件 | 性质 | 为什么留在活目录 |
+|---|---|---|
+| `V123__retire_join_height_processing_item.sql` | 纯数据（#5230 / #5231 裁定：软删 + 停用「接高」行，不动任何表/列） | 建库脚本里**没有**这一笔（复算：`grep -c join_height ../init/schema.sql` → `0`）⇒ 归档它会让**每个新建环境**上「接高」重新变成活跃项（「CI 全绿、功能静默缺失」） |
+| `V124__backfill_read_permissions.sql` | 纯数据（#5246 读权限回填） | 同上（脚本里没有这一笔） |
+| `V125__backfill_write_permissions.sql` | 纯数据（#5246 写权限回填） | 同上 |
+| `V126__drop_zombie_db_objects.sql` | **结构变更**（issue #5245 A 组：删 3 表 + 3 列 + C1 的 `COMMENT ON COLUMN` 纠正） | 它的效果**已经**同步进建库脚本（基线契约要求「结构变更必须同步进脚本」），按切点规则它**将来**随下一次「重切」进归档；本单**不动切点**（issue #5245 明令：活目录 = V123/V124/V125/V126，归档 = V1..V122）⇒ 此刻它留在活目录是「**切点尚未前移**」的正常形态，不是遗漏 |
+
+⚠️ **`V124` / `V125` 是 #5246 合入的**：本单（#5245）未动它们，也**不许**重编号
+（已发布的迁移文件逐字节冻结，重编号等于让存量库整份跳过它）。
+另：本表**不写「活目录里有几条」的结论**（数字随每次合并而变，抄在文档里必腐烂）——
+判据永远是 `min(本目录) > max(../migration-archive/)`。
 
 ## 新迁移怎么写
 

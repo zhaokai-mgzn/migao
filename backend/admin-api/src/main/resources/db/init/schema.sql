@@ -170,6 +170,8 @@ CREATE TABLE products (
 );
 
 COMMENT ON COLUMN products.stock IS '库存数量';
+-- 🔴 issue #5245 C1：V51 的注释称这两列「无消费方」—— **与代码事实相反**，两列都被
+-- admin-web 商品页真实读取（见 V126 的 COMMENT 纠正，两条路径同文案）。
 COMMENT ON COLUMN products.stock_warning_threshold IS '库存预警阈值';
 COMMENT ON COLUMN products.sku_code IS '商品货号';
 COMMENT ON COLUMN products.stock_deduction_mode IS '库存扣减模式: on_order / on_payment';
@@ -274,19 +276,13 @@ CREATE TABLE processing_items (
     deleted INTEGER DEFAULT 0
 );
 
--- 加工组合规则表：定义加工项之间的互斥、必选等关系
-CREATE TABLE processing_rules (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    name VARCHAR(255) NOT NULL,
-    rule_type VARCHAR(32) NOT NULL,  -- mutually_exclusive / required / optional / stackable
-    applicable_category_id VARCHAR(64),  -- 适用的商品分类
-    processing_item_ids JSONB NOT NULL,  -- 涉及的加工项 ID 列表
-    description TEXT,
-    status VARCHAR(32) DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- ⚠️ 原 `processing_rules`（「加工组合规则表：互斥/必选/可选/可叠加」）已**删表**
+-- （issue #5245 A5，2026-09-23 用户裁定「删表」）：全仓零代码引用（Java 实体/Mapper/DTO/Service
+-- 与 Python/前端 types 全无；V68 头注释早已登记 KNOWN-03「表在、全仓 0 代码引用」）——
+-- 保留它 = 让「加工项可组合性」看起来已经实现。存量库由 `V126__drop_zombie_db_objects.sql`
+-- 幂等 DROP TABLE（含索引与 RLS 策略）；新建库由本文件不再建表。
+-- 「加工费组合」的真值源是 `processing_fee_combinations`（V68）——它把「组合」做成了**计价**口径，
+-- 与这张从未落码的「组合校验」表不是同一个概念（勿混为一谈）。
 
 -- ================================================
 -- 3. 知识库相关表
@@ -675,9 +671,12 @@ CREATE TABLE orders (
     customer_address TEXT,                          -- 客户地址
     total_amount DECIMAL(12,2) DEFAULT 0,           -- 总金额
     status VARCHAR(20) DEFAULT 'pending',           -- 状态: pending/confirmed/producing/completed/cancelled
-    -- 来自 008_product_sku_matrix.sql
-    payment_status VARCHAR(20) DEFAULT 'unpaid',    -- 支付状态: unpaid/paid/refunded
-    stock_deducted BOOLEAN DEFAULT FALSE,           -- 是否已扣库存
+    -- ⚠️ 原 `payment_status` / `stock_deducted`（来自 008_product_sku_matrix.sql）已**删列**
+    -- （issue #5245 A2/A3，2026-09-23 用户裁定）：全仓零读取点（Java 实体无映射、两条 SQL 链无写点）
+    -- ⇒ 「列在但无人读」= 第二份会漂移的真相。存量库由 `V126__drop_zombie_db_objects.sql` 幂等
+    -- DROP COLUMN；新建库由本文件不再建列。
+    -- 支付与扣库存的真值源不在 orders 上（支付走 tenant_payment_qrcodes + 订单状态机，
+    -- 库存走 stock_ledger / stock_batch_consumptions）。
     -- 来自 010_order_follow_status.sql
     follow_status VARCHAR(20) DEFAULT 'pending',    -- 跟进状态: pending/following/completed
     -- 来自 V20260901__add_order_user_id.sql
@@ -1355,48 +1354,15 @@ COMMENT ON TABLE production_instance_repricing_logs IS '未定价实例的**显�
 COMMENT ON COLUMN production_instance_repricing_logs.new_unit_price IS '本次补上的计件单价（元/单位）= 补价那一刻部位价目矩阵的当前价；回滚只在实例行当前值仍等于本值时才还原（CAS），不覆盖后续改动';
 COMMENT ON COLUMN production_instance_repricing_logs.rolled_back_at IS '回滚时刻（NULL = 未回滚）；回滚只还原 unit_price → NULL，不碰 factor / done_qty / status / 报工历史';
 
--- 特殊选项 → 条件工序 / 计件系数（V59，issue #4230 Java 侧 v1a）
--- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql
--- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
--- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
--- 真值源 = ai-agent app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS / OPTION_FACTOR_SCOPES
--- （NON_PIECEWORK_OPTIONS 那两项是**显式登记的「不计件」**，两张表都**不**种 —— 种进来会把它
--- 变成「有映射但系数 1」，两种语义又混成一种）。
-CREATE TABLE IF NOT EXISTS production_option_routings (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    option_name VARCHAR(32) NOT NULL,                -- 特殊选项名（真值源 §1 的 19 项之一）
-    operation_name VARCHAR(64) NOT NULL,             -- 条件工序名（production_operations.name）
-    after_operation VARCHAR(64) NOT NULL,            -- 插在它之后（不在路线中 ⇒ 追加到末尾）
-    sort_order INT NOT NULL DEFAULT 0,
-    status VARCHAR(16) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER NOT NULL DEFAULT 0
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_production_option_routings_tenant_option_op
-    ON production_option_routings (tenant_id, option_name, operation_name)
-    WHERE deleted = 0;
-
-CREATE TABLE IF NOT EXISTS production_option_factors (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    option_name VARCHAR(32) NOT NULL,
-    operation_name VARCHAR(64),                      -- NULL = 该部位全部工序（平摊档）；非空 = 逐工序例外档
-    factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 乘在工序实例 factor 上
-    source VARCHAR(16) NOT NULL DEFAULT '推算',       -- 实证 / 推算
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER NOT NULL DEFAULT 0
-);
--- 唯一性用**表达式索引**（COALESCE(operation_name,'')）：NULL 在普通唯一索引里互不相等，
--- 不加 COALESCE 就能插进多行「同选项同平摊档」⇒ 系数取值不确定（静默失真）。
-CREATE UNIQUE INDEX IF NOT EXISTS uk_production_option_factors_tenant_option_op
-    ON production_option_factors (tenant_id, option_name, COALESCE(operation_name, ''))
-    WHERE deleted = 0;
-
-COMMENT ON TABLE production_option_routings IS '特殊选项 → 条件工序（V59，issue #4230）：实例化时把 operation_name 插到 after_operation 之后';
-COMMENT ON TABLE production_option_factors IS '特殊选项 → 计件系数（V59，issue #4230）：operation_name NULL = 该部位全部工序（平摊档），非空 = 逐工序例外档（例外档盖住平摊档）';
+-- ⚠️ 原 `production_option_routings` / `production_option_factors`（V59，issue #4230）已**删表**
+-- （issue #5245 A4，2026-09-23 用户裁定）：V73 只把活跃行软删、表仍在 ⇒ 那是「历史行 + 零消费者」
+-- 的僵尸表（`RemnantService` 是最后一个读点，本单已把它改读 `production_route_rules`）。
+-- 存量库由 `V126__drop_zombie_db_objects.sql` 幂等 DROP TABLE（两表 + 全部索引）；
+-- 新建库由本文件不再建表、不再种子。
+-- 规则真值源 = `production_route_rules`（V71 建表 / V72 扩列）—— 选项→条件工序与计件系数档
+-- 都已搬进该表（`trigger_kind='option'`；系数档 `action='factor'`，且自 #4589 起已软删退场）。
+-- 归档载体（逐字节冻结的历史证据）= `db/migration-archive/V59__create_production_option_tables.sql`
+-- 与 V65（ERP 改名）—— 判据改指归档文件，不删断言。
 
 -- 信号 → 路线键 + 路线版本账（V60，issue #4308「工艺路线商家可配」）
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql
@@ -1533,7 +1499,8 @@ CREATE INDEX IF NOT EXISTS idx_daily_briefings_tenant_date
 -- ================================================
 -- SKU 级库存变更事实账（粒度 = SKU 级，#4038：product_skus.stock 是权威、products.stock 是派生）。
 -- 每行 = 一次变更（before_qty → after_qty），同 SKU 相邻两行必须首尾相接才可对账。
--- 保留期：不设 TTL，随订单生命周期软删（deleted）。与 orders.stock_deducted 死列的关系见 V53 头注释。
+-- 保留期：不设 TTL，随订单生命周期软删（deleted）。`orders.stock_deducted` 已于
+-- issue #5245 A2 删列（原「死列」表述见 V53 头注释 —— 那是历史记录，列本身现在不存在了）。
 CREATE TABLE IF NOT EXISTS stock_ledger_entries (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -2020,10 +1987,7 @@ CREATE INDEX idx_processing_items_category ON processing_items(category_id);
 CREATE INDEX idx_processing_items_status ON processing_items(status);
 CREATE INDEX idx_processing_items_deleted ON processing_items(deleted);
 
--- processing_rules 索引
-CREATE INDEX idx_processing_rules_tenant ON processing_rules(tenant_id);
-CREATE INDEX idx_processing_rules_category ON processing_rules(applicable_category_id);
-
+-- （原 `processing_rules` 的两条索引随该表一并删除，issue #5245 A5）
 
 
 
@@ -2203,9 +2167,7 @@ ALTER TABLE processing_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_processing_items ON processing_items
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
-ALTER TABLE processing_rules ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation_processing_rules ON processing_rules
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+-- （原 `processing_rules` 的 RLS + 策略随该表一并删除，issue #5245 A5）
 
 ALTER TABLE tenant_apps ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_tenant_apps ON tenant_apps
@@ -2990,48 +2952,13 @@ UPDATE production_route_rules
    AND production_route_rules.trigger_value = v.trigger_value
    AND production_route_rules.customer_unit_price IS NULL;
 
--- 计件系数档搬进规则表（`action='factor'`）：旧 `production_option_factors` 的档位。
--- ⚠️ 只软删旧表而不搬迁 = **静默丢掉计件系数**（一分为二 ×1.7 消失 ⇒ 工人少发钱）。
-INSERT INTO production_route_rules
-    (id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation,
-     priority, factor, status)
-SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 'factor',
-       CASE
-           WHEN f.operation_name IS NULL THEN NULL
-           WHEN f.operation_name LIKE '%-布' THEN left(f.operation_name, length(f.operation_name) - 2)
-           WHEN f.operation_name LIKE '%-纱' THEN left(f.operation_name, length(f.operation_name) - 2)
-           WHEN f.operation_name = '布三边' THEN '三边'
-           WHEN f.operation_name = '纱三边' THEN '三边'
-           WHEN f.operation_name = '布帘车被' THEN '车被'
-           WHEN f.operation_name = '帘头制作' THEN '帘头制作'
-           WHEN f.operation_name = '上车布-布' THEN '上车布'
-           WHEN f.operation_name = '上车布-纱' THEN '上车布'
-           ELSE f.operation_name END,
-       NULL,
-       100,   -- issue #4514：原写 COALESCE(f.sort_order, 100)，但 production_option_factors **没有 sort_order 列**（V59 建表起就没有；本文件里 sort_order 出现在其它表）⇒ 该引用必然报错、整份迁移回滚。改用注释里已写明的默认值 100。
-       f.factor,
-       'active'
-  FROM tenants t
-  JOIN production_option_factors f ON f.tenant_id = t.id AND f.deleted = 0
- WHERE t.deleted = 0
-   AND NOT EXISTS (
-       SELECT 1 FROM production_route_rules e
-        WHERE e.tenant_id = t.id AND e.deleted = 0
-          AND e.trigger_kind = 'option' AND e.trigger_value = f.option_name
-          AND e.position IS NULL AND e.action = 'factor'
-          AND COALESCE(e.operation, '') = COALESCE(
-              CASE
-                  WHEN f.operation_name IS NULL THEN NULL
-                  WHEN f.operation_name LIKE '%-布' THEN left(f.operation_name, length(f.operation_name) - 2)
-                  WHEN f.operation_name LIKE '%-纱' THEN left(f.operation_name, length(f.operation_name) - 2)
-                  WHEN f.operation_name = '布三边' THEN '三边'
-                  WHEN f.operation_name = '纱三边' THEN '三边'
-                  WHEN f.operation_name = '布帘车被' THEN '车被'
-                  WHEN f.operation_name = '帘头制作' THEN '帘头制作'
-                  WHEN f.operation_name = '上车布-布' THEN '上车布'
-                  WHEN f.operation_name = '上车布-纱' THEN '上车布'
-                  ELSE f.operation_name END, ''))
-ON CONFLICT (id) DO NOTHING;
+-- ⚠️ 原「V72 计件系数档搬进规则表」（`action='factor'`，源 = 旧 `production_option_factors`）
+-- 已随删表退场（issue #5245 A4）：源表本体已 DROP（V126），这条 INSERT…SELECT 在**建库时**
+-- 必然报 `relation "production_option_factors" does not exist` —— `docker-entrypoint-initdb.d`
+-- 的 psql 带 `ON_ERROR_STOP=1` ⇒ **整份建库中止**（#3270 形态）。
+-- 终态也不需要它：系数档自 #4589（用户裁定「计件工资 = 数量 × 计件单价，不需要系数」）起
+-- **已退场**，下面的软删语句就是把它清零的收口 —— 新建库从此**没有** `action='factor'` 行，
+-- 与存量库（V72/V76 搬入 → V87/V89 软删）终态一致。
 
 -- 计件系数档**退场**（V87，issue #4589：用户裁定「计件工资 = 数量 × 计件单价，不考虑系数」）。
 -- bootstrap 终态与 `V87__retire_factor_route_rules.sql` **同源同值**：把上面那条 V72 搬进来的
@@ -3085,42 +3012,13 @@ SELECT 'rr-v84-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
           AND e.action = r.action AND e.operation = r.operation)
 ON CONFLICT (id) DO NOTHING;
 
--- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）
--- 逐字抄自真值源 backend/ai-agent-service/app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS
--- （16 项，sort_order 与真值源字典序一致）与 OPTION_FACTOR_SCOPES（v1 只种「一分为二 ⇒ ×1.7」这个
--- **实证**档；§2.4 的逐工序细算档是纯推算，不拿推算值覆盖实证值 ⇒ 不种）。
--- NON_PIECEWORK_OPTIONS（余料带回-布/-纱）**不种**：它们是显式登记的「不计件」。
--- ⚠️ 选项名 = **ERP 名**（issue #4389 裁定 R-e）：本文件是 bootstrap **终态**，直接写目标态
--- （bootstrap 路径不跑迁移链 ⇒ 不经过 V65 的改名）；存量库由
--- V65__align_special_option_names_with_erp.sql 改名对齐。
--- 防漂移：backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOptionRoutingMigrationTest.java
--- 逐行比对本文件 / V59 ∪ V65 / routing.py 三源（改名/改值/加减选项即红）。
-INSERT INTO production_option_routings
-    (id, tenant_id, option_name, operation_name, after_operation, sort_order, status)
-VALUES
-  ('opt-rt-01', 1, '拼1次',      '拼1次-布',  '布三边',   1, 'active'),
-  ('opt-rt-02', 1, '拼2次',      '拼2次-布',  '布三边',   2, 'active'),
-  ('opt-rt-03', 1, '拼3次',      '拼3次-布',  '布三边',   3, 'active'),
-  ('opt-rt-04', 1, '加花边',     '花边-布',   '布三边',   4, 'active'),
-  ('opt-rt-05', 1, '加铅块',     '铅坠-布',   '布三边',   5, 'active'),
-  ('opt-rt-06', 1, '接高',       '接高-布',   '精裁-布',  6, 'active'),
-  ('opt-rt-07', 1, '双眼皮接高', '接高-布',   '精裁-布',  7, 'active'),
-  ('opt-rt-08', 1, '余料做绑带', '绑带-布',   '布帘车被', 8, 'active'),
-  ('opt-rt-09', 1, '布绑带',     '绑带-布',   '布帘车被', 9, 'active'),
-  ('opt-rt-10', 1, '余料做帘头', '帘头制作',  '布三边',  10, 'active'),
-  ('opt-rt-11', 1, '抱枕',       '抱枕',      '外帘打卷', 11, 'active'),
-  ('opt-rt-12', 1, '纱绑带',     '绑带-纱',   '布帘车被', 12, 'active'),
-  ('opt-rt-13', 1, '加logo条',   'logo条-布', '布三边',  13, 'active'),
-  ('opt-rt-14', 1, '加立边',     '立边-布',   '布三边',  14, 'active'),
-  ('opt-rt-15', 1, '扣环',       '扣环-布',   '布三边',  15, 'active'),
-  ('opt-rt-16', 1, '防翘扣',     '防翘扣-布', '布三边',  16, 'active')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO production_option_factors
-    (id, tenant_id, option_name, operation_name, factor, source)
-VALUES
-  ('opt-fa-01', 1, '一分为二', NULL, 1.7, '实证')
-ON CONFLICT (id) DO NOTHING;
+-- ⚠️ 原「特殊选项 → 条件工序 / 计件系数」种子（V59 ∪ V65 改名后的终态形态：16 行条件工序
+-- + 1 行计件系数）已随删表退场（issue #5245 A4）—— 两张表本体已 DROP（V126），种子无处可落。
+-- 终态形态：`production_route_rules` 的 `trigger_kind='option'` 行（由上面的 V72/V76 等价回填
+-- 段按租户生成），真值源仍是 backend/ai-agent-service/app/production/routing.py 的
+-- SPECIAL_OPTION_ROUTINGS；判据改指**归档载体**（V59 ∪ V65，逐字节冻结）与真值源逐行逐值比对
+-- （见 tests/unit_ci_workflows/test_production_catalog_seed.py 的「已退场收敛面」段），
+-- 终态「表已不存在 + 零读取点」由 tests/unit_ci_workflows/test_dropped_db_objects.py 守。
 
 -- ================================================
 -- 11. bootstrap 对齐：迁移链/java 实体已要求、本文件此前缺失的列与表（issue #3270）
@@ -3163,8 +3061,11 @@ ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS channel_configs JSONB;
 -- 会话最后活动时间（V13）
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;
 
--- 加工项每米数量密度（V33）
-ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS per_meter_quantity DECIMAL(6,2);
+-- ⚠️ 原 `processing_items.per_meter_quantity`（V33 加列 / V34 删列 / V41 又加回）已**删列**
+-- （issue #5245 A1，2026-09-23 用户裁定）：僵尸列 —— 列在、生产零消费者（DTO / 前端 TS /
+-- Agent Python 已全删，无读无写），而建库脚本一直把它建出来 ⇒ 「库里有那一列」本身在
+-- 暗示「每米数量」这个已回滚的口径仍然成立（issue #3005 的裁决被列定义推翻）。
+-- 存量库由 `V126__drop_zombie_db_objects.sql` 幂等 DROP COLUMN；新建库由本文件不再加列。
 
 -- 加工项**显式声明**的工艺（V78，issue #4452）：路线键「工艺」维的受控来源。
 -- NULL = 商家没声明（不是「工艺=空」）⇒ 该维按缺维处理、route_source 显式标注，不猜。

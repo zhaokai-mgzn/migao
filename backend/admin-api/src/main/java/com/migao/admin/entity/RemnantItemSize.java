@@ -26,7 +26,8 @@ import java.time.OffsetDateTime;
  * 不是静默返回空列表，也不是凭空给一个推荐。
  *
  * <h2>{@link #itemKey} 为什么是**工序名**</h2>
- * 特殊选项 → 条件工序的那张表（{@code production_option_routings}）已经在用工序名当键，
+ * 特殊选项 → 条件工序的那张表（{@code production_route_rules}，`trigger_kind='option'`；
+ * 旧表 {@code production_option_routings} 已由 issue #5245 A4 删除）已经在用工序名当键，
  * 而它逐字同真值源 {@code backend/ai-agent-service/app/production/routing.py} 的
  * {@code SPECIAL_OPTION_ROUTINGS[opt]["operation"]}。另造一套「小件名」= 第二份会漂移的口径
  * ⇒ 本表直接用同一套键（{@code 绑带-布} / {@code 帘头制作} / {@code 抱枕} …）。

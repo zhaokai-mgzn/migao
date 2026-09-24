@@ -57,10 +57,6 @@ class ProductionOperationCommandServiceTest {
     @Mock
     private ProductionRoutingMapper productionRoutingMapper;
     @Mock
-    private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
-    @Mock
-    private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
-    @Mock
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @Mock
     private com.migao.admin.mapper.ProductionRouteTemplateMapper productionRouteTemplateMapper;

@@ -1004,6 +1004,24 @@ def test_price_version_backfill_is_idempotent(seed_sqls):
 # 而改名迁移按**内容**发现（含 `UPDATE production_option_* SET option_name` 的 `V*.sql`）
 # ⇒ 将来的改名迁移无需改本文件。
 
+#: 已退场的选项目录两表（issue #5245 A4，2026-09-23 用户裁定）：**物理删除**，建库脚本不再建。
+#:
+#: 判据不是删掉 —— 迁移侧的**归档载体**（V59 ∪ V65，逐字节冻结）仍与真值源逐行逐值比对
+#: （下面两条照旧、一字未改）；**终态面**随风化，改判为「两表已不存在（可执行 SQL 里没有）」，
+#: 该退场另由 `tests/unit_ci_workflows/test_dropped_db_objects.py` 的三面证明守住。
+#: ⇒ 「收敛面显式缩小 + 写明理由」，不是把比对删掉。
+RETIRED_OPTION_TABLES = ("production_option_routings", "production_option_factors")
+
+
+def _terminal_retired_tables_absent(schema_text: str) -> None:
+    """终态判据：建库脚本的**可执行** SQL 里不得再有这两张表（注释里的历史说明不算）。"""
+    code = sql_code(schema_text)
+    for table in RETIRED_OPTION_TABLES:
+        assert table not in code, (
+            f"建库脚本仍有 `{table}` 的可执行引用 ⇒ issue #5245 A4 的删表没做完"
+            f"（本判据剥注释：说明文字不算）")
+
+
 OPTION_FACTOR_COLUMNS = ("id", "tenant_id", "option_name", "operation_name", "factor", "source")
 OPTION_ROUTING_COLUMNS = ("id", "tenant_id", "option_name", "operation_name",
                           "after_operation", "sort_order", "status")
@@ -1099,11 +1117,10 @@ def test_option_factor_names_converge_across_three_sources(schema_sql):
     truth = {(opt, sc["operation_name"]): float(sc["factor"])
              for opt, scopes in factor_scopes.items() for sc in scopes}
     migration = _factor_map(effective_option_rows("production_option_factors", OPTION_FACTOR_COLUMNS))
-    bootstrap = _factor_map(_normalized(
-        parse_seed(schema_sql, "production_option_factors", OPTION_FACTOR_COLUMNS),
-        OPTION_FACTOR_COLUMNS))
     assert migration == truth, f"系数表：迁移侧（V59 ∪ 改名）≠ routing.py OPTION_FACTOR_SCOPES：{_diff_keys(migration, truth)}"
-    assert bootstrap == truth, f"系数表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+    # 终态面（issue #5245 A4 改判）：表已物理删除 ⇒ 「bootstrap 终态逐值比对」无对象可施，
+    # 改判为**退场断言**（判据没被删，只是对象改指归档载体 + 终态）。
+    _terminal_retired_tables_absent(schema_sql)
 
 
 def test_option_routing_names_converge_across_three_sources(schema_sql):
@@ -1112,11 +1129,12 @@ def test_option_routing_names_converge_across_three_sources(schema_sql):
     truth = {opt: (spec["operation"], spec["after"]) for opt, spec in routings.items()}
     migration = _routing_map(effective_option_rows("production_option_routings",
                                                    OPTION_ROUTING_COLUMNS))
-    bootstrap = _routing_map(_normalized(
-        parse_seed(schema_sql, "production_option_routings", OPTION_ROUTING_COLUMNS),
-        OPTION_ROUTING_COLUMNS))
     assert migration == truth, f"条件工序表：迁移侧 ≠ routing.py SPECIAL_OPTION_ROUTINGS：{_diff_keys(migration, truth)}"
-    assert bootstrap == truth, f"条件工序表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+    # 终态面（issue #5245 A4 改判）：两表已删 ⇒ 终态载体是 `production_route_rules`
+    # （`trigger_kind='option'` 行，由 schema.sql 的 V72/V76 等价回填段按租户生成）。
+    _terminal_retired_tables_absent(schema_sql)
+    assert re.search(r"INSERT\s+INTO\s+production_route_rules\b", sql_code(schema_sql), re.I), (
+        "建库脚本没有向 `production_route_rules` 落任何行 ⇒ 特殊选项规则的终态载体不见了")
 
 
 def test_option_names_carry_no_stale_spelling_anywhere():
@@ -1133,10 +1151,11 @@ def test_option_names_carry_no_stale_spelling_anywhere():
                            ("production_option_routings", OPTION_ROUTING_COLUMNS)):
         names = {r["option_name"] for r in effective_option_rows(table, columns)}
         assert names & stale == set(), f"{table}（迁移侧有效状态）残留旧写法: {sorted(names & stale)}"
-    assert not (stale & {r["option_name"] for r in _normalized(
-        parse_seed(SCHEMA.read_text(encoding="utf-8"), "production_option_factors",
-                   OPTION_FACTOR_COLUMNS), OPTION_FACTOR_COLUMNS)}), \
-        "schema.sql 的系数种子残留旧写法"
+    # 终态面（issue #5245 A4 改判）：该表的终态种子已随删表退场 ⇒ 改判为退场断言
+    # （旧写法不得残留在**终态载体** production_route_rules 的种子里）。
+    _terminal_retired_tables_absent(SCHEMA.read_text(encoding="utf-8"))
+    assert not (stale & set(re.findall(r"'([^']*)'", sql_code(SCHEMA.read_text(encoding="utf-8"))))), \
+        "建库脚本的可执行 SQL 里残留 ERP 改名之前的选项写法（旧写法 = 查不到的 join key）"
 
 
 def test_erp_leftover_return_forms_are_all_explicitly_registered():
@@ -1156,6 +1175,8 @@ def test_erp_leftover_return_forms_are_all_explicitly_registered():
         names = {r["option_name"] for r in effective_option_rows(table, columns)}
         assert names & {"余料带回-布", "余料带回-纱", "余料带回"} == set(), \
             f"{table} 里落了不计件/待确认选项（会把「不计件」变成「有映射但系数 1」）"
+    # 终态面（issue #5245 A4 改判）：表已删 ⇒ 终态不存在「落表」这一可能（判据改指退场）
+    _terminal_retired_tables_absent(SCHEMA.read_text(encoding="utf-8"))
 
 
 def test_option_rename_application_is_load_bearing(tmp_path):

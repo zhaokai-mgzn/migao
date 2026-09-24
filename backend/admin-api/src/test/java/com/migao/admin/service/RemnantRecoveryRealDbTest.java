@@ -16,7 +16,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
-import com.migao.admin.mapper.ProductionOptionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -136,10 +136,13 @@ class RemnantRecoveryRealDbTest {
                     + " ('op-5146-1', " + TENANT_ID + ", '绑带-布'),"
                     + " ('op-5146-2', " + TENANT_ID + ", '帘头制作')");
             // 特殊选项 → 条件工序（**既有唯一真值源**）：匹配的小件需求由它解析
-            st.execute("INSERT INTO production_option_routings"
-                    + " (id, tenant_id, option_name, operation_name, after_operation, sort_order, status)"
-                    + " VALUES ('or-5146-1', " + TENANT_ID + ", '余料做绑带', '绑带-布', '布帘车被', 8, 'active'),"
-                    + " ('or-5146-2', " + TENANT_ID + ", '余料做帘头', '帘头制作', '布三边', 10, 'active')");
+            // 特殊选项 → 条件工序（**唯一真值源** production_route_rules；issue #5245 A4 起
+            // 旧表 production_option_routings 已 DROP ⇒ 夹具必须种在新表上，否则夹具自己先报错）
+            st.execute("INSERT INTO production_route_rules"
+                    + " (id, tenant_id, trigger_kind, trigger_value, action, operation, after_operation,"
+                    + " priority, status)"
+                    + " VALUES ('or-5146-1', " + TENANT_ID + ", 'option', '余料做绑带', 'insert', '绑带-布', '布帘车被', 8, 'active'),"
+                    + " ('or-5146-2', " + TENANT_ID + ", 'option', '余料做帘头', 'insert', '帘头制作', '布三边', 10, 'active')");
         }
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
@@ -169,7 +172,7 @@ class RemnantRecoveryRealDbTest {
         for (Class<?> mapper : List.of(StockBatchMapper.class, StockBatchConsumptionMapper.class,
                 ProductSkuMapper.class, CraftCalcConfigMapper.class, FabricRemnantMapper.class,
                 RemnantItemSizeMapper.class, ProductionOperationMapper.class,
-                ProductionOptionRoutingMapper.class, OrderMapper.class, OrderItemMapper.class)) {
+                ProductionRouteRuleMapper.class, OrderMapper.class, OrderItemMapper.class)) {
             configuration.addMapper(mapper);
         }
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -180,7 +183,7 @@ class RemnantRecoveryRealDbTest {
                 session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductionOperationMapper.class),
-                session.getMapper(ProductionOptionRoutingMapper.class),
+                session.getMapper(ProductionRouteRuleMapper.class),
                 session.getMapper(OrderMapper.class),
                 session.getMapper(OrderItemMapper.class));
         CraftCalcConfigService configService = new CraftCalcConfigService(
@@ -515,6 +518,60 @@ class RemnantRecoveryRealDbTest {
                 + " WHERE id = " + id));
         assertThat(badAmount).as("回收额写错 ⇒ 当场拒绝（不是读面各算各的）").isNotNull();
         assertThat(sqlStateOf(badAmount)).isEqualTo("23514");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 判据 9（issue #5245 A4）：载体切换 —— 小件需求逐值等于规则表的 insert 工序集合
+    //
+    // 为什么必须单列：本单把读点从 `production_option_routings`（已 DROP）切到
+    // `production_route_rules` —— 而「切对了」不能只靠「返回了行」（本仓口径：非空 ≠ 正确）。
+    // 四条判据各挡一种错法：① 逐值（读错表/读错 action）；② 保序去重（契约形状变了）；
+    // ③ 可红证（读的是缓存/常量而不是真值源）；④ 反向护栏（不因新增源而多出需求项）。
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 判据9（#5245 A4）载体切换：required 逐值 = 规则表 action='insert' 工序（保序去重 + 反向护栏 + 红证）")
+    void requiredItemsFollowTheRuleTableExactly() throws Exception {
+        putSpec("绑带-布", "2.5", "0.2");
+        putSpec("帘头制作", "2.5", "0.2");
+
+        // ① 逐值：两个特殊选项 ⇒ required 恰为该二选项的 insert 工序，且按 priority 升序（8 → 10）
+        String orderNo = newOrder("载体切换单");
+        String itemId = orderItemOf(orderNo, "余料做绑带", "余料做帘头");
+        List<String> both = remnantService.match(TENANT_ID, itemId, "PC-5146-CARRIER").requiredItems();
+        assertThat(both)
+                .as("required 必须逐值等于 production_route_rules(trigger_kind='option' AND "
+                        + "action='insert') 的工序集合，按 priority 升序 —— 旧表靠 DB 返回序（不确定顺序）")
+                .containsExactly("绑带-布", "帘头制作");
+
+        // ② 保序去重：再插一条**同工序**规则（另一个选项）⇒ 工序名只出现一次（契约形状与改前逐字相同）
+        exec("INSERT INTO production_route_rules (id, tenant_id, trigger_kind, trigger_value, action,"
+                + " operation, after_operation, priority, status) VALUES ('or-5146-dedup', " + TENANT_ID
+                + ", 'option', '布绑带', 'insert', '绑带-布', '布帘车被', 9, 'active')");
+        String dedupItem = orderItemOf(newOrder("去重单"), "余料做绑带", "布绑带");
+        assertThat(remnantService.match(TENANT_ID, dedupItem, "PC-5146-CARRIER").requiredItems())
+                .as("同一工序被两个选项要求 ⇒ 只出现一次（required 是 keySet 保序去重）")
+                .containsExactly("绑带-布");
+
+        // ③ 红证：改规则表一行（insert → remove）⇒ 结果必须跟着变（证明读的是真值源，不是常量/缓存）
+        exec("UPDATE production_route_rules SET action = 'remove' WHERE id = 'or-5146-1'");
+        assertThat(remnantService.match(TENANT_ID, itemId, "PC-5146-CARRIER").requiredItems())
+                .as("红证：把「余料做绑带」那条改成 action='remove'（不是「插入工序」）⇒ 该工序必须从"
+                        + "需求里消失；不变 ⇒ 读的不是规则表（或没按 action 过滤）")
+                .containsExactly("帘头制作");
+        exec("UPDATE production_route_rules SET action = 'insert' WHERE id = 'or-5146-1'");
+
+        // ④ 反向护栏：软删某选项的规则行 ⇒ 该选项不再产生需求项（不因换源而多出需求）
+        exec("UPDATE production_route_rules SET deleted = 1 WHERE id = 'or-5146-2'");
+        assertThat(remnantService.match(TENANT_ID, itemId, "PC-5146-CARRIER").requiredItems())
+                .as("反向护栏：没有 insert 规则的选项 ⇒ 需求为空（与旧表口径同：查不到就没有需求项）")
+                .containsExactly("绑带-布");
+
+        // 复原 ⇒ 必须回到两条（证明上面那次「少一条」不是别的原因造成的）
+        exec("UPDATE production_route_rules SET deleted = 0 WHERE id = 'or-5146-2'");
+        assertThat(remnantService.match(TENANT_ID, itemId, "PC-5146-CARRIER").requiredItems())
+                .as("复原后必须回到两条（上一条的「空」确实来自 deleted 过滤）")
+                .containsExactly("绑带-布", "帘头制作");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════

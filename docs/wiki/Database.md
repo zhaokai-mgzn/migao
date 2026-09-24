@@ -19,6 +19,15 @@ PostgreSQL 15，39 张业务表，按域分组：
 | **通知** | notifications, notification_templates, notification_rules | 消息推送 |
 | **系统** | system_configs, login_logs, audit_logs, user_memories, user_suggestion_prefs | 配置/审计/AI偏好 |
 
+> 🔴 **2026-09-23 僵尸对象清理（issue #5245 A 组，用户裁定）**：删 **3 张表**
+> （`production_option_routings` / `production_option_factors` —— V73 只软删了行、表仍在；
+> `processing_rules` —— 全仓零代码引用）与 **3 个列**（`processing_items.per_meter_quantity`、
+> `orders.stock_deducted`、`orders.payment_status`）。落法 = **新迁移
+> `backend/admin-api/src/main/resources/db/migration/V126__drop_zombie_db_objects.sql`（幂等）
+> + 本页所属的建库脚本同步移除**（两条路径同终态）；上表的业务表清单**不含**这三张表
+> （它们从未被登记为业务表）。三面证明（脚本里没有 / 迁移里有幂等 DROP / 源码零访问路径）
+> 的机械判据 = `tests/unit_ci_workflows/test_dropped_db_objects.py`。
+
 ## 多租户隔离 (5层)
 
 1. JWT 提取 tenant_id (不可伪造)

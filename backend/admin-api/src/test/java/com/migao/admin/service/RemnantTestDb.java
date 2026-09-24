@@ -12,7 +12,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
-import com.migao.admin.mapper.ProductionOptionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -86,10 +86,13 @@ public final class RemnantTestDb {
             st.execute("INSERT INTO production_operations (id, tenant_id, name) VALUES"
                     + " ('op-5147-1', " + TENANT_ID + ", '绑带-布'),"
                     + " ('op-5147-2', " + TENANT_ID + ", '帘头制作')");
-            st.execute("INSERT INTO production_option_routings"
-                    + " (id, tenant_id, option_name, operation_name, after_operation, sort_order, status)"
-                    + " VALUES ('or-5147-1', " + TENANT_ID + ", '余料做绑带', '绑带-布', '布帘车被', 8, 'active'),"
-                    + " ('or-5147-2', " + TENANT_ID + ", '余料做帘头', '帘头制作', '布三边', 10, 'active')");
+            // 特殊选项 → 条件工序（**唯一真值源** production_route_rules；issue #5245 A4 起
+            // 旧表 production_option_routings 已 DROP ⇒ 夹具必须种在新表上，否则夹具自己先报错）
+            st.execute("INSERT INTO production_route_rules"
+                    + " (id, tenant_id, trigger_kind, trigger_value, action, operation, after_operation,"
+                    + " priority, status)"
+                    + " VALUES ('or-5147-1', " + TENANT_ID + ", 'option', '余料做绑带', 'insert', '绑带-布', '布帘车被', 8, 'active'),"
+                    + " ('or-5147-2', " + TENANT_ID + ", 'option', '余料做帘头', 'insert', '帘头制作', '布三边', 10, 'active')");
         }
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
@@ -118,7 +121,7 @@ public final class RemnantTestDb {
         for (Class<?> mapper : List.of(StockBatchMapper.class, StockBatchConsumptionMapper.class,
                 ProductSkuMapper.class, com.migao.admin.mapper.CraftCalcConfigMapper.class,
                 FabricRemnantMapper.class, RemnantItemSizeMapper.class, ProductionOperationMapper.class,
-                ProductionOptionRoutingMapper.class, OrderMapper.class, OrderItemMapper.class)) {
+                ProductionRouteRuleMapper.class, OrderMapper.class, OrderItemMapper.class)) {
             configuration.addMapper(mapper);
         }
         SqlSessionFactory factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -128,7 +131,7 @@ public final class RemnantTestDb {
                 session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductionOperationMapper.class),
-                session.getMapper(ProductionOptionRoutingMapper.class),
+                session.getMapper(ProductionRouteRuleMapper.class),
                 session.getMapper(OrderMapper.class),
                 session.getMapper(OrderItemMapper.class));
         return new RemnantTestDb(cluster, dataSource, session, service);

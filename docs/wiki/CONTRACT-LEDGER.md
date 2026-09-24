@@ -132,13 +132,15 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米单价中 → 加工项计价方式仅 `per_meter / per_set / fixed / per_area`，
 **per_piece 已全链路移除**（schema V34 回滚迁移 + DTO/TS/Python 删除）。
 
-🔴 **2026-09-23 改判「每米数量」密度列（issue #5245 A1）**：本行原写
-**「per_meter_quantity / custom_per_meter_quantity 已全链路移除」—— 与库事实相反**。
+🔴 **2026-09-23 改判并收口「每米数量」密度列（issue #5245 A1）**：本行原写
+**「per_meter_quantity / custom_per_meter_quantity 已全链路移除」—— 当时与库事实相反**。
 真实迁移史：`V33` 加列 → `V34` 删列 → **`V41`（`V41__align_bootstrap_schema_missing_columns.sql`）
 又把 `processing_items.per_meter_quantity` 加回**，初始化建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` 亦
-`ADD COLUMN IF NOT EXISTS` ⇒ **该列在存量库与新建库里都真实存在**。
-准确口径 = **僵尸列**（列在、生产零消费者：DTO/TS/Python 确实已删，无读无写）；
-**删列（新迁移 + 初始化脚本同步）待 #5243 合入后执行**（本单 #5245 不动 DB 面）。
+`ADD COLUMN IF NOT EXISTS` ⇒ 当时**该列在存量库与新建库里都真实存在**（准确口径 = **僵尸列**：
+列在、生产零消费者 —— DTO / 前端 TS / Agent Python 的字段确实已删，无读无写）。
+**现已删列（终态）**：`V126__drop_zombie_db_objects.sql` 幂等 `DROP COLUMN IF EXISTS`，
+初始化建库脚本同步移除该列（issue #5245 A1，2026-09-23 用户裁定）⇒
+**「已全链路移除」这句话自 V126 起为真**（此前是「代码里移除了、库里还在」的半移除态）。
 `custom_per_meter_quantity` 随 `product_processing_items` 表由 V66 DROP，无残留。
 
 | 字段 | 后端 Java | 前端 TS | Agent Python | 备注 |
