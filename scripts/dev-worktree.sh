@@ -350,7 +350,7 @@ cmd_add() {
     exit 1
   fi
   # v1.11（issue #5422）：建工作区前把「已合并但没人收尾」的自动收掉（事件驱动，判定在 issue_lifecycle.py；失败不阻塞建工作区）
-  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"
+  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --no-artifacts --except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"
   mkdir -p "$(dirname "$path")"
   if [ "$branch_is_local" = "1" ]; then
     git -C "$REPO_ROOT" worktree add "$path" "$branch"

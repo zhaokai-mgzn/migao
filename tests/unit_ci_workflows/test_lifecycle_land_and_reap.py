@@ -79,7 +79,7 @@ LAND_STEPS_ANCHOR = (
 )
 # 注入锚点：**逐字**取自 scripts/dev-worktree.sh 的那一行接线
 REAP_CALL_LINE = (
-    '  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply '
+    '  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --no-artifacts '
     '--except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"'
 )
 
@@ -144,6 +144,8 @@ def _wiring_problems(body: str) -> list[str]:
         problems.append("add 路径必须带 --apply（否则自动收尾恒为空转）")
     if '--except "$branch"' not in body:
         problems.append('必须 --except "$branch"（本次要建的分支不能被自己收掉）')
+    if "--no-artifacts" not in body:
+        problems.append("必须 --no-artifacts（主工作区根是跨会话共享写面：别人的 pr-body-*.md 可能正在用）")
     return problems
 
 
@@ -759,6 +761,31 @@ def test_reap_merged_gh_unavailable_is_three(fx: Fixture):
     assert proc.returncode == 3, f"gh 缺失必须 exit=3：exit={proc.returncode}\n{proc.stdout}"
     assert str(wt) in _worktree_paths(fx.repo), "无法判定却删了 worktree"
     assert REAP_BRANCH in _branches(fx.repo), "无法判定却删了本地分支"
+
+
+def test_reap_merged_no_artifacts_protects_shared_write_surface(fx: Fixture):
+    """`--no-artifacts`（`add` 自动收尾用的口径）不动主工作区根 —— 那是**跨会话共享写面**。
+
+    别人的 `pr-body-*.md` 可能正躺在主工作区根用着；默认口径（无该 flag）与 `finish`/`prune` 一致，仍清。
+    """
+    _mk(fx, REAP_BRANCH)
+    fx.set_state(rows=[_merged_row(REAP_BRANCH)])
+    body = fx.repo / "pr-body-5422.md"
+    body.write_text("别人的 PR body 正在用\n", encoding="utf-8")
+
+    proc = fx.run("reap-merged", "--apply", "--no-artifacts")
+
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert body.exists(), "--no-artifacts 竟然删了别人的 pr-body（跨会话共享写面）"
+    assert "跳过过程产物清理" in proc.stdout, f"跳过必须出声：\n{proc.stdout}"
+
+    other = fx.repo / "pr-body-5423.md"
+    other.write_text("另一份\n", encoding="utf-8")
+    fx.set_state(rows=[_merged_row("fix/second", number=31)])
+    _mk(fx, "fix/second", name="second")
+    plain = fx.run("reap-merged", "--apply")
+    assert plain.returncode == 0, f"{plain.stdout}\n{plain.stderr}"
+    assert not other.exists(), "默认口径应与 finish/prune 一致（清主工作区根的过程产物）"
 
 
 # ── ⑧ 接线：dev-worktree.sh add 的那一行 ────────────────────────────────────

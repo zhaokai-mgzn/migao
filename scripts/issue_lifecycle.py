@@ -85,6 +85,10 @@ worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../mig
 **零动作也要出声**（G6）：没有可收尾的 ⇒ 打印「本轮零动作 + 逐类原因计数」——
 「我判了、都不该动」必须与「我没跑」长得不一样。
 
+`--no-artifacts`：跳过「过程产物清理」。理由 = 主工作区根是**跨会话共享写面**（§2.3 第 8 条同族）：
+别人的 `pr-body-*.md` 可能正躺在那里用着 ⇒ `dev-worktree.sh add` 的**自动**收尾走这个口径；
+显式 `finish` / `prune --apply` 的既有行为**不变**（它们由操作者针对自己的包调用）。
+
 ### 判据的替身注入点（只换 CLI/边界，不 mock 被测函数）
 
     MIGAO_GH_BIN=...              # gh 可执行文件（沿用既有替身注入点）
@@ -784,8 +788,12 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
         if not verify_clean(target, cwd, root):
             failures += 1
 
-    removed = clean_artifacts(root, apply=True)
-    print(f"\n🧽 已清过程产物 {len(removed)} 项")
+    removed = clean_artifacts(root, apply=True) if not args.no_artifacts else []
+    if args.no_artifacts:
+        print("\nℹ️  --no-artifacts：跳过过程产物清理 —— 主工作区根是**跨会话共享写面**"
+              "（别人的 `pr-body-*.md` 可能正躺在那里在用；§2.3 第 8 条同族）")
+    else:
+        print(f"\n🧽 已清过程产物 {len(removed)} 项")
     print(f"✅ 自动收尾完成：{len(reapable) - failures}/{len(reapable)} 个目标已清。"
           if not failures else f"⚠️  {failures} 个目标自证有未清项（见上）。")
     return EXIT_UNMERGED if (failures or anchor_hits) else EXIT_OK
@@ -1086,6 +1094,9 @@ def main(argv: list[str] | None = None) -> int:
     p_reap.add_argument("--dry-run", action="store_true", help="显式 dry-run（本身就是默认口径，写上只为可读）")
     p_reap.add_argument("--except", dest="exclude", action="append", default=[],
                         help="排除该分支（可重复；`dev-worktree.sh add` 用它排除本次要建的分支）")
+    p_reap.add_argument("--no-artifacts", action="store_true",
+                        help="跳过过程产物清理（主工作区根是**跨会话共享写面**：别人的 pr-body-*.md "
+                             "可能正在用；`dev-worktree.sh add` 的自动收尾用它）")
     p_reap.set_defaults(func=cmd_reap_merged)
 
     args = parser.parse_args(argv)
