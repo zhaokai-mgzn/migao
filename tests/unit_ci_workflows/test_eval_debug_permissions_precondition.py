@@ -58,6 +58,26 @@ import assertion_taxonomy as tax  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 TARGET_CASES = ("HR-009", "HR-010")
 AI_AGENT = REPO_ROOT / "backend" / "ai-agent-service"
+EMPLOYEE_TOOL_SRC = "backend/ai-agent-service/app/tools/employee_manage.py"
+
+
+def _tool_action_enum(rel_path: str) -> set:
+    """工具源码里 `VALID_ACTIONS = {...}` 的 action 枚举 —— **源码即真值**，不另列清单。
+
+    与 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（AST 解析）同款口径。
+    HR-009 的改判判据用它回答一个机械问题：「用例声明的那个 action，**工具现在还有吗**？」
+    （#5247 删掉写 action 后，任何仍指向 `create` 的声明都是死引用 ⇒ 恒真空的断言）。
+    """
+    src = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
+    m = re.search(r"VALID_ACTIONS\s*=\s*[\{\[](.*?)[\}\]]", src, re.S)
+    assert m, f"{rel_path} 里找不到 `VALID_ACTIONS = {{...}}`（判据失去目标）"
+    return set(re.findall(r'"([^"]+)"', m.group(1)))
+
+
+def _dead_must_fail_declarations(case: dict, source_actions: set) -> list:
+    """`must_fail` 里声明了、但**工具源码 action 枚举里不存在**的 action（= 恒真空的死引用）。"""
+    return [f"{s.get('tool')}({s.get('action')})" for s in (case.get("must_fail") or [])
+            if isinstance(s, dict) and str(s.get("action")) not in source_actions]
 
 # ── 探针事件的**夹具**（形状取自服务端真实发点，产品锚点见 TestProductAnchors）──
 # 通配回落：`check_permission` 放行 ⇒ `_page_stream` 的成功分支发 tool_call + tool_result。
@@ -815,26 +835,65 @@ class TestRealCasesDeclareThePrecondition:
 class TestHR009AttemptRequirementIsNotDropped:
 
     def test_hr009_keeps_a_scoring_attempt_assertion(self):
-        """HR-009 必须保留「尝试一次」这条**计分**断言。
+        """HR-009 必须保留「尝试一次」这条**计分**断言 —— 但「尝试」的事实面已换位置。
 
         为什么不能"为了与注入面对齐"删掉它：删了 ⇒ `scoring_assertion_count == 0`
         ⇒ 静态门禁判 `CASE-TRUST-EMPTY-ASSERTION`（恒绿形态，门禁已实装、且新增违规阻塞合并），
         且「权限拒绝路径」唯一的 LLM 层证据消失。故冲突只能由**注入面收窄**（#4147）解决。
+
+        原断言（留档）：`assert "create" in str(c["expectations"])` —— 前提 = 越权写
+        `employee_manage(action=create)` **仍是一条可调用的工具声明**。#5247（B 端只读化）
+        把 `create` 从 `employee_manage` 源码的 action 枚举整条删除
+        （`VALID_ACTIONS` 现只剩 `list` / `detail`）⇒「尝试一次越权写」在工具面已不可能发生，
+        原断言的前提被证伪（继续要求它 = 要求用例声明一个死引用）。
+
+        改判（**不是放宽**）——「尝试」这一**用例事实**改由 `user_inputs` 承担，并把
+        「不得谎报 / 不得敷衍」的负向约束**一并**要求（少了它这条用例就只剩"agent 说了话"）：
+        ① 首轮必须仍是那次真实的开账号请求（本用例是一次真实尝试，不是空转）；
+        ② 计分通道不得为空；
+        ③ `forbidden_text` 必须非空，且 `want_text` 必须要求给出**后台**这条正向路径
+           —— 「如实说明 + 引导后台」是 #5247 之后该场景的**唯一正确回答**。
         """
         c = _cases()["HR-009"]
         assert c.get("expectations"), f"HR-009 的计分断言被删空：{c.get('expectations')}"
         assert tax.scoring_assertion_count(c) > 0, (
             "计分断言数 = 0 ⇒ 该用例的 score 通道恒为 1.0（CASE-TRUST-EMPTY-ASSERTION）")
-        assert "create" in str(c.get("expectations")), (
-            f"HR-009 的计分断言不再是「越权 create 尝试一次」：{c.get('expectations')}")
+        attempt = str(c["user_inputs"][0])
+        assert "客服账号" in attempt and "开" in attempt, (
+            f"HR-009 的首轮不再是那次真实的开账号尝试（本用例会退化成空转）：{attempt!r}")
+        assert c.get("forbidden_text"), (
+            f"HR-009 丢了「不得敷衍 / 不得编造」的负向约束：{c.get('forbidden_text')}")
+        assert "后台" in str(c.get("want_text")), (
+            f"HR-009 不再要求给出后台开通路径（#5247：如实说明 + 引导后台是唯一正确回答）："
+            f"{c.get('want_text')!r}")
 
-    def test_hr009_keeps_must_fail_on_the_denied_write(self):
-        """与"尝试一次"**并存**的负向断言：任何一次 create 都不得成功（跨轮机器判定）。"""
+    def test_hr009_must_fail_never_declares_a_deleted_write_action(self):
+        """原断言（留档）：`must_fail` 必须声明 `employee_manage(action=create)`。
+
+        前提被 #5247 证伪：`create` 已从 `employee_manage` 源码的 action 枚举删除 ⇒
+        那条 `must_fail` **恒真空**（永远不可能有一次成功的 `create` 可被否证）——
+        它不是"更强的判据"，而是「不会红的判据」（`migao-acceptance` 的空断言形态）。
+
+        改判成 **fail-closed** 形态（比原断言更强，不是放宽）：
+        · 「越权写不得成功」的机器可判否证改由 `db_verify[employee_absent]` 承担
+          （见本文件 `test_hr009_has_negative_effect_assertion`：它仍是跨轮的效果层断言，
+          且被 Case Trust 的效果层判据认账）；
+        · `must_fail` 里**每一条**声明的 action 都必须**在工具源码的当前枚举里真的存在**
+          —— 若将来有人把 `must_fail: employee_manage(action=create)` 加回来，本断言立刻红
+          （除非同时把 `create` 从源码恢复，那时它才重新是一条有对象的判据）。
+        —— 判据面（源码 action 枚举）不在这里另列一份清单，直接解析工具源码。
+        """
         c = _cases()["HR-009"]
-        must_fail = [m for m in (c.get("must_fail") or [])
-                     if isinstance(m, dict) and str(m.get("tool")) == "employee_manage"]
-        assert must_fail, f"HR-009 缺「越权写不得成功」的跨轮断言：{c.get('must_fail')}"
-        assert "create" in str(must_fail[0].get("action")), must_fail
+        actions = _tool_action_enum(EMPLOYEE_TOOL_SRC)
+        assert actions and "create" not in actions, (
+            f"HR-009 的改判前提已变：employee_manage 源码的 action 枚举含 create：{sorted(actions)}")
+        dead = _dead_must_fail_declarations(c, actions)
+        assert dead == [], (
+            f"HR-009 的 `must_fail` 声明了工具源码里已被删除的 action（死引用 ⇒ 恒真空）：{dead}")
+        # 注入式红证：把已删的 `create` 写回 must_fail ⇒ 同一判据必须报出（证明它不是恒真断言）
+        injected = dict(c, must_fail=[{"tool": "employee_manage", "action": "create"}])
+        assert _dead_must_fail_declarations(injected, actions) == ["employee_manage(create)"], (
+            "注入改前形态后判据仍不报 ⇒ 新判据无判别力（空断言）")
 
     def test_case_records_the_product_side_channel(self):
         """用例必须**登记**冲突的产品侧归属（否则下一个人只看到一条"莫名红"的用例）。"""

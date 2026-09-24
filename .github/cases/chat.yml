@@ -86,7 +86,10 @@ cases:
       - "创建商品，名称测试，价格 100"
       - "算了，不创建了，帮我查查今天的订单都怎么样"
     expectations:
-      - tool: product_manage
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原首条
+      # `- tool: product_manage` 已移除 —— 建品写工具已从 B 端全部 skill 解绑（工具类与
+      # C 端绑定未动）⇒ 保留它 = 永不满足的悬空声明（静态判据还会把本用例判成
+      # 「只能跑小布却未标注 persona」）。断言面按 A 类模板改判为**存活的只读路径** order_query。
       # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
       - tool: order_query
     # 效果层断言（issue #4517 的 burn-down 缴费；门禁 a2 条 / #3778「调用了 ≠ 成了」）：
@@ -130,8 +133,12 @@ cases:
         action: create
     data_checks:
       - "切换由『订单』域触发词命中，而非字符数"
-    skip_reason: ""
-    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）。2026-09-21（issue #4946 的 burn-down 缴费 —— 本 PR 改了 `cases/*.yml` ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 必须**整条销账**）：本用例命中的三条存量违规（CASE-TRUST-NO-EFFECT-ASSERTION / NO-SELF-CLEAN / NO-PRECONDITION-ASSERTION）逐条修掉 —— ① 补 `must_succeed[order_query]` 效果层断言（R2 的诉求是「真的查出来」，裸工具名只证明「调用了」）；② 补 `namespaces[product_name:测试]` + `pre_clean[product_remove:测试]`（并行同名建品用例会污染判据；跑坏留下的同名商品会让基线不为 0 ⇒ 先复位再评，重试前置与首跑等价）；③ 补 `precondition[product_count_for_keyword:测试, expect:0, max_growth:0]`（本用例的意义就是「没有创建」⇒ 基线 0 + 整轮不增长；`expect:0` 依 `precondition_lower_bound` 规则②把存在性下界降为 0）。user_inputs / expectations / forbidden_tools / data_checks / traces 原样未动、无放宽。"
+      # ⚠️ 2026-09-24（issue #5247）：原「未创建」断言的**机器形态**早在 2026-09-14 就升级为
+      # `forbidden_tools[product_manage(action=create)]`（跨轮全程禁用）—— 那条**原样保留**
+      # （解绑后仍成立：永不调用；删它才是放宽）。本条补的是**行为面**的新机制。
+      - "如实说明米宝不做建品（创建商品能力已从米宝下线），并引导顾客到后台「商品」页面操作；不得口头声称已创建/已受理"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明米宝不做建品、引导去后台商品页面」。"
+    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）。2026-09-21（issue #4946 的 burn-down 缴费 —— 本 PR 改了 `cases/*.yml` ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 必须**整条销账**）：本用例命中的三条存量违规（CASE-TRUST-NO-EFFECT-ASSERTION / NO-SELF-CLEAN / NO-PRECONDITION-ASSERTION）逐条修掉 —— ① 补 `must_succeed[order_query]` 效果层断言（R2 的诉求是「真的查出来」，裸工具名只证明「调用了」）；② 补 `namespaces[product_name:测试]` + `pre_clean[product_remove:测试]`（并行同名建品用例会污染判据；跑坏留下的同名商品会让基线不为 0 ⇒ 先复位再评，重试前置与首跑等价）；③ 补 `precondition[product_count_for_keyword:测试, expect:0, max_growth:0]`（本用例的意义就是「没有创建」⇒ 基线 0 + 整轮不增长；`expect:0` 依 `precondition_lower_bound` 规则②把存在性下界降为 0）。user_inputs / expectations / forbidden_tools / data_checks / traces 原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage, order_query] 改判为 [order_query]（存活的只读路径）；must_succeed / required_args / repeat_until 里的 product_manage 同步移除（否则成为永不满足的悬空声明）—— 本用例的 must_succeed 原本只声明 order_query（保留）、required_args / repeat_until 无 product_manage 声明（无需改动）；`forbidden_tools[product_manage(action=create)]` 原样保留（「永不调用」在解绑后仍成立，删它才是放宽）；`data_checks` 增补行为面新机制（如实说明 + 引导后台）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_advanced.py"
@@ -217,16 +224,19 @@ cases:
       - "确认创建"
     expectations:
       - tool: order_query
-      - tool: product_manage
-        args:
-          action: create
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原
+      # `- tool: product_manage(args.action=create)` 已移除 —— 建品写工具已从 B 端全部 skill
+      # 解绑（工具类与 C 端绑定未动）⇒ 保留 = 永不满足的悬空声明；断言面改判为存活的只读路径。
     # 效果层断言（#3778「调用了 ≠ 成了」/ CASE-TRUST-NO-EFFECT-ASSERTION burn-down）：
     # 本条 data_checks 断言的是「创建的 name=星夜, price=299」——那是**效果**，
     # 而 `expectations[product_manage]` 只证明**被调用**。故显式要求 create 成功。
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`must_succeed` 里的
+    # product_manage 已移除（能力从 B 端下线 ⇒ 该效果层声明永不满足）。效果层**不空心地消失**，
+    # 而按 A 类模板**改判到存活的只读路径** `order_query`（口径同同批退役的 CH-002 的
+    # `must_succeed[order_query]`）—— 保留可失败的效果层断言，不是放宽：用户「算了，不创建了」
+    # 的诉求仍有机器判据（查订单真的成功）。
     must_succeed:
-      - tool: product_manage
-        args:
-          action: create
+      - tool: order_query
     data_checks:
       - "创建的 name=星夜, price=299"
       - "打岔前后上下文未丢失"
@@ -251,8 +261,8 @@ cases:
         source: "星夜"
         expect: 0
         max_growth: 1
-    skip_reason: ""
-    merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动；2026-09-18（issue #4200 的潜伏恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「星夜」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（同族实例 PR-008 / PR-016 已实测：逐条计分断言全 passed 而 `score=0.0`）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言原样未动、无放宽。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品并确认建品（星夜）」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明米宝不做建品、引导去后台商品页面」。"
+    merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动；2026-09-18（issue #4200 的潜伏恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「星夜」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（同族实例 PR-008 / PR-016 已实测：逐条计分断言全 passed 而 `score=0.0`）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, product_manage(action=create)] 改判为 [order_query]，`must_succeed` 里的 product_manage 同步移除并**改判到存活的只读路径 order_query**（不留空 —— 效果层断言保留、也避免悬空声明；required_args / repeat_until 本就没有 product_manage 声明）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -312,9 +322,11 @@ cases:
       # 由剩余轮次完整保留。
       - "确认下刚才改的价格生效了（现在是 199 吗）"
     expectations:
-      - tool: product_manage
-        args:
-          action: update
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原
+      # `- tool: product_manage(args.action=update)`（改价写）已移除 —— 改价能力与工具已从
+      # B 端全部 skill 解绑 ⇒ 保留 = 永不满足的悬空声明；断言面按 A 类模板改判为存活的只读
+      # 路径（长上下文 / 跨域回切 / 按名定位同一商品的用例意图不变）。
+      - tool: product_search
       - tool: product_detail
     data_checks:
       - "第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）"
@@ -353,11 +365,12 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    must_succeed:
-      - tool: product_manage
-        action: update
-    skip_reason: ""
-    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。 ｜ 2026-09-21（issue #4921 的 burn-down 缴费，随 #4913 的用例库同步）：补 `must_succeed[product_manage(action=update)]`（效果层 —— 裸工具名期望只证「调用过」，改价 `success=false` 照样判绿）+ `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位的那件商品在且唯一；有同名副本时 agent 会正确地反问，红却表现为「agent 不干活」）+ `namespaces[product_name:遮光窗帘]`（**弱证据**：并行互斥；`product_attr` 无声明式复位类型 ⇒ 「重试前置不等价」这条残留**如实登记**在用例注释里，跟随 #4128）。三条一起把 `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN` **整条销账**；`user_inputs` / `expectations` / `data_checks` 一字未动。"
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`must_succeed` 原声明
+    # `product_manage(action=update)`（改价效果层）—— 能力从 B 端下线后该声明**永不满足**
+    # ⇒ 整条移除（不是放宽：本用例已退役，见 skip_reason；活着的机器断言 =
+    # expectations[product_search, product_detail] + precondition + data_checks）。
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「改价（商品管理）」（product_manage action=update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「搜商品 + 查商品详情（product_search / product_detail）+ 如实说明改价须在后台「商品」页面操作」。"
+    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。 ｜ 2026-09-21（issue #4921 的 burn-down 缴费，随 #4913 的用例库同步）：补 `must_succeed[product_manage(action=update)]`（效果层 —— 裸工具名期望只证「调用过」，改价 `success=false` 照样判绿）+ `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位的那件商品在且唯一；有同名副本时 agent 会正确地反问，红却表现为「agent 不干活」）+ `namespaces[product_name:遮光窗帘]`（**弱证据**：并行互斥；`product_attr` 无声明式复位类型 ⇒ 「重试前置不等价」这条残留**如实登记**在用例注释里，跟随 #4128）。三条一起把 `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN` **整条销账**；`user_inputs` / `expectations` / `data_checks` 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update), product_detail] 改判为 [product_search, product_detail]，`must_succeed` 里的 product_manage 同步移除（否则成为永不满足的悬空声明；required_args / repeat_until 本就没有 product_manage 声明）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"

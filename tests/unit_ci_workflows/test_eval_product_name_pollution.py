@@ -39,6 +39,24 @@
    `precondition[product_count_for_keyword]` ⇒ 前置坏了走
    `precondition_not_applied(declared:…)`（runner 侧），而不是伪装成「agent 不干活」。
 
+## 2026-09-24（#5247 用户裁定「B 端米宝只读化」）：**被测对象退场 ⇒ 判据/夹具改判**
+
+`product_manage(action=create)` 已从 B 端全部 skill 解绑且写 action 从源码删除 ⇒
+库内四条建品写方（`PR-008`/`PR-011`/`PR-012`/`PR-019`）全部退役（`expectations` 改判
+`direct_reply`、`skip_reason` 带 `#5247`）⇒ 本文件两处"活跃态"判据**没有对象**：
+① "已知污染源必须被扫描面认出"（它们不再是建品写方）；② 台账里 `PR-008`/`PR-012` 的
+"清理目标不可解"缺口（写商品属性的期望已删 ⇒ 缺口不复现）。另有三条红证的**写工具槽**
+用的是已不再是写工具的工具（`customer_manage(action=add_tag)` 等）⇒ 夹具不再被认作写用例、
+规则 b2 静默不触发（红证假绿）。**改判口径见各用例 docstring**，共性三条：
+① 判据只针对**存活**对象（退役登记必须"名副其实"：条目仍在库 + 带 `#5247` 理由 +
+   不再带任何写期望、也不再是建品写方形态）；② 原断言保留为**解退役路径**的条件式守卫；
+③ 红证夹具的写工具槽重锚到当前可达的写工具，**缺陷形态逐字保留** —— 判别力由合成夹具承担，
+一条未放宽。
+> ⚠️ 本批暴露的**判据源盲区**（值得所有"是否写方"判据警惕）：`product_manage` 退出
+> `WRITE_TOOLS`（幽灵写工具处置）后，只读 `assertion_taxonomy.write_expectations` 的判据
+> **对本代建品写方失明**（塞回 `product_manage(action=create)` 也认不出）⇒ 本文件因此
+> 保留**两处**判据源（taxonomy 的写期望 + 本地 `_is_create_case` 的建品写方形态）。
+
 文件末尾两组**零 LLM** 证据：① 用 runner 自己的 `check_expectation` 把"同名 2 件 ⇒ agent
 澄清 ⇒ 写工具未调用 ⇒ 判红"这条因果链在纯数据上跑出来（`products=2` 红 / `1` 绿 / `0` 红）；
 ② `product_count_for_keyword` 的两条判据 + fail-closed 兜底 + 单一真相源。
@@ -70,8 +88,18 @@ SEED_PRODUCT_NAMES = (
 #: ⇒ 危害面是"用例之间同名 / 清理互相误删 / 自身重试前置不等价"（`#3800` 家族），
 #: 与"读方首跑前置被污染"（#3835 的病灶）不同族，故**登记不修**、另开跟随单。
 REGISTERED_OWNERSHIP_GAPS = {
-    "PR-008": "声明了自有名「测试窗帘A」但无 pre_clean ⇒ 重试前置（1 件）与首跑（0 件）不等价（#3800）",
-    "PR-012": "声明了自有名「测试窗帘」但无 pre_clean ⇒ 同上（#3800）",
+    # ── 2026-09-24（#5247）**两条存量缺口随被测对象退场**（照实留档，不是放宽）──────────
+    # `PR-008` 原登记：「声明了自有名「测试窗帘A」但无 pre_clean ⇒ 重试前置（1 件）与
+    #   首跑（0 件）不等价（#3800）」；
+    # `PR-012` 原登记：「声明了自有名「测试窗帘」但无 pre_clean ⇒ 同上（#3800）」。
+    # 为什么不再复现（原前提被 #5247 证伪）：B 端建品写能力整体下线 ——
+    #   `product_manage(action=create)` 已从 B 端全部 skill 解绑、写 action 也从源码删除
+    #   ⇒ 两条用例的 `expectations` 改判 `direct_reply`（`skip_reason` 带 #5247）
+    #   ⇒ 它们**不再是建品写方**，`ownership_gaps` 的扫描面不再覆盖它们
+    #   ⇒ 登记的缺口随对象退场而消失（**不是**缺口被修好 —— 能力已不存在）。
+    # 台账按本判据自己的要求（「陈旧条目即红」）收缩；**口径未放宽**：任何**新**的缺口
+    # 仍会让 `new == []` 变红；"扫描面如今为空"由
+    # `test_the_known_polluters_are_covered_by_the_scan` 的前提自证钉住（防假绿）。
     # PR-014 / PR-015 / PR-020 三条缺口**已随 #4371 商品↔加工项解耦注销**（清单只许缩短）：
     # 它们整条用例都建立在「商品持有加工项」（建品时按适用分类过滤加工项 / 加工项自定义价落库）
     # 之上，解耦后用例已从 cases/product.yml 删除 ⇒ 缺口对象不存在，登记随之移除。
@@ -90,6 +118,21 @@ REGISTERED_OWNERSHIP_GAPS = {
 #: 判据能认出「写种子名 + product_dedupe」这一形态，扫描面本身由
 #: `test_no_create_case_writes_a_seed_product_name` 扫**全库**建品用例。
 SEED_COLLISION_FIXED = ("PR-011", "PR-019")
+
+#: **#5247 退役的建品写方** = 原「已知污染源」名册的退役去向（值 = 退役理由；**只许缩短**）。
+#: 为什么需要它：`test_the_known_polluters_are_covered_by_the_scan` 的原口径是
+#: 「已知污染源必须被 `_is_create_case` 认出，否则主判据恒绿空跑」—— #5247 把 B 端建品写
+#: 能力整体下线（`product_manage(action=create)` 从全部 B 端 skill 解绑 + 写 action 从源码
+#: 删除）⇒ 两条用例的 `expectations` 改判 `direct_reply` ⇒ 它们**不再是建品写方**
+#: （`_is_create_case` 对它们本就该返回 False）⇒ 原断言对"活跃态"仍成立、对"退役态"
+#: **没有对象**。改判为三问（退役登记名副其实 + 存活建品写方集必须为空 + 解退役路径
+#: 扫描面必须重新认出），三问合起来**比原断言更强** —— 见该用例 docstring。
+#: **不是放宽、也不是藏身处**：把真写方塞进本登记（留着写期望却登记为"已退役"）会让
+#: 该用例的第一问直接变红。
+RETIRED_POLLUTERS_5247 = {
+    "PR-011": "#5247 建品写能力从 B 端下线 ⇒ 退役（expectations 改判 direct_reply，不再是建品写方）",
+    "PR-019": "#5247 建品写能力从 B 端下线 ⇒ 退役（expectations 改判 direct_reply，不再是建品写方）",
+}
 
 
 def _load_runner():
@@ -252,22 +295,85 @@ class TestWriterOwnsItsProductName:
             f"按名读它的用例会岔路判红（#3835）：{bad}")
 
     def test_the_known_polluters_are_covered_by_the_scan(self):
-        """扫描面自证：已知污染源必须**被判据覆盖到**（否则主判据是空跑）。
+        """扫描面自证：**已知建品写方**必须被判据覆盖到（否则主判据是空跑）。
 
         `migao-acceptance`「绿了但没跑」：若 `_is_create_case` 认不出它们，
         主判据恒绿、判别力为 0。
+
+        原口径（#3835）：`PR-011`/`PR-019` 是**存活**污染源 ⇒ 直接断言
+        `_is_create_case(by[cid])` 为真（认不出 = 扫描面失效）。
+
+        #5247 证伪的前提：B 端建品写能力整体下线 ⇒ 两条用例的 `expectations` 改判
+        `direct_reply`、`skip_reason` 带 `#5247` ⇒ 它们**不再是建品写方**，原断言的活跃态
+        对象不存在（`_is_create_case` 对它们本就该返回 False）。改判为三问，全部 fail-closed：
+          ① 退役登记**名副其实**：条目仍在库（退役 ≠ 删除）+ 确实带 `#5247` 退役理由 +
+             不再带**任何写期望**、也不再是**建品写方形态**。两处判据源**都必须有**：
+             `assertion_taxonomy.write_expectations`（当前可达写工具 ⇒ 堵住"塞回
+             `notification_manage(action=mark_read)` 之类的真写期望"）+ 本地
+             `_is_create_case`（**建品写方形态**）—— 只靠前者会漏：`product_manage` 已随
+             #5247 退出 `WRITE_TOOLS`（幽灵写工具处置），把
+             `{"tool": "product_manage", "args": {"action": "create"}}` 塞回来
+             `write_expectations` **认不出来**，而它恰恰是"混进退役登记"最可能的形态；
+             ⇒ 堵死"把真写方塞进退役登记蒙混过关"；
+          ② 扫描面必须认得**所有当前存活**的建品写方 ⇒ 现存库内存活建品写方集**必须为空**
+             （#5247 后建品写只可能来自 B 端）——若某天写方回归/新写方未登记，本条先红，
+             逼人回来重新核对扫描面，而不是让主判据在空扫描面上假绿；
+          ③ **解退役路径**：把条目的写期望在内存里还原成改前形态，扫描面必须立刻重新认出它
+             —— 这正是原断言的判别力，逐字保留为条件式守卫（不动用例库）。
         """
         by = {c["id"]: c for c in _all_cases()}
-        missing = [cid for cid in SEED_COLLISION_FIXED if not _is_create_case(by[cid])]
-        assert missing == [], f"判据认不出这些建品用例（扫描面失效）：{missing}"
+        tax = _taxonomy()
+        # ① 退役登记名副其实
+        assert set(RETIRED_POLLUTERS_5247) == set(SEED_COLLISION_FIXED), (
+            "退役登记与「已修的种子撞名实例」名册漂移（两处必须同集合，防单一事实源分叉）")
+        for cid, why in sorted(RETIRED_POLLUTERS_5247.items()):
+            case = by.get(cid)
+            assert case, (
+                f"{cid} 已从用例库删除 —— 退役只改断言面，条目与理由必须留档（{why}）")
+            skip = str(case.get("skip_reason") or "")
+            assert "#5247" in skip, (
+                f"{cid} 登记为 #5247 退役却未写明理由（{skip[:60]!r}）—— 退役必须可追溯")
+            assert not tax.write_expectations(case), (
+                f"{cid} 仍在退役登记里却**带着写期望**（{tax.write_expectations(case)}）"
+                "⇒ 真写方被塞进退役登记蒙混过关")
+            assert not _is_create_case(case), f"{cid} 仍被认作建品写方（退役不彻底）"
+        # ② 扫描面必须认得所有**当前存活**的建品写方 ⇒ 该集合必须为空
+        live = sorted(cid for cid, c in by.items()
+                      if _is_create_case(c) and not str(c.get("skip_reason") or ""))
+        assert live == [], (
+            "现存库内仍有**存活**的建品写方 —— B 端建品写能力已随 #5247 下线，存活集必须为空；"
+            "出现即说明建品写能力回归（或新写方未登记）⇒ 请回到本判据重新核对扫描面与台账，"
+            f"不要直接删本条断言：{live}")
+        # ③ 解退役路径：改前形态必须被扫描面重新认出（原断言，条件式保留）
+        for cid in sorted(RETIRED_POLLUTERS_5247):
+            revived = dict(by[cid])
+            revived["skip_reason"] = ""
+            revived["expectations"] = [{"tool": "product_manage", "args": {"action": "create"}}]
+            assert _is_create_case(revived), (
+                f"判据认不出这些建品用例（扫描面失效）：['{cid}'] —— 解退役（写期望还原为"
+                "改前形态）后仍认不出 ⇒ 主判据 `bad == []` 恒绿、判别力为 0")
 
     def test_ownership_gaps_match_the_registered_ledger(self):
         """存量缺口必须与登记清单**逐条相等** —— 清单只许缩短（新增即红）。
 
         这不是"豁免"：任何**新**的所有权缺口都会让本断言红；修好一条却没同步清单也会红
         （防债务僵化，同 `.github/case-trust-baseline.json` 的口径）。
+
+        ⚠️ 2026-09-24（#5247）：台账里 `PR-008`/`PR-012` 两条**已按本条判据自己的要求
+        移除**（"这些已登记的缺口已不复现 ⇒ 必须从 `REGISTERED_OWNERSHIP_GAPS` 移除"）——
+        它们的缺口建立在"写商品属性的建品流程"上，而 `product_manage(action=create)` 已从
+        B 端下线 ⇒ 用例退役、缺口不复现（留档见台账旁的注释）。**口径未放宽**：
+        `new == []` / `stale == []` 两条 fail-closed 语义逐字保留，且下面加了**前提自证**，
+        让"扫描面如今为空"这件事显式化（否则本判据会在空扫描面上假绿）。
         """
-        live = ownership_gaps(_all_cases())
+        by = {c["id"]: c for c in _all_cases()}
+        live = ownership_gaps(list(by.values()))
+        # 前提自证（防「绿了但没跑」）：本判据的**扫描面**（建品写方）已随 #5247 全域退役 ⇒
+        # `live` 必为空集。若某天存活建品写方回归，这条前提先红，逼你回来重新登记台账 ——
+        # 而不是让下面的 `new == []` 在空扫描面上静默通过。
+        assert [cid for cid, c in by.items()
+                if _is_create_case(c) and not str(c.get("skip_reason") or "")] == [], (
+            "存活建品写方已回归 —— 台账（`REGISTERED_OWNERSHIP_GAPS`）必须重新核对并登记缺口")
         new = sorted(set(live) - set(REGISTERED_OWNERSHIP_GAPS))
         assert new == [], (
             "出现**未登记**的建品用例名字所有权缺口（#3835 / `#3800`）：\n  - "
@@ -392,20 +498,31 @@ class TestCleanupTargetResolvabilityScope:
         return {v["code"] for v in tax.judge_case(case, catalog=self._catalog())}
 
     def test_case_owned_cleanup_target_is_exempt(self):
-        """**改后绿**：清理自有名（名字来自本用例 `namespaces` 声明）⇒ 不判不可解析。"""
+        """**改后绿**：清理自有名（名字来自本用例 `namespaces` 声明）⇒ 不判不可解析。
+
+        ⚠️ 2026-09-24（#5247）夹具重锚：写工具槽由 `product_manage(action=create)` 换成
+        **当前可达**的写工具 `notification_manage(action=mark_read)` —— 否则夹具不被
+        `judge_case` 认作写用例、规则 b2 根本不执行 ⇒ 本用例"不判不可解析"恒真（假绿）。
+        缺陷形态（`pre_clean` 点名一个种子真值里解析不到的目标）逐字保留。
+        """
         case = {
             "id": "FAKE-OWN-1", "title": "（夹具）清自己的产物", "persona": "mibao",
             "user_inputs": ["录入这个商品，名称E2E建品流程样品帘，价格 100"],
             "namespaces": ["product_name:E2E建品流程样品帘"],
-            "expectations": [{"tool": "product_manage", "args": {"action": "create"}}],
-            "must_succeed": [{"tool": "product_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "product_remove",
                            "product_keyword": "E2E建品流程样品帘"}],
         }
+        tax = _taxonomy()
+        # 非空跑自证（防同款夹具再次静默失效）：夹具必须**真的**被认作写用例 ——
+        # 否则规则 b2 不执行，下面那条"不判不可解析"就是恒真断言（绿了但没跑）。
+        assert tax.write_expectations(case), (
+            "夹具的写工具槽失效（不在 `WRITE_TOOLS` / `WRITE_TOOL_ACTIONS` 里）⇒ "
+            "规则 b2 不会执行，本用例会假绿")
         assert self.CODES not in self._codes(case), "用例自有名的清理目标被误判为不可解析"
         # 非空跑自证：**裸的可解析性判据本身就返回 False** —— 差别完全由豁免产生
-        tax = _taxonomy()
         assert tax.resolve_pre_clean_target(
             "product_remove", "product_keyword", "E2E建品流程样品帘", self._catalog()) is False, (
             "夹具选错了（这个目标竟然在种子里可解析）⇒ 本用例证明不了豁免在起作用")
@@ -413,13 +530,22 @@ class TestCleanupTargetResolvabilityScope:
             case, "product_remove", "E2E建品流程样品帘") is True
 
     def test_unowned_cleanup_target_is_still_blocked(self):
-        """**fail-closed**：清理一个**既不在种子、也没被自己声明**的名字 ⇒ 照样判红。"""
+        """**fail-closed**：清理一个**既不在种子、也没被自己声明**的名字 ⇒ 照样判红。
+
+        ⚠️ 2026-09-24（#5247）夹具重锚（**根因**）：原写工具槽 `product_manage(action=create)`
+        已从 B 端下线、且不再是 `WRITE_TOOLS` 成员 ⇒ 夹具不被认作写用例 ⇒ 规则 b2 不触发
+        ⇒ 本红证**变成假绿**（改判前实测：`assert CODES in set()` 失败）。改用当前可达的写
+        工具 `notification_manage(action=mark_read)`（B 端可达；夹具自带 `persona: mibao`
+        故不引入双端 persona 违规）。**缺陷形态逐字保留**：`pre_clean[product_remove]
+        .product_keyword = '幽灵商品名'` 既不在种子（`catalog.products = {遮光窗帘}`）
+        也不在本用例 `namespaces` 声明里 ⇒ 必须继续判 `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE`。
+        """
         case = {
             "id": "FAKE-OWN-2", "title": "（夹具）清别人的名字", "persona": "mibao",
             "user_inputs": ["录一个商品"],
             "namespaces": ["product_name:甲乙丙帘"],
-            "expectations": [{"tool": "product_manage", "args": {"action": "create"}}],
-            "must_succeed": [{"tool": "product_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "product_remove", "product_keyword": "幽灵商品名"}],
         }
@@ -431,13 +557,20 @@ class TestCleanupTargetResolvabilityScope:
 
         反例锚点：`employee_reactivate{employee_name: 王五}`（准备型）—— 若把它也豁免，
         就把 HR-003 这类正确用例的护栏拆掉了。
+
+        ⚠️ 2026-09-24（#5247）夹具重锚：写工具槽 `employee_manage(action=toggle_status)`
+        已随"8 个工具收窄为只读"（写 action 从源码删除）退出 `WRITE_TOOL_ACTIONS` ⇒ 夹具
+        不再被认作写用例、规则 b2 不触发（红证假绿）。改用当前可达的写工具
+        `notification_manage(action=mark_read)`。**缺陷形态逐字保留**：准备型
+        `pre_clean[employee_reactivate].employee_name = '李四'` 虽在 `namespaces` 里声明，
+        仍必须按种子真值核对（种子里只有「王五」）⇒ 继续判红。
         """
         case = {
             "id": "FAKE-OWN-3", "title": "（夹具）准备型不复位", "persona": "mibao",
             "user_inputs": ["恢复王五"],
             "namespaces": ["employee_name:李四"],
-            "expectations": [{"tool": "employee_manage", "args": {"action": "toggle_status"}}],
-            "must_succeed": [{"tool": "employee_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "employee_reactivate", "employee_name": "李四"}],
         }
@@ -445,13 +578,23 @@ class TestCleanupTargetResolvabilityScope:
             "准备型的点名目标被这次豁免放过 —— 豁免范围越界（会拆掉 HR-003 的护栏）")
 
     def test_cu_003_shape_still_blocked(self):
-        """历史形态（`CU-003` 的 `VIP2活跃` ∉ 种子标签目录）必须**继续**判红。"""
+        """历史形态（`CU-003` 的 `VIP2活跃` ∉ 种子标签目录）必须**继续**判红。
+
+        ⚠️ 2026-09-24（#5247）夹具重锚（**根因**）：原写工具槽
+        `customer_manage(action=add_tag)` 已随"8 个工具收窄为只读"删除（该工具现只有
+        `{list, detail, list_tags}`）⇒ 夹具不被认作写用例、规则 b2 不触发（红证假绿：
+        实测 `assert CODES in set()` 失败）。改用当前可达的写工具
+        `notification_manage(action=mark_read)`。**缺陷形态逐字保留**：`pre_clean`
+        `[customer_tag_remove].tag_name = 'VIP2活跃'` 在种子标签目录（`catalog
+        .customer_tags = {VIP2}`）里解析不到，且它不在 `namespaces` 声明里（声明的只有
+        手机号）⇒ 必须继续判红。
+        """
         case = {
             "id": "FAKE-CU-003", "title": "（夹具）CU-003 形态", "persona": "mibao",
             "user_inputs": ["给张三加VIP2活跃标签", "确认"],
             "namespaces": ["customer_phone:13800138000"],
-            "expectations": [{"tool": "customer_manage", "args": {"action": "add_tag"}}],
-            "must_succeed": [{"tool": "customer_manage"}],
+            "expectations": [{"tool": "notification_manage", "args": {"action": "mark_read"}}],
+            "must_succeed": [{"tool": "notification_manage"}],
             "precondition": [{"type": "product_count_for_keyword", "source": "x", "expect": 0}],
             "pre_clean": [{"type": "customer_tag_remove", "customer_keyword": "13800138000",
                            "tag_name": "VIP2活跃"}],

@@ -30,6 +30,10 @@
    `xiaobu-acceptance` 的注种子必须吃**单值** persona 输入（一次 run 一套栈）—— 混栈即红；
 4. **归属锁定**：CH-010 只属 xiaobu、OR-016 只属 mibao（后者是"双端点名商品用例
    已被语义收口归到 B 端"的证据，防止有人把它挪回 C 端重演 0 分）。
+   ⚠️ 2026-09-24（#5247，详见 `TestCasePersonaOwnershipLock`）：OR-016 已退役
+   （它断言的「下单 confirm 前询问加工项」依赖 `order_create`，而写工具已从 B 端全部
+   skill 解绑）⇒ 退役条目不进任何 persona 的可跑集，该锁改判为
+   「**退役不改端归属** + 解退役必须回到 mibao 可跑集 + 任何状态都不得进 xiaobu」。
 
 ## 2026-09-17 / 2026-09-21：第三个 workflow 先「移出」、后「整体删除」
 
@@ -803,7 +807,12 @@ class TestCasePersonaOwnershipLock:
     """归属锁定：这两个用例分别是两端"错栈即 0 分"的证据，不许被挪到另一端。"""
 
     @staticmethod
-    def _owners() -> dict:
+    def _library() -> tuple:
+        """载入 `(用例字典列表, persona 过滤器模块)` —— 两者同源，供本类各判据复用。
+
+        「条目仍在库」与「在哪端的可跑集里」必须读**同一份**渲染结果，否则容易出现
+        "这条判据看的是 A 份、那条看的是 B 份"的口径漂移。
+        """
         sys.path.insert(0, str(REPO_ROOT / ".github"))
         sys.path.insert(0, str(REPO_ROOT / "tests" / "agent_eval"))
         render_spec = importlib.util.spec_from_file_location(
@@ -822,6 +831,11 @@ class TestCasePersonaOwnershipLock:
         filter_spec.loader.exec_module(filt)
 
         cases = render.load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
+        return cases, filt
+
+    @classmethod
+    def _owners(cls) -> dict:
+        cases, filt = cls._library()
         return {
             p: {c.get("id", "") for c in filt.select_cases_for_persona(cases, p)}
             for p in ("mibao", "xiaobu")
@@ -837,9 +851,49 @@ class TestCasePersonaOwnershipLock:
         )
 
     def test_or016_is_mibao_only(self):
-        """OR-016 点名 B 端 fixture 商品 → 归 B 端栈（这正是"错栈即 0 分"的反面证据）。"""
+        """OR-016 归属锁：**米宝专属**（它点名 B 端 fixture 商品）—— 退役**不改端归属**。
+
+        原口径：`OR-016` 必须在 `mibao` 可跑集里、且不在 `xiaobu` 可跑集里（"错栈即 0 分"
+        的反面证据：它点名「2699系列雪尼尔窗帘面料」= B 端 fixture，跑 C 端栈必然搜不到）。
+
+        #5247 证伪的前提：`OR-016` 断言的「下单 confirm 前主动询问加工项」依赖写工具
+        `order_create`，而它已从 B 端全部 skill 解绑 ⇒ 用例**退役**
+        （`skip_reason` = `[backend-contract] [#5247] …`）。退役条目**不进任何 persona 的
+        可跑集** ⇒ 原断言的"活跃态"**没有被测对象**（不是判据失效，是对象退场）。
+
+        为什么改判不是放宽：原断言对"活跃态"**仍是要求**，故保留为**解退役路径**的条件式
+        守卫；同时补上三条退役态也必须成立的判据，合起来**比原断言更强**：
+          ① 条目仍在用例库（退役 ≠ 删除 —— 删掉就没人记得这条能力去哪了）；
+          ② 退役理由必须写明 `#5247` 且走 `[backend-contract]` 计分通道（不是静默跳过）；
+          ③ 端归属不得被改判：`persona == "mibao"` —— 本锁防的正是"退役时顺手把它搬到
+             C 端"（改判 `xiaobu` 或抹成空都会让本条红）；
+          ④ 解退役路径（原断言逐字保留为条件式）：`skip_reason` 一旦为空，它必须**重新**
+             出现在 `mibao` 可跑集里；
+          ⑤ 任何状态下都**不得**出现在 `xiaobu` 可跑集（原第二条断言未放宽）。
+        """
         owners = self._owners()
-        assert "OR-016" in owners["mibao"], "OR-016 不在 mibao 可跑集 —— 守卫前提失效"
+        cases, _ = self._library()
+        case = next((c for c in cases if c.get("id") == "OR-016"), None)
+        # ① 退役 ≠ 删除
+        assert case, (
+            "OR-016 条目已从用例库消失 —— 退役只改断言面，条目与理由必须留档（#5247）")
+        skip = str(case.get("skip_reason") or "")
+        # ② 退役理由可追溯（#5247 裁定 + `[backend-contract]` 计分通道）
+        if skip:
+            assert skip.startswith("[backend-contract]"), (
+                "OR-016 的退役理由不在 `[backend-contract]` 计分通道"
+                f"（静默跳过形态）：{skip[:60]!r}")
+            assert "#5247" in skip, (
+                "OR-016 的退役理由未写明 #5247 —— 退役必须有可追溯的裁定与理由："
+                f"{skip[:80]!r}")
+        # ③ 退役不改端归属（本锁的核心：防"静默搬到 C 端"）
+        assert case.get("persona") == "mibao", (
+            "OR-016 的端归属被改判 —— 退役**不改端归属**（本锁防的正是「静默搬到 C 端」；"
+            f"persona={case.get('persona')!r}）")
+        # ④ 解退役路径守卫：活跃态必须回到 mibao 可跑集（原断言，逐字保留为条件式）
+        assert skip or "OR-016" in owners["mibao"], (
+            "OR-016 已解退役（skip_reason 为空）却不在 mibao 可跑集 —— 守卫前提失效")
+        # ⑤ 原断言：不得出现在 C 端可跑集（任何状态下都成立）
         assert "OR-016" not in owners["xiaobu"], (
             "OR-016 出现在 xiaobu 可跑集 —— 它点名「2699系列雪尼尔窗帘面料」（B 端 fixture），"
             "跑 C 端栈必然搜不到（#3496 归因的假失败形态）"

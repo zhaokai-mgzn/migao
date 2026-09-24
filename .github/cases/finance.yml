@@ -8,7 +8,7 @@ domain: finance
 
 cases:
   - id: FN-001
-    title: "资金流水查询与登记"
+    title: "资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判）"
     domains:
       - finance
     tier: normal
@@ -20,13 +20,17 @@ cases:
       - finance.auto-record
       - finance.txn-no
     user_inputs:
-      - "登记一笔线下收款，金额 88 元，微信支付"
-      - "确认"
+      # 2026-09-24（issue #5247，B 端只读化）：原两轮（登记 + 确认）随写能力下线改判为**只读查询** ——
+      # `finance_api` 的写 action `create_transaction` 已从源码删除（工具收窄为只读
+      # {get_summary, get_transactions, get_reconciliation}）。
+      - "查一下最近的资金流水"
     expectations:
+      # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create_transaction` 已从源码删除 ⇒
+      # 机器可判字段改判到**存活的只读路径** `get_transactions`（写 action 不得残留：悬空声明
+      # 永不满足，会阻塞 CI 的 action 绑定判据）。
       - tool: finance_api
         args:
-          action: create_transaction
-          type: income
+          action: get_transactions
     # ── 断言可执行化：堵住「工具失败 100%、用例仍 100% 绿」的假绿（issue #3558 / #3548）──
     # 假绿实证（2026-09-14 云测试环境真实重放，缺陷部署期）：`finance_api.py:202` 用 `json=`
     # 调自研客户端（`AdminApiClient.post` 只收 `json_data`）→ 必抛 TypeError → 线下收支登记
@@ -43,6 +47,9 @@ cases:
     # 有效性验证（两个方向都跑过，见 PR body）：
     #   · 缺陷态（线上真实重放 + 把线上失败形状喂给 runner 真实断言函数）→ `must_succeed`/`output_verify` 双红；
     #   · 修复态（#3548 合并部署后真实重放）→ 双绿 100%。
+    # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[finance_api]` **保留**（只读工具的
+    # 成功层断言是合法加强，PG-015 有先例）—— 读的仍是 `tool_result.success`；本用例已改判为只读
+    # 查询 ⇒ 它现在证的是「查询真的成功」（原「登记真的成功」的写语义已随写 action 下线消失）。
     must_succeed:
       - tool: finance_api
     output_verify:
@@ -50,30 +57,36 @@ cases:
       # （create_transaction / get_summary / get_transactions / get_reconciliation），
       # 缺 action 会按**工具名**取首个成功 payload → 可能核到别的 action 的返回（假红/假绿双面）。
       - tool: finance_api
-        action: create_transaction
+        action: get_transactions
         expect:
-          transactionNo: "__nonempty__"
-          type: "income"
-          amount: 88
-          status: "success"
+          # 只读查询的**真实 payload** = `finance_api._get_transactions` 的
+          # `ToolResult.data = {"items": [...], "total": N}`（源码口径，逐字核对过）⇒ 断言
+          # 「列表字段存在且非空」（同 OR-001 / PR-001 的 `orders: __nonempty__` 形态）。
+          # ⚠️ 刻意**不**断言 `total`：它是随栈/时间窗变化的数值（工具自动补「本月1号~今天」的
+          # 起止日期），写死常量 = 依赖栈的恒红判据；而 `__nonempty__` 落在数值 0 上同样会假红。
+          items: "__nonempty__"
     data_checks:
-      - "流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）"
-      - "登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红"
+      - "流水列表逐值来自服务端（finance_api get_transactions 的成功返回体由 output_verify 机器核对：items 非空）—— 只读：不得声称已登记 / 已入账（原第 1 条「流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success」是写路径的产出断言，已随 #5247 写能力下线改判）"
+      - "查询失败时不得声称查到：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红（原第 2 条「登记失败时不得声称成功」同口径改判；只读用例不得声称已登记）"
       # ── 前置自断言（issue #4967 的 case-trust burn-down 缴费；只加不改）──
       # 本用例是**写类**（create_transaction 落一笔线下收款）⇒ 规则 f 要求对自己的**前置**
       # 给出**可判定**断言：前置悄悄不成立时红的表现是 `unmatched expectation`
       # （看起来像「米宝不会登记收款」，归因全错）。机器计分口径 = 含 `success=true`
       # ⇒ 前置不成立时**会红**（纯散文的「前置：…」不计分，等于没断言）。
-      - "前置：财务写面可用且本次登记可落库 —— 工具返回 success=true 即证前置成立（机器计分口径，同 must_succeed）"
+      # ⚠️ 2026-09-24（issue #5247，B 端只读化）：以上「写类」前提已随写 action 下线消失 ⇒
+      # 本格（机器计分口径 = 含 `success=true`）改判为**只读面**的前置。
+      - "前置：财务查询面可用 —— 查询返回 success=true 即证前置成立（机器计分口径，同 must_succeed；原「财务写面可用且本次登记可落库」随写 action 下线必然为假 ⇒ 改判为只读面）"
     # ── 自清理声明（弱证据档，**如实登记**）──
     # 规则「写类用例必须声明自清理」的现有出口只有两类：① `pre_clean` 把目标状态**复位**；
     # ② `namespaces` 只保证**并行互斥**（弱证据：不解决重试前置）。本用例走 ②：
     # 夹具层**没有**「删掉这笔线下收款」的复位动作（`_CLEAN_TYPES` 里无对应类型）
     # ⇒ 如实登记为弱证据，不假称已复位。先例：#4968（CT-002）/ #4969（OR-007）/ #4960/#4961（CU-004）。
+    # ── 2026-09-24（issue #5247，B 端只读化）：本用例改判为只读查询（不再落任何流水）⇒ 该
+    # `namespaces` 声明成为**历史残留**；按「与本次改动无关的断言一个字不动」保留原样，只加本注释。
     namespaces:
       - "finance_txn:88"
     skip_reason: ""
-    merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严）"
+    merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`finance_api` 收窄为只读（写 action `create_transaction` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `finance_api(action=create_transaction, type=income)` → `finance_api(action=get_transactions)`；`output_verify` 由 `create_transaction` 的成功返回体（transactionNo / type / amount / status）→ `get_transactions` 的**真实 payload** `items` 非空（「列表字段存在」形态，同 OR-001 / PR-001）；`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：`must_succeed[finance_api]` 保留 —— 只读工具的成功层断言是合法加强，PG-015 有先例；写路径的产出断言换成只读列表字段断言，并新增「不得声称已登记 / 已入账」的正向约束）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"

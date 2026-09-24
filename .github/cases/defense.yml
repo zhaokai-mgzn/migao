@@ -626,13 +626,22 @@ cases:
       - "查客户第3次"
       - "查客户第4次"
       - "查客户第5次"
-      - "给张三下遮光窗帘的订单"
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：末轮原为
+      # 「给张三下遮光窗帘的订单」（order_create，已只属 C 端）⇒ 静态判据把整条用例判成
+      # 「只能跑小布却未标注 persona」，成为 CI 阻塞。改判为**双端共享**的 `product_detail`
+      # 只读核对：本用例证的是「压缩后上下文复用」，与写无关 ⇒ 语义不变，且继续保持
+      # 「双端可跑」语义（无需标注 persona）。
+      - "看看遮光窗帘的详情"
     expectations:
-      - tool: order_create
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原末轮写步断言
+      # `order_create`（已只属 C 端）⇒ 静态判据把整条用例判成「只能跑小布却未标注 persona」，
+      # 成为 CI 阻塞；改判为**双端共享**的只读工具 `product_detail`（本用例证的是压缩后上下文
+      # 复用，与写无关：语义不变，也不再需要 persona 标注）。
+      - tool: product_detail
     data_checks:
       - "消息超过 max_recent=12 后触发压缩（原用例写 20 轮已校准）"
       - "上下文包含历史摘要"
-      - "最后一步正确复用前几轮的 UUID"
+      - "最后一步正确复用前几轮解析出的商品（遮光窗帘），体现压缩后上下文未丢"
     # ── 前置自断言 + 自清理 + 效果层（issue #4992 的 case-trust burn-down 缴费）────────────
     # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**）：
     #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION ② CASE-TRUST-NO-SELF-CLEAN ③ CASE-TRUST-NO-EFFECT-ASSERTION
@@ -657,10 +666,13 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`must_succeed` 由
+    # order_create 改判为**双端共享**的 product_detail（原写工具已从 B 端解绑 ⇒ 保留 =
+    # 永不满足的悬空声明；效果层不落空：「末轮真的把商品查出来了」仍有 success 断言）。
     must_succeed:
-      - tool: order_create
+      - tool: product_detail
     skip_reason: "需要多轮对话，跑一遍耗时较长"
-    merge_log: "eval L001 独有；压缩阈值按代码校准 20→12 ｜ 2026-09-21（issue #4992 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位下单对象，同名副本会让 agent 合理地要求澄清而报告只表现为「agent 不干活」）+ `must_succeed[order_create]`（效果层，「调用了 ≠ 成了」）+ `namespaces[customer_phone:13800138000]`（**弱证据**，如实登记：夹具层无「删掉本用例建的那笔订单」的复位动作）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
+    merge_log: "eval L001 独有；压缩阈值按代码校准 20→12 ｜ 2026-09-21（issue #4992 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位下单对象，同名副本会让 agent 合理地要求澄清而报告只表现为「agent 不干活」）+ `must_succeed[order_create]`（效果层，「调用了 ≠ 成了」）+ `namespaces[customer_phone:13800138000]`（**弱证据**，如实登记：夹具层无「删掉本用例建的那笔订单」的复位动作）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`order_create` 从 B 端解绑（只剩 C 端）⇒ 末轮写步改判为双端共享的 `product_detail` 只读核对（否则静态判据把本用例判成「只能跑小布却未标注 persona」，成为 CI 阻塞；不改语义：本用例证的是压缩后上下文复用，与写无关）。expectations / must_succeed 由 order_create 改判为 product_detail，末轮 user_inputs 由「给张三下遮光窗帘的订单」改为「看看遮光窗帘的详情」，data_checks 第 3 条同步改判（「复用前几轮的 UUID」→「复用前几轮解析出的商品（遮光窗帘）」）；namespaces / precondition / skip_reason / truths_ref / 其余 user_inputs 原样未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_context_manager.py"
@@ -758,7 +770,11 @@ cases:
       - "（长会话）确认补充商品属性"
       - "（长会话，>20 条消息）确认"
     expectations:
-      - tool: product_manage
+      # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原 `- tool: product_manage`
+      # 已移除 —— 建品/补商品属性的写工具已从 B 端全部 skill 解绑 ⇒ 保留 = 永不满足的悬空声明；
+      # 断言面按 A 类模板改判为**如实说明 + 引导去后台页面**（仓内既有伪工具形态 `direct_reply`，
+      # 用法同 DF-016 / MC-021）。
+      - tool: direct_reply
     # ── 效果层 + 自清理 + 前置自断言（2026-09-23 case-trust burn-down 缴费，metric=entries
     #    ⇒ 必须**整条销账**；先例 = CU-005 的 #5039 缴费）──
     # ① 效果层（`must_succeed`）：「调用了 ≠ 成了」（#3778）—— 本用例的**被测对象正是确认守卫**：
@@ -766,9 +782,10 @@ cases:
     #    ⇒ 写工具**根本不会被调用** ⇒ 光有 `expectations[product_manage]` 时，报告上只表现为
     #    `unmatched expectation`（看起来像「agent 不干活」），而真正的根因（守卫被污染）看不见。
     #    加上它之后：「确认被识别 ⇒ 写真的执行了」这条因果链才有可失败判据。
-    must_succeed:
-      - tool: product_manage
-        action: update
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原
+    # `must_succeed[product_manage(action=update)]` 已**整条移除** —— 写能力从 B 端下线后该
+    # 效果层声明永不满足（不是放宽：用例已退役，见 skip_reason；被保护的行为仍在 =
+    # 「如实说明 + 引导后台」由 `expectations[direct_reply]` + 两条 data_checks 承载）。
     # ② 自清理（`namespaces`，**如实登记为弱证据**）：taxonomy 明列的档位 —— 只保证并行互斥，
     #    不解决重试前置。本用例的写目标是**共享夹具商品**，而夹具层**没有**商品属性域的复位动作
     #    （`product_status_restore` 只管上下架状态、不管属性）⇒ 这里只能登记弱证据，不发明类型。
@@ -782,8 +799,8 @@ cases:
     data_checks:
       - "会话消息数 >20 时最后一条用户消息content不被追加任何提示文本（无「当前对话已持续」字样）"
       - "长会话下确认词仍被 _is_explicit_confirmation 识别为明确确认（长度不超限）"
-    skip_reason: ""
-    merge_log: "2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[product_manage(action=update)]`（效果层：「调用了 ≠ 成了」—— 守卫被污染时写工具**根本不会被调用**，只表现为 unmatched expectation）+ `namespaces[product_name:遮光窗帘]`（弱证据，如实登记：夹具层无商品属性域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。`user_inputs` / `expectations` / 两条 `data_checks` / `skip_reason` / `traces` **一字未动**、断言强度不放宽"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「建品确认卡」（product_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「如实说明 + 引导去后台页面」（direct_reply）。"
+    merge_log: "2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[product_manage(action=update)]`（效果层：「调用了 ≠ 成了」—— 守卫被污染时写工具**根本不会被调用**，只表现为 unmatched expectation）+ `namespaces[product_name:遮光窗帘]`（弱证据，如实登记：夹具层无商品属性域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。`user_inputs` / `expectations` / 两条 `data_checks` / `skip_reason` / `traces` **一字未动**、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑（建品/补商品属性的写能力与工具全部下线）⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage] 改判为 [direct_reply]（如实说明 + 引导后台，仓内既有伪工具形态），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）；user_inputs / 两条 data_checks / `preconditions`（声明层散文前置）/ namespaces / traces 原样未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"

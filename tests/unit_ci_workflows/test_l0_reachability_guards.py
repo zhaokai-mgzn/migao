@@ -277,15 +277,34 @@ def test_every_registered_write_tool_is_declared():
     与 `tests/test_write_tool_confirm_gate_invariant.py` 的「写工具必须显式表态」同族：
     那边管确认门禁，这边管**判据归属**。
 
-    反例输入：新增一个 `read_only = False` 的工具而不动 taxonomy ⇒ 必红。
+    ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：判定面从「已注册」
+    **收紧为「已注册 ∧ 两端可达」** —— 旧口径隐含「已注册 ⇒ 必然可达」，而 #5247 之后
+    7 个写工具**仍注册**（类与注册行都在）却**绑不上任何 skill**（模型永远调不到）：
+    要求它们表态 = 幽灵写工具（`test_write_tool_sets_only_name_reachable_tools` 会判红）。
+    收紧不是放宽：不可达的那 7 个必须**逐条登记**在 `UNREACHABLE_REGISTERED_WRITE_TOOLS`
+    （带理由），集合**双向相等**比对 ⇒ 新出现一个「已注册 ∧ 不可达」的写工具照样判红。
+
+    反例输入：① 新增一个 `read_only = False` 且**绑得上 skill** 的工具而不动 taxonomy ⇒ 必红；
+    ② 把某个已解绑工具**重新绑回**任一 skill（变成可达）却仍不在 taxonomy 表态 ⇒ 必红；
+    ③ 新增一个注册但不绑任何 skill 的写工具（不在登记表里）⇒ 必红。
     """
     registered = registered_tools()
     write_tools = {n for n, is_write in registered.items() if is_write}
-    declared = set(tax.WRITE_TOOLS) | set(tax.WRITE_TOOL_ACTIONS)
+    reachable = set(eval_case_filter.mibao_real_toolset()) | set(eval_case_filter.XIAOBU_TOOLS)
+    assert len(reachable) >= 30, f"可达面只解析出 {len(reachable)} 个 —— 判据疑似空转"
 
-    undeclared = sorted(write_tools - declared)
+    unreachable = sorted(write_tools - reachable)
+    assert unreachable == sorted(UNREACHABLE_REGISTERED_WRITE_TOOLS), (
+        f"「已注册但两端不可达」的写工具集合与登记表**不等**：\n"
+        f"  实测 = {unreachable}\n  登记 = {sorted(UNREACHABLE_REGISTERED_WRITE_TOOLS)}\n"
+        f"→ 新出现的：要么把它绑回某个 skill（回到可达面，必须同时在 taxonomy 表态），"
+        f"要么在 `UNREACHABLE_REGISTERED_WRITE_TOOLS` 写明为什么留着一个调不到的工具。"
+    )
+
+    declared = set(tax.WRITE_TOOLS) | set(tax.WRITE_TOOL_ACTIONS)
+    undeclared = sorted((write_tools & reachable) - declared)
     assert not undeclared, (
-        f"以下**已注册写工具**没在 taxonomy 里表态（既不在 `WRITE_TOOLS`，"
+        f"以下**已注册且可达的写工具**没在 taxonomy 里表态（既不在 `WRITE_TOOLS`，"
         f"也不是 `WRITE_TOOL_ACTIONS` 的 key）：{undeclared}\n"
         f"→ 它们的用例不会被要求效果层断言 = 门禁静默变空壳（#3778 的形态）。\n"
         f"→ 修法：按「整工具即写」还是「仅部分 action 是写」归入对应集合。"

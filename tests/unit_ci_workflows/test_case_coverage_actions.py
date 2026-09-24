@@ -233,14 +233,21 @@ class TestRepoActionLevelJudgement:
     def test_repo_reports_action_gaps_including_known_precedents(self):
         rep = _rep(self.cases)
         pairs = set(rep.action_uncovered)
-        # ⚠️ `processing_order_update` 已于 #3917 从 B 端工具集移除（agent 暂不接入
-        # 加工单工具），不再出现在 action 缺口里 —— 用 `customer_manage` 的未覆盖
-        # action 替代作为「判据生效」的已知先例。
-        for expected in (("customer_manage", "create_tag"),
-                         ("processing_item_manage", "create_category"),
-                         ("order_manage", "update_status")):
+        # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：先例**整组换锚** ——
+        # 原三条先例（`customer_manage/create_tag`、`processing_item_manage/create_category`、
+        # `order_manage/update_status`）断言的 action **已从工具源码删除 / 工具已从 B 端解绑**
+        # ⇒ 它们不再是"未覆盖的 action"，继续钉着只会让本判据恒红。换用的四条全部是**当前真实**
+        # 未覆盖对：其中 `dashboard_stats/pending_tasks` 是 #5247 新加进枚举的动作（判据必须看得见
+        # 新面），另三条是存量只读 action（长年未覆盖、进工作清单）。
+        for expected in (("inventory_manage", "low_stock_alert"),
+                         ("notification_manage", "unread_count"),
+                         ("role_manage", "detail"),
+                         ("dashboard_stats", "pending_tasks")):
             assert expected in pairs, f"{expected} 未被报出 —— action 级判据没生效"
-        assert len(pairs) >= 30, f"只报出 {len(pairs)} 处 action 缺口，疑似解析口径缩水"
+        # 下界随事实收缩（**不是**放宽阈值）：8 个工具收窄为纯只读（写 action 整批消失）+
+        # 44 条写路径用例退役 ⇒ 未覆盖对从 41 降到 21（实测 2026-09-24）。下界仍守
+        # 「解析口径没缩水」这条真实意图：再掉一截必须有人解释是哪些 action 真的没了。
+        assert len(pairs) >= 21, f"只报出 {len(pairs)} 处 action 缺口，疑似解析口径缩水"
 
     def test_repo_check_is_green_with_baseline(self):
         for persona in ("mibao", "xiaobu"):
@@ -261,6 +268,13 @@ class TestRepoActionLevelJudgement:
              承担（`action_dangling` + `check_problems()` 文本**带用例 ID** + `blocking_gaps()`
              三处同验），不再依赖"仓库里恰好有一条真实违规"；
           ③ C 端同样归零（`order_query` 本就不是小布工具）。
+
+        ⚠️ 2026-09-24（issue #5247，B 端只读化）：注入用的工具**重新锚定** —— 原用的
+        `order_manage` 已从 B 端全部 skill 解绑（不在 `toolset_for("mibao")` 里）⇒
+        `build_coverage_report` 按「工具不在本端」直接跳过它的 action（`tool not in tools: continue`）
+        ⇒ 注入**不再产生悬空项**、本判据会退化成**恒真空转**（这正是"注入式红证"要防的形态）。
+        换成当前 B 端可达且**多 action** 的 `inventory_manage`（只读化后枚举 = query /
+        low_stock_alert），注入语义与断言强度不变。
         """
         rep = _rep(self.cases, "mibao")
         assert rep.action_dangling == [], (
@@ -269,23 +283,27 @@ class TestRepoActionLevelJudgement:
             "C 端不得有悬空 action（order_query 不是小布工具）")
 
         injected = list(self.cases) + [
-            _case("T-DANGLING", expectations=[{"tool": "order_manage",
+            _case("T-DANGLING", expectations=[{"tool": "inventory_manage",
                                               "args": {"action": "no_such_action"}}])]
         rep2 = _rep(injected, "mibao")
-        assert ("order_manage", "no_such_action") in rep2.action_dangling
-        assert rep2.action_dangling_cases[("order_manage", "no_such_action")] == ["T-DANGLING"], (
+        assert ("inventory_manage", "no_such_action") in rep2.action_dangling
+        assert rep2.action_dangling_cases[("inventory_manage", "no_such_action")] == ["T-DANGLING"], (
             "报错信息里带不出用例 ID —— 销账无从定位")
-        assert any("order_manage(action=no_such_action)[T-DANGLING]" in p
+        assert any("inventory_manage(action=no_such_action)[T-DANGLING]" in p
                    for p in rep2.check_problems()), (
             "注入悬空 action 后 check_problems() 未报出（去掉豁免清单必红）")
-        assert ("order_manage", "action_dangling") in rep2.blocking_gaps()
+        assert ("inventory_manage", "action_dangling") in rep2.blocking_gaps()
 
     def test_repo_uncovered_actions_alone_never_block(self):
-        """仓库里 41 处 action 未覆盖，但（在清单下）不得产生任何阻塞项。"""
+        """仓库里 21 处 action 未覆盖（#5247 后实测；改前 41），但（在清单下）不得产生任何阻塞项。
+
+        下界随事实收缩（**不是**放宽）：写 action 整批消失 + 写路径用例退役 ⇒ 未覆盖对减少；
+        它守的仍是「action 级报告没静默变空」这条意图，并且**只报告不阻塞**这一口径一字未动。
+        """
         rep = _attach_baseline(
             _rep(self.cases, "mibao"),
             load_baseline(BASELINE_PATH, "mibao", toolset_for("mibao")))
-        assert len(rep.action_uncovered) >= 30
+        assert len(rep.action_uncovered) >= 21
         assert rep.check_problems() == []
 
     def test_xiaobu_has_no_action_dangling(self):

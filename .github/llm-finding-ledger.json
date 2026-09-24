@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "LLM 红例 → 确定性下沉台账（用户裁定 4′，issue #4034 ← #4009）。凡由真实 LLM 评测自动开单发现的红例（标题族见下），都必须在这里**有且只有一条**条目：status=sunk = 已产出 ≥1 条确定性断言（效果层用例断言或 L0 不变式）；status=unsunk = **显式登记为未下沉**（reason + follow_up 必填）。「没有条目」= 静默通过，是裁定明令禁止的形态。机械检查入口：`python3 .github/llm_sink_check.py --selftest | --issue N | --all`（退出码 0=已下沉且断言非空 / 1=违规或未登记 / 3=无法判定）。判据的单一源 = `.github/assertion_taxonomy.py` 的 `EFFECT_FIELDS` + `has_effect_assertion`（本台账不另列一份字段清单）。LLM 来源 issue 的标题族 = `[Post-Deploy] 部署后回归失败` / `[Xiaobu] … 验收失败` / `[Agent Eval] 米宝冒烟评测失败` / `[Agent Eval] 米宝对抗评测失败`。GitHub 侧回填记录的机读标记：`<!-- llm-sink-backfill: #<issue> sunk=<cases> -->`（也认评论里出现 `llm-finding-ledger.json` 或「下沉台账」字样）。",
+  "note": "LLM 红例 → 确定性下沉台账（用户裁定 4′，issue #4034 ← #4009）。凡由真实 LLM 评测自动开单发现的红例（标题族见下），都必须在这里**有且只有一条**条目：status=sunk = 已产出 ≥1 条确定性断言（效果层用例断言或 L0 不变式）；status=unsunk = **显式登记为未下沉**（reason + follow_up 必填）。「没有条目」= 静默通过，是裁定明令禁止的形态。机械检查入口：`python3 .github/llm_sink_check.py --selftest | --issue N | --all`（退出码 0=已下沉且断言非空 / 1=违规或未登记 / 3=无法判定）。判据的单一源 = `.github/assertion_taxonomy.py` 的 `EFFECT_FIELDS` + `has_effect_assertion`（本台账不另列一份字段清单）。LLM 来源 issue 的标题族 = `[Post-Deploy] 部署后回归失败` / `[Xiaobu] … 验收失败` / `[Agent Eval] 米宝冒烟评测失败` / `[Agent Eval] 米宝对抗评测失败`。GitHub 侧回填记录的机读标记：`<!-- llm-sink-backfill: #<issue> sunk=<cases> -->`（也认评论里出现 `llm-finding-ledger.json` 或「下沉台账」字样）。 ⚠️ sink 落点不变量（#5247 实测）：sink 必须指向**存活用例的非空效果层字段** —— 用例退役（`skip_reason` 非空）后其写路径字段会被按判据要求清空，原 sink 即悬空引用；此时只能**改判落点**或**把条目登记为 unsunk**，不得保留空壳 sink、也不得伪造新 sink。",
   "_schema": {
     "version": "台账版本（当前 1）",
     "entries[].issue": "发现该 LLM 红例的 GitHub issue 号（正整数）",
@@ -18,30 +18,9 @@
   "entries": [
     {
       "issue": 4014,
-      "status": "sunk",
-      "sinks": [
-        {
-          "kind": "case_assertion",
-          "cases": [
-            "OR-009",
-            "OR-010",
-            "OR-011"
-          ],
-          "fields": [
-            "must_succeed"
-          ]
-        },
-        {
-          "kind": "case_assertion",
-          "cases": [
-            "OR-011"
-          ],
-          "fields": [
-            "db_verify"
-          ]
-        }
-      ],
-      "evidence": "P5 包（issue #4014 的 B3，PR #4021 / commit 8dfc85a4）把 3 条下单用例从『工具被调用过』升级为效果层断言：OR-009/OR-010/OR-011 各补 must_succeed[order_create]，OR-011 另补 db_verify（order_items 明细+数量、order_phone 落库号）；三条用例的 merge_log 逐条记到 issue #4014（`--selftest` 逐条核 merge_log 含 `#4014`）"
+      "status": "unsunk",
+      "reason": "改判为未下沉（#5247 B 端只读化，用户裁定 2026-09-23）：原 sink 的**落点已不存在**。本条原本记录的下沉 = `must_succeed` @ OR-009 / OR-010 / OR-011 + `db_verify` @ OR-011（P5 包，PR #4021 / commit 8dfc85a4）；#5247 把 B 端创建/更新能力与对应 tools 整体移除后，这些断言依赖的写路径（order_create）已从 B 端解绑 ⇒ 三条用例退役（skip_reason 指向 #5247）、上述字段按判据要求清空 ⇒ `--selftest` 逐条报 SINK-CASE-FIELD-EMPTY + SINK-CASE-NO-EFFECT-ASSERTION。按「被测对象不存在 ⇒ 改判判据、不是放宽判据」与裁定 4′「未下沉必须显式登记」，本条改判为 unsunk —— **不伪造新 sink**：三条用例已退役、不进运行期，任何仍指向它们的落点都是死引用（不会红的效果层断言）。原 P5 下沉记录仍在 git 历史与 docs/testing/llm-finding-sinking.md 中留档。跟踪单 #4009（与本台账其余存量 unsunk 同单）：需裁定这些 finding 在只读形态下是否/如何重建确定性断言。",
+      "follow_up": 4009
     },
     {
       "issue": 3679,
@@ -111,34 +90,6 @@
         {
           "kind": "case_assertion",
           "cases": [
-            "OR-029"
-          ],
-          "fields": [
-            "must_succeed"
-          ]
-        },
-        {
-          "kind": "case_assertion",
-          "cases": [
-            "PR-008"
-          ],
-          "fields": [
-            "must_succeed",
-            "output_verify"
-          ]
-        },
-        {
-          "kind": "case_assertion",
-          "cases": [
-            "PR-026"
-          ],
-          "fields": [
-            "must_succeed"
-          ]
-        },
-        {
-          "kind": "case_assertion",
-          "cases": [
             "CU-008"
           ],
           "fields": [
@@ -146,21 +97,12 @@
           ]
         }
       ],
-      "evidence": "run 35243351675 @67db87ae（determination / normal 全库 / 两腿）的 7 条失败逐条下沉，PR 见本条目所在分支（分支名 fix/4042-llm-sink）。逐条：① **OR-002**（首跑指纹 arg_mismatch(order_query,status)）——原 `data_checks: data.orders.length >= 0` 恒真且不计分（OR-001 的 merge_log 已把本用例登记为未处理的同类实例）⇒ 升级为 output_verify(order_query(action=list) 的 orders 非空)；② **OR-014**——amount_verify 已在（且真红），本轮修的是它的**真值口径**：断言只取商品级价（168），而工具层接地闸门（order_create._reject_unit_price_not_grounded → unit_price_grounding_error）按**所选 SKU 价**判 ⇒ 同栈 PR-021 把共享夹具 prod_eval_blackout 的米白/散剪 SKU 价改成 150（无复位）后，按该规格下单 150 被断言判成「凭记忆报价」= 假红（同一条断言在 xiaobu 腿判绿，差异只在夹具）⇒ local_runner 的真值改为**库价真值集合**（声明规格取匹配 SKU 价，未声明取商品级价 ∪ 任一 SKU 价），红证：修前 runner + 同一假体必报「单价 150.0 ≠ 商品库 168.0」；③ **OR-029**——#4053 已补 must_succeed/precondition/order_before，但它的两个控制轮（auto_select / repeat_until）写成了 **JSON 字符串**，而 runner 只把 dict 轮当控制轮 ⇒ 声明静默失效、卡片无人作答、order_create 永不执行（恒红且归因错人）⇒ 改为 block style dict 轮，并补静态守卫 test_no_control_turn_is_written_as_json_string（红证：改回字符串形态 ⇒ 报 2 条）；④ **PR-008**（no_success(product_manage)）——改前零效果层断言（唯一产出侧痕迹 data.product_id.length > 0 不计分）⇒ 补 must_succeed + output_verify(product_id 非空) + pre_clean[product_remove 自有名] + precondition(expect=0)；⑤ **PR-016**（跨 run 复发 no_success(product_manage)）——改前零效果层断言 ⇒ 补 must_succeed + precondition(expect=0)；⑥ **PR-026**（no_success(product_manage(action=update))）——must_succeed 已在，但用例**结构上不可满足**：R2 的单张 auto_respond 轮被 R1 后的 choice 卡（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 改为 repeat_until(tool_called=product_manage, max=3)（有卡答卡，目标工具成功即跳过余轮）；⑦ **CU-008**（no_success(customer_manage)）——确定性断言早已在（expectations action=detail + must_succeed）且确实判红，属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走 order_query/logistics_track 答订单物流），已按 R4「新违规只有两个出口」开独立 issue 跟踪，不在本 PR 修。**仍在跟踪的旁支（不属本 ledger 的 sunk 判据）**：PR-021 改共享夹具 SKU 价后**无复位**（写方自清理缺口）、PR-008 首跑的建品流程空转（agent 反复问加工项）——均已在 #4042 上回填并另开单。机械复核：python3 .github/llm_sink_check.py --issue 4042 与 --selftest 均返回 0\n\n⚠️ 2026-09-19 台账维护（issue #4371 商品↔加工项解耦）：原第 ⑤ 条下沉（`PR-016` + `must_succeed`）已从本条目移除 —— 该用例**整条删除**（「建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项」的全部语义建立在「商品持有加工项 + 按适用分类过滤」之上，解耦后不存在），故其 `sink` 不再指向任何真实用例（`SINK-CASE-MISSING`）。移除**不是**撤销下沉结论：该条当初修的形态（建品用例零效果层断言 ⇒ 补 `must_succeed`）在同一 PR 的 `PR-008` 上仍有等价 sink（`must_succeed` + `output_verify`），且 `CASE-TRUST-NO-EFFECT-ASSERTION` 仍由门禁对全库写用例生效。"
+      "evidence": "run 35243351675 @67db87ae（determination / normal 全库 / 两腿）的 7 条失败逐条下沉，PR 见本条目所在分支（分支名 fix/4042-llm-sink）。逐条：① **OR-002**（首跑指纹 arg_mismatch(order_query,status)）——原 `data_checks: data.orders.length >= 0` 恒真且不计分（OR-001 的 merge_log 已把本用例登记为未处理的同类实例）⇒ 升级为 output_verify(order_query(action=list) 的 orders 非空)；② **OR-014**——amount_verify 已在（且真红），本轮修的是它的**真值口径**：断言只取商品级价（168），而工具层接地闸门（order_create._reject_unit_price_not_grounded → unit_price_grounding_error）按**所选 SKU 价**判 ⇒ 同栈 PR-021 把共享夹具 prod_eval_blackout 的米白/散剪 SKU 价改成 150（无复位）后，按该规格下单 150 被断言判成「凭记忆报价」= 假红（同一条断言在 xiaobu 腿判绿，差异只在夹具）⇒ local_runner 的真值改为**库价真值集合**（声明规格取匹配 SKU 价，未声明取商品级价 ∪ 任一 SKU 价），红证：修前 runner + 同一假体必报「单价 150.0 ≠ 商品库 168.0」；③ **OR-029**——#4053 已补 must_succeed/precondition/order_before，但它的两个控制轮（auto_select / repeat_until）写成了 **JSON 字符串**，而 runner 只把 dict 轮当控制轮 ⇒ 声明静默失效、卡片无人作答、order_create 永不执行（恒红且归因错人）⇒ 改为 block style dict 轮，并补静态守卫 test_no_control_turn_is_written_as_json_string（红证：改回字符串形态 ⇒ 报 2 条）；④ **PR-008**（no_success(product_manage)）——改前零效果层断言（唯一产出侧痕迹 data.product_id.length > 0 不计分）⇒ 补 must_succeed + output_verify(product_id 非空) + pre_clean[product_remove 自有名] + precondition(expect=0)；⑤ **PR-016**（跨 run 复发 no_success(product_manage)）——改前零效果层断言 ⇒ 补 must_succeed + precondition(expect=0)；⑥ **PR-026**（no_success(product_manage(action=update))）——must_succeed 已在，但用例**结构上不可满足**：R2 的单张 auto_respond 轮被 R1 后的 choice 卡（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 改为 repeat_until(tool_called=product_manage, max=3)（有卡答卡，目标工具成功即跳过余轮）；⑦ **CU-008**（no_success(customer_manage)）——确定性断言早已在（expectations action=detail + must_succeed）且确实判红，属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走 order_query/logistics_track 答订单物流），已按 R4「新违规只有两个出口」开独立 issue 跟踪，不在本 PR 修。**仍在跟踪的旁支（不属本 ledger 的 sunk 判据）**：PR-021 改共享夹具 SKU 价后**无复位**（写方自清理缺口）、PR-008 首跑的建品流程空转（agent 反复问加工项）——均已在 #4042 上回填并另开单。机械复核：python3 .github/llm_sink_check.py --issue 4042 与 --selftest 均返回 0\n\n⚠️ 2026-09-19 台账维护（issue #4371 商品↔加工项解耦）：原第 ⑤ 条下沉（`PR-016` + `must_succeed`）已从本条目移除 —— 该用例**整条删除**（「建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项」的全部语义建立在「商品持有加工项 + 按适用分类过滤」之上，解耦后不存在），故其 `sink` 不再指向任何真实用例（`SINK-CASE-MISSING`）。移除**不是**撤销下沉结论：该条当初修的形态（建品用例零效果层断言 ⇒ 补 `must_succeed`）在同一 PR 的 `PR-008` 上仍有等价 sink（`must_succeed` + `output_verify`），且 `CASE-TRUST-NO-EFFECT-ASSERTION` 仍由门禁对全库写用例生效。\n\n**#5247 改判（B 端只读化，用户裁定 2026-09-23）**：③ OR-029 / ④ PR-008 / ⑤ PR-026 三条 sink 的落点已不存在（这三条用例断言的写路径 order_create / product_manage 已从 B 端解绑 ⇒ 用例退役、`must_succeed` / `output_verify` 按判据要求清空，`--selftest` 会报 SINK-CASE-FIELD-EMPTY + SINK-CASE-NO-EFFECT-ASSERTION）⇒ 按「不伪造 sink」原则**只删除这三条已悬空的 sink**，保留仍存活且经判据逐项核过的三条（output_verify@OR-002 / amount_verify@OR-014 / must_succeed@CU-008：用例存活 + 字段非空 + has_effect_assertion + merge_log 回填 `#4042` 均通过）。本条**不整条改判为 unsunk**：它仍满足「已产出 ≥1 条确定性断言」，写成 unsunk 会把一条假声明放进台账、并抹掉这条 finding 的存活落点（sink 的落点须是**存活用例的非空**效果层字段）。"
     },
     {
       "issue": 4093,
       "status": "sunk",
       "sinks": [
-        {
-          "kind": "case_assertion",
-          "cases": [
-            "OR-016"
-          ],
-          "fields": [
-            "must_succeed"
-          ]
-        },
         {
           "kind": "case_assertion",
           "cases": [
@@ -171,7 +113,7 @@
           ]
         }
       ],
-      "evidence": "run 35251175156 失败集里最后两条「无任何确定性断言」的用例逐条下沉（原 unsunk 登记的 reason 所指正是这两条）；PR 见本条目所在分支（分支名 feat/4110-sink-or016-pr018，跟踪单 #4110）—— 本单按用户指令**未开 PR**，PR 号由集成方开 PR 时回填。① **OR-016**（首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）—— 前半个指纹此前**无任何断言可判红**：`expectations[order_create]` 只证明「被调用过」（runner 的 `check_expectation` 不读 `success`），三条 `data_checks` 是自然语义、不进 scoring_checks ⇒ 补效果层 `must_succeed[{tool: order_create}]`（fail-closed：一次都没成功即判红）；同时补 `persona: mibao`（清掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`：本条是 B 端店员代客下单 —— `eval_case_filter.is_customer_facing_case` 的 docstring 逐字点名本用例、`tests/agent_eval/fixtures/mibao_eval_seed.sql` 第 1 节标题写着「2699 系列雪尼尔窗帘面料（**OR-016 点名**）」，而 `xiaobu_eval_seed.sql` 里该名商品 0 件）；`precondition[product_count_for_keyword ... expect=1]` 系 #4082 批次已加，本单只按 seed 真值复核（mibao seed 该名商品恰 1 件）。② **PR-018**（首跑指纹 `no_success(product_search)`）—— 该指纹的成因是**用例挂错了腿**（「低库存」是商家后台口径，C 端小布拒绝作答是**正确行为**）⇒ 补 `persona: mibao`（title / `tags: [mibao]` / `app/api/chat.py::_filter_products_by_reference` 的实现注释三处均写 B 端米宝），并补读场景的效果层断言 `must_succeed[{tool: product_search}]`（证明这次查询真的成功返回；**刻意不要求非空**：两份 fixture 里**没有一件低库存商品** —— 阈值 `LOW_STOCK_THRESHOLD = 100` 而商品级 stock=1000/1000/800/600、SKU 级一律 500 ⇒ 空结果时工具仍返回 `success=true`。「要求非空」会变成依赖运行期世界状态的恒红判据）。两条用例的 `merge_log` 均回填 `#4093`（`--selftest` 逐用例核）；`.github/case-trust-baseline.json` 随 `python3 .github/case_trust_gate.py --prune-baseline` **整条删除**这两个条目（净缩数字**锚定 SHA**：读数 @8e03e5b3 = 条目 137→135、违规码 219→216；并入 `origin/main@589adb4a`（该版基线已含 #4108 新增的 2 条用例 ⇒ 136 条/218 码）后按同法重对账 = **136→134 / 218→215**，两次都是**只删不加**，门禁打印「本次净变化：条目 -2，违规码 -3」）。机械复核：`python3 .github/llm_sink_check.py --issue 4093` 与 `--selftest` 均返回 **0**。"
+      "evidence": "run 35251175156 失败集里最后两条「无任何确定性断言」的用例逐条下沉（原 unsunk 登记的 reason 所指正是这两条）；PR 见本条目所在分支（分支名 feat/4110-sink-or016-pr018，跟踪单 #4110）—— 本单按用户指令**未开 PR**，PR 号由集成方开 PR 时回填。① **OR-016**（首跑指纹 `no_success(order_create) || order_before_missing(interact[choice:processing_items])`）—— 前半个指纹此前**无任何断言可判红**：`expectations[order_create]` 只证明「被调用过」（runner 的 `check_expectation` 不读 `success`），三条 `data_checks` 是自然语义、不进 scoring_checks ⇒ 补效果层 `must_succeed[{tool: order_create}]`（fail-closed：一次都没成功即判红）；同时补 `persona: mibao`（清掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`：本条是 B 端店员代客下单 —— `eval_case_filter.is_customer_facing_case` 的 docstring 逐字点名本用例、`tests/agent_eval/fixtures/mibao_eval_seed.sql` 第 1 节标题写着「2699 系列雪尼尔窗帘面料（**OR-016 点名**）」，而 `xiaobu_eval_seed.sql` 里该名商品 0 件）；`precondition[product_count_for_keyword ... expect=1]` 系 #4082 批次已加，本单只按 seed 真值复核（mibao seed 该名商品恰 1 件）。② **PR-018**（首跑指纹 `no_success(product_search)`）—— 该指纹的成因是**用例挂错了腿**（「低库存」是商家后台口径，C 端小布拒绝作答是**正确行为**）⇒ 补 `persona: mibao`（title / `tags: [mibao]` / `app/api/chat.py::_filter_products_by_reference` 的实现注释三处均写 B 端米宝），并补读场景的效果层断言 `must_succeed[{tool: product_search}]`（证明这次查询真的成功返回；**刻意不要求非空**：两份 fixture 里**没有一件低库存商品** —— 阈值 `LOW_STOCK_THRESHOLD = 100` 而商品级 stock=1000/1000/800/600、SKU 级一律 500 ⇒ 空结果时工具仍返回 `success=true`。「要求非空」会变成依赖运行期世界状态的恒红判据）。两条用例的 `merge_log` 均回填 `#4093`（`--selftest` 逐用例核）；`.github/case-trust-baseline.json` 随 `python3 .github/case_trust_gate.py --prune-baseline` **整条删除**这两个条目（净缩数字**锚定 SHA**：读数 @8e03e5b3 = 条目 137→135、违规码 219→216；并入 `origin/main@589adb4a`（该版基线已含 #4108 新增的 2 条用例 ⇒ 136 条/218 码）后按同法重对账 = **136→134 / 218→215**，两次都是**只删不加**，门禁打印「本次净变化：条目 -2，违规码 -3」）。机械复核：`python3 .github/llm_sink_check.py --issue 4093` 与 `--selftest` 均返回 **0**。\n\n**#5247 改判（B 端只读化，用户裁定 2026-09-23）**：① OR-016 的 sink 落点已不存在（该用例断言的写路径 order_create 已从 B 端解绑 ⇒ 用例退役、`must_succeed` 按判据要求清空，`--selftest` 会报 SINK-CASE-FIELD-EMPTY + SINK-CASE-NO-EFFECT-ASSERTION）⇒ 删除这条已悬空的 sink；保留 ② PR-018 的 `must_succeed[product_search]`（用例存活 + 字段非空 + has_effect_assertion + merge_log 回填 `#4093` 均通过）—— 它是**读场景**断言，不受 B 端只读化影响。本条**不整条改判为 unsunk**：理由同 #4042（仍 ≥1 条存活落点 ⇒ 如实保持 sunk）。"
     }
   ],
   "unimplemented": [

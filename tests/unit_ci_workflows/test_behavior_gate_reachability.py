@@ -9,6 +9,12 @@
 实证危害：PR **#3718**（修 OR-015「模块越界拒绝」）自己的真实 LLM 迭代档选中的是
 `CH-003/CH-013/CH-014/CH-015/DF-011/DF-012` —— **目标用例没跑**。
 
+> ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：上面这段是**当时的
+> 诊断原文**（保留为病史）。修前的三条里有 **OR-015 已随 B 端只读化退役**（写能力从 B 端解绑
+> ⇒ 用例进 `unrunnable`，不再可能被调度）—— 它从「必须可达」的集合移入
+> `RETIRED_KEY_CASES_5247`（带理由 + fail-closed 自证），本文件的可达性判据对**活跃**用例
+> 一格未放宽。
+
 ## 为什么"在映射集合里"不够（本文件存在的理由）
 
 映射结果**不是**直接当 `case_ids` 用，而要先过**用例库自己的选择函数**
@@ -92,12 +98,6 @@ ROUTING_SOURCE = "backend/ai-agent-service/app/graph/nodes.py"
 # 每条 = 用例 ID → 入选依据（**必须**带 run 号或 issue 号，否则 TestKeyCaseRegistry 会红）。
 KEY_BEHAVIOR_CASES = {
     # ── 判据 A + B（结论档确定性失败 + 结构性不可达）──
-    "OR-015": (
-        "判据 A+B：run 34841029062 的 mibao `eval-summary` 里 completion.deterministic_failures "
-        "= ['AS-003','CR-001','OR-008','OR-015','PG-016','PP-007']（含本用例）；"
-        "同时它修前不可达（issue #3725）——正是 PR #3718「模块越界拒绝」的暴露用例，"
-        "而该 PR 自己的门禁没选中它。"
-    ),
     "AS-003": (
         "判据 A+B：run 34841029062 的 mibao `eval-summary` 的 deterministic_failures 含 AS-003"
         "（跨域复用 order_id 创建退款工单）；修前亦不可达（issue #3725）。"
@@ -114,19 +114,26 @@ KEY_BEHAVIOR_CASES = {
         "（选购下单表单化交互，#3653 的 paths 前置门后仍靠它保住 C 端主链路信号；"
         "#3725 补入 OR-017 后，C 端成员由 1 条增至 2 条）。"
     ),
-    "OR-016": (
-        "判据 B：兜底网现有成员（issue #3502）——下单引导/加工项询问（§13.2 订单域核心）。"
-    ),
-    "PR-019": (
-        "判据 B：兜底网现有成员（issue #3502）——建品规格与加工项价格落库（§13.2 商品域核心）。"
-    ),
-    "AS-007": (
-        "判据 B：兜底网现有成员（issue #3502）——换货选目标商品后确认加工项（§13.2 售后域核心）。"
-    ),
+}
+
+#: 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）**从关键用例集合退役**的条目。
+#:
+#: 为什么必须单列并保留理由（不是删掉了事）：这四条都是**写路径**用例
+#: （OR-015 建单前置校验 / OR-016 建单确认前询问加工项 / PR-019 建品规格落库 / AS-007 换货），
+#: 写能力已从 B 端全部 skill 解绑 ⇒ 用例退役（`skip_reason` 写明理由，条目不删除），
+#: 它们按 workflow 语义进 `unrunnable`，**不再可能**被门禁调度 ⇒ 从「必须可达」的集合里移出。
+#: 保留理由 = 下一个人能判断「该不该把它放回去」（写能力若回归，这四条必须一并回表）。
+RETIRED_KEY_CASES_5247 = {
+    "OR-015": "#5247：建单写链路（order_create + validate_input 写面前置）已从 B 端下线",
+    "OR-016": "#5247：建单写链路（order_create 确认轮）已从 B 端下线",
+    "PR-019": "#5247：建品写链路（product_manage 落库规格）已从 B 端下线",
+    "AS-007": "#5247：换货写链路（after_sales_manage 写 action 已删除）已从 B 端下线",
 }
 
 # 本次新增进兜底网的三条（红线锁用：它们**只报告、不阻塞**）
-NEWLY_ADDED_FALLBACK_CASES = ("OR-015", "OR-017", "AS-003")
+# ⚠️ 2026-09-24（issue #5247）：**OR-015 已从中移除**（它随 B 端只读化退役，见
+# `RETIRED_KEY_CASES_5247`）；OR-017 / AS-003 仍是活跃用例，本红线对它们继续有效。
+NEWLY_ADDED_FALLBACK_CASES = ("OR-017", "AS-003")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -247,6 +254,24 @@ class TestKeyCaseRegistry:
             f"登记表里的用例已不在 `.github/cases/` 中：{missing} —— "
             "请更新 KEY_BEHAVIOR_CASES（用例真被删除时）或恢复用例。"
         )
+
+    def test_retired_key_cases_are_really_retired(self):
+        """**退役登记是 fail-closed 的**（issue #5247）：从「必须可达」集合移出的唯一合法理由
+        是「该用例真的退役了」—— 若有人把它的 `skip_reason` 清空（解退役）却没把它放回
+        `KEY_BEHAVIOR_CASES`，它会**静默离开门禁射程** ⇒ 本判据报红。
+        """
+        by_id = {str(c.get("id") or ""): c for c in _case_dicts()}
+        problems = []
+        for cid, why in RETIRED_KEY_CASES_5247.items():
+            c = by_id.get(cid)
+            if c is None:
+                problems.append(f"{cid} 不在用例库里（退役 ≠ 删除条目）：{why}")
+            elif not str(c.get("skip_reason") or "").strip():
+                problems.append(
+                    f"{cid} 已不再是 skip 用例（skip_reason 为空）⇒ 它必须回到 "
+                    f"KEY_BEHAVIOR_CASES 才不会被静默移出门禁射程。退役理由：{why}"
+                )
+        assert problems == [], "退役登记与用例库不一致：\n  " + "\n  ".join(problems)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
