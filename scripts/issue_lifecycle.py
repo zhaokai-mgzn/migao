@@ -44,9 +44,63 @@
 
     ./scripts/issue-lifecycle.sh finish <分支|工作区路径> [--dry-run]   # 收尾一个包（自证干净）
     ./scripts/issue-lifecycle.sh prune [--apply]                        # 批量：默认 dry-run，--apply 才删
+    ./scripts/issue-lifecycle.sh land <分支> [--dry-run] [--from 步骤] [--ci-timeout 秒]
+    ./scripts/issue-lifecycle.sh reap-merged [--apply] [--except 分支]  # 自动收尾（默认 dry-run）
 
-退出码：0 = 成功（含幂等空转）；1 = 用法/找不到目标；2 = 未合并（fail-closed，什么都不删）；
-3 = 无法判定（gh 不可用 / 离线）—— **不得当 0 读**。
+### `land`：一条命令完成「落地」（用户裁定 2026-09-24）
+
+**为什么**：集成侧原先逐个手工做 `rebase` → `gate` → `gh pr ready` → 轮询等合并 →
+`finish` →（改过预设再）`preset-anchor-refresh`，一晚重复十几次（用户逐字：
+「我不希望每天要花 token 浪费在基建上和定期清理工作区」）。⇒ 固定序列做成**一条命令 + 一段总结**。
+
+**🔴 顺序即安全顺序**（`LAND_STEPS`，执行体 `for` **遍历**它 —— 顺序只有一个来源）：
+
+| # | 步骤 | 为什么必须在这个位置 |
+|---|---|---|
+| ① | `rebase` | 一切判定都要基于最新主线；用仓内入口 `dev-worktree.sh rebase`（**禁裸 rebase/merge**），先 `git fetch origin main`（fetch 不是 rebase/merge） |
+| ② | `gate` | **判红即立即停**：不 ready、不等 CI、不收尾 |
+| ③ | `ready` | ⚠️ **本步自己没有前置判据** —— 唯一的保护就是「②必须先跑且必须绿」这条顺序。把 `gh pr ready` 提到 `gate` 之前 = **把闸摘掉**（红的分支会被推成 ready 并交给 auto-merge） |
+| ④ | `wait-ci` | `gh pr checks <PR> --watch`（**一次阻塞调用**，不写 sleep 轮询）；超时可配（`--ci-timeout`，默认 1800s）⇒ 超时 exit 3（未判定 ≠ 绿） |
+| ⑤ | `wait-merge` | 合并是 GitHub 侧异步的 ⇒ **单发**读一次 `gh pr view --json state,mergedAt`（gh 2.97.0 的 `pr view` **没有** `--watch`，实测）；未观察到合并 ⇒ 报「未观察」+ 可续跑出口，**不猜** |
+| ⑥ | `finish` | 只在**已确认合并**后收尾（`cmd_finish` 自己 fail-closed 复核「已合并」⇒ 双保险） |
+| ⑦ | `preset-refresh` | 变更集含 `.agent-presets/**` ⇒ 跑 `scripts/preset-anchor-refresh.sh`（§18.2 硬纪律：活锚落后 = drift 面硬漂移）；不含 ⇒ **跳过并打印原因** |
+
+`--from <步骤>` 只允许从 `LAND_RESUMABLE_FROM` 起（`wait-ci`/`wait-merge`/`finish`/`preset-refresh`）
+—— **`rebase`/`gate`/`ready` 永不可跳过**，否则「顺序即安全顺序」失效。
+幂等：PR 已 `MERGED`（= 「已合并但没人收尾」形态）⇒ 自动只做 ⑥⑦，其余逐步打「跳过 + 原因」。
+
+### `reap-merged`：新工作前把「已合并但没人收尾」的自动收掉（用户裁定 2026-09-24）
+
+**为什么**：`migao-wt/` 下有 77 个 worktree，其中一批是「PR 已合并但没人收尾」，
+**没有任何机制会提醒或代办**（实测一晚手工清 15 个）。⇒ 在**建新工作区之前**（`dev-worktree.sh add`
+调一行）把这一类收掉；仍是**事件驱动**，不新增 `schedule`/cron（用户 2026-09-21 裁定）。
+
+判定口径（**一条**取数、两个条件同刻看，禁一半快照一半实时）：`gh pr list --state all` ⇒
+**有已合并 PR** 且 **无 open PR**。理由：分支可能被复用（既有 merged 又有 open）⇒ 只认「已合并」
+会删掉正在飞的那条 PR。另加四条 fail-closed 保护（任一命中即**不删**）：① 主干分支
+② 活锚保护 ③ 有**活跃会话锁**（PID 存活 ⇒ 可能正在用）④ 是某个 open PR 的 **base**（stacked）。
+worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../migao-wt`）之下 ⇒ 半径外的检出
+（别人的手工检出）**一律不动**。
+
+**零动作也要出声**（G6）：没有可收尾的 ⇒ 打印「本轮零动作 + 逐类原因计数」——
+「我判了、都不该动」必须与「我没跑」长得不一样。
+
+`--no-artifacts`：跳过「过程产物清理」。理由 = 主工作区根是**跨会话共享写面**（§2.3 第 8 条同族）：
+别人的 `pr-body-*.md` 可能正躺在那里用着 ⇒ `dev-worktree.sh add` 的**自动**收尾走这个口径；
+显式 `finish` / `prune --apply` 的既有行为**不变**（它们由操作者针对自己的包调用）。
+
+### 判据的替身注入点（只换 CLI/边界，不 mock 被测函数）
+
+    MIGAO_GH_BIN=...              # gh 可执行文件（沿用既有替身注入点）
+    MIGAO_DEVTREE_BIN=...         # dev-worktree.sh（默认 <主仓库根>/scripts/dev-worktree.sh）
+    MIGAO_VERIFY_BIN=...          # verify-all.sh（默认 <分支检出>/verify-all.sh —— gate 必须在**分支自己的检出**里跑）
+    MIGAO_PRESET_REFRESH_BIN=...  # preset-anchor-refresh.sh
+    MIGAO_WT_BASE=...             # 工作区根（同 dev-worktree.sh）
+    MIGAO_ANCHOR=...              # 活锚路径（默认 $HOME/.dsh/.agent-presets/migao）
+
+退出码：0 = 成功（含幂等空转与「零动作」）；1 = 用法/找不到目标；2 = fail-closed（判红 / 未合并 /
+有目标被拒）—— 该删的照删、不该删的一个不删；3 = **无法判定**（gh 不可用 / 离线 / CI 未跑完）——
+**不得当 0 读**。
 """
 
 from __future__ import annotations
@@ -70,6 +124,24 @@ DEFAULT_REF = "origin/main"
 PROTECTED_BRANCHES = ("main", "master")
 
 EXIT_OK, EXIT_USAGE, EXIT_UNMERGED, EXIT_UNKNOWN = 0, 1, 2, 3
+TIMEOUT_RC = 124  # `_run` 的超时哨兵：必须与「真判红」分开（超时 = 无法判定 ⇒ exit 3）
+
+# 替身注入点（只换 CLI/边界，不 mock 被测函数 —— 见模块 docstring）
+DEVTREE_ENV = "MIGAO_DEVTREE_BIN"
+VERIFY_ENV = "MIGAO_VERIFY_BIN"
+PRESET_REFRESH_ENV = "MIGAO_PRESET_REFRESH_BIN"
+WT_BASE_ENV = "MIGAO_WT_BASE"
+DEFAULT_CI_TIMEOUT = 1800
+PR_LIMIT = 500  # 一次取数的上限（与 GUARD._pr_merged_branches 同量级；截断后果见 read_pr_rows 调用点）
+
+# ── `land` 的**顺序即安全顺序**（唯一顺序源：执行体 `for` 遍历它，不手写第二套）────────
+# 把 `ready` 提到 `gate` 之前 ⇒ 把「gate 这道闸」摘掉（`ready` 自己没有前置判据）。
+# 判据（计划序 + **实跑序**）见 tests/unit_ci_workflows/test_lifecycle_land_and_reap.py。
+LAND_STEPS: tuple[str, ...] = (
+    "rebase", "gate", "ready", "wait-ci", "wait-merge", "finish", "preset-refresh",
+)
+# `--from` 只允许从这些步骤起 —— `rebase`/`gate`/`ready` **永不可跳过**（跳了 = 顺序锁破）。
+LAND_RESUMABLE_FROM: tuple[str, ...] = ("wait-ci", "wait-merge", "finish", "preset-refresh")
 
 
 def _load_guard():
@@ -204,6 +276,529 @@ def all_merged_branches(cwd: Path) -> set[str] | None:
     return GUARD._pr_merged_branches(cwd)
 
 
+# ── 外部命令封装（land）：超时/缺失都不抛异常，而是回一个**可判**的结果 ──────────────
+
+def _run(argv: list[str], cwd: Path, timeout: int | None = None) -> subprocess.CompletedProcess:
+    """跑一条外部命令。超时 ⇒ `returncode = TIMEOUT_RC`（**无法判定 ≠ 判红**，调用方必须分开处置）。"""
+    try:
+        return subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, TIMEOUT_RC, "", f"超时（>{timeout}s）")
+    except (FileNotFoundError, OSError) as exc:
+        return subprocess.CompletedProcess(argv, 127, "", f"{type(exc).__name__}: {exc}")
+
+
+def _tail(text: str | None, lines: int = 12) -> str:
+    rows = [r for r in (text or "").strip().splitlines() if r.strip()]
+    return "\n".join(f"     │ {r}" for r in rows[-lines:])
+
+
+def _devtree_script(root: Path) -> str:
+    return os.environ.get(DEVTREE_ENV) or str(root / "scripts" / "dev-worktree.sh")
+
+
+def _verify_script(wt: Path) -> str:
+    """gate 必须在**分支自己的检出**里跑（它按 `git diff origin/main...HEAD` 取变更集）。"""
+    return os.environ.get(VERIFY_ENV) or str(wt / "verify-all.sh")
+
+
+def _preset_refresh_script(root: Path) -> str:
+    return os.environ.get(PRESET_REFRESH_ENV) or str(root / "scripts" / "preset-anchor-refresh.sh")
+
+
+def worktree_path_of(branch: str, cwd: Path) -> Path | None:
+    """该分支已注册 worktree 的路径（无 ⇒ None）。复用守卫的解析，不另写第二套。"""
+    for entry in GUARD._worktrees(cwd):
+        if entry["branch"] == branch:
+            return Path(entry["path"])
+    return None
+
+
+def current_branch(path: Path) -> str | None:
+    """该检出当前所在的分支（detached HEAD ⇒ None）。
+
+    ⚠️ 为什么自己写：`agent-presets-guard.py` **没有** `wt_branch_of`（那是 dev-worktree.sh 的
+    bash 函数），而 `resolve_target()` 里那句 `GUARD.wt_branch_of(...)` 因此**必抛 AttributeError**
+    —— 只走 `finish <工作区路径>`（文档承诺的用法）才会踩到，故既有单测从未覆盖到。
+    实测（2026-09-24）：`./scripts/issue-lifecycle.sh finish <worktree 路径> --dry-run`
+    ⇒ `AttributeError: module 'agent_presets_guard' has no attribute 'wt_branch_of'`。
+    """
+    proc = git("rev-parse", "--abbrev-ref", "HEAD", cwd=path, check=False)
+    name = proc.stdout.strip()
+    return name if (proc.returncode == 0 and name and name != "HEAD") else None
+
+
+# ── PR 读数（**一次取数**同时给出「有无 open PR」与「有无已合并 PR」）────────────────
+
+PR_FIELDS = "number,state,isDraft,url,mergedAt,files"
+
+
+class PrReading:
+    """一个分支的 PR 现状：open / merged / none / **unknown**（未知 ≠ 无）。"""
+
+    def __init__(self, state: str, number: int | None = None, is_draft: bool = False,
+                 url: str = "", merged_at: str = "", files: list[str] | None = None):
+        self.state, self.number, self.is_draft = state, number, is_draft
+        self.url, self.merged_at, self.files = url, merged_at, list(files or [])
+
+    @property
+    def touches_presets(self) -> bool:
+        return any(p.startswith(".agent-presets/") for p in self.files)
+
+
+def _files_of(row: dict) -> list[str]:
+    files = row.get("files")
+    if not isinstance(files, list):
+        return []
+    return [f.get("path") for f in files if isinstance(f, dict) and f.get("path")]
+
+
+def read_pr(branch: str, cwd: Path) -> PrReading:
+    """`gh pr list --head <branch> --state all`（**一次**取数）⇒ 四态。
+
+    一次取数给出**同刻**的两个事实（禁一半快照一半实时）：①有没有 open PR ②有没有已合并 PR。
+    分支被复用时（既 open 又有 merged）⇒ **优先按 open 处置**（fail-closed：在飞的那个优先）。
+    """
+    proc = _run([gh_bin(), "pr", "list", "--head", branch, "--state", "all",
+                 "--limit", "10", "--json", PR_FIELDS], cwd=cwd, timeout=60)
+    if proc.returncode != 0:
+        return PrReading("unknown")
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return PrReading("unknown")
+    if not isinstance(rows, list):
+        return PrReading("unknown")
+    open_rows = [r for r in rows if isinstance(r, dict) and r.get("state") == "OPEN"]
+    merged_rows = [r for r in rows if isinstance(r, dict) and r.get("state") == "MERGED"]
+    if open_rows:
+        row = open_rows[0]
+        return PrReading("open", row.get("number"), bool(row.get("isDraft")),
+                         row.get("url") or "", "", _files_of(row))
+    if merged_rows:
+        row = merged_rows[0]
+        return PrReading("merged", row.get("number"), False,
+                         row.get("url") or "", row.get("mergedAt") or "", _files_of(row))
+    return PrReading("none")
+
+
+def read_merge_state(number: int, cwd: Path) -> tuple[str, str] | None:
+    """**单发**读一次合并状态（`gh pr view <num> --json state,mergedAt`）；取不到 ⇒ None。
+
+    ⚠️ gh 2.97.0 的 `gh pr view` **没有** `--watch`（只有 `--web`，实测 `gh pr view --help`）
+    ⇒ 「等合并」只能是「`gh pr checks --watch` 阻塞返回后**单发**读一次」，
+    **不引入 sleep 轮询**（口径：等待不轮询）。
+    """
+    proc = _run([gh_bin(), "pr", "view", str(number), "--json", "state,mergedAt"], cwd=cwd, timeout=120)
+    if proc.returncode != 0:
+        return None
+    try:
+        row = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(row, dict):
+        return None
+    return str(row.get("state") or ""), str(row.get("mergedAt") or "")
+
+
+# ── land：一条命令完成「落地」（顺序 = LAND_STEPS，执行体遍历它）──────────────────
+
+class StepResult:
+    """一步的读数：done / skipped / failed / stopped（**跳过也必须写清为什么**）。"""
+
+    def __init__(self, step: str, status: str = "pending", why: str = "", code: int = EXIT_OK):
+        self.step, self.status, self.why, self.code = step, status, why, code
+
+    def line(self) -> str:
+        icon = {"done": "✅", "skipped": "⏭️", "failed": "❌", "stopped": "⏸️"}.get(self.status, "…")
+        return f"{self.step:<14} {icon} {self.why}"
+
+
+def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
+    branch, root, wt, pr = ctx["branch"], ctx["root"], ctx["wt"], ctx["pr"]
+
+    if step == "rebase":
+        # fetch **不是** rebase/merge（禁令针对裸 rebase/merge）—— 不 fetch 就谈不上「rebase 到**最新** main」
+        fetch = _run(["git", "fetch", "origin", "main"], cwd=root, timeout=300)
+        if fetch.returncode != 0:
+            print(_tail(fetch.stderr))
+            return StepResult(step, "failed", "`git fetch origin main` 失败 ⇒ 停（无法保证 rebase 到**最新** main）",
+                              EXIT_UNMERGED)
+        proc = _run(["bash", _devtree_script(root), "rebase", branch], cwd=root, timeout=900)
+        if proc.returncode != 0:
+            print(_tail(proc.stderr or proc.stdout))
+            return StepResult(step, "failed", "rebase 失败 ⇒ 停（入口 = dev-worktree.sh rebase；禁裸 rebase/merge）",
+                              EXIT_UNMERGED)
+        return StepResult(step, "done", "已 rebase 到最新 origin/main（入口：scripts/dev-worktree.sh rebase）")
+
+    if step == "gate":
+        print("   🔍 跑 ./verify-all.sh gate（在**分支自己的检出**里；与 CI 同规则）")
+        proc = _run(["bash", _verify_script(wt), "gate"], cwd=wt, timeout=3600)
+        print(_tail(proc.stdout or proc.stderr))
+        if proc.returncode != 0:
+            return StepResult(step, "failed",
+                              "`./verify-all.sh gate` **判红** ⇒ 立即停：不 ready、不等 CI、不收尾（exit 2）",
+                              EXIT_UNMERGED)
+        return StepResult(step, "done", "gate 绿")
+
+    if step == "ready":
+        if not pr.is_draft:
+            return StepResult(step, "skipped", f"PR #{pr.number} 已是 ready ⇒ 不重复调用 `gh pr ready`")
+        proc = _run([gh_bin(), "pr", "ready", str(pr.number)], cwd=root, timeout=120)
+        if proc.returncode != 0:
+            print(_tail(proc.stderr or proc.stdout))
+            return StepResult(step, "failed", f"`gh pr ready {pr.number}` 失败 ⇒ 停", EXIT_UNMERGED)
+        return StepResult(step, "done", f"PR #{pr.number} 已转 ready（在 gate 绿**之后**）")
+
+    if step == "wait-ci":
+        print(f"   ⏳ 一次阻塞等 CI：`gh pr checks {pr.number} --watch`（超时上限 {args.ci_timeout}s；"
+              "不写 sleep 轮询；超时 ⇒ exit 3，不得当绿读）")
+        proc = _run([gh_bin(), "pr", "checks", str(pr.number), "--watch"], cwd=root, timeout=args.ci_timeout)
+        if proc.returncode == TIMEOUT_RC:
+            return StepResult(step, "stopped",
+                              f"CI 在 {args.ci_timeout}s 内没跑完 ⇒ **未判定**（exit 3）。续跑："
+                              f"./scripts/issue-lifecycle.sh land {branch} --from wait-ci", EXIT_UNKNOWN)
+        print(_tail(proc.stdout))
+        if proc.returncode != 0:
+            return StepResult(step, "failed",
+                              f"CI 判红/取消（复核：`gh pr checks {pr.number}`）⇒ 停：不收尾、不猜已合并",
+                              EXIT_UNMERGED)
+        return StepResult(step, "done", "CI 全绿（`gh pr checks --watch` 退出 0）")
+
+    if step == "wait-merge":
+        print(f"   ⏳ 单发读合并状态：`gh pr view {pr.number} --json state,mergedAt`"
+              "（pr view 无 --watch，故不引入 sleep 轮询）")
+        reading = read_merge_state(pr.number, root)
+        if reading is None:
+            return StepResult(step, "stopped", "合并状态取不到（gh 不可用 / 未登录 / 离线）⇒ 未判定（exit 3）",
+                              EXIT_UNKNOWN)
+        state, merged_at = reading
+        if state == "MERGED":
+            ctx["merged_at"] = merged_at
+            return StepResult(step, "done", f"已合并（mergedAt {merged_at or '未知'}）")
+        if state == "CLOSED":
+            return StepResult(step, "failed", "PR 已 CLOSED 但**未合并** ⇒ 不收尾（fail-closed）", EXIT_UNMERGED)
+        return StepResult(step, "stopped",
+                          f"checks 已结束但仍**未观察到合并**（state={state}）—— 本步不猜、不收尾。续跑："
+                          f"./scripts/issue-lifecycle.sh land {branch} --from wait-merge", EXIT_UNMERGED)
+
+    if step == "finish":
+        print("   🧹 收尾（复用 finish 的判定本体，不另写第二套）：worktree + 本地/远程分支 + 过程产物")
+        rc = cmd_finish(argparse.Namespace(target=branch, dry_run=False))
+        if rc != EXIT_OK:
+            return StepResult(step, "failed",
+                              f"finish 非零退出（exit {rc}）⇒ 见上方清单（未合并 / 活锚保护 / 自证未清）",
+                              EXIT_UNMERGED)
+        return StepResult(step, "done", "worktree + 本地分支 + 远程分支已清，且已自证干净")
+
+    if step == "preset-refresh":
+        if ctx["files"] and not pr.touches_presets:
+            return StepResult(step, "skipped", "变更集不含 `.agent-presets/**` ⇒ 无需刷活锚（§18.2 只在预设变更后要求）")
+        why = ("变更集含 `.agent-presets/**`（§18.2 硬纪律）" if pr.touches_presets
+               else "变更集取不到 ⇒ **保守跑一次**（刷活锚幂等、零风险 —— 宁可多刷不可漏刷）")
+        proc = _run(["bash", _preset_refresh_script(root)], cwd=root, timeout=600)
+        print(_tail(proc.stdout or proc.stderr, 6))
+        if proc.returncode != 0:
+            return StepResult(step, "failed",
+                              "活锚刷新失败（落后 ⇒ drift 面硬漂移）。手工复跑：./scripts/preset-anchor-refresh.sh",
+                              EXIT_UNMERGED)
+        return StepResult(step, "done", f"已跑 `preset-anchor-refresh.sh`（{why}）")
+
+    return StepResult(step, "failed", f"未知步骤 {step}（LAND_STEPS 与实现不同步）⇒ fail-closed", EXIT_USAGE)
+
+
+def cmd_land(args: argparse.Namespace) -> int:
+    branch = args.branch
+    cwd = Path.cwd()
+    root = main_root(cwd)
+    # ⚠️ 必须离开可能被删掉的检出目录：`finish` 会把调用者所在的 worktree 删掉，
+    #    之后 `Path.cwd()` / `git -C <cwd>` 会当场失败（进程 cwd 已被 unlink）。
+    os.chdir(root)
+    print(f"🚀 land：{branch}")
+    print(f"   顺序（顺序即安全顺序）：{' → '.join(LAND_STEPS)}")
+
+    wt = worktree_path_of(branch, cwd)
+    if wt is None or not wt.is_dir():
+        print(f"❌ 分支 {branch} 没有可用的 worktree 检出（rebase / gate 都需要它）⇒ 零动作。", file=sys.stderr)
+        print(f"   先建：./scripts/dev-worktree.sh add {branch}", file=sys.stderr)
+        return EXIT_USAGE
+
+    pr = read_pr(branch, cwd)
+    if pr.state == "unknown":
+        print("⏭️  无法判定 PR 状态（gh 不可用 / 未登录 / 离线）—— 判据**未跑** ⇒ 零动作（exit 3，不得当 0 读）。",
+              file=sys.stderr)
+        return EXIT_UNKNOWN
+    if pr.state == "none":
+        print(f"❌ 分支 {branch} 在 GitHub 上没有任何 PR ⇒ 零动作。", file=sys.stderr)
+        print("   先开 **draft** PR 再来 land（改动全部 commit 完再开 PR：native auto-merge 会秒合，"
+              "后补的 commit 会搁浅）。", file=sys.stderr)
+        return EXIT_USAGE
+
+    ctx = {"branch": branch, "root": root, "wt": wt, "pr": pr, "files": list(pr.files), "merged_at": ""}
+    declared: list[StepResult] = []
+    plan = list(LAND_STEPS)
+    if pr.state == "merged":
+        declared = [StepResult(s, "skipped", "PR 已合并 ⇒ 该步目的已达成（不重跑 rebase/gate，也不重复 ready）")
+                    for s in ("rebase", "gate", "ready", "wait-ci", "wait-merge")]
+        plan = ["finish", "preset-refresh"]
+        print(f"ℹ️  PR #{pr.number} 已是 **MERGED**（= 「已合并但没人收尾」形态）⇒ 只做 finish + preset-refresh")
+    if args.from_step:
+        if args.from_step in plan:
+            plan = plan[plan.index(args.from_step):]
+            print(f"ℹ️  --from {args.from_step}：从该步起（前面的步骤按 --from 跳过；rebase/gate/ready 永不可跳）")
+        else:
+            print(f"ℹ️  --from {args.from_step} 落在已达成区间（PR 已合并）⇒ 从 {plan[0]} 起")
+
+    if args.dry_run:
+        print("ℹ️  --dry-run（**零动作**）：计划 = " + " → ".join(plan))
+        for r in declared:
+            print(f"   {r.line()}")
+        print(f"   前置读数：worktree={wt}；PR #{pr.number}（state={pr.state}，draft={pr.is_draft}）；"
+              f"变更集 {len(pr.files)} 个文件" + ("（含 .agent-presets/**）" if pr.touches_presets else ""))
+        print("   要真做：去掉 --dry-run。")
+        return EXIT_OK
+
+    results: list[StepResult] = list(declared)
+    for step in plan:                      # ★ 顺序的唯一来源：遍历 LAND_STEPS（不是手写调用序列）
+        print(f"\n── [{len(results) + 1}] {step} ──")
+        res = _land_do_step(step, ctx, args)
+        results.append(res)
+        print(f"   {res.line()}")
+        if res.status in ("failed", "stopped"):
+            break
+    return _land_summary(branch, pr, results, ctx)
+
+
+def _land_summary(branch: str, pr: PrReading, results: list[StepResult], ctx: dict) -> int:
+    rc = next((r.code for r in results if r.status in ("failed", "stopped") and r.code), EXIT_OK)
+    done = [r.step for r in results if r.status == "done"]
+    skipped = [f"{r.step}（{r.why}）" for r in results if r.status == "skipped"]
+    bad = next((r for r in results if r.status in ("failed", "stopped")), None)
+
+    print("\n════════ land 总结 ════════")
+    print(f"分支：{branch}    PR：#{pr.number} {pr.url}")
+    for i, r in enumerate(results, 1):
+        print(f"  {i}. {r.line()}")
+    print(f"本轮做了什么：{'、'.join(done) if done else '（无）'}")
+    print(f"跳过了什么：{('；'.join(skipped)) if skipped else '（无）'}")
+    if bad is None:
+        print(f"一行结论：✅ land 完成 —— {branch} 已合并并收尾（PR #{pr.number}）")
+    else:
+        icon = "⏸️" if bad.status == "stopped" else "❌"
+        print(f"一行结论：{icon} land 停在 [{bad.step}]：{bad.why.splitlines()[0]}")
+        print("           ⇒ 未收尾的分支保持原样（fail-closed）；复查后可续跑。")
+    return rc
+
+
+# ── reap-merged：新工作前把「已合并但没人收尾」的自动收掉 ──────────────────────────
+
+class Candidate:
+    """一个待判定对象：分支（+ 可能存在的 worktree / 本地 / 远程引用）。"""
+
+    def __init__(self, branch: str, path: Path | None = None, local: bool = False,
+                 remote: bool = False, stale: bool = False):
+        self.branch, self.path, self.local, self.remote, self.stale = branch, path, local, remote, stale
+
+
+def wt_base_dir(cwd: Path) -> Path:
+    env = os.environ.get(WT_BASE_ENV)
+    if env:
+        return Path(env).resolve()
+    return (main_root(cwd).parent / "migao-wt").resolve()
+
+
+def read_pr_rows(cwd: Path) -> list[dict] | None:
+    """**一次**取全量 PR（`--state all`）⇒ 行列表；取不到 ⇒ None（无法判定，不得当 0 读）。"""
+    proc = _run([gh_bin(), "pr", "list", "--state", "all", "--limit", str(PR_LIMIT),
+                 "--json", "number,state,headRefName,baseRefName"], cwd=cwd, timeout=120)
+    if proc.returncode != 0:
+        return None
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    return rows if isinstance(rows, list) else None
+
+
+def classify_rows(rows: list[dict]) -> tuple[set[str], dict[str, int], set[str]]:
+    """行 → （有已合并 PR 的分支集, open PR 的分支→号, open PR 的 base 集）。"""
+    merged: set[str] = set()
+    open_nums: dict[str, int] = {}
+    open_bases: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        head, state = row.get("headRefName") or "", row.get("state") or ""
+        if state == "MERGED":
+            merged.add(head)
+        elif state == "OPEN":
+            number = row.get("number")
+            open_nums[head] = number if isinstance(number, int) else -1
+            if row.get("baseRefName"):
+                open_bases.add(str(row["baseRefName"]))
+    return merged, open_nums, open_bases
+
+
+def reap_candidates(cwd: Path, root: Path) -> list[Candidate]:
+    """候选 = 已注册 worktree（主工作区除外）+ 本地分支 + 远程分支（`origin/*`，去重成一行一分支）。"""
+    by_branch: dict[str, Candidate] = {}
+
+    def touch(branch: str, path: Path | None = None, local: bool = False,
+              remote: bool = False, stale: bool = False) -> None:
+        c = by_branch.get(branch)
+        if c is None:
+            by_branch[branch] = Candidate(branch, path, local, remote, stale)
+            return
+        c.path = c.path or path
+        c.stale = c.stale or stale
+        c.local, c.remote = c.local or local, c.remote or remote
+
+    root_resolved = root.resolve()
+    for entry in GUARD._worktrees(cwd):
+        path, branch = Path(entry["path"]), entry["branch"]
+        if not branch or path.resolve() == root_resolved:
+            continue
+        exists = path.is_dir()
+        touch(branch, path if exists else None, stale=not exists)
+
+    for line in git("for-each-ref", "refs/heads", "--format=%(refname:short)", cwd=cwd, check=False).stdout.splitlines():
+        if line.strip():
+            touch(line.strip(), local=True)
+    for line in git("for-each-ref", "refs/remotes/origin", "--format=%(refname:short)",
+                    cwd=cwd, check=False).stdout.splitlines():
+        name = line.strip()
+        if not name or name.endswith("/HEAD") or "/" not in name:
+            continue
+        touch(name.split("/", 1)[1], remote=True)
+    return list(by_branch.values())
+
+
+def classify_candidate(c: Candidate, merged: set[str], open_nums: dict[str, int], open_bases: set[str],
+                       protected: list[Path], locked: set[str], self_branches: set[str],
+                       wt_base: Path) -> tuple[bool, str, str]:
+    """⇒ (可否收尾, 原因分类键, 可读原因)。**任一保护命中即不删**（fail-closed，顺序即处置优先级）。"""
+    if c.branch in PROTECTED_BRANCHES:
+        return False, "主干分支", "主干分支，永不判可移除"
+    if c.branch in self_branches:
+        return False, "本次目标/当前检出", "本次调用的目标分支或当前检出的分支（--except / cwd）"
+    if c.path is not None:
+        why = protected_reason(c.path, protected)
+        if why:
+            return False, "活锚保护", "**活锚保护**：" + why
+        if not c.path.resolve().is_relative_to(wt_base):
+            return False, "半径外 worktree", f"worktree 不在工作区根（{wt_base}）下 ⇒ 自动收尾半径外"
+    if c.stale:
+        return False, "stale worktree 记录", "stale worktree 记录（目录已不存在）→ 先 `git worktree prune`"
+    if c.branch in open_nums:
+        return False, "有 open PR", f"有 open PR（#{open_nums[c.branch]}）⇒ 在飞，不动"
+    if c.branch in open_bases:
+        return False, "是 open PR 的 base", "是某个 open PR 的 base（stacked PR）⇒ 删了会连带影响它"
+    if c.branch in locked:
+        return False, "活跃会话锁", "有**活跃会话锁**（PID 存活）⇒ 可能正在用"
+    if c.branch not in merged:
+        return False, "无已合并 PR", "GitHub 上没有已合并 PR（从未有 PR / 未合并）⇒ fail-closed"
+    return True, "可收尾", "有已合并 PR 且无 open PR ⇒ 可收尾"
+
+
+def cmd_reap_merged(args: argparse.Namespace) -> int:
+    from collections import Counter
+
+    cwd = Path.cwd()
+    root = main_root(cwd)
+    wt_base = wt_base_dir(cwd)
+    mode = "APPLY（真删）" if args.apply else "dry-run（零删除）"
+    print(f"🧹 自动收尾（{mode}）—— 判定：有**已合并** PR 且**无 open PR**")
+    print("   （squash 合并下 `--merged` / `git cherry` 结构性失效 ⇒ 判据只认 GitHub PR 状态）")
+
+    rows = read_pr_rows(cwd)
+    if rows is None:
+        print("⏭️  「PR 状态」这条判据**未跑**（gh 不可用 / 未登录 / 离线）⇒ 一个都不删"
+              "（exit 3 = 无法判定，**不得当 0 读**）。", file=sys.stderr)
+        return EXIT_UNKNOWN
+    if not rows:
+        print("⏭️  gh 可用但**一条 PR 都取不到**（空结果）⇒ 无法判定 ⇒ 一个都不删（exit 3）。", file=sys.stderr)
+        return EXIT_UNKNOWN
+    if len(rows) >= PR_LIMIT:
+        print(f"⚠️  读数可能被 `--limit {PR_LIMIT}` **截断**（本次恰好拿到 {PR_LIMIT} 条）⇒ 更老的已合并 PR "
+              "可能不在读数里。后果是**漏收**（fail-closed 方向：判不出「已合并」就不动），**不会误删**；"
+              "要全量需分页，本单未做（如实登记为边界）。")
+
+    merged, open_nums, open_bases = classify_rows(rows)
+    protected = anchor_protected_paths()
+    locked = GUARD._locked_branches(cwd)
+    self_branches = {b for b in (current_branch(cwd), current_branch(root), *args.exclude) if b}
+    candidates = reap_candidates(cwd, root)
+
+    reapable: list[Candidate] = []
+    skipped: list[tuple[Candidate, str, str]] = []
+    for c in candidates:
+        ok, key, why = classify_candidate(c, merged, open_nums, open_bases,
+                                         protected, locked, self_branches, wt_base)
+        if ok:
+            reapable.append(c)
+        else:
+            skipped.append((c, key, why))
+
+    print(f"\n读数（**一次取数** `gh pr list --state all`）：PR {len(rows)} 条 / 有已合并 PR 的分支 "
+          f"{len(merged)} 个 / 有 open PR 的分支 {len(open_nums)} 个")
+    print(f"候选 {len(candidates)} 个（{wt_base} 下的 worktree + 本地分支 + 远程分支）")
+    print(f"\n── 可收尾：{len(reapable)} 个 ──")
+    for c in reapable:
+        print(f"  ✅ {c.branch}" + (f"（worktree {c.path}）" if c.path else "（无注册 worktree）"))
+    if not reapable:
+        print("  （无）")
+    print(f"\n── 跳过：{len(skipped)} 个 ──")
+    for c, _key, why in skipped:
+        print(f"  ⚠️  {c.branch}：{why}")
+
+    anchor_hits = [c for c, key, _why in skipped if key == "活锚保护"]
+    if anchor_hits:
+        print(f"\n❌ **活锚保护命中 {len(anchor_hits)} 个**：活锚必须是**专职只读镜像**，绝不能指向工作区"
+              "（issue #3956 实证：误删 ⇒ DSH 静默加载不到研发模式）⇒ 这些路径零删除，整轮 exit 2 报警。",
+              file=sys.stderr)
+
+    if not reapable:
+        digest = "、".join(f"{k} ×{v}" for k, v in Counter(key for _c, key, _w in skipped).most_common())
+        print(f"\nℹ️  **本轮零动作**：0 个可收尾（判了、都不该动 —— 不是「没跑」）。"
+              f"跳过原因分布：{digest or '（无候选）'}")
+        return EXIT_UNMERGED if anchor_hits else EXIT_OK
+
+    if not args.apply:
+        print("\nℹ️  这是 dry-run（默认）—— **零删除**。要真删："
+              "./scripts/issue-lifecycle.sh reap-merged --apply")
+        return EXIT_UNMERGED if anchor_hits else EXIT_OK
+
+    failures = 0
+    for c in reapable:
+        print(f"\n🧹 收尾：{c.branch}" + (f"（{c.path}）" if c.path else "（无注册 worktree）"))
+        try:
+            if c.path is not None:
+                remove_worktree(str(c.path), cwd)
+                print(f"✅ 已移除工作区：{c.path}")
+            if c.local and delete_local_branch(c.branch, cwd):
+                print(f"✅ 已删除本地分支：{c.branch}")
+            if c.remote and delete_remote_branch(c.branch, cwd):
+                print(f"✅ 已删除远程分支：origin/{c.branch}")
+        except RuntimeError as exc:
+            print(f"❌ 收尾失败：{exc}")
+            failures += 1
+            continue
+        ledger_add(c.branch, cwd)
+        target = Target(c.branch, str(c.path) if c.path else None, c.path is not None, c.local, c.remote)
+        if not verify_clean(target, cwd, root):
+            failures += 1
+
+    removed = clean_artifacts(root, apply=True) if not args.no_artifacts else []
+    if args.no_artifacts:
+        print("\nℹ️  --no-artifacts：跳过过程产物清理 —— 主工作区根是**跨会话共享写面**"
+              "（别人的 `pr-body-*.md` 可能正躺在那里在用；§2.3 第 8 条同族）")
+    else:
+        print(f"\n🧽 已清过程产物 {len(removed)} 项")
+    print(f"✅ 自动收尾完成：{len(reapable) - failures}/{len(reapable)} 个目标已清。"
+          if not failures else f"⚠️  {failures} 个目标自证有未清项（见上）。")
+    return EXIT_UNMERGED if (failures or anchor_hits) else EXIT_OK
+
+
 # ── 过程产物清理 ──────────────────────────────────────────────────────────────
 
 def artifact_paths(root: Path) -> list[Path]:
@@ -255,7 +850,7 @@ def resolve_target(target: str, cwd: Path) -> Target:
     branch = ""
     if Path(target).is_dir():
         path = str(Path(target).resolve())
-        branch = GUARD.wt_branch_of(Path(path)) or ""
+        branch = current_branch(Path(path)) or ""
     for e in GUARD._worktrees(cwd):
         if path is None and e["branch"] == target:
             path, branch = e["path"], e["branch"]
@@ -477,6 +1072,32 @@ def main(argv: list[str] | None = None) -> int:
     p_prune = sub.add_parser("prune", help="批量收尾所有已注册 worktree（默认 dry-run）")
     p_prune.add_argument("--apply", action="store_true", help="真删（默认只打印清单）")
     p_prune.set_defaults(func=cmd_prune)
+
+    p_land = sub.add_parser(
+        "land",
+        help="一条命令落地：" + " → ".join(LAND_STEPS) + "（顺序即安全顺序；gate 判红即停）",
+    )
+    p_land.add_argument("branch", help="要落地的分支（必须有已注册的 worktree 检出）")
+    p_land.add_argument("--dry-run", action="store_true", help="只打印计划与前置读数，**零动作**")
+    p_land.add_argument("--from", dest="from_step", choices=LAND_RESUMABLE_FROM,
+                        help="从该步起续跑（只允许 " + "/".join(LAND_RESUMABLE_FROM)
+                             + " —— rebase/gate/ready 是安全前置，永不可跳过）")
+    p_land.add_argument("--ci-timeout", type=int, default=DEFAULT_CI_TIMEOUT,
+                        help=f"`gh pr checks --watch` 的阻塞上限（秒，默认 {DEFAULT_CI_TIMEOUT}）；超时 ⇒ exit 3")
+    p_land.set_defaults(func=cmd_land)
+
+    p_reap = sub.add_parser(
+        "reap-merged",
+        help="自动收尾「有已合并 PR 且无 open PR」的 worktree/本地/远程分支（**默认 dry-run**）",
+    )
+    p_reap.add_argument("--apply", action="store_true", help="真删（默认只打印清单）")
+    p_reap.add_argument("--dry-run", action="store_true", help="显式 dry-run（本身就是默认口径，写上只为可读）")
+    p_reap.add_argument("--except", dest="exclude", action="append", default=[],
+                        help="排除该分支（可重复；`dev-worktree.sh add` 用它排除本次要建的分支）")
+    p_reap.add_argument("--no-artifacts", action="store_true",
+                        help="跳过过程产物清理（主工作区根是**跨会话共享写面**：别人的 pr-body-*.md "
+                             "可能正在用；`dev-worktree.sh add` 的自动收尾用它）")
+    p_reap.set_defaults(func=cmd_reap_merged)
 
     args = parser.parse_args(argv)
     return args.func(args)
