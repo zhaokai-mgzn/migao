@@ -1,0 +1,29 @@
+{
+  "_doc": [
+    "族 6（善后与补救）的失败码**燃尽账户**（issue #5441，§23 G2）。数据文件 —— 判据只读它，不读注释。",
+    "纪律（机械执行，见 tests/unit_ci_workflows/test_remedy_registry_guard.py）：",
+    "  ① `awaiting_rows` = **既没有登记行、又不在本账户里**的失败码 ⇒ 判红（未登记即红）。",
+    "     ⇒ 修好一条 = 在 app/utils/remedy_registry.py 补一行 `Remedy(...)` 并**在同一个 PR 删掉本账户对应条目**。",
+    "  ② 账户**只许缩短**：`awaiting_rows` 里已登记 / 已不在码集的陈旧条目 ⇒ 判红（防止账户变成永久豁免）。",
+    "  ③ 「每个失败码都有出口」的判据 = `登记码 ∪ awaiting_rows == 现取码集`（逐值相等，涨跌都红）。",
+    "  ④ `anchor` = 冻结时刻的现取读数（条数），与现取逐值相等；不许把它当解释性上限。",
+    "现状（2026-09-25，issue #5441）：现取失败码 18 条，其中 13 条已有登记行、5 条走**默认话术**（本账户）。",
+    "默认话术**本身**也受全部文本面判据约束（纯中文 / 无重试字样 / 非「未知错误」）—— 所以「走默认」不等于「免检」，",
+    "它只是**不够贴切**（这几条的归因与出路还没有人写），故作为**可见欠账**在册。"
+  ],
+  "issue": "#5441",
+  "frozen_at": "2026-09-25",
+  "anchor": {
+    "face": 18,
+    "registered": 13,
+    "awaiting": 5,
+    "note": "现取读数（`python3 -m pytest tests/unit_ci_workflows/test_remedy_registry_guard.py -q -s` 会打印）。18 = 13 已登记 + 5 走默认话术。"
+  },
+  "awaiting_rows": [
+    "REVIEW_ERROR",
+    "SESSION_NOT_FOUND",
+    "card_already_emitted_this_turn",
+    "handoff_blocked_capability_denial",
+    "handoff_blocked_inflight"
+  ]
+}

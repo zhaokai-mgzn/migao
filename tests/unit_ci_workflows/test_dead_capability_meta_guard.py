@@ -99,6 +99,14 @@
   「商户员工查用 `order_query`」），一刀切会把**正确文本**判红 ——
   只判「点名**全局不可达**工具」这一档（必然 `tool_not_found`）。本单扩面**继承同一条收窄**
   （新面走同一个 `not_judged` 通道），并有**注入式负控**钉住（`test_out_of_domain_mentions_are_not_judged`）。
+- **射程再扩一层（issue #5441，族 6 善后与补救）**：引用面自本单起**再收一层源** ——
+  `app/utils/remedy_registry.py`（「失败 → 原因 → 补救」登记表，`remedy:` 前缀 / `remedy_texts()`）。
+  它同属「指点**去哪里**」的文本（`execution/react_turn.py` 的 `tool_not_found` 话术直接取自它、
+  回灌给模型），**新增声明面 ⇒ 同批登记进读源**；复用**同一个判据本体** `_scan_refs`、同一套
+  `allowed`（= 所有被绑定工具的并集，与 references 共享层同口径）与**同一档不判表**
+  （`kind="shared"` ⇒ 域外点名走判红档，**不进显式不判表、不动 `anchor.not_judged`**）。
+  该面的**独立判据**在 `tests/unit_ci_workflows/test_remedy_registry_guard.py`
+  （登记面 / 重试面 / 文本面 + 本条复用的**注入式红证**），本文件只负责让它的文本**在射程内**。
 
 复算（零依赖、秒级）：
 `python3 -m pytest tests/unit_ci_workflows/test_dead_capability_meta_guard.py -q -s`
@@ -116,6 +124,49 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
 REFS_DIR = SKILLS_DIR / "references"
 LEDGER_PATH = Path(__file__).with_name("dead_object_ledger.json")
+
+#: **族 6（善后与补救）的失败登记表**（issue #5441）：本判据新增的「指点去哪里」文本面。
+#: 它同属「注入模型的文本」（`execution/react_turn.py` 的 `tool_not_found` 话术直接取自它、
+#: 回灌给模型）⇒ 不收录它，它的文本就落在判定面之外（§23 G5「判定面之外 = 永久免检」）。
+#: ⇒ **新增声明面 ⇒ 同批登记进读源**，并复用**同一个判据本体** `_scan_refs` 与同一套 `allowed`。
+REMEDY_REGISTRY = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "utils"
+                   / "remedy_registry.py")
+
+
+def remedy_texts(sources: dict[str, str]) -> dict[str, str]:
+    """`remedy:<短码>`（操作级行是 `remedy:<短码>@<工具>`；默认话术行是 `remedy:default`）
+    → 该行**用户可见的那一句**。
+
+    ⚠️ 键必须带 `@<工具>`：同一个失败码可以有多条**操作级**行（`tool_execution_failed` 就有
+    「下单 = 不可重试」与「只读查询 = 可重试」两条），只按码做键会让后一条**静默覆盖**前一条
+    —— 判据面凭空少一行而**没有任何东西会红**（同 §23.8 B1「判据语料不许被自己吃掉」）。
+    ⚠️ 取 `Remedy(...)` 的 `reason` + `remedy` 两个**关键字实参的静态文本**（字面量 / 隐式拼接）；
+    取不到就**不编**（保守方向）—— 但现取为 0 会让新守卫
+    `test_remedy_registry_guard.test_registry_covers_the_reference_surface_without_dead_refs`
+    判红（**绿得没有计数 = 空跑**，§23 G7）。
+    """
+    out: dict[str, str] = {}
+    for key, text in sorted(sources.items()):
+        if not key.startswith("remedy:"):
+            continue
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.Call):
+                continue
+            called = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if called != "Remedy":
+                continue
+            kw = {k.arg: k.value for k in node.keywords if k.arg}
+            code = _string_value(kw["code"]) if "code" in kw else None
+            scope = _string_value(kw["scope"]) if "scope" in kw else None
+            parts = [_string_value(kw[name]) for name in ("reason", "remedy") if name in kw]
+            body = "。".join(p for p in parts if p)
+            if body:
+                surface = f"remedy:{code or 'default'}" + (f"@{scope}" if scope else "")
+                assert surface not in out, (
+                    f"登记表里 `{surface}` 有两条同键行 ⇒ 引用面判据只看得见一条（另一条静默免检）。"
+                )
+                out[surface] = body
+    return out
 
 #: 本文件负责的**三个面**（射程面**不在此表** —— 见 `problems_range_face_is_reused`）。
 MY_FACES = ("ref", "guard", "bind")
@@ -169,6 +220,10 @@ def surface_sources() -> dict[str, str]:
     out = dict(mc._source_map())
     for path in sorted(REFS_DIR.rglob("*.md")):
         out[f"ref:{path.relative_to(REFS_DIR)}"] = path.read_text(encoding="utf8")
+    # issue #5441：族 6 的失败登记表（同属「指点去哪里」的文本面）—— **新增声明面 ⇒ 同批登记**。
+    if REMEDY_REGISTRY.exists():
+        out[f"remedy:{REMEDY_REGISTRY.relative_to(REPO_ROOT)}"] = REMEDY_REGISTRY.read_text(
+            encoding="utf8")
     assert out, "判据面取空（读源失效）⇒ 本守卫会静默空跑成绿"
     return out
 
@@ -743,6 +798,12 @@ class Scan:
         for surface, text in sorted({**self.params, **self.runtime}.items()):
             rows.append((surface, self._allowed_of_tool(surface.split(":", 1)[1].split(".", 1)[0]),
                          text, "tool"))
+        # issue #5441：族 6 的失败登记表 —— 它由**多个域共享**一份（工具面 / 授权面 / 业务前提面），
+        # 故与 references 共享层同口径：`allowed` = **所有被绑定工具的并集**（`frozenset(self.binders)`）、
+        # `kind="shared"`（非工具面 ⇒ 域外点名走**判红档**，不进显式不判表、**不动 `anchor.not_judged`**）
+        # ⇒ 只有「点名**任何 skill 都调不到**的工具」才红，与引用面既有语义逐字一致（不另立第二套）。
+        for surface, text in sorted(remedy_texts(sources).items()):
+            rows.append((surface, frozenset(self.binders), text, "shared"))
         return rows
 
     def _scan_refs(self, sources: dict[str, str]):

@@ -41,6 +41,7 @@ from app.graph.skills.base_skill import (
     resolve_sms_code, safe_exc_message, unit_price_grounding_error,
 )
 from app.graph.pending_validated import VALIDATION_FAILURE_KEY
+from app.utils.remedy_registry import remedy_for
 
 
 # 「第 7 节未执行 ⇒ 该名未绑定」的哨兵。
@@ -500,7 +501,17 @@ async def react_turn(
                                                 "message": _recover_msg},
                                                ensure_ascii=False),
                                     {"success": False, "error": "tool_not_found_relocked"})
-                        return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                        # 话术取自**族 6 的失败登记表**（issue #5441）。原先这里回给模型的是
+                        # `f"工具 {tool_name} 不可用"` —— 那是把**英文短码**（工具名）回灌给模型，
+                        # 而 `references/base/principles.md` 的核心原则 4 明令回复里不得出现工具名
+                        # ⇒ 只差一步就被念给用户听。登记表给的是**纯中文短句 + 可照做的下一步**，
+                        # 且该文本已在 `test_dead_capability_meta_guard` 的引用面射程内
+                        # （点名不可达工具会判红）。
+                        _unavailable = remedy_for("tool_not_found")
+                        return tool_call, json.dumps(
+                            {"success": False, "error": "tool_not_found",
+                             "message": f"{_unavailable.reason}。{_unavailable.remedy}"},
+                            ensure_ascii=False), {"success": False}
                     # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
                     _blocked_q = await _quantity_choice_block(
                         tool_name, args, tool_call, session_id, skill_name, state)
