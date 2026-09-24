@@ -376,7 +376,9 @@ def test_registry_routes_match_real_pages() -> None:
 def test_unregistered_truth_source_does_not_inject(monkeypatch) -> None:
     """🔴 登记表未登记即**不生效**（fail-closed）—— 摘掉真值源 ⇒ 那条 route 不再注入。"""
     baseline = PR.build_page_context("/orders/123", "12345", role="admin", permissions=["*"])
-    assert baseline is not None, "前提自证：未注入前该 route 是登记的"
+    assert baseline == PR.PageContext(
+        route="/orders/123", truth_source="curtain-fabric-quote-rules", entity_id="12345",
+    ), "前提自证：未注入前该 route 是登记的且带实体 id"
     monkeypatch.setattr(
         PR, "TRUTH_SOURCES",
         {k: v for k, v in PR.TRUTH_SOURCES.items() if k != "curtain-fabric-quote-rules"},
@@ -395,9 +397,10 @@ def test_unregistered_route_renders_constant_notice() -> None:
 def test_truth_source_reaches_context_with_citation() -> None:
     """④ 可追溯：本轮上下文里**确实**带上了登记的真值源与必写标注。"""
     ctx = PR.build_page_context(f"/products/{UUID}", UUID, role="admin", permissions=["*"])
-    assert ctx is not None
-    source = PR.resolve_truth_source(ctx.truth_source)
-    assert source is not None
+    assert ctx == PR.PageContext(
+        route=f"/products/{UUID}", truth_source="craft-calc-glossary", entity_id=UUID,
+    )
+    source = PR.TRUTH_SOURCES[ctx.truth_source]
     rendered = PR.render_page_context(_QUESTION, ctx)
     assert source.citation in rendered
     assert source.path in rendered
@@ -538,8 +541,7 @@ class TestPageContextField:
     @pytest.mark.asyncio
     async def test_registered_route_injects_truth_source(self) -> None:
         message = await _run_handler(_req("/orders/123", "12345"), _merchant())
-        source = PR.resolve_truth_source("curtain-fabric-quote-rules")
-        assert source is not None
+        source = PR.TRUTH_SOURCES["curtain-fabric-quote-rules"]
         assert source.citation in message
         assert source.path in message
         assert "/orders/123" in message

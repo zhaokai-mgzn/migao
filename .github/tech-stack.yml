@@ -109,6 +109,15 @@ modules:
         tests:
           - 'tests/unit/test_{1}.py'
           - 'tests/test_{1}.py'
+      # 页面上下文（issue #5371 族 4，新目录 app/context/）：登记表（route→真值源）、
+      # **默认拒绝**、按角色裁剪、跨语言形态同源的判据全在 `tests/test_page_context.py`
+      # —— 故**逐文件**映射到同一个可收集文件（`(.+)` 会把 `__init__.py` 也捕获进来，
+      # 这正是想要的：`__init__.py` 只是再导出公开 API，没有独立行为）。
+      # 为什么不靠兜底：兜底会产出 `tests/test_page_registry.py` / `tests/test___init__.py`
+      # 这类**要新建**的路径，而判据其实已经集中在一个文件里（照 `app/core/` 的写法显式登记）。
+      - pattern: 'backend/ai-agent-service/app/context/(.+)\.py'
+        tests:
+          - 'tests/test_page_context.py'
       # LLM 模型路由（issue #2546 / #5353）：select_model 由 test_vision_integration 的
       # TestSelectModelWithVision 覆盖，故逐文件显式登记。
       # ⚠️ **不得**写 tests/test_llm_pipeline.py —— 它在 pytest.ini 的 addopts `--ignore=` 里
