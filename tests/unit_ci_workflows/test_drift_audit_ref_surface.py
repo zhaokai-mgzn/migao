@@ -35,6 +35,10 @@ DRIFT = REPO_ROOT / "scripts" / "drift_audit.py"
 # ── 判据 ① 的必需覆盖集：**本单裁定必须进判定面**的两个评测面目录 ───────────────
 REQUIRED_COVERED = ("tests/agent_eval/", ".github/cases/")
 
+# 夹具里那条引用的**目标文件与行号**（拼接构造，避免本文件自己出现连续 `路径:行号` 字面量）
+FX_REF = "app/x.py"
+FX_LINE = 1
+
 # ── 判据 ④ 的**显式不判表**（每条必须给理由；粒度 = 顶层两级目录）──────────────
 # 「不判」不是"没看见"：这里是**逐条裁定**的结果，差集非空即红 ⇒ 新增一条必须同时改这里。
 # 判据是 `test_meta_guard_ref_bearing_dirs_are_declared`（含把 `tests/agent_eval/`
@@ -219,7 +223,7 @@ def test_injection_two_dirs_red_when_covered_and_silent_when_uncovered(tmp_path)
         target: "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\n",
         # 裸行号（在范围内、无 @<sha>）
         ".github/cases/aftersales.yml": f"# 探针读数见 `{target}:3`\n",
-        # 越界（`#5309` 的现场形态：`after_sales_manage.py:435` 而该文件仅 259 行）
+        # 越界（`#5309` 的现场形态：`after_sales_manage.py` 的越界行号，该文件仅 259 行）
         "tests/agent_eval/local_runner.py": f'"""见 `{target}:435`。"""\n',
     })
 
@@ -287,8 +291,11 @@ def test_meta_guard_ref_bearing_dirs_are_declared(tmp_path):
     #    那两个目录的引用**清零** ⇒ 无引用的目录**按定义**不在差集里（差集的口径是"承载引用的目录"）。
     #    拿它当红证 = 用一个结构性不成立的形态充数（`migao-acceptance`「空断言」同族）。
     fixture = _mk_repo(tmp_path, {
-        "docs/wiki/ok.md": "见 `app/x.py:1 @abc1234`\n",   # 判定面内 + `@<sha>` 限定 ⇒ 合规
-        "tools/notes.md": "见 `app/x.py:1`\n",             # **未登记目录**里的一条裸引用
+        # ⚠️ 字面量**不写成连续的 `路径:行号`**：否则本文件自己就成了被判定对象
+        #    （drift 面 `ref-freshness` 会把它当裸引用/悬空引用，Case Trust 规则 G 会把它当
+        #    `CASE-TRUST-STALE-LINE-REF` 判红 —— 两处都实测踩过）。故用拼接构造夹具文本。
+        "docs/wiki/ok.md": "见 `" + FX_REF + ":" + str(FX_LINE) + " @abc1234`\n",  # 判定面内 + `@<sha>` ⇒ 合规
+        "tools/notes.md": "见 `" + FX_REF + ":" + str(FX_LINE) + "`\n",            # **未登记目录**里的一条裸引用
     })
     injected = {d: n for d, n in _uncovered_dirs(mod, fixture).items()
                 if d not in DECLARED_NOT_COVERED}
