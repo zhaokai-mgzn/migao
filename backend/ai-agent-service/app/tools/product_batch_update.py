@@ -157,14 +157,19 @@ class ProductBatchUpdateTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": list(_ACTIONS),
+                # ⚠️ enum 必须是**字面量列表**：`scripts/case_coverage.py::tool_declared_actions`
+                # 按源码文本取 `parameters.properties.action.enum`（真值源）—— 写成
+                # `list(_ACTIONS)` 这类表达式会让它读成「该工具没有 action 维度」⇒
+                # 用例里任何 action 声明都判 `action_dangling`（**假红阻塞**）。实测踩过。
+                "enum": ["preview", "execute", "revert"],
                 "description": "preview=生成批次并返回逐条「改前 → 改后」预览（先给商家确认）；"
                                "execute=执行该批次（须带 preview 返回的 batch_id）；"
                                "revert=撤销该批次（逐条还原为改前值 old_value）",
             },
             "batch_type": {
                 "type": "string",
-                "enum": list(BATCH_TYPES),
+                # 同为字面量（可被静态读取；与 `BATCH_TYPES` 的一致性由单测钉住）
+                "enum": ["product_price", "product_status"],
                 "description": "批量类型（action=preview 必填）：product_price=商品级统一定价批量改价；"
                                "product_status=批量上/下架。只有这两个",
             },

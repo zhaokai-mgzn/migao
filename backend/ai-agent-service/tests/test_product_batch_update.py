@@ -31,6 +31,7 @@ from app.tools.base import ToolContext
 from app.tools.product_batch_update import (
     BATCH_TYPE_PRICE,
     BATCH_TYPE_STATUS,
+    BATCH_TYPES,
     MAX_BATCH_ITEMS,
     VALID_ACTIONS,
     ProductBatchUpdateTool,
@@ -202,6 +203,20 @@ class TestWhitelistAndInputGuards:
         """白名单只有 `product_price` / `product_status`（通用批量有意不做）。"""
         declared = set(tool.parameters["properties"]["batch_type"]["enum"])
         assert declared == {BATCH_TYPE_PRICE, BATCH_TYPE_STATUS}
+
+    def test_enums_are_literals_for_the_static_action_catalog(self, tool):
+        """🔴 action / batch_type 的 enum 必须与常量一致**且是字面量列表**。
+
+        为什么专门判：`scripts/case_coverage.py::tool_declared_actions` 的真值源 = 工具源码文本里
+        `parameters.properties.action.enum` 的**字面量**（正则取花括号配对后的 `enum`）。
+        写成表达式（如 `list(_ACTIONS)`）⇒ 它读到「该工具没有 action 维度」⇒ **用例里任何
+        action 声明都被判 `action_dangling`（假红阻塞 CI）** —— 实测踩过。
+        """
+        props = tool.parameters["properties"]
+        assert props["action"]["enum"] == ["preview", "execute", "revert"]
+        assert set(props["action"]["enum"]) == set(VALID_ACTIONS)
+        assert props["batch_type"]["enum"] == ["product_price", "product_status"]
+        assert set(props["batch_type"]["enum"]) == set(BATCH_TYPES)
 
     @pytest.mark.asyncio
     async def test_unknown_batch_type_is_rejected(self, tool):
