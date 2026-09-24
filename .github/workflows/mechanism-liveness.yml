@@ -134,8 +134,10 @@ jobs:
             echo ''
             echo "复算（本机、零成本）：\`python3 scripts/mechanism_liveness.py --check\`"
           } > "$BODY"
-          gh pr comment "$PR" --body-file "$BODY" || true
-          gh pr edit "$PR" --add-label block/merge || true
+          gh pr comment "$PR" --body-file "$BODY" \
+            || echo "::warning::无法在 PR 上贴修复指引（限流/权限）—— **不影响判红结论**，请直接读本 run 的 step summary"
+          gh pr edit "$PR" --add-label block/merge \
+            || echo "::warning::无法打 block/merge（限流/权限）—— **判红结论不变**，但 auto-merge 不会被本标签拦住，请人工确认"
           exit 0
 
       - name: 通过 ⇒ 摘 block/merge（PR 腿）
@@ -146,7 +148,10 @@ jobs:
         run: |
           set +e
           LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
-          echo "$LABELS" | grep -qx 'block/merge' && gh pr edit "$PR" --remove-label block/merge || true
+          if echo "$LABELS" | grep -qx 'block/merge'; then
+            gh pr edit "$PR" --remove-label block/merge \
+              || echo "::warning::无法摘 block/merge（限流/权限）—— 它是**恢复态**的收尾动作，请人工确认"
+          fi
           exit 0
 
   watchdog:
@@ -230,10 +235,13 @@ jobs:
             echo "- **处置归属**：按 finding 的 \`mech=\` 归属到该机制的文件所有者（登记见 \`scripts/mechanism-registry.json\`）。"
           } > "$BODY"
           if [ -n "$EXIST" ]; then
-            gh issue comment "$EXIST" --body-file "$BODY" || true
-            gh issue edit "$EXIST" --add-label priority/P1 || true
+            gh issue comment "$EXIST" --body-file "$BODY" \
+              || echo "::warning::无法在值班 issue #$EXIST 上追加本轮证据（限流/权限）"
+            gh issue edit "$EXIST" --add-label priority/P1 \
+              || echo "::warning::无法给值班 issue #$EXIST 打 priority/P1（限流/权限）"
           else
-            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 || true
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+              || echo "::warning::无法创建 P1 值班 issue（限流/权限）—— 请人工按本 run 的 step summary 建单"
           fi
           exit 0
 
@@ -244,6 +252,12 @@ jobs:
         env:
           OUTCOME: ${{ job.status }}
         run: |
-          bash .github/scripts/mechanism_liveness.sh emit mechanism-liveness \
-            --outcome "$OUTCOME" \
-            --why "看门人本轮判定面见上（登记完整性由 registry job 承担）"
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不让读数步判红**
+          # （报告者不改变机制结论；判「静默」的地方是看门人自己的定时腿）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit mechanism-liveness \
+              --outcome "$OUTCOME" \
+              --why "看门人本轮判定面见上（登记完整性由 registry job 承担）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=mechanism-liveness）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

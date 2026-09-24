@@ -72,4 +72,12 @@ jobs:
         if: always()
         env:
           OUTCOME: ${{ job.status }}
-        run: bash .github/scripts/mechanism_liveness.sh emit stale --outcome "$OUTCOME"
+        run: |
+          # 发射器**可能不在检出里**（本 job 若检出固定 `ref: main`，而发射器是本 PR 新增 ⇒ 合并前取不到；
+          # 浅检出同理）⇒ **降级为 warning 标注，绝不让读数步把机制判红**（报告者不改变机制结论）。
+          # 「本轮无声」由看门人（定时腿）承接 —— 判「静默」的地方是它，不是这里。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit stale --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=stale）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

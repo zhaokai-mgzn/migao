@@ -60,7 +60,7 @@ jobs:
             echo "✅ fixtures 无变化，无需更新"
             # 零动作**也必须出声**（issue #5326 判据 1 / 4）：本步原先是整个 job 里最静默的一条路径
             # （月度跑一次、多数月份零动作）⇒ 现在它明确说「我看了、没变化、所以没动」。
-            mechanism_liveness_declare --seen 1 --acted 0 --why "fixtures 无变化（零动作，不是没跑）" || true
+            mechanism_liveness_declare --seen 1 --acted 0 --why "fixtures 无变化（零动作，不是没跑）"
           else
             git config user.name "migao-fixture-bot"
             git config user.email "fixture-bot@users.noreply.github.com"
@@ -72,7 +72,7 @@ jobs:
             gh pr create --title "chore(e2e): 重录 API fixtures（月度自动）" \
               --body "月度 fixture 重录，保持 quality 测试数据新鲜。录制即脱敏（手机号确定性掩码）。" \
               --base main
-            mechanism_liveness_declare --seen 1 --acted 1 --why "fixtures 有变化 ⇒ 已开重录 PR（${BRANCH}）" || true
+            mechanism_liveness_declare --seen 1 --acted 1 --why "fixtures 有变化 ⇒ 已开重录 PR（${BRANCH}）"
           fi
 
       - name: Notify on failure (dedup guard)
@@ -115,4 +115,12 @@ jobs:
         if: always()
         env:
           OUTCOME: ${{ job.status }}
-        run: bash .github/scripts/mechanism_liveness.sh emit fixture-record --outcome "$OUTCOME"
+        run: |
+          # 发射器**可能不在检出里**（本 job 若检出固定 `ref: main`，而发射器是本 PR 新增 ⇒ 合并前取不到；
+          # 浅检出同理）⇒ **降级为 warning 标注，绝不让读数步把机制判红**（报告者不改变机制结论）。
+          # 「本轮无声」由看门人（定时腿）承接 —— 判「静默」的地方是它，不是这里。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit fixture-record --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=fixture-record）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

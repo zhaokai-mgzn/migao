@@ -122,15 +122,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # 面外漂移的**通道登记**（#5074）：PR 腿对面外漂移恒绿（判定面 = 本 PR 的改动集），
           # 这里显式报出条数 + 承接物 —— 免得「面外」被读成「没问题」（那正是本单的缺陷形态）。
+          OUT_SCOPE=$(python3 -c "import json;print(json.load(open('drift-audit-report.json'))['summary']['new_drift_out_of_scope'])" 2>/dev/null || echo '?')
           # 存活读数（issue #5326 判据 1）：计数类读数（面外新增漂移条数），**非挂钟时长**。
-          # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
+          # ⚠️ 必须放在 `OUT_SCOPE=` **之后**（放到前面 ⇒ 在 `-u` 下引用未赋值变量直接死：
+          #    本包实测把整个 job 判红 —— 报告者把机制弄挂了）。
+          # ⚠️ **本块不得出现任何吞码写法**：既有判据（`tests/unit_ci_workflows/`
+          #    `test_drift_audit_unjudgeable_tri_state.py` 的 `test_workflow_wires_exit_3_to_failure_not_pass`）
+          #    按**文本扫描**「捕获返回码之后 → 重放退出码之前」这段，出现吞码后缀即判「返回码可能被吞」。
+          #    ⚠️ 这条注释本身也**不许写出那个字面量**：写了就等于自己把判据弄红
+          #    （§17.3 ③「判据被自己的文案喂红」—— 本包实测踩过一次）。
+          #    兜底由 `mechanism_liveness_declare` 内部完成，它永远返回 0，不会中断本步。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
             mechanism_liveness_declare --seen "${OUT_SCOPE}" \
-              --why "漂移审计完成：面外新增漂移 ${OUT_SCOPE} 条 · 退出码 ${RC}" || true
-
+              --why "漂移审计完成：面外新增漂移 ${OUT_SCOPE} 条 · 退出码 ${RC}"
           fi
-          OUT_SCOPE=$(python3 -c "import json;print(json.load(open('drift-audit-report.json'))['summary']['new_drift_out_of_scope'])" 2>/dev/null || echo '?')
           if [ "${OUT_SCOPE}" != "0" ] && [ "${OUT_SCOPE}" != "?" ]; then
             echo "::warning::面外新增漂移 ${OUT_SCOPE} 条（所属文件不在本 PR 改动集 ⇒ **本 PR 不阻塞**）：由定时腿的 P1 值班 issue 承接（标题含「真相源契约审计未通过（定时腿）」）；只有**面内**新增漂移才会卡本 PR。通道语义见本文件头部「面外漂移的拦截点」。"
           fi
@@ -233,4 +239,12 @@ jobs:
         if: always()
         env:
           OUTCOME: ${{ job.status }}
-        run: bash .github/scripts/mechanism_liveness.sh emit drift-audit --outcome "$OUTCOME"
+        run: |
+          # 发射器**可能不在检出里**（本 job 若检出固定 `ref: main`，而发射器是本 PR 新增 ⇒ 合并前取不到；
+          # 浅检出同理）⇒ **降级为 warning 标注，绝不让读数步把机制判红**（报告者不改变机制结论）。
+          # 「本轮无声」由看门人（定时腿）承接 —— 判「静默」的地方是它，不是这里。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit drift-audit --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=drift-audit）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

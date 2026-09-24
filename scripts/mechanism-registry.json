@@ -11,7 +11,7 @@
       "name": "悬空 PR 扫描（arm 后长时间不合并的 PR 必须出声）",
       "workflow": ".github/workflows/automerge.yml",
       "job": "detect-dangling-prs",
-      "expected_observable": "每轮一条 `::notice::MECHANISM-LIVENESS mech=automerge run=<run_id> rc=0|1 seen=unknown acted=unknown why=<...>`；悬空 ⇒ 机制自身另有 `::error::` + 非零退出。",
+      "expected_observable": "每轮一条 `::notice::|::warning::MECHANISM-LIVENESS mech=automerge run=<run_id> rc=<0|1|3> seen=unknown acted=unknown why=悬空 PR 扫描：退出码 …`；读数**并入**跑判据脚本的那一步（job 的最后一步、`if: always()`、`set +e; RC=$?; … ; exit $RC`），**不新加一步** —— 既有红证 `tests/unit_ci_workflows/test_dangling_pr_scan.py` 的 `test_host_workflow_wiring_guard_is_not_vacuous` 以「最后一步 = 跑判据脚本的那一步」为前提。",
       "criterion": "看门人断言：main 上最近一次**已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失或绑定旧 run ⇒ 红。判定只用 run 归属与结论，**不用挂钟时长**。",
       "consumer": "值班（.github/workflows/mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）",
       "reading": "instrumented",

@@ -32,7 +32,11 @@
 #  · 注解会被 GitHub 限流（每 step 10 条 / 每 job 50 条）。读数步**单独一个 step** ⇒
 #    本行必占该 step 的注解额度（见 `tests/unit_ci_workflows/test_mechanism_liveness.py`
 #    的 `test_reading_step_is_its_own_step`）。
-set -uo pipefail
+# ⚠️ **不要在文件顶层 `set -uo pipefail`**：本文件会被**机制体的 run 块 `source`**，
+#    顶层 `set` 会**改写调用者的 shell 选项** —— 实测把 `drift-audit.yml` 的 run 块
+#    变成 `-u` 模式，于是它后面一句引用尚未赋值的 `${OUT_SCOPE}` 直接 `unbound variable`
+#    把整个审计 job 判红（报告者把机制弄挂了）。函数内部一律用 `${x:-默认}` 兜底。
+#    选项只在 **CLI 入口**（本文件被当脚本执行时）设置。
 
 MECHANISM_LIVENESS_MARKER="MECHANISM-LIVENESS"
 
@@ -114,6 +118,7 @@ mechanism_liveness_emit() {
 
 # ── CLI（`bash mechanism_liveness.sh <子命令> …`）────────────────────────────
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  set -uo pipefail
   case "${1:-}" in
     emit)    shift; mechanism_liveness_emit "$@"; exit 0 ;;
     declare) shift; mechanism_liveness_declare "$@"; exit 0 ;;

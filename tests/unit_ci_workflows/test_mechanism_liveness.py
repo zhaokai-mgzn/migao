@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -318,7 +319,8 @@ def test_red_proof_reading_step_moved_off_the_end_is_detected(tmp_path):
     repo = _mini_repo(tmp_path)
     victim = repo / ".github" / "workflows" / "stale.yml"
     text = victim.read_text(encoding="utf-8")
-    assert text.rstrip("\n").endswith('--outcome "$OUTCOME"'), "夹具前置不成立"
+    assert "      - name: 存活读数（本轮做了什么 / 为什么零动作）\n" in text, "夹具前置不成立"
+    assert text.rstrip("\n").endswith("fi"), "夹具前置不成立：读数步本该是 job 的最后一步"
     victim.write_text(
         text.rstrip("\n") + "\n\n      - name: 事后又做了一步（读数不再是最终结论）\n"
                             "        if: success()\n        run: echo late\n",
@@ -910,7 +912,23 @@ def _outcome_binding_problems(repo: Path) -> tuple[int, list[str]]:
             checked += 1
             env = step.get("env")
             bound = env.get("OUTCOME") if isinstance(env, dict) else None
-            if bound != "${{ job.status }}":
+            if "--outcome" not in run:
+                # 工作步内联发射（automerge：读数并入跑判据脚本的那一步）不吃 `env.OUTCOME`，
+                # 它用 `--rc "$RC"`；⇒ 改判「rc 确实来自被捕获的退出码」。
+                # 两种合法的 rc 来源（都要求 rc 是**真读出来的**，不是字面量常量）：
+                #   · 工作步内联（automerge）：`set +e; <cmd>; RC=$?` ⇒ `--rc "$RC"`；
+                #   · 专用内联读数步（close-linked-issues，无 checkout）：`case "$OUTCOME"` 映射 rc
+                #     —— 该映射的**等价性**由 `test_inline_emission_is_grammar_equivalent_to_the_emitter` 真跑钉住。
+                reads_rc = bool(re.search(r"RC=\$\?", run)) or 'case "$OUTCOME" in' in run
+                # rc 必须**真读出来**并**真的进了读数行**：
+                #   · 调发射器 ⇒ `--rc "$RC"`；· 纯内联 printf ⇒ 格式串含 `rc=%s` 且实参含 `"$RC"`。
+                passes_rc = '--rc "$RC"' in run or ("rc=%s" in run and '"$RC"' in run)
+                if not (reads_rc and passes_rc):
+                    problems.append(
+                        f"{entry['id']}：内联发射必须把**真读出来的** rc 送进读数行"
+                        f"（`RC=$?` 或 `case \"$OUTCOME\"` 映射 + `--rc \"$RC\"` / `rc=%s`）：{run[-160:]!r}"
+                    )
+            elif bound != "${{ job.status }}":
                 problems.append(f"{entry['id']}：读数步的 `env.OUTCOME` = {bound!r}")
             elif "$OUTCOME" not in run:
                 # 只要求 `run:` **真的用到** `$OUTCOME`（把 env 绑定交给机制体）；
@@ -1024,3 +1042,91 @@ def test_red_proof_injection_helper_self_proves_in_shell_guard(tmp_path):
     checked, broken = _shell_syntax_problems(repo)
     assert checked >= 150 and broken == [], f"合规副本被判红 ⇒ 空判据：checked={checked} broken={broken}"
     assert _outcome_binding_problems(repo)[1] == [], "合规副本的 OUTCOME 绑定被判红 ⇒ 空判据"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 元守卫（第二批）：**CI 实测撞出来的两处**，同样各配注入式红证
+# ══════════════════════════════════════════════════════════════════════════
+def test_sourcing_the_emitter_does_not_mutate_caller_shell(tmp_path):
+    """`source` 发射器**不得改写调用者的 shell 选项** —— 它是报告者，不该把机制弄挂。
+
+    本包**CI 实测**撞出来的：发射器顶层写了 `set -uo pipefail` ⇒ 被 `drift-audit.yml` 的 run 块
+    `source` 后，**调用者**变成 `-u` 模式，于是它后面一句引用尚未赋值的 `${OUT_SCOPE}`
+    直接 `unbound variable` ⇒ **整个审计 job 判红**（`OUT_SCOPE: unbound variable`）。
+    """
+    probe = 'source "{emitter}" >/dev/null 2>&1; printf "flags=%s " "$-"; printf "unset=[%s]" "${{DEFINITELY_UNSET_XYZ:-}}"; echo'
+    baseline = subprocess.run(["bash", "-c", 'printf "flags=%s" "$-"'], capture_output=True, text=True, timeout=60)
+    sourced = subprocess.run(
+        ["bash", "-c", probe.format(emitter=EMITTER)], capture_output=True, text=True, timeout=60,
+    )
+    assert sourced.returncode == 0, f"source 发射器后调用者直接失败（报告者把机制弄挂了）：{sourced.stderr}"
+    got_flags = sourced.stdout.split("flags=")[1].split()[0]
+    want_flags = baseline.stdout.strip().removeprefix("flags=")
+    assert got_flags == want_flags, (
+        f"source 发射器改变了调用者的 shell 选项：{got_flags!r} vs 基线 {want_flags!r} "
+        f"⇒ 调用者后续引用未赋值变量会直接死"
+    )
+    assert "unset=[]" in sourced.stdout, f"source 后引用未赋值变量不安全：{sourced.stdout!r}"
+
+
+def test_red_proof_emitter_mutating_caller_shell_is_red(tmp_path):
+    """**注入式红证**：把 `set -uo pipefail` 加回发射器顶层 ⇒ **必红**（调用者选项被改写）。"""
+    mutant = _mutate_emitter(
+        tmp_path, 'MECHANISM_LIVENESS_MARKER="MECHANISM-LIVENESS"',
+        'set -uo pipefail\nMECHANISM_LIVENESS_MARKER="MECHANISM-LIVENESS"', "shell-mutation",
+    )
+    proc = subprocess.run(
+        ["bash", "-c", f'source "{mutant}" >/dev/null 2>&1; printf "flags=%s " "$-"; echo "unset=[${{NOPE_XYZ:-}}]"'],
+        capture_output=True, text=True, timeout=60,
+    )
+    baseline = subprocess.run(["bash", "-c", 'printf "flags=%s" "$-"'], capture_output=True, text=True, timeout=60)
+    assert proc.stdout.split("flags=")[1].split()[0] != baseline.stdout.strip().removeprefix("flags="), (
+        f"注入 `set -uo pipefail` 后调用者选项竟然没变 ⇒ 该红证没有判别力：{proc.stdout!r}"
+    )
+
+
+def test_every_emitter_reading_step_fails_open_when_the_emitter_is_absent():
+    """读数步必须**降级为 warning**，而不是判红：发射器可能不在检出里（固定 `ref: main` / 浅检出）。
+
+    本包**CI 实测**撞出来的：`deploy-reconcile.yml` 检出 `ref: main`，而发射器是本 PR 新增 ⇒
+    PR 自己的 CI 上取不到该文件 ⇒ `bash .github/scripts/mechanism_liveness.sh: No such file or directory`
+    （exit 127）⇒ **job 判红**。判「静默」的地方是看门人（定时腿），不是这里 —— 报告者不改变机制结论。
+    """
+    missing: list[str] = []
+    checked = 0
+    for entry in _registry_data()["mechanisms"]:
+        if entry.get("reading_site", "emitter") != "emitter":
+            continue
+        needle = f"emit {entry['id']}"
+        for step in ML._job_steps(REPO_ROOT, entry["workflow"], entry["job"]):
+            run = str(step.get("run") or "")
+            if needle not in run:
+                continue
+            checked += 1
+            if "if [ -f .github/scripts/mechanism_liveness.sh ]" not in run:
+                missing.append(f"{entry['id']}：读数步没有「发射器不在检出里 ⇒ 降级」的护栏")
+    print(f"[元守卫] 带护栏的读数步现取 = {checked} 个")
+    assert checked >= 7, f"现取 {checked} 个 ⇒ 判据面过小（元守卫可能空跑报绿）"
+    assert not missing, "读数步会把「发射器不在检出里」判红（报告者不得把机制弄挂）：\n" + "\n".join(
+        f"  {m}" for m in missing
+    )
+
+
+def test_red_proof_reading_step_without_fail_open_guard_is_red(tmp_path):
+    """**注入式红证**：把某个读数步的护栏去掉 ⇒ **必红**。"""
+    repo = _mini_repo(tmp_path)
+    victim = repo / ".github" / "workflows" / "stale.yml"
+    text = victim.read_text(encoding="utf-8")
+    guard = "          if [ -f .github/scripts/mechanism_liveness.sh ]; then\n"
+    assert text.count(guard) == 1, "夹具前置：该护栏本该唯一"
+    victim.write_text(text.replace(guard, "          if true; then\n"), encoding="utf-8")
+    registry = ML.load_registry(repo)
+    missing = []
+    for entry in registry["mechanisms"]:
+        if entry.get("reading_site", "emitter") != "emitter":
+            continue
+        for step in ML._job_steps(repo, entry["workflow"], entry["job"]):
+            run = str(step.get("run") or "")
+            if f"emit {entry['id']}" in run and "if [ -f .github/scripts/mechanism_liveness.sh ]" not in run:
+                missing.append(entry["id"])
+    assert "stale" in missing, f"去掉护栏后元守卫没有判红 ⇒ 该红证没有判别力：{missing}"
