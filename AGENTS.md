@@ -33,6 +33,10 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
    （用「关联 #NNNN」+ 人工关单并附证据）；降成本的固化**禁挂钟时长**（钉与负载无关的工作量读数）；
    核验前**自证坐标**（只读一律 `git show origin/main:<path>`，**禁读工作树**；变异注入先自证生效）。
    全文见 `migao-dev-flow` §23（G1~G10）。
+9. **main 侧没有守护 ⇒ 合并后必须自证**：`pr-check` 只在 `pull_request` 触发 ⇒ **main 上的破坏没有任何 run 会报**
+   （实证 `#5396` 半成品落 main，卡住**所有** PR 的 required 检查，只在下个 PR 上爆）。⇒ ① 引入**约束类判据**时必须
+   **同 PR 补齐被约束对象**，并在 PR body 写明**真值在哪一侧 + 依据**；② 合并后**在 main 上复算**目标判据
+   （`git show origin/main:<path>` 或纯检出跑一次），**不要**用「CI 绿」推断 main 健康。全文见 `migao-dev-flow` §23.7（A1~A3）。
 
 ## 按场景找文档（先查索引，按需 Read）
 
