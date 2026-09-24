@@ -385,6 +385,18 @@ def _bootstrap_guard_problems(doc: dict) -> list[str]:
     return problems
 
 
+def _bootstrap_guard_snippet() -> str:
+    """从 workflow 里取出**首发日护栏那一段 bash**（真跑它，而不是读它的文本）。"""
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for step in _steps(doc):
+        run = str(step.get("run", ""))
+        marker = "if [ ! -f scripts/post_merge_verify.py ]"
+        if marker in run:
+            start = run.index(marker)
+            return run[start:run.index("set +e", start)]
+    raise AssertionError(f"{WORKFLOW_REL} 里找不到首发日护栏片段（判据 15 无从判定 ⇒ 大声失败）")
+
+
 def _permission_problems(doc: dict) -> list[str]:
     problems = []
     perms = doc.get("permissions")
@@ -516,6 +528,32 @@ class TestWorkflowWiring:
             if not hit:
                 raise AssertionError(f"变异点失配：找不到 `{needle}`（红证不得是空断言）")
             assert _bootstrap_guard_problems(doc) != [], f"删掉 `{needle}` 之后判据没红 ⇒ 空断言"
+
+    def test_first_day_is_loud_but_not_red(self, tmp_path):
+        """判据 15（**行为级**）：首发日形态（本体与 workflow 都不在检出里）⇒ `exit 0` + `::notice::`。
+
+        这条是 ⑤ 那次自伤的真形态复刻：真跑 workflow 里那段 bash，不是读它的文本。
+        """
+        proc = subprocess.run(["bash", "-c", _bootstrap_guard_snippet()], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        assert proc.returncode == 0, f"首发日应**不判红**（实测 rc={proc.returncode}）：\n{out}"
+        assert "::notice::" in out and "pending-merge" in out, f"首发日必须出声并点名 pending-merge：\n{out}"
+        assert "::error::" not in out, f"首发日不得报 error：\n{out}"
+
+    def test_half_removed_mechanism_turns_it_red(self, tmp_path):
+        """判据 15（**行为级**红证）：workflow 在、判定本体不见了 ⇒ `exit 1` + `::error::`。
+
+        ⛔ 不许静默 —— 否则「删掉判定本体」会变成一条永远绿的腿。
+        """
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "post-merge-verify.yml").write_text("name: probe\n", encoding="utf-8")
+        proc = subprocess.run(["bash", "-c", _bootstrap_guard_snippet()], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        assert proc.returncode == 1, f"机制被拆掉半截 ⇒ 必须判红（实测 rc={proc.returncode}）：\n{out}"
+        assert "::error::" in out, f"拆掉半截必须报 error：\n{out}"
 
     def test_write_scope_is_least_privilege(self):
         """判据 12：唯一写作用域 = `issues`（本腿没有 PR 对象 ⇒ 不给它 PR 写权限）。"""
