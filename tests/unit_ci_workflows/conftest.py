@@ -19,6 +19,8 @@
 红证与负例见 `tests/unit_ci_workflows/test_shared_eval_case_immutability.py`（喂真·原地改写 ⇒ 守卫必红）。
 """
 import copy
+import hashlib
+import os
 import pickle
 import sys
 from pathlib import Path
@@ -154,3 +156,134 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         f"（全部 skip = {len(skipped)}）"
         "—— CI 注入了 MIGAO_REQUIRE_REALDB ⇒ 真库族 skip 必须是 0"
     )
+    # 用例语料解析的**工作量读数**（issue #5301）：与挂钟无关 ⇒ 不受 runner 负载影响。
+    # 判据本体在 tests/unit_ci_workflows/test_cases_corpus_parse_memo.py；这里只让它**可见**
+    # （「省了多少」必须长得像省了多少，不能只在 PR body 里）。
+    _memo = corpus_memo_state()
+    terminalreporter.write_line(
+        f"[corpus-memo] 用例语料：真解析 = {_memo['misses']} 次 / 缓存命中 = {_memo['hits']} 次"
+        f"（缓存条目 {_memo['cache_size']}；{_memo['reason']}）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 用例库全量解析的**内容级缓存**（issue #5301：把套件成本压回有明确余量的水平）
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 病灶（#5301 实测，不是估算）
+#
+# `render_cases.load_case_dicts()` **每一次调用**都要把 `.github/cases/**`（25 文件 / ~1.9MB）
+# 整体走一遍 `yaml_light` 解析 + 逐文件严格判定 —— 本机实测 **~160ms/次**（`yaml_light` 占绝大部分，
+# `require_strict` 只占 ~11ms/25 文件）。而 `tests/unit_ci_workflows/**` 有 **75 处**调用点，
+# 且其中不少是**每个测试各调一次**（如 `test_case_trust_gate.py` 的多处 `_live()` / `_cases()`）。
+# ⇒ 同一份**内容根本没变**的语料，在一个 pytest 进程里被**重复解析数百次**。
+# 插桩实测（5 个文件 / 262 个用例）：`load_case_dicts` **102 次**、累计 **152.6s**。
+#
+# ## 修法（沿用本仓既有先例，不新造机制）
+#
+# `.github/cases_yaml.py`（issue #5151）已经证明过这条路：「**键 = 内容 sha256**（不是路径、不是
+# 时间戳）⇒ 内容变了键就变 ⇒ **不可能命中过期结论**」。这里对**取值**那一层做同一件事
+# （那处缓存的是"严格判定的结论"，本处缓存的是"解析出来的用例"）。
+#
+# * **命中时返回深拷贝** ⇒ 与「现场重新解析一遍」**逐值等价、且对象互不共享** —— 语义一字不变
+#   （这也正是今天的语义：每次调用拿到的都是全新的嵌套对象）；
+# * **只缓存成功结果** ⇒ 解析抛错（`CasesYamlError`）时不写缓存，每次照旧现场抛；
+# * **目录里任何 `.yml` 的内容或文件名变了 ⇒ 键变 ⇒ 重新解析**（新文件/删文件/改一个字都算）。
+#
+# ## 为什么装在 conftest（一处安装、全目录受益）
+#
+# 补丁打在 `render_cases.load_case_dicts` 上；`.github/case_trust_gate.py` 的
+# `load_cases_from_dir()` 是**调用时**才 `from render_cases import load_case_dicts` ⇒ 它自动走同一份缓存，
+# 不需要改 `.github/**` 一个字。conftest 在本目录任何测试模块**导入之前**执行 ⇒ 连
+# `from render_cases import load_case_dicts` 这种模块级绑定也拿得到缓存版。
+#
+# 防回退判据（与负载无关的结构性读数，不是挂钟时长）：
+# `tests/unit_ci_workflows/test_cases_corpus_parse_memo.py` —— 「同一内容重复加载 ⇒ 真解析 0 次」。
+# 红证孔：`MIGAO_NO_CORPUS_MEMO=1`（**默认关闭**，只为让"把机制注回 ⇒ 必红"可复算）。
+_GH_DIR = REPO_ROOT / ".github"
+_CORPUS_CACHE: dict[str, list] = {}
+_CORPUS_STATS = {"misses": 0, "hits": 0}
+_CORPUS_CACHE_MAX = 64          # 纯防病态增长（套件里内容种类是个位数）
+_UNCACHED_LOAD_CASE_DICTS = None
+_MEMO_STATE = {"installed": False, "reason": "尚未安装"}
+
+
+def _corpus_key(cases_dir) -> str | None:
+    """目录内容的 sha256（文件名 + 逐文件内容都进键）；读不到 ⇒ `None` = 不缓存。"""
+    try:
+        names = sorted(n for n in os.listdir(cases_dir) if n.endswith(".yml"))
+    except OSError:
+        return None
+    if not names:
+        return None
+    digest = hashlib.sha256()
+    for name in names:
+        try:
+            with open(os.path.join(str(cases_dir), name), "rb") as fh:
+                blob = fh.read()
+        except OSError:
+            return None
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(blob)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _memoized_load_case_dicts(cases_dir, *args, **kwargs):
+    """`render_cases.load_case_dicts` 的包装：同内容只真解析一次，返回**深拷贝**。"""
+    key = _corpus_key(cases_dir)
+    if key is not None and key in _CORPUS_CACHE:
+        _CORPUS_STATS["hits"] += 1
+        return copy.deepcopy(_CORPUS_CACHE[key])
+    result = _UNCACHED_LOAD_CASE_DICTS(cases_dir, *args, **kwargs)   # 抛错 ⇒ 不写缓存
+    if key is None:
+        return result
+    if len(_CORPUS_CACHE) >= _CORPUS_CACHE_MAX:
+        _CORPUS_CACHE.clear()
+    _CORPUS_CACHE[key] = result          # 缓存持有主副本；调用方拿到的是它的深拷贝
+    _CORPUS_STATS["misses"] += 1
+    return copy.deepcopy(result)
+
+
+_memoized_load_case_dicts.__corpus_memo__ = True      # type: ignore[attr-defined]
+
+
+def install_corpus_memo() -> tuple[bool, str]:
+    """把内容级缓存装到 `render_cases.load_case_dicts`（幂等）。返回 `(是否已装, 说明)`。
+
+    `MIGAO_NO_CORPUS_MEMO=1` ⇒ **有意不装**（红证孔）：但仍记下补丁前的原函数，
+    好让守卫的红证对照臂（"把机制注回"）在任何情况下都拿得到它。
+    """
+    global _UNCACHED_LOAD_CASE_DICTS
+    try:
+        if str(_GH_DIR) not in sys.path:
+            sys.path.append(str(_GH_DIR))                   # append：只作兜底解析路径
+        import render_cases                                  # noqa: PLC0415
+    except Exception as exc:                                 # pragma: no cover
+        _MEMO_STATE.update(installed=False, reason=f"render_cases 不可导入：{exc!r}")
+        return False, _MEMO_STATE["reason"]
+    current = render_cases.load_case_dicts
+    if not getattr(current, "__corpus_memo__", False):
+        _UNCACHED_LOAD_CASE_DICTS = current                  # 补丁前 = 红证的对照臂
+    if os.environ.get("MIGAO_NO_CORPUS_MEMO") == "1":         # 红证孔：见模块末注释
+        _MEMO_STATE.update(installed=False, reason="MIGAO_NO_CORPUS_MEMO=1 ⇒ 有意不装（红证）")
+        return False, _MEMO_STATE["reason"]
+    if getattr(current, "__corpus_memo__", False):
+        _MEMO_STATE.update(installed=True, reason="已装（幂等复用）")
+        return True, _MEMO_STATE["reason"]
+    render_cases.load_case_dicts = _memoized_load_case_dicts
+    _MEMO_STATE.update(installed=True, reason="已装到 render_cases.load_case_dicts")
+    return True, _MEMO_STATE["reason"]
+
+
+def corpus_memo_state() -> dict:
+    """缓存安装状态 + 命中/未命中计数（**判据用它，不用挂钟时长**）。"""
+    return {**_MEMO_STATE, **_CORPUS_STATS, "cache_size": len(_CORPUS_CACHE)}
+
+
+def corpus_loader_uncached():
+    """补丁**之前**的原函数（红证用：直连它 = 「把缓存注回」的对照臂）。"""
+    return _UNCACHED_LOAD_CASE_DICTS
+
+
+install_corpus_memo()
