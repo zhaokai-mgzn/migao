@@ -62,8 +62,14 @@ exemptions:
   # ── #3081 快捷回复功能下线：移除 quick_reply 兜底文案/意图标签（gate 模板命名不符，已有测试覆盖）──
   - pattern: "backend/ai-agent-service/app/core/fallback.py"
     reason: "移除 quick_reply_manage 兜底文案：已有 tests/unit/test_fallback.py 覆盖 TOOL_FALLBACK_MESSAGES（含各工具文案断言）。gate 模板要求 tests/test_core/fallback.py 命名不符"
-  - pattern: "backend/ai-agent-service/app/suggestions/preference_tracker.py"
-    reason: "移除 quick_reply 意图标签：已有 tests/test_preference_tracker.py + test_preference_injection.py 覆盖 INTENT_LABELS 映射。gate 模板要求 tests/test_suggestions/preference_tracker.py 命名不符"
+  # ⚠️ 本条原为 `app/suggestions/preference_tracker.py` 的**冗余豁免**（issue #5329 落地时删）：
+  # 那条豁免的成因是 `app/suggestions/(.+)\.py` **缺显式 diff_to_test 规则**，通用规则要求
+  # `tests/test_suggestions/<源文件名>.py`（不带 `test_` 前缀，pytest 收不到）⇒ 只能靠豁免绕开。
+  # #5329 就近补上该规则后，`preference_tracker.py` 走规则匹配到既有的
+  # `backend/ai-agent-service/tests/test_preference_tracker.py` ⇒ **pass**，豁免变成死条目。
+  # 按本文件抬头「减少能免检的面才是收紧」删除（守卫 test_qa_exemptions_liveness 会点名死条目）。
+  # 上一条 `app/suggestions/follow_up.py` 的豁免**仍然有效、保留**：它的配套测试名
+  #（`test_follow_up_suggestions.py`）不符合任何模板 ⇒ 不经豁免仍会被判缺测。
 
   # ── 历史分支 UI 重设计组件 break-glass（#2575）——2026-09-18 用户裁定：**整块 19 条删除** ──
   # 被删范围（reason 统一为「#2575 随分支部署，本次未改其逻辑」）：chat 9 / dashboard 3 / ui 5 /

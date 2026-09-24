@@ -129,6 +129,14 @@ modules:
         tests:
           - 'tests/test_vision/test_{1}.py'
           - 'tests/test_vision/{1}.py'
+      # 提问引导模块（issue #5329）：模糊输入的「可点击猜测」投影
+      # （通用规则会要求 tests/test_suggestions/<源文件名>.py —— 不带 test_ 前缀 ⇒
+      #  pytest.ini 只收 test_*.py ⇒ **不可被收集**，门禁会「绿」而测试从不运行；
+      #  同 production / clarification 两处，故显式登记本规则，模板保持扁平可收集）
+      - pattern: 'backend/ai-agent-service/app/suggestions/(.+)\.py'
+        tests:
+          - 'tests/test_suggestions_{1}.py'
+          - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
