@@ -1,6 +1,7 @@
 package com.migao.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -57,11 +58,35 @@ public class CustomerProfile {
     private String sourceChannel;
 
     // --- RFM 评分 ---
+    // 🔴 三个缩写字段的线上键名由 **getter 上的 @JsonProperty** 显式钉住（issue #5459）：
+    //    `getRScore()` 这类「前两个字母都大写」的名字被 Jackson 的默认 Bean 命名折叠成全小写
+    //    （rscore）⇒ 同一字段在「画像视图」（按 #5362 的**声明字段名**构造）与「列表 / 详情 / PUT」
+    //    （实体直接序列化）两个面上名字不同。声明名是唯一基准 ⇒ 统一钉成 rScore / fScore / mScore。
+    //    ⚠️ 注解**必须落在 getter 上**：实体字段是 private 且不带 Jackson 注解 ⇒ 对 Jackson 不可见，
+    //    属性只由 `getXxx/setXxx` 派生；把 @JsonProperty 标在**字段**上会让字段变得可见，于是
+    //    「字段 rScore」与「getter 折叠出的 rscore」变成**两个属性**（实测键数 42 → 45，多出
+    //    rscore/fscore/mscore 三个重复键）。标在 getter 上则是把同一个属性**改名** ⇒ 键数仍是 42。
+    //    判据：backend/admin-api/src/test/java/com/migao/admin/controller/CustomerProfileWireKeyParityTest.java
     private Integer rScore;
 
     private Integer fScore;
 
     private Integer mScore;
+
+    @JsonProperty("rScore")
+    public Integer getRScore() {
+        return rScore;
+    }
+
+    @JsonProperty("fScore")
+    public Integer getFScore() {
+        return fScore;
+    }
+
+    @JsonProperty("mScore")
+    public Integer getMScore() {
+        return mScore;
+    }
 
     private Integer rfmTotalScore;
 
