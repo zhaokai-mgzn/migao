@@ -3457,6 +3457,7 @@ cases:
     user_inputs:
       - "（无 LLM 环节：本用例的判据由前端 vitest 单测 + CI 守卫直接执行，见 traces.tests）"
     expectations: []
+    skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含 4 条注入式红证实跑）"
     data_checks:
       - "**判据 1·不猜商品**：识别出 N 条明细 ⇒ 先给「N 条待选」的选品面板（候选 + 恒在的「都不是」），**不直接建行**；匹配不到 / 未选 / 点「都不是」/ 选了**没给过该条目**的商品 ⇒ **一行都不建**（明细留在备注）。红证：注入「载入候选后自动选第一个」（= 识别即建行）⇒ 页面断言当场红（实测 4 条全红）。"
       - "**判据 2·候选可解释**：每个候选带**用户读得到的理由**（与商品名重合 N/M 字 / 名称包含 / 规格命中如「材质 雪尼尔」）并按分排序 —— 不是把目录原样倒给用户，也不是「AI 推荐」这类黑箱文案。"
@@ -3470,6 +3471,7 @@ cases:
       tests:
         - "frontend/admin-web/tests/unit/lib/order-line-match.test.ts"
         - "frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx"
         - "tests/unit_ci_workflows/test_fabric_width_truth_source.py"
       ci:
         - pr-check.yml

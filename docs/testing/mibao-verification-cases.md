@@ -3268,6 +3268,7 @@
 数据: **判据 6·🔴 单价来自目录 / SKU**：图上写「120元/米」⇒ 只作**复核提示**展示，行价 = SKU 价 88；无可用规格 ⇒ 单价 0（不猜价）。红证（已实跑）：`unitPrice` 改成识别价 120 ⇒ 判据 6 三条断言红。
 数据: **判据 7·用户复核**：选品前一行都不建；建行后数量 / 单价**可就地改**（改完仍是商家的值，不被推导静默改回）；每条明细的处置在面板上可见（已建行 / 已跳过），面板随时可关（未处理的明细只留在备注）。
 数据: **类级（铁律 8 / §23 G1·G2）**：识别字段 ⇄ 建行面 的**接线登记表**（`LINE_PATH_FIELD_KEYS`）—— 源码实际读取的键必须 ⊆ 声明、声明必须在后端 `targets.py` 的 order 字段表里（改名漂移 / 偷偷多读一个键 ⇒ 红）；**钱面类级守卫**：订单侧识别字段表里出现价格 / 门幅类键 ⇒ 红（注入 `price` / `door_width` 即红，已实跑）。
+跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含 4 条注入式红证实跑）
 ```
 溯源:  ｜ tags: order, image_recognize, sku_select, craft_calc
 
@@ -6366,7 +6367,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：471（活跃 120，跳过 351）
+- 用例总数：471（活跃 119，跳过 352）
 - tier 分布：smoke 10 / normal 431 / adversarial 30
 - 售后域：9
 - Agent 核心域：6

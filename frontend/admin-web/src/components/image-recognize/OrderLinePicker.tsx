@@ -88,7 +88,7 @@ export default function OrderLinePicker({
                 data-testid={`order-line-picker-price-hint-${index}`}
                 className="mt-1 text-xs text-amber-700"
               >
-                图上写「{item.entry.priceHint}」—— 行价一律取自目录 / SKU（**识别的价格不是真值**）
+                图上写「{item.entry.priceHint}」—— 行价一律取自目录 / SKU（识别的价格不是真值）
               </p>
             )}
             {item.resolved !== null ? (
