@@ -91,6 +91,18 @@ REF_SURFACE = (
     # 已发布迁移被 `migration_fingerprints.json` 指纹守卫冻结（不可改）⇒ 其中查出的存量
     # 逐条进 burn-down 基线（见基线 JSON 的 `reason`），**新增**迁移照常 fail-closed。
     "backend/admin-api/src/main/resources/db/migration/",
+    # 评测面两处（issue #5309）：`#5298` 只修好了**判定面内**的悬空引用，而同族引用落在
+    # 面外 ⇒ **连读数都没有**（不是"判绿"，是"没判"）。两处都是**契约性引用载体**，不是
+    # 时效快照：`tests/agent_eval/` 是评测 runner / 核对器（引用它核对 payload 形状的源码
+    # 位置），`.github/cases/` 是**用例单一源**（注释与 merge_log 里点名源码位置是常规写法）。
+    # 匹配语义：`_in_surface` 用 `startswith` ⇒ 两条都以 `/` 结尾 = **精确目录前缀**，
+    # 不吃同名前缀的兄弟目录（如 `tests/agent_eval_extra/`）；仍先判 `REF_SURFACE_EXEMPT`，
+    # `DERIVED_VIEWS` 仍对 `tests/agent_eval/eval_cases.py` 只报告不阻塞。
+    # **加面不是加豁免**：这两处当下的存量已在 #5309 第一批逐条改成符号/文本锚（新增 0 条），
+    # 此后**新增**引用照常 fail-closed；覆盖固化见
+    # `tests/unit_ci_workflows/test_drift_audit_ref_surface.py`（含类级元守卫）。
+    "tests/agent_eval/",
+    ".github/cases/",
 )
 REF_SURFACE_EXEMPT = (
     "docs/audit-",            # 月度审计快照
