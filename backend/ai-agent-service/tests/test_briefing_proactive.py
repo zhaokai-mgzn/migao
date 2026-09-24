@@ -40,8 +40,8 @@ from app.briefing.proactive import (
 BIZ_DATE = "2026-09-22"
 
 #: 固定数据快照（判据 1 的「给定快照」）。同一份快照同时承载：
-#: 当天异常（SO-4 / SO-1 / C-1 / PC-1 / SKU-1,SKU-3）与**历史异常**
-#: （SO-5 @09-01 / C-7 @09-03 / PC-3 @09-01）—— 判据 4 的两侧都取自它。
+#: 当天异常（SO-4 / SO-1 / C-1 / PC-1,PC-4 / SKU-1,SKU-3 / OD-1）与**历史异常**
+#: （SO-5 @09-01 / C-7 @09-03 / PC-3 @09-01 / OD-3 @09-05）—— 判据 4 的两侧都取自它。
 SNAPSHOT = {
     "biz_date": BIZ_DATE,
     "orders": [
@@ -89,13 +89,27 @@ SNAPSHOT = {
     ],
     "price_changes": [
         # 幅度 40% > 30% ⇒ 命中；恰 30% ⇒ 不命中（边界）
-        {"change_no": "PC-1", "order_no": "SO-4", "product_id": "P-1",
-         "original_price": 200.0, "new_price": 120.0, "changed_at": "2026-09-22T09:30:00+08:00"},
-        {"change_no": "PC-2", "order_no": "SO-2", "product_id": "P-2",
-         "original_price": 100.0, "new_price": 70.0, "changed_at": "2026-09-22T09:40:00+08:00"},
+        # ⚠️ 两行都是**改价**：`product_update`（商品级统一定价）与 `sku_update`（单 SKU 调价）
+        # —— 只筛前者会**漏一半**（审计日志 tool_name 的两个取值，issue #5388 冻结判据）。
+        {"change_no": "PC-1", "tool_name": "product_update", "product_id": "P-1",
+         "before_price": 200.0, "new_price": 120.0, "changed_at": "2026-09-22T09:30:00+08:00"},
+        {"change_no": "PC-2", "tool_name": "product_update", "product_id": "P-2",
+         "before_price": 100.0, "new_price": 70.0, "changed_at": "2026-09-22T09:40:00+08:00"},
+        {"change_no": "PC-4", "tool_name": "sku_update", "product_id": "P-1",
+         "before_price": 500.0, "new_price": 250.0, "changed_at": "2026-09-22T09:50:00+08:00"},
         # **历史**异常（09-01，幅度 50%）
-        {"change_no": "PC-3", "order_no": "SO-5", "product_id": "P-5",
-         "original_price": 100.0, "new_price": 50.0, "changed_at": "2026-09-01T09:00:00+08:00"},
+        {"change_no": "PC-3", "tool_name": "product_update", "product_id": "P-5",
+         "before_price": 100.0, "new_price": 50.0, "changed_at": "2026-09-01T09:00:00+08:00"},
+    ],
+    "order_discounts": [
+        # 让利 40% > 30% ⇒ 命中；恰 30% ⇒ 不命中（边界）
+        {"order_no": "OD-1", "total_amount": 1000.0, "discount_amount": 400.0,
+         "created_at": "2026-09-22T08:00:00+08:00"},
+        {"order_no": "OD-2", "total_amount": 1000.0, "discount_amount": 300.0,
+         "created_at": "2026-09-22T08:10:00+08:00"},
+        # **历史**异常（09-05，让利 50%）—— 「日报只放当天」的另一侧断言
+        {"order_no": "OD-3", "total_amount": 1000.0, "discount_amount": 500.0,
+         "created_at": "2026-09-05T08:00:00+08:00"},
     ],
 }
 
@@ -106,6 +120,7 @@ EXPECTED_DAILY = [
     ("repeat_returns", BIZ_DATE),
     ("low_stock", BIZ_DATE),
     ("price_change_over", BIZ_DATE),
+    ("discount_over", BIZ_DATE),
 ]
 
 #: 全量扫描（含历史异常）：按 日期倒序 → 紧急度 → 规则注册序
@@ -115,13 +130,15 @@ EXPECTED_SCAN = [
     ("repeat_returns", BIZ_DATE),
     ("low_stock", BIZ_DATE),
     ("price_change_over", BIZ_DATE),
+    ("discount_over", BIZ_DATE),
+    ("discount_over", "2026-09-05"),
     ("repeat_returns", "2026-09-03"),
     ("below_cost_price", "2026-09-01"),
     ("price_change_over", "2026-09-01"),
 ]
 
-#: 历史异常的三条证据（判据 4 的「必不出现」侧：按 ref 断言，避免只盯日期）
-HISTORICAL_REFS = ("SO-5", "C-7", "PC-3")
+#: 历史异常的四条证据（判据 4 的「必不出现」侧：按 ref 断言，避免只盯日期）
+HISTORICAL_REFS = ("SO-5", "C-7", "PC-3", "OD-3")
 
 
 def _digest(findings):
@@ -208,8 +225,8 @@ class TestThreePiece:
     def test_every_registered_rule_is_named_and_has_an_action(self):
         """规则注册表自身的不变式：具名 + 唯一 id + 有处置入口"""
         ids = [r.rule_id for r in RULES]
-        assert len(ids) == 5
-        assert len(set(ids)) == 5
+        assert len(ids) == 6
+        assert len(set(ids)) == 6
         for spec in RULES:
             assert spec.rule_name
             assert spec.action_url.startswith("/")
@@ -246,7 +263,9 @@ class TestDailyViewIsNarrow:
     """判据 4：日报只含当天异常（历史异常必须不出现）"""
 
     def test_daily_findings_are_all_today(self):
-        daily = daily_findings(SNAPSHOT)
+        # 当天成立的异常**全集**（把展示上限抬到条数以上 ⇒ 本断言盯的是「当天」而不是「前 N 条」；
+        # 默认上限下被截断的那一条由 `test_daily_total_is_not_capped_by_max_findings` 兜住）
+        daily = daily_findings(SNAPSHOT, config=ProactiveConfig(max_findings=len(EXPECTED_DAILY)))
         assert [(f["rule_id"], f["detected_on"]) for f in daily] == EXPECTED_DAILY
         assert {f["detected_on"] for f in daily} == {BIZ_DATE}
 
@@ -280,6 +299,7 @@ class TestThresholdsAreConfigurable:
         assert DEFAULT_CONFIG.low_stock_threshold == 100   # 与 low_stock_alert 同源口径
         assert DEFAULT_CONFIG.repeat_return_count == 3
         assert DEFAULT_CONFIG.price_change_pct == 30.0
+        assert DEFAULT_CONFIG.discount_pct == 30.0
 
     def test_unshipped_days_boundary(self):
         """恰 N 天不命中 / N+1 天命中 —— 同一张快照上的两侧断言（SO-2 恰 3 天）"""
@@ -306,8 +326,10 @@ class TestThresholdsAreConfigurable:
     def test_price_change_pct_boundary(self):
         """恰等阈值（30%）不命中 / 超阈值（40%）命中"""
         observed = _by_rule(daily_findings(SNAPSHOT), "price_change_over")["criterion"]["observed"]
-        assert [r["ref"] for r in observed] == ["PC-1"]     # PC-2 恰 30% 落到界外
+        # PC-1（商品级改价 40%）与 PC-4（单 SKU 改价 50%）都命中；PC-2 恰 30% 落到界外
+        assert [r["ref"] for r in observed] == ["PC-1", "PC-4"]
         assert observed[0]["pct"] == 40.0
+        assert {r["tool_name"] for r in observed} == {"product_update", "sku_update"}
 
     def test_thresholds_can_come_from_the_snapshot(self):
         """阈值可随快照下发（租户级配置的落点），显式入参优先"""
@@ -324,6 +346,8 @@ class TestThresholdsAreConfigurable:
             ProactiveConfig(unshipped_days=0)
         with pytest.raises(ValueError):
             ProactiveConfig(price_change_pct=-1.0)
+        with pytest.raises(ValueError):
+            ProactiveConfig(discount_pct=-1.0)
 
 
 #: 装配后的快照（族 3 跨域视图内核，issue #5358 / #5348）—— 与 admin-api
@@ -331,7 +355,9 @@ class TestThresholdsAreConfigurable:
 #: · 行级数组 orders/skus/returns + 装配层自描述 `row_fields`（它真的给了哪些字段）
 #: · orders 行带 `cost_amount`（#5348 接通：**Σ(行数量 × 该行 SKU 的 avg_cost)**；`null` = 成本未知）
 #: · 租户级事实 `cost_accounting`（该租户是否存在 `avg_cost IS NOT NULL` 的 SKU）
-#: · **没有 `price_changes`**（全仓无改价流水表）⇒ `price_change_over` 接不通
+#: · **没有 `price_changes` / `order_discounts`**（本快照只演示「未接线」那一侧：无该能力时
+#:   规则落 `not_wired`，**不是「命中 0 条」**）；接通了的那一侧见
+#:   `test_briefing_proactive_price_and_discount.py` 的 `ASSEMBLED_AUDIT`
 ASSEMBLED = {
     "biz_date": BIZ_DATE,
     "cost_accounting": True,
@@ -371,11 +397,12 @@ ASSEMBLED_QUIET = dict(
     returns=[],
 )
 
-#: `ASSEMBLED` 上**真的命中**的三条 / **已接线**的四条
-#: （多出来的那条 = `below_cost_price` 已接通，但该快照上成本 1000 ≥ 成交 1200 ⇒ 无命中）/ 未接线的一条
+#: `ASSEMBLED` 上**真的命中**的三条 / **已接线**的五条
+#: （多出来的两条 = `below_cost_price` 已接通但该快照上成本 1000 ≥ 成交 1200 ⇒ 无命中）/
+#: **未接线的两条**（本快照没装配改价审计与让利订单两个数组）
 HITTING_RULES = frozenset({"unshipped_overdue", "low_stock", "repeat_returns"})
 WIRED_RULES = HITTING_RULES | {"below_cost_price"}
-NOT_WIRED_RULES = frozenset({"price_change_over"})
+NOT_WIRED_RULES = frozenset({"price_change_over", "discount_over"})
 
 #: **被行数上限截断**的快照：`row_meta` 显式登记（截断不许静默 —— 有界是热路径必须，
 #: 但它会新开一个「看不见的行 ⇒ 不命中 ⇒ 被读成没问题」的面）。
@@ -436,7 +463,7 @@ class TestWiringStatusIsPerRule:
         assert daily_findings(ASSEMBLED_QUIET) == []
 
     def test_status_is_per_rule_not_whole(self):
-        """判据 3：接线状态**逐规则**（部分接线是可能的：本单接 4 条、1 条结构性不可达）"""
+        """判据 3：接线状态**逐规则**（部分接线是可能的：本快照接 5 条、2 条结构性不可达）"""
         status = proactive_status(ASSEMBLED)
         assert {r for r, s in status.items() if s["status"] == WIRED} == set(WIRED_RULES)
         assert {r for r, s in status.items() if s["status"] == NOT_WIRED} == set(NOT_WIRED_RULES)
@@ -593,7 +620,7 @@ class TestTruncationAndGapsAreExplicit:
         """「日报要窄」是**展示口径**：条数上限不许把「今天有几项」变成少报"""
         narrow = ProactiveConfig(max_findings=2)
         assert len(daily_findings(SNAPSHOT, config=narrow)) == 2
-        assert daily_findings_total(SNAPSHOT, config=narrow) == len(EXPECTED_DAILY) == 5
+        assert daily_findings_total(SNAPSHOT, config=narrow) == len(EXPECTED_DAILY) == 6
 
 
 #: **部分行成本未知**的快照（issue #5348 的行级三态）：装配层逐行解析 SKU，
@@ -733,4 +760,11 @@ class TestCostJoinAndNotEnabled:
         assert spec.enabled_by == ("cost_accounting", "成本核算",
                                    "在商品入库时录入单价（系统按移动加权算出成本价）")
         assert spec.judgeable_fields == ("cost_amount",)
-        assert all(r.enabled_by is None for r in RULES if r.rule_id != "below_cost_price")
+        # 🔴 只有**声明了租户级前置**的规则才有 `enabled_by`（#5388：改价的审计留痕是第二条）
+        assert all(r.enabled_by is None
+                   for r in RULES if r.rule_id not in ("below_cost_price", "price_change_over"))
+        change = next(r for r in RULES if r.rule_id == "price_change_over")
+        assert change.enabled_by == (
+            "audit_tool_logging", "写工具审计留痕",
+            "让米宝或员工通过 AI 助手执行一次写操作（如改价）以产生审计留痕")
+        assert change.judgeable_fields == ("before_price", "new_price")

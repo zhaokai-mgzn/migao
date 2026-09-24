@@ -23,12 +23,16 @@
   "row_fields": {...},        # 装配层**自描述**：本次真的给出了哪些行数组、每个数组有哪些字段
   "row_meta": {...},          # 每个行数组的元信息：{"limit": 500, "count": 500, "truncated": true}
   "cost_accounting": true,    # 租户级**事实**（issue #5348）：该租户是否存在 avg_cost IS NOT NULL 的 SKU
+  "audit_tool_logging": true, # 租户级**事实**（issue #5388）：窗口内是否存在**任意** agent_tool 审计行
+                              #   = 审计上报在本租户上确实在产出（缺省 = **未知**，不当 false）
   "orders":   [{"order_no", "status", "customer_id", "created_at", "shipped_at",
                 "sale_amount", "cost_amount"}],              # 低于成本价 / 超 N 天未发货
   "skus":     [{"sku_id", "product_id", "product_name", "stock"}],  # 库存告急（stock ≤ 阈值）
   "returns":  [{"return_no", "customer_id", "product_id", "returned_at", "amount"}],
-  "price_changes": [{"change_no", "order_no", "product_id",
-                     "original_price", "new_price", "changed_at"}],
+  "price_changes": [{"change_no", "tool_name", "product_id",                 # 改价（审计日志源）
+                     "before_price", "new_price", "changed_at"}],
+  "order_discounts": [{"order_no", "total_amount", "discount_amount",        # 让利（订单列源）
+                       "created_at"}],
 }
 ```
 
@@ -49,8 +53,31 @@
 数据来源：admin-api 聚合层（`DailyBriefingService.aggregateSnapshot`）落库的 `source_snapshot`
 —— 与经营日报**同源**，故两个入口口径一致（设计文档 §三 族 3 末「同一内核、两种消费形态」）。
 快照内的行级数组（orders / skus / returns）由跨域视图内核（族 3 · 包 1，issue #5358）装配，
-本模块只消费。**结构性不可达**（如实登记，不是静默失效）：全仓无改价流水表 ⇒ `price_changes`
-永不出现 ⇒ `price_change_over` 接不通（在未接线清单里，**不是「命中 0 条」**）。
+本模块只消费。
+
+## 改价幅度（issue #5388 裁定 C）：数据源 = **审计日志**，不建改价流水表
+
+`price_changes` 由装配层从 `audit_logs` 装配（`resource_type='agent_tool'` 且
+`tool_name ∈ {product_update, sku_update}` —— 🔴 **两者都是改价**：商品级统一定价 / 单 SKU 调价，
+只筛一个会**漏一半**），幅度取自审计行里的 `before_price` / `price` 真值。
+两条**固有边界**（`RuleSpec.caveats`，始终可取、非 `wired` 时并入 `reason`，不许静默）：
+
+1. 审计是 **fail-open**（3s 硬上限、允许丢行）⇒ 本项**只会漏报、不会误报**；
+2. 审计留痕自 **#5303** 起才带 `before_price` ⇒ 无 `before_price` 的记录**不判定**
+   （`judgeable_fields` 落成行级「未判定」+ `gaps` 点名），**不是「幅度 0」**。
+
+🔴 **两种「没有改价记录」必须不同**（本单最易做错的一条）：**该租户从没改过价**（正常的空）
+与**审计根本没在跑**（故障的空）在输出上长得一样。判据 = 租户级事实 `audit_tool_logging`
+（窗口内是否存在**任意** `agent_tool` 审计行 = 审计上报在该租户上确实在产出）：
+`true` ⇒ 正常的空（信封还是 `wired`，空命中可读成「这方面没问题」）；
+`false` ⇒ `not_enabled` + 可行动的原因（**不许**读成「无异常」）；**缺省 ⇒ 未知**，不宣称「没开」。
+
+## 让利幅度（`discount_over`）：数据源 = `orders.discount_amount`
+
+幅度 = `discount_amount / total_amount`。语义是**经营洞察**（让利过多），
+与「有人动了价」（内控）**互补，不是替代**。
+它与改价那条的「空」**性质不同**：`orders` 是主库列（不是 fail-open 旁路）⇒ 数组已接入且完整时，
+空命中**可信**（本窗口内确实没有让利）；其故障空是**结构性的**（数组没装配 ⇒ `not_wired`）。
 
 🔴 **成本价（issue #5348）**：成本不在 `orders` 表上，而在 `product_skus.avg_cost`（移动加权）。
 装配层**逐行解析 SKU**（① `processing_info.skuId` → ② 该商品**唯一** SKU → ③ 不可解析）后给出
@@ -166,6 +193,8 @@ class ProactiveConfig:
     repeat_return_window_days: int = 7
     #: 改价幅度阈值（百分比，保留 2 位小数后比较 ⇒ 恰等阈值不命中）
     price_change_pct: float = 30.0
+    #: 让利幅度阈值（百分比；口径 = `discount_amount / total_amount`，issue #5388）
+    discount_pct: float = 30.0
     #: 低于成本价的容忍额度（亏损额 **严格大于** 它才命中；0.0 = 只要低于成本就命中）
     below_cost_tolerance: float = 0.0
     #: 日报条数上限（「日报要窄」的机械落点；超出按紧急度截断）
@@ -183,6 +212,7 @@ class ProactiveConfig:
                 raise ValueError(f"{name} 必须是不小于 {low} 的整数，实得 {value!r}")
         for name, value in (
             ("price_change_pct", self.price_change_pct),
+            ("discount_pct", self.discount_pct),
             ("below_cost_tolerance", self.below_cost_tolerance),
         ):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
@@ -243,9 +273,14 @@ class RuleSpec:
     #: 是**该租户没开**」⇒ 落 `not_enabled`（带可行动的 `reason`）。键缺省/非布尔 ⇒ **不宣称**
     #: 「没开」（看不见的事实不是 `False`：滚动升级期的老快照按未知处理）。
     enabled_by: Optional[Tuple[str, str, str]] = None
+    #: **数据源固有边界**（issue #5388）：与「本次是否完整」无关 —— 它是这个源**永远**带的性质
+    #: （如审计是 fail-open ⇒ 只可能漏报）。始终随 status 条目给出（`caveats`），
+    #: **非 `wired` 时并入 `reason`** ⇒ 边界不会因为「今天恰好完整」而消失。
+    #: 🔴 它**不进** `reason` 的 `wired` 分支（不变式 `reason is None` ⟺ `wired` 不开例外）。
+    caveats: Tuple[str, ...] = ()
 
 
-# ── 五条首批规则 ────────────────────────────────────────────────────────────
+# ── 七条规则（首批五条 + #5388 的 `price_change_over` 改数据源 / `discount_over` 新增）────
 
 
 def _detect_below_cost(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -> List[_Hit]:
@@ -362,13 +397,19 @@ def _detect_repeat_returns(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig)
 
 
 def _detect_price_change(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -> List[_Hit]:
+    """改价幅度（issue #5388）：行来自**审计日志**（`tool_name ∈ {product_update, sku_update}`）。
+
+    🔴 键名逐字 = 审计真值（`before_price` / `new_price`）：`before_price` 缺失的行
+    （#5303 之前的改价、或脱敏期落库的历史行）在本层被跳过 —— 但**不是静默的**：
+    `judgeable_fields` 把它们登记为「未判定」，`proactive_status` 据此落 `incomplete` + `gaps`。
+    """
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for row in _rows(snapshot, "price_changes"):
-        original, new = _num(row.get("original_price")), _num(row.get("new_price"))
-        if original is None or new is None or original <= 0:
+        before, new = _num(row.get("before_price")), _num(row.get("new_price"))
+        if before is None or new is None or before <= 0:
             continue
         # 保留 2 位小数后比较 ⇒ 「恰等阈值」不命中（浮点毛刺不改变边界行为）
-        pct = round(abs(new - original) / original * 100, 2)
+        pct = round(abs(new - before) / before * 100, 2)
         if pct <= cfg.price_change_pct:
             continue
         day, ref = _day(row.get("changed_at")), _ref(row, "change_no", "id")
@@ -376,9 +417,9 @@ def _detect_price_change(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -
             continue
         grouped.setdefault(day.isoformat(), []).append({
             "ref": ref,
-            "order_no": row.get("order_no"),
+            "tool_name": row.get("tool_name"),
             "product_id": row.get("product_id"),
-            "original_price": original,
+            "before_price": before,
             "new_price": new,
             "pct": pct,
         })
@@ -386,7 +427,39 @@ def _detect_price_change(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -
     for date, rows in grouped.items():
         rows.sort(key=lambda r: r["ref"])
         result.append(_Hit(date, tuple(rows), len(rows),
-                           round(sum(abs(r["new_price"] - r["original_price"]) for r in rows), 2)))
+                           round(sum(abs(r["new_price"] - r["before_price"]) for r in rows), 2)))
+    return result
+
+
+def _detect_discount(snapshot: Any, as_of: _dt.date, cfg: ProactiveConfig) -> List[_Hit]:
+    """让利幅度（issue #5388）：`discount_amount / total_amount > discount_pct`（`orders` 主库列）。
+
+    语义 = **经营洞察**（这单让利过多），与 `price_change_over`（内控：有人动了价）互补。
+    分母未知（`total_amount` 缺/非数）或 ≤ 0 的行**不判定**（不许当成 100%）——
+    登记在 `judgeable_fields` 里，由 `proactive_status` 落成「未判定」。
+    """
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in _rows(snapshot, "order_discounts"):
+        total, discount = _num(row.get("total_amount")), _num(row.get("discount_amount"))
+        if total is None or discount is None or total <= 0:
+            continue
+        pct = round(discount / total * 100, 2)
+        if pct <= cfg.discount_pct:
+            continue
+        day, ref = _day(row.get("created_at")), _ref(row, "order_no", "id")
+        if day is None or not ref:
+            continue
+        grouped.setdefault(day.isoformat(), []).append({
+            "ref": ref,
+            "total_amount": total,
+            "discount_amount": discount,
+            "pct": pct,
+        })
+    result: List[_Hit] = []
+    for date, rows in grouped.items():
+        rows.sort(key=lambda r: r["ref"])
+        result.append(_Hit(date, tuple(rows), len(rows),
+                           round(sum(r["discount_amount"] for r in rows), 2)))
     return result
 
 
@@ -464,15 +537,50 @@ RULES: Tuple[RuleSpec, ...] = (
         rule_id="price_change_over",
         rule_name="改价幅度超阈值",
         severity="medium",
-        expression="abs(new_price - original_price) / original_price * 100 > price_change_pct",
-        action_label="去核对改价订单",
-        action_url="/orders",
+        expression="abs(new_price - before_price) / before_price * 100 > price_change_pct",
+        action_label="去核对改价记录",
+        action_url="/products",
         unit="笔",
         thresholds=lambda cfg: {"price_change_pct": cfg.price_change_pct},
         title=lambda hit, cfg: f"{hit.count} 笔改价幅度超 {cfg.price_change_pct:g}%",
         detect=_detect_price_change,
-        # 🔴 全仓无改价流水表 ⇒ `price_changes` 数组永不装配 ⇒ 该规则结构性接不通（同上）
-        requires=("price_changes", ("change_no", "original_price", "new_price", "changed_at")),
+        # 🔴 数据源 = 审计日志（issue #5388）：装配层按 `resource_type='agent_tool'` +
+        # `tool_name ∈ {product_update, sku_update}` 装配 —— **两者都是改价**（只筛一个会漏一半）。
+        requires=("price_changes", ("change_no", "before_price", "new_price", "changed_at")),
+        # 行级可判定性：缺 before_price（#5303 之前的改价）/ 缺 new_price（脱敏期历史行）⇒ **未判定**
+        judgeable_fields=("before_price", "new_price"),
+        # 租户级前置 = **审计上报在本租户上确实在产出**（窗口内有任意 agent_tool 审计行）：
+        # false ⇒ 「从没改过价」与「审计没在跑」不可分 ⇒ not_enabled（不是「无异常」）。
+        enabled_by=("audit_tool_logging", "写工具审计留痕",
+                    "让米宝或员工通过 AI 助手执行一次写操作（如改价）以产生审计留痕"),
+        caveats=(
+            "审计上报是 fail-open（3s 硬上限、允许丢行）⇒ 本项只会**漏报**、不会误报",
+            "审计留痕自 #5303 起才带改价真值：更早的改价没有 before_price ⇒ 那类记录**不判定**（不是幅度 0）",
+            "批量改价（product_batch_update）**不在本项射程内**（本项只判逐条改价："
+            "product_update / sku_update）⇒ 批量降价不会被本项发现（已知缺口，照实登记）",
+        ),
+    ),
+    RuleSpec(
+        rule_id="discount_over",
+        rule_name="让利幅度超阈值",
+        severity="medium",
+        expression="discount_amount / total_amount * 100 > discount_pct",
+        action_label="去核对让利订单",
+        action_url="/orders",
+        unit="单",
+        thresholds=lambda cfg: {"discount_pct": cfg.discount_pct},
+        title=lambda hit, cfg: f"{hit.count} 单让利超 {cfg.discount_pct:g}%（合计让利 {hit.amount:.2f} 元）",
+        detect=_detect_discount,
+        # 数据源 = `orders.discount_amount`（主库列，**不是** fail-open 旁路）：数组只装配
+        # 窗口内**有让利**的订单（0 让利不可能命中）⇒ 已接入且完整时空命中可信。
+        requires=("order_discounts", ("order_no", "total_amount", "discount_amount", "created_at")),
+        # 可空/可缺：`discount_amount` 默认 0、`total_amount` 未知时**分母未知** ⇒ 未判定（不是 100%）
+        judgeable_fields=("discount_amount", "total_amount"),
+        caveats=(
+            "折扣取自 orders.discount_amount（建单录入的应收−实收差额，**默认 0**）："
+            "从未录入过优惠的老订单，其 0 是默认值 ⇒ 本项对历史订单偏漏报",
+            "该数组只含窗口内**有让利**的订单（0 让利不可能命中）⇒ 已接入且完整时，空命中 = 本窗口内确实没有让利",
+        ),
     ),
 )
 
@@ -544,12 +652,14 @@ def proactive_status(
     为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 4 条能接、1 条结构上
     接不通），整体布尔到了调用方还是分不出「哪一条没接线」——那就又变回「空命中 = 今天没问题」。
 
-    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps"}}`：
+    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps", "caveats"}}`：
     `status` ∈ {`wired`（本次完整可用）, `not_wired`（系统未实现）, `not_enabled`（系统有、该租户没开）,
     `incomplete`（本次不完整）}；
     不变式：**`reason is None` ⟺ `status == wired`**（`not_enabled` **不开例外**）—— 调用方只要看这一条，
     就知道空命中能不能读成「没问题」。`missing` = 缺的数组/字段；`gaps` = 不完整的具体原因
-    （截断 / 维度缺值 / **有行未判定**）。
+    （截断 / 维度缺值 / **有行未判定**）；`caveats` = **数据源固有边界**（issue #5388：如审计是
+    fail-open ⇒ 只可能漏报）—— 它**恒在**（可为空列表），非 `wired` 时并入 `reason`，
+    `wired` 时只以 `caveats` 出现（不变式不给 `wired` 开例外，但边界也不许因此静默）。
 
     纯函数、只读：同一 `(snapshot, rules)` ⇒ 同一结果，与命中集合互不影响
     （接线状态不改判据、不改命中）。
@@ -607,9 +717,13 @@ def proactive_status(
             "rule_id": spec.rule_id,
             "rule_name": spec.rule_name,
             "status": value,
-            "reason": reason,
+            # 固有边界并入原因（#5388）：非 wired 时调用方只读 reason 也不会漏掉边界；
+            # wired 时 reason 保持 None（不变式），边界仍由 `caveats` 给出 ⇒ 两头都不静默。
+            "reason": reason if reason is None or not spec.caveats
+                      else "；".join([reason, *spec.caveats]),
             "missing": missing,
             "gaps": gaps,
+            "caveats": list(spec.caveats),
         }
     return status
 

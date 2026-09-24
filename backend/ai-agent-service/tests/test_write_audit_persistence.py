@@ -29,6 +29,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools import registry as registry_module
 from app.tools.registry import ToolRegistry
 
 # 审计端点（admin-api 新增）：工具层不直连 DB，统一走 HTTP（本仓架构契约）
@@ -301,3 +302,123 @@ class TestProductionWiring:
 
         assert result_dict["success"] is True
         assert admin_client.post.await_count == 0
+
+
+def _tools_declaring_before_price() -> set:
+    """AST 扫 `app/tools/*.py`：`read_only = False` 且 schema 里声明了 `before_price` 的工具名。
+
+    **从源码推出**（不维护第二份手抄清单）：`before_price` = 改前价，issue #5303 起是
+    「传 price 就必须同时传」的必填预览字段 ⇒ 「声明了它」与「这个工具会改价」是同一件事。
+    """
+    import ast as _ast
+    import pathlib as _pathlib
+
+    tools_dir = _pathlib.Path(__file__).resolve().parents[1] / "app" / "tools"
+    found = set()
+    for path in sorted(tools_dir.glob("*.py")):
+        tree = _ast.parse(path.read_text(encoding="utf-8"))
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ClassDef):
+                continue
+            name = read_only = schema = None
+            for stmt in node.body:
+                if (isinstance(stmt, _ast.Assign) and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], _ast.Name)):
+                    target = stmt.targets[0].id
+                    if target == "name" and isinstance(stmt.value, _ast.Constant):
+                        name = stmt.value.value
+                    elif target == "read_only" and isinstance(stmt.value, _ast.Constant):
+                        read_only = stmt.value.value
+                    elif target == "parameters":
+                        schema = stmt.value
+            if not name or read_only is not False or schema is None:
+                continue
+            keys = {c.value for c in _ast.walk(schema)
+                    if isinstance(c, _ast.Constant) and isinstance(c.value, str)}
+            if "before_price" in keys:
+                found.add(name)
+    return found
+
+
+class TestPriceChangeFactsAreRecorded:
+    """issue #5388：**改价真值必须真的进审计行**（`action_details.priceChange`）。
+
+    前提自证（本单证伪过的那一条）：`action_details.params` 按 PII 纪律只记类型占位
+    （`desensitize_params`）⇒ 「改价的 before/after 已经在审计里」**原本不成立**
+    （`params["price"]` 落库是字符串 `"<float>"`，规则将永远不可判定）。
+    本类钉住修正后的形态：真值走**独立键**，`params` 的形状面一字不动。
+
+    对照判据（会红吗）：把 `price_change_facts` 从载荷里摘掉 ⇒ 第 1 条必红；
+    把价格键并回 `desensitize_params`（值被抹成占位）⇒ 同一条红；给非改价工具也发
+    `priceChange` ⇒ 第 2 条红；新增改价工具漏登记 ⇒ 元守卫（第 4 条）红。
+    """
+
+    async def test_both_price_tools_carry_the_price_values(self, ctx, admin_client):
+        """`product_update`（商品级统一定价）与 `sku_update`（单 SKU 调价）**都**带改价真值"""
+        from app.tools.registry import audit_write_tool
+
+        cases = (
+            ("product_update",
+             {"product_id": "P-1", "name": "雪尼尔-米白", "price": 12.5, "before_price": 10.0},
+             {"price": 12.5, "before_price": 10.0, "product_id": "P-1"}),
+            ("sku_update",
+             {"product_id": "P-1", "color": "米白", "door_width": "2.8",
+              "price": 250.0, "before_price": 500.0},
+             {"price": 250.0, "before_price": 500.0, "product_id": "P-1",
+              "color": "米白", "door_width": "2.8"}),
+        )
+        for tool_name, params, expected in cases:
+            admin_client.post.reset_mock()
+            await audit_write_tool(tool_name, ctx, params, True, 12.0)
+            details = _payload(admin_client)["actionDetails"]
+            assert details["priceChange"] == expected, tool_name
+            # 🔴 形状面仍然脱敏（PII 纪律**不回退**）：同一行的 params 里没有任何真值
+            assert details["params"]["price"] == "<float>"
+            assert details["params"]["before_price"] == "<float>"
+            assert not any(isinstance(v, (int, float)) for v in details["params"].values())
+
+    async def test_other_write_tools_do_not_get_the_price_key(self, ctx, admin_client):
+        """非改价工具不得多出 `priceChange`（审计载荷不许被隐式扩大），PII 照旧不出网"""
+        from app.tools.registry import audit_write_tool
+
+        await audit_write_tool("order_create", ctx,
+                               {"customer_phone": "13800138000", "amount": 100.0}, True, 3.0)
+        details = _payload(admin_client)["actionDetails"]
+        assert "priceChange" not in details
+        assert "13800138000" not in json.dumps(details, ensure_ascii=False)
+        assert details["params"] == {"customer_phone": "<str>", "amount": "<float>"}
+
+    async def test_absent_keys_are_not_invented(self, ctx, admin_client):
+        """没传的键不进取证材料：缺 `before_price` ⇒ 记录里就没有它（**不是 0**）"""
+        from app.tools.registry import audit_write_tool
+
+        await audit_write_tool("product_update", ctx, {"product_id": "P-1", "price": 12.5}, True, 1.0)
+        facts = _payload(admin_client)["actionDetails"]["priceChange"]
+        assert facts == {"price": 12.5, "product_id": "P-1"}
+        assert "before_price" not in facts
+
+    def test_registry_covers_every_tool_declaring_before_price(self):
+        """**类级元守卫**（§23 G1/G2）：声明 `before_price` 的写工具集 == 登记集（双向）。
+
+        为什么需要它：病灶不是「漏了 `sku_update` 这一处」，而是
+        「**新增一个改价工具 ⇒ 它的改价在审计里不可判定，而不会有任何东西变红**」。
+        判据从源码推出（AST：`read_only` + schema 键），登记面漏一个/多一个都判红。
+        """
+        declared = _tools_declaring_before_price()
+        assert declared, "一个都没解析出来 ⇒ 判据在空跑（锚点漂移，不是通过）"
+        assert declared == set(registry_module._PRICE_CHANGE_TOOLS), (
+            f"改了改价工具面而没同步登记：源码解析 {sorted(declared)} vs 登记 "
+            f"{sorted(registry_module._PRICE_CHANGE_TOOLS)} —— 漏登记的工具其改价不会被任何规则发现")
+
+    def test_batch_price_update_is_a_known_gap_not_a_silent_one(self):
+        """已知缺口（照实登记）：批量改价**不在本项射程内**，但必须**披露**而不是静默漏掉。
+
+        `product_batch_update` 的条目用 `oldValue/newValue`（不是 `before_price/price`），
+        且属族 2（#5314）的批量写面 ⇒ 本单不扩射程；引擎侧 `price_change_over.caveats`
+        逐字点名它 ⇒ 用户/调用方看得见这个缺口。
+        """
+        from app.briefing.proactive import RULES
+
+        spec = next(r for r in RULES if r.rule_id == "price_change_over")
+        assert "product_batch_update" in "；".join(spec.caveats), "已知缺口未披露 ⇒ 就是静默漏报"
+        assert "product_batch_update" not in registry_module._PRICE_CHANGE_TOOLS

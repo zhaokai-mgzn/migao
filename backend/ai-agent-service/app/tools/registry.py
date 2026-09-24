@@ -138,8 +138,46 @@ def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
 
     手机号/地址/姓名等真实值一旦进日志或 `audit_logs.action_details`，就是不可撤销的
     PII 泄露（多租户 SaaS 的合规问题）。故这里是唯一实现，调用方不得各写一份。
+
+    ⚠️ 本函数**只管 `action_details.params`**（形状面）。**改价真值**另走独立键
+    `action_details.priceChange`（见 `price_change_facts`，issue #5388）——
+    不是本函数的例外，而是**另一个键**：混进来看似省事，实则让「同一键的值有时是真值、
+    有时是占位」变成新的隐式规则（本仓反复批判的形态）。
     """
     return {k: f"<{type(v).__name__}>" for k, v in (params or {}).items()}
+
+
+# ── 改价真值（issue #5388）：审计日志 = 改价流水源 ──────────────────────────────
+# 为什么需要它：裁定 C 的判据（改价幅度 = |price - before_price| / before_price）要求审计行里
+# **有这两个数**，而 `params` 按 PII 纪律只能是类型占位（上面那个函数）——
+# ⇒ 真值走**独立键**，只对改价类工具发。
+#
+# 为什么价格/商品标识可以留真值：`desensitize_params` 防的是 **PII**（phone/address/name）；
+# 价格、商品 id、颜色、门幅是**经营事实**，且工具自己本来就把改前价打进 loguru
+# （`app/tools/product_update.py` 的 `logger.info(... 改前价={before_price})`）。
+# 记账面同理：`audit_logs.resource_id/resource_name` 对 AI 工具调用**恒为 null**
+# （`AgentAuditLogController.record` 传 null）⇒ 不留商品标识就连「哪个商品被改价」都无从取证。
+#
+# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫）：凡工具 schema 里
+# 声明了 `before_price`（改前价，issue #5303 的必填预览字段）的写工具**必须**登记在此 ——
+# 漏登记 ⇒ 该类工具的改价在审计里**不可判定**，而不会有任何东西变红。
+_PRICE_CHANGE_TOOLS = frozenset({"product_update", "sku_update"})
+#: 逐条改价的字段白名单（**加法即登记**：新增字段要在这里 + 快照契约同步）
+_PRICE_CHANGE_FACT_KEYS = ("price", "before_price", "product_id", "color", "door_width")
+
+
+def price_change_facts(tool_name: str, params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """改价类工具的**价格事实**（→ `audit_logs.action_details.priceChange`）；非改价工具 ⇒ `None`。
+
+    只取白名单里的键，且**丢弃 `None`**（没传的字段不出现在取证材料里 —— 与 `params` 的
+    「键在值在」不同：那里键名本身就是脱敏后的形状证据）。
+    """
+    if tool_name not in _PRICE_CHANGE_TOOLS:
+        return None
+    source = params or {}
+    facts = {key: source[key] for key in _PRICE_CHANGE_FACT_KEYS
+             if key in source and source[key] is not None}
+    return facts or None
 
 
 async def audit_write_tool(
@@ -177,6 +215,24 @@ async def audit_write_tool(
         )
     try:
         client = get_admin_api_client()
+        action_details: Dict[str, Any] = {
+            # ⚠️ 重复 `action` 是**有意**的：`action` 列在迁移 V52 里被回填为
+            # 「动词」，而回填只能从 `action_details->>'action'` 派生 ——
+            # 新行带上它，回填规则才对**新行**同样成立（否则 V52 的注释
+            # 「新写入方已直接写 action」与回填语句的射程不一致）。
+            # 唯一事实源仍是 `derive_audit_action` 的返回值（上方 action 变量）。
+            "action": action,
+            "params": desensitize_params(params),
+            "success": success,
+            "durationMs": round(duration_ms, 1),
+            "role": context.role,
+            "sessionId": context.session_id,
+        }
+        # 改价类工具另发**价格事实**（issue #5388）：真值只走这个独立键，`params` 的形状面
+        # 一字不动 ⇒ 既有 PII 判据（只记类型占位）与「改价幅度可判定」同时成立。
+        _price_facts = price_change_facts(tool_name, params)
+        if _price_facts:
+            action_details["priceChange"] = _price_facts
         resp = await asyncio.wait_for(
             client.post(
                 "/api/admin/agent/audit-logs",
@@ -184,19 +240,7 @@ async def audit_write_tool(
                     "action": action,
                     "toolName": tool_name,
                     "resourceType": _WRITE_AUDIT_RESOURCE_TYPE,
-                    "actionDetails": {
-                        # ⚠️ 重复 `action` 是**有意**的：`action` 列在迁移 V52 里被回填为
-                        # 「动词」，而回填只能从 `action_details->>'action'` 派生 ——
-                        # 新行带上它，回填规则才对**新行**同样成立（否则 V52 的注释
-                        # 「新写入方已直接写 action」与回填语句的射程不一致）。
-                        # 唯一事实源仍是 `derive_audit_action` 的返回值（上方 action 变量）。
-                        "action": action,
-                        "params": desensitize_params(params),
-                        "success": success,
-                        "durationMs": round(duration_ms, 1),
-                        "role": context.role,
-                        "sessionId": context.session_id,
-                    },
+                    "actionDetails": action_details,
                 },
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,

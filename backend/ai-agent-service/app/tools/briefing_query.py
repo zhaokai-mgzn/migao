@@ -182,6 +182,16 @@ class BriefingQueryTool(BaseTool):
                 f"。⚠️ 以下能力本次没有检查："
                 f"{'、'.join(entry['rule_name'] for entry in not_enabled)} —— {detail}"
             )
+        # 数据源**固有边界**（issue #5388）：`wired`（无 reason）与 `not_wired`（上面只点名、
+        # 不给 reason）两态在消息里看不到边界 ⇒ 这里补说；`incomplete` / `not_enabled` 的 reason
+        # 已并入同一份边界（引擎侧 `proactive_status`）⇒ 不重复。
+        # 🔴 为什么 `wired` 也要说：审计是 **fail-open** 旁路 —— 空命中只代表「窗口内没有可判定的
+        # 改价记录」，不代表绝对无事（**只可能漏报、不会误报**）。
+        caveated = [(entry["rule_name"], entry["caveats"]) for entry in status.values()
+                    if entry["caveats"] and (entry["reason"] is None or entry["status"] == NOT_WIRED)]
+        if caveated:
+            message += ("。⚠️ 以下规则的**数据源有固有边界**（空命中不等于绝对无事）："
+                        + "；".join(f"{name}：{'；'.join(items)}" for name, items in caveated))
         return ToolResult(
             success=True,
             data=dict(data, proactive=findings, proactive_status=status),

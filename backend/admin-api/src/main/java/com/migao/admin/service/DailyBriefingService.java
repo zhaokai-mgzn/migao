@@ -61,6 +61,7 @@ public class DailyBriefingService {
     private final ProductMapper productMapper;
     private final ProductService productService;
     private final BriefingGenerateClient briefingGenerateClient;
+    private final AuditLogMapper auditLogMapper;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
 
@@ -112,6 +113,26 @@ public class DailyBriefingService {
     /** 退货事实的来源：售后工单里的**退货**类型（全仓无独立退货流水表）。 */
     static final String RETURN_TICKET_TYPE = "return";
 
+    // ── 改价（审计源）× 让利（订单源）—— issue #5388 ──────────────────────────
+
+    /**
+     * 「近期」窗口（天）：改价审计与让利订单**共用同一个窗口变量**（与 #5369 的退货率两端同因：
+     * 两处各写一个天数 ⇒ 口径会各自演化，且不会有任何东西变红）。
+     */
+    static final int SNAPSHOT_RECENT_WINDOW_DAYS = 30;
+
+    /** AI 工具写操作审计的 `resource_type`（与 `app/tools/registry.py::_WRITE_AUDIT_RESOURCE_TYPE` 同一字面量）。 */
+    static final String AGENT_TOOL_RESOURCE_TYPE = "agent_tool";
+
+    /**
+     * **会改价**的写工具（`audit_logs.tool_name` 的两个取值，issue #5388 冻结判据）。
+     *
+     * <p>🔴 两者**都是改价**：`product_update` = 商品级统一定价、`sku_update` = 单 SKU 调价；
+     * 只筛前者会**漏一半**。字面量与工具自身声明的 `name` 逐字相同
+     * （`app/tools/product_update.py` / `app/tools/sku_update.py`）—— 不许凭语义推测（§17.3 ⑤）。</p>
+     */
+    static final List<String> PRICE_CHANGE_TOOLS = List.of("product_update", "sku_update");
+
     /**
      * 快照行数组的**自描述**：本次装配真的给出了哪些行数组、每个数组有哪些字段。
      *
@@ -144,6 +165,14 @@ public class DailyBriefingService {
         // （由 returns 行的 product_id 复用而来，不另算一遍），分母 = 同窗口内的订单行数。
         fields.put("product_return_stats", List.of("product_id", "return_tickets", "order_lines"));
         fields.put("returns", List.of("return_no", "customer_id", "product_id", "returned_at", "amount"));
+        // 改价（issue #5388）：数据源 = `audit_logs`（`resource_type='agent_tool'` 且
+        // `tool_name ∈ PRICE_CHANGE_TOOLS`）—— **不建改价流水表**（用户裁定 C）。
+        // `before_price` / `new_price` 可为 **null**：老审计行（脱敏期落库的）读不出数 ⇒ 引擎按
+        // 「行级未判定」处理（不是「幅度 0」）—— 键**恒在**，缺字段与值为 null 是两回事。
+        fields.put("price_changes", List.of("change_no", "tool_name", "product_id",
+                "before_price", "new_price", "changed_at"));
+        // 让利（issue #5388）：数据源 = `orders.discount_amount`（建单录入的应收−实收差额，默认 0）
+        fields.put("order_discounts", List.of("order_no", "total_amount", "discount_amount", "created_at"));
         return fields;
     }
 
@@ -461,17 +490,31 @@ public class DailyBriefingService {
         OffsetDateTime returnWindowStart = todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS);
         RowBatch returns = assembleReturnRows(tenantId, returnWindowStart);
         RowBatch productReturnStats = assembleProductReturnStats(tenantId, returnWindowStart, returns);
+        // 改价（审计源）与让利（订单源）：issue #5388 —— 两者的「近期」窗口**共用同一个变量**
+        OffsetDateTime recentWindowStart = todayStart.minusDays(SNAPSHOT_RECENT_WINDOW_DAYS);
+        RowBatch priceChanges = assemblePriceChangeRows(tenantId, recentWindowStart);
+        RowBatch orderDiscounts = assembleDiscountRows(tenantId, recentWindowStart);
         snapshot.put("row_fields", SNAPSHOT_ROW_FIELDS);
         // 截断必须显式（`row_meta`）：有界不许变成静默少报 —— 看不见的行不命中，会被读成「没问题」。
-        snapshot.put("row_meta", rowMeta(orders, skus, returns, productReturnStats));
+        Map<String, Object> rowMeta = rowMeta(orders, skus, returns, productReturnStats);
+        rowMeta.put("price_changes", rowMetaEntry(priceChanges));
+        rowMeta.put("order_discounts", rowMetaEntry(orderDiscounts));
+        snapshot.put("row_meta", rowMeta);
         // 租户级**事实**（issue #5348）：该租户是否在做成本核算 —— 判据 = 是否存在
         // `avg_cost IS NOT NULL` 的 SKU（可从事实推出 ⇒ 不引入人工配置项）。引擎据此把
         // 「低于成本价」落成 `not_enabled`（系统**有**、该租户**没开**），而不是 `not_wired`。
         snapshot.put("cost_accounting", costsAreTracked(tenantId));
+        // 租户级**事实**（issue #5388）：审计上报在该租户上**确实在产出**吗（窗口内是否存在
+        // **任意** agent_tool 审计行）—— 它把两种「没有改价记录」分开：
+        // true = 「你从没改过价」（正常的空）；false = 「审计没在跑/没在用」（故障的空，
+        // 引擎落 `not_enabled` 而不是「无异常」）。缺省（老快照）⇒ 未知，不当 false。
+        snapshot.put("audit_tool_logging", auditToolLoggingAlive(tenantId, recentWindowStart));
         snapshot.put("orders", orders.rows());
         snapshot.put("skus", skus.rows());
         snapshot.put("returns", returns.rows());
         snapshot.put("product_return_stats", productReturnStats.rows());
+        snapshot.put("price_changes", priceChanges.rows());
+        snapshot.put("order_discounts", orderDiscounts.rows());
         return snapshot;
     }
 
@@ -504,6 +547,145 @@ public class DailyBriefingService {
             rows.add(orderRow(order, shippedAt.get(order.getId()), costs.get(order.getId())));
         }
         return new RowBatch(rows, truncated);
+    }
+
+    // ==================== 改价（审计源）× 让利（订单源）—— issue #5388 ====================
+
+    /**
+     * 审计上报在该租户上**是否在产出**（窗口内是否存在**任意** `resource_type='agent_tool'` 的行）。
+     *
+     * <p>这是「两种『没有改价记录』」的判据源（issue #5388 点名最易做错的一条）：审计是
+     * **fail-open 旁路**（3s 硬上限、允许丢行）⇒ 窗口内**一条都没有**时，无法区分
+     * 「该租户从没改过价」（**正常的空**）与「审计没在跑 / 没在用」（**故障的空**）。
+     * 引擎据此把 `price_change_over` 落成 `not_enabled`（**不判定**），而不是把空命中读成「无异常」。</p>
+     *
+     * <p>判据**从事实推出**（不引入人工配置项）：窗口内有其它写工具（下单 / 建品 …）的审计行，
+     * 就说明这条上报链路在该租户上是活的。</p>
+     */
+    boolean auditToolLoggingAlive(Long tenantId, OffsetDateTime windowStart) {
+        Long rows = auditLogMapper.selectCount(new LambdaQueryWrapper<AuditLog>()
+                .eq(AuditLog::getTenantId, tenantId)
+                .eq(AuditLog::getResourceType, AGENT_TOOL_RESOURCE_TYPE)
+                .ge(AuditLog::getCreatedAt, windowStart));
+        return rows != null && rows > 0;
+    }
+
+    /**
+     * `price_changes` 行：**数据源 = 审计日志**（issue #5388 裁定 C —— 不建改价流水表）。
+     *
+     * <p>筛：`tenant_id` + `resource_type='agent_tool'` + `tool_name ∈ {@link #PRICE_CHANGE_TOOLS}`
+     * （两者**都是改价**，只筛一个会漏一半）+ 时间窗；按 `created_at` **倒序**取前
+     * {@link #SNAPSHOT_ROW_LIMIT} 条（近期优先 ⇒ 日报关心的「今天」不会被历史淹没），
+     * 多取一行只为判定截断（截断经 `row_meta` 显式交给引擎 ⇒ 落 `incomplete`，不静默少报）。</p>
+     *
+     * <p>🔴 只有**带了改价参数**的调用才是改价事件：`product_update` 也可能只是改名。判据 =
+     * `action_details.priceChange` 在场（issue #5388 新增的取证键），**或** `params` 里有 `price` 键
+     * —— 后者覆盖**脱敏期**（该键上线前）落库的历史行：键在 ⇒ 确实改过价，但值只是类型占位
+     * ⇒ 该行 `before_price`/`new_price` 落 **null**（引擎按「行级未判定」处理，**不是「幅度 0」**）。</p>
+     */
+    RowBatch assemblePriceChangeRows(Long tenantId, OffsetDateTime windowStart) {
+        List<AuditLog> logs = auditLogMapper.selectList(new LambdaQueryWrapper<AuditLog>()
+                .eq(AuditLog::getTenantId, tenantId)
+                .eq(AuditLog::getResourceType, AGENT_TOOL_RESOURCE_TYPE)
+                .in(AuditLog::getToolName, PRICE_CHANGE_TOOLS)
+                .ge(AuditLog::getCreatedAt, windowStart)
+                .orderByDesc(AuditLog::getCreatedAt)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = logs.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            logs = logs.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(logs.size());
+        for (AuditLog log : logs) {
+            Map<String, Object> row = priceChangeRow(log);
+            if (row != null) {
+                rows.add(row);
+            }
+        }
+        return new RowBatch(rows, truncated);
+    }
+
+    /** 一条审计行 ⇒ 一行 `price_changes`；**不是改价事件**（本次调用没带改价参数）⇒ `null`。 */
+    static Map<String, Object> priceChangeRow(AuditLog log) {
+        Map<String, Object> details = asMap(log.getActionDetails());
+        Map<String, Object> facts = details == null ? null : asMap(details.get("priceChange"));
+        Map<String, Object> params = details == null ? null : asMap(details.get("params"));
+        if (facts == null && (params == null || !params.containsKey("price"))) {
+            return null;    // 如「只改了商品名」的 product_update ⇒ 不是改价事件
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("change_no", log.getId());
+        row.put("tool_name", log.getToolName());
+        row.put("product_id", facts == null ? null : evidenceText(facts.get("product_id")));
+        row.put("before_price", facts == null ? null : toDouble(facts.get("before_price")));
+        row.put("new_price", facts == null ? null : toDouble(facts.get("price")));
+        row.put("changed_at", iso(log.getCreatedAt()));
+        return row;
+    }
+
+    /**
+     * `order_discounts` 行：**数据源 = `orders.discount_amount`**（issue #5388）—— 建单录入的
+     * 「应收 `total_amount` − 实收 `actual_amount` 差额」。
+     *
+     * <p>population = 窗口内**有让利**的订单（`discount_amount > 0`）：0 让利**不可能命中**
+     * ⇒ 不进数组（有界，且不会被海量「没打折」的订单把真正要看的那几单挤掉）；
+     * 按 `created_at` 倒序取前 {@link #SNAPSHOT_ROW_LIMIT} 条（近期优先）+ 截断显式。</p>
+     *
+     * <p>语义 = **经营洞察**（让利过多），与 `price_change_over`（内控：有人动了价）**互补**。
+     * 与审计源的关键差别：`orders` 是**主库列**（不是 fail-open 旁路）⇒ 数组已接入且完整时，
+     * 空命中**可信**（本窗口内确实没有让利）。</p>
+     */
+    RowBatch assembleDiscountRows(Long tenantId, OffsetDateTime windowStart) {
+        List<Order> discounted = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId)
+                .gt(Order::getDiscountAmount, BigDecimal.ZERO)
+                .ge(Order::getCreatedAt, windowStart)
+                .orderByDesc(Order::getCreatedAt)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = discounted.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            discounted = discounted.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(discounted.size());
+        for (Order order : discounted) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("order_no", order.getOrderNo());
+            row.put("total_amount", order.getTotalAmount());
+            row.put("discount_amount", order.getDiscountAmount());
+            row.put("created_at", iso(order.getCreatedAt()));
+            rows.add(row);
+        }
+        return new RowBatch(rows, truncated);
+    }
+
+    /** `Object`（JSONB 经 MyBatis-Plus `JacksonTypeHandler` 读回）⇒ `Map`；不是映射 ⇒ `null`（不猜）。 */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> asMap(Object value) {
+        return value instanceof Map ? (Map<String, Object>) value : null;
+    }
+
+    /** 数值读取：非数（含 `<float>` 这类**脱敏占位**）⇒ `null` = **未判定**（**不是 0**）。 */
+    static Double toDouble(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Double.valueOf(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** 取证文本：脱敏占位（`<str>` 形态）**不得**当成真值 —— 返回 `null`（看不见 ≠ 有值）。 */
+    static String evidenceText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.startsWith("<") && text.endsWith(">") ? null : text;
     }
 
     /**
