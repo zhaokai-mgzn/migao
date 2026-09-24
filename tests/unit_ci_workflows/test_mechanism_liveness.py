@@ -54,6 +54,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EMITTER = REPO_ROOT / ".github" / "scripts" / "mechanism_liveness.sh"
 CHECKER = REPO_ROOT / "scripts" / "mechanism_liveness.py"
@@ -827,12 +829,13 @@ def test_injection_helper_self_proves_it_took_effect(tmp_path):
         ("不存在的锚点（故意）", "x", "锚点不存在"),
         ('  printf \'%s\\n\' "$line"', '  printf \'%s\\n\' "$line"', "锚点重复出现且未变"),
     ):
-        try:
+        with pytest.raises(AssertionError) as caught:
             _mutate_emitter(tmp_path, old, new, "should-fail")
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError(f"注入辅助函数放行了「{why}」⇒ 红证可能是空红证")
+        # 断言**具体理由**（不是「抛了就行」）：辅助函数必须点名它为什么拒绝，
+        # 否则调用方读不出「这个红证到底成不成立」。
+        assert "[should-fail]" in str(caught.value), (
+            f"注入辅助函数放行了「{why}」或没给出可读理由 ⇒ 红证可能是空红证：{caught.value}"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
