@@ -86,10 +86,12 @@ async function safeClick(page, locator, label) {
 const waitVisible = (locator, timeout) =>
   locator.waitFor({ state: 'visible', timeout }).then(() => true).catch(() => false)
 
-// toast 校验（antd/message 样式：出现即可）
-async function expectToast(page, text) {
-  await page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {})
-}
+// ⚠️ toast 助手 `expectToast()` 已**删除**（issue #4314）：全文件零调用 = 死判据，
+// 且它内部 `waitFor(...).catch(() => {})` 吞超时 ⇒ 一旦接上调用点即**恒真**（空判据）。
+// `15-orders-new` 的 toast 判定维持原样（那是「定长 sleep + 单次 isVisible」同族，
+// 按 #4314 正文裁定**待真栈可用时成批**改成 `waitVisible` / expect 轮询 —— 本机云 dev 库
+// 不可达，改了没人跑过 = 假红/假绿）。零调用死判据的常驻判据 =
+// `tests/unit_ci_workflows/test_dead_judgement_helpers.py`。
 
 // 管理端 API（node 侧直连，复用浏览器会话的登录态）。
 // 为什么不从页面内 fetch：access_token 是 HttpOnly+Secure+SameSite=Strict cookie，

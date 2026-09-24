@@ -14,6 +14,7 @@ seed 一改两边就漂移：复位会把工单复位到**一个 seed 从没产�
   · seed 的时间线基线 action 改字面量 → 复位的 `action <> '<seed 字面量>'` 不匹配 ⇒ 必红；
   · 复位 SQL 开始改写基线列（id/tenant_id/ticket_no/order_id/created_at…）⇒ 必红。
 """
+import ast
 import re
 import sys
 import types
@@ -31,6 +32,63 @@ CLOSED_STATE_COLUMNS = ("closed_at", "close_reason", "internal_notes")
 BASELINE_COLUMNS = ("id", "tenant_id", "ticket_no", "order_id", "customer_id", "ticket_type",
                     "source", "priority", "description", "refund_amount", "created_at",
                     "deleted")
+
+
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
+sys.path.append(str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 收敛：剥注释的唯一实现）
+    code_without_comments,
+)
+
+
+def _code_only(body: str, where: str) -> str:
+    """源码切片 → **代码面**：剥注释（复用全仓唯一实现）**并抹掉 docstring**。
+
+    为什么连 docstring 一起抹：它和注释一样是**写给人看的散文** —— 一句
+    「不要改成 PUT /api/admin/orders/{id}/status」写在 docstring 里，同样会把
+    「裸子串」判据喂红（同族假红，issue #5003①）。
+    **其它字符串字面量一律保留**：真实 HTTP 调用的方法名与 URL 就在字符串里
+    （`c.request("PUT", …)`），抹掉字符串会把**真调用**一起丢掉 —— 那是假绿方向，比假红更坏。
+
+    切片解析不出 AST 时**只剥注释**（不因解析失败放宽也不收紧；lexical 剥注释不需要语法成立）。
+    """
+    code = code_without_comments(body, where)
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return code
+    lines = code.splitlines(keepends=True)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        statements = getattr(node, "body", None) or []
+        if not statements:
+            continue
+        first = statements[0]
+        head = getattr(first, "value", None)
+        if not (isinstance(first, ast.Expr) and isinstance(head, ast.Constant)
+                and isinstance(head.value, str)):
+            continue
+        for row in range(head.lineno, head.end_lineno + 1):
+            line = lines[row - 1]
+            start = head.col_offset if row == head.lineno else 0
+            end = head.end_col_offset if row == head.end_lineno else len(line.rstrip("\n"))
+            lines[row - 1] = line[:start] + " " * max(0, end - start) + line[end:]
+    return "".join(lines)
+
+
+def _product_api_call(body: str) -> str:
+    """代码面里的**产品状态更新 API**标记（`PUT` / `/status`）；没有则返回空串。
+
+    与旧口径**等强度**（旧 = 对原文做裸子串匹配），差别只在**输入**：旧口径吃注释 ⇒
+    在切片内写一句注释就假红（#4992 实测）。这里只读代码面。
+    """
+    code = _code_only(body, "tests/agent_eval/local_runner.py::_reset_aftersales_ticket")
+    for marker in ("PUT", "/status"):
+        if marker in code:
+            return marker
+    return ""
 
 
 def _load_runner():
@@ -218,18 +276,53 @@ class TestSeedIsTheSingleSourceOfTheReset:
     def test_reset_runs_through_db_not_product_api(self):
         """复位**不得**回落成产品 API（admin-api 的 `closed` 是终态，改了就是改产品契约）。
 
-        平台约束：`AfterSalesTicketService.java:103-109` 的 `STATUS_TRANSITIONS`
-        `closed → Set.of()`（无回到 pending 的写路径）+ 关闭分支只 set 不清空
-        ⇒ 评测侧复位只能走带外（DB/seed）。这条守卫防止"顺手改成调 API"。
+        平台约束：`backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java`
+        的 `STATUS_TRANSITIONS`（按该常量名检索）把 `closed` 定为终态（无回到 pending 的写路径）
+        + 关闭分支只 set 不清空 ⇒ 评测侧复位只能走带外（DB/seed）。
+        这条守卫防止"顺手改成调 API"。
         """
         runner = _load_runner()
         src = Path(RUNNER_PATH).read_text(encoding="utf-8")
         start = src.index("async def _reset_aftersales_ticket(")
         body = src[start:src.index("async def _run_pre_clean(", start)]
-        if "PUT" in body or "/status" in body:
-            raise AssertionError("复位实现里出现了产品状态更新 API —— 平台约束禁改（见 docstring）")
+        where = _product_api_call(body)
+        if where:
+            raise AssertionError(f"复位实现里出现了产品状态更新 API（命中 {where!r}）"
+                                 " —— 平台约束禁改（见 docstring）")
         if "asyncpg" not in body:
             raise AssertionError("复位必须走 DB 直连（asyncpg）")
         if runner._eval_db_dsn().startswith("postgresql+asyncpg://"):
             raise AssertionError("DSN 未归一（SQLAlchemy 风格 DSN 直连会连不上）："
                                  f"{runner._eval_db_dsn()}")
+
+    def test_product_api_detector_reads_code_not_comments(self):
+        """#5003① 的反向红证：**注释**里写端点名 ⇒ 不得红；真写进**代码** ⇒ 必须红。
+
+        旧口径对源码切片做**裸子串**匹配（`"PUT" in body or "/status" in body`）⇒
+        在切片范围内的注释里写「走 `PUT /api/admin/orders/{id}/status`」就**假红**
+        （#4992 实测踩到），修法是「把注释改写成不含这两个子串的说法」——
+        **那是为过判据改文案，不是修缺陷**（§17.3 ⑤）。现口径 = 只读**代码面**
+        （剥注释复用 `unit_ci_workflows/_source_parsing.py::code_without_comments`，
+        全仓唯一实现，不新增第二份）。
+        """
+        comment_only = (
+            'async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+            '    # 复位走带外 DB；**不要**改成 PUT /api/admin/orders/{id}/status\n'
+            '    """docstring 里也提一句：PUT 与 /status 都不得出现在代码里。"""\n'
+            '    conn = await asyncpg.connect(dsn)\n'
+            '    return "ok"\n')
+        if _product_api_call(comment_only):
+            raise AssertionError(f"注释/docstring 里的端点名被读成代码（假红，正是 #5003①）："
+                                 f"{_product_api_call(comment_only)!r}")
+        real_call = (
+            'async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+            '    async with httpx.AsyncClient() as c:\n'
+            '        await c.request("PUT", f"{API}/api/admin/orders/{ticket_no}/status")\n'
+            '    return "ok"\n')
+        if not _product_api_call(real_call):
+            raise AssertionError("真写成 HTTP 调用却判不出（假绿）⇒ 该判据是空断言")
+        src = Path(RUNNER_PATH).read_text(encoding="utf-8")
+        start = src.index("async def _reset_aftersales_ticket(")
+        live = src[start:src.index("async def _run_pre_clean(", start)]
+        if _product_api_call(live):
+            raise AssertionError("正对照失败：真语料的复位实现被判成产品 API 调用")

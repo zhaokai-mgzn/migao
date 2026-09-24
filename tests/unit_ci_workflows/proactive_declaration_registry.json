@@ -1,0 +1,141 @@
+{
+  "_what": "**声明点**的登记册（issue #5389）：装配层（Java `DailyBriefingService`）声明的行字段/租户事实 × 引擎（`app/briefing/proactive.py` 的 `RuleSpec`）声明的消费面。判据 = tests/unit_ci_workflows/test_proactive_declarations_are_registered.py；装配层新增字段/事实**未登记即红**。",
+  "_invariants": [
+    "row_fields 的键集必须与装配层现取的声明**逐字相等**（少一个 = 未登记；多一个 = 陈旧条目）。",
+    "nullable=true 的字段被某规则 requires ⇒ 该规则**必须**登记 judgeable_fields（或逐条豁免，带理由 + 单号）。漏登记 ⇒ 红（issue #5389 判据 1）。",
+    "tenant_facts 的键集必须与装配层现取的 `snapshot.put(<key>, …)` 相等；enabled_by 指向的事实必须已登记且真的下发。",
+    "tenant_facts[*].gates 列出的字段，被某规则 requires ⇒ 该规则必须声明 enabled_by（或逐条豁免）—— 否则该规则在未开启租户上**静默落 wired**。",
+    "两个豁免台账**今天为空**、只许缩短；每条必须带理由 + 单号。"
+  ],
+  "_boundary": "nullable 是**显式裁定**（不是从代码自动派生）：本登记册机械保证的是「每新增/改动一个字段都必须显式裁定可空性并写理由（未登记即红）」，**不保证裁定一定正确** —— 从装配层 builder / DB 约束**派生**可空性是下一步（见 PR body 残余，owner = 简报装配层 owner）。",
+  "row_fields": {
+    "orders.order_no": {
+      "nullable": false,
+      "reason": "订单号：装配层逐行 row.put 自订单表列（未逐列核对 DB 约束）；detect 用它做 ref 与排序键",
+      "issue": "#5358"
+    },
+    "orders.status": {
+      "nullable": false,
+      "reason": "订单状态：装配层取自订单表；detect 与 UNSHIPPED_STATUSES 比较（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "orders.customer_id": {
+      "nullable": false,
+      "reason": "客户 id：装配层取自订单表；当前无规则 requires 它（保留给维度/跨域视图）",
+      "issue": "#5358"
+    },
+    "orders.created_at": {
+      "nullable": false,
+      "reason": "下单时刻：装配层取自订单表；detect 用它与 as_of 求天数（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "orders.shipped_at": {
+      "nullable": false,
+      "reason": "发货时刻：**可缺省但键恒在**（未发货 = 键存在、值为空）—— detect 用 truthiness 判「未发货」，不是判定行级可判定性",
+      "issue": "#5358"
+    },
+    "orders.sale_amount": {
+      "nullable": false,
+      "reason": "成交额：装配层取自订单表金额列；detect 对它做 _num 转换（防御性 None 检查 ≠ 可空声明）",
+      "issue": "#5358"
+    },
+    "orders.cost_amount": {
+      "nullable": true,
+      "reason": "**已取证（#5348）**：成本价来自 product_skus.avg_cost 的逐行 join，SKU 无成本价的行 ⇒ 该行 cost 未知 ⇒ Σ 行成本为空 ⇒ 本行**未判定**（故登记 judgeable_fields）",
+      "issue": "#5348"
+    },
+    "skus.sku_id": {
+      "nullable": false,
+      "reason": "规格 id：装配层取自 SKU 表（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "skus.product_id": {
+      "nullable": false,
+      "reason": "商品 id：装配层取自 SKU 表（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "skus.product_name": {
+      "nullable": false,
+      "reason": "商品名：装配层取自商品表（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "skus.stock": {
+      "nullable": false,
+      "reason": "库存：装配层取自 SKU 表；detect 与阈值比较（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "returns.return_no": {
+      "nullable": false,
+      "reason": "退货单号：装配层取自退货表（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "returns.customer_id": {
+      "nullable": false,
+      "reason": "客户 id：装配层取自退货表；repeat_returns 用它做**分组维度**",
+      "issue": "#5358"
+    },
+    "returns.product_id": {
+      "nullable": false,
+      "reason": "商品 id：装配层取自退货表；repeat_returns 用它做**分组维度**",
+      "issue": "#5358"
+    },
+    "returns.returned_at": {
+      "nullable": false,
+      "reason": "退货时刻：装配层取自退货表（未逐列核对 DB 约束）",
+      "issue": "#5358"
+    },
+    "returns.amount": {
+      "nullable": false,
+      "reason": "退货金额：装配层取自退货表金额列",
+      "issue": "#5358"
+    },
+    "skus.sales_count": {
+      "nullable": false,
+      "reason": "SKU 销量（#5369 商品健康度视图的权威列，SKU 级唯一权威；商品级同名列是派生冗余列，不进快照）。装配层逐键 row.put 自 SKU 表列 —— **未逐列核对 DB 约束**；0 的语义 = 当期真的没卖出，不是未知",
+      "issue": "#5369"
+    },
+    "skus.price": {
+      "nullable": false,
+      "reason": "SKU 售价（#5369）：装配层 row.put(\"price\", sku.getPrice()) —— **未逐列核对 DB 约束**（未取证，照实登记）",
+      "issue": "#5369"
+    },
+    "skus.avg_cost": {
+      "nullable": true,
+      "reason": "**已取证**（装配层注释逐字）：「avg_cost **原样透出 null**（存量不回填、不猜 0）⇒ 视图侧据此判『该行成本未知』，不得被 0 冒充成『成本为零』」；契约同句写着「NULL = 成本未知，不是『成本为 0』」⇒ 该字段**可空**（#5369 的 SKU 级权威列，与 orders.cost_amount 同源口径）",
+      "issue": "#5369"
+    },
+    "product_return_stats.product_id": {
+      "nullable": false,
+      "reason": "商品 id（#5369 退货率两端之一）：装配层显式过滤掉 null/空 的 product_id 才入行 ⇒ 行内必有值",
+      "issue": "#5369"
+    },
+    "product_return_stats.return_tickets": {
+      "nullable": false,
+      "reason": "退货工单数（#5369，退货率分子）：0 = 该商品当期**真的**没有退货工单（装配层按 product_id 归并计数）",
+      "issue": "#5369"
+    },
+    "product_return_stats.order_lines": {
+      "nullable": false,
+      "reason": "订单行数（#5369，退货率分母）：0 = 该商品当期没有订单行 ⇒ 比率**未知**（agent 侧不倒推 0）—— 0 有确定语义，不冒充未知",
+      "issue": "#5369"
+    }
+  },
+  "unwired_arrays": {
+    "price_changes": {
+      "reason": "**刻意不装配**（全仓无改价流水表）⇒ price_change_over 规则结构上接不通；装配层 SNAPSHOT_ROW_FIELDS 的注释自陈此事，引擎侧按规则登记在此（不是「命中 0 条」）",
+      "issue": "#5358"
+    }
+  },
+  "tenant_facts": {
+    "cost_accounting": {
+      "gates": [
+        "orders.cost_amount",
+        "skus.avg_cost"
+      ],
+      "reason": "装配层从事实推出（是否存在 avg_cost IS NOT NULL 的 SKU），不是人工配置项；False ⇒「系统有这能力、该租户没开」⇒ not_enabled（可行动），与 not_wired（不可行动）并列不可合并。gates 里加上 `skus.avg_cost`（#5369 起该 SKU 级列也进快照）：该事实**定义上**就是 avg_cost 的可空性，故任何读它的规则都必须声明 enabled_by，否则在未开启租户上静默落 wired",
+      "issue": "#5348"
+    }
+  },
+  "judgeable_exemptions": {},
+  "enabled_by_exemptions": {}
+}
