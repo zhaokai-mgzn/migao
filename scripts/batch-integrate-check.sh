@@ -159,7 +159,7 @@ PY
     case "$SC_RC" in
       0) echo "  OK 无搁浅（交付物逐条内容级核对通过）" ;;
       1) echo "  FAIL 检出搁浅 ⇒ 开**跟随 PR** 补齐（**不得**向已合并分支追加 commit）"; rc=1 ;;
-      *) echo "  FAIL 无法判定（stranding-check exit=$SC_RC：缺 gh / 缺网络 / PR 元数据不全）—— **不许当通过**"; rc=1 ;;
+      *) echo "  FAIL 无法判定（stranding-check exit=${SC_RC}：缺 gh / 缺网络 / PR 元数据不全）—— **不许当通过**"; rc=1 ;;
     esac
   else
     echo "  (未给 PR 号，跳过；单跑：./scripts/stranding-check.sh --pr <n>｜--branch <ref>)"
