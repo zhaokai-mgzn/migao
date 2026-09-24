@@ -14,7 +14,7 @@ tool 模块要求 `tests/test_tools_<name>.py`）。断言分三面：
 ⚠️ 这些断言会红吗：把 `read_only` 改 False、把权限码改别的、去掉 `check_permission` 早返回、
 把端点换成别的路径、把 `except` 里的返回改成 `raise` —— 逐一都会红（每条断言都盯着一个**会变的**真值）。
 """
-# case_ids: DA-008, DA-009, DA-010, DA-014
+# case_ids: DA-008, DA-009, DA-010, DA-014, DA-018
 import json
 
 import pytest
@@ -188,4 +188,208 @@ class TestProactiveDailyFindings:
 
         assert result.success is True
         assert result.data["proactive"] == []
+        # 🔴 #5358：无快照 ⇒ 五条规则**一条都没接线**，消息必须如实说明（见 TestNotWiredDisclosure）；
+        # 这句主体文案保持不变（不因未接线而改写日报主体）。
+        assert (result.message or "").startswith("今日经营日报如下")
+
+
+#: 未接线的两条能力（`RULES[].rule_name` 原文）—— 消息里必须逐条点名
+UNWIRED_NAMES = ("低于成本价的订单", "改价幅度超阈值")
+
+#: 装配后的快照（与 admin-api `aggregateSnapshot` 同形）：三条规则接线、两条接不通；
+#: 且**当天一条都没命中** —— 正是「空命中」最容易被读成「今天一切正常」的那一种。
+UNWIRED_SNAPSHOT = {
+    "biz_date": "2026-09-22",
+    "row_fields": {
+        "orders": ["order_no", "status", "customer_id", "created_at", "shipped_at", "sale_amount"],
+        "skus": ["sku_id", "product_id", "product_name", "stock"],
+        "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
+    },
+    "orders": [],
+    "skus": [],
+    "returns": [],
+}
+
+
+def _assert_honest_about_unwired(message, names=UNWIRED_NAMES):
+    """**判据本体**（#5358 判据 4）：`not_wired` 时必须如实说明「尚未接入」，**禁止**「今日无异常」类表述。
+
+    这是 deterministic 面（工具消息），LLM 的自由措辞不在本断言范围内 —— 消息是它唯一的输入源，
+    消息里没有的兜底，模型编不出来。
+    """
+    for name in names:
+        assert name in message, f"未接线能力「{name}」未如实说明"
+    assert "尚未接入" in message, "未接线必须有「尚未接入」的明确措辞"
+    for forbidden in ("今日无异常", "无异常", "一切正常", "没有异常", "未发现异常", "暂无异常"):
+        assert forbidden not in message, f"未接线时出现了「{forbidden}」类表述（会把空命中读成没问题）"
+    return True
+
+
+#: 行数组被上限**截断**的快照（`row_truncated` 显式登记）：本次检查过，但**不完整** ——
+#: 空命中同样不得被读成「没问题」。
+TRUNCATED_SNAPSHOT = dict(UNWIRED_SNAPSHOT, row_meta={
+    "orders": {"limit": 500, "count": 500, "truncated": True},
+    "skus": {"limit": 500, "count": 0, "truncated": False},
+    "returns": {"limit": 500, "count": 0, "truncated": False},
+})
+
+#: 当天**真有** 3 项异常、但 `max_findings=2`（租户配置）把日报截成 2 条的快照。
+LIMITED_SNAPSHOT = {
+    "biz_date": "2026-09-22",
+    "config": {"max_findings": 2},
+    "row_fields": UNWIRED_SNAPSHOT["row_fields"],
+    "row_meta": {
+        "orders": {"limit": 500, "count": 1, "truncated": False},
+        "skus": {"limit": 500, "count": 2, "truncated": False},
+        "returns": {"limit": 500, "count": 3, "truncated": False},
+    },
+    "orders": [{"order_no": "SO-1", "status": "confirmed", "customer_id": "C-1",
+                "created_at": "2026-09-12T10:00:00+08:00", "shipped_at": None,
+                "sale_amount": 1200.0}],
+    "skus": [{"sku_id": "SKU-1", "product_id": "P-1", "product_name": "雪尼尔-米白", "stock": 20.0},
+             {"sku_id": "SKU-2", "product_id": "P-2", "product_name": "棉麻-灰", "stock": 30.0}],
+    "returns": [{"return_no": f"RT-{n}", "customer_id": "C-1", "product_id": "P-9",
+                 "returned_at": f"2026-09-{day}T10:00:00+08:00", "amount": 100.0}
+                for n, day in ((1, 18), (2, 20), (3, 22))],
+}
+
+
+class TestNotWiredDisclosure:
+    """#5358 判据 4：未接线的能力如实说明，不得用「今日无异常」覆盖。
+
+    对照判据（会红吗）：把工具消息里「尚未接入」那段删掉 ⇒ 本类第 1 条必红（见两条注入式红证）；
+    把状态判定改回「命中为空即正常」⇒ 禁用词判据与点名判据都会红。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_message_discloses_not_wired_capabilities(self, mock_get_client):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": UNWIRED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        # 当天确实 0 条命中 —— 若没有披露，这句话就是「今天一切正常」
+        assert result.data["proactive"] == []
+        assert _assert_honest_about_unwired(result.message or "") is True
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_status_reaches_the_caller(self, mock_get_client):
+        """逐规则状态必须进 `data`（不然「两种空可分」只活在服务端，调用方还是分不出来）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": UNWIRED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        status = result.data["proactive_status"]
+        assert status["price_change_over"]["status"] == "not_wired"
+        assert status["low_stock"]["status"] == "wired"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_all_wired_snapshot_gets_no_disclosure(self, mock_get_client):
+        """全部接线时**不得**出现未接线措辞（否则披露会因为「总是出现」而失去信息量）"""
+        wired = dict(
+            UNWIRED_SNAPSHOT,
+            row_fields={**UNWIRED_SNAPSHOT["row_fields"],
+                        "orders": UNWIRED_SNAPSHOT["row_fields"]["orders"] + ["cost_amount"],
+                        "price_changes": ["change_no", "order_no", "product_id",
+                                          "original_price", "new_price", "changed_at"]},
+        )
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": wired}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert "尚未接入" not in (result.message or "")
         assert result.message == "今日经营日报如下"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_missing_disclosure_fails_the_judgement(self, mock_get_client):
+        """**注入式红证**：把某条未接线能力的名字从消息里抹掉 ⇒ 判据必红（不是空断言）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": UNWIRED_SNAPSHOT}})
+        mock_get_client.return_value = client
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        stripped = (result.message or "").replace(UNWIRED_NAMES[0], "")
+        assert stripped != (result.message or ""), "被抹掉的名字原本就不在消息里 ⇒ 本红证是空跑"
+        with pytest.raises(AssertionError):
+            _assert_honest_about_unwired(stripped)
+
+    def test_red_proof_forbidden_text_judgement_is_load_bearing(self):
+        """**注入式红证**：消息里出现「今日无异常」类表述 ⇒ 判据必红"""
+        with pytest.raises(AssertionError):
+            _assert_honest_about_unwired(
+                f"以下能力尚未接入本次扫描：{'、'.join(UNWIRED_NAMES)}（今日无异常）")
+
+
+class TestIncompleteDisclosure:
+    """判据 7（「有界不许变成静默少报」）：**本次不完整**与**条数被截断**都必须显式。
+
+    对照判据（会红吗）：把 `row_meta` 抹掉 ⇒ 不完整披露判据必红；把真实条数改回被截断的条数
+    ⇒ 条数判据必红（两条都是「少报」形态）。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_truncated_rows_are_disclosed_as_incomplete(self, mock_get_client):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": TRUNCATED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        message = result.message or ""
+        assert "本次数据不完整" in message, "截断必须显式说出来（有界不许变成静默少报）"
+        assert "超 N 天未发货" in message, "点名的必须是**哪条**规则不完整"
+        for forbidden in ("今日无异常", "无异常", "一切正常", "未发现异常"):
+            assert forbidden not in message
+        assert result.data["proactive_status"]["unshipped_overdue"]["status"] == "incomplete"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_truncation_disclosure_is_load_bearing(self, mock_get_client):
+        """**注入式红证**：抹掉 `row_meta`（= 装作没截断）⇒ 上一条判据必红"""
+        plain = {key: value for key, value in TRUNCATED_SNAPSHOT.items() if key != "row_meta"}
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True, "data": {"bizDate": "2026-09-22", "sourceSnapshot": plain}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        with pytest.raises(AssertionError):
+            assert "本次数据不完整" in (result.message or "")
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_capped_daily_list_states_the_true_total(self, mock_get_client):
+        """日报条数被 `max_findings` 截断 ⇒ 消息必须点出**真实条数**（3 项，不是 2 项）"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": LIMITED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        message = result.message or ""
+        assert len(result.data["proactive"]) == 2, "日报条数上限生效（max_findings=2）"
+        assert "另有 2 项当天异常待处理" in message
+        assert "当天共 3 项" in message, "被截断的条数必须点出真实总数"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_red_proof_missing_total_is_load_bearing(self, mock_get_client):
+        """**注入式红证**：把真实条数改回被截断的条数（= 少报）⇒ 判据必红"""
+        message = "今日经营日报如下，另有 2 项当天异常待处理"
+        with pytest.raises(AssertionError):
+            assert "当天共 3 项" in message

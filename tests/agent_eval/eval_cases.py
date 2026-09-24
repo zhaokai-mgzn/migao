@@ -2217,6 +2217,60 @@ _CASE_DA_015 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-016 [NORMAL] 跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358）（源: cases/data.yml）──
+_CASE_DA_016 = EvalCase(
+    id='DA-016',
+    legacy_id='',
+    title='跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营日报数据快照装配自检'],
+    expectations=[],
+    data_checks=['快照带 orders/skus/returns 三个行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount；sku_id/product_id/product_name/stock；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）', '**price_changes 数组不存在**（全仓无改价流水表）、orders 行**没有 cost_amount**（orders 表无成本列）—— 两条结构性缺口显式登记，而不是「装配了但命中 0 条」', '每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）'],
+    skip_reason='[backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-017 [NORMAL] 跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358）（源: cases/data.yml）──
+_CASE_DA_017 = EvalCase(
+    id='DA-017',
+    legacy_id='',
+    title='跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现接线状态自检'],
+    expectations=[],
+    data_checks=['接线状态**逐规则**输出（rule_id → status + 未接线原因 + 缺哪个数组/字段）：装配行级数组后三条规则 wired、两条结构性不可达（below_cost_price 缺 cost_amount、price_change_over 缺 price_changes）为 not_wired —— 部分接线场景有断言，不是整体一个布尔', '**两种空可分**：五条规则当天一条都没命中时，未接线（带原因）与已接线但无命中（不带原因）在输出上必须不同 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红', '装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）', '🔴 **有界不许变成静默少报**：行数组被行数上限截断 ⇒ 该规则落 `incomplete`（带原因：上限多少行 / 本次给出多少行）；分组维度在部分行缺值（如退货行没有商品）同样落 `incomplete` —— 注入式红证：抹掉截断标志 ⇒ 截断判据必红；把缺值补齐 ⇒ 维度判据必红', '不变式（一套口径）：`reason is None` ⟺ `status == wired`（= 已接入**且本次完整**）—— 只有 `wired` 才允许把空命中读成「这方面没问题」；日报条数被 max_findings 截断时，工具消息必须点出**真实条数**（日报只列前 N 项，当天共 M 项）'],
+    skip_reason='[backend-contract] 逐规则接线状态由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestWiringStatusIsPerRule），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'wiring'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-018 [NORMAL] 未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358）（源: cases/data.yml）──
+_CASE_DA_018 = EvalCase(
+    id='DA-018',
+    legacy_id='',
+    title='未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天有什么异常'],
+    expectations=[],
+    data_checks=['工具消息逐条点名未接线的能力（规则名）并给出「尚未接入」的明确措辞；当天 0 条命中时也不得出现「今日无异常 / 无异常 / 一切正常 / 未发现异常」这类表述（消息是模型的唯一输入源，消息里没有的兜底模型编不出来）', '逐规则状态进 data（`proactive_status`），调用方自己可分「未接线 / 本次不完整 / 已接入且完整但无命中」；全部接线且完整时**不得**出现未接线措辞（披露不能因为总是出现而失去信息量）', '本次**不完整**（行数被上限截断 / 分组维度缺值）时同样如实说明（「本次数据不完整，空命中不代表没有问题」+ 点名规则 + 原因），与未接线披露并列；注入式红证：抹掉截断标志 ⇒ 该判据必红', '注入式红证：从消息里抹掉某条未接线能力的名字、或往消息里塞「今日无异常」⇒ 同一判据必须变红'],
+    skip_reason='[backend-contract] 未接线话术由 ai-agent 单测验证（tests/test_tools_briefing_query.py 的 TestNotWiredDisclosure），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'honest-empty'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -8952,6 +9006,9 @@ ALL_CASES = (
     _CASE_DA_013,
     _CASE_DA_014,
     _CASE_DA_015,
+    _CASE_DA_016,
+    _CASE_DA_017,
+    _CASE_DA_018,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

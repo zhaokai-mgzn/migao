@@ -27,8 +27,10 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -53,6 +55,9 @@ public class DailyBriefingService {
     private final SessionMapper sessionMapper;
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderItemMapper orderItemMapper;
+    private final OrderLogisticsMapper orderLogisticsMapper;
+    private final ProductSkuMapper productSkuMapper;
+    private final ProductMapper productMapper;
     private final ProductService productService;
     private final BriefingGenerateClient briefingGenerateClient;
     private final ObjectMapper objectMapper;
@@ -74,6 +79,80 @@ public class DailyBriefingService {
      * 包级可见，供同包测试断言锁 TTL 与实现同源。
      */
     static final long BRIEFING_LOCK_TTL_SECONDS = 600L;
+
+    // ==================== 行级快照（族 3 跨域视图内核，issue #5358）====================
+
+    /**
+     * 行级数组的**行数上限**：有界，不得全表拖（截断方向刻意取「最该看的那一头」——
+     * 订单按 `created_at` 升序 = 最久未发优先；SKU 按 `stock` 升序 = 最缺货优先；退货按时间倒序 = 最近优先）。
+     * 500 行 ≫ 单租户单日的待发货单 / 库存告急 SKU / 退货量级。
+     */
+    static final int SNAPSHOT_ROW_LIMIT = 500;
+
+    /**
+     * 行数组的**取数**上限 = {@link #SNAPSHOT_ROW_LIMIT} + 1：多取一行只为**判定是否被截断**
+     * （多出来的那行不进快照）。
+     *
+     * <p>🔴 为什么要判定：有界是热路径必须的，但**静默截断会新开一个少报面** —— 看不见的行不会命中 ⇒
+     * 「没发现」被读成「没问题」，正是本单要治的形态（#5348）。截断事实经 `row_meta` 显式交给引擎，
+     * 由引擎落成规则的 `incomplete` 状态（空命中不得读成没问题）。</p>
+     */
+    static final int SNAPSHOT_ROW_FETCH_LIMIT = SNAPSHOT_ROW_LIMIT + 1;
+
+    /** 退货行窗口（天）：覆盖连续退货规则的观察窗口（默认 7 天）并留足余量。 */
+    static final int SNAPSHOT_RETURN_WINDOW_DAYS = 90;
+
+    /** 库存告急口径（与 `dashboard-jump.low-stock` 同源：库存 ≤ 100）—— 计数与行数组共用一份，避免两处口径。 */
+    static final int LOW_STOCK_THRESHOLD = 100;
+
+    /** 「该发货而未发货」的订单状态 —— 与聚合指标 `pending_ship_orders` 同一口径。 */
+    static final List<String> UNSHIPPED_STATUSES = List.of("confirmed", "producing");
+
+    /** 退货事实的来源：售后工单里的**退货**类型（全仓无独立退货流水表）。 */
+    static final String RETURN_TICKET_TYPE = "return";
+
+    /**
+     * 快照行数组的**自描述**：本次装配真的给出了哪些行数组、每个数组有哪些字段。
+     *
+     * <p>引擎（`app/briefing/proactive.py::proactive_status`）拿它 × 每条规则的输入契约算
+     * **逐规则接线状态** ——「没数据」与「没问题」的分界就在这里，两侧各只有一份声明。</p>
+     *
+     * <p>🔴 两处**刻意缺席**（如实登记为「未接线」，**不是「命中 0 条」**）：
+     * ① `orders` 行没有 `cost_amount` —— `orders` 表无成本列（金额列只有 total/actual/discount/refund）
+     * ⇒ 低于成本价规则接不通（成本价列属数据模型变更，另立 issue #5348）；
+     * ② `price_changes` **整个数组不装配** —— 全仓无改价流水表 ⇒ 改价幅度规则接不通。</p>
+     */
+    static final Map<String, List<String>> SNAPSHOT_ROW_FIELDS = snapshotRowFields();
+
+    private static Map<String, List<String>> snapshotRowFields() {
+        Map<String, List<String>> fields = new LinkedHashMap<>();
+        fields.put("orders", List.of("order_no", "status", "customer_id", "created_at",
+                "shipped_at", "sale_amount"));
+        fields.put("skus", List.of("sku_id", "product_id", "product_name", "stock"));
+        fields.put("returns", List.of("return_no", "customer_id", "product_id", "returned_at", "amount"));
+        return fields;
+    }
+
+    /** 一批快照行 + 它**是否被行数上限截断**（截断必须显式：见 {@link #SNAPSHOT_ROW_FETCH_LIMIT}）。 */
+    record RowBatch(List<Map<String, Object>> rows, boolean truncated) {
+    }
+
+    /** 行数组的元信息（`row_meta`）：行数上限 / 实际行数 / 是否被截断 —— 引擎据此把「本次不完整」说出来。 */
+    static Map<String, Object> rowMeta(RowBatch orders, RowBatch skus, RowBatch returns) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("orders", rowMetaEntry(orders));
+        meta.put("skus", rowMetaEntry(skus));
+        meta.put("returns", rowMetaEntry(returns));
+        return meta;
+    }
+
+    private static Map<String, Object> rowMetaEntry(RowBatch batch) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("limit", SNAPSHOT_ROW_LIMIT);
+        entry.put("count", batch.rows().size());
+        entry.put("truncated", batch.truncated());
+        return entry;
+    }
 
     // ==================== 企业开关（红线 3）====================
 
@@ -236,7 +315,10 @@ public class DailyBriefingService {
         Map<String, Number> metrics = extractMetrics(snapshot);
 
         // 2) LLM 组织层
-        JsonNode briefing = briefingGenerateClient.generate(tenantId, snapshot);
+        // 🔴 提示词只喂**聚合指标 + 脱敏事实**：行级数组是规则引擎 / 按需视图的输入（族 3），
+        // 不进 LLM 上下文 —— 否则每条简报都要把上千行 JSON 塞进去（ai-agent 侧虽有 6000 字符预算，
+        // 那也只会把它截成半截 JSON：既涨成本，又给模型一堆与组织简报无关的行）。
+        JsonNode briefing = briefingGenerateClient.generate(tenantId, promptSnapshot(snapshot));
 
         DailyBriefing record = DailyBriefing.builder()
                 .tenantId(tenantId)
@@ -284,7 +366,7 @@ public class DailyBriefingService {
         Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);
 
         long pendingShip = toLong(orderStats.get("pending_ship"));
-        long lowStock = productService.getLowStockSkuCount(tenantId, 100);
+        long lowStock = productService.getLowStockSkuCount(tenantId, LOW_STOCK_THRESHOLD);
         long processingPending = orderItemMapper.selectProcessingPendingOrdersCount();
         long totalTickets = afterSalesTicketMapper.selectCount(
                 new LambdaQueryWrapper<AfterSalesTicket>()
@@ -353,7 +435,228 @@ public class DailyBriefingService {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("metrics", metrics);
         snapshot.put("facts", facts);
+        // 行级数组（族 3 跨域视图内核，issue #5358）：有界 + 租户隔离（显式带 tenantId，
+        // 叠加 TenantLineInnerInterceptor 的 tenant_id 注入 —— 与既有工单查询同口径）。
+        // 🔴 `price_changes` **不装配**（全仓无改价流水表）⇒ 该数组不存在，见 SNAPSHOT_ROW_FIELDS。
+        RowBatch orders = assembleOrderRows(tenantId);
+        RowBatch skus = assembleSkuRows(tenantId);
+        RowBatch returns = assembleReturnRows(tenantId, todayStart.minusDays(SNAPSHOT_RETURN_WINDOW_DAYS));
+        snapshot.put("row_fields", SNAPSHOT_ROW_FIELDS);
+        // 截断必须显式（`row_meta`）：有界不许变成静默少报 —— 看不见的行不命中，会被读成「没问题」。
+        snapshot.put("row_meta", rowMeta(orders, skus, returns));
+        snapshot.put("orders", orders.rows());
+        snapshot.put("skus", skus.rows());
+        snapshot.put("returns", returns.rows());
         return snapshot;
+    }
+
+    /**
+     * `orders` 行：**当前仍待发货**的订单（population 与聚合指标 `pending_ship_orders` 同口径），
+     * 按 `created_at` 升序取前 {@link #SNAPSHOT_ROW_LIMIT} 条 —— 最久未发的先保留。
+     *
+     * <p>`shipped_at` 取该订单物流记录里最晚的发货时刻：引擎把它当「已发货」的第二判据，
+     * 状态漂移（状态还是待发货、物流其实已发出）时不至于误报。</p>
+     */
+    RowBatch assembleOrderRows(Long tenantId) {
+        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId)
+                .in(Order::getStatus, UNSHIPPED_STATUSES)
+                .orderByAsc(Order::getCreatedAt)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        // 多取的那一行只用来判定截断（见 SNAPSHOT_ROW_FETCH_LIMIT），不进快照
+        boolean truncated = orders.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            orders = orders.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        if (orders.isEmpty()) {
+            return new RowBatch(new ArrayList<>(), truncated);
+        }
+        Map<String, OffsetDateTime> shippedAt = shippedAtByOrder(tenantId, orders);
+        List<Map<String, Object>> rows = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            rows.add(orderRow(order, shippedAt.get(order.getId())));
+        }
+        return new RowBatch(rows, truncated);
+    }
+
+    /**
+     * 行里的时刻一律落 **ISO-8601 字符串**。
+     *
+     * <p>🔴 快照最终落 `daily_briefings.source_snapshot`（JSONB），走的是 MyBatis-Plus
+     * `JacksonTypeHandler` —— 它的 ObjectMapper 是**裸 `new ObjectMapper()`（没有 JavaTimeModule）**：
+     * 快照里出现 `OffsetDateTime` 会在 insert 时抛 `InvalidDefinitionException`
+     * （「Java 8 date/time type not supported by default」，本机实测）。
+     * ⇒ 快照只放 JSON 原生类型（字符串 / 数字 / 布尔 / null / 列表 / 映射），时刻用 ISO 串；
+     * 引擎侧（`_day`）本来就按 ISO 串解析。</p>
+     */
+    static String iso(OffsetDateTime value) {
+        return value == null ? null : value.toString();
+    }
+
+    /** 订单行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
+    static Map<String, Object> orderRow(Order order, OffsetDateTime shippedAt) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("order_no", order.getOrderNo());
+        row.put("status", order.getStatus());
+        row.put("customer_id", order.getUserId());
+        row.put("created_at", iso(order.getCreatedAt()));
+        row.put("shipped_at", iso(shippedAt));
+        // 成交金额：实付优先、缺省回落总额。**成本价刻意不给**（`orders` 表无成本列）——
+        // 于是「低于成本价」在引擎侧落在未接线清单里，而不是表现为「命中 0 条」。
+        row.put("sale_amount",
+                order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount());
+        return row;
+    }
+
+    private Map<String, OffsetDateTime> shippedAtByOrder(Long tenantId, List<Order> orders) {
+        List<String> orderIds = orders.stream()
+                .map(Order::getId).filter(StringUtils::hasText).distinct().toList();
+        Map<String, OffsetDateTime> shippedAt = new HashMap<>();
+        if (orderIds.isEmpty()) {
+            return shippedAt;
+        }
+        for (OrderLogistics logistics : orderLogisticsMapper.selectList(
+                new LambdaQueryWrapper<OrderLogistics>()
+                        .eq(OrderLogistics::getTenantId, tenantId)
+                        .in(OrderLogistics::getOrderId, orderIds)
+                        // 入参 id 已由上面那步有界（≤ SNAPSHOT_ROW_LIMIT 个），这里再加一道硬上限：
+                        // 父级上限将来放宽时，本查询不会跟着无界。
+                        .last("LIMIT " + SNAPSHOT_ROW_LIMIT))) {
+            if (logistics.getShippedAt() != null) {
+                shippedAt.merge(logistics.getOrderId(), logistics.getShippedAt(),
+                        (a, b) -> a.isAfter(b) ? a : b);
+            }
+        }
+        return shippedAt;
+    }
+
+    /**
+     * `skus` 行：**库存最低的前 N 个在售 SKU**（`stock >= 0`，按库存升序截断 ⇒ 保留的正是最该看的）。
+     *
+     * <p>刻意**不按阈值预筛**：`low_stock_threshold` 可由租户配置覆盖（引擎侧 `ProactiveConfig`），
+     * 快照若按默认 100 截断，租户把阈值调高后就会**静默漏报** —— 那正是本单要治的
+     * 「没数据被读成没问题」；阈值过滤留给引擎，装配层只负责把行按有界方式给全。</p>
+     */
+    RowBatch assembleSkuRows(Long tenantId) {
+        List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .ge(ProductSku::getStock, 0)
+                .orderByAsc(ProductSku::getStock)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = skus.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            skus = skus.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        if (skus.isEmpty()) {
+            return new RowBatch(new ArrayList<>(), truncated);
+        }
+        Map<String, String> names = onSaleProductNames(tenantId, skus);
+        List<Map<String, Object>> rows = new ArrayList<>(skus.size());
+        for (ProductSku sku : skus) {
+            String productName = names.get(sku.getProductId());
+            if (productName == null) {
+                continue;   // 下架/已删商品下的 SKU 不进快照（与聚合指标 low_stock_items 同口径）
+            }
+            rows.add(skuRow(sku, productName));
+        }
+        return new RowBatch(rows, truncated);
+    }
+
+    /** SKU 行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
+    static Map<String, Object> skuRow(ProductSku sku, String productName) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("sku_id", sku.getId());
+        row.put("product_id", sku.getProductId());
+        row.put("product_name", productName);
+        row.put("stock", sku.getStock());
+        return row;
+    }
+
+    /** 在售商品 id → 名称（下架/已删商品不入表 ⇒ 其 SKU 不进快照）。 */
+    private Map<String, String> onSaleProductNames(Long tenantId, List<ProductSku> skus) {
+        List<String> productIds = skus.stream()
+                .map(ProductSku::getProductId).filter(StringUtils::hasText).distinct().toList();
+        Map<String, String> names = new HashMap<>();
+        if (productIds.isEmpty()) {
+            return names;
+        }
+        for (Product product : productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getStatus, "on_sale")
+                .in(Product::getId, productIds)
+                // 同上：id 入参已有界，这里再加一道硬上限（父级放宽时本查询不跟着无界）
+                .last("LIMIT " + SNAPSHOT_ROW_LIMIT))) {
+            names.put(product.getId(), product.getName());
+        }
+        return names;
+    }
+
+    /**
+     * `returns` 行：**退货工单**流水（全仓无独立退货流水表，退货事实落在 `after_sales_tickets`）。
+     * 行字段按契约：`return_no` ← 工单号、`returned_at` ← **工单发起时刻**（退货发起即事件日）、
+     * `amount` ← 退款金额。
+     *
+     * <p>`product_id` **不猜**：工单本身没有商品列，只有该工单关联订单的商品**唯一**时才回填；
+     * 多商品订单给 `null` ⇒ 那些行仍参与「同一客户」维度的连续退货判定，商品维度不可用
+     * （如实登记，不假装全覆盖）。</p>
+     */
+    RowBatch assembleReturnRows(Long tenantId, OffsetDateTime windowStart) {
+        List<AfterSalesTicket> tickets = afterSalesTicketMapper.selectList(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                        .eq(AfterSalesTicket::getTenantId, tenantId)
+                        .eq(AfterSalesTicket::getTicketType, RETURN_TICKET_TYPE)
+                        .ge(AfterSalesTicket::getCreatedAt, windowStart)
+                        .orderByDesc(AfterSalesTicket::getCreatedAt)
+                        .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        boolean truncated = tickets.size() > SNAPSHOT_ROW_LIMIT;
+        if (truncated) {
+            tickets = tickets.subList(0, SNAPSHOT_ROW_LIMIT);
+        }
+        if (tickets.isEmpty()) {
+            return new RowBatch(new ArrayList<>(), truncated);
+        }
+        Map<String, String> singleProduct = singleProductByOrder(tenantId, tickets);
+        List<Map<String, Object>> rows = new ArrayList<>(tickets.size());
+        for (AfterSalesTicket ticket : tickets) {
+            rows.add(returnRow(ticket, singleProduct.get(ticket.getOrderId())));
+        }
+        return new RowBatch(rows, truncated);
+    }
+
+    /** 退货行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
+    static Map<String, Object> returnRow(AfterSalesTicket ticket, String productId) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("return_no", ticket.getTicketNo());
+        row.put("customer_id", ticket.getCustomerId());
+        row.put("product_id", productId);
+        row.put("returned_at", iso(ticket.getCreatedAt()));
+        row.put("amount", ticket.getRefundAmount());
+        return row;
+    }
+
+    /** 每张订单的**唯一**商品 id：多商品订单不入表（`product_id` 回填 null，不猜）。 */
+    private Map<String, String> singleProductByOrder(Long tenantId, List<AfterSalesTicket> tickets) {
+        List<String> orderIds = tickets.stream()
+                .map(AfterSalesTicket::getOrderId).filter(StringUtils::hasText).distinct().toList();
+        Map<String, String> single = new HashMap<>();
+        if (orderIds.isEmpty()) {
+            return single;
+        }
+        Map<String, Set<String>> products = new HashMap<>();
+        for (OrderItem item : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, tenantId)
+                .in(OrderItem::getOrderId, orderIds))) {
+            if (StringUtils.hasText(item.getProductId())) {
+                products.computeIfAbsent(item.getOrderId(), key -> new LinkedHashSet<>())
+                        .add(item.getProductId());
+            }
+        }
+        products.forEach((orderId, ids) -> {
+            if (ids.size() == 1) {
+                single.put(orderId, ids.iterator().next());
+            }
+        });
+        return single;
     }
 
     @SuppressWarnings("unchecked")
@@ -369,6 +672,20 @@ public class DailyBriefingService {
             }
         }
         return metrics;
+    }
+
+    /**
+     * LLM 提示词用的快照视图：**只含** `metrics` + `facts`（红线 4 的「纯数字 + 脱敏事实」口径）。
+     *
+     * <p>行级数组（`orders` / `skus` / `returns` 与 `row_fields` / `row_meta`）**出提示词**：它们是
+     * 规则引擎与按需视图的输入，落库快照里在、提示词里不在 —— 两件事各取所需，不是两份口径
+     * （提示词视图是落库快照的**子集**，唯一来源仍是 {@link #aggregateSnapshot}）。</p>
+     */
+    static Map<String, Object> promptSnapshot(Map<String, Object> snapshot) {
+        Map<String, Object> prompt = new LinkedHashMap<>();
+        prompt.put("metrics", snapshot.get("metrics"));
+        prompt.put("facts", snapshot.get("facts"));
+        return prompt;
     }
 
     // ==================== 数字回填校验层（红线 4）====================

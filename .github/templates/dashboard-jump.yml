@@ -16,6 +16,9 @@ business_truths:
   - [dashboard-jump.proactive-deterministic] 同一数据快照 ⇒ 逐字可复现的命中集合（规则具名、阈值可复算）
   - [dashboard-jump.proactive-action-required] 无处置入口的条目不进日报（只报问题不给出口＝制造焦虑）
   - [dashboard-jump.proactive-today-only] 日报只放当天成立的异常，历史异常留给全量视图按需查询
+  # 跨域视图内核（族 3 · 包 1，issue #5358）—— 把「没数据」与「没问题」在数据层分开
+  - [dashboard-jump.proactive-wiring-status] 逐规则接线状态：未接线 / 本次不完整 / 已接入且完整但当天无命中，三者可分（截断与维度缺值都显式）
+  - [dashboard-jump.proactive-unwired-disclosure] 未接线的能力如实说明「尚未接入」，不得读成「今日无异常」
 primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
   - tests/e2e/specs/orders/order-list.spec.ts

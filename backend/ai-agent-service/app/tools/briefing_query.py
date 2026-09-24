@@ -7,7 +7,13 @@ AI 智能客服系统 - 经营日报（每日简报）查询 Tool（issue #5247 
 from typing import Any, Dict
 from loguru import logger
 
-from app.briefing.proactive import daily_findings
+from app.briefing.proactive import (
+    INCOMPLETE,
+    NOT_WIRED,
+    daily_findings,
+    daily_findings_total,
+    proactive_status,
+)
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
@@ -81,9 +87,38 @@ class BriefingQueryTool(BaseTool):
         # 主动发现（族 1 · 包 1，issue #5322）：对**同源聚合快照**做确定性规则扫描，
         # 只把「当天异常」并进日报（全量视图留给按需查询，族 3）；无快照 ⇒ 空集合，不猜。
         # 🔴 没有处置入口的条目在引擎装配期就被丢弃（`app/briefing/proactive.py::_assemble`）。
-        findings = daily_findings(data.get("sourceSnapshot"), as_of=data.get("bizDate"))
-        logger.info("[briefing_query] done proactive={}", len(findings))
+        snapshot = data.get("sourceSnapshot")
+        findings = daily_findings(snapshot, as_of=data.get("bizDate"))
+        # 逐规则接线状态（issue #5358）：**没接线 / 本次不完整** ≠ **已接线且本次完整但当天无命中**
+        # —— 空命中不得被读成「今天一切正常」。状态进 `data`（调用方自己可分），
+        # 未接线 / 不完整的规则在消息里**如实点名**。
+        status = proactive_status(snapshot)
+        unwired = [entry["rule_name"] for entry in status.values() if entry["status"] == NOT_WIRED]
+        incomplete = [entry for entry in status.values() if entry["status"] == INCOMPLETE]
+        total_today = daily_findings_total(snapshot, as_of=data.get("bizDate"))
+        logger.info("[briefing_query] done proactive={} total_today={} not_wired={} incomplete={}",
+                    len(findings), total_today, len(unwired), len(incomplete))
         message = "今日经营日报如下"
         if findings:
             message = f"今日经营日报如下，另有 {len(findings)} 项当天异常待处理"
-        return ToolResult(success=True, data=dict(data, proactive=findings), message=message)
+            if total_today > len(findings):
+                # 「日报要窄」不许变成静默少报：条数被 max_findings 截断时点出真实条数
+                message += f"（日报只列前 {len(findings)} 项，当天共 {total_today} 项）"
+        if unwired:
+            # 禁用措辞（「今日无异常」「一切正常」…）一律不出现：本次根本**没有检查**这些方面。
+            message += (
+                f"。⚠️ 以下能力尚未接入本次扫描：{'、'.join(unwired)}"
+                " —— 这些方面本次没有检查数据，请勿理解为均已检查"
+            )
+        if incomplete:
+            # 同上：本次**检查了但不完整**（行数被上限截断 / 维度缺值）⇒ 也不得读成「没问题」。
+            detail = "；".join(entry["reason"] for entry in incomplete)
+            message += (
+                f"。⚠️ 以下能力本次数据不完整，空命中不代表没有问题："
+                f"{'、'.join(entry['rule_name'] for entry in incomplete)} —— {detail}"
+            )
+        return ToolResult(
+            success=True,
+            data=dict(data, proactive=findings, proactive_status=status),
+            message=message,
+        )
