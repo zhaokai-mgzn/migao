@@ -22,9 +22,8 @@ MIBAO_CONFIG = AgentConfig(
         "customer",
         "staff",
         # settings 已解绑（issue #5247 用户裁定：系统设置/通知配置不进 B 端对话面）。
-        # 本注释可以照常写 "settings" 这样的带引号 skill 名：权限守卫自 issue #5272 起按**真字符串
-        # token** 解析 `skill_names`（注释与文档字符串都不算绑定）——原先那条「本注释不得给 skill 名
-        # 加双引号」的规避说明已作废（它描述的假红已修）。
+        # 本注释不再需要「不得给 skill 名加双引号」那类规避说明：权限守卫自 issue #5272 起按
+        # **真字符串 token** 解析 `skill_names`（注释与文档字符串都不算绑定）—— 该规避说明已作废。
         # skill 文件本身保留在注册表里（`app/graph/skills/settings_skill.py`），
         # 因为删除它会让路由/账本口径漂移，而「不进 B 端」的判据是**绑定面**不是文件存在性。
         "data",
