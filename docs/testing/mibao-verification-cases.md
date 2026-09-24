@@ -1520,26 +1520,27 @@
 ### DA-016. 跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358） 🔵
 ```
 你: 经营日报数据快照装配自检
-数据: 快照带 orders/skus/returns 三个行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount；sku_id/product_id/product_name/stock；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）
-数据: **price_changes 数组不存在**（全仓无改价流水表）、orders 行**没有 cost_amount**（orders 表无成本列）—— 两条结构性缺口显式登记，而不是「装配了但命中 0 条」
+数据: 快照带 orders/skus/returns 三个行级数组，行键逐字等于契约（order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；sku_id/product_id/product_name/stock；return_no/customer_id/product_id/returned_at/amount），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）
+数据: **结构性缺口只剩一条**：`price_changes` **数组不存在**（全仓无改价流水表）⇒ 改价幅度规则接不通，显式登记而不是「装配了但命中 0 条」；orders 行的 **`cost_amount` 已装配**（issue #5348 接通成本价 join = Σ 行数量 × 该行 SKU 的 `avg_cost`）—— 🔴 该键**恒在**、值可为 **NULL**：NULL = **成本未知（整单不可判定）**，**不是**「缺字段」（缺字段会被引擎读成「系统没接线」，那是另一回事），也**不出部分和**（任一行不可解析、或该行 `avg_cost` 为空 ⇒ 整单 NULL）
 数据: 每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）
 跳过: [backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.proactive-deterministic, dashboard-jump.low-stock
-溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配 ｜ tags: proactive, briefing, snapshot
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配；2026-09-24 文本刷新（issue #5387）：orders 行新增 `cost_amount`（#5348 接通成本价 join）⇒ 契约键清单补该键、旧口径「orders 行没有 cost_amount」整条退场，**结构性缺口只剩 `price_changes` 一条** ｜ tags: proactive, briefing, snapshot
 
 ### DA-017. 跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358） 🔵
 ```
 你: 主动发现接线状态自检
-数据: 接线状态**逐规则**输出（rule_id → status + 未接线原因 + 缺哪个数组/字段）：装配行级数组后三条规则 wired、两条结构性不可达（below_cost_price 缺 cost_amount、price_change_over 缺 price_changes）为 not_wired —— 部分接线场景有断言，不是整体一个布尔
-数据: **两种空可分**：五条规则当天一条都没命中时，未接线（带原因）与已接线但无命中（不带原因）在输出上必须不同 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红
+数据: 接线状态**逐规则**输出（rule_id → status + 原因 + 缺哪个数组/字段），且**四态可分**：`wired`（已接入**且本次完整** —— 只有它能被判成「这方面没问题」）/ `incomplete`（已接入但**本次不完整**：行数被上限截断、分组维度缺值、有行未判定）/ `not_enabled`（系统**有**该能力、**该租户没开**，**可行动**：引导开启）/ `not_wired`（系统**未实现**，**不可行动**）—— 🔴 `not_enabled` 与 `not_wired` **并列、不可合并**（一个是「去开就能用」、一个是「现在没有」），**不是**一个整体布尔
+数据: 五条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over` 是**唯一**结构性不可达（缺 `price_changes` 数组）⇒ `not_wired` —— 部分接线场景有断言，不是整体一个布尔
+数据: **不同性质的「没有」可分**：五条规则当天一条都没命中时，`not_wired`（系统没做）/ `not_enabled`（该租户没开）/ `incomplete`（本次不完整）与「`wired` 但当天无命中」在输出上必须不同 —— 前三种都带原因、只有 `wired` 不带 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红
 数据: 装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）
 数据: 🔴 **有界不许变成静默少报**：行数组被行数上限截断 ⇒ 该规则落 `incomplete`（带原因：上限多少行 / 本次给出多少行）；分组维度在部分行缺值（如退货行没有商品）同样落 `incomplete` —— 注入式红证：抹掉截断标志 ⇒ 截断判据必红；把缺值补齐 ⇒ 维度判据必红
 数据: 不变式（一套口径）：`reason is None` ⟺ `status == wired`（= 已接入**且本次完整**）—— 只有 `wired` 才允许把空命中读成「这方面没问题」；日报条数被 max_findings 截断时，工具消息必须点出**真实条数**（日报只列前 N 项，当天共 M 项）
 跳过: [backend-contract] 逐规则接线状态由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestWiringStatusIsPerRule），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.proactive-wiring-status
-溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 逐规则接线状态（治 #5348 的语义空转） ｜ tags: proactive, briefing, wiring
+溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 逐规则接线状态（治 #5348 的语义空转）；2026-09-24 文本刷新（issue #5387）：新增第四态 `not_enabled`（`below_cost_price` 的状态**随租户三态**，不再是 `not_wired`）⇒ 旧口径「两条结构性不可达（含 below_cost_price）为 not_wired」整条退场，**唯一**结构性不可达 = `price_change_over` ｜ tags: proactive, briefing, wiring
 
 ### DA-018. 未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358） 🔵
 ```
