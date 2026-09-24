@@ -38,6 +38,9 @@ ORDER_TOOLS = [
     "processing_order_set_query",
     # 交互卡片只保留**消歧/选择**（choice）：B 端不再发写确认卡（issue #5247 裁定 2）。
     "interact",
+    # Agent 深通道（issue #5368 包 2）：手写单 / 微信截图 → **建单页同页填充**
+    # （客户名 / 电话 / 地址 / 明细 / 数量 / 帘宽帘高）。只读、纯本地；小布不绑。
+    "image_recognize",
 ]
 
 # 订单 Skill 专用 System Prompt（展示规则，状态机见 references/prompts/order.md）

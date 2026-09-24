@@ -48,6 +48,8 @@ from app.vision.pipeline import (
     rewrite_image_url as _rewrite_image_url,
     validate_image_url as _validate_image_url,
 )
+# 同页填充的**安全日志摘要**（issue #5368 包 2）：只含 target/计数/键名 —— 值一律不进日志
+from app.vision.deep_channel import log_summary
 
 
 def _to_agent_role(role: str) -> str:
@@ -1266,6 +1268,19 @@ async def _agent_stream_to_sse(
                                         yield SSEEvent.interactive(
                                             component_type,
                                             _mask_card_for_customer(data, context))
+
+                                # ── 同页填充（issue #5368 包 2）：**瞬时**通道 ──
+                                # 计划推给商家**当前页面**的表单（浏览器内存事件）：
+                                # 不进 URL（access log / Referer）、不进浏览器历史、不进 localStorage。
+                                # 🔴 **有意不登记进交互卡的持久化槽位**（收尾 `save_message(interactive=…)`）：
+                                # 一旦登记，整张计划（订单侧含收货信息）就落进会话 metadata = PII 落盘。
+                                # 日志只打安全摘要（target/计数/键名）——**值一律不进日志**。
+                                # 判据：backend/ai-agent-service/tests/test_page_fill_channel.py
+                                if tool_name == "image_recognize" and result_dict.get("success"):
+                                    fill_plan = result_dict.get("data") or {}
+                                    if fill_plan.get("component") == "page_fill":
+                                        logger.info(f"[chat/page-fill] {log_summary(fill_plan)}")
+                                        yield SSEEvent.page_fill(fill_plan)
 
                     elif response.type == "error":
                         # 错误（携带 traceback 诊断信息）

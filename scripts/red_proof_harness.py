@@ -151,6 +151,16 @@ TOOLS: dict[str, ToolSpec] = {
         impl=(_AAPI_MAIN + "service/AgentBatchService.java",),
         criteria=(_AAPI_TEST + "service/AgentBatchServiceTest.java",),
     ),
+    "scripts/agent-batch-tenant-red-proof.py": ToolSpec(
+        floor=5,
+        heavy="Maven + JDK + PG 二进制（**真库判据**：一次性 initdb + pg_ctl 集群；5 条变异 + 基线实测 183s）",
+        impl=(
+            _AAPI_MAIN + "config/MybatisPlusConfig.java",
+            _AAPI_MAIN + "service/AgentBatchService.java",
+            "backend/admin-api/src/main/resources/db/init/schema.sql",
+        ),
+        criteria=(_AAPI_TEST + "service/AgentBatchCrossTenantRealDbTest.java",),
+    ),
 }
 
 
