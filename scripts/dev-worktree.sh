@@ -13,7 +13,7 @@
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
 #   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃预设快照差异 → rebase origin/main → 重新刷新预设（issue #3972）
-#   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 活锚落后即非零退出）
+#   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
 #   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像 → origin/main（自检转绿）
@@ -27,7 +27,9 @@
 #   ① 创建路径（本脚本 `add`）：**已自动刷新** —— 建完工作区即把 `.agent-presets/**` 对齐 origin/main
 #      （`refresh_presets()`，v1.8 / issue #3851）⇒ 这个面**不需要**人工再刷一遍；
 #   ② 提交路径（本脚本 `preset-guard`）：判定暂存/工作区是否构成**版本下降**，命中即 fail-closed；
-#      **合法升级放行**（改研发模式本身不能被堵死），同版本内容不同 = 分叉 → 告警；
+#      **合法升级放行**（改研发模式本身不能被堵死）；**同号不同内容 = 跨包撞车 ⇒ 也判红**
+#      （v1.12 / issue #5425：两个并行包各自只抬一格 ⇒ 同号两条沿革，只能靠人肉发现；
+#       出口逐字给「抬号到「基准版本 + 1」」）；
 #   ③ 加载点（活锚 `~/.dsh/.agent-presets/migao`）：**必须自愈** —— `./scripts/preset-anchor-refresh.sh`
 #      把专职只读镜像刷到 origin/main（`preset-guard` 同时判活锚新鲜度，落后/悬空即非零退出）；
 #   ④ 清理半径：`rm` / `prune` **会命中** worktree 的预设快照 ⇒ 清理前先 `readlink` 活锚目标并排除它
@@ -349,6 +351,8 @@ cmd_add() {
     echo "❌ 目标路径已存在：${path}"
     exit 1
   fi
+  # v1.11（issue #5422）：建工作区前把「已合并但没人收尾」的自动收掉（事件驱动，判定在 issue_lifecycle.py；失败不阻塞建工作区）
+  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --no-artifacts --except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"
   mkdir -p "$(dirname "$path")"
   if [ "$branch_is_local" = "1" ]; then
     git -C "$REPO_ROOT" worktree add "$path" "$branch"
@@ -455,6 +459,10 @@ case "${1:-}" in
     #     ② 提交路径：**就是本子命令**（判版本下降，命中即 fail-closed；合法升级放行）；
     #     ③ 加载点（活锚）：**必须自愈** —— ./scripts/preset-anchor-refresh.sh（落后/悬空本命令同样非零退出）；
     #     ④ 清理半径：rm / prune **会命中** worktree 的预设快照（清理前先 readlink 活锚目标）。
+    # v1.12（issue #5425）：新增一条判定 —— 候选与基准 **`version:` 相同、但文件内容不同**
+    #   = **同号不同内容 = 跨包撞车** ⇒ **判红**（原先只告警 ⇒ 只能靠人肉发现；2026-09-24 一晚撞 2 次）；
+    #   出口逐字给出「**抬号到「基准版本 + 1」**」（本仓约定抬次版本：`1.56.0` → `1.57.0`）。
+    #   既有语义一字未动：降级 ⇒ 红；升级 ⇒ 放行；无 `.agent-presets/**` 改动 ⇒ 放行；**同号同内容 ⇒ 放行**。
     # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）—— 本分支只负责提示与出口。
     shift
     PY="$(command -v python3.11 || command -v python3 || true)"
