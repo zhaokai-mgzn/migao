@@ -7,9 +7,15 @@ import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
 // 同页填充（issue #5368 包 2）：SSE `page_fill` → **浏览器内存事件** → 当前页面表单。
 // 依赖方向单向：快通道不引用本通道（判据 5，见 lib/agent-page-fill.ts 文件头）。
 import { emitPageFill } from '@/lib/agent-page-fill'
+// 页面上下文（issue #5371 族 4）：只把**路径 + 像 id 的段**作为 `page_context` 递上去，
+// 「哪一页能注入 / 按角色怎么裁剪」由服务端登记表判定（未登记 ⇒ 不注入）。前端不做任何判定。
+import { pageContextPayload } from '@/lib/page-context'
 
 // 生成唯一 ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
+
+/** 当前页面路径（SSR / 测试环境无 window ⇒ 空串 ⇒ 不递交，退回普通问答） */
+const currentPagePath = () => (typeof window === 'undefined' ? '' : window.location.pathname)
 
 /** 在途流：AI 回复累计缓冲 + 该流的 abort 控制器（多会话并发，key = 归属 session_id） */
 interface ActiveStream {
@@ -461,6 +467,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     try {
       const token = getToken()
       const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
+      // 页面上下文（元数据，**不是**消息内容）：挂在独立字段上 —— message 仍是用户原话
+      const pageContext = pageContextPayload(currentPagePath())
 
       const response = await fetch(`${AI_SERVICE_URL}/api/chat/send`, {
         method: 'POST',
@@ -474,6 +482,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         body: JSON.stringify({
           session_id: currentSessionId,
           message: content.trim(),
+          ...(pageContext ? { page_context: pageContext } : {}),
           ...(images && images.length > 0 ? { images } : {}),
           ...(ignoredSuggestions.length > 0 ? { ignored_suggestions: ignoredSuggestions } : {}),
         }),
