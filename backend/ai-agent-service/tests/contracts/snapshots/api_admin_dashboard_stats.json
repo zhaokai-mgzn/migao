@@ -5,19 +5,19 @@
     "todayOrdersChange": 0.0,
     "todaySales": 0,
     "todaySalesChange": 0.0,
-    "totalCustomers": 0,
+    "totalCustomers": 2,
     "newCustomersToday": 0,
-    "activeSessions": 69,
-    "aiSessionRate": 100.0,
-    "monthRevenue": 0,
-    "monthRevenueChange": -100.0,
-    "totalProducts": 11,
-    "totalOrders": 4,
-    "totalTickets": 7,
-    "pendingShipOrders": 0,
-    "processingPendingOrders": 0,
-    "lowStockItems": 161
+    "activeSessions": 0,
+    "aiSessionRate": 0.0,
+    "monthRevenue": 1837281,
+    "monthRevenueChange": 4362.1,
+    "totalProducts": 99,
+    "totalOrders": 784,
+    "totalTickets": 47,
+    "pendingShipOrders": 86,
+    "processingPendingOrders": 48,
+    "lowStockItems": 250
   },
-  "requestId": "req_ae58d15f0cfc410c",
-  "timestamp": 1784420223
+  "requestId": "req_8b5a4384845c491d",
+  "timestamp": 1790289815
 }

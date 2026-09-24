@@ -2,50 +2,320 @@
   "success": true,
   "data": [
     {
-      "id": "3e24d5a112ead9195994d1d7efb2641c",
-      "name": "卧室系列",
-      "level": 1,
-      "sortOrder": 0,
+      "id": "071c042283b62e3a4e000b178242632d",
+      "name": "家居窗帘",
+      "parentId": "3e24d5a112ead9195994d1d7efb2641c",
+      "level": 2,
       "status": "active",
-      "children": [
-        {
-          "id": "071c042283b62e3a4e000b178242632d",
-          "name": "家居窗帘",
-          "parentId": "3e24d5a112ead9195994d1d7efb2641c",
-          "level": 2,
-          "sortOrder": 0,
-          "status": "active",
-          "children": [],
-          "createdAt": "2026-06-14 14:05:16",
-          "updatedAt": "2026-06-14 14:05:16"
-        }
-      ],
-      "createdAt": "2026-06-06 16:46:45",
-      "updatedAt": "2026-06-06 16:46:45"
+      "children": [],
+      "createdAt": "2026-06-14 14:05:16",
+      "updatedAt": "2026-06-14 14:05:16",
+      "sort": 0
     },
     {
       "id": "88b6c50fbc2695fd0fca51705e957d17",
       "name": "窗帘布艺",
       "level": 1,
-      "sortOrder": 0,
       "status": "active",
-      "children": [
-        {
-          "id": "6c57dcb2b5e34fd8b0d0a3c1adaa0228",
-          "name": "办公室窗帘",
-          "parentId": "88b6c50fbc2695fd0fca51705e957d17",
-          "level": 2,
-          "sortOrder": 0,
-          "status": "active",
-          "children": [],
-          "createdAt": "2026-06-21 17:48:45",
-          "updatedAt": "2026-06-21 17:48:45"
-        }
-      ],
+      "children": [],
       "createdAt": "2026-06-06 20:05:43",
-      "updatedAt": "2026-06-06 20:05:43"
+      "updatedAt": "2026-06-06 20:05:43",
+      "sort": 1
+    },
+    {
+      "id": "520a7625f5adde9117d57a441d2169ed",
+      "name": "验收分类718010",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-08-27 19:38:44",
+      "updatedAt": "2026-08-27 19:38:44",
+      "sort": 2
+    },
+    {
+      "id": "3e24d5a112ead9195994d1d7efb2641c",
+      "name": "卧室系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-06-06 16:46:45",
+      "updatedAt": "2026-06-06 16:46:45",
+      "sort": 3
+    },
+    {
+      "id": "99efc7b822668ed427c6d35f70fd9158",
+      "name": "儿童窗帘",
+      "parentId": "88b6c50fbc2695fd0fca51705e957d17",
+      "level": 2,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-07-19 08:59:59",
+      "updatedAt": "2026-07-19 08:59:59",
+      "sort": 4
+    },
+    {
+      "id": "6c57dcb2b5e34fd8b0d0a3c1adaa0228",
+      "name": "办公室窗帘",
+      "parentId": "88b6c50fbc2695fd0fca51705e957d17",
+      "level": 2,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-06-21 17:48:45",
+      "updatedAt": "2026-06-21 17:48:45",
+      "sort": 5
+    },
+    {
+      "id": "03373967474cabbf9146cb7687e76ff9",
+      "name": "蕾丝窗帘",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-05 14:21:31",
+      "updatedAt": "2026-09-05 14:21:31",
+      "sort": 6
+    },
+    {
+      "id": "6b08ac7ff8eac7ba106981a753220c31",
+      "name": "开开心心",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-05 14:24:00",
+      "updatedAt": "2026-09-05 14:24:00",
+      "sort": 7
+    },
+    {
+      "id": "d2d9c6ba0af8e887bdb67561fca5b66c",
+      "name": "111",
+      "parentId": "6b08ac7ff8eac7ba106981a753220c31",
+      "level": 2,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-05 14:24:45",
+      "updatedAt": "2026-09-05 14:24:45",
+      "sort": 8
+    },
+    {
+      "id": "2f1c158c747e85586f32c7436c2f4805",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 01:04:18",
+      "updatedAt": "2026-09-10 01:04:18",
+      "sort": 9
+    },
+    {
+      "id": "538359c683e590f4f9a4369eaf264063",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 01:43:33",
+      "updatedAt": "2026-09-10 01:43:33",
+      "sort": 10
+    },
+    {
+      "id": "b10bca5036355527cdb7ccaccca12fb8",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 04:25:36",
+      "updatedAt": "2026-09-10 04:25:36",
+      "sort": 11
+    },
+    {
+      "id": "8caa889038e8bfa4a002aa44b4632351",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 04:39:49",
+      "updatedAt": "2026-09-10 04:39:49",
+      "sort": 12
+    },
+    {
+      "id": "1dbc16b4dbc7fa25ec130e03942d4298",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 16:15:24",
+      "updatedAt": "2026-09-10 16:15:24",
+      "sort": 13
+    },
+    {
+      "id": "d97f740241163305cb3eab6dc59fefc0",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 15:41:47",
+      "updatedAt": "2026-09-10 15:41:47",
+      "sort": 14
+    },
+    {
+      "id": "ecab5553c2d7698c6c23ebd499fecc2d",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 20:31:16",
+      "updatedAt": "2026-09-10 20:31:16",
+      "sort": 15
+    },
+    {
+      "id": "93580ab49f82faa2bd1cfad6ccdf3419",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 22:25:52",
+      "updatedAt": "2026-09-10 22:25:52",
+      "sort": 16
+    },
+    {
+      "id": "94356c8ccf3db7f3c62f2d3801d98ede",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-10 23:12:10",
+      "updatedAt": "2026-09-10 23:12:10",
+      "sort": 17
+    },
+    {
+      "id": "54e7e20f828009570f9841a569d4d389",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 00:32:42",
+      "updatedAt": "2026-09-11 00:32:42",
+      "sort": 18
+    },
+    {
+      "id": "3b25817ef8fb01930214ad38a05179a0",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 00:48:13",
+      "updatedAt": "2026-09-11 00:48:13",
+      "sort": 19
+    },
+    {
+      "id": "fbb560a2598ca2796104fa7808f1bf80",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 02:21:33",
+      "updatedAt": "2026-09-11 02:21:33",
+      "sort": 20
+    },
+    {
+      "id": "4d80bdbd0b0a6e63c184358d87be759d",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 04:35:11",
+      "updatedAt": "2026-09-11 04:35:11",
+      "sort": 21
+    },
+    {
+      "id": "1439405c9444ad515f9b2bf2cd6dd9cc",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 11:44:40",
+      "updatedAt": "2026-09-11 11:44:40",
+      "sort": 22
+    },
+    {
+      "id": "758fe1dbc0915023b4ce35362eb9b8ba",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 12:51:10",
+      "updatedAt": "2026-09-11 12:51:10",
+      "sort": 23
+    },
+    {
+      "id": "aacfecbe64a4862070ee405cd4403070",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 13:24:42",
+      "updatedAt": "2026-09-11 13:24:42",
+      "sort": 24
+    },
+    {
+      "id": "095c563018f0550deae3f5ab892071ca",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 14:12:55",
+      "updatedAt": "2026-09-11 14:12:55",
+      "sort": 25
+    },
+    {
+      "id": "0608a343f70fc873bfc60719c16403cc",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 14:42:56",
+      "updatedAt": "2026-09-11 14:42:56",
+      "sort": 26
+    },
+    {
+      "id": "fa029fb1808e76d59d547a56b57ca4f2",
+      "name": "哈哈哈哈",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-15 13:26:49",
+      "updatedAt": "2026-09-15 13:26:49",
+      "sort": 27
+    },
+    {
+      "id": "a567ba64e030520a9cd8e11e460e6c55",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-11 17:13:49",
+      "updatedAt": "2026-09-11 17:13:49",
+      "sort": 28
+    },
+    {
+      "id": "c35e2ec1dcf89e69658b3f169493217c",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-12 01:08:23",
+      "updatedAt": "2026-09-12 01:08:23",
+      "sort": 29
+    },
+    {
+      "id": "292c412ffb36d1d5d375456577600f5a",
+      "name": "轻奢系列",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-09-14 10:58:12",
+      "updatedAt": "2026-09-14 10:58:12",
+      "sort": 30
     }
   ],
-  "requestId": "req_902a319abc884d7e",
-  "timestamp": 1784420223
+  "requestId": "req_0d32b6c30c61495f",
+  "timestamp": 1790289815
 }

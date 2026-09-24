@@ -1,185 +1,734 @@
 {
   "success": true,
   "data": {
-    "total": 4,
+    "total": 784,
     "page": 1,
     "size": 5,
     "items": [
       {
-        "id": "449a0b2a668227997279f4f4cbe77eaf",
-        "orderNo": "20260622495822122",
-        "customerName": "smoke-customer-9a7c7658",
-        "customerPhone": "13882140953",
-        "totalAmount": 23.8,
-        "actualAmount": 23.8,
-        "processingFee": 0,
-        "hasProcessing": false,
-        "status": "cancelled",
-        "remark": "smoke-test-9a7c7658",
-        "closeReason": "修改订单金额，从23.80调整为20.00",
-        "createdAt": "2026-06-22T23:09:13.312036+08:00",
-        "updatedAt": "2026-06-22T23:09:13.31206+08:00",
-        "items": [
-          {
-            "productId": "44a3729ad8ce5507f510e9229f1382db",
-            "productName": "2611 家居系统",
-            "productCode": "2611",
-            "quantity": 1,
-            "unitPrice": 23.8,
-            "amount": 23.8,
-            "subtotal": 23.8
-          }
-        ]
-      },
-      {
-        "id": "c20bf823510b61a202d8a2d98acf7af7",
-        "orderNo": "20260621555000260",
+        "id": "c2aff73ce4322a3cecd63bc387f4c080",
+        "orderNo": "20260921973550001",
         "customerName": "赵凯",
         "customerPhone": "13456000919",
-        "totalAmount": 14554.6,
-        "actualAmount": 14554.6,
-        "processingFee": 9.0,
+        "customerAddress": "西湖区",
+        "totalAmount": 806.54,
+        "actualAmount": 806.54,
+        "processingFee": 186.6,
         "hasProcessing": true,
-        "status": "completed",
-        "remark": "测试的\n实收款：¥0.00（订单总额 ¥14554.60）",
-        "createdAt": "2026-06-21T17:50:10.781049+08:00",
-        "updatedAt": "2026-06-21T17:50:10.781119+08:00",
+        "status": "producing",
+        "createdAt": "2026-09-21T00:40:30.777515+08:00",
+        "updatedAt": "2026-09-21T00:40:30.839597+08:00",
+        "isUrgent": false,
         "items": [
           {
-            "productId": "44a3729ad8ce5507f510e9229f1382db",
-            "productName": "2611 家居系统",
-            "productCode": "2611",
-            "quantity": 112,
+            "productId": "b4e420cf7819b83f974a325332620b32",
+            "productName": "2699系列雪尼尔窗帘面料",
+            "productCode": "2699",
+            "quantity": 6.3,
             "unitPrice": 23.8,
-            "amount": 2665.6,
-            "subtotal": 2674.6,
+            "amount": 149.94,
+            "subtotal": 225.54,
             "processingInfo": {
-              "skuId": 2068631954098823200,
-              "colorId": 2068631953989771300,
-              "skuCode": "2611-01-ZJ-32",
-              "colorName": "米白",
-              "doorWidth": "3.2米",
-              "processingFee": 9,
-              "sellingMethod": "full_roll",
+              "craft": "韩褶",
+              "skuId": "2100404329773109249",
+              "style": "单色",
+              "colorId": "2100404327940198402",
+              "formula": "pleat",
+              "skuCode": "2699-06-SJ-28",
+              "isShaped": true,
+              "saleForm": "成品帘",
+              "colorName": "2699-06 蓝灰色",
+              "craftTier": "standard",
+              "doorWidth": "2.8米",
+              "openCount": 2,
+              "hasPattern": false,
+              "cuttingMode": "定高买宽",
+              "formulaText": "韩折公式：(3.2+0.3)×2 → 24折 → 0.25×24+0.3 = 6.3米",
+              "fabric_meters": 6.3,
+              "processingFee": 75.6,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "余料带回-布"
+              ],
               "processingItems": [
                 {
-                  "id": "proc_item_shape_normal",
-                  "name": "普通定型",
+                  "id": "pi-v83-1-06",
+                  "name": "定型",
                   "unit": "米",
-                  "quantity": 1,
-                  "subtotal": 6
+                  "quantity": 6.3
                 },
                 {
-                  "id": "proc_item_hook_roman",
-                  "name": "罗马杆环安装",
-                  "unit": "个",
-                  "quantity": 1,
-                  "subtotal": 3
+                  "id": "pi-v83-1-02",
+                  "name": "韩折",
+                  "unit": "米",
+                  "quantity": 6.3
+                },
+                {
+                  "name": "超高",
+                  "quantity": 1
                 }
-              ]
+              ],
+              "processingMeters": 6.3,
+              "processingFeeDetail": {
+                "hint": "特殊选项 [余料带回-布] **未定价**（对客元/套为空）⇒ 这几项按 0 计、**不套任何默认价**。请去「加工费管理」(/production/processing-fees) 为它们定价",
+                "items": [
+                  "定型",
+                  "超高",
+                  "韩折"
+                ],
+                "amount": 75.6,
+                "meters": 6.3,
+                "set_key": "#0",
+                "fee_source": "manual",
+                "unit_price": 12,
+                "composition": "定型+超高+韩折",
+                "price_source": "manual",
+                "meters_source": "processingMeters",
+                "special_options": [
+                  {
+                    "name": "余料带回-布",
+                    "sets": 1,
+                    "amount": 0,
+                    "priced": false,
+                    "billing": "unpriced"
+                  }
+                ],
+                "mixed_color_options": [],
+                "mixed_color_surcharge": 0,
+                "special_options_total": 0.0,
+                "mixed_color_surcharge_per_meter": 2.4
+              },
+              "processingFeeOverride": 12
             }
           },
           {
-            "productId": "6820e8b42bbba71d40168975ed61dd77",
-            "productName": "今天试试看",
-            "productCode": "8827",
-            "quantity": 120,
-            "unitPrice": 99.0,
-            "amount": 11880.0,
-            "subtotal": 11880.0,
+            "productId": "714952655b786927f1002454f044ee76",
+            "productName": "金刚棉",
+            "productCode": "金刚棉",
+            "quantity": 9.0,
+            "unitPrice": 20.0,
+            "amount": 180.0,
+            "subtotal": 291.0,
             "processingInfo": {
-              "skuId": 2066420769695019000,
-              "colorId": 2066420769602744300,
-              "colorName": "红色",
+              "craft": "韩褶",
+              "skuId": "2100415616410292225",
+              "style": "单色",
+              "colorId": "2100415616141856769",
+              "formula": "fullness",
+              "skuCode": "金刚棉-02-SJ-28",
+              "isShaped": true,
+              "saleForm": "成品帘",
+              "colorName": "金刚棉-蓝",
+              "craftTier": "standard",
+              "doorWidth": "2.8",
+              "openCount": 1,
+              "hasPattern": false,
+              "curtainType": "纱帘",
+              "cuttingMode": "定高买宽",
+              "formulaText": "褶倍数公式：(4.5÷1)×2 → 每片 4.5×2=9米 ×1片 = 9.0米",
+              "fabric_meters": 9,
+              "processingFee": 111,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "布绑带"
+              ],
+              "processingItems": [
+                {
+                  "id": "pi-v83-1-06",
+                  "name": "定型",
+                  "unit": "米",
+                  "quantity": 9
+                },
+                {
+                  "id": "pi-v83-1-02",
+                  "name": "韩折",
+                  "unit": "米",
+                  "quantity": 9
+                }
+              ],
+              "processingMeters": 9,
+              "processingFeeDetail": {
+                "items": [
+                  "定型",
+                  "韩折"
+                ],
+                "amount": 108.0,
+                "meters": 9,
+                "set_key": "#1",
+                "fee_source": "matched",
+                "unit_price": 12.0,
+                "composition": "定型+韩折",
+                "meters_source": "processingMeters",
+                "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
+                "special_options": [
+                  {
+                    "name": "布绑带",
+                    "sets": 1,
+                    "amount": 3.0,
+                    "priced": true,
+                    "billing": "per_set",
+                    "unit_price": 3.0
+                  }
+                ],
+                "mixed_color_options": [],
+                "mixed_color_surcharge": 0,
+                "special_options_total": 3.0,
+                "mixed_color_surcharge_per_meter": 2.4
+              }
+            }
+          },
+          {
+            "productId": "7ce62fcc113010e27f4d14f187a9fc71",
+            "productName": "9231 遮光窗帘",
+            "productCode": "9231",
+            "quantity": 10.0,
+            "unitPrice": 29.0,
+            "amount": 290.0,
+            "subtotal": 290.0,
+            "processingInfo": {
+              "skuId": "2099825418358067202",
+              "colorId": "2099825417192050690",
+              "skuCode": "9231-05-ZJ-28",
+              "saleForm": "布料",
+              "colorName": "9231-05 清霜月白",
+              "doorWidth": "2.8米",
+              "processingFee": 0,
+              "sellingMethod": "full_roll",
+              "processingMeters": 10,
+              "processingFeeDetail": {
+                "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                "items": [],
+                "amount": 0,
+                "meters": 10,
+                "set_key": "#2",
+                "fee_source": "unpriced",
+                "composition": "",
+                "meters_source": "processingMeters",
+                "special_options": [],
+                "mixed_color_options": [],
+                "mixed_color_surcharge": 0,
+                "special_options_total": 0.0,
+                "mixed_color_surcharge_per_meter": 2.4
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "f8e7f5a4f7a2e6ef0167a3ef29d013c4",
+        "orderNo": "20260920934270001",
+        "customerName": "熊大",
+        "customerPhone": "13456800000",
+        "customerAddress": "哈哈哈",
+        "totalAmount": 2924.0,
+        "actualAmount": 2924.0,
+        "processingFee": 6.0,
+        "hasProcessing": true,
+        "status": "pending",
+        "createdAt": "2026-09-20T16:13:43.261167+08:00",
+        "updatedAt": "2026-09-20T16:13:43.267113+08:00",
+        "isUrgent": false,
+        "items": [
+          {
+            "productId": "714952655b786927f1002454f044ee76",
+            "productName": "金刚棉",
+            "productCode": "金刚棉",
+            "quantity": 18.3,
+            "unitPrice": 20.0,
+            "amount": 366.0,
+            "subtotal": 372.0,
+            "processingInfo": {
+              "craft": "平幔",
+              "skuId": "2100415616410292225",
+              "style": "单色",
+              "colorId": "2100415616141856769",
+              "skuCode": "金刚棉-02-SJ-28",
+              "isShaped": true,
+              "saleForm": "成品帘",
+              "colorName": "金刚棉-蓝",
+              "doorWidth": "2.8",
+              "openCount": 2,
+              "hasPattern": true,
+              "cuttingMode": "定高买宽",
+              "formulaText": "韩折公式：(9+0.3)×2 → 72折 → 0.25×72+0.3 = 18.3米",
+              "pleatSpacing": 0.1,
+              "fabric_meters": 18.3,
+              "patternRepeat": 0.3,
+              "processingFee": 6,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "余料带回-纱",
+                "布绑带",
+                "纱绑带"
+              ],
+              "processingItems": [
+                {
+                  "id": "pi-v83-1-06",
+                  "name": "定型",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_craft_print",
+                  "name": "印花工艺",
+                  "unit": "平方米",
+                  "quantity": 1,
+                  "subtotal": 20,
+                  "unitPrice": 20,
+                  "pricingMethod": "per_area"
+                },
+                {
+                  "id": "proc_item_craft_lg",
+                  "name": "LG工艺",
+                  "unit": "件",
+                  "quantity": 1,
+                  "subtotal": 50,
+                  "unitPrice": 50,
+                  "pricingMethod": "fixed"
+                },
+                {
+                  "id": "pi-v83-1-09",
+                  "name": "接高",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "pi-v83-1-12",
+                  "name": "缎带",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "pi-v83-1-05",
+                  "name": "平幔",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "pi-v83-1-08",
+                  "name": "扣环",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_acc_velcro",
+                  "name": "魔术贴安装",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 73.2,
+                  "unitPrice": 4,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_punch_rod",
+                  "name": "穿杆孔加工",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 73.2,
+                  "unitPrice": 4,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_hem_korean",
+                  "name": "韩式波浪折边",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 219.60000000000002,
+                  "unitPrice": 12,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_shape_pleat",
+                  "name": "压褶定型",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 219.60000000000002,
+                  "unitPrice": 12,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_shape_wave",
+                  "name": "波浪定型",
+                  "unit": "米",
+                  "quantity": 18.3,
+                  "subtotal": 146.4,
+                  "unitPrice": 8,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_shape_iron",
+                  "name": "免烫定型",
+                  "unit": "平方米",
+                  "quantity": 1,
+                  "subtotal": 15,
+                  "unitPrice": 15,
+                  "pricingMethod": "per_area"
+                },
+                {
+                  "name": "超高",
+                  "quantity": 1,
+                  "subtotal": 0,
+                  "unitPrice": 0
+                }
+              ],
+              "processingMeters": 18.3,
+              "processingFeeDetail": {
+                "hint": "选配组合「LG工艺+免烫定型+印花工艺+压褶定型+定型+平幔+扣环+接高+波浪定型+穿杆孔加工+缎带+超高+韩式波浪折边+魔术贴安装」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），**不套任何默认价**。请去「加工费管理」(/production/processing-fees) 为该组合定价，或确认这些加工项不该组合收费",
+                "items": [
+                  "LG工艺",
+                  "免烫定型",
+                  "印花工艺",
+                  "压褶定型",
+                  "定型",
+                  "平幔",
+                  "扣环",
+                  "接高",
+                  "波浪定型",
+                  "穿杆孔加工",
+                  "缎带",
+                  "超高",
+                  "韩式波浪折边",
+                  "魔术贴安装"
+                ],
+                "amount": 0,
+                "meters": 18.3,
+                "set_key": "#0",
+                "fee_source": "unpriced",
+                "composition": "LG工艺+免烫定型+印花工艺+压褶定型+定型+平幔+扣环+接高+波浪定型+穿杆孔加工+缎带+超高+韩式波浪折边+魔术贴安装",
+                "meters_source": "processingMeters",
+                "special_options": [
+                  {
+                    "name": "余料带回-纱",
+                    "sets": 1,
+                    "amount": 0,
+                    "priced": false
+                  },
+                  {
+                    "name": "布绑带",
+                    "sets": 1,
+                    "amount": 3.0,
+                    "priced": true,
+                    "unit_price": 3.0
+                  },
+                  {
+                    "name": "纱绑带",
+                    "sets": 1,
+                    "amount": 3.0,
+                    "priced": true,
+                    "unit_price": 3.0
+                  }
+                ],
+                "special_options_total": 6.0
+              }
+            }
+          },
+          {
+            "productId": "7ce62fcc113010e27f4d14f187a9fc71",
+            "productName": "9231 遮光窗帘",
+            "productCode": "9231",
+            "quantity": 88.0,
+            "unitPrice": 29.0,
+            "amount": 2552.0,
+            "subtotal": 2552.0,
+            "processingInfo": {
+              "skuId": "2099825417598898178",
+              "colorId": "2099825417099776002",
+              "skuCode": "9231-02-SJ-28",
+              "saleForm": "布料",
+              "colorName": "9231-02 云栖浅禾",
               "doorWidth": "2.8米",
               "processingFee": 0,
               "sellingMethod": "bulk_cut",
-              "processingItems": []
+              "processingMeters": 88,
+              "processingFeeDetail": {
+                "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                "items": [],
+                "amount": 0,
+                "meters": 88,
+                "set_key": "#1",
+                "fee_source": "unpriced",
+                "composition": "",
+                "meters_source": "processingMeters",
+                "special_options": [],
+                "special_options_total": 0.0
+              }
             }
           }
         ]
       },
       {
-        "id": "f732fefc4a799ed40c1c9e9593c0ffc7",
-        "orderNo": "20260619376915624",
-        "customerName": "李建明",
-        "customerPhone": "13867129034",
-        "totalAmount": 340.0,
-        "actualAmount": 340.0,
-        "processingFee": 0,
-        "hasProcessing": false,
-        "status": "completed",
-        "remark": "婚房全屋窗帘，分批安装",
-        "createdAt": "2026-06-19T11:25:47.023052+08:00",
-        "updatedAt": "2026-06-19T11:25:47.023074+08:00",
+        "id": "dbfa4e1844c6f2bbb05b8b9f01e7951d",
+        "orderNo": "20260920017590001",
+        "customerName": "赵凯",
+        "customerPhone": "13456000919",
+        "customerAddress": "杭州市",
+        "totalAmount": 470.7,
+        "actualAmount": 470.7,
+        "processingFee": 155.0,
+        "hasProcessing": true,
+        "status": "producing",
+        "createdAt": "2026-09-20T09:02:08.141026+08:00",
+        "updatedAt": "2026-09-20T09:02:08.147138+08:00",
+        "isUrgent": false,
         "items": [
           {
-            "productId": "e6cd5b404c49bb08f52ec854bc557b25",
-            "productName": "2699系列",
-            "quantity": 5,
-            "unitPrice": 68.0,
-            "amount": 340.0,
-            "subtotal": 440.0,
+            "productId": "b4e420cf7819b83f974a325332620b32",
+            "productName": "2699系列雪尼尔窗帘面料",
+            "productCode": "2699",
+            "quantity": 9.0,
+            "unitPrice": 23.8,
+            "amount": 214.2,
+            "subtotal": 324.2,
             "processingInfo": {
-              "items": [
+              "craft": "韩褶",
+              "skuId": "2100404328753893377",
+              "style": "单色",
+              "colorId": "2100404327818563585",
+              "skuCode": "2699-02-SJ-28",
+              "isShaped": true,
+              "saleForm": "成品帘",
+              "colorName": "2699-02 浅米灰",
+              "doorWidth": "2.8米",
+              "openCount": 1,
+              "hasPattern": false,
+              "cuttingMode": "定高买宽",
+              "formulaText": "韩折公式：(4.5+0.2)×2 → 35折 → 0.25×35+0.2 = 9米",
+              "pleatSpacing": 0.125,
+              "fabric_meters": 9,
+              "processingFee": 110,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "加logo条"
+              ],
+              "processingItems": [
                 {
+                  "id": "pi-v83-1-06",
                   "name": "定型",
-                  "price": 12.0,
-                  "amount": 60.0
+                  "unit": "米",
+                  "quantity": 9,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
                 },
                 {
-                  "name": "四爪钩",
-                  "price": 2.0,
-                  "amount": 40.0
+                  "id": "pi-v83-1-02",
+                  "name": "韩折",
+                  "unit": "米",
+                  "quantity": 9,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
                 }
               ],
-              "totalProcessingFee": 100.0
+              "processingMeters": 9,
+              "processingFeeDetail": {
+                "items": [
+                  "定型",
+                  "韩折"
+                ],
+                "amount": 108.0,
+                "meters": 9,
+                "fee_source": "matched",
+                "unit_price": 12.0,
+                "composition": "定型+韩折",
+                "meters_source": "processingMeters",
+                "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
+                "special_options": [
+                  {
+                    "name": "加logo条",
+                    "sets": 1,
+                    "amount": 2.0,
+                    "priced": true,
+                    "unit_price": 2.0
+                  }
+                ],
+                "special_options_total": 2.0
+              }
+            }
+          },
+          {
+            "productId": "7ce62fcc113010e27f4d14f187a9fc71",
+            "productName": "9231 遮光窗帘",
+            "productCode": "9231",
+            "quantity": 3.5,
+            "unitPrice": 29.0,
+            "amount": 101.5,
+            "subtotal": 146.5,
+            "processingInfo": {
+              "craft": "韩褶",
+              "skuId": "2099825417598898178",
+              "style": "单色",
+              "colorId": "2099825417099776002",
+              "skuCode": "9231-02-SJ-28",
+              "isShaped": true,
+              "saleForm": "成品帘",
+              "colorName": "9231-02 云栖浅禾",
+              "doorWidth": "2.8米",
+              "openCount": 1,
+              "curtainType": "纱帘",
+              "cuttingMode": "定高买宽",
+              "processingFee": 45,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "纱绑带"
+              ],
+              "processingItems": [
+                {
+                  "id": "pi-v83-1-06",
+                  "name": "定型",
+                  "unit": "米",
+                  "quantity": 3.5,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "pi-v83-1-02",
+                  "name": "韩折",
+                  "unit": "米",
+                  "quantity": 3.5,
+                  "subtotal": 0,
+                  "unitPrice": 0,
+                  "pricingMethod": "per_meter"
+                }
+              ],
+              "processingMeters": 3.5,
+              "processingFeeDetail": {
+                "items": [
+                  "定型",
+                  "韩折"
+                ],
+                "amount": 42.0,
+                "meters": 3.5,
+                "fee_source": "matched",
+                "unit_price": 12.0,
+                "composition": "定型+韩折",
+                "meters_source": "processingMeters",
+                "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
+                "special_options": [
+                  {
+                    "name": "纱绑带",
+                    "sets": 1,
+                    "amount": 3.0,
+                    "priced": true,
+                    "unit_price": 3.0
+                  }
+                ],
+                "special_options_total": 3.0
+              }
             }
           }
         ]
       },
       {
-        "id": "331c7252a09a97d74e2e06c6041075a1",
-        "orderNo": "20260619204200907",
-        "customerName": "张美华",
-        "customerPhone": "13957168235",
-        "totalAmount": 384.0,
-        "actualAmount": 384.0,
+        "id": "c7614f5b2ea89b7af2ad12d2496659c3",
+        "orderNo": "20260918908650001",
+        "customerName": "系数验证737462",
+        "customerPhone": "13900002222",
+        "customerAddress": "验证地址",
+        "totalAmount": 93.9,
+        "actualAmount": 93.9,
         "processingFee": 0,
-        "hasProcessing": false,
-        "status": "shipped",
-        "remark": "主卧+次卧窗帘，走顺丰\n[2026-07-08 17:15] 不错  有进步",
-        "createdAt": "2026-06-19T11:25:46.855233+08:00",
-        "updatedAt": "2026-06-19T11:25:46.855278+08:00",
+        "hasProcessing": true,
+        "status": "producing",
+        "createdAt": "2026-09-18T16:05:37.632838+08:00",
+        "updatedAt": "2026-09-18T16:05:37.633656+08:00",
+        "isUrgent": false,
         "items": [
           {
-            "productId": "1f5ee03db221b40eac0089e97f74f466",
-            "productName": "CL-2024系列",
-            "productCode": "CL-2024",
-            "quantity": 3,
-            "unitPrice": 128.0,
-            "amount": 384.0,
-            "subtotal": 480.0,
+            "productId": "deff0be6c885cbf0469abe4f7b8da608",
+            "productName": "2699系列雪尼尔窗帘面料",
+            "productCode": "2699",
+            "quantity": 3.0,
+            "unitPrice": 23.8,
+            "amount": 71.4,
+            "subtotal": 71.4,
             "processingInfo": {
-              "items": [
-                {
-                  "name": "韩式褶皱",
-                  "price": 20.0,
-                  "amount": 60.0
-                },
-                {
-                  "name": "定型",
-                  "price": 12.0,
-                  "amount": 36.0
-                }
+              "doorWidth": "2.8",
+              "processingFee": 15,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "拼1次",
+                "一分为二"
               ],
-              "totalProcessingFee": 96.0
+              "processingItems": [
+                {
+                  "id": "proc_item_1",
+                  "name": "锁边",
+                  "unit": "米",
+                  "quantity": 3,
+                  "subtotal": 22.5,
+                  "unitPrice": 7.5,
+                  "pricingMethod": "per_meter"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "8614224ecd54374e0cbf33c1cb564958",
+        "orderNo": "20260918667990002",
+        "customerName": "系数验证405317",
+        "customerPhone": "13900002222",
+        "customerAddress": "验证地址",
+        "totalAmount": 93.9,
+        "actualAmount": 93.9,
+        "processingFee": 0,
+        "hasProcessing": true,
+        "status": "producing",
+        "createdAt": "2026-09-18T16:00:05.463747+08:00",
+        "updatedAt": "2026-09-18T16:00:05.463793+08:00",
+        "isUrgent": false,
+        "items": [
+          {
+            "productId": "deff0be6c885cbf0469abe4f7b8da608",
+            "productName": "2699系列雪尼尔窗帘面料",
+            "productCode": "2699",
+            "quantity": 3.0,
+            "unitPrice": 23.8,
+            "amount": 71.4,
+            "subtotal": 71.4,
+            "processingInfo": {
+              "doorWidth": "2.8",
+              "processingFee": 15,
+              "sellingMethod": "bulk_cut",
+              "specialOptions": [
+                "拼1次",
+                "一分为二"
+              ],
+              "processingItems": [
+                {
+                  "id": "proc_item_1",
+                  "name": "锁边",
+                  "unit": "米",
+                  "quantity": 3,
+                  "subtotal": 22.5,
+                  "unitPrice": 7.5,
+                  "pricingMethod": "per_meter"
+                }
+              ]
             }
           }
         ]
       }
     ]
   },
-  "requestId": "req_054e4a00758f45b4",
-  "timestamp": 1784420223
+  "requestId": "req_e339fad45edf4656",
+  "timestamp": 1790289814
 }
