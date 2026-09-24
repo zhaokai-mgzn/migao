@@ -35,7 +35,8 @@
 ⑦ **dry-run 与「零动作出声」**：`reap-merged` 默认 dry-run（零删除）、`land --dry-run` 零动作；
    没有可收尾的 ⇒ 打印「本轮零动作 + 逐类原因计数」（G6：**不许静默**）；
 ⑧ **接线**：`dev-worktree.sh add` 里那一行调用必须还在（**按 `cmd_add()` 函数体定位**，
-   不是全文 grep）；红证 = 删掉那一行 ⇒ 判据必红。
+   不是全文 grep）；红证 = 删掉那一行 ⇒ 判据必红。**另有一条行为级判据**：把真脚本拷进 fixture
+   跑一遍真 `add` ⇒ 「已合并但没人收尾」的被**真收掉**、新工作区照建（结构断言证不了「调用真的成功」）。
 
 夹具一律是 `tmp_path` 下的**真 git 仓库 + 真 bare origin + 真 worktree**（不是 mock）：
 判据本体就是 git 语义，mock 掉 git 等于把被测对象换成替身（`migao-acceptance` §19.1「绿了但没跑」）。
@@ -807,6 +808,43 @@ def test_wiring_criterion_is_red_when_call_line_is_removed():
     red = _wiring_problems(_cmd_add_body(mutated))
     assert red, "删掉接线后判据必须红（否则本条是空断言）"
     assert any("没有调用" in p for p in red), f"红的必须是「未接线」这件事：{red}"
+
+
+def test_dev_worktree_add_actually_reaps_a_merged_worktree(tmp_path: Path):
+    """**行为级**接线判据：真 `dev-worktree.sh add` 跑一遍 ⇒ 已合并的被真收掉、新工作区照建。
+
+    为什么结构断言不够：它只证明「那一行还在」，证不了「调用真的成功」—— 例如 `reap-merged` 的
+    flag 一旦改名，`add` 只会打一行警告继续跑（**失败不阻塞**是设计），结构断言照样绿。
+    """
+    fx = Fixture(tmp_path)
+    (fx.repo / ".agent-presets" / "migao").mkdir(parents=True, exist_ok=True)
+    (fx.repo / ".agent-presets" / "migao" / "preset.yml").write_text("version: fixture\n", encoding="utf-8")
+    _git(fx.repo, "add", ".agent-presets")
+    _git(fx.repo, "commit", "-q", "-m", "add presets")
+    _git(fx.repo, "push", "-q", "origin", "main")
+
+    scripts = fx.repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    for name in ("dev-worktree.sh", "issue-lifecycle.sh"):
+        shutil.copy(REPO_ROOT / "scripts" / name, scripts / name)
+    shutil.copy(MODULE, scripts / "issue_lifecycle.py")
+    shutil.copy(GUARD_MODULE, scripts / "agent-presets-guard.py")
+
+    stale = _mk(fx, REAP_BRANCH)
+    fx.set_state(rows=[_merged_row(REAP_BRANCH)])
+    assert str(stale) in _worktree_paths(fx.repo), "夹具没造出「已合并但没人收尾」的形态"
+    assert REAP_BRANCH in _remote_branches(fx.repo), "夹具没造出远程分支"
+
+    new_branch = "fix/brand-new"
+    _git(fx.repo, "branch", new_branch, "main")
+    proc = subprocess.run(["bash", str(scripts / "dev-worktree.sh"), "add", new_branch],
+                          cwd=str(fx.repo), capture_output=True, text=True, env=fx.env())
+
+    assert proc.returncode == 0, f"add 本身不得被自动收尾影响：\n{proc.stdout}\n{proc.stderr}"
+    assert (fx.wt_base / "brand-new").is_dir(), "新工作区没建出来"
+    assert str(stale) not in _worktree_paths(fx.repo), "add 没有真收掉「已合并但没人收尾」的 worktree"
+    assert REAP_BRANCH not in _branches(fx.repo), "add 没有真收掉本地分支"
+    assert REAP_BRANCH not in _remote_branches(fx.repo), "add 没有真收掉远程分支"
 
 
 # ── 相邻缺陷（本次实测）：finish 的「按路径收尾」曾经 AttributeError ───────────
