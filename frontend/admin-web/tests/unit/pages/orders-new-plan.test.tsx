@@ -466,7 +466,17 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
 
     // **显式告知**（改前：只能靠一个不显眼的「恢复按公式计算」自己发现）
-    expect(await screen.findByTestId('meters-manual-stale')).toHaveTextContent('未跟随')
+    // ⚠️ 判据 2′（issue #5281）：本条改前是**空判据** —— 只断言「未跟随」⇒ 把推导值 / 差整段删掉
+    // **不会有任何东西变红**。现在钉住**三量齐备**（手填 20 米 / 推导 = 面板的 13.3 米 / 差 6.7 米）。
+    const staleNotice = await screen.findByTestId('meters-manual-stale')
+    expect(staleNotice).toHaveTextContent('未跟随')
+    expect(staleNotice).toHaveTextContent('用料已人工指定（20 米')
+    expect(staleNotice).toHaveTextContent('系统推导用料 13.3 米')
+    expect(staleNotice).toHaveTextContent('差 6.7 米')
+    // **同源判据**：告知里**逐字含**面板 `craft-plan-meters` 的文本（同一个数，不是"另算一个"）
+    expect(staleNotice).toHaveTextContent(
+      (screen.getByTestId('craft-plan-meters').textContent ?? '').trim()
+    )
     // 商家手填的数**不得被静默改回**（真值源 §8）——人工态也不因"联动"去发试算把自己的值顶掉
     await new Promise((r) => setTimeout(r, 600))
     expect(craftCalcCalls().length).toBe(before)
@@ -476,6 +486,112 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     fireEvent.click(screen.getByRole('button', { name: '恢复按公式计算' }))
     await waitFor(() => expect(qtyInput()).toHaveValue('9.8'))
     expect(screen.queryByTestId('meters-manual-stale')).toBeNull()
+  })
+
+  // ===== 判据 2′（issue #5281）：告知元素内**三量齐备**（手填 / 推导 / 差）=====
+  //
+  // owner 2026-09-23 裁定（口径 **A**；`acceptance/2026-09-23/order-auto-derivation/report.md` §12.1 判据 2）：
+  // 「手工改 / 未跟随」告知**元素内**（同一 `data-testid`）必须同时含
+  // ① 当前生效值（商家手填，带单位）② 系统的推导值（带单位）③ 两者的差（相等 ⇒ 显式写「相同」）；
+  // 推导值结构性不存在 / 引擎本次未返回 ⇒ **显式写明不可比**，不得静默缺项。判定只有满足 / 未满足两态。
+  //
+  // 真值源纪律：推导值 = `plan.meters`（**与面板 `craft-plan-meters` 同源** —— 同一个数）。
+  // ⚠️ 本组用例**刻意**让 `plan.meters`(5.8) ≠ `data.fabric_meters`(13.3)：若两个数一样，
+  // 「拿 `fabric_meters` 当推导值」这个变异**不会变红**（差值也假不出来）⇒ 红证没有判别力。
+  // 场景逐字复刻 §12.1 的 `S4b` 帧（手填 7.7 米 / 系统推导 5.8 米，同屏但在**另一块**）。
+  it('判据 2′（红证）：告知元素内**同时**含手填值 / 推导值 / 差，推导值与面板 `craft-plan-meters` 同值', async () => {
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve({
+        data: {
+          data: {
+            ...calcResponse(params).data.data,
+            fabric_meters: 13.3,
+            plan: { ...planFor(params), meters: 5.8 },
+          },
+        },
+      })
+    )
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
+
+    fireEvent.change(qtyInput(), { target: { value: '7.7' } }) // 人工指定：手填 7.7 米
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } }) // 改参数 ⇒ 签名变 ⇒ 告知出现
+
+    const notice = await screen.findByTestId('meters-manual-stale')
+    // **同源判据**（最硬的一条）：告知里**逐字含**面板那一块的文本
+    const panelText = (screen.getByTestId('craft-plan-meters').textContent ?? '').trim()
+    expect(panelText).toBe('用料 5.8 米') // 先钉住面板自己（防"两边一起错"也判绿）
+    expect(notice).toHaveTextContent(panelText)
+    // 三量：① 手填值 ② 推导值 ③ 差
+    expect(notice).toHaveTextContent('用料已人工指定（7.7 米')
+    expect(notice).toHaveTextContent('系统推导用料 5.8 米')
+    expect(notice).toHaveTextContent('差 1.9 米')
+    // 差**不得**漏出 IEEE-754 长尾（`5.8 - 7.7 = -1.9000000000000004`）
+    expect(notice.textContent ?? '').not.toMatch(/\d\.\d{3,}/)
+    // 场景自证：本帧 `plan.meters`(5.8) 与 `data.fabric_meters`(13.3) **确实**不同
+    // ⇒ 「拿 `fabric_meters` 当推导值」那条变异有判别力（见 PR body 红证 ②）
+    expect(screen.getByTestId('craft-plan-meters-mismatch')).toHaveTextContent('5.8')
+    // 四条底线（owner 2026-09-23 裁定）一字不动
+    expect(notice).toHaveTextContent('未跟随')
+    expect(notice).toHaveTextContent('不会静默覆盖你手填的数')
+    expect(notice).toHaveTextContent('恢复按公式计算')
+  })
+
+  it('判据 2′：手填值 === 推导值 ⇒ 告知里**显式写「相同」**（不得退化成「差 0 米」）', async () => {
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve({
+        data: {
+          data: {
+            ...calcResponse(params).data.data,
+            fabric_meters: 13.3,
+            plan: { ...planFor(params), meters: 7.7 },
+          },
+        },
+      })
+    )
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
+
+    fireEvent.change(qtyInput(), { target: { value: '7.7' } }) // = 推导值（`plan.meters`）
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
+
+    const notice = await screen.findByTestId('meters-manual-stale')
+    expect(notice).toHaveTextContent('用料已人工指定（7.7 米')
+    expect(notice).toHaveTextContent('系统推导用料 7.7 米')
+    expect(notice).toHaveTextContent('相同')
+    expect(notice).not.toHaveTextContent('差 0')
+  })
+
+  it('判据 2′：`plan` 未返回 ⇒ 告知里**显式写不可比**（不得静默缺项）', async () => {
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) => {
+      const data = { ...calcResponse(params).data.data } as Record<string, unknown>
+      delete data.plan // 后端未接线 / 降级态：响应里没有 `data.plan`
+      return Promise.resolve({ data: { data } })
+    })
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
+    // 降级提示（既有判据 7）与告知**同帧**并存 ⇒ 告知里的「不可比」是**说出来的**，不是省掉的
+    expect(screen.getByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
+
+    fireEvent.change(qtyInput(), { target: { value: '7.7' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
+
+    const notice = await screen.findByTestId('meters-manual-stale')
+    expect(notice).toHaveTextContent('用料已人工指定（7.7 米')
+    expect(notice).toHaveTextContent('本次未返回推导值，无法比较')
+    // **不得臆造**一个推导值 / 差（缺项必须是"说出来"的）
+    expect(notice).not.toHaveTextContent('系统推导用料')
+    expect(notice).not.toHaveTextContent('差 ')
+    // 四条底线仍在（不可比 ≠ 砍掉告知的其余部分）
+    expect(notice).toHaveTextContent('未跟随')
+    expect(notice).toHaveTextContent('不会静默覆盖你手填的数')
+    expect(notice).toHaveTextContent('恢复按公式计算')
   })
 })
 

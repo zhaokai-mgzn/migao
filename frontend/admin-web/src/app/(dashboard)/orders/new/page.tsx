@@ -3946,6 +3946,32 @@ function LineItemBlock({
       craftCalcSignature(craftCalcParamsOf(calcInputOf(line, calcConfig)))
 
   /**
+   * **告知句内的「推导值 / 差」**（issue #5281 · owner 2026-09-23 裁定口径 **A** / 判据 2′）——
+   * 告知元素内必须**同时**含三个量：① 当前生效值（手填，见句首）② 系统的推导值 ③ 两者的差
+   * （相等 ⇒ 显式写「相同」）；推导值未返回 ⇒ 显式写**不可比**，**不得静默缺项**。
+   *
+   * **真值源纪律**：推导值一律取 `plan.meters` —— 与面板 `craft-plan-meters`（`用料 {plan.meters} 米`）
+   * **同源**，商家在告知里看到的数与他上方面板看到的是**同一个**。
+   * ⛔ 不得改取 `line.calc.fabric_meters`：它是**算料结果**（数量预填用的那个），与面板展示的推导用料
+   * **可以不是同一个数**（页面自己的 `craft-plan-meters-mismatch` 就是为这种不等而存在的）
+   * ⇒ 拿它当推导值，差会与商家眼前的推导值打架（同一屏两个「系统说的数」）。
+   *
+   * **差的格式化**：`plan.meters - line.quantity` 直接相减会漏出 IEEE-754 长尾
+   * （实测 `5.8 - 7.7 = -1.9000000000000004`）⇒ 一律按 **0.01 米**收口（`toFixed(2)`）后展示；
+   * 取绝对值（商家要的是"差多少"，方向由句内那两个数本身可见）。收口后为 0 ⇒ 显式写「相同」——
+   * **判定与展示用同一个数** ⇒ 不会出现「相同」与「差 0 米」互相矛盾的那种文案。
+   */
+  const metersCompareText = (() => {
+    if (plan === null || !Number.isFinite(Number(plan.meters))) {
+      return '本次未返回推导值，无法比较'
+    }
+    const delta = Number((Number(plan.meters) - Number(line.quantity)).toFixed(2))
+    return delta === 0
+      ? `系统推导用料 ${plan.meters} 米，与你手填的相同`
+      : `系统推导用料 ${plan.meters} 米，差 ${Math.abs(delta)} 米`
+  })()
+
+  /**
    * **加工费取价明细**（issue #4874）—— 键名冻结于后端 `ProcessingFeeCalculator.detail`：
    * `composition`（归一化组合键）/ `items`（展示用加工项名，与「加工费组合」页同源）/
    * `unit_price` / `fee_source`（`matched` / `manual` / `unpriced`）。
@@ -4121,10 +4147,12 @@ function LineItemBlock({
                         </button>
                       </p>
                       {/* **显式告知**（issue #5202 · 根因 2）：人工指定的数**没跟随**这次改动 ——
-                          不静默覆盖商家手填的数，也不让商家自己猜为什么数没变（一键恢复就在上面）。 */}
+                          不静默覆盖商家手填的数，也不让商家自己猜为什么数没变（一键恢复就在上面）。
+                          ⚠️ 判据 2′（issue #5281）：句内**补上**推导值与差（`metersCompareText`）——
+                          改前商家要知道"差多少"得自己去上方面板按「用料方案（系统推导）」那行自己减。 */}
                       {metersStale && (
                         <p data-testid="meters-manual-stale" className="mt-1 text-xs text-amber-700">
-                          用料已人工指定（{line.quantity} 米）—— 宽 / 高 / 门幅或工艺改动后系统
+                          用料已人工指定（{line.quantity} 米；{metersCompareText}）—— 宽 / 高 / 门幅或工艺改动后系统
                           <strong>未跟随</strong>重算（不会静默覆盖你手填的数）；点上方「恢复按公式计算」
                           按新参数重算。
                         </p>
