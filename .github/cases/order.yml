@@ -2503,20 +2503,16 @@ cases:
       # `repeat_until{tool_called: order_create, max: 8}` **整块移除**：目标工具已从 B 端
       # 全部 skill 解绑 ⇒ 「协作轮到写单成功为止」的循环永不满足（悬空声明）。同一轮的其它键
       # （`code` / `fallback` / `form_values`）按原样保留、不删（删它们属本包范围外的清理）。
-      - fallback: "确认下单"
-        # `code`（issue #3430 的 repeat_until 契约 + `test_xiaobu_case_set` 的
-        # `test_write_cases_using_repeat_until_supply_code` 守卫）：断言了需验证码的写工具
-        # （order_create）的 repeat_until 用例必须能**被问码就供码** —— 否则 agent 真索码时
-        # 无码可给、流程仍卡死。同 OR-028（persona: mibao）先例。B 端代客下单本免验证码
-        # （`_needs_sms_verification` 只对 role==customer 生效），此声明是"合作型顾客"的
-        # 兜底：真被索码时给 dev/CI 栈的 bypass 码（SMS_BYPASS_CODE=123456）。
-        code: "123456"
-        form_values:
-          customer_name: "张三"
-          customer_phone: "13800138000"
-          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
-          color: "2699-03暖米色"
-          colorName: "2699-03暖米色"
+      # ── 该控制轮**整轮退场**（issue #5247，用户裁定 2026-09-23 B 端只读化）──
+      # 原为 `- repeat_until: {tool_called: order_create, max: 8}` + 同轮的 `fallback` /
+      # `code` / `form_values`。两条原因使其**不能只删 `repeat_until` 而保留其余键**：
+      #   ① 循环永不满足：`order_create` 已从 B 端全部 skill 解绑（悬空声明）；
+      #   ② **载荷窗口审计会红**：`payload_window_audit` 判的是「声明了载荷键却没有任何
+      #      『投递轮』」—— 只删 `repeat_until` 会把 `code` 变成**无投递轮的孤立载荷声明**
+      #      ⇒ `deliverable_rounds` 为空 ⇒ 判据 `test_every_declared_payload_covers_last_
+      #      answerable_round` 报「OR-029: 载荷窗口在最后一个可作答轮次之前用尽」。
+      # 本用例已退役（B 端不再有下单能力，见 `skip_reason`）⇒ 整轮改写为留档注释，
+      # 既不留悬空键、也不删历史说明。
     namespaces:
       - "customer_phone:13800138000"
       - "product_name:2699系列雪尼尔窗帘面料"

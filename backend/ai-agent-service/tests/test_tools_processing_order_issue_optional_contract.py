@@ -243,9 +243,17 @@ def _round(round_no: int) -> dict:
 def test_case_expectation_still_reds_when_complete_never_called():
     """用**用例自己声明的** must_succeed × **runner 自己的**断言跑合成轨迹。
 
-    这条是「不许为了让用例变绿而删写操作期望」的机械守卫：
-    真的没调 `action=complete` ⇒ `check_must_succeed` 必须报违规；
-    真的调成功 ⇒ 必须放行。两侧都断言，防止断言退化成恒真/恒假。
+    ⚠️ **2026-09-24 改判（issue #5247，用户裁定 2026-09-23 B 端只读化）**：本守卫原先钉
+    `PG-016.must_succeed == [processing_order_update(complete)]`，并把「期望被改成别的」
+    一律判为违规。而 #5247 按裁定把写工具 `processing_order_update` 从 B 端**全部 skill 解绑**
+    ⇒ 该期望在 B 端**已不可满足**，用例随之改判为「查加工单状态」（其 title 已写明
+    「原『更新状态-完成』随 #5247 写能力下线改判」）。
+
+    ⇒ 改判的是**期望对象**，不是「放宽」。本测试仍守住四件事：
+      ① 期望**非空**且**逐字**等于用例声明（不许清空、不许静默换成别的工具）；
+      ② 从未调用 ⇒ 必须红；③ 成功调用 ⇒ 必须放行（两侧都断言，防退化成恒真/恒假）；
+      ④ **写照期望**的合成轨迹仍必须红 —— 「写期望不得被删/放宽」这条口径对**任何仍然
+         声明写期望的用例**依然有效（`action` 过滤不得被子串顶替）。
     """
     lr = _runner()
     matching = [c for c in lr.ALL_CASES if c.id == "PG-016"]
@@ -253,16 +261,33 @@ def test_case_expectation_still_reds_when_complete_never_called():
         f"ALL_CASES 里 PG-016 应有且仅有 1 条（实为 {len(matching)}）⇒ 本守卫失锚"
     )
     case = matching[0]
-    assert case.must_succeed == [{"tool": "processing_order_update", "action": "complete"}], (
-        f"PG-016 的 must_succeed 被改动了（现为 {case.must_succeed}）"
-        "—— 写操作期望不得放宽/删除"
+
+    # ① 改判后的期望：非空 + 逐字钉死（再改必须同时写明理由，不得静默放宽）
+    assert case.must_succeed == [{"tool": "processing_order_query"}], (
+        f"PG-016 的 must_succeed 现为 {case.must_succeed} —— 只读化改判后应为「查加工单状态」；"
+        "若再被改动，必须在用例 title/skip_reason 与本守卫里写明理由（不得静默放宽/清空）"
     )
 
-    # 真失败形态：全程没调过 processing_order_update ⇒ 必须红
+    # ② 真失败形态：全程没调过期望工具 ⇒ 必须红
     never_called = lr.check_must_succeed([_round(i) for i in range(1, 9)], case.must_succeed)
-    assert never_called, "从未调用写工具却放行 ⇒ 反向守卫失效"
+    assert never_called, "从未调用期望工具却放行 ⇒ 反向守卫失效"
 
-    # 仅发过 issue/start、从未 complete ⇒ 也必须红（action 过滤不得被子串顶替）
+    # ③ 真成功形态：期望工具成功一次 ⇒ 必须放行（防"恒红"）
+    satisfied = [
+        {
+            "__round": 6,
+            "tool_calls": [{"name": "processing_order_query",
+                            "args": {"action": "detail", "id": "JG-1"}}],
+            "tool_results": [{"tool": "processing_order_query", "result": {"success": True}}],
+        }
+    ]
+    assert lr.check_must_succeed(satisfied, case.must_succeed) == [], (
+        "期望的工具成功调用却仍报违规 ⇒ 断言退化成恒红"
+    )
+
+    # ④ 写期望口径仍承重：仅发过 issue/start、从未 complete ⇒ 必须红
+    #    （对**任何仍然声明**写期望的用例都成立；`action` 过滤不得被子串顶替）
+    legacy_write_expectation = [{"tool": "processing_order_update", "action": "complete"}]
     partial = [
         {
             "__round": 6,
@@ -270,9 +295,9 @@ def test_case_expectation_still_reds_when_complete_never_called():
             "tool_results": [{"tool": "processing_order_update", "result": {"success": True}}],
         }
     ]
-    assert lr.check_must_succeed(partial, case.must_succeed), "只 issue 没 complete 却放行"
+    assert lr.check_must_succeed(partial, legacy_write_expectation), "只 issue 没 complete 却放行"
 
-    # 真成功形态：complete 成功一次 ⇒ 必须放行（防"恒红"）
+    # ⑤ 同上期望的真成功形态仍必须放行（写期望一侧也防"恒红"）
     completed = [
         {
             "__round": 6,
@@ -280,4 +305,4 @@ def test_case_expectation_still_reds_when_complete_never_called():
             "tool_results": [{"tool": "processing_order_update", "result": {"success": True}}],
         }
     ]
-    assert lr.check_must_succeed(completed, case.must_succeed) == []
+    assert lr.check_must_succeed(completed, legacy_write_expectation) == []

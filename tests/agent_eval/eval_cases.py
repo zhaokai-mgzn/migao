@@ -4079,7 +4079,7 @@ _CASE_OR_029 = EvalCase(
     title='B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：打孔、韩褶、定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', {'auto_select': True}, {'fallback': '确认下单', 'code': '123456', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '2699-03暖米色', 'colorName': '2699-03暖米色'}}],
+    user_inputs=['录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：打孔、韩褶、定型', '1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000', {'auto_select': True}],
     expectations=['product_search', 'interact(component=choice)', 'product_detail'],
     data_checks=['（退役，#5247）如实说明米宝只做数据查询与分析、**不提供经对话录单/下单**，并引导去后台订单管理页面处理。改判前口径（留档，不再生效）—— 原两条的断言对象都是 order_create 的写单行为，随 order_create 从 B 端解绑而不成立（该工具已不在 B 端工具集里，调用本身不可能发生）：①「确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建」②「order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项打孔 ¥8/米 + 韩褶 ¥12/米 + 定型 ¥10/米（均取自 seed 加工项目录）」'],
     skip_reason='[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「先查商品再录订单」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为只读三段（product_search → product_detail，含 interact(choice) 卡）+ 如实说明「米宝不提供经对话录单/下单」并引导去后台订单管理页面。',
