@@ -314,6 +314,12 @@
       "criterion": null,
       "owner": "tests/agent_eval/local_runner.py owner",
       "unfixed_reason": "注释声称与 Java 侧 `OrderStatusUpdateRequest` 的 `@Pattern` **及** `OrderService.STATUS_TRANSITIONS` 的键集逐字一致。**本包未落地**（非结构不可机械化）：钉它要在 Java 源码里解析注解正则里的枚举与 `Map.of(...)` 的键集，属该文件 owner 的下一步；登记为未固化，不是已治"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py",
+      "symbol": "CODE_EXTS",
+      "issue": "#4376",
+      "criterion": "tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py::test_trap_is_reproducible_on_real_implementation"
     }
   ],
   "frozen_declarations": [
