@@ -170,7 +170,15 @@ const planFor = (params: Record<string, unknown>, over: Record<string, unknown> 
   join_height_m: (params?.join_height_m as number) ?? null,
   join_width_m: (params?.join_width_m as number) ?? null,
   meters: 13.3,
-  auto: params?.cutting_mode === undefined,
+  // ⚠️ **`auto` 的判据是四个键有没有发**（引擎 `derive_plan(manual=…)`：任一项人工值 ⇒ `auto=false`），
+  // **不是**「加工类型发没发」—— `S1` 帧实测（#5262 §13.1）：只发 `join_height_m` ⇒ 引擎 `auto=false`
+  // 而 `cutting_mode` 仍是引擎推导的「定高买宽」。这条口径正是本文件判据 2 的判别力来源
+  // （替身若写成 `params?.cutting_mode === undefined`，则「只改接高」那一帧会被喂成 `auto=true` ⇒ 假绿）。
+  auto:
+    params?.cutting_mode === undefined &&
+    params?.splice_times === undefined &&
+    params?.join_height_m === undefined &&
+    params?.join_width_m === undefined,
   reason: '成品高 2.6 + 上下卷边 0.3 = 2.9 ≤ 门幅 3.2 ⇒ 定高买宽单幅可做（用料最少）',
   candidates: CANDIDATES,
   ...over,
@@ -288,7 +296,11 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
 
     // 推导结果**只读展示**（改前：页面没有这个块 ⇒ 必红）
     expect(await screen.findByTestId('craft-plan-mode')).toHaveTextContent('定高买宽')
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('系统推导')
+    // **甲**（issue #5287 ①b）：来源标到**每一项** —— 加工类型这一档的归属挂在它**自己**身上
+    expect(screen.getByTestId('craft-plan-mode-source')).toHaveTextContent('系统推导')
+    // 块级 `craft-plan-source` **退为汇总**（判据 2：块级不得单独承担项级归属）
+    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('来源汇总')
+    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 0 项')
     // 推导依据可读（商家要能核对判定）：plan.reason + 候选逐条
     expect(screen.getByTestId('craft-plan-reason')).toHaveTextContent('成品高 2.6')
     const candidates = within(await screen.findByTestId('craft-plan-candidates'))
@@ -322,8 +334,11 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     await waitFor(() =>
       expect(craftCalcCalls().at(-1)).toMatchObject({ cutting_mode: '定宽买高' })
     )
-    // 人工覆盖进请求 ⇒ 服务端 `auto=false` ⇒ 界面显示「人工指定」
-    expect(await screen.findByTestId('craft-plan-source')).toHaveTextContent('人工指定')
+    // 人工覆盖进请求 ⇒ **加工类型这一项**的来源变「人工指定」（甲：标在项上，不在块上）
+    expect(await screen.findByTestId('craft-plan-mode-source')).toHaveTextContent('人工指定')
+    // 块级只报**汇总**（其余三项仍是系统推导）
+    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 1 项')
+    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('系统推导 3 项')
 
     const before = craftCalcCalls().length
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
@@ -1170,5 +1185,144 @@ describe('#5211 推导出的拼N次并入生效特殊选项（工序 / 计件 / 
     const items = await submitAndGetProcessingItemNames()
     expect(items).toContain('倒幅')
     expect(items).not.toContain('拼接')
+  })
+})
+
+// ── issue #5287：①b（甲 · 项级来源）/ ②（引擎拒绝 ⇒ 不得「已并入」）/ ③（用料标失效）──────────
+describe('#5287 项级来源 + 引擎拒绝态（判据 2/3/4/5）', { timeout: 20000 }, () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+    })
+    mockGetProduct.mockResolvedValue({ data: { data: PRODUCT } })
+    mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(calcResponse(params))
+    )
+    mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
+    mockAutoFeatures.mockResolvedValue({
+      data: { data: { auto_features: [], door_width: null, notices: [] } },
+    })
+    mockDoorWidthPlan.mockResolvedValue({
+      data: {
+        data: {
+          state: 'undecidable',
+          code: 'missing-cutting-mode',
+          effective_cutting_mode: null,
+          door_width: null,
+          panels: null,
+          splice: false,
+          verdict: 'unknown',
+          suggestion: null,
+          reason: '（替身：规则面由既有测试覆盖）',
+        },
+      },
+    })
+  })
+
+  it('判据 2（红证）：**只**人工加接高 ⇒ 加工类型仍是「系统推导」，只有接高是「人工指定」', async () => {
+    // 复现 #5262 §13.1 的 `S1` 帧：`req.cutting_mode` **缺席**（商家从没点过加工类型），
+    // `req.join_height_m = 0.05`。改前：面板把**加工类型**标成「人工指定（不再被自动改判）」。
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(0))
+    openCraftParams()
+
+    fireEvent.change(screen.getByTestId('craft-plan-join-height-input'), {
+      target: { value: '0.05' },
+    })
+    await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ join_height_m: 0.05 }))
+    // 请求面自证：加工类型那个键**根本没发**（引擎收到的 `cutting_mode_sent == false`）
+    expect(craftCalcCalls().at(-1)).not.toHaveProperty('cutting_mode')
+
+    // 逐项归属（甲）：接高 = 人工指定；加工类型 / 拼次 / 接宽 = 系统推导
+    expect(screen.getByTestId('craft-plan-join-height-source')).toHaveTextContent('人工指定')
+    expect(screen.getByTestId('craft-plan-mode-source')).toHaveTextContent('系统推导')
+    expect(screen.getByTestId('craft-plan-splice-source')).toHaveTextContent('系统推导')
+    expect(screen.getByTestId('craft-plan-join-width-source')).toHaveTextContent('系统推导')
+    // 红证：把项级标注去掉、只留块级（改前的形态）⇒ 上面四条必红
+    expect(screen.getByTestId('craft-plan-mode-source')).not.toHaveTextContent('人工指定')
+    // 块级汇总（不是项级归属的载体）
+    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 1 项')
+  })
+
+  it('判据 3（红证）：引擎拒绝该组合 ⇒ 同帧**两处**都不得再写「已并入」，改用「未生效」', async () => {
+    // 复现 #5262 §13.2 的 `S2` 帧：人工接高 + 拼 2 次 ⇒ 引擎 400/422 拒绝
+    // （引擎逐字：「加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）」）。
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(0))
+    openCraftParams()
+
+    mockCraftCalcPreview.mockRejectedValue({
+      response: {
+        data: {
+          error: {
+            code: 'CRAFT_CALC_INVALID_INPUT',
+            message:
+              '算料参数不合法，本次试算已中止（不给 0 米）：加工类型「定高买宽」是买宽订单、' +
+              '零拼接 ⇒ 拼次只能是 0（收到 2）',
+          },
+        },
+      },
+    })
+    pickChip('拼接（人工加）', '拼2次')
+    fireEvent.change(screen.getByTestId('craft-plan-join-height-input'), {
+      target: { value: '0.05' },
+    })
+    await waitFor(() => expect(screen.getByText(/算料试算失败.*拼次只能是 0/)).toBeInTheDocument())
+
+    // 两处（`craft-plan-splice` 与 `craft-plan-derived-options`）都**不得**再宣称「已并入」
+    const spliceLine = screen.getByTestId('craft-plan-splice')
+    expect(spliceLine).not.toHaveTextContent('已并入')
+    expect(spliceLine).toHaveTextContent('未生效')
+    const derived = screen.getByTestId('craft-plan-derived-options')
+    expect(derived).not.toHaveTextContent('已并入')
+    expect(derived).toHaveTextContent('未生效')
+    // 同帧的错误态仍在（不是静默）
+    expect(screen.getByText(/算料试算失败.*拼次只能是 0/)).toBeInTheDocument()
+  })
+
+  it('判据 4（红证）：同一组合下引擎**同意** ⇒ 「已并入」回来（判据来自引擎响应，不是前端自判）', async () => {
+    // 与上一条**同参数**、只换引擎的答复：这是「同源」的判别性对照 ——
+    // 前端若自己写了一份「拼次是否合法」的判断，这一条就会红（它会在引擎同意时也说未生效）。
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(0))
+    openCraftParams()
+
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) =>
+      Promise.resolve(
+        calcResponse(params, { cutting_mode: '定宽买高', panels: 3, splice_times: 2, splice_option: '拼2次' })
+      )
+    )
+    pickChip('拼接（人工加）', '拼2次')
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-splice')).toHaveTextContent('已并入')
+    )
+    expect(screen.getByTestId('craft-plan-derived-options')).toHaveTextContent('已并入')
+  })
+
+  it('判据 5（红证）：引擎拒绝 ⇒ `用料` 必须标「已失效」（不得继续显示上一次的旧值而无标记）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+    await waitFor(() => expect(screen.getByTestId('craft-plan-meters')).toHaveTextContent('13.3'))
+    // 成功帧：**没有**失效标记（否则本条的判别力就没了）
+    expect(screen.getByTestId('craft-plan-meters')).not.toHaveTextContent('已失效')
+
+    mockCraftCalcPreview.mockRejectedValue({
+      response: { data: { error: { message: '加工类型「定高买宽」是买宽订单、零拼接' } } },
+    })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-meters')).toHaveTextContent('已失效')
+    )
+    // 旧值仍在（不装成 0 米），但**标明已失效**——改前形态：只显示 `用料 13.3 米`，无任何标记
+    expect(screen.getByTestId('craft-plan-meters')).toHaveTextContent('13.3')
   })
 })

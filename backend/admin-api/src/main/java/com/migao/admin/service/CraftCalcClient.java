@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
@@ -61,6 +62,21 @@ public class CraftCalcClient {
 
     /** fail-closed 错误码（可见位置同 {@link ProductionOperationQtyClient#ERR_OPERATION_QTY_UNAVAILABLE}）。 */
     public static final String ERR_CRAFT_CALC_UNAVAILABLE = "CRAFT_CALC_UNAVAILABLE";
+
+    /**
+     * **参数校验类**拒绝的错误码（issue #5287 ④，与 ai-agent 的 400/422 同码）。
+     *
+     * <p>🔴 为什么要与 {@link #ERR_CRAFT_CALC_UNAVAILABLE} **分开**（不是措辞洁癖）：
+     * 实测（`acceptance/2026-09-23/order-auto-derivation/report.md` §13.2 的 `S2` 帧）里，
+     * 「人工接高 + 拼次 ≥ 1」被引擎以 <b>400</b> 拒（真因 = 商家自己的参数组合：
+     * 「加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）」），
+     * 而 Java 侧的兜底 catch 把它包成了 <b>422 / `CRAFT_CALC_UNAVAILABLE`</b> + 文案
+     * 「算料服务（ai-agent）不可用」<b>⇒ 把病因指错</b>：商家会去查服务，而问题在自己的参数上。</p>
+     *
+     * <p>⚠️ 边界：**真正的服务不可用**（不可达 / 超时 / 未配置 token / 5xx / 外壳
+     * {@code success != true}）**仍然**用 {@link #ERR_CRAFT_CALC_UNAVAILABLE} —— 那是它的本义。</p>
+     */
+    public static final String ERR_CRAFT_CALC_INVALID_INPUT = "CRAFT_CALC_INVALID_INPUT";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestTemplate restTemplate;
@@ -166,6 +182,18 @@ public class CraftCalcClient {
                             : null);
         } catch (BusinessException e) {
             throw e; // fail-closed 原样上抛（不吞、不降级）
+        } catch (HttpStatusCodeException e) {
+            // ── 引擎**自己**拒绝了这组参数（400 / 422，issue #5287 ④）──────────────────────────
+            // 与「服务不可用」是**两类**：真因在商家的参数组合上 ⇒ 必须用自己的错误码，
+            // 否则商家照文案去查服务（而服务是好的），错误信息把自己指到了错的地方。
+            // 判定只读**引擎给的状态码**（400 = 引擎口径拒答 / 422 = 形态校验）——
+            // **不在 Java 侧复制「哪些参数组合合法」的判断**（那是第二份引擎判定）。
+            if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 422) {
+                throw invalidInput(url, engineErrorDetail(e), e);
+            }
+            log.error("算料试算端点不可达: url={}, status={}, err={}",
+                    url, e.getStatusCode(), e.getMessage());
+            throw unavailable(url, e.getMessage(), e);
         } catch (Exception e) {
             log.error("算料试算端点不可达: url={}, err={}", url, e.getMessage());
             throw unavailable(url, e.getMessage(), e);
@@ -348,6 +376,44 @@ public class CraftCalcClient {
             log.error("算料默认配置端点不可达: url={}, err={}", url, e.getMessage());
             throw unavailable(url, e.getMessage(), e);
         }
+    }
+
+    /**
+     * 引擎的**参数校验类**拒绝（issue #5287 ④）—— 与 {@link #unavailable} 是**两类**，不得混用：
+     * 真因在商家自己的参数组合（如「定高买宽 + 拼次 2」），报「算料服务不可用」会把商家引去查服务。
+     *
+     * <p>{@code httpStatus = 400}（与 ai-agent 端点同码）：这是**调用方的入参**问题，不是服务端故障。</p>
+     */
+    private BusinessException invalidInput(String url, String reason, Exception cause) {
+        BusinessException e = new BusinessException(ERR_CRAFT_CALC_INVALID_INPUT,
+                "算料参数不合法，本次试算已中止（不给 0 米）：" + reason,
+                400,
+                "请按上面的原因改**参数组合**后重新试算（例如「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能为 0）；"
+                        + "算料服务本身是好的，不需要重启 ai-agent（当前服务地址 " + url + "）。"
+                        + "用料米数必须来自算料引擎（真值源 §8 褶数法），系统不会用 0 或前端自拼的公式顶替。");
+        if (cause != null) {
+            e.initCause(cause);
+        }
+        return e;
+    }
+
+    /**
+     * 从引擎的 4xx 响应体里取**它自己给的原因**（`detail.error.message`；取不到 ⇒ 原样给响应体）。
+     *
+     * <p>⚠️ **不编原因**：这是「把引擎的话搬给商家」的搬运动作，不是第二份判定（判据 4 的精神 ——
+     * 前端/Java 都不许自己判「这个组合合不合法」）。</p>
+     */
+    private String engineErrorDetail(HttpStatusCodeException e) {
+        try {
+            JsonNode error = objectMapper.readTree(e.getResponseBodyAsString()).path("detail").path("error");
+            String message = error.path("message").asText("");
+            if (StringUtils.hasText(message)) {
+                return message;
+            }
+        } catch (Exception ignored) {
+            // 响应体不是本端点的信封（如 FastAPI 形态校验的 detail 数组）⇒ 退回原样响应体
+        }
+        return e.getResponseBodyAsString();
     }
 
     private BusinessException unavailable(String url, String reason, Exception cause) {

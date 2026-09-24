@@ -687,3 +687,82 @@ class TestLegacySplicePathIsUnified:
         assert modern["join_height_m"] == pytest.approx(0.1)
         assert modern["meters"] == pytest.approx(1.6)
         assert legacy["meters"] == modern["meters"]
+
+
+# ── issue #5287 ①a / 判据 1：**未显式给加工类型 ⇒ 由人工值蕴含**必须披露（同族同模板）──────
+class TestImpliedModeIsDisclosedForEveryManualValue:
+    """「蕴含了加工类型」必须**说出来**，且**归属**不得错（issue #5287 ①a；证据 = `S1` / `S3` / `S4` 三帧）。
+
+    取证（`acceptance/2026-09-23/order-auto-derivation/report.md` §13.1）：
+    `S1` 帧商家**只**改了接高 0.05 米、**从没点过加工类型**（`req.cutting_mode` 缺席），
+    而依据行写「**加工类型按人工值「定高买宽」逐字采用**」⇒ 把**引擎推导值**断言成**人工值**。
+
+    引擎自己在**同族**情形下早有「蕴含」披露（`S3` 帧逐字「未显式给加工类型，但人工拼 2 次
+    ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）」），唯独接高 / 接宽两支**漏了**
+    （源码里那段的条件原为 `cutting_mode is None and splice_times is not None and splice_times >= 1`）。
+
+    红证形态（每条都能单独判红）：
+    - 去掉 `_implied_mode()` 里接高那一支的 `note`（只返回 mode）⇒ `test_join_height_*` 红；
+    - 把 `note` 的拼次模板改回只在 `splice_times` 分支里拼字符串 ⇒ `test_splice_*` 红；
+    - 把 `mode_clause` 改回「按人工值「{effective_mode}」逐字采用」⇒ 三条 `manual_value_*` 红。
+    """
+
+    def test_join_height_without_cutting_mode_is_disclosed_as_implied(self):
+        """只改接高（`cutting_mode` 缺席）⇒ 依据行必须**逐字**说明「接高蕴含了定高买宽」。"""
+        p = plan(join_height_m=0.05)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT, "接高 ⇒ 蕴含定高买宽"
+        assert p["auto"] is False, "人工加接高 ⇒ auto=false（R7）"
+        assert p["join_height_m"] == pytest.approx(0.05)
+        assert "未显式给加工类型，但人工加接高 0.05 米 ⇒ 蕴含**定高买宽**" in p["reason"], (
+            "**判据 1**：未显式给加工类型时，让引擎选定高买宽的那个人工值必须被点名"
+            "（与拼次那支同族同模板）"
+        )
+        assert "加工类型" in p["reason"]
+        # 归属不得错：**引擎推导值**不得被断言成**人工值**（`S1` 帧的那个错）
+        assert "按人工值「定高买宽」逐字采用" not in p["reason"], (
+            "商家从没点过加工类型 ⇒ 不得写成「按人工值…逐字采用」（判据 2 的引擎侧半边）"
+        )
+
+    def test_join_width_without_cutting_mode_is_disclosed_as_implied(self):
+        """接宽支同理（原实现也漏）—— 断言它没被「只补接高」的改法落下。"""
+        p = plan(window_height=3.0, join_width_m=0.05)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        assert "未显式给加工类型，但人工加接宽 0.05 米 ⇒ 蕴含**倒幅**" in p["reason"]
+        assert "按人工值「倒幅」逐字采用" not in p["reason"]
+
+    def test_splice_family_wording_is_pinned(self):
+        """拼次那支的**逐字**口径不许漂（`S3` 帧的归档读数就是这句，改它就等于改告知）。"""
+        p = plan(splice_times=2)
+        assert (
+            "未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）"
+            in p["reason"]
+        )
+
+    def test_explicit_cutting_mode_equal_to_implied_value_is_not_called_implied(self):
+        """显式值**恰好等于**蕴含值 ⇒ 那句「人工值…逐字采用」已经说清，不得再声称「未显式给」。"""
+        p = plan(cutting_mode=CUTTING_MODE_FIXED_WIDTH, splice_times=2)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        assert "按人工值「定宽买高」逐字采用" in p["reason"]
+        assert "未显式给加工类型" not in p["reason"], "显式给了加工类型 ⇒ 这句话是假话"
+
+    def test_nothing_implied_says_so_instead_of_claiming_an_implication(self):
+        """`splice_times=0`（人工覆盖但不蕴含倒幅）⇒ 既不说「按人工值…加工类型」也不说「蕴含」。"""
+        p = plan(splice_times=0)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT
+        assert "加工类型**未人工指定** ⇒ 沿用系统推导的「定高买宽」" in p["reason"]
+        assert "蕴含" not in p["reason"]
+
+    def test_manual_value_that_overrides_explicit_mode_is_attributed_correctly(self):
+        """`S4` 帧：显式「定高买宽」+ 拼 2 次 ⇒ 实际按「定宽买高」算，**人工值仍是「定高买宽」**。
+
+        ⚠️ 判据 2 覆盖本帧（#5287 用户裁定：不另立）—— 原文写「加工类型按**人工值「定宽买高」**
+        逐字采用」，而人工值明明是「定高买宽」。
+        """
+        p = plan(cutting_mode=CUTTING_MODE_FIXED_HEIGHT, splice_times=2)
+        assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH, "人工拼次 ≥ 1 蕴含倒幅（先于显式值）"
+        assert "按人工值「定高买宽」逐字采用" in p["reason"], "人工值要如实写出来"
+        assert "按人工值「定宽买高」逐字采用" not in p["reason"], (
+            "「定宽买高」是**引擎蕴含值**，不得断言成人工值（判据 2）"
+        )
+        assert "人工拼 2 次 ⇒ 蕴含**倒幅**" in p["reason"], "取代关系要说出来"
+        assert "被蕴含值取代，实际按「定宽买高」算" in p["reason"]
