@@ -230,3 +230,84 @@ describe('NumberInput 失焦归一化与边界（issue #5198）', () => {
     expect(input().value).toBe('')
   })
 })
+
+/**
+ * issue #5210（下单页 8 个数字框从页面私有 `NumberField` 收敛到本组件）逼出来的两条
+ * **行为保真**守卫 —— 它们不是新功能，而是旧实现本来就有的语义：
+ * ① 「调用方会把我们回调的值**映射**一下」（`next ?? 0` / `positiveOrNull`）时，
+ *    正在输入的草稿不得被那个映射后的回显顶掉；
+ * ② 「只是点进来又点出去」的框不得被归一化、也不得回调（旧 `NumberField` 的 onBlur 只有
+ *    `setDraft(null)`）—— 否则会把调用方带副作用的 onChange 唤醒（米数被标「人工指定」等）。
+ * 两条都**可单点变异变红**（红证逐条写在断言上方）。
+ */
+describe('NumberInput 行为保真守卫（issue #5210 收敛）', () => {
+  it('② 调用方把 null 映射成 0（`?? 0`）：一次 change 粘贴 "0." 不吞小数点', () => {
+    function Mapped() {
+      const [v, setV] = useState<number | null>(13.3)
+      return <NumberInput data-testid="ni" value={v} onChange={(next) => setV(next ?? 0)} />
+    }
+    render(<Mapped />)
+    expect(input().value).toBe('13.3')
+    // 一次 change 把**不完整草稿** "0." 发出去（粘贴 / 全选改写）⇒ 调用方映射成 0（外部值 13.3 → 0）
+    fireEvent.change(input(), { target: { value: '0.' } })
+    // 红证（单点变异，实测）：删掉 effect 里
+    // `if (editingRef.current && (value ?? 0) === draftNumber(draftRef.current)) return` ⇒ 本断言收到 '0'
+    expect(input().value).toBe('0.')
+    fireEvent.change(input(), { target: { value: '0.5' } })
+    expect(input().value).toBe('0.5')
+  })
+
+  it('②b 调用方把 0 归 null（`positiveOrNull`）：敲 "0" 不把框清空', () => {
+    function Positive() {
+      const [v, setV] = useState<number | null>(6.6)
+      return (
+        <NumberInput
+          data-testid="ni"
+          value={v}
+          onChange={(next) => setV(next !== null && next > 0 ? next : null)}
+        />
+      )
+    }
+    render(<Positive />)
+    fireEvent.change(input(), { target: { value: '0' } })
+    // 红证（单点变异，实测）：删掉上面那条守卫 ⇒ 本断言收到 ''（框当场清空）。
+    // 页面同形态判据：tests/unit/pages/orders-new-plan.test.tsx 判据 6b（窗宽敲 0 ⇒ 框里是 "0"）。
+    expect(input().value).toBe('0')
+    fireEvent.change(input(), { target: { value: '0.' } })
+    expect(input().value).toBe('0.')
+  })
+
+  it('③ 只聚焦 + 离开：不归一化、不回调（精度 > decimals 的值原样留着）', () => {
+    const spy = vi.fn()
+    render(<NumberInput data-testid="ni" value={13.375} decimals={2} onChange={spy} />)
+    fireEvent.focus(input())
+    fireEvent.blur(input())
+    // 红证（单点变异，实测）：删掉 handleBlur 开头的 `const typed = editingRef.current … if (!typed) { … return }`
+    // ⇒ 本断言收到 '13.38'、且 spy 被调用（= 「点进来又点出去」静默改值 + 唤醒带副作用的 onChange）
+    expect(input().value).toBe('13.375')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('③b 敲过键时失焦归一化照旧（守卫不得把正常归一化一起关掉）', () => {
+    const spy = vi.fn()
+    render(<NumberInput data-testid="ni" value={13.3} decimals={2} onChange={spy} />)
+    fireEvent.change(input(), { target: { value: '13.375' } })
+    fireEvent.blur(input())
+    expect(input().value).toBe('13.38')
+    expect(spy).toHaveBeenLastCalledWith(13.38)
+  })
+
+  it('④ 外部 value 是 NaN（老调用方拿它当「未定价」占位）⇒ 渲染期同步不得死循环', () => {
+    const { rerender } = render(
+      <NumberInput data-testid="ni" value={Number.NaN} onChange={() => {}} />
+    )
+    // 红证（单点变异，实测）：把同步条件从 `Object.is(value, lastValue)` 改回 `value !== lastValue`
+    // ⇒ `NaN !== NaN` 恒真 ⇒ 渲染期 setState 每次都触发 ⇒ React「Too many re-renders」⇒ 本用例必红。
+    expect(input().value).toBe('')
+    rerender(<NumberInput data-testid="ni" value={Number.NaN} onChange={() => {}} />)
+    expect(input().value).toBe('')
+    // NaN ⇒ 数字仍要能同步（守卫只吞「NaN ⇒ NaN」这一对）
+    rerender(<NumberInput data-testid="ni" value={5} onChange={() => {}} />)
+    expect(input().value).toBe('5')
+  })
+})

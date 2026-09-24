@@ -10,7 +10,7 @@ import { urgencyRequestFields } from '@/lib/order-urgency'
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
-import { Button, Card, Input, Modal } from '@/components/ui'
+import { Button, Card, Input, Modal, NumberInput } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
 import OrderExtraOptions from '@/components/orders/OrderExtraOptions'
 import {
@@ -1060,73 +1060,34 @@ function mergePlanOverrides(
 
 /**
  * 正数 ⇒ 原样；其余（空 / 0 / 负数 / 非数）⇒ `null` —— **数字输入框的提交口径**
- * （原 `decimalOrNull(raw: string)` 的等价物：`NumberField` 已经把文本解析成数字，故这里收数字）。
+ * （原 `decimalOrNull(raw: string)` 的等价物：数字框已经把文本解析成数字，故这里收数字）。
  */
 function positiveOrNull(value: number | null): number | null {
   return value !== null && Number.isFinite(value) && value > 0 ? value : null
 }
 
 /**
- * 本页私有的**数字输入框**（issue #5202 · 用户第 7 点「不能直接输入 0，所以导致无法输入 0.？」）。
+ * 本页 8 个数字框**一律用共享 `NumberInput`**（issue #5210 收敛：原先的页面私有 `NumberField`
+ * 与 `components/ui/NumberInput.tsx` 是同一真值的两份实现 —— 「要么收敛，要么显式登记，不许静默并存」）。
  *
- * 病根：受控数字框把值经 `Number` 承载（`value={qty || ''}` / `Number(raw)`）⇒
- * 输入 `0` 被渲染成空串、输入 `0.` 被 `Number('0.') = 0` 顶掉 ⇒ **永远打不出 `0.5`**（窄窗真实存在）。
- * 修法两条：① 保留**正在输入的原始文本**（`draft`，失焦后回到真值渲染）；
- * ② 输入框收敛为 `type="text"` + `inputMode="decimal"` —— `type="number"` 对 `0.` 这种
- * **中间态**会被 UA 直接清空（react-aria / antd 同款处置）。
+ * 病根（issue #5202 · 用户第 7 点「不能直接输入 0，所以导致无法输入 0.？」）：受控数字框把值经
+ * `Number` 承载（`value={qty || ''}` / `Number(raw)`）⇒ 输入 `0` 被渲染成空串、输入 `0.` 被
+ * `Number('0.') = 0` 顶掉 ⇒ **永远打不出 `0.5`**（窄窗真实存在）。两份实现都用
+ * `type="text"` + `inputMode="decimal"` + 字符串草稿解决它。
  *
- * ⚠️ 它**只做「文本 ⇄ 数字」与字符合法性过滤**，不含任何算料口径（口径一律在服务端）。
- * ⚠️ 子单 B（#5201 包 B）的 `components/ui/NumberInput.tsx` 合并后，由母单统一替换本实现。
+ * ## 收敛口径（等价优先；逐站点证据见 issue #5210，测试 = `tests/unit/pages/orders-new-number-parity.test.tsx`）
+ *
+ * - `decimals={3}`：本页这 8 格**都没有本地精度校验**（`validate()` 只校验 `> 0`），旧实现原样承载
+ *   任意位数 ⇒ 取 2（组件默认）会**新增**「3 位小数被静默改值」的行为差异（尺寸/米数直接改钱），
+ *   取 3 则把差异收窄到 >3 位（<1 毫米 / <0.1 分）；且接高那格的服务端可辨粒度本就是 3 位
+ *   （`curtain_calc.derive_plan` 对人工接高取 `round(float(join_height_m), 3)`）。
+ * - **不传 `min` / `max`**：旧实现从不夹紧，本页非法值一律由**可见校验**兜底（「数量须大于 0」/
+ *   「单价须大于 0」/「未填宽（米）」/ 接高上限**就地报错**）⇒ 传 `min`/`max` 等于让输入框
+ *   **静默改值**（接高那格尤其：页面明确要求不得把 0.15 静默截成 0.1）。
+ * - **不传 `allowEmpty`**（默认 `true`）：旧实现在「清空 + 失焦」后同样落 `null`（各站点再分别落
+ *   0 / null）⇒ 同口径；`false` 会把清空**回退到上一个有效值** = 新增行为差异。
+ * - `className` 逐字沿用各站点原有字面量（`check-ui-regression.sh` 比对 neutral token）。
  */
-function NumberField({
-  value,
-  onCommit,
-  testId,
-  ariaLabel,
-  placeholder,
-  className,
-}: {
-  value: number | null
-  /** 提交**合法数字**；清空 / 非法 ⇒ `null`（由调用方决定语义：宽高落 `null`、米数落 0） */
-  onCommit: (next: number | null) => void
-  testId?: string
-  ariaLabel?: string
-  placeholder?: string
-  className?: string
-}) {
-  const [draft, setDraft] = useState<string | null>(null)
-  /**
-   * 草稿只在**仍代表当前值**时保留（`''` 与 `0` 视为同义：两者在下游分别是「清空」与「被拒」）。
-   * 外部改值（算料预填 / 「恢复按公式计算」写回）⇒ 草稿让位 —— 否则页面显示的还是商家敲的半截旧文本
-   * （实测：手改 20 → 点恢复 ⇒ 值已变 9.8，输入框却还写着 20）。
-   */
-  const draftAlive = draft !== null && Number(draft === '' ? 0 : draft) === (value ?? 0)
-  const shown =
-    draftAlive && draft !== null
-      ? draft
-      : value === null || value === undefined || !Number.isFinite(Number(value))
-        ? ''
-        : String(value)
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      data-testid={testId}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      value={shown}
-      onChange={(e) => {
-        const raw = e.target.value
-        // 非法字符忽略（防 NaN）；空串 ⇒ `null`（清空是合法输入态，最终由提交校验兜底）
-        if (!/^\d*\.?\d*$/.test(raw)) return
-        setDraft(raw)
-        onCommit(raw === '' ? null : Number(raw))
-      }}
-      onBlur={() => setDraft(null)}
-      className={className}
-    />
-  )
-}
 
 function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
   return {
@@ -3209,22 +3170,24 @@ function FabricRow({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label required>数量</Label>
-          {/* 布料行的数字框同样换掉（issue #5202）：吞键缺陷与帘行同源 */}
-          <NumberField
+          {/* 布料行的数字框同样换掉（issue #5202）：吞键缺陷与帘行同源；#5210 起 = 共享 `NumberInput` */}
+          <NumberInput
             value={line.quantity}
-            onCommit={(next) => onChangeQty(next ?? 0)}
+            onChange={(next) => onChangeQty(next ?? 0)}
+            decimals={3}
             placeholder="米"
-            ariaLabel="数量"
+            aria-label="数量"
             className={inputClass}
           />
           {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
         </div>
         <div>
           <Label required>单价 (¥/米)</Label>
-          <NumberField
+          <NumberInput
             value={line.unitPrice}
-            onCommit={(next) => onChangePrice(next ?? 0)}
-            ariaLabel="单价 (¥/米)"
+            onChange={(next) => onChangePrice(next ?? 0)}
+            decimals={3}
+            aria-label="单价 (¥/米)"
             className={inputClass}
           />
           {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
@@ -4077,11 +4040,12 @@ function LineItemBlock({
                 <div>
                   <Label required>窗宽 (米)</Label>
                   {/* 三项输入之一（issue #5202）；数字框能打出 `0.`（如 0.5 米窄窗） */}
-                  <NumberField
+                  <NumberInput
                     value={line.width}
-                    onCommit={(next) => onChangeWidth(positiveOrNull(next))}
+                    onChange={(next) => onChangeWidth(positiveOrNull(next))}
+                    decimals={3}
                     placeholder="如 6.6"
-                    ariaLabel="窗宽 (米)"
+                    aria-label="窗宽 (米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
@@ -4089,11 +4053,12 @@ function LineItemBlock({
                 <div>
                   <Label required>窗高 (米)</Label>
                   {/* 三项输入之一（issue #5202） */}
-                  <NumberField
+                  <NumberInput
                     value={line.height}
-                    onCommit={(next) => onChangeHeight(positiveOrNull(next))}
+                    onChange={(next) => onChangeHeight(positiveOrNull(next))}
+                    decimals={3}
                     placeholder="如 2.6"
-                    ariaLabel="窗高 (米)"
+                    aria-label="窗高 (米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
@@ -4106,11 +4071,12 @@ function LineItemBlock({
                   <Label required>用料米数</Label>
                   {/* issue #5202：换成保留原始文本的数字框 —— 改前 `value={line.quantity || ''}`
                       + `Number(raw)` 会把 `0` 渲染成空串（输入 "0" 当场清空 ⇒ 打不出 "0.5"）。 */}
-                  <NumberField
+                  <NumberInput
                     value={line.quantity}
-                    onCommit={(next) => onChangeQty(next ?? 0)}
+                    onChange={(next) => onChangeQty(next ?? 0)}
+                    decimals={3}
                     placeholder="米"
-                    ariaLabel="用料米数"
+                    aria-label="用料米数"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
@@ -4162,10 +4128,11 @@ function LineItemBlock({
                 </div>
                 <div>
                   <Label required>单价 (¥/米)</Label>
-                  <NumberField
+                  <NumberInput
                     value={line.unitPrice}
-                    onCommit={(next) => onChangePrice(next ?? 0)}
-                    ariaLabel="单价 (¥/米)"
+                    onChange={(next) => onChangePrice(next ?? 0)}
+                    decimals={3}
+                    aria-label="单价 (¥/米)"
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
@@ -4571,23 +4538,24 @@ function LineItemBlock({
                           <span className="text-neutral-500">
                             人工加{canJoinHeight ? '接高' : '接宽'}（米，≤ {JOIN_GAP_MAX_METERS}）
                           </span>
-                          <NumberField
-                            testId={
+                          <NumberInput
+                            data-testid={
                               canJoinHeight
                                 ? 'craft-plan-join-height-input'
                                 : 'craft-plan-join-width-input'
                             }
-                            ariaLabel={`人工加${canJoinHeight ? '接高' : '接宽'}（米）`}
+                            aria-label={`人工加${canJoinHeight ? '接高' : '接宽'}（米）`}
                             value={
                               (canJoinHeight
                                 ? line.planOverrides?.joinHeightM
                                 : line.planOverrides?.joinWidthM) ?? null
                             }
-                            onCommit={(next) =>
+                            onChange={(next) =>
                               onChangePlanOverrides(
                                 canJoinHeight ? { joinHeightM: next } : { joinWidthM: next }
                               )
                             }
+                            decimals={3}
                             className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                           />
                         </div>
@@ -4783,12 +4751,13 @@ function LineItemBlock({
                            而那会连带清空尺寸/工艺）。⇒ **override 是商家输的，入口就一直在**。 */}
                     {(feeIsUnpriced && canOverrideFee) || line.processingFeeOverride != null ? (
                       <span className="inline-flex items-center gap-1">
-                        <NumberField
-                          testId="fee-unit-price-override"
-                          ariaLabel="改单价（元/米）"
+                        <NumberInput
+                          data-testid="fee-unit-price-override"
+                          aria-label="改单价（元/米）"
                           placeholder="元/米"
                           value={line.processingFeeOverride}
-                          onCommit={(next) => onProcessingFeeOverrideChange(positiveOrNull(next))}
+                          onChange={(next) => onProcessingFeeOverrideChange(positiveOrNull(next))}
+                          decimals={3}
                           className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                         />
                         <span className="text-neutral-500">元/米</span>

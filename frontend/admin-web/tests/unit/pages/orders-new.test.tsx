@@ -2,7 +2,8 @@
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 // ⚠️ issue #5202（下单页数字输入框修「打不出 `0.`」）：改用保留原始文本的实现
-// （`page.tsx::NumberField`，`type="number"` → `type="text" inputMode="decimal"` 才会留住 `0.` 这种中间态）
+// （`page.tsx` 的数字框 —— issue #5210 起 = 共享 `components/ui/NumberInput.tsx`，
+// `type="number"` → `type="text" inputMode="decimal"` 才会留住 `0.` 这种中间态）
 // ⇒ 本文件里针对这些框的 `toHaveValue(<数字>)` 期望值改为**字符串形**。
 // **断言强度一字未变**（还是同一个值），改的只是 jest-dom 对文本输入框的类型口径。
 // OR-035（工艺规格写侧录入）：#4566 起 `craft` / `isShaped` 的写侧真值来源搬到**加工项**
