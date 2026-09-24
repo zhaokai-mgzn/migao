@@ -1534,6 +1534,42 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "AI Agent Service Unit Tests",
+      "job": "ai-agent-service unit tests",
+      "run_id": 36047987293,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/36047987293",
+      "pr": 5457,
+      "head_sha": "acdcaf91bf77c0808607c66aa46c2892a417bfc8",
+      "head_branch": "fix/5454-menu-name-truth",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-24T19:33:49Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "Case Trust Gate (断言可信度)",
+      "run_id": 36047987662,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/36047987662",
+      "pr": 5457,
+      "head_sha": "acdcaf91bf77c0808607c66aa46c2892a417bfc8",
+      "head_branch": "fix/5454-menu-name-truth",
+      "first_failure_step": "Judge changed case entries (fail-closed)",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-24T19:37:27Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
