@@ -358,6 +358,14 @@ def _assigned_value(source: str, symbol: str, where: str) -> ast.AST:
     return values[0]
 
 
+def _try_shared_reader(source: str, symbol: str, where: str) -> tuple[str, ...] | None:
+    """共享读法**能**直接给出成员时返回它；成员级名字回指会让它按口径漂移报错 ⇒ 返回 `None`。"""
+    try:
+        return assigned_strings(source, symbol, where)
+    except AssertionError:
+        return None
+
+
 def _members_of(source: str, symbol: str, where: str) -> tuple[str, ...]:
     """模块级字面量字符串集合的成员（按源码顺序）。
 
@@ -366,10 +374,9 @@ def _members_of(source: str, symbol: str, where: str) -> tuple[str, ...]:
     按口径漂移报错 ⇒ 这里补一层**成员级**解析：字面量成员直接取，名字成员走共享的
     `declared_strings`（认 `NAME = "字面量"`），其余形态一律报错（fail-closed，不静默给空集）。
     """
-    try:
-        return assigned_strings(source, symbol, where)
-    except AssertionError:
-        pass
+    shared = _try_shared_reader(source, symbol, where)
+    if shared is not None:
+        return shared
     node = _assigned_value(source, symbol, where)
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and len(node.args) == 1:
         node = node.args[0]
