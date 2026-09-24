@@ -18,6 +18,7 @@ import com.migao.admin.security.JwtTokenProvider;
 import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.jsonwebtoken.Claims;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -52,6 +53,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
+    private final MeterRegistry meterRegistry;
     private final UserMapper userMapper;
     private final UserIdentityMapper userIdentityMapper;
     private final TenantMapper tenantMapper;
@@ -63,6 +65,16 @@ public class AuthService {
      * Redis Token 黑名单 key 前缀
      */
     private static final String TOKEN_BLACKLIST_PREFIX = "token:blacklist:";
+
+    /**
+     * 吊销检查「不可执行」的可观测读数（Micrometer counter）。
+     * 与 {@code JwtAuthenticationFilter} 使用**同一个**字面量（由
+     * {@code tests/unit_ci_workflows/test_declared_vs_effective.py} 钉住，防两处各自演化）。
+     */
+    public static final String BLACKLIST_CHECK_UNAVAILABLE_METRIC = "migao.security.revocation_check_unavailable";
+
+    /** 吊销检查不可执行时的日志关键词（告警规则按它匹配 —— 静默降级换绿必红）。 */
+    public static final String BLACKLIST_CHECK_UNAVAILABLE_KEYWORD = "REVOCATION_CHECK_UNAVAILABLE";
 
     /**
      * Refresh Token Cookie 名（审计 07 P1-5/P1-F1）：
@@ -616,7 +628,14 @@ public class AuthService {
         // 检查 Refresh Token 是否被吊销
         Claims claims = jwtTokenProvider.getClaimsFromToken(refreshToken);
         String jti = claims.getId();
-        if (jti != null && isTokenBlacklisted(jti)) {
+        // 检查结果 `null` = **不可执行**（Redis 异常）⇒ 显式降级：拒绝，且用与「已吊销」不同的状态码/文案，
+        // 让「吊销检查失效中」在客户端与告警面都看得见（fail-closed，issue #4866）。
+        Boolean revoked = jti != null ? isTokenBlacklisted(jti) : Boolean.FALSE;
+        if (revoked == null) {
+            throw new BusinessException("AUTH_UNAVAILABLE",
+                    "吊销状态不可判定（Redis 不可用），已按 fail-closed 拒绝本次刷新", 503);
+        }
+        if (revoked) {
             throw BusinessException.authFailed("Refresh Token 已吊销");
         }
 
@@ -943,13 +962,21 @@ public class AuthService {
 
     /**
      * 检查 Token 是否在黑名单中
+     *
+     * @return {@code TRUE}=已吊销 / {@code FALSE}=未吊销 / {@code null}=**检查不可执行**（Redis 异常）
+     *         —— 调用方必须按已吊销处理（fail-closed，issue #4866）
      */
-    private boolean isTokenBlacklisted(String jti) {
+    private Boolean isTokenBlacklisted(String jti) {
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(TOKEN_BLACKLIST_PREFIX + jti));
         } catch (Exception e) {
-            log.warn("Redis 黑名单检查异常: {}", e.getMessage());
-            return false;
+            // ⛔ 不许改回「异常 ⇒ 未吊销（放行）」：那会让 Redis 不可用期间的已吊销/已登出 token 继续可用
+            //（issue #4866）。降级方向登记在 tests/unit_ci_workflows/declared_effective_registry.json 的
+            // security_degradation 台账 —— 改方向 / 去掉读数 ⇒ 判据必红。
+            log.error("{}（吊销检查不可执行 ⇒ 按已吊销拒绝，fail-closed）: jti={}",
+                    BLACKLIST_CHECK_UNAVAILABLE_KEYWORD, jti, e);
+            meterRegistry.counter(BLACKLIST_CHECK_UNAVAILABLE_METRIC).increment();
+            return null;
         }
     }
 

@@ -66,11 +66,11 @@ for f in "${KEY_UI_FILES[@]}"; do
   cur_neutral=$(get_content "$f" | grep -c "neutral" || true)
 
   if [ "$main_neutral" -gt 0 ] && [ "$cur_neutral" -eq 0 ]; then
-    echo "❌ UI 回退: $f（origin/main 有 neutral=${main_neutral}，当前=${cur_neutral}）"
+    echo "❌ UI 回退: ${f}（origin/main 有 neutral=${main_neutral}，当前=${cur_neutral}）"
     REGRESSED=$((REGRESSED + 1))
     FAIL=1
   elif [ "$main_neutral" -gt 0 ] && [ "$cur_neutral" -lt "$main_neutral" ] && [ "$MODE" = "worktree" ]; then
-    echo "⚠️ UI token 减少: $f（main=${main_neutral} → 当前=${cur_neutral}）"
+    echo "⚠️ UI token 减少: ${f}（main=${main_neutral} → 当前=${cur_neutral}）"
   fi
 done
 

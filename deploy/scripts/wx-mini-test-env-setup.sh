@@ -213,11 +213,11 @@ server_run() {
     --instance-id "$SWAS_INSTANCE_ID" \
     --biz-region-id "$SWAS_REGION" \
     --name "$name" --type RunShellScript 2>&1) || {
-      SKIPPED+=("服务器命令 $name（aliyun CLI 调用失败）")
+      SKIPPED+=("服务器命令 ${name}（aliyun CLI 调用失败）")
       warn "aliyun CLI 调用失败"; return 1
     }
   invoke_id=$(printf '%s' "$out" | sed -n 's/.*"InvokeId": *"\([^"]*\)".*/\1/p' | head -1)
-  [[ -n "$invoke_id" ]] || { SKIPPED+=("服务器命令 $name（未拿到 InvokeId）"); warn "未拿到 InvokeId"; return 1; }
+  [[ -n "$invoke_id" ]] || { SKIPPED+=("服务器命令 ${name}（未拿到 InvokeId）"); warn "未拿到 InvokeId"; return 1; }
   tries=0
   while (( tries < 20 )); do
     sleep 3
@@ -230,18 +230,18 @@ server_run() {
       if [[ "$exitcode" == "0" ]]; then
         printf '  %s✓ server %s OK%s\n' "$GREEN" "$RESET" "$name"
       else
-        SKIPPED+=("服务器命令 $name（ExitCode=$exitcode）")
+        SKIPPED+=("服务器命令 ${name}（ExitCode=${exitcode}）")
         warn "服务器命令 $name 退出码 $exitcode"
       fi
       return 0
     elif [[ "$status" == "Failed" || "$status" == "Timeout" ]]; then
-      SKIPPED+=("服务器命令 $name（状态 $status）")
+      SKIPPED+=("服务器命令 ${name}（状态 ${status}）")
       warn "服务器命令 $name 状态 $status"
       return 1
     fi
     tries=$((tries + 1))
   done
-  SKIPPED+=("服务器命令 $name（轮询超时）")
+  SKIPPED+=("服务器命令 ${name}（轮询超时）")
   warn "服务器命令 $name 轮询超时，稍后可手动核对"
 }
 
@@ -294,7 +294,7 @@ pause "确认服务器配置结果后回车继续"
 
 # ── Stage 5 · 本地小程序配置 ───────────────────────────────────────────────
 stage "本地小程序配置（自动）"
-say "把测试环境 API 域名写进 $ENV_FILE，构建时自动指向线上后端。"
+say "把测试环境 API 域名写进 ${ENV_FILE}，构建时自动指向线上后端。"
 write_env TARO_APP_API_URL "$WX_API_DOMAIN"
 write_env TARO_APP_AI_API_URL "$WX_API_DOMAIN"
 # Taro 支持 TARO_APP_ID 覆盖构建产物 appid（dist/project.config.json），与
