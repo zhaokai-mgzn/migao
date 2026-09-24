@@ -1,4 +1,4 @@
-# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, OR-014
+# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, PR-010, OR-014
 """**共享夹具的属性写方**必须声明复位手段（issue #4075 的机制半边：L0 判据 + 红证）。
 
 ## 病灶（run `35243351675` @`67db87ae`，两条腿同一条断言结论相反）
@@ -41,7 +41,8 @@
 ## 为什么口径是"属性写方"而不是"带写期望"
 
 裁定的原文是「凡 `user_inputs` 点名种子商品且带写期望的用例」。直接按
-`assertion_taxonomy.is_write_case` 取"写期望"（#5247 前 **49 条**、#5247 后 **15 条**），
+`assertion_taxonomy.is_write_case` 取"写期望"（读数：#5247 前 **49 条**、#5247 后 **15 条**
+—— 数字是**当时的读数**、随用例面变，不是阈值），
 其中绝大多数是 `order_create`（**下单**不改商品属性，它只是**引用**该商品）—— 对它们要求
 "复位"是无对象的假红（R2：判据不得拦掉原本合法的输入）。故按**结构性**三层收窄，每层都可复算：
 
@@ -51,8 +52,12 @@
   ∩ **活写方**的期望（tool ∈ 写工具扫描面；拆 ` or `，与 runner 同口径）
   → 属性（(tool, action) → 属性键，显式登记）
 ```
-⇒ 收窄后**命中 0 条**（活写方 = `order_create` / `aftersale_create` / `notification_manage` /
-`settings_manage`，都不触达商品属性）。**不适用域负例**见 `test_order_only_cases_are_not_in_scope`
+⇒ 收窄后的**命中数随写方面变**（这正是判据要的：写方回绑/退场都立刻反映到命中数上）：
+#5247 后是 **0 条**（当时活写方 `order_create` / `aftersale_create` / `notification_manage` /
+`settings_manage` 都不触达商品属性）；**#5303 起是 3 条**（`PR-009` / `PR-010` 的
+`product_update` → `base_price`、`PR-021` 的 `sku_update` → `sku_price`）—— 三条各自声明了
+对应复位，故判据 ② 判绿：**机制真的在被使用**，不是空转。
+**不适用域负例**见 `test_order_only_cases_are_not_in_scope`
 （`order_create` 用例**不得**被判红 —— 库里 13 条点名种子商品的下单用例靠这条口径不被假红）。
 
 ## #5247 改判（2026-09-23 用户裁定「B 端米宝只读化」）：真值面为什么变了
@@ -76,6 +81,35 @@
 触达可复位属性却未声明复位即红、无复位类型的属性未登记即红、台账有陈旧条目即红，
 每条都有**能真的变红**的红证，且红证已重新锚定到当前可达的写方（整工具写 = `order_create`，
 action 级写 = `notification_manage(mark_read)`）。消失的是"写方本身"这个被测对象，不是判别力。
+
+## #5303 改判（2026-09-24，承接 #5247、**不是推翻**）：两个 A 档可逆写工具**回绑** ⇒ 真值面又变了
+
+**新事实**：`product_update` / `sku_update` 被**重新绑定**到 B 端 `product_skill`
+（product_skill 也进了 `_CONFIRM_GATE_BINDING_SKILLS` 名册）。二者是 #5285 只读化后唯一回绑的
+**A 档可逆写**：前者写**商品级** `products.base_price`（PATCH
+`/api/admin/agent/products/{id}`，字段 `basePrice`），后者写 `product_skus.price`
+（PATCH `…/skus/price`）；都带工具级预览闸（缺 `before_price` 的改价 fail-closed，
+且 `before_price` 不进请求体）。⇒ **它们重新可达**。
+
+**三处口径同步**（同一个理由：**判据面必须与真实可达面逐字一致** —— 多一个 = 按旧地图判，
+少一个 = 静默漏判）：
+① `.github/assertion_taxonomy.py` 的 `WRITE_TOOLS` **补回**这两个名字（见该文件的 #5303 注释）；
+本文件的 `WRITE_TOOL_SURFACE` 从它**推导** ⇒ 扫描面自动跟着变（**没有第二份手抄清单**）；
+② `PRODUCT_ATTR_WRITERS` 新增两行（`("product_update","")` → `base_price`、
+`("sku_update","")` → `sku_price`），并从 `RETIRED_ATTR_WRITERS` **移出同两条 key**
+（同一 key 同时留在留档表里 = 双源：留档表是**历史**，不得读成"仍活着"）；
+③ runner 新增复位类型 `product_price_restore`（attr `base_price`），与既有的
+`sku_price_restore`（attr `sku_price`）**正交** —— 商品级基准价与单规格价是两个属性，
+只复位后者治不了前者（`product_skus.price` 的接地真值就是商品级价）。
+
+**判据 ② 从"无对象"变回"有对象"（这是改判的目的，不是副作用）**：`PR-009` / `PR-010`
+写商品级价、`PR-021` 写 SKU 价 ⇒ 三条都必须声明对应复位（`post_clean`），否则本文件判红。
+`REGISTERED_RESTORE_GAPS` **仍为空**：判据 ③ 只收"写了**尚无复位类型**的属性"的用例，
+而这两个属性**都已有复位类型** ⇒ 走判据 ② 的"必须声明"出口，不进台账（台账没有被挪用成白名单）。
+
+**为什么不是放宽**：判据 ①②③ 的代码一字未改，扫描面/profile 一条没删 —— 变的是**被测对象**：
+#5247 让它们消失（判据无对象 ⇒ 红证只能注入），#5303 让它们回来（判据重新有**真**对象）。
+新增两条 key 让判据 ① **多**两个必须被回答的写方 ⇒ 更严，不是更松。
 
 ## 为什么不能只靠"读方止血"（#4078 已做）
 
@@ -174,8 +208,8 @@ WRITE_TOOL_SURFACE: frozenset = (
 
 #: `(tool, action)` → **属性键**（`""` = 是写方但**不改共享夹具的属性** ⇒ 判据 ②③ 都不适用）。
 #: `action` 取 `""` 表示期望里没声明 action（`is_write_expectation` 对 action 级写工具**保守判写**）。
-#: ⚠️ 只登记**库里真实出现**的活写方 key（当前 3 条具体 action + 2 条"未声明 action"）——
-#: 每个 key 都要有人回答"它改的是不是共享夹具"；**未在此归类 ⇒ 判据 ① 直接红**。
+#: ⚠️ 只登记**库里真实出现**的活写方 key —— 每个 key 都要有人回答「它改的是不是共享夹具」；
+#: **未在此归类 ⇒ 判据 ① 直接红**。
 #: 为什么不把这张表也整体推导：推导出来等于"永远已归类"= 判据 ① 变空壳 ——
 #: "这个新写方改不改共享夹具"必须由人判定，只能显式登记。
 PRODUCT_ATTR_WRITERS: dict = {
@@ -184,6 +218,14 @@ PRODUCT_ATTR_WRITERS: dict = {
     ("order_create", ""): "",
     # 建售后工单：写的是**工单实体**，不触达商品属性。
     ("aftersale_create", ""): "",
+    # ── #5303 回绑的两个 A 档可逆写工具：**都是商品属性写方**（本次改判的核心）──────
+    # 商品级统一定价（`products.base_price`；PATCH `/api/admin/agent/products/{id}`）。
+    # 属性键是独立的 `base_price`：它与 `sku_price` **正交**（商品级 vs 单规格），
+    # 共用一个键会让"声明了错误的那一个"也判绿（假绿）——红证见
+    # test_price_restore_types_are_orthogonal。
+    ("product_update", ""): "base_price",     # PR-009 / PR-010 的写方
+    # 单规格调价（`product_skus.price`；PATCH `…/skus/price`）—— PR-021 的写方。
+    ("sku_update", ""): "sku_price",
     # ── action 级写方（taxonomy 的 `WRITE_TOOL_ACTIONS`）────────────────────
     # 改密码：写的是**账号设置**，不触达商品属性（库里唯一在册的 settings 写方 = ST-003）。
     ("settings_manage", "change_password"): "",
@@ -198,16 +240,21 @@ PRODUCT_ATTR_WRITERS: dict = {
 }
 
 #: **留档**（#4075 / #4128 时代的商品属性写方 → 属性键），**已不是活写方**。
-#: 为什么留：runner 的 `RESTORE_TYPES_BY_ATTR`（`status` / `sku_price`）与用例库里仍在的
-#: 3 条 `post_clean` 声明（PR-007 / PR-025 / PR-021）指向这些属性 —— 本表是
+#: 为什么留：runner 的 `RESTORE_TYPES_BY_ATTR`（`status` / `sku_price` / `base_price`）与用例库里
+#: 仍在的 `post_clean` 声明指向这些属性 —— 本表是
 #: 「runner 新增复位类型 ⇒ 必须在写面词表里有出处」这条**反向判据**的锚点
 #: （见 `test_runner_restore_attrs_have_a_known_writer_surface`）。
 #: ⚠️ 它**不参与**判据 ① 的活写方归类（扫描面不看它），也**不得**再往里加东西 ——
 #: 新增写方一律走「taxonomy → `WRITE_TOOL_SURFACE` → `PRODUCT_ATTR_WRITERS`」这条链。
+#: ⚠️ 2026-09-24（issue #5303）：原留档条目 `("sku_update","") → sku_price` 与
+#: `("product_update","") → product_attr` **已移出本表** —— 二者随 #5303 **回绑 B 端
+#: product skill**（A 档可逆写）⇒ 重新成为**活写方**，已按新真值登记进 `PRODUCT_ATTR_WRITERS`
+#: （`base_price` / `sku_price`）。**同一 key 不得同时留在两张表**：留档表是**历史**，
+#: 留着它会读成"仍活着"，而判据 ① 用的是活写方表 ⇒ 两表打架时没人会红（双源形态）。
+#: 判据 `test_no_writer_key_is_double_claimed` 把"不得两表重复"变成机器可判。
+#: （`product_attr` 这个属性键仍有出处：`("product_manage","update")` —— 该工具**未**回绑。）
 RETIRED_ATTR_WRITERS: dict = {
-    ("sku_update", ""): "sku_price",                  # 单独 SKU 调价（PR-021 的写方）
     ("product_manage", "toggle_status"): "status",    # 上下架（PR-007 / PR-025 的写方）
-    ("product_update", ""): "product_attr",           # base_price / allow_return_restock / …
     ("product_manage", "update"): "product_attr",     # images / 字段级更新
     ("inventory_manage", "adjust"): "stock",          # 出库（PR-005 的写方）
     ("product_manage", "create"): "",     # 建品：写**新对象**，不触达共享夹具属性（#3835 守卫单独治）
@@ -222,6 +269,9 @@ RETIRED_ATTR_WRITERS: dict = {
 #:   · `PR-005` —— 已改判为「只读库存台账 + 入库批次」（`stock_ledger_query` /
 #:     `inbound_order_query(batches)`），**不再写 stock**（写 action `adjust` 已从源码删除）；
 #:   · `PR-009` —— 已随 #5247 退役：`product_update`（改 base_price）从 B 端解绑，写商品属性的断言已删；
+#:     ⚠️ **2026-09-24（#5303）改判**：`product_update` **回绑** B 端 product skill ⇒ 该条的写方
+#:     **重新可达**；但 `base_price` 已有复位类型（`product_price_restore`）且用例声明了它
+#:     ⇒ 走判据 ② 的"必须声明复位"出口，**不进本台账**（台账只收"尚无复位类型"的属性）。
 #:   · `PR-010` —— 已随 #5247 退役（同上，`product_update` 写面）；其 processing_items 一侧
 #:     早在 #4371 就随「商品不再持有加工项」退场；
 #:   · `PR-017` —— 已随 #5247 退役（`product_update` / `product_manage` 写 allow_return_restock
@@ -231,6 +281,11 @@ RETIRED_ATTR_WRITERS: dict = {
 #:   · `CH-006` —— 已随 #5247 退役（改价 199 的断言改成 `product_search` / `product_detail` 只读核对）。
 #: 证据链（不是"清空即销账"）：复算双向相等 + 新增缺口红证 + 陈旧条目红证 +
 #: `test_retired_writers_are_no_longer_seen_as_writers`（留档的写方真的不再被判据看见）。
+#: ⚠️ 2026-09-24（#5303）：**台账仍为空**，同样不是销账 —— 回绑的两个写工具
+#: （`product_update` / `sku_update`）触达的属性**都已有复位类型**（`base_price` /
+#: `sku_price`）⇒ 它们由判据 ②（必须声明复位）管，而不是判据 ③（登记缺口）。
+#: 若哪天只回绑了工具、没给属性配复位类型，`product_price_restore` 一撤 ⇒ 判据 ③ 立刻把
+#: `PR-009` / `PR-010` 报成新缺口（红证 `test_red_proof_rebound_writer_without_a_restore_type_is_a_gap`）。
 REGISTERED_RESTORE_GAPS: dict = {}
 
 
@@ -242,6 +297,9 @@ def live_write_expectations(case: dict) -> list:
     """用例里**当前可达写方**的写期望 → `[(tool, action)]`（排序去重，纯函数）。
 
     扫描面 = `WRITE_TOOL_SURFACE`（从 `assertion_taxonomy` 推导，见其 docstring）。
+    ⚠️ 2026-09-24（#5303）：`product_update` / `sku_update` 回绑 B 端 product skill ⇒ 它们
+    重新出现在本函数的扫描面里（此前是 #5247 口径下的幽灵写工具）⇒ 判据 ①/② 对
+    `PR-009` / `PR-010` / `PR-021` **重新有对象**（不是新增判据，是判据重新有了被测对象）。
     ⚠️ 拆 ` or `：字符串形态的期望（`["direct_reply or order_create or interact"]`，`CH-009`
     就是它）由 `expectation_tools` 拆过一次，而 dict 形态里的 ` or `（旧形态
     `{"tool": "product_update or product_manage"}`）由本函数拆 —— 与 runner 的
@@ -354,6 +412,18 @@ def _writer_attr_vocabulary() -> set:
     return {a for a in (*PRODUCT_ATTR_WRITERS.values(), *RETIRED_ATTR_WRITERS.values()) if a}
 
 
+def double_claimed_writer_keys() -> list:
+    """**同时**出现在活写方表与留档表里的 `(tool, action)` key（issue #5303 落成的判据）。
+
+    为什么必须可判：留档表的语义是**"已不是活写方"**（历史），活写方表是**判据 ① 的比对面**。
+    同一个 key 两边都有 = 两份互相矛盾的声明共存，而**没有任何东西会因此变红**
+    （判据 ① 只看活写方表）⇒ 读的人会按留档那句"已不是活写方"做判断。
+    #5303 的 `product_update` / `sku_update` 回绑正是这个形态：它们必须**只在**活写方表里
+    （留档条目已移出）。纯函数，零依赖。
+    """
+    return sorted(set(PRODUCT_ATTR_WRITERS) & set(RETIRED_ATTR_WRITERS))
+
+
 def orphan_restore_attrs() -> list:
     """runner 里**没有写面出处**的复位属性（反向漏判：要求声明会指向没人能声明的目标）。"""
     vocab = _writer_attr_vocabulary()
@@ -421,9 +491,15 @@ class TestSeedTruthAndScanSurface:
             f"扫描面与 taxonomy 不一致：{sorted(WRITE_TOOL_SURFACE)}")
         assert {"order_create", "aftersale_create"} <= WRITE_TOOL_SURFACE, (
             "整工具写方（C 端下单 / 建工单）不在扫描面里 —— 判据 ① 会漏掉它们")
-        assert not ({"product_manage", "product_update", "sku_update", "inventory_manage",
-                     "order_manage", "processing_item_manage"} & WRITE_TOOL_SURFACE), (
-            "#5247 已退场的写工具仍在扫描面里 ⇒ 判据会按**旧地图**判（幽灵写方）")
+        # ⚠️ 2026-09-24（#5303）：`product_update` / `sku_update` 回绑 B 端 product skill
+        # ⇒ **必须回到扫描面**。原文把它们放在下面那条"已退场"负例断言里（那是 #5247 的真值）
+        # —— 留着会与本条判据面打架：真值面少两个写方 = 判据**静默漏判**（#5247 的反面形态）。
+        assert {"product_update", "sku_update"} <= WRITE_TOOL_SURFACE, (
+            "#5303 回绑的两个 A 档可逆写工具不在扫描面里 ⇒ 含它们期望的用例不再被判成"
+            "写用例（效果层 / 复位要求对它静默失效）")
+        assert not ({"product_manage", "inventory_manage", "order_manage",
+                     "processing_item_manage"} & WRITE_TOOL_SURFACE), (
+            "#5247 已退场、且 #5303 **未**回绑的写工具仍在扫描面里 ⇒ 判据按旧地图判（幽灵写方）")
 
     def test_scan_surface_covers_the_known_writers(self):
         """**扫描面自证**：当前**存在**的写方必须被 `live_write_expectations` 认出来。
@@ -456,6 +532,29 @@ class TestSeedTruthAndScanSurface:
         assert {k[0] for k in live} >= {"order_create", "aftersale_create", "settings_manage"}, (
             f"真实库的活写方没被认全：{sorted(live)}")
 
+    def test_rebound_writers_are_seen_by_the_surface(self):
+        """**#5303 判据（防空转）**：回绑的两个 A 档可逆写工具必须被 `live_write_expectations` 认出。
+
+        为什么必须钉在**真实库**上（不只是钉 taxonomy）：扫描面漂移的形态正是"taxonomy 改了、
+        库里那条期望却没被认出来" —— 此时判据 ② 对 `PR-009` / `PR-010` / `PR-021` **静默**失效
+        （无对象 ⇒ 判绿，`migao-acceptance`「绿了但没跑」）。
+        判别力（反方向）：**未**回绑的 `product_manage` 必须仍认不出（幽灵写方）。
+        """
+        by = {c["id"]: c for c in _all_cases()}
+        assert ("product_update", "") in live_write_expectations(by["PR-009"]), (
+            "#5303：PR-009 的 `product_update` 期望没被认成活写方 ⇒ 判据 ② 对它静默失效"
+            f"（实际认到：{live_write_expectations(by['PR-009'])}）")
+        assert ("product_update", "") in live_write_expectations(by["PR-010"]), (
+            "#5303：PR-010（写链路已恢复）的 `product_update` 期望没被认成活写方 ⇒ 同上"
+            f"（实际认到：{live_write_expectations(by['PR-010'])}）")
+        assert ("sku_update", "") in live_write_expectations(by["PR-021"]), (
+            "#5303：PR-021 的 `sku_update` 期望没被认成活写方 ⇒ 同上"
+            f"（实际认到：{live_write_expectations(by['PR-021'])}）")
+        ghost = {"id": "FAKE-12", "user_inputs": ["把遮光窗帘改成 199 元"],
+                 "expectations": [{"tool": "product_manage", "args": {"action": "update"}}]}
+        assert live_write_expectations(ghost) == [], (
+            "未回绑的 `product_manage` 被算成活写方 ⇒ 扫描面漂移（判据按旧地图判）")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 四、判据 ①：写面必须归类（fail-closed）
@@ -465,14 +564,30 @@ class TestWriteSurfaceIsClassified:
     def test_every_live_write_is_classified(self):
         """**核心**：活写方的每个 `tool(action)` 写期望都已归类（fail-closed）。
 
-        #5247 后真实库里的活写方 key 只有 3 个具体写 + 2 个"未声明 action"的保守判写口子
-        （见 `PRODUCT_ATTR_WRITERS`）—— 少，但**每一个都必须有人回答**"改不改共享夹具"。
+        #5247 后真实库里的活写方只剩 5 个 key（3 类"不触达夹具" + 2 个"未声明 action"的保守
+        判写口子，见 `PRODUCT_ATTR_WRITERS`）；**#5303 起多两个真·商品属性写方**
+        （`product_update` / `sku_update` 回绑）—— 少，但**每一个都必须有人回答**"改不改共享夹具"。
         """
         bad = unclassified_live_writes(_all_cases())
         assert bad == {}, (
             "出现**未归类**的活写方 —— 它改的是不是共享夹具没人回答，"
             "判据 ②③（要不要复位）因此无从适用。请在 PRODUCT_ATTR_WRITERS 显式归类：\n  "
             + "\n  ".join(f"{k} ← {v}" for k, v in sorted(bad.items())))
+
+    def test_no_writer_key_is_double_claimed(self, monkeypatch):
+        """**#5303 新判据**：一个 `(tool, action)` key **不得同时**出现在活写方表与留档表里。
+
+        留档表的语义是"**已不是**活写方"（历史），活写方表是判据 ① 的比对面 —— 两表同 key
+        = 两份互相矛盾的声明共存，而判据 ① 只看活写方表 ⇒ **没有任何东西会因此变红**。
+        #5303 回绑 `product_update` / `sku_update` 时正是这个形态（留档条目必须移出）。
+        """
+        assert double_claimed_writer_keys() == [], (
+            "同一写方 key 同时被登记为「活写方」与「已退场留档」—— 留档会读成"
+            f"「仍活着」，而判据 ① 只看活写方表（双源）：{double_claimed_writer_keys()}")
+        # 注入式红证：把同一条 key 塞回留档表 ⇒ 判据必须报出来（否则它是空壳）
+        monkeypatch.setitem(RETIRED_ATTR_WRITERS, ("product_update", ""), "product_attr")
+        assert double_claimed_writer_keys() == [("product_update", "")], (
+            "同一 key 在两表里都存在却认不出来 ⇒ 本判据空转（假绿）")
 
     def test_red_proof_unclassified_action_is_caught(self, monkeypatch):
         """**红证 ①（action 级写方）**：没归类的写 action ⇒ 判据必红。
@@ -505,11 +620,16 @@ class TestWriteSurfaceIsClassified:
         """**留档 / 边界**：已退场的写工具**不被**扫描面看见 —— 这是有意的口径。
 
         扫描面 = **当前可达**的写方（见 `WRITE_TOOL_SURFACE` 的 docstring）。#5247 把
-        `product_manage` / `product_update` / `sku_update` 从 B 端解绑（两侧工具集都不可达）
-        ⇒ 它们不再是写方，本判据看不见它们（这就是本文件在真实库上"少了几条"的原因）。
-        口径的另一半由 taxonomy 的 `test_write_tool_sets_only_name_reachable_tools` 兜底：
-        新增写工具必须先在 taxonomy 里登记，否则它**不是**"可达写方"。
-        判别力没有丢：**活**写方的新 action 仍会被判据 ① 拦住（见上面两条红证）。
+        `product_manage` / `order_manage` / … 从 B 端解绑（两侧工具集都不可达）
+        ⇒ 它们不再是写方，本判据看不见它们。
+        ⚠️ 2026-09-24（#5303）：原本文用 `product_update` / `sku_update` 当"幽灵"的活例 ——
+        **它们已回绑、重新可达** ⇒ 不再是本条的实例（继续拿它们当负控 = 用真写方证明
+        "看不见写方"，红证会变成永远不可能红的假证）。现取的幽灵实例是 `product_manage`
+        （#5247 解绑、#5303 **未**回绑）。口径的另一半由 taxonomy 的
+        `test_write_tool_sets_only_name_reachable_tools` 兜底：新增写工具必须先在 taxonomy
+        里登记，否则它**不是**"可达写方"。
+        判别力没有丢：**活**写方的新 action 仍会被判据 ① 拦住（见上面两条红证），
+        回绑的写方会被 `test_rebound_writers_are_seen_by_the_surface` 正面认出来。
         """
         fake = [{"id": "FAKE-2", "user_inputs": ["改价"],
                  "expectations": [{"tool": "product_price_bulk_update"}]}]
@@ -539,12 +659,15 @@ class TestWriteSurfaceIsClassified:
 class TestSharedFixtureWritersDeclareRestore:
     """判据 ②：写共享夹具**可复位属性**的活写方必须声明复位。
 
-    ⚠️ 2026-09-24（#5247）：本判据在**真实库上命中 0 条** —— 活写方（`order_create` /
+    ⚠️ 2026-09-24（#5247）：本判据**一度**在真实库上命中 0 条 —— 当时的活写方（`order_create` /
     `aftersale_create` / `notification_manage` / `settings_manage`）都不触达商品属性
-    ⇒ 没有"必须声明复位"的对象。**这不是放宽**：机制照旧可红，只是被测对象（商品属性写方）
-    已被 #5247 删除。为了证明机制仍活着，下面的红证把"触达可复位属性"这一格**注入**到
-    当前可达的写方上（原口径直接拿 PR-021 / PR-025 / PR-007 当写方，那三个写工具已解绑
-    ⇒ 前提消失，红证会变成"永远不可能红"的假证）。
+    ⇒ 没有"必须声明复位"的对象。**那不是放宽**：机制照旧可红，只是被测对象（商品属性写方）
+    已被 #5247 删除，当时的红证只能把"触达可复位属性"这一格**注入**到可达写方上。
+    ⚠️ 2026-09-24（#5303）**改判**：`product_update` / `sku_update` 回绑 ⇒ 真实库重新有
+    **真·商品属性写方**（`PR-009` / `PR-010` → `base_price`、`PR-021` → `sku_price`）⇒ 本判据
+    重新有**真对象**（`test_rebound_writers_declare_their_restore` + 不带注入的红证
+    `test_red_proof_rebound_writer_without_post_clean_is_caught`）。上面那两条注入式红证
+    **保留**：它们证的是机制本身，与对象是否存在无关（R1：不因为对象回来了就删证明）。
     """
 
     def test_no_shared_fixture_writer_lacks_a_restore(self):
@@ -601,21 +724,87 @@ class TestSharedFixtureWritersDeclareRestore:
             f"真实库里的活写方没被扫到（判据空跑？）：{sorted(miss)}")
 
     def test_retired_writers_are_no_longer_seen_as_writers(self):
-        """**改判留档**：`REGISTERED_RESTORE_GAPS` 那 7 条的写方在新真值下**不存在**。
+        """**改判留档**：被判"已改判为只读 / 已退役"的用例，其期望里**不得**再有活写方。
 
         逐条留档（为什么不再在册）见 `REGISTERED_RESTORE_GAPS` 的 docstring；
-        这里把"它们真的不再被判据看见"变成机器可判：9 条改判/退役用例的期望里
-        **不得**再有活写方。判别力：谁要是把写方加回这些用例（例如重新声明
-        `product_manage` 之外的某个活写工具），判据 ①（未归类即红）/②（未声明复位即红）
-        会立刻响 —— 台账的"留档"结论随之必须重算。
+        这里把"它们真的不再被判据看见"变成机器可判。
+        ⚠️ 2026-09-24（#5303）：原 9 条名单里的 `PR-009` / `PR-010` / `PR-021` **已移出** ——
+        `product_update` / `sku_update` 回绑 ⇒ 这三条**重新是活写方**（把它们留在名单里 =
+        用"已退役"的判据锁住三条已回归的用例：本条会恒红，随后多半被人删掉换成弱断言）。
+        `PR-010` 是集成期**追加**恢复的一条（写链路「改价 + 确认闸」整条回来），
+        与 PR-009 同写 `base_price`。
+        它们的新真值由 `test_rebound_writers_are_seen_by_the_surface`（被认成活写方）与
+        `test_rebound_writers_declare_their_restore`（**已声明**对应复位）正面钉住。
+        判别力：谁要是把写方加回**其余 6 条**（例如重新声明某个活写工具），判据 ①（未归类即红）
+        /②（未声明复位即红）会立刻响 —— 台账的"留档"结论随之必须重算。
         """
         by = {c["id"]: c for c in _all_cases()}
-        for cid in ("PR-005", "PR-009", "PR-010", "PR-017", "PR-021",
-                    "PR-025", "PR-026", "PR-027", "CH-006"):
+        for cid in ("PR-005", "PR-017", "PR-025", "PR-026", "PR-027", "CH-006"):
             got = live_write_expectations(by[cid])
             assert got == [], (
                 f"{cid} 仍带着活写方期望 {got} —— 「已改判为只读/已退役」这条留档不再成立，"
                 "台账（现为空）必须按新真值重算")
+
+    # ── #5303：回绑写方的**正面**判据（真实库 + 无注入红证）─────────────────────
+    def test_rebound_writers_declare_their_restore(self):
+        """**#5303 主判据（真实库）**：回绑写方的三条用例（`PR-009` / `PR-010` / `PR-021`）
+        都必须声明复位。
+
+        这是本判据从"无对象"变回"有对象"的直接判据 —— 集成方只回绑工具、漏了 `post_clean`
+        （或声明了**另一个**复位类型 / 属性键对不上）⇒ 本条先红。
+        """
+        by = {c["id"]: c for c in _all_cases()}
+        rebound = ["PR-009", "PR-010", "PR-021"]
+        miss = missing_restores([by[cid] for cid in rebound])
+        assert miss == {}, (
+            "#5303 回绑的写方缺复位声明 ⇒ 跑完把共享夹具留给同栈其它用例（#4075 的病灶）：\n  "
+            + "\n  ".join(f"{cid}: 缺 {sorted(a)} 的复位" for cid, a in sorted(miss.items())))
+        for cid in ("PR-009", "PR-010"):
+            assert "product_price_restore" in declared_restore_types(by[cid]), (
+                f"{cid} 写的是**商品级** `base_price` ⇒ 必须声明 `product_price_restore`："
+                f"{sorted(declared_restore_types(by[cid]))}")
+        assert "sku_price_restore" in declared_restore_types(by["PR-021"]), (
+            "PR-021 写的是 **SKU 价** ⇒ 必须声明 `sku_price_restore`："
+            f"{sorted(declared_restore_types(by['PR-021']))}")
+
+    def test_red_proof_rebound_writer_without_post_clean_is_caught(self):
+        """**红证 ②（#5303 真写方，**零注入**）**：回绑的两个工具触达可复位属性、用例却没声明
+        复位 ⇒ 必红。
+
+        与上面两条注入式红证的分工：它们证"（属性键 → 复位类型）这一格生效"，本条证
+        "**真实的**回绑写方此刻正被判据看着" —— #5303 之后不再需要把属性键注入到
+        `order_create` 上才能触发判据 ②（对象本身回来了）。
+        """
+        for cid, tool, attr, restore in (
+                ("FAKE-13", "product_update", "base_price", "product_price_restore"),
+                ("FAKE-14", "sku_update", "sku_price", "sku_price_restore")):
+            fake = [{"id": cid, "user_inputs": ["把遮光窗帘改成 199 元"],
+                     "expectations": [{"tool": tool}]}]
+            assert touched_attrs(fake[0]) == {attr}, (
+                f"{tool} 没被算成写 {attr} ⇒ 判据 ② 对它无对象：{touched_attrs(fake[0])}")
+            assert missing_restores(fake) == {cid: [attr]}, (
+                f"{tool} 无复位声明却没判红 ⇒ 判据 ② 在真实写方上失效：{missing_restores(fake)}")
+            ok = [dict(fake[0], post_clean=[{"type": restore, "product_keyword": "遮光窗帘"}])]
+            assert missing_restores(ok) == {}, (
+                f"声明了 {restore} 仍判红 ⇒ 判据恒红（判别力失效）")
+
+    def test_price_restore_types_are_orthogonal(self):
+        """**#5303 正交性判据**：商品级 `base_price` 与单规格 `sku_price` 各绑各自的复位类型。
+
+        为什么必须钉住：若两个属性共用一个键（或两个复位类型共用一个 attr），
+        "写商品级价、却只声明了 SKU 价复位"会被判绿 —— 那是**假绿**（世界仍然是脏的），
+        正是 #4075 病根在新写方上的重现：复位手段对不上被改的那个属性。
+        """
+        m = runner_restore_map()
+        assert m.get("base_price") == "product_price_restore", (
+            f"商品级基准价没绑定 `product_price_restore`：{m}")
+        assert m.get("sku_price") == "sku_price_restore", f"SKU 价的复位类型被改了：{m}"
+        fake = [{"id": "FAKE-15", "user_inputs": ["把遮光窗帘改成 199 元"],
+                 "expectations": [{"tool": "product_update"}],
+                 "post_clean": [{"type": "sku_price_restore", "product_keyword": "遮光窗帘",
+                                 "color_name": "米白", "price": 168}]}]
+        assert missing_restores(fake) == {"FAKE-15": ["base_price"]}, (
+            "写商品级价、只声明 SKU 价复位竟判绿 ⇒ 两个属性不是正交的（假绿）")
 
     # ── 不适用域负例（R2：判据不得拦掉原本合法的输入）────────────────────────
     def test_order_only_cases_are_not_in_scope(self):
@@ -735,6 +924,21 @@ class TestUnrestorableWritersAreRegisteredGaps:
         assert ledger_stale_entries(_all_cases()) == ["PR-005"], (
             "陈旧条目没被认出来 ⇒ 台账会僵化（「只许缩短」这条语义失效）")
 
+    def test_red_proof_rebound_writer_without_a_restore_type_is_a_gap(self, monkeypatch):
+        """**红证 ③（#5303 的反方向）**：撤掉 `base_price` 的复位类型绑定 ⇒ 回绑的写方**立刻**
+        变成"无复位类型"的缺口（必须登记台账）。
+
+        为什么值得单列：它证"台账仍为空"**不是销账** —— `PR-009` 不进台账，只因为 `base_price`
+        已有复位类型；绑定一撤，同一条用例立刻走台账路径（fail-closed）。
+        """
+        monkeypatch.delitem(lr.RESTORE_TYPES_BY_ATTR, "base_price")
+        fake = [{"id": "FAKE-16", "user_inputs": ["把遮光窗帘改成 199 元"],
+                 "expectations": [{"tool": "product_update"}]}]
+        assert unregistered_restore_gaps(fake) == {"FAKE-16": ["base_price"]}, (
+            f"没有复位类型的属性没走台账路径（判据 ③ 失效）：{unregistered_restore_gaps(fake)}")
+        assert ledger_new_entries(fake) == ["FAKE-16"], (
+            "新缺口没进红名单 ⇒ 台账的 fail-closed 语义失效")
+
     def test_unknown_action_attr_lands_in_the_ledger_path(self):
         """`action` 未声明的 action 级写工具走台账路径（可见），不被当成"不改夹具"。
 
@@ -769,6 +973,13 @@ class TestRunnerRegistryIsTheSingleSource:
                 f"{t} 不能在 post 阶段执行 ⇒ 写方无从声明（#4075 的机制等于没落地）：{meta}")
         assert "product_status_restore" in lr._POSTCLEAN_TYPES
         assert "sku_price_restore" in lr._POSTCLEAN_TYPES
+        # #5303 的复位族第三批：商品级基准价（`product_update` 的写面）—— 属性键必须**独立**
+        # 于 `sku_price`（正交性判据见 TestSharedFixtureWritersDeclareRestore
+        # ::test_price_restore_types_are_orthogonal）。
+        assert "product_price_restore" in lr._POSTCLEAN_TYPES
+        assert lr.RESTORE_TYPES_BY_ATTR.get("base_price") == "product_price_restore", (
+            "#5303 回绑的 `product_update` 写的是商品级 `base_price` —— 没有独立属性键 ⇒ "
+            f"判据 ②/③ 对它对不上号：{lr.RESTORE_TYPES_BY_ATTR}")
         # #4992 的复位族第二批（订单状态 / 客户档案）：同一条结论通道
         # （`restore_failures` → `completion_verdict`）—— 行为面守卫见
         # `tests/unit_ci_workflows/test_shared_fixture_restore_order_customer.py`。
@@ -782,7 +993,11 @@ class TestRunnerRegistryIsTheSingleSource:
         只剩订单 / 工单 / 通知 / 设置四类、**都不触达商品属性** ⇒ 活写方值域恒为 `""`，
         按原值域比对会把 runner 的 `status` / `sku_price` 全判成孤儿（满屏假红）。
         **新口径**：值域 = 活写方分类值 ∪ **退场写方留档词表**（`RETIRED_ATTR_WRITERS` ——
-        它与仍在库里的 3 条 `post_clean` 声明（PR-007 / PR-025 / PR-021）、runner 的复位族同源）。
+        它与仍在库里的 `post_clean` 声明、runner 的复位族同源）。
+        ⚠️ 2026-09-24（#5303）：`sku_price` / `base_price` 现在由**活写方表**提供
+        （`sku_update` / `product_update` 回绑）—— 留档表少了两条 key，比对面照样闭合
+        （这正是"两表不得重复声明同一个 key"的判据 `test_no_writer_key_is_double_claimed`
+        要防的形态）。
         **判别力为什么还在**：runner 新增一个复位类型（比如 `stock`）而词表里没有出处 ⇒ 依旧红
         （红证见 `test_red_proof_orphan_restore_attr_is_caught`）。
         """
@@ -846,7 +1061,10 @@ class _Resp:
 
 
 class _Shop:
-    """内存商品库（形状照抄种子：`status` + `skus[colorName/sellingMethod/doorWidth/price]`）。
+    """内存商品库（形状照抄种子：`status` + `basePrice` + `skus[colorName/sellingMethod/doorWidth/price]`）。
+
+    `basePrice`（商品级基准价）是 #5303 新增的那一面：`product_update` 写它
+    （PATCH `/api/admin/agent/products/{id}`），而 `product_skus.price` 的接地真值就是它。
 
     `fail_keys` / `ignore_writes` 是两个**失败注入**口子：
       · `fail_keys`     —— 端点返回 500（写失败）；
@@ -857,6 +1075,7 @@ class _Shop:
     def __init__(self, products=None):
         self.products = products if products is not None else [
             {"id": "prod_eval_blackout", "name": "遮光窗帘", "status": SEED_STATUS,
+             "basePrice": SEED_PRICE,
              "skus": [
                  {"colorName": "米白", "sellingMethod": "bulk_cut", "doorWidth": "2.8",
                   "price": SEED_PRICE},
@@ -875,6 +1094,11 @@ class _Shop:
     def status(self, pid="prod_eval_blackout"):
         p = self.by_id(pid) or {}
         return p.get("status")
+
+    def base_price(self, pid="prod_eval_blackout"):
+        """商品级基准价（`basePrice`；#5303 的写面真值）。"""
+        p = self.by_id(pid) or {}
+        return p.get("basePrice")
 
     def price(self, color, pid="prod_eval_blackout"):
         p = self.by_id(pid) or {}
@@ -906,6 +1130,21 @@ class _Shop:
             if color and s.get("colorName") != color:
                 continue
             s["price"] = body.get("price")
+        return True
+
+    def set_base_price(self, pid: str, body: dict) -> bool:
+        """商品级基准价写面（#5303；合同同后端 DTO：**只认** `basePrice`）。
+
+        ⚠️ 刻意**照抄后端契约**（未知字段被忽略）：这样"复位发错字段名"的形态
+        （#3807 的静默空转）在假体上也会静默不落地 ⇒ 只有回读校验才抓得到（同真后端）。
+        """
+        p = self.by_id(pid)
+        if not p:
+            return False
+        if self.ignore_writes:
+            return True
+        if "basePrice" in body:
+            p["basePrice"] = body["basePrice"]
         return True
 
 
@@ -943,6 +1182,11 @@ class _FakeClient:
             pid = path.rstrip("/").rsplit("/", 3)[-3]
             ok = self.shop.set_sku_price(pid, kw.get("json") or {})
             return _Resp({"data": {}}, 200 if ok else 404)
+        if method == "PATCH" and "/agent/products/" in path:
+            # #5303：商品级基准价写面（`product_update` 的端点）
+            pid = path.rstrip("/").rsplit("/", 1)[-1]
+            ok = self.shop.set_base_price(pid, kw.get("json") or {})
+            return _Resp({"data": {}}, 200 if ok else 404)
         return _Resp({}, 404)
 
     async def get(self, url, **kw):
@@ -975,6 +1219,9 @@ STATUS_SPEC = {"type": "product_status_restore", "product_keyword": "遮光窗�
 PRICE_SPEC = {"type": "sku_price_restore", "product_keyword": "遮光窗帘",
               "color_name": "米白", "selling_method": "bulk_cut", "door_width": "2.8",
               "price": SEED_PRICE}
+# #5303：**商品级**基准价复位（PR-009 的写方 `product_update` 改的那一面）
+PRODUCT_PRICE_SPEC = {"type": "product_price_restore", "product_keyword": "遮光窗帘",
+                      "price": SEED_PRICE}
 
 
 def _run(spec, phase="post"):
@@ -1095,6 +1342,94 @@ class TestSkuPriceRestore:
         assert "未生效" in msg, msg
 
 
+class TestProductPriceRestore:
+    """#5303：`product_update` 回绑 B 端 ⇒ **商品级**基准价这一面重新需要复位。
+
+    本组的四格与 `TestSkuPriceRestore` 同形（真实分支 / 幂等 / 配置错误 / 失败可见 + 静默
+    空转），因为**复位族的口径必须逐条一致** —— 差异只有"被复位的是哪个属性"。
+    """
+
+    def test_restores_the_fixture(self, monkeypatch):
+        """**走真实分支**：PR-009 的病灶面 —— 商品级价被改成 199 ⇒ 复位回 168。"""
+        shop = _Shop()
+        shop.set_base_price("prod_eval_blackout", {"basePrice": 199})
+        assert shop.base_price() == 199, "夹具没被写脏（夹具写错了？）"
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRODUCT_PRICE_SPEC)
+        assert shop.base_price() == SEED_PRICE, f"复位没生效：{shop.base_price()} / {msg!r}"
+        assert ("PATCH", "/api/admin/agent/products/prod_eval_blackout") in shop.calls, shop.calls
+        assert not msg.startswith(lr._POSTCLEAN_BAD_MARKERS), msg
+        assert "回读一致" in msg or "已复位" in msg, msg
+
+    def test_is_idempotent(self, monkeypatch):
+        """**幂等**：本就在种子值 ⇒ 成功（且**不**发多余的写请求）。"""
+        shop = _Shop()
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRODUCT_PRICE_SPEC)
+        assert not msg.startswith(lr._POSTCLEAN_BAD_MARKERS), msg
+        assert "本就" in msg, f"幂等路径的文案必须点明「本就等于种子值」：{msg!r}"
+        assert not [c for c in shop.calls if c[0] == "PATCH"], "幂等时不该发写请求"
+
+    def test_missing_price_is_a_config_error(self, monkeypatch):
+        """配置错误（缺 `price`）**不是**静默跳过：走**阶段化**标记、折进结论。"""
+        shop = _Shop()
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        spec = {"type": "product_price_restore", "product_keyword": "遮光窗帘"}
+        post = _run(spec)
+        assert post.startswith(lr._POSTCLEAN_NOT_APPLIED), post
+        assert lr.check_postclean_not_applied([post]) == [post]
+        pre = _run(spec, phase="pre")
+        assert pre.startswith(lr._PRECONDITION_NOT_APPLIED), (
+            f"同一缺口在 pre 阶段必须走 pre 的标记（归因不指错阶段）：{pre!r}")
+
+    def test_missing_target_is_visible(self, monkeypatch):
+        """**失败可见**：目标商品不在库里 ⇒ `PRECONDITION_NOT_RESTORED`（进结论）。"""
+        shop = _Shop(products=[])
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRODUCT_PRICE_SPEC)
+        assert msg.startswith(lr._POSTCLEAN_NOT_APPLIED), msg
+        assert lr.check_postclean_not_applied([msg]) == [msg], "未复位没被折进结论"
+
+    def test_write_failure_is_visible(self, monkeypatch):
+        """**失败可见**：写端点 500 ⇒ 标记进结论（不是静默）。"""
+        shop = _Shop()
+        shop.set_base_price("prod_eval_blackout", {"basePrice": 199})
+        shop.fail_keys.add(("PATCH", "/agent/products/"))
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRODUCT_PRICE_SPEC)
+        assert msg.startswith(lr._POSTCLEAN_NOT_APPLIED), msg
+        assert "500" in msg, msg
+
+    def test_silent_noop_is_caught_by_the_readback(self, monkeypatch):
+        """**#3807 的形态**：写返回 2xx 但值没落地 ⇒ 必须被**回读**抓住（不是静默成功）。"""
+        shop = _Shop()
+        shop.set_base_price("prod_eval_blackout", {"basePrice": 199})
+        shop.ignore_writes = True
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRODUCT_PRICE_SPEC)
+        assert msg.startswith(lr._POSTCLEAN_NOT_APPLIED), (
+            f"2xx 但值未落地被当成成功（静默空转复现）：{msg!r}")
+        assert "未生效" in msg, msg
+
+    def test_sku_restore_does_not_fix_the_product_price(self, monkeypatch):
+        """**本类型存在的理由**（正交性红证）：只跑 `sku_price_restore` **治不了**商品级脏值。
+
+        没有这条，本类型就有可能是"多写了一个没人需要的复位动作"—— 实测口径相反：
+        SKU 价复位只改 `product_skus.price`，商品级 `basePrice` 仍是脏的
+        （而按商品级真值判定的用例读的就是它）。
+        """
+        shop = _Shop()
+        shop.set_base_price("prod_eval_blackout", {"basePrice": 199})
+        monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
+        msg = _run(PRICE_SPEC)                       # 只跑 SKU 价复位
+        assert not msg.startswith(lr._POSTCLEAN_BAD_MARKERS), msg
+        assert shop.base_price() == 199, (
+            "SKU 价复位竟然把商品级价也改了 —— 两个属性不是正交的（本类型的理由不成立）")
+        # 再跑商品级复位 ⇒ 归零（两条各治一面）
+        assert not _run(PRODUCT_PRICE_SPEC).startswith(lr._POSTCLEAN_BAD_MARKERS)
+        assert shop.base_price() == SEED_PRICE
+
+
 class TestTwoConsecutiveRuns:
     """**红证 ③**：连续两次运行同一用例，第二次**开始时**夹具是种子原值。
 
@@ -1104,11 +1439,17 @@ class TestTwoConsecutiveRuns:
 
     @staticmethod
     def _pollute(shop: _Shop):
-        """模拟**写方**（agent 的工具调用）：PR-021 改 SKU 价 + PR-025 下架。"""
+        """模拟**写方**（agent 的工具调用）：PR-021 改 SKU 价 + PR-025 下架 + PR-009 改商品价。
+
+        ⚠️ 2026-09-24（#5303）：补第三个写面（商品级 `basePrice`，`product_update` 的端点）——
+        端到端红证必须覆盖**每一个回绑的写方**，否则"复位接好了"这句话只对其中一面成立。
+        """
         async def _do():
             async with _FakeClient(shop) as c:
                 await c.patch(f"{lr.ADMIN_API}/api/admin/agent/products/prod_eval_blackout/skus/price",
                               headers={}, json={"price": 150, "color": "米白"}, timeout=15)
+                await c.patch(f"{lr.ADMIN_API}/api/admin/agent/products/prod_eval_blackout",
+                              headers={}, json={lr.PRODUCT_PRICE_FIELD: 199}, timeout=15)
                 await c.put(f"{lr.ADMIN_API}/api/admin/products/prod_eval_blackout/status",
                             headers={}, json={"status": "off_sale"}, timeout=15)
         asyncio.run(_do())
@@ -1118,12 +1459,16 @@ class TestTwoConsecutiveRuns:
         monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
         # ── 第 1 次运行 ──
         self._pollute(shop)
-        assert (shop.status(), shop.price("米白")) == ("off_sale", 150), "夹具没被写脏（夹具写错了？）"
-        msgs = asyncio.run(lr._run_clean_specs("tok", [STATUS_SPEC, PRICE_SPEC], "post"))
+        assert (shop.status(), shop.price("米白"), shop.base_price()) == \
+            ("off_sale", 150, 199), "夹具没被写脏（夹具写错了？）"
+        msgs = asyncio.run(lr._run_clean_specs(
+            "tok", [STATUS_SPEC, PRICE_SPEC, PRODUCT_PRICE_SPEC], "post"))
         assert lr.check_postclean_not_applied(msgs) == [], msgs
         # ── 第 2 次运行的**起点** ──
-        assert (shop.status(), shop.price("米白")) == (SEED_STATUS, SEED_PRICE), (
-            f"第二次运行看到的不是种子原值：{shop.status()} / {shop.price('米白')}")
+        assert (shop.status(), shop.price("米白"), shop.base_price()) == \
+            (SEED_STATUS, SEED_PRICE, SEED_PRICE), (
+            f"第二次运行看到的不是种子原值：{shop.status()} / {shop.price('米白')} / "
+            f"{shop.base_price()}")
 
     def test_without_post_clean_the_second_run_starts_dirty(self, monkeypatch):
         """**负例**（证明上面的绿不是恒真）：不复位 ⇒ 第二次运行起点就是脏值。"""
@@ -1131,7 +1476,8 @@ class TestTwoConsecutiveRuns:
         monkeypatch.setattr(lr, "httpx", _FakeHttpx(shop))
         self._pollute(shop)
         # 不执行 post_clean（模拟"去掉某写方的 post_clean"）
-        assert (shop.status(), shop.price("米白")) == ("off_sale", 150), (
+        assert (shop.status(), shop.price("米白"), shop.base_price()) == \
+            ("off_sale", 150, 199), (
             "不复位时夹具竟然自己回到种子值 —— 本组红证失去判别力")
 
 

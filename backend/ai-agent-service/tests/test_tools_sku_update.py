@@ -54,7 +54,7 @@ class TestExecute:
         mock_client_factory.return_value = client
 
         result = await tool.execute(
-            context, product_id="prod-001", price=9.9,
+            context, product_id="prod-001", price=9.9, before_price=9.9,
             color="白色", door_width="2.8米",
         )
 
@@ -63,6 +63,8 @@ class TestExecute:
         # V108：SKU 组合只有 颜色 × 门幅 ⇒ payload 不得再带 `selling_method`
         # （接收端 /skus/price 不读该键 ⇒ 下发=静默丢弃；判据见
         #  tests/test_tool_payload_backend_contract.py）
+        # issue #5303：`before_price` 同理**不得下发**（它是改前价的预览声明，
+        # 端点只读 price/color/door_width）。
         client.patch.assert_awaited_once_with(
             "/api/admin/agent/products/prod-001/skus/price",
             json_data={"price": 9.9, "color": "白色", "door_width": "2.8米"},
@@ -82,7 +84,7 @@ class TestExecute:
         })
         mock_client_factory.return_value = client
 
-        result = await tool.execute(context, product_id="prod-404", price=5.0)
+        result = await tool.execute(context, product_id="prod-404", price=5.0, before_price=9.9)
 
         assert result.success is False
         assert "SKU 调价失败" in result.message

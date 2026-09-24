@@ -120,6 +120,19 @@ _saved_states: dict = {}  # {product_id: {"basePrice": ..., "name": ...}}
 PRODUCT_PRICE_FIELD = "basePrice"
 
 
+def _product_price(item) -> object:
+    """商品级基准价的**唯一取值口径**（`basePrice` 权威、`price` 兜底）。
+
+    为什么要抽成一处（issue #5303 顺手收口的小口径）：快照（`snapshot_product`）、
+    复位（`restore_product`）与复位族（`_restore_product_price`）读的是**同一个字段**，
+    而 #3807 的病根正是"各处对写路径权威字段名的口径不统一"（请求体发 `price`、读回读
+    `price`，两头都错位）。三处各写一份 `p.get("basePrice") or p.get("price")` 就是同一
+    口径的第二、三份实现（`migao-dev-flow` §18 单一真相源）。纯读、无副作用。
+    """
+    cur = (item or {}).get(PRODUCT_PRICE_FIELD)
+    return cur if cur is not None else (item or {}).get("price")
+
+
 def _safe_json(resp, default=None):
     """防御性 JSON 解析：响应非 JSON（限流/瞬断/400 HTML）时返回默认值，不中断评测。
 
@@ -153,9 +166,7 @@ async def snapshot_product(token: str, product_keyword: str) -> str | None:
             return None
         p = items[0]
         pid = p["id"]
-        price = p.get(PRODUCT_PRICE_FIELD)
-        if price is None:
-            price = p.get("price")
+        price = _product_price(p)
         _saved_states[pid] = {PRODUCT_PRICE_FIELD: price, "name": p.get("name", "")}
         return pid
 
@@ -202,9 +213,7 @@ async def restore_product(token: str, product_id: str) -> str:
         if cur is None:
             return (f"PRECONDITION_NOT_RESTORED: 价格复位回读未命中商品 {short}"
                     f"（复位结果未证实）")
-        got = cur.get(PRODUCT_PRICE_FIELD)
-        if got is None:
-            got = cur.get("price")
+        got = _product_price(cur)
         try:
             same = got is not None and float(got) == float(price)
         except (TypeError, ValueError):
@@ -462,6 +471,16 @@ _CLEAN_TYPES: dict[str, dict] = {
     #     —— 唯一例外是"目标当前值已等于复位值"（幂等成功，不是 no-op 空转）。
     "product_status_restore":    {"phases": ("pre", "post"), "attr": "status"},
     "sku_price_restore":         {"phases": ("pre", "post"), "attr": "sku_price"},
+    # ⚠️ 2026-09-24（issue #5303）：`product_update`（写**商品级** `products.base_price`）
+    # 重新绑定 B 端 product skill ⇒ 它写的那半夹具又需要复位手段（此前该工具不可达 ⇒
+    # 无写方、无复位对象）。与 `sku_price_restore` 同族的两个正交面之一：
+    #   · `sku_price` —— `product_skus.price`（单规格价，PR-021 的写方 `sku_update`）；
+    #   · `base_price` —— `products.base_price`（**商品级**基准价，PR-009 的写方
+    #     `product_update`；`product_skus.price` 的接地真值就是它 ⇒ 被改脏会让**按商品级
+    #     真值**判定的用例（如 OR-014 的接地单价）读到错值，且改 SKU 价的复位**治不了它**）。
+    # 属性键必须是**独立的** `base_price`：与 `sku_price` 共用一个键会让
+    # 「写 SKU 价」与「写商品价」在守卫侧不可区分 ⇒ 声明了错误的那一个也判绿（假绿）。
+    "product_price_restore":     {"phases": ("pre", "post"), "attr": "base_price"},
     # ── 复位族第二批（issue #4992）：写方改的是**订单状态** / **客户档案字段** ──
     # 为什么这两条此前只能登记 `namespaces` 弱证据（OR-007 / CU-004 的原注释）：
     #   · OR-007 **取消**订单 ⇒ 重跑时那条订单已 `cancelled`（终态，状态机 `cancelled → Set.of()`
@@ -511,7 +530,8 @@ _PRECLEAN_CLEANUP_TYPES = frozenset({
 # 它要求的是**肯定式**前置（"用例点名的那张种子订单**在**、且是 confirmed 且无加工单"），
 # 与 `aftersales_ticket_prepare` 同族。清单不存在（栈缺 seed）⇒ `_PRECONDITION_NOT_APPLIED`
 # ⇒ 折进用例结论，**不得**静默放过（那正是 #3781 要堵的"带着假前置跑完"）。
-# 复位族（`product_status_restore` / `sku_price_restore`，#4075）与**准备型同侧**：
+# 复位族（`product_status_restore` / `sku_price_restore` / `product_price_restore`，
+# #4075 + #5303）与**准备型同侧**：
 # 目标不在位 / 写失败 / 回读不符 ⇒ 夹具仍是脏的 ⇒ 必须进结论（fail-closed）。
 
 # 配置错误的**稳定前缀**：`_run_clean_specs` 据此把它们折进用例结论
@@ -970,6 +990,57 @@ async def _restore_sku_price(token: str, spec: dict, phase: str) -> str:
     return f"已复位 {_who} 的 SKU 价 → {want}（回读一致）"
 
 
+async def _restore_product_price(token: str, spec: dict, phase: str) -> str:
+    """`product_price_restore`：按商品名把**商品级基准价**（`products.base_price`）复位到给定值。
+
+    为什么需要（issue #5303）：`product_update` 重新绑定 B 端 product skill（A 档可逆写）
+    ⇒ **共享夹具又多了一个写方**，而它写的是**商品级** `base_price` —— 与
+    `sku_price_restore` 治的是**两个正交属性**：`product_skus.price` 的接地真值就是商品级
+    价格（`fixtures/xiaobu_eval_seed.sql`：`product_skus.price = p.base_price`），
+    故商品级被改脏时，按**商品级**真值判定的用例（如 OR-014 的接地单价）读到的仍是脏值，
+    **只复位 SKU 价治不了它**（正是 #4075 那半个病灶在新写方上的重现：写方改了世界、
+    而复位手段对不上被改的那个属性）。属性键因此必须独立（`base_price` ≠ `sku_price`）——
+    共用一个键会让"写 SKU 价"与"写商品价"在守卫侧不可区分（假绿）。
+
+    `price` 必填（缺 = 配置错误，交由调用侧 `_run_clean_specs` 折进结论）；定位口径与
+    其余复位族**共用** `_find_restore_target`（精确同名 > 唯一子串，0 件/多件即 fail-closed）。
+
+    ⚠️ 请求体字段名走 `PRODUCT_PRICE_FIELD`（`basePrice`）而不是字面量 `price`：
+    #3807 的实证 —— 发 `price` 时后端 DTO 忽略未知属性、`basePrice` 保持 null ⇒
+    **2xx + "已复位"文案 + 值根本没变**（静默空转）。故本函数与 `restore_product` 同源，
+    且**必须回读**：2xx ≠ 值已落地（回读不符 / 回读里没有该字段 ⇒ 按"未证实/未生效"记账）。
+    """
+    kw = str(spec.get("product_keyword") or "")
+    want = spec.get("price")
+    if want is None:
+        return _clean_not_applied(
+            phase, f"`product_price_restore` 缺 `price`（无法确定复位目标值）")
+    _who = f"商品「{kw}」"
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        prod, err = await _find_restore_target(c, token, kw)
+        if not prod:
+            return _clean_not_applied(phase, err)
+        pid = str(prod.get("id") or "")
+        cur = _product_price(await _readback_product(c, h, pid))
+        if cur is not None and _same_price(cur, want):
+            return f"{_who} 的商品级基准价本就是 {want}，无需复位（幂等）"
+        r = await c.patch(f"{ADMIN_API}/api/admin/agent/products/{pid}",
+                          headers=h, json={PRODUCT_PRICE_FIELD: want}, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"{_who} 的商品级基准价复位为 {want} 失败（HTTP {r.status_code}）")
+        got = _product_price(await _readback_product(c, h, pid))
+        if got is None:
+            return _clean_not_applied(
+                phase, f"{_who} 的商品级基准价复位**未证实** —— "
+                       f"回读里没有 {PRODUCT_PRICE_FIELD}")
+        if not _same_price(got, want):
+            return _clean_not_applied(
+                phase, f"{_who} 的商品级基准价复位**未生效** —— 回读 {got}，应为 {want}")
+    return f"已复位 {_who} 的商品级基准价 → {want}（回读一致）"
+
+
 async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
     """`order_status_restore`：把**被点名的订单**状态复位到给定值（issue #4992）。
 
@@ -1173,6 +1244,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
       （#3781：只用姓名会命中同名残留 → 目标不确定 → 用例恒红）。
     - product_status_restore / sku_price_restore: **复位族**（#4075）——把写方对共享夹具
       （种子商品）的改动复位；幂等 + 回读校验 + 失败可见（见各自 docstring）。
+    - product_price_restore: **复位族**（#5303）——把写方（`product_update`，A 档可逆写
+      重新绑定 B 端 product skill）改的**商品级基准价**复位；与 `sku_price_restore` 正交
+      （商品级 vs 单规格），幂等 + 回读校验 + 失败可见（见该函数 docstring）。
     - order_status_restore / customer_profile_restore: **复位族第二批**（#4992）——把写方
       对**订单状态** / **客户档案字段**的改动复位；幂等 + 回读校验 + 失败可见
       （见各自 docstring；前者走 DB 直连，理由是订单状态机把终态设为不可逆）。
@@ -1344,6 +1418,10 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     if _type == "sku_price_restore":
         # 复位族（#4075）：把 **SKU 价**复位（PR-021 的病灶面）。
         return await _restore_sku_price(token, spec, phase)
+    if _type == "product_price_restore":
+        # 复位族（#5303）：把**商品级基准价**复位（PR-009 的写方 `product_update` 重新可达后
+        # 的病灶面；与 SKU 价正交 —— 见该函数 docstring）。
+        return await _restore_product_price(token, spec, phase)
     if _type == "order_status_restore":
         # 复位族（#4992）：把**订单状态**复位（OR-007「取消订单」的病灶面 —— 首跑取消后
         # 该订单进终态，重跑前置不等价）。走 DB 直连的理由见该函数 docstring。

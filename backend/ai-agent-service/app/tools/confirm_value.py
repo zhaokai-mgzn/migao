@@ -45,7 +45,33 @@ _CONFIRM_FIELD_LABELS = {
     "unit": "单位",
     "sku_code": "货号",
     "stock_quantity": "库存",
+    # 改价预览（issue #5303 / A 档可逆写补回）：`before_price` 是**改前价声明**，
+    # 卡片上必须与人话标签成对出现 —— 否则商家看到的只是一个孤零零的"价格"，
+    # 「改前 → 改后」的"改前"整个缺失（= 没有预览就让人确认改钱）。
+    "before_price": "改前价",
 }
+
+#: 改价预览里 `price` 的语义是**改后价**。仅在 `before_price` 在场时生效
+#: （其余工具如 `product_manage` 的 `price` 仍是「价格」—— 口径只对改价这一对收窄）。
+_PRICE_AFTER_LABEL = "改后价"
+
+
+def price_preview_missing(args: dict) -> str:
+    """改价写调用的**预览前置**判据（单一源，issue #5303）：合规返回 ""，否则返回缺失原因。
+
+    `price`（改后价）在场而 `before_price`（改前价）缺席 ⇒ 确认卡只能呈现"改后"，
+    "改前 → 改后"从未被展示过 ⇒ 写工具 fail-closed（禁止无预览直接写）。
+
+    两个消费方共用本函数，避免"两侧各写一份口径"漂移：
+      · 写工具 `product_update` / `sku_update` 的执行前校验；
+      · 门禁话术 `base_skill._confirm_card_fields_hint`（告诉模型下一步该补什么）。
+    """
+    a = args or {}
+    if a.get("price") is None:
+        return ""
+    if a.get("before_price") is None:
+        return "本次改价没有带 before_price（改前价）"
+    return ""
 
 
 def confirm_card_fields(args: dict) -> list:
@@ -96,7 +122,9 @@ def confirm_card_fields(args: dict) -> list:
         # 控制键是动作指令/路由元数据，不是"要执行的内容"，不进卡片回显
         # （issue #3882：action/operation/op/target_tool/target_action/params/
         #   component/title 等）；label 优先给可读中文（_CONFIRM_FIELD_LABELS），
-        # 未登记键回退原键名。
+        # 未登记键回退原键名。改价（issue #5303）：`before_price` 在场 ⇒ `price`
+        # 渲染成「改后价」，与「改前价」成对（单点口径，见 `_PRICE_AFTER_LABEL`）。
+        _after_label = (_PRICE_AFTER_LABEL if a.get("before_price") is not None else None)
         for key, value in a.items():
             if key in _CONFIRM_CARD_CONTROL_KEYS or value is None:
                 continue
@@ -104,8 +132,10 @@ def confirm_card_fields(args: dict) -> list:
                 rendered = json.dumps(value, ensure_ascii=False, default=str)
             else:
                 rendered = str(value)
-            fields.append({"label": _CONFIRM_FIELD_LABELS.get(key, key),
-                           "value": rendered})
+            label = _CONFIRM_FIELD_LABELS.get(key, key)
+            if key == "price" and _after_label:
+                label = _after_label
+            fields.append({"label": label, "value": rendered})
     return fields
 
 

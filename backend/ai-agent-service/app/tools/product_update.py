@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+from app.tools.confirm_value import price_preview_missing
 from app.utils.http_client import get_admin_api_client
 
 
@@ -19,6 +20,8 @@ class ProductUpdateTool(BaseTool):
         "false=定制商品退货不回补）。"
         "【反例】单独 SKU 调价本工具不支持（用 sku_update）；加工项与商品无关，不在本工具范围。"
         "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
+        "【必填·改价】传 price 时必须同时传 before_price（改前价，取自 product_detail 的真值）——"
+        "确认卡据此呈现「改前 → 改后」；漏传一律被拒（price_preview_required，issue #5303）。"
         "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"
         "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
     )
@@ -39,6 +42,10 @@ class ProductUpdateTool(BaseTool):
                 "description": "商品标识。支持名称/序号/UUID，服务端自动解析",
             },
             "price": {"type": "number", "description": "新价格（可选）"},
+            "before_price": {
+                "type": "number",
+                "description": "改前价（元）。传 price 时必填：取自 product_detail 返回的**当前价**真值（不得凭记忆或推算），用于确认卡展示「改前 → 改后」",
+            },
             "name": {"type": "string", "description": "新名称（可选）"},
             "description": {"type": "string", "description": "新描述（可选）"},
             "status": {
@@ -59,6 +66,7 @@ class ProductUpdateTool(BaseTool):
         context: ToolContext,
         product_id: str,
         price: Optional[float] = None,
+        before_price: Optional[float] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
         status: Optional[str] = None,
@@ -71,6 +79,22 @@ class ProductUpdateTool(BaseTool):
                 error="权限不足",
                 message="您没有权限修改商品信息",
                 suggestion="商品更新仅对商家账号开放（admin/tenant_admin），请确认当前账号角色或联系管理员",
+            )
+
+        # ── 改价必须先预览后写（issue #5303，A 档可逆写补回）──
+        # 判据单一源 = `confirm_value.price_preview_missing`（确认卡的「改前价 / 改后价」
+        # 字段由同一模块派生）：`price` 在场而 `before_price` 缺席 ⇒ 卡上只有"改后"，
+        # "改前 → 改后"从未被展示过 ⇒ **fail-closed**（禁止无预览直接写）。
+        # `before_price` 只是**预览声明**，不进请求体（`AgentProductUpdateRequest` 无此字段）。
+        _preview_err = price_preview_missing({"price": price, "before_price": before_price})
+        if _preview_err:
+            return ToolResult(
+                success=False,
+                error="price_preview_required",
+                message=f"改价被拒（缺改前价预览）：{_preview_err}",
+                suggestion=("先用 product_detail 取该商品**当前价**（= before_price），"
+                            "再发 interact(component=confirm) 把「改前价 → 改后价」展示给商家，"
+                            "商家点卡后带上 before_price 重试本工具"),
             )
 
         # Build only the fields that were actually provided
@@ -92,7 +116,7 @@ class ProductUpdateTool(BaseTool):
                 suggestion="没有要修改的字段，请向用户确认要改哪一项（价格/库存/规格等）后重试",
             )
 
-        logger.info(f"[product_update] {product_id}: {list(json_data.keys())}")
+        logger.info(f"[product_update] {product_id}: {list(json_data.keys())} | 改前价={before_price}")
         client = get_admin_api_client()
         response = await client.patch(
             f"/api/admin/agent/products/{product_id}",

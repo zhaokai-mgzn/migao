@@ -113,13 +113,25 @@ class TestMibaoToolsetTruth:
         # 反向硬边界（#5247）：已从 B 端解绑的写工具**不得**回到 B 端工具集。
         # （MC-021 的九条注入式红证是同一事实的完整判据；此处只做本真值测试的定点核对，
         #   防止「漏解绑一个 skill」在工具集真值这一层静默通过。）
+        # ⚠️ 2026-09-24 改判（issue #5303，A 档可逆写补回）：`product_update` / `sku_update`
+        # **已从本集合移出** —— 二者按用户裁定回到 B 端（`product` skill；`WRITE|IDEMPOTENT` +
+        # 可逆 + 不绕过审核门禁 + 改前价预览）。移出**不是放宽**：白名单由
+        # `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 1/6 逐条钉住
+        # （只许绑 product、必须带 `requires_confirmation`、能力文案↔绑定双向一致），
+        # 而**本集合其余条目一条都不许动**（它们仍是硬边界）。
+        A_TIER_REBOUND = {"product_update", "sku_update"}
         unbound_write_tools = {
-            "order_create", "order_manage", "product_manage", "product_update",
-            "sku_update", "processing_item_manage", "processing_order_generate",
+            "order_create", "order_manage", "product_manage",
+            "processing_item_manage", "processing_order_generate",
             "processing_order_update",
         }
         leaked = real & unbound_write_tools
         assert not leaked, f"B 端工具集混入已解绑的写工具（#5247）: {sorted(leaked)}"
+        # 正向钉住 A 档回绑：只"移出负向集合"会让白名单成员**悄悄消失也没人红**
+        # ⇒ 补一条正向断言（撤销/解绑白名单 = 必须显式改判，不许静默退化）。
+        assert A_TIER_REBOUND <= real, (
+            f"#5303 的 A 档可逆写工具不在 B 端工具集里：{sorted(A_TIER_REBOUND - real)}"
+            "（补回白名单被撤销 / 被解绑 ⇒ 必须显式改判本断言，不能静默消失）")
 
     def test_every_declared_skill_file_is_parseable(self):
         """米宝**声明**的每个 skill 都必须存在且解析出工具（issue #3555 防假绿）。

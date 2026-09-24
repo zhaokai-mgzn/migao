@@ -1,4 +1,4 @@
-# case_ids: PR-010, PR-011, OR-014
+# case_ids: PR-009, PR-010, PR-011, OR-014
 """评测 harness 的**写操作**清点表（issue #3807 的「同类扫描」交付物）。
 
 ## 为什么要把它做成可执行的登记表，而不是一段报告
@@ -29,6 +29,7 @@
 | `_run_clean_action` | DELETE 用户长期记忆 | `status_code >= 300` 或 `success is False` | ✅ |
 | `_restore_product_status` | PUT 商品在售状态复位（`product_status_restore`，#4075） | 状态码 + **回读 `status`** | ✅ |
 | `_restore_sku_price` | PATCH SKU 价复位（`sku_price_restore`，#4075） | 状态码 + **回读 `skus[].price`** | ✅ |
+| `_restore_product_price` | PATCH **商品级基准价**复位（`product_price_restore`，#5303） | 状态码 + **回读 `basePrice`** | ✅ |
 
 > 注（#4075）：实现体函数名由 `_run_pre_clean_action` 改为 **`_run_clean_action`** ——
 > `post_clean` 与 `pre_clean` 共用同一份实现（不复制第二套），名字不再带阶段。
@@ -98,6 +99,13 @@ DISPOSITIONS = {
     ("_restore_sku_price", "patch", 1):
         "已校验：status_code >= 300 记账 + **回读** `skus[].price` 比对（按色名/售卖方式/门幅）；"
         "回读找不到该规格 ⇒ 按「未证实」记账（不静默当成功）",
+    # ── 复位族第三批（issue #5303）：A 档可逆写回绑 ⇒ 商品级基准价这一面重新有写方 ──
+    ("_restore_product_price", "patch", 1):
+        "已校验（issue #5303）：status_code >= 300 记账 + **回读** `basePrice` 比对"
+        "（`_readback_product` + `_product_price`，与 #3807 的 `restore_product` 同源口径）；"
+        "2xx 但值未落地 ⇒ `PRECONDITION_NOT_RESTORED: post_clean` 进结论"
+        "（**与 `_restore_sku_price` 正交**：商品级 `products.base_price` ≠ `product_skus.price`，"
+        "回读错字段就抓不到这个写点的静默空转 —— 红证见 test_shared_fixture_write_restore.py）",
     # ── 复位族第二批（issue #4992）：同为**已校验**档（状态码 + 回读值比对）──
     ("_restore_customer_profile", "put", 1):
         "已校验（issue #4992）：status_code >= 300 记账 + **回读** `data.profile.phone`（与可选 "

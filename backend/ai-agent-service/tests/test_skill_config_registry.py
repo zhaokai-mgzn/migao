@@ -476,7 +476,7 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
     "session_manage": "写 action（assign/end）删除 ⇒ 收窄为 list/monitor/detail",
 }
 
-#: 仍绑定「需确认写工具」的 Skill 名册（#5247 后 **3** 个）—— 由
+#: 仍绑定「需确认写工具」的 Skill 名册（#5247 后 3 个 → **#5303 后 4 个**）—— 由
 #: `test_confirmed_write_tools_require_interact_in_same_skill` 现算并**集合相等**校验。
 #:
 #: 🔴 **issue #5247 改判**：原阈值 `checked >= 10` 的真值是 15 个 Skill；本单把 6 个 B 端
@@ -487,8 +487,13 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
 #:     已从 mibao 的 skill_names 移出、但注册关系保留 ⇒ 结构上仍走得到确认门禁）；
 #:   · `customer_order`（C 端，绑 order_create）；
 #:   · `customer_aftersales`（C 端，绑 aftersale_create）。
+#:
+#: 🔴 **issue #5303 改判（A 档可逆写补回，2026-09-24）**：`product` skill 重新绑定
+#: `product_update` / `sku_update`（均 `requires_confirmation=True`）⇒ 名册**加回 `product`**。
+#: ⚠️ 这正是本条不变式的价值所在：**多出来 ⇒ 有 Skill 重新绑了写工具**（要登记，并确认它绑了
+#: `interact` —— product 已绑）。判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
 _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
-    "settings", "customer_order", "customer_aftersales",
+    "settings", "customer_order", "customer_aftersales", "product",
 })
 
 # 显式豁免台账（键 = Skill 名，值 = 不绑 `interact` 的理由）：**没绑 `interact` 的 Skill 必须
