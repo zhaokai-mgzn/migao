@@ -1,0 +1,204 @@
+{
+  "schema": "migao.redproof-registry/1",
+  "issue": 5328,
+  "_what": [
+    "红证**登记册**：哪条判据带红证、注入点在哪（文件 + 逐字锚）、期望的**逐字红形态**是什么。",
+    "`scripts/redproof_sweep.py` 按本表逐条做「注入 → 断言必红 → 还原」（临时副本上，见该脚本 docstring）。",
+    "本表**只登记**、不重复既有机制：机具声明的前提自检在 `scripts/red_proof_harness.py` 的 TOOLS/`--check`，",
+    "缓存卫生在 `scripts/red_proof.py` —— 本表补的是它们没有的那一层：**注入之后到底会不会红**。"
+  ],
+  "_how_to_extend": [
+    "① 新增红证机具（`scripts/*-red-proof.py`）⇒ **必须**同时在本表登记（`entries` 一条实跑项，或在 `unfixed` 里",
+    "   写明「未固化 + 原因 + 谁看」）—— 未登记的「号称有红证」不许存在（`registry_problems()` 会红）。",
+    "② 每条 `entries` 的 `anchor` / `replacement` 必须**逐字**取自机具里那条变异（`mutation` 字段标明出处），",
+    "   `criteria.red_text` 必须是**观测到的**红形态片段（不是「期望存在」这种弱前提）。",
+    "③ 机具改名 / 判据改名 / 源码漂移 ⇒ 巡检会具名报「注入点失配」，按报告重取锚点后再登记（不许删条目换绿）。"
+  ],
+  "entries": [
+    {
+      "id": "pool-board/urgent_guard",
+      "tool": "scripts/pool-board-red-proof.py",
+      "mutation": "urgent_guard",
+      "criterion": "判据3 加急单不进池（成批路径上的那道闸）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "anchor": "        // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。\n        // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。\n        assertNoUrgentInPooledBatch(orderIds, tenantId);\n",
+      "replacement": "        // [RED-PROOF] 闸被摘掉\n",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=PoolBoardUrgencyTest#pooledBatchContainingUrgentOrderIsRejectedFailClosed", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.PoolBoardUrgencyTest",
+        "method": "pooledBatchContainingUrgentOrderIsRejectedFailClosed",
+        "red_text": "Expecting code to raise a throwable"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3（基线 / 注入 / 还原），Maven 离线增量"
+    },
+    {
+      "id": "product-batch/old_value_persistence",
+      "tool": "scripts/product-batch-red-proof.py",
+      "mutation": "old_value_persistence",
+      "criterion": "判据1 预览持久化 old_value（撤销依据来自 DB 真值）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
+      "anchor": "                    // 🔴 落库的是 **DB 真值**，不是调用方字符串：撤销依据不能是调用方的一面之词\n                    .oldValue(current)\n",
+      "replacement": "                    // [RED-PROOF] 撤销依据不再落库\n                    .oldValue(null)\n",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AgentBatchServiceTest", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.AgentBatchServiceTest",
+        "method": "persistsPreviewWithOldValueCollectedFromDb",
+        "red_text": "撤销的唯一依据"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "order-urgency/extra_column",
+      "tool": "scripts/order-urgency-red-proof.py",
+      "mutation": "extra_column",
+      "criterion": "判据1 加急回写只动自己那两列（SET 白名单）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "anchor": "        update.set(Order::getUpdatedAt, OffsetDateTime.now());\n        orderMapper.update(null, update);",
+      "replacement": "        update.set(Order::getUpdatedAt, OffsetDateTime.now());\n        // [RED-PROOF] 顺手把订单状态也同步一行\n        update.set(Order::getStatus, order.getStatus());\n        orderMapper.update(null, update);",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=OrderUrgencyFieldsTest#updateUrgencyWritesOnlyTheTwoOwnColumns", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.OrderUrgencyFieldsTest",
+        "method": "updateUrgencyWritesOnlyTheTwoOwnColumns",
+        "red_text": "零联动 / 不损失客户"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "auto-batch/default_off",
+      "tool": "scripts/auto-batch-red-proof.py",
+      "mutation": "default_off",
+      "criterion": "缺省关 ⇒ 零动作（自动成批缺省必须是关）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "anchor": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false;",
+      "replacement": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true; // [RED-PROOF]",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AutoBatchDispatchTest#defaultOffDoesNothingAtAll", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.AutoBatchDispatchTest",
+        "method": "defaultOffDoesNothingAtAll",
+        "red_text": "缺省 = 关"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "auto-batch-due-scan/default_off",
+      "tool": "scripts/auto-batch-due-scan-red-proof.py",
+      "mutation": "default_off",
+      "criterion": "缺省关 ⇒ 扫描零动作（不启用也照扫 = 越权派单）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/AutoBatchDueScanService.java",
+      "anchor": "        if (!processingOrderService.autoBatchPolicy().enabled()) {",
+      "replacement": "        if (false) { // [RED-PROOF] 缺省关的闸被拆掉",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AutoBatchDueScanServiceTest#defaultOffMeansZeroAction", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.AutoBatchDueScanServiceTest",
+        "method": "defaultOffMeansZeroAction",
+        "red_text": "没有扫 ⇒ enabled=false"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "cutting-plan/M1_no_parallel_rows",
+      "tool": "scripts/cutting-plan-red-proof.py",
+      "mutation": "M1 禁止一切并排",
+      "criterion": "判据 并排必须发生（两块窄窗料同排一行）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/CuttingPlanCalculator.java",
+      "anchor": "            if (target < 0) {",
+      "replacement": "            if (true) {",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=CuttingPlanCalculatorTest#fixedHeightTallWindowsPairIntoOneRow", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.CuttingPlanCalculatorTest",
+        "method": "fixedHeightTallWindowsPairIntoOneRow",
+        "red_text": "必须并排成一行"
+      },
+      "requires": ["cmd:java", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3（该类逐条判据强制重编译，机具全量实测约半小时）"
+    },
+    {
+      "id": "saving-metrics-backend/totals_one_source",
+      "tool": "scripts/saving-metrics-red-proof-backend.py",
+      "mutation": "判据1 汇总一致：金额改成「整段求和再取整」（= 第二套口径）",
+      "criterion": "判据1 汇总与逐行同源（不许第二套口径）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java",
+      "anchor": "SUM(ROUND((c.formula_meters - c.planned_meters) * c.unit_cost, 2))",
+      "replacement": "ROUND(SUM((c.formula_meters - c.planned_meters) * c.unit_cost), 2)",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=SavingMetricsBoardRealDbTest#boardTotalsEqualPerLineSum", "-DfailIfNoTests=false"],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.SavingMetricsBoardRealDbTest",
+        "method": "boardTotalsEqualPerLineSum",
+        "red_text": "看板合计 == Σ 逐单 saved_amount"
+      },
+      "requires": ["cmd:java", "cmd:initdb", "cmd:pg_ctl", "file:backend/admin-api/mvnw"],
+      "cost": "单类单方法 ×3（真库判据：一次性 initdb + pg_ctl 集群）"
+    },
+    {
+      "id": "saving-metrics-web/no_data_not_zero",
+      "tool": "scripts/saving-metrics-red-proof-web.py",
+      "mutation": "判据4 空数据不冒充 0：无值渲染成 0",
+      "criterion": "判据4 空数据不冒充 0（前端渲染层）",
+      "guarded": "frontend/admin-web/src/lib/saving-board.ts",
+      "anchor": "  if (n === null) return NO_DATA\n  return digits === 0 ? String(Math.round(n)) : trimTrailingZeros(n.toFixed(digits))",
+      "replacement": "  if (n === null) return '0'\n  return digits === 0 ? String(Math.round(n)) : trimTrailingZeros(n.toFixed(digits))",
+      "criteria": {
+        "cwd": "frontend/admin-web",
+        "cmd": ["npx", "vitest", "run", "tests/unit/lib/saving-board.test.ts"],
+        "kind": "stdout",
+        "red_text": "Tests\\s+\\d+ failed \\(\\d+\\)"
+      },
+      "requires": ["cmd:npm", "dir:frontend/admin-web/node_modules"],
+      "link_deps": ["frontend/admin-web/node_modules"],
+      "cost": "单文件 vitest ×3（依赖只读软链进副本；机具全量实测 12s）"
+    },
+    {
+      "id": "automerge/secrets-yardstick-same-source",
+      "tool": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+      "mutation": "TestSecretsYardstickInjectionsProveDiscriminatingPower::test_dropping_the_yardstick_in_the_guard_turns_criterion9_red 的变异点（逐字取自该守卫）",
+      "criterion": "判据 9/#5286：`secrets.*` 只在**注释**里 ⇒ bot PR 仍须 arm（尺子必须剥注释）",
+      "guarded": ".github/workflows/automerge.yml",
+      "anchor": "SECRETS_RE.search(strip(text))",
+      "replacement": "SECRETS_RE.search(text)",
+      "criteria": {
+        "cwd": ".",
+        "cmd": ["python3", "-m", "pytest", "tests/unit_ci_workflows/test_automerge_bot_safe_path.py", "-q"],
+        "kind": "stdout",
+        "red_text": "FAILED .*TestCriterion9SecretsCommentOnlyArms"
+      },
+      "requires": ["cmd:python3"],
+      "cost": "单个 pytest 文件 ×3（零 Maven / 零 npm / 零 PG）",
+      "note": "**这一条就是类别里那两例（#5268 判据 4 / #5286 判据 4）的现行形态**：注释里的 `secrets.*` 一旦被当引用，判据 9 必红；反之（例如尺子被抽走）巡检报「该红证已退化」。"
+    }
+  ],
+  "unfixed": [
+    {
+      "id": "agent-eval-face",
+      "what": "用例 / 夹具级红证（给 prompt / 工具注入缺陷 ⇒ 该 **eval 用例**必须判红）——本类里 #5272 那一例的邻域",
+      "reason": "要**真实 LLM** 才算得出「用例是否判红」；本仓已裁定**不自动跑真实 LLM 评测**（#4262：不自动验证、手动集中跑一次）⇒ 结构上进不了本巡检的定时腿",
+      "owner": "评测面 owner（`migao-acceptance` 协议 + 用例库维护者）",
+      "现状": "静态判据在 PR 面（`.github/case_trust_gate.py` / `.github/assertion_taxonomy.py`：空断言 / 无效果层断言 / 自清理…）；实跑红证仍靠**人工集中跑一次**并留痕"
+    },
+    {
+      "id": "tools-full-mutation-set",
+      "what": "各红证机具（`scripts/*-red-proof.py`）里**其余变异**的全量实跑",
+      "reason": "登记册每机具只收**一条代表**（注入 ×3 次判据）；机具全量实测 2~30 分钟 ⇒ 逐条 ×3 跑不进定时腿预算（§23 G8：不拿挂钟当判据，故此处按**条数**而不是时长裁剪）",
+      "owner": "各机具 owner（`scripts/*-red-proof.py` 的维护者，按登记册 `entries[].tool` 分工）",
+      "现状": "全量实跑入口 = `./verify-all.sh redproof`（人工 / 发布前跑）；本巡检覆盖不到的那部分在此**显式登记**，不假装覆盖"
+    }
+  ]
+}

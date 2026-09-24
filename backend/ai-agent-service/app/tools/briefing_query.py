@@ -9,6 +9,7 @@ from loguru import logger
 
 from app.briefing.proactive import (
     INCOMPLETE,
+    NOT_ENABLED,
     NOT_WIRED,
     daily_findings,
     daily_findings_total,
@@ -146,10 +147,14 @@ class BriefingQueryTool(BaseTool):
         # 未接线 / 不完整的规则在消息里**如实点名**。
         status = proactive_status(snapshot)
         unwired = [entry["rule_name"] for entry in status.values() if entry["status"] == NOT_WIRED]
+        # 🔴 #5348：**系统有、该租户没开**（如未做成本核算）—— 与「尚未接入」**并列、不可合并**：
+        # 前者**可行动**（用户能去开启），后者不可行动（系统没做）。混成一句，用户就不知道
+        # 「没这个功能」还是「我没开」。`reason` 非 None 且就是那句引导（不变式不给本态开例外）。
+        not_enabled = [entry for entry in status.values() if entry["status"] == NOT_ENABLED]
         incomplete = [entry for entry in status.values() if entry["status"] == INCOMPLETE]
         total_today = daily_findings_total(snapshot, as_of=data.get("bizDate"))
-        logger.info("[briefing_query] done proactive={} total_today={} not_wired={} incomplete={}",
-                    len(findings), total_today, len(unwired), len(incomplete))
+        logger.info("[briefing_query] done proactive={} total_today={} not_wired={} not_enabled={} incomplete={}",
+                    len(findings), total_today, len(unwired), len(not_enabled), len(incomplete))
         message = "今日经营日报如下"
         if findings:
             message = f"今日经营日报如下，另有 {len(findings)} 项当天异常待处理"
@@ -163,11 +168,19 @@ class BriefingQueryTool(BaseTool):
                 " —— 这些方面本次没有检查数据，请勿理解为均已检查"
             )
         if incomplete:
-            # 同上：本次**检查了但不完整**（行数被上限截断 / 维度缺值）⇒ 也不得读成「没问题」。
+            # 同上：本次**检查了但不完整**（行数被上限截断 / 维度缺值 / 有行未判定）⇒ 也不得读成「没问题」。
             detail = "；".join(entry["reason"] for entry in incomplete)
             message += (
                 f"。⚠️ 以下能力本次数据不完整，空命中不代表没有问题："
                 f"{'、'.join(entry['rule_name'] for entry in incomplete)} —— {detail}"
+            )
+        if not_enabled:
+            # 🔴 与「尚未接入」那句**分开说**（#5348）：本态是**可行动**的 —— 说清「是**你**没开」，
+            # 并把 reason（= 开启引导）原样给出去；不这么说，用户只会以为系统没这个能力。
+            detail = "；".join(entry["reason"] for entry in not_enabled)
+            message += (
+                f"。⚠️ 以下能力本次没有检查："
+                f"{'、'.join(entry['rule_name'] for entry in not_enabled)} —— {detail}"
             )
         return ToolResult(
             success=True,

@@ -118,22 +118,26 @@ public class DailyBriefingService {
      * <p>引擎（`app/briefing/proactive.py::proactive_status`）拿它 × 每条规则的输入契约算
      * **逐规则接线状态** ——「没数据」与「没问题」的分界就在这里，两侧各只有一份声明。</p>
      *
-     * <p>🔴 两处**刻意缺席**（如实登记为「未接线」，**不是「命中 0 条」**）：
-     * ① `orders` 行没有 `cost_amount` —— `orders` 表无成本列（金额列只有 total/actual/discount/refund）
-     * ⇒ 低于成本价规则接不通（成本价列属数据模型变更，另立 issue #5348）；
-     * ② `price_changes` **整个数组不装配** —— 全仓无改价流水表 ⇒ 改价幅度规则接不通。</p>
+     * <p>`orders` 行的 `cost_amount`（issue #5348，2026-09-24 接通）：**Σ(行数量 × 该行 SKU 的
+     * `avg_cost`)** —— 成本不在 `orders` 表上，而在 `product_skus.avg_cost`（移动加权）。逐行解析
+     * SKU（① `order_items.processing_info.skuId` → ② 该商品**唯一** SKU → ③ 不可解析）；
+     * 🔴 **任一行不可判定 ⇒ 该订单行 `cost_amount = NULL`**（整单不可判定，**不出部分和**）。
+     * `NULL` = **成本未知**，不是「成本为 0」（沿用 `avg_cost` 既有口径：不猜 0）。</p>
      *
      * <p>族 3 · 包 2（issue #5369，具名视图 `product_health`）追加：`skus` 行补 `sales_count` /
      * `price` / `avg_cost` 三个 **SKU 级权威列**（`#4038`；商品级同名列是派生冗余列，不进快照），
      * 并新增 `product_return_stats` —— 退货率的**两端**（分子由 `returns` 行的商品归属复用而来、
      * 分母 = 同窗口内的订单行数）。</p>
+     *
+     * <p>🔴 **刻意缺席**（如实登记为「未接线」，**不是「命中 0 条」**）：`price_changes`
+     * **整个数组不装配** —— 全仓无改价流水表 ⇒ 改价幅度规则接不通（另立 issue）。</p>
      */
     static final Map<String, List<String>> SNAPSHOT_ROW_FIELDS = snapshotRowFields();
 
     private static Map<String, List<String>> snapshotRowFields() {
         Map<String, List<String>> fields = new LinkedHashMap<>();
         fields.put("orders", List.of("order_no", "status", "customer_id", "created_at",
-                "shipped_at", "sale_amount"));
+                "shipped_at", "sale_amount", "cost_amount"));
         fields.put("skus", List.of("sku_id", "product_id", "product_name", "stock",
                 "sales_count", "price", "avg_cost"));
         // 商品健康度视图（族 3 · 包 2，issue #5369）的退货率两端：分子 = 归属到该商品的退货工单数
@@ -460,6 +464,10 @@ public class DailyBriefingService {
         snapshot.put("row_fields", SNAPSHOT_ROW_FIELDS);
         // 截断必须显式（`row_meta`）：有界不许变成静默少报 —— 看不见的行不命中，会被读成「没问题」。
         snapshot.put("row_meta", rowMeta(orders, skus, returns, productReturnStats));
+        // 租户级**事实**（issue #5348）：该租户是否在做成本核算 —— 判据 = 是否存在
+        // `avg_cost IS NOT NULL` 的 SKU（可从事实推出 ⇒ 不引入人工配置项）。引擎据此把
+        // 「低于成本价」落成 `not_enabled`（系统**有**、该租户**没开**），而不是 `not_wired`。
+        snapshot.put("cost_accounting", costsAreTracked(tenantId));
         snapshot.put("orders", orders.rows());
         snapshot.put("skus", skus.rows());
         snapshot.put("returns", returns.rows());
@@ -489,9 +497,11 @@ public class DailyBriefingService {
             return new RowBatch(new ArrayList<>(), truncated);
         }
         Map<String, OffsetDateTime> shippedAt = shippedAtByOrder(tenantId, orders);
+        // 逐订单成本（#5348）：键缺席 = **成本未知**（该行 `cost_amount` 落 NULL），不是 0。
+        Map<String, BigDecimal> costs = costByOrder(tenantId, orders);
         List<Map<String, Object>> rows = new ArrayList<>(orders.size());
         for (Order order : orders) {
-            rows.add(orderRow(order, shippedAt.get(order.getId())));
+            rows.add(orderRow(order, shippedAt.get(order.getId()), costs.get(order.getId())));
         }
         return new RowBatch(rows, truncated);
     }
@@ -511,17 +521,20 @@ public class DailyBriefingService {
     }
 
     /** 订单行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */
-    static Map<String, Object> orderRow(Order order, OffsetDateTime shippedAt) {
+    static Map<String, Object> orderRow(Order order, OffsetDateTime shippedAt, BigDecimal costAmount) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("order_no", order.getOrderNo());
         row.put("status", order.getStatus());
         row.put("customer_id", order.getUserId());
         row.put("created_at", iso(order.getCreatedAt()));
         row.put("shipped_at", iso(shippedAt));
-        // 成交金额：实付优先、缺省回落总额。**成本价刻意不给**（`orders` 表无成本列）——
-        // 于是「低于成本价」在引擎侧落在未接线清单里，而不是表现为「命中 0 条」。
+        // 成交金额：实付优先、缺省回落总额。
         row.put("sale_amount",
                 order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount());
+        // 订单成本（#5348）：Σ 行成本；**任一行不可判定 ⇒ null**（整单不可判定，口径见 costByOrder）。
+        // 🔴 该键**恒在**（值可为 null）：null 是「成本未知（不可判定）」，不是「缺字段」——
+        // 缺字段会被引擎读成「系统没接线（not_wired）」，那是另一回事。
+        row.put("cost_amount", costAmount);
         return row;
     }
 
@@ -545,6 +558,164 @@ public class DailyBriefingService {
             }
         }
         return shippedAt;
+    }
+
+    // ==================== 订单成本（低于成本价，issue #5348）====================
+
+    /**
+     * 该租户是否在做成本核算（issue #5348 的**租户级事实**）。
+     *
+     * <p>判据 = **是否存在 `avg_cost IS NOT NULL` 的 SKU** —— 它**从事实推出**，不引入人工配置项
+     * （用户裁定 2026-09-24：存量库存 `avg_cost = NULL` 表示「用户不做成本核算」，这是**受支持的形态**，
+     * 不是错误）。`false` ⇒ 引擎把「低于成本价」落成 `not_enabled`（系统**有**、该租户**没开**）。</p>
+     */
+    boolean costsAreTracked(Long tenantId) {
+        Long withCost = productSkuMapper.selectCount(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .isNotNull(ProductSku::getAvgCost));
+        return withCost != null && withCost > 0;
+    }
+
+    /**
+     * 逐订单成本（issue #5348）。**键缺席 = 成本未知（不可判定）**，不是 0。
+     *
+     * <p>冻结判据：① 逐订单行解析 SKU（`processing_info.skuId` → 该商品**唯一** SKU → 不可解析）；
+     * ② 行成本 = `quantity × avg_cost`；③ 订单成本 = **Σ 行成本**；
+     * ④ 🔴 **任一行不可解析、或该行 `avg_cost` 为 NULL ⇒ 整单未知（不出部分和）**。</p>
+     *
+     * <p>为什么不出部分和：部分和 = **把未知行当 0**（`avg_cost` 既有口径明写「不猜 0」），
+     * 它给出的是成本的**下界**而不是成本 ⇒ 据此报出的亏损额必然少报，而「没超成本」这个结论也站不住
+     * （未知的那些行可能把整单推过线）。宁可**整单不判定**，也不给一个会误导商家去砍价的数。</p>
+     */
+    Map<String, BigDecimal> costByOrder(Long tenantId, List<Order> orders) {
+        Map<String, BigDecimal> costs = new HashMap<>();
+        List<String> orderIds = orders.stream()
+                .map(Order::getId).filter(StringUtils::hasText).distinct().toList();
+        if (orderIds.isEmpty()) {
+            return costs;
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, tenantId)
+                .in(OrderItem::getOrderId, orderIds));
+        if (items.isEmpty()) {
+            return costs;   // 没有订单行 ⇒ 成本无从算起（未知，不是 0）
+        }
+        Map<String, List<ProductSku>> skusByProduct = costSkusByProduct(tenantId, items);
+        Map<String, List<OrderItem>> linesByOrder = new LinkedHashMap<>();
+        for (OrderItem item : items) {
+            if (StringUtils.hasText(item.getOrderId())) {
+                linesByOrder.computeIfAbsent(item.getOrderId(), key -> new ArrayList<>()).add(item);
+            }
+        }
+        linesByOrder.forEach((orderId, lines) -> {
+            BigDecimal total = orderCost(lines, skusByProduct);
+            if (total != null) {
+                costs.put(orderId, total);
+            }
+        });
+        return costs;
+    }
+
+    /**
+     * 订单成本 = **Σ 行成本**；任一行不可判定 ⇒ `null`（**整单不可判定**，不出部分和）。
+     *
+     * <p>静态纯函数（无 I/O）：判据 2（保守性）的**注入式红证**就直接打在它身上 ——
+     * 把返回值改成「部分和」（= 未知行当 0）时，测试里那条断言必须变红。</p>
+     */
+    static BigDecimal orderCost(List<OrderItem> lines, Map<String, List<ProductSku>> skusByProduct) {
+        if (lines.isEmpty()) {
+            return null;    // 空行集 = 成本未知（不是「成本为 0」）
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (OrderItem line : lines) {
+            BigDecimal lineCost = lineCost(line, skusByProduct);
+            if (lineCost == null) {
+                return null;    // 🔴 保守：宁可整单不判定，也不出一个会低估成本的部分和
+            }
+            total = total.add(lineCost);
+        }
+        return total;
+    }
+
+    /**
+     * 行成本 = `quantity × avg_cost`；`null` = 该行**成本未知**（不可判定）。
+     *
+     * <p>SKU 解析优先级（冻结判据）：① `processing_info.skuId` → ② 该商品**唯一** SKU（商品只有 1 个
+     * SKU ⇒ 无歧义）→ ③ 不可解析。声明的 `skuId` 已失效（不在本商品的 SKU 集里）时退回 ② ——
+     * 与 `OrderService.matchSkuId` 的「陈旧 `skuId` 先校验、再回退键族」同口径。</p>
+     */
+    static BigDecimal lineCost(OrderItem line, Map<String, List<ProductSku>> skusByProduct) {
+        BigDecimal quantity = line.getQuantity();
+        if (quantity == null) {
+            return null;    // 数量未知 ⇒ 该行成本未知
+        }
+        List<ProductSku> skus = skusByProduct.getOrDefault(line.getProductId(), List.of());
+        ProductSku sku = null;
+        Long declared = declaredSkuId(line.getProcessingInfo());
+        if (declared != null) {
+            sku = skus.stream().filter(candidate -> declared.equals(candidate.getId()))
+                    .findFirst().orElse(null);
+        }
+        if (sku == null && skus.size() == 1) {
+            sku = skus.get(0);      // ② 该商品只有 1 个 SKU ⇒ 无歧义
+        }
+        if (sku == null || sku.getAvgCost() == null) {
+            return null;            // ③ 不可解析 / 成本价 NULL ⇒ 未知（**不猜 0**）
+        }
+        return quantity.multiply(sku.getAvgCost());
+    }
+
+    /**
+     * `order_items.processing_info` 里的 `skuId`（键族见 `OrderService.matchSkuId`）。
+     *
+     * <p>JSONB 里的数字可能是 `Long` / `Integer` / 字符串，一律按数值解析；无该键或非数值 ⇒ `null`
+     * （**不猜**：猜错的成本会直接被当成真值去判「低于成本」）。</p>
+     */
+    static Long declaredSkuId(Object processingInfo) {
+        if (!(processingInfo instanceof Map<?, ?> info)) {
+            return null;
+        }
+        Object raw = info.get("skuId");
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw instanceof String text && StringUtils.hasText(text)) {
+            try {
+                return Long.valueOf(text.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 本次订单行涉及的商品 → 这些商品的**全部** SKU（供「唯一 SKU」判定与取 `avg_cost`）。
+     *
+     * <p>🔴 查询撞上行数上限 ⇒ 返回空表（= 所有行都不可解析 ⇒ 所有订单成本未知）：截断会让
+     * 「该商品只有一个 SKU」的判定**失真**（第二个 SKU 可能正好在被截掉的那部分里）⇒ 那时给出的
+     * 成本可能张冠李戴，宁可全部不判定。</p>
+     */
+    private Map<String, List<ProductSku>> costSkusByProduct(Long tenantId, List<OrderItem> items) {
+        List<String> productIds = items.stream()
+                .map(OrderItem::getProductId).filter(StringUtils::hasText).distinct().toList();
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .in(ProductSku::getProductId, productIds)
+                .last("LIMIT " + SNAPSHOT_ROW_FETCH_LIMIT));
+        if (skus.size() > SNAPSHOT_ROW_LIMIT) {
+            return Map.of();
+        }
+        Map<String, List<ProductSku>> byProduct = new LinkedHashMap<>();
+        for (ProductSku sku : skus) {
+            if (StringUtils.hasText(sku.getProductId())) {
+                byProduct.computeIfAbsent(sku.getProductId(), key -> new ArrayList<>()).add(sku);
+            }
+        }
+        return byProduct;
     }
 
     /**
