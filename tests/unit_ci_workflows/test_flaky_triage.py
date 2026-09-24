@@ -28,6 +28,7 @@
 每条守卫都配一条**注入式红证**：把坏形态注回 ⇒ 必须红。判据读的是**文件内容**（不是
 mtime/size），且注入走 `str.replace` 的**内容变异** ⇒ 无缓存可污染（纯文本，不 import 变异体）。
 """
+import copy
 import importlib.util
 import io
 import json
@@ -35,6 +36,7 @@ import re
 import shutil
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 import yaml
@@ -54,6 +56,8 @@ def _load(path, name):
 
 FL = _load(SCRIPTS / "flaky_ledger.py", "migao_flaky_ledger")
 REAL_WORKFLOW = WORKFLOW_PATH.read_text(encoding="utf-8")
+#: 脚本源码本体（红证用它做**内容变异** ⇒ 免疫 `.pyc` 缓存；判据读内容，不读 mtime/size）。
+REAL_SCRIPT_SOURCE = (SCRIPTS / "flaky_ledger.py").read_text(encoding="utf-8")
 
 
 # ── 夹具（形状与 GitHub REST `/actions/runs/{id}` + `/attempts/{n}/jobs` 同源） ──
@@ -486,9 +490,324 @@ class TestReconcile:
         assert "对账干净" in capsys.readouterr().out
 
     def test_shipped_ledger_reconciles_clean(self):
-        """出厂台账必须是干净的（否则一落地就是欠账）。"""
-        assert FL.reconcile(FL.load_ledger(LEDGER_PATH)) == {
-            "new_events": [], "duplicates": [], "fixed_not_deducted": []}
+        """出厂台账必须是干净的（否则一落地就是欠账）。
+
+        ⚠️ #5307 判据②：**失败消息必须可行动** —— 断言消息带**欠账清单**（每条 `workflow` /
+        `run_id` / `job`）+ **可直接复制**的回填命令（`FL.render_reconcile_report`）。旧形态只有
+        `assert {...} == {...}` 的 diff：读的人不知道下一步做什么；而 schema 只写「由分诊方回填」、
+        没写用哪个命令 ⇒ 回填成了「文档要求做、却没有合法工具做」的动作（= 台账自我死锁的一半）。
+        """
+        ledger = FL.load_ledger(LEDGER_PATH)
+        violations = shipped_violations(ledger)
+        assert violations == [], violations[0]
+
+
+# ── ⑤f #5307：`follow_up` 的**回填路径**（字段级 ⇒ 不破坏「条目只追加」） ──────────
+
+CLEAN_RECONCILE = {"new_events": [], "duplicates": [], "fixed_not_deducted": []}
+
+#: 回填**只许**碰这三个字段（「条目只追加」在字段级的边界）。
+FOLLOW_UP_FIELDS = ("follow_up", "status", "fixed_by")
+
+
+def _load_mutant(source: str, name: str):
+    """把**内容变异**后的脚本源码当模块加载（红证用：判据读内容，免疫 `.pyc` 缓存）。"""
+    namespace = {"__name__": name, "__file__": str(SCRIPTS / "flaky_ledger.py")}
+    exec(compile(source, f"<mutant:{name}>", "exec"), namespace)
+    return types.SimpleNamespace(**namespace)
+
+
+def shipped_violations(ledger, judge=None, render=None) -> list:
+    """`test_shipped_ledger_reconciles_clean` 的**判据本体**（空 = 绿；非空 = 可行动清单）。
+
+    抽成函数是为了让「注入欠账 ⇒ 必红」能被**单独**证明（红证不写在断言消息里，而走同一判据）：
+    `judge` / `render` 可换成变异体 ⇒ 判据的判别力可被红证钉住（§19.1 元规则③）。
+    """
+    judge = judge or FL.reconcile
+    render = render or FL.render_reconcile_report
+    result = judge(ledger)
+    if result == CLEAN_RECONCILE:
+        return []
+    return [render(ledger, result)]
+
+
+def append_semantics_violations(before: dict, after: dict, targets) -> list:
+    """「条目只追加」的机械判据（空 = 合规）：回填**不许**新增/删除/重排条目，
+    且只许改 `targets` 里那些条目的 `follow_up`(/`status`/`fixed_by`)。"""
+    bad = []
+    rows_before, rows_after = before.get("entries") or [], after.get("entries") or []
+    if len(rows_before) != len(rows_after):
+        bad.append(f"条目数变了（{len(rows_before)} → {len(rows_after)}）⇒ 「条目只追加」被破坏")
+    if [FL.entry_key(e) for e in rows_before] != [FL.entry_key(e) for e in rows_after]:
+        bad.append("条目的键集合/顺序变了 ⇒ 「条目只追加」（不删、不重排）被破坏")
+    targets = set(targets)
+    for i, (eb, ea) in enumerate(zip(rows_before, rows_after)):
+        if eb == ea:
+            continue
+        if i not in targets:
+            bad.append(f"entries[{i}] 不在本次回填目标里却被改动 ⇒ 回填越界")
+            continue
+        for field in sorted(set(eb) | set(ea)):
+            if field in FOLLOW_UP_FIELDS:
+                continue
+            if eb.get(field) != ea.get(field):
+                bad.append(f"entries[{i}].{field} 被改动（回填只许改 {FOLLOW_UP_FIELDS}）")
+    return bad
+
+
+def fail_closed_violations(rc, before: dict, after: dict) -> list:
+    """fail-closed 判据（空 = 合规）：`run_id` 不存在 / 单号非法 ⇒ **非零退出**且台账**一字未改**
+    （「静默无操作」正是 #5307 的病灶形态：命令看起来成功了，死亡锁却还在）。"""
+    bad = []
+    if rc == 0:
+        bad.append("静默无操作：该拒绝的输入却退 0（读的人会以为回填成功）")
+    if before != after:
+        bad.append("拒绝路径却改动了台账（fail-closed 必须是**无副作用**的）")
+    return bad
+
+
+def _fixture(tmp_path, name="ledger.json", inject=True, run_id=990000001):
+    """出厂台账的副本（可选：注入一条 `kind=flaky`/`status=open`/`follow_up=null` 欠账）。"""
+    ledger = copy.deepcopy(FL.load_ledger(LEDGER_PATH))
+    entry = None
+    if inject:
+        entry = copy.deepcopy(ledger["entries"][-1])
+        entry.update({"workflow": "PR Check", "job": "admin-web typecheck + unit tests",
+                      "run_id": run_id, "run_attempt": 2, "kind": "flaky", "status": "open",
+                      "follow_up": None, "rerun_result": "success",
+                      "reason": FL.KIND_REASON["flaky"], "remedy": FL.KIND_REMEDY["flaky"]})
+        entry.pop("fixed_by", None)
+        ledger["entries"].append(entry)
+    path = tmp_path / name
+    path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path, ledger, entry
+
+
+class TestFollowUp:
+    """#5307 判据①：**文档化的回填路径**（`follow-up` 子命令）；判据③：注入 ⇒ 红 / 回填 ⇒ 绿。
+
+    ⚠️ 为什么必须有这条路径（**本单病灶**）：`append_entries` 对同幂等键**跳过**（幂等）⇒ 用
+    `append` 回填 = 无效；CLI 又没有回填子命令 ⇒ schema 里那句「由分诊方回填」**没有合法工具**；
+    而 required 测试判「台账必须 reconcile 干净」⇒ 一条欠账就让台账分支**永远绿不了**。
+    """
+
+    def test_debt_red_then_backfill_green(self, tmp_path):
+        """判据③逐字：注入一条欠账 ⇒ 判据**必红**（消息含清单 + 可复制命令）；回填 ⇒ **归零**。"""
+        path, ledger, _ = _fixture(tmp_path)
+        injected = shipped_violations(ledger)
+        assert injected, "注入 kind=flaky/status=open/follow_up=null 后判据仍绿 ⇒ 判据是空断言"
+        report = injected[0]
+        for anchor in ("990000001", "admin-web typecheck + unit tests", "PR Check"):
+            assert anchor in report, f"欠账清单缺 `{anchor}`（读的人定位不到那条）：{report}"
+        assert "flaky_ledger.py follow-up" in report, "清单里没有**可直接复制**的回填命令"
+        assert "--issue <跟踪单号>" in report, "回填命令没说明单号位置（回填路径仍然不可执行）"
+
+        assert FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                        "--issue", "5088"]) == 0
+        assert shipped_violations(FL.load_ledger(path)) == [], "回填后仍有欠账（判据没归零）"
+
+    def test_backfill_keeps_append_only_semantics(self, tmp_path):
+        """判据①后半：回填**只改字段** —— 条目数与顺序不变，其它条目一字未动。"""
+        path, ledger, entry = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        target = len(before["entries"]) - 1
+        assert FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                        "--issue", "5088"]) == 0
+        after = json.loads(path.read_text(encoding="utf-8"))
+        assert append_semantics_violations(before, after, {target}) == []
+        assert after["entries"][target]["follow_up"] == 5088
+        assert [FL.entry_key(e) for e in after["entries"]] == [FL.entry_key(e) for e in before["entries"]]
+
+    def test_backfill_is_idempotent(self, tmp_path, capsys):
+        """幂等：重复回填同一值 = **无副作用**（文件一个字节都不动）。"""
+        path, _, _ = _fixture(tmp_path)
+        assert FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                        "--issue", "5088"]) == 0
+        first = path.read_bytes()
+        capsys.readouterr()
+        assert FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                        "--issue", "5088"]) == 0
+        out = capsys.readouterr().out
+        assert "幂等" in out and "未改动" in out, out
+        assert path.read_bytes() == first, "重复回填改动了文件（不是无副作用的空操作）"
+
+    def test_unknown_run_id_fails_closed(self, tmp_path, capsys):
+        """fail-closed：`run_id` 不在台账里 ⇒ 非零退出 + 明确报错 + **台账一字未改**。"""
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = FL.main(["follow-up", "--ledger", str(path), "--run-id", "1", "--issue", "5088"])
+        err = capsys.readouterr().err
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) == []
+        assert "不在台账里" in err and "拒绝回填" in err, err
+
+    def test_run_id_must_be_positive(self, tmp_path, capsys):
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = FL.main(["follow-up", "--ledger", str(path), "--run-id", "0", "--issue", "5088"])
+        err = capsys.readouterr().err
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) == []
+        assert "正整数" in err, err
+
+    def test_invalid_issue_number_fails_closed(self, tmp_path, capsys):
+        """fail-closed：单号非正整数（`0` / 负数 / 非数字）⇒ 非零退出 + 明确报错。"""
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        for bad_issue in ("0", "-3", "5088x"):
+            rc = FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                          "--issue", bad_issue])
+            err = capsys.readouterr().err
+            assert fail_closed_violations(
+                rc, before, json.loads(path.read_text(encoding="utf-8"))) == [], (bad_issue, err)
+            assert "正整数" in err or "不是整数" in err, (bad_issue, err)
+
+    def test_ambiguous_run_needs_job_and_lists_candidates(self, tmp_path, capsys):
+        """同一 run 有多条（不同 job）⇒ **不许猜**：非零退出并给出可复制的候选命令。"""
+        path, ledger, entry = _fixture(tmp_path, inject=False)
+        for job in ("job A", "job B"):
+            twin = copy.deepcopy(entry if entry else ledger["entries"][-1])
+            twin.update({"job": job, "run_id": 990000002, "kind": "flaky", "status": "open",
+                         "follow_up": None, "rerun_result": "success"})
+            twin.pop("fixed_by", None)
+            ledger["entries"].append(twin)
+        path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000002",
+                      "--issue", "5088"])
+        err = capsys.readouterr().err
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) == []
+        for anchor in ("命中 2 条", "--job 'job A'", "--job 'job B'"):
+            assert anchor in err, f"候选命令缺 `{anchor}`：{err}"
+
+    def test_backfill_can_deduct_with_evidence(self, tmp_path):
+        """销账路径：`--status fixed --fixed-by <凭据>` 一次写完（否则 `reconcile` 判销账不成立）。"""
+        path, _, _ = _fixture(tmp_path)
+        assert FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                        "--issue", "5088", "--status", "fixed",
+                        "--fixed-by", "PR #9999"]) == 0
+        entry = FL.load_ledger(path)["entries"][-1]
+        assert (entry["status"], entry["fixed_by"], entry["follow_up"]) == ("fixed", "PR #9999", 5088)
+        assert shipped_violations(FL.load_ledger(path)) == []
+
+    def test_fixed_requires_fixed_by(self, tmp_path, capsys):
+        """fail-closed：标 `fixed` 却不给凭据 ⇒ 拒绝（否则写出一条「销账不成立」的假账）。"""
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = FL.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                      "--issue", "5088", "--status", "fixed"])
+        err = capsys.readouterr().err
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) == []
+        assert "--fixed-by" in err, err
+
+    def test_how_to_is_documented_in_one_place(self):
+        """schema 里那句「由分诊方回填」必须**点明用哪个命令**（死锁的另一半）。"""
+        howto = FL.FOLLOW_UP_HOWTO
+        for anchor in ("follow-up", "--run-id", "--issue", "--job", "--status fixed",
+                       "--fixed-by", "非零退出", "幂等"):
+            assert anchor in howto, f"回填口径缺 `{anchor}`：{howto}"
+
+    def test_reconcile_branch_reads_the_ungated_branch_ledger(self, capsys):
+        """#5307 可见性：`reconcile --branch` 对账的是**台账分支**那份（欠账正停在它上面）。"""
+        original = FL.read_branch_ledger
+        FL.read_branch_ledger = lambda branch="": {
+            "version": 1, "note": "", "_schema": {}, "entries": [_entry(follow_up=None)]}
+        try:
+            assert FL.main(["reconcile", "--branch", "chore/flaky-ledger"]) == 1
+        finally:
+            FL.read_branch_ledger = original
+        out = capsys.readouterr().out
+        assert "follow-up --ledger" in out and "900001" in out, out
+
+    def test_reconcile_branch_undeterminable_is_three(self, capsys):
+        """三态：读不到台账分支 ⇒ 退 3（**不得**当「无欠账」读）。"""
+        original = FL.read_branch_ledger
+
+        def boom(branch=""):
+            raise RuntimeError("stub: 读不到分支台账")
+
+        FL.read_branch_ledger = boom
+        try:
+            assert FL.main(["reconcile", "--branch", "chore/flaky-ledger"]) == 3
+        finally:
+            FL.read_branch_ledger = original
+        assert "未跑 ≠ 通过" in capsys.readouterr().err
+
+
+class TestFollowUpRedProofs:
+    """注入式红证：把坏实现 / 旧形态注回 ⇒ 上述判据**必须**红（不会红的判据 = 空断言）。"""
+
+    def test_red_proof_reconcile_widened_to_ignore_missing_follow_up(self):
+        """把「flaky 且 open 却没 follow_up」这条对账判据**摘掉**（= 为了变绿而放宽本意）⇒ 必红。"""
+        mutated = REAL_SCRIPT_SOURCE.replace(
+            'if entry.get("kind") == "flaky" and entry.get("status") != "fixed" '
+            'and not entry.get("follow_up"):',
+            "if False:", 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        widened = _load_mutant(mutated, "m_flaky_widened")
+        _, ledger, _ = _fixture(Path(tempfile.mkdtemp()), inject=True)
+        assert widened.reconcile(ledger) == CLEAN_RECONCILE, "变异体前提变了（先修本测试）"
+        assert shipped_violations(ledger, judge=widened.reconcile,
+                                  render=FL.render_reconcile_report) == [], (
+            "放宽对账判据后判据仍红 ⇒ 本红证没打在点子上")
+
+    def test_red_proof_backfill_that_appends_instead_of_editing(self):
+        """把回填实现成「追加一条」⇒ 「条目只追加」判据必须红（= #5307 里 append 回填无效的形态）。
+
+        ⚠️ 直接调变异体的 `apply_follow_up`（不走 CLI）：CLI 的「回填后仍须自洽」闸会先一步拒绝
+        写入（`ledger_violations` 抓幂等键重复）⇒ 那样测到的是那道闸，不是「只追加」判据本身。
+        """
+        mutated = REAL_SCRIPT_SOURCE.replace(
+            '        for field in ("follow_up", "status", "fixed_by"):\n'
+            '            if target[field] != before[field]:\n'
+            '                entry[field] = target[field]\n',
+            "        entries.append(__import__('copy').deepcopy(entry))\n", 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        bad_mod = _load_mutant(mutated, "m_flaky_append")
+        ledger = copy.deepcopy(FL.load_ledger(LEDGER_PATH))
+        target = len(ledger["entries"])
+        twin = copy.deepcopy(ledger["entries"][-1])
+        twin.update({"run_id": 990000001, "job": "admin-web typecheck + unit tests",
+                     "kind": "flaky", "status": "open", "follow_up": None,
+                     "rerun_result": "success"})
+        twin.pop("fixed_by", None)
+        ledger["entries"].append(twin)
+        before = copy.deepcopy(ledger)
+        indices = bad_mod.follow_up_index(ledger, 990000001)
+        bad_mod.apply_follow_up(ledger, indices, issue=5088)
+        assert append_semantics_violations(before, ledger, {target}) != [], (
+            "追加式回填没有被判红 ⇒ 「条目只追加」判据是空断言")
+
+    def test_red_proof_fail_open_on_unknown_run_id(self, tmp_path, capsys):
+        """把拒绝路径改成**静默无操作**（`return 0`）⇒ fail-closed 判据必须红。"""
+        mutated = REAL_SCRIPT_SOURCE.replace(
+            '            print(f"⛔ {exc}", file=sys.stderr)\n'
+            '            print(f"   （回填口径：{FOLLOW_UP_HOWTO}）", file=sys.stderr)\n'
+            "            return 1\n",
+            "            return 0\n", 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        bad_mod = _load_mutant(mutated, "m_flaky_failopen")
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = bad_mod.main(["follow-up", "--ledger", str(path), "--run-id", "1", "--issue", "5088"])
+        capsys.readouterr()
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) != [], (
+            "静默无操作没有被判红 ⇒ fail-closed 判据是空断言")
+
+    def test_red_proof_invalid_issue_accepted(self, tmp_path, capsys):
+        """把「单号必须正整数」的校验摘掉 ⇒ 非法单号被静默接受 ⇒ fail-closed 判据必须红。"""
+        mutated = REAL_SCRIPT_SOURCE.replace(
+            "    if num <= 0:\n"
+            '        raise ValueError(f"{what}={value!r} 不是正整数")\n',
+            "    if False:\n"
+            '        raise ValueError(f"{what}={value!r} 不是正整数")\n', 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        bad_mod = _load_mutant(mutated, "m_flaky_badissue")
+        path, _, _ = _fixture(tmp_path)
+        before = json.loads(path.read_text(encoding="utf-8"))
+        rc = bad_mod.main(["follow-up", "--ledger", str(path), "--run-id", "990000001",
+                           "--issue", "0"])
+        capsys.readouterr()
+        assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) != [], (
+            "非法单号被接受却没有被判红 ⇒ fail-closed 判据是空断言")
 
 
 # ── ⑤d 条目必须**可行动**（照 #4757 形态：每条带 reason + remedy） ─────────────

@@ -198,6 +198,12 @@ def _triggers(wf) -> dict:
     return wf.get("on") or wf.get(True) or {}
 
 
+def _code_lines(text: str) -> str:
+    """只保留**命令行形态**（剔除整行注释）—— 本仓「提及 ≠ 调用」纪律（已踩四次）：
+    判据读注释里的字面量会被自己的说明文案骗绿/骗红。"""
+    return "\n".join(ln for ln in (text or "").splitlines() if not ln.lstrip().startswith("#"))
+
+
 def audit_reconcile(src: str) -> list:
     """兜底 workflow 结构判据（空 = 合规）。纯函数，注入变异体后复用同一路径。"""
     bad = []
@@ -239,19 +245,46 @@ def audit_reconcile(src: str) -> list:
             bad.append(f"step[{i}] 引用了 GITHUB_TOKEN 之外的 secrets {sorted(extra)}（红线：不许新增 secret）")
 
     # ③ 判据必须来自**同一实现**（同脚本同参数，不复制规则），且失败不许被 `tee` 吞掉
-    #    ⚠️ 排除引导期的 `--help` 探测步骤：那不是对账判定（否则 `drift_steps[0]` 会指错步骤）。
-    drift_steps = [s for s in steps
-                   if "flaky_ledger.py ledger-drift" in _step_text(s)
-                   and "ledger-drift --help" not in _step_text(s)]
-    if not drift_steps:
-        bad.append("没有调用 `flaky_ledger.py ledger-drift` 的步骤 ⇒ 兜底判据根本不会被调用")
+    #    ⚠️ 定位方式 = **`id: drift*`**（不是「文本里含 `flaky_ledger.py ledger-drift`」）：
+    #    #5310 起，**修复步骤自己也调** `ledger-drift`（报红前用同一实时读法**复核一次**）⇒
+    #    旧的文本启发式会把两个步骤混在一起，`drift_steps[0]` 与「接管道必须有 pipefail」
+    #    都指错对象。定位失效 ⇒ 显式违规（**不许**静默空跑）。
+    judge = [s for s in steps if str(s.get("id") or "").startswith("drift")]
+    if not judge:
+        bad.append("没有 `id: drift*` 的判定步骤 ⇒ 没有调用 `flaky_ledger.py ledger-drift` 的步骤"
+                   "（兜底判据根本不会被调用；下游 `if:` 也失去依赖）")
     else:
-        txt = "\n".join(_step_text(s) for s in drift_steps)
-        if "drift" not in str(drift_steps[0].get("id") or ""):
-            bad.append("判定步骤必须有 `id: drift*`（下游 `if:` 依赖它的输出）")
-        if "|" in txt and not re.search(r"(?m)^\s*set\s+-o\s+pipefail\s*$", txt):
-            bad.append("判定步骤接了管道却无 `set -o pipefail`（**命令行形态**）⇒ 判据失败（含 exit 3）"
-                       "被 `tee` 吞掉、`drift` 输出为空 ⇒ 静默 no-op（红线）")
+        # ⚠️ 排除引导期的 `--help` 探测步骤：那不是对账判定。
+        drift_steps = [s for s in judge if "ledger-drift --help" not in _step_text(s)]
+        if not drift_steps:
+            bad.append("判定步骤（`id: drift*`）里没有调用 `flaky_ledger.py ledger-drift` 的步骤"
+                       " ⇒ 兜底判据根本不会被调用")
+        else:
+            txt = _code_lines(_step_text(drift_steps[0]))
+            if "flaky_ledger.py ledger-drift" not in txt:
+                bad.append("判定步骤（`id: drift*`）里没有调用 `flaky_ledger.py ledger-drift` 的步骤"
+                           " ⇒ 兜底判据根本不会被调用")
+            if "|" in txt and not re.search(r"(?m)^\s*set\s+-o\s+pipefail\s*$", txt):
+                bad.append("判定步骤接了管道却无 `set -o pipefail`（**命令行形态**）⇒ 判据失败（含 exit 3）"
+                           "被 `tee` 吞掉、`drift` 输出为空 ⇒ 静默 no-op（红线）")
+            # ⑨ #5310 **类级元守卫**：判据不许**跨时刻 / 跨面拼接**。
+            #    类别形态 = 本 workflow 在**实时**查询外部状态（`gh pr list`），而判定侧读的是
+            #    另一个时刻/另一个面的读数（job 启动时的**检出快照**）⇒ 台账 PR 恰在窗口内合并
+            #    就得到「领先却无 PR」的**假红**（实测 run 35951257498：启动 03:23:37、报错
+            #    03:23:55，PR #5139 在 03:23:46 合并；报「24 条未落仓」= 分支 72 − 旧快照 main 48，
+            #    真实 key 差 = ahead 0 / behind 0）。**这条拦的是类别**：下一个人换一种快照读法
+            #    （摘掉 `--main-live`、或再挂一个 `--main-file`）都会红，而不只是钉某一处写法。
+            #    ⚠️ 判据读**命令行形态**（`_code_lines`）—— 本步骤的注释里恰好写着「旧口径 =
+            #    `--main-file`」（说明用），子串判据会被自己的说明文案骗红。
+            live_pr = any(re.search(r"gh pr list\b", _code_lines(_step_text(s))) for s in steps)
+            if live_pr:
+                if "--main-live" not in txt or "--repo" not in txt:
+                    bad.append("#5310 类级元守卫（跨时刻读数）：本 workflow 在**实时**查询 PR，"
+                               "而 drift 判定的 main 侧不是实时读（缺 `--main-live`/`--repo`）"
+                               "⇒ 判据跨了两个时刻（快照 vs 实时）")
+                if re.search(r"--main-file\b", txt):
+                    bad.append("#5310 类级元守卫（跨时刻读数）：drift 判定同时挂了 `--main-file`"
+                               "（检出快照）⇒ 一半快照一半实时")
 
     # ④ 无漂移 ⇒ 零动作；有漂移 ⇒ 走修复（两分支都必须存在，否则兜底会空转/反复动作）
     ifs = [str(s.get("if") or "") for s in steps]
@@ -301,11 +334,51 @@ def audit_reconcile(src: str) -> list:
                 bad.append("兜底 approve 的 fail-closed 出口缺 `::error::` 或 `exit 1`（红线）")
 
     # ⑥ 不静默：无 open PR / 兜底后仍无 check / 分叉 —— 三条都要有可观测信号
-    repair = "\n".join(_step_text(s) for s in steps if "ledger-drift" not in _step_text(s))
+    #    ⚠️ 定位方式 = **步骤名**（`有漂移 ⇒` / `分叉告警`），不是「文本里不含 `ledger-drift`」：
+    #    #5310 起修复步骤自己也调 `ledger-drift`（判据收尾复核）⇒ 旧启发式会把它**整段排除**
+    #    ⇒ ⑥⑦ 全部空跑 = **空断言**。找不到这些步骤 ⇒ 显式违规（定位失效必须红，不许静默）。
+    repair_steps = [s for s in steps
+                    if str(s.get("name") or "").startswith(("有漂移 ⇒", "分叉告警"))]
+    missing = [p for p in ("有漂移 ⇒", "分叉告警")
+               if not any(str(s.get("name") or "").startswith(p) for s in steps)]
+    if missing:
+        bad.append(f"找不到「有漂移 ⇒ …」/「分叉告警」步骤（缺 {missing}）⇒ ⑥⑦ 的定位失效"
+                   "（本守卫会静默空跑，先修 workflow/本测试）")
+    repair = "\n".join(_step_text(s) for s in repair_steps)
     if not re.search(r"gh pr list\b[^\n]*--head", repair):
         bad.append("没有 `gh pr list … --head` 找台账 PR ⇒ 无法判定「有没有路径把台账推上 main」")
     if not re.search(r"::error::[^\n]*open PR", repair):
         bad.append("「分支领先 main 却**没有 open PR**」没有 fail-closed 出口（红线：这正是静默停在分支上的形态）")
+    # ⑩ #5310 **类级元守卫**：**可行动出口必须真的可行动**。
+    #    类别形态 = 报错文案给的动作在该状态下**不可能改变结果**（旧文案逐字是「可行动：重跑
+    #    flaky-triage.yml（由它补建台账 PR）」，而 `flaky-triage.yml` 只在 `entry_count != '0'`
+    #    即**有新的终态事件**时才补建 PR ⇒ 本状态（没有待落仓条目、也没有 PR）下它什么也修不了）
+    #    —— 「可行动出口不可行动」比红本身更坏（本仓 §19「假读数」同族）。判据两条：
+    #      ① 报错必须给**状态改变型**出口（重建 PR / 重开 PR 这种真的改状态的动作）；
+    #      ② 必须**显式说明**旧出口为何无效（否则下一个人照旧把它当成出路贴回来）。
+    if not re.search(r"::error::[^\n]*open PR[^\n]*(gh pr create|gh pr reopen)", repair):
+        bad.append("#5310 类级元守卫（可行动出口）：no-PR 的报错必须给**真能改变结果**的出口"
+                   "（重建 `gh pr create` / 重开 `gh pr reopen`），不是「重跑某个 workflow」")
+    if "不改变结果" not in repair:
+        bad.append("#5310 类级元守卫（可行动出口）：no-PR 的报错必须**显式说明**旧出口"
+                   "（重跑 flaky-triage.yml）为何无效 —— 否则不可行动的出口会被再贴回来")
+    # ⑪ #5307 可见性：**台账分支**的欠账必须落在某个消费面（job summary + `::error::`）。
+    #    类别形态 = 「判据判红但没有任何人看」（这条 required 测试在台账分支上恒红约 40 小时，
+    #    而不在 required 集合 + `flaky-triage` 按自指守卫跳过该分支 + 本兜底原先只补 approve/arm）。
+    #    ⚠️ 判据只认**调用形态**（`^\s*python3 … reconcile --branch`）：同一步骤的引导期 `::warning::`
+    #    文案里恰好也写着 `reconcile --branch`（说明用）—— 子串判据会被自己的文案喂绿（本仓已踩五次）。
+    debt = [s for s in steps
+            if re.search(r"(?m)^\s*python3\s+\S*flaky_ledger\.py\s+reconcile\s+--branch\b",
+                         _code_lines(_step_text(s)))]
+    if not debt:
+        bad.append("#5307 可见性：没有任何步骤对账**台账分支**的欠账（`reconcile --branch`）"
+                   "⇒ 台账分支的确定性失败仍无消费面")
+    else:
+        dtxt = _step_text(debt[0])
+        if not re.search(r"::error::[^\n]*欠账", dtxt):
+            bad.append("#5307 可见性：欠账步骤缺 `::error::`（红得不可归因）")
+        if "GITHUB_STEP_SUMMARY" not in dtxt:
+            bad.append("#5307 可见性：欠账清单没写进 job summary（人看不到清单与回填命令）")
     # ⚠️ 阈值判据读 **job env**（不是「文本里提到过 STALE_MINUTES」）：后者会被报错文案里的
     #    `${STALE_MINUTES}` 自己骗绿 —— 把阈值定义删掉也照样通过 = 空断言。
     stale = str((job.get("env") or {}).get("STALE_MINUTES") or "")
@@ -397,12 +470,15 @@ class TestReconcileWorkflowRedProofs:
         assert any("零动作" in v for v in audit_reconcile(mutated))
 
     def test_inject_removing_no_open_pr_fail_closed(self):
-        """摘掉「没有 open PR ⇒ 红」⇒ 台账静默停在分支上（本单要治的形态）⇒ 必红。"""
+        """摘掉「没有 open PR ⇒ 红」的出口 ⇒ 台账静默停在分支上（本兜底要治的形态）⇒ 必红。
+
+        ⚠️ #5310 同步锚点（**判据强度未降**）：文案换成「真出口 + 显式说明旧出口无效」后，
+        这里只把 `::error::` 与 open PR 的**形态**摘掉（出口文句仍在）⇒ 命中「没有 fail-closed 出口」。
+        """
         mutated = REAL_RECONCILE.replace(
-            'echo "::error::台账分支领先 main（${AHEAD} 条未落仓）却**没有 open PR** '
-            '⇒ 无任何路径把它推上 main（台账停在分支上）。可行动：重跑 flaky-triage.yml'
-            '（由它补建台账 PR）"\n            exit 1',
-            'echo "⚠️ 没有 open PR"\n            exit 0', 1)
+            'echo "::error::台账分支领先 main（${AHEAD} 条未落仓；复核 ahead=${RECHECK_AHEAD:-未知}）'
+            '却**没有 open PR**',
+            'echo "⚠️ 没有 open PR', 1)
         assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
         violations = audit_reconcile(mutated)
         assert any("open PR" in v for v in violations), violations
@@ -627,6 +703,39 @@ RECONCILE_RED_PROOFS = [
     ("divergence_signal_removed", 'echo "::error::台账分叉：', 'echo "⚠️ 台账分叉：', "分叉"),
     ("fallback_pushes_branch", "          # ② 找台账 PR",
      "          git push origin HEAD:main\n          # ② 找台账 PR", "`git push`"),
+    # ── #5310：两条**类级元守卫**各自的红证（把实现退回「拼接」形态 ⇒ 必红）──────────────
+    ("repair_step_renamed", "      - name: 有漂移 ⇒ 补 approve", "      - name: 修复步骤",
+     "找不到「有漂移 ⇒"),
+    ("main_side_not_live",
+     '            --branch "$LEDGER_BRANCH" --main-live --repo "$GITHUB_REPOSITORY" \\\n'
+     '            --gh-output "$GITHUB_OUTPUT"',
+     '            --branch "$LEDGER_BRANCH" \\\n            --gh-output "$GITHUB_OUTPUT"',
+     "类级元守卫（跨时刻读数）"),
+    ("main_side_snapshot_spliced_in",
+     '            --branch "$LEDGER_BRANCH" --main-live --repo "$GITHUB_REPOSITORY" \\\n'
+     '            --gh-output "$GITHUB_OUTPUT"',
+     '            --main-file .github/flaky-ledger.json --branch "$LEDGER_BRANCH" --main-live '
+     '--repo "$GITHUB_REPOSITORY" \\\n            --gh-output "$GITHUB_OUTPUT"',
+     "一半快照一半实时"),
+    ("actionable_exit_replaced_by_fake_one",
+     "**真实出口**（本兜底**不建 PR** —— 建 PR 是 flaky-triage.yml 的唯一职责，见文件头）："
+     "① 若该 PR 是被误关的，重开它（gh pr reopen）—— 分支内容与 PR 都在，重开后 required 检查照跑；"
+     "② 否则由**人 / agent 显式重建**台账 PR：gh pr create --base main --head $LEDGER_BRANCH "
+     "--title 'chore(flaky): 台账追加' --body '（由 flaky-triage.yml 维护）'，"
+     "随后本兜底下一轮补 approve + arm auto-merge。",
+     "可行动：重跑 flaky-triage.yml（由它补建台账 PR）",
+     "类级元守卫（可行动出口）"),
+    ("actionable_exit_invalidity_disclaimer_removed",
+     "⚠️ 旧的出口「重跑 flaky-triage.yml」在本状态下**不改变结果**",
+     "⚠️ 亦可重跑 flaky-triage.yml", "类级元守卫（可行动出口）"),
+    # ── #5307：台账分支的欠账必须有**消费面**（否则那条红没人看）────────────────────
+    ("debt_visibility_removed",
+     '          python3 .github/scripts/flaky_ledger.py reconcile --branch "$LEDGER_BRANCH" \\\n',
+     '          python3 .github/scripts/flaky_ledger.py reconcile '
+     '--ledger .github/flaky-ledger.json \\\n',
+     "#5307 可见性"),
+    ("debt_summary_write_removed", '            | tee -a "$GITHUB_STEP_SUMMARY"\n',
+     "", "#5307 可见性"),
 ]
 
 TRIAGE_RED_PROOFS = [

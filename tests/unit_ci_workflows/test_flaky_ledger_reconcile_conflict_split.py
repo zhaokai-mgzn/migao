@@ -56,8 +56,11 @@ case "${1:-} ${2:-}" in
 esac
 """
 
-# 只实现「把 approve 结果写成空列表」——被测步骤只读它的**条数**（= 待批准 run 数）。
-LEDGER_STUB = r"""import pathlib
+# 只实现「把 approve 结果写成空列表」+「把 ledger-drift 的 ahead 写成 N 条」——被测步骤只读
+# 它们的**条数**（= 待批准 run 数 / 复核后的 ahead 条数）。
+LEDGER_STUB = r"""import json
+import os
+import pathlib
 import sys
 
 out = None
@@ -65,7 +68,12 @@ for i, a in enumerate(sys.argv):
     if a == "--json-out":
         out = sys.argv[i + 1]
 if out:
-    pathlib.Path(out).write_text("[]", encoding="utf-8")
+    if "ledger-drift" in sys.argv:
+        n = int(os.environ.get("STUB_RECHECK_AHEAD", "0"))
+        payload = {"ahead": [f"w/{i}/j" for i in range(n)], "behind": []}
+    else:
+        payload = []
+    pathlib.Path(out).write_text(json.dumps(payload), encoding="utf-8")
 """
 
 
@@ -90,8 +98,11 @@ def _script(src: str, ahead: int, age: int) -> str:
 def run_repair(tmp_path: Path, src: str = SRC, *, ahead: int = 4, age: int = 448,
                pr: str = "5093", merge_state: str = "CLEAN", mergeable: str = "MERGEABLE",
                auto_merge: str = "armed", arm_rc: int = 0, arm_out: str = "",
-               checks: int = 3):
-    """把该步骤**真的执行一遍**（`bash -e`，与 GitHub 的默认 shell 形态一致）。"""
+               checks: int = 3, recheck_ahead: int = 0):
+    """把该步骤**真的执行一遍**（`bash -e`，与 GitHub 的默认 shell 形态一致）。
+
+    `recheck_ahead` = 报红前那次**复核**（`ledger-drift` 实时重算）读到的 ahead 条数（#5310）。
+    """
     work = tmp_path / "repo"
     (work / ".github" / "scripts").mkdir(parents=True, exist_ok=True)
     (work / ".github" / "scripts" / "flaky_ledger.py").write_text(LEDGER_STUB, encoding="utf-8")
@@ -116,6 +127,7 @@ def run_repair(tmp_path: Path, src: str = SRC, *, ahead: int = 4, age: int = 448
         "STUB_ARM_RC": str(arm_rc),
         "STUB_ARM_OUT": arm_out,
         "STUB_CHECKS": str(checks),
+        "STUB_RECHECK_AHEAD": str(recheck_ahead),
     })
     return subprocess.run(["bash", "-e", "-c", _script(src, ahead, age)],
                           cwd=work, env=env, capture_output=True, text=True)
@@ -175,6 +187,75 @@ def test_old_swallow_form_is_gone():
     """③ 的**反向**判据：旧的「arm 失败 ⇒ 非致命」吞法必须已不存在（否则读数与动作不自洽）。"""
     assert "非致命，由下一轮对账复核" not in SRC
     assert "ARM_RC" in repair_run(SRC)
+
+
+# ── #5310：判据不许跨时刻读数 / 无事可做不得报错 / 出口必须真可行动（判据级红证） ──────
+
+ZERO_ACTION_GUARD = (
+    '          if [ "${AHEAD:-0}" = "0" ]; then\n'
+    '            echo "::notice::✅ 台账已与 main 收敛（ahead=0）—— 兜底零动作'
+    '（#5310：判据与 PR 查询不许跨时刻读数）"\n'
+    "            exit 0\n"
+    "          fi\n"
+)
+
+
+def test_zero_ahead_is_zero_action_and_never_the_no_pr_error(tmp_path):
+    """#5310 判据②：`ahead == 0` ⇒ **零动作**（与「无漂移 ⇒ 零动作」同一条），**不许**报错。"""
+    p = run_repair(tmp_path, ahead=0, pr="")
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "::notice::" in p.stdout and "零动作" in p.stdout, p.stdout
+    assert "::error::" not in p.stdout, p.stdout
+
+
+def test_red_proof_zero_ahead_guard_removed_goes_red(tmp_path):
+    """**红证**（判据②）：把这道闸摘掉 ⇒ 同一输入（`ahead=0` ∧ 无 PR）走到「无 PR ⇒ error」。
+
+    这正是**旧形态**：判据拿的是一个跨时刻读数，于是「无事可做」被读成「领先却无 PR」的假红。
+    """
+    mutated = SRC.replace(ZERO_ACTION_GUARD, "", 1)
+    assert mutated != SRC, "注入锚点失效（先修本测试）"
+    # 复核读到 ahead=7（= 判据与 PR 查询之间**没有**收敛）⇒ 挡住它的只有「零动作」这道闸。
+    base = run_repair(tmp_path / "base", SRC, ahead=0, pr="", recheck_ahead=7)
+    assert base.returncode == 0, base.stdout + base.stderr
+    injected = run_repair(tmp_path / "inj", mutated, ahead=0, pr="", recheck_ahead=7)
+    assert injected.returncode == 1, "摘掉零动作闸后本该（按旧形态）假红，实际仍绿"
+    assert "没有 open PR" in injected.stdout, injected.stdout
+
+
+def test_truly_behind_and_truly_no_pr_is_still_red_with_a_real_exit(tmp_path):
+    """#5310 判据③④：**真**落后 + **真**无 PR ⇒ 仍必须红（不放宽本意），且出口**真的可行动**。"""
+    p = run_repair(tmp_path, ahead=7, pr="", recheck_ahead=7)
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "gh pr create --base main --head" in p.stdout, "报错没给能改变结果的真出口"
+    assert "不改变结果" in p.stdout, "没说明旧出口（重跑 flaky-triage.yml）为何无效"
+
+
+def test_converged_inside_the_window_is_not_red(tmp_path):
+    """判据①收尾复核：判据与 PR 查询跨的那个**秒级**窗口内已收敛 ⇒ 零动作（不假红）。"""
+    p = run_repair(tmp_path, ahead=3, pr="", recheck_ahead=0)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "复核 ahead=0" in p.stdout, p.stdout
+
+
+def test_red_proof_recheck_removed_reintroduces_false_red(tmp_path):
+    """**红证**（判据①）：把「报红前复核一次」摘掉 ⇒ 收敛在窗口内的场景又变假红。"""
+    mutated = SRC.replace(
+        '            if [ "$RECHECK_RC" = "0" ] && [ "$RECHECK_AHEAD" = "0" ]; then\n'
+        '              echo "::notice::✅ 复核 ahead=0 —— 台账已在窗口内落仓'
+        '（#5310：判据与 PR 查询不许跨时刻读数）⇒ 零动作，不判红"\n'
+        "              exit 0\n"
+        "            fi\n", "", 1)
+    assert mutated != SRC, "注入锚点失效（先修本测试）"
+    base = run_repair(tmp_path / "base", SRC, ahead=3, pr="", recheck_ahead=0)
+    assert base.returncode == 0, base.stdout + base.stderr
+    injected = run_repair(tmp_path / "inj", mutated, ahead=3, pr="", recheck_ahead=0)
+    assert injected.returncode == 1, "摘掉复核后本该假红，实际仍绿"
+
+
+def test_unactionable_exit_text_is_gone():
+    """判据③的**反向**判据：旧的不可行动出口不许留在文案里（否则会被再贴回来）。"""
+    assert "可行动：重跑 flaky-triage.yml（由它补建台账 PR）" not in SRC
 
 
 # ── 每条判据都能被**单独**注入变红 ──────────────────────────────────────────────

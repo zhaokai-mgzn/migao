@@ -49,6 +49,31 @@ name: Flaky Ledger Reconcile (台账落仓对账兜底)
 #     squash 提交 ⇒ 只追加的分支**每一轮都会再冲突**（实测：`#4881` 落仓后分支又 `diverged`
 #     ahead 34 / behind 16、PR `DIRTY`、`check 数=0`、陈旧 448 分钟）。⇒ **一次性 rebase 只是
 #     解阻，不是根治**：根治要由那个唯一写者**在追加前先 rebase**（本兜底不做，只在冲突时报出）。
+#
+# ─── #5310：判据**不许跨时刻读数**（本文件原口径的假红，已修） ───────────────────────
+# 旧口径把**两个不同时刻**的读数拼在一起：main 侧台账取 **job 启动时的检出快照**（工作区），
+# 而 PR 侧是**实时** `gh pr list` ⇒ 台账 PR 在这个窗口里被合并就得到「**落后 N 条 + 无 PR**」。
+# **实测**（逐字）：失败 run `35951257498`，`createdAt=startedAt=2026-09-24T03:23:37Z`、
+# 报错时刻 `03:23:55`，而台账 PR #5139 在 `03:23:46` 合并（**跨在该 run 中间**）；
+# 它报「24 条未落仓」= 分支 72 − **旧快照** main 48，真实 key 差 = **ahead 0 / behind 0**。
+# 修法（本单裁定的 ①）：main 侧改**实时**读（`ledger-drift --main-live`：`gh api` 取 `main`
+# 上该文件）⇒ 判据与 PR 查询读的都是「**现在**」；另加两道：
+#   · `ahead == 0` ⇒ **零动作**（与既有「无漂移 ⇒ 零动作」同一条），**不许**走到「无 open PR ⇒ error」
+#     —— 无事可做时报错正是「可行动出口不可行动」的现场；
+#   · 报红前**复核一次**（同一实时读法）：判据与 PR 查询之间仍可能跨一个**秒级**窗口，
+#     台账 PR 恰在此刻合并 ⇒ 复核已收敛 ⇒ 零动作（不红）。
+# 报错文案的出口必须**真的可行动**：旧的「重跑 flaky-triage.yml」在本状态下**什么也修不了**
+# （它只在 `entry_count != '0'` 即**有新的终态事件**时才补建 PR）⇒ 换成真出口并**显式说明**
+# 旧出口为何无效（不许留白）。
+#
+# ─── #5307：台账分支的确定性失败**没有任何消费面**（本文件补上） ────────────────────
+# **实测**：台账分支上有 4 条 `kind=flaky` / `status=open` / `follow_up=null` ⇒ **required** 测试
+# `tests/unit_ci_workflows/test_flaky_triage.py::TestReconcile::test_shipped_ledger_reconciles_clean`
+# 在该分支上**恒红**（4 次尝试同形）⇒ 台账停摆约 **40 小时**，而这条红**没有任何人看**：
+#   ① 不在 required 集合（不阻塞任何 PR）；② `flaky-triage` 按「自指守卫」**跳过**台账分支；
+#   ③ 本兜底原先只补 approve/arm、**不读失败原因**。
+# ⇒ 新增「台账欠账可见性」步骤：把**欠账清单 + 可直接复制的回填命令**（由
+# `flaky_ledger.py reconcile --branch …` 渲染，措辞只有一处事实源）写进 job summary 并 `::error::`。
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -92,6 +117,36 @@ jobs:
       - name: 台账自检（fail-closed：台账不合规就不参与对账）
         run: python3 .github/scripts/flaky_ledger.py selftest
 
+      - name: 台账欠账可见性（#5307：台账分支的确定性失败此前没有任何消费面）
+        run: |
+          # 为什么需要这一步（#5307 最深的教训，**实测**）：**required** 测试
+          # `tests/unit_ci_workflows/test_flaky_triage.py::TestReconcile::test_shipped_ledger_reconciles_clean`
+          # 判「台账必须 reconcile 干净」，而**分支台账**上只要有一条 `kind=flaky` / `status=open` /
+          # `follow_up=null`（当时**回填路径不存在**），它就在该分支上**恒红** ⇒ 台账永远落不了 main。
+          # 而这条红**没有任何人看**：① 不在 required 集合（不阻塞任何 PR）；② `flaky-triage` 按
+          # 「自指守卫」**跳过**台账分支（`head_branch == LEDGER_BRANCH` ⇒ skip）；③ 本兜底原先
+          # 只补 approve/arm、**不读失败原因**。⇒ 本步骤把**欠账清单 + 可直接复制的回填命令**
+          # 写进 job summary 并 `::error::`（红得可归因；命令由脚本渲染 ⇒ 措辞只有一处事实源）。
+          # ⚠️ 引导期：`reconcile --branch` 随本 PR 落地，main 尚未包含它 ⇒ 显式 `::warning::`
+          #    并跳过（**跳过 ≠ 通过**）—— 与既有 `ledger-drift` 引导期探测同一形态。
+          set -uo pipefail
+          if ! python3 .github/scripts/flaky_ledger.py reconcile --help 2>&1 | grep -q -- '--branch'; then
+            echo "::warning::main 的 flaky_ledger.py 还没有 \`reconcile --branch\`（引导期：本步骤随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"
+            exit 0
+          fi
+          # 对账对象 = **台账分支**上那份台账（不是工作区的 main 副本）：欠账正停在分支上、且那份
+          # 没有 required 判据 ⇒ 只有在这里读它，红才有人看见。
+          set +e
+          python3 .github/scripts/flaky_ledger.py reconcile --branch "$LEDGER_BRANCH" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          RC=${PIPESTATUS[0]}
+          set -e
+          case "$RC" in
+            0) echo "::notice::✅ 台账分支无欠账（reconcile 干净）" ;;
+            1) echo "::error::台账分支存在欠账（reconcile=1）⇒ required 测试 \`test_shipped_ledger_reconciles_clean\` 在该分支上恒红 ⇒ 台账落不了 main（#5307）。清单 + 可直接复制的回填命令见上方 job summary"; exit 1 ;;
+            *) echo "::error::无法判定台账分支的欠账状态（reconcile 退 ${RC}）⇒ **不得**当「无欠账」读（未跑 ≠ 通过）"; exit 1 ;;
+          esac
+
       - name: 引导期检查（main 上还没有判据子命令 ⇒ 本轮显式跳过，**不是**通过）
         id: preflight
         run: |
@@ -113,13 +168,20 @@ jobs:
       - name: 对账判定（纯函数；**状态级** —— 台账分支是否领先 main）
         id: drift
         if: steps.preflight.outputs.ready == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # ⚠️ `set -o pipefail` **必需**：本行接了 `tee`（写 job summary）。没有它时管道退出码
           #    取 `tee` 的 0 ⇒ 判据失败（含 `exit 3` 无法判定）被吞掉 ⇒ `drift` 输出为空
           #    ⇒ 所有 `if:` 全假 ⇒ **静默 no-op**（"兜底没生效"装成"没有漂移"）= 本单要治的形态。
           set -o pipefail
+          # #5310 判据①：main 侧台账取**实时**（`--main-live`：`gh api` 取 main 上的该文件），
+          # **不再**用 job 启动时的检出快照（旧口径 = `--main-file` = 工作区）—— 旧口径与下面
+          # 实时的 open PR 查询**跨了两个时刻**，台账 PR 在窗口内被合并就假红「落后 N 条 + 无 PR」。
+          # 判据读的都必须是「现在」（判据与 PR 查询同一时刻，**不许**一半快照一半实时）。
           python3 .github/scripts/flaky_ledger.py ledger-drift \
-            --branch "$LEDGER_BRANCH" --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+            --branch "$LEDGER_BRANCH" --main-live --repo "$GITHUB_REPOSITORY" \
+            --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 无漂移 ⇒ 零动作收工（幂等：不碰 PR、不 approve、不 push）
         if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift != '1'
@@ -139,6 +201,15 @@ jobs:
           set -uo pipefail
           AHEAD="${{ steps.drift.outputs.ahead }}"
           AGE="${{ steps.drift.outputs.age_minutes }}"
+          # ⓪ #5310 判据②：**无事可做时不得报错** —— `ahead == 0` ⇒ 走「零动作」路径
+          #    （与既有的「无漂移 ⇒ 零动作」同一条），**不许**走到下面的「无 open PR ⇒ error」。
+          #    没有这道闸时，一个**跨时刻读数**（或 drift 输出与真实状态错位）会让本步拿着
+          #    `ahead > 0` 去查 PR，而台账 PR 已在窗口内合并 ⇒ 报「领先却无 PR」的红，
+          #    其实**没有任何事要做**（实测形态：run 35951257498）。
+          if [ "${AHEAD:-0}" = "0" ]; then
+            echo "::notice::✅ 台账已与 main 收敛（ahead=0）—— 兜底零动作（#5310：判据与 PR 查询不许跨时刻读数）"
+            exit 0
+          fi
           # ① 补 approve —— 与 flaky-triage.yml 步骤⑤ **同一实现**（同脚本同参数，不复制规则）。
           #    本 job 的工作区是 **main**（本 workflow 从不 checkout 台账分支）⇒ 跑的就是 main 的副本，
           #    故不会踩 flaky-triage.yml 步骤④ 那个「切树后跑到分支旧副本」的坑。
@@ -154,7 +225,24 @@ jobs:
           PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number \
                  --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
           if [ -z "$PR" ]; then
-            echo "::error::台账分支领先 main（${AHEAD} 条未落仓）却**没有 open PR** ⇒ 无任何路径把它推上 main（台账停在分支上）。可行动：重跑 flaky-triage.yml（由它补建台账 PR）"
+            # ⓪b #5310 判据①的收尾复核：判据（**实时**读 main）与这里的 PR 查询之间仍可能跨一个
+            #     **秒级**窗口 —— 台账 PR 若恰在此刻合并，读数又会变成「领先却无 PR」（本单病灶）。
+            #     故在报红前**复核一次**（同一实时读法）：已收敛 ⇒ 零动作，不红。
+            RECHECK_RC=0
+            RECHECK_AHEAD=""
+            python3 .github/scripts/flaky_ledger.py ledger-drift \
+              --branch "$LEDGER_BRANCH" --main-live --repo "$GITHUB_REPOSITORY" \
+              --json-out /tmp/recheck.json >/dev/null 2>&1 || RECHECK_RC=$?
+            RECHECK_AHEAD=$(python3 -c "import json;print(len(json.load(open('/tmp/recheck.json'))['ahead']))" 2>/dev/null || echo "")
+            if [ "$RECHECK_RC" = "0" ] && [ "$RECHECK_AHEAD" = "0" ]; then
+              echo "::notice::✅ 复核 ahead=0 —— 台账已在窗口内落仓（#5310：判据与 PR 查询不许跨时刻读数）⇒ 零动作，不判红"
+              exit 0
+            fi
+            # ⓪c #5310 判据③：**可行动出口必须真的可行动**。旧文案给的是「重跑 flaky-triage.yml」，
+            #     而在本状态下它**什么也修不了**（没有待落仓条目要补建 PR；且 `flaky-triage.yml`
+            #     只在 `entry_count != '0'` 即**有新的终态事件**时才补建 PR）⇒ 换成真出口，
+            #     并**显式说明旧出口为何无效**（不许留白、也不许给假出口）。
+            echo "::error::台账分支领先 main（${AHEAD} 条未落仓；复核 ahead=${RECHECK_AHEAD:-未知}）却**没有 open PR** ⇒ 无任何路径把它推上 main（台账停在分支上）。**真实出口**（本兜底**不建 PR** —— 建 PR 是 flaky-triage.yml 的唯一职责，见文件头）：① 若该 PR 是被误关的，重开它（gh pr reopen）—— 分支内容与 PR 都在，重开后 required 检查照跑；② 否则由**人 / agent 显式重建**台账 PR：gh pr create --base main --head $LEDGER_BRANCH --title 'chore(flaky): 台账追加' --body '（由 flaky-triage.yml 维护）'，随后本兜底下一轮补 approve + arm auto-merge。⚠️ 旧的出口「重跑 flaky-triage.yml」在本状态下**不改变结果**（它只在有**新的终态事件**时才补建 PR）⇒ 故不再作为出口。"
             exit 1
           fi
           # ③ 补 arm auto-merge（幂等）。**不是放行**：台账 PR 仍要真的跑完 required 检查才可能合并。
