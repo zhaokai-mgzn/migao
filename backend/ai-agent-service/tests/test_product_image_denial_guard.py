@@ -1,30 +1,67 @@
-"""商品图片域的能力误宣守卫（issue #3931）— 语义归一判据（锚点 × 否定 × 自我主体）。
+"""商品图片域的能力守卫（issue #3931 → **#5318 改判**）— 语义归一判据（锚点 × 否定 × 自我主体）。
 
 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
 agent 拒绝：「我这个商品管理入口只能改价格、名称、描述、状态、回补库存开关这些字段，
 不包含图片上传……您上传的这张色卡图我这边拿不到可写入的地址，所以没法代劳」——
-但同一回合 tool_calls 里就有 product_update(images=[色卡URL])，且 19:49 用户坚持后
-改用 product_manage(action=update, images=[2 个 URL]) 成功 —— 图片更新能力真实存在。
+当时 `product_manage(action=update, images=…)` 真实可达（19:49 改用它成功），所以那句话是
+**能力误宣**：守卫命中即纠正重答，并把模型推去调用那个真实可达的写工具。
 
-守卫要求（与下单域 #3389/#3477 同构）：**AI 自己否定一个它实际拥有的能力**（图片更新）
-→ 必须命中并纠正；「顾客没发图片」「主图还是空的建议上传」「我没权限删除商品」等
-非能力误宣（中性说明 / 真实越权）→ 不得命中（防误伤，判别性测试）。
+**改判（issue #5318，2026-09-24）**：`product_manage` 自 #5247 起已从**全部 B 端 skill 解绑**
+（#5303 只补回 `product_update` / `sku_update` 两条改价），图片写能力**真的不在手里**
+⇒「该入口不支持图片」从谎话变成真话。旧纠正话术（「你可以真实设置主图，立即调用
+`product_manage(…)`」）于是成了**系统主动注入的、指向不可达工具的指令**：模型必然
+`tool_not_found`，且每次命中都多烧一次重答 —— 守卫从纠错器变成 bug 制造器。
+⇒ 本文件按新裁定改判（**不是删守卫**）：
+  · 判据（锚点 × 否定 × 自我主体）与判别性用例**原样保留**（仍是同一类「AI 自我否定」形态）；
+  · **纠正方向换掉**：如实说明「这条能力当前不在米宝能力内」+ 引导商家到后台「商品管理」页面
+    （判据见 `TestProductImageCorrectiveAdjudication`）；
+  · **注入话术不得点名任何模型调不到的工具**（同一类判据的机械形态，含其它图片话术面）。
 """
 # case_ids: PR-017, PR-026, PR-027
 
 import json
+import re
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.graph.skills.base_skill import (
+    _IMAGE_DROP_GUIDANCE,
     _product_image_capability_available,
     _product_image_denial_hit,
     _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE,
     capability_denial_text_hit,
     execute_skill,
 )
+from app.tools.product_update import ProductUpdateTool
+from app.tools.sku_update import SkuUpdateTool
+
+
+# ── #5318 的机械判据：**注入给模型的话术不得点名它调不到的工具** ──────────────────
+# 病根（issue #5318）：纠正话术逐字写着「立即调用 `product_manage(action=update, …)`」，
+# 而该工具自 #5247 起已从全部 B 端 skill 解绑 ⇒ 模型必然 `tool_not_found`。
+# 判据取**执行域事实**（哪些工具真的在手上），不抄工具名清单 —— 换名字/换工具都不会失效。
+
+
+def _named_tools(text: str) -> set:
+    """文本里出现的**注册表工具名**（这些话术都是注入给模型看的：点谁，它就去调谁）。"""
+    from app.tools.registry import get_tool_registry
+    return {n for n in get_tool_registry().get_tool_names() if n in (text or "")}
+
+
+def _reachable_product_tools() -> set:
+    """B 端商品域**真的能调**的工具名 = `PRODUCT_TOOLS` 在册的 + 全域共享的只读工具（#4125）。"""
+    from app.tools.registry import get_tool_registry
+    from app.graph.skills.product_skill import PRODUCT_TOOLS
+    full = get_tool_registry()
+    return {n for n in PRODUCT_TOOLS if full.get_tool(n)} | {
+        t.name for t in full.get_all_tools() if getattr(t, "read_only", False)}
+
+
+def _image_segments(text: str) -> list:
+    """只挑**图片相关**的小句（本单范围：不扩面到 #5315 的其它文案面）。"""
+    return [s for s in re.split(r"[；。\n]", text or "") if "图" in s]
 
 
 class TestProductImageDenialHit:
@@ -90,6 +127,72 @@ class TestProductImageCapabilityFactDriven:
         registry = MagicMock()
         registry.get_tool.side_effect = lambda n: tool if n == "product_manage" else None
         assert _product_image_capability_available(registry) is False
+
+
+class TestProductImageCorrectiveAdjudication:
+    """#5318 改判：纠正方向 = **如实说明能力边界 + 引导后台页面**，且话术**不点名调不到的工具**。
+
+    红证（改前）：旧话术逐字写着「主图/图片更新能力在 `product_manage(action=update, images=…)`
+    里，**你可以真实设置主图**……立即调用 `product_manage(…)` 执行」—— 该工具自 #5247 起
+    不在任何 B 端 skill 的工具子集里 ⇒ 这条**系统主动注入的指令**必然以 `tool_not_found` 收场。
+    """
+
+    #: #5318 的病根原文（红证夹具：判据对它必须**判红**，否则判据是空断言）
+    LEGACY_WORDING = (
+        "主图/图片更新能力在 `product_manage(action=update, images=…/detail_images=…)` 里，"
+        "**你可以真实设置主图**。请**重新给出回复**……先 `product_detail`/`product_search` "
+        "拿真实商品 UUID，发 `interact(component=confirm)` 确认后立即调用 "
+        "`product_manage(action=update, product_id=<UUID>, images=[色卡图URL])` 执行。"
+    )
+
+    def test_judge_has_teeth_on_legacy_wording(self):
+        """红证：旧话术喂给判据 ⇒ 必须判红（证明下面那条断言不是空断言）。"""
+        bad = _named_tools(self.LEGACY_WORDING) - _reachable_product_tools()
+        assert bad == {"product_manage"}, (
+            f"判据对 #5318 的病根原文没有判别力（实得 {sorted(bad)}）—— 同步本判据"
+        )
+
+    def test_corrective_names_no_unreachable_tool(self):
+        """纠正话术点名的工具必须**都在**本流程可达集里（旧话术点名 product_manage ⇒ 红）。"""
+        unreachable = (_named_tools(_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE)
+                       - _reachable_product_tools())
+        assert unreachable == set(), (
+            f"纠正话术点名了模型调不到的工具 {sorted(unreachable)} —— 它是**系统主动注入的指令**，"
+            "会把模型推向必然 tool_not_found 的调用（#5318 病根）"
+        )
+
+    def test_corrective_direction_is_honest_and_points_to_backend_page(self):
+        """新方向两件事齐备：① 如实说明「该能力当前不在能力内」② 给出去处（后台商品管理页）。"""
+        text = _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
+        assert "不在" in text and "能力内" in text, (
+            "纠正话术未如实说明「该能力当前不在米宝能力内」"
+        )
+        assert "后台" in text and "商品管理" in text, (
+            "纠正话术未引导商家到后台「商品管理」页面（光说做不到不算交付）"
+        )
+        assert "/products" in text, "纠正话术缺少可执行的后台页面路径"
+        assert "禁止" in text or "不得" in text, (
+            "纠正话术未禁止「已为您设置主图/主图已更新/设置成功」类谎称已执行的措辞"
+        )
+
+    def test_image_wording_surfaces_name_no_unreachable_tool(self):
+        """图片相关话术的**全部注入面**用同一判据（issue #5318 范围）。
+
+        纠正话术 / 写工具丢弃图片参数的指引 / 两条改价工具描述里的图片反例 ——
+        任一处漏改，模型就又被推向一个调不到的工具（它们都会被注入进模型上下文）。
+        """
+        surfaces = {
+            "纠正话术": _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE,
+            "图片参数丢弃指引": " ".join(_IMAGE_DROP_GUIDANCE.values()),
+            "product_update 描述（图片反例）": ProductUpdateTool.description,
+            "sku_update 描述（图片反例）": SkuUpdateTool.description,
+        }
+        for label, text in surfaces.items():
+            segs = _image_segments(text)
+            assert segs, f"{label}：没扫到任何图片相关小句 ⇒ 判据空跑（同步本判据）"
+            for seg in segs:
+                bad = _named_tools(seg) - _reachable_product_tools()
+                assert not bad, f"{label} 的图片话术点名了调不到的工具 {sorted(bad)}：{seg!r}"
 
 
 class TestProductImageDenialMorphology:
@@ -317,8 +420,11 @@ class TestProductImageDenialToolCallGate:
         return out, executed, call_inputs
 
     def test_denial_text_with_tool_call_triggers_correction(self):
-        """能力可达（product_manage 带 images）：拒绝文本+查询调用同回合 → 纠正注入。"""
-        out, executed, call_inputs = self._drive(with_capability=True)
+        """能力**确实不在手里**（#5318 后的生产事实）：拒绝文本+查询调用同回合 → 纠正注入。
+
+        #5247 之后「该入口不支持图片」是真话 ⇒ 纠正内容 = 如实说明 + 引导后台页面（不推任何工具）。
+        """
+        out, executed, call_inputs = self._drive(with_capability=False)
         # 纠正话术必须出现在某次 LLM 调用的输入里
         assert any(
             any(getattr(m, "content", "") == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
@@ -328,11 +434,13 @@ class TestProductImageDenialToolCallGate:
         # 流程继续：interact 确认卡被真实执行
         assert "interact" in executed, f"纠正后流程未推进，executed={executed}"
 
-    def test_no_correction_when_capability_unavailable(self):
-        """能力不可达（注册表无 product_manage）：同文本不得触发纠正（事实门）。"""
-        out, executed, call_inputs = self._drive(with_capability=False)
+    def test_no_correction_when_capability_available(self):
+        """边界（#5318 改判后的事实门）：图片写能力**若被补回**（属另一次产品裁定），
+        本单的「该能力不在能力内」话术**不得**再注入 —— 那时它是假话。
+        """
+        out, executed, call_inputs = self._drive(with_capability=True)
         assert not any(
             any(getattr(m, "content", "") == _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
                 for m in msgs)
             for msgs in call_inputs
-        ), "能力不可达时不应注入纠正话术"
+        ), "图片写能力可达时不得注入「能力不在内」话术（会变成能力谎报）"

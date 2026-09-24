@@ -1,15 +1,19 @@
-"""写工具净化不再静默 — 图片类参数丢弃即失败并给正确工具指引（issue #3930）。
+"""写工具净化不再静默 — 图片类参数丢弃即失败并给出**可达的**去处（issue #3930 → #5318 改判）。
 
 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
 agent 把请求路由到 product_update（它没有 images 参数）→ `_sanitize_tool_args`
 静默丢弃 images → 空字段调用 → 「没有要修改的字段」→ 模型外推「该入口不支持图片」
 → 编造性能力否定出站。
 
-修复：写工具（read_only=False）丢弃**图片类**未知参数（images/detail_images/main_image）
-时不再静默 —— 直接返回失败 + product_manage 指引（不执行），让模型改走
-`product_manage(action=update, images=…)`。
+修复（#3930）：写工具（read_only=False）丢弃**图片类**未知参数（images/detail_images/main_image）
+时不再静默 —— 直接返回失败 + 指引（不执行），误宣链的源头被切断。
 只读工具与非图片类未知参数保持 issue #3361 的静默净化行为
 （存量用例依赖，见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）。
+
+**改判（issue #5318，2026-09-24）**：旧指引写「请用 `product_manage(action=update, images=…)`」，
+而 `product_manage` 自 #5247 起已从全部 B 端 skill 解绑 ⇒ 这条**注入进模型的指引**
+会把模型推向必然 `tool_not_found` 的调用。新指引 = 如实说明（图片写入不在能力内）+
+引导商家到后台「商品管理」页面(/products)操作，**不点名任何工具**。
 """
 # case_ids: PR-017, PR-026, PR-027
 
@@ -73,26 +77,37 @@ def _run(tool, args):
 
 
 class TestWriteToolImageArgsDroppedFailsWithGuidance:
-    """写工具丢弃图片类参数 → 失败 + product_manage 指引，且不执行（误宣链源头切断）。"""
+    """写工具丢弃图片类参数 → 失败 + 可达指引，且不执行（误宣链源头切断）。
 
-    def test_images_dropped_returns_failure_with_product_manage_guidance(self):
+    #5318 改判后「可达指引」= 如实说明 + 引导后台页面，且**不点名任何工具**
+    （点名就是这么坏掉的：旧指引点名的 `product_manage` 已从 B 端解绑）。
+    """
+
+    def test_images_dropped_returns_failure_with_backend_guidance(self):
         tool = _FakeWriteTool()
         result_str, result_dict = _run(
             tool, {"product_id": "p1", "images": ["http://x/1.jpg"]})
         assert result_dict["success"] is False
-        assert "product_manage" in result_dict["error"], result_dict["error"]
+        assert "product_manage" not in result_dict["error"], (
+            f"指引又点名了已从 B 端解绑的工具：{result_dict['error']}"
+        )
         assert "images" in result_dict["error"]
+        assert "后台" in result_dict["error"] and "商品管理" in result_dict["error"], (
+            f"指引未给出去处（后台商品管理页）：{result_dict['error']}"
+        )
         assert tool.executed == [], "丢弃参数后不得执行写工具（空字段调用正是「没有要修改的字段」误宣链）"
         parsed = json.loads(result_str)
         assert parsed["success"] is False
-        assert "product_manage" in parsed["message"]
+        assert "product_manage" not in parsed["message"]
+        assert "后台" in parsed["message"]
 
     def test_detail_images_and_main_image_covered(self):
         for arg in ("detail_images", "main_image"):
             tool = _FakeWriteTool()
             _, result_dict = _run(tool, {"product_id": "p1", arg: ["http://x/1.jpg"]})
             assert result_dict["success"] is False, f"{arg} 未拦截"
-            assert "product_manage" in result_dict["error"], f"{arg} 指引缺失"
+            assert "product_manage" not in result_dict["error"], f"{arg} 指引点名了调不到的工具"
+            assert "后台" in result_dict["error"], f"{arg} 指引缺失去处"
             assert tool.executed == []
 
     def test_no_dropped_args_executes_normally(self):
@@ -128,10 +143,12 @@ class TestDroppedArgsGuidance:
         assert _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "action": "x"}) == ""
 
-    def test_image_args_get_product_manage_guidance(self):
+    def test_image_args_get_backend_page_guidance(self):
         msg = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "images": ["x"]})
-        assert "product_manage(action=update, images" in msg, msg
+        assert "product_manage" not in msg, msg
+        assert "后台" in msg and "商品管理" in msg, msg
         msg2 = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "detail_images": ["x"]})
-        assert "product_manage(action=update, detail_images" in msg2, msg2
+        assert "product_manage" not in msg2, msg2
+        assert "后台" in msg2 and "商品管理" in msg2, msg2
