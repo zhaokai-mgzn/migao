@@ -32,7 +32,7 @@ KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
 - 安装步骤、加工流程（如"打孔窗帘怎么安装"）
 - 加工费、价格标准（如"打孔加工多少钱"）→ 用 processing_item_query 查加工项目录
 - 售后政策、退换货规则
-- 知识管理操作（创建/更新/删除）请引导用户到后台「知识卡片」页面操作"""
+- 知识管理操作（创建/更新/删除）请引导用户到后台「知识库」页面操作"""
 
 KNOWLEDGE_SKILL_CONFIG = SkillConfig(
     name="knowledge",

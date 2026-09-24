@@ -44,12 +44,17 @@
   `{"error"|"error_code": "<短码>"}` 字典字面量、`*ERROR_CODES` 冻结集），短码形态 = `^[A-Za-z][A-Za-z0-9_]*$`。
   形如 `"No tool context available"`（自由文本，不是短码）**有意排除**；运行期由服务端**动态回传**的
   未登记码走**默认话术**（默认话术受本文件全部文本面判据约束）；
-- **页面入口的可达口径 = 「真实侧边栏菜单项」**（`frontend/admin-web/src/config/menu.ts`，
+- **页面入口的可达口径 = 「真实侧边栏节点」**（`frontend/admin-web/src/config/menu.ts` 是**唯一真值源**，
   `Sidebar.tsx` 只读它 —— 复用 `test_menu_three_sources_are_isomorphic.py` 的解析函数，不另立第二套）。
-  这是**保守**口径：`app/tools/base.py::_denial_suggestion` 与 `references/base/principles.md`
-  写的是「角色管理」，而真实侧边栏里对应项叫「岗位权限」—— 该存量措辞**不在本判据射程内**
-  （它不是本单新增的文本面，改它要连带改 #4147 的三条判据文件），故**如实登记**、
-  **不假装本判据覆盖了它**；
+  🔴 **射程自 issue #5454 起覆盖存量**（本文件原登记「`_denial_suggestion` / `principles.md` 的存量措辞
+  **不在本判据射程内**……**不假装本判据覆盖了它**」—— 那条欠账**已收口**，见「一·B 存量页面指针面」）：
+  `legacy_pointer_problems` 现取「模型可见文本面 ∪ `app/**/*.py` 字面量」里**所有**页面指针，
+  首级必须是 `sidebar_nodes()`（组名 ∪ 菜单项 ∪ **独立项**）之一。**存量不一致已逐条改对**：
+  「角色管理」→「组织管理 → 岗位权限」（与 admin-api 的 403 文案同源，那边本来就写「岗位权限」）、
+  「商品管理」→「商品列表」、「客户管理」→「客户列表」、「知识卡片」→「知识库」、
+  「系统设置」/「AI 配置」→「企业基础信息」、「库存」/「商品分类」/「加工项」→ 真实菜单项。
+  显式不判表 `LEGACY_POINTER_EXEMPTIONS` 现取 **2 条**（C 端「我的」页、看板字段名「应做数量」），
+  条数冻结在 `LEGACY_POINTER_EXEMPTION_COUNT`，**只许缩短**；
 - **本文件不判**「话术在真实对话里是否被采用」（那要 LLM 层评测，本单不派发评测）；
   它判的是**登记表本身的机械性质** —— 表里的行与运行时真实失败码是否对齐、建议会不会导致重复写入、
   点名的入口存不存在。
@@ -298,11 +303,18 @@ def idempotent_tools() -> dict[str, bool]:
 
 
 def page_labels() -> frozenset:
-    """真实侧边栏菜单项（复用菜单三源同构守卫的解析函数 —— 不另立第二套页面词汇）。"""
-    groups = menu._parse_frontend(menu.MENU_TS.read_text(encoding="utf8"))
-    out = frozenset(name for _key, _group, items in groups for name in items)
+    """真实侧边栏**页面**（菜单项 ∪ 独立项）—— 复用菜单三源同构守卫的解析函数，不另立第二套。
+
+    ⚠️ issue #5454 修：原实现只取 `_parse_frontend` 的**组内项**，漏掉 `standaloneItems`
+    （`Sidebar.tsx` 渲染的是两者之和）⇒ 「通知中心」这类独立项被判「不在侧边栏」（**假红**）。
+    真值源缺项会让判据把**正确**话术判红，与射程不足同样有害。
+    """
+    src = menu.MENU_TS.read_text(encoding="utf8")
+    groups = menu._parse_frontend(src)
+    out = {name for _key, _group, items in groups for name in items}
+    out |= set(menu._parse_standalone(src))
     assert out, "侧边栏菜单项解析为 0 ⇒ 页面入口判据会空跑（fail-closed）"
-    return out
+    return frozenset(out)
 
 
 def derived_retry(code: str, scope: str) -> bool:
@@ -310,6 +322,126 @@ def derived_retry(code: str, scope: str) -> bool:
     if code in non_retryable_codes():
         return False
     return bool(scope) and idempotent_tools().get(scope, False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一·B、**存量**页面指针面（issue #5454）：既有话术点名的后台入口必须真实存在
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 为什么必须补这一段：上面的 `entry_problems` 已经落了「话术里点名的入口必须存在」这条口径，
+# 但它的射程**只覆盖族 6 自己那张新增的表**（`registry_rows()`）。**既有**文本 ——
+# 工具 description、references/prompts、skills 自述、`app/tools/base.py::_denial_suggestion`
+# 的运行期话术、`app/graph/skills/base_skill.py` 注入 system prompt 的权限范围段 ——
+# **从未被核过**，而它们恰恰是「用户照着找不到入口」的现场（§23 G5：扩面时存量逐条处置）。
+#
+# 判据本体**复用**：真值源 = 上方的 `page_labels()` / `sidebar_nodes()`（`menu.ts` 是唯一真值源）；
+# 口径 = 同一条「点名的入口必须真实存在」。**不另立第二套页面词汇、不另写扫描器**。
+
+AGENT_SERVICE_ROOT = REPO_ROOT / "backend" / "ai-agent-service"
+
+#: 指向后台页面的**文风锚点**（由本仓既有话术反推，不是凭空发明）：
+#: ① 前面紧邻导航词 —— `商户后台「通知中心」页`；
+#: ② 后面紧邻页面词 —— `「商品管理 → 分类」页面` / `「岗位权限」中开通`；
+#: ③ `「A」或「B」` / `「A」/「B」` 并列的备选入口 —— 同一「去哪一页」槽位的同位语，
+#:    一侧是指针 ⇒ 另一侧同属指针（`「员工管理 → 编辑员工 → 权限」或「角色管理 → 岗位权限」`）。
+#: ⚠️ `入口` **有意不入锚点**：`「订单列表」页(/orders)的「新建订单」入口` 里的后一个是**页内按钮**，
+#:    不是侧边栏节点 —— 把它算进来就是把正确文风喂红（§17.3「判据被自己的文案喂红」）。
+_NAV_BEFORE = re.compile(r"(?:后台|侧边栏|菜单|导航)[（(：:，,\s]*$")
+_NAV_AFTER = re.compile(r"^(?:(?:页|页面|节点)|(?:中)?开通)")
+_POINTER = re.compile(r"「([^」]{1,24})」")
+_POINTER_PAIR = re.compile(r"「([^」]{1,24})」\s*[或/]\s*「([^」]{1,24})」")
+
+#: 显式不判表（**只许缩短**）：与 admin-web 侧边栏无关的页面指针。每条必须带理由。
+LEGACY_POINTER_EXEMPTIONS: tuple[str, ...] = (
+    "app/api/products.py::「我的」",      # C 端小程序「我的」页（小布面）—— 不在 admin-web 侧边栏
+    "app/api/internal.py::「应做数量」",  # 看板**字段名**，不是页面入口
+)
+#: 冻结账户：条数**现取**比对，涨跌都红（与 `dead_object_ledger.json` 的 `anchor.not_judged` 同纪律）。
+LEGACY_POINTER_EXEMPTION_COUNT = 2
+
+
+def sidebar_nodes() -> frozenset:
+    """真实侧边栏的**可导航节点** = 分组名 ∪ 页面（菜单项 ∪ 独立项）。
+
+    为什么分组名也算（issue #5454）：`「组织管理 → 岗位权限」` 是**组 → 项**的真实导航路径
+    （#5271 后侧边栏就是七大组 + 组内项）。只认页面会把这条**正确**指路判红 ⇒ 假红。
+    """
+    src = menu.MENU_TS.read_text(encoding="utf8")
+    out = {name for _key, name, _items in menu._parse_frontend(src)} | set(page_labels())
+    out |= set(menu._parse_standalone(src))
+    assert out, "侧边栏可导航节点解析为 0 ⇒ 页面指针判据会空跑（fail-closed）"
+    return frozenset(out)
+
+
+def page_pointers(text: str) -> list[tuple[str, str]]:
+    """抽出文本里的**页面指针** → `[(完整 token, 首级名)]`。
+
+    **只看首级**：`「员工管理 → 编辑员工 → 权限」` 的后两级是**页内步骤**（编辑对话框里的权限栏），
+    侧边栏可达性只取决于首级 —— 判据**不假装**能判页内步骤是否存在（见文末「未固化」）。
+    """
+    marks = list(_POINTER.finditer(text))
+    judged: dict[int, bool] = {}
+    for m in marks:
+        judged[m.start()] = bool(_NAV_BEFORE.search(text[:m.start()])
+                                 or _NAV_AFTER.match(text[m.end():]))
+    for pair in _POINTER_PAIR.finditer(text):
+        left = text.index(f"「{pair.group(1)}」", pair.start())
+        right = text.index(f"「{pair.group(2)}」", pair.start())
+        if judged.get(left) or judged.get(right):
+            judged[left] = judged[right] = True
+    return [(m.group(1), m.group(1).split("→")[0].strip()) for m in marks if judged.get(m.start())]
+
+
+def legacy_pointer_texts(sources: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    """现取**存量**页面指针语料 = 模型可见文本面 ∪ `app/**/*.py` 的字符串字面量。
+
+    两处都要，各补一半：
+      · **模型可见文本面**（`dc.Scan._surfaces`）= 已登记读源（工具 description / 参数 description /
+        运行期 suggestion·message / references·prompts / skill 自述 / agent 直答 / 族 6 登记表）；
+      · **`app/**/*.py` 的字面量** = 补上读源里**没有**的那两处模型可见文本 ——
+        `app/tools/base.py::_denial_suggestion`（运行期按码回灌的话术）与
+        `app/graph/skills/base_skill.py`（注入 system prompt 的权限范围段）。
+        它们正是本单立案时点名「从未被核过」的那几处（**新增声明面 ⇒ 同批登记进读源**）。
+    """
+    src = sources if sources is not None else dc.surface_sources()
+    out: list[tuple[str, str]] = []
+    for surface, _allowed, text, _kind in dc.Scan(src, dc.ledger())._surfaces(src):
+        if text:
+            out.append((surface, text))
+    for path in sorted((AGENT_SERVICE_ROOT / "app").rglob("*.py")):
+        rel = path.relative_to(AGENT_SERVICE_ROOT)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf8"))
+        except SyntaxError as exc:  # 语法错 = 读源坏了，不许静默跳过
+            raise AssertionError(f"{rel} 解析失败 ⇒ 存量指针语料不完整：{exc}") from exc
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                out.append((f"{rel}:{node.lineno}", node.value))
+    assert out, "存量指针语料取空 ⇒ 判据会空跑成绿（fail-closed）"
+    return out
+
+
+def _pointer_site(where: str) -> str:
+    """指针站点的稳定键：字面量键去掉末尾的行号后缀，面键（`ref:` / `tool:` / `sugg:` 等）原样。"""
+    return re.sub(r":\d+$", "", where)
+
+
+def legacy_pointer_problems(texts: list[tuple[str, str]] | None = None) -> list[str]:
+    """存量页面指针面：**首级必须能在真实侧边栏里找到**（找不到 ⇒ 用户按话术找不到入口）。"""
+    nodes = sidebar_nodes()
+    problems: list[str] = []
+    for where, text in (texts if texts is not None else legacy_pointer_texts()):
+        for token, first in page_pointers(text):
+            if first in nodes:
+                continue
+            if f"{_pointer_site(where)}::「{token}」" in LEGACY_POINTER_EXEMPTIONS:
+                continue
+            problems.append(
+                f"{where} 把用户指向「{token}」，但首级「{first}」**不在真实侧边栏里**"
+                f" ⇒ 用户照着找不到入口（话术比不说更糟）。真实可导航节点："
+                f"{'、'.join(sorted(nodes))}。"
+            )
+    return problems
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -527,6 +659,87 @@ def test_user_visible_text_is_pure_chinese_without_attribution() -> None:
     assert not problems, "\n".join(problems) + f"\n{REPRO}"
 
 
+# ── 存量页面指针面（issue #5454）：既有话术点名的后台入口必须真实存在 ──────────
+
+#: 本单立案时点名的存量站点（**现取必须在面内** —— 抽取规则或读源一旦失灵，这里先红）。
+#: 与 `legacy_pointer_problems` 的分工：这条守「**判据有没有看见**」，那条守「看见的都对不对」。
+LEGACY_KNOWN_SITES: tuple[tuple[str, str], ...] = (
+    ("app/tools/base.py", "员工管理 → 编辑员工 → 权限"),
+    ("app/tools/base.py", "组织管理 → 岗位权限"),
+    ("app/graph/skills/base_skill.py", "岗位权限"),
+    ("ref:base/principles.md", "岗位权限"),
+    ("tool:customer_manage", "客户列表"),
+    ("sugg:settings_manage", "企业基础信息"),
+)
+#: 厚度下限（**现取读数**，不是解释性上限）：低于它说明抽取规则或读源坏了 ⇒ 红。
+LEGACY_POINTER_FLOOR = 60
+
+
+def test_legacy_page_pointers_match_the_real_sidebar() -> None:
+    """🔴 本单的常驻判据：**既有**话术点名的后台入口必须真实存在（射程覆盖存量，不只新增）。"""
+    problems = legacy_pointer_problems()
+    assert not problems, "\n".join(problems) + f"\n{REPRO}"
+
+
+def test_legacy_pointer_face_is_alive_and_printed() -> None:
+    """§23 G2/G7：读数**现取打印** + 前置自证（已知站点必须在面内、抽取不得空跑）。"""
+    texts = legacy_pointer_texts()
+    pointers = [(w, t, f) for w, body in texts for t, f in page_pointers(body)]
+    seen = {(_pointer_site(w), t) for w, t, _f in pointers}
+    print(f"[#5454 · 存量页面指针面现取] 语料 {len(texts)} 条 / 指针 {len(pointers)} 处 / "
+          f"不一致 {len(legacy_pointer_problems(texts))} 处 / 豁免 {len(LEGACY_POINTER_EXEMPTIONS)} 条")
+    print("[#5454 · 真实可导航节点] " + "、".join(sorted(sidebar_nodes())))
+    missing = sorted(k for k in LEGACY_KNOWN_SITES if k not in seen)
+    assert not missing, (
+        f"已知存量站点不在被判定面内 {missing} ⇒ 判据对它们**空跑**（绿得没有计数）。"
+        f"现取站点键：{sorted(seen)}")
+    assert len(pointers) >= LEGACY_POINTER_FLOOR, (
+        f"现取指针只有 {len(pointers)} 处（下限 {LEGACY_POINTER_FLOOR}）⇒ 抽取规则或读源坏了"
+        f"（fail-closed：宁可红，不许静默空跑成绿）")
+
+
+def test_legacy_pointer_exemptions_only_shrink() -> None:
+    """豁免面**只许缩短**：条数冻结（涨跌都红）+ 每条必须**活着**（陈旧条目同 PR 删掉）。"""
+    pointers = [(w, t, f) for w, body in legacy_pointer_texts() for t, f in page_pointers(body)]
+    assert len(LEGACY_POINTER_EXEMPTIONS) <= LEGACY_POINTER_EXEMPTION_COUNT, (
+        f"显式不判表 **{len(LEGACY_POINTER_EXEMPTIONS)} 条 > 冻结账户 "
+        f"{LEGACY_POINTER_EXEMPTION_COUNT}** —— 豁免面只许缩短；确需新增 ⇒ "
+        f"同 PR 显式上调本常量并给出理由（一次可评审的动作）。")
+    nodes = sidebar_nodes()
+    live = {f"{_pointer_site(w)}::「{t}」" for w, t, f in pointers if f not in nodes}
+    stale = sorted(k for k in LEGACY_POINTER_EXEMPTIONS if k not in live)
+    assert not stale, (
+        f"豁免条目已**陈旧**（它指向的指针不再出现，或那处文本已改对）{stale} ⇒ "
+        f"同 PR 删掉它（豁免面只许缩短，不许留成解释性上限）。")
+
+
+def test_legacy_pointer_rule_is_precise() -> None:
+    """负控：**页内按钮 / 字段名 / 域术语**不得被判（否则正确文风被整片喂红）+ 真值源正控。"""
+    # 正控①：真实**菜单项** ⇒ 判为指针
+    assert page_pointers("请让用户通过商户后台「企业基础信息」页查看") == [
+        ("企业基础信息", "企业基础信息")]
+    # 正控②：**独立项**（`standaloneItems`，`Sidebar.tsx` 渲染它）必须可判 —— 本单修的真值源缺口
+    assert "通知中心" in sidebar_nodes()
+    assert not legacy_pointer_problems([("注入:正控", "并引导其到商户后台「通知中心」页自助处理")])
+    # 正控③：**组名**做首级（`组 → 项` 的真实导航路径）⇒ 一致（只认页面会把正确指路判红）
+    assert "组织管理" in sidebar_nodes()
+    assert not legacy_pointer_problems([("注入:正控", "引导用户到后台「组织管理 → 岗位权限」页操作")])
+    # 负控①：页内按钮（后面是「入口」而不是「页」）⇒ 不入面
+    assert page_pointers("请到「订单列表」页(/orders)的「新建订单」入口操作") == [
+        ("订单列表", "订单列表")]
+    # 负控②：与导航无关的引号词（域术语 / 数据映射）⇒ 不入面
+    assert page_pointers("知识单元为「知识卡片」，卡片展示「改前 → 改后」") == []
+    assert page_pointers("请到后台「订单列表」页展示「改前 → 改后」") == [("订单列表", "订单列表")]
+    # 显式不判表**是活的**（它不是装饰）：两条豁免各自挡住一个真实的非侧边栏指针
+    assert page_pointers("商家后台「应做数量」退化成订单数") == [("应做数量", "应做数量")]
+    # 行号由变量拼出（引用纪律禁写裸行号）：判据仍需证明「带行号的字面量键」能命中豁免表
+    line = 1
+    assert not legacy_pointer_problems(
+        [(f"app/api/internal.py:{line}", "商家后台「应做数量」退化成订单数")])
+    assert not legacy_pointer_problems(
+        [(f"app/api/products.py:{line}", "提供对话/「我的」页的数据端点")])
+
+
 def test_burn_down_anchor_is_printed() -> None:
     """§23 G2：读数**现取打印**，不写死解释性上限。"""
     face, rows, ledger = live_failure_codes(), registry_rows(), load_ledger()
@@ -676,3 +889,20 @@ def test_every_judgement_can_go_red() -> None:
     assert REGISTRY_SURFACE not in stripped and not dc.remedy_texts(stripped), (
         "读源剔除没生效 ⇒ 这条红证打在空对象上"
     )
+
+    # ⑩ 🔴 **存量**页面指针面（issue #5454）：把一条**既有**话术改成指向不存在的菜单项 ⇒ 必须变红
+    texts = legacy_pointer_texts(sources)
+    assert not legacy_pointer_problems(texts), (
+        "对照组：未注入时存量指针面必须全绿（否则红证无从归因）")
+    target = [w for w, _t in texts if w == "tool:role_manage"]
+    assert target, "注入对象（`tool:role_manage` 的话术）不在被判定面内 ⇒ 这条红证会是空的"
+    poisoned = [(w, t.replace("「组织管理 → 岗位权限」", "「角色管理 → 岗位权限」"))
+                for w, t in texts]
+    assert poisoned != texts, "注入没生效（锚点失配）—— 同步本判据"
+    assert (target[0], "角色管理 → 岗位权限") in {
+        (w, tok) for w, t in poisoned for tok, _f in page_pointers(t)}, (
+        "注入的假菜单项没有进到被判定面 ⇒ 下面那条断言是空的")
+    problems = legacy_pointer_problems(poisoned)
+    assert any("「角色管理 → 岗位权限」" in p and "找不到入口" in p for p in problems), (
+        "把既有话术改成指向**不存在的菜单项**「角色管理」却没有变红 ⇒ 本判据是空断言"
+        "（它只覆盖了新增文本、没有覆盖存量）。")

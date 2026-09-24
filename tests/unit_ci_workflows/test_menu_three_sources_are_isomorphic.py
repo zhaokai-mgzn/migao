@@ -124,6 +124,24 @@ def _parse_frontend(src: str) -> list[tuple[str, str, list[str]]]:
     return groups
 
 
+def _parse_standalone(src: str) -> list[str]:
+    """`menu.ts` → **一级独立菜单项**名（无子级、直接跳转的那几项，如「通知中心」）。
+
+    为什么单开一个函数（issue #5454）：`Sidebar.tsx` 渲染的是 `menuGroups` **∪ `standaloneItems`**
+    （两处都 import），而 `_parse_frontend` 的返回值**只含组** —— 于是独立项在**页面词汇表**里缺席
+    ⇒ 任何指向它的**正确**话术都会被判「菜单项不存在」（假红）。**真值源必须完整**：
+    本函数与 `_parse_frontend` 同源同文件（**不另立第二套解析**），两者一起构成侧边栏真值。
+    """
+    starts = [m.start() for m in re.finditer(r"export const standaloneItems", src)]
+    assert starts, "`menu.ts` 里找不到 `export const standaloneItems`（解析失配 ⇒ 红，不得静默返回空表）"
+    names = re.findall(
+        r"\{\s*key:\s*'[^']+',\s*name:\s*'([^']+)',\s*icon:\s*'[^']+',\s*path:\s*'[^']+'",
+        src[starts[0]:],
+    )
+    assert names, "`standaloneItems` 解析出 0 项（解析失配 ⇒ 红，独立项也是导航的一部分）"
+    return names
+
+
 def _parse_controller(src: str) -> list[tuple[str, str, list[str]]]:
     """`MenuController.MENU_TREE` → `[(组 key, 组名, [节点 label…])]`（按组内 `List.of(...)` 的变量顺序）。"""
     decls = dict(re.findall(r'MenuNode\s+(\w+)\s*=\s*new MenuNode\("[^"]+",\s*"([^"]+)"\)', src))

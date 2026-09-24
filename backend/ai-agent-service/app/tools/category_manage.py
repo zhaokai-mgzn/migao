@@ -35,7 +35,7 @@ class CategoryManageTool(BaseTool):
         "tree 返回的分类 id（长字符串如 88b6c50fbc...）用于按分类筛选商品。"
         "【反例】查商品/库存用 product_search / product_detail；分类 id ≠ 商品 id，不要混用。"
         "【反例】新建/改名/删除分类**不在本工具能力内**（B 端已只读化，issue #5247）——"
-        "引导用户到后台「商品管理 → 分类」页面自行操作，不要承诺代为修改。"
+        "引导用户到后台「商品列表 → 分类管理」页面自行操作，不要承诺代为修改。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
     # 权限码（admin-api 目录）：CategoryController 类级 `@RequirePermission("product:category")`。
