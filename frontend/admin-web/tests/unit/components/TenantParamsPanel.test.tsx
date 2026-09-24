@@ -129,7 +129,16 @@ describe('判据 3：默认值可见（§22 P3，租户级）', () => {
   it("source='stored' ⇒ **不**标「未配置」（谎报已配置 = 让商家以为没生效）", async () => {
     getCraftCalcConfig.mockResolvedValue(calcResponse('stored'))
     render(<TenantParamsPanel />)
-    await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())
+    // ⚠️ 「面板已渲染」**不能区分两态**：`param-hem_margin` 行在 loading 期就已渲染（值位是占位「…」），
+    // 而 `usingDefault = isUsingEngineDefault(calc?.source)` 对 `source === undefined`（读面还没回来）
+    // **也判 true** ⇒ 读面未落地时「未配置」徽标**就在**文档里，紧随其后的同步否定断言必红
+    // （issue #5300 实测红：`expect(element).not.toBeInTheDocument()`）。
+    // 这里等**读面响应已落到界面上**的正向信号：值位由占位「…」变成本次 stored 的配置值
+    // （`TenantParamsPanel.tsx` 的 `loading ? '…' : valueOf(...)`）——它在两态下有区别；
+    // 且**不把否定断言塞进 waitFor**（元素瞬时不在 ⇒ 假绿）。
+    await waitFor(() =>
+      expect(screen.getByTestId('param-value-hem_margin')).toHaveTextContent('0.4')
+    )
     expect(screen.queryByTestId('param-calc-using-default')).not.toBeInTheDocument()
     expect(screen.queryByTestId('param-unset-hem_margin')).not.toBeInTheDocument()
   })
@@ -170,7 +179,12 @@ describe('判据 6：AI 客服域的清单与文案一致', () => {
     for (const key of Object.keys(AI_PARAM_COPY)) {
       expect(await screen.findByTestId(`param-${key}`)).toBeInTheDocument()
     }
-    expect(screen.getByTestId('param-value-botName')).toHaveTextContent('小布')
+    // ⚠️ 与判据 2 同因（issue #5300 同族）：`param-${key}` 行在 loading 期就已渲染，
+    // 真正来自读面的是**值位** ⇒ 同步读 `param-value-botName` 会读到占位「…」。
+    // 等**被断言的这件事本身**成立，断言语义一字未改。
+    await waitFor(() =>
+      expect(screen.getByTestId('param-value-botName')).toHaveTextContent('小布')
+    )
   })
 })
 
@@ -222,7 +236,12 @@ describe('判据 8：内联参数（余料回收域）在本页内渲染（issue
     render(<TenantParamsPanel />)
     fireEvent.click(screen.getByTestId('param-domain-remnant'))
     await waitFor(() => expect(screen.getByTestId('param-remnant-specs')).toBeInTheDocument())
-    expect(screen.getByTestId('remnant-specs-unset')).toBeInTheDocument()
+    // ⚠️ 容器在 loading 期就已渲染（`param-remnant-specs` 不受 `!loading` 约束），而
+    // `remnant-specs-unset` 只在 `!loading && !configured` 时才上屏（`RemnantItemSizesPanel.tsx`）
+    // ⇒ 对**异步渲染面**用同步 `getBy*` 就是竞态（issue #5300 实测红：`Unable to find
+    // [data-testid="remnant-specs-unset"]`）。改成等**目标本身**出现，断言语义一字未改。
+    const unset = await screen.findByTestId('remnant-specs-unset')
+    expect(unset).toBeInTheDocument()
     expect(screen.getByTestId('remnant-specs-notice').textContent).toContain('不产生匹配建议')
     // 同一个域里的行式入口（余料台账）也还在
     expect(screen.getByTestId('param-row-/production/remnants')).toBeInTheDocument()

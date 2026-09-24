@@ -335,8 +335,18 @@ describe('CustomerDetailPage', () => {
     // 非空未改动字段照旧下发（保住既有「缺一不可」语义）
     expect(payload.defaultReceiverName).toBe('张三')
     expect(toast.success).not.toHaveBeenCalled()
-    expect(toast.warning).toHaveBeenCalledWith('已保存其余改动；暂不支持清空：常用物流公司')
-    expect(screen.getByPlaceholderText('选择或输入承运商')).toHaveValue('四季安物流')
+    // ⚠️ 这一条同样是「等 A 断言 B」的 B 侧（同一处竞态在注入延迟下的**确定性**红点：
+    // `toast.warning` 也在 `await updateCustomer` 之后才被调用）⇒ 同样等它成立。
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith('已保存其余改动；暂不支持清空：常用物流公司')
+    )
+    // ⚠️ 回填发生在 `updateCustomer` **兑现之后**（`await` 之后才 commitReceiverState ⇒ setReceiver）：
+    // 上面那条 waitFor 只等到「接口**被调用**」，此刻清空后的空串还在 ⇒ 同步断言就是竞态
+    // （issue #5300 实测红：`expect(element).toHaveValue(四季安物流)` 收到空串）。
+    // 让**被断言的这件事本身**可重试 —— 断言语义一字未改，只是等到它成立。
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('选择或输入承运商')).toHaveValue('四季安物流')
+    )
   })
 
   it('有真实改动且无清空时仍报「已保存」（防误伤）', async () => {
