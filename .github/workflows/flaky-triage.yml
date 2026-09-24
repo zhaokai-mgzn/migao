@@ -363,3 +363,16 @@ jobs:
             echo "合并是**异步**的：本 job 结束前不会落地；由 required 检查 + auto-merge 收口。"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::📒 台账 PR #$PR —— $STATE / check 数=$CHECKS"
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**
+      # ⇒ 每轮必出一行 `::notice::MECHANISM-LIVENESS mech=<id> ...`（零动作 ⇒ `acted=0` + `why`）。
+      # 机制**停摆**（本步不再执行）⇒ **根本没有这一行**。看门人（`mechanism-liveness.yml` 的
+      # 定时腿）断言「main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的读数」，
+      # 缺失 / 绑定旧 run / **读数与 run 结论矛盾** ⇒ 判红（判据 2）。
+      # ⚠️ 判定只用 run 归属与结论，**不用挂钟时长**（判据 4：时长受 runner 负载污染）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${ job.status }
+        run: bash .github/scripts/mechanism_liveness.sh emit flaky-triage --outcome "$OUTCOME"

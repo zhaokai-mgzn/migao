@@ -213,8 +213,30 @@ jobs:
             echo "> 断路器结论）——不再出现「run 报 success 但看不出它为什么没动」（issue #4827）。"
           } >> "$SUMMARY"
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
+          # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
+          # **非挂钟时长**。零动作（NODRIFT=3、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
+          # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            source .github/scripts/mechanism_liveness.sh
+            mechanism_liveness_declare --seen 3 --acted "${MISSING}" \
+              --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）" || true
+
+          fi
           if [ "$UNKNOWN" -gt 0 ]; then
             echo "::warning::Deploy Reconcile：${UNKNOWN} 个服务判据不可用——已按 fail-open 兜底补部署，请人工确认"
           else
             echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED}（基准 main HEAD=${HEAD7}）"
           fi
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**
+      # ⇒ 每轮必出一行 `::notice::MECHANISM-LIVENESS mech=<id> ...`（零动作 ⇒ `acted=0` + `why`）。
+      # 机制**停摆**（本步不再执行）⇒ **根本没有这一行**。看门人（`mechanism-liveness.yml` 的
+      # 定时腿）断言「main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的读数」，
+      # 缺失 / 绑定旧 run / **读数与 run 结论矛盾** ⇒ 判红（判据 2）。
+      # ⚠️ 判定只用 run 归属与结论，**不用挂钟时长**（判据 4：时长受 runner 负载污染）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${ job.status }
+        run: bash .github/scripts/mechanism_liveness.sh emit deploy-reconcile --outcome "$OUTCOME"

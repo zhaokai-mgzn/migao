@@ -377,3 +377,27 @@ jobs:
           # 其余（延迟/截断/状态未知）是**降级**信号 → 只告警不刷红，避免告警疲劳。
           if [ "$n_close_fail" -gt 0 ]; then exit 1; fi
           exit 0
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # ⚠️ **本 job 不得 `actions/checkout`**（安全不变量：`pull_request_target` 下检出 PR 代码
+      # = 可读 secrets；既有守卫 `tests/unit_ci_workflows/test_close_linked_issues_chain.py`
+      # 的 `test_does_not_checkout_pr_code` 逐字钉住这一点）⇒ **取不到**发射器文件
+      # `.github/scripts/mechanism_liveness.sh` ⇒ 这里**内联**发射**同一语法**。
+      # 两处投影**机械钉等价**（#5346 ③「同一真值两处投影 ⇒ 共享实现或机械钉等价」）：
+      # `tests/unit_ci_workflows/test_mechanism_liveness.py`
+      # 的 `test_inline_emission_is_grammar_equivalent_to_the_emitter` 用**同一个解析器**
+      # 解析本行与发射器的输出，并逐字段比对（含成功轮 notice / 失败轮 warning 两个方向）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          case "$OUTCOME" in
+            success) RC=0 ;;
+            failure) RC=1 ;;
+            *)       RC=130 ;;
+          esac
+          LEVEL=notice; [ "$RC" = "0" ] || LEVEL=warning
+          printf '::%s::MECHANISM-LIVENESS mech=close-linked-issues run=%s rc=%s seen=unknown acted=unknown why=%s\n' \
+            "$LEVEL" "${GITHUB_RUN_ID:-local}" "$RC" \
+            "计数读数取不到：本 job 不得 checkout（安全不变量）⇒ 无发射器；读数只给存在性与 rc"

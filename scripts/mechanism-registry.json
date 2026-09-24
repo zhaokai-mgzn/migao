@@ -1,0 +1,163 @@
+{
+  "schema": 1,
+  "issue": "#5326",
+  "what": "维护类机制的**显式登记**（判据 3）。新增维护类机制必须同时登记 —— 否则『新机制没人看』这条会重演。",
+  "discovery_rule": "维护类机制 = `on:` 含 `schedule` 或 `workflow_run`（**无人值守**）**且** workflow/job 级 `permissions` 里有任一**写**作用域（issues / pull-requests / contents / actions / discussions / packages / deployments）。规则是**结构性**的（读真 YAML），不是文件名清单 —— 实测它零特例地重现 issue #5326 正文列出的 8 条机制。",
+  "judged_by": "scripts/mechanism_liveness.py（判据本体的单一实现）",
+  "reading_grammar": "::notice::MECHANISM-LIVENESS mech=<id> run=<run_id> rc=<n> seen=<n|unknown> acted=<n|unknown> why=<单行>（发射器：.github/scripts/mechanism_liveness.sh）",
+  "mechanisms": [
+    {
+      "id": "automerge",
+      "name": "悬空 PR 扫描（arm 后长时间不合并的 PR 必须出声）",
+      "workflow": ".github/workflows/automerge.yml",
+      "job": "detect-dangling-prs",
+      "expected_observable": "每轮一条 `::notice::MECHANISM-LIVENESS mech=automerge run=<run_id> rc=0|1 seen=unknown acted=unknown why=<...>`；悬空 ⇒ 机制自身另有 `::error::` + 非零退出。",
+      "criterion": "看门人断言：main 上最近一次**已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失或绑定旧 run ⇒ 红。判定只用 run 归属与结论，**不用挂钟时长**。",
+      "consumer": "值班（.github/workflows/mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [
+        {
+          "what": "counts（seen/acted）",
+          "reason": "机制体是 `scripts/dangling_pr_scan.py`，只以三态**退出码**（0/1/3）表达结论，不回传扫描面条数 ⇒ 读数只能给 rc。取不到就写 `unknown`，不编造。",
+          "issue": "#5326",
+          "consumer": "值班（同上）；计数需求登记在此，未固化"
+        }
+      ],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "close-linked-issues",
+      "name": "合并后补偿关闭 issue（含定时对账）",
+      "workflow": ".github/workflows/close-linked-issues.yml",
+      "job": "close-linked-issues",
+      "expected_observable": "每轮一条内联发射的 `::notice::MECHANISM-LIVENESS mech=close-linked-issues run=<run_id> rc=0 seen=unknown acted=unknown why=<...>`（成功轮 notice / 失败轮 warning）；零动作时仍出声，`why` 写明计数取不到的原因。",
+      "criterion": "同 automerge：run 归属 + 结论（**非挂钟**）。另：读数 `rc` 与 run 结论**不得矛盾**（读数与事实相反正是 #5264 的形态）。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [
+        {
+          "what": "counts（seen/acted）",
+          "reason": "计数只存在于机制体自己的 run 块里（`n_window`/`n_stale`/`n_closed` 等），而读数步是**独立的一步**（进程隔离）且本 job 不得 checkout ⇒ 没有跨 step 传递通道可用（`$GITHUB_OUTPUT` 需要改机制体步骤，本包只做纯追加）。⇒ 计数读数为 `unknown`，不编造。",
+          "issue": "#5326",
+          "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）；计数需求登记在此，未固化"
+        }
+      ],
+      "reading_site": "inline",
+      "reading_site_reason": "本 job 在 `pull_request_target` 下**不得 `actions/checkout`**（检出 PR 代码 = 可读 secrets；既有安全守卫 `tests/unit_ci_workflows/test_close_linked_issues_chain.py` 的 `test_does_not_checkout_pr_code` 逐字钉住）⇒ 取不到 `.github/scripts/mechanism_liveness.sh` ⇒ 读数改为在读数步里**内联**发射同一语法。等价性由真跑内联文本 + 同一个解析器的逐字段比对钉住。"
+    },
+    {
+      "id": "deploy-reconcile",
+      "name": "部署对账（缺镜像则补 dispatch）",
+      "workflow": ".github/workflows/deploy-reconcile.yml",
+      "job": "reconcile",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数，含 `acted=<补 dispatch 数>`；零动作（无漂移）时 `acted=0` 且 `why` 写明「无漂移 / 断路器跳过」。",
+      "criterion": "同 automerge。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "drift-audit",
+      "name": "真相源契约审计（含每日债务盘点腿）",
+      "workflow": ".github/workflows/drift-audit.yml",
+      "job": "audit",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数，含 `seen=<面外新增漂移数>`；零动作时 `acted=0` 且 `why` 写明「本轮无新增漂移」。",
+      "criterion": "同 automerge。⚠️ 注意本机制的**调度存在性**另由 `scripts/drift_audit.py::check_heartbeat()` 判（『调度存在』），本登记判的是**执行成果**（『最近一次真的跑过且出声』）—— 两者互补，缺一不可。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "fixture-record",
+      "name": "月度 fixture 重录（防录制数据过期失真）",
+      "workflow": ".github/workflows/fixture-record.yml",
+      "job": "re-record",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数；零动作（fixtures 无变化）时 `acted=0` 且 `why` 写明「fixtures 无变化，无需更新」——**这正是原先最静默的那条路径**（月度跑一次、多数月份零动作）。",
+      "criterion": "同 automerge。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "flaky-ledger-reconcile",
+      "name": "台账兜底对账（补 approve / arm auto-merge）",
+      "workflow": ".github/workflows/flaky-ledger-reconcile.yml",
+      "job": "reconcile",
+      "expected_observable": "**期望**：每轮一条 MECHANISM-LIVENESS 读数，含 `acted=<approve 数 + arm 数>`，零动作时 `why` 写明为什么零 action_required。",
+      "criterion": "同 automerge（run 归属 + 结论）。**当前未固化**（见 unfixed）。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "unfixed",
+      "unfixed": [
+        {
+          "what": "存活读数步",
+          "reason": "本包（issue #5326）的**文件所有权**不含该 workflow —— 并发包 issue #5301 正在改同一个文件（`flaky-ledger-reconcile.yml` + `.github/scripts/flaky_ledger.py`），同时改会互相覆盖。⇒ 本包**不碰**该文件，读数步留给持有该文件的包补。**这不是「无法产出读数」**：它已被证明可产出（该文件现有 5 条 `::notice::`），只差按本语法落一行。",
+          "issue": "#5326",
+          "consumer": "值班（mechanism-liveness 定时腿会在它仍缺失时**持续报红** ⇒ 不会静默腐烂）；handoff：持有该文件的包（#5301）合入后补读数步，并在本登记的 `reading` 改回 `instrumented`"
+        }
+      ],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "flaky-triage",
+      "name": "失败重跑分流（重跑 / 标 flaky / 卸 auto-merge / 台账追加）",
+      "workflow": ".github/workflows/flaky-triage.yml",
+      "job": "triage",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数；`::notice::` 已有 7 条（分流判定 / 重跑 / 标 flaky / 台账追加 / approve / arm），本包补的是**绑定 run id 的存活读数**（判据 1 要的是「每轮必出声」，不是「某些分支出声」）。",
+      "criterion": "同 automerge。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [
+        {
+          "what": "counts（seen/acted）",
+          "reason": "分流结论分散在 6 个步骤里（各自 `::notice::`），没有单一计数出口；本包只加**读数步**（存在性 + rc），不为凑计数改 6 处判定逻辑（那会扩大本包对分流逻辑的改动面）。",
+          "issue": "#5326",
+          "consumer": "值班（同上）；计数需求登记在此，未固化"
+        }
+      ],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "mechanism-liveness",
+      "name": "机制存活看门人（本单新增：登记完整性 + 存活读数新鲜度）",
+      "workflow": ".github/workflows/mechanism-liveness.yml",
+      "job": "watchdog",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（**看门人自己也受同一语法约束**：一个不给自己出声的看门人，正是本单要消灭的形态）。",
+      "criterion": "同 automerge。",
+      "consumer": "值班（本 workflow 自身的定时腿失败 ⇒ P1 值班 issue；另 `scripts/drift_audit.py::check_heartbeat()` 覆盖其**调度存在性**）",
+      "reading": "instrumented",
+      "unfixed": [
+        {
+          "what": "自指判定（首发日）",
+          "reason": "看门人判定**自己**时，main 上「最近一次已完成 run」在合并当天尚不存在。判据对此**显式**记 `pending-first-run` 备注（**不是** finding）—— 与 `scripts/drift_audit.py::check_heartbeat()` 的 `pending-merge` 同族：**监控自己不得自造假红**。第二次定时腿起自动纳入判定。",
+          "issue": "#5326",
+          "consumer": "值班（第二次定时腿起自动生效）"
+        }
+      ],
+      "reading_site": "emitter"
+    },
+    {
+      "id": "stale",
+      "name": "Stale 清理（长期无活动的 issue/PR 打标 + 回收）",
+      "workflow": ".github/workflows/stale.yml",
+      "job": "stale",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（机制体是第三方预置 action，无介入点 ⇒ 读数只有 `rc`/存在性，`seen`/`acted` = `unknown`）。",
+      "criterion": "同 automerge。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented",
+      "unfixed": [
+        {
+          "what": "counts（seen/acted）",
+          "reason": "机制体 = `actions/stale@v11`（预置 action，不可插入 `declare`）。它的处置计数要拿到只能换成自写实现——那是另一个包的量级，本包不做（**不为凑读数而重写机制**）。⚠️ 且**不得**按语义推测该 action 的 outputs 名（本仓已立此教训）。",
+          "issue": "#5326",
+          "consumer": "值班（同上）；计数需求登记在此，未固化"
+        }
+      ],
+      "reading_site": "emitter"
+    }
+  ],
+  "exempt": [],
+  "reading_sites": "`emitter` = 调共享发射器（常规）；`inline` = 内联**同一语法**（唯一合法场景：本 job **不得 checkout** ⇒ 取不到发射器文件）—— 内联必须带 `reading_site_reason`，且由 tests/unit_ci_workflows/test_mechanism_liveness.py 的`test_inline_emission_is_grammar_equivalent_to_the_emitter` **真跑内联文本**并逐字段比对。"
+}

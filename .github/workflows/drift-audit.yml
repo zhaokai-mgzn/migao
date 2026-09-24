@@ -122,6 +122,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # 面外漂移的**通道登记**（#5074）：PR 腿对面外漂移恒绿（判定面 = 本 PR 的改动集），
           # 这里显式报出条数 + 承接物 —— 免得「面外」被读成「没问题」（那正是本单的缺陷形态）。
+          # 存活读数（issue #5326 判据 1）：计数类读数（面外新增漂移条数），**非挂钟时长**。
+          # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            source .github/scripts/mechanism_liveness.sh
+            mechanism_liveness_declare --seen "${OUT_SCOPE}" \
+              --why "漂移审计完成：面外新增漂移 ${OUT_SCOPE} 条 · 退出码 ${RC}" || true
+
+          fi
           OUT_SCOPE=$(python3 -c "import json;print(json.load(open('drift-audit-report.json'))['summary']['new_drift_out_of_scope'])" 2>/dev/null || echo '?')
           if [ "${OUT_SCOPE}" != "0" ] && [ "${OUT_SCOPE}" != "?" ]; then
             echo "::warning::面外新增漂移 ${OUT_SCOPE} 条（所属文件不在本 PR 改动集 ⇒ **本 PR 不阻塞**）：由定时腿的 P1 值班 issue 承接（标题含「真相源契约审计未通过（定时腿）」）；只有**面内**新增漂移才会卡本 PR。通道语义见本文件头部「面外漂移的拦截点」。"
@@ -213,3 +221,16 @@ jobs:
             gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 || true
           fi
           exit 0
+
+      # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
+      # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**
+      # ⇒ 每轮必出一行 `::notice::MECHANISM-LIVENESS mech=<id> ...`（零动作 ⇒ `acted=0` + `why`）。
+      # 机制**停摆**（本步不再执行）⇒ **根本没有这一行**。看门人（`mechanism-liveness.yml` 的
+      # 定时腿）断言「main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的读数」，
+      # 缺失 / 绑定旧 run / **读数与 run 结论矛盾** ⇒ 判红（判据 2）。
+      # ⚠️ 判定只用 run 归属与结论，**不用挂钟时长**（判据 4：时长受 runner 负载污染）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${ job.status }
+        run: bash .github/scripts/mechanism_liveness.sh emit drift-audit --outcome "$OUTCOME"
