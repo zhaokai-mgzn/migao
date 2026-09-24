@@ -29,6 +29,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools import registry as registry_module
 from app.tools.registry import ToolRegistry
 
 # 审计端点（admin-api 新增）：工具层不直连 DB，统一走 HTTP（本仓架构契约）
@@ -301,3 +302,201 @@ class TestProductionWiring:
 
         assert result_dict["success"] is True
         assert admin_client.post.await_count == 0
+
+
+def _tools_declaring_price() -> set:
+    """AST 扫 `app/tools/*.py`：`read_only = False` 且 schema 的 `properties` 里**有 `price` 键**的工具名。
+
+    **从源码推出**（不维护第二份手抄清单）：`price` 键 = 这个工具接受一个价格入参 ⇒ **它能改价**。
+
+    ⚠️ 判据**不是** `before_price`（本单复核的修正）：`product_manage` 也能改 `basePrice`，
+    却没有 before_price 预览约束（#5303 只覆盖 product_update / sku_update）⇒
+    「声明 before_price ⟺ 会改价」这个前提**已被证伪** —— 用它会把一条真实的改价路径静默放行。
+    只取 `properties` 下的**键**（不取描述文本）：描述里提一句 `price` 不算会改价。
+    """
+    import ast as _ast
+    import pathlib as _pathlib
+
+    tools_dir = _pathlib.Path(__file__).resolve().parents[1] / "app" / "tools"
+    found = set()
+    for path in sorted(tools_dir.glob("*.py")):
+        tree = _ast.parse(path.read_text(encoding="utf-8"))
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ClassDef):
+                continue
+            name = read_only = schema = None
+            for stmt in node.body:
+                if (isinstance(stmt, _ast.Assign) and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], _ast.Name)):
+                    target = stmt.targets[0].id
+                    if target == "name" and isinstance(stmt.value, _ast.Constant):
+                        name = stmt.value.value
+                    elif target == "read_only" and isinstance(stmt.value, _ast.Constant):
+                        read_only = stmt.value.value
+                    elif target == "parameters":
+                        schema = stmt.value
+            if not name or read_only is not False or schema is None:
+                continue
+            keys = set()
+            for inner in _ast.walk(schema):
+                if not isinstance(inner, _ast.Dict):
+                    continue
+                for key, value in zip(inner.keys, inner.values):
+                    if (isinstance(key, _ast.Constant) and key.value == "properties"
+                            and isinstance(value, _ast.Dict)):
+                        keys |= {k.value for k in value.keys if isinstance(k, _ast.Constant)}
+            if "price" in keys:
+                found.add(name)
+    return found
+    return found
+
+
+class TestPriceChangeFactsAreRecorded:
+    """issue #5388：**改价真值必须真的进审计行**（`action_details.priceChange`）。
+
+    前提自证（本单证伪过的那一条）：`action_details.params` 按 PII 纪律只记类型占位
+    （`desensitize_params`）⇒ 「改价的 before/after 已经在审计里」**原本不成立**
+    （`params["price"]` 落库是字符串 `"<float>"`，规则将永远不可判定）。
+    本类钉住修正后的形态：真值走**独立键**，`params` 的形状面一字不动。
+
+    对照判据（会红吗）：把 `price_change_facts` 从载荷里摘掉 ⇒ 第 1 条必红；
+    把价格键并回 `desensitize_params`（值被抹成占位）⇒ 同一条红；给非改价工具也发
+    `priceChange` ⇒ 第 2 条红；新增改价工具漏登记 ⇒ 元守卫（第 4 条）红。
+    """
+
+    async def test_both_price_tools_carry_the_price_values(self, ctx, admin_client):
+        """`product_update`（商品级统一定价）与 `sku_update`（单 SKU 调价）**都**带改价真值"""
+        from app.tools.registry import audit_write_tool
+
+        cases = (
+            ("product_update",
+             {"product_id": "P-1", "name": "雪尼尔-米白", "price": 12.5, "before_price": 10.0},
+             {"price": 12.5, "before_price": 10.0, "product_id": "P-1"}),
+            ("sku_update",
+             {"product_id": "P-1", "color": "米白", "door_width": "2.8",
+              "price": 250.0, "before_price": 500.0},
+             {"price": 250.0, "before_price": 500.0, "product_id": "P-1",
+              "color": "米白", "door_width": "2.8"}),
+        )
+        for tool_name, params, expected in cases:
+            admin_client.post.reset_mock()
+            await audit_write_tool(tool_name, ctx, params, True, 12.0)
+            details = _payload(admin_client)["actionDetails"]
+            assert details["priceChange"] == expected, tool_name
+            # 🔴 形状面仍然脱敏（PII 纪律**不回退**）：同一行的 params 里没有任何真值
+            assert details["params"]["price"] == "<float>"
+            assert details["params"]["before_price"] == "<float>"
+            assert not any(isinstance(v, (int, float)) for v in details["params"].values())
+
+    async def test_other_write_tools_do_not_get_the_price_key(self, ctx, admin_client):
+        """非改价工具不得多出 `priceChange`（审计载荷不许被隐式扩大），PII 照旧不出网"""
+        from app.tools.registry import audit_write_tool
+
+        await audit_write_tool("order_create", ctx,
+                               {"customer_phone": "13800138000", "amount": 100.0}, True, 3.0)
+        details = _payload(admin_client)["actionDetails"]
+        assert "priceChange" not in details
+        assert "13800138000" not in json.dumps(details, ensure_ascii=False)
+        assert details["params"] == {"customer_phone": "<str>", "amount": "<float>"}
+
+    async def test_absent_keys_are_not_invented(self, ctx, admin_client):
+        """没传的键不进取证材料：缺 `before_price` ⇒ 记录里就没有它（**不是 0**）"""
+        from app.tools.registry import audit_write_tool
+
+        await audit_write_tool("product_update", ctx, {"product_id": "P-1", "price": 12.5}, True, 1.0)
+        facts = _payload(admin_client)["actionDetails"]["priceChange"]
+        assert facts == {"price": 12.5, "product_id": "P-1"}
+        assert "before_price" not in facts
+
+    def test_registry_covers_every_tool_that_can_set_a_price(self):
+        """**类级元守卫**（§23 G1/G2）：会改价的写工具必须**要么登记、要么进例外台账**。
+
+        病灶不是「漏了 `sku_update` 这一处」，而是
+        「**新增一个改价工具 ⇒ 它的改价不会被任何规则发现，而不会有任何东西变红**」。
+        三条判据（判据源 = 源码 AST + 例外台账 + 引擎 caveats，不维护第二份手抄清单）：
+
+        ① 声明 `price` 的写工具必须被「登记集 ∪ 例外台账」覆盖（否则 ⇒ 红：静默改价路径）；
+        ② 登记面不得比现实宽（登记了却不声明 `price` ⇒ 红：口径漂移）；
+        ③ 每个例外必须在引擎 `price_change_over.caveats` 里**被点名**（缺口不许只活在代码里）。
+
+        ⚠️ 本判据的**前一版**用 `before_price` 当「会改价」的判据 —— 复核实测 `product_manage`
+        证伪了它（也能改价、却没有该字段）⇒ 判据改为 `price` + 例外台账（本单的实证修正）。
+        """
+        from app.briefing.proactive import RULES
+
+        declared = _tools_declaring_price()
+        tracked = set(registry_module._PRICE_CHANGE_TOOLS)
+        untracked = set(registry_module._UNTRACKED_PRICE_TOOLS)
+        assert declared, "一个都没解析出来 ⇒ 判据在空跑（锚点漂移，不是通过）"
+        assert not (tracked & untracked), "同一工具不得既登记为「在射程」又登记为「已知缺口」"
+        assert not (declared - tracked - untracked), (
+            f"会改价却既未登记也未登记为已知缺口：{sorted(declared - tracked - untracked)}"
+            " —— 它的改价不会被任何规则发现，而没有任何东西会红")
+        assert tracked <= declared, (
+            f"登记面比现实宽：{sorted(tracked - declared)} 并未声明 `price` ⇒ 口径漂移（谁在改价？）")
+        caveats = "；".join(next(r for r in RULES if r.rule_id == "price_change_over").caveats)
+        for tool in sorted(untracked):
+            assert tool in caveats, f"例外 {tool} 未在引擎 caveats 里点名 ⇒ 那就是静默漏报"
+
+    def test_known_gap_tools_are_a_real_ledger_not_a_dumping_ground(self):
+        """例外台账的**只许缩短**那一半：每条例外必须真实存在（陈旧条目 ⇒ 红），且仍能改价。
+
+        判据 = 源码里真有一个 `read_only=False` 的工具类叫这个名字（否则台账就是在藏东西）。
+        """
+        import ast as _ast
+        import pathlib as _pathlib
+
+        tools_dir = _pathlib.Path(__file__).resolve().parents[1] / "app" / "tools"
+        write_tools = set()
+        for path in sorted(tools_dir.glob("*.py")):
+            tree = _ast.parse(path.read_text(encoding="utf-8"))
+            for node in _ast.walk(tree):
+                if not isinstance(node, _ast.ClassDef):
+                    continue
+                name = read_only = None
+                for stmt in node.body:
+                    if (isinstance(stmt, _ast.Assign) and len(stmt.targets) == 1
+                            and isinstance(stmt.targets[0], _ast.Name)):
+                        if stmt.targets[0].id == "name" and isinstance(stmt.value, _ast.Constant):
+                            name = stmt.value.value
+                        elif stmt.targets[0].id == "read_only" and isinstance(stmt.value, _ast.Constant):
+                            read_only = stmt.value.value
+                if name and read_only is False:
+                    write_tools.add(name)
+        stale = set(registry_module._UNTRACKED_PRICE_TOOLS) - write_tools
+        assert not stale, f"例外台账里的 {sorted(stale)} 在源码里已不存在（陈旧条目必须销账）"
+
+    def test_batch_price_update_is_a_known_gap_not_a_silent_one(self):
+        """已知缺口（照实登记）：批量改价**不在本项射程内**，但必须**披露**而不是静默漏掉。
+
+        `product_batch_update` 的条目用 `oldValue/newValue`（不是 `before_price/price`），
+        且属族 2（#5314）的批量写面 ⇒ 本单不扩射程；引擎侧 `price_change_over.caveats`
+        逐字点名它 ⇒ 用户/调用方看得见这个缺口。
+        """
+        from app.briefing.proactive import RULES
+
+        spec = next(r for r in RULES if r.rule_id == "price_change_over")
+        assert "product_batch_update" in "；".join(spec.caveats), "已知缺口未披露 ⇒ 就是静默漏报"
+        assert "product_batch_update" not in registry_module._PRICE_CHANGE_TOOLS
+
+    def test_python_and_java_price_tool_lists_agree(self):
+        """**跨模块字面量必须机械钉住**（复核 P2）：Python 侧与 Java 侧的工具表 / resource_type 逐字相等。
+
+        漂移方向是**静默漏报**（Python 加了工具、Java 没加 ⇒ 快照里那类改价永远不出现，
+        而两侧各自单测都绿）⇒ 判据读 Java 源码字面量比对，不靠「注释声称逐字相同」。
+        """
+        import pathlib as _pathlib
+        import re
+
+        java = (_pathlib.Path(__file__).resolve().parents[2] / "admin-api" / "src" / "main"
+                / "java" / "com" / "migao" / "admin" / "service" / "DailyBriefingService.java"
+                ).read_text(encoding="utf-8")
+        tools = re.search(r"PRICE_CHANGE_TOOLS = List\.of\(([^)]*)\)", java)
+        assert tools, "Java 侧找不到 PRICE_CHANGE_TOOLS 字面量 ⇒ 锚点漂移（判据不得静默通过）"
+        java_tools = set(re.findall(r'"([^"]+)"', tools.group(1)))
+        assert java_tools == set(registry_module._PRICE_CHANGE_TOOLS), (
+            f"两侧改价工具表漂移：Java {sorted(java_tools)} vs Python "
+            f"{sorted(registry_module._PRICE_CHANGE_TOOLS)} —— 漂移方向是静默漏报")
+        resource = re.search(r'AGENT_TOOL_RESOURCE_TYPE = "([^"]+)"', java)
+        assert resource, "Java 侧找不到 AGENT_TOOL_RESOURCE_TYPE 字面量 ⇒ 锚点漂移"
+        assert resource.group(1) == registry_module._WRITE_AUDIT_RESOURCE_TYPE

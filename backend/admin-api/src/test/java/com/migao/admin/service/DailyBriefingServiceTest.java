@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.MybatisPlusConfig;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.AfterSalesTicket;
+import com.migao.admin.entity.AuditLog;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
@@ -87,6 +88,8 @@ class DailyBriefingServiceTest {
     @Mock
     private ProductMapper productMapper;
     @Mock
+    private AuditLogMapper auditLogMapper;
+    @Mock
     private ProductService productService;
     @Mock
     private BriefingGenerateClient briefingGenerateClient;
@@ -137,7 +140,7 @@ class DailyBriefingServiceTest {
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         for (Class<?> entity : List.of(Order.class, OrderItem.class, OrderLogistics.class,
-                ProductSku.class, Product.class, AfterSalesTicket.class)) {
+                ProductSku.class, Product.class, AfterSalesTicket.class, AuditLog.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
         }
         // 聚合快照默认 stub
@@ -645,6 +648,29 @@ class DailyBriefingServiceTest {
             return Order.builder().id("O-1").tenantId(1L).orderNo(orderNo).status("confirmed")
                     .userId("C-1").createdAt(OffsetDateTime.parse("2026-09-12T10:00:00+08:00"))
                     .actualAmount(new BigDecimal("1200.00")).totalAmount(new BigDecimal("1500.00"))
+                    // 让利（issue #5388）：1500 应收 − 1200 实收 = 400 让利（26.7% < 30% ⇒ 不命中）
+                    .discountAmount(new BigDecimal("400.00"))
+                    .build();
+        }
+
+        /** 一条**改价**审计行（issue #5388）：`action_details.priceChange` 带改价真值 */
+        private AuditLog priceAuditRow(String toolName, Double before, Double price) {
+            Map<String, Object> priceChange = new java.util.LinkedHashMap<>();
+            priceChange.put("product_id", "P-1");
+            if (before != null) {
+                priceChange.put("before_price", before);
+            }
+            if (price != null) {
+                priceChange.put("price", price);
+            }
+            Map<String, Object> details = new java.util.LinkedHashMap<>();
+            details.put("action", "update");
+            details.put("params", Map.of("product_id", "<str>", "price", "<float>"));
+            details.put("priceChange", priceChange);
+            return AuditLog.builder().id("A-" + toolName).tenantId(1L)
+                    .resourceType("agent_tool").toolName(toolName)
+                    .createdAt(OffsetDateTime.parse("2026-09-22T09:30:00+08:00"))
+                    .actionDetails(details)
                     .build();
         }
 
@@ -701,6 +727,10 @@ class DailyBriefingServiceTest {
             // 退货率分母（族 3 · 包 2，issue #5369）：P-1 有 4 条订单行、P-2 有 2 条
             when(orderItemMapper.selectProductOrderLineCounts(any(), any(), anyInt())).thenReturn(
                     List.of(countRow("P-1", 4L), countRow("P-2", 2L)));
+            // 改价（审计源，issue #5388）：一条 product_update 的改价审计行 + 该租户审计在跑
+            when(auditLogMapper.selectList(any())).thenReturn(List.of(
+                    priceAuditRow("product_update", 200.0, 120.0)));
+            when(auditLogMapper.selectCount(any())).thenReturn(1L);
         }
 
         /**
@@ -715,6 +745,8 @@ class DailyBriefingServiceTest {
             ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
             if (mapper == orderMapper) {
                 verify(orderMapper, atLeastOnce()).selectList(captor.capture());
+            } else if (mapper == auditLogMapper) {
+                verify(auditLogMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == orderLogisticsMapper) {
                 verify(orderLogisticsMapper, atLeastOnce()).selectList(captor.capture());
             } else if (mapper == productSkuMapper) {
@@ -738,7 +770,7 @@ class DailyBriefingServiceTest {
         }
 
         @Test
-        @DisplayName("契约三数组装配；price_changes **不存在**（不是「命中 0 条」）")
+        @DisplayName("行数组契约：五个数组（含改价/让利两个新数组）；截断元信息逐数组齐备")
         void assemblesTheThreeContractArrays() {
             stubRows();
 
@@ -747,11 +779,129 @@ class DailyBriefingServiceTest {
             assertThat((List<?>) snapshot.get("orders")).hasSize(1);
             assertThat((List<?>) snapshot.get("skus")).hasSize(1);
             assertThat((List<?>) snapshot.get("returns")).hasSize(2);
-            assertThat(snapshot).doesNotContainKey("price_changes");
+            // 改价（审计源）与让利（订单源）**都已装配**（issue #5388）—— 不再是「结构性不可达」
+            assertThat((List<?>) snapshot.get("price_changes")).hasSize(1);
+            assertThat((List<?>) snapshot.get("order_discounts")).hasSize(1);
             assertThat(snapshot.get("row_fields")).isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FIELDS);
+            assertThat(snapshot.get("audit_tool_logging")).isEqualTo(true);
             assertThat((Map<String, Object>) snapshot.get("row_meta"))
-                    .as("截断必须显式：每个行数组（含退货率两端）都要有 row_meta")
-                    .containsOnlyKeys("orders", "skus", "returns", "product_return_stats");
+                    .as("截断必须显式：每个行数组（含退货率两端与两个新数组）都要有 row_meta")
+                    .containsOnlyKeys("orders", "skus", "returns", "product_return_stats",
+                            "price_changes", "order_discounts");
+        }
+
+        @Test
+        @DisplayName("price_changes 行：审计行的价格真值 + 工具名；两行都来自改价类工具")
+        void priceChangeRowsComeFromTheAuditLog() {
+            stubRows();
+            when(auditLogMapper.selectList(any())).thenReturn(List.of(
+                    priceAuditRow("product_update", 200.0, 120.0),
+                    priceAuditRow("sku_update", 500.0, 250.0)));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("price_changes");
+
+            assertThat(rows).hasSize(2);
+            assertThat(rows).extracting(r -> r.get("tool_name"))
+                    .containsExactly("product_update", "sku_update");
+            assertThat(rows.get(0))
+                    .containsEntry("before_price", 200.0)
+                    .containsEntry("new_price", 120.0)
+                    .containsEntry("product_id", "P-1");
+            assertThat(rows.get(0).get("changed_at")).isEqualTo("2026-09-22T09:30+08:00");
+        }
+
+        @Test
+        @DisplayName("审计行读不出价（脱敏期历史行）⇒ 价格落 null（**未判定**，不是幅度 0）")
+        void desensitizedHistoryYieldsNullPricesNotZero() {
+            stubRows();
+            // `params` 里有 price 键（= 确实改过价），但没有 priceChange 真值（该键上线前落库的行）
+            AuditLog legacy = AuditLog.builder().id("A-legacy").tenantId(1L)
+                    .resourceType("agent_tool").toolName("product_update")
+                    .createdAt(OffsetDateTime.parse("2026-09-22T09:00:00+08:00"))
+                    .actionDetails(Map.of("action", "update",
+                            "params", Map.of("product_id", "<str>", "price", "<float>",
+                                    "before_price", "<float>")))
+                    .build();
+            when(auditLogMapper.selectList(any())).thenReturn(List.of(legacy));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("price_changes");
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0)).containsEntry("before_price", null).containsEntry("new_price", null);
+            // 🔴 占位串**不得**被当成商品标识（看不见 ≠ 有值）
+            assertThat(rows.get(0)).containsEntry("product_id", null);
+        }
+
+        @Test
+        @DisplayName("只改名（params 无 price 键、无 priceChange）的审计行 ⇒ 不是改价事件，不进数组")
+        void nonPriceAuditRowsAreNotPriceChanges() {
+            stubRows();
+            AuditLog rename = AuditLog.builder().id("A-rename").tenantId(1L)
+                    .resourceType("agent_tool").toolName("product_update")
+                    .createdAt(OffsetDateTime.parse("2026-09-22T09:00:00+08:00"))
+                    .actionDetails(Map.of("action", "update", "params", Map.of("name", "<str>")))
+                    .build();
+            when(auditLogMapper.selectList(any())).thenReturn(List.of(rename));
+
+            assertThat((List<?>) service.aggregateSnapshot(1L).get("price_changes")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("改价审计被行数上限截断 ⇒ row_meta.truncated 显式（不静默少报）")
+        void priceChangeTruncationIsExplicit() {
+            stubRows();
+            int n = DailyBriefingService.SNAPSHOT_ROW_FETCH_LIMIT;
+            when(auditLogMapper.selectList(any())).thenReturn(
+                    java.util.stream.IntStream.rangeClosed(1, n)
+                            .mapToObj(i -> priceAuditRow("product_update", 200.0 + i, 100.0)).toList());
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat(metaOf(snapshot, "price_changes"))
+                    .containsEntry("truncated", true)
+                    .containsEntry("limit", DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+            assertThat((List<?>) snapshot.get("price_changes"))
+                    .hasSize(DailyBriefingService.SNAPSHOT_ROW_LIMIT);
+        }
+
+        @Test
+        @DisplayName("租户级事实 audit_tool_logging：窗口内有任意写工具审计行 ⇒ true；0/缺 ⇒ false")
+        void auditToolLoggingFactSeparatesTheTwoKindsOfEmpty() {
+            stubRows();
+            when(auditLogMapper.selectCount(any())).thenReturn(0L);
+            when(auditLogMapper.selectList(any())).thenReturn(List.of());
+
+            Map<String, Object> noAudit = service.aggregateSnapshot(1L);
+
+            // 🔴 关键区分（issue #5388）：**从没改过价**与**审计没在跑**不许共用一个说法
+            assertThat(noAudit.get("audit_tool_logging")).isEqualTo(false);
+
+            when(auditLogMapper.selectCount(any())).thenReturn(3L);
+            assertThat(service.aggregateSnapshot(1L).get("audit_tool_logging")).isEqualTo(true);
+
+            when(auditLogMapper.selectCount(any())).thenReturn(null);   // 未知 ⇒ 不宣称「在跑」
+            assertThat(service.aggregateSnapshot(1L).get("audit_tool_logging")).isEqualTo(false);
+        }
+
+        @Test
+        @DisplayName("order_discounts 行：让利订单的四个契约字段（金额原样给，不在这里算）")
+        void discountRowsCarryTheContractFields() {
+            stubRows();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows =
+                    (List<Map<String, Object>>) service.aggregateSnapshot(1L).get("order_discounts");
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0))
+                    .containsEntry("order_no", "SO-1")
+                    .containsEntry("total_amount", new BigDecimal("1500.00"))
+                    .containsEntry("discount_amount", new BigDecimal("400.00"));
+            assertThat(rows.get(0).get("created_at")).isEqualTo("2026-09-12T10:00+08:00");
         }
 
         @Test
@@ -833,7 +983,8 @@ class DailyBriefingServiceTest {
 
             service.aggregateSnapshot(1L);
 
-            for (Object mapper : List.of(orderMapper, productSkuMapper, afterSalesTicketMapper)) {
+            for (Object mapper : List.of(orderMapper, productSkuMapper, afterSalesTicketMapper,
+                    auditLogMapper)) {
                 for (AbstractWrapper<?, ?, ?> wrapper : capturedWrappers(mapper)) {
                     assertThat(wrapper.getSqlSegment())
                             .as("行数组查询必须有界（逐条，不只第一条）")
@@ -979,7 +1130,7 @@ class DailyBriefingServiceTest {
             service.aggregateSnapshot(1L);
 
             for (Object mapper : List.of(orderMapper, orderLogisticsMapper, productSkuMapper,
-                    productMapper, afterSalesTicketMapper)) {
+                    productMapper, afterSalesTicketMapper, auditLogMapper)) {
                 for (AbstractWrapper<?, ?, ?> wrapper : capturedWrappers(mapper)) {
                     assertThat(wrapper.getParamNameValuePairs().values())
                             .as("行数组查询必须显式带 tenantId（拦截器之外的第二道，逐条）")
@@ -1039,9 +1190,15 @@ class DailyBriefingServiceTest {
         @Test
         @DisplayName("结构性不可达如实登记：price_changes 不入册（全仓仍无改价流水表）")
         void structuralGapsAreDeclared() {
-            // 改价面仍结构性接不通（另立 issue）⇒ 谁把改价流水接上，这两条会红，逼他同步改引擎接线判据。
-            // 🔴 成本面（原「orders 无成本列 ⇒ 接不通」）已由 #5348 接通：判据搬到 CostJoin 的正面断言。
-            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS).doesNotContainKey("price_changes");
+            // 🔴 改价面（原「结构性接不通，另立 issue」）已由 #5388 接通：`price_changes` 现在
+            // 由**审计日志**装配（裁定 C，不建流水表）⇒ 本判据翻面成**正面**断言（谁把数组摘掉 ⇒ 红）。
+            // 让利面同批新增（`order_discounts`）。两条都在 `assemblesTheThreeContractArrays` 有行级断言。
+            assertThat(DailyBriefingService.SNAPSHOT_ROW_FIELDS)
+                    .containsKeys("price_changes", "order_discounts");
+            assertThat(DailyBriefingService.PRICE_CHANGE_TOOLS)
+                    .as("两个工具**都是改价**（只筛一个会漏一半，issue #5388）")
+                    .containsExactly("product_update", "sku_update");
+            assertThat(DailyBriefingService.AGENT_TOOL_RESOURCE_TYPE).isEqualTo("agent_tool");
         }
     }
 

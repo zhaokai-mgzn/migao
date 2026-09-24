@@ -138,8 +138,60 @@ def desensitize_params(params: Dict[str, Any]) -> Dict[str, str]:
 
     手机号/地址/姓名等真实值一旦进日志或 `audit_logs.action_details`，就是不可撤销的
     PII 泄露（多租户 SaaS 的合规问题）。故这里是唯一实现，调用方不得各写一份。
+
+    ⚠️ 本函数**只管 `action_details.params`**（形状面）。**改价真值**另走独立键
+    `action_details.priceChange`（见 `price_change_facts`，issue #5388）——
+    不是本函数的例外，而是**另一个键**：混进来看似省事，实则让「同一键的值有时是真值、
+    有时是占位」变成新的隐式规则（本仓反复批判的形态）。
     """
     return {k: f"<{type(v).__name__}>" for k, v in (params or {}).items()}
+
+
+# ── 改价真值（issue #5388）：审计日志 = 改价流水源 ──────────────────────────────
+# 为什么需要它：裁定 C 的判据（改价幅度 = |price - before_price| / before_price）要求审计行里
+# **有这两个数**，而 `params` 按 PII 纪律只能是类型占位（上面那个函数）——
+# ⇒ 真值走**独立键**，只对改价类工具发。
+#
+# 为什么价格/商品标识可以留真值：`desensitize_params` 防的是 **PII**（phone/address/name）；
+# 价格、商品 id、颜色、门幅是**经营事实**，且工具自己本来就把改前价打进 loguru
+# （`app/tools/product_update.py` 的 `logger.info(... 改前价={before_price})`）。
+# 记账面同理：`audit_logs.resource_id/resource_name` 对 AI 工具调用**恒为 null**
+# （`AgentAuditLogController.record` 传 null）⇒ 不留商品标识就连「哪个商品被改价」都无从取证。
+#
+# 🔴 登记面是**判据**（`tests/test_write_audit_persistence.py` 的元守卫，§23 G1/G2）：凡 schema 里
+# 声明了 **`price`** 的写工具必须**要么登记在此、要么登记进下面的例外台账** —— 两者都不在 ⇒ 红。
+# ⚠️ 判据是 **`price`**（会不会改价），**不是** `before_price`：本单复核实测 `product_manage`
+# 也能改 `basePrice` 却**没有** before_price 预览约束（#5303 只覆盖 product_update / sku_update）
+# ⇒ 旧前提「声明 before_price ⟺ 会改价」**已被证伪**（它会静默放行一条真实的改价路径）。
+_PRICE_CHANGE_TOOLS = frozenset({"product_update", "sku_update"})
+
+#: **已知不在射程**的可改价写工具（例外台账，只许缩短 —— §23 G2 燃尽靶）。
+#: 两条硬约束（元守卫逐条判）：① 例外必须真实存在且真的能改价（陈旧条目 ⇒ 红）；
+#: ② 每个例外必须在引擎 `price_change_over.caveats` 里**被点名**（缺口不许只活在代码注释里）。
+_UNTRACKED_PRICE_TOOLS = {
+    # 也能改 basePrice（`_update_product` 里 `json_data["basePrice"] = price`），但无 before_price
+    # 预览约束 ⇒ 改前价不可得 ⇒ 本项不判（已 caveats 点名）
+    "product_manage": "能改 basePrice，但无 before_price 预览约束（#5303 只覆盖 product_update/sku_update）",
+    # 批量改价：条目用 oldValue/newValue（族 2 / #5314 的批量写面），schema 里没有 price 键
+    "product_batch_update": "批量改价：条目用 oldValue/newValue，不产 price/before_price 真值",
+}
+
+#: 逐条改价的字段白名单（**加法即登记**：新增字段要在这里 + 快照契约同步）
+_PRICE_CHANGE_FACT_KEYS = ("price", "before_price", "product_id", "color", "door_width")
+
+
+def price_change_facts(tool_name: str, params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """改价类工具的**价格事实**（→ `audit_logs.action_details.priceChange`）；非改价工具 ⇒ `None`。
+
+    只取白名单里的键，且**丢弃 `None`**（没传的字段不出现在取证材料里 —— 与 `params` 的
+    「键在值在」不同：那里键名本身就是脱敏后的形状证据）。
+    """
+    if tool_name not in _PRICE_CHANGE_TOOLS:
+        return None
+    source = params or {}
+    facts = {key: source[key] for key in _PRICE_CHANGE_FACT_KEYS
+             if key in source and source[key] is not None}
+    return facts or None
 
 
 async def audit_write_tool(
@@ -177,6 +229,24 @@ async def audit_write_tool(
         )
     try:
         client = get_admin_api_client()
+        action_details: Dict[str, Any] = {
+            # ⚠️ 重复 `action` 是**有意**的：`action` 列在迁移 V52 里被回填为
+            # 「动词」，而回填只能从 `action_details->>'action'` 派生 ——
+            # 新行带上它，回填规则才对**新行**同样成立（否则 V52 的注释
+            # 「新写入方已直接写 action」与回填语句的射程不一致）。
+            # 唯一事实源仍是 `derive_audit_action` 的返回值（上方 action 变量）。
+            "action": action,
+            "params": desensitize_params(params),
+            "success": success,
+            "durationMs": round(duration_ms, 1),
+            "role": context.role,
+            "sessionId": context.session_id,
+        }
+        # 改价类工具另发**价格事实**（issue #5388）：真值只走这个独立键，`params` 的形状面
+        # 一字不动 ⇒ 既有 PII 判据（只记类型占位）与「改价幅度可判定」同时成立。
+        _price_facts = price_change_facts(tool_name, params)
+        if _price_facts:
+            action_details["priceChange"] = _price_facts
         resp = await asyncio.wait_for(
             client.post(
                 "/api/admin/agent/audit-logs",
@@ -184,19 +254,7 @@ async def audit_write_tool(
                     "action": action,
                     "toolName": tool_name,
                     "resourceType": _WRITE_AUDIT_RESOURCE_TYPE,
-                    "actionDetails": {
-                        # ⚠️ 重复 `action` 是**有意**的：`action` 列在迁移 V52 里被回填为
-                        # 「动词」，而回填只能从 `action_details->>'action'` 派生 ——
-                        # 新行带上它，回填规则才对**新行**同样成立（否则 V52 的注释
-                        # 「新写入方已直接写 action」与回填语句的射程不一致）。
-                        # 唯一事实源仍是 `derive_audit_action` 的返回值（上方 action 变量）。
-                        "action": action,
-                        "params": desensitize_params(params),
-                        "success": success,
-                        "durationMs": round(duration_ms, 1),
-                        "role": context.role,
-                        "sessionId": context.session_id,
-                    },
+                    "actionDetails": action_details,
                 },
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,

@@ -479,7 +479,7 @@ cases:
 
   - id: DA-016
     legacy_id: ""
-    title: "跨域视图内核：行级快照按契约装配（orders/skus/returns 有界 + 租户隔离，issue #5358）"
+    title: "跨域视图内核：行级快照按契约装配（orders/skus/returns/price_changes/order_discounts 有界 + 租户隔离，issue #5358）"
     domains:
       - data
     tier: normal
@@ -494,14 +494,15 @@ cases:
       - "经营日报数据快照装配自检"
     expectations: []
     data_checks:
-      - "快照带 orders/skus/returns/**product_return_stats** 四个行级数组，行键逐字等于契约（orders：order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；skus：sku_id/product_id/product_name/stock/sales_count/price/avg_cost；returns：return_no/customer_id/product_id/returned_at/amount；product_return_stats：product_id/return_tickets/order_lines），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）"
-      - "**结构性缺口只剩一条**：`price_changes` **数组不存在**（全仓无改价流水表）⇒ 改价幅度规则接不通，显式登记而不是「装配了但命中 0 条」；orders 行的 **`cost_amount` 已装配**（issue #5348 接通成本价 join = Σ 行数量 × 该行 SKU 的 `avg_cost`）—— 🔴 该键**恒在**、值可为 **NULL**：NULL = **成本未知（整单不可判定）**，**不是**「缺字段」（缺字段会被引擎读成「系统没接线」，那是另一回事），也**不出部分和**（任一行不可解析、或该行 `avg_cost` 为空 ⇒ 整单 NULL）"
+      - "快照带 orders/skus/returns/price_changes/order_discounts 五个行级数组，行键逐字等于契约（orders：order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；skus：sku_id/product_id/product_name/stock/sales_count/price/avg_cost；returns：return_no/customer_id/product_id/returned_at/amount；product_return_stats：product_id/return_tickets/order_lines；price_changes：change_no/tool_name/product_id/before_price/new_price/changed_at；order_discounts：order_no/total_amount/discount_amount/created_at），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）"
+      - "**改价的数据源 = 审计日志**（issue #5388 裁定 C：不建改价流水表）：`price_changes` 由 `audit_logs` 装配 —— 筛 `resource_type='agent_tool'` 且 `tool_name ∈ {product_update, sku_update}`（🔴 **两者都是改价**：商品级统一定价 / 单 SKU 调价，只筛一个会漏一半），幅度取自 `action_details.priceChange` 的 `before_price`/`price` **真值**（脱敏纪律下 `params` 只记类型占位 ⇒ 真值走该独立键，issue #5388）；**让利的数据源 = `orders.discount_amount`**（`order_discounts`：只装窗口内 `discount_amount > 0` 的订单）。两条固有边界**如实登记**、不许静默：审计是 **fail-open**（3s 上限、允许丢行）⇒ 只可能漏报；审计留痕自 #5303 起才带 `before_price` ⇒ 读不出数的历史行落 **NULL**（= 行级**未判定**，**不是「幅度 0」**，也**不是**「缺字段」）；orders 行的 **`cost_amount` 已装配**（issue #5348 接通成本价 join = Σ 行数量 × 该行 SKU 的 `avg_cost`）—— 🔴 该键**恒在**、值可为 **NULL**：NULL = **成本未知（整单不可判定）**，也**不出部分和**"
       - "每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）"
     skip_reason: "[backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配；2026-09-24 文本刷新（issue #5387）：orders 行新增 `cost_amount`（#5348 接通成本价 join）⇒ 契约键清单补该键、旧口径「orders 行没有 cost_amount」整条退场，**结构性缺口只剩 `price_changes` 一条**；2026-09-24 文本刷新（#5387 跟随，补 #5396 半成品）：装配层 `SNAPSHOT_ROW_FIELDS` 早已含 skus 的 `sales_count`/`price`/`avg_cost` 与 `product_return_stats` 数组（issue #5369）⇒ 契约键清单补齐这些键并补该数组名（判据 test_wiring_status_case_truth_sync::test_snapshot_case_text_covers_assembly_row_fields 抓到 main 侧既存红）"
+    merge_log: "2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 行级快照装配；2026-09-24 文本刷新（issue #5387）：orders 行新增 `cost_amount`（#5348 接通成本价 join）⇒ 契约键清单补该键；2026-09-24 文本刷新（#5387 跟随，补 #5396 半成品）：装配层 `SNAPSHOT_ROW_FIELDS` 早已含 skus 的 `sales_count`/`price`/`avg_cost` 与 `product_return_stats` 数组（issue #5369）⇒ 契约键清单补齐这些键并补该数组名；2026-09-24 文本刷新（issue #5388）：契约键清单补 `price_changes`（审计源）与 `order_discounts`（订单源）两个数组 ⇒ 旧口径「结构性缺口只剩 price_changes 一条」整条退场（改价幅度已接通）"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AuditLogPriceChangeRealDbTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -523,16 +524,17 @@ cases:
     expectations: []
     data_checks:
       - "接线状态**逐规则**输出（rule_id → status + 原因 + 缺哪个数组/字段），且**四态可分**：`wired`（已接入**且本次完整** —— 只有它能被判成「这方面没问题」）/ `incomplete`（已接入但**本次不完整**：行数被上限截断、分组维度缺值、有行未判定）/ `not_enabled`（系统**有**该能力、**该租户没开**，**可行动**：引导开启）/ `not_wired`（系统**未实现**，**不可行动**）—— 🔴 `not_enabled` 与 `not_wired` **并列、不可合并**（一个是「去开就能用」、一个是「现在没有」），**不是**一个整体布尔"
-      - "五条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over` 是**唯一**结构性不可达（缺 `price_changes` 数组）⇒ `not_wired` —— 部分接线场景有断言，不是整体一个布尔"
-      - "**不同性质的「没有」可分**：五条规则当天一条都没命中时，`not_wired`（系统没做）/ `not_enabled`（该租户没开）/ `incomplete`（本次不完整）与「`wired` 但当天无命中」在输出上必须不同 —— 前三种都带原因、只有 `wired` 不带 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红"
+      - "六条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over`（**数据源 = 审计日志**，issue #5388）**同样随租户三态** —— 审计在跑且行级完整 ⇒ `wired`、**有行读不出改价真值**（#5303 之前的记录没有 before_price）⇒ `incomplete`（+ `gaps` 点名未判定）、**窗口内连一条写工具审计行都没有**（审计没在跑 ⇒ 无法区分「从没改过价」与「审计丢行」）⇒ `not_enabled`（可行动：让米宝执行一次写操作以产生审计留痕）；`discount_over`（**数据源 = `orders.discount_amount`**，经营洞察）⇒ 数组已接入且完整即 `wired`（它是主库列、非 fail-open 旁路 ⇒ 空命中可信），行级金额缺失（`discount_amount` 默认 0 / `total_amount` 未知）⇒ `incomplete`（分母未知的**不判定**，不是 100% 让利）—— 部分接线场景有断言，不是整体一个布尔"
+      - "**不同性质的「没有」可分**：六条规则当天一条都没命中时，`not_wired`（系统没做）/ `not_enabled`（该租户没开）/ `incomplete`（本次不完整）与「`wired` 但当天无命中」在输出上必须不同 —— 前三种都带原因、只有 `wired` 不带 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红；🔴 **「租户从没改过价」与「审计根本没在跑」也必须不同**（两者都表现为「没有改价记录」：前者正常的空 ⇒ `wired`、后者故障的空 ⇒ `not_enabled`，判据 = 租户级事实 `audit_tool_logging`）"
       - "装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）"
       - "🔴 **有界不许变成静默少报**：行数组被行数上限截断 ⇒ 该规则落 `incomplete`（带原因：上限多少行 / 本次给出多少行）；分组维度在部分行缺值（如退货行没有商品）同样落 `incomplete` —— 注入式红证：抹掉截断标志 ⇒ 截断判据必红；把缺值补齐 ⇒ 维度判据必红"
       - "不变式（一套口径）：`reason is None` ⟺ `status == wired`（= 已接入**且本次完整**）—— 只有 `wired` 才允许把空命中读成「这方面没问题」；日报条数被 max_findings 截断时，工具消息必须点出**真实条数**（日报只列前 N 项，当天共 M 项）"
     skip_reason: "[backend-contract] 逐规则接线状态由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestWiringStatusIsPerRule），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 逐规则接线状态（治 #5348 的语义空转）；2026-09-24 文本刷新（issue #5387）：新增第四态 `not_enabled`（`below_cost_price` 的状态**随租户三态**，不再是 `not_wired`）⇒ 旧口径「两条结构性不可达（含 below_cost_price）为 not_wired」整条退场，**唯一**结构性不可达 = `price_change_over`"
+    merge_log: "2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 逐规则接线状态（治 #5348 的语义空转）；2026-09-24 文本刷新（issue #5387）：新增第四态 `not_enabled`（`below_cost_price` 的状态**随租户三态**，不再是 `not_wired`）；2026-09-24 文本刷新（issue #5388）：`price_change_over` 改数据源（审计日志）后**同样随租户三态**（含新增的「审计没在跑 ⇒ not_enabled」区分）、新增 `discount_over`（订单源，两态）⇒ 旧口径「唯一结构性不可达 = price_change_over」整条退场"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_briefing_proactive.py"
+        - "backend/ai-agent-service/tests/test_briefing_proactive_price_and_discount.py"
       ci:
         - pr-check.yml
       verifies: []

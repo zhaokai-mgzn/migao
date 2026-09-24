@@ -17,6 +17,7 @@ tool 模块要求 `tests/test_tools_<name>.py`）。断言分三面：
 # case_ids: DA-008, DA-009, DA-010, DA-014, DA-018
 import ast
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -226,6 +227,38 @@ UNWIRED_SNAPSHOT = {
     "skus": [],
     "returns": [],
 }
+
+
+#: **全部接线**的快照（issue #5388）：改价（审计源）与让利（订单源）两个数组都装配 + 审计事实为真
+#: ⇒ 六条规则全 `wired`、当天一条不命中 = 「空命中」最容易被读成「绝对无事」的那一种。
+WIRED_SNAPSHOT = dict(
+    UNWIRED_SNAPSHOT,
+    audit_tool_logging=True,
+    row_fields={**UNWIRED_SNAPSHOT["row_fields"],
+                "orders": UNWIRED_SNAPSHOT["row_fields"]["orders"] + ["cost_amount"],
+                "price_changes": ["change_no", "tool_name", "product_id",
+                                  "before_price", "new_price", "changed_at"],
+                "order_discounts": ["order_no", "total_amount", "discount_amount", "created_at"]},
+)
+
+#: **审计没在跑**的快照（#5388 的「故障的空」）：字段齐（系统有），但窗口内一条写工具审计行都没有
+#: ⇒ `price_change_over` 落 `not_enabled`（可行动），而**不是**与「从没改过价」共用一个说法。
+AUDIT_OFF_SNAPSHOT = dict(WIRED_SNAPSHOT, audit_tool_logging=False)
+
+
+def _assert_source_caveats_are_disclosed(message):
+    """**判据本体**（#5388）：数据源**固有边界**不得静默 —— 审计 fail-open ⇒ 只可能漏报；
+    审计留痕自 #5303 起才带改价真值 ⇒ 更早的记录不判定。
+
+    为什么连 `wired` 的空命中也要说：审计是**旁路**（3s 上限、允许丢行）——
+    空命中只代表「窗口内没有可判定的改价记录」，不代表绝对无事。
+    """
+    assert "fail-open" in message, "审计源的 fail-open 边界未披露"
+    assert "漏报" in message, "必须说清方向（只可能漏报、不会误报）"
+    assert "#5303" in message, "改价的历史边界（更早的记录不判定）未披露"
+    for forbidden in ("今日无异常", "无异常", "一切正常", "没有异常", "未发现异常", "暂无异常"):
+        assert forbidden not in message, f"出现了「{forbidden}」类表述（会把空命中读成没问题）"
+    return True
 
 
 def _assert_honest_about_unwired(message, names=UNWIRED_NAMES):
@@ -478,14 +511,12 @@ class TestNotWiredDisclosure:
 
     @patch("app.tools.briefing_query.get_admin_api_client")
     async def test_all_wired_snapshot_gets_no_disclosure(self, mock_get_client):
-        """全部接线时**不得**出现未接线措辞（否则披露会因为「总是出现」而失去信息量）"""
-        wired = dict(
-            UNWIRED_SNAPSHOT,
-            row_fields={**UNWIRED_SNAPSHOT["row_fields"],
-                        "orders": UNWIRED_SNAPSHOT["row_fields"]["orders"] + ["cost_amount"],
-                        "price_changes": ["change_no", "order_no", "product_id",
-                                          "original_price", "new_price", "changed_at"]},
-        )
+        """全部接线时**不得**出现未接线措辞（否则披露会因为「总是出现」而失去信息量）。
+
+        🔴 但**数据源固有边界**照说（issue #5388）：`wired` 的空命中也不是「绝对无事」
+        —— 审计是 fail-open 旁路，改价那条只可能漏报。
+        """
+        wired = WIRED_SNAPSHOT
         client = AsyncMock()
         client.get = AsyncMock(return_value={
             "success": True,
@@ -494,8 +525,13 @@ class TestNotWiredDisclosure:
 
         result = await BriefingQueryTool().execute(context=ALLOWED)
 
-        assert "尚未接入" not in (result.message or "")
-        assert result.message == "今日经营日报如下"
+        message = result.message or ""
+        assert "尚未接入" not in message
+        assert not [e for e in result.data["proactive_status"].values() if e["status"] != "wired"], \
+            "本快照必须**全部接线**（否则下面的边界断言与「未接线披露」串台）"
+        assert message.startswith("今日经营日报如下")
+        assert "fail-open" in message and "#5303" in message, "数据源固有边界必须照说"
+        assert "默认 0" in message, "让利源的默认值边界也要说（否则老订单的 0 被读成「确实没打折」）"
 
     @patch("app.tools.briefing_query.get_admin_api_client")
     async def test_red_proof_missing_disclosure_fails_the_judgement(self, mock_get_client):
@@ -517,6 +553,60 @@ class TestNotWiredDisclosure:
         with pytest.raises(AssertionError):
             _assert_honest_about_unwired(
                 f"以下能力尚未接入本次扫描：{'、'.join(UNWIRED_NAMES)}（今日无异常）")
+
+
+class TestSourceCaveatsDisclosure:
+    """#5388：**数据源固有边界**必须披露（不许静默），且 `wired` 的空命中也要带边界。
+
+    对照判据（会红吗）：把工具消息里那段边界披露删掉 ⇒ 第 3 条的注入式红证必红；
+    把引擎 `RuleSpec.caveats` 清空 ⇒ 第 1 条必红（边界只有一处声明）。
+    """
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_caveats_are_disclosed_even_when_wired(self, mock_get_client):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": WIRED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        assert result.data["proactive"] == [], "本快照当天零命中（前提：下面的披露不是被命中带出来的）"
+        assert _assert_source_caveats_are_disclosed(result.message or "") is True
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_audit_not_running_is_not_enabled_and_says_so(self, mock_get_client):
+        """审计没在跑 ⇒ 「从没改过价」与「审计丢行」不可分 ⇒ `not_enabled` + 边界并入 reason"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": AUDIT_OFF_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        status = result.data["proactive_status"]
+        assert status["price_change_over"]["status"] == "not_enabled"
+        assert status["discount_over"]["status"] == "wired", "让利那条**不受**审计影响（不同数据源）"
+        message = result.message or ""
+        assert "你还没开启写工具审计留痕" in message
+        assert _assert_source_caveats_are_disclosed(message) is True
+
+    def test_red_proof_missing_caveat_segment_fails_the_judgement(self):
+        """**注入式红证**：消息里没有边界披露（只报「今日经营日报如下」）⇒ 判据必红"""
+        with pytest.raises(AssertionError):
+            _assert_source_caveats_are_disclosed("今日经营日报如下")
+
+    def test_red_proof_caveats_have_a_single_source(self):
+        """边界只有一处声明（`RuleSpec.caveats`）：清空它 ⇒ 工具消息里那句随之消失（不是另抄一份）"""
+        from app.briefing import proactive as engine
+
+        stripped = tuple(
+            replace(spec, caveats=()) if spec.rule_id == "price_change_over" else spec
+            for spec in engine.RULES)
+        status = engine.proactive_status(WIRED_SNAPSHOT, rules=stripped)
+        assert status["price_change_over"]["caveats"] == []
 
 
 class TestIncompleteDisclosure:

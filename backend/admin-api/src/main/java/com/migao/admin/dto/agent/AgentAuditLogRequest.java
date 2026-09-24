@@ -36,7 +36,10 @@ public class AgentAuditLogRequest {
     /**
      * 审计详情 → audit_logs.action_details（JSONB）。
      * 约定键：action（动词副本，供 V52 回填派生）、params（**已脱敏**：字段名 → 类型占位
-     * `<str>`/`<int>`）、success、durationMs、role、sessionId（表无 session_id 列，暂落此处）。
+     * `<str>`/`<int>`）、success、durationMs、role、sessionId（表无 session_id 列，暂落此处）、
+     * <b>priceChange</b>（**改价真值**，issue #5388：仅 {@code tool_name ∈ {product_update,
+     * sku_update}} 有值 —— 价格与商品标识非 PII，而改价幅度的判据源就是这两个数；
+     * 缺该键的改价行 ⇒ 快照落 NULL = 行级**未判定**，不是「幅度 0」）。
      */
     private Map<String, Object> actionDetails;
 }
