@@ -1,0 +1,279 @@
+name: Post-Merge Verify (main 侧守护腿)
+
+# ── 这是什么（issue #5423 = `migao-dev-flow` §23.7 **A2** 的机械化）─────────────────
+# `pr-check` **只在 `pull_request` 触发** ⇒ **main 上的破坏没有任何 run 会报**：
+#   · `#5396` 新增了「装配层字段 ⊆ DA-016 契约键清单」这条判据，却**没把 DA-016 的清单补上**
+#     ⇒ **半成品落 main**（该判据在它自己的 PR 上是绿的 = §23.8 **B3「当时绿 ≠ 合并后绿」**）；
+#   · 它爆在**下一次任何 PR** 的 required 检查（`ci workflow helper unit tests`）上 ⇒ **卡住全队列**，
+#     最后由人花一整轮做热修（`#5405`）+ 给 4 个分支逐一 rebase 才解开。
+# 本腿把那一次「人肉事后复算」变成**合并后自动跑**：把落入 main 的变更里**被判据引用**的那些判据
+# 重跑一遍 ⇒ 判据与它约束的数据不同刻落地 ⇒ 必红 ⇒ 走**值班 issue**（下面有出口）。
+
+# ── 为什么是「定向跑」而不是 `./verify-all.sh quick`（判据，不是口味）────────────
+# `quick` 档的检查项 = admin-api 单测 / ai-agent 单测 / admin-web vitest / tsc / worker-h5 node 测试 /
+# QA Growth Gate / UI 回退 / 覆盖体检 —— **没有一项**跑 `tests/unit_ci_workflows`（自证：
+# `sed -n '/^  quick)/,/^    ;;/p' verify-all.sh`）。而 `#5396` 爆的正是该目录（CI job
+# `ci workflow helper unit tests` 的命令 = `python -m pytest tests/unit_ci_workflows -q`）
+# ⇒ **`quick` 抓不到这一类**。成本侧同理：`quick` 要 JDK+Maven / npm / node / PG 四套工具链冷启动，
+# 本腿只要 `pytest` + `pyyaml`（+ 真库判据要的 PG **二进制**，不装服务 —— 与 `pr-check` 同源）。
+
+# ── 触发面：`push` 是必须的那一面，但**它会被吞**（实测，不是推断）──────────────
+# 实测（2026-09-24，`gh run list --branch main --event push --limit 25`）：最近 ~15 次合并里
+# **只有 2 次**在 main 上产生了 push run（`fca6ce3` #5395 / `54bd6c2` #5409），其余（含 `#5396`
+# `e8fc247`、`#5405` `69458c2`、`#5412` `dfed199`）**零 push run**。同根因的既有记录：
+# issue **#3113「push 被吞」**（`deploy-reconcile.yml` 头部）、`verify-trigger.yml` 头部
+# （`pull_request: [closed]` 对 bot 合并 100% 不触发）、`close-linked-issues.yml`（#3585）。
+# ⇒ 只挂 `push` 的守护腿 = **多数合并根本不会跑**（正是本单要消灭的「机制静默失效」形态）。
+# ⇒ 照既有范式（`deploy-reconcile.yml`）补**已被证明可靠**的那一面：
+#   `pull_request: [opened, reopened]`（新 PR 打开必触发 —— 恰好就是 `#5396` 破坏**爆在全队列**的那一刻）
+#   + `schedule`（触发全面停摆时的定时兜底）+ `workflow_dispatch`（值班复算入口）。
+
+# ── 水位（不看挂钟、不建第二本台账）────────────────────────────────────────────
+# 判定窗口 = **本腿最近一次成功 run 的 `headSha` .. main 当前 HEAD**（"自上次验证过之后新落地的"）。
+# ⇒ 天然**无缝隙**（每一次落地都会被某一次 run 覆盖）、**幂等**（重复跑同一窗口结论相同）、
+#   且**不需要新台账**（GitHub 的 run 历史就是水位 —— 台账另存一处必然漂移，本仓已踩过 `#5264`/`#5307`）。
+# 水位取不到（首次运行 / `gh` 不可达 / 对象不在检出里）⇒ **退回固定窗口**（`LOOKBACK` 个提交）
+# 并打 `::warning::` —— 方向是**多验**，不是少验。
+
+# ── 判定面（**显式不判表**，§23 G5：面外不是安全区，必须写明）──────────────────
+# 判 = `tests/unit_ci_workflows/test_*.py`（= `ci workflow helper unit tests` 的同一批）。
+# **不判** = 其它测试面（admin-web vitest / admin-api Java 单测 / ai-agent `tests/**`）——
+# 它们各自有自己的 PR 面与工具链成本，本腿**不假装覆盖它们**（跑全 = 每次合并 10 分钟级，与 §23 G8 冲突）。
+# 可见性的前提 = 既有**引用纪律**（`migao-dev-flow` §16.7）：判据要读某文件，路径必须写成可静态解析的
+# 形态（仓库相对全路径，或 `REPO / "a" / "b"` 链）；写在 docstring / 注释里**不算**引用
+# （§23.8 **B1**：判据语料不含自身说明）。「看不见」的东西不会被静默吞掉：每次都会打印**未命中清单**。
+
+# ── 读数（§23 G8：禁挂钟当判据）────────────────────────────────────────────────
+# 只报**与负载无关**的量：变更文件数 / 命中判据数 / 跑判据数 / 跳过数 / 未命中数 + 各自原因。
+# `timeout-minutes` 只是**上限**，不参与任何判定；读数里没有、也不许有时长字段（判据钉住）。
+
+# ── 本腿**不翻 required**（§2.2 的两条前置）────────────────────────────────────
+# ① 它**没有** `pull_request` 的稳定判定面（判定基准是 main 的当前状态，PR 事件只是触发时机）
+#    ⇒ 翻 required 会让所有 PR 永久 `BLOCKED`（"Expected — waiting for status to be reported"）；
+# ② 判定含 `gh` 取水位 / 检出完整性等**环境依赖** ⇒ 判定不确定。
+# ⇒ 形态 = **报告型 + 判红走值班 issue**（`priority/P1`，下文的失败钩子）。
+# ⛔ 本 PR **不动** `pr-check.yml` 的 required 集合与判定语义（那是另一条线的裁定）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
+  schedule:
+    # 每日 03:17 CST（UTC+8）= UTC 19:17，避开整点与 19:40（redproof-sweep）/ 20:37（mechanism-liveness）
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: '（可选）显式窗口起点 sha（缺省 = 本腿最近一次成功 run 的 headSha）'
+        required: false
+        default: ''
+      lookback:
+        description: '（可选）水位取不到时的固定窗口大小（个提交）'
+        required: false
+        default: '40'
+
+permissions:
+  contents: read
+  actions: read          # 读本 workflow 的历史 run 取「上次成功的水位」
+  issues: write          # 判红出口：开/更 P1 值班 issue（缺它 = 钩子自己崩溃、红而不留痕，issue #3834）
+
+concurrency:
+  # **不取消**：每次触发都要算（水位只在成功时前进 ⇒ 取消不会丢覆盖，但排队比互相取消更好读）
+  group: post-merge-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Post-Merge Verify (定向跑判据面)
+    runs-on: ubuntu-latest
+    # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口（含真库判据 ~127s）
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main（判定基准 = main 的当前状态，**不是** PR 的 head）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # 取水位要 diff 历史（`git diff <水位>..HEAD`）；浅检出会让窗口不可解析 ⇒ 本腿无法判定
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install deps（判据面只要 pytest + pyyaml，与 pr-check 的 ci-workflow-tests 同款）
+        run: pip install -q pytest pyyaml
+
+      # 真库判据要的是**二进制**而不是 PG 服务（13 个模块各自起一次性 initdb + pg_ctl 集群）。
+      # 搜路径**同源** `tests/unit_ci_workflows/pg_cluster.py`（不另抄一份）—— 这就是 pr-check 的
+      # `ci workflow helper unit tests` 修过的那个坑（#5203：探测只认 PATH ⇒ 83 条真库判据每次 CI
+      # 都 skip 成绿）。缺二进制 ⇒ **红**（不是 skip）：CI 上「没跑」绝不能是绿。
+      - name: Assert PostgreSQL binaries exist (fail-closed 前置，issue #5203)
+        run: |
+          python3 - <<'PY' >> "$GITHUB_PATH"
+          from tests.unit_ci_workflows import pg_cluster
+          for d in pg_cluster.bin_search_dirs():
+              print(d)
+          PY
+          python3 - <<'PY'
+          from tests.unit_ci_workflows import pg_cluster
+          missing = pg_cluster.missing()
+          print(f"runner 镜像 = {__import__('os').environ.get('ImageOS', '?')}")
+          print(f"缺的 PG 二进制 = {missing or '无'}")
+          raise SystemExit(1 if missing else 0)
+          PY
+          status=$?
+          if [ "$status" != "0" ]; then
+            echo "::error::找不到 PG 二进制（initdb/pg_ctl/psql）⇒ 真库判据无法执行。"
+            echo "本腿不装 PG 服务，二进制靠 runner 镜像自带（理由与修法同 pr-check.yml 的 ci-workflow-tests job，issue #5203）。"
+            exit 1
+          fi
+          echo "✅ PG 二进制存在 —— 真库判据能真跑（本次若选中它们，不会退化成 skip）"
+
+      - name: 判定（定向跑判据面）
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：与 pr-check 同款。
+          MIGAO_REQUIRE_REALDB: "1"
+          EVENT: ${{ github.event_name }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_LOOKBACK: ${{ inputs.lookback }}
+        run: |
+          set -uo pipefail
+          LOOKBACK="${INPUT_LOOKBACK:-40}"
+          BASE="${INPUT_BASE:-}"
+          BASE_SOURCE="explicit(--base 输入)"
+          if [ -z "$BASE" ]; then
+            # 水位 = 本 workflow **最近一次成功 run** 的 headSha（不新建台账；失败/取消不算成功 ⇒
+            # 未覆盖的范围会被下一次 run 重新覆盖，方向是**多验**）。
+            BASE="$(gh run list --workflow post-merge-verify.yml --status success --limit 1 \
+                      --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
+            BASE_SOURCE="水位(上次成功 run 的 headSha)"
+            if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+              echo "::warning::取不到水位（首次运行 / gh 不可达 / 该对象不在检出里）⇒ 退回固定窗口 HEAD~${LOOKBACK}（多验，不是少验）"
+              BASE=""
+              BASE_SOURCE="lookback(HEAD~${LOOKBACK})"
+            fi
+          fi
+          echo "窗口起点 = ${BASE:-HEAD~${LOOKBACK}}（来源：$BASE_SOURCE）"
+          echo "触发事件 = $EVENT"
+
+          set +e
+          if [ -n "$BASE" ]; then
+            python3 scripts/post_merge_verify.py --base "$BASE" \
+              --json post-merge-verify-report.json > /tmp/post-merge-verify.txt 2>&1
+          else
+            python3 scripts/post_merge_verify.py --lookback "$LOOKBACK" \
+              --json post-merge-verify-report.json > /tmp/post-merge-verify.txt 2>&1
+          fi
+          RC=$?
+          set -e
+          cat /tmp/post-merge-verify.txt
+
+          # 机制体交出自己的读数（`seen`/`acted` = 与负载无关的量，§23 G8）+ 摊到 step summary
+          SEEN="$(python3 -c 'import json;print(json.load(open("post-merge-verify-report.json"))["changed_count"])' 2>/dev/null || echo unknown)"
+          ACTED="$(python3 -c 'import json;print(json.load(open("post-merge-verify-report.json"))["selected_count"])' 2>/dev/null || echo unknown)"
+          WHY="窗口=${BASE:-HEAD~${LOOKBACK}}(${BASE_SOURCE}) rc=${RC} 变更文件=${SEEN} 命中判据=${ACTED}"
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            source .github/scripts/mechanism_liveness.sh
+            mechanism_liveness_declare --seen "$SEEN" --acted "$ACTED" --why "$WHY"
+          else
+            echo "::warning::本轮读数交给发射器失败（发射器不在检出里）—— 末尾的读数步会明说「读数缺失（不是零动作）」"
+          fi
+
+          {
+            echo "## Post-Merge Verify（main 侧守护腿，issue #5423）"
+            echo ''
+            echo "- 窗口起点：\`${BASE:-HEAD~${LOOKBACK}}\`（来源：$BASE_SOURCE）"
+            echo "- 触发事件：\`$EVENT\`"
+            echo "- 读数（与负载无关）：变更文件 \`$SEEN\` / 命中判据 \`$ACTED\`"
+            echo ''
+            echo '```'
+            cat /tmp/post-merge-verify.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RC" = "3" ]; then
+            echo "::warning::本腿**无法判定**（退出码 3：git / 窗口 / pytest 之一不可用）—— 这不是「通过」"
+          fi
+          exit $RC
+
+      - name: Upload 机器可读报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-merge-verify-report
+          path: post-merge-verify-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── 判红出口：沿用既有通道（mechanism-liveness / redproof-sweep 的同一形态）──────
+      # 定时腿 / push 腿**没有 PR 对象** ⇒ `block/merge` 无处施加（给"相关 PR"打标会把修它的人自己
+      # 拦死 = `#5075` 同款自锁）⇒ 出口 = **P1 值班 issue**（开/更，不新造第二套约定）。
+      - name: 判红 ⇒ 开/更 P1 值班 issue（**值班口径**：本通道不拦合并）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          TITLE="[post-merge] main 上的判据与它约束的数据不同刻落地（合并后守护腿未通过）"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          BODY=$(mktemp)
+          {
+            echo "合并后 main 侧守护腿未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ''
+            echo "触发事件：\`${{ github.event_name }}\`；判定基准：main \`${{ github.sha }}\`"
+            echo ''
+            echo '```'
+            cat /tmp/post-merge-verify.txt 2>/dev/null || echo "(报告缺失 —— 见本 run 的 step summary)"
+            echo '```'
+            echo ''
+            echo "### 这一类是什么（别读成「某个 PR 没写好」）"
+            echo ''
+            echo "- 判据在它自己的 PR 上是绿的，**合并后 main 才是红的**（\`migao-dev-flow\` §23.8 **B3「当时绿 ≠ 合并后绿」**）；"
+            echo "- 实测形态：\`#5396\` 加了「装配层字段 ⊆ DA-016 契约键清单」这条判据却没补 DA-016 的清单"
+            echo "  ⇒ 半成品落 main ⇒ 爆在**下一次任何 PR** 的 required 检查上、**卡住全队列**；"
+            echo "- ⇒ 处置口径（§23.7 **A1/A3**）：**真值在哪一侧**先钉死，再**同 PR**补齐被约束对象；"
+            echo "  改判据的人与改数据的人必须是同一次落地（否则就是本例）。"
+            echo ''
+            echo "### 清零判据（怎么算好）"
+            echo ''
+            echo "- 本机复算（零成本、可复制）："
+            echo "  \`python3 scripts/post_merge_verify.py --base <窗口起点> --head <跑红时的 main sha>\` 退出 0；"
+            echo "- 或在 Actions 上手动复跑本 workflow（\`workflow_dispatch\`，可带 \`base\` 输入）⇒ 绿；"
+            echo "- **退出码 3 = 无法判定**（git / 窗口 / pytest 不可用）——\`3\` **不得当 0 读**，先修环境再判。"
+            echo ''
+            echo "### 谁看"
+            echo ''
+            echo "- 按判红判据的**文件归属**分流：输出里逐条点名了被选中的 \`tests/unit_ci_workflows/test_*.py\`"
+            echo "  ⇒ 归该判据与它引用的数据的维护者（未固化的归属登记见 \`scripts/mechanism-registry.json\`"
+            echo "  的 \`post-merge-verify\` 条目）；"
+            echo "- 集成侧兜底（本通道是**报告型**：它不拦合并，只负责让 main 的破坏**当场可见**）。"
+          } > "$BODY"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --body-file "$BODY" \
+              || echo "::warning::无法在值班 issue #$EXIST 上追加本轮证据（限流/权限）"
+            gh issue edit "$EXIST" --add-label priority/P1 \
+              || echo "::warning::无法给值班 issue #$EXIST 打 priority/P1（限流/权限）"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+              || echo "::warning::无法创建 P1 值班 issue（限流/权限）—— 请人工按本 run 的 step summary 建单"
+          fi
+          exit 0
+
+      # ── 存活读数（issue #5326 判据 1 / 4）：必须是 job 的**最后一步**且 `if: always()` ──
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不让读数步判红**；
+          # 措辞必须区分「读数缺失」与「零动作」（两者长得一样正是本单要消灭的形态）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit post-merge-verify \
+              --outcome "$OUTCOME" \
+              --why "合并后 main 侧守护腿（定向跑判据面；窗口/读数见上一步）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=post-merge-verify）：发射器不在检出里（固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
