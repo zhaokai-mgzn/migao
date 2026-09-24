@@ -1,0 +1,70 @@
+{
+  "_doc": "「声明位置 == 生效位置」台账（判据 = tests/unit_ci_workflows/test_declared_vs_effective.py）。口径同 guard_parsing_allowlist.json：未登记即红 / 台账只许缩短 / 条数现取。",
+  "silently_ignored_keys": [
+    {"key": "snapshotPathTemplate", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "Playwright 只从 TestConfig / TestProject 读它；写在 use: 里会被静默忽略（注释/README 却常把它当真值）", "evidence": "Playwright 1.63.0 types/test.d.ts：snapshotPathTemplate 只声明在 TestConfig / TestProject，不在 PlaywrightTestOptions（= use 的类型）；本单实测：配置加载**不报错**，且 resolved project.snapshotPathTemplate === undefined", "issue": "#4185"},
+    {"key": "testDir", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "测试根目录是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：testDir 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "snapshotDir", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "快照根目录是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：snapshotDir 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "outputDir", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "产物目录是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：outputDir 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "testMatch", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "用例匹配是配置/项目级键，写在 use: 里被静默忽略（会静默跑出「零用例/多用例」）", "evidence": "Playwright 1.63.0 types/test.d.ts：testMatch 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "testIgnore", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "用例排除是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：testIgnore 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "fullyParallel", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "并行开关是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：fullyParallel 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "forbidOnly", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "`forbidOnly` 是配置级键，写在 use: 里被静默忽略（CI 上「误提交 .only 不报错」）", "evidence": "Playwright 1.63.0 types/test.d.ts：forbidOnly 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "retries", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "重试次数是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：retries 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "workers", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "并发数是配置/项目级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：workers 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "reporter", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "reporter 是配置级键，写在 use: 里被静默忽略（CI 上会静默丢报告）", "evidence": "Playwright 1.63.0 types/test.d.ts：reporter 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "globalSetup", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "globalSetup 是配置级键，写在 use: 里被静默忽略（前置动作一步都不跑）", "evidence": "Playwright 1.63.0 types/test.d.ts：globalSetup 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "globalTeardown", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "globalTeardown 是配置级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：globalTeardown 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "projects", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "projects 是配置级键，写在 use: 里被静默忽略（项目/设备配置整段失效）", "evidence": "Playwright 1.63.0 types/test.d.ts：projects 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "webServer", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "webServer 是配置级键，写在 use: 里被静默忽略（服务不起、测试连不上）", "evidence": "Playwright 1.63.0 types/test.d.ts：webServer 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "preserveOutput", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "preserveOutput 是配置级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：preserveOutput 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "metadata", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "metadata 是配置/项目级键，写在 use: 里被静默忽略（报告里会静默缺字段）", "evidence": "Playwright 1.63.0 types/test.d.ts：metadata 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "build", "rejected_in": ["use"], "effective_scopes": ["顶层 config"], "reason": "build 是配置级键，写在 use: 里被静默忽略", "evidence": "Playwright 1.63.0 types/test.d.ts：build 只声明在 TestConfig（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "expect", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "expect 断言超时是配置/项目级键，写在 use: 里被静默忽略（超时设置形同虚设）", "evidence": "Playwright 1.63.0 types/test.d.ts：expect 只声明在 TestConfig / TestProject（不在 PlaywrightTestOptions）", "issue": "#4185"},
+    {"key": "timeout", "rejected_in": ["use"], "effective_scopes": ["顶层 config", "project 级"], "reason": "整例超时是配置/项目级键，写在 use: 里被静默忽略（超时设置形同虚设）", "evidence": "Playwright 1.63.0 types/test.d.ts：timeout 声明在 TestConfig / TestProject 等（不在 PlaywrightTestOptions）", "issue": "#4185"}
+  ],
+  "platform_placeholders": ["{platform}", "{snapshotSuffix}"],
+  "baseline_sites": [
+    {
+      "dir": "tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts-snapshots",
+      "config": "tests/playwright.xiaobu.config.ts",
+      "spec": "tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts",
+      "platforms": ["darwin", "linux"],
+      "reason": "小布 H5 视觉基线（2 条 toHaveScreenshot 断言 × darwin/linux = 4 个 PNG）；路径由 Playwright 默认模板决定，配置里不再声明 snapshotPathTemplate",
+      "issue": "#4185"
+    }
+  ],
+  "extra_surface": [
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java", "why": "吊销检查（refresh / logout 路径）的行为判据现场，文件名不含安全关键词 ⇒ 显式登记进可信度面", "issue": "#4866"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java", "why": "#5327 点名的 mocked 跨租户判据现场（文件名不含 Tenant 关键词）⇒ 显式登记进面", "issue": "#5327"}
+  ],
+  "security_assertion_trust": [
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/security/JwtAuthenticationFilterTest.java", "trust": "mocked", "reason": "吊销检查的异常路径靠注入 Redis 异常（hasKey 行为由 mock 提供）；真实 Redis 不可用的端到端行为不在本文件可判范围", "gap": "#4866", "issue": "#4866"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/security/JwtTokenProviderTest.java", "trust": "unit", "reason": "纯 JWT 签发/验签/解析逻辑判据，断言不依赖数据访问层（现取无 Mapper/SqlSession/DataSource/@SpringBootTest/PgCluster 标记）", "issue": "#4866"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchCrossTenantRealDbTest.java", "trust": "realdb", "reason": "#5327 的真库判据：起一次性真 PG 集群 + 生产 TenantLineInnerInterceptor 装配，A 租户建批次 / B 租户读·执行·撤销 ⇒ NOT_FOUND 且零写", "issue": "#5327"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/TenantIsolationTest.java", "trust": "mocked", "reason": "跨租户隔离断言走 mocked mapper（SQL 未执行）+ 拦截器装配；mocked 级覆盖不到「谓词写错 / 列不存在 / 表未纳管」三类真问题", "gap": "#5327", "issue": "#5327"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentTenantIsolationTest.java", "trust": "mocked", "reason": "并发下跨租户隔离断言走 mocked ProductMapper/OrderMapper（SQL 未执行）", "gap": "#5327", "issue": "#5327"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java", "trust": "mocked", "reason": "refresh / logout 的吊销语义依赖 StringRedisTemplate 的 mock 行为；真 Redis 的过期/网络异常形态不在本文件内", "gap": "#4866", "issue": "#4866"},
+    {"site": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java", "trust": "mocked", "reason": "#5327 主动登记的边界：跨租户三条判据（execute / revert / get）用 mocked mapper ⇒ confirm 只到「服务层第二道闸」，SQL 层不可见", "gap": "#5327", "realdb_counterpart": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchCrossTenantRealDbTest.java", "issue": "#5327"}
+  ],
+  "security_degradation": {
+    "surface": [
+      "backend/admin-api/src/main/java/com/migao/admin/security/**",
+      "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java"
+    ],
+    "observability": {
+      "keyword": "REVOCATION_CHECK_UNAVAILABLE",
+      "metric": "migao.security.revocation_check_unavailable",
+      "sites": [
+        "backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java",
+        "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java"
+      ]
+    },
+    "entries": [
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java::isTokenBlacklisted", "catch_blocks": 1, "return_literals": [], "permissive_literal": "false", "direction": "fail-closed", "observability_required": true, "reason": "#4866 修复：吊销检查不可执行 ⇒ 返回 null（= 不可判定），调用方按已吊销拒绝（fail-closed）+ ERROR 日志 + counter", "issue": "#4866"},
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/security/JwtTokenProvider.java::validateToken", "catch_blocks": 2, "return_literals": ["false", "false"], "permissive_literal": "true", "direction": "fail-closed", "reason": "验签/解析失败 ⇒ 判 Token 无效（拒绝认证）：本来就是 fail-closed，登记以免被「顺手改成放行」", "issue": ""},
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::isTokenBlacklisted", "catch_blocks": 1, "return_literals": [], "permissive_literal": "false", "direction": "fail-closed", "observability_required": true, "reason": "#4866 修复：同 JwtAuthenticationFilter；refreshToken 对「不可判定」显式返回 503 AUTH_UNAVAILABLE 而不是 401 已吊销", "issue": "#4866"},
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::blacklistToken", "catch_blocks": 1, "return_literals": [], "direction": "fail-open", "reason": "写黑名单失败只记 ERROR 日志、调用方照样返回成功 ⇒ 登出/轮换后的旧 token 仍可用（本单**只登记不改行为**：改行为会变更登出 API 语义，留待裁定）", "issue": "#4866"},
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::logout", "catch_blocks": 1, "return_literals": [], "direction": "fail-closed", "reason": "解析失败（现场注释：多为已过期）⇒ 该 token 本就不能再认证，不写黑名单不构成放行", "issue": ""}
+    ]
+  }
+}

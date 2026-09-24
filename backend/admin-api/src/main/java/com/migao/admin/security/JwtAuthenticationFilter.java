@@ -3,6 +3,7 @@ package com.migao.admin.security;
 import com.migao.admin.config.TenantContext;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -37,6 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final StringRedisTemplate redisTemplate;
+    private final MeterRegistry meterRegistry;
 
     @Value("${jwt.cookie.name:access_token}")
     private String cookieName;
@@ -45,6 +47,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * Redis Token 黑名单 key 前缀
      */
     private static final String TOKEN_BLACKLIST_PREFIX = "token:blacklist:";
+
+    /**
+     * 吊销检查「不可执行」的可观测读数（Micrometer counter，`/actuator/metrics/<name>` 可读）。
+     * 与 {@code AuthService} 使用**同一个**字面量（由
+     * {@code tests/unit_ci_workflows/test_declared_vs_effective.py} 钉住，防两处各自演化）。
+     */
+    public static final String BLACKLIST_CHECK_UNAVAILABLE_METRIC = "migao.security.revocation_check_unavailable";
+
+    /** 吊销检查不可执行时的日志关键词（告警规则按它匹配 —— 静默降级换绿必红）。 */
+    public static final String BLACKLIST_CHECK_UNAVAILABLE_KEYWORD = "REVOCATION_CHECK_UNAVAILABLE";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -69,9 +81,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     }
 
                     // 检查 Token 是否在 Redis 黑名单中（已登出/吊销）
+                    // 检查结果 `null` = **不可执行**（Redis 异常）⇒ 与「已吊销」同样拒绝（fail-closed，issue #4866）
                     String jti = claims.getId();
-                    if (jti != null && isTokenBlacklisted(jti)) {
-                        log.warn("Token 已吊销 (jti={})", jti);
+                    Boolean revoked = jti != null ? isTokenBlacklisted(jti) : Boolean.FALSE;
+                    if (revoked == null || revoked) {
+                        log.warn("Token 已吊销或吊销状态不可判定，不建立认证 (jti={}, 判定={})",
+                                jti, revoked == null ? "UNDECIDABLE" : "REVOKED");
                         filterChain.doFilter(request, response);
                         return;
                     }
@@ -159,14 +174,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * 检查 Token 是否在 Redis 黑名单中
      *
      * @param jti Token 唯一标识
-     * @return 是否已吊销
+     * @return {@code TRUE}=已吊销 / {@code FALSE}=未吊销 / {@code null}=**检查不可执行**（Redis 异常）
+     *         —— 调用方必须按已吊销处理（fail-closed，issue #4866）
      */
-    private boolean isTokenBlacklisted(String jti) {
+    private Boolean isTokenBlacklisted(String jti) {
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(TOKEN_BLACKLIST_PREFIX + jti));
         } catch (Exception e) {
-            log.warn("Redis 黑名单检查异常，默认放行: {}", e.getMessage());
-            return false;
+            // ⛔ 不许改回「异常 ⇒ 未吊销（放行）」：那会让 Redis 不可用期间的已吊销/已登出 token 继续可用，
+            //    且没有任何人会察觉（issue #4866）。降级方向登记在
+            //    tests/unit_ci_workflows/declared_effective_registry.json 的 security_degradation 台账 ——
+            //    改方向 / 去掉读数 ⇒ 判据必红。
+            log.error("{}（吊销检查不可执行 ⇒ 按已吊销拒绝，fail-closed）: jti={}",
+                    BLACKLIST_CHECK_UNAVAILABLE_KEYWORD, jti, e);
+            meterRegistry.counter(BLACKLIST_CHECK_UNAVAILABLE_METRIC).increment();
+            return null;
         }
     }
 

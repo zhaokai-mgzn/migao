@@ -69,8 +69,14 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     viewport: { width: 390, height: 844 }, // iPhone 12/13 尺寸
-    // 视觉基线路径：tests/e2e/specs/xiaobu/__screenshots__
-    snapshotPathTemplate: '{testDir}/specs/xiaobu/__screenshots__/{arg}{ext}',
+    // 视觉基线路径：**不在这里声明** —— `snapshotPathTemplate` 不是 `use:` 的选项，
+    // 写在 `use:` 里会被 Playwright **静默忽略**（issue #4185 实测读数：resolved project 的
+    // `snapshotPathTemplate === undefined`，`__screenshots__/` 目录从未生成）。
+    // 生效路径 = Playwright 默认模板（4 个基线 PNG 就在这里，darwin / linux 各一份）：
+    //   tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts-snapshots/<arg>-<projectName>-<platform>.png
+    // 将来若要改模板：只能放**顶层 config 或 project 级**，且**必须带 `{platform}`**
+    // （否则双平台基线互相覆盖）。常驻判据见
+    // tests/unit_ci_workflows/test_declared_vs_effective.py。
   },
 
   projects: [

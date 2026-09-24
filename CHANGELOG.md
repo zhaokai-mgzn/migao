@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+### Redis 不可用时「已吊销的 token」不再被放行：吊销检查改 fail-closed，并留下可读的失效读数（2026-09-24，issue #4866）
+
+- **改了什么（安全面，用户可观察）**：JWT 吊销（黑名单）检查在 **Redis 异常**时，此前是「**默认放行**」
+  （`catch` 里 `return false` = 当作**未吊销**）⇒ 已登出 / 已吊销的 token 在 Redis 不可用期间**继续可用**，
+  而**没有任何人会察觉**（只有一行会被日志淹没的 `warn`）。现在改为 **fail-closed**：吊销状态
+  **不可判定**时**不建立认证**（受保护端点 401）；刷新令牌端点额外区分语义 —— 真吊销返回 401 `AUTH_FAILED`，
+  **不可判定**返回 **503 `AUTH_UNAVAILABLE`**，文案明说「吊销状态不可判定（Redis 不可用），已按 fail-closed 拒绝」。
+- **不许静默**：两处检查点（`JwtAuthenticationFilter` / `AuthService`）异常时都留
+  `log.error`（关键词 `REVOCATION_CHECK_UNAVAILABLE`）+ Micrometer counter
+  `migao.security.revocation_check_unavailable`（`/actuator/metrics/` 可读）。
+- **取舍（照实登记）**：这是**可用性换安全**的有意选择 —— Redis 长时间不可用时，带 token 的请求会被拒。
+  是否需要「有界降级窗口」属**产品裁定**（见 PR body 的「未固化项」）；当前形态由常驻判据钉住
+  （改回「异常 ⇒ 放行」或去掉读数 ⇒ 判据必红）。
+- **残留（照实登记）**：`AuthService.blacklistToken`（**写**黑名单失败只记日志 ⇒ 登出没真正生效）
+  本次**只登记不改行为**（改行为会变更登出 API 语义），已进降级方向台账并带单号。
+
 ### 改价只认「商家点确认卡」；编出来的改前价会被服务端当场拒（2026-09-24，issue #5317）
 
 - **改了什么（商家可见面 = 米宝改价）**：#5303 落的「改价前必须展示 before → after」护栏有两处
