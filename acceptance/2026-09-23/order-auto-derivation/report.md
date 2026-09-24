@@ -495,3 +495,183 @@ shasum -a 256 probe-ua2-manual-override.mjs probe-typing-zero-sites.mjs probe-pl
 > 要把 §12.1 判据 2、§12.2 的 5 个字段变成**会红的**判据，须按 `#5218`/`#5228` 家族的做法另立用例
 > （可判定的钉法见 #5228 评论：**语义级**断言，例如「输入 `0.5` 后提交值为 `0.5`」「空 ⇒ `null`、`0` 不被当空」，
 > **不要**建在 `0.` 中间态上 —— jsdom 与真浏览器读数相反）。
+
+## 13. 承接 issue #5262：两条观察项的**补读数**与定性（2026-09-23 晚，独立取证包）
+
+> 本节**纯追加**（§1–§12 一字未改）。本单**只取证 + 定性，不改实现**（修复另开包）。
+
+### 13.0 被测对象与环境（可复核锚点）
+
+- 独立 worktree `../migao-wt/5262-ua-observations`，分支 `test/5262-ua-observations`，
+  起点 = `origin/main` = **`e48818410`**。
+  ⚠️ **与 §12 的被测 commit（`df88e4f69`）不是同一个 commit** ⇒ 本节读数**不可与 §12 逐字比对**
+  （只可与 §12 的**结论**对照）。两轮之间动过下单页的提交：
+  `git log df88e4f69..e48818410 -- "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx"`。
+- 栈（照 §2 配方，含一处**路径订正**）：本地一次性 PG（`/tmp/mg5262/data`，`migao_admin`，:5432）
+  → `backend/admin-api/src/main/resources/db/init/schema.sql` **（现行路径；旧 `docs/sql/schema.sql`
+  已被 #5243 / PR #5256 迁走，照旧配方会 `SCHEMA_FAIL`）** → 两个评测种子（xiaobu 先、mibao 后）
+  → `craft_calc_configs` 补 `('ccc_ua_tenant1', 1)` → admin-api **:8080** → ai-agent **:8001**
+  → admin-web **:3001**（`frontend/admin-web` 里 `npm ci` 真装 + `NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`）。
+- 探针 = `ua/probe-5262-plan-attribution.mjs`（**新增**）。相对 §12 探针的**三处增量**（正是本 issue 缺的读数）：
+  ① **记请求载荷**（`[req]`，人工面四键 + `*_sent` 布尔 —— 回答「这个键到底发没发」）；
+  ② **先展开「改工艺参数」再抓 `S0`**（另留 `S0c` 收起态作对照）；
+  ③ 试算失败行**单独滚入视口再拍**一张（否则面板那张拍不到红字）。
+- 读数：`ua/run-5262-plan-attribution.txt`（**权威**，最终版）/ `ua/run-5262-plan-attribution-r2.txt`
+  （同探针、未含增量③的完整读数，保留以复核**未滚动前**的 `in_viewport` 取值）。截图 9 张（清单见 §13.4）。
+- 🔴 **两处噪声，读读数前先知道**：① `/api/admin/production/craft-calc-config` **也含子串 `craft-calc`** ——
+  早期版本把它记进了 plan 序列（即 `cutting_mode=null` 且 `status=200` 的那两条）；最终版已收窄为 `/orders/craft-calc`。
+  ② `unpriced-fee-alert` 是**另一条通路**（加工费组合未定价），**每一帧都在**，与本节的 ①/② 无关，不要混读。
+- 探针迭代 3 轮（**如实登记**）：`r1` 按 issue 的假设复现 ② **失败**（见 §13.2 开头，反而拿到一条引擎口径读数）
+  → `r2` 修正前置 + 加滚动修复 → `r3` = 归档权威读数。`r1` 未归档，其两条决定性读数逐字引在 §13.2。
+
+### 13.1 观察项①：只改「接高」，面板把**加工类型**标成「人工指定」
+
+**读数（`S0` vs `S1`，**同一 DOM 条件** —— 两侧都已展开「改工艺参数」）**：
+
+| 读数 | `S0`（全自动，未手工改任何项） | `S1`（**只**手工改接高 = 0.05，加工类型一个键都没点过） |
+|---|---|---|
+| `[req]` 人工面 | `{"cutting_mode":null,"cutting_mode_sent":false,"splice_times":null,"splice_times_sent":false,"join_height_m":null,"join_height_m_sent":false,"join_width_m":null,"join_width_m_sent":false}` | `{…同左…,"join_height_m":0.05,"join_height_m_sent":true}` —— **`cutting_mode` 仍未发**（`cutting_mode_sent:false`） |
+| `[server]` | `{"status":200,"cutting_mode":"定高买宽","auto":true,"splice_times":0,"join_height_m":0.1,"meters":13.3}` | `{"status":200,"cutting_mode":"定高买宽","auto":false,"splice_times":0,"join_height_m":0.05,"meters":13.3}` |
+| `craft-plan-source` | `"系统推导"` | `"人工指定（不再被自动改判）"` |
+| 加工类型**选中态** | `["定高买宽"]` | `["定高买宽"]`（**逐字相同**） |
+| `cutting-mode-auto` 徽标 | `null` | `null`（**两帧都没有**） |
+| 依据行（引擎 `plan.reason` 原文） | `自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：选定 **fixed_height_join_height** —— 缺口 0.1 米 ≤ 上限 0.1 米 ⇒ 定高买宽 + 接高；接高不参与算料 ⇒ 用料仍 13.3 米（与不接高逐值相等，裁定 5）` | `**人工覆盖**（裁定 4/6）：加工类型按人工值「定高买宽」逐字采用（门幅 2.8 米 / 成品高 2.9 米 / 用料 T 13.3 米），系统不再自动改判；人工加接高 0.05 米（≤ 上限 0.1 米，**不参与算料**）` |
+
+**逐字段对照（探针自算，逐字）**：`req.cutting_mode: S0=null vs S1=null`；
+`req.cutting_mode_sent: S0=false vs S1=false`；`req.join_height_m: S0=null vs S1=0.05`；
+`resp.cutting_mode: S0="定高买宽" vs S1="定高买宽"`（**相同**）；`resp.auto: S0=true vs S1=false`；
+`resp.join_height_m: S0=0.1 vs S1=0.05`；`resp.meters: 13.3 vs 13.3`。
+
+**两条纠偏（先于定性 —— 归档里那两条读数要改读法）**：
+
+1. **「`cutting_mode_checked` 从空集变成选中」是读数假象。** #5255 归档的 `S0` 快照抓在**面板收起**时
+   （`craft-plan-edit` 未展开 ⇒ `OrderCraftFields` 整块不在 DOM）。本节 `S0c` 帧复现该条件：`radiogroups`
+   只剩 `售卖形态 / 帘体` 两个组，**`加工类型` 组根本不在 DOM**（逐字：
+   `[{"label":"售卖形态",…},{"label":"帘体",…}]`）；一展开，`S0` 的选中态就是 `["定高买宽"]`。
+   ⇒ **只改接高没有改变选中态**：全自动时它就已经「选中」了。
+2. **判据 1 的字面红证前提（`auto=true`）在 `S1` 不成立**：`S1` 引擎 `auto=false`。
+   ⇒ **不得**按「判据 1 违反」记（那是把前提当结论）。真正被判据 1/2 命中的是**归属文案**，见下。
+
+**定性：观察项① = 缺陷**（归属文案与引擎事实不符 ⇒ **判据 2 不满足**；判据 1 按其**实质**不满足、按其**字面**前提不成立）。
+逐条引读数：
+
+- **引擎没收到任何人工加工类型**：`S1` 请求里 `cutting_mode_sent:false`（该键**根本不存在**，不是"传了相同的值"）
+  ⇒ 「引擎实际收到的人工值」= **无**。
+- 而 `S1` 响应 `plan.cutting_mode="定高买宽"`，是引擎按 `_implied_mode()`（`join_height_m` 非空 ⇒ 定高买宽）
+  **推导**出来的（`backend/ai-agent-service/app/tools/curtain_calc.py` 的 `derive_plan` `manual` 分支：
+  `elif join_height_m is not None: effective_mode = CUTTING_MODE_FIXED_HEIGHT`）。
+- 面板同帧逐字写「**加工类型按人工值「定高买宽」逐字采用**」（该句是引擎 `plan.reason` 原文，页面逐字转发）
+  ⇒ **把一个推导值断言成人工值**。判据 2 要求「依据行必须能区分**本项**被人工指定 与**本块**已转人工态」——
+  此处不但没有区分，还把块级人工态写成了本项的人工值：这是判据 2 红证形态（「只留一句通用文案 ⇒ 必红」）的
+  **更强形态**（留了一句**措辞专属但归属错误**的文案）。
+- **引擎自己在同类情形下有「蕴含」措辞，唯独这一支没有** —— `S3` 帧的 `plan.reason` 逐字含
+  「**未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）**」；
+  而「未显式给加工类型，但人工加接高 ⇒ 蕴含定高买宽」这一支**没有对应告知**
+  （源码里该披露段的条件是 `cutting_mode is None and splice_times is not None and splice_times >= 1`）。
+  ⇒ 这不是「面板语义本就是整块转人工」能解释掉的：同族情形已被引擎**显式区分**，只有「接高蕴含」这一支漏了。
+- **商家侧后果（判据 1 的实质）**：面板把该项标为「人工指定」而商家从未点过加工类型；且**两帧都没有「自动」徽标**
+  （`cutting-mode-auto=null`；该徽标只在商家显式点「未指定」后才出现 —— `S5` 帧逐字 `cutting_mode_auto_badge="自动"`）
+  ⇒ 商家在这一帧**没有任何**可用信息区分「这档是我选的」与「这是系统替我定的」。
+
+**不改实现**（本单只取证）：修复面至少两处 ——（a）引擎 `plan.reason` 的「接高蕴含」支补一句与「拼次蕴含」同族的披露；
+（b）面板把块级标签 `craft-plan-source` 与项级 `craft-plan-mode` 紧邻渲染所导致的归属歧义。
+
+### 13.2 观察项②：`定高买宽 + 拼2次` 引擎 422，而面板仍写「已并入特殊选项 ⇒ 插工序 + 计件」
+
+**先修一处前提（否则复现不出来 —— 这是本节第一条实测订正）**：
+**光**「人工加工类型 = 定高买宽 + 人工拼2次」**不触发 422**。`r1` 帧逐字：
+`[req] {"cutting_mode":"定高买宽","cutting_mode_sent":true,"splice_times":2,"join_height_m":null}` →
+`[server] {"status":200,"cutting_mode":"定宽买高","auto":false,"splice_times":2,"splice_option":"拼2次","meters":8.7}`。
+即：引擎 `_implied_mode()` 里「**人工拼次 ≥ 1 ⇒ 蕴含倒幅**」这一支**先于**显式 `cutting_mode` 生效 ⇒
+显式「定高买宽」被**静默改写**为「定宽买高」，不抛错。
+⇒ 422 的真实前置 = **人工接高（把 `effective_mode` 钉死在定高买宽）** **且** **拼次 ≥ 1** 同时存在。
+最终版探针据此重排（`S2` 帧）。
+
+**`S2` 帧读数（决定性）**：
+
+- `[req]` `{"cutting_mode":null,"cutting_mode_sent":false,"splice_times":2,"splice_times_sent":true,"join_height_m":0.05,"join_height_m_sent":true}`
+- `[server]` **`{"status":422,"err_code":"CRAFT_CALC_UNAVAILABLE","err":"算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request on POST request for \"http://127.0.0.1:8001/api/internal/production/craft-calc\": \"{\"detail\":{\"success\":false,\"error\":{\"code\":\"CRAFT_CALC_INVALID_INPUT\",\"message\":\"加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）\"}}}\""}`
+- **上屏文本（⇒ 界面**不是**静默）**：`calc_error_red_texts = ["算料试算失败：算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：400 Bad Request … 「加工类型「定高买宽」是买宽订单、零拼接 ⇒ 拼次只能是 0（收到 2）」…"]`
+  （红字那条 `<p class="text-red-600">` **没有 testid**，故按类名 + 文本抓）；该行 `calc_error_rects = [{"in_viewport":true,"top":273,"bottom":465}]`
+  ⇒ **与面板同帧、同一视口**（截图 `ua/5262-b1b-S2-422-错误行.png` 一屏同时拍到红字与面板）。
+- **同帧面板仍写「已并入」**（逐字，两处）：
+  - `craft-plan-splice` = `"拼接 拼2次（已并入特殊选项 ⇒ 插工序 + 计件）"`
+  - `craft-plan-derived-options` = `"「拼2次」：已并入特殊选项（⇒ 插工序 + 计件）不采纳 「接高」：已并入特殊选项（⇒ 插工序 + 计件）不采纳"`
+- 同帧其余读数：`craft-plan-mode = "加工类型：定高买宽"`、`craft-plan-meters = "用料 13.3 米"`
+  （**上一次成功试算的陈旧值** —— 失败分支只写 `calcError`、**不更新** `calc`，源码见
+  `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 的试算 effect 里 `if (hit.error) return { ...it, calcError: hit.error }`）；
+  `craft-plan-unavailable = null`（该降级告知管的是「推导服务未就绪」另一路，**未**出现，与此无关）；
+  `unpriced-fee-alert` 出现但内容是**加工费组合未定价**（另一条通路，见 §13.0 噪声②）。
+
+**对照（同一面板文案、引擎同意时）**：`S3` 帧清空接高（拼2次保留）⇒ `[req] {splice_times:2, splice_times_sent:true}` →
+`[server] {status:200, cutting_mode:"定宽买高", splice_times:2, splice_option:"拼2次"}`，面板同款「已并入」文案
+⇒ 说明该文案**本身不必然错**；错的是**引擎拒绝时它照旧显示** —— 面板的「已并入」由前端
+`frontend/admin-web/src/lib/craft-calc-request.ts` 的 `derivedSpliceOptionOf` 按**人工覆盖值**直接算出，
+**不读引擎判定**。
+
+**定性：观察项② = 缺陷（判据 3 只满足一半 ⇒ 不满足）**：
+
+| 判据 3 的要求 | 逐字读数 | 结论 |
+|---|---|---|
+| 引擎拒绝该组合时，界面必须给**显式错误** | 红字逐字上屏、与面板**同一视口**（`top=273`、`in_viewport=true`） | ✅ **满足**（不是静默） |
+| **不得**仍显示「已并入」 | `craft-plan-splice` 与 `craft-plan-derived-options` **同帧两处**仍写「已并入特殊选项（⇒ 插工序 + 计件）」 | ❌ **不满足** |
+
+⇒ 商家在同一屏看到的是：面板说「拼2次已并入 ⇒ 会插工序 + 计件」、红字说引擎拒绝该组合且**本次试算已中止**、
+同时用料仍是上一次的 `13.3 米`（陈旧值）而右侧金额仍按 `13.3 × 168 + 2.50` 计。
+**面板断言与引擎响应矛盾**（判据 3 原话）⇒ **本单只回报、不改实现**。
+
+### 13.3 边界与未覆盖项（照实登记，**不许含糊成通过**）
+
+1. **提交路径未跑（不作判定）**：`S2` 的 422 是**试算端点**（`POST /api/admin/orders/craft-calc`）的拒绝。
+   **订单提交后是否真会插 `拼2次-布` 工序 / 计件**未取证（未点「提交订单」、未核
+   `processingInfo.specialOptions` → 工序 / 计件的落库结果）⇒ 「面板那句『已并入』在**提交面**是真是假」
+   **不做判定**；本节只判定「**与试算引擎响应矛盾**」（判据 3 的字面要求）。
+2. **相邻发现（同族，未定性 ⇒ 待裁定）**：`S4` 帧（显式点「定高买宽」+ 拼2次）
+   `[req] {cutting_mode:"定高买宽", cutting_mode_sent:true, splice_times:2}` →
+   `[server] {status:200, cutting_mode:"定宽买高"}`，依据行写「**人工覆盖**（裁定 4/6）：加工类型按**人工值「定宽买高」**逐字采用…」
+   —— **人工值是「定高买宽」**；且这一支连 `S3` 那句「未显式给加工类型…⇒ 蕴含倒幅」的告知都没有
+   （该披露段的条件要求 `cutting_mode is None`）。形态与 §13.1 同族（依据行归属 ≠ 引擎事实），
+   但**触发路径不同**，本单**不并入 ①/② 的判定**，登记为待裁定。
+3. **未跑 / 未做**：本单**未改任何实现**、**未做红证**（禁改 `frontend/**`）、**未派发任何真实 LLM 评测 / workflow**；
+   **未**跑其余商品 / 颜色 / 尺寸组合，**未**跑 `craft_tier` / 款式=拼色 / 对花 等分支；
+   `S0c`（面板收起）只用于解释归档假象，**不作为判据**。
+4. **`unpriced-fee-alert` 与本节无关**：它在**所有帧**都出现（内容是「定型 + 拼接 + 超宽」组合未定价），
+   **不得**当作 ② 的「告知 / 未告知」证据。
+5. **本节不是防回退判据**：`acceptance/**` 无 `# case_ids:`、不进 CI 判据面。
+   要把 §13.1 / §13.2 变成**会红的**断言，须按 `#5218`/`#5228` 家族做法另立用例。可判定形态建议：
+   ① 引擎侧 —— 「未显式给 `cutting_mode` 时，`plan.reason` **不得**出现『按人工值…逐字采用』」；
+   ② 界面侧 —— 「`calcError != null` 时**不得**渲染『已并入特殊选项』」（红证 = 恢复"面板说已并入 + 引擎 422"的现状）。
+6. **两轮读数不可逐字比对**：被测 commit 不同（本节 `e48818410` vs §12 `df88e4f69`），见 §13.0。
+7. **探针自身迭代如实登记**：`r1` 未归档（其两条决定性读数已逐字引在 §13.2）；`r2` 完整读数归档
+   （用于复核**未滚动前**的 `panel_in_viewport` / `calc_error_in_viewport`：`r2` 的 `S2` 帧为
+   `panel_in_viewport:false`、`calc_error_in_viewport:[false]`（`top=-520`），即**当帧两者都在视口外**；
+   `r3` 加滚动修复后为 `panel_in_viewport:true`、`calc_error_in_viewport:[true]` —— **同一帧的两种测法都对**，
+   差别只在"滚没滚"，读的时候要对上口径）。
+
+### 13.4 归档清单（本轮新增，逐字复制、未美化）
+
+| 文件 | 字节 | sha256 |
+|---|---|---|
+| `ua/probe-5262-plan-attribution.mjs`（探针源码，最终版） | 18463 | `581fc6b9c704d640e467447c22c6d76761214f58ccca0b897bb78bcf6819b05d` |
+| `ua/run-5262-plan-attribution.txt`（**权威读数**，最终版 stdout） | 56981 | `f6b2e3678c95960d2455c10c60aabae936154a3fd4091090adee1bc7241a768a` |
+| `ua/run-5262-plan-attribution-r2.txt`（同探针、未含滚动修复的完整读数） | 56904 | `974e17e3cdcde6dcdc7c308d370e0547992e90db5464f1cba2b11bbbc53c5336` |
+| `ua/5262-a1-S0c-面板收起.png` | 313828 | `32379dd7d63c3ac58df499dd76148ddc4080f94c0b0fbad1c2382c05c7851670` |
+| `ua/5262-a2-S0-展开后基线.png` | 330393 | `06c88a55694608964b640613bb09d3d94f91d0031b449adc4fd5db246d3a3c01` |
+| `ua/5262-a3-S1-只改接高0.05.png` | 325416 | `bdec59ba18bfe0198b8159117c4a0ab34d1e9c88caa2ba04d120c5fe6b4293ce` |
+| `ua/5262-a4-S1b-清空接高.png` | 327366 | `337adff0af9ed5bdc2fabd9b96dcca6ddeafbd0c0442388408b4d5787413c242` |
+| `ua/5262-b1-S2-接高0.05+拼2次-422.png` | 361445 | `a39da0ba5c628f5b23f303ce39897c40ca07488976d9a81e359d8da2b4b38771` |
+| `ua/5262-b1b-S2-422-错误行.png`（红字滚入视口后的同帧截图） | 316014 | `a84013b8c48344dad3ab96995f574a4037873064cb24d0ef8351d77f4f06e236` |
+| `ua/5262-b2-S3-拼2次-合法对照.png` | 311682 | `e6afe47c86775ed6d4f58d46ca356e20def8c958c410b6e56552041473230bf9` |
+| `ua/5262-b3-S4-显式定高买宽+拼2次.png` | 318489 | `05c1ad8055c3b831e9bcc3e75f72a5de738444e2dc1fde5ae2b0bc598774cc5a` |
+| `ua/5262-b4-S5-恢复.png` | 323400 | `567ca3ad5a38dfe59628471619286d9c3b4fde69d6e7da706ae8e899d5fe0cab` |
+
+复核本批未被改动过：
+
+```bash
+cd acceptance/2026-09-23/order-auto-derivation/ua
+shasum -a 256 probe-5262-plan-attribution.mjs run-5262-plan-attribution.txt run-5262-plan-attribution-r2.txt 5262-*.png
+```
+
+> ⚠️ **本单结论的强度边界**：① 与 ② 都判**缺陷**，但**都不含**「提交面后果」的判定（§13.3 第 1 条）；
+> 判据 1 是**按其字面前提不成立、按其实质不满足**分写的（§13.1）——
+> **不得**把本节读成"三条判据全红"或"全部通过"。
