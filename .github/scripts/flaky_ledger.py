@@ -53,9 +53,26 @@ CLI 又没有回填子命令 ⇒ 回填变成「**文档要求做、却没有合
 ⇒ main 侧改**实时**读（`--main-live`：`gh api` 取 `main` 上的该文件）；`ahead == 0` ⇒ **零动作**
 （与既有的「无漂移 ⇒ 零动作」同一条），报错文案给**真能改变结果**的出口。
 
+#5301 判据②：台账分支的失败 job **必须有自动重跑**（本单修）
+----------------------------------------------------------
+「**可见 ≠ 有救援**」：#5307 把台账分支的欠账写进了 job summary（可见），但那条红**依然没人救** ——
+台账分支的 CI 失败**没有任何自动重跑路径**：
+  ① `decide()` 的**自指守卫**逐字判 `head_branch == LEDGER_BRANCH` ⇒ `skip`（防自指递归：
+     台账 PR 又被分流）⇒ `flaky-triage.yml` **结构上**不救它；
+  ② 本兜底原先只补 approve + arm、**不读失败原因更不重跑**。
+**实测**：台账 PR #5139 的 required 测试 4 次尝试同形失败（7m32s~8m16s）⇒ 台账停摆约 40 小时，
+解阻靠**人工** `gh run rerun <id> --failed`。
+⇒ `runs_needing_rerun`（纯函数：判据）+ `rerun-failed`（CLI：动作）：
+   · **上限 1 次**，事实源是 **GitHub 的 `run_attempt`**（重跑一次必 +1），**不是**自己记的计数器
+     （计数器随进程消失 ⇒ 每 20 分钟触发一轮的兜底迟早变成无限重跑）；
+   · 只作用于**台账分支**（`head_branch` 是纯函数里的**硬条件**，不是调用方约定），且只作用于
+     **分支 tip** 的 run（陈旧 push 的 run 重跑对「PR 能否合并」零贡献，却真烧 CI 分钟）；
+   · 重跑后**回读** `run_attempt` 并如实记账（job summary + `::notice::`）——「我以为重跑了」不算读数；
+     额度用尽仍失败 ⇒ `::error::` + 人工出口（**可见**，不许静默降级成「没事」）。
+
 退出码（三态，照本仓库 `merge_gate.py` / `llm_sink_check.py` 口径）
 ------------------------------------------------------------------
-`0` = 正常；`1` = 违规（台账不自洽 / 参数非法）；`3` = **无法判定**（取不到事实）。
+`0` = 正常；`1` = 违规（台账不自洽 / 参数非法 / 重跑动作失败 / 额度用尽）；`3` = **无法判定**（取不到事实）。
 """
 from __future__ import annotations
 
@@ -93,6 +110,12 @@ TRIAGED_WORKFLOWS = (
 
 #: **上限**：首次 + 最多 1 次重跑。改大这个数 = 允许无限重跑 ⇒ 守卫测试会红。
 MAX_ATTEMPTS = 2
+
+#: #5301 判据②：**台账分支**兜底重跑的**上限（次数）** —— 与上面的 `MAX_ATTEMPTS = 2`（首次 + 最多 1 次）
+#: **同口径**（由它派生，不写第二份数字：写死两份必然有一处先腐烂）。
+#: ⚠️ 上限的**事实源是 GitHub 的 `run_attempt`**（重跑一次它必 +1），**不是**本兜底自己记的计数器 ——
+#: 计数器随进程消失 ⇒ 每 20 分钟触发一轮的兜底迟早变成**无限重跑**（那是红线）。
+MAX_LEDGER_RERUNS = MAX_ATTEMPTS - 1
 
 #: 这些 conclusion **不是测试失败**：取消 / 超时 / 基础设施 / 启动失败 / 过期。
 #: 命中 ⇒ 不重跑、不记账、不打标（「不许把 infra 抖动记成 flaky」）。
@@ -900,6 +923,93 @@ def approve_runs(repo: str, run_ids) -> list:
     return list(run_ids)
 
 
+# ── #5301 判据②：台账分支失败 job 的**兜底重跑**（上限 1 次；只作用于台账分支） ──────
+#
+# 为什么必须有它（**实测**，不要重新猜）：台账分支的 CI 失败此前**没有任何自动重跑路径** ——
+#   · `decide()` 的**自指守卫**逐字判 `head_branch == LEDGER_BRANCH` ⇒ skip（防自指递归：
+#     台账 PR 又被分流）⇒ `flaky-triage.yml` **结构上**不救它；
+#   · 本兜底原先只补 approve + arm、**不读失败原因更不重跑**（#5307 只补了**可见性**）。
+# 实测形态：台账 PR #5139 的 required 测试 4 次尝试同形失败（7m32s~8m16s）⇒ 台账停摆约 40 小时，
+# 解阻靠**人工** `gh run rerun <id> --failed`。
+#
+# ⚠️ 上限的**事实源是 GitHub 的 `run_attempt`**（重跑一次必 +1），**不是**本兜底记的计数器：
+#    计数器随进程消失 ⇒ 每 20 分钟触发一轮的兜底迟早变成**无限重跑**（红线）。
+#    以 `run_attempt` 为判据 ⇒ 天然幂等：同一 run 只会被重跑一次，且「已重跑过」与「首次」**可判**。
+
+
+def runs_needing_rerun(runs, *, head_branch: str = LEDGER_BRANCH, workflows=None,
+                       head_sha=None, max_reruns: int = MAX_LEDGER_RERUNS) -> dict:
+    """**纯函数**：从 run 列表分出「可重跑」与「重跑额度已用尽」两类（只取事实，零 IO）。
+
+    返回 `{"rerun": [...], "exhausted": [...], "out_of_scope": int}`；每条 =
+    `{id, name, attempt, head_sha, head_branch}`。
+
+    判据（缺一不可，且都是**硬条件**，不是调用方约定）：
+      · `head_branch == head_branch` —— **只作用于台账分支**（#5301 判据④：注入放宽 ⇒ 守卫必红）；
+      · `event == pull_request` —— 同 `decide()`（部署 / 定时 / 手动的 run 不参与分流）；
+      · `name ∈ workflows` —— 复用 `TRIAGED_WORKFLOWS` 白名单（「PR 上跑测试、重跑无副作用」才收；
+        白名单**由调用方传入** ⇒ 本函数不硬编码副本）；
+      · `head_sha == head_sha`（给了才判）—— **只救分支 tip 的 run**：陈旧 push 的 check 挂在旧
+        commit 上，重跑它对「PR 能否合并」零贡献，却真烧 CI 分钟（#5264 实测：该分支 211 个 run 里
+        白名单口径命中 **74** 个 ⇒ 全重跑 = CI 雪崩）；
+      · `conclusion == failure` —— 只有失败才有「重跑失败 job」可言（取消 / 超时 / 基础设施一族
+        同 `NOT_TEST_FAILURE_CONCLUSIONS` 的口径 ⇒ 不重跑）；
+      · **上限**：`attempt <= max_reruns`（= 1）⇒ 可重跑；否则 ⇒ `exhausted`（**已重跑过**，
+        不论由谁发起：本兜底 / 人 / 别的路径）—— 这就是「首次」与「已重跑过」的**可判**区分。
+    """
+    allowed = None if workflows is None else set(workflows)
+    out = {"rerun": [], "exhausted": [], "out_of_scope": 0}
+    for run in runs or []:
+        if not isinstance(run, dict):
+            continue
+        if str(run.get("head_branch") or "") != head_branch:
+            out["out_of_scope"] += 1
+            continue
+        if str(run.get("event") or "") != "pull_request":
+            out["out_of_scope"] += 1
+            continue
+        if allowed is not None and run.get("name") not in allowed:
+            out["out_of_scope"] += 1
+            continue
+        if head_sha and run.get("head_sha") != head_sha:
+            out["out_of_scope"] += 1
+            continue
+        if _conclusion(run) != "failure":
+            out["out_of_scope"] += 1
+            continue
+        rid = run.get("id")
+        if not isinstance(rid, int):
+            continue
+        entry = {"id": rid, "name": run.get("name"), "attempt": _attempt(run),
+                 "head_sha": run.get("head_sha"), "head_branch": run.get("head_branch")}
+        (out["rerun"] if entry["attempt"] <= max_reruns else out["exhausted"]).append(entry)
+    return out
+
+
+def rerun_failed_run(repo: str, run_id: int) -> None:
+    """`gh run rerun <run-id> --failed`（**只重跑失败的 job**，不重跑整个 run）。
+
+    形态与 `flaky-triage.yml` 的重跑步骤是**同一条命令**（判据只有一处，不复制规则）。需要
+    `actions: write`（本兜底已声明）。**fail-closed**：非零 ⇒ 抛 `RuntimeError` ⇒ CLI 非零 ⇒
+    workflow 红（「重跑没发出去」不许装成「兜底已生效」）。
+    """
+    proc = subprocess.run(
+        ["gh", "run", "rerun", str(run_id), "--failed", "--repo", repo],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh run rerun {run_id} --failed 失败（rc={proc.returncode}）："
+            f"{(proc.stderr or proc.stdout or '').strip()[:200]}")
+
+
+def run_attempt_after_rerun(repo: str, run_id: int):
+    """重跑**之后回读** `run_attempt`（读数必须来自动作之后的事实）；取不到 ⇒ `None`（不假装成功）。"""
+    try:
+        return _attempt(_gh_api(f"repos/{repo}/actions/runs/{run_id}"))
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
 # ── #4825：台账落仓的**状态级对账**（独立兜底；不依赖 flaky-triage.yml 还活着） ────
 #
 # 为什么需要它（**实测**，别照抄 issue 文本）：#4804 的修法（上面的 `approve`）是
@@ -1190,6 +1300,13 @@ def main(argv=None) -> int:
                    help="#5307：改为对账**台账分支**上的台账（那份 CI 不在 required 集合、"
                         "欠账此前没有任何消费面）；读不到分支 ⇒ 退 3（未跑 ≠ 通过）")
 
+    p = sub.add_parser("rerun-failed",
+                       help="#5301 判据②：重跑**台账分支**上失败的 job（上限 1 次，如实记账）")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--branch", default=LEDGER_BRANCH,
+                   help="台账分支名 —— **只作用于该分支**（别的分支的 run 一律不重跑）")
+    p.add_argument("--json-out", help="写出本轮的重跑 / 额度用尽清单（供审计）")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "fetch":
@@ -1434,6 +1551,92 @@ def main(argv=None) -> int:
             _write(args.json_out, json.dumps(
                 {"entry_total": len(ledger.get("entries") or []), "groups": rows},
                 ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "rerun-failed":
+        # #5301 判据②：台账分支的失败 job 此前**没有任何自动重跑路径**（`decide()` 的自指守卫让
+        # `flaky-triage.yml` **结构上**跳过该分支；本兜底原先只补 approve/arm）⇒ 台账 PR 撞一次
+        # 确定性失败就只能人工救（实测停摆约 40 小时）。本命令把它落成**有上限的机械动作**。
+        if args.branch != LEDGER_BRANCH:
+            # 作用域收敛（判据④）：本命令**只**救台账分支 —— 放宽一次就可能变成「兜底替全仓重跑
+            # CI」。参数非法 ⇒ 退 1（不是「无法判定」）。
+            print(f"⛔ `--branch {args.branch}` 不是台账分支（{LEDGER_BRANCH}）⇒ **拒绝重跑**"
+                  f"（作用域：本命令只作用于台账分支）", file=sys.stderr)
+            return 1
+        try:
+            listing = _gh_api(f"repos/{args.repo}/actions/runs"
+                              f"?event=pull_request&branch={args.branch}&per_page=100")
+            tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.branch}"))
+        except (subprocess.CalledProcessError, ValueError) as exc:
+            print(f"⛔ 取不到台账分支 `{args.branch}` 的 run / tip 事实（{exc}）⇒ **无法判定**"
+                  f"（未跑 ≠ 通过），本轮零动作、fail-closed", file=sys.stderr)
+            return 3
+        if not tip:
+            # 与 `approve` 同一条纪律：**不**用「此刻最新可见的 run」代替 tip（GitHub 创建 run 是
+            # 异步的）—— 陈旧 push 的 run 重跑对「PR 能否合并」零贡献，却真烧 CI 分钟。
+            print(f"⛔ 无法确定台账分支 `{args.branch}` 的 tip（取不到 `commit.sha`）⇒ 不敢用"
+                  f"「最新可见的推送」代替 ⇒ 本轮零动作、fail-closed（退 3）", file=sys.stderr)
+            return 3
+        plan = runs_needing_rerun(listing.get("workflow_runs") or [], head_branch=args.branch,
+                                  workflows=TRIAGED_WORKFLOWS, head_sha=tip)
+        print(f"📒 台账失败 job 兜底重跑（{args.branch} tip={tip[:12]}）：候选 {len(plan['rerun'])} 个 / "
+              f"额度已用尽 {len(plan['exhausted'])} 个 / 面外 {plan['out_of_scope']} 个"
+              f"（上限 {MAX_LEDGER_RERUNS} 次，绝不无限重跑）")
+        done = []
+        for entry in plan["rerun"]:
+            try:
+                jobs = (_gh_api(f"repos/{args.repo}/actions/runs/{entry['id']}/jobs")
+                        .get("jobs") or [])
+            except (subprocess.CalledProcessError, ValueError) as exc:
+                print(f"⛔ 取不到 run {entry['id']} 的 job 事实（{exc}）⇒ **不重跑它**"
+                      f"（「到底有没有失败 job」不许靠猜）⇒ 退 3", file=sys.stderr)
+                return 3
+            failed = [str(job.get("name")) for job in jobs if is_failed(job)]
+            if not failed:
+                # 与 `decide()` 同口径：conclusion=failure 但**没有任何失败 job**（workflow 级失败）
+                # ⇒ `gh run rerun --failed` 无 job 可重跑。
+                print(f"⏭️ run {entry['id']}（{entry['name']}）conclusion=failure 但**没有任何失败 job**"
+                      f"（workflow 级失败）⇒ 无 job 可重跑")
+                continue
+            try:
+                rerun_failed_run(args.repo, entry["id"])
+            except RuntimeError as exc:
+                print(f"⛔ {exc} ⇒ 台账分支的失败 job 仍**无人救**（fail-closed，不静默）", file=sys.stderr)
+                return 1
+            after = run_attempt_after_rerun(args.repo, entry["id"])
+            before = entry["attempt"]
+            if after is None:
+                readback = "unknown"
+                print(f"::warning::run {entry['id']} 已发出重跑，但**回读**不到 run_attempt ⇒ 读数缺失"
+                      f"（不假装成功；下一轮由 `run_attempt` 事实复核：≥{before + 1} = 已重跑过）")
+            elif after > before:
+                readback = "advanced"
+                print(f"::notice::🔁 run {entry['id']}（{entry['name']} · {args.branch}）已重跑失败 job "
+                      f"{failed}：attempt {before} → {after}（上限 {MAX_LEDGER_RERUNS} 次，"
+                      f"**绝不无限重跑**）")
+            else:
+                readback = "pending"
+                print(f"::notice::🔁 run {entry['id']} 重跑已发出，回读 attempt={after}（尚未推进 = "
+                      f"GitHub 的异步窗口）⇒ 下一轮按 `run_attempt` 复核，**不会**重复重跑")
+            done.append({**entry, "failed_jobs": failed, "attempt_after": after, "readback": readback})
+        for entry in plan["exhausted"]:
+            print(f"❌ run {entry['id']}（{entry['name']}）attempt={entry['attempt']} —— **已重跑过**"
+                  f"（上限 {MAX_LEDGER_RERUNS} 次）仍失败 ⇒ 确定性失败，**不再自动重跑**")
+        if args.json_out:
+            _write(args.json_out, json.dumps(
+                {"branch": args.branch, "tip": tip, "max_reruns": MAX_LEDGER_RERUNS,
+                 "rerun": done, "exhausted": plan["exhausted"],
+                 "out_of_scope": plan["out_of_scope"]}, ensure_ascii=False, indent=2))
+        if plan["exhausted"]:
+            # 额度用尽必须**可见**（红）且**可行动** —— 静默降级正是本单要治的形态。
+            print(f"::error::台账分支的失败 run 已达重跑上限（{MAX_LEDGER_RERUNS} 次）仍失败 ⇒ "
+                  f"**本兜底不再自动重跑**（绝不无限重跑）。**人工出口**：① 先按「台账欠账可见性」"
+                  f"步骤的清单回填 `follow-up` 跟踪单，修好后由 `flaky-triage.yml` 的下一轮追加推送"
+                  f"带来**新的 run**（新 run 的 attempt=1 ⇒ 额度自然重置）；② 确需再跑一次时**由人**"
+                  f"执行 `gh run rerun <run-id> --failed`（人工动作，本兜底不做）。")
+            return 1
+        print(f"✅ 兜底重跑完成：本轮重跑 {len(done)} 个（上限 {MAX_LEDGER_RERUNS} 次）· "
+              f"额度已用尽 {len(plan['exhausted'])} 个 · 结果由下一次触发按 `run_attempt` 复核")
         return 0
 
     if args.cmd == "reconcile":

@@ -287,11 +287,16 @@ def audit_reconcile(src: str) -> list:
                                "（检出快照）⇒ 一半快照一半实时")
 
     # ④ 无漂移 ⇒ 零动作；有漂移 ⇒ 走修复（两分支都必须存在，否则兜底会空转/反复动作）
+    #    ⚠️ 「有漂移 ⇒ …」这一半的定位方式 = **步骤名**（同 ⑥ 的既有口径）：#5301 起还有**第二个**
+    #    步骤以「有漂移」为前置（兜底重跑）⇒ 旧的「全步骤文本扫描」会被那一步**遮挡**（把修复步骤
+    #    那个闸摘掉也照样通过 = 空断言，实测被本单的新步骤命中）。
+    repair_if = [str(s.get("if") or "") for s in steps
+                 if str(s.get("name") or "").startswith("有漂移 ⇒")]
     ifs = [str(s.get("if") or "") for s in steps]
+    if not any(re.search(r"steps\.drift\.outputs\.drift\s*==\s*'1'", t) for t in repair_if):
+        bad.append("缺「有漂移 ⇒ 补 approve + 补 arm」分支（`if: steps.drift.outputs.drift == '1'`）")
     if not any(re.search(r"steps\.drift\.outputs\.drift\s*!=\s*'1'", t) for t in ifs):
         bad.append("缺「无漂移 ⇒ 零动作」分支（`if: steps.drift.outputs.drift != '1'`）")
-    if not any(re.search(r"steps\.drift\.outputs\.drift\s*==\s*'1'", t) for t in ifs):
-        bad.append("缺「有漂移 ⇒ 补 approve + 补 arm」分支（`if: steps.drift.outputs.drift == '1'`）")
 
     # ④b 引导期：判据/动作都取 **main** 的脚本，而本兜底随 PR 落地 ⇒ PR 未合并时 main 上还没有
     #     `ledger-drift`（实测：首次运行 exit 2「invalid choice: 'ledger-drift'」）。
@@ -379,6 +384,40 @@ def audit_reconcile(src: str) -> list:
             bad.append("#5307 可见性：欠账步骤缺 `::error::`（红得不可归因）")
         if "GITHUB_STEP_SUMMARY" not in dtxt:
             bad.append("#5307 可见性：欠账清单没写进 job summary（人看不到清单与回填命令）")
+    # ⑫ #5301 判据②：**台账分支不许留白** —— 台账分支上的失败 job 必须有**自动重跑**路径。
+    #    类别形态 = 「分支上的失败 job 没有任何自动重跑路径，只能人工救」：
+    #    `flaky-triage.yml` 的 `decide()` 按**自指守卫**逐字判 `head_branch == LEDGER_BRANCH` ⇒ skip
+    #    （防自指递归）⇒ 那条路**结构上**不救它；而本兜底原先只补 approve/arm、不读失败原因更不重跑
+    #    ⇒ 台账 PR 撞一次确定性失败就停摆（**实测** 4 次尝试同形失败、约 40 小时无人救）。
+    #    ⚠️ **可见 ≠ 有救援**（#5307 只做了可见性）⇒ 本条判的是「有救援」。
+    #    ⚠️ 判据只认**调用形态**（同 ⑪）：本步骤的注释里也写着 `rerun-failed`（说明用）——
+    #    子串判据会被自己的说明文案喂绿（本仓「提及 ≠ 调用」已踩多次）。
+    rerun_steps = [s for s in steps
+                   if re.search(r"(?m)^\s*python3\s+\S*flaky_ledger\.py\s+rerun-failed\b",
+                                _code_lines(_step_text(s)))]
+    if not rerun_steps:
+        bad.append("#5301 判据②：没有任何步骤重跑台账分支的失败 job（`rerun-failed` 调用形态）"
+                   "⇒ 台账分支的确定性失败仍**只能人工救**（判据② 不许留白）")
+    else:
+        rtxt = _step_text(rerun_steps[0])
+        rcode = _code_lines(rtxt)
+        if '--branch "$LEDGER_BRANCH"' not in rcode:
+            bad.append('#5301 判据④：兜底重跑未把作用域绑到 `--branch "$LEDGER_BRANCH"`（命令行形态）'
+                       "⇒ 可能重跑**别的分支**的 run（作用域越权）")
+        if "GITHUB_STEP_SUMMARY" not in rcode:
+            bad.append("#5301 判据②：兜底重跑的**记账**没落进 job summary ⇒「重跑了哪个 job / 结果如何」不可见")
+        if not re.search(r"::error::[^\n]*退 3", rtxt):
+            bad.append("#5301 判据②：兜底重跑缺「**无法判定**（退 3）⇒ 红」的出口 ⇒ 未跑会被读成通过")
+        if not re.search(r"::error::[^\n]*无人救", rtxt):
+            bad.append("#5301 判据②：兜底重跑的动作失败缺 fail-closed 出口（`::error::` 无人救）"
+                       "⇒ 重跑没发出去也不红 = 静默")
+        if "rerun-failed --help" not in rcode or not re.search(r'(?m)^\s*echo\s+"::warning::', rtxt):
+            bad.append("#5301 判据②：缺引导期探测（`rerun-failed --help` + `::warning::`）⇒ main 还没有"
+                       "该子命令时 argparse 退 2 会被读成「兜底失败」= 假红（同 `ledger-drift` 既有形态）")
+        if not re.search(r"steps\.drift\.outputs\.drift\s*==\s*'1'",
+                         str(rerun_steps[0].get("if") or "")):
+            bad.append("#5301 判据②：兜底重跑没以「**有漂移**」为前置 ⇒ 台账已同步时仍会白烧 CI 分钟"
+                       "（与既有两处「无事可做 ⇒ 零动作」同口径）")
     # ⚠️ 阈值判据读 **job env**（不是「文本里提到过 STALE_MINUTES」）：后者会被报错文案里的
     #    `${STALE_MINUTES}` 自己骗绿 —— 把阈值定义删掉也照样通过 = 空断言。
     stale = str((job.get("env") or {}).get("STALE_MINUTES") or "")
@@ -736,6 +775,34 @@ RECONCILE_RED_PROOFS = [
      "#5307 可见性"),
     ("debt_summary_write_removed", '            | tee -a "$GITHUB_STEP_SUMMARY"\n',
      "", "#5307 可见性"),
+    # ── #5301 判据②/③/④：台账分支的失败 job 必须能**自动重跑**（上限 1 次、只作用于本分支）──
+    ("rerun_invocation_removed",
+     '          python3 .github/scripts/flaky_ledger.py rerun-failed \\\n',
+     '          true \\\n', "#5301 判据②：没有任何步骤重跑"),
+    ("rerun_scope_widened",
+     '            --repo "$GITHUB_REPOSITORY" --branch "$LEDGER_BRANCH" \\\n',
+     '            --repo "$GITHUB_REPOSITORY" --branch "$GITHUB_HEAD_REF" \\\n',
+     "#5301 判据④"),
+    ("rerun_accounting_removed",
+     '            --json-out /tmp/rerun.json | tee -a "$GITHUB_STEP_SUMMARY"\n',
+     '            --json-out /tmp/rerun.json\n', "记账"),
+    ("rerun_undeterminable_exit_removed",
+     '            3) echo "::error::无法判定台账分支的失败 run（rerun-failed 退 3）⇒ **未跑 ≠ 通过**，'
+     '不得当成「没有失败」"; exit 1 ;;\n',
+     '            3) echo "无法判定"; exit 0 ;;\n', "退 3"),
+    ("rerun_action_failure_swallowed",
+     '            *) echo "::error::台账失败 job 兜底重跑失败（rc=${RC}）⇒ 台账分支的确定性失败仍'
+     '**无人救**（fail-closed，不静默）"; exit 1 ;;\n',
+     '            *) echo "重跑失败"; exit 0 ;;\n', "无人救"),
+    ("rerun_guidance_probe_removed",
+     '          if ! python3 .github/scripts/flaky_ledger.py rerun-failed --help >/dev/null 2>&1; then\n',
+     '          if false; then\n', "引导期探测"),
+    ("rerun_not_gated_on_drift",
+     "      - name: 台账失败 job 兜底重跑（#5301：台账分支不许留白）\n"
+     "        if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift == '1'\n",
+     "      - name: 台账失败 job 兜底重跑（#5301：台账分支不许留白）\n"
+     "        if: steps.preflight.outputs.ready == '1'\n",
+     "有漂移"),
 ]
 
 TRIAGE_RED_PROOFS = [
