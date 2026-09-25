@@ -526,3 +526,29 @@ if __name__ == "__main__":       # 复算读数（零 LLM、不连库）：pytho
     print("未命中且无见证（应为空或全在台账内）：")
     for _entry in _result["unbacked"]:
         print("  " + _fmt([_entry]))
+
+# ── 夹具的「声明 ↔ 实现」一致（2026-09-25 链内修，无单可挂）────────────────────
+
+def test_multi_door_width_insert_filters_by_the_color_it_declares():
+    """第二门幅 SKU 的 INSERT **必须带颜色过滤** —— 与它自己的注释声明一致。
+
+    现场：该段注释写「只补 `prod_eval_summer` 的**米白色**」，而原 `WHERE` **只过滤了商品**
+    ⇒ 今天只有米白一色所以无害，**将来给该商品加任何颜色都会静默多出 3.2 SKU**
+    （夹具的声明与实现脱节 —— 正是 `migao-acceptance` 的"恒绿/静默"形态）。
+    本项随 issue #5060 关闭而**脱管**（`gh issue list --search xiaobu_eval_seed` 0 命中）⇒ 按 铁律 11(a) 链内修。
+
+    判据（结构化，不按整文件 grep）：取出 `door_width = '3.2'` 那条 INSERT 语句，断言它的 `WHERE`
+    里出现 `color_name` 过滤；把该行删掉 ⇒ 本判据**必红**。
+    """
+    from pathlib import Path
+
+    sql = (Path(__file__).resolve().parents[2] / "tests" / "agent_eval" / "fixtures"
+           / "xiaobu_eval_seed.sql").read_text(encoding="utf-8")
+    stmts = [st for st in sql.split(";") if "'3.2'" in st and "INSERT INTO product_skus" in st]
+    assert len(stmts) == 1, f"第二门幅 SKU 的 INSERT 应当恰好一条（实得 {len(stmts)}）——判据需同步"
+    stmt = stmts[0]
+    where = stmt.split("WHERE", 1)[1]
+    assert "color_name" in where, (
+        "第二门幅 SKU 的 INSERT 没有颜色过滤 ⇒ 与注释声明的「只补米白色」脱节，"
+        "将来加色会**静默**多出 3.2 SKU（链内修，无单可挂）"
+    )
