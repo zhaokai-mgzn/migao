@@ -484,8 +484,15 @@ curtain_calc 输出 ────────────┤
 #### 加工单快照必须扩白名单（否则第 ③ 处永远拿不到）
 
 `ProcessingOrderService.java` 的 `buildSnapshot`（`copyIfPresent` 段） 用 `copyIfPresent(pi, entry, key)` **逐键**取顶层键 ——
-**新键不加进这个列表就不会进快照**。需补：`curtainType` / `craft` / `cuttingMode` / `openCount` /
-`isShaped` / `pleatSpacing` / `style` / `room` / `hasPattern` / `patternRepeat` + §4.3 的全部算料输出键。
+**新键不加进这个列表就不会进快照**。已补：`curtainType` / `craft` / `cuttingMode` / `openCount` /
+`isShaped` / `pleatSpacing` / `style` / `room` / `hasPattern` / `patternRepeat`（`CRAFT_SPEC_SNAPSHOT_KEYS`）。
+**算料输出键**（`CALC_OUTPUT_SNAPSHOT_KEYS`，issue #4354）**逐键枚举 = 7 个**（本行原写「+ §4.3 的**全部**算料输出键」——
+「全部」会随 §4.3 演进无声变质，故改枚举）：
+`fabric_meters` / `pleat_count` / `per_panel_pleats` / `panels` / `holes` / `fullness` / `fullness_actual`
+（同一白名单里另有 `formula_text` = 可读算料公式串，issue #4555 单独加入，见该常量的 javadoc）。
+🔴 **有意排除（不是遗漏）**：`source`（折数/用料取值来源 —— **报价/订单层**的追溯字段，加工单展示字段表未列它）、
+`meters`（历史别名，主键是 `fabric_meters`）、`set_count`（算料引擎**暂未产出**，`routing.py` 的 `SET_KEYS` 注明兜底 1）——
+这三键只在算料**输入**透传白名单（`CALC_INFO_KEYS`）里，**不进快照**。
 （加工单快照是**加工单的固化真相**，生成时的条件工序与计件系数都从快照读 ⇒ 漏一个键 = 车间少一道活。）
 
 ## 五、落地顺序（本方案 = 不动钱部分）

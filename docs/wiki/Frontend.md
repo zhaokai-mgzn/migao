@@ -52,7 +52,9 @@
 ## mini-app (Taro 微信小程序)
 
 3 个 tab 页：对话(SSE流式) · 会话历史 · 个人中心
-5 种卡片组件：ProductCard, KnowledgeCard, LogisticsCard, ToolCallIndicator
+卡片组件：**不抄数**（个数会腐烂）—— 真值源 `frontend/mini-app/src/components/cards/`
+（ProductCard / KnowledgeCard / LogisticsCard / QuotationCard / OrderCard / PaymentCard / ConfirmCard / ChoiceCard / FormCard / ProductionProgressCard …）
+旧文列的 `ToolCallIndicator` 随卡型体系收敛（issue #4016 P14）**已删除**、全仓零引用，不再是卡片组件。
 技术：Taro（**版本不抄数**，真值源 `frontend/mini-app/package.json` 的 `@tarojs/taro`）/ React 18 / Sass / Zustand
 
 ## bmini-app (Taro B 端商家小程序，issue #2977)
