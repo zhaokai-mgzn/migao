@@ -2069,9 +2069,26 @@ class TestAutoRespond:
         out = lr.resolve_auto_respond(results, fallback="确认", form_values={})
         assert out == "确认下单：遮光窗帘"
 
-    def test_confirm_without_confirm_value_falls_back_to_text(self):
+    def test_confirm_without_confirm_value_signs_and_still_sends_fallback(self):
+        """无 `confirmValue` 的确认卡 ⇒ 独立签名（issue #3862），**本轮实发文本逐字不变**。
+
+        ⚠️ 本条原先是 `test_confirm_without_confirm_value_falls_back_to_text`，断言的是**旧行为**
+        （静默走 fallback 文本）—— 与上面 #3803 那格同一形态：**"断言旧行为"的反向守卫，
+        在该行为被认定成病灶之后就变成了病灶本身**。后果：`backend/ai-agent-service/app/api/chat.py`
+        只在 XML 显式给出该键时才写 `confirmValue` ⇒ "确认卡没有可点值"是**可达**形态，
+        harness 只能发 fallback 文本 ⇒ 卡永远没人点、流程卡死，而失败串写成「agent 不干活」。
+
+        反向半条仍在（且更硬）：`unwrap_harness_signature` 摘掉签名后发的文本必须**逐字**
+        等于 fallback —— 不许把内部签名原样发给 agent，也不许把正常路径改红。
+        """
         results = self._last([{"component": "confirm", "fields": []}])
-        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={}) == "确认下单"
+        out = lr.resolve_auto_respond(results, fallback="确认下单", form_values={})
+        inc = lr.parse_harness_incompatible(out)
+        assert isinstance(inc, dict), f"无 confirmValue 的确认卡仍静默降级：{out!r}（issue #3862 复发）"
+        assert inc["kind"] == "no_fillable_payload" and inc["card"] == "confirm", inc
+        _bucket: list = []
+        assert lr.unwrap_harness_signature(out, "确认下单", _bucket) == "确认下单", _bucket
+        assert len(_bucket) == 1, _bucket
 
     def test_answers_choice_card_with_first_option_value(self):
         results = self._last([{"component": "choice",
@@ -2104,10 +2121,23 @@ class TestAutoRespond:
         assert inc["kind"] == "form_fields_mismatch"
         assert inc["card_fields"] == ["unknown_key"] and inc["case_fields"] == ["a"]
 
-    def test_form_without_values_still_falls_back(self):
-        """反向守卫：用例**没提供**载荷时行为不变（仍走 fallback）—— 不得把正常路径改红。"""
+    def test_form_without_values_signs_and_still_sends_fallback(self):
+        """用例**没提供**载荷 + 有待答 form 卡 ⇒ 独立签名（issue #3862），实发文本不变。
+
+        与上面那格的分工：`form_fields_mismatch`（**声明了**载荷、零匹配）vs
+        `no_fillable_payload`（**压根没有**载荷）。旧形态下本格是**静默降级**，后果与 #3803
+        同族：顾客永远填不上表、流程卡死 ⇒ 用例必红，而归因指向产品/agent。
+        （原先是 `test_form_without_values_still_falls_back`，断言的就是那个静默行为。）
+        """
         results = self._last([{"component": "form", "formFields": [{"key": "unknown_key"}]}])
-        assert lr.resolve_auto_respond(results, fallback="确认下单", form_values={}) == "确认下单"
+        out = lr.resolve_auto_respond(results, fallback="确认下单", form_values={})
+        inc = lr.parse_harness_incompatible(out)
+        assert isinstance(inc, dict), f"无载荷的 form 卡仍静默降级：{out!r}（issue #3862 复发）"
+        assert inc["kind"] == "no_fillable_payload" and inc["card"] == "form", inc
+        assert inc["card_fields"] == ["unknown_key"], inc
+        _bucket: list = []
+        assert lr.unwrap_harness_signature(out, "确认下单", _bucket) == "确认下单", _bucket
+        assert len(_bucket) == 1, _bucket
 
     def test_form_synonym_field_names_are_filled(self):
         """同义字段名可回填（issue #3803 治法①）：卡上 `name`/`phone` ↔ 用例 `customer_name`/`customer_phone`。

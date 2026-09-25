@@ -10,7 +10,7 @@
 把这个函数的**载荷窗口语义**锁在 L0，才能在"改用例资产的那一次 PR"上立刻变红
 （L2 那层跑的是另一套 fixture，看不到 `.github/cases/` 的真实形状）。
 
-## 本文件锁六件事
+## 本文件锁七件事
 
 | # | 断言 | 红证（改回修前形态即红） |
 |---|---|---|
@@ -20,6 +20,7 @@
 | ④ | 载荷零匹配 ⇒ **不许静默降级**；且折叠出的原子与"agent 没做"**分属不同身份**（`#3803`） | 原子规则缺失/被删 ⇒ 折成 `no_success(order_create)` 形态 ⇒ 红 |
 | ⑤ | `repeat_until` 轮的**载荷饿死**：文字提到"验证码"不得挤掉**可回填的 form 卡**（`#3829` / OR-026） | 恢复旧优先级 ⇒ `test_soft_code_mention_no_longer_starves_fillable_form_card` 得到 `'123456'` ⇒ 红 |
 | ⑥ | **S1 全族**（`repeat_until` 同时声明 `code` + 载荷）的离线重放台账：窗口内必须交付载荷 | 同上 ⇒ 全族 `__FORM__` 命中 0（`0/7,0/8×5`）⇒ 红 |
+| ⑦ | **有卡可答、却无载荷可填**（`#3862`）：本轮 `auto_respond` 只声明了文本而 agent 发了 form/confirm/choice 卡 ⇒ 独立 kind `no_fillable_payload`（**不许静默降级**）；另加**类级元守卫**：`resolve_auto_respond` 里每个 `return fallback` 出口都必须标记 | 删掉任一签名出口 ⇒ `test_no_payload_form_card_is_signed_not_silent` 得到 `'确认下单'` ⇒ 红；抹掉任一 `# SILENT-OK:` 标记 ⇒ `test_every_card_branch_fallback_exit_is_marked` ⇒ 红 |
 ⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用下方最小替身（与
 `test_eval_summary_attribution.py` / `test_eval_runner_same_round_scope.py` 同形）。
@@ -545,3 +546,198 @@ def test_customer_json_text_is_not_flagged_as_control_turn():
                                             '{"color":"米白","qty":3}']) == []
     assert lr.check_control_turns_declared([{"auto_select": True}, "普通文本",
                                             {"text": "看看这个"}]) == []
+
+
+# ── ⑦ 「有卡可答、却无载荷可填」不许静默（issue #3862）────────────────────────
+# 病灶：#3803 的签名骨架**只在用例声明了非空载荷时**才可能触发（`form_values` 非空）。
+# 载荷为空时——该轮 `auto_respond` 只声明了文本、agent 却发了一张 form/confirm/choice 卡
+# ——旧实现直接 `return fallback`：**既没有 `harness_incompatible` 签名，也没有其它可辨信号**。
+# 于是「harness 答不出这张卡」在结论里长得像「agent 不干活」（`must_succeed` 未满足 /
+# `unmatched expectation`）—— 归因错人（暴露面读数见 PR body，按 origin/main 用例库实测）。
+#
+# 治法（**不改行为、不放宽任何断言**）：在**同一个** `harness_incompatible(...)` 族里加一个
+# **独立 kind** `no_fillable_payload`（卡类型进 payload ⇒ 与 `form_fields_mismatch` 折成
+# 不同原子），本轮仍然发 fallback 文本、用例仍然判红（`harness_incompatible_failures`
+# 照旧阻塞 `ok`），只是「该谁修」从 agent 改成 harness/用例形状。
+
+_SIG_KIND = "no_fillable_payload"
+_SILENT_MARKERS = ("# SILENT-OK:", "# SILENT-SIGNED:")
+
+
+def test_no_payload_form_card_is_signed_not_silent():
+    """**红证（本单本体）**：agent 发 form 卡 + 本轮**没有可填载荷** ⇒ 必须出现签名。
+
+    改前读数：返回 `'确认下单'`（`parse_harness_incompatible` → `None`）⇒ 本断言红。
+    改后读数：`harness_incompatible(no_fillable_payload)`，且 payload 带卡类型与卡字段
+    （可归因：读者一眼知道是**哪张卡**答不出，而不是去找一份不存在的字段清单）。
+    """
+    card = {"type": "form", "formFields": [{"key": "customer_name"}]}
+    out = lr.resolve_auto_respond(_last_card(card), fallback="确认下单", form_values={})
+    inc = lr.parse_harness_incompatible(out)
+    assert isinstance(inc, dict), (
+        f"agent 发了 form 卡而本轮没有可填载荷，harness 静默降级成 {out!r} —— 结论里看不出"
+        f"「harness 答不出这张卡」，这条红会被记成「agent 没做」（归因错人，issue #3862）")
+    assert inc["kind"] == _SIG_KIND, inc
+    assert inc["card"] == "form", inc
+    assert inc["card_fields"] == ["customer_name"], inc
+
+
+def test_no_clickable_value_confirm_card_is_signed_not_silent():
+    """confirm 卡同理：`confirmValue` 缺省时点击协议回传不出任何东西 ⇒ 必须出现签名。
+
+    `backend/ai-agent-service/app/api/chat.py` 只在 XML 显式给出该键时才写进卡片
+    （`if v: payload[key] = v`）⇒ "确认卡没有可点值"是**可达**形态，不是假想。
+    """
+    out = lr.resolve_auto_respond(_last_card({"type": "confirm", "fields": []}),
+                                  fallback="确认下单", form_values={})
+    inc = lr.parse_harness_incompatible(out)
+    assert isinstance(inc, dict), f"无 `confirmValue` 的确认卡被静默降级成 {out!r}（issue #3862）"
+    assert inc["kind"] == _SIG_KIND and inc["card"] == "confirm", inc
+
+
+def test_no_option_choice_card_is_signed_not_silent():
+    """choice 卡同理：**没有任何可选项** ⇒ 前端协议下点不出东西 ⇒ 必须出现签名。"""
+    out = lr.resolve_auto_respond(_last_card({"type": "choice", "options": []}),
+                                  fallback="第一个", form_values={})
+    inc = lr.parse_harness_incompatible(out)
+    assert isinstance(inc, dict), f"无可选项的选择卡被静默降级成 {out!r}（issue #3862）"
+    assert inc["kind"] == _SIG_KIND and inc["card"] == "choice", inc
+
+
+def test_round_with_fillable_payload_is_never_signed():
+    """**反向红证（防误签）**：本轮**有**可填载荷 / 可点值 / 可选项 ⇒ 一律不得出现签名。
+
+    三类卡各一条。任一条出现签名都说明判据太宽 —— 把正常轮判成 harness 不兼容
+    （误红 + 归因再次错人），比原来的静默还糟。
+    """
+    form = {"type": "form", "formFields": [{"key": "customer_name"}]}
+    got = lr.resolve_auto_respond(_last_card(form), fallback="确认下单",
+                                  form_values={"customer_name": "张三"})
+    assert got == '__FORM__|{"customer_name": "张三"}', (
+        f"有载荷的 form 卡没回填（{got!r}）—— 正常路径**逐字不变**是反向红证的前提")
+    confirm = {"type": "confirm", "confirmValue": "确认下单"}
+    got = lr.resolve_auto_respond(_last_card(confirm), fallback="那就这样吧", form_values={})
+    assert got == "确认下单", f"有 confirmValue 的确认卡没被点（{got!r}）"
+    choice = {"type": "choice", "options": [{"label": "米白", "value": "c1"}]}
+    got = lr.resolve_auto_respond(_last_card(choice), fallback="第一个", form_values={})
+    assert got == "米白", f"有选项的选择卡没被点（{got!r}）"
+
+
+def test_no_card_round_falls_back_without_signature():
+    """真·无待答卡（答 agent 的文本提问）：fallback 是**正确行为**，不得有签名。
+
+    否则全量档每一轮都挂一条 harness 不兼容 ⇒ 噪声把真信号淹掉（同 `prefer_text_notes` 的取舍）。
+    """
+    got = lr.resolve_auto_respond(_last_card({"type": "text", "text": "好的"}),
+                                  fallback="数量 3 米", form_values={})
+    assert got == "数量 3 米", got
+    assert lr.parse_harness_incompatible(got) is None, got
+
+
+def test_no_payload_signature_lands_on_same_face_and_still_blocks():
+    """签名必须**落到与 `harness_incompatible` 同一个面上**，且**不得**放行（issue #3862）。
+
+    两件事同时钉：① `_case_issue_atom` 折出 `harness_incompatible(no_fillable_payload)`
+    —— 与 `no_success(order_create)` **分属不同原子**（否则"harness 答不出卡"与"agent 没下单"
+    在两次尝试的同因判定上再次混为一谈）；② `completion_verdict` 照旧 `ok is False`，
+    单列进 `harness_incompatible_failures` 而**不**混进 `deterministic_failures`。
+    """
+    needle = 'f"harness_incompatible({_inc.get(\'kind\')}): 待答 **{_inc.get(\'card\')}** 卡而本轮用例"'
+    assert needle in RUNNER_PATH.read_text(encoding="utf-8"), (
+        "runner 的 `no_fillable_payload` 原文格式变了 —— 本守卫的字面量已不代表生产"
+        "（断言退化成空断言）")
+    issue = ("harness_incompatible(no_fillable_payload): 待答 **form** 卡而本轮用例"
+             "**没有可填载荷** —— harness 拿不出这张卡的答复")
+    atom = lr._case_issue_atom(issue)
+    assert atom == "harness_incompatible(no_fillable_payload)", atom
+    assert atom != lr._case_issue_atom(
+        "must_succeed: order_create 从未被调用 → 没有发生任何写操作"), (
+        "无载荷签名与 agent 行为失败折成同一原子 ⇒ 归因仍会错人")
+    v = lr.completion_verdict([{"case_id": "OR-014", "score": 0.0,
+                                "classification": "reproducible",
+                                "harness_incompatible": [{"kind": _SIG_KIND}]}], ())
+    assert v["ok"] is False, "无载荷签名被放行了 —— 那是放宽断言（禁止）"
+    assert v["harness_incompatible_failures"] == ["OR-014"], v
+    assert v["deterministic_failures"] == [], v
+
+
+def test_harness_signature_is_never_sent_as_a_customer_message():
+    """签名是**归因载体**，不是要给 agent 看的话：三个分支都必须先摘出来再发。
+
+    实测（改前）：`resolve_repeat_turn` / `resolve_auto_select_turn` 两路会把
+    `__HARNESS_INCOMPATIBLE__|{...}` **原样当顾客消息发给 agent** —— 签名只在
+    `auto_respond` 分支被摘。本单加的 kind 触发面**大得多**（任何"只有文本"的轮次撞上卡）
+    ⇒ 不收口就是每轮往对话里塞一段内部 JSON（真行为回归）。
+    """
+    form = {"type": "form", "formFields": [{"key": "customer_name"}]}
+    rep = lr.resolve_repeat_turn(_last_card(form), {}, {})
+    assert lr.parse_harness_incompatible(rep), (
+        f"`resolve_repeat_turn` 没走到签名路径（{rep!r}）—— 本守卫的前提不成立（会静默空跑）")
+    sel = lr.resolve_auto_select_turn(_last_card(form), {})
+    assert lr.parse_harness_incompatible(sel), sel
+    bucket: list = []
+    assert lr.unwrap_harness_signature(rep, "确认下单", bucket) == "确认下单"
+    assert len(bucket) == 1 and bucket[0].get("kind") == _SIG_KIND, bucket
+    assert lr.unwrap_harness_signature("正常文本", "确认下单", bucket) == "正常文本"
+    assert len(bucket) == 1, f"非签名文本被误收进归因桶：{bucket}"
+    # 结构断言：`run_case` 的三个分支都过这个收口 —— 逐分支各摘一次**一定会漏**
+    # （实测就漏了两路）；收口函数自身的定义 + 3 个调用点 ⇒ 至少 4 处。
+    assert RUNNER_PATH.read_text(encoding="utf-8").count("unwrap_harness_signature(") >= 4, (
+        "`run_case` 的分支没有全部过收口函数 —— 签名会原样发给 agent")
+
+
+def _unmarked_fallback_exits(src: str) -> list:
+    """`resolve_auto_respond` 里**未标记**的 `return fallback` 出口（类级元守卫的判据本体）。
+
+    抽成纯函数是为了让守卫**自己**也能被注入式红证（见下一条）：注入一个未标记的出口，
+    判据必须报出来 —— 否则这条守卫是恒真断言（"什么都说没问题"的守卫 = 空断言）。
+    """
+    body = src.split("def resolve_auto_respond(", 1)[1].split("\ndef ", 1)[0]
+    lines = body.splitlines()
+    bad = []
+    for i, line in enumerate(lines):
+        if not re.search(r"return\s+(?:fallback|value\s+or\s+fallback)\s*$", line):
+            continue
+        prev = ""
+        for j in range(i - 1, -1, -1):
+            if lines[j].strip():
+                prev = lines[j]
+                break
+        if not any(m in prev for m in _SILENT_MARKERS):
+            bad.append(line.strip())
+    return bad
+
+
+def test_every_fallback_exit_in_resolve_auto_respond_is_marked():
+    """**类级元守卫**（`#3862` 的病灶本体）：`resolve_auto_respond` 里**每个
+    `return fallback` 出口**都必须在上一行带结构化标记。
+
+    标记二选一：`# SILENT-OK: <理由>`（**有意的**降级 —— 如 `prefer_text` 轮、同一张卡
+    点满两次的模型层不收敛）／`# SILENT-SIGNED: <kind>`（该出口的"答不出卡"前置条件已由
+    签名覆盖）。未标记 ⇒ 红。
+
+    为什么必须有这一条：原病灶正是「**新加一个静默降级，没有任何东西会变红**」——
+    只修 form 那一处 = 没修（下一张卡、下一个 kind 会原样复发）。
+    """
+    src = RUNNER_PATH.read_text(encoding="utf-8")
+    bad = _unmarked_fallback_exits(src)
+    assert bad == [], (
+        f"`resolve_auto_respond` 有 {len(bad)} 个**未标记**的 `return fallback` 出口：{bad} —— "
+        f"这类静默降级不会有任何东西变红（issue #3862 复发）；"
+        f"要么改成 `return harness_incompatible(no_fillable_payload, ...)`，"
+        f"要么在上一行加 `# SILENT-OK: <理由>`")
+
+
+def test_silent_exit_guard_catches_injection():
+    """注入式红证（§23 G7 / G10）：判据**自证生效**，否则上一条是恒真断言（假绿）。"""
+    probe = ("def resolve_auto_respond(a):\n"
+             "    if a:\n"
+             "        return fallback\n"
+             "\ndef other():\n"
+             "    return fallback\n")
+    assert _unmarked_fallback_exits(probe) == ["return fallback"], (
+        "注入的**未标记**静默出口没被抓到 —— 上一条守卫是恒真断言（假绿）")
+    marked = probe.replace("        return fallback\n",
+                           "        # SILENT-OK: 有意的降级（本例）\n        return fallback\n")
+    assert _unmarked_fallback_exits(marked) == [], (
+        f"标记过的出口被误报 ⇒ 守卫会把合规代码判红：{_unmarked_fallback_exits(marked)}")
