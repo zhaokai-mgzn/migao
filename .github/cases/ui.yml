@@ -1453,11 +1453,17 @@ cases:
       - "ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐"
       - "选项缺 label 时回退 value（label || value 协议兜底不回归）"
       - "提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction"
+      - "多选卡（issue #3947）：卡声明 multiSelect=true 时点选项只本地勾选积累（零 onAction）、再点可取消，点「完成选择（N）」才一次性回传 `${multiSelectSubmitPrefix}${已选名称、拼接}`（默认「已选加工项：A、B」）；未勾选不渲染提交按钮；提交后锁卡。判据 = frontend/mini-app/tests/choice-card.test.tsx 与 frontend/bmini-app/tests/choice-card.test.tsx 的行为用例，接线普查 = tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py"
+      - "多选字段不得被 store 白名单吞掉（issue #3947 的真实病根）：frontend/mini-app/src/store/chatStore.ts 的 onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，判据 = frontend/mini-app/tests/store-chat.test.ts"
+      - "单选卡（无 multiSelect）点第一项仍立即提交，且不渲染「完成选择」按钮（防多选逻辑污染单选体验）"
     skip_reason: "[backend-contract] 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐"
+    merge_log: "2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐；2026-09-25 补：多选卡勾选积累 +「完成选择（N）」一次性提交（issue #3947，admin-web 既有协议的 Taro 落地）"
     traces:
       tests:
         - "frontend/mini-app/tests/choice-card.test.tsx"
+        - "frontend/mini-app/tests/store-chat.test.ts"
+        - "frontend/bmini-app/tests/choice-card.test.tsx"
+        - "tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py"
       ci:
         - pr-check.yml
       verifies: []

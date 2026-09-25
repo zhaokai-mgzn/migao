@@ -25,6 +25,33 @@ function redirectToLogin() {
   }
 }
 
+/**
+ * 认证**入口**端点（issue #5485）：这些 URL 自身的 401 = 凭据问题，
+ * **绝不能**走「刷新 token → 重试」那条路 —— 那会把「账号或密码错误」吞成
+ * 「登录已过期，请重新登录」，并丢掉服务端的反枚举文案（AU-003 要求三种病因同码同文案）。
+ */
+const AUTH_ENTRY_PATHS = ['/api/auth/refresh', '/api/auth/sms/login', '/api/auth/employee/login']
+
+/** 首登强制改密的错误码（后端 `PasswordChangeRequiredFilter`，issue #5485 I4） */
+const PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED'
+
+/** 首登强制改密页路径（与 `src/app/change-password/page.tsx` 一致） */
+const CHANGE_PASSWORD_PATH = '/change-password'
+
+/**
+ * 引导到「首登强制改密」页（issue #5485 I4）。
+ *
+ * 未改密的会话访问**任何**业务 API 都会得到 403 `PASSWORD_CHANGE_REQUIRED` ——
+ * 所以必须在**拦截层全局**处理：只在一个页面处理的话，别的页面照样一屏报错。
+ * 已在改密页时不重复赋值（避免无谓的整页重载）。
+ */
+function redirectToChangePassword() {
+  if (typeof window === 'undefined') return
+  if (window.location.pathname !== CHANGE_PASSWORD_PATH) {
+    window.location.href = CHANGE_PASSWORD_PATH
+  }
+}
+
 // ========== Token 刷新队列 ==========
 let isRefreshing = false
 let failedQueue: Array<{
@@ -78,11 +105,15 @@ request.interceptors.response.use(
 
     // 401 处理：尝试刷新 Token
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      // 如果是刷新 token 或登录请求本身返回 401，直接跳转登录
+      // 认证入口端点自身的 401：交给调用方展示服务端原文（登录页/改密页的内联错误区），
+      // 不走刷新重试（见 AUTH_ENTRY_PATHS 注释）
       const url = originalRequest.url || ''
-      if (url.includes('/api/auth/refresh') || url.includes('/api/auth/admin/login')) {
-        useAuthStore.getState().clearAuth()
-        redirectToLogin()
+      if (AUTH_ENTRY_PATHS.some((p) => url.includes(p))) {
+        if (url.includes('/api/auth/refresh')) {
+          // 刷新端点自己 401 ⇒ 会话确实过期：清态并回登录页
+          useAuthStore.getState().clearAuth()
+          redirectToLogin()
+        }
         return Promise.reject(error)
       }
 
@@ -137,6 +168,14 @@ request.interceptors.response.use(
       const { status, data } = error.response as { status: number; data: any }
       switch (status) {
         case 403:
+          // #5485 I4：首登未改密的会话访问业务 API ⇒ 403 PASSWORD_CHANGE_REQUIRED。
+          // 文案用面向用户的说法 —— 后端那句是给开发者看的（"请调用 POST /api/auth/password/change"）。
+          if (data?.error?.code === PASSWORD_CHANGE_REQUIRED) {
+            toast.error('首次登录请先修改密码')
+            markErrorToastShown(error)
+            redirectToChangePassword()
+            return Promise.reject(error)
+          }
           toast.error('没有权限执行此操作')
           break
         case 404:

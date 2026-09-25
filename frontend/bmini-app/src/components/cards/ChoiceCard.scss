@@ -37,6 +37,12 @@
       background: #eef4ff;
       border-color: #1a73e8;
     }
+
+    // 多选勾选态（issue #3947）：勾选不提交，靠选中态给商家反馈
+    &--selected {
+      background: #eef4ff;
+      border-color: #1a73e8;
+    }
   }
 
   &__option-main {
@@ -93,5 +99,39 @@
   &__page-indicator {
     font-size: 13px;
     color: #6b7280;
+  }
+
+  // 多选提交/跳过（issue #3947）
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  &__submit {
+    flex: 1;
+    padding: 10px 0;
+    background: #1a73e8;
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  &__submit-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  &__skip {
+    padding: 10px 16px;
+    background: #f0f2f5;
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  &__skip-text {
+    font-size: 14px;
+    color: #4b5563;
   }
 }

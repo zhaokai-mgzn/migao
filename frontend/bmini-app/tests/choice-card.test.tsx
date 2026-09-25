@@ -92,3 +92,71 @@ describe('ChoiceCard — 提交锁（CH-030 防重复提交）', () => {
     expect(onAction).not.toHaveBeenCalled()
   })
 })
+
+describe('ChoiceCard — 多选卡：勾选积累 + 「完成选择(N)」一次性提交（CH-030 同一协议面，issue #3947）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  // 与后端 interact(multiSelect=true) 下发的载荷同形（interact.py 在 multiSelect 时
+  // 一定补齐 prefix/label/skipLabel 三个文案字段）
+  const multiCard: InteractiveData = {
+    type: 'choice',
+    component: 'choice',
+    multiSelect: true,
+    multiSelectSubmitPrefix: '已选商品：',
+    multiSelectSubmitLabel: '完成选择',
+    multiSelectSkipLabel: '不需要加工项',
+    title: '请勾选要批量修改的商品（可多选）',
+    options: [
+      { label: '亚麻窗帘 A', value: 'sku_1001' },
+      { label: '雪尼尔窗帘 B', value: 'sku_1002' },
+    ],
+  }
+
+  it('勾选 A、B 后提交：一次性回传 prefix + 已选名称集合（点第一项不得提交/锁卡）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+
+    fireEvent.click(screen.getByText('亚麻窗帘 A'))
+    fireEvent.click(screen.getByText('雪尼尔窗帘 B'))
+    expect(onAction).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('完成选择（2）'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith('已选商品：亚麻窗帘 A、雪尼尔窗帘 B')
+  })
+
+  it('未勾选任何项时不渲染提交按钮；提交后锁卡（CH-030 不回归）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+    expect(screen.queryByText(/完成选择（/)).toBeNull()
+
+    fireEvent.click(screen.getByText('亚麻窗帘 A'))
+    fireEvent.click(screen.getByText('完成选择（1）'))
+    fireEvent.click(screen.getByText('雪尼尔窗帘 B'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('跳过按钮只在卡自带 multiSelectSkipLabel 时渲染并原样回传该文案', () => {
+    const onAction = jest.fn()
+    const { unmount } = render(<ChoiceCard data={multiCard} onAction={onAction} />)
+    fireEvent.click(screen.getByText('不需要加工项'))
+    expect(onAction).toHaveBeenCalledWith('不需要加工项')
+    unmount()
+
+    const noSkip: InteractiveData = { ...multiCard }
+    delete noSkip.multiSelectSkipLabel
+    render(<ChoiceCard data={noSkip} onAction={jest.fn()} />)
+    expect(screen.queryByText('不需要加工项')).toBeNull()
+  })
+
+  it('单选卡（无 multiSelect）点第一项仍立即回传 value，且不渲染多选提交按钮（防回归）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={baseChoice} onAction={onAction} />)
+    fireEvent.click(screen.getByText('现代简约'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith('现代简约')
+    expect(screen.queryByText(/完成选择/)).toBeNull()
+  })
+})

@@ -1,4 +1,8 @@
 # case_ids: MC-012, PG-013, PR-021, CU-003
+# drift-audit: refs-are-fixtures
+#   本文件里大量 `path:NNN` 是喂给 `assertion_taxonomy.find_path_line_refs()` 的**合成夹具**
+#   （按定义必须是失效引用：`a/b.py:5`、`local_runner.py:999999`、`eval-environments.md:86` 等）
+#   ⇒ 按 `scripts/drift_audit.py` 的 ref-freshness 出口显式声明，**不是**为真实引用开豁免。
 """
 断言可信度门禁的 L0 防复发守卫（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）。
 

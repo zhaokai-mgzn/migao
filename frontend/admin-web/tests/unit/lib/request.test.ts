@@ -1,4 +1,4 @@
-// case_ids: UI-024
+// case_ids: AU-006, UI-024
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import axios from 'axios'
 import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
@@ -562,6 +562,141 @@ describe('response interceptor - 错误 toast 去重标记（issue #2923）', ()
       )
       expect(toast.error).toHaveBeenCalledWith('登录已过期，请重新登录')
       expect(isErrorToastShown(rejection)).toBe(true)
+
+      request.defaults.adapter = originalAdapter
+    })
+  })
+
+  // ================================================================
+  // #5485 强制改密（I4）：未改密的会话访问业务 API ⇒ 403 PASSWORD_CHANGE_REQUIRED
+  // —— 必须在**拦截层全局**处理：只在一个页面处理的话，别的页面照样一屏报错
+  // ================================================================
+  describe('response interceptor - 首登强制改密全局拦截（issue #5485 AU-006）', () => {
+    const originalLocation = window.location
+    let locationStub: { pathname: string; href: string }
+
+    beforeEach(() => {
+      // jsdom 里给 location.href 赋值不会真跳转（且会报 not implemented）⇒ 换成可断言的桩
+      locationStub = { pathname: '/dashboard', href: '' }
+      Object.defineProperty(window, 'location', { value: locationStub, writable: true, configurable: true })
+    })
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { value: originalLocation, writable: true, configurable: true })
+    })
+
+    /** 后端 PasswordChangeRequiredFilter 的真实响应体（HTTP 403） */
+    const passwordChangeRequiredError = () =>
+      createAxiosError(403, {
+        success: false,
+        error: {
+          code: 'PASSWORD_CHANGE_REQUIRED',
+          message: '首次登录需先修改密码，请调用 POST /api/auth/password/change',
+        },
+      })
+
+    it('403 PASSWORD_CHANGE_REQUIRED：全局引导到改密页（任意业务端点都拦得住）', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(passwordChangeRequiredError())
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.get('/api/admin/orders')).rejects.toBeDefined()
+
+      expect(locationStub.href).toBe('/change-password')
+      expect(toast.error).toHaveBeenCalledWith('首次登录请先修改密码')
+      // 不得退化成那句容易误导的通用文案（用户会以为是自己权限不够）
+      expect(toast.error).not.toHaveBeenCalledWith('没有权限执行此操作')
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('已在改密页时不再重复赋值 href（避免无谓的整页重载）', async () => {
+      locationStub.pathname = '/change-password'
+      const mockAdapter = vi.fn().mockRejectedValue(passwordChangeRequiredError())
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.get('/api/admin/orders')).rejects.toBeDefined()
+
+      expect(locationStub.href).toBe('')
+      // 提示仍要给（第一次的失败原因不能吞掉）
+      expect(toast.error).toHaveBeenCalledWith('首次登录请先修改密码')
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('其它 403（无该错误码）：仍是原有权限文案，不跳改密页', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(403, { success: false, error: { code: 'PERMISSION_DENIED', message: '无权限' } })
+      )
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.get('/api/admin/orders')).rejects.toBeDefined()
+
+      expect(toast.error).toHaveBeenCalledWith('没有权限执行此操作')
+      expect(locationStub.href).toBe('')
+
+      request.defaults.adapter = originalAdapter
+    })
+  })
+
+  // ================================================================
+  // #5485 认证入口端点自身的 401：是「凭据错」，不是「会话过期」
+  // ================================================================
+  describe('response interceptor - 认证入口端点的 401 不走刷新（issue #5485 AU-003/AU-004）', () => {
+    it('员工登录 401：不触发 refresh、不弹「登录已过期」（否则反枚举文案被吞成会话过期）', async () => {
+      const mockRefreshAccessToken = vi.fn()
+      mockGetState.mockReturnValue({
+        accessToken: 'stale-token',
+        clearAuth: vi.fn(),
+        refreshAccessToken: mockRefreshAccessToken,
+      })
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(
+          401,
+          { success: false, error: { code: 'UNAUTHORIZED', message: '账号或密码错误' } },
+          { url: '/api/auth/employee/login', headers: {} }
+        )
+      )
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request
+        .post('/api/auth/employee/login', { identifier: 'zhangsan@migao', password: 'wrong' })
+        .then(() => null, (e: unknown) => e as AxiosError)
+
+      expect(mockRefreshAccessToken).not.toHaveBeenCalled()
+      expect(toast.error).not.toHaveBeenCalledWith('登录已过期，请重新登录')
+      // 服务端原文原样留给页面展示（反枚举：企业编码不存在/用户不存在/密码错 → 同一条）
+      expect((rejection as AxiosError).response?.data).toMatchObject({
+        error: { message: '账号或密码错误' },
+      })
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('短信登录 401：同样不走刷新（非 admin 员工被拒的文案要能显示出来）', async () => {
+      const mockRefreshAccessToken = vi.fn()
+      mockGetState.mockReturnValue({
+        accessToken: 'stale-token',
+        clearAuth: vi.fn(),
+        refreshAccessToken: mockRefreshAccessToken,
+      })
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(
+          401,
+          { success: false, error: { code: 'UNAUTHORIZED', message: '验证码错误' } },
+          { url: '/api/auth/sms/login', headers: {} }
+        )
+      )
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.post('/api/auth/sms/login', { phone: '13800138000', code: '000000' })).rejects.toBeDefined()
+
+      expect(mockRefreshAccessToken).not.toHaveBeenCalled()
+      expect(toast.error).not.toHaveBeenCalledWith('登录已过期，请重新登录')
 
       request.defaults.adapter = originalAdapter
     })

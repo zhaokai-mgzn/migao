@@ -123,6 +123,13 @@ export interface InteractiveData {
     tool?: string
     params?: string
   }
+  /** 多选模式（interact multiSelect=true：批量建品/批量改商品勾选等，issue #3947）——
+   * 点击本地勾选累积，「完成选择（N）」一次性提交 prefix + 名称列表；
+   * 字段名/默认值与 admin-web `InteractiveMessage.tsx`、`interact.py` 逐字一致（单一协议源） */
+  multiSelect?: boolean
+  multiSelectSubmitPrefix?: string  // 提交文本前缀，默认「已选加工项：」
+  multiSelectSubmitLabel?: string   // 完成按钮文字，默认「完成选择」
+  multiSelectSkipLabel?: string     // 跳过按钮文字 + 跳过提交文本，默认「不需要加工项」
 }
 
 export interface ToolCallData {

@@ -25,8 +25,8 @@ import type {
   KnowledgeCardListParams,
   KnowledgeCandidate,
   KnowledgeTemplateInfo,
-  LoginParams,
   LoginResponse,
+  EmployeeChangePasswordParams,
   RefreshTokenResponse,
   UserInfoResponse,
   Order,
@@ -113,7 +113,6 @@ import type {
   CustomerTagFormData,
   AiConfig,
   SystemSettings,
-  ChangePasswordParams,
   LoginLog,
   UploadedFile,
   Employee,
@@ -148,9 +147,29 @@ import { FrontendToBackendStatus } from '@/types'
 
 // 认证 API
 export const authApi = {
-  login: (data: LoginParams) => 
-    request.post<ApiResponse<LoginResponse>>('/api/auth/admin/login', data),
-      
+  // 🔴 `POST /api/auth/admin/login`（密码登录）自 #375 起**后端已禁用**，前端入口已下线：
+  // 管理员走 smsLogin，员工走 employeeLogin（issue #5485）。**不要**恢复这个调用。
+
+  /**
+   * 员工登录（issue #5485）：`identifier` = `用户名@企业编码`。
+   *
+   * ⚠️ **原样发标识** —— 企业编码即租户标识，服务端按**最后一个 `@`** 切分并解析租户。
+   * 前端**不解析租户、不猜 tenantId、不回落任何默认租户**（历史上 store 里
+   * `Number(tenantCode)` + 非法回落租户 1 的写法会把 A 企业员工送进 B 企业）。
+   */
+  employeeLogin: (identifier: string, password: string) =>
+    request.post<ApiResponse<LoginResponse>>('/api/auth/employee/login', { identifier, password }),
+
+  /**
+   * 自助改密（issue #5485）：首登强制改密的**唯一出口**。
+   *
+   * 成功响应**直接带新凭据**（结构与登录一致）⇒ 调用方用响应里的 accessToken 继续，
+   * **不要**再手动调一次 refreshAccessToken（旧 token 仍带 claim，改完密码反而全站 403）。
+   * 弱密码 / 旧密码错 → 422，`error.message` 可直接展示。
+   */
+  changePassword: (data: EmployeeChangePasswordParams) =>
+    request.post<ApiResponse<LoginResponse>>('/api/auth/password/change', data),
+
   // 审计 07 P1-5：refresh token 由后端 HttpOnly cookie 承载，body 不再传参
   refreshToken: () =>
     request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', {}),
@@ -164,6 +183,10 @@ export const authApi = {
   sendSmsCode: (phone: string) =>
     request.post<ApiResponse>('/api/auth/sms/send', { phone }),
 
+  /**
+   * 短信验证码登录（**仅**平台超管 + 企业管理员；#5485 I2）。
+   * 非 admin 员工走它会被拒并给出引导文案（改用账号密码）—— 文案取自服务端，前端不改写。
+   */
   smsLogin: (phone: string, code: string) =>
     request.post<ApiResponse<LoginResponse>>('/api/auth/sms/login', { phone, code }),
 
@@ -1410,9 +1433,6 @@ export const settingsApi = {
 
   updateAiConfig: (data: Partial<AiConfig>) =>
     request.put<ApiResponse<AiConfig>>('/api/admin/tenant/ai-config', data),
-
-  changePassword: (data: ChangePasswordParams) =>
-    request.put<ApiResponse<void>>('/api/admin/settings/password', data),
 
   getLoginLogs: (params?: PageParams) =>
     request.get<ApiResponse<PageResponse<LoginLog>>>('/api/admin/settings/login-logs', { params }),

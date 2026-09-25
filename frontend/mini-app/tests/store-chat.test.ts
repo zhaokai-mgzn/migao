@@ -424,4 +424,36 @@ describe('历史回放透传 + 交互组件本地锁（CH-030/CH-031, issue #303
     const aiMsg = store.getState().messages.find((m: any) => m.id === 'm1')
     expect(aiMsg?.interactiveAnswered).toBe(true)
   })
+
+  // UI-043 / CH-030（issue #3947）：多选协议字段必须在 store 白名单里原样透传 ——
+  // 漏一个字段，卡就永远拿到 undefined ⇒ 静默退回单选（点一个即锁卡），而组件用例仍绿。
+  describe('onInteractive 多选协议透传', () => {
+    it('multiSelect 四个字段原样落到消息 interactive（不得被白名单吞掉）', async () => {
+      const store = getChatStore()
+      const { createChatSSEClient: mockCreate } = require('../src/services/chatService')
+      const sseSend = jest.fn()
+      mockCreate.mockReturnValue({ sendMessage: sseSend })
+      store.setState({ currentSessionId: 's1', isStreaming: false, handedOff: false })
+
+      await store.getState().sendMessage('下单')
+      const callbacks = sseSend.mock.calls[0][3]
+      callbacks.onInteractive({
+        type: 'choice',
+        component: 'choice',
+        title: '这款商品支持以下加工项，需要哪些呢？（可多选）',
+        options: [{ label: '压褶定型（米）', value: 'proc_item_craft_press' }],
+        multiSelect: true,
+        multiSelectSubmitPrefix: '已选加工项：',
+        multiSelectSubmitLabel: '完成选择',
+        multiSelectSkipLabel: '不需要加工项',
+      })
+
+      const aiMsg = store.getState().messages.find((m: any) => m.role === 'assistant')
+      expect(aiMsg?.interactive?.multiSelect).toBe(true)
+      expect(aiMsg?.interactive?.multiSelectSubmitPrefix).toBe('已选加工项：')
+      expect(aiMsg?.interactive?.multiSelectSubmitLabel).toBe('完成选择')
+      expect(aiMsg?.interactive?.multiSelectSkipLabel).toBe('不需要加工项')
+      expect(aiMsg?.interactive?.options).toHaveLength(1)
+    })
+  })
 })

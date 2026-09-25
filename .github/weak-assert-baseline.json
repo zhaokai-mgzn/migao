@@ -3,10 +3,12 @@
   "_scope": "`legacy_weak_counts`（路径 → 处数）与 `weak_total` 是**锚定 SHA 上的快照**：某个测试文件的弱断言处数**只许 ≤ 锚点**（净缩放行）；**不在明细里却有处数 = 新增入账 ⇒ 红**（新文件一律 fail-closed，没有豁免口子）。扫描集由 `.github/growth_gate.py::_is_test_file` 单一事实源决定（含 .ts/.tsx —— TS 侧形态已入表，见该文件的 `_TS_WEAK_PATTERNS` 与 issue #5080 盲区①）。账本缺失/损坏/明细与 `weak_total`/`history` 不一致 ⇒ 门禁 rc 2（fail-closed）。「谁入表、谁不入表」的实测取舍钉在 `_TS_WEAK_PATTERNS` 的注释与守卫测试里（`toBeTruthy` 有意不入表）。",
   "_when_to_update": "① **清偿**（把某文件的弱断言改成触业务数据的断言）⇒ 跑 `python3 .github/growth_gate.py --write-weak-baseline` 重锚定（**只接受净缩**：任一处数增长/新入账即被拒 ⇒ 不能用改账本洗白新增弱断言），它会写回明细并追加 `history` 一行；② 手改明细也可（判据只看「不增长」），但**必须**同步 `weak_total` 与 `history` 末行（否则按账本损坏 rc 2 判红）；③ 新增测试文件**不得**入账（先把弱断言改掉）；④ 确需放宽入表集合（增删判据形态）⇒ 那是改**门禁口径**，必须同时改 `_TS_WEAK_PATTERNS` / `_WEAK_PATTERNS` 与守卫测试，**不是**改本文件。",
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
-  "anchor_sha": "6ae2ac92c0845952826aef57cd4e65abf4f3780c",
-  "anchored_at": "2026-09-25",
-  "weak_total": 246,
+  "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
+  "anchored_at": "2026-09-21",
+  "weak_total": 245,
   "legacy_weak_counts": {
+    "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
+    "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
     "backend/ai-agent-service/tests/test_acceptance_case_checks.py": 1,
     "backend/ai-agent-service/tests/test_admin_api_failure_mapping.py": 1,
     "backend/ai-agent-service/tests/test_agent_eval_runner.py": 1,
@@ -29,6 +31,7 @@
     "backend/ai-agent-service/tests/test_order_create_spec_key_family.py": 3,
     "backend/ai-agent-service/tests/test_performance_isolation.py": 1,
     "backend/ai-agent-service/tests/test_post_deploy_verify.py": 2,
+    "backend/ai-agent-service/tests/test_production/test_piecework.py": 1,
     "backend/ai-agent-service/tests/test_rule_matcher.py": 23,
     "backend/ai-agent-service/tests/test_session_memory.py": 4,
     "backend/ai-agent-service/tests/test_skill_routing_integrity.py": 6,
@@ -39,9 +42,6 @@
     "backend/ai-agent-service/tests/test_tools_logistics_track.py": 3,
     "backend/ai-agent-service/tests/test_tools_registry.py": 2,
     "backend/ai-agent-service/tests/test_vision_integration.py": 1,
-    "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
-    "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
-    "backend/ai-agent-service/tests/test_production/test_piecework.py": 1,
     "backend/ai-agent-service/tests/unit/test_admin_api_cache.py": 4,
     "backend/ai-agent-service/tests/unit/test_circuit_breaker.py": 4,
     "frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx": 2,
@@ -61,7 +61,6 @@
     "frontend/admin-web/tests/unit/lib/sku-utils.test.ts": 3,
     "frontend/admin-web/tests/unit/lib/token-refresh.test.ts": 1,
     "frontend/admin-web/tests/unit/pages/app-routes.test.tsx": 2,
-    "frontend/admin-web/tests/unit/pages/employees.test.tsx": 1,
     "frontend/admin-web/tests/unit/pages/processing-fees.test.tsx": 2,
     "frontend/admin-web/tests/unit/pages/processing-merged.test.tsx": 1,
     "frontend/admin-web/tests/unit/pages/production-routings.test.tsx": 1,
@@ -98,9 +97,15 @@
     },
     {
       "anchored_at": "2026-09-25",
-      "anchor_sha": "6ae2ac92c0845952826aef57cd4e65abf4f3780c",
-      "weak_total": 246,
-      "note": "重锚定（只许缩）：248 → 246"
+      "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
+      "weak_total": 247,
+      "note": "精确销账（只许缩）：248 → 247 处（issue #5485）。`frontend/admin-web/tests/unit/pages/employees.test.tsx` 的 `expect(callArgs).toBeDefined()`（存在性形态）改成 `toMatchObject({...})` 触业务数据断言 ⇒ 该文件 1 → 0，移出明细。**只动这一格 + weak_total + 本行**，其余文件锚点值原样保留（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
+    },
+    {
+      "anchored_at": "2026-09-25",
+      "anchor_sha": "7e56e38b490762f0367ea612982640fd89cf2c70",
+      "weak_total": 245,
+      "note": "精确销账（只许缩）：247 → 245 处（issue #3731）。改判 `backend/ai-agent-service/tests/test_intent_router.py` 两条判据时去掉 2 处 `assert result is not None`（弱断言形态）⇒ 该文件 28 → 26。**只动这一格 + weak_total + 本行**（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
     }
   ]
 }

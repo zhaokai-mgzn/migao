@@ -860,7 +860,8 @@ class TestEvalTierDispatch:
     """C 端评测档位可切换（issue #3270 第 2 步：取缺陷分布）。
 
     只跑 smoke（5 条）等于体检只量身高。要拿「C 端能力缺陷分布」必须能跑
-    normal 档（C 端全量 ~40 条）。档位由 workflow_dispatch 输入控制，
+    normal 档（C 端**该档全部**用例——**条数不在此写死**，单一事实源 = 用例库 /
+    `tests/agent_eval/behavior_mapping.py`）。档位由 workflow_dispatch 输入控制，
     默认 smoke 保持门禁快速。
     """
 

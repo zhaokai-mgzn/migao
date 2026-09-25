@@ -11,6 +11,8 @@ const protectedRoutePrefixes = [
   '/dashboard', '/products', '/processing', '/knowledge', '/settings',
   '/orders', '/chat', '/customers', '/employees', '/roles',
   '/agent-workspace', '/after-sales', '/notifications', '/categories',
+  // 首登强制改密页（issue #5485）：未登录访问它同样该去登录页（页面本身依赖已认证会话）
+  '/change-password',
 ]
 
 // 审计 07 P1-F1：JWT 为 HttpOnly cookie，JS 无法读取——
@@ -29,6 +31,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isChecking, setIsChecking] = useState(true)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const _hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword)
 
   useEffect(() => {
     if (!_hasHydrated) return
@@ -43,6 +46,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return
     }
 
+    // #5485：首登未改密的会话，除改密/登出/读自己信息外服务端一律 403
+    // （PASSWORD_CHANGE_REQUIRED，axios 层已全局兜底）。这里在路由层先兜一次，
+    // 免得用户看到的是一屏业务页报错而不是「你先改密码」。
+    if (isLoggedIn && mustChangePassword && pathname !== '/change-password') {
+      router.replace('/change-password')
+      return
+    }
+
     // 未登录用户访问受保护路由 -> 跳转登录页
     if (!isLoggedIn && isProtectedRoute) {
       router.replace(`/login?callbackUrl=${encodeURIComponent(pathname)}`)
@@ -50,7 +61,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     setIsChecking(false)
-  }, [pathname, router, isAuthenticated, _hasHydrated])
+  }, [pathname, router, isAuthenticated, _hasHydrated, mustChangePassword])
 
   // 检查中不渲染内容，避免闪烁
   if (isChecking) {

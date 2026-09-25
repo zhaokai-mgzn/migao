@@ -191,6 +191,16 @@
       "criterion": "看门人断言：main 上最近一次**已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失或绑定旧 run ⇒ 红。判定只用 run 归属与结论，**不用挂钟时长**。（触发面是 `push: main` + `workflow_dispatch` ⇒ 读数新鲜度跟随 main 的活动。）",
       "consumer": "值班（.github/workflows/mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）",
       "reading": "instrumented"
+    },
+    {
+      "id": "h5-freshness-guard",
+      "name": "C 端 H5 产物新鲜度（线上 Last-Modified vs 源码最近改动）",
+      "workflow": ".github/workflows/h5-freshness-guard.yml",
+      "job": "h5-freshness",
+      "expected_observable": "每轮一条 `::notice::MECHANISM-LIVENESS mech=h5-freshness-guard run=<run_id> rc=<0|3> seen=<1> acted=<0|1> why=<一行>`；读数由 job **最后一步**（`if: always()`）调共享发射器产出；计数由机制体 `python3 scripts/h5_freshness_guard.py` 打印的 `MIGAO-H5FRESH-SUMMARY seen=… acted=… why=…` 经 `mechanism_liveness_declare` 交出（**机制体自己不打读数行**）。",
+      "criterion": "看门人断言：main 上最近一次**已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失或绑定旧 run ⇒ 红。判定只用 run 归属与结论，不用挂钟时长。",
+      "consumer": "值班（.github/workflows/mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）",
+      "reading": "instrumented"
     }
   ],
   "exempt": [],
