@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import subprocess
 import sys
@@ -42,6 +43,8 @@ PREFIX_TO_WORKFLOW = {
     "[Nightly]": "nightly-verification.yml",
     "[drift]": "drift-audit.yml",
     "[Xiaobu]": "xiaobu-acceptance.yml",
+    #: ⚠️ 这一条是**窗口驱动**的腿（见 READING_REQUIRED_WORKFLOWS）：它的绿可能是"零动作/短路径"的绿
+    "[post-merge]": "post-merge-verify.yml",
 }
 #: 人工"钉住"的标签：带了就永不自动关
 PIN_LABELS = ("block/need-human", "ai-draft", "hold/auto-fail")
@@ -76,6 +79,42 @@ def _parse(ts: str | None) -> datetime | None:
         return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+#: **只在"窗口驱动"的腿上**要求的更强判据（见 `run_has_readings`）
+READING_REQUIRED_WORKFLOWS = frozenset({"post-merge-verify.yml"})
+
+#: 允许被**自动关单**的作者（CI / 机器人）。**人写的单永不自动关**，哪怕标题前缀对得上。
+BOT_AUTHORS = frozenset({"app/github-actions", "github-actions[bot]"})
+
+
+def is_bot_authored(issue: dict) -> bool:
+    """作者是不是 CI/机器人（2026-09-25 补：**人写的单不得被自动收**）。
+
+    为什么：本脚本只按**标题前缀**认单（`[Post-Deploy] …`）—— 人完全可能写一个同前缀的标题，
+    那种单里往往有**人补充的上下文**，被自动关掉就是**丢证据**。⇒ 加一道"作者必须是机器人"。
+    """
+    login = str(((issue.get("author") or {}) if isinstance(issue.get("author"), dict) else {}).get("login") or "")
+    return login in BOT_AUTHORS or login.endswith("[bot]")
+
+
+def run_has_readings(run_id: int) -> bool | None:
+    """该 run 是否**真的判过**（日志里有读数行且「跑判据」> 0）。**取不到 ⇒ None（无法判定）**。
+
+    为什么必须查（2026-09-25 实测两例"假绿"，都会**丢信号**）：
+      · **零动作/短路径的绿**：`post-merge-verify` 在「窗口内无变更」时会 2m56s 就 success
+        （**一条判据都没跑**）—— 真正的判定 run 是 11 分钟那种；
+      · **判据自 skip 的绿**：`test_drift_audit_contract.py` 在 CI 的**浅检出**里自己 skip
+        （`origin/main` 不可解析）⇒ 腿"绿"但那条判据**从没跑过**。
+    ⇒ 只看 `conclusion == success` 就关单 = 把"**没判**"当成"**判过了**"。
+    """
+    proc = _run([gh_bin(), "run", "view", str(run_id), "--log"], timeout=180)
+    if proc.returncode != 0:
+        return None
+    hits = re.findall(r"跑判据\s*(\d+)", proc.stdout or "")
+    if not hits:
+        return None                     # 没有读数行 ⇒ **不得当"判过"**（fail-closed）
+    return any(int(x) > 0 for x in hits)
 
 
 def workflow_for(title: str) -> str | None:
@@ -154,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     issues = gh_json(["issue", "list", "--state", "open", "--limit", "500",
-                      "--json", "number,title,labels,createdAt"])
+                      "--json", "number,title,labels,createdAt,author"])
     if issues is None:
         print("⏭️  gh 取不到 open issue ⇒ **一条都不关**（exit 3，无法判定 ≠ 空集）", file=sys.stderr)
         summarise(EXIT_UNKNOWN, 0, 0, "gh 不可用/未登录 ⇒ 无法判定")
@@ -182,9 +221,13 @@ def main(argv: list[str] | None = None) -> int:
         if pin:
             print(f"  🔒 #{n} 带 `{pin}` ⇒ 钉住，不自动关")
             continue
+        if not is_bot_authored(issue):      # 人写的单永不自动收（2026-09-25）
+            print(f"  🙅 #{n} 作者不是 CI/机器人（{(issue.get('author') or {}).get('login')}）"
+                  f"⇒ 单里可能有人补充的上下文，**不自动关**")
+            continue
         if wf not in runs_cache:
             runs_cache[wf] = gh_json(["run", "list", "--workflow", wf, "--branch", "main",
-                                      "--limit", "10", "--json", "status,conclusion,createdAt"])
+                                      "--limit", "10", "--json", "status,conclusion,createdAt,databaseId"])
         runs = runs_cache[wf]
         if runs is None:
             unknown += 1
@@ -195,6 +238,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {'✅' if ok else '⏸️ '} #{n}（{wf}）：{why}")
         if not ok:
             continue
+        if wf in READING_REQUIRED_WORKFLOWS:
+            # ⚠️ 「绿」还必须**真的判过**（零动作 / 自 skip 的绿都不得算，见 `run_has_readings`）
+            newest_run = next((r for r in runs if isinstance(r, dict)
+                               and r.get("conclusion") == "success" and r.get("databaseId")), None)
+            verdict = None if newest_run is None else run_has_readings(int(newest_run["databaseId"]))
+            if verdict is not True:
+                unknown += 1
+                why_no = "取不到 run 记录" if newest_run is None else "日志无读数 / 跑判据 0"
+                print(f"  ⚠️  #{n}（{wf}）：run 绿但**取不到「判过」的证据**（{why_no}）"
+                      f"⇒ 不关（无法判定 ≠ 判过了）")
+                continue
         closable.append((n, wf, why))
         if not args.apply:
             continue
