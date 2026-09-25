@@ -11,6 +11,7 @@ import com.migao.admin.mapper.WorkerSessionMapper;
 import com.migao.admin.security.JwtAuthenticationFilter;
 import com.migao.admin.security.PasswordChangeRequiredFilter;
 import com.migao.admin.security.SecurityConfig;
+import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.ServiceTokenFilter;
 import com.migao.admin.security.WorkerSessionFilter;
 import com.migao.admin.worker.WorkerSessionService;
@@ -19,10 +20,20 @@ import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.context.annotation.Import;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 
 import javax.sql.DataSource;
+import java.util.Map;
 import java.sql.Driver;
 
 /**
@@ -52,6 +63,7 @@ import java.sql.Driver;
         GlobalExceptionHandler.class, TenantDomainResolver.class,
         WorkerSessionFilter.class, WorkerSessionService.class,
         JwtAuthenticationFilter.class, ServiceTokenFilter.class, PasswordChangeRequiredFilter.class,
+        LoginFailureGuard.class,
         WorkerAuthController.class, WorkerProductionController.class})
 public class WorkerTenantGuardApp {
 
@@ -84,6 +96,39 @@ public class WorkerTenantGuardApp {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("无法加载 JDBC 驱动 " + className, e);
         }
+    }
+
+    /**
+     * 登录失败计数（issue #5531）依赖的 Redis：本夹具**不断言**这一面（工人会话⇒租户链不经过它），
+     * 只为满足 {@link WorkerSessionService} 的构造依赖 ⇒ 用 test double，并显式登记这个边界。
+     * 失败计数的**行为**由 {@code WorkerLoginLockoutTest} / {@code EmployeeLoginLockoutTest} 钉住。
+     */
+    @Bean
+    @SuppressWarnings("unchecked")
+    StringRedisTemplate stringRedisTemplate() {
+        // ⚠️ 必须是**有行为的**替身：裸 mock 的 opsForValue() 返回 null ⇒ LoginFailureGuard 的
+        //    fail-closed 会把每次登录判成 503（实测：8 条里 5 条挂在 "Status expected:<200> but was:<503>"）。
+        //    这也顺带证明 fail-closed 真的生效（守卫不可执行 ⇒ 不放行）。
+        Map<String, String> store = new java.util.concurrent.ConcurrentHashMap<>();
+        StringRedisTemplate t = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(t.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenAnswer(i -> store.get(i.getArgument(0, String.class)));
+        when(ops.increment(anyString())).thenAnswer(i -> {
+            String k = i.getArgument(0, String.class);
+            long v = Long.parseLong(store.getOrDefault(k, "0")) + 1;
+            store.put(k, String.valueOf(v));
+            return v;
+        });
+        when(t.expire(anyString(), anyLong(), any(java.util.concurrent.TimeUnit.class))).thenReturn(true);
+        when(t.delete(anyString())).thenAnswer(i -> store.remove(i.getArgument(0, String.class)) != null);
+        return t;
+    }
+
+    /** {@link LoginFailureGuard} 只用到 MeterRegistry 的 counter(...) 读数面 ⇒ 真实现即可。 */
+    @Bean
+    MeterRegistry meterRegistry() {
+        return new SimpleMeterRegistry();
     }
 
     /** 真 Mapper（**不是** mock）：本守卫的全部意义就是行使租户拦截器那条真实路径。 */
