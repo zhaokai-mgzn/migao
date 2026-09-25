@@ -1,0 +1,321 @@
+# cases/auth.yml — 登录 / 认证域用例（issue #5485 登录重构：员工「用户名@企业编码 + 密码」）
+# 来源：issue #5485 的 10 条业务真值（AU-001~AU-010）。均为 admin-api 后端单测契约
+# （跳过 agent-eval 的决定与理由见每条 skip_reason；机器判红通道 = traces.tests）。
+# 三个前端包（admin-web / bmini-app）消费同一批真值，但它们的页面行为用例由各自包补。
+
+schema: "case-contract/1.0"
+domain: auth
+
+cases:
+  - id: AU-001
+    legacy_id: ""
+    title: "员工登录 用户名@企业编码 + 密码 → 成功签发 JWT"
+    domains:
+      - auth
+    tier: smoke
+    tags:
+      - auth
+      - login
+      - employee
+    truths_ref:
+      - auth.employee-login
+      - auth.tenant-local-identity
+    user_inputs:
+      - "员工在登录页填 用户名@企业编码（如 zhangsan@acme）+ 密码 → POST /api/auth/employee/login → 成功，进入该企业"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "端点形状：body = {identifier, password}；成功 200 + success=true + data.accessToken 非空 + data.user.identityType='employee' + data.user.tenantId = 企业编码解析出的租户（refresh token 只经 HttpOnly cookie，不进响应体）。红证：backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java 断言响应字段与 cookie 口径，删掉 mustChangePassword 字段即红。"
+      - "租户上下文：登录成功后 TenantContext = 解析出的 tenant_id（后续 roles/permissions/租户名查询都按它走）。红证：EmployeeLoginServiceTest 断言 TenantContext.getTenantId()==1L 且 userMapper.selectActiveByTenantAndUsername(1L,'zhangsan') 被以该租户调用。"
+      - "标识切分按**最后一个** @：`a@b@acme` 的 username 段是 `a@b`（会被用户名格式校验拒绝，但切分本身不歧义）；两侧任一为空 ⇒ 401（不是 500、不是放行）。"
+      - "存量带下划线的企业编码（tenant_7478359537 形态）**必须能登录** —— 编码字符集含 `_`；改成只允许连字符 ⇒ 该用例必红。证据：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.loginByEmployee / AuthController 端点），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：登录重构为「管理员手机号+短信 / 员工用户名@企业编码+密码」"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-002
+    legacy_id: ""
+    title: "跨租户隔离：同名员工分属 A/B，凭据只解析到自己企业"
+    domains:
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - auth
+      - tenant_isolation
+      - defense
+    truths_ref:
+      - auth.tenant-local-identity
+      - auth.employee-login
+    user_inputs:
+      - "企业 A 与企业 B 都有员工 zhangsan：用 zhangsan@A的企业编码 登录 → 只进 A；用 zhangsan@B的企业编码 登录 → 只进 B"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "查询**本身**带租户条件（不变式 I1）：`UserMapper.selectActiveByTenantAndUsername` 的 SQL 逐字含 `tenant_id = #{tenantId}` 与 `username = #{username}`。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java 反射读 @Select 的 SQL 文本，删掉租户谓词即红。"
+      - "绝不跨租户兜底：解析到 A 时**一次都不**用 B 的 tenantId 查用户（`verify(never())`）。红证：同上，把 tenant_id 换成「先按 username 全局查、再取第一条」即红。"
+      - "类级元守卫（让同类进不来）：任意 `@InterceptorIgnore(tenantLine=\"true\")` 且查 `users`、SQL 里却没有 `tenant_id` 谓词的方法**必须登记豁免台账**，否则判红；台账条数只许缩短。判据：tests/unit_ci_workflows/test_tenant_scoped_user_queries.py（含注入式自证：临时加一个无租户谓词的同形方法 ⇒ 必红）。"
+    skip_reason: "[backend-contract] 纯后端单测契约 + 静态类级守卫，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：跨租户同名不得串号（不变式 I1/I3）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
+        - "tests/unit_ci_workflows/test_tenant_scoped_user_queries.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-003
+    legacy_id: ""
+    title: "反枚举：企业编码不存在 / 用户不存在 / 密码错 → 统一 401 文案"
+    domains:
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - auth
+      - anti_enumeration
+      - defense
+    truths_ref:
+      - auth.employee-login
+    user_inputs:
+      - "分别用「不存在的企业编码」「该企业下不存在的用户名」「错误密码」「已禁用账号」「格式非法的标识」尝试员工登录"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "五种失败走**同一出口**：HTTP 401 + error.code=AUTH_FAILED + message 逐字相同（`账号或密码错误`），不泄露是哪一项错。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java 把五种病因聚合成一个断言（`containsOnly`），任一分支换成别的文案/状态码即红；端点层同判据见 backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java。"
+      - "失败不许产生副作用：不下发 access/refresh cookie、不建用户、不改任何行。"
+      - "文案的**唯一来源**是 LoginIdentifiers.AUTH_FAILED_MESSAGE（三处各写一份字符串 ⇒ 口径必然漂移，属禁止形态）。"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.loginByEmployee 的反枚举出口），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：员工登录失败不区分「哪个字段错」"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-004
+    legacy_id: ""
+    title: "短信登录角色门禁：非 admin 员工走短信 → 拒绝"
+    domains:
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - auth
+      - sms
+      - role_gate
+    truths_ref:
+      - auth.sms-admin-only
+    user_inputs:
+      - "普通员工（role=operator / employee）与 C 端顾客（role=customer）用「手机号 + 短信验证码」登录 → 被拒绝，并提示改用账号密码登录"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "门禁在**签发之前**：非管理员命中 ⇒ 401 + 文案含「非管理员」「员工登录入口」；一个 token 都不许签发（verify(never()) generateAccessToken/generateRefreshToken）。红证：backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java，把门禁删掉或放宽成「有账号即可」⇒ 三条拒绝用例当场变绿/不抛，测试即红。"
+      - "评测种子同形数据同样被拒：role=employee（debug_employee_wangwu 形态）与 role=customer（debug_customer_1 形态，手机号 13800138000）都不得通过短信登录。"
+      - "多租户歧义口径**不回退**（审计 07 P1-2）：同手机号命中多个租户且未指定租户 ⇒ 拒绝，禁止静默 LIMIT 1 落错租户。"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.loginBySms 的角色门禁），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：短信登录新增角色门禁（不变式 I2）—— 改前普通员工手机号对得上即可短信登录"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-005
+    legacy_id: ""
+    title: "管理员短信登录（企业管理员 + 平台超管）仍可用"
+    domains:
+      - auth
+    tier: smoke
+    tags:
+      - auth
+      - sms
+      - admin
+    truths_ref:
+      - auth.sms-admin-only
+      - auth-sms.login-order
+    user_inputs:
+      - "企业管理员（users.role=admin）与平台超管（platform_admins）用「手机号 + 短信验证码」登录 → 成功"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "平台超管路径**逻辑一字不改**：仍先查 platform_admins，tenantId=-1、role=super_admin，且**不经过**角色门禁（没有 users 行）。红证：backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java 断言 super_admin + tenantId=-1 + `verify(userService, never()).getUserRoles(...)`；把门禁挪到平台路径之前即红。"
+      - "企业管理员照旧：role=admin 命中 ⇒ 签发（identityType='sms'），并携带 mustChangePassword 字段（默认 false）。"
+      - "真值订正留档：模板 auth-sms.login-order 原文「不限 admin 角色」已被本单推翻（本次改判逐字写在模板里）。"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.loginBySms 的管理员路径），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：明确「管理员两条路径继续可用」，防门禁误伤"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-006
+    legacy_id: ""
+    title: "首登强制改密：未改密访问业务 API → 403；改密后放行"
+    domains:
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - auth
+      - must_change_password
+      - defense
+    truths_ref:
+      - auth.must-change-password
+    user_inputs:
+      - "管理员给员工设了初始密码 → 员工用初始密码首登 → 除改密/登出/读自己信息外一律 403（PASSWORD_CHANGE_REQUIRED）→ 改密成功后正常使用"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "签发侧按**数据库当前值**算 claim，且**登录与刷新两条路径都算**：未改密时刷新一次拿到的新 access token **仍带** pwd_change_required（只在登录时算 ⇒ 本判据必红）。红证：backend/admin-api/src/test/java/com/migao/admin/service/ForcePasswordChangeServiceTest.java + backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java（真实 RSA 签发 + 真实过滤链串联）。"
+      - "拦截侧**默认拒绝**：带该 claim 的会话访问 /api/admin/** 一律 403 + error.code=PASSWORD_CHANGE_REQUIRED，且请求**到不了业务链**；白名单只有 POST /api/auth/password/change、POST /api/auth/logout、GET /api/auth/me、POST /api/auth/refresh。"
+      - "改密即换发：POST /api/auth/password/change（需认证、校验旧密码、策略 ≥8 位且含字母与数字否则 422）成功后清 must_change_password，并**直接**在响应里给一份不带标记的新 access token ⇒ 用「改密响应里的那个 token」访问同一业务 API **放行**（200）。红证：PasswordChangeEnforcementTest 第 ④⑤ 步；若改回「只清标记不发新 token」⇒ 该步必然拿不到可放行的 token 而红。"
+      - "旧 token 仍被拦（拦截侧只看 claim、不看库）：客户端必须用改密响应里的新 token —— 这一性质被显式钉住（第 ⑥ 步），以免「改密后旧 token 自动放行」被当成实现细节悄悄改变。"
+      - "平台超管调本端点 ⇒ 明确业务错误（不是 NPE/404）：platform_admins 没有 users 行。"
+    skip_reason: "[backend-contract] 纯后端单测契约（签发侧 + 过滤链全链路），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：首登强制改密（不变式 I4）—— 含最容易漏的「刷新后仍 403」与「改密即换发」两条"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ForcePasswordChangeServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-007
+    legacy_id: ""
+    title: "管理员设 用户名+初始密码 → 员工可登录；租户内重名 → 拒绝"
+    domains:
+      - auth
+      - hr
+    tier: normal
+    tags:
+      - auth
+      - employee_manage
+      - username
+    truths_ref:
+      - auth.username-uniqueness
+      - auth.employee-login
+    user_inputs:
+      - "管理员在员工管理里给员工设「用户名 + 初始密码」→ 员工可用该凭据登录；同一企业内用户名重复 → 明确拒绝并提示换一个"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "写面规整与校验：POST /api/admin/users / PUT /api/admin/users/{id} 的 username 统一转小写、按 ^[a-z0-9][a-z0-9._-]{2,31}$ 校验（违规 422 + 明确文案，不写库）。红证：backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java。"
+      - "租户内重复 ⇒ 422（不是数据库异常裸抛 500）且提示「请换一个」；并发下由唯一索引兜底（DuplicateKeyException 转 422）。红证：同上两条用例（应用层查重命中 / insert 抛 DuplicateKeyException）。"
+      - "创建带初始密码、PUT 带 password、PUT /{id}/reset-password ⇒ must_change_password=true（**仅当确实设了密码**：没密码的账号被标强制改密会永久锁死 —— 改密要校验旧密码而旧密码是 null）。"
+      - "响应字段别漏：员工详情/列表里新列以 `employeeUsername` 下发（`username` 这个键历史上等于手机号，**不动它**以免打碎存量消费者），并附 `mustChangePassword`。"
+    skip_reason: "[backend-contract] 纯后端单测契约（UserService 的员工用户名写面），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：员工账号的「用户名 + 初始密码」由管理员设置"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-008
+    legacy_id: ""
+    title: "不同租户可用相同用户名"
+    domains:
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - auth
+      - tenant_isolation
+      - username
+    truths_ref:
+      - auth.tenant-local-identity
+      - auth.username-uniqueness
+    user_inputs:
+      - "A 企业已有员工 zhangsan；在 B 企业再建一个用户名 zhangsan 的员工 → 允许（两家互不影响）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "应用层查重**必须带 tenant_id**：把租户条件删掉就退化成「全球唯一」，本用例必红（判据捕获 wrapper 的 SQL 片段并断言含 username 与 tenant_id）。证据：backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java"
+      - "数据库侧唯一索引只到租户内：`uk_users_tenant_username ON users (tenant_id, username) WHERE username IS NOT NULL AND deleted = 0` —— 改成 `ON users (username)`（全球唯一）或丢掉部分索引谓词（存量 NULL 行互相冲突 / 软删行占位）⇒ 必红。判据：tests/unit_ci_workflows/test_tenant_scoped_user_queries.py 同时校验**迁移 V128 与建库脚本**两份真相。"
+      - "改自己的用户名时查重**排除自己**（否则管理员改不动任何已有用户名的员工）；不传 username（null）表示不修改，不误清空。"
+    skip_reason: "[backend-contract] 纯后端单测契约 + 静态数据面守卫，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：用户名唯一性只到租户内（不变式 I3）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java"
+        - "tests/unit_ci_workflows/test_tenant_scoped_user_queries.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-009
+    legacy_id: ""
+    title: "企业编码设置：格式 / 唯一性 / 保留字校验"
+    domains:
+      - auth
+      - settings
+    tier: normal
+    tags:
+      - auth
+      - tenant_code
+      - settings
+    truths_ref:
+      - auth.tenant-code-rule
+    user_inputs:
+      - "管理员在「企业基础信息」里设置企业编码：格式不合规 / 已被别的企业占用 / 是保留字 → 明确拒绝并说明原因"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "三类拒绝都是 422 + 明确文案：格式（含大写/空格/@/超长/单字符）、保留字（admin/api/www/app/platform/support/system/root/login/auth）、已被占用（大小写不敏感、排除自己）。红证：backend/admin-api/src/test/java/com/migao/admin/controller/TenantCodeSettingsTest.java，任一类放宽成「静默接受」即红。"
+      - "设置入口**复用**既有 PUT /api/admin/settings 的 code 字段（GET /api/admin/settings 本就下发 code；权限码沿用 system:manage）—— 不新造端点、不新造权限码；响应里带出新编码。"
+      - "存量兼容不变式 ①：编码**未变更即跳过校验**（管理员打开企业基础信息**原样保存**不能被自己的新校验拒掉，否则那页的 name/logo/通知开关一起废掉）；② 字符集**含下划线**（dev 库现存 tenant_7478359537 / tenant_5321056468 两个租户，只允许连字符会让它们的员工永远登不进来且管理员无自救路径）。"
+      - "新租户默认编码符合该格式且可读：`<企业名 slug>-<4 位随机>`（纯中文企业名退化为 `shop`），淘汰 `tenant_%06d%04d`（含下划线、不可读）；唯一性靠查重 + 重试，最终兜底是数据库 UNIQUE(tenants.code)（并发撞车 ⇒ 注册失败而非静默撞号）。"
+    skip_reason: "[backend-contract] 纯后端单测契约（SettingsController 的企业编码校验），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：企业编码由管理员设置（格式 / 全局唯一 / 保留字），并兼容存量下划线形态"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/TenantCodeSettingsTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: AU-010
+    legacy_id: ""
+    title: "存量员工（无用户名）无法用员工登录"
+    domains:
+      - auth
+    tier: normal
+    tags:
+      - auth
+      - legacy
+      - no_migration
+    truths_ref:
+      - auth.no-auto-migration
+      - auth.employee-login
+    user_inputs:
+      - "存量员工（users.username 仍为 NULL）尝试用员工登录 → 失败；管理员补设用户名后才能登录（不做自动迁移、不自动生成用户名）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "存量行（username IS NULL）落不进员工登录的查询：SQL 逐字含 `username = #{username}` ⇒ NULL 永不匹配；登录统一返回 401 同一文案。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java（查询不命中即拒绝），把查询改成 `(username = ? OR username IS NULL)` 兜底即红。"
+      - "迁移不迁移数据：V128 只加列 + 部分唯一索引，`username` 保持 NULL、`must_change_password` 默认 FALSE（存量行不受影响）。判据：迁移 V128 与建库脚本的 SQL 文本由 tests/unit_ci_workflows/test_tenant_scoped_user_queries.py 校验；指纹账本 tests/unit_ci_workflows/migration_fingerprints.json 冻结两份载体。"
+      - "定位仍只在自己企业内发生（没有「全平台按用户名找人」的兜底路径）：`selectActiveByTenantAndUsername(tenantId, ...)` 被以非空 tenantId 调用过。"
+    skip_reason: "[backend-contract] 纯后端单测契约（存量行的登录失败路径），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5485）：存量员工不自动迁移，补设前无法登录是预期行为"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

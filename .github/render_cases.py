@@ -53,6 +53,7 @@ SKILL_MAP = {
     "cross": "CROSS",
     "chat": "MULTI_TURN",
     # ── 以下域显式映射到 GENERAL：后端 / 单测契约域，不属任何 LLM skill ──
+    "auth": "GENERAL",   # issue #5485 登录/认证域：后端单测契约域，显式映射（不靠缺省兜底）
     "defense": "GENERAL",
     "hr": "GENERAL",
     "settings": "GENERAL",
@@ -85,7 +86,7 @@ DOMAIN_TITLES = {
     "bmini": "B 端小程序域", "finance": "财务对账域", "knowledge": "知识问答域",
     "misc": "杂项域", "onboarding": "商家入驻域", "ontology": "领域本体域",
     "registry": "工具注册器域", "token-refresh": "令牌刷新域", "ui": "前端 UI 域",
-    "utils": "跨切面工具域",
+    "utils": "跨切面工具域", "auth": "登录认证域",
 }
 
 
