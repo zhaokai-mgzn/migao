@@ -71,8 +71,11 @@ class MainlineOperationReferenceTest {
     /**
      * 布料主线（**2 道**）= `V88` ③ 的终态（`裁剪` 取代退场的 `配料`）。
      *
-     * <p>⚠️ 与 `ai-agent` 的 `routing.py::FABRIC_MAINLINE_STEPS`（仍是 `["配料","打包"]`）**不同源**
-     * —— 这是 issue #4701（P1）已登记的跨单冲突，**本类不碰 ai-agent**，按 Java 侧终态钉住。</p>
+     * <p>✅ 与 `ai-agent` 的 `routing.py::FABRIC_MAINLINE_STEPS` **已同源**（该侧自 issue #4952 起
+     * 同样是 `裁剪 → 打包`，且 `routing.py` 的注释把 `配料` 记为「零消费、留作历史真值源镜像」）。
+     * 跨端同源由判据 **E-3** 钉住：
+     * `tests/unit_ci_workflows/test_routing_model_p2_consumers.py::test_seed_service_fabric_mainline_matches_truth_source`
+     * （issue #4998 —— 原先只靠 javadoc 里的「不同源」提醒，**没有任何判据会红**）。</p>
      */
     private static final List<String> FABRIC_MAINLINE = List.of("裁剪", "打包");
 

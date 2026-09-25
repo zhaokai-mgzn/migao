@@ -159,6 +159,11 @@ backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.j
 **代价（实测数字）**：`36 格价目`（见 §2.4）+ 一个「布料列」。
 **派生缺陷**：`#4670` 用户实测「**建不出纯布料路线**」——「新建路线」的「适用帘种」取值域 = `positionColumns`（同源带出），矩阵无 `布料` 列 ⇒ 选项里没有它（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1029`）。
 
+> ⚠️ **状态标注（2026-09-25 / issue #4998）**：本节是 **2026-09-20 的快照**。此后 `配料` 已按
+> **issue #4952** 改判为「**零消费**、留作 V79/V88 与 `schema.sql` 的**历史真值源镜像**」，
+> `routing.py::FABRIC_MAINLINE_STEPS` 现为 `["裁剪","打包"]`（与 Java 侧同源，判据 **E-3**）。
+> 下文表格里的 `["配料","打包"]` 与行号属**快照时刻的事实**，**不代表现行口径**。
+
 ### 2.3 `配料` / `打包` 的现状（逐字）
 
 | 项 | `配料` | `打包` |

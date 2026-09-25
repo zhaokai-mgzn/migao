@@ -505,6 +505,33 @@ def test_seed_service_mainline_matches_truth_source():
     )
 
 
+def test_seed_service_fabric_mainline_matches_truth_source():
+    """判据 E-3：Java 开租播种的**布料主线**与 `routing.py::FABRIC_MAINLINE_STEPS` 逐字同值（issue #4998）。
+
+    为什么必须有它：E-1/E-2 只守了「价目矩阵」与「**窗帘**主线」；**布料主线**两侧曾长期不同源
+    （Java 已按 V88 / #4676 改判 `裁剪 → 打包`，而 ai-agent 侧仍写 `配料 → 打包`），
+    而**没有任何判据**会因此变红 —— 只能靠人读 javadoc 才发现（本单就是这么被发现的）。
+    ⚠️ 红证：把任一侧改回 `配料 → 打包`（或只改一侧）⇒ 本判据必须红。
+    """
+    src = _read(SEED_SERVICE)
+    start = src.index("List<String> FABRIC_MAINLINE_STEPS = List.of(")
+    end = src.index(");", start)
+    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+
+    py_src = _read(ROUTING_PY)
+    # ⚠️ rindex：该标识符在注释里也被提到（首次出现不是定义处）
+    pstart = py_src.rindex("FABRIC_MAINLINE_STEPS: List[str] = [")
+    # ⚠️ 必须找 `"]`（最后一个字符串的收尾）而不是第一个 `]` —— 后者会落在 `List[str]` 里，
+    #    于是解析出空列表、判据**恒红**（本判据第一版就这么错过一次：`1 failed` 是假红）。
+    pend = py_src.index('"]', pstart) + 1
+    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+
+    assert java_steps == py_steps, (
+        f"布料主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
+        f"新租户会拿到旧工序（缺 `裁剪` / 多 `配料` ⇒ 车间按旧流程干，计件口径跟着错）"
+    )
+
+
 def test_seed_service_craft_rules_match_truth_source():
     """判据 E-3：Java 开租播种的 10 条工艺变体规则与 `routing.py::ROUTE_RULES` 的 craft 部分逐条同值。"""
     import ast
