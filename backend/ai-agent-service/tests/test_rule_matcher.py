@@ -3,7 +3,7 @@
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
 """
-from app.router.rule_matcher import RuleMatcher, _extract_text
+from app.router.rule_matcher import REGEX_RULES, RuleMatcher, _extract_text
 from app.router.intent_config import IntentType
 
 
@@ -152,6 +152,29 @@ class TestMatch:
         # "创建订单" 含"订单"，不应被商品创建正则抢占
         result = self._match("创建订单")
         assert result.intent == IntentType.ORDER_CREATE
+
+    def test_bare_confirm_create_not_product_inquiry(self):
+        # issue #3731：商品创建规则的注释要求「+ 任意商品描述」，但尾组 `(?:商品|产品|…)?`
+        # 是**可选**、且 `.{0,10}` 允许零字符 ⇒ 裸「确认创建」（答卡文案，AS-003 的 R3 输入）
+        # 也命中 ⇒ 被判 PRODUCT_INQUIRY，并参与 L1 高置信域切换（#3625），把订单/售后域拉去商品域。
+        result = self._match("确认创建")
+        assert result is None or result.intent != IntentType.PRODUCT_INQUIRY
+
+    def test_create_with_product_description_still_product_inquiry(self):
+        # 同一条规则的射程守门（防「把规则改死」）：带商品描述时仍必须判商品域。
+        # 末项专挑上一条规则覆盖不到的形态（动词与商品名之间有修饰语）—— 证明该规则不冗余。
+        for message in ("创建遮光窗帘", "新建色卡", "新建个浅灰色的色卡"):
+            result = self._match(message)
+            assert getattr(result, "intent", None) == IntentType.PRODUCT_INQUIRY, message
+
+    def test_no_product_regex_matches_without_product_noun(self):
+        # 类级固化（issue #3731）：射程守门**遍历全部** PRODUCT_INQUIRY 正则（不只盯被修的那一条）
+        # —— 将来再加一条「尾组可选」的商品规则，这里就会红。语料 = 有创建动词/数量词、无商品名词。
+        bare = ("确认创建", "创建", "新建", "添加", "创建一个", "新建个", "帮我新建")
+        product_patterns = [p for p, intent in REGEX_RULES if intent == IntentType.PRODUCT_INQUIRY]
+        for pattern in product_patterns:
+            for message in bare:
+                assert pattern.search(message) is None, f"{message} 被 {pattern.pattern} 命中"
 
     def test_no_match_returns_none(self):
         assert self._match("随便说点什么") is None

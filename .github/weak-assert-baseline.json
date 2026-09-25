@@ -5,7 +5,7 @@
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
   "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
   "anchored_at": "2026-09-21",
-  "weak_total": 247,
+  "weak_total": 245,
   "legacy_weak_counts": {
     "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
     "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
@@ -25,7 +25,7 @@
     "backend/ai-agent-service/tests/test_graph_builder.py": 7,
     "backend/ai-agent-service/tests/test_graph_skills.py": 26,
     "backend/ai-agent-service/tests/test_id_resolver.py": 2,
-    "backend/ai-agent-service/tests/test_intent_router.py": 28,
+    "backend/ai-agent-service/tests/test_intent_router.py": 26,
     "backend/ai-agent-service/tests/test_llm_pipeline.py": 4,
     "backend/ai-agent-service/tests/test_multimodal_content_handling.py": 6,
     "backend/ai-agent-service/tests/test_order_create_spec_key_family.py": 3,
@@ -100,6 +100,12 @@
       "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
       "weak_total": 247,
       "note": "精确销账（只许缩）：248 → 247 处（issue #5485）。`frontend/admin-web/tests/unit/pages/employees.test.tsx` 的 `expect(callArgs).toBeDefined()`（存在性形态）改成 `toMatchObject({...})` 触业务数据断言 ⇒ 该文件 1 → 0，移出明细。**只动这一格 + weak_total + 本行**，其余文件锚点值原样保留（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
+    },
+    {
+      "anchored_at": "2026-09-25",
+      "anchor_sha": "7e56e38b490762f0367ea612982640fd89cf2c70",
+      "weak_total": 245,
+      "note": "精确销账（只许缩）：247 → 245 处（issue #3731）。改判 `backend/ai-agent-service/tests/test_intent_router.py` 两条判据时去掉 2 处 `assert result is not None`（弱断言形态）⇒ 该文件 28 → 26。**只动这一格 + weak_total + 本行**（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
     }
   ]
 }
