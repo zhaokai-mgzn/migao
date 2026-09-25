@@ -129,3 +129,105 @@ describe('ChoiceCard — 点击协议回传人话 label（UI-043，对齐 issue 
     expect(onAction).toHaveBeenCalledWith('fallback_value')
   })
 })
+
+describe('ChoiceCard — 多选卡：勾选积累 + 「完成选择(N)」一次性提交（UI-043 / CH-030，issue #3947）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  // 与后端 interact(multiSelect=true) 下发的载荷同形（interact.py 在 multiSelect 时
+  // 一定补齐 prefix/label/skipLabel 三个文案字段；C 端加工项兜底卡只带 multiSelect）
+  const multiCard: InteractiveData = {
+    type: 'choice',
+    component: 'choice',
+    multiSelect: true,
+    multiSelectSubmitPrefix: '已选加工项：',
+    multiSelectSubmitLabel: '完成选择',
+    multiSelectSkipLabel: '不需要加工项',
+    title: '这款商品支持以下加工项，需要哪些呢？（可多选）',
+    options: [
+      { label: '压褶定型（米）', value: 'proc_item_craft_press' },
+      { label: 'LG工艺（件）', value: 'proc_item_craft_lg' },
+      { label: '打孔（米）', value: 'proc_item_craft_hole' },
+    ],
+  }
+
+  it('勾选 A、B 后提交：一次性回传 prefix + 已选项集合（点第一项不得提交/锁卡）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    fireEvent.click(screen.getByText('LG工艺（件）'))
+    // 勾选阶段必须**零提交**：改前点第一项即 onAction + 锁卡 ⇒ 多选意图被吞
+    expect(onAction).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('完成选择（2）'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith('已选加工项：压褶定型（米）、LG工艺（件）')
+  })
+
+  it('再点已选项 = 取消勾选，提交载荷随之收缩', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    fireEvent.click(screen.getByText('LG工艺（件）'))
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    fireEvent.click(screen.getByText('完成选择（1）'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith('已选加工项：LG工艺（件）')
+  })
+
+  it('未勾选任何项时不渲染提交按钮（不给「空的提交」）', () => {
+    render(<ChoiceCard data={multiCard} onAction={jest.fn()} />)
+    expect(screen.queryByText('完成选择（0）')).toBeNull()
+    expect(screen.queryByText(/完成选择（/)).toBeNull()
+  })
+
+  it('提交后锁卡：再点选项不再触发 onAction（CH-030 不回归）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    fireEvent.click(screen.getByText('完成选择（1）'))
+    fireEvent.click(screen.getByText('LG工艺（件）'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('跳过：卡自带 multiSelectSkipLabel 时渲染跳过按钮并原样回传该文案', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={multiCard} onAction={onAction} />)
+    fireEvent.click(screen.getByText('不需要加工项'))
+    expect(onAction).toHaveBeenCalledWith('不需要加工项')
+  })
+
+  it('卡未带 multiSelectSkipLabel 时不渲染跳过按钮（凭空发默认文案会让答卡轮失配）', () => {
+    const noSkip: InteractiveData = { ...multiCard }
+    delete noSkip.multiSelectSkipLabel
+    render(<ChoiceCard data={noSkip} onAction={jest.fn()} />)
+    expect(screen.queryByText('不需要加工项')).toBeNull()
+    // 提交能力不受影响（前缀仍是协议默认值，AI 侧 _card_accepts_answer 按前缀识别）
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    expect(screen.getByText('完成选择（1）')).toBeTruthy()
+  })
+
+  it('提交文案后端驱动：自定义 prefix/label 生效（色号/规格等非加工项场景）', () => {
+    const onAction = jest.fn()
+    const custom: InteractiveData = {
+      ...multiCard,
+      multiSelectSubmitPrefix: '已选色号：',
+      multiSelectSubmitLabel: '确定',
+    }
+    render(<ChoiceCard data={custom} onAction={onAction} />)
+    fireEvent.click(screen.getByText('压褶定型（米）'))
+    fireEvent.click(screen.getByText('确定（1）'))
+    expect(onAction).toHaveBeenCalledWith('已选色号：压褶定型（米）')
+  })
+
+  it('单选卡（无 multiSelect）点第一项立即提交，且不渲染多选提交按钮（防回归）', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={baseChoice} onAction={onAction} />)
+    fireEvent.click(screen.getByText('现代简约'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onAction).toHaveBeenCalledWith('现代简约')
+    expect(screen.queryByText(/完成选择/)).toBeNull()
+  })
+})
