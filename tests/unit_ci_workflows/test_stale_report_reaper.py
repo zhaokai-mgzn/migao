@@ -46,6 +46,7 @@ printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
   "issue list") cat "$GH_ISSUES" ;;
   "run list")   cat "$GH_RUNS" ;;
+  "run view")   cat "${GH_RUN_LOG:-/dev/null}" ;;
 esac
 exit 0
 """
@@ -57,18 +58,22 @@ def _iso(delta_hours: float) -> str:
     return (NOW - timedelta(hours=delta_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _issue(title: str, *, age_hours: float = 48, labels: list[str] | None = None, number: int = 900):
+def _issue(title: str, *, age_hours: float = 48, labels: list[str] | None = None, number: int = 900,
+           author: str = "app/github-actions"):
+    """⚠️ 默认作者是 **CI**：2026-09-25 起本脚本加了作者闸门（人写的单永不自动收）⇒
+    夹具必须显式表达"这是 CI 开的报告"，否则测的就不是窗口逻辑而是闸门了。"""
     return {"number": number, "title": title, "createdAt": _iso(age_hours),
+            "author": {"login": author},
             "labels": [{"name": n} for n in (labels or [])]}
 
 
 def _runs(conclusions: list[str], hours: list[float]) -> list[dict]:
-    return [{"status": "completed", "conclusion": c, "createdAt": _iso(h)}
-            for c, h in zip(conclusions, hours)]
+    return [{"status": "completed", "conclusion": c, "createdAt": _iso(h), "databaseId": 5000 + i}
+            for i, (c, h) in enumerate(zip(conclusions, hours))]
 
 
 def _fixture(tmp_path: Path, issues: list[dict], runs: list[dict] | None = None,
-             run_list_rc: int = 0):
+             run_list_rc: int = 0, run_log: str = ""):
     stub = tmp_path / "gh"
     stub.write_text(STUB, encoding="utf-8")
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
@@ -86,7 +91,9 @@ def _fixture(tmp_path: Path, issues: list[dict], runs: list[dict] | None = None,
         "GH_LOG": str(log),
         "GH_ISSUES": str(tmp_path / "issues.json"),
         "GH_RUNS": str(tmp_path / ("missing.json" if run_list_rc else "runs.json")),
+        "GH_RUN_LOG": str(tmp_path / "runlog.txt"),
     }
+    (tmp_path / "runlog.txt").write_text(run_log, encoding="utf-8")
     return env, log
 
 
@@ -178,3 +185,47 @@ def test_unmapped_prefix_is_named_not_silently_skipped(tmp_path):
     out = _run(tmp_path, env, "--apply")
     assert "前缀未登记" in out.stdout and "#900" in out.stdout, out.stdout
     assert not [c for c in _calls(log) if c.startswith("issue close")]
+
+# ── 「自动关单会不会漏东西」的两条守卫（2026-09-25，用户提问驱动）────────────────
+
+def test_human_authored_report_is_never_auto_closed(tmp_path):
+    """**人写的单永不自动收** —— 哪怕标题前缀与自动报告模板完全一致。
+
+    为什么：本脚本只按标题前缀认单，而人完全可能写同前缀的标题；那种单里往往有**人补充的上下文**
+    ⇒ 自动关掉就是**丢证据**。⇒ 作者不是 CI/机器人 ⇒ 一条都不关（并点名）。
+    红证形态：去掉作者闸门 ⇒ 本判据立刻红。
+    """
+    human = _issue("[Post-Deploy] 部署后回归失败 — 我补充了现场日志", author="guangzhen")
+    env, log = _fixture(tmp_path, [human], GREEN_RUNS)
+    out = _run(tmp_path, env, "--apply")
+    calls = _calls(log)
+    assert not any(c.startswith("issue close") for c in calls), f"人写的单被自动关了：{calls}"
+    assert not any(c.startswith("issue comment") for c in calls), f"对人写的单贴了自动证据评论：{calls}"
+    assert "作者不是 CI/机器人" in out.stdout, out.stdout
+
+
+def test_green_but_no_readings_is_not_closed(tmp_path):
+    """**窗口驱动**的腿（post-merge）：run 绿但**取不到「判过」的证据** ⇒ 不关。
+
+    为什么（实测两种假绿，都会丢信号）：① 「零动作/短路径」的绿 —— 窗口内无变更时 2m56s 就 success、
+    **一条判据都没跑**；② 「判据自 skip」的绿 —— `test_drift_audit_contract.py` 在浅检出里自己 skip。
+    ⇒ 只看 `conclusion == success` 就关单 = 把"**没判**"当成"**判过了**"。
+    红证形态：让 `run_has_readings` 恒 True ⇒ 本判据立刻红。
+    """
+    issue = _issue("[post-merge] main 上的判据与它约束的数据不同刻落地（合并后守护腿未通过）")
+    # 让标题映射到 post-merge 腿：直接用 --only + 该前缀（前缀表里加）
+    env, log = _fixture(tmp_path, [issue], GREEN_RUNS, run_log="（日志里没有任何读数行）\n")
+    out = _run(tmp_path, env, "--apply")
+    calls = _calls(log)
+    assert not any(c.startswith("issue close") for c in calls), f"没有「判过」证据却关了：{calls}"
+    assert "无法判定" in out.stdout or "不关" in out.stdout, out.stdout
+
+
+def test_green_with_readings_closes(tmp_path):
+    """正控：同一条腿，run 绿 **且日志里跑判据 > 0** ⇒ 正常关（守卫不能把正常路径也堵死）。"""
+    issue = _issue("[post-merge] main 上的判据与它约束的数据不同刻落地（合并后守护腿未通过）")
+    env, log = _fixture(tmp_path, [issue], GREEN_RUNS,
+                        run_log="读数（与负载无关）：变更文件 21 / 命中判据 66 / 跑判据 66\n")
+    out = _run(tmp_path, env, "--apply")
+    calls = _calls(log)
+    assert any(c.startswith("issue close") for c in calls), f"有「判过」证据却没关：{calls} / {out.stdout}"
