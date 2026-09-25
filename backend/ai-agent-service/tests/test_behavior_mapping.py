@@ -1,4 +1,4 @@
-# case_ids: OR-016, OR-028, AS-007, PR-019, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-017, CH-013, CH-014, CH-015, CH-008
+# case_ids: OR-016, OR-028, AS-007, PR-019, CH-010, CU-003, CU-004, HR-001, HR-005, ST-003, ST-005, DA-004, FN-001, PP-002, PP-006, PG-017, CH-013, CH-014, CH-015, CH-008, PR-013, PR-024, CH-043, CH-039, CH-040, CH-041
 """行为改动 diff → 用例映射单测（tests/agent_eval/behavior_mapping.py，issue #3502）。
 
 被测契约（详见模块 docstring）：
@@ -68,6 +68,28 @@ ROUTING_NODES_PATH = "backend/ai-agent-service/app/graph/nodes.py"
 BASE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/base_skill.py"
 # 转人工 Tool 本体（创建人工会话/工单/通知），见 TestHumanHandoffRules
 HUMAN_HANDOFF_PATH = "backend/ai-agent-service/app/tools/human_handoff.py"
+# ── 算料 / 报价域（#5034）：引擎本体 + C 端报价 skill + 算料产出真值源 ──
+# 三个载体此前**全落兜底网**（算料用例交集 = ∅），见 TestCalcDomainRules 的修前读数
+CURTAIN_CALC_PATH = "backend/ai-agent-service/app/tools/curtain_calc.py"
+CUSTOMER_QUOTE_SKILL_PATH = "backend/ai-agent-service/app/graph/skills/customer_quote_skill.py"
+PRODUCTION_ROUTING_PATH = "backend/ai-agent-service/app/production/routing.py"
+# 算料**配置查询**工具：用例库里零用例（`.github/eval-coverage-baseline.yml` 存量缺口，
+# 跟踪 #3592）⇒ 刻意不锚（边界断言见 TestCalcDomainRules 末尾，不是"以为覆盖了"）
+CRAFT_CALC_CONFIG_TOOL_PATH = "backend/ai-agent-service/app/tools/craft_calc_config_query.py"
+# 名字里带 `craft-calc` 的**前端**载体（算料配置页的「口径与术语说明」）—— 反向红证用：
+# 它不在 AI 行为域 ⇒ 必须得空集，绝不能带出算料用例（防规则被写成"看到 calc 就命中"）
+CALC_FRONTEND_PATH = "frontend/admin-web/src/lib/craft-calc-glossary.ts"
+# 算料 diff **必须**选中的用例（字典序，与映射函数契约一致）：
+#   PR-013 = 米数 + 金额（`data.fabric_meters > 0` / `data.total > 0`）
+#   PR-024 = 唯一的 `output_verify` **值级**断言（`fabric_meters: 10.2` / `formula_used` / 告警）
+#   CH-043 = 引擎入参 `fabric_widths` 的填参行为（值级子集 + `must_succeed`）
+CALC_DOMAIN_CASES = ["CH-043", "PR-013", "PR-024"]
+# 算料产出**真值源**（`routing.py`：引擎产出 → 工序应做数量/单位）必须选中的用例：
+# 生产进度（xiaobu CH-039 / mibao CH-040）+ 计件明细（mibao CH-041）
+CALC_TRUTH_SOURCE_CASES = ["CH-039", "CH-040", "CH-041"]
+# 同族的**查询工具本体**（本单普查发现同样零映射；用例断言的就是这两个工具）
+PRODUCTION_PROGRESS_TOOL_PATH = "backend/ai-agent-service/app/tools/production_progress_query.py"
+PIECEWORK_QUERY_TOOL_PATH = "backend/ai-agent-service/app/tools/piecework_query.py"
 
 # 真实承载防御/熔断逻辑的源码（#3551 全表复核时实测：只有这些是仓内真实存在的载体）
 # 注：`base_skill.py` 也是防御载体之一，但它同时承载写操作/转人工守卫（#3624 追加规则），
@@ -611,6 +633,135 @@ class TestRulesAnchorToSourcePaths:
             ["backend/ai-agent-service/app/graph/skills/references/prompts/customer.md"])
         assert source == "rules"
         assert cases == ["CH-003", "CH-022", "CU-003", "CU-004"]
+
+
+class TestCalcDomainRules:
+    """#5034：算料 / 报价域必须有**有因果**的规则桶（修前三个真值源全落兜底网、零算料用例）。
+
+    修前实测（`origin/main` @ab107dead，用**同一纯函数**复算，逐文件）：
+
+        app/tools/curtain_calc.py              → ('default_net', DEFAULT_BEHAVIOR_CASES)
+        app/graph/skills/customer_quote_skill.py → 同上
+        app/production/routing.py              → 同上
+        DEFAULT_BEHAVIOR_CASES = [AS-003, AS-007, CH-010, OR-015, OR-016, OR-017, PR-019]
+        ⇒ 算料 / 报价用例交集 = **∅**（且兜底网与改动**无因果**：只报告、连 issue 都不开）
+
+    ⇒ 改了算料引擎 / C 端报价入口 / 算料产出真值源，**一条算料用例都不跑** ——
+    这是 `#3725` / `#3783` / `#3837` / `#3786` 同族缺陷的**第四次复发**（§13.3「修复必须重放」
+    在**映射层**的漏洞）。本类把三个承载文件的射程钉死，并**双向**钉（防"一律命中"）。
+    """
+
+    @pytest.mark.parametrize("path", [CURTAIN_CALC_PATH, CUSTOMER_QUOTE_SKILL_PATH])
+    def test_calc_engine_and_quote_skill_hit_calc_cases(self, path):
+        """算料引擎本体 / C 端报价 skill 本体 → `rules` 且选中三条算料用例。
+
+        两个文件为什么同一条规则：`customer_quote_skill` **就是**提供 `curtain_calc` 的
+        C 端入口（PR-013 的 `persona: xiaobu` 说明即此）—— 拆成两条只会让"改入口 skill"
+        漏掉另一端（#4454 给 `customer_order_skill.py` 补 OR-037 时漏掉的同族一处：
+        `customer_(manage|skill|general_skill)` 匹配不到 `customer_quote_skill` 这个文件名）。
+        """
+        assert bm.map_changed_files_with_source([path]) == (CALC_DOMAIN_CASES, "rules")
+
+    def test_production_routing_truth_source_hits_progress_and_piecework_cases(self):
+        """算料产出真值源（米/折/孔/幅/套 → 工序应做数量）→ 生产进度与计件的承载用例。
+
+        `routing.py` 的 `METER_KEYS` 注释即写「主键 = **引擎真产出**」，`FOLD_KEYS` /
+        `HOLE_KEYS` / `PANEL_KEYS` / `SET_KEYS` 逐键对应引擎产出，`qty_and_source()` 把
+        `calc_info` 换算成**工序应做数量** ⇒ 它的行为面是**生产进度 / 计件问答**。
+
+        ⚠️ 它**不**锚 PR-013/PR-024/CH-043：那三条只看 `curtain_calc` 自身的入参与产出，
+        `routing.py` 一行都不参与 ⇒ 锚上就是 `#3551` 实证过的「与改动无因果的红」（假阻塞）。
+        按**因果**挑，不按"同域"挑 —— 这是本规则的**有意边界**（缩水即红，见
+        `tests/unit_ci_workflows/test_behavior_mapping_tool_coverage.py` 的声明表）。
+        """
+        assert bm.map_changed_files_with_source([PRODUCTION_ROUTING_PATH]) == (
+            CALC_TRUTH_SOURCE_CASES, "rules")
+
+    @pytest.mark.parametrize("path", [PRODUCTION_ROUTING_PATH,
+                                      PRODUCTION_PROGRESS_TOOL_PATH,
+                                      PIECEWORK_QUERY_TOOL_PATH])
+    def test_calc_output_consumer_family_hits_the_same_case_set(self, path):
+        """同族三文件（真值源 + 两个查询工具本体）→ 同一用例集（`CH-039/040/041`）。
+
+        为什么把两个**查询工具**也算进「算料产出」家族（本单普查发现，非凭猜）：
+        CH-039 / CH-040 的 `expectations` + `must_succeed` 断言的就是
+        `production_progress_query`，CH-041 断言的是 `piecework_query` —— 修前它们同样在
+        「有 live 用例却零映射」清单里（改工具本体 ⇒ 仍落兜底网 = #5034 病根的同族一处）。
+        血缘：真值源 `routing.py` 给**应做数量/单位/工序单价**，两个工具把结果查给用户。
+        """
+        assert bm.map_changed_files_with_source([path]) == (CALC_TRUTH_SOURCE_CASES, "rules")
+
+    @pytest.mark.parametrize("path", [CURTAIN_CALC_PATH, CUSTOMER_QUOTE_SKILL_PATH,
+                                      PRODUCTION_ROUTING_PATH])
+    def test_anchored_calc_truth_source_exists(self, path):
+        """锚定的必须是仓内**真实存在**的算料真值源（防退化成凭空的文件名）。"""
+        assert (REPO_ROOT / path).is_file(), f"锚定的算料真值源不存在：{path}"
+
+    @pytest.mark.parametrize("path", [CURTAIN_CALC_PATH, CUSTOMER_QUOTE_SKILL_PATH,
+                                      PRODUCTION_ROUTING_PATH])
+    def test_calc_diff_does_not_fall_back_to_the_net(self, path):
+        """算料 diff 必须是**规则桶**、且不得再混入兜底网条目（兜底网 = 只报告 + 无因果）。"""
+        cases, source = bm.map_changed_files_with_source([path])
+        assert source == "rules", f"{path} 仍落 `{source}`（cases={cases}）= 回到 #5034 的病根"
+        assert set(cases).isdisjoint(bm.DEFAULT_BEHAVIOR_CASES), (
+            f"{path} 的映射结果混入兜底网条目 "
+            f"{sorted(set(cases) & set(bm.DEFAULT_BEHAVIOR_CASES))}"
+        )
+
+    # ── 反方向（防把映射写成"一律命中"）：不含算料域 agent 本体的 diff 不得带出算料用例 ──
+    def test_calc_named_frontend_file_never_hits_calc_rules(self):
+        """反向红证 ②：名字里带 `craft-calc` 的**前端**文件 ⇒ 空集（不得命中算料用例）。
+
+        取这个文件（而不是随便挑个前端文件）就是为了让反证有牙：规则一旦被写成
+        "看到 calc 就命中"、或作用域被放宽到前端，本断言当场变红
+        （规则作用域 = `BEHAVIOR_SOURCE_PREFIXES`，只含 agent 本体源码）。
+        """
+        assert bm.map_changed_files_with_source([CALC_FRONTEND_PATH]) == ([], "none")
+
+    def test_other_domain_source_does_not_hit_calc_rules(self):
+        """反向红证 ②（另一半）：另一个域的 agent 本体源码 ⇒ 只有本域用例，零算料用例。"""
+        cases, source = bm.map_changed_files_with_source(
+            ["backend/ai-agent-service/app/tools/order_create.py"])
+        assert source == "rules"
+        assert set(cases).isdisjoint(CALC_DOMAIN_CASES + CALC_TRUTH_SOURCE_CASES), (
+            f"改下单工具却带出算料 / 生产用例：{cases}"
+        )
+
+    def test_reverse_assertion_would_fire_if_the_rule_scope_widened(self, monkeypatch):
+        """反向断言的**红证**（证明它不是空断言，`migao-acceptance`：不会红的断言 = 空断言）。
+
+        注入 = 两件"写错映射"的真实形态：① 作用域放宽到前端（`AI_BEHAVIOR_PATH_PREFIXES`
+        与 `BEHAVIOR_SOURCE_PREFIXES` 都加 `frontend/`）；② 加一条"看到 calc 就命中"的过宽
+        规则。注入后上面那条「前端 craft-calc 文件得空集」必然变红 ⇒ 它测得动
+        （与被测真值解耦，永远有效）。
+
+        ⚠️ 两个前缀都要注入（实测：只改 `BEHAVIOR_SOURCE_PREFIXES` 不够 —— 前端路径会先在
+        `is_ai_behavior_file()` 那一关被判"非行为改动" ⇒ 返回 `([], "none")`，注入不生效
+        = 红证自己空转）。
+        """
+        monkeypatch.setattr(bm, "AI_BEHAVIOR_PATH_PREFIXES",
+                            bm.AI_BEHAVIOR_PATH_PREFIXES + ("frontend/",))
+        monkeypatch.setattr(bm, "BEHAVIOR_SOURCE_PREFIXES",
+                            bm.BEHAVIOR_SOURCE_PREFIXES + ("frontend/",))
+        monkeypatch.setattr(bm, "MAPPING_RULES",
+                            list(bm.MAPPING_RULES) + [(r"craft-calc|calc", ["PR-013"])])
+        cases, source = bm.map_changed_files_with_source([CALC_FRONTEND_PATH])
+        assert source == "rules"
+        assert [c for c in cases if c in CALC_DOMAIN_CASES] == ["PR-013"], (
+            f"注入过宽规则后前端文件仍未命中算料用例（{cases}）—— 说明反向断言测不到东西"
+        )
+
+    def test_craft_calc_config_tool_is_deliberately_out_of_scope(self):
+        """**有意边界**（登记在案，不是"以为覆盖了"）：算料配置查询工具当下刻意不锚。
+
+        理由：它在用例库里**零用例**（`.github/eval-coverage-baseline.yml` 的存量缺口，
+        跟踪 #3592）⇒ 锚它只能得到空射程或与改动无因果的假阻塞（`#3551`）。
+        本断言锚的是**那次决策的闸门**（先例：`test_routing_layer_still_falls_to_report_only_net`
+        的"更新方式"段）：将来给它补了用例、决定纳入规则桶时，请连同本断言一起改
+        —— 它不是"这个文件永远不准进规则桶"。
+        """
+        assert bm.map_changed_files_with_source([CRAFT_CALC_CONFIG_TOOL_PATH]) == (
+            list(bm.DEFAULT_BEHAVIOR_CASES), "default_net")
 
 
 class TestCaseIdsExistInCaseLibrary:

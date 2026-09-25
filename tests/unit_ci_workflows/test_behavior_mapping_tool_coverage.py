@@ -1,4 +1,4 @@
-# case_ids: PR-006, PR-018
+# case_ids: PR-006, PR-018, PR-013, PR-024, CH-043, CH-039, CH-040, CH-041
 """行为映射门禁「已声明覆盖关系」守卫（issue #3837）—— L0 静态锁，秒级零 LLM。
 
 ## 病根（与 issue #3725 的 OR-015 同族：「改了 X，门禁一条 X 的用例都没跑」）
@@ -54,12 +54,20 @@
 
 ## 已知边界（如实登记，不假装覆盖）
 
-- 本表**只声明低库存口径**三个文件。`inventory_manage.py` 的 `query`/`adjust` 两条路径
+- 本表现覆盖**两个域**：低库存口径（三个文件，#3837）+ **算料 / 报价域**（三个文件，#5034，
+  见下方声明的依据）。`inventory_manage.py` 的 `query`/`adjust` 两条路径
   （`PR-004`/`PR-005`）**不在**声明内 —— 改那两条路径时本规则不构成覆盖。要补就加进
   `DECLARED_TOOL_FILE_COVERAGE` + `MAPPING_RULES`，本文件会强制它对上；
 - `PR-002` 刻意**不入**（复核后排除）：它断言的是另一个枚举值 `stock_status: out_of_stock`
   （库存≤0），`product_search.py` 的该分支在 #3831 里一行未改，且其 `data_checks` 是
   `data.products.length >= 0`（恒真）。
+- **算料域的边界**（#5034，同样"不假装覆盖"）：① `app/tools/craft_calc_config_query.py`
+  刻意**不入** —— 它在用例库里零用例（`.github/eval-coverage-baseline.yml` 存量缺口，
+  跟踪 #3592），锚它只能得到空射程或假阻塞；② `app/production/routing.py` **只**锚
+  生产进度 / 计件（CH-039/CH-040/CH-041），**不**锚引擎侧三条（PR-013/PR-024/CH-043）——
+  后者不看 `routing.py`，锚上就是 `#3551` 的"与改动无因果的红"；③ `[backend-contract]`
+  的引擎覆盖登记条（CH-036/CH-038/CH-042）是 `unrunnable`（`skip_reason` 非空）
+  ⇒ 锚进规则桶 = 挂不可跑用例，它们的确定性覆盖在 `traces.tests` 的单测上。
 """
 import re
 import sys
@@ -105,6 +113,43 @@ DECLARED_TOOL_FILE_COVERAGE = {
         ["PR-006"],
         "`action=low_stock_alert` 的**唯一**承载用例（PR-006 的 OR 分支之一）；"
         "PR #3831 的**真实行为变更**（不传 threshold 时默认 10→100）就在这条路径上。",
+    ),
+    # ── 算料 / 报价域（#5034）：修前三个真值源全落兜底网，算料用例交集 = ∅ ──
+    "backend/ai-agent-service/app/tools/curtain_calc.py": (
+        ["PR-013", "PR-024", "CH-043"],
+        "算料报价引擎**本体**（issue #5034）：用布量 / 幅数 / 金额的唯一计算处 ⇒ 改它必须真跑"
+        "算料面三条 —— PR-013（米数 + 金额）、PR-024（唯一的 `output_verify` 值级断言）、"
+        "CH-043（引擎入参 `fabric_widths` 填参 + `must_succeed`）。三条全 live 且 xiaobu 可调度；"
+        "`[backend-contract]` 的引擎覆盖登记条（CH-036/CH-038/CH-042）刻意不含（unrunnable）。",
+    ),
+    "backend/ai-agent-service/app/graph/skills/customer_quote_skill.py": (
+        ["PR-013", "PR-024", "CH-043"],
+        "C 端报价 skill **本体**（issue #5034）：它就是**提供** `curtain_calc` 的入口"
+        "（PR-013 的 `persona: xiaobu` 说明即此），此前与引擎本体同落兜底网 ——"
+        "`#4454` 给 `customer_order_skill.py` 补 OR-037 时漏掉的同族一处："
+        "`customer_(manage|skill|general_skill)` 匹配不到 `customer_quote_skill` 这个文件名。",
+    ),
+    "backend/ai-agent-service/app/production/routing.py": (
+        ["CH-039", "CH-040", "CH-041"],
+        "算料产出的**真值源**（issue #5034）：`METER_KEYS` 注释即写「主键 = 引擎真产出」，"
+        "`FOLD_KEYS`/`HOLE_KEYS`/`PANEL_KEYS`/`SET_KEYS` 逐键对应引擎产出，"
+        "`qty_and_source()` 把它换算成**工序应做数量（米/折/孔/幅/套）** ⇒ 行为面 ="
+        "生产进度与计件问答：CH-039（xiaobu 问进度）/ CH-040（mibao 问进度）/ "
+        "CH-041（mibao 查计件明细 = 工序/数量/金额）。⚠️ 它**不**锚 PR-013/PR-024/CH-043 ——"
+        "那三条 `routing.py` 一行都不参与，锚上就是「与改动无因果的红」（#3551）。",
+    ),
+    "backend/ai-agent-service/app/tools/production_progress_query.py": (
+        ["CH-039", "CH-040"],
+        "同一家族（#5034）的**查询工具本体**：CH-039 / CH-040 的 `expectations` + `must_succeed`"
+        "断言的就是它（`production_progress_query`）⇒ 改它却零用例 = #5034 病根的同族一处"
+        "（普查实测：本单修前它也在「零映射载体」清单里）。两条用例分别是 xiaobu / mibao 的"
+        "**唯一**进度覆盖。",
+    ),
+    "backend/ai-agent-service/app/tools/piecework_query.py": (
+        ["CH-041"],
+        "同一家族（#5034）的**计件查询工具本体**：CH-041（mibao 查工人计件工资 = 工序/数量/金额）"
+        "是它的**唯一**覆盖 —— 与 `routing.py`（工序单价/单位真值源）同一条血缘："
+        "计件金额 = 工序应做数量 × 工序单价。",
     ),
 }
 
@@ -273,14 +318,19 @@ class TestDeclaredCoverageIsSelected:
         `#3837` 的病根正是"低库存用例在映射表里不存在" ⇒ 这里把"来源必须是 rules"钉死在
         低库存域上：谁把这条规则删了/挪回兜底网，本测试就红。
         """
-        case_ids, source = map_changed_files_with_source(
-            ["backend/ai-agent-service/app/tools/stock_semantics.py"])
+        path = "backend/ai-agent-service/app/tools/stock_semantics.py"
+        required = DECLARED_TOOL_FILE_COVERAGE[path][0]
+        case_ids, source = map_changed_files_with_source([path])
         assert source == "rules", (
             f"改低库存单点来源却落到 `{source}`（应为 `rules`）—— case_ids={case_ids}。"
             "兜底网与本改动无因果（失败连 issue 都不开）= 回到 issue #3837 的病根。"
         )
-        assert set(case_ids) >= set(_declared_case_ids()), (
-            f"低库存域选中的用例 {case_ids} 未覆盖已声明集 {_declared_case_ids()}"
+        # ⚠️ #5034 实测：原判据比的是 `_declared_case_ids()`（**全表并集**）—— 名字与消息都写
+        # 「低库存域/已声明集」，实际语义却是"本表所有域的用例并集" ⇒ 只要新增**任何**声明域，
+        # 本断言立刻假红（与低库存无关）。故改为按**本文件**的声明集比（与判据名/文档同义，
+        # 对低库存域一字未放宽：仍是 PR-006 + PR-018 + 来源必须是 rules）。
+        assert set(case_ids) >= set(required), (
+            f"低库存域选中的用例 {case_ids} 未覆盖**本文件**已声明集 {required}"
         )
 
     def test_pr3831_real_diff_witness(self):
