@@ -1657,31 +1657,19 @@ RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
 #     ⚠️ 僵尸判据 `_probe_drift_audit_diff_scoped_stale` 与其注册项**保留**（它现在探不到证据 =
 #     正是「已实装」的读数，按探针名检索即可复核），因此本项**不在**下方 `UNIMPLEMENTED` 里
 #     —— 留着就是「实装了还挂着未实装」的假真值。
+#   · `CASE-TRUST-CROSS-LEG-NARROW-RUN` —— **已实装**（issue #5504，2026-09-25）：
+#     runner 的「禁止静默少跑」守卫现在**按 persona 校验 `case_ids` 的跨腿完整性** ——
+#     `tests/agent_eval/eval_case_filter.py` 的 `audit_case_ids_leg_parity` 对每条请求 ID
+#     **按 persona 现取它应落的那条腿**（`persona` 字段），与它实际声明/登记的去向比对：
+#     跨腿 ⇒ 点名「未覆盖该 ID + 两边去向」且**不判整腿红**；归属本腿却未被收集（档位/分片/
+#     skip/工具集/语义）⇒ **违规并点名**；库里真没有该 ID ⇒ 违规（改前一律报成「无法解析」
+#     = 归因错）；`persona` 值不属任何一条腿 ⇒ 显式登记。接线在 `local_runner.py` 的
+#     `--case-ids` 收窄之后、`run_suite` **派发之前**（零 LLM）。
+#     ⚠️ 僵尸判据 `_probe_single_leg_persona` 与其注册项**保留**（同 `DRIFT-AUDIT-STALE-DIFF-SCOPED`
+#     的处置：它现在探不到证据 = 正是「已实装」的读数，按探针名检索即可复核），
+#     因此本项**不在**下方 `UNIMPLEMENTED` 里 —— 留着就是「实装了还挂着未实装」的假真值。
+#     判据 = `tests/unit_ci_workflows/test_persona_leg_parity.py`（含撤登记守卫）。
 UNIMPLEMENTED: tuple[dict, ...] = (
-    {
-        "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
-        "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
-        "why_not": (
-            "静态只能看到**本 PR 的 diff**，看不到「本次运行会不会用 `case_ids` 窄跑」"
-            "—— 那是**运行期**信息。静态侧只能要求 persona 标注存在"
-            "（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。"
-        ),
-        "needs": (
-            "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#5504；"
-            "`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
-        ),
-        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        "issue": 5504,
-        "expires": "2027-03-31",
-        "how_to_verify": (
-            "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**"
-            "（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。"
-            "核验：单腿派发（`xiaobu-acceptance.yml` 的 `persona` 输入）+ `case_ids` 含一条"
-            "单端用例 ID，另一腿**不再**判红；或该守卫源码里出现按 persona 过滤 `case_ids` 的分支"
-            "（按「禁止静默少跑」文本检索）。"
-        ),
-        "hit_probe": "single_leg_persona",
-    },
     {
         "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
         "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",

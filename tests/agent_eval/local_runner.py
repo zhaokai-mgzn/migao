@@ -68,9 +68,12 @@ CASE_SLEEP = _env_float("EVAL_CASE_SLEEP", 1.0)
 sys.path.insert(0, os.path.dirname(__file__))
 from eval_case_filter import (  # noqa: E402
     XIAOBU_TOOLS,
+    audit_case_ids_leg_parity,
     case_expectation_tools as _case_expectation_tools,
     case_persona as _case_persona,
     case_skip_reason as _case_skip_reason,
+    format_leg_parity_report,
+    judge_case_ids_leg_parity,
     select_cases_for_persona,
 )
 
@@ -9832,6 +9835,9 @@ async def main():
     #         小布能力内；B 端管理用例——断言的工具小布没有——一律排除，
     #         防「跑在错误 Agent 上还计分」的假绿）
     before = len(cases)
+    # #5504：留住**过滤前**的用例全集 = `--case-ids` 的解析空间。跨腿 ID 必须能被解析成
+    # 「属于另一条腿」，而不是被当成「无法解析」（归因错 ⇒ 误导性红 + 误导评论）。
+    _cases_universe = list(cases)
     cases = select_cases_for_persona(cases, PERSONA)
     if len(cases) != before:
         print(f"🧪 Persona={PERSONA}：用例集过滤后 {len(cases)}/{before} 条"
@@ -9859,11 +9865,11 @@ async def main():
         return [c for c in cases if not c.skip_reason]
 
     # 迭代提速（issue #3417）：--case-ids 只保留指定用例（与 tier/shard 正交）
-    if (args.case_ids or "").strip():
+    # #5504：这里的 `_missing` **不再**直接判红 —— 归因交给下面的跨腿完整性校验
+    # （「ID 根本不存在」与「ID 属于另一条腿」是两件事，改前一律报成前者 = 误导性红）。
+    _case_ids_input = (args.case_ids or "").strip()
+    if _case_ids_input:
         _picked, _missing = filter_cases_by_ids(cases, args.case_ids)
-        if _missing:
-            print(f"❌ --case-ids 里有无法解析的用例 ID: {_missing}（禁止静默少跑）")
-            sys.exit(1)
         print(f"🎯 --case-ids 收窄：{len(cases)} → {len(_picked)} 条（{args.case_ids}）")
         # 记进 env 供 run_key 使用（#3769：收窄跑 ⇒ 键必然不同 ⇒ 不构成判定结论）
         os.environ["EVAL_CASE_IDS_INPUT"] = args.case_ids
@@ -9885,6 +9891,29 @@ async def main():
                       "—— 空片会静默假绿，请检查分片数与用例数")
                 sys.exit(1)
             cases = sharded
+
+    # ── #5504：派发前的「禁止静默少跑」按 persona 校验（零 LLM，必须在 run_suite 之前）──
+    # 改前只有「ID 能不能解析」这一层：跨腿 ID 被报成「无法解析」（归因错 ⇒ 误导性红 +
+    # 触发误导评论）。本判据对每条请求 ID **按 persona 现取它应落的那条腿**，与它**实际
+    # 声明/登记的去向**比对，逐条点名「用例 ID + persona + 两边去向」：
+    #   · 跨腿未覆盖 ⇒ 显式点名，**不判整腿红**（本腿该跑什么就跑什么）；
+    #   · 登记在本腿却没被收集（档位/分片/skip/工具集/语义任一环丢掉）⇒ **红**；
+    #   · 库里真没有这个 ID（含 legacy_id 口径）⇒ **红**（真写错，不是跨腿）；
+    #   · `persona` 值不属于任何一条腿 ⇒ 无法判定 ⇒ **显式登记**（不静默跳过）。
+    # 放在分片之后：此处的 `_will_run` 已经是「本腿最终会跑的集合」，
+    # 档位/分片这类**事后**过滤造成的少跑也一并被点名。
+    if _case_ids_input:
+        _suite_pick = {"smoke": smoke_cases, "normal": normal_cases,
+                       "adversarial": adversarial_cases, "full": active_cases}.get(args.suite)
+        _will_run = list(_suite_pick()) if _suite_pick else list(cases)
+        _parity = audit_case_ids_leg_parity(_case_ids_input, _cases_universe, _will_run,
+                                            PERSONA, suite=args.suite or "")
+        for _line in format_leg_parity_report(_parity, PERSONA, args.suite or ""):
+            print(_line)
+        _fatal, _code, _msg = judge_case_ids_leg_parity(_parity, len(_will_run))
+        print(_msg)
+        if _fatal:
+            sys.exit(_code)
 
     try:
         if args.suite == "case":

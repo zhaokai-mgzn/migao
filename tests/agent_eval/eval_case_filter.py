@@ -342,3 +342,232 @@ def selected_case_ids(cases, persona: str) -> set:
     """该端**实际会跑**的用例 ID 集合（供报告渲染按 tier 分组用，避免二次过滤漂移）。"""
     return {(c.get("id") if isinstance(c, dict) else getattr(c, "id", "?"))
             for c in select_cases_for_persona(cases, persona)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 跨腿完整性（issue #5504）——「禁止静默少跑」的 persona 面
+#
+# 缺口：一条用例**被登记进某条腿**（`case_ids` 窄跑 / 声明 persona）时，必须**真的在那条腿上
+# 被收集/执行**；被过滤条件（persona / 档位 / 分片 / skip_reason / 工具集 / 语义）丢掉的那一刻
+# 必须**显式出声**。改前只有「ID 在库里能不能解析」这一层：跨腿 ID 会被报成
+# 「无法解析的用例 ID」= **归因错**（库里明明有、还写着 persona），既误导人、又会触发误导评论。
+#
+# ⚠️ 判定一律**读结构化声明对象**（`persona` / `skip_reason` 字段，经 `case_persona` /
+# `case_skip_reason`），**不做任何文本子串匹配** —— #5003 已把一处裸子串判定改成结构化调用点
+# 判定，本判据同口径（否则「注释里写了 persona 字样」就会改变判定结果）。
+# ══════════════════════════════════════════════════════════════════════════════
+LEGS: tuple = ("xiaobu", "mibao")
+
+LEG_LABELS = {
+    "xiaobu": "小布腿（C 端）",
+    "mibao": "米宝腿（B 端）",
+    "both": "双端（两条腿都跑）",
+}
+
+
+def leg_label(leg: str) -> str:
+    """腿 → 人读标签（未知值原样回显，**不静默归并**成某条腿）。"""
+    leg = (leg or "").strip().lower()
+    return LEG_LABELS.get(leg, f"未知腿（persona={leg!r}）")
+
+
+def declared_leg(c) -> str:
+    """用例**声明/登记**的归属腿 = `persona` 字段（缺省 = `both`，即双端）。"""
+    return case_persona(c) or "both"
+
+
+def case_ids_of(c) -> list:
+    """用例的 ID 与 legacy_id（`--case-ids` / `--case-id` 两套口径都认）。"""
+    if isinstance(c, dict):
+        got = [c.get("id"), c.get("legacy_id")]
+    else:
+        got = [getattr(c, "id", ""), getattr(c, "legacy_id", "")]
+    return [str(v) for v in got if str(v or "").strip()]
+
+
+def leg_covers(run_leg: str, declared: str) -> bool:
+    """本腿是否会跑「声明去 `declared`」的用例（`both` = 两条腿都跑）。"""
+    return declared == "both" or declared == (run_leg or "").strip().lower()
+
+
+def _leg_entry(cid: str, declared: str, run_leg: str, why: str) -> dict:
+    """一条分类结果：**点名三件套**（用例 ID + 声明 persona + 两边去向）+ 归因说明。"""
+    return {"id": cid, "declared": declared, "run": run_leg,
+            "declared_leg": leg_label(declared), "run_leg": leg_label(run_leg), "why": why}
+
+
+def audit_case_ids_leg_parity(requested, universe, collected, persona, suite: str = "") -> dict:
+    """按 persona 校验 `case_ids` 的**跨腿完整性**（issue #5504）。零 LLM 的纯函数。
+
+    `universe` = **过滤前**的用例全集（= 解析空间，跨腿 ID 必须能被解析成
+    「属于另一条腿」而不是「不存在」）；`collected` = 本腿**最终**会跑的用例集合。
+
+    分类（逐 ID，全部都进报告，**不静默跳过**任何一类）：
+      · `ok`          —— 归属本腿（或双端）且真的被收集 ⇒ 会执行；
+      · `cross_leg`   —— 声明归属**另一条腿** ⇒ 本腿的 persona 过滤按设计跳过它；
+                         **显式点名「未覆盖该 ID」+ 两边去向，不算违规**（不判整腿红）；
+      · `not_covered` —— 归属本腿（或双端）却**未被收集**（档位 / 分片 / skip_reason /
+                         工具集 / 语义任一环丢掉）⇒ **违规**：少跑必须显式，不能默不作声；
+      · `unresolved`  —— 用例库里没有这个 ID（含 legacy_id）⇒ **违规**（真写错 / 真不存在）；
+      · `unjudged`    —— 无法判定的形态（`persona` 值不属于任何一条腿）⇒ **显式登记**。
+    """
+    if isinstance(requested, str):
+        want = [x.strip() for x in requested.split(",") if x.strip()]
+    else:
+        want = [str(x).strip() for x in (requested or []) if str(x).strip()]
+    run_leg = (persona or "").strip().lower()
+
+    by_id: dict = {}
+    for c in (universe or []):
+        for i in case_ids_of(c):
+            by_id.setdefault(i, c)
+    collected_ids = {i for c in (collected or []) for i in case_ids_of(c)}
+
+    report = {"requested": want, "persona": run_leg, "suite": suite,
+              "ok": [], "cross_leg": [], "not_covered": [], "unresolved": [], "unjudged": []}
+    for cid in want:
+        case = by_id.get(cid)
+        if case is None:
+            report["unresolved"].append(_leg_entry(
+                cid, "", run_leg, "用例库里没有这个 ID（含 legacy_id）—— 真不存在，不是跨腿", ))
+            continue
+        declared = declared_leg(case)
+        if declared != "both" and declared not in LEGS:
+            report["unjudged"].append(_leg_entry(
+                cid, declared, run_leg, "persona 值不属于任何一条腿 ⇒ 现取不到它应落的那条腿"))
+            continue
+        if not leg_covers(run_leg, declared):
+            report["cross_leg"].append(_leg_entry(
+                cid, declared, run_leg, "另一端专属 ⇒ 本腿按 persona 过滤跳过（设计内）"))
+            continue
+        if cid in collected_ids:
+            report["ok"].append(_leg_entry(cid, declared, run_leg, "本腿已收集（会执行）"))
+            continue
+        skip = case_skip_reason(case)
+        why = (f"skip_reason 非空（{skip[:60]}）⇒ 本腿不会跑它"
+               if skip else
+               "既未被本腿收集、也没有任何显式登记（skip_reason 为空）⇒ 静默少跑")
+        report["not_covered"].append(_leg_entry(cid, declared, run_leg, why))
+    return report
+
+
+def leg_parity_violations(report: dict) -> list:
+    """违规清单（= **红**的那些）：ID 不存在 / 登记在本腿却没被收集。"""
+    return list(report.get("unresolved") or []) + list(report.get("not_covered") or [])
+
+
+def format_leg_parity_report(report: dict, persona: str = "", suite: str = "") -> list:
+    """人读清单（逐行）。**每一类都要出现**（含 0 条的计数）——
+    「没少跑」与「没检查」必须长得不一样；清单里的每一项都点名叫全三件套。"""
+    run_leg = (persona or report.get("persona") or "").strip().lower()
+    lines = [f"🧾 --case-ids 跨腿完整性（persona={run_leg}"
+             + (f"，suite={suite}" if suite else "")
+             + f"）：请求 {len(report.get('requested') or [])} 条"
+               f" ⇒ 本腿已收集 {len(report.get('ok') or [])} 条"
+               f"（跨腿未覆盖 {len(report.get('cross_leg') or [])} 条 / "
+               f"违规 {len(leg_parity_violations(report))} 条 / "
+               f"无法判定 {len(report.get('unjudged') or [])} 条）"]
+    if report.get("ok"):
+        lines.append(f"   ✅ 本腿执行：{', '.join(e['id'] for e in report['ok'])}")
+    if report.get("cross_leg"):
+        lines.append("   ⚠️ 未覆盖该 ID（声明归属另一端 ⇒ 本腿不执行；**不判整腿红**）：")
+        for e in report["cross_leg"]:
+            lines.append(f"      · {e['id']}：persona={e['declared']!r} ⇒ 应落【{e['declared_leg']}】；"
+                         f"本次 =【{e['run_leg']}】｜{e['why']}")
+    if report.get("not_covered"):
+        lines.append("   ❌ 少跑（登记在本腿却没被收集 —— 必须显式，不许静默）：")
+        for e in report["not_covered"]:
+            lines.append(f"      · {e['id']}：persona={e['declared']!r} ⇒ 应落【{e['declared_leg']}】；"
+                         f"本次 =【{e['run_leg']}】｜{e['why']}")
+    if report.get("unresolved"):
+        lines.append("   ❌ 无法解析的用例 ID（用例库里不存在，含 legacy_id 口径）：")
+        for e in report["unresolved"]:
+            lines.append(f"      · {e['id']}｜{e['why']}")
+    if report.get("unjudged"):
+        lines.append("   ⚠️ 无法判定（现取不到应落的腿 —— 显式登记，不静默跳过）：")
+        for e in report["unjudged"]:
+            lines.append(f"      · {e['id']}：persona={e['declared']!r}｜{e['why']}")
+    return lines
+
+
+def judge_case_ids_leg_parity(report: dict, will_run: int) -> tuple:
+    """收窄跑的三态裁决：`(fatal, code, message)`（零 LLM，可单测的纯函数）。
+
+      · 有违规（`unresolved` / `not_covered`）⇒ fatal：少跑必须显式；
+      · 无违规但 `will_run == 0` ⇒ fatal，**归因 = 「未覆盖」而不是「ID 无法解析」**
+        —— 这正是 #5504 修的误导性红；空跑仍然非零退出（issue #3062 禁假绿）；
+      · 无违规且 ≥1 条可跑 ⇒ **不 fatal**：跨腿 ID 已在清单里点名，本腿该跑什么就跑什么
+        （即「跨腿登记 **不**判整腿红」）。
+    """
+    bad = leg_parity_violations(report)
+    if bad:
+        return (True, 1,
+                f"❌ --case-ids 少跑/写错 {len(bad)} 条（禁止静默少跑）："
+                f"{', '.join(e['id'] for e in bad)} —— 逐条见上方清单（含 persona 与两边去向）")
+    if will_run <= 0:
+        return (True, 1,
+                "❌ 本腿 0 条可跑（请求的用例全部未覆盖本腿）—— 空跑会假绿，"
+                "禁止按通过读（issue #3062）；逐条归因见上方【未覆盖该 ID】清单")
+    return (False, 0, f"✅ 跨腿完整性校验通过：本腿执行 {will_run} 条")
+
+
+def audit_library_leg_parity(cases, selected=None, personas=LEGS) -> dict:
+    """全库逐条比对：**按 persona 现取**它应落的那条腿 vs 它**实际声明/登记**的去向（#5504）。
+
+    `selected` = 各腿**现取**的收集集（缺省由 `select_cases_for_persona` 现算；测试可注入
+    「少跑一条」的形态喂给同一校验函数）。逐条用例 × 逐条腿分类：
+      · `collected`         —— 本腿会跑它；
+      · `other_leg`         —— **正常跨腿**：声明另一条腿 ⇒ 本腿不收（**不是**违规，
+                               防把判据写成「凡跨腿皆红」）；
+      · `registered_skip`   —— 声明本腿但 `skip_reason` 非空（作者**显式登记**了不跑的理由）
+                               ⇒ 合法少跑，进未命中清单（不判红）；
+      · `silent`            —— 声明本腿、未被收集、**无任何显式登记** ⇒ **违规（静默少跑）**；
+      · `dual_leg_narrowed` —— 双端用例在本腿被工具集/语义收口（issue #3266）⇒ 设计内收口，
+                               进未命中清单（不判红）；
+      · `unjudged`          —— `persona` 值不属于任何一条腿 ⇒ 显式登记。
+    返回 `{"legs": {leg: {…}}, "violations": [...], "counts": {...}}`。
+    """
+    cases = list(cases or [])
+    picks = dict(selected or {})
+    out: dict = {"legs": {}, "violations": []}
+    for leg in personas:
+        leg = (leg or "").strip().lower()
+        if leg not in picks:
+            picks[leg] = select_cases_for_persona(cases, leg)
+        collected_ids = {i for c in picks[leg] for i in case_ids_of(c)}
+        bucket = {k: [] for k in ("collected", "other_leg", "registered_skip",
+                                 "silent", "dual_leg_narrowed", "unjudged")}
+        for c in cases:
+            cid = case_ids_of(c)
+            if not cid:
+                bucket["unjudged"].append({"id": "", "declared": declared_leg(c),
+                                           "why": "用例缺 id ⇒ 现取不到它的登记去向"})
+                continue
+            name = cid[0]
+            declared = declared_leg(c)
+            if declared != "both" and declared not in LEGS:
+                bucket["unjudged"].append({"id": name, "declared": declared,
+                                           "why": "persona 值不属于任何一条腿"})
+            elif any(i in collected_ids for i in cid):
+                bucket["collected"].append({"id": name, "declared": declared})
+            elif not leg_covers(leg, declared):
+                bucket["other_leg"].append({"id": name, "declared": declared,
+                                            "why": f"声明归属 {leg_label(declared)}，本腿不收"})
+            elif case_skip_reason(c):
+                bucket["registered_skip"].append(
+                    {"id": name, "declared": declared,
+                     "why": f"skip_reason 显式登记：{case_skip_reason(c)[:60]}"})
+            elif declared == "both":
+                bucket["dual_leg_narrowed"].append(
+                    {"id": name, "declared": declared,
+                     "why": f"双端用例被本腿的工具集/语义收口（issue #3266）—— 未命中，非静默"})
+            else:
+                bucket["silent"].append(
+                    {"id": name, "declared": declared, "run": leg,
+                     "declared_leg": leg_label(declared), "run_leg": leg_label(leg),
+                     "why": "声明归属本腿、却未被本腿收集，且无 skip_reason 等显式登记 ⇒ 静默少跑"})
+        out["legs"][leg] = bucket
+        out["violations"] += bucket["silent"]
+    out["counts"] = {leg: {k: len(v) for k, v in b.items()}
+                     for leg, b in out["legs"].items()}
+    return out
