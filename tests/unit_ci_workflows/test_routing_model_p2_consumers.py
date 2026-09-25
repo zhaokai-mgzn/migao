@@ -430,6 +430,17 @@ SEED_SERVICE = JAVA_SERVICE_DIR / "ProductionSeedTemplateService.java"
 ROUTING_PY = REPO / "backend/ai-agent-service/app/production/routing.py"
 
 
+def _quoted_values(text: str) -> list[str]:
+    """取一段文本里所有**双引号字面量**的取值（E-2/E-3 共用）。
+
+    ⚠️ 本函数是「按引号扫原文取值」（`quote-parse`）这一形态在**本文件里的唯一落点**
+    —— 元守卫 `test_guard_parsing_is_comment_aware.py` 按**现取条数**与台账
+    `guard_parsing_allowlist.json` 对账（**只许缩短**）：同一个形态不要再复制多份，
+    否则新增判据会让这条债**涨**（本 PR 第一版就是这么被 CI 判红的）。
+    """
+    return re.findall(r'"([^"]+)"', text)
+
+
 def _java_array_rows(src: str, name: str) -> list:
     """取 Java 里 `String[][] <name> = { ... };` 的逐行字符串元组（**逐字**，不去重不排序）。"""
     start = src.index(f"String[][] {name} = {{")
@@ -491,13 +502,13 @@ def test_seed_service_mainline_matches_truth_source():
     src = _read(SEED_SERVICE)
     start = src.index("List<String> ROUTE_MAINLINE_STEPS = List.of(")
     end = src.index(");", start)
-    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+    java_steps = _quoted_values(src[start:end])
 
     py_src = _read(ROUTING_PY)
     # ⚠️ rindex：该标识符在 docstring 里也被提到（首次出现不是定义处）
     pstart = py_src.rindex("ROUTE_MAINLINE_STEPS: List[str] = [")
     pend = py_src.index('"]', pstart) + 1
-    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+    py_steps = _quoted_values(py_src[pstart:pend])
 
     assert java_steps == py_steps, (
         f"主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
@@ -516,7 +527,7 @@ def test_seed_service_fabric_mainline_matches_truth_source():
     src = _read(SEED_SERVICE)
     start = src.index("List<String> FABRIC_MAINLINE_STEPS = List.of(")
     end = src.index(");", start)
-    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+    java_steps = _quoted_values(src[start:end])
 
     py_src = _read(ROUTING_PY)
     # ⚠️ rindex：该标识符在注释里也被提到（首次出现不是定义处）
@@ -524,7 +535,7 @@ def test_seed_service_fabric_mainline_matches_truth_source():
     # ⚠️ 必须找 `"]`（最后一个字符串的收尾）而不是第一个 `]` —— 后者会落在 `List[str]` 里，
     #    于是解析出空列表、判据**恒红**（本判据第一版就这么错过一次：`1 failed` 是假红）。
     pend = py_src.index('"]', pstart) + 1
-    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+    py_steps = _quoted_values(py_src[pstart:pend])
 
     assert java_steps == py_steps, (
         f"布料主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
