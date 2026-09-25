@@ -72,7 +72,11 @@ class SSEToolResultEvent(BaseModel):
 
 class SSECardEvent(BaseModel):
     """SSE 卡片事件数据"""
-    type: str = Field(..., description="卡片类型: product_list / product_detail / logistics / order")
+    type: str = Field(..., description=(
+        "卡片类型: product_list / product_detail / logistics / order / quotation / "
+        "production_progress / payment / batch_stock"
+        "（= `app/api/chat.py::_detect_card_type` 在工具注册表上的可产出集合；"
+        "判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py`）"))
     data: Any = Field(..., description="卡片数据")
 
 
