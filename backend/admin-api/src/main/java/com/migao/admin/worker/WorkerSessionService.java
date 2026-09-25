@@ -2,6 +2,7 @@ package com.migao.admin.worker;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.User;
+import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.entity.WorkerSession;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.UserMapper;
@@ -60,6 +61,8 @@ public class WorkerSessionService {
     private final WorkerSessionMapper workerSessionMapper;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    /** 登录失败计数（issue #5531）：工人 PIN 与员工密码是同一类「可被猜解的凭据入口」。 */
+    private final LoginFailureGuard loginFailureGuard;
 
     /** 租户级闲置超时（分钟）；越界值回落到默认并**打警告**（不静默接受非法配置）。 */
     @Value("${worker.session.idle-minutes:" + DEFAULT_IDLE_MINUTES + "}")
@@ -84,16 +87,25 @@ public class WorkerSessionService {
         if (!StringUtils.hasText(workerNo) || !StringUtils.hasText(pin)) {
             throw BusinessException.validationError("工号与 PIN 均不能为空");
         }
+        // 防在线爆破（issue #5531）：计数键 = 租户 + 规整后的工号（与档案是否存在无关 ⇒ 不泄露存在性）。
+        String failKey = LoginFailureGuard.keyOf("worker", String.valueOf(tenantId), workerNo.trim());
+        if (loginFailureGuard.isLocked(failKey)) {
+            log.warn("[工人登录] 该标识处于锁定窗口（issue #5531 防爆破，不再查库）");
+            throw BusinessException.authFailed(LoginFailureGuard.LOCKED_MESSAGE);
+        }
         User worker = findWorkerByNo(tenantId, workerNo.trim());
         if (worker == null || !StringUtils.hasText(worker.getPasswordHash())
                 || !passwordEncoder.matches(pin, worker.getPasswordHash())) {
+            loginFailureGuard.recordFailure(failKey);
             log.warn("[工人登录] 失败：租户 {} 工号 {}（凭据不匹配或非工人档案）", tenantId, workerNo);
             throw BusinessException.authFailed("工号或 PIN 不正确");
         }
         if (!"active".equals(worker.getStatus())) {
+            loginFailureGuard.recordFailure(failKey);
             log.warn("[工人登录] 失败：工号 {} 档案非 active（status={}）", workerNo, worker.getStatus());
             throw BusinessException.authFailed("工号或 PIN 不正确");
         }
+        loginFailureGuard.clear(failKey);
         WorkerSession session = createSession(tenantId, worker, deviceLabel);
         log.info("[工人登录] 成功：tenantId={}, workerNo={}, sessionId={}", tenantId, workerNo, session.getId());
         return sessionPayload(session);

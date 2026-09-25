@@ -7,7 +7,10 @@ import com.migao.admin.entity.WorkerSession;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.WorkerSessionMapper;
+import com.migao.admin.security.LoginFailureGuard;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,16 +23,20 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.OffsetDateTime;
+import java.util.concurrent.TimeUnit;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 /**
  * 工人登录态语义测试（issue #4733）。
@@ -61,9 +68,27 @@ class WorkerSessionServiceTest {
 
     private WorkerSessionService service;
 
+    /** 失败计数（issue #5531）：真守卫 + 内存假 Redis ⇒ 本类原有登录行为不被防护改写。 */
+    private LoginFailureGuard loginFailureGuard;
+
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
-        service = new WorkerSessionService(workerSessionMapper, userMapper, passwordEncoder);
+        Map<String, String> store = new HashMap<>();
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenAnswer(i -> store.get(i.getArgument(0, String.class)));
+        when(ops.increment(anyString())).thenAnswer(i -> {
+            String k = i.getArgument(0, String.class);
+            long v = Long.parseLong(store.getOrDefault(k, "0")) + 1;
+            store.put(k, String.valueOf(v));
+            return v;
+        });
+        when(redis.expire(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(redis.delete(anyString())).thenReturn(true);
+        loginFailureGuard = new LoginFailureGuard(redis, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        service = new WorkerSessionService(workerSessionMapper, userMapper, passwordEncoder, loginFailureGuard);
     }
 
     // ============================================================ ① 工人登录（改前无此路径）

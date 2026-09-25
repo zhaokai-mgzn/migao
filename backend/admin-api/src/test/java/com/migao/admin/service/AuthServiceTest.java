@@ -11,6 +11,7 @@ import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.JwtTokenProvider;
+import com.migao.admin.security.LoginFailureGuard;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletResponse;
@@ -84,6 +85,10 @@ class AuthServiceTest {
 
     @Mock
     private CustomerService customerService;
+
+    /** 登录失败计数（issue #5531）：本类不测它 ⇒ 用 mock（默认未锁定 ⇒ 既有行为不变）。 */
+    @Mock
+    private LoginFailureGuard loginFailureGuard;
 
     private User testUser;
     private LoginRequest loginRequest;

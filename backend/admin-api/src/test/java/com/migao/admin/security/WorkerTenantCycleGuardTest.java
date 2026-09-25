@@ -23,6 +23,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -40,12 +41,16 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -140,6 +145,7 @@ class WorkerTenantCycleGuardTest {
     void resetSchema() {
         TenantContext.clear();
         SecurityContextHolder.clearContext();
+        stubLoginGuardRedis();
         execute("DROP TABLE IF EXISTS worker_sessions");
         execute("DROP TABLE IF EXISTS users");
         execute("CREATE TABLE users ("
@@ -201,6 +207,31 @@ class WorkerTenantCycleGuardTest {
         assertThat(found.getUsername()).isEqualTo("zhangsan");
         assertThat(userMapper.selectActiveByTenantAndUsername(TENANT_B, "zhangsan"))
                 .as("同名员工在另一租户下必须查不到（租户内定位 I3）").isNull();
+    }
+
+    /**
+     * 登录失败计数（issue #5531）用到的 Redis 面：本类用 {@code @MockBean} 覆盖了
+     * {@code StringRedisTemplate} ⇒ 必须给它**行为**，否则 {@code LoginFailureGuard} 的 fail-closed
+     * 会把每次登录判成 **503**（实测：裸 mock ⇒ 8 条里 5 条挂在 {@code Status expected:<200> but was:<503>}）。
+     * 顺带说明：那次 503 本身正好证明「守卫不可执行 ⇒ 不放行」这条降级方向是活的。
+     */
+    private final Map<String, String> loginGuardStore = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @SuppressWarnings("unchecked")
+    private void stubLoginGuardRedis() {
+        loginGuardStore.clear();
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenAnswer(i -> loginGuardStore.get(i.getArgument(0, String.class)));
+        when(ops.increment(anyString())).thenAnswer(i -> {
+            String k = i.getArgument(0, String.class);
+            long v = Long.parseLong(loginGuardStore.getOrDefault(k, "0")) + 1;
+            loginGuardStore.put(k, String.valueOf(v));
+            return v;
+        });
+        when(redisTemplate.expire(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(redisTemplate.delete(anyString()))
+                .thenAnswer(i -> loginGuardStore.remove(i.getArgument(0, String.class)) != null);
     }
 
     @AfterEach

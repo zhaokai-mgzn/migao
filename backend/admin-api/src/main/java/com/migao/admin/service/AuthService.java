@@ -15,6 +15,7 @@ import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.security.JwtTokenProvider;
+import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.support.LoginIdentifiers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -62,6 +63,8 @@ public class AuthService {
     private final PlatformAdminMapper platformAdminMapper;
     private final com.migao.admin.mapper.TenantAiConfigMapper tenantAiConfigMapper;
     private final CustomerService customerService;
+    /** 登录失败计数（issue #5531 防在线爆破）—— 员工/工人两条凭据路共用同一实现。 */
+    private final LoginFailureGuard loginFailureGuard;
 
     /**
      * Redis Token 黑名单 key 前缀
@@ -138,11 +141,21 @@ public class AuthService {
         // 1. 切分并规整标识（唯一实现点 = LoginIdentifiers；此处不复制正则）
         String[] parts = LoginIdentifiers.split(identifier);
         if (parts == null) {
+            // ⚠️ 此出口**刻意不计数**：标识不可解析 ⇒ 没有稳定的计数键（无法归因到任何被尝试的账号），
+            //    而且它不构成"对某个账号的猜测"。计数只发生在能解析出 (企业编码, 用户名) 之后。
             log.warn("员工登录失败：标识格式不合法（同一 401 文案，不区分病因）");
             throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
         }
         String username = parts[0];
         String tenantCode = parts[1];
+
+        // 防在线爆破（issue #5531）：计数键由**规整后的被尝试标识**构成（与账号是否存在无关）
+        // ⇒ 不存在的用户名同样会被计数与锁定 ⇒ 锁定文案不泄露账号是否存在（反枚举 I1 的一部分）。
+        String failKey = LoginFailureGuard.keyOf("employee", tenantCode, username);
+        if (loginFailureGuard.isLocked(failKey)) {
+            log.warn("员工登录失败：该标识处于锁定窗口（issue #5531 防爆破，不再查库）");
+            throw BusinessException.authFailed(LoginFailureGuard.LOCKED_MESSAGE);
+        }
 
         // 2. 企业编码 → tenant_id（只在 deleted=0 且 status='active' 的租户里解析）
         Tenant tenant = tenantMapper.selectOne(new LambdaQueryWrapper<Tenant>()
@@ -151,6 +164,7 @@ public class AuthService {
                 .last("LIMIT 1"));
         if (tenant == null) {
             log.warn("员工登录失败：企业编码不可用 tenantCode={}", tenantCode);
+            loginFailureGuard.recordFailure(failKey);
             throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
         }
 
@@ -158,18 +172,21 @@ public class AuthService {
         User user = userMapper.selectActiveByTenantAndUsername(tenant.getId(), username);
         if (user == null) {
             log.warn("员工登录失败：该企业下无此用户名 tenantId={}", tenant.getId());
+            loginFailureGuard.recordFailure(failKey);
             throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
         }
 
         // 4. 密码（password_hash 为 null 的存量行 ⇒ matches 返回 false，同样落到同一文案）
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             log.warn("员工登录失败：密码不匹配 tenantId={}", tenant.getId());
+            loginFailureGuard.recordFailure(failKey);
             throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
         }
 
         // 5. 状态（SQL 已门禁 active，这里是纵深防御；同样不区分文案）
         if (!"active".equals(user.getStatus())) {
             log.warn("员工登录失败：状态异常 tenantId={}", tenant.getId());
+            loginFailureGuard.recordFailure(failKey);
             throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
         }
 
@@ -188,6 +205,8 @@ public class AuthService {
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
         setRefreshTokenCookie(response, refreshToken);
 
+        // 成功 ⇒ 清零（否则"成功前打错几次"会累积到锁定）
+        loginFailureGuard.clear(failKey);
         log.info("员工登录成功: userId={}, tenantId={}", user.getId(), user.getTenantId());
         return LoginResponse.builder()
                 .user(LoginResponse.UserInfo.builder()

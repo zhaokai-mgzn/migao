@@ -427,7 +427,7 @@
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
-## 登录认证域（10 case）
+## 登录认证域（11 case）
 
 ### AU-001. 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT 🟢
 ```
@@ -553,6 +553,20 @@
 ```
 真值: auth.no-auto-migration, auth.employee-login
 溯源: 2026-09-25 新增（issue #5485）：存量员工不自动迁移，补设前无法登录是预期行为 ｜ tags: auth, legacy, no_migration
+
+### AU-011. 登录失败计数/锁定 - 凭据类登录入口达阈值即锁，且不泄露账号是否存在 🔵
+```
+你: 员工登录入口连续提交 5 次错误口令；未知用户名同样连提 5 次；工人 PIN 入口同理
+期望: direct_reply
+数据: 同一标识窗口内失败达 5 次 ⇒ 第 6 次被拒，文案 = `尝试次数过多，请 5 分钟后再试`（**即便口令正确**）
+数据: 锁定后**不再查库**（判据：mapper 调用次数停在第 5 次）
+数据: **不存在的用户名同样被计数与锁定** ⇒ 锁定文案不泄露账号是否存在（与反枚举 I1 相容）
+数据: 大小写/空白变体共享同一计数键（防绕道）；成功登录清零；首次失败即置 TTL、后续失败刷新
+数据: Redis 不可用 ⇒ fail-closed（503 AUTH_UNAVAILABLE + 读数 migao.auth.login_guard_unavailable），不放行
+跳过: [backend-contract] 后端单测契约（EmployeeLoginLockoutTest / WorkerLoginLockoutTest）+ 类级元守卫（test_credential_login_has_failure_guard.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth.login-lockout
+溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
 ## B 端小程序域（7 case）
 
@@ -6773,12 +6787,12 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：483（活跃 119，跳过 364）
-- tier 分布：smoke 12 / normal 441 / adversarial 30
+- 用例总数：484（活跃 119，跳过 365）
+- tier 分布：smoke 12 / normal 442 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
-- 登录认证域：10
+- 登录认证域：11
 - B 端小程序域：7
 - 分类域：3
 - 对话边界域：43

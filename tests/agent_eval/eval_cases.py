@@ -868,6 +868,24 @@ _CASE_AU_010 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AU-011 [NORMAL] 登录失败计数/锁定 - 凭据类登录入口达阈值即锁，且不泄露账号是否存在（源: cases/auth.yml）──
+_CASE_AU_011 = EvalCase(
+    id='AU-011',
+    legacy_id='',
+    title='登录失败计数/锁定 - 凭据类登录入口达阈值即锁，且不泄露账号是否存在',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['员工登录入口连续提交 5 次错误口令；未知用户名同样连提 5 次；工人 PIN 入口同理'],
+    expectations=['direct_reply'],
+    data_checks=['同一标识窗口内失败达 5 次 ⇒ 第 6 次被拒，文案 = `尝试次数过多，请 5 分钟后再试`（**即便口令正确**）', '锁定后**不再查库**（判据：mapper 调用次数停在第 5 次）', '**不存在的用户名同样被计数与锁定** ⇒ 锁定文案不泄露账号是否存在（与反枚举 I1 相容）', '大小写/空白变体共享同一计数键（防绕道）；成功登录清零；首次失败即置 TTL、后续失败刷新', 'Redis 不可用 ⇒ fail-closed（503 AUTH_UNAVAILABLE + 读数 migao.auth.login_guard_unavailable），不放行'],
+    skip_reason='[backend-contract] 后端单测契约（EmployeeLoginLockoutTest / WorkerLoginLockoutTest）+ 类级元守卫（test_credential_login_has_failure_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'brute_force', 'defense'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── BM-001 [NORMAL] B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配（源: cases/bmini.yml）──
 _CASE_BM_001 = EvalCase(
     id='BM-001',
@@ -9170,6 +9188,7 @@ ALL_CASES = (
     _CASE_AU_008,
     _CASE_AU_009,
     _CASE_AU_010,
+    _CASE_AU_011,
     _CASE_BM_001,
     _CASE_BM_002,
     _CASE_BM_003,
