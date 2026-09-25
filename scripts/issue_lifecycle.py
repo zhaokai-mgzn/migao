@@ -418,6 +418,40 @@ class StepResult:
         return f"{self.step:<14} {icon} {self.why}"
 
 
+def push_after_rebase(branch: str, wt: Path) -> tuple[bool, str]:
+    """把 rebase 后的**新历史**推到远端（`--force-with-lease`）。→ (是否成功, 读数)
+
+    🔴 为什么必须有这一步（issue #5489，2026-09-25 实测）：`land` 的 `rebase` 步原先**只 rebase 不推送**
+    ⇒ rebase 重写历史后，`ready` / `wait-ci` 看到的仍是**远端旧 head**：等的是**别人那次提交**的 CI
+    （§23.7 A1「判定对象与数据不同刻」同族），而且 PR 可能在**缺 commit** 的状态下被合并
+    （当天实测：`git push` 被拒 `non-fast-forward`，而 ready+arm 已经执行）。
+    `--force-with-lease` 在「远端有新提交（别人推过）」时**仍会拒**（fail-closed，不覆盖别人的工作）。
+    """
+    proc = _run(["git", "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}"], cwd=wt, timeout=300)
+    if proc.returncode != 0:
+        return False, (proc.stderr or proc.stdout or "").strip()
+    return True, f"已推 origin/{branch}（--force-with-lease）"
+
+
+def assert_head_pushed(branch: str, wt: Path) -> tuple[bool, str]:
+    """断言「本地 HEAD 已推到 `origin/<branch>`」→ (是否同步, 读数)。
+
+    防的是同一条病灶的**另一半**：即使本次没 rebase（例如从 `wait-ci` 续跑），只要本地有**未推送**的提交，
+    `wait-ci` 等的就**不是本次内容**。取不到 head（fetch 失败 / 空结果）⇒ **无法判定 ⇒ 停**（fail-closed）。
+    """
+    fetch = _run(["git", "fetch", "--quiet", "origin", branch], cwd=wt, timeout=120)
+    if fetch.returncode != 0:
+        return False, "`git fetch origin <branch>` 失败 ⇒ 无法判定远端 head（不继续，避免等错对象）"
+    local = git("rev-parse", "HEAD", cwd=wt, check=False).stdout.strip()
+    remote = git("rev-parse", f"origin/{branch}", cwd=wt, check=False).stdout.strip()
+    if not local or not remote:
+        return False, "取不到本地/远端 head ⇒ 无法判定"
+    if local != remote:
+        return False, (f"本地 HEAD {local[:9]} ≠ origin/{branch} {remote[:9]} ⇒ **你要等的 CI 不是本次内容**"
+                       f"（先推送；rebase 过就 `git push --force-with-lease`）")
+    return True, f"本地 HEAD == origin/{branch}（{local[:9]}）"
+
+
 def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
     branch, root, wt, pr = ctx["branch"], ctx["root"], ctx["wt"], ctx["pr"]
 
@@ -433,7 +467,14 @@ def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
             print(_tail(proc.stderr or proc.stdout))
             return StepResult(step, "failed", "rebase 失败 ⇒ 停（入口 = dev-worktree.sh rebase；禁裸 rebase/merge）",
                               EXIT_UNMERGED)
-        return StepResult(step, "done", "已 rebase 到最新 origin/main（入口：scripts/dev-worktree.sh rebase）")
+        pushed, why_push = push_after_rebase(branch, wt)
+        if not pushed:
+            print(_tail(why_push))
+            return StepResult(step, "failed",
+                              "rebase 后**推送失败** ⇒ 停（远端仍是旧 head，继续 ready/等 CI 会等错对象；"
+                              "若远端有新提交，先核对再重试）", EXIT_UNMERGED)
+        return StepResult(step, "done",
+                          f"已 rebase 到最新 origin/main 并推送（{why_push}）")
 
     if step == "gate":
         print("   🔍 跑 ./verify-all.sh gate（在**分支自己的检出**里；与 CI 同规则）")
@@ -446,6 +487,12 @@ def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
         return StepResult(step, "done", "gate 绿")
 
     if step == "ready":
+        in_sync, why_sync = assert_head_pushed(branch, wt)
+        print(f"   🔎 同步断言：{why_sync}")
+        if not in_sync:
+            return StepResult(step, "failed",
+                              f"{why_sync} ⇒ 停（**不 ready、不等 CI**：否则等的是旧 head 的 CI）",
+                              EXIT_UNMERGED)
         if not pr.is_draft:
             return StepResult(step, "skipped", f"PR #{pr.number} 已是 ready ⇒ 不重复调用 `gh pr ready`")
         proc = _run([gh_bin(), "pr", "ready", str(pr.number)], cwd=root, timeout=120)

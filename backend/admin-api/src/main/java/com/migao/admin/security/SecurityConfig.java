@@ -47,6 +47,12 @@ public class SecurityConfig {
     private final ServiceTokenFilter serviceTokenFilter;
     /** 工人登录态过滤器（issue #4733）：X-Worker-Session-Id → ROLE_WORKER 认证。 */
     private final WorkerSessionFilter workerSessionFilter;
+    /**
+     * 首登强制改密拦截器（issue #5485 不变式 I4）：带 {@code pwd_change_required} claim 的会话
+     * 除白名单外一律 403。**无依赖** ⇒ 不参与 {@code securityConfig → … → securityConfig} 那条环
+     * （见本类 {@code authenticationProvider} 的 javadoc）。
+     */
+    private final PasswordChangeRequiredFilter passwordChangeRequiredFilter;
     private final UserDetailsService userDetailsService;
     /** 403 响应体序列化（与 @RequirePermission 拒绝同一份措辞，issue #4105 F1）。 */
     private final ObjectMapper objectMapper;
@@ -150,6 +156,10 @@ public class SecurityConfig {
                         .requestMatchers(
                                 // 认证接口（公开，不需要认证）
                                 "/api/auth/admin/login",
+                                // 员工登录（issue #5485）：员工用「用户名@企业编码 + 密码」登录，
+                                // 是**公开入口**（还没拿到任何 token）；租户由标识里的企业编码解析，
+                                // 不由 body 传入（无「任意 tenantId 即可登录」的捷径）。
+                                "/api/auth/employee/login",
                                 "/api/auth/mini/login",
                                 "/api/auth/bmini/login",
                                 "/api/auth/h5/authorize",
@@ -203,6 +213,9 @@ public class SecurityConfig {
                 // Service Token 过滤器在 JWT 过滤器之前，用于内部服务调用
                 .addFilterBefore(serviceTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 首登强制改密（issue #5485 I4）**必须排在 JWT 过滤器之后** —— 它的输入是
+                // JwtAuthenticationFilter 落下的请求属性（claim 已验签）。排前面 ⇒ 恒不触发（静默失效）。
+                .addFilterAfter(passwordChangeRequiredFilter, JwtAuthenticationFilter.class)
                 // 工人过滤器在 JWT 之后：**只在 SecurityContext 尚无认证时**设置
                 // ⇒ 商家（持 JWT）的请求逐字走既有链路（本过滤器对它是 no-op）
                 .addFilterAfter(workerSessionFilter, JwtAuthenticationFilter.class)
@@ -322,6 +335,18 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterRegistration(JwtAuthenticationFilter filter) {
         FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /**
+     * 禁止 Spring Boot 自动注册 PasswordChangeRequiredFilter 为 Servlet Filter
+     * （只通过 Spring Security 过滤链管理，避免双重执行）
+     */
+    @Bean
+    public FilterRegistrationBean<PasswordChangeRequiredFilter> passwordChangeRequiredFilterRegistration(
+            PasswordChangeRequiredFilter filter) {
+        FilterRegistrationBean<PasswordChangeRequiredFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

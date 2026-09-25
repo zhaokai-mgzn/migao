@@ -198,6 +198,16 @@ jobs:
           reconcile_one admin-api deploy-admin-api.yml backend/admin-api ""
           reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests"
           reconcile_one admin-web deploy-frontend.yml frontend/admin-web ""
+          # worker-h5（issue #5001）—— **静态落地面腿**：发布到 `app.migaozn.com` 静态根的 `w/`，
+          # **没有镜像** ⇒ 判据 ①（镜像已存在）对它恒不成立，判定来自漂移判据 ②（自
+          # `worker-h5-publish.yml` 上次**成功**发布起 `frontend/worker-h5/**` 有无改动）。
+          # 为什么必须有这条腿：该 workflow 的触发面只有 `push: main` + `workflow_dispatch`，而
+          # auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ 它触发的 `push` **不会**再触发 workflow
+          # （#3113 已登记的同族抑制）⇒ 改了 `frontend/worker-h5/**` 的 PR 合并后工人端
+          # **静默不发布**（实测：#4973 合并后线上 `frontend/worker-h5/src/render.mjs` 仍 0 命中
+          # 「开工」，无红无告警）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响，正是免疫的兜底腿。
+          # 代码路径 = `worker-h5-publish.yml` 的 `on.push.paths` 正向项（有动态对齐守卫）。
+          reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""
 
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
@@ -214,11 +224,13 @@ jobs:
           } >> "$SUMMARY"
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
-          # **非挂钟时长**。零动作（NODRIFT=3、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
+          # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
+          # `--seen` = 本轮的**对账腿数**（4 条：3 条镜像腿 + worker-h5 静态落地面腿，issue #5001）——
+          # 它与读数必须同刻（不加腿就报 4 = 读数与事实相反，#5264 的形态）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-            mechanism_liveness_declare --seen 3 --acted "${MISSING}" \
+            mechanism_liveness_declare --seen 4 --acted "${MISSING}" \
               --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）"
 
           fi

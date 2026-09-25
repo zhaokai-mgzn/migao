@@ -147,6 +147,10 @@ class WorkerTenantCycleGuardTest {
                 + "password_hash VARCHAR(128), nickname VARCHAR(64), avatar VARCHAR(255),"
                 + "role VARCHAR(32), position VARCHAR(64), worker_no VARCHAR(64),"
                 + "permissions VARCHAR(2048), session_ttl INTEGER, status VARCHAR(16),"
+                // V128（issue #5485）：员工登录用户名 + 首登强制改密标记。真 Mapper 的
+                // selectActiveUsersByPhoneIgnoreTenant 已把这两列列进投影 ⇒ 夹具 DDL 缺列会
+                // 让本守卫在「Column \"username\" not found」上假红（实测踩中）。
+                + "username VARCHAR(64), must_change_password BOOLEAN NOT NULL DEFAULT FALSE,"
                 + "created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE,"
                 + "deleted INTEGER NOT NULL DEFAULT 0)");
         // 与 V98 逐列同形（生产 PG 的 DDL；H2 的 PostgreSQL 模式接受同一份类型）
@@ -159,6 +163,44 @@ class WorkerTenantCycleGuardTest {
                 + "ended_at TIMESTAMP WITH TIME ZONE, end_reason VARCHAR(16),"
                 + "created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE,"
                 + "deleted INTEGER NOT NULL DEFAULT 0)");
+    }
+
+    // ============================ ⓪ 员工登录查询 × 租户拦截器（issue #5485，真栈实测的 P0）
+
+    @Test
+    @DisplayName("🔴 员工登录查询必须显式关掉租户自动注入（声明层判据）+ 租户谓词必须真的生效（行为层正向）")
+    void employeeLoginLookupMustBypassTenantInjection() throws Exception {
+        // ── 为什么是"声明层"判据 ─────────────────────────────────────────────
+        // 真栈验收实测的 P0：`UserMapper.selectActiveByTenantAndUsername` 漏掉
+        // `@InterceptorIgnore(tenantLine = "true")` 时，员工登录（**未认证**、TenantContext 为空）
+        // 会让 TenantLineInnerInterceptor 走 fail-closed 分支抛
+        // `RuntimeException: Tenant context not initialized - possible unauthenticated access`
+        // ⇒ 凡走到"查用户"这一步的请求（含最常见的「用户名打错」）返回 **500**，同时破坏反枚举。
+        // ⚠️ 我**先写的是行为型断言**（在本夹具里调一次、断言不抛异常）—— 变异注入（删注解、
+        //    sha 自证生效）后它**仍然绿** ⇒ 那是**空断言**（本夹具的 H2 + 拦截器组合没复现出
+        //    生产那条 fail-closed 路径）。按纪律空断言不许留 ⇒ 改为声明层判据：
+        //    删掉注解这条**必红**（红证见下），且不假装测了行为。
+        // 行为面真正能测的是"租户谓词生效"（正向 + 跨租户两个方向），那两条留下。
+        java.lang.reflect.Method m = UserMapper.class
+                .getMethod("selectActiveByTenantAndUsername", Long.class, String.class);
+        com.baomidou.mybatisplus.annotation.InterceptorIgnore ig =
+                m.getAnnotation(com.baomidou.mybatisplus.annotation.InterceptorIgnore.class);
+        assertThat(ig).as("员工登录查询必须带 @InterceptorIgnore（否则未认证时租户拦截器 fail-closed ⇒ 500）")
+                .isNotNull();
+        assertThat(ig.tenantLine()).as("tenantLine 必须为 true").isEqualTo("true");
+
+        // ── 行为层：租户谓词真的在生效（正向 + 反向，防判据空转）────────────
+        TenantContext.clear();
+        SecurityContextHolder.clearContext();
+        assertThat(userMapper.selectActiveByTenantAndUsername(TENANT_A, "no_such_user")).isNull();
+
+        execute("INSERT INTO users (id, tenant_id, phone, username, password_hash, nickname, role, status, deleted)"
+                + " VALUES ('guarded-emp-1', " + TENANT_A + ", '13000000701', 'zhangsan', 'x', '张三', 'operator', 'active', 0)");
+        User found = userMapper.selectActiveByTenantAndUsername(TENANT_A, "zhangsan");
+        assertThat(found).as("同租户用户名查询必须能命中").isNotNull();
+        assertThat(found.getUsername()).isEqualTo("zhangsan");
+        assertThat(userMapper.selectActiveByTenantAndUsername(TENANT_B, "zhangsan"))
+                .as("同名员工在另一租户下必须查不到（租户内定位 I3）").isNull();
     }
 
     @AfterEach

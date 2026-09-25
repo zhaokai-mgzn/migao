@@ -31,7 +31,8 @@
    SIGPIPE 变成了假分支**，不是「仓库里没有代码改动」。
 2. **改后行为（桩化真跑 `run:` 正文）**：把 workflow 里**当前**的对账 `run:` 正文抽出来，
    在真实 git 仓库 + 桩 `gh`/`docker` 下执行，断言五个场景的**动作**与**判定依据**：
-   - 注入「HEAD 镜像缺失 + 自上次成功部署起有代码改动」（= 事故形态）⇒ **真 dispatch 3 条**；
+   - 注入「HEAD 镜像缺失 + 自上次成功部署起有代码改动」（= 事故形态）⇒ **真 dispatch**（3 条镜像腿
+     + worker-h5 静态落地面腿，issue #5001）；
    - 「无漂移」（HEAD 是 docs 提交，但自上次成功部署起该服务代码没动）⇒ 零 dispatch
      **但 summary 明写依据**（不是静默 success）；
    - 「断路器命中」（同一 headSha 已 failure）⇒ 零 dispatch + 记明原因；
@@ -105,16 +106,30 @@ import os, sys
 
 args = sys.argv[1:]
 if args[:2] == ["manifest", "inspect"]:
-    tag = args[2].rsplit(":", 1)[-1]
+    # 按**完整镜像引用**（`<registry>/<ns>/<repo>:<tag>`）判定 —— 与真实 ACR 同形：tag 是
+    # **逐仓库**的，所以「没有镜像的腿」（worker-h5，静态落地面腿，issue #5001）在这里
+    # 真的不存在 ⇒ 它只能落到漂移判据 ②。
+    ref = args[2]
     existing = {t for t in os.environ.get("STUB_IMAGE_TAGS", "").split(",") if t}
-    sys.exit(0 if tag in existing else 1)
+    sys.exit(0 if ref in existing else 1)
 sys.exit(3)
 '''
+
+# 有镜像的三条腿（真值源 = `deploy-*.yml`）；worker-h5 **不在其中**（它发布静态文件，不构建镜像）
+IMAGE_LEGS = ("admin-api", "ai-agent-service", "admin-web")
+
+
+def image_ref(svc: str, head7: str) -> str:
+    return f"{ACR_REGISTRY}/{ACR_NAMESPACE}/{svc}:sha-{head7}"
+
 
 DEPLOY_WF = {
     "admin-api": "deploy-admin-api.yml",
     "ai-agent-service": "deploy-ai-agent-service.yml",
     "admin-web": "deploy-frontend.yml",
+    # worker-h5（issue #5001）：**静态落地面腿**（无镜像）⇒ 判据 ① 对它恒不成立，判定来自漂移
+    # 判据 ②（自 `worker-h5-publish.yml` 上次成功发布起 `frontend/worker-h5/**` 有无改动）。
+    "worker-h5": "worker-h5-publish.yml",
 }
 
 
@@ -167,7 +182,8 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(rel, encoding="utf-8")
 
-    for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts"):
+    for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts",
+                "frontend/worker-h5/a.mjs"):
         touch(rel)
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
@@ -196,7 +212,7 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
 def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
                   image_tags: str = "", list_fail: bool = False, head7: str) -> tuple:
     """在 `repo` 里执行改后的对账正文（桩 gh/docker），返回 (proc, summary, dispatches)。"""
-    assert set(runs_by_wf) == set(DEPLOY_WF.values()), "必须给出全部三个 deploy workflow 的 run 列表"
+    assert set(runs_by_wf) == set(DEPLOY_WF.values()), "必须给出全部四条对账腿的 run 列表"
     bin_dir = make_stubs(tmp_path)
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir(exist_ok=True)
@@ -366,7 +382,8 @@ def test_current_workflow_has_no_pipefail_grep_q_construct():
 # 二、改后行为（桩化真跑）：注入各场景 ⇒ 断言动作 + 判定依据
 # ══════════════════════════════════════════════════════════════════════════
 
-ALL_DRIFT_PATHS = ("backend/admin-api/b.py", "backend/ai-agent-service/b.py", "frontend/admin-web/b.ts")
+ALL_DRIFT_PATHS = ("backend/admin-api/b.py", "backend/ai-agent-service/b.py", "frontend/admin-web/b.ts",
+                   "frontend/worker-h5/b.mjs")
 
 
 def test_incident_shape_now_dispatches(tmp_path):
@@ -383,21 +400,21 @@ def test_incident_shape_now_dispatches(tmp_path):
     assert dispatches == ["deploy-admin-api.yml"], (
         f"应只 dispatch 被吞的那条腿（事故里一条都没动）→ 实得 {dispatches}\n{proc.stdout}"
     )
-    assert "**结论**：dispatch=1 · 无漂移=2" in summary, f"summary 结论行不对 → {summary!r}"
+    assert "**结论**：dispatch=1 · 无漂移=3" in summary, f"summary 结论行不对 → {summary!r}"
     assert "已 dispatch 补部署" in summary and "backend/admin-api 有代码改动" in summary, (
         f"summary 没写清「为什么补」（判定依据）→ {summary!r}"
     )
 
 
-def test_all_three_services_dispatch_when_code_changed(tmp_path):
-    """三条腿都有代码改动（+ 镜像缺失）⇒ 三条都补（事故里 3 个服务的镜像都没构建）。"""
+def test_all_reconciled_legs_dispatch_when_code_changed(tmp_path):
+    """四条对账腿都有代码改动（+ 镜像缺失）⇒ 四条都补（事故里 3 个服务的镜像都没构建）。"""
     fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), f"→ {dispatches}\n{proc.stdout}"
-    assert "**结论**：dispatch=3" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=4" in summary, f"{summary!r}"
 
 
 def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
@@ -408,22 +425,31 @@ def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"无漂移不该 dispatch（否则每个 docs 提交都空转重建）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=3" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 3, f"三条「无漂移」依据都要落表 → {summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=4" in summary, f"{summary!r}"
+    assert summary.count("无漂移：自") == 4, f"四条「无漂移」依据都要落表 → {summary!r}"
     assert "::notice::" in proc.stdout, "零 dispatch 时必须给一条 notice（可观测）"
 
 
 def test_head_image_present_does_not_dispatch(tmp_path):
-    """HEAD 的镜像已存在 ⇒ 零 dispatch + 记明依据（镜像名）。"""
+    """HEAD 的镜像已存在 ⇒ 零 dispatch + 记明依据（镜像名）。
+
+    ⚠️ worker-h5 **没有镜像**（静态落地面腿，issue #5001）⇒ 判据 ① 对它恒不成立，
+    它这一轮的「无漂移」来自**漂移判据 ②**——这是该腿的结构事实，不是本测试的偶然。
+    """
     fx = commit_repos(tmp_path)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D1"], "success"),
-        image_tags=f"sha-{fx['head7']}", head7=fx["head7"],
+        # 只让**有镜像**的三条腿的镜像存在（worker-h5 无镜像 —— 这正是 #5001 的结构事实）
+        image_tags=",".join(image_ref(svc, fx["head7"]) for svc in IMAGE_LEGS),
+        head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == []
-    assert "**结论**：dispatch=0 · 无漂移=3" in summary
+    assert "**结论**：dispatch=0 · 无漂移=4" in summary
     assert summary.count("镜像已存在") == 3 and f"sha-{fx['head7']}" in summary, f"{summary!r}"
+    assert summary.count("无漂移：自") == 1 and "| worker-h5 |" in summary, (
+        f"无镜像的 worker-h5 腿必须落到漂移判据（而不是「镜像已存在」）→ {summary!r}"
+    )
 
 
 def test_breaker_skips_and_records_reason(tmp_path):
@@ -434,8 +460,8 @@ def test_breaker_skips_and_records_reason(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"断路器命中后不该 dispatch → {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=3" in summary, f"{summary!r}"
-    assert summary.count("断路器：") == 3 and "已失败过" in proc.stdout, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=4" in summary, f"{summary!r}"
+    assert summary.count("断路器：") == 4 and "已失败过" in proc.stdout, f"{summary!r}"
 
 
 def test_cancelled_is_not_treated_as_failure(tmp_path):
@@ -462,7 +488,7 @@ def test_query_failure_fails_open_with_warning(tmp_path):
         f"查询失败必须 fail-open 照旧补部署（本检查出错绝不停掉对账）→ {dispatches}"
     )
     assert "::warning::" in proc.stdout, "判据不可用必须出声（warning），不许静默"
-    assert "判定失败=3" in summary, f"{summary!r}"
+    assert "判定失败=4" in summary, f"{summary!r}"
 
 
 def test_git_history_loss_fails_open_not_silent(tmp_path):
@@ -476,4 +502,4 @@ def test_git_history_loss_fails_open_not_silent(tmp_path):
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), (
         f"git 判不了时必须 fail-open（按兜底补部署）→ {dispatches}\n{proc.stdout}"
     )
-    assert "判定失败=3" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+    assert "判定失败=4" in summary and "::warning::" in proc.stdout, f"{summary!r}"

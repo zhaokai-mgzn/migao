@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
@@ -106,7 +107,7 @@ class AdminUserControllerTest {
             setAdminUser();
             com.migao.admin.entity.User user = new com.migao.admin.entity.User();
             user.setId("new-user");
-            when(userService.createUser(any(), any(), any(), any(), any(), any(), any())).thenReturn(user);
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(user);
 
             mockMvc.perform(post("/api/admin/users")
                             .contentType("application/json")
@@ -118,7 +119,7 @@ class AdminUserControllerTest {
         @DisplayName("operator 创建用户 → 200（细粒度权限已上移至 PermissionInterceptor，集成层见 SecurityConfigTest）")
         void operatorCanCreateUser() throws Exception {
             setOperatorUser();
-            when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                     .thenReturn(new com.migao.admin.entity.User());
 
             mockMvc.perform(post("/api/admin/users")
@@ -126,7 +127,7 @@ class AdminUserControllerTest {
                             .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
                     .andExpect(status().isOk());
 
-            verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any());
+            verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean());
         }
 
         // issue #3605：#3561 只补了 update 侧；本条锁 create 侧（同族漏网面复核结论：create 侧本就读取），
@@ -141,7 +142,7 @@ class AdminUserControllerTest {
             when(roleService.getRoleById("role-manager")).thenReturn(role);
             com.migao.admin.entity.User user = new com.migao.admin.entity.User();
             user.setId("user-new");
-            when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                     .thenReturn(user);
 
             // 与 ai-agent `app/tools/employee_manage.py::_create_user` 下发的 payload 逐字一致
@@ -152,8 +153,10 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             // 岗位=角色体系（#2969）：roleIds 解析出 role code 后，position 兜底同值
+            // issue #5485：控制器改调 9 参重载 —— 追加 username（本条 payload 未传 ⇒ null）
+            // 与 forceChangePassword（payload 带 password ⇒ true）两个实参。
             verify(userService).createUser(eq("13900000002"), eq("init-pass-123"), eq("张三"),
-                    eq("manager"), eq("manager"), isNull(), eq(1L));
+                    eq("manager"), eq("manager"), isNull(), eq(1L), isNull(), eq(true));
             // roleIds 必须真的写 user_roles（角色表主键语义，与 update 侧一致）
             verify(roleService).assignRoleToUser("user-new", "role-manager", 1L);
         }
@@ -190,7 +193,7 @@ class AdminUserControllerTest {
         @DisplayName("下发 phone → 手机号进入更新实参（不再被静默丢弃）")
         void phoneIsForwardedToUpdate() throws Exception {
             setAdminUser();
-            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(existingUser());
 
             mockMvc.perform(put("/api/admin/users/user-1")
@@ -199,7 +202,7 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             verify(userService).updateUser(eq("user-1"), eq("张三"), nullable(String.class), nullable(String.class),
-                    nullable(String.class), nullable(String.class), eq("13900000002"));
+                    nullable(String.class), nullable(String.class), eq("13900000002"), nullable(String.class));
         }
 
         @Test
@@ -207,7 +210,7 @@ class AdminUserControllerTest {
         void roleIdsIsResolvedToRoleCode() throws Exception {
             setAdminUser();
             when(roleService.getRoleById("role-manager")).thenReturn(roleWithCode("manager"));
-            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(existingUser());
 
             mockMvc.perform(put("/api/admin/users/user-1")
@@ -216,7 +219,7 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("manager"),
-                    nullable(String.class), nullable(String.class), nullable(String.class));
+                    nullable(String.class), nullable(String.class), nullable(String.class), nullable(String.class));
         }
 
         @Test
@@ -224,7 +227,7 @@ class AdminUserControllerTest {
         void positionFallbackStillWorksWhenNoRoleProvided() throws Exception {
             setAdminUser();
             when(roleService.getRoleByPosition("客服主管", 1L)).thenReturn(roleWithCode("manager"));
-            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(existingUser());
 
             mockMvc.perform(put("/api/admin/users/user-1")
@@ -233,14 +236,14 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("manager"),
-                    eq("客服主管"), nullable(String.class), nullable(String.class));
+                    eq("客服主管"), nullable(String.class), nullable(String.class), nullable(String.class));
         }
 
         @Test
         @DisplayName("显式 role 优先于 roleIds（与 createUser 口径一致）")
         void explicitRoleWinsOverRoleIds() throws Exception {
             setAdminUser();
-            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any()))
+            when(userService.updateUser(any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(existingUser());
 
             mockMvc.perform(put("/api/admin/users/user-1")
@@ -249,7 +252,7 @@ class AdminUserControllerTest {
                     .andExpect(status().isOk());
 
             verify(userService).updateUser(eq("user-1"), nullable(String.class), nullable(String.class), eq("admin"),
-                    nullable(String.class), nullable(String.class), nullable(String.class));
+                    nullable(String.class), nullable(String.class), nullable(String.class), nullable(String.class));
             verify(roleService, never()).getRoleById(any());
         }
     }

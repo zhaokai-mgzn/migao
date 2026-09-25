@@ -54,11 +54,13 @@ class AdminApiWorkerRoleGateTest {
     @Mock
     private WorkerSessionFilter workerSessionFilter;
     @Mock
+    private PasswordChangeRequiredFilter passwordChangeRequiredFilter;
+    @Mock
     private org.springframework.security.core.userdetails.UserDetailsService userDetailsService;
 
     private AuthorizationManager<RequestAuthorizationContext> gate() {
         SecurityConfig config = new SecurityConfig(jwtAuthenticationFilter, serviceTokenFilter,
-                workerSessionFilter, userDetailsService, new ObjectMapper());
+                workerSessionFilter, passwordChangeRequiredFilter, userDetailsService, new ObjectMapper());
         return config.adminApiAuthorizationManager();
     }
 

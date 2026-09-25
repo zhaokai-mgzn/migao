@@ -214,7 +214,6 @@ DECLARE
   v_cust   INTEGER;
   v_emp    INTEGER;
   v_cust_w INTEGER;
-  v_ord6   INTEGER;
 BEGIN
   SELECT count(*) INTO v_prod   FROM products          WHERE id = 'prod_eval_2699' AND deleted = 0;
   SELECT count(*) INTO v_colors FROM product_colors    WHERE product_id = 'prod_eval_2699';
@@ -226,20 +225,23 @@ BEGIN
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
-  -- CU-005 的两个点名对象（#5030 缴费用）：客户档案「王五」+ 其**无加工项**的可发货订单 0006
+  -- CU-005 的点名对象之一（#5030 缴费用）：客户档案「王五」。
+  -- ⚠️ 另一个点名对象（其**无加工项**的可发货订单 `EVAL-MB-ORD-0006`）**不在本块核对**：
+  --   该订单由 **Phase 3** 才 INSERT，而本块在 Phase 1 ⇒ 「自检早于被检查对象」会让
+  --   `psql -v ON_ERROR_STOP=1` 在本块当场中止（issue #5501 的真库实测形态，rc=3）。
+  --   ⇒ 该读数已随它的 INSERT 挪到 Phase 3 的自检块（判据见文件末尾「#5501 修正说明」）。
   SELECT count(*) INTO v_cust_w FROM customer_profiles WHERE id = 'cust_eval_wangwu';
-  SELECT count(*) INTO v_ord6   FROM orders            WHERE order_no = 'EVAL-MB-ORD-0006' AND deleted = 0;
   -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V66 DROP，
   -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
-  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=% 客户王五=% 订单0006=%',
-    v_prod, v_colors, v_pi, v_cust, v_emp, v_cust_w, v_ord6;
+  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=% 客户王五=%',
+    v_prod, v_colors, v_pi, v_cust, v_emp, v_cust_w;
   IF v_prod < 1 OR v_colors < 1 OR v_pi < 16 THEN   -- 16 = ERP 目录项数（见上）
     RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项目录 缺失（prod=% colors=% pi=%）',
       v_prod, v_colors, v_pi;
   END IF;
-  IF v_cust < 1 OR v_emp < 1 OR v_cust_w < 1 OR v_ord6 < 1 THEN
-    RAISE EXCEPTION 'B 端 fixture 注入失败：客户张三=% 员工王五=% 客户王五=% 订单0006=%',
-      v_cust, v_emp, v_cust_w, v_ord6;
+  IF v_cust < 1 OR v_emp < 1 OR v_cust_w < 1 THEN
+    RAISE EXCEPTION 'B 端 fixture 注入失败：客户张三=% 员工王五=% 客户王五=%',
+      v_cust, v_emp, v_cust_w;
   END IF;
 END $$;
 
@@ -429,6 +431,7 @@ DECLARE
   v_ord      INTEGER;
   v_pending  INTEGER;
   v_timeline INTEGER;
+  v_ord6     INTEGER;
 BEGIN
   -- 承载订单：**必须三合一**（issue #4259）—— ① 按 order_no 找得到；② 它正是工单挂的那张；
   --   ③ 它的客户 = 工单的客户。旧口径只核 ①，而本段原先与 Phase 2 撞 id 时 ① 仍然 = 1
@@ -450,11 +453,17 @@ BEGIN
      AND status = 'pending' AND deleted = 0;
   SELECT count(*) INTO v_timeline FROM ticket_timeline
    WHERE tenant_id = 1 AND ticket_id = 'tkt_eval_as_9001' AND action = 'created';
-  RAISE NOTICE 'B 端 Phase 3 核对: 承载订单(存在∧是工单挂的∧客户同族)=% 未处理工单=% 建单时间线=%',
-    v_ord, v_pending, v_timeline;
-  IF v_ord < 1 OR v_pending < 1 THEN
-    RAISE EXCEPTION 'B 端 Phase 3 注入失败：AS-004 需要的 pending 工单或其承载订单不成立
-（承载订单=% 工单=%）', v_ord, v_pending;
+  -- CU-005 的另一个点名对象（#5030 缴费用）—— **从 Phase 1 挪到这里**（issue #5501）：
+  --   其**无加工项**的可发货订单 0006 由**紧邻上方**的 INSERT 写入 ⇒ 自检不再早于被检查对象。
+  --   把它挪回 Phase 1（或把该 INSERT 挪到本块之后）⇒ 静态判据必红：
+  --   tests/unit_ci_workflows/test_eval_seed_selfcheck_ordering.py
+  SELECT count(*) INTO v_ord6 FROM orders
+   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0006' AND deleted = 0;
+  RAISE NOTICE 'B 端 Phase 3 核对: 承载订单(存在∧是工单挂的∧客户同族)=% 未处理工单=% 建单时间线=% CU-005发货对象0006=%',
+    v_ord, v_pending, v_timeline, v_ord6;
+  IF v_ord < 1 OR v_pending < 1 OR v_ord6 < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 3 注入失败：AS-004 的 pending 工单 / 其承载订单 / CU-005 的可发货订单 0006 不成立
+（承载订单=% 工单=% 订单0006=%）', v_ord, v_pending, v_ord6;
   END IF;
 END $$;
 
@@ -469,6 +478,22 @@ END $$;
 --     （逐条核「每个 EVAL-MB-ORD-* 的声明行真的会生效」+「注释客户 = 实际生效行」+ 工单同族）；
 --     判据（运行期）：上方 Phase 3 DO 块的「承载订单三合一」计数 —— 回注该缺陷时它会
 --     RAISE EXCEPTION（实测 `psql -v ON_ERROR_STOP=1` exit=3，种子步骤 fail-fast）。
+
+-- #5501 修正说明（本文件原先的缺陷，留档防复发）：
+--   · 旧形态：**Phase 1 的核对块**（上面那处「数据核对」DO 块）核了 `EVAL-MB-ORD-0006`，
+--     而该订单由 **Phase 3** 才 INSERT ⇒ **自检永远早于被检查对象**。
+--     `scripts/eval_stack_seed.sh` 用 `psql -v ON_ERROR_STOP=1` ⇒ 全新库上首次注入即在该块
+--     `RAISE EXCEPTION` 中止（实测 rc=3，NOTICE 打 `客户王五=1 订单0006=0`）
+--     ⇒ **mibao persona 的评测栈根本装不起来**，且**不是幂等二跑能自救**的形态。
+--     当时**全部静态守卫都是绿的** —— 它们看声明 / 列集 / 文本形态，没有一条判「块与块的顺序」。
+--   · 现形态：该读数**随它的 INSERT 一起**落在 Phase 3 的核对块里（插入在紧邻上方）⇒ 顺序自洽。
+--     为什么不选「把 0006 的 INSERT 提前到 Phase 1 之前」：那要把 0005/0006 同处的那条多行
+--     INSERT 拆开，并把 0006 的说明（其理由引用 Phase 2 才插入的 0002/0003/0004）搬到前面 ——
+--     改动面更大、语义更差；而「每个阶段只核对自己（及更早阶段）插的对象」本身就是更干净的口径。
+--   · 判据（静态，类级）：tests/unit_ci_workflows/test_eval_seed_selfcheck_ordering.py
+--     —— 扫 `tests/agent_eval/fixtures/*.sql`：自检块引用的实体键，若同文件里有 INSERT 写过它，
+--     则最早那条 INSERT 必须在自检块之前（把插入挪回自检之后 ⇒ 必红）。
+--   · 判据（运行期）：真库按 `eval_stack_seed.sh` 的顺序跑 xiaobu → mibao ⇒ rc=0（连跑 2 次一致）。
 
 -- ============================================================================
 -- 遗留 TODO（#3496 / #3519 剩余失败）：

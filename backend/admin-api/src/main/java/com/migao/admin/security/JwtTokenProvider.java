@@ -71,6 +71,17 @@ public class JwtTokenProvider {
     public static final String CLAIM_USERNAME = "username";
     public static final String CLAIM_ROLES = "roles";
     public static final String CLAIM_PERMISSIONS = "permissions";
+    /**
+     * 首登强制改密 claim（issue #5485 不变式 I4）。
+     *
+     * <p>⚠️ 这是**内部** claim 名（snake_case，随 JWT 走）；对外 DTO 字段是
+     * {@code mustChangePassword}（camelCase）。两套命名**有意分开**，不要合并成一个字面量 ——
+     * 前端只看得见 DTO 字段名，claim 名改动不该被当成对外契约变更。</p>
+     *
+     * <p>签发侧（登录 + **刷新**）按数据库当前 {@code users.must_change_password} 计算；
+     * 拦截侧见 {@link PasswordChangeRequiredFilter}。</p>
+     */
+    public static final String CLAIM_PWD_CHANGE_REQUIRED = "pwd_change_required";
     public static final String CLAIM_TOKEN_TYPE = "tokenType";
     public static final String TOKEN_TYPE_ACCESS = "access";
     public static final String TOKEN_TYPE_REFRESH = "refresh";
@@ -229,6 +240,18 @@ public class JwtTokenProvider {
      * 签发 Access Token（含细粒度权限）
      */
     public String generateAccessToken(String userId, Long tenantId, String username, List<String> roles, List<String> permissions) {
+        return generateAccessToken(userId, tenantId, username, roles, permissions, false);
+    }
+
+    /**
+     * 签发 Access Token（含细粒度权限 + 首登强制改密标记，issue #5485）。
+     *
+     * @param passwordChangeRequired ⚠️ 必须由调用方按**数据库当前** {@code users.must_change_password}
+     *                               计算 —— 登录与刷新**两条路径都要算**；只在登录时算会被
+     *                               「刷新一次 token」绕过（不变式 I4 最容易漏的那条）。
+     */
+    public String generateAccessToken(String userId, Long tenantId, String username, List<String> roles,
+                                      List<String> permissions, boolean passwordChangeRequired) {
         Instant now = Instant.now();
         Instant expiration = now.plusSeconds(accessTokenExpiration);
 
@@ -239,6 +262,7 @@ public class JwtTokenProvider {
                 .claim(CLAIM_USERNAME, username)
                 .claim(CLAIM_ROLES, roles)
                 .claim(CLAIM_PERMISSIONS, permissions)
+                .claim(CLAIM_PWD_CHANGE_REQUIRED, passwordChangeRequired)
                 .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiration))

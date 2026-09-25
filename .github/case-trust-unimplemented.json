@@ -7,9 +7,9 @@
       "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
       "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
       "why_not": "静态只能看到**本 PR 的 diff**，看不到「本次运行会不会用 `case_ids` 窄跑」—— 那是**运行期**信息。静态侧只能要求 persona 标注存在（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。",
-      "needs": "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。",
-      "issue": 3822,
-      "expires": "2027-01-31",
+      "needs": "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#5504；`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。",
+      "issue": 5504,
+      "expires": "2027-03-31",
       "how_to_verify": "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。核验：单腿派发（`xiaobu-acceptance.yml` 的 `persona` 输入）+ `case_ids` 含一条单端用例 ID，另一腿**不再**判红；或该守卫源码里出现按 persona 过滤 `case_ids` 的分支（按「禁止静默少跑」文本检索）。",
       "hit_probe": "single_leg_persona"
     },
@@ -38,8 +38,8 @@
       "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
       "why_not": "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定（`migao-acceptance`：LLM 只覆盖语义残留）。静态侧只能判定「它**不计分**」（`is_machine_scored_data_check`）并据此要求效果层断言。",
       "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
-      "issue": 3483,
-      "expires": "2027-03-31",
+      "issue": 5505,
+      "expires": "2027-06-30",
       "how_to_verify": "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」⇒ 撤本登记。核验：存在按用例 ID 产出语义复核结论的脚本/用例，且 `python3 .github/case_trust_gate.py` 的未实装清单里不再需要这一条。",
       "hit_probe": "prose_data_check"
     }

@@ -734,11 +734,18 @@ def test_reconcile_keeps_its_safety_gates():
 #   ⓒ 「跑了但没说为什么没动」⇒ 每个判定分支都要 echo + 落 `$GITHUB_STEP_SUMMARY`。
 # ══════════════════════════════════════════════════════════════════════════
 
-# 镜像名 → deploy workflow（真值源；`check_reconcile_paths_match_deploy_triggers` 据此反查）
+# 对账项名 → deploy/发布 workflow（真值源；`check_reconcile_paths_match_deploy_triggers` 据此反查）
+# ⚠️ 这是「必须逐服务对账的腿」的**单一真值源**：往 `deploy-reconcile.yml` 加/删一条
+#    `reconcile_one` 而不同时改这里（或反之）⇒ `set(calls) == set(SVC_TO_DEPLOY_WORKFLOW)` 判红
+#    ⇒ 「加了腿但没登记 / 登记了腿但没接线」两种半成品都进不来（issue #5001 的形态）。
 SVC_TO_DEPLOY_WORKFLOW = {
     "admin-api": "deploy-admin-api.yml",
     "ai-agent-service": "deploy-ai-agent-service.yml",
     "admin-web": "deploy-frontend.yml",
+    # worker-h5（issue #5001）：**静态落地面腿**（发布 `frontend/worker-h5/**` 到静态根 `w/`），
+    # 无镜像 ⇒ 对账走漂移判据 ②；它的触发面只有 `push: main` + `workflow_dispatch`，而被
+    # `GITHUB_TOKEN` 合并的 auto-merge **吞掉那个 push** ⇒ 缺了这条腿就等于「改动静默不发布」。
+    "worker-h5": "worker-h5-publish.yml",
 }
 
 
@@ -861,7 +868,11 @@ def parse_reconcile_calls(text: str) -> dict:
         svc, wf, path, excl_q, excl_b = m.groups()
         assert svc not in calls, f"`reconcile_one {svc}` 出现了两次（判据已过期）"
         calls[svc] = {"wf": wf, "path": path, "excl": excl_q if excl_q is not None else excl_b}
-    assert len(calls) == 3, f"必须逐服务调用 3 次 → 实得 {sorted(calls)}"
+    # 条数由**登记册**派生（不写死数字）：写死会让「加了一条腿」与「登记册」两处投影分叉
+    # ——#5001 的病根正是「登记/接线只有一处」（当时写死 3，worker-h5 落在两处之外）。
+    assert len(calls) == len(SVC_TO_DEPLOY_WORKFLOW), (
+        f"逐服务调用数必须等于登记册条目数 {len(SVC_TO_DEPLOY_WORKFLOW)} → 实得 {sorted(calls)}"
+    )
     return calls
 
 
@@ -1009,6 +1020,22 @@ def test_reconcile_path_alignment_criterion_has_discriminating_power():
         "reconcile_one admin-web deploy-frontend.yml frontend/admin-web",
         "reconcile_one admin-web deploy-frontend.yml frontend",
     )
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_paths_match_deploy_triggers(broken)
+
+
+def test_reconcile_worker_h5_leg_criterion_has_discriminating_power():
+    """🔴 反向红证（issue #5001）：**删掉 worker-h5 那条对账腿** ⇒ 判据必红（防空断言）。
+
+    这是本单的**实例判据**：worker-h5 曾经落在 `SVC_TO_DEPLOY_WORKFLOW` 之外 ⇒ 改了
+    `frontend/worker-h5/**` 的 PR 经 auto-merge 合并后工人端**静默不发布**（线上文件仍是旧的，
+    无红无告警）。本判据把「腿必须存在」变成会红的断言 —— 它红时可归因到「登记册里的腿没接线」，
+    出口是可行动的（补回那一行，或从登记册里删掉该服务）。
+    """
+    real = reconcile_run()
+    check_reconcile_paths_match_deploy_triggers(real)  # 前提：真文本先绿
+    broken = re.sub(r"^reconcile_one worker-h5 .*\n", "", real, flags=re.M)
     assert broken != real, "注入未生效（判据自证）"
     with pytest.raises(AssertionError):
         check_reconcile_paths_match_deploy_triggers(broken)

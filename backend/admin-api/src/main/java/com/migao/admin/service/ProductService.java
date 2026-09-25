@@ -122,6 +122,17 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     );
 
     /**
+     * 库存台账 note（issue #4157）：建品/改品直写 SKU 库存的来源说明。
+     *
+     * <p>{@code reason} 复用 {@link StockLedger#REASON_MANUAL}（人工直接设定库存，与
+     * {@link #adjustStockForAgent} 同族）—— 表上有 {@code ck_stock_ledger_reason} CHECK
+     * 只放行 order/aftersales/manual/inbound，为「区分来源」去造第五个 reason 需要迁移，
+     * 且是第二套口径。**建档/改品的库存变更**与**新 SKU 基线行**由 note 区分。</p>
+     */
+    private static final String LEDGER_NOTE_SKU_CHANGED = "商品建档/编辑：SKU 库存变更";
+    private static final String LEDGER_NOTE_SKU_BASELINE = "商品建档/编辑：新 SKU 初始库存（基线行）";
+
+    /**
      * 分页查询商品列表
      */
     public PageResponse<ProductResponse> getProducts(ProductQueryRequest query, Long tenantId) {
@@ -527,6 +538,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
+        // 库存台账（issue #4157）：本方法是**建品/改品直写 SKU 库存**这条变更路径的唯一收口，
+        // 此前不落账 ⇒「某 SKU 的库存为什么从 X 变成 Y」在这条路径上答不出。
+        // 变更**之前**取快照，变更后用同一份既有比对落账（复用 StockLedgerService，不写第二套判据）。
+        Map<Long, ProductSku> stockBeforeSave = stockLedgerService.snapshotSkus(List.of(productId));
+
         // 加载现有颜色与 SKU（仅当前商品，不跨租户；create 时为空）
         List<ProductColor> existingColors = productColorMapper.selectList(
                 new LambdaQueryWrapper<ProductColor>().eq(ProductColor::getProductId, productId));
@@ -552,6 +568,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
         Set<Long> keptColorIds = new LinkedHashSet<>();
         Set<Long> keptSkuIds = new LinkedHashSet<>();
+        // 本次新建的 SKU（issue #4157）：首行按「补一条基线行」落账（快照比对看不见新增行）
+        List<ProductSku> createdSkus = new ArrayList<>();
 
         // 提取颜色名列表（优先用 colorName，即色号如 "2699-01"）
         List<String> colorNames = new ArrayList<>();
@@ -698,6 +716,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     entity.setSkuCode(skuCode);
                     entity.setSalesCount(BigDecimal.ZERO);
                     productSkuMapper.insert(entity);
+                    createdSkus.add(entity);
                     keptSkuIds.add(entity.getId());
                 }
             }
@@ -717,6 +736,24 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     productColorMapper.deleteById(c.getId());
                 }
             }
+        }
+
+        // 库存台账（issue #4157）：两条腿都落账 ——
+        //   ① 既有 SKU 的**真实**变化：变更前快照 vs 变更后实际值（无变化不落行 ⇒ 台账里不出现
+        //      delta=0 噪声行；`recordChangesAgainstSnapshot` 是既有唯一比对实现）；
+        //   ② 新 SKU 首行 = **基线行**（用户 2026-09-25 裁定，见 #5496 建议①）：与既有「历史不回填」
+        //      口径一致 —— 存量不追补，但**新发生的变更必须落账** ⇒ 链条从 0 起算、首行有前驱，
+        //      而不是在「新 SKU 首次库存」处断头。
+        stockLedgerService.recordChangesAgainstSnapshot(tenantId, stockBeforeSave,
+                StockLedger.REASON_MANUAL, null, LEDGER_NOTE_SKU_CHANGED);
+        for (ProductSku created : createdSkus) {
+            BigDecimal initial = StockQuantity.orZero(created.getStock());
+            if (initial.compareTo(BigDecimal.ZERO) == 0) {
+                // 初始库存为 0 不落行：0 变更行是噪声（与手工调整 / 快照比对同一口径）
+                continue;
+            }
+            stockLedgerService.record(tenantId, productId, created.getId(), created.getSkuCode(),
+                    BigDecimal.ZERO, initial, StockLedger.REASON_MANUAL, null, LEDGER_NOTE_SKU_BASELINE);
         }
 
         // SKU 变更后回写商品级 stock（issue #4038）：商品库存的**唯一权威是 SKU 级**，
