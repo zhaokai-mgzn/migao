@@ -13,7 +13,11 @@
     "⚠️ 本表只钉**取整口径**（浮点 vs 毫米整数）。",
     "🔴 **2026-09-21（issue #5030）**：宽方向余量整体退场 ⇒ 总用料口径由 `(width + side_margin) × fullness`",
     "改为 **`width × fullness`**（成品宽 = 净窗宽）⇒ 本表的算例值随之重建（边界算例改取",
-    "`4.2 ÷ 1.4`、`8.4 ÷ 1.4`、`8.4 ÷ 2.8`、`9.8 ÷ 1.4` 四处浮点漂移；判别力与「非边界不被误改」两条护栏都保留）。"
+    "`4.2 ÷ 1.4`、`8.4 ÷ 1.4`、`8.4 ÷ 2.8`、`9.8 ÷ 1.4` 四处浮点漂移；判别力与「非边界不被误改」两条护栏都保留）。",
+    "🔴 **2026-09-25（issue #5060，用户裁定「统一取整」）**：本表**扩到覆盖单一门幅路径** —— 新增",
+    "`singleDoorPremises` + `singleDoorCases` 两段（落点 = `calculate_fabric_meters` 定宽分支与",
+    "`build_quote` 报价卡幅数复算，两者调**同一个** `_panels_for_door`）。原 `cases` 段（候选路径）",
+    "**逐值不变** —— 它本来就是毫米整数（#5038 已治）；本次改的是**另一条**路径的取整口径。"
   ],
   "conventions": {
     "need": "总用料（米）= **width × fullness**（宽方向**无**余量，issue #5030）",
@@ -206,5 +210,34 @@
         "state": "undecidable"
       }
     }
+  ],
+  "singleDoorPremises": {
+    "hemMargin": 0.3,
+    "why": [
+      "**单一门幅路径**段（issue #5060 判据 3：守卫从「只覆盖候选路径」扩到「也覆盖单一门幅路径」）。",
+      "落点 = `calculate_fabric_meters()` 的定宽分支 + `build_quote()` 的报价卡幅数复算 —— issues #5060 起两者调**同一个**",
+      "`_panels_for_door(total, door)`（= 毫米整数向上取整 `-(-_mm(total) // max(1, _mm(door)))`）。",
+      "`expectedPanels` = 真值（毫米整数）；`floatPanels` = 改前浮点式 `math.ceil(width × fullness ÷ door)` 的值",
+      "（边界行两者相差 1 幅 —— 这就是 issue #5060 的病根，`floatPanels` 是判别力下界的基准）。",
+      "`expectedMeters = ceil_to_step(expectedPanels × (height + hemMargin), 0.1)` —— 引擎对**总用料**的",
+      "「向上进位到 0.1 米」出口（issue #4527 判据 3）；它与幅数取整是两件不同的事，不要混。",
+      "hemMargin 必须等于引擎 `DEFAULT_CRAFT_CALC_CONFIG['hem_margin']`（引擎腿逐值断言 ⇒ 不同值即红）。"
+    ]
+  },
+  "singleDoorCases": [
+    {"id": "sd-4.2-2.0-2.8", "why": "4.2 × 2 = 8.4 = 3 × 2.8 ⇒ 8.4 ÷ 2.8 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 4.2, "height": 3.0, "fullness": 2.0, "door": 2.8, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-2.1-2.0-1.4", "why": "4.2 ÷ 1.4 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 2.1, "height": 3.0, "fullness": 2.0, "door": 1.4, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-4.2-2.0-1.4", "why": "8.4 ÷ 1.4 = 6.000000000000001（浮点）⇒ 真值 6 幅、浮点 7 幅", "width": 4.2, "height": 3.0, "fullness": 2.0, "door": 1.4, "expectedPanels": 6, "floatPanels": 7, "expectedMeters": 19.8},
+    {"id": "sd-4.9-2.0-1.4", "why": "9.8 ÷ 1.4 = 7.000000000000001（浮点）⇒ 真值 7 幅、浮点 8 幅", "width": 4.9, "height": 3.0, "fullness": 2.0, "door": 1.4, "expectedPanels": 7, "floatPanels": 8, "expectedMeters": 23.1},
+    {"id": "sd-5.4-1.5-2.7", "why": "8.1 ÷ 2.7 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 5.4, "height": 3.0, "fullness": 1.5, "door": 2.7, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-6.4-1.5-3.2", "why": "9.6 ÷ 3.2 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 6.4, "height": 3.0, "fullness": 1.5, "door": 3.2, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-4.2-3.0-1.4", "why": "12.6 ÷ 1.4 = 9.000000000000002（浮点）⇒ 真值 9 幅、浮点 10 幅", "width": 4.2, "height": 3.0, "fullness": 3.0, "door": 1.4, "expectedPanels": 9, "floatPanels": 10, "expectedMeters": 29.7},
+    {"id": "sd-7.0-3.0-1.4", "why": "21.0 ÷ 1.4 = 15.000000000000002（浮点）⇒ 真值 15 幅、浮点 16 幅", "width": 7.0, "height": 3.0, "fullness": 3.0, "door": 1.4, "expectedPanels": 15, "floatPanels": 16, "expectedMeters": 49.5},
+    {"id": "sd-2.7-3.0-2.7", "why": "8.1 ÷ 2.7 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 2.7, "height": 3.0, "fullness": 3.0, "door": 2.7, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-5.4-3.0-2.7", "why": "16.2 ÷ 2.7 = 6.000000000000001（浮点）⇒ 真值 6 幅、浮点 7 幅", "width": 5.4, "height": 3.0, "fullness": 3.0, "door": 2.7, "expectedPanels": 6, "floatPanels": 7, "expectedMeters": 19.8},
+    {"id": "sd-3.2-3.0-3.2", "why": "9.6 ÷ 3.2 = 3.0000000000000004（浮点）⇒ 真值 3 幅、浮点 4 幅", "width": 3.2, "height": 3.0, "fullness": 3.0, "door": 3.2, "expectedPanels": 3, "floatPanels": 4, "expectedMeters": 9.9},
+    {"id": "sd-6.4-3.0-3.2", "why": "19.2 ÷ 3.2 = 6.000000000000001（浮点）⇒ 真值 6 幅、浮点 7 幅", "width": 6.4, "height": 3.0, "fullness": 3.0, "door": 3.2, "expectedPanels": 6, "floatPanels": 7, "expectedMeters": 19.8},
+    {"id": "sd-non-boundary-3.0-2.0-2.8", "why": "**非边界**（6.0 ÷ 2.8 = 2.142857…）⇒ 两式同值 3 幅：反向护栏「非边界输入不许被改」", "width": 3.0, "height": 3.0, "fullness": 2.0, "door": 2.8, "expectedPanels": 3, "floatPanels": 3, "expectedMeters": 9.9},
+    {"id": "sd-non-boundary-6.6-2.0-3.05", "why": "**非边界**（13.2 ÷ 3.05 = 4.327868852459016…）⇒ 两式同值 5 幅：反向护栏", "width": 6.6, "height": 3.0, "fullness": 2.0, "door": 3.05, "expectedPanels": 5, "floatPanels": 5, "expectedMeters": 16.5}
   ]
 }

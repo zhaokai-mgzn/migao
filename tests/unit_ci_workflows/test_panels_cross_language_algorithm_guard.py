@@ -51,6 +51,14 @@
 （宽高按厘米报、褶倍是一位小数）；C7 断言算例表**不含**该形态，故本表的等价性前提成立。
 ⚠️ 本表只钉**取整口径**（`need = width × fullness`，宽方向**无余量** —— issue #5030）；
 `docs/design/craft-calc-and-fabric-routing.md` §4.5（issue #4760），**不在本单范围、未动**。
+
+🔴 **2026-09-25（issue #5060，用户裁定「统一取整」）**：分幅的取整口径**全引擎统一**到毫米整数 ——
+`-(-_mm(total) // max(1, _mm(door)))` 现在是**唯一实现** `_panels_for_door(total, door)` 的函数体，
+四条落点（候选集 / 既有单一门幅 / 定宽买高米数 / 报价卡幅数复算）全部调它 ⇒
+「候选路径毫米整数、单一门幅路径浮点 `ceil`」这一分叉形态**结构性不可再发生**。
+本守卫相应：C1 改钉**该唯一实现**（`ENGINE_PANELS_EXPR` / `ENGINE_PANELS_HELPER`）+ 加**死亡条件**
+（`FLOAT_PANELS_RE`：引擎代码里不得再有浮点直除的分幅形态）；**新增 C8** 覆盖**单一门幅路径**
+（共享表新增 `singleDoorCases` 段，引擎腿跑真引擎、本文件照源复算，两腿共读同一张表）。
 """
 from __future__ import annotations
 
@@ -70,10 +78,24 @@ PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 #: 引擎腿（①）：必须**读同一张表**（C6）
 ENGINE_TEST = REPO_ROOT / "backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py"
 
-#: 引擎侧的分幅式（C1：逐字，**不得**退化成浮点）
-ENGINE_PANELS_EXPR = "-(-_mm(total) // max(1, _mm(ge)))"
+#: 引擎侧的分幅式（C1：逐字，**不得**退化成浮点）。issue #5060 起它是**唯一实现**
+#: `_panels_for_door(total, door)` 的函数体 —— 四条落点（候选集 / 既有单一门幅 / 定宽买高米数 /
+#: 报价卡幅数复算）全部调它 ⇒「两条分幅路径在边界分叉」这一形态**结构性不可再发生**。
+ENGINE_PANELS_EXPR = "-(-_mm(total) // max(1, _mm(door)))"
+#: 引擎侧分幅**唯一实现**的名字（C1：落点只许引用它，不许各写一份取整式）
+ENGINE_PANELS_HELPER = "_panels_for_door"
 #: 引擎侧 `_mm` 的舍入式（C1）
 ENGINE_MM_EXPR = "int(round(float(value) * _MM))"
+
+#: **死亡条件**（C1b）：引擎**代码**里不得再有浮点直除的分幅形态（issue #5060 的病根：
+#: 「总用料恰为门幅整数倍」时浮点 `ceil` 多算 1 幅 ⇒ 多收一整幅长的面料费与加工费）
+FLOAT_PANELS_RE = re.compile(
+    r"math\.ceil\(\s*(?:window_width\s*\*\s*\w+|meters_fixed_height)\s*/\s*fabric_width\s*\)"
+)
+
+#: golden 表的**单一门幅路径**段（issue #5060 判据 3：守卫从「只覆盖候选路径」扩到
+#: 「也覆盖单一门幅路径」—— 引擎腿跑真引擎、本文件的静态腿照源复算，两腿共读同一张表）
+SINGLE_DOOR_KEY = "singleDoorCases"
 
 #: C2：**禁止**出现的浮点直除形态（就是改前那两处；`\w+` 允许任意局部变量名）
 FORBIDDEN_FLOAT_FORMS = (
@@ -125,6 +147,14 @@ def _round3(value: float) -> float:
     return round(value, 3)
 
 
+def _ceil01(value: float) -> float:
+    """与引擎 `ceil_to_step(v, 0.1)` 同口径（**总用料**向上进位到 0.1 米，issue #4527 判据 3）。
+
+    ⚠️ 这是「米数出口」的进位，与分幅数的取整（`_engine_panels`）是**两件事** —— 别混。
+    """
+    return round(math.ceil(round(value / 0.1, 9)) * 0.1, 9)
+
+
 def _engine_candidates(candidates: list[float], allowance: float) -> list[float]:
     """与引擎同式的候选过滤：`float(g) > allow`（⇒ `g_eff > 0`）。"""
     return [g for g in candidates if g > allowance]
@@ -148,6 +178,18 @@ def test_engine_source_uses_millimeter_integer_division() -> None:
         f"引擎源里找不到 `_mm` 的舍入式「{ENGINE_MM_EXPR}」—— 毫米整数口径的根没了 ⇒ 红"
     )
     assert re.search(r"_MM\s*=\s*1000", src), "引擎 `_MM` 比例常量不见了（米 ⇒ 毫米的换算基准）⇒ 红"
+    assert ENGINE_PANELS_HELPER in src, (
+        f"引擎里找不到分幅的**唯一实现** `{ENGINE_PANELS_HELPER}` —— 两条路径会各写一份取整式"
+        "（issue #5060 的病根形态：候选路径毫米整数 / 单一门幅路径浮点）⇒ 红"
+    )
+    offenders = [
+        line for line in src.splitlines()
+        if not line.lstrip().startswith("#") and FLOAT_PANELS_RE.search(line)
+    ]
+    assert offenders == [], (
+        "引擎里又出现浮点直除的分幅形态（issue #5060 已统一为毫米整数）⇒ "
+        "「总用料恰为门幅整数倍」时会多算 1 幅（**改钱**）：\n  " + "\n  ".join(offenders)
+    )
 
 
 # ── C2 / C3：TS 侧不得再有浮点直除，且必须有毫米整数形态 ─────────────────────
@@ -292,3 +334,58 @@ def test_all_legs_read_the_same_golden_table() -> None:
         "它已改成自带期望值 ⇒ 静态腿与引擎腿会各自漂移，本守卫的「跨语言相等」结论失效"
     )
     assert name in Path(__file__).read_text(encoding="utf8"), "本文件的静态腿没有引用共享算例表 ⇒ 红"
+
+
+# ── C8：共享表覆盖**单一门幅路径**（issue #5060 判据 3）──────────────────────
+
+def test_golden_covers_the_single_door_path() -> None:
+    """C8（issue #5060）：共享算例表必须覆盖**单一门幅路径**，且该段有**判别力**。
+
+    背景：`#5038` 只把**候选路径**（`resolve_fabric_plan`）钉进了共享表，而**单一门幅路径**
+    （`calculate_fabric_meters` 的定宽分支 + `build_quote` 的报价卡幅数复算）当时一字未动
+    ⇒ 「总用料恰为门幅整数倍」时两条路径给出**两个**幅数（浮点 4 幅 / 真值 3 幅），全程无人红。
+    本条要求该段：① 逐例 == 毫米整数式；② 至少一例能分开「浮点式」（`floatPanels`）；
+    ③ `expectedMeters` 与「幅数 × 幅长」自洽；④ 前提可判（确实走倒幅 / 避开半毫米输入）。
+    """
+    data = _golden()
+    rows = data.get(SINGLE_DOOR_KEY)
+    assert isinstance(rows, list) and rows, (
+        f"共享算例表缺 `{SINGLE_DOOR_KEY}` 段 —— **单一门幅路径**仍未被覆盖"
+        "（issue #5060 判据 3：守卫要从「只覆盖候选路径」扩到「也覆盖单一门幅路径」）"
+    )
+    hem = data["singleDoorPremises"]["hemMargin"]
+    discriminating: list[str] = []
+    for row in rows:
+        total = row["width"] * row["fullness"]
+        door = row["door"]
+        mm_panels = _engine_panels(total, door)
+        assert mm_panels == row["expectedPanels"], (
+            f"{row['id']}：毫米整数式给 {mm_panels} 幅，表里是 {row['expectedPanels']} —— 表与真值源脱钩"
+        )
+        assert _float_panels(total, door) == row["floatPanels"], (
+            f"{row['id']}：改前浮点式给 {_float_panels(total, door)} 幅，表里登记 {row['floatPanels']}"
+            "（判别力下界的基准错了 ⇒ 本段证明不了任何事）"
+        )
+        assert row["expectedMeters"] == round(_ceil01(mm_panels * (row["height"] + hem)), 2), (
+            f"{row['id']}：`expectedMeters`（{row['expectedMeters']}）≠ 幅数 × 幅长再向上进位到 0.1"
+            f"（{round(_ceil01(mm_panels * (row['height'] + hem)), 2)}）—— 表内不自洽"
+        )
+        assert row["height"] + hem > door, (
+            f"{row['id']}：`height + 卷边 ≤ 门幅` ⇒ 该行走**定高买宽**、根本没有幅数（前提不成立）"
+        )
+        for value in (row["width"], row["fullness"], row["door"], row["height"]):
+            assert abs(abs(_mm(value) - value * 1000) - _HALF_MM) > _EPS, (
+                f"{row['id']}：算例含**半毫米**输入 {value}（两侧舍入口径不同，本表不能承载该形态）"
+            )
+        if row["floatPanels"] != mm_panels:
+            discriminating.append(row["id"])
+    assert discriminating, (
+        f"`{SINGLE_DOOR_KEY}` 里没有任何一例能分开「浮点式」与「毫米整数式」⇒ 该段是空覆盖"
+        "（边界算例被删/被改成非整数倍）"
+    )
+    # 反向护栏：也要有「两式同值」的非边界算例（防有人把该段改成「全边界」，那就是另一个极端）
+    same = [r["id"] for r in rows if r["floatPanels"] == r["expectedPanels"]]
+    assert same, (
+        f"`{SINGLE_DOOR_KEY}` 里没有「非整数倍（两式同值）」的算例 ⇒ 无法证明"
+        "「非边界输入不被改坏」（判据 3 的反向护栏）"
+    )

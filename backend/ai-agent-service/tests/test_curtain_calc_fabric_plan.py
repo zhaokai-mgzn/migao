@@ -32,6 +32,15 @@
 **都不传 `cutting_mode`**）逐值不变；② 单一门幅既有路径逐值不变；③ 定高买宽**可行**时
 `_fixed_height()` 逐值不变。⚠️ **不是**不变量：缺口 ≤ 0.1 的算例 —— 它们的 `meters` 从
 `T + 加高条` 变成 `T`，**这正是裁定要的效果**。
+
+
+## issue #5060：**单一门幅路径**也扩进同一张共享算例表（文件末尾 `TestSingleDoorPanelsGolden`）
+
+`#5038` 只把**候选路径**（`resolve_fabric_plan`）钉进了 `tests/fixtures/panels-cross-language-golden.json`，
+而**单一门幅路径**（`calculate_fabric_meters` 的定宽分支 + `build_quote` 的报价卡幅数复算）
+当时一字未动 ⇒ 总用料恰为门幅整数倍时浮点多算 1 幅（`4.2 × 2 ÷ 2.8 = 3.0000000000000004`）。
+用户 2026-09-25 裁定「**统一取整**」：全引擎的分幅数只留**一个**实现
+`_panels_for_door(total, door)`（毫米整数），本类读共享表的 **`singleDoorCases` 段**跑**真引擎**逐值比对。
 """
 import json
 from pathlib import Path
@@ -44,6 +53,8 @@ from app.tools.curtain_calc import (
     CUTTING_MODE_SPLICE,
     MAX_JOIN_GAP_M,
     build_quote,
+    calculate_fabric_meters,
+    ceil_to_step,
     resolve_craft_calc_config,
     resolve_fabric_plan,
 )
@@ -403,3 +414,84 @@ class TestCrossLanguagePanelsGolden:
         assert checked > 0, (
             "共享表里没有「候选全被剔除」的算例 ⇒ 本条会空跑（fail-closed 那一面无人钉）"
         )
+
+
+# ── issue #5060：**单一门幅路径**扩进同一张共享算例表（判据 3）────────────────────
+class TestSingleDoorPanelsGolden:
+    """**单一门幅路径**（既有 `fabric_width=…` 口径）的分幅取整 —— 引擎腿。
+
+    改前：候选路径毫米整数、单一门幅路径浮点 `ceil` ⇒ 边界输入上两条路径给出**两个**幅数
+    （`W=4.2` / 2 倍褶 / 门幅 `2.8`：候选 3 幅 / 单一门幅 4 幅，真值 3）。用户裁定「统一取整」后
+    三条落点（定宽买高米数 / 报价格 `panels` / 报价卡幅数复算）同调 `_panels_for_door`。
+    本类跑**真引擎**、读共享表的 `singleDoorCases` 段（静态腿 = `tests/unit_ci_workflows/
+    test_panels_cross_language_algorithm_guard.py` 的 C8 照源复算）⇒ 两腿共读同一张表。
+    """
+
+    @staticmethod
+    def _data() -> dict:
+        assert GOLDEN_JSON.is_file(), (
+            f"共享算例表不存在：{GOLDEN_JSON} —— 跨语言判据会空跑（fail-closed，不得静默通过）"
+        )
+        data = json.loads(GOLDEN_JSON.read_text(encoding="utf8"))
+        assert data.get("singleDoorCases"), (
+            "共享算例表缺 `singleDoorCases` 段 —— **单一门幅路径**未被覆盖（issue #5060 判据 3）"
+        )
+        return data
+
+    def test_table_hem_margin_equals_the_engine_config(self):
+        """表的前提（每幅长 = `height + 卷边`）必须与引擎配置**同值**，否则期望米数与实际口径脱钩。"""
+        hem = self._data()["singleDoorPremises"]["hemMargin"]
+        engine_hem = resolve_craft_calc_config(None)["hem_margin"]
+        assert hem == pytest.approx(engine_hem), (
+            f"共享表 `hemMargin` = {hem} ≠ 引擎配置 `hem_margin` = {engine_hem} ⇒ 红"
+        )
+
+    def test_calculate_fabric_meters_matches_the_shared_table(self):
+        """落点 ①：`calculate_fabric_meters` 的定宽买高米数 == 表里的「毫米整数幅数 × 幅长」。"""
+        data = self._data()
+        hem = data["singleDoorPremises"]["hemMargin"]
+        boundary_checked = 0
+        for row in data["singleDoorCases"]:
+            meters, formula_used, _warning = calculate_fabric_meters(
+                window_width=row["width"], window_height=row["height"],
+                fullness=row["fullness"], fabric_width=row["door"],
+            )
+            assert formula_used == "fixed_width", f"{row['id']}：本例应走定宽买高（倒幅）"
+            expected = round(ceil_to_step(row["expectedPanels"] * (row["height"] + hem), 0.1), 2)
+            assert meters == pytest.approx(expected), (
+                f"{row['id']}：米数 {meters} ≠ 真值 {expected}"
+                f"（{row['expectedPanels']} 幅 × {row['height'] + hem} 米，向上进位到 0.1）"
+            )
+            assert meters == pytest.approx(row["expectedMeters"]), (
+                f"{row['id']}：米数 {meters} ≠ 共享表 `expectedMeters` {row['expectedMeters']}"
+            )
+            if row["floatPanels"] != row["expectedPanels"]:
+                boundary_checked += 1
+                float_meters = round(
+                    ceil_to_step(row["floatPanels"] * (row["height"] + hem), 0.1), 2)
+                assert meters != pytest.approx(float_meters), (
+                    f"{row['id']}：边界行的米数与**改前浮点幅数**（{row['floatPanels']} 幅 = "
+                    f"{float_meters} 米）同值 ⇒ 取整口径没生效（浮点又回来了）"
+                )
+        assert boundary_checked >= 1, "共享表里没有边界行 ⇒ 本判据在边界面上空跑"
+
+    def test_build_quote_panels_and_notice_match_the_shared_table(self):
+        """落点 ②③：报价格 `panels` 与报价卡告警里的「幅数 N 幅」都必须 == 同一份真值。"""
+        data = self._data()
+        for row in data["singleDoorCases"]:
+            quote = build_quote(
+                window_width=row["width"], window_height=row["height"],
+                fullness=row["fullness"], fabric_width=row["door"],
+            )
+            assert quote["formula_used"] == "fixed_width"
+            assert quote["panels"] == row["expectedPanels"], (
+                f"{row['id']}：报价幅数 {quote['panels']} ≠ 真值 {row['expectedPanels']}"
+            )
+            assert f"幅数 {row['expectedPanels']} 幅" in quote["warning"], (
+                f"{row['id']}：报价卡告警里的幅数与真值不符（显示/计价分叉）—— 实际："
+                f"{quote['warning']!r}"
+            )
+            if row["floatPanels"] != row["expectedPanels"]:
+                assert f"幅数 {row['floatPanels']} 幅" not in quote["warning"], (
+                    f"{row['id']}：告警里出现了**改前浮点**幅数 {row['floatPanels']} —— 又分叉了"
+                )
