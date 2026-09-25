@@ -531,3 +531,181 @@ class TestFailureStaysAttributable:
         assert out["final_answer"] == "刚才这轮没成功，请您再说一次，我继续为您办理。", (
             f"失败话术被改成了别的东西：{out['final_answer']!r}"
         )
+
+
+# ────────────── ⑤ 历史重建的耦合：**注释登记 → 机械判据**（issue #3860） ──────────────
+#
+# 病灶：`customer_service_agent._convert_history` 目前把 `tool_calls` **整个丢掉**
+# ⇒ 跨轮历史里根本不存在「带 `tool_calls` 的 assistant 消息」⇒ 上游那条 400 规则**无处触发**
+# （这也是「为什么以前没炸」的原因之一）。而**一旦**有人为别的目的保留 `tool_calls`，
+# `#3852` 的形态就会**跨轮复发**。修复包当时只在 `message_payload.py` 头部**写注释**登记这条耦合 ——
+# **注释不会红**（`#3843`：注释漂移 = 假绿来源）⇒ 本节把它变成机械判据：
+#   · 行为层：条件不变式（**今天绿**：丢干净 ⇒ 不违反；**破坏耦合即红**）；
+#   · 判别力自证：把「带 tool_calls 却不带 reasoning_content」的形态喂给同一个校验函数 ⇒ 必须报红；
+#   · 源级：AST 扫 `app/**` 的 `AIMessage(tool_calls=…)` 构造点，缺 `reasoning_content` 即红。
+
+
+def _history_violations(messages) -> list[str]:
+    """产出里**凡带 `tool_calls` 的 assistant 消息，必须同时带 `reasoning_content`**。
+
+    纯函数（可单测 + 可判别力自证）。这就是上游那条规则的**本地等价物**：上游在
+    `assistant.tool_calls` 且缺 `reasoning_content` 时抛 400（原文见 `UPSTREAM_400`）。
+    """
+    bad: list[str] = []
+    for m in messages:
+        calls = getattr(m, "tool_calls", None)
+        if not calls:
+            continue
+        kwargs = getattr(m, "additional_kwargs", None) or {}
+        if not kwargs.get("reasoning_content"):
+            bad.append(
+                f"{type(m).__name__}(content={str(m.content)[:20]!r}) 带 {len(calls)} 个 tool_calls "
+                "却没有 reasoning_content ⇒ 复现 #3852 的 400"
+            )
+    return bad
+
+
+def _source_violations(src: str) -> list[str]:
+    """**源级**守卫（AST，不按文本扫）：`AIMessage(...)` 若传了 `tool_calls=`，必须同批带 `reasoning_content`。"""
+    import ast
+
+    bad: list[str] = []
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = (func.id if isinstance(func, ast.Name)
+                else func.attr if isinstance(func, ast.Attribute) else "")
+        if name != "AIMessage":
+            continue
+        kw = {k.arg for k in node.keywords if k.arg}
+        if "tool_calls" not in kw:
+            continue
+        has_rc = "reasoning_content" in kw
+        if not has_rc:
+            has_rc = any(k.arg == "additional_kwargs" and "reasoning_content" in ast.dump(k.value)
+                         for k in node.keywords)
+        if not has_rc:
+            bad.append(f"line {node.lineno}: `AIMessage(tool_calls=…)` 没同批带 `reasoning_content`")
+    return bad
+
+
+class TestHistoryRebuildCoupling:
+    """`_convert_history` 一旦保留 `tool_calls`，就必须同批回传 `reasoning_content`（issue #3860）。"""
+
+    def test_convert_history_never_keeps_tool_calls_without_reasoning_content(self):
+        """**条件不变式**：历史重建产出里不许出现「带 tool_calls 却没 reasoning_content」。"""
+        from app.agents.customer_service_agent import CustomerServiceAgent
+
+        history = [
+            {"role": "user", "content": "给我来一套布帘"},
+            {"role": "assistant", "content": "好的，先确认尺寸",
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "order_create", "arguments": "{}"}}],
+             "reasoning_content": "先看库存再报价"},
+            {"role": "user", "content": "就按这个来"},
+        ]
+        produced = list(CustomerServiceAgent._convert_history(object(), history))
+        bad = _history_violations(produced)
+        assert bad == [], "历史重建产出了「带 tool_calls 却没 reasoning_content」的消息（#3852 会跨轮复发）：\n  " + "\n  ".join(bad)
+
+        kept = [m for m in produced if getattr(m, "tool_calls", None)]
+        # 读数：0 条 = 该规则今天**无处触发**（如实登记，不假装证明）；>0 条 ⇒ 上面的断言已保证它们都带 reasoning_content
+        logger.info(f"[#3860] 历史重建产出 {len(produced)} 条消息，带 tool_calls 的 = {len(kept)} 条")
+        assert len(produced) == 3, f"历史重建条数变了（{len(produced)} ≠ 3）—— 判据语料需同步"
+
+    def test_checker_flags_tool_calls_without_reasoning_content(self):
+        """**判别力自证**：校验函数必须能红（否则它在空转）。"""
+        violating = AIMessage(content="改", tool_calls=[{"id": "c1", "name": "order_create", "args": {}}])
+        assert _history_violations([violating]), "校验函数漏判「带 tool_calls 无 reasoning_content」"
+        ok = AIMessage(content="改", tool_calls=[{"id": "c1", "name": "order_create", "args": {}}],
+                       additional_kwargs={"reasoning_content": "想了"})
+        assert _history_violations([ok]) == [], "校验函数把合规形态判红了（假红）"
+        plain = AIMessage(content="闲聊")
+        assert _history_violations([plain]) == [], "无 tool_calls 的消息不该被这条规则约束"
+
+    def test_cross_turn_coupling_is_registered_and_checked(self):
+        """**跨轮耦合的登记表守卫**：`app/**` 里每处 `AIMessage(tool_calls=…)` 都必须**显式登记**。
+
+        为什么不是"一律判红"：本仓有 2 处**合成**卡片消息（`interact` 卡管道用的假 assistant 轮），
+        它们**没有**上游给的 `reasoning_content`，而契约明令「**无则不得凭空造**」⇒ 不能靠补字段消红。
+        它们今天安全的**唯一理由**是：跨轮历史重建**把 `tool_calls` 丢掉**（见上面的条件不变式），
+        所以它们不会以"带 tool_calls 的 assistant"形态回到请求体。
+
+        ⇒ 本判据把这条**理由**变成可红的机器判据：
+          · 扫到的站点**未登记** ⇒ 红（逼作者说明它为什么安全，或改走 `ensure_reasoning_content`）；
+          · 登记表里的站点**已消失** ⇒ 红（登记表不许腐烂，只许缩短）；
+          · **条件联动**：一旦历史重建**开始保留 `tool_calls`** ⇒ 这些合成站点**必须**同批带
+            `reasoning_content`（否则 #3852 的 400 就跨轮复发）—— 这正是 issue #3860 要防的形态。
+        """
+        from pathlib import Path
+
+        #: 合成卡片消息的**白名单登记**：`文件 → (站点条数, 说明)`。
+        #: ⚠️ **按文件计数**而不是"文件在集合里就行" —— 否则同一文件里**再加一处**会静默溜过
+        #: （本判据第一版就是文件级集合，注入实测**没红**，见 PR body 的红证表）。
+        REGISTERED = {
+            "app/graph/handoff_offer.py": (1, "转人工安抚轮的 `interact` choice 卡（合成 assistant 轮，只下发 SSE，不进历史）"),
+            "app/graph/nodes.py": (1, "含糊澄清卡 `_guess_card_messages`（同上，复用既有卡片管道）"),
+        }
+
+        app = Path(__file__).resolve().parents[1] / "app"
+        found: dict[str, list[int]] = {}
+        total_aimessage = 0
+        for py in sorted(app.rglob("*.py")):
+            src = py.read_text(encoding="utf-8")
+            total_aimessage += src.count("AIMessage(")
+            bad = _source_violations(src)
+            if bad:
+                rel = str(py.relative_to(app.parent))
+                found[rel] = [int(v.split("line ")[1].split(":")[0]) for v in bad]
+
+        # ① 未登记即红：**新文件** 与 **已登记文件里的新站点**（按条数）都要拦
+        undeclared = sorted(set(found) - set(REGISTERED))
+        mismatch = sorted(
+            f"{k}（登记 {REGISTERED[k][0]} 条 / 现取 {len(found[k])} 条：line {found[k]}）"
+            for k in set(found) & set(REGISTERED) if len(found[k]) != REGISTERED[k][0]
+        )
+        assert not undeclared and not mismatch, (
+            "`AIMessage(tool_calls=…)` 缺 `reasoning_content` 且与登记表不符："
+            + ("；".join(undeclared + mismatch))
+            + "\n  三个出口：① 若它是**合成**消息（不进历史）⇒ 更新本判据的 `REGISTERED` 并写清理由"
+            "（条数也要改）；② 否则走 `app/llm/message_payload.py::ensure_reasoning_content`"
+            "（**不得**凭空造 reasoning_content）；③ 站点已删 ⇒ 把登记条目一并删掉（只许缩短）。"
+        )
+        # ② 登记表不许腐烂（登记的站点已不存在 ⇒ 条目必须删）
+        stale = sorted(set(REGISTERED) - set(found))
+        assert not stale, f"登记表里的站点已不存在（登记表只许缩短）：{stale}"
+
+        # ③ 条件联动：历史重建一旦保留 tool_calls ⇒ 这些合成站点必须带 reasoning_content
+        kept = self._history_rebuild_keeps_tool_calls()
+        if kept:
+            assert not found, (
+                "历史重建**已开始保留 `tool_calls`** ⇒ 合成卡片站点必须同批带上 `reasoning_content`，"
+                f"否则 400 会跨轮复发（#3852/#3860）：{found}"
+            )
+        logger.info(
+            f"[#3860] app/ 现取 `AIMessage(` = {total_aimessage} 处；带 tool_calls 且无 reasoning = {len(found)} 处"
+            f"（已登记 {sum(c for c, _ in REGISTERED.values())} 条 / {len(REGISTERED)} 个文件）；历史重建保留 tool_calls = {kept}"
+        )
+        assert total_aimessage > 0, "扫描面为 0 ⇒ 判据在空转（app/ 里应当有 AIMessage 构造点）"
+
+    @staticmethod
+    def _history_rebuild_keeps_tool_calls() -> bool:
+        """**现取**判据：历史重建是否会把 `tool_calls` 带回产出（今天 = False）。"""
+        from app.agents.customer_service_agent import CustomerServiceAgent
+
+        produced = list(CustomerServiceAgent._convert_history(object(), [
+            {"role": "assistant", "content": "改",
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "order_create", "arguments": "{}"}}],
+             "reasoning_content": "想了"},
+        ]))
+        return any(getattr(m, "tool_calls", None) for m in produced)
+
+    def test_source_guard_flags_aimessage_with_tool_calls(self):
+        """**AST 判据的判别力自证**（守卫本身必须能红）。"""
+        bad_src = 'm = AIMessage(content="x", tool_calls=[{"id": "c1"}])'
+        assert _source_violations(bad_src), "AST 守卫漏判 `AIMessage(tool_calls=…)` 缺 reasoning_content"
+        good_src = ('m = AIMessage(content="x", tool_calls=[{"id": "c1"}], '
+                    'additional_kwargs={"reasoning_content": "r"})')
+        assert _source_violations(good_src) == [], "AST 守卫把合规构造判红了（假红）"
