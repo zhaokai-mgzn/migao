@@ -340,6 +340,13 @@
       "issue": "#3947",
       "criterion": "tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py::test_census_matches_frozen_package_set",
       "note": "常量上方的 `#:` 注释声称「现取**必须等于**本常量」⇒ 由该判据承担：现取 `frontend/*/src/components/cards/ChoiceCard.tsx` 的包集合与该冻结常量**逐项相等**（新增未登记包 / 包改名 / 删除都判红）；「冻结常量与语料两边一起收窄」的形态另由 test_census_covers_both_personas 拦住"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_case_seed_truth_backing.py",
+      "symbol": "SEED_FILES",
+      "issue": "#4064",
+      "criterion": "tests/unit_ci_workflows/test_case_seed_truth_backing.py::test_the_fixtures_read_are_the_ones_the_eval_stack_loads",
+      "note": "注释声称「判据真值与考场数据栈同源」⇒ 由该判据钉住：评测栈种子的单一实现 `scripts/eval_stack_seed.sh`（issue #3563）必须逐字引用本文件读的那两个 fixture （xiaobu_eval_seed.sql / mibao_eval_seed.sql）"
     }
   ],
   "frozen_declarations": [
