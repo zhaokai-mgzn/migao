@@ -264,7 +264,7 @@ docker compose -f deploy/docker-compose.yml exec -T postgres \
 ```
 
 > 注意：商品 `status` 必须是 **`on_sale`** —— admin-api 未显式指定 status 时
-> 只返回 on_sale 商品（`ProductService.java:144`），用 `active` 会搜不到。
+> 只返回 on_sale 商品（真值 = `backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java` 的商品列表查询默认只放 `on_sale`），用 `active` 会搜不到。
 
 ## 6.1 已知基础设施破损（另行跟进 issue #3270）
 
@@ -274,7 +274,7 @@ C 端评测链路有三处破损，与用例库正确性无关，但会让「评
 |---|---|---|
 | `xiaobu-acceptance.yml` **从未绿过** | 9/9 run 全 failure；postgres 容器 exit 3 → ai-agent 未起 → `ConnectError` | C 端评测**零信号** |
 | 该 workflow 的失败处理自崩 | 用 `github.rest.search.issues`（正确为 `search.issuesAndPullRequests`） | **issue 从未创建**，无人知晓在失败 |
-| `LLM_BREAKER` 全局单一熔断器 | `base_skill.py:47` 一个 `llm_minimax` 名护所有 skill；单 skill 3×60s 超时 → 全部 skill OPEN | 用户看到「抱歉，AI 服务暂时不可用」；C 端查订单/下单/问答全挂 |
+| `LLM_BREAKER` 全局单一熔断器 | `backend/ai-agent-service/app/graph/skills/base_skill.py` 的 `llm_minimax` 一个名字护所有 skill；单 skill 3×60s 超时 → 全部 skill OPEN | 用户看到「抱歉，AI 服务暂时不可用」；C 端查订单/下单/问答全挂 |
 
 另：C 端 smoke 未进 PR 门禁（`pr-check` 的 `agent-eval-smoke` 不设 `PERSONA`）。
 
