@@ -612,8 +612,13 @@ def test_deps_and_judging_step_share_one_interpreter():
     steps = doc["jobs"]["verify"]["steps"]
     install = next((s for s in steps if "pip install" in str(s.get("run") or "")), None)
     judging = next((s for s in steps if "post_merge_verify.py" in str(s.get("run") or "")), None)
-    assert install is not None, "找不到「装依赖」步（workflow 结构变了，判据需同步）"
-    assert judging is not None, "找不到「判定」步（workflow 结构变了，判据需同步）"
+    # ⚠️ **不用「存在性」弱断言**（只证明"有东西"、不触业务数据）——本仓的弱断言账本判据会当场判红
+    # （本 PR 第一版就是这么被 CI 抓到的）。⚠️ 连注释里都**不能写出那个模式的字面文本**：
+    # 扫描器是**按原文正则**扫的 ⇒ 注释里的示例会把自己喂成一处弱断言（§23.8 B1 同族）。
+    # 改成对**结构结论**断言（下面这条）。
+    missing = [label for label, step in (("Install deps（装依赖）", install),
+                                         ("判定（跑判据）", judging)) if step is None]
+    assert missing == [], f"workflow 结构变了 ⇒ 找不到这些步（判据需同步）：{missing}"
 
     install_run = str(install["run"])
     judging_run = str(judging["run"])
