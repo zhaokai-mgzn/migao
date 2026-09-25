@@ -20,6 +20,9 @@ PR 做**部分交付**时按 §23 G9 **有意不写**关闭词 ⇒ issue 悬挂�
 | 调换 `post-评论` / `close` 两步的顺序 | `test_close_apply_comments_before_closing` |
 | 去掉 `pending_close_rows` 里的 `& open_nums`（把已关的也算进来） | `test_pending_close_lists_only_still_open_refs` |
 | 把 dry-run 分支删掉（默认就真写） | `test_dry_run_writes_nothing` |
+| 去掉 `cmd_close` 里的「未实装登记追踪单 ⇒ 拒关」分支（issue #5506） | `test_close_refuses_when_issue_is_an_unimplemented_tracking_issue` |
+| 把登记册不可解析时的 fail-closed 改成放行 | `test_close_fails_closed_when_registry_unreadable` |
+| 把 `--ack-unimplemented-registry` 的旁路删掉 | `test_close_ack_flag_allows_it` |
 
 `gh` 一律用**替身可执行文件**注入（`MIGAO_GH_BIN`，与 `test_issue_lifecycle_finish.py` 同款）：
 只换 CLI 边界，不 mock 被测函数；命令走**真 argparse + 真 dispatch**（subprocess 跑真 CLI）。
@@ -248,3 +251,77 @@ def test_dot_worktree_below_threshold_is_silent(tmp_path):
     assert out.returncode == 0, (out.stdout, out.stderr)
     assert "::warning::" not in out.stderr, f"1 个不该出声：{out.stderr}"
     assert paths[0].is_dir()
+
+
+# ── close：**未实装登记的追踪单必须拒关**（issue #5506） ──────────────────────
+#
+# 实测代价（2026-09-25）：#3822 / #3483 按其自身判据交付关闭，却仍留在
+# `.github/case-trust-unimplemented.json` 的「未实装」登记里 ⇒ 门禁规则
+# `CASE-TRUST-UNIMPL-ISSUE-CLOSED` 在**下一个 PR** 上判红 ⇒ **全队列 6 条 PR 同时 BLOCKED**
+# （而它们的 diff 与登记册毫无关系）。本组判据把这一步拦在**关单那一刻**。
+
+
+def _registry(tmp_path: Path, entries: list[dict]) -> None:
+    d = tmp_path / ".github"
+    d.mkdir(exist_ok=True)
+    (d / "case-trust-unimplemented.json").write_text(
+        json.dumps({"_comment": "夹具", "unimplemented": entries}, ensure_ascii=False), encoding="utf-8")
+
+
+def test_close_refuses_when_issue_is_an_unimplemented_tracking_issue(tmp_path):
+    """追踪单仍被登记为「未实装」⇒ **拒关**（且**零写**：连证据评论都不许贴）。"""
+    env, log = _fixture(tmp_path)
+    _registry(tmp_path, [{"code": "CASE-TRUST-CROSS-LEG-NARROW-RUN", "issue": 3822,
+                          "expires": "2027-01-31"}])
+    out = _run(tmp_path, env, "close", "3822", "--reason", "delivered",
+               "--evidence", "PR #5487 merged 2026-09-25T02:08Z（夹具）")
+    assert out.returncode == 1, (out.returncode, out.stdout, out.stderr)
+    assert "CASE-TRUST-UNIMPL-ISSUE-CLOSED" in out.stderr, out.stderr
+    assert "#3822" in out.stderr and "撤登记" in out.stderr, out.stderr
+    assert _calls(log) == [], f"拒关时不得写任何东西，实测调用：{_calls(log)}"
+
+
+def test_close_refuses_before_apply_too(tmp_path):
+    """`--apply` 也拦得住（否则就是"打印计划拒、真关放行"的假守卫）。"""
+    env, log = _fixture(tmp_path)
+    _registry(tmp_path, [{"code": "CASE-TRUST-X", "issue": 3822, "expires": "2027-01-31"}])
+    out = _run(tmp_path, env, "close", "3822", "--reason", "delivered",
+               "--evidence", "夹具", "--apply")
+    assert out.returncode == 1, (out.returncode, out.stdout, out.stderr)
+    assert _calls(log) == [], f"--apply 时也不得写：{_calls(log)}"
+
+
+def test_close_ack_flag_allows_it(tmp_path):
+    """显式承担（如登记已在同批修复 PR 里同步）⇒ 放行。"""
+    env, _ = _fixture(tmp_path)
+    _registry(tmp_path, [{"code": "CASE-TRUST-X", "issue": 3822, "expires": "2027-01-31"}])
+    out = _run(tmp_path, env, "close", "3822", "--reason", "delivered",
+               "--evidence", "夹具", "--ack-unimplemented-registry")
+    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
+    assert "[dry] #3822" in out.stdout, out.stdout
+
+
+def test_close_unrelated_issue_is_allowed(tmp_path):
+    """登记册里没有的 issue ⇒ 正常走（守卫不得把正常关单也拦了）。"""
+    env, _ = _fixture(tmp_path)
+    _registry(tmp_path, [{"code": "CASE-TRUST-X", "issue": 3822, "expires": "2027-01-31"}])
+    out = _run(tmp_path, env, "close", "9999", "--reason", "delivered", "--evidence", "夹具")
+    assert out.returncode == 0 and "[dry] #9999" in out.stdout, (out.returncode, out.stdout, out.stderr)
+
+
+def test_close_fails_closed_when_registry_unreadable(tmp_path):
+    """登记册在但**解析不了** ⇒ 拒关（fail-closed：宁可不关，也不误关）。"""
+    env, log = _fixture(tmp_path)
+    d = tmp_path / ".github"; d.mkdir(exist_ok=True)
+    (d / "case-trust-unimplemented.json").write_text("{ 这不是 JSON", encoding="utf-8")
+    out = _run(tmp_path, env, "close", "9999", "--reason", "delivered", "--evidence", "夹具")
+    assert out.returncode == 1 and "fail-closed" in out.stderr, (out.returncode, out.stderr)
+    assert _calls(log) == []
+
+
+def test_close_without_registry_file_warns_but_proceeds(tmp_path):
+    """**没有**该文件（不在仓库根跑）⇒ 出声但放行（不是本仓结构 ⇒ 不拦）。"""
+    env, _ = _fixture(tmp_path)
+    out = _run(tmp_path, env, "close", "9999", "--reason", "delivered", "--evidence", "夹具")
+    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
+    assert "跳过" in out.stderr and "未实装登记" in out.stderr, out.stderr

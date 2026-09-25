@@ -1240,6 +1240,39 @@ def close_rows_from_text(text: str) -> list[tuple[int, str, str]]:
     return out
 
 
+#: 「未实装登记」的**单一源**（门禁 `case_trust_gate.py` 从同一份文件读；**不要**抄第二份口径）。
+UNIMPLEMENTED_REGISTRY = Path(".github/case-trust-unimplemented.json")
+
+
+def unimplemented_tracking_issues(cwd: Path) -> dict[int, str]:
+    """→ `{issue 号: 登记 code}` —— 这份登记册把某些 issue 当**未实装项的追踪单**在用。
+
+    为什么关单前必须过这一关（issue #5506 实测代价）：追踪单一旦被关，门禁规则
+    `CASE-TRUST-UNIMPL-ISSUE-CLOSED`（「已关闭的追踪单 = 过期借口」）会在**下一个 PR** 上判红 ——
+    2026-09-25 实测一次：全队列 6 条 PR 同时 BLOCKED，而它们的 diff 与登记册**毫无关系**。
+
+    口径：**文件在但读不出** ⇒ 抛 `ValueError`（fail-closed：宁可不关，也不误关）；
+    **文件不存在**（在不含它的目录里跑）⇒ 返回空 dict + 出声（不是本仓结构 ⇒ 不拦）。
+    """
+    path = cwd / UNIMPLEMENTED_REGISTRY
+    if not path.exists():
+        print(f"⚠️  未找到 {UNIMPLEMENTED_REGISTRY}（不在仓库根跑？）⇒ **跳过**未实装登记的守卫",
+              file=sys.stderr)
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("unimplemented") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError("缺 `unimplemented` 列表")
+        out: dict[int, str] = {}
+        for e in entries:
+            if isinstance(e, dict) and isinstance(e.get("issue"), int):
+                out[e["issue"]] = str(e.get("code", "?"))
+        return out
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError(f"{UNIMPLEMENTED_REGISTRY} 不可解析：{exc}") from exc
+
+
 def cmd_close(args: argparse.Namespace) -> int:
     """**无证据不关单**：先贴证据评论，再关（默认 dry-run；`--apply` 才写）。"""
     cwd = Path.cwd()
@@ -1264,6 +1297,25 @@ def cmd_close(args: argparse.Namespace) -> int:
         print(f"❌ issue {missing} 缺**内容级证据** —— 「无证据不关单」是本命令的硬约束（fail-closed）。\n"
               f"   证据要能复算：一条命令 + 关键输出，例："
               f"\"PR #1234 merged 2026-09-14T23:06Z；git grep -n X origin/main -- <path> ⇒ 命中\"",
+              file=sys.stderr)
+        return EXIT_USAGE
+
+    try:
+        tracked = unimplemented_tracking_issues(cwd)
+    except ValueError as exc:
+        print(f"❌ 未实装登记册不可读 ⇒ **拒绝关单**（fail-closed）：{exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    hits = sorted((n, tracked[n]) for n, _, _ in rows if n in tracked)
+    if hits and not args.ack_unimplemented_registry:
+        print("❌ 拒绝关闭：以下 issue 仍是「**未实装登记**」的追踪单 —— 关掉它们会让门禁在**下一个 PR** 上判红"
+              "（规则 `CASE-TRUST-UNIMPL-ISSUE-CLOSED`；2026-09-25 实测一次全队列阻塞，见 issue #5506）：",
+              file=sys.stderr)
+        for n, code in hits:
+            print(f"   · #{n} ← 登记 {code}", file=sys.stderr)
+        print("   两个出口（门禁原文）：① **实装了 ⇒ 撤登记**（改 `.github/assertion_taxonomy.py` 的 "
+              "`UNIMPLEMENTED` 并重落盘）；② **没实装 ⇒ 开新追踪单**，把登记的 `issue` 指过去 + 重设 `expires`。\n"
+              "   已在别处同步该登记（例如同批修复 PR）时，可显式承担：`--ack-unimplemented-registry`",
               file=sys.stderr)
         return EXIT_USAGE
 
@@ -1363,6 +1415,8 @@ def main(argv: list[str] | None = None) -> int:
     p_close.add_argument("--evidence", help="一行**内容级证据**（必填；含可复算命令 + 关键输出）")
     p_close.add_argument("--batch-file", help="TSV 批量：`<issue>\\t<reason>\\t<证据>` 每行一条")
     p_close.add_argument("--apply", action="store_true", help="真关（默认只打印计划）")
+    p_close.add_argument("--ack-unimplemented-registry", action="store_true",
+                         help="显式承担「该 issue 仍是未实装登记的追踪单」仍要关（默认**拒关**，issue #5506）")
     p_close.set_defaults(func=cmd_close)
 
     args = parser.parse_args(argv)
