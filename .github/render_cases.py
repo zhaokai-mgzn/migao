@@ -242,6 +242,11 @@ def to_eval_py(cases):
            '    skip_reason: str = ""',
            '    legacy_id: str = ""',
            "    tags: List[str] = field(default_factory=list)",
+            # 历史轮次（issue #5482）：同一会话里**先构造** N 轮前置对话（语法同 user_inputs：
+            # str / 同一批控制轮 dict）。⚠️ 必须落在**有默认值**的那一段之后 —— 它前面
+            # （user_inputs / expectations / data_checks）是无默认值字段，插错位置会让
+            # dataclass 直接抛 `non-default argument follows default argument`（实测踩过）。
+            "    pre_turns: List = field(default_factory=list)",
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
@@ -278,6 +283,12 @@ def to_eval_py(cases):
         out.append(f"    skill=Skill.{skill},")
         out.append(f"    difficulty=Difficulty.{tier},")
         out.append(f"    user_inputs={c.get('user_inputs') or []!r},")
+        # 历史轮次（issue #5482）：与 `pre_clean` 同口径 —— 只在**声明时**落字面量，
+        # 未声明的用例走 dataclass 默认（缺省 = 无历史，行为与旧版逐字一致）。
+        # ⚠️ 必须渲染：不渲染 = 用例在 yml 里声明了 `pre_turns` 却被生成物**静默丢掉**
+        # （"声明无消费"，本仓库反复踩的形态 —— 与 #3836 给 `pre_clean` 补渲染同因）。
+        if c.get("pre_turns"):
+            out.append(f"    pre_turns={c.get('pre_turns')!r},")
         exps = [exp_to_str(e) for e in (c.get("expectations") or [])]
         out.append(f"    expectations={exps!r},")
         out.append(f"    data_checks={c.get('data_checks') or []!r},")
@@ -435,6 +446,13 @@ def to_md(cases):
                         "xiaobu": "单端 —— 仅小布腿跑，米宝腿跳过"}.get(
                             _persona, "两腿都跑（非 mibao/xiaobu 的取值按缺省处理）")
                 lines.append(f"端: {_persona}（{_leg}）")
+            # 历史轮次（issue #5482）：与 `pre_clean` / `post_clean` 同因同形 —— 声明了
+            # `pre_turns` 却看不见，读账本的人会把"前置构造的轮"读成"本用例被测的轮"
+            # （轮次口径直接错位）。前缀用「历史:」，与「你:」（本用例自己的轮）分开。
+            # ⚠️ `pre_turns` 的值与 `user_inputs` 同构（str / 控制轮 dict）⇒ 逐条一行，
+            # 不能按字符迭代（#3968 的 `precondition` 散文形态踩过这个坑）。
+            for _pt in _as_items(c.get("pre_turns")):
+                lines.append(f"历史: {_one_line(_pt)}")
             for e in (c.get("expectations") or []):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):

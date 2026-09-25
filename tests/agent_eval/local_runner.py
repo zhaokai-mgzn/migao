@@ -493,6 +493,20 @@ _CLEAN_TYPES: dict[str, dict] = {
     #   `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」而红）。
     "order_status_restore":      {"phases": ("pre", "post"), "attr": ""},
     "customer_profile_restore":  {"phases": ("pre", "post"), "attr": ""},
+    # ── 复位族第三批（issue #5482）：写方改的是**会话凭证事实** ──
+    # 「已发验证码 / 已点确认卡 / 会话态」在产品侧只有**一个**载体：PG `session_states`
+    # （`SessionStateStore`，键 = `session_id`；`last_sms_code` / `last_confirm_value` /
+    # `confirmed_write_tool` / `pending_validated_input` / clarify / handoff …）。
+    # 同一会话**连续跑两次**同一用例时，上一跑记下的事实会放行本跑的写：
+    #   · `_stored_sms_code` 把上一轮的码回填进 `order_create.sms_code` ⇒ 本跑顾客没供码，
+    #     写照样成立；
+    #   · `confirmed_write_release` 按 `confirmed_write_tool` + 被确认的**值**放行 ⇒
+    #     本跑顾客没点卡，写照样放行（确认门禁是**安全性质**，被上一跑满足 = 假绿温床）。
+    # ⇒ #3751 的「重跑同一用例前置等价」在这一面**没有手段**（实现体见
+    # `_restore_session_credentials`）。
+    # ⚠️ `attr` 留空是**有意**的（同 `order_status_restore`）：会话不是商品夹具属性，
+    # 编一个属性键会让 `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」。
+    "session_credential_restore": {"phases": ("pre", "post"), "attr": ""},
 }
 
 # 派生视图（**不要**再各写一份字面量：类型清单只在上面那张表里）
@@ -1226,6 +1240,78 @@ def _same_price(a, b) -> bool:
         return False
 
 
+# 会话凭证事实的载体（**单一事实源**）：PG `session_states`（`SessionStateStore`，键 = `session_id`）。
+# 复位目标 = 该会话**刚建立**时的初始态（没有任何已发生的凭证动作）⇒ 直接删行，语义与产品侧
+# `SessionStateStore.clear()` **同一份**。刻意**不**写死"要清哪些键"：那张键清单
+# （`last_sms_code` / `last_confirm_value` / `confirmed_write_tool` / `pending_validated_input` /
+# clarify / handoff …）随迭代增减，写死一份就等于把复位做成"漏项静默成功"（本仓库反复踩的形态）。
+_SESSION_EXISTS_SQL = "SELECT 1 FROM sessions WHERE id = $1"
+_SESSION_STATE_READ_SQL = "SELECT state FROM session_states WHERE session_id = $1"
+_SESSION_STATE_CLEAR_SQL = "DELETE FROM session_states WHERE session_id = $1"
+
+
+async def _restore_session_credentials(token: str, spec: dict, phase: str) -> str:
+    """`session_credential_restore`：把**会话凭证事实**（验证码/确认卡/会话态）复位到初始态。
+
+    为什么需要（issue #5482）：「已发验证码 / 已点确认卡 / 会话态」三者是**同一份**会话工作
+    状态（PG `session_states`，键 = `session_id`）。同一会话**连续跑两次**同一用例时，上一跑
+    留下的事实会放行本跑的写：
+      · `_stored_sms_code` 把上一轮的码回填进 `order_create.sms_code`（`finalize_turn` 的确认
+        收口：`resolve_sms_code(extract_sms_code(last_user_msg) or _stored_sms_code(session_id), …)`）
+        ⇒ **本跑顾客没供码，写照样成立**；
+      · `confirmed_write_release` 按 `confirmed_write_tool` + 被确认的**值**放行 ⇒
+        **本跑顾客没点卡，写照样放行**。
+    ⇒ 第二次的前置 ≠ 第一次（#3751 的「重跑前置等价」在这一面没有手段）。
+
+    ⚠️ 为什么走 DB 直连而不是 HTTP：`DELETE /api/chat/sessions/{id}` 删的是**整个会话**
+    （终态 purged，消息/历史一起没）—— 那是"换窗口"（`new_session` 轮），不是"复位凭证"；
+    HTTP 面上**没有**"清空会话工作状态、保留会话"的路径。口径与 `_reset_aftersales_ticket`
+    / `_reset_processing_order` 同一份：与 seed 走同一条 DB，**不改产品代码**。
+
+    定位**只按 `session_id`**（不可变键，§18.3）；`spec.session_id` 缺省回落环境变量
+    `EVAL_SESSION_ID`（重放旧会话的调用方给的就是它）。
+
+    幂等：该会话**本就没有**工作状态行 ⇒ 已是初始态 ⇒ 成功返回，**不发** DELETE。
+    失败可见（fail-closed，走 `_clean_not_applied(phase, …)` 的稳定标记）：缺 `session_id` /
+    asyncpg 不可用 / DB 不可达 / 会话不在库里（目标不存在）/ 回读仍存在（没清干净）。
+    ⚠️ 措辞红线（#3751）：**成功路径**的消息不得含「未复位」/「失败」——`_reset_for_retry`
+    据此判"重试前置与首次不等价"。
+    """
+    sid = str(spec.get("session_id") or os.environ.get("EVAL_SESSION_ID") or "").strip()
+    if not sid:
+        return _clean_not_applied(
+            phase, "`session_credential_restore` 缺 `session_id`（且环境变量 `EVAL_SESSION_ID` "
+                   "未设）—— 无法确定复位哪个会话")
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError as e:
+        return _clean_not_applied(phase, f"会话 {sid} 的凭证复位未执行（asyncpg 不可用: {e}）")
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn())
+    except Exception as e:
+        return _clean_not_applied(
+            phase, f"会话 {sid} 的凭证复位未执行（DB 不可达: {type(e).__name__}: {e}）")
+    try:
+        if not await conn.fetchval(_SESSION_EXISTS_SQL, sid):
+            return _clean_not_applied(
+                phase, f"会话 {sid!r} 不在库里（复位目标不存在 —— 栈不对或 id 抄错）")
+        before = await conn.fetchval(_SESSION_STATE_READ_SQL, sid)
+        if before is None:
+            return f"会话 {sid} 本就没有凭证事实（初始态，幂等）"
+        await conn.execute(_SESSION_STATE_CLEAR_SQL, sid)
+        if await conn.fetchval(_SESSION_STATE_READ_SQL, sid) is not None:
+            return _clean_not_applied(
+                phase, f"会话 {sid} 的凭证事实**没清干净** —— 回读该会话仍有工作状态")
+    finally:
+        try:
+            await conn.close()
+        except Exception:
+            pass
+    n = len(before) if isinstance(before, (dict, list, str)) else 0
+    return (f"已复位会话 {sid} 的凭证事实（验证码/确认卡/会话态）→ 初始态"
+            f"（清掉 {n} 项，回读一致）")
+
+
 async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     """一次夹具层动作的**实现体**（原始消息；族/阶段归类见 `_run_pre_clean` / `_run_post_clean`）。
 
@@ -1250,6 +1336,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     - order_status_restore / customer_profile_restore: **复位族第二批**（#4992）——把写方
       对**订单状态** / **客户档案字段**的改动复位；幂等 + 回读校验 + 失败可见
       （见各自 docstring；前者走 DB 直连，理由是订单状态机把终态设为不可逆）。
+    - session_credential_restore: **复位族第三批**（#5482）——把**会话凭证事实**
+      （已发验证码 / 已点确认卡 / 会话态）复位到该会话刚建立时的初始态；DB 直连
+      （HTTP 面无"清空会话工作状态、保留会话"的路径，见该函数 docstring）。
 
     ⚠️ 调用时机（issue #3751 / #4075）：`pre` 阶段只允许在**一次尝试开始之前**执行
     （`run_suite` 在首次尝试前与每次重试前调用；绝不在 `run_case`/`db_verify` 之后 ——
@@ -1429,6 +1518,10 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     if _type == "customer_profile_restore":
         # 复位族（#4992）：把**客户档案被写的字段**复位（CU-004「改手机号」的病灶面）。
         return await _restore_customer_profile(token, spec, phase)
+    if _type == "session_credential_restore":
+        # 复位族第三批（#5482）：把**会话凭证事实**（验证码/确认卡/会话态）复位到初始态
+        # （实现体见 `_restore_session_credentials`）。
+        return await _restore_session_credentials(token, spec, phase)
     # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
     #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
     # 配置错误**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，
@@ -5179,7 +5272,7 @@ _CONTROL_TURN_KEYS = frozenset({
 })
 
 
-def check_control_turns_declared(user_inputs: list) -> list:
+def check_control_turns_declared(user_inputs: list, field: str = "user_inputs") -> list:
     """控制轮必须以 **dict**（YAML block style）声明；写成 JSON 字符串 ⇒ 报出来。
 
     为什么（issue #4042 复核，实证 OR-029 —— #4053 的修法**静默失效**）：
@@ -5208,11 +5301,35 @@ def check_control_turns_declared(user_inputs: list) -> list:
         keys = set(parsed)
         if keys <= _CONTROL_TURN_KEYS:
             issues.append(
-                f"user_inputs 第 {i} 轮是**控制轮的 JSON 字符串**（键：{sorted(keys)}）—— "
+                f"{field} 第 {i} 轮是**控制轮的 JSON 字符串**（键：{sorted(keys)}）—— "
                 f"runner 只把 dict 轮当控制轮，字符串轮会被当**纯文本**发给 agent "
                 f"⇒ 该声明静默失效（卡片无人作答、目标工具永不执行，用例恒红且归因错人）。"
                 f"请改成 YAML block style 的 dict 轮")
     return issues
+
+
+def check_pre_turns_declared(pre_turns) -> list:
+    """`pre_turns`（历史轮次）的**声明形态**自断言（issue #5482，fail-closed）。
+
+    与 `check_control_turns_declared` 同族同因（#4042）：`run_case` 只把列表里的 **str/dict**
+    当轮次解释，**其它形态一律构造不出来**，而"构造不出来"在旧行为下是**静默**的：
+    整个字段写成 JSON 字符串 / dict ⇒ 当没有历史 ⇒ 用例带着**假前置**跑，报告上只表现为
+    "断言没命中"（归因错到 agent 头上）。
+    ⇒ 形态错一律折进 `case_issues`（fail-closed、不进 agent 归因）；"控制轮写成 JSON 字符串"
+    那一格**复用** `check_control_turns_declared`（不复制第二份口径）。
+    ⚠️ **空列表放行**（理由见下方分支注释）：dataclass 缺省就是 `[]` ⇒ 与"没声明"不可分。
+    """
+    if pre_turns is None:
+        return []
+    if not isinstance(pre_turns, list):
+        return [f"pre_turns 必须是**列表**（当前 {type(pre_turns).__name__}）—— runner 只把列表里"
+                f"的 str/dict 当历史轮解释 ⇒ 该声明会静默失效（0 轮历史，用例带着假前置跑）"]
+    # ⚠️ **空列表不算错**（有意，且是唯一可行的口径）：`EvalCase.pre_turns` 的 dataclass 缺省
+    # 就是 `[]` ⇒ 「声明了空列表」与「没声明」在**对象**上不可分。把 `[]` 判红会让
+    # **全库每一条用例**（486 条，缺省即 `[]`）当场 score=0（实测踩到）——那是把判据自己
+    # 变成缺陷。生成物侧也不落空列表字面量（`render_cases` 只在非空时落）⇒ 这一格没有
+    # 静默失效面：真声明了历史却给空列表，在 yml 里就已经退化成"没声明"。
+    return check_control_turns_declared(pre_turns, field="pre_turns")
 
 
 async def check_debug_user_precondition(token: str, case) -> list:
@@ -7718,6 +7835,13 @@ async def run_case(case, token: str, session_id: str) -> dict:
     flush 落库）并新建会话。长期记忆只在**新会话**建立 prompt 时注入，同会话内看不到
     （候选要等会话关闭才落库），所以「老客户偏好识别」这类能力必须跨会话才能判定。
     该轮**必须给 text**（空文本会发出一条空消息，属用例书写错误）。
+
+    `pre_turns`（issue #5482）：**同一会话里先构造 N 轮前置对话**（"长会话才暴露"的用例
+    缺的正是这个起点）。语法与 `user_inputs` **完全一致**（str / 同一批控制轮 dict），
+    走同一条 `send_message` 路径、进同一份 `results`；历史轮在前（`__pre_turn=True`，
+    R1..Rk），本用例自己的轮次顺延（R(k+1)…）。缺省 = 空 ⇒ 既有用例行为**逐字不变**。
+    ⚠️ 产品侧**不接受**注入历史（请求体无 chat_history，服务端按 session_id 自加载）⇒
+    这里只能真发前置轮（花真 token）。
     """
     results = []
     all_tool_names = []
@@ -7754,6 +7878,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
                 f"precondition[debug_permissions_effective] 探针执行失败: {type(e).__name__}: {e}")
     # 控制轮的**声明形态**（issue #4042）：写成 JSON 字符串 ⇒ 静默退化成纯文本轮（fail-closed 报出来）
     case_issues += check_control_turns_declared(getattr(case, "user_inputs", None) or [])
+    # 历史轮次的**声明形态**（issue #5482）：`pre_turns` 声明了却构造不出来 = 前置**静默失效**
+    # （用例带着假前置跑）⇒ 与上面同族，fail-closed 报出来。
+    case_issues += check_pre_turns_declared(getattr(case, "pre_turns", None))
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
@@ -7777,9 +7904,22 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     # `repeat_until` 轮展开（issue #3430）：把「协作型顾客继续配合」表达成一份轮次，
     # 由运行时按**实际卡片序列/是否被索要验证码**决定这一轮发什么（见 resolve_repeat_turn）。
-    _turns = expand_repeat_turns(list(case.user_inputs or []))
+    # 历史轮次（issue #5482）：`pre_turns` = 在**同一个会话**里先构造 N 轮前置对话，再跑本用例
+    # 自己的 `user_inputs`。它与 `user_inputs` 走**同一条**路径 —— 同一份 `expand_repeat_turns`
+    # 展开、同一个 `send_message`、同一份 `results` 轨迹与计分口径（**不造第二套轮次解释器，
+    # 也不造第二套轨迹/断言**：`order_before` / `forbidden_text` / `want_text` 的轮次作用域
+    # 读的仍是这一份 `results`；历史轮 = R1..Rk，本用例的轮次顺延到 R(k+1)…）。
+    # 为什么必须是"真发消息"（产品侧现状，实测取证）：`POST /api/chat/send` **不接受**注入历史
+    # （`backend/ai-agent-service/tests/test_business_verification.py` 逐字：请求体不包含
+    # chat_history，多轮历史由服务端按 session_id 自动加载）⇒ 构造历史的**唯一**通路就是把
+    # 前置轮真的发出去（这也意味着 `pre_turns` 花的是真 token，写用例时要算成本）。
+    _pre_turns = expand_repeat_turns(list(getattr(case, "pre_turns", None) or []))
+    _turns = _pre_turns + expand_repeat_turns(list(case.user_inputs or []))
 
     for i, msg in enumerate(_turns):
+        # 该轮是不是**历史轮**（`pre_turns`）：随轮次落进轨迹，让"前置构造的轮"与
+        # "本用例被测的轮"在证据里可分辨（issue #5482）。
+        _is_pre = i < len(_pre_turns)
         images = []
         if isinstance(msg, dict) and msg.get("new_session"):
             await _end_session(token, session_id,
@@ -7860,6 +8000,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
                                debug_user=getattr(case, "debug_user", "") or "",
                                debug_permissions=_case_debug_permissions(case))
         r["__round"] = i + 1
+        r["__pre_turn"] = _is_pre
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])
         results.append(r)

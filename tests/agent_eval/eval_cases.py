@@ -38,6 +38,7 @@ class EvalCase:
     skip_reason: str = ""
     legacy_id: str = ""
     tags: List[str] = field(default_factory=list)
+    pre_turns: List = field(default_factory=list)
     persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855
     order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）
     forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）
