@@ -9,6 +9,7 @@ import com.migao.admin.controller.WorkerProductionController;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.WorkerSessionMapper;
 import com.migao.admin.security.JwtAuthenticationFilter;
+import com.migao.admin.security.PasswordChangeRequiredFilter;
 import com.migao.admin.security.SecurityConfig;
 import com.migao.admin.security.ServiceTokenFilter;
 import com.migao.admin.security.WorkerSessionFilter;
@@ -50,7 +51,7 @@ import java.sql.Driver;
 @Import({SecurityConfig.class, PasswordEncoderConfig.class, MybatisPlusConfig.class,
         GlobalExceptionHandler.class, TenantDomainResolver.class,
         WorkerSessionFilter.class, WorkerSessionService.class,
-        JwtAuthenticationFilter.class, ServiceTokenFilter.class,
+        JwtAuthenticationFilter.class, ServiceTokenFilter.class, PasswordChangeRequiredFilter.class,
         WorkerAuthController.class, WorkerProductionController.class})
 public class WorkerTenantGuardApp {
 

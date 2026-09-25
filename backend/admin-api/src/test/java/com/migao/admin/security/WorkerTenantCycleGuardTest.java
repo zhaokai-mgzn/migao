@@ -147,6 +147,10 @@ class WorkerTenantCycleGuardTest {
                 + "password_hash VARCHAR(128), nickname VARCHAR(64), avatar VARCHAR(255),"
                 + "role VARCHAR(32), position VARCHAR(64), worker_no VARCHAR(64),"
                 + "permissions VARCHAR(2048), session_ttl INTEGER, status VARCHAR(16),"
+                // V128（issue #5485）：员工登录用户名 + 首登强制改密标记。真 Mapper 的
+                // selectActiveUsersByPhoneIgnoreTenant 已把这两列列进投影 ⇒ 夹具 DDL 缺列会
+                // 让本守卫在「Column \"username\" not found」上假红（实测踩中）。
+                + "username VARCHAR(64), must_change_password BOOLEAN NOT NULL DEFAULT FALSE,"
                 + "created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE,"
                 + "deleted INTEGER NOT NULL DEFAULT 0)");
         // 与 V98 逐列同形（生产 PG 的 DDL；H2 的 PostgreSQL 模式接受同一份类型）

@@ -106,26 +106,40 @@ class AgentBatchMigrationTest {
     class Migration {
 
         @Test
-        @DisplayName("V127 是活目录的**下一个**空闲号（不跳号/不与归档号重号，防同号乱序）")
+        @DisplayName("活目录迁移版本号唯一且不与归档链同号（防同号乱序：撞车 = 有一条永远不会跑）")
         void versionIsNextFreeAndUnique() throws Exception {
             assertThat(Files.isRegularFile(root().resolve(MIGRATION_REL)))
                     .as("迁移文件必须在 %s", MIGRATION_REL).isTrue();
 
-            int mine = 127;
+            // ⚠️ 这里原写「活目录里其它文件版本号必须 < V127（V127 是最新一条）」—— 那是本仓
+            //    **点名过的自毁式真值主张**：下一条迁移（V128，issue #5485 登录重构）一落地就必红，
+            //    且报错文案把行动指向错误方向（本单在 CI 上实测踩中）。
+            //    判据本意（见方法名）=「**同号乱序 ⇒ 有一条永远不会跑**」⇒ 正确口径 =
+            //    ① 活目录版本号**无重复**；② 活目录与归档链**无同号**。
+            //    同族改法（同为本仓踩中后改的）见
+            //    backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java
+            //    与 tests/unit_ci_workflows/test_inbound_opening_register.py。
+            //    V127/V128 各自的逐字节冻结另由 tests/unit_ci_workflows/migration_fingerprints.json 的
+            //    sha256 账本守（此处不重复主张）。
+            List<Integer> live = new ArrayList<>();
             for (String name : liveMigrations()) {
                 Matcher m = Pattern.compile("^V(\\d+)__").matcher(name);
-                if (m.find() && name.startsWith("V127__")) {
-                    continue;
+                if (m.find()) {
+                    live.add(Integer.parseInt(m.group(1)));
                 }
-                assertThat(Integer.parseInt(m.group(1)))
-                        .as("活目录里 %s 的版本号必须小于 V127（V127 是最新一条）", name)
-                        .isLessThan(mine);
             }
-            // 归档链（历史证据，逐字节冻结）里不得有同号
+            assertThat(live).as("活目录里迁移版本号不得重复（撞车 ⇒ 有一条永远不会跑）")
+                    .doesNotHaveDuplicates();
+
+            // 归档链（历史证据，逐字节冻结）里不得与活目录同号
             try (Stream<Path> s = Files.list(root().resolve(ARCHIVE_DIR))) {
-                assertThat(s.map(f -> f.getFileName().toString())
-                        .filter(n -> n.startsWith("V127__")).toList())
-                        .as("归档链已有同号 ⇒ 迁移顺序不确定（issue #3812 的形态）").isEmpty();
+                List<Integer> archived = s.map(f -> f.getFileName().toString())
+                        .map(n -> Pattern.compile("^V(\\d+)__").matcher(n))
+                        .filter(Matcher::find)
+                        .map(mm -> Integer.parseInt(mm.group(1)))
+                        .toList();
+                assertThat(live).as("活目录与归档链同号 ⇒ 迁移顺序不确定（issue #3812 的形态）")
+                        .doesNotContainAnyElementsOf(archived);
             }
         }
 
