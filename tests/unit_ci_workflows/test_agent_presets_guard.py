@@ -604,6 +604,11 @@ def anchor_env(tmp_path: Path) -> dict:
     _git(tmp_path, "clone", "-q", str(origin), str(baseline))      # 已 fetch：origin/main = c3
     mirror = tmp_path / "mirror"
     _git(tmp_path, "clone", "-q", str(origin), str(mirror))
+    # ⚠️ `git clone` **不写** user.name/email，而 macOS 的 git 会拿系统 GECOS 兜底 ⇒ 本机「看起来有
+    # identity」、Linux CI 上直接 `fatal: empty ident name`（实测：本 PR 该腿唯一的红就是这个）。
+    # ⇒ 夹具**自带** identity，绝不依赖运行环境的全局/系统配置。
+    _git(mirror, "config", "user.email", "fixture@example.com")
+    _git(mirror, "config", "user.name", "fixture")
     _git(mirror, "checkout", "-q", "--detach", c3)
     return {"origin": origin, "seed": seed, "baseline": baseline, "mirror": mirror,
             "c1": c1, "c2": c2, "c3": c3}
