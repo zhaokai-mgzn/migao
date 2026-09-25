@@ -134,6 +134,11 @@ class OrderIdempotencyTest {
                 Order.builder().id("order-2").orderNo("ORD-2").customerName("张三")
                         .status("pending").totalAmount(new BigDecimal("300.00")).build());
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        // 商品级权威价桩（issue #3881 缺陷二 / #4025 F11，本 PR）：无 SKU 身份键的明细行
+        // 改由商品级唯一权威价核对（改前静默放过）⇒ 权威价 = 明细单价，让**幂等键**成为唯一变量。
+        when(productMapper.selectById("p-idem-4037")).thenReturn(com.migao.admin.entity.Product.builder()
+                .id("p-idem-4037").tenantId(TENANT).name("遮光窗帘")
+                .basePrice(new BigDecimal("150")).build());
     }
 
     @Test
@@ -230,6 +235,7 @@ class OrderIdempotencyTest {
         req.setCustomerPhone("13800001111");
         req.setClientRequestId(clientRequestId);
         OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+        item.setProductId("p-idem-4037");
         item.setProductName("遮光窗帘");
         item.setQuantity(BigDecimal.valueOf(2));
         item.setUnitPrice(new BigDecimal("150"));

@@ -84,6 +84,11 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
     # issue #5243：基线语义判据（空库建终态 / 存量库不重放）**自带一次性真 PG 集群** ⇒ 登记。
     _SVC + "MigrationBaselineSemanticsTest.java": "direct",
+    # issue #3881 缺陷二 / #4025 F11（无 SKU 标识的订单行改 422 fail-closed）的真库判据 ——
+    # 证两件 mock 面结构上看不见的事：① **被拒绝时订单表零落账**（防「先建单再报错」）；
+    # ② 本次新增的两条读路径是真 SQL（products 按 (tenant_id, name) 唯一匹配 + 逻辑删除、
+    # product_skus 价格集合）—— 列名/租户拦截器/软删过滤在 mock 面都不可见（#5141/#5169 同族）。
+    _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
     # issue #4157：库存台账**第三条变更路径**（建品/改品直写 SKU 库存）的真库判据 ——

@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+### AI 下单：订单行没有 SKU/商品标识时不再静默放过 —— 单价无从核对即 422 拒绝（2026-09-25，issue #3881）
+
+- **改了什么（用户可见）**：AI 下单（`order_create` → `POST /api/admin/agent/orders`）的明细行若
+  **既没声明 SKU 标识**（`processingInfo` 里的 `skuId` / `skuCode` / `colorName`）、**又无法解析出商品**，
+  服务端**不再直接放过**：改按**商品级唯一权威价**核对单价（唯一 SKU 价，或没有 SKU 记录商品的商品级价）——
+  对不上即 **422**（`VALIDATION_ERROR`，文案附「请求 X 元 / 系统价 Y 元」）；**权威价无从唯一确定**时
+  （该商品有多个不同规格价而未声明规格、商品查不到或同名多条、完全无价）同样 **422**，并给出可行动建议
+  （用 `product_detail` 的 `id` 补 `items[].product_id`，多规格商品再补 `processing_info.skuId`）。
+- **为什么**：issue #3881 缺陷二原文 —— `validateAgentItemUnitPrice` 里
+  「无 productId 或无 skuCode/colorName → `return; // 无 SKU 标识，无法解析权威价 → 不拦截`」，
+  即 OR-014「米白 ¥150/米 编造价落单」的**服务端半边口子**（明细可以只有商品名、`order_items.product_id`
+  落 NULL、单价一次都没核对就进总额）。用户裁定：**改成 422（fail-closed）**，少一道静默少算钱的口子。
+- **顺带修的同一处口子**：`processingInfo.skuId`（`order_create` 工具描述里的「**首选键**」）此前
+  不被该守卫识别 ⇒ 照工具描述只传 `skuId` 的行反被判成「无 SKU 标识」静默放过；
+  现按与 `matchSkuId` **同一键族**（`skuId`/`skuCode`/`colorName`）识别。
+- **没改什么（负控）**：后台表单路径（`POST /api/admin/orders` → `OrderService.createOrder`）**不经**本守卫，
+  行为逐字不变；**合法形态照旧下单**——单规格价商品（多 SKU 同价）、**没有 SKU 记录的简单商品**
+  （卖布行：商品级一个价）、无加工项行、同价多 SKU 的分色商品；声明了 `skuCode`/`colorName` 的行的
+  解析口径也逐字不变（解析不到 / 命中多条仍按原判据不在此拦截，库存路径另有 #4090 的显式拒绝）。
+
 ### 左侧菜单：每个菜单项都有各自的图标（不再有 4 组「完全一样」）（2026-09-25，issue #5582）
 
 - **改了什么（用户可见）**：左侧菜单原有 **4 组图标重复**，且都在同一屏里紧挨着出现 ——

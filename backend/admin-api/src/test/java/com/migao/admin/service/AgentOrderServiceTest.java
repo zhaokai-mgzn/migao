@@ -75,6 +75,16 @@ class AgentOrderServiceTest {
                 .status("confirmed").totalAmount(new BigDecimal("299.00")).build();
     }
 
+    /**
+     * 商品级权威价桩（issue #3881 缺陷二 / #4025 F11，本 PR）：**没有 SKU 身份键**的明细行
+     * 改由「商品级唯一权威价」核对（改前是静默放过）。本类锁的用例含**数量/单价闸门**，
+     * 故把权威价桩成与输入同值 —— 让被测闸门成为唯一的拒绝来源，判据不被新守卫抢答。
+     */
+    private void stubProductAuthority(BigDecimal price) {
+        when(productMapper.selectById("p-qty-3622")).thenReturn(Product.builder()
+                .id("p-qty-3622").tenantId(1L).name("遮光窗帘").basePrice(price).build());
+    }
+
     @Nested
     @DisplayName("Agent 创建订单")
     class CreateOrderForAgent {
@@ -86,10 +96,16 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
             OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+            item.setProductId("p-basic-3881");
             item.setProductName("窗帘"); item.setQuantity(BigDecimal.valueOf(2));
             item.setUnitPrice(new BigDecimal("150"));
             item.setSubtotal(new BigDecimal("300.00"));
             req.setItems(List.of(item));
+            // 商品级权威价桩（issue #3881 / #4025 F11）：本用例锁「基本创建成功」，
+            // 无 SKU 身份键的行改由**商品级唯一权威价**核对 ⇒ 权威价 = 明细单价，创建照旧成功。
+            when(productMapper.selectById("p-basic-3881")).thenReturn(Product.builder()
+                    .id("p-basic-3881").tenantId(1L).name("窗帘")
+                    .basePrice(new BigDecimal("150")).build());
 
             when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
                 Order o = inv.getArgument(0); o.setId("order-new"); return 1;
@@ -272,6 +288,7 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
             OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+            item.setProductId("p-qty-3622");
             item.setProductName("遮光窗帘");
             item.setQuantity(quantity);
             item.setUnitPrice(unitPrice);
@@ -285,6 +302,7 @@ class AgentOrderServiceTest {
         @DisplayName("负数量 → 拒绝（不 insert 订单：负金额会污染总额，负需求还绕过库存校验）")
         void negativeQuantityRejected() {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(-3), new BigDecimal("168"));
+            stubProductAuthority(new BigDecimal("168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -297,6 +315,7 @@ class AgentOrderServiceTest {
         @DisplayName("0 数量 → 拒绝（0 元明细）")
         void zeroQuantityRejected() {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(0), new BigDecimal("168"));
+            stubProductAuthority(new BigDecimal("168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -309,6 +328,7 @@ class AgentOrderServiceTest {
         @DisplayName("负单价 → 拒绝（负单价 × 数量 = 负金额）")
         void negativeUnitPriceRejected() {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("-168"));
+            stubProductAuthority(new BigDecimal("-168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -321,6 +341,7 @@ class AgentOrderServiceTest {
         @DisplayName("0 单价 → 拒绝")
         void zeroUnitPriceRejected() {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), BigDecimal.ZERO);
+            stubProductAuthority(BigDecimal.ZERO);
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
@@ -333,6 +354,7 @@ class AgentOrderServiceTest {
         @DisplayName("合法数量/单价 → 仍可下单（防过严：闸门不是「永远下不了单」）")
         void legalQuantityAndPriceStillPass() {
             AgentOrderCreateRequest req = buildQtyReq(BigDecimal.valueOf(3), new BigDecimal("168"));
+            stubProductAuthority(new BigDecimal("168"));
             mockOrderInsert();
 
             OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
@@ -422,11 +444,13 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三");
             req.setCustomerPhone("13800001111");
             OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+            item.setProductId("p-qty-3622");
             item.setProductName("遮光窗帘");
             item.setQuantity(new BigDecimal("0.5"));
             item.setUnitPrice(new BigDecimal("168"));
             item.setSubtotal(new BigDecimal("84.00"));
             req.setItems(List.of(item));
+            stubProductAuthority(new BigDecimal("168"));
 
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class)
