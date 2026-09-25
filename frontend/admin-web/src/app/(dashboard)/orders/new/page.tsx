@@ -994,6 +994,26 @@ function buildLineProcessingInfo(
   if (Number.isFinite(meters) && meters > 0) info.processingMeters = meters
   const calcMeters = Number(line.calc?.fabric_meters)
   if (Number.isFinite(calcMeters) && calcMeters > 0) info.fabric_meters = calcMeters
+  // **算料输出逐键落库**（issue #4273）：加工单实例化的「应做数量」按 `calc_info` 取真值 ——
+  // 「折」类读 `pleat_count`（`routing.py` 的 FOLD_KEYS）、「幅」类读 `panels`（PANEL_KEYS）；
+  // 缺键 ⇒ 折/幅/套类**兜底 1** 且 `qty_source=fallback`（车间按 1 折报工 = 假完工）。
+  // 键名 = 试算响应同键 = 下游 `ProcessingOrderService.CALC_INFO_KEYS` 白名单口径
+  // ⇒ **只透传、零映射、不自拼**（前端换算 = 第二份算料逻辑）。
+  // **缺值不写**：算料没产出该键（倍数法无褶数 ⇒ `pleat_count=0`；定高买宽无幅数 ⇒ `plan.panels=null`）
+  // ⇒ 不落键 —— 写 0/null 会被下游当成真值（「不做」与「没算」必须可区分）。
+  const pleatCount = Number(line.calc?.pleat_count)
+  if (Number.isFinite(pleatCount) && pleatCount > 0) info.pleat_count = pleatCount
+  const perPanelPleats = Number(line.calc?.per_panel_pleats)
+  if (Number.isFinite(perPanelPleats) && perPanelPleats > 0) info.per_panel_pleats = perPanelPleats
+  // 幅数（`panels`）：引擎产出在推导方案里（`plan.panels`，issue #5201），订单层键名是**扁平**的
+  // `panels`（`CALC_INFO_KEYS` / `CALC_OUTPUT_SNAPSHOT_KEYS` 同口径）—— 同一份引擎输出的**搬运**，
+  // 不是第二次推导（逐值断言 = 同文件单测判据 1）。
+  const panels = Number(line.calc?.plan?.panels)
+  if (Number.isFinite(panels) && panels > 0) info.panels = panels
+  const fullness = Number(line.calc?.fullness)
+  if (Number.isFinite(fullness) && fullness > 0) info.fullness = fullness
+  const fullnessActual = Number(line.calc?.fullness_actual)
+  if (Number.isFinite(fullnessActual) && fullnessActual > 0) info.fullness_actual = fullnessActual
   // 算料公式串（issue #4546）：把**试算响应**里的 `formula_text` 原样落进订单层 camelCase 键
   // `formulaText` —— 详情页据此告知商家「用料是怎么算出来的」。
   // 🔴 **只透传、不得自拼**（`lib/api.ts` 头注释：公式串由 ai-agent 后端产出，前端自拼 = 第二份算料逻辑）。
