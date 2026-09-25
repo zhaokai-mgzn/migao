@@ -681,4 +681,40 @@ describe('Sidebar', () => {
       ])
     })
   })
+
+  // ── 菜单图标两两不同（issue #5582）─────────────────────────────────────────────
+
+  it('🔴 菜单图标两两不同（渲染面）：21 项的图标互不重复（issue #5582）', async () => {
+    // 用户实测「左侧菜单栏有部分子菜单的图标完全一样」——数据层去重（menu-icons.test.ts 判据④）
+    // 只证明**配置**不重复；这里证明**渲染出来**的图标也不重复（§15.1 结果可见）。
+    // 「每日简报」挂在企业简报开关上（`briefingToggle`，缺省关 ⇒ 不渲染）⇒ 本判据要先把它打开，
+    // 否则 21 项只到 20 项（本单实测踩过一次：`Unable to find text: 每日简报`）。
+    mockBriefingEnabled = true
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // 简报开关的可见性是**异步**拉配置决定的（同文件既有用例的写法）⇒ 等它到位再展开
+    await waitFor(() => expect(screen.getByText('每日简报')).toBeInTheDocument())
+    expandAll()
+
+    const items: [string, string][] = [...GROUPS.flatMap((g) => g.items), ['notifications', '通知中心']]
+    const byIcon = new Map<string, string[]>()
+    for (const [, name] of items) {
+      const link = linkFor(name)
+      // tests/setup.ts 的 lucide 夹具把每个图标渲染成 `data-testid="icon-<kebab>"` ⇒ 从**渲染结果**反读图标名
+      const icon =
+        link.querySelector('[data-testid^="icon-"]')?.getAttribute('data-testid')?.replace(/^icon-/, '') ?? '(无图标)'
+      byIcon.set(icon, [...(byIcon.get(icon) ?? []), name])
+    }
+
+    const collisions = [...byIcon.entries()]
+      .filter(([, names]) => names.length > 1)
+      .map(([icon, names]) => `${icon} → ${names.join('、')}`)
+
+    expect(items, '面非空自证：21 项（20 组内项 + 通知中心）').toHaveLength(21)
+    expect(
+      collisions,
+      `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`
+        + '出口：给后出现的那一项换一个语义相近的 lucide 图标（menu.ts + menu-icons.ts + tests/setup.ts 白名单三处同批）。',
+    ).toEqual([])
+    expect(byIcon.size).toBe(items.length)
+  })
 })

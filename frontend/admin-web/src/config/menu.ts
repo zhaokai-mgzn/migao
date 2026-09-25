@@ -130,7 +130,7 @@ export const menuGroups: MenuGroup[] = [
       // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view` —— `order:refund`
       // 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。
       // #5271 重排本组时**必须保留**该码。
-      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
+      { key: 'after-sales', name: '售后工单', icon: 'LifeBuoy', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
       // #2969：客户列表原在「客户管理」组；#5271 并入交易管理组（动线合并，见上）
       { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
       // #2969：财务对账原在「客户管理」组；#5271 并入交易管理组（订单 → 收款 → 对账）
@@ -166,7 +166,7 @@ export const menuGroups: MenuGroup[] = [
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。
       // 工序库半边 = 该页**左栏**；旧路径 /production/operations 保留为重定向（旧深链不 404）。
       { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'production:view', keywords: ['gypz', 'gongyi', 'gongxu', 'luxian'] },
-      { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
+      { key: 'production-piecework', name: '计件工资', icon: 'Coins', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
     ],
   },
   // issue #5271 **新组**：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，是**同一条物流动线**，
@@ -191,7 +191,7 @@ export const menuGroups: MenuGroup[] = [
       // 省料看板（issue #5159）：L2 批次余量分档聚合 + L3 单位产出的面料消耗。
       // 一屏同时给两条指标（①「剩余 ≤0.2m 的批次占比」②「入库/采购总米数」）并把
       // 「单看①会被排料省料误导」写在页面上；存量导入批次单独成组、不与切换后混算。
-      { key: 'production-saving-board', name: '省料看板', icon: 'BarChart3', path: '/production/saving-board', permissionCode: 'processing:manage', keywords: ['slkb', 'shengliao', 'haoliao'] },
+      { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'processing:manage', keywords: ['slkb', 'shengliao', 'haoliao'] },
     ],
   },
   // #2969: 组织管理组（员工管理 + 岗位权限 + 企业基础信息）
@@ -203,7 +203,7 @@ export const menuGroups: MenuGroup[] = [
       { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list', keywords: ['yggl', 'yuangong'] },
       // issue #5291：岗位权限节点改挂**读**码 `system:view`（企业基础信息仍是 system:manage）。
       { key: 'roles', name: '岗位权限', icon: 'ShieldCheck', path: '/roles', permissionCode: 'system:view', keywords: ['gwqx', 'jiaose', 'quanxian'] },
-      { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage', keywords: ['qyxx', 'shezhi', 'qiye'] },
+      { key: 'settings', name: '企业基础信息', icon: 'Settings', path: '/settings', permissionCode: 'system:manage', keywords: ['qyxx', 'shezhi', 'qiye'] },
     ],
   },
 ]

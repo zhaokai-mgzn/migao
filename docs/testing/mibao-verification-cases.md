@@ -6039,7 +6039,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（56 case）
+## 前端 UI 域（57 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -6800,6 +6800,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-25 新增（issue #5576）：池看板 → 智能派单 + 页内去内部隐喻 + 三源同构与「只改文案」负控 + 「池」隐喻类级元守卫。取号 UI-058。 ｜ tags: ui, copy, naming, pool-board
 
+### UI-059. 左侧菜单图标两两不同 —— 4 组同图各自换唯一图标 + 数据层/渲染面双判据（issue #5582） 🔵
+```
+你: 用户逐字：「左侧菜单栏有部分子菜单的图标完全一样，能否做到每个菜单不同图标」
+期望: direct_reply
+数据: 🔴 判据·**数据层两两不同**（`menu-icons.test.ts` 判据④）：28 个节点（7 组头 + 20 组内项 + 1 独立项）的图标名去重后数量 == 节点数；面非空自证（节点数 == 28 且点名 8 个已知节点）。修复前实测 4 组同图：`BarChart3` 经营看板/省料看板、`ShieldCheck` 售后工单/岗位权限、`Calculator` 财务对账/计件工资、`Building2` 组织管理/企业基础信息。
+数据: 🔴 判据·**渲染面两两不同**（`Sidebar.test.tsx`）：展开全部组后，21 项（20 组内项 + 通知中心）的**渲染结果**里图标互不重复（从 tests/setup.ts 的 lucide 夹具 `data-testid="icon-<kebab>"` 反读，不是读配置）—— §15.1「结果可见」。⚠️ 本判据需先 `mockBriefingEnabled = true` + `waitFor` 等「每日简报」到位（它是异步拉配置决定可见性的，实测踩过一次）。
+数据: 🔴 红证（单点变异）：把「省料看板」的图标改回 `BarChart3` ⇒ **数据层与渲染面两条判据同时具名变红**（`BarChart3 → 经营看板、省料看板`），还原 sha256 逐字节一致。
+数据: **三处同批**（漏一处即红/即抛）：`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 的 import 与 `menuIconMap` + `tests/setup.ts` 的 lucide 白名单（未登记的新图标会让任何渲染 Sidebar 的用例当场抛 `No "X" export is defined on the "lucide-react" mock`）。既有三条注册表判据（正向不漏 / 反向无死映射 / 注入式红证）逐条不回归。
+数据: **只换图标**：路由 / 菜单 key / 权限码 / 菜单名一律未动（`frontend-fix.no-api-change`）；图标仍是**前端专属**（MC-019 裁决：服务端不下发 icon）。
+跳过: [backend-contract] 纯前端菜单图标 + 静态/渲染判据（无 LLM 行为面），不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-25 新增（issue #5582）：4 组同图各自换唯一图标（售后工单→LifeBuoy / 省料看板→TrendingDown / 计件工资→Coins / 企业基础信息→Settings）+ 数据层与渲染面双判据。取号 UI-059。 ｜ tags: ui, menu, icon, layout
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -6829,8 +6843,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：487（活跃 119，跳过 368）
-- tier 分布：smoke 12 / normal 445 / adversarial 30
+- 用例总数：488（活跃 119，跳过 369）
+- tier 分布：smoke 12 / normal 446 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6855,7 +6869,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：56
+- 前端 UI 域：57
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

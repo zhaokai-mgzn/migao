@@ -359,7 +359,7 @@ job 名随 persona 参数化也不适合做 required 名）。
 ### 7.1 待验证的问题（不是"优化"，是"证实/证伪"）
 
 `LLMFactory.create_skill_llm` 的思考开关写法来自 MiniMax-M3 时代
-（`app/llm/factory.py:63-69`）：`enable_thinking=True` 发
+（`app/llm/factory.py` 的 `create_skill_llm`）：`enable_thinking=True` 发
 `extra_body={"thinking": {"type": "enabled"}}`，`force_no_think=True` 发
 `{"thinking": {"type": "disabled"}}`；**两个都不传 → 不传 `extra_body`**（`tests/test_llm_factory.py:41` 钉死）。
 

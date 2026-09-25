@@ -2012,3 +2012,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-059
+    legacy_id: ""
+    title: "左侧菜单图标两两不同 —— 4 组同图各自换唯一图标 + 数据层/渲染面双判据（issue #5582）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - menu
+      - icon
+      - layout
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户逐字：「左侧菜单栏有部分子菜单的图标完全一样，能否做到每个菜单不同图标」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据·**数据层两两不同**（`menu-icons.test.ts` 判据④）：28 个节点（7 组头 + 20 组内项 + 1 独立项）的图标名去重后数量 == 节点数；面非空自证（节点数 == 28 且点名 8 个已知节点）。修复前实测 4 组同图：`BarChart3` 经营看板/省料看板、`ShieldCheck` 售后工单/岗位权限、`Calculator` 财务对账/计件工资、`Building2` 组织管理/企业基础信息。"
+      - "🔴 判据·**渲染面两两不同**（`Sidebar.test.tsx`）：展开全部组后，21 项（20 组内项 + 通知中心）的**渲染结果**里图标互不重复（从 tests/setup.ts 的 lucide 夹具 `data-testid=\"icon-<kebab>\"` 反读，不是读配置）—— §15.1「结果可见」。⚠️ 本判据需先 `mockBriefingEnabled = true` + `waitFor` 等「每日简报」到位（它是异步拉配置决定可见性的，实测踩过一次）。"
+      - "🔴 红证（单点变异）：把「省料看板」的图标改回 `BarChart3` ⇒ **数据层与渲染面两条判据同时具名变红**（`BarChart3 → 经营看板、省料看板`），还原 sha256 逐字节一致。"
+      - "**三处同批**（漏一处即红/即抛）：`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 的 import 与 `menuIconMap` + `tests/setup.ts` 的 lucide 白名单（未登记的新图标会让任何渲染 Sidebar 的用例当场抛 `No \"X\" export is defined on the \"lucide-react\" mock`）。既有三条注册表判据（正向不漏 / 反向无死映射 / 注入式红证）逐条不回归。"
+      - "**只换图标**：路由 / 菜单 key / 权限码 / 菜单名一律未动（`frontend-fix.no-api-change`）；图标仍是**前端专属**（MC-019 裁决：服务端不下发 icon）。"
+    skip_reason: "[backend-contract] 纯前端菜单图标 + 静态/渲染判据（无 LLM 行为面），不进入 agent-eval 冒烟"
+    merge_log: "2026-09-25 新增（issue #5582）：4 组同图各自换唯一图标（售后工单→LifeBuoy / 省料看板→TrendingDown / 计件工资→Coins / 企业基础信息→Settings）+ 数据层与渲染面双判据。取号 UI-059。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/menu-icons.test.ts"
+        - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
