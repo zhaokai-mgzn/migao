@@ -92,7 +92,7 @@
 
 | # | 判定方式 | 违反后的处置 | 落码 |
 |---|---|---|---|
-| I3-a | 用例首轮断言自己的前置（订单数 / 客户数 / 目标对象存在 / 库内无同名残留），前置不成立 = **fail-closed** 并把观测值打进失败信息 | 与 dev-flow §18.4 同款：`前置不成立：customers=2（期望 1）`，**不得**继续跑成"agent 不干活"的红 | **未实装**（运行器侧，见 §6） |
+| I3-a | 用例首轮断言自己的前置（订单数 / 客户数 / 目标对象存在 / 库内无同名残留），前置不成立 = **fail-closed** 并把观测值打进失败信息 | 与 dev-flow §18.4 同款：`前置不成立：customers=2（期望 1）`，**不得**继续跑成"agent 不干活"的红 | **部分实装**（运行器侧，见 §6）。**已落码的一半** = **夹具层准备前置**不成立时的折叠通道：`tests/agent_eval/local_runner.py` 的 `check_preclean_not_applied` 按稳定前缀（`_PRECLEAN_BAD_MARKERS`：`pre_clean: 不支持的 type` 配置错误 + `pre_clean: 前置未应用`）把「配置错误 / 前置未应用」折成 `score=0` 并进 `failures`；`post_clean` 侧**同构**（`check_postclean_not_applied` 走 `_POSTCLEAN_BAD_MARKERS` ⇒ `restore_failures` ⇒ 阻塞）。**未落码的一半** = ① 用例**自己**在首轮断言前置（订单数 / 客户数 / 同名残留）—— 用例库没有这个断言位，也没有静态门禁；② 覆盖面**不全**：准备型的「未复位 / 失败」消息（`aftersales_ticket_prepare` 的「未复位：库里没有工单…」、`user_memories_clear` 的「清理长期记忆失败…」）**不带** `_PRECONDITION_NOT_APPLIED` 前缀 ⇒ **首次尝试不进结论**（只在重试边界被「未复位 / 失败」子串兜到）—— #3797 登记，**至今未修**（`origin/main` 上 `_reset_aftersales_ticket` 的失败分支仍是那两句原文） |
 | I3-b | 写用例必须声明 `namespaces`（并发不被他人改世界） | 补 `namespaces` | **只报告不阻塞**（`未实装`，判据面不成立，见 §6） |
 
 ### I4 时效可验
@@ -136,6 +136,8 @@ policy_version        # 判据口径版本（口径一改即失效）
 
 **前置自断言**（I3-a）：本契约要求"前置不成立 ⇒ fail-closed 并把观测值打进失败信息"。
 **本包只写契约与判据，不碰 runner** —— 落地在运行器那一层（issue #3846 的 F 规则）。
+运行器侧**已落码的那一半**（夹具层准备前置的折叠通道）与**仍未覆盖的两处**（用例自身的首轮自断言、
+准备型「未复位 / 失败」消息的漏标记）逐条写在 §1 的 I3-a 行与 #3797 里 —— **别把"有一半落码"读成"已实装"**。
 
 ---
 
@@ -230,6 +232,7 @@ git -C "$R" status --porcelain                                 # 必须为空
 | id | 不变量 | 为什么没做成机器判据 | 缺什么 |
 |---|---|---|---|
 | `ref-semantic-hit` | I1 | 唯一可机判的形态是"同行反引号锚点串必须出现在目标行"；`@d0724892` 实测 **26 条带锚引用中 20 条误红**（多引用同行 / 锚点是另一条引用 / 锚点是整句散文）⇒ 按「误红即坏断言」不做 | 引用方给出**结构化**期望锚点（如 `path:NNN#symbol`），或统一改写成符号锚（指令层写法变更） |
+| `read-at-main` | I1 | 护栏 A 的「**工具化 `read-at-main`**」**全仓不存在**（`git grep -n read-at-main origin/main` ⇒ **0 命中**）：现存只有 `migao-dev-flow` §18.1 的**纪律**（只读核查一律 `git show origin/main:<path>`、禁 grep 工作树）与各人手里的裸 `git show` —— 纪律会失效，而**没有任何东西会因此变红**（#3843 的源码层返工正是这么来的：把落后十几个提交的工作树当真相，同一个符号两次都查不到）。本审计的 `Audit.read(rel, rev)` 是同一件事的**内部**形态（判据全走 `--base`），但它不是给人 / 给会话用的入口，也没有「核查必须走它」的消费方 | ① 一个可执行只读入口（脚本子命令 / 纯函数），把 `git show <base>:<path>` 固定下来（含 base 不可解析、路径不存在时的 fail-closed 形态）；② **消费方**：让「这次核查读了工作树」可判 —— 没有消费方的声明只是又一纸纪律（`migao-dev-flow` §20 R5「声明无消费」）。在此之前**照旧按纪律手工 `git show origin/main:<path>`**，不冒充已覆盖 |
 | `hardcoded-count` | I1 | 受管引用面 `~?N 条` 命中 **63 处**，绝大多数为叙事/历史语境，**无零误红判据**（无法区分"断言当下条数"与"复述历史读数"）；#3787 第 4 条即此族 | 用例库给出机器可读的条数声明位，或这类句子改成"以 X 为单一事实源"的无数字写法 |
 | `section-pointer-semantic` | I1 | 章节号存在性可判（`16.5` 确实存在），但"该不该指 16.5 而不是 16.7"要读语义；#3787 第 1/2 条即此族 | 引用写成**带章节标题**的锚（`§16.7「派发后」`），把存在性判定升级为标题命中 |
 | `runtime-fencing` | I1/I3 | 实装点在 `tests/agent_eval/local_runner.py`，**由另一任务包落地**；本包按边界不碰 runner | runner 侧把 §3.2 的四项指纹写进 `run_key`；前置失败走 fail-closed 分支 |
@@ -352,6 +355,21 @@ python3 scripts/drift_audit.py --regen-baseline --reason "PR #xxxx：销账 xxx"
 
 **退出码**：`0` 无新增漂移 / `1` 新增漂移（或 `--strict-stale` 下的陈旧条目 / 判据崩溃）/
 `2` 用法错误（如 `--regen-baseline` 缺 `--reason`）。
+
+**逐条点名的未知豁免（`--allow-unknown <check-id>`，issue #3951）**：`--fail-on-unknown` 只有
+"全开 / 全关"两档，而 CI runner 上**活锚天然不存在** ⇒ `skill-anchor` **结构性恒 `unknown`**
+⇒ 定时腿与"有没有漂移"**无关地永远红**（`stale-report-reaper` 也永远收不掉它：判据是"最近 3 次
+已完成 run 全 `success`"，`--consecutive` 默认 3）。故豁免做成**逐条点名**，定时腿声明
+`--allow-unknown skill-anchor`。三条边界（缺一条它就退化成 blanket bypass）：
+
+① 判据的 `status` / `notes` / JSON 报告**照旧原样输出**（"未知"没有被改写成"通过"），报告另起一行
+登记本轮名单，抬头写 `UNKNOWN-EXEMPT`（既不冒充 `ok`，也不与退出码 `0` 相反）；
+② 名单**必须当场兑现**，否则**用法错误（`exit 2`）**：点名的 id 不存在，或该判据本次**不是**
+`unknown`（已经能判了 ⇒ 撤豁免；`error` 更不许豁免）；
+③ 活锚**真的存在**时它照常判定（`ok` / `new-drift` 与豁免无关），`--strict-stale` 一个字没放宽。
+
+红证 = `tests/unit_ci_workflows/test_drift_audit_allow_unknown.py`（无名单 ⇒ `unknown` 仍判 `3`；
+名单只免点名的那一条；名单不兑现 ⇒ 非零）。
 
 **误红了怎么办（先怀疑夹具，再怀疑判据）**：测试里的**红证夹具**按定义就是一个"失效的引用"
 （形如 `<不存在的路径>.py:<行号>`）—— 它必然被引用新鲜度扫到。处方**不是**放宽判据，而是在该
