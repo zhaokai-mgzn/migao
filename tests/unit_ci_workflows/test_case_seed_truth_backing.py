@@ -269,18 +269,23 @@ DECLARED_SCOPES = {c["scope"] for c in LEDGER["undecidable_classes"]}
 
 
 # ── ① 前提：真值在哪一侧（防静默空跑）────────────────────────────────────────
+def test_the_fixtures_read_are_the_ones_the_eval_stack_loads():
+    """判据的「真值」与考场的「数据栈」必须同源 —— 断言对象 = 装载脚本自己点名的文件。
+
+    `scripts/eval_stack_seed.sh` 是评测栈种子的**单一实现**（issue #3563：三个 workflow
+    曾各写一份且互不相等）⇒ 判据不得另立一份 seed 名单。
+
+    ⚠️ **本判据刻意放在模块级**（不在类里）：`SEED_FILES` 的注释声称了「同源」⇒ 该声明必须
+    在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `same_source_claims` 里
+    登记一条 `criterion`，而那张表的判据解析器只认模块级的 `def <名字>(`。
+    """
+    script = SEED_SCRIPT.read_text(encoding="utf-8")
+    for name in SEED_FILES:
+        assert f"$FIXTURES/{name}" in script, (
+            f"装载脚本没有引用 {name} ⇒ 本判据读的 fixture 可能已不是考场真值源：{name}")
+
+
 class TestSeedTruthPremise:
-    def test_the_fixtures_read_are_the_ones_the_eval_stack_loads(self):
-        """判据的「真值」与考场的「数据栈」必须同源 —— 断言对象 = 装载脚本自己点名的文件。
-
-        `scripts/eval_stack_seed.sh` 是评测栈种子的**单一实现**（issue #3563：三个 workflow
-        曾各写一份且互不相等）⇒ 判据不得另立一份 seed 名单。
-        """
-        script = SEED_SCRIPT.read_text(encoding="utf-8")
-        for name in SEED_FILES:
-            assert f"$FIXTURES/{name}" in script, (
-                f"装载脚本没有引用 {name} ⇒ 本判据读的 fixture 可能已不是考场真值源：{name}")
-
     def test_seed_data_text_holds_the_truths_the_criterion_requires(self):
         """前提成立：seed 数据文本真的解析出来了，且含对齐后的 OR-029 真值。"""
                 # 现取（2026-09-25，origin/main@f4f7d9070）：17872 字符；下限只作「解析失效」探测。
