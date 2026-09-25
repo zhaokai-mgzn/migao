@@ -44,11 +44,19 @@ export default function EmployeesPage() {
     position: '',
     role: '',
     permissions: [] as string[],
+    // #5485：员工登录账号（用户名 + 初始密码）。用户名租户内唯一，重名由服务端 422。
+    username: '',
+    password: '',
   })
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // 重置密码（#5485：管理员重置 = 员工忘记密码时的找回路径；重置后强制改密）
+  const [resetTarget, setResetTarget] = useState<Employee | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
+  const [resetting, setResetting] = useState(false)
 
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
@@ -132,7 +140,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ name: '', phone: '', position: '', role: '', permissions: [] })
+    setFormData({ name: '', phone: '', position: '', role: '', permissions: [], username: '', password: '' })
     setFormOpen(true)
   }
 
@@ -159,6 +167,10 @@ export default function EmployeesPage() {
       position: employee.position || '',
       role: employee.role || (employee.roles?.[0]?.code as string) || '',
       permissions: employee.permissions || [],
+      // #5485：登录账号取 employeeUsername（⚠️ `username` 在列表里仍是手机号，不能拿来当账号）
+      username: employee.employeeUsername || '',
+      // 密码不回显（后端也不下发）；留空 = 不改密码
+      password: '',
     })
     setFormOpen(true)
   }
@@ -167,6 +179,12 @@ export default function EmployeesPage() {
   const handleSubmit = async () => {
     if (!formData.name.trim()) { toast.error('请输入姓名'); return }
     if (!formData.phone.trim()) { toast.error('请输入手机号'); return }
+    // #5485：新建必须同时给「用户名 + 初始密码」—— 没有账号的员工**根本登不进来**
+    // （存量账号不自动迁移，管理员补设前无法登录是预期行为；新员工别制造下一个这样的账号）
+    if (!editingEmployee) {
+      if (!formData.username.trim()) { toast.error('请设置登录用户名'); return }
+      if (!formData.password) { toast.error('请设置初始密码'); return }
+    }
     if (!formData.position.trim()) { toast.error('请选择岗位'); return }
 
     // 「角色」字段已从表单移除（#2907）：新建时不传 role，由后端按岗位解析（#2969 岗位=角色体系）；
@@ -178,6 +196,10 @@ export default function EmployeesPage() {
       permissions: formData.permissions,
     }
     if (formData.role) payload.role = formData.role
+    // 编辑时留空 = 不改（用户名留空不发送，避免把已有账号清掉）
+    const username = formData.username.trim()
+    if (username) payload.username = username
+    if (formData.password) payload.password = formData.password
 
     setFormLoading(true)
     try {
@@ -186,14 +208,32 @@ export default function EmployeesPage() {
         toast.success('编辑成功')
       } else {
         await employeeApi.createEmployee(payload)
-        toast.success('创建成功')
+        toast.success('创建成功，该员工首次登录需修改密码')
       }
       setFormOpen(false)
       loadEmployees()
     } catch (e) {
-      // Error handled by API layer
+      // Error handled by API layer（用户名租户内重复 → 服务端 422，message 已由拦截器提示）
     } finally {
       setFormLoading(false)
+    }
+  }
+
+  // 重置密码（#5485）：重置后该员工下次登录**必须先改密**（后端强制置标记）
+  const handleResetPassword = async () => {
+    if (!resetTarget) return
+    if (!resetPasswordValue) { toast.error('请输入新的初始密码'); return }
+    setResetting(true)
+    try {
+      await employeeApi.resetPassword(resetTarget.id, { newPassword: resetPasswordValue })
+      toast.success('密码已重置，请告知员工：下次登录需先修改密码')
+      setResetTarget(null)
+      setResetPasswordValue('')
+      loadEmployees()
+    } catch (e) {
+      // Error handled by API layer（弱密码 → 422，服务端 message 可直接展示）
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -255,6 +295,18 @@ export default function EmployeesPage() {
       ),
     },
     { key: 'phone', title: '手机号', dataIndex: 'phone', width: '140px' },
+    {
+      // #5485：登录账号。⚠️ 列表里 `username` **仍是手机号**（后端未动），
+      // 登录用的用户名是 `employeeUsername` —— 显示错了等于让管理员对着手机号去猜账号。
+      key: 'employeeUsername',
+      title: '登录账号',
+      width: '150px',
+      render: (record) => (
+        record.employeeUsername
+          ? <span className="text-sm text-neutral-700">{record.employeeUsername}</span>
+          : <span className="text-neutral-400 text-sm">未设置</span>
+      ),
+    },
     {
       key: 'position',
       title: '岗位',
@@ -327,6 +379,12 @@ export default function EmployeesPage() {
                 className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
               >
                 编辑
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setResetTarget(record); setResetPasswordValue('') }}
+                className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
+              >
+                重置密码
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
@@ -444,6 +502,23 @@ export default function EmployeesPage() {
             value={formData.phone}
             onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
           />
+          <Input
+            label={editingEmployee ? '登录用户名（留空不改）' : '登录用户名 *'}
+            placeholder="员工登录账号，如 zhangsan"
+            value={formData.username}
+            onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+          />
+          <Input
+            label={editingEmployee ? '重置密码（留空不改）' : '初始密码 *'}
+            type="password"
+            placeholder={editingEmployee ? '留空则保持原密码' : '请输入初始密码'}
+            value={formData.password}
+            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+          />
+          <p className="-mt-2 text-xs text-neutral-400">
+            员工用「<span className="text-neutral-500">用户名@企业编码</span>」+ 密码登录（企业编码见「企业基础信息」）。
+            用户名在企业内不能重复；<span className="text-neutral-500">员工首次登录需修改密码</span>后才能使用其他功能。
+          </p>
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">岗位 *</label>
             <Select
@@ -490,6 +565,37 @@ export default function EmployeesPage() {
         <p className="text-neutral-600">
           确定要删除员工 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？此操作不可撤销。
         </p>
+      </Modal>
+
+      {/* 重置密码对话框（#5485：员工忘记密码时的找回路径 —— 本议题不做员工自助找回） */}
+      <Modal
+        open={!!resetTarget}
+        onClose={() => setResetTarget(null)}
+        title="重置员工密码"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setResetTarget(null)} disabled={resetting}>
+              取消
+            </Button>
+            <Button onClick={handleResetPassword} loading={resetting}>
+              确认重置
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            为 <span className="font-medium text-neutral-900">{resetTarget?.name}</span> 设置一个新的初始密码。
+            重置后请告知员工：<span className="text-neutral-900">下次登录需先修改密码</span>才能使用其他功能。
+          </p>
+          <Input
+            label="新的初始密码 *"
+            type="password"
+            placeholder="请输入新的初始密码"
+            value={resetPasswordValue}
+            onChange={(e) => setResetPasswordValue(e.target.value)}
+          />
+        </div>
       </Modal>
     </div>
   )
