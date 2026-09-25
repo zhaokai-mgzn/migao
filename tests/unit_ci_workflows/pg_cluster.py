@@ -114,6 +114,10 @@ REALDB_TEST_MODULES: frozenset[str] = frozenset({
     # issue #5263：孤儿集群的判据文件 —— 其中两条**行为级**红证真起集群（失败用例 ⇒ 无残留 /
     # 去掉 teardown ⇒ 真残留），故它**本身就是**真库判据（也经 `realdb_binaries` 夹具取二进制）。
     "test_pg_orphan_sweep.py",
+    # issue #5502：dollar-quoted 块内 `:变量` 的类级锁 —— 真库那一半在**全新库**上按文档用法跑
+    # `docs/deployment/demo-seed.sql`（ON_ERROR_STOP=1 ⇒ exit 0 + 零 ERROR + 行数 == 语句数），
+    # 外加一条把病灶段喂进同一批 psql 调用的红证。缺 PG ⇒ CI 判红（不是静默跳过）。
+    "test_psql_vars_outside_dollar_quotes.py",
 })
 
 #: 标记的**假值**（与 Java 侧同款口径：非空且非 0/false 才算「要求真库」）

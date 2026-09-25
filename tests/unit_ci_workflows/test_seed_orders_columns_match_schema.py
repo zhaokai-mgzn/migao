@@ -25,6 +25,7 @@
 | ① | INSERT 列集 ∩ **V126 删列集** = ∅ | 归因清晰（点名 V126 / #5245），但只覆盖**这一次**的删列 |
 | ② | INSERT 列集 ⊆ **建库脚本现列集** | 类级：将来任何删列 / 改名都会红，不依赖「记得来改判据」 |
 | ③ | 每条 INSERT 的**列数 = 值数** | 「删了列忘了删值」是同一次修复的**另一半**；①② 都看不见它 |
+| ④ | **任何表**的 INSERT：表建过 + 列存在 + 列数 = 值数（`scan_all_inserts`） | ①②③ **只判 `orders` 一张表** ⇒ `product_skus.selling_method`（V113 已 `DROP`）漂到 issue #5502 才被人肉发现 —— 表级推广是同批（#5502）补的 |
 
 ## 射程：**活** seed，不是档案
 
@@ -40,9 +41,12 @@
 
 ## ⚠️ 边界（如实登记）
 
-解析是**静态文本**层面的（不是 SQL 引擎）：只认 `INSERT INTO orders (<列清单>)` 这一种显式
-列清单形态，且只判 `orders` 一张表。**无列清单的形态**（`INSERT INTO orders VALUES …`）
-**不做静默跳过**，直接判红 —— 「静态判不了 ⇒ 没得查 ⇒ 绿」正是本仓最忌讳的假绿。
+解析是**静态文本**层面的（不是 SQL 引擎）：只认 `INSERT INTO <表> (<列清单>)` 这一种显式
+列清单形态。**无列清单的形态**（`INSERT INTO <表> VALUES …`）**不做静默跳过**，直接判红 ——
+「静态判不了 ⇒ 没得查 ⇒ 绿」正是本仓最忌讳的假绿。
+
+判据①②③ 只判 `orders`（它们的真值源是 V126 那一批删列）；判据④ 判**所有表**
+（列集 ⊆ 建库脚本 + 列数 = 值数）—— 两条射程**有意不同**，见判据表第 ④ 行。
 """
 import re
 import sys
@@ -76,8 +80,10 @@ LIVE_SEEDS = (
 # 解析本体（纯函数 ⇒ 注入式红证行使的是**同一份**判据，不是它的复制品）
 # ══════════════════════════════════════════════════════════════════════════════════
 
-_INSERT_ORDERS_RE = re.compile(r"INSERT\s+INTO\s+orders\b", re.I)
-_COLUMN_LIST_RE = re.compile(r"INSERT\s+INTO\s+orders\s*\(([^)]*)\)", re.I | re.S)
+#: 表无关的 `INSERT INTO <表>` 头（类级判据扫**所有**表 —— issue #5502 同批推广）
+_INSERT_ANY_RE = re.compile(r"INSERT\s+INTO\s+(\w+)", re.I)
+#: 带显式列清单的 `INSERT INTO <表> (列…)`（`group(1)` = 表名 / `group(2)` = 列清单）
+_COLUMN_LIST_RE = re.compile(r"INSERT\s+INTO\s+(\w+)\s*\(([^)]*)\)", re.I | re.S)
 
 
 def _next_semicolon(text: str, start: int) -> int:
@@ -175,29 +181,34 @@ def _select_arity(rest: str):
     return len(_split_top_level(body))
 
 
-def orders_inserts(sql: str) -> list:
-    """一份 seed SQL → 每条 `INSERT INTO orders` 的解析结果。
+def seed_inserts(sql: str, tables=None) -> list:
+    """一份 seed SQL → 每条**带显式列清单**的 `INSERT INTO <表> (…)` 的解析结果。
 
-    返回 `[{stmt, columns, arities, unknown, dropped}]`：
+    返回 `[{table, stmt, columns, arities}]`：
 
-    * `columns` / `unknown`（不在建库脚本里的列） / `dropped`（∩ V126 删列集）都是**小写列名**；
+    * `table` / `columns` 都是**小写**；
     * `arities` = 各值元组的字段数（多行 VALUES）或 `[列数]`（单行 SELECT）；
-    * **无列清单**（`INSERT INTO orders VALUES …`）⇒ `pytest.fail`（fail-closed，不许静默跳过）。
+    * `tables=None` ⇒ 扫**所有**表（类级判据用）；给集合 ⇒ 只扫这些表；
+    * **无列清单**（`INSERT INTO <表> VALUES …`）⇒ `pytest.fail`（fail-closed，不许静默跳过）。
     """
     text = strip_sql_comments(sql)
     out = []
-    for m in _INSERT_ORDERS_RE.finditer(text):
+    for m in _INSERT_ANY_RE.finditer(text):
+        table = m.group(1).lower()
+        if tables is not None and table not in tables:
+            continue
         end = _next_semicolon(text, m.start())
-        assert end != -1, f"fail-closed：`INSERT INTO orders` 之后找不到语句结束的 `;`（读了 {m.start()}）"
+        assert end != -1, (
+            f"fail-closed：`INSERT INTO {table}` 之后找不到语句结束的 `;`（读了 {m.start()}）")
         stmt = text[m.start():end + 1]
         cm = _COLUMN_LIST_RE.match(stmt)
         if not cm:
             pytest.fail(
-                f"fail-closed：`INSERT INTO orders` **没有显式列清单** ⇒ 本条判据静态判不了。\n"
+                f"fail-closed：`INSERT INTO {table}` **没有显式列清单** ⇒ 本条判据静态判不了。\n"
                 f"  语句：{stmt[:160]}…\n"
                 f"  「判不了 ⇒ 跳过 ⇒ 绿」正是本仓最忌讳的假绿；请补列清单，或把本判据扩到该形态"
-                f"（issue #4056）。")
-        cols = [c.strip().strip('"').lower() for c in cm.group(1).split(",") if c.strip()]
+                f"（issue #4056 / #5502）。")
+        cols = [c.strip().strip(chr(34)).lower() for c in cm.group(2).split(",") if c.strip()]
         rest = stmt[cm.end():]
         arities = _values_arity(rest)
         if arities is None:
@@ -211,8 +222,13 @@ def orders_inserts(sql: str) -> list:
                     f"fail-closed：既不是 `VALUES` 也不是 `SELECT` 形态 ⇒ 值数判不了。\n"
                     f"  语句：{stmt[:160]}…")
             arities = [single]
-        out.append({"stmt": stmt, "columns": cols, "arities": arities})
+        out.append({"table": table, "stmt": stmt, "columns": cols, "arities": arities})
     return out
+
+
+def orders_inserts(sql: str) -> list:
+    """`orders` 一张表（`seed_inserts` 的薄包装 —— 判据①②③与既有注入式红证都用它）。"""
+    return seed_inserts(sql, tables={"orders"})
 
 
 def v126_dropped_orders_columns() -> set:
@@ -244,6 +260,44 @@ def scan_seeds(schema_columns: dict, dropped: set, seeds=LIVE_SEEDS) -> dict:
                 violations.append(
                     f"列数 {len(cols)} ≠ 值数 {bad}（删列时忘了同步删值 ⇒ psql 仍会报 "
                     f"`INSERT has more expressions than target columns`）")
+        if violations:
+            out[rel] = violations
+    return out
+
+
+def scan_all_inserts(schema_columns: dict, seeds=LIVE_SEEDS, texts=None) -> dict:
+    """**表级**类级体检（判据④，issue #5502 同批推广 #4056 判据②）→ `{相对路径: [违规]}`。
+
+    每条 `INSERT INTO <表> (列…)`：表必须在建库脚本里建过、列必须存在、**列数 = 值数**。
+    与判据②的差别只在**射程**：② 只判 `orders`，本判据判**所有表**
+    —— `docs/deployment/demo-seed.sql` 的 `product_skus.selling_method`（V113 已
+    `DROP COLUMN`：售卖方式上移为商品级 `products.selling_methods`）正是②看不见的那一类，
+    而它**一行都没执行过**（块内 `:tenant_id` 先让整个 `DO` 块语法中止了）。
+
+    `texts`（`{相对路径: 原文}`）= 注入式红证的覆盖孔：给定时**整体替换**磁盘读取
+    （红证行使的是**同一份**判定逻辑，不是它的复制品）。
+    """
+    out = {}
+    for rel in seeds:
+        if texts is None:
+            path = REPO / rel
+            assert path.is_file(), f"fail-closed：登记的活 seed 不存在（读了 {rel}）—— 扫描会空转=假绿"
+            text = path.read_text(encoding="utf-8")
+        else:
+            assert rel in texts, f"fail-closed：注入语料里没有 {rel}（读了 {sorted(texts)}）"
+            text = texts[rel]
+        violations = []
+        for ins in seed_inserts(text):
+            table, cols = ins["table"], ins["columns"]
+            if table not in schema_columns:
+                violations.append(f"表 `{table}` 不在建库脚本里")
+                continue
+            unknown = sorted(c for c in cols if c not in schema_columns[table])
+            if unknown:
+                violations.append(f"`{table}` 的列 {unknown} 不在建库脚本里")
+            bad = [n for n in ins["arities"] if n != len(cols)]
+            if bad:
+                violations.append(f"`{table}` 列数 {len(cols)} ≠ 值数 {bad}")
         if violations:
             out[rel] = violations
     return out
@@ -398,3 +452,47 @@ def test_parser_fails_closed_without_a_column_list_and_ignores_comments():
     ins = orders_inserts(commented)
     assert len(ins) == 1, f"注释行被当成语句 ⇒ 判据被自己的说明文字喂红（读出了 {len(ins)} 条）"
     assert not set(ins[0]["columns"]) & _SYNTH_DROPPED, "注释里的被删列名被算成了引用"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 ④（表级）—— issue #5502 同批推广
+# ══════════════════════════════════════════════════════════════════════════════════
+
+#: #5502 实测的那条漂移：`product_skus.selling_method` 已随 V113 删除（售卖方式上移为
+#: 商品级 `products.selling_methods`），而活 seed 仍逐字写着它。
+_DRIFTED_PRODUCT_SKUS_INSERT = (
+    "INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price)\n"
+    "SELECT 1, 'p-zg-001', 1, 'bulk_cut', '2.8米', 98.00\n"
+    "WHERE NOT EXISTS (SELECT 1 FROM product_skus WHERE product_id = 'p-zg-001');\n"
+)
+
+
+def test_live_seed_inserts_match_schema_for_every_table():
+    """判据④（表级类级）：**任何**活 seed 的**任何** `INSERT INTO <表> (列…)` 都要与建库脚本对得上。
+
+    判据② 只判 `orders` ⇒ `product_skus.selling_method` 这类漂移怎么腐烂都不会红。
+    """
+    hits = scan_all_inserts(parse_schema_columns_strict())
+    assert not hits, (
+        "这些活 seed 的 INSERT 与建库脚本对不上（表名 / 列名 / 列数）：\n  "
+        + "\n  ".join(f"{rel}: {vs}" for rel, vs in sorted(hits.items()))
+        + "\n⇒ 打库当场中止（`column … does not exist` / `INSERT has more expressions than "
+          "target columns`）。真值源 = backend/admin-api/src/main/resources/db/init/schema.sql"
+          "（必须先核它，不要凭记忆猜列）。"
+          "\n迁移删列时**同批**改活 seed —— 判据④认任何表，不依赖「记得回来改判据」。")
+
+
+def test_all_table_scan_goes_red_on_the_issue_5502_drift():
+    """判据④的注入式红证：把 #5502 实测的漂移列写回**真语料** ⇒ 必红，且只红那一处。"""
+    texts = {rel: (REPO / rel).read_text(encoding="utf-8") for rel in LIVE_SEEDS}
+    schema_columns = parse_schema_columns_strict()
+    assert scan_all_inserts(schema_columns, texts=texts) == {}, \
+        "注入前真语料就不干净 —— 先修语料再谈红证"
+
+    target = "docs/deployment/demo-seed.sql"
+    injected = dict(texts)
+    injected[target] = texts[target] + "\n" + _DRIFTED_PRODUCT_SKUS_INSERT
+    hits = scan_all_inserts(schema_columns, texts=injected)
+    assert set(hits) == {target}, f"注入只该让 {target} 变红，实际：{sorted(hits)}"
+    assert any("selling_method" in v for v in hits[target]), (
+        f"注入 V113 已删的列后读数是 {hits[target]} ⇒ 判据④没看见它（判红不可归因）")

@@ -1,5 +1,5 @@
 # case_ids: MC-012
-"""「自毁式真值主张」（断言最高迁移版本号 == 常量）机械守卫（issue #5166）。
+"""「自毁式真值主张」（断言「我是当前最高迁移版本号」）机械守卫（issue #5166；形态 ⑦ = issue #5493）。
 
 ## 病灶（2026-09-22 同一批新代码里**连出三次**，每次都靠后一个单顺手修掉）
 
@@ -12,6 +12,12 @@
 | ① | `backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java` | `versions.get(size - 1) == 116` | #5148 的 V117 |
 | ② | `tests/unit_ci_workflows/test_inbound_opening_register.py` | `max(versions) == 118` | #5158 的 V119 |
 | ③ | #5158 自己新写的文件 | 同款 | 自查后一并改 |
+| ④ | `backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java` | `.isLessThan(mine)`（`int mine = 127;`） | #5485 的 V128（**V128 落地时实测踩中**，issue #5493） |
+
+⚠️ **④ 暴露的是射程缺口（issue #5493）**：①②③ 全是 `== <常量>` 家族，**同一句主张换个比较算子**
+（`.isLessThan(<本地常量>)` = 「**别人都小于我**」）原先**整个漏出去**——自毁机制完全相同
+（V128 一进活目录，`V128 < 127` 当场不成立）。⇒ 形态表补第 ⑦ 条，同批补一条**反向**要求：
+从被测输出算出来的合法比较断言**不得**判红（`LEGIT` 负控 + 两条门的承重红证）。
 
 ## 正确写法（本仓既有先例，见 `_GUIDANCE`，命中时逐字打印）
 
@@ -31,6 +37,8 @@ assert len([v for v in versions if v >= N]) == len({v for v in versions if v >= 
 | 4 | 覆盖边界登记（`NOT_COVERED`）**带死亡条件**：谁补上了 ⇒ 那条断言当场变红 | `test_registered_gaps_are_still_gaps` |
 | 5 | 每条形态各有一条能单独变红的红证（新增形态不配红证 ⇒ 红） | `test_every_pattern_has_a_red_proof` |
 | 6 | 存量零违规（**零容忍、无 burn-down 白名单**） | `test_real_tree_has_zero_violations` |
+| 7 | 形态 ⑦ 注入（`isLessThan(<本地 3 位常量>)`）⇒ 红并指名文件与行 | `test_injected_violation_is_red_and_named`（`java_islessthan_local_const` / `java_isgreaterthan_local_const`） |
+| 8 | 形态 ⑦ 的两条门**各自承重**：关掉任一条 ⇒ 对应合法负控**当场变红** | `test_version_context_gate_is_load_bearing` / `test_local_binding_gate_is_load_bearing` |
 
 ## 能抓什么 / 抓不到什么（**如实登记，不把"抓不到"伪装成"已覆盖"**）
 
@@ -45,6 +53,13 @@ assert len([v for v in versions if v >= N]) == len({v for v in versions if v >= 
 | `helper_const_last` | 断言助手：常量在后 | `self.assertEqual(max(versions), 117)` |
 | `assertj_isequalto` | AssertJ 相等断言 | `assertThat(versions.get(versions.size() - 1)).isEqualTo(116)` / `assertThat(Collections.max(migrationVersions)).isEqualTo(119)` |
 | `assertj_last` | AssertJ 取末元素 | `assertThat(versions).last().isEqualTo(116)` |
+| `assertj_cmp_local_const` | AssertJ **比较算子** + 同文件绑定的 3 位常量（形态 ⑦，issue #5493） | `.isLessThan(mine)`（文件里另有 `int mine = 127;`） / `.isGreaterThan(floor)`（文件里另有 `int floor = 100;`） / `isLessThanOrEqualTo` / `isGreaterThanOrEqualTo` 同族 |
+
+形态 ⑦ 与 ①~⑥ 的差别只在**算子**：①~⑥ 主张「我 == 最大号」，⑦ 主张「**别人都小于我**」。两条门
+（**同文件 3 位常量绑定** + **文件处于迁移版本号语境**）缺一不可，因为单看算子会大面积假红：
+全仓现取 27 个文件的比较算子，实参**全是**被测输出算出来的值（`sorted.indexOf(...)` / `sql.indexOf("COMMIT;")` /
+`copyAt` / `poolSize` / `prev.getId()`）或裸字面量 sanity bound（`isGreaterThan(0)` …）。两条门各有一条
+**承重红证**（去掉任一条 ⇒ 对应 `LEGIT` 负控当场变红，判据 8），⇒ 门不是装饰。
 
 **跨行也抓**（`assert max(\n versions\n) == 117`、Java 的链式换行断言）：判定跑在**折叠成单行**的
 「只含代码」文本上，行号由位置映射反查（见 `_collapse`）。
@@ -59,6 +74,10 @@ assert len([v for v in versions if v >= N]) == len({v for v in versions if v >= 
 | `assertEquals(118, versions.stream()...max().orElseThrow())` | **Java Stream 归约**：`max()` 无参，与 `Optional` 流式写法在文本层不可区分 |
 | `assert len(versions) == 119` | **有意不抓**：同病灶的**另一主张**（条数 ≠ 最大值），与「正好落了 N 条版本行」这类**合法**断言同形 ⇒ 抓它 = 制造假红 |
 | `assert max(versions) <= 118` | **有意不抓**：`<=` 作为「上界 sanity bound」是合法写法，文本层与自毁主张不可区分（取舍口径同本仓弱断言门禁对 `toBeTruthy` 的处置） |
+| `.isLessThan(127)`（**裸字面量**实参） | **有意不抓**：与合法 sanity bound（`isGreaterThan(0)` / `isGreaterThan(25)` / `isGreaterThan(30)` / `isGreaterThan(50)` / `isLessThan(100)` …）在文本层同形 ⇒ 抓它 = 大面积假红。形态 ⑦ 只认「实参是**同文件绑定的标识符**」这一种指纹 |
+| `.isLessThan(mine)` 但文件**无迁移语境** | **有意不抓**：这就是形态 ⑦ 第②条门（版本语境）的代价。不加它会误伤 `int timeoutMs = 500; assertThat(elapsed).isLessThan(timeoutMs)` 这类**真断言**（本仓对误伤宁可不抓） |
+| `int mine = 28; … .isLessThan(mine)`（**2 位**版本号） | **有意不抓**：门①卡死「**3 位**数字字面量」是为了不误伤（2 位数常量在真断言里太常见，如 `isGreaterThan(10)`）。代价 = 两位迁移号（仓库早期的 `V28` 这类**历史**形态）漏掉；4 位（`V1000`）同理漏掉 |
+| Python 侧 `assert versions[-1] < mine`（`mine = 127`） | **有意不抓**：形态 ⑦ 的射程是 **AssertJ 比较算子**（Java 面）。Python 的 `< 常量` 与 `assert len(batch) < 200` 这类合法上限断言在文本层同形 ⇒ 射程有意不扩（纳入要另付一条假红防线，见 `SURFACE` 的覆盖面登记） |
 
 **覆盖面**（`test_surface_is_locked` 钉住）：扫 `SURFACE` 四个 glob；**前端测试面
 （`frontend/**/*.test.tsx`）有意未扫** —— 迁移版本号主张是后端 / admin-api 面的形态，纳入会让
@@ -107,6 +126,10 @@ _GUIDANCE = """\
           assert len([v for v in versions if v >= N]) == len({v for v in versions if v >= N})
   Java  ： assertThat(versions).contains(N);
           assertThat(versions.stream().filter(v -> v >= N).toList()).doesNotHaveDuplicates();
+  Java（**比较算子**形态 ⑦，issue #5493 —— 「别人都小于我」同样是自毁主张）：
+          assertThat(live).doesNotHaveDuplicates();                     // 同号乱序 ⇒ 有一条永远不会跑
+          assertThat(live).doesNotContainAnyElementsOf(archived);       // 活目录与归档链不得同号
+        先例：backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java
 ⚠️ 只查「**本档及以后**」——仓库存量里 V29 / V33 各有两份（历史遗留）⇒ 全量查重会历史假红。
 先例：tests/unit_ci_workflows/test_inbound_order_idempotency.py（`>= 117`）、
       backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java
@@ -238,6 +261,37 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         rf"assertThat\s*\(\s*{_VER}\s*\)\s*\.\s*(?:last|getLast)\s*\(\s*\)\s*\.\s*isEqualTo\s*\(\s*\d+\s*\)")),
 )
 
+# ══════════════════ ②b 形态 ⑦：比较算子 + 本地 3 位常量（issue #5493） ══════════════════
+#
+# 病灶（2026-09-25 实测，V128 落地时踩中）：同一句「**我是当前最高迁移号**」换个比较算子写成
+# `.isLessThan(<本地常量>)` 就整个漏出去了 —— ①~⑥ 全是 `== <常量>` 家族，⑦ 的句意是
+# 「**别人都小于我**」。自毁机制完全相同：活目录里一出现 V128，「V128 < 127」当场不成立 ⇒ 判据变红，
+# 且报错文案（「V128 必须小于 V127」）把人指向**错误行动**（去怀疑新迁移写错了）。
+# 实例 = backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java
+# （V128 = issue #5485；修法见 PR #5492：改判「活目录版本号无重复 + 活目录与归档链无同号」）。
+#
+# 🔴 为什么**不能**只匹配 `.isLessThan(<标识符>)`（本仓对误伤的态度是宁可不抓也不假红）：
+#    全仓现取 27 个文件的比较算子，实参**全是**从被测输出算出来的值
+#    （`sorted.indexOf(...)` / `sql.indexOf("COMMIT;")` / `copyAt` / `poolSize` / `prev.getId()` /
+#    `templateExplicitScopeNames(json).size()` / `orderTail.lastIndexOf(" id")` …）
+#    或**裸字面量 sanity bound**（`isGreaterThan(0)` / `isGreaterThan(25)` / `isGreaterThan(30)` …）
+#    ⇒ 单看算子 = 大面积假红。判据 = **两条件同时成立**（都是**文件级**判定；本守卫是文本层、
+#       不做数据流分析）：
+#      ① 实参那个标识符在**同一文件**里被绑成 **3 位数字字面量**（`int mine = 127;` / `MINE = 127;`）
+#         —— 这正是「写死一个魔数当迁移号」的指纹；
+#      ② 该文件处于**迁移版本号语境**（代码里出现 migration / version(s) 标识符）
+#         —— 否则 `int timeoutMs = 500; assertThat(elapsed).isLessThan(timeoutMs)` 这类**合法**
+#            比较断言会被误伤（那是真断言，不是自毁主张）。
+#    两条门**各自承重**（去掉任一条 ⇒ 对应 `LEGIT` 负控当场变红）：
+#    `test_version_context_gate_is_load_bearing` / `test_local_binding_gate_is_load_bearing`。
+_CMP_LOCAL = re.compile(r"\.\s*is(?:Less|Greater)Than(?:OrEqualTo)?\s*\(\s*([A-Za-z_]\w*)\s*\)")
+_BIND_3DIGIT = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*=\s*(\d{3})\s*;")
+_VER_CONTEXT = re.compile(r"(?i)(?:migration|versions?)")
+CMP_LOCAL_CONST = "assertj_cmp_local_const"
+
+#: 全部形态 id（`test_every_pattern_has_a_red_proof` 的**声明侧**）：①~⑥ = 单条正则；⑦ = 两条件判定。
+FORM_IDS: frozenset[str] = frozenset([pid for pid, _ in _PATTERNS] + [CMP_LOCAL_CONST])
+
 
 class Hit(NamedTuple):
     path: str        # 仓库相对路径
@@ -252,6 +306,26 @@ class Scan(NamedTuple):
     skipped: tuple[str, ...]    # 无法词法化的文件（fail-closed，见 UNPARSEABLE_ALLOWED）
 
 
+def _cmp_local_const_hits(rel: str, text: str, code: str, *,
+                          require_local_binding: bool = True,
+                          require_version_context: bool = True) -> list[Hit]:
+    """形态 ⑦：`.is(Less|Greater)Than(OrEqualTo)(<标识符>)`，且该标识符**同文件**绑成 3 位数字字面量，
+    且文件处于迁移版本号语境（两条门的依据见 ②b 的注释块）。
+
+    两个开关**只**给承重红证用（`test_*_gate_is_load_bearing`）：关掉任一 ⇒ 对应 `LEGIT` 负控当场变红
+    ——这是「门在承重、不是在装饰」的正面证据（同判据 2 的口径）。
+    """
+    if require_version_context and not _VER_CONTEXT.search(code):
+        return []
+    binds = {m.group(1): m.group(2) for m in _BIND_3DIGIT.finditer(code)}
+    flat, back = _collapse(code)
+    return [Hit(rel, text.count("\n", 0, back[m.start()]) + 1, CMP_LOCAL_CONST,
+                f"{m.group(0).strip()}   ← {m.group(1)} = {binds.get(m.group(1), '?')};"
+                f" 是同文件写死的 3 位常量")
+            for m in _CMP_LOCAL.finditer(flat)
+            if not require_local_binding or m.group(1) in binds]
+
+
 def scan_file(path: Path, rel: str, *, exclude_noncode: bool = True) -> list[Hit]:
     """扫描一个文件。`exclude_noncode=False` = **去掉排除逻辑**（只在判据 2 的红证里用）。"""
     text = path.read_text(encoding="utf-8")
@@ -260,6 +334,7 @@ def scan_file(path: Path, rel: str, *, exclude_noncode: bool = True) -> list[Hit
     flat, back = _collapse(code)
     hits = [Hit(rel, text.count("\n", 0, back[m.start()]) + 1, pid, m.group(0).strip())
             for pid, rx in _PATTERNS for m in rx.finditer(flat)]
+    hits.extend(_cmp_local_const_hits(rel, text, code))          # 形态 ⑦（两条件判定，issue #5493）
     return sorted(set(hits), key=lambda h: (h.line, h.pattern))
 
 
@@ -304,7 +379,8 @@ _SCAN_CACHE: dict[bool, Scan] = {}
 
 def _render(hits) -> str:
     body = "\n  ".join(f"{h.path}:{h.line}: {h.text}   [{h.pattern}]" for h in hits)
-    return (f"❌ 检出「自毁式真值主张」（断言最高迁移版本号 == 常量）共 {len(hits)} 处：\n  {body}\n\n"
+    return (f"❌ 检出「自毁式真值主张」（「我是当前最高迁移版本号」：`== 常量` 或 `isLessThan(本地常量)`）"
+            f"共 {len(hits)} 处：\n  {body}\n\n"
             + _GUIDANCE)
 
 
@@ -351,6 +427,31 @@ CORPUS: dict[str, dict] = {
                              "code": "class V {\n    void t() {\n        assertThat(versions.get(versions.size() - 1))\n                .isEqualTo(116);\n    }\n}\n"},
     "java_subscript_size_minus_1": {"lang": "java", "line": 3, "patterns": {"helper_const_first"},
                                     "code": "class V {\n    void t() {\n        assertEquals(116, versions[versions.size() - 1]);\n    }\n}\n"},
+    # 形态 ⑦（issue #5493）：**真实形状**，逐字取自 V128 落地时踩中的那处
+    # （AgentBatchMigrationTest#versionIsNextFreeAndUnique，见 PR #5492）。
+    "java_islessthan_local_const": {
+        "lang": "java", "line": 8, "patterns": {CMP_LOCAL_CONST},
+        "code": ("class V {\n"
+                 "    void t() {\n"
+                 "        int mine = 127;\n"
+                 "        for (String name : liveMigrations()) {\n"
+                 "            if (m.find() && name.startsWith(\"V127__\")) continue;\n"
+                 "            assertThat(Integer.parseInt(m.group(1)))\n"
+                 "                    .as(\"活目录里 %s 的版本号必须小于 V127（V127 是最新一条）\", name)\n"
+                 "                    .isLessThan(mine);\n"
+                 "        }\n"
+                 "    }\n"
+                 "}\n")},
+    # 形态 ⑦ 的另一半算子（`isGreaterThanOrEqualTo`）与另一条绑定形态（**字段**常量，非局部变量）。
+    "java_isgreaterthan_local_const": {
+        "lang": "java", "line": 5, "patterns": {CMP_LOCAL_CONST},
+        "code": ("class V {\n"
+                 "    void t() {\n"
+                 "        int floor = 100;\n"
+                 "        readMigrations();\n"
+                 "        assertThat(v).isGreaterThanOrEqualTo(floor);\n"
+                 "    }\n"
+                 "}\n")},
 }
 
 #: **已知抓不到 / 有意不抓**的形态（如实登记）。判据见 `test_registered_gaps_are_still_gaps`：
@@ -379,6 +480,50 @@ NOT_COVERED: dict[str, dict] = {
         "code": "def test_dummy():\n    assert max(versions) <= 118\n",
         "reason": "**有意不抓**：`max(versions) <= N` 作为「上界 sanity bound」是合法写法，"
                   "与自毁式主张在文本层不可区分（取舍口径同本仓弱断言门禁对 `toBeTruthy` 的处置）。"},
+    # ── 形态 ⑦（issue #5493）的四条边界：逐条都是**取舍**，不是"还没做" ──
+    "cmp_against_literal_deliberately_out": {
+        "lang": "java",
+        "code": ("class V {\n"
+                 "    void t() {\n"
+                 "        List<Integer> versions = liveMigrations();\n"
+                 "        assertThat(versions.get(versions.size() - 1)).isLessThan(127);\n"
+                 "    }\n"
+                 "}\n"),
+        "reason": "**有意不抓**：裸字面量实参（`.isLessThan(127)`）与合法 sanity bound 在文本层同形 "
+                  "—— 全仓现取的合法用法有 `isGreaterThan(0)`（20+ 处）/ `isGreaterThan(25)` / "
+                  "`isGreaterThan(30)` / `isGreaterThan(50)` / `isLessThan(100)` 等 ⇒ 抓它 = 大面积假红。"
+                  "形态 ⑦ 只认「实参是**同文件绑定的标识符**」这一种指纹。"},
+    "cmp_without_version_context_deliberately_out": {
+        "lang": "java",
+        "code": ("class V {\n"
+                 "    void t() {\n"
+                 "        int timeoutMs = 500;\n"
+                 "        assertThat(elapsed).isLessThan(timeoutMs);\n"
+                 "    }\n"
+                 "}\n"),
+        "reason": "**有意不抓**：这就是形态 ⑦ 第②条门（迁移版本号语境）的代价。不加它会把 "
+                  "`int timeoutMs = 500; assertThat(elapsed).isLessThan(timeoutMs)` 这类**真断言**判红 "
+                  "（本仓对误伤的态度是宁可不抓也不假红）。承重红证见 "
+                  "`test_version_context_gate_is_load_bearing`（关掉该门 ⇒ 这条当场变红）。"},
+    "cmp_two_digit_version_deliberately_out": {
+        "lang": "java",
+        "code": ("class V {\n"
+                 "    void t() {\n"
+                 "        int mine = 28;\n"
+                 "        for (String name : liveMigrations()) {\n"
+                 "            assertThat(Integer.parseInt(m.group(1))).isLessThan(mine);\n"
+                 "        }\n"
+                 "    }\n"
+                 "}\n"),
+        "reason": "**有意不抓**：门①卡死「**3 位**数字字面量」同样是为了不误伤 —— 2 位数常量在真断言里"
+                  "太常见（`isGreaterThan(10)` 等）。代价 = 两位迁移号（仓库早期的 `V28` 这类**历史**形态）"
+                  "漏掉；4 位（`V1000`）同理漏掉。"},
+    "py_lt_local_const_deliberately_out": {
+        "lang": "py",
+        "code": "def test_dummy():\n    mine = 127\n    assert versions[-1] < mine\n",
+        "reason": "**有意不抓**：形态 ⑦ 的射程是 **AssertJ 比较算子**（Java 面）。Python 侧的 `< 常量` "
+                  "与 `assert len(batch) < 200` 这类合法上限断言在文本层同形 ⇒ 射程有意不扩"
+                  "（纳入要另付一条假红防线，同 `SURFACE` 的覆盖面登记口径）。"},
 }
 
 #: **合法写法负控**：一条都不许命中。含 4 条「反面教材写在注释 / docstring / 字符串里」的负控
@@ -412,6 +557,24 @@ LEGIT: dict[str, dict] = {
                            "code": "class V {\n    /** ⚠️ 不得写成 assertThat(versions.get(versions.size() - 1)).isEqualTo(116) */\n    void t() {}\n}\n"},
     "prose_java_text_block": {"lang": "java",
                               "code": "class V {\n    String s = \"\"\"\n        不得写成 max(versions) == 118\n        \"\"\";\n}\n"},
+    # 形态 ⑦ 的**反向**负控（issue #5493 的硬要求：合法比较断言不得判红）——
+    # 两条都是**逐字取自本仓真实写法**的实参形态。
+    "java_cmp_from_sut": {"lang": "java",
+                          "code": ("class V {\n"
+                                   "    void t() {\n"
+                                   "        List<String> sorted = migrationNames();\n"
+                                   "        assertThat(idx)\n"
+                                   "                .isLessThan(sorted.indexOf(\"V28__seed.sql\"));\n"
+                                   "    }\n"
+                                   "}\n")},
+    "java_cmp_unbound_ident": {"lang": "java",
+                               "code": ("class V {\n"
+                                        "    void t() {\n"
+                                        "        int threadCount = 100;\n"
+                                        "        long n = migrations().size();\n"
+                                        "        assertThat(active).isLessThanOrEqualTo(poolSize);\n"
+                                        "    }\n"
+                                        "}\n")},
 }
 
 #: **反面教材（应该存在的文案）**：`(仓库相对全路径, 文本锚点)`。它们**必须留着**（它们是"不要这么写"的
@@ -445,6 +608,11 @@ def _inject(tmp_path: Path, name: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(entry["code"], encoding="utf-8")
     return path
+
+
+def _code_only_of(name: str, path: Path) -> str:
+    """按语料声明的语言遮蔽一个注入文件 —— 供形态 ⑦ 的**承重红证**直接调用判定函数。"""
+    return _CODE_ONLY[_ALL_CORPUS[name]["lang"]](path.read_text(encoding="utf-8"))
 
 
 # ══════════════════ ④ 判据 ══════════════════
@@ -528,7 +696,7 @@ def test_exclusion_is_load_bearing_on_guard_own_fixtures():
 
 def test_every_pattern_has_a_red_proof():
     """**新增形态必须配红证**：`_PATTERNS` 里每条形态都得有语料样例，且样例命中集**恰好**等于声明集。"""
-    declared = {pid for pid, _ in _PATTERNS}
+    declared = set(FORM_IDS)
     covered = set().union(*(e["patterns"] for e in CORPUS.values()))
     assert covered == declared, f"形态与红证不匹配：缺红证 = {sorted(declared - covered)}；多余 = {sorted(covered - declared)}"
     for name, entry in CORPUS.items():
@@ -552,6 +720,52 @@ def test_registered_gaps_are_still_gaps(tmp_path):
     assert not newly_covered, (
         f"这些形态**已经**被抓到了（好消息）：{newly_covered} —— 请把它们从 `NOT_COVERED` 移进 `CORPUS`"
         f"（并同步本文件模块头那张「能抓 / 抓不到」的表），再删掉对应条目。")
+
+
+def test_version_context_gate_is_load_bearing(tmp_path):
+    """判据 8（红证）：形态 ⑦ 的**版本语境门**在承重 —— **关掉它** ⇒ 那条「合法写法」当场变红。
+
+    被关掉门后会变红的那条语料是 `cmp_without_version_context_deliberately_out`
+    （`int timeoutMs = 500; assertThat(elapsed).isLessThan(timeoutMs)` —— 那是**真断言**）。
+    没有这条，`test_legit_forms_stay_green` 无法排除「本来就命中不了」的空跑情形（同判据 2 的口径）。
+    """
+    name = "cmp_without_version_context_deliberately_out"
+    path = _inject(tmp_path, name)
+    rel = path.relative_to(tmp_path).as_posix()
+    text = path.read_text(encoding="utf-8")
+    code = _code_only_of(name, path)
+    assert _cmp_local_const_hits(rel, text, code) == [], "带门时这条合法写法被判红了 ⇒ 门的位置不对"
+    assert _cmp_local_const_hits(rel, text, code, require_version_context=False), (
+        "关掉版本语境门后仍未命中 ⇒ 该门**不是承重的那一层**（这条红证无效，判据 8 会退化成空断言）")
+
+
+def test_local_binding_gate_is_load_bearing(tmp_path):
+    """判据 8（红证）：形态 ⑦ 的**3 位常量绑定门**在承重 —— **关掉它** ⇒ 合法负控当场变红。
+
+    被关掉门后会变红的那条语料是 `java_cmp_unbound_ident`
+    （`ConcurrentTenantIsolationTest` 的真实形状：`int threadCount = 100;` 与
+    `.isLessThanOrEqualTo(poolSize)` 同处一文件，但 `poolSize` **不是**写死的 3 位常量）。
+    """
+    name = "java_cmp_unbound_ident"
+    path = _inject(tmp_path, name)
+    rel = path.relative_to(tmp_path).as_posix()
+    text = path.read_text(encoding="utf-8")
+    code = _code_only_of(name, path)
+    assert _cmp_local_const_hits(rel, text, code) == [], "带门时这条合法写法被判红了 ⇒ 门的位置不对"
+    assert _cmp_local_const_hits(rel, text, code, require_local_binding=False), (
+        "关掉绑定门后仍未命中 ⇒ 该门**不是承重的那一层**（这条红证无效，判据 8 会退化成空断言）")
+
+
+def test_new_counterexample_prose_is_kept():
+    """判据 9：形态 ⑦ 的「不要这么写」论据（V128 踩中处）**必须留着**。
+
+    ⚠️ 它**不进** `_COUNTEREXAMPLE_PROSE`：那张表的红侧要求「去掉遮蔽后**当场被判红**」，而这条注释里
+    **没有**可匹配的比较算子（`必须 < V127` 是文案、不是代码）⇒ 登记它会让判据 2 的红证变假
+    （实测：去掉遮蔽后该文件确实不被判红）。⇒ 本判据只钉「论据还在」这一侧，如实登记这一处不对称。
+    """
+    rel = "backend/admin-api/src/test/java/com/migao/admin/migration/AgentBatchMigrationTest.java"
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    assert "自毁式真值主张" in text and "必须 < V127" in text, f"形态 ⑦ 的论据文案丢了：{rel}"
 
 
 def test_surface_is_locked():
