@@ -157,7 +157,12 @@ SELECT 1, pc.product_id, pc.id, pc.color_name, '3.2', p.base_price, 500,
        p.sku_code || '-' || pc.color_name || '-3.2'
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
+-- ⚠️ **必须带颜色过滤**（2026-09-25）：上面注释写的是「只补 prod_eval_summer 的**米白色**」，
+-- 但原 WHERE 只过滤了商品 ⇒ 今天只有米白一色**无害**，**将来给该商品加任何颜色都会静默多出 3.2 SKU**
+-- （与注释不一致 ⇒ 夹具自己的声明与实现脱节）。本项随 issue #5060 关闭而脱管（0 载体），
+-- 按铁律 11(a) **链内修**（未开单）。
 WHERE pc.product_id = 'prod_eval_summer'
+  AND pc.color_name = '米白色'
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id

@@ -685,3 +685,52 @@ def test_main_side_has_a_drift_audit_backstop():
     assert names.index(str(step["name"])) < names.index("判定（定向跑判据面）"), (
         "漂移兜底应排在「判定（定向跑判据面）」**之前**（先做便宜的全局兜底，再跑定向判据面）"
     )
+
+
+# ── 类级固化：凡跑 `gh` 的步都必须带 token（2026-09-25 自伤实证）────────────────
+
+def test_every_gh_using_step_declares_a_token():
+    """本 workflow 里**任何**跑 `gh` 的步骤都必须声明 `GH_TOKEN`，否则 `gh` 未认证。
+
+    现场（自伤，2026-09-25）：我加的「零新开核验」步跑了 `gh issue list` 却**没带 token** ⇒
+    该步退出码 **3「无法判定」** ⇒ **本腿从那一刻起每次合并都红**（实测：11:55 success →
+    12:01/12:05/12:10/12:14 连续 failure，时间点正是该步被引入的那一刻）。
+    这条**不是**只钉那一步：凡是本 workflow 里 `run` 含 `gh ` 的步，都得有 `GH_TOKEN`
+    （env 里显式写，或该步引用了 workflow 级 `env`）。
+    """
+    import re
+    import yaml
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    wf = root / ".github" / "workflows" / "post-merge-verify.yml"
+    doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+    job = doc["jobs"]["verify"]
+    wf_env = {**(doc.get("env") or {}), **(job.get("env") or {})}
+
+    # ⚠️ **必须覆盖"间接调 gh"**（我这条判据第一版就是栽在这）：那个红掉的步，`run` 里根本没有字面
+    # `gh ` —— 它调的是 `python3 scripts/issue_lifecycle.py check-new-issues`，而 gh 在那个脚本**内部**。
+    # ⇒ 口径 = ① 直接出现 gh 调用；② **调用了"自己会调 gh 的仓内脚本"**（清单**现取**：读脚本源码，
+    #    不写死清单，否则下一个人新加一个 gh 脚本又漏）。两类都要求声明 GH_TOKEN。
+    gh_scripts = set()
+    for f in [*root.glob("scripts/*.py"), *root.glob(".github/scripts/*.py")]:
+        src = f.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"gh_bin\(|subprocess\.[a-z]+\(\s*\[?\s*[\"']gh[\"']|github-actions", src):
+            gh_scripts.add(f.name)
+
+    missing = []
+    for step in job["steps"]:
+        run = str(step.get("run") or "")
+        direct = bool(re.search(r"(^|\s|&&|\|\||;|\$\()gh\s", run))
+        indirect = any(name in run for name in gh_scripts)
+        if not (direct or indirect):
+            continue
+        env = {**wf_env, **(step.get("env") or {})}
+        if "GH_TOKEN" not in env:
+            why = "直接调 gh" if direct else f"调用会调 gh 的脚本（{sorted(gh_scripts)} 之一）"
+            missing.append(f"{step.get('name') or '?'} —— {why}")
+    assert gh_scripts or True, ""  # 保持变量被使用（清单为空时本判据自动退化为只管直接调用）
+    assert missing == [], (
+        "这些步会（直接或间接）跑 `gh` 却没带 GH_TOKEN（未认证 ⇒ 退出码 3「无法判定」⇒ 本腿每次合并都红）：\n  "
+        + "\n  ".join(missing)
+    )

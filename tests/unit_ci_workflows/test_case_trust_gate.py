@@ -2654,9 +2654,14 @@ class TestUnimplementedRegistrations:
         g = self._g()
         entries = copy.deepcopy(self._live_entries())
         closed_no = entries[0]["issue"]
+        # 期望集 = **所有**指向该单的登记（不假定 `entries[0]` 的单号在清单里独一份）：
+        # 原写法写死了「只有 entries[0] 会被判 closed」⇒ 一旦多条登记共用一个追踪单
+        # （现实形态：#4155 同时承载两条口径型登记）就假红。判据的判别力不变：
+        # 该单的登记必须**全部**被判 closed、其它单的登记一条都不许被连坐。
+        expect = [e["code"] for e in entries if e["issue"] == closed_no]
         res = g.check_unimplemented_issues(entries, fetcher=lambda n: (True, "closed")
                                            if n == closed_no else (True, "open"))
-        assert [c["entry"] for c in res["closed"]] == [entries[0]["code"]], res
+        assert [c["entry"] for c in res["closed"]] == expect, res
         assert res["unverifiable"] == [], res
         # 端到端（不碰网络）：把 fetcher 注入到外壳 → blocking
         guard = g.judge_unimplemented_manifest(
