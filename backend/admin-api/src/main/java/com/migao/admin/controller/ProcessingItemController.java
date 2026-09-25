@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.*;
 /**
  * 加工项管理控制器
  * 提供加工项 CRUD 接口（issue #4882：`POST /calculate` 端点随加工项目录的计价方式与单价一并退场）
+ *
+ * <p>权限：类级 {@code processing:manage} 覆盖**写面**（POST/PUT/DELETE）；
+ * 两个读面（{@code GET /}、{@code GET /{id}}）按 issue #5291 改挂方法级生产域**读**码
+ * {@code production:view}（与「加工项管理」节点、Agent 侧 {@code processing_item_query} 同码）。</p>
  */
 @Slf4j
 @RequirePermission("processing:manage")
@@ -27,6 +31,8 @@ public class ProcessingItemController {
      *
      * GET /api/admin/processing-items?page=1&size=20&keyword=xxx&categoryId=xxx&status=active
      */
+    // issue #5291：读端点改挂生产域读码 `production:view`（方法级优先于类级 processing:manage）。
+    @RequirePermission("production:view")
     @GetMapping
     public ApiResponse<PageResponse<ProcessingItemResponse>> getProcessingItems(ProcessingItemQueryRequest query) {
         Long tenantId = TenantContext.getTenantId();
@@ -40,6 +46,8 @@ public class ProcessingItemController {
      *
      * GET /api/admin/processing-items/{id}
      */
+    // issue #5291：同 `GET /`（读面 = production:view）。
+    @RequirePermission("production:view")
     @GetMapping("/{id}")
     public ApiResponse<ProcessingItemResponse> getProcessingItemById(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();

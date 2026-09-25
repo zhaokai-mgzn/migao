@@ -97,7 +97,8 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项管理')
     expect(entry!.path).toBe('/production/processing')
-    expect(entry!.permissionCode).toBe('processing:manage')
+    // issue #5291：加工项管理 = 生产域**读**码 production:view（写面仍 processing:manage）。
+    expect(entry!.permissionCode).toBe('production:view')
     // 与本组「商品列表」同组（用户裁定：合并后的菜单放入商品管理大菜单下），位次 = 原「加工项管理」那一格
     expect(productGroup()!.children.map((c) => c.name)).toEqual(['商品列表', '加工项管理'])
     // 渲染出来的图标也必须是本项声明的那个（配置断言绿、画面错是 #4482 的既有形态）
@@ -116,12 +117,13 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
       '/production/piecework',
     ])
     expect(productionPaths).not.toContain('/production/processing')
-    // 加工项权限码仍统一 processing:manage（组内一致，无分叉）
+    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage
+    //（同组不同权是有意的：「看得见这一页」与「改得动生产数据」分开）。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
+      'production:view',
       'processing:manage',
-      'processing:manage',
-      'processing:manage',
-      'processing:manage',
+      'production:view',
+      'production:view',
     ])
     // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
     // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage），

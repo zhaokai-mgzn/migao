@@ -1,9 +1,10 @@
 """
 加工套件 / 扫码进度查询 Tool 测试 —— 只读契约 + **逐 action 的端点归属**（issue #5247）
 
-⚠️ 权限码是 `processing:manage`：这三个读端点（#5257 新增、#5246 收口）生效码即 `processing:manage`
-—— 与侧边栏「生产看板」节点同码。若写成旧的 `processing:view`，持有它的岗位能在页面里看不到
-生产看板的情况下经米宝读到套件与扫码进度（权限泄露），故这里逐字钉死。
+⚠️ 权限码是生产域读码 `production:view`（issue #5291：从写码 `processing:manage` 拆出）：这三个读端点
+（#5257 新增、#5246 收口）生效码即 `production:view` —— 与侧边栏「生产看板」节点同码。若写成
+`processing:view`，持有它的岗位能在页面里看不到生产看板的情况下经米宝读到套件与扫码进度（权限泄露）；
+若写成写码 `processing:manage`，则只读岗位又被假拒绝。故这里逐字钉死。
 """
 # case_ids: PG-057
 import pytest
@@ -12,7 +13,7 @@ from unittest.mock import patch, AsyncMock
 from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 from app.tools.base import ToolContext
 
-PERMISSION = "processing:manage"
+PERMISSION = "production:view"  # issue #5291：工具与三个读端点同挂生产域读码
 LIST = "/api/admin/processing-order-sets"
 DETAIL = "/api/admin/processing-order-sets/ps-1"
 SCAN = "/api/admin/processing-order-sets/scan-progress"

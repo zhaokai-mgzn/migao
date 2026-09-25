@@ -67,9 +67,10 @@ class PieceworkQueryTool(BaseTool):
     }
 
     # 仅 B 端：工人工资/人工成本不对 C 端顾客开放 —— C 端 JWT 没有权限码，天然被挡。
-    # 权限码（admin-api 目录）：计件/报工属**加工面读码** `processing:manage`（issue #5246 改判：
-    # 原取 order:list 是订单读码，与计件端点的 `@RequirePermission("processing:manage")` 不符）。
-    required_permissions = ["processing:manage"]
+    # 权限码（admin-api 目录，issue #5291）：计件/报工取生产域读码 `production:view`
+    # （`AgentProductionController` 的 `GET .../piecework` 方法级注解同码）。
+    # 沿革：原取 order:list（订单读码），#5246 曾改判为 `processing:manage`。
+    required_permissions = ["production:view"]
     read_only = True
     destructive = False
     idempotent = True

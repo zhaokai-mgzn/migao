@@ -591,22 +591,33 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/池看板/工艺配置/计件工资（processing:manage）；物料三项已拆出本组")
+    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage（#5291）")
     void currentUserMenusExposeProductionGroup() {
-        List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("processing:manage");
+        // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
+        // 就此分开；**池看板**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
+        // 且无 Agent 工具调用 ⇒ 不在本单射程）。
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> readOnly = menusForPermissions("production:view");
 
-        var production = groupByKey(menus, "production-center");
+        var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("生产看板", "池看板", "工艺配置", "计件工资");
+                .containsExactly("生产看板", "工艺配置", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/routings", "/production/piecework");
+                "/production", "/production/routings", "/production/piecework");
+        // 同组不同权：池看板**不**随读码一起出现（拆码没有变成「一组一起放行」）
+        assertThat(allNames(readOnly)).doesNotContain("池看板");
+        // 加工项管理（product-center 组）同批改用读码 ⇒ 也随 production:view 可见
+        assertThat(allNames(readOnly)).contains("加工项管理");
 
-        // 同一份权限下「仓储与物料」组只含 processing:manage 的两项：入库单（inbound:view）不出现
-        // —— 证明入库单确实挂在**独立的**权限判定上，而不是被并进了 processing:manage。
-        var inventory = groupByKey(menus, "inventory-center");
+        // 反向（原管理码持有者仍看得见它本来那几页）：只持 processing:manage ⇒ 生产组只剩池看板，
+        // 「仓储与物料」组只剩余料台账/省料看板；入库单（inbound:view）**不出现** —— 证明入库单
+        // 确实挂在**独立的**权限判定上，而不是被并进了 processing:manage。
+        List<com.migao.admin.dto.UserInfoResponse.MenuItem> manageOnly = menusForPermissions("processing:manage");
+        var productionManageOnly = groupByKey(manageOnly, "production-center");
+        assertThat(namesOf(productionManageOnly.getChildren())).containsExactly("池看板");
+        var inventory = groupByKey(manageOnly, "inventory-center");
         assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账", "省料看板");
-        assertThat(allNames(menus)).doesNotContain("入库单");
+        assertThat(allNames(manageOnly)).doesNotContain("入库单");
     }
 
     @Test

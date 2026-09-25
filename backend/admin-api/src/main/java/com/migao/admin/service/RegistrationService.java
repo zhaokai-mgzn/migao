@@ -622,9 +622,16 @@ public class RegistrationService {
                 {"商品列表", "product:list", "product", "list", "查看商品列表"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},
+                // 商品分类**读**码（issue #5291）：分类读端点（`CategoryController.getCategoryTree`）
+                // 与只读工具 `category_manage` 同批改挂本码 —— 此前读端点在类级 `product:category` 上
+                // ⇒ 只读工具不得不持**写**码（例外表 10 条之一）。写面仍是 `product:category`。
+                {"商品分类查看", "product:category:view", "product", "view", "查看商品分类"},
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
+                // 生产域**读**码（issue #5291）：生产看板 / 加工项管理 / 工艺配置 / 计件工资四个侧边栏
+                // 节点、四个页面的读端点、以及 8 个只读工具同批改挂本码（写面仍是 `processing:manage`）。
+                {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
@@ -659,6 +666,9 @@ public class RegistrationService {
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
+                // 岗位权限**读**码（issue #5291）：权限目录读端点（`AdminPermissionController`）与只读
+                // 工具 `role_manage` 同批改挂本码；「岗位权限」侧边栏节点也改用本码。写面仍是 `system:manage`。
+                {"岗位权限查看", "system:view", "system", "view", "查看岗位与权限目录"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
         };
 
@@ -699,7 +709,11 @@ public class RegistrationService {
                 "agent:session:manage"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
-                "product:list", "product:create", "product:category", "processing:manage",
+                "product:list", "product:create", "product:category", "product:category:view",
+                // issue #5291：operator 是原持 `product:category` / `processing:manage` 的岗位
+                // ⇒ 同批回填三个域读码中的两个（第三个 `system:view` **不给** —— 它属 admin 专属，
+                //   多授 = 让运营看见「岗位权限」页并读到权限目录，属**放宽**，本单不做）。
+                "processing:manage", "production:view",
                 "processing:view", "processing:update", "inbound:view", "inbound:create",
                 "customer:view", "finance:view", "agent:session", "employee:list",
                 "after_sales:view", "knowledge:view",

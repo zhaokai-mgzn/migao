@@ -1,8 +1,8 @@
 """
 AI 智能客服系统 - 算料配置查询 Tool（issue #5247 模块覆盖：算料）
 
-只读：`CraftCalcConfigController`（类级 `@RequirePermission("processing:manage")`）→
-`GET /api/admin/production/craft-calc-config`。
+只读：`CraftCalcConfigController` 的 `GET /api/admin/production/craft-calc-config`
+（该 GET 按 issue #5291 挂**方法级**生产域读码 `production:view`；`PUT` 写面仍是类级 `processing:manage`）。
 
 ⚠️ 门宽方案**不建工具**（用户裁定 2026-09-23）：只有计算型 `POST /api/admin/orders/door-width-plan`，
 没有可查对象 ⇒ 在 issue #5247 与 PR 里登记为已知缺口。
@@ -27,9 +27,9 @@ class CraftCalcConfigQueryTool(BaseTool):
         "【标注】READONLY — 只读查询"
     )
 
-    # 权限码（admin-api 目录）：`CraftCalcConfigController` 类级 `@RequirePermission("processing:manage")`
-    # —— 与侧边栏「工艺配置」节点同码（生产域无专属读码，粒度债见守卫的 READ_WRITE_EXCEPTIONS）。
-    required_permissions = ["processing:manage"]
+    # 权限码（admin-api 目录，issue #5291）：`CraftCalcConfigController` 的 `GET` 改挂方法级
+    # 生产域读码 `production:view`（写面 `PUT` 仍是类级 `processing:manage`）—— 与侧边栏「工艺配置」节点同码。
+    required_permissions = ["production:view"]
     read_only = True
     destructive = False
     idempotent = True

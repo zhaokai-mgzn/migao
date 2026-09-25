@@ -39,10 +39,11 @@ class RoleManageTool(BaseTool):
         "【反例】建/改/删岗位**不在本工具能力内**——引导用户到后台「组织管理 → 岗位权限」页操作。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
-    # 权限码（admin-api 目录）：AdminRoleController 类级 `@RequirePermission("system:manage")`。
+    # 权限码（admin-api 目录，issue #5291）：权限目录读端点 `AdminPermissionController` 已改挂
+    # 岗位权限**读**码 `system:view`（写面 `PUT/DELETE /api/admin/roles` 仍是 `system:manage`）。
     # 该码在目录里只有 admin（RoleService 第 301 行「不含 system:manage —— 归 admin 专属（越权守卫）」）
     # ⇒ 实际放行面不变，只是不再靠角色名硬编码。
-    required_permissions = ["system:manage"]
+    required_permissions = ["system:view"]
 
     read_only = True
     read_only_actions = {"list", "all", "detail", "list_permissions"}  # 只读 action 免确认拦截

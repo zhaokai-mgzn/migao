@@ -157,7 +157,8 @@ class MenuControllerTest {
         // 顺序：导航项（= menu.ts 该组逐字顺序）在前，动作码节点**统一追加在组尾**
         assertEquals(List.of("商品列表", "加工项管理", "新增商品", "商品分类管理"),
                 labels(products.path("children")));
-        assertEquals(List.of("product:list", "processing:manage", "product:create", "product:category"),
+        // issue #5291：加工项管理 = 生产域**读**码 production:view。
+        assertEquals(List.of("product:list", "production:view", "product:create", "product:category"),
                 codes(products.path("children")));
     }
 
@@ -174,14 +175,15 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/池看板/工艺配置/计件工资（四项同码 processing:manage，物料三项已拆出）")
+    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage（#5291）")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
         assertEquals(List.of("生产看板", "池看板", "工艺配置", "计件工资"),
                 labels(production.path("children")));
-        assertEquals(List.of("processing:manage", "processing:manage",
-                "processing:manage", "processing:manage"), codes(production.path("children")));
+        // issue #5291：三项导航改挂生产域**读**码；池看板仍是 processing:manage（同组不同权）。
+        assertEquals(List.of("production:view", "processing:manage",
+                "production:view", "production:view"), codes(production.path("children")));
     }
 
     @Test
@@ -203,7 +205,8 @@ class MenuControllerTest {
         assertEquals("组织管理", org.path("label").asText());
         assertEquals(List.of("员工管理", "岗位权限", "企业基础信息", "新增员工"),
                 labels(org.path("children")));
-        assertEquals(List.of("employee:list", "system:manage", "system:manage", "employee:create"),
+        // issue #5291：岗位权限节点改挂**读**码 system:view（企业基础信息仍是 system:manage）。
+        assertEquals(List.of("employee:list", "system:view", "system:manage", "employee:create"),
                 codes(org.path("children")));
     }
 

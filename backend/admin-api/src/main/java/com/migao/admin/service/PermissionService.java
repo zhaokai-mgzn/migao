@@ -85,8 +85,8 @@ public class PermissionService {
             case "operator" -> List.of(
                     "dashboard:view",
                     "order:list", "order:detail", "order:refund",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage",
+                    "product:list", "product:create", "product:category", "product:category:view",
+                    "processing:manage", "production:view",
                     "customer:view",
                     "finance:view",
                     "agent:session",
@@ -95,8 +95,8 @@ public class PermissionService {
             );
             case "product_manager" -> List.of(
                     "dashboard:view",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage"
+                    "product:list", "product:create", "product:category", "product:category:view",
+                    "processing:manage", "production:view"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view"
@@ -181,9 +181,11 @@ public class PermissionService {
                 {"商品列表", "product:list", "product", "list", "查看商品列表"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},
+                {"商品分类查看", "product:category:view", "product", "view", "查看商品分类"},
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
+                {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
@@ -205,6 +207,7 @@ public class PermissionService {
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
+                {"岗位权限查看", "system:view", "system", "view", "查看岗位与权限目录"},
                 {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
         };
 

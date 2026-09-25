@@ -25,11 +25,16 @@ import java.util.List;
  * ① 唯一前端调用方是「岗位权限」页（{@code ROUTE_PERMISSION_MAP} 已要求 {@code system:manage}）；
  * ② 唯一 ai-agent 调用方是 {@code role_manage} 工具，其 {@code required_permissions} 本就是
  * {@code ["system:manage"]} ⇒ 两条既有调用链在注解落地后**逐字不变**（零回归）。</p>
+ *
+ * <p><b>issue #5291 改判</b>：本端点是**读**面（权限目录），改挂新增的岗位权限读码
+ * {@code system:view}；原持 {@code system:manage} 的岗位由
+ * {@code V128__backfill_domain_read_permissions.sql} 同批补授读码 ⇒ 可见性零变化。
+ * ai-agent 的 {@code role_manage} 同批改持 {@code system:view}（判据：工具码 ≡ 端点生效码）。</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/permissions")
-@RequirePermission("system:manage")
+@RequirePermission("system:view")
 @RequiredArgsConstructor
 public class AdminPermissionController {
 

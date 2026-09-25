@@ -381,8 +381,13 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ALL_KEYS.filter((k) => k !== 'briefing'),
     ],
     [
-      '生产/仓管混合权限 ⇒ 生产管理组 4 项 + 仓储与物料组 3 项 + 加工项管理',
-      { permissions: ['dashboard:view', 'processing:manage', 'inbound:view'], roles: ['operator'] },
+      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 4 项 + 仓储与物料组 3 项 + 加工项管理',
+      // issue #5291：生产看板/工艺配置/计件工资改挂**读**码 production:view，
+      // 池看板/余料台账/省料看板仍是 processing:manage（同组不同权）。
+      {
+        permissions: ['dashboard:view', 'production:view', 'processing:manage', 'inbound:view'],
+        roles: ['operator'],
+      },
       [
         'dashboard',
         'processing',
@@ -402,17 +407,25 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ['dashboard', 'inbound-orders', 'notifications'],
     ],
     [
-      '只有 processing:manage ⇒ 入库单**不在**（inbound:view 是独立门禁，不互相顶替）',
+      '只有 processing:manage ⇒ 入库单**不在**（inbound:view 是独立门禁）；生产组只剩池看板（#5291 同组不同权）',
       { permissions: ['processing:manage'] },
+      [
+        'dashboard',
+        'production-pool',
+        'production-remnants',
+        'production-saving-board',
+        'notifications',
+      ],
+    ],
+    [
+      '只持生产**读**码 production:view ⇒ 生产看板/工艺配置/计件工资 + 加工项管理在；池看板/余料/省料**不在**',
+      { permissions: ['production:view'] },
       [
         'dashboard',
         'processing',
         'production-board',
-        'production-pool',
         'production-process',
         'production-piecework',
-        'production-remnants',
-        'production-saving-board',
         'notifications',
       ],
     ],

@@ -371,20 +371,20 @@ class AgentProductionControllerTest {
     }
 
     @Test
-    @DisplayName("三个 GET 各自的方法级 @RequirePermission(processing:manage) 护栏不可丢（#5246 已移除类级）")
+    @DisplayName("三个 GET 各自的方法级 @RequirePermission(production:view) 护栏不可丢（#5246 已移除类级；#5291 改读码）")
     void agentControllerDeclaresPermission() throws Exception {
         // issue #5246：类级 @RequirePermission("order:list") 已移除 —— 本控制器是「生产看板 / 计件工资」
-        // 侧边栏节点的 agent 侧数据面，码必须与那两个节点同码（processing:manage），否则
+        // 侧边栏节点的 agent 侧数据面，码必须与那两个节点同码（issue #5291 起 = production:view），否则
         // 「有 order:list、没有 processing:manage」的角色能绕过菜单直达生产数据。
         // 判据落在**每个端点**上（不是类级一个码）：类级盖全类时，日后新增端点会静默继承一个过期的码。
         assertThat(AgentProductionController.class.getAnnotation(RequirePermission.class))
                 .as("类级 @RequirePermission 应已按 #5246 移除（改为逐端点方法级）").isNull();
         assertThat(permissionOf("progress", String.class))
-                .as("/progress").isEqualTo("processing:manage");
+                .as("/progress").isEqualTo("production:view");
         assertThat(permissionOf("piecework", String.class, String.class))
-                .as("/piecework").isEqualTo("processing:manage");
+                .as("/piecework").isEqualTo("production:view");
         assertThat(permissionOf("worklog", String.class))
-                .as("/worklog").isEqualTo("processing:manage");
+                .as("/worklog").isEqualTo("production:view");
     }
 
     /** 取某端点方法上的 @RequirePermission 值；注解缺失即断言失败（护栏丢失，不得静默通过）。 */

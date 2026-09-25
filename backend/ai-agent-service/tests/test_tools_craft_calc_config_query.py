@@ -11,7 +11,7 @@ from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
 from app.tools.base import ToolContext
 
 ENDPOINT = "/api/admin/production/craft-calc-config"
-PERMISSION = "processing:manage"
+PERMISSION = "production:view"  # issue #5291：读面从写码 processing:manage 改挂生产域读码
 
 ALLOWED = ToolContext(tenant_id=7, user_id="u-1", session_id="s-1", role="admin",
                       permissions=[PERMISSION])

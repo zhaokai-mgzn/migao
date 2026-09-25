@@ -85,7 +85,8 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
     // processing:manage（processing:view 在四处菜单源里没有任何节点 ⇒ 持它的岗位能读到页面里
     // 看不到的生产数据，用户裁定禁止）⇒ 本控制器的锚**同步跟随**（方向只收窄）。
     // 本常量仍与两端点断言并用：兄弟再动 ⇒ 必红。
-    private static final String ANCHOR_PERMISSION = "processing:manage";
+    // issue #5291：兄弟读端点（同实体族）的生效码 = 生产域新增的**读**码 production:view。
+    private static final String ANCHOR_PERMISSION = "production:view";
 
     private static final List<String> PAGE_KEYS = List.of("total", "page", "size", "items");
     private static final List<String> LIST_ROW_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",
@@ -315,7 +316,7 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
     // ══════════════════ 权限锚定（#5246 / #5247 的判据）
 
     @Test
-    @DisplayName("🔴 三个端点都有**方法级** @RequirePermission，且锚 = 兄弟读端点的生效码 processing:view")
+    @DisplayName("🔴 三个端点都有**方法级** @RequirePermission，且锚 = 兄弟读端点的生效码 production:view（#5291）")
     void everyEndpointDeclaresMethodLevelPermission() throws Exception {
         for (String name : List.of("list", "detail", "scanProgress")) {
             Method method = Arrays.stream(ProcessingOrderSetController.class.getDeclaredMethods())
@@ -330,7 +331,7 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
         assertThat(ProcessingOrderSetController.class.getAnnotation(RequirePermission.class))
                 .as("逐端点方法级声明（不靠类级一把抓）").isNull();
 
-        // 锚定判据的**另一半**：兄弟只读端点（同实体族）的生效码必须仍是 processing:view
+        // 锚定判据的**另一半**：兄弟只读端点（同实体族）的生效码必须仍是 production:view（#5291 新增的读码）
         // ⇒ 它若改码，本断言红，逼一次锚定复核（不静默漂移）。
         Method sibling = ProcessingOrderController.class.getDeclaredMethod("list", String.class, String.class);
         assertThat(sibling.getAnnotation(RequirePermission.class).value())

@@ -15,7 +15,7 @@
 | **S1 工具** | `backend/ai-agent-service/app/tools/*.py` 的 `required_permissions` / `read_only` / `allowed_roles` | 44 个工具里只有 21 个声明权限码，其余靠**手写角色白名单**（#4106 F3/F4 说的漂移病根）；`inventory_manage.allowed_roles` 里还留着 C 端角色 `customer` |
 | **S2 端点** | `backend/admin-api/src/main/java/com/migao/admin/controller/**` 的 `@RequirePermission`（**方法级优先于类级**，同 `PermissionInterceptor.resolveRequirePermission`） | 类级读码盖住写端点（`AgentProductController` 的 `product:list` 盖住 4 个 PATCH/POST）；11 个 controller 完全没有注解 |
 | **S3 菜单** | **三处**菜单源（`frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`）—— 第四处（`UserController.generateMenus`）已于 issue #5236 整段删除，本守卫**双向**钉住它不得长回来 | 同一节点多源各写各的码（`售后工单` = `order:refund`，而客服岗位没有该码）；被删的第四处当时是**5 节点遗留树**（`product:manage` 粗码），没有任何守卫覆盖 |
-| **S4 岗位** | 内置岗位默认权限（`RegistrationService.initializeDefaultRolesAndPermissions` 的 `attachDefaultPermissions` + `RoleService.getPermissionCodesForRole` 硬编码回退） | 岗位持 `processing:view` 却**没有**对应菜单节点 ⇒ 经 Agent 能查到页面里看不到的生产数据 |
+| **S4 岗位** | 内置岗位默认权限（`RegistrationService.initializeDefaultRolesAndPermissions` 的 `attachDefaultPermissions` + `RoleService.getPermissionCodesForRole` 硬编码回退） | 岗位持 `processing:view` 却**没有**对应菜单节点 ⇒ 经 Agent 能查到页面里看不到的生产数据；issue #5291 起：岗位的**读**码与菜单节点码由判据 10 逐面钉住 |
 
 ## 三条授权面（对账必须同时覆盖）
 
@@ -36,8 +36,10 @@
    并**双向**钉住第四处菜单源已删（issue #5236）：被删符号不得长回来，且它缺席时解析器不得静默恒绿。
 4. **零权限泄露**：对每个内置岗位 R 与每个已编码工具 T —— `R 可调 T ⇒ R 看得见 T 的菜单节点`
    （用户逐字要求）。
-5. **读写码不错配**：`read_only=True` 的工具不得只要求写码；写工具不得只要求读码
-   （冲突项走**具名例外** `READ_WRITE_EXCEPTIONS`，每条带理由 + 建议修法，不允许沉默跳过）。
+5. **读写码不错配**：`read_only=True` 的工具不得只要求写码；写工具不得只要求读码。
+   冲突项走**具名例外** `READ_WRITE_EXCEPTIONS`（每条带理由 + 建议修法，不允许沉默跳过），
+   且该表**只许缩短**：条数**现取**、上限登记在 `READ_WRITE_EXCEPTIONS_CEILING`
+   （issue #5291 起 = **0**：三个域的读码补齐后，一条例外都不该再挂着）。
 6. **角色白名单卫生**：声明了权限码的工具不得再声明 `allowed_roles`（第二份不生效的假门禁）；
    `allowed_roles` 里不得出现 C 端角色（`customer`/`agent`）与幽灵角色（`tenant_admin`/`worker`，
    admin-api 里没有角色行/权限映射）—— 除非该工具**确实**是 C 端可达的（`c_end_reachable`）。
@@ -47,7 +49,12 @@
    `UNANNOTATED_ENDPOINTS` 的某条已登记口径；登记项不得陈旧。同理 `REGISTERED_RESIDUALS`
    逐条登记**已知但本单不修**的残留（带理由 + 去向）。
 9. **解析器自检（防恒绿空跑）**：注解条数守恒 / 两处权限目录逐值相等 / 岗位硬编码回退 ⊆ 种子矩阵 /
-   菜单码 ∈ 权限目录 / 各集合非空。
+   菜单码 ∈ 权限目录 / 各集合非空，且**每个读码**在种子矩阵与硬编码回退里**两面一致**
+   （`SEED_PARITY_READ_CODES`）。
+10. **三个域的读码「四面锚定」**（issue #5291 收口）：新增的读码在**目录 / 承载工具 / 菜单节点 /
+    端点 / 岗位**五处逐面登记（`READ_CODE_ANCHORS`），任一面掉码都红 —— 含「把读码从菜单源删掉」
+    与「只读工具退回管理码」两种回归形态。**例外表缩小≠判据失去判别力**：该条与判据 5 的台账
+    一起，把「删条目」这件事变成**可红**的动作（见 `test_exception_ledger_only_shrinks`）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -658,10 +665,25 @@ PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
     "customer:view": frozenset({"customer:create"}),
     "finance:view": frozenset({"finance:create"}),
     "agent:session": frozenset({"agent:session:manage"}),
-    "processing:manage": frozenset({"processing:update"}),
+    # issue #5291：生产域新增**读**码 `production:view` ⇒ 本键由 `processing:manage` 改名而来
+    #（节点的读码变了，页内写码不变）：该页发起的写动作仍用 `processing:manage`（加工项 CRUD）
+    # 与 `processing:update`（生成/改加工单）。
+    "production:view": frozenset({"processing:manage", "processing:update"}),
     "employee:list": frozenset({"employee:create"}),
     "knowledge:view": frozenset({"knowledge:manage"}),
     "inbound:view": frozenset({"inbound:create"}),
+}
+
+#: 页内**读**码（判据 3/4 的第三个落点，issue #5291）：某个**只读子面**没有独立侧边栏节点
+#: （它挂在某页之内，例如「商品分类」没有自己的菜单项、其管理入口在商品列表页里），
+#: 但仍需要一个可授予的**读**码 —— 于是登记为「该页读码 → 页内读码」。
+#: 与 `PAGE_WRITE_CODES` 对称：两者合起来 = 「这一页**名下**的全部码」。
+#: 判据：该码必须有人用（判据 3 ②）、持它的岗位必须看得见**这一页**（判据 4）、
+#: 且它必须在 `READ_CODE_ANCHORS` 里登记（判据 10）。
+PAGE_READ_CODES: dict[str, frozenset[str]] = {
+    # 商品分类读码：`CategoryController.getCategoryTree` + 只读工具 `category_manage`
+    # （分类管理没有独立侧边栏入口 ⇒ 归属「商品列表」页）。
+    "product:list": frozenset({"product:category:view"}),
 }
 
 #: 纯本地工具（**无任何 admin-api HTTP 调用点** ⇒ 没有可对账的端点码）。
@@ -684,35 +706,19 @@ LOCAL_ONLY_TOOLS: dict[str, str] = {
 READ_CODE_ACTIONS = frozenset({"view", "list", "detail", "session"})
 
 #: 读写码冲突的**具名例外**（判据 5）：每条必须带理由 + 建议修法；条目陈旧（不再冲突）也红。
-READ_WRITE_EXCEPTIONS: dict[str, str] = {
-    # issue #5247（B 端只读化）：两个工具只读化后**新进入**本表 —— 它们是「域内没有读码」
-    # 的同一个病（读端点与写端点同码），不是本单新造的粒度债，逐条登记 + 建议修法：
-    "category_manage": "只读化后只剩 `tree`（`GET /api/admin/categories/tree`），而商品域**没有分类读码** —— "
-                       "`CategoryController` 整类（含读端点）都是 `@RequirePermission(\"product:category\")`。"
-                       "建议：新增分类读码并把读端点迁过去（产品裁定，本单不动节点/岗位矩阵）。",
-    "role_manage": "只读化后只剩 list/all/detail/list_permissions，而 `GET /api/admin/permissions`（权限目录）"
-                   "挂在 `system:manage` 上 —— 岗位权限域**没有读码**。"
-                   "建议：为权限目录新增读码（如 `system:view`）并与「岗位权限」节点同批迁移。",
-    # ⚠️ 只读工具却持**管理码**的**既有**残留：生产域**没有可用的读码** ——
-    # `processing:view` 在任一处菜单源里都没有节点（「生产看板/计件工资/工艺配置」的节点码
-    # 都是 `processing:manage`）⇒ 若让工具持 `processing:view`，就等于允许"页面里看不到、
-    # Agent 却查得到"（用户裁定禁止）。用户裁定：**不得改节点码、不得给岗位新增权限**
-    # ⇒ 唯一可行方向是工具码对齐节点码（收窄），读写粒度债如实登记。
-    # 建议（未实装）：为生产域引入真正的读码（如 `production:view`）并把节点与端点同批迁过去。
-    "processing_item_query": "节点『加工项管理』= `processing:manage`（该域无读节点）⇒ 只读工具不得不持管理码。"
-                             "建议：新开生产域读码并把节点/端点/工具同批迁移",
-    "processing_order_query": "节点『生产看板』= `processing:manage`（加工单列表已并入该页），端点同批收窄为同码。"
-                              "建议：同上",
-    "production_progress_query": "同『生产看板』节点码。建议：同上",
-    "production_worklog_query": "同『生产看板』节点码。建议：同上",
-    "piecework_query": "节点『计件工资』= `processing:manage`。建议：同上",
-    "operation_catalog_query": "工序库/路线读端点（`ProductionController` 的方法级 `processing:manage`）所在域无读码 ⇒ "
-                                "只读工具持管理码；与生产域其它读工具同因。建议：为生产域设计真读码",
-    "processing_order_set_query": "加工套件读面（`ProcessingOrderSetController` 三个读端点）与加工单读面同码"
-                                "`processing:manage`（生产域无专属读码）。建议：为生产域设计真读码",
-    "craft_calc_config_query": "算料配置读端点（`CraftCalcConfigController` 类级 `processing:manage`）所在域无读码 ⇒ "
-                               "只读工具持管理码；与生产域同因（#5247 新增只读面时一并登记）。建议：为生产/算料域设计真读码",
-}
+#:
+#: 🔴 issue #5291（用户 2026-09-25 裁定「方案①：新增读码」）：本表**已清空** —— 原 10 条**同源**
+#: （分类 / 权限目录 / 生产域三个域**没有读码** ⇒ 只读工具只能持管理码）已由「三个域各新增一个读码」
+#: 根治（`product:category:view` / `system:view` / `production:view`，四处同批：三处菜单源 + 岗位矩阵，
+#: 读端点与只读工具同批迁移）。逐条处置见 issue #5291 与本次 PR body。
+#:
+#: **只许缩短的靶子** = 下面那个上限（条数**现取** ⇒ 表一变长就红，抬高上限必须在 diff 里显式改这一行）。
+READ_WRITE_EXCEPTIONS: dict[str, str] = {}
+
+#: `READ_WRITE_EXCEPTIONS` 的**条数上限**（判据 5 的台账面）：issue #5291 清空后为 **0**。
+#: 设计口径（migao-dev-flow §23 G1「豁免台账只许缩短、条数现取、命中数涨跌都红」）：
+#: 例外表是**燃尽靶子**而不是垃圾场 —— 新增一条必须在同一 diff 里抬高本上限并写明理由（评审可见）。
+READ_WRITE_EXCEPTIONS_CEILING = 0
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -776,6 +782,17 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
 
 #: `RoleService.getPermissionCodesForRole` 里**有意保留**的历史角色（admin-api 无角色行/无种子）：
 #: 它们是存量库里的岗位码，回退表保住兼容；新增任何角色都必须先落进种子矩阵，否则判据 9 红。
+#: 「种子矩阵 ↔ 硬编码回退」必须**两面一致**的**读**码（判据 9③）：
+#: issue #5246 拆出的两个 + issue #5291 拆出的三个。两面不一致的形态 =
+#: 「有权限快照的账号看得见、没有的账号看不见」——同一岗位两种行为，只在老账号上出现。
+SEED_PARITY_READ_CODES = (
+    "after_sales:view",
+    "knowledge:view",
+    "product:category:view",
+    "production:view",
+    "system:view",
+)
+
 LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {
     "product_manager": "POC 期的历史岗位码（`mibao.py` 的 `allowed_roles` 仍在用）：无 roles 行，只有回退表口径",
     "knowledge_editor": "同上（知识库编辑岗）",
@@ -794,13 +811,9 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
         "why": "通知域在 admin-api 权限目录里**没有任何码**；读面是自助语义（收件人取当前用户）",
         "where": "去向：#5247（B 端通知能力下线）+ #5236；本守卫按『未覆盖模块』登记，不臆造码",
     },
-    "生产域缺读码": {
-        "what": "生产域读面（生产看板/计件工资/工艺配置）的菜单码与端点码都是 `processing:manage`，"
-                "而只读工具（`processing_item_query`/`piecework_query`/`production_*_query`）不得不持管理码",
-        "why": "节点码早已是 `processing:manage`；按用户裁定「不得改变节点码、不得给岗位新增权限」，"
-               "唯一可行方向是把**工具码对齐节点码**（收窄），读写粒度残留如实登记",
-        "where": "见 `READ_WRITE_EXCEPTIONS` 逐条；去向：为生产域设计真正的读码（产品裁定）",
-    },
+    # 「生产域缺读码」**已于 issue #5291 消项**（用户 2026-09-25 裁定「方案①：新增读码」）：
+    # 生产域读码 `production:view` 连同分类 / 权限目录两个读码一起落地（三处菜单源 + 岗位矩阵 +
+    # 读端点 + 8 个只读工具同批迁移）⇒ 该条不再是残留，按「登记表只许缩短」从本表**删除**。
     "订单/客户/财务/会话缺写码": {
         "what": "`order_manage` / `customer_manage` / `finance_api` / `session_manage` 是写工具，"
                 "但目录里对应资源只有读码（或唯一码即 `order:list` / `customer:view` / `finance:view` / `agent:session`）",
@@ -1029,6 +1042,7 @@ def problems_menu_parity(w: World) -> list[str]:
     front = w.menus["frontend"]
     node_codes = {c for c in front.values() if c}
     write_codes = {c for fam in PAGE_WRITE_CODES.values() for c in fam}
+    read_codes = {c for fam in PAGE_READ_CODES.values() for c in fam}
     # ① 每个已编码的 B 端工具都必须有节点登记（否则「没登记」会被读成「没问题」）
     for t in _coded_b_end(w):
         if t.name not in TOOL_MENU_NODE:
@@ -1042,7 +1056,7 @@ def problems_menu_parity(w: World) -> list[str]:
         if t is None or not t.required_permissions:
             continue
         for code in t.required_permissions:
-            if code not in node_codes and code not in write_codes:
+            if code not in node_codes and code not in write_codes and code not in read_codes:
                 out.append(
                     f"{name}：声明的码 `{code}` 既不是任何菜单节点的码、也不在 PAGE_WRITE_CODES 里"
                     "（= 没有页面对应的能力 / 新码没登记）"
@@ -1060,7 +1074,11 @@ def problems_menu_parity(w: World) -> list[str]:
         # 锚定口径：工具必须**至少持有一个「本页的码」**（节点码，或从本页发起的写码）——
         # 至于它另外还读别的页（如 `order_create` 在建单流程里读商品 `product:list`），
         # 那部分由判据 ②（码必须有出处）与判据 4（跨页可见性）分别把关。
-        anchor = {node_code} | set(PAGE_WRITE_CODES.get(node_code, frozenset()))
+        anchor = (
+            {node_code}
+            | set(PAGE_WRITE_CODES.get(node_code, frozenset()))
+            | set(PAGE_READ_CODES.get(node_code, frozenset()))
+        )
         if not (codes & anchor):
             out.append(
                 f"{name}：required_permissions={sorted(codes)} 与节点『{node_name}』"
@@ -1126,6 +1144,10 @@ def _code_owner_pages(w: World) -> dict[str, set[str]]:
         pages = owners.get(page_code, set())
         for code in writes:
             owners.setdefault(code, set()).update(pages)
+    for page_code, reads in PAGE_READ_CODES.items():
+        pages = owners.get(page_code, set())
+        for code in reads:
+            owners.setdefault(code, set()).update(pages)
     return owners
 
 
@@ -1154,12 +1176,14 @@ def problems_leakage(w: World) -> list[str]:
                 )
                 continue
             if not any(w.menus["frontend"].get(p) == code or code in PAGE_WRITE_CODES.get(
+                    w.menus["frontend"].get(p) or "", set()) or code in PAGE_READ_CODES.get(
                     w.menus["frontend"].get(p) or "", set()) for p in pages):
                 out.append(f"权限泄露：码 `{code}` 的归属节点解析失败（{sorted(pages)}）—— 同步本判据")
                 continue
             visible = [
                 p for p in pages
                 if code in PAGE_WRITE_CODES.get(w.menus["frontend"].get(p) or "", set())
+                or code in PAGE_READ_CODES.get(w.menus["frontend"].get(p) or "", set())
                 or w.menus["frontend"].get(p) == code
             ]
             if not any((w.menus["frontend"].get(p) or "") in perms or w.menus["frontend"].get(p) is None
@@ -1197,6 +1221,17 @@ def problems_read_write(w: World) -> list[str]:
                 f"{t.name}：`read_only=False`（会写数据）却只要求读码 {reads} ⇒ "
                 "只读持有者拿到写能力（端点层若同为读码，则**没有任何一层**拦它）"
             )
+    # 台账面（issue #5291）：例外表**只许缩短** —— 条数**现取**，超过登记上限即红。
+    # 形态：把某个只读工具的码改回管理码、并把它登记进例外表（正是例外表存在的理由）
+    # ⇒ 「具名例外」的老检查会放行，**只有**这一条能拦（红证见 `test_exception_ledger_only_shrinks`）。
+    if len(READ_WRITE_EXCEPTIONS) > READ_WRITE_EXCEPTIONS_CEILING:
+        out.append(
+            f"读写例外表**又长回来了**：{len(READ_WRITE_EXCEPTIONS)} 条 > 上限 "
+            f"{READ_WRITE_EXCEPTIONS_CEILING}（issue #5291 已为分类 / 权限目录 / 生产域补齐读码 "
+            "`product:category:view` / `system:view` / `production:view` ⇒ 只读工具不得再靠具名例外持"
+            "管理码）。登记表是**燃尽靶子**：确需新增，必须在同一 diff 里显式抬高 "
+            "`READ_WRITE_EXCEPTIONS_CEILING` 并写明理由"
+        )
     for name, reason in READ_WRITE_EXCEPTIONS.items():
         if name not in excused:
             out.append(f"读写例外 `{name}` 已不冲突（或工具不存在）⇒ 陈旧例外必须删除：{reason[:40]}…")
@@ -1332,7 +1367,7 @@ def problems_self_checks(w: World) -> list[str]:
             f"（差集 {sorted(set(w.catalog) ^ set(w.catalog_perm_service))}）—— "
             "存量租户的岗位权限页会缺码/多码"
         )
-    # ③ 岗位硬编码回退 ⊆ 种子矩阵；两个新读码的持有岗位两边一致
+    # ③ 岗位硬编码回退 ⊆ 种子矩阵；`SEED_PARITY_READ_CODES` 的持有岗位两边一致
     for role, fallback in sorted(w.role_fallback.items()):
         seeded = w.roles.get(role)
         if seeded is None:
@@ -1347,7 +1382,7 @@ def problems_self_checks(w: World) -> list[str]:
         extra = sorted(fallback - seeded)
         if extra:
             out.append(f"岗位 `{role}` 的硬编码回退多出种子矩阵没有的码 {extra}（回退会绕过岗位权限页）")
-        for code in ("after_sales:view", "knowledge:view"):
+        for code in SEED_PARITY_READ_CODES:
             if (code in seeded) != (code in fallback):
                 out.append(
                     f"岗位 `{role}` 的 `{code}` 在种子矩阵与硬编码回退里不一致"
@@ -1373,6 +1408,151 @@ def problems_self_checks(w: World) -> list[str]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════
+# issue #5291：三个域新增读码的**锚定台账**（判据 10 的唯一来源）
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class ReadCodeAnchor:
+    """一个**新增读码**的五处落点（判据 10 逐面复核；任一面掉码 ⇒ 红）。"""
+
+    domain: str                                  # 业务域（红证文案用）
+    tool: str                                    # 承载它的**只读**工具（判据 5 的载体）
+    node_sources: tuple[tuple[str, str], ...]    # (菜单源标签, 节点名) —— 该源里该节点必须 == 本码
+    legacy_code: str                             # 迁移前的管理/写码（读码回退 ⇒ 判据 5/10 红）
+    page_code: str | None                        # 无独立菜单节点时：挂在哪个页读码下
+    endpoints: tuple[str, ...]                   # 该码必须生效的关键读端点（`verb 路径`）
+    role_holders: tuple[str, ...]                # 原持 legacy_code、必须同批持有本码的内置岗位
+
+
+#: 三个域读码的锚定登记表（issue #5291：用户 2026-09-25 裁定「新增读码」）。
+#:
+#: ⚠️ **如实登记的两条边界**（不粉饰）：
+#:   ① `auth` 源只登记**解析器看得见**的节点（`_iter_menu_auth` 只取 `permissions.contains(...)` 块内
+#:      **首个** `menuItem`，而生产组那三个节点的 `if` 块以注释开头 ⇒ 解析面看不见它们）。
+#:      `AuthService` 侧的同码由 `AuthServiceTest` 的**渲染面**断言兜住（按 `production:view` 拿菜单，
+#:      断言「生产看板/工艺配置/计件工资」可见、按 `processing:manage` 拿只剩池看板）—— 那是行为级判据，
+#:      不是文本级判据。本表**不**用「源码里出现过这个字符串」来假装覆盖。
+#:   ② `system:view` 的 `role_holders` 为空是**有意**：内置岗位里只有 admin 持 `system:manage`（恒 `*`），
+#:      其余岗位**一个都不给** —— 给 operator 就是让运营看见「岗位权限」页并读到权限目录（放宽，禁止）。
+READ_CODE_ANCHORS: dict[str, ReadCodeAnchor] = {
+    "product:category:view": ReadCodeAnchor(
+        domain="商品分类",
+        tool="category_manage",
+        # 分类管理**没有独立侧边栏节点**（入口在商品列表页内）⇒ 走 `PAGE_READ_CODES` 挂页。
+        node_sources=(),
+        legacy_code="product:category",
+        page_code="product:list",
+        endpoints=("GET /api/admin/categories/tree", "GET /api/admin/categories"),
+        role_holders=("operator",),
+    ),
+    "system:view": ReadCodeAnchor(
+        domain="岗位权限 / 权限目录",
+        tool="role_manage",
+        node_sources=(("frontend", "岗位权限"), ("controller", "岗位权限"), ("auth", "岗位权限")),
+        legacy_code="system:manage",
+        page_code=None,
+        endpoints=("GET /api/admin/permissions",),
+        role_holders=(),
+    ),
+    "production:view": ReadCodeAnchor(
+        domain="生产域",
+        tool="processing_order_query",
+        node_sources=(
+            ("frontend", "加工项管理"), ("controller", "加工项管理"),
+            ("frontend", "生产看板"), ("controller", "生产看板"),
+            ("frontend", "工艺配置"), ("controller", "工艺配置"),
+            ("frontend", "计件工资"), ("controller", "计件工资"),
+        ),
+        legacy_code="processing:manage",
+        page_code=None,
+        endpoints=(
+            "GET /api/admin/processing-orders",
+            "GET /api/admin/processing-items",
+            "GET /api/admin/processing-order-sets",
+            "GET /api/admin/production/operations-catalog",
+            "GET /api/admin/production/routings",
+            "GET /api/admin/production/craft-calc-config",
+            "GET /api/admin/agent/production/progress",
+            "GET /api/admin/agent/production/worklog",
+            "GET /api/admin/agent/production/piecework",
+        ),
+        role_holders=("operator",),
+    ),
+}
+
+
+def problems_read_code_anchoring(w: World) -> list[str]:
+    """判据 10：三个域读码的**五面锚定**（issue #5291）—— 任一面掉码 ⇒ 红。
+
+    为什么必须有**这一条**（既有判据 2/3/4 各自都有漏网形态 ⇒ 「删读码」这件事没人看得见）：
+      ① 判据 3 的锚定对「节点**无码**」是**跳过**（`node_code is None ⇒ continue`：全员可见节点）；
+      ② 菜单源的**交会同构**只比「两处都有码」的节点 —— 一方掉成无码 ⇒ 它退出交集 ⇒ 不报；
+      ③ 判据 4 只在**真有岗位持该码**时才看得见「码没有节点」；岗位一旦没回填，它连看都不看。
+    ⇒ 「把读码从某处删掉 / 退回管理码」必须有一条**能红**的判据，否则删码 = 授权语义悄悄消失
+    （这正是 issue #5246/#5247 那批「代码收窄了、语义没落地」的同族形态）。
+    """
+    out: list[str] = []
+    by_name = _by_name(w)
+    for code, a in sorted(READ_CODE_ANCHORS.items()):
+        # ① 权限目录：两处**集合相等**由判据 9② 判；这里判该码**在**目录里（否则岗位权限页勾不到）
+        if code not in set(w.catalog):
+            out.append(f"读码 `{code}`（{a.domain}）不在权限目录里 ⇒ 「岗位权限」页勾不到它")
+        # ② 承载工具：必须**仍声明**本码、且仍是只读（退回管理码 = 本单要治的病复发）
+        t = by_name.get(a.tool)
+        if t is None:
+            out.append(f"读码 `{code}` 登记的承载工具 `{a.tool}` 不存在（陈旧登记）")
+        else:
+            if code not in t.required_permissions:
+                out.append(
+                    f"{a.tool} 未声明读码 `{code}`（现声明 {list(t.required_permissions)}）"
+                    "⇒ 只读工具退回管理码"
+                )
+            if not t.read_only:
+                out.append(f"{a.tool} 已不是只读工具（read_only=False）⇒ 读码的「只读」语义无从成立")
+        # ③ 菜单源：登记的每个 (源, 节点) 都必须**在**该源里、且码**逐字等于**本码
+        for src, node in a.node_sources:
+            nodes = w.menus.get(src, {})
+            if node not in nodes:
+                out.append(
+                    f"菜单源 `{src}` 里没有节点『{node}』⇒ 读码 `{code}` 的锚点缺席"
+                    "（菜单被改 / 解析面变了）"
+                )
+            elif nodes[node] != code:
+                out.append(
+                    f"菜单源 `{src}` 的节点『{node}』码 = `{nodes[node]}` ≠ 读码 `{code}` "
+                    "⇒ 改/删一处菜单源即可悄悄回退"
+                )
+        # ④ 无独立节点的读码必须挂在某页读码之下，否则「码没有出处」（判据 3 ② 也会报）
+        if a.page_code is not None and code not in PAGE_READ_CODES.get(a.page_code, frozenset()):
+            out.append(
+                f"读码 `{code}` 未登记在页 `{a.page_code}` 的 `PAGE_READ_CODES` 里 ⇒ 码没有出处"
+            )
+        # ⑤ 端点：登记的关键读端点必须**确实**挂本码（判据 2 管「工具码 ≡ 端点码」，这里管「哪几个端点」）
+        for key in a.endpoints:
+            verb, _, path = key.partition(" ")
+            eps = w.all_eps.get((verb, path))
+            if not eps:
+                out.append(f"读码 `{code}` 登记的端点 `{key}` 在 admin-api 里查不到（陈旧登记 / 路径漂移）")
+            elif not any(ep.permission == code for ep in eps):
+                out.append(
+                    f"端点 `{key}` 未挂读码 `{code}`"
+                    f"（生效码 {sorted({ep.permission for ep in eps}, key=str)}）"
+                )
+        # ⑥ 岗位：原持 legacy 管理码的内置岗位必须**同批**持有本码（拆码不许变成收权）
+        for role in a.role_holders:
+            perms = w.roles.get(role)
+            if perms is None:
+                out.append(f"读码 `{code}` 登记的岗位 `{role}` 不在种子岗位矩阵里（陈旧登记）")
+            elif "*" not in perms and code not in perms:
+                out.append(
+                    f"岗位 `{role}` 原持 `{a.legacy_code}`，却没有同批拿到读码 `{code}` ⇒ "
+                    "拆码把它的菜单/Agent 面**收权**了（只收窄不放宽的反面）"
+                )
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具必须声明权限码": problems_missing_codes,
     "2 · 工具码 ≡ 端点生效码": problems_endpoint_parity,
@@ -1383,6 +1563,7 @@ JUDGEMENTS = {
     "7 · c_end_reachable 不得手写": problems_c_end_flag,
     "8 · 未注解端点/残留已登记": problems_registered_decisions,
     "9 · 解析器自检": problems_self_checks,
+    "10 · 三个域读码的锚定（issue #5291）": problems_read_code_anchoring,
 }
 
 
@@ -1392,7 +1573,7 @@ JUDGEMENTS = {
 
 
 def test_every_judgement_is_green() -> None:
-    """九条判据在**当前仓库**上全绿（红 = 权限面已经漂移，逐条问题见断言文案）。"""
+    """十条判据在**当前仓库**上全绿（红 = 权限面已经漂移，逐条问题见断言文案）。"""
     w = world()
     problems = {label: fn(w) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
@@ -1468,15 +1649,17 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _add_allowed_roles(s, '["admin", "customer"]'),
             problems_role_list_hygiene,
         ),
-        "③ 岗位拿到页内写码却没有该页读码（finance += product:category）⇒ 判据 4 红": (
+        "③ 岗位拿到页内读码却没有该页读码（finance += product:category:view）⇒ 判据 4 红": (
             # 锚点口径（issue #5247 改判）：注入的码**必须是「某个 B 端可达工具仍声明的码」**
             # —— 判据 4 只看 `declared`（B 端工具声明的码）∩ 岗位权限。
             # 原锚 `employee:create` 在 #5247 收窄 `employee_manage` 后**不再被任何 B 端工具声明**
             # ⇒ 判据 4 恒不报（红证空转，由 `test_every_judgement_can_go_red` 抓到，故改锚）。
-            # 现锚 `product:category`：由只读工具 `category_manage` 声明，且经 `PAGE_WRITE_CODES`
-            # 归属「商品列表」页 —— 财务岗没有 `product:list`（该页读码）⇒ 「拿得到、看不见」成立。
+            # 现锚（issue #5291 改判）：`product:category:view` —— 由只读工具 `category_manage` 声明，
+            # 且经 `PAGE_READ_CODES` 归属「商品列表」页 ⇒ 财务岗没有 `product:list`（该页读码）
+            # ⇒ 「Agent 拿得到、页面里看不见」成立。原锚 `product:category` 随读码拆分**退出声明面**
+            #（工具不再声明它）⇒ 那时本注入会变成空断言，故同批改锚。
             "java:service/RegistrationService.java",
-            lambda s: _add_role_code(s, "financeRole", "product:category"),
+            lambda s: _add_role_code(s, "financeRole", "product:category:view"),
             problems_leakage,
         ),
         "③b 码没有任何菜单节点（改掉『售后工单』节点码）⇒ 判据 4 红": (
@@ -1560,6 +1743,32 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             "java:service/RegistrationService.java",
             lambda s: _drop_role_code(s, "operatorRole", "product:list"),
             problems_leakage,
+        ),
+        "⑬ 把生产读码从**前端菜单源**删掉（生产看板 → 无码）⇒ 判据 10 红": (
+            # issue #5291 的**真实回归形态**：节点仍在、只是 `permissionCode` 没了 ⇒
+            # 判据 3 的锚定会**跳过**它（无码节点被读成「全员可见」）、交会同构也不再比它
+            # ⇒ 只有判据 10 能拦（这正是「删读码必须有一条能红的判据」的理由）。
+            "menu:frontend",
+            # 锚点 = **生产看板**那一行（`path: '/production'`）—— 与注入名逐字对应；
+            # 用「第一个 production:view」当锚会让失败文案点名另一个节点（读数与结论不符）。
+            lambda s: s.replace(
+                "path: '/production', permissionCode: 'production:view', ", "path: '/production', ", 1),
+            problems_read_code_anchoring,
+        ),
+        "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 生产看板）⇒ 判据 10 红": (
+            "menu:controller",
+            lambda s: s.replace(
+                'new MenuNode("production:view", "生产看板")',
+                'new MenuNode("processing:manage", "生产看板")', 1),
+            problems_read_code_anchoring,
+        ),
+        "⑮ 承载工具退回管理码（processing_order_query → processing:manage）⇒ 判据 10 红": (
+            # 与 ⑤ 成对（**但锚点必须是登记表里的「承载工具」**，否则本注入是空断言 ——
+            # `READ_CODE_ANCHORS` 的 ② 只复核登记的那一个工具）：⑤ 证明判据 5 仍有判别力
+            #（例外表清空后照样红），本注入证明**读码锚定**那条也拦得住「工具悄悄退回管理码」。
+            "tool:processing_order_query.py",
+            lambda s: _set_codes(s, "processing_order_query.py", '["processing:manage"]'),
+            problems_read_code_anchoring,
         ),
         "⑨ 有人删掉一个 @RequirePermission ⇒ 端点变成未登记的无码端点 ⇒ 判据 8 红": (
             # 为什么不用「改路径名」来造这个红：`UNANNOTATED_ENDPOINTS` 里有 `GET /api/admin/notifications*`
@@ -1884,7 +2093,7 @@ def test_every_judgement_can_go_red() -> None:
     base_world = build_world(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}
     assert all(not v for v in green.values()), (
-        "对照组：未注入时九条判据必须全绿（否则红证无从归因）：\n"
+        "对照组：未注入时十条判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
     for label, (key, mutate, judgement) in _injections().items():
@@ -1893,6 +2102,42 @@ def test_every_judgement_can_go_red() -> None:
         assert sources[key] != base_sources[key], f"{label}：注入没生效（锚点失配）—— 同步本判据"
         mutated = build_world(sources)
         assert judgement(mutated), f"{label}：判据没有变红 ⇒ 它是空断言"
+
+
+def test_exception_ledger_only_shrinks(monkeypatch) -> None:
+    """例外表**只许缩短**（issue #5291 的收口面）：`READ_WRITE_EXCEPTIONS` 一旦变长即红。
+
+    三段式（缺任何一段这条判据就是空断言）：
+      ① **对照组**：当前树（表已清空）下判据 5 全绿；
+      ② **删条目 ≠ 失去判别力**：把某个只读工具的码改回管理码 ⇒ 判据 5 **照样红**
+         （例外表清空没有把这条能力一起删掉，与注入 ⑤ 同向互证）；
+      ③ **台账能拦「加回一条例外」**：把该工具登记进例外表（这正是例外表当初存在的理由）
+         ⇒ 「具名例外」的老检查放行，**只有**条数台账能拦 ⇒ 它必须红。
+
+    为什么第 ③ 段必须有：只看 ①②，「例外表只许缩短」就只是**注释里的纪律** ——
+    新增一条例外的 PR 会一路绿到 main（#5246/#5247 两批把它从 7 条喂到 10 条，无人被拦）。
+    """
+    base = _source_map()
+    assert not problems_read_write(build_world(base)), "前提：当前树判据 5 全绿（例外表为空）"
+
+    mutated = dict(base)
+    key = "tool:processing_order_query.py"
+    mutated[key] = _set_codes(mutated[key], "processing_order_query.py", '["processing:manage"]')
+    hits = problems_read_write(build_world(mutated))
+    assert any("`read_only=True`（只读）却要求写/管理码" in h for h in hits), (
+        f"② 失败：只读工具改持管理码后判据 5 没红 ⇒ 删例外条目把判别力一起删掉了（hits={hits}）"
+    )
+
+    monkeypatch.setitem(
+        READ_WRITE_EXCEPTIONS,
+        "processing_order_query",
+        "红证注入：假装这是本轮新欠的粒度债（具名例外必须带理由 + 建议修法）",
+    )
+    hits = problems_read_write(build_world(mutated))
+    assert any("读写例外表**又长回来了**" in h for h in hits), (
+        f"③ 失败：例外表加回一条后条数台账没红 ⇒ 「只许缩短」是空断言（hits={hits}）"
+    )
+    assert len(READ_WRITE_EXCEPTIONS) > READ_WRITE_EXCEPTIONS_CEILING
 
 
 # ── issue #5323 第 1 条：岗位默认权限 / 角色码的**取值口径**（注释不是代码）───────────────

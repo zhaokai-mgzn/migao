@@ -70,7 +70,8 @@
   调用点（留着 = `employee:list` 把「通知中心」这个后台全员可见页收窄成"只有持码岗位可用"）。
   ⇒ `required_permissions = []` + 类体显式 `allowed_roles`（不含 C 端/幽灵角色），
   并登记进 `ROLE_GATED_B_SIDE_TOOLS`。
-- `role_manage` / `settings_manage` 的码是 `system:manage`；对 `settings_manage` 而言
+- `role_manage` 的码是**读码** `system:view`（issue #5291：`GET /api/admin/permissions` 等读端点），
+  `settings_manage` 的码是 `system:manage`；对 `settings_manage` 而言
   该码是**读码**（三个读端点都是它）⇒ #5302 收窄为只读后**码不变**（无写码可去，
   该域读写同码的粒度债见 `tests/unit_ci_workflows/test_agent_permission_parity.py`
   的 `REGISTERED_RESIDUALS`「settings 域写面未注解」）。
@@ -101,7 +102,7 @@ from app.tools.registry import create_default_registry
 # 真值表（判据的唯一来源 —— 测试与红证夹具共用这一处，不写第二份）
 # ──────────────────────────────────────────────────────────────────────────────
 
-#: admin-api 权限目录（22 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
+#: admin-api 权限目录（30 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
 #: 该判据按**集合**比对 ⇒ 新增码必须同批落在这里，否则「镜像腐烂 ⇒ 工具层按错码授权」判红）
 PERMISSION_CATALOG = frozenset({
     "dashboard:view",
@@ -109,9 +110,15 @@ PERMISSION_CATALOG = frozenset({
     "product:list",
     "product:create",
     "product:category",
+    # 商品分类**查看**码（issue #5291）：分类读面（列表 / 树）此前与增删改同用 `product:category`
+    # ⇒ 只想看分类的岗位必须被授予「改分类」的权才进得去；本次按读写拆开（写面仍是 `product:category`）。
+    "product:category:view",
     "processing:manage",
     "processing:view",
     "processing:update",
+    # 生产域**读**码（issue #5291）：生产看板 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
+    # `processing:manage`（写面码，只读持有者要么被假拒绝、要么被迫拿到写权）；本次拆出读码。
+    "production:view",
     # 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
     "inbound:view",
     "inbound:create",
@@ -130,6 +137,9 @@ PERMISSION_CATALOG = frozenset({
     "agent:session",
     "employee:list",
     "employee:create",
+    # 岗位权限**查看**码（issue #5291）：`GET /api/admin/permissions` 等读面取它，
+    # 写面（建/改/删岗位、企业设置）仍是 `system:manage`。**admin 专属**：不授予任何非 admin 岗位。
+    "system:view",
     "system:manage",
     # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
     # 此前写动作挂在读码上（只读持有者因此拿到写能力，端点层也拦不住）。
@@ -150,7 +160,11 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "inbound:create", "inbound:view", "knowledge:view",
         "order:create", "order:detail", "order:list", "order:refund", "order:update",
         "processing:manage", "processing:update", "processing:view",
-        "product:category", "product:create", "product:list",
+        # issue #5291：operator 原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码，
+        # 否则拆码会把它的分类 / 生产面**收权**（「只收窄不放宽」的反面：原持管理码者不受影响）。
+        # `system:view` **不给** —— 它属 admin 专属，多授 = 让运营读到岗位与权限目录，属放宽，本单不做。
+        "production:view",
+        "product:category", "product:category:view", "product:create", "product:list",
     }),
     "customer_service": frozenset({
         "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
@@ -166,7 +180,11 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "order:detail", "order:list", "processing:view",
     }),
     "product_manager": frozenset({
-        "dashboard:view", "processing:manage", "product:category",
+        "dashboard:view", "processing:manage",
+        # issue #5291：该岗位的码由 `RoleService` 的硬编码回退给出（seed 里没有它）——
+        # 原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码，矩阵与回退逐值同步。
+        "production:view",
+        "product:category", "product:category:view",
         "product:create", "product:list",
     }),
     "knowledge_editor": frozenset({"dashboard:view", "product:list"}),
@@ -191,11 +209,13 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247 进场：简报卡（读面）取 `dashboard:view` —— 与
     # `DashboardController` 的 `@RequirePermission` 同码。
     "briefing_query": ("dashboard:view",),
-    # issue #5247：码**未变**（`product:category`），变的只是工具本身收窄为只读（`tree`）。
-    "category_manage": ("product:category",),
-    # issue #5247 进场：算料配置读面 —— 配置读写同用 `processing:manage`
-    # （`CraftCalcConfigController` 的 `@RequirePermission`），本工具只读、不写配置。
-    "craft_calc_config_query": ("processing:manage",),
+    # issue #5247：工具本身收窄为只读（`tree`）。
+    # issue #5291：码从写码 `product:category` 改挂**分类读码** `product:category:view`
+    # （`CategoryController` 的两个 GET 已改挂它）—— 只读工具不再要求「改分类」的权限。
+    "category_manage": ("product:category:view",),
+    # issue #5247 进场：算料配置读面 —— 此前配置读写同用 `processing:manage`。
+    # issue #5291：读面改挂生产域读码 `production:view`（写面 `PUT` 仍是 `processing:manage`）。
+    "craft_calc_config_query": ("production:view",),
     # issue #5247 改判：写 action（create/update/打标签族）已删除 ⇒ 写码 `customer:create` 退场。
     "customer_manage": ("customer:view",),
     "dashboard_stats": ("dashboard:view",),
@@ -221,19 +241,24 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "order_create": ("order:create", "product:list"),
     "order_manage": ("order:update",),
     "order_query": ("order:list",),
-    # issue #5247 进场：加工项目录（店铺级）读面 —— 与 `ProcessingCatalogController` 同码
-    # （与 `category_manage` 的 `product:category` 无关：那是**商品分类**，不是加工项）。
-    "operation_catalog_query": ("processing:manage",),
-    # issue #5246 改判：计件/报工/加工单读面取**加工面读码** processing:manage
+    # issue #5247 进场：加工项目录（店铺级）读面（与 `category_manage` 的分类码无关：
+    # 那是**商品分类**，不是加工项）。
+    # issue #5291：读面改挂生产域读码 `production:view`（写面仍是原码）。
+    "operation_catalog_query": ("production:view",),
+    # issue #5246 改判：计件/报工/加工单读面取生产面读码
     # （ProductionController 的方法级注解；原 order:list / processing:view 与端点生效码不符）。
-    "piecework_query": ("processing:manage",),
+    # issue #5291：该生产域读码即新拆出的 `production:view`（写面仍是 `processing:manage`/`processing:update`）。
+    "piecework_query": ("production:view",),
     "processing_item_manage": ("processing:manage",),
-    "processing_item_query": ("processing:manage",),
+    # issue #5291：加工项读面（`ProcessingItemController` 两个 GET 的方法级注解）取读码 `production:view`；
+    # 写工具 `processing_item_manage` 仍是 `processing:manage`（上下两行**故意不同码**）。
+    "processing_item_query": ("production:view",),
     "processing_order_generate": ("processing:update",),
-    "processing_order_query": ("processing:manage",),
-    # issue #5247 进场（加工套件 / 扫码循环，`ProcessingOrderSetController`）：三个端点均是
-    # 方法级 `@RequirePermission("processing:manage")` ⇒ 与加工面读码同源（生产域暂无专属读码）。
-    "processing_order_set_query": ("processing:manage",),
+    # issue #5291：加工单**查看**取生产域读码 `production:view`（写工具仍是 `processing:update`）。
+    "processing_order_query": ("production:view",),
+    # issue #5247 进场（加工套件 / 扫码循环，`ProcessingOrderSetController`）：三个读端点。
+    # issue #5291：生产域已有专属读码 ⇒ 三端点改挂 `production:view`（写面不变）。
+    "processing_order_set_query": ("production:view",),
     "processing_order_update": ("processing:update",),
     # issue #5314：批量改价 / 批量上下架的端点码与**逐条写同码**（契约 §三「不新开权限面」；
     # 契约正文括注的 `product:update` 在权限目录里不存在 ⇒ 取「同码」这条更硬的判据）。
@@ -242,11 +267,13 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "product_manage": ("product:create",),
     "product_search": ("product:list",),
     "product_update": ("product:create",),
-    "production_progress_query": ("processing:manage",),
-    "production_worklog_query": ("processing:manage",),
-    # issue #5247：码**未变**（`system:manage` = admin 专属越权守卫，本表不放松），
-    # 变的只是工具收窄为只读（list/all/detail/list_permissions）。
-    "role_manage": ("system:manage",),
+    # issue #5291：生产进度 / 报工明细读面改挂生产域读码 `production:view`。
+    "production_progress_query": ("production:view",),
+    "production_worklog_query": ("production:view",),
+    # issue #5247：工具收窄为只读（list/all/detail/list_permissions）。
+    # issue #5291：码从写码 `system:manage` 改挂**读码** `system:view`（`GET /api/admin/permissions`
+    # 已改挂它）。两个码都只归 admin（越权守卫）⇒ 放行集不变，但只读工具不再要求「改岗位」的权限。
+    "role_manage": ("system:view",),
     # issue #5247 改判：写 action（assign/end）已删除 ⇒ 写码 `agent:session:manage` 退场
     # （读码 `agent:session` 不变）。
     "session_manage": ("agent:session",),
@@ -268,8 +295,10 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "briefing_query": frozenset({
         "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
     }),
+    # issue #5291：读码 `product:category:view` 的持有角色 —— operator / product_manager 同批回填
+    # ⇒ 放行集**不变**（没有谁被收回，也没有新岗位进场）。
     "category_manage": frozenset({"operator", "product_manager"}),
-    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "craft_calc_config_query": frozenset({"operator", "product_manager"}),
     "customer_manage": frozenset({"customer_service", "operator", "sales"}),
     "dashboard_stats": frozenset({
@@ -291,15 +320,18 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
-    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "operation_catalog_query": frozenset({"operator", "product_manager"}),
-    # issue #5246 改判：计件/报工/加工单读面 = `processing:manage` ⇒ 运营 + 商品主管。
+    # issue #5246 改判：计件/报工/加工单读面 = 生产域读码；issue #5291 起即 `production:view`
+    # ⇒ 运营 + 商品主管（两岗同批回填，放行集与改码前逐字相同）。
     "piecework_query": frozenset({"operator", "product_manager"}),
     "processing_item_manage": frozenset({"operator", "product_manager"}),
+    # issue #5291：加工项 / 加工单 / 生产进度 / 报工明细读面改挂 `production:view` ⇒ 持有角色仍为
+    # operator + product_manager（判据 `test_reviewed_mapping_and_expected_roles_agree` 按目录复算）。
     "processing_item_query": frozenset({"operator", "product_manager"}),
     "processing_order_generate": frozenset({"operator"}),
     "processing_order_query": frozenset({"operator", "product_manager"}),
-    # issue #5247 进场：`processing:manage` 的持有角色（目录推导）。
+    # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "processing_order_set_query": frozenset({"operator", "product_manager"}),
     "processing_order_update": frozenset({"operator"}),
     # issue #5314：与 `product_update` 同码 ⇒ 放行集**逐字相同**（目录推导，不额外授予）
@@ -310,6 +342,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "product_update": frozenset({"operator", "product_manager"}),
     "production_progress_query": frozenset({"operator", "product_manager"}),
     "production_worklog_query": frozenset({"operator", "product_manager"}),
+    # issue #5291：读码 `system:view` 与写码 `system:manage` 一样**不授予任何非 admin 岗位**
+    # ⇒ 放行集仍为空（admin 恒为 `*`；本单没有放宽）。
     "role_manage": frozenset(),
     "session_manage": frozenset({"customer_service", "operator"}),
     "settings_manage": frozenset(),
@@ -504,8 +538,9 @@ class TestPermissionCodeIsTheGate:
             assert role_allowed(tools[name], "operator") is True, (
                 f"{name}: operator 持有对应权限码，不得再判「权限不足」"
             )
-        # role_manage / settings_manage 的码是 system:manage —— 目录里只有 admin 有
-        # （`RoleService` 第 301 行「不含 system:manage —— 归 admin 专属（越权守卫）」）
+        # role_manage 的码是读码 `system:view`（issue #5291）、settings_manage 的是 `system:manage`
+        # —— 目录里两个码都只有 admin 有（`RoleService` 的硬编码回退「不含 system:manage ——
+        # 归 admin 专属（越权守卫）」，且 `system:view` 不授予任何非 admin 岗位）
         # ⇒ 它们仍然只放行 admin；**没有放宽**，只是不再靠角色名硬编码。
         for name in ("role_manage", "settings_manage"):
             assert role_allowed(tools[name], "operator") is False, (
@@ -517,7 +552,7 @@ class TestPermissionCodeIsTheGate:
         tool = all_checked_tools()["category_manage"]
         ctx = ToolContext(
             tenant_id=1, user_id="u-custom", session_id="s-custom",
-            role="poc_operator_custom", permissions=["product:category"],
+            role="poc_operator_custom", permissions=["product:category:view"],  # issue #5291：随工具改挂读码
         )
         assert tool.check_permission(ctx) is True, "持码的自定义角色必须放行（角色名不在任何白名单里）"
 
@@ -824,7 +859,7 @@ class TestRoleMirrorMatchesTheAdminApiSource:
         assert java_fallback_role_permissions(role_service), "抽不到硬编码回退（fail-closed）"
 
     def test_the_catalog_is_exactly_the_java_directory(self):
-        """18 码目录逐字一致：改名 ⇒ 「缺 + 多」同时出现。"""
+        """30 码目录逐字一致：改名 ⇒ 「缺 + 多」同时出现。"""
         gaps = catalog_gaps(java_catalog_codes(_read(_REGISTRATION_SERVICE)), PERMISSION_CATALOG)
         assert gaps == [], (
             f"`PERMISSION_CATALOG` 与 `RegistrationService.defaultPermissions` 不符：{gaps}"
@@ -972,7 +1007,7 @@ class TestRoleMirrorGuardIsNotVacuous:
             java_fallback_role_permissions(role_service), ROLE_PERMISSIONS) == []
 
     def test_operator_seed_is_a_superset_of_the_hardcoded_fallback(self):
-        """登记的现实差异：seed（14 码）⊃ 回退（12 码，缺加工单查看/操作）。
+        """登记的现实差异：seed（25 码）⊃ 回退（21 码，缺加工单查看/操作与入库单两码）。
 
         镜像取 **seed 口径**（新租户真值，`V29`/`V32`/`V43` 对存量租户补齐）⇒
         回退是它的子集；本断言把这条关系钉住，防「回退悄悄比 seed 更宽」被当成等价。
