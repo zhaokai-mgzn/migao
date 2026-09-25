@@ -1,7 +1,7 @@
 /**
  * 工人认证服务（issue #4733）：工号 + PIN 登录 / 当前工人 / 快速切换 / 登出。
  *
- * <p>与商家认证（`utils/auth.ts` 的 `bminiLogin`）**彻底分离**：那条链路走微信授权 + JWT，
+ * <p>与商家认证（`utils/auth.ts` 的 `employeeLogin`）**彻底分离**：那条链路走账号密码 + JWT，
  * 这条走工号 + PIN + 工人 session。工人**不得**获得商家权限 —— 登录成功后拿到的 session
  * 只对 `/api/worker/**` 有效。</p>
  *

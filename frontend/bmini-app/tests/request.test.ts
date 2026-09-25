@@ -176,6 +176,22 @@ describe('request utils', () => {
       )
     })
 
+    it('无 Token 时的 401 不弹「登录已过期」也不跳转（业务拒绝的文案归调用方，issue #5485）', async () => {
+      // 员工登录失败就是 401 + {success:false,error:{...}} ⇒ 若这里照样弹会话过期 + 跳登录页，
+      // 会把后端那句统一文案（「账号或密码错误」）盖成技术噪声，并多跳一次页面
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 401,
+        data: { success: false, error: { code: 'AUTH_FAILED', message: '账号或密码错误' } },
+      })
+
+      await expect(
+        post('/api/auth/employee/login', { identifier: 'zhangsan@acme', password: 'x' }),
+      ).rejects.toThrow('Request failed with status 401')
+
+      expect(Taro.showToast).not.toHaveBeenCalled()
+      expect(Taro.redirectTo).not.toHaveBeenCalled()
+    })
+
     it('403 应提示无权限', async () => {
       ;(Taro.request as jest.Mock).mockResolvedValueOnce({
         statusCode: 403,

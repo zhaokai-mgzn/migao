@@ -1,13 +1,26 @@
 /**
  * 认证工具
  *
- * 提供微信小程序登录、Token 管理、用户信息等
+ * 提供 B 端员工账号密码登录、C 端微信小程序登录、Token 管理、用户信息等
  */
 
 import Taro from '@tarojs/taro'
 import { post } from './request'
 import { API_BASE_URL, STORAGE_KEYS } from './constants'
 import type { User, LoginResult, ApiResponse } from '../types'
+
+/**
+ * 取**服务端文案**（`ApiResponse.error.message`）。
+ *
+ * 为什么不能只用 `error.message`（issue #5485 实测）：admin-api 的业务失败是**带 HTTP 状态码**的
+ * —— 员工登录失败 = `401` + `{success:false, error:{code:'AUTH_FAILED', message:'账号或密码错误'}}`，
+ * 改密不合规 = `422` + `error.message`。而 request 层对非 2xx 是 **throw**，`error.message` 只是
+ * 「Request failed with status 401」这种技术串 ⇒ 端侧就永远看不到后端那句统一文案（反枚举契约失效）。
+ * request 层把响应体挂在 `error.data` 上，这里优先取它。
+ */
+function serverMessage(error: any, fallback: string): string {
+  return error?.data?.error?.message || error?.message || fallback
+}
 
 /**
  * 微信小程序登录
@@ -59,30 +72,28 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
 }
 
 /**
- * B 端员工小程序登录（米宝商家端，issue #2977）
- * 1. 调用 Taro.login() 获取微信 code
- * 2. 首次需配合 <Button open-type="getPhoneNumber"> 授权，将返回的动态 code 作为 phoneCode 传入
- * 3. POST /api/auth/bmini/login { code, phoneCode }
- * 4. 后端：换 openid 查绑定 → 已绑定直接签发员工 JWT；未绑定则换手机号跨租户匹配员工
- *    （role∉customer/agent）→ 绑定 user_identities(bmini_app) → 签发含 permissions 的员工 JWT；
- *    匹配不到员工即时拒绝（禁止自动建号）。
+ * B 端员工登录（米宝商家端，issue #5485 起＝「用户名@企业编码 + 密码」）
  *
- * @param phoneCode 首次登录必传：getPhoneNumber 授权返回的动态 code；二次登录（已绑定）可不传
+ * 1. POST /api/auth/employee/login，body `{ identifier, password }`
+ * 2. `identifier` 形如 `zhangsan@acme`（**原样发服务端**）——租户**只**由标识里的
+ *    企业编码解析，前端**不解析租户、不传 tenantId**（否则「任意数字即可切租户」）
+ * 3. 存储 Token / 用户 / 租户（`user.tenantId` 由服务端回填）
+ *
+ * 原「微信授权手机号 → 跨租户匹配员工 → 绑定 openid → 二次免密」整条退场：
+ * 本函数**不调用 `Taro.login()`**，`POST /api/auth/bmini/login` 已废弃
+ * （旧版调用会拿到明确拒绝 + 引导文案，不是 404）。
+ *
+ * 格式合规 / 账号是否存在 / 密码是否正确的判定**单一真值在后端**：
+ * 三者统一 401 同一文案（反枚举），前端不复制校验规则、不区分字段报错。
  */
-export async function bminiLogin(phoneCode?: string): Promise<LoginResult> {
+export async function employeeLogin(identifier: string, password: string): Promise<LoginResult> {
   try {
-    // 获取微信 code
-    const loginRes = await Taro.login()
-    if (!loginRes.code) {
-      return { success: false, error: '获取微信登录凭证失败' }
-    }
-
-    // 调用后端 B 端登录接口（admin-api，JWT + HttpOnly cookie 由后端处理）
+    // 调用后端员工登录接口（admin-api，JWT + HttpOnly cookie 由后端处理）
     const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
-      '/api/auth/bmini/login',
+      '/api/auth/employee/login',
       {
-        code: loginRes.code,
-        phoneCode: phoneCode || undefined,
+        identifier,
+        password,
       },
       { baseURL: API_BASE_URL, skipAuth: true },
     )
@@ -96,7 +107,7 @@ export async function bminiLogin(phoneCode?: string): Promise<LoginResult> {
 
     const { accessToken: token, user } = data.data
 
-    // 存储到本地（tenantId 由后端员工账号定位，无需前端传入）
+    // 存储到本地（tenantId 由后端按标识里的企业编码解析，无需前端传入）
     Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
     Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
     if (user?.tenantId != null) {
@@ -105,11 +116,53 @@ export async function bminiLogin(phoneCode?: string): Promise<LoginResult> {
 
     return { success: true, user }
   } catch (error: any) {
-    console.error('B 端员工小程序登录失败:', error)
+    console.error('B 端员工登录失败:', error)
     return {
       success: false,
-      error: error.message || '登录失败，请稍后重试',
+      error: serverMessage(error, '登录失败，请稍后重试'),
     }
+  }
+}
+
+/**
+ * 自助改密（首登强制改密的**唯一端侧出口**，issue #5485）
+ *
+ * 1. POST /api/auth/password/change，body `{ oldPassword, newPassword }` —— **需认证**
+ *    （带 `Authorization: Bearer`，故**不能** `skipAuth`）
+ * 2. 成功 ⇒ 响应体结构与登录一致：**直接换发**一份不带强制改密标记的新凭据
+ *    （后端刻意这么设计：旧 token 仍带 claim，若要求前端「记得再刷新一次」就会出现
+ *     「改完密码反而全站 403」的自锁）⇒ 这里用新凭据覆盖本地存储
+ * 3. 失败（原密码不正确 / 新密码不符合策略）⇒ 422 + 服务端文案；
+ *    **前端不复制密码策略**（策略的唯一真值在后端）
+ *
+ * 该端点与 `logout` / `me` / `refresh` 是强制改密会话的白名单（后端 `PasswordChangeRequiredFilter`），
+ * 所以商家员工（很多是手机-only）**不必去电脑端管理后台**，在本页就能完成。
+ */
+export async function changePassword(oldPassword: string, newPassword: string): Promise<LoginResult> {
+  try {
+    const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
+      '/api/auth/password/change',
+      { oldPassword, newPassword },
+      { baseURL: API_BASE_URL },
+    )
+
+    if (!data.success || !data.data) {
+      return { success: false, error: data.error?.message || '密码修改失败' }
+    }
+
+    const { accessToken: token, user } = data.data
+
+    // 用「改密响应里的新凭据」覆盖本地凭据（旧 token 仍带强制改密标记，不能留）
+    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
+    if (user?.tenantId != null) {
+      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
+    }
+
+    return { success: true, user }
+  } catch (error: any) {
+    console.error('自助改密失败:', error)
+    return { success: false, error: serverMessage(error, '密码修改失败，请稍后重试') }
   }
 }
 

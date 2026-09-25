@@ -1,8 +1,10 @@
-// case_ids: API-010, BM-001, BM-002, BM-003
+// case_ids: API-010, AU-001, AU-002, AU-003, AU-006, BM-001, BM-002, BM-003
 /**
  * 认证工具函数测试
  *
- * 覆盖: Token存取、登录态判断、登出清理、JWT过期检查、微信登录流程（C 端 mini + B 端 bmini）
+ * 覆盖: Token 存取、登录态判断、登出清理、JWT 过期检查、
+ *       C 端微信登录（miniAppLogin 不动）、
+ *       B 端员工账号密码登录（employeeLogin）+ 自助改密（changePassword），issue #5485
  */
 import Taro from '@tarojs/taro'
 import {
@@ -13,7 +15,8 @@ import {
   logout,
   checkTokenValidity,
   miniAppLogin,
-  bminiLogin,
+  employeeLogin,
+  changePassword,
 } from '../src/utils/auth'
 import { STORAGE_KEYS } from '../src/utils/constants'
 
@@ -147,7 +150,7 @@ describe('auth utils', () => {
     })
   })
 
-  // ========== 微信小程序登录 ==========
+  // ========== C 端微信小程序登录（本次不动） ==========
 
   describe('miniAppLogin', () => {
     it('登录成功应存储 Token 和用户信息', async () => {
@@ -198,70 +201,172 @@ describe('auth utils', () => {
     })
   })
 
-  // ========== B 端员工小程序登录（issue #2977） ==========
+  // ========== B 端员工账号密码登录（issue #5485 起＝用户名@企业编码 + 密码） ==========
 
-  describe('bminiLogin', () => {
-    const mockEmpUser = { id: 'emp-1', nickname: '运营小王', avatar: null, role: 'operator', tenantId: 1, tenantName: '词元通达' }
+  describe('employeeLogin', () => {
+    const mockEmpUser = {
+      id: 'emp-1',
+      nickname: '运营小王',
+      avatar: null,
+      role: 'operator',
+      roles: ['operator'],
+      tenantId: 7,
+      tenantName: '词元通达',
+      mustChangePassword: false,
+      identityType: 'employee',
+    }
 
-    it('首次登录（带 phoneCode）成功应存储 Token/用户/租户 (BM-001)', async () => {
+    it('登录成功应落 Token/用户，租户由响应回填（AU-001 / BM-001）', async () => {
       mockPost.mockResolvedValueOnce({
         success: true,
-        data: { accessToken: 'bmini-jwt-token', user: mockEmpUser },
+        data: { accessToken: 'employee-jwt-token', user: mockEmpUser },
       })
 
-      const result = await bminiLogin('phone-auth-code-1')
+      const result = await employeeLogin('zhangsan@acme', 'init-pass-123')
 
       expect(result.success).toBe(true)
       expect(result.user).toEqual(mockEmpUser)
-      expect(Taro.login).toHaveBeenCalled()
-      // 请求体：code + phoneCode（首次绑定）
       expect(mockPost).toHaveBeenCalledWith(
-        '/api/auth/bmini/login',
-        expect.objectContaining({ phoneCode: 'phone-auth-code-1' }),
-        expect.objectContaining({ baseURL: expect.any(String), skipAuth: true }),
+        '/api/auth/employee/login',
+        { identifier: 'zhangsan@acme', password: 'init-pass-123' },
+        { baseURL: expect.any(String), skipAuth: true },
       )
-      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, 'bmini-jwt-token')
-      // tenantId 由后端员工账号定位写入
-      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, 1)
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, 'employee-jwt-token')
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.USER, JSON.stringify(mockEmpUser))
+      // 租户 = 服务端按标识里的企业编码解析所得（不是前端传的）
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, 7)
     })
 
-    it('二次登录可不带 phoneCode（openid 已绑定直接签发）(BM-002)', async () => {
+    it('请求体只含 identifier + password：不传 tenantId（AU-002 前端侧判据）', async () => {
       mockPost.mockResolvedValueOnce({
         success: true,
-        data: { accessToken: 'bmini-jwt-token-2', user: mockEmpUser },
+        data: { accessToken: 'employee-jwt-token', user: mockEmpUser },
       })
 
-      const result = await bminiLogin()
+      await employeeLogin('zhangsan@acme', 'init-pass-123')
 
-      expect(result.success).toBe(true)
-      expect(mockPost).toHaveBeenCalledWith(
-        '/api/auth/bmini/login',
-        expect.objectContaining({ phoneCode: undefined }),
-        expect.any(Object),
-      )
+      const body = mockPost.mock.calls[0][1] as Record<string, unknown>
+      expect(Object.keys(body).sort()).toEqual(['identifier', 'password'])
+      expect(body).not.toHaveProperty('tenantId')
     })
 
-    it('后端返回失败（手机号未匹配员工）应透传错误 (BM-003)', async () => {
+    it('不调用 Taro.login()：微信授权换码路径已退场（BM-002）', async () => {
       mockPost.mockResolvedValueOnce({
-        success: false,
-        error: { code: 'AUTH_FAILED', message: '手机号未匹配员工账号，请联系管理员开通' },
+        success: true,
+        data: { accessToken: 'employee-jwt-token', user: mockEmpUser },
       })
 
-      const result = await bminiLogin('phone-auth-code-x')
+      await employeeLogin('zhangsan@acme', 'init-pass-123')
+
+      expect(Taro.login).not.toHaveBeenCalled()
+    })
+
+    it('凭据错（真实形态 HTTP 401 + error.message）⇒ 端侧用服务端统一文案，不落 Token（AU-003 / BM-003）', async () => {
+      // admin-api 的业务失败是**带 HTTP 状态码**的（EmployeeLoginControllerTest 钉的形状）：
+      // 401 + {success:false, error:{code:'AUTH_FAILED', message:'账号或密码错误'}} ⇒ request 层 throw，
+      // 响应体挂在 error.data 上。**不能**按「HTTP 200 + success:false」去 mock（那是假绿）。
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 401'), {
+          statusCode: 401,
+          data: {
+            success: false,
+            error: { code: 'AUTH_FAILED', message: '账号或密码错误' },
+          },
+        }),
+      )
+
+      const result = await employeeLogin('zhangsan@acme', 'wrong-pass')
 
       expect(result.success).toBe(false)
-      expect(result.error).toContain('未匹配员工')
-      // 不落任何 token
+      // 反枚举：前端不加工、不添加「用户名存在/密码错」这类区分信息
+      expect(result.error).toBe('账号或密码错误')
+      expect(Taro.setStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, expect.any(String))
+      expect(Taro.setStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, expect.anything())
+    })
+
+    it('网络异常应捕获并返回错误', async () => {
+      mockPost.mockRejectedValueOnce(new Error('Network Error'))
+
+      const result = await employeeLogin('zhangsan@acme', 'init-pass-123')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Network Error')
+    })
+  })
+
+  // ========== 自助改密（首登强制改密的端侧出口，issue #5485） ==========
+
+  describe('changePassword', () => {
+    const changedUser = {
+      id: 'emp-1',
+      nickname: '运营小王',
+      avatar: null,
+      tenantId: 7,
+      mustChangePassword: false,
+    }
+
+    it('提交到 /api/auth/password/change，body {oldPassword,newPassword} 且**带认证**（AU-006）', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'new-jwt-token', user: changedUser },
+      })
+
+      await changePassword('init-pass-123', 'new-pass-456')
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/auth/password/change',
+        { oldPassword: 'init-pass-123', newPassword: 'new-pass-456' },
+        expect.objectContaining({ baseURL: expect.any(String) }),
+      )
+      // 该端点在强制改密白名单里但**需认证** ⇒ 不得 skipAuth（否则拿 401，白名单也没意义）
+      expect((mockPost.mock.calls[0][2] as any).skipAuth).toBeUndefined()
+    })
+
+    it('成功 ⇒ 用响应里换发的新凭据覆盖本地凭据', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'new-jwt-token', user: changedUser },
+      })
+
+      const result = await changePassword('init-pass-123', 'new-pass-456')
+
+      expect(result.success).toBe(true)
+      expect(result.user).toEqual(changedUser)
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, 'new-jwt-token')
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.USER, JSON.stringify(changedUser))
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, 7)
+    })
+
+    it('新密码不符合策略（422）⇒ 展示服务端文案，不自行造规则、不覆盖凭据', async () => {
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 422'), {
+          statusCode: 422,
+          data: {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: '新密码须至少 8 位且包含字母和数字' },
+          },
+        }),
+      )
+
+      const result = await changePassword('init-pass-123', 'short1')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('新密码须至少 8 位且包含字母和数字')
       expect(Taro.setStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, expect.any(String))
     })
 
-    it('微信 code 获取失败应返回错误', async () => {
-      ;(Taro.login as jest.Mock).mockResolvedValueOnce({ code: '' })
+    it('原密码不正确（422）⇒ 同样原样展示服务端文案', async () => {
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 422'), {
+          statusCode: 422,
+          data: { success: false, error: { code: 'VALIDATION_ERROR', message: '原密码不正确' } },
+        }),
+      )
 
-      const result = await bminiLogin()
+      const result = await changePassword('wrong-old', 'new-pass-456')
 
       expect(result.success).toBe(false)
-      expect(result.error).toContain('微信登录凭证')
+      expect(result.error).toBe('原密码不正确')
     })
   })
 })
