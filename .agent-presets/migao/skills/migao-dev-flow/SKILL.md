@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.60.0
+version: 1.60.1
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -190,7 +190,11 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
    - **清理走事件驱动，不要高频定时任务**（v1.45.0 新增，用户裁定：「依赖高频的定时清理任务，不是很安全，而且不高效，浪费时间成本」）
      ⇒ 交付形态 = **本地、attended、单一入口**：`bash scripts/issue-lifecycle.sh land <分支>`（**落地一条命令**：rebase→gate→ready→等 CI→等合并→收尾→按需刷活锚，**顺序即安全顺序**）/`reap-merged [--apply]`（**自动收尾已合并的**：新工作开始 / 落地完成时触发，⛔ 不新增 cron）/`finish <分支>`（单包收尾）/
-     `prune [--apply]`（批量；**默认 dry-run**）。安全条件：**未合并 ⇒ fail-closed** / **活锚硬保护** /
+     `prune [--apply]`（批量；**默认 dry-run**）/
+     **`pending-close`**（**报告型**：已合并 PR 引用了却没写关闭词、且仍 open 的 issue ⇒ 待人工关单清单，**零写操作**）/
+     **`close <issue>|--batch-file --evidence … [--apply]`**（**无证据不关单**：先贴证据评论再关；`delivered→completed`、`superseded|stale-report→not planned`）。
+     ⇒ **关单只许走 `close`**（v1.60.1 / issue #5480 漏洞 2）：手写 `gh issue comment` + `gh issue close`
+     在 2026-09-25 一晚重复 **37 次**，顺序/理由/证据格式全靠记 ⇒ 收敛成一条命令。安全条件：**未合并 ⇒ fail-closed** / **活锚硬保护** /
      **三态退出码（`3` = 无法判定，不得当 `0` 读）** / 幂等靠 **git common dir 台账**。
      ⚠️ **`prune` 会一并删远程分支**（仅当有**已合并** PR 且**无 open PR**）—— 本会话实测（`prune` 自身输出）
      远程分支 **294 → 7**、worktree **13 → 1**。**先跑 dry-run 看清单**，再 `--apply`。
@@ -2028,6 +2032,10 @@ B2 有**门禁侧后果**（`drift_audit` 的 burn-down 会红），但"用哪�
 ### 23.9.3 未实装 / 边界（照实登记，§19.1）
 
 - **C1/C2 = 已落码**（PR #5424）：`land <分支>`（顺序唯一真相源 `LAND_STEPS`；`--from` 白名单**永不可跳 rebase/gate/ready**）+ `reap-merged`（判定 = **有已合并 PR 且无 open PR**；保护位 = open PR / 未合并 / stacked base / 活跃会话锁 / **活锚** / 主干 / `--except`）+ **`add` 已接线**；残余边界：`gh --limit 500` 截断 ⇒ **漏收方向**（fail-closed）；`land` 一次调用**不保证**到收尾（自动合并异步）⇒ 常见 `land` + `land --from wait-merge` 两次；
+- **C1 追加两条（v1.60.1 / issue #5480，2026-09-25 实测）**：`pending-close`（**发现面**：已合并 PR **引用了却没写关闭词** ⇒ 待人工关单清单；**零写**、取不到数即 exit 3）
+  + `close`（**执行面**：**无 `--evidence` 即拒**、先评论后关单、`delivered→completed`/`superseded|stale-report→not planned`、默认 dry-run）；
+  以及 `prune`/`reap-merged` 的**点号（临时）worktree 堆积出声**（>3 ⇒ `::warning::` + 逐条路径，**只报不删**）。
+  实证：当晚为「已交付却悬挂」付了 **8 个核验员 + 37 次手工关单**，另有 **7 个**临时 worktree 手工清 ⇒ 三者都收敛进同一入口。
 - **C3 = 已落码**（PR #5426）：`post-merge-verify.yml`（触发面 `push:[main]` + **`pull_request:[opened,reopened]`** —— 实测 push 会被吞：近 15 次合并只有 2 次产生 main 的 push run；窗口 = **水位**；判红 ⇒ P1 值班单；**首发日护栏**防监控自造假红）；**实战已验证**：`#5413`×`#5415` 相隔 2.5 分钟落地造成的跨包红，本腿在纯净 main 检出上复算 `rc=1` 抓到；
 - ⛔ **本节不承诺"基建归零"**：新功能面会持续产生新的判据面，那是正常产出。本节承诺的是**消灭"同一类动作每天重做"** —— 判据是 C1~C4 各自的**落码锚点**，而不是"以后没有基建单"。
 
@@ -2742,3 +2750,12 @@ B2 有**门禁侧后果**（`drift_audit` 的 burn-down 会红），但"用哪�
   ② **新增 §23.11**「规则里的『做不到』也是一条判据」：与 §23.10 D2「能试的就别推断」同源。
   ③ **代价（可量化）**：本会话为它**白等一轮**（先要 `gh auth refresh -s workflow` 才动手）；历史上更让多个包绕开 workflow 改动。
   **未实装 / 边界（如实登记，§19.1）**：只有纪律 + 实证，**没有任何机械锁**会拦住「技能里写死做不到的规则」。
+
+- v1.60.1（2026-09-25 **C1 追加两条子命令：`pending-close` / `close` + 点号 worktree 出声**，本次，issue #5480）：
+  ① 当晚「重复动作 ≥3 次」的三处实证 —— **37 次**手写 `gh issue comment`+`gh issue close`（关单）、
+  **8 个核验员**才发现 37 条「已交付却悬挂」（发现面缺失）、**7 个**临时（点号）worktree 手工清（堆积不可见）；
+  ② 三者收敛进**同一入口** `scripts/issue-lifecycle.sh`：`pending-close`（**报告型、零写**）、
+  `close`（**无 `--evidence` 即拒**，默认 dry-run）、`prune`/`reap-merged` 的 `>3 ⇒ ::warning::`（**只报不删**）；
+  ③ 判据 = `tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py`（11 条，**5 条注入式红证**实跑过）。
+  **未实装 / 边界（如实登记，§19.1）**：`pending-close` 的判定是**启发式**（body 里的 `#N` 引用，
+  `关联 #N` 与"真该关"不可机器区分）⇒ 刻意**只做发现**；点号 worktree **真删**的判据未实现（用户裁定不做无人值守删除）。
