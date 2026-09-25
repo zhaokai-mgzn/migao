@@ -234,15 +234,10 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     # processing_item_manage/product_update/session_manage/settings_manage/
     # sku_update 写操作此前无规则 → validate_input 返回「未知工具」→ agent 按
     # 安全规则拒绝执行。补规则让所有写工具走标准校验+确认链。
-    "finance_api": {
-        "create_transaction": {
-            "required": ["type", "amount"],
-            "type": {"type": str, "label": "收支类型(income/refund)", "enum": ["income", "refund"]},
-            # 契约下限 0.01（`FinanceTransactionCreateRequest.java:21-23` @DecimalMin(0.01)），
-            # 旧规则 min=0 → amount=0 放行后必被 422（issue #3566 核查）
-            "amount": {"type": (int, float), "min": 0.01, "label": "金额（>0，最低 0.01）"},
-        },
-    },
+    # [RETIRED #4025 F8] `finance_api` 整个规则键已删除：该工具随 B 端只读化（#5247）收窄为
+    # `get_summary`/`get_transactions`/`get_reconciliation` 三个只读 action，`create_transaction`
+    # 已不在 `VALID_ACTIONS` 里 ⇒ 它下面的规则永不命中（死配置）。只读工具不需要规则块
+    # （F6 只对写工具提出要求）⇒ 整个键一并移除 —— 是**清掉了**，不是「漏了」。
     # ── issue #4011 A4：缺口补齐的通用口径（本次补的规则分散在各自的工具块里）──
     # 缺口形态：工具已注册、该 action 无规则 ⇒ 旧实现返回 `success=True, data={"skipped": True}`
     # （假绿）⇒ 模型读到“校验通过”继续执行，还会把 `pending_validated_input` 落账、下一轮被
@@ -373,11 +368,10 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "settings_manage": {
-        "change_password": {
-            "required": ["old_password", "new_password"],
-            "old_password": {"type": str, "min_len": 1, "label": "旧密码"},
-            "new_password": {"type": str, "min_len": 1, "label": "新密码"},
-        },
+        # [RETIRED #4025 F8] `change_password` 规则块已删除：该写 action 随 #5302 从
+        # `VALID_ACTIONS` 删除 ⇒ 规则永不命中（死配置）。⚠️ 同键下另两个 action
+        # （`update_settings`/`update_ai_config`）的规则块**仍是**死配置，仍登记在单一台账
+        # `RETIRED_RULE_KEYS_B_END_READONLY` 里 —— 那是同一张台账的余下格子，不在本包射程。
         "update_settings": {
             # 字段名错修复（issue #3566 核查）：旧规则必填 `data`，但工具没有 data 参数
             # （`settings_manage.py:69-77` 真实参数 name/industry）→ 合法写路径被闸门

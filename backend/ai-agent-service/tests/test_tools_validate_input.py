@@ -373,21 +373,47 @@ class TestValidateInputCategoryManage:
 
 
 class TestValidateInputWriteToolAudit:
-    """Round 45 审计：7 个 WRITE 工具补规则后，写操作可正常校验（此前「未知工具」→ agent 拒绝执行）。"""
+    """Round 45 审计：7 个 WRITE 工具补规则后，写操作可正常校验（此前「未知工具」→ agent 拒绝执行）。
 
-    async def test_finance_create_transaction(self, tool, admin_tool_context):
+    ⚠️ **#4025 F8 销账包（本包改判）**：`finance_api`（随 #5247 只读化）与
+    `settings_manage.change_password`（随 #5302 只读化）的规则块已从 `_VALIDATION_RULES` 删除
+    ⇒ 与之对应的用例**改判为锁 fail-closed 新真相**（旧断言「死配置照样放行」已不成立），
+    不再是「写操作可正常校验」。本类余下用例覆盖的规则块仍在表里（单一台账在册）。
+    """
+
+    async def test_finance_create_transaction_is_fail_closed(self, tool, admin_tool_context):
+        """改判（#4025 F8 销账）：`finance_api` 的**整个规则键**已从 `_VALIDATION_RULES` 删除。
+
+        逐字读数：`finance_api.py` 的
+        `VALID_ACTIONS = {get_summary, get_transactions, get_reconciliation}`
+        （该工具随 B 端只读化 #5247 收窄为三个 `get_*`）⇒ `create_transaction` 是**死 action**，
+        其规则块是死配置，已删。故闸门对**该工具名**整体走「未知的工具」fail-closed 分支。
+        新锁方向：调用**必须被明确拒绝**且理由点名**工具级**缺口（不得静默通过）。
+        """
         result = await tool.execute(
             context=admin_tool_context, target_tool="finance_api",
             target_action="create_transaction", params={"type": "income", "amount": 100},
         )
-        assert result.success is True
+        assert result.success is False, result.message
+        assert result.error == "未知的工具", result.error
 
-    async def test_finance_missing_amount(self, tool, admin_tool_context):
+    async def test_finance_missing_amount_is_not_field_level(self, tool, admin_tool_context):
+        """改判（#4025 F8 销账）：缺 `amount` **不再由字段规则拦** —— 那条规则已不存在。
+
+        改前本用例锁的是「缺 `amount` ⇒ 被字段校验拦」（理由在规则块的 `required` 上）；
+        规则块随本包删除后那个理由**没有对象**了 ⇒ 锁新真相：拒绝落在「未知的工具」分支，
+        且**报错里不出现字段名**（证明死配置已不再参与字段级校验）。
+        反例方向：若有人把规则块加回来（字段级校验复活）⇒ 报错里会出现 `amount` ⇒ 本条变红。
+        """
         result = await tool.execute(
             context=admin_tool_context, target_tool="finance_api",
             target_action="create_transaction", params={"type": "income"},
         )
-        assert result.success is False
+        assert result.success is False, result.message
+        assert result.error == "未知的工具", result.error
+        assert "amount" not in result.message, (
+            f"拒绝理由落到了字段级校验上（死规则块疑似复活）：{result.message!r}"
+        )
 
     async def test_notification_mark_read(self, tool, admin_tool_context):
         result = await tool.execute(
@@ -420,13 +446,23 @@ class TestValidateInputWriteToolAudit:
         )
         assert result.success is False
 
-    async def test_settings_change_password(self, tool, admin_tool_context):
+    async def test_settings_change_password_is_fail_closed(self, tool, admin_tool_context):
+        """改判（#4025 F8 销账）：`settings_manage.change_password` 规则块已随本包删除。
+
+        逐字读数：`settings_manage.py` 的
+        `VALID_ACTIONS = {get_settings, get_ai_config, login_logs}`
+        （该工具随 #5302 收窄为三个只读 action）⇒ `change_password` 是**死 action**。
+        与 `finance_api` 的**工具级**缺口不同：`settings_manage` 键**仍在**规则表里
+        （另有两个死键规则块在册），故走的是 **action 级**「该操作无校验规则」fail-closed 分支
+        —— 两个分支各由一条用例钉住，不重复。
+        """
         result = await tool.execute(
             context=admin_tool_context, target_tool="settings_manage",
             target_action="change_password",
             params={"old_password": "old", "new_password": "new123"},
         )
-        assert result.success is True
+        assert result.success is False, result.message
+        assert result.error == "该操作无校验规则", result.error
 
     async def test_product_update_has_id(self, tool, admin_tool_context):
         result = await tool.execute(
@@ -588,23 +624,25 @@ class TestValidateInputGateContractAudit:
         )
         assert ok.success is True, ok.message
 
-    async def test_finance_amount_below_api_min_blocked(self, tool, admin_tool_context):
-        """过松：契约下限 0.01（`FinanceTransactionCreateRequest.java:21-23` @DecimalMin(0.01)），
-        闸门旧规则 min=0 → amount=0 放行后必被 422。
+    async def test_finance_amount_min_rule_has_no_discriminating_power(self, tool, admin_tool_context):
+        """改判（#4025 F8 销账）：该规则块的 `amount.min = 0.01` **判别力已归零**。
 
-        位置：`backend/ai-agent-service/app/tools/validate_input.py`"""
+        改前本用例锁「过松」形态：`amount=0` 必被拦、`amount=0.01` 必放行（契约下限
+        `FinanceTransactionCreateRequest.java` 的 `@DecimalMin(0.01)`）。规则块随本包删除后
+        两侧落到**同一个** fail-closed 结论 ⇒ 锁新真相：**既不放行、也不设阈值**。
+        反例方向：规则块复活 ⇒ 0 被拦而 0.01 放行 ⇒ 本条立刻变红。
+        """
         blocked = await tool.execute(
             context=admin_tool_context, target_tool="finance_api",
             target_action="create_transaction", params={"type": "income", "amount": 0},
         )
-        assert blocked.success is False
-        assert "amount" in blocked.message
-
         ok = await tool.execute(
             context=admin_tool_context, target_tool="finance_api",
             target_action="create_transaction", params={"type": "income", "amount": 0.01},
         )
-        assert ok.success is True, ok.message
+        assert blocked.success is False, blocked.message
+        assert ok.success is False, ok.message
+        assert blocked.error == ok.error == "未知的工具", (blocked.error, ok.error)
 
     async def test_inventory_adjustment_zero_blocked(self, tool, admin_tool_context):
         """过松：adjustment=0 被 Service 拒（`ProductService.java:1716-1718`
@@ -663,7 +701,10 @@ def _dead_rule_keys(rules_by_tool):
 
 #: 🔴 **#5247 退役台账**：`_VALIDATION_RULES` 里 **action 已从工具删除**的规则键
 #: （B 端米宝只读化：#5247 的 8 把 + #5302 收口的 2 把（settings 域）工具的写 action 被删、
-#: 规则块留在 app 侧未同批清理，共 30 条）。
+#: 规则块留在 app 侧未同批清理；**条数现取、不写死** —— 判据是集合相等，不是计数）。
+#: ⚠️ **#4025 F8 销账包**：其中 2 条对应的规则块已从 app 侧删除
+#:   （`finance_api.create_transaction` / `settings_manage.change_password`）⇒ 这 2 条**必须**
+#:   从本台账删除，否则「陈旧条目」判红 —— 这正是本台账双向对账的应有之义，不是放宽。
 #:
 #: ⚠️ 常量名**不再带单个 issue 号**（原 `RETIRED_RULE_KEYS_5247`）：#5302 是同一轮
 #:   「B 端只读化」的收口（settings 域漏网补齐），两批条目记在**同一张台账**上 ——
@@ -695,7 +736,7 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     ("employee_manage", "toggle_status"),
     ("employee_manage", "update"),
     # [RETIRED #5247] finance_api：收窄为三个 get_*（写 action create_transaction 删除）
-    ("finance_api", "create_transaction"),
+    #   → [销账 #4025 F8] 该规则块已从 `_VALIDATION_RULES` 删除 ⇒ 不再计入本台账
     # [RETIRED #5247] inventory_manage：收窄为 query/low_stock_alert（写 action adjust 删除）
     ("inventory_manage", "adjust"),
     # [RETIRED #5247] role_manage：收窄为 list/all/detail/list_permissions（写 action 全删）
@@ -712,7 +753,8 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     ("notification_manage", "mark_read"),
     ("notification_manage", "read_all"),
     # [RETIRED #5302] settings_manage：收窄为 get_settings/get_ai_config/login_logs（写 action 全删）
-    ("settings_manage", "change_password"),
+    #   → [销账 #4025 F8] `change_password` 的规则块已从 `_VALIDATION_RULES` 删除 ⇒ 该条销账
+    #     （`update_ai_config` / `update_settings` 的规则块仍在 app 侧 ⇒ 仍记在此）
     ("settings_manage", "update_ai_config"),
     ("settings_manage", "update_settings"),
 })
@@ -736,8 +778,11 @@ class TestValidationRuleKeysAreLive:
          （陈旧台账 = 永久后门：`stale entries are red too`）；
       ③ 检测器自证（`test_detector_catches_dead_rule_key`）仍要求"注入即报"，
          且**注入不得掩盖台账**（除注入项外的输出必须与真值逐项一致）。
-    **去向**：app 侧删除这 23 个规则块（写 action 已不存在）后，本台账必须同批清空
+    **去向**：app 侧删除这些规则块（写 action 已不存在）后，本台账必须同批清空
     —— ②会把"清完了却没销账"也判红。
+    🔴 **#4025 F8 销账包（已销 2 条）**：`finance_api.create_transaction` /
+    `settings_manage.change_password` 的规则块已从 `_VALIDATION_RULES` 删除 ⇒ 这两条已从
+    本台账销账（余下条目仍待清理，本包不扩大射程）。
     """
 
     def test_no_dead_rule_keys(self):

@@ -96,24 +96,13 @@ RULE_LESS_WRITE_TOOLS: dict[str, str] = {
     ),
 }
 
-# F8：`required` 里在工具源码中找不到的字段。值 = 理由。当前 3 条**全部**是「规则块对应的
-# action 已被工具删除」的死键（单一台账 `RETIRED_RULE_KEYS_B_END_READONLY` 已逐条记着），
+# F8：`required` 里在工具源码中找不到的字段。值 = 理由。
+# **已清空（空 dict = 该白名单的合法终态，不是「判据关掉了」）**：曾经的 3 条**全部**是
+# 「规则块对应的 action 已被工具删除」的死键，其规则块已随 #4025 的 F8 销账包从 app 侧删除
+# （`finance_api.create_transaction` / `settings_manage.change_password`）⇒ 豁免项归零。
+# 本白名单**只许缩短**：再新增一条 = 给一个活规则开豁免，判据会红；
 # 由 `test_unknown_required_key_ledger_is_not_stale_and_within_the_single_ledger` 钉住。
-UNKNOWN_REQUIRED_KEYS: dict[str, str] = {
-    "finance_api.create_transaction.amount": (
-        "`finance_api` 已随 B 端只读化（#5247）收窄为三个 `get_*`，`create_transaction` 写 action "
-        "已删除（单一台账已记该 (tool, action)）⇒ 规则块里的 `amount` 是死键；"
-        "app 侧删掉该规则块后本条销账"
-    ),
-    "settings_manage.change_password.old_password": (
-        "`settings_manage` 已随 #5302 收窄为 `get_settings`/`get_ai_config`/`login_logs`，"
-        "`change_password` 写 action 已删除（单一台账已记该 (tool, action)）⇒ `old_password` 是死键"
-    ),
-    "settings_manage.change_password.new_password": (
-        "同上（`change_password` 已从工具删除）⇒ `new_password` 是死键；"
-        "app 侧删掉该规则块后本条销账"
-    ),
-}
+UNKNOWN_REQUIRED_KEYS: dict[str, str] = {}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
