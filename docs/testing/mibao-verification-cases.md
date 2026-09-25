@@ -38,9 +38,10 @@
 数据: 工单号匹配 ^AS-\d{8}-\d{4}$
 前置: order_count_for_phone(source=13800138000)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
+必须成功: aftersale_create
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 查看售后工单（只读；原「更新工单状态-关闭」随 #5247 写能力下线改判） 🔵
 ```
@@ -68,9 +69,10 @@
 数据: 售后工单包含正确的退款原因
 前置: order_count_for_phone(source=13800138000)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
+必须成功: aftersale_create
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
-溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。 ｜ tags: multi_turn, cross_skill, real_scenario
+溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。 ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`**（效果层；同族形状 = CH-012，条件档理由同 AS-003）—— 原用例只有「调用了」级证据。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: multi_turn, cross_skill, real_scenario
 
 ### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
 ```
@@ -824,9 +826,12 @@
 数据: 表单字段注入本轮 LLM 上下文（不改写会话历史）
 数据: 日志中手机号脱敏（138****8000）
 数据: payload 超限/非法 JSON 回退为普通文本处理
+前置: order_count_for_phone(source=13800138000、max_growth=1)
+命名空间(同键互斥·自动串行): customer_phone:13800138000
+必须成功: order_create
 ```
 真值: ai-chat.context-memory
-溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ tags: form, interactive, multi_turn
+溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: form, interactive, multi_turn
 
 ### CH-010. 选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单） 🔵
 ```

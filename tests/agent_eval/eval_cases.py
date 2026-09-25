@@ -114,6 +114,7 @@ _CASE_AS_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'aftersale_create', 'only_if_called': True}],
     namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
@@ -154,6 +155,7 @@ _CASE_AS_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'aftersale_create', 'only_if_called': True}],
     namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
@@ -1242,6 +1244,9 @@ _CASE_CH_009 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_create', 'only_if_called': True}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000', 'max_growth': 1}],
 )
 
 # ── CH-010 [NORMAL] 选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单）（源: cases/chat.yml）──

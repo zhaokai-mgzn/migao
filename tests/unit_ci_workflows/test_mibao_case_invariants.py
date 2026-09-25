@@ -87,6 +87,23 @@ def _bend_runnable_cases():
         yield c
 
 
+def _must_succeed_specs(case) -> list:
+    """`must_succeed` 声明 → `[(工具名, 是否条件档)]`（本文件里**唯一**一份取值口径）。
+
+    条件档 = `only_if_called: true`（issue #3778 第一批落地的档位）：
+    「从未调用」不算失败，只有「调用过但无一成功」才判红 —— 它的存在意义正是
+    **双端用例里那一支只在单腿可用的写工具**（B 端腿没这个工具 ⇒ 不该判红）。
+    两条 persona 边界判据据此分流，见 `TestBendWriteToolSuccessAssertions`。
+    """
+    out = []
+    for m in case.get("must_succeed") or []:
+        if isinstance(m, str):
+            out.append((m, False))
+        elif isinstance(m, dict):
+            out.append((str(m.get("tool") or ""), bool(m.get("only_if_called"))))
+    return out
+
+
 class TestMibaoToolsetTruth:
     """B 端工具集真值：与 skill 源码一致，且不含 C 端专属工具（镜像 C 端真值测试）"""
 
@@ -254,8 +271,12 @@ class TestBendWriteToolSuccessAssertions:
         bend = _mibao_real_toolset()
         bad = []
         for c in _bend_runnable_cases():
-            for m in c.get("must_succeed") or []:
-                tool = m if isinstance(m, str) else (m or {}).get("tool")
+            for tool, conditional in _must_succeed_specs(c):
+                # 条件档（`only_if_called`）在 B 端腿**从不调用**该工具 ⇒ 不可能产生 B 端噪音，
+                # 前提不成立故不适用本判据；它仍受下方
+                # `test_conditional_specs_must_name_a_tool_known_on_some_leg` 约束（拼写/越界照旧可红）。
+                if conditional:
+                    continue
                 if tool and tool not in bend:
                     bad.append(f"{c['id']}: {tool}")
         assert not bad, (
@@ -266,17 +287,55 @@ class TestBendWriteToolSuccessAssertions:
 
         （`human_handoff` 已于 2026-09-19 退场、两端都不可达 ⇒ 从本 C 端专属清单移除，
         与 `test_mibao_toolset_excludes_customer_only_tools` 同口径。）
+
+        ⚠️ 2026-09-25（issue #3778 第一批）：判据按**条件档**分流 —— 本条的**目的**是
+        「不要造 B 端固定噪音」（原话：B 端跑必挂），而 `only_if_called: true` 的声明在 B 端腿
+        **从不调用**该工具 ⇒ 结构化地不可能挂 ⇒ 目的不适用。放过的这一档**没有失去判别力**：
+        它转由 `test_conditional_specs_must_name_a_tool_known_on_some_leg` 判（工具名必须
+        在**两端并集**内，拼错/臆造照旧红）；且**无条件**声明仍照本条原样判红。
         """
         c_only = {"aftersale_create", "curtain_calc", "customer_order_query",
                   "customer_address_query", "customer_logistics_track"}
         bad = []
         for c in _bend_runnable_cases():
-            for m in c.get("must_succeed") or []:
-                tool = m if isinstance(m, str) else (m or {}).get("tool")
+            for tool, conditional in _must_succeed_specs(c):
+                if conditional:
+                    continue
                 if tool in c_only:
                     bad.append(f"{c['id']}: {tool}")
         assert not bad, (
             f"B 端可跑用例 must_succeed 了 C 端专属工具（B 端跑必挂 = 固定噪音）: {bad}")
+
+    def test_conditional_specs_must_name_a_tool_known_on_some_leg(self):
+        """条件档的**新出口判据**（上面两条放过它之后必须接住的一格）。
+
+        条件档只回答「B 端腿会不会挂」，**不回答**「这个工具名是不是真的存在」——
+        拼错/臆造的条件声明会让断言**永远空转**（永不调用 ⇒ 永不判红），
+        那正是「不会红的断言 = 空断言」。故条件档的工具名必须落在
+        **两端工具集并集 ∪ 伪工具**内（`B ∪ C ⊆ 注册表` 由 `TestNoUnknownToolNames` 保证）。
+        红证：把任一条件声明的工具名改成 `aftersale_creat`（少一个 e）⇒ 本条红。
+        """
+        known = _mibao_real_toolset() | set(XIAOBU_TOOLS) | PSEUDO_TOOL_NAMES
+        bad = []
+        for c in _bend_runnable_cases():
+            for tool, conditional in _must_succeed_specs(c):
+                if conditional and tool not in known:
+                    bad.append(f"{c['id']}: {tool}")
+        assert not bad, (
+            f"条件档 must_succeed 声明了**两端都不存在**的工具名"
+            f"（断言永远空转 = 空断言）: {bad}")
+
+        # 非空转：条件档在库里确实存在（否则本条恒绿），且判别力对注入敏感
+        live_conditional = [(c["id"], tool) for c in _bend_runnable_cases()
+                            for tool, cond in _must_succeed_specs(c) if cond]
+        assert live_conditional, (
+            "库里一条条件档都没有 ⇒ 本条失去判别力（口径变化时请同步本判据）"
+        )
+        probe = {"id": "ZZ-PROBE", "must_succeed": [{"tool": "aftersale_creat",
+                                                    "only_if_called": True}]}
+        assert [t for t, cond in _must_succeed_specs(probe) if cond and t not in known], (
+            "注入的拼写错误条件声明未被判红 ⇒ 本判据是空断言"
+        )
 
 
 class TestNoUnknownToolNames:

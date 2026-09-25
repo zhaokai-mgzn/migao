@@ -2995,11 +2995,31 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
     声明 `action` 时（issue #3681，同 #3667 的同族修法）：取的是**那次调用**自己的成败
     （同轮同名调用按出现顺序对齐，见 `_round_action_result`）——同一轮里**别的 action
     成功不能顶替**（那是假绿）；对不齐的合成轨迹回退**工具级**旧语义（不猜，向后兼容）。
+
+    声明 `only_if_called: true` 时（**条件效果层**，#3778 的 CH-009 格）：
+    **「从未调用」不再算违规**，只有「调用过但没有一次成功」才算 —— 给「写分支是**可选**的
+    OR 期望」用（如 `direct_reply or order_create or interact`：顾客只发文本也算合格，
+    但**一旦真的去下单，就必须成了**）。没有这一档时，可选写分支只有两条路，都是本仓
+    最忌讳的形态：**不写**（则该分支无论怎么失败都判绿 —— #3778 的原病）或**无条件写**
+    （`direct_reply` 那一支的合格行为被误判成失败 = 假红）。
+    未声明该键 ⇒ 语义一字不变（缺省 `False` = 无条件「必须至少成功一次」）。
     """
     issues = []
     for spec in must_succeed or []:
         if isinstance(spec, str):
             spec = {"tool": spec}
+        if not isinstance(spec, dict):
+            issues.append(f"must_succeed: 配置非字符串/字典: {spec!r}")
+            continue
+        unknown = sorted(set(spec) - {"tool", "action", "only_if_called"})
+        if unknown:
+            # 与 `check_must_fail` 的同一处硬化对称（那边早有白名单）：未支持的键**过去被静默
+            # 忽略** ⇒ 断言降级/空转而用例照旧判绿（同 `must_fail` 的 `条目含未支持的键` 码）。
+            issues.append(
+                f"must_succeed: 条目含未支持的键 {unknown}（会被静默忽略 → 断言降级/空转）: {spec!r}"
+                f"—— 支持 tool/action/only_if_called；值级作用域见 issue #3689")
+            continue
+        only_if_called = bool(spec.get("only_if_called"))
         tool = str(spec.get("tool", ""))
         action = spec.get("action")
         if not tool:
@@ -3052,6 +3072,10 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
         if any(ok for _, ok, _ in attempts):
             continue
         if not attempts:
+            if only_if_called:
+                # 条件效果层（#3778 / CH-009）：可选写分支「没被选中」不是失败 ——
+                # 但**一旦选中就受下面那条约束**。
+                continue
             issues.append(
                 f"must_succeed: {tool} 从未被调用 → 没有发生任何写操作"
                 "（期望里的工具名出现≠工具真的跑了）")
