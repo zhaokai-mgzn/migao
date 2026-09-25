@@ -184,7 +184,22 @@ def collect_roots() -> tuple[Path, ...]:
                     roots.add(cand.resolve())
                 elif cand.is_file():
                     roots.add(cand.parent.resolve())
-    return tuple(sorted(roots))
+    return _bounded_roots(roots)
+
+
+def _bounded_roots(roots) -> tuple[Path, ...]:
+    """**收口到仓库内**（2026-09-25 生产实证，纯函数便于单测/红证）。
+
+    `testpaths` / 命令行 token 里若出现绝对路径或 `..`，解析出的根可能落在**仓库外**
+    （实证：CI 上 `resolve_mention` 的 `rglob` 扫进了 `/proc/<pid>/task` ⇒
+    ① 把主机文件系统当仓库遍历（慢且越界），② 与进程退出**竞态** ⇒ `FileNotFoundError`
+    让整条 main 侧守护腿判红）。判据只该在**它自己的仓库**里找文件。
+    """
+    bounded = tuple(r for r in sorted(roots) if r == REPO_ROOT or REPO_ROOT in r.parents)
+    dropped = [str(r) for r in sorted(roots) if r not in bounded]
+    if dropped:                                  # 出声，不静默（否则"少扫"会变成看不见的假设）
+        print(f"⚠️ collect_roots 丢掉仓库外的收集根（{len(dropped)} 个）：{dropped}")
+    return bounded
 
 
 @lru_cache(maxsize=1)
@@ -260,10 +275,25 @@ def resolve_mention(mention: str) -> list[Path]:
     name = Path(mention).name
     hits = set()
     for root in collect_roots():
-        for p in root.rglob(name):
+        for p in _rglob_tolerant(root, name):
             if p.is_file() and not (PRUNED_DIRS & set(p.parts)):
                 hits.add(p)
     return sorted(hits)
+
+
+def _rglob_tolerant(root: Path, name: str):
+    """按 basename 查文件，**容错遍历**：目录在遍历中消失/无权限 ⇒ 跳过，不抛。
+
+    为什么不用 `Path.rglob`（2026-09-25 生产实证）：`rglob` 在**目录消失**时会抛
+    `FileNotFoundError`（实测 `/proc/<pid>/task/<tid>` 随进程退出消失）⇒ 一条"找不到就跳过"
+    的查找，把整条 main 侧守护腿判红。查找类判据不该因**竞态**而红。
+    """
+    import os
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+        dirnames[:] = [d for d in dirnames if d not in PRUNED_DIRS]
+        if name in filenames:
+            yield Path(dirpath) / name
 
 
 def skip_claims(cases) -> list[dict]:
@@ -465,3 +495,45 @@ class TestNegativeCases:
         ghosts = trace_ghosts([{"id": "ZZ-008", "traces": {"ci": ["pr-check.yml"]}}])
         assert not ghosts, ghosts
         assert (WORKFLOWS_DIR / "pr-check.yml").is_file()
+
+# ── 类级固化（2026-09-25 生产实证：main 侧守护腿被判红）────────────────────────
+
+def test_collect_roots_is_bounded_to_the_repo():
+    """`collect_roots()` **只许**返回仓库内的目录（判据不得遍历主机文件系统）。
+
+    现场：`resolve_mention` 的 `rglob` 曾扫进 `/proc/<pid>/task` ⇒ 既越界又因进程退出竞态抛
+    `FileNotFoundError` ⇒ main 侧守护腿（真跑 3781 条判据）判红。本条把"根在仓库内"钉成不变量。
+    """
+    roots = collect_roots()
+    assert roots, "收集根为空 ⇒ 判据在空转（应至少有一个 ini/testpaths 或命令行路径）"
+    outside = [str(r) for r in roots if not (r == REPO_ROOT or REPO_ROOT in r.parents)]
+    assert outside == [], f"收集根跑到仓库外（会遍历主机文件系统）：{outside}"
+
+
+def test_rglob_tolerant_survives_a_vanishing_directory(tmp_path):
+    """**容错遍历**：目录在遍历中消失 ⇒ 跳过而不是抛（这就是当天那条红的形态）。"""
+    import os
+
+    root = tmp_path / "r"
+    (root / "keep").mkdir(parents=True)
+    (root / "keep" / "target.py").write_text("x", encoding="utf-8")
+    (root / "vanish").mkdir()
+    (root / "vanish" / "gone.py").write_text("x", encoding="utf-8")
+    # 造"竞态"：让 vanish 目录在遍历时已不存在（模拟 /proc/<pid> 消失）
+    (root / "vanish" / "gone.py").unlink()
+    (root / "vanish").rmdir()
+    hits = list(_rglob_tolerant(root, "target.py"))
+    assert [p.name for p in hits] == ["target.py"], hits
+    assert list(_rglob_tolerant(root, "gone.py")) == []
+
+
+def test_bounded_roots_drops_paths_outside_the_repo():
+    """`_bounded_roots` 必须**丢掉仓库外的根**（当天那条红的直接判据）。
+
+    红证形态：把实现改成 `return tuple(sorted(roots))`（不设界）⇒ 本用例立刻红。
+    """
+    inside = REPO_ROOT / "tests"
+    outside = Path("/proc")
+    assert _bounded_roots({inside}) == (inside,)
+    assert _bounded_roots({inside, outside}) == (inside,), "仓库外的根没有被丢掉（会遍历主机文件系统）"
+    assert _bounded_roots({outside, Path("/")}) == (), "全是仓库外的根时应当返回空"
