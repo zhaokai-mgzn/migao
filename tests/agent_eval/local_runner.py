@@ -2529,6 +2529,20 @@ _WRITE_TOOL_NAMES = frozenset({
     "customer_manage", "settings_manage", "staff_manage",
 })
 
+
+def _is_write_args_tool(name) -> bool:
+    """该调用是否走 `write_args` 的**专属**入参压缩（写工具 + `curtain_calc` =「钱的输入」）。
+
+    单一事实源（#3681 的取值对齐纪律）：`build_round_trace` 的 `write_args` 与
+    `format_round_trace` 的 `args=` 段必须用**同一个**判定 —— 各写一遍必然漂移成
+    「轨迹里有、日志里没有」。
+    注意：本判定**只**决定"进不进专属通道"；入参的**通用**通道 `call_args` 覆盖全部工具
+    （issue #3823），两者并存、**互不吞**。
+    """
+    n = str(name or "").lower()
+    return n in _WRITE_TOOL_NAMES or n == "curtain_calc"
+
+
 # 「完成态」写宣告措辞（**刻意保守**）：只收**明确表示写操作已发生**的说法。
 # 为什么不收"已加上/已添加"：加工项/颜色这类**草稿选择**在对话里本来就用这个措辞
 # （订单要等 confirm 才写），收进来会把正常话术判红 —— 与"宁可漏报不可误报"一致；
@@ -2699,6 +2713,9 @@ def check_required_args(results: list, required_args: list) -> list:
 
     背景（2026-09-08 Round2 实拍）：S3 建品 create 只传加工项名称不带价格、缺 specifications
     → DB specs={}、加工项 ¥0.00——工具调用存在但数据正确性不达标，旧评测按工具名判过。
+
+    ⚠️ **只判存在性**（字段非空），**不比较值** —— 需要「参数值相等」级结论请用
+    `check_arg_values`（issue #3823 的证据分级：存在性 / 值级 / 结果级不得互相顶替）。
     """
     issues = []
     for req in required_args or []:
@@ -2801,6 +2818,142 @@ def check_forbidden_args(results: list, forbidden_args: list) -> list:
                         issues.append(
                             f"forbidden_args[{tool}.{f}](R{r.get('__round')}): "
                             f"该参数禁止出现（越权/数据隔离风险）")
+    return issues
+
+
+# ── **参数值级**断言（issue #3823 的第 3 条：证据等级不得越级）─────────────────
+
+def _arg_path_values(args: dict, path: str) -> list:
+    """按 `required_args` 的路径口径取**值**（`key` / `key.sub` / `list[].key`）。
+
+    与 `_check_required_field`（存在性判定）**同口径**：`items[].qty` 与 `items.qty` 同义，
+    列表自动逐元素下钻 ⇒ 返回**候选值列表**（"某次调用的某个值命中"由调用方判定）。
+    边界（如实登记，防被读成"两者等价"）：`_check_required_field` 对 `list[].x` 要求
+    **每一项**都有该字段，本函数只回答"取到了哪些值" ⇒ 部分元素缺字段时两者会在
+    「全部 vs 任一」上分叉（这正是"存在性"与"值级"两种断言的差别，不在这里抹平）。
+    """
+    cur: list = [args]
+    for seg in str(path or "").split("."):
+        seg = seg[:-2] if seg.endswith("[]") else seg
+        if not seg:
+            return []
+        nxt: list = []
+        for v in cur:
+            if isinstance(v, dict):
+                if seg in v:
+                    nxt.append(v[seg])
+            elif isinstance(v, list):
+                nxt.extend(x[seg] for x in v if isinstance(x, dict) and seg in x)
+        cur = nxt
+        if not cur:
+            return []
+    return cur
+
+
+def _arg_value_equal(got, want) -> bool:
+    """值比较：标量走**既有** `_args_value_matches`（数字 str/int 混比等容错口径 ——
+    **不另立第二套**）；列表要求**等长且逐元素**同口径相等（长短不一都不算相等，不放宽）。"""
+    if isinstance(want, list) or isinstance(got, list):
+        if not isinstance(want, list) or not isinstance(got, list) or len(got) != len(want):
+            return False
+        return all(_args_value_matches(g, w) for g, w in zip(got, want))
+    return _args_value_matches(got, want)
+
+
+def check_arg_values(round_trace: list, arg_values: list) -> list:
+    """**参数值级**断言：声明的工具（可限定 `action`）必须**至少有一次调用**的参数与期望**逐值相等**。
+
+    为什么单独立一族（issue #3823 的第 3 条：分工必须写死，否则会被越级使用）：
+      · `required_args` = **存在性**（字段非空 —— `applicable_category_id` 非空**不等于**
+        它 == 前一步分类确认得到的真实分类 ID）；
+      · `must_succeed`  = **结果级**（写操作真的成功/落库）；
+      · 本断言        = **值级**（`applicable_category_id == 7`）。
+    ⇒ 需要「值相等」的验收判据**只许**用本断言；拿 `required_args` 顶替 = 把存在性读成值相等
+    （#3823 的病灶：判据 2 只闭合了一半，报告里却像"全绿"）。
+
+    证据来源 = **落盘的轨迹** `round_trace[*].call_args`（`build_round_trace` 产出），
+    刻意**不**读 `run_case` 内存里的 `results[*].tool_calls[*].args`：后者本来就在内存里，
+    "离线/复核侧读不到"才是 #3823 的缺口 —— 读内存 = 判据覆盖不到真正的取证面。
+
+    **失败关闭**（三条都是"没有证据就不给结论"，与 #3367 同纪律）：
+      · 轨迹里**没有** `call_args` 通道（改前形态 / 未接线 / 空轨迹）⇒ 报「取不到参数值」，
+        **不得**按相等放行 —— 否则判据会退化成"总有值"；
+      · 该工具**从未被调用**（通道在、调用缺失）⇒ 报「未调用」；
+      · 配置写错（缺 `tool` / 空 `values` / 期望值是 None 或 dict）⇒ 报违规，不静默跳过。
+
+    条目形态（与 `required_args` 同形，便于用例作者迁移；路径口径也同它）：
+        - {tool: processing_item_query, values: {applicable_category_id: 7}}
+        - {tool: interact, action: create, values: {multiSelect: true}}
+    命中语义 = 「**存在一次**调用，其**全部**声明值都相等」（与 `check_required_args` 的
+    调用选择器**同源**，避免同一个 runner 里两套"算不算命中"的口径）。
+    """
+    issues: list = []
+    for spec in arg_values or []:
+        if not isinstance(spec, dict):
+            issues.append(f"arg_values: 配置非字典: {spec!r}")
+            continue
+        tool = str(spec.get("tool", ""))
+        if not tool:
+            issues.append(f"arg_values: 配置缺 tool（该断言会被静默跳过）: {spec!r}")
+            continue
+        values = spec.get("values")
+        if not isinstance(values, dict) or not values:
+            # 只有 tool 没有 values = 退化成"调用过就算过"，比作者本意弱得多（同 #3367）
+            issues.append(
+                f"arg_values[{tool}]: 缺/空 values —— 该断言会退化为「调用过即通过」，"
+                f"请写明要比对的字段与期望值: {spec!r}")
+            continue
+        _bad = [str(f) for f, w in values.items() if w is None or isinstance(w, dict)]
+        if _bad:
+            issues.append(
+                f"arg_values[{tool}]: 期望值不得是 None/dict（{_bad}）—— 值级断言只比对标量/列表，"
+                f"嵌套值请写成点分路径（如 pageMeta.params.page）: {spec!r}")
+            continue
+        action = str(spec.get("action") or "")
+        # 逐调用收集**入参证据**：只认落盘的通道（内存里的 `results` 不是本断言的证据面）
+        calls: list = []
+        channel_rounds = 0
+        for rnd in round_trace or []:
+            if not isinstance(rnd, dict):
+                continue
+            recorded = rnd.get("call_args")
+            if recorded is None:
+                continue
+            channel_rounds += 1
+            for c in recorded or []:
+                if not isinstance(c, dict) or not _tool_name_matches(c.get("tool"), tool):
+                    continue
+                a = c.get("args") if isinstance(c.get("args"), dict) else {}
+                if action and str(a.get("action") or "") != action:
+                    continue
+                calls.append((rnd.get("round"), a))
+        if not channel_rounds:
+            issues.append(
+                f"arg_values[{tool}]: 轨迹里**没有**逐调用入参通道（`call_args` 全缺）⇒ "
+                f"取不到参数值，**不得**按「相等」放行（issue #3823 的取证盲区：先确认 runner "
+                f"版本/轨迹通道，再谈 agent 行为）")
+            continue
+        if not calls:
+            issues.append(f"arg_values: 未调用 {tool}(action={action or None})")
+            continue
+        # 调用选择器 = **"存在一次满足全部声明值"**（与 `check_required_args` 同口径）；
+        # 报最可诊断的那次（真值不符 > 该参数未传）。
+        reasons = []
+        for rnd, args in calls:
+            miss = []
+            for f, want in values.items():
+                got = _arg_path_values(args, str(f))
+                if any(_arg_value_equal(g, want) for g in got):
+                    continue
+                seen = "实际**未传该参数**" if not got else f"实际 {got!r}"
+                miss.append(f"arg_values[{tool}.{f}](R{rnd}): 期望 {want!r}，{seen}")
+            if not miss:
+                reasons = []
+                break
+            reasons.append(miss)
+        if reasons:
+            issues.extend(next(
+                (m for m in reasons if not any("未传该参数" in x for x in m)), reasons[0]))
     return issues
 
 
@@ -6149,6 +6302,8 @@ def check_output_verify(results: list, output_verify: list) -> list:
 
     与既有断言的分工：
       · `expectations: tool(args=…)` → 输入侧（用哪些参数调的）
+      · `check_arg_values`          → 输入侧的**值级**（该参数的值 == 期望事实；#3823 新增，
+        证据取自**落盘**的 `round_trace[*].call_args`；存在性断言 `required_args` 不比较值）
       · `must_succeed`              → 有没有真的做成功
       · `output_verify`             → **产出侧**（算出来的数对不对）
     为什么必须补：算料报价（curtain_calc）的价值全在算出来的数上，而此前
@@ -7140,6 +7295,97 @@ def _compact_write_args(args: dict) -> dict:
     return out
 
 
+# ── **全工具**入参的值级证据（issue #3823）────────────────────────────────────
+#: 通用入参压缩的边界（轨迹是日志与产物，不是全量存档）
+_ARG_MAX_VALUE = 40      # 单个标量（自由文本）最长字符数
+_ARG_MAX_ITEMS = 6       # 单个容器（dict/list）最多保留的条目数
+_ARG_MAX_DEPTH = 3       # 容器嵌套深度上限（够到 `pageMeta.params.<k>`）
+_ARG_LOG_MAX_CALLS = 6   # 轨迹行 `callargs=` 段每次最多渲染几条调用（超出只报数，不静默丢）
+_ARG_TRUNCATED = "…"     # 截断标记（「到此为止」与「本来就这么长」必须可分）
+
+#: 邮箱（与产品侧 `backend/ai-agent-service/app/utils/pii_mask.py` 的 `_EMAIL` **同 pattern**；
+#: 该模块的手机号 `_PHONE` 与本文件 `_FULL_PHONE_RE` 逐字相同）。机器判据见
+#: `tests/unit_ci_workflows/test_eval_tool_args_evidence.py`：**现取**产品源码里的两条 pattern
+#: 与本文件逐例同判，任一侧漂移即红（runner 零依赖、不能 import `app.*`，口径只能抄 ⇒ 必须钉）。
+_ARG_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+def _mask_pii_in_arg_text(text: str) -> str:
+    """入参自由文本的脱敏：手机号 + 邮箱（**与产品侧 `pii_mask.py` 同口径**）。
+
+    为什么邮箱也要脱（issue #3823 第 2 条的显式要求）：`_mask_phones_in_text` 只啃手机号 ——
+    入参里的邮箱此前会**原样**进 CI 日志与 artifact。
+    口径来源 = `backend/ai-agent-service/app/utils/pii_mask.py`：手机号带**数字边界**
+    （`(?<!\\d)1[3-9]\\d{9}(?!\\d)`，不啃订单号里的数字片段）、邮箱保留本地部分前 2；
+    **验证码/订单号等数字串保持原样**（该口径刻意不啃数字串，否则会把订单号毁掉）。
+    """
+    out = _mask_phones_in_text(text)
+    return _ARG_EMAIL_RE.sub(
+        lambda m: m.group().partition("@")[0][:2] + "***@" + m.group().partition("@")[2], out)
+
+
+def _arg_scalar(v):
+    """标量入参的**值级**记录：数字/布尔/None 原样保留；字符串压单行 + 掩码 PII + 截断。
+
+    "原样保留"是硬要求：值级断言的语义就是**值相等**，把 `7` 记成 `"7"`、把 `True` 记成
+    `"true"` 都会让证据与真值漂移（比较侧 `_args_value_matches` 容错数字 str/int 混比，
+    但**证据侧**仍照原类型记 —— 不制造第二种形态）。
+    """
+    if v is None or isinstance(v, bool) or isinstance(v, (int, float)):
+        return v
+    s = _mask_pii_in_arg_text(v)         # 手机号 + 邮箱（入参会进 CI 日志与 artifact）
+    return s if len(s) <= _ARG_MAX_VALUE else s[: _ARG_MAX_VALUE - 1] + _ARG_TRUNCATED
+
+
+def _arg_value(v, depth: int):
+    """递归压缩一个入参值（保持值可比 + 有界）。"""
+    if isinstance(v, dict):
+        if depth <= 0:
+            return f"<dict {len(v)}>"
+        return {str(k): _arg_value(x, depth - 1) for k, x in list(v.items())[:_ARG_MAX_ITEMS]}
+    if isinstance(v, (list, tuple)):
+        if depth <= 0:
+            return f"<list {len(v)}>"
+        out = [_arg_value(x, depth - 1) for x in list(v)[:_ARG_MAX_ITEMS]]
+        if len(v) > _ARG_MAX_ITEMS:
+            # 有界 ≠ 静默少报：截断了就**标出来**（同 `_result_digest` 的 `(+N more)` 纪律）
+            out.append(f"{_ARG_TRUNCATED}+{len(v) - _ARG_MAX_ITEMS}")
+        return out
+    return _arg_scalar(v)
+
+
+def _compact_call_args(args) -> dict:
+    """**全工具**入参的值级证据摘要（issue #3823）。
+
+    为什么必须补（#3823 的病灶）：`write_args` 只收写工具 ⇒ 读/查类工具的入参在轨迹里
+    **根本不存在** —— `processing_item_query` 的 `applicable_category_id`、`interact` 的
+    `multiSelect`、`pageMeta.params` 这类**判别性字段**读不到，于是「该值 == 前一步分类确认
+    得到的真实分类 ID」这种**值相等**级验收只能退到自然语言 `data_checks`
+    （按 `docs/testing/acceptance-protocol.md` 不作机器证据）。
+
+    与 `write_args` 的关系：**同键名同形状**（`{tool, args}`）、**互不吞** —— 写工具仍走
+    `write_args` 的专属压缩（数量/金额/算料口径），本函数给出**统一**的通用通道，
+    值级断言不必按写/读分两处查。
+    压缩取向与 `_compact_write_args` 一致：判别性字段原样保留、手机号掩码、自由文本截断、
+    容器条目有界（见 `_ARG_MAX_*`）。
+    """
+    if not isinstance(args, dict):
+        return {}
+    return {str(k): _arg_value(v, _ARG_MAX_DEPTH) for k, v in args.items()}
+
+
+def _render_call_args(call: dict) -> str:
+    """把一条调用渲染成一行：`tool{<与轨迹同源的 JSON>}`（issue #3823 的日志通道）。
+
+    与轨迹用**同一份**压缩 dict（`json.dumps` 同一份值）—— 日志只是它的可检索视图；
+    另写一套格式化必然与轨迹漂移。`sort_keys` 固定键序 ⇒ 同一形态的日志可直接 diff。
+    """
+    body = json.dumps(call.get("args") or {}, ensure_ascii=False, sort_keys=True)
+    if len(body) > 160:
+        body = body[:160] + _ARG_TRUNCATED
+    return f"{call.get('tool')}{body}"
+
+
 def build_round_trace(results: list) -> list:
     """构造逐轮轨迹：每轮的用户输入形态 / 工具 / 卡 / 回复摘要 / **工具成败**。
 
@@ -7163,7 +7409,10 @@ def build_round_trace(results: list) -> list:
     不能 import app.*，硬编码副本必然与 skill 定义漂移。
 
     Returns:
-        list[dict]: 每轮 {round, tools, results, cards, interactive, text, error}
+        list[dict]: 每轮 {round, tools, results, cards, interactive, text, error,
+                    card_calls, write_args, call_args}
+                    （`call_args` = **全工具**入参的值级证据，issue #3823；
+                     `write_args` 仍是**写工具专属**的旧通道，两条互不吞）
     """
     trace: list[dict] = []
     for r in results or []:
@@ -7214,8 +7463,21 @@ def build_round_trace(results: list) -> list:
                     "args": _compact_write_args(tc.get("args") or {}),
                 }
                 for tc in (r.get("tool_calls") or [])
-                if str(tc.get("name", "")).lower() in _WRITE_TOOL_NAMES
-                or str(tc.get("name", "")).lower() == "curtain_calc"
+                if _is_write_args_tool(tc.get("name"))
+            ],
+            # **全工具**入参（issue #3823 的值级证据通道）：与 `write_args` **同键名同形状**
+            # （`[{tool, args}]`），但覆盖**每一个**调用 —— 读/查类工具的入参此前在轨迹里
+            # 完全不存在（`write_args` 只收写工具）⇒「参数值相等」级断言无从取证，
+            # 于是只能退到"字段非空"（存在性）级结论，而报告里两者长得一样
+            # （实测 run 34907835734：`PR-016` 判据 2 只闭合了一半）。
+            # 两条**互不吞**：写工具仍走 `write_args` 的专属压缩（数量/金额/算料），
+            # 这里给统一口径 —— 值级断言不必按写/读分两处查。
+            "call_args": [
+                {
+                    "tool": str(tc.get("name", "")),
+                    "args": _compact_call_args(tc.get("args") or {}),
+                }
+                for tc in (r.get("tool_calls") or [])
             ],
             # 截断：轨迹用于归因，不是全文存档（全文另见 final_text / 产物）
             "text": text[:60],
@@ -7406,6 +7668,17 @@ def format_round_trace(trace: list) -> str:
                 extra = ",".join(f"{k}={a[k]}" for k in ("customer_phone", "sms_code") if a.get(k))
                 return f"{w.get('tool')}{{{body}{(';' + extra) if extra else ''}}}"
             bits.append("args=" + ",".join(_one(w) for w in wa[:3]))
+        # **其余工具**的入参（issue #3823 的值级通道）：写工具已在上面 `args=` 段
+        # （专属压缩、更细），此处只补**未被覆盖**的调用 ⇒ 两段并集 = 轨迹 `call_args` 全集：
+        # 既不重复打印（日志不翻倍）也不漏 —— 实测 run 34907835734 的 log 里 `applicable`
+        # `grep -c` **零命中**，正是"读/查类工具的入参从来没进过日志"。
+        _other = [c for c in (t.get("call_args") or [])
+                  if not _is_write_args_tool(c.get("tool"))]
+        if _other:
+            _shown = [_render_call_args(c) for c in _other[:_ARG_LOG_MAX_CALLS]]
+            if len(_other) > _ARG_LOG_MAX_CALLS:
+                _shown.append(f"({_ARG_TRUNCATED}+{len(_other) - _ARG_LOG_MAX_CALLS} more)")
+            bits.append("callargs=" + ";".join(_shown))
         # 助手**回复片段**（issue #3445 复盘）：轨迹此前只说模型"调了什么"，不说它"说了什么"——
         # 于是"顾客答完卡、模型空转"（`tools=-`）与"模型在问别的/脚本没答它"在日志里同形，
         # 归因只能靠猜（CH-010 首跑失败即此形，最后只能记 llm-noise 重试放行）。
@@ -9039,6 +9312,16 @@ def _summary_case(result: dict, failures: list) -> dict:
         entry["first_attempt_signature"] = result["first_attempt_signature"]
     if result.get("first_attempt_evidence"):
         entry["first_attempt_evidence"] = result["first_attempt_evidence"]
+    # 逐调用入参（issue #3823）：**值级**证据随 artifact 落盘 —— **通过用例也带**
+    # （#3823 的苦主正是一条 `score=100%` 的用例：失败用例的轨迹会打印，绿用例的值级证据
+    # 此前在产物与日志里都没有 ⇒ 判据只能闭合成"存在性"级）。
+    # 与 `round_trace[*].call_args` **同键名同形状**（扁平化，便于离线按工具检索；
+    # 要看轮次用日志的 `callargs=` 段 —— 那里带 `Rn`）。不带轨迹的旧形态/合成夹具 ⇒
+    # 不带该键（逐字节不变，同 `assertions_fired` 的纪律）。
+    _call_args = [c for t in (result.get("round_trace") or [])
+                  if isinstance(t, dict) for c in (t.get("call_args") or [])]
+    if _call_args:
+        entry["call_args"] = _call_args
     # 商品价格复位结果（issue #3807）：复位是否真的生效必须可逐条核对，
     # 而不是"日志里静悄悄 = 复位成功"。
     if result.get("restore"):
@@ -9219,6 +9502,7 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
       write_cases_ok：其中通过的条数（通过却没落库 = 真假绿）
       cases：[{id, score, classification, pre_clean}]（+ 失败用例的 `failures`：断言级原因数组）
               （+ 重试前置未复位时的 `precondition`：#3751）
+              （+ 逐调用入参 `call_args`：**值级**证据，仅在该用例的轨迹带通道时出现；#3823）
       completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
                 + **两类分组的结构化字段**（#4207）：`must_fix_failures`（阻塞条目里
                 `score<1` 的真失败）/ `blocked_but_passed`（阻塞条目里 `score==1.0` 的
