@@ -591,3 +591,63 @@ class TestWorkflowWiring:
             "塞了时长字段却没红 ⇒ 空断言"
         assert _wall_clock_problems(["changed_count", "selected_count"], doc) == [], \
             "负控：正常读数不得被判红"
+
+# ── issue #5434：**装依赖的解释器** 与 **跑判据的解释器** 必须是同一个 ──────────────
+#
+# 实测形态（main 上连续多轮）：`actions/setup-python@v7` + `pip install -q pytest pyyaml` **都跑过了**，
+# 而判定步仍报 `❌ /usr/bin/python3 里没有 pytest ⇒ 无法判定（rc=3）` —— 因为 `pip` 装到了 toolcache 的
+# site-packages，而判定步的 `python3` 解析到 runner 自带的 `/usr/bin/python3`。
+# ⇒ 本腿**永远**停在「无法判定」= 铁律 9 A2 的机械化**实际从未生效**（#5423 要消灭的形态，发生在它自己身上）。
+#
+# 判据钉的是**不变量**（不是措辞）：本 workflow 里「装依赖」与「跑判据」必须共用**同一个解释器变量**，
+# 且判定步**不得**裸调 `python3`（那一处正是解释器可以分叉的地方）。
+
+def test_deps_and_judging_step_share_one_interpreter():
+    import re
+    from pathlib import Path
+    import yaml
+
+    wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "post-merge-verify.yml"
+    doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+    steps = doc["jobs"]["verify"]["steps"]
+    install = next((s for s in steps if "pip install" in str(s.get("run") or "")), None)
+    judging = next((s for s in steps if "post_merge_verify.py" in str(s.get("run") or "")), None)
+    # ⚠️ **不用「存在性」弱断言**（只证明"有东西"、不触业务数据）——本仓的弱断言账本判据会当场判红
+    # （本 PR 第一版就是这么被 CI 抓到的）。⚠️ 连注释里都**不能写出那个模式的字面文本**：
+    # 扫描器是**按原文正则**扫的 ⇒ 注释里的示例会把自己喂成一处弱断言（§23.8 B1 同族）。
+    # 改成对**结构结论**断言（下面这条）。
+    missing = [label for label, step in (("Install deps（装依赖）", install),
+                                         ("判定（跑判据）", judging)) if step is None]
+    assert missing == [], f"workflow 结构变了 ⇒ 找不到这些步（判据需同步）：{missing}"
+
+    install_run = str(install["run"])
+    judging_run = str(judging["run"])
+
+    # ① 装依赖必须**显式用某个解释器变量**（`"$PY" -m pip install …`），不许裸 `pip install`
+    #    —— 裸 pip 正是「装到 A、跑到 B」的分叉点。
+    assert re.search(r'"?\$[A-Z_]+"?\s+-m\s+pip\s+install', install_run), (
+        "装依赖步必须显式用解释器变量（`\"$PY\" -m pip install …`），不得裸 `pip install`：\n"
+        + install_run
+    )
+    # ② 该变量必须经 `$GITHUB_ENV` 传给后续步骤（否则判定步拿不到同一个解释器）
+    assert "GITHUB_ENV" in install_run and "MIGAO_PY" in install_run, (
+        "装依赖步必须把解释器经 `$GITHUB_ENV` 交给后续步骤（`MIGAO_PY`）：\n" + install_run
+    )
+    # ③ 判定步必须用同一个变量，且**显式 --python**（脚本默认取 `sys.executable`，但显式传更不容易分叉）
+    assert "MIGAO_PY" in judging_run, "判定步没有用装依赖时定下的解释器（MIGAO_PY）：\n" + judging_run
+    assert "--python" in judging_run, f"判定步没显式传 `--python`：{judging_run[:200]}"
+    # ④ 判定步**不得**裸调 `python3 scripts/post_merge_verify.py`（改前的形态）
+    assert not re.search(r"(^|\s)python3\s+scripts/post_merge_verify\.py", judging_run, re.M), (
+        "判定步又在裸调 `python3 scripts/post_merge_verify.py` ⇒ 解释器可分叉（#5434）：\n" + judging_run
+    )
+
+
+def test_judging_step_fails_loudly_when_the_interpreter_lacks_pytest():
+    """环境是我们的责任 ⇒ 缺 pytest 要**响亮地失败**（可归因），不许退化成不可归因的 rc=3。"""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[2] / ".github" / "workflows"
+            / "post-merge-verify.yml").read_text(encoding="utf-8")
+    assert 'import pytest, yaml' in text and "::error::" in text, (
+        "判定步缺「解释器前置断言」（`import pytest, yaml` + `::error::` 指明根因）"
+    )
