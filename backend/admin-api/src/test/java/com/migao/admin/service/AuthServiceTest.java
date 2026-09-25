@@ -366,7 +366,7 @@ class AuthServiceTest {
         when(smsService.verifyCode("13800138000", "123456")).thenReturn(true);
         when(platformAdminMapper.selectOne(any())).thenReturn(null);
         when(userMapper.selectActiveUsersByPhoneIgnoreTenant("13800138000")).thenReturn(List.of(u1, u2));
-        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList(), anyList()))
+        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList(), anyList(), anyBoolean()))
                 .thenReturn("jwt-token-2");
         when(jwtTokenProvider.generateRefreshToken(anyString(), anyLong())).thenReturn("refresh-token-2");
         when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);

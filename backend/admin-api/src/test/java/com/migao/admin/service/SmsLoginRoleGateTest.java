@@ -19,6 +19,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -28,6 +30,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,6 +50,7 @@ import static org.mockito.Mockito.when;
  * 测试即红；把门禁扩到平台超管路径 ⇒ AU-005 两条立刻红。</p>
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("短信登录角色门禁（仅管理员）")
 class SmsLoginRoleGateTest {
 
@@ -100,7 +104,7 @@ class SmsLoginRoleGateTest {
     }
 
     private void stubTenantUserLogin() {
-        when(jwtTokenProvider.generateAccessToken(anyString(), any(), anyString(), anyList(), anyList(), any()))
+        when(jwtTokenProvider.generateAccessToken(anyString(), any(), anyString(), anyList(), anyList(), anyBoolean()))
                 .thenReturn("access");
         when(jwtTokenProvider.generateRefreshToken(anyString(), any())).thenReturn("refresh");
         when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);
@@ -122,7 +126,7 @@ class SmsLoginRoleGateTest {
                 .hasMessage("该账号非管理员，请使用员工登录入口（用户名@企业编码 + 密码）");
 
         // 拒绝必须是**签发前**的：一个 token 都不许发
-        verify(jwtTokenProvider, never()).generateAccessToken(anyString(), any(), anyString(), anyList(), anyList(), any());
+        verify(jwtTokenProvider, never()).generateAccessToken(anyString(), any(), anyString(), anyList(), anyList(), anyBoolean());
         verify(jwtTokenProvider, never()).generateRefreshToken(anyString(), any());
     }
 

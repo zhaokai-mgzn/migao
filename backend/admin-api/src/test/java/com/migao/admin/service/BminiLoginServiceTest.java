@@ -24,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -116,7 +117,7 @@ class BminiLoginServiceTest {
         verifyNoInteractions(userIdentityMapper);
         verify(userMapper, never()).insert(any(com.migao.admin.entity.User.class));
         verify(jwtTokenProvider, never()).generateAccessToken(
-                anyString(), any(), anyString(), anyList(), anyList(), any());
+                anyString(), any(), anyString(), anyList(), anyList(), anyBoolean());
         verify(jwtTokenProvider, never()).generateRefreshToken(anyString(), any());
     }
 
@@ -130,12 +131,12 @@ class BminiLoginServiceTest {
 
         verify(userIdentityMapper, never()).selectOne(any());
         verify(jwtTokenProvider, never()).generateAccessToken(
-                anyString(), any(), anyString(), anyList(), anyList(), any());
+                anyString(), any(), anyString(), anyList(), anyList(), anyBoolean());
     }
 
     @Test
     @DisplayName("BM-003 「手机号未匹配员工」旧语义已退场：拒绝理由与匹配结果无关，且不存在手机号匹配查询")
-    void phoneMatchingPath_isGone() {
+    void phoneMatchingPath_isGone() throws Exception {
         // 无论是否传 phoneCode、无论库里有没有员工，出口都是同一句「已废弃」
         assertRejectedWithGuidance(firstLoginRequest);
 

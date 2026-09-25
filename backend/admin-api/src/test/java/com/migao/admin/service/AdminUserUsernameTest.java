@@ -61,12 +61,26 @@ class AdminUserUsernameTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), User.class);
     }
 
-    /** 联表给 selectOne 的返回值（null = 该租户下没有同名，允许创建）。 */
+    /**
+     * 抓「用户名查重」那一次 selectOne：createUser 会先按**手机号**查重、再按**用户名**查重，
+     * 故按 SQL 片段区分（不是靠调用序号 —— 序号一改就静默抓错对象）。
+     */
     @SuppressWarnings("unchecked")
     private LambdaQueryWrapper<User> capturedUsernameQuery() {
         ArgumentCaptor<LambdaQueryWrapper<User>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(userMapper).selectOne(captor.capture());
-        return captor.getValue();
+        verify(userMapper, org.mockito.Mockito.atLeastOnce()).selectOne(captor.capture());
+        return captor.getAllValues().stream()
+                .filter(w -> w.getSqlSegment().contains("username"))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError("没有发生「按用户名查重」的查询 —— 租户内唯一性校验缺失"));
+    }
+
+    /** 只让**按 column 查重**的那一次命中已有行（另一列查重返回 null，模拟真实库）。 */
+    private void givenExistingByColumn(String column, User existing) {
+        when(userMapper.selectOne(any())).thenAnswer(inv -> {
+            LambdaQueryWrapper<User> wrapper = inv.getArgument(0);
+            return wrapper.getSqlSegment().contains(column) ? existing : null;
+        });
     }
 
     // ======================== AU-007 ========================
@@ -106,7 +120,7 @@ class AdminUserUsernameTest {
     @DisplayName("AU-007 本企业内用户名重复 ⇒ 422 明确文案（提示换一个），不是 500")
     void createUser_duplicateInSameTenant_rejectedWith422() {
         User existing = User.builder().id("other-user").tenantId(1L).username("zhangsan").build();
-        when(userMapper.selectOne(any())).thenReturn(existing);
+        givenExistingByColumn("username", existing);
 
         assertThatThrownBy(() -> userService.createUser("13800000003", "Init1234", "王五", "operator", "客服",
                 null, 1L, "zhangsan", true))
