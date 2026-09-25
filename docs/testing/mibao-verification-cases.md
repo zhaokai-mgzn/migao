@@ -3868,7 +3868,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## 加工单域（54 case）
+## 加工单域（55 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4572,6 +4572,18 @@
 跳过: [backend-contract] 真库（真 PG）后端契约用例：断言全部由 BatchConsumptionLedgerRealDbTest 执行（7 条判据，每条各带一个能单独变红的红证），写路径无 LLM 环节 ⇒ 不进 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5190，P2）：#5145 的批次消耗台账此前只有 mock / 控制器层测试，而这四件事（账实一致 / 唯一闸原子性 / V121 符号约束 / 对账恒等式）在 mock 面结构上不可见（Mockito 测不出约束）。本单复用 #5167 提取的共用件 PgCluster 与 #5199 已修好并在 CI 真跑的真库基础设施（MIGAO_REQUIRE_REALDB fail-closed），只补判据、不改口径。取号 PG-062：PG-059/060/061 已被 #5145/#5142 占用，PG-062 在 main 与全部在飞分支上均未占用（`git for-each-ref` 逐 ref 核过）。 ｜ tags: processing-order, production, stock-batch, ledger, real-db
+
+### PG-063. 卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1） 🔵
+```
+数据: success=true
+数据: 判据 1·🔴 **卖布行（`saleForm=布料`、无 `processingItems`）必须走布料基础路线并实例化工序**（本条的**核心判据**，issue #4909 判据 1）：该行进快照 ⇒ 成 1 个部位 ⇒ `processing_orders.route_key` = 布料路线（`RoutingModelFixture.FABRIC_TEMPLATE_NAME`）、`route_source='direct'`，且**落库工序** = 布料基础路线主线（本例夹具 = V79 版 `[配料, 打包]`；真库 V88 终态见判据 4）。**红证（本机实跑，2026-09-25）**：把 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` 的 `buildSnapshot()` 入口过滤改回缺陷形态（`procs.isEmpty()` 即 `continue`）⇒ 本用例当场红（读数 `改前：快照被清空 ⇒ 该单被判「无加工项，无需生成加工单」` + `改前该行根本不参与路线解析`）；还原 ⇒ 该文件 18/18 全绿。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的「PG-063 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序」
+数据: 判据 2·**卖布行的算料米数取订单行数量，不得兜底 1**（同单发现的第二处缺陷，issue #4909 判据，踩中 #4208 红线）：`calc_info.fabric_meters` == 订单行 `quantity`（夹具 10 米）；缺该键 ⇒ 算料端点按缺键兜底 **1** ⇒ 10 米的布单只做 1 米、计件按 1 米算。证据：同文件「PG-063 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）」
+数据: 判据 3·**反向护栏（旧语义一字不放宽）**：**没有** `saleForm=布料` 且无加工项的行（普通配件 / 赠品行）⇒ 仍**不**进快照 —— 整单判「无加工项，无需生成加工单」（`success=false` 且文案含「无加工项」），不成部位、不产工序、也不得凭空生成加工单。证据：同文件「PG-063 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）」
+数据: 判据 4·**夹具漂移（如实登记，不得读成真值）**：本例夹具的主线仍是 V79 版 `RoutingModelFixture.FABRIC_MAINLINE = [配料, 打包]`，而真库 V88 终态 = `[裁剪, 打包]`（该漂移的登记见 backend/admin-api/src/test/java/com/migao/admin/service/MainlineOperationReferenceTest.java）⇒ 断言写 `[配料, 打包]`、真库行为是 `[裁剪-布, 打包]`。夹具与真值的收敛属 issue #4676 的跟随单，**不在本条内**；本条只把这条真库形态**钉成判据**（改前它连判据都没有）。
+数据: **边界（如实登记）**：① 本条只覆盖**订单侧形态**（`saleForm=布料`、无 `processingItems`）与部位/工序/算料输入的**确定性单测**；② **未在本机做端到端 HTTP 复验**（本地栈 8080/8001 未启动）—— 线上复验动作 = 对 `20260921973550001` 走一次 `POST /api/admin/processing-orders/generate`（需先清理 `JG-20260921-8237`），需人工确认，不自动执行（同 PR #4918 的边界登记）。
+跳过: [backend-contract] 后端契约（订单行形态 ⇒ 路线/工序实例化/算料输入的确定性单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 执行
+```
+溯源: 2026-09-25 新增（issue #4916 判据 2 收口，覆盖 issue #4909 的修复 / PR #4918）：#4909 的修复证据齐全（18/18 + 红证）但**没进用例库**，原因如实登记在 #4916（当时 Case Trust 的 burn-down 要求触碰 `.github/cases/**` 的 PR 净销账 ≥1 条存量条目，而存量条目全是别域 LLM 行为用例，凭「缴门禁」去猜别域语义 = 造假断言，验证又要真跑 LLM 评测 ⇒ 按 #4262 不自动跑）。本次是**已经要缴这笔账的触碰** ⇒ 一并补上。① 该文件里三条 `@DisplayName` 原写 `PG-057` —— 而库内 PG-057 = 米宝查加工单过程明细（`production_worklog_query`，随 #4927 于同日 17:32Z 落地，晚于 #4918 的 17:09Z）⇒ 改判为本条 `PG-063`（**只改引用号，断言面一字未动**），并把 `PG-063` 补进文件头 `case_ids:`。② **未固化项（如实登记，本单登记不动）**：同一文件里 5 处 `PG-039` 前缀的布料/未定价用例与库内 PG-039（= 工序作用域 scope）**同名不同义**，且全仓另有数个测试文件以同款方式声明 PG-039（如 tests/unit_ci_workflows/test_fabric_route_seed.py）—— 这是**先于本单**存在的用例号重载，收敛它要动多包共用的号序并需裁定，属「体量超一个包 + 需裁定」（AGENTS.md 铁律 11 的 ①④）。 ｜ tags: processing-order, production, routing, fabric, fixture-drift
 
 ## 商品域（97 case）
 
@@ -6065,11 +6077,12 @@
 期望: direct_reply
 数据: OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50
 数据: OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50
-数据: OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」
+数据: 🔴 OrderTable「采购商品」列**逐条**渲染全部明细（2026-09-25 补判据，issue #4908 的修复证据入用例库，配套 #4916 判据 1）：1 个订单 **3 条** `items` ⇒ 该单元格里渲染出 **3 组「名称 + 货号」**（3 行 `货号 X`，且三条商品名与末一条货号都落在**同一个** `td` 内），顺序与 `items` 相同；改前只取 `items[0]` ⇒ 只出 1 组、该断言当场红（红证实测：`expected [ <div …(1)></div> ] to have a length of 3 but got 1`）。**反向护栏**：`items` 为空仍渲染「暂无数据」且无裸 `-` 占位（见下一条）。证据：frontend/admin-web/tests/unit/components/OrderTable.test.tsx 的「多商品订单：采购商品列逐条渲染全部商品（名称 + 货号），不是只渲染第一条」
+数据: OrderTable 采购明细列与采购商品列在 `items` 为空时渲染「暂无数据」，且全表无裸 `-` 占位（**2026-09-25 事实订正**：本条原文写「采购商品列无 `firstItem`」—— `firstItem` 是实现期局部变量，已随 issue #4908 的修复删除（改后按 `items?.length` 判空）⇒ 判据文字不再引用已不存在的实现标识符，判据强度一格未降）
 跳过: [backend-contract] 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.status-chip, frontend-fix.empty-state
-溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ tags: ui, status-chip, empty-state
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ 2026-09-25（issue #4916 判据 1 收口，覆盖 issue #4908 的修复）：补一条**可在 traces.tests 里定位到确定性断言**的判据（「N 条 `items` ⇒ N 组『名称 + 货号』」—— 改前本条只有「空态『暂无数据』」那一条，多商品订单的核心行为**零判据**），并把已过时的实现标识符 `firstItem` 从判据文字里去掉（该变量随 #4908 删除）。`traces.tests` 与 `truths_ref` 一字未动（断言执行者仍是 OrderTable.test.tsx 里那条既有用例）。 ｜ tags: ui, status-chip, empty-state
 
 ### UI-003. 米宝「今日经营速览」洞察条 - 一句话经营解读 🔵
 ```
@@ -6869,7 +6882,7 @@
 - 领域本体域：4
 - 订单域：47
 - 加工项域：13
-- 加工单域：54
+- 加工单域：55
 - 商品域：97
 - 工具注册器域：1
 - 设置域：10
@@ -6976,6 +6989,7 @@
 - PG-055: 价目**写面**字段契约（🔴 2026-09-21 改判，issue #4939 配套 #4951）：`PUT /operation-positions/{id}` **只收** `unit_price`；收到 `applicable` ⇒ 422 + 可行动 hint（拒绝，不静默忽略）；价的两态与调价留痕不变（原 #4798 的「`applicable=true` 必须解析得到变体」护栏**随字段退场而退休**）
 - PG-056: 正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效
 - PG-062: 批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算
+- PG-063: 卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

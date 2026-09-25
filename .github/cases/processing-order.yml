@@ -2335,3 +2335,54 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-063（issue #4909，P1；用例库缺口收口 = issue #4916 判据 2 的缴费方）：
+  # **卖布行（`saleForm=布料`）天然没有 `processingItems`** —— 按米卖布、不选加工项，
+  # 真库形态如此（实证订单 `20260921973550001` 的「9231 遮光窗帘」行：只有
+  # `saleForm=布料` / `sellingMethod=full_roll` / 10 米，**没有** `processingItems` 键）。
+  # 而既有夹具（PG-026~PG-030 族，以及改写前 PG-039 的布料夹具）**都把加工项塞进了
+  # `processingItems`** ⇒ 这条真实形态长期零判据：`buildSnapshot()` 的
+  # `procs.isEmpty() ⇒ continue` 把整行丢掉 ⇒ 该商品在加工单
+  # `JG-20260921-8237` 里 **0 行工序**，且无任何报错、`route_source` 只落成 `partial`。
+  # ⇒ 本条的存在理由就是「**用例夹具与真库形态的差异本身就是判据盲区**」（issue #4916 原文）。
+  #
+  # 取号：`PG-063` 在 main 与全部本地/远程分支上均未占用
+  # （`for r in $(git for-each-ref --format='%(refname)' refs/heads refs/remotes/origin); do
+  #   git grep -q "id: PG-063" "$r" -- .github/cases; done` 逐 ref 核过）。
+  # 本条**不**复用 PG-039（库内 PG-039 = 工序作用域 scope）也**不**复用 PG-057
+  # （库内 PG-057 = 米宝查加工单过程明细 `production_worklog_query`，随 #4927 于同日 17:32Z
+  # 落地，晚于 #4918 的 17:09Z）—— 详见本条 merge_log 的登记。
+  # ==========================================================================
+  - id: PG-063
+    legacy_id: ""
+    title: "卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - production
+      - routing
+      - fabric
+      - fixture-drift
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "判据 1·🔴 **卖布行（`saleForm=布料`、无 `processingItems`）必须走布料基础路线并实例化工序**（本条的**核心判据**，issue #4909 判据 1）：该行进快照 ⇒ 成 1 个部位 ⇒ `processing_orders.route_key` = 布料路线（`RoutingModelFixture.FABRIC_TEMPLATE_NAME`）、`route_source='direct'`，且**落库工序** = 布料基础路线主线（本例夹具 = V79 版 `[配料, 打包]`；真库 V88 终态见判据 4）。**红证（本机实跑，2026-09-25）**：把 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` 的 `buildSnapshot()` 入口过滤改回缺陷形态（`procs.isEmpty()` 即 `continue`）⇒ 本用例当场红（读数 `改前：快照被清空 ⇒ 该单被判「无加工项，无需生成加工单」` + `改前该行根本不参与路线解析`）；还原 ⇒ 该文件 18/18 全绿。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的「PG-063 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序」"
+      - "判据 2·**卖布行的算料米数取订单行数量，不得兜底 1**（同单发现的第二处缺陷，issue #4909 判据，踩中 #4208 红线）：`calc_info.fabric_meters` == 订单行 `quantity`（夹具 10 米）；缺该键 ⇒ 算料端点按缺键兜底 **1** ⇒ 10 米的布单只做 1 米、计件按 1 米算。证据：同文件「PG-063 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）」"
+      - "判据 3·**反向护栏（旧语义一字不放宽）**：**没有** `saleForm=布料` 且无加工项的行（普通配件 / 赠品行）⇒ 仍**不**进快照 —— 整单判「无加工项，无需生成加工单」（`success=false` 且文案含「无加工项」），不成部位、不产工序、也不得凭空生成加工单。证据：同文件「PG-063 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）」"
+      - "判据 4·**夹具漂移（如实登记，不得读成真值）**：本例夹具的主线仍是 V79 版 `RoutingModelFixture.FABRIC_MAINLINE = [配料, 打包]`，而真库 V88 终态 = `[裁剪, 打包]`（该漂移的登记见 backend/admin-api/src/test/java/com/migao/admin/service/MainlineOperationReferenceTest.java）⇒ 断言写 `[配料, 打包]`、真库行为是 `[裁剪-布, 打包]`。夹具与真值的收敛属 issue #4676 的跟随单，**不在本条内**；本条只把这条真库形态**钉成判据**（改前它连判据都没有）。"
+      - "**边界（如实登记）**：① 本条只覆盖**订单侧形态**（`saleForm=布料`、无 `processingItems`）与部位/工序/算料输入的**确定性单测**；② **未在本机做端到端 HTTP 复验**（本地栈 8080/8001 未启动）—— 线上复验动作 = 对 `20260921973550001` 走一次 `POST /api/admin/processing-orders/generate`（需先清理 `JG-20260921-8237`），需人工确认，不自动执行（同 PR #4918 的边界登记）。"
+    skip_reason: "[backend-contract] 后端契约（订单行形态 ⇒ 路线/工序实例化/算料输入的确定性单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 执行"
+    merge_log: "2026-09-25 新增（issue #4916 判据 2 收口，覆盖 issue #4909 的修复 / PR #4918）：#4909 的修复证据齐全（18/18 + 红证）但**没进用例库**，原因如实登记在 #4916（当时 Case Trust 的 burn-down 要求触碰 `.github/cases/**` 的 PR 净销账 ≥1 条存量条目，而存量条目全是别域 LLM 行为用例，凭「缴门禁」去猜别域语义 = 造假断言，验证又要真跑 LLM 评测 ⇒ 按 #4262 不自动跑）。本次是**已经要缴这笔账的触碰** ⇒ 一并补上。① 该文件里三条 `@DisplayName` 原写 `PG-057` —— 而库内 PG-057 = 米宝查加工单过程明细（`production_worklog_query`，随 #4927 于同日 17:32Z 落地，晚于 #4918 的 17:09Z）⇒ 改判为本条 `PG-063`（**只改引用号，断言面一字未动**），并把 `PG-063` 补进文件头 `case_ids:`。② **未固化项（如实登记，本单登记不动）**：同一文件里 5 处 `PG-039` 前缀的布料/未定价用例与库内 PG-039（= 工序作用域 scope）**同名不同义**，且全仓另有数个测试文件以同款方式声明 PG-039（如 tests/unit_ci_workflows/test_fabric_route_seed.py）—— 这是**先于本单**存在的用例号重载，收敛它要动多包共用的号序并需裁定，属「体量超一个包 + 需裁定」（AGENTS.md 铁律 11 的 ①④）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

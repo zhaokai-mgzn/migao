@@ -246,8 +246,10 @@ describe('OrderTable', () => {
     expect(screen.getByText('-')).toBeTruthy()
   })
 
-  // #2539: 采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，整表无裸 '-' 占位
-  it('采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，无裸 - 占位', () => {
+  // #2539: 采购明细列与采购商品列的 items 为空时渲染「暂无数据」，整表无裸 '-' 占位
+  // （原判据文字写「采购商品列无 firstItem」—— 该实现期局部变量已随 issue #4908 的修复删除，
+  //   2026-09-25 随 #4916 一并改为按 `items` 判空，文案不再引用已不存在的实现标识符）
+  it('采购明细列与采购商品列的 items 为空时渲染「暂无数据」，无裸 - 占位', () => {
     const emptyItemsOrder = {
       ...mockOrder,
       items: [],

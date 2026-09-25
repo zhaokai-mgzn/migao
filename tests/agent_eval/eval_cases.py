@@ -5831,6 +5831,24 @@ _CASE_PG_062 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-063 [NORMAL] 卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）（源: cases/processing-order.yml）──
+_CASE_PG_063 = EvalCase(
+    id='PG-063',
+    legacy_id='',
+    title='卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "判据 1·🔴 **卖布行（`saleForm=布料`、无 `processingItems`）必须走布料基础路线并实例化工序**（本条的**核心判据**，issue #4909 判据 1）：该行进快照 ⇒ 成 1 个部位 ⇒ `processing_orders.route_key` = 布料路线（`RoutingModelFixture.FABRIC_TEMPLATE_NAME`）、`route_source='direct'`，且**落库工序** = 布料基础路线主线（本例夹具 = V79 版 `[配料, 打包]`；真库 V88 终态见判据 4）。**红证（本机实跑，2026-09-25）**：把 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` 的 `buildSnapshot()` 入口过滤改回缺陷形态（`procs.isEmpty()` 即 `continue`）⇒ 本用例当场红（读数 `改前：快照被清空 ⇒ 该单被判「无加工项，无需生成加工单」` + `改前该行根本不参与路线解析`）；还原 ⇒ 该文件 18/18 全绿。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的「PG-063 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序」", '判据 2·**卖布行的算料米数取订单行数量，不得兜底 1**（同单发现的第二处缺陷，issue #4909 判据，踩中 #4208 红线）：`calc_info.fabric_meters` == 订单行 `quantity`（夹具 10 米）；缺该键 ⇒ 算料端点按缺键兜底 **1** ⇒ 10 米的布单只做 1 米、计件按 1 米算。证据：同文件「PG-063 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）」', '判据 3·**反向护栏（旧语义一字不放宽）**：**没有** `saleForm=布料` 且无加工项的行（普通配件 / 赠品行）⇒ 仍**不**进快照 —— 整单判「无加工项，无需生成加工单」（`success=false` 且文案含「无加工项」），不成部位、不产工序、也不得凭空生成加工单。证据：同文件「PG-063 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）」', '判据 4·**夹具漂移（如实登记，不得读成真值）**：本例夹具的主线仍是 V79 版 `RoutingModelFixture.FABRIC_MAINLINE = [配料, 打包]`，而真库 V88 终态 = `[裁剪, 打包]`（该漂移的登记见 backend/admin-api/src/test/java/com/migao/admin/service/MainlineOperationReferenceTest.java）⇒ 断言写 `[配料, 打包]`、真库行为是 `[裁剪-布, 打包]`。夹具与真值的收敛属 issue #4676 的跟随单，**不在本条内**；本条只把这条真库形态**钉成判据**（改前它连判据都没有）。', '**边界（如实登记）**：① 本条只覆盖**订单侧形态**（`saleForm=布料`、无 `processingItems`）与部位/工序/算料输入的**确定性单测**；② **未在本机做端到端 HTTP 复验**（本地栈 8080/8001 未启动）—— 线上复验动作 = 对 `20260921973550001` 走一次 `POST /api/admin/processing-orders/generate`（需先清理 `JG-20260921-8237`），需人工确认，不自动执行（同 PR #4918 的边界登记）。'],
+    skip_reason='[backend-contract] 后端契约（订单行形态 ⇒ 路线/工序实例化/算料输入的确定性单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 执行',
+    tags=['processing-order', 'production', 'routing', 'fabric', 'fixture-drift'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -8182,7 +8200,7 @@ _CASE_UI_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['订单/售后状态用语义色 chips 表达，数据空态显示暂无数据'],
     expectations=['direct_reply'],
-    data_checks=['OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50', 'OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50', 'OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」'],
+    data_checks=['OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50', 'OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50', '🔴 OrderTable「采购商品」列**逐条**渲染全部明细（2026-09-25 补判据，issue #4908 的修复证据入用例库，配套 #4916 判据 1）：1 个订单 **3 条** `items` ⇒ 该单元格里渲染出 **3 组「名称 + 货号」**（3 行 `货号 X`，且三条商品名与末一条货号都落在**同一个** `td` 内），顺序与 `items` 相同；改前只取 `items[0]` ⇒ 只出 1 组、该断言当场红（红证实测：`expected [ <div …(1)></div> ] to have a length of 3 but got 1`）。**反向护栏**：`items` 为空仍渲染「暂无数据」且无裸 `-` 占位（见下一条）。证据：frontend/admin-web/tests/unit/components/OrderTable.test.tsx 的「多商品订单：采购商品列逐条渲染全部商品（名称 + 货号），不是只渲染第一条」', 'OrderTable 采购明细列与采购商品列在 `items` 为空时渲染「暂无数据」，且全表无裸 `-` 占位（**2026-09-25 事实订正**：本条原文写「采购商品列无 `firstItem`」—— `firstItem` 是实现期局部变量，已随 issue #4908 的修复删除（改后按 `items?.length` 判空）⇒ 判据文字不再引用已不存在的实现标识符，判据强度一格未降）'],
     skip_reason='[backend-contract] 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'status-chip', 'empty-state'],
     persona='',
@@ -9526,6 +9544,7 @@ ALL_CASES = (
     _CASE_PG_057,
     _CASE_PG_060,
     _CASE_PG_062,
+    _CASE_PG_063,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
