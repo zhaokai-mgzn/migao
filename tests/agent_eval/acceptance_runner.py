@@ -225,7 +225,6 @@ def ua_items(checks: list) -> list:
 # 于是剧本能否走完，取决于"模型这一跑恰好没要求验证码"：实测同一剧本两次结果不同
 # （run 34766277197 L1=0 通过 / run 34767663158 order_create 未调用 → L1=1）。
 # 真实顾客被要求验证码时会**把码发过去**；剧本必须能表达这件事，否则"验收通过"带运气成分。
-_CODE_HINTS = ("验证码", "校验码", "短信码", "动态码")
 DEFAULT_SMS_CODE = os.environ.get("SMS_BYPASS_CODE") or "123456"
 
 
@@ -234,18 +233,23 @@ def needs_code(rounds: list) -> bool:
 
     两条判据与评测侧 `needs_verification_code` 同源（issue #3430 实证）：
     agent 会**重发同一张确认卡**、而写调用在后台因缺码失败 —— 只看文字会漏这种形态。
+
+    **文字腿 = 形态判据**（`local_runner.text_requests_code`，issue #3757）：旧的子串充分条件
+    会把「验证码已收到 / 别再发 / 就差您点卡」判成索码 ⇒ 剧本一轮轮供码、**不点卡**
+    （评测侧死循环在验收剧本侧的孪生形态）。词表与判据都只有一份：本文件不再自建
+    （硬信号腿复用 `local_runner.CODE_HINTS`）。
     """
     if not rounds:
         return False
     last = rounds[-1] or {}
-    if any(h in str(last.get("ai_text") or "") for h in _CODE_HINTS):
+    if _LR.text_requests_code(str(last.get("ai_text") or "")):
         return True
     for tr in (last.get("tool_results") or []):
         res = (tr or {}).get("result") if isinstance((tr or {}).get("result"), dict) else {}
         if not res or res.get("success"):
             continue
         blob = f"{res.get('error') or ''} {res.get('message') or ''}"
-        if any(h in blob for h in _CODE_HINTS) or "短信" in blob:
+        if any(h in blob for h in _LR.CODE_HINTS) or "短信" in blob:
             return True
     return False
 
