@@ -430,6 +430,17 @@ SEED_SERVICE = JAVA_SERVICE_DIR / "ProductionSeedTemplateService.java"
 ROUTING_PY = REPO / "backend/ai-agent-service/app/production/routing.py"
 
 
+def _quoted_values(text: str) -> list[str]:
+    """取一段文本里所有**双引号字面量**的取值（E-2/E-3 共用）。
+
+    ⚠️ 本函数是「按引号扫原文取值」（`quote-parse`）这一形态在**本文件里的唯一落点**
+    —— 元守卫 `test_guard_parsing_is_comment_aware.py` 按**现取条数**与台账
+    `guard_parsing_allowlist.json` 对账（**只许缩短**）：同一个形态不要再复制多份，
+    否则新增判据会让这条债**涨**（本 PR 第一版就是这么被 CI 判红的）。
+    """
+    return re.findall(r'"([^"]+)"', text)
+
+
 def _java_array_rows(src: str, name: str) -> list:
     """取 Java 里 `String[][] <name> = { ... };` 的逐行字符串元组（**逐字**，不去重不排序）。"""
     start = src.index(f"String[][] {name} = {{")
@@ -491,17 +502,44 @@ def test_seed_service_mainline_matches_truth_source():
     src = _read(SEED_SERVICE)
     start = src.index("List<String> ROUTE_MAINLINE_STEPS = List.of(")
     end = src.index(");", start)
-    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+    java_steps = _quoted_values(src[start:end])
 
     py_src = _read(ROUTING_PY)
     # ⚠️ rindex：该标识符在 docstring 里也被提到（首次出现不是定义处）
     pstart = py_src.rindex("ROUTE_MAINLINE_STEPS: List[str] = [")
     pend = py_src.index('"]', pstart) + 1
-    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+    py_steps = _quoted_values(py_src[pstart:pend])
 
     assert java_steps == py_steps, (
         f"主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
         f"新租户的主线与车间实际走线不一致（顺序错 = 按错顺序干）"
+    )
+
+
+def test_seed_service_fabric_mainline_matches_truth_source():
+    """判据 E-3：Java 开租播种的**布料主线**与 `routing.py::FABRIC_MAINLINE_STEPS` 逐字同值（issue #4998）。
+
+    为什么必须有它：E-1/E-2 只守了「价目矩阵」与「**窗帘**主线」；**布料主线**两侧曾长期不同源
+    （Java 已按 V88 / #4676 改判 `裁剪 → 打包`，而 ai-agent 侧仍写 `配料 → 打包`），
+    而**没有任何判据**会因此变红 —— 只能靠人读 javadoc 才发现（本单就是这么被发现的）。
+    ⚠️ 红证：把任一侧改回 `配料 → 打包`（或只改一侧）⇒ 本判据必须红。
+    """
+    src = _read(SEED_SERVICE)
+    start = src.index("List<String> FABRIC_MAINLINE_STEPS = List.of(")
+    end = src.index(");", start)
+    java_steps = _quoted_values(src[start:end])
+
+    py_src = _read(ROUTING_PY)
+    # ⚠️ rindex：该标识符在注释里也被提到（首次出现不是定义处）
+    pstart = py_src.rindex("FABRIC_MAINLINE_STEPS: List[str] = [")
+    # ⚠️ 必须找 `"]`（最后一个字符串的收尾）而不是第一个 `]` —— 后者会落在 `List[str]` 里，
+    #    于是解析出空列表、判据**恒红**（本判据第一版就这么错过一次：`1 failed` 是假红）。
+    pend = py_src.index('"]', pstart) + 1
+    py_steps = _quoted_values(py_src[pstart:pend])
+
+    assert java_steps == py_steps, (
+        f"布料主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
+        f"新租户会拿到旧工序（缺 `裁剪` / 多 `配料` ⇒ 车间按旧流程干，计件口径跟着错）"
     )
 
 
