@@ -11,7 +11,7 @@ r"""issue #5502：**dollar-quoted 块内不得出现 psql `:变量`**（静态�
 （`psql` 手册：「variable interpolation will not be performed within quoted SQL literals and
 identifiers」；`$$ … $$` 内的 `:name` 原样进服务端）⇒ 服务端收到字面量 `:tenant_id`：
 
-    psql:docs/deployment/demo-seed.sql:97: ERROR:  syntax error at or near ":"
+    psql:docs/deployment/demo-seed.sql（第 3 节 SKU 段的 dollar-quoted 块）: ERROR:  syntax error at or near ":"
     第4行...id INTO cid FROM product_colors WHERE tenant_id = :tenant_id...
                                                               ^
     EXIT=3
