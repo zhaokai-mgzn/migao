@@ -4,6 +4,11 @@
 -- 用途：为 POC 演示准备真实感演示数据（窗帘商品 + SKU 矩阵 + 加工项 + 客户 + 订单）
 -- 用法：psql "$DATABASE_URL" -v tenant_id=1 -f demo-seed.sql
 -- 幂等：所有 INSERT 用 WHERE NOT EXISTS 守卫，可重复执行
+-- ⚠️ 参数化只有 psql 变量一种范式（issue #5502）：psql **不在 dollar-quoted 体内**做
+--    `:变量` 替换 ⇒ 别把 `:tenant_id` 写进 `DO $$ … $$` / 函数体里（服务端直接收到
+--    `:tenant_id` ⇒ `syntax error at or near ":"`）。要把变量带进块里，就把它拼进块**外层**
+--    的语句（见第 3 节的 SKU 段：`INSERT … SELECT … FROM product_colors c WHERE …`）。
+--    判据：tests/unit_ci_workflows/test_psql_vars_outside_dollar_quotes.py（注入即红）。
 -- 数据来源：knowledge_base/products/product_catalog.md + docs/curtain-fabric-quote-rules.md
 -- ============================================================
 
@@ -81,32 +86,24 @@ INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, s
 SELECT :tenant_id, 'p-sl-001', '米白', '#F5EFE0', 2
 WHERE NOT EXISTS (SELECT 1 FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_name = '米白');
 
--- SKU：星空全遮光（象牙白 × 散剪/整卷 × 2.8米/1.4米）
-DO $$
-DECLARE cid BIGINT;
-BEGIN
-  SELECT id INTO cid FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_name = '象牙白';
-  IF cid IS NOT NULL THEN
-    INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price, stock, sku_code)
-    SELECT :tenant_id, 'p-zg-001', cid, 'bulk_cut', '2.8米', 98.00, 500, 'ZG001-象牙白-散剪-2.8'
-    WHERE NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = cid AND selling_method = 'bulk_cut' AND door_width = '2.8米');
-    INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price, stock, sku_code)
-    SELECT :tenant_id, 'p-zg-001', cid, 'full_roll', '2.8米', 88.00, 100, 'ZG001-象牙白-整卷-2.8'
-    WHERE NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = cid AND selling_method = 'full_roll' AND door_width = '2.8米');
-  END IF;
-END $$;
+-- SKU：星空全遮光（象牙白 × 2.8米）
+-- 色号用**相关子查询**取（`FROM product_colors c`），不是 `DO` 块里的 `SELECT … INTO`：
+-- 后者要把 `:tenant_id` 带进 dollar-quoted 体内，而 psql 在体内不做替换（issue #5502）。
+-- 写法与 tests/agent_eval/fixtures/*.sql 的 SKU 段同源：`price` 取货号 `base_price`。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 500, 'ZG001-象牙白-2.8米'
+FROM product_colors c
+JOIN products p ON p.id = c.product_id
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '象牙白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = c.id AND door_width = '2.8米');
 
--- SKU：雾霭柔光纱（白色 × 散剪 × 2.8米）
-DO $$
-DECLARE cid BIGINT;
-BEGIN
-  SELECT id INTO cid FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_name = '白色';
-  IF cid IS NOT NULL THEN
-    INSERT INTO product_skus (tenant_id, product_id, color_id, selling_method, door_width, price, stock, sku_code)
-    SELECT :tenant_id, 'p-sl-001', cid, 'bulk_cut', '2.8米', 35.00, 800, 'SL001-白色-散剪-2.8'
-    WHERE NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_id = cid AND selling_method = 'bulk_cut' AND door_width = '2.8米');
-  END IF;
-END $$;
+-- SKU：雾霭柔光纱（白色 × 2.8米）
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 800, 'SL001-白色-2.8米'
+FROM product_colors c
+JOIN products p ON p.id = c.product_id
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-sl-001' AND c.color_name = '白色'
+  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_id = c.id AND door_width = '2.8米');
 
 -- ──────────────────────────────────────────────
 -- 4. 加工项（6 个布艺核心加工项）
