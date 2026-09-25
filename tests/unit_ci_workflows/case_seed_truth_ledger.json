@@ -1,0 +1,56 @@
+{
+  "note": "issue #4064「用例罐头输入 ↔ seed 真值」静态对账判据的登记台账（判据 = tests/unit_ci_workflows/test_case_seed_truth_backing.py）。两条纪律：① unbacked_entries = 现取未命中项的**全部**集合（未登记即红、条目须活着 ⇒ 两个方向都判红，只许缩短）；② 登记项只允许出现在 skip_reason 非空的**已退役**用例上（活跃用例没有登记出口 ⇒ 不许拿登记换绿）。",
+  "readings": {
+    "recompute": "backend/ai-agent-service/.venv/bin/python tests/unit_ci_workflows/test_case_seed_truth_backing.py",
+    "adjudicated_at": "2026-09-25",
+    "baseline": "origin/main@f4f7d9070"
+  },
+  "undecidable_classes": [
+    {
+      "scope": "user_inputs.product_name",
+      "reason": "自由文本里的商品名静态不可解析：中文没有词边界，按品类后缀（面料/窗帘/窗纱/布艺/纱帘/遮光布）取锚点会把前一个动词一起吞进来 —— 实测误报样本「搜遮光窗帘」「看看这个面料」「分类选窗帘」「推荐几款热销窗帘」（判据原型跑 origin/main 时逐条现取，见 test_case_seed_truth_backing.py 的 PRODUCT_NAME）。**结构化的**商品名声明仍在面内：namespaces 的 product_name 键、pre_clean.product_keyword、precondition[product_count_for_keyword].source"
+    },
+    {
+      "scope": "data_checks.money",
+      "reason": "金额是**派生量**（面料小计/加工费/组合价/预估合计/红证描述里的修复前渲染值），seed 没有「金额」真值列 ⇒ 散文里的 ¥ 数字静态不对账；数值类的对账对象只保留有真值列的「库存」（products.stock / product_skus.stock）"
+    },
+    {
+      "scope": "data_checks.stock",
+      "reason": "断言散文里提到的库存数字（如「库存不足时如何」的算例），其承载对象不是 seed 里的某一行商品 ⇒ 无锚点可对账；有锚点的库存字面量（罐头输入里的「库存 N」）在面内，见 test_case_seed_truth_backing.py 的 STOCK"
+    },
+    {
+      "scope": "data_checks.spec",
+      "reason": "「货号-色号」形态在 data_checks 里是**算例的水位描述**（如「按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）」），不是对 seed 目录的引用 ⇒ 无锚点"
+    },
+    {
+      "scope": "namespaces.key:role_code",
+      "reason": "角色码真值在 admin-api 迁移（backend/admin-api/src/main/resources/db/migration/）与服务端 role_manage 返回，**不在** tests/agent_eval/fixtures/ 的评测 seed 面 ⇒ 本判据（seed 面）无真值源"
+    },
+    {
+      "scope": "namespaces.key:finance_txn",
+      "reason": "同上：财务流水号由财务模块在运行期生成，评测 seed 无流水目录"
+    },
+    {
+      "scope": "precondition.type:debug_permissions_effective",
+      "reason": "该类型的 source 是**权限码**（形如 employee:list / employee:create），不是 seed 实体 ⇒ 无目录可对账"
+    }
+  ],
+  "unbacked_entries": [
+    {
+      "case_id": "AS-006",
+      "field": "precondition[0].source",
+      "kind": "precondition:aftersales_ticket_count_for_ticket_no",
+      "literal": "AS-20260701-0002",
+      "cls": "retired_missing_truth",
+      "reason": "点名工单 AS-20260701-0002 在评测 seed 里 0 命中（seed 只有 AS-20260914-9001）。**用例自身已登记该真值缺失**：skip_reason 逐字为「依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）…LLM 行为待重构为自包含（先建工单再完结）」。处置：本 PR 不改 seed（不许改数据让判据过）、不改用例断言（不许改用例让判据过）⇒ 按 issue #4064 的「确有真值缺失 ⇒ 如实登记」落册；重构方向与 owner = 该用例 skip_reason 已写明"
+    },
+    {
+      "case_id": "CT-003",
+      "field": "namespaces[0]",
+      "kind": "ns:category",
+      "literal": "轻奢系列",
+      "cls": "retired_missing_truth",
+      "reason": "命名空间键声明了分类「轻奢系列」，seed 的 categories 目录里 0 命中（CT-002 的「新建」是同一名字的自建来源，#5247 之后两条用例的创建/删除写能力都已从 B 端下线）。**用例自身已登记该前提作废**：data_checks 逐字留档「前置：目标分类「轻奢系列」在位…⚠️ 2026-09-24（issue #5247，B 端只读化）：删除能力已下线 ⇒ 该写面前置必然为假（悬空声明）」+ skip_reason 标记退役。处置同 AS-006：只登记、不改 seed/断言（该用例的正确判定层已在 traces.tests 的工具层单测）"
+    }
+  ]
+}
