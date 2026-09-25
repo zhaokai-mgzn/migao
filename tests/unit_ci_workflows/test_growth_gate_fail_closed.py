@@ -149,8 +149,14 @@ def test_main_base_mode_fails_closed_on_git_error(monkeypatch):
 # 同处注释还写着「与 pr-check 的 Check weak asserts step 语义一致」= 注释漂移（读注释的人
 # 会以为两地同口径），故本次一并改掉。
 #
-# 修法：判定收敛到**单一事实源** `growth_gate._is_test_file`（G5 用例追溯与弱断言扫描共用），
-# 由 `--check-weak --new-tests-only` 施加 —— 本地脚本不再自己写一份 grep。
+# 修法（2026-09-17 / #4077）：判定收敛到**单一事实源**，由 `--check-weak --new-tests-only` 施加
+# —— 本地脚本不再自己写一份 grep。
+# ⚠️ 2026-09-25（#5477）：那份「单一事实源」当时被写成了 `_is_test_file`（**只看文件名**），
+#    而 CI 侧的内联 grep 扫**全路径** ⇒ 两侧**判据集合不同**（本地绿 / CI 红；实测已跟踪文件里
+#    85 个只在 CI 侧，最小反例 `backend/ai-agent-service/tests/contract_snapshot_registry.py`）。
+#    现在扫描集口径的唯一实现是 `growth_gate.select_weak_scan_files`（全路径 = **CI 原射程**，
+#    CI 集合零变化、本地补齐那 85 个）；两侧集合相等由
+#    `tests/unit_ci_workflows/test_new_test_selection_parity.py` 真跑两个入口判定。
 #
 # 不变量（下面四个场景就是它的可执行形态，**两个方向都要**）：
 #   · 假红方向：新增源文件**不得**让本地报红（CI 本来就不报）；
@@ -158,13 +164,14 @@ def test_main_base_mode_fails_closed_on_git_error(monkeypatch):
 #   · 判别性：强断言测试 + 源文件混合 ⇒ 不报；
 #   · 变异红证：把 `--new-tests-only` 从本地脚本摘掉（= 旧行为）⇒ 场景 A 立刻变回 ❌（断言非空转）。
 #
-# 与 CI 的一致性口径（**两处注释写同一段**，见 issue #4077 的裁定）：
-#   · 判定**本应相同** —— 都是「这个新增文件是不是测试文件」，唯一实现 `_is_test_file`；
-#   · 扫描源**本应不同** —— CI 只可能看到已提交 diff（PR 的改动必然已提交）；本地还要并入
+# 与 CI 的一致性口径：
+#   · 选取集**同一份实现** —— `growth_gate.select_weak_scan_files`（#5477 起两侧都调它；
+#     此前 CI 是内联 grep、本地是 `_is_test_file` ⇒ 两个口径）；
+#   · 候选源**本应不同** —— CI 只可能看到已提交 diff（PR 的改动必然已提交）；本地还要并入
 #     **工作区**未提交的新增文件（否则「提交前跑」对该文件是空跑，issue #3724）。
-#   ⚠️ 本测试**不复刻** `pr-check.yml` 的 grep，也不读它的文本 —— CI 侧口径在运行期由本文件
-#      场景 B 的文本 oracle 代表；把 workflow 文本焊进单测会让 workflow 一改（需 `workflow`
-#      scope，本分支 token 无）就红，那是在制造假红而不是防假红。
+#   ⚠️ 本测试**不复刻** `pr-check.yml` 的 grep、也不读它的文本 —— CI 侧口径由**共享实现本身**
+#      代表（场景 B 直接调 `select_weak_scan_files`）；把 workflow 文本焊进单测会让 workflow
+#      一改就红，那是在制造假红而不是防假红。
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 真跑 `bash verify-all.sh gate` 的最小 harness ──
@@ -257,10 +264,9 @@ def _run_gate(repo):
 
 # 弱断言样本一律**拼接构造**（本文件自身也是「新增测试文件」，会被 `--check-weak` 扫）
 _WEAK_LINE = "    assert result is " + "not None\n"
-# CI 那条 step 的过滤（pr-check.yml 的 `grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec'`）
-# 的净化形态：只回答「CI 会不会把这个文件交给扫描器」——**故意不复刻 CI 的全文**。
-_CI_CODE_EXT = re.compile(r"\.(py|java|ts|tsx)$", re.I)
-_CI_TEST_NAME = re.compile(r"test|spec", re.I)
+# ⚠️ 2026-09-25（issue #5477）：CI 侧选取集**不再在本文件里复刻**（`_CI_CODE_EXT`/`_CI_TEST_NAME`
+#    就是一份会漂移的副本，而它正是 #5477 的病根）—— 改为直接调共享实现
+#    `growth_gate.select_weak_scan_files`（见场景 B）。
 
 # 扫描器输出里「**真的扫过某个文件**」的唯一形态（`📄 <path>: N 处弱断言`）。
 # ⚠️ 不能用「日志里有『弱断言』三个字」当判据 —— 固定表头「扫描新增测试文件的弱断言」
@@ -351,8 +357,8 @@ def test_real_weak_assert_caught_by_both_local_and_ci(tmp_path):
 
     added = _git(repo, "diff", "--diff-filter=A", "--name-only", "origin/main...HEAD").stdout
     candidates = [f for f in added.split("\n") if f.strip()]
-    ci_scan = [f for f in candidates
-               if _CI_CODE_EXT.search(f) and _CI_TEST_NAME.search(f)]
+    # CI 的口径 = **共享实现**（issue #5477；此前是本文件里复刻的一份 grep = 会漂移的副本）
+    ci_scan = _load_gate().select_weak_scan_files(candidates)
     assert entry in ci_scan, (
         "CI 口径必须把这个新增测试文件交给扫描器 —— 否则本地那一半红就是靠"
         f"「两边都漏扫」换来的（假绿）：{ci_scan}"
