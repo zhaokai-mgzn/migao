@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -663,12 +664,15 @@ def test_auto_select_turn_directive_is_counted(tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # ⑦ 无心跳的调度任务（I4）
 # ─────────────────────────────────────────────────────────────────────────────
-def _wf(name: str, cron: str | None, paused: bool = False) -> str:
+def _wf(name: str, cron: str | None, paused: bool = False, decl: int | None = None) -> str:
+    """假 workflow 正文；`decl` = 在**头部**登记「分钟级 cron 最坏投递间隔」（issue #3951）。"""
+    mark = f"# drift-audit: minute-cron-throttle-minutes = {decl}\n" if decl else ""
     if paused:
         on = "on:\n  # schedule:\n  #   - cron: '0 18 * * *'\n  workflow_dispatch:\n"
     else:
         on = f"on:\n  schedule:\n    - cron: '{cron}'\n"
-    return f"name: {name}\n{on}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"
+    return (f"{mark}name: {name}\n{on}\njobs:\n  a:\n    runs-on: ubuntu-latest\n"
+            f"    steps:\n      - run: true\n")
 
 
 NOW = "2026-09-15T06:00:00Z"  # 距 09-06T02:00 的成功恰 9 天
@@ -747,6 +751,78 @@ def test_heartbeat_offline_is_unknown_not_pass(tmp_path):
     # 但报告/退出码能把"判据没跑出结论"与"确实有漂移"分开（`3` 不得当 `0` 读）。
     rc2, out2, _ = run(repo, "--check", "--only", "heartbeat", "--fail-on-unknown")
     assert rc2 == 3, out2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑦-b 分钟级 cron 的**节流登记**（issue #3951 的第二成因）
+#   实测：`flaky-ledger-reconcile.yml` 声明 `*/20`，而 GitHub 的 schedule 投递间隔
+#   **5h08m / 5h44m** ⇒ 「3×声明周期」(1h) 结构性不可达 = **误红**（误红即坏断言）。
+#   修法 = 把「最坏投递间隔」做成**登记值**（workflow 头部 `drift-audit:` 标记行），判据读它：
+#   有效周期 = max(声明周期, 登记值)。下面四条把两个方向都钉死（不放松 / 不 blanket）。
+# ─────────────────────────────────────────────────────────────────────────────
+def _throttled_repo(tmp_path, decl: int | None, *, age_hours: float = 3.5,
+                    decl2: int | None = None):
+    """夹具：一个 `*/20` 的 workflow（被节流那一类）+ 登记位（`decl=None` ⇒ 不登记）。"""
+    files = {".github/workflows/flaky.yml": _wf("Flaky", "*/20 * * * *")}
+    if decl:
+        files[".github/workflows/audit.yml"] = _wf("Audit", "17 21 * * *", decl=decl)
+    if decl2:
+        files[".github/workflows/other.yml"] = _wf("Other", "17 20 * * *", decl=decl2)
+    repo = mk_repo(tmp_path, files)
+    stamp = datetime(2026, 9, 15, 6, 0, tzinfo=timezone.utc) - timedelta(hours=age_hours)
+    runs = {"flaky.yml": [{"status": "completed", "conclusion": "success",
+                           "createdAt": stamp.strftime("%Y-%m-%dT%H:%M:%SZ")}]}
+    for name in ("audit.yml", "other.yml"):
+        if f".github/workflows/{name}" in files:
+            runs[name] = [{"status": "completed", "conclusion": "success",
+                           "createdAt": "2026-09-15T05:00:00Z"}]
+    fixture = tmp_path / "gh.json"
+    fixture.write_text(json.dumps(runs), encoding="utf-8")
+    return repo, fixture
+
+
+def _heartbeat_run(repo, fixture):
+    return run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+               "--gh-fixture", str(fixture), "--now", NOW)
+
+
+def test_heartbeat_minute_cron_honours_the_registered_throttle_bound(tmp_path):
+    """**登记生效**：`*/20` + 登记 360min ⇒ 阈值 18h ⇒ 3.5h 前的成功**不再**误红（正对照）。"""
+    repo, fixture = _throttled_repo(tmp_path, decl=360)
+    rc, out, rep = _heartbeat_run(repo, fixture)
+    chk = check_of(rep, "heartbeat")
+    assert rc == 0, f"登记了节流上界却仍判红（误红没消掉）：\n{out}"
+    assert not [f for f in chk["findings"] if "flaky.yml" in f["detail"]], out
+    assert any("flaky.yml" in n and "节流" in n and "360" in n for n in chk["notes"]), out
+
+
+def test_heartbeat_minute_cron_without_the_registration_is_still_red(tmp_path):
+    """**只许收紧的那一半**：摘掉登记 ⇒ **不放松**（照旧 1h 阈值）⇒ 判 stale 并点名「未登记」。"""
+    repo, fixture = _throttled_repo(tmp_path, decl=None)
+    rc, out, rep = _heartbeat_run(repo, fixture)
+    chk = check_of(rep, "heartbeat")
+    details = " || ".join(f["detail"] for f in chk["findings"])
+    assert rc == 1, f"登记被摘掉后判据静默放松了（豁免腐烂入口）：\n{out}"
+    assert "flaky.yml" in details and "最近成功在 3.5 小时前" in details, details
+    assert any("未登记" in n for n in chk["notes"]), out
+
+
+def test_heartbeat_conflicting_registrations_do_not_relax(tmp_path):
+    """两处登记取值冲突 ⇒ **不放松**（真值只许一个）+ 报告点名 —— 台账不许有两个真值。"""
+    repo, fixture = _throttled_repo(tmp_path, decl=360, decl2=60)
+    rc, out, rep = _heartbeat_run(repo, fixture)
+    chk = check_of(rep, "heartbeat")
+    assert rc == 1, f"登记冲突时静默放行了（两个真值都生效）：\n{out}"
+    assert any("登记冲突" in n for n in chk["notes"]), out
+
+
+def test_heartbeat_registered_bound_does_not_mask_a_dead_schedule(tmp_path):
+    """登记值**不是 blanket ignore**：真停摆（30.5h 无成功 > 18h 阈值）⇒ 照旧红。"""
+    repo, fixture = _throttled_repo(tmp_path, decl=360, age_hours=30.5)
+    rc, out, rep = _heartbeat_run(repo, fixture)
+    details = " || ".join(f["detail"] for f in check_of(rep, "heartbeat")["findings"])
+    assert rc == 1, f"登记值把真停摆也吞了（blanket ignore）：\n{out}"
+    assert "flaky.yml" in details and "最近成功在 30.5 小时前" in details, details
 
 
 # ─────────────────────────────────────────────────────────────────────────────

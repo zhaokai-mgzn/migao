@@ -815,6 +815,22 @@ def check_mutable_locators(a: Audit) -> CheckResult:
 SCHED_LINE = re.compile(r"^\s*-?\s*cron:\s*['\"]?([^'\"\n]+)['\"]?", re.M)
 PAUSED_SCHED = re.compile(r"^\s*#\s*(schedule:|-?\s*cron:)", re.M)
 
+# ── 心跳阈值：**声明周期** vs **GitHub 实际投递**（结构性误红的根因，issue #3951）─────────
+# 事实（现取，命令见 `docs/wiki/truth-source-contract.md` §1 I4-b）：GitHub 对本仓**分钟级**
+# cron（`*/N`，N < 60）的投递被节流 —— 实测 `flaky-ledger-reconcile.yml` 的 schedule run 间隔
+# **5h08m / 5h44m**（2026-09-25）。⇒ 拿「3 × 声明周期」（`*/20` ⇒ **1h**）当阈值
+# **结构性不可达** = 误红（`migao-acceptance`：误红即坏断言；它也正是 #3951 定时腿恒红的第二成因）。
+#
+# 修法 = 把「最坏投递间隔」做成**登记值**，判据读它（**不点名任何 workflow、不写死文件名**）：
+#   登记形态 = workflow 头部一行 `# drift-audit: minute-cron-throttle-minutes = <N>`；
+#   有效周期 = max(声明周期, 登记值) ⇒ 阈值仍是 3×有效周期。
+# ⚠️ **只许收紧的那一半**：登记缺失 / 两处取值冲突 ⇒ **不放松**（照旧按 3×声明周期判，并在
+# 报告里点名"节流上界未登记"）—— 摘掉登记会立刻在报告里说话，不会静默变成永久免检。
+HEARTBEAT_THROTTLE_DECL = re.compile(
+    r"drift-audit:\s*minute-cron-throttle-minutes\s*=\s*(\d+)")
+#: 声明周期 < 本值的 cron 归「**分钟级**」（= 会被 GitHub 节流的那一类）
+MINUTE_CRON_PERIOD_MAX = 60
+
 
 def _period_minutes(cron: str) -> int | None:
     parts = cron.split()
@@ -835,6 +851,53 @@ def _period_minutes(cron: str) -> int | None:
         if dom == "*" and mon == "*" and dow.isdigit():
             return 7 * 1440
     return None
+
+
+def _fmt_age(td: timedelta) -> str:
+    """阈值 / 时长的**人读**形态（< 2 天按小时）—— 「阈值 0 天」会让判红无法归因。"""
+    return f"{td.total_seconds() / 3600:.1f} 小时" if td < timedelta(days=2) else f"{td.days} 天"
+
+
+def _declared_throttle_minutes(heads: list[tuple[str, str]]) -> tuple[int | None, str]:
+    """读**登记的**「分钟级 cron 最坏投递间隔」（单一来源 = workflow 头部的 `drift-audit:` 标记行）。
+
+    · 恰好一处登记 ⇒ `(N, "")`；
+    · 一处都没有 ⇒ `(None, "未登记")`；
+    · 多处且取值不一致 ⇒ `(None, "登记冲突（…）")`。
+
+    为什么是**登记值**而不是代码里的常量：节流是 **GitHub 的行为**（会变），判据只该回答
+    「拿什么当有效周期」。登记值一改，判定跟着改；摘掉登记 ⇒ 立刻恢复"结构性误红"并在报告里
+    点名 —— 这是本机制**只许收紧**的那一半（对比 `Finding.always` 的同类设计）。
+    """
+    found: list[tuple[str, int]] = []
+    for name, head in heads:
+        m = HEARTBEAT_THROTTLE_DECL.search(head)
+        if m:
+            found.append((name, int(m.group(1))))
+    if not found:
+        return None, "未登记"
+    if len({v for _, v in found}) > 1:
+        return None, "登记冲突（" + " / ".join(f"{n}={v}" for n, v in found) + "）"
+    return found[0][1], ""
+
+
+def _effective_period(period: int | None, throttle: int | None,
+                      problem: str) -> tuple[int | None, str]:
+    """分钟级 cron 的**有效周期** + 写进报告的一句说明（`(周期, 说明)`；其余情况说明为空）。
+
+    · 非分钟级（或周期不可解析）⇒ 原样返回，判定口径**一个字不变**；
+    · 分钟级 + 有登记 ⇒ `max(声明周期, 登记值)`（登记值是"最坏投递间隔"，故取 max）；
+    · 分钟级 + 无登记 / 冲突 ⇒ **不放松**，只加一句归因说明（红得可解释、可修）。
+    """
+    if not period or period >= MINUTE_CRON_PERIOD_MAX:
+        return period, ""
+    if throttle:
+        return max(period, throttle), (
+            f"（分钟级 cron 被 GitHub 节流：声明 {period}min 不可达 ⇒ 按登记的**最坏投递间隔** "
+            f"{throttle}min 当有效周期）")
+    return period, (
+        f"（分钟级 cron 的节流上界**{problem}** ⇒ 只按 3×声明周期判 —— **结构性误红的来源**；"
+        f"登记形态 = workflow 头部 `# drift-audit: minute-cron-throttle-minutes = <N>`）")
 
 
 def _gh_runs(a: Audit, workflow: str, limit: int = 40) -> list[dict] | None:
@@ -880,14 +943,21 @@ def check_heartbeat(a: Audit) -> CheckResult:
     wf_dir = a.repo / ".github" / "workflows"
     scheduled: list[tuple[str, list[str]]] = []
     paused: list[str] = []
+    heads: list[tuple[str, str]] = []
     for f in sorted(wf_dir.glob("*.yml")):
         txt = f.read_text(encoding="utf-8", errors="ignore")
         head = txt.split("\njobs:")[0]
+        heads.append((f.name, head))
         crons = SCHED_LINE.findall(head)
         if crons:
             scheduled.append((f.name, [c.strip() for c in crons]))
         elif PAUSED_SCHED.search(txt):
             paused.append(f.name)
+    throttle, throttle_problem = _declared_throttle_minutes(heads)
+    if throttle and not any(p and p < MINUTE_CRON_PERIOD_MAX for _, crons in scheduled
+                            for p in (_period_minutes(c) for c in crons)):
+        r.notes.append(f"登记的分钟级 cron 节流上界 {throttle}min **本轮没用上**（判据面里没有分钟级 "
+                       f"cron）⇒ 该登记可以撤掉（豁免台账只许缩短）")
     r.evaluated = len(scheduled) + len(paused)
     for name in paused:
         r.findings.append(Finding(
@@ -931,6 +1001,7 @@ def check_heartbeat(a: Audit) -> CheckResult:
         succ = [t for t in (_parse_ts(x.get("createdAt", "")) for x in runs
                             if x.get("conclusion") == "success") if t]
         period = min([p for p in (_period_minutes(c) for c in crons) if p] or [0]) or None
+        eff, throttle_note = _effective_period(period, throttle, throttle_problem)
         if not succ:
             last = _parse_ts(runs[0].get("createdAt", ""))
             age = (a.now - last).days if last else "?"
@@ -941,16 +1012,16 @@ def check_heartbeat(a: Audit) -> CheckResult:
                 f"却没有任何机制因它不心跳而红"))
             continue
         age = a.now - max(succ)
-        threshold = timedelta(minutes=period * 3) if period else timedelta(days=3)
-        if period and period >= 1440:
-            threshold = timedelta(minutes=period + 2 * 1440)
-        r.notes.append(f"{name}: 周期 {period}min，最近成功 {max(succ).date()}（{age.days} 天前），"
-                       f"阈值 {threshold}")
+        threshold = timedelta(minutes=eff * 3) if eff else timedelta(days=3)
+        if eff and eff >= 1440:
+            threshold = timedelta(minutes=eff + 2 * 1440)
+        r.notes.append(f"{name}: 周期 {period}min{throttle_note}，最近成功 {max(succ).date()}"
+                       f"（{_fmt_age(age)}前），阈值 {_fmt_age(threshold)}")
         if age > threshold:
             r.findings.append(Finding(
                 f"{name}|stale",
-                f"{name} 最近成功在 {age.days} 天前（周期 {period}min，阈值 {threshold.days} 天）"
-                f"—— 调度还挂着但已经不产出"))
+                f"{name} 最近成功在 {_fmt_age(age)}前（周期 {period}min{throttle_note}，"
+                f"阈值 {_fmt_age(threshold)}）—— 调度还挂着但已经不产出"))
     if unknown and len(unknown) == len(scheduled):
         # 全部未知 ⇒ 心跳判定整体不可用，必须显式标注（`--fail-on-unknown` 时按未知=坏处理）
         r.status = "unknown"
@@ -1082,7 +1153,11 @@ CHECKS: list[Check] = [
         title="无心跳的调度任务",
         judgment="列出所有用 `schedule:` 的 workflow（含**被注释停用**的），比对最后一次**成功**运行的时间"
                  "与 cron 周期推出的阈值；零成功 / 从未跑过 / 超过阈值 ⇒ 漂移。"
-                 "`gh` 不可达 ⇒ 该项记『未知』，**不假装通过**。",
+                 "`gh` 不可达 ⇒ 该项记『未知』，**不假装通过**；**分钟级** cron（声明周期 < 60min）"
+                 "的阈值按**登记的**最坏投递间隔取有效周期（workflow 头部 "
+                 "`# drift-audit: minute-cron-throttle-minutes = <N>`）—— GitHub 对分钟级 cron 的"
+                 "实测节流会让「3×声明周期」结构性不可达（误红，issue #3951）；登记缺失/冲突 ⇒ "
+                 "**不放松**（照旧按 3×声明周期判并在报告里点名）。",
         remedy="先看最近一次失败 job 日志定位根因；确因环境波动则修稳定再恢复 `schedule:`，"
                "不要长期挂着不产出的调度（停摆不会自己变红）。",
         fn=check_heartbeat, network=True, min_evaluated=1,
