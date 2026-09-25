@@ -102,7 +102,12 @@
 | # | 判定方式 | 违反后的处置 | 落码 |
 |---|---|---|---|
 | I4-a | **活锚**（`~/.dsh/.agent-presets/migao`，软链）逐技能与仓库比 `version:` + **逐字节 sha256**；活锚检出落后 `base` **且落后区间动过 `.agent-presets/migao/**` ⇒ 红**（**内容级**判定，不是提交数 —— 落后 1 个提交但预设未变 ⇒ 规则仍是最新，判红就是噪音红）；活锚 `.agent-presets/` 下**有未提交改动 ⇒ 红**（内容无法用 sha 引证）；活锚**不存在 ⇒ 未知**（不判通过） | 见 §5「活锚拓扑」；对活锚所在检出 `git fetch origin main && git merge --ff-only origin/main`（**不要手抄文件**，手抄就是新一层快照） | `skill-anchor` |
-| I4-b | 凡声明 `schedule:` 的 workflow（含**被注释停用**的）：核"最后一次**成功**运行"与 cron 周期推出的阈值；**零成功 / 从未跑过 / 超阈值 / 调度被注释停用 ⇒ 红**；`gh` 不可达 ⇒ **未知**（不假装通过） | 当**缺陷开单**，不得读成"它一直红/它不重要"；修稳定再恢复 `schedule:` | `heartbeat` |
+| I4-b | 凡声明 `schedule:` 的 workflow（含**被注释停用**的）：核"最后一次**成功**运行"与 cron 周期推出的阈值；**零成功 / 从未跑过 / 超阈值 / 调度被注释停用 ⇒ 红**；`gh` 不可达 ⇒ **未知**（不假装通过）。**分钟级** cron（声明周期 < 60min）的阈值按**登记的**最坏投递间隔取有效周期（workflow 头部 `# drift-audit: minute-cron-throttle-minutes = <N>`，实测依据见下表注）—— GitHub 对分钟级 cron 的节流会让「3×声明周期」结构性不可达（误红）；登记缺失 / 取值冲突 ⇒ **不放松**（照旧按 3×声明周期判并在报告里点名） | 当**缺陷开单**，不得读成"它一直红/它不重要"；修稳定再恢复 `schedule:`；**分钟级 cron 的阈值**走上面那个登记值（改登记 ⇒ 判定跟着改；摘登记 ⇒ 立刻在报告里说话） | `heartbeat` |
+
+> **I4-b 的实测依据（现取，别写死）**：`gh run list --workflow=flaky-ledger-reconcile.yml --limit 100 --json event,createdAt,conclusion`
+> ⇒ 其 `*/20` 的 schedule run 间隔实测 **5h08m / 5h44m**（2026-09-25），而 `flaky-ledger-reconcile.yml`
+> 的失败/成功大多来自 `pull_request` 事件 ⇒ 用「3×声明周期」判它 = **误红**。登记值取 **360min**
+> 是为了覆盖实测最坏间隔（旧口径「2~5.5 小时」低估了它）。**这一条不改任何其它 workflow 的口径**。
 
 ---
 

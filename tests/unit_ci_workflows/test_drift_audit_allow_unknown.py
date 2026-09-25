@@ -45,6 +45,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -121,13 +122,19 @@ def missing_anchor(tmp: Path) -> str:
     return str(tmp / "no-such-anchor-dir")
 
 
-def audit(repo: Path, *args: str) -> tuple[int, str, dict]:
-    """跑**真的**审计（`--offline` 只影响网络判据；报告写到仓库外，不污染被测树）。"""
+def audit(repo: Path, *args: str, offline: bool = True) -> tuple[int, str, dict]:
+    """跑**真的**审计（报告写到仓库外，不污染被测树）。
+
+    `offline=True`（默认）让网络判据记「未知」；**给了 `--gh-fixture` 的用例要关掉它** ——
+    否则心跳判据因为"离线"整条记 `unknown`，就测不到阈值本身。
+    """
     out = Path(tempfile.mkdtemp()) / "drift.json"
-    p = subprocess.run(
-        [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main", "--offline",
-         "--json", str(out)] + list(args),
-        capture_output=True, text=True, timeout=300, cwd=str(REPO_ROOT))
+    cmd = [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main",
+           "--json", str(out)]
+    if offline:
+        cmd.append("--offline")
+    p = subprocess.run(cmd + list(args), capture_output=True, text=True, timeout=300,
+                       cwd=str(REPO_ROOT))
     rep = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
     return p.returncode, p.stdout + p.stderr, rep
 
@@ -269,3 +276,77 @@ def test_workflow_declares_a_single_named_exemption_on_the_scheduled_leg():
     ids = set(re.findall(r"--allow-unknown\s+([A-Za-z0-9_\-]+)",
                          WORKFLOW.read_text(encoding="utf-8")))
     assert ids == {"skill-anchor"}, f"豁免面被扩大了（只许 skill-anchor）：{sorted(ids)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 8：整条腿的收口 —— 无漂移的树 + 定时腿参数 ⇒ `0`
+# ─────────────────────────────────────────────────────────────────────────────
+def test_drift_free_tree_exits_0_under_the_scheduled_leg_flags(tmp_path):
+    """两个成因都消掉之后，定时腿在**无漂移的树**上真的 `0`（而不是"仍然红、只是说法变了"）。
+
+    · `skill-anchor`：活锚不存在 ⇒ 记 `unknown`，由**点名豁免**放行（判据照旧打印）；
+    · `heartbeat`：`--gh-fixture` 给出**近期成功** ⇒ 能判、且判成 `ok`
+      （`--offline` 会让它整条记 `unknown` ⇒ 必须关掉离线，见 `audit(offline=...)`）。
+    """
+    repo = mk_repo(tmp_path)
+    fixture = tmp_path / "gh.json"
+    fixture.write_text(json.dumps({"fixture-daily.yml": [
+        {"status": "completed", "conclusion": "success",
+         "createdAt": "2026-09-15T05:00:00Z"}]}), encoding="utf-8")
+    rc, out, rep = audit(repo, "--check", "--strict-stale", "--fail-on-unknown",
+                         "--allow-unknown", "skill-anchor",
+                         "--only", "skill-anchor,heartbeat",
+                         "--live-anchor", missing_anchor(tmp_path),
+                         "--gh-fixture", str(fixture), "--now", "2026-09-15T06:00:00Z",
+                         offline=False)
+    assert rc == 0, f"无漂移的树 + 定时腿参数仍非零（豁免 / 阈值没接上）：rc={rc}\n{out}"
+    assert check_of(rep, "skill-anchor")["status"] == "unknown", out
+    assert check_of(rep, "heartbeat")["status"] == "ok", out
+    assert rep["summary"]["unknown_exempt"] == ["skill-anchor"], rep["summary"]
+    assert rep["summary"]["verdict"] == "unknown-exempt", rep["summary"]["verdict"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 9：登记位必须**在当前树上真的被用到**（否则它就是一条没人消费的声明）
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture(scope="module")
+def drift_mod():
+    """按**路径**加载判据模块（不复制第二套正则/清单：有效周期只认 `drift_audit` 的实现）。"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("drift_audit_throttle", DRIFT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["drift_audit_throttle"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_real_repo_minute_crons_are_judged_against_the_registered_bound(drift_mod):
+    """自证坐标：登记值**在当前树上被读到**，且每个分钟级 cron 的有效周期确实 = max(声明周期, 登记值)。
+
+    这条同时钉住三种腐烂：① 登记行被删 / 被挪到 `jobs:` 之后（判据读的是**头部**）⇒ 读不到；
+    ② 登记值被改到实测最坏投递间隔之下 ⇒ 结构性误红会回来；③ 分钟级 cron 全没了却留着登记
+    ⇒ 台账该撤（豁免台账只许缩短）。
+    """
+    wf_dir = REPO_ROOT / ".github" / "workflows"
+    heads = [(p.name, p.read_text(encoding="utf-8").split("\njobs:")[0])
+             for p in sorted(wf_dir.glob("*.yml"))]
+    throttle, problem = drift_mod._declared_throttle_minutes(heads)
+    assert throttle, (
+        f"读不到登记的分钟级 cron 节流上界（{problem}）⇒ 判据不放松 ⇒ 定时腿结构性误红。"
+        f"登记形态 = workflow 头部 `# drift-audit: minute-cron-throttle-minutes = <N>`")
+    # 实测依据：`flaky-ledger-reconcile.yml` 的 schedule 投递间隔 5h08m / 5h44m（2026-09-25）
+    # ⇒ 登记值低于 330min（= 旧口径的上界 5.5h）就覆盖不住实测最坏间隔，误红会复发。
+    assert throttle >= 330, (
+        f"登记值 {throttle}min 低于实测最坏投递间隔（~5h44m）⇒ 「3×声明周期」式误红会复发；"
+        f"要降它必须先给出新的实测依据（命令见 `docs/wiki/truth-source-contract.md` §1 I4-b 注）")
+    fine = [(name, head, c) for name, head in heads for c in drift_mod.SCHED_LINE.findall(head)
+            if (drift_mod._period_minutes(c) or 0)
+            and drift_mod._period_minutes(c) < drift_mod.MINUTE_CRON_PERIOD_MAX]
+    assert fine, (
+        "当前树里已没有任何**分钟级** cron ⇒ 这条登记成了没有消费方的声明（豁免台账只许缩短）："
+        "请把 workflow 头部那行 `# drift-audit: minute-cron-throttle-minutes = …` 撤掉")
+    for name, _head, cron in fine:
+        period = drift_mod._period_minutes(cron)
+        eff, note = drift_mod._effective_period(period, throttle, problem)
+        assert eff == max(period, throttle), f"{name} 的有效周期不是 max(声明周期, 登记值)：{eff}"
+        assert "节流" in note, f"{name} 的报告说明没有写清「为什么用有效周期」：{note}"
