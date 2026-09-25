@@ -68,6 +68,26 @@ test('共享模块 operationDisplayName：逻辑名 · 部位 / 缺键退回快�
   )
 })
 
+test('共享模块：同义不同名的 operation_name 也作快照名兜底（issue #5003②）', () => {
+  // 报工流水读面（`WorkLogRow`）把**同一语义**（快照 / 变体名）放在 `operation_name` 下 ——
+  // 改前兜底分支只认 `operation` ⇒ 读面行传进来时取不到值、显示空串（本行就是那条红证）。
+  assert.equal(
+    operationDisplayName({ operation_name: '定型-布' }),
+    '定型-布',
+    '只有 operation_name ⇒ 退回快照名原文（改前给空串）',
+  )
+  assert.equal(
+    operationDisplayName({ operation_name: '定型-布', logical_name: '定型', position: '布帘' }),
+    '定型 · 布帘',
+    '有逻辑名 + 部位 ⇒ 走逻辑名（别名只在兜底分支生效）',
+  )
+  assert.equal(
+    operationDisplayName({ operation: '精裁-布', operation_name: '三边-布' }),
+    '精裁-布',
+    '同义两键同时在 ⇒ `operation` 优先（口径显式，不靠书写顺序）',
+  )
+})
+
 // ── ② 一屏渲染：显示名带部位（红证：改前不 trim / 缺逻辑名只显示部位）────────
 
 test('一屏：工序显示名 = 「逻辑名 · 部位」（不得直接拼 logical_name + position）', () => {

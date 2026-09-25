@@ -18,13 +18,19 @@
  * 两者都缺 ⇒ 空串（调用方按空态渲染，**不编占位名**）。
  * 改前本卡片直接渲染 `data.current_operation`（工人端**快照名**，变体名 `精裁-布`）⇒ 顾客端
  * 看到的是内部变体名而不是「精裁 · 布帘」。
+ *
+ * 🔴 **同义不同名（issue #5003②）**：快照 / 变体名在**报工流水读面**上叫 `operation_name`
+ * ⇒ 兜底分支**两个键名都认**（改前只认 `operation`：传进来的对象只有 `operation_name` 时
+ * 兜底取不到值 ⇒ 显示空串）。两键同时在 ⇒ `operation` 优先。
+ * ⚠️ 本卡片把 `current_operation` **显式映射**成 `operation` 后传进来（映射点见调用方）。
  */
 export function operationDisplayName(op?: {
   operation?: string | null
+  operation_name?: string | null
   logical_name?: string | null
   position?: string | null
 } | null): string {
-  const logical = (op?.logical_name ?? '').trim() || (op?.operation ?? '').trim()
+  const logical = (op?.logical_name ?? '').trim() || (op?.operation ?? '').trim() || (op?.operation_name ?? '').trim()
   const position = (op?.position ?? '').trim()
   return logical && position ? `${logical} · ${position}` : logical
 }

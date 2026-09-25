@@ -30,6 +30,24 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 | C5 | 已退役面不得再渲染工序（退役 ≠ 无人管） | 把工序加回纸面 ⇒ 必红 |
 | C6 | 工人端（worker-h5）**引用**共享模块 `frontend/shared/operation-display.mjs`（不许自拼一份回来） | 改回 `${logical_name} · ${position}` ⇒ 必红 |
 | C7 | 四份实现（admin-web / shared / bmini / mini-app）**喂同一张输入表逐值等价** | 改任一份而不同步 ⇒ 必红（含注入式红证） |
+| C8 | 读面「工序名键」**逐个登记**（未登记即红 / 台账只许缩短）+ helper 的接受键集**结构化**锁定（#5003②） | 读面新增一个 `operation*` 键 ⇒ 必红；删掉 helper 的同义别名兜底 ⇒ 必红 |
+
+## 🔴 C8 的「键名分叉」（issue #5003②）
+
+`operation` 这一个键名在本仓有**三种语义**，`operation_name` 又是同一个语义的**另一个名字**
+（同义不同名）—— 而 helper 的兜底分支原先只认 `operation`：
+
+| 键（真值源 = `frontend/bmini-app/src/services/productionService.ts`） | 语义 | 处置 |
+|---|---|---|
+| `ProductionOperation.operation` | 快照 / 变体名（`精裁-布`） | **fallback**（helper 兜底键） |
+| `WorkLogRow.operation_name` | 同上（报工流水读面的键名） | **fallback**（#5003② 补的显式映射） |
+| `PieceworkSummary.per_operation[].operation` | **逻辑名**（`精裁`）—— 同名不同义 | `logical`：**不得**喂兜底 |
+| `ScanResolveResult.operation` | 挂的是**对象**（`ScanOperationView`） | `container`：不得喂 helper |
+| 各 `*.logical_name` | 读时派生的逻辑名 | `derived`：只作首选键 |
+
+C8 把这张表变成**台账**：读面里出现的每个工序名键都必须登记（**未登记即红**），
+台账条目必须**活着**（真值源里已消失 ⇒ 红 ⇒ 只许缩短），
+且登记为 `fallback` 的键必须真的在 helper 的接受键集里（**两张表不许各说各话**）。
 
 ## 🔴 C3 的「渲染位置」判据（issue #4963 收口）
 
@@ -70,10 +88,15 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 共享实现（#5323 收敛：剥注释的**唯一**实现）—— append 而非 insert，避免遮蔽同名模块。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows._source_parsing import code_without_comments  # noqa: E402
 
 #: 显示名的**唯一**实现（拼装只此一份；各页各拼一份必然漂移，而漂移的那一份不会变红）
 HELPER = "frontend/admin-web/src/lib/operation-display.ts"
@@ -252,6 +275,14 @@ _NAMES: tuple[tuple[str, str], ...] = (
     ("缺 logical_name（老数据）", "{ operation: '定型-布' }"),
     ("logical_name 全空白", "{ operation: '定型-布', logical_name: '  ' }"),
     ("键值带空白", "{ operation: 'x', logical_name: ' 精裁 ', position: ' 布帘 ' }"),
+    # #5003② 的同义不同名：报工流水读面把**同一语义**（快照 / 变体名）放在 `operation_name` 下 ——
+    # 这三行是它进 helper 的**唯一**证据（改前读数 = `''`：`operation_name` 不在接受键集里 ⇒ 显示空串）。
+    ("读面行：只有 operation_name", "{ operation_name: '定型-布' }"),
+    ("读面行 + 逻辑名", "{ operation_name: '定型-布', logical_name: '定型' }"),
+    ("读面行 + 逻辑名 + 部位", "{ operation_name: '定型-布', logical_name: '定型', position: '布帘' }"),
+    # 同名不同义时**哪个赢**必须由口径定，不许留给对象字面量的书写顺序：
+    # `operation` 是 `ProductionOperation` 的元素键（读面契约的主键名）⇒ 快照名优先。
+    ("operation 与 operation_name 同时在", "{ operation: '精裁-布', operation_name: '三边-布' }"),
 )
 _EXPECTED: tuple[str, ...] = (
     "",             # ① 空态给空串，**不编占位名**「工序」（改前 bmini 编「工序」）
@@ -264,6 +295,10 @@ _EXPECTED: tuple[str, ...] = (
     "定型-布",       # ⑤ 缺 logical_name ⇒ 退回快照名原文（改前只显示部位 / 显示空白）
     "定型-布",       # ⑥ logical_name 全空白 ⇒ 同上
     "精裁 · 布帘",   # ⑦ 键值带空白必须 trim（改前不 trim ⇒ 原样上屏）
+    "定型-布",       # ⑧ #5003② 同义不同名：`operation_name` 也是快照名（改前给空串）
+    "定型",         # ⑨ 逻辑名在 ⇒ 走逻辑名
+    "定型 · 布帘",   # ⑩ 逻辑名 + 部位
+    "精裁-布",       # ⑪ 同义两键同时在 ⇒ `operation` 优先（口径显式，不靠书写顺序）
 )
 
 
@@ -615,3 +650,176 @@ def test_c7_injected_divergence_is_red(tmp_path: Path):
     )
     # 反向：真实文件仍与冻结表一致（证明上面那次不一致来自注入，而不是本来就不一致）
     assert _parity(rel) == list(_EXPECTED)
+
+
+# ── C8：读面「工序名键」逐个登记 + helper 接受键集（issue #5003②）──────────────
+#
+# 病根（#5003② 登记的**守卫/契约脆点**）：`operation` 一个键名有三种语义、`operation_name`
+# 又是同一个语义的另一个键名 —— 而 helper 的兜底分支只认 `operation`
+# ⇒ 传进去的对象只有 `operation_name` 时（报工流水读面 `WorkLogRow`），
+# 兜底分支**取不到值**：`operationDisplayName({ operation_name: '定型-布' })` 返回 `''`
+# （**改前实测读数**）⇒ 界面显示空工序名（零报错、零判据）。
+#
+# C8 的形态 = 「**未登记即红**」的台账 + 「两张表不许各说各话」的交叉断言。
+
+#: 读面真值源：bmini 的读面类型**只**在这份文件里声明 ⇒ 它是「键名分叉」的对账源。
+READ_FACE_SOURCE = "frontend/bmini-app/src/services/productionService.ts"
+
+#: helper **接受**的键（C8 从四份实现里**结构化**取 `op?.<键>`，不按文本子串取）：
+#: `logical_name` = 逻辑名（首选）· `position` = 部位 ·
+#: `operation` / `operation_name` = **同一语义**（工人端快照 / 变体名）的两个键名，
+#: 后者是 #5003② 补的**显式映射**（同义不同名）。
+ACCEPTED_KEYS: frozenset[str] = frozenset(
+    {"logical_name", "operation", "operation_name", "position"}
+)
+
+#: 台账（`(interface, 键, 处置)`）：读面里出现的每个工序名键都要登记，条目必须**活着**。
+#:   `fallback`  = 快照 / 变体名 ⇒ helper 的兜底分支**接受**它（必须 ∈ `ACCEPTED_KEYS`）；
+#:   `logical`   = **逻辑名** —— ⚠️ **同名不同义**：`per_operation[].operation` 与
+#:                 `ProductionOperation.operation` 同名却是逻辑名（计件查找键）。把它喂兜底分支
+#:                 就是把逻辑名当快照名显示、拿去比 `per_operation` 又查不到（#4963 的静默消失形态）；
+#:   `derived`   = 读时派生的逻辑名 ⇒ 只作首选键，**不是**兜底键；
+#:   `container` = 该键挂的是**对象**（不是名字字符串）⇒ 不得喂 helper。
+#: 残余（如实登记，本判据判不了）：`ScanOperationView` / `ScanAlternativeView` /
+#: `ScanOverviewOperationView` 三个扫码读面**只下发派生逻辑名、不下发快照名** ⇒ 老数据
+#: （`logical_name` 空）时兜底分支无值可取（显示空串）。补这个键属**读面契约**
+#: （Java 侧 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java`
+#: → 前端类型），跨模块改动不在本包射程 —— 见 PR body 未固化项。
+_NAME_KEY_LEDGER: tuple[tuple[str, str, str], ...] = (
+    ("ProductionOperation", "operation", "fallback"),
+    ("ProductionOperation", "logical_name", "derived"),
+    ("WorkLogRow", "operation_name", "fallback"),
+    ("PieceworkSummary", "operation", "logical"),
+    ("ScanOperationView", "logical_name", "derived"),
+    ("ScanAlternativeView", "logical_name", "derived"),
+    ("ScanOverviewOperationView", "logical_name", "derived"),
+    ("ScanResolveResult", "operation", "container"),
+)
+
+
+def _is_name_key_candidate(key: str) -> bool:
+    """一个成员键是否落在「工序名键」的**发现面**里（决定它要不要登记）。
+
+    四个已知键 + `operation*` 家族里既不是标识符（`*_id`）也不是复数容器（`*s`）的新键
+    （如 `operation_label`）⇒ 一律要求登记（**未登记即红**就是靠这条发现面）。
+    """
+    if key in ("operation", "operation_name", "current_operation", "logical_name"):
+        return True
+    return key.startswith("operation") and not key.endswith(("_id", "s"))
+
+
+def _interface_body(code: str, open_index: int) -> str:
+    """`{…}` 平衡扫描（注释已剥；只要块边界，不做语法解析）。不平衡 ⇒ 红（fail-closed）。"""
+    depth, i = 0, open_index
+    while i < len(code):
+        if code[i] == "{":
+            depth += 1
+        elif code[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return code[open_index:i + 1]
+        i += 1
+    raise AssertionError(f"`{READ_FACE_SOURCE}` 的 interface 大括号不平衡 ⇒ 抽取失败 ⇒ 红")
+
+
+def _read_face_name_keys(src: str) -> set[tuple[str, str]]:
+    """真值源里 `(interface, 键)` 的工序名键**全集**（先剥注释：复用全仓唯一实现）。
+
+    **内联**成员也要认：`per_operation: { operation: string; amount: number }[]`
+    正是「同名不同义」那一处（计件的 `operation` 是逻辑名）⇒ 只扫顶层成员会漏掉它。
+    """
+    code = code_without_comments(src, READ_FACE_SOURCE)
+    found: set[tuple[str, str]] = set()
+    for match in re.finditer(r"^export interface (\w+)", code, re.M):
+        body = _interface_body(code, code.index("{", match.end()))
+        for key in re.findall(r"\b([A-Za-z_]\w*)\s*\??\s*:", body):
+            if _is_name_key_candidate(key):
+                found.add((match.group(1), key))
+    return found
+
+
+def _name_key_mismatches(src: str) -> list[str]:
+    """真值源 ↔ 台账的**双向**差集（未登记 / 死条目）。纯函数 ⇒ 可喂注入语料做红证。"""
+    found = _read_face_name_keys(src)
+    ledger = {(iface, key) for iface, key, _ in _NAME_KEY_LEDGER}
+    return ([f"未登记：{iface}.{key}" for iface, key in sorted(found - ledger)]
+            + [f"台账死条目（真值源里已不存在）：{iface}.{key}" for iface, key in sorted(ledger - found)])
+
+
+def _accepted_keys(src: str) -> set[str]:
+    """一份实现**实际读的键**（结构化：`op?.<键>`）—— 不是对实现文本做子串匹配。"""
+    return set(re.findall(r"op\?\s*\.\s*(\w+)", _extract_function(src, "operationDisplayName")))
+
+
+def test_c8_read_face_name_keys_are_all_registered():
+    """C8 之一：bmini 读面里出现的每个工序名键都**登记在册**（未登记 / 死条目 ⇒ 红）。"""
+    mismatches = _name_key_mismatches(_read(READ_FACE_SOURCE))
+    assert mismatches == [], (
+        f"`{READ_FACE_SOURCE}` 的工序名键与台账对不上（issue #5003②）——\n  "
+        + "\n  ".join(mismatches)
+        + "\n新增键要在 `_NAME_KEY_LEDGER` 里写明它的**语义**与能否当 helper 的兜底"
+        "（同名不同义正是本条的病灶）；已消失的条目要删（台账只许缩短）"
+    )
+
+
+def test_c8_helper_accepts_exactly_the_registered_fallback_keys():
+    """C8 之二：四份实现的接受键集 == `ACCEPTED_KEYS`，且台账的 `fallback` 键都在其中。
+
+    两条合起来钉住「**两张表不许各说各话**」：把某个兜底键从 helper 里删掉
+    （或只删一份实现）⇒ 必红；台账里登记成 `fallback` 而 helper 不认 ⇒ 必红。
+    """
+    for rel in IMPLEMENTATIONS:
+        actual = _accepted_keys(_read(rel))
+        assert actual == set(ACCEPTED_KEYS), (
+            f"`{rel}` 的接受键集与冻结口径不一致：实际 {sorted(actual)} ≠ "
+            f"{sorted(ACCEPTED_KEYS)}（#5003②：同义不同名的两个键名都要认）"
+        )
+    fallback_keys = {key for _iface, key, disposition in _NAME_KEY_LEDGER if disposition == "fallback"}
+    assert fallback_keys <= set(ACCEPTED_KEYS), (
+        f"台账把 {sorted(fallback_keys - set(ACCEPTED_KEYS))} 登记成兜底键，但 helper 不认它 ⇒ "
+        "两张表各说各话（正是 #5003② 的形态）"
+    )
+    assert fallback_keys == {"operation", "operation_name"}, (
+        f"台账里的兜底键集被改动（{sorted(fallback_keys)}）—— 兜底语义 = 快照 / 变体名，"
+        "两个键名（`operation` / 同义的 `operation_name`）之外不得再加"
+    )
+
+
+def test_c8_unregistered_name_key_is_red(tmp_path: Path):
+    """C8 之三（**未登记即红**的红证）：往读面类型里塞一个新键 ⇒ 台账立刻对不上。
+
+    红证卫生：注入前后用**内容指纹**自证（禁 mtime/size），注入点不存在即红。
+    """
+    original = _read(READ_FACE_SOURCE)
+    injected = original.replace(
+        "  operation: string\n", "  operation: string\n  operation_label?: string\n", 1
+    )
+    assert injected != original, (
+        f"`{READ_FACE_SOURCE}` 的 `ProductionOperation` 里找不到注入点 ⇒ 本红证会空跑"
+    )
+    assert _fingerprint(injected) != _fingerprint(original), "注入后内容指纹未变 ⇒ 注入没生效"
+    assert ("ProductionOperation", "operation_label") in _read_face_name_keys(injected), (
+        "注入的新键没被抽取到 ⇒ C8 的发现面是空跑（未登记形态会静默通过）"
+    )
+    assert _name_key_mismatches(injected) != [], (
+        "读面新增一个未登记的工序名键却**没**判红 ⇒ C8 是空判据"
+    )
+    # 反向：真语料仍对得上（证明上面那次不一致来自注入，而不是本来就不一致）
+    assert _name_key_mismatches(original) == []
+
+
+def test_c8_dropping_the_alias_fallback_is_red():
+    """C8 之四（**反向**红证）：把 `operation_name` 这个同义别名从兜底分支里删掉 ⇒ 必红。
+
+    这条防的是「把判据改松到永远绿」的反方向 —— 有人嫌两个键名麻烦、删掉别名兜底时，
+    C7 的 ⑧ 行（逐值）与 C8 之二（键集）会**同时**红。
+    """
+    rel = IMPLEMENTATIONS[2]  # bmini 的那一份
+    original = _read(rel)
+    injected = original.replace(" || (op?.operation_name ?? '').trim()", "")
+    assert injected != original, f"`{rel}` 里找不到别名兜底的注入点 ⇒ 本红证会空跑"
+    assert _fingerprint(injected) != _fingerprint(original), "注入后内容指纹未变 ⇒ 注入没生效"
+    assert _accepted_keys(injected) != set(ACCEPTED_KEYS), (
+        "删掉 `operation_name` 兜底后接受键集**没**变 ⇒ C8 是空判据"
+    )
+    assert _accepted_keys(original) == set(ACCEPTED_KEYS)  # 反向：真文件仍达标

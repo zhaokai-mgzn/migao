@@ -221,6 +221,17 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "（改前本条理由写「该文件当前未被任何标记命中」且只谈 `.operation` 来源 —— "
         "**与代码不符**：它当时渲染的正是 catalog 的 `op.name`，而那正是 P1 的漏点）",
     ),
+    (
+        "frontend/admin-web/src/lib/operation-display.ts",
+        "**唯一的显示名拼装实现本身**（S1 守卫 `tests/unit_ci_workflows/test_operation_display_name_guard.py` "
+        "的 `HELPER` 常量指向的正是它）：它是**生产者**，不是消费面 —— 无 JSX、不渲染任何工序名，"
+        "故「这个面有没有走唯一 helper」对它无意义（受管面判据 C2a 不适用）。"
+        "它命中标记 `operation_name` 是**契约声明**：issue #5003② 把「快照 / 变体名」的**同义键名**"
+        "（`operation` / `operation_name` —— 后者是报工流水读面 `WorkLogRow` 的键名）写进"
+        "`OperationNameFields` 与兜底分支（改前只认 `operation` ⇒ 传进来的是读面行时兜底取不到值，"
+        "工序名显示空白）。"
+        "**过期即红**：一旦本文件开始渲染工序名（出现 JSX 渲染位置取值）⇒ 本守卫的直接渲染判据判红。",
+    ),
 )
 
 #: 受管面「直接渲染快照名」的形态（与 S1 的 C3 **同形** —— issue #4963 起两边都是

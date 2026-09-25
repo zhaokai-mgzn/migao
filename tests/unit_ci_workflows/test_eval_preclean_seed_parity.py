@@ -12,7 +12,9 @@ seed 一改两边就漂移：复位会把工单复位到**一个 seed 从没产�
   · seed 把 `status` 改成 `'processing'` → 复位仍写 `pending` ⇒ 必红；
   · 复位 SQL 去掉 `close_reason = NULL` → 与 seed 的"该列未给值（= NULL）"不一致 ⇒ 必红；
   · seed 的时间线基线 action 改字面量 → 复位的 `action <> '<seed 字面量>'` 不匹配 ⇒ 必红；
-  · 复位 SQL 开始改写基线列（id/tenant_id/ticket_no/order_id/created_at…）⇒ 必红。
+  · 复位 SQL 开始改写基线列（id/tenant_id/ticket_no/order_id/created_at…）⇒ 必红；
+  · 复位实现里**真的**出现产品状态更新 API 的**调用点** ⇒ 必红；
+    而注释 / 文档字符串 / **非调用字符串** / 标识符里写同形文本 ⇒ **不得**红（#5003① 的双向判据）。
 """
 import ast
 import re
@@ -34,60 +36,93 @@ BASELINE_COLUMNS = ("id", "tenant_id", "ticket_no", "order_id", "customer_id", "
                     "deleted")
 
 
-# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest 同款理由）。
-sys.path.append(str(REPO_ROOT / "tests"))
+#: 产品状态更新 API 的**调用形态**：本仓的评测复位若回落到产品 API，只可能是 HTTP 客户端的
+#: 方法调用（`c.request("PUT", …)` / `httpx.put(…)` / `session.post(…)`）。
+_HTTP_CALLS = frozenset({"request", "put", "post", "patch", "delete"})
 
-from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 收敛：剥注释的唯一实现）
-    code_without_comments,
-)
+#: 与旧口径**同一对标记**（旧 = `"PUT" in body or "/status" in body`）—— 只换**读法**
+#: （「命中落在调用点上」vs「出现在原文任意位置」）：标记集不放宽，判定强度不放松。
+_API_MARKERS = ("PUT", "/status")
+
+#: 被测切片的坐标。给**仓库相对全路径**（裸文件名 + 行号会被 Case Trust 规则 G 判红）。
+_SLICE_WHERE = "tests/agent_eval/local_runner.py::_reset_aftersales_ticket"
 
 
-def _code_only(body: str, where: str) -> str:
-    """源码切片 → **代码面**：剥注释（复用全仓唯一实现）**并抹掉 docstring**。
+def _string_parts(node: ast.AST) -> list[str]:
+    """`node` 子树里的字符串常量片段（字面量 + f-string 的常量段）。
 
-    为什么连 docstring 一起抹：它和注释一样是**写给人看的散文** —— 一句
-    「不要改成 PUT /api/admin/orders/{id}/status」写在 docstring 里，同样会把
-    「裸子串」判据喂红（同族假红，issue #5003①）。
-    **其它字符串字面量一律保留**：真实 HTTP 调用的方法名与 URL 就在字符串里
-    （`c.request("PUT", …)`），抹掉字符串会把**真调用**一起丢掉 —— 那是假绿方向，比假红更坏。
-
-    切片解析不出 AST 时**只剥注释**（不因解析失败放宽也不收紧；lexical 剥注释不需要语法成立）。
+    注释不是 AST 节点；文档字符串只在**被当作实参**时才会走到这里（那时它确实是实参）。
+    标识符（如 `INPUT_QTY`）不是常量 ⇒ 不再贡献命中（#5003① 的第二类假红）。
     """
-    code = code_without_comments(body, where)
-    try:
-        tree = ast.parse(body)
-    except SyntaxError:
-        return code
-    lines = code.splitlines(keepends=True)
+    return [sub.value for sub in ast.walk(node)
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str)]
+
+
+def _name_bindings(tree: ast.AST) -> dict[str, list[str]]:
+    """切片内 `名字 = <字符串 / f-string>` 的片段表（**一层**，不做别名传播、不跨函数）。
+
+    为什么要它：真形态常把 URL 先存变量再传进调用
+    （`endpoint = f"{API}/api/admin/orders/{t}/status"` 然后 `await client.post(endpoint)`）——
+    只看调用点的字面量实参会**漏**掉这一形态（假绿方向，比假红更坏）。
+    """
+    out: dict[str, list[str]] = {}
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets, value = [node.target], node.value
+        else:
             continue
-        statements = getattr(node, "body", None) or []
-        if not statements:
+        if value is None:
             continue
-        first = statements[0]
-        head = getattr(first, "value", None)
-        if not (isinstance(first, ast.Expr) and isinstance(head, ast.Constant)
-                and isinstance(head.value, str)):
+        parts = _string_parts(value)
+        if not parts:
             continue
-        for row in range(head.lineno, head.end_lineno + 1):
-            line = lines[row - 1]
-            start = head.col_offset if row == head.lineno else 0
-            end = head.end_col_offset if row == head.end_lineno else len(line.rstrip("\n"))
-            lines[row - 1] = line[:start] + " " * max(0, end - start) + line[end:]
-    return "".join(lines)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                out.setdefault(target.id, []).extend(parts)
+    return out
 
 
 def _product_api_call(body: str) -> str:
-    """代码面里的**产品状态更新 API**标记（`PUT` / `/status`）；没有则返回空串。
+    """代码面里的**产品状态更新 API 调用点**（AST 判定）；没有则返回空串。
 
-    与旧口径**等强度**（旧 = 对原文做裸子串匹配），差别只在**输入**：旧口径吃注释 ⇒
-    在切片内写一句注释就假红（#4992 实测）。这里只读代码面。
+    #5003① 的口径：旧实现对源码切片做**裸子串**匹配（`"PUT" in body or "/status" in body`）
+    ⇒ 假红三类（**改前实测读数**见 `test_product_api_detector_reads_call_sites_not_prose`）：
+      ① 注释 / 文档字符串里提到端点名（#5402 已收口）；
+      ② **非调用**的字符串字面量（`note = "…不要回落成 PUT /status…"`）⇒ 判 `'PUT'`（假红）；
+      ③ **标识符**里含 `PUT`（`INPUT_QTY`）⇒ 判 `'PUT'`（假红）。
+    现口径 = 只认**语法位置**：命中必须落在 `ast.Call` 节点（被调用名 ∈ `_HTTP_CALLS`）
+    **自己的实参**里 —— 实参字面量、f-string 常量段，或该切片内 `名字 = "…"` 绑定的名字。
+    注释 / 文档字符串 / 松散散文不是 AST 节点，标识符不是字符串常量 ⇒ 结构上不再贡献命中。
+
+    解析失配（切片语法不成立）⇒ **红**（FAIL-CLOSED）：`ast.parse` 失败时**不得**退化成
+    「没命中 = 通过」—— 那正是本判据最该避免的空跑形态。
     """
-    code = _code_only(body, "tests/agent_eval/local_runner.py::_reset_aftersales_ticket")
-    for marker in ("PUT", "/status"):
-        if marker in code:
-            return marker
+    try:
+        tree = ast.parse(body)
+    except SyntaxError as exc:
+        raise AssertionError(
+            f"{_SLICE_WHERE} 的切片无法 ast.parse（{exc}）⇒ 解析失配 ⇒ 红（同步本判据）") from exc
+    bindings = _name_bindings(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        callee = func.attr if isinstance(func, ast.Attribute) else (
+            func.id if isinstance(func, ast.Name) else "")
+        if callee not in _HTTP_CALLS:
+            continue
+        texts: list[str] = []
+        for arg in list(node.args) + [kw.value for kw in node.keywords]:
+            texts += _string_parts(arg)
+            for sub in ast.walk(arg):
+                if isinstance(sub, ast.Name):
+                    texts += bindings.get(sub.id, [])
+        for text in texts:
+            for marker in _API_MARKERS:
+                if marker in text:
+                    return f"{callee}(…) 的实参"
     return ""
 
 
@@ -287,7 +322,7 @@ class TestSeedIsTheSingleSourceOfTheReset:
         body = src[start:src.index("async def _run_pre_clean(", start)]
         where = _product_api_call(body)
         if where:
-            raise AssertionError(f"复位实现里出现了产品状态更新 API（命中 {where!r}）"
+            raise AssertionError(f"复位实现里出现了产品状态更新 API **调用点**（命中 {where}）"
                                  " —— 平台约束禁改（见 docstring）")
         if "asyncpg" not in body:
             raise AssertionError("复位必须走 DB 直连（asyncpg）")
@@ -295,32 +330,68 @@ class TestSeedIsTheSingleSourceOfTheReset:
             raise AssertionError("DSN 未归一（SQLAlchemy 风格 DSN 直连会连不上）："
                                  f"{runner._eval_db_dsn()}")
 
-    def test_product_api_detector_reads_code_not_comments(self):
-        """#5003① 的反向红证：**注释**里写端点名 ⇒ 不得红；真写进**代码** ⇒ 必须红。
+    def test_product_api_detector_reads_call_sites_not_prose(self):
+        """#5003① 的**双向**红证：散文 / 标识符里的端点名 ⇒ 不得红；真**调用点** ⇒ 必须红。
 
-        旧口径对源码切片做**裸子串**匹配（`"PUT" in body or "/status" in body`）⇒
-        在切片范围内的注释里写「走 `PUT /api/admin/orders/{id}/status`」就**假红**
-        （#4992 实测踩到），修法是「把注释改写成不含这两个子串的说法」——
-        **那是为过判据改文案，不是修缺陷**（§17.3 ⑤）。现口径 = 只读**代码面**
-        （剥注释复用 `unit_ci_workflows/_source_parsing.py::code_without_comments`，
-        全仓唯一实现，不新增第二份）。
+        改前读数（旧口径 = 对源码切片做裸子串 `"PUT" in body or "/status" in body`）：
+          · 注释 / docstring ⇒ 已由 #5402 的剥说明口径收口（**不**红）；
+          · **非调用的字符串字面量**（`note = "…不要回落成 PUT /status…"`）⇒ 判 `'PUT'`（**假红**）；
+          · **标识符**里含 `PUT`（`INPUT_QTY`）⇒ 判 `'PUT'`（**假红**）。
+        后两类是 #5003① 未收的残余：命中不落在「调用点」上，却被读成「回落成产品 API」。
+        现口径只认**语法位置**（`ast.Call` + `_HTTP_CALLS` + 实参），故：散文 / 标识符永不算命中，
+        而下面四种**真调用形态**（含 URL 另存变量那种，最容易被"改松"漏掉）必须仍判红。
         """
-        comment_only = (
+        prose = (
             'async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
             '    # 复位走带外 DB；**不要**改成 PUT /api/admin/orders/{id}/status\n'
             '    """docstring 里也提一句：PUT 与 /status 都不得出现在代码里。"""\n'
+            '    note = "复位只走 DB：不要回落成 PUT /status 接口"\n'
+            '    INPUT_QTY = 3\n'
             '    conn = await asyncpg.connect(dsn)\n'
-            '    return "ok"\n')
-        if _product_api_call(comment_only):
-            raise AssertionError(f"注释/docstring 里的端点名被读成代码（假红，正是 #5003①）："
-                                 f"{_product_api_call(comment_only)!r}")
-        real_call = (
-            'async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
-            '    async with httpx.AsyncClient() as c:\n'
-            '        await c.request("PUT", f"{API}/api/admin/orders/{ticket_no}/status")\n'
-            '    return "ok"\n')
-        if not _product_api_call(real_call):
-            raise AssertionError("真写成 HTTP 调用却判不出（假绿）⇒ 该判据是空断言")
+            '    return note\n')
+        where = _product_api_call(prose)
+        if where:
+            raise AssertionError(
+                f"散文 / 标识符里的端点名被读成「回落成产品 API」（假红，正是 #5003①）：命中 {where}")
+
+        real_calls = (
+            # ① #4992 实测踩到的形态：客户端实例方法 + 方法名/URL 都在实参里
+            ('async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+             '    async with httpx.AsyncClient() as c:\n'
+             '        await c.request("PUT", f"{API}/api/admin/orders/{ticket_no}/status")\n'
+             '    return "ok"\n'),
+            # ② 模块级快捷方法（方法名不再是 `request`）
+            ('async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+             '    await httpx.put(f"{API}/api/admin/orders/{ticket_no}/status")\n'
+             '    return "ok"\n'),
+            # ③ URL 先存变量再传进调用（只看字面量实参会**漏**这一形态 ⇒ 假绿）
+            ('async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+             '    endpoint = f"{API}/api/admin/orders/{ticket_no}/status"\n'
+             '    async with httpx.AsyncClient() as c:\n'
+             '        await c.post(endpoint, json={"status": "pending"})\n'
+             '    return "ok"\n'),
+            # ④ 只有方法名标记（URL 与本判据无关）—— 仍判红：复位**不得**调任何写方法回产品
+            ('async def _reset_aftersales_ticket(ticket_no: str) -> str:\n'
+             '    async with httpx.AsyncClient() as c:\n'
+             '        await c.request("PUT", f"{API}/api/admin/tickets/{ticket_no}")\n'
+             '    return "ok"\n'),
+        )
+        for index, real_call in enumerate(real_calls, start=1):
+            if not _product_api_call(real_call):
+                raise AssertionError(
+                    f"真写成 HTTP 调用（形态 {index}）却判不出（假绿）⇒ 该判据会被改成永远绿")
+
+        # 显式落一个**布尔读数**再接判定：不用裸 `pass`（那是弱断言扫描器认的形态之一，
+        # 加进来会让「弱断言只许非增」的台账上涨 —— #5370 实测形态）。
+        parse_failed = False
+        try:
+            _product_api_call('async def _reset_aftersales_ticket(:\n')
+        except AssertionError:
+            parse_failed = True
+        if not parse_failed:
+            raise AssertionError(
+                "切片解析不出 AST 时**没有**红 ⇒ 判定退化成「没命中 = 通过」（空跑形态）")
+
         src = Path(RUNNER_PATH).read_text(encoding="utf-8")
         start = src.index("async def _reset_aftersales_ticket(")
         live = src[start:src.index("async def _run_pre_clean(", start)]
