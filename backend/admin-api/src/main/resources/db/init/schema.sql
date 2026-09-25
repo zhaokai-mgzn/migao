@@ -804,7 +804,7 @@ CREATE TABLE IF NOT EXISTS processing_orders (
     qr_token VARCHAR(64),                             -- 加工单二维码 token（V49，扫码报工入口）
     route_key VARCHAR(32),                            -- 实际使用的路线键「帘种×工艺」（V60，issue #4308）
     route_requested_key VARCHAR(32),                  -- 派生出来想用的路线键（V60）；两维全不命中时 NULL
-    route_source VARCHAR(16),                         -- 路线键来源（V60 issue #4308 + V130 补齐第 5 态）：direct 帘种与工艺直读订单显式列 order_items.curtainType/craft（issue #4354/#4362，不查信号映射表，与 derived 同档）/ derived 两维均由库中信号命中且路线存在 / partial 只命中一维（补信号）/ missing_route 派生键库中无路线（建路线）/ default 两维全不命中（补信号）
+    route_source VARCHAR(16),                         -- 路线键来源（V60 issue #4308 + V130 补齐第 5 态）：direct 帘种与工艺直读订单显式列 order_items.curtain_type/craft（issue #4354/#4362，不查信号映射表，与 derived 同档）/ derived 两维均由库中信号命中且路线存在 / partial 只命中一维（补信号）/ missing_route 派生键库中无路线（建路线）/ default 两维全不命中（补信号）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INT DEFAULT 0
