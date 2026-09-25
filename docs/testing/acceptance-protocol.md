@@ -325,6 +325,30 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   「工具层失败」与「模型层漏调」在一行里可区分。**C 端写用例必须声明**（由
   `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestWriteToolSuccessAssertions` 强制）。
 
+#### 3.2.1 入参**值级**断言（`arg_values` → `check_arg_values`，issue #3823）
+
+三级证据**不得互相顶替** —— 这正是 #3320 判据 2 只能"闭合一半"的根因：
+
+| 级别 | 断言 | 回答的问题 | 证据来源 |
+|---|---|---|---|
+| **存在性** | `required_args` | 该字段**传了没**（非空） | 内存 `results[*].tool_calls[*].args` |
+| **值级** | `arg_values` → `check_arg_values` | 该值**等于**期望事实吗（如 `processing_item_query.applicable_category_id == 前一步分类确认得到的真实分类 ID`） | **落盘**的 `round_trace[*].call_args`（`tests/agent_eval/local_runner.py` 产出） |
+| **结果级** | `must_succeed` / `db_verify` | 写操作**真的发生了**吗（落库） | SSE `tool_result` / 库回读 |
+
+- 条目形态（路径口径同 `required_args`，含 `list[].key` 深路径）：
+  `- {tool: processing_item_query, values: {applicable_category_id: 7}}`；
+- **失败关闭**（三条，都是"没有证据就不给结论"）：轨迹里**没有** `call_args` 通道
+  （改前形态 / 未接线 / 空轨迹）⇒ 判违规；该工具**从未被调用** ⇒ 判违规；
+  配置写错（缺 `tool` / 空 `values` / 期望值是 dict 或 None）⇒ 判违规。
+  ⚠️ 任何一条都**不得**被读成"放行" —— 取不到证据 ≠ 值相等。
+- 取值通道（三处**同源**，同一份压缩值）：轨迹 `round_trace[*].call_args`；
+  job log 的 `callargs=` 段（评测腿设 `AGENT_EVAL_TRACE_ALL=1` ⇒ **通过用例也打**）；
+  artifact `eval-summary-*.json` 的 `cases[].call_args`。入参中的手机号按
+  `backend/ai-agent-service/app/utils/pii_mask.py` 的口径掩码、自由文本截断、容器条目有界。
+- **本次落地的边界（如实登记）**：证据通道 + 校验函数已落码；
+  用例库的**声明面**（`.github/cases/*.yml` 的 `arg_values`）**未接线** ——
+  改用例面需同步渲染生成物与两条用例账本，属独立单。
+
 ### 3.3 反模式断言（负向）
 
 - "禁止/不得"类行为显式断言：禁止提前弹 confirm、禁止跳过加工项询问（商品绑定加工项时）、
@@ -440,6 +464,12 @@ R2 ...
 > 注：表中前几项已在 2026-09 陆续落地（interactive 采集、`order_before` 轮次锚定、
 > `want_text/forbidden_text`、`required_args/forbidden_args`、`db_verify`、轮次轨迹
 > `round_trace`）；保留原表作为"差距→升级"的决策记录。
+>
+> 2026-09-25（issue #3823）：**全工具入参的值级证据**落地 —— 轨迹 `round_trace[*].call_args`
+> + job log 的 `callargs=` 段 + artifact `cases[].call_args`，并配套 `check_arg_values`
+> （值相等断言，失败关闭）。改前 `write_args` **只收写工具** ⇒ 读/查类工具的参数值
+> 在产物与日志里都读不到（实测 run 34907835734 的 log 里 `applicable` 零命中），
+> 「值相等」级验收只能退到自然语言 `data_checks`（按 §1.3 不作机器证据）。见 §3.2.1。
 
 ### 6.2 `acceptance_runner.py` 差距清单
 
