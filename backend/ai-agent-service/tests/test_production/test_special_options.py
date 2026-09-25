@@ -239,17 +239,22 @@ class TestCriterion3ReusedOperations:
     def test_reused_operations_have_quantity_and_price(self):
         """复用工序的应做数量/单价随实例下发（数量仍走 `_qty_for`，无第二份算料逻辑）。
 
-        ⚠️ 越界发现（不在本单范围，未顺手改）：「个」类工序（帘头制作/抱枕/腰靠垫）不在
-        `KNOWN_QTY_UNITS` 里，而 `_qty_for` 对未声明单位**回落「米」分支** ⇒ 拿到的是用料
-        米数（12.3）而不是「个」的口径。本条按**现状**断言并显式标注，避免把缺陷固化成
-        「正确值」（同族口径见 tests/test_production/test_operation_qty.py 的
-        `test_unknown_unit_ops_are_fallback`）。
+        🔴 **2026-09-25 改判（issue #4228，用户裁定「个 / 件 归固定值 1 + 显式登记」）**：
+        本条此前按**现状**断言 `帘头制作` 的应做数量 == `CALC["fabric_meters"]`（12.3），
+        并在 docstring 里把该形态**显式登记为缺陷**（原句逐字：「越界发现（不在本单范围，未顺手改）
+        ……「个」类工序（帘头制作/抱枕/腰靠垫）不在 `KNOWN_QTY_UNITS` 里，而 `_qty_for`
+        对未声明单位**回落「米」分支** ⇒ 拿到的是用料米数（12.3）而不是「个」的口径」）。
+        #4228 已按裁定修掉该回落（`FIXED_ONE_UNITS` 显式登记 ⇒ 兜底 1）⇒ 本条随之改判为 **1.0**，
+        并加反向断言把「回落米口径」这个旧形态**钉死为不可回退**（判别性：改回回落米分支 ⇒ 红）。
         """
         insts = _by_op(["布绑带", "余料做帘头", "抱枕"])
         assert insts["绑带-布"]["qty"] == 1.0        # 套：引擎待补键 ⇒ 兜底 1
         assert insts["绑带-布"]["unit_price"] == 0.5
-        assert insts["帘头制作"]["qty"] == CALC["fabric_meters"]   # 个：未声明单位 ⇒ 回落米口径
+        # 个：引擎不产出该量 ⇒ 兜底 1（**不是**用料米数；旧形态见 docstring）
+        assert insts["帘头制作"]["qty"] == 1.0
+        assert insts["帘头制作"]["qty"] != CALC["fabric_meters"]
         assert insts["帘头制作"]["unit_price"] == 2.0
+        assert insts["抱枕"]["qty"] == 1.0           # 个：同一条兜底口径（此前未断言，补上）
         assert insts["抱枕"]["unit_price"] == 2.0
 
 
