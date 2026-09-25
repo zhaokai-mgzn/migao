@@ -5,7 +5,7 @@
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
   "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
   "anchored_at": "2026-09-21",
-  "weak_total": 248,
+  "weak_total": 247,
   "legacy_weak_counts": {
     "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
     "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
@@ -61,7 +61,6 @@
     "frontend/admin-web/tests/unit/lib/sku-utils.test.ts": 3,
     "frontend/admin-web/tests/unit/lib/token-refresh.test.ts": 1,
     "frontend/admin-web/tests/unit/pages/app-routes.test.tsx": 2,
-    "frontend/admin-web/tests/unit/pages/employees.test.tsx": 1,
     "frontend/admin-web/tests/unit/pages/processing-fees.test.tsx": 2,
     "frontend/admin-web/tests/unit/pages/processing-merged.test.tsx": 1,
     "frontend/admin-web/tests/unit/pages/production-routings.test.tsx": 1,
@@ -95,6 +94,12 @@
       "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
       "weak_total": 248,
       "note": "首次锚定（issue #5080）：TS 存在性形态（toBeDefined / not.toBeNull）入表 + `is None`/`is not None` 收窄到单一比较形态（去 11 处真断言假红）。锚定 81 个测试文件 / 248 处。"
+    },
+    {
+      "anchored_at": "2026-09-25",
+      "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
+      "weak_total": 247,
+      "note": "精确销账（只许缩）：248 → 247 处（issue #5485）。`frontend/admin-web/tests/unit/pages/employees.test.tsx` 的 `expect(callArgs).toBeDefined()`（存在性形态）改成 `toMatchObject({...})` 触业务数据断言 ⇒ 该文件 1 → 0，移出明细。**只动这一格 + weak_total + 本行**，其余文件锚点值原样保留（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
     }
   ]
 }
