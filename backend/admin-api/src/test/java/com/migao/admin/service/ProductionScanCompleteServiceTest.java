@@ -40,6 +40,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -59,7 +60,8 @@ import static org.mockito.Mockito.when;
  * <p><b>红证（改前 / 注入实测，逐条输出见 PR body）</b>：</p>
  * <ol>
  *   <li><b>未确定工序却记账</b>：{@code OPERATION_AMBIGUOUS}（seq 重复）/ {@code SET_ALREADY_COMPLETED}
- *       / {@code SCAN_NEEDS_SELECTION}（旧码）三条路径**零写入** —— 删掉守卫 ⇒ 本文件红；</li>
+ *       / {@code SCAN_NEEDS_SELECTION}（旧码）/ {@code SET_HAS_NO_OPERATIONS}（存量单零关联工序行，
+ *       issue #4871）四条路径**零写入** —— 删掉守卫 ⇒ 本文件红；</li>
  *   <li><b>中途失败留残留</b>：CAS 冲突（{@code rows=0}）⇒ 抛 + 释放幂等占位 + 不落结果快照，
  *       三处写入靠 {@code @Transactional}（下面用反射钉住注解与其 {@code rollbackFor}）—— 摘掉注解 ⇒ 红；</li>
  *   <li><b>同键重复计件</b>：占位失败 ⇒ 回放首次结果、{@code insert} 一次都不发生 —— 跳过占位 ⇒ 红；</li>
@@ -273,6 +275,48 @@ class ProductionScanCompleteServiceTest {
                 // （设计 §5.3.1「拒绝码 = 契约面」）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
                 .hasFieldOrPropertyWithValue("code", "SET_ALREADY_COMPLETED")
                 .hasFieldOrPropertyWithValue("httpStatus", 409);
+
+        assertNothingWritten();
+    }
+
+    /**
+     * 🔴 <b>存量加工单的实测形态（issue #4871）</b>：部位码能印、短链能跳（302 + 工人端落地页），
+     * 但该套<b>一行工序实例都没关联</b>（存量工序行的 {@code set_id} / {@code set_no} 全 NULL ——
+     * V92 按「套的部位清单」{@code order_item_id} 回填，而存量行多为 NULL ⇒ 挂不上）
+     * ⇒ 解析面 {@code set_progress = {total: 0, done: 0}} 且 {@code completed = true}。
+     *
+     * <p>🔴 病根：{@code completed} 键 = {@code chosen == null} —— <b>「本套零关联工序行」与
+     * 「本套真做完了」共用这一个值</b>（{@code ProductionScanService#setPositionView}）⇒ 记账侧
+     * 只读 {@code completed} 就<b>分不出</b>这两态，回执于是说出<b>假陈述</b>
+     * 「本套（…）的工序都已完成」，而真相是「一行都没关联上」。判据（issue #4871 验收标准逐字）：
+     * <b>{@code total == 0} 与 {@code done == total} 必须是两个分支，不能共用同一句</b>。</p>
+     *
+     * <p>夹具与真实读面<b>同源</b>（不另造 {@code set_progress} 桩字段）：{@code set_progress} 由
+     * {@code ProductionService#progressOf} 按 {@code ProcessingSetReadService#listSetOperations}
+     * 的结果算出（本类只 mock Mapper）⇒ <b>空列表</b>就是「零关联工序行」本身。</p>
+     */
+    @Test
+    @DisplayName("🔴 存量单（本套零关联工序行，total=0）⇒ 409 SET_HAS_NO_OPERATIONS，措辞不得说「工序都已完成」，且零写入")
+    void setWithoutOperationRowsIsRejectedWithHonestMessage() {
+        stubSetWithoutOperations();
+
+        Throwable thrown = catchThrowable(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER));
+
+        // 🔴 契约面（issue #4810 的口径：`@DisplayName` 只是文案，码与状态码才是断言）：
+        // 与真「已完成」**不是同一个码** —— 两个分支共用同一句/同一个码 ⇒ 本断言红。
+        assertThat(thrown)
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "SET_HAS_NO_OPERATIONS")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
+        // 文案面（本单的靶心）：说**真实**的原因（零关联工序行），绝不出现真「已完成」那句假陈述。
+        // 改前这句逐字是「本套（…）的工序都已完成，没有可报的工序（本次未记账）」⇒ 本断言红。
+        assertThat(thrown.getMessage())
+                .contains("没有关联工序行")
+                .doesNotContain("都已完成");
+        // 诚实措辞的第二半 = 可行动：说清「按部位逐道报工 / 重新实例化本单」两条出路。
+        assertThat(((BusinessException) thrown).getSuggestion())
+                .contains("逐道报工")
+                .contains("重新实例化");
 
         assertNothingWritten();
     }
@@ -783,6 +827,18 @@ class ProductionScanCompleteServiceTest {
 
     private void stubPending(ProcessingPositionOperation operation) {
         stubPending(List.of(operation));
+    }
+
+    /**
+     * 存量单（issue #4871）：部位码命中该套，但该套的工序实例<b>一行都没有</b>
+     * （= 解析面 {@code set_progress {total: 0, done: 0}}、{@code completed = true}）。
+     *
+     * <p>与真实读面<b>同源</b>：{@code set_progress} 由 {@code ProductionService#progressOf} 按
+     * {@code ProcessingSetReadService#listSetOperations} 的结果算出 ⇒ 这里只把 Mapper 读面桩成
+     * <b>空列表</b>，<b>不另造 {@code set_progress} 桩字段</b>（另造桩 = 测的是桩，不是被测实现）。</p>
+     */
+    private void stubSetWithoutOperations() {
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
     }
 
     private void stubPending(List<ProcessingPositionOperation> operations) {
