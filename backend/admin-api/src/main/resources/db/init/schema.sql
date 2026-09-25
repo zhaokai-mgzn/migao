@@ -42,11 +42,17 @@ CREATE TABLE users (
     nickname VARCHAR(128),
     avatar VARCHAR(512),
     role VARCHAR(64),
+    -- 员工登录用户名（V128，issue #5485）：员工用「<username>@<tenants.code> + 密码」登录。
+    -- NULL = 存量行 / 管理员尚未补设（**不自动迁移、不自动生成**；补设前无法登录是预期行为）。
+    username VARCHAR(64),
     -- 工人工号（V98，issue #4733）：非 NULL = 该行是**工人档案**（role=worker）；
     -- NULL = 商家用户（本列引入前的全部存量行）。租户内唯一（部分唯一索引见下）。
     worker_no VARCHAR(64),
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
+    -- 首登强制改密（V128，issue #5485）：管理员设的初始密码必须首登改掉。
+    -- 默认 FALSE ⇒ 存量行与「未设密码」的账号不受影响。
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -54,6 +60,11 @@ CREATE TABLE users (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_users_tenant_worker_no
     ON users (tenant_id, worker_no)
     WHERE worker_no IS NOT NULL AND deleted = 0;
+-- 员工用户名唯一性**只到租户内**（issue #5485 不变式 I3）：不同企业可同名；跨企业不串号靠
+-- 登录时的「tenantCode → tenant_id → WHERE tenant_id=? AND username=?」定位，绝不跨租户兜底（I1）。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_users_tenant_username
+    ON users (tenant_id, username)
+    WHERE username IS NOT NULL AND deleted = 0;
 
 -- 角色表：RBAC 角色定义
 CREATE TABLE roles (

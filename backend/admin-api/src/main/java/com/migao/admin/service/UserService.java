@@ -9,6 +9,7 @@ import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
 import com.migao.admin.security.SecurityUser;
+import com.migao.admin.support.LoginIdentifiers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -290,6 +291,20 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public User createUser(String phone, String password, String nickname, String role, String position, String permissions, Long tenantId) {
+        return createUser(phone, password, nickname, role, position, permissions, tenantId, null, false);
+    }
+
+    /**
+     * 创建员工账号（含员工登录用户名，issue #5485）。
+     *
+     * @param username           员工登录用户名（可空；非空时转小写 + 格式校验 + **租户内**唯一校验）
+     * @param forceChangePassword 是否置 {@code must_change_password=true}
+     *                           （⚠️ 只在「确实设了初始密码」时置 true：没有密码的账号被标成强制改密
+     *                           会**永久锁死** —— 改密要校验旧密码，而旧密码是 null）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User createUser(String phone, String password, String nickname, String role, String position,
+                           String permissions, Long tenantId, String username, boolean forceChangePassword) {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
         assertAssignableRoleAndPermissions(role, permissions);
 
@@ -303,6 +318,8 @@ public class UserService implements UserDetailsService {
             throw BusinessException.validationError("手机号已被注册: " + phone);
         }
 
+        String normalizedUsername = assertUsernameAssignable(username, tenantId, null);
+
         // 创建用户
         // password 为 null 时不设密码（对应 #375 禁用密码登录，走 SMS 验证码）
         String passwordHash = StringUtils.hasText(password)
@@ -311,7 +328,10 @@ public class UserService implements UserDetailsService {
         User user = User.builder()
                 .tenantId(tenantId)
                 .phone(phone)
+                .username(normalizedUsername)
                 .passwordHash(passwordHash)
+                // 强制改密只对「确实设了密码」的账号生效（见方法 javadoc）
+                .mustChangePassword(forceChangePassword && passwordHash != null)
                 .nickname(nickname)
                 .role(role != null ? role : "operator")
                 .position(StringUtils.hasText(position) ? position : (role != null ? role : "operator"))
@@ -319,14 +339,20 @@ public class UserService implements UserDetailsService {
                 .status("active")
                 .build();
 
-        userMapper.insert(user);
+        try {
+            userMapper.insert(user);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 数据库唯一索引是**并发下的兜底**（应用层校验挡不住两个请求同时通过）
+            throw BusinessException.validationError(usernameConflictMessage(normalizedUsername));
+        }
 
         // 如果有角色，同步到 user_roles 表
         if (StringUtils.hasText(role)) {
             assignRoleToUser(user.getId(), role, tenantId);
         }
 
-        log.info("创建用户成功: id={}, phone={}, role={}", user.getId(), phone, role);
+        log.info("创建用户成功: id={}, phone={}, role={}, hasUsername={}", user.getId(), phone, role,
+                normalizedUsername != null);
         user.setPasswordHash(null);
         return user;
     }
@@ -364,6 +390,18 @@ public class UserService implements UserDetailsService {
     @Transactional(rollbackFor = Exception.class)
     public User updateUser(String userId, String nickname, String avatar, String role, String position,
                            String permissions, String phone) {
+        return updateUser(userId, nickname, avatar, role, position, permissions, phone, null);
+    }
+
+    /**
+     * 更新用户基本信息（含员工登录用户名，issue #5485）。
+     *
+     * @param username 员工登录用户名：{@code null} 表示不修改；非空时转小写 + 格式校验 +
+     *                 **租户内**唯一校验（排除自己）—— A 企业的 zhangsan 不妨碍 B 企业的 zhangsan（I3）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateUser(String userId, String nickname, String avatar, String role, String position,
+                           String permissions, String phone, String username) {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
         assertAssignableRoleAndPermissions(role, permissions);
 
@@ -390,6 +428,11 @@ public class UserService implements UserDetailsService {
             }
             user.setPhone(phone);
         }
+        // 用户名变更（issue #5485）：与创建口径一致，校验**租户内**唯一（排除自己）
+        String normalizedUsername = assertUsernameAssignable(username, user.getTenantId(), userId);
+        if (normalizedUsername != null) {
+            user.setUsername(normalizedUsername);
+        }
         if (StringUtils.hasText(role) && !role.equals(user.getRole())) {
             user.setRole(role);
             // 更新 user_roles 表
@@ -400,8 +443,13 @@ public class UserService implements UserDetailsService {
             user.setPermissions(permissions);
         }
 
-        userMapper.updateById(user);
-        log.info("更新用户信息成功: id={}", userId);
+        try {
+            userMapper.updateById(user);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 数据库唯一索引兜底（并发下应用层校验可能双双通过）
+            throw BusinessException.validationError(usernameConflictMessage(normalizedUsername));
+        }
+        log.info("更新用户信息成功: id={}, hasUsername={}", userId, normalizedUsername != null);
         user.setPasswordHash(null);
         return user;
     }
@@ -414,15 +462,62 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void changePassword(String userId, String newPassword) {
+        changePassword(userId, newPassword, true);
+    }
+
+    /**
+     * 修改用户密码（可指定是否要求首登改密，issue #5485）。
+     *
+     * @param forceChangePassword {@code true} ⇒ 置 {@code must_change_password=true}
+     *        （管理员设的密码是「初始密码」，员工首登必须改掉）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(String userId, String newPassword, boolean forceChangePassword) {
         User user = getUserById(userId);
         user.setPasswordHash(PASSWORD_ENCODER.encode(newPassword));
+        user.setMustChangePassword(forceChangePassword);
         userMapper.updateById(user);
-        log.info("修改用户密码成功: id={}", userId);
+        log.info("修改用户密码成功: id={}, forceChange={}", userId, forceChangePassword);
+    }
+
+    /**
+     * 员工用户名可赋值性校验（issue #5485）：规整 → 格式 → **租户内**唯一。
+     *
+     * @param username   原始输入（null / 空白 ⇒ 返回 null，表示「不设置/不修改」）
+     * @param tenantId   目标租户（唯一性**只到租户内** —— 不同企业可同名，这是 I3 的实现点）
+     * @param excludeUserId 唯一性校验时排除的用户（改自己时排除自己；创建传 null）
+     * @return 规整后的用户名（小写）
+     */
+    private String assertUsernameAssignable(String username, Long tenantId, String excludeUserId) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        String normalized = LoginIdentifiers.normalize(username);
+        if (!LoginIdentifiers.isValidUsername(normalized)) {
+            throw BusinessException.validationError(LoginIdentifiers.USERNAME_RULE);
+        }
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getUsername, normalized)
+                .eq(User::getTenantId, tenantId)
+                .eq(User::getDeleted, 0);
+        User existing = userMapper.selectOne(wrapper);
+        if (existing != null && !existing.getId().equals(excludeUserId)) {
+            throw BusinessException.validationError(usernameConflictMessage(normalized));
+        }
+        return normalized;
+    }
+
+    /** 用户名租户内重复的**明确文案**（422，不靠数据库异常裸抛 500；提示「换一个」）。 */
+    private static String usernameConflictMessage(String username) {
+        return "用户名「" + username + "」在本企业已被占用，请换一个（不同企业之间可以同名）";
     }
 
     /**
      * 管理员重置用户密码
      * 重置为默认密码（手机号后6位）
+     *
+     * <p>issue #5485：重置后**必须**置 {@code must_change_password=true} —— 管理员知道这个密码，
+     * 它只是「初始密码」，员工首登必须改成自己的。</p>
      *
      * @param userId 用户ID
      * @return 重置后的默认密码
@@ -434,8 +529,9 @@ public class UserService implements UserDetailsService {
         // 默认密码：手机号后6位
         String defaultPassword = phone.length() >= 6 ? phone.substring(phone.length() - 6) : phone;
         user.setPasswordHash(PASSWORD_ENCODER.encode(defaultPassword));
+        user.setMustChangePassword(true);
         userMapper.updateById(user);
-        log.info("重置用户密码成功: id={}", userId);
+        log.info("重置用户密码成功（已置强制改密）: id={}", userId);
         return defaultPassword;
     }
 

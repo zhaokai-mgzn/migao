@@ -189,8 +189,11 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
 | 命中**本租户商户员工**（行存在且未软删、`status=active`、租户一致、角色 ∉ {customer, agent}） | 该员工的**真实角色**（不再挂 `service`） | **生效** —— `@RequirePermission` + `roleService.getUserPermissions(realUserId)` |
 | 其余（无 `X-User-Id` / C 端 customer·agent / 跨租户 / 查不到用户） | 内部服务 `service`（今日行为） | 直通（无细粒度校验） |
 
-- 商户员工判定口径与 `UserMapper.selectActiveEmployeesByPhoneIgnoreTenant`（SQL `role NOT IN ('customer','agent')`）、
-  `AuthService.validateBminiEmployee`、`UserService` 员工管理「排除 C 端消费者」**同源**，不另造第二套。
+- 商户员工判定口径与 `UserService` 员工管理「排除 C 端消费者」（`users.role ∉ {customer, agent}`）**同源**，不另造第二套。
+  ⚠️ 2026-09-25（issue #5485）：原先并列点名的 `UserMapper.selectActiveEmployeesByPhoneIgnoreTenant` 与
+  `AuthService.validateBminiEmployee`（B 端小程序「微信手机号匹配员工」）**已随该单删除** ——
+  员工登录统一为「用户名@企业编码 + 密码」（`POST /api/auth/employee/login`），
+  商户员工判定只看 `users.role`；本条口径因此只剩一个实现点（`UserService` 的员工管理写面）。
 - 查库异常时回退 `service` 身份**并记 ERROR**：调用方已持有可信 `SERVICE_TOKEN`（可信内部服务，非不可信第三方），
   失败回退不构成提权；留痕用于区分「查失败」与「查不到」。
 - ⚠️ 判定必须在 `TenantContext` 就绪**之后**执行（`users` 表不在 `MybatisPlusConfig.IGNORE_TENANT_TABLES` 内，

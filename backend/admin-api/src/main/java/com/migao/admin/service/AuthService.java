@@ -16,6 +16,7 @@ import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.security.JwtTokenProvider;
 import com.migao.admin.security.SecurityUser;
+import com.migao.admin.support.LoginIdentifiers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.jsonwebtoken.Claims;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -36,6 +37,7 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * 认证服务类
@@ -103,9 +105,176 @@ public class AuthService {
     @Value("${jwt.cookie.same-site:strict}")
     private String cookieSameSite;
 
-    /** B 端员工小程序 appid（issue #2977：绑定/查询 user_identities 时隔离渠道） */
-    @Value("${wechat.bmini.appid:}")
-    private String bminiAppId;
+    /**
+     * 密码策略（最小可用，issue #5485）：≥8 位且**同时**含字母与数字。
+     * 策略不满足 → 422 + 明确文案（不是静默接受，也不是 401 —— 这是写面校验，不是认证失败）。
+     */
+    private static final Pattern PASSWORD_POLICY = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{8,}$");
+
+    /** 密码策略不满足时的唯一文案（用户可见、可行动）。 */
+    public static final String PASSWORD_POLICY_MESSAGE =
+            "新密码不满足要求：至少 8 位，且同时包含字母和数字";
+
+    /** 每次登录/刷新都按**数据库当前值**计算该标记（不变式 I4：刷新路径最容易漏）。 */
+    private static boolean mustChangePasswordOf(User user) {
+        return Boolean.TRUE.equals(user.getMustChangePassword());
+    }
+
+    // ======================== 员工登录（用户名@企业编码 + 密码，issue #5485） ========================
+
+    /**
+     * 员工登录：「{@code <username>@<tenantCode>} + 密码」。
+     *
+     * <p><b>反枚举</b>：企业编码不存在 / 用户名不存在 / 密码错误 / 状态非 active / 标识格式不合法
+     * —— 全部抛出**同一个** {@link BusinessException#authFailed}（401 + 同一文案），
+     * 不泄露是哪一项错。</p>
+     *
+     * <p><b>不变式 I1/I3</b>：租户**只**由标识里的企业编码解析（不接受 body tenantId）；
+     * 用户查询逐字带 {@code tenant_id} 条件（{@code selectActiveByTenantAndUsername}）
+     * ⇒ 不同企业的同名员工各进各的企业，绝不串号、也没有跨租户兜底路径。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public LoginResponse loginByEmployee(String identifier, String password, HttpServletResponse response) {
+        // 1. 切分并规整标识（唯一实现点 = LoginIdentifiers；此处不复制正则）
+        String[] parts = LoginIdentifiers.split(identifier);
+        if (parts == null) {
+            log.warn("员工登录失败：标识格式不合法（同一 401 文案，不区分病因）");
+            throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
+        }
+        String username = parts[0];
+        String tenantCode = parts[1];
+
+        // 2. 企业编码 → tenant_id（只在 deleted=0 且 status='active' 的租户里解析）
+        Tenant tenant = tenantMapper.selectOne(new LambdaQueryWrapper<Tenant>()
+                .eq(Tenant::getCode, tenantCode)
+                .eq(Tenant::getStatus, "active")
+                .last("LIMIT 1"));
+        if (tenant == null) {
+            log.warn("员工登录失败：企业编码不可用 tenantCode={}", tenantCode);
+            throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
+        }
+
+        // 3. 按「租户 + 用户名」查用户 —— tenant_id 条件是契约的一部分（I1）
+        User user = userMapper.selectActiveByTenantAndUsername(tenant.getId(), username);
+        if (user == null) {
+            log.warn("员工登录失败：该企业下无此用户名 tenantId={}", tenant.getId());
+            throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
+        }
+
+        // 4. 密码（password_hash 为 null 的存量行 ⇒ matches 返回 false，同样落到同一文案）
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            log.warn("员工登录失败：密码不匹配 tenantId={}", tenant.getId());
+            throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
+        }
+
+        // 5. 状态（SQL 已门禁 active，这里是纵深防御；同样不区分文案）
+        if (!"active".equals(user.getStatus())) {
+            log.warn("员工登录失败：状态异常 tenantId={}", tenant.getId());
+            throw BusinessException.authFailed(LoginIdentifiers.AUTH_FAILED_MESSAGE);
+        }
+
+        // 6. 租户上下文（后续 roles/permissions/租户名查询都按它走）
+        TenantContext.setTenantId(user.getTenantId());
+
+        List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
+        boolean mustChangePassword = mustChangePasswordOf(user);
+
+        // 7. 签发（与 loginBySms 同源：含 permissions 的 access + refresh + HttpOnly cookie）
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                user.getId(), user.getTenantId(), user.getUsername(), roles, permissions, mustChangePassword);
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId(), user.getTenantId());
+
+        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        setRefreshTokenCookie(response, refreshToken);
+
+        log.info("员工登录成功: userId={}, tenantId={}", user.getId(), user.getTenantId());
+        return LoginResponse.builder()
+                .user(LoginResponse.UserInfo.builder()
+                        .id(user.getId())
+                        .nickname(user.getNickname())
+                        .avatar(user.getAvatar())
+                        .role(user.getRole())
+                        .identityType("employee")
+                        .roles(roles)
+                        .tenantId(user.getTenantId())
+                        .tenantName(getTenantName(user.getTenantId()))
+                        .botName(getBotName(user.getTenantId()))
+                        .mustChangePassword(mustChangePassword)
+                        .build())
+                .accessToken(accessToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
+                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
+                .build();
+    }
+
+    /**
+     * 自助改密（首登强制改密的出口，issue #5485）。
+     *
+     * <p>需认证；校验旧密码 → 校验策略（≥8 位且含字母与数字，不满足 422）→ 落新密码并
+     * **清除** {@code must_change_password}。清除后**下一次刷新/登录**签发的 token 才不带
+     * {@code pwd_change_required} —— 手上那个旧 token 仍带 claim（拦截侧只看 claim，不看库），
+     * 故客户端改密成功后应刷新一次 token（前端包负责）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public LoginResponse changePassword(String oldPassword, String newPassword, HttpServletResponse response) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof SecurityUser securityUser)) {
+            throw BusinessException.authFailed("用户未认证");
+        }
+        // 平台超管在 platform_admins 表里、没有 users 行 ⇒ 明确业务错误，不落成 404/NPE（无意义的技术性 500）
+        if (securityUser.getRoles() != null && securityUser.getRoles().contains("super_admin")) {
+            throw BusinessException.authFailed("平台管理员账号不支持在本入口修改密码");
+        }
+        User user = userService.getUserById(securityUser.getUserId());
+
+        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
+            throw BusinessException.validationError("原密码不正确");
+        }
+        if (!StringUtils.hasText(newPassword) || !PASSWORD_POLICY.matcher(newPassword).matches()) {
+            throw BusinessException.validationError(PASSWORD_POLICY_MESSAGE);
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
+        userMapper.updateById(user);
+
+        // 🔴 **改密即换发**（issue #5485）：不能把「记得再刷新一次 token」留给前端 ——
+        //    旧 access token 仍带 pwd_change_required（拦截侧只看 claim），客户端若忘了刷新，
+        //    表现就是「改完密码反而全站 403」，而这是**安全门禁**造成的自锁。
+        //    新 token 的标记按库当前值算（刚清过）= false ⇒ 客户端拿到即可正常使用。
+        List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                user.getId(),
+                user.getTenantId(),
+                StringUtils.hasText(user.getUsername()) ? user.getUsername() : user.getPhone(),
+                roles,
+                permissions,
+                false);
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId(), user.getTenantId());
+        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        setRefreshTokenCookie(response, refreshToken);
+
+        log.info("自助改密成功，已清除强制改密标记并换发新 token: userId={}", user.getId());
+        return LoginResponse.builder()
+                .user(LoginResponse.UserInfo.builder()
+                        .id(user.getId())
+                        .nickname(user.getNickname())
+                        .avatar(user.getAvatar())
+                        .role(user.getRole())
+                        .identityType(StringUtils.hasText(user.getUsername()) ? "employee" : "account")
+                        .roles(roles)
+                        .tenantId(user.getTenantId())
+                        .tenantName(getTenantName(user.getTenantId()))
+                        .botName(getBotName(user.getTenantId()))
+                        .mustChangePassword(false)
+                        .build())
+                .accessToken(accessToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
+                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
+                .build();
+    }
 
     // ======================== 账号密码登录 ========================
 
@@ -244,20 +413,32 @@ public class AuthService {
             throw BusinessException.authFailed("用户状态异常");
         }
 
-        // 5. 设置租户上下文
+        // 5. 角色门禁（issue #5485 不变式 I2）：短信登录**只**服务平台超管与企业管理员
+        //    （平台超管在步骤 2 已返回）。普通员工走短信一律拒绝，并**明确引导**到员工登录入口
+        //    —— 这里与员工登录的反枚举口径**有意不同**：员工登录失败不区分病因（防探测账号是否存在），
+        //    而「你是员工」这件事在本路径上已由「手机号在这家企业里命中非 admin 账号」确定。
+        List<String> roles = userService.getUserRoles(user);
+        boolean isAdmin = roles.stream().anyMatch(r -> "admin".equalsIgnoreCase(r));
+        if (!isAdmin) {
+            log.warn("短信登录拒绝：账号非管理员（I2），引导改用员工登录 tenantId={}", user.getTenantId());
+            throw BusinessException.authFailed("该账号非管理员，请使用员工登录入口（用户名@企业编码 + 密码）");
+        }
+
+        // 6. 设置租户上下文
         TenantContext.setTenantId(user.getTenantId());
 
-        // 6. 获取用户角色和权限
-        List<String> roles = userService.getUserRoles(user);
+        // 7. 获取权限
         List<String> permissions = roleService.getUserPermissions(user.getId());
+        boolean mustChangePassword = mustChangePasswordOf(user);
 
-        // 7. 签发 JWT Token（含细粒度权限）
+        // 8. 签发 JWT Token（含细粒度权限 + 强制改密标记）
         String accessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
                 user.getPhone(),
                 roles,
-                permissions
+                permissions,
+                mustChangePassword
         );
 
         String refreshToken = jwtTokenProvider.generateRefreshToken(
@@ -285,6 +466,7 @@ public class AuthService {
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
                         .botName(getBotName(user.getTenantId()))
+                        .mustChangePassword(mustChangePassword)
                         .build())
                 .accessToken(accessToken)
                 .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
@@ -428,139 +610,25 @@ public class AuthService {
         return newUser;
     }
 
-    // ======================== B 端员工小程序登录（bmini，issue #2977） ========================
+    // ======================== B 端员工小程序登录（bmini，#2977 → #5485 收口） ========================
 
     /**
-     * B 端员工小程序登录（手机号绑定式，非自动建号）。
+     * B 端员工小程序登录 —— **已禁用**（issue #5485）。
      *
-     * 与 C 端 miniProgramLogin 语义相反：
-     * - C 端：openid 无绑定 → 自动创建 customer 用户（拉新）
-     * - B 端：openid 无绑定 → 微信授权手机号换号 → <b>跨租户匹配员工账号</b>（role 非
-     *   customer/agent，UserMapper.selectActiveEmployeesByPhoneIgnoreTenant 门禁）→ 绑定
-     *   user_identities(bmini_app) → 签发员工 JWT（含 roles+permissions，工具级鉴权同源）
-     * - 匹配不到员工：明确拒绝，绝不建号、绝不下发 token（BM-003）
+     * <p>员工登录统一为「用户名@企业编码 + 密码」（{@code POST /api/auth/employee/login}）；
+     * 微信手机号匹配员工的那条路径（原 {@code UserMapper.selectActiveEmployeesByPhoneIgnoreTenant}）
+     * 随之退场 —— 它按手机号**跨租户**匹配员工，正是本次要消灭的「账号定位不落在企业内」形态。</p>
      *
-     * @param request  {code: wx.login code（必填）, phoneCode: getPhoneNumber 授权 code（首次必填）}
-     * @param response HTTP 响应（Set-Cookie）
-     * @return 员工登录响应
+     * <p>沿用 #375「密码登录已禁用」的同款范式：**接口保留、抛 AUTH_FAILED + 引导文案** ——
+     * 客户端拿到的是明确引导（而不是 404 或静默失联），旧版小程序在升级窗口内表现可读。</p>
+     *
+     * @deprecated 改用 {@code POST /api/auth/employee/login}（用户名@企业编码 + 密码）
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Deprecated // #5485
     public LoginResponse bminiLogin(BminiLoginRequest request, HttpServletResponse response) {
-        log.info("B 端员工小程序登录: hasPhoneCode={}", StringUtils.hasText(request.getPhoneCode()));
-
-        // 1. code2Session（bmini 渠道 appid）换 openid
-        WechatService.Code2SessionResult sessionResult = wechatService.bminiCode2Session(request.getCode());
-        String openid = sessionResult.getOpenid();
-
-        // 2. 查既有 bmini 绑定（identityType + appId 双隔离，杜绝与 C 端 openid 串用）
-        UserIdentity identity = userIdentityMapper.selectOne(
-                new LambdaQueryWrapper<UserIdentity>()
-                        .eq(UserIdentity::getOpenid, openid)
-                        .eq(UserIdentity::getIdentityType, "bmini_app")
-                        .eq(UserIdentity::getAppId, bminiAppId)
-                        .eq(UserIdentity::getDeleted, 0));
-
-        if (identity != null) {
-            // 二次登录：已有绑定 → 校验员工 → 直接签发（无需 phoneCode，BM-002）
-            User user = userMapper.selectById(identity.getUserId());
-            if (user == null || user.getDeleted() != null && user.getDeleted() == 1) {
-                throw BusinessException.authFailed("员工账号不存在，请联系管理员");
-            }
-            validateBminiEmployee(user);
-            TenantContext.setTenantId(user.getTenantId());
-            log.info("B 端员工已绑定，直接登录: userId={}, tenantId={}", user.getId(), user.getTenantId());
-            return buildBminiLoginResponse(user, response);
-        }
-
-        // 3. 首次登录：必须授权手机号换号匹配员工
-        if (!StringUtils.hasText(request.getPhoneCode())) {
-            throw BusinessException.authFailed("首次登录需授权手机号绑定员工账号");
-        }
-        WechatService.PhoneNumberResult phoneResult = wechatService.bminiGetPhoneNumber(request.getPhoneCode());
-        String purePhone = phoneResult != null ? phoneResult.getPurePhoneNumber() : null;
-        if (!StringUtils.hasText(purePhone)) {
-            throw BusinessException.authFailed("微信未返回有效手机号，请重新授权");
-        }
-
-        // 4. 跨租户匹配员工（SQL 已门禁 role NOT IN ('customer','agent')，customer 撞号也拒绝）
-        List<User> employees = userMapper.selectActiveEmployeesByPhoneIgnoreTenant(purePhone);
-        if (employees.isEmpty()) {
-            log.warn("B 端员工登录失败，手机号未匹配员工账号: phone={}****{}", maskPhone(purePhone));
-            throw BusinessException.authFailed("手机号未匹配员工账号，请联系管理员开通");
-        }
-        if (employees.size() > 1) {
-            log.warn("B 端员工登录歧义，手机号关联多个员工账号: phone={}****{}", maskPhone(purePhone));
-            throw BusinessException.authFailed("手机号关联多个员工账号，请通过管理后台登录");
-        }
-        User employee = employees.get(0);
-        validateBminiEmployee(employee);
-        TenantContext.setTenantId(employee.getTenantId());
-
-        // 5. 绑定 openid ↔ 员工（identityType=bmini_app + appId 隔离渠道）
-        UserIdentity newIdentity = UserIdentity.builder()
-                .tenantId(employee.getTenantId())
-                .userId(employee.getId())
-                .identityType("bmini_app")
-                .appId(bminiAppId)
-                .openid(openid)
-                .build();
-        userIdentityMapper.insert(newIdentity);
-        log.info("B 端员工首次登录绑定成功: userId={}, tenantId={}, openid=masked",
-                employee.getId(), employee.getTenantId());
-
-        return buildBminiLoginResponse(employee, response);
-    }
-
-    /**
-     * 校验 bmini 员工账号可登录（active + 非 C 端角色双保险）。
-     */
-    private void validateBminiEmployee(User user) {
-        if (!"active".equals(user.getStatus())) {
-            throw BusinessException.authFailed("员工账号状态异常");
-        }
-        String role = user.getRole();
-        if (role == null || "customer".equals(role) || "agent".equals(role)) {
-            // SQL 已门禁，这里是纵深防御：customer/agent 永不通过 bmini 入口
-            log.warn("B 端员工登录拒绝：角色非员工 userId={}, role={}", user.getId(), role);
-            throw BusinessException.authFailed("手机号未匹配员工账号，请联系管理员开通");
-        }
-    }
-
-    /**
-     * 签发 B 端员工 JWT 并构建登录响应（与 smsLogin 同源：roles + permissions + HttpOnly cookie）。
-     */
-    private LoginResponse buildBminiLoginResponse(User user, HttpServletResponse response) {
-        // 角色与权限
-        List<String> roles = userService.getUserRoles(user);
-        List<String> permissions = roleService.getUserPermissions(user.getId());
-
-        // 签发 JWT（username 放手机号，含权限 → 米宝 ToolContext 工具级鉴权可用）
-        String accessToken = jwtTokenProvider.generateAccessToken(
-                user.getId(), user.getTenantId(), user.getPhone(), roles, permissions);
-        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId(), user.getTenantId());
-
-        // HttpOnly Cookie（审计 07 P1-5：refresh token 仅经 cookie 下发）
-        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
-        setRefreshTokenCookie(response, refreshToken);
-
-        String tenantName = getTenantName(user.getTenantId());
-
-        return LoginResponse.builder()
-                .user(LoginResponse.UserInfo.builder()
-                        .id(user.getId())
-                        .nickname(user.getNickname())
-                        .avatar(user.getAvatar())
-                        .role(user.getRole())
-                        .identityType("bmini")
-                        .roles(roles)
-                        .tenantId(user.getTenantId())
-                        .tenantName(tenantName)
-                        .botName(getBotName(user.getTenantId()))
-                        .build())
-                .accessToken(accessToken)
-                .refreshToken(null)
-                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
-                .build();
+        log.warn("B 端小程序登录已禁用 (#5485)：员工登录统一为 用户名@企业编码 + 密码");
+        throw BusinessException.authFailed(
+                "小程序手机号登录已禁用，请使用员工登录入口（用户名@企业编码 + 密码）");
     }
 
     // ======================== 微信公众号 OAuth 登录（占位） ========================
@@ -670,13 +738,19 @@ public class AuthService {
         List<String> roles = userService.getUserRoles(user);
         List<String> permissions = roleService.getUserPermissions(user.getId());
 
-        // 签发新的 Token（含细粒度权限）
+        // 签发新的 Token（含细粒度权限 + 强制改密标记）
+        // 🔴 关键（issue #5485 不变式 I4）：标记按**数据库当前值**重算 ——
+        //    「只在登录时算」会被「刷新一次 token」绕过（刷出来的新 token 便不再带 claim）。
+        //    也正因如此，/api/auth/refresh 可以安全地留在强制改密的**白名单**里
+        //    （见 PasswordChangeRequiredFilter 的白名单注释）。
+        boolean mustChangePassword = mustChangePasswordOf(user);
         String newAccessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
                 user.getPhone(),
                 roles,
-                permissions
+                permissions,
+                mustChangePassword
         );
 
         String newRefreshToken = jwtTokenProvider.generateRefreshToken(
@@ -710,6 +784,7 @@ public class AuthService {
                         .roles(roles)
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
+                        .mustChangePassword(mustChangePassword)
                         .build())
                 .accessToken(newAccessToken)
                 .refreshToken(newRefreshToken)
@@ -816,7 +891,10 @@ public class AuthService {
         return UserInfoResponse.builder()
                 .user(UserInfoResponse.UserInfo.builder()
                         .id(user.getId())
-                        .username(user.getPhone())
+                        // 账号标识语义（issue #5485）：员工的登录标识是 users.username（不再是手机号）
+                        // ⇒ 有 username 就回它；平台超管 / 存量未补设的行回手机号（**不出现 null 导致前端空白**）。
+                        // 字段名与结构一字未动（/api/auth/me 的消费者很多，只改取值）。
+                        .username(StringUtils.hasText(user.getUsername()) ? user.getUsername() : user.getPhone())
                         .nickname(user.getNickname())
                         .position(user.getPosition())
                         .avatar(user.getAvatar())
@@ -825,6 +903,8 @@ public class AuthService {
                         .botName(getBotName(user.getTenantId()))
                         .tenantLogo(tenantLogo)
                         .status(user.getStatus())
+                        // 前端靠它决定是否跳「首登改密」页（本端点在强制改密白名单里）
+                        .mustChangePassword(mustChangePasswordOf(user))
                         .build())
                 .roles(securityUser.getRoles())
                 .permissions(permissions)

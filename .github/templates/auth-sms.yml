@@ -6,17 +6,33 @@ business_truths:
   - [auth-sms.code-rule] 短信验证码 6 位数字，Redis 存储 TTL 300 秒（5 分钟），校验通过即删除（一次性使用）
   - [auth-sms.send-limit] 发送验证码 POST /api/auth/sms/send，60 秒防刷 + 每手机号每日上限 10 次
   - [auth-sms.bypass] dev/CI 可注入 sms.bypass-code（默认空=禁用），测试常见万能码 123456
-  - [auth-sms.login-order] 短信登录 POST /api/auth/sms/login：先查 platform_admins（super_admin，tenantId=-1），再跨租户按手机号查 users（active 用户，不限 admin 角色，取 updated_at DESC LIMIT 1）
+  - [auth-sms.login-order] 短信登录 POST /api/auth/sms/login：先查 platform_admins（super_admin，tenantId=-1，**逻辑一字不改**），再跨租户按手机号查 users（active 用户）。🔴 **2026-09-25 改判（issue #5485）**：原文「不限 admin 角色」**已被推翻** —— 租户用户命中的**必须** users.role='admin' 才签发，非管理员一律 401「该账号非管理员，请使用员工登录入口（用户名@企业编码 + 密码）」（同手机号多租户歧义仍拒绝，审计 07 P1-2 口径不回退）
   - [auth-sms.login-response] 短信登录成功返回 LoginResponse：accessToken/refreshToken/expiresIn/user（user 含 id/nickname/avatar/role/identityType/roles/tenantId/tenantName，无 name、无 phone 字段）
   - [auth-sms.password-disabled] 密码登录 POST /api/auth/admin/login 已禁用（#375）：接口仍存在但抛 AUTH_FAILED(401)
   - [auth-sms.register-fields] 注册接口 POST /api/auth/register 为企业入驻申请：必填 companyName/contactName/phone/smsCode，无 password 字段，返回 {applicationId, status, message, rejectReason?}，不返回 token；status 为 AI 甄别终态：approved（自动开通）/ rejected（带 rejectReason）/ pending（兜底，一般不出现）
   - [auth-sms.error-codes] 验证码错误/过期：登录侧返回 401(AUTH_FAILED)，注册侧返回 422(VALIDATION_ERROR)
+
+  - [auth.employee-login] 员工登录 POST /api/auth/employee/login：body {identifier, password}；identifier = `<username>@<tenantCode>` 按**最后一个** `@` 切分、两侧非空、统一转小写（username `^[a-z0-9][a-z0-9._-]{2,31}$`，tenantCode `^[a-z0-9][a-z0-9_-]{1,31}$`）；成功返回 LoginResponse（user.identityType=`employee`，含 mustChangePassword），accessToken + HttpOnly cookie 与 loginBySms 同源
+  - [auth.tenant-local-identity] 租户内定位（不变式 I1/I3）：租户**只**由 identifier 里的企业编码解析（tenants.code，deleted=0 且 status='active'）⇒ tenant_id；用户查询逐字带 tenant_id（`WHERE tenant_id=? AND username=? AND deleted=0`）；**禁止**无租户限定的用户名查询与跨租户兜底。用户名唯一性只到租户内（`uk_users_tenant_username` 部分唯一索引 `(tenant_id, username) WHERE username IS NOT NULL AND deleted=0`）⇒ 不同企业可同名、A 的凭据绝不解析到 B
+  - [auth.sms-admin-only] 短信仅管理员（不变式 I2）：短信登录只对 platform_admins（super_admin）与 users.role='admin' 签发；其余角色（operator/employee/customer/…）401 拒绝并引导员工登录入口 —— 普通员工不再能靠手机号短信登录
+  - [auth.must-change-password] 首登强制改密（不变式 I4）：users.must_change_password；**签发侧**（登录 + **刷新 token**）按**数据库当前值**计算 JWT claim `pwd_change_required`（只在登录时算会被「刷新一次」绕过）；**拦截侧**带该 claim 的会话除白名单（POST /api/auth/password/change、POST /api/auth/logout、GET /api/auth/me、POST /api/auth/refresh）外一律 403 `PASSWORD_CHANGE_REQUIRED`；POST /api/auth/password/change 需认证、校验旧密码、策略 ≥8 位且含字母与数字（否则 422），成功后清标记并**换发**新 access token（响应体同登录），不依赖客户端记得再刷新一次
+  - [auth.username-uniqueness] 员工用户名租户内唯一：写面（POST /api/admin/users、PUT /api/admin/users/{id}）统一转小写 + 格式校验 + 应用层查重（**带 tenant_id**）+ 唯一索引兜底（DuplicateKeyException 转 422）；租户内重复 ⇒ 422「用户名…已被占用，请换一个」。创建带初始密码 / PUT 带 password / PUT /{id}/reset-password ⇒ must_change_password=true（**仅当确实设了密码** —— 无密码账号被标强制改密会永久锁死）
+  - [auth.tenant-code-rule] 企业编码：格式 `^[a-z0-9][a-z0-9_-]{1,31}$`（**含下划线** —— 兼容存量 `tenant_7478359537` 形态，否则那两个租户的员工永远登不进来）；全平台唯一（大小写不敏感、排除自己，唯一冲突转 422）；保留字黑名单 admin/api/www/app/platform/support/system/root/login/auth；违规一律 422 + 明确文案。设置入口**复用** PUT /api/admin/settings 的 code 字段（GET 侧本就下发 code；权限码沿用 system:manage，不新造端点/权限码）；**编码未变更即跳过校验**（管理员原样保存不能被自己的新校验拒掉）。新租户默认值 = `<企业名 slug>-<4 位随机>`（淘汰 tenant_%06d%04d 的时间戳形态）
+  - [auth.no-auto-migration] 存量不迁移：users.username 保持 NULL、must_change_password 默认 FALSE；管理员补设用户名之前**无法用员工登录**（这是预期行为，不是缺陷，绝不自动生成用户名）
+  - [auth.bmini-disabled] POST /api/auth/bmini/login **已废弃并明确拒绝**（沿用 #375 的同款范式：接口保留、抛 AUTH_FAILED + 引导「用户名@企业编码 + 密码」）；「微信手机号匹配员工」路径（AuthService.bminiLogin 匹配段 + UserMapper.selectActiveEmployeesByPhoneIgnoreTenant）已**删除**，bmini 与商家端统一走 employee/login
 
   - [auth.mini-program-login] C 端小程序登录 POST /api/auth/mini/login（#3011）：租户判定以域名解析为权威——X-Tenant-Id（nginx 按 <tenantId>.app.migaozn.com 子域名注入并覆盖）优先，Host 正则兜底，body tenantId 仅兼容期兜底（warn 日志）；均无法解析 → 422 显式拒绝，不静默落默认租户
 primary_specs:
   - tests/e2e/specs/auth/login-sms.spec.ts
   - tests/e2e/specs/auth/register.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
+  # issue #5485：员工登录 / 短信门禁 / 强制改密 / 用户名 / 企业编码的判据源
+  - backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/controller/TenantCodeSettingsTest.java
+  - tests/unit_ci_workflows/test_tenant_scoped_user_queries.py
 
 reviewer_asserts:
   - API: POST /api/auth/sms/send

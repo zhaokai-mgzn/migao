@@ -64,8 +64,12 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
 
     /**
      * C 端（小程序/B2C）角色，不属于商户员工范畴。
-     * 与 {@code UserMapper.selectActiveEmployeesByPhoneIgnoreTenant} 的 SQL 门禁
-     * {@code role NOT IN ('customer','agent')} 同口径（AuthService 的 bmini 员工门禁同源）。
+     * 与商户员工门禁 {@code role NOT IN ('customer','agent')} 同口径
+     * （实现点：{@code UserService} 员工管理的「排除 C 端消费者」）。
+     *
+     * <p>⚠️ issue #5485：原先并列点名的 {@code UserMapper.selectActiveEmployeesByPhoneIgnoreTenant}
+     * 与 {@code AuthService.validateBminiEmployee}（bmini 微信手机号匹配员工）**已随本单删除** ——
+     * 员工登录统一为「用户名@企业编码 + 密码」，商户员工判定只看 {@code users.role}。</p>
      */
     private static final Set<String> C_END_ROLES = Set.of("customer", "agent");
 
@@ -186,10 +190,9 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
      *
      * <p>判定口径与既有实现**同源**，不新造第二套（issue #4105）：用户行存在且未软删
      * （{@code @TableLogic} 由 {@code selectById} 隐式加 {@code deleted = 0}）、
-     * {@code status = active}（同 {@code AuthService.validateBminiEmployee}）、
+     * {@code status = active}、
      * 租户与 {@code X-Tenant-Id} 一致、角色非 {@code customer}/{@code agent}
-     * （同 {@code UserMapper.selectActiveEmployeesByPhoneIgnoreTenant} 的 SQL 门禁与
-     * {@code UserService} 员工管理「排除 C 端消费者」口径）。</p>
+     * （与 {@code UserService} 员工管理「排除 C 端消费者」口径同源）。</p>
      */
     private User resolveMerchantStaff(String userId, Long tenantId) {
         try {

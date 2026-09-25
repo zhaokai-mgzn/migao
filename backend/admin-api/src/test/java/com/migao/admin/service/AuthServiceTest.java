@@ -152,7 +152,9 @@ class AuthServiceTest {
         when(userService.getUserRoles(testUser)).thenReturn(List.of("admin"));
         when(roleService.getUserPermissions("user-001")).thenReturn(List.of("*"));
 
-        when(jwtTokenProvider.generateAccessToken(eq("user-001"), eq(1L), eq("13800138000"), anyList(), anyList()))
+        // issue #5485：刷新路径必须按数据库当前 must_change_password 重算标记 ⇒ 6 参重载
+        when(jwtTokenProvider.generateAccessToken(eq("user-001"), eq(1L), eq("13800138000"),
+                anyList(), anyList(), eq(false)))
                 .thenReturn("new-access-token");
         when(jwtTokenProvider.generateRefreshToken("user-001", 1L))
                 .thenReturn("new-refresh-token");
@@ -364,7 +366,7 @@ class AuthServiceTest {
         when(smsService.verifyCode("13800138000", "123456")).thenReturn(true);
         when(platformAdminMapper.selectOne(any())).thenReturn(null);
         when(userMapper.selectActiveUsersByPhoneIgnoreTenant("13800138000")).thenReturn(List.of(u1, u2));
-        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList(), anyList()))
+        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList(), anyList(), anyBoolean()))
                 .thenReturn("jwt-token-2");
         when(jwtTokenProvider.generateRefreshToken(anyString(), anyLong())).thenReturn("refresh-token-2");
         when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);

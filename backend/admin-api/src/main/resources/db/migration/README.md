@@ -32,6 +32,8 @@ min(本目录的版本号) > max(../migration-archive/ 的版本号)
 | `V123__retire_join_height_processing_item.sql` | 纯数据（#5230 / #5231 裁定：软删 + 停用「接高」行，不动任何表/列） | 建库脚本里**没有**这一笔（复算：`grep -c join_height ../init/schema.sql` → `0`）⇒ 归档它会让**每个新建环境**上「接高」重新变成活跃项（「CI 全绿、功能静默缺失」） |
 | `V124__backfill_read_permissions.sql` | 纯数据（#5246 读权限回填） | 同上（脚本里没有这一笔） |
 | `V125__backfill_write_permissions.sql` | 纯数据（#5246 写权限回填） | 同上 |
+| `V128__add_users_username_and_must_change_password.sql` | **结构变更**（issue #5485：`users.username` + `users.must_change_password` + 租户内部分唯一索引 `uk_users_tenant_username`） | 它的效果**已经**同步进建库脚本（基线契约要求「结构变更必须同步进脚本」）⇒ 按切点规则它**将来**随下一次「重切」进归档；本单**不动切点**（issue #5245 的活目录登记口径：切点尚未前移时的正常形态，不是遗漏） |
+| `V127__create_agent_batches.sql` | **结构变更**（issue #5314：`agent_batches` / `agent_batch_items` 两表 + 租户 RLS，效果已同步进建库脚本） | 同上一行（切点未前移 ⇒ 留在活目录是**正常形态**；上一版表格漏登记它，本单同批补齐） |
 | `V126__drop_zombie_db_objects.sql` | **结构变更**（issue #5245 A 组：删 3 表 + 3 列 + C1 的 `COMMENT ON COLUMN` 纠正） | 它的效果**已经**同步进建库脚本（基线契约要求「结构变更必须同步进脚本」），按切点规则它**将来**随下一次「重切」进归档；本单**不动切点**（issue #5245 明令：活目录 = V123/V124/V125/V126，归档 = V1..V122）⇒ 此刻它留在活目录是「**切点尚未前移**」的正常形态，不是遗漏 |
 
 ⚠️ **`V124` / `V125` 是 #5246 合入的**：本单（#5245）未动它们，也**不许**重编号
