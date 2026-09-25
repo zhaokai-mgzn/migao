@@ -1130,3 +1130,72 @@ def test_red_proof_reading_step_without_fail_open_guard_is_red(tmp_path):
             if f"emit {entry['id']}" in run and "if [ -f .github/scripts/mechanism_liveness.sh ]" not in run:
                 missing.append(entry["id"])
     assert "stale" in missing, f"去掉护栏后元守卫没有判红 ⇒ 该红证没有判别力：{missing}"
+
+
+# ── issue #5419：看门人的**读数解析**与**run 挑选**两条真根因 ──────────────────────
+#
+# 实测（2026-09-25）：看门人报 **10 条**「机制跑了没出声」，而逐条核验发现**其中 9 条是假红** ——
+# 真机制在正常出声，是**看门人自己**读不到：
+#   · `…/check-runs/<id>/annotations` 的 `message` **没有** `notice::` 前缀（GitHub 已把它吃掉、
+#     等级另存在 `annotation_level`）⇒ 带前缀的正则**永远配不上**注解形态；
+#   · 最新一次 run 若被 `cancelled` / `skipped`，读数步可能根本没机会跑 ⇒ 拿它判「没出声」是误判。
+# 修完这两条后：**10 条红 → 0 条红**（`scripts/mechanism_liveness.py --check --watchdog`）。
+
+def _wd_obs(conclusion: str, annotations: list[str], run_id: int = 36000000000) -> dict:
+    return {"completed_runs": 5, "run_id": run_id, "conclusion": conclusion,
+            "head_sha": "a" * 40, "emitter_at_head_sha": True,
+            "annotations": annotations, "job_conclusions": {}}
+
+
+def _wd_reg(eid: str = "demo-mech") -> dict:
+    return {"mechanisms": [{"id": eid, "workflow": ".github/workflows/demo.yml", "job": "demo",
+                            "reading_site": "emitter"}]}
+
+
+def test_parse_readings_accepts_annotation_form_without_level_prefix():
+    """**注解形态**（注解 API 的 `message`，无 `notice::` 前缀）必须认（#5419 的真根因）。"""
+    line = ("MECHANISM-LIVENESS mech=h5-freshness-guard run=36097909767 rc=0 seen=1 acted=1 "
+            "why=线上产物陈旧（落后 25.9 天）")
+    got = ML.parse_readings([line], "h5-freshness-guard")
+    assert len(got) == 1, f"注解形态没被认出来（#5419 假红根因复现）：{got}"
+    assert got[0]["run"] == "36097909767" and got[0]["rc"] == "0" and got[0]["acted"] == "1"
+
+
+def test_parse_readings_still_accepts_log_form_with_prefix():
+    """**日志形态**（`##[notice]` + 时间戳）也必须继续认（改这条不得把另一种载体弄坏）。"""
+    line = "stale\t读数\t2026-09-25T05:15:04.1234567Z ##[notice]MECHANISM-LIVENESS mech=stale run=123 rc=0 seen=1 acted=0 why=零动作"
+    got = ML.parse_readings([line], "stale")
+    assert len(got) == 1 and got[0]["why"] == "零动作", got
+
+
+def test_parse_readings_rejects_prose_that_merely_mentions_the_marker():
+    """**不得**按文案放行：缺结构化字段的行不算读数（否则任何提及都会变成"出声"）。"""
+    for prose in ("本 workflow 会输出 MECHANISM-LIVENESS 行",
+                  "MECHANISM-LIVENESS mech=stale run=123 rc=0 why=缺两个字段"):
+        assert ML.parse_readings([prose], "stale") == [], f"按文案放行了：{prose!r}"
+
+
+def test_pick_judgeable_run_skips_a_newer_cancelled_run():
+    """挑「可判的最近一次」：更新的 `cancelled` 不得盖住更早的 `success`（否则真信号被漏掉）。"""
+    runs = [{"databaseId": 3, "conclusion": "cancelled"},
+            {"databaseId": 2, "conclusion": "success"},
+            {"databaseId": 1, "conclusion": "skipped"}]
+    assert ML._pick_judgeable_run(runs)["databaseId"] == 2
+    # 一条可判的都没有 ⇒ 回落到最新那条（由 judge_watchdog 走「无法判定」分支）
+    only_nonfinal = [{"databaseId": 9, "conclusion": "cancelled"}, {"databaseId": 8, "conclusion": "skipped"}]
+    assert ML._pick_judgeable_run(only_nonfinal)["databaseId"] == 9
+
+
+def test_watchdog_does_not_flag_a_non_final_run():
+    """非终态 run（cancelled/skipped）⇒ **不计 finding**（取消/跳过都不是结果，§16.7）。"""
+    for conclusion in ("cancelled", "skipped", "timed_out"):
+        rep = ML.judge_watchdog(_wd_reg(), {"demo-mech": _wd_obs(conclusion, [])})
+        assert not rep.findings, f"{conclusion} 被误报成「跑了没出声」：{[getattr(f, 'key', f) for f in rep.findings]}"
+        assert any("不是结果" in n for n in rep.notes), rep.notes
+
+
+def test_watchdog_still_flags_a_successful_run_without_reading():
+    """**反向对照**（防我把判据改松）：有结论的 run 且确实没读数 ⇒ 仍必须判红。"""
+    rep = ML.judge_watchdog(_wd_reg(), {"demo-mech": _wd_obs("success", ["与本机制无关的注解"])})
+    keys = [getattr(f, "key", str(f)) for f in rep.findings]
+    assert "watchdog-no-reading:demo-mech" in keys, keys
