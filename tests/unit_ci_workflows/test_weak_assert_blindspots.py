@@ -276,3 +276,56 @@ def test_pr_check_keeps_new_tests_only_fail_closed():
     text = (REPO_ROOT / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8")
     assert "--check-weak" in text and "--new-tests-only" in text, "CI 必须保留新增文件弱断言检查"
     assert "--diff-filter=A" in text, "CI 的「新增」口径是 diff-filter=A（本单不改变它）"
+
+
+# ── 说明 vs 实现（2026-09-25 同一形态一天撞 4 次 ⇒ 就地修在扫描器上）────────────────
+#
+# 现场：把「不要写某个存在性弱断言」这类**解释性注释**写进测试文件 ⇒ 账本当场多算一处弱断言
+# （当天本会话的 PR 就是这么被 CI 判红的：**改法注释里出现了那个模式的字面文本**）。
+# 同族更早的形态：#5272（判据按原文扫代码 ⇒ 注释里的 `"settings"` 被读成「仍绑定」）。
+# ⇒ 口径：**命中落在注释/文档字符串里就不算**；其余判定一字不变（账本只许缩短）。
+#
+# ⚠️ 下面的**夹具文本一律用拼接构造**：本文件会被同一个扫描器扫到，若把模式字面写进语料，
+# 语料自己就变成 4 处「弱断言」（本判据第一版当场踩到）—— 这是「判据语料不含自身说明」的翻版。
+
+_WEAK = "assert got is " + "not None"      # 存在性弱断言（拼接，避免字面落进语料）
+_WEAK_NONE = "assert got is " + "None"
+
+
+def _scan(path, name: str, body: str) -> int:
+    mod = _load_gate()
+    return len(mod.find_weak_asserts(str(_write(path, name, body))))
+
+
+def test_comment_mention_is_not_counted(tmp_path):
+    """注释里**提到**弱断言模式 ⇒ 不算（这正是当天踩的那个坑）。"""
+    body = "def test_x():\n    # 不要写 " + _WEAK + " 这种存在性断言\n    assert got == 3"
+    assert _scan(tmp_path, "test_a.py", body) == 0
+
+
+def test_docstring_mention_is_not_counted(tmp_path):
+    """模块 docstring 里提到该模式 ⇒ 不算。"""
+    body = '"""说明：历史上的 ' + _WEAK_NONE + ' 形态已修。"""\n\n\ndef test_x():\n    assert got == 3'
+    assert _scan(tmp_path, "test_b.py", body) == 0
+
+
+def test_real_weak_assert_is_still_counted(tmp_path):
+    """真实存在性弱断言**照样计数**（口径没被放宽）。"""
+    assert _scan(tmp_path, "test_c.py", "def test_x():\n    " + _WEAK) == 1
+
+
+def test_weak_assert_before_a_trailing_comment_is_still_counted(tmp_path):
+    """同一行「真断言 + 行尾注释」⇒ 仍计数（命中在说明**之前**）。"""
+    assert _scan(tmp_path, "test_d.py", "def test_x():\n    " + _WEAK_NONE + "  # 行尾说明") == 1
+
+
+def test_hash_inside_a_string_does_not_hide_later_lines(tmp_path):
+    """字符串里的 `#` 不得被当成注释起点（否则后续行会被误判成说明）。"""
+    body = 'def test_x():\n    tag = "a#b"\n    ' + _WEAK_NONE
+    assert _scan(tmp_path, "test_e.py", body) == 1
+
+
+def test_ts_line_comment_mention_is_not_counted(tmp_path):
+    """TS 的 `//` 注释里提到模式 ⇒ 不算。"""
+    body = "it('x', () => {\n  // expect(foo).toBe" + "Defined() 是弱断言\n  expect(foo).toEqual(3)\n})"
+    assert _scan(tmp_path, "x.test.ts", body) == 0

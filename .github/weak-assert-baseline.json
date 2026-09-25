@@ -5,12 +5,11 @@
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
   "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
   "anchored_at": "2026-09-21",
-  "weak_total": 245,
+  "weak_total": 242,
   "legacy_weak_counts": {
     "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
     "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
     "backend/ai-agent-service/tests/test_acceptance_case_checks.py": 1,
-    "backend/ai-agent-service/tests/test_admin_api_failure_mapping.py": 1,
     "backend/ai-agent-service/tests/test_agent_eval_runner.py": 1,
     "backend/ai-agent-service/tests/test_api_chat_helpers.py": 1,
     "backend/ai-agent-service/tests/test_business_verification.py": 6,
@@ -31,7 +30,6 @@
     "backend/ai-agent-service/tests/test_order_create_spec_key_family.py": 3,
     "backend/ai-agent-service/tests/test_performance_isolation.py": 1,
     "backend/ai-agent-service/tests/test_post_deploy_verify.py": 2,
-    "backend/ai-agent-service/tests/test_production/test_piecework.py": 1,
     "backend/ai-agent-service/tests/test_rule_matcher.py": 23,
     "backend/ai-agent-service/tests/test_session_memory.py": 4,
     "backend/ai-agent-service/tests/test_skill_routing_integrity.py": 6,
@@ -75,7 +73,7 @@
     "tests/e2e/specs/chat/chat-panel-resize.spec.ts": 2,
     "tests/e2e/specs/chat/chat.spec.ts": 1,
     "tests/e2e/specs/orders/order-create.spec.ts": 1,
-    "tests/e2e/specs/quality/cross-page-consistency.spec.ts": 7,
+    "tests/e2e/specs/quality/cross-page-consistency.spec.ts": 6,
     "tests/e2e/specs/settings/toggle-geometry.spec.ts": 2,
     "tests/smoke/test_04_ai_chat.py": 1,
     "tests/smoke/test_06_perf.py": 1,
@@ -106,6 +104,12 @@
       "anchor_sha": "7e56e38b490762f0367ea612982640fd89cf2c70",
       "weak_total": 245,
       "note": "精确销账（只许缩）：247 → 245 处（issue #3731）。改判 `backend/ai-agent-service/tests/test_intent_router.py` 两条判据时去掉 2 处 `assert result is not None`（弱断言形态）⇒ 该文件 28 → 26。**只动这一格 + weak_total + 本行**（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
+    },
+    {
+      "anchored_at": "2026-09-25",
+      "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
+      "weak_total": 242,
+      "note": "口径修正（**更严，只许缩**）：弱断言扫描器改为「命中落在**注释/文档字符串**里就不算」——此前按整行正则扫，会把**解释性注释里写出的模式**当成真实现象（当天同一形态一天撞 4 次：改法注释里出现那个模式的字面文本 ⇒ 账本当场多算一处）。实测 245 → 242（去掉 3 处说明里的假命中；其中 2 个文件归零 ⇒ 移出明细）。**只动这几格 + weak_total + 本行**，其余锚点值原样保留（未走 --write-weak-baseline）。"
     }
   ]
 }
