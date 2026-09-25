@@ -9,7 +9,7 @@
  * axios 拦截器强制 window.location.href='/login'（生产实测：页面先渲染再被跳走）。
  * 官网首页必须常开：未登录者不跳转，登录只由用户主动发起；**受保护业务页的跳转一条不放宽**。
  */
-// case_ids: DF-014, OB-001
+// case_ids: DF-014, OB-001, UI-060
 import { describe, it, expect } from 'vitest'
 import { isPublicRoute, shouldRedirectToLogin, PUBLIC_ROUTES } from '../../../src/lib/auth-redirect'
 
