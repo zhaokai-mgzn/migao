@@ -81,8 +81,9 @@ TOOLS: dict[str, ToolSpec] = {
         criteria=(_AAPI_TEST + "service/OrderUrgencyFieldsTest.java",),
     ),
     "scripts/pool-board-red-proof.py": ToolSpec(
-        floor=5,
-        heavy="Maven + JDK（admin-api 单测；5 条变异实测 107s）",
+        # issue #5550 新增 pi_null_guard（存量行 NPE 形态）⇒ 下限随声明**同批抬高**（只许增）
+        floor=6,
+        heavy="Maven + JDK（admin-api 单测；6 条变异实测 119s）",
         impl=(_AAPI_MAIN + "service/ProcessingOrderService.java",),
         criteria=(_AAPI_TEST + "service/PoolBoardUrgencyTest.java",),
     ),

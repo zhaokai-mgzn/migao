@@ -769,8 +769,14 @@ public class RemnantService {
 
     /** 本行携带的特殊选项（{@code processing_info.specialOptions: string[]}），保序去重。 */
     static List<String> specialOptionsOf(OrderItem item) {
-        Object raw = OrderLineCraftFields.normalize(item == null ? null : item.getProcessingInfo())
-                .get("specialOptions");
+        Map<String, Object> info = OrderLineCraftFields.normalize(
+                item == null ? null : item.getProcessingInfo());
+        // 🔴 存量行：`processing_info` 为 NULL ⇒ 归一化返回 null（真库实证 issue #5550：待派明细 15/29 为 NULL）
+        // —— 缺值就是「这一行没带任何特殊选项」，**不得解引用**（原写法 `.get(...)` 直连解引用 ⇒ NPE 500）。
+        if (info == null) {
+            return List.of();
+        }
+        Object raw = info.get("specialOptions");
         if (!(raw instanceof List<?> list)) {
             return List.of();
         }

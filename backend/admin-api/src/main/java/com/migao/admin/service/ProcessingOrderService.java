@@ -3305,6 +3305,14 @@ public class ProcessingOrderService {
         for (OrderItem item : items) {
             // 归一化：processingInfo 可能是 Map（BaseMapper 路径）或 JSON 字符串（自定义 @Select 路径）
             Map<String, Object> pi = normalizeProcessingInfo(item.getProcessingInfo());
+            // 🔴 存量行：`order_items.processing_info` **可为 NULL**（真库实证 issue #5550：待派池里
+            // 29 行有 **15 行**是 NULL）⇒ 归一化结果是**可能为 null 的缺值**，不得直接解引用
+            // —— #4909 那行 `str(pi.get("saleForm"))` 踩的正是这里，池看板因此**恒 500**
+            //（读面把整池的每一行都过一遍，NULL 行必被扫到；这不是间歇故障）。
+            // 缺值语义 = 既没有加工项、也没有 `saleForm` ⇒ 与「无加工项的非卖布行」走**同一条**既有语义：跳过。
+            if (pi == null) {
+                continue;
+            }
             List<Map<String, Object>> procs = extractProcessingItems(pi);
             // 卖布行（`saleForm = 布料`）**天然没有加工项**（按米卖布，不选加工项）⇒ 旧过滤把它整行丢掉，
             // 于是 `buildPositionPayload` 的布料路线分支（`deriveRouteKey`，issue #4529）**永不执行**

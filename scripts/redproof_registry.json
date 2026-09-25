@@ -25,13 +25,25 @@
       "replacement": "            \"notification_templates\",\n            \"notification_rules\",\n            // [RED-PROOF] 两张批次表被塞进豁免清单 = 从拦截范围里摘掉\n            \"agent_batches\",\n            \"agent_batch_items\"\n    );",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AgentBatchCrossTenantRealDbTest", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AgentBatchCrossTenantRealDbTest",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AgentBatchCrossTenantRealDbTest",
         "method": "crossTenantGetIsNotFoundAndWritesNothing",
         "red_text": "SQL 层：租户拦截器必须给 agent_batches 注入 tenant_id 谓词"
       },
-      "requires": ["cmd:java", "cmd:initdb", "cmd:pg_ctl", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "cmd:initdb",
+        "cmd:pg_ctl",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类 ×3（基线 / 注入 / 还原复跑）；真库判据：一次性 initdb + pg_ctl 集群（实测单次 ≈35s）"
     },
     {
@@ -44,13 +56,25 @@
       "replacement": "        // [RED-PROOF] 租户谓词不再注入：多租户拦截器未挂上\n",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AgentBatchCrossTenantRealDbTest", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AgentBatchCrossTenantRealDbTest",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AgentBatchCrossTenantRealDbTest",
         "method": "crossTenantExecuteIsNotFoundAndWritesNothing",
         "red_text": "SQL 层：租户拦截器必须给 agent_batches 注入 tenant_id 谓词"
       },
-      "requires": ["cmd:java", "cmd:initdb", "cmd:pg_ctl", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "cmd:initdb",
+        "cmd:pg_ctl",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类 ×3（基线 / 注入 / 还原复跑）；真库判据：一次性 initdb + pg_ctl 集群（实测单次 ≈35s）"
     },
     {
@@ -63,13 +87,25 @@
       "replacement": "-- [RED-PROOF] 新表没有 tenant_id 列、也没登记豁免（拦截器会给它注入 tenant_id 谓词）\nCREATE TABLE IF NOT EXISTS zz_redproof_unregistered (\n    id VARCHAR(64) PRIMARY KEY\n);\n\n-- ================================================\n-- END OF SCHEMA\n-- ================================================\n",
       "criteria": {
         "cwd": "backend/admin-api",
-        "cmd": ["./mvnw", "-o", "-q", "test", "-Dtest=AgentBatchCrossTenantRealDbTest", "-DfailIfNoTests=false"],
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AgentBatchCrossTenantRealDbTest",
+          "-DfailIfNoTests=false"
+        ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AgentBatchCrossTenantRealDbTest",
         "method": "tenantInterceptionCoverageLedgersAreFrozen",
         "red_text": "燃尽台账（只许缩短）：在拦截面内却没有 tenant_id 列的表"
       },
-      "requires": ["cmd:java", "cmd:initdb", "cmd:pg_ctl", "file:backend/admin-api/mvnw"],
+      "requires": [
+        "cmd:java",
+        "cmd:initdb",
+        "cmd:pg_ctl",
+        "file:backend/admin-api/mvnw"
+      ],
       "cost": "单类 ×3（基线 / 注入 / 还原复跑）；真库判据：一次性 initdb + pg_ctl 集群（实测单次 ≈35s）"
     },
     {
@@ -330,6 +366,35 @@
       ],
       "cost": "单个 pytest 文件 ×3（零 Maven / 零 npm / 零 PG）",
       "note": "**这一条就是类别里那两例（#5268 判据 4 / #5286 判据 4）的现行形态**：注释里的 `secrets.*` 一旦被当引用，判据 9 必红；反之（例如尺子被抽走）巡检报「该红证已退化」。"
+    },
+    {
+      "id": "pool-board/pi_null_guard",
+      "tool": "scripts/pool-board-red-proof.py",
+      "mutation": "pi_null_guard",
+      "criterion": "判据1/2 存量行（processing_info 为 NULL，issue #5550）不炸池读面",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "anchor": "            if (pi == null) {\n                continue;\n            }\n",
+      "replacement": "            // [RED-PROOF] pi 的 null 判定被摘掉\n",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=PoolBoardUrgencyTest#poolReadFaceSurvivesLegacyItemWithoutProcessingInfo",
+          "-DfailIfNoTests=false"
+        ],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.PoolBoardUrgencyTest",
+        "method": "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo",
+        "red_text": "because \"pi\" is null"
+      },
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
+      "cost": "单类单方法 ×3（基线 / 注入 / 还原），Maven 离线增量"
     }
   ],
   "unfixed": [

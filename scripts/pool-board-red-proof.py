@@ -59,6 +59,7 @@ CRITERIA = {
     "orderingPrefersNearestDeliveryDateThenLongestWaitAndPutsNullsLast": "判据5 排序（临期优先、null 最后）",
     "urgentSectionUsesTheSameOrderingKey": "判据5 插队区同一把排序键",
     "orderLevelFieldsAreStampedIntoSnapshotRows": "范围5 透传（isUrgent 恒落键 / 到货日缺值不落键）",
+    "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo": "判据1/2 存量行（processing_info 为 NULL，issue #5550）不炸池读面",
 }
 
 
@@ -128,6 +129,14 @@ def mutation_stamp(src: str) -> str:
         }""")
 
 
+def mutation_pi_null_guard(src: str) -> str:
+    """摘掉 `buildSnapshot` 里 `pi` 的 null 判定（issue #5550：`processing_info` 为 NULL 的存量行 NPE）。"""
+    return replace_once(src, """            if (pi == null) {
+                continue;
+            }
+""", "            // [RED-PROOF] pi 的 null 判定被摘掉\n")
+
+
 MUTATIONS = [
     ("urgent_guard", "摘掉「加急单不进池」的成批闸", mutation_urgent_guard,
      "pooledBatchContainingUrgentOrderIsRejectedFailClosed"),
@@ -139,6 +148,8 @@ MUTATIONS = [
      "defaultsAreUnchangedWhenNothingIsUrgentAndNoDeliveryDate"),
     ("stamp", "订单级字段不进快照", mutation_stamp,
      "orderLevelFieldsAreStampedIntoSnapshotRows"),
+    ("pi_null_guard", "摘掉 buildSnapshot 的 pi null 判定（存量行 NPE）", mutation_pi_null_guard,
+     "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo"),
 ]
 
 
