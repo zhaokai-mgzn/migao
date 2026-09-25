@@ -272,10 +272,14 @@ def test_verify_all_gate_runs_the_baseline_check():
 
 
 def test_pr_check_keeps_new_tests_only_fail_closed():
-    """CI 侧"新增测试文件"的弱断言检查不得被拆（新增 fail-closed 是修法的一半）。"""
+    """CI 侧"新增测试文件"的弱断言检查不得被拆，且选取集必须走**共享实现**（#4077 / #5477）。"""
     text = (REPO_ROOT / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8")
     assert "--check-weak" in text and "--new-tests-only" in text, "CI 必须保留新增文件弱断言检查"
-    assert "--diff-filter=A" in text, "CI 的「新增」口径是 diff-filter=A（本单不改变它）"
+    assert "--select-weak-files" in text, (
+        "CI 的选取集必须由 growth_gate 的唯一实现产出（issue #5477：此前是本文件里的内联 grep）")
+    gate_src = GATE_PY.read_text(encoding="utf-8")
+    assert "--diff-filter=A" in gate_src, (
+        "「新增」口径仍是 diff-filter=A（本单不改变它）—— 真值现在在 growth_gate.get_added_files")
 
 
 # ── 说明 vs 实现（2026-09-25 同一形态一天撞 4 次 ⇒ 就地修在扫描器上）────────────────

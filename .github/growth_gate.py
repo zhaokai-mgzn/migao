@@ -347,17 +347,17 @@ TEST_FILE_EXTS = (".py", ".java", ".ts", ".tsx")
 
 
 def _is_test_file(file_path):
-    """路径是否为测试文件。
+    """路径是否为**用例文件**（口径：只看文件名）。
 
     判定：扩展名必须是代码文件（.py/.java/.ts/.tsx），文件名含 test/spec；
     conftest（pytest 夹具，非用例）与 runner/生成数据文件（local_runner/eval_cases 等）不算。
 
-    ⚠️ **本函数是「哪些文件算测试文件」的单一事实源（issue #4077）**：G5 用例追溯与新测试
-    弱断言扫描（`--check-weak --new-tests-only`）都必须调它。此前这句判定在三处各写了一遍
-    （本函数 / `pr-check.yml` 的内联 grep / `verify-all.sh` 的内联 grep），且本地那处**只**过滤
-    工作区新增文件、不过滤已提交 diff 里的新增文件 ⇒ 新增**源文件**（如 `app/**/x.py`）被当作
-    测试文件扫弱断言、报出 CI 不会报的红（`verify-all.sh` 曾断言「与 pr-check 语义一致」但实现
-    不同 = 注释漂移）。**禁止在别处再写一套判定**：复制一份必然漂移。
+    ⚠️ **本函数是「这个文件自己是不是用例文件」的单一事实源（issue #4077）**：G5 用例追溯
+    （`case_trace_check`）必须调它。**弱断言扫描集不归本函数管** —— 那是另一条口径
+    （`select_weak_scan_files`，按**全路径**，见其 docstring 与 issue #5477）：`--check-weak
+    --new-tests-only` 曾也调本函数，而 CI 侧用内联 `grep -iE 'test|spec'` 扫全路径 ⇒ 同一批改动
+    在两侧得到**不同的判据集合**（本地绿 / CI 红，且差异来源在两侧都看不出来）。
+    **禁止在别处再写一套判定**：复制一份必然漂移。
     """
     base = file_path.split("/")[-1]
     if not base.endswith(TEST_FILE_EXTS):
@@ -365,6 +365,45 @@ def _is_test_file(file_path):
     if base in ("conftest.py", "conftest.ts"):
         return False
     return re.search(r"(test|spec)", base, re.I) is not None
+
+
+def select_weak_scan_files(paths):
+    """弱断言扫描的**选取集**：唯一实现（CI `pr-check` 与本地 `verify-all.sh` 共用，issue #5477）。
+
+    口径 = CI 侧原内联管道的**逐字语义**（`git diff --diff-filter=A --name-only … |
+    grep -E '\\.(py|java|ts|tsx)$' | grep -iE 'test|spec'`）：
+
+      · 扩展名 ∈ `TEST_FILE_EXTS`；
+      · **全路径**（不只是文件名）含 `test|spec`，不区分大小写。
+
+    ⚠️ 与 `_is_test_file`（只看文件名）**有意不同**，两者不得互相替代：
+    本函数是**扫描集**口径 —— `tests/**` / `backend/*/tests/**` 里的共享模块、fixture、conftest
+    也在面内（取证：按本口径比按文件名多选中 **85 个已跟踪文件**，逐条见 issue #5477）；
+    收敛方向取**不缩小任何一侧**的那一侧（CI 是权威门禁，本地 `gate` 是它的预检 ——
+    预检比权威窄，正是「本地绿 / CI 红」的成因）。
+    """
+    return [f for f in (p.strip() for p in paths)
+            if f.endswith(TEST_FILE_EXTS) and re.search(r"(test|spec)", f, re.I)]
+
+
+def print_weak_scan_manifest(candidates, selected, stream=None):
+    """打印**同一份清单**（两侧刻意走同一函数 ⇒ 输出可逐字对比，issue #5477）。
+
+    形态（两侧逐字相同）：
+      🔎 弱断言扫描集（唯一口径 select_weak_scan_files，issue #5477）：候选 M 个 → 选中 N 个 / 剔除 K 个
+        ✔ 选中: <path>
+        ✖ 剔除: <path>
+    """
+    stream = stream or sys.stderr
+    chosen = set(selected)
+    print(f"🔎 弱断言扫描集（唯一口径 select_weak_scan_files，issue #5477）："
+          f"候选 {len(candidates)} 个 → 选中 {len(selected)} 个 / "
+          f"剔除 {len(candidates) - len(chosen)} 个", file=stream)
+    for f in selected:
+        print(f"  ✔ 选中: {f}", file=stream)
+    for f in candidates:
+        if f not in chosen:
+            print(f"  ✖ 剔除: {f}", file=stream)
 
 
 def case_trace_check(rules, files, repo_root, cases_dir, base="origin/main"):
@@ -888,8 +927,13 @@ def get_changed_files(base="origin/main"):
         return None
 
 
-def get_added_files(base="origin/main"):
-    """git diff --diff-filter=A → 本 PR 新增文件（G5 用）。"""
+def get_added_files(base="origin/main", strict=False):
+    """git diff --diff-filter=A → 本 PR 新增文件（G5 用）。
+
+    `strict=True`（`--select-weak-files` 用）：git diff 失败时返回 `None` 并打 `::error::`
+    —— 「扫描不到新增文件」≠「没有新增文件」（fail-closed，同 issue #3631）。旧 CI 内联管道
+    在 git diff 失败时被 `|| true` 吞掉 ⇒ 打印「✅ 无新增测试文件」= 假绿。
+    """
     try:
         result = subprocess.run(
             ["git", "diff", "--diff-filter=A", "--name-only", f"{base}...HEAD"],
@@ -900,10 +944,16 @@ def get_added_files(base="origin/main"):
                 ["git", "diff", "--diff-filter=A", "--name-only", base, "HEAD"],
                 capture_output=True, text=True, timeout=15,
             )
+        if result.returncode != 0:
+            msg = (result.stderr or "").strip() or f"git diff 退出码 {result.returncode}"
+            print(f"{'::error::' if strict else '⚠️'} git diff --diff-filter=A 失败: {msg}",
+                  file=sys.stderr)
+            return None if strict else []
         return [f.strip() for f in result.stdout.split("\n") if f.strip()]
     except Exception as e:
-        print(f"⚠️ git diff --diff-filter=A 失败: {e}", file=sys.stderr)
-        return []
+        print(f"{'::error::' if strict else '⚠️'} git diff --diff-filter=A 失败: {e}",
+              file=sys.stderr)
+        return None if strict else []
 
 
 def _render_markdown(results, blockers, warnings):
@@ -1063,8 +1113,14 @@ def main(argv=None):
     parser.add_argument("--check-weak", action="store_true",
                         help="扫描 --files 指定测试文件的弱断言（凑数断言），有则退出 1")
     parser.add_argument("--new-tests-only", action="store_true",
-                        help="配合 --check-weak：先按 _is_test_file 过滤掉非测试文件再扫"
-                             "（调用方可能把候选文件与源文件混在一起传进来，见 issue #4077）")
+                        help="配合 --check-weak：先按 select_weak_scan_files 过滤掉扫描集外的文件"
+                             "再扫（调用方可能把候选文件与源文件混在一起传进来，见 issue #4077/#5477）")
+    parser.add_argument("--select-weak-files", action="store_true",
+                        help="只打印弱断言扫描集（唯一口径 select_weak_scan_files，issue #5477）："
+                             "stdout 逐行输出**选中**路径（供 `--check-weak --files` 直接消费），"
+                             "同一份清单与计数打到 stderr（CI 与本地同一函数 ⇒ 可逐字对比）；"
+                             "候选源 = --files；未给 --files 时按 --base 取 diff-filter=A"
+                             "（git diff 失败 ⇒ 非零退出，fail-closed）")
     parser.add_argument("--check-weak-baseline", action="store_true",
                         help="全仓扫描弱断言并与锚点账本比对（存量只许非增、新文件 fail-closed，"
                              "见 issue #5080）；有增长退 1，账本缺失/损坏退 2（fail-closed）")
@@ -1114,21 +1170,38 @@ def main(argv=None):
             rc, _, _ = check_weak_baseline(args.repo_root, path)
         return rc
 
+    if args.select_weak_files:
+        # 「哪些新增文件进弱断言扫描集」的**唯一出口**（issue #5477）：CI 与本地都从这里拿清单，
+        # 判定本身只有 `select_weak_scan_files` 一份（调用方不得再写一套 grep / 不得改用
+        # `_is_test_file` 那套只看文件名的口径）。
+        if args.files is None:
+            # 未给 --files ⇒ 按 base 取「本 PR 新增文件」（与 CI 原先的 diff-filter=A 同一口径）；
+            # git diff 失败 ⇒ 非零退出（fail-closed：「扫描不到」≠「没有新增」，见 issue #3631）
+            added = get_added_files(args.base, strict=True)
+            if added is None:
+                return 2
+            candidates = added
+        else:
+            candidates = [f.strip() for f in args.files if f.strip()]
+        selected = select_weak_scan_files(candidates)
+        print_weak_scan_manifest(candidates, selected)
+        for f in selected:
+            print(f)   # stdout 只放选中路径（给 shell 消费）；清单本体在 stderr（给人/给对比）
+        return 0
+
     if args.check_weak:
         if not args.files:
             print("⚠️ --check-weak 需配合 --files 指定测试文件")
             return 1
         # 只扫**测试文件**：候选文件里可能混着新增源文件（本地 `verify-all.sh gate` 把
-        # 「已提交新增文件 ∪ 工作区新增文件」一并传来），判定走 `_is_test_file` 单一事实源
-        # —— 门禁的扫描集与「测试文件」的定义必须同源，否则新增源文件会被当测试文件扫
-        # ⇒ 报出 CI 不会报的红（issue #4077）。该步只缩小扫描集，**不放宽判定**：
+        # 「已提交新增文件 ∪ 工作区新增文件」一并传来），判定走 `select_weak_scan_files`
+        # **单一事实源**（issue #5477；此前这里走 `_is_test_file` = 只看文件名，与 CI 的
+        # 全路径 grep 得到不同集合）。该步只缩小扫描集，**不放宽判定**：
         # 真弱断言仍逐个检出（解释器无关，纯文本扫描）。
         files = [f for f in args.files if f.strip()]
         if args.new_tests_only:
-            kept = [f for f in files if _is_test_file(f)]
-            if len(kept) < len(files):
-                print(f"  ⏭️ 按测试文件判定剔除 {len(files) - len(kept)} 个非测试文件"
-                      f"（新增源文件不参与弱断言扫描，与 CI 同一判定：_is_test_file）")
+            kept = select_weak_scan_files(files)
+            print_weak_scan_manifest(files, kept)
             files = kept
         if not files:
             print("✅ 候选文件中无新增测试文件，跳过弱断言检查")
