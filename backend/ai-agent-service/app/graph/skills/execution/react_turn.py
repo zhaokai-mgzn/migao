@@ -287,6 +287,9 @@ async def react_turn(
                             f"[{skill_name}] 拦截文本级能力误宣并重答 | session={session_id} "
                             f"hit={_denial_hit!r} mid_order={_order_in_progress}")
                         if _order_in_progress and not _has_write_now:
+                            # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
+                            # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
+                            _relocked_this_round = True
                             await _relock_order_skill(session_id, state,
                                                       migrate_card_owner=True)
                         if _has_write_now:
@@ -654,6 +657,9 @@ async def react_turn(
                                 f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
                                 f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
                             if _order_in_progress and not _order_write_tool_here(skill_registry):
+                                # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
+                                # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
+                                _relocked_this_round = True
                                 await _relock_order_skill(session_id, state,
                                                           migrate_card_owner=True)
                             return (tool_call,
@@ -682,6 +688,9 @@ async def react_turn(
                                 "`validate_input` → `order_create`（含 sms_code）。"
                                 "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
                             if _order_in_progress and not _order_write_tool_here(skill_registry):
+                                # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
+                                # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
+                                _relocked_this_round = True
                                 await _relock_order_skill(session_id, state,
                                                           migrate_card_owner=True)
                             return (tool_call,
