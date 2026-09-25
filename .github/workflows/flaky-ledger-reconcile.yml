@@ -187,6 +187,46 @@ jobs:
             echo "::warning::main 的 flaky_ledger.py 还没有 \`ledger-drift\` 子命令（引导期：本兜底随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"
           fi
 
+      - name: 审批队列读数（#5417 判据 1/2：停在 `action_required` 的 run 不许静默）
+        # `always()`：**读数不许被上游的红吃掉** —— 上游红时「队列里有没有卡住的 run」正是要看的。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 为什么必须有这一步（#5417，**实测**，读数逐字）：台账 PR 的 `pull_request` run 会被
+          # GitHub 放进审批队列（`conclusion=action_required`、**零 job ⇒ 零 check-run**）。
+          # 机制侧会去批准它们，而**失效形态是「静默」**：
+          #   · 单发一次 approve 撞上「run 还没被创建」⇒ 脚本报「暂无待批准 run」并退出 0
+          #     （triage run 36116623413 步骤⑤ 日志）⇒ 台账 PR 停在 `check 数=0 / mergeStateStatus=BLOCKED`
+          #     **18 分钟**（09:07:26 → 09:25:31）；
+          #   · 同一次推送（push `425732992`）里 tip 上共 **10** 个 run 在队列，机制只批了 **4** 个
+          #     （`🔓 历史待批准 102 个，其中属于分支 tip=… 的 4 个 ⇒ 只批准这 4 个：[…]`，reconcile
+          #     run 36118293816 日志）—— 另外 6 个（Drift Audit / PR Issue Link Check / Flaky Ledger
+          #     Reconcile / Mechanism Liveness / Deploy Reconcile / Post-Merge Verify）**永远留在队列里**，
+          #     因为批准面沿用了「重跑白名单」口径（白名单外**故意不批**：它们不是 required，批了只会
+          #     给台账 PR 添红 —— 这是**登记在册的残余**，不是失效）。
+          # ⇒ 本步骤把三类**分开**报（机制面 / 按设计不批 / 陈旧推送）+ 每条 run 的链接 + 人工出口命令。
+          # ⚠️ 只读：`approval-queue` 子命令**不发** approve、不碰 PR、不写台账、不改任何判定。
+          set -uo pipefail
+          [ -f .github/scripts/flaky_ledger.py ] || {
+            echo "::warning::检出里没有 .github/scripts/flaky_ledger.py ⇒ 本轮读数**无声**（**不是**「队列为空」）"; exit 0; }
+          if ! python3 .github/scripts/flaky_ledger.py approval-queue --help >/dev/null 2>&1; then
+            echo "::warning::main 的 flaky_ledger.py 还没有 \`approval-queue\` 子命令（引导期：本读数随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"
+            exit 0
+          fi
+          set +e
+          python3 .github/scripts/flaky_ledger.py approval-queue \
+            --repo "$GITHUB_REPOSITORY" --head-branch="$LEDGER_BRANCH" \
+            --min-age-minutes "${APPROVE_QUEUE_MIN_AGE_MINUTES:-10}" \
+            --json-out /tmp/approval-queue.json | tee -a "$GITHUB_STEP_SUMMARY"
+          RC=${PIPESTATUS[0]}
+          set -e
+          case "$RC" in
+            0) : ;;
+            3) echo "::error::无法判定审批队列状态（approval-queue 退 3）⇒ **未跑 ≠ 通过**，不得当「没有待批准 run」读"; exit 1 ;;
+            *) echo "::error::审批队列读数异常退出（rc=${RC}）⇒ 不得当「队列为空」读"; exit 1 ;;
+          esac
+
       - name: 对账判定（纯函数；**状态级** —— 台账分支是否领先 main）
         id: drift
         if: steps.preflight.outputs.ready == '1'

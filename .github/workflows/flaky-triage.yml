@@ -323,19 +323,24 @@ jobs:
           #    工作区里的脚本，执行的是台账分支的旧副本（**没有 approve 子命令**，实测
           #    `invalid choice: 'approve'`）⇒ 台账永远落不到 main（#4825 的实测根因）。
           # fail-closed：批准发不出去 ⇒ 红（否则「台账没 check」会装成「已经放行」）
+          # ⚠️ #5417（**实测根因，别再重新猜**）：本步骤原先**单发一次**，而 GitHub 创建 run 是
+          #    **异步**的 ⇒ 那一刻 tip 上「暂无待批准 run」⇒ 脚本按诚实读数退出 **0**（workflow 绿）
+          #    ⇒ 台账 PR 停在 `check 数=0 / mergeStateStatus=BLOCKED`。实测空窗（push `425732992`）：
+          #    09:07:26 打出「暂无待批准 run」→ 09:25:31 才被**另一条** workflow 的兜底轮次批上
+          #    = **18 分钟**；同刻读数 `state=OPEN mergeStateStatus=BLOCKED autoMerge=armed / check 数=0`。
+          #    ⇒ `--wait-seconds`：窗口内轮询（幂等，重复批准不会重复发 POST）；**窗口用尽仍停在
+          #    `action_required` ⇒ 非零退出**（fail-closed，不再是「诚实退出 0」）。
           python3 /tmp/flaky_ledger.py approve \
-            --repo "$GITHUB_REPOSITORY" --head-branch "$BRANCH" || {
-            echo "::error::approve 台账 PR 的 action_required run 失败 ⇒ 台账 PR 仍无 check、main 不增长（fail-closed）"; exit 1; }
-          # 批准是异步的（run_attempt 会 +1）；短窗复核，拿不到只打 notice（**不**把异步当失败）
+            --repo "$GITHUB_REPOSITORY" --head-branch "$BRANCH" \
+            --wait-seconds "${APPROVE_WAIT_SECONDS:-60}" || {
+            echo "::error::approve 台账 PR 的 action_required run 失败（含「窗口用尽仍停在 action_required」）⇒ 台账 PR 拿不到 required 的 check、main 不增长（fail-closed）"; exit 1; }
+          # 回读**读数**（不是门禁）：批准是异步的（run_attempt 会 +1）⇒ 这里只把 tip 的
+          # run_attempt 打出来供审计；「队列有没有清空」由脚本在窗口内自行复核并 fail-closed。
           # ⚠️ 分支过滤参数是 **`branch=`**；`head_branch=` 会被 API **静默忽略**（实测会返回
           #    全仓 11867 个 run 而不是本分支的 13 个）⇒ 读数会指向无关 run。
-          for i in $(seq 1 10); do
-            ATTEMPT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&branch=$BRANCH&per_page=1" \
-                        --jq '.workflow_runs[0].run_attempt // 0' 2>/dev/null || echo 0)
-            [ "${ATTEMPT:-0}" -ge 2 ] && break
-            sleep 3
-          done
-          echo "::notice::🔓 approve 已发出；台账 PR 最新 run_attempt=${ATTEMPT:-?}（≥2 = 批准已生效、check 正在产出）"
+          ATTEMPT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&branch=$BRANCH&per_page=1" \
+                      --jq '.workflow_runs[0].run_attempt // 0' 2>/dev/null || echo 0)
+          echo "::notice::🔓 approve 已发出、并由脚本在窗口内复核（未清空即已判红）；台账 PR #${PR} 最新 run_attempt=${ATTEMPT:-?}"
 
       # ── ⑥ arm auto-merge（**在 approve 之后**；台账 PR 仍需真的跑完 required 检查）──
       - name: ⑥ 台账 PR arm auto-merge（检查齐了才可能落地；CI 红则**不**合并）
