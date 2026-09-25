@@ -6,6 +6,29 @@
 
 ## [Unreleased]
 
+### 存量加工单扫部位码报工：回执不再假称「工序都已完成」，改说「本套没有关联工序行」并指路（2026-09-25，issue #4871）
+
+- **改了什么（用户可见）**：工人扫**部位码**报工（`POST /api/worker/production/scan/complete`）时，
+  若该套**一行工序实例都没关联**（存量加工单的工序行 `set_id` / `set_no` 全 NULL ⇒ V92 按「套的部位清单」
+  回填时挂不上套），回执不再是与真「本套已完工」**同一句**的「本套（…）的工序都已完成」
+  —— 那句话在**没有任何关联工序**时是**假陈述**（一行都没关联上，什么都谈不上完成）；
+  改为**自己的拒绝码** `SET_HAS_NO_OPERATIONS`（409）+ 诚实措辞
+  「本套（…）没有关联工序行（存量数据未回填）⇒ 没有可报的工序（本次未记账）」，
+  并给出可行动指路「请按部位逐道报工（生产 → 加工单 → 工序列表）；或重新实例化本单以补挂工序的套归属」。
+  判据 = issue #4871 验收标准逐字：`set_progress.total == 0` 与 `done == total` 必须是**两个**分支，
+  **不能共用同一句**。
+- **没改什么（负控）**：真「都已完成」那条路径的**码 / 状态码 / 文案一字未动**
+  （`SET_ALREADY_COMPLETED` / 409 / 「…的工序都已完成…」）；拒绝仍**fail-closed 且零写入**
+  （不猜套、不把进度记到错的窗上，设计 §5.3⑤）；`report` 端点与旧码降级路径（`SCAN_NEEDS_SELECTION`）
+  一字未动；存量工序行的 `unit_price` / `factor` / `done_qty` **一个字节都不碰**（issue #4871 的红线）。
+- **为什么**：issue #4871 现象（活环境实测 2026-09-20）——存量单的部位码能印、短链能跳（302 + 工人端
+  落地页），但工人扫它**报不了工**，而回执把「一行都没关联上」说成「都已完成」⇒ 工人照着回执无法行动。
+- **类级固化**：契约账本的**拒绝码守卫**（`tests/unit_ci_workflows/test_contract_ledger_reject_codes.py`）
+  **同批**要求新码入册 `docs/wiki/CONTRACT-LEDGER.md` 的「工人端扫码完成」行（源码多抛一个码而账本
+  不登记 ⇒ 判红）；实例判据 =
+  `backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java`
+  的 `setWithoutOperationRowsIsRejectedWithHonestMessage`（**改前实测红**）。
+
 ### AI 下单：订单行没有 SKU/商品标识时不再静默放过 —— 单价无从核对即 422 拒绝（2026-09-25，issue #3881）
 
 - **改了什么（用户可见）**：AI 下单（`order_create` → `POST /api/admin/agent/orders`）的明细行若

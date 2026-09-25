@@ -24,7 +24,8 @@ import java.util.Map;
  *       本类不重写解析/推断）：token ⇒（套，部位）+ 下一道待做工序；</li>
  *   <li>🔴 <b>未确定工序 ⇒ 拒绝记账</b>（切片 ① 类注释的约定 + 设计 §3.3 / §5.3⑤）：
  *       推断零道 / 多道 / 旧码降级（需选套选部位）⇒ 抛 {@code NO_PENDING_OPERATION} /
- *       {@code SET_ALREADY_COMPLETED} / {@code SCAN_NEEDS_SELECTION}，<b>一个字节都不写</b>
+ *       {@code SET_ALREADY_COMPLETED} / {@code SET_HAS_NO_OPERATIONS}（本套零关联工序行，
+ *       issue #4871）/ {@code SCAN_NEEDS_SELECTION}，<b>一个字节都不写</b>
  *       {@code production_work_logs}（红证见 {@code ProductionScanCompleteServiceTest}）；</li>
  *   <li><b>一次事务</b>（{@link ProductionService#applyScanComplete}，跨 bean 调用 ⇒ 代理生效）：
  *       报工明细 + CAS（{@code done_qty}/{@code status}）+ {@code done_at} + <b>{@code started_at} /
@@ -151,10 +152,26 @@ public class ProductionScanCompleteService {
         }
 
         // 🔴 硬约束：工序必须确定（设计 §3.3 / §5.3⑤）。切片 ① 已保证「绝不产出非唯一确定的工序」，
-        // 本类是**记账侧**的那一半：operation 为空（无待做工序 / 本套已完成）⇒ 拒绝，不猜、不静默取第一道。
+        // 本类是**记账侧**的那一半：operation 为空（本套零关联工序行 / 无待做工序 / 本套已完成）
+        // ⇒ 拒绝，不猜、不静默取第一道。
         @SuppressWarnings("unchecked")
         Map<String, Object> operationView = (Map<String, Object>) scan.get("operation");
         if (operationView == null) {
+            // 🔴 「本套一行工序都没关联」≠「本套做完了」（issue #4871）：`completed` 键 = `chosen == null`
+            // —— 这两态**共用**同一个值（`ProductionScanService#setPositionView`）⇒ 只读 `completed`
+            // 会把「存量单的工序行 set_id/set_no 全 NULL、挂不上套」说成「工序都已完成」= **假陈述**。
+            // 判据 = 解析面**已算好并透传**的 `set_progress.total`（不在这里重查库 = 不造第二份口径）：
+            //   `total == 0` ⇒ 本套零关联工序行（存量数据未回填）⇒ **自己的码 + 诚实措辞 + 指路**；
+            //   `total >  0` ⇒ 真「都已完成」⇒ 下面那条（码 / 状态码 / 文案**一字不动**）。
+            // 取不到 total（旧码降级形态 `set_progress` 为 null = 判不出是哪一套）⇒ **未知，不猜**
+            // ⇒ 走原有分支，绝不据此断言「零关联工序行」。
+            if (totalSetOperations(scan) == 0) {
+                throw new BusinessException("SET_HAS_NO_OPERATIONS",
+                        "本套（" + scan.get("set_no") + "）没有关联工序行（存量数据未回填）"
+                                + "⇒ 没有可报的工序（本次未记账）",
+                        409,
+                        "请按部位逐道报工（生产 → 加工单 → 工序列表）；或重新实例化本单以补挂工序的套归属");
+            }
             if (Boolean.TRUE.equals(scan.get("completed"))) {
                 throw new BusinessException("SET_ALREADY_COMPLETED",
                         "本套（" + scan.get("set_no") + "）的工序都已完成，没有可报的工序（本次未记账）",
@@ -237,6 +254,21 @@ public class ProductionScanCompleteService {
             result.put("set_completed", null);
             result.put("next_operation", null);
         }
+    }
+
+    /**
+     * 本套**活跃工序实例总数**（解析面的 {@code set_progress.total}，issue #4871）。
+     *
+     * <p>🔴 <b>只读解析面那一份</b>（{@code ProductionScanService#setPositionView} 已算好并透传）——
+     * 在记账侧再查一次库就是第二份口径（两处迟早不同）。</p>
+     *
+     * @return {@code ≥ 0} = 总数；<b>{@code -1} = 未知</b>（旧码降级形态的 {@code set_progress}
+     *         为 {@code null}：判不出是哪一套）⇒ 调用方<b>不得</b>据此断言「零关联工序行」（不猜）
+     */
+    private static int totalSetOperations(Map<String, Object> scan) {
+        Object progress = scan.get("set_progress");
+        Object total = progress instanceof Map<?, ?> view ? view.get("total") : null;
+        return total instanceof Number number ? number.intValue() : -1;
     }
 
     /** 剩余应做数量 = 应做 − 已报（下限 0；`qty`/`done_qty` 为 NULL 按 0 读，与 isDone 同口径）。 */
