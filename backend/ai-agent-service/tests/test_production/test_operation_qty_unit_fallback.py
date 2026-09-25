@@ -29,6 +29,8 @@
 """
 # case_ids: PP-012
 
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -274,3 +276,120 @@ class TestUnitRegistrationCensus:
         )
         assert _qty_for("假工序-未登记单位", {"fabric_meters": 12.3}) == 1.0
         assert qty_and_source("假工序-未登记单位", {"fabric_meters": 12.3}) == (1.0, "fallback")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 类级固化 C：真值源**显式登记**（条目被删 / 单位漂移 / 现取读数腐烂 ⇒ 红）
+#
+# 病根（issue #4228 的收尾项，关联 #5496「新增·C」）：这条口径此前**只写在代码注释里** ——
+# 真值源 `docs/curtain-production-rules.md` §4「数量口径」清单里没有它 ⇒「登记在」与
+# 「登记被删」在数据上**不可区分**（代码注释不会被任何判据读；`migao-dev-flow` §23.12①）。
+# 本条把三件事钉成一条判据：
+#   ① §4 有该口径的登记条目；② 条目里的单位集合 == 代码登记表 `FIXED_ONE_UNITS`（双向）；
+#   ③ 条目里的**现取读数** == 由 `OPERATION_CATALOG` 现算的条数（数字腐烂即红，不靠人记得）。
+# 与 `TestUnitRegistrationCensus`（管**代码侧**：新单位必须进登记表）互补。
+# ══════════════════════════════════════════════════════════════════════════
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+TRUTH_SOURCE = REPO_ROOT / "docs" / "curtain-production-rules.md"
+TRUTH_SECTION_HEADING = "## 4. 计件（工资计算）"
+REGISTRY_LITERAL = re.compile(r"FIXED_ONE_UNITS\s*=\s*\(([^)]*)\)")
+CENSUS_READING = re.compile(r"`unit=([^`]+)`\s*\**(\d+)\**\s*道")
+REQUIRED_WORDS = ("兜底 1", "禁止", "fabric_meters", "KNOWN_QTY_UNITS")
+
+
+def _truth_section(text: str) -> str:
+    """真值源 §4 的正文（到下一个 `## ` 标题为止）；节缺失 ⇒ 空串（由判据报红）。"""
+    start = text.find(TRUTH_SECTION_HEADING)
+    if start < 0:
+        return ""
+    rest = text[start + len(TRUTH_SECTION_HEADING):]
+    end = rest.find("\n## ")
+    return rest if end < 0 else rest[:end]
+
+
+def _registration_bullet(section: str) -> str:
+    """§4 里**登记该口径**的那一条 bullet（含登记表符号 `FIXED_ONE_UNITS`）。"""
+    hits = [b for b in re.split(r"\n(?=- )", section) if "FIXED_ONE_UNITS" in b]
+    assert len(hits) == 1, (
+        f"真值源 §4 必须**恰好一条**条目提到 `FIXED_ONE_UNITS`，实得 {len(hits)} 条 —— "
+        f"0 条 = 口径仍只在代码注释里（issue #4228 收尾项未落）；多条 = 两份真值源。"
+    )
+    return hits[0]
+
+
+def _check_truth_source_registration(text: str) -> None:
+    """真值源登记面的**唯一判据**：三处任一漂移 ⇒ AssertionError（消息给可行动出口）。"""
+    bullet = _registration_bullet(_truth_section(text))
+
+    literals = REGISTRY_LITERAL.findall(bullet)
+    assert len(literals) == 1, (
+        f"登记条目必须**恰好一处**写出代码侧登记表的字面赋值（`FIXED_ONE_UNITS = (…, …)`），"
+        f"实得 {len(literals)} 处（0 处 = 无从机器比对；多处 = 两份登记）—— 当前条目开头：{bullet[:100]!r}"
+    )
+    registered = tuple(re.findall(r'"([^"]+)"', literals[0]))
+    assert registered == tuple(FIXED_ONE_UNITS), (
+        f"真值源登记的单位 {registered} 与代码登记表 {tuple(FIXED_ONE_UNITS)} 不一致 ⇒ "
+        f"两侧必须逐值相同（改登记表就**同批**改真值源 §4）"
+    )
+
+    for word in REQUIRED_WORDS:
+        assert word in bullet, (
+            f"登记条目缺「{word}」—— 口径（兜底 1）/ 禁令（禁止按米读 `fabric_meters`）/ "
+            f"另一侧登记表（`KNOWN_QTY_UNITS`）缺一即不可执行"
+        )
+
+    readings = {unit: int(count) for unit, count in CENSUS_READING.findall(bullet)}
+    actual = {unit: sum(1 for meta in OPERATION_CATALOG.values() if meta["unit"] == unit)
+              for unit in FIXED_ONE_UNITS}
+    assert readings == actual, (
+        f"真值源现取读数 {readings} 与 `OPERATION_CATALOG` 现算 {actual} 不一致 ⇒ "
+        f"把 §4 登记条目里的 `unit=<单位> N 道` 改成现算值（读数是**现取**的，不许写死不动）"
+    )
+
+
+class TestTruthSourceRegistration:
+    """**登记面**判据：口径必须落在真值源里，而不是只躺在代码注释里（issue #4228 收尾项）。"""
+
+    def test_section4_registration_is_intact(self):
+        """绿证：真值源 §4 的登记条目与代码登记表 / 工序库现算值三向一致。"""
+        assert TRUTH_SOURCE.is_file(), f"真值源不存在：{TRUTH_SOURCE}"
+        _check_truth_source_registration(TRUTH_SOURCE.read_text(encoding="utf-8"))
+
+    def test_injected_missing_registration_is_red(self):
+        """**自证①**：删掉登记条目（= 退回「只在代码注释里」）⇒ 判据必须红。"""
+        text = TRUTH_SOURCE.read_text(encoding="utf-8")
+        crippled = text.replace(_registration_bullet(_truth_section(text)), "- 【默】口径未登记。")
+        assert crippled != text, "变异注入未生效（文本逐字未变）⇒ 本自证无判别力"
+        with pytest.raises(AssertionError) as excinfo:
+            _check_truth_source_registration(crippled)
+        assert "FIXED_ONE_UNITS" in str(excinfo.value)
+
+    def test_injected_unit_drift_is_red(self):
+        """**自证②**：条目里的单位集合少写一个 ⇒ 必须红（防「登记表改了、真值源没跟」）。"""
+        text = TRUTH_SOURCE.read_text(encoding="utf-8")
+        crippled = REGISTRY_LITERAL.sub(f'FIXED_ONE_UNITS = ("{FIXED_ONE_UNITS[0]}")', text, count=1)
+        assert crippled != text, "变异注入未生效（文本逐字未变）⇒ 本自证无判别力"
+        with pytest.raises(AssertionError) as excinfo:
+            _check_truth_source_registration(crippled)
+        assert "不一致" in str(excinfo.value)
+
+    def test_injected_census_drift_is_red(self):
+        """**自证③**：现取读数被写死成别的数字 ⇒ 必须红（读数只能来自现算）。"""
+        text = TRUTH_SOURCE.read_text(encoding="utf-8")
+        crippled = CENSUS_READING.sub(
+            lambda m: f"`unit={m.group(1)}` **{int(m.group(2)) + 1}** 道", text, count=1,
+        )
+        assert crippled != text, "变异注入未生效（文本逐字未变）⇒ 本自证无判别力"
+        with pytest.raises(AssertionError) as excinfo:
+            _check_truth_source_registration(crippled)
+        assert "现取读数" in str(excinfo.value)
+
+    def test_injected_meter_fallback_permission_is_red(self):
+        """**自证④**：删掉「禁止按米折算」⇒ 必须红（只登记单位名 ≠ 登记了口径）。"""
+        text = TRUTH_SOURCE.read_text(encoding="utf-8")
+        crippled = text.replace("禁止", "允许")
+        assert crippled != text, "变异注入未生效（文本逐字未变）⇒ 本自证无判别力"
+        with pytest.raises(AssertionError) as excinfo:
+            _check_truth_source_registration(crippled)
+        assert "禁止" in str(excinfo.value)
