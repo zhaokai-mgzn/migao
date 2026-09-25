@@ -12,7 +12,8 @@
    `gh pr merge --disable-auto` + `block/merge` + `flaky/rerun-green`
    （#4248 实证：`block/merge` 标签**拦不住已 arm** 的 auto-merge，只有 `--disable-auto` 停得住）；
 2. **绝不无限重跑**：`MAX_ATTEMPTS == 2`（首次 + 最多 1 次），`gh run rerun` 在 workflow 里
-   **恰好一处**且由 `action == 'rerun'` 独占；第二次仍红 ⇒ `confirmed_failure`，**不放行**；
+   **恰好一处**且由 `action == 'rerun'` 独占；第二次仍红 ⇒ `record_both_red` + `kind=unknown`
+   （#5088：**两次都红 ≠ 确定性失败**，判据与红证见 `test_flaky_ledger_kind_semantics.py`），**不放行**；
 3. **绝不误判 infra**：cancelled / timed_out / startup_failure / 无 steps 的 job /
    只在「取代码 · 装依赖」步骤失败的 job ⇒ `skip` 或 `infra_suspect`，**不入 flaky**；
 4. **绝不重复记账**：幂等键 `(workflow, run_id, job)`；台账**只追加**、不写硬编码计数；
@@ -122,19 +123,24 @@ class TestRerunOnce:
         assert e["run_id"] == 900001 and e["pr"] == 4757
         assert e["first_failure_step"] == "Run unit tests"
 
-    def test_second_attempt_failure_is_confirmed_failure_and_never_reruns(self):
-        """**反向护栏**：两次都失败 ⇒ 仍然失败（不放行、不重跑第三次）。"""
+    def test_second_attempt_failure_is_unknown_and_never_reruns(self):
+        """**反向护栏**：两次都失败 ⇒ 仍然失败（不放行、不重跑第三次）。
+
+        #5088：`kind` **不再**由 `rerun_result` 单独推出 —— 自动路径只有步骤级事实，
+        两次都红一律 `unknown`（fail-closed：不归因），但**照常失败**这条硬约束不变。
+        """
         d = FL.decide(bundle(run=make_run(attempt=2, conclusion="failure"),
                              jobs=[make_job()], prior_jobs=None))
-        assert d["action"] == "record_confirmed_failure", d
-        assert d["kind"] == "confirmed_failure"
+        assert d["action"] == "record_both_red", d
+        assert d["kind"] == "unknown"
         assert d["entries"][0]["rerun_result"] == "failure"
+        assert d["entries"][0]["kind"] == "unknown"
 
     def test_third_attempt_still_never_reruns(self):
         """上限是硬的：即使 run_attempt 被人为推高，也绝不重跑。"""
         d = FL.decide(bundle(run=make_run(attempt=3, conclusion="failure"),
                              jobs=[make_job()]))
-        assert d["action"] == "record_confirmed_failure", d
+        assert d["action"] == "record_both_red", d
 
     def test_green_first_attempt_is_noop(self):
         d = FL.decide(bundle(run=make_run(attempt=1, conclusion="success"),
@@ -225,8 +231,9 @@ def policy_violations(decide_fn) -> list:
         bad.append("第二次仍失败却又重跑 ⇒ 违反「最多重跑 1 次」")
     if d["action"] in ("mark_flaky", "record_infra", "skip"):
         bad.append(f"第二次仍失败却给出 {d['action']!r} ⇒ **把确定性失败放行**（红线）")
-    if d["kind"] != "confirmed_failure":
-        bad.append(f"第二次仍失败的 kind 应为 confirmed_failure，实际 {d['kind']!r}")
+    if d["kind"] != "unknown" or d["kind"] in FL.ATTRIBUTABLE_KINDS:
+        bad.append(f"第二次仍失败的 kind 应为 unknown（**不归因**，事实不足以判确定性失败），"
+                   f"实际 {d['kind']!r}")
 
     d = decide_fn(bundle(run=make_run(attempt=2, conclusion="success"), jobs=[],
                          prior_jobs=[make_job()]))
@@ -256,7 +263,7 @@ class TestPolicyInvariants:
         """**红证**：注入「第二次失败也放行」⇒ 不变式**必须**红。"""
         def leaky(b, max_attempts=FL.MAX_ATTEMPTS):
             d = FL.decide(b, max_attempts)
-            if d["action"] == "record_confirmed_failure":
+            if d["action"] == "record_both_red":
                 return dict(d, action="mark_flaky", kind="flaky")
             return d
 
@@ -280,7 +287,7 @@ class TestPolicyInvariants:
         """**红证**：注入「第二次仍失败也重跑」⇒ 不变式**必须**红。"""
         def leaky(b, max_attempts=FL.MAX_ATTEMPTS):
             d = FL.decide(b, max_attempts)
-            if d["action"] == "record_confirmed_failure":
+            if d["action"] == "record_both_red":
                 return dict(d, action="rerun", kind=None, entries=[])
             return d
 
@@ -873,10 +880,15 @@ class TestCommentVisibility:
         body = FL.render_comment(self._mark_flaky_decision())
         assert body.startswith("<!-- flaky-triage: action=mark_flaky")
 
-    def test_confirmed_failure_comment_says_it_stays_failed(self):
-        d = FL.decide(bundle(run=make_run(attempt=2, conclusion="failure"), jobs=[make_job()]))
+    def test_both_red_comment_says_it_stays_failed_and_is_unattributed(self):
+        """#5088：评论**不许**再把「两次都红」写成「确定性失败」；要列两次尝试的原始事实。"""
+        d = FL.decide(bundle(run=make_run(attempt=2, conclusion="failure"), jobs=[make_job()],
+                             prior_jobs=[make_job()]))
         body = FL.render_comment(d)
         assert "仍然失败" in body and "不重跑第三次" in body
+        assert "不归因" in body and "unknown" in body
+        assert "确定性失败**" not in body.split("判据：")[0], body
+        assert "a1：「Run unit tests」" in body and "a2：「Run unit tests」" in body, body
 
 
 # ── ⑥ workflow 结构锁（读 YAML 真值 + 注入式红证） ────────────────────────────

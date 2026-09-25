@@ -1,8 +1,8 @@
 {
-  "version": 1,
-  "note": "CI 失败重跑分流台账（issue #4717）。凡被 `.github/workflows/flaky-triage.yml` 判为**终态**的失败 job，都在这里有且只有一条条目：kind=flaky = 首次失败、**重跑后通过**（随机波动，已打 `flaky/rerun-green` + `block/merge` 并 `gh pr merge --disable-auto` 卸下 auto-merge）；kind=confirmed_failure = **重跑仍失败**（确定性失败，不放行、不重跑第三次）；kind=infra_suspect = 取消/超时/基础设施/环境（含「取代码·装依赖」步骤失败）—— **不算 flaky**，仅登记。⚠️ **只追加、不修改**（幂等键 = `(workflow, run_id, job)`，同一次失败被重跑/重判多次只留一条）。⚠️ 本文件**不写任何计数/阈值**：条数一律现取（`python3 .github/scripts/flaky_ledger.py report`）—— 硬编码计数会随追加而腐烂（#4701/#4714/#4742 纪律），阈值同样留给消费方。机械入口：`selftest`（0=自洽 / 1=违规）、`report`（按 (workflow, job) 聚合，计数现取）、`reconcile`（三态对账 0/1：新事件未登记修复路径 / 重复计数 / 已修未销账——**未接 required 门禁**，是消费接口）。消费方（后续单）：同一 `job` 反复出现 `kind=flaky` ⇒ 按 `migao-acceptance`「随机红 = 归因层失效」开单修根因，而不是继续重跑。",
+  "version": 2,
+  "note": "CI 失败重跑分流台账（issue #4717；`kind` 的**语义收紧见 #5088**）。凡被 `.github/workflows/flaky-triage.yml` 判为**终态**的失败 job，都在这里有且只有一条条目。`kind` 的口径（#5088 起，**fail-closed：事实不够判就不给结论**）：① `flaky` = 首次失败、**重跑后通过**（同 SHA 重跑绿 ⇒ 该失败不可复现；已打 `flaky/rerun-green` + `block/merge` 并 `gh pr merge --disable-auto` 卸下 auto-merge）；② `unknown` = **两次尝试都红** —— 旧口径把它写成 `confirmed_failure`「确定性失败」，而逐条拉两次尝试的 job 日志取证后，**21 条里 7 条这样判错**（4 条两次尝试红的不是同一条断言 / 2 条是宽窗口竞态 / 1 条是 dependabot 的 `npm ERESOLVE` 确定性冲突）⇒ 现在**不归因**，只记原始事实 `attempts`（每次尝试的失败步骤逐字）与 `unknown_reason`（为什么不归因）；③ `deterministic` = **只能由 `attest` 写入**：分诊方按 #5088 口径拉两次尝试的 job 日志、把断言摘要逐字回填，两次**同一断言同一错误**才给该值（不同 ⇒ 仍 `unknown`），且必须带 `attested_evidence`（凭据）；④ `infra_suspect` = 失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）—— **不算 flaky**，仅登记（⚠️ 两次报错逐字相同 ⇒ 更像**确定性**依赖问题，不是环境抖动）；⑤ `confirmed_failure` = **旧口径的存量值**：**只出现在本文件的历史条目里**，**原样保留**（台账是证据，不许改写历史来「洗」数据），但**不得**作为归因依据、新写入不再产生该值。⚠️ 「**禁止用 `unknown` 归因**」的机械形态 = 脚本里的 `ATTRIBUTABLE_KINDS`（`unknown` 不在其中；`report` 的 `attributed` 列只统计它）。⚠️ **只追加、不修改**（幂等键 = `(workflow, run_id, job)`，同一次失败被重跑/重判多次只留一条）；**字段级**例外只有两个，且都只改指定条目的指定字段：`follow-up`（#5307）与 `attest`（#5088）。⚠️ 本文件**不写任何计数/阈值**：条数一律现取（`python3 .github/scripts/flaky_ledger.py report`）—— 硬编码计数会随追加而腐烂（#4701/#4714/#4742 纪律），阈值同样留给消费方。机械入口：`selftest`（0=自洽 / 1=违规）、`report`（按 (workflow, job) 聚合，计数现取，`unknown` 单列）、`reconcile`（三态对账 0/1：新事件未登记修复路径 / 重复计数 / 已修未销账——**未接 required 门禁**，是消费接口）、`attest`（#5088：回填断言级事实并给结论）。消费方（后续单）：同一 `job` 反复出现 `kind=flaky` ⇒ 按 `migao-acceptance`「随机红 = 归因层失效」开单修根因，而不是继续重跑。",
   "_schema": {
-    "version": "台账版本（当前 1）",
+    "version": "台账版本（当前 2 = #5088 起的 `kind` 新口径；1 = 旧口径）",
     "entries[].workflow": "workflow 的 `name`（如 `PR Check` / `Mini-App CI`）",
     "entries[].job": "失败 job 的 `name`（required 检查的 context 通常就是它）",
     "entries[].run_id": "**首次失败那次 run** 的 id（GitHub run id，整数；与重跑共用同一 run id，`run_attempt` 区分）",
@@ -13,14 +13,18 @@
     "entries[].head_branch": "分支名（仅供定位）",
     "entries[].first_failure_step": "首次失败时**第一个失败步骤**的名字（空串 = runner 级失败，无步骤失败）",
     "entries[].rerun_result": "success | failure | not_rerun",
-    "entries[].kind": "flaky | confirmed_failure | infra_suspect（无第四态；不确定一律偏 infra_suspect）",
+    "entries[].kind": "flaky | deterministic | unknown | infra_suspect（**新口径**）+ confirmed_failure（**旧口径的存量值**，只读、不得用于归因）。#5088：`unknown` = 两次都红但事实不足以归因（fail-closed，禁止用它归因）；`deterministic` 只能由 `attest` 写入（需两次同一断言同一错误 + `attested_evidence`）",
     "entries[].observed_at": "判定时刻（取 run 的 updated_at/created_at，ISO8601 UTC）",
     "entries[].reason": "**可行动信息**：为什么判成这个 kind（非空；空串 = 违规）",
     "entries[].remedy": "**可行动信息**：建议的修复路径（非空；空串 = 违规）——照 #4757 `time_flaky_baseline.json` 形态",
     "entries[].status": "open | fixed（fixed 需配 `fixed_by`，否则 `reconcile` 判「销账不成立」）",
     "entries[].follow_up": "跟踪单号（整数）或 null；CI 生成时为 null，由**分诊方**回填。`kind=flaky` 且 status=open 却没回填 ⇒ `reconcile` 判「新事件未登记修复路径」（红）",
     "entries[].fixed_by": "仅 status=fixed 需要：修复凭据（PR / run / 用例），否则销账不成立",
-    "unimplemented": "**如实登记未机械化**的部分：① `follow_up` 的自动开单没做（CI 只写 null，靠分诊方回填）；② `reconcile` **未接 required 门禁**（消费接口，按需调用）；③ `flaky` 分类对「只在装依赖步骤失败」是 fail-safe 偏 infra（宁可漏标 flaky，不可把 infra 记成 flaky）——漏标是可补的，误记会污染台账本身。"
+    "unimplemented": "**如实登记未机械化**的部分：① `follow_up` 的自动开单没做（CI 只写 null，靠分诊方回填）；② `reconcile` **未接 required 门禁**（消费接口，按需调用）；③ `flaky` 分类对「只在装依赖步骤失败」是 fail-safe 偏 infra（宁可漏标 flaky，不可把 infra 记成 flaky）——漏标是可补的，误记会污染台账本身；④ **#5088：断言级事实（`assertion`）在 CI 侧取不到**（GitHub 的 jobs API 只给步骤名），故自动路径的两次都红一律 `unknown`；把它升级为 `deterministic` 需要人按日志取证后 跑 `attest`（**未接 required 门禁**，没有东西会强制分诊方去跑）；⑤ 同一 SHA 两次「同一断言同一错误」仍**不能证明**确定性（#5088 实测有宽窗口竞态连红两次）⇒ `deterministic` 的语义是「两次尝试同一断言同一错误的**判据读数** + 分诊方归因」，不是数学证明",
+    "entries[].attempts": "**原始事实**（#5088）：每次尝试一条 `{attempt:int, job:str, step:str, assertion:str|null}`；`step` = 该次尝试第一个失败步骤逐字（空串 = runner 级失败）；`assertion` = 断言摘要 —— CI 自动路径**取不到**（jobs API 只给步骤名）故为 null，由 `attest` 按日志取证逐字回填",
+    "entries[].unknown_reason": "仅 `kind=unknown`：**为什么不归因**（逐字判据：两次红的不是同一步骤 / 不是同一条断言 / 只有步骤级事实 / 第一次尝试的事实缺失）。非空，否则 `selftest` 判违规",
+    "entries[].attested_evidence": "仅 `kind=deterministic`：日志取证凭据（run / attempt / 日志取法）。缺失 ⇒ `selftest` 判「无凭据的归因」（归因必须有凭据）",
+    "migration": "**#5088 的迁移动作与依据（显式登记）**：① 历史条目**一条未改** —— 102 条里 93 条 `confirmed_failure` + 7 条 `flaky` + 2 条 `infra_suspect` 的 `kind`/`reason`/`remedy` 保持原样（台账是证据，改写历史 = 销毁证据）；② 迁移只发生在**语义层**：顶层 `note`/`_schema` 与本版 `version=2` 登记「旧值 = 由 `rerun_result` 推出的旧口径，已知会过度声称」，并把新写入改为 fail-closed（两次都红 ⇒ `unknown` + 原始事实）；③ 依据 = #5088 的包逐条拉两次尝试的 job 日志（`gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs`）的读数：21 条里 7 条判错"
   },
   "entries": [
     {

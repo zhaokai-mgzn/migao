@@ -70,6 +70,35 @@ CLI 又没有回填子命令 ⇒ 回填变成「**文档要求做、却没有合
    · 重跑后**回读** `run_attempt` 并如实记账（job summary + `::notice::`）——「我以为重跑了」不算读数；
      额度用尽仍失败 ⇒ `::error::` + 人工出口（**可见**，不许静默降级成「没事」）。
 
+#5088：`kind` **不是归因层**（本单修：语义收紧 + fail-closed）
+------------------------------------------------------------
+旧口径把 `kind` 由 `rerun_result` 推出（`build_entries`：第二次绿 ⇒ `flaky` / 两次都红 ⇒
+`confirmed_failure`）⇒ 「重跑仍红」被读成「**确定性失败**」。按 #5088 的包**逐条拉两次尝试的
+job 日志**取证（读数见该 PR body）：21 条里 **7 条判错**（issue 的 9 条错 2 · 后增 12 条错 5）：
+
+  · 4 条 `confirmed_failure` 的两次尝试**红的不是同一条断言**（run `35866618242` / `35891090972`
+    / `35927546366` / `35942147403`）⇒ 同一 SHA 下失败不一致，**不是**稳定复现的同一个失败；
+  · 2 条是**宽窗口竞态**（`ship-order` 的 `#4882` 那条用例：一个 run 里 a1 红 / a2 绿 ⇒ 记 `flaky`，
+    另一个 run 里同一条用例、同一条报错 a1/a2 都红 ⇒ 记 `confirmed_failure`）——
+    真实机制与「确定性」**相反**；
+  · 1 条 `infra_suspect`（dependabot 的 `npm ERESOLVE`）两次尝试逐字同一个错误 ⇒ 那是该 PR 的
+    依赖**不可解析**（确定性的），不是环境抖动。
+
+⇒ 新口径（**fail-closed：事实不够判就不给结论**）：
+  · `flaky` —— 同 SHA 重跑绿（该失败**不可复现**，事实够判）；
+  · 两次都红 ⇒ **自动路径一律 `unknown`**（CI 只有**步骤级**事实：GitHub 的 jobs API 只给步骤名，
+    不给断言文本 ⇒ 不足以判断「是否同一断言」），同时把两次尝试的**原始事实**记进 `attempts`
+    （`step` 逐字），并用 `unknown_reason` 逐字写明**为什么不归因**；
+  · `deterministic` **只能由 `attest` 写入**：分诊方按 #5088 的口径拉两次尝试的 job 日志
+    （`gh api repos/{repo}/actions/jobs/<job_id>/logs`），把断言摘要逐字回填 ——
+    两次**同一断言同一错误** ⇒ `deterministic`；**不同 ⇒ 仍 `unknown`**（#5088 的建议口径）；
+    且必须带 `attested_evidence`（凭据）⇒「**归因必须有凭据**」；
+  · **「禁止用 `unknown` 归因」的机械形态** = `ATTRIBUTABLE_KINDS`（单一事实源，`unknown` 不在其中），
+    `aggregate()` 的 `attributed` 计数只统计它；
+  · **历史条目一字未改**（93 条 `confirmed_failure` 照旧）：台账是**证据**，不许用改写历史来「洗」数据；
+    旧值的语义在台账顶层 `_schema` 里**显式登记**为「旧口径，已知会过度声称」，且新写入
+    **不再产生**该值（判据：`tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`）。
+
 退出码（三态，照本仓库 `merge_gate.py` / `llm_sink_check.py` 口径）
 ------------------------------------------------------------------
 `0` = 正常；`1` = 违规（台账不自洽 / 参数非法 / 重跑动作失败 / 额度用尽）；`3` = **无法判定**（取不到事实）。
@@ -161,7 +190,17 @@ ENTRY_REQUIRED = {
     "remedy": str,
     "status": str,
 }
-ENTRY_KINDS = ("flaky", "confirmed_failure", "infra_suspect")
+#: `kind` 的**全部取值**（读侧白名单）。前四个是 **#5088 之后**的口径（`unknown` = 事实不足以归因）；
+#: 最后一个是**旧口径的存量值** —— 保留在白名单里是「**历史不得改写**」（台账是证据）的必要条件，
+#: 不是允许新写入：`build_entries` 只产出新口径（判据 `test_decide_never_emits_legacy_kind`）。
+ENTRY_KINDS = ("flaky", "deterministic", "unknown", "infra_suspect", "confirmed_failure")
+#: 旧口径的存量值（**只读**；新写入一律不产生）。
+LEGACY_ENTRY_KINDS = frozenset({"confirmed_failure"})
+#: **可以用于归因**的 kind（单一事实源）。`unknown` 不在其中 ⇒「禁止用 unknown 归因」的机械形态：
+#: 读侧的归因计数（`aggregate()['attributed']`）只统计本集合，`unknown` 永远单独成列。
+ATTRIBUTABLE_KINDS = frozenset({"flaky", "deterministic", "infra_suspect"})
+#: 必须带**原始事实**（`attempts`）的新口径 kind；`deterministic` 另需 `attested_evidence`（凭据）。
+FACT_BACKED_KINDS = frozenset({"deterministic", "unknown"})
 ENTRY_STATUSES = ("open", "fixed")
 RERUN_RESULTS = ("success", "failure", "not_rerun")
 #: 台账里**禁止**出现的顶层键：硬编码计数会随追加而腐烂（#4701/#4714/#4742 纪律）。
@@ -180,19 +219,39 @@ FOLLOW_UP_HOWTO = (
     "绝不静默无操作）；重复回填同一值 = **无副作用**（幂等）。"
 )
 
+#: 「**怎么把断言级事实回填**」的权威口径（#5088）—— `unknown` 条目的 remedy、`attest` 的帮助文本、
+#: 守卫测试的失败消息都从它取值（**不复制第二份措辞**）。
+ATTEST_HOWTO = (
+    "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 "
+    "id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，"
+    "比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）："
+    "`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json "
+    "--run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' "
+    "--attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；"
+    "两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+)
+
 #: 每个 kind 的**可行动**说明（生成时即写入，读的人不必回查脚本）。
 KIND_REASON = {
     "flaky": "首次失败、**重跑后通过**（随机波动）——**不是**本次改动修好了它",
+    # ⚠️ 旧口径的存量值：**只出现在历史条目里**（那些 `reason`/`remedy` 是当时逐字写入的证据，不许改写）。
     "confirmed_failure": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
     "infra_suspect": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+    "deterministic": ("同一 SHA 两次尝试红的**同一条断言、同一个错误**（分诊方按日志取证后 `attest`）"
+                      "⇒ 可复现的确定性失败"),
+    "unknown": ("两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**"
+                "（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）"),
 }
 KIND_REMEDY = {
     "flaky": ("按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）："
               "时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；"
               "修后**必须给红证**（把机制注回 ⇒ 必红）"),
     "confirmed_failure": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
-    "infra_suspect": ("排查 runner 容量 / 依赖源 / 网络：偶发一次属环境抖动；"
-                      "反复出现 ⇒ 查依赖锁定与 runner 超时配置"),
+    "infra_suspect": ("**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 "
+                      "`npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）："
+                      "两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络"),
+    "deterministic": "按真实失败排查（两次尝试同一断言同一错误 ⇒ 可复现；证据在条目的 `attempts` 里）",
+    "unknown": ATTEST_HOWTO,
 }
 
 
@@ -252,19 +311,83 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def build_entries(run, failed_jobs, rerun_result: str) -> list:
-    """把「失败 job 列表 + 重跑结果」变成台账条目（**只追加**，不修改既有条目）。"""
+def attempt_facts(job, attempt: int, assertion=None) -> dict:
+    """**一条原始事实**：第 `attempt` 次尝试里这个 job 的失败读数（不经解释）。
+
+    `step` = `failed_step_name`（逐字的失败步骤名，空串 = runner 级失败）；
+    `assertion` = 断言摘要 —— **CI 自动路径取不到**（GitHub 的 jobs API 只给步骤名，不给断言文本），
+    故自动写入 `None`；由 `attest` 按 #5088 的日志取证口径**逐字**回填（`attempt1`/`attempt2` 各一份）。
+    """
+    return {"attempt": attempt, "job": job.get("name"),
+            "step": failed_step_name(job), "assertion": assertion}
+
+
+def classify_both_red(a1, a2) -> tuple:
+    """**两次都红**时能得出的结论（fail-closed：事实不够判 ⇒ `unknown` + 逐字理由）。
+
+    这是本模块**唯一**的归因判据（`build_entries` 与 `attest` 共用，**不写第二份规则**）。
+    返回 `(kind, unknown_reason)`；`kind == "unknown"` 时 `unknown_reason` 必非空。
+
+    判据（按事实强度从上到下；**每一条都给得出它的读数**）：
+      · 两次的断言摘要都非空、**逐字相同**且步骤相同 ⇒ `deterministic`（同一个失败**复现**两次）；
+      · 两次的断言摘要都非空但**不同** ⇒ `unknown`（同一 SHA 下失败不一致 ⇒ 不是同一个失败）
+        —— 这正是 #5088 的建议口径「两次尝试红的不是同一条断言 ⇒ 不得记确定性」；
+      · 只有步骤级事实（自动路径的常态）⇒ `unknown`（步骤名（`Run unit tests` 一类）**不足以**
+        判断是否同一断言；同一 SHA 两跑都红也可能是宽窗口竞态 —— #5088 实测 2 条正是如此）；
+      · 第一次尝试的事实缺失（`prior_jobs` 取不到 / job 只存在于后一次尝试）⇒ `unknown`（无从比较）。
+    """
+    if a1 is None or a2 is None:
+        return "unknown", ("第一次尝试的失败事实不在本次取数范围内（`prior_jobs` 缺失 / 该 job 只出现在"
+                           "后一次尝试）⇒ 无从比较两次是否同一失败，**不归因**")
+    if a1.get("step") != a2.get("step"):
+        return "unknown", (f"两次尝试红的**不是同一个步骤**（attempt1={a1.get('step')!r} / "
+                           f"attempt2={a2.get('step')!r}）⇒ 同一 SHA 下失败不一致，**不归因**")
+    s1, s2 = a1.get("assertion"), a2.get("assertion")
+    if s1 and s2:
+        if s1 == s2:
+            return "deterministic", ""
+        return "unknown", (f"同一 SHA 两次尝试红的**不是同一条断言**（attempt1={s1!r} / "
+                           f"attempt2={s2!r}）⇒ 不是稳定复现的同一个失败，**不归因**")
+    return "unknown", ("两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给"
+                       "步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是"
+                       "宽窗口竞态），**不归因**。要归因：" + ATTEST_HOWTO)
+
+
+def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
+                  failed_attempt=None) -> list:
+    """把「失败 job 列表 + 重跑结果」变成台账条目（**只追加**，不修改既有条目）。
+
+    #5088：`kind` **不再由 `rerun_result` 单独推出** —— 两次都红 ⇒ `unknown`（fail-closed），
+    并把**原始事实**同时记下（`attempts`：每次尝试的失败步骤逐字、断言摘要待 `attest` 回填），
+    让读的人**自己判**，而不是替它下结论。
+
+    `prior_failed_jobs` = **上一次**尝试的失败 job（用于比较两次的失败事实）；
+    `failed_attempt` = `failed_jobs` 所属的尝试序号（默认取 run 的 `run_attempt`）。
+    """
     out = []
+    prior = list(prior_failed_jobs or [])
+    attempt_now = _attempt(run) if failed_attempt is None else int(failed_attempt)
     for job in failed_jobs:
+        name = job.get("name")
+        facts = attempt_facts(job, attempt_now)
+        # 上一次尝试的同一 job（用于把**两次的原始事实**都记下来 —— 供读者自己复核）
+        prev_job = next((j for j in prior if j.get("name") == name), None)
+        prev_facts = (attempt_facts(prev_job, max(attempt_now - 1, 1))
+                      if prev_job is not None else None)
+        attempts = [prev_facts, facts] if prev_facts is not None else [facts]
+        unknown_reason = None
         if job_is_infra(job):
+            # #5088 实测：`infra_suspect` 里有一条实为 dependabot 的 `npm ERESOLVE`
+            # （两次尝试逐字同一个错误 = 确定性的依赖不可解析）⇒ 也把两次的事实都记下，
+            # 读的人一眼能看出「两次是否逐字相同」（本判据**不**替它分类）。
             kind = "infra_suspect"
         elif rerun_result == "success":
             kind = "flaky"
         else:
-            kind = "confirmed_failure"
-        out.append({
+            kind, unknown_reason = classify_both_red(prev_facts, facts)
+        entry = {
             "workflow": run.get("name"),
-            "job": job.get("name"),
+            "job": name,
             "run_id": run.get("id"),
             "run_attempt": run.get("run_attempt"),
             "run_url": run.get("html_url"),
@@ -274,6 +397,8 @@ def build_entries(run, failed_jobs, rerun_result: str) -> list:
             "first_failure_step": failed_step_name(job),
             "rerun_result": rerun_result,
             "kind": kind,
+            # #5088：**原始事实**（可核、逐字；结论由它推出，读的人也能自己复核）
+            "attempts": attempts,
             "observed_at": run.get("updated_at") or run.get("created_at") or _now(),
             # 可行动信息：生成时即写入（读的人不必回查脚本 / 不必翻日志）
             "reason": KIND_REASON[kind],
@@ -282,7 +407,10 @@ def build_entries(run, failed_jobs, rerun_result: str) -> list:
             # 跟踪单号由**分诊方**回填（CI 生成时不知道单号）——
             # `reconcile` 会把「kind=flaky 且 status=open 但没 follow_up」判成欠账（红）。
             "follow_up": None,
-        })
+        }
+        if unknown_reason:
+            entry["unknown_reason"] = unknown_reason
+        out.append(entry)
     return out
 
 
@@ -297,7 +425,8 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
       · `rerun`                  —— 首次失败 ⇒ 重跑失败 job **1 次**
       · `mark_flaky`             —— 第二次绿 ⇒ 标 flaky（**并卸 auto-merge**）
       · `record_infra`           —— 第二次绿但全是 infra ⇒ 只记账（不打 flaky 标、不卸）
-      · `record_confirmed_failure` —— 第二次仍红 ⇒ **照常失败**（不再重跑第三次）
+      · `record_both_red`        —— 第二次仍红 ⇒ **照常失败**（不再重跑第三次）；条目 `kind=unknown`
+        （#5088：两次都红**不足以**判定「确定性失败」⇒ 只记事实、不归因）
     """
     run = (bundle or {}).get("run") or {}
     jobs = (bundle or {}).get("jobs") or []
@@ -326,7 +455,8 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
         first_failed = [j for j in prior_jobs if is_failed(j)]
         if not first_failed:
             return skip("重跑绿，但**首次尝试没有失败 job**（可能被取消后重跑）⇒ 无 flaky 证据")
-        return _terminal(run, first_failed, "success", attempt)
+        return _terminal(run, first_failed, "success", attempt,
+                         failed_attempt=max(attempt - 1, 1))
     if conclusion != "failure":
         return skip(f"conclusion={conclusion} 不是测试失败")
 
@@ -334,7 +464,8 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
     if not failed:
         return skip("conclusion=failure 但没有任何失败 job（workflow 级失败）—— 无 job 可重跑")
     if attempt >= max_attempts:
-        return _terminal(run, failed, "failure", attempt)
+        return _terminal(run, failed, "failure", attempt,
+                         prior_failed_jobs=prior_jobs, failed_attempt=attempt)
     return {
         "action": "rerun",
         "reason": (f"首次失败（attempt={attempt}）⇒ 自动重跑失败 job "
@@ -354,8 +485,10 @@ def _attempt(run) -> int:
         return 1
 
 
-def _terminal(run, failed_jobs, rerun_result: str, attempt: int) -> dict:
-    entries = build_entries(run, failed_jobs, rerun_result)
+def _terminal(run, failed_jobs, rerun_result: str, attempt: int, prior_failed_jobs=None,
+              failed_attempt=None) -> dict:
+    entries = build_entries(run, failed_jobs, rerun_result, prior_failed_jobs,
+                            failed_attempt=failed_attempt)
     kinds = {e["kind"] for e in entries}
     if rerun_result == "success" and "flaky" in kinds:
         action, kind = "mark_flaky", "flaky"
@@ -364,9 +497,10 @@ def _terminal(run, failed_jobs, rerun_result: str, attempt: int) -> dict:
         action, kind = "record_infra", "infra_suspect"
         reason = "第二次绿，但失败 job 全属 infra/环境 ⇒ 只记账（**不**记成 flaky）"
     else:
-        action, kind = "record_confirmed_failure", "confirmed_failure"
+        action, kind = "record_both_red", "unknown"
         reason = (f"第 {attempt} 次仍失败 ⇒ **照常失败**（不再重跑第 {attempt + 1} 次）"
-                  f"；确定性失败，绝不放行")
+                  f"；两次尝试都红 **≠** 确定性失败（#5088 实测：21 条里 7 条被旧口径这样判错）"
+                  f"⇒ 记 `kind=unknown` + 原始事实，**不归因**（归因需先按 #5088 口径取证再 `attest`）")
     return {"action": action, "reason": reason, "kind": kind,
             "entries": entries, "pr": pr_number(run), "attempt": attempt}
 
@@ -527,6 +661,35 @@ def ledger_violations(ledger: dict) -> list:
         # 「第二次绿 ⇒ flaky」的**方向**也必须自洽：重跑没绿就不许标 flaky
         if entry.get("kind") == "flaky" and entry.get("rerun_result") != "success":
             bad.append(f"entries[{i}] kind=flaky 但 rerun_result≠success —— 放行了未复现的失败")
+        # #5088：新口径的 kind 必须**带原始事实**（只给结论不给读数 = 不可核 ⇒ 会被当成归因层用）
+        if entry.get("kind") in FACT_BACKED_KINDS:
+            attempts = entry.get("attempts")
+            if not isinstance(attempts, list) or not attempts:
+                bad.append(f"entries[{i}].kind={entry.get('kind')!r} 必须带原始事实 `attempts`"
+                           f"（至少一条：这次尝试的失败步骤逐字）")
+            else:
+                for k, fact in enumerate(attempts):
+                    if (not isinstance(fact, dict) or not isinstance(fact.get("attempt"), int)
+                            or not isinstance(fact.get("step"), str)
+                            or not (fact.get("assertion") is None
+                                    or isinstance(fact.get("assertion"), str))):
+                        bad.append(f"entries[{i}].attempts[{k}] 形状应为 "
+                                   f"{{attempt:int, job:str, step:str, assertion:str|null}}")
+        if entry.get("kind") == "unknown" and not str(entry.get("unknown_reason") or "").strip():
+            bad.append(f"entries[{i}] kind=unknown 但 `unknown_reason` 为空 ⇒ 读的人不知道"
+                       f"**为什么不归因**（fail-closed 也必须写明理由）")
+        if entry.get("kind") == "deterministic":
+            # 「归因必须有凭据」的机械形态：两次断言级事实（逐字）+ `attest` 凭据，缺一 ⇒ 违规
+            facts = [f for f in (entry.get("attempts") or []) if isinstance(f, dict)]
+            sigs = [f.get("assertion") for f in facts]
+            if (len(facts) != 2
+                    or len([s for s in sigs if isinstance(s, str) and s.strip()]) != 2
+                    or len(set(sigs)) != 1):
+                bad.append(f"entries[{i}] kind=deterministic 但两次尝试的断言摘要不齐/不同 "
+                           f"⇒ **无凭据的归因**（deterministic 只能由 `attest` 写入）")
+            if not str(entry.get("attested_evidence") or "").strip():
+                bad.append(f"entries[{i}] kind=deterministic 缺 `attested_evidence`（日志取证凭据）"
+                           f"⇒ 无凭据的归因")
         key = entry_key(entry)
         if key in seen:
             bad.append(f"entries[{i}] 幂等键重复 {key}（同一次失败记了多条）")
@@ -678,6 +841,74 @@ def apply_follow_up(ledger, indices, *, issue=None, status=None, fixed_by=None) 
     return {"changed": changed, "idempotent": not changed}
 
 
+# ── #5088：`attest` —— 用**日志取证**回填断言级事实并给结论（「归因必须有凭据」） ──────
+
+
+class AttestError(Exception):
+    """`attest` 的 fail-closed 出口（CLI 捕获 ⇒ 非零退出 + 明确报错，**绝不**静默无操作）。"""
+
+
+def apply_attestation(ledger, indices, *, attempt1_assertion, attempt2_assertion, evidence) -> dict:
+    """把**日志取证**得到的两次尝试断言摘要写进**已存在条目**，并据唯一判据给结论。
+
+    **字段级**（与 #5307 的 `follow-up` 同口径）：只改 `attempts` / `kind` / `reason` / `remedy` /
+    `unknown_reason` / `attested_evidence`，**不**新增、不删除、不重排条目、不碰其它字段。
+
+    为什么必须有它（**#5088 的病灶是「结论没有凭据、也没人能补凭据」**）：自动路径只有步骤级事实
+    （GitHub 的 jobs API 不给断言文本）⇒ 两次都红只能记 `unknown`；要让台账给出 `deterministic`，
+    必须有人把两次尝试的**日志读数**逐字回填 —— 本命令就是那个**合法工具**
+    （#5307 的教训：文档要求做、却没有工具做的动作 = 自我死锁）。
+
+    fail-closed（抛 `AttestError`，全部**不写盘**）：
+      · 两次断言摘要或 `--evidence` 为空 ⇒ 拒绝（凭据为空 = 无凭据的归因，比不归因更坏）；
+      · 条目 `rerun_result != "failure"` ⇒ 拒绝（重跑绿（`flaky`）/ 没重跑过的条目**不适用**本判据）；
+      · 条目缺 `attempt=2` 的原始事实 ⇒ 拒绝（不知第二次尝试的失败步骤，回填会写出不自洽的事实）。
+
+    结论 = `classify_both_red`（**唯一**判据，不写第二份）：两次同一断言同一错误 ⇒ `deterministic`；
+    不同 ⇒ 仍 `unknown`（#5088 的建议口径「两次红的不是同一条断言 ⇒ 不得记确定性」）。
+    """
+    entries = (ledger or {}).get("entries") or []
+    fields = ("attempts", "kind", "reason", "remedy", "unknown_reason", "attested_evidence")
+    changed = []
+    for i in indices:
+        entry = entries[i]
+        where = (f"entries[{i}]（run_id={entry.get('run_id')} "
+                 f"job={entry.get('job')!r}）")
+        if entry.get("rerun_result") != "failure":
+            raise AttestError(
+                f"{where} 的 rerun_result={entry.get('rerun_result')!r} ⇒ 本判据**只适用于"
+                f"「两次都红」**的条目（重跑绿的 `flaky` 条目与没重跑过的条目不适用）")
+        facts = [f for f in (entry.get("attempts") or []) if isinstance(f, dict)]
+        if not any(int(f.get("attempt") or 0) == 2 for f in facts):
+            raise AttestError(
+                f"{where} 缺 `attempt=2` 的原始事实（`attempts` 现取 = "
+                f"{[f.get('attempt') for f in facts]!r}）⇒ 拒绝回填（不知第二次尝试的失败步骤，"
+                f"回填会写出不自洽的事实）")
+        before = {k: copy.deepcopy(entry.get(k)) for k in fields}
+        for fact in facts:
+            if int(fact.get("attempt") or 0) == 1:
+                fact["assertion"] = str(attempt1_assertion)
+            elif int(fact.get("attempt") or 0) == 2:
+                fact["assertion"] = str(attempt2_assertion)
+        a1 = next((f for f in facts if int(f.get("attempt") or 0) == 1), None)
+        a2 = next((f for f in facts if int(f.get("attempt") or 0) == 2), None)
+        kind, unknown_reason = classify_both_red(a1, a2)
+        entry["kind"] = kind
+        entry["reason"] = KIND_REASON[kind]
+        entry["remedy"] = KIND_REMEDY[kind]
+        if unknown_reason:
+            entry["unknown_reason"] = unknown_reason
+        elif "unknown_reason" in entry:
+            del entry["unknown_reason"]
+        entry["attested_evidence"] = str(evidence).strip()
+        after = {k: copy.deepcopy(entry.get(k)) for k in fields}
+        if after == before:
+            continue
+        changed.append({"index": i, "key": list(entry_key(entry)),
+                        "before": before, "after": after})
+    return {"changed": changed, "idempotent": not changed}
+
+
 def render_reconcile_report(ledger, result, ledger_path: str = LEDGER_REL) -> str:
     """把 `reconcile` 的欠账渲染成**可行动**清单 + **可直接复制**的回填命令（#5307 判据②）。
 
@@ -742,6 +973,10 @@ def aggregate(ledger: dict) -> dict:
     这是台账的**消费接口**：后续单要判「某用例连续 N 次标 flaky ⇒ 必须修」时，
     拿这里的 `flaky` 计数自己定阈值 —— **阈值不写进本仓库**（#4701/#4714/#4742 纪律：
     硬编码计数/阈值会随追加而腐烂；本仓库 `time_flaky_guard.py` 的存量账本同此口径）。
+
+    #5088：`unknown`（= 事实不足以归因）**单独成列**，且 `attributed` 只统计
+    `ATTRIBUTABLE_KINDS` ⇒ 消费方**结构上**拿不到「把 unknown 当归因」的计数
+    （「禁止用 unknown 归因」的机械形态；`confirmed_failure` 是旧口径存量值，同样单列、不作归因依据）。
     """
     groups: dict = {}
     for entry in ledger.get("entries") or []:
@@ -749,11 +984,14 @@ def aggregate(ledger: dict) -> dict:
         slot = groups.setdefault(key, {
             "workflow": entry.get("workflow"), "job": entry.get("job"),
             "total": 0, "flaky": 0, "confirmed_failure": 0, "infra_suspect": 0,
+            "deterministic": 0, "unknown": 0, "attributed": 0,
             "last_run_id": None, "last_observed_at": None,
         })
         slot["total"] += 1
-        if entry.get("kind") in ("flaky", "confirmed_failure", "infra_suspect"):
+        if entry.get("kind") in ENTRY_KINDS:
             slot[entry["kind"]] += 1
+        if entry.get("kind") in ATTRIBUTABLE_KINDS:
+            slot["attributed"] += 1
         slot["last_run_id"] = entry.get("run_id")
         slot["last_observed_at"] = entry.get("observed_at")
     return groups
@@ -1140,12 +1378,21 @@ def render_comment(decision: dict) -> str:
         "",
     ]
 
+    def attempt_cell(entry: dict) -> str:
+        """把条目的**原始事实**（每次尝试的失败步骤）渲染进表格 —— 结论由读者复核，不靠 `kind` 断言。"""
+        facts = entry.get("attempts") or []
+        if not facts:
+            return entry.get("first_failure_step") or "（runner 级，无步骤失败）"
+        return " · ".join(
+            f"a{f.get('attempt')}：「{f.get('step') or '（runner 级，无步骤失败）'}」"
+            f"{'｜' + str(f.get('assertion')) if f.get('assertion') else ''}"
+            for f in facts)
+
     def table(first_col: str) -> list:
         out = [f"| job | {first_col} | 重跑结果 | 结论 | 台账条目（幂等键） |", "|---|---|---|---|---|"]
         for e in entries:
-            step = e.get("first_failure_step") or "（runner 级，无步骤失败）"
-            out.append(f"| `{e['job']}` | {step} | `{e['rerun_result']}` | **`{e['kind']}`** "
-                       f"| `{e['workflow']}/{e['run_id']}/{e['job']}` |")
+            out.append(f"| `{e['job']}` | {attempt_cell(e)} | `{e['rerun_result']}` | "
+                       f"**`{e['kind']}`** | `{e['workflow']}/{e['run_id']}/{e['job']}` |")
         return out
 
     why = (f"`{first.get('job')}` 在第 **1** 次尝试（run "
@@ -1201,20 +1448,25 @@ def render_comment(decision: dict) -> str:
         ]
     else:
         lines += [
-            "## ❌ Flaky Triage —— 重跑**仍然失败**（确定性失败）",
+            "## ❌ Flaky Triage —— 重跑**仍然失败**（两次尝试都红；**不归因**）",
             "",
-            f"**为什么照常失败**：{why}，**第 2 次尝试仍然失败** ⇒ 确定性失败。"
+            f"**为什么照常失败**：{why}，**第 2 次尝试仍然失败**。"
             "已按「照常失败」处理：**不重跑第三次**、**不放行**、**不卸 auto-merge**"
             "（required 检查自己就是红的）。",
             "",
-            *table("失败步骤"),
+            "⚠️ **「两次都红」不是「确定性失败」**（#5088 实测：把前者读成后者会在 21 条里错 7 条；"
+            "同一 SHA 两跑都红也可能是**宽窗口竞态**）。故本条记为 **`unknown`（不归因）**，"
+            "并附**两次尝试的原始事实**：",
+            "",
+            *table("尝试 → 失败步骤"),
             "",
             f"**下一步（可行动）**：{first.get('remedy') or ''}",
             "",
             f"判据：{decision.get('reason')}",
         ]
     lines += ["", "<sub>机制见 `migao` issue #4717（CI 层两项：重跑分流 + flaky 台账）；"
-                  "判据 `tests/unit_ci_workflows/test_flaky_triage.py`</sub>"]
+                  "`kind` 的语义收紧见 #5088；判据 `tests/unit_ci_workflows/test_flaky_triage.py` + "
+                  "`tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`</sub>"]
     return "\n".join(lines) + "\n"
 
 
@@ -1277,6 +1529,22 @@ def main(argv=None) -> int:
     p.add_argument("--issue", help="跟踪单号（必须**正整数**；条目 follow_up 已非空时可省略）")
     p.add_argument("--status", choices=["fixed"], help="可选：同时销账（必须配 `--fixed-by`）")
     p.add_argument("--fixed-by", help="销账凭据（PR / run / 用例），仅 `--status fixed` 需要")
+
+    p = sub.add_parser("attest",
+                       help="#5088：回填两次尝试的**断言摘要**（日志取证）并据「同一断言同一错误」"
+                            "给结论（deterministic / 仍 unknown）",
+                       epilog=ATTEST_HOWTO,
+                       formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--ledger", default=str(LEDGER_PATH))
+    p.add_argument("--run-id", required=True, type=int,
+                   help="**已存在条目**的 run_id（不存在 ⇒ 非零退出，绝不静默无操作）")
+    p.add_argument("--job", help="同一 run 有多个 job 的条目时用它定位（缺省且命中多条 ⇒ 非零退出）")
+    p.add_argument("--attempt1-assertion", required=True,
+                   help="第一次尝试的失败断言摘要（**逐字**：失败断言 + 错误文本）")
+    p.add_argument("--attempt2-assertion", required=True,
+                   help="第二次尝试的失败断言摘要（**逐字**）")
+    p.add_argument("--evidence", required=True,
+                   help="取证凭据（run / attempt / 日志取法）；为空 ⇒ 拒绝（归因必须有凭据）")
 
     p = sub.add_parser("append", help="只追加 + 幂等地写入台账（`--align-main`：推前先与 main 对齐）")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
@@ -1524,6 +1792,54 @@ def main(argv=None) -> int:
               f"fixed_not_deducted={len(left['fixed_not_deducted'])}")
         return 0
 
+    if args.cmd == "attest":
+        # #5088：把**日志取证**得到的断言级事实回填进已存在条目 —— 「归因必须有凭据」的落地点。
+        # 全部 fail-closed：任一不成立 ⇒ 非零退出 + 明确报错（静默无操作正是本单要治的形态）。
+        try:
+            run_id = _positive_int(args.run_id, "--run-id")
+        except ValueError as exc:
+            print(f"⛔ {exc} ⇒ 拒绝回填（fail-closed：非零退出，不静默无操作）", file=sys.stderr)
+            return 1
+        a1 = str(args.attempt1_assertion or "").strip()
+        a2 = str(args.attempt2_assertion or "").strip()
+        ev = str(args.evidence or "").strip()
+        if not a1 or not a2 or not ev:
+            print("⛔ `--attempt1-assertion` / `--attempt2-assertion` / `--evidence` 必须都非空 "
+                  "⇒ 拒绝回填（凭据为空 = 无凭据的归因，比不归因更坏）", file=sys.stderr)
+            return 1
+        ledger = load_ledger(args.ledger)
+        bad = ledger_violations(ledger)
+        if bad:
+            print("⛔ 台账自身不合规，拒绝回填（先 `selftest`）：\n  - " + "\n  - ".join(bad),
+                  file=sys.stderr)
+            return 1
+        try:
+            indices = follow_up_index(ledger, run_id, args.job)
+            result = apply_attestation(ledger, indices, attempt1_assertion=a1,
+                                       attempt2_assertion=a2, evidence=ev)
+        except (FollowUpError, AttestError) as exc:
+            print(f"⛔ {exc}", file=sys.stderr)
+            print(f"   （取证与回填口径：{ATTEST_HOWTO}）", file=sys.stderr)
+            return 1
+        if result["idempotent"]:
+            print(f"⏭️ 幂等：run {run_id} 的 {len(indices)} 条已是目标值 ⇒ 台账未改动"
+                  f"（重复回填 = 无副作用）")
+            return 0
+        bad_after = ledger_violations(ledger)
+        if bad_after:
+            print("⛔ 回填会把台账改成不合规 ⇒ 拒绝写入：\n  - " + "\n  - ".join(bad_after),
+                  file=sys.stderr)
+            return 1
+        save_ledger(args.ledger, ledger)
+        for change in result["changed"]:
+            print(f"📒 entries[{change['index']}] {_key_str(change['key'])}："
+                  f"kind {change['before']['kind']!r} → {change['after']['kind']!r}"
+                  f"（断言级事实已逐字回填；凭据={change['after']['attested_evidence']!r}）")
+        print(f"✅ 已回填 {len(result['changed'])} 条的断言级事实（条目数现取 = "
+              f"{len(ledger.get('entries') or [])}，**只改字段、未新增/删除/重排条目**）"
+              f"→ {args.ledger}")
+        return 0
+
     if args.cmd == "selftest":
         ledger = load_ledger(args.ledger)
         bad = ledger_violations(ledger)
@@ -1542,11 +1858,16 @@ def main(argv=None) -> int:
               f"不同 (workflow, job) = {len(rows)}）")
         for row in rows:
             print(f"  · {row['workflow']} :: {row['job']} —— flaky={row['flaky']} "
-                  f"confirmed_failure={row['confirmed_failure']} "
-                  f"infra_suspect={row['infra_suspect']} 合计={row['total']}"
+                  f"deterministic={row['deterministic']} infra_suspect={row['infra_suspect']} "
+                  f"**unknown={row['unknown']}**（不归因）· 旧口径 confirmed_failure="
+                  f"{row['confirmed_failure']} · 可归因小计 attributed={row['attributed']} "
+                  f"· 合计={row['total']}"
                   f"（最近 run {row['last_run_id']} @ {row['last_observed_at']}）")
         print("⚠️ 本命令**不设阈值**（不写死计数）：「同一 job 反复 flaky ⇒ 必须修根因」的"
               "判定留给消费方，按 `migao-acceptance`「随机红 = 归因层失效」开单。")
+        print("⚠️ `unknown` 是**未归因**（两次都红但事实不足以判）—— **不得**并入 flaky / "
+              "deterministic / confirmed_failure 任何一列做归因（#5088）；要归因先 "
+              "`attest` 回填两次尝试的断言摘要。")
         if args.json_out:
             _write(args.json_out, json.dumps(
                 {"entry_total": len(ledger.get("entries") or []), "groups": rows},
