@@ -163,6 +163,20 @@ jobs:
           echo "漂移审计退出码 = ${RC}（0 通过 / 1 判红 / 3 不可判 —— 非 0 都不得当 0 读）"
           exit ${RC}
 
+      # ── 会话内零新开 issue 的机械核验（2026-09-25 用户裁定，铁律 11(a) / §24.0）──
+      # 口径：一次 agent 会话不得新建 issue，唯一例外 = 人类显式要求（该单正文写 `人为要求：…`）。
+      # 报告型判据：现取「新建但无该标记」的 issue ⇒ 逐条列出；**有违规 ⇒ 本步失败**
+      # （本腿是报告型 ⇒ 不拦合并，但走本腿既有的「判红 ⇒ 开/更值班 issue」出口，一次而不是每单一条）。
+      - name: 零新开核验（agent 会话不得新建 issue，除人为要求）
+        id: new_issues
+        run: |
+          set +e
+          OUT="$(python3 scripts/issue_lifecycle.py check-new-issues --since "$(date -u +%F)" 2>&1)"
+          RC=$?
+          printf '%s\n' "${OUT}"
+          echo "退出码 = ${RC}（0 = 窗口内无违规；1 = 有违规；3 = 无法判定）"
+          exit ${RC}
+
       - name: 判定（定向跑判据面）
         id: verify
         env:

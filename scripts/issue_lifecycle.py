@@ -1198,6 +1198,32 @@ def pending_close_rows(pr_rows: list[dict], open_nums: set[int],
     return out
 
 
+
+#: 「人为要求」标记（2026-09-25 用户裁定：会话内零新开 issue，唯一例外 = 人类显式要求）
+HUMAN_REQUEST_MARKER = "人为要求："
+
+
+def is_human_requested(body: str) -> bool:
+    """body 里出现 `人为要求：…` 标记 ⇒ 该单是**人类显式要求**开的（唯一合法例外）。
+
+    口径：**不要求首行** —— 标记可能在标题下一行、或被 GitHub 模板挪位；只要正文里出现该标记即算。
+    （判据侧的"首行"措辞是给人读的约定；机械判据用"出现即算"，**更不容易误伤**。)
+    """
+    return HUMAN_REQUEST_MARKER in (body or "")
+
+
+def non_human_requested(rows: list[dict]) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：从未带标记的 issue 行里挑出「非人为要求」的 ⇒ [(number, createdAt, title)]。"""
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("number"):
+            continue
+        if is_human_requested(r.get("body") or ""):
+            continue
+        out.append((int(r["number"]), str(r.get("createdAt") or "")[:19], str(r.get("title") or "")[:70]))
+    return sorted(out)
+
+
 def cmd_pending_close(args: argparse.Namespace) -> int:
     """报告型：待人工关单清单。**零写操作**（只读 gh）。"""
     cwd = Path.cwd()
@@ -1361,6 +1387,36 @@ def cmd_close(args: argparse.Namespace) -> int:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
+def cmd_check_new_issues(args: argparse.Namespace) -> int:
+    """报告型：现取「新建但**没有**人为要求标记」的 issue（会话内零新开政策的机械判据）。
+
+    口径（2026-09-25 用户裁定）：一次 agent 会话**不得新建 issue**，唯一例外 = 人类显式要求，
+    且该单正文里要有 `人为要求：…` 标记。本命令**只报告、零写**：
+      · 退出码 0 = 窗口内没有违规；1 = 有违规（逐条列出）；3 = **无法判定**（gh 取不到 ⇒ 不得当 0 读）。
+    为什么是报告型而不是"自动关"：判"这单到底有没有人为要求"要人看（人可能在对话里要求过但没写标记）
+    ⇒ 本仓口径一贯是**发现面自动、处置面留人**。
+    """
+    cwd = Path.cwd()
+    # ⚠️ `_gh_json` 的契约 = 失败回 **None**（不是元组）⇒ 调用方必须把 None 与「空集」分开（fail-closed）。
+    rows = _gh_json([
+        "issue", "list", "--state", "all", "--limit", str(args.limit),
+        "--search", f"created:>={args.since}",
+        "--json", "number,title,body,createdAt",
+    ], cwd)
+    if rows is None:
+        print("❌ 无法判定：取不到 issue 列表（gh 不可用 / 未认证 / 输出非 JSON）—— **不得当 0 读**")
+        # ⚠️ 三态必须分开：0 = 无违规 / 1 = **有违规** / 3 = **无法判定**。
+        # 本判据第一版在这里写了 EXIT_USAGE（=1）⇒ 把"取不到数据"混同成"有违规"（我自己的判据当场抓到）。
+        return EXIT_UNKNOWN
+    bad = non_human_requested(rows)
+    print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条，其中**非人为要求** = {len(bad)} 条")
+    for num, created, title in bad:
+        print(f"  · #{num} {created} {title}")
+        print(f"    ↳ 处置：① 链内修 ② 并入既有台账 ③ 在会话里向人类提出；若确系人为要求 ⇒ 在该单正文补 `人为要求：…`")
+    return 1 if bad else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="issue-lifecycle",
@@ -1411,6 +1467,13 @@ def main(argv: list[str] | None = None) -> int:
     p_pending.add_argument("--since-days", type=int, default=None, help="只看最近 N 天合并的 PR")
     p_pending.set_defaults(func=cmd_pending_close)
 
+    p_new = sub.add_parser(
+        "check-new-issues",
+        help="报告型：现取「新建但没有 `人为要求：` 标记」的 issue（会话内零新开政策的机械判据）",
+    )
+    p_new.add_argument("--since", default=str(date.today()), help="窗口起点（created:>= 的值，默认今天）")
+    p_new.add_argument("--limit", type=int, default=200, help="抓最近 N 条（默认 200）")
+    p_new.set_defaults(func=cmd_check_new_issues)
     p_close = sub.add_parser(
         "close",
         help="**无证据不关单**：先贴证据评论再关（默认 dry-run；delivered→completed，其余→not planned）",
