@@ -77,10 +77,27 @@ const REPORT = {
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
+// ── 「读面延迟」注入夹具（issue #5088，红证 + 类级探针用）────────────────────
+// 默认 0 ⇒ 与 `mockResolvedValue` 等价（同一条已兑现的微任务链，行为一字不变）。
+// `ADMIN_WEB_READ_LAG_MS=300 npx vitest run <本文件>` ⇒ 把「请求**已发出**」与「读面**已落到界面**」
+// 之间的窗口**确定性地**拉到 300ms ⇒ 任何「等 A（接口被调用）断言 B（界面内容）」的等待方式必红。
+//
+// 为什么需要它：本 job 的 flake 全是**同一机制**——`waitFor(() => expect(接口).toHaveBeenCalled())`
+// 只证明请求发出，**不证明 setState 已提交**（React 的并发调度把提交排在宏任务上），
+// 紧随其后的同步 `getBy*` 于是撞进「表单/面板已挂、数据未落」的窗口。CI 实测（run 36005743156，
+// PR 5409 = **纯文档 PR**，与本文件任何改动无关）：`Unable to find an element by:
+// [data-testid="piecework-unpriced"]`，DOM 里刷新按钮还挂着 `animate-spin`（=仍在 loading）。
+// 靠负载碰运气的红，这里用注入延迟变成**必红**。
+const READ_LAG_MS = Number(process.env.ADMIN_WEB_READ_LAG_MS ?? 0)
+const laggedOk = (data: unknown): Promise<{ data: { success: boolean; data: unknown } }> =>
+  READ_LAG_MS > 0
+    ? new Promise((resolve) => setTimeout(() => resolve(ok(data)), READ_LAG_MS))
+    : Promise.resolve(ok(data))
+
 describe('计件工资报表页 /production/piecework', () => {
   beforeEach(() => {
     vi.setSystemTime(FROZEN_NOW) // 每条用例都回到同一冻结时刻
-    mockGetPieceworkSummary.mockReset().mockResolvedValue(ok(REPORT))
+    mockGetPieceworkSummary.mockReset().mockImplementation(() => laggedOk(REPORT))
   })
 
   afterEach(() => {
@@ -125,8 +142,8 @@ describe('计件工资报表页 /production/piecework', () => {
   })
 
   it('老数据缺 logical_name ⇒ 退回 operation 原文（不显示空白）', async () => {
-    mockGetPieceworkSummary.mockResolvedValue(
-      ok({
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({
         ...REPORT,
         per_operation: [{ operation: '定型-布', amount: 83.45, qty: 211 }],
       }),
@@ -174,7 +191,9 @@ describe('计件工资报表页 /production/piecework', () => {
   })
 
   it('期间无报工：空态提示（不显示 ¥0.00 假数据）', async () => {
-    mockGetPieceworkSummary.mockResolvedValue(ok({ period: '2026-08', total: 0, per_worker: [], per_operation: [] }))
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({ period: '2026-08', total: 0, per_worker: [], per_operation: [] }),
+    )
     render(<PieceworkReportPage />)
 
     await waitFor(() => expect(screen.getByTestId('piecework-empty')).toBeInTheDocument())
@@ -190,7 +209,10 @@ describe('计件工资报表页 /production/piecework', () => {
   })
   it('按部位下钻：渲染部位行 + 金额/数量（真值源 §4 下钻链）', async () => {
     render(<PieceworkReportPage />)
-    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    // 等「读面**已落到界面**」（`piecework-by-worker` 只在 `!loading` 时渲染），
+    // 不是等「请求已发出」——后者在 loading 态就成立，紧随其后的同步 `getBy*` 于是撞进
+    // 「面板已挂、数据未落」的窗口（issue #5088 的 flake 机制；本文件另有注入延迟夹具）。
+    await waitFor(() => expect(screen.getByTestId('piecework-by-worker')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('piecework-tab-position'))
 
@@ -203,7 +225,8 @@ describe('计件工资报表页 /production/piecework', () => {
 
   it('按套下钻：渲染**套（樘窗组）**行 + 金额/数量（#4725：套 = 樘窗，不是订单行）', async () => {
     render(<PieceworkReportPage />)
-    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    // 同上：等读面落地（issue #5088），不是等请求发出。
+    await waitFor(() => expect(screen.getByTestId('piecework-by-worker')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('piecework-tab-set'))
 
@@ -221,8 +244,8 @@ describe('计件工资报表页 /production/piecework', () => {
   it('下钻红证：缺 per_position / per_set ⇒ 该档显式「无数据」，不崩不静默', async () => {
     // 老后端（未带下钻维度）：人/工序两档**有数据**（否则整页走空态、根本没有 tab），
     // 但 per_position / per_set 缺席 ⇒ 下钻两档应为空态而不是抛错。
-    mockGetPieceworkSummary.mockResolvedValue(
-      ok({
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({
         period: '2026-09',
         total: 80,
         per_worker: [{ worker_name: '张三', amount: 80, qty: 200 }],
@@ -230,7 +253,8 @@ describe('计件工资报表页 /production/piecework', () => {
       }),
     )
     render(<PieceworkReportPage />)
-    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    // 同上：等读面落地（issue #5088），不是等请求发出。
+    await waitFor(() => expect(screen.getByTestId('piecework-by-worker')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('piecework-tab-position'))
     expect(within(screen.getByTestId('piecework-by-position')).getByText('无数据')).toBeInTheDocument()
@@ -249,8 +273,8 @@ describe('计件工资报表页 /production/piecework', () => {
  */
 describe('计件报表页 未定价可见（issue #4696）', () => {
   it('🔴 只有未定价报工 ⇒ **不得**渲染空态，必须显示未定价 + 定价入口', async () => {
-    mockGetPieceworkSummary.mockResolvedValue(
-      ok({
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({
         period: '2026-09',
         total: 0,
         per_worker: [],
@@ -265,10 +289,14 @@ describe('计件报表页 未定价可见（issue #4696）', () => {
       }),
     )
     render(<PieceworkReportPage />)
-    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    // 等「读面**已落到界面**」的**正向**信号（`piecework-unpriced` 只在 `!loading` 时渲染），
+    // 不是等「请求已发出」——CI 实测红（run 36005743156）：只等调用的写法下，
+    // 断言跑在 loading 态（DOM 里 `data-testid="piecework-loading"` 还在）⇒
+    // `Unable to find an element by: [data-testid="piecework-unpriced"]`。
+    // 断言内容一字未改：否定断言仍在 waitFor **之外**（塞进去会因元素瞬时不在而假绿）。
+    await waitFor(() => expect(screen.getByTestId('piecework-unpriced')).toBeInTheDocument())
 
     expect(screen.queryByTestId('piecework-empty')).not.toBeInTheDocument()
-    expect(screen.getByTestId('piecework-unpriced')).toBeInTheDocument()
     expect(screen.getByTestId('piecework-unpriced-0')).toHaveTextContent('未定价')
     expect(screen.getByTestId('piecework-unpriced-pricing-link')).toHaveAttribute(
       'href',
