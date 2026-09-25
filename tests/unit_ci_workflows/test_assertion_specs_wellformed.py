@@ -344,8 +344,13 @@ class TestOutputVerifyActionScope:
 
 # ── 断言词汇表审计（issue #3417 复盘）────────────────────────────────────────────
 # 词汇表单一源 = 生成物 `EvalCase` 的字段（渲染器/装载器/守卫三方都以它为准）
+# ⚠️ `META_FIELDS` 的语义 = 「**不是断言**的字段」（输入/元数据）——与 `UNUSED_ALLOWED`
+# （"是断言但暂时没用例用"）**不同族**：`pre_turns`（issue #5482）放进这里是**定性**，
+# 不是豁免：它是**轮次输入**（"同一会话里先构造 N 轮前置对话"），与 `user_inputs` 同类，
+# 不参与任何断言计分。放 `UNUSED_ALLOWED` 会两头错：① 把它说成"断言"；
+# ② 首个用例声明它的那一刻被 `test_allowlisted_field_is_still_unused` 判"过期豁免"。
 META_FIELDS = {
-    "id", "title", "skill", "difficulty", "user_inputs", "expectations",
+    "id", "title", "skill", "difficulty", "user_inputs", "pre_turns", "expectations",
     "data_checks", "skip_reason", "legacy_id", "tags", "persona",
 }
 

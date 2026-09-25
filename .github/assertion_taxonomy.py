@@ -638,6 +638,7 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
     "product_price_restore": "product_keyword",     # `_restore_product_price` → `spec.get("product_keyword")`；子串匹配商品名（#4161 补登记）
     "order_status_restore": "order_no",             # `_restore_order_status` → `spec.get("order_no")`；不可变键定位订单（#4161 补登记）
     "customer_profile_restore": "customer_keyword", # `_restore_customer_profile` → `spec.get("customer_keyword")`（或 `customer_id`）；定位客户（#4161 补登记）
+    "session_credential_restore": "session_id",     # `_restore_session_credentials` → `spec.get("session_id")`（缺省回落 `EVAL_SESSION_ID`）；不可变键定位会话（#5482 登记）
 }
 # ⚠️ **键类字段的解析口径未实装**（如实登记，不粉饰）：`resolve_pre_clean_target` 只覆盖
 # **名字类**三条（`tag_name` / `employee_name` / `product_keyword` —— 种子目录
