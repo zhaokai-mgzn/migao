@@ -155,6 +155,11 @@ jobs:
       # ⇒ 非 0 一律把退出码带出去（本腿是报告型：不拦合并，但走本腿既有的「判红 ⇒ 开/更值班 issue」出口）。
       - name: main 侧漂移兜底（漂移审计；全历史检出下真判）
         id: drift
+        # ⚠️ **带 GH_TOKEN**：`drift_audit.py` 内部会调 `gh run list`（脚本内 `["gh", "run", "list", …]`）
+        # ⇒ 不带 token 时那条路径未认证（这条是类级判据 `test_every_gh_using_step_declares_a_token`
+        #   抓出来的**第二处**，不是本 PR 的主诉）。
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           OUT="$(python3 scripts/drift_audit.py 2>&1)"
