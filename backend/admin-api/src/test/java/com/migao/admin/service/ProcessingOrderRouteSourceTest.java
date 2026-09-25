@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030, PG-039
+// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030, PG-039, PG-063
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -398,7 +398,7 @@ class ProcessingOrderRouteSourceTest {
      * ⇒ {@code deriveRouteKey} 的布料分支永不执行（整件商品的工序凭空消失，且无任何报错）。</p>
      */
     @Test
-    @DisplayName("PG-057 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序")
+    @DisplayName("PG-063 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序")
     void fabricLineWithoutProcessingItemsStillGetsTheFabricRoute() {
         stubRoutings();
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
@@ -425,7 +425,7 @@ class ProcessingOrderRouteSourceTest {
      * ⇒ 10 米的布单只做 1 米、计件按 1 米算。
      */
     @Test
-    @DisplayName("PG-057 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）")
+    @DisplayName("PG-063 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）")
     void fabricLineWithoutProcessingItemsSendsOrderQuantityAsMeters() {
         stubRoutings();
         stubGenerate(List.of(fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", "布料")));
@@ -450,7 +450,7 @@ class ProcessingOrderRouteSourceTest {
      * ⇒ 旧语义逐字不变 —— 无加工项仍不进快照（不成部位、不产工序、也不得凭空生成加工单）。
      */
     @Test
-    @DisplayName("PG-057 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）")
+    @DisplayName("PG-063 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）")
     void itemWithoutProcessingItemsAndWithoutFabricSaleFormIsStillSkipped() {
         stubRoutings();
         // 只桩到「订单 + 明细」：本用例的路径在**幂等检查之前**就中止（快照为空）

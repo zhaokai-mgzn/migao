@@ -59,9 +59,10 @@ cases:
     data_checks:
       - "OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50"
       - "OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50"
-      - "OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」"
+      - "🔴 OrderTable「采购商品」列**逐条**渲染全部明细（2026-09-25 补判据，issue #4908 的修复证据入用例库，配套 #4916 判据 1）：1 个订单 **3 条** `items` ⇒ 该单元格里渲染出 **3 组「名称 + 货号」**（3 行 `货号 X`，且三条商品名与末一条货号都落在**同一个** `td` 内），顺序与 `items` 相同；改前只取 `items[0]` ⇒ 只出 1 组、该断言当场红（红证实测：`expected [ <div …(1)></div> ] to have a length of 3 but got 1`）。**反向护栏**：`items` 为空仍渲染「暂无数据」且无裸 `-` 占位（见下一条）。证据：frontend/admin-web/tests/unit/components/OrderTable.test.tsx 的「多商品订单：采购商品列逐条渲染全部商品（名称 + 货号），不是只渲染第一条」"
+      - "OrderTable 采购明细列与采购商品列在 `items` 为空时渲染「暂无数据」，且全表无裸 `-` 占位（**2026-09-25 事实订正**：本条原文写「采购商品列无 `firstItem`」—— `firstItem` 是实现期局部变量，已随 issue #4908 的修复删除（改后按 `items?.length` 判空）⇒ 判据文字不再引用已不存在的实现标识符，判据强度一格未降）"
     skip_reason: "[backend-contract] 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539）"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ 2026-09-25（issue #4916 判据 1 收口，覆盖 issue #4908 的修复）：补一条**可在 traces.tests 里定位到确定性断言**的判据（「N 条 `items` ⇒ N 组『名称 + 货号』」—— 改前本条只有「空态『暂无数据』」那一条，多商品订单的核心行为**零判据**），并把已过时的实现标识符 `firstItem` 从判据文字里去掉（该变量随 #4908 删除）。`traces.tests` 与 `truths_ref` 一字未动（断言执行者仍是 OrderTable.test.tsx 里那条既有用例）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/status-chip.test.ts"
