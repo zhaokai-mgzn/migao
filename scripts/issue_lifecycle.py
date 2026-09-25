@@ -113,7 +113,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -1055,6 +1057,172 @@ def cmd_prune(args: argparse.Namespace) -> int:
     return EXIT_OK if not failures else EXIT_UNMERGED
 
 
+# ── 「已交付却悬挂」的发现面 + 「无证据不关单」的执行面（issue #5480 漏洞 2）──────────
+#
+# 病灶（2026-09-25 实测）：PR 是**部分交付**时按 §23 G9 有意**不写**关闭词 ⇒ issue 悬挂，
+# 而**没有任何东西会变红** —— 当天靠人工逐条对账才发现 37 条「已交付 / 已被取代却仍 open」，
+# 8 个核验员 + 逐条内容级取证的成本本可省掉（同族：#4411 的「已交付未关闭」形态）。
+# ⇒ 两条命令：`pending-close`（**只发现，零写操作**）+ `close`（**无 `--evidence` 即拒**，默认 dry-run）。
+
+CLOSE_KEYWORD = re.compile(r"(?:clos|fix|resolv)\w*\s*#(\d+)", re.I)
+ISSUE_REF = re.compile(r"#(\d+)")
+#: 判定 → `gh issue close --reason` 的取值（delivered = completed；其余 = not planned）
+CLOSE_REASON_MAP = {"delivered": "completed", "superseded": "not planned", "stale-report": "not planned"}
+CLOSE_REASON_HEAD = {
+    "delivered": "诉求已在 `origin/main` 落地",
+    "superseded": "已被后续 issue / 裁定取代",
+    "stale-report": "一次性 CI 报告，已过期",
+}
+
+
+def _gh_json(argv: list[str], cwd: Path, timeout: int = 120):
+    """跑一条 gh 并解析 JSON。**任何失败都回 None**（= 无法判定，调用方必须与「空集」分开）。"""
+    proc = _run([gh_bin(), *argv], cwd, timeout=timeout)
+    if proc.returncode != 0:
+        return None
+    try:
+        return json.loads(proc.stdout or "null")
+    except json.JSONDecodeError:
+        return None
+
+
+def pending_close_rows(pr_rows: list[dict], open_nums: set[int],
+                       since_days: int | None = None, today: str | None = None,
+                       ) -> list[tuple[int, str, list[int]]]:
+    """纯函数（可单测）：已合并 PR 里**引用了却没写关闭词**、且**仍 open** 的 issue。
+
+    判定刻意**只做发现**：`关联 #N` 形式的引用大多是**合法的部分交付**（§23 G9 有意不写关闭词），
+    所以这里不做任何「应该关」的判断 —— 关不关要人看「该 PR 交付了什么 / 剩余什么」。
+    """
+    floor = None
+    if since_days is not None:
+        base = date.fromisoformat(today) if today else date.today()
+        floor = (base - timedelta(days=since_days)).isoformat()
+    out: list[tuple[int, str, list[int]]] = []
+    for row in pr_rows:
+        if not isinstance(row, dict) or not row.get("number"):
+            continue
+        body = row.get("body") or ""
+        day = str(row.get("mergedAt") or "")[:10]
+        if floor is not None and day and day < floor:
+            continue
+        closed = {int(x) for x in CLOSE_KEYWORD.findall(body)}
+        refs = {int(x) for x in ISSUE_REF.findall(body)}
+        pend = sorted((refs - closed) & open_nums)
+        if pend:
+            out.append((int(row["number"]), day, pend))
+    return out
+
+
+def cmd_pending_close(args: argparse.Namespace) -> int:
+    """报告型：待人工关单清单。**零写操作**（只读 gh）。"""
+    cwd = Path.cwd()
+    prs = _gh_json(["pr", "list", "--state", "merged", "--limit", str(args.limit),
+                    "--json", "number,title,body,mergedAt"], cwd)
+    issues = _gh_json(["issue", "list", "--state", "open", "--limit", "500", "--json", "number"], cwd)
+    if prs is None or issues is None:
+        print("⏭️  无法判定（gh 不可用 / 未登录 / 取数失败）⇒ exit 3 —— **不得当 0 读**（空集 ≠ 取不到）",
+              file=sys.stderr)
+        return EXIT_UNKNOWN
+    open_nums = {int(i["number"]) for i in issues if isinstance(i, dict) and i.get("number")}
+    rows = pending_close_rows(prs, open_nums, args.since_days)
+    total = sum(len(p) for _, _, p in rows)
+    print(f"── 待人工关单：{len(rows)} 个已合并 PR / {total} 条仍 open 的 issue（计数**现取**，不写死）──")
+    for num, day, pend in rows:
+        print(f"  · PR #{num}（{day}）→ {', '.join('#' + str(i) for i in pend)}")
+    if not rows:
+        print("  （无）")
+        return EXIT_OK
+    print("\n可复算：`gh pr view <PR> --json body,mergedAt --jq .body` 看它交付了什么；"
+          "`gh issue view <N> --json state,comments` 看剩余什么。")
+    print("⚠️  本清单**只做发现**：`关联 #N` 大多是**合法的部分交付**（§23 G9 有意不写关闭词）"
+          "⇒ 关不关要人判断剩余口径；本命令**不自动关、零写操作**。")
+    return EXIT_OK
+
+
+def _evidence_comment(issue: int, reason: str, evidence: str) -> str:
+    return (f"## ✅ 关闭：{CLOSE_REASON_HEAD[reason]}\n\n"
+            f"**判定依据（内容级证据）**：{evidence}\n\n"
+            f"> 由 `./scripts/issue-lifecycle.sh close` 关闭；**无 `--evidence` 即拒**（fail-closed）。"
+            f"若判定有误：`gh issue reopen {issue}`。\n")
+
+
+def close_rows_from_text(text: str) -> list[tuple[int, str, str]]:
+    """解析批量文件（TSV，每行 `<issue>\\t<reason>\\t<证据>`；空行与 `#` 注释行跳过）。"""
+    out: list[tuple[int, str, str]] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.rstrip().split("\t")
+        if len(parts) != 3 or not parts[0].strip().isdigit():
+            raise ValueError(f"第 {lineno} 行不是 `<issue>\\t<reason>\\t<证据>` 三列：{line[:80]!r}")
+        out.append((int(parts[0]), parts[1].strip(), parts[2].strip()))
+    if not out:
+        raise ValueError("批量文件里没有可执行的行")
+    return out
+
+
+def cmd_close(args: argparse.Namespace) -> int:
+    """**无证据不关单**：先贴证据评论，再关（默认 dry-run；`--apply` 才写）。"""
+    cwd = Path.cwd()
+    if args.batch_file:
+        try:
+            rows = close_rows_from_text(Path(args.batch_file).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"❌ 批量文件不可用：{exc}", file=sys.stderr)
+            return EXIT_USAGE
+    elif args.issue:
+        rows = [(args.issue, args.reason, (args.evidence or "").strip())]
+    else:
+        print("❌ 需要 issue 号或 --batch-file", file=sys.stderr)
+        return EXIT_USAGE
+
+    unknown = sorted({r for _, r, _ in rows if r not in CLOSE_REASON_MAP})
+    if unknown:
+        print(f"❌ 未知 reason {unknown}（可选 {sorted(CLOSE_REASON_MAP)}）", file=sys.stderr)
+        return EXIT_USAGE
+    missing = [n for n, _, ev in rows if not ev]
+    if missing:
+        print(f"❌ issue {missing} 缺**内容级证据** —— 「无证据不关单」是本命令的硬约束（fail-closed）。\n"
+              f"   证据要能复算：一条命令 + 关键输出，例："
+              f"\"PR #1234 merged 2026-09-14T23:06Z；git grep -n X origin/main -- <path> ⇒ 命中\"",
+              file=sys.stderr)
+        return EXIT_USAGE
+
+    mode = "**真关**" if args.apply else "dry-run（**零写操作**；加 `--apply` 才真关）"
+    print(f"待关闭 {len(rows)} 条 —— {mode}")
+    failures = 0
+    for n, reason, ev in rows:
+        if not args.apply:
+            print(f"  [dry] #{n} {reason} :: {ev[:110]}")
+            continue
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+            fh.write(_evidence_comment(n, reason, ev))
+            tmp = fh.name
+        try:
+            posted = _run([gh_bin(), "issue", "comment", str(n), "--body-file", tmp], cwd, timeout=120)
+            if posted.returncode != 0:
+                failures += 1
+                print(f"❌ #{n} 证据评论失败（**未关单**，不留无证据的关闭）：{_tail(posted.stderr, 3)}")
+                continue
+            closed = _run([gh_bin(), "issue", "close", str(n), "--reason", CLOSE_REASON_MAP[reason]],
+                          cwd, timeout=120)
+            if closed.returncode != 0:
+                failures += 1
+                print(f"⚠️  #{n} 证据已贴但关单失败：{_tail(closed.stderr, 3)}")
+                continue
+            print(f"✅ #{n} {reason}（证据评论 → `not planned`/`completed` 已按判定落）")
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    if failures:
+        print(f"\n⚠️  {failures} 条未完成（其余已处理；逐条可重跑，幂等靠「证据评论 + 关单」两步各自可重入）。")
+        return EXIT_UNMERGED
+    return EXIT_OK
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
@@ -1098,6 +1266,26 @@ def main(argv: list[str] | None = None) -> int:
                         help="跳过过程产物清理（主工作区根是**跨会话共享写面**：别人的 pr-body-*.md "
                              "可能正在用；`dev-worktree.sh add` 的自动收尾用它）")
     p_reap.set_defaults(func=cmd_reap_merged)
+
+    p_pending = sub.add_parser(
+        "pending-close",
+        help="**报告型**：已合并 PR 引用了却没写关闭词、且仍 open 的 issue ⇒ 待人工关单清单（**零写操作**）",
+    )
+    p_pending.add_argument("--limit", type=int, default=200, help="扫最近 N 个已合并 PR（默认 200）")
+    p_pending.add_argument("--since-days", type=int, default=None, help="只看最近 N 天合并的 PR")
+    p_pending.set_defaults(func=cmd_pending_close)
+
+    p_close = sub.add_parser(
+        "close",
+        help="**无证据不关单**：先贴证据评论再关（默认 dry-run；delivered→completed，其余→not planned）",
+    )
+    p_close.add_argument("issue", nargs="?", type=int, help="issue 号（或用 --batch-file）")
+    p_close.add_argument("--reason", choices=sorted(CLOSE_REASON_MAP), default="delivered",
+                         help="delivered=已交付 / superseded=被取代 / stale-report=过期报告")
+    p_close.add_argument("--evidence", help="一行**内容级证据**（必填；含可复算命令 + 关键输出）")
+    p_close.add_argument("--batch-file", help="TSV 批量：`<issue>\\t<reason>\\t<证据>` 每行一条")
+    p_close.add_argument("--apply", action="store_true", help="真关（默认只打印计划）")
+    p_close.set_defaults(func=cmd_close)
 
     args = parser.parse_args(argv)
     return args.func(args)
