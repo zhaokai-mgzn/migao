@@ -1732,6 +1732,42 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "QA Growth Gate",
+      "run_id": 36099013585,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/36099013585",
+      "pr": 5528,
+      "head_sha": "866aab980f2815409b6629938eb357ce6769ef19",
+      "head_branch": "test/5485-acceptance-artifacts",
+      "first_failure_step": "Fail on blocking violations",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-25T05:45:14Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "Secret Scan (gitleaks)",
+      "run_id": 36099013585,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/36099013585",
+      "pr": 5528,
+      "head_sha": "866aab980f2815409b6629938eb357ce6769ef19",
+      "head_branch": "test/5485-acceptance-artifacts",
+      "first_failure_step": "Run gitleaks secret scan",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-25T05:45:14Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
