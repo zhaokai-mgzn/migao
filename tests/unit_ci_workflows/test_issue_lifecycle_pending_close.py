@@ -380,3 +380,23 @@ def test_workflow_runs_the_new_issues_check():
     assert len(hit) == 1, f"「零新开核验」步必须恰好一个（实得 {len(hit)}）"
     run = str(hit[0]["run"])
     assert "exit ${RC}" in run or "exit $RC" in run, "该步必须把退出码带出去（有违规 ⇒ 腿红）"
+
+
+def test_new_issues_policy_is_not_retroactive():
+    """**规则不追溯**：政策生效前创建的单**豁免**，生效后新建且无标记的才算违规。
+
+    为什么必须有这条（实测）：政策生效当天，main 侧腿立刻因**当天早些时候**创建的 28 条存量
+    判定为「有违规」而红 —— 即"让机制上线"本身制造了一条**天天红**的腿（本仓明确要避免的形态）。
+    ⇒ 口径：规则只在**生效之后**适用；历史存量按生效前豁免（读数里分列，不静默丢）。
+
+    红证形态：去掉 `created < effective` 的豁免分支 ⇒ 本判据立刻红。
+    """
+    mod = _load_il()
+    eff = mod.NEW_ISSUES_POLICY_EFFECTIVE
+    before = {"number": 1, "title": "政策前建的", "createdAt": "2026-09-25T01:00:00Z", "body": "## 现象"}
+    after = {"number": 2, "title": "政策后建的", "createdAt": "2026-09-25T13:00:00Z", "body": "## 现象"}
+    human = {"number": 3, "title": "人为要求", "createdAt": "2026-09-25T13:00:00Z",
+             "body": "人为要求：用户在对话里让开的"}
+    bad = mod.violates_new_issues_policy([before, after, human], eff)
+    assert [n for n, _c, _t in bad] == [2], f"应只报政策生效后且无标记的 #2，实得 {bad}"
+    assert eff == "2026-09-25T12:01:24Z", "生效时刻是政策 PR 的合并时间；改了它等于改了追溯边界，需同步说明"
