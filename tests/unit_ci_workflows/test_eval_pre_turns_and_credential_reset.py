@@ -333,6 +333,22 @@ class TestTheFieldIsWiredEndToEnd:
         assert "    pre_turns=[" not in gen_plain
         assert _case().pre_turns == []
 
+    def test_the_ci_yaml_loader_maps_the_field(self, monkeypatch):
+        """**CI 走的是 YAML 装载路径**（`--cases .github/cases`）⇒ 漏映射 = 声明了却在 CI 上丢历史。
+
+        本仓已记载 3 次同款假绿（`debug_user` / `output_verify` / `auto_fill`）：字段在
+        渲染器映射了、`load_cases_from_yaml` 漏了 ⇒ 生成物看着正常、本地读生成物也正常，
+        而 CI 走的正是 YAML 路径 ⇒ 该声明**从未生效**。这里驱动**真实装载体**
+        （只替换它的数据源），去掉 `load_cases_from_yaml` 里的 `pre_turns=` 即红。
+        """
+        synthetic = {"id": "STUB-Y", "title": "t", "tier": "normal", "_domain": "chat",
+                     "user_inputs": ["确认"], "expectations": [],
+                     "pre_turns": ["有没有遮光窗帘", {"auto_select": True}]}
+        monkeypatch.setattr(render_cases, "load_case_dicts", lambda _d: [dict(synthetic)])
+        loaded = lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))
+        assert [c.pre_turns for c in loaded] == [["有没有遮光窗帘", {"auto_select": True}]]
+        assert [c.user_inputs for c in loaded] == [["确认"]]
+
     def test_no_case_in_the_library_uses_it_yet_so_the_default_path_is_untouched(self):
         """现取读数：本 PR **不动**任何存量用例 ⇒ 生成物 diff 只有 dataclass 一行。"""
         cases = render_cases.load_case_dicts(str(REPO_ROOT / ".github" / "cases"))

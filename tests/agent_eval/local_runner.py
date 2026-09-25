@@ -9837,6 +9837,13 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             skill=Skill.GENERAL,  # 域信息由 _domain 携带，runner 不消费 skill
             difficulty=Difficulty(c.get("tier", "normal")),
             user_inputs=c.get("user_inputs") or [],
+            # 历史轮次（issue #5482）：**CI 走的是这条 YAML 装载路径**（`--cases .github/cases`），
+            # 不是生成物 `eval_cases.py` ⇒ 漏映射 = 用例在 yml 里声明了 `pre_turns` 却在 CI 上
+            # **静默丢了历史**（"前置构造不出来，用例照跑"），而本地读生成物路径看不出问题 ——
+            # 与 `debug_user` / `output_verify` / `auto_fill` 记载的**同款假绿**（#3391/#3417）。
+            # 本格由 `tests/unit_ci_workflows/test_eval_pre_turns_and_credential_reset.py`
+            # 的 `test_the_ci_yaml_loader_maps_the_field` 逐值钉住（去掉这行即红）。
+            pre_turns=c.get("pre_turns") or [],
             expectations=[exp_to_str(e) for e in (c.get("expectations") or [])],
             data_checks=c.get("data_checks") or [],
             skip_reason=c.get("skip_reason", ""),

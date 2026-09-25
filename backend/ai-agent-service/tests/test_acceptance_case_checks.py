@@ -5003,8 +5003,12 @@ class TestAssertionVocabularyIsMappedByLoader:
     """
 
     # 元数据字段：不是断言，天然不需要 probe
+    # ⚠️ `pre_turns`（issue #5482）属**轮次输入**（"同一会话里先构造 N 轮前置对话"，与
+    # `user_inputs` 同类）⇒ 进 META 是**定性**（不是豁免）；它的 CI 装载路径
+    # （`load_cases_from_yaml`）由 `tests/unit_ci_workflows/test_eval_pre_turns_and_credential_reset.py`
+    # 的 `test_the_ci_yaml_loader_maps_the_field` 逐值钉住（去掉那行映射即红）。
     META = {
-        "id", "title", "skill", "difficulty", "user_inputs", "expectations",
+        "id", "title", "skill", "difficulty", "user_inputs", "pre_turns", "expectations",
         "data_checks", "skip_reason", "legacy_id", "tags", "persona",
     }
 
