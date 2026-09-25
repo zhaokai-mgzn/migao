@@ -17,7 +17,7 @@
 
 import Taro from '@tarojs/taro'
 import { getToken } from './auth'
-import { AI_API_BASE_URL, STORAGE_KEYS } from './constants'
+import { AI_API_BASE_URL } from './constants'
 
 export interface VoiceResult {
   text: string
@@ -119,7 +119,6 @@ export function stopRecording(): Promise<string> {
 /** 上传音频并转写。失败返回 null（调用方自行 toast）。 */
 export async function transcribeFile(tempFilePath: string): Promise<VoiceResult | null> {
   const token = getToken()
-  const tenantId = Taro.getStorageSync(STORAGE_KEYS.TENANT_ID) || 1
 
   const resp = await Taro.uploadFile({
     url: `${AI_API_BASE_URL}/api/chat/transcribe`,
@@ -131,7 +130,7 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
     },
     formData: {
       language: 'zh',
-      tenant_id: String(tenantId),
+      // 租户来自 JWT，上传时不带 tenant_id（后端 transcribe 签名只有 audio + language）
     },
   })
 
