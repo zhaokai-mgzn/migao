@@ -182,6 +182,10 @@ vi.mock('lucide-react', () => ({
   Store: iconStub('store'),
   Boxes: iconStub('boxes'),
   Layers: iconStub('layers'),
+  // issue #5582：菜单图标两两不同 —— 售后工单/省料看板/计件工资 三项换图标（漏白名单 ⇒ 渲染 Sidebar 的用例当场抛）
+  LifeBuoy: iconStub('life-buoy'),
+  TrendingDown: iconStub('trending-down'),
+  Coins: iconStub('coins'),
   UserCog: iconStub('usercog'),
   ThumbsUp: iconStub('thumbsup'),
   ThumbsDown: iconStub('thumbsdown'),

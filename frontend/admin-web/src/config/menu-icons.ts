@@ -15,6 +15,7 @@
 import {
   BarChart3,
   Bell,
+  Coins,
   BookOpen,
   Boxes,
   Building2,
@@ -37,6 +38,9 @@ import {
   Store,
   UserCircle,
   Users,
+  LifeBuoy,
+  Settings,
+  TrendingDown,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -44,6 +48,7 @@ import {
 export const menuIconMap: Record<string, LucideIcon> = {
   BarChart3,
   Bell,
+  Coins,
   BookOpen,
   Boxes,
   Building2,
@@ -66,6 +71,9 @@ export const menuIconMap: Record<string, LucideIcon> = {
   Store,
   UserCircle,
   Users,
+  LifeBuoy,
+  Settings,
+  TrendingDown,
 }
 
 /**

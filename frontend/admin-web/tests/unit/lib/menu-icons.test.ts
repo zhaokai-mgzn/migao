@@ -97,4 +97,55 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     expect(registeredWithoutRecycle).toHaveLength(registeredIconNames().length - 1)
     expect(unregisteredIcons(iconNamesFromSource(MENU_TS), registeredWithoutRecycle)).toEqual(['Recycle'])
   })
+
+  // ── 判据④：图标两两不同（issue #5582）──────────────────────────────────────────
+  //
+  // 病根（用户实测）：「左侧菜单栏有部分子菜单的图标完全一样」—— 28 个节点里 4 组同图
+  // （`BarChart3` 经营/省料看板、`ShieldCheck` 售后/岗位权限、`Calculator` 财务/计件工资、
+  //   `Building2` 组织管理组/企业基础信息），且这些节点在侧边栏里**紧挨着出现** ⇒ 视觉上没有区分度。
+  //
+  // ⚠️ 取数路径**只用运行时对象**（`allItems()`），不用源码文本：判据① 那种 `icon: '…'` 的文本正则
+  //    取不到「name ↔ icon 的配对」（组对象是多行字面量）⇒ 文本路径判不了重复，硬凑会假红/假绿。
+  //    这条边界如实登记在测试里，而不是假装两条路径都用了。
+
+  /** 「同图多节点」检查器（纯函数 ⇒ 注入式红证与正式判定共用同一个函数，判别力才有意义） */
+  function iconCollisions(items: readonly { name: string; icon: string }[]): string[] {
+    const byIcon = new Map<string, string[]>()
+    for (const item of items) byIcon.set(item.icon, [...(byIcon.get(item.icon) ?? []), item.name])
+    return [...byIcon.entries()]
+      .filter(([, names]) => names.length > 1)
+      .map(([icon, names]) => `${icon} → ${names.join('、')}`)
+  }
+
+  it('🔴 判据④ 图标两两不同：28 个节点（7 组 + 20 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+    const items = allItems()
+    // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
+    expect(items.length).toBe(28)
+    expect(items.map((i) => i.name)).toEqual(
+      expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础信息']),
+    )
+
+    const collisions = iconCollisions(items)
+    expect(
+      collisions,
+      '以下图标被多个菜单项使用 —— 它们在同一屏里紧挨着出现，等于没有区分度（issue #5582）。\n'
+        + '出口：给后出现的那一项换一个语义相近的 lucide 图标，**三处同批**：'
+        + '`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 注册 + `tests/setup.ts` 的 lucide 白名单'
+        + '（漏白名单会让任何渲染 Sidebar 的用例当场抛错）。\n'
+        + collisions.join('\n'),
+    ).toEqual([])
+    // 等价表述：去重后数量 == 节点数（防「只报出第一个重复」就收工）
+    expect(new Set(items.map((i) => i.icon)).size).toBe(items.length)
+  })
+
+  it('判据④ 注入式红证：把「省料看板」的图标改回重复值 ⇒ 检查器**具名**报出那两个节点', () => {
+    const items = allItems()
+    // 未注入 ⇒ 绿（现状无重复）
+    expect(iconCollisions(items)).toEqual([])
+
+    // 注入生效自证 + 判别力落在被注入的那一格上
+    const injected = items.map((i) => (i.name === '省料看板' ? { ...i, icon: 'BarChart3' } : i))
+    expect(injected.find((i) => i.name === '省料看板')?.icon).toBe('BarChart3')
+    expect(iconCollisions(injected)).toEqual(['BarChart3 → 经营看板、省料看板'])
+  })
 })
