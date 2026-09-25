@@ -1,0 +1,91 @@
+name: Stale Report Reaper（腿转绿 ⇒ 关陈旧 CI 报告）
+
+# 病灶与判据：scripts/stale_report_reaper.py（issue #5491）
+#   CI 腿失败会自动开单（`[Post-Deploy] …` / `[Nightly] …` / `[drift] …`），腿恢复后报告仍挂着 ——
+#   2026-09-25 的存量清理里 7 条这类单子是**人工逐条核验**才关的。
+# 触发面：`push: main`（事件驱动）+ 手动 —— ⛔ **不新增 cron**（用户 2026-09-21 裁定：无人值守删除不安全）。
+on:
+  # ① 由「被报告的腿」**完成时**驱动（比 push 更贴题：腿一转绿就能收口）——
+  #    也让本腿成为本仓定义下的**维护类机制**（`workflow_run` 无人值守 × `issues: write` 写作用域），
+  #    因而必须登记进 `scripts/mechanism-registry.json`（已登记，否则 `Mechanism Liveness Registry` 判红）。
+  workflow_run:
+    workflows:
+      - "Post-Deploy Eval (部署后全量回归)"
+      - "Nightly Verification (p1 smoke + fixture e2e)"
+      - "Drift Audit (真相源契约)"
+      - "Xiaobu Acceptance (小布 C 端验收)"
+    types: [completed]
+  # ② main 上有新合并时也扫一遍（覆盖「报告还开着、而它报的那条腿早已绿」的存量）
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "真关（默认 true；调试时可关掉只观察）"
+        type: boolean
+        default: true
+      only:
+        description: "只处理这些 issue 号（逗号分隔，调试用）"
+        required: false
+        type: string
+
+# 本腿**只关 issue**，不碰代码/分支 ⇒ 最小权限：contents 只读 + issues 写
+# （#3834 的教训：permissions 一旦显式声明，未列出的 scope 全归零 —— 需要写 issue 就必须显式写出来）
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: stale-report-reaper
+  cancel-in-progress: false
+
+jobs:
+  reap-stale-reports:
+    name: reap-stale-reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 腿转绿 ⇒ 关陈旧报告（判据 + 计数声明）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 默认是 `bash -e`：本步要拿到机制体的真实退出码（0/2/3 三态）⇒ 先关掉 -e
+          set +e
+          # 机制体（可选，一行）：把本轮计数交出来；不声明 ⇒ 读数 `seen/acted=unknown`
+          # （=「跑了但没说自己做了什么」，与「根本没跑」在形态上不同）
+          source .github/scripts/mechanism_liveness.sh
+
+          APPLY_FLAG=""
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event.inputs.apply }}" = "true" ]; then
+            APPLY_FLAG="--apply"
+          fi
+          ONLY_ARGS=""
+          if [ -n "${{ github.event.inputs.only }}" ]; then
+            for n in $(printf '%s' "${{ github.event.inputs.only }}" | tr ',' ' '); do
+              ONLY_ARGS="${ONLY_ARGS} --only ${n}"
+            done
+          fi
+
+          OUT="$(python3 scripts/stale_report_reaper.py ${APPLY_FLAG} ${ONLY_ARGS})"
+          RC=$?
+          printf '%s\n' "${OUT}"
+          SEEN="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-REAPER-SUMMARY seen=\([0-9]*\).*/\1/p' | tail -1)"
+          ACTED="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-REAPER-SUMMARY .*acted=\([0-9]*\).*/\1/p' | tail -1)"
+          WHY="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-REAPER-SUMMARY .*why=//p' | tail -1)"
+          mechanism_liveness_declare --seen "${SEEN:-unknown}" --acted "${ACTED:-unknown}" \
+            --why "${WHY:-no-declaration}"
+          exit ${RC}
+
+      # ── 存活读数（issue #5326 判据 1 / 4）──────────────────────────────────────
+      # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**
+      # ⇒ 每轮必出一行 `::notice::MECHANISM-LIVENESS mech=stale-report-reaper …`。
+      # 机制**停摆**（本步不再执行）⇒ 根本没有这一行 —— 看门人（mechanism-liveness.yml 定时腿）判红。
+      # ⚠️ 读数**只由共享发射器**出：本脚本自己再打一份 = 第二个发射器（issue #5326 的同族病）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          bash .github/scripts/mechanism_liveness.sh emit stale-report-reaper --outcome "${OUTCOME}"
