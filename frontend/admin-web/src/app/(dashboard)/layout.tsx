@@ -19,14 +19,21 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/after-sales', code: 'after_sales:view' },
   { prefix: '/orders', code: 'order:list' },
   { prefix: '/products', code: 'product:list' },
-  { prefix: '/categories', code: 'product:category' },
+  // issue #5291：分类读端点改挂读码 `product:category:view` ⇒ 页面守卫同码
+  //（增删改分类仍由后端 `product:category` 拦，前端不重复表达写权限）。
+  { prefix: '/categories', code: 'product:category:view' },
   // 顺序敏感：必须在 /processing 之前（前缀匹配会先命中 /processing）
-  { prefix: '/processing-orders', code: 'processing:manage' },
-  { prefix: '/processing', code: 'processing:manage' },
+  { prefix: '/processing-orders', code: 'production:view' },
+  { prefix: '/processing', code: 'production:view' },
   // issue #4357：加工单唯一入口（生产看板）此前**没有**前端权限守卫，而它承接的
   // 原 /processing-orders 是有的 ⇒ 合并后守卫必须跟着入口走，否则等于砍掉既有护栏。
-  // 前缀覆盖 /production/operations、/production/routings、/production/piecework。
-  { prefix: '/production', code: 'processing:manage' },
+  // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 生产看板 / 工艺配置 / 计件工资按读码；
+  // **池看板 / 余料台账 / 省料看板仍是 `processing:manage`**（同组不同权）⇒ 更具体的子路径
+  // 必须排在 `/production` 之前（前缀匹配先命中），否则会把它们一起收权。
+  { prefix: '/production/pool', code: 'processing:manage' },
+  { prefix: '/production/remnants', code: 'processing:manage' },
+  { prefix: '/production/saving-board', code: 'processing:manage' },
+  { prefix: '/production', code: 'production:view' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },
   { prefix: '/employees', code: 'employee:list' },
@@ -34,7 +41,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
   //（增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。
   { prefix: '/knowledge', code: 'knowledge:view' },
-  { prefix: '/roles', code: 'system:manage' },
+  // issue #5291：岗位权限节点/页面按**读**码 `system:view`（改岗位仍由后端 system:manage 拦）。
+  { prefix: '/roles', code: 'system:view' },
   { prefix: '/briefing', code: 'dashboard:view' },
   { prefix: '/dashboard', code: 'dashboard:view' },
 ]

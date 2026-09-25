@@ -292,8 +292,10 @@ public class RoleService {
             case "operator" -> List.of(
                     "dashboard:view",
                     "order:list", "order:detail", "order:refund",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage",
+                    "product:list", "product:create", "product:category", "product:category:view",
+                    "processing:manage", "production:view",
+                    // issue #5291：两个域读码与种子矩阵逐值同步 —— 回退路径（无 role_permissions 记录）
+                    // 若不跟上，「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
                     "customer:view",
                     "finance:view",
                     "agent:session",
@@ -313,8 +315,11 @@ public class RoleService {
             );
             case "product_manager" -> List.of(
                     "dashboard:view",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage"
+                    // issue #5291：历史岗位（无 roles 行，仅回退口径）原持 `product:category` /
+                    // `processing:manage` ⇒ 同批回填两个读码，否则拆码会把它的生产/分类面**收权**
+                    //（「只收窄不放宽」的反面：原持管理码者不受影响）。
+                    "product:list", "product:create", "product:category", "product:category:view",
+                    "processing:manage", "production:view"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view",

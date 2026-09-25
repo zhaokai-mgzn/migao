@@ -33,7 +33,7 @@ ORDER_TOOLS = [
     # processing_items ⇒ 不绑定本工具就是「提示词承诺了做不到的事」（同型先例 #3365）。
     "processing_item_query",
     "processing_order_query",     # 加工单查询（只读）
-    # 加工套件 / 扫码循环（issue #5247 模块覆盖）：GET /api/admin/processing-order-sets*（processing:manage），
+    # 加工套件 / 扫码循环（issue #5247 模块覆盖）：GET /api/admin/processing-order-sets*（production:view，#5291 生产域读码），
     # 复用服务端同一份 setOverview 聚合（不得另造第二份），unit_price=null 保持 null（#4696 口径）。
     "processing_order_set_query",
     # 交互卡片只保留**消歧/选择**（choice）：B 端不再发写确认卡（issue #5247 裁定 2）。

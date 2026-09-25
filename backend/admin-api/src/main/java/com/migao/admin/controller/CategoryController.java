@@ -34,6 +34,9 @@ public class CategoryController {
      * GET /api/admin/categories
      * GET /api/admin/categories/tree
      */
+    // issue #5291：读端点改挂**分类读码** `product:category:view` —— 写面（POST/PUT/DELETE）
+    // 仍是类级 `product:category`（方法级优先，见 `PermissionInterceptor.resolveRequirePermission`）。
+    @RequirePermission("product:category:view")
     @GetMapping({"" , "/tree"})
     public ApiResponse<List<CategoryResponse>> getCategoryTree() {
         Long tenantId = TenantContext.getTenantId();

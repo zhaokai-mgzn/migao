@@ -68,7 +68,8 @@ export function TenantParamsPanel() {
       setCalc(calcRes.value.data?.data ?? null)
     } else {
       setCalc(null)
-      // ⚠️ 读面受 `processing:manage` 门控：**权限拒绝是终态**，不是「参数有问题」——
+      // ⚠️ 读面受生产域读码 `production:view` 门控（issue #5291；写面 `PUT` 仍 `processing:manage`）：
+      // **权限拒绝是终态**，不是「参数有问题」——
       // 给可行动话术，不让商家反复重试（同族实证：issue #4103 的 P0 形态）。
       setCalcError('算料口径读取失败（可能是当前岗位没有「工艺配置」权限）—— 请联系管理员开权限后重试')
     }

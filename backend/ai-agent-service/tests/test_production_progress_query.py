@@ -57,9 +57,10 @@ class TestMetadataContract:
         assert tool.destructive is False
         assert tool.idempotent is True
         # 两端可用：顾客查自己的单、商户员工查任意单。issue #5246 起口径 =
-        # 权限码（= 页面节点『生产看板』的 processing:manage）+ 双端标记，**不再**手写角色白名单
+        # 权限码（= 页面节点『生产看板』的码）+ 双端标记，**不再**手写角色白名单
         # （手写清单必然与 admin-api 目录漂移，且会把 C 端角色写进 B 端独占工具）。
-        assert tool.required_permissions == ["processing:manage"]
+        # issue #5291：该节点码 = 生产域读码 `production:view`（此前与写面同用 `processing:manage`）。
+        assert tool.required_permissions == ["production:view"]
         assert tool.c_end_reachable is True, "C 端 JWT 没有权限码 ⇒ 必须显式标记双端，否则顾客查进度全量失效"
         assert "allowed_roles" not in type(tool).__dict__, (
             "声明了权限码的工具不得再声明 allowed_roles（第二份不生效的假门禁）"

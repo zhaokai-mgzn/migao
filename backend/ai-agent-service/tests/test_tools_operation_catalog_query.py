@@ -1,9 +1,10 @@
 """
 工序库 / 工艺路线查询 Tool 测试 —— 只读契约 + **逐 action 的端点归属**（issue #5247）
 
-⚠️ 本工具的权限码是 `processing:manage`（生产域**没有读码**）：两个读端点虽在
-`ProductionController`（类级 `order:list`）里，但已按 #5246 的裁决**拆成方法级 `processing:manage`**
-—— 否则持有 `order:list` 的客服/销售/财务能经米宝读到「工艺配置」页面里看不见的数据（权限泄露）。
+⚠️ 本工具的权限码是生产域读码 `production:view`（issue #5291：生产域此前**没有读码**，两个读端点与
+`ProductionController` 的写面同用 `order:list`/`processing:manage`）：读端点已按 #5246/#5291 的裁决
+**拆成方法级 `production:view`** —— 否则持有 `order:list` 的客服/销售/财务能经米宝读到「工艺配置」
+页面里看不见的数据（权限泄露），而只持读码的岗位若被要求写码则被假拒绝。
 本文件把「工具码 == 端点码」钉在测试层。
 """
 # case_ids: PP-002
@@ -13,7 +14,7 @@ from unittest.mock import patch, AsyncMock
 from app.tools.operation_catalog_query import OperationCatalogQueryTool
 from app.tools.base import ToolContext
 
-PERMISSION = "processing:manage"
+PERMISSION = "production:view"
 OPERATIONS = "/api/admin/production/operations-catalog"
 ROUTINGS = "/api/admin/production/routings"
 
@@ -37,7 +38,7 @@ class TestDeclaration:
         assert tool.destructive is False
 
     def test_permission_is_the_menu_node_code(self):
-        """权限码 = 侧边栏「工艺配置」节点码（生产域无读码 ⇒ 用管理码，方向只收窄）"""
+        """权限码 = 侧边栏「工艺配置」节点码（issue #5291 起 = 生产域读码 `production:view`，方向只收窄）"""
         assert OperationCatalogQueryTool.required_permissions == [PERMISSION]
 
     def test_action_enum_is_read_only_only(self):

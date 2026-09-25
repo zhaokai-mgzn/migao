@@ -217,7 +217,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径：生产管理组四项全部 processing:manage；入库单的独立码随组走（inbound:view）', () => {
+  it('权限码口径：生产看板/工艺配置/计件工资 = 读码 production:view，池看板 = processing:manage（#5291）', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
@@ -225,10 +225,10 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 原先「入库单是仓储动作、权限码独立（inbound:view，issue #5034）」的口径**不变**，
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
-      'processing:manage',
-      'processing:manage',
-      'processing:manage',
-      'processing:manage',
+      'production:view',    // 生产看板（issue #5291）
+      'processing:manage',  // 池看板（同组不同权：其读端点用 processing:view、无 Agent 工具）
+      'production:view',    // 工艺配置
+      'production:view',    // 计件工资
     ])
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
@@ -236,8 +236,9 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'processing:manage',
       'processing:manage',
     ])
-    // 反恒真：本组 4 项全部与页面门禁同码（processing:manage 是加工/生产动作的统一码）
-    expect(new Set(group!.children.map((c) => c.permissionCode))).toEqual(new Set(['processing:manage']))
+    // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红
+    expect(new Set(group!.children.map((c) => c.permissionCode)))
+      .toEqual(new Set(['production:view', 'processing:manage']))
   })
 })
 

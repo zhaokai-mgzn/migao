@@ -5,13 +5,12 @@ AI 智能客服系统 - 工序库 / 工艺路线查询 Tool（issue #5247 模块
 - `operations` → `GET /api/admin/production/operations-catalog`（工序库：分组/单位/计件单价/开始标记）
 - `routings`   → `GET /api/admin/production/routings`（工艺路线模板：主线 + 适用帘种 + 默认标记）
 
-⚠️ 权限码口径（issue #5247）：这两个读端点原先只吃 `ProductionController` 的**类级** `order:list`
-⇒ 持 `order:list` 的客服/销售/财务能经米宝读工艺数据，而侧边栏「工艺配置」页（`processing:manage`）
-对它们不可见 = 用户裁定禁止的权限泄露形态。故本次给这两个端点补**方法级**
-`@RequirePermission("processing:manage")`，工具同码 —— 方向是**收窄**（cs/sales/finance 失去该读面），
-与 #5246 对 `processing_order_query` / `piecework_query` / `production_*_query` 的处置一致。
-生产域「读面没有专属读码」的粒度债由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
-的 `READ_WRITE_EXCEPTIONS` 逐条登记。
+⚠️ 权限码口径（issue #5247 起，issue #5291 收口）：这两个读端点原先只吃 `ProductionController` 的
+**类级** `order:list` ⇒ 持 `order:list` 的客服/销售/财务能经米宝读工艺数据，而侧边栏「工艺配置」页
+对它们不可见 = 用户裁定禁止的权限泄露形态。#5247 先补**方法级**注解（收窄到 `processing:manage`）；
+**issue #5291** 为生产域读出**读**码 `production:view` 后，端点与工具同批改挂读码
+（只读工具不再被迫持管理码；粒度债台账 `READ_WRITE_EXCEPTIONS` 因此**清空为 0 条**）。
+判据：`tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 10（读码五面锚定）。
 """
 
 from typing import Any, Dict
@@ -35,10 +34,10 @@ class OperationCatalogQueryTool(BaseTool):
         "【标注】READONLY — 只读查询"
     )
 
-    # 权限码（admin-api 目录）：`ProductionController.GET /operations-catalog` 与
-    # `GET /routings` 的方法级 `@RequirePermission("processing:manage")`（本次新增）——
-    # 与侧边栏「工艺配置」节点同码（生产域无专属读码，粒度债见守具的 READ_WRITE_EXCEPTIONS）。
-    required_permissions = ["processing:manage"]
+    # 权限码（admin-api 目录，issue #5291）：`ProductionController` 的 `GET /operations-catalog`
+    # 与 `GET /routings` 改挂生产域读码 `production:view` —— 与侧边栏「工艺配置」节点同码
+    #（该节点本轮同批改用读码 ⇒ 只读岗位第一次真正可用）。
+    required_permissions = ["production:view"]
     read_only = True
     destructive = False
     idempotent = True

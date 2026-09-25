@@ -2131,7 +2131,8 @@ def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
 #      （引擎用 `DEFAULT_CRAFT_CALC_CONFIG`；不可达那一族另挂显式 warning + `config_source` 留痕）。
 # 与服务端下单路径 `CraftCalcClient#withTenantConfig`（`selectActiveByTenant` → 非空才加 `config` 键）
 # 逐字同口径 —— 两条入口必须是同一个米数，否则就是本单要消灭的「同一张单两个答案」。
-#: admin-api 的租户算料配置读面（`CraftCalcConfigController`，类级 `@RequirePermission("processing:manage")`）。
+#: admin-api 的租户算料配置读面（`CraftCalcConfigController` 的 GET，**方法级** `@RequirePermission("production:view")`
+#: —— issue #5291 生产域读码；C 端无权限码、走 `ServiceTokenFilter` 的 service 权威，故本工具不受影响）。
 TENANT_CRAFT_CALC_CONFIG_PATH = "/api/admin/production/craft-calc-config"
 #: 服务端 `data.source` 的两个取值（`CraftCalcConfigService.SOURCE_STORED` / `SOURCE_DEFAULT`）。
 _SERVER_SOURCE_STORED = "stored"

@@ -11,8 +11,9 @@ AI 智能客服系统 - 加工套件 / 扫码循环查询 Tool（issue #5247 模
 ⚠️ **未定价不得折 0**（既有 #4696 口径）：`unit_price` 为 null 时保持 null（服务端返回什么就转述什么），
 禁止在工具侧填 0 或估算。
 
-权限码：三个端点（#5246 收尾）为方法级 `@RequirePermission("processing:manage")` ——
-与侧边栏「生产看板」节点同码（生产域无专属读码，粒度债见权限守卫的 `READ_WRITE_EXCEPTIONS`）。
+权限码：三个端点（#5246 收尾，**issue #5291 改码**）为方法级 `@RequirePermission("production:view")` ——
+与侧边栏「生产看板」节点、兄弟读端点（`ProcessingOrderController` 的两个 GET）**逐字同码**
+（生产域读码，issue #5291 新增）。
 """
 
 from typing import Any, Dict, Optional
@@ -50,7 +51,9 @@ class ProcessingOrderSetQueryTool(BaseTool):
         "【标注】READONLY — 只读查询，不含任何写 action"
     )
 
-    required_permissions = ["processing:manage"]
+    # 权限码（admin-api 目录，issue #5291）：三个读端点按生产域读码 `production:view` 收口
+    # （`ProcessingOrderSetController` 的方法级注解；写面无 Agent 工具调用）。
+    required_permissions = ["production:view"]
     read_only = True
     destructive = False
     idempotent = True

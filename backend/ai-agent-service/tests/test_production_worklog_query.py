@@ -107,16 +107,17 @@ def tool():
     return ProductionWorklogQueryTool()
 
 
-#: 商户员工 JWT 的 `permissions` claim —— 过程明细端点 = AgentProductionController 类级的
-#: `@RequirePermission("order:list")`（与 /progress、/piecework 同一授权面，不新增权限码）。
-# issue #5246：码从 `order:list` 对齐到页面节点『生产看板』的 `processing:manage`
-# （`AgentProductionController` 同批改为方法级 processing:manage）。
-SELLER_PERMISSIONS = ["processing:manage"]
+#: 商户员工 JWT 的 `permissions` claim —— 过程明细端点 = AgentProductionController 方法级的
+#: `@RequirePermission`（与 /progress、/piecework 同一授权面）。
+# issue #5246：码从 `order:list` 对齐到页面节点『生产看板』的码
+# （`AgentProductionController` 同批改为方法级）。
+# issue #5291：该码 = 生产域读码 `production:view`（此前与写面同用 `processing:manage`）。
+SELLER_PERMISSIONS = ["production:view"]
 
 
 @pytest.fixture
 def seller_context():
-    """B 端商户员工（米宝）上下文 —— 持 `order:list`"""
+    """B 端商户员工（米宝）上下文 —— 持 `production:view`（过程明细读码，issue #5291）"""
     return ToolContext(
         tenant_id=1, user_id="agent_001", session_id="sess_wl_1",
         role="operator", permissions=list(SELLER_PERMISSIONS),
@@ -139,8 +140,8 @@ class TestMetadataContract:
         assert tool.idempotent is True
 
     def test_b_end_only_by_permission_code(self, tool):
-        assert tool.required_permissions == ["processing:manage"], (
-            "过程明细端点 = AgentProductionController 的 processing:manage（与菜单节点『生产看板』同码，issue #5246）"
+        assert tool.required_permissions == ["production:view"], (
+            "过程明细端点 = AgentProductionController 的读码 production:view（与菜单节点『生产看板』同码，issue #5291）"
         )
         customer = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
         assert tool.check_permission(customer) is False, "C 端顾客必须被拒（报工人/计件不对顾客开放）"
@@ -265,24 +266,24 @@ class TestPermission:
         assert result.suggestion
 
     def test_operator_allowed_others_denied_after_node_alignment(self, tool):
-        """issue #5246 的**有意收窄**：只有运营岗（+ admin 通配）能查过程明细；
+        """issue #5246 的**有意收窄**（issue #5291 改挂读码）：只有运营岗（+ admin 通配）能查过程明细；
         客服 / 销售 / 财务被拒（他们看不见『生产看板』菜单，此前却能经 Agent 查到）。"""
         ctx = ToolContext(
             tenant_id=1, user_id="u_001", session_id="s", role="operator",
             permissions=list(SELLER_PERMISSIONS),
         )
-        assert tool.check_permission(ctx) is True, "operator 持 processing:manage，应可查过程明细"
+        assert tool.check_permission(ctx) is True, "operator 持 production:view，应可查过程明细"
         for role in ("customer_service", "sales", "finance"):
             ctx = ToolContext(
                 tenant_id=1, user_id="u_002", session_id="s", role=role,
-                permissions=["order:list", "processing:view"],
+                permissions=["order:list", "processing:view"],   # 岗位真实默认码（不含 production:view）
             )
             assert tool.check_permission(ctx) is False, (
-                f"{role} 没有 processing:manage（看不见『生产看板』菜单）⇒ 经 Agent 也不得查"
+                f"{role} 没有 production:view（看不见『生产看板』菜单）⇒ 经 Agent 也不得查"
             )
 
     def test_role_without_the_code_is_denied(self, tool):
-        """负向：真实商户角色但不持 `order:list` ⇒ 拒绝。"""
+        """负向：真实商户角色但不持 `production:view` ⇒ 拒绝。"""
         ctx = ToolContext(
             tenant_id=1, user_id="u_002", session_id="s",
             role="product_manager", permissions=["product:list"],

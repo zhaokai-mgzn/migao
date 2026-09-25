@@ -810,12 +810,15 @@ class TestMapperGuardIsNotVacuous:
 # ⑥ 真实 403 响应体穿过**曾被漏掉的两条分支**（#4149 G4 的后果闭环）
 # ──────────────────────────────────────────────────────────────────────────────
 
-# issue #5246：计件/进度端点已对齐到页面节点码 `processing:manage`（AgentProductionController）
-REQUIRED_PERMISSION = "processing:manage"
+# issue #5246：计件/进度端点已对齐到页面节点码（AgentProductionController）。
+# issue #5291：该节点码 = 生产域读码 `production:view`（此前与写面同用 `processing:manage`）。
+# ⚠️ 计件分支的上下文必须持**新码**，否则工具层先拒 —— 403 体根本到不了被测的映射点，
+# 判据会去断言「工具层拒绝」而不是「admin-api 403 的映射」。
+REQUIRED_PERMISSION = "production:view"
 
 #: 两条漏检分支的宿主：`(模块, 工具类, 会话上下文, 调用参数, 该分支调用方的套话文案)`。
-#: issue #5246 起两工具都对齐到页面节点码 `processing:manage`（`AgentProductionController`
-#: 已由类级 `order:list` 改为方法级 `processing:manage`）。两工具的**可达面不同**：
+#: issue #5246 起两工具都对齐到页面节点码；issue #5291 起该码为 `production:view`
+#: （`AgentProductionController` 的方法级注解）。两工具的**可达面不同**：
 #: 计件仅 B 端（持码的商户员工），进度是**双端**（`c_end_reachable` ⇒ C 端角色按角色层放行）
 #: ⇒ 上下文各给一份，免得把「工具层拒绝」误当成「admin-api 拒绝」。
 _DENIAL_BRANCHES = [
