@@ -2820,7 +2820,7 @@ export default function NewOrderPage() {
         {/* 右侧：费用明细 + 操作 */}
         <div className="space-y-6">
           {/* 加急 / 要求到货日（issue #5177）：**做在订单上**（不是售后页）——
-              加急单在池看板上走「加急插队区」（不进池、立即单派），到货日是派单排序键。 */}
+              加急单在智能派单页走「加急订单（不参与合并）」，到货日是派单排序键。 */}
           <Card>
             <div className="p-6">
               <SectionTitle icon={<Zap className="w-4 h-4" />} title="加急 / 到货日" />
@@ -2852,7 +2852,7 @@ export default function NewOrderPage() {
                   <span className="text-sm text-neutral-700">
                     加急（插队）
                     <span className="block text-xs text-neutral-400 mt-0.5">
-                      加急单不进池，在池看板上单独立即派单
+                      加急单不参与合并，在智能派单页立即单独派单
                     </span>
                   </span>
                 </div>
@@ -2871,7 +2871,7 @@ export default function NewOrderPage() {
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   <p className="mt-1 text-xs text-neutral-400">
-                    留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，池看板上排得越前
+                    留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，在智能派单页排得越前
                   </p>
                 </div>
               </div>

@@ -24,7 +24,7 @@ import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview } from '@/typ
 const MAX_WAIT_HOURS = 24
 
 /**
- * 池看板 `/production/pool`（issue #5177）—— 消费 #5169 已交付的三个端点：
+ * 智能派单 `/production/pool`（issue #5177；命名与去内部隐喻见 #5576）—— 消费 #5169 已交付的三个端点：
  *
  * ```
  * GET  /api/admin/production/pool            读面（含加急插队区 + 物料分组）
@@ -68,7 +68,7 @@ export default function ProductionPoolPage() {
       const res = await poolBoardApi.getBoard({ maxWaitHours: MAX_WAIT_HOURS })
       setBoard(res.data?.data ?? null)
     } catch (e) {
-      toastRequestError(e, '加载池看板失败')
+      toastRequestError(e, '加载智能派单失败')
     } finally {
       setLoading(false)
     }
@@ -95,7 +95,7 @@ export default function ProductionPoolPage() {
       } catch (e) {
         if (cancelled) return
         setPreview(null)
-        setPreviewError(dispatchErrorText(e, '成批预览失败'))
+        setPreviewError(dispatchErrorText(e, '合并预览失败'))
       }
     })()
     return () => {
@@ -126,13 +126,13 @@ export default function ProductionPoolPage() {
       const done = rows.find((r) => r.success)
       if (done) {
         // **结果可见**：toast 里带加工单号（不是只说一句「成功」）
-        toast.success(`加急插队派单成功：${done.processingOrderNo ?? '-'}`)
+        toast.success(`加急单派单成功：${done.processingOrderNo ?? '-'}`)
         await reloadAfterDispatch()
       } else {
-        toast.error(rows[0]?.message || '加急插队派单失败')
+        toast.error(rows[0]?.message || '加急单派单失败')
       }
     } catch (e) {
-      const text = dispatchErrorText(e, '加急插队派单失败')
+      const text = dispatchErrorText(e, '加急单派单失败')
       setDispatchError(text)
       setResults(null)
       toastRequestError(e, text)
@@ -152,14 +152,14 @@ export default function ProductionPoolPage() {
       setResults(rows)
       const okCount = rows.filter((r) => r.success).length
       if (okCount > 0) {
-        toast.success(`成批派单完成：${okCount} 单`)
+        toast.success(`合并派单完成：${okCount} 单`)
         await reloadAfterDispatch()
       } else {
-        toast.error('成批派单失败')
+        toast.error('合并派单失败')
       }
     } catch (e) {
       // 加急单混进池化批 ⇒ 422 VALIDATION_ERROR（整批拒绝）—— 文案必须看得见
-      const text = dispatchErrorText(e, '成批派单失败')
+      const text = dispatchErrorText(e, '合并派单失败')
       setDispatchError(text)
       setResults(null)
       toastRequestError(e, text)
@@ -205,11 +205,11 @@ export default function ProductionPoolPage() {
         <div>
           <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
             <Layers className="w-5 h-5 text-primary-600" />
-            池看板
+            智能派单
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            待派订单按物料（商品 × 颜色 × 门幅）成组 —— 同料合并领料以减少接头损耗；
-            <strong>加急单不进池</strong>，要立刻单派
+            待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；
+            <strong>加急单不参与合并</strong>，立即单独派单
           </p>
         </div>
         <Button variant="secondary" onClick={() => void load()} loading={loading}>
@@ -221,7 +221,7 @@ export default function ProductionPoolPage() {
       {/* 顶部状态条：池化开关 / 最长等待 / 池内订单 / 加急 / 超时未派 */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-white border border-neutral-200 rounded-lg p-3 text-sm">
         <span data-testid="pool-status-pooling" className="inline-flex items-center gap-2">
-          <span className="text-neutral-500">池化开关</span>
+          <span className="text-neutral-500">合并派单开关</span>
           {board?.poolingEnabled ? (
             <Badge variant="success">已开启</Badge>
           ) : (
@@ -232,13 +232,13 @@ export default function ProductionPoolPage() {
           最长等待 <span className="font-mono text-neutral-900">{board?.maxWaitHours ?? MAX_WAIT_HOURS}</span> 小时
         </span>
         <span data-testid="pool-status-order-count" className="text-neutral-600">
-          池内订单 <span className="font-mono text-neutral-900">{board?.orderCount ?? 0}</span> 单
+          待派订单 <span className="font-mono text-neutral-900">{board?.orderCount ?? 0}</span> 单
         </span>
         <span data-testid="pool-status-line-count" className="text-neutral-600">
-          明细 <span className="font-mono text-neutral-900">{board?.lineCount ?? 0}</span> 行
+          加工明细 <span className="font-mono text-neutral-900">{board?.lineCount ?? 0}</span> 行
         </span>
         <span data-testid="pool-status-urgent-count" className="text-neutral-600">
-          加急 <span className="font-mono text-neutral-900">{board?.urgentCount ?? 0}</span> 单
+          加急订单 <span className="font-mono text-neutral-900">{board?.urgentCount ?? 0}</span> 单
         </span>
         <span
           data-testid="pool-status-overdue-count"
@@ -292,15 +292,15 @@ export default function ProductionPoolPage() {
           {/*
             ── 加急插队区 ──────────────────────────────────────────────────────────
             结构性优先：**整段**渲染在成批区之前（不是前端排序的结果）。
-            这些单**不进池**（不是成批候选）⇒ 每行一个「加急插队派单」（单订单 + pooled:false）。
+            这些单**不参与合并**（不是合并候选）⇒ 每行一个「加急插队派单」（单订单 + pooled:false）。
           */}
           <Card>
             <div className="p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-amber-600" />
-                <h2 className="text-sm font-medium text-neutral-900">加急插队区</h2>
+                <h2 className="text-sm font-medium text-neutral-900">加急订单（不参与合并，立即派）</h2>
                 <span className="text-xs text-neutral-500">
-                  {urgentLines.length} 行 / {board?.urgentCount ?? 0} 单 —— 不进池，立即单派
+                  {urgentLines.length} 行 / {board?.urgentCount ?? 0} 单 —— 不参与合并，立即单独派单
                 </span>
               </div>
               {urgentLines.length === 0 ? (
@@ -363,7 +363,7 @@ export default function ProductionPoolPage() {
                               loading={singlePending === line.orderId}
                               data-testid={`pool-dispatch-single-${line.orderId}`}
                             >
-                              加急插队派单
+                              立即派单
                             </Button>
                           </td>
                         </tr>
@@ -384,9 +384,9 @@ export default function ProductionPoolPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Layers className="w-4 h-4 text-primary-600" />
-                  <h2 className="text-sm font-medium text-neutral-900">成批区（按物料分组）</h2>
+                  <h2 className="text-sm font-medium text-neutral-900">可合并的待派订单（按料分组）</h2>
                   <span className="text-xs text-neutral-500">
-                    {groups.length} 个物料组 / 已选 {selectedIds.length} 单
+                    {groups.length} 个料组 / 已选 {selectedIds.length} 单
                   </span>
                 </div>
                 <Button
@@ -395,12 +395,12 @@ export default function ProductionPoolPage() {
                   loading={dispatching}
                   data-testid="pool-dispatch-batch"
                 >
-                  一键成批派单
+                  一键合并派单
                 </Button>
               </div>
 
               {groups.length === 0 ? (
-                <div className="px-4 py-10 text-center text-neutral-400 text-sm">池内没有待派订单</div>
+                <div className="px-4 py-10 text-center text-neutral-400 text-sm">当前没有可合并的待派订单</div>
               ) : (
                 <div className="space-y-4">
                   {groups.map((group, gi) => (
@@ -495,7 +495,7 @@ export default function ProductionPoolPage() {
                 >
                   {previewError ? (
                     <p className="text-sm text-red-600" data-testid="pool-preview-error">
-                      成批预览失败：{previewError}
+                      合并预览失败：{previewError}
                     </p>
                   ) : !preview ? (
                     <p className="text-sm text-neutral-400">正在预览…</p>

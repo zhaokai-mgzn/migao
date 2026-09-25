@@ -4516,7 +4516,7 @@ class ProcessingOrderServiceTest {
         assertThat(pool.warnings().get(0).message())
                 .as("🔴 告警必须**带着对象名字**说出来：哪张单、等了多久、该做什么（不得静默压单）")
                 .contains("ORD-20260912-0002").contains("30.0").contains("24")
-                .contains("成批派单");
+                .contains("合并派单");
         assertThat(pool.groups().get(0).lines().get(0).waitHours())
                 .as("池内等待时长**逐单可读**，且**等得久的在前**（= 记录期既有序：池按 createdAt 升序遍历；"
                         + "issue #5177 的排序键在「无加急单、无到货日」时与之**同序** ⇒ 缺省不变）")

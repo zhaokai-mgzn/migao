@@ -19,7 +19,7 @@
  * - **DOM 面**：`tests/unit/components/OrderTableUrgency.test.tsx`（列表角标逐值）/
  *   `tests/unit/components/OrderUrgencyPanel.test.tsx`（详情徽标正反两态）/
  *   `tests/unit/pages/orders-urgency.test.tsx`（建单请求体「键不存在」）/
- *   `tests/unit/pages/production-pool-urgent.test.tsx`（池看板插队区角标）。
+ *   `tests/unit/pages/production-pool-urgent.test.tsx`（智能派单插队区角标）。
  * - **源码面（本文件）**：口径的**唯一性**（三处角标 + 一处请求体都走同一份纯函数）
  *   —— 没有这一条，上面的红证与 DOM 面**脱钩**（改坏了纯函数而组件不用它，红证就白证了）。
  */

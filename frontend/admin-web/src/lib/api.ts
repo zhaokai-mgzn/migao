@@ -33,7 +33,7 @@ import type {
   OrderListParams,
   OrderFormData,
   OrderStatusUpdateParams,
-  // 订单加急 / 到货日 + 池看板（issue #5177）
+  // 订单加急 / 到货日 + 智能派单（issue #5177）
   OrderUrgencyParams,
   PoolBoard,
   PoolDispatchRequest,
@@ -772,10 +772,10 @@ export const imageRecognizeApi = {
 }
 
 /**
- * 池看板 API（issue #5177；消费 #5169 已交付的三个端点）。
+ * 智能派单 API（issue #5177；消费 #5169 已交付的三个端点）。
  *
  * 端点与后端一一对应：
- *   GET  /api/admin/production/pool            池看板读面（含加急插队区 + 物料分组）
+ *   GET  /api/admin/production/pool            智能派单读面（含加急插队区 + 物料分组）
  *   POST /api/admin/production/pool/preview    成批预览（服务端算米数，前端只渲染）
  *   POST /api/admin/production/pool/dispatch   派单（成批 `pooled:true`；加急插队 = 单订单 + `pooled:false`）
  *

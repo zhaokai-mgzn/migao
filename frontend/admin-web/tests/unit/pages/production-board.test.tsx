@@ -152,7 +152,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
-    expect(links[1].textContent).toContain('池看板')
+    expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
     expect(links[2].textContent).toContain('工艺配置')
     expect(links[2]).toHaveAttribute('href', '/production/routings')
@@ -217,7 +217,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径：生产看板/工艺配置/计件工资 = 读码 production:view，池看板 = processing:manage（#5291）', () => {
+  it('权限码口径：生产看板/工艺配置/计件工资 = 读码 production:view，智能派单 = processing:manage（#5291）', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
@@ -226,7 +226,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',    // 生产看板（issue #5291）
-      'processing:manage',  // 池看板（同组不同权：其读端点用 processing:view、无 Agent 工具）
+      'processing:manage',  // 智能派单（同组不同权：其读端点用 processing:view、无 Agent 工具）
       'production:view',    // 工艺配置
       'production:view',    // 计件工资
     ])

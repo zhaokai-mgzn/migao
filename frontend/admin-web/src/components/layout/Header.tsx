@@ -64,10 +64,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 顺序敏感：更具体的子路径必须先于 /production
   // issue #4416：「工序库」并入「工艺配置」/production/routings（旧 /production/operations 已重定向）
   { match: (p) => p.startsWith('/production/routings'), crumbs: [{ label: '生产管理' }, { label: '工艺配置' }] },
-  // 池看板（issue #5177）：**必须排在 `/production` 之前** —— 本表是 `find` 取**首个命中**，
+  // 智能派单（issue #5177）：**必须排在 `/production` 之前** —— 本表是 `find` 取**首个命中**，
   // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「生产看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-pool`、服务端两处菜单节点逐字一致。
-  { match: (p) => p.startsWith('/production/pool'), crumbs: [{ label: '生产管理' }, { label: '池看板' }] },
+  { match: (p) => p.startsWith('/production/pool'), crumbs: [{ label: '生产管理' }, { label: '智能派单' }] },
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
   // `/production` 会抢走它 ⇒ 面包屑退化成「生产看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。

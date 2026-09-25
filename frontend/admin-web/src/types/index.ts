@@ -3113,7 +3113,7 @@ export interface BatchCandidates {
   candidates: BatchCandidate[]
 }
 
-// ========== 池看板 / 池化派单（issue #5177，消费 #5169 已交付的三个端点）==========
+// ========== 智能派单 / 池化派单（issue #5177，消费 #5169 已交付的三个端点）==========
 
 /**
  * 池内一行（`PoolLine`）—— `GET /api/admin/production/pool` 的
@@ -3166,7 +3166,7 @@ export interface PoolGroup {
 }
 
 /**
- * 池看板读面（`GET /api/admin/production/pool`）。
+ * 智能派单读面（`GET /api/admin/production/pool`）。
  *
  * ⚠️ 后端 Jackson `non_null` ⇒ `warnings` / `urgentLines` 等键在「无内容」时**可能缺席**，
  * 消费方一律用 `?? []` 兜底（不要假设键存在）。
@@ -3346,7 +3346,7 @@ export interface PoolDispatchResult {
    * 要在界面上显示**单号**必须自己从看板数据里按 `orderId → orderNo` 映射（纯展示映射，不重算）。
    * 红证：把这里写成 `orderId`/`orderNo` ⇒ 服务端根本没这两个键 ⇒ 结果行渲染成空白，
    * 而 vitest 桩（`ok(data: unknown)`）不校验形状 ⇒ **判据被自己的文案喂绿**（已修：
-   * 两个池看板测试的桩都改成显式 `PoolDispatchResult[]` 注解，形状错了 tsc 就红）。
+   * 两个智能派单测试的桩都改成显式 `PoolDispatchResult[]` 注解，形状错了 tsc 就红）。
    */
   orderRef: string
   processingOrderNo?: string | null

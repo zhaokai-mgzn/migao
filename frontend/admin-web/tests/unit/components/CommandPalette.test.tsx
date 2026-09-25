@@ -197,7 +197,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('点结果项：跳转 + 关闭（鼠标路径与键盘路径同口径）', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     const item = screen.getByTestId('command-palette-item-production-pool')
-    expect(within(item).getByText('池看板')).toBeInTheDocument()
+    expect(within(item).getByText('智能派单')).toBeInTheDocument()
 
     fireEvent.click(item)
     expect(mockOnClose).toHaveBeenCalledTimes(1)

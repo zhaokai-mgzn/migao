@@ -220,7 +220,7 @@ class AutoBatchDueScanServiceTest {
     @DisplayName("🔴 判据2 红证：池内等了 30 小时（超看板 24 小时上限）但**未到期** ⇒ 扫描腿不派")
     void overdueButNotDueIsNotDispatched() {
         enableProductionPolicy();
-        // waitHours = 30 > maxWaitHours(24) ⇒ 池看板会告警（overdue=true）；但到货日在 30 天后
+        // waitHours = 30 > maxWaitHours(24) ⇒ 智能派单会告警（overdue=true）；但到货日在 30 天后
         // ⇒ 最晚派单日 = 今天 + 23 ⇒ 未到期 ⇒ 一张都不许派
         stubScanTenants();
         stubPool(List.of(order("o-wait", "ORD-WAIT", 30, LocalDate.now().plusDays(30))));

@@ -2,7 +2,7 @@
 
 /**
  * 余料台账 /production/remnants（V122，issue #5146）—— 「企业参数中心 → 余料回收」域的**下钻页**，
- * 且自 issue #5191 起**同时是侧边栏入口**（生产管理组「余料台账」；同批新页口径对齐 —— 池看板 /
+ * 且自 issue #5191 起**同时是侧边栏入口**（生产管理组「余料台账」；同批新页口径对齐 —— 智能派单 /
  * 省料看板都有菜单项；权限码 processing:manage，与类级 `@RequirePermission` 同码）。
  *
  * ## 它是什么 / 不是什么
@@ -188,7 +188,7 @@ export default function RemnantLedgerPage() {
             { label: '可用', value: `${summary.availableCount}`, sub: `${num(summary.availableMeters)} 米` },
             { label: '已用', value: `${summary.usedCount}`, sub: `${num(summary.recoveredMetersTotal)} 米` },
             { label: '已报废', value: `${summary.scrappedCount}`, sub: `${num(summary.scrappedMetersTotal)} 米` },
-            { label: '客户带走', value: `${summary.customerTakenCount}`, sub: '不进可用池' },
+            { label: '客户带走', value: `${summary.customerTakenCount}`, sub: '不计入可用余料' },
           ].map((cell) => (
             <div key={cell.label} className="bg-white border border-neutral-200 rounded-lg p-3">
               <div className="text-xs text-neutral-500">{cell.label}</div>
@@ -215,7 +215,7 @@ export default function RemnantLedgerPage() {
         <div className="text-sm font-medium text-neutral-900">小件优先匹配</div>
         <p className="text-xs text-neutral-500">
           填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求，
-          再从<InlineMarkdown text="**可用池**" />里挑装得下的余料（同缸号优先、其次同色）；找到就不新领料。
+          再从<InlineMarkdown text="**可用余料**" />里挑装得下的余料（同缸号优先、其次同色）；找到就不新领料。
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

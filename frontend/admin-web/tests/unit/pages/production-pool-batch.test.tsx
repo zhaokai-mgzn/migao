@@ -1,6 +1,6 @@
 // case_ids: PR-081
 //
-// PR-081（issue #5177）：池看板**成批区**（排序渲染、预览、一键成批派单 UI）的可执行判据。
+// PR-081（issue #5177）：智能派单**成批区**（排序渲染、预览、一键成批派单 UI）的可执行判据。
 //
 // 本文件的核心是**判据 5：排序是真实消费者** —— 服务端是排序的唯一口径
 // （到货日升序 null 最后 → waitHours 降序 → waitingSince 升序 → orderId 升序），
@@ -127,7 +127,7 @@ const renderedOrderNos = () =>
     screen.getByTestId('pool-groups-section').querySelectorAll('[data-testid^="pool-line-"]'),
   ).map((el) => el.getAttribute('data-testid')!.replace('pool-line-', ''))
 
-describe('池看板 · 成批区（PR-081）', () => {
+describe('智能派单 · 成批区（PR-081）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetBoard.mockResolvedValue(ok(board()))
@@ -179,7 +179,7 @@ describe('池看板 · 成批区（PR-081）', () => {
     // 时「对照·逐单派应领」整行会消失/变 `-`，那正是本单修掉的静默空转）
     expect(preview).toHaveTextContent('逐单公式米数（对照基线）')
     expect(preview).toHaveTextContent('10.00')
-    expect(preview).toHaveTextContent('预计领料米数（池化后）')
+    expect(preview).toHaveTextContent('合并后预计领料米数')
     expect(preview).toHaveTextContent('6.50')
     // 🔴 服务端值逐字（99 而不是 10 − 6.5 = 3.50）⇒ 前端重算必红
     expect(preview).toHaveTextContent('预计节省')
@@ -189,7 +189,7 @@ describe('池看板 · 成批区（PR-081）', () => {
     expect(preview).toHaveTextContent('8.00')
     // 「池化**新增**收益」（= perOrder − pooled = 1.5）与「预计节省」（99）分开显示 ——
     // 把两者当同一个数渲染必红
-    expect(preview).toHaveTextContent('池化新增收益')
+    expect(preview).toHaveTextContent('合并新增收益')
     expect(preview).toHaveTextContent('1.50')
     // 预览 API **没有**逐单明细 ⇒ 不得凭空渲染一张「逐单计划米数」表
     expect(preview).not.toHaveTextContent('逐单计划米数')

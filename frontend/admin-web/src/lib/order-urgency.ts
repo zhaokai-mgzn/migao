@@ -5,7 +5,7 @@
  *
  * 「加急」这个事实在界面上有**三处**消费点：订单列表角标
  * （`frontend/admin-web/src/components/orders/OrderTable.tsx`）、订单详情徽标
- * （`frontend/admin-web/src/components/orders/OrderUrgencyPanel.tsx`）、池看板插队区行
+ * （`frontend/admin-web/src/components/orders/OrderUrgencyPanel.tsx`）、智能派单插队区行
  * （`frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx`）。
  * 三处各写一份 `x.isUrgent ? '加急' : '不加急'` = **三份会漂的口径**
  * （同 `frontend/admin-web/src/lib/saving-board.ts` 头注释的纪律：口径只留一处）。
@@ -19,7 +19,7 @@
  */
 import type { Order } from '@/types'
 
-/** 加急取值的最小入参（`Order` 与池看板的 `PoolLine` 都带 `isUrgent`） */
+/** 加急取值的最小入参（`Order` 与智能派单的 `PoolLine` 都带 `isUrgent`） */
 export interface UrgencySource {
   isUrgent?: boolean | null
 }

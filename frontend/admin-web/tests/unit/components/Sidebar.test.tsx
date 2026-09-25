@@ -69,7 +69,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     name: '生产管理',
     items: [
       ['production-board', '生产看板'],
-      ['production-pool', '池看板'],
+      ['production-pool', '智能派单'],
       ['production-process', '工艺配置'],
       ['production-piecework', '计件工资'],
     ],
@@ -234,7 +234,7 @@ describe('Sidebar', () => {
     expect(linkFor('客户列表')).toHaveAttribute('href', '/customers')
     expect(linkFor('财务对账')).toHaveAttribute('href', '/finance')
     expect(linkFor('生产看板')).toHaveAttribute('href', '/production')
-    expect(linkFor('池看板')).toHaveAttribute('href', '/production/pool')
+    expect(linkFor('智能派单')).toHaveAttribute('href', '/production/pool')
     expect(linkFor('工艺配置')).toHaveAttribute('href', '/production/routings')
     expect(linkFor('计件工资')).toHaveAttribute('href', '/production/piecework')
     // issue #5271：面料进出与消耗移入新组「仓储与物料」（原生产管理组）
@@ -360,7 +360,7 @@ describe('Sidebar', () => {
     mockUsePathname.mockReturnValue('/production/pool')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(activeKeys()).toEqual(['production-pool'])
-    expect(getActiveClass(linkFor('池看板'))).toContain('bg-primary-600')
+    expect(getActiveClass(linkFor('智能派单'))).toContain('bg-primary-600')
     expect(getActiveClass(linkFor('生产看板'))).not.toContain('bg-primary-600')
   })
 
@@ -671,7 +671,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('省料看板')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
       // issue #5291：生产看板/工艺配置/计件工资 改挂读码 production:view ⇒
-      // 只持 processing:manage 时它们**不在**（生产组只剩池看板），生产组与仓储组仍各自成立。
+      // 只持 processing:manage 时它们**不在**（生产组只剩智能派单），生产组与仓储组仍各自成立。
       expect(menuKeys()).toEqual([
         'dashboard',
         'production-pool',

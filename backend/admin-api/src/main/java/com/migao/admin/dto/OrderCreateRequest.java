@@ -97,7 +97,7 @@ public class OrderCreateRequest {
     /**
      * **客户要求到货日**（V120，issue #5177；{@code YYYY-MM-DD}）。
      * {@code null} / 不传 ⇒ **未指定**（不猜、不写列）—— NULL 才是「未指定」的真值，
-     * 不用今天/承诺交期顶替。消费者 = 池看板排序（到货日升序、NULL 排最后）。
+     * 不用今天/承诺交期顶替。消费者 = 智能派单排序（到货日升序、NULL 排最后）。
      *
      * <p>⚠️ <b>单侧字段（wire 契约）</b>：同 {@link #isUrgent}（agent 工具 schema 不采集，
      * 单侧登记见 {@code OrderDtoContractTest}）。</p>

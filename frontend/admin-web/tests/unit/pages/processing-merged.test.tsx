@@ -117,7 +117,7 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
       '/production/piecework',
     ])
     expect(productionPaths).not.toContain('/production/processing')
-    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage
+    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage
     //（同组不同权是有意的：「看得见这一页」与「改得动生产数据」分开）。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',

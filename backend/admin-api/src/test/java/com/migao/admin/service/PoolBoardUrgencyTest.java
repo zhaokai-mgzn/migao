@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
- * 🔴 <b>池看板 + 加急插队（issue #5177）的单元判据</b> —— 本单的三个核心判断都在这里可复算。
+ * 🔴 <b>智能派单 + 加急插队（issue #5177）的单元判据</b> —— 本单的三个核心判断都在这里可复算。
  *
  * <h2>判据映射（每条都带**能单独让它红**的形态）</h2>
  * <ol>
@@ -55,7 +55,7 @@ import static org.mockito.Mockito.when;
  * {@code pooled=false} 时抛的仍是**既有文案**，不是本单新加的拒绝文案。</p>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("#5177 池看板：加急不进池 / 排序是真实消费者 / 缺省不变 / 订单级字段透传快照")
+@DisplayName("#5177 智能派单：加急不进池 / 排序是真实消费者 / 缺省不变 / 订单级字段透传快照")
 class PoolBoardUrgencyTest {
 
     private static final Long TENANT = 1L;
@@ -159,7 +159,7 @@ class PoolBoardUrgencyTest {
                 TENANT, null, null, Boolean.TRUE))
                 .as("成批派单：加急单一进批次就整批拒绝")
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("加急单不进池")
+                .hasMessageContaining("加急单不参与合并派单")
                 .hasMessageContaining("ORD-9001")
                 .hasMessageNotContaining("不允许生成加工单");
 
@@ -167,7 +167,7 @@ class PoolBoardUrgencyTest {
                 List.of(), null))
                 .as("成批**预览**同一条闸：预览一个派不出去的批次就是说谎（判据 4）")
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("加急单不进池")
+                .hasMessageContaining("加急单不参与合并派单")
                 .hasMessageContaining("ORD-9001");
     }
 
@@ -351,7 +351,7 @@ class PoolBoardUrgencyTest {
 
     /**
      * 存量行：`order_items.processing_info` 为 **NULL**（真库实证 issue #5550：待派明细 15/29 行如此）
-     * —— 归一化入口对它返回 null，任何直接解引用都会 NPE（池看板恒 500 的根因）。
+     * —— 归一化入口对它返回 null，任何直接解引用都会 NPE（智能派单恒 500 的根因）。
      */
     private List<OrderItem> itemsWithoutProcessingInfo(String orderId, String itemId) {
         return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)

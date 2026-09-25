@@ -84,11 +84,11 @@ public class MenuController {
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
         // 生产管理（issue #4203/#4205/#4308/#5177）：本组四项中**生产看板 / 工艺配置 / 计件工资**
         // 按 issue #5291 改挂生产域**读**码 `production:view`（「看得见这一页」与「改得动生产数据」
-        // 就此分开）；「池看板」仍按 `processing:manage`（其读端点用 processing:view、无 Agent 工具）。
+        // 就此分开）；「智能派单」仍按 `processing:manage`（其读端点用 processing:view、无 Agent 工具）。
         // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
         // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
         MenuNode pr1 = new MenuNode("production:view", "生产看板");
-        MenuNode prPool = new MenuNode("processing:manage", "池看板");
+        MenuNode prPool = new MenuNode("processing:manage", "智能派单");
         // 🔴 「工艺配置」= issue #4416 把「工序库」+「工艺路线」**合并为单一入口**后的名称
         // （工序库半边 = 该页左栏；旧路径 /production/operations 保留为重定向）。
         // 权限码沿用 processing:manage（不要新造权限码）。

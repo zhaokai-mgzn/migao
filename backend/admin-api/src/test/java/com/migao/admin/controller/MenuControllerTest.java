@@ -63,7 +63,7 @@ class MenuControllerTest {
     private static final List<String> MENU_ITEM_LABELS = List.of(
             "经营看板", "每日简报", "在线接待", "知识库", "商品列表", "加工项管理",
             "订单列表", "售后工单", "客户列表", "财务对账",
-            "生产看板", "池看板", "工艺配置", "计件工资",
+            "生产看板", "智能派单", "工艺配置", "计件工资",
             "入库单", "余料台账", "省料看板", "员工管理", "岗位权限", "企业基础信息");
 
     /** 动作码节点（非菜单项）4 个，**统一追加在组尾**：product:create / product:category / order:detail / employee:create。 */
@@ -175,13 +175,13 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage（#5291）")
+    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage（#5291）")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
-        assertEquals(List.of("生产看板", "池看板", "工艺配置", "计件工资"),
+        assertEquals(List.of("生产看板", "智能派单", "工艺配置", "计件工资"),
                 labels(production.path("children")));
-        // issue #5291：三项导航改挂生产域**读**码；池看板仍是 processing:manage（同组不同权）。
+        // issue #5291：三项导航改挂生产域**读**码；智能派单仍是 processing:manage（同组不同权）。
         assertEquals(List.of("production:view", "processing:manage",
                 "production:view", "production:view"), codes(production.path("children")));
     }

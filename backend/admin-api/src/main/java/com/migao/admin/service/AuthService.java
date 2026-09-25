@@ -1293,19 +1293,19 @@ public class AuthService {
         // 生产管理分组（issue #4203/#4205 后端半边）：#5271 起**由 7 项降到 4 项** ——
         // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组；
         // 本组只留「加工执行 + 工艺配置 + 结算」；权限码自 issue #5291 起分出**读**码 production:view
-        //（生产看板 / 工艺配置 / 计件工资），池看板仍是 processing:manage。
+        //（生产看板 / 工艺配置 / 计件工资），智能派单仍是 processing:manage。
         // 四个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
-        // issue #5291：生产看板 / 工艺配置 / 计件工资按生产域**读**码门控；池看板沿用 processing:manage。
+        // issue #5291：生产看板 / 工艺配置 / 计件工资按生产域**读**码门控；智能派单沿用 processing:manage。
         if (isAll || permissions.contains("production:view")) {
             // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
             productionChildren.add(menuItem("production-board", "生产看板", "/production"));
         }
-        // 池看板（issue #5177）：池化派单的决策屏，权限码沿用 processing:manage
+        // 智能派单（issue #5177）：池化派单的决策屏，权限码沿用 processing:manage
         //（其读端点 `ProductionPoolController` 是 processing:view、无 Agent 工具 ⇒ 不在 #5291 射程）。
         if (isAll || permissions.contains("processing:manage")) {
-            productionChildren.add(menuItem("production-pool", "池看板", "/production/pool"));
+            productionChildren.add(menuItem("production-pool", "智能派单", "/production/pool"));
         }
         if (isAll || permissions.contains("production:view")) {
             // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
