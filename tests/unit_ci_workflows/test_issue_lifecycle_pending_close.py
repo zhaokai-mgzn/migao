@@ -325,3 +325,58 @@ def test_close_without_registry_file_warns_but_proceeds(tmp_path):
     out = _run(tmp_path, env, "close", "9999", "--reason", "delivered", "--evidence", "夹具")
     assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
     assert "跳过" in out.stderr and "未实装登记" in out.stderr, out.stderr
+
+
+# ── 会话内零新开：机械判据（2026-09-25 用户裁定，铁律 11(a) / §24.0）─────────────
+
+def _load_il():
+    """从 `scripts/issue_lifecycle.py` 加载被测模块（零依赖，importlib 文件加载）。
+
+    本文件既有判据走 CLI 子进程；这两条是**纯函数**判据，直接加载模块更快也更准。
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "issue_lifecycle_under_test", Path(__file__).resolve().parents[2] / "scripts" / "issue_lifecycle.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_human_request_marker_is_the_only_exemption():
+    """带 `人为要求：` 标记的单**不算违规**；没标记的**逐条列出**（政策：会话内零新开）。"""
+    rows = [
+        {"number": 1, "title": "人为要求开的", "createdAt": "2026-09-25T01:00:00Z",
+         "body": "人为要求：用户在对话里说「顺手开一张跟踪单」"},
+        {"number": 2, "title": "会话自己开的", "createdAt": "2026-09-25T02:00:00Z",
+         "body": "## 现象\n…"},
+        {"number": 3, "title": "标记在下文也算", "createdAt": "2026-09-25T03:00:00Z",
+         "body": "## 背景\n\n人为要求：用户原话见会话 2026-09-25"},
+    ]
+    bad = _load_il().non_human_requested(rows)
+    assert [n for n, _c, _t in bad] == [2], f"应只报 #2，实得 {bad}"
+
+
+def test_new_issues_check_is_fail_closed_when_gh_is_unavailable(tmp_path, monkeypatch):
+    """`--check-new-issues` 取不到 issue 列表 ⇒ **无法判定（rc=3）**，不得当 0 读。"""
+    import argparse
+    monkeypatch.chdir(tmp_path)
+    mod = _load_il()
+    monkeypatch.setattr(mod, "_gh_json", lambda *a, **k: None)   # 契约：失败回 None
+    rc = mod.cmd_check_new_issues(argparse.Namespace(since="2026-09-25", limit=100))
+    assert rc == 3, f"取不到数据必须 rc=3（实得 {rc}）"
+
+
+def test_workflow_runs_the_new_issues_check():
+    """main 侧腿必须真的跑这条判据（否则政策只有文档、没有机械面）。"""
+    import yaml
+    from pathlib import Path
+
+    wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "post-merge-verify.yml"
+    text = wf.read_text(encoding="utf-8")
+    assert "check-new-issues" in text, "main 侧腿没有接线 `check-new-issues` ⇒ 零新开政策无人核验"
+    steps = yaml.safe_load(text)["jobs"]["verify"]["steps"]
+    hit = [s for s in steps if "check-new-issues" in str(s.get("run") or "")]
+    assert len(hit) == 1, f"「零新开核验」步必须恰好一个（实得 {len(hit)}）"
+    run = str(hit[0]["run"])
+    assert "exit ${RC}" in run or "exit $RC" in run, "该步必须把退出码带出去（有违规 ⇒ 腿红）"
