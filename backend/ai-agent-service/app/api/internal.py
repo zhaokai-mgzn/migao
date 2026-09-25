@@ -386,13 +386,15 @@ async def operation_qty(
 
     本端点**只答数量**：路线 / 单价 / 开始标记的真相源是 DB 工序库（#4193），不在此返回。
     （`is_must_finish` / 必完标记自 #4961 起已退场，更不在本端点返回。）
-    兜底口径（不把加工单生成打成硬失败）：缺键 / 引擎不认识的工序或单位 ⇒ qty=1（**绝不落 0**，
-    应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 假完工）+ `qty_source="fallback"`，HTTP 仍 200。
+    兜底口径（不把加工单生成打成硬失败）：缺键 / **非正数**（显式 0 与负数，issue #4228）/
+    引擎不认识的工序或单位 ⇒ qty=1（**绝不落 0**，应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 假完工）
+    + `qty_source="fallback"`，HTTP 仍 200。
 
     `qty_source_by_operation` 三态（供页面/排查区分值的来路，Java 侧照此落 `qty_source` 列）：
     ① 键名（`fabric_meters` / `pleat_count` / `holes`）= 该键直接供数；
     ② `<键名>_x6` = 「孔」类无 holes 时按每米 6 孔的行业口径估算（12.3 米 → 73.8 孔）；
-    ③ `"fallback"` = 真兜底 1（无键可读 / 未知工序或单位 / panels・set_count 引擎待补键）。
+    ③ `"fallback"` = 真兜底 1（无键可读 / 非正数 / 未知工序或单位（含 `FIXED_ONE_UNITS`
+    的「个 / 件」类）/ panels・set_count 引擎待补键）。
     """
     positions = []
     for position in request.positions:
