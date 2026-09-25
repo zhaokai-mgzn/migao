@@ -1,0 +1,39 @@
+-- `processing_orders.route_source` 列注释同步：四态 → 五态 —— issue #4369（真值漂移收口）
+--
+-- ## 一句话
+--   把列注释补上第 5 态 `direct`（issue #4354 / #4362）：路线键**直读**订单侧显式列
+--   `order_items.curtainType` / `craft`，不再走关键字派生。
+--
+-- ## 为什么需要一条迁移（而不是改 V60）
+--   `COMMENT ON COLUMN processing_orders.route_source` 写在
+--   `db/migration-archive/V60__create_routing_customization_tables.sql` 里 —— 该迁移**已归档、
+--   逐字节冻结**（`tests/unit_ci_workflows/test_migration_immutability.py` 的指纹账本；
+--   `MigrationRunner` 按文件名整份跳过已应用迁移 ⇒ 改它对存量环境**不生效**）
+--   ⇒ 只能在新迁移里改 DB 注释（先例 = V126 用 `COMMENT ON COLUMN` 纠正 V51 的陈旧注释）。
+--
+-- ## 影响面（**只改注释**）
+--   · 无 schema 变更：列类型 `VARCHAR(16)` 本来就装得下 `direct`（最长的是 `missing_route`）；
+--   · 无数据变更：不动任何列 / 索引 / 约束 / 行；
+--   · 运维/排障第一现场（DB 注释）此前只列四态 ⇒ 照着它读会把真实存在的 `direct` 当成未知值。
+--
+-- ## 五态（与 `ProcessingOrderService` 的 RouteKey 判定逐字一致）
+--   `direct`        —— 帘种/工艺**直读**订单侧显式列（`order_items.curtainType` / `craft`，V63 / issue #4362）；
+--                      两维都直读 ⇒ **不查**信号映射表（订单侧真值优先于任何派生）。
+--                      与 `derived` **同档**：都不是「需要人看」的形态（issue #4354 的 severity = 0）。
+--   `derived`       —— 帘种与工艺两维都由库中信号映射（`production_route_signals`）命中，且该键的路线在库中存在；
+--   `partial`       —— 只有**一维**命中（另一维取默认值）⇒ 补救动作 = 去「信号映射」**补另一维**；
+--   `missing_route` —— 两维都命中但**库中无该路线**（T2，回落默认路线）⇒ 补救动作 = 去「工艺路线」**建路线**；
+--   `default`       —— 两维**全不命中**（T1，直接取默认键 布帘×韩褶）⇒ 补救动作 = 去「信号映射」**补信号**。
+--   ⚠️ T2 **不并入** `partial`（补救动作不同：建路线 vs 补信号）；T1/T2 都**不得**伪装成「已派生」。
+--
+-- ## 边界（如实登记：关键字派生**保留**，不是待删项）
+--   `direct` 未命中时仍按关键字派生跑（`productionOperationQueryService.routeSignals(tenantId)`）——
+--   那是**存量单兜底**：老订单没有 `curtainType` / `craft` 两列，永久需要这条回退路径。
+--   ⇒ 不得把「派生表」读成「待删」项（issue #4369 收口的正是这句陈旧真值）。
+--
+-- ## 幂等
+--   `COMMENT ON COLUMN` 是幂等覆盖写；整份文件 = 一个事务（`MigrationRunner` 是
+--   `jdbc.execute(整份文本)`），任一句失败即整份回滚且不记账。
+
+COMMENT ON COLUMN processing_orders.route_source IS
+    '路线键来源（V60 issue #4308；第 5 态 direct 见 issue #4354/#4362，注释由 V130 补齐）：direct 帘种与工艺直读订单侧显式列 order_items.curtainType/craft（不查信号映射表，与 derived 同档）/ derived 两维均由库中信号命中且路线存在 / partial 只命中一维（补信号）/ missing_route 派生键库中无路线（建路线）/ default 两维全不命中（补信号）';
