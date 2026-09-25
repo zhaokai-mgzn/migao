@@ -73,8 +73,15 @@ INLINE_REASON_MIN = 20
 REQUIRED_ENTRY_FIELDS = ("id", "name", "workflow", "job", "expected_observable", "criterion", "consumer")
 ISSUE_RE = re.compile(r"^#\d{3,}$")
 #: 读数行解析（与 `.github/scripts/mechanism_liveness.sh` 的语法**同源**，改语法必须同改两处并有判据钉住）。
+#: 读数的**两种载体**必须都能认（issue #5419 实测）：
+#:   · **日志行**（`gh run view --log`）：带 workflow-command 前缀，形如 `##[notice]MECHANISM-LIVENESS …`
+#:     （日志里还带 ANSI/时间戳，故前缀**可选**匹配）；
+#:   · **注解 API**（`…/check-runs/<id>/annotations` 的 `message`）：GitHub **已经吃掉** `notice::` 前缀
+#:     （等级在 `annotation_level` 字段里）⇒ 拿带前缀的正则去配它**永远配不上**。
+#: ⚠️ 这正是 #5419 的真根因：看门人把「注解存在但没前缀」判成「机制没出声」⇒ **假红**（真机制在正常出声）。
+#: 口径不变：仍然**只认结构化字段**（`mech/run/rc/seen/acted/why`），不按文案判（§17.3 ③）。
 READING_RE = re.compile(
-    r"(?:notice|warning|error)::" + MECHANISM_MARKER +
+    r"(?:(?:notice|warning|error)::)?" + MECHANISM_MARKER +
     r"\s+mech=(?P<mech>\S+)\s+run=(?P<run>\S+)\s+rc=(?P<rc>\S+)"
     r"\s+seen=(?P<seen>\S+)\s+acted=(?P<acted>\S+)\s+why=(?P<why>.*)$"
 )
@@ -464,6 +471,21 @@ def judge_watchdog(registry: dict, observations: dict[str, dict]) -> Report:
                 f"**早于本机制的读数落点** ⇒ pending-instrumentation（合并后首次触发即纳入判定）"
             )
             continue
+        # run 级 `skipped` ＝ **本轮机制未执行**（条件门控/上游 job 没跑）⇒ 与「跑了没出声」**不是一回事**
+        # （issue #5419 实测：`flaky-triage` 的最近 run 结论 = skipped ⇒ 旧口径把它报成「没出声」。
+        #  与下面 job 级 skipped 的口径**同源**；「连续多轮都跳过」属另一族，见残余登记。）
+        # `cancelled` / `timed_out` / `startup_failure` 等**非终态结论**同理：run 被取消 ⇒ 读数步可能
+        # 根本没机会跑 ⇒ 判「跑了没出声」是**误判**（本仓口径：取消/跳过都**不是结果**，§16.7）。
+        # ⚠️ 「某机制**总是**被取消/从不成功」由**心跳判据**（`drift_audit.py` 的近 N 次零成功）承接，
+        #    不在这里报 —— 两条判据分工，不互相抢答。
+        if str(obs.get("conclusion") or "") in {"skipped", "cancelled", "timed_out",
+                                                 "startup_failure", "stale", "action_required"}:
+            rep.note(
+                f"{eid}: 最近一次已完成的 run（{obs.get('run_id')}）结论 = **{obs.get('conclusion')}** "
+                f"（取消/跳过都**不是结果**）⇒ 本轮**无法判定**（≠「跑了没出声」）⇒ 不计 finding；"
+                f"「总是被取消」由心跳判据承接"
+            )
+            continue
         judged += 1
         run_id = str(obs.get("run_id"))
         lines = list(obs.get("annotations") or [])
@@ -577,6 +599,23 @@ def _normalize_job(name: str) -> str:
     return "-".join("".join(c if c.isalnum() else " " for c in name.lower()).split())
 
 
+#: 「有结论」的 run 结论集合（只有它们才可能合法地承载读数；其余属非终态）。
+JUDGEABLE_CONCLUSIONS = frozenset({"success", "failure"})
+
+
+def _pick_judgeable_run(completed: list[dict]) -> dict:
+    """从「已完成」的 run 里挑**可判**的那一次（issue #5419）。
+
+    为什么不能直接取 `completed[0]`：`cancelled` / `skipped` 等**非终态**里，读数步可能根本没机会跑
+    （本仓口径：取消/跳过都**不是结果**，§16.7）⇒ 拿它判「跑了没出声」是**误判**。
+    ⚠️ 但也不能就此"只看最新那条"：若最新恰是 cancelled、而更早的 success 真的没出声，
+    那条**真信号**会被漏掉 ⇒ 规则 = **先挑可判的**；一条可判的都没有时，才回落到最新那条
+    （由 `judge_watchdog` 走「无法判定」note 分支）。
+    """
+    judgeable = [r for r in completed if str(r.get("conclusion") or "") in JUDGEABLE_CONCLUSIONS]
+    return (judgeable or completed)[0]
+
+
 def _mechanism_job_skipped(registry: dict, eid: str, obs: dict) -> str:
     """该 run 上**这个机制的 job** 是否被跳过 ⇒ 返回 job id（被跳过）或空串。"""
     entry = next((m for m in registry.get("mechanisms", []) if str(m.get("id")) == eid), None)
@@ -610,7 +649,7 @@ def observe_via_gh(repo_slug: str, registry: dict) -> dict[str, dict]:
         if not completed:
             out[eid] = {"completed_runs": 0}
             continue
-        newest = completed[0]
+        newest = _pick_judgeable_run(completed)
         out[eid] = {
             "completed_runs": len(completed),
             "run_id": newest.get("databaseId"),
