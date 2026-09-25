@@ -1,4 +1,4 @@
-// case_ids: UI-024
+// case_ids: AU-006, UI-024
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import axios from 'axios'
 import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
