@@ -2104,9 +2104,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         for (OrderCreateRequest.OrderItemRequest item : request.getItems()) {
-            // GB/T 47746-2026 M3（issue #2806）：服务端取价校验——SKU 可解析时，
-            // unitPrice 必须与权威价严格一致（防 LLM 定价幻觉；解析不到不拦截防误伤）。
-            // 规格键（skuCode/colorName）从 processingInfo 解析（唯一生产者的形态，见本方法注释）。
+            // GB/T 47746-2026 M3（issue #2806）：服务端取价校验——权威价**唯一可得**时，
+            // unitPrice 必须与权威价严格一致（防 LLM 定价幻觉）。
+            // ⚠️ issue #3881 缺陷二 / #4025 F11（本 PR）：改前此处是「解析不到不拦截防误伤」，
+            // 即无 SKU 标识的行单价零核对落库；现在**无标识也要核**（按商品级唯一权威价），
+            // 无从确定即 422 —— 判据见 validateAgentItemUnitPrice 的 javadoc。
+            // 规格键（skuCode/colorName，以及工具层首选键 skuId）从 processingInfo 解析。
             validateAgentItemUnitPrice(item, tenantId);
             // subtotal 服务端强制重算（对抗 LLM 编造）—— 逐字保留收敛前的口径演算：
             // `order_items.subtotal` 直接喂 `products.sales_amount`（见 adjustStockAndSales），
