@@ -423,6 +423,22 @@ class TestAttestCli:
                       "--evidence", "x"])
         assert rc == 1, rc
 
+    def test_attest_cli_refuses_an_entry_whose_rerun_was_green(self, tmp_path):
+        """fail-closed：`flaky`（重跑绿）条目**不适用**归因判据 ⇒ 拒绝，且**不写盘**。"""
+        entry = both_red_entry()
+        entry["rerun_result"] = "success"
+        entry["kind"] = "flaky"
+        entry["reason"] = FL.KIND_REASON["flaky"]
+        entry["remedy"] = FL.KIND_REMEDY["flaky"]
+        entry.pop("unknown_reason", None)
+        path = _write_ledger(tmp_path, entry)
+        payload = path.read_text(encoding="utf-8")
+        rc = FL.main(["attest", "--ledger", str(path), "--run-id", "900001",
+                      "--attempt1-assertion", "a", "--attempt2-assertion", "a",
+                      "--evidence", "x"])
+        assert rc == 1, rc
+        assert path.read_text(encoding="utf-8") == payload, "拒绝时必须**不写盘**"
+
     def test_report_and_reconcile_cli_still_clean_on_the_shipped_ledger(self):
         for argv in (["selftest"], ["reconcile"]):
             proc = subprocess.run(
