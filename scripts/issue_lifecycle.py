@@ -805,6 +805,12 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     merged, open_nums, open_bases = classify_rows(rows)
     protected = anchor_protected_paths()
     locked = GUARD._locked_branches(cwd)
+    if locked is None:
+        # `_locked_branches` 的 `None` = **无法判定**（#5430 同族：取不到 common git dir）。
+        # 不得当成「无锁」继续收尾 —— 有会话在用的 worktree 会被删掉（fail-closed：本次一个都不收尾）。
+        print("❌ 读不到 common git dir ⇒ **判不了活跃会话锁**（无法判定，exit 3）；本次一个都不收尾。",
+              file=sys.stderr)
+        return EXIT_UNKNOWN
     self_branches = {b for b in (current_branch(cwd), current_branch(root), *args.exclude) if b}
     candidates = reap_candidates(cwd, root)
 
