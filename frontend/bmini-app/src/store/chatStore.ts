@@ -369,6 +369,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           deliveryOptions: data.deliveryOptions,
           paymentOptions: data.paymentOptions,
           amount: data.amount,
+          // 多选协议（issue #3947）：interact(multiSelect=true) 的批量选择卡必须
+          // **原样透传**这四个字段 —— 白名单漏一个，卡就永远拿到 undefined ⇒ 静默退回
+          // 单选（点一个即锁卡），而组件与用例各自都还是绿的。
+          multiSelect: data.multiSelect,
+          multiSelectSubmitPrefix: data.multiSelectSubmitPrefix,
+          multiSelectSubmitLabel: data.multiSelectSubmitLabel,
+          multiSelectSkipLabel: data.multiSelectSkipLabel,
         }
         set(state => ({
           messages: state.messages.map(msg =>

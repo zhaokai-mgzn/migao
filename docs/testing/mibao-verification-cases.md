@@ -1113,9 +1113,11 @@
 数据: 历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点
 数据: 翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互
 数据: 下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）
+数据: 多选卡（issue #3947）与提交锁共存：mini-app/bmini-app 的 ChoiceCard 在 card.multiSelect=true 时点选项**不提交、不锁卡**（仅本地勾选累积），点「完成选择（N）」一次性提交后锁卡（第二次提交/再点选项不再触发 onAction）；单选卡仍是「点即提交即锁卡」
+数据: 多选协议字段不被 store 白名单吞掉（issue #3947 真实病根）：frontend/mini-app/src/store/chatStore.ts 与 frontend/bmini-app/src/store/chatStore.ts 的 SSE onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，普查 = tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py（未登记的新前端包带 ChoiceCard ⇒ 判红）
 跳过: [backend-contract] 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040） ｜ tags: interactive, submit-lock, customer-end, freeze
+溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040）；2026-09-25 补：多选卡（multiSelect=true）勾选积累 +「完成选择（N）」一次性提交与锁卡共存（issue #3947） ｜ tags: interactive, submit-lock, customer-end, freeze
 
 ### CH-031. C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失 🔵
 ```
@@ -6333,10 +6335,13 @@
 数据: ChoiceCard 点击选项回传 opt.label || opt.value（人话，如「LG工艺 ¥50/件」），不得回传内部编码 proc_item_craft_lg —— 与 admin-web InteractiveMessage.tsx 单一事实源及 AI 侧 nodes.py _card_accepts_answer（label/value 均接受）对齐
 数据: 选项缺 label 时回退 value（label || value 协议兜底不回归）
 数据: 提交锁（CH-030）不回归：点选后锁卡，后续点击不再触发 onAction
+数据: 多选卡（issue #3947）：卡声明 multiSelect=true 时点选项只本地勾选积累（零 onAction）、再点可取消，点「完成选择（N）」才一次性回传 `${multiSelectSubmitPrefix}${已选名称、拼接}`（默认「已选加工项：A、B」）；未勾选不渲染提交按钮；提交后锁卡。判据 = frontend/mini-app/tests/choice-card.test.tsx 与 frontend/bmini-app/tests/choice-card.test.tsx 的行为用例，接线普查 = tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py
+数据: 多选字段不得被 store 白名单吞掉（issue #3947 的真实病根）：frontend/mini-app/src/store/chatStore.ts 的 onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，判据 = frontend/mini-app/tests/store-chat.test.ts
+数据: 单选卡（无 multiSelect）点第一项仍立即提交，且不渲染「完成选择」按钮（防多选逻辑污染单选体验）
 跳过: [backend-contract] 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐 ｜ tags: ui, mini-app, choice-card, protocol
+溯源: 2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐；2026-09-25 补：多选卡勾选积累 +「完成选择（N）」一次性提交（issue #3947，admin-web 既有协议的 Taro 落地） ｜ tags: ui, mini-app, choice-card, protocol
 
 ### UI-042. C 端助手消息富文本渲染 — markdown 粗体/列表渲染为样式而非裸符号（真机实测反馈） 🔵
 ```
