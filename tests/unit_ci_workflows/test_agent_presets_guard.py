@@ -1169,6 +1169,31 @@ def test_red_wins_over_undecidable(tmp_path: Path):
     assert "无法判定（三态" in proc.stdout                     # 活锚段确实也判了 3（不是没跑）
 
 
+def test_cross_repo_anchor_readout_names_the_real_reason(anchor_env: dict):
+    """读数诚实性（#5430 同族：读数指向**错误对象**会把排查带偏 —— 本次实测踩到）：
+
+    活锚**是** git 检出、只是它的 HEAD 提交**不在基准仓对象库**里（实测：活锚镜像比本工作区新）
+    ⇒ 读数必须这么说；旧版一律打印「活锚不是 git 检出」（= 另一种 `unknown` 的原因）⇒ 读了会去查错东西。
+    """
+    mirror = anchor_env["mirror"]
+    _git(mirror, "checkout", "-q", "--detach", anchor_env["c3"])
+    (mirror / "local-only.txt").write_text("镜像上的本地提交\n", encoding="utf-8")
+    _git(mirror, "add", "-A")
+    _git(mirror, "commit", "-q", "-m", "镜像本地提交（不在基准仓对象库里）")
+    sha = _git(mirror, "rev-parse", "HEAD").stdout.strip()
+    if _try_git(anchor_env["baseline"], "cat-file", "-e", f"{sha}^{{commit}}").returncode == 0:
+        raise AssertionError("夹具不成立：该提交竟在基准仓对象库里（本判据会退化成另一格）")
+
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", anchor_env["baseline"], mirror / ".agent-presets/migao",
+                                   explicit=False, out=out)
+    text = out.getvalue()
+
+    assert rc == 0, text                          # 内容一致 ⇒ 绿（这一格本来就绿，改的只是读数）
+    assert "不在基准仓对象库" in text
+    assert "活锚不是 git 检出" not in text
+
+
 def test_lag_state_is_unknown_when_ref_unresolvable(tmp_path: Path):
     """**红证**（同族，同一文件）：`_lag_state` 在 ref 取不到时必须是 `unknown`（**关系未判**），
     而不是有结论的 `divergent` —— 旧版：回显被当 sha ⇒ `merge-base` 随之失败 ⇒ 误判「分叉」。

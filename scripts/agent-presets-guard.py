@@ -720,7 +720,16 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         print(f"      {REFRESH_CMD}", file=out)
         return 1
 
-    tail = "，且 sha 为同一提交" if state == "same" else "（sha 关系未判：活锚不是 git 检出）"
+    # 读数必须指向**真实原因**（#5430 同族：读数指向错误对象 = 把人带偏）：
+    # `unknown` 有两种来源 —— 活锚不是 git 检出（判不了 sha），或活锚 HEAD 提交**不在基准仓对象库**里
+    # （实测：活锚镜像比本工作区的对象库新 ⇒ `cat-file` 查不到 ⇒ 关系未判，而活锚**确实是** git 检出）。
+    if state == "same":
+        tail = "，且 sha 为同一提交"
+    elif top is None:
+        tail = "（sha 关系未判：活锚不是 git 检出）"
+    else:
+        tail = (f"（sha 关系未判：活锚 HEAD {(sha or '?')[:12]} 不在基准仓对象库里 —— "
+                "**活锚是 git 检出**，只是两边的对象库不同刻）")
     print(f"   ✅ 活锚新鲜：内容与 {ref} 逐字节一致（{len(expected)} 个文件）{tail}", file=out)
     return 0
 
