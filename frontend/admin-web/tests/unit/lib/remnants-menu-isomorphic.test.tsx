@@ -6,7 +6,7 @@
  *
  * `/production/remnants`（余料台账，V122 / issue #5146）**存在且可达**，但只能从
  * 「企业参数中心 → 余料回收」域的 `rows[].href` 下钻进入；而**同期新增**的
- * `/production/pool`（池看板 #5177）/ `/production/saving-board`（省料看板 #5159）都进了侧边栏
+ * `/production/pool`（智能派单 #5177）/ `/production/saving-board`（省料看板 #5159）都进了侧边栏
  * ⇒ 口径不一致。用户裁定**补菜单**（不登记成「有意不进侧边栏」）。
  *
  * ## 为什么必须有这条守卫

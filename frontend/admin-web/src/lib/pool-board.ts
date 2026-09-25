@@ -1,5 +1,5 @@
 /**
- * 池看板 / 池化派单的**纯前端薄助手**（issue #5177）。
+ * 智能派单 / 池化派单的**纯前端薄助手**（issue #5177）。
  *
  * 🔴 本文件**只做两件事**：① 拼请求体；② 把服务端给的数字**格式化成文案**。
  *
@@ -100,10 +100,10 @@ export function formatMeters(meters: number | null | undefined, digits = 2): str
 export function previewSummaryRows(preview: PoolPreview): { label: string; value: string }[] {
   return [
     { label: '逐单公式米数（对照基线）', value: formatMeters(preview.formulaMeters) },
-    { label: '预计领料米数（池化后）', value: formatMeters(preview.pooledPlannedMeters) },
+    { label: '合并后预计领料米数', value: formatMeters(preview.pooledPlannedMeters) },
     { label: '预计节省', value: formatMeters(preview.savedMeters) },
     { label: '对照·逐单派应领', value: formatMeters(preview.perOrderPlannedMeters) },
-    { label: '池化新增收益', value: formatMeters(preview.poolingGainMeters) },
+    { label: '合并新增收益', value: formatMeters(preview.poolingGainMeters) },
   ]
 }
 

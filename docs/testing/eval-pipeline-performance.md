@@ -370,7 +370,7 @@ job 名随 persona 参数化也不适合做 required 名）。
   「DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body」+
   `assert "extra_body" not in kwargs`（PR #2547 / commit `f7cd3ba9` 引入）；
 - 而 **skill 路径仍在传**（`factory.py:64/67`）；
-- `factory.py:51` 的注释「不传参时 M3 默认仍开思考」是 MiniMax-M3 时代产物，当前模型是
+- `app/llm/factory.py` 里那句「不传参时 M3 默认仍开思考」的注释是 MiniMax-M3 时代产物，当前模型是
   `deepseek-flash`（`app/config.py:41,111-112`）。
 
 `_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS`（`app/graph/skills/base_skill.py:198-224`）
@@ -416,7 +416,7 @@ job 名随 persona 参数化也不适合做 required 名）。
    `system_fingerprint`，无 `thinking`/`reasoning` 回显）→ 判定只能靠**行为差异**，不能靠回显。
 3. **provider 默认是「开」**：C（不传 `extra_body`）照样产出 reasoning_content（len=537，
    122 reasoning tokens），与 A 同级。
-   ⇒ `factory.py:51` 那句「不传参时默认仍开思考」在当前 provider 上**结论仍然成立**
+   ⇒ 上面那句「不传参时默认仍开思考」在当前 provider 上**结论仍然成立**
    （虽然它是 M3 时代的注释）；但**语义已变**：不是「M3 特有的默认」，而是
    「DeepSeek 的默认思考行为」。`enable_thinking=False` 才是「什么都不说、放任默认」，
    `force_no_think=True` 才是**真正关闭**。

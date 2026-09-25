@@ -3015,7 +3015,7 @@ cases:
 
   - id: PR-081
     legacy_id: ""
-    title: "🔴 池看板可用化：**排序是字段的真实消费者**（加急优先 / 到货日临期优先，`null` 排最后）+ 成批预览**逐值不说谎** + 一键成批派单"
+    title: "🔴 智能派单可用化：**排序是字段的真实消费者**（加急优先 / 到货日临期优先，`null` 排最后）+ 成批预览**逐值不说谎** + 一键成批派单"
     domains:
       - product
       - processing-order
@@ -3031,7 +3031,7 @@ cases:
       - batch-ledger.dispatch-pool-visibility
       - order-urgency.queue-jump
     user_inputs:
-      - "商家在池看板上看积压、勾单、看预计节省、一键成批派单（非 LLM 行为，由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖）"
+      - "商家在智能派单上看积压、勾单、看预计节省、一键成批派单（非 LLM 行为，由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -3042,7 +3042,7 @@ cases:
       - "**一键成批派单（§15.1）**：勾选 ⇒ 调 `/preview` 展示 预计领料 vs 逐单公式米数 = 预计节省；点「一键成批派单」⇒ 调 `/dispatch`（`pooled=true`）且**逐单结果可见**（成功显示加工单号、失败显示 message），看板刷新。"
       - "🔴 存量行不炸读面（issue #5550）：`order_items.processing_info` 为 **NULL** 的明细行（真库实证：待派 29 行里 15 行如此）**不得**让 `GET /api/admin/production/pool` NPE 500 —— 该行按「既无加工项也无 `saleForm`」的**既有**语义跳过（不成派单候选、不产出行；整单没有快照时不进池），而**同池的正常行一行不丢**（同夹具里正常单照旧成组、计数逐值不变）。**红证** = 摘掉 `buildSnapshot` 的 `pi == null` 判定 ⇒ `PoolBoardUrgencyTest#poolReadFaceSurvivesLegacyItemWithoutProcessingInfo` 当场 NPE 红。**类级元守卫** = `ProcessingInfoNullSafetyMetaGuardTest#everyNormalizationCallSiteHandlesNull`（归一化入口的每一处结果解引用都必须先判 null；无判定的新调用点即红，报告给文件:行与出口）。"
     skip_reason: "[backend-contract] 排序/预览/成批派单（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5177）：池看板排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。"
+    merge_log: "2026-09-23 新增（issue #5177）：智能派单排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
@@ -3431,7 +3431,7 @@ cases:
       - "定时腿会不会变成「窗口到点就派」，以及不启用时它会不会偷偷动数据（非 LLM 行为，由 Java 判据覆盖）"
     expectations: []
     data_checks:
-      - "🔴 判据 2·**只查业务约束（不得引入池化窗口参数）**：① 池内等了 **30 小时**（超过看板 24 小时上限 ⇒ 池看板会告警）但客户到货日在 30 天后（**未到期**）⇒ 扫描腿**不派**（红证：把等待上限当死线的变异 `window_as_deadline` ⇒ 本判据红）；② 进池才 **1 小时**（远未到上限）但已过最晚派单日 ⇒ **照派**；③ 把等待上限调成 `0.001h` / `9999h` ⇒ 派单结果与 `reasons` 文案**逐值相同**（派不派与该参数无关）；④ 结构性：策略记录 `AutoBatchPolicy` 的入参集合**逐个钉死**（只有既有的看板告警上限 `maxWaitHours`，**没有任何**新增的窗口/超时参数）。"
+      - "🔴 判据 2·**只查业务约束（不得引入池化窗口参数）**：① 池内等了 **30 小时**（超过看板 24 小时上限 ⇒ 智能派单会告警）但客户到货日在 30 天后（**未到期**）⇒ 扫描腿**不派**（红证：把等待上限当死线的变异 `window_as_deadline` ⇒ 本判据红）；② 进池才 **1 小时**（远未到上限）但已过最晚派单日 ⇒ **照派**；③ 把等待上限调成 `0.001h` / `9999h` ⇒ 派单结果与 `reasons` 文案**逐值相同**（派不派与该参数无关）；④ 结构性：策略记录 `AutoBatchPolicy` 的入参集合**逐个钉死**（只有既有的看板告警上限 `maxWaitHours`，**没有任何**新增的窗口/超时参数）。"
       - "🔴 判据 2·**定时腿是兜底、不是第二条主触发**：满足成批条件③（需求 ≥ 最小批量）但**未到期**的单 ⇒ 扫描腿一张都不派；**同一份池**走事件腿（`order_confirmed`）⇒ 当场按条件③成批 ⇒ 「什么时候成批」仍由业务事件决定，扫描腿只判业务约束。"
       - "🔴 判据 4·**默认关**：自动成批未启用（`AUTO_BATCH_DEFAULT_ENABLED = false`）⇒ 扫描腿**零读零写**：连「有哪些租户」都不查（`orderMapper` / `itemMapper` / `processingOrderMapper` 零交互）、**零日志**、**零轮数**（心跳的 `rounds` 仍为 0）⇒ 记录期基线零污染。"
       - "🔴 判据 5·**心跳可见**：`/actuator/health` 的 `autoBatchDueScanHealth` details 给出 `enabled` / `rounds` / `last_success_at` / `last_failure_at` / `last_scanned_tenants` / `last_dispatched` / `last_error`（跑过一轮后轮数与最近成功时刻必须变；未跑过时为 `null` = 「没跑」长得像「没跑」），状态**恒 UP**（同 `MigrationHealthIndicator`：让扫描腿把整环境打成 DOWN 比原问题更糟）⇒ 停摆有可观测面（红证：`heartbeat_not_exposed` ⇒ 本判据红）。"
@@ -3925,7 +3925,7 @@ cases:
       - static-guard
     truths_ref: []
     user_inputs:
-      - "登录后打开侧边栏：生产管理组里能看到「余料台账」，点进去到 /production/remnants（与池看板 / 省料看板口径一致）（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起「余料台账」在**「仓储与物料」（`inventory-center`）**组，与入库单/省料看板同组；组归属以本用例 `data_checks` 为准，本句只作历史留痕）"
+      - "登录后打开侧边栏：生产管理组里能看到「余料台账」，点进去到 /production/remnants（与智能派单 / 省料看板口径一致）（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起「余料台账」在**「仓储与物料」（`inventory-center`）**组，与入库单/省料看板同组；组归属以本用例 `data_checks` 为准，本句只作历史留痕）"
     expectations: []
     data_checks:
       - "判据 1·**三处同构**（漏任一处 = 「岗位权限页勾得动、侧边栏看不到」或反之）：`frontend/admin-web/src/config/menu.ts`（真实侧边栏单一来源）/ `MenuController.MENU_TREE`（`GET /api/admin/menus`，岗位权限页消费）/ `AuthService.buildMenusByPermissions`（登录下发）的**「仓储与物料」组（`inventory-center`；#5271 拆组前本项挂在「生产管理」组 —— 该表述已作废）**都含「余料台账」，节点名 / 路径 / 图标逐字一致且**顺序一致**（组内三项顺序 = 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`），组名逐字「仓储与物料」、组 key 三源一致）。红证 A（实测）：只改 `menu.ts` 一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 判红（#5271 起比对**全树**：组 key + 组名 + 组顺序 + 导航型节点名）；红证 B：删掉 `menu.ts` 里该节点 ⇒ `remnants-menu-isomorphic.test.tsx` 判据 ① 与 PG-038 的面包屑覆盖同时判红。"

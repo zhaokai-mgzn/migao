@@ -186,7 +186,7 @@ describe('RolesPage', () => {
     expect(tree.getByText('财务对账')).toBeInTheDocument()
     // issue #5271：生产管理组 4 项 + 新组「仓储与物料」3 项都要在权限树里（否则「勾得动/看不到」漂移）
     expect(tree.getByText('生产看板')).toBeInTheDocument()
-    expect(tree.getByText('池看板')).toBeInTheDocument()
+    expect(tree.getByText('智能派单')).toBeInTheDocument()
     expect(tree.getByText('工艺配置')).toBeInTheDocument()
     expect(tree.getByText('计件工资')).toBeInTheDocument()
     expect(tree.getByText('入库单')).toBeInTheDocument()

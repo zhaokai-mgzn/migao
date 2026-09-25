@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 类级元守卫（issue #5550）：{@code processing_info} 归一化结果的**每一处解引用**都必须先处理 null。
  *
  * <h2>为什么要有它（只修一处 = 没修）</h2>
- * 2026-09-25 的 P0：池看板**恒 500**，根因是 `buildSnapshot` 里
+ * 2026-09-25 的 P0：智能派单**恒 500**，根因是 `buildSnapshot` 里
  * {@code str(pi.get("saleForm"))} —— {@code pi} 来自归一化函数，而 `order_items.processing_info`
  * **可为 NULL**（真库实证：待派池 29 行里 15 行是 NULL），于是必 NPE。
  * 同一形态在 {@code RemnantService.specialOptionsOf} 里**一模一样地存在**

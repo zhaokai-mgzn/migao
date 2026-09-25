@@ -42,7 +42,6 @@
       "docs/testing/eval-pipeline-performance.md|app/graph/skills/base_skill.py#198|bare": 1,
       "docs/testing/eval-pipeline-performance.md|app/llm/factory.py#63|bare": 1,
       "docs/testing/eval-pipeline-performance.md|factory.py#114|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|factory.py#51|bare": 2,
       "docs/testing/eval-pipeline-performance.md|factory.py#64|bare": 1,
       "docs/testing/eval-pipeline-performance.md|factory.py#82|bare": 1,
       "docs/testing/eval-pipeline-performance.md|tests/test_llm_factory.py#41|bare": 1,

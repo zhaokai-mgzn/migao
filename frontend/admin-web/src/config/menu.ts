@@ -14,7 +14,7 @@
 // ## 为什么重排（现状诊断，证据见 issue #5271）
 //
 // 重设计前「生产管理」是 **7 项的杂物抽屉**，把四种不同使用场景混编在一起：
-// 决策屏（生产看板 / 池看板 / 省料看板）+ 台账（余料台账 / 入库单）
+// 决策屏（生产看板 / 智能派单 / 省料看板）+ 台账（余料台账 / 入库单）
 // + 基础配置（工艺配置）+ 结算（计件工资）—— 一个生产主管找「入库单」与找「省料看板」
 // 是两件事，却挤在同一个折叠组里；而「商品管理」只有 2 项。
 //
@@ -141,7 +141,7 @@ export const menuGroups: MenuGroup[] = [
   // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组。
   // issue #4203/#4205 后端半边：本组节点权限码原统一 processing:manage（operator 已持有该码）。
   // 🔴 issue #5291：生产域新增**读**码 `production:view` —— 「生产看板 / 工艺配置 / 计件工资」
-  // 三个节点改用读码（「看得见这一页」与「改得动生产数据」就此分开）；「池看板」仍按
+  // 三个节点改用读码（「看得见这一页」与「改得动生产数据」就此分开）；「智能派单」仍按
   // processing:manage（其读端点用 processing:view、且无 Agent 工具调用，不在本单射程）。
   // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py（判据 3/4/10）。
   // issue #4357：「加工单」并入本组 —— 但它**不新增菜单项**：加工单列表页与「生产看板」
@@ -158,9 +158,9 @@ export const menuGroups: MenuGroup[] = [
     children: [
       // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
       { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
-      // 池看板（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
+      // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
       // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
-      { key: 'production-pool', name: '池看板', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:manage', keywords: ['ckb', 'chi', 'paidan', '派单'] },
+      { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:manage', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
       // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。

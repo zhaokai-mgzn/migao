@@ -437,12 +437,12 @@ class OrderDtoContractTest {
                         + " **不**声明它 ⇒ agent 路径不填、服务端**未传就不写**（落列默认 FALSE = 不加急）。"
                         + "🔴 它**不是**售后工单 priority 的别名：两者不共享来源、不联动、不派生"
                         + "（用户裁定「加急不能跟售后工单绑定，得在订单上直接做」）—— 该字段的消费者是"
-                        + "**加急插队**（不进池、立刻单派）与池看板，均在服务端，工具面无需采集");
+                        + "**加急插队**（不进池、立刻单派）与智能派单，均在服务端，工具面无需采集");
         REGISTERED_SINGLE_SIDED_FIELDS.put("requiredDeliveryDate",
                 "客户要求到货日（V120，issue #5177）：**只有 Java 侧**有人工下单表单采集它"
                         + "（订单页的到货日选择器，格式 YYYY-MM-DD）；ai-agent 工具 schema 不声明 ⇒ "
                         + "agent 路径不填、服务端**未传就不写**（NULL = 未指定，不猜、不回填）。"
-                        + "消费者 = 池看板排序/筛选（到货日升序、NULL 排最后）；该语义只在服务端，"
+                        + "消费者 = 智能派单排序/筛选（到货日升序、NULL 排最后）；该语义只在服务端，"
                         + "工具面采集它需要先裁定 agent 是否代客户承诺到货日（未在本单范围）。"
                         + "服务端落列与改单三态见 OrderService.updateUrgency");
         REGISTERED_SINGLE_SIDED_FIELDS.put("sms_code",

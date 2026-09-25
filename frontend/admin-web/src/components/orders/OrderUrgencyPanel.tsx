@@ -128,7 +128,7 @@ export default function OrderUrgencyPanel({
             保存
           </Button>
           <span className="text-xs text-neutral-400 pb-2.5">
-            留空 = 未指定（清空后不再参与派单排序）；加急单不进池，在池看板上单独派单
+            留空 = 未指定（清空后不再参与派单排序）；加急单不参与合并，在智能派单页单独派单
           </span>
         </div>
       </div>

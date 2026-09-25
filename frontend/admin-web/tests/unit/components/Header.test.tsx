@@ -525,13 +525,13 @@ describe('Header', () => {
     expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
   })
 
-  it('/production/pool 路径面包屑仍是「生产管理 > 池看板」（不随面料动线搬家）', async () => {
+  it('/production/pool 路径面包屑仍是「生产管理 > 智能派单」（不随面料动线搬家）', async () => {
     mockPathname = '/production/pool'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('池看板')).toBeInTheDocument()
+    expect(screen.getByText('智能派单')).toBeInTheDocument()
     expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
   })
 

@@ -294,7 +294,7 @@ public class ProcessingOrderService {
     private static final String SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE = "requiredDeliveryDate";
 
     /**
-     * 池看板的**唯一**排序口径（issue #5177 判据 5「排序是真实消费者」）。
+     * 智能派单的**唯一**排序口径（issue #5177 判据 5「排序是真实消费者」）。
      *
      * <h2>键序（每一把都有理由，且都不是「单号序」）</h2>
      * <ol>
@@ -506,8 +506,8 @@ public class ProcessingOrderService {
                 // 而不是一个数不清对象的计数。**加急单同样告警** —— 它更不该被压住。
                 warnings.add(new ProductionPoolViews.PoolWarning(order.getId(), order.getOrderNo(),
                         waitHours, String.format(
-                        "订单 %s 已在待派池里等了 %s 小时（上限 %s 小时）：请成批派单或单独派单"
-                                + "（池化窗口不得把这张单压住）",
+                        "订单 %s 已等待派单 %s 小时（超过上限 %s 小时）：请合并派单或单独派单"
+                                + "（不要一直压着不派）",
                         order.getOrderNo(), waitHours.toPlainString(), maxWaitHours.toPlainString())));
             }
             boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
@@ -543,7 +543,7 @@ public class ProcessingOrderService {
                 ordersInPool.add(order.getId());
             }
         }
-        // 池看板排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
+        // 智能派单排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
         urgentLines.sort(POOL_LINE_ORDER);
         List<ProductionPoolViews.PoolGroup> groups = new ArrayList<>();
         for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByMaterial.entrySet()) {
@@ -705,10 +705,10 @@ public class ProcessingOrderService {
         }
         if (!urgent.isEmpty()) {
             throw BusinessException.validationError(
-                    "加急单不进池，不能参与成批派单：" + String.join("、", urgent),
+                    "加急单不参与合并派单，请单独派：" + String.join("、", urgent),
                     List.of(),
-                    "请把这几个加急单单独派工（同一个端点 + pooled=false 即插队），"
-                            + "或先取消它们的加急标记再成批");
+                    "请把这几个加急单单独派单（立即派 = 单订单派单），"
+                            + "或先取消它们的加急标记再合并派单");
         }
     }
 
@@ -790,7 +790,7 @@ public class ProcessingOrderService {
      * @param minBatchMeters     条件③：`池内同物料需求 ≥ 最小批量`
      * @param standardCycleDays  业务兜底的标准生产周期（天）
      * @param assignmentRule     自动路径显式采用的指派规则（#5167）
-     * @param maxWaitHours       池看板的滞留上限（沿用 #5169 的请求参数缺省）
+     * @param maxWaitHours       智能派单的滞留上限（沿用 #5169 的请求参数缺省）
      */
     public record AutoBatchPolicy(boolean enabled, int fillRatioPercent, BigDecimal convergeMeters,
                                   BigDecimal minBatchMeters, int standardCycleDays,
@@ -3307,7 +3307,7 @@ public class ProcessingOrderService {
             Map<String, Object> pi = normalizeProcessingInfo(item.getProcessingInfo());
             // 🔴 存量行：`order_items.processing_info` **可为 NULL**（真库实证 issue #5550：待派池里
             // 29 行有 **15 行**是 NULL）⇒ 归一化结果是**可能为 null 的缺值**，不得直接解引用
-            // —— #4909 那行 `str(pi.get("saleForm"))` 踩的正是这里，池看板因此**恒 500**
+            // —— #4909 那行 `str(pi.get("saleForm"))` 踩的正是这里，智能派单因此**恒 500**
             //（读面把整池的每一行都过一遍，NULL 行必被扫到；这不是间歇故障）。
             // 缺值语义 = 既没有加工项、也没有 `saleForm` ⇒ 与「无加工项的非卖布行」走**同一条**既有语义：跳过。
             if (pi == null) {

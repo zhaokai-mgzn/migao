@@ -72,7 +72,7 @@ public class Order {
      * **客户要求到货日**（V120，issue #5177；{@code orders.required_delivery_date DATE}）。
      *
      * <p>NULL = <b>未指定</b>（**不猜、不回填** —— 存量单从未采集过这个外部事实，
-     * 回填就是编一个日期）。消费者 = **池看板的排序/筛选**（到货日升序、NULL 排**最后**，
+     * 回填就是编一个日期）。消费者 = **智能派单的排序/筛选**（到货日升序、NULL 排**最后**，
      * 不得当成「最紧急」）。它**不影响**对客价格、售价、成品、交期承诺（判据 6）。</p>
      */
     private LocalDate requiredDeliveryDate;

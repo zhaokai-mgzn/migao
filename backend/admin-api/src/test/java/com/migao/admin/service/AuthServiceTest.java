@@ -596,10 +596,10 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；池看板 = processing:manage（#5291）")
+    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage（#5291）")
     void currentUserMenusExposeProductionGroup() {
         // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
-        // 就此分开；**池看板**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
+        // 就此分开；**智能派单**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
         // 且无 Agent 工具调用 ⇒ 不在本单射程）。
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> readOnly = menusForPermissions("production:view");
 
@@ -609,17 +609,17 @@ class AuthServiceTest {
                 .containsExactly("生产看板", "工艺配置", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
                 "/production", "/production/routings", "/production/piecework");
-        // 同组不同权：池看板**不**随读码一起出现（拆码没有变成「一组一起放行」）
-        assertThat(allNames(readOnly)).doesNotContain("池看板");
+        // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
+        assertThat(allNames(readOnly)).doesNotContain("智能派单");
         // 加工项管理（product-center 组）同批改用读码 ⇒ 也随 production:view 可见
         assertThat(allNames(readOnly)).contains("加工项管理");
 
-        // 反向（原管理码持有者仍看得见它本来那几页）：只持 processing:manage ⇒ 生产组只剩池看板，
+        // 反向（原管理码持有者仍看得见它本来那几页）：只持 processing:manage ⇒ 生产组只剩智能派单，
         // 「仓储与物料」组只剩余料台账/省料看板；入库单（inbound:view）**不出现** —— 证明入库单
         // 确实挂在**独立的**权限判定上，而不是被并进了 processing:manage。
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> manageOnly = menusForPermissions("processing:manage");
         var productionManageOnly = groupByKey(manageOnly, "production-center");
-        assertThat(namesOf(productionManageOnly.getChildren())).containsExactly("池看板");
+        assertThat(namesOf(productionManageOnly.getChildren())).containsExactly("智能派单");
         var inventory = groupByKey(manageOnly, "inventory-center");
         assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账", "省料看板");
         assertThat(allNames(manageOnly)).doesNotContain("入库单");

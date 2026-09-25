@@ -1,6 +1,6 @@
 // case_ids: PR-081
 //
-// PR-081（issue #5177）：池看板的**纯前端薄助手** —— 池化派单请求体 + 服务端值的展示格式化。
+// PR-081（issue #5177）：智能派单的**纯前端薄助手** —— 池化派单请求体 + 服务端值的展示格式化。
 //
 // 本文件只钉两件**前端口径红线**（真值源 = `ProductionPoolViews.Preview` 的五个 BigDecimal 字段
 // + `migao-dev-flow` §15）：
@@ -88,14 +88,14 @@ describe('成批预览摘要：渲染服务端值，绝不自己相减', () => {
     poolingGainMeters: 1.5, // = 8 − 6.5（服务端算）
   } as unknown as PoolPreview
 
-  it('五行摘要逐字给出服务端的五个键（标签分开「预计节省」与「池化新增收益」）', () => {
+  it('五行摘要逐字给出服务端的五个键（标签分开「预计节省」与「合并新增收益」）', () => {
     const rows = previewSummaryRows(preview)
     expect(rows.map((r) => r.label)).toEqual([
       '逐单公式米数（对照基线）',
-      '预计领料米数（池化后）',
+      '合并后预计领料米数',
       '预计节省',
       '对照·逐单派应领',
-      '池化新增收益',
+      '合并新增收益',
     ])
     expect(rows.map((r) => r.value)).toEqual(['10.00', '6.50', '99.00', '8.00', '1.50'])
   })
@@ -108,10 +108,10 @@ describe('成批预览摘要：渲染服务端值，绝不自己相减', () => {
     expect(compare.value).toBe('8.00')
   })
 
-  it('「预计节省」与「池化新增收益」是两个独立的服务端键 —— 合成一句就是丢信息', () => {
+  it('「预计节省」与「合并新增收益」是两个独立的服务端键 —— 合成一句就是丢信息', () => {
     const rows = previewSummaryRows(preview)
     const saved = rows.find((r) => r.label === '预计节省')!
-    const gain = rows.find((r) => r.label === '池化新增收益')!
+    const gain = rows.find((r) => r.label === '合并新增收益')!
     // saved = formula − pooled = 3.5（**真实**服务端值；本桩故意给 99 以钉「不自己算」）；
     // gain = perOrder − pooled = 1.5：两者是**不同**的数，混成一个就分不清「池化的功劳」与「旧收益」
     expect(saved.value).not.toBe(gain.value)
