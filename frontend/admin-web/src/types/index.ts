@@ -2024,20 +2024,18 @@ export interface PaymentQrcode {
 /** 收款码表：键 = `wechat` / `alipay`（后端 map 口径） */
 export type PaymentQrcodeMap = Record<string, PaymentQrcode>
 
-// 修改密码参数
-export interface ChangePasswordParams {
-  oldPassword: string
-  newPassword: string
-  confirmPassword: string
-}
+// 注：原 `ChangePasswordParams`（对应 `PUT /api/admin/settings/password`，带 confirmPassword）
+// 已随 issue #5485 删除 —— 全仓零调用方（含测试）。该端点在**后端仍在**、但前端从未接线
+// （企业设置页的「修改密码」入口自 #3006 起就没有恢复）；前端唯一的改密路径是
+// `POST /api/auth/password/change`（见下）。留着那个包装 = 一条指向旧端点的死代码，
+// 后来人极易误用（issue #5485 的评审裁定：死代码是负债，顺手删）。
 
 /**
- * 员工自助改密请求（`POST /api/auth/password/change`，issue #5485）。
+ * 自助改密请求（`POST /api/auth/password/change`，issue #5485）。
  *
- * ⚠️ 与上面的 `ChangePasswordParams` **不是一回事**：那个是 `PUT /api/admin/settings/password`
- * （企业设置页的改密，带 confirmPassword）。本端点 body 只有这两个键 ——
- * 「确认新密码」是**纯前端**校验，不进请求体。成功后响应**直接带新凭据**（LoginResponse，
- * 含新 accessToken 与 mustChangePassword=false），前端不必再手动刷新一次。
+ * body 只有这两个键 ——「确认新密码」是**纯前端**校验，不进请求体。
+ * 成功后响应**直接带新凭据**（LoginResponse，含新 accessToken 与 mustChangePassword=false），
+ * 前端不必再手动刷新一次。
  */
 export interface EmployeeChangePasswordParams {
   oldPassword: string

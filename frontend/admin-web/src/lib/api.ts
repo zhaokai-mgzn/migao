@@ -113,7 +113,6 @@ import type {
   CustomerTagFormData,
   AiConfig,
   SystemSettings,
-  ChangePasswordParams,
   LoginLog,
   UploadedFile,
   Employee,
@@ -1434,9 +1433,6 @@ export const settingsApi = {
 
   updateAiConfig: (data: Partial<AiConfig>) =>
     request.put<ApiResponse<AiConfig>>('/api/admin/tenant/ai-config', data),
-
-  changePassword: (data: ChangePasswordParams) =>
-    request.put<ApiResponse<void>>('/api/admin/settings/password', data),
 
   getLoginLogs: (params?: PageParams) =>
     request.get<ApiResponse<PageResponse<LoginLog>>>('/api/admin/settings/login-logs', { params }),
