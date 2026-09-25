@@ -3,6 +3,7 @@ package com.migao.admin.service;
 
 import com.migao.admin.dto.RemnantViews;
 import com.migao.admin.entity.FabricRemnant;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.RemnantItemSize;
 import com.migao.admin.exception.BusinessException;
 import org.junit.jupiter.api.AfterAll;
@@ -101,6 +102,21 @@ class RemnantServiceTest {
                 Map.of("item_key", "绑带-布", "length_m", "0.5", "width_m", "0.2")));
         assertThat(service.specs(RemnantTestDb.TENANT_ID).items().stream()
                 .map(RemnantViews.SpecLine::itemKey).toList()).containsExactly("绑带-布");
+    }
+
+    // ────────────────────────────────────────────── 存量行：processing_info 为 NULL（issue #5550）
+
+    @Test
+    @DisplayName("存量行 processing_info 为 NULL ⇒ 特殊选项读面返回空（不得 NPE 500）")
+    void specialOptionsOfLegacyItemWithoutProcessingInfo() {
+        OrderItem legacy = OrderItem.builder().id("i-legacy").tenantId(RemnantTestDb.TENANT_ID)
+                .orderId("ORD-legacy").productId("prod-1").quantity(new BigDecimal("3")).build();
+
+        // 🔴 红证（修复前）：`OrderLineCraftFields.normalize(...)` 返回 null ⇒ 直连 `.get(...)` NPE
+        //    真库实证：待派明细 15/29 行的 processing_info 为 NULL（issue #5550）。
+        assertThat(RemnantService.specialOptionsOf(legacy))
+                .as("缺值 = 这一行没带任何特殊选项（缺键就缺，不猜）").isEmpty();
+        assertThat(RemnantService.specialOptionsOf(null)).as("null 行同样按缺值处理").isEmpty();
     }
 
     // ────────────────────────────────────────────── 判据 3：recover 的 fail-closed

@@ -5465,10 +5465,11 @@
 数据: 🔴 判据 4·**预览不说谎**：看板的「预计节省」`savedMeters = formulaMeters − pooledPlannedMeters` 与落账 `Σ saved_meters`（= `Σ(formula_meters − planned_meters)`）**逐值相等**（真库 SQL 读数 == 实体派生读数 == 预览算式，三腿同值）；另分开回 `perOrderPlannedMeters` / `poolingGainMeters`，**不把 #5158 已有的单订单内并排算成池化的功劳**。前端**不重算**这两个数（渲染服务端值 —— 两套口径正是「预览说谎」的成因）。
 数据: **池视图字段齐**：单号 / 物料（商品 × 颜色 × 门幅）/ 需求米数 / 等待时长 / 加急标记 / 到货日 + `maxWaitHours` / `poolingEnabled`（缺省关必须看得见）/ `overdueCount` 与**带对象名字**的 `warnings`（含加急单 —— 加急更不该被压住）。
 数据: **一键成批派单（§15.1）**：勾选 ⇒ 调 `/preview` 展示 预计领料 vs 逐单公式米数 = 预计节省；点「一键成批派单」⇒ 调 `/dispatch`（`pooled=true`）且**逐单结果可见**（成功显示加工单号、失败显示 message），看板刷新。
+数据: 🔴 存量行不炸读面（issue #5550）：`order_items.processing_info` 为 **NULL** 的明细行（真库实证：待派 29 行里 15 行如此）**不得**让 `GET /api/admin/production/pool` NPE 500 —— 该行按「既无加工项也无 `saleForm`」的**既有**语义跳过（不成派单候选、不产出行；整单没有快照时不进池），而**同池的正常行一行不丢**（同夹具里正常单照旧成组、计数逐值不变）。**红证** = 摘掉 `buildSnapshot` 的 `pi == null` 判定 ⇒ `PoolBoardUrgencyTest#poolReadFaceSurvivesLegacyItemWithoutProcessingInfo` 当场 NPE 红。**类级元守卫** = `ProcessingInfoNullSafetyMetaGuardTest#everyNormalizationCallSiteHandlesNull`（归一化入口的每一处结果解引用都必须先判 null；无判定的新调用点即红，报告给文件:行与出口）。
 跳过: [backend-contract] 排序/预览/成批派单（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟
 ```
 真值: pool-board.urgency-first-ordering, batch-ledger.dispatch-pool-visibility, order-urgency.queue-jump
-溯源: 2026-09-23 新增（issue #5177）：池看板排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 ｜ tags: pool-board, order-urgency, dispatch-pool, backend-contract
+溯源: 2026-09-23 新增（issue #5177）：池看板排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。 ｜ tags: pool-board, order-urgency, dispatch-pool, backend-contract
 
 ### PR-082. 🔴 V120 迁移质量（**两遍幂等** + 列类型/默认/NOT NULL 终态对账 + schema.sql 同步）+ 加急/到货日**透传进加工单快照** 🔵
 ```
@@ -5676,11 +5677,12 @@
 数据: 判据·**回收额口径**：`recovered_amount = 用掉米数 × 该批次当时均价`（真库逐值），`recovered_unit_cost` 是**回收那一刻**的快照；**改价后历史读数一字不变**；来源批次没记均价 ⇒ **拒绝回收**（宁可为失败，不许估）。
 数据: 🔴 判据·**未配置不静默**：清空尺寸表 ⇒ 匹配 `configured=false`、**推荐为空**、`notice` **非空**（含「未配置」）；配置读面同样显式说明「未启用」。**红证**：配一行 ⇒ `configured=true` 且 `notice` 消失、**真的开始匹配**（同一份夹具 ⇒ 差别只在配置）。渲染面同判据：未配置 ⇒ 面板显式徽标「未配置（正在用默认值：空 ⇒ 未启用）」+ 服务端说明**原样**上屏；已配置 ⇒ 两个「未配置」信号都不许出现。
 数据: 判据·**不凭空推荐**：余料宽 / 长任一不足 ⇒ **无推荐**且给出可读原因；同夹具把需求改小 ⇒ 必须命中（正向对照，证明「空」是因为尺寸而不是别的原因）。
+数据: 🔴 存量行特殊选项读面（issue #5550）：`processing_info` 为 **NULL** 的明细行 ⇒ `specialOptionsOf` 必须返回**空列表**（缺值就是这一行没带特殊选项，不猜），而**不是** NPE —— 原写法 `normalize(...).get(...)` 是直连解引用，余料回收（`orderTakesRemnantsAway` / `match`）对同样的存量行随时 500。**红证** = 还原直连解引用 ⇒ `RemnantServiceTest#specialOptionsOfLegacyItemWithoutProcessingInfo` 当场 NPE 红；类级元守卫同上（`ProcessingInfoNullSafetyMetaGuardTest`）。
 数据: 判据·**配置面合规**（`migao-dev-flow` §22）：小件尺寸表挂在**既有企业参数中心**的「余料回收」域**页内**（不新造第二个配置入口）、三件套齐全且**文案里不出现数字**、术语**就地**可查（独立锚点命名空间，与算料域不抢 id）、`impact` 明确写出「不改对客价 / 不改加工费 / 不改成品尺寸」（用户裁定「不能损失客户」）。
 跳过: [backend-contract] 真 PG 判据 + admin-web vitest 渲染/静态守卫，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: remnant-recovery.small-item-specs-configurable, remnant-recovery.match-and-recovery
-溯源: 2026-09-23 新增（issue #5146）：小件优先匹配 + 可配尺寸参数 + 未配置不静默 + 不凭空推荐。取号 PR-098。 ｜ tags: remnant, small-item-match, configurable-param, real-db, backend-contract
+溯源: 2026-09-23 新增（issue #5146）：小件优先匹配 + 可配尺寸参数 + 未配置不静默 + 不凭空推荐。取号 PR-098。 2026-09-25 追加（issue #5550）：特殊选项读面对 `processing_info` 为 NULL 的存量行返回空（不 NPE）。 ｜ tags: remnant, small-item-match, configurable-param, real-db, backend-contract
 
 ### PR-099. 🔴 真库：客户带走的余料不入可用池 + 报废留痕 + 账实一致由 DB 约束钉住（红证：混入可用池 ⇒ 立刻命中；抹掉原因 ⇒ 23514） 🔵
 ```

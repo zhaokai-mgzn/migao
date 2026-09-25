@@ -289,6 +289,36 @@ class PoolBoardUrgencyTest {
         assertThat(empty).isEmpty();
     }
 
+    // ─────────────────────────────────────────── 存量行：processing_info 为 NULL（issue #5550）
+
+    @Test
+    @DisplayName("存量行 processing_info 为 NULL ⇒ 池读面不得 500（该行不成候选，正常行照旧入池）")
+    void poolReadFaceSurvivesLegacyItemWithoutProcessingInfo() {
+        OffsetDateTime now = OffsetDateTime.now();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                orderOf("o-legacy", "ORD-1001", now.minusHours(30), false, null),
+                orderOf("o-normal", "ORD-1002", now.minusHours(2), false, null)));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                itemsWithoutProcessingInfo("o-legacy", "i-legacy"), itemsOf("o-normal", "i-normal"));
+
+        // 🔴 红证（修复前实测）：`normalizeProcessingInfo` 返回 null ⇒ `str(pi.get("saleForm"))` NPE
+        //    ⇒ 整个读面 500（真库实证：待派池 29 行有 15 行 processing_info 为 NULL）。
+        ProductionPoolViews.Pool pool = processingOrderService.pool(TENANT, null);
+
+        assertThat(pool.groups()).as("只有带 processing_info 的正常行成组").hasSize(1);
+        assertThat(pool.groups().get(0).lines()).extracting(ProductionPoolViews.PoolLine::orderId)
+                .as("缺 processing_info 的行既无加工项也无 saleForm ⇒ 不成派单候选（既有语义），"
+                        + "正常行一行不丢")
+                .containsExactly("o-normal");
+        assertThat(pool.lineCount()).as("明细行数 = 1（NULL 行不产出行）").isEqualTo(1);
+        assertThat(pool.orderCount())
+                .as("NULL 行整单没有快照 ⇒ 按**既有**语义不进池（`if (snapshot.isEmpty()) continue;`，"
+                        + "本单不改这条口径）；🔴 关键是不能 500，且不得把正常单一起丢掉")
+                .isEqualTo(1);
+        assertThat(pool.urgentCount()).as("NULL 行不得被读成加急").isZero();
+    }
+
     // ─────────────────────────────────────────── 夹具
 
     private Order orderOf(String id, String orderNo, OffsetDateTime createdAt, boolean urgent,
@@ -317,5 +347,16 @@ class PoolBoardUrgencyTest {
                 .productId("prod-1").productName("布艺遮光帘A").quantity(new BigDecimal("3"))
                 .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
                 .processingInfo(info).build());
+    }
+
+    /**
+     * 存量行：`order_items.processing_info` 为 **NULL**（真库实证 issue #5550：待派明细 15/29 行如此）
+     * —— 归一化入口对它返回 null，任何直接解引用都会 NPE（池看板恒 500 的根因）。
+     */
+    private List<OrderItem> itemsWithoutProcessingInfo(String orderId, String itemId) {
+        return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)
+                .productId("prod-1").productName("存量布艺帘").quantity(new BigDecimal("3"))
+                .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
+                .build());
     }
 }
