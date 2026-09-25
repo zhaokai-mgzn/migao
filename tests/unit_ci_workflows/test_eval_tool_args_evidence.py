@@ -54,6 +54,7 @@ job log 的轨迹行对 `processing_item_query` **只打结果摘要**
 （与 `tests/unit_ci_workflows/test_eval_denial_trace_shape.py` 同形）。
 """
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -366,6 +367,47 @@ class TestCompaction:
                                      "note": "打给 13900139000 确认"})
         assert out["customer_phone"] == "138****8000", out
         assert "13900139000" not in json.dumps(out, ensure_ascii=False), out
+
+    def test_email_is_masked(self):
+        """邮箱同属 PII（issue 点名 `pii_mask.py` 口径）—— 此前会原样进日志与 artifact。"""
+        out = lr._compact_call_args({"note": "发 zhang.san@example.com 确认",
+                                     "contact": "a@b.co"})
+        assert "zhang.san@example.com" not in json.dumps(out, ensure_ascii=False), out
+        assert out["note"] == "发 zh***@example.com 确认", out
+        # 单字符本地部分（`a@b.co`）：产品侧 `mask_email` 特意避免"把 `@` 当前缀"
+        # ⇒ 结果是 `a***@b.co`（**不是** `a@***@b.co`）—— 本判据钉住这个形态。
+        assert out["contact"] == "a***@b.co", out
+
+    def test_pii_masking_matches_the_product_side_module(self):
+        """脱敏口径与产品侧 `backend/ai-agent-service/app/utils/pii_mask.py` **逐例同判**。
+
+        为什么要钉（issue #3823 第 2 条点名了这个模块）：runner 是零依赖脚本、**不能**
+        `import app.*`，口径只能抄 —— 抄来的东西没有判据必然漂移（同 `#4098` 钉产品常量的做法）。
+        做法：从该模块**源码现取**两条正则的 pattern 字面量（不 import），本进程编译后与
+        runner 的脱敏输出逐例比对，并保留产品侧的**刻意口径**：`_PHONE` 带数字边界
+        ⇒ 订单号/验证码这类**数字串保持原样**（否则会把订单号毁掉 —— 该模块 docstring 的原话）。
+        """
+        src = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "utils"
+               / "pii_mask.py").read_text(encoding="utf-8")
+        phone = re.search(r'^_PHONE = re\.compile\(r"([^"]+)"\)', src, re.M)
+        email = re.search(r'^_EMAIL = re\.compile\(r"([^"]+)"\)', src, re.M)
+        assert phone and email, (
+            "产品侧 pii_mask.py 的两条正则不再可现取 ⇒ 本等价判据失去对象（改锚点，别删判据）")
+
+        def _product(text):
+            out = re.sub(phone.group(1),
+                         lambda m: m.group()[:3] + "****" + m.group()[-4:], text)
+            return re.sub(email.group(1),
+                          lambda m: m.group().partition("@")[0][:2] + "***@"
+                          + m.group().partition("@")[2], out)
+
+        for sample in ("打给 13900139000 确认",
+                       "订单号 20260913027050006",     # 数字串**不得**被啃（产品侧 docstring 原话）
+                       "验证码 483920",
+                       "a@b.co",
+                       "zhang.san@example.com",
+                       "邮箱 zhang.san@example.com 或手机 13800138000"):
+            assert lr._mask_pii_in_arg_text(sample) == _product(sample), sample
 
     def test_long_free_text_is_truncated(self):
         """自由文本截断（判别性字段是标量/短值，长文本只会把日志喂胖）。"""

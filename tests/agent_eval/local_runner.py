@@ -7303,9 +7303,29 @@ _ARG_MAX_DEPTH = 3       # 容器嵌套深度上限（够到 `pageMeta.params.<k
 _ARG_LOG_MAX_CALLS = 6   # 轨迹行 `callargs=` 段每次最多渲染几条调用（超出只报数，不静默丢）
 _ARG_TRUNCATED = "…"     # 截断标记（「到此为止」与「本来就这么长」必须可分）
 
+#: 邮箱（与产品侧 `backend/ai-agent-service/app/utils/pii_mask.py` 的 `_EMAIL` **同 pattern**；
+#: 该模块的手机号 `_PHONE` 与本文件 `_FULL_PHONE_RE` 逐字相同）。机器判据见
+#: `tests/unit_ci_workflows/test_eval_tool_args_evidence.py`：**现取**产品源码里的两条 pattern
+#: 与本文件逐例同判，任一侧漂移即红（runner 零依赖、不能 import `app.*`，口径只能抄 ⇒ 必须钉）。
+_ARG_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+def _mask_pii_in_arg_text(text: str) -> str:
+    """入参自由文本的脱敏：手机号 + 邮箱（**与产品侧 `pii_mask.py` 同口径**）。
+
+    为什么邮箱也要脱（issue #3823 第 2 条的显式要求）：`_mask_phones_in_text` 只啃手机号 ——
+    入参里的邮箱此前会**原样**进 CI 日志与 artifact。
+    口径来源 = `backend/ai-agent-service/app/utils/pii_mask.py`：手机号带**数字边界**
+    （`(?<!\\d)1[3-9]\\d{9}(?!\\d)`，不啃订单号里的数字片段）、邮箱保留本地部分前 2；
+    **验证码/订单号等数字串保持原样**（该口径刻意不啃数字串，否则会把订单号毁掉）。
+    """
+    out = _mask_phones_in_text(text)
+    return _ARG_EMAIL_RE.sub(
+        lambda m: m.group().partition("@")[0][:2] + "***@" + m.group().partition("@")[2], out)
+
 
 def _arg_scalar(v):
-    """标量入参的**值级**记录：数字/布尔/None 原样保留；字符串压单行 + 掩码手机号 + 截断。
+    """标量入参的**值级**记录：数字/布尔/None 原样保留；字符串压单行 + 掩码 PII + 截断。
 
     "原样保留"是硬要求：值级断言的语义就是**值相等**，把 `7` 记成 `"7"`、把 `True` 记成
     `"true"` 都会让证据与真值漂移（比较侧 `_args_value_matches` 容错数字 str/int 混比，
@@ -7313,7 +7333,7 @@ def _arg_scalar(v):
     """
     if v is None or isinstance(v, bool) or isinstance(v, (int, float)):
         return v
-    s = _mask_phones_in_text(v)          # 复用既有掩码口径（入参会进 CI 日志与 artifact）
+    s = _mask_pii_in_arg_text(v)         # 手机号 + 邮箱（入参会进 CI 日志与 artifact）
     return s if len(s) <= _ARG_MAX_VALUE else s[: _ARG_MAX_VALUE - 1] + _ARG_TRUNCATED
 
 
