@@ -19,6 +19,16 @@
   python3 scripts/drift_audit.py --regen-baseline --reason "PR #xxxx：销账 xxx"
   python3 scripts/drift_audit.py --list-checks         # 打印判据集合（护栏清单，机器可读）
   python3 scripts/drift_audit.py --repo <path> --base <rev> --offline   # 供 L0 夹具使用
+  # 定时腿：**逐条点名**哪条判据的"未知"不折成非零（可重复；只影响 `--fail-on-unknown` 这一关）
+  python3 scripts/drift_audit.py --check --strict-stale --fail-on-unknown \
+      --allow-unknown skill-anchor
+
+**`--allow-unknown` 的边界（别把它当 blanket bypass 读）**：它**只**让点名的判据不在
+`--fail-on-unknown` 上折成非零；判据的 `status` / `notes` / JSON 报告**照旧原样输出**
+（"未知"没有被改写成"通过"），报告里另起一行显式登记本轮名单。名单必须**当场兑现**，
+否则**用法错误（`exit 2`）**：① 点名的 id 在本次报告里不存在；② 该 id 本次状态**不是
+`unknown`**（已经能判了 ⇒ 撤豁免；`error` 更不许豁免）。这样豁免**只会因为"世界变了"而响**，
+不会腐烂成永久免检。
 
 **基线只许缩短**（防僵化，#4045 起=**全量对账** + burn-down 预算）：
   · 新增漂移（now > base，或出现新 key）⇒ `--check` 非零退出（fail-closed）；
@@ -1157,6 +1167,23 @@ UNIMPLEMENTED: list[dict[str, str]] = [
                    "或把引用改写成符号锚 —— 那是写法契约变更，属指令层（`.agent-presets/**`），本包不改。",
     },
     {
+        "id": "read-at-main",
+        "invariant": "I1",
+        "what": "护栏 A 的**工具化 `read-at-main`**：把「只读核查一律读 `origin/main` 的 git 对象」"
+                "做成**唯一入口**（一个可执行命令 / 一个纯函数），使『读了工作树』在工具层不可能发生",
+        "why": "**全仓不存在**（`git grep -n read-at-main origin/main` ⇒ **0 命中**）。现存只有 "
+               "`migao-dev-flow` §18.1 的**纪律**（只读核查一律 `git show origin/main:<path>`、"
+               "禁 grep 工作树）与各人手里的裸 `git show` —— 纪律会失效，而**没有任何东西会因此变红**"
+               "（#3843 的源码层返工正是这么来的：把落后十几个提交的工作树当真相，同一个符号两次都"
+               "查不到）。本审计的 `Audit.read(rel, rev)` 是同一件事的**内部**形态（判据全走 `--base`），"
+               "但它不是给人 / 给会话用的入口，也没有『核查必须走它』的消费方。",
+        "missing": "① 一个可执行只读入口（脚本子命令 / 纯函数），把 `git show <base>:<path>` 固定下来 "
+                   "（含 base 不可解析、路径不存在时的 fail-closed 形态）；② **消费方**：让『这次核查"
+                   "读了工作树』可判 —— 没有消费方的声明只是又一纸纪律（`migao-dev-flow` §20 R5"
+                   "『声明无消费』）。在此之前**照旧按纪律手工 `git show origin/main:<path>`**，"
+                   "不冒充已覆盖。",
+    },
+    {
         "id": "hardcoded-count",
         "invariant": "I1",
         "what": "写死条数 / 写死版本随真值漂移的检测（『文档里写死的现值』与真值不一致）",
@@ -1799,7 +1826,18 @@ def render_summary(rep: dict, baseline: dict) -> str:
     L.append("-" * 78)
     # **判据不可判**（三态 `3`）必须与「发现数为 0」在报告里就分开（#5151）：否则读者会把
     # "判据没跑出结论"当成"没有漂移"，进而去动基线（那正是差点删掉 9 条合法豁免的路径）。
-    unjudgeable = [c for c in rep["checks"] if c["status"] in ("error", "unknown")]
+    # ⚠️ **已点名豁免**的那几条要从这里排除（issue #3951）：它们的 `status` 照旧 `unknown`、
+    # notes 照旧原样打印（"未知"没有被改写成"通过"），但退出码确实不再是 `3` ——
+    # 不排除就会出现「本节说三态 3」而报告末行写「0 通过」的**结论与实现相反**。
+    exempt = set(s.get("unknown_exempt") or ())
+    unjudgeable = [c for c in rep["checks"]
+                   if c["status"] in ("error", "unknown") and c["id"] not in exempt]
+    if exempt:
+        L.append("⚪ **已声明的未知豁免**（`--allow-unknown`，本轮名单：%s）—— 这几条**没有产出结论**"
+                 "（`status` 照旧 `unknown`、notes 照旧原样打印，**不等于通过**），只是不参与 "
+                 "`--fail-on-unknown` 的折非零；判据一旦能判（活锚真的装上 / 判据改名）⇒ 不撤名单就是"
+                 "**用法错误**（`exit 2`）。判据本身**一个字都没有放宽**。"
+                 % "、".join(f"[{x}]" for x in sorted(exempt)))
     if unjudgeable:
         L.append("❌ **判据不可判**（三态 `3`，**不得读成 0**）—— 它们**没有产出结论**："
                  "`findings` 为空**不是**「发现数为 0 / 没有漂移」：")
@@ -1935,7 +1973,8 @@ def build_baseline(rep: dict, reason: str) -> dict:
     }
 
 
-def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bool) -> int:
+def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bool,
+              allow_unknown: tuple[str, ...] = ()) -> int:
     """**三态退出码**（`0` 通过 / `1` 判红 / `3` **不可判**）—— 单一实现，与报告同源（#5151）。
 
     为什么必须有 `3`：原先"判据自身异常"与"判据说没有漂移"都表现为 `findings` 为空，调用方
@@ -1948,6 +1987,12 @@ def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bo
       `--fail-on-unknown`，定时腿用）。**没声明该开关时 `unknown` 仍只报告**（`0`）——
       这是**既有语义，没有放宽**：CI runner 上活锚天然不存在（`skill-anchor` 恒 `unknown`），
       把 `unknown` 无条件折成非零 = 每个 PR 常红。
+    · `allow_unknown`（`--allow-unknown <check-id>`，可重复）= **逐条点名**的豁免：只有名单里的
+      判据 id 不参与上面那条"未知折非零"。**粒度就是这条豁免存在的理由**：CI runner 上活锚
+      **天然不存在** ⇒ `skill-anchor` **结构性恒 `unknown`** ⇒ 定时腿**永远**红（与"有没有漂移"
+      无关），而"干脆关掉 `--fail-on-unknown`"会**顺带放行**心跳/网络类的未知 —— 那正是该开关
+      要拦的假绿。名单的合法性由 `unknown_exemption_errors()` **当场**核对（不兑现 ⇒ `exit 2`，
+      根本进不到本函数）。
     · `2` 仍留给 `--regen-baseline` 缺 `--reason` 的用法错误（`main()` 里，与本函数无关）。
     """
     if not check:
@@ -1958,11 +2003,39 @@ def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bo
         return 1
     if strict_stale and (s["stale_baseline_entry"] or s["new_drift_out_of_scope"]):
         return 1
+    allowed = set(allow_unknown or ())
     if any(c["status"] == "error" for c in rep["checks"]):
         return 3
-    if fail_on_unknown and any(c["status"] == "unknown" for c in rep["checks"]):
+    if fail_on_unknown and any(c["status"] == "unknown" and c["id"] not in allowed
+                               for c in rep["checks"]):
         return 3
     return 0
+
+
+def unknown_exemption_errors(rep: dict, allow_unknown) -> list[str]:
+    """`--allow-unknown <check-id>` 的**反向判据**：豁免必须"当场兑现"（issue #3951）。
+
+    为什么必须有（否则它就是一个 blanket bypass）：名单一旦腐烂（判据改名 / 活锚真的装上 /
+    判据崩成 `error`），"我声明过豁免"会**静默**变成"这条永远不判" —— 而那正是本审计要治的
+    形态（豁免一条不存在的漂移 = 未来的假真值）。故两种形态都**当场判用法错误（`exit 2`）**：
+
+    · 名单里的 id 在本次报告里**不存在**（判据改名 / 打错字）；
+    · 该 id 本次状态**不是 `unknown`**（它已经能判了 ⇒ 豁免该撤；`error` 更不许被豁免）。
+
+    返回人读的问题串（空列表 = 名单兑现）。
+    """
+    by_id = {c["id"]: c for c in rep.get("checks", [])}
+    out: list[str] = []
+    for cid in allow_unknown or ():
+        c = by_id.get(cid)
+        if c is None:
+            known = "、".join(sorted(by_id)) or "（本次没跑任何判据）"
+            out.append(f"`--allow-unknown {cid}`：本次报告里**没有这个判据 id**（改名了？打错了？）"
+                       f"—— 现有判据：{known}")
+        elif c["status"] != "unknown":
+            out.append(f"`--allow-unknown {cid}`：它本次的状态是 `{c['status']}`，**不是 `unknown`** "
+                       f"⇒ 这条豁免已经用不上了（能判的判据不许豁免），请把它从名单里删掉")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1980,6 +2053,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", default=None, help="只跑这些判据（逗号分隔）")
     ap.add_argument("--offline", action="store_true", help="跳过网络判据（心跳记未知）")
     ap.add_argument("--fail-on-unknown", action="store_true", help="未知也当失败（定时任务用）")
+    ap.add_argument("--allow-unknown", action="append", default=None, metavar="CHECK_ID",
+                    help="**逐条点名**的未知豁免（可重复；只影响 `--fail-on-unknown` 这一关）。"
+                         "判据的 status/notes 照旧打印（不写成通过）；名单不兑现（id 不存在 / "
+                         "它本次不是 unknown）⇒ 用法错误 exit 2 —— 免得豁免腐烂成 blanket bypass。")
     ap.add_argument("--strict-stale", action="store_true",
                     help="**定时审计腿**：面外新增漂移也阻塞（陈旧条目自 #4045 起一律阻塞，"
                          "与本开关无关）。PR 门禁**不要**开：面外新增多半来自并行包刚合并进 "
@@ -2015,6 +2092,29 @@ def main(argv: list[str] | None = None) -> int:
     base_baseline = load_base_baseline(a)
     rep = run_audit(a, baseline, only, changed, base_baseline)
 
+    # `--allow-unknown` 的**反向判据**先于一切动作（含 `--regen-baseline` 的写盘）：声明了豁免
+    # 就必须当场兑现，否则它就是"我声明过 ⇒ 这条以后永远不判"的腐烂入口（issue #3951）。
+    allow_unknown = list(args.allow_unknown or [])
+    skipped = {c["id"] for c in rep["checks"]}
+    rep["summary"]["unknown_exempt"] = sorted(cid for cid in allow_unknown if cid in skipped)
+    exempt_errors = unknown_exemption_errors(rep, allow_unknown)
+    if exempt_errors:
+        # 报告**照常打印**：只报"名单过期"而藏起判据现在的真实状态，读的人就看不到**它为什么过期**
+        # （活锚真的装上了？判据崩了？）—— 判红必须可归因（`migao-acceptance`）。
+        # 本路径**不打印**「退出码（三态）」那一行（`tri_state` 还没算）：免得给出与 `exit 2` 相反的说法。
+        print(render_summary(rep, baseline))
+        if args.json_out:
+            # 机器可读报告**照旧落盘**：用法错误不该让下游读数（如面外新增条数）凭空消失。
+            # ⚠️ 这里**不写** `summary.tri_state`：本条路径的返回码是**用法错误**（`2`），
+            # 不是三态判定 —— 写了就会让报告声称一个没算过的结论。
+            Path(args.json_out).write_text(
+                json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
+        for msg in exempt_errors:
+            print(f"❌ {msg}")
+        print("❌ 用法错误（exit 2）：`--allow-unknown` **只许**登记『本次真的是 `unknown`』的判据 —— "
+              "判据改名 / 活锚真的装上了 / 判据崩成 `error`，都必须把名单改回来（豁免只许缩短）。")
+        return 2
+
     if args.regen_baseline:
         if not args.reason.strip():
             print("❌ --regen-baseline 必须带 --reason（PR 里要说明为什么重生成基线）")
@@ -2033,8 +2133,14 @@ def main(argv: list[str] | None = None) -> int:
     # 三态退出码**先算、再打印**：报告里的 `summary.tri_state` 与进程退出码同源（#5151），
     # 免得读者从 "verdict" 猜退出码（两者一度可以相反）。
     rc = tri_state(rep, check=args.check, strict_stale=args.strict_stale,
-                   fail_on_unknown=args.fail_on_unknown)
+                   fail_on_unknown=args.fail_on_unknown,
+                   allow_unknown=tuple(allow_unknown))
     rep["summary"]["tri_state"] = rc
+    if rc == 0 and rep["summary"]["verdict"] == "unknown":
+        # 豁免生效时抬头必须**同时**说出两件事：**没有漂移**（rc=0）与**确有一条判据没结论**。
+        # 写成 `ok` 是否认后者；写成 `unknown` 与 rc=0 相反 —— 本审计治过的正是这种
+        # "结论与实现相反"（抬头 OK 而 rc=1，见 `run_audit` 里 verdict 的排序注释）。
+        rep["summary"]["verdict"] = "unknown-exempt"
     print(render_summary(rep, baseline))
     if args.json_out:
         Path(args.json_out).write_text(
