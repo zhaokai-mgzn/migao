@@ -15,19 +15,32 @@ permissions:
 
 jobs:
   trigger:
-    if: |
-      (contains(github.event.issue.labels.*.name, 'needs-verification') ||
-       contains(github.event.issue.labels.*.name, 'needs-truths') ||
-       contains(github.event.issue.labels.*.name, 'process-improvement')) &&
-      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
-      !contains(github.event.issue.labels.*.name, 'block/need-human') &&
-      !contains(github.event.issue.labels.*.name, 'hold/auto-fail')
+    # ⚠️ **本闸门刻意不看事件载荷里的标签**（issue #5481 ③ 的根因就在这）：
+    # 本 workflow 与 `issue-contract-check.yml` **同为 `issues: opened` 触发**，而 `needs-truths`
+    # 是**另一个 run** 写上去的 ⇒ 事件载荷里根本看不到它 ⇒ 先跑完的「看不到标签、不转换」，
+    # 后跑的「只写标签、不转换」⇒ **真值齐全的 issue 永远不转档、且没有任何东西会变红**
+    # （实证 #3814：body 里本有 `## 验收标准` + 4 条编号判据，却一直挂 `needs-truths` 到一次无关编辑）。
+    # ⇒ 闸门只保留事件层面的粗判，真正的判定一律用下面「现取标签」步拿到的**实时**标签。
+    if: github.event.issue.number != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
+      # ── 现取标签（消除 `opened` 竞态；issue #5481 ③）─────────────────────────────
+      # 一律用 API 读**当前**标签，不读 `github.event.issue.labels`：后者是同刻快照，
+      # 另一个 workflow 在别的 run 里加的标签**永远看不到**。
+      - name: 现取标签（不读事件载荷 —— 消除 opened 竞态）
+        id: labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          L=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '[.labels[].name]|join(",")')
+          echo "names=$L" >> "$GITHUB_OUTPUT"
+          echo "现取标签 = $L"
+
       - name: 处理 needs-truths → needs-verification 转换
-        if: contains(github.event.issue.labels.*.name, 'needs-truths')
+        if: contains(steps.labels.outputs.names, 'needs-truths')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -44,7 +57,7 @@ jobs:
           fi
 
       - name: 打 needs-draft 标签（仅当 needs-verification 且无有效 DRAFT）
-        if: contains(github.event.issue.labels.*.name, 'needs-verification')
+        if: contains(steps.labels.outputs.names, 'needs-verification')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -59,7 +72,7 @@ jobs:
           echo "✅ needs-draft — 等 agent-poll 生成 case"
 
       - name: 校验 DRAFT 是否引用 issue 声明的用例（case-contract）
-        if: contains(github.event.issue.labels.*.name, 'needs-verification')
+        if: contains(steps.labels.outputs.names, 'needs-verification')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -89,8 +102,8 @@ jobs:
 
       - name: 补 ai-draft 标签（process-improvement 缺标 guard）
         if: |
-          contains(github.event.issue.labels.*.name, 'process-improvement') &&
-          !contains(github.event.issue.labels.*.name, 'ai-draft')
+          contains(steps.labels.outputs.names, 'process-improvement') &&
+          !contains(steps.labels.outputs.names, 'ai-draft')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}

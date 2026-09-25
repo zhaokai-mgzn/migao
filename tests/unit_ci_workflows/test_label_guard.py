@@ -36,24 +36,24 @@ class TestLabelGuardStructure:
         assert wf is not None
         assert wf.get("name") is not None
 
-    def test_job_trigger_includes_process_improvement(self):
-        """job trigger 的 if 条件必须覆盖 process-improvement label。"""
+    def test_process_improvement_is_still_handled(self):
+        """`process-improvement` 的处置仍在 —— 判定位置从 **job 闸门**下沉到**步骤**（issue #5481 ③）。
+
+        原判据断言「job 级 `if` 里有 process-improvement」；而 #5481 的竞态修复把**所有标签判定**
+        下沉到步骤里、一律用**现取**标签（job 闸门只看事件类型）⇒ 判据相应改为
+        「文件里仍有 process-improvement 的**判定分支**」。**强度不减**：缺了照样红。
+        """
+        import json
+
         wf = load_workflow()
         jobs = wf.get("jobs", {})
         assert jobs, "workflow 至少应有 1 个 job"
-
-        # 找到 trigger job
-        trigger_job = jobs.get("trigger")
-        if trigger_job is None:
-            # 可能改名了，取第一个 job
-            trigger_job = list(jobs.values())[0]
-
-        job_if = trigger_job.get("if", "")
-        assert job_if, "job 必须有 if 条件做 label 过滤"
-
-        # 必须包含 process-improvement 关键字
-        assert "process-improvement" in job_if, (
-            f"if 条件缺少 process-improvement label 检查:\n  if: {job_if}"
+        text = json.dumps(wf, ensure_ascii=False)
+        assert "process-improvement" in text, (
+            "workflow 里再也找不到 process-improvement 的处置 ⇒ 该标签的 ai-draft guard 没了"
+        )
+        assert "steps.labels.outputs.names" in text, (
+            "标签判定没有走「现取标签」（#5481 ③ 的竞态会复发）"
         )
 
     def test_has_ai_draft_guard_step(self):
@@ -217,3 +217,61 @@ class TestTruthVocabularySingleSource:
             f"判据词表缺仓库实际写法 {missing} ⇒ 这些 issue 仍会被误判「缺业务真值」"
             f"（当前词表: {tokens}）"
         )
+
+
+# ── `opened` 竞态：判定必须用**现取**标签，不得读事件载荷（issue #5481 ③）──────────
+
+def test_case_draft_reads_live_labels_not_the_event_payload():
+    """`case-draft` 的判定必须用**现取**标签（issue #5481 ③ 的 `opened` 竞态）。
+
+    现场：本 workflow 与 `issue-contract-check.yml` **同为 `issues: opened` 触发**，而 `needs-truths`
+    是**另一个 run** 写上去的 ⇒ 事件载荷里看不到它 ⇒ 先跑完的「看不到标签、不转换」、后跑的
+    「只写标签、不转换」⇒ **真值齐全的 issue 永远不转档，且没有任何东西会变红**。
+    实证 `#3814`：body 里本有 `## 验收标准` + 4 条编号判据，却一直挂 `needs-truths` 到一次无关编辑。
+
+    判据（三条同时成立）：① 没有**判定用**的 `github.event.issue.labels` 引用（注释与说明不算）；
+    ② 有一个把现取标签写进 `$GITHUB_OUTPUT` 的步；③ 至少一处 `if:` 用的是那个输出。
+    """
+    import re
+    from pathlib import Path
+
+    wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "case-draft.yml"
+    text = wf.read_text(encoding="utf-8")
+
+    offenders = [ln.strip() for ln in text.splitlines()
+                 if "github.event.issue.labels" in ln and not ln.strip().startswith("#")]
+    assert offenders == [], (
+        "`case-draft` 的判定仍读**事件载荷**里的标签 ⇒ `opened` 竞态复发（#5481 ③）：\n  "
+        + "\n  ".join(offenders)
+    )
+    assert "GITHUB_OUTPUT" in text and "gh issue view" in text, (
+        "缺「现取标签」步（必须用 API 读当前标签并写进 $GITHUB_OUTPUT）"
+    )
+    assert re.search(r"if:\s*[^\n]*steps\.labels\.outputs\.names", text), (
+        "没有任何 `if:` 用现取标签的输出 ⇒ 现取步白跑"
+    )
+
+
+def test_truth_vocab_covers_the_forms_actually_used_in_the_wild():
+    """词表必须覆盖仓库**实际写法**（issue #5481 ① 的语料面；红证 = 把词表改窄 ⇒ 本判据红）。
+
+    语料 = #5481 归一前在**真实标题**里出现过的判据词形（逐条取自该单的实测台账），
+    不是凭空造的；断言「这些词形**都**能被门禁认出来」——这正是「172 → 97」那次归一暴露的缺口。
+    """
+    from pathlib import Path
+    import re
+
+    wf = (Path(__file__).resolve().parents[2] / ".github" / "workflows"
+          / "issue-contract-check.yml").read_text(encoding="utf-8")
+    # ⚠️ 该文件里是 **JS** 写法（`const TRUTH_VOCAB = '…';`）⇒ 取词表要容忍空格与 `const`
+    # （本判据第一版写成 `TRUTH_VOCAB='…'` 无空格 ⇒ 取不到 ⇒ 判据当场红，已修）
+    m = re.search(r"TRUTH_VOCAB\s*=\s*'([^']+)'", wf)
+    assert m, "找不到 TRUTH_VOCAB（词表被改名 ⇒ 判据需同步，别让它静默消失）"
+    vocab = m.group(1)
+
+    #: #5481 实测到的**真实标题词形**（归一前的原标题里出现过的判据词）
+    corpus = ("验收标准", "验收判据", "验收清单", "验收口径", "完成判据", "判定标准", "判据")
+    missing = [w for w in corpus if not re.search(vocab, w)]
+    assert missing == [], (
+        f"这些**真实标题里出现过**的判据词形门禁认不出（#5481 ① 的缺口会复发）：{missing}"
+    )
