@@ -668,8 +668,14 @@ def test_main_side_has_a_drift_audit_backstop():
 
     wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "post-merge-verify.yml"
     steps = yaml.safe_load(wf.read_text(encoding="utf-8"))["jobs"]["verify"]["steps"]
-    step = next((s for s in steps if s.get("name") and "漂移" in str(s["name"])), None)
-    assert step is not None, "本腿缺「漂移审计兜底」步 ⇒ PR 带进 main 的漂移没有 CI 兜底（浅检出里那条判据会自 skip）"
+    hits = [s for s in steps if s.get("name") and "漂移" in str(s["name"])]
+    # ⚠️ 不用「存在性」弱断言（只证明"有东西"）——本仓的弱断言账本判据会当场判红（本 PR 第一版就是这么被
+    # 自己的 gate 抓到的）。改成对**结构结论**断言：缺步 / 多步都报出来。
+    assert [len(hits)] == [1], (
+        "本腿的「漂移审计兜底」步必须**恰好一个**（缺 ⇒ PR 带进 main 的漂移没有 CI 兜底；"
+        f"多 ⇒ 判据需同步）：实测命中 {len(hits)} 个"
+    )
+    step = hits[0]
     run = str(step.get("run") or "")
     assert "scripts/drift_audit.py" in run, f"该步没跑漂移审计：{run[:200]}"
     assert "exit ${RC}" in run or "exit $RC" in run, (
