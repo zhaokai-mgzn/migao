@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.59.1
+version: 1.60.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -129,6 +129,9 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   它**只** resolve「未解决 + bot + `isOutdated`」，**人类线程永不自动 resolve**
   （`required_conversation_resolution` 对**人类**评审线程是有价值的护栏 —— **不要**关掉它）。
   workflow 级自动化 (a)/(b) 因本机 token **无 `workflow` scope** 属**保留类**（不改任何 workflow）。
+  > ⚠️ **v1.60.0 纠错（issue #5486）**：本行的**理由**已被实测证伪 —— `git push` 走 **SSH** 时**不受**
+  > `workflow` scope 限制（实证：PR #5484 推含 `.github/workflows/**` 改动的分支**成功**，并用 API 做了内容级核验）；
+  > 受限的是 **`gh pr merge` / API 那一侧**。⇒ 「保留类」只对**合并路径**成立，**不是「改不了」**。见 §23.11。
 - **「哪些判据拦合并」必须现查，不许凭名字猜**（v1.39 修正，2026-09-21 / **#4634** + **#4248**）：
   native auto-merge 只看分支保护的 **required 集合** ⇒ **不在其中的判据判红照旧合并**，而 PR 页面上红/绿
   与 required 判据**长得一样** ⇒ 极易被读成「绿 = 可以合」（实证：关联 #4214 的 `Drift Audit` = fail 而该 PR 仍 MERGED；#4266 / #4267 / #4271 同款复发）。
@@ -254,7 +257,7 @@ gh run rerun $run --failed
 - 仓库已开启原生 **Auto Merge**：非 bot、非 draft、无 `block/merge` 标签、目标 main 的 PR，CI 全绿后**自动 squash 合并 + 删分支**，无需人工点合并。
 - agent 创建 PR 后**不需要等人工合并**——CI 绿即自动合；合并后 issue 因 body 的 Closes 自动关闭，形成「PR→合并→issue 关闭」全自动闭环。
 - 三个兜底闸门：bot PR（dependabot 需人工按 §7 SOP 分类）、`block/merge` 标签（人工闸）、draft PR 不自动合。
-- 强制人工合并的例外：改 `.github/workflows/` 的 PR 需 `workflow` scope（默认 token 无），按 §7.1 保留类处理。
+- 强制人工合并的例外：改 `.github/workflows/` 的 PR 用 **`gh pr merge` 合并**需 `workflow` scope（默认 token 无）⇒ 走 **native auto-merge / 网页合并**，或 `gh auth refresh -s workflow`；**推送这一步不受限**（SSH，v1.60.0 / issue #5486）。
 - **「全绿却 BLOCKED」不是 CI 问题**（v1.34 / **#4231**）：CI 绿 + `MERGEABLE` + 无阻塞 label 而
   `mergeStateStatus=BLOCKED` ⇒ 按 §2.2 首查**未解决评审线程**
   （`python3 scripts/resolve_stale_bot_threads.py <PR>`），**别**去重跑 CI / 查冲突 / 查 label。
@@ -266,7 +269,7 @@ gh run rerun $run --failed
   ⇒ **只有 `gh pr merge --disable-auto` 能停住它**：落闸用
   `python3 scripts/merge_gate.py --check <PR> --apply-label`（**默认同时 disarm**；未 arm 时只打标签即可）；
   逃生口 `--no-disarm-auto` **会明写**「已 arm 的 auto-merge 不会被本标签拦住」（**不做静默降级**）。
-  workflow 级接线 = **保留类**（本机 token 无 `workflow` scope，不改任何 workflow）。
+  workflow 级接线 = **保留类**（按 §23.11 / v1.60.0 的三分口径：**SSH 推可以**；`gh pr merge` 不行；auto-merge / 网页可以）。
 
 ### 3.4 测试要求按变更文件类型（QA Growth Gate 门禁）
 
@@ -328,6 +331,12 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 > ② **bot 的「只改 uses 版本 tag」类**（= `#4470`/`#4475` 的形态）经两个安全类 + required 检查门禁后
 > **也自动 arm**；
 > ③ **major 升级仍留人工** —— 这是仓库原本跳过 bot PR 的真实理由（半套升级 / 大版本破坏要人工关）。
+
+> **2026-09-25 再修正（v1.60.0 / issue #5486）**：上面「连人工 `gh pr merge` 都合不了」是**合并路径**的实证
+> （GraphQL / API 侧，**仍然成立**），但**不等于「workflow 改不了」** —— 同日实测：`git push` 走 **SSH** 推
+> **含 `.github/workflows/**` 改动**的分支**成功**（PR #5484；`gh api …/contents/…?ref=<分支>` 内容级核验到了新内容）。
+> ⇒ 新增 / 删除 / 改名 workflow 文件**不必再"留给有权限者"**：正常改 → **SSH 推** → 走 **native auto-merge 或网页合并**；
+> 只有「**必须用 `gh pr merge`**」这一条路径仍受限。三分口径见 §23.11。
 >
 > ⚠️ 「required 检查全绿」的口径是 **GitHub 自己的判定** `mergeStateStatus ∈ {CLEAN, UNSTABLE}`，
 > **不是**「`gh pr checks` 一条不红」：CI 里读不到 required 集合（`GET /branches/main/protection` 需 admin；
@@ -2036,7 +2045,28 @@ B2 有**门禁侧后果**（`drift_audit` 的 burn-down 会红），但"用哪�
 
 **未实装 / 边界（照实登记，§19.1）**：D1 的机械化（"滚动分支落后 N ⇒ 红"）**未落码**（owner = 该分支的自动化）；D2 是**取证纪律**；D3/D4 是**操作纪律**（三者均无门禁）。
 
-## 版本沿革（v1.1 → v1.59.0）
+## 23.11 规则里的「做不到」也是一条判据（v1.60.0 新增，2026-09-25 issue #5486 实测）
+
+**病灶**：技能自己写着的「本机 token 无 `workflow` scope ⇒ **不改任何 workflow**」被当作事实沿用了多轮，
+而 2026-09-25 一次**直接试推**就证伪了（`git push` 走 SSH 推含 `.github/workflows/**` 的分支**成功**；
+受限的是 `gh pr merge` / API 那一侧）。**代价可量化**：本会话为它**白等一轮**（先向用户要 `gh auth refresh -s workflow` 才动手），
+历史上更让多个包**主动绕开** workflow 改动 —— 与 §23「判据与事实不同刻」同族，只是这次错的是**规则自身**。
+
+**三分口径（每条都带实证，别再复述旧理由）**：
+
+| 动作 | 路径 | 实测 |
+|---|---|---|
+| 推含 `.github/workflows/**` 的分支 | `git push`（**SSH**，本机默认 remote） | ✅ 成功（PR #5484 + `gh api …/contents/…?ref=<分支>` 内容级核验） |
+| 同上 | HTTPS + gh OAuth token | ❌ `refusing to allow an OAuth App to create or update workflow` |
+| 合并含 workflow 改动的 PR | `gh pr merge`（GraphQL / API） | ❌ 被拒（§7.1 既有实证，**仍成立**） |
+| 同上 | **native auto-merge**（GitHub 侧执行）/ 网页合并 | ✅ 可用（与 §7.1 的 bot arm 同机制） |
+
+⇒ 正确表述是「**合并路径**受限」，**不是「改不了」**。
+
+**⚠️ 未实装（如实登记，§19.1）**：本节只有纪律 + 实证，**没有任何机械锁**会拦住「技能里写死一条做不到的规则」；
+判据当前只能靠**动手试一次**（成本极低）—— 与 §23.10 D2「触发面要按实测触发次数取证」同源：**能试的就别推断**。
+
+## 版本沿革（v1.1 → v1.60.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -2702,3 +2732,13 @@ B2 有**门禁侧后果**（`drift_audit` 的 burn-down 会红），但"用哪�
   ② **D2** 触发面要按**实测触发次数**取证（实证：`push` 被吞 —— 近 15 次合并只有 2 次产生 main 的 push run）；
   ③ **D3** **"no checks reported" ≠ 绿**，且**批量批准会适得其反**（并发组会挤掉新的 run）；
   ④ **D4** 破坏性批量操作**默认放后台 + 中断后核对状态再续跑**（实证：一次清 74 个时被超时杀掉）。
+
+- v1.60.0（2026-09-25 **纠错：`workflow` scope 的真实边界 + 新增 §23.11**，本次，issue #5486）：
+  ① **纠错**：原文多处写「本机 token 无 `workflow` scope ⇒ 保留类（**不改任何 workflow**）」—— **理由不成立**：
+  `git push` 走 **SSH** 时**不受**该 scope 限制（实证 PR #5484 推含 `.github/workflows/**` 改动的分支**成功**，
+  且用 API 内容级核验）；受限的是 **`gh pr merge` / API** 那一侧（旧实证仍成立）。
+  ⇒ 三分口径：**SSH 推可以 / `gh pr merge` 不行 / native auto-merge 或网页可以**；
+  §2.2、§3.3（两处）、§7.1 各加**前向指针**（**不改写历史事实**）。
+  ② **新增 §23.11**「规则里的『做不到』也是一条判据」：与 §23.10 D2「能试的就别推断」同源。
+  ③ **代价（可量化）**：本会话为它**白等一轮**（先要 `gh auth refresh -s workflow` 才动手）；历史上更让多个包绕开 workflow 改动。
+  **未实装 / 边界（如实登记，§19.1）**：只有纪律 + 实证，**没有任何机械锁**会拦住「技能里写死做不到的规则」。
