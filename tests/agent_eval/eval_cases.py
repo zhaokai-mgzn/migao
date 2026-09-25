@@ -9107,6 +9107,24 @@ _CASE_UI_055 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端控件用例：前置（受控夹具的 value/onChange、SKU 矩阵的 colors×doorWidths 组合、算料配置 GET 的引擎默认值、工人端工序夹具）全部由单测自建或打桩（`mockGetCraftCalcConfig` 等），不依赖共享夹具与真实服务 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-056 [NORMAL] 入库单页按钮几何完整性 — 按钮标签不换行（`whitespace-nowrap` 进 Button 基类）+ 类级元守卫（issue #5558；同族 UI-041）（源: cases/ui.yml）──
+_CASE_UI_056 = EvalCase(
+    id='UI-056',
+    legacy_id='',
+    title='入库单页按钮几何完整性 — 按钮标签不换行（`whitespace-nowrap` 进 Button 基类）+ 类级元守卫（issue #5558；同族 UI-041）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['仓储与物料 → 入库单：页头与筛选行的按钮文字被压成竖排（期初建账导入 / 新建入库单 / 查询 / 重置）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据·**效果层几何（Playwright boundingBox + 内容溢出）**：1100×800 与 1280×800 两视口下，四个按钮的 `scrollHeight − clientHeight ≤ 1`（标签没换行）且宽度 ≥ 自然宽度下限（期初建账导入 130 / 新建入库单 118 / 查询 78 / 重置 76）。**修复前实测**：期初建账导入溢出 **13px**（1100 视口）/ 3px（1280）、查询溢出 3px，宽度被压到 101 / 90 / 70 / 68（自然宽度 140 / 124 / 84 / 82）⇒ 标签在固定 `h-9` 盒子里换行。**红证** = 去掉基类 `whitespace-nowrap` ⇒ 该 spec 当场红（含 Playwright 失败截图）。仅「元素存在/不存在」不算覆盖（`frontend-fix.layout`）。', '🔴 判据·**类级元守卫**（每次 PR 就拦，不等 nightly E2E）：`frontend/admin-web/tests/unit/ui-primitive-nowrap-guard.test.ts` 扫 `src/components/ui/**`，凡是 `inline-flex` 基类的原语都必须带 `whitespace-nowrap`；发现规则是机械的（不是人工台账），新原语漏了即红，并带非空跑自证（普查面为空 / 已知原语改名 ⇒ 先红）。**红证** = 去掉 Button 的那一条 ⇒ 元守卫指名 `Button.tsx` 变红。', '**类级口径（为什么不是只钉这一页）**：`Badge` / `StatusBadge` 早就有 `whitespace-nowrap`，只有 `Button` 漏了 —— 它是三个 `inline-flex` 原语里的异类；同族先例 UI-041（设置页开关缺 `shrink-0` ⇒ 轨道被压扁、圆钮溢出）说明「flex 行里的原语缺几何保护」是一**类**。本单只改共享基类，**不动任何页面结构**。', '**不回归**：无 API/契约变更（`frontend-fix.no-api-change`）；页面列表渲染/建单/过账等既有前端判据（PR-037）逐条不变。'],
+    skip_reason='[backend-contract] 纯前端布局几何由 Playwright E2E（tests/e2e/specs/warehouse/inbound-orders-button-geometry.spec.ts）+ admin-web vitest 覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'layout', 'button', 'geometry'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -9626,6 +9644,7 @@ ALL_CASES = (
     _CASE_UI_053,
     _CASE_UI_054,
     _CASE_UI_055,
+    _CASE_UI_056,
     _CASE_UT_001,
     _CASE_UT_002,
 )

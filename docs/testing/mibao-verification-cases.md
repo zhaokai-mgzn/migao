@@ -6039,7 +6039,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（53 case）
+## 前端 UI 域（54 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -6760,6 +6760,19 @@
 真值: frontend-fix.vitest, frontend-fix.tsc
 溯源: 2026-09-23 新增（issue #5198，用户实测报告「不能直接输入 0，所以导致无法输入 0.？」）：把「数字输入框 0 打不进去 / 小数点吞键 / 中间态丢失」这一族反模式收敛到共享组件 NumberInput（`type="text"` + `inputMode="decimal"` + 字符串草稿），并就地修掉三处真缺陷（SkuMatrix 价格库存格、算料配置参数、工人端报工键盘）。2026-09-23（issue #5218，独立复核推翻 #5198 声称的「其余站点已核无缺陷」）：**补判据 6/7 并订正判据 3 的假红证** —— ① `SkuMatrix` 的 `sku?.price ? sku.price : null` 是同一 bug 家族的**新形态**（0 为 falsy ⇒ 编辑既有值时框当场清空），改判为「只有真缺值才映射成空」；② 下单页工艺字段（花距 / 配布边米数 / 配布边单价）迁 `NumberInput` 并删掉 `numberOrNull` 的 `> 0` 强转，配布边 `0` 改为**显式告知**（不再无声跳回主布）；③ 删掉 `NumberInput` 里那条「删了也不会有任何测试变红」的守卫（假红证）并同步订正判据 3；④ 新增判据 6 的静态扫描（`x ? x : null` 数值接线全仓零命中，含扫描器自身的红证）；⑤ 判据 8 收口另外三处漏网站点（ProductForm 卷长 / OversizeThresholdPreview 四框 / routings 规则单价），其中规则单价按 issue 许可用「逐字保留原文」等效实现（改用 NumberInput 会让失焦归一化把该被拒绝的三位小数静默改成合法值）；⑥ 判据 9 复核发现 #9 —— 实测该红证**成立**（删 `continue` 守卫 ⇒ 该条红），故不降级、只补留痕。同时**如实登记未改站点**（`orders/new/page.tsx` 由另一工作包整体重写，缺陷只登记；inbound-orders / finance / RefundOrderModal / ProductDetail 行内改价 / ProductForm「1 卷 = 多少米」/ OrderCraftFields / OversizeThresholdPreview 经真实浏览器实测「0 → . → 5 得 0.5」判为无缺陷 ⇒ 按最少代码阶梯**不为了统一而改**）。2026-09-23（issue #5250，用例库同步：判据文字落后于实现）：判据 6 的文字改成与 #5228 实现（PR #5249）**同口径** —— 从「不得再有 `x ? x : null` 形态的数值接线」扩成「**语义判定 + 分档作用域**」，并**把判据边界与判据本体一起登记**：分档理由（裸 `||` 全仓 223 处 ⇒ 全仓判红即假红机器）、已知不覆盖 3 条（裸 `||` 非接线面 / 经中间变量与 `{...props}` 的间接接线 / #5228 表里字面的跨行 `&&` 写法不是合法 JS），三条各**指回实现侧可执行断言 ⑨**（不是留白）；红证标注同步订正为 ①~⑤（旧文字只写 ①④，落后于扩成四变体 + 跨行的实现）。本单**只同步文字 + 重渲染**，判据实现与其它用例条目一字未动。 ｜ tags: ui, number-input, decimal, admin-web, bmini
 
+### UI-056. 入库单页按钮几何完整性 — 按钮标签不换行（`whitespace-nowrap` 进 Button 基类）+ 类级元守卫（issue #5558；同族 UI-041） 🔵
+```
+你: 仓储与物料 → 入库单：页头与筛选行的按钮文字被压成竖排（期初建账导入 / 新建入库单 / 查询 / 重置）
+期望: direct_reply
+数据: 🔴 判据·**效果层几何（Playwright boundingBox + 内容溢出）**：1100×800 与 1280×800 两视口下，四个按钮的 `scrollHeight − clientHeight ≤ 1`（标签没换行）且宽度 ≥ 自然宽度下限（期初建账导入 130 / 新建入库单 118 / 查询 78 / 重置 76）。**修复前实测**：期初建账导入溢出 **13px**（1100 视口）/ 3px（1280）、查询溢出 3px，宽度被压到 101 / 90 / 70 / 68（自然宽度 140 / 124 / 84 / 82）⇒ 标签在固定 `h-9` 盒子里换行。**红证** = 去掉基类 `whitespace-nowrap` ⇒ 该 spec 当场红（含 Playwright 失败截图）。仅「元素存在/不存在」不算覆盖（`frontend-fix.layout`）。
+数据: 🔴 判据·**类级元守卫**（每次 PR 就拦，不等 nightly E2E）：`frontend/admin-web/tests/unit/ui-primitive-nowrap-guard.test.ts` 扫 `src/components/ui/**`，凡是 `inline-flex` 基类的原语都必须带 `whitespace-nowrap`；发现规则是机械的（不是人工台账），新原语漏了即红，并带非空跑自证（普查面为空 / 已知原语改名 ⇒ 先红）。**红证** = 去掉 Button 的那一条 ⇒ 元守卫指名 `Button.tsx` 变红。
+数据: **类级口径（为什么不是只钉这一页）**：`Badge` / `StatusBadge` 早就有 `whitespace-nowrap`，只有 `Button` 漏了 —— 它是三个 `inline-flex` 原语里的异类；同族先例 UI-041（设置页开关缺 `shrink-0` ⇒ 轨道被压扁、圆钮溢出）说明「flex 行里的原语缺几何保护」是一**类**。本单只改共享基类，**不动任何页面结构**。
+数据: **不回归**：无 API/契约变更（`frontend-fix.no-api-change`）；页面列表渲染/建单/过账等既有前端判据（PR-037）逐条不变。
+跳过: [backend-contract] 纯前端布局几何由 Playwright E2E（tests/e2e/specs/warehouse/inbound-orders-button-geometry.spec.ts）+ admin-web vitest 覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.layout, frontend-fix.e2e, frontend-fix.no-api-change
+溯源: 2026-09-25 新增（issue #5558）：Button 基类缺 whitespace-nowrap ⇒ flex 行里被压到 min-content、标签竖排；E2E 几何断言（溢出 13px → 0）+ 类级元守卫（inline-flex 原语必须带 nowrap）。取号 UI-056。 ｜ tags: ui, layout, button, geometry
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -6789,8 +6802,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：484（活跃 119，跳过 365）
-- tier 分布：smoke 12 / normal 442 / adversarial 30
+- 用例总数：485（活跃 119，跳过 366）
+- tier 分布：smoke 12 / normal 443 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6815,7 +6828,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：53
+- 前端 UI 域：54
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

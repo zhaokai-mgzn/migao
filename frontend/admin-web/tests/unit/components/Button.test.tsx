@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-001, UI-002
+// case_ids: UI-001, UI-002, UI-056
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -9,6 +9,14 @@ describe('Button Component', () => {
   it('renders children', () => {
     render(<Button>Submit</Button>)
     expect(screen.getByText('Submit')).toBeInTheDocument()
+  })
+
+  it('基类带 whitespace-nowrap：窄容器里标签不换行（issue #5558）', () => {
+    // 红证：去掉基类的 whitespace-nowrap ⇒ 本判据当场红。
+    // 效果层几何（真实页面上按钮内容不溢出）由 Playwright 判据
+    // tests/e2e/specs/warehouse/inbound-orders-button-geometry.spec.ts 守。
+    render(<Button>期初建账导入</Button>)
+    expect(screen.getByText('期初建账导入').className).toContain('whitespace-nowrap')
   })
 
   it('applies primary variant styles by default', () => {
