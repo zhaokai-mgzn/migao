@@ -1047,6 +1047,10 @@ def _plain_checkout(tmp_path: Path, name: str, bare: Path | None = None) -> Path
     repo = tmp_path / name
     if bare is not None:
         _git(tmp_path, "clone", "-q", str(bare), str(repo))
+        # ⚠️ `git clone` **不写** user.name/email ⇒ 在镜像里提交会撞「Author identity unknown」
+        # （本机有全局 identity ⇒ 本地绿、CI 红：实测 CI 该腿唯一的红就是这里）。
+        _git(repo, "config", "user.email", "fixture@example.com")
+        _git(repo, "config", "user.name", "fixture")
         return repo
     repo.mkdir(parents=True, exist_ok=True)
     _git(repo, "init", "-q", "-b", "main")
