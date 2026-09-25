@@ -9125,6 +9125,24 @@ _CASE_UI_056 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-057 [NORMAL] 省料看板文案去内部代号（L2/L3 → 说人话）+ 类级元守卫：内部代号不得进用户可见文案（issue #5565）（源: cases/ui.yml）──
+_CASE_UI_057 = EvalCase(
+    id='UI-057',
+    legacy_id='',
+    title='省料看板文案去内部代号（L2/L3 → 说人话）+ 类级元守卫：内部代号不得进用户可见文案（issue #5565）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['生产管理 → 省料看板：页头与两个区块标题写着 L2 / L3（用户逐字「L2和L3是什么概念，用户不懂，我也不懂」）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据·**渲染文本零代号**：省料看板整页渲染文本里不出现 `L1/L2/L3`（严格 `/L[123]/`）。修复前实测：页头副标题「批次余量分档（L2）＋ 单位产出的面料消耗（L3）」+ 区块标题「L2 批次余量分档…」「L3 单位产出的面料消耗…」三处命中。断言口径 = **整页 textContent**（本页「批次余量分档」在副标题与区块标题各出现一次，`findByText` 会因多命中重试到 5s 超时 —— 已记在测试文件注释里）。', '判据·**说人话且不丢口径**：副标题渲染出「每批布用剩多少」「每平方米成品用掉多少米布」；两个区块标题去掉代号后**仍**点明分组/粒度（「按物料 × 时间 × 来源分组」「按 ISO 周 / 按月」不许顺手删）。', '🔴 判据·**类级元守卫**：`src/app` / `src/components` / `src/lib` 三处扫「用户可见形态」的内部代号 —— `（L2）`（括号包裹）与 `L2 中文`（标题式）；注释行与 SVG `d="…"` 不算（它们不上屏，实测 `orders/page.tsx` 图标路径含 `L3` 会假红）。未登记即红，豁免台账为空。修复前实测具名三行（saving-board/page.tsx 的副标题与两个 h2）。', '**不回归**：口径/接口/数值一律未动（`frontend-fix.no-api-change`）；省料看板既有纯函数判据（PR-095：空数据不冒充 0、档位文案来自服务端）逐条不变。'],
+    skip_reason='[backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'copy', 'saving-board', 'jargon'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -9645,6 +9663,7 @@ ALL_CASES = (
     _CASE_UI_054,
     _CASE_UI_055,
     _CASE_UI_056,
+    _CASE_UI_057,
     _CASE_UT_001,
     _CASE_UT_002,
 )
