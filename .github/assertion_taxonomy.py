@@ -1171,7 +1171,7 @@ def is_single_leg_by_toolset(case: dict) -> bool:
         `TestDegenerateGuardRails::test_mibao_toolset_truth_loaded` 报红。
 
     仍是**下界**：语义单端（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）
-    静态不可判定，登记在 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#3483）。
+    静态不可判定，登记在 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#5505）。
     """
     if _XIAOBU_TOOLS is None or not _MIBAO_TOOLS:
         return False
@@ -1182,7 +1182,7 @@ def is_single_leg_by_toolset(case: dict) -> bool:
 def missing_persona_annotation(case: dict) -> bool:
     """单端（按工具集可判定的）用例是否**缺** persona 标注。
 
-    规则 d 的静态部分：要求**标注存在**。跨腿窄跑的禁止（#3822）属 T2，见未实装清单。
+    规则 d 的静态部分：要求**标注存在**。跨腿窄跑的禁止（#5504）属 T2，见未实装清单。
     """
     if not is_single_leg_by_toolset(case):
         return False
@@ -1607,12 +1607,12 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。"
         ),
         "needs": (
-            "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#3822；"
+            "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#5504；"
             "`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。"
         ),
         # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        "issue": 3822,
-        "expires": "2027-01-31",
+        "issue": 5504,
+        "expires": "2027-03-31",
         "how_to_verify": (
             "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**"
             "（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。"
@@ -1685,8 +1685,8 @@ UNIMPLEMENTED: tuple[dict, ...] = (
         ),
         "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
         # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        "issue": 3483,
-        "expires": "2027-03-31",
+        "issue": 5505,
+        "expires": "2027-06-30",
         "how_to_verify": (
             "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`"
             "是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」"
