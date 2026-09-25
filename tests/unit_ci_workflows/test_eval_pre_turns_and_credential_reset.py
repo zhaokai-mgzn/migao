@@ -285,7 +285,7 @@ class TestPreTurnsAreConstructed:
         """构造不出来必须是**响的**：非列表形态 ⇒ 折进结论（score=0）；空列表 = **缺省**，放行。
 
         ⚠️ 空列表**不能**判红（实测教训）：`EvalCase.pre_turns` 的 dataclass 缺省就是 `[]`
-        ⇒ 把 `[]` 当"声明了 0 轮"会让**全库 486 条用例**当场 score=0（判据自己变缺陷）。
+        ⇒ 把 `[]` 当"声明了 0 轮"会让**全库**（现取条数）**用例当场 score=0（判据自己变缺陷）。
         生成物侧也不落空列表字面量 ⇒ 这一格没有静默失效面。
         """
         for bad in ('["有没有遮光窗帘"]', "有没有遮光窗帘", {"text": "看看"}):
@@ -352,18 +352,20 @@ class TestTheFieldIsWiredEndToEnd:
     def test_no_case_in_the_library_uses_it_yet_so_the_default_path_is_untouched(self):
         """现取读数：本 PR **不动**任何存量用例 ⇒ 生成物 diff 只有 dataclass 一行。"""
         cases = render_cases.load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
-        assert len(cases) == 486
+        # ⚠️ **不许写死条数**（本 PR 首轮就因为写死 486 在 required 腿上红：库随别的 PR 长到了 487）。
+        # 口径 = 与**生成物** `eval_cases.ALL_CASES` 的**现取**条数一致，且非空（防"零条也绿"空转）。
+        assert len(cases) == len(eval_cases.ALL_CASES) > 0
         assert [c["id"] for c in cases if c.get("pre_turns")] == []
 
     def test_every_library_case_passes_the_new_guard(self):
-        """类级元守卫：全库 486 条**真 `EvalCase` 对象**过 `pre_turns` 判据 ⇒ 一条都不误伤。
+        """类级元守卫：全库**（现取条数）**真 `EvalCase` 对象**过 `pre_turns` 判据 ⇒ 一条都不误伤。
 
         这一条是"缺省路径逐字不变"的**全量**形态：新判据若把 dataclass 缺省（`[]`）读成
         "声明了 0 轮历史"，全库每一条用例都会当场 score=0（开发中实测踩到）——
         本判据把那一格钉死，改回去即红。
         """
         import eval_cases
-        assert len(eval_cases.ALL_CASES) == 486
+        assert len(eval_cases.ALL_CASES) > 0, "生成物零条 ⇒ 判据在空转（不许拿空集当通过）"
         assert [c.id for c in eval_cases.ALL_CASES
                 if lr.check_pre_turns_declared(c.pre_turns)] == []
 
