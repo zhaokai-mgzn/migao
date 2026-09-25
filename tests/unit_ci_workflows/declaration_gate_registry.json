@@ -333,6 +333,13 @@
       "issue": "#5007",
       "criterion": "tests/unit_ci_workflows/test_growth_gate_source_filename_trap.py::test_code_exts_match_growth_gate_implementation",
       "note": "模块头注释声称与 `.github/growth_gate.py::TEST_FILE_EXTS` 同源 ⇒ 由该判据从**实现源码**读出该集合后**逐项同序**比对。⚠️ 本条目修的是 **main 侧的一处空承诺**：#5413 带进来的这个文件写了同源注释但没有判据承担它，#5415 的常驻判据（#5007①）上线后在任何 PR 上判红；因 `ci workflow helper unit tests` 在 required 集合里 ⇒ 会卡住所有 PR（AGENTS.md 铁律 9 的「main 侧没有守护」形态）。本条目只**补上执行面**，不改任何门禁的通过条件。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py",
+      "symbol": "EXPECTED_PACKAGES",
+      "issue": "#3947",
+      "criterion": "tests/unit_ci_workflows/test_frontend_choice_multiselect_protocol.py::test_census_matches_frozen_package_set",
+      "note": "常量上方的 `#:` 注释声称「现取**必须等于**本常量」⇒ 由该判据承担：现取 `frontend/*/src/components/cards/ChoiceCard.tsx` 的包集合与该冻结常量**逐项相等**（新增未登记包 / 包改名 / 删除都判红）；「冻结常量与语料两边一起收窄」的形态另由 test_census_covers_both_personas 拦住"
     }
   ],
   "frozen_declarations": [
