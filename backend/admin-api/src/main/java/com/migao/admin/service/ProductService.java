@@ -722,18 +722,32 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
-        // 缺失才删：删除本次请求未保留的旧 SKU/颜色（先 SKU 后颜色）
+        // 缺失才删：删除本次请求未保留的旧 SKU/颜色（先 SKU 后颜色）。**只删「本次请求声明过的维度」**
+        // （issue #5515）：未声明（null）≠ 声明为空（[]）——
+        //   ① 颜色维度：请求**显式声明了 colors**（哪怕是空数组）才允许删色；未声明 ⇒ 一行都不删
+        //      （请求没提这件事 ≠ 要求清空它）；
+        //   ② SKU 维度：SKU 行是矩阵（颜色 × 门幅）的**成员** ⇒ 只有请求**声明了矩阵**（colors 非 null）
+        //      **且本次真的给出了 SKU 集合**（显式 `skus`，或由 colors × doorWidths 派生）才做
+        //      「缺失即删」；只点名若干 SKU 行（改价 / 改库存）时集合没给全 ⇒ 一行都不删。
+        //   ③ 显式声明（含空数组）⇒ 该维度的提交集合即全集、缺失即删（既有语义，逐字不变）。
+        // 为什么必须区分（真库实测，issue #5515）：颜色被删会经 `product_skus.color_id` 的
+        // `ON DELETE CASCADE` 把该色下的 SKU 行**一并静默删除** ⇒ 「只改 SKU、不动颜色」
+        // （改价 / 改库存）这类看起来完全合理的调用形态会把 SKU 行删光（读数：2 → 0）。
         // pruneMissing=false 的是**批量导入**路径（issue #5154）：商家在导入页看不到库里已有的 SKU，
         // 按「提交集合 = 全量声明」删会把批次挂着的 SKU 静默删掉（断链）⇒ 导入一律只增改不删。
         if (pruneMissing) {
-            for (ProductSku s : existingSkus) {
-                if (!keptSkuIds.contains(s.getId())) {
-                    productSkuMapper.deleteById(s.getId());
+            if (colorInputs != null && skuInputs != null) {
+                for (ProductSku s : existingSkus) {
+                    if (!keptSkuIds.contains(s.getId())) {
+                        productSkuMapper.deleteById(s.getId());
+                    }
                 }
             }
-            for (ProductColor c : existingColors) {
-                if (!keptColorIds.contains(c.getId())) {
-                    productColorMapper.deleteById(c.getId());
+            if (colorInputs != null) {
+                for (ProductColor c : existingColors) {
+                    if (!keptColorIds.contains(c.getId())) {
+                        productColorMapper.deleteById(c.getId());
+                    }
                 }
             }
         }
