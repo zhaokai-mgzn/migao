@@ -23,19 +23,24 @@ public interface UserMapper extends BaseMapper<User> {
      * （审计 07 P1-2：禁止静默 LIMIT 1 导致登录落错租户）。
      */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, worker_no, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC")
+    @Select("SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC")
     List<User> selectActiveUsersByPhoneIgnoreTenant(@Param("phone") String phone);
 
     /**
-     * 跨租户按手机号查询活跃「员工」账号（B 端小程序登录用，issue #2977）。
+     * 按「租户 + 用户名」查询活跃员工账号（员工登录，issue #5485 不变式 I1/I3）。
      *
-     * 门禁语义：仅商户员工（role 非 customer/agent）可绑定 bmini 登录——
-     * C 端消费者账号即使手机号撞号也绝不通过 bmini 入口登录（BM-003 员工专属门禁）。
-     * 与 C 端 findOrCreate 语义相反：B 端「匹配不到即拒绝」，禁止自动建号。
+     * <p>🔴 {@code tenant_id} 谓词是**契约的一部分**，不是可选项：它由
+     * {@code tenants.code} 解析出的 tenant_id 传入，用户名唯一性只到租户内 ⇒ **不同企业可同名**。
+     * 任何「不带租户限定的用户名查询 / 跨租户兜底」都是跨企业串号（I1）。
+     * 类级元守卫：{@code tests/unit_ci_workflows/test_tenant_scoped_user_queries.py}
+     * （凡是 {@code @InterceptorIgnore(tenantLine="true")} 又查 {@code users} 的方法，
+     * SQL 里没有 tenant_id 就必须登记豁免台账 —— 未登记即红）。</p>
+     *
+     * <p>本方法**不使用** {@code @InterceptorIgnore}：租户条件显式写在 SQL 里 ——
+     * 登录端点未认证、登录前 TenantContext 尚未设置，自动注入不可依赖。</p>
      */
-    @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, worker_no, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' AND role NOT IN ('customer', 'agent') ORDER BY updated_at DESC")
-    List<User> selectActiveEmployeesByPhoneIgnoreTenant(@Param("phone") String phone);
+    @Select("SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE tenant_id = #{tenantId} AND username = #{username} AND deleted = 0 AND status = 'active'")
+    User selectActiveByTenantAndUsername(@Param("tenantId") Long tenantId, @Param("username") String username);
 
     /**
      * 看板客户维度聚合（#2886 性能优化：客户总数 + 今日新增一次查询，替代 2 次串行 selectCount）。

@@ -14,6 +14,7 @@ import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuditLogService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.support.LoginIdentifiers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +87,13 @@ public class SettingsController {
      * 更新系统设置
      *
      * PUT /api/admin/settings
+     *
+     * <p>issue #5485：接受可选的 {@code code} —— **企业编码由管理员设置**。取值三条校验
+     * （格式 / 全平台唯一且大小写不敏感 / 保留字黑名单）全部返回 <b>422 + 明确文案</b>。</p>
+     *
+     * <p>⚠️ 语义后果（写给后来人）：企业编码就是员工登录标识的后半段
+     * （{@code <username>@<tenantCode>}）⇒ <b>改它之后全员要用新编码登录</b>。这是
+     * 「编码可由管理员设置」必然带来的，属预期行为（不是缺陷），但不该让人意外。</p>
      */
     @RequirePermission("system:manage")
     @PutMapping("/api/admin/settings")
@@ -153,7 +161,43 @@ public class SettingsController {
             tenant.setNotificationEmail(finalEmail);
         }
 
-        tenantMapper.update(null, wrapper);
+        // 企业编码（issue #5485）：管理员可设置 —— 它同时是员工登录标识的后半段。
+        // 校验口径的唯一实现点 = LoginIdentifiers（格式 / 保留字），这里只补「全平台唯一」。
+        // 🔴 不变式：**校验只作用于变更**。管理员在「企业基础信息」**原样保存**时，任何**存量编码**
+        //    （旧生成器产出过 `tenant_7478359537` 这种带下划线的形态；生产上还可能有保留字形态）
+        //    都不该被自己的新校验拒掉 —— 否则那一页的 name/logo/通知开关会**一起存不了**，
+        //    而管理员没有任何自救路径（连登录进不去都改不了编码）。
+        if (data.containsKey("code")) {
+            String rawCode = (String) data.get("code");
+            String code = LoginIdentifiers.normalize(rawCode);
+            if (code == null) {
+                throw BusinessException.validationError("企业编码不能为空");
+            }
+            if (!code.equals(LoginIdentifiers.normalize(tenant.getCode()))) {
+                String violation = LoginIdentifiers.validateTenantCode(rawCode);
+                if (violation != null) {
+                    throw BusinessException.validationError(violation);
+                }
+                // 全平台唯一且**大小写不敏感**（只存小写 ⇒ lower(code) 是等价写法），排除自己
+                Tenant conflict = tenantMapper.selectOne(new LambdaQueryWrapper<Tenant>()
+                        .apply("lower(code) = {0}", code)
+                        .ne(Tenant::getId, tenantId)
+                        .last("LIMIT 1"));
+                if (conflict != null) {
+                    throw BusinessException.validationError(
+                            "企业编码「" + code + "」已被其他企业占用，请换一个");
+                }
+            }
+            wrapper.set("code", code);
+            tenant.setCode(code);
+        }
+
+        try {
+            tenantMapper.update(null, wrapper);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 数据库 UNIQUE(tenants.code) 是并发下的兜底（应用层校验挡不住两个请求同时通过）：转 422，不裸抛 500
+            throw BusinessException.validationError("企业编码已被占用，请换一个");
+        }
 
         // 返回更新后的设置
         Map<String, Object> settings = new HashMap<>();
