@@ -43,6 +43,16 @@ export interface User {
   tenantName?: string
   /** 企业 Logo（「企业基础信息」设置） */
   tenantLogo?: string
+  /**
+   * 员工账号用户名（issue #5485）。
+   * ⚠️ 与 `username` 有意分开：员工列表里 `username` **仍是手机号**（未动），
+   * 登录账号是 `employeeUsername`；只有 `GET /api/auth/me` 的 `username` 对员工才等于账号用户名。
+   */
+  employeeUsername?: string
+  /** 首登强制改密标记（issue #5485 I4）：true ⇒ 只能访问改密/登出/读自己信息 */
+  mustChangePassword?: boolean
+  /** 身份类型：employee=员工 / admin=企业管理员 / super_admin=平台超管（#5485） */
+  identityType?: string
 }
 
 // 菜单项类型
@@ -53,20 +63,38 @@ export interface MenuItem {
   children?: MenuItem[]
 }
 
-// 登录参数
-export interface LoginParams {
-  username: string
-  password: string
-  tenantId?: number
-  tenantCode?: string
-}
+// 登录参数（issue #5485：旧的 `LoginParams` 已随 store 的 legacy `login()` 一并删除 ——
+// 它的 `tenantId`/`tenantCode` 允许前端自行拼租户，正是「A 企业员工进到 B 企业」的形态。
+// 员工登录现在只发 `{identifier, password}`，见 `authApi.employeeLogin`。）
 
 // 登录响应
+/**
+ * 登录/改密响应内层用户（issue #5485）。
+ *
+ * 只列登录时真正下发的键 —— 不吃 `User` 的必填项（登录响应不含 permissions/menus，
+ * 它们靠登录后的 `GET /api/auth/me` 补齐）。
+ */
+export interface LoginUser {
+  id?: string | number
+  nickname?: string
+  /** 单一角色码（admin/operator/...） */
+  role?: string
+  roles?: string[]
+  tenantId?: number
+  tenantName?: string
+  /** employee=员工（用户名@企业编码）/ admin=企业管理员 / super_admin=平台超管 */
+  identityType?: string
+  /** 首登强制改密：true ⇒ 前端**直接引导到改密页**，不要先进业务页再等 403 */
+  mustChangePassword?: boolean
+}
+
 export interface LoginResponse {
   accessToken: string
   refreshToken: string
   expiresIn: number
   tokenType: string
+  /** 登录用户（员工登录 / 短信登录 / 改密响应均下发；改密响应结构与登录一致） */
+  user?: LoginUser
 }
 
 // Token 刷新响应
@@ -1966,6 +1994,15 @@ export interface SystemSettings {
   companyName: string
   logo?: string
   notificationEnabled: boolean
+  /**
+   * 企业编码（issue #5485）：员工登录标识 `用户名@企业编码` 的后半段。
+   *
+   * 走**既有** `GET/PUT /api/admin/settings`（后端**没有**新开 `/api/admin/tenant/code`，
+   * 见 PR #5492 的偏差项 1）。格式 `^[a-z0-9][a-z0-9_-]{1,31}$`（**含下划线** ——
+   * 存量 `tenant_7478359537` 就是这种形态），全平台唯一、另有保留字黑名单。
+   * ⚠️ 前端**不自己写正则**：非法 / 被占用 / 保留字一律由服务端 422 的 message 说明原因。
+   */
+  code?: string
 }
 
 /**
@@ -1992,6 +2029,19 @@ export interface ChangePasswordParams {
   oldPassword: string
   newPassword: string
   confirmPassword: string
+}
+
+/**
+ * 员工自助改密请求（`POST /api/auth/password/change`，issue #5485）。
+ *
+ * ⚠️ 与上面的 `ChangePasswordParams` **不是一回事**：那个是 `PUT /api/admin/settings/password`
+ * （企业设置页的改密，带 confirmPassword）。本端点 body 只有这两个键 ——
+ * 「确认新密码」是**纯前端**校验，不进请求体。成功后响应**直接带新凭据**（LoginResponse，
+ * 含新 accessToken 与 mustChangePassword=false），前端不必再手动刷新一次。
+ */
+export interface EmployeeChangePasswordParams {
+  oldPassword: string
+  newPassword: string
 }
 
 // 登录日志（对应后端 AuditLog action=login 的字段）
@@ -2452,6 +2502,7 @@ export interface RoleFormData {
 export interface Employee {
   id: number
   name: string
+  /** 手机号（`username` 与之同义，仍是手机号；登录账号见 `employeeUsername`，issue #5485） */
   phone?: string
   email?: string
   position?: string
@@ -2461,6 +2512,13 @@ export interface Employee {
   status: EmployeeStatus
   createdAt: string
   updatedAt: string
+  /**
+   * 员工登录账号用户名（issue #5485）。
+   * 为空 ⇒ 该员工**还无法登录**（存量账号不自动迁移，需管理员补设），列表要显示为「未设置」。
+   */
+  employeeUsername?: string
+  /** 该员工当前是否处于「首登未改密」状态（#5485）：列表据此提示需重新设密码 */
+  mustChangePassword?: boolean
 }
 
 // 员工列表查询参数
@@ -2472,11 +2530,19 @@ export interface EmployeeListParams extends PageParams {
 // 员工表单数据
 export interface EmployeeFormData {
   name: string
+  /** ⚠️ 手机号**仍是必填**（后端校验，issue #5485 未放开）——登录走账号密码，手机号仍用于档案/通知 */
   phone: string
   position: string
   /** RBAC 角色码（admin/operator/product_manager/自定义角色）；此前 UI 不传导致新建员工恒为 operator */
   role?: string
   permissions: string[]
+  /**
+   * 员工登录账号用户名（#5485）：`^[a-z0-9][a-z0-9._-]{2,31}$`，**租户内唯一**。
+   * 写入与登录统一转小写；重名由服务端 422（message 可直接展示）。
+   */
+  username?: string
+  /** 初始密码（仅新建/改密时下发）：设置后该员工首登**必须**先改密 */
+  password?: string
 }
 
 // 重置密码参数

@@ -1,4 +1,4 @@
-// case_ids: HR-001, HR-002, UI-028
+// case_ids: AU-007, HR-001, HR-002, UI-028
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -24,6 +24,7 @@ vi.mock('@/store/auth', () => ({
 const mockGetEmployees = vi.fn()
 const mockCreateEmployee = vi.fn()
 const mockUpdateEmployee = vi.fn()
+const mockResetPassword = vi.fn()
 const mockGetAllRoles = vi.fn()
 
 vi.mock('@/lib/api', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/lib/api', () => ({
     getEmployees: (...args: any[]) => mockGetEmployees(...args),
     createEmployee: (...args: any[]) => mockCreateEmployee(...args),
     updateEmployee: (...args: any[]) => mockUpdateEmployee(...args),
+    resetPassword: (...args: any[]) => mockResetPassword(...args),
     deleteEmployee: vi.fn(),
     toggleEmployeeStatus: vi.fn(),
   },
@@ -146,7 +148,9 @@ describe('EmployeesPage', () => {
       data: {
         data: {
           items: [
-            { id: 1, name: '张三', phone: '13800001111', position: '客服', permissions: ['products:view'], status: 'active', createdAt: '2026-06-01T10:00:00' },
+            // #5485：`employeeUsername` 才是登录账号（`username` 仍是手机号，后端未动）
+            { id: 1, name: '张三', phone: '13800001111', position: '客服', permissions: ['products:view'], status: 'active', createdAt: '2026-06-01T10:00:00', employeeUsername: 'zhangsan' },
+            // 存量员工：管理员尚未补设用户名 ⇒ 显示「未设置」，且这个员工当前登不进来
             { id: 2, name: '李四', phone: '13800002222', position: '管理员', permissions: [], status: 'disabled', createdAt: '2026-06-02T10:00:00' },
           ],
           total: 2,
@@ -224,73 +228,99 @@ describe('EmployeesPage', () => {
     })
   })
 
-  // ==================== #1830: username 字段残留清理 ====================
+  // ==================== #5485: 员工登录账号（用户名 + 初始密码） ====================
+  // ⚠️ #1830 曾断言「弹窗不含用户名字段」—— 那时「用户名」只是手机号的别名、无独立含义。
+  // #5485 起「用户名」是**登录账号**（与手机号分离、租户内唯一、员工靠它登录），
+  // 故这条判据按新契约**反向重写**（不是删掉，见下方逐条）。
 
-  it('#1830: 新增弹窗不包含用户名字段', async () => {
+  it('#5485: 新增弹窗含「登录用户名」与「初始密码」字段', async () => {
     render(<EmployeesPage />)
-    const addBtn = screen.getByText('新增员工')
-    fireEvent.click(addBtn)
+    fireEvent.click(screen.getByText('新增员工'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
-    // 弹窗表单不应包含「用户名」label
-    expect(screen.queryByText('用户名')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('员工登录账号，如 zhangsan')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('请输入初始密码')).toBeInTheDocument()
   })
 
-  it('#1830/#2907: 新增弹窗仅含姓名/手机号/岗位/账号权限 4 字段，不含角色/用户名字段', async () => {
+  it('#1830/#2907/#5485: 新增弹窗含姓名/手机号/登录用户名/初始密码/岗位/账号权限 6 字段，仍不含角色', async () => {
     render(<EmployeesPage />)
     fireEvent.click(screen.getByText('新增员工'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
     const modal = within(screen.getByTestId('modal'))
-    // 必须看到这 4 个 label
     expect(modal.getByText('姓名 *')).toBeInTheDocument()
     expect(modal.getByText('手机号 *')).toBeInTheDocument()
+    expect(modal.getByText('登录用户名 *')).toBeInTheDocument()
+    expect(modal.getByText('初始密码 *')).toBeInTheDocument()
     expect(modal.getByText('岗位 *')).toBeInTheDocument()
     expect(modal.getByText('账号权限 *')).toBeInTheDocument()
-    // 不包含用户名字段（#1830）
-    expect(modal.queryByText('用户名')).not.toBeInTheDocument()
-    // 不包含角色字段（#2907：新增员工弹窗去掉「角色」）
+    // 角色字段仍不在（#2907：新增员工弹窗去掉「角色」）
     expect(modal.queryByText('角色')).not.toBeInTheDocument()
   })
 
-  it('#1830: 填写完整表单点创建不触发「请输入用户名」错误', async () => {
-    mockCreateEmployee.mockResolvedValue({ data: { data: { id: 99 } } })
+  it('#5485: 弹窗说明登录方式「用户名@企业编码」与「员工首次登录需修改密码」', async () => {
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    expect(screen.getByText(/用户名@企业编码/)).toBeInTheDocument()
+    expect(screen.getByText(/员工首次登录需修改密码/)).toBeInTheDocument()
+  })
+
+  it('#5485: 列表显示登录账号 employeeUsername（手机号列仍是手机号）；未设置的存量员工显示「未设置」', async () => {
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('employee-1')).toBeInTheDocument()
+    })
+    expect(within(screen.getByTestId('employee-1')).getByTestId('cell-employeeUsername')).toHaveTextContent('zhangsan')
+    expect(within(screen.getByTestId('employee-1')).getByTestId('cell-phone')).toHaveTextContent('13800001111')
+    // 存量员工（管理员尚未补设用户名）：显示「未设置」，而不是拿手机号冒充账号
+    expect(within(screen.getByTestId('employee-2')).getByTestId('cell-employeeUsername')).toHaveTextContent('未设置')
+  })
+
+  it('#5485: 新建时未填登录用户名 → 提示「请设置登录用户名」且不发请求（没有账号的员工登不进来）', async () => {
     render(<EmployeesPage />)
     // 打开新增弹窗
     fireEvent.click(screen.getByText('新增员工'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
-    // 获取姓名和手机号输入框
-    const inputs = screen.getAllByRole('textbox')
-    const nameInput = inputs.find((el) => el.getAttribute('placeholder')?.includes('姓名'))
-    const phoneInput = inputs.find((el) => el.getAttribute('placeholder')?.includes('手机号'))
-    if (nameInput) fireEvent.change(nameInput, { target: { value: '张三' } })
-    if (phoneInput) fireEvent.change(phoneInput, { target: { value: '13800138000' } })
-    // 点击创建按钮
-    const createBtn = screen.getByText('创建')
-    fireEvent.click(createBtn)
-    await waitFor(() => {
-      // 不应弹出「请输入用户名」错误
-      expect(mockToastError).not.toHaveBeenCalledWith('请输入用户名')
-    })
+    fireEvent.change(screen.getByPlaceholderText('请输入姓名'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号'), { target: { value: '13800138000' } })
+    // 用户名留空点创建
+    fireEvent.click(screen.getByText('创建'))
+    expect(mockToastError).toHaveBeenCalledWith('请设置登录用户名')
+    expect(mockCreateEmployee).not.toHaveBeenCalled()
   })
 
-  it('#1830/#2907: 创建员工 payload 不含 username/role 字段', async () => {
+  it('#5485: 新建时未填初始密码 → 提示「请设置初始密码」且不发请求', async () => {
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('请输入姓名'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号'), { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByPlaceholderText('员工登录账号，如 zhangsan'), { target: { value: 'zhangsan' } })
+    fireEvent.click(screen.getByText('创建'))
+    expect(mockToastError).toHaveBeenCalledWith('请设置初始密码')
+    expect(mockCreateEmployee).not.toHaveBeenCalled()
+  })
+
+  it('#5485: 创建员工 payload 带 username + password（仍不含 role）', async () => {
     mockCreateEmployee.mockResolvedValue({ data: { data: { id: 99 } } })
     render(<EmployeesPage />)
     fireEvent.click(screen.getByText('新增员工'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
-    // Fill name → mocked Input with placeholder "请输入姓名"
-    const nameInput = screen.getByPlaceholderText('请输入姓名')
-    fireEvent.change(nameInput, { target: { value: '张三' } })
-    // Fill phone → mocked Input with placeholder "请输入手机号"
-    const phoneInput = screen.getByPlaceholderText('请输入手机号')
-    fireEvent.change(phoneInput, { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入姓名'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号'), { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByPlaceholderText('员工登录账号，如 zhangsan'), { target: { value: 'zhangsan' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入初始密码'), { target: { value: 'Init#12345' } })
     // 选岗位（#2969 岗位下拉）：选「客服」→ 自动带出岗位默认权限（products:view + order:list）
     const posSelect = within(screen.getByTestId('modal')).getByRole('combobox')
     fireEvent.change(posSelect, { target: { value: '客服' } })
@@ -300,13 +330,89 @@ describe('EmployeesPage', () => {
       expect(mockCreateEmployee).toHaveBeenCalled()
     })
     const callArgs = mockCreateEmployee.mock.calls[0]?.[0]
-    expect(callArgs).toBeDefined()
-    expect(callArgs).not.toHaveProperty('username')
+    expect(callArgs).toMatchObject({
+      name: '张三',
+      phone: '13800138000',
+      position: '客服',
+      username: 'zhangsan',
+      password: 'Init#12345',
+    })
     expect(callArgs).not.toHaveProperty('role')
-    expect(callArgs).toHaveProperty('name', '张三')
-    expect(callArgs).toHaveProperty('phone', '13800138000')
-    expect(callArgs).toHaveProperty('position', '客服')
     expect(callArgs.permissions).toEqual(expect.arrayContaining(['products:view', 'order:list']))
+  })
+
+  // ==================== #5485: 编辑员工（不回显/不清空既有账号） ====================
+
+  it('#5485: 编辑弹窗用户名预填 employeeUsername（**不是** 手机号）且密码不回显', async () => {
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('编辑').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(screen.getAllByText('编辑')[0])
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    const usernameInput = screen.getByPlaceholderText('员工登录账号，如 zhangsan') as HTMLInputElement
+    expect(usernameInput.value).toBe('zhangsan')
+    // 密码不回显（后端不下发；留空即不改）
+    const passwordInput = screen.getByPlaceholderText('留空则保持原密码') as HTMLInputElement
+    expect(passwordInput.value).toBe('')
+  })
+
+  it('#5485: 编辑保存时用户名留空 → payload 不含 username/password（不把已有账号悄悄清掉）', async () => {
+    mockUpdateEmployee.mockResolvedValue({ data: { data: { id: 2 } } })
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('编辑').length).toBeGreaterThan(0)
+    })
+    // 第 2 行（李四）没有 employeeUsername（存量员工）
+    fireEvent.click(screen.getAllByText('编辑')[1])
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => {
+      expect(mockUpdateEmployee).toHaveBeenCalled()
+    })
+    const callArgs = mockUpdateEmployee.mock.calls[0]?.[1]
+    expect(callArgs).toMatchObject({ name: '李四', phone: '13800002222', position: '管理员' })
+    expect(callArgs).not.toHaveProperty('username')
+    expect(callArgs).not.toHaveProperty('password')
+  })
+
+  // ==================== #5485: 重置密码（员工忘记密码时的找回路径） ====================
+
+  it('#5485: 重置密码 → 提交新初始密码并提示「下次登录需先修改密码」', async () => {
+    mockResetPassword.mockResolvedValue({ data: { data: null } })
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('重置密码').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(screen.getAllByText('重置密码')[0])
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('请输入新的初始密码'), { target: { value: 'Reset#12345' } })
+    fireEvent.click(screen.getByText('确认重置'))
+
+    await waitFor(() => {
+      expect(mockResetPassword).toHaveBeenCalledWith(1, { newPassword: 'Reset#12345' })
+    })
+    expect(mockToastSuccess).toHaveBeenCalledWith('密码已重置，请告知员工：下次登录需先修改密码')
+  })
+
+  it('#5485: 重置密码未填新密码 → 提示且不发请求', async () => {
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getAllByText('重置密码').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(screen.getAllByText('重置密码')[0])
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('确认重置'))
+    expect(mockToastError).toHaveBeenCalledWith('请输入新的初始密码')
+    expect(mockResetPassword).not.toHaveBeenCalled()
   })
 
   // ==================== #2969 岗位权限体系：选岗位自动带出默认权限（快照可自定义） ====================

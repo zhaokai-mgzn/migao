@@ -42,6 +42,8 @@ export default function SettingsPage() {
     companyName: '',
     logo: '',
     notificationEnabled: false,
+    // 企业编码（issue #5485）：员工登录用「用户名@企业编码」，改它会影响全员登录，故单独提示
+    code: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -94,6 +96,8 @@ export default function SettingsPage() {
           companyName: res.data.data.companyName || '',
           logo: res.data.data.logo || '',
           notificationEnabled: !!res.data.data.notificationEnabled,
+          // #5485：企业编码由既有 GET /api/admin/settings 下发（不新开端点）
+          code: res.data.data.code || '',
         })
         // Logo 变化时重置预览失败标记
         setLogoPreviewError(false)
@@ -180,6 +184,9 @@ export default function SettingsPage() {
       toast.success('企业信息已保存，侧边栏将同步展示')
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || '保存失败')
+      // #5485：企业编码保存失败（格式/占用/保留字 ⇒ 422）时把输入框拉回已保存的值 ——
+      // 别让一个「没生效的编码」留在框里，看起来像是已经改好了
+      await loadSettings()
     } finally {
       setSavingSettings(false)
     }
@@ -264,6 +271,27 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
                     />
                     <p className="text-xs text-neutral-400 mt-1">将展示在后台侧边栏与米宝的企业身份中</p>
+                  </div>
+
+                  {/* 企业编码（issue #5485）：员工登录标识 `用户名@企业编码` 的后半段。
+                      ⚠️ 这是全员登录的凭据组成部分 —— 改了它，员工手上的登录方式就变了，
+                      所以既要能改（新企业要设可读编码），也要把影响说清楚。 */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1.5">企业编码</label>
+                    <input
+                      type="text"
+                      className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      placeholder="如 migao"
+                      value={settings.code || ''}
+                      onChange={(e) => setSettings({ ...settings, code: e.target.value })}
+                    />
+                    <p className="text-xs text-neutral-400 mt-1">
+                      员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'migao'}）。
+                      全平台唯一，只能用 2~32 位小写字母、数字、连字符与下划线；格式或占用不合规时会提示原因。
+                    </p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      修改后员工需改用新编码登录（原「用户名@旧编码」立即失效），请先通知员工再保存。
+                    </p>
                   </div>
 
                   <div>

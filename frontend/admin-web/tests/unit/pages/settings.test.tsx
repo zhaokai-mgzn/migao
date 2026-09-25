@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054
+// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -127,6 +127,8 @@ function mockApiSuccess() {
         companyName: '测试企业',
         logo: '',
         notificationEnabled: true,
+        // #5485：企业编码由既有 GET /api/admin/settings 下发
+        code: 'migao',
       },
     },
   })
@@ -351,6 +353,61 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       await waitFor(() => {
         expect(mockFetchUserInfo).toHaveBeenCalledTimes(1)
       })
+    })
+  })
+
+  // ================================================================
+  // #5485 企业编码（AU-009）：员工登录标识 `用户名@企业编码` 的后半段
+  // —— 走**既有** GET/PUT /api/admin/settings 的 `code` 字段（后端未新开端点）
+  // ================================================================
+
+  describe('企业编码 — 显示 / 保存 / 服务端校验（#5485）', () => {
+    it('#5485: 显示当前企业编码，并说明「员工用它登录：用户名@企业编码」', async () => {
+      render(<SettingsPage />)
+      const codeInput = await screen.findByPlaceholderText('如 migao')
+      expect(codeInput).toHaveValue('migao')
+      expect(screen.getByText(/用户名@企业编码/)).toBeInTheDocument()
+      // 改编码会影响全员登录方式 ⇒ 影响说明必须在（护栏文案）
+      expect(screen.getByText(/修改后员工需改用新编码登录/)).toBeInTheDocument()
+    })
+
+    it('#5485: 保存企业信息时把 code 一并提交（不新开端点）', async () => {
+      const user = userEvent.setup()
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
+      render(<SettingsPage />)
+      const codeInput = await screen.findByPlaceholderText('如 migao')
+      fireEvent.change(codeInput, { target: { value: 'migao_home' } })
+      await user.click(screen.getByRole('button', { name: '保存' }))
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled()
+      })
+      // 含下划线的编码原样提交（存量租户就是 tenant_7478359537 这种形态）
+      expect(mockUpdateSettings.mock.calls[0][0]).toMatchObject({ code: 'migao_home' })
+    })
+
+    it('#5485: 编码不合规/被占用（422）→ 展示**服务端** message，并把输入框拉回已保存的值', async () => {
+      const user = userEvent.setup()
+      mockUpdateSettings.mockRejectedValue({
+        response: {
+          status: 422,
+          data: { success: false, error: { code: 'VALIDATION_ERROR', message: '企业编码已被占用，请换一个' } },
+        },
+      })
+      render(<SettingsPage />)
+      const codeInput = await screen.findByPlaceholderText('如 migao')
+      fireEvent.change(codeInput, { target: { value: 'admin' } })
+      await user.click(screen.getByRole('button', { name: '保存' }))
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith('企业编码已被占用，请换一个')
+      })
+      // 未生效的编码不留在框里（否则看起来像是已经改好了）
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('如 migao')).toHaveValue('migao')
+      })
+      // 回滚 = 重新拉一次设置
+      expect(mockGetSettings).toHaveBeenCalledTimes(2)
     })
   })
 
