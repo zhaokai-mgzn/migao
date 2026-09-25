@@ -651,3 +651,31 @@ def test_judging_step_fails_loudly_when_the_interpreter_lacks_pytest():
     assert 'import pytest, yaml' in text and "::error::" in text, (
         "判定步缺「解释器前置断言」（`import pytest, yaml` + `::error::` 指明根因）"
     )
+
+
+# ── main 侧漂移兜底（2026-09-25 实测缺口）────────────────────────────────────
+
+def test_main_side_has_a_drift_audit_backstop():
+    """本腿必须带**漂移审计兜底**步（否则"PR 带进 main 的漂移"没有 CI 兜底）。
+
+    现场：#5502 的包实测发现 `tests/unit_ci_workflows/test_drift_audit_contract.py
+    ::test_real_repo_audit_is_green_on_current_tree` 在 **CI 的浅检出**里**自己 skip**
+    （`origin/main` 不可解析）⇒ 一次合并在 main 上带进了**面内阻塞**漂移，**只在有人本机跑时才发现**。
+    本腿全历史检出 ⇒ 这一步能真判，且**非 0 退出码要带出去**（0 通过 / 1 判红 / 3 不可判）。
+    """
+    import yaml
+    from pathlib import Path
+
+    wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "post-merge-verify.yml"
+    steps = yaml.safe_load(wf.read_text(encoding="utf-8"))["jobs"]["verify"]["steps"]
+    step = next((s for s in steps if s.get("name") and "漂移" in str(s["name"])), None)
+    assert step is not None, "本腿缺「漂移审计兜底」步 ⇒ PR 带进 main 的漂移没有 CI 兜底（浅检出里那条判据会自 skip）"
+    run = str(step.get("run") or "")
+    assert "scripts/drift_audit.py" in run, f"该步没跑漂移审计：{run[:200]}"
+    assert "exit ${RC}" in run or "exit $RC" in run, (
+        "该步必须把 drift_audit 的**退出码**带出去（非 0 ⇒ 本步失败），否则等于「跑了但不判」：" + run[:200]
+    )
+    names = [str(s.get("name") or "") for s in steps]
+    assert names.index(str(step["name"])) < names.index("判定（定向跑判据面）"), (
+        "漂移兜底应排在「判定（定向跑判据面）」**之前**（先做便宜的全局兜底，再跑定向判据面）"
+    )
