@@ -121,7 +121,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 |---|---|---|---|
 | `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
 | `agent-behavior-eval.yml` | 🗑️ **已删除**（#4275，2026-09-21；此前 #4034 已退出槽位） | 该 workflow 已按用户裁定**整体删除**（承接 #4262；它的唯一产物是 PR 评论、绑死 PR 上下文）⇒ 不在 workflow 集合里 ⇒ 既不占槽位、也不再产出映射信号 | 槽位持有者由**三处收敛为两处**；「谁真起栈谁进」由 `test_eval_stack_seed_parity.py` 的**双向相等**判据钉住（凡起栈必登记） |
-| `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
+| `xiaobu-acceptance.yml` | ✅ **已落**（2026-09-25 复核：`jobs.xiaobu-acceptance.concurrency = {group: eval-stack-global, cancel-in-progress: false}` 已在文件里；核实命令 `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/xiaobu-acceptance.yml'));print(d['jobs']['xiaobu-acceptance'].get('concurrency'))"`） | 文件级 `concurrency`（`on:` 下那段）**保持不变**；在 **`jobs.xiaobu-acceptance:` 下、`timeout-minutes` 之后**新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }`（**用锚点定位，不写行号** —— 活跃编辑文件的裸行号几分钟就会失效，本仓已因此返工过） | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
 
 > ℹ️ **`agent-eval.yml` 有意**不在**本表（#4821 裁定，见 §3.9）**：它**不打独立栈**（打的是
 > **已部署**的云测试环境，是该环境上唯一的 normal 全量入口）⇒ 按「谁真起栈谁进槽位」，

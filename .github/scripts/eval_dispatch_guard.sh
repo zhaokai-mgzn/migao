@@ -143,7 +143,7 @@ fi
 if [ -n "$relevant" ]; then
   if [ -n "$lookup_hit_run" ]; then
     say "⏭️ 同一 SHA 已有判定结论 ⇒ **不重复跑**（B 结论复用，issue #3769）"
-    say "   引用：run ${lookup_hit_run}（sha=${EVAL_SHA} tier=${EVAL_TIER} 全库跑，两个 persona 的 completion.ok=true）"
+    say "   引用：run ${lookup_hit_run}（sha=${EVAL_SHA} tier=${EVAL_TIER} **该档全库**，两个 persona 的 completion.ok=true）"
     say "   查看：https://github.com/${REPO}/actions/runs/${lookup_hit_run}"
     say "   键 = (sha, tier, case_ids=空, cases_fingerprint=$(_cases_fingerprint), policy_version=$(_policy_version))"
     exit 2
@@ -174,7 +174,7 @@ else
   LATEST_CMD="${LATEST_CMD:-gh api repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?status=completed\&branch=main\&per_page=20 --jq '[.workflow_runs[] | select(.conclusion==\"success\")][0].id'}"
   latest=$(eval "$LATEST_CMD" 2>/dev/null || true)
   if [ -n "$latest" ]; then
-    say "   引用：本 SHA 暂无已完成 run；最近一次 main 上的判定全库跑 = run ${latest}"
+    say "   引用：本 SHA 暂无已完成 run；最近一次 main 上的判定（**该档全库**）= run ${latest}"
     say "         https://github.com/${REPO}/actions/runs/${latest}"
     say "         ⚠️ 对象 SHA **不同** ⇒ 仅供参考（不得作为本 SHA 的评测结论复用）"
   else

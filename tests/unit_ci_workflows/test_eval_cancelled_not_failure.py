@@ -21,7 +21,7 @@ r"""「cancelled 的评测 run 不得被记成失败」的 L0 静态不变式（
 ## 纪律（两条，缺一不可）
 
 ① **取消不是结果**：`cancelled` 不得判 failure、不得建 issue
-   （`migao-dev-flow` §16.5「跳过不得算 failure」；`migao-acceptance`「cancelled 的 run 不构成结论」）。
+   （`migao-dev-flow` §16.7「派发后」：取消/跳过都**不是结果**；`migao-acceptance`「cancelled 的 run 不构成结论」）。
 ② **但取消要可见**：`::warning::` annotation + step summary 抬头「本 run 被取消（未评测，不构成结论）」
    —— 只要"可见"不要"变红"（重复留红会让真失败与噪音同形，正是 #3534 那条 issue 的病灶）。
 
