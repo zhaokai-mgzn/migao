@@ -33,7 +33,11 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           BODY=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body')
-          HAS_TRUTH=$(echo "$BODY" | grep -cP 'CONTRACT_JSON|business_truths|业务真值|验收标准' || echo "0")
+          # 判据词表 —— **必须与 issue-contract-check.yml 里的 TRUTH_VOCAB 逐字一致**
+          # （守卫 = tests/unit_ci_workflows/test_label_guard.py::TestTruthVocabularySingleSource）
+          # 原先只认 4 个词，与仓库实际写法（验收判据 / 判据 / 三、判据…）脱节 ⇒ issue #5481。
+          TRUTH_VOCAB='验收判据|验收标准|验收清单|验收口径|完成判据|判定标准|判据'
+          HAS_TRUTH=$(echo "$BODY" | grep -cP "CONTRACT_JSON|business_truths|业务真值|$TRUTH_VOCAB" || echo "0")
           if [ "$HAS_TRUTH" -gt 0 ]; then
             gh issue edit "$ISSUE_NUMBER" --add-label "needs-verification" --remove-label "needs-truths" 2>/dev/null || true
             echo "✅ 已补业务真值 → needs-verification，进入质量门禁体系"

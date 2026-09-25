@@ -36,8 +36,21 @@ jobs:
               return;
             }
 
+            // 判据词表 —— **必须与 case-draft.yml 里的 TRUTH_VOCAB 逐字一致**
+            // （守卫 = tests/unit_ci_workflows/test_label_guard.py::TestTruthVocabularySingleSource）
+            // 病根（issue #5481，2026-09-25 实测）：本 workflow 原先只认「业务真值 / 验收标准 /
+            // 问题描述」三种拼写，而 AGENTS.md 铁律 6 与 migao-dev-flow / migao-acceptance 教 agent
+            // 写「验收判据」——agent 是 issue 的主要作者 ⇒ 172 条 open issue 里 77 条「判据节本来
+            // 就在」仍被判「缺业务真值」，其 PR 还被 verify-trigger 静默跳过自动验收。
+            const TRUTH_VOCAB = '验收判据|验收标准|验收清单|验收口径|完成判据|判定标准|判据';
+            // 判据类小节：`## 三、验收判据` / `## 收口判据（…）` 一并认；**刻意锚在行尾**，
+            // 避免把「…的判据是子串扫描…」这类行内提及当成判据节（假绿方向）。
+            const CRITERIA_HEADING = new RegExp(
+              '^#{2,4}[^\\n]{0,12}?(' + TRUTH_VOCAB + ')([ \\t]*[（(][^\\n]*)?$', 'm');
+
             const hasContract = /<!--\s*CONTRACT_JSON/.test(body);
-            const hasTruths = /"business_truths"\s*:\s*\[[^\]]*[a-zA-Z一-鿿]/.test(body) ||
+            const hasTruths = CRITERIA_HEADING.test(body) ||
+              /"business_truths"\s*:\s*\[[^\]]*[a-zA-Z一-鿿]/.test(body) ||
               /##\s*业务真值/.test(body) ||
               /##\s*验收标准\s*\n\s*[-*]\s*\S/.test(body) ||
               // 问题描述必须跟具体内容才算真值，避免空标题误入
