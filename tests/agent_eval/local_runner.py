@@ -1916,6 +1916,37 @@ def _interactive_satisfies(exp_args, result: dict) -> tuple[bool, str]:
     return False, f"interactive 事件组件不匹配（期望 {want_comp}）"
 
 
+# ── 工具级 error code 的可断言口径（issue #4098）────────────────────────────────
+# 缺口：`error.code=` 只读**轮级** SSE error（`result["error"]` 只在 `event: error`
+# = 异常路径被赋值），而工具失败走 `event: tool_result` ⇒ 「工具必须以某错误码失败」
+# 的断言**恒不可满足**（实证：CH-001 的 `error.code=NOT_FOUND` 在 run 34650006175
+# 逐字报 `expected error not_found but got None`）。
+#
+# 本键把**工具级**结果里的 `result.error` 变成可断言结构，与轮级 `error.code=` 是
+# **两条独立口径、互不吞**（轮级只读 `result["error"]`，工具级只读 `tool_results`）：
+#
+#     tool.error.code=validation_failed_write_blocked
+#
+# 键名**故意包含** `error.code=` 子串 ⇒ 自动落进既有机器计分白名单（`run_case` 的
+# `"error.code=" in dcs`）与 `_scoring_check_is_failable` ⇒ **不新造第二套计分口径、
+# 不动 `.github/assertion_taxonomy.py`**（白名单与 taxonomy 的一致性按子串匹配，
+# 判据在 `tests/unit_ci_workflows/test_case_trust_gate.py` 的
+# `test_machine_scored_marker_matches_runner_source`）。
+TOOL_ERROR_CODE_PREFIX = "tool.error.code="
+_TOOL_ERROR_CODE_RE = re.compile(r"tool\.error\.code\s*=\s*(\w+)")
+
+
+def _tool_error_codes(result: dict) -> list:
+    """本轮**工具级**失败码（`event: tool_result` → `result.error`），**非**轮级 SSE error。
+
+    取数复用 `_tool_result_status`（它已把 `tr["result"]["error"]` 解析成 `st["error"]`，
+    缺 `success` 标记记为 `no_success_flag`）—— 不另建解析副本，避免两处口径漂移。
+    """
+    return [str(st.get("error") or "")
+            for st in _tool_result_status(result.get("tool_results") or [])
+            if st.get("error")]
+
+
 def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     """检查一条 expectation 是否满足
 
@@ -2002,7 +2033,22 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
             return True, "success=true (no error)"
         return False, f"expected success but got error: {result['error']}"
 
-    # 检查 error code
+    # 工具级 error code（issue #4098）：`tool.error.code=<CODE>` 只看 `event: tool_result`
+    # 的结果（`result.error`）—— **不**看轮级 `result["error"]`（两条口径互不吞，见
+    # `TOOL_ERROR_CODE_PREFIX` 上方说明）。**必须排在下一条轮级分支之前**：本键名含
+    # `error.code=` 子串，否则会被轮级分支当成轮级断言去核 ⇒ 恒不可满足（正是本 issue 的病）。
+    if TOOL_ERROR_CODE_PREFIX in exp_lower:
+        _want_tool_code = _TOOL_ERROR_CODE_RE.search(exp_lower)
+        if _want_tool_code:
+            _want_code = _want_tool_code.group(1)
+            _codes = _tool_error_codes(result)
+            for _c in _codes:
+                if _want_code in _c.lower():
+                    return True, f"tool error code matched: {_c}"
+            return False, (f"expected tool error {_want_code} but got "
+                           f"{_codes or 'no tool failure'}")
+
+    # 检查 error code（**轮级**：只读 `event: error` 的 `result["error"]`，语义一字未动）
     if "error.code=" in exp_lower or "error.code =" in exp_lower:
         expected_code = re.search(r'error\.code\s*=\s*(\w+)', exp_lower)
         if expected_code:
@@ -3201,18 +3247,22 @@ def _last_round_error_verdict(results: list, expectations: list, data_checks: li
     success=true / tool 等 expectation，用例仍被计为通过（假验收 —— 线上
     sess_806703a2dcca4059 的图片崩溃正是类假阳性）。
     规则：最后一轮（用例终点）出现 error 事件且用例未显式预期错误
-    （expectations/data_checks 含 error.code= 或 suggestion）→ 返回失败原因；
+    （expectations/data_checks 含**轮级** error.code= 或 suggestion）→ 返回失败原因；
     否则返回 None。
+
+    ⚠️ 工具级键 `tool.error.code=`（issue #4098）**不**构成"轮级崩溃已被预期"：它约束的是
+    工具结果，与"本会话最后轮可以崩"无关 ⇒ 不得豁免本守卫（否则新键一上线就自带一个假绿口子）。
     """
     if not results:
         return None
     last_error = results[-1].get("error")
     if not last_error:
         return None
-    expected_err_markers = ("error.code", "suggestion")
     all_checks = list(expectations or []) + list(data_checks or [])
+    # 「预期错误」= 轮级 `error.code=`（**排除** `tool.error.code=`）或 suggestion
     expects_error = any(
-        any(m in (str(c).lower()) for m in expected_err_markers)
+        "suggestion" in str(c).lower()
+        or re.search(r"(?<!tool\.)error\.code", str(c).lower()) is not None
         for c in all_checks
     )
     if expects_error:
@@ -3525,6 +3575,12 @@ def _expectation_atom(exp: str, detail: str) -> str:
     m = re.match(r"expected error (\S+) but got", d)
     if m:
         return "error_code_expected(%s)" % m.group(1)
+    # 工具级 error code（issue #4098）：与轮级 `error_code_expected` **分族** —— 两者
+    # 归因方向不同（改判据写法 vs 改闸门/工具），混成一族会让"轮级没报错"与"工具没报该码"
+    # 在台账里同形。
+    m = re.match(r"expected tool error (\S+) but got", d)
+    if m:
+        return "tool_error_code_expected(%s)" % m.group(1)
     return "expectation(%s)" % (_generic_token(exp)[:60] or "?")
 
 

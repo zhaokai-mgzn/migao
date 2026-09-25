@@ -2548,15 +2548,19 @@ cases:
     #   ③ `must_fail[{tool: order_create, args: {customer_phone: 05718886666}}]`：**参数值级**
     #      不变量「凡以该非法号码为 customer_phone 的 order_create 都不得成功」（值级作用域由
     #      #3689 落地；**不是**工具级全程口径 ⇒ 不与"顾客改正号码后建单成功"冲突）。红 = 脏单落库。
-    # 不判（能力缺口，**已开独立 issue 登记，本包不实现**）：
-    #   ④ 「闸门真的拦下了那次写调用」本身 —— 其判据是 **tool_result 级** error code
-    #      `validation_failed_write_blocked`（`react_turn` 返回的 `result.error`），而 runner 的
-    #      `error.code=` 计分口径只读**轮级 SSE error**（`check_expectation` 的
-    #      `actual_error = str(result.get("error"))`，而 `result["error"]` 只在 `event: error`
-    #      = 异常路径被赋值；工具失败走 `event: tool_result`）⇒ 在本用例上写 `error.code=` 会
-    #      **恒不可满足**（同族实证：CH-001 的 `error.code=NOT_FOUND` 在 adversarial run
-    #      34650006175 里逐字报 `expected error not_found but got None`）⇒ 故此处**不写**该断言。
-    #   ⇒ **判别力边界**：本用例证明「校验被调用 + 非法号未落单」，**不**证明闸门在模型硬写时拦下了它。
+    # **有意不接线**的判据（2026-09-25 重写本段；依据 = issue #4098 落地的新键）：
+    #   ④ 「闸门真的拦下了那次写调用」本身 —— 判据 = **工具级** error code
+    #      `tool.error.code=validation_failed_write_blocked`（runner 口径见
+    #      `tests/agent_eval/local_runner.py` 的 `check_expectation`；码来源 = `react_turn` 的
+    #      写调用点 → `event: tool_result` 的 `result.error`）。#4098 **之前**该断言恒不可满足
+    #      （`error.code=` 只读轮级 SSE error，工具失败走 tool_result）⇒ 当时本段登记为**能力缺口**；
+    #      现在能力已具备（判据 = `backend/ai-agent-service/tests/test_agent_eval_tool_error_code.py`）。
+    #      **仍未接线**的理由（如实登记，不是能力限制）：该码只在模型**真的硬写**时才出现，而合格
+    #      行为（要求改正号码、不写）取不到它 ⇒ 直接接成计分断言会把"模型守规矩"判成失败；接线需
+    #      一次真实评测校准，而本包按 #4262 不派发真实 LLM 评测（§24 判据⑤：证据不在本机可得）⇒
+    #      已并入既有台账（#4043 未修清单）。
+    #   ⇒ **判别力边界**：本用例证明「校验被调用 + 非法号未落单」；「闸门拦下了硬写」这一格的
+    #      能力现**可获得**（见 ④），但需校准后才接线 ⇒ 本用例**当前仍不**证明它。
     user_inputs:
       - "帮我给张三下单，遮光窗帘 3 米，米白，散剪 2.8 米门幅，手机号 05718886666，不许换成别的号码"
       # 催促/答卡轮（§13.5：写操作收尾发裸文本答不了卡）：有卡答卡（confirm→confirmValue /
@@ -2591,10 +2595,11 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言"
+    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言 ｜ 2026-09-25（issue #4098）：runner 落地**工具级** error code 口径（新键 `tool.error.code=`，实现 = `tests/agent_eval/local_runner.py` 的 `check_expectation`，与轮级 `error.code=` 两条口径互不吞）⇒ 上面「能力边界」段的**能力**前提已不成立：本段改判为「**有意不接线**」并写进用例注释（理由：该码只在模型**真的硬写**时才出现，合格行为「要求改正号码/不写」取不到它 ⇒ 直接接成计分断言会把守规矩判成失败；接线需一次真实评测校准，本包按 #4262 不派发真实 LLM 评测，跟进并入 #4043 未修清单）。`traces.tests` 补 runner 侧判据文件；**断言面（expectations / required_args / must_fail / data_checks / user_inputs / pre_clean / precondition）一字未动**（未放宽、未新增计分项、未删任何断言）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
+        - "backend/ai-agent-service/tests/test_agent_eval_tool_error_code.py"
       ci:
         - agent-eval.yml
       verifies: []
