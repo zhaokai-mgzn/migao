@@ -112,6 +112,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1143,6 +1144,90 @@ def runs_for_head(runs, head_sha) -> list:
             if isinstance(r, dict) and r.get("head_sha") == head_sha]
 
 
+# ── #5417：审批队列的**幂等重试**与**可归因读数**（停在 action_required 的 run 不许静默） ──
+#
+# 病根（**实测**，2026-09-25 台账 PR #5563 / push `425732992`）：`approve` 在 push 之后
+# **单发一次**，而 GitHub 创建 run 是**异步**的 ⇒ 那一刻 tip 上「暂无待批准 run」⇒ 脚本按
+# 「诚实读数」退出 **0**（workflow 跟着绿）⇒ 台账 PR 停在 `check 数=0 / mergeStateStatus=BLOCKED`
+# —— 实测 **18 分钟**（09:07:26 → 09:25:31）后才被**另一条** workflow 的兜底轮次顺手批上。
+# 逐字证据（triage run 36116623413 步骤⑤ 日志）：
+#   `ℹ️ tip=425732992180fada5f187ae10e4f67ea49c61904 暂无待批准 run（尚未创建或已批准）⇒ 本轮零动作`
+#   同刻（09:08:04）读数：`state=OPEN mergeStateStatus=BLOCKED autoMerge=armed / check 数=0`
+# ⇒ 修法 = **幂等重试**（`--wait-seconds`）：轮询到 tip 的审批队列**清空**为止；窗口用尽仍非空 ⇒
+# **非零退出**（fail-closed）。⚠️ 「批准是异步的」不等于「批准没生效」：窗口内的残余**不算失败**。
+#: 轮询间隔（秒）；取小值只为让窗口尽量贴合「GitHub 把 run 标成 action_required」的延迟。
+APPROVE_POLL_SECONDS = 5
+
+
+def _monotonic() -> float:
+    """单调时钟读数（**单测可替换**：窗口判据不该真等满 90 秒 —— 见
+    `tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py` 的假时钟）。"""
+    return time.monotonic()
+
+
+def run_url(repo: str, run_id: int) -> str:
+    """run 的**可点击出口**：读数要「可归因」，就必须带得上链接（否则只说了一半）。"""
+    return f"https://github.com/{repo}/actions/runs/{run_id}"
+
+
+def _age_minutes(created_at, now=None):
+    """`created_at`（ISO8601 / `Z` 结尾）→ 分钟；解析不了 ⇒ `None`（**不许**猜成 0 = 刚创建）。"""
+    if not isinstance(created_at, str) or not created_at:
+        return None
+    try:
+        ts = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ((now or datetime.now(timezone.utc)) - ts).total_seconds() / 60.0
+
+
+def approval_queue_reading(runs, *, repo, head_sha=None, min_age_minutes=0.0,
+                           now=None, limit=10) -> dict:
+    """**纯函数**（零 IO）：把「停在 `action_required` 的 run」分成三类并给出出口。
+
+    三类必须**分开报**（#5417 判据 1）—— 否则「机制没生效」与「按设计不批」会长得一样：
+      · `in_scope` —— `TRIAGED_WORKFLOWS` 内、且挂在分支 tip 上：它们停在队列 = **机制失效**
+        （台账 PR 拿不到 required 的 check ⇒ 落不了 main），必须处置；
+      · `out_of_scope` —— 白名单外：机制**故意不批**（白名单口径 = 「重跑无副作用」，报告型 /
+        有仓外副作用的 workflow 不在其中），它们**不在 required 集合** ⇒ 批了只会给台账 PR 添红；
+      · `stale` —— 非分支 tip 的陈旧推送：**只计数**（tip 收窄的必然结果：批准它们对 required
+        判定零贡献、只会放大 CI）。
+
+    `min_age_minutes` 只过滤**读得出年龄**的条目：年龄未知（`created_at` 畸形）⇒ **保留**
+    （fail-closed：不许把「读不出」当「刚创建」滤掉）。`head_sha=None` ⇒ 不按 tip 分流（全算 in/out）。
+    """
+    now = now or datetime.now(timezone.utc)
+    allowed = set(TRIAGED_WORKFLOWS)
+    buckets: dict = {"in_scope": [], "out_of_scope": [], "stale": 0, "unaged": 0}
+    for run in runs or []:
+        if not isinstance(run, dict):
+            continue
+        if run.get("event") != "pull_request" or run.get("conclusion") != "action_required":
+            continue
+        rid = run.get("id")
+        if not isinstance(rid, int):
+            continue
+        if head_sha and run.get("head_sha") != head_sha:
+            buckets["stale"] += 1
+            continue
+        age = _age_minutes(run.get("created_at"), now)
+        if age is None:
+            buckets["unaged"] += 1
+        elif min_age_minutes and age < float(min_age_minutes):
+            continue
+        entry = {"id": rid, "name": run.get("name"),
+                 "age_minutes": None if age is None else round(age, 1),
+                 "url": run_url(repo, rid)}
+        buckets["in_scope" if run.get("name") in allowed else "out_of_scope"].append(entry)
+    for key in ("in_scope", "out_of_scope"):
+        buckets[key] = sorted(buckets[key], key=lambda e: (e["age_minutes"] is None, e["id"]))
+        buckets[key + "_total"] = len(buckets[key])
+        buckets[key] = buckets[key][:limit]
+    return buckets
+
+
 def approve_runs(repo: str, run_ids) -> list:
     """逐个 `POST …/actions/runs/{id}/approve`（走 `gh api`，`GH_TOKEN` 来自环境）。
 
@@ -1504,6 +1589,20 @@ def main(argv=None) -> int:
     p.add_argument("--head-branch", required=True,
                    help="只看该分支的 pull_request run（台账分支）")
     p.add_argument("--json-out", help="写出被批准的 run id 列表（供复核/审计）")
+    p.add_argument("--wait-seconds", type=float, default=0.0,
+                   help="#5417：**幂等重试**窗口（秒）。GitHub 创建 run 是异步的 ⇒ 单发一次会"
+                        "「暂无待批准 run」而静默退出 0（实测空窗 18 分钟）。>0 ⇒ 轮询到 tip 的"
+                        "审批队列清空为止；窗口用尽仍非空 ⇒ **非零退出**（fail-closed）")
+
+    p = sub.add_parser("approval-queue",
+                       help="#5417：**只读**读数 —— 停在 `action_required` 的 run 分类清单"
+                            "（机制面 / 按设计不批 / 陈旧推送）+ 人工出口命令")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--head-branch", default=LEDGER_BRANCH)
+    p.add_argument("--min-age-minutes", type=float, default=0.0,
+                   help="只报「停了 ≥ 该分钟数」的 run（年龄读不出的条目一律保留）")
+    p.add_argument("--limit", type=int, default=10, help="每类最多列出多少条（其余只报计数）")
+    p.add_argument("--json-out")
 
     p = sub.add_parser("ledger-drift",
                        help="台账落仓对账（#4825 兜底判据）：台账分支是否领先 main")
@@ -1608,49 +1707,137 @@ def main(argv=None) -> int:
     if args.cmd == "approve":
         # ⚠️ 参数名是 **`branch=`**，不是 `head_branch=`（实测：`head_branch=` 被 API **静默忽略**
         #    ⇒ 返回**全仓** 11867 个 run，而不是本分支的 13 个）。写错的失效形态 = 批准一堆无关 run。
-        listing = _gh_api(f"repos/{args.repo}/actions/runs"
-                          f"?event=pull_request&branch={args.head_branch}&per_page=100")
-        all_runs = listing.get("workflow_runs") or []
-        needing = set(runs_needing_approval(all_runs, workflows=TRIAGED_WORKFLOWS))
-        if not needing:
-            # 快速路径：候选为空 ⇒ **不查 tip**（少一次 API 调用，且与既有读数逐字一致）。
-            print("✅ 无 `action_required` 的 pull_request run（无需 approve —— 可能已批准或已被正常触发）")
+        wait = max(0.0, float(getattr(args, "wait_seconds", 0.0) or 0.0))
+        deadline = _monotonic() + wait
+        attempted: list = []
+        tip = None
+        round_no = 0
+        while True:
+            round_no += 1
+            all_runs = (_gh_api(f"repos/{args.repo}/actions/runs"
+                                f"?event=pull_request&branch={args.head_branch}&per_page=100")
+                        .get("workflow_runs") or [])
+            needing = set(runs_needing_approval(all_runs, workflows=TRIAGED_WORKFLOWS))
+            if not needing and not attempted and not wait:
+                # 快速路径（**只在没给窗口时**）：候选为空 ⇒ **不查 tip**（少一次 API 调用，
+                # 且与既有读数逐字一致）。⚠️ 给了窗口就**不许**走这里：候选为空正是
+                # 「GitHub 还没创建这批 run」的实测形态（#5417），此时退出 0 = 静默 0 动作。
+                print("✅ 无 `action_required` 的 pull_request run（无需 approve —— 可能已批准或已被正常触发）")
+                if args.json_out:
+                    _write(args.json_out, json.dumps([], ensure_ascii=False))
+                return 0
+            # #5264：候选**非空** ⇒ 只批准**分支 tip 那一次推送**的 run（收窄理由见 `runs_for_head`）。
+            # ⚠️ tip 必须从**分支事实**取：本步骤在 push 台账分支之后**立刻**执行，而 GitHub 创建 run 是
+            #    **异步**的 ⇒ 「此刻可见的最新 run」可能还是**上一次**推送的。拿它当 tip = 批准**陈旧 SHA**
+            #    却把日志说成「批准了本次推送」（读数与事实不一致）⇒ 故意**不**做这个退回：
+            #    解析不到 tip 就 fail-closed（非零退出，workflow 侧会 `::error::` 显性化）。
+            candidates = [r for r in all_runs
+                          if r.get("id") in needing and r.get("id") not in attempted]
+            if tip is None:
+                tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
+                if not tip:
+                    print(f"⛔ 无法确定台账分支 `{args.head_branch}` 的 tip（`GET /repos/{{repo}}/branches/…` "
+                          f"取不到 `commit.sha`）⇒ 不敢用「最新可见推送」代替 —— 那会把**陈旧 SHA** 的 run "
+                          f"批准起来、并把读数说成「批准了本次推送」。**本轮零动作、fail-closed**"
+                          f"（历史待批准 {len(needing)} 个一个不批；下一轮触发会重试）。", file=sys.stderr)
+                    return 1
+            pending = sorted(runs_for_head(candidates, tip), key=lambda r: r["id"])
+            if pending:
+                ids = [r["id"] for r in pending]
+                print(f"🔓 历史待批准 {len(needing)} 个，其中属于分支 tip={tip} 的 {len(ids)} 个"
+                      f" ⇒ 只批准这 {len(ids)} 个（被 GITHUB_TOKEN 抑制 ⇒ 无 job ⇒ 无 check）：{ids}")
+                # #5417 判据 2：读数必须**可行动** —— 每条带 run 链接（人工出口见日志尾）。
+                for run in pending:
+                    print(f"   · run {run['id']}  {run.get('name')}  → {run_url(args.repo, run['id'])}")
+                try:
+                    approve_runs(args.repo, ids)
+                except RuntimeError as exc:
+                    print(f"⛔ approve 失败 ⇒ 台账 PR 仍无 check、`--auto` 仍不会触发（**不许静默**）：{exc}",
+                          file=sys.stderr)
+                    return 1
+                attempted += ids
+                print(f"✅ 已 approve {len(ids)} 个 run —— 它们将真正执行并产出 check-runs")
+            elif not attempted and round_no == 1:
+                # 诚实读数：tip 上确实没有待批准 run（GitHub 尚未创建、或已批准）。
+                # **不许**在此时改去批准陈旧 SHA（见上）—— 它们对 required 判定零贡献。
+                print(f"ℹ️ tip={tip} 暂无待批准 run（尚未创建或已批准）⇒ 本轮零动作，下一轮触发会重试"
+                      f"（历史待批准 {len(needing)} 个均为**陈旧推送**，批准它们对 required 判定无贡献）")
+            if _monotonic() >= deadline:
+                break
+            time.sleep(min(APPROVE_POLL_SECONDS, max(0.05, deadline - _monotonic())))
+        if not wait:
             if args.json_out:
-                _write(args.json_out, json.dumps([], ensure_ascii=False))
+                _write(args.json_out, json.dumps(attempted, ensure_ascii=False))
             return 0
-        # #5264：候选**非空** ⇒ 只批准**分支 tip 那一次推送**的 run（收窄理由见 `runs_for_head`）。
-        # ⚠️ tip 必须从**分支事实**取：本步骤在 push 台账分支之后**立刻**执行，而 GitHub 创建 run 是
-        #    **异步**的 ⇒ 「此刻可见的最新 run」可能还是**上一次**推送的。拿它当 tip = 批准**陈旧 SHA**
-        #    却把日志说成「批准了本次推送」（读数与事实不一致）⇒ 故意**不**做这个退回：
-        #    解析不到 tip 就 fail-closed（非零退出，workflow 侧会 `::error::` 显性化）。
-        candidates = [r for r in all_runs if r.get("id") in needing]
-        tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
-        if not tip:
-            print(f"⛔ 无法确定台账分支 `{args.head_branch}` 的 tip（`GET /repos/{{repo}}/branches/…` "
-                  f"取不到 `commit.sha`）⇒ 不敢用「最新可见推送」代替 —— 那会把**陈旧 SHA** 的 run "
-                  f"批准起来、并把读数说成「批准了本次推送」。**本轮零动作、fail-closed**"
-                  f"（历史待批准 {len(needing)} 个一个不批；下一轮触发会重试）。", file=sys.stderr)
+        # 终态复核（#5417）：窗口用尽 ⇒ tip 的审批队列**必须已清空**
+        # （队列非空 = 那些 run 仍在 `action_required` ⇒ 它们永远不产出 check-run ⇒ required 不满足）。
+        # ⚠️ 只有**给了窗口**才做这一步：窗口内的残余属「批准尚未生效」的异步，不是失败。
+        # ⚠️ 判据必须**按 dict 过滤后再取 id**：`runs_needing_approval` 返回的是 **id**，
+        #    直接喂给 `runs_for_head`（按 dict 的 `head_sha` 过滤）会恒得空集 ⇒ 这条 fail-closed
+        #    变成**空断言**（本单的红证 `test_window_exhausted_is_fail_closed` 就是钉这个）。
+        all_runs = (_gh_api(f"repos/{args.repo}/actions/runs"
+                            f"?event=pull_request&branch={args.head_branch}&per_page=100")
+                    .get("workflow_runs") or [])
+        still_queued = set(runs_needing_approval(all_runs, workflows=TRIAGED_WORKFLOWS))
+        leftover = sorted(r["id"] for r in runs_for_head(
+            [r for r in all_runs if isinstance(r, dict) and r.get("id") in still_queued], tip))
+        if leftover:
+            print(f"⛔ 窗口 {wait:.0f}s 用尽，分支 tip={tip} 仍有 {len(leftover)} 个 run 停在 "
+                  f"`action_required`（无 job ⇒ 无 check-run ⇒ 台账 PR 拿不到 required 的 check）："
+                  f"{leftover}", file=sys.stderr)
+            for rid in leftover:
+                print(f"   · run {rid} → {run_url(args.repo, rid)}"
+                      f"（人工出口：gh api -X POST repos/{args.repo}/actions/runs/{rid}/approve）",
+                      file=sys.stderr)
             return 1
-        ids = sorted(r["id"] for r in runs_for_head(candidates, tip))
-        if not ids:
-            # 诚实读数：tip 上确实没有待批准 run（GitHub 尚未创建、或已批准）。
-            # **不许**在此时改去批准陈旧 SHA（见上）—— 它们对 required 判定零贡献。
-            print(f"ℹ️ tip={tip} 暂无待批准 run（尚未创建或已批准）⇒ 本轮零动作，下一轮触发会重试"
-                  f"（历史待批准 {len(needing)} 个均为**陈旧推送**，批准它们对 required 判定无贡献）")
-            if args.json_out:
-                _write(args.json_out, json.dumps([], ensure_ascii=False))
-            return 0
-        print(f"🔓 历史待批准 {len(needing)} 个，其中属于分支 tip={tip} 的 {len(ids)} 个"
-              f" ⇒ 只批准这 {len(ids)} 个（被 GITHUB_TOKEN 抑制 ⇒ 无 job ⇒ 无 check）：{ids}")
-        try:
-            approve_runs(args.repo, ids)
-        except RuntimeError as exc:
-            print(f"⛔ approve 失败 ⇒ 台账 PR 仍无 check、`--auto` 仍不会触发（**不许静默**）：{exc}",
-                  file=sys.stderr)
-            return 1
-        print(f"✅ 已 approve {len(ids)} 个 run —— 它们将真正执行并产出 check-runs")
+        print(f"✅ 窗口 {wait:.0f}s 内 tip={tip} 的审批队列已清空（本轮共 approve {len(attempted)} 个）")
         if args.json_out:
-            _write(args.json_out, json.dumps(ids, ensure_ascii=False))
+            _write(args.json_out, json.dumps(attempted, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "approval-queue":
+        # #5417 判据 1：**停在 action_required 的 run 必须留下可归因读数**（不许静默）。
+        # 只读：本子命令**不发任何 approve**，也不碰 PR / 分支（读数不改变任何状态）。
+        try:
+            all_runs = (_gh_api(f"repos/{args.repo}/actions/runs"
+                                f"?event=pull_request&branch={args.head_branch}&per_page=100")
+                        .get("workflow_runs") or [])
+            tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            print(f"⛔ 取不到 run 列表 / 分支 tip（{exc}）⇒ **未跑 ≠ 通过**（不得当「队列为空」读）",
+                  file=sys.stderr)
+            return 3
+        if not tip:
+            print(f"⛔ 取不到台账分支 `{args.head_branch}` 的 tip ⇒ **无法判定**（不得当「没有待批准 run」读）",
+                  file=sys.stderr)
+            return 3
+        reading = approval_queue_reading(
+            all_runs, repo=args.repo, head_sha=tip,
+            min_age_minutes=args.min_age_minutes, limit=max(1, args.limit))
+        in_scope, out_scope = reading["in_scope"], reading["out_of_scope"]
+        head = (f"#5417 审批队列读数：tip={tip}（{args.head_branch}）"
+                f" · 机制面待批准 {reading['in_scope_total']} 个"
+                f" · 白名单外（按设计不批）{reading['out_of_scope_total']} 个"
+                f" · 陈旧推送 {reading['stale']} 个 · 年龄读不出 {reading['unaged']} 个")
+        if in_scope:
+            print(f"::warning::{head} —— 机制面仍有 run 停在 `action_required` ≥"
+                  f"{args.min_age_minutes:.0f} 分钟 ⇒ 台账 PR 拿不到 required 的 check（必须处置）")
+        else:
+            print(f"::notice::{head} —— 机制面无待批准 run（台账 PR 的 check 已产出）")
+        for label, entries, total in (("机制面", in_scope, reading["in_scope_total"]),
+                                      ("白名单外（机制故意不批；非 required）", out_scope,
+                                       reading["out_of_scope_total"])):
+            for entry in entries:
+                age = "年龄未知" if entry["age_minutes"] is None else f"{entry['age_minutes']} 分钟"
+                print(f"   · [{label}] run {entry['id']}  {entry['name']}  {age}  → {entry['url']}")
+            if total > len(entries):
+                print(f"   · [{label}] …另有 {total - len(entries)} 个（清单按 --limit 截断）")
+        if in_scope or out_scope:
+            print("::notice::人工出口（唯一入口；机制不自动批白名单外的 run）："
+                  "gh api -X POST repos/<owner>/<repo>/actions/runs/<run_id>/approve")
+        if args.json_out:
+            _write(args.json_out, json.dumps(reading, ensure_ascii=False))
+            return 0
         return 0
 
     if args.cmd == "ledger-drift":

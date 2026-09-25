@@ -1173,8 +1173,8 @@ class TestWorkflowGuardRedProofs:
     def test_inject_removing_approve_fail_closed(self):
         """摘掉 approve 的 fail-closed 出口 ⇒ 批准失败会静默（台账没 check 却像已放行）⇒ 必红。"""
         mutated = REAL_WORKFLOW.replace(
-            'echo "::error::approve 台账 PR 的 action_required run 失败 ⇒ 台账 PR 仍无 check、'
-            'main 不增长（fail-closed）"; exit 1; }',
+            'echo "::error::approve 台账 PR 的 action_required run 失败（含「窗口用尽仍停在 '
+            'action_required」）⇒ 台账 PR 拿不到 required 的 check、main 不增长（fail-closed）"; exit 1; }',
             'echo "⚠️ approve 没发出去"; }', 1)
         assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
         assert any("fail-closed 出口" in v for v in audit_workflow(mutated))
@@ -1719,8 +1719,8 @@ class TestApproveFixRedProofs:
 
     def test_red_proof_cli_dropping_the_narrowing_step(self):
         """变异点 ③：CLI 里**不套用**收窄（直接批准全部候选）⇒ CLI 判据必红。"""
-        mutant = _mutant(('ids = sorted(r["id"] for r in runs_for_head(candidates, tip))',
-                          'ids = sorted(r["id"] for r in candidates)'))
+        mutant = _mutant(('pending = sorted(runs_for_head(candidates, tip), key=lambda r: r["id"])',
+                          'pending = sorted(candidates, key=lambda r: r["id"])'))
         assert approve_cli_violations(vars(FL)) == []
         violations = approve_cli_violations(mutant)
         assert violations, "CLI 不套用收窄后仍判绿 ⇒ 四态判据是**空断言**"
