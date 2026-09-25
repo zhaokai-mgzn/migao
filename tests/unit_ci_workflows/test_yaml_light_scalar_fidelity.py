@@ -256,7 +256,7 @@ def test_real_case_library_keeps_every_case_and_every_row():
     （那由下一条管），所以「取值差异」与「内容缩水」两类问题不会互相掩盖。
     """
     files = sorted(CASES.glob("*.yml"))
-    assert len(files) == 25, f"用例库文件数变了（{len(files)}）—— 本判据会静默空跑"
+    assert len(files) == 26, f"用例库文件数变了（{len(files)}）—— 本判据会静默空跑"
     for f in files:
         truth, got = _diffs(f.read_text(encoding="utf-8"))
         _assert_no_row_loss(truth, got, f.name)

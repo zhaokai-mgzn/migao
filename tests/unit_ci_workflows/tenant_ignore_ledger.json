@@ -1,0 +1,12 @@
+{
+  "_comment": "租户隔离豁免台账（issue #5485）：`@InterceptorIgnore(tenantLine = \"true\")` + 查 `users` 且 SQL 里**没有** `tenant_id` 谓词的方法。判据源 = tests/unit_ci_workflows/test_tenant_scoped_user_queries.py。**豁免只许缩短**：销账（补上 tenant_id 或删方法）后必须同批删条目，新增豁免必须先证明补偿控制。",
+  "_why_exemptions_exist": "少数查询**必须**跨租户（登录标识本身就是租户外的键）；给它们硬加 tenant_id 会让多租户场景下查不到人。豁免的代价是必须写清「为什么串号不可能发生」。",
+  "entries": [
+    {
+      "method": "selectActiveUsersByPhoneIgnoreTenant",
+      "reason": "短信登录的服务端查找键是**手机号**（登录标识，天然跨租户）：同号可能存在于多个租户，加 tenant_id 谓词会让多租户下的管理员查不到人。",
+      "compensating_control": "① 命中多个租户且未指定 tenantId ⇒ **拒绝登录**（审计 07 P1-2，禁止静默 LIMIT 1 落错租户）；② role 门禁（issue #5485 不变式 I2）：只对 users.role='admin' 签发，非管理员一律 401 并引导员工登录入口；③ 平台超管路径走 platform_admins 表，不经过本查询。红证：AuthServiceTest 的多租户歧义三条 + SmsLoginRoleGateTest 的四条拒绝用例。",
+      "registered_by": "issue #5485"
+    }
+  ]
+}

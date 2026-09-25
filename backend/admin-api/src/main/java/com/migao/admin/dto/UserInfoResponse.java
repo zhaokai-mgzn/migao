@@ -91,6 +91,14 @@ public class UserInfoResponse {
          * 状态
          */
         private String status;
+
+        /**
+         * 首登强制改密（issue #5485 不变式 I4）：前端靠它决定是否跳「首登改密」页。
+         *
+         * <p>⚠️ 本字段是 {@code GET /api/auth/me} 在**强制改密白名单**里的原因 ——
+         * 会话被拦时前端要靠这次调用（它本身放行）判断该跳哪一页。</p>
+         */
+        private Boolean mustChangePassword;
     }
 
     /**

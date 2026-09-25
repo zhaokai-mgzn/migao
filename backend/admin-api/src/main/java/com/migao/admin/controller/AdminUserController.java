@@ -91,10 +91,13 @@ public class AdminUserController {
     @RequirePermission("employee:create")
     public ApiResponse<User> createUser(@RequestBody Map<String, Object> body) {
         Long tenantId = TenantContext.getTenantId();
-        String phone = body.containsKey("phone") ? (String) body.get("phone") : (String) body.get("username");
+        String phone = (String) body.get("phone");
         if (phone == null || phone.isBlank()) {
             throw BusinessException.validationError("手机号不能为空");
         }
+        // 员工登录用户名（issue #5485）：`username` 是**新列的实名**，不再是 phone 的兜底别名
+        // （口径见 LoginIdentifiers：格式校验 + 租户内唯一 + 统一转小写）。
+        String username = (String) body.get("username");
         String password = (String) body.get("password"); // 可选，不传则默认用手机号
         String name = (String) body.getOrDefault("name", "");
         String position = (String) body.getOrDefault("position", "");
@@ -162,7 +165,11 @@ public class AdminUserController {
         }
 
         log.info("创建用户: phone={}, name={}, role={}, position={}, tenantId={}", phone, name, role, position, tenantId);
-        User user = userService.createUser(phone, password, name, role, position, permissions, tenantId);
+        // 初始密码 ⇒ 置强制改密（issue #5485）：管理员知道这个密码，它只是「初始密码」。
+        // ⚠️ 只在**确实设了密码**时置 true —— 没密码的账号被标成强制改密会永久锁死
+        //    （改密要校验旧密码，而旧密码是 null）。短信登录的管理员因此不受影响。
+        User user = userService.createUser(phone, password, name, role, position, permissions, tenantId,
+                username, password != null && !password.isBlank());
 
         // 如果传了 roleIds，同步写入 user_roles 关联表（岗位场景已由 UserService.createUser 按 role code 关联）
         if (roleIdList != null && !roleIdList.isEmpty()) {
@@ -217,10 +224,10 @@ public class AdminUserController {
             }
         }
 
-        // 如果有密码，同步修改
+        // 如果有密码，同步修改（issue #5485：管理员设的密码是「初始密码」⇒ 一并置强制改密）
         String password = (String) body.get("password");
         if (password != null && !password.isEmpty()) {
-            userService.changePassword(id, password);
+            userService.changePassword(id, password, true);
         }
 
         // 从请求体读取权限列表（快照式：员工权限 = 员工管理保存的勾选）
@@ -255,7 +262,9 @@ public class AdminUserController {
         }
 
         log.info("更新用户: id={}, name={}, position={}", id, name, position);
-        User user = userService.updateUser(id, name, avatar, role, position, permissions, phone);
+        // username（issue #5485）：null = 不改；非空 ⇒ 转小写 + 格式校验 + 租户内唯一（排除自己）
+        String username = (String) body.get("username");
+        User user = userService.updateUser(id, name, avatar, role, position, permissions, phone, username);
         return ApiResponse.success(user);
     }
 
@@ -329,6 +338,10 @@ public class AdminUserController {
         map.put("username", user.getPhone());
         map.put("name", user.getNickname());
         map.put("phone", user.getPhone());
+        // 员工登录用户名（issue #5485）：`username` 这个键历史上等于手机号，**不动它**（存量消费者很多）；
+        // 新列以 `employeeUsername` 下发（null = 尚未补设）。前端员工管理页显示/编辑用这个键。
+        map.put("employeeUsername", user.getUsername());
+        map.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
         map.put("email", null);
         map.put("role", user.getRole());
         // position 为空时回退到 role 名称

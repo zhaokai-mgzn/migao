@@ -11,6 +11,7 @@ import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.TenantApplication;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.support.LoginIdentifiers;
 import com.migao.admin.entity.Permission;
 import com.migao.admin.entity.Role;
 import com.migao.admin.entity.RolePermission;
@@ -530,13 +531,31 @@ public class RegistrationService {
     // ==================== 内部辅助方法 ====================
 
     /**
-     * 根据企业名称生成唯一的租户编码
-     * 格式：tenant_ + 时间戳后6位 + 随机4位
+     * 为新租户生成**可读、合规、唯一**的默认企业编码（issue #5485）。
+     *
+     * <p>淘汰的旧形态：{@code tenant_%06d%04d}（时间戳拼随机数）—— 它含下划线，
+     * **不满足**登录标识对企业编码的格式 {@code ^[a-z0-9][a-z0-9-]{1,31}$}，
+     * 而且既不可读也不可改。新形态 = {@code <企业名 slug>-<4 位随机>}
+     * （如 {@code acme-fabric-3k9z}；纯中文企业名 slug 退化为 {@code shop}），
+     * 管理员之后可在「企业基础信息」里自行设置。</p>
+     *
+     * <p><b>唯一性</b>：先查库（{@code tenants.code} 全局查重）+ 重试；最终兜底是数据库
+     * {@code UNIQUE(tenants.code)}。⚠️ 并发下的取舍如实登记：同时有两个请求落到同一候选值时，
+     * 唯一约束会让**后到的那次注册整体失败**（事务已中止，PG 里不能在事务内重试），
+     * 而不是静默撞号 —— fail-closed，管理员重试即可。9 位随机（36^4 ≈ 168 万）叠加
+     * 查重使该概率可忽略。</p>
      */
     private String generateTenantCode(String companyName) {
-        long timestamp = System.currentTimeMillis();
-        int random = RANDOM.nextInt(10000);
-        return String.format("tenant_%06d%04d", timestamp % 1000000, random);
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String candidate = LoginIdentifiers.defaultTenantCode(companyName, RANDOM);
+            LambdaQueryWrapper<Tenant> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(Tenant::getCode, candidate);
+            if (tenantMapper.selectCount(wrapper) == 0) {
+                return candidate;
+            }
+            log.warn("默认企业编码候选已被占用，重试: attempt={}", attempt);
+        }
+        throw new BusinessException("TENANT_CODE_EXHAUSTED", "企业编码生成失败，请重试", 500);
     }
 
     /**

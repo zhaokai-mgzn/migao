@@ -100,6 +100,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     @SuppressWarnings("unchecked")
                     List<String> roles = claims.get(JwtTokenProvider.CLAIM_ROLES, List.class);
 
+                    // 首登强制改密标记（issue #5485 不变式 I4）：claim → 请求属性，
+                    // 由 PasswordChangeRequiredFilter 决定是否 403。
+                    // 这里只搬运、不判定（判定只有一处：那个过滤器），也不改 SecurityUser 的形状。
+                    if (Boolean.TRUE.equals(claims.get(JwtTokenProvider.CLAIM_PWD_CHANGE_REQUIRED, Boolean.class))) {
+                        request.setAttribute(PasswordChangeRequiredFilter.PWD_CHANGE_REQUIRED_ATTRIBUTE, Boolean.TRUE);
+                    }
+
                     // 设置租户上下文（tenantId=-1 表示平台管理员，无租户归属）
                     if (tenantId != null && tenantId != -1L) {
                         TenantContext.setTenantId(tenantId);

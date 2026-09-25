@@ -2,6 +2,8 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.BminiLoginRequest;
+import com.migao.admin.dto.ChangePasswordRequest;
+import com.migao.admin.dto.EmployeeLoginRequest;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.MiniPhoneBindRequest;
@@ -56,6 +58,55 @@ public class AuthController {
             HttpServletResponse response) {
         log.warn("密码登录已禁用 (#375), username={}", request.getUsername());
         throw BusinessException.authFailed("密码登录已禁用，请使用短信验证码登录");
+    }
+
+    // ======================== 员工登录（用户名@企业编码 + 密码，issue #5485） ========================
+
+    /**
+     * 员工登录
+     *
+     * POST /api/auth/employee/login
+     *
+     * Request: { "identifier": "zhangsan@acme", "password": "..." }
+     * Response: { "success": true, "data": { "user": {..., "mustChangePassword": false}, "accessToken": "..." } }
+     *
+     * <p>租户由 {@code identifier} 里的企业编码解析（**不由 body 传入**）：企业编码不存在 /
+     * 用户名不存在 / 密码错误 / 状态非 active / 标识格式不合法 —— 一律**同一 401 同一文案**
+     * （反枚举，不泄露是哪一项错）。失败文案的唯一来源 = {@code LoginIdentifiers.AUTH_FAILED_MESSAGE}。</p>
+     */
+    @PostMapping("/employee/login")
+    public ApiResponse<LoginResponse> employeeLogin(
+            @Valid @RequestBody EmployeeLoginRequest request,
+            HttpServletResponse response) {
+        log.info("员工登录请求");
+        LoginResponse loginResponse = authService.loginByEmployee(
+                request.getIdentifier(), request.getPassword(), response);
+        return ApiResponse.success(loginResponse);
+    }
+
+    // ======================== 自助改密（首登强制改密的出口，issue #5485） ========================
+
+    /**
+     * 修改当前登录用户密码
+     *
+     * POST /api/auth/password/change
+     *
+     * Request: { "oldPassword": "...", "newPassword": "..." }
+     *
+     * <p>需认证。成功后 {@code must_change_password=false}，并**直接换发一份新 access token**
+     * （响应体结构与登录一致）—— 客户端拿到的就是「已改密、可正常使用」的凭据，
+     * **不需要**额外记得再刷新一次（否则旧 token 仍带 claim ⇒ 改完密码反而全站 403）。</p>
+     *
+     * <p>本端点与 {@code /api/auth/logout}、{@code /api/auth/me}、{@code /api/auth/refresh}
+     * 是强制改密会话的白名单（见 {@code PasswordChangeRequiredFilter}）。</p>
+     */
+    @PostMapping("/password/change")
+    public ApiResponse<LoginResponse> changePassword(@RequestBody ChangePasswordRequest request,
+                                                     HttpServletResponse response) {
+        log.info("自助修改密码请求");
+        LoginResponse loginResponse = authService.changePassword(
+                request.getOldPassword(), request.getNewPassword(), response);
+        return ApiResponse.success(loginResponse);
     }
 
     // ======================== 短信验证码登录 ========================
@@ -122,6 +173,10 @@ public class AuthController {
      *
      * 流程：code→openid → 查 bmini_app 绑定 → 已绑定直接登录；未绑定则换号匹配员工 → 绑定 → 签发员工 JWT。
      * 语义与 C 端相反：匹配不到员工账号时<b>拒绝且不自动建号</b>（BM-003）。
+     *
+     * @deprecated issue #5485：员工登录统一为「用户名@企业编码 + 密码」（{@code /api/auth/employee/login}），
+     *     微信手机号匹配员工的那条路径已退场。接口**保留**（同 #375 的禁用范式：仍存在、仍抛
+     *     AUTH_FAILED，客户端能拿到明确引导文案而不是 404）。
      */
     @PostMapping("/bmini/login")
     public ApiResponse<LoginResponse> bminiLogin(

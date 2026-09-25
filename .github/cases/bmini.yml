@@ -10,7 +10,7 @@ domain: bmini
 cases:
   - id: BM-001
     legacy_id: ""
-    title: "B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid"
+    title: "B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配"
     domains:
       - bmini
       - auth
@@ -18,29 +18,29 @@ cases:
     tags:
       - bmini
       - login
-      - bind
+      - employee
     truths_ref:
-      - auth-sms.bypass
+      - auth.employee-login
+      - auth.tenant-local-identity
     user_inputs:
-      - "POST /api/auth/bmini/login {code, phoneCode} 首次登录：code2Session 换 openid 无绑定 → getPhoneNumber 换手机号 → 跨租户匹配员工（role≠customer/agent）→ 绑定 user_identities → 签发含 permissions 的员工 JWT"
+      - "员工在 bmini-app 登录页填 `用户名@企业编码` + 密码 → POST /api/auth/employee/login → 服务端按编码解析租户、按 (tenant_id, username) 定位员工 → 签发含 permissions 的员工 JWT（issue #5485 收口：员工只留用户名+密码）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "首次登录成功返回 accessToken + user（identityType=bmini）"
-      - "user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工"
+      - "登录成功返回 accessToken + user；租户 = 标识里的企业编码解析所得（不由前端传 tenantId）"
+      - "**不再**写入 user_identities / 不再需要 phoneCode / 不再有 openid 免密路径（原「微信授权手机号匹配员工 + 绑定 openid」整体退场）"
       - "签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）"
-    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "issue #2977 B 端手机版登录设计新增"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin 的废弃语义 + AuthService.loginByEmployee），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 新增；2026-09-25 改写（issue #5485）：员工登录统一为 用户名@企业编码 + 密码，微信手机号匹配 + openid 免密路径退场"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
-
   - id: BM-002
     legacy_id: ""
-    title: "B 端员工二次登录 - openid 已绑定直接登录（免手机号授权）"
+    title: "B 端员工小程序登录 - bmini 专用入口已废弃（明确拒绝，不静默失联）"
     domains:
       - bmini
       - auth
@@ -48,28 +48,27 @@ cases:
     tags:
       - bmini
       - login
-      - rebind
+      - deprecated
     truths_ref:
-      - auth-sms.bypass
+      - auth.bmini-disabled
     user_inputs:
-      - "POST /api/auth/bmini/login {code} 二次登录：user_identities 已存在 bmini_app 绑定 → 直接签发员工 JWT，不再要求 phoneCode"
+      - "任何客户端仍调用 POST /api/auth/bmini/login（旧版小程序在升级窗口内）→ 服务端明确拒绝并引导到 /api/auth/employee/login"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "已有绑定时不调用 getPhoneNumber（无需 phoneCode）"
-      - "返回同一员工账号的 accessToken + user"
-    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "issue #2977 B 端手机版登录设计新增"
+      - "拒绝语义：抛 AUTH_FAILED + 引导文案（沿用 #375「密码登录已禁用」范式），**不是** 404/静默失联"
+      - "**不存在**「openid 已绑定即免密登录」这条路径（本次整条删除）—— 员工每次都要用账号密码登录"
+    skip_reason: "[backend-contract] 纯后端单测契约（BminiLoginServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 新增；2026-09-25 改写（issue #5485）：bmini 专用登录入口废弃"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
-
   - id: BM-003
     legacy_id: ""
-    title: "B 端登录手机号未匹配员工 - 明确拒绝且禁止自动建号"
+    title: "B 端登录拒绝语义保留 - 匹配不到员工绝不自动建号，且失败不泄露账号是否存在"
     domains:
       - bmini
       - auth
@@ -80,19 +79,21 @@ cases:
       - login
       - defense
     truths_ref:
-      - auth-sms.bypass
+      - auth.employee-login
+      - auth.no-auto-migration
     user_inputs:
-      - "POST /api/auth/bmini/login {code, phoneCode} 手机号在 users 表无员工匹配（或仅 customer 角色）→ 拒绝登录，不自动创建用户（与 C 端 findOrCreate 语义相反）"
+      - "POST /api/auth/employee/login 用户名在企业下不存在（或密码错、或该账号被禁用）→ 拒绝登录，不自动创建用户（与 C 端 findOrCreate 语义相反）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "业务错误：手机号未匹配员工账号（不得建号、不得返回 token）"
-      - "不向 users / user_identities 写入任何新记录"
-      - "仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）"
-    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "issue #2977 B 端手机版登录设计新增"
+      - "失败统一为 401 AUTH_FAILED「账号或密码错误」（**反枚举**：用户名不存在/密码错/账号禁用/编码不存在 四者同码同文案）"
+      - "不向 users / user_identities 写入任何新记录、不返回 token"
+      - "C 端 consumer 账号不会被员工登录入口认领（员工凭据由管理员设置，与 C 端自动建号语义相反）"
+    skip_reason: "[backend-contract] 纯后端单测契约（EmployeeLoginServiceTest / BminiLoginServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 新增；2026-09-25 改写（issue #5485）：拒绝语义保留，入口换成员工账号密码"
     traces:
       tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
       ci:
         - pr-check.yml
