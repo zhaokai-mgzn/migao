@@ -323,10 +323,18 @@ class OrderStockSkuKeyFamilyTest {
     // ======================== 3. 负例（R2）：无 SKU 身份的合法订单不得被拒 ========================
 
     @Test
-    @DisplayName("负例：只带加工信息/规格属性（无 SKU 身份键）的合法订单不得被拒 —— 合法跳过 SKU 级库存")
+    @DisplayName("负例：只带加工信息/规格属性（无 SKU 身份键）的合法订单不得被拒 —— 合法跳过 SKU 级库存"
+            + "（取价维度改按商品级权威价核对，issue #3881 / #4025 F11）")
     void noSkuIdentity_isLegalSkip_notRejected() {
         // 该商品**确有** SKU 行（stub 成匹配行）—— 证明跳过不是「没查到」，而是「本就没有 SKU 身份语义」
         lenient().when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(storedSku()));
+        // 🔴 改判（issue #3881 / #4025 F11，用户裁定 A①）：本形态是**合法形态**（订单有效、库存维度
+        // 合法跳过），但**取价**维度不再静默放过 —— 改按商品级唯一权威价核对（此处唯一 SKU 价
+        // 168.00 = 明细单价 168.00 ⇒ 放行）。故补商品解析桩；「无从确定权威价 ⇒ 422」的正/负例见
+        // OrderNoSkuIdentityFailClosedTest。
+        when(productMapper.selectById(PRODUCT_ID)).thenReturn(com.migao.admin.entity.Product.builder()
+                .id(PRODUCT_ID).tenantId(1L).name(PRODUCT_NAME)
+                .basePrice(new BigDecimal("168.00")).build());
         when(orderMapper.update(any(), any())).thenReturn(1);
         mockCreatedOrder("confirmed");
 

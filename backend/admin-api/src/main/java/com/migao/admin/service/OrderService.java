@@ -2151,9 +2151,17 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * Agent 下单明细单价的服务端取价校验（GB/T 47746-2026 M3，issue #2806）。
      *
      * 规则（严格一致才放行，用户已确认）：
-     * - 明细同时提供 productId 与 skuCode（或 colorName）且能解析到唯一 SKU → 请求 unitPrice
-     *   必须与 SKU 权威价一致（BigDecimal compareTo == 0），不一致抛 400 并附权威价供修正；
-     * - 解析不到（无 SKU 标识 / SKU 不存在 / 命中多条 SKU 无法唯一确定）→ 不拦截（防误伤），记 warn。
+     * - 明细声明了 SKU 身份键（键族与 {@link #matchSkuId} **同一族**：{@code skuId}（ID 族，
+     *   工具层声明的「首选键」）/ {@code skuCode} / {@code colorName}）且能解析到唯一 SKU →
+     *   请求 unitPrice 必须与 SKU 权威价一致（BigDecimal compareTo == 0），不一致抛 422 并附权威价供修正；
+     * - 声明了键族却解析不到 / 命中多条无法唯一确定 → **不在此拦截**（防误伤），记 warn
+     *   （库存路径另有 issue #4090 的显式拒绝，两层判据分工不同、不合并）；
+     * - <b>未声明任何 SKU 身份键（issue #3881 缺陷二 / #4025 F11）→ 不再静默放过</b>：改前这里是
+     *   {@code return}（单价**零核对**落库 —— 明细可以只有 product_name，{@code order_items.product_id}
+     *   落 NULL，编造价一路进总额且无告警）。改后按**商品级权威价**核对
+     *   （见 {@link #validateAgentItemUnitPriceByProductAuthority}）：权威价唯一可得
+     *   （商品可解析且规格价唯一，或无 SKU 记录的简单商品有商品级价）⇒ 与声明键族的行
+     *   **同一口径**严格核对；无从确定 ⇒ 422（可行动文案，指名缺什么）。</p>
      *
      * <p>规格键只在 {@code processingInfo} 内（issue #4089 收敛后 DTO 不再有顶层
      * {@code skuCode}/{@code colorName} 字段——那正是 issue 清单的 D1/D2：唯一生产者从不填它们，
@@ -2167,6 +2175,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 两个生产者的真实形态
         String skuCode = null;
         String colorName = null;
+        Long skuId = null;
         if (item.getProcessingInfo() instanceof Map<?, ?> info) {
             Object rawSku = info.get("skuCode");
             if (rawSku != null) {
@@ -2176,43 +2185,188 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (rawColor != null) {
                 colorName = String.valueOf(rawColor);
             }
+            // issue #3881 缺陷二同族（本 PR 顺带修）：order_create 工具描述把 skuId 定为「首选键」，
+            // 而本守卫此前**只认** skuCode/colorName ⇒ 照工具描述传 skuId 的行反被判成
+            // 「无 SKU 标识」→ 静默放过（最精确的键落进 fail-open 分支）。
+            skuId = toSkuIdOrNull(info.get("skuId"));
         }
-        boolean hasSkuKey = StringUtils.hasText(skuCode) || StringUtils.hasText(colorName);
-        if (!StringUtils.hasText(item.getProductId()) || !hasSkuKey) {
-            return; // 无 SKU 标识，无法解析权威价 → 不拦截
+        // ① ID 族最精确：直查该 SKU（归属同商品才认；陈旧/越界的 skuId 回落到键族，不在此拒绝）
+        if (skuId != null) {
+            ProductSku byId = productSkuMapper.selectById(skuId);
+            if (byId != null && byId.getPrice() != null
+                    && (item.getProductId() == null
+                        || item.getProductId().equals(byId.getProductId()))) {
+                assertUnitPriceMatchesAuthority(item, byId.getPrice());
+                return;
+            }
+            log.warn("[order] 取价校验：processingInfo.skuId 不可用（库中不存在或不属于该商品），回落键族/商品级: productId={} skuId={}",
+                    item.getProductId(), skuId);
         }
+        // ② 字符串键族（skuCode / colorName）：现口径逐字保留
+        if (StringUtils.hasText(item.getProductId())
+                && (StringUtils.hasText(skuCode) || StringUtils.hasText(colorName))) {
+            LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(ProductSku::getTenantId, tenantId)
+                    .eq(ProductSku::getProductId, item.getProductId());
+            if (StringUtils.hasText(skuCode)) {
+                wrapper.eq(ProductSku::getSkuCode, skuCode);
+            } else {
+                wrapper.eq(ProductSku::getColorName, colorName);
+            }
+            wrapper.orderByAsc(ProductSku::getId)
+                    .last("LIMIT 2"); // 取 2 条探测歧义
+            List<ProductSku> skus = productSkuMapper.selectList(wrapper);
+            if (skus == null || skus.isEmpty()) {
+                log.warn("[order] 取价校验跳过（SKU 未解析到）: productId={} skuCode={} colorName={}",
+                        item.getProductId(), skuCode, colorName);
+                return;
+            }
+            if (skus.size() > 1) {
+                log.warn("[order] 取价校验跳过（SKU 不唯一，无法确定权威价）: productId={} skuCode={}",
+                        item.getProductId(), skuCode);
+                return;
+            }
+            BigDecimal authoritative = skus.get(0).getPrice();
+            if (authoritative == null) {
+                return; // SKU 无价格，无从校验
+            }
+            assertUnitPriceMatchesAuthority(item, authoritative);
+            return;
+        }
+        // ③ 无（有效）SKU 身份键 ⇒ 商品级权威价核对 / fail-closed（issue #3881 缺陷二、#4025 F11）
+        validateAgentItemUnitPriceByProductAuthority(item, tenantId);
+    }
 
-        LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ProductSku::getTenantId, tenantId)
-                .eq(ProductSku::getProductId, item.getProductId());
-        if (StringUtils.hasText(skuCode)) {
-            wrapper.eq(ProductSku::getSkuCode, skuCode);
+    /**
+     * 无 SKU 身份键时的**商品级**取价校验（issue #3881 缺陷二 / #4025 F11：fail-open → fail-closed）。
+     *
+     * <p>改前形态（本方法要修的那一行）：{@code !productId || !hasSkuKey ⇒ return}（只记 warn）
+     * —— 单价零核对落库。#3881 原文：「工具描述『不传时服务端通过 product_name 自动匹配』
+     * —— OrderService 无此逻辑（grep 无命中），product_id 落库为 NULL」。</p>
+     *
+     * <p><b>只拦真正无从核价的那种（合法形态不受影响）</b>：商品可解析且其 SKU 价集合唯一
+     * （或无 SKU 记录但有商品级价的简单商品 —— 卖布行那种「商品级一个价」的形态）⇒ 该价即
+     * 权威价，与声明键族的行同一口径核对；只有「商品解析不到 / 多个不同规格价而未声明规格 /
+     * 完全无价」才 422。<b>商品名唯一匹配</b>不是新造口径：ai-agent 工具层接地解析
+     * （{@code order_create._resolve_library_grounded}）用的就是「product_id 或 product_name
+     * 唯一匹配」，此处只是让服务端守卫不再把它当「无标识」放过。</p>
+     */
+    private void validateAgentItemUnitPriceByProductAuthority(OrderCreateRequest.OrderItemRequest item,
+                                                             Long tenantId) {
+        Product product = resolveProductForUnitPrice(item, tenantId);
+        if (product == null) {
+            throw noAuthorityReject(item, productMissingReason(item),
+                    "请补齐商品标识后重试：用 product_detail 拿到商品 id 填入 items[].product_id；"
+                            + "该商品有多个规格价时，还要在 items[].processing_info 里带上 skuId"
+                            + "（product_detail 的 skus[].id，最精确；也可用 skuCode / colorName，多门幅时附 doorWidth）。");
+        }
+        List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .eq(ProductSku::getProductId, product.getId())
+                .orderByAsc(ProductSku::getId));
+        BigDecimal authoritative;
+        if (skus != null && !skus.isEmpty()) {
+            authoritative = uniquePriceOf(skus);
+            if (authoritative == null) {
+                throw noAuthorityReject(item,
+                        String.format("该商品 %d 个 SKU 存在多个不同规格价，而本行未声明规格", skus.size()),
+                        "请在 items[].processing_info 里补 skuId（product_detail 的 skus[].id，最精确）"
+                                + "或 skuCode / colorName（多门幅时附 doorWidth），再按该规格的库价下单。");
+            }
         } else {
-            wrapper.eq(ProductSku::getColorName, colorName);
+            // 无 SKU 记录的商品（简单商品 / 卖布行形态）：权威价 = 商品级价，**显式允许**
+            // （#3881 的 P0 建议原文：「无 SKU 时 base_price 且须显式允许」）
+            authoritative = product.getBasePrice();
+            if (authoritative == null) {
+                throw noAuthorityReject(item, "该商品既没有 SKU 记录也没有商品级价",
+                        "请先在商品库为该商品配置价格（商品级价或 SKU 价）后再下单。");
+            }
         }
-        wrapper.orderByAsc(ProductSku::getId)
-                .last("LIMIT 2"); // 取 2 条探测歧义
-        List<ProductSku> skus = productSkuMapper.selectList(wrapper);
-        if (skus == null || skus.isEmpty()) {
-            log.warn("[order] 取价校验跳过（SKU 未解析到）: productId={} skuCode={} colorName={}",
-                    item.getProductId(), skuCode, colorName);
-            return;
+        assertUnitPriceMatchesAuthority(item, authoritative);
+    }
+
+    /** 无权威价可核对 ⇒ 422（复用既有 {@code VALIDATION_ERROR} 信封 + suggestion，不另造错误形状）。 */
+    private BusinessException noAuthorityReject(OrderCreateRequest.OrderItemRequest item,
+                                                String reason, String suggestion) {
+        String message = String.format(
+                "商品「%s」单价 %s 元无法核对（%s）—— 按 fail-closed 拒绝下单（issue #3881）。",
+                item.getProductName(), item.getUnitPrice().toPlainString(), reason);
+        log.warn("[order] 取价校验拒绝（无权威价可核对，fail-closed）: productId={} productName={} unitPrice={} reason={}",
+                item.getProductId(), item.getProductName(), item.getUnitPrice(), reason);
+        return new BusinessException("VALIDATION_ERROR", message, 422, suggestion);
+    }
+
+    private String productMissingReason(OrderCreateRequest.OrderItemRequest item) {
+        if (StringUtils.hasText(item.getProductId())) {
+            return String.format("商品标识 product_id=%s 在商品库中不存在或不属于本租户", item.getProductId());
         }
-        if (skus.size() > 1) {
-            log.warn("[order] 取价校验跳过（SKU 不唯一，无法确定权威价）: productId={} skuCode={}",
-                    item.getProductId(), skuCode);
-            return;
+        if (StringUtils.hasText(item.getProductName())) {
+            return String.format("商品名「%s」在商品库中匹配不到唯一商品（查不到或同名多条）", item.getProductName());
         }
-        BigDecimal authoritative = skus.get(0).getPrice();
-        if (authoritative == null) {
-            return; // SKU 无价格，无从校验
+        return "该行既没有 product_id 也没有 product_name";
+    }
+
+    /**
+     * 取价校验用的商品解析：{@code productId} 优先（**归属同租户**才算），否则按商品名**唯一**匹配
+     * （同名多条 ⇒ 返回 null，不猜是哪一个 —— 猜错商品 = 按错价核对）。
+     */
+    private Product resolveProductForUnitPrice(OrderCreateRequest.OrderItemRequest item, Long tenantId) {
+        if (StringUtils.hasText(item.getProductId())) {
+            Product byId = productMapper.selectById(item.getProductId());
+            return byId != null && tenantId != null && tenantId.equals(byId.getTenantId()) ? byId : null;
         }
+        if (!StringUtils.hasText(item.getProductName())) {
+            return null;
+        }
+        List<Product> byName = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getName, item.getProductName().trim())
+                .orderByAsc(Product::getId)
+                .last("LIMIT 2"));
+        return byName != null && byName.size() == 1 ? byName.get(0) : null;
+    }
+
+    /** 候选 SKU 的**唯一**权威价：价格集合去重后恰一个 ⇒ 返回它；多个不同价 / 全无价 ⇒ null。 */
+    private static BigDecimal uniquePriceOf(List<ProductSku> skus) {
+        BigDecimal only = null;
+        for (ProductSku sku : skus) {
+            BigDecimal price = sku == null ? null : sku.getPrice();
+            if (price == null) {
+                continue;
+            }
+            if (only == null) {
+                only = price;
+            } else if (only.compareTo(price) != 0) {
+                return null;
+            }
+        }
+        return only;
+    }
+
+    /** 单价必须与权威价严格一致（BigDecimal compareTo == 0），否则 422 并附权威价供修正。 */
+    private void assertUnitPriceMatchesAuthority(OrderCreateRequest.OrderItemRequest item,
+                                                BigDecimal authoritative) {
         if (item.getUnitPrice().compareTo(authoritative) != 0) {
-            log.warn("[order] 取价校验拒绝（LLM 单价≠权威价）: productId={} skuCode={} request={} authoritative={}",
-                    item.getProductId(), skuCode, item.getUnitPrice(), authoritative);
+            log.warn("[order] 取价校验拒绝（LLM 单价≠权威价）: productId={} request={} authoritative={}",
+                    item.getProductId(), item.getUnitPrice(), authoritative);
             throw BusinessException.validationError(
                     String.format("商品「%s」单价与系统价格不一致：请求 %.2f 元，系统价 %.2f 元。请以系统价重新下单。",
                             item.getProductName(), item.getUnitPrice(), authoritative));
+        }
+    }
+
+    /** {@code processingInfo.skuId} 解析：非数字/空 ⇒ 视为未声明（回落由键族负责，不在此拒绝）。 */
+    private static Long toSkuIdOrNull(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.valueOf(String.valueOf(raw).trim());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

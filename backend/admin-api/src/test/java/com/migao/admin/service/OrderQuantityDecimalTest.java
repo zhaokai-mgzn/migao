@@ -261,6 +261,7 @@ class OrderQuantityDecimalTest {
     @DisplayName("Agent 路径端到端：小数数量 8.4 经 createOrderForAgent 透传落库且小计按原值重算")
     void agentPathKeepsDecimalQuantity() {
         OrderCreateRequest.OrderItemRequest agentItem = new OrderCreateRequest.OrderItemRequest();
+        agentItem.setProductId("p-eval-embroidery");
         agentItem.setProductName("刺绣窗帘");
         agentItem.setQuantity(new BigDecimal("8.4"));
         agentItem.setUnitPrice(new BigDecimal("100.00"));
@@ -291,6 +292,11 @@ class OrderQuantityDecimalTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenAnswer(invocation -> List.of(captured.item));
         lenient().when(orderLogisticsMapper.selectByOrderId(anyString(), anyLong())).thenReturn(List.of());
+        // 商品级权威价桩（issue #3881 缺陷二 / #4025 F11，本 PR）：无 SKU 身份键的明细行
+        // 改由商品级唯一权威价核对 ⇒ 权威价 = 明细单价 100.00；本用例锁的是**小数数量保真**。
+        when(productMapper.selectById("p-eval-embroidery")).thenReturn(com.migao.admin.entity.Product.builder()
+                .id("p-eval-embroidery").tenantId(1L).name("刺绣窗帘")
+                .basePrice(new BigDecimal("100.00")).build());
 
         OrderDetailResponse result = orderService.createOrderForAgent(agentRequest, 1L);
 
