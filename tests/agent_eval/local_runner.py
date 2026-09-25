@@ -6649,6 +6649,23 @@ def parse_harness_incompatible(text) -> dict | None:
     return data if isinstance(data, dict) else {"kind": "unparseable"}
 
 
+def unwrap_harness_signature(text, fallback: str, bucket: list) -> str:
+    """把 `harness_incompatible(...)` 签名从"本轮要发什么"里摘出来（issue #3803 / #3862）。
+
+    签名只承载**归因信息**，不是要给顾客/agent 看的话 —— 摘进 `bucket`（判定层据此单列），
+    本轮仍发 `fallback`（流程继续，行为与"静默降级"逐字相同）。非签名文本原样透传。
+
+    为什么必须有这个**唯一收口**：三个分支（`auto_select` / `repeat_until` / `auto_respond`）
+    各自的兜底文本不同，逐分支各摘一次**一定会漏** —— 实测 `auto_select` 与 `repeat_until`
+    两路会把 `__HARNESS_INCOMPATIBLE__|{...}` **原样当顾客消息发给 agent**。
+    """
+    inc = parse_harness_incompatible(text)
+    if inc is None:
+        return text
+    bucket.append(inc)
+    return fallback
+
+
 def match_form_values(card_keys: list, values: dict) -> dict:
     """按**卡声明的字段名**从用例载荷里取值 → `{card_key: value}`。
 
@@ -6806,6 +6823,7 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
                 notes.append(_note)
             else:
                 print(f"⚠️ {_note}")
+        # SILENT-OK: 用例**显式**声明 prefer_text=true（"这一轮就是这句话"）⇒ 不答卡是设计内形态
         return fallback
     rounds = results or []
     if rounds:
@@ -6840,15 +6858,26 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
             # → 模型再重发」的 4 次确认死循环（被 check_confirm_loop 判红）。
             # 两次之后仍重发，则属**模型层**不收敛，交给 check_confirm_loop 如实判红。
             if _repeat_count(value) >= 2:
+                # SILENT-OK: 同一张确认卡已点满 2 次 ⇒ **模型层不收敛**（现有设计，交 check_confirm_loop 判红）
                 return fallback
-            return value or fallback
+            if value:
+                return value
+            # 确认卡**没有可点的值**（`backend/ai-agent-service/app/api/chat.py` 只在 XML
+            # 显式给出该键时才写进卡片）⇒ 前端点击协议回传不出任何东西，harness 拿不出
+            # 这张卡的答复 —— 旧实现 `return value or fallback` 是**静默降级**（issue #3862）。
+            return harness_incompatible("no_fillable_payload", card="confirm")
 
         choice = by_comp.get("choice")
+        _choice_unanswerable = False
         if choice is not None:
             answer = choice_card_answer(choice)
             # 选择卡同理：同一答复最多两次（首答 + 一次重申），之后走 fallback
             if answer and _repeat_count(answer) < 2:
                 return answer
+            # 卡**没有任何可选项**（`choice_card_answer` 逐字返回 ""）⇒ 前端协议下顾客点不出
+            # 东西、harness 拿不出答复（issue #3862）。**不在此 return**：同轮多卡时
+            # form 优先级更低（旧顺序 confirm > choice > form），提前返回会改行为。
+            _choice_unanswerable = not answer
 
         form = by_comp.get("form")
         if form is not None:
@@ -6865,7 +6894,18 @@ def resolve_auto_respond(results: list, fallback: str, form_values: dict,
                     card_fields=[k for k in _card_keys if k],
                     case_fields=sorted(str(k) for k in (form_values or {})),
                 )
+            # 本轮**没有可填载荷**（该轮 `auto_respond` 只声明了文本）而 agent 发了 form 卡
+            # ⇒ **不许静默降级**（issue #3862）：旧实现直接 `return fallback`，于是"harness
+            # 答不出这张卡"在结论里**没有任何可辨信号**，失败被记成"agent 不干活"（归因错人）。
+            return harness_incompatible(
+                "no_fillable_payload", card="form",
+                card_fields=[k for k in _card_keys if k],
+            )
 
+        if _choice_unanswerable:
+            return harness_incompatible("no_fillable_payload", card="choice")
+
+    # SILENT-OK: 真·无待答卡（答 agent 的文本提问）/ 已点满两次的模型层不收敛 —— 都不是"harness 答不出卡"
     return fallback
 
 
@@ -7378,12 +7418,17 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # 无 choice 卡（agent 文本澄清路径）→ fallback「第一个」保持旧语义兼容。
             # ⚠️ 但"待答的是 confirm/form 卡"时不能再发「第一个」（对不上卡片）——
             # 见 `resolve_auto_select_turn` 的实证说明。
-            text = resolve_auto_select_turn(results, case_form_values)
+            # 签名**绝不原样发给 agent**（issue #3862）：内部签名是归因载体，不是顾客的话。
+            text = unwrap_harness_signature(
+                resolve_auto_select_turn(results, case_form_values), "第一个", harness_incompat)
         elif isinstance(msg, dict) and msg.get("__repeat__"):
             # repeat_until 展开出的轮次：目标工具已成功 → 余下的重复轮直接跳过
             if repeat_stop_met(results, msg.get("__repeat__") or {}):
                 continue
-            text = resolve_repeat_turn(results, msg.get("opts") or {}, case_form_values)
+            _ropts = msg.get("opts") or {}
+            text = unwrap_harness_signature(
+                resolve_repeat_turn(results, _ropts, case_form_values),
+                str(_ropts.get("fallback") or "确认下单"), harness_incompat)
         elif isinstance(msg, dict) and msg.get("auto_respond"):
             # 合作型用户：优先回答上一轮的待答卡片，无卡则用 fallback 文本
             spec = msg.get("auto_respond") or {}
@@ -7402,9 +7447,8 @@ async def run_case(case, token: str, session_id: str) -> dict:
             # §3803：载荷与待答 form 卡字段零匹配 ⇒ 本轮**仍发 fallback**（流程继续），
             # 但把"形状不兼容"记成独立族 —— 不写成 agent 行为失败（归因不落在产品头上）。
             _inc = parse_harness_incompatible(text)
-            if _inc is not None:
-                harness_incompat.append(_inc)
-                text = str(spec.get("fallback") or "确认")
+            text = unwrap_harness_signature(text, str(spec.get("fallback") or "确认"),
+                                            harness_incompat)
             _pending = pending_card_summary(results)
             if _pending:
                 # 失败时的第一归因线索（issue #3803 要求 3）：把**待答卡类型**与**本轮
@@ -7544,6 +7588,17 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 判红仍然判红（fail-closed，不放宽任何断言），但归因落在 harness/用例形状上 ——
     # 旧形态把这种红写成 `order_create 从未被调用`，让人去查产品能力（归因错人）。
     for _inc in harness_incompat:
+        if _inc.get("kind") != "form_fields_mismatch":
+            # 载荷**为空**（该轮 `auto_respond` 只声明了文本）却有待答卡（issue #3862）：
+            # 病灶与下面的"零匹配"不同（这里根本**没有**载荷清单可列）⇒ 措辞必须分开，
+            # 否则读者会去找一份不存在的字段清单（归因再次错人）。
+            case_issues.append(
+                f"harness_incompatible({_inc.get('kind')}): 待答 **{_inc.get('card')}** 卡而本轮用例"
+                f"**没有可填载荷** —— harness 拿不出这张卡的答复、只能发 fallback 文本，"
+                f"卡没人答（流程可能就此卡死）；本次红是 harness/用例形状不兼容，"
+                f"**不代表 agent 行为失败**（改法：该轮补 `auto_respond.form_values` 或用例级 "
+                f"`auto_fill`；若这张卡本就不该发，那是 agent 的卡片形状问题，单独立单）")
+            continue
         case_issues.append(
             f"harness_incompatible({_inc.get('kind')}): 用例载荷字段 "
             f"{_inc.get('case_fields')} 与待答 form 卡字段 {_inc.get('card_fields')} "
