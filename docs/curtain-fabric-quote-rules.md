@@ -114,6 +114,16 @@
 > `tests/unit_ci_workflows/test_panels_formula_split_audit.py`（C1 / C2 / C4）与
 > `tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`（C1 / C8）。
 
+> **分子口径：仍为两族 —— 2026-09-25 用户裁定「① 保持现状」**（本次只统一**取整方式**，**未**统一分子）：
+> · **`_resolve_plan`（单一门幅 / 倍数法一路）**：分子 = `T = ceil_to_step(W × N, 0.1)` 的**进位值**；
+> · **`calculate_fabric_meters` / `build_quote`（定宽买高米数与报价卡复算）**：分子 = `W × N`。
+> ⇒ 两者在**边界格**上会给出不同幅数（#5514/#5060 实测：2280 格网格里 **29 格**变化、**全部恰好 −1 幅**、每格 −3.3 米；
+> 非边界格零变化）。用户明确**不做统一**（统一分子属**第二笔改钱**）⇒ 本页**不得**读成"幅数分子已统一"。
+> 复算：`backend/ai-agent-service/tests/test_curtain_calc_panels_rounding_unified.py`
+> 与 `tests/unit_ci_workflows/test_panels_formula_split_audit.py`（C1/C2/C4）。
+> （为什么写在这里：本项原挂在 issue **#5060**，该单已随"取整方式统一"关闭 ⇒ 若不落进真值源，
+> "分子仍是两族"这个事实就会**脱管**，下一位读这份文档的人会误以为已统一。）
+
 > **本文与 §0 的分工（issue #4819）**：§0 管**数值**（只此一处，且有守卫逐值比对代码常量）；本节管**公式形态**
 > （只写符号）。改任一常量 ⇒ 只改代码与 §0，**本节一个字都不用动**；本节若出现数值字面量，守卫即判红。
 
