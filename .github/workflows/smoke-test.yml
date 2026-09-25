@@ -19,6 +19,19 @@ on:
       SMOKE_SERVICE_TOKEN:
         required: true
 
+# ── 本腿的红必须**能判**（issue #4182，2026-09-25）────────────────────────────────
+# 现场（2026-09-17）：`d5435e45` 的 P0 smoke = `3 failed, 17 passed`，失败形态只有
+# `httpx.RemoteProtocolError: Server disconnected` 与 `Expected 200, got 502`；而**同一条部署腿**的
+# 前一个 SHA `f752f980` 端到端全绿、部署本身（Buildx/Push/Deploy）也全过。当时**取不到**这些输出
+# （`gh run view --log-failed` / `gh api …/jobs/<id>/logs` 只拿到 post-job 清理步骤）⇒ 判不了红。
+# ⇒ 本单让这条腿同时具备三件事：
+#   ① 就绪探测的**逐次读数**（含非期望状态码）摊到 run summary；
+#   ② pytest 输出 tee 进 summary + 作为 artifact 上传（成功也传，便于对账"窗口 vs 回归"）；
+#   ③ 请求层对**瞬态签名**做有界等待重试（`502`/`503`/`504` 与传输层断开 = "还没就绪"；
+#      `500` 与真断言失败**照旧当场红**，一次都不重跑用例）。
+# 重试策略单点在 `tests/smoke/retry_policy.py`；行为判据 =
+# `tests/unit_ci_workflows/test_smoke_transient_retry.py`。
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -43,21 +56,54 @@ jobs:
       - name: Wait for services ready
         # 2026-09-01 新增：部署为滚动重启，冒烟过早会撞上服务未就绪的瞬态 502
         # （greenlet 部署冒烟 8 failed 全 502 教训），先等待就绪再测，最多 5 分钟。
+        # 2026-09-25 强化（issue #4182）：
+        #   ① **连中两次**才算就绪 —— 滚动重启期间可能出现**瞬时** 200，单次命中就开测 = 仍在窗口内；
+        #   ② 逐次读数（含 502/503/504/000 这些非期望码）摊到 run summary —— 原来只有 job log 里的
+        #      `echo`，事后判不了"这次红是窗口还是回归"。
+        # 未就绪 ⇒ **不判红**（继续冒烟）：请求层还有一层有界瞬态重试，最终由断言判定 ——
+        # 让"没就绪"与"回归"各自由它该负责的那一层说。
         env:
           ADMIN_API_URL: ${{ inputs.admin_api_url }}
           AI_AGENT_URL: ${{ inputs.ai_agent_url }}
         run: |
           ready=0
+          streak=0
+          trace=""
           for i in $(seq 1 30); do
             ai=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$AI_AGENT_URL/health" || true)
             adm=$(curl -s -o /dev/null -w "%{http_code}" -m 10 -X POST "$ADMIN_API_URL/api/auth/sms-code" -H 'Content-Type: application/json' -d '{}' || true)
-            echo "attempt $i: ai-agent=$ai admin-api=$adm"
-            if [ "$ai" = "200" ] && [ "$adm" = "401" ]; then ready=1; break; fi
+            line="attempt $i: ai-agent=$ai admin-api=$adm"
+            echo "$line"
+            trace="${trace}${line}"$'\n'
+            if [ "$ai" = "200" ] && [ "$adm" = "401" ]; then streak=$((streak + 1)); else streak=0; fi
+            if [ "$streak" -ge 2 ]; then ready=1; break; fi
             sleep 10
           done
-          [ "$ready" = "1" ] && echo "✅ 服务就绪" || echo "⚠️ 5 分钟内未就绪，继续冒烟（由断言判定）"
+          if [ "$ready" = "1" ]; then
+            result="就绪（连续 2 次探测命中）"
+            echo "✅ 服务就绪（连续 2 次探测命中）"
+          else
+            result="5 分钟内未取得「连续 2 次就绪」⇒ 继续冒烟，由断言判定"
+            echo "::warning::5 分钟内未取得「连续 2 次就绪」⇒ 继续冒烟（请求层还有一层有界瞬态重试；探测读数见本 run 的 step summary）"
+          fi
+          {
+            echo "## P0 Smoke 前置：服务就绪探测（issue #4182）"
+            echo ''
+            echo "- ai-agent \`$AI_AGENT_URL/health\` 期望 \`200\`；admin-api \`$ADMIN_API_URL/api/auth/sms-code\` 期望 \`401\`"
+            echo "- 判定：**连续 2 次**命中才算就绪（滚动重启期间的瞬时 200 不算）"
+            echo "- 结果：$result"
+            echo ''
+            echo '```'
+            printf '%s' "$trace"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run P0 smoke tests
+        # issue #4182：失败证据必须落在 run summary + artifact（原来只在 job log 里，
+        # 而 `gh run view --log-failed` 还可能只取到 post-job 清理步骤）。
+        # `--timeout` 30 → 120：请求层的瞬态等待预算（单请求最多多等 29s）必须放得进**单条用例**的
+        # 超时，否则窗口内的重试会被 pytest-timeout 提前掐死（"重试了但仍红"与真回归无法区分）。
+        # job 级 `timeout-minutes: 10` 不动 ⇒ 整条腿仍被硬上限框住。
         env:
           SMOKE_ENV: production
           ADMIN_API_URL: ${{ inputs.admin_api_url }}
@@ -65,5 +111,29 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
         run: |
+          set +e
           cd tests/smoke
-          pytest -m "p0" --tb=short -q --timeout=30
+          pytest -m "p0" --tb=short -q --timeout=120 2>&1 | tee "$GITHUB_WORKSPACE/p0-smoke.log"
+          rc=${PIPESTATUS[0]}
+          {
+            echo "## P0 Smoke 结果（issue #4182：失败必须能判）"
+            echo ''
+            echo "- pytest 退出码：\`$rc\`"
+            echo "- 完整日志 artifact：\`p0-smoke-log\`（文件 \`p0-smoke.log\`）"
+            echo "- 瞬态读数：日志尾部那行「本轮遇瞬态签名 N 次 / 重试 N 次 / 累计等待 Ns」"
+            echo '  （`tests/smoke/retry_policy.py` 的会话账本；零重试也会打印一行，避免"没跑"与"零动作"同形）'
+            echo ''
+            echo '```'
+            tail -c 30000 "$GITHUB_WORKSPACE/p0-smoke.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Upload P0 smoke log（失败证据，issue #4182）
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p0-smoke-log
+          path: p0-smoke.log
+          retention-days: 14
+          if-no-files-found: warn

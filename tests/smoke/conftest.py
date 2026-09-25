@@ -9,6 +9,23 @@ import pytest
 
 from .config import EnvConfig, get_config
 from .helpers import SmokeTestClient
+from .retry_policy import SESSION_LEDGER
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """瞬态重试读数（issue #4182）：**有重试**与**零重试**都要出声。
+
+    只在"有重试"时打印的话，「本轮零瞬态」与「读数机制坏了」长得一模一样
+    （本仓最贵的形态：绿了但没跑）。这行会随 tee 进 run summary 与 artifact
+    ⇒ "这次为什么绿 / 为什么红"事后可判。
+    """
+    if SESSION_LEDGER.retries:
+        print(f"\n⚠️ P0 冒烟本轮遇瞬态签名 {SESSION_LEDGER.transient_events} 次，"
+              f"重试 {SESSION_LEDGER.retries} 次，累计等待 {SESSION_LEDGER.waited:.0f}s"
+              f"（会话上限 {SESSION_LEDGER.budget_s:.0f}s）"
+              f"—— 部署滚动重启窗口，非回归（issue #4182）")
+    else:
+        print("\n✅ P0 冒烟本轮零瞬态重试（无 502/503/504，也无连接断开）")
 
 
 @pytest.fixture(scope="session")

@@ -107,15 +107,25 @@ jobs:
       # 于是本腿**永远**停在「无法判定 rc=3」= 铁律 9 A2 的机械化实际上**从未生效**）。
       # ⇒ 口径：**用同一个解释器装、用它跑**（`"$PY" -m pip install` + `--python "$PY"`），并把 `PY`
       #    经 `$GITHUB_ENV` 传给后续步骤，绝不依赖 PATH 里的 `python3` 到底是谁。
-      - name: Install deps（判据面只要 pytest + pyyaml；**同一解释器装 + 用它跑**，issue #5434）
+      # ⚠️ issue #5575（2026-09-25 实测）：原来只装 `pytest pyyaml`，而**本腿是按变更文件选子集跑的**
+      # （`--base` / `--lookback` ⇒ 只跑命中判据的**子集**）：`tests/unit_ci_workflows/test_flake_history_index.py`
+      # 会加载 `tests/agent_eval/local_runner.py`（模块级 `import httpx`）⇒ **单独被选中时 8 条全红**
+      # `ModuleNotFoundError: No module named 'httpx'`。它在别的 run 上是绿的，只因某个**同批被选中**的
+      # L0 判据在 import 期往 `sys.modules` 塞了 httpx 替身
+      # （`tests/unit_ci_workflows/test_code_ask_semantics_l0.py::_install_httpx_stub`）
+      # ⇒ **绿是"选择"的事故**（「判据跑了」≠「判据真的能跑」）。
+      # 修法 = **诚实声明依赖**（装 httpx），而不是让判据继续吃别的判据的 `sys.modules` 注入；
+      # 类级锁 = `tests/unit_ci_workflows/test_sys_modules_cross_file_independence.py`
+      # （面内判据不得依赖**别的**判据往 `sys.modules` 注入模块）。
+      - name: Install deps（判据面要 pytest + pyyaml + httpx；**同一解释器装 + 用它跑**，issue #5434 / #5575）
         run: |
           set -euo pipefail
           PY="$(command -v python3)"
           echo "解释器 = $PY"
-          "$PY" -m pip install -q --disable-pip-version-check pytest pyyaml
+          "$PY" -m pip install -q --disable-pip-version-check pytest pyyaml httpx
           "$PY" - <<'PYEOF'
-          import sys, pytest, yaml
-          print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} @ {sys.executable}")
+          import sys, pytest, yaml, httpx
+          print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} / httpx {httpx.__version__} @ {sys.executable}")
           PYEOF
           echo "MIGAO_PY=$PY" >> "$GITHUB_ENV"
 

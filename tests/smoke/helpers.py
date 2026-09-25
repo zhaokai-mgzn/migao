@@ -1,11 +1,18 @@
 """
 冒烟测试工具函数
+
+⚠️ 请求层带**有界瞬态重试**（issue #4182）：`502`/`503`/`504` 与传输层断开会被当作
+"服务还没就绪"等待重试；而 `500` / `401` / 真断言失败**照旧当场红**。
+策略与预算（尝试次数 / 等待 / 会话上限）单点在 `retry_policy.py`，
+判据在 `tests/unit_ci_workflows/test_smoke_transient_retry.py`。
 """
 
 import time
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from .retry_policy import SESSION_LEDGER, TransientRetrier, is_transient_status
 
 
 class SmokeTestClient:
@@ -17,6 +24,8 @@ class SmokeTestClient:
         self._access_token: Optional[str] = None
         self._refresh_token: Optional[str] = None
         self._client = httpx.Client(timeout=timeout, follow_redirects=True)
+        #: 瞬态重试器（预算走**会话级**账本 —— 两个 client 共用同一份上限）
+        self._retrier = TransientRetrier()
 
     @property
     def auth_headers(self) -> Dict[str, str]:
@@ -35,33 +44,37 @@ class SmokeTestClient:
         self._access_token = None
         self._refresh_token = None
 
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """**所有动词的唯一出口**：瞬态签名（502/503/504 与传输层断开）走有界等待重试。
+
+        非瞬态（含 500）立即返回 ⇒ 断言照旧执行；重试耗尽 ⇒ 把**最后一次**的响应/异常
+        原样交出去 ⇒ 该红的还是红（不会把 500、也不会把真断言失败"重试"成绿）。
+        策略/预算见 `retry_policy.py`；判据见 `tests/unit_ci_workflows/test_smoke_transient_retry.py`。
+
+        ⚠️ 重试会复用 `kwargs`（`json=` / `params=` 可安全重发）；流式 `stream_post` **不走**这里
+        （`httpx` 的流式接口是一次性上下文管理器，重发要重开会话）—— P0 档不消费它。
+        """
+        url = f"{self.base_url}{path}"
+        headers = {**self.auth_headers, **kwargs.pop("headers", {})}
+        return self._retrier.run(
+            lambda: self._client.request(method, url, headers=headers, **kwargs)
+        )
+
     def get(self, path: str, **kwargs) -> httpx.Response:
         """发送 GET 请求"""
-        headers = {**self.auth_headers, **kwargs.pop("headers", {})}
-        return self._client.get(
-            f"{self.base_url}{path}", headers=headers, **kwargs
-        )
+        return self._request("GET", path, **kwargs)
 
     def post(self, path: str, **kwargs) -> httpx.Response:
         """发送 POST 请求"""
-        headers = {**self.auth_headers, **kwargs.pop("headers", {})}
-        return self._client.post(
-            f"{self.base_url}{path}", headers=headers, **kwargs
-        )
+        return self._request("POST", path, **kwargs)
 
     def put(self, path: str, **kwargs) -> httpx.Response:
         """发送 PUT 请求"""
-        headers = {**self.auth_headers, **kwargs.pop("headers", {})}
-        return self._client.put(
-            f"{self.base_url}{path}", headers=headers, **kwargs
-        )
+        return self._request("PUT", path, **kwargs)
 
     def delete(self, path: str, **kwargs) -> httpx.Response:
         """发送 DELETE 请求"""
-        headers = {**self.auth_headers, **kwargs.pop("headers", {})}
-        return self._client.delete(
-            f"{self.base_url}{path}", headers=headers, **kwargs
-        )
+        return self._request("DELETE", path, **kwargs)
 
     def stream_post(self, path: str, **kwargs):
         """发送 SSE 流式 POST 请求"""
@@ -76,10 +89,29 @@ class SmokeTestClient:
         self._client.close()
 
 
+def transient_diagnostics(resp: httpx.Response) -> str:
+    """瞬态签名下的**可复现最小证据**（issue #4182 第 2 条：现在的失败输出取不到 ⇒ 判不了红）。
+
+    只在 `502`/`503`/`504` 上追加：请求 URL + 本轮重试读数 + 一条可复制的 `curl`。
+    非瞬态（含 `500`）返回空串 —— 那种红不需要"部署窗口"叙事，就是需要人读代码/日志。
+    """
+    if not is_transient_status(resp.status_code):
+        return ""
+    url = str(getattr(getattr(resp, "request", None), "url", "") or "<未知>")
+    return (
+        f"\n  ↳ 瞬态签名 HTTP {resp.status_code}：已按 #4182 的策略重试"
+        f"（本轮累计重试 {SESSION_LEDGER.retries} 次 / 累计等待 {SESSION_LEDGER.waited:.0f}s，"
+        f"会话上限 {SESSION_LEDGER.budget_s:.0f}s）后**仍然**如此"
+        f" ⇒ 至少已排除短窗口瞬态，按**回归优先**排查。"
+        f"\n  ↳ 最小复现：curl -i -m 10 '{url}'  （需鉴权的接口自行附 header）"
+    )
+
+
 def assert_success_response(resp: httpx.Response, status_code: int = 200) -> Dict[str, Any]:
-    """断言成功响应格式"""
+    """断言成功响应格式（瞬态签名附可复现证据；断言本身**不**重试）"""
     assert resp.status_code == status_code, (
         f"Expected {status_code}, got {resp.status_code}: {resp.text[:500]}"
+        + transient_diagnostics(resp)
     )
     data = resp.json()
     # 支持两种格式：{success: true, data: ...} 或 {code: 200, data: ...}
