@@ -11,6 +11,7 @@ import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.security.JwtTokenProvider;
+import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.SecurityUser;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
@@ -92,6 +93,10 @@ class ForcePasswordChangeServiceTest {
     private TenantAiConfigMapper tenantAiConfigMapper;
     @Mock
     private CustomerService customerService;
+
+    /** 登录失败计数（issue #5531）：本类不测它 ⇒ 用 mock（默认未锁定 ⇒ 既有行为不变）。 */
+    @Mock
+    private LoginFailureGuard loginFailureGuard;
 
     private final Tenant tenantA = Tenant.builder().id(1L).code("acme").name("甲公司").status("active").build();
 

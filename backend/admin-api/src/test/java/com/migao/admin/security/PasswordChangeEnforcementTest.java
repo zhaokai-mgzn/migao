@@ -6,6 +6,7 @@ import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.User;
 import com.migao.admin.mapper.PlatformAdminMapper;
+import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.mapper.TenantAiConfigMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserIdentityMapper;
@@ -103,6 +104,10 @@ class PasswordChangeEnforcementTest {
     private TenantAiConfigMapper tenantAiConfigMapper;
     @Mock
     private CustomerService customerService;
+
+    /** 登录失败计数（issue #5531）：本类不测它 ⇒ 用 mock（默认未锁定 ⇒ 既有行为不变）。 */
+    @Mock
+    private LoginFailureGuard loginFailureGuard;
 
     private static final String BUSINESS_API = "/api/admin/users";
 
