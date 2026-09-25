@@ -1007,3 +1007,220 @@ def test_anchor_judgement_documents_its_division_of_labour_with_drift_audit():
     assert "drift_audit" in guard_src, "guard 未点出与 C1 的分工（会有第二份口径）"
     assert "噪音红" in guard_src, "guard 未写明 C1 为什么停在内容级（读者会以为矛盾）"
     assert "preset-anchor-check.sh" in audit_src, "C1 未指向开工/提交路径的 sha 级判据"
+
+
+# ── ⑦ 「取不到 ref」的三态（issue #5430）──────────────────────────────────────
+# 病根（**一类**缺陷，不是一个缺陷）：判据在**取不到证据**时判「通过」。
+# `git rev-parse <ref>` 在 ref 不存在时把 `<ref>` **原样回显**到 stdout（并返回非零），而当时那一行是
+# `check=False` 且**没看 rc** ⇒ ① 回显被当基线 sha ⇒ 拿**字面量** `"origin/main"` 去活锚检出问
+# 「有没有这个提交」（活锚里当然有）⇒ 判「同一上游（同一份历史）」= **伪造读数**；
+# ② 活锚里恰好没有该字面量 ref 时反手判「不同源」⇒ `⏭️ 未跑判定` + **exit 0 = 与「通过」同一个码**。
+# 本组：红证 A（改前 exit 0）、红证 B（改前打印伪造读数）、反向红证（ref 正常 ⇒ 照常判），
+# 以及同族的两处（`_lag_state` 的假「分叉」/ `prune` 把读不到状态当「干净」）。
+
+
+def _try_git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """**不断言**成败的 git（夹具自证用：判据不许在取不到证据时判通过，夹具也不许）。"""
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+
+
+def _noref_repo(tmp_path: Path, name: str = "work") -> Path:
+    """**没有 `origin/main`** 的真仓库（无 `origin` 远程、无 `refs/remotes/origin/main`）。
+
+    这正是默认基准 `origin/main` 取不到的场景：浅检出 / 没 fetch / ref 名变了。
+    """
+    repo = tmp_path / name
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    _seed_preset(repo, "1.28.0")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base（无 origin/main）")
+    if _try_git(repo, "rev-parse", "--verify", "-q", "origin/main").returncode == 0:
+        raise AssertionError("夹具不成立：该仓库竟能解析 origin/main（本组判据会空跑成假绿）")
+    return repo
+
+
+def _plain_checkout(tmp_path: Path, name: str, bare: Path | None = None) -> Path:
+    """活锚形态的检出：给 `bare` ⇒ 克隆（有 `refs/remotes/origin/main`，= 真实镜像形态）；否则本地 init。"""
+    repo = tmp_path / name
+    if bare is not None:
+        _git(tmp_path, "clone", "-q", str(bare), str(repo))
+        return repo
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    _seed_preset(repo, "1.28.0")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "anchor v1.28.0")
+    return repo
+
+
+def test_unresolvable_ref_is_undecidable_not_pass(tmp_path: Path):
+    """**红证 A**（改前 **exit 0 = 通过**）：基线 `origin/main` 取不到 + 活锚检出里也没有该字面量 ref。
+
+    改前：退路拿回显 `"origin/main"` 去活锚里问「有没有这个提交」⇒ 没有 ⇒ 判「不是同一上游」
+    ⇒ `⏭️ 未跑判定` + **exit 0**（与「通过」同一个码）⇒ 判据在最需要它的场景下**静默失效**。
+    改后：入口判 **`3` 无法判定**、说明「这次根本没判」、给出可行动出口（`git fetch` / `--ref`）。
+    """
+    work = _noref_repo(tmp_path)
+    anchor = _plain_checkout(tmp_path, "anchor-no-ref")
+    out = io.StringIO()
+
+    rc = GUARD_MODULE.judge_anchor("origin/main", work, anchor / ".agent-presets/migao",
+                                   explicit=False, out=out)
+    text = out.getvalue()
+
+    assert rc == 3, text                          # 改前为 0（= 通过）
+    assert "无法判定" in text and "不可解析" in text
+    assert "git fetch origin" in text             # 出口必须可行动
+    assert "不是同一上游" not in text             # 旧版正是在这里下了**没有证据的结论**
+    assert "✅" not in text                       # 不许长得像「绿」
+
+
+def test_unresolvable_ref_never_fabricates_same_upstream(tmp_path: Path):
+    """**红证 B**（改前打印**伪造读数**）：活锚检出里**有** `refs/remotes/origin/main`（真实镜像形态）。
+
+    改前：回显 `"origin/main"` 被当基线 sha ⇒ 拿字面量去活锚问「有没有这个提交」⇒ 有 ⇒
+    判「同一上游（**同一份历史**）」并把基线读数打成 `origin/main @?`；随后又用**同一个字面量**
+    去取文件清单而红 ⇒ **判红的原因本身是伪造的读数**（把人引向「落后 / 分叉」而不是「前提缺失」）。
+    """
+    work = _noref_repo(tmp_path)
+    bare = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
+    seed = _plain_checkout(tmp_path, "seed")
+    _git(seed, "remote", "add", "origin", str(bare))
+    _git(seed, "push", "-q", "origin", "main")
+    mirror = _plain_checkout(tmp_path, "mirror", bare=bare)
+    if _try_git(mirror, "rev-parse", "--verify", "-q", "origin/main").returncode != 0:
+        raise AssertionError("夹具不成立：活锚检出里没有 `origin/main`（本判据会退化成另一条红因）")
+
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", work, mirror / ".agent-presets/migao",
+                                   explicit=False, out=out)
+    text = out.getvalue()
+
+    assert rc == 3, text
+    assert "拥有基线提交" not in text             # 改前逐字：活锚检出拥有基线提交 origin/main（同一份历史）
+    assert "同一份历史" not in text
+    assert "无法判定" in text
+
+
+def test_resolvable_ref_still_judges_both_same_upstream_legs(anchor_env: dict, tmp_path: Path):
+    """**反向红证**（别把判据改成「永远无法判定」）：`origin/main` 正常可解析时，同源判定的**两条腿**照常判。
+
+    ① **生效 origin URL 腿**：活锚镜像与本仓库同一上游 ⇒ 判定（内容不一致 ⇒ 红，且**不是**「未跑判定」）；
+    ② **对象级退路腿**：镜像的 origin URL 被改成别的路径（URL 腿失效），但**基线提交在它的历史里**
+       ⇒ 仍判「同一上游（同一份历史）」并照常判内容。
+    """
+    baseline, mirror, c1 = anchor_env["baseline"], anchor_env["mirror"], anchor_env["c1"]
+    _git(mirror, "checkout", "-q", "--detach", c1)
+
+    url_out = io.StringIO()
+    rc_url = GUARD_MODULE.judge_anchor("origin/main", baseline, mirror / ".agent-presets/migao",
+                                       explicit=False, out=url_out)
+    assert rc_url == 1, url_out.getvalue()
+    assert "同一上游" in url_out.getvalue()
+    assert "未跑判定" not in url_out.getvalue()
+    assert "活锚内容与 origin/main 不一致" in url_out.getvalue()
+
+    alias = tmp_path / "alias"
+    _git(tmp_path, "clone", "-q", str(anchor_env["origin"]), str(alias))
+    _git(alias, "remote", "set-url", "origin", str(tmp_path / "not-origin.git"))
+    _git(alias, "checkout", "-q", "--detach", c1)
+
+    obj_out = io.StringIO()
+    rc_obj = GUARD_MODULE.judge_anchor("origin/main", baseline, alias / ".agent-presets/migao",
+                                       explicit=False, out=obj_out)
+    assert rc_obj == 1, obj_out.getvalue()
+    assert "同一份历史" in obj_out.getvalue()      # 对象级退路腿
+    assert "未跑判定" not in obj_out.getvalue()
+
+
+def test_cli_reports_exit_code_3_when_only_undecidable(tmp_path: Path):
+    """接线：只有「无法判定」时 `check` 必须退 **3**（改前：拿回显当 sha ⇒ `ls-tree` 失败 ⇒ 假红 1）。"""
+    work = _noref_repo(tmp_path)
+    anchor = _plain_checkout(tmp_path, "anchor-cli3")
+
+    proc = _run_guard(work, "check", "--source", "index", "--ref", "origin/main",
+                      "--anchor", str(anchor / ".agent-presets/migao"))
+
+    assert proc.returncode == 3, proc.stdout
+    assert "无法判定" in proc.stdout and "不得当 0 读" in proc.stdout
+    assert "ls-tree" not in proc.stdout            # 旧版那条「拿回显去取文件清单」的假红因不得再出现
+
+
+def test_red_wins_over_undecidable(tmp_path: Path):
+    """三态合并：**有结论的红（1）优先于无法判定（3）** —— 一次运行里既有真红又有不可判时先修真红
+    （与 `scripts/drift_audit.py::tri_state()` 同序）；且**两段确实都判了**（不是「没跑」）。
+    """
+    work = _noref_repo(tmp_path)
+    anchor = _plain_checkout(tmp_path, "anchor-cli1")
+    _write_skill(work, "1.26.0", filler=9)        # 降级（HEAD 上是 1.28.0）
+    _git(work, "add", "-A")
+
+    proc = _run_guard(work, "check", "--source", "index", "--ref", "origin/main",
+                      "--anchor", str(anchor / ".agent-presets/migao"))
+
+    assert proc.returncode == 1, proc.stdout                  # 1 优先于 3
+    assert "不可判定（fail-closed）" in proc.stdout            # 单调性段的红因
+    assert "无法判定（三态" in proc.stdout                     # 活锚段确实也判了 3（不是没跑）
+
+
+def test_lag_state_is_unknown_when_ref_unresolvable(tmp_path: Path):
+    """**红证**（同族，同一文件）：`_lag_state` 在 ref 取不到时必须是 `unknown`（**关系未判**），
+    而不是有结论的 `divergent` —— 旧版：回显被当 sha ⇒ `merge-base` 随之失败 ⇒ 误判「分叉」。
+    """
+    work = _noref_repo(tmp_path)
+    sha = _git(work, "rev-parse", "HEAD").stdout.strip()
+
+    assert GUARD_MODULE._lag_state("origin/main", work, sha) == "unknown"    # 改前为 "divergent"
+
+
+def test_locked_branches_is_undecidable_without_common_dir(tmp_path: Path):
+    """**红证**（同族，同一文件）：`_locked_branches` 取不到 common git dir ⇒ **`None` = 无法判定**。
+
+    改前：`rev-parse --git-common-dir` 失败 ⇒ stdout 空 ⇒ `or (cwd / ".git")` 兜底 ⇒ 返回**空集**
+    ⇒ 被读成「无活跃会话锁」⇒ `prune` 会把**有会话在用**的工作区列进「可安全移除」。
+    """
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    if _try_git(outside, "rev-parse", "--git-common-dir").returncode == 0:
+        raise AssertionError("夹具不成立：该目录竟是 git 仓库（判据会空跑成假绿）")
+
+    assert GUARD_MODULE._locked_branches(outside) is None, "取不到 common git dir 必须判「无法判定」"
+
+    repo = tmp_path / "repo-ok"
+    _git(tmp_path, "init", "-q", "-b", "main", str(repo))
+    assert GUARD_MODULE._locked_branches(repo) == set(), "正对照：确实没有锁时仍是空集（不是 None）"
+
+
+def test_prune_does_not_read_unreadable_status_as_clean(tmp_path: Path):
+    """**红证**（同族，同一文件）：读不到工作树状态（`git status` 失败）**不得**被读成「干净」。
+
+    改前：stdout 空 ⇒ 「工作树干净」⇒ 该 worktree 落进**可安全移除**（取不到证据却判「安全」）。
+    夹具：一个已注册、分支已合入的 worktree，把它的 `.git` 指针文件改坏（目录还在，git 读不了状态）。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    (repo / "f.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    wt = tmp_path / "wt-broken"
+    _git(repo, "worktree", "add", "-q", "-b", "fix/broken", str(wt))
+    (wt / ".git").write_text("这不是一个 gitdir 指针\n", encoding="utf-8")
+    if _try_git(wt, "status", "--porcelain").returncode == 0:
+        raise AssertionError("夹具不成立：工作树状态仍可读（判据会空跑成假绿）")
+
+    proc = _run_guard(repo, "prune", "--dry-run", "--ref", "main")
+
+    assert proc.returncode == 0, proc.stdout
+    safe_block, manual_block = proc.stdout.split("── 需人看")[0], proc.stdout.split("── 需人看")[1]
+    assert str(wt) not in safe_block, "读不到工作树状态却被判『可安全移除』（无证据的『安全』）"
+    assert str(wt) in manual_block
+    assert "读不到工作树状态" in manual_block

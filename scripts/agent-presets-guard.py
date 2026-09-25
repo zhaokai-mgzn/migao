@@ -64,8 +64,15 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
     # 存量体检（只打印清单，绝不删除；--dry-run 必须显式给出）
     python3 scripts/agent-presets-guard.py prune --dry-run
 
-退出码：0 = 绿；1 = 判定为「版本下降 / 同号不同内容（跨包撞车）/ 活锚落后 / 不可判定」（fail-closed）；
-2 = 用法错误。
+退出码（**三态**，与 `scripts/drift_audit.py` / `scripts/post_merge_verify.py` 同口径）：
+
+  0 = 绿（**有结论**：无版本下降、无同号撞车、活锚新鲜）；
+  1 = 判红（**有结论**：版本下降 / 同号不同内容（跨包撞车）/ 活锚落后 / 内容不一致 / 悬空 / 技能加载不了）；
+  3 = **无法判定**（判据**没跑出结论**：基线 `ref` 取不到 ⇒ 连「能不能比」都判不了 —— **不得当 0 读**，见「地雷 E」）；
+  2 = 用法错误。
+
+  **`1` 优先于 `3`**：一次运行里既有真红又有不可判时，先修真红（同 `drift_audit.tri_state()`）。
+  `3` **永不等于** `0`：调用方（含 `dev-worktree.sh preset-guard`）只许把 `0` 当通过。
 
 ## 成本口径与存活读数（§23 G8 / G6）
 
@@ -82,7 +89,27 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
 | 活锚内容 ≠ `origin/main`（缺文件 / 内容不同） | ❌ 红（含逐文件清单 + 版本对比 + 同步命令） |
 | 内容一致但活锚检出**落后** `origin/main` | ❌ 红（现在无害，但**下一次改预设就到不了加载点** —— 正是 #4026 的病灶） |
 | 内容一致、sha 也是同一个提交 | ✅ 绿 |
-| 活锚检出与本仓库**不同源**（默认活锚路径才适用） | `⏭️ 未跑判定`（exit 0）—— 拿无关仓库的 main 量活锚没有意义 |
+| 活锚检出与本仓库**不同源**（默认活锚路径才适用；**且有证据**：生效 origin URL 不等，或基线 sha 不在活锚历史里） | `⏭️ 未跑判定`（exit 0）—— 拿无关仓库的 main 量活锚没有意义 |
+| 基线 `ref` **不可解析**（`origin/main` 不在检出里 / 浅检出 / ref 名变了） | ❌ **`3` 无法判定**（fail-closed）—— 见下面「地雷 E」 |
+
+**地雷 E：取不到 `ref` 时判据自己选择「看得见」（issue #5430）**
+
+`git rev-parse <ref>` 在 `ref` **不存在**时把 `<ref>` **原样回显**到 stdout（并返回非零）——
+而旧版这一行是 `check=False` **且没看 rc**：
+
+```python
+ref_sha = git("rev-parse", ref, cwd=cwd, check=False).stdout.strip()   # ← 未判 rc
+if ref_sha and git("-C", str(anchor_repo), "cat-file", "-e", f"{ref_sha}^{{commit}}", check=False).returncode == 0:
+    return True, f"活锚检出拥有基线提交 {ref_sha[:12]}（同一份历史）"
+```
+
+⇒ 回显 `"origin/main"` 被当成基线 sha，再拿这个**字面量**去活锚检出问「有没有这个提交」——
+活锚检出里当然有 `origin/main` ⇒ 判「**同一上游（同一份历史）**」（**伪造读数**）；
+若活锚检出里恰好**没有**该字面量 ref，则反手判「**不同源**」⇒ `⏭️ 未跑判定` + **exit 0 = 与「通过」同一个退出码**
+⇒ 判据在最需要它的场景（浅检出 / 没 fetch / ref 名变了）下**静默失效**。
+
+现口径（三态）：`ref` 取不到 ⇒ `judge_anchor` 入口直接判 **`3` 无法判定**并打印修法（`git fetch` / `--ref`）；
+`_same_upstream` 里的 rc 检查作为**第二道**（即便将来有人挪走入口守卫，也**不再伪造** sha 读数）。
 
 **显式 `--anchor` 一律判定**（你明确指定了要比的对象）；`⏭️` 一律**不是**「通过」。
 """
@@ -429,13 +456,17 @@ def _same_upstream(ref: str, cwd: Path, anchor_repo: Path) -> tuple[bool, str]:
        （`https://github.com/…` vs `ssh://git@ssh.github.com:443/…`）⇒ 真活锚被**静默跳过**；
     ② 只比对象级「锚点检出里有没有基线那个提交」⇒ 锚点**还没 fetch** 到基线新提交时被判
        「不同历史」⇒ 落后**不红**；而这恰恰是本单要治的形态（main 刚前进、锚点还没跟上）。
+    ③ 把 `git rev-parse` 的**回显**当 sha（`ref` 不存在时它把 ref 名原样打到 stdout）⇒ 判出
+       「同一上游（同一份历史）」这种**没有证据的结论**（issue #5430）—— 故这里**先判 rc**。
     """
     if anchor_repo.resolve() == cwd.resolve():
         return True, "活锚就在本仓库检出内"
     a, b = _norm_remote(_remote_url(anchor_repo)), _norm_remote(_remote_url(cwd))
     if a and a == b:
         return True, f"活锚检出与本仓库同一上游（{a}）"
-    ref_sha = git("rev-parse", ref, cwd=cwd, check=False).stdout.strip()
+    proc = git("rev-parse", ref, cwd=cwd, check=False)
+    # 🔴 rc 必须判（issue #5430）：`rev-parse` 失败时 stdout 是**回显**，不是 sha。
+    ref_sha = proc.stdout.strip() if proc.returncode == 0 else ""
     if ref_sha and git("-C", str(anchor_repo), "cat-file", "-e", f"{ref_sha}^{{commit}}",
                        check=False).returncode == 0:
         return True, f"活锚检出拥有基线提交 {ref_sha[:12]}（同一份历史）"
@@ -554,8 +585,12 @@ def _lag_state(ref: str, cwd: Path, sha: str | None) -> str:
         return "unknown"
     if git("cat-file", "-e", f"{sha}^{{commit}}", cwd=cwd, check=False).returncode != 0:
         return "unknown"          # 对象不在基准仓（跨仓比较）⇒ 不判，退到内容级
-    ref_sha = git("rev-parse", ref, cwd=cwd, check=False).stdout.strip()
-    if ref_sha and ref_sha == sha:
+    # rc 必须判（#5430 同族）：`ref` 不存在时 `rev-parse` **回显字面量** ⇒ 会被当 sha 用，并让下面的
+    # `merge-base` 失败 ⇒ 误判成有结论的「分叉」。取不到 ⇒ `unknown`（关系未判，**不是** divergent）。
+    resolved = git("rev-parse", ref, cwd=cwd, check=False)
+    if resolved.returncode != 0 or not resolved.stdout.strip():
+        return "unknown"
+    if resolved.stdout.strip() == sha:
         return "same"
     if git("merge-base", "--is-ancestor", sha, ref, cwd=cwd, check=False).returncode == 0:
         return "behind"
@@ -568,10 +603,18 @@ def _commits_behind(ref: str, sha: str, cwd: Path) -> str:
 
 
 def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=sys.stdout) -> int:
-    """活锚新鲜度判定。0 = 绿（或 `⏭️` 未跑判定）；1 = 红（落后 / 悬空 / 内容不同 / 不可加载）。
+    """活锚新鲜度判定。三态：0 = 绿（或 `⏭️` 未跑判定）；1 = 红（落后 / 悬空 / 内容不同 / 不可加载）；
+    **3 = 无法判定**（基线 `ref` 取不到 ⇒ 内容比对与落后判定的**共同前提缺失** —— issue #5430）。
 
     `explicit=True`（用户显式 `--anchor`）⇒ **一律判定**；否则默认活锚只在「与当前仓库同源」时判定
     （拿无关仓库的 `main` 量活锚没有意义：夹具仓库、别的产品仓库都会误报）。
+
+    ⚠️ **为什么 `ref` 解析失败在入口判、且判 `3` 而不是 `1`**（#5430）：`ref` 是**调用的前提**，
+    前提缺失 ⇒ 内容级与 sha 级两条判据**都没跑出结论** ⇒ 按本仓三态口径（`scripts/drift_audit.py`
+    的 `tri_state()` / `scripts/post_merge_verify.py` 的 `Undecidable`）用 `3`；**不是**判「红」
+    （红 = **有结论**，会把它误报成「落后 / 分叉」），更不是退出 `0`（与「通过」同一个码 ⇒
+    判据在最需要它的场景下静默失效）。取不到 `ref` 在**本机是可控的**（`--ref` 是参数、默认
+    `origin/main` 一条 `git fetch` 即恢复）⇒ 必须出声、且给可行动出口。
     """
     print("\n🔎 活锚新鲜度（DSH 真正加载的那份内容；地雷 B / issue #4026）", file=out)
     print(f"   活锚：{anchor}", file=out)
@@ -588,8 +631,25 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
               f"{PRESET_SUBDIR}/README.md", file=out)
         return 1
 
+    # 🔴 入口先核**基线 ref 能否解析**（#5430）：`git rev-parse <ref>` 在 ref 不存在时把 `<ref>`
+    # **原样回显**到 stdout（非零退出）—— 旧版 `check=False` 且不看 rc ⇒ 回显被当成基线 sha
+    # （伪造「拥有基线提交 origin/main（同一份历史）」这种**没有证据的结论**）；而判「同源」的退路
+    # 也随之失真：活锚里恰好没有该字面量 ref 时会反手判「不同源」⇒ `⏭️` + exit 0 = 与「通过」同一个码。
+    # 这里是内容级 / sha 级两条判据的**共同前提**，故在入口一次判清（隐式 / 显式 `--anchor` 口径一致）。
+    ref_proc = git("rev-parse", ref, cwd=cwd, check=False)
+    if ref_proc.returncode != 0:
+        print(f"   ❌ 无法判定（三态 `3`）：基线 `{ref}` 在本仓库（{cwd}）**不可解析**"
+              " ⇒ 内容比对与落后判定的共同前提缺失（浅检出 / 没 fetch / ref 名变了）", file=out)
+        print("      后果：**这次根本没判** —— 旧口径在这种情形下要么把 `<ref>` 的回显当基线 sha"
+              "（判出一个没有证据的结论），要么退出 0（与「通过」同一个码）⇒ 判据静默失效。", file=out)
+        print(f"      修（可行动，任选其一）：`git fetch origin`（让 {ref} 可解析）/ "
+              f"`--ref <本仓库真实存在的基线 ref>`", file=out)
+        return 3
+
     top, sha = _anchor_checkout(real)
-    base_sha = git("rev-parse", "--short", ref, cwd=cwd, check=False).stdout.strip() or "?"
+    ref_short = git("rev-parse", "--short", ref, cwd=cwd, check=False)
+    # rc 已在上面判过；这里只为打印读数，且**绝不用回显**当读数（#5430）
+    base_sha = ref_short.stdout.strip() if ref_short.returncode == 0 else "?"
     if top is None:
         print("   ⚠️ 活锚不是 git 检出（判不了 sha/落后）—— 形态上属**手抄副本**：没有跟随机制", file=out)
     else:
@@ -690,6 +750,20 @@ def _print_reading(stats: dict, total_sources: int, out=sys.stdout) -> None:
         )
 
 
+def _merge_exit(current: int, other: int) -> int:
+    """三态合并：`1`（**有结论的红**）优先于 `3`（**无法判定**）；只有两边都是 `0` 才是 `0`。
+
+    与 `scripts/drift_audit.py::tri_state()` 同口径（本仓三态：`0` 通过 / `1` 判红 / `3` 不可判），
+    本脚本**不另造**第四种语义。**`3` 永不等于 `0`**：调用方（含 `dev-worktree.sh preset-guard`）
+    只许把 `0` 当通过 —— 否则「没跑出结论」这个状态在接口上**不存在**，正是 issue #5430 的形态。
+    """
+    if current == 1 or other == 1:
+        return 1
+    if current == 3 or other == 3:
+        return 3
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     cwd = Path(args.repo).resolve()
     sources = [args.source] if args.source != "both" else ["index", "worktree"]
@@ -707,12 +781,17 @@ def cmd_check(args: argparse.Namespace) -> int:
     # 地雷 B（issue #4026）：仓库内容全对 ≠ 活锚新鲜 —— 活锚落后时改进到不了加载点。
     # 显式 `--anchor` 一律判定；默认活锚只在「与当前仓库同源」时判定（见 judge_anchor）。
     anchor = Path(args.anchor).expanduser() if args.anchor else DEFAULT_ANCHOR
-    rc |= judge_anchor(args.ref, cwd, anchor, explicit=bool(args.anchor), out=sys.stdout)
+    rc = _merge_exit(rc, judge_anchor(args.ref, cwd, anchor, explicit=bool(args.anchor), out=sys.stdout))
+    if rc == 3:
+        print("\n❌ **无法判定**（exit 3）—— 本判据这次**没跑出结论**，**不得当 0 读**，更不得当成「通过」："
+              "按上面的修法让基线 ref 可解析后重跑。")
     return rc
 
 
 def cmd_anchor(args: argparse.Namespace) -> int:
-    """活锚新鲜度（独立入口；供 `scripts/preset-anchor-check.sh` 与开工自检调用）。"""
+    """活锚新鲜度（独立入口；供 `scripts/preset-anchor-check.sh` 与开工自检调用）。
+
+    三态退出码：`0` 绿 / `1` 红 / **`3` 无法判定**（基线 ref 取不到）。"""
     cwd = Path(args.repo).resolve()
     return judge_anchor(args.ref, cwd, Path(args.anchor).expanduser(), explicit=True, out=sys.stdout)
 
@@ -787,14 +866,21 @@ def _pr_merged_branches(cwd: Path) -> set[str] | None:
     return names or None
 
 
-def _locked_branches(cwd: Path) -> set[str]:
+def _locked_branches(cwd: Path) -> set[str] | None:
     """活跃会话锁涉及的分支（PID 仍存活）—— 被锁的工作区一律不判「可安全移除」。
 
     锁目录一律按 **common git dir** 定位（worktree 内的 `$WT/.git` 是指针文件、不是目录，
     直接拼 `.git/sessions` 会永远读不到 —— 那会让守卫**静默失效**）。
+
+    🔴 **`None` = 无法判定**（#5430 同族）：取不到 common git dir（`rev-parse` 失败）⇒ 锁面整个不可知，
+    **不得**退回「按 `cwd/.git` 找」—— 旧版的 `or (cwd / ".git")` 恰好把失败读成「没找到锁」⇒ 返回空集
+    ⇒ 「无锁」⇒ 有会话在用的工作区被判「可安全移除」（**取不到证据却判「安全」**）。
+    调用方必须按 fail-closed 处置 `None`（`cmd_prune` / `issue_lifecycle.reap` 均已接线）。
     """
     common = git("rev-parse", "--git-common-dir", cwd=cwd, check=False)
-    lock_dir = Path(common.stdout.strip() or (cwd / ".git"))
+    if common.returncode != 0 or not common.stdout.strip():
+        return None
+    lock_dir = Path(common.stdout.strip())
     if not lock_dir.is_absolute():
         lock_dir = cwd / lock_dir
     lock_dir = lock_dir / "sessions"
@@ -840,12 +926,18 @@ def cmd_prune(args: argparse.Namespace) -> int:
         if not Path(path).is_dir():
             manual.append((path, branch or "(detached)", "目录已不存在（stale worktree 记录）→ 用 `git worktree prune` 清理"))
             continue
-        dirty = git("status", "--porcelain", cwd=Path(path), check=False).stdout.strip()
+        dirty = git("status", "--porcelain", cwd=Path(path), check=False)
         reasons = []
-        if dirty:
-            reasons.append(f"工作树不干净（{len(dirty.splitlines())} 条改动）")
+        # 🔴 rc 必须判（#5430 同族）：`git status` 失败时 stdout 为空 —— 旧版把它读成「工作树干净」
+        # ⇒ 读不到状态的 worktree 被列进**可安全移除**（取不到证据却判「安全」）。
+        if dirty.returncode != 0:
+            reasons.append("读不到工作树状态（`git status` 失败 ⇒ **判不了是否干净**，按需人看处置）")
+        elif dirty.stdout.strip():
+            reasons.append(f"工作树不干净（{len(dirty.stdout.splitlines())} 条改动）")
         if not branch:
             reasons.append("detached HEAD，无分支可核合入状态")
+        elif locked is None:
+            reasons.append("读不到 common git dir ⇒ **判不了有没有活跃会话锁**（无法判定，不得读成「无锁」）")
         elif branch in locked:
             reasons.append("有活跃会话锁（可能有会话在用）")
         elif not _merged_into(ref, branch, cwd) and not (pr_merged and branch in pr_merged):
@@ -864,6 +956,12 @@ def cmd_prune(args: argparse.Namespace) -> int:
     for path, branch in safe:
         via = "" if _merged_into(ref, branch, cwd) else "  ← 经「PR 已合并」判据（squash 合并，祖先/`cherry` 看不见）"
         print(f"  ✅ {path}  （分支 {branch}）{via}")
+    if locked is None:
+        print(
+            "\n⚠️ 「活跃会话锁」这条判据**未跑**：读不到 common git dir"
+            "（`git rev-parse --git-common-dir` 失败）⇒ 本清单里**每一条**都按「可能有会话在用」处置"
+            "（**无法判定 ≠ 无锁**；#5430 同族）。"
+        )
     if pr_merged is None:
         print(
             "\n⚠️ 「PR 已合并」这条判据**未跑**（gh 不可用 / 未登录 / 离线）"
@@ -893,7 +991,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=".", help="仓库根（默认当前目录）")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_check = sub.add_parser("check", help="判定被检内容是否构成 `.agent-presets/**` 版本下降（含活锚新鲜度）")
+    p_check = sub.add_parser("check", help="判定被检内容是否构成 `.agent-presets/**` 版本下降"
+                                          "（含活锚新鲜度）；退出码三态 0/1/3（+2 用法错误）")
     p_check.add_argument("--ref", default=DEFAULT_REF, help=f"基准 ref（默认 {DEFAULT_REF}）")
     p_check.add_argument(
         "--source", choices=["both", "index", "worktree"], default="both",

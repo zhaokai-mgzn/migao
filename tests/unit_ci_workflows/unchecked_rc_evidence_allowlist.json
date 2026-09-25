@@ -1,0 +1,23 @@
+{
+  "_doc": [
+    "「`check=False` 子进程调用把 stdout 当证据」的**豁免台账**（issue #5430 的类级元守卫）—— 数据文件，判据只读它、不读注释。",
+    "纪律（机械执行，见 tests/unit_ci_workflows/test_unchecked_rc_evidence_guard.py）：",
+    "  ① 每条必须有 `reason` + `issue`；缺任一项 ⇒ 该测试必红。",
+    "  ② 台账**只许缩短**：未登记的命中 ⇒ 红；已登记文件的命中数涨或跌 ⇒ 红；条目陈旧（该文件已无命中）⇒ 红。",
+    "  ③ `hits` 是**现取条数**（不写死解释性上限）；燃尽锚点 = 条目数与 `hits` 之和，由测试每次打印。",
+    "  ④ 「判据本体」文件（`scripts/agent-presets-guard.py`）不在台账里，也**不接受登记** —— 它命中即红（#5430 已收口）。",
+    "现状：只记录**已有债务**，不含任何兜底/通配条目。"
+  ],
+  "entries": {
+    "scripts/issue_lifecycle.py": {
+      "hits": 6,
+      "reason": "同族存量（#5430 清扫时**未收口**，照实登记）：`assert_head_pushed`（`rev-parse HEAD` / `rev-parse origin/<branch>` 各 1）、`reap_candidates`（两条 `for-each-ref`）、`verify_clean`（`ls-remote` / `status --porcelain` 各 1）—— 这些调用**失败的前提**已被同函数/同流程更早的调用挡掉（`git fetch` 失败即早退、`_worktrees()` 先抛 `GitError`、`show-ref` 先在同一个仓库上判过），故当前**不可达**；改它们要动 `land`/`finish` 的既有语义与夹具（体量超本单）。收口方向 = 判 rc 后按该文件既有的 `EXIT_UNKNOWN = 3` 出声（**无法判定 ≠ 通过**）。",
+      "issue": "#5430"
+    },
+    ".github/danger_scan.py": {
+      "hits": 1,
+      "reason": "同族**形态**存量、但**失效方向是 fail-closed**（故本单只登记、不改行为）：`analyze()` 里 `git ls-files <迁移目录>` 取不到时 `mig_files` 为空 ⇒ `known` 为空 ⇒ 不会认定 `bootstrap_alignment` ⇒ 照样追加 blocker（不放行）。收口方向 = 判 rc 后显式出声（读不到迁移清单时把原因写进读数而非静默当空）。",
+      "issue": "#5430"
+    }
+  }
+}
