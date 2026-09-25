@@ -556,6 +556,57 @@ def _weak_patterns_for(test_file):
     return patterns
 
 
+def _prose_spans(text: str):
+    """→ 每行「说明部分」的起始列（None = 该行没有说明）与「是否在文档字符串内」。
+
+    · 行注释：`#`（Python）/ `//`（TS）——**跳过字符串字面量里**的标记（否则 `"a#b"` 会被误判）；
+    · 文档字符串：三引号块内的整行都算说明（用逐行状态机跟踪开/闭）。
+    """
+    marks = ["#", "//"]
+    starts: list = []
+    in_doc = False
+    doc_delim = ""
+    for line in text.split("\n"):
+        if in_doc:
+            starts.append(0)                      # 整行都在文档字符串里 = 说明
+            if doc_delim in line:
+                in_doc = False
+                doc_delim = ""
+            continue
+        for d in (chr(34) * 3, chr(39) * 3):
+            if d in line:
+                in_doc = True
+                doc_delim = d
+                break
+        if in_doc:
+            starts.append(0)                      # 该行是文档字符串的开头行 ⇒ 视为说明行
+            if line.count(doc_delim) >= 2:        # 同一行开闭（单行 docstring）
+                in_doc = False
+                doc_delim = ""
+            continue
+        # 逐字符找注释起点，跳过字符串字面量
+        quote = ""
+        pos = None
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quote:
+                if ch == quote and line[i - 1:i] != "\\":
+                    quote = ""
+            elif ch in "\"'":
+                quote = ch
+            else:
+                for m in marks:
+                    if line.startswith(m, i):
+                        pos = i
+                        break
+            if pos is not None:
+                break
+            i += 1
+        starts.append(pos)
+    return starts
+
+
 def find_weak_asserts(test_file):
     """扫描测试文件的弱断言（不触业务数据的存在性/恒真断言 + 空 pass）。
 
@@ -570,15 +621,25 @@ def find_weak_asserts(test_file):
     except (OSError, UnicodeDecodeError) as e:
         raise ValueError(f"无法读取测试文件 {test_file}（{e.__class__.__name__}）") from e
     patterns = _weak_patterns_for(test_file)
+    prose = _prose_spans(text)
     for no, line in enumerate(text.split("\n"), 1):
         stripped = line.strip()
         if not stripped:
             continue
+        prose_at = prose[no - 1] if no - 1 < len(prose) else None
+        if prose_at == 0:                          # 整行在文档字符串里 ⇒ 这行是**说明**，不判
+            continue
+        lead = len(line) - len(line.lstrip())
         for pat in patterns:
-            if pat.search(stripped):
-                weak.append({"line_no": no, "line": stripped,
-                             "reason": "弱断言（不触业务数据）"})
-                break
+            m = pat.search(stripped)
+            if not m:
+                continue
+            col = lead + m.start()
+            if prose_at is not None and col >= prose_at:
+                continue                           # 命中落在**注释**里 ⇒ 是说明，不算弱断言
+            weak.append({"line_no": no, "line": stripped,
+                         "reason": "弱断言（不触业务数据）"})
+            break
     return weak
 
 
