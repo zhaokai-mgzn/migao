@@ -312,6 +312,14 @@ class TestBaseSkillRules:
     **明确排除 OR-016**：它当前是已知的用例自相矛盾（`user_inputs[1]` 为裸文本，与
     `order_before` 时序断言冲突，由另一包校准中）。挂上去会让**每个改 `base_skill.py` 的 PR**
     吃到规则命中红（仓库级红，与 #3551 的 DF-011 假阻塞同型）。**待 OR-016 校准合入后再补映射。**
+
+    #3786 追加**第三个守卫族** → `OR-014` **及同类扫描出的 4 条**（能力自我否定族）：`base_skill.py` 的
+    `capability_denial_text_hit` / `_scope_misattribution_hit`（"落单不归我管 / 不具备提交能力"）
+    与回锁目标 `_flow_owner_skill` 正是 OR-014 的失败形态（`order_create` 真实可达却自称做不到 ⇒
+    `no_success(order_create)`）。修前它是本条最典型的漏映射：**改守卫族 = 改 OR-014 的修复面**，
+    而映射推出的用例集里没有 OR-014（§13.3 修复必须重放，在**映射层**的漏洞）。
+    族↔用例的一致性由 `tests/unit_ci_workflows/test_behavior_mapping_guard_family_coverage.py`
+    机器复算；本节只做**实例断言**（写死期望值 —— 任何一处映射改动都必须同步改这几条断言）。
     """
 
     def test_base_skill_maps_to_handoff_cases(self):
@@ -325,6 +333,34 @@ class TestBaseSkillRules:
         cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
         assert [c for c in cases if c.startswith("DF-")] == ["DF-011", "DF-012"]
 
+    def test_base_skill_maps_to_capability_denial_case(self):
+        """#3786：改守卫载体 → 能力自我否定族（OR-014）必须进强信号集。
+
+        修前实测：`base_skill.py` 只映射 `CH-013/CH-014/CH-015/DF-011/DF-012` —— 改的正是
+        OR-014 的守卫族（PR #3785），而 OR-014 **不在集里**（修 A 却验 B）。
+        """
+        cases, source = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert source == "rules"
+        assert "OR-014" in cases
+
+    def test_base_skill_maps_to_the_whole_denial_family(self):
+        """#3786 验收标准第 1 条「不要只补这一条」：同类扫描出的同族 live 用例一并纳入。
+
+        族标记 = **两个登记处**（L0 不变式 + 行为面直测）声明的并集 ∩ live：
+        OR-021/OR-022/OR-025/AS-009 都是"工具可达 + 能力不否定（权限类禁词）"同一判据所判。
+        """
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert {"OR-014", "OR-021", "OR-022", "OR-025", "AS-009"} <= set(cases)
+
+    def test_base_skill_does_not_map_to_retired_or_boundary_cases(self):
+        """刻意排除的两类：`skip_reason` 非空的族内用例（不可跑）+ 负向边界用例。
+
+        `PR-026/PR-027`（图片域能力不误宣）随 #5247 B 端只读化退役 ⇒ 进规则桶 = 假阻塞（§19.1）；
+        `DF-020/DF-021`（越权拒绝不得被误判）是同一判据的**负向边界**，属登记在案的边界。
+        """
+        cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
+        assert [c for c in cases if c in ("PR-026", "PR-027", "DF-020", "DF-021")] == []
+
     def test_base_skill_does_not_map_to_order_case(self):
         """刻意排除 OR-016（用例自相矛盾、校准中）——防"每个改 base_skill 的 PR"恒红。"""
         cases, _ = bm.map_changed_files_with_source([BASE_SKILL_PATH])
@@ -333,7 +369,8 @@ class TestBaseSkillRules:
     def test_base_skill_expected_full_set(self):
         """锁定全集（并集 + 字典序）：新规则只能通过改这条断言进入。"""
         assert bm.map_changed_files_with_source([BASE_SKILL_PATH]) == (
-            ["CH-013", "CH-014", "CH-015", "DF-011", "DF-012"], "rules")
+            ["AS-009", "CH-013", "CH-014", "CH-015", "DF-011", "DF-012",
+             "OR-014", "OR-021", "OR-022", "OR-025"], "rules")
 
     @pytest.mark.parametrize("path", [
         # issue #4049：execute_skill 的三段实现搬到了 execution/ —— 转人工守卫判据与写门禁链
