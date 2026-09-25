@@ -55,6 +55,12 @@
     端点 / 岗位**五处逐面登记（`READ_CODE_ANCHORS`），任一面掉码都红 —— 含「把读码从菜单源删掉」
     与「只读工具退回管理码」两种回归形态。**例外表缩小≠判据失去判别力**：该条与判据 5 的台账
     一起，把「删条目」这件事变成**可红**的动作（见 `test_exception_ledger_only_shrinks`）。
+11. **前端页面守卫（`ROUTE_PERMISSION_MAP`）前缀序 + 码锚定**（issue #5291 收口）：#5291 改了它
+    **5 个前缀**，而它此前**全仓零判据**（PR #5516 自己登记为「未固化项」）⇒ 改错不会有东西变红。
+    三段：① 更宽的前缀不得排在更具体的子路径之前（`find()` 先命中即短路 ⇒ `/production` 排到
+    `/production/pool|remnants|saving-board` 之前会让三个管理码页面按读码判定）；② 码必须在
+    权限目录里（否则该路由对所有角色恒 403）；③ 登记的前缀必须解析到 `config/menu.ts` 的节点、
+    且码逐字相等，**未登记的前缀不登记即红**（台账 `ROUTE_MENU_ANCHORS` / `ROUTE_WITHOUT_MENU_NODE`）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -101,6 +107,8 @@ JAVA_MAIN = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
 CONTROLLER_DIR = JAVA_MAIN / "com" / "migao" / "admin" / "controller"
 SERVICE_DIR = JAVA_MAIN / "com" / "migao" / "admin" / "service"
 MENU_TS = REPO_ROOT / "frontend/admin-web/src/config/menu.ts"
+#: 前端**页面守卫**（`ROUTE_PERMISSION_MAP`，issue #5291 改了 5 个前缀而此前无任何判据 —— 判据 11）。
+ROUTE_LAYOUT = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)" / "layout.tsx"
 MENU_CONTROLLER = CONTROLLER_DIR / "MenuController.java"
 AUTH_SERVICE = SERVICE_DIR / "AuthService.java"
 USER_CONTROLLER = CONTROLLER_DIR / "UserController.java"
@@ -172,6 +180,7 @@ def _source_map() -> dict[str, str]:
         ("menu:controller", MENU_CONTROLLER),
         ("menu:auth", AUTH_SERVICE),
         ("menu:user", USER_CONTROLLER),
+        ("route:layout.tsx", ROUTE_LAYOUT),
     ):
         assert path.is_file(), f"被判据引用的文件不存在：{path}（路径漂移 ⇒ 红，不得静默跳过）"
         srcs[key] = path.read_text(encoding="utf8")
@@ -891,6 +900,7 @@ class World:
     endpoints: dict[str, tuple[tuple[str, str, str | None], ...]]
     all_eps: dict[tuple[str, str], tuple]
     menus: dict[str, dict[str, str | None]]
+    route_guard: tuple[tuple[str, str], ...]
     catalog: tuple[str, ...]
     catalog_perm_service: tuple[str, ...]
     roles: dict[str, frozenset[str]]
@@ -925,6 +935,7 @@ def build_world(sources: dict[str, str]) -> World:
         endpoints=eps,
         all_eps=index.endpoints(),
         menus=parse_menus(sources),
+        route_guard=parse_route_guard(sources["route:layout.tsx"]),
         catalog=reg_cat,
         catalog_perm_service=perm_cat,
         roles=parse_role_defaults(sources["java:service/RegistrationService.java"]),
@@ -967,7 +978,7 @@ def _endpoint_patterns() -> dict[str, str]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 四、九条判据（纯函数：输入 `World`，输出问题清单 —— 空 = 绿）
+# 四、判据（纯函数：输入 `World`，输出问题清单 —— 空 = 绿）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -1553,6 +1564,144 @@ def problems_read_code_anchoring(w: World) -> list[str]:
     return out
 
 
+# ── 判据 11：前端**页面守卫**（`ROUTE_PERMISSION_MAP`，issue #5291 的收口面）─────────────────
+#
+# 为什么必须有这一条：#5291 改了它 **5 个前缀**，而它此前**全仓零判据**（PR #5516 自己把它登记进
+# 「未固化项」）⇒ 改错不会有东西变红。而它带着一个真实的权限面风险：`find()` 是**首个前缀命中**，
+# 所以「更宽的前缀排在更具体的子路径之前」会把子路径整个遮蔽 —— `layout.tsx` 的 `/production`
+#（读码）若排到 `/production/pool|remnants|saving-board`（管理码）之前，访问池看板就会按
+# `production:view` 判定 ⇒ **两个方向的错都有**（持 `processing:manage` 者被 403、
+# 持 `production:view` 者反而通行）。
+
+
+def _strip_ts_line_comments(text: str) -> str:
+    """剥掉 TS **行注释**（只在字符串**外**截断）——「注释不是代码」的口径，见 issue #5272/#5323。"""
+    out_lines: list[str] = []
+    for line in text.splitlines():
+        quoted: str | None = None
+        cut = len(line)
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quoted is not None:
+                if ch == quoted:
+                    quoted = None
+            elif ch in "'\"`":
+                quoted = ch
+            elif ch == "/" and line[i : i + 2] == "//":
+                cut = i
+                break
+            i += 1
+        out_lines.append(line[:cut])
+    return "\n".join(out_lines)
+
+
+_ROUTE_ENTRY_RE = re.compile(r"\{\s*prefix:\s*'([^']*)'\s*,\s*code:\s*'([^']*)'\s*\}")
+
+
+def parse_route_guard(text: str) -> tuple[tuple[str, str], ...]:
+    """解析 `layout.tsx` 的 `ROUTE_PERMISSION_MAP`（条目 = `(prefix, code)`，**保持源序**）。
+
+    保持源序是前提：遮蔽只在「顺序」上有意义。注释一律剥掉（注释里贴的样例条目不算条目）。
+    """
+    entries = tuple(_ROUTE_ENTRY_RE.findall(_strip_ts_line_comments(text)))
+    assert entries, (
+        "`ROUTE_PERMISSION_MAP` 解析为空 ⇒ 判据 11 会空跑（fail-closed）。"
+        "锚点漂移时先修解析器，**不得**让它静默通过。"
+    )
+    return entries
+
+
+#: 路由前缀 → `config/menu.ts` 的**节点名**（判据 11 ③ 的锚点台账）。
+#: 真值在**菜单源**一侧（复用同一份 `parse_menus`，不造第二个解析器）：本表只登记
+#: 「这个页面在侧边栏里是哪个节点」，**不复写码** —— 码由菜单源现取比对。
+ROUTE_MENU_ANCHORS: dict[str, str] = {
+    "/after-sales": "售后工单",
+    "/orders": "订单列表",
+    "/products": "商品列表",
+    "/processing": "加工项管理",
+    "/production/pool": "智能派单",
+    "/production/remnants": "余料台账",
+    "/production/saving-board": "省料看板",
+    "/production": "生产看板",
+    "/customers": "客户列表",
+    "/finance": "财务对账",
+    "/employees": "员工管理",
+    "/settings": "企业基础信息",
+    "/knowledge": "知识库",
+    "/roles": "岗位权限",
+    "/briefing": "每日简报",
+}
+
+#: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
+ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
+    "/chat": "会话页没有侧边栏节点（「在线接待」的路径是 `/agent-workspace/human-sessions`）⇒ 守卫码 `agent:session` 无节点可钉",
+    "/categories": "分类管理**没有独立侧边栏节点**（入口在商品列表页内，同 `READ_CODE_ANCHORS`）⇒ 该码由判据 10 的 `PAGE_READ_CODES['product:list']` 承担",
+    "/processing-orders": "加工单唯一入口已并入「生产看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「生产看板」",
+    "/dashboard": "菜单节点『经营看板』的码是 `None`（menu.ts 该行无 `permissionCode`），而页面守卫要 `dashboard:view` —— 两侧取值**不同**；本判据不假定哪一侧为真值（谁改都对不上时仍由②保证码在目录里），登记为残留",
+}
+
+
+def problems_route_guard(w: World) -> list[str]:
+    """判据 11：`ROUTE_PERMISSION_MAP` 的**前缀序**与**码锚定**（issue #5291 收口）。
+
+    三段（缺任何一段这条判据就有漏网形态）：
+      ① **前缀序不得遮蔽**：任何条目的前缀都不得是**更早**条目的真前缀（`find()` 先命中即短路）；
+      ② **码必须在权限目录里**：否则该路由**对所有角色恒 403**（码名打错 / 码已删）；
+      ③ **前缀 ↔ 菜单节点**：登记的前缀必须解析到 `config/menu.ts` 的节点、且码逐字相等
+         （侧边栏看得见而页面 403，或反之）；**未登记的前缀不登记即红**，台账陈旧也红。
+    """
+    out: list[str] = []
+    entries = w.route_guard
+    prefixes = [p for p, _ in entries]
+
+    for p in sorted({q for q in prefixes if prefixes.count(q) > 1}):
+        out.append(f"路由前缀 `{p}` 重复登记 ⇒ `find()` 只命中第一条，后一条是**死条目**")
+    for p in prefixes:
+        if not p.startswith("/"):
+            out.append(f"路由前缀 `{p}` 不以 `/` 开头 ⇒ `pathname.startsWith` 永不命中（守卫失效）")
+
+    # ① 遮蔽：更宽的前缀排在更具体的子路径之前 ⇒ 子路径永远命中不到
+    for i, (p, _) in enumerate(entries):
+        for q in prefixes[:i]:
+            if p != q and p.startswith(q):
+                out.append(
+                    f"路由 `{q}` 排在更具体的 `{p}` 之前 ⇒ `{p}` 被短路成死条目："
+                    "持更宽那侧码的人通吃、持该页自己的码的人被 403（两个方向的错都有）"
+                )
+
+    # ② 码必须在权限目录里
+    catalog = set(w.catalog)
+    for c in sorted({c for _, c in entries} - catalog):
+        out.append(f"路由守卫要求码 `{c}`，它不在权限目录里 ⇒ 该路由**对所有角色恒 403**")
+
+    # ③ 前缀 ↔ 菜单节点（真值 = 菜单源）
+    known = set(prefixes)
+    nodes = w.menus.get("frontend", {})
+    for p, node in sorted(ROUTE_MENU_ANCHORS.items()):
+        if p not in known:
+            out.append(f"`ROUTE_MENU_ANCHORS` 登记的前缀 `{p}` 已不在 `ROUTE_PERMISSION_MAP` 里（陈旧登记）")
+            continue
+        if node not in nodes:
+            out.append(f"`ROUTE_MENU_ANCHORS['{p}']` 指的节点『{node}』在 `config/menu.ts` 里不存在（陈旧登记）")
+            continue
+        guard_code = next(c for pp, c in entries if pp == p)
+        if nodes[node] != guard_code:
+            out.append(
+                f"路由 `{p}` 的守卫码 = `{guard_code}` ≠ 菜单节点『{node}』的码 = `{nodes[node]}` "
+                "⇒ 侧边栏与页面守卫各说各话（一方改了、另一方没跟上）"
+            )
+
+    for p in sorted(set(ROUTE_WITHOUT_MENU_NODE) - known):
+        out.append(f"`ROUTE_WITHOUT_MENU_NODE` 登记的 `{p}` 已不在 `ROUTE_PERMISSION_MAP` 里（陈旧登记）")
+    for p in sorted(known - set(ROUTE_MENU_ANCHORS) - set(ROUTE_WITHOUT_MENU_NODE)):
+        out.append(
+            f"路由 `{p}` 既没有菜单节点锚点、也没有「无节点」理由 ⇒ **新增页面守卫必须先登记**"
+            "（否则它改了码不会有东西变红）"
+        )
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具必须声明权限码": problems_missing_codes,
     "2 · 工具码 ≡ 端点生效码": problems_endpoint_parity,
@@ -1564,6 +1713,7 @@ JUDGEMENTS = {
     "8 · 未注解端点/残留已登记": problems_registered_decisions,
     "9 · 解析器自检": problems_self_checks,
     "10 · 三个域读码的锚定（issue #5291）": problems_read_code_anchoring,
+    "11 · 页面守卫前缀序 + 码锚定（issue #5291）": problems_route_guard,
 }
 
 
@@ -1573,7 +1723,7 @@ JUDGEMENTS = {
 
 
 def test_every_judgement_is_green() -> None:
-    """十条判据在**当前仓库**上全绿（红 = 权限面已经漂移，逐条问题见断言文案）。"""
+    """全部判据在**当前仓库**上全绿（红 = 权限面已经漂移，逐条问题见断言文案）。"""
     w = world()
     problems = {label: fn(w) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
@@ -1634,6 +1784,19 @@ def _drop_role_code(text: str, role_fragment: str, code: str) -> str:
     new_block = block.replace(f'"{code}", ', "", 1)
     assert new_block != block, f"注入锚点失配：该岗位列表里没有 `{code}`"
     return text[:idx] + new_block + text[end:]
+
+
+def _shadow_production_subpaths(text: str) -> str:
+    """判据 11 ① 的注入：把 `/production`（**更宽**）挪到 `/production/pool` 之前。
+
+    这是 #5291 的**顺序回归形态**（不是改一个字的假变异）：`find()` 先命中 `/production`
+    ⇒ `/production/pool|remnants|saving-board` 三个**管理码**页面全部按读码判定。
+    """
+    wide = "  { prefix: '/production', code: 'production:view' },\n"
+    assert wide in text, "注入锚点失配：找不到 `/production` 那一行（同步本判据）"
+    pool = "  { prefix: '/production/pool', code: 'processing:manage' },\n"
+    assert pool in text, "注入锚点失配：找不到 `/production/pool` 那一行（同步本判据）"
+    return text.replace(wide, "", 1).replace(pool, wide + pool, 1)
 
 
 def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
@@ -1779,6 +1942,37 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 '    @RequirePermission("product:list")\n    @GetMapping("/batches")',
                 '    @GetMapping("/batches")', 1),
             problems_registered_decisions,
+        ),
+        "⑯ 把 `/production`（更宽）挪到 `/production/pool` 之前 ⇒ 子路径被短路 ⇒ 判据 11 红": (
+            # 判据 11 ①（前缀序）：`find()` 先命中 ⇒ 三个管理码页面全部按读码判定。
+            "route:layout.tsx",
+            _shadow_production_subpaths,
+            problems_route_guard,
+        ),
+        "⑰ 页面守卫码打错（`/categories` → `product:category:veiw`）⇒ 判据 11 红": (
+            # 判据 11 ②（码必须在目录里）：码名不存在 ⇒ 该路由**对所有角色恒 403**（整页打不开）。
+            # 锚点选 `/categories` 是**有意**：它不在 `ROUTE_MENU_ANCHORS` 里 ⇒ 只触发 ②，
+            # 失败文案能干净归因（若选 `/knowledge` 会同时触发 ③，读数与结论对不上）。
+            "route:layout.tsx",
+            lambda s: s.replace(
+                "{ prefix: '/categories', code: 'product:category:view' }",
+                "{ prefix: '/categories', code: 'product:category:veiw' }",
+                1,
+            ),
+            problems_route_guard,
+        ),
+        "⑱ 岗位权限页面守卫退回管理码（`/roles` → `system:manage`）⇒ 判据 11 红": (
+            # 判据 11 ③（前缀 ↔ 菜单节点）：#5291 的**读码回退形态** —— 与 ⑬⑭⑮ 同族，
+            # 但那一族只覆盖菜单源 / 工具，**页面守卫此前没有任何判据**。
+            # 形态 = 侧边栏按 `system:view` 过滤、页面却要 `system:manage`
+            # ⇒ 只持读码的岗位「看得见菜单、点进去 403」。
+            "route:layout.tsx",
+            lambda s: s.replace(
+                "{ prefix: '/roles', code: 'system:view' }",
+                "{ prefix: '/roles', code: 'system:manage' }",
+                1,
+            ),
+            problems_route_guard,
         ),
     }
 
@@ -2093,7 +2287,7 @@ def test_every_judgement_can_go_red() -> None:
     base_world = build_world(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}
     assert all(not v for v in green.values()), (
-        "对照组：未注入时十条判据必须全绿（否则红证无从归因）：\n"
+        "对照组：未注入时全部判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
     for label, (key, mutate, judgement) in _injections().items():
