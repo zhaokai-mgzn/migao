@@ -579,22 +579,45 @@ def is_case_owned_cleanup_target(case: dict, ptype: str, value: str) -> bool:
     return str(ptype) in CLEANUP_PRECLEAN_TYPES and str(value) in case_declared_resource_values(case)
 
 
-# `_run_pre_clean` 已实现的类型与各自的**点名目标字段**（真值锚点 = local_runner
-# 的分支；变更时同步此处）。`None` = 该类型没有「点名目标」（无需种子真值解析）。
+# `_run_clean_action` 已实现的类型与各自的**点名目标字段**（真值锚点 = `local_runner`
+# 的实现分支；变更时同步此处）。`None` = 该类型**不点名任何对象**（无需种子真值解析）。
+#
+# ⚠️ 本表必须与 `runner._PRECLEAN_TYPES` **逐项对齐**（未登记即红 / 多登记即红，条数**现取**）：
+# 判据 = `tests/unit_ci_workflows/test_eval_preclean_registry.py` 的
+# `TestPrecleanTargetTableMatchesRunner`。**这道元守卫就是 #4161 的根治** —— 本表曾漏登记
+# `employee_remove` / `user_memories_clear` + 5 个 `*_restore` 复位族共 **7** 个类型，
+# 而表外的类型在 `pre_clean_targets` 里直接 `continue` ⇒ 那些用例的点名目标**从未被**
+# `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` 核对（= 一条**没登记**的豁免面：没人知道少判了）。
+# 字段名**一律从 runner 的实现分支读出来**（它 `spec.get("<字段>")` 读哪个就写哪个，含
+# `_run_clean_action` 调用的 `_restore_*` / `_reset_*`）—— 不照抄别的表、不凭猜；
+# 填错字段名与漏登记**同害**（取到空串 ⇒ 同样静默不登记），由上述守卫的第③条拦。
+# ⚠️ `aftersales_ticket_prepare` / `processing_order_reset` 两格曾登记为 `None`（理由写的是
+# 「不点名」，来源是 #3751 **之前**的实现）；现分支读 `ticket_no` / `order_no` ⇒ 按「runner 是
+# 唯一真值源」改登记为键类字段（同族证据：#4161 的病根正是"表落后于 runner"）。
 KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
-    "customer_tag_remove": "tag_name",         # 精确匹配种子 customer_tags.name
-    "product_remove": "product_keyword",       # 子串匹配商品名
-    "product_dedupe": "product_keyword",       # 子串匹配商品名
-    "employee_reactivate": "employee_name",    # 精确匹配员工名
-    "aftersales_ticket_prepare": None,         # 只需存在 pending 工单，不点名
-    "processing_order_reset": None,            # 按 order_no 复位订单/加工单（#3833 修复新增）
+    # 顺序与 runner 的 `_CLEAN_TYPES` 声明顺序一致（便于逐项比对；顺序本身不是判据）
+    "product_remove": "product_keyword",            # 分支 `if _type == "product_remove"` → `spec.get("product_keyword")`；子串匹配商品名
+    "product_dedupe": "product_keyword",            # 分支 `if _type == "product_dedupe"` → `spec.get("product_keyword")`；子串匹配商品名
+    "customer_tag_remove": "tag_name",              # 兜底分支（`if _type != "customer_tag_remove"` ⇒ 配置错误）→ `spec.get("tag_name")`；精确匹配种子 `customer_tags.name`
+    "user_memories_clear": None,                    # 分支只读 `spec.get("agent_type")`（枚举作用域，缺省 xiaobu）⇒ **不点名任何对象**（#4161 补登记）
+    "aftersales_ticket_prepare": "ticket_no",       # 分支 → `spec.get("ticket_no")`（缺省 = 种子工单号）：点名的是一张**工单**（不可变键）
+    "employee_reactivate": "employee_name",         # 分支 → `spec.get("employee_name")`（+ `employee_phone` 精确定位）；精确匹配员工名
+    "employee_remove": "employee_name",             # 分支 → `spec.get("employee_name")`（+ `employee_phone`）；精确匹配员工名（#4161 补登记：HR-002/HR-009/HR-010 的清理目标此前**不被核对**）
+    "processing_order_reset": "order_no",           # 分支 → `spec.get("order_no")`（缺省 = PG-013 专用种子订单）：点名的是一张**订单**（不可变键）
+    "product_status_restore": "product_keyword",    # `_restore_product_status` → `spec.get("product_keyword")`；子串匹配商品名（#4161 补登记）
+    "sku_price_restore": "product_keyword",         # `_restore_sku_price` → `spec.get("product_keyword")`；子串匹配商品名（#4161 补登记）
+    "product_price_restore": "product_keyword",     # `_restore_product_price` → `spec.get("product_keyword")`；子串匹配商品名（#4161 补登记）
+    "order_status_restore": "order_no",             # `_restore_order_status` → `spec.get("order_no")`；不可变键定位订单（#4161 补登记）
+    "customer_profile_restore": "customer_keyword", # `_restore_customer_profile` → `spec.get("customer_keyword")`（或 `customer_id`）；定位客户（#4161 补登记）
 }
+# ⚠️ **键类字段的解析口径未实装**（如实登记，不粉饰）：`resolve_pre_clean_target` 只覆盖
+# **名字类**三条（`tag_name` / `employee_name` / `product_keyword` —— 种子目录
+# `extract_seed_catalog` 只收 `_NAME_COLUMNS` 的名字列），其余字段落它的兜底 `return True`
+# ⇒ `ticket_no` / `order_no` / `customer_keyword` 这三格是"**已登记点名目标、但门禁侧尚无可
+# 判定口径**"（登记让它们**可见**，不再靠"表里没有"沉默）。同族残留见
+# `docs/wiki/gate-exemption-ledger.md` 的 `KNOWN_PRECLEAN_TARGET_FIELDS` 行。
 # 声明了 `pre_clean` 但类型不在上表 ⇒ 静态**无法**判定其点名目标 ⇒ 不登记（**不是**缺陷的
-# 借口：真值锚点 = `runner._PRECLEAN_TYPES`，两边**必须同步**）。
-# ⚠️ **已发现的漂移**：`employee_remove`（runner 已实装、目标字段 `employee_name`）与
-# `user_memories_clear` 不在上表 ⇒ HR-002 / HR-009 / HR-010 的 pre_clean 目标**未被**
-# `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` 核对（= 一条没登记的豁免面）。
-# 本模块的文件所有权不含该表（本次只同步 `UNIMPLEMENTED`）⇒ 不在本次改，登记见 #4161。
+# 借口：真值锚点 = `runner._PRECLEAN_TYPES`，两边**必须同步**，且由上面的元守卫判红来保证）。
 # 历史备注：这里曾指向 `UNIMPLEMENTED` 的 `CASE-TRUST-PRECLEAN-UNKNOWN-TYPE`，
 # 该登记**已撤**（runner 侧早已 fail-closed，见 `UNIMPLEMENTED` 上方的「已撤登记」）。
 
@@ -602,16 +625,20 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
 def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
     """从 `pre_clean` 提取「需在种子真值里可解析的目标」=[(类型, 字段, 值)]。
 
-    真值锚点 = `local_runner._run_pre_clean` 的分支（按该函数名检索），
-    类型↔字段的映射见 `KNOWN_PRECLEAN_TARGET_FIELDS`：
-      · `customer_tag_remove`       → `tag_name`（精确匹配种子 `customer_tags.name`）
-      · `product_remove`            → `product_keyword`（子串匹配商品名）
-      · `product_dedupe`            → `product_keyword`（子串匹配商品名）
-      · `employee_reactivate`       → `employee_name`（精确匹配员工名）
-      · `aftersales_ticket_prepare` → **无点名目标**（只需存在 pending 工单，不登记）
-      · `processing_order_reset`    → **无点名目标**（按订单号复位，不依赖种子名字）
-      · 未知类型                     → 不登记（真值 = `runner._PRECLEAN_TYPES`；表未同步的
-                                       `employee_remove` 漂移见上方 ⚠️ 与 #4161）
+    真值锚点 = `local_runner._run_clean_action` 的**实现分支**（`pre_clean` / `post_clean`
+    共用这一份实现，按该函数名检索），类型↔字段的**完整**映射见
+    `KNOWN_PRECLEAN_TARGET_FIELDS`（与 `runner._PRECLEAN_TYPES` 逐项对齐，由
+    `tests/unit_ci_workflows/test_eval_preclean_registry.py` 的
+    `TestPrecleanTargetTableMatchesRunner` 锁死 —— #4161 之前本表漏了 7 个类型）：
+      · **名字类（有解析口径，真核对）**：`customer_tag_remove` → `tag_name`（精确匹配种子
+        `customer_tags.name`）；`product_remove` / `product_dedupe` / `product_status_restore` /
+        `sku_price_restore` / `product_price_restore` → `product_keyword`（子串匹配商品名）；
+        `employee_reactivate` / `employee_remove` → `employee_name`（精确匹配员工名）。
+      · **键类（登记了字段、门禁侧暂无口径 ⇒ 不判）**：`aftersales_ticket_prepare` →
+        `ticket_no`；`processing_order_reset` / `order_status_restore` → `order_no`；
+        `customer_profile_restore` → `customer_keyword`。见上表下方的 ⚠️。
+      · `user_memories_clear` → `None`：只按 `agent_type` 清空整类记忆，**不点名对象**，不进本列表。
+      · 未知类型 → 不登记（表本身与 runner 的对齐由上述元守卫保证，不再靠注释提醒）。
     """
     specs = case_or_spec.get("pre_clean") if isinstance(case_or_spec, dict) else None
     out: list[tuple[str, str, str]] = []
@@ -621,9 +648,9 @@ def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
         t = str(spec.get("type") or "")
         field = KNOWN_PRECLEAN_TARGET_FIELDS.get(t, "UNKNOWN")
         if field is None:
-            continue  # 该类型无点名目标（aftersales_ticket_prepare / processing_order_reset）
+            continue  # 该类型不点名对象（当前只有 user_memories_clear）
         if field == "UNKNOWN":
-            continue  # 未知类型：不登记（真值 = runner._PRECLEAN_TYPES，同步漂移见 #4161）
+            continue  # 未知类型：不登记（真值 = runner._PRECLEAN_TYPES，元守卫判红，不靠注释）
         v = str(spec.get(field) or "")
         if v:
             out.append((t, field, v))

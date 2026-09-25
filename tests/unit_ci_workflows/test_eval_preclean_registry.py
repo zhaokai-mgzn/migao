@@ -42,7 +42,7 @@ cases[CU-003] = {"score": 0.0, "classification": "pass",   # ← 行为侧首跑
 ⚠️ 最容易踩错的一格：`employee_remove`（#3788）也是清理型 —— 首跑还没造出重名员工时它必然
 no-op，把它算成失败会**复活 HR-002/HR-003 的恒红**。
 
-## 本文件锁五条
+## 本文件锁六条
 
 1. **注册表是单一事实源**：用例库里出现的每个 `pre_clean` type ∈ `runner._PRECLEAN_TYPES`
    （漏实现/拼错 ⇒ CI 直接红，而不是静默少做一件事）；
@@ -54,6 +54,10 @@ no-op，把它算成失败会**复活 HR-002/HR-003 的恒红**。
    —— 否则每个用例都会带着假的"前置未应用"标记；
 5. **两族分开**（#3791）：每个 type 必须**显式**归入一族；清理型的"目标不存在"走
    `_PRECLEAN_NOOP`（可见、**不进结论**），准备型的未应用**照旧进结论**。
+6. **两张表逐项对齐**（issue #4161）：`assertion_taxonomy.KNOWN_PRECLEAN_TARGET_FIELDS`
+   必须与 runner 的 `_PRECLEAN_TYPES` **同集合**（未登记即红 / 多登记即红 / 字段名必须能在
+   runner 里真读到；条数**现取**）—— 该表是门禁 b2 的**唯一**类型↔字段地图，**表外**的类型
+   在 `pre_clean_targets` 里直接 `continue` ⇒ 点名目标**永不核对**（实测曾落后 **7** 个类型）。
 
 ## 红证
 
@@ -66,6 +70,7 @@ no-op，把它算成失败会**复活 HR-002/HR-003 的恒红**。
 | ⑤ 清理型 no-op 不判失败（#3791） | `test_real_cu003_shape_is_a_benign_noop_end_to_end` —— 走 CU-003 的**真实分支**（假 HTTP 罐装目录）；把该分支改回 `_PRECONDITION_NOT_APPLIED` 即红（见 PR 红证记录） |
 | ⑤ 准备型未应用仍判失败（#3791） | `test_prepare_family_not_applied_still_fails_end_to_end` —— 员工查不到 ⇒ 标记保留 ⇒ KEY_JOURNEY 失败；把 `_classify_preclean_message` 的判据放宽成"所有 type 都降级"即红 |
 | ⑤ employee_remove 留在清理型 | `test_employee_remove_absence_is_benign_not_a_failure` —— 把它移出 `_PRECLEAN_CLEANUP_TYPES` 即红 |
+| ⑥ 两张表对齐（#4161） | 三条独立红证（**实跑读数见 PR body**）：① 从表里删一条 ⇒ `test_every_runner_preclean_type_is_registered` 红；② 往表里加一条 runner 不认识的 ⇒ `test_no_registered_type_is_unknown_to_the_runner` 红；③ 把字段名改成 runner 不读的（`employee_nmae`）⇒ `test_every_registered_field_is_read_by_the_runner` 红 |
 """
 import json
 import re
@@ -147,6 +152,86 @@ class TestRegistryIsTheSingleSource:
         assert missing == [], f"注册表里有但没实现分支的 type：{missing}"
         missing_post = [t for t in sorted(lr._POSTCLEAN_TYPES) if not _implemented(t)]
         assert missing_post == [], f"post 阶段登记了但没实现分支的 type：{missing_post}"
+
+
+class TestPrecleanTargetTableMatchesRunner:
+    """`KNOWN_PRECLEAN_TARGET_FIELDS` 与 runner 的 `_PRECLEAN_TYPES` **逐项对齐**（issue #4161）。
+
+    ## 病灶（#4161；taxonomy 里那条 ⚠️ 的逐字登记）
+
+    `assertion_taxonomy.KNOWN_PRECLEAN_TARGET_FIELDS` 是门禁 b2
+    （`CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE`）的**唯一**类型↔字段地图：**表外**的
+    `pre_clean.type` 在 `pre_clean_targets` 里直接 `continue` ⇒ 该用例的点名目标**永不核对**。
+    实测它当时**落后 runner 7 个类型**（`employee_remove` / `user_memories_clear` +
+    `product_status_restore` / `sku_price_restore` / `product_price_restore` /
+    `order_status_restore` / `customer_profile_restore`）⇒ HR-002 / HR-009 / HR-010 的
+    清理目标**从未被**核对过 —— **一条没登记的豁免面**（不是"少判一条"，是"没人知道少判了"）。
+
+    ## 为什么判据是"两张表逐项对齐"而不是"把缺的那 7 个补上"
+
+    补上缺的 = 只修这一次；**下一次** runner 新增 `pre_clean` 类型时（#4075 / #4992 / #5303
+    各加过一批）不会有任何东西变红 ⇒ 同一个洞换个类型再来一遍。本类把**对齐本身**变成判据：
+    **未登记即红 / 多登记即红 / 字段名必须在 runner 里真读到**，条数**现取**
+    （`len(lr._PRECLEAN_TYPES)` —— 写死数字会随 runner 增长静默过期，那正是本病灶的成因）。
+
+    ## 红证（三条，实跑读数见 PR body）
+
+    ① 从表里删一条 ⇒ `test_every_runner_preclean_type_is_registered` 红；
+    ② 往表里加一条 runner 不认识的 ⇒ `test_no_registered_type_is_unknown_to_the_runner` 红；
+    ③ 把某条的字段名改成 runner 不读的（`employee_nmae`）⇒
+       `test_every_registered_field_is_read_by_the_runner` 红。
+    """
+
+    @staticmethod
+    def _table() -> dict:
+        """门禁侧的判据源（`.github` 已在本文件顶部进 `sys.path`，不复制第二份表）。"""
+        import assertion_taxonomy
+        return assertion_taxonomy.KNOWN_PRECLEAN_TARGET_FIELDS
+
+    def test_every_runner_preclean_type_is_registered(self):
+        """**未登记即红**：runner 实装的每个 `pre_clean` 类型都必须在表里有条目。"""
+        missing = sorted(lr._PRECLEAN_TYPES - set(self._table()))
+        assert missing == [], (
+            f"这些类型 runner 已实装、表里却没有条目 ⇒ 它们的点名目标**永远不会**被 "
+            f"`CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE` 核对（表外的 type 直接 continue）"
+            f"= 没登记的豁免面（#4161）：{missing}\n"
+            f"出口：按 runner 的 `_run_clean_action` 实现分支读出的那个字段补进表"
+            f"（它 `spec.get('…')` 读哪个就写哪个）；该类型**确实不点名任何对象**时"
+            f"才写 None 并在注释里写明理由。")
+
+    def test_no_registered_type_is_unknown_to_the_runner(self):
+        """**多登记即红**：表里不得有 runner 不认识的类型（幽灵条目 = 假的核对面）。"""
+        table = self._table()
+        extra = sorted(set(table) - lr._PRECLEAN_TYPES)
+        assert extra == [], (
+            f"表里有 runner 不认识（或已改名/已删）的类型 ⇒ 声明它的用例会走 runner 的"
+            f"配置错误，而表里这条只是**看上去**被核对了：{extra}\n"
+            f"合法类型（现取）：{sorted(lr._PRECLEAN_TYPES)}")
+        # 双向对齐 = 集合相等；条数**现取**（不写死数字 —— 写死的数字会静默过期）
+        assert len(table) == len(lr._PRECLEAN_TYPES), (
+            f"两张表条数不等：table={len(table)} runner={len(lr._PRECLEAN_TYPES)}"
+            f"（具体条目名由上面两条差集断言给出）")
+
+    def test_every_registered_field_is_read_by_the_runner(self):
+        """字段名必须能在 runner 里**真读到** —— 防「表填了个 runner 不读的字段」。
+
+        与漏登记**同害**：字段名拼错（`employee_nmae`）或 runner 改名后没同步 ⇒
+        `spec.get(<错名>)` 取到空串 ⇒ `pre_clean_targets` 的 `if v:` 不过 ⇒ 目标同样静默不核对。
+
+        ⚠️ 边界（照实登记，不粉饰）：本判据只证明"runner 里存在该字段的读取点"，**不**证明
+        "就是这一个 type 读它"（`product_keyword` 被多个 type 读，那是设计）—— 逐类型的归属
+        依据写在 taxonomy 表上逐行的注释里，机器判不了。
+        ⚠️ 取值形态**两种都要认**：`spec.get("x")` 与 `spec.get("x", "")`（runner 对
+        `employee_name` 用的是后者 —— 只认前者会把**真读**判成"读不到"，那就是假红）。
+        """
+        src = (REPO_ROOT / "tests" / "agent_eval" / "local_runner.py").read_text(encoding="utf-8")
+        assert "spec.get(" in src, (
+            "runner 里没有 `spec.get(` 取值点（取值口径改了？锚点漂移 ⇒ 本守卫会静默空跑）")
+        blind = sorted({f for f in self._table().values()
+                        if f and f'spec.get("{f}"' not in src})
+        assert blind == [], (
+            f"表里这些字段名在 runner 里读不到（拼错 / runner 改名后没同步）⇒ "
+            f"`pre_clean_targets` 取到空值、点名目标静默不核对（#4161 的同族形态）：{blind}")
 
 
 class TestUnknownTypeIsNotASilentSkip:
