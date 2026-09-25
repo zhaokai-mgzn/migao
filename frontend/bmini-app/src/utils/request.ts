@@ -55,6 +55,11 @@ function getToken(): string | null {
 function handleErrorStatus(statusCode: number, data: any): void {
   switch (statusCode) {
     case 401:
+      // 只有「本来就有会话」才谈得上过期。无 token 时的 401 是**端点自己的业务拒绝**
+      // （issue #5485：员工登录失败统一 `401` + `AUTH_FAILED` + 统一文案；改密同理）
+      // ⇒ 文案归调用方展示（`serverMessage` 取 `error.data.error.message`）；
+      // 这里再弹「登录已过期」+ 跳登录页会把反枚举文案盖成技术噪声、并多跳一次页面。
+      if (!getToken()) break
       // 清除 Token，跳转登录页
       try {
         Taro.removeStorageSync(STORAGE_KEYS.TOKEN)

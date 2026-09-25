@@ -25,9 +25,10 @@
   在本机不可得 ⇒ 退化为纯函数级同 config 判据 + **响应形状镜像**
   （fixture 的键集/形状取自 `CraftCalcConfig#toConfigMap` 与 `CraftCalcConfigController#get` 的
   `data = {source, config}`）；
-- 权限通路（`GET /api/admin/production/craft-calc-config` 是类级 `processing:manage`）：
+- 权限通路（`GET /api/admin/production/craft-calc-config` 的**读码**：issue #5291 起为方法级
+  `production:view`，此前与写面同用类级 `processing:manage`）：
   携 `X-User-Id` 且命中本租户商户员工时走**真实角色**（`PermissionInterceptor#hasBypassRole` 旁路失效）
-  ⇒ 不持 `processing:manage` 的岗位（如 `customer_service` / `sales` / `finance`）会拿到 403。
+  ⇒ 不持 `production:view` 的岗位（如 `customer_service` / `sales` / `finance`）会拿到 403。
   本文件按「权限拒绝 = **终态** + 可行动话术」钉住（issue #4103 的 P0 形态：拒绝被当成参数问题
   ⇒ agent 反复重试烧轮次）。**该岗位面的能力影响已登记在 PR/报告，不在本文件内放宽**。
 """
@@ -313,7 +314,7 @@ def test_permission_face_is_bounded_by_the_tool_role_gate():
       · `admin`（米宝 B 端主用户）在 admin-api 恒持 `*` ⇒ 读配置**不会** 403；
       · C 端（`customer`/`agent`）不是本租户商户员工 ⇒ `ServiceTokenFilter` 回退内部服务身份 ⇒ 读配置**不会** 403；
       · `operator` / `customer_service` / `sales` / `finance` **进不了本工具**（角色闸先拒），故它们的
-        `processing:manage` 缺口对本工具无影响；
+        生产域读码（`production:view`，issue #5291）持有与否对本工具无影响；
       · 只剩 legacy `tenant_admin`（admin-api 无该角色/无权限映射 ⇒ 所有 `@RequirePermission` 都 403，
         跨服务口径断裂已由 issue #4106 登记）与自定义同名角色会走到 403 那一支。
 

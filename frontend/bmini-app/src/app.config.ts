@@ -6,6 +6,10 @@ export default defineAppConfig({
     'pages/profile/index/index',
     'pages/sessions/detail/index',
     'pages/auth/login/index',
+    // 首登强制改密页（issue #5485）：管理员设的初始密码必须首登后改掉；
+    // 改密端点(`POST /api/auth/password/change`)在强制改密白名单内、成功即换发新凭据
+    // ⇒ 商家员工在本页自助改密，不必去电脑端
+    'pages/auth/change-password/index',
     'pages/production/index/index',
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',

@@ -475,7 +475,8 @@ class TestDenialsCarryANonRetryableCode:
         """第二个共享入口：`ToolRegistry.execute_tool` 的拒绝同样必须带码。"""
         registry = get_tool_registry()
         # issue #5246：`logistics_track` 现持 `order:list`，而 OPERATOR **正好持有该码**
-        # ⇒ 它不再是「被拒绝的工具」。改用 operator 确实无码的工具（`system:manage` 归 admin 专属）。
+        # ⇒ 它不再是「被拒绝的工具」。改用 operator 确实无码的工具
+        # （`role_manage` 的读码 `system:view` 归 admin 专属，issue #5291）。
         result = await registry.execute_tool(
             "role_manage", OPERATOR, action="list",
         )
@@ -486,7 +487,8 @@ class TestDenialsCarryANonRetryableCode:
 
     async def test_denied_idempotent_tool_no_longer_enters_the_retry_replay(self):
         """病灶效果层：被拒绝的幂等工具**不得**再被参数改写重放（llm 一次都不许调）。"""
-        # 同上：operator 已持 `order:list` ⇒ 改用无码的 `role_manage`（system:manage 归 admin）
+        # 同上：operator 已持 `order:list` ⇒ 改用 operator 无码的 `role_manage`
+        # （issue #5291 起其读码是 `system:view`，与写码 `system:manage` 一样归 admin 专属）
         tool = get_tool_registry().get_tool("role_manage")
         llm = _FakeLLM({"order_id": _UUIDISH})
         with patch("app.graph.skills.base_skill.LLMFactory.create_suggestion_llm",

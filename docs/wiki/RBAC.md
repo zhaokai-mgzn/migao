@@ -10,7 +10,7 @@
 | 管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
 | 平台管理员 | super_admin | 全部权限（在 `platform_admins` 表，走 `PermissionInterceptor` 直通） |
 | 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经米宝查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）, **`agent:session:manage`**（会话转接/结束写码，issue #5246 第二批）。**仍无** `order:refund`（退款写面）与 `order:update`（改单写面） |
-| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增） |
+| 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增）, **`product:category:view`**, **`production:view`**（三个域**读**码中的两个，issue #5291 新增 —— operator 原持 `product:category` / `processing:manage`，拆码时**同批回填读码** ⇒ 菜单与 Agent 面**零变化**；第三个 `system:view` **不给**：岗位权限归 admin 专属） |
 | 销售 | sales | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `product:list`, `order:list`, `order:detail`, `customer:view`, `processing:view` |
 | 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
@@ -142,20 +142,33 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > 读码上**而能改单、删客户、登记收支；现在不能（各自只保留读面）。**没有给任何岗位新增权限**：
 > 新写码只授给原本就用这些写面工作的岗位（operator，及 finance / customer_service 各自那一个）。
 >
-> ⚠️ **`processing:view` 的现状（如实登记）**：它仍留在四个岗位的默认权限里，但**在四处菜单源里
-> 没有任何节点**，且已不再是任何**工具**可达读面的门槛 —— 读端点的码统一对齐到节点码
-> `processing:manage`（`ProcessingOrderController` 的 GET、`AgentProductionController` 的三个
-> GET，以及**跟随兄弟锚点**同批改码的 `ProcessingOrderSetController` 三个读端点）。
-> 现存唯一仍用 `processing:view` 的端点是 `ProductionPoolController` 的两个读端点
-> （无 Agent 工具调用，已登记为残留）。**方向只收窄**：只持 `processing:view` 的岗位失去这几处
-> 生产读面，与「不得泄露页面看不到的数据」的裁定一致。
+> ⚠️ **`processing:view` 的现状（2026-09-25 订正，issue #5291）**：它仍留在四个岗位的默认权限里，
+> 但**在四处菜单源里没有任何节点**，也**不是任何 Agent 工具可达读面的门槛** —— 生产域读面自
+> issue #5291 起改挂**新增的生产域读码 `production:view`**（`ProcessingOrderController` 的两个 GET、
+> `AgentProductionController` 的三个 GET、`ProcessingOrderSetController` 三个读端点、
+> `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog` 与 `/routings`、
+> `CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 / 加工项管理」四个节点同码；
+> 写面仍是 `processing:manage` / `processing:update`。现存唯一仍用 `processing:view` 的端点是
+> `ProductionPoolController` 的两个读端点（无 Agent 工具调用，已登记为残留）。**方向只收窄**：
+> 只持 `processing:view` 的岗位（客服 / 销售 / 财务）既无 `processing:manage` 也无 `production:view`
+> ⇒ 与「不得泄露页面看不到的数据」的裁定一致。
+>
+> 🔵 **三个域读码（issue #5291，用户 2026-09-25 裁定「新增读码」）**：`product:category:view`（商品分类）、
+> `system:view`（岗位权限 / 权限目录）、`production:view`（生产域）。落地 = **四处同批**：
+> 三处菜单源（`frontend/admin-web/src/config/menu.ts` / `MenuController.MENU_TREE` /
+> `AuthService.buildMenusByPermissions`）+ 岗位矩阵（`RegistrationService` 种子 + `RoleService` 硬编码回退），
+> 读端点与 8 个只读工具同批迁移。**可见性零变化（可复算）**：两个读码只授给**原本就持对应管理码**的岗位
+> （operator + 历史岗位 `product_manager` 的回退表），`system:view` 只授给 admin；存量租户由迁移
+> `backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql`
+> 按**同一谓词**补齐。机械判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 10
+> （读码五面锚定）+ 判据 5 的例外表台账（`READ_WRITE_EXCEPTIONS` **已清空、只许缩短**）。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）
 
 | # | controller | 端点 | 现状 | 结论 | 依据 |
 |---|---|---|---|---|---|
-| 1 | `AdminPermissionController` | `GET /api/admin/permissions` | 无注解 | ✅ **补 `system:manage`** | 权限目录：唯一前端调用方「岗位权限」页已要求 `system:manage`；唯一 ai-agent 调用方 `role_manage` 工具的 `required_permissions` 本就是 `["system:manage"]` ⇒ **零回归**。且该端点带**写副作用**（`ensureFullPermissionCatalog` 懒补种） |
+| 1 | `AdminPermissionController` | `GET /api/admin/permissions` | 无注解 | ✅ **补读码 `system:view`**（原 `system:manage`，issue #5291 改判） | 权限目录是**读**面：唯一前端调用方「岗位权限」页、唯一 ai-agent 调用方 `role_manage` 工具**同批改用读码** ⇒ **零回归**（原持 `system:manage` 的岗位由 V128 迁移同批补授读码）。且该端点带**写副作用**（`ensureFullPermissionCatalog` 懒补种） |
 | 2 | `NotificationRuleController` | `GET/POST/PUT/DELETE /api/admin/notification-rules` | 无注解 | ✅ **补类级 `system:manage`** | 租户级通知配置（含写面），与「租户设置」同族；前端与 ai-agent **零调用**（仅单测命中）⇒ 零回归 |
 | 3 | `NotificationTemplateController` | `GET/POST/PUT/DELETE /api/admin/notification-templates` | 无注解 | ✅ **补类级 `system:manage`** | 同上 |
 | 4 | `NotificationController` | `GET /notifications`、`GET /unread-count`、`PUT /{id}/read`、`PUT /read-all`、`DELETE /{id}` | 无注解 | ⬜ **该放行** | **自助**端点：收件人一律取 `SecurityContext` 的当前 `userId`（不接受 body 注入）⇒ 无跨用户读写；通知中心**无前端路由守卫**（全员可见）⇒ 加码会砍掉所有岗位的通知铃铛 |

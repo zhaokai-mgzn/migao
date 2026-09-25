@@ -293,7 +293,7 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：**商品与加工项组**含合并项「加工项管理」（#4542 名 / #5271 组名）→ /production/processing（权限码 processing:manage）', async () => {
+  it('侧边栏：**商品与加工项组**含合并项「加工项管理」（#4542 名 / #5271 组名）→ /production/processing（权限码 production:view，issue #5291）', async () => {
     const { menuGroups } = await import('@/config/menu')
     // issue #4490（含同日**规格修订**：「合并后的菜单放入到商品管理大菜单下」）：
     // 「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为单一入口，
@@ -305,7 +305,8 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     const entry = product!.children.find((c) => c.path === '/production/processing')
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项管理')
-    expect(entry!.permissionCode).toBe('processing:manage')
+    // issue #5291：加工项管理 = 生产域**读**码 production:view（加工项 CRUD 仍 processing:manage）。
+    expect(entry!.permissionCode).toBe('production:view')
     expect(product!.children.map((c) => c.name)).toContain('商品列表')
     expect(product!.children.map((c) => c.path)).not.toContain('/processing')
     // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）

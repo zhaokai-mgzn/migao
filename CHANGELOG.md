@@ -95,6 +95,26 @@
   折 / 幅 / 套 = 兜底 1 + `fallback`），老单行为零变化。
 - **口径只有一份**：键名 = 试算响应同键 = 后端 `ProcessingOrderService.CALC_INFO_KEYS` 白名单，
   前端**只透传、零映射、不自拼**（换算即第二份算料逻辑）。
+### 生产域 / 商品分类 / 岗位权限三个域新增**读**码：只读能力不再要求写权限（2026-09-25，issue #5291）
+
+- **改了什么（可观察）**：这三个域此前**没有读码** ⇒ 「看数据」与「改数据」共用同一个管理/写码
+  （生产域 `processing:manage`、商品分类 `product:category`、岗位权限 `system:manage`）。
+  现在各新增一个**读**码 —— `production:view` / `product:category:view` / `system:view`：侧边栏
+  「生产看板 / 工艺配置 / 计件工资 / 加工项管理」「岗位权限」节点、这些页面的**读**端点，以及米宝的
+  8 个生产只读工具 + `category_manage` + `role_manage` 全部改挂读码；**写面一个都没动**
+  （加工项 CRUD 仍 `processing:manage`、生成/改加工单仍 `processing:update`、分类增删改仍
+  `product:category`、改岗位仍 `system:manage`）。
+- **对既有岗位的影响 = 0（只收窄不放宽，可复算）**：读码只授给**原本就持对应管理码**的岗位
+  （运营 `operator`；历史岗位 `product_manager` 的硬编码回退表同批回填），`system:view` 只授给 admin；
+  存量租户由 `backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql`
+  按**同一谓词**补齐 ⇒ 菜单可见性与米宝可查范围**逐值不变**。只持旧读码 `processing:view` 的
+  客服 / 销售 / 财务仍**看不到也查不到**生产数据（#5246 的裁定不变）。
+- **为什么值得改**：此前「只查数据的工具」要求写权限 —— 持管理码者失去细粒度约束，且将来想给
+  「只读岗位」开数据面时**无码可用**；现在可以只授读码。
+- **守卫**：`tests/unit_ci_workflows/test_agent_permission_parity.py` 的读写例外表
+  （`READ_WRITE_EXCEPTIONS`）**从 10 条清到 0 条**（且新增条数台账，**只许缩短**），并新增判据 10
+  把三个读码的「目录 / 承载工具 / 菜单节点 / 端点 / 岗位」五面逐面钉死 —— 删任何一面
+  （含「把某条读码从菜单源删掉」）都会变红。
 
 ### 客户画像的 RFM 三字段在「列表 / 详情 / PUT」上的键名与声明名统一（2026-09-25，issue #5459）
 

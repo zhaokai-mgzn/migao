@@ -101,7 +101,8 @@ export const menuGroups: MenuGroup[] = [
       { key: 'products', name: '商品列表', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'shangpin'] },
       // issue #4490（用户裁定 2026-09-19；同日**规格修订**：「加工项管理和加工费管理**合并后的菜单
       // 放入到商品管理大菜单下**」）：「加工项管理」(/production/processing) 与「加工费管理」
-      // (/production/processing-fees) **合并为单一入口** —— 两者是同一权限码（processing:manage）、
+      // (/production/processing-fees) **合并为单一入口** —— 两者是同一业务域、同一入口
+      //（节点码自 issue #5291 起 = 生产域**读**码 production:view；页内写动作仍 processing:manage）、
       // 同一业务域（加工费组合的 items[] 必须取自加工项目录的活跃加工项），拆开意味着
       // 「建组合发现缺加工项要跳到另一个菜单组去建」。
       // issue #4542（用户裁定 2026-09-19：把菜单名从 #4490 的合并名改回「加工项管理」）：
@@ -114,7 +115,7 @@ export const menuGroups: MenuGroup[] = [
       // 两个旧路径都保留为重定向（/processing、/production/processing-fees → 本路径），旧深链不 404。
       // 图标沿用原「加工项管理」的 Scissors（本项默认 tab 就是「加工项」）。
       // ⚠️ **路径有意不改**：改路径会让刚上线的两条旧路径重定向再叠一层。
-      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/production/processing', permissionCode: 'processing:manage', keywords: ['jgx', 'jiagong', 'jiagongfei', '加工费'] },
+      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/production/processing', permissionCode: 'production:view', keywords: ['jgx', 'jiagong', 'jiagongfei', '加工费'] },
     ],
   },
   // issue #5271：原「订单管理」+ 原「客户管理」组的两个项 → **交易管理**（一条动线：
@@ -138,7 +139,11 @@ export const menuGroups: MenuGroup[] = [
   },
   // issue #5271：生产管理组**由 7 项降到 4 项** —— 只留「加工执行 + 工艺配置 + 结算」；
   // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组。
-  // issue #4203/#4205 后端半边：本组节点权限码统一 processing:manage（operator 已持有该码）。
+  // issue #4203/#4205 后端半边：本组节点权限码原统一 processing:manage（operator 已持有该码）。
+  // 🔴 issue #5291：生产域新增**读**码 `production:view` —— 「生产看板 / 工艺配置 / 计件工资」
+  // 三个节点改用读码（「看得见这一页」与「改得动生产数据」就此分开）；「池看板」仍按
+  // processing:manage（其读端点用 processing:view、且无 Agent 工具调用，不在本单射程）。
+  // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py（判据 3/4/10）。
   // issue #4357：「加工单」并入本组 —— 但它**不新增菜单项**：加工单列表页与「生产看板」
   // 是同一实体、同一端点（processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口「生产看板」
   //（列表页能力：关键词/状态筛选、重置、刷新、商品与数量快照摘要、查看跳订单详情 全部并入看板）。
@@ -152,7 +157,7 @@ export const menuGroups: MenuGroup[] = [
     icon: 'Factory',
     children: [
       // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
-      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'processing:manage', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
+      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
       // 池看板（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
       // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
       { key: 'production-pool', name: '池看板', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:manage', keywords: ['ckb', 'chi', 'paidan', '派单'] },
@@ -160,8 +165,8 @@ export const menuGroups: MenuGroup[] = [
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。
       // 工序库半边 = 该页**左栏**；旧路径 /production/operations 保留为重定向（旧深链不 404）。
-      { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'processing:manage', keywords: ['gypz', 'gongyi', 'gongxu', 'luxian'] },
-      { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage', keywords: ['jjgz', 'jijian', 'gongzi'] },
+      { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'production:view', keywords: ['gypz', 'gongyi', 'gongxu', 'luxian'] },
+      { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
     ],
   },
   // issue #5271 **新组**：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，是**同一条物流动线**，
@@ -196,7 +201,8 @@ export const menuGroups: MenuGroup[] = [
     icon: 'Building2',
     children: [
       { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list', keywords: ['yggl', 'yuangong'] },
-      { key: 'roles', name: '岗位权限', icon: 'ShieldCheck', path: '/roles', permissionCode: 'system:manage', keywords: ['gwqx', 'jiaose', 'quanxian'] },
+      // issue #5291：岗位权限节点改挂**读**码 `system:view`（企业基础信息仍是 system:manage）。
+      { key: 'roles', name: '岗位权限', icon: 'ShieldCheck', path: '/roles', permissionCode: 'system:view', keywords: ['gwqx', 'jiaose', 'quanxian'] },
       { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage', keywords: ['qyxx', 'shezhi', 'qiye'] },
     ],
   },

@@ -13,12 +13,21 @@
 | 坐席 | 移动坐席：待接管队列 + 详情接管/回复/结束 | `/api/admin/agent-sessions/*` |
 | 我的 | 员工信息（昵称/角色/租户）+ 退出登录 | — |
 
-## 登录（B 端语义，与 C 端相反）
+## 登录（issue #5485 起＝账号密码）
 
-- 首次：`<Button open-type="getPhoneNumber">` 授权 → `POST /api/auth/bmini/login {code, phoneCode}`
-- 后端：openid 无绑定 → 换号跨租户匹配员工（role∉customer/agent）→ 绑定 `user_identities(bmini_app)` → 签发含 permissions 的员工 JWT
-- **匹配不到员工即时拒绝，绝不自动建号**（BM-003）
-- 二次：openid 已绑定 → 免授权直接登录
+- 员工在登录页填 **`用户名@企业编码`**（如 `zhangsan@acme`）+ **密码** →
+  `POST /api/auth/employee/login {identifier, password}`（`src/utils/auth.ts` 的 `employeeLogin`）
+- **租户只由标识里的企业编码解析**（服务端）：前端**不解析租户、不传 `tenantId`**；
+  `user.tenantId` 由服务端回填进本地存储并用于后续请求头
+- 失败（企业编码不存在 / 用户名不存在 / 密码错）统一 **同一 401 同一文案**（反枚举），前端原样展示
+- 账号由企业管理员在管理后台设置（含初始密码）；**首登强制改密**——改密前后端只放行
+  「改密 / 登出 / 读自己信息」白名单接口，其余一律 403 `PASSWORD_CHANGE_REQUIRED`
+  ⇒ 登录响应 `user.mustChangePassword === true` 时**不进主界面**，直接送
+  `pages/auth/change-password`（原密码 + 新密码 + 确认新密码），成功后用**换发的新凭据**进主界面
+  （`POST /api/auth/password/change` 本身在白名单内且响应体同登录 ⇒ 商家员工**不必去电脑端**）
+- 原「`<Button open-type="getPhoneNumber">` 授权 → 跨租户匹配员工 → 绑定 openid → 二次免密」**整条退场**：
+  `POST /api/auth/bmini/login` 已废弃（旧版调用会拿到明确拒绝 + 引导文案，不是 404）；
+  退场由 `tests/bmini-login-retired.test.ts` 元守卫看住（再次出现即红）
 
 需要真实小程序 appid/secret 时配置 `WECHAT_BMINI_APPID/SECRET`；未配置且 `WECHAT_MOCK_ENABLED=true` 时走 Mock 联调。
 

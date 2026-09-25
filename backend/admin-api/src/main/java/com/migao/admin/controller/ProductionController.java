@@ -45,6 +45,9 @@ import java.util.Map;
  * <p><b>权限口径（本批新增端点逐条声明，见 issue #4104 的控制器级错配台账）</b>：
  * 类级 {@code order:list} 是读口径；写/报表端点用方法级 {@code processing:manage} 覆盖
  * （方法级优先，见 {@code PermissionInterceptor.resolveRequirePermission}）。
+ * ⚠️ <b>issue #5291</b>：两个**只读**端点（{@code /operations-catalog}、{@code /routings}）改挂生产域
+ * **读**码 {@code production:view}（与「工艺配置」节点、Agent 侧 {@code operation_catalog_query} 同码）
+ * —— 它们此前用方法级 {@code processing:manage}，只因当时该域没有读码。
  * **唯一例外是打印计数**：它沿用类级 {@code order:list} —— 打印按钮今天对客服/销售/财务可见
  * （{@code order:list} 授了 4 个岗位，{@code processing:manage} 只授 operator），
  * 收窄会让「能打开生产明细却打不了卡」变成功能回退；计数只是打印动作的元数据，不涉安全边界。</p>
@@ -400,8 +403,10 @@ public class ProductionController {
      * 工序库（按分组/排序的工序目录，含计件单价与开始标记；{@code is_must_finish} 键**保留但恒 false**，#4961）
      * GET /api/admin/production/operations-catalog
      */
+    // issue #5291：这两个**读**端点改挂生产域读码 `production:view`
+    //（Agent 侧 operation_catalog_query 同码；写面端点一律不变）。
     @GetMapping("/operations-catalog")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> operationsCatalog() {
         return ApiResponse.success(
                 productionOperationQueryService.catalog(TenantContext.getTenantId()));
@@ -416,7 +421,7 @@ public class ProductionController {
      * —— 前端由 P3（#4433）适配。</p>
      */
     @GetMapping("/routings")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> routings() {
         return ApiResponse.success(
                 productionOperationQueryService.routings(TenantContext.getTenantId()));

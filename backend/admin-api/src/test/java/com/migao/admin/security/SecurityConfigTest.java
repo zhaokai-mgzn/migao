@@ -971,24 +971,26 @@ class SecurityConfigTest {
     // 把对应的注解 / ADMIN_API_REJECTED_ROLES 改动回退 ⇒ 该用例必红（改前实测输出见 PR body）。
 
     @Test
-    @DisplayName("权限审计 - 商户员工无 system:manage 访问 /api/admin/permissions ⇒ 403（改前放行）")
+    @DisplayName("权限审计 - 商户员工无 system:view 访问 /api/admin/permissions ⇒ 403（改前放行）")
     void permissionAudit_permissions_withoutSystemManage_denied() throws Exception {
         when(roleService.getUserPermissions(any())).thenReturn(List.of("dashboard:view"));
 
+        // issue #5291：该端点是**读**面（权限目录）⇒ 生效码 = 新增的读码 `system:view`
+        //（原持 `system:manage` 的岗位由 V128 迁移同批补授读码 ⇒ 可见性零变化）。
         mockMvc.perform(get("/api/admin/permissions")
                         .with(user("staff-p1").roles("OPERATOR")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
-                .andExpect(jsonPath("$.error.details[0].message").value("system:manage"));
+                .andExpect(jsonPath("$.error.details[0].message").value("system:view"));
 
         // 承重判据（负向控制）：改前该端点放行到业务层 ⇒ 这条 verify 会红
         verify(permissionService, never()).getAllPermissions();
     }
 
     @Test
-    @DisplayName("权限审计 - 商户员工持 system:manage 访问 /api/admin/permissions ⇒ 200（正向对照，未过度收窄）")
+    @DisplayName("权限审计 - 商户员工持 system:view 访问 /api/admin/permissions ⇒ 200（正向对照，未过度收窄）")
     void permissionAudit_permissions_withSystemManage_allowed() throws Exception {
-        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:manage"));
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:view"));
         when(permissionService.getAllPermissions()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/admin/permissions")

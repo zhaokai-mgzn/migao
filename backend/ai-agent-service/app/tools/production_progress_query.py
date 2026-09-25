@@ -63,12 +63,12 @@ class ProductionProgressQueryTool(BaseTool):
         "required": ["order_no"],
     }
 
-    # 权限码（admin-api 目录）：生产进度端点取**加工面读码** `processing:manage`
-    # （ProductionController 的 /progress、/piecework 等方法级 `@RequirePermission("processing:manage")`）。
+    # 权限码（admin-api 目录，issue #5291）：生产进度端点取生产域读码 `production:view`
+    # （`AgentProductionController` 的 `GET /api/admin/agent/production/progress` 方法级注解同码）。
     # 本工具**双端**（顾客查自己的单 + 商户员工查任意单）⇒ c_end_reachable=True：
     # C 端 JWT 没有 permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
     # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`，横向越权，issue #5246 判据 6）。
-    required_permissions = ["processing:manage"]
+    required_permissions = ["production:view"]
     c_end_reachable = True
     read_only = True
     destructive = False

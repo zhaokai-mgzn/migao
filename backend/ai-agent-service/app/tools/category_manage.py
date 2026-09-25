@@ -38,9 +38,10 @@ class CategoryManageTool(BaseTool):
         "引导用户到后台「商品列表 → 分类管理」页面自行操作，不要承诺代为修改。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
-    # 权限码（admin-api 目录）：CategoryController 类级 `@RequirePermission("product:category")`。
+    # 权限码（admin-api 目录，issue #5291）：分类**读**端点已改挂分类读码 `product:category:view`
+    # （`CategoryController.getCategoryTree` 的方法级注解；写面 POST/PUT/DELETE 仍是 `product:category`）。
     # 此前写死 ["admin","tenant_admin"] ⇒ operator / product_manager 持码却被判「权限不足」（#4106 F4）。
-    required_permissions = ["product:category"]
+    required_permissions = ["product:category:view"]
 
     read_only = True
     read_only_actions = {"tree"}  # 只读 action 免确认拦截

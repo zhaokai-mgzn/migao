@@ -45,15 +45,17 @@ public class ProcessingOrderController {
     }
 
     /**
-     * 加工单列表（权限 processing:manage）
+     * 加工单列表（权限 production:view —— issue #5291 新增的生产域**读**码）
      * GET /api/admin/processing-orders?keyword=&status=
      *
-     * issue #5246：processing:view → processing:manage —— 本列表页现在是「生产看板」节点
-     * （issue #4357 合并入口），而该节点的码是 processing:manage；processing:view 已**没有菜单节点**，
-     * 保留它等于让角色经 agent 侧看到它们在侧边栏看不见的东西（权限界面的可见性 ≠ 实际可达性）。
+     * 沿革：issue #5246 曾把本读面从 processing:view 改到 processing:manage（当时「生产看板」节点的码
+     * 是 processing:manage，而 processing:view 没有任何菜单节点）；issue #5291 为生产域读出**读**码
+     * production:view 后，节点与本读端点同批改挂读码 —— 只读持有者不再被迫持管理码。
      */
+    // issue #5291：读面（列表 / 详情）改挂生产域读码 `production:view`；
+    // 写面（POST /generate、PATCH /{id}）仍是 `processing:update`。
     @GetMapping
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<List<ProcessingOrderResponse>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status) {
@@ -62,14 +64,14 @@ public class ProcessingOrderController {
     }
 
     /**
-     * 加工单详情（权限 processing:manage）
+     * 加工单详情（权限 production:view，issue #5291）
      * GET /api/admin/processing-orders/{id}   id 可为 UUID/加工单号/订单号
      *
-     * issue #5246：与列表同码（processing:manage）—— 详情与列表是同一入口的两个读面，
+     * 与列表同码（production:view）—— 详情与列表是同一入口的两个读面，
      * 同页不同码会造出「列表打不开、详情打得开」的错位。
      */
     @GetMapping("/{id}")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<ProcessingOrderResponse> detail(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();
         return ApiResponse.success(processingOrderService.getDetail(id, tenantId));

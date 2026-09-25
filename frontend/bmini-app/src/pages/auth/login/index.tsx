@@ -1,48 +1,54 @@
-import { useCallback } from 'react'
-import { View, Text, Button } from '@tarojs/components'
+import { useCallback, useState } from 'react'
+import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import './index.scss'
 
 /**
- * B 端员工小程序登录页（米宝商家端，issue #2977）
+ * B 端员工登录页（米宝商家端）—— issue #5485 起统一为「账号密码」
  *
- * 登录流程：
- * 1. 点击「授权手机号登录」触发 <Button open-type="getPhoneNumber"> 微信手机号授权
- * 2. onGetPhoneNumber 拿到动态 code → bminiLoginAction(phoneCode)
- * 3. 后端：wx.login code 换 openid → 查 bmini_app 绑定 → 未绑定则用手机号跨租户匹配
- *    员工（role∉customer/agent）→ 绑定并签发员工 JWT；匹配不到即时拒绝
- * 4. 登录成功 → switchTab 到「问米宝」（首页 Tab）
+ * 1. 员工填「用户名@企业编码」+ 密码 → employeeLoginAction(identifier, password)
+ * 2. 后端 `POST /api/auth/employee/login` 由标识里的企业编码解析租户
+ *    （前端**不解析租户、不传 tenantId**）
+ * 3. 成功 → switchTab 到「问米宝」（首页 Tab）
+ *
+ * 原「微信授权手机号 → 跨租户匹配员工 → 绑定 openid → 二次免密」整条退场：
+ * 本页**没有** `getPhoneNumber` 授权按钮，`POST /api/auth/bmini/login` 已废弃。
+ *
+ * 格式与账号存在性的判定**单一真值在后端**（统一 401 同一文案，反枚举）——
+ * 这里只挡「空输入」，不复制后端的企业编码 / 用户名格式规则（否则就是第二套真值）。
  */
 export default function LoginPage() {
-  const { isLoading, bminiLoginAction } = useAuthStore()
+  const { isLoading, employeeLoginAction } = useAuthStore()
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
 
   /**
-   * getPhoneNumber 授权回调：拿到动态 code 后发起 B 端登录。
-   * - e.detail.code：授权成功返回的动态令牌（后端换真实手机号）
-   * - e.detail.errMsg 以 getUserProfile:fail/deny 结尾 = 用户拒绝授权
+   * 提交登录。
+   * 空输入在本地拦下（不白跑一次请求）；其余一律交后端判定，
+   * 失败原因由 authStore 内部 showToast（不区分是哪个字段错）。
+   *
+   * 首登强制改密（`user.mustChangePassword`）：**不放进主界面**，直接送改密页 ——
+   * 改密前后端只放行白名单接口，硬进主界面只会让每个功能都 403（用户读成「小程序坏了」）。
    */
-  const handleGetPhoneNumber = useCallback(
-    async (e: any) => {
-      const detail = e?.detail || {}
-      if (detail.errMsg && detail.errMsg.includes('deny')) {
-        Taro.showToast({ title: '需要授权手机号才能登录', icon: 'none' })
-        return
-      }
-      if (!detail.code) {
-        Taro.showToast({ title: '未获取到手机号授权，请重试', icon: 'none' })
-        return
-      }
-      if (isLoading) return
+  const handleLogin = useCallback(async () => {
+    if (isLoading) return
+    if (!identifier.trim() || !password) {
+      Taro.showToast({ title: '请输入用户名@企业编码和密码', icon: 'none' })
+      return
+    }
 
-      const success = await bminiLoginAction(detail.code)
-      if (success) {
-        Taro.switchTab({ url: '/pages/chat/index/index' })
-      }
-      // 失败原因由 authStore 内部 showToast（如「手机号未匹配员工账号」）
-    },
-    [isLoading, bminiLoginAction],
-  )
+    const success = await employeeLoginAction(identifier.trim(), password)
+    if (!success) return
+
+    // 动作之后的**最新**状态：钩子返回值在本闭包里是旧的
+    const { user } = useAuthStore.getState()
+    if (user?.mustChangePassword) {
+      Taro.redirectTo({ url: '/pages/auth/change-password/index' })
+      return
+    }
+    Taro.switchTab({ url: '/pages/chat/index/index' })
+  }, [identifier, password, isLoading, employeeLoginAction])
 
   // 服务条款
   const handleTerms = useCallback(() => {
@@ -58,7 +64,7 @@ export default function LoginPage() {
   const handlePrivacy = useCallback(() => {
     Taro.showModal({
       title: '隐私协议',
-      content: '登录仅用于绑定您的员工账号，手机号信息将严格保密。',
+      content: '本应用仅使用您的员工账号信息完成登录校验，账号信息将严格保密。',
       showCancel: false,
       confirmText: '我知道了',
     })
@@ -75,24 +81,43 @@ export default function LoginPage() {
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
 
-      {/* 中间欢迎文案 */}
-      <View className='login-welcome'>
-        <Text className='login-welcome__title'>欢迎回来</Text>
-        <Text className='login-welcome__desc'>
-          授权手机号即可登录{'\n'}随时随地查看经营数据、处理紧急事务
-        </Text>
+      {/* 中间登录表单 */}
+      <View className='login-form'>
+        <View className='login-field'>
+          <Text className='login-field__label'>用户名@企业编码</Text>
+          <Input
+            className='login-field__input'
+            type='text'
+            placeholder='如 zhangsan@acme'
+            value={identifier}
+            onInput={(e: any) => setIdentifier(e.detail.value)}
+          />
+        </View>
+
+        <View className='login-field'>
+          <Text className='login-field__label'>密码</Text>
+          <Input
+            className='login-field__input'
+            password
+            placeholder='请输入密码'
+            value={password}
+            onInput={(e: any) => setPassword(e.detail.value)}
+            onConfirm={handleLogin}
+          />
+        </View>
+
+        <Text className='login-form__hint'>账号由企业管理员在管理后台设置</Text>
       </View>
 
       {/* 底部操作区域 */}
       <View className='login-actions'>
         <Button
           className={`login-btn ${isLoading ? 'login-btn--loading' : ''}`}
-          openType='getPhoneNumber'
-          onGetPhoneNumber={handleGetPhoneNumber}
           loading={isLoading}
           disabled={isLoading}
+          onClick={handleLogin}
         >
-          {isLoading ? '登录中...' : '微信授权手机号登录'}
+          {isLoading ? '登录中...' : '登录'}
         </Button>
 
         <View className='login-agreement'>

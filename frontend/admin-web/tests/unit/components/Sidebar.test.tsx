@@ -670,12 +670,11 @@ describe('Sidebar', () => {
       expect(screen.getByText('余料台账')).toBeInTheDocument()
       expect(screen.getByText('省料看板')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
+      // issue #5291：生产看板/工艺配置/计件工资 改挂读码 production:view ⇒
+      // 只持 processing:manage 时它们**不在**（生产组只剩池看板），生产组与仓储组仍各自成立。
       expect(menuKeys()).toEqual([
         'dashboard',
-        'production-board',
         'production-pool',
-        'production-process',
-        'production-piecework',
         'production-remnants',
         'production-saving-board',
         'notifications',

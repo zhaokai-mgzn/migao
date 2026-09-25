@@ -32,8 +32,8 @@ PRODUCT_TOOLS = [
     # ── 商家后端模块只读接入（issue #5247 模块覆盖：库存 / 生产 / 算料）──
     "stock_ledger_query",        # 库存台账（GET /api/admin/stock-ledger → product:list）
     "inbound_order_query",       # 入库单 / 批次（GET /api/admin/inbound-orders* → inbound:view）
-    "operation_catalog_query",   # 工序库 / 工艺路线（GET /api/admin/production/{operations-catalog,routings} → processing:manage）
-    "craft_calc_config_query",   # 算料配置（GET /api/admin/production/craft-calc-config → processing:manage）
+    "operation_catalog_query",   # 工序库 / 工艺路线（GET /api/admin/production/{operations-catalog,routings} → production:view，#5291）
+    "craft_calc_config_query",   # 算料配置（GET /api/admin/production/craft-calc-config → production:view，#5291）
     # ── A 档可逆写补回（issue #5303，用户裁定 2026-09-24）：**只补这两条** ──
     # 判据：`WRITE|IDEMPOTENT`（重放安全）+ 可逆（价格能再调回去）+ 非对外承诺 +
     # 不绕过审核门禁；权限码 `product:create`（= admin-api `AgentProductController` 的

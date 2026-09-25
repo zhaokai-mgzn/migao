@@ -32,11 +32,11 @@ class ProcessingOrderQueryTool(BaseTool):
         "【标注】READONLY — 只读查询"
     )
 
-    # 权限码（admin-api 目录）：加工单**查看**取加工面读码 `processing:manage`
-    # （ProcessingOrderController 的查询端点 `GET /api/admin/processing-orders` 生效码 = `processing:manage`；
-    # #5246 改判：原 `processing:view` 与之不符，且没有任何菜单节点用该码）。
+    # 权限码（admin-api 目录，issue #5291）：加工单**查看**取生产域读码 `production:view`
+    # （`ProcessingOrderController` 的查询端点 `GET /api/admin/processing-orders` 同码）。
+    # 沿革：#5246 曾把工具码对齐节点码 `processing:manage`（当时生产域无读码）⇒ 本单读出读码后回到只读语义。
     # 旧白名单里的 knowledge_editor 在目录里只有 dashboard:view + product:list ⇒ 不再放行（收窄）。
-    required_permissions = ["processing:manage"]
+    required_permissions = ["production:view"]
     read_only = True
     # 已恢复接入（issue #4196：反转 #3917 的下线决策）：registry 注册 + order skill 工具绑定
     # + prompts/order.md 操作指引三处齐备；概念区分口径仍在（防混淆守则）。

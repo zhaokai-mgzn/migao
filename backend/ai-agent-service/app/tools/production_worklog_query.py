@@ -81,10 +81,10 @@ class ProductionWorklogQueryTool(BaseTool):
     }
 
     # 仅 B 端：报工明细含报工人与计件金额（工资面）⇒ 不对 C 端顾客开放。
-    # 权限码（admin-api 目录）：报工明细属**加工面读码** `processing:manage`（issue #5246 改判：
-    # 原取 order:list 是订单读码，与 ProductionController 报工/计件端点的
-    # `@RequirePermission("processing:manage")` 不符）。
-    required_permissions = ["processing:manage"]
+    # 权限码（admin-api 目录，issue #5291）：报工明细取生产域读码 `production:view`
+    # （`AgentProductionController` 的 `GET .../worklog` 方法级注解同码）。
+    # 沿革：原取 order:list（订单读码），#5246 曾改判为 `processing:manage`。
+    required_permissions = ["production:view"]
     read_only = True
     destructive = False
     idempotent = True

@@ -67,7 +67,8 @@ public class MenuController {
         // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。
         MenuNode cs2 = new MenuNode("knowledge:view", "知识库");
         MenuNode p1 = new MenuNode("product:list", "商品列表");
-        MenuNode p4 = new MenuNode("processing:manage", "加工项管理");
+        // issue #5291：加工项管理 = 生产域读码（写面 @RequirePermission 仍 processing:manage）。
+        MenuNode p4 = new MenuNode("production:view", "加工项管理");
         // 动作码节点（非菜单项）：与菜单项同域，**统一追加在组尾**（导航项 = 前缀子序列）
         MenuNode p2 = new MenuNode("product:create", "新增商品");
         MenuNode p3 = new MenuNode("product:category", "商品分类管理");
@@ -81,16 +82,18 @@ public class MenuController {
         MenuNode f1 = new MenuNode("finance:view", "财务对账");
         // 动作码节点：组尾追加（与权限页「操作权限」一节单独勾选的形态一致）
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
-        // 生产管理（issue #4203/#4205/#4308/#5177）：四项共用 processing:manage ——
+        // 生产管理（issue #4203/#4205/#4308/#5177）：本组四项中**生产看板 / 工艺配置 / 计件工资**
+        // 按 issue #5291 改挂生产域**读**码 `production:view`（「看得见这一页」与「改得动生产数据」
+        // 就此分开）；「池看板」仍按 `processing:manage`（其读端点用 processing:view、无 Agent 工具）。
         // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
         // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
-        MenuNode pr1 = new MenuNode("processing:manage", "生产看板");
+        MenuNode pr1 = new MenuNode("production:view", "生产看板");
         MenuNode prPool = new MenuNode("processing:manage", "池看板");
         // 🔴 「工艺配置」= issue #4416 把「工序库」+「工艺路线」**合并为单一入口**后的名称
         // （工序库半边 = 该页左栏；旧路径 /production/operations 保留为重定向）。
         // 权限码沿用 processing:manage（不要新造权限码）。
-        MenuNode pr2 = new MenuNode("processing:manage", "工艺配置");
-        MenuNode pr3 = new MenuNode("processing:manage", "计件工资");
+        MenuNode pr2 = new MenuNode("production:view", "工艺配置");
+        MenuNode pr3 = new MenuNode("production:view", "计件工资");
         // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料。
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
         // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
@@ -100,7 +103,8 @@ public class MenuController {
         MenuNode prSaving = new MenuNode("processing:manage", "省料看板");
         // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
         MenuNode e1 = new MenuNode("employee:list", "员工管理");
-        MenuNode r1 = new MenuNode("system:manage", "岗位权限");
+        // issue #5291：岗位权限节点改挂读码 `system:view`（企业基础信息仍是 system:manage）。
+        MenuNode r1 = new MenuNode("system:view", "岗位权限");
         // 旧 label「租户设置」→「企业基础信息」（#5271；code 不变 system:manage）——
         // 节点原挂在已消失的 `settings` 顶层组，现随组织面并入 `org-center`。
         MenuNode s1 = new MenuNode("system:manage", "企业基础信息");

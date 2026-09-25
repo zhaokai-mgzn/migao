@@ -48,20 +48,22 @@ public class AgentProductionController {
     /**
      * 订单生产进度（按订单号，租户隔离）
      *
-     * issue #5246：类级 {@code @RequirePermission("order:list")} 已移除 —— 本控制器是
-     * 生产看板 / 计件工资侧边栏节点的 agent 侧数据面，而那两个节点由 {@code processing:manage} 守着
-     * ⇒ 继续用 order:list 会让「无 processing:manage、有 order:list」的角色绕过菜单直达生产数据。
+     * 权限（issue #5246 移除类级 {@code order:list}；issue #5291 改挂读码）：本控制器是
+     * 生产看板 / 计件工资侧边栏节点的 agent 侧数据面，三个 GET 的方法级码 = 那些节点当前的码
+     * {@code production:view}（生产域**读**码）⇒ 「没有该码、只有 order:list」的角色不能绕过菜单直达生产数据。
      */
+    // issue #5291：三个 GET 的方法级码由 `processing:manage` 改为生产域读码 `production:view`
+    //（与侧边栏「生产看板 / 计件工资」节点同码；工具侧三个只读工具同批收口）。
     @GetMapping("/progress")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> progress(
             @RequestParam(value = "order_no", required = false) String orderNo) {
         return ApiResponse.success(productionService.progress(orderNo, TenantContext.getTenantId()));
     }
 
-    /** 工人计件（按人 + 期间 YYYY-MM）—— issue #5246：同 processing:manage（计件工资节点同码） */
+    /** 工人计件（按人 + 期间 YYYY-MM）—— 与「计件工资」节点同码 production:view（issue #5291 读码） */
     @GetMapping("/piecework")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> piecework(
             @RequestParam(value = "worker_name", required = false) String workerName,
             @RequestParam(value = "period", required = false) String period) {
@@ -75,10 +77,10 @@ public class AgentProductionController {
      * <p>订单解析与 {@code /progress} 同口径（{@code resolveOrder} 四形态：内部 order_id /
      * 订单号 / 加工单 qr_token / 加工单号），租户隔离同口径。**只读**。</p>
      *
-     * <p>issue #5246：同 {@code /progress} —— 生产看板数据面，码 = processing:manage。</p>
+     * <p>同 {@code /progress} —— 生产看板数据面，码 = {@code production:view}（issue #5291 读码）。</p>
      */
     @GetMapping("/worklog")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> worklog(
             @RequestParam(value = "order_no", required = false) String orderNo) {
         return ApiResponse.success(productionService.worklog(orderNo, TenantContext.getTenantId()));

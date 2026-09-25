@@ -37,7 +37,7 @@ export default function ChatPage() {
 
   /** 初始化：检查登录 + 续聊/新建会话（B 端：未登录引导去登录页，不做 C 端静默登录） */
   const initialize = useCallback(async () => {
-    // 检查登录状态（B 端首次登录需 getPhoneNumber 授权，无法静默）
+    // 检查登录状态（B 端首次登录需账号密码，无微信静默登录）
     if (!checkAuth()) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       setTimeout(() => Taro.redirectTo({ url: '/pages/auth/login/index' }), 600)

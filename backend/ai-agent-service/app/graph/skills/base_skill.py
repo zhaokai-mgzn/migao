@@ -3288,6 +3288,10 @@ PERMISSION_LABELS = {
     "order:update": "订单操作",
     "order:create": "新增订单",
     "customer:create": "客户维护",
+    # issue #5291：三个域新增**读**码（名称逐字取 admin-api RegistrationService 的同码条目）。
+    "product:category:view": "商品分类查看",
+    "production:view": "生产查看",
+    "system:view": "岗位权限查看",
     "finance:create": "财务操作",
     "agent:session:manage": "会话操作",
     "order:list": "订单列表",

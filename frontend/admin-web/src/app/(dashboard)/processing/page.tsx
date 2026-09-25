@@ -6,7 +6,8 @@ import { redirect } from 'next/navigation'
  * 「加工项管理」(/processing，商品管理组) 与「加工费管理」(/production/processing-fees，生产管理组)
  * **合并为单一菜单入口** `/production/processing`（菜单名「加工项管理」—— issue #4542 用户裁定
  * 把菜单名从 #4490 的合并名改回「加工项管理」，与服务端 `MenuController`/`AuthService` 同名）：
- * 两者是同一权限码（`processing:manage`）、同一业务域（加工项及其定价）——
+ * 两者是同一业务域（加工项及其定价）、同一菜单入口；权限码自 issue #5291 起 = 生产域**读**码
+ * `production:view`（写面仍是 `processing:manage`）——
  * 加工费组合的 `items[]` 必须取自加工项目录的活跃加工项，拆在两个菜单组里意味着
  * 「建组合发现缺加工项要跳到另一个菜单组去建」。
  *

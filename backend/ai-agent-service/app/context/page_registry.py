@@ -136,14 +136,15 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
     PageEntry(
         route="/production/routings",
         truth_source="craft-calc-glossary",
-        page_permissions=("processing:manage",),
-        entity_permissions=("processing:manage",),
+        # issue #5291：生产域读码（页面节点 / 读端点 / 只读工具同码）。
+        page_permissions=("production:view",),
+        entity_permissions=("production:view",),
     ),
     PageEntry(
         route="/production/processing",
         truth_source="craft-calc-glossary",
-        page_permissions=("processing:manage",),
-        entity_permissions=("processing:manage",),
+        page_permissions=("production:view",),
+        entity_permissions=("production:view",),
     ),
     PageEntry(
         route="/production/pool",
