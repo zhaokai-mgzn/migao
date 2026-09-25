@@ -38,7 +38,6 @@
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#145|bare": 1,
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#173|bare": 1,
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#92|bare": 2,
-      "docs/testing/eval-environments.md|bare-line|第 86-88 行": 1,
       "docs/testing/eval-pipeline-performance.md|app/config.py#41|bare": 1,
       "docs/testing/eval-pipeline-performance.md|app/graph/skills/base_skill.py#198|bare": 1,
       "docs/testing/eval-pipeline-performance.md|app/llm/factory.py#63|bare": 1,
@@ -49,14 +48,7 @@
       "docs/testing/eval-pipeline-performance.md|tests/test_llm_factory.py#41|bare": 1,
       "docs/testing/eval-pipeline-performance.md|tests/test_llm_factory.py#81|bare": 1,
       "docs/testing/xiaobu-eval-tooling.md|ProductService.java#144|bare": 1,
-      "docs/testing/xiaobu-eval-tooling.md|base_skill.py#47|bare": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|a/b.py#2|dangling": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|a/b.py#3|dangling": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|a/b.py#5|dangling": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|docs/testing/eval-environments.md#86|bare": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|local_runner.py#2000|bare": 2,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|no/such/file.py#10|dangling": 1,
-      "tests/unit_ci_workflows/test_case_trust_gate.py|tests/agent_eval/local_runner.py#999999|oor": 1
+      "docs/testing/xiaobu-eval-tooling.md|base_skill.py#47|bare": 1
     },
     "regression-guard": {},
     "skill-anchor": {},

@@ -957,7 +957,7 @@ jobs:
             echo ""
             echo "${MSG}"
             echo ""
-            echo "判据：\`needs.eval.result == 'cancelled'\`（取消不是结果，见 dev-flow 16.5）。"
+            echo "判据：\`needs.eval.result == 'cancelled'\`（取消不是结果，见 dev-flow §16.7「派发后」）。"
             echo "要判断某次部署的行为，请找该 SHA 上**真正跑完**的那一轮 run。"
           } >> "$GITHUB_STEP_SUMMARY"
 
