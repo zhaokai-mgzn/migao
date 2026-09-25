@@ -56,7 +56,7 @@ export function stripComments(code: string): string {
 }
 
 /** 检出禁止形态；返回 `文件:行号 形态` 列表（空 = 合规） */
-export function detectTenantDerivation(code: string, file = 'inline.ts'): string[] {
+export function detectTenantDerivation(code: string, file = 'snippet'): string[] {
   const stripped = stripComments(code).split('\n')
   const hits: string[] = []
   stripped.forEach((line, i) => {
@@ -93,9 +93,14 @@ describe('租户定位纪律（#5485 类级元守卫 · 前端不推导租户）
       'const tenantId = Number.isFinite(parsed) && parsed > 0 ? parsed : 1',
       'const params = { username, password, tenantId: Number(tenantCode.trim()) }',
     ].join('\n')
-    const hits = detectTenantDerivation(historical, 'historical-auth.ts')
+    const hits = detectTenantDerivation(historical)
     expect(hits.length).toBeGreaterThanOrEqual(2)
-    expect(hits.join('\n')).toContain('historical-auth.ts:3')
+    // 点名坏形态 —— 锚点是**形态名**，不是「文件:行号」：后者会被 Case Trust Gate 的规则 G
+    // 当成「对真实文件的陈旧行引用」判红（本断言测的是**合成夹具**，不指向任何真实文件的行）。
+    expect(hits.some((h) => h.includes('tenantId-由-Number/parseInt-推导'))).toBe(true)
+    expect(hits.some((h) => h.includes('Number/parseInt(<xxxCode>)'))).toBe(true)
+    // 行号仍必须报到（夹具第 3 行是 `tenantId: Number(tenantCode.trim())`）：只断「带了位号」这一格式
+    expect(hits.every((h) => /[0-9]+ \[/.test(h))).toBe(true)
 
     // ② 同样的字面量出现在**注释**里（本仓现状）⇒ 一条都不许命中
     //    （否则说明性注释会把守卫喂红 —— §23.4 T2 实测形态）
