@@ -48,24 +48,34 @@ LEDGER = Path(__file__).resolve().parent / "tenant_ignore_ledger.json"
 IGNORE_ANNOTATION = '@InterceptorIgnore(tenantLine = "true")'
 #: SQL 文本里出现它 = 该查询落在 users 表上
 USERS_TABLE = re.compile(r"\busers\b", re.IGNORECASE)
-#: 租户谓词（缺它就跨租户）
-TENANT_PREDICATE = re.compile(r"\btenant_id\b", re.IGNORECASE)
+#: 租户谓词（缺它就跨租户）。
+#  ⚠️ 必须按**谓词**判（`tenant_id` 后面跟 `=`），不能按「SQL 里有没有 tenant_id」判 ——
+#  后者会把 `SELECT id, tenant_id, ... FROM users` 这种**投影列**当成谓词 ⇒ 判据空转（假绿）。
+#  实测：本守卫第二版就是这么把唯一一条命中漏成 0 条的。
+TENANT_PREDICATE = re.compile(r"\btenant_id\s*=", re.IGNORECASE)
 
 STATEMENT_RE = re.compile(r"@(?:Select|Update|Delete|Insert)\(\s*(.*?)\s*\)\s*\n", re.DOTALL)
 STRING_LITERAL_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
+#: 「关掉租户注入」注解**紧邻**语句注解 ⇒ 该语句属于这个方法。
+#  ⚠️ 只按**文件级**出现该注解来判断会造假阳性：`UserMapper.selectDashboardUserStats` 是普通
+#  `@Select`（租户条件由 TenantLineInnerInterceptor **自动注入**，它没有关掉注入）——
+#  按文件级判定会把它误判成「跨租户且无 tenant_id」（实测：本守卫第一版就是这么红的）。
+#  故必须把注解绑到**紧邻的**那一条语句上。
+INLINE_STATEMENT_RE = re.compile(
+    r'@InterceptorIgnore\(tenantLine = "true"\)\s*'
+    r"@(?:Select|Update|Delete|Insert)\((.*?)\)\s*\n"
+    r"[^;{]*?\s(\w+)\s*\(",
+    re.DOTALL,
+)
+
 
 def _method_names_and_sql(java_src: str) -> list[tuple[str, str]]:
-    """→ [(方法名, 语句 SQL 文本)]：把 `@Select` 之后**最近的**方法签名与方法体里的字面量拼起来。"""
+    """→ [(方法名, 语句 SQL 文本)]：**关掉租户注入注解紧邻**的那条语句 + 它后面的方法名。"""
     out: list[tuple[str, str]] = []
-    for match in STATEMENT_RE.finditer(java_src):
-        # 语句注解之后的第一处 `Type name(` 即方法名
-        rest = java_src[match.end():]
-        sig = re.search(r"[A-Za-z_][\w<>,\.\[\]\s]*\s+(\w+)\s*\(", rest)
-        if not sig:
-            continue
+    for match in INLINE_STATEMENT_RE.finditer(java_src):
         sql = " ".join(STRING_LITERAL_RE.findall(match.group(1)))
-        out.append((sig.group(1), sql))
+        out.append((match.group(2), sql))
     return out
 
 
@@ -75,8 +85,6 @@ def scan_tenant_ignore_users_queries(mapper_dir: Path = None) -> dict[str, str]:
     target = Path(mapper_dir or MAPPER_DIR)
     for java in sorted(target.glob("*.java")):
         src = java.read_text(encoding="utf-8")
-        if IGNORE_ANNOTATION not in src:
-            continue
         for name, sql in _method_names_and_sql(src):
             if USERS_TABLE.search(sql) and not TENANT_PREDICATE.search(sql):
                 hits[name] = f"{java.name}: {sql[:160]}"
