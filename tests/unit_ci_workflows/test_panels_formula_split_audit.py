@@ -239,7 +239,12 @@ def _doc_panels_expression() -> str:
 
 
 def _engine_panels_expressions() -> list[str]:
-    """引擎源码里**全部** `math.ceil(window_width * N / fabric_width)` 表达式（保序）。"""
+    """引擎源码里**全部**分幅调用 `_panels_for_door(window_width * N, fabric_width)`（保序）。
+
+    ⚠️ issue #5060 起两处落点都调**同一个**毫米整数实现；改前的浮点形态
+    `math.ceil(window_width * N / fabric_width)` 是**已退役**的写法，回归由
+    `RETIRED_FLOAT_PANELS_RE` 判红（**死亡条件**，见 C1 / C2）。
+    """
     return ENGINE_PANELS_RE.findall(_read(CALC_PY))
 
 
