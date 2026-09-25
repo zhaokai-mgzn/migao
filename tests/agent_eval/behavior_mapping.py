@@ -264,6 +264,68 @@ MAPPING_RULES = [
     (r"app/tools/stock_semantics\.py|app/tools/product_search\.py"
      r"|app/tools/inventory_manage\.py",
      ["PR-006", "PR-018"]),
+    # ── 算料 / 报价域（引擎本体 + C 端报价入口 skill）→ PR-013、PR-024、CH-043 —— #5034 补锚 ──
+    # 病根（与 #3725 / #3783 / #3837 / #3786 **同族**，这是第四次复发）：`MAPPING_RULES` 里
+    # **没有任何一条**锚定算料（`curtain_calc`）。修前实测（本包用同一纯函数复算 origin/main）：
+    #   `app/tools/curtain_calc.py` / `app/graph/skills/customer_quote_skill.py` /
+    #   `app/production/routing.py` → (`default_net`, DEFAULT_BEHAVIOR_CASES)，而
+    #   DEFAULT_BEHAVIOR_CASES 里**算料/报价用例 = ∅**（兜底网还与改动**无因果**：
+    #   只报告、连 issue 都不开）⇒ 改了算料引擎 / 口径 / 入口 skill，**一条算料用例都不跑**
+    #   = §13.3「修复必须重放」在**映射层**的漏洞（"修了却没人验"）。
+    #
+    # 两个文件为什么同一条规则：`customer_quote_skill` **就是**提供 `curtain_calc` 的 C 端入口
+    #   （PR-013 的 `persona: xiaobu` 说明即此 —— 米宝工具集里没有该工具）⇒ 拆成两条只会让
+    #   "改入口 skill"漏掉另一端。它此前连同族一起漏掉是**文件名形态**所致：
+    #   `customer_(manage|skill|general_skill)` 匹配不到 `customer_quote_skill`
+    #   （#4454 给 `customer_order_skill.py` 补 OR-037 时**漏掉的同族一处**，本单按"同类扫描"一并补）。
+    #
+    # 为什么是这三条用例（**逐条读过用例真实断言**，不是按关键词猜）：
+    #   · PR-013「窗帘算料报价 - 褶皱倍数与用布量计算」（xiaobu，`skip_reason` 空）：
+    #     期望 = `curtain_calc(window_width=3, window_height=2.5)`，`data_checks` =
+    #     `data.fabric_meters > 0` / `data.total > 0` —— **米数与金额**的直接承载用例；
+    #   · PR-024「小布算料上限 - 定宽布买高 + 对花损耗」（xiaobu，`skip_reason` 空）：
+    #     算料面**唯一**带 `output_verify` **值级**断言的用例（`fabric_meters: 10.2` /
+    #     `formula_used: fixed_width` / `warning: __nonempty__`）—— 引擎算法改动若把数算错，
+    #     只有它能当场变红（PR-013 只断 `> 0`，算成 1 米也绿）；
+    #   · CH-043「顾客没指定门幅 ⇒ 模型把商品 SKU 门幅去重成候选集填进 curtain_calc」
+    #     （xiaobu，`skip_reason` 空）：钉**引擎入参 schema / 填参**（`fabric_widths` 值级子集
+    #     + `must_succeed`）—— 改 `curtain_calc` 的入参契约时它是唯一覆盖。
+    # ⚠️ 刻意**不含**（复核后排除，非凭猜）：
+    #   · `[backend-contract]` 的引擎覆盖登记条 CH-036（算料引擎确定性逻辑）/ CH-038（报价协商）/
+    #     CH-042（门幅与加工类型自动选择）：`skip_reason` 非空 ⇒ 按调度语义进 `unrunnable`、
+    #     **永远不会执行**，锚进规则桶 = 挂不可跑用例（§19.1「看着有射程、实际零执行」）；
+    #     它们的确定性覆盖登记在 `traces.tests` 的单测上（`test_curtain_calc*.py`），不在本面。
+    #   · `app/tools/craft_calc_config_query.py`（算料**配置**查询）：用例库零用例
+    #     （`.github/eval-coverage-baseline.yml` 的存量缺口，跟踪 #3592）⇒ 锚它只能得到
+    #     空射程或假阻塞；该边界与声明表一起被钉住（见 `TestCalcDomainRules` 的闸门断言）。
+    # ⚠️ 三条用例同在 xiaobu 腿（单端 persona）⇒ 派生 persona 矩阵 = `["xiaobu"]`，
+    #   **mibao 腿不会被启动**（#3653：persona 按命中的用例分桶派生）
+    #   —— 不存在「另一条腿必然 `exit 1`（禁止静默少跑）」的形态。
+    (r"app/tools/curtain_calc\.py|app/graph/skills/customer_quote_skill\.py",
+     ["PR-013", "PR-024", "CH-043"]),
+    # ── 算料产出的**真值源** → 生产进度 / 计件的承载用例 —— #5034 同批 ──
+    # `app/production/routing.py` 是算料结果的**消费侧真值源**：`METER_KEYS` 的注释即写
+    # 「主键 = **引擎真产出**」，`FOLD_KEYS` / `HOLE_KEYS` / `PANEL_KEYS` / `SET_KEYS` 逐键
+    # 对应引擎产出（**米 / 折 / 孔 / 幅 / 套**），`qty_and_source()` 把 `calc_info` 换算成
+    # **工序应做数量** ⇒ 改它就是改「算出来的米数怎么变成工序数量 / 单位」，行为面落在
+    # 生产进度与计件问答（工序名 / 应做数量 / 单位 / 明细）。
+    # 为什么是这三条（当下**唯一可跑**的承载面，逐条读过）：CH-039（小布问生产进度，xiaobu）/
+    #   CH-040（米宝问生产进度，mibao）/ CH-041（米宝查计件明细 = 工序/数量/金额，mibao）——
+    #   `skip_reason` 全空，且分别是 `production_progress_query` / `piecework_query` 的
+    #   **唯一**覆盖（覆盖门禁对"绑了却零用例"判阻塞）。
+    # ⚠️ 它**不**锚 PR-013/PR-024/CH-043：那三条只看 `curtain_calc` 自身，`routing.py` 一行都
+    #   不参与 ⇒ 锚上就是 #3551 实证过的「与改动无因果的红」（假阻塞）。
+    #   按**因果**挑，不按"同域"挑 —— 这是本规则的**有意边界**（缩水即红，见
+    #   `tests/unit_ci_workflows/test_behavior_mapping_tool_coverage.py` 的声明表）。
+    # ⚠️ persona 分属两端（CH-039 → xiaobu；CH-040 / CH-041 → mibao）⇒ 两条腿各领本腿 ID，
+    #   不会拿到外端 ID（#3822 的 `exit 1` 形态不成立；本断言由上面那个 L0 文件锁定）。
+    # 家族补齐（#5034 同批**普查**发现，不是凭猜）：同血缘的**查询工具本体**同样零映射 ——
+    #   `production_progress_query.py`（CH-039 / CH-040 的 `expectations` + `must_succeed`
+    #   断言的就是它）与 `piecework_query.py`（CH-041 的**唯一**承载）⇒ 一并锚进同一用例集
+    #   （改工具本体而一条本域用例都不跑 = #5034 病根的同族一处）。
+    (r"app/production/routing\.py|app/tools/production_progress_query\.py"
+     r"|app/tools/piecework_query\.py",
+     ["CH-039", "CH-040", "CH-041"]),
 ]
 
 # 无规则命中时的默认集（兜底网）：§13.2 各核心域的代表用例 + 曾**不可达**的关键用例。
