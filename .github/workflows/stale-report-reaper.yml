@@ -88,4 +88,13 @@ jobs:
         env:
           OUTCOME: ${{ job.status }}
         run: |
-          bash .github/scripts/mechanism_liveness.sh emit stale-report-reaper --outcome "${OUTCOME}"
+          # 发射器**可能不在检出里**（检出固定 `ref: main` / 浅检出 ⇒ 本 PR 新增的发射器取不到）
+          # ⇒ **降级为 warning，绝不让读数步把机制判红**（报告者不改变机制结论；判「静默」的是看门人）。
+          # 判据：tests/unit_ci_workflows/test_mechanism_liveness.py
+          #   ::test_every_emitter_reading_step_fails_open_when_the_emitter_is_absent
+          #   ::test_reading_step_binds_outcome_to_the_github_expression
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit stale-report-reaper --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=stale-report-reaper）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
