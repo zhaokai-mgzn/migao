@@ -7,7 +7,7 @@
 import Taro from '@tarojs/taro'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { miniAppLogin, bminiLogin, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
+import { miniAppLogin, employeeLogin, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
 import { STORAGE_KEYS, DEFAULT_TENANT_ID } from '../utils/constants'
 import type { User } from '../types'
 
@@ -20,8 +20,8 @@ interface AuthState {
 
   // Actions
   login: (tenantId?: number) => Promise<boolean>
-  /** B 端员工小程序登录（issue #2977）：phoneCode 首次必传（getPhoneNumber 授权 code） */
-  bminiLoginAction: (phoneCode?: string) => Promise<boolean>
+  /** B 端员工登录（issue #5485）：identifier = `用户名@企业编码`，原样发服务端（前端不解析租户） */
+  employeeLoginAction: (identifier: string, password: string) => Promise<boolean>
   logout: () => void
   setUser: (user: User) => void
   setToken: (token: string) => void
@@ -110,19 +110,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       /**
-       * B 端员工小程序登录（issue #2977）
-       * phoneCode：首次登录必传（<Button open-type="getPhoneNumber"> 授权动态 code）；
-       * 已绑定员工二次登录可不传（后端按 openid 直接签发）。
-       * 匹配不到员工账号时后端明确拒绝（不自动建号），此处展示错误信息。
+       * B 端员工登录（issue #5485）：`用户名@企业编码` + 密码。
+       * 失败原因（编码不存在 / 用户名不存在 / 密码错）由后端统一成同一 401 文案，此处原样展示。
+       * 首登强制改密：Taro 端**没有改密页** ⇒ 只提示「到管理后台修改密码」（缺口如实登记，
+       * 不假装有改密页）；改密前业务接口会 403 `PASSWORD_CHANGE_REQUIRED`（后端不变式 I4）。
        */
-      bminiLoginAction: async (phoneCode?: string) => {
+      employeeLoginAction: async (identifier: string, password: string) => {
         const { isLoading } = get()
         if (isLoading) return false
 
         set({ isLoading: true })
 
         try {
-          const result = await bminiLogin(phoneCode)
+          const result = await employeeLogin(identifier, password)
 
           if (result.success && result.user) {
             set({
@@ -131,6 +131,13 @@ export const useAuthStore = create<AuthState>()(
               isLoggedIn: true,
               isLoading: false,
             })
+            if (result.user.mustChangePassword) {
+              Taro.showToast({
+                title: '首次登录请到管理后台修改密码',
+                icon: 'none',
+                duration: 3000,
+              })
+            }
             return true
           }
 

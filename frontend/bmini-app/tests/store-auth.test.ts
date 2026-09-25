@@ -1,4 +1,4 @@
-// case_ids: BM-005
+// case_ids: AU-001, AU-003, AU-006, BM-001, BM-003, BM-005
 /**
  * Auth Zustand Store 测试（B 端小程序基建，issue #2977）
  *
@@ -10,6 +10,7 @@ import { STORAGE_KEYS } from '../src/utils/constants'
 // Mock auth utils
 jest.mock('../src/utils/auth', () => ({
   miniAppLogin: jest.fn(),
+  employeeLogin: jest.fn(),
   getToken: jest.fn(() => null),
   getUser: jest.fn(() => null),
   logout: jest.fn(),
@@ -28,6 +29,7 @@ function getAuthStore() {
   // Re-mock after resetModules
   jest.mock('../src/utils/auth', () => ({
     miniAppLogin: jest.fn(),
+    employeeLogin: jest.fn(),
     getToken: jest.fn(() => null),
     getUser: jest.fn(() => null),
     logout: jest.fn(),
@@ -99,6 +101,110 @@ describe('authStore', () => {
       // 第二次应该直接返回 false
       const result = await useAuthStore.getState().login(1)
       expect(result).toBe(false)
+    })
+  })
+
+  // ========== B 端员工账号密码登录（issue #5485） ==========
+
+  describe('employeeLoginAction', () => {
+    const empUser = {
+      id: 'emp-1',
+      nickname: '运营小王',
+      avatar: null,
+      role: 'operator',
+      tenantId: 7,
+      mustChangePassword: false,
+    }
+
+    it('登录成功应更新状态并落 Token（AU-001 / BM-001）', async () => {
+      const useAuthStore = getAuthStore()
+      const { employeeLogin: mockEmpLogin, getToken: mockGt } = require('../src/utils/auth')
+
+      mockEmpLogin.mockResolvedValueOnce({ success: true, user: empUser })
+      mockGt.mockReturnValue('emp-token')
+
+      const success = await useAuthStore
+        .getState()
+        .employeeLoginAction('zhangsan@acme', 'init-pass-123')
+
+      expect(success).toBe(true)
+      expect(mockEmpLogin).toHaveBeenCalledWith('zhangsan@acme', 'init-pass-123')
+      const state = useAuthStore.getState()
+      expect(state.token).toBe('emp-token')
+      expect(state.user).toEqual(empUser)
+      expect(state.isLoggedIn).toBe(true)
+      expect(state.isLoading).toBe(false)
+    })
+
+    it('首登强制改密 → 提示「首次登录请到管理后台修改密码」（AU-006；Taro 端无改密页）', async () => {
+      const useAuthStore = getAuthStore()
+      const { employeeLogin: mockEmpLogin, getToken: mockGt } = require('../src/utils/auth')
+
+      mockEmpLogin.mockResolvedValueOnce({
+        success: true,
+        user: { ...empUser, mustChangePassword: true },
+      })
+      mockGt.mockReturnValue('emp-token')
+
+      const success = await useAuthStore
+        .getState()
+        .employeeLoginAction('zhangsan@acme', 'init-pass-123')
+
+      expect(success).toBe(true)
+      const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
+      expect(TaroInStore.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: '首次登录请到管理后台修改密码' }),
+      )
+    })
+
+    it('非强制改密（false/缺省）不弹该提示', async () => {
+      const useAuthStore = getAuthStore()
+      const { employeeLogin: mockEmpLogin, getToken: mockGt } = require('../src/utils/auth')
+
+      mockEmpLogin.mockResolvedValueOnce({ success: true, user: empUser })
+      mockGt.mockReturnValue('emp-token')
+
+      await useAuthStore.getState().employeeLoginAction('zhangsan@acme', 'init-pass-123')
+
+      const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
+      expect(TaroInStore.showToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: '首次登录请到管理后台修改密码' }),
+      )
+    })
+
+    it('登录失败应保持未登录、不落 Token，并展示后端统一文案（AU-003 / BM-003）', async () => {
+      const useAuthStore = getAuthStore()
+      const { employeeLogin: mockEmpLogin } = require('../src/utils/auth')
+
+      mockEmpLogin.mockResolvedValueOnce({ success: false, error: '账号或密码错误' })
+
+      const success = await useAuthStore
+        .getState()
+        .employeeLoginAction('zhangsan@acme', 'wrong-pass')
+
+      expect(success).toBe(false)
+      expect(useAuthStore.getState().isLoggedIn).toBe(false)
+      expect(useAuthStore.getState().token).toBeNull()
+      const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
+      expect(TaroInStore.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: '账号或密码错误' }),
+      )
+    })
+
+    it('正在登录时不应重复调用', async () => {
+      const useAuthStore = getAuthStore()
+      const { employeeLogin: mockEmpLogin } = require('../src/utils/auth')
+
+      // 让登录挂起
+      mockEmpLogin.mockReturnValue(new Promise(() => {}))
+
+      useAuthStore.getState().employeeLoginAction('zhangsan@acme', 'init-pass-123')
+      const result = await useAuthStore
+        .getState()
+        .employeeLoginAction('zhangsan@acme', 'init-pass-123')
+
+      expect(result).toBe(false)
+      expect(mockEmpLogin).toHaveBeenCalledTimes(1)
     })
   })
 

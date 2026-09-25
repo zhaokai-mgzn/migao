@@ -61,7 +61,9 @@ B 端 agent 手机版（商家员工「问米宝」）：独立小程序（与 C
 复用 C 端 mini-app 的基建代码（SSEClient / authStore / request / chatService）。
 
 - 4 个 tab 页：问米宝(SSE对话→米宝) · 数据(经营一屏) · 坐席(移动坐席) · 我的
-- 登录：微信授权手机号 → `POST /api/auth/bmini/login` 匹配员工账号绑定（非自动建号，BM-001~003）
+- 登录：「用户名@企业编码 + 密码」→ `POST /api/auth/employee/login`（issue #5485 起统一口径；
+  租户只由标识里的企业编码解析，前端不传 tenantId）。原「微信授权手机号 → 匹配员工并绑定 openid」
+  已整条退场（BM-001~003 已改写；`POST /api/auth/bmini/login` 废弃）
 - 后端接口全复用 admin-api（dashboard / agent-sessions / chat SSE），零新增后端功能
 - CI：`.github/workflows/bmini-app.yml`（typecheck + 单测）
 

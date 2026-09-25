@@ -3,9 +3,10 @@
 ## 为什么需要这一层
 
 C/B 两端小程序的 `User` 类型声明的是 **`auth_user` storage 里的形状**，而那个形状的唯一
-生产者是 admin-api 的 `POST /api/auth/mini/login` · `POST /api/auth/bmini/login`
-（`super_login`），前端 `miniAppLogin` 把响应的 `data.data.user` **原样** `JSON.stringify`
-存进 storage（`frontend/mini-app/src/utils/auth.ts`）。后端全库 camelCase（`LoginResponse.
+生产者是 admin-api 的 `POST /api/auth/mini/login` · `POST /api/auth/employee/login`
+（B 端 2026-09-25 / issue #5485 起由「用户名@企业编码 + 密码」入口生产；原 `POST /api/auth/bmini/login`
+已废弃），前端 `miniAppLogin` / `employeeLogin` 把响应的 `data.data.user` **原样** `JSON.stringify`
+存进 storage（`frontend/mini-app/src/utils/auth.ts` · `frontend/bmini-app/src/utils/auth.ts`）。后端全库 camelCase（`LoginResponse.
 UserInfo`：`id/nickname/avatar/role/identityType/roles/tenantId/tenantName/botName`）。
 
 历史缺陷（本守卫的起因）：`User.tenant_id` 声明为**必填 `number`**，但后端从来没有

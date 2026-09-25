@@ -7,8 +7,9 @@
 /**
  * 登录用户 —— **`auth_user` storage 里存的形状就是这个形状**（唯一事实源）。
  *
- * 生产者：`POST /api/auth/bmini/login` 响应 `data.user`，由 `bminiLogin` **原样**
+ * 生产者：`POST /api/auth/employee/login` 响应 `data.user`，由 `employeeLogin` **原样**
  * `JSON.stringify` 落 storage（`utils/auth.ts`），前端不做任何字段改名/归一化。
+ * （issue #5485 起员工登录统一为「用户名@企业编码 + 密码」；原 `POST /api/auth/bmini/login` 已废弃。）
  * ⇒ 字段名必须与后端 `LoginResponse.UserInfo`（admin-api 全库 camelCase）逐字一致；
  *    **禁止** snake_case 别名（历史缺陷：`tenant_id` 必填但后端从未提供，运行时恒
  *    `undefined`；B 端另有 camelCase `tenantId` 与之重复声明，已收敛为一处）。
@@ -30,9 +31,13 @@ export interface User {
   role?: string
   /** 角色列表（后端 roles claim） */
   roles?: string[]
-  /** 租户 ID（B 端登录由后端员工账号定位，camelCase 与后端一致，登录响应必带） */
+  /** 首登强制改密（issue #5485 不变式 I4；与后端同名字段逐字一致）：`true` ⇒ 改密前除
+   *  「改密 / 登出 / 读自己信息」外后端一律 403 `PASSWORD_CHANGE_REQUIRED`。
+   *  ⚠️ Taro 端**没有改密页** ⇒ 本包目前只能提示「到管理后台修改密码」（缺口已登记） */
+  mustChangePassword?: boolean
+  /** 租户 ID（B 端登录由后端按标识里的企业编码解析，camelCase 与后端一致，登录响应必带） */
   tenantId: number
-  /** 登录渠道标识（bmini/sms/mini_program…） */
+  /** 登录渠道标识（employee/sms/mini_program…） */
   identityType?: string
 }
 

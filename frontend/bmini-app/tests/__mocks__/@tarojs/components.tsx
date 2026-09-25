@@ -18,14 +18,17 @@ export const View = createComponent('div')
 export const Text = createComponent('span')
 export const Image = createComponent('img')
 export const ScrollView = createComponent('div')
-export const Input = React.forwardRef<any, any>(({ onInput, onConfirm, ...rest }, ref) => {
+export const Input = React.forwardRef<any, any>(({ onInput, onConfirm, password, ...rest }, ref) => {
   return React.createElement('input', {
     ref,
+    ...rest,
+    // Taro 的 `password` 是布尔属性（小程序侧＝遮蔽输入）；HTML 侧对应 type="password"。
+    // 不映射的话「密码框是否遮蔽」在测试里完全不可见（断言会退化成恒真）。
+    type: rest.type || (password ? 'password' : undefined),
     onChange: (e: any) => onInput?.({ detail: { value: e.target.value } }),
     onKeyDown: (e: any) => {
       if (e.key === 'Enter') onConfirm?.({ detail: { value: e.target.value } })
     },
-    ...rest,
   })
 })
 Input.displayName = 'Input'
