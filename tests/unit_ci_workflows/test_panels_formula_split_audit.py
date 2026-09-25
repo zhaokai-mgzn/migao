@@ -29,8 +29,8 @@
 
 | # | 四方（口径源） | 落点 | 必须同式 |
 |---|---|---|---|
-| 1 | **引擎 A 通路** | `calculate_fabric_meters()` 定宽分支 | `ceil(窗宽 × 褶倍 ÷ 门幅)` |
-| 2 | **`build_quote` 的 panels** | `build_quote()` 的 `fixed_width` 复算 | 与 ① 逐字同式（同源，不新造第二式） |
+| 1 | **引擎 A 通路** | `calculate_fabric_meters()` 定宽分支 | `_panels_for_door(窗宽 × 褶倍, 门幅)`（**毫米整数**，issue #5060） |
+| 2 | **`build_quote` 的 panels** | `build_quote()` 的 `fixed_width` 复算 | 与 ① **同一函数**（同源，不新造第二式） |
 | 3 | ~~前端超宽判据~~ | **已退场**（issue #5035 起判定整条搬到服务端）⇒ 只剩 ①② 两处 | — |
 | 4 | **真值源 §3 公式** | `docs/curtain-fabric-quote-rules.md` §3 | `P = ceil(W × N / G)`（**不得**含 `SIDE_MARGIN`） |
 
@@ -49,6 +49,17 @@
    这条判定面写法）—— 这正是「改判不是删断言」的形态（§17.3 ④）。
 ⚠️ **分幅公式本身一字未动**（判据 C1 / C2 / C4 原样保留）—— 退役的只是「特征名 == 分幅条件的布尔形态」
 这条**推论**，不是分幅。
+
+🔴 **2026-09-25 再改判（issue #5060，用户裁定「统一取整」）**：分幅的**取整口径**由浮点
+`ceil(W × N / G)` 统一为**毫米整数**（`_panels_for_door`，与候选路径**同一实现**）—— 改前
+「总用料恰为门幅整数倍」时浮点**多算 1 幅**（`4.2 × 2 ÷ 2.8 = 3.0000000000000004` ⇒ 浮点 4 幅 /
+真值 3 幅），而幅数进 `M = P × (H + 卷边)` ⇒ **改钱**。
+⇒ 本守卫的「同式」判据**升格**为：①② 必须调**同一个** `_panels_for_door`（不是「两处各写一遍
+同样的浮点式」），并加**死亡条件**：引擎**代码**里不得再出现浮点直除的分幅形态（`RETIRED_FLOAT_PANELS_RE`）；
+C4 对照表复算改用毫米整数式，并**新增一行边界算例**（`4.2 / 2.0 / 2.8 ⇒ 3`）—— 没有边界行，
+这张表就**分不出**「浮点」与「毫米整数」（判别力下界，`BOUNDARY_ROWS` 钉住）。
+⚠️ 同族（另一份守卫）：`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py` 的
+共享算例表也**扩到了单一门幅路径**（`singleDoorCases` 段）。
 
 ## 判据（每条都能**单独**判红）
 
@@ -114,17 +125,40 @@ TABLE: tuple[tuple[float, float, float, int], ...] = (
     (3.0, 2.0, 2.8, 3),
     (4.0, 2.0, 2.8, 3),
     (1.45, 1.8, 2.8, 1),
+    # 边界（issue #5060）：`4.2 × 2 ÷ 2.8 = 3.0000000000000004` ⇒ 浮点 ceil 给 4 幅、真值 3 幅
+    (4.2, 2.0, 2.8, 3),
 )
 #: 通路 C 在 §4.5「通路与调用方」表里的**行锚点**与**口径串**（C6：登记与代码自洽）
 
-#: 引擎源码里的分幅表达式（**逐字**；A 通路与 `build_quote` 的复算各一处）
-ENGINE_PANELS_RE = re.compile(r"math\.ceil\(\s*window_width\s*\*\s*(\w+)\s*/\s*fabric_width\s*\)")
+#: 引擎源码里的分幅调用（**逐字**；A 通路与 `build_quote` 的复算各一处）
+#: ⚠️ **issue #5060 改判**：两处都必须调**同一个** `_panels_for_door`（毫米整数）——
+#: 改前是「两处各写一遍浮点 `math.ceil(window_width * N / fabric_width)`」，那正是边界分叉的病根。
+ENGINE_PANELS_RE = re.compile(r"_panels_for_door\(\s*window_width\s*\*\s*(\w+)\s*,\s*fabric_width\s*\)")
+#: **死亡条件**：改前的浮点形态不得复活（边界上多算 1 幅 ⇒ 改钱）。只判**代码**（注释/docstring 不算）
+RETIRED_FLOAT_PANELS_RE = re.compile(
+    r"math\.ceil\(\s*window_width\s*\*\s*\w+\s*/\s*fabric_width\s*\)"
+)
+#: 毫米整数口径的**唯一实现**（`_panels_for_door` 的签名与函数体；判据 C1 钉住它不得退化）
+PANELS_HELPER_SIGNATURE = "def _panels_for_door(total: float, door: float) -> int:"
+PANELS_HELPER_BODY = "-(-_mm(total) // max(1, _mm(door)))"
+#: 边界行（**判别力下界**）：浮点式与毫米整数式在这些行上**不同** —— 表里缺了它们就没判别力
+BOUNDARY_ROWS: tuple[tuple[float, float, float], ...] = ((4.2, 2.0, 2.8),)
 #: **判定面**的超宽判据（逐字：判的是**企业阈值参数**，不是分幅条件 —— issue #5130 改判）
 #: ⚠️ issue #5035 起判定面已整条搬到服务端（前端 `detectAutoFeatures` 删除）⇒ 本条瞄**引擎**。
 OVER_WIDTH_CRITERION = 'window_width > cfg["oversize_width_threshold"]'
 #: **已退役**的旧判定面写法（issue #5130 前的几何耦合：超宽 == 分幅条件的布尔形态）
 #: —— 它的回归是 C3 的**死亡条件**（§17.3 ④：豁免 / 改判必须能证明旧做法没有回来）。
 RETIRED_OVER_WIDTH_CRITERION = "product = window_width * fullness"
+
+
+def _mm(value: float) -> int:
+    """与引擎 `_mm` **同源**（米 ⇒ 整数毫米）—— 静态腿照源复算，不 import 被测服务。"""
+    return int(round(float(value) * 1000))
+
+
+def _panels_mm(total: float, door: float) -> int:
+    """与引擎 `_panels_for_door` **同源**的分幅式（**毫米整数**向上取整，issue #5060）。"""
+    return -(-_mm(total) // max(1, _mm(door)))
 
 
 def _read(path: Path) -> str:
@@ -205,7 +239,12 @@ def _doc_panels_expression() -> str:
 
 
 def _engine_panels_expressions() -> list[str]:
-    """引擎源码里**全部** `math.ceil(window_width * N / fabric_width)` 表达式（保序）。"""
+    """引擎源码里**全部**分幅调用 `_panels_for_door(window_width * N, fabric_width)`（保序）。
+
+    ⚠️ issue #5060 起两处落点都调**同一个**毫米整数实现；改前的浮点形态
+    `math.ceil(window_width * N / fabric_width)` 是**已退役**的写法，回归由
+    `RETIRED_FLOAT_PANELS_RE` 判红（**死亡条件**，见 C1 / C2）。
+    """
     return ENGINE_PANELS_RE.findall(_read(CALC_PY))
 
 
@@ -225,13 +264,24 @@ class TestPanelsFormulaSplitAudit:
         )
         engine = _engine_panels_expressions()
         assert engine, (
-            "引擎源码里找不到 `math.ceil(window_width * N / fabric_width)` —— "
+            "引擎源码里找不到 `_panels_for_door(window_width * N, fabric_width)` —— "
             "A 通路（`calculate_fabric_meters` 定宽分支）的分幅式被改名/改写 ⇒ 红"
         )
         for symbol in engine:
             assert symbol == "fullness" or symbol.isupper(), (
                 f"引擎分幅式的乘数是 {symbol!r}（期望 `fullness`（A 通路）或大写褶倍变量 `N`）"
             )
+        src = _read(CALC_PY)
+        assert PANELS_HELPER_SIGNATURE in src, (
+            f"引擎里找不到分幅的**唯一实现**「{PANELS_HELPER_SIGNATURE}」—— 两条路径会各写一份 ⇒ 红"
+        )
+        assert PANELS_HELPER_BODY in src, (
+            f"引擎分幅实现里找不到毫米整数式「{PANELS_HELPER_BODY}」—— 口径退化成浮点/换了写法 ⇒ 红"
+        )
+        assert not RETIRED_FLOAT_PANELS_RE.search(_code_only(CALC_PY)), (
+            "引擎**代码**里又出现浮点直除的分幅形态（`math.ceil(窗宽 × 褶倍 ÷ 门幅)`）—— "
+            "那是 issue #5060 的病根（总用料恰为门幅整数倍时多算 1 幅 ⇒ 改钱）⇒ 红"
+        )
 
     def test_c2_build_quote_panels_recompute_is_the_same_formula(self):
         """C2：`build_quote` 的 panels 复算与 A 通路**逐字同式**（不新造第二式）。
@@ -252,6 +302,15 @@ class TestPanelsFormulaSplitAudit:
         src = _read(CALC_PY)
         assert "cfg[\"side_margin\"]" not in src and "cfg['side_margin']" not in src, (
             "引擎里又出现 `cfg[\"side_margin\"]` 消费点 —— 该配置键已整体退场（issue #5030）⇒ 红"
+        )
+        # 死亡条件（issue #5060）：浮点直除的分幅形态不得在**两处落点**任一复活
+        offenders = [
+            line for line in _code_only(CALC_PY).splitlines()
+            if RETIRED_FLOAT_PANELS_RE.search(line)
+        ]
+        assert offenders == [], (
+            "引擎里又出现浮点直除的分幅形态（issue #5060 已统一为毫米整数）⇒ "
+            "「总用料恰为门幅整数倍」时会多算 1 幅（改钱），且与米数分叉：\n  " + "\n  ".join(offenders)
         )
 
     def test_c3_over_width_criterion_is_the_enterprise_threshold(self):
@@ -297,11 +356,17 @@ class TestPanelsFormulaSplitAudit:
         )
         engine = set(_engine_panels_expressions())
         assert engine == {"fullness", "N"}, f"引擎分幅式不齐：{sorted(engine)}"
+        # 判别力下界（issue #5060）：边界行的两式必须**不同**，否则本表分不出「浮点 vs 毫米整数」
+        for width, fullness, door in BOUNDARY_ROWS:
+            assert math.ceil(width * fullness / door) != _panels_mm(width * fullness, door), (
+                f"边界行 W={width} N={fullness} G={door} 两式同值 ⇒ 本表失去判别力"
+                "（#5060 的病根形态 = 浮点在门幅整数倍边界上多算 1 幅）"
+            )
         for width, fullness, door, expected in TABLE:
-            # ① A 通路（`calculate_fabric_meters` 定宽分支）—— 照源复算
-            a = math.ceil(width * fullness / door)
-            # ② `build_quote` 的 panels 复算 —— 与 A **同式**（同一表达式，只有变量名不同）
-            b1 = math.ceil(width * fullness / door)
+            # ① A 通路（`calculate_fabric_meters` 定宽分支）—— 照源复算（**毫米整数**，issue #5060）
+            a = _panels_mm(width * fullness, door)
+            # ② `build_quote` 的 panels 复算 —— 与 A **同一个函数**（同源同一实现，不新造第二式）
+            b1 = _panels_mm(width * fullness, door)
             assert (a, b1) == (expected, expected), (
                 f"对照表 W={width} N={fullness} G={door} 与复算不符："
                 f"表里 {expected}，复算 A={a} / build_quote={b1} ⇒ "

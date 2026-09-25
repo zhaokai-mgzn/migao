@@ -19,6 +19,8 @@ fail-closed；服务端不可达 ⇒ 显式降级 + 留痕，见 `load_tenant_cr
   ⚠️ 订单宽高 = **窗户宽高**（净窗宽/净窗高）⇒ 成品宽 = 净窗宽、成品高 = 净窗高
   （用户 2026-09-21 裁定，issue #5030；`SIDE_MARGIN` 与配置键 `side_margin` 一并退场）
 - 定宽布（买高）：P = ceil(W×N/G)，M = P × (H + 0.3)   （G=门幅, H=窗高, 0.3=上下卷边）
+  ⚠️ 幅数的取整口径 = **毫米整数**（`_panels_for_door`，issue #5060）：浮点在「总用料恰为门幅
+  整数倍」时多算 1 幅（`4.2 × 2 ÷ 2.8 = 3.0000000000000004` ⇒ 浮点 4 幅 / 真值 3 幅）。
 - 罗马帘：M = (W + 0.2) × (H + 0.3)
 - 对花：定宽布每幅长加 1 个花距
 
@@ -344,7 +346,7 @@ def derive_plan(
         raise ValueError(f"门幅 door_width 必须大于 0（收到 {door_width!r}）—— 不按缺省门幅推算")
     total = float(fixed_height_meters)
     need_h = round(float(window_height) + hem_margin, 3)
-    panels = max(1, -(-_mm(total) // max(1, _mm(door))))
+    panels = _panels_for_door(total, door)
     notices: List[str] = []
 
     if cutting_mode not in (None, CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
@@ -1257,6 +1259,26 @@ def _mm(value: float) -> int:
     return int(round(float(value) * _MM))
 
 
+def _panels_for_door(total: float, door: float) -> int:
+    """分幅数 `P = ceil(T / D)` —— **全模块唯一**实现，**毫米整数**向上取整（issue #5060）。
+
+    为什么必须**唯一**：本模块曾有两条分幅路径（候选集路径用毫米整数、单一门幅路径用浮点
+    `ceil`）⇒ 同一组边界输入给出**两个**幅数：
+
+        `W=4.2` / 2 倍褶 / 门幅 `2.8` ⇒ `T = 8.4`，而 `8.4 ÷ 2.8 = 3.0000000000000004`（浮点）
+        ⇒ 浮点 `ceil` **4 幅** / 毫米整数 **3 幅**（真值 3）。
+
+    幅数进 `M = P × (H + 卷边)` ⇒ 差 1 幅 = **整整一幅长**的面料费与加工费（**涉钱**）。
+    领域精度是**毫米**（`_MM`）：宽按厘米报、褶倍一位小数 ⇒ `value × 1000` 恒为整数
+    ⇒ 本式是**精确**的十进制除法，不引入新的近似。
+
+    调用点（必须全部走本函数）：`derive_plan` / `resolve_fabric_plan`（候选集路径）、
+    `_resolve_plan` 的既有单一门幅分支、`calculate_fabric_meters`（定宽买高米数）、
+    `build_quote`（报价卡幅数复算）。
+    """
+    return -(-_mm(total) // max(1, _mm(door)))
+
+
 def resolve_fabric_plan(
     *,
     window_height: float,
@@ -1386,7 +1408,7 @@ def resolve_fabric_plan(
 
     def _fixed_width() -> Dict[str, Any]:
         ranked = sorted(
-            ((-(-_mm(total) // max(1, _mm(ge))), ge, g) for g, ge in candidates),
+            ((_panels_for_door(total, ge), ge, g) for g, ge in candidates),
             key=lambda item: (item[0], item[1]),
         )
         panels, eff, width = ranked[0]
@@ -1458,8 +1480,9 @@ def calculate_fabric_meters(
         meters = window_width * fullness
         return meters, "fixed_height", ""
 
-    # 定宽买高：幅数向上取整，每幅长 = 窗高 + 卷边（+ 对花花距）
-    panels = math.ceil(window_width * fullness / fabric_width)
+    # 定宽买高：幅数向上取整（**毫米整数** —— 与候选路径同一实现，issue #5060），
+    # 每幅长 = 窗高 + 卷边（+ 对花花距）
+    panels = _panels_for_door(window_width * fullness, fabric_width)
     panel_length = window_height + cfg["hem_margin"]
     if has_pattern:
         panel_length += pattern_repeat
@@ -1717,9 +1740,11 @@ def build_quote(
             # 只有「真的换了做法」（倒幅 / 接高）才告警 —— 定高买宽单幅是**正常路径**，不 nag。
             over = plan["reason"] if (plan["splice"] or tail == "width") else ""
             return plan["panels"], plan["meters"], f"fixed_{tail}{suffix}", over
-        # ── 既有路径（单一门幅）：口径**一字未动**（回归不变量）──
+        # ── 既有路径（单一门幅）：**幅数取整口径**已按 issue #5060 与候选路径统一（涉钱改动，
+        #    影响面 = 「总用料恰为门幅整数倍」的边界输入，前后逐值对比见 PR）；其余口径一字未动 ──
         if window_height + cfg["hem_margin"] > fabric_width:
-            count = math.ceil(meters_fixed_height / fabric_width)
+            # 幅数取整口径与候选路径、与定宽买高米数**同源同一函数**（issue #5060）
+            count = _panels_for_door(meters_fixed_height, fabric_width)
             plan_state.update(cutting_mode=CUTTING_MODE_FIXED_WIDTH)
             return (
                 count,
@@ -1837,9 +1862,10 @@ def build_quote(
             if formula_used == "fixed_width":
                 # 定宽买高：幅数在 `calculate_fabric_meters` 内算出（局部变量 `panels`）却没进返回值
                 # ⇒ 报价卡「幅数」行永不出现（issue #4374 交付物 3）。此处按**同一公式**
-                # （`ceil(W × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
-                # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**（本单不改钱）。
-                panels = math.ceil(window_width * N / fabric_width)
+                # （`ceil(W × N / G)`，与 `calculate_fabric_meters` 的定宽分支**同源同一函数**）
+                # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**；issue #5060 起取整口径
+                # 也随之与米数同源（改前此处与米数各写一遍浮点 `ceil` ⇒ 边界上显示会与计价分叉）。
+                panels = _panels_for_door(window_width * N, fabric_width)
             # 新键（issue #5013）也要**如实**：罗马帘没有「定高/定宽」之分 ⇒ `None`
             # （不发明第三个加工类型值）。
             plan_state["cutting_mode"] = {

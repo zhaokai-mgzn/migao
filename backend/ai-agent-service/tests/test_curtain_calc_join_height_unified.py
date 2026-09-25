@@ -23,7 +23,7 @@
 |---|---|---|
 | 1 | 缺口 > 0.1 ⇒ 倒幅、`splice=False` | `if not _join_gap_ok(gap):` → `if False:`（= 恢复「缺口多大都行」） |
 | 2 | 缺口 ≤ 0.1 ⇒ `splice=True` 且 `meters = T`、`splice_strips = 0` | `_splice()` 米数/段数改回旧口径（`meters = T + 3.3`、`splice_strips = 1`） |
-| 3 | **agent 报价侧逐值不变**（两条通路**都不传** `cutting_mode`）：240 + 240 例快照摘要逐位相等 | `_fixed_width()` 的米数漂 `+0.1`（⚠️ 漂 `+0.001` 会被 `ceil_to_step` 的 0.1 进位步长**吸收** ⇒ 红证空跑，实测踩过） |
+| 3 | **agent 报价侧逐值不变**（两条通路**都不传** `cutting_mode`）：240 + 240 例快照摘要逐位相等（现行锚 = `AGENT_QUOTE_DIGEST_AFTER_5060`，**#5060 重锚**，见下方 ③） | `_fixed_width()` 的米数漂 `+0.1`（⚠️ 漂 `+0.001` 会被 `ceil_to_step` 的 0.1 进位步长**吸收** ⇒ 红证空跑，实测踩过） |
 | 4 | 阈值**与 `derive_plan` 同源**：判定点只调 `_join_gap_ok`，**不内联**该数值 | `_splice()` 里内联 `gap <= 0.1` |
 
 判据 4 钉的是「**判定点不内联数值**」，不是「文件里不许出现 `0.1`」—— 后者会因
@@ -35,12 +35,24 @@
 （sha256 of canonical JSON）⇒ 绿 = 「逐值不变」；它同时也证明判据 3 是**回归不变量**而不是
 「跟着实现一起改钉的期望值」。网格 = 10 成品宽 × 6 成品高 × 2 褶倍 × 2 对花档，
 每条算例各跑 `fabric_widths=[2.8, 3.2]` 与 `fabric_width=2.8` 两条 agent 真实通路。
+
+🔴 **2026-09-25 重锚（issue #5060，用户裁定「统一取整」）**：**单一门幅路径**（`fabric_width=2.8`）
+的分幅取整由浮点 `ceil` 改为**毫米整数**（与候选路径**同一函数** `_panels_for_door`）⇒
+本网格里 `single|4.2|{2.75,3.0,3.3,3.9}|2.0|{False,True}` **8/480** 行的 `panels` 由 **4 → 3**
+（`4.2 × 2 ÷ 2.8 = 3.0000000000000004` ⇒ 浮点**多算 1 幅**），米数/金额随之**下降一幅长**
+（实测 `single|4.2|3.0|2.0|False`：13.2 → 9.9 米、总额 1717.6 → 1341.4）。
+⇒ 判据 3 的锚**改为 `AGENT_QUOTE_DIGEST_AFTER_5060`**（原锚保留在上面，仍被 `TestReAnchor…` 引用）；
+候选路径（`fabric_widths=…`）**逐值不变**（240 例全中）。
+**重锚不是「跟着实现改钉期望值」**：`TestReAnchorIsFullyExplainedBy5060` 用**注入式**证明——
+把**那两处**取整还原成浮点后，摘要**恰好**回到 `AGENT_QUOTE_DIGEST_BEFORE_5213`（逐位相等）
+⇒ 差量 100% 由本单的两处取整解释、别无其它改动；差量行清单亦被逐行钉住（`DELTA_ROWS_5060`）。
 """
 from __future__ import annotations
 
 import ast
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -55,6 +67,12 @@ AT_LIMIT_HEIGHT = 3.0       # need_h = 3.3 − 3.2 = 缺口 0.1（恰为上限�
 #: 判据 3 的**改动前**快照摘要（240 + 240 例；见模块 docstring）
 AGENT_QUOTE_DIGEST_BEFORE_5213 = (
     "f5e2e258628a9d5425bad78e87dc8f23b3568a3d9002411892967834333e8404"
+)
+
+#: 判据 3 的**现行**锚 = #5060（统一取整）**之后**的摘要。重锚理由与内容级证明见模块 docstring ③
+#: 与 `TestReAnchorIsFullyExplainedBy5060`（还原两处取整 ⇒ 摘要逐位回到上面那个原锚）。
+AGENT_QUOTE_DIGEST_AFTER_5060 = (
+    "e55954690b48094f613994bd444ec92b209eeafeb035e5224e8b8ef13f24539e"
 )
 
 #: 判据 3 网格（与「改动前」那次测量逐值同参）—— 只放 agent 工具参数表里**真实存在**的两种调用形态
@@ -119,7 +137,7 @@ def criterion_3(src: str, mod: dict) -> bool:
     rows = agent_quote_rows(mod)
     if len(rows) != 480:  # fail-closed：网格被改小/踩空 ⇒ 判据会静默变弱
         raise AssertionError(f"判据 3 的网格应为 480 例，实得 {len(rows)} 例 —— 不得静默缩表")
-    return agent_quote_digest(mod) == AGENT_QUOTE_DIGEST_BEFORE_5213
+    return agent_quote_digest(mod) == AGENT_QUOTE_DIGEST_AFTER_5060
 
 
 #: 判定点（接高阈值）—— 两处都必须**只调**共享判据 `_join_gap_ok`
@@ -202,6 +220,69 @@ MUTATIONS = {
     ),
 }
 CRITERIA = {"1": criterion_1, "2": criterion_2, "3": criterion_3, "4": criterion_4}
+
+
+# ── #5060 重锚的**内容级**证明（不是「跟着实现改钉期望值」）─────────────────────
+#: #5060 的两处取整落点（**逐字**）—— 还原成**改前的浮点形态**后，摘要必须**恰好**回到 #5213 的原锚
+PANELS_ROUNDING_SITES = (
+    ("    panels = _panels_for_door(window_width * fullness, fabric_width)",
+     "    panels = math.ceil(window_width * fullness / fabric_width)"),
+    ("                panels = _panels_for_door(window_width * N, fabric_width)",
+     "                panels = math.ceil(window_width * N / fabric_width)"),
+)
+
+#: #5060 在 agent 单一门幅通路上改变的行（**全量** 8/480；值 = 网格键，与 `agent_quote_rows` 同构）
+DELTA_ROWS_5060 = (
+    "single|4.2|2.75|2.0|False", "single|4.2|2.75|2.0|True",
+    "single|4.2|3.0|2.0|False", "single|4.2|3.0|2.0|True",
+    "single|4.2|3.3|2.0|False", "single|4.2|3.3|2.0|True",
+    "single|4.2|3.9|2.0|False", "single|4.2|3.9|2.0|True",
+)
+
+
+class TestReAnchorIsFullyExplainedBy5060:
+    """#5060（统一取整）重锚了判据 3 的摘要 —— 差量必须**只**由那两处取整解释。"""
+
+    def test_reverting_the_two_rounding_sites_reproduces_the_pre_5060_anchor(self):
+        """注入式：把两处取整还原成浮点 ⇒ 摘要**逐位**回到 #5213 的原锚（差量 = 本单，别无其它）。"""
+        src, mod = _real()
+        assert agent_quote_digest(mod) == AGENT_QUOTE_DIGEST_AFTER_5060, (
+            "现行源与重锚摘要不符 ⇒ 又有人改了行为却没重锚（或重锚值抄错）"
+        )
+        reverted = src
+        for old, new in PANELS_ROUNDING_SITES:
+            hits = reverted.count(old)
+            assert hits == 1, (
+                f"取整落点锚点命中 {hits} 次（要求恰好 1 次）：{old!r} —— 锚点漂移会让本证明空跑"
+            )
+            reverted = reverted.replace(old, new)
+        assert agent_quote_digest(load_variant(reverted)) == AGENT_QUOTE_DIGEST_BEFORE_5213, (
+            "把两处取整还原成浮点后，摘要没有回到 #5213 的原锚 ⇒ 重锚的差量**不止**由 #5060 解释"
+            "（有别的行为改动混进来了，必须逐行查清后再决定重锚）"
+        )
+
+    def test_the_delta_rows_are_exactly_the_single_door_boundary_rows(self):
+        """全量差量行 = 「单一门幅路径 + 总用料恰为门幅整数倍」那 8 行（多/少一行都说明影响面不符）。"""
+        _src, mod = _real()
+        door = 2.8
+        actual = []
+        for width in GRID_WIDTHS:
+            for height in GRID_HEIGHTS:
+                for fullness in GRID_FULLNESS:
+                    for has_pattern, repeat in GRID_PATTERNS:
+                        quote = mod["build_quote"](
+                            window_width=width, window_height=height, fullness=fullness,
+                            fabric_price=98, has_pattern=has_pattern, pattern_repeat=repeat,
+                            fabric_width=door,
+                        )
+                        if quote["formula_used"] != "fixed_width":
+                            continue
+                        if quote["panels"] != math.ceil(width * fullness / door):
+                            actual.append(f"single|{width}|{height}|{fullness}|{has_pattern}")
+        assert tuple(actual) == DELTA_ROWS_5060, (
+            f"#5060 在 agent 单一门幅通路上改变的行 = {actual}（期望 {list(DELTA_ROWS_5060)}）—— "
+            "多一行 = 有未登记的改钱面；少一行 = 该改的没改（边界又在多算幅数）"
+        )
 
 
 # ── 绿：四条判据在真源码上成立 ────────────────────────────────────────────────

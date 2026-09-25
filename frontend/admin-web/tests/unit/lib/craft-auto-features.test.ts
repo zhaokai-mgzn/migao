@@ -26,7 +26,7 @@
  * | 1 | **前端不得持有余量常量副本**（`HEM_MARGIN` 已随 #5043 包 2b 删除），且引擎侧真值仍在 | 把 `export const HEM_MARGIN` 加回前端 ⇒ 红；删掉引擎侧定义 ⇒ 红 |
  * | 2 | `parseDoorWidth()` 缺失 / 不可解析 / 非正 ⇒ `null`（**不得回退任何缺省门幅**） | 回退到 2.8 ⇒ 红 |
  * | 3 | `DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` **不得**回到本模块（反向守卫） | 把缺省门幅加回来 ⇒ 红 |
- * | 4 | 引擎「定宽买高」分幅公式**逐字**是 `math.ceil(window_width * fullness / fabric_width)`（**无宽方向余量**，issue #5030） | 引擎改公式而前端不跟 ⇒ 红 |
+ * | 4 | 引擎「定宽买高」分幅**调同一个毫米整数实现** `_panels_for_door(window_width * fullness, fabric_width)`（**无宽方向余量**，issue #5030；**取整口径 = 毫米整数**，issue #5060） | 引擎改公式 / 改回浮点直除而前端不跟 ⇒ 红 |
  * | 5 | `AUTO_FEATURE_NAMES` 与 V83 目录里标「自动推导特征」的行**逐值对齐**（双向、按序） | 清单多一项（如 `正幅`）⇒ 红 |
  *
  * ⚠️ **判定语义（分流 / 含褶倍 / 倒幅 / 几何矛盾）的判据已不在本文件** —— 它们随实现一起搬到
@@ -145,15 +145,28 @@ describe('#4746 / #4877 门幅真值源（**前端不持有缺省门幅** + 反�
 describe('#4662 分幅口径 —— 钉**引擎侧**真值源（前端判定已退场，本条守公式不被改走）', () => {
   /**
    * 真值源（算料引擎 `curtain_calc.py` 的**定宽买高**分支）：
-   * `panels = math.ceil(window_width * fullness / fabric_width)`
+   * `panels = _panels_for_door(window_width * fullness, fabric_width)`
    * ⇒ 「要分幅」⟺ `窗宽 × 褶倍 > 门幅` —— **这才是真正多花钱的地方**
    * （用户 2026-09-20 裁定 A：「超宽」要含褶倍；issue #5030：**宽方向无余量**）。
+   * 🔴 **issue #5060（用户 2026-09-25 裁定「统一取整」）**：幅数的**取整口径**统一为**毫米整数**
+   * （唯一实现 `_panels_for_door`，函数体 = 毫米整数向上取整）⇒ 改前那处**浮点直除**不得复活
+   * （「总用料恰为门幅整数倍」时浮点 `ceil` 多算 1 幅 ⇒ 多收一整幅长 = 改钱）。
    */
-  it('#4662 / #5030 判据与引擎**同源**：定宽买高分支逐字就是 ceil(窗宽 × 褶倍 ÷ 门幅)（漂移即红）', () => {
-    // 逐字读真值源（不是抄现值）：引擎改了分幅公式而前端不跟 ⇒ 本断言必红
+  it('#4662 / #5030 / #5060 判据与引擎**同源**：定宽买高分支逐字调同一毫米整数实现（漂移即红）', () => {
+    // 逐字读真值源（不是抄现值）：引擎改了分幅公式 / 取整口径而前端不跟 ⇒ 本断言必红
     expect(source).toContain(
-      'panels = math.ceil(window_width * fullness / fabric_width)'
+      'panels = _panels_for_door(window_width * fullness, fabric_width)'
     )
+    // 分幅的**唯一实现**（毫米整数向上取整）必须在源里 —— 实现被删 / 换成浮点 ⇒ 红
+    expect(source).toContain('-(-_mm(total) // max(1, _mm(door)))')
+    // **死亡条件**（issue #5060）：改前的**浮点直除**形态不得复活（边界上多算 1 幅 = 多收一整幅长）。
+    // ⚠️ 只看**代码行**（Python 的 `#` 注释不算）—— 否则「注释里留档旧形态」会把自己喂红。
+    const codeLines = source
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n')
+    expect(codeLines).not.toContain('math.ceil(window_width * fullness / fabric_width)')
+    expect(codeLines).not.toContain('math.ceil(meters_fixed_height / fabric_width)')
     // 定高可用条件（判定 / 提示的几何依据）：`高 + 上下卷边 <= 门幅` ⇒ 定高买宽，否则回落定宽买高。
     // ⚠️ issue #4976 包 1b 起**上下卷边可配**：引擎读 `cfg["hem_margin"]`（默认值 = 常量 `HEM_MARGIN`）。
     // ✅ issue #5036 起**前端已退场**（判定与提示都由服务端给，且都读**该租户配置**）⇒ 本断言钉的是
