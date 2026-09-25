@@ -263,7 +263,9 @@ def test_truth_vocab_covers_the_forms_actually_used_in_the_wild():
 
     wf = (Path(__file__).resolve().parents[2] / ".github" / "workflows"
           / "issue-contract-check.yml").read_text(encoding="utf-8")
-    m = re.search(r"TRUTH_VOCAB='([^']+)'", wf)
+    # ⚠️ 该文件里是 **JS** 写法（`const TRUTH_VOCAB = '…';`）⇒ 取词表要容忍空格与 `const`
+    # （本判据第一版写成 `TRUTH_VOCAB='…'` 无空格 ⇒ 取不到 ⇒ 判据当场红，已修）
+    m = re.search(r"TRUTH_VOCAB\s*=\s*'([^']+)'", wf)
     assert m, "找不到 TRUTH_VOCAB（词表被改名 ⇒ 判据需同步，别让它静默消失）"
     vocab = m.group(1)
 
