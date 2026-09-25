@@ -351,6 +351,8 @@ class TestTheFieldIsWiredEndToEnd:
 
     def test_no_case_in_the_library_uses_it_yet_so_the_default_path_is_untouched(self):
         """现取读数：本 PR **不动**任何存量用例 ⇒ 生成物 diff 只有 dataclass 一行。"""
+        import eval_cases
+
         cases = render_cases.load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
         # ⚠️ **不许写死条数**（本 PR 首轮就因为写死 486 在 required 腿上红：库随别的 PR 长到了 487）。
         # 口径 = 与**生成物** `eval_cases.ALL_CASES` 的**现取**条数一致，且非空（防"零条也绿"空转）。
