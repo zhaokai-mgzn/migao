@@ -84,6 +84,12 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
     # issue #5243：基线语义判据（空库建终态 / 存量库不重放）**自带一次性真 PG 集群** ⇒ 登记。
     _SVC + "MigrationBaselineSemanticsTest.java": "direct",
+    # issue #4778：**活迁移链的 runner 事务语义**判据（整份单事务 / 失败整份回滚 / 失败不记账 /
+    # 二跑幂等）—— 空库先由**真的** schema.sql 建出终态，再让 runner 扫**真的**活迁移目录
+    # （`backend/admin-api/src/main/resources/db/migration/`）真跑。
+    # 为什么必须真 PG：这些语义只存在于 `jdbc.execute(整份文本)` 这条**生产**路径上 ——
+    # mock 面只能断言「调用了 execute」，`psql -f` 是**逐条 autocommit**（另一条语义）⇒ 两者都看不见。
+    _SVC + "MigrationRunnerLiveChainRealDbTest.java": "direct",
     # issue #3881 缺陷二 / #4025 F11（无 SKU 标识的订单行改 422 fail-closed）的真库判据 ——
     # 证两件 mock 面结构上看不见的事：① **被拒绝时订单表零落账**（防「先建单再报错」）；
     # ② 本次新增的两条读路径是真 SQL（products 按 (tenant_id, name) 唯一匹配 + 逻辑删除、

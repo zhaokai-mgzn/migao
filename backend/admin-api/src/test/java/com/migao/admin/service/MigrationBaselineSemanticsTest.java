@@ -322,11 +322,24 @@ class MigrationBaselineSemanticsTest {
         return runner;
     }
 
+    /**
+     * 真库装配：**基线语义**判据专用。
+     *
+     * <p>⚠️ 此处**刻意**把 {@code migrationPattern} 指向一个**真的存在但为空**的临时目录（用不存在的
+     * {@code file:} 目录会让 Spring 的路径匹配抛错，把判据变成「测夹具」）：本类三条真库判据断言的是
+     * **基线分支**（台账已有该键 / 存量库 / 空库），若让活迁移链同时跑，两个被测对象会混在一个判据里
+     * —— 活链里任何一条失败都会表现成「基线判据红」，归因层就废了。</p>
+     *
+     * <p>🔴 **这条注释曾经是错的**（issue #4778）：原文写「归档链后活目录为空」，而
+     * {@code backend/admin-api/src/main/resources/db/migration/} 早已又长回活迁移
+     * （写这句的时刻是 {@code V123} … {@code V129}，且会继续增长）—— 注释与判据**一起过期**，
+     * 而没有任何东西会因此变红。活链的 runner 语义（单事务 / 失败整份回滚 / 不记账 / 二跑幂等）
+     * 由 {@code MigrationRunnerLiveChainRealDbTest} 在真 PG 上**真跑**，其中有一条前置自断言：
+     * 活目录空掉即判红。这里**不再复述**活目录的内容 —— 复述事实的注释必然腐烂，指路即可。</p>
+     */
     private static MigrationRunner realRunner(JdbcTemplate jdbc, String initScriptLocation) {
         MigrationRunner runner = new MigrationRunner(provider(jdbc),
                 new PathMatchingResourcePatternResolver());
-        // 归档链后活目录为空 —— 指向一个**真的存在但为空**的目录，让「迁移扫描」这一维保持确定性
-        //（用不存在的 `file:` 目录会让 Spring 的路径匹配抛错，把判据变成「测夹具」）。
         ReflectionTestUtils.setField(runner, "migrationPattern", emptyMigrationDir() + "/*.sql");
         ReflectionTestUtils.setField(runner, "initScriptLocation", "file:" + initScriptLocation);
         return runner;
