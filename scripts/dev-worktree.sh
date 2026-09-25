@@ -378,6 +378,13 @@ cmd_add() {
   echo "   ⚠️  本工作区已刷新 .agent-presets/**（相对本分支 HEAD 即「改动」）——要 rebase 请用："
   echo "      ./scripts/dev-worktree.sh rebase ${branch}"
   echo "      （该子命令会先丢弃预设快照差异再 rebase，否则 git 会以「本地改动会被覆盖」拒绝；issue #3972）"
+  # v1.12（2026-09-25 包实测）：**创建之后** main 若再抬技能版本，本 worktree 的 `.agent-presets/`
+  #   就比 `origin/main` 旧 ⇒ 本地跑全量套件会出现 `preset-monotonic` 判「技能版本回退」的**假红**
+  #   （CI 不红：CI 的 base 是本分支的合并基点）。实测代价 = 一个包白跑一轮排查。
+  #   ⇒ 建完就把出口印出来，别让人再去猜。
+  echo "   ℹ️  若**之后** main 抬过技能版本 ⇒ 本地复跑可能报 \`preset-monotonic\` 假红（CI 不会）。一条命令出口："
+  echo "      git -C ${path} checkout origin/main -- .agent-presets"
+  echo "      （本分支**没碰** .agent-presets 时这样做是安全的；碰过则用 rebase 子命令，别覆盖自己的改动）"
 }
 
 cmd_list() {
