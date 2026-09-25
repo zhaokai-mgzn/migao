@@ -86,6 +86,9 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "MigrationBaselineSemanticsTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
+    # issue #4157：库存台账**第三条变更路径**（建品/改品直写 SKU 库存）的真库判据 ——
+    # 证的是「一行真的进了 stock_ledger_entries」（含 ck_stock_ledger_reason 约束与 NUMERIC(12,1) 列）。
+    _SVC + "ProductStockLedgerRealDbTest.java": "direct",
     # 类名不含 `RealDb`（`*RealMappingTest`）—— 判据①**不能**只扫 `*RealDbTest` 通配，
     # 否则这一类判据的改名/删除扫不出来（本守卫正是按「谁真去连真 PG」定义集合）。
     _SVC + "ProductionPartCodeRealMappingTest.java": "direct",
