@@ -254,28 +254,24 @@ END $$;
 -- 命名/金额与 C 端 seed（xiaobu_eval_seed.sql）同风格，便于互证。
 INSERT INTO orders
   (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
-   total_amount, status, payment_status, stock_deducted, follow_status, remark,
+   total_amount, status, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000001', 1, 'EVAL-MB-ORD-0001', NULL, '张三', '13800138000',
-   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：已完成订单（AS-003 退货挂单用）',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'completed', 'B 端评测 fixture：已完成订单（AS-003 退货挂单用）',
    TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-05 10:00:00+08', 0),
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 1, 'EVAL-MB-ORD-0002', NULL, '张三', '13800138000',
-   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'confirmed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-013 加工单生成用）',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'confirmed', 'completed', 'B 端评测 fixture：已确认含加工项订单（PG-013 加工单生成用）',
    TIMESTAMPTZ '2026-09-10 10:00:00+08', TIMESTAMPTZ '2026-09-10 10:00:00+08', 0),
   -- #3658（issue #3658）：PG-013/015/016 竞态修复 —— 三条用例此前**共用** EVAL-MB-ORD-0002，
   -- 并发跑时只有一个能生成加工单成功（PG-015 实测赢、PG-013/016 吃「订单已生产中」假红）。
   -- 现各自独立订单：0002=PG-013、0003=PG-015（查）、0004=PG-016（状态流转）。
   -- 客户刻意用**不同手机号**（李四/王五），避免污染 AS-003/AS-007 的「张三 13800138000 最近订单」定位。
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 1, 'EVAL-MB-ORD-0003', NULL, '李四', '13900139000',
-   '浙江省杭州市拱墅区莫干山路 2 号 2 幢 202 室', 540.00, 'confirmed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-015 加工单查询用）',
+   '浙江省杭州市拱墅区莫干山路 2 号 2 幢 202 室', 540.00, 'confirmed', 'completed', 'B 端评测 fixture：已确认含加工项订单（PG-015 加工单查询用）',
    TIMESTAMPTZ '2026-09-11 10:00:00+08', TIMESTAMPTZ '2026-09-11 10:00:00+08', 0),
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000004', 1, 'EVAL-MB-ORD-0004', NULL, '王五', '13700137000',
-   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：已确认含加工项订单（PG-016 加工单状态流转用）',
+   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'completed', 'B 端评测 fixture：已确认含加工项订单（PG-016 加工单状态流转用）',
    TIMESTAMPTZ '2026-09-12 10:00:00+08', TIMESTAMPTZ '2026-09-12 10:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
@@ -364,12 +360,11 @@ END $$;
 --   aftersales_ticket_prepare 补建（local_runner.py 已实现）。
 INSERT INTO orders
   (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
-   total_amount, status, payment_status, stock_deducted, follow_status, remark,
+   total_amount, status, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000005', 1, 'EVAL-MB-ORD-0005', NULL, '张三', '13800138000',
-   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：承载 AS-004 未处理工单的已完成订单（#3519，须早于 Phase 2 两单；独立 id/order_no 见 #4259）',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'completed', 'B 端评测 fixture：承载 AS-004 未处理工单的已完成订单（#3519，须早于 Phase 2 两单；独立 id/order_no 见 #4259）',
    TIMESTAMPTZ '2026-09-01 09:00:00+08', TIMESTAMPTZ '2026-09-01 09:00:00+08', 0),
   -- ── CU-005 的发货对象（#5030 的 case-trust burn-down 缴费用）──
   -- 为什么必须是**无 order_items** 的单：`update_logistics` 语义 = 记录物流后流转 shipped
@@ -377,8 +372,7 @@ VALUES
   -- 「含加工项且无已完成加工单」的单 ⇒ 种子里既有的 confirmed 单（0002/0003/0004）**都含加工项**，
   -- 发货必然被拒（`must_succeed` 会是假断言）。本单刻意不挂明细 ⇒ 走 confirmed→shipped 合法路径。
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000006', 1, 'EVAL-MB-ORD-0006', NULL, '王五', '13700137000',
-   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：CU-005 的发货对象（无 order_items ⇒ 可 confirmed→shipped）',
+   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'completed', 'B 端评测 fixture：CU-005 的发货对象（无 order_items ⇒ 可 confirmed→shipped）',
    TIMESTAMPTZ '2026-09-12 11:00:00+08', TIMESTAMPTZ '2026-09-12 11:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 

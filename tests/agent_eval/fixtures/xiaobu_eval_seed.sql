@@ -231,16 +231,14 @@ ON CONFLICT (id) DO NOTHING;
 --     顺带覆盖 skill prompt 里「已发货订单仍可建售后工单」这条历史回归规则。
 INSERT INTO orders
   (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
-   total_amount, status, payment_status, stock_deducted, follow_status, remark,
+   total_amount, status, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
   ('a1b2c3d4-e5f6-4a7b-8c9d-000000000001', 1, 'EVAL-ORD-0001', 'debug_customer_1', '张三', '13800138000',
-   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 504.00, 'completed', 'paid', TRUE,
-   'completed', 'C 端评测 fixture：已完成订单（地址预填 / 售后建单用）',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 504.00, 'completed', 'completed', 'C 端评测 fixture：已完成订单（地址预填 / 售后建单用）',
    TIMESTAMPTZ '2026-08-01 10:00:00+08', TIMESTAMPTZ '2026-08-05 10:00:00+08', 0),
   ('a1b2c3d4-e5f6-4a7b-8c9d-000000000002', 1, 'EVAL-ORD-0002', 'debug_customer_1', '张三', '13800138000',
-   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 384.00, 'shipped', 'paid', TRUE,
-   'completed', 'C 端评测 fixture：已发货订单（物流查询 / 最近一笔用）',
+   '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 384.00, 'shipped', 'completed', 'C 端评测 fixture：已发货订单（物流查询 / 最近一笔用）',
    TIMESTAMPTZ '2026-09-01 10:00:00+08', TIMESTAMPTZ '2026-09-09 18:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
