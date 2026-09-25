@@ -183,6 +183,11 @@ describe('matchesRoute：最长前缀匹配的底座', () => {
     ['/production/pool 认子路径', '/production/pool', '/production/pool/9', true],
     ['前缀边界：/production/poo 不是 /production/pool', '/production/pool', '/production/poo', false],
     ['完全无关', '/orders', '/products', false],
+    // ── 旧深链别名（issue #4439）────────────────────────────────────────────
+    ['旧深链：#4439 生产明细子页 /processing-orders/{id}/production ⇒ /production 必须认', '/production', '/processing-orders/88/production', true],
+    ['旧深链：/production 也认旧列表路径 /processing-orders（重定向前）', '/production', '/processing-orders', true],
+    ['别名边界：/processing-orders-archive 不是别名 /processing-orders 的子路径', '/production', '/processing-orders-archive', false],
+    ['别名只挂在 /production 上：其它项不认 /processing-orders', '/orders', '/processing-orders/88/production', false],
   ])('%s', (_name, itemPath, current, expected) => {
     expect(matchesRoute(itemPath as string, current as string)).toBe(expected)
   })
@@ -208,6 +213,8 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
     ['/production/processing 同时命中 /production ⇒ 取最长（该项归商品与加工项组）', '/production/processing', '/production/processing'],
     ['/inbound-orders 只命中自己', '/inbound-orders', '/inbound-orders'],
     ['/notifications（独立项）', '/notifications', '/notifications'],
+    // issue #4439：真实菜单下的**用户可见判据** —— 旧深链必须高亮「生产看板」
+    ['旧深链 /processing-orders/{id}/production ⇒ 高亮「生产看板」（issue #4439）', '/processing-orders/88/production', '/production'],
   ])('%s', (_name, current, expected) => {
     expect(resolveActivePath(allPaths, current as string)).toBe(expected)
   })
@@ -218,6 +225,18 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
     expect(resolveActivePath(['/production', '/production/pool'], '/production/pool')!.length).toBeGreaterThan(
       '/production'.length,
     )
+  })
+
+  it('#4439 判别力：把别名表去掉 ⇒ 旧深链必然 0 项高亮（这条断言就是它存在的理由）', () => {
+    // 正向：别名在 ⇒ 命中「生产看板」
+    expect(resolveActivePath(allPaths, '/processing-orders/88/production')).toBe('/production')
+    // 反向（判别力自证）：仅用**不含别名的匹配口径**跑同一路径 ⇒ 必须无命中。
+    // 这条对照说明：若 `matchesRoute` 退回「只认自身或子路径」，本用例的第一行就会红。
+    const withoutAlias = allPaths.filter((p) => {
+      if (p === '/dashboard') return false
+      return '/processing-orders/88/production' === p || '/processing-orders/88/production'.startsWith(p + '/')
+    })
+    expect(withoutAlias).toEqual([])
   })
 
   it('无命中 / pathname 为 null ⇒ null（不得回落成「第一项」）', () => {
