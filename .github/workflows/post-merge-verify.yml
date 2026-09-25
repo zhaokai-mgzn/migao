@@ -102,8 +102,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps（判据面只要 pytest + pyyaml，与 pr-check 的 ci-workflow-tests 同款）
-        run: pip install -q pytest pyyaml
+      # ⚠️ issue #5434（实测）：原来写 `pip install -q pytest pyyaml`，而判定步跑的是 `python3` ——
+      # runner 上这两者**可能不是同一个解释器**（实测 main 上连续多次 `❌ /usr/bin/python3 里没有 pytest`，
+      # 于是本腿**永远**停在「无法判定 rc=3」= 铁律 9 A2 的机械化实际上**从未生效**）。
+      # ⇒ 口径：**用同一个解释器装、用它跑**（`"$PY" -m pip install` + `--python "$PY"`），并把 `PY`
+      #    经 `$GITHUB_ENV` 传给后续步骤，绝不依赖 PATH 里的 `python3` 到底是谁。
+      - name: Install deps（判据面只要 pytest + pyyaml；**同一解释器装 + 用它跑**，issue #5434）
+        run: |
+          set -euo pipefail
+          PY="$(command -v python3)"
+          echo "解释器 = $PY"
+          "$PY" -m pip install -q --disable-pip-version-check pytest pyyaml
+          "$PY" - <<'PYEOF'
+          import sys, pytest, yaml
+          print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} @ {sys.executable}")
+          PYEOF
+          echo "MIGAO_PY=$PY" >> "$GITHUB_ENV"
 
       # 真库判据要的是**二进制**而不是 PG 服务（13 个模块各自起一次性 initdb + pg_ctl 集群）。
       # 搜路径**同源** `tests/unit_ci_workflows/pg_cluster.py`（不另抄一份）—— 这就是 pr-check 的
@@ -159,6 +173,13 @@ jobs:
           fi
           echo "窗口起点 = ${BASE:-HEAD~${LOOKBACK}}（来源：${BASE_SOURCE}）"
           echo "触发事件 = $EVENT"
+          # 前置断言（issue #5434）：环境是我们的责任 ⇒ 这里缺失要**响亮地**失败并指到根因，
+          # 而不是让它退化成 rc=3「无法判定」（那个状态今天已经在 main 上连挂多轮，没人能一眼归因）。
+          if ! "$MIGAO_PY" -c "import pytest, yaml" 2>/dev/null; then
+            echo "::error::$MIGAO_PY 里没有 pytest/pyyaml —— Install deps 步与判定步用了不同解释器（#5434 的形态）"
+            exit 1
+          fi
+          echo "判定解释器 = $MIGAO_PY"
 
           # ── 首发日 / 引入本腿的 PR：判定本体尚未在**判定基准（main）**上落地 ─────────────
           # `pull_request` 事件的 workflow 定义取自 **PR**，而判定基准是**显式 checkout 的 main**
@@ -184,10 +205,10 @@ jobs:
 
           set +e
           if [ -n "$BASE" ]; then
-            python3 scripts/post_merge_verify.py --base "$BASE" \
+            "$MIGAO_PY" scripts/post_merge_verify.py --python "$MIGAO_PY" --base "$BASE" \
               --json post-merge-verify-report.json > /tmp/post-merge-verify.txt 2>&1
           else
-            python3 scripts/post_merge_verify.py --lookback "$LOOKBACK" \
+            "$MIGAO_PY" scripts/post_merge_verify.py --python "$MIGAO_PY" --lookback "$LOOKBACK" \
               --json post-merge-verify-report.json > /tmp/post-merge-verify.txt 2>&1
           fi
           RC=$?
