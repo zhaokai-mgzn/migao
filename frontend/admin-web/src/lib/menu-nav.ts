@@ -48,11 +48,29 @@ export function visibleMenuGroups(groups: MenuGroup[], opts: MenuFilterOptions):
 }
 
 /** 路由是否命中某菜单项（`/dashboard` 额外认 `/`；其余按「自身或子路径」前缀匹配） */
+/**
+ * **旧深链 → 菜单项 path** 的别名（issue #4439）。
+ *
+ * 为什么需要：路由迁移（#4357）把列表页从 `/processing-orders` 迁到 `/production`，
+ * 但**生产明细子页的真实路径仍是旧深链** `/processing-orders/{id}/production`
+ * ⇒ 只按「自身或子路径」匹配时 `activePath = null` ⇒ **侧边栏一项都不高亮**
+ * （用户看到的是"不知道自己在哪一页"）。
+ *
+ * 口径：别名**只在匹配这一侧**生效（不进入 `resolveActivePath` 的「最长」比较集），
+ * 因此不会改变既有「两项同时命中要取最长」的行为。
+ */
+const LEGACY_PATH_ALIASES: Record<string, readonly string[]> = {
+  '/production': ['/processing-orders'],
+}
+
 export function matchesRoute(itemPath: string, current: string): boolean {
   if (itemPath === '/dashboard') {
     return current === '/dashboard' || current === '/'
   }
-  return current === itemPath || current.startsWith(itemPath + '/')
+  if (current === itemPath || current.startsWith(itemPath + '/')) return true
+  return (LEGACY_PATH_ALIASES[itemPath] ?? []).some(
+    (alias) => current === alias || current.startsWith(alias + '/'),
+  )
 }
 
 /**
