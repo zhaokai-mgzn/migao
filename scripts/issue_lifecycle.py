@@ -135,6 +135,8 @@ PRESET_REFRESH_ENV = "MIGAO_PRESET_REFRESH_BIN"
 WT_BASE_ENV = "MIGAO_WT_BASE"
 DEFAULT_CI_TIMEOUT = 1800
 PR_LIMIT = 500  # 一次取数的上限（与 GUARD._pr_merged_branches 同量级；截断后果见 read_pr_rows 调用点）
+#: 临时（点号）worktree 的出声阈值（issue #5480 漏洞 1）：**只报不删**（无人值守删除不安全）
+DOT_WT_WARN_THRESHOLD = 3
 
 # ── `land` 的**顺序即安全顺序**（唯一顺序源：执行体 `for` 遍历它，不手写第二套）────────
 # 把 `ready` 提到 `gate` 之前 ⇒ 把「gate 这道闸」摘掉（`ready` 自己没有前置判据）。
@@ -609,6 +611,33 @@ def wt_base_dir(cwd: Path) -> Path:
     return (main_root(cwd).parent / "migao-wt").resolve()
 
 
+def dot_worktrees(cwd: Path) -> list[Path]:
+    """`migao-wt/.xxx` 这类**临时（点号）worktree** 的现状清单（issue #5480 漏洞 1）。
+
+    它们**不在**自动收尾半径内（多为 detached HEAD ⇒ 无分支可核合入状态），但会**堆积**：
+    2026-09-25 实测残留 **7 个**，当天各花人工一次 `git worktree remove --force`。
+    ⇒ 本函数只**让堆积可见**（计数 + 逐条路径），**不删任何东西**（真删的判据另议）。
+    """
+    out: list[Path] = []
+    for entry in GUARD._worktrees(cwd):
+        path = Path(entry["path"])
+        if path.name.startswith(".") and path.is_dir():
+            out.append(path)
+    return sorted(out)
+
+
+def warn_dot_worktrees(cwd: Path, label: str) -> int:
+    """超过阈值 ⇒ 打印 `::warning::` + 逐条路径（返回条数）。**零删除**。"""
+    dots = dot_worktrees(cwd)
+    if len(dots) > DOT_WT_WARN_THRESHOLD:
+        print(f"::warning:: [{label}] 临时（点号）worktree 堆积 {len(dots)} 个"
+              f"（阈值 {DOT_WT_WARN_THRESHOLD}）—— 它们**不在**自动收尾半径内，"
+              f"要清只能人工 `git worktree remove --force <path>`：", file=sys.stderr)
+        for path in dots:
+            print(f"  • {path}", file=sys.stderr)
+    return len(dots)
+
+
 def read_pr_rows(cwd: Path) -> list[dict] | None:
     """**一次**取全量 PR（`--state all`）⇒ 行列表；取不到 ⇒ None（无法判定，不得当 0 读）。"""
     proc = _run([gh_bin(), "pr", "list", "--state", "all", "--limit", str(PR_LIMIT),
@@ -711,6 +740,7 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     mode = "APPLY（真删）" if args.apply else "dry-run（零删除）"
     print(f"🧹 自动收尾（{mode}）—— 判定：有**已合并** PR 且**无 open PR**")
     print("   （squash 合并下 `--merged` / `git cherry` 结构性失效 ⇒ 判据只认 GitHub PR 状态）")
+    warn_dot_worktrees(cwd, "reap-merged")
 
     rows = read_pr_rows(cwd)
     if rows is None:
@@ -989,6 +1019,7 @@ def cmd_prune(args: argparse.Namespace) -> int:
     root = main_root(cwd)
     mode = "APPLY（真删）" if args.apply else "dry-run（零删除）"
     print(f"🧹 批量收尾（{mode}）—— 对所有已注册 worktree 做同样的判定\n")
+    warn_dot_worktrees(cwd, "prune")
 
     merged_set = all_merged_branches(cwd)
     protected = anchor_protected_paths()

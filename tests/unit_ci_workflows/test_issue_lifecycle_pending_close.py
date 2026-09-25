@@ -55,9 +55,16 @@ def _fixture(tmp_path: Path, prs: list[dict] | None = None, issues: list[dict] |
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     (tmp_path / "prs.json").write_text(json.dumps(prs or []), encoding="utf-8")
     (tmp_path / "issues.json").write_text(json.dumps(issues or []), encoding="utf-8")
+    # 守卫里有一处**字面量** `"gh"`（`agent-presets-guard._pr_merged_branches`，不走 MIGAO_GH_BIN）
+    # ⇒ 再把替身放上 PATH 首位，两边都拦得住（仍只换 CLI 边界，不 mock 被测函数）。
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "gh").write_text(STUB, encoding="utf-8")
+    (bindir / "gh").chmod(0o755)
     log = tmp_path / "gh.log"
     env = {
         **os.environ,
+        "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
         "MIGAO_GH_BIN": str(stub),
         "GH_LOG": str(log),
         "GH_PRS": str(tmp_path / "prs.json"),
@@ -189,3 +196,55 @@ def test_close_batch_file_requires_evidence_every_row(tmp_path):
     out = _run(tmp_path, env, "close", "--batch-file", str(f), "--apply")
     assert out.returncode == 1, (out.returncode, out.stdout, out.stderr)
     assert not _calls(log), f"整批拒绝 ⇒ 零写操作，实测：{_calls(log)}"
+
+# ── 漏洞 1：临时（点号）worktree 的堆积必须**出声**（只报不删）────────────────────
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True,
+                   env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e",
+                        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@e"})
+
+
+def _repo_with_dot_worktrees(tmp_path: Path, count: int):
+    """真 git 仓库 + `count` 个**真**点号 worktree（不是 mock：判据本体就是 git 语义）。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("x", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+    base = tmp_path / "migao-wt"
+    base.mkdir()
+    paths = []
+    for i in range(count):
+        p = base / f".tmp-verify-{i}"
+        _git(repo, "worktree", "add", "--detach", "-q", str(p))
+        paths.append(p)
+    # ⚠️ 罐头里**必须**有 ≥1 条已合并 PR：`all_merged_branches` 对**空结果**判「无法判定」
+    #    （exit 3）——那是刻意的 fail-closed 口径，不是本用例要测的东西。
+    env, log = _fixture(tmp_path, prs=[{"number": 1, "state": "MERGED",
+                                        "headRefName": "some-merged-branch", "baseRefName": "main"}],
+                         issues=[])
+    env["MIGAO_WT_BASE"] = str(base)
+    return repo, paths, env, log
+
+
+def test_dot_worktree_pileup_warns_and_deletes_nothing(tmp_path):
+    """> 阈值 ⇒ `::warning::` + 逐条路径；且**零删除**（无人值守删除不安全，用户裁定）。"""
+    repo, paths, env, _ = _repo_with_dot_worktrees(tmp_path, 4)
+    out = _run(repo, env, "prune")
+    assert out.returncode == 0, (out.stdout, out.stderr)
+    assert "::warning::" in out.stderr, f"堆积 4 个应出声：{out.stderr}"
+    assert "4 个" in out.stderr, out.stderr
+    for p in paths:
+        assert str(p) in out.stderr, f"应逐条列出 {p}：{out.stderr}"
+    assert all(p.is_dir() for p in paths), "只报不删：点号 worktree 必须还在"
+
+
+def test_dot_worktree_below_threshold_is_silent(tmp_path):
+    """≤ 阈值 ⇒ 不出声（避免噪音把真信号淹掉）。"""
+    repo, paths, env, _ = _repo_with_dot_worktrees(tmp_path, 1)
+    out = _run(repo, env, "prune")
+    assert out.returncode == 0, (out.stdout, out.stderr)
+    assert "::warning::" not in out.stderr, f"1 个不该出声：{out.stderr}"
+    assert paths[0].is_dir()
