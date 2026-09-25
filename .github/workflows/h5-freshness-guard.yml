@@ -1,0 +1,77 @@
+name: H5 Freshness Guard（C 端产物新鲜度）
+
+# 病灶与判据：scripts/h5_freshness_guard.py（issue #4184 判据 2）
+#   线上 app.migaozn.com/js/app.js 的 Last-Modified = 08-30，而 frontend/mini-app 最近改动 = 09-21
+#   ⇒ 线上落后 ~22 天，**没有任何东西会因此变红**（「C 端已部署」的说法一直被当真）。
+# 触发面：产物发布腿完成时（workflow_run）+ main 有新合并 + 手动；⛔ 无 cron（用户 2026-09-21 裁定）。
+on:
+  workflow_run:
+    workflows:
+      - "Mini-App CI"
+      - "Publish worker-h5 (app.migaozn.com/w/)"
+    types: [completed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "超期即判红（默认只 ::warning:: —— C 端 H5 暂无发布通路，#4184 主体待裁定）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write   # 显式声明（将来「判红自己开单」的出口要用；未列出的 scope 会被清零 —— #3834 的教训）
+
+concurrency:
+  group: h5-freshness-guard
+  cancel-in-progress: false
+
+jobs:
+  h5-freshness:
+    name: h5-freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 判据要 `git log -1 -- frontend/mini-app` ⇒ 需要真实历史（浅检出会让它取不到 ⇒ 判「无法判定」）
+          fetch-depth: 0
+
+      - name: 判据（线上 Last-Modified vs 源码最近改动）+ 计数声明
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          source .github/scripts/mechanism_liveness.sh
+
+          GATE_FLAG=""
+          if [ "${{ github.event.inputs.gate }}" = "true" ]; then
+            GATE_FLAG="--gate"
+          fi
+
+          OUT="$(python3 scripts/h5_freshness_guard.py ${GATE_FLAG})"
+          RC=$?
+          printf '%s\n' "${OUT}"
+          SEEN="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-H5FRESH-SUMMARY seen=\([0-9]*\).*/\1/p' | tail -1)"
+          ACTED="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-H5FRESH-SUMMARY .*acted=\([0-9]*\).*/\1/p' | tail -1)"
+          WHY="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-H5FRESH-SUMMARY .*why=//p' | tail -1)"
+          mechanism_liveness_declare --seen "${SEEN:-unknown}" --acted "${ACTED:-unknown}" \
+            --why "${WHY:-no-declaration}"
+          exit ${RC}
+
+      # ── 存活读数（issue #5326 判据 1 / 4）──────────────────────────────────────
+      # 本步 `if: always()` 且是 job 的**最后一步**：机制停摆 ⇒ 根本没有这一行（看门人判红）。
+      # 判据：tests/unit_ci_workflows/test_mechanism_liveness.py
+      #   ::test_reading_step_binds_outcome_to_the_github_expression
+      #   ::test_every_emitter_reading_step_fails_open_when_the_emitter_is_absent
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit h5-freshness-guard --outcome "$OUTCOME"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=h5-freshness-guard）：发射器不在检出里（检出固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
