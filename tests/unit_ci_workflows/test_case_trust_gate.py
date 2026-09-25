@@ -1,4 +1,4 @@
-# case_ids: MC-012, PG-013, PR-021, CU-003
+# case_ids: MC-012, PG-013, PR-021, CU-003, AS-003, AS-005, CH-009
 # drift-audit: refs-are-fixtures
 #   本文件里大量 `path:NNN` 是喂给 `assertion_taxonomy.find_path_line_refs()` 的**合成夹具**
 #   （按定义必须是失效引用：`a/b.py:5`、`local_runner.py:999999`、`eval-environments.md:86` 等）
@@ -3104,3 +3104,180 @@ class TestRedProofRecord:
                                   recon=recon)
         assert "未登记违规" in text and "阻塞" in text, text
         assert "只报告" not in text, "报告仍在说「只报告」= 与实现相反（假真值）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 十一、`or` 期望里的写工具必须**两种形态同口径**（#3778「调用了 ≠ 成了」的判据面一格）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestDictFormOrWriteVisibility:
+    """`expectations` 的 dict 形态与字符串形态必须**同口径**拆 ` or `。
+
+    病灶（#3778 现场取证，2026-09-25）：拆分支原先只实现在**字符串**分支上，而
+    `.github/cases/*.yml`（**门禁真正判的那份源**）一律写 dict ⇒
+    `{tool: "after_sales_manage or aftersale_create"}` 整串被当成**一个工具名** ⇒
+    `is_write_expectation()` 判读（该串不在 `WRITE_TOOLS`）⇒ 该用例**不再被分类为写用例**
+    ⇒ 规则 a2（效果层断言）与规则 b（自清理）对它**静默失效**，且没有任何东西变红。
+    生成物 `eval_cases.py` 把 dict 渲染成**字符串**（走拆分分支）⇒ **同一棵树两套判定**。
+
+    现取受影响面 = 3 条：`AS-003` / `AS-005` / `CH-009`。
+    红证：把 `expectation_tools` 的 dict 分支改回「整串当一个工具名」⇒ 本类前四条全红。
+    """
+
+    @staticmethod
+    def _dict_or_case(expr: str, **over) -> dict:
+        case = {
+            "id": "ZZ-001",
+            "title": "合成：dict 形态的 or 期望",
+            "user_inputs": ["帮我下单"],
+            "expectations": [{"tool": expr}],
+            "data_checks": [],
+            "skip_reason": "",
+        }
+        case.update(over)
+        return case
+
+    def test_dict_form_or_alternative_is_visible(self):
+        """dict 形态的 ` or ` 必须拆出**每一个**候选工具（含写工具）。"""
+        tools = [t for t, _ in tax.expectation_tools(
+            self._dict_or_case("interact or order_create"))]
+        assert tools == ["interact", "order_create"], (
+            f"dict 形态未拆 or（整串被当成一个工具名）⇒ 写工具对判据不可见：{tools}"
+        )
+        writes = [t for t, _ in tax.write_expectations(
+            self._dict_or_case("interact or order_create"))]
+        assert writes == ["order_create"], (
+            f"含写工具的 dict-or 期望未被分类为写 ⇒ 效果层/自清理规则静默失效：{writes}"
+        )
+
+    def test_dict_form_and_string_form_are_identical(self):
+        """同一条表达式两种形态必须得到**逐字相同**的结果（形态不得再分叉）。"""
+        expr = "after_sales_manage or aftersale_create"
+        as_dict = tax.expectation_tools(self._dict_or_case(expr))
+        as_str = tax.expectation_tools(
+            {**self._dict_or_case(expr), "expectations": [expr]})
+        assert as_dict == as_str, (
+            f"两种形态判定不一致（生成物走字符串分支、门禁走 dict 分支）:\n"
+            f"  dict  = {as_dict}\n  str   = {as_str}"
+        )
+        # 判别力非空转：这条表达式里确实有一个写工具，两种形态都必须认出它
+        assert [t for t, _ in tax.write_expectations(
+            {**self._dict_or_case(expr), "expectations": [expr]})] == ["aftersale_create"]
+
+    def test_dict_or_write_case_without_effect_assertion_is_blocked(self):
+        """规则 a2 必须**真的被武装**：dict-or 里藏着写工具 ⇒ 无效果层断言即违规。"""
+        v = codes(tax.judge_case(self._dict_or_case("interact or order_create"),
+                                 catalog=_seed_catalog(), repo_root=REPO_ROOT))
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" in v, (
+            f"dict 形态 or 里的写工具没让规则 a2 命中 ⇒ 该规则对这一形态静默失效：{sorted(v)}"
+        )
+        # 补上效果层断言即销账（证明红的是「缺断言」而不是别的）
+        fixed = self._dict_or_case(
+            "interact or order_create", must_succeed=[{"tool": "order_create"}])
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(
+            tax.judge_case(fixed, catalog=_seed_catalog(), repo_root=REPO_ROOT))
+
+    def test_the_three_touched_cases_are_write_cases(self):
+        """现取受影响面：这三条必须被判成**写用例**（本条即 #3778 第一批的坐标）。"""
+        live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+        for cid in ("AS-003", "AS-005", "CH-009"):
+            assert cid in live, f"用例库解析不到 {cid} —— 判据坐标失效"
+            writes = sorted({t for t, _ in tax.write_expectations(live[cid])})
+            assert writes, f"{cid} 未被分类为写用例 ⇒ 效果层规则对它静默失效"
+            assert tax.has_effect_assertion(live[cid]), f"{cid} 声明了写工具却无效果层断言"
+
+    def test_library_wide_write_cases_all_declare_effect_assertions(self):
+        """**类级元守卫**：全库写用例都必须有 ≥1 条效果层断言（`[backend-contract]` 分流外）。
+
+        为什么需要它（而不是只留上面的逐条）：新写一条「dict-or 藏写工具」的用例时，
+        上游没有任何东西会提醒作者补效果层断言 —— 这条把「同类进不来」变成机器可判。
+        判据**不复制**：直接调判据单一源的 `judge_case`（口径只有那一处）。
+        非空转：写用例数下界断言在下方（找不到写用例 ⇒ 本条会红，不会恒绿）。
+        """
+        live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+        write_cases = [cid for cid, c in live.items() if tax.is_write_case(c)]
+        assert len(write_cases) >= 3, (
+            f"全库只认出 {len(write_cases)} 条写用例 —— 判据疑似空转（写工具集/拆分失效）"
+        )
+        offenders = sorted(
+            cid for cid in write_cases
+            if "CASE-TRUST-NO-EFFECT-ASSERTION" in codes(
+                tax.judge_case(live[cid], catalog=_seed_catalog(), repo_root=REPO_ROOT))
+        )
+        assert offenders == [], (
+            f"这些写用例没有任何效果层断言（「调用了 ≠ 成了」）：{offenders}"
+        )
+
+
+class TestWriteEffectAssertionMustBeToolScoped:
+    """写用例的效果层证据必须**指名工具**（#3778 的类级固化，2026-09-25）。
+
+    病灶（`AS-003` 的红证）：`data_checks: ["success=true"]` 在 runner 里的判定是
+    `if "success=true" in exp_lower: return not result.get("error")` —— **只读轮级
+    `event: error`**，工具级失败（`tool_result.result.success=false`）根本不算 ⇒ 它是
+    「该轮没有轮级错误」，**任何工具成功都能满足**。于是「工单没建出来」也能绿。
+
+    修法分两层，缺任一层都不算修好：
+      ① 实例：`AS-003` 补 `must_succeed[aftersale_create]`（见其 merge_log）；
+      ② 类级：规则 a2 改用 `has_write_effect_assertion`（只认 `EFFECT_FIELDS`）
+         ⇒ **新**写用例再走这条形态会被判红，不会静默复现。
+
+    红证：把 a2 的判据换回 `has_effect_assertion` ⇒ 本类第一条红。
+    """
+
+    @staticmethod
+    def _write_case_with_round_level_success_only(**over) -> dict:
+        case = {
+            "id": "ZZ-002",
+            "title": "合成：写用例只声明轮级 success=true",
+            "user_inputs": ["帮我建一张售后工单"],
+            "expectations": [{"tool": "aftersale_create"}],
+            "must_succeed": [],
+            "data_checks": ["success=true"],
+            "namespaces": ["customer_phone:13800138000"],
+            "precondition": [{"type": "order_count_for_phone",
+                              "source": "13800138000", "max_growth": 1}],
+            "skip_reason": "",
+        }
+        case.update(over)
+        return case
+
+    def test_round_level_success_true_does_not_count_for_write_cases(self):
+        """轮级 `success=true` 不得充当写用例的效果层证据（工具无关 ⇒ 建失败也绿）。"""
+        case = self._write_case_with_round_level_success_only()
+        assert tax.has_effect_assertion(case), "夹具前提：它确实是「机器计分型」data_check"
+        assert not tax.has_write_effect_assertion(case), (
+            "写用例的工具级效果层判据把轮级 success=true 也算进去了 ⇒ 硬化失效"
+        )
+        v = codes(tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT))
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" in v, (
+            f"只靠轮级 success=true 的写用例未被判红 ⇒ 规则 a2 对这一形态静默失效：{sorted(v)}"
+        )
+
+    def test_tool_scoped_assertion_clears_it(self):
+        """补一条指名工具的效果层断言即销账（证明红的是「缺工具级证据」而不是别的）。"""
+        case = self._write_case_with_round_level_success_only(
+            must_succeed=[{"tool": "aftersale_create"}])
+        assert tax.has_write_effect_assertion(case)
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(
+            tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT))
+
+    def test_read_case_with_success_true_is_not_flagged(self):
+        """负例（防扩大化）：**读**用例的 `success=true` 仍是合法证据，规则 a2 不适用。"""
+        case = self._write_case_with_round_level_success_only(
+            expectations=[{"tool": "order_query"}],
+            namespaces=[], precondition=[])
+        assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(
+            tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT))
+
+    def test_live_library_has_no_such_write_case_left(self):
+        """库级读数（现取）：全库已无「只靠轮级 success=true」的写用例。
+
+        非空转：写用例数下界在下方 —— 认不出写用例时本条会红，不会恒绿。
+        """
+        live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+        write_cases = [cid for cid, c in live.items() if tax.is_write_case(c)]
+        assert len(write_cases) >= 3, f"只认出 {len(write_cases)} 条写用例 —— 判据疑似空转"
+        offenders = sorted(cid for cid in write_cases
+                           if not tax.has_write_effect_assertion(live[cid]))
+        assert offenders == [], f"这些写用例的效果层证据不是工具级的：{offenders}"

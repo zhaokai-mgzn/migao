@@ -313,6 +313,25 @@ def has_effect_assertion(case: dict) -> bool:
     return any("success=true" in s.lower() for s in machine_scored_data_checks(case))
 
 
+def has_write_effect_assertion(case: dict) -> bool:
+    """**写用例**是否含**工具级**效果层断言（规则 a2 用；比 `has_effect_assertion` 更严）。
+
+    ⚠️ 为什么写用例不收「轮级 `success=true`」（2026-09-25，issue #3778 第一批的类级固化）：
+    那条 data_check 在 runner 里的判定是
+    `if "success=true" in exp_lower: return not result.get("error")` —— 它**只读轮级
+    `event: error`**，工具级失败（`tool_result.result.success=false`）**根本不算** ⇒ 它是
+    「**该轮没有轮级错误**」，与「写操作成了」无关（**任何工具成功**都能满足它）。
+    实证红证（`AS-003`）：让 `aftersale_create` 返回 `success=false`、同轮 `order_query` 成功
+    ⇒ 该 data_check 仍判过 ⇒ 工单一张没有而用例绿。
+    ⇒ 对写用例，「效果层」必须是**指名工具**的那一类：`must_succeed` / `db_verify` /
+    `output_verify` / `amount_verify` / `post_session`（即 `EFFECT_FIELDS`）。
+    非写用例不受影响（读用例的 `success=true` 仍是合法证据，故 `has_effect_assertion` 一字未动
+    —— 它同时是 `.github/llm-finding-ledger.json` 的 sink 校验口径**单一源**）。
+    硬化后全库新增违规 = **0 条**（现取：21 条写用例全部具备工具级效果层断言）。
+    """
+    return any(case.get(f) for f in EFFECT_FIELDS)
+
+
 def has_behavior_assertion(case: dict) -> bool:
     """是否含**行为层**断言（工具调用/时序/效果 —— 与「纯散文禁令」相对）。
 
@@ -432,15 +451,25 @@ def expectation_tools(case: dict) -> list[tuple[str, dict]]:
       · dict：`{tool: sku_update, args: {action: add_tag}}`
       · 字符串（旧形态 / 生成物）：`customer_manage(action=add_tag) or direct_reply`
 
-    字符串形态下按 ` or ` 拆分支（与 runner 的 `check_expectation` 同语义）。
+    **两种形态都**按 ` or ` 拆分支（与 runner 的 `check_expectation` 同语义）。
+
+    ⚠️ **dict 形态也必须拆**（#3778「调用了 ≠ 成了」在本表里的第二格，2026-09-25 修）：
+    拆分支原先只实现在**字符串**分支上，而 `.github/cases/*.yml`（**门禁真正判的那份源**）
+    一律写 dict 形态 ⇒ `{tool: "after_sales_manage or aftersale_create"}` 整串被当成**一个工具名**
+    ⇒ `is_write_expectation()` 判读（该串不在 `WRITE_TOOLS`）⇒ 含写工具的用例**不再被分类为
+    写用例** ⇒ 效果层断言（规则 a2）与自清理（规则 b）对它**静默失效**，且没有任何东西会因此
+    变红 —— 正是本模块 header 点名要防的「门禁空壳」。同一棵树两套判定：生成物
+    `eval_cases.py` 把 dict 渲染成**字符串**（走拆分分支，判「是写用例」），源文件侧判「是读用例」。
+    现取受影响面 = 3 条（`AS-003` / `AS-005` / `CH-009`），复算命令见 PR body。
     """
     out: list[tuple[str, dict]] = []
     for exp in case.get("expectations") or []:
         if isinstance(exp, dict):
-            tool = str(exp.get("tool") or "").strip()
             args = exp.get("args") if isinstance(exp.get("args"), dict) else {}
-            if tool:
-                out.append((tool, args))
+            for part in str(exp.get("tool") or "").split(" or "):
+                part = part.strip()
+                if part:
+                    out.append((part, args))
             continue
         for part in str(exp).split(" or "):
             part = part.strip()
@@ -1434,6 +1463,10 @@ RULES: tuple[dict, ...] = (
             "或 `db_verify`（查落库值）、`output_verify`（核产出 payload）、"
             "`amount_verify`（核金额）、`post_session`（核会话关闭后落库）。"
             "**不要**只写散文 data_checks 充当落库断言（那条不计分）。"
+            f"⚠️ **轮级 `success=true` 也不算**（2026-09-25 硬化）：它只读 `event: error`，"
+            f"任何工具成功都能满足它 ⇒ 对写用例是**工具无关**的证据（实证 AS-003 的红证："
+            f"`aftersale_create` 失败而 `order_query` 成功时它照样通过）。"
+            f"判据 = `has_write_effect_assertion`（本模块单一源）。"
         ),
     },
     {
@@ -2000,12 +2033,12 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
     write_exps = write_expectations(case)
     if write_exps:
         names = ", ".join(sorted({t for t, _ in write_exps}))
-        if not has_effect_assertion(case) and not traces_scored:
+        if not has_write_effect_assertion(case) and not traces_scored:
             add("CASE-TRUST-NO-EFFECT-ASSERTION",
-                f"含写期望 [{names}] 但无任何效果层断言"
-                f"（效果层字段：{'/'.join(EFFECT_FIELDS)}；"
-                f"机器计分型 data_checks 也认，但必须含 "
-                f"{'/'.join(MACHINE_DATA_CHECK_MARKERS)} 之一）"
+                f"含写期望 [{names}] 但无任何**工具级**效果层断言"
+                f"（效果层字段：{'/'.join(EFFECT_FIELDS)}）"
+                f"—— 写用例**不收**轮级 `success=true`（它只读 `event: error`，"
+                f"任何工具成功都能满足 ⇒ 与「写操作成了」无关，实证 AS-003）"
                 f"⇒「调用了 ≠ 成了」（#3778）")
 
         # ── 规则 b：前置等价性（写用例必须声明自清理）──

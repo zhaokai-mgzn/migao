@@ -518,12 +518,38 @@ cases:
       # `direct_reply` = 该轮无 tool_calls 且有 final_text（runner 既有语义，见 local_runner 的匹配实现）；
       # `order_create` / `interact` = 直接下单 / 出确认卡。
       - tool: direct_reply or order_create or interact
+    # ── 效果层断言 + 自清理（2026-09-25，issue #3778 第一批）──
+    # 本条的写分支（`order_create`）是**可选**的（三条合格落地形态里的一条）⇒ 不能用无条件的
+    # `must_succeed`：顾客只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。
+    # 但「不写」也有个必须堵的洞（**本条原来的假绿形态**）：`expectations` 只做工具名匹配
+    # （`__all_tool_names` 跨轮累积）⇒ 一次**被后端拒绝**的 `order_create` 照样满足期望 ——
+    # 而那一轮既没有文本（`direct_reply` 要求无 tool_calls）也没有卡 ⇒ 顾客什么都没得到，
+    # 用例却判绿。`only_if_called: true`（条件效果层）正好表达这条真值：
+    # 「没去下单」不算失败，「**去下单了就必须成了**」。
+    must_succeed:
+      - tool: order_create
+        only_if_called: true
+    # 自清理（规则 b）：写分支真被选中时会以 `13800138000` 落一笔订单 —— 声明命名空间与
+    # 同手机号的建单用例（AS-003/AS-005/CH-012/OR-016 …）**自动互斥**，重试前置才等价。
+    namespaces:
+      - "customer_phone:13800138000"
+    # 前置自断言（规则 f：多轮/**写类**用例必须对自己的前置给出可判定断言 —— 本条因上面那格
+    # 效果层断言而**首次**被分类为写类，规则随即到期）。形状与同手机号族逐字同构
+    # （AS-003 / AS-005 / CH-012 / CH-016）：**有意不给 `expect`**（计数随栈而变，写死基线 =
+    # 依赖栈的恒红判据），靶子存在性下界由 runner 恒生效的 `precondition_lower_bound` 兜。
+    # `max_growth: 1`：本用例的写分支**会自己**为这个号码建 1 笔订单 —— 不给就让正常行为
+    # `0 → 1 > 0` 恒判漂移、score 归零（先例 = HR-002 的 `max_growth: 1`）；并行用例再造
+    # （`0 → 2`）仍判漂移 ⇒ 判别力不丢。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+        max_growth: 1
     data_checks:
       - "表单字段注入本轮 LLM 上下文（不改写会话历史）"
       - "日志中手机号脱敏（138****8000）"
       - "payload 超限/非法 JSON 回退为普通文本处理"
     skip_reason: ""
-    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2"
+    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。"
     traces:
       tests:
         - "frontend/mini-app/tests/form-card.test.tsx"
