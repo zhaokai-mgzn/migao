@@ -4722,13 +4722,63 @@ def check_form_prefill(results: list, spec: list) -> list:
 
 _CODE_REQUEST_HINTS = ("验证码", "校验码", "短信码", "动态码", "verification code")
 
+#: 公开别名：姊妹 runner（`acceptance_runner.needs_code` 的**硬信号腿**）复用同一张表 ——
+#: 一张表复制两份必然漂移（issue #3757 的孪生形态就是两侧各写了一份子串判据）。
+CODE_HINTS = _CODE_REQUEST_HINTS
+
+# ── 「agent 在索码吗」的**形态判据**（issue #3757）────────────────────────────
+# 病根：旧实现是**子串充分条件**（`any(h in final_text for h in _CODE_REQUEST_HINTS)`）⇒
+# 「验证码已收到 / 别再发 / 就差您点卡」这类**收讫语义**的正确话术也被判成"在索码" ⇒
+# `resolve_repeat_turn` 每轮走供码分支、**一次都不点确认卡** ⇒ 写调用被确认门禁反复拦回
+# （`confirmation_required_no_card`）⇒ 同一张卡重复下发 ⇒ 轮数耗尽。
+# 实证（run 34854258883 / SHA 9bb789ea，OR-026 首跑逐轮 trace）：R3~R9 的 `you=` 全是
+# `123456`、而 `ai=` 是「验证码我已经收好啦 ✅ 就差您点一下上面卡片里的「确认下单」按钮」。
+#
+# 判据（"出现『验证码』"降为**必要条件**，两侧都判）：
+#   ① **索取形态**（面向码的请求动作：发我 / 提供 / 是多少 / 输入 / 再发一次…）⇒ 索码；
+#   ② **收讫 / 否定形态**（已收到 / 收好 / 记下 / 看到 / 收不到 / 别再发 / 不用再…）⇒ **不**索码
+#      —— 判据只在这一侧翻转 ⇒ 交给"有卡答卡"分支去点卡（点卡才是正确的下一步）；
+#   ③ 两侧并存 ⇒ **索取优先**（"已收到，但过期的请再发一次"是真的还要码，不得判成回执）；
+#   ④ 两侧皆无（描述性提及，如"用来接收下单验证码"）⇒ **保持旧行为（索码）**：把这一类也
+#      翻成不索码，会让 #3829 的 L0 红证（删掉"form 卡优先"段 ⇒ 必红）退化成空断言
+#      （§23.5 坐标漂移）⇒ 故默认值不动，只翻转收讫侧。
+# 硬信号不受影响：写调用**因缺码被挡**（`_code_gate_blocked`）仍最优先供码，收讫话术也压不过它。
+_CODE_ASK_STEMS = ("发我", "发给我", "发过来", "发一下", "发来", "给我发", "重新发", "重发",
+                   "再发一次", "再发一遍", "再发个", "提供", "告诉我", "是多少", "多少",
+                   "输入", "填写", "填入", "回复", "报一下")
+_CODE_ACK_STEMS = ("收到", "收好", "记下", "看到", "获取", "拿到",
+                   "收不到", "没收到", "未收到", "没看到",
+                   "别再发", "别发", "不用再", "不用发", "无需", "不需要", "不用",
+                   "已通过", "已校验", "已核验", "已生效", "已填", "已提交")
+#: 形态判定窗口（以"验证码"为中心的左右各 25 字）：中文子句平均 ~10 字，25 字覆盖
+#: "验证码已收到，不过刚才那个过期了，请再发一次"（索取动作距词 16 字）这类跨子句再索取。
+_CODE_FORM_WINDOW = 25
+
+
+def text_requests_code(text: str) -> bool:
+    """`text` 里是否**在索要验证码**（形态判据，issue #3757；纯函数、零依赖）。
+
+    逐处"验证码"取其左右各 `_CODE_FORM_WINDOW` 字的窗口判形态（见上方 ①~④）。
+    任一处既不是索取形态、也不落在收讫形态 ⇒ 判索码（保持旧行为）。
+    """
+    s = str(text or "")
+    for hint in _CODE_REQUEST_HINTS:
+        i = s.find(hint)
+        while i >= 0:
+            win = s[max(0, i - _CODE_FORM_WINDOW): i + len(hint) + _CODE_FORM_WINDOW]
+            if any(k in win for k in _CODE_ASK_STEMS):
+                return True                        # ① / ③ 索取形态（含"回执 + 再索取"）
+            if not any(a in win for a in _CODE_ACK_STEMS):
+                return True                        # ④ 两侧皆无 ⇒ 保持旧行为（判索码）
+            i = s.find(hint, i + 1)                # ② 收讫形态 ⇒ 这一处不算索码，看下一处
+    return False
+
 
 def _agent_asked_for_code(results: list) -> bool:
-    """上一轮 agent 是否在**索要验证码**（供码时机的唯一依据）。"""
+    """上一轮 agent 是否在**索要验证码**（供码时机的唯一依据；形态判据见 `text_requests_code`）。"""
     if not results:
         return False
-    text = str((results[-1] or {}).get("final_text") or "")
-    return any(h in text for h in _CODE_REQUEST_HINTS)
+    return text_requests_code(str((results[-1] or {}).get("final_text") or ""))
 
 
 def _code_gate_blocked(results: list) -> bool:
