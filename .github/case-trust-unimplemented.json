@@ -4,16 +4,6 @@
   "_constraints": "**每条登记必须带 `issue`（正整数追踪号）/ `expires`（YYYY-MM-DD）/ `how_to_verify`（怎么算已实装的可执行判据/命令）/ `hit_probe`（僵尸判据）。**四条判据都可红（判据本体 = assertion_taxonomy.judge_unimplemented，门禁壳 = case_trust_gate.judge_unimplemented_manifest）：① 缺任一字段 ⇒ 红（指名缺哪个）；② `expires` 已过 ⇒ 红（到期未实装**不许静默续期**）；③ `issue` 指向的单已 CLOSED（或编号不存在）⇒ 红（借口不能过期不销：实装了就该撤登记，没实装就该开新单）；④ **僵尸登记** ⇒ 红（`hit_probe` 探不到存活证据 = 登记所述口径已不成立，留着会被读成「还没做」）。`why_not`/`needs` 只是理由与缺口，**不构成约束**。",
   "unimplemented": [
     {
-      "code": "CASE-TRUST-CROSS-LEG-NARROW-RUN",
-      "title": "单端用例在与其他腿共用 `case_ids` 时被选中",
-      "why_not": "静态只能看到**本 PR 的 diff**，看不到「本次运行会不会用 `case_ids` 窄跑」—— 那是**运行期**信息。静态侧只能要求 persona 标注存在（`CASE-TRUST-SINGLE-LEG-NO-PERSONA` 已实装）。",
-      "needs": "runner 侧按 persona 校验 `case_ids` 的跨腿完整性（#5504；`local_runner.py` 的「禁止静默少跑」守卫按该文本检索）。属 T2。",
-      "issue": 5504,
-      "expires": "2027-03-31",
-      "how_to_verify": "runner 的「禁止静默少跑」守卫**按 persona 校验 `case_ids` 的跨腿完整性**（单端用例被另一腿选中时不再产生误导性红/自动评论）⇒ 撤登记。核验：单腿派发（`xiaobu-acceptance.yml` 的 `persona` 输入）+ `case_ids` 含一条单端用例 ID，另一腿**不再**判红；或该守卫源码里出现按 persona 过滤 `case_ids` 的分支（按「禁止静默少跑」文本检索）。",
-      "hit_probe": "single_leg_persona"
-    },
-    {
       "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
       "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",
       "why_not": "#4031 已实装全量对账（陈旧条目阻塞）+ 到期清零（全局生效），但**每-PR 最低消减**的口径默认 `scope=case_touching_prs`：字面口径（**每个** PR，含不改用例的）会让全仓每个 PR 都必须改 `.github/cases/**` + 清单才能合并 —— 与「先把清单清干净再翻 required，避免阻塞所有人」的顺序铁律自相矛盾，且会把 Java 单测 PR 也卡在用例库上（= 假红）。口径是**数据**（`burn_down.scope`），改为 `all_prs` 即字面口径。",
