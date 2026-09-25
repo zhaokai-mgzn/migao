@@ -35,11 +35,18 @@
  * ② `position` 为空 / 全空白（部位无关工序）⇒ 只显示逻辑名；
  * ③ 两者都缺 ⇒ 空串（调用方按空态渲染，**不编占位名**）。
  *
- * @param {{operation?: string|null, logical_name?: string|null, position?: string|null}|null|undefined} op
+ * 🔴 **同义不同名（issue #5003②）**：快照 / 变体名在**报工流水读面**上叫 `operation_name`
+ * （`WorkLogRow`）—— 它与 `operation` 是**同一语义**的两个键名 ⇒ 兜底分支**两个都认**
+ * （改前只认 `operation`：传进来的对象只有 `operation_name` 时兜底取不到值，显示空串）。
+ * 两键同时在 ⇒ `operation` 优先（口径显式，不靠对象字面量的书写顺序）。
+ * ⚠️ **同名不同义**：`per_operation[].operation`（计件汇总）**是逻辑名**、不是快照名 ——
+ * 不得把它喂进本函数的兜底分支（#4963：拿快照名比逻辑名 ⇒ 累计计件静默消失）。
+ *
+ * @param {{operation?: string|null, operation_name?: string|null, logical_name?: string|null, position?: string|null}|null|undefined} op
  * @returns {string}
  */
 export function operationDisplayName(op) {
-  const logical = (op?.logical_name ?? '').trim() || (op?.operation ?? '').trim()
+  const logical = (op?.logical_name ?? '').trim() || (op?.operation ?? '').trim() || (op?.operation_name ?? '').trim()
   const position = (op?.position ?? '').trim()
   return logical && position ? `${logical} · ${position}` : logical
 }

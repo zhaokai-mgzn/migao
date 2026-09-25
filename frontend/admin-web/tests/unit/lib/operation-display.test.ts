@@ -38,6 +38,14 @@ describe('operationDisplayName（工序显示名唯一口径）', () => {
     expect(operationDisplayName({ operation: '定型-布', logical_name: '  ' })).toBe('定型-布')
   })
 
+  it('同义不同名：operation_name（报工流水读面键）也作快照名兜底（issue #5003②）', () => {
+    // 改前兜底分支只认 `operation` ⇒ 读面行传进来时取不到值、显示空串（本行即那条红证）。
+    expect(operationDisplayName({ operation_name: '定型-布' })).toBe('定型-布')
+    expect(operationDisplayName({ operation_name: '定型-布', logical_name: '定型' })).toBe('定型')
+    // 同义两键同时在 ⇒ `operation` 优先（口径显式，不靠对象字面量的书写顺序）
+    expect(operationDisplayName({ operation: '精裁-布', operation_name: '三边-布' })).toBe('精裁-布')
+  })
+
   it('有逻辑名时**不出现**变体名（快照名只作兜底）', () => {
     const text = operationDisplayName({ operation: '精裁-布', logical_name: '精裁', position: '布帘' })
     expect(text.includes('精裁-布')).toBe(false)

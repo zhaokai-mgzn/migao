@@ -29,8 +29,12 @@ export interface ProductionOperation {
    * ③ `per_operation[].operation` = **逻辑名**（计件查找键；#4963 已修「拿快照名比逻辑名 ⇒
    *    累计计件静默消失」—— 显示名与查找键是**两件事**）。
    *
-   * 未固化（本 PR 未做，如实登记在 PR body 残余）：键名统一 / helper 显式映射 /
-   * `frontend/shared/operation-display.mjs` 的 C7 逐值表随键名改动扩表。
+   * 已固化（issue #5003② 收口）：**helper 显式映射** —— 四份显示名实现
+   * （含 `frontend/shared/operation-display.mjs`）的兜底分支**同时接受 `operation_name`**
+   * 作为 `operation` 的同义键（两键同时在 ⇒ `operation` 优先），C7 逐值表已随之扩表；
+   * 读面「工序名键」台账 + 「未登记即红 / 台账只许缩短」由
+   * `tests/unit_ci_workflows/test_operation_display_name_guard.py` 的 C8 钉住
+   * （新增一个 `operation*` 键而不登记 ⇒ 红）。
    */
   operation: string
   /**
