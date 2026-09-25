@@ -264,9 +264,21 @@ SET_KEYS = ("set_count",)                  # 引擎暂未产出 ⇒ 兜底 1（�
 # 孔数估算：引擎不产出 `holes` 时的行业口径（每米约 6 孔；12.3 米 → 72 孔与现场核对一致）
 HOLE_PER_METER = 6
 
-# 引擎有数量口径的单位（= `_qty_for` 的分支覆盖范围）；其余单位（如「个」）无口径
-# ⇒ 调用方按铁律「未知单位兜底 1 + fallback」处置（见 `qty_and_source`）。
+# 引擎有数量口径的单位（= `_qty_for` 的分支覆盖范围，且 `_qty_keys_for_unit` 给得出候选键）。
 KNOWN_QTY_UNITS = ("米", "折", "孔", "幅", "套")
+
+# 引擎**不产出**该数量的单位（issue #4228 ①，**显式登记**）：「个 / 件」类工序的应做数量
+# 在真值源里**没有定义** —— `docs/curtain-production-rules.md` §4（计件）没有给「个」的数量口径，
+# §2 只把「个 / 件」列进**单位取值域**（`单位（米/套/件/个）`）、没说一「个」是多少
+# （一「个」= 一幅成品帘头？一只抱枕？一道扣环？本仓无从判定）。
+#
+# 🔴 **这是兜底口径、不是真值**：登记在此**不等于**「一单一樘一个」。它存在的唯一理由是让
+# 「引擎不产出 ⇒ 有意兜底 1」与「忘了给这个单位建分支」在数据上**可区分**（后者撞
+# `tests/test_production/test_operation_qty_unit_fallback.py::TestUnitRegistrationCensus` 的红）。
+# 改前这两个形态**长得一样**（都静默走最后一行 `_pick(METER_KEYS, 1)`）⇒ `帘头制作` 喂
+# `{fabric_meters: 12.3}` 算出 **12.3 个**。真值待客户确认后另单补（届时迁进 `KNOWN_QTY_UNITS`
+# 并给 `_qty_keys_for_unit` 补候选键即可，登记表是唯一改动点）。
+FIXED_ONE_UNITS = ("个", "件")
 
 
 def _qty_keys_for_unit(unit: Optional[str]) -> tuple:
@@ -288,7 +300,9 @@ def _qty_keys_for_unit(unit: Optional[str]) -> tuple:
         return SET_KEYS
     if unit == "米":
         return METER_KEYS
-    return ()   # 引擎不认识的工序/单位：无口径 ⇒ 兜底 1 + fallback
+    # 引擎不产出该量的单位（`FIXED_ONE_UNITS` 的「个 / 件」类）与未登记单位：
+    # 引擎不产出该量 ⇒ 无候选键 ⇒ 兜底 1 + fallback（见 `_qty_for` 的收尾分支）
+    return ()
 
 # 非「孔」单位**直接供数**的键（命中即报键名）：引擎真产出 `fabric_meters`/`pleat_count`。
 # 「孔」的直采键是 `holes`（引擎暂未产出，见 HOLE_KEYS 注释，但调用方可按现场口径给出），
@@ -300,7 +314,8 @@ DIRECT_QTY_KEYS = ("fabric_meters", "pleat_count")
 #   ② "<键名>_x6"（HOLE_PER_METER 后缀）= 无 holes 时按**每米 HOLE_PER_METER 孔**的行业口径
 #      估算（见 `_qty_for` 的「孔」分支②；12.3 米 → 73.8 孔，与现场核对一致）
 #      ⇒ 标 fallback 会把「有依据的估算」说成「占位值」，正是本单要治的误导
-#   ③ "fallback"                        = 真兜底：无键可读 / 引擎不认识的工序或单位 /
+#   ③ "fallback"                        = 真兜底：无键可读 / **非正数**（显式 0 与负数，
+#      issue #4228 ②）/ 引擎不认识的工序或单位（含 FIXED_ONE_UNITS 的「个 / 件」类）/
 #      panels・set_count（引擎已登记为**待补键**：见 PANEL_KEYS/SET_KEYS 注释，未产出）
 HOLE_ESTIMATE_SUFFIX = f"_x{HOLE_PER_METER}"
 
@@ -308,8 +323,12 @@ HOLE_ESTIMATE_SUFFIX = f"_x{HOLE_PER_METER}"
 def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
     """应做数量 = 算料引擎输出（褶数/用料/孔数/幅数/套数），报工只确认不心算。
 
-    键口径见模块常量（{@link METER_KEYS} 等）；缺键**一律兜底 1**，绝不落 0
-    （应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 工序一开始就算完成 ⇒ 假完工，同族缺陷）。
+    键口径见模块常量（{@link METER_KEYS} 等）；缺键 / **非正数**（显式 0 与负数）
+    **一律兜底 1**，绝不落 0（应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 工序一开始就算完成
+    ⇒ 假完工，同族缺陷）—— 非正数这半条判据的**唯一实现**在 `_pick`。
+
+    ⚠️ **单位维只有两个出口**（issue #4228 ①）：`KNOWN_QTY_UNITS`（引擎有口径 ⇒ 读对应键）
+    与 `FIXED_ONE_UNITS` / 未登记单位（引擎不产出 ⇒ **兜底 1**）。**没有「按米折算」这条兜底路**。
     """
     unit = OPERATION_CATALOG.get(operation, {}).get("unit", "米")
     if unit == "折":
@@ -325,14 +344,26 @@ def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
         return float(_pick(calc_info, PANEL_KEYS, 1))
     if unit == "套":
         return float(_pick(calc_info, SET_KEYS, 1))
-    return float(_pick(calc_info, METER_KEYS, 1))  # 米
+    if unit == "米":
+        return float(_pick(calc_info, METER_KEYS, 1))
+    # 引擎不产出该量的单位（FIXED_ONE_UNITS 的「个 / 件」类）**与未登记单位**：兜底 1 ——
+    # **不再静默落到「米」分支**（issue #4228 ①；未登记单位也走这里 ⇒ 判据不依赖登记，登记只为可区分）
+    return 1.0
 
 
 def _pick(calc_info: Dict[str, Any], keys: tuple, default: Any) -> Any:
-    """按 keys 顺序取第一个非空值（键名漂移的双读兼容），全缺 ⇒ default。"""
+    """按 keys 顺序取第一个**可用**值（键名漂移的双读兼容）；全缺 / **非正数** ⇒ default。
+
+    「可用」= 非 None 且为**正数**（issue #4228 ②）：**显式 `0` 与负数一律视同缺键** ——
+    数量没有「0 / 负」这个取值（工序不存在就不该有实例行），落 0 会让 `done_qty ≥ qty`
+    恒真 ⇒ 工序一开始就算完成（**假完工**），与「缺键一律兜底 1」同因。
+
+    ⚠️ 本判据**只此一处**：`qty_and_source` 判「某个键是否真供数」时复用的就是本函数
+    （`_pick(calc_info, (key,), None) is None`）—— 不许在别处另写一份正数判据（否则值/标签会分叉）。
+    """
     for key in keys:
         value = calc_info.get(key)
-        if value is not None:
+        if value is not None and float(value) > 0:
             return value
     return default
 
@@ -341,8 +372,8 @@ def qty_and_source(operation: str, calc_info: Dict[str, Any]) -> tuple:
     """应做数量 + 口径来源标签（issue #4208）：`(qty, qty_source)`。
 
     数量：命中算料键 ⇒ 一律取 `_qty_for`（**唯一算料真相源**，严禁第二份逻辑）；
-    无口径（缺键 / 引擎不认识的工序 / 引擎不认识的单位）⇒ **兜底 1，绝不落 0**
-    （应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
+    无口径（缺键 / **非正数**（显式 0 与负数）/ 引擎不认识的工序 / 引擎不认识的单位）
+    ⇒ **兜底 1，绝不落 0**（应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
 
     来源标签三态见模块常量注释（{@link DIRECT_QTY_KEYS} / {@link HOLE_ESTIMATE_SUFFIX}）：
     键名 = 直接供数；`<键名>_x6` = 每米 6 孔的行业估算；"fallback" = 真兜底。
@@ -350,7 +381,10 @@ def qty_and_source(operation: str, calc_info: Dict[str, Any]) -> tuple:
     """
     unit = OPERATION_CATALOG.get(operation, {}).get("unit")
     for key in _qty_keys_for_unit(unit):
-        if calc_info.get(key) is None:
+        # 「该键是否真供数」= `_pick` 的**同一判据**（非 None 且 > 0）：显式 0 / 负数视同缺键
+        # ⇒ 值走兜底 1、标签如实报 fallback。改前这里只看 `is None`，`{fabric_meters: 0}`
+        # 会返回 `(0.0, "fabric_meters")` —— 把「无效值」冒称成「该键直接供数」（issue #4228 ②）
+        if _pick(calc_info, (key,), None) is None:
             continue
         qty = _qty_for(operation, calc_info)
         if unit == "孔":
