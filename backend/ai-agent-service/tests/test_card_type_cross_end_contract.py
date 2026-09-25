@@ -4,7 +4,11 @@
 ## 缺陷形态（本文件守卫的那道此前无人守卫的接缝）
 
 后端 `app/api/chat.py::_detect_card_type` 是**卡型的唯一产出源**，它按工具名下发类型：
-`product_list` / `product_detail` / `logistics` / `order` / `quotation`。此前没有任何机械守卫：
+`product_list` / `product_detail` / `logistics` / `order` / `quotation`
+（现为 8 型，另加 `production_progress` / `payment` / `batch_stock`，见下「反向契约」节；
+两处书面清单 —— `app/api/sse.py` 的 `card()` docstring 与 `app/api/schemas.py` 的
+`SSECardEvent.type` 描述 —— 已由本文件文末「散文枚举」判据与真值集机械对齐，issue #3968 ②）。
+此前没有任何机械守卫：
 
 - C 端 `frontend/mini-app/src/components/chat/MessageBubble.tsx::renderCard` 实现 9 种，含 `quotation` → 齐全；
 - B 端移动 `frontend/bmini-app/src/components/chat/MessageBubble.tsx::renderCard` 与 C 端同族 → 齐全；
@@ -565,3 +569,140 @@ class TestNoOrphanRendererBranches:
             "泄漏判据认不出 #3960 的修复前形态 ⇒ 该判据是空断言"
         )
         assert "未知卡片类型" in pre_fix_default
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 散文枚举：`卡片类型` 的书面清单必须等于真值集（issue #3968 ②）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病灶：`app/api/sse.py` 的 `card()` docstring 与 `app/api/schemas.py` 的
+# `SSECardEvent.type` 描述**各手写了一份**卡型清单，两份都停在 **4** 型
+# （漏 `quotation` / `production_progress` / `payment` / `batch_stock`）——
+# 而 `quotation` 恰恰是 C 端已在渲染的真实卡型。读这两处书面清单的人（含 AI）
+# 会据此以为卡型只有 4 个，且**没有任何东西会因此变红**（与 #3960 的接缝同族：
+# 真值在代码里，散文另写了一份，两份永不比对）。
+#
+# 真值源 = 本文件 `_all_backend_card_tools()`（工具注册表 × 真实 `_detect_card_type`）
+# —— 与上面「后端卡型唯一产出源」那条判据**同一**提取器，不新增第二份口径；
+# 卡型集一变（新增工具/删映射），这里的散文清单立刻红。
+_PROSE_CARD_TYPE_RE = re.compile(r"卡片类型\s*[：:]?\s*[（(]?\s*([a-z_]+(?:\s*/\s*[a-z_]+)+)")
+#: 隐式字符串拼接（`"…a / "` 换行 `"b…"`）会**打断**清单文本：判据先把这种边界折平，
+#: 否则「把长行拆成两段」这种纯格式改动会假红（判据只该管内容是否等于真值）。
+_IMPLICIT_CONCAT_RE = re.compile(r"""["']\s*\n\s*["']""")
+
+#: 登记过的散文枚举站（仓库相对路径 → 该文件里枚举出现的**次数**）。
+#: **未登记即红**（新站点必须做一次决定）/ **已登记而不再枚举即红**（登记不能变僵尸）。
+PROSE_CARD_TYPE_SITES: dict[str, int] = {
+    "backend/ai-agent-service/app/api/schemas.py": 1,
+    "backend/ai-agent-service/app/api/sse.py": 1,
+}
+#: 散文枚举的扫面 = 后端**生产代码**（发现面；判据/文档面各有主人，见 PR body 的未固化项）。
+PROSE_CARD_TYPE_ROOT = REPO_ROOT / "backend" / "ai-agent-service" / "app"
+
+
+def prose_card_type_enumerations(source: str) -> list[str]:
+    """源码文本里的卡型散文枚举（折平隐式拼接；值按空白压平便于比较）。"""
+    flat = _IMPLICIT_CONCAT_RE.sub("", source)
+    return [" ".join(m.split()) for m in _PROSE_CARD_TYPE_RE.findall(flat)]
+
+
+def prose_card_type_set(enumeration: str) -> set[str]:
+    """枚举原文 → 卡型集合（`a / b` ⇒ {a, b}）。"""
+    return {t.strip() for t in enumeration.split("/") if t.strip()}
+
+
+def prose_card_type_sites() -> dict[str, list[str]]:
+    """`app/**/*.py` 里全部「卡片类型 + 斜杠清单」站点（不读登记表 —— 登记表是**被核对的对象**）。"""
+    found: dict[str, list[str]] = {}
+    for path in sorted(PROSE_CARD_TYPE_ROOT.rglob("*.py")):
+        enums = prose_card_type_enumerations(path.read_text(encoding="utf-8"))
+        if enums:
+            found[path.relative_to(REPO_ROOT).as_posix()] = enums
+    return found
+
+
+def stale_prose_card_type_enumerations(sites: dict[str, list[str]], truth: set[str]) -> dict[str, list[str]]:
+    """判据本体（纯函数）：`{站: [与真值集不一致的枚举原文]}`；全空 = 契约成立。"""
+    return {site: bad for site, enums in sites.items()
+            for bad in [[e for e in enums if prose_card_type_set(e) != truth]] if bad}
+
+
+def prose_site_registration_diff(found: dict[str, int], registered: dict[str, int]) -> dict[str, list[str]]:
+    """登记差集（纯函数）：`{unregistered / stale / count_mismatch}` —— 三者全空才是对齐的。"""
+    return {
+        "unregistered": sorted(set(found) - set(registered)),
+        "stale": sorted(set(registered) - set(found)),
+        "count_mismatch": sorted(s for s in set(found) & set(registered) if found[s] != registered[s]),
+    }
+
+
+class TestProseCardTypeEnumerations:
+    """书面清单（docstring / Field description）必须等于真值集（issue #3968 ②）。"""
+
+    def test_no_prose_site_enumerates_a_stale_card_type_set(self):
+        truth = set(_all_backend_card_tools().values())
+        violations = stale_prose_card_type_enumerations(prose_card_type_sites(), truth)
+        assert violations == {}, (
+            "这些书面卡型清单与后端**可产出**集合不一致（读它的人会据此以为卡型只有列出的那些）："
+            + "；".join(f"{site} → {bad}" for site, bad in violations.items())
+            + f"｜真值集={sorted(truth)}"
+        )
+
+    def test_prose_sites_are_registered_and_alive(self):
+        """两个方向都判：未登记即红（新站点要做决定）/ 已登记而不再枚举即红（登记不能是僵尸）。"""
+        found = {site: len(enums) for site, enums in prose_card_type_sites().items()}
+        diff = prose_site_registration_diff(found, PROSE_CARD_TYPE_SITES)
+        assert all(not v for v in diff.values()), (
+            f"书面清单站点与登记表不一致（增删站点都要同步 `PROSE_CARD_TYPE_SITES`）：{diff}"
+            f"｜实际={found}｜登记={PROSE_CARD_TYPE_SITES}"
+        )
+
+    def test_truth_set_is_non_vacuous(self):
+        truth = set(_all_backend_card_tools().values())
+        assert truth >= set(_CARD_TOOL_ANCHORS.values()) and len(truth) > 1, (
+            f"真值集提取异常（{sorted(truth)}）—— 空集/缩水会让「清单 vs 真值」判据真空通过"
+        )
+
+    def test_extractor_recognises_the_pre_fix_forms(self):
+        """提取器自证：认得出**修复前**的真实形态（含 `schemas.py` 的隐式字符串拼接）。"""
+        expected = ["product_list / product_detail / logistics / order"]
+        assert prose_card_type_enumerations(
+            "            card_type: 卡片类型 (product_list / product_detail / logistics / order)"
+        ) == expected
+        assert prose_card_type_enumerations(
+            '"卡片类型: product_list / product_detail / logistics / order"'
+        ) == expected
+        assert prose_card_type_enumerations(
+            '"卡片类型: product_list / product_detail / "\n        "logistics / order"'
+        ) == expected, "隐式拼接被换行打断 ⇒ 提取器对「长行拆两段」的纯格式改动会假红"
+        assert prose_card_type_set(expected[0]) == {
+            "product_list", "product_detail", "logistics", "order"}
+
+    def test_red_proof_pre_fix_enumerations_are_flagged(self):
+        """回放红证：把修复前的 4 型原文喂给判据本体 ⇒ 必须报出（证判据非空断言）。"""
+        pre_fix = "卡片类型 (product_list / product_detail / logistics / order)"
+        truth = set(_all_backend_card_tools().values())
+        sites = {"backend/ai-agent-service/app/api/sse.py": prose_card_type_enumerations(pre_fix)}
+        violations = stale_prose_card_type_enumerations(sites, truth)
+        assert violations == {
+            "backend/ai-agent-service/app/api/sse.py":
+                ["product_list / product_detail / logistics / order"]
+        }, f"修复前的 4 型原文未被判据认出 ⇒ 该判据是空断言。实际 {violations}"
+
+    def test_red_proof_unregistered_site_is_flagged(self):
+        """构造红证：发现面里出现未登记站点 ⇒ 登记判据必红（防「悄悄再写一份清单」）。"""
+        fabricated = dict(PROSE_CARD_TYPE_SITES)
+        fabricated["backend/ai-agent-service/app/api/brand_new.py"] = 1
+        diff = prose_site_registration_diff(fabricated, PROSE_CARD_TYPE_SITES)
+        assert diff["unregistered"] == ["backend/ai-agent-service/app/api/brand_new.py"], (
+            f"未登记站点未被判据认出 ⇒ 「未登记即红」是空断言。实际 {diff}"
+        )
+
+    def test_red_proof_deleted_prose_site_is_flagged(self):
+        """构造红证：登记了却不再枚举（清单被删）⇒ 必红（登记不能变成僵尸）。"""
+        trimmed = {site: n for site, n in PROSE_CARD_TYPE_SITES.items()
+                   if site.endswith("sse.py")}
+        diff = prose_site_registration_diff(trimmed, PROSE_CARD_TYPE_SITES)
+        assert diff["stale"] == ["backend/ai-agent-service/app/api/schemas.py"], (
+            f"「已登记而不再枚举」未被判据认出 ⇒ 少判一个方向。实际 {diff}"
+        )

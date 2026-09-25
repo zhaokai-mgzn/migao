@@ -163,6 +163,23 @@ def filter_by_persona(cases, persona: str):
 
 # ── 期望断言 → 旧 eval 的字符串形态 ──
 
+def _as_items(v):
+    """声明的值 → 待渲染的项列表（`str` 当**单项**，不当可迭代）。
+
+    实测（issue #3968）：`precondition` 有 **14** 条是散文形态（值本身是 `str`），
+    直接 `for x in v` 会把字符串按**字符**拆开 —— 一条散文前置渲染成 3223 行单字符行
+    （账本被字符行淹没，而"渲染了"这件事在肉眼上还成立）。
+    """
+    if isinstance(v, str):
+        return [v]
+    return list(v or [])
+
+
+def _one_line(v) -> str:
+    """值折成单行：散文声明里的换行会把**一条**声明拆成多行，账本行数随即不可复算。"""
+    return " ".join(str(v).split())
+
+
 def exp_to_str(e):
     if isinstance(e, str):
         return e
@@ -407,6 +424,17 @@ def to_md(cases):
                     lines.append(f"你: {_t}{suffix}" if _t else f"你: {suffix.strip() or '(空)'}")
                 else:
                     lines.append(f"你: {msg}")
+            # `persona` 此前**完全不渲染**（issue #3968 ①）：用例上写着 `persona: mibao`
+            # （单端标注）、`namespaces`（资源互斥清单），账本里却查不到 ⇒ 读 casebook 的人
+            # （含 AI）看不到"这条是单端的 / 它和谁争同一资源"，据此讨论跨腿覆盖 = 结论必错。
+            # 写法照 #3836 给 `pre_clean` 补渲染的先例（同一处、同一形态），不自创第二套结构。
+            # 缺行 = YAML 未声明 = 双端（与 `filter_by_persona` 的缺省语义一致，不额外落字面量）。
+            if c.get("persona"):
+                _persona = _one_line(c["persona"])
+                _leg = {"mibao": "单端 —— 仅米宝腿跑，小布腿跳过",
+                        "xiaobu": "单端 —— 仅小布腿跑，米宝腿跳过"}.get(
+                            _persona, "两腿都跑（非 mibao/xiaobu 的取值按缺省处理）")
+                lines.append(f"端: {_persona}（{_leg}）")
             for e in (c.get("expectations") or []):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):
@@ -432,6 +460,26 @@ def to_md(cases):
                     lines.append(f"复位: {_pc_type}({_pc_args})" if _pc_args else f"复位: {_pc_type}")
                 else:
                     lines.append(f"复位: {pc}")
+            # `precondition` / `preconditions`（issue #3968 ① 的同类实例，随本包一并补渲染）：
+            # 前置断言此前同样不可见 —— 而"本用例只在那条前置成立时才可归因"正是读账本的人
+            # 判读红绿的前提（与 #3836 的 `pre_clean` 同病灶：声明的运行期动作在账本上不可见）。
+            for pc in _as_items(c.get("precondition")):
+                if isinstance(pc, dict):
+                    _pc_type = _one_line(pc.get("type") or "")
+                    _pc_args = "、".join(f"{k}={_one_line(v)}" for k, v in pc.items() if k != "type")
+                    lines.append(f"前置: {_pc_type}({_pc_args})" if _pc_args else f"前置: {_pc_type}")
+                else:
+                    lines.append(f"前置: {_one_line(pc)}")
+            for pc in _as_items(c.get("preconditions")):
+                # 散文前置（声明层，`_PRECONDITION_TYPES` 无此类型）与结构化前置分开印：
+                # 同前缀会让读者分不清"runner 真会断言的前置"与"人读的前提说明"。
+                lines.append(f"前置(散文): {_one_line(pc)}")
+            # `namespaces`（全局命名空间声明 `<kind>:<值>`，issue #3781）此前同样不渲染：
+            # 读账本的人看不出"这条与谁争同一资源"（两条用例键有交集 ⇒ runner 自动串行）
+            # ⇒ 会把串行后的结果读成"覆盖不足"，或反过来（issue #3968 ① 的原始误判就是这个）。
+            if c.get("namespaces"):
+                lines.append("命名空间(同键互斥·自动串行): "
+                             + "、".join(_one_line(n) for n in _as_items(c["namespaces"])))
             for ob in (c.get("order_before") or []):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
@@ -445,6 +493,10 @@ def to_md(cases):
                     lines.append(f"禁词{_ft_scope}: {'、'.join(str(x) for x in _ft_words)}")
                 else:
                     lines.append(f"禁词: {ft}")
+            for fct in _as_items(c.get("forbidden_card_text")):
+                # 卡面禁用文案（issue #3968 ① 同类：声明了的断言在账本上不可见 ⇒ 读者
+                # 不知道这条还管着"卡里不许出现哪些字"）。
+                lines.append(f"禁卡文: {_one_line(fct)}")
             for ftl in (c.get("forbidden_tools") or []):
                 _ftl_tool = ftl if isinstance(ftl, str) else (ftl or {}).get("tool")
                 _ftl_act = "" if isinstance(ftl, str) else ((ftl or {}).get("action") or "")
