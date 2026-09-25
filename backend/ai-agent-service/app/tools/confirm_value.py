@@ -233,3 +233,184 @@ def values_match(prior: dict, now: dict) -> bool:
         if not same_value(field, (prior or {}).get(field), value):
             return False
     return True
+
+
+# ══════════ 卡值 ↔ 落库值的**覆盖面台账**（issue #4025 / F22 判据层收口）══════════
+# F22 的病灶是「全系统无一处校验卡值与落库值一致」。判据**本体**已经存在
+# （订单事实面 = `order_create.order_confirmation_verdict`；涉钱值面 = 上面的 `values_match`），
+# 缺的是"**下一条落库路径**凭什么会被登记进这套比对" —— 没有面，新写路径默默落地、
+# 零信号（本仓库反复批判的"未表态即静默"形态，同
+# `tests/test_write_tool_confirm_gate_invariant.py` 的 `CONFIRM_GATE_EXEMPT_WRITE_TOOLS`）。
+#
+# 故：**每条会落库的写路径**必须在此显式表态 ——
+#   ① `amount_guarded` / `value_guarded`：声明它归哪一套比对载体管辖；
+#   ② `undecidable`：**结构上判不了**，必须带 `reason` + `issue` + `owner`（缺口不许匿名）。
+# **未登记即红、陈旧条目即红、声明与源码不符即红** ——
+# 判据 = `backend/ai-agent-service/tests/test_card_db_consistency_guard.py`。
+#
+# 名册**现取**（不写死条数）：`app/tools/*.py` 里 `read_only = False` 且有类属性 `name` 的文件。
+# 复算：`python -m pytest tests/test_card_db_consistency_guard.py -q -s -k census`
+
+#: 比对载体的两种谱系（值 = `stance` 的取值）。
+AMOUNT_GUARDED = "amount_guarded"   # 订单事实串（手机号 + 逐行 名称/数量/单价/小计/加工费/合计）
+VALUE_GUARDED = "value_guarded"     # 涉钱面**按值**比对（`CARD_ONLY_VALUE_FIELDS`）
+UNDECIDABLE = "undecidable"         # 结构上无从比对（**显式登记**，不静默跳过）
+
+#: 未登记进本台账的写路径在调用侧得到的判据 —— 与"一致"**绝不同形**（fail-loud）。
+VERDICT_UNENROLLED = "unenrolled"
+
+#: 写路径 → 表态。键集必须与源码面名册**双向相等**（缺一个 / 多一个都红）。
+CARD_DB_CONSISTENCY_LEDGER: dict = {
+    # ── ① 有比对载体 ─────────────────────────────────────────────────────────
+    "order_create": {
+        "stance": AMOUNT_GUARDED,
+        "guard": "app.tools.order_create.order_confirmation_verdict",
+        "anchor": "#4037",
+        "note": "订单事实串与确认卡投影同口径；不一致 ⇒ 落库前拦截（拦截点 react_turn）",
+    },
+    "product_update": {
+        "stance": VALUE_GUARDED,
+        "guard": "app.tools.confirm_value.values_match",
+        "anchor": "#5414",
+        "note": "价对（before_price → price）按值比对；改价另受 #5303「改前→改后」预览前置约束",
+    },
+    "sku_update": {
+        "stance": VALUE_GUARDED,
+        "guard": "app.tools.confirm_value.values_match",
+        "anchor": "#5414",
+        "note": "声明 before_price ⇒ 与 product_update 同一套价对比对",
+    },
+    "product_batch_update": {
+        "stance": VALUE_GUARDED,
+        "guard": "app.tools.confirm_value.values_match",
+        "anchor": "#5314",
+        "note": "钱在批次行里、参数只带 batch_id ⇒ 按值比对的对象就是 batch_id（与 #5414 同口径）",
+    },
+    "product_manage": {
+        "stance": VALUE_GUARDED,
+        "guard": "app.tools.confirm_value.values_match",
+        "anchor": "#5414",
+        "note": "`price` 属 CARD_ONLY_VALUE_FIELDS ⇒ 建品调用带该字段即入按值比对（该比对与工具无关）",
+    },
+    # ── ② 结构上不可判定（逐条给理由，**不静默跳过**）──────────────────────────
+    "order_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#4025",
+        "issue": "#4025",
+        "owner": "订单域写路径 owner（order_manage）",
+        "reason": "退款走 `refund_amount`，**不在** CARD_ONLY_VALUE_FIELDS（price/before_price/"
+                  "batch_id）里 ⇒ 没有卡值比对载体：卡上的退款金额由模型自由书写，"
+                  "机器侧没有可与之核对的那一份",
+    },
+    "aftersale_create": {
+        "stance": UNDECIDABLE,
+        "anchor": "#4025",
+        "issue": "#4025",
+        "owner": "售后域写路径 owner（aftersale_create）",
+        "reason": "同上（`refund_amount` 无按值核对载体）；该工具的建单金额由服务端按订单实收派生",
+    },
+    "processing_item_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#4882",
+        "issue": "#4025",
+        "owner": "加工域写路径 owner（processing_item_manage）",
+        "reason": "参数面已无金额字段（加工项单价 / 计价方式随 #4882 整体移除，"
+                  "快照键族收缩为 id/name/quantity/unit）⇒ 无值可比；加工费只在订单面有载体",
+    },
+    "processing_order_generate": {
+        "stance": UNDECIDABLE,
+        "anchor": "#4025",
+        "issue": "#4025",
+        "owner": "加工域写路径 owner（processing_order_generate）",
+        "reason": "批量生成加工单：参数只有 `order_ids`，金额（加工费）在订单行里；"
+                  "且该动作由**已确认流程派生**（订单 confirmed → producing）⇒ 无卡值可核对",
+    },
+    "processing_order_update": {
+        "stance": UNDECIDABLE,
+        "anchor": "#4025",
+        "issue": "#4025",
+        "owner": "加工域写路径 owner（processing_order_update）",
+        "reason": "参数面（id/action/processor/expected_delivery_date/reason）无金额字段"
+                  "⇒ 无值可比对",
+    },
+    "human_handoff": {
+        "stance": UNDECIDABLE,
+        "anchor": "#5247",
+        "issue": "#5247",
+        "owner": "客服域写路径 owner（human_handoff）",
+        "reason": "工具已退场（deprecated、不在 create_default_registry、不在任何 skill 工具集）"
+                  "⇒ 无活着的落库路径；条目保留以对齐**源码面**名册口径"
+                  "（与 tests/test_write_audit_action_semantics.py 的 WRITE_TOOL_INVENTORY 同口径）",
+    },
+}
+
+
+def _undecidable_verdict(tool_name: str, stance: str, reason: str) -> dict:
+    """不可判定形态的统一构造（`confirmed` / `actual` 留空 = 两侧都没得比）。"""
+    return {"tool": tool_name, "stance": stance, "verdict": UNDECIDABLE,
+            "reason": reason, "confirmed": "", "actual": ""}
+
+
+def card_db_verdict(tool_name: str, *, args: dict = None,
+                    prior_order_facts: str = "",
+                    prior_values: dict = None) -> dict:
+    """「卡上给用户看的值」× 「真正要落库的值」——**逐路径判据分发**（issue #4025 / F22）。
+
+    Returns:
+        dict: `{"tool", "stance", "verdict", "reason", "confirmed", "actual"}`；
+        `verdict` 取 match / mismatch / undecidable / **unenrolled**。
+
+    • 未登记进台账的写路径 ⇒ `unenrolled`（**绝不**返回 match）：台账漏登记的路径
+      在**调用侧**也拿不到"绿"，与判据侧的"未登记即红"两侧同时兜住。
+    • 分发**不另立口径**：`amount_guarded` 走 `order_create.order_confirmation_verdict`，
+      `value_guarded` 走本模块的 `values_match`（与放行侧同一实现）。
+    """
+    entry = CARD_DB_CONSISTENCY_LEDGER.get(str(tool_name or ""))
+    if entry is None:
+        return {
+            "tool": str(tool_name or ""), "stance": "", "verdict": VERDICT_UNENROLLED,
+            "reason": (f"写落库路径 {tool_name} 未登记进卡值↔落库比对台账（F22 类级元守卫）"
+                       f"⇒ 判为**未覆盖**，不视为一致；请登记比对载体或登记为不可判定"),
+            "confirmed": "", "actual": "",
+        }
+    stance = entry.get("stance")
+    if stance == AMOUNT_GUARDED:
+        from app.tools.order_create import order_confirmation_verdict
+        return {"tool": tool_name, "stance": stance,
+                **order_confirmation_verdict(args or {}, prior_order_facts)}
+    if stance == VALUE_GUARDED:
+        from app.tools.order_create import (
+            ORDER_VERDICT_MATCH, ORDER_VERDICT_MISMATCH, ORDER_VERDICT_UNDECIDABLE,
+        )
+        now = write_value_facts(args or {})
+        if not now:
+            return _undecidable_verdict(
+                tool_name, stance,
+                f"本次调用不带涉钱面值字段（CARD_ONLY_VALUE_FIELDS={CARD_ONLY_VALUE_FIELDS}）"
+                f"⇒ 本次没有可比对的值")
+        prior = {k: v for k, v in (prior_values or {}).items() if k in now}
+        if not prior:
+            return _undecidable_verdict(
+                tool_name, stance,
+                "会话里没有这张卡的**值**快照（旧形态记录 / 未点卡）⇒ 无从比对")
+        if values_match(prior, now):
+            return {"tool": tool_name, "stance": stance, "verdict": ORDER_VERDICT_MATCH,
+                    "reason": f"本次要落库的值与顾客点过的卡上的值逐项一致：{now}",
+                    "confirmed": json.dumps(prior, ensure_ascii=False, sort_keys=True),
+                    "actual": json.dumps(now, ensure_ascii=False, sort_keys=True)}
+        return {"tool": tool_name, "stance": stance, "verdict": ORDER_VERDICT_MISMATCH,
+                "reason": (f"涉钱面被拦截：本次要落库的值与顾客点过的**卡上的值**不一致。"
+                           f"卡上是 {json.dumps(prior, ensure_ascii=False, sort_keys=True)}，"
+                           f"本次是 {json.dumps(now, ensure_ascii=False, sort_keys=True)}。"
+                           f"（价面字段按**值**比对，10.0 与 10.00 是同一个价。）"
+                           f"确实要改，就**重新发一张确认卡**让顾客再点一次。"),
+                "confirmed": json.dumps(prior, ensure_ascii=False, sort_keys=True),
+                "actual": json.dumps(now, ensure_ascii=False, sort_keys=True)}
+    if stance == UNDECIDABLE:
+        return _undecidable_verdict(
+            tool_name, stance,
+            str(entry.get("reason") or "已登记为不可判定（台账未写理由 ⇒ 由判据判红）"))
+    # 台账里出现了未定义的 stance ⇒ 不静默（判据侧同样会红）
+    return _undecidable_verdict(
+        tool_name, str(stance or ""),
+        f"台账条目 {tool_name} 的 stance 不认识：{stance!r} ⇒ 判为不可判定")
