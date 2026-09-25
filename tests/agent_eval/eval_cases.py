@@ -9203,6 +9203,24 @@ _CASE_UI_059 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-060 [NORMAL] 官网首页未登录不跳登录页 —— 根路径进公开路由白名单（`isPublicRoute('/')` = true / `shouldRedirectToLogin('/')` = false），受保护业务页跳转一条不放宽（issue #4903 的行为修复补录用例，关联 #4906）（源: cases/ui.yml）──
+_CASE_UI_060 = EvalCase(
+    id='UI-060',
+    legacy_id='',
+    title="官网首页未登录不跳登录页 —— 根路径进公开路由白名单（`isPublicRoute('/')` = true / `shouldRedirectToLogin('/')` = false），受保护业务页跳转一条不放宽（issue #4903 的行为修复补录用例，关联 #4906）",
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['未登录直接打开 migaozn.com 官网首页（根路径 /）：首页必须正常常开，不得被强制跳转到登录页'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**根路径是公开路由**：`isPublicRoute('/')` === true；带 query/hash 的落地页同样 true（`isPublicRoute('/?utm_source=wechat')` === true、`isPublicRoute('/#hero')` === true）。执行点 = frontend/admin-web/tests/unit/lib/auth-redirect.test.ts 的「官网首页（根路径）是公开路由 —— migaozn.com 首页不得把未登录访客挡在门外（issue #4903）」（逐条 `expect(...).toBe(true)`）。", "判据 2·**根路径 401 不跳登录页**：`shouldRedirectToLogin('/')` === false —— AuthProvider 不再对首页执行会话恢复、axios 拦截器不再强制 `window.location.href='/login'`（生产实测形态：首页先渲染再被跳走）。执行点 = 同文件的「官网首页 401 不跳转 —— 只有用户主动点「商家登录」才去登录页（issue #4903）」（`expect(shouldRedirectToLogin('/')).toBe(false)`）。", "判据 3·**受保护业务页跳转一条不放宽**（反向护栏 —— 防「放宽首页」被顺手扩大成放宽业务面）：`shouldRedirectToLogin` 对 '/dashboard' / '/orders' / '/customers' 全 === true，且 `isPublicRoute` 对 '/dashboard' / '/orders' / '/products' / '/employees' / '/agent-workspace' 全 === false。执行点 = 「受保护业务页非公开路由」+「在受保护页面 401 时应跳转登录」+「不含任何受保护业务页（放宽首页不得连带放宽业务面）」。", "判据 4·**公开面单一源**：`PUBLIC_ROUTES` 排序后逐字等于 ['/', '/about', '/contact', '/login', '/register', '/services']（六项；根路径必须在内、受保护业务页不得混入）。执行点 = 「恰好是「首页 + 认证页 + 官网公开页」六项」+「公开路由的子路径也算公开（兼容 query 前缀）」。", "🔴 红证（单点变异实测 2026-09-26，node 直跑真源码 + 变异副本，非纸面推断）：把 `PUBLIC_ROUTES` 里的 '/' 删掉 ⇒ 7 条探针 **4 条判红**（`isPublicRoute('/')`、`isPublicRoute('/?utm_source=wechat')`、`shouldRedirectToLogin('/')`、`PUBLIC_ROUTES` 六项断言），判据 1/2/4 三条**同时失效**；还原后 7/7 绿。⚠️ 判据 3 在该变异下**仍绿** —— 它是反向护栏（本缺陷的红证不在它身上），如实登记以免被读成它的红证。"],
+    skip_reason='[backend-contract] 纯前端路由守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/auth-redirect.test.ts 执行',
+    tags=['ui', 'auth', 'redirect', 'public-route', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -9727,6 +9745,7 @@ ALL_CASES = (
     _CASE_UI_057,
     _CASE_UI_058,
     _CASE_UI_059,
+    _CASE_UI_060,
     _CASE_UT_001,
     _CASE_UT_002,
 )

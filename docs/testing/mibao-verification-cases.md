@@ -2387,7 +2387,7 @@
 期望: knowledge_search(query=退换货)
 数据: 售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）
 ```
-溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾） ｜ tags: knowledge, wiki, xiaobu, mibao
+溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾）；2026-09-26（关联 #3971）补 traces：二层缺陷「检索分类软过滤」（PR #3068 / squash 0628253b）的承重测试 KnowledgeCardServiceTest 已声明本用例，此前却未登记进 traces.tests；同批如实登记 —— 本用例在含 0628253b 的部署 SHA 上的**真 LLM 层重放未跑**（#4262 口径：真 LLM 跑属人工按需触发），故当前只有单测级证据 ｜ tags: knowledge, wiki, xiaobu, mibao
 
 ### KN-004. 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除） 🔵
 ```
@@ -6057,7 +6057,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（57 case）
+## 前端 UI 域（58 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -6833,6 +6833,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-25 新增（issue #5582）：4 组同图各自换唯一图标（售后工单→LifeBuoy / 省料看板→TrendingDown / 计件工资→Coins / 企业基础信息→Settings）+ 数据层与渲染面双判据。取号 UI-059。 ｜ tags: ui, menu, icon, layout
 
+### UI-060. 官网首页未登录不跳登录页 —— 根路径进公开路由白名单（`isPublicRoute('/')` = true / `shouldRedirectToLogin('/')` = false），受保护业务页跳转一条不放宽（issue #4903 的行为修复补录用例，关联 #4906） 🔵
+```
+你: 未登录直接打开 migaozn.com 官网首页（根路径 /）：首页必须正常常开，不得被强制跳转到登录页
+期望: direct_reply
+数据: 判据 1·**根路径是公开路由**：`isPublicRoute('/')` === true；带 query/hash 的落地页同样 true（`isPublicRoute('/?utm_source=wechat')` === true、`isPublicRoute('/#hero')` === true）。执行点 = frontend/admin-web/tests/unit/lib/auth-redirect.test.ts 的「官网首页（根路径）是公开路由 —— migaozn.com 首页不得把未登录访客挡在门外（issue #4903）」（逐条 `expect(...).toBe(true)`）。
+数据: 判据 2·**根路径 401 不跳登录页**：`shouldRedirectToLogin('/')` === false —— AuthProvider 不再对首页执行会话恢复、axios 拦截器不再强制 `window.location.href='/login'`（生产实测形态：首页先渲染再被跳走）。执行点 = 同文件的「官网首页 401 不跳转 —— 只有用户主动点「商家登录」才去登录页（issue #4903）」（`expect(shouldRedirectToLogin('/')).toBe(false)`）。
+数据: 判据 3·**受保护业务页跳转一条不放宽**（反向护栏 —— 防「放宽首页」被顺手扩大成放宽业务面）：`shouldRedirectToLogin` 对 '/dashboard' / '/orders' / '/customers' 全 === true，且 `isPublicRoute` 对 '/dashboard' / '/orders' / '/products' / '/employees' / '/agent-workspace' 全 === false。执行点 = 「受保护业务页非公开路由」+「在受保护页面 401 时应跳转登录」+「不含任何受保护业务页（放宽首页不得连带放宽业务面）」。
+数据: 判据 4·**公开面单一源**：`PUBLIC_ROUTES` 排序后逐字等于 ['/', '/about', '/contact', '/login', '/register', '/services']（六项；根路径必须在内、受保护业务页不得混入）。执行点 = 「恰好是「首页 + 认证页 + 官网公开页」六项」+「公开路由的子路径也算公开（兼容 query 前缀）」。
+数据: 🔴 红证（单点变异实测 2026-09-26，node 直跑真源码 + 变异副本，非纸面推断）：把 `PUBLIC_ROUTES` 里的 '/' 删掉 ⇒ 7 条探针 **4 条判红**（`isPublicRoute('/')`、`isPublicRoute('/?utm_source=wechat')`、`shouldRedirectToLogin('/')`、`PUBLIC_ROUTES` 六项断言），判据 1/2/4 三条**同时失效**；还原后 7/7 绿。⚠️ 判据 3 在该变异下**仍绿** —— 它是反向护栏（本缺陷的红证不在它身上），如实登记以免被读成它的红证。
+跳过: [backend-contract] 纯前端路由守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/auth-redirect.test.ts 执行
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-26 新增（用例库补录，关联 #4906 / 行为修复 #4903）：未登录访问 migaozn.com 官网首页被强制跳登录页 —— 公开路由白名单补 '/'（AuthProvider 跳过会话恢复、拦截器不强制跳转），受保护业务页跳转一条不放宽。取号 UI-060（#4906 标题里的 UI-053 已被 #4965「订单详情页打印报价单」占用，按当前最大号 UI-059 顺延）。 ｜ tags: ui, auth, redirect, public-route, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -6862,8 +6876,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：489（活跃 119，跳过 370）
-- tier 分布：smoke 12 / normal 447 / adversarial 30
+- 用例总数：490（活跃 119，跳过 371）
+- tier 分布：smoke 12 / normal 448 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6888,7 +6902,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：57
+- 前端 UI 域：58
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

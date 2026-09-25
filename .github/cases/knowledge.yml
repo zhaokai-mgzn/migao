@@ -156,10 +156,11 @@ cases:
     data_checks:
       - "售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾）"
+    merge_log: "2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ；2026-09-09 本地重放通过（KN-003 同域 smoke 100%）后解除 skip（issue #3076 复盘收尾）；2026-09-26（关联 #3971）补 traces：二层缺陷「检索分类软过滤」（PR #3068 / squash 0628253b）的承重测试 KnowledgeCardServiceTest 已声明本用例，此前却未登记进 traces.tests；同批如实登记 —— 本用例在含 0628253b 的部署 SHA 上的**真 LLM 层重放未跑**（#4262 口径：真 LLM 跑属人工按需触发），故当前只有单测级证据"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_rule_matcher.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeCardServiceTest.java"
       ci:
         - agent-eval.yml
       verifies: []
