@@ -206,17 +206,20 @@ class TestRuleMatcher:
         assert result is not None
         assert result.intent == IntentType.PRODUCT_INQUIRY
 
-    def test_standalone_create_matches_product_inquiry(self, matcher):
-        """单独的 '创建' 通过正则匹配 product_inquiry（P&E 创建流程入口）"""
-        result = matcher.match("创建")
-        assert result is not None
-        assert result.intent == IntentType.PRODUCT_INQUIRY
+    def test_standalone_create_not_product_inquiry(self, matcher):
+        """裸 '创建' 不再命中 product_inquiry（issue #3731：该正则要求「创建 + 商品描述」）
 
-    def test_standalone_new_matches_product_inquiry(self, matcher):
-        """单独的 '新建' 通过正则匹配 product_inquiry（P&E 创建流程入口）"""
+        原判据（测试审计 commit `b21ef73ee`）固化了过宽射程：注释写"需要商品描述"、正则尾组
+        却是可选 ⇒ 无域信号的裸动词被 L1 判成 0.9 高置信商品意图（#3731 验收标准要求收窄）。
+        收窄后交 L2 分类器按上下文接手；仓内无用例以裸动词为输入（`.github/cases/**` 实查 0 条）。
+        """
+        result = matcher.match("创建")
+        assert result is None or result.intent != IntentType.PRODUCT_INQUIRY
+
+    def test_standalone_new_not_product_inquiry(self, matcher):
+        """裸 '新建' 不再命中 product_inquiry（issue #3731，同 `test_standalone_create_…`）"""
         result = matcher.match("新建")
-        assert result is not None
-        assert result.intent == IntentType.PRODUCT_INQUIRY
+        assert result is None or result.intent != IntentType.PRODUCT_INQUIRY
 
     def test_product_keyword_still_matches(self, matcher):
         """'商品' 关键词仍然匹配 product_inquiry（回归保护）"""
