@@ -308,39 +308,97 @@ def order_facts_of(payload: Any) -> str:
     }, ensure_ascii=False, sort_keys=True)
 
 
+# ── 落库前核对的**三态**判据取值（issue #4025 / F22 的判据层收口）──────────────
+# 运行时只需要"拦 / 放"两态；**审计面**必须三态：一致 / 不一致 / **不可判定**。
+# 若"无从核对"也走放行侧的空串，它就与"真的比对过且对得上"长得一模一样 ——
+# 那正是 F22「全系统无一处校验两者一致」在**判据层**的残留形态
+# （§migao-acceptance 的"空跑"：绿了但没跑）。
+ORDER_VERDICT_MATCH = "match"
+ORDER_VERDICT_MISMATCH = "mismatch"
+ORDER_VERDICT_UNDECIDABLE = "undecidable"
+
+
+def order_confirmation_verdict(payload: Any, confirmed_facts: Any) -> dict:
+    """顾客确认过的事实 × 本次真正要落库的事实 —— **三态**判据源（issue #4025 / F22）。
+
+    Returns:
+        dict: `{"verdict", "reason", "confirmed", "actual"}`；`verdict` 取
+        `ORDER_VERDICT_MATCH` / `ORDER_VERDICT_MISMATCH` / `ORDER_VERDICT_UNDECIDABLE`。
+        `reason` **恒非空** —— 一致与不可判定也各有一句"凭什么这么判"，
+        否则判据自己说不出话，红/绿都不可归因。
+
+    判定顺序与本函数 `mismatch` 之外的三条边界**逐条对齐** `order_confirmation_mismatch`
+    （后者是本函数的 `mismatch` 投影）——本函数只**增加**"说得出为什么"，
+    一条放行边界都不改。
+
+    消费者：`app.tools.confirm_value.card_db_verdict`（覆盖面台账的判据分发）。
+    运行时拦截仍走 `order_confirmation_mismatch`（行为一字未动，本单不动产品口径）。
+    """
+    confirmed = str(confirmed_facts or "").strip()
+    if not confirmed:
+        return {
+            "verdict": ORDER_VERDICT_UNDECIDABLE,
+            "reason": "会话里没有顾客确认过的订单事实快照（老会话 / 非下单写路径）⇒ 无从比对",
+            "confirmed": "", "actual": order_facts_of(payload),
+        }
+    actual = order_facts_of(payload)
+    if not actual:
+        return {
+            "verdict": ORDER_VERDICT_UNDECIDABLE,
+            "reason": "本次下单 payload 复算不出订单事实（无 items / 形态不认识）⇒ 无从比对",
+            "confirmed": confirmed, "actual": "",
+        }
+    try:
+        prior_items = json.loads(confirmed).get("items") or []
+    except (ValueError, TypeError, AttributeError):
+        # 快照形态不认识 ⇒ 不臆断（拒绝比放行安全的前提是"读得懂"，读不懂就不猜）
+        return {
+            "verdict": ORDER_VERDICT_UNDECIDABLE,
+            "reason": "确认快照形态不认识（不是可解析的订单事实 JSON）⇒ 不臆断",
+            "confirmed": confirmed, "actual": actual,
+        }
+    if not prior_items:
+        return {
+            "verdict": ORDER_VERDICT_UNDECIDABLE,
+            "reason": "确认快照里没有 items（该写调用不是下单，或快照只有手机号）⇒ 无从比对",
+            "confirmed": confirmed, "actual": actual,
+        }
+    if actual == confirmed:
+        return {
+            "verdict": ORDER_VERDICT_MATCH,
+            "reason": "本次要落库的订单事实与顾客确认卡上的那一份逐字一致",
+            "confirmed": confirmed, "actual": actual,
+        }
+    return {
+        "verdict": ORDER_VERDICT_MISMATCH,
+        "reason": (
+            f"下单被拦截：本次要执行的订单明细与**顾客确认卡上的明细不一致**。"
+            f"顾客确认的是 {confirmed}，本次要落库的是 {actual}。"
+            f"确认过的数量/单价/加工项/手机号一旦变化，顾客点过的确认即失效"
+            f"（线上实证：卡上 ¥498（10 米/3 加工项）落库成 ¥133.80（1 米/2 加工项））。"
+            f"请把明细改回顾客确认过的值；确实要改，就**重新发一张确认卡**让顾客再确认一次，"
+            f"不要直接落库。"
+        ),
+        "confirmed": confirmed, "actual": actual,
+    }
+
+
 def order_confirmation_mismatch(payload: Any, confirmed_facts: Any) -> str:
     """落库前核对：**顾客确认过的事实** vs **本次真正要执行的事实**。
 
     Returns:
         str: 不一致时的可行动描述；一致 / 无从核对（快照为空）时返回 ""（放行）。
+        ⚠️ `""` 同时覆盖**一致**与**无从核对**两种情形：运行时无需区分（两者都放行），
+        审计/判据**必须**区分 —— 要区分请读 `order_confirmation_verdict` 的 `verdict`
+        （本函数就是它的 `mismatch` 投影，不另立第二份判定）。
 
     fail-closed 边界（刻意保守，避免把合法输入拦掉）：
       · 没记过确认快照（老会话 / 非确认路径）⇒ 放行 —— 本函数**只比对"确认过什么"**，
         不替代确认门禁（门禁在 base_skill，各自职责不重叠）；
       · 确认快照里没有 items（写工具不是下单，或快照只有手机号）⇒ 放行。
     """
-    confirmed = str(confirmed_facts or "").strip()
-    if not confirmed:
-        return ""
-    actual = order_facts_of(payload)
-    if not actual:
-        return ""
-    try:
-        prior_items = json.loads(confirmed).get("items") or []
-    except (ValueError, TypeError, AttributeError):
-        return ""  # 快照形态不认识 ⇒ 不臆断（拒绝比放行安全的前提是"读得懂"，读不懂就不猜）
-    if not prior_items:
-        return ""
-    if actual == confirmed:
-        return ""
-    return (
-        f"下单被拦截：本次要执行的订单明细与**顾客确认卡上的明细不一致**。"
-        f"顾客确认的是 {confirmed}，本次要落库的是 {actual}。"
-        f"确认过的数量/单价/加工项/手机号一旦变化，顾客点过的确认即失效"
-        f"（线上实证：卡上 ¥498（10 米/3 加工项）落库成 ¥133.80（1 米/2 加工项））。"
-        f"请把明细改回顾客确认过的值；确实要改，就**重新发一张确认卡**让顾客再确认一次，"
-        f"不要直接落库。"
-    )
+    verdict = order_confirmation_verdict(payload, confirmed_facts)
+    return verdict["reason"] if verdict["verdict"] == ORDER_VERDICT_MISMATCH else ""
 
 
 class OrderCreateTool(BaseTool):
