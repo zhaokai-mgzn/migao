@@ -1,10 +1,10 @@
-// case_ids: API-010, AU-001, AU-002, AU-003, BM-001, BM-002, BM-003
+// case_ids: API-010, AU-001, AU-002, AU-003, AU-006, BM-001, BM-002, BM-003
 /**
  * 认证工具函数测试
  *
  * 覆盖: Token 存取、登录态判断、登出清理、JWT 过期检查、
  *       C 端微信登录（miniAppLogin 不动）、
- *       B 端员工账号密码登录（employeeLogin，issue #5485：租户只由标识里的企业编码解析）
+ *       B 端员工账号密码登录（employeeLogin）+ 自助改密（changePassword），issue #5485
  */
 import Taro from '@tarojs/taro'
 import {
@@ -16,6 +16,7 @@ import {
   checkTokenValidity,
   miniAppLogin,
   employeeLogin,
+  changePassword,
 } from '../src/utils/auth'
 import { STORAGE_KEYS } from '../src/utils/constants'
 
@@ -260,11 +261,19 @@ describe('auth utils', () => {
       expect(Taro.login).not.toHaveBeenCalled()
     })
 
-    it('后端拒绝时原样透传统一文案且不落 Token（AU-003 / BM-003）', async () => {
-      mockPost.mockResolvedValueOnce({
-        success: false,
-        error: { code: 'AUTH_FAILED', message: '账号或密码错误' },
-      })
+    it('凭据错（真实形态 HTTP 401 + error.message）⇒ 端侧用服务端统一文案，不落 Token（AU-003 / BM-003）', async () => {
+      // admin-api 的业务失败是**带 HTTP 状态码**的（EmployeeLoginControllerTest 钉的形状）：
+      // 401 + {success:false, error:{code:'AUTH_FAILED', message:'账号或密码错误'}} ⇒ request 层 throw，
+      // 响应体挂在 error.data 上。**不能**按「HTTP 200 + success:false」去 mock（那是假绿）。
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 401'), {
+          statusCode: 401,
+          data: {
+            success: false,
+            error: { code: 'AUTH_FAILED', message: '账号或密码错误' },
+          },
+        }),
+      )
 
       const result = await employeeLogin('zhangsan@acme', 'wrong-pass')
 
@@ -282,6 +291,82 @@ describe('auth utils', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Network Error')
+    })
+  })
+
+  // ========== 自助改密（首登强制改密的端侧出口，issue #5485） ==========
+
+  describe('changePassword', () => {
+    const changedUser = {
+      id: 'emp-1',
+      nickname: '运营小王',
+      avatar: null,
+      tenantId: 7,
+      mustChangePassword: false,
+    }
+
+    it('提交到 /api/auth/password/change，body {oldPassword,newPassword} 且**带认证**（AU-006）', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'new-jwt-token', user: changedUser },
+      })
+
+      await changePassword('init-pass-123', 'new-pass-456')
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/auth/password/change',
+        { oldPassword: 'init-pass-123', newPassword: 'new-pass-456' },
+        expect.objectContaining({ baseURL: expect.any(String) }),
+      )
+      // 该端点在强制改密白名单里但**需认证** ⇒ 不得 skipAuth（否则拿 401，白名单也没意义）
+      expect((mockPost.mock.calls[0][2] as any).skipAuth).toBeUndefined()
+    })
+
+    it('成功 ⇒ 用响应里换发的新凭据覆盖本地凭据', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'new-jwt-token', user: changedUser },
+      })
+
+      const result = await changePassword('init-pass-123', 'new-pass-456')
+
+      expect(result.success).toBe(true)
+      expect(result.user).toEqual(changedUser)
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, 'new-jwt-token')
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.USER, JSON.stringify(changedUser))
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, 7)
+    })
+
+    it('新密码不符合策略（422）⇒ 展示服务端文案，不自行造规则、不覆盖凭据', async () => {
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 422'), {
+          statusCode: 422,
+          data: {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: '新密码须至少 8 位且包含字母和数字' },
+          },
+        }),
+      )
+
+      const result = await changePassword('init-pass-123', 'short1')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('新密码须至少 8 位且包含字母和数字')
+      expect(Taro.setStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, expect.any(String))
+    })
+
+    it('原密码不正确（422）⇒ 同样原样展示服务端文案', async () => {
+      mockPost.mockRejectedValueOnce(
+        Object.assign(new Error('Request failed with status 422'), {
+          statusCode: 422,
+          data: { success: false, error: { code: 'VALIDATION_ERROR', message: '原密码不正确' } },
+        }),
+      )
+
+      const result = await changePassword('wrong-old', 'new-pass-456')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('原密码不正确')
     })
   })
 })

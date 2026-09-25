@@ -7,7 +7,7 @@
 import Taro from '@tarojs/taro'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { miniAppLogin, employeeLogin, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
+import { miniAppLogin, employeeLogin, changePassword, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
 import { STORAGE_KEYS, DEFAULT_TENANT_ID } from '../utils/constants'
 import type { User } from '../types'
 
@@ -22,6 +22,8 @@ interface AuthState {
   login: (tenantId?: number) => Promise<boolean>
   /** B 端员工登录（issue #5485）：identifier = `用户名@企业编码`，原样发服务端（前端不解析租户） */
   employeeLoginAction: (identifier: string, password: string) => Promise<boolean>
+  /** 首登强制改密（issue #5485）：成功后用**响应里的新凭据**覆盖本地凭据 */
+  changePasswordAction: (oldPassword: string, newPassword: string) => Promise<boolean>
   logout: () => void
   setUser: (user: User) => void
   setToken: (token: string) => void
@@ -112,8 +114,8 @@ export const useAuthStore = create<AuthState>()(
       /**
        * B 端员工登录（issue #5485）：`用户名@企业编码` + 密码。
        * 失败原因（编码不存在 / 用户名不存在 / 密码错）由后端统一成同一 401 文案，此处原样展示。
-       * 首登强制改密：Taro 端**没有改密页** ⇒ 只提示「到管理后台修改密码」（缺口如实登记，
-       * 不假装有改密页）；改密前业务接口会 403 `PASSWORD_CHANGE_REQUIRED`（后端不变式 I4）。
+       * 首登强制改密（`user.mustChangePassword`）本层**不弹提示、不决定去向** ——
+       * 由登录页读到 `user.mustChangePassword` 后送往改密页（否则提示与路由会是两处口径）。
        */
       employeeLoginAction: async (identifier: string, password: string) => {
         const { isLoading } = get()
@@ -131,13 +133,6 @@ export const useAuthStore = create<AuthState>()(
               isLoggedIn: true,
               isLoading: false,
             })
-            if (result.user.mustChangePassword) {
-              Taro.showToast({
-                title: '首次登录请到管理后台修改密码',
-                icon: 'none',
-                duration: 3000,
-              })
-            }
             return true
           }
 
@@ -147,6 +142,40 @@ export const useAuthStore = create<AuthState>()(
         } catch (error: any) {
           set({ isLoading: false })
           Taro.showToast({ title: '登录失败，请稍后重试', icon: 'none' })
+          return false
+        }
+      },
+
+      /**
+       * 首登强制改密（issue #5485）：成功后后端**换发**新凭据（响应体同登录），
+       * `changePassword` 已把新 token/user 落 storage ⇒ 这里同步内存态（`getToken()` 取新的）。
+       * 失败（原密码不正确 / 新密码不符合策略）展示服务端文案，前端不造校验规则。
+       */
+      changePasswordAction: async (oldPassword: string, newPassword: string) => {
+        const { isLoading } = get()
+        if (isLoading) return false
+
+        set({ isLoading: true })
+
+        try {
+          const result = await changePassword(oldPassword, newPassword)
+
+          if (result.success && result.user) {
+            set({
+              token: getToken(),
+              user: result.user,
+              isLoggedIn: true,
+              isLoading: false,
+            })
+            return true
+          }
+
+          set({ isLoading: false })
+          Taro.showToast({ title: result.error || '密码修改失败', icon: 'none' })
+          return false
+        } catch (error: any) {
+          set({ isLoading: false })
+          Taro.showToast({ title: '密码修改失败，请稍后重试', icon: 'none' })
           return false
         }
       },

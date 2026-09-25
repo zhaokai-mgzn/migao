@@ -4,20 +4,25 @@
  * 覆盖: 渲染（账号 + 密码 + 登录按钮）、提交调用、空输入拦截、
  *       成功跳转、失败不跳转、密码框遮蔽、微信授权按钮已退场
  */
-// case_ids: AU-001, AU-003, BM-001, BM-002
+// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002
 import React from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
 // Mock stores
 const mockEmployeeLoginAction = jest.fn()
 const mockLogin = jest.fn()
+const mockGetState = jest.fn()
 
 jest.mock('../src/store/authStore', () => ({
-  useAuthStore: jest.fn(() => ({
-    isLoading: false,
-    login: mockLogin,
-    employeeLoginAction: mockEmployeeLoginAction,
-  })),
+  useAuthStore: Object.assign(
+    jest.fn(() => ({
+      isLoading: false,
+      login: mockLogin,
+      employeeLoginAction: mockEmployeeLoginAction,
+    })),
+    // 登录页在动作之后读的是**最新**状态（首登强制改密 ⇒ 去改密页）
+    { getState: () => mockGetState() },
+  ),
 }))
 
 import Taro from '@tarojs/taro'
@@ -46,6 +51,8 @@ async function clickLogin() {
 describe('LoginPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    // 缺省：普通员工（不强制改密）⇒ 直接进主界面
+    mockGetState.mockReturnValue({ user: { mustChangePassword: false } })
   })
 
   it('应渲染品牌、账号密码两个输入框与登录按钮', () => {
@@ -96,6 +103,31 @@ describe('LoginPage', () => {
     expect(Taro.switchTab).toHaveBeenCalledWith({
       url: '/pages/chat/index/index',
     })
+  })
+
+  it('mustChangePassword=true ⇒ 不进主界面，直接转首登改密页（AU-006）', async () => {
+    mockEmployeeLoginAction.mockResolvedValueOnce(true)
+    mockGetState.mockReturnValue({ user: { mustChangePassword: true } })
+
+    render(<LoginPage />)
+    fillForm('zhangsan@acme', 'init-pass-123')
+    await clickLogin()
+
+    // 改密前后端只放行白名单接口 ⇒ 放进主界面只会每个功能都 403（用户读成「小程序坏了」）
+    expect(Taro.switchTab).not.toHaveBeenCalled()
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/pages/auth/change-password/index' })
+  })
+
+  it('mustChangePassword 非真 ⇒ 直接进主界面', async () => {
+    mockEmployeeLoginAction.mockResolvedValueOnce(true)
+    mockGetState.mockReturnValue({ user: { mustChangePassword: false, id: 'emp-1' } })
+
+    render(<LoginPage />)
+    fillForm('zhangsan@acme', 'init-pass-123')
+    await clickLogin()
+
+    expect(Taro.redirectTo).not.toHaveBeenCalledWith({ url: '/pages/auth/change-password/index' })
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/chat/index/index' })
   })
 
   it('账号为空 → 本地拦截并提示，不发请求', async () => {

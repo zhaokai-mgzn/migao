@@ -27,6 +27,9 @@ export default function LoginPage() {
    * 提交登录。
    * 空输入在本地拦下（不白跑一次请求）；其余一律交后端判定，
    * 失败原因由 authStore 内部 showToast（不区分是哪个字段错）。
+   *
+   * 首登强制改密（`user.mustChangePassword`）：**不放进主界面**，直接送改密页 ——
+   * 改密前后端只放行白名单接口，硬进主界面只会让每个功能都 403（用户读成「小程序坏了」）。
    */
   const handleLogin = useCallback(async () => {
     if (isLoading) return
@@ -36,9 +39,15 @@ export default function LoginPage() {
     }
 
     const success = await employeeLoginAction(identifier.trim(), password)
-    if (success) {
-      Taro.switchTab({ url: '/pages/chat/index/index' })
+    if (!success) return
+
+    // 动作之后的**最新**状态：钩子返回值在本闭包里是旧的
+    const { user } = useAuthStore.getState()
+    if (user?.mustChangePassword) {
+      Taro.redirectTo({ url: '/pages/auth/change-password/index' })
+      return
     }
+    Taro.switchTab({ url: '/pages/chat/index/index' })
   }, [identifier, password, isLoading, employeeLoginAction])
 
   // 服务条款

@@ -11,6 +11,7 @@ import { STORAGE_KEYS } from '../src/utils/constants'
 jest.mock('../src/utils/auth', () => ({
   miniAppLogin: jest.fn(),
   employeeLogin: jest.fn(),
+  changePassword: jest.fn(),
   getToken: jest.fn(() => null),
   getUser: jest.fn(() => null),
   logout: jest.fn(),
@@ -30,6 +31,7 @@ function getAuthStore() {
   jest.mock('../src/utils/auth', () => ({
     miniAppLogin: jest.fn(),
     employeeLogin: jest.fn(),
+    changePassword: jest.fn(),
     getToken: jest.fn(() => null),
     getUser: jest.fn(() => null),
     logout: jest.fn(),
@@ -136,7 +138,7 @@ describe('authStore', () => {
       expect(state.isLoading).toBe(false)
     })
 
-    it('首登强制改密 → 提示「首次登录请到管理后台修改密码」（AU-006；Taro 端无改密页）', async () => {
+    it('mustChangePassword=true 时 store 不弹提示、不决定去向（去向由登录页定，AU-006）', async () => {
       const useAuthStore = getAuthStore()
       const { employeeLogin: mockEmpLogin, getToken: mockGt } = require('../src/utils/auth')
 
@@ -151,25 +153,11 @@ describe('authStore', () => {
         .employeeLoginAction('zhangsan@acme', 'init-pass-123')
 
       expect(success).toBe(true)
+      // 去向（改密页 or 主界面）只由登录页读 `user.mustChangePassword` 决定 ——
+      // store 再弹一句就是两处口径（且「到管理后台」的说法已随自助改密页作废）
+      expect(useAuthStore.getState().user?.mustChangePassword).toBe(true)
       const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
-      expect(TaroInStore.showToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: '首次登录请到管理后台修改密码' }),
-      )
-    })
-
-    it('非强制改密（false/缺省）不弹该提示', async () => {
-      const useAuthStore = getAuthStore()
-      const { employeeLogin: mockEmpLogin, getToken: mockGt } = require('../src/utils/auth')
-
-      mockEmpLogin.mockResolvedValueOnce({ success: true, user: empUser })
-      mockGt.mockReturnValue('emp-token')
-
-      await useAuthStore.getState().employeeLoginAction('zhangsan@acme', 'init-pass-123')
-
-      const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
-      expect(TaroInStore.showToast).not.toHaveBeenCalledWith(
-        expect.objectContaining({ title: '首次登录请到管理后台修改密码' }),
-      )
+      expect(TaroInStore.showToast).not.toHaveBeenCalled()
     })
 
     it('登录失败应保持未登录、不落 Token，并展示后端统一文案（AU-003 / BM-003）', async () => {
@@ -205,6 +193,57 @@ describe('authStore', () => {
 
       expect(result).toBe(false)
       expect(mockEmpLogin).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // ========== 自助改密（首登强制改密的端侧出口，issue #5485） ==========
+
+  describe('changePasswordAction', () => {
+    const changedUser = {
+      id: 'emp-1',
+      nickname: '运营小王',
+      avatar: null,
+      tenantId: 7,
+      mustChangePassword: false,
+    }
+
+    it('改密成功 ⇒ 用换发的新凭据更新状态（AU-006）', async () => {
+      const useAuthStore = getAuthStore()
+      const { changePassword: mockChange, getToken: mockGt } = require('../src/utils/auth')
+
+      mockChange.mockResolvedValueOnce({ success: true, user: changedUser })
+      mockGt.mockReturnValue('new-token')
+
+      const success = await useAuthStore
+        .getState()
+        .changePasswordAction('init-pass-123', 'new-pass-456')
+
+      expect(success).toBe(true)
+      expect(mockChange).toHaveBeenCalledWith('init-pass-123', 'new-pass-456')
+      const state = useAuthStore.getState()
+      expect(state.token).toBe('new-token')
+      expect(state.user).toEqual(changedUser)
+      expect(state.isLoggedIn).toBe(true)
+      expect(state.isLoading).toBe(false)
+    })
+
+    it('改密失败（原密码不正确）⇒ 展示服务端文案且不改动凭据', async () => {
+      const useAuthStore = getAuthStore()
+      const { changePassword: mockChange } = require('../src/utils/auth')
+
+      mockChange.mockResolvedValueOnce({ success: false, error: '原密码不正确' })
+
+      const success = await useAuthStore
+        .getState()
+        .changePasswordAction('wrong-old', 'new-pass-456')
+
+      expect(success).toBe(false)
+      expect(useAuthStore.getState().token).toBeNull()
+      expect(useAuthStore.getState().isLoggedIn).toBe(false)
+      const TaroInStore = require('@tarojs/taro').default || require('@tarojs/taro')
+      expect(TaroInStore.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: '原密码不正确' }),
+      )
     })
   })
 

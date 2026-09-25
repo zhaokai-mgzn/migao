@@ -10,6 +10,19 @@ import { API_BASE_URL, STORAGE_KEYS } from './constants'
 import type { User, LoginResult, ApiResponse } from '../types'
 
 /**
+ * 取**服务端文案**（`ApiResponse.error.message`）。
+ *
+ * 为什么不能只用 `error.message`（issue #5485 实测）：admin-api 的业务失败是**带 HTTP 状态码**的
+ * —— 员工登录失败 = `401` + `{success:false, error:{code:'AUTH_FAILED', message:'账号或密码错误'}}`，
+ * 改密不合规 = `422` + `error.message`。而 request 层对非 2xx 是 **throw**，`error.message` 只是
+ * 「Request failed with status 401」这种技术串 ⇒ 端侧就永远看不到后端那句统一文案（反枚举契约失效）。
+ * request 层把响应体挂在 `error.data` 上，这里优先取它。
+ */
+function serverMessage(error: any, fallback: string): string {
+  return error?.data?.error?.message || error?.message || fallback
+}
+
+/**
  * 微信小程序登录
  * 1. 调用 Taro.login() 获取微信 code
  * 2. POST /api/auth/mini/login { code, tenantId }（admin-api camelCase 入参；历史注释误写
@@ -106,8 +119,50 @@ export async function employeeLogin(identifier: string, password: string): Promi
     console.error('B 端员工登录失败:', error)
     return {
       success: false,
-      error: error.message || '登录失败，请稍后重试',
+      error: serverMessage(error, '登录失败，请稍后重试'),
     }
+  }
+}
+
+/**
+ * 自助改密（首登强制改密的**唯一端侧出口**，issue #5485）
+ *
+ * 1. POST /api/auth/password/change，body `{ oldPassword, newPassword }` —— **需认证**
+ *    （带 `Authorization: Bearer`，故**不能** `skipAuth`）
+ * 2. 成功 ⇒ 响应体结构与登录一致：**直接换发**一份不带强制改密标记的新凭据
+ *    （后端刻意这么设计：旧 token 仍带 claim，若要求前端「记得再刷新一次」就会出现
+ *     「改完密码反而全站 403」的自锁）⇒ 这里用新凭据覆盖本地存储
+ * 3. 失败（原密码不正确 / 新密码不符合策略）⇒ 422 + 服务端文案；
+ *    **前端不复制密码策略**（策略的唯一真值在后端）
+ *
+ * 该端点与 `logout` / `me` / `refresh` 是强制改密会话的白名单（后端 `PasswordChangeRequiredFilter`），
+ * 所以商家员工（很多是手机-only）**不必去电脑端管理后台**，在本页就能完成。
+ */
+export async function changePassword(oldPassword: string, newPassword: string): Promise<LoginResult> {
+  try {
+    const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
+      '/api/auth/password/change',
+      { oldPassword, newPassword },
+      { baseURL: API_BASE_URL },
+    )
+
+    if (!data.success || !data.data) {
+      return { success: false, error: data.error?.message || '密码修改失败' }
+    }
+
+    const { accessToken: token, user } = data.data
+
+    // 用「改密响应里的新凭据」覆盖本地凭据（旧 token 仍带强制改密标记，不能留）
+    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
+    if (user?.tenantId != null) {
+      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
+    }
+
+    return { success: true, user }
+  } catch (error: any) {
+    console.error('自助改密失败:', error)
+    return { success: false, error: serverMessage(error, '密码修改失败，请稍后重试') }
   }
 }
 
