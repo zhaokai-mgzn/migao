@@ -1212,6 +1212,32 @@ def is_human_requested(body: str) -> bool:
     return HUMAN_REQUEST_MARKER in (body or "")
 
 
+#: 「会话内零新开 issue」政策的**生效时刻**（= 该政策 PR 的合并时间，2026-09-25 12:01:24Z）。
+#: ⚠️ **政策不追溯**：生效前创建的单**豁免**（那时规则还不存在）—— 否则这条腿会因历史存量
+#: **天天红**（实测：政策生效当天 main 侧腿立刻因 28 条存量判定为「有违规」而失败）。
+NEW_ISSUES_POLICY_EFFECTIVE = "2026-09-25T12:01:24Z"
+
+
+def violates_new_issues_policy(rows: list[dict],
+                               effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：挑出**政策生效之后**创建、且正文无 `人为要求：` 标记的 issue。
+
+    三态之外的第四条纪律：**规则不追溯**（新规则只在生效之后适用）—— 判据不得拿历史存量开刀，
+    否则"让机制上线"本身就制造了一条天天红的腿（实测过一次）。
+    """
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("number"):
+            continue
+        created = str(r.get("createdAt") or "")
+        if created and created < effective:          # ISO8601 字符串可直接比较（同格式、UTC）
+            continue                                  # 生效前 ⇒ 豁免（不追溯）
+        if is_human_requested(r.get("body") or ""):
+            continue
+        out.append((int(r["number"]), created[:19], str(r.get("title") or "")[:70]))
+    return sorted(out)
+
+
 def non_human_requested(rows: list[dict]) -> list[tuple[int, str, str]]:
     """纯函数（可单测）：从未带标记的 issue 行里挑出「非人为要求」的 ⇒ [(number, createdAt, title)]。"""
     out = []
@@ -1409,8 +1435,11 @@ def cmd_check_new_issues(args: argparse.Namespace) -> int:
         # ⚠️ 三态必须分开：0 = 无违规 / 1 = **有违规** / 3 = **无法判定**。
         # 本判据第一版在这里写了 EXIT_USAGE（=1）⇒ 把"取不到数据"混同成"有违规"（我自己的判据当场抓到）。
         return EXIT_UNKNOWN
-    bad = non_human_requested(rows)
-    print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条，其中**非人为要求** = {len(bad)} 条")
+    grandfathered = [r for r in rows if isinstance(r, dict)
+                     and str(r.get('createdAt') or '') < NEW_ISSUES_POLICY_EFFECTIVE]
+    bad = violates_new_issues_policy(rows, NEW_ISSUES_POLICY_EFFECTIVE)
+    print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条；其中**政策生效前**（{NEW_ISSUES_POLICY_EFFECTIVE}）"
+          f"创建 ⇒ **豁免**（规则不追溯）= {len(grandfathered)} 条；**违规**（生效后新建且无标记）= {len(bad)} 条")
     for num, created, title in bad:
         print(f"  · #{num} {created} {title}")
         print(f"    ↳ 处置：① 链内修 ② 并入既有台账 ③ 在会话里向人类提出；若确系人为要求 ⇒ 在该单正文补 `人为要求：…`")
