@@ -6039,7 +6039,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（54 case）
+## 前端 UI 域（55 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -6773,6 +6773,19 @@
 真值: frontend-fix.layout, frontend-fix.e2e, frontend-fix.no-api-change
 溯源: 2026-09-25 新增（issue #5558）：Button 基类缺 whitespace-nowrap ⇒ flex 行里被压到 min-content、标签竖排；E2E 几何断言（溢出 13px → 0）+ 类级元守卫（inline-flex 原语必须带 nowrap）。取号 UI-056。 ｜ tags: ui, layout, button, geometry
 
+### UI-057. 省料看板文案去内部代号（L2/L3 → 说人话）+ 类级元守卫：内部代号不得进用户可见文案（issue #5565） 🔵
+```
+你: 生产管理 → 省料看板：页头与两个区块标题写着 L2 / L3（用户逐字「L2和L3是什么概念，用户不懂，我也不懂」）
+期望: direct_reply
+数据: 🔴 判据·**渲染文本零代号**：省料看板整页渲染文本里不出现 `L1/L2/L3`（严格 `/L[123]/`）。修复前实测：页头副标题「批次余量分档（L2）＋ 单位产出的面料消耗（L3）」+ 区块标题「L2 批次余量分档…」「L3 单位产出的面料消耗…」三处命中。断言口径 = **整页 textContent**（本页「批次余量分档」在副标题与区块标题各出现一次，`findByText` 会因多命中重试到 5s 超时 —— 已记在测试文件注释里）。
+数据: 判据·**说人话且不丢口径**：副标题渲染出「每批布用剩多少」「每平方米成品用掉多少米布」；两个区块标题去掉代号后**仍**点明分组/粒度（「按物料 × 时间 × 来源分组」「按 ISO 周 / 按月」不许顺手删）。
+数据: 🔴 判据·**类级元守卫**：`src/app` / `src/components` / `src/lib` 三处扫「用户可见形态」的内部代号 —— `（L2）`（括号包裹）与 `L2 中文`（标题式）；注释行与 SVG `d="…"` 不算（它们不上屏，实测 `orders/page.tsx` 图标路径含 `L3` 会假红）。未登记即红，豁免台账为空。修复前实测具名三行（saving-board/page.tsx 的副标题与两个 h2）。
+数据: **不回归**：口径/接口/数值一律未动（`frontend-fix.no-api-change`）；省料看板既有纯函数判据（PR-095：空数据不冒充 0、档位文案来自服务端）逐条不变。
+跳过: [backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-25 新增（issue #5565）：省料看板文案去内部代号 L2/L3（改说人话）+ 「内部代号不得进用户可见文案」类级元守卫。取号 UI-057。 ｜ tags: ui, copy, saving-board, jargon
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -6802,8 +6815,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：485（活跃 119，跳过 366）
-- tier 分布：smoke 12 / normal 443 / adversarial 30
+- 用例总数：486（活跃 119，跳过 367）
+- tier 分布：smoke 12 / normal 444 / adversarial 30
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -6828,7 +6841,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：54
+- 前端 UI 域：55
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

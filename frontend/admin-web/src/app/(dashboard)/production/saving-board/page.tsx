@@ -90,7 +90,7 @@ export default function SavingBoardPage() {
             省料看板
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            省了多少料：批次余量分档（L2）＋ 单位产出的面料消耗（L3）；
+            省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；
             <strong>存量导入批次单独成组</strong>，不与切换后混算
           </p>
         </div>
@@ -203,7 +203,7 @@ export default function SavingBoardPage() {
       <Card>
         <div className="p-5" data-testid="saving-batch-groups">
           <h2 className="text-sm font-medium text-neutral-900 mb-3">
-            L2 批次余量分档（物料 × 时间 × 来源组）
+            批次余量分档（每批布用剩多少 · 按物料 × 时间 × 来源分组）
           </h2>
           {batchGroups.length === 0 ? (
             <div className="px-4 py-10 text-center text-neutral-400 text-sm" data-testid="saving-batch-groups-empty">
@@ -314,7 +314,7 @@ export default function SavingBoardPage() {
         <div className="p-5" data-testid="saving-trend">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-neutral-900">
-              L3 单位产出的面料消耗（{granularity === 'week' ? '按 ISO 周' : '按月'}）
+              单位产出的面料消耗（每平方米成品用掉多少米布 · {granularity === 'week' ? '按 ISO 周' : '按月'}）
             </h2>
             <span className="text-xs text-neutral-500">时区 {trend?.timezone ?? '-'}</span>
           </div>
