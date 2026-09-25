@@ -120,60 +120,29 @@ def _sibling_receiver_fields_fn():
     )
 
 
-# ── Java `extends` 继承链（issue #4166：断言实现窄于真实语义 ⇒ 假红）─────────
+# ── Java 接收字段（**单一事实源**：解析本体在 sibling，本文件只做转发）──────────────
 #
-# 为什么必须沿继承链收集父类字段：Spring/Jackson 反序列化 `@RequestBody` 的是**整体
-# 对象图**，父类声明的字段照样绑定。只看被点名类型**自身**声明的字段 ⇒ 把继承来的键
-# 判成「接收端读不到」⇒ **假红**（产品侧是对的，窄的是断言）。
-# 实证：#4089（PR #4162，`73846861`）把 `AgentOrderCreateRequest` 收敛成
-# `extends OrderCreateRequest` + 只声明 `clientRequestId`，本门禁随即把
-# items/customerName/customerPhone/customerAddress/remark 报成「未登记的不一致键」。
-_EXTENDS_RE = re.compile(r"\bextends\s+([\w.]+)")
-
-
-def _java_parent_type(class_name: str) -> str | None:
-    """`class X extends Y` 的父类简单名（无 `extends` / 找不到该类声明 → None）。
-
-    只读**类声明头部**（`class X` 到类体 `{` 之间）：全文件搜 `extends` 会把方法体里的
-    泛型通配（`? extends Foo`）当成父类，造出幽灵继承边。
-    定位顺序与 sibling 的 `_source_of_receiver_type` 同口径：**同名文件优先**（其次任意
-    含该声明的文件 = 内部类形态）。
-    """
-    ordered = sorted(_java_sources().items(), key=lambda kv: (Path(kv[0]).stem != class_name, kv[0]))
-    for _rel, src in ordered:
-        m = re.search(rf"\bclass\s+{re.escape(class_name)}\b", src)
-        if not m:
-            continue
-        rest = src[m.end():]
-        stops = [i for i in (rest.find("{"), rest.find(";")) if i >= 0]
-        head = rest[: min(stops)] if stops else rest[:200]
-        pm = _EXTENDS_RE.search(head)
-        return pm.group(1).split(".")[-1] if pm else None
-    return None
+# 为什么沿继承链收集父类字段：Spring/Jackson 反序列化 `@RequestBody` 的是**整体对象图**，
+# 父类声明的字段照样绑定。只看被点名类型**自身**声明的字段 ⇒ 把继承来的键判成「接收端读不到」
+# ⇒ **假红**（产品侧是对的，窄的是断言）。实证 #4089（PR #4162）：
+# `AgentOrderCreateRequest` 收敛成 `extends OrderCreateRequest` + 只声明 `clientRequestId`，
+# 本门禁随即把 items/customerName/customerPhone/customerAddress/remark 报成「未登记的不一致键」。
+#
+# ⚠️ **issue #4179**：本文件原先**自带第二套**祖先解析层（`_EXTENDS_RE` + `_java_parent_type` +
+# 递归 `_java_fields_with_ancestors`），而 sibling 在 #4169 已把同一件事做进
+# `_receiver_fields_from_java`（含防环、外部父类终止、`<T extends Y>` 边界不误判）⇒ 两处口径
+# 可以各自漂移 = `#3843` 说的「同一真值两处投影」。现在**只保留转发**，本体一律走 sibling。
 
 
 def _java_receiver_fields(class_name: str) -> frozenset[str]:
     """Java 接收类型（请求 DTO / 实体 / 内部类）**及其 `extends` 祖先链**的实例字段名。
 
-    字段名本身仍由 sibling 解析器给（单一事实源：同一正则、同一缓存、同一口径）；
-    本函数只补「沿继承链逐级取值」这一层。祖先类解析不到时**不吞异常** —— sibling 的
-    `assert` 会被 `_receiving_keys` 转成「接收类型无法解析」红，符合本文件「显式暴露而非
-    静默跳过」的口径（静默少收字段 = 假绿）。
+    本体在 `test_tool_field_name_contract.py::_receiver_fields_from_java`（**单一事实源**）；
+    本函数只是转发，**不得**在此重新实现继承链遍历（见上方 issue #4179 的说明）。
+    祖先类解析不到时**不吞异常** —— sibling 的 `assert` 会被 `_receiving_keys` 转成
+    「接收类型无法解析」红，符合本文件「显式暴露而非静默跳过」的口径（静默少收字段 = 假绿）。
     """
-    return _java_fields_with_ancestors(class_name, ())
-
-
-@lru_cache(maxsize=None)
-def _java_fields_with_ancestors(class_name: str, _seen: tuple[str, ...]) -> frozenset[str]:
-    """递归收集 `class_name` 自身 + 各级父类的字段（多级；`_seen` 防循环继承死递归）。"""
-    if class_name in _seen:
-        return frozenset()
-    fields = set(_sibling_receiver_fields_fn()(class_name))
-    parent = _java_parent_type(class_name)
-    if parent:
-        fields |= _java_fields_with_ancestors(parent, _seen + (class_name,))
-    return frozenset(fields)
-
+    return _sibling_receiver_fields_fn()(class_name)
 
 
 # 静态不可解析 payload 的调用点：必须显式登记「谁在兜底」——禁止自由文本
@@ -495,27 +464,34 @@ def test_receiver_keys_follow_the_extends_chain() -> None:
     )
 
 
-def test_extends_chain_walker_recurses_and_keeps_discriminating(monkeypatch) -> None:
-    """解析器自检：多级 `extends` 链逐级收字段，且链外的键仍不可读（红证）。
+def test_shared_extends_walker_recurses_and_keeps_discriminating(monkeypatch) -> None:
+    """解析器自检（**打在单一事实源上**）：多级 `extends` 链逐级收字段，且链外键仍不可读。
 
-    真实仓库当前只有**一级**链（`AgentOrderCreateRequest → OrderCreateRequest`），
-    只测真实链锁不住「多级」这条要求（父类自己不继承、祖父类才有字段的形态）——
-    故用合成三级链把递归钉死；另断言链外键不入集，防递归顺手放宽成恒绿。
+    真实仓库当前只有**一级**链（`AgentOrderCreateRequest → OrderCreateRequest`），只测真实链锁不住
+    「多级」这条要求 ⇒ 用合成三级链把递归钉死；另断言链外键不入集，防递归顺手放宽成恒绿。
+
+    ⚠️ **issue #4179**：本自检原先打在**本文件自带的第二套 walker**（`_java_parent_type`）上；
+    那套已删、改为转发 sibling 的共享实现 ⇒ 自检必须**改打在共享实现上**，否则它会变成一条
+    永远绿的僵尸判据（"判据打在已删除的实现上" = 空判据）。
     """
     parents = {"_TProbeLeaf": "_TProbeMid", "_TProbeMid": "_TProbeBase", "_TProbeBase": None}
-    declared = {
-        "_TProbeLeaf": frozenset({"leafKey"}),
-        "_TProbeMid": frozenset({"midKey"}),
-        "_TProbeBase": frozenset({"baseKey"}),
+    sources = {
+        # ⚠️ 字段必须**单独成行**：共享实现的 `_FIELD_RE` 带 `re.MULTILINE` 且要求行首 `private`，
+        # 写在类声明同一行会解析不到字段（本自检第一版就是这么写成"恒红"的）。
+        "_TProbeLeaf": "public class _TProbeLeaf extends _TProbeMid {\n    private String leafKey;\n}",
+        "_TProbeMid": "public class _TProbeMid extends _TProbeBase {\n    private String midKey;\n}",
+        "_TProbeBase": "public class _TProbeBase {\n    private String baseKey;\n}",
     }
-    monkeypatch.setattr(
-        "tests.test_tool_payload_backend_contract._java_parent_type", parents.__getitem__
-    )
-    monkeypatch.setattr(
-        "tests.test_tool_payload_backend_contract._sibling_receiver_fields_fn",
-        lambda: declared.__getitem__,
-    )
-    got = _java_receiver_fields("_TProbeLeaf")
+    shared = _sibling_contract._receiver_fields_from_java
+    monkeypatch.setattr(_sibling_contract, "_source_of_receiver_type",
+                        lambda c, root=None: sources.get(c))
+    monkeypatch.setattr(_sibling_contract, "_superclass_of",
+                        lambda src, current: parents[current])
+    shared.cache_clear()          # 共享实现带 lru_cache ⇒ 注入内部函数后必须清缓存
+    try:
+        got = _java_receiver_fields("_TProbeLeaf")
+    finally:
+        shared.cache_clear()
     problems = [
         f"多级 extends 链漏收 {k!r}（只收自身/一级父类 → 仍是假红）"
         for k in ("leafKey", "midKey", "baseKey")
@@ -523,7 +499,7 @@ def test_extends_chain_walker_recurses_and_keeps_discriminating(monkeypatch) -> 
     ]
     if "outsideKey" in got:
         problems.append("链外键 'outsideKey' 被收进可读键（解析过宽 = 假阴性风险）")
-    assert not problems, "❌ extends 递归解析自检失败：\n  " + "\n  ".join(problems)
+    assert not problems, "❌ extends 递归解析自检失败（打在共享实现上）：\n  " + "\n  ".join(problems)
 
 
 def test_payload_keys_are_readable_by_receiver() -> None:
@@ -826,3 +802,49 @@ if __name__ == "__main__":  # pragma: no cover - 开发期报告模式
     print("\n── 无 payload 的调用点（只读端点，不在本门禁断言面）──")
     readonly = [c for c in _tool_calls() if not c.payload_kwarg]
     print(f"共 {len(readonly)} 个；端点 {sorted({c.endpoint for c in readonly})}")
+
+
+# ── 单一事实源守卫（issue #4179）──────────────────────────────────────────────
+
+def test_no_second_java_ancestor_parser_in_this_file() -> None:
+    """本文件**不得**再出现第二套 Java `extends` 祖先解析层（单一事实源 = sibling）。
+
+    形态（#4179 实测）：本文件曾自带 `_EXTENDS_RE` + 父类解析 + 递归收集，而 sibling 在 #4169
+    已把同一件事（含防环、外部父类终止、`<T extends Y>` 边界）做进 `_receiver_fields_from_java`
+    ⇒ **同一真值两处投影**（`#3843`）：两处口径可以各自漂移，而漂移的那天没有任何东西会红。
+
+    ⚠️ **本判据只走 AST，不扫原文**（`#3843` / §23.8 B1「判据语料不含自身说明」）：本文件的注释与
+    docstring **必须**提到 `_EXTENDS_RE` / 那个被删的函数名来解释历史 —— 按文本扫会把说明当实现，
+    判据当场变成"永远红"（本节第一版就是这么写的，已改）。
+    """
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    funcs = {n.name: n for n in ast.walk(tree)
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    # ① 反例：本地的 `extends` 正则常量 = 第二套实现的标志
+    assigned = {t.id for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                for t in n.targets if isinstance(t, ast.Name)}
+    assert "_EXTENDS_RE" not in assigned, (
+        "又出现了本地的 `extends` 正则常量 —— 那是第二套祖先解析层的标志（issue #4179）；"
+        "解析本体只允许在 `test_tool_field_name_contract.py::_receiver_fields_from_java`"
+    )
+    # ② 反例：父类解析 / 递归收集函数
+    dup = set(funcs) & {"_java_parent_type", "_java_fields_with_ancestors"}
+    assert not dup, f"又出现了第二套祖先解析函数：{sorted(dup)}（见 issue #4179）"
+
+    # ③ 正向：`_java_receiver_fields` 的函数体必须**调用** sibling 的共享实现
+    assert "_java_receiver_fields" in funcs, "转发函数不见了（本文件的唯一解析入口）"
+    calls = {n.func.id for n in ast.walk(funcs["_java_receiver_fields"])
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "_sibling_receiver_fields_fn" in calls, (
+        "解析不再经 sibling 的共享实现（单一事实源被绕过）："
+        f"实测调用 = {sorted(calls)}"
+    )
+
+    # ④ 共享实现上的负控自检必须在位（实现删了而自检还留着 = 僵尸判据）
+    assert "test_shared_extends_walker_recurses_and_keeps_discriminating" in funcs, (
+        "共享实现上的负控自检不见了 —— 多级 extends 链这条要求会再次失去守卫"
+    )
