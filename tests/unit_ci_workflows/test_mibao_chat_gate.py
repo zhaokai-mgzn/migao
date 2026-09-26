@@ -28,6 +28,22 @@
 | ④ **迁移面**：`agent:chat` 的存量回填**只授 `admin`**（裁定⑧）+ 幂等 + 终态对账 `DO` 块 + 头部回滚 SQL | 多授一个岗位 / 去掉 `DO` 块 ⇒ 红 |
 | ⑤ **服务端接线**：`AdminGate` 是唯一判定；`/api/auth/me`（`AuthService.getCurrentUser`）经**同一函数**下发能力位 | 判定改成读 `role` 字段 / 能力位恒 `true` ⇒ 红 |
 | ⑥ **端侧消费**：两端都读服务端 `capabilities.mibaoChat`，且未授权态含**逐字**「需要管理员授权」+ 可行动引导（不是静默隐藏、不是 403 白屏） | 改成前端硬编码码 / 删掉引导文案 ⇒ 红 |
+| ⑦ **防空跑**：语料完整 + 判据自身不在语料内 | 语料塌陷 ⇒ 红 |
+| ⑧ **E2E 管理员身份 mock 保真度**：`tests/e2e/**` 里 `roles: ['admin']`（**字符串字面量**数组）的**身份**对象必须带 `capabilities.mibaoChat` | 删掉该位 ⇒ 红（**这正是本包 CI 的真实红**，见下） |
+
+## 🔴 判据 ⑧ 的来历（**本包 CI 实测的真红，逐字登记**）
+
+本包首轮 CI 的 job「Demo path specs (admin-web, fixture mode)」**红**：
+`tests/e2e/specs/chat/chat-panel-resize.spec.ts` **7 failed**（`7 failed / 3 skipped / 50 passed`）。
+
+**归因 = fixture 保真度，不是授权门**：`tests/e2e/fixtures.ts` 的 mock 身份写 `roles: ['admin']`
+但**没有** `capabilities`（该字段是本包才引入的）⇒ 授权门读到 `undefined` ⇒
+**整个对话面板不渲染** ⇒ 几何断言全红。而真实 `/api/auth/me` 对 `roles: ['admin']`
+（权限恒为 `["*"]`）**就下发** `mibaoChat: true` ⇒ **mock 落后于真实契约**。
+
+⇒ **修法 = 给身份 mock 补能力位**（**不是**放宽门、**不是**让未授权也渲染面板）。
+判据 ⑧ 把这一**类**钉住：以后任何人新增一个「管理员身份 mock」而忘了能力位 ⇒ **当场红**，
+不必等到某个 E2E 在几何断言上以「找不到面板」的形式报警（那种报警指向错误的方向）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -102,6 +118,18 @@ ADMIN_CODES_RE = re.compile(
 
 #: 「字面量相邻」= 三个码按序出现，两两之间只隔引号 / 逗号 / 花括号 / 空白。
 _ADJACENCY_SEP = r"""["'`\s,\{\}\[\]]*"""
+
+#: E2E 面（判据 ⑧：身份 mock 的保真度）。
+E2E_ROOT = "tests/e2e/"
+E2E_FIXTURES = "tests/e2e/fixtures.ts"
+
+#: **身份**里的管理员角色 —— 数组元素必须是**字符串字面量** `'admin'`。
+#: ⚠️ 必须与「角色对象列表」区分开：`roles: [{ code: 'admin', name: '管理员' }]` 是
+#: **员工列表行**的 DTO（不是调用者身份）⇒ 不得要求它带能力位。
+#: 本判据开发时实测误伤过一次（脚本把能力位插进了 `/api/admin/users*` 的行 DTO），故收紧正则。
+E2E_ADMIN_IDENTITY_RE = re.compile(
+    r"roles\s*:\s*\[\s*['\"]admin['\"]\s*(?:,\s*['\"][^'\"]*['\"]\s*)*\]"
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -360,6 +388,57 @@ def problems_frontend_consumption(corpus: dict[str, str]) -> list[str]:
     return out
 
 
+def _enclosing_object(text: str, idx: int) -> str | None:
+    """`idx` 之前最近的 `{` 起做括号配平 ⇒ 返回该对象字面量（配平失败 ⇒ `None`）。"""
+    start = text.rfind("{", 0, idx)
+    if start == -1:
+        return None
+    depth = 0
+    for j in range(start, len(text)):
+        char = text[j]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:j + 1]
+    return None
+
+
+def problems_e2e_identity_fidelity(corpus: dict[str, str]) -> list[str]:
+    """判据 ⑧：E2E 里**管理员身份**的 mock 必须与真实 `/api/auth/me` 同形（带能力位）。
+
+    病根（本包 CI 实测，**真红**）：`tests/e2e/fixtures.ts` 的 mock 身份写 `roles: ['admin']`
+    但**没有** `capabilities` ⇒ 授权门读到 `undefined` ⇒ **整个对话面板不渲染** ⇒
+    `tests/e2e/specs/chat/chat-panel-resize.spec.ts` 7 条几何断言全红（job「Demo path specs」）。
+
+    🔴 那是 **fixture 保真度**问题、**不是**授权门的问题：真实 `/api/auth/me` 对
+    `roles: ['admin']`（权限恒为 `["*"]`）**就下发** `mibaoChat: true`（见判据 ⑤）。
+    fixture 是**手写 stub**，身份字段是它的**副本** ⇒ 服务端契约一变，它就静默漂移
+    （同族：`craft-display` 三份副本无守卫）。⇒ 本判据把这一类**钉在机械面上**：
+    管理员身份 mock 少能力位 ⇒ 红。
+    """
+    out: list[str] = []
+    hits = 0
+    for rel, text in sorted(corpus.items()):
+        if not rel.startswith(E2E_ROOT):
+            continue
+        for m in E2E_ADMIN_IDENTITY_RE.finditer(text):
+            hits += 1
+            obj = _enclosing_object(text, m.start())
+            if obj is None:
+                out.append(f"`{rel}`：`roles: ['admin']` 的宿主对象解析失败 ⇒ 判据会空跑（fail-closed）")
+                continue
+            if "capabilities" not in obj or "mibaoChat" not in obj:
+                out.append(
+                    f"`{rel}`：管理员身份的 mock 缺 `capabilities.mibaoChat` ⇒ "
+                    "端侧读到 `undefined` ⇒ 授权门落「需要管理员授权」态（E2E 里表现为页面无面板）"
+                )
+    if hits == 0:
+        out.append("`tests/e2e/**` 里一个管理员身份 mock 都没解析出来 ⇒ 判据会空跑（fail-closed）")
+    return out
+
+
 def problems_self_check(corpus: dict[str, str]) -> list[str]:
     """判据 ⑦：防空跑（语料非空 + 关键对象都在语料内 + 判据自身不在语料内）。"""
     out: list[str] = []
@@ -367,7 +446,7 @@ def problems_self_check(corpus: dict[str, str]) -> list[str]:
         out.append(f"代码面语料只解析出 {len(corpus)} 个文件 ⇒ 语料塌了（判据会空跑）")
     for rel in (
         ADMIN_GATE, REGISTRATION_SERVICE, PERMISSION_SERVICE, USER_INFO_RESPONSE,
-        AUTH_SERVICE, BMINI_GATE, BMINI_PAGE, WEB_GATE, WEB_PAGE,
+        AUTH_SERVICE, BMINI_GATE, BMINI_PAGE, WEB_GATE, WEB_PAGE, E2E_FIXTURES,
     ):
         if rel not in corpus:
             out.append(f"关键对象 `{rel}` 不在语料内（判据会空跑）")
@@ -387,6 +466,7 @@ JUDGEMENTS: dict[str, "callable"] = {
     "⑤ 服务端接线（唯一判定 ⇒ 能力位）": problems_server_wiring,
     "⑥ 端侧消费（能力位 + 逐字文案 + 可行动引导）": problems_frontend_consumption,
     "⑦ 防空跑（语料完整 + 判据自身不在语料内）": problems_self_check,
+    "⑧ E2E 管理员身份 mock 保真度（必须带能力位）": problems_e2e_identity_fidelity,
 }
 
 
@@ -464,6 +544,14 @@ def _inject_corpus_collapse(corpus: dict[str, str]) -> dict[str, str]:
     return {rel: text for rel, text in corpus.items() if rel in keep}
 
 
+def _inject_stale_e2e_identity(corpus: dict[str, str]) -> dict[str, str]:
+    """⑧ 把 E2E 管理员身份 mock 的能力位删掉（**这正是本包 CI 红的真实形态**）。"""
+    text = corpus[E2E_FIXTURES]
+    mutated = text.replace("capabilities: { mibaoChat: true },", "", 1)
+    assert mutated != text, f"注入锚点失配（`{E2E_FIXTURES}` 的管理员身份能力位不在）"
+    return {**corpus, E2E_FIXTURES: mutated}
+
+
 INJECTIONS: dict[str, tuple["callable", "callable"]] = {
     "① 第二个文件里再抄一遍三码数组 ⇒ 判据 ① 红": (_inject_second_constant, problems_single_constant),
     "② 前端写 hasPermission(码) && hasPermission(码) ⇒ 判据 ② 红": (_inject_frontend_gate_by_code, problems_frontend_copy),
@@ -472,6 +560,7 @@ INJECTIONS: dict[str, tuple["callable", "callable"]] = {
     "⑤ 判定改成读 role 字段 ⇒ 判据 ⑤ 红": (_inject_role_based_judgement, problems_server_wiring),
     "⑥ 拒绝态文案退回「无权限」⇒ 判据 ⑥ 红": (_inject_silent_hide, problems_frontend_consumption),
     "⑦ 语料塌陷 ⇒ 判据 ⑦ 红": (_inject_corpus_collapse, problems_self_check),
+    "⑧ 删掉 E2E 管理员身份 mock 的能力位 ⇒ 判据 ⑧ 红": (_inject_stale_e2e_identity, problems_e2e_identity_fidelity),
 }
 
 
