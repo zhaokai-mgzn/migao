@@ -890,3 +890,56 @@ def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):
     assert any(line for line in proc.stdout.splitlines() if marker in line), (
         f"判红信息里找不到 {marker!r}（红得不具体 = 排查时看不出是哪条判据）：\n{proc.stdout}"
     )
+
+
+# ── 传输载体（Dockerfile）的指令文法判据（issue #5668 首次发布实测）──────────────
+# 病根（实测，run 36257350656）：把说明文字**裸写**在 Dockerfile 里 ⇒ Docker 把它当指令
+# ⇒ `dockerfile parse error on line 3: unknown instruction: 本镜像只做一件事：把` ⇒
+# `Pack product into transport image and push` 步骤红。**本机没有 docker 二进制**（判据跑不到
+# `docker build`）⇒ 用**指令文法**当第一道闸：这一闸恰好就是那次红的形态。
+
+DOCKERFILE = REPO_ROOT / "deploy" / "bmini-h5" / "Dockerfile"
+DOCKER_INSTRUCTIONS = {
+    "add", "arg", "cmd", "copy", "entrypoint", "env", "expose", "from", "healthcheck",
+    "label", "maintainer", "onbuild", "run", "shell", "stopsignal", "user", "volume", "workdir",
+}
+
+
+def _dockerfile_problems(text: str) -> list:
+    """每一行要么空行、要么注释（`#`）、要么以**合法指令关键字**开头（含续行 `\\`）。"""
+    problems = []
+    continuing = False
+    for i, raw in enumerate(text.splitlines(), 1):
+        if continuing:
+            continuing = raw.rstrip().endswith("\\")
+            continue
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        keyword = line.split(None, 1)[0].lower()
+        if keyword not in DOCKER_INSTRUCTIONS:
+            problems.append(f"第 {i} 行不是注释也不是合法指令（`{keyword}`）：{line[:80]}")
+        continuing = raw.rstrip().endswith("\\")
+    return problems
+
+
+def test_dockerfile_lines_are_all_comments_or_instructions():
+    text = _read(DOCKERFILE)
+    assert isinstance(text, str), f"{DOCKERFILE.relative_to(REPO_ROOT)} 缺失 —— 传输载体没有了"
+    problems = _dockerfile_problems(text)
+    assert problems == [], (
+        "传输载体 Dockerfile 的指令文法判据不通过（CI 的 `docker build` 会红）：\n  - "
+        + "\n  - ".join(problems)
+    )
+    # 反空跑：判据的前提是这个文件真的被用来构建（workflow 里出现 `-f <该文件>`）
+    wf = _read(WORKFLOW_PATH) or ""
+    assert "-f deploy/bmini-h5/Dockerfile" in wf, "workflow 不再从这个 Dockerfile 构建 ⇒ 上面的判据是空的"
+
+
+def test_dockerfile_criterion_has_discriminating_power():
+    """🔴 红证：把一行说明**裸写**进去（= 首次发布的真实形态）⇒ 判据必红。"""
+    text = _read(DOCKERFILE)
+    assert isinstance(text, str)
+    broken = text.replace("FROM alpine:3.20", "本镜像只做一件事：把产物搬到实例上\nFROM alpine:3.20")
+    assert broken != text, "变异注入未生效（找不到 FROM 行）"
+    assert _dockerfile_problems(broken), "裸写散文的行竟被判绿 —— 判据是空断言"
