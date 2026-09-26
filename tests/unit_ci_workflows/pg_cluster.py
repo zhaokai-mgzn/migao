@@ -118,6 +118,11 @@ REALDB_TEST_MODULES: frozenset[str] = frozenset({
     # `docs/deployment/demo-seed.sql`（ON_ERROR_STOP=1 ⇒ exit 0 + 零 ERROR + 行数 == 语句数），
     # 外加一条把病灶段喂进同一批 psql 调用的红证。缺 PG ⇒ CI 判红（不是静默跳过）。
     "test_psql_vars_outside_dollar_quotes.py",
+    # issue #4945（处 2）：加工单过程明细三段夹具（`production_work_logs`）—— 在**全新库**上按
+    # 评测栈的建库顺序跑 schema + 两个 seed（`ON_ERROR_STOP=1`，含幂等二跑），再核 PG-057 声明的
+    # 数值与真库读数逐值相等。缺 PG ⇒ CI 判红（不是静默跳过）——「本机无 docker」不构成理由：
+    # 真库判据要的是二进制（initdb/pg_ctl/psql），不是容器。
+    "test_worklog_seed_realpg.py",
 })
 
 #: 标记的**假值**（与 Java 侧同款口径：非空且非 0/false 才算「要求真库」）

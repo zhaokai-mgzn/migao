@@ -33,6 +33,8 @@
 
 # case_ids: OR-041
 
+import ast
+import json
 import re
 from pathlib import Path
 
@@ -489,3 +491,96 @@ class TestMoneyFacingParsingIsSyntaxBased:
         assert _config_put_keys(src.replace('config.put("tiers", b); ', "")) == ["per_fold_single"], (
             "真删一个 config.put ⇒ 读数不变 ⇒ 判据恒真（空断言）"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 9（issue #4945 处 1）：两条**真栈**判据必须用**同一份**租户配置
+# ══════════════════════════════════════════════════════════════════════════════
+# 病根：判据 5 的「同一租户 + 同一入参 ⇒ 米宝工具路径 ≡ CraftCalcClient 路径」这条保证，
+# 由**两侧各自的** `TENANT_CONFIG_JSON` 声明支撑 ——
+#   · 服务端半边：backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcConfigRealDbTest.java
+#     （真 PG + 真 craft_calc_configs 行 + 真 toConfigMap + 真 CraftCalcClient 出参）
+#   · AI 侧半边：backend/ai-agent-service/tests/test_production/test_tenant_craft_calc_config.py
+#     （纯函数级 + 响应形状镜像）
+# 两份声明**各自演化**时，两侧的「同一 config」在账面成立、实际不等（改一侧不改另一侧的
+# 那条判据**照旧全绿**）—— 与判据 1~8 的五个源漂移**同族**，故收在同一处口径里。
+#
+# 判据：两份 JSON 里**双方都声明的键**逐值相等（AI 侧那份是 9 键子集：V114 的两个企业阈值参数
+# 不在它的面内，那几个键由判据 4/4b 与 Java 侧真库判据各自覆盖）。
+# 红证（注入式）：把任一侧的 `default_formula` 由 `fullness` 改成 `pleat`（= 13.5 → 13.2 米）
+# ⇒ 本判据必红（`_same_declared_config` 是纯函数，注入载荷直接喂给它）。
+
+#: 服务端真栈判据里的配置声明块（Java text block：`private static final String TENANT_CONFIG_JSON = """ … """`）
+JAVA_REALDB_TEST = (REPO / "backend/admin-api/src/test/java/com/migao/admin/service"
+                    / "CraftCalcConfigRealDbTest.java")
+AI_SIDE_TEST = (REPO / "backend/ai-agent-service/tests/test_production"
+                / "test_tenant_craft_calc_config.py")
+
+_TEXT_BLOCK_RE = re.compile(
+    r"TENANT_CONFIG_JSON\s*=\s*\"\"\"(.*?)\"\"\"", re.S)
+_PY_DICT_RE = re.compile(
+    r"^TENANT_CONFIG_JSON:\s*Dict\[str,\s*Any\]\s*=\s*(\{.*?^\})", re.S | re.M)
+
+
+def _java_declared_config(java_src: str) -> dict:
+    """取 Java text block 里的配置 JSON（缺块即 fail-closed：没有它，本判据是空跑）。"""
+    block = _TEXT_BLOCK_RE.search(java_src)
+    assert block, ("服务端真栈判据里没有 `TENANT_CONFIG_JSON = \"\"\"…\"\"\"` 配置声明块 ⇒ "
+                   "判据 9 读不到对象（空跑）")
+    return json.loads(block.group(1))
+
+
+def _ai_declared_config(py_src: str) -> dict:
+    """取 AI 侧那个 dict 字面量（用 `ast` 解析 ⇒ 注释 / 换行 / 尾逗号都不影响）。"""
+    block = _PY_DICT_RE.search(py_src)
+    assert block, ("AI 侧判据里没有 `TENANT_CONFIG_JSON: Dict[str, Any] = {…}` 声明 ⇒ "
+                   "判据 9 读不到对象（空跑）")
+    return ast.literal_eval(block.group(1))
+
+
+def _same_declared_config(java_config: dict, ai_config: dict) -> dict:
+    """双方都声明的键 → `{键: (服务端值, AI 侧值)}`（本判据只比交集；键集覆盖另有判据 4/4b）。"""
+    shared = set(java_config) & set(ai_config)
+    return {k: (java_config[k], ai_config[k]) for k in sorted(shared)}
+
+
+def test_both_realstack_judgements_declare_the_same_tenant_config():
+    """两条真栈判据的 `TENANT_CONFIG_JSON` 在**交集键上逐值相等**，且交集非空。"""
+    shared = _same_declared_config(
+        _java_declared_config(JAVA_REALDB_TEST.read_text(encoding="utf-8")),
+        _ai_declared_config(AI_SIDE_TEST.read_text(encoding="utf-8")))
+    assert len(shared) >= 8, (
+        f"两侧共同声明的配置键只有 {len(shared)} 个（{sorted(shared)}）—— 交集太小 ⇒ "
+        f"「同一 config」这条前提近乎没被钉住")
+    drifted = {k: v for k, v in shared.items() if v[0] != v[1]}
+    assert drifted == {}, (
+        f"两侧声明的同一批配置值不一致：{drifted} ⇒ 「同一租户 + 同一配置」这条前提在账面成立、"
+        f"实际不等（米宝一个数、下单路径另一个数）。改一侧必须同批改另一侧。")
+
+
+def test_judgement9_detector_reds_on_injected_drift():
+    """红证（注入式）：任一侧改一个值 ⇒ `_same_declared_config` 必须报出不一致。"""
+    java_config = _java_declared_config(JAVA_REALDB_TEST.read_text(encoding="utf-8"))
+    ai_config = _ai_declared_config(AI_SIDE_TEST.read_text(encoding="utf-8"))
+    assert _same_declared_config(java_config, ai_config) and not [
+        k for k, (a, b) in _same_declared_config(java_config, ai_config).items() if a != b]
+
+    # 注入 A：服务端侧 `default_formula` 由 fullness（13.5 米）改成 pleat（13.2 米）
+    mutated_java = dict(java_config, default_formula="pleat")
+    drift = {k: v for k, v in _same_declared_config(mutated_java, ai_config).items() if v[0] != v[1]}
+    assert drift == {"default_formula": ("pleat", "fullness")}, (
+        f"服务端侧改值后判据读不出不一致 ⇒ 空断言：{drift}")
+
+    # 注入 B：AI 侧 `meters_rounding_step` 0.5 → 0.1（进位口径漂移，米数随之变）
+    mutated_ai = dict(ai_config, meters_rounding_step=0.1)
+    drift_b = {k: v for k, v in _same_declared_config(java_config, mutated_ai).items() if v[0] != v[1]}
+    assert drift_b == {"meters_rounding_step": (0.5, 0.1)}, (
+        f"AI 侧改值后判据读不出不一致 ⇒ 空断言：{drift_b}")
+
+    # 注入 C：声明块被删 ⇒ 解析必须 fail-closed（不是「读到空 dict ⇒ 恰好相等」）
+    for parse, src in ((_java_declared_config, "class X {}\n"), (_ai_declared_config, "X = 1\n")):
+        try:
+            parse(src)
+        except AssertionError:
+            continue
+        raise AssertionError("声明块缺失时解析没有 fail-closed ⇒ 判据会在「无对象」时空跑成绿")
