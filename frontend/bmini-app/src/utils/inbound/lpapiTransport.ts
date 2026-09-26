@@ -18,6 +18,16 @@
  * 3. **厂商口径未核实**（设计 §8.5 ①②③④）：SDK 是否厂商官方发布、DP30S 的 BLE 口是否开放、
  *    精确打印宽度 —— 全部未核实 ⇒ 本文件**不写死**任何「实测值」，只按安全侧（有效版心 ≤48mm，
  *    见 `./truth` 的 `effectiveWidthPx`）送图。
+ *
+ * ## ⚠️ 实测读数：weapp 产物会把这个**浏览器专用** SDK 也打进去（照实登记，未修）
+ *
+ * `import('lpapi-ble')` 是静态可分析的依赖 ⇒ webpack 的小程序腿**不能拆分异步 chunk**
+ * （构建日志：`NoAsyncChunksWarning`）⇒ 整包内联。实测（2026-09-27，`npm run build:weapp` 后）：
+ * `dist/pages/worker/inbound/index.js` = **545,816 B**，内容含 `LPAPI`。
+ * 影响面：小程序端**本来就不支持标签打印**（`not-h5` 文案），却因此白背一个用不了的 SDK。
+ * **未修的理由**：小程序链路由用户裁定**搁置**（#5650），包体不构成用户可见影响；
+ * 修法（重启条件）= 把真实传输层拆成 Taro 的平台后缀文件（`lpapiTransport.h5.ts` 真实现 /
+ * `lpapiTransport.weapp.ts` 空实现），或改成运行时按 URL 加载 UMD —— 两者都要重跑两端构建。
  */
 import { isH5 } from '../platform'
 import { LabelTransportError, type LabelTransport } from './labelPrint'
