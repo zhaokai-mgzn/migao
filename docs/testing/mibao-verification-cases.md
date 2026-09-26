@@ -1818,7 +1818,7 @@
 端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
 期望: briefing_query
 数据: success=true
-数据: （散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回空态（success=true + 「今日暂无经营日报数据」）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）
+数据: （散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回**成功空态**（消息「今日暂无经营日报数据」；机器面由上面那条机器计分项覆盖）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）
 数据: （散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接
 必须成功: briefing_query
 ```
@@ -1831,7 +1831,7 @@
 端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
 期望: session_manage(action=list)
 数据: success=true
-数据: （散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回空列表且 success=true，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表
+数据: （散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回**空列表 + 成功状态**，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表
 数据: （散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替
 必须成功: session_manage
 ```
@@ -4634,7 +4634,7 @@
 端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
 期望: processing_order_set_query(action=list)
 数据: success=true
-数据: （散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具 `success=true` + 「暂无套件记录」⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序
+数据: （散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具**成功 + 空列表**（消息「暂无套件记录」）⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序
 数据: （散文、不计分）只读 + 未定价口径：三个 action 全部只读（权限码 production:view，工具 read_only=true）⇒ 不得声称已生成 / 已修改加工单；`detail` 的 `unit_price` 为 null = **尚未定价**，必须原样转述（不得说成 0 元、不得估算，#4696）；缺 id / 缺单号时应先向用户确认，不得编造
 必须成功: processing_order_set_query
 ```
