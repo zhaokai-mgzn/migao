@@ -152,11 +152,28 @@ cases:
     must_succeed:
       - tool: aftersale_create
         only_if_called: true
+      # 落库面（issue #4097）：与上面那条**同一件事**，但读的是**审计真值** ——
+      # 写侧 #4052 起就把 `metadata.tool_results`（`{tool, success, error}`，与
+      # `metadata.tool_calls` **逐项对齐**）落进会话消息，读侧
+      # `GET /api/chat/history/{sid}` 自本单起回传该字段。两面**显式二选一**（`source`），
+      # 不并存、不互相顶替：
+      #   · 上面那条 = SSE 事件面（「流上说成了」）；
+      #   · 本条     = 落库面（「会话记录里真记着成了」）。
+      # 为什么可以两条都声明：写侧的 `tool_results_info` 与流上的 `tool_result` 事件
+      # **同源同序**（`backend/ai-agent-service/app/api/chat.py` 的 SSE 桥一次调用同时产出两者）
+      # ⇒ 正常路径上必然一致；**不一致即缺陷**（流上成了、库里没有 / 反之 = #3778 的同族形态，
+      # 此前没有任何断言能发现）——正是要它红。
+      # 取数不可用（读侧未暴露该键 / HTTP 失败 / 本用例跨会话）⇒ runner **fail-closed**
+      # 判「断言未评估」（不静默放过）；口径见 `tests/agent_eval/local_runner.py` 的
+      # `check_must_succeed` 与 `rounds_from_history_payload`。
+      - tool: aftersale_create
+        source: metadata
+        only_if_called: true
     data_checks:
       - "success=true"
       - "工单号匹配 ^AS-\\d{8}-\\d{4}$"
     skip_reason: ""
-    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。"
+    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-09-26（issue #4097）：补 **`must_succeed[aftersale_create, source=metadata, only_if_called=true]`** —— 同一件事的**落库面**断言（读 `metadata.tool_results`；读侧 `GET /api/chat/history/{sid}` 自本单起回传该字段，此前只写不读、评测无法断言「确实调了 / 确实成了」）。两面**显式二选一**（`source`），取数不可用 ⇒ fail-closed 判「断言未评估」；本条与既有 SSE 面条目同源同序（写侧一次调用同时产出事件与落库元信息）⇒ 正常路径必然一致、不一致即缺陷。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_aftersale_create.py"

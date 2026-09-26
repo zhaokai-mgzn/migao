@@ -2410,16 +2410,24 @@ async def get_history(
         # 展示卡卡型回传（#4016 A15）：与 interactive 对称 —— 落库的卡型要能**读出来**
         # 才不是只写不读的空字段（`metadata ? 'cards'` 亦可直接在库上做用量统计）。
         card_types = None
+        # 工具**执行结果**元信息回传（issue #4097）：写侧自 #4052 起就落 `metadata.tool_results`
+        # （`[{tool, success, error}]`，与 `metadata.tool_calls` 逐项对齐），但读侧一直没暴露
+        # ⇒ 评测只能断言「模型说它调了」，不能断言「确实调了 / 确实成了」。
+        # 与 `cards` 同款口径：落库值**原样**回传，缺失/非列表 → None（不猜、不补、不裁）。
+        # 与 `tool_calls` 同层同权（本响应已在回传 args）⇒ 不引入新的数据暴露面。
+        tool_results_data = None
         if isinstance(metadata, dict):
             interactive_data = metadata.get("interactive")
             interactive_answered = metadata.get("interactive_answered", False) is True
             card_types = metadata.get("cards")
+            tool_results_data = metadata.get("tool_results")
         elif isinstance(metadata, str):
             try:
                 meta_parsed = json.loads(metadata)
                 interactive_data = meta_parsed.get("interactive")
                 interactive_answered = meta_parsed.get("interactive_answered", False) is True
                 card_types = meta_parsed.get("cards")
+                tool_results_data = meta_parsed.get("tool_results")
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -2434,6 +2442,9 @@ async def get_history(
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
+            # 工具执行结果（落库值原样回传；空/缺失 → None）。与 `tool_calls` **逐项对齐**
+            # （写侧 #4052 的对齐契约），消费者按同一索引取「这次调用成没成」。
+            "tool_results": tool_results_data if isinstance(tool_results_data, list) else None,
             "interactive": _mask_card_for_customer(interactive_data, current_user)
             if isinstance(interactive_data, dict) else interactive_data,
             "interactive_answered": interactive_answered,

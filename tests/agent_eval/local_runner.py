@@ -3173,7 +3173,186 @@ def _tool_name_matches(name: str, tool: str) -> bool:
     return n == t or n.endswith("." + t)
 
 
-def check_must_succeed(results: list, must_succeed: list) -> list:
+# ══════════════════════════════════════════════════════════════════════════════
+# 落库面（read side）取数：`metadata.tool_results`（issue #4097）
+# ══════════════════════════════════════════════════════════════════════════════
+# 写侧自 #4052 起就把 `{tool, success, error}` 落进会话消息的 `metadata.tool_results`
+# （与 `metadata.tool_calls` **逐项对齐**），但读侧一直没暴露、runner 也从不读它 ⇒
+# 「调了 order_create」可判、「order_create 真成了」在**落库审计真值**上不可判
+# （#4097 的原话：只能断言「模型说了它调了」）。本组函数补上读侧消费：
+# 用例在 `must_succeed` 条目上显式声明 `source: metadata`（落库面）或 `source: sse`
+# （缺省，SSE 事件面）——**两面显式二选一**，不并存、不互相顶替。
+#
+# **为什么不做成第二套断言**（#4097：「避免两处各写一份口径漂移」）：落库面先被还原成与
+# SSE 面**同形**的 rounds（`tool_calls` + `tool_results`），再交给 `check_must_succeed`
+# 的**同一段**判定 —— tool / action / only_if_called 的作用域两边天然一致，不存在两份口径。
+#
+# ⚠️ 已知边界（如实登记）：落库面是**按会话**取的，而用例可能跨会话（`new_session` 轮会
+# 关掉旧会话再开新的）⇒ 只能取到**最后一个会话**。这种情况由调用方**fail-closed**
+# （报「断言未评估」），不做静默的局部覆盖（局部覆盖会把"早期会话里成了"读成"从未被调用"）。
+MUST_SUCCEED_SOURCES = frozenset({"sse", "metadata"})
+
+#: 「被拒」的错误码白名单（**显式枚举**，不宽正则）：判据源 = 后端工具层真实返回的拒码。
+#: `cross_skill_target` = `validate_input` 判「这次诉求不属本 skill」时回给模型的码
+#: （`backend/ai-agent-service/app/tools/validate_input.py`）；#4123 的 AS-003 失败链
+#: （被拒后模型直接放弃、链路再未推进）就是它。未登记的码**不计入**自愈率分母。
+DENIAL_ERROR_CODES = frozenset({"cross_skill_target"})
+
+
+def rounds_from_history_payload(payload: dict) -> tuple:
+    """`GET /api/chat/history/{sid}` 响应 → 与 SSE 面**同形**的 rounds（issue #4097）。
+
+    返回 `(rounds, error)`；`error` 非空 ⇒ 断言**不可评估**（fail-closed，绝不当"没问题"）。
+
+    还原口径（逐项对齐是**写侧**的契约，这里只做形状翻译，不做裁剪/合并）：
+      · 每条消息的 `tool_calls`（`[{tool, args}]`，落库键名）→ SSE 形态 `[{name, args}]`；
+      · 每条消息的 `tool_results`（`[{tool, success, error}]`）→ SSE 形态
+        `[{tool, result: {success, error}}]`（`__round` = 该消息在历史里的序号，
+        **不是**用例轮次号 —— 落库面没有轮次概念，用「第 n 条消息」定位）。
+      · 只有带 `tool_results` 的消息才成为一轮（无消息 = 无落库证据）。
+
+    🔴 **「读侧没暴露该键」必须与「确实没有工具结果」区分开**：前者是本 issue 的缺陷形态
+    （写侧落库了、读侧没回传），若被读成「空 = 没有调用」，断言会退化成一句
+    「从未被调用」的行为失败 —— 归因错人且掩盖读侧回归。故这里按**键是否存在**
+    （`"tool_results" in msg`）判，缺键即报错。
+    """
+    data = (payload or {}).get("data") if isinstance(payload, dict) else None
+    messages = data.get("messages") if isinstance(data, dict) else None
+    if not isinstance(messages, list):
+        return [], ("读侧响应里没有 data.messages —— 断言未评估（fail-closed）")
+    exposed = False
+    rounds = []
+    for idx, msg in enumerate(messages, start=1):
+        if not isinstance(msg, dict):
+            continue
+        if "tool_results" in msg:
+            exposed = True
+        results = msg.get("tool_results")
+        if not isinstance(results, list) or not results:
+            continue
+        calls = msg.get("tool_calls") if isinstance(msg.get("tool_calls"), list) else []
+        rounds.append({
+            "__round": idx,
+            "tool_calls": [
+                {"name": c.get("tool") or c.get("name"), "args": c.get("args") or {}}
+                for c in calls if isinstance(c, dict)
+            ],
+            "tool_results": [
+                {"tool": t.get("tool"),
+                 "result": {"success": bool(t.get("success")), "error": t.get("error")}}
+                for t in results if isinstance(t, dict)
+            ],
+            "__source": "metadata",
+        })
+    if not exposed:
+        return [], ("历史消息里**没有** `tool_results` 键 —— 写侧落库了但读侧未暴露"
+                    "（issue #4097 的缺陷形态）⇒ 断言未评估（fail-closed）")
+    return rounds, ""
+
+
+async def fetch_session_tool_result_rounds(token: str, session_id: str,
+                                           debug_user: str = "",
+                                           debug_permissions: str = "") -> tuple:
+    """读侧取数（issue #4097）：`GET /api/chat/history/{session_id}` → `(rounds, error)`。
+
+    `limit=100`（接口上限）：评测用例的会话长度远小于该值，取满即不会截断早期消息
+    （截断会让"早期轮成了"被读成"从未被调用" = 假红）。
+    """
+    if not session_id:
+        return [], "取不到会话 id —— 断言未评估（fail-closed）"
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{AI_API}/api/chat/history/{session_id}",
+                            headers=_chat_headers(token, debug_user, debug_permissions),
+                            params={"limit": 100}, timeout=20)
+    except Exception as e:
+        return [], f"读侧取数请求失败 {type(e).__name__}: {e}"
+    if r.status_code != 200:
+        return [], f"读侧取数 HTTP {r.status_code}"
+    return rounds_from_history_payload(_safe_json(r, {}) or {})
+
+
+def denial_recovery_stats(rounds: list, window: int = 3,
+                          codes: frozenset = DENIAL_ERROR_CODES) -> dict:
+    """被拒后自愈率（issue #4097 评论）——**报告型读数，不产生任何断言、不改用例分数**。
+
+    ## 为什么需要
+
+    #4123 的 AS-003 由 pass → reproducible：`validate_input` 回 `cross_skill_target` 之后
+    **没有任何路由动作**、模型直接放弃链路。这类失败真正的代价不是"被拒"（拒是护栏在起作用），
+    而是"**被拒之后链路没有恢复**" —— 两者在旧证据面上都读不到（读侧未暴露 `tool_results`）。
+
+    ## 口径（本函数的定义即判据，写清楚以便复算）
+
+    · 事件序 = 按 rounds 顺序摊平的 `(tool, success, error)`；
+    · **被拒** = `success=false` 且 `error` 命中 `codes` 白名单（默认只有 `cross_skill_target`）；
+    · **自愈** = 该次被拒之后 `window` 个事件内出现**至少一次成功调用**（链路继续推进）；
+    · **未自愈** = 窗口内零成功（模型被拒后放弃 → 用户办不成事）。
+
+    ⚠️ 边界（如实登记）：① 自愈的判据是"窗口内**任一**成功"，不是"同一目标工具成功"
+    （`cross_skill_target` 的正确恢复本来就是**换域**再调，同工具重试恰恰是错的行为）；
+    ② 按 skill 域分组的汇总**未实现**（落库记录里没有 skill 字段，须另补口径，不猜）。
+    """
+    events = []
+    for r in rounds or []:
+        for t in (r or {}).get("tool_results") or []:
+            if not isinstance(t, dict):
+                continue
+            res = t.get("result") if isinstance(t.get("result"), dict) else {}
+            events.append((str(t.get("tool") or ""), bool(res.get("success")),
+                           str(res.get("error") or "")))
+    denials = [i for i, (_t, ok, err) in enumerate(events)
+               if not ok and err and err in codes]
+    recovered = 0
+    unrecovered = []
+    by_code = {}
+    for i in denials:
+        tool, _ok, err = events[i]
+        by_code[err] = by_code.get(err, 0) + 1
+        if any(ok for _t, ok, _e in events[i + 1:i + 1 + max(int(window), 0)]):
+            recovered += 1
+        else:
+            unrecovered.append({"tool": tool, "error": err, "at": i})
+    n = len(denials)
+    return {
+        "denials": n,
+        "recovered": recovered,
+        "recovery_rate": (recovered / n) if n else None,
+        "by_code": by_code,
+        "unrecovered": unrecovered,
+    }
+
+
+def denial_recovery_summary() -> dict:
+    """本轮（本进程 = 本分片）「被拒后自愈」汇总 —— 报告型（issue #4097 评论）。
+
+    跨分片合并 = 各分片计数**相加**（率由合并后的两个计数重算，**不要**对率取平均）。
+    台账按 `case.id` 记账 ⇒ 重试只覆盖不累加（同一用例的两次尝试不重复计入分母）。
+    """
+    per_case = dict(_DENIAL_RECOVERY_BY_CASE)
+    denials = sum(s.get("denials") or 0 for s in per_case.values())
+    recovered = sum(s.get("recovered") or 0 for s in per_case.values())
+    return {
+        "cases": len(per_case),
+        "denials": denials,
+        "recovered": recovered,
+        "recovery_rate": (recovered / denials) if denials else None,
+        "unrecovered_cases": sorted(
+            cid for cid, s in per_case.items() if s.get("denials") and not s.get("recovered")),
+    }
+
+
+#: 用例 id → 该用例最后一次尝试的「被拒后自愈」读数（报告型台账；见 `denial_recovery_summary`）
+_DENIAL_RECOVERY_BY_CASE: dict = {}
+
+#: session_id → 已取到的落库面 rounds（`run_case` 为 `source: metadata` 取过一次 ⇒
+#: 报告型的自愈率台账**复用**同一份结果，不重复发一次 HTTP）。
+_TOOL_RESULT_ROUNDS_CACHE: dict = {}
+
+
+def check_must_succeed(results: list, must_succeed: list,
+                       metadata_rounds: list = None,
+                       metadata_error: str = "") -> list:
     """写工具**成功**断言：声明的工具必须至少真正成功一次（「调了」≠「成了」）。
 
     背景（CI 实证 run 34686905546 / 34685247189，issue #3361）：
@@ -3206,6 +3385,12 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
     最忌讳的形态：**不写**（则该分支无论怎么失败都判绿 —— #3778 的原病）或**无条件写**
     （`direct_reply` 那一支的合格行为被误判成失败 = 假红）。
     未声明该键 ⇒ 语义一字不变（缺省 `False` = 无条件「必须至少成功一次」）。
+
+    声明 `source` 时（issue #4097）：`sse`（缺省）= 上面这条 SSE 事件面路径；`metadata` =
+    **落库面**（`metadata.tool_results`，由读侧 `GET /api/chat/history/{sid}` 回传，经
+    `rounds_from_history_payload` 还原成同形 rounds）。两面**显式二选一**：
+    落库面取数不可用（读侧未暴露该键 / HTTP 失败 / 用例跨会话）⇒ **判「断言未评估」**
+    （fail-closed），绝不当通过 —— 否则"落库了但没人读"这类缺陷会静默消失。
     """
     issues = []
     for spec in must_succeed or []:
@@ -3214,13 +3399,13 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
         if not isinstance(spec, dict):
             issues.append(f"must_succeed: 配置非字符串/字典: {spec!r}")
             continue
-        unknown = sorted(set(spec) - {"tool", "action", "only_if_called"})
+        unknown = sorted(set(spec) - {"tool", "action", "only_if_called", "source"})
         if unknown:
             # 与 `check_must_fail` 的同一处硬化对称（那边早有白名单）：未支持的键**过去被静默
             # 忽略** ⇒ 断言降级/空转而用例照旧判绿（同 `must_fail` 的 `条目含未支持的键` 码）。
             issues.append(
                 f"must_succeed: 条目含未支持的键 {unknown}（会被静默忽略 → 断言降级/空转）: {spec!r}"
-                f"—— 支持 tool/action/only_if_called；值级作用域见 issue #3689")
+                f"—— 支持 tool/action/only_if_called/source；值级作用域见 issue #3689")
             continue
         only_if_called = bool(spec.get("only_if_called"))
         tool = str(spec.get("tool", ""))
@@ -3228,9 +3413,29 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
         if not tool:
             issues.append(f"must_succeed: 配置缺 tool: {spec!r}")
             continue
+        # 读哪一面（issue #4097）：缺省 `sse` = 既有 SSE 事件面，语义一字不变；
+        # `metadata` = 落库面（`metadata.tool_results`）。**显式二选一**，不并存。
+        source = str(spec.get("source") or "sse")
+        if source not in MUST_SUCCEED_SOURCES:
+            issues.append(
+                f"must_succeed: 配置 source={source!r} 不在支持集 "
+                f"{sorted(MUST_SUCCEED_SOURCES)}（读的是哪一面必须显式二选一）: {spec!r}")
+            continue
+        face = results
+        face_note = ""
+        if source == "metadata":
+            face_note = "（落库面 source=metadata）"
+            if metadata_rounds is None:
+                # fail-closed：「断言未评估」也是失败 —— 否则读侧一挂，落库面断言静默消失、
+                # 用例照旧判绿（本仓最忌讳的"声称查过而其实没查"）。
+                issues.append(
+                    f"must_succeed[source=metadata]: {tool} 的落库面取数不可用"
+                    f"（{metadata_error or '未取数'}）—— 断言未评估（fail-closed）")
+                continue
+            face = metadata_rounds
 
         attempts: list = []   # [(round, ok, error)]
-        for r in results or []:
+        for r in face or []:
             rnd = r.get("__round")
             # 调用侧：LLM 是否发起了该工具（按 action 过滤）
             called = False
@@ -3281,14 +3486,14 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
                 continue
             issues.append(
                 f"must_succeed: {tool} 从未被调用 → 没有发生任何写操作"
-                "（期望里的工具名出现≠工具真的跑了）")
+                f"（期望里的工具名出现≠工具真的跑了）{face_note}")
         else:
             detail = ", ".join(
                 f"R{rnd}:{err or 'failed'}" for rnd, _ok, err in attempts
             )
             issues.append(
                 f"must_succeed: {tool} 共 {len(attempts)} 次调用**无一成功**（{detail}）"
-                "—— 调了 ≠ 成了")
+                f"—— 调了 ≠ 成了{face_note}")
     return issues
 
 
@@ -3758,6 +3963,11 @@ _CASE_ATOM_RULES = (
     (re.compile(rf"^db_verify\[[^\]]+\]: 找不到 ({_TOOL})"), "no_success({0})"),
     # ② 断言**配置错误**（与业务行为无关，但必须可辨、稳定；不含 repr 细节）
     (re.compile(r"^must_succeed: 配置"), "config_error(must_succeed)"),
+    # 落库面取数不可用（issue #4097）：读侧没暴露 `metadata.tool_results` / 取数失败 / 用例跨会话
+    # ⇒ 「断言未评估」。**必须与行为失败分属不同原子**：原文看着像"工具没跑"，
+    # 真相却是**读侧回归**（写侧落库了、读侧没回传）—— 归因错人会让修复方向整个反过来。
+    (re.compile(r"^must_succeed\[source=metadata\]: .*断言未评估"),
+     "config_error(must_succeed_metadata)"),
     (re.compile(r"^must_fail: 配置"), "config_error(must_fail)"),
     (re.compile(r"^must_fail: 条目含未支持的键"), "config_error(must_fail)"),
     (re.compile(r"^forbidden_tools: 配置"), "config_error(forbidden_tools)"),
@@ -7137,6 +7347,36 @@ async def check_post_session(token: str, post_session: list) -> list:
     return issues
 
 
+async def _record_denial_recovery(case, token: str, r: dict) -> None:
+    """报告型（issue #4097 评论）：把本用例的「被拒后自愈」读数记进本轮台账。
+
+    **刻意不碰分数**（与 post_session 断言分属两类）：取数失败只打印一行 ——
+    基础设施波动不该把用例判红（那是"报错当失败"的老毛病）；但**必须可见**，
+    否则"指标恒为 0"会被读成"从来没被拒过"。
+    """
+    sid = str(r.get("final_session_id") or "")
+    rounds = _TOOL_RESULT_ROUNDS_CACHE.get(sid)
+    if rounds is None:
+        try:
+            rounds, err = await fetch_session_tool_result_rounds(
+                token, sid,
+                debug_user=getattr(case, "debug_user", "") or "",
+                debug_permissions=_case_debug_permissions(case))
+        except Exception as e:                      # 取数是旁路，绝不外抛
+            rounds, err = [], f"{type(e).__name__}: {e}"
+        if err:
+            print(f"     ℹ️ 自愈率取数跳过（{err}）")
+            return
+    stats = denial_recovery_stats(rounds)
+    _DENIAL_RECOVERY_BY_CASE[case.id] = stats
+    if stats["denials"]:
+        _rate = stats["recovery_rate"]
+        print(f"     📉 被拒后自愈（#4097 读数）：被拒 {stats['denials']} 次 / "
+              f"自愈 {stats['recovered']} 次（率 {_rate:.0%}，窗口 3 个事件）"
+              + (f" ❌ 未自愈（{stats['unrecovered'][0]['error']}"
+                 f"@R{stats['unrecovered'][0]['at']}）" if stats["unrecovered"] else ""))
+
+
 async def _close_and_verify_session(case, token: str, r: dict, session_id: str) -> None:
     """关闭用例会话并执行关闭后置断言（失败按用例级失败计入 r）。
 
@@ -7147,6 +7387,14 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
     await _end_session(token, r.get("final_session_id") or session_id,
                        debug_user=getattr(case, "debug_user", "") or "",
                        debug_permissions=_case_debug_permissions(case))
+    # 被拒后自愈率（报告型，issue #4097 评论）：放在 end_session 之后 —— 会话关闭**不删**消息，
+    # 历史接口照常可读（真值 = `SessionMemory.close_session` 只改 status 与 ended_at）。
+    # ⚠️ 报告型读数在**用例主链路**上 ⇒ 任何异常都不得中断用例（取数失败只打印一行）；
+    # 这里再包一层兜底，让"旁路不影响主路"成为结构性保证，而不是只靠内部 try。
+    try:
+        await _record_denial_recovery(case, token, r)
+    except Exception as e:                          # pragma: no cover - 兜底路径
+        print(f"     ℹ️ 自愈率记账跳过（{type(e).__name__}: {e}）")
     if not getattr(case, "post_session", None):
         return
     try:
@@ -8298,7 +8546,28 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
     # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
     # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
-    case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
+    # `source: metadata` 的条目（issue #4097）**先取落库面**（读侧 `metadata.tool_results`）
+    # 再进同一段判定 —— 取数失败/跨会话 ⇒ 把原因交给断言层报「未评估」（fail-closed）。
+    _ms_specs = getattr(case, "must_succeed", []) or []
+    _meta_rounds, _meta_err = None, ""
+    if any(isinstance(s, dict) and str(s.get("source") or "") == "metadata" for s in _ms_specs):
+        if session_breaks:
+            # 跨会话用例：读侧只能取到**最后一个**会话的落库记录 ⇒ 局部覆盖会把"早期会话里成了"
+            # 读成"从未被调用"（假红）或反之（假绿）。不猜：判「断言未评估」。
+            _meta_err = f"用例跨会话（{session_breaks} 次 new_session）⇒ 落库面只能取到最后一个会话"
+        else:
+            _meta_rounds, _meta_err = await fetch_session_tool_result_rounds(
+                token, session_id,
+                debug_user=getattr(case, "debug_user", "") or "",
+                debug_permissions=_case_debug_permissions(case))
+            if _meta_err:
+                _meta_rounds = None
+            else:
+                # 自愈率台账复用同一份取数（报告型，见 `_record_denial_recovery`）
+                _TOOL_RESULT_ROUNDS_CACHE[session_id] = _meta_rounds
+    case_issues += check_must_succeed(results, _ms_specs,
+                                      metadata_rounds=_meta_rounds,
+                                      metadata_error=_meta_err)
     # 必须失败（issue #3544 收口批）：must_succeed 的镜像 —— 「业务不得发生」也要机器可判，
     # 最坏形态是"调了且成了"（脏数据落库），而"调了但失败"/"压根没调"都算合格拒绝。
     case_issues += check_must_fail(results, getattr(case, "must_fail", []) or [])
@@ -9861,7 +10130,7 @@ def _evidence_window(results: list) -> dict:
 
 
 def write_summary_json(path: str, label: str, shard: str, results: list,
-                       elapsed_s: float = None) -> None:
+                       elapsed_s: float = None, denial_recovery: dict = None) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
     为什么需要：分片后每个 job 只跑一部分用例，后续步骤（DB 审计、假绿告警）若按
@@ -9942,6 +10211,10 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
     payload["cost"] = _cost_block(results, elapsed_s)
     # verdict ledger 的键（#3769）：同一 SHA 已有结论 ⇒ 派发侧据此拒绝重复跑。
     payload["run_key"] = _run_key(results, label)
+    # 被拒后自愈率（#4097 评论）：**只加**顶层键，报告型（不参与 `completion`/`ok` 的任何判定）。
+    # 跨分片合并 = 各分片计数相加后重算率（不要对率取平均）；见 `denial_recovery_summary`。
+    if denial_recovery is not None:
+        payload["denial_recovery"] = denial_recovery
     try:
         with open(path, "w", encoding="utf-8") as f:
             _json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -10312,11 +10585,21 @@ async def main():
     ok, msg = _ci_verdict(results)
     print(f"\n{'✅' if ok else '❌'} {msg}")
 
+    # 被拒后自愈率（报告型，issue #4097 评论）：**只打印、不参与判定** —— 分母（被拒次数）
+    # 取决于被测 agent 的真实行为，把它写进通过条件会让"没有拒绝发生"变成失败（假红）。
+    _dr = denial_recovery_summary()
+    if _dr["denials"] or _dr["cases"]:
+        _rate = _dr["recovery_rate"]
+        print(f"📉 被拒后自愈率（#4097）：被拒 {_dr['denials']} 次 / 自愈 {_dr['recovered']} 次"
+              f"（率 {'n/a' if _rate is None else format(_rate, '.0%')}，覆盖 {_dr['cases']} 条用例）"
+              + (f"；未自愈用例 {_dr['unrecovered_cases']}" if _dr["unrecovered_cases"] else ""))
+
     # 机器可读汇总（分片审计/报告消费；env 未设则跳过）
     _sum_path = os.environ.get("AGENT_EVAL_SUMMARY_JSON")
     if _sum_path:
         write_summary_json(_sum_path, args.suite, args.shard, results,
-                           elapsed_s=time.monotonic() - _run_t0)
+                           elapsed_s=time.monotonic() - _run_t0,
+                           denial_recovery=_dr)
 
     sys.exit(0 if ok else 1)
 

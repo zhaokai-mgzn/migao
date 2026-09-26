@@ -559,6 +559,64 @@ class TestGetHistory:
 
     @patch("app.api.chat.SessionMemory")
     @pytest.mark.asyncio
+    async def test_history_returns_tool_results(self, MockSM):
+        """get_history 回传工具**执行结果**（issue #4097，写侧 #4052 的消费侧）。
+
+        没有这一侧，`metadata.tool_results` 就是只写不读的空字段 —— 评测只能断言
+        「模型说它调了」，不能断言「确实调了 / 确实成了」。断言三件事：
+        ① 值原样回传；② 与 `tool_calls` **逐项对齐**（同一索引 = 同一次调用）；
+        ③ 缺失 → None（不补、不猜）。
+        """
+        calls = [{"tool": "order_create", "args": {"customer_name": "甲"}},
+                 {"tool": "order_create", "args": {"customer_name": "乙"}}]
+        results = [{"tool": "order_create", "success": False, "error": "tool_execution_failed"},
+                   {"tool": "order_create", "success": True, "error": None}]
+        msg = {
+            "id": "m4", "session_id": "sess_1", "role": "assistant",
+            "content": "已重试", "content_type": "text",
+            "created_at": "2026-06-20T10:00:00Z",
+            "tool_calls": calls,
+            "metadata": {"tool_calls": calls, "tool_results": results},
+        }
+        m = _memory(get_session=_session(), get_history=[msg])
+        MockSM.return_value = m
+        result = await get_history("sess_1", current_user=_user())
+        assert result["success"] is True
+        out = result["data"]["messages"][0]
+        assert out["tool_results"] == results, f"落库值必须原样回传: {out['tool_results']}"
+        assert len(out["tool_results"]) == len(out["tool_calls"]), (
+            "tool_results 必须与 tool_calls 逐项对齐（消费者按同一索引取成败）")
+        assert out["tool_results"][0]["success"] is False
+        assert out["tool_results"][1]["success"] is True
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_history_tool_results_absent_or_malformed_is_none(self, MockSM):
+        """缺失 / 形态不对 ⇒ None（不猜、不补）；`metadata` 是 JSON 字符串的旧行同样要读到。"""
+        import json
+        rows = [
+            {"id": "m5", "session_id": "sess_1", "role": "assistant", "content": "无工具",
+             "content_type": "text", "created_at": "2026-06-20T10:00:00Z",
+             "metadata": {"cards": ["order"]}},
+            {"id": "m6", "session_id": "sess_1", "role": "assistant", "content": "形态不对",
+             "content_type": "text", "created_at": "2026-06-20T10:00:00Z",
+             "metadata": {"tool_results": "not-a-list"}},
+            {"id": "m7", "session_id": "sess_1", "role": "assistant", "content": "JSON 字符串行",
+             "content_type": "text", "created_at": "2026-06-20T10:00:00Z",
+             "metadata": json.dumps({"tool_results": [
+                 {"tool": "aftersale_create", "success": True, "error": None}]})},
+        ]
+        m = _memory(get_session=_session(), get_history=rows)
+        MockSM.return_value = m
+        result = await get_history("sess_1", current_user=_user())
+        msgs = result["data"]["messages"]
+        assert msgs[0]["tool_results"] is None
+        assert msgs[1]["tool_results"] is None
+        assert msgs[2]["tool_results"] == [
+            {"tool": "aftersale_create", "success": True, "error": None}]
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
     async def test_history_without_cards_returns_none(self, MockSM):
         """负例（R2）：无卡历史轮次回传 None，不得伪造空列表/占位值。"""
         msg = {

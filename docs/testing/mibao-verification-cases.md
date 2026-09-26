@@ -39,9 +39,10 @@
 前置: order_count_for_phone(source=13800138000)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
 必须成功: aftersale_create
+必须成功: aftersale_create（落库面 metadata.tool_results）
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-09-26（issue #4097）：补 **`must_succeed[aftersale_create, source=metadata, only_if_called=true]`** —— 同一件事的**落库面**断言（读 `metadata.tool_results`；读侧 `GET /api/chat/history/{sid}` 自本单起回传该字段，此前只写不读、评测无法断言「确实调了 / 确实成了」）。两面**显式二选一**（`source`），取数不可用 ⇒ fail-closed 判「断言未评估」；本条与既有 SSE 面条目同源同序（写侧一次调用同时产出事件与落库元信息）⇒ 正常路径必然一致、不一致即缺陷。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 查看售后工单（只读；原「更新工单状态-关闭」随 #5247 写能力下线改判） 🔵
 ```

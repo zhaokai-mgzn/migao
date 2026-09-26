@@ -325,6 +325,30 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   「工具层失败」与「模型层漏调」在一行里可区分。**C 端写用例必须声明**（由
   `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestWriteToolSuccessAssertions` 强制）。
 
+  **读的是哪一面（`source`，issue #4097）**：缺省 `sse` = 上面的 SSE 事件面；声明
+  `source: metadata` 则改读**落库面** —— 写侧 #4052 起落进会话消息的
+  `metadata.tool_results`（`{tool, success, error}`，与 `metadata.tool_calls` 逐项对齐），
+  由读侧 `GET /api/chat/history/{session_id}` 回传（本单起），runner 经
+  `rounds_from_history_payload` 还原成**同形** rounds 走**同一段**判定（两面共用一份口径，
+  不存在两套语义）。两面**显式二选一**：同一条用例可以两条都声明（一面流上、一面库里），
+  不一致即缺陷。
+
+  ```yaml
+  must_succeed:
+    - tool: aftersale_create
+      only_if_called: true              # SSE 面：去建了就必须成了
+    - tool: aftersale_create
+      source: metadata                  # 落库面：会话记录里也必须记着成了
+      only_if_called: true
+  ```
+
+  ⚠️ **取数不可用 = 判红**（fail-closed，原子 `config_error(must_succeed_metadata)`）：
+  读侧未暴露该键 / HTTP 失败 / 用例跨会话（`new_session` ⇒ 只能取到最后一个会话）⇒
+  判「断言未评估」，**不静默放过**。静态词汇表 = `source ∈ {sse, metadata}`，
+  由 `tests/unit_ci_workflows/test_assertion_specs_wellformed.py` 在 PR 阶段（零 LLM）判红；
+  「写侧落库的字段必须被读侧回传」的类级锁见
+  `tests/unit_ci_workflows/test_tool_results_write_read_agreement.py`。
+
 #### 3.2.1 入参**值级**断言（`arg_values` → `check_arg_values`，issue #3823）
 
 三级证据**不得互相顶替** —— 这正是 #3320 判据 2 只能"闭合一半"的根因：

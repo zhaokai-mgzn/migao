@@ -550,7 +550,13 @@ def to_md(cases):
             for ms in (c.get("must_succeed") or []):
                 _ms_tool = ms if isinstance(ms, str) else ms.get("tool")
                 _ms_act = "" if isinstance(ms, str) else (ms.get("action") or "")
-                lines.append(f"必须成功: {_ms_tool}({_ms_act})" if _ms_act else f"必须成功: {_ms_tool}")
+                # 读的是哪一面（issue #4097）：同一条用例可以**同时**声明 SSE 面条目与落库面
+                # 条目 ⇒ 不加标记时账本上会出现两行逐字相同的「必须成功: X」，读者无从分辨
+                # （账本是真值源，失真即误判）。缺省 `sse` 不标（存量行一字不变）。
+                _ms_src = ("" if isinstance(ms, str) or ms.get("source") != "metadata"
+                           else "（落库面 metadata.tool_results）")
+                lines.append((f"必须成功: {_ms_tool}({_ms_act})" if _ms_act
+                              else f"必须成功: {_ms_tool}") + _ms_src)
             for mf in (c.get("must_fail") or []):
                 _mf_tool = mf if isinstance(mf, str) else mf.get("tool")
                 _mf_act = "" if isinstance(mf, str) else (mf.get("action") or "")

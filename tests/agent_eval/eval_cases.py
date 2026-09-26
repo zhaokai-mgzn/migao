@@ -117,7 +117,7 @@ _CASE_AS_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'aftersale_create', 'only_if_called': True}],
+    must_succeed=[{'tool': 'aftersale_create', 'only_if_called': True}, {'tool': 'aftersale_create', 'source': 'metadata', 'only_if_called': True}],
     namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
