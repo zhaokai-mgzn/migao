@@ -891,6 +891,27 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 **订单**是否同步进 `producing` **另议**（§8 A6）。
 ⚠️ **A 模式下「首工序完成」即「首工序开始」**（没有开工事件，报工就是完工）⇒ 触发点 = **完成**，不是认领。
 
+🔴 **已落码（2026-09-26，issue #4695；用户裁定「落 D13」）** —— 本表第 1 行交付了，
+交付形态与上表有**一处偏离**，如实登记：
+
+- 触发点 = **报满**（`done_qty ≥ qty`），不是认领（与 D13 行、与上面那条「触发点 = 完成」逐字一致）。
+- 落点 = 加工单 `issued → in_processing` + `processing_orders.in_processing_at`，**只**这一条入边。
+  ⚠️ 上表写的 `generated/issued → in_processing` 里 **`generated` 那半未交付**：A6 未裁定 ⇒ 按保守读法
+  **不直达**（该单保持 `generated`，仍需先「发加工」）⇒ **它仍挂在 §8 A6，是待裁定项，不是已交付项**。
+- 「走状态机、不裸 UPDATE」的落法 = 合法性问
+  `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` 的
+  `allowsTransition`（唯一真相源 = 那张 `STATUS_TRANSITIONS`）；落库走
+  `backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java` 的
+  `markInProcessingIfFrom` 条件更新，谓词 = **本次被授权的那一个起始态** ⇒ 迁移表只有一份投影，
+  也不是无条件写；`COALESCE` 保证开工时刻不被重复/并发报工改写。
+- 顺序 = **先转态、再完工判定**：单工序加工单在这一次报工里就全部报满，若先判完工，
+  `markCompletedIfActive` 会把活跃集里的 `issued` 直接置 `completed` ⇒ 谓词再不成立、
+  `in_processing_at` **永远为空**（「生产开始」在数据上不存在）。
+- 证据（红证已实跑）：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java`
+  的 7 条 D13 用例（改前 4 条失败 —— `expected: "in_processing" but was: "issued"`）+
+  状态机锚点 `ProcessingOrderServiceTest#onlyIssuedMayEnterInProcessing` + SQL 形状守卫
+  `ProcessingOrderMapperTest#markInProcessingIfFrom_sqlShape`。
+
 ---
 
 ## 8. 待用户裁定（**集中列出，不替业务决定**）
@@ -902,7 +923,7 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 | **A3** | **C 模式（开工选扫）是否要做、何时做** | ① 不做 ② 现在做（可选开关）③ 将来做 | **③ 将来做**（裁定②-3：C 只作**预留**）。`V92`（**已落码**）建列（**零行为变化**），开关与交互**另单**〔原写 `V89` ⇒ **口径订正**见 §11.1〕 |
 | **A4** | **数量上限的「合理损耗」** | ① 0 容差（现状）② 允许配置损耗率 | **②**（真值源 `:56` 逐字写了「+合理损耗」，现状是 0 ⇒ 与真值源有差）；但**不得**静默 clamp |
 | **A5** | **发货 / 点交是否按套** | ① 按单（现状）② 按套 | 需业务：工程单「22 套分 3 车发」是真实场景；本设计**只保证套号可被引用** |
-| **A6** | **首工序触发的是「加工单」还是「订单」进生产中**；`generated` 能否直达 `in_processing` | 见 §7.3 | 按 #4117 同族落**加工单** `in_processing`；`generated` 直达需裁定 |
+| **A6** | **首工序触发的是「加工单」还是「订单」进生产中**；`generated` 能否直达 `in_processing` | 见 §7.3 | **前半已交付**（2026-09-26，issue #4695，用户裁定「落 D13」）：落**加工单** `in_processing`，**订单不联动**（订单级时点归「发加工」，用户裁定 #4305）。🔴 **后半仍未裁定、仍挂在 A6**：`generated` 能否直达 `in_processing` —— 本次按**保守读法**实现（**不直达**：该单保持 `generated`，需先「发加工」或走手工端点）。裁定入口 = 本行：若判「直达」，改动点 = `ProcessingOrderService.STATUS_TRANSITIONS` 增一条 `generated → in_processing`（首工序报满的自动路径会**跟着放开**，因为合法性取自同一张表）；判据 `ProcessingOrderServiceTest#onlyIssuedMayEnterInProcessing` 会**先红**提醒，不是静默生效 |
 | **A7** | **一樘窗 = 一套 与 #4373「一个窗帘商品 = 1 套」冲突** | 见 §10 C4 | **以本单（#4687）为准**（用户 2026-09-20 裁定「一樘窗 = 一套」）；~~**需要一份显式改判**（否则 #4373 的验收判据仍按旧口径）~~ ⇒ ✅ **已交付：issue #4693** —— 改判落在 `docs/design/position-instance-routing-model.md` **§2.1.1**（就地改判 + 依据三样齐全 + 历史留档 + 可执行断言） |
 | **A8** | **旧码是否设强制失效日** | ① 不设（自然退场）② 设截止日 | **①**：强制失效会打断在产单；撤销端点（既有）已提供「立即作废」的手动出路 |
 | **A9** | **`processing_operation_claims`（认领事件表）现在建不建** | ① 不建（C 模式另立迁移）② `V92` 一起建〔原写 `V89`〕 | **①**（YAGNI：A 模式零消费者；「最少代码」阶梯）⇒ ✅ **已按 ① 落地**：`V92` **未建**该表 |
@@ -1133,7 +1154,7 @@ issue #4687 的 10 条要求 ⇒ 本文落点：
 | D10 | **旧码**（加工单级）仍可解析 ⇒ 返回 `granularity="order"` + **强制选部位** | 旧码 404 ⇒ 红；旧码**默认取第 1 套** ⇒ 红 |
 | D11 | 报工金额**逐字不变**（本设计不改既有金额口径） | 任一历史金额变化 ⇒ 红 |
 | D12 | 存量单（`order_item_id` 为 NULL 的行）**行为逐字不变** | 读面报错 / 归错套 ⇒ 红 |
-| D13 | 首工序**完成** ⇒ 加工单进 `in_processing`（**走状态机，不裸 UPDATE**） | 裸 UPDATE 绕过 ⇒ 红 |
+| D13 | 首工序**完成** ⇒ 加工单进 `in_processing`（**走状态机，不裸 UPDATE**） | 裸 UPDATE 绕过 ⇒ 红 ｜ ✅ **已落码（2026-09-26，issue #4695）**：红证实跑 —— 改前 4 条失败（`expected: "in_processing" but was: "issued"`，含并发/重放那条 "Wanted but not invoked"），实现后 7/7 绿；⚠️ `generated` 那半**未交付**（A6 未裁定，见 §8） |
 | D14 | 全部活跃工序实例报满（#4961 口径） ⇒ 加工单 `completed`（**复用 `markCompletedIfActive`**） | 各写一份 ⇒ 红 |
 | D15 | **C 模式默认关** ⇒ 默认路径**不要求**任何认领 / 开始交互 | 默认要求点「开始」⇒ 红（裁定②-3） |
 | D16 | C 模式开启时，**未认领直接完成**仍合法（认领不是完成的前置） | 未认领被拒 ⇒ 红（§4.4 共存口径①） |
@@ -1175,6 +1196,9 @@ V92（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零
    ├─② 完成（§4.2 事务入口 + 防呆④补全 + 删越站闸门）← **主闭环**（D5/D6/D7/D9）
    ├─③ 卡点报表（§6.3）                    ← 只读面（D8）
    ├─④ 状态机联动（§7.3）                  ← D13/D14
+   │        ✅ **D14 已落码**（issue #4117，`markCompletedIfActive`）
+   │        ✅ **D13 已落码**（2026-09-26，issue #4695）：首工序报满 ⇒ 加工单 `issued → in_processing`
+   │        （走状态机 + 条件更新；幂等）。⚠️ **`generated` 直达那半仍待裁**（§8 A6）
    └─⑤ 旧码降级形态（§2.6）                ← D10（**建议尽早**：存量车间在产）
 ```
 
