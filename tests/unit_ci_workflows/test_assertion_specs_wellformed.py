@@ -1,4 +1,4 @@
-# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020, OR-023, OR-024
+# case_ids: OR-012, OR-014, OR-017, OR-018, CH-010, CH-011, DF-020, OR-023, OR-024, AS-010, FN-001, OR-001, OR-002, OR-049, PR-001, PR-002, PR-021, PR-024
 """断言配置必须**形状正确**（issue #3367 断言层审计）。
 
 ## 为什么需要守卫
@@ -27,6 +27,23 @@ from unit_ci_workflows._source_parsing import (  # noqa: E402  （#5323 收敛�
     assigned_strings,
     declared_strings,
     nested_string_members,
+)
+
+# 产出键快照（issue #3729）：生成器 / 刷新入口 / 判定口径的**唯一实现**都在这里
+# （`--refresh` 刷快照、`--check` 新鲜度、`--verdicts` 逐条判定）——本文件只把它的读数变成会红的判据。
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from output_keys_snapshot import (  # noqa: E402
+    IMPOSSIBLE,
+    LEDGER_PATH,
+    PRODUCIBLE,
+    UNKNOWN,
+    derive,
+    derive_module,
+    freshness_diff,
+    key_verdict,
+    ledger_entries,
+    load_snapshot,
+    spec_key_verdicts,
 )
 
 #: 工具类名必须是**纯小写标识符**（与旧口径 `"([a-z_][a-z0-9_]*)"` 同一个过滤口径，只是不再扫原文）。
@@ -552,3 +569,202 @@ class TestActionSetParsingIsSyntaxBased:
         assert multi.get("batch_stock_query") == {
             "batches", "distribution", "saving_board", "saving_trend"}, (
             f"元组形态的 VALID_ACTIONS / 一层回指的 enum 未被读到：{multi.get('batch_stock_query')}")
+
+
+class TestOutputKeysAreProducible:
+    """`output_verify.expect` 的键名必须是该工具**真能产出**的键（issue #3729 的 L0 键名校验）。
+
+    **为什么需要**：断言里写错字段名（PP-007 曾写 `price`，工具给出的却是另一套键）时，
+    这条断言**永远不可能满足** —— 一种「恒红」的配置错误，而 PR 阶段此前没有任何零 LLM 的
+    判据能发现它：工具源码里没有产出 schema 的机器可读形态（`data=<变量>` /
+    `**response.get("data")` 是工具里的常态 ⇒ 扫「字面 `data=` 键」连正确答案都表达不出来）。
+
+    **单一源** = `tests/agent_eval/output_keys_snapshot.json`（**生成物，禁手改**；由
+    `scripts/output_keys_snapshot.py --refresh` 从工具源码推导）。三态判定：
+
+    | 判定 | 含义 | 本守卫 |
+    |---|---|---|
+    | `producible` | 快照里有这个键 | 绿 |
+    | `impossible` | 快照说该工具（该 action）产出形状是**静态**的，且没有此键 | **红** |
+    | `unknown` | 形状不定（后端透传 / 条件出键 / 工具不在快照里） | **红，除非登记** |
+
+    **fail-closed 但不说谎**：`unknown` 一律判红，除非在
+    `tests/agent_eval/output_keys_unknown_ledger.json` 里逐条登记并写明「这个键由谁产出、
+    为什么快照看不见它」（未登记即红 = 不许静默放行；登记条目必须活着 = 台账只许缩短）。
+    """
+
+    def _cases(self):
+        return load_case_dicts(str(CASES_DIR))
+
+    def test_snapshot_is_fresh(self):
+        """新鲜度守卫：工具产出键变了而快照没刷 ⇒ 红（L0 会开始拿**假快照**判案）。
+
+        机制 = **重算比对**（不是比哈希、不是比时间戳）：把当前工具源码重新推导一遍，与提交的
+        快照逐字段比。于是「改了工具产出键忘了刷快照」与「生成器语义变了忘了刷快照」被同一条
+        判据抓住 —— 这正是快照不腐烂的**唯一**保证。
+        """
+        diff = freshness_diff(load_snapshot(), derive())
+        assert not diff, (
+            "产出键快照与工具源码推导不一致（工具产出键改了却没刷快照）：\n  "
+            + "\n  ".join(diff)
+            + "\n修法：python3 scripts/output_keys_snapshot.py --refresh，把刷新后的快照一起提交"
+        )
+
+    def test_snapshot_is_not_vacuous(self):
+        """防「守卫恒真」：快照必须真的覆盖工具面（解析失效 ⇒ 键集塌成空 ⇒ 声明什么都能过）。"""
+        tools = ((load_snapshot() or {}).get("tools") or {})
+        assert len(tools) >= 40, f"快照只覆盖 {len(tools)} 个工具 —— 生成器疑似失效"
+        total = sum(len(t["keys"]) for t in tools.values())
+        assert total >= 150, f"快照产出键总数只有 {total} —— 解析疑似塌成空集"
+
+    def test_output_verify_tools_are_covered(self):
+        """`output_verify` 引用的工具必须在快照里（否则判定只能退化成 unknown = 覆盖缺口）。"""
+        tools = ((load_snapshot() or {}).get("tools") or {})
+        missing = sorted({r["tool"] for r in spec_key_verdicts(self._cases(), load_snapshot())
+                          if r["tool"] not in tools})
+        assert not missing, (
+            f"以下工具被 output_verify 引用但不在产出键快照里：{missing}"
+            " —— 先修生成器的覆盖面（而不是把判定登记成 unknown）")
+
+    def test_declared_expect_keys_are_producible_or_registered(self):
+        """L0 判红：静态不可能 ⇒ 红；形状不定且未登记 ⇒ 红（两条都给出可行动的出口）。"""
+        ledger = ledger_entries()
+        bad = []
+        for r in spec_key_verdicts(self._cases(), load_snapshot()):
+            if r["status"] == PRODUCIBLE:
+                continue
+            where = f"{r['case']}.output_verify[{r['tool']}].expect.{r['key']}"
+            if r["status"] == IMPOSSIBLE:
+                bad.append(f"{where}：该工具产不出这个键（{r['detail']}）—— 断言恒不满足（恒红）")
+            elif r["ledger_id"] not in ledger:
+                bad.append(
+                    f"{where}：快照判不了（{r['detail']}）且未登记 —— 未登记即红："
+                    f"要么改成真键名，要么在 {LEDGER_PATH.name} 登记并写明理由")
+        assert not bad, "output_verify 声明的产出键不合法：\n  " + "\n  ".join(bad)
+
+    def test_unknown_ledger_entries_are_alive(self):
+        """台账纪律：条目一旦不再对应「形状不定」的声明键即红（过期豁免只许缩短）。"""
+        rows = spec_key_verdicts(self._cases(), load_snapshot())
+        live = {r["ledger_id"] for r in rows if r["status"] == UNKNOWN}
+        dead = sorted(set(ledger_entries()) - live)
+        assert not dead, (
+            "以下台账条目已不再对应任何「形状不定」的声明键（过期豁免，必须删掉）：\n  "
+            + "\n  ".join(dead))
+
+    def test_repo_anchor_shapes_are_resolved(self):
+        """锚点：**旧口径读不出**的真形态必须在快照里读出来（否则 L0 就是一条空判据）。
+
+        三条都取自本仓真实工具（不是合成 fixture）：`curtain_calc` 的 `data=<变量>` 经
+        `build_quote` 返回、`order_create` 从响应体里**读过** `replayed`、`sku_update` 的
+        字面 dict —— 它们正是 #3729 记录的「扫字面 data= 键」误判的那几类。
+        """
+        tools = ((load_snapshot() or {}).get("tools") or {})
+        assert tools, "快照里一个工具都没有 —— 先跑 --refresh"
+        curtain = tools.get("curtain_calc") or {}
+        assert "fabric_meters" in (curtain.get("keys") or []), (
+            "`data=<变量>`（经本模块函数返回的 dict）没被推导出来")
+        assert "fabric_meters" not in (curtain.get("literal_keys") or []), (
+            "旧口径（只读 data= 字面键）本该看不到它 —— 现在看到了说明两种视图塌成了一种")
+        assert "replayed" in ((tools.get("order_create") or {}).get("keys") or []), (
+            "工具从响应体读过的键没被算作「它能产出」")
+        assert "new_price" in ((tools.get("sku_update") or {}).get("literal_keys") or []), (
+            "字面 dict 形态的键没被读到")
+
+
+class TestOutputKeyDerivationIsPinned:
+    """生成器口径的**合成源码**自证（不借真工具证明自己）。
+
+    没有这一层，生成器退化（返回空集 / 认错搜索域 / 把失败出口当产出）时，
+    `TestOutputKeysAreProducible` 只会**看起来更绿**（键少了 ⇒ 判红变少），没有任何东西会红。
+    """
+
+    #: 覆盖全部口径分支的最小源码：字面 dict / 响应体透传 / 本地函数返回 / 同名变量跨方法隔离 /
+    #: 失败出口 / 多 action 归属。
+    FIXTURE = (
+        "from app.tools.base import BaseTool, ToolResult\n"
+        "\n"
+        "def _helper(x):\n"
+        '    return {"helper_key": x}\n'
+        "\n"
+        "class DemoTool(BaseTool):\n"
+        '    name = "demo_tool"\n'
+        '    VALID_ACTIONS = {"list", "passthrough", "helper", "scope_a", "scope_b"}\n'
+        "\n"
+        "    async def execute(self, context, action, **kwargs):\n"
+        '        if action == "list":\n'
+        "            return await self._list(context)\n"
+        '        elif action == "passthrough":\n'
+        "            return await self._passthrough(context)\n"
+        '        elif action == "helper":\n'
+        "            return await self._helper_action(context)\n"
+        '        elif action == "scope_a":\n'
+        "            return await self._scope_a(context)\n"
+        '        elif action == "scope_b":\n'
+        "            return await self._scope_b(context)\n"
+        "\n"
+        "    async def _list(self, context):\n"
+        "        rows = []\n"
+        '        return ToolResult(success=True, data={"items": rows, "total": len(rows)})\n'
+        "\n"
+        "    async def _passthrough(self, context):\n"
+        '        body = context.client.get("payload", {})\n'
+        '        name = body.get("name")\n'
+        "        return ToolResult(success=True, data=body, summary=str(name))\n"
+        "\n"
+        "    async def _helper_action(self, context):\n"
+        "        return ToolResult(success=True, data=_helper(1))\n"
+        "\n"
+        "    async def _scope_a(self, context):\n"
+        '        payload = {"a_key": 1}\n'
+        "        return ToolResult(success=True, data=payload)\n"
+        "\n"
+        "    async def _scope_b(self, context):\n"
+        '        payload = {"b_key": 1}\n'
+        "        return ToolResult(success=True, data=payload)\n"
+        "\n"
+        "    async def _failed(self, context):\n"
+        '        return ToolResult(success=False, message="boom", data={"ghost": 1})\n'
+    )
+
+    def _entry(self):
+        return derive_module(self.FIXTURE)["demo_tool"]
+
+    def test_per_action_keys_are_attributed(self):
+        acts = self._entry()["actions"]
+        assert acts["list"] == {"keys": ["items", "total"], "dynamic": False}, (
+            f"字面 dict 形态没被读全：{acts['list']}")
+        assert acts["helper"] == {"keys": ["helper_key"], "dynamic": False}, (
+            f"本地函数返回的 dict 没被展开：{acts['helper']}")
+        assert set(acts["passthrough"]["keys"]) == {"name"}, (
+            f"响应体透传时「读过的键」没被算作产出：{acts['passthrough']}")
+        assert acts["passthrough"]["dynamic"] is True, "响应体透传未被标成形状不定"
+
+    def test_search_scope_is_per_method(self):
+        """`Name` 回指的搜索域必须是**本方法**：同名局部变量跨方法串 ⇒ 过度认领（假绿）。"""
+        acts = self._entry()["actions"]
+        assert acts["scope_a"] == {"keys": ["a_key"], "dynamic": False}, (
+            f"搜索域串到别的方法了：{acts['scope_a']}")
+        assert acts["scope_b"] == {"keys": ["b_key"], "dynamic": False}, (
+            f"搜索域串到别的方法了：{acts['scope_b']}")
+
+    def test_failure_exit_is_not_a_produced_key(self):
+        entry = self._entry()
+        assert "ghost" not in entry["keys"], "失败出口（success=False）的 data 被当成了产出键"
+
+    def test_literal_view_is_the_narrow_one(self):
+        """旧口径视图（`literal_keys`）必须**更窄** —— 它是 before/after 对比的基线，不是产出面。"""
+        entry = self._entry()
+        assert entry["literal_keys"] == ["items", "total"], (
+            f"旧口径视图应只剩字面 dict 的键：{entry['literal_keys']}")
+        assert set(entry["keys"]) > set(entry["literal_keys"]), (
+            "两种视图塌成一种 ⇒ #3729 的 before/after 对比失去意义")
+
+    def test_key_verdict_is_three_state(self):
+        entry = self._entry()
+        assert key_verdict(entry, "list", "items") == (PRODUCIBLE, "")
+        assert key_verdict(entry, "list", "nope")[0] == IMPOSSIBLE
+        assert key_verdict(entry, "passthrough", "whatever")[0] == UNKNOWN
+        assert key_verdict(entry, "list", "items.0.name") == (PRODUCIBLE, ""), (
+            "点号路径（嵌套产出）应只看首段")
+        assert key_verdict(entry, "ghost_action", "items")[0] == UNKNOWN, (
+            "归属不出来的 action ⇒ 只能判形状不定，不许冒充静态判定")
