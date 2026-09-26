@@ -4723,7 +4723,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（97 case）
+## 商品域（100 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -6004,6 +6004,52 @@
 ```
 溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ tags: batch, threshold, static-guard, evidence-strength
 
+### PR-110. 工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」 🔵
+```
+你: 工人在车间用手机拍上游标签入库（非 LLM 行为，由 admin-api 单测与结构守卫覆盖）
+期望: direct_reply
+数据: 🔴 判据 = **DTO 声明字段集**（不是运行时校验）：`WorkerInboundRecognizeRequest` = {images, barcode}、`WorkerInboundDraftRequest` = {productId, skuId, quantity, unitCost, dyeLot, supplier, supplierDocNo, warehouse, rollLengthM, remark}、`WorkerInboundPostRequest` = {confirmed} —— 三个集**恰好相等**（多一个键就红）；`adjustment` / `delta` / `setStock` / `stock` / `reason` / `operator` / `tenantId` / `targetType` / `source` / `importRunId` 一个都不在集里
+数据: 🔴 零商家权限码（源码判据）：控制器与服务源码里**没有** `@RequirePermission` / `PermissionInterceptor` / `requirePermission`，也不出现任何商家码字面量（`inbound:view` / `inbound:create` / `product:create` / `order:create`）
+数据: 🔴 不复用商家识别端点：源码不引用 `ImageRecognitionController` / `TARGET_PERMISSIONS` / `/api/admin/image-recognition`（复用的是能力 `ImageRecognitionClient`，不是那个人机接口）
+数据: 🔴 不新造库存增减：源码里没有 `receiveStock` / `deductStock` / `restoreStock` / `stock_ledger_entries` / `StockLedgerService`；过账本体必须落到 `inboundOrderService.create(` / `inboundOrderService.post(`
+数据: 路径面：控制器 `@RequestMapping` == `/api/worker/inbound`（不以 `/api/admin` 开头），且本包**只有** `/recognize`、`/drafts`、`/drafts/{id}/post` 三个 POST（标签位图 / 打印计数属 P2，不得顺手落进来）
+数据: 🔴 工人在 `/api/admin/**` 仍被拒：`SecurityConfig.ADMIN_API_REJECTED_ROLES` 含 `WorkerSessionService.WORKER_ROLE`（= `worker`），且该集合不含 `operator`/`admin`/`service`（反向护栏：门禁不是「把所有人都拒了」）
+跳过: [backend-contract] 工人入库面是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与结构守卫覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-09-26 新增（issue #5052 P1，设计真值源 docs/design/inbound-photo-and-label.md §5）：工人可达的入库三端点（recognize / drafts / drafts/{id}/post）。本条钉「载体与边界」：字段集即能力集、零商家权限码、不新造库存增减、路径不与 /api/admin/** 混用。识别与过账的行为判据见 PR-111 / PR-112。 ｜ tags: inventory, inbound, worker, backend-contract
+
+### PR-111. 工人入库识别：解码优先（0 次 LLM）/ 降级不预填 / 零命中 SKU 不自动建品 🔵
+```
+你: 工人拍上游标签 → 系统回候选（品名 / 色号 / 米数 / 条码原文），不落库、不动库存（非 LLM 行为，由 admin-api 单测覆盖）
+期望: direct_reply
+数据: 🔴 成本守卫：请求带前端解码得到的条码原文 ⇒ 走解码路径且 `ImageRecognitionClient.recognize` **零调用**（`verify(..., never())`）；条码按货号精确匹配既有 SKU，零命中 ⇒ 空匹配 + 提示人工录入
+数据: vision 兜底：无条码时才调用，且 target 由服务端固定为 `inbound`（`verify(..., times(1)).recognize(eq("inbound"), any())`）—— 客户端结构上选不了 target
+数据: 🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）
+数据: 🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）
+数据: 张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）
+数据: ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
+跳过: [backend-contract] 入库识别是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first
+溯源: 2026-09-26 新增（issue #5052 P1，设计 §6）：识别策略 = 解码优先 → vision 兜底 → 手输。复用既有 vision 基建（ImageRecognitionClient → ai-agent POST /api/internal/vision/recognize），**只换 schema 与入口**：ai-agent 的 app/vision/targets.py 新增 `inbound` target（不新增第二套识别内核）。 ｜ tags: inventory, inbound, worker, vision, backend-contract
+
+### PR-112. 工人入库过账：复用 #5045 过账 + Idempotency-Key 只加一次库存 + 未确认 / 跨租户拒绝 🔵
+```
+你: 工人确认后提交过账（非 LLM 行为，由 admin-api 单测覆盖）
+期望: direct_reply
+数据: 建草稿**不动库存**：`receiveStock` / `stockLedgerService.record` / `stockBatchMapper.insert` 全部零调用；响应 `status=draft`、`source=purchase`（工人面结构上传不出第二个来源值）、行上 `batchNo=null`
+数据: 🔴 数量准入（#5063 判据）：负数 / 0 / 超 1 位小数 ⇒ **400** 且一行都不落库；`0.5` 米的尾料可如实登记；`skuId` 不存在 ⇒ 400 且不自动建品
+数据: 🔴 过账才动库存：每次过账在 `stock_ledger_entries` 落一行 `reason='inbound'`，`before_qty` = SKU 当时库存、`after_qty − before_qty == 入库量`（`receiveStock` 恰好一次）
+数据: 🔴 幂等：同 `Idempotency-Key` 重复提交 ⇒ `claim` 第二次返回 false、回放首次结果（`replayed=true`），`receiveStock` 与 `record` 仍各只有一次、`markPosted` 只有一次；换新幂等键再提交 ⇒ 409（#5045 的条件更新闸），库存仍只加一次
+数据: 🔴 未确认不落库：`confirmed` 缺失 / false / null / 整个 body 缺失 ⇒ **409**，且 `receiveStock` / `record` / `markPosted` 零调用
+数据: 🔴 跨租户 / 非本人草稿 ⇒ **404**（不是 403，避免存在性泄露），且不写任何库存
+数据: 身份只来自 `X-Worker-Session-Id`：body 里塞 `operator` / `tenantId` 不被读取（`markPosted` 收到的 operator = session 解出的工人 id，tenant = 上下文租户）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-post-idempotent, inbound-order-flow.draft-then-post
+溯源: 2026-09-26 新增（issue #5052 P1，设计 §5.2 / §9.2）：过账**内部复用** #5045 的 `InboundOrderService.post`（不新造库存增减、不直接写台账）；幂等**复用** #4037 的客户端请求幂等实现（不新建第二套幂等表）；状态码按设计单：参数类拒绝 400（口径本体仍是 InboundOrderService.requireItemNumbers 那一处）、未确认 409、跨租户/非本人 404。 ｜ tags: inventory, inbound, worker, idempotency, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -7013,8 +7059,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：497（活跃 126，跳过 371）
-- tier 分布：smoke 12 / normal 452 / adversarial 31
+- 用例总数：500（活跃 126，跳过 374）
+- tier 分布：smoke 12 / normal 455 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7035,7 +7081,7 @@
 - 订单域：49
 - 加工项域：14
 - 加工单域：56
-- 商品域：97
+- 商品域：100
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
