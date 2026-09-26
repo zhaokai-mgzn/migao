@@ -9,21 +9,25 @@
   run 的每个 job，算 `n` / `median` / `p90` / `max`（秒）——来源
   `gh api repos/<owner>/<repo>/actions/runs?event=pull_request&status=completed` +
   `…/runs/<id>/jobs`（**逐次现取**，不引二手数字）。
-- **上限（ceiling）**：取自 **workflow 自身**的 `timeout-minutes × 60`（= 那条腿的硬杀开关，
-  仓库里**已有**的、可评审的值）——**不是**本脚本发明的预算。判据会拿现取 YAML 复比，
-  手抄腐烂即红（见 `tests/unit_ci_workflows/test_ci_cost_ledger.py`）。
+- **硬杀上限（`hard_kill_seconds`）**：取自 **workflow 自身**的 `timeout-minutes × 60`
+  （仓库里**已有**的、可评审的值）——**不是**本脚本发明的。判据会拿现取 YAML 复比，手抄腐烂即红。
+- **目标预算（`budget_seconds`）**：**owner 裁定（2026-09-26）= 该腿实测 p90 向上取整**。
+  ⇒ 预算是**读数的函数**，不是人手填的数；取不到读数（n < 3）的腿**保持 `null` + 显式留白**，不编数。
+- **超预算判红**：新一次实测的 p90 上取整 **>** 台账里**已冻结**的预算 ⇒ 本命令**非零退出且不写台账**
+  （不许静默抬预算），并要求**先查「新增」开销**（钉与负载无关的计数），
+  **不得**靠抬 `timeout-minutes` 交差（与 #5365 同源口径）；
+  确有必要抬 ⇒ 显式 `--accept-raise`（重冻结为现取 p90，改动在 diff 里可见）。
 - **required 口径**：取 `required_status_snapshot.json`（分支保护快照），**不猜**。
-- **不发明**：目标预算 / 评测月度频率上限这类**需要 owner 裁定**的值一律写
-  `null` + `budget_status: "待裁定"` + 一条可回答的 `question`。已有台账里的裁定值会被
-  **原样保留**（重算读数不会覆盖人的裁定）。
 
-    python3 scripts/ci_cost_ledger.py --measure     # 现取 → 重写 tests/unit_ci_workflows/ci_cost_ledger.json
+    python3 scripts/ci_cost_ledger.py --measure                  # 现取 → 重写台账（超预算则退出 1 且不写）
+    python3 scripts/ci_cost_ledger.py --measure --accept-raise   # 显式同意把超预算的腿重冻结为现取 p90
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import subprocess
 import sys
@@ -40,6 +44,10 @@ REPO_SLUG = "zhaokai-mgzn/migao"
 
 #: 评测型流水线（**非 PR 触发**，workflow_dispatch）—— 月度频率读数用于 ② 的「频率上限」议题。
 EVAL_WORKFLOWS = ("agent-eval.yml", "agent-eval-adversarial.yml", "xiaobu-acceptance.yml")
+
+#: 预算口径的两个取值（owner 裁定 2026-09-26；判据按**逐字相等**核对，改动必须两边同改）。
+BUDGET_STATUS_MEASURED = "已裁定：预算 = 实测 p90（向上取整）"
+BUDGET_STATUS_NO_READING = "无读数：不编预算（显式留白）"
 
 
 def gh_json(args: list[str]):
@@ -126,6 +134,33 @@ def _stats(values: list[float]) -> dict:
     }
 
 
+def ceil_budget(p90_seconds: float) -> int:
+    """预算 = 实测 p90 **向上取整**（owner 裁定 2026-09-26）。"""
+    return int(math.ceil(p90_seconds))
+
+
+def budget_breaches(frozen_budgets: dict, fresh_p90: dict) -> list[dict]:
+    """**纯函数**：哪些腿的新实测 p90 上取整 > 台账里已冻结的预算。
+
+    `frozen_budgets` = `{leg_id: 已冻结预算秒}`（非整数/缺项的腿不判 —— 那是「无读数、不编预算」）。
+    `fresh_p90` = `{leg_id: 本次实测 p90 秒}`。
+    抽成纯函数是为了让判据能用**合成数据**直接证明「超预算会红」（不必等真实 CI 变慢）。
+    """
+    breaches: list[dict] = []
+    for leg_id, p90 in sorted(fresh_p90.items()):
+        budget = frozen_budgets.get(leg_id)
+        if not isinstance(budget, int):
+            continue
+        if ceil_budget(p90) > budget:
+            breaches.append({
+                "id": leg_id,
+                "budget_seconds": budget,
+                "new_p90_seconds": p90,
+                "new_p90_ceil": ceil_budget(p90),
+            })
+    return breaches
+
+
 def _eval_cadence() -> dict:
     """评测型流水线的**实测**月度触发次数（`workflow_dispatch` 为主 ⇒ 读数=人跑的频率）。"""
     out: dict[str, dict[str, int]] = {}
@@ -141,57 +176,94 @@ def _eval_cadence() -> dict:
     return out
 
 
-def _questions_from_existing() -> dict[str, dict]:
-    """保留上一版台账里**人的裁定**（重算读数绝不覆盖 owner 决定）。"""
+def _previous_legs() -> dict[str, dict]:
+    """上一版台账的腿（用于取**已冻结预算**做超预算判定）。"""
     if not LEDGER_PATH.exists():
         return {}
     old = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     return {leg["id"]: leg for leg in old.get("legs") or []}
 
 
+ATTRIBUTION_POLICY = {
+    "rule": ("某腿**超出预算**（新实测 p90 上取整 > 台账里已冻结的预算）⇒ `--measure` **非零退出且不写台账**"
+             "（不许静默抬预算；预算是读数的函数，不是人手填的数）"),
+    "what_to_check_first": ("先查**新增**开销 —— 钉与负载无关的计数：新判据文件数 / 真库 `initdb` 次数 / "
+                            "语料真解析次数 / 新增依赖安装；**不要**用抬 `timeout-minutes` 交差"
+                            "（与 #5365 同源口径：上限是值班判据，不是成本成绩单）"),
+    "how_to_raise": ("确有必要抬预算 ⇒ 显式 `python3 scripts/ci_cost_ledger.py --measure --accept-raise`"
+                     "（把该腿预算重冻结为现取 p90，改动在 diff 里可见），并在 PR / 追踪单上写明为什么"),
+    "enforced_where": ("超预算判红在**能读 Actions API 的环境**（本机 / attended）生效；CI 的 "
+                       "`ci workflow helper unit tests` 读不到历史时长 ⇒ 它只锁「预算 == 实测 p90 上取整」"
+                       "这条**文件不变式**（判据 = tests/unit_ci_workflows/test_ci_cost_ledger.py）"),
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--measure", action="store_true", help="现取 gh API 并重写台账")
     parser.add_argument("--runs-per-workflow", type=int, default=8)
+    parser.add_argument("--accept-raise", action="store_true",
+                        help="超预算时**显式**同意把预算重冻结为现取 p90（默认拒绝并退出 1）")
     args = parser.parse_args()
     if not args.measure:
         parser.print_help()
         return 2
 
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     required = _required_names()
     skeleton = _legs_skeleton()
     per_leg, per_flow = _sample_legs(args.runs_per_workflow)
-    previous = _questions_from_existing()
+    previous = _previous_legs()
+
+    fresh: dict[str, dict] = {}
+    for leg_id, base in skeleton.items():
+        samples = per_leg.get((base["workflow"], base["check_name"])) or []
+        if len(samples) >= 3:
+            fresh[leg_id] = _stats(samples)
+
+    frozen_budgets = {lid: leg["budget_seconds"] for lid, leg in previous.items()
+                      if isinstance(leg.get("budget_seconds"), int)}
+    breaches = budget_breaches(frozen_budgets, {lid: st["p90_seconds"] for lid, st in fresh.items()})
+    if breaches and not args.accept_raise:
+        print("❌ 超预算（预算 = 台账里已冻结的实测 p90 上取整）—— 本命令**不写台账**：", file=sys.stderr)
+        for row in breaches:
+            print(f"   · {row['id']}：预算 {row['budget_seconds']}s / 现取 p90 {row['new_p90_seconds']}s"
+                  f"（上取整 {row['new_p90_ceil']}s）⇒ 超 {row['new_p90_ceil'] - row['budget_seconds']}s",
+                  file=sys.stderr)
+        print(f"\n{ATTRIBUTION_POLICY['what_to_check_first']}\n{ATTRIBUTION_POLICY['how_to_raise']}",
+              file=sys.stderr)
+        return 1
 
     legs = []
     for leg_id, base in sorted(skeleton.items()):
         samples = per_leg.get((base["workflow"], base["check_name"])) or []
-        old = previous.get(leg_id) or {}
-        row = {
+        stats = fresh.get(leg_id)
+        if stats:
+            budget, status = ceil_budget(stats["p90_seconds"]), BUDGET_STATUS_MEASURED
+            basis = f"budget = ceil(measured.p90_seconds={stats['p90_seconds']}) @ {now}"
+        else:
+            budget, status = None, BUDGET_STATUS_NO_READING
+            basis = (f"现取 n={len(samples)} < 3（本腿多为 skipped/未触发）⇒ **不编预算**，"
+                     "保持显式留白")
+        legs.append({
             "id": leg_id,
             **base,
             "required": base["check_name"] in required,
-            "measured": _stats(samples) if len(samples) >= 3 else None,
-            "measure_status": ("ok" if len(samples) >= 3
-                               else f"样本不足（现取 n={len(samples)}；本腿多为 skipped/未触发）"),
-            # ⚠️ owner 裁定字段：一律 `null`（除非上一版已裁定）—— **不发明数字**。
-            "budget_seconds": old.get("budget_seconds"),
-            "budget_status": ("已裁定" if isinstance(old.get("budget_seconds"), int) else "待裁定"),
-            "budget_question": old.get("budget_question") or (
-                "这条腿的目标预算（不是硬杀上限）应定为多少？—— 需要 owner 决定；"
-                "现取读数见 `measured`，硬杀上限见 `hard_kill_seconds`"
-            ),
-        }
-        legs.append(row)
+            "measured": stats,
+            "measure_status": "ok" if stats else f"样本不足（现取 n={len(samples)}）",
+            "budget_seconds": budget,
+            "budget_status": status,
+            "budget_basis": basis,
+        })
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     ledger = {
         "schema": "ci-cost-ledger/v1",
         "issue": "#3507",
         "what": (
-            "每条 PR 触发的 CI 腿：**实测**近期时长 + 显式上限 + required 口径。"
-            "上限 = 该腿自己声明的 `timeout-minutes`（硬杀开关，见 `hard_kill_source`），"
-            "由 tests/unit_ci_workflows/test_ci_cost_ledger.py 与现取 YAML 逐条复比（手抄腐烂即红）。"
+            "每条 PR 触发的 CI 腿：**实测**近期时长 + 显式上限 + 目标预算 + required 口径。"
+            "上限 = 该腿自己声明的 `timeout-minutes`（硬杀开关，见 `hard_kill_source`）；"
+            "预算 = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）；"
+            "两者都由 tests/unit_ci_workflows/test_ci_cost_ledger.py 与现取 YAML / 读数复比。"
         ),
         "judged_by": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
         "measured": {
@@ -201,35 +273,44 @@ def main() -> int:
             "runs_per_workflow": args.runs_per_workflow,
             "recompute": "python3 scripts/ci_cost_ledger.py --measure",
         },
+        "attribution_policy": ATTRIBUTION_POLICY,
         "workflow_totals": {
             name: {"n": len(vals), **_stats(vals)} for name, vals in sorted(per_flow.items())
         },
         "legs": legs,
         "eval_cadence": {
-            "what": "评测型流水线（**非 PR 触发**）每月**实测**触发次数 —— ② 的「月度频率上限」议题的读数基线",
+            "what": "评测型流水线（**非 PR 触发**）每月**实测**触发次数 —— 频率议题的读数基线",
             "source": f"gh api repos/{REPO_SLUG}/actions/workflows/<wf>/runs?per_page=100",
             "runs_per_month": _eval_cadence(),
         },
         "policy_decisions": [
             {
                 "id": "eval-monthly-frequency-cap",
-                "status": "待裁定",
+                "status": "已裁定：有意不设上限（只登记手动触发现状）",
                 "question": "normal / adversarial 评测的**月度频率上限**定为多少？",
-                "why_not_derivable": (
-                    "「上限」是策略数字，不是读数：现取只给出**历史频率**（见 `eval_cadence.runs_per_month`）。"
-                    "按本仓纪律「不许编一个看起来合理的数」⇒ 记为待裁定，由 owner 拍板后写入本字段。"
+                "decision": (
+                    "**不设硬上限**，只登记现状：`agent-eval.yml` 与 `agent-eval-adversarial.yml` 现取"
+                    "**都只有 `workflow_dispatch`**（无 schedule / 无自动触发面）⇒ 频率 = 人跑的频率，"
+                    "**上限本来就撞不到**，设一个数只会是空转的管理数字。"
                 ),
-                "decided_by": None,
+                "reopen_condition": (
+                    "任一评测 workflow 恢复/新增**自动触发**（`schedule` / `push` / `pull_request` / "
+                    "`workflow_call` 被自动面调用）⇒ **重开本裁定**，届时上限才有可撞的对象"
+                ),
+                "evidence": "见 `eval_cadence.runs_per_month`（实测月度次数）与各 workflow 的 `on:`（现取）",
+                "decided_by": "用户裁定 2026-09-26（经集成侧转达）",
             },
             {
                 "id": "per-leg-target-budget",
-                "status": "待裁定",
+                "status": "已裁定：预算 = 实测 p90（向上取整），超了红",
                 "question": "各腿的**目标预算**（低于硬杀上限的期望值）如何取？",
-                "why_not_derivable": (
-                    "硬杀上限已由 workflow 的 `timeout-minutes` 给出（可复算）；"
-                    "「我们希望它多快」属成本-风险取舍（压太紧会把慢 runner 变成假红）⇒ 需 owner 裁定。"
+                "decision": (
+                    "预算 = 该腿**实测 p90 向上取整**（读数的函数，不是人手填的数）；取不到读数（n < 3）的腿"
+                    "**保持留白**、不编数。新实测 p90 上取整 **>** 已冻结预算 ⇒ `--measure` **非零退出且不写台账**，"
+                    "并要求**先查「新增」开销**、**不得**靠抬 `timeout-minutes` 交差（见 `attribution_policy`）。"
                 ),
-                "decided_by": None,
+                "reopen_condition": "预算口径本身变更（例如改用 p95 或引入分位数以外的口径）时重开",
+                "decided_by": "用户裁定 2026-09-26（经集成侧转达）",
             },
         ],
         "external_blockers": [
@@ -260,7 +341,8 @@ def main() -> int:
     LEDGER_PATH.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     with_measure = sum(1 for leg in legs if leg["measured"])
     print(f"✅ 已重写 {LEDGER_PATH.relative_to(REPO)}：腿 {len(legs)} 条"
-          f"（其中有实测读数 {with_measure} 条）/ required {sum(1 for leg in legs if leg['required'])} 条 @ {now}")
+          f"（其中有实测读数 {with_measure} 条 / 有预算 {sum(1 for x in legs if x['budget_seconds'])} 条）"
+          f"/ required {sum(1 for leg in legs if leg['required'])} 条 @ {now}")
     return 0
 
 
