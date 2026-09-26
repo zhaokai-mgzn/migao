@@ -3521,3 +3521,197 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-049
+    legacy_id: ""
+    title: "同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张"
+    domains:
+      - order
+    tier: edge
+    # 单端标注（case-trust 规则 d）：`order_create` 是**小布（C 端）**工具
+    # （`tests/agent_eval/eval_case_filter.py` 的 XIAOBU_TOOLS，真值源 = customer_order_skill.py
+    # 的 CUSTOMER_ORDER_TOOLS）；米宝（B 端）自 issue #5247 起只读、不绑该工具
+    # ⇒ 缺 persona 时 B 端腿必挂（假红）。
+    persona: xiaobu
+    tags:
+      - order_create
+      - idempotency
+      - retry
+    # ⚠️ 真值缺口（显式登记，不装作有）：幂等键语义（同会话 × 同窗 × 同操作 ⇒ 同键 ⇒ 回放）
+    # 目前**不在** `.github/templates/order.yml` 里 —— 它由 Java 单测 + 真库证据承载
+    # （issue #4037 / PR #4072），行为层此前**零覆盖**（本用例即补这一格）。
+    # 空 truths_ref = 缺口（warning），不是"已覆盖"。
+    truths_ref: []
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      color: "米白"
+      colorName: "米白"
+    user_inputs:
+      # 自包含：不点名种子之外的任何对象（商品「遮光窗帘」来自 xiaobu_eval_seed.sql）。
+      - "帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧"
+      # 答卡轮（有什么卡答什么卡）—— 下单闭环要先过 form/confirm/验证码三道，静态文本极易错位。
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
+          fallback: "确认"
+      # ── 同会话同键重试（issue #4074 的 runner 能力 `retry_same_session`）──────────────
+      # 语义：**同一会话**里把同一次逻辑写请求再发一遍（绝不换会话 —— 换会话 = 换键 =
+      # 这一格结构上测不到）。停条件 = `order_create` **成功 ≥2 次**；跑通即提前结束。
+      # ⚠️ 本控制轮与 `repeat_until` 走**同一套**展开/作答机器（`resolve_repeat_turn`），
+      # 故「确认卡被重复点击」形态也落在这一格；差别只在停条件的计数下界。
+      - retry_same_session:
+          tool: order_create
+          calls: 2
+          max: 3
+        fallback: "我这边页面提示『提交失败，请重试』，你帮我把刚才那单再提交一次，内容不用改"
+    expectations:
+      - tool: order_create
+    # 效果层（issue #3361「调了 ≠ 成了」）+ **可达性判据**（issue #4074）：
+    # `min_successes: 2` = 同一次逻辑写请求**真的被发了第二遍**。缺它时，"模型只回了一句
+    # 『已经提交成功』但一次都没重发"会被当成通过（幂等断言因此没有对象可判 —— 那是绿得
+    # 没有证据的形态）。声明了 `retry_same_session` 而 runner 没有消费它 ⇒ 本行**判红**。
+    must_succeed:
+      - tool: order_create
+        min_successes: 2
+    # 产出侧（issue #3367）：**最后一次**成功调用（= 重试那一次）必须带 `replayed=true`
+    # —— 服务端 `ClientRequestIdService.replay` 只在**同键命中**时置位，故它是"同键"唯一
+    # 的机器证据（`last: true` = 取最后一次；缺省取首次会核到**创建**那一次 ⇒ 恒红）。
+    output_verify:
+      - tool: order_create
+        last: true
+        expect:
+          replayed: true
+    # 落库层（issue #3056 / #4074）：该幂等键名下**恰好一张订单**，且确有回放。
+    # 新增 fetch `order_by_client_request_id`：同一会话 + 至少一次回放 + 单据张数
+    # （三条合起来才判 —— 只判张数会被"压根没重试"洗成绿）。
+    db_verify:
+      - fetch: order_by_client_request_id
+        source: order_create
+        expect_rows: 1
+        expect_replayed: true
+    # C 端**写用例必须断言 confirm 卡先行**（守卫 = tests/unit_ci_workflows/test_xiaobu_coverage.py
+    # 的 test_every_xiaobu_write_case_asserts_confirm_card_first）：顾客先看到明细卡、之后才落库。
+    order_before:
+      - "interact[confirm] before order_create"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    # 并行隔离 + 前置自断言（issue #3781 / #3835）：本用例按商品名定位下单目标、且与
+    # 同样争用该号码/该商品的建单用例**互斥**；「该名字唯一」是它真正依赖且**只读**的前置。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己会建单 ⇒ 漂移判据（缺省
+    # `max_growth: 0`）必然判红（「硬写一条注定红的守卫」，同 OR-014/OR-017 的先例）。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    data_checks:
+      - "同键的三维 = 重试窗(600s) × **会话** × **操作**（服务端唯一键 `(tenant_id, client_request_id)`，取自请求头 X-Client-Request-Id）：本用例两次写调用都在**同一会话**内（runner 的 retry_same_session 不换会话）⇒ 取值相同 ⇒ 第二次被去重并回放首次结果。"
+      - "**恰好一张单据**：`orders` 里该次下单只有一张（机器断言 db_verify[order_by_client_request_id]，expect_rows=1 + expect_replayed=true）—— 重复下单 = 重复扣款/重复生产，本用例守的就是这一格。"
+      - "**回放可见**：第二次调用返回 replayed=true（机器断言 output_verify[order_create, last]），且顾客看到的仍是**同一个订单号**，不得播报成「又下了一单」。"
+      - "**可达性（红证方向）**：若模型只口头声称已重发、实际没有第二次 order_create 成功调用 ⇒ must_succeed[min_successes=2] 判红（不是绿）。「声明无消费」与「能力没被触发」都不会被洗成通过。"
+      - "⚠️ 形态边界（如实登记，不当作已覆盖）：本用例制造的是「顾客转述页面提示提交失败、要求原样再提交一次」这一**行为层可稳定复现**的重试形态；真正的「服务端已落库但 HTTP 客户端 25s 超时」需要故障注入（当前无此能力）⇒ 该形态仍由 Java 单测 + 真库证据承载（issue #4037 / PR #4072），本用例是它的**行为层代理形态**，不是等价物。"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #4074「行为层对幂等零覆盖」）：① 新增 db_verify fetch `order_by_client_request_id`（同会话 + 至少一次回放 + 单据张数三条一起判）；② 新增 runner 控制轮 `retry_same_session`（同会话把同一次逻辑写请求再发一遍，停条件 = 目标工具成功 ≥ calls 次）；③ must_succeed 新增 `min_successes`（可达性下界，缺它则该声明不消费也判绿）；④ output_verify 新增 `last: true`（核**最后一次**调用的产出 = 重试那一次的 payload）。断言只增不减；persona 显式标注为 xiaobu（order_create 是 C 端工具）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_idempotency_coverage_capability.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-050
+    legacy_id: ""
+    title: "合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）"
+    domains:
+      - order
+    tier: adversarial
+    # 单端标注：同 OR-049（`order_create` 是小布 C 端工具；米宝自 #5247 起只读）。
+    persona: xiaobu
+    tags:
+      - order_create
+      - idempotency
+      - legal_repeat
+      - negative
+    truths_ref: []
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      color: "米白"
+      colorName: "米白"
+    user_inputs:
+      # 第一笔：遮光窗帘 3 米。
+      - "帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧"
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
+          fallback: "确认"
+      # 第二笔：**另一款商品 + 另一个数量** = 真·合法复购（顾客家里第二个房间要另一款窗帘）。
+      # ⚠️ 刻意**不**用「隔一会儿再下一单同样的货」那种形态：换会话/换窗后键本来就不同，
+      # 那条断言**恒真**，证明不了任何事（issue #4229 的核验评论已把这点写死）。
+      # 本形态才是残留的判别器：同会话 + 同操作 + 同窗 ⇒ 两笔**共用一把键**。
+      - "再帮我下一单：北欧风窗帘 2 米，米白色，收货信息同上，直接下单吧"
+      - auto_respond:
+          fallback: "确认下单"
+      - auto_respond:
+          fallback: "确认"
+      - auto_respond:
+          fallback: "123456"
+      - auto_respond:
+          fallback: "确认"
+    expectations:
+      - tool: order_create
+    # 两笔都必须**真的落成**（第二笔被回放吞掉时，工具照样返回 success=true —— 所以
+    # `min_successes: 2` 只证明"发了两次"，"落了两张"由下面的 db_verify 判，两层缺一不可）。
+    must_succeed:
+      - tool: order_create
+        min_successes: 2
+    db_verify:
+      - fetch: order_by_client_request_id
+        source: order_create
+        expect_rows: 2
+        expect_replayed: false
+    order_before:
+      - "interact[confirm] before order_create"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+      - type: product_dedupe
+        product_keyword: "北欧风窗帘"
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:遮光窗帘"
+      - "product_name:北欧风窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "北欧风窗帘"
+        expect: 1
+    data_checks:
+      - "**判据（机器断言 db_verify[order_by_client_request_id]，expect_rows=2 + expect_replayed=false）**：同会话两笔**内容不同**的订单 ⇒ 成功调用必须指向**两张不同的订单**，且**一次回放都不能有**。"
+      - "**这条会真的红（红证方向）**：服务端去重键 = `(tenant_id, client_request_id)`，而键 = 重试窗 × 会话 × 操作、**不含内容**（issue #4212 已补操作维度、内容维度按 issue #4229 裁定**暂不做**）⇒ 同会话同窗内第二笔会被当成重试**回放**（顾客看到「订单已创建成功」却只有一张单）⇒ 本用例判红。⚠️ **本用例当前预期为红**：红 = 该残留存在的机器证据（不是回归），红原文落在 db_verify（回放出现 / 张数 1 ≠ 2），可机器分辨。"
+      - "**不得用「换新键 ⇒ 落第二单」凑数**：换会话/等窗口之后键本来就不同，那条断言**恒真**，证明不了「合法复购被保障」（issue #4229 的核验评论逐字点名过这个形态）。"
+      - "**重启条件（可执行）**：一旦按 issue #4229 的候选 (a)（内容指纹进键）落地 ⇒ 本用例应当转绿；转绿前它是这条缺口的**值守判据**。"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #4074 第 3 条「合法复购负例，缺一不可」）。形态选择：**同会话 + 内容不同的两笔**（而不是「隔一段时间再下一单同样的货」）—— 后者的键本来就不同、断言恒真，构不成证据（依据 = issue #4229 的核验评论，逐字点名）。**本用例当前预期为红**：内容维度按 #4229 裁定「暂时不做，直接关闭 issue」保持现状 ⇒ 第二笔会被回放吞掉，db_verify 报「出现了 1 次回放」「指向 1 张订单 ≠ 期望 2 张」。这不是恒红凑数：它是该残留唯一的机器判据，且修法（内容指纹进键）落地即转绿 —— 重启条件写在 data_checks 里。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_idempotency_coverage_capability.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

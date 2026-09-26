@@ -26,10 +26,17 @@ from eval_case_filter import select_cases_for_persona  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "xiaobu-acceptance.yml"
 
-# C 端对抗面（现行 10 条）：7 条双端里符合 C 端语义的 + 3 条 C 端原生（DF-020/021/022）
+# C 端对抗面（现行 11 条）：7 条双端里符合 C 端语义的 + 3 条 C 端原生（DF-020/021/022）
+# + **OR-050**（issue #4074：同会话第二笔**内容不同**的订单不得被当重试吞掉）——
+#   入本集合的理由：它是**负例**（合法复购被吞 = 资金/信任面），且 `order_create` 是小布专属
+#   工具（米宝自 #5247 起只读）⇒ `persona: xiaobu` + `tier: adversarial` 是它的正确归属。
+#   ⚠️ 它**当前预期为红**（幂等键缺内容维度，issue #4229 按用户裁定暂不做）—— 红是本条要守的
+#   那个缺口的机器证据，不是回归；要把它移出每周对抗档，唯一的动作是改它的 `tier`
+#   （改本表 = 静默移出评测面，禁止）。
 EXPECTED_CEND_ADVERSARIAL = {
     "CH-011", "DF-002", "DF-005", "DF-011", "DF-012", "DF-013",
     "DF-020", "DF-021", "DF-022", "DF-023",
+    "OR-050",
 }
 
 # 断言编码的是 B 端机制（工具层隔离/建品校验/批量删改），与 C 端正确行为不匹配。

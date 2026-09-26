@@ -622,3 +622,90 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  - id: AS-010
+    legacy_id: ""
+    title: "同会话同键重试建工单 —— 第二次是幂等回放（replayed=true），落库工单恰好一张"
+    domains:
+      - aftersales
+      - order
+    tier: edge
+    # 单端标注（case-trust 规则 d）：**建工单只能走 C 端** `aftersale_create`
+    # （`tests/agent_eval/eval_case_filter.py` 的 XIAOBU_TOOLS）；米宝的 `after_sales_manage`
+    # 自 issue #5247（用户裁定 2026-09-23 B 端只读化）起 `VALID_ACTIONS={"list","detail"}`，
+    # **没有 create** ⇒ 缺 persona 时 B 端腿必挂（假红）。
+    persona: xiaobu
+    tags:
+      - aftersale_create
+      - idempotency
+      - retry
+    # 真值（模板侧已有，逐条对应）：
+    #   create-order-required = 建工单必须关联已存在订单；dup-guard = 同订单同类型活跃工单的拒绝口径；
+    #   ticket-format = 工单号形态。⚠️ **幂等键语义本身不在模板里**（缺口，同 OR-049 的登记）。
+    truths_ref:
+      - aftersales-flow.create-order-required
+      - aftersales-flow.dup-guard
+      - aftersales-flow.ticket-format
+    user_inputs:
+      # 自包含：点名 xiaobu_eval_seed.sql 里真实存在的订单（该顾客本人名下），不依赖"最近一单"
+      # 这类相对指代（同栈并行用例会实时改写集合，AS-003/AS-005 的教训）。
+      - "订单 EVAL-ORD-0001 的窗帘颜色和图片不符，我要退货，帮我建个售后工单"
+      - auto_respond:
+          fallback: "确认创建"
+      - auto_respond:
+          fallback: "确认"
+      # ── 同会话同键重试（issue #4074 的 runner 能力 `retry_same_session`）──────────────
+      # 与订单路径**对称**（P15 实测两条写路径共用同一套占位/回放实现与同一把键的三个维度，
+      # 只有操作维度取值不同：`order` / `aftersale`）。停条件 = `aftersale_create` 成功 ≥2 次。
+      - retry_same_session:
+          tool: aftersale_create
+          calls: 2
+          max: 3
+        fallback: "我这边页面提示『提交失败，请重试』，你帮我把刚才那个售后工单再提交一次，内容不用改"
+    expectations:
+      - tool: aftersale_create
+    # 效果层 + **可达性判据**（issue #3361 / #4074）：工单要真建出来，且同一次逻辑写请求
+    # **真的被发了第二遍**（只发一遍证明不了幂等 —— 那是绿得没有证据的形态）。
+    must_succeed:
+      - tool: aftersale_create
+        min_successes: 2
+    # 产出侧：**最后一次**成功调用（= 重试那一次）必须带 replayed=true（服务端只在**同键命中**
+    # 时置位；`last: true` = 取最后一次，缺省取首次会核到创建那一次 ⇒ 恒红）。
+    output_verify:
+      - tool: aftersale_create
+        last: true
+        expect:
+          replayed: true
+    # 落库层：该幂等键名下**恰好一张工单**（同一会话 + 至少一次回放 + 张数，三条一起判）。
+    db_verify:
+      - fetch: after_sales_by_client_request_id
+        source: aftersale_create
+        expect_rows: 1
+        expect_replayed: true
+    # C 端**写用例必须断言 confirm 卡先行**（守卫 = tests/unit_ci_workflows/test_xiaobu_coverage.py）。
+    order_before:
+      - "interact[confirm] before aftersale_create"
+    # 自清理（弱证据档，case-trust 规则 b 接受 `namespaces`）+ 并行隔离：本用例按顾客手机号
+    # 定位下单对象，与同号码的建单/建工单用例自动互斥。
+    namespaces:
+      - "customer_phone:13800138000"
+    # 运行期前置（issue #4521 口径，同 AS-003/AS-005）：R1 依赖「该顾客名下有订单」这件事
+    # 成立（订单集合为空 ⇒ 建工单整条链不成立，而报告上只表现为 `unmatched lookup`，归因全错）。
+    # **有意不给 `expect`**：计数随栈而变。本用例**不建订单** ⇒ 漂移格（缺省 max_growth: 0）不会被自己踩红。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    data_checks:
+      - "**同键只落一张工单**（机器断言 db_verify[after_sales_by_client_request_id]，expect_rows=1 + expect_replayed=true）：判据 = 同一会话 + 至少一次 `replayed=true`（服务端 `ClientRequestIdService.replay` 只在同键命中时置位）+ 全部成功调用指向**同一张工单**。"
+      - "**回放可见**（机器断言 output_verify[aftersale_create, last]）：第二次调用返回 replayed=true，顾客看到的仍是**同一个工单号**，不得播报成「又建了一张」。"
+      - "**可达性（红证方向）**：模型只口头声称已重发、实际没有第二次成功的 aftersale_create ⇒ must_succeed[min_successes=2] 判红（不是绿）。"
+      - "⚠️ 与 dup-guard 的区别（别把两件事混成一件）：`aftersales-flow.dup-guard` 治的是「同订单同类型已有活跃工单 ⇒ 422」这条**业务规则**；本用例治的是**同一次逻辑写请求被重发**时的**同键回放**（在 claim 层就被挡下、`replayed=true`，不会走到 dup-guard 的 422）。两者都要在，缺任何一条都会让另一条看起来像坏了。"
+      - "⚠️ 形态边界（如实登记）：与 OR-049 同 —— 「服务端已落库但 HTTP 客户端超时」需要故障注入（当前无此能力），本用例用「顾客转述页面提示提交失败、要求原样再提交」这一行为层可复现的重试形态作代理，不是等价物。"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_idempotency_coverage_capability.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
