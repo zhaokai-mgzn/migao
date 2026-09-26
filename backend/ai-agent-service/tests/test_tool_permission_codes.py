@@ -148,6 +148,12 @@ PERMISSION_CATALOG = frozenset({
     "customer:create",
     "finance:create",
     "agent:session:manage",
+    # 米宝唤出码（issue #5642 功能⑤）：与 admin-api `RegistrationService.defaultPermissions` /
+    # `PermissionService.ensureFullPermissionCatalog` 的**同名同行**逐字对齐（名称「米宝对话」）。
+    # ⚠️ 它**不是**工具层授权码（工具层仍按各工具的 `required_permissions` 判）—— 它管的是
+    # 「能不能唤出米宝」（`AdminGate.canSummonMibao` ⇒ `capabilities.mibaoChat`），
+    # 落进本镜像只是为了**目录不腐烂**（判据：本 frozenset ≡ Java 目录逐值相等）。
+    "agent:chat",
 })
 
 #: 商户角色的默认权限码（DB seed 口径；`admin` 运行时恒为 `*`）
