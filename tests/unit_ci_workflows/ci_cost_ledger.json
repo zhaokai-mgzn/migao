@@ -124,6 +124,20 @@
       "budget_basis": "budget = ceil(measured.p90_seconds=128.0) @ 2026-09-26T04:16:13Z"
     },
     {
+      "id": "bmini-app.yml::build",
+      "workflow": "bmini-app.yml",
+      "job": "build",
+      "check_name": "bmini-app build (h5 + weapp)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": null,
+      "measure_status": "样本不足（本腿由 issue #5650 新增，尚无历史 run）",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": "新增腿，现取 n=0 < 3 ⇒ **不编预算**，保持显式留白（有读数后由 `scripts/ci_cost_ledger.py --measure` 按预算=ceil(实测 p90) 重算）"
+    },
+    {
       "id": "demo-evidence.yml::admin-web-demo-path",
       "workflow": "demo-evidence.yml",
       "job": "admin-web-demo-path",
