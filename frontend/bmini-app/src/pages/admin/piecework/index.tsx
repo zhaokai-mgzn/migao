@@ -29,9 +29,14 @@ import {
 } from '../../../services/adminOpsService'
 import '../../../styles/admin-surfaces.scss'
 
-export default function AdminPieceworkPage() {
+/**
+ * @param now 当前时刻（**可注入**：默认读墙钟）。存在的唯一理由是**判据不许依赖墙钟** ——
+ *   用例若在断言里 `new Date()` 造期望值，跨月边界就会随机红（本仓的类级守卫
+ *   `tests/unit_ci_workflows/time_flaky_guard.py` 明令禁止「用墙钟造期望值」；
+ *   本页首版正是被它判红 ⇒ 把时刻做成入参，用例传**固定时刻**、断言用**字面量**）。
+ */
+export default function AdminPieceworkPage({ now = new Date() }: { now?: Date } = {}) {
   const { isLoggedIn } = useAuthStore()
-  const now = new Date()
   const currentPeriod = periodOf(now)
   const previousPeriod = previousPeriodOf(now)
   const [period, setPeriod] = useState(currentPeriod)

@@ -31,7 +31,6 @@ import AdminPieceworkPage from '../src/pages/admin/piecework/index'
 import {
   fetchMyPermissions,
   getPieceworkReport,
-  previousPeriodOf,
   type PieceworkReport,
 } from '../src/services/adminOpsService'
 
@@ -105,15 +104,19 @@ describe('管理面④计件工资报表（issue #5654）', () => {
   })
 
   it('期间切换：点「上月」⇒ 请求带上一月的 period', async () => {
-    render(<AdminPieceworkPage />)
+    // 🔴 **时刻由入参注入、期望值用字面量** —— 判据绝不依赖墙钟：
+    // 若在断言里 `new Date()` 造期望值，跨月边界（如 1 日 00:00）会随机红；
+    // 本仓类级守卫 `tests/unit_ci_workflows/time_flaky_guard.py` 专治这一形态
+    // （本文件首版正是被它判红 ⇒ 这里改为「固定时刻 + 字面量」）。
+    const FIXED_NOW = '2026-09-15T12:00:00+08:00'
+    render(<AdminPieceworkPage now={new Date(FIXED_NOW)} />)
     await waitFor(() => expect(mockReport).toHaveBeenCalledTimes(1))
-    const currentPeriod = mockReport.mock.calls[0][0].period
-    const expectedPrevious = previousPeriodOf(new Date())
-    expect(currentPeriod).not.toBe(expectedPrevious)
+    expect(mockReport).toHaveBeenCalledWith({ period: '2026-09' })
+    expect(screen.getByTestId('piecework-period').textContent).toContain('2026-09')
 
     fireEvent.click(screen.getByTestId('piecework-period-prev'))
-    await waitFor(() => expect(mockReport).toHaveBeenCalledWith({ period: expectedPrevious }))
-    expect(screen.getByTestId('piecework-period').textContent).toContain(expectedPrevious)
+    await waitFor(() => expect(mockReport).toHaveBeenCalledWith({ period: '2026-08' }))
+    expect(screen.getByTestId('piecework-period').textContent).toContain('2026-08')
   })
 
   it('无权限有文案：403 ⇒ 逐字「无「计件工资报表」查看权限（需要权限码 processing:manage）」', async () => {
