@@ -279,6 +279,12 @@ public class UserService implements UserDetailsService {
         // 显式传 role=customer 筛选同样不返回：消费者不属于员工范畴，员工管理不管理消费者。
         wrapper.ne(User::getRole, "customer");
 
+        // 工人档案同样不属于员工范畴（issue #4869）：工人复用 users 表（worker_no 非空 + role=worker），
+        // 但**没有**菜单权限、没有登录用户名，只能用工号 + PIN 进工人端扫码报工 ⇒ 混进员工列表会
+        // 长得像员工（点「编辑」能改岗位/权限，而工人这条路根本不成立）。工人有自己的列表面
+        // GET /api/admin/workers（WorkerAdminService.listWorkers），本方法不再返回它们。
+        wrapper.ne(User::getRole, WorkerAdminService.WORKER_ROLE);
+
         // 角色筛选
         if (StringUtils.hasText(role)) {
             wrapper.eq(User::getRole, role);

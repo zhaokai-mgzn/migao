@@ -27,6 +27,28 @@
   4 条注入式红证实测：自写第二份阈值 / 空态塞占位 / 计数不同源 / 候选查询丢 tenantId，各自必红）+
   `frontend/bmini-app/tests/production-todo-overview.test.tsx`（9 条；2 条注入式红证实测：403 静默降级 /
   第一屏只渲染一部分，各自必红）。
+### 员工管理新增「工人档案」：录**工号 + PIN** 就能建出第一个工人，工人只用工人端扫码报工、进不了管理后台（2026-09-26，issue #4869）
+
+- **改了什么（用户可见）**：员工管理页分成「员工 / 工人档案」两个面。在「工人档案」里点
+  「新建工人档案」，填 **工号 + 姓名 + PIN** 即建号 —— 工人随即可以用「工号 + PIN」登录工人端
+  （`POST /api/worker/login`）扫码报工。**工号在本企业内唯一**：重复录入直接拒绝并说清是哪个工号
+  （**409，不是 500，也不会悄悄建出第二个**）；列表可按工号/姓名搜索，可停用/启用。
+- **改动前是什么样**：任何产品路径都建不出工人档案（无控制台、无接口、无种子）⇒「工号 + PIN 登录」
+  虽然早已可用，在真实部署里却**没有可登录的对象**（第一个工人都建不出来）。
+- **它「不是」什么（负控，红线）**：① 工人**不是员工** —— 不进管理后台（`/api/admin/**` 对
+  `worker` 角色一律 403）、没有菜单权限、没有员工登录用户名，也**不会出现在员工列表里**
+  （服务端列表已显式排除 `role=worker`，与排除 C 端消费者同一口径）；② **没有新造一套账号体系** ——
+  工人就是 `users` 表里 `worker_no` 非空 + `role=worker` 的行，登录态复用既有 `worker_sessions`；
+  ③ **不新增权限码**：建号/列表复用员工域的 `employee:create` / `employee:list`，停用/启用复用既有的
+  `PUT /api/admin/users/{id}/status`；④ PIN 走 BCrypt 落库，接口**从不回显任何口令字段**。
+- **边界（如实登记）**：PIN 限定 **4~12 位数字**（工人端 PIN 输入框是数字键盘，含字母的 PIN 工人打不出来
+  ⇒ 建号时就拒，而不是等工人报障）；工号大小写**敏感**（与登录侧逐字一致，不做归一化）。
+- **类级固化**：`backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java`（建号 ⇒
+  工号+PIN **真登录**成功 / 跨租户不可见 / 重复工号 409 / 零商家权限 / PIN 形态）、
+  `backend/admin-api/src/test/java/com/migao/admin/controller/AdminWorkerControllerTest.java`、
+  `backend/admin-api/src/test/java/com/migao/admin/security/AdminApiWorkerRoleGateTest.java`（建号角色码
+  = 登录/门禁同一字面量）、`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java`
+  （worker 身份访问新端点 ⇒ 403 且未进服务层）、`frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx`。
 
 ### 对外入口加限流：动态面按来源限速、静态面（含工人端 /w/）不限速（2026-09-26，关联 #20）
 
