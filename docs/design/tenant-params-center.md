@@ -138,7 +138,8 @@
    - **口径 B 的落码**：审计写在 `TenantParamAuditService` 内**吞掉一切 RuntimeException** ⇒ **配置保存照常成功**；
      失败**必须显眼** ⇒ 结构化日志 `PARAM_AUDIT_WRITE_FAILED`（含 tenant / domain / operation / operationId /
      待写行数 / **已写行数** / 异常栈）+ 计数指标 `migao.tenant_param_audit.write_failed`。
-     ⚠️ `CraftCalcConfigService.put` 仍**无** `@Transactional`（口径 A 的前提一字未动：本单**不改**事务语义）。
+     ⚠️ `CraftCalcConfigService.put` 仍**无** `@Transactional`（**同事务那条口径**的前提一字未动：
+     本单**不改**事务语义）。
    - 判据：`backend/admin-api/src/test/java/com/migao/admin/service/TenantParamAuditServiceTest.java` 九条 +
      `CraftCalcConfigServiceTest` 的 P6 四条（改一个键 ⇒ **恰好一行**且改前→改后逐值正确 / 审计写失败 ⇒ **保存照常**
      且计数 + ERROR 日志都在 / 422 被拒的写不写行 / 首次保存的改前值为 `null`）。
