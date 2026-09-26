@@ -447,6 +447,9 @@ public class UserService implements UserDetailsService {
         // 租户取自 TenantContext（员工管理写面恒在租户上下文内），且**保持在读取目标用户之前**：
         // 校验不通过时连目标行都不查（既有语义：越权请求不泄露"该 userId 存不存在"）。
         assertAssignableRoleAndPermissions(role, permissions, TenantContext.getTenantId());
+        // 目标侧 ⊆ 检查（issue #4104 的另一半）：改资料同样是「管理既有账号」——
+        // 改手机号/用户名就等于改掉别人的登录凭据 ⇒ 与改密同族，必须同一把尺。
+        permissionInterceptor.assertManagesTarget(userId, "修改员工资料");
 
         User user = getUserById(userId);
 
@@ -516,6 +519,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void changePassword(String userId, String newPassword, boolean forceChangePassword) {
+        // 目标侧 ⊆ 检查（issue #4104）：改密 = 取得该账号身份 ⇒ 落库前断言目标权限 ⊆ 自身权限
+        permissionInterceptor.assertManagesTarget(userId, "修改密码");
         User user = getUserById(userId);
         user.setPasswordHash(PASSWORD_ENCODER.encode(newPassword));
         user.setMustChangePassword(forceChangePassword);
@@ -567,6 +572,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public String resetPassword(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：重置成默认密码 = 直接拿到该账号 ⇒ 先过 ⊆ 门禁
+        permissionInterceptor.assertManagesTarget(userId, "重置密码");
         User user = getUserById(userId);
         String phone = user.getPhone();
         // 默认密码：手机号后6位
@@ -585,6 +592,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void disableUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：停用高权限账号 = 让管理员失效（治理动作，同一把尺）
+        permissionInterceptor.assertManagesTarget(userId, "停用账号");
         User user = getUserById(userId);
         if ("disabled".equals(user.getStatus())) {
             throw BusinessException.validationError("用户已处于禁用状态");
@@ -601,6 +610,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void enableUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：与停用同一把尺（同族动作不得一严一松）
+        permissionInterceptor.assertManagesTarget(userId, "启用账号");
         User user = getUserById(userId);
         if ("active".equals(user.getStatus())) {
             throw BusinessException.validationError("用户已处于启用状态");
@@ -617,6 +628,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：不能删掉一个权限高于自己的账号（含管理员）
+        permissionInterceptor.assertManagesTarget(userId, "删除员工");
         User user = getUserById(userId);
         userMapper.deleteById(userId);
 

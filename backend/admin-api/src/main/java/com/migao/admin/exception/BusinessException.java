@@ -166,4 +166,16 @@ public class BusinessException extends RuntimeException {
     public static BusinessException permissionEscalationDenied(String message, String suggestion) {
         return new BusinessException("PERMISSION_ESCALATION_DENIED", message, 403, suggestion);
     }
+
+    /**
+     * 越权管理：被操作的账号权限高于操作者本人（issue #4104 第 2 节的目标侧半，
+     * 用户 2026-09-26 裁定「不得管理权限高于自己的账号」）。
+     *
+     * <p>403 + **独立错误码**（与 {@code PERMISSION_ESCALATION_DENIED} 分开）：前者是
+     * 「你想授予的码你自己没有」，本码是「你想管理的账号权限比你高」——
+     * 出口不同（一个是别授予，一个是找更高权限的管理员来做），调用方与 LLM 都该分辨得出。</p>
+     */
+    public static BusinessException permissionOutrankDenied(String message, String suggestion) {
+        return new BusinessException("PERMISSION_OUTRANK_DENIED", message, 403, suggestion);
+    }
 }

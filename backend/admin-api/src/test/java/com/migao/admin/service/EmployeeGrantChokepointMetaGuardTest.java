@@ -9,8 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,6 +50,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>测试侧替身纪律</b>：以 {@code UserService} 为被测对象的测试类必须声明门禁替身 ——
  *       否则 {@code @InjectMocks} 会把新依赖注成 {@code null}，运行时 **NPE 级联**
  *       （2026-09-26 实测：漏声明 ⇒ 全模块 18 条红，且红的样子像"测试坏了"而不是"漏了替身"）。</li>
+ *   <li><b>目标侧写面普查 + 台账</b>（issue #4104 的另一半）：针对**既有账号**的写方法
+ *       （改资料 / 改密 / 重置 / 停用 / 启用 / 删除）每一个都必须过目标侧 ⊆ 门禁，
+ *       调用点数与台账**现取**（新增写面必须显式抬高；少了 ⇒ 有写面丢门禁）。</li>
+ *   <li><b>角色→码映射只许一份真值</b>：`switch (roleCode)` 式的角色→权限码映射在全仓
+ *       `src/main/java` 里只允许存在于 {@code RoleService} —— 第二份必然漂移
+ *       （#4104 §4 的 {@code knowledge_editor} 两处不一致即由此而来；本次已删掉
+ *       {@code PermissionService.getPermissionsByRole} 这份零调用方的死码）。</li>
  * </ol>
  *
  * <p><b>未固化项（如实登记，不粉饰）</b>：① 射程 = {@code UserService} 这一个文件的公开写面
@@ -78,6 +87,33 @@ class EmployeeGrantChokepointMetaGuardTest {
 
     /** ⊆ 断言本体（服务侧对 {@code PermissionInterceptor#assertGrantable} 的委托）。 */
     private static final String SUBSET_DELEGATION = "permissionInterceptor.assertGrantable(";
+
+    /** 目标侧 ⊆ 门禁的调用入口（针对**既有账号**的写面；带接收者，故匹配用 contains）。 */
+    private static final String TARGET_GUARD_CALL = "permissionInterceptor.assertManagesTarget(";
+
+    /**
+     * 目标侧写面台账（**现取**，只许缩短或显式改名）：接受 {@code String userId}
+     * **且真的写账号**（{@code updateById} / {@code deleteById}）的公开方法。
+     * 当前 6 个 —— 每个都必须过目标侧 ⊆ 门禁（issue #4104 的另一半）。
+     */
+    private static final Set<String> TARGET_WRITE_SURFACE = Set.of(
+            "updateUser", "changePassword", "resetPassword", "deleteUser", "disableUser", "enableUser");
+
+    /** 目标侧 ⊆ 门禁的调用点数（**现取**，只许显式抬高）：当前 6 处（每个写面一处）。 */
+    private static final int TARGET_GUARD_CALL_SITES = 6;
+
+    /** 角色 → 权限码映射的**唯一真值**文件（判据9）。 */
+    private static final String ROLE_CODE_MAP_SOURCE = "RoleService.java";
+
+    /** 角色→码映射的文本指纹（`switch (roleCode) { case "x" -> ... }`）。 */
+    private static final String ROLE_CASE_FINGERPRINT = "case \"operator\" ->";
+
+    /** 主源码根（判据9 普查面）。 */
+    private static final Path MAIN_JAVA_ROOT = Paths.get("src/main/java");
+
+    /** 门禁本体（判据10）：两条 ⊆ 断言的实现文件。 */
+    private static final String INTERCEPTOR_SOURCE =
+            "src/main/java/com/migao/admin/security/PermissionInterceptor.java";
 
     /**
      * 授权写面台账（**现取**，只许缩短或显式改名）：接受 {@code permissions} 参数的公开方法名。
@@ -165,6 +201,98 @@ class EmployeeGrantChokepointMetaGuardTest {
     }
 
     @Test
+    @DisplayName("🔴 判据8 目标侧写面普查 + 台账：每个针对既有账号的写方法都必须过 ⊆ 门禁（未登记即红）")
+    void targetSideWriteSurfaceIsGated() {
+        String source = readUserServiceSource();
+        List<MethodWindow> windows = methodWindows(source);
+
+        Set<String> census = windows.stream()
+                .filter(window -> window.header().contains("String userId"))
+                .filter(window -> window.body().contains("userMapper.updateById(")
+                        || window.body().contains("userMapper.deleteById("))
+                .map(MethodWindow::name)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        assertThat(census)
+                .as("普查非空自证：方法被改名/搬走 ⇒ 这里先红，而不是静默通过")
+                .isNotEmpty();
+        assertThat(census)
+                .as("目标侧写面台账（新增写账号的公开方法必须登记；写面消失则同 PR 改小台账）")
+                .isEqualTo(TARGET_WRITE_SURFACE);
+
+        long calls = source.lines()
+                .map(String::trim)
+                .filter(line -> !line.startsWith("//"))
+                .filter(line -> line.contains(TARGET_GUARD_CALL))
+                .count();
+        assertThat(calls)
+                .as("目标侧 ⊆ 门禁调用点数（台账 TARGET_GUARD_CALL_SITES=%d；新增写面须在同一 diff 抬高）",
+                        TARGET_GUARD_CALL_SITES)
+                .isEqualTo(TARGET_GUARD_CALL_SITES);
+
+        for (String writeSurface : TARGET_WRITE_SURFACE) {
+            long guarded = windows.stream()
+                    .filter(window -> window.name().equals(writeSurface))
+                    .filter(window -> window.body().contains(TARGET_GUARD_CALL))
+                    .count();
+            assertThat(guarded)
+                    .as("%s 的某个重载体内必须调用目标侧 ⊆ 门禁（委派型重载由被委派者兜住）", writeSurface)
+                    .isGreaterThan(0L);
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 判据9 角色→权限码映射只许有一份真值（第二份映射 = 漂移源，未登记即红）")
+    void roleCodeMappingHasSingleSource() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>();
+        try (var paths = Files.walk(MAIN_JAVA_ROOT)) {
+            for (Path path : paths.filter(p -> p.toString().endsWith(".java")).toList()) {
+                sources.put(path.getFileName().toString(), Files.readString(path));
+            }
+        }
+
+        assertThat(roleCodeMapHolders(sources))
+                .as("非空跑自证：普查面必须真的包含那份映射（`%s`）", ROLE_CODE_MAP_SOURCE)
+                .contains(ROLE_CODE_MAP_SOURCE);
+        assertThat(roleCodeMapHolders(sources))
+                .as("角色→码映射只许一处真值 —— 第二份必然漂移（#4104 §4 的 `knowledge_editor` 两处不一致就是这么来的）")
+                .containsExactly(ROLE_CODE_MAP_SOURCE);
+    }
+
+    @Test
+    @DisplayName("🔴 判据10 门禁本体：两条 ⊆ 断言都必须真的拒绝，且比较只有一份实现（掏空 / 复制 ⇒ 红）")
+    void interceptorBodiesRejectAndShareOneComparison() {
+        String source = readSource(INTERCEPTOR_SOURCE);
+
+        assertThat(source)
+                .as("两条命令式断言都必须在（授予侧 / 目标侧）")
+                .contains("public void assertGrantable(")
+                .contains("public void assertManagesTarget(");
+        assertThat(countLinesContaining(source, "throw BusinessException.permissionEscalationDenied("))
+                .as("授予侧门禁必须真的拒绝（注释掉那行 throw ⇒ 红）")
+                .isEqualTo(1L);
+        assertThat(countLinesContaining(source, "throw BusinessException.permissionOutrankDenied("))
+                .as("目标侧门禁必须真的拒绝（注释掉那行 throw ⇒ 红）")
+                .isEqualTo(1L);
+        assertThat(countLinesContaining(source, "own().contains("))
+                .as("比较原语只许一份（`codesBeyondOwn`）—— 第二处内联比较就是**第二份授权实现**（#4148 口径禁止）")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("🔴 判据9 自证（红证）：合成语料里出现第二份角色→码映射必须被判红")
+    void roleCodeMapScannerFlagsSecondMapping() {
+        Map<String, String> singleSource = Map.of(ROLE_CODE_MAP_SOURCE, "case \"operator\" -> List.of();");
+        Map<String, String> drifted = new LinkedHashMap<>(singleSource);
+        drifted.put("PermissionService.java", "switch (roleCode) { case \"operator\" -> List.of(); }");
+
+        assertThat(roleCodeMapHolders(singleSource)).containsExactly(ROLE_CODE_MAP_SOURCE);
+        assertThat(roleCodeMapHolders(drifted))
+                .as("第二份映射必须被扫出来（否则本判据是空断言）")
+                .containsExactly("PermissionService.java", ROLE_CODE_MAP_SOURCE);
+    }
+
+    @Test
     @DisplayName("🔴 判据7 以 UserService 为被测对象的测试类必须声明门禁替身（否则 @InjectMocks 注入 null ⇒ NPE 级联）")
     void userServiceTestsDeclarePermissionInterceptorStub() throws IOException {
         List<String> offenders = new ArrayList<>();
@@ -248,7 +376,12 @@ class EmployeeGrantChokepointMetaGuardTest {
     }
 
     private static String readUserServiceSource() {
-        Path path = Paths.get(USER_SERVICE_SOURCE);
+        return readSource(USER_SERVICE_SOURCE);
+    }
+
+    /** 读一份仓库相对路径的源码；不存在 ⇒ 红（路径写错不是静默通过）。 */
+    private static String readSource(String relativePath) {
+        Path path = Paths.get(relativePath);
         assertThat(Files.exists(path))
                 .as("扫描目标必须存在（路径写错 ⇒ 不是静默通过）: %s", path.toAbsolutePath())
                 .isTrue();
@@ -257,6 +390,24 @@ class EmployeeGrantChokepointMetaGuardTest {
         } catch (IOException e) {
             throw new IllegalStateException("读取 " + path.toAbsolutePath() + " 失败", e);
         }
+    }
+
+    /** 含该片段的**非注释**行数（注释里的提及不算实现）。 */
+    private static long countLinesContaining(String source, String needle) {
+        return source.lines()
+                .map(String::trim)
+                .filter(line -> !line.startsWith("//") && !line.startsWith("*") && !line.startsWith("/*"))
+                .filter(line -> line.contains(needle))
+                .count();
+    }
+
+    /** 角色→码映射的持有者（判据9）：语料里含映射指纹的文件名（升序）。 */
+    private static List<String> roleCodeMapHolders(Map<String, String> sources) {
+        return sources.entrySet().stream()
+                .filter(entry -> entry.getValue().contains(ROLE_CASE_FINGERPRINT))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
     }
 
     private static List<MethodWindow> methodWindows(String source) {
