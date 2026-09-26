@@ -167,26 +167,32 @@
       ]
     },
     {
-      "id": "pr-check-admin-web-build",
+      "id": "pr-check-admin-web-tests",
       "workflow": "pr-check.yml",
       "job": "admin-web-test",
       "trigger": {
-        "kind": "step-detect-grep",
+        "kind": "step-detect-regex",
         "step": "Detect admin-web changes",
         "emit_id": "detect_aw",
-        "predicate": "^frontend/admin-web/"
+        "predicate": "^(frontend/admin-web/|\\.github/workflows/pr-check\\.yml$)"
       },
       "must_cover": [
         {
           "path": "frontend/admin-web",
-          "reason": "被门控的**只有** `Production build (Next-only checks)` 这一步；typecheck / ESLint / 单测无条件跑"
+          "reason": "本腿的 `npm ci` / `tsc --noEmit` / `eslint` / `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root = 该目录，`setupFiles: ./tests/setup.ts` 亦在其内；依赖全是 npm 公共包，无仓内 workspace 依赖）"
         }
       ],
       "uncovered": [],
       "auto_discover_root": null,
       "check_name": "admin-web typecheck + unit tests",
       "gated_steps": [
-        "Production build (Next-only checks)"
+        "Set up Node.js 20",
+        "Install dependencies",
+        "TypeScript type check",
+        "ESLint",
+        "Production build (Next-only checks)",
+        "Run unit tests",
+        "Security audit (deps)"
       ]
     },
     {
@@ -279,6 +285,61 @@
       "check_name": "worker-h5 unit tests (node --test)",
       "gated_steps": [
         "Run worker-h5 unit tests (node --test)"
+      ]
+    },
+    {
+      "id": "pr-check-admin-api-tests",
+      "workflow": "pr-check.yml",
+      "job": "admin-api-test",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect admin-api changes",
+        "emit_id": "detect_api",
+        "predicate": "^(backend/admin-api/|\\.github/workflows/pr-check\\.yml$)"
+      },
+      "must_cover": [
+        {
+          "path": "backend/admin-api",
+          "reason": "本腿在 `backend/admin-api` 里跑 `./mvnw test`；`backend/admin-api/src/test/**` 里按仓根拼出的仓内路径经复算**全部**落在本目录下（复算：`grep -rhoE '\"(backend|frontend|scripts|tests|docs|\\.github)/[^\"]*\"' backend/admin-api/src/test --include=*.java | sort -u`）；该模块无仓内 Maven 父/兄弟模块（parent = `spring-boot-starter-parent`，仓根无 `pom.xml` / `.mvn`）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "admin-api unit tests",
+      "gated_steps": [
+        "Set up JDK 21",
+        "Assert PostgreSQL binaries exist (fail-closed 前置，issue",
+        "Run unit tests"
+      ]
+    },
+    {
+      "id": "pr-check-e2e-quality-gate",
+      "workflow": "pr-check.yml",
+      "job": "e2e-quality-gate",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect e2e changes",
+        "emit_id": "detect_e2e",
+        "predicate": "^(tests/|frontend/admin-web/|\\.github/workflows/pr-check\\.yml$)"
+      },
+      "must_cover": [
+        {
+          "path": "tests",
+          "reason": "`npx playwright test e2e/specs/…` 的 spec / fixture / 配置与 `tests/package-lock.json` 都在这里"
+        },
+        {
+          "path": "frontend/admin-web",
+          "reason": "Playwright `webServer` 真构建并启动 admin-web —— 它坏了本腿必红"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "E2E quality gate",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install test deps",
+        "Install admin-web deps (for Playwright webServer)",
+        "Run quality specs (fixture-only)"
       ]
     }
   ],
