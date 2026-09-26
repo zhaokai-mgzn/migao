@@ -1979,11 +1979,6 @@ def _js_block(text: str, open_brace: int) -> str:
     return text[open_brace:]
 
 
-def _frontend_api_calls_in(text: str) -> tuple[str, ...]:
-    """片段里出现的 `xxxApi.fn(` 调用（去重排序）。"""
-    return tuple(sorted({f"{o}.{f}" for o, f in re.findall(r"\b([A-Za-z]+Api)\.(\w+)\(", text)}))
-
-
 def page_first_screen_text(page_text: str) -> str:
     """页面源码里**由 `useEffect` 驱动**的可执行面（= 判「第一屏读端点」的语料）。
 
@@ -2122,13 +2117,11 @@ def problems_menu_read_parity(w: World) -> list[str]:
                 "（路径↔节点漂移 ⇒ 锚错人）"
             )
             continue
-        page_path = DASHBOARD_APP / anchor.page
         page_rel = f"frontend/admin-web/src/app/(dashboard)/{anchor.page}"
         page_text = w.sources.get(f"page:{path}")
         if page_text is None:
             out.append(f"锚点 `{path}` 的页面源码没进源码表（{page_rel}）—— 路径漂移 ⇒ 红")
             continue
-        assert page_path.name  # 仅为可读性保留（真实读数一律走 `w.sources`，注入式红证才有效）
         # ②-a **声明面自证**：台账声明的每个调用必须仍在该页的「effect 驱动面」上 ——
         #     挪进纯交互路径（点击/勾选才跑）就不再是第一屏调用 ⇒ 声明陈旧，必须同步台账。
         corpus = page_first_screen_text(page_text)
