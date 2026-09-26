@@ -52,8 +52,12 @@
   「任何内容扫描式机制都分不清『引用』与『使用』」（`migao-dev-flow` §2.2 的同族教训）
   ⇒ 判据要钉的是「**代码里**只有一处常量」。这是**口径声明**，不是给判据开后门。
 - **判据自身不在语料内**（`SELF` 显式排除）—— 防 B1「判据被自己计数」。
-- **判据 ② 的口径是「每文件不同成员数 ≤ 1」而非「全前端不得出现任何一个」**：实测存量里
-  `frontend/admin-web/src/app/(dashboard)/layout.tsx` 与 `frontend/admin-web/src/config/menu.ts`
+- **判据 ① 的「剥注释」只覆盖 `.java`**：仓库的剥注释唯一实现是 `_source_parsing.java_code`（Java）
+  与 `.github/danger_scan.py::strip_comment`（YAML / shell 行内注释），**没有**覆盖
+  `.ts` / `.py` / `.sql` 的通用实现 ⇒ 那几类按**原文**扫描。残留：在这些语言的**注释里**写出三码相邻
+  ⇒ 本判据**偏严**（多报一次），方向与门禁 fail-closed 一致（多看一眼 vs. 漏检），且**不是**假绿。
+  ⚠️ 这与「判据被自己的文案喂红」同族（§23.4 T2）—— 本判据**自身**已被排除，故不受影响。
+- **判据 ② 的口径是「每文件不同成员数 ≤ 1」而非「全前端不得出现任何一个」**：实测存量里  `frontend/admin-web/src/app/(dashboard)/layout.tsx` 与 `frontend/admin-web/src/config/menu.ts`
   合法地各持**一个**成员（路由门 / 菜单节点码，是**既有**页面权限面，不是本单的判定）
   ⇒ 口径取「不得**共现**」（任意两个落入同一文件 = 有人开始自己判管理员），
   否则本判据在存量上就恒红（那会让它变成「为过判据而改存量」）。
@@ -66,10 +70,19 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SELF = Path(__file__).resolve()
+
+# append（**不是** insert）：只作脚本模式的兜底解析路径，避免遮蔽同名模块（与 conftest / 同目录既有守卫同款理由）。
+sys.path.append(str(REPO / "tests"))
+
+from unit_ci_workflows._source_parsing import (  # noqa: E402
+    java_code,
+    java_literals,
+)
 
 ADMIN_GATE = "backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java"
 REGISTRATION_SERVICE = "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java"
@@ -161,10 +174,18 @@ def load_corpus(root: Path = REPO) -> dict[str, str]:
 
 
 def parse_admin_codes(gate_text: str) -> tuple[str, ...]:
-    """`AdminGate.ADMIN_PERMISSION_CODES` 的成员（**判据的唯一取值口**，不写第二份字面量）。"""
-    m = ADMIN_CODES_RE.search(gate_text)
+    """`AdminGate.ADMIN_PERMISSION_CODES` 的成员（**判据的唯一取值口**，不写第二份字面量）。
+
+    🔴 **先剥注释、再按词法取字面量** —— 两件都由**仓库唯一实现**做：
+    `unit_ci_workflows._source_parsing` 的 `java_code`（引号感知的 Java 剥注释）与 `java_literals`
+    （词法扫描，注释 / 字符串里的假声明不会被读成声明）。**不自写「按引号扫原文」的口径**：
+    那种写法会被注释喂中，且被 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`
+    的 RULE_QUOTE 判红（本判据首版就是这么被抓住的 —— 台账**只许缩短**，正确修法是改用共享实现）。
+    """
+    code = java_code(gate_text)
+    m = ADMIN_CODES_RE.search(code)
     assert m, "`AdminGate.ADMIN_PERMISSION_CODES = Set.of(...)` 解析失配 ⇒ 判据会空跑（fail-closed）"
-    codes = tuple(re.findall(r'"([^"]+)"', m.group(1)))
+    codes = tuple(value for _pos, value in java_literals(m.group(1)))
     assert len(codes) == 3, (
         f"管理员权限码集合应解析出 3 个成员（裁定④逐字），实得 {len(codes)}：{codes}"
         " ⇒ 判据会空跑，同步本文件（fail-closed）"
@@ -191,6 +212,18 @@ def parse_migrations(corpus: dict[str, str]) -> dict[str, str]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+def _scan_text(rel: str, text: str) -> str:
+    """判据 ① 的扫描面：**先剥注释**（共享实现 `java_code`），再找字面量。
+
+    ⚠️ **边界（照实登记）**：只对 `.java` 剥注释 —— 仓库的「剥注释唯一实现」是
+    `_source_parsing.java_code`（Java）与 `.github/danger_scan.py::strip_comment`（YAML/shell 行内注释），
+    **没有**覆盖 `.ts` / `.py` / `.sql` 的通用实现。⇒ 那几类仍按**原文**扫描：
+    在这些语言的**注释里**写出三码相邻，本判据会**偏严**（多报一次），
+    方向与门禁 fail-closed 一致（多看一眼 vs. 漏检）；该残留已登记进模块 docstring 的边界节。
+    """
+    return java_code(text) if rel.endswith(".java") else text
+
+
 def problems_single_constant(corpus: dict[str, str]) -> list[str]:
     """判据 ①：全仓代码面里，三码的**字面量相邻出现**次数 == 1（且唯一那处是 `AdminGate.java`）。"""
     gate = corpus.get(ADMIN_GATE)
@@ -198,7 +231,10 @@ def problems_single_constant(corpus: dict[str, str]) -> list[str]:
         return [f"`{ADMIN_GATE}` 不在语料内（路径漂移 ⇒ 判据空跑，不得静默跳过）"]
     codes = parse_admin_codes(gate)
     pattern = re.compile(_ADJACENCY_SEP.join(re.escape(c) for c in codes))
-    hits = [rel for rel, text in sorted(corpus.items()) for _ in pattern.finditer(text)]
+    hits = [
+        rel for rel, text in sorted(corpus.items())
+        for _ in pattern.finditer(_scan_text(rel, text))
+    ]
     out: list[str] = []
     if len(hits) != 1:
         out.append(
