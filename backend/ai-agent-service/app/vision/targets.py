@@ -136,6 +136,14 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
 #: （把 shipment 整份字段表改成与 order 逐字相同 ⇒ 五格全部未登记 ⇒ 红）。
 SHARED_FIELD_KEYS: Dict[str, Tuple[str, ...]] = {
     "quantity": ("order", "shipment"),
+    # 🔴 `inbound`（#5052 P1）与 `shipment`（#5648）**各自**都不与任何 target 共享键，
+    # 但两者合并后 `product_name` 相交 —— 这是**合并态才出现的新交互**（两个分支各自绿、
+    # 合起来被本判据抓到，实测 `AssertionError: [('inbound','shipment','product_name')]`）。
+    # 与 `quantity` 同族：**同一列名、两个不同的事实** ——
+    # `inbound.product_name` = 上游布卷标签上的品名（收货对象），
+    # `shipment.product_name` = 订单行 / 商品标签上的商品名（发货对象）。
+    # 两者都逐字取自既有列名（`order_items.product_name` / 商品名），**不许自造第二套口径**。
+    "product_name": ("inbound", "shipment"),
 }
 
 #: 「**驱动下游推导链的原始输入**」的登记表（issue #5349）—— 识别只产出推导的**输入**。
