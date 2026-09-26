@@ -325,6 +325,19 @@ class TestDenialRecoveryStats:
     def test_empty_face_is_not_a_denial(self):
         assert lr.denial_recovery_stats([])["denials"] == 0
 
+    def test_declared_denial_codes_really_exist_in_the_backend(self):
+        """白名单里的拒码必须在后端源码里**真的存在** —— 否则自愈率**结构性恒 0**。
+
+        形态同本 PR 的主题（声明了却不可达 = 空读数）：拒码写错一个字母、或后端改了码，
+        指标就永远算不出东西，而**没有任何东西会变红**。真值 = 工具层真的把它放进
+        `error=` 实参（`validate_input` 的 `error="cross_skill_target"` 那条分支）。
+        """
+        tools_dir = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
+        src = "\n".join(p.read_text(encoding="utf-8") for p in sorted(tools_dir.glob("*.py")))
+        missing = [c for c in sorted(lr.DENIAL_ERROR_CODES) if f'error="{c}"' not in src]
+        assert not missing, (
+            f"这些拒码在 app/tools/** 里找不到 `error=\"<码>\"` ⇒ 自愈率永远数不到：{missing}")
+
 
 class TestDenialRecoveryIsWired:
     """实现了却没人调用 = 空转（#3391/#3417 的同族形态）⇒ 逐点钉住**调用点**（零 LLM）。"""
