@@ -99,6 +99,11 @@ REALDB_FILES: dict[str, str] = {
     # 证两件 mock 面结构上看不见的事：① **被拒绝时订单表零落账**（防「先建单再报错」）；
     # ② 本次新增的两条读路径是真 SQL（products 按 (tenant_id, name) 唯一匹配 + 逻辑删除、
     # product_skus 价格集合）—— 列名/租户拦截器/软删过滤在 mock 面都不可见（#5141/#5169 同族）。
+    # issue #5052 P2：入库标签的**打印计数并发不丢 + 部分唯一索引 + 撤销留档**。
+    # 为什么必须真 PG：`COALESCE(print_count,0)+1` 与「读出来 +1 再写回」在**单线程 mock 下
+    # 逐字相同**（都是"调了一次 mapper"）—— 丢更新只有 N 个连接真并发打同一行才现形；
+    # 部分唯一索引 / CHECK / 表达式索引更是 mock 里**不存在**的 DB 对象。
+    _SVC + "InboundLabelPrintCountRealDbTest.java": "direct",
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
