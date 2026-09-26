@@ -56,11 +56,9 @@ class TenantParamAuditMapperTest {
                 "id", "tenantId", "paramDomain", "paramKey", "oldValue", "newValue",
                 "actorId", "actorName", "actorSource", "actorUnknownReason",
                 "operation", "operationId", "createdAt", "deleted");
-        // 迁移（活目录）
+        // 一次调用同时覆盖**两源**（helper 的语义就是「迁移 + 建库脚本」，见 ProductionMigrationSql）
         ProductionMigrationSql.assertTableColumnsIn(MIGRATION, "tenant_param_audit",
                 COLUMNS.toArray(String[]::new));
-        // 建库脚本（新建库路径不跑迁移链 ⇒ 这一份必须同批同步）
-        ProductionMigrationSql.assertTableColumns("tenant_param_audit", COLUMNS.toArray(String[]::new));
     }
 
     @Test
