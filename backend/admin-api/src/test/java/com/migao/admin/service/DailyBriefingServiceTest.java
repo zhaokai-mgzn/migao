@@ -54,6 +54,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.migao.admin.time.BusinessClock;
 
 /**
  * DailyBriefingService 单元测试（智能每日经营简报，issue #3468）
@@ -368,12 +369,12 @@ class DailyBriefingServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.getVerifyStatus()).isEqualTo("verified");
-            // 业务"今日"口径 = 服务常量（Asia/Shanghai），断言必须与该常量同源：
+            // 业务"今日"口径 = 单点 BusinessClock（Asia/Shanghai，issue #3802），断言必须与该单点同源：
             // 用 JVM 默认时区（CI = UTC）时，UTC 16:00–24:00（北京次日 00:00–08:00）两侧"今天"差一天
             // ⇒ 每天 8 小时必然假红、阻断所有 PR（issue #3796）。
-            // 另独立钉死该常量值本身，避免"服务改时区、断言跟着漂移"式的空断言。
-            assertThat(DailyBriefingService.CST).isEqualTo(java.time.ZoneId.of("Asia/Shanghai"));
-            assertThat(result.getBizDate()).isEqualTo(java.time.LocalDate.now(DailyBriefingService.CST));
+            // 另独立钉死该时区值本身，避免"服务改时区、断言跟着漂移"式的空断言。
+            assertThat(BusinessClock.BUSINESS_ZONE).isEqualTo(java.time.ZoneId.of("Asia/Shanghai"));
+            assertThat(result.getBizDate()).isEqualTo(java.time.LocalDate.now(BusinessClock.BUSINESS_ZONE));
             assertThat(result.getSourceSnapshot()).isNotNull();
             verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
         }
@@ -465,7 +466,7 @@ class DailyBriefingServiceTest {
             verify(valueOperations).setIfAbsent(keyCaptor.capture(), eq("1"),
                     eq(DailyBriefingService.BRIEFING_LOCK_TTL_SECONDS), eq(TimeUnit.SECONDS));
             assertThat(keyCaptor.getValue())
-                    .isEqualTo("briefing:gen:1:" + LocalDate.now(DailyBriefingService.CST));
+                    .isEqualTo("briefing:gen:1:" + LocalDate.now(BusinessClock.BUSINESS_ZONE));
             verify(redisTemplate).delete(anyString());
             verify(dailyBriefingMapper).insert(any(DailyBriefing.class));
         }

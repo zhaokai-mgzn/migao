@@ -21,8 +21,10 @@ import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.mapper.WorkerReportAuditMapper;
 import com.migao.admin.worker.WorkerIdentity;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -110,6 +112,12 @@ public class ProductionService {
             "shipped", "已发货",
             "completed", "已完成",
             "cancelled", "已取消");
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final ProcessingOrderMapper processingOrderMapper;
     private final ProcessingPositionOperationMapper positionOperationMapper;
@@ -1242,7 +1250,7 @@ public class ProductionService {
                 // 不能复用 ⇒ 只能显式标记。聚合据此**不按 0 计件**，并在报表上显式可见。
                 .priceState(op.getUnitPrice() == null ? PRICE_STATE_UNPRICED : PRICE_STATE_PRICED)
                 .workType(workType)
-                .workDate(LocalDate.now())
+                .workDate(businessClock.today())
                 .createdAt(OffsetDateTime.now())
                 .deleted(0)
                 .build();

@@ -3,10 +3,12 @@ package com.migao.admin.service;
 import com.migao.admin.config.OssConfig;
 import com.migao.admin.dto.UploadedFileInfo;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.time.BusinessClock;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.ObjectMetadata;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
@@ -17,8 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.UUID;
@@ -44,6 +44,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @ConditionalOnExpression(OssConfig.REQUIRE_OSS_CREDENTIALS)
 public class OssService implements FileStorageService {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final OSS ossClient;
     private final OssConfig ossConfig;
@@ -110,7 +116,7 @@ public class OssService implements FileStorageService {
                     .name(file.getOriginalFilename())
                     .size(file.getSize())
                     .type(file.getContentType())
-                    .createdAt(LocalDateTime.now())
+                    .createdAt(businessClock.now())
                     .build();
 
         } catch (IOException e) {
@@ -214,7 +220,7 @@ public class OssService implements FileStorageService {
      * 生成 OSS 对象 Key
      */
     private String generateObjectKey(String directory, String originalFilename) {
-        String datePath = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        String datePath = businessClock.today().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
         String extension = getFileExtension(originalFilename);
         String uuid = UUID.randomUUID().toString().replace("-", "");
         return String.format("%s/%s/%s%s", directory, datePath, uuid, extension);

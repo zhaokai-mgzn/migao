@@ -9,8 +9,10 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.*;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.*;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +24,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -49,6 +49,12 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class DailyBriefingService {
 
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
+
     private final DailyBriefingMapper dailyBriefingMapper;
     private final TenantMapper tenantMapper;
     private final OrderMapper orderMapper;
@@ -70,13 +76,6 @@ public class DailyBriefingService {
 
     /** 数字对账容差：metrics value 与快照值之差绝对值 ≤ 容差即视为一致（浮点/舍入） */
     private static final double METRIC_TOLERANCE = 0.001;
-
-    /**
-     * 业务时区（简报"今日"口径）：包级可见，供同包测试断言复用同一常量，
-     * 避免测试另写一份 "Asia/Shanghai" 造成两处漂移（issue #3796）。
-     */
-    static final ZoneId CST = ZoneId.of("Asia/Shanghai");
-    private static final ZoneOffset CST_OFFSET = ZoneOffset.ofHours(8);
 
     /**
      * 分布式生成锁 TTL（秒，issue #3957）：覆盖一次完整 LLM 生成耗时；
@@ -284,7 +283,7 @@ public class DailyBriefingService {
      * 查询今日简报（未生成返回 null，前端展示引导空态）
      */
     public DailyBriefing getTodayBriefing(Long tenantId) {
-        return getBriefingByDate(tenantId, LocalDate.now(CST));
+        return getBriefingByDate(tenantId, businessClock.today());
     }
 
     /**
@@ -321,7 +320,7 @@ public class DailyBriefingService {
             return null;
         }
 
-        String lockKey = "briefing:gen:" + tenantId + ":" + LocalDate.now(CST);
+        String lockKey = "briefing:gen:" + tenantId + ":" + businessClock.today();
         boolean locked = tryAcquireGenerationLock(lockKey);
         if (!locked) {
             log.info("简报生成跳过：另一实例正在生成或当日已生成 tenantId={}", tenantId);
@@ -378,7 +377,7 @@ public class DailyBriefingService {
 
     /** generateForTenant 的实际逻辑（TenantContext 已就绪） */
     private DailyBriefing doGenerate(Long tenantId) {
-        LocalDate today = LocalDate.now(CST);
+        LocalDate today = businessClock.today();
         // 当日已生成 → 幂等跳过（唯一键 (tenant_id, biz_date) 兜底）
         DailyBriefing existing = getBriefingByDate(tenantId, today);
         if (existing != null) {
@@ -428,16 +427,16 @@ public class DailyBriefingService {
      * 复用看板聚合 SQL（selectDashboardOrderStats 等，租户由拦截器注入）。
      */
     public Map<String, Object> aggregateSnapshot(Long tenantId) {
-        OffsetDateTime todayStart = LocalDate.now(CST).atStartOfDay().atOffset(CST_OFFSET);
+        OffsetDateTime todayStart = businessClock.startOfToday();
         OffsetDateTime tomorrowStart = todayStart.plusDays(1);
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
-        OffsetDateTime monthStart = LocalDate.now(CST).withDayOfMonth(1).atStartOfDay().atOffset(CST_OFFSET);
+        OffsetDateTime monthStart = businessClock.startOfDay(businessClock.today().withDayOfMonth(1));
         OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
 
         Map<String, Object> orderStats = orderMapper.selectDashboardOrderStats(
                 todayStart, tomorrowStart, yesterdayStart, monthStart, lastMonthStart);
         Map<String, Object> userStats = userMapper.selectDashboardUserStats(todayStart);
-        OffsetDateTime activeThreshold = OffsetDateTime.now(CST_OFFSET).minusMinutes(30);
+        OffsetDateTime activeThreshold = businessClock.nowOffset().minusMinutes(30);
         Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);
 
         long pendingShip = toLong(orderStats.get("pending_ship"));
@@ -1374,8 +1373,8 @@ public class DailyBriefingService {
         List<Tenant> enabledTenants = tenantMapper.selectList(
                 new LambdaQueryWrapper<Tenant>()
                         .eq(Tenant::getBriefingEnabled, true));
-        LocalTime now = LocalTime.now(CST);
-        LocalDate today = LocalDate.now(CST);
+        LocalTime now = businessClock.time();
+        LocalDate today = businessClock.today();
         int generated = 0;
         for (Tenant tenant : enabledTenants) {
             String timeStr = StringUtils.hasText(tenant.getBriefingGenerateTime())

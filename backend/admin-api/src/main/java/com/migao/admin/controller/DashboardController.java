@@ -6,20 +6,20 @@ import com.migao.admin.entity.*;
 import com.migao.admin.mapper.*;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +34,12 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/admin/dashboard")
 @RequiredArgsConstructor
 public class DashboardController {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final ProductMapper productMapper;
     private final OrderMapper orderMapper;
@@ -56,11 +62,10 @@ public class DashboardController {
         log.info("获取 Dashboard 统计数据: tenantId={}", tenantId);
 
         // 今日起止时间（使用中国标准时间 UTC+8）
-        ZoneId cst = ZoneId.of("Asia/Shanghai");
-        OffsetDateTime todayStart = LocalDate.now(cst).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime todayStart = businessClock.startOfToday();
         OffsetDateTime tomorrowStart = todayStart.plusDays(1);
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
-        OffsetDateTime monthStart = LocalDate.now(cst).withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime monthStart = businessClock.startOfDay(businessClock.today().withDayOfMonth(1));
         OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
 
         // #2886 性能优化：订单维度原来 8 次串行 selectCount/selectList → 1 次 SQL FILTER 聚合
@@ -97,7 +102,7 @@ public class DashboardController {
                         .eq(AfterSalesTicket::getTenantId, tenantId));
 
         // #2886：活跃会话/AI 会话 2 次串行 count → 1 次 FILTER 聚合
-        OffsetDateTime activeThreshold = OffsetDateTime.now(ZoneOffset.ofHours(8)).minusMinutes(30);
+        OffsetDateTime activeThreshold = businessClock.nowOffset().minusMinutes(30);
         Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);
         long activeSessions = toLong(sessionStats.get("active_sessions"));
         long aiSessions = toLong(sessionStats.get("ai_sessions"));
@@ -164,8 +169,7 @@ public class DashboardController {
     @GetMapping("/order-trend")
     public ApiResponse<List<OrderTrendPointResponse>> getOrderTrend(
             @RequestParam(defaultValue = "7") int days) {
-        ZoneId cst = ZoneId.of("Asia/Shanghai");
-        OffsetDateTime startDate = LocalDate.now(cst).minusDays(days - 1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime startDate = businessClock.startOfDay(businessClock.today().minusDays(days - 1));
 
         List<Map<String, Object>> rawData = orderMapper.selectOrderTrend(startDate);
 
@@ -178,7 +182,7 @@ public class DashboardController {
         // 填充所有日期（含无数据日期）
         List<OrderTrendPointResponse> result = new ArrayList<>();
         for (int i = days - 1; i >= 0; i--) {
-            String dateStr = LocalDate.now().minusDays(i).toString();
+            String dateStr = businessClock.today().minusDays(i).toString();
             Map<String, Object> row = dataMap.get(dateStr);
             long amount = row != null && row.get("amount") != null
                     ? ((Number) row.get("amount")).longValue() : 0L;
@@ -386,11 +390,10 @@ public class DashboardController {
     public ApiResponse<List<ProductRankingResponse>> getProductRanking(
             @RequestParam(defaultValue = "day") String period,
             @RequestParam(defaultValue = "10") int limit) {
-        ZoneId cst = ZoneId.of("Asia/Shanghai");
         // day: 近7天; month: 近30天（避免当天0点无数据导致"暂无数据"）
         OffsetDateTime periodStart = "month".equals(period)
-                ? LocalDate.now(cst).minusDays(30).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
-                : LocalDate.now(cst).minusDays(7).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+                ? businessClock.startOfDay(businessClock.today().minusDays(30))
+                : businessClock.startOfDay(businessClock.today().minusDays(7));
         OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusDays(30) : periodStart.minusDays(7);
 
         // #2886 性能优化：本周期聚合一次 SQL（替代原来全量明细拉到 JVM 分组排序 + 每商品一次上期查询）
