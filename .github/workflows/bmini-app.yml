@@ -74,3 +74,66 @@ jobs:
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm test
+
+  # ── 构建腿（issue #5650）──────────────────────────────────────────────────────────
+  # 为什么必须有：用户 2026-09-26 裁定「暂时只做 H5 浏览器访问，小程序链路先搁置」
+  #   ⇒ **h5 编译产物 = 唯一用户可达形态**，而本 workflow 此前**两端都不构建**
+  #   （全仓唯一 `build:h5` 在 `frontend/mini-app`，与本端无关）⇒ 编译坏了没有任何东西会红。
+  # 为什么两端都构建：h5 的平台分支改动会同时压到 weapp 侧（本次改的就是 `utils/platform.ts` 的判别），
+  #   只构建 h5 会让「h5 绿、weapp 编译坏了」这种形态溜过去。
+  # 为什么合成**一个** job 而不是两条：`npm ci`（bmini-app 依赖树重）的成本远大于一次 `taro build`，
+  #   拆两条 = 两次冷装；失败归因靠 step 名（`Build H5` / `Build weapp`），不需要两个 check 名。
+  # ⚠️ 本单**只加构建腿**，不动 required 集合（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
+  build:
+    name: bmini-app build (h5 + weapp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect bmini-app changes
+        id: detect
+        run: |
+          # 与 `typecheck-and-test` 同一门控口径：仅 PR 事件用 diff 门控；push main 全量跑。
+          # job 本身**保持运行**（required check 永不悬空），只是把重活跳掉。
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），全量构建两端"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/bmini-app/|tests/|\.github/)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 bmini-app 相关变更，构建两端"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 bmini-app 相关变更（其他模块 PR），跳过构建空跑"
+          fi
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.run_build == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        if: steps.detect.outputs.run_build == 'true'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      # 先 h5：它是唯一的用户可达形态（构建坏了就没人能访问）⇒ 失败时先报这一条
+      - name: Build H5
+        if: steps.detect.outputs.run_build == 'true'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run build:h5
+
+      - name: Build weapp
+        if: steps.detect.outputs.run_build == 'true'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run build:weapp

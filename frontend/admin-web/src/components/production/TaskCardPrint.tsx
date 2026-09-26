@@ -12,15 +12,27 @@ import { groupBySet } from './ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
- * 加工单**洗水码**（可打印纸面，issue #4964；取代 #4946 的 60×30 横向版）
+ * 加工单**洗水码**（可打印纸面，issue #4964 → 版式改判 issue #5646）
  *
- * 用户裁定（2026-09-21，逐字意图）：洗水码改**竖版 30mm × 60mm 单列**，照**真实工单**
- * （亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = 加工单号 / 客户 / 第N套共M套 /
+ * 用户裁定（2026-09-26，逐字意图）：「**洗水码宽是50，长度根据我们实际需要来定**」
+ * ⇒ 本版把纸型由 #4946 的**竖版 30mm × 60mm** 改为 **竖版 50mm × 60mm**（长度见下方第 5 条实测账）。
+ * 照**真实工单**（亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = 加工单号 / 客户 / 第N套共M套 /
  * 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 / 交期 / 备注 / 算料公式 + 二维码与**大字**短码。
  *
  * 🔴 **退场两项**（同一次字段裁定**未选**，勿"顺手加回"）：
  *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
  *   ② **完整套号**（`JG-…-001`）—— 与行①的加工单号重复，纯占纸面。
+ *
+ * 🔴 **30mm → 50mm 时被推翻的三条「窄版心妥协」**（宽 30→50 把版心由 27.6mm 抬到 47.599mm，+72%）：
+ *   ① **件名不再 clamp 到 2 行** —— 版心约 22.5em/行（旧 ≈13em/行）⇒ 实测最长件名折 2 行，
+ *      再给 clamp 只会平白砍掉真名（该 clamp 当年只为 27.6mm 版心而设）；
+ *   ② **加工方式不再折 2 行** —— 实测「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈22em) 在 47.599mm
+ *      下**恰好 1 行**（30mm 下同样的值要 2 行）；`line-clamp-2` 仅作**预算上界**保留；
+ *   ③ **算料公式 clamp 3 行 → 2 行** —— 两条真公式串（`curtain_calc._formula_text` 的两种登记形态）
+ *      在 47.599mm 下都**恰好 2 行**（30mm 下「韩褶公式」串要 3 行）。容量不退反增：
+ *      本版 2 × 22.5em = **45em** > 30mm 时代的 3 × 13em = **39em**。
+ *   `色号`的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**：50mm 下恢复独立渲染只会多印一遍同名信息、
+ *   白吃 2.538mm 高度预算（实测件名已含色号的单占比不低），**不恢复**。
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
  * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
@@ -34,15 +46,33 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 3. 不得放进 Modal（面板 `max-h` 会裁掉多页明细）；每页只挂一份（全局选择器）；
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
  *    不放单号拼接串、不放加工单级 `qr_token`；**缺码不画假码**（出占位框）；
- * 5. 🔴 **纸面高度预算（竖版 30×60 的实测账，勿随手加行）**：60mm 高减去上下各 1.2mm 内边距
- *    ⇒ 可用 **57.6mm**；6pt / `line-height 1.2` ⇒ **每行 2.54mm**。当前构成（17 行上限）：
- *    加工单号(7pt，2.96) + 客户 + 套序 + 部位 + 件名(≤2 行) + 色号 + 用料 + 宽高 + 加工方式(≤2 行)
- *    + 订单号 + 交期 + 备注(≤2 行) + 算料公式(≤2 行) ≈ **43.2mm**，底部「二维码 + 短码」行 ≈ **12mm**
- *    ⇒ 合计 ≈ **55.2mm ≤ 57.6mm**（余量 ~2.4mm）。
- *    ⚠️ **余量是给「版式不折行」用的**：60×30 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的人可读短码
+ * 5. 🔴 **纸面高度预算（竖版 50×60 的实测账，勿随手加行；issue #5646）**：
+ *    **实测方法**（同 #4949）：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page`
+ *    出 PDF，逐元素量底边/右边。本版读数：容器 **49.998mm × 59.998mm**、PDF MediaBox
+ *    **142.08 × 169.92 pt = 50.13 × 59.97mm**（= `@page 50mm 60mm`，每张独占一页）、
+ *    正文右边界 48.799mm 减 1.2mm 内边距 ⇒ **版心宽 47.599mm**、6pt / `line-height 1.2`
+ *    ⇒ **每行 2.538mm**（行高与 30mm 时代**同值**；变的是每行装多少字：27.6mm ≈ 13em/行 → 47.599mm ≈ **22.5em/行**）。
+ *    60mm 高减上下各 1.2mm ⇒ 可用 **57.6mm**。逐行实测（**最坏场景**：长件名 + 备注 2 行 + 算料公式 2 行）：
+ *    加工单号(7pt, **2.96**) + 客户 2.538 + 套序 2.538 + 部位 2.538 + 件名(2 行, **5.077**) + 色号 2.538
+ *    + 用料 2.538 + 宽高 2.538 + 加工方式(1 行, 2.538) + 订单号 2.538 + 交期 2.538 + 备注(2 行, **5.077**)
+ *    + 算料公式(2 行, **5.077**) ⇒ 中部文字块 **38.071mm**；再加加工单号块 2.96、中部上下各 0.5mm 间距
+ *    与底部「二维码(45px = **11.906**) + 人可读短码」行 ⇒ 正文总高 **56.337mm ≤ 60mm**。
+ *    **保守上界**（加工方式也按 `line-clamp-2` 折满 2 行）= 38.071 + 2.538 = **40.612mm** ⇒ 正文 **58.878mm**。
+ *    **长度取值理由**（用户 2026-09-26「长度按实际需要来定」）：按最坏 **56.337mm** 向上取整到标准标签长度
+ *    ⇒ **60mm**（余量 **3.663mm** ≈ 1.44 行；即便退化成上面的保守上界也仍有 **1.122mm** 余量）。
+ *    ⚠️ 长度与 #4946 同值**是实测结论、不是沿用**：`L` 逐值扫描（50/54/55/56/57/58/59/60/62mm）给出
+ *    「中部文字块不被裁」的最小 L = **57mm**（56mm 实测被裁 **0.265mm**、55mm 被裁 **1.323mm**）
+ *    ⇒ **60mm 以下不安全**。
+ *    ⚠️ **余量是给「版式不折行」用的**：30×60 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的人可读短码
  *    挤出纸外（issue #4949）。⇒ 本版把**二维码 + 短码**放在 `shrink-0` 的底部行、文字块用
  *    `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码与短码**
  *    （短码是设计里明写的降级入口：`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。
+ *    件名已按第 ① 条**去掉 clamp** ⇒ 超过「2 行」的件名（需 > 45em ≈ 45 个汉字，实测最长件名只用 2 行）
+ *    会把中部补充文字挤出可视区 —— 这正是上面那条设计取舍的**兜底面**，不是静默裁切：码与短码仍在。
+ * 6. ⚠️ **别把这个洗水码挪到德佟 DP30S 上打**：DP30S 是 **203dpi 的 2 英寸头**，**有效打印宽度通常只有
+ *    48mm（384 dots）** ⇒ **50mm 宽打不满**，右侧约 2mm 打不到（约束登记在 issue #5052「裁定记录 5」）。
+ *    本版按用户 2026-09-26 裁定做 50mm —— 洗水码今天由 admin-web 走 A4/标签打印机出，**不是 DP30S**；
+ *    若将来要上 DP30S，必须先改回 ≤48mm 并重算本条的预算账。
  */
 interface TaskCardPrintProps {
   processingOrderNo: string
@@ -118,9 +148,9 @@ export default function TaskCardPrint({
     <div className={cn('task-card-print-area print-doc text-neutral-900', className)}>
       <style>{`
         .task-card-print-area { display: none; }
-        @page { size: 30mm 60mm; margin: 0; }
-        /* 洗水码本体：固定 30mm × 60mm（竖版），超出一律裁掉（纸面只有这么大） */
-        .task-card-label { width: 30mm; height: 60mm; overflow: hidden; box-sizing: border-box;
+        @page { size: 50mm 60mm; margin: 0; }
+        /* 洗水码本体：固定 50mm × 60mm（竖版），超出一律裁掉（纸面只有这么大） */
+        .task-card-label { width: 50mm; height: 60mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 6pt; line-height: 1.2; display: flex; flex-direction: column;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
@@ -148,8 +178,10 @@ export default function TaskCardPrint({
         const specRows = craftSpecRows(item)
         // 加工方式 = 工艺 · 加工类型 · 打开方式 · 定型（**值**一律取自 `craft-display` 的同一份格式化，不重算）。
         // 其中「是否定型」在纸面上按**行业措辞**收成「定型 / 不定型」—— 真实工单就是这么写的
-        // （图1「单开-韩褶-定型」、图3「双开韩褶 定高买宽 定型」）；单印一个「是」在 27.6mm 宽的
-        // 纸面上读不出是哪个字段的「是」。**只映射展示形态，不改值本身**。
+        // （图1「单开-韩褶-定型」、图3「双开韩褶 定高买宽 定型」）；单印一个「是」在纸面上读不出
+        // 是哪个字段的「是」。**只映射展示形态，不改值本身**。
+        // 版心 47.599mm ≈ 22.5em/行（issue #5646 实测）⇒ 实测最长形态
+        // 「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈22em) **恰好 1 行**；`line-clamp-2` 只作预算上界。
         const shaped = specValue(specRows, '是否定型')
         const craftMode = [
           specValue(specRows, '工艺'),
@@ -168,7 +200,9 @@ export default function TaskCardPrint({
         // 件名：部位名优先，退回商品名（纸面要能认出「这一张是给哪一件的」）
         const pieceName = position ? position.position_name || position.product_name || '' : ''
         const colorName = typeof item?.colorName === 'string' ? item.colorName.trim() : ''
-        // 色号已含在件名里 ⇒ 不重复渲染（纸面只有 27.6mm 宽，重复 = 挤掉别的字段）
+        // 色号已含在件名里 ⇒ 不重复渲染。**50mm 下仍保留这条去重**（issue #5646 按实测裁定）：
+        // 版心由 27.6mm 抬到 47.599mm 后空间虽宽裕，但恢复独立渲染只会把同一个色号多印一遍、
+        // 白吃 2.538mm（一行）高度预算，而预算已用到 58.878/60mm。
         const showColor = colorName !== '' && !pieceName.includes(colorName)
         const size = sizeText(position?.width, position?.height)
 
@@ -204,8 +238,8 @@ export default function TaskCardPrint({
                       部位 {position.position_kind}
                     </div>
                   )}
-                  {/* ③ 件名（可折 2 行；认件） */}
-                  <div className="line-clamp-2" data-testid={`task-card-label-position-${index}`}>
+                  {/* ③ 件名（可折行、不再 clamp；认件） */}
+                  <div data-testid={`task-card-label-position-${index}`}>
                     {pieceName || '—'}
                   </div>
                   {showColor && (
@@ -240,12 +274,16 @@ export default function TaskCardPrint({
                     </div>
                   )}
                   {/* 算料公式（用户字段裁定里的「备注（工艺备注 / 算料公式）」）：
-                      形态 = `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` ≈ 21.7em
-                      ⇒ 27.6mm 宽（≈13em/行）下要 **3 行**才装得下；**clamp 到 2 行会把末端的
-                      `= 13.3米`（结果）切掉**，纸面成了「… = …」（渲染实拍实测，issue #4964）。
-                      实测余量够 3 行（最坏高度那张正文 2 行时到 40.19mm，QR 行起于 46.9mm）。 */}
+                      形态 = `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
+                      另一登记形态 = `褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11米`。
+                      🔴 issue #5646 实测改判 **clamp 3 行 → 2 行**：两条真公式串在 47.599mm 版心
+                      （≈22.5em/行）下都**恰好 2 行**（30mm 时代「韩褶公式」串要 3 行）。
+                      容量不退反增：2 × 22.5em = **45em** > 旧口径 3 × 13em = **39em**；
+                      高度预算同时省下 2.538mm（这正是最坏情况能收进 60mm 的原因）。
+                      ⚠️ 不许再回到 3 行：最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）
+                      实测需 61.4mm > 60mm ⇒ 会把中部文字挤出纸外。 */}
                   {formula && (
-                    <div className="line-clamp-3 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
+                    <div className="line-clamp-2 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
                       {formula}
                     </div>
                   )}

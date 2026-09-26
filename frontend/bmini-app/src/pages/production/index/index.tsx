@@ -26,6 +26,7 @@ import { WorkerBar } from '../../../components/WorkerBar'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
+import { canUseNativeScan, H5_SCAN_UNAVAILABLE_HINT } from '../../../utils/platform'
 import {
   appendWorkLog,
   cacheOrderOperations,
@@ -344,6 +345,17 @@ export default function ProductionPage() {
    * </ol>
    */
   const handleScan = useCallback(async () => {
+    // 🔴 h5 降级（issue #5650）：`Taro.scanCode` 在 h5 的实现是
+    // `processOpenApi({ name: 'scanQRCode', … })`（实测 `dist/api/device/scan.js`）—— 那是**微信 JS-SDK**，
+    // 只在微信内置浏览器可用；纯浏览器（Chrome/Safari）里 `window.wx` 不存在，Taro 直接走
+    // `weixinCorpSupport` 的 notSupported 分支 ⇒ 调用只会「什么都没发生」。
+    // 所以这里**先判平台再调**，并把工人引到本页**既有**的第二条路径（下方「或手输加工单号」→ `loadOrder`）：
+    // 不白屏、不静默失败，也**不平行造第二条识别链**（拒绝路径与手输路径都汇到同一个 `loadOrder` / `scanResolve`）。
+    if (!canUseNativeScan()) {
+      Taro.showToast({ title: H5_SCAN_UNAVAILABLE_HINT, icon: 'none' })
+      return
+    }
+
     try {
       const res = await Taro.scanCode({ scanType: ['qrCode'] })
       const raw = String(res?.result || '').trim()

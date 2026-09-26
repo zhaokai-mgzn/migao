@@ -18,7 +18,8 @@
 // 纯文本码（**只读**：零写请求、qr_token 一字不动）+ 一键复制单号 + 按 processing:manage 显隐，
 // 用于串联「扫码 → 手动输单号 → 报工 → 计件」端到端联调（B 档小程序码需 bmini 凭据，本单缺）。
 // PP-011（issue #4946，用户裁定 2026-09-21）：**洗水码取代 A4 任务卡** —— 生产页传
-// `positions` 给任务卡（每部位一张 60×30mm，码 = 该部位自己的 `scan_url`/`part_token`），
+// `positions` 给任务卡（每部位一张，码 = 该部位自己的 `scan_url`/`part_token`；
+// **纸型后经 issue #5646 改判为 50mm×60mm**，见 `frontend/admin-web/src/components/production/TaskCardPrint.tsx`），
 // 且「生成二维码（测试用）」弹层**逐张**出码（N 个部位 ⇒ N 张，各带人可读短码 + 复制短码），
 // 不再是「一张单号码」。撤销语义（`qr_token` 为空 ⇒ 占位文案）逐字保留。
 // PP-011（issue #4960 第 3 条 / #4961，2026-09-21）：① 实例显示名 `逻辑名 · 部位` 的**口径唯一性**

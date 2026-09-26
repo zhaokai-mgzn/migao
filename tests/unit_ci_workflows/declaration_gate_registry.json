@@ -113,6 +113,32 @@
       ]
     },
     {
+      "id": "bmini-app-build",
+      "workflow": "bmini-app.yml",
+      "job": "build",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect bmini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/bmini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/bmini-app",
+          "reason": "门禁自己住的模块（h5 + weapp 两端 `taro build` 的对象；issue #5650 起 h5 编译产物 = 唯一用户可达形态）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "bmini-app build (h5 + weapp)",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install dependencies",
+        "Build H5",
+        "Build weapp"
+      ]
+    },
+    {
       "id": "mini-app-typecheck-and-test",
       "workflow": "mini-app.yml",
       "job": "typecheck-and-test",
