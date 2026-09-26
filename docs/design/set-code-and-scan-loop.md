@@ -907,6 +907,9 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 - 顺序 = **先转态、再完工判定**：单工序加工单在这一次报工里就全部报满，若先判完工，
   `markCompletedIfActive` 会把活跃集里的 `issued` 直接置 `completed` ⇒ 谓词再不成立、
   `in_processing_at` **永远为空**（「生产开始」在数据上不存在）。
+- **自动路径的两条边界（有意，均有兜底）**：① **不追溯存量单** —— 首工序在上线**之前**就报满的在产单
+  不被回溯转态（零迁移、零回填）⇒ 走手工端点补开工；② **单里没有任何 `is_start_marker` 工序** ⇒
+  自动路径不触发（保持 `issued`），**不回落**成「按 `seq` 最小推一道」（触发器就是那道标记工序）。
 - 证据（红证已实跑）：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java`
   的 7 条 D13 用例（改前 4 条失败 —— `expected: "in_processing" but was: "issued"`）+
   状态机锚点 `ProcessingOrderServiceTest#onlyIssuedMayEnterInProcessing` + SQL 形状守卫

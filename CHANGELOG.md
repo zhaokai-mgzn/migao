@@ -24,6 +24,9 @@
 - **手工入口保留**：加工单「开始加工」（`action = "start"`）语义不变 —— 存量单补开工 / 自动路径
   不适用的兜底（单里没有任何 `is_start_marker` 工序、首工序报工时该单尚未发加工等）；
   两条路径**同一个目标态、同一张状态机**。
+- **两条边界（有意，均有兜底）**：① 首工序在本次上线**之前**就报满的在产单**不被回溯**转态
+  （零迁移、零回填）⇒ 走手工端点补开工；② 单里一道 `is_start_marker` 工序都没有（商家自编路线 /
+  工序库改过）⇒ 自动路径**不触发**，也**不**回落成「按 `seq` 最小推一道」。
 - **类级固化**：`ProcessingOrderMapperTest#markInProcessingIfFrom_sqlShape`（唯一写路径 +
   谓词 / `COALESCE` / 租户 / 软删守卫）、`ProcessingOrderServiceTest#onlyIssuedMayEnterInProcessing`
   （状态机锚点：放开 `generated → in_processing` 必须先裁 A6，判据**先红**）、
