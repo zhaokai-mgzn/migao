@@ -875,8 +875,6 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):
     """判据 7：四种坏形态必须判红（否则上面的绿是空断言）。"""
     dist = _make_bmini_dist(tmp_path)
-    if mode == "stale_b":
-        pass
     root = _served_root_with(tmp_path, dist)
     with _NginxishServer(root, mode) as base:
         proc = _run_verify(base, dist)
