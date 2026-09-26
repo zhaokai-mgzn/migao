@@ -28,6 +28,7 @@ honored ⇒ 红；`source` 被拿掉（= 声明无消费者）⇒ 绿。后者�
 from __future__ import annotations
 
 import ast
+import re
 import sys
 import types
 from pathlib import Path
@@ -323,3 +324,40 @@ class TestDenialRecoveryStats:
 
     def test_empty_face_is_not_a_denial(self):
         assert lr.denial_recovery_stats([])["denials"] == 0
+
+
+class TestDenialRecoveryIsWired:
+    """实现了却没人调用 = 空转（#3391/#3417 的同族形态）⇒ 逐点钉住**调用点**（零 LLM）。"""
+
+    SRC = RUNNER_PATH.read_text(encoding="utf-8")
+
+    def _fn(self, name: str):
+        for node in ast.parse(self.SRC).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                return node
+        raise AssertionError(f"local_runner.py 里找不到 {name} —— 解析失效（判据会变成空断言）")
+
+    def test_recorded_after_every_session_close(self):
+        """`_close_and_verify_session` 必须真的调用取数/记账（否则台账恒空、指标恒 0）。"""
+        called = {n.func.attr if isinstance(n.func, ast.Attribute) else
+                  (n.func.id if isinstance(n.func, ast.Name) else "")
+                  for n in ast.walk(self._fn("_close_and_verify_session"))
+                  if isinstance(n, ast.Call)}
+        assert "_record_denial_recovery" in called, (
+            "会话关闭后没记账 ⇒ `denial_recovery_summary()` 恒为 0（读者会以为从没被拒过）")
+
+    def test_summary_is_printed_and_serialized(self):
+        """汇总必须**同时**进 stdout 与机器可读 summary（只看日志 = 过了保留期就丢）。"""
+        main_src = ast.unparse(self._fn("main"))
+        assert "denial_recovery_summary(" in main_src, "main() 没打印/没传自愈率汇总"
+        assert "denial_recovery=_dr" in main_src, "汇总没传给 write_summary_json（只打印会丢）"
+        write_src = ast.unparse(self._fn("write_summary_json"))
+        assert re.search(r"""payload\[['"]denial_recovery['"]\]""", write_src), (
+            "write_summary_json 没落这个键")
+
+    def test_record_only_never_touches_score(self):
+        """报告型的红线：取数失败**不得**改分数（否则基础设施波动会变成用例红）。"""
+        src = ast.unparse(self._fn("_record_denial_recovery"))
+        for bad in ("score", "passed", "failed"):
+            assert f"r[{bad!r}]" not in src, (
+                f"_record_denial_recovery 动了 r[{bad!r}] —— 报告型读数不许参与判定")
