@@ -91,4 +91,6 @@ export const H5_API_OUTLET_LEDGER: Record<string, string> = {
     'h5 不调用它（stub）：语音入口保留可见但禁用，点击给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
   scanCode:
     'h5 仅微信内置浏览器可用（JS-SDK）；纯浏览器降级为手输单号，点「扫一扫」给显式提示（H5_SCAN_UNAVAILABLE_HINT）',
+  createOffscreenCanvas:
+    'h5 不调用它（未实现的 stub）：拍照入库的**本机解码**在 h5 走 <img> + canvas 取像素，只有小程序端才用它；小程序端取不到像素时明说「已改用服务端识别」（src/utils/inbound/barcodeDecode.ts 的平台分支）',
 }

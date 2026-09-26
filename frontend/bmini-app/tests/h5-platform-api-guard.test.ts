@@ -41,6 +41,7 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
   it('射程非空且确实取到了本仓的命中用法（判据不许空转成「0 命中 = 通过」）', () => {
     expect(usages.length).toBeGreaterThan(50)
     expect(Array.from(new Set(hazardous.map((u) => u.api))).sort()).toEqual([
+      'createOffscreenCanvas',
       'getRecorderManager',
       'login',
       'scanCode',

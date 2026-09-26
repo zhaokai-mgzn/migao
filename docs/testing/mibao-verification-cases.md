@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（9 case）
+## B 端小程序域（19 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -712,6 +712,143 @@
 跳过: [backend-contract] 确定性契约/机械判据，由 jest（frontend/bmini-app/tests/admin-surfaces-guard.test.ts / admin-surfaces-service.test.ts / admin-surfaces-permission.test.tsx / admin-pool-dispatch.test.tsx / admin-inbound-post.test.tsx / admin-after-sales.test.tsx / admin-piecework.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-26 新增（issue #5654）：管理面 11 项「只有电脑端能做」中的 4 项下放到手机端（载体 = bmini-app 的 h5 产物，#5650）。四项全部消费既有端点（零后端改动）；权限可见性以**端点码**为判据（并登记了与 admin-web 菜单节点码的两处分歧）；写动作全部二次确认；计件报表与 PC 同一个端点、同一份服务端聚合（判据夹具用「per_worker 之和 ≠ total」证明页面没重算）。 ｜ tags: bmini, admin-surface, permission, h5, backend_contract
+
+### BM-010. 入库标签 50×30mm 像素口径 - 单一真值（400/384/240/8 dots/mm），别处出现第二份字面量即红 🔵
+```
+你: 工人拍照入库出标签时，设备侧（客户端 canvas）按 50×30mm 的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、**有效打印宽 48mm ⇒ 384px（安全侧）**、高 30mm ⇒ 240px，1:1 不缩放不裁切
+期望: direct_reply
+数据: 判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×50`、`effectiveWidthPx == dotsPerMm×48`、`heightPx == dotsPerMm×30`（四个孤立的数不算数；红证：把 effectiveWidthPx 改成 400 或 dotsPerMm 改成 8.47 ⇒ 红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts
+数据: 判据 2·**单一真值**：全仓（frontend + backend 的 ts/tsx/js/jsx/mjs/json）**只有一个文件**同时写着 384 与 240 = `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384/240 ⇒ 实测判红）。
+数据: 判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 400/384/240（只能从真值源取）。
+数据: 判据 4·**待实测显式登记**：50×30 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（DP30S 有效打印宽度等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。
+数据: 判据 5·**判据自身排除在语料外**（B1）：守卫文件自己会写 384/240，必须显式排除，否则判据永远红或永远抓不到真违规。
+跳过: [backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 P3+P4）：设备侧 canvas 渲染 50×30mm 入库标签的像素口径单一真值化（#5651 介质矩阵扩表 + bmini 跨工程消费）。 ｜ tags: bmini, inbound, label, single-source
+
+### BM-011. 入库标签短码口径 - 与 WorkerShortLinkService / WorkerInbound 控制器逐值一致（端点/头名/字母表） 🔵
+```
+你: 工人端消费 `/api/worker/inbound/**`：上传 / 识别 / 建草稿 / 过账 / 按短码读详情 / 打印留痕；请求头幂等键名为 `Idempotency-Key`（逐字等于后端常量），短码 = 8 位、字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ`（生成面不产出 I/L/O/U）
+期望: direct_reply
+数据: 判据 1·**端点字面量逐值来自后端 Java 源**（不是按语义推测）：端侧 6 个端点路径 ⊆ 三个控制器的 `@RequestMapping` + 方法映射，且**反向覆盖**（后端有而端侧漏 ⇒ 红）。红证：把 `drafts` 写成 `draft` ⇒ 判据红（实测退出码 1）。证据：frontend/bmini-app/tests/inbound-api-contract.test.ts
+数据: 判据 2·**HTTP 方法一致**（GET 详情读面写成 POST ⇒ 405）：从 service 源码就近取每个端点常量实际用的方法，与后端注解比对。
+数据: 判据 3·**幂等头名逐字**：`INBOUND_IDEMPOTENCY_HEADER` == `WorkerInboundController.IDEMPOTENCY_HEADER`（写成报工链的 `X-Client-Request-Id` ⇒ 幂等**静默失效**，重复提交真的入两次库而两次都 200）。
+数据: 判据 4·**短码字母表 / 长度逐值**：`SHORT_CODE_ALPHABET` / `SHORT_CODE_LENGTH` == `WorkerShortLinkService.ALPHABET` / `CODE_LENGTH`，且不含 I/L/O/U（客户端只校验、不生成）。
+跳过: [backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-api-contract.test.ts 解析后端 Java 源逐值比对），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry, inbound-order-flow.worker-post-idempotent
+溯源: 2026-09-27 新增（issue #5052 P3）：端侧契约字面量（端点/方法/幂等头/短码字母表）改为**解析后端 Java 源逐值比对**，防「凭语义推测」写错端点而类型检查与单测都不报。 ｜ tags: bmini, inbound, contract
+
+### BM-012. 入库标签版面 - 缺码不画假码 / 长名截断可见 / 1:1 不缩放不裁切 / 整数倍点阵 🔵
+```
+你: 标签纸面渲染（50×30mm）：短码缺失或脏码（长度不对 / 含 I L O U）时**不画二维码**、留空位并印可见标注；品名等文本超宽时**截断 + 省略号**；二维码按整数倍点阵绘制
+期望: direct_reply
+数据: 判据 1·**缺码不画假码**：`shortCode` 为空 / 非法 ⇒ `qr === null`、纸面出现可见标注「短码缺失·未出码」、warnings 含「未绘制二维码」；paint 计划里**没有任何二维码方块**（红证：改成画占位二维码 ⇒ 实测判红）。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts
+数据: 判据 2·**长名截断必须可见**：超宽文本 ⇒ 省略号 + `truncated=true` + warnings；短文本**不**截断（红证：静默裁切（截了但不带省略号）⇒ 判定器判红，实测退出码 1）。
+数据: 判据 3·**1:1 不缩放不裁切**：画布尺寸 = 版心 384×240（从真值源取），所有绘制 op 落在版心内、文本不越界；渲染出的位图宽高 == 计划宽高。
+数据: 判据 4·**二维码整数倍点阵**：`sizePx == moduleCount × cellPx`（cellPx 为整数、≥1），点阵非空（防「画了个空方框」）。
+数据: 判据 5·**缺字段不编造**：没有的字段整行不画；品名缺失时印可见标注「未填品名」而不是留白或编一个名字。
+跳过: [backend-contract] 确定性版面判据（jest: frontend/bmini-app/tests/inbound-label-layout.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 P3）：50×30mm 标签版面（缺码不画假码 / 可见截断 / 1:1 / 整数倍点阵）。 ｜ tags: bmini, inbound, label
+
+### BM-013. 识别成本守卫 - 照片含可解条码时 0 次 LLM 调用（先本机解码，只上传 1 张并带上条码原文） 🔵
+```
+你: 工人拍上游标签 → 设备侧先解码（jsQR）：解出条码 ⇒ 只把**解出码的那一张**上传并带 `barcode` 调 `/api/worker/inbound/recognize`（服务端走 `barcode_decode` 路径，零 LLM）；解不出 ⇒ 全量上传（≤3 张）不带条码，服务端 vision 兜底
+期望: direct_reply
+数据: 判据 1·**解码命中 ⇒ llmCalls == 0**（假服务端复刻服务端语义：`barcode` 非空才不调模型）、上传恰好 1 张、请求里 `barcode` 非空。红证：把识别排到解码之前 ⇒ 假服务端计数 = 1 ⇒ 判据红（实测退出码 1）。证据：frontend/bmini-app/tests/inbound-decode-first.test.ts
+数据: 判据 2·**解码失败 ⇒ 全量上传（≤3）+ 不带 barcode**（服务端 vision 兜底，1 次 LLM），且超过 3 张时端侧先截断（不让工人白等一次 400）。
+数据: 判据 3·**解码库真能解出码**：真跑 encode（qrcode-generator）→ decode（jsQR）往返，解出原文；纯白图必须解不出（防「永远返回第一个参数」式假实现）。
+数据: 判据 4·**过程不静默**：解码失败/降级时给出「已改用服务端识别」这类明说。
+数据: ⚠️ weapp 侧本机解码需 `Taro.createOffscreenCanvas`，**本机无小程序运行时 ⇒ 未实测**；取不到像素 ⇒ 返回 null ⇒ 回落服务端 vision（失败方向安全），文案已在 `H5_API_OUTLET_LEDGER` + 本页缺口台账登记并被调用点引用。
+跳过: [backend-contract] 确定性成本守卫判据（jest: frontend/bmini-app/tests/inbound-decode-first.test.ts，含 qrcode→jsQR 真往返），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first
+溯源: 2026-09-27 新增（issue #5052 P3）：落实设计 §6.1「解码优先（0 次 LLM）」，并把顺序钉进纯函数 + 假服务端计数判据。 ｜ tags: bmini, inbound, cost-guard
+
+### BM-014. 打印必留痕 - 送打印的唯一入口先调服务端 /print；留痕失败不打印；前端不自行计数 🔵
+```
+你: 工人点「打印标签」：先调 `POST /api/worker/inbound/labels/{短码}/print`（计数原子自增 + audit_logs），服务端回执成功**才**把位图送给打印机；纸上/屏上的「第几次」一律取服务端回执
+期望: direct_reply
+数据: 判据 1·**顺序硬约束**：调用序 = render → **recordPrint** → transport（红证：交换成先送数据再留痕 ⇒ 判据红，实测退出码 1）。证据：frontend/bmini-app/tests/inbound-print-channel.test.ts
+数据: 判据 2·**留痕失败 ⇒ 一次都不送数据**（不产生无痕打印）；回执里 `printRecorded:false` 说清。
+数据: 判据 3·**前端不自行计数**：两次不同服务端读数（7 / 12）原样转发，不做本地 +1；源码面判据：入库模块里不存在对 `printCount` 的算术（红证：本地 +1 ⇒ 行为判据与源码面判据同时红）。
+数据: 判据 4·**渲染失败 ⇒ 中止且未留痕**（画不出来就不该占一次计数）。
+数据: 判据 5·**送数据失败要说清「留痕已发生」**（重打会再记一次，不骗工人）。
+跳过: [backend-contract] 确定性留痕判据（jest: frontend/bmini-app/tests/inbound-print-channel.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.print-count-and-audit
+溯源: 2026-09-27 新增（issue #5052 P4）：把「打印必留痕」做成唯一入口 + 调用序判据（前端无第二条送数据路径），并把计数唯一写方固定在服务端。 ｜ tags: bmini, inbound, print, audit
+
+### BM-015. 打印能力缺口 - 每种失败各有可行动文案，且动手前上屏（iOS / 非 HTTPS / 无蓝牙 / 非 h5 / SDK 缺失 / 取消 / 连不上 / 机型不支持） 🔵
+```
+你: 工人用手机打开入库页：iOS 任何浏览器 / 非 HTTPS 地址 / 浏览器无 Web Bluetooth / 小程序端 / 打印组件加载失败 / 用户取消选择 / 连不上 / 机型不支持 —— 每一种都要说清「为什么」与「现在能做什么」，并在**动手前**（拍照之前）就把本机能不能打印说清楚
+期望: direct_reply
+数据: 判据 1·**逐种文案两两不同、非空、可行动**（红证：合并成一条通用文案 ⇒ 判据红，实测退出码 1）：iOS ⇒ 点名 iPhone/iPad 并给「换安卓或电脑端补打」；非 HTTPS ⇒ 点名 https 入口；无 API ⇒ 点名 Android/桌面 Chrome；非 h5 ⇒ 点名小程序链路搁置 + 换 Chrome；SDK 缺失 ⇒ 保持联网刷新；取消 ⇒ 说明计数已记一次；连不上 ⇒ 开机/3 米内/别被占用；机型不支持 ⇒ 选 DP 开头；打印失败 ⇒ 查纸仓；渲染失败 ⇒ 不会打空白标签。证据：frontend/bmini-app/tests/inbound-print-channel.test.ts
+数据: 判据 2·**探测顺序**：iOS 判在「无 Web Bluetooth」**之前**（iPhone 上换任何浏览器都不行 ⇒ 先判无 API 会把人引向走不通的动作）；`isSecureContext` 缺失按**不安全**处理（fail-closed）。
+数据: 判据 3·**动手前上屏**：页面在拍照步之前就渲染能力探测结论（`data-testid=inbound-print-capability` 出现在 step 分支之外）；iOS 环境下一进页面（**零操作**）就能看到该文案，且此时未调用任何服务端端点（红证：把横幅挪进「打完失败后」⇒ 判据红）。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx + tests/inbound-page-platform-gaps.test.ts（判据 G5 按源码位置断言）
+数据: ⚠️ 真机（DP30S）打印**未验证**（本机无该机型 / 无 Android 蓝牙环境）⇒ 传输层做成可注入接口，判据全部跑在替身上；重启条件见 PR 正文。
+跳过: [backend-contract] 确定性能力缺口判据（jest: frontend/bmini-app/tests/inbound-print-channel.test.ts + worker-inbound-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.print-count-and-audit
+溯源: 2026-09-27 新增（issue #5052 P4）：打印通道的能力探测与失败分类（每种一句可行动文案 + 动手前上屏）。 ｜ tags: bmini, inbound, print, platform-gap
+
+### BM-016. 拍照入库页类级守卫 - 声明==实测 / 平台缺口登记且接线 / h5 不调 Taro.login / 路由登记 🔵
+```
+你: 拍照入库页（`/pages/worker/inbound/index`）的平台能力面：射程内用到的 Taro API 必须逐值等于声明集；命中 #5650 两张清单（h5 未实现 / 只走微信 JS-SDK）的 API 必须在台账登记出路**且被调用点真的引用**；h5 下不得调 `Taro.login`
+期望: direct_reply
+数据: 判据 G0·**路由登记**：`INBOUND_PAGE_ROUTE` 逐字出现在 `src/app.config.ts` 的 pages 里（没登记 = 死链），页面 / 页面配置 / 工人登录页都在。
+数据: 判据 G1·**声明 == 实测（双向）**：射程内实测 `Taro.*` 集 == `INBOUND_PAGE_TARO_APIS`（红证：页面加一处未声明的 `Taro.showToast` ⇒ 红，实测退出码 1）。
+数据: 判据 G2·**缺口必须接线**：本页命中清单的 `createOffscreenCanvas` 在 `H5_API_OUTLET_LEDGER`（#5650 全局台账）与 `INBOUND_PAGE_PLATFORM_GAP_HINTS`（本页台账）**两处**都登记，且文案出现在**射程内真的会渲染它的文件**里（只登记不接线 ⇒ 红）。
+数据: 判据 G3/G4·**台账只许缩短且条目活着**（射程里已不存在的 API 不得留在台账）、文案非占位（≥10 字）。
+数据: 判据 G5·**打印能力探测在动手前上屏**（源码位置判据）+ 每条失败原因都点名了引用它的文件。
+数据: 判据 G6·**h5 不调 `Taro.login`**、页面不碰 `/api/admin/**`（去注释后判定：注释里的解释不算违规）。证据：frontend/bmini-app/tests/inbound-page-platform-gaps.test.ts
+跳过: [backend-contract] 类级元守卫（jest: frontend/bmini-app/tests/inbound-page-platform-gaps.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-09-27 新增（issue #5052 P3）：类级固化「声明了能力缺口却没接线」（#5654 P9 形态）+「新加一处平台调用而没人知道它在 h5 不可用」。 ｜ tags: bmini, inbound, meta-guard
+
+### BM-017. SKU 匹配门禁与预填口径 - 零命中拒绝入库不建品 / 不确定不预填 / 多命中工人消歧 / 数量口径唯一真值在服务端 🔵
+```
+你: 识别回执到达页面后：命中既有 `product_skus` ⇒ 预填并请工人核对；零命中 ⇒ 拒绝入库、不自动建品；多命中 ⇒ 工人自己选；vision 降级 / requiresManualEntry ⇒ 三格全空、提示手输
+期望: direct_reply
+数据: 判据 1·**零命中 ⇒ none**（文案含「不会自动建品」）+ 提交闸拒绝（没有 skuId 就不放行，只有 productId 也不放行）。红证：允许无 sku 提交 ⇒ 红（实测退出码 1）。证据：frontend/bmini-app/tests/inbound-sku-gate.test.ts
+数据: 判据 2·**不确定不预填**：`degraded` / `requiresManualEntry` / 零命中 ⇒ `prefillUsed=false` 且品名/色号/米数三格全空 + 可行动提示（红证：让降级分支也预填 ⇒ 判定函数判红）。
+数据: 判据 3·**多命中由工人消歧**：返回 `ambiguous` 且不自动取第一条；唯一命中才预选（仍要核对）。
+数据: 判据 4·**端侧只拦结构上不可能成功的**（缺 SKU / 缺米数 / 未勾选「我确认」）；数值口径**唯一真值在服务端**（`> 0` 且最多 1 位小数，超 1 位显式拒绝），端侧不重写第二份（源码面：recognizeGate.ts 无 Number(/parseFloat/toFixed/小数位正则），400 文案原样上屏）。
+数据: 判据 5·**「不自动建品」是结构事实**：入库射程内不存在任何建商品 / 建 SKU / 改库存的调用（红证：加一个 `POST /api/admin/products` ⇒ 红）；建草稿请求体结构上无 `adjustment`/`delta`/`setStock`/`operator`/`tenantId`。
+跳过: [backend-contract] 确定性门禁判据（jest: frontend/bmini-app/tests/inbound-sku-gate.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface, product-sku-stock.decimal-1dp-migration
+溯源: 2026-09-27 新增（issue #5052 P3）：设计 §6.3 / §6.4 的端侧落点（零命中不建品、不确定不预填、多命中不替工人猜）。 ｜ tags: bmini, inbound, sku-gate
+
+### BM-018. 拍照入库页链路 - 工人身份分流（无 session 明说去登录）+ 过账二次确认（取消即不建单） 🔵
+```
+你: 工人（有工号 + PIN 的 worker session）在手机浏览器打开入库页：拍照/选图 → 识别 → 核对并勾选「我确认」→ 点「提交过账」→ 二次确认 → 建单并过账 → 出标签 → 送打印；没有工人 session 时页面明说去登录工人身份
+期望: direct_reply
+数据: 判据 1·**身份分流**：无工人 session ⇒ 渲染「请先用工号 + PIN 登录工人身份」引导且**不渲染拍照入口**；点引导 ⇒ `Taro.navigateTo` 到工人登录页（不静默跳走、不静默失败）。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx
+数据: 判据 2·**过账二次确认（不可逆动作护栏）**：弹窗取消 ⇒ `createInboundDraft` / `postInboundDraft` **一次都不被调**；确认 ⇒ 各恰好一次，且建单请求体只含入库语义（dyeLot/productId/quantity/remark/skuId/supplier/supplierDocNo —— 无 adjustment/operator/tenantId）。红证：去掉确认分支 ⇒ 取消用例红（实测退出码 1）。
+数据: 判据 3·**服务端 400 的文案原样上屏**（数量口径真值在服务端）：建单被拒 ⇒ 屏上逐字出现服务端 message，且**不继续过账**（不产生半张单）。
+数据: 判据 4·**h5 下不调 `Taro.login`**（工人身份走工号 + PIN）。
+数据: 判据 5·过账后短码上屏（工人可抄），标签步渲染 50×30mm 版心（= 有效打宽 × 纸高）。
+跳过: [backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-inbound-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post, inbound-label-flow.worker-detail-read-and-photo-upload
+溯源: 2026-09-27 新增（issue #5052 P3）：拍照入库页端到端链路（身份分流 / 二次确认 / 服务端文案上屏 / 短码上屏）。 ｜ tags: bmini, inbound, page-flow
+
+### BM-019. 工号+PIN 登录页在 h5 可用 - 拍照入库的登录前置在浏览器下走得出（不依赖微信换码） 🔵
+```
+你: 工人首次在手机浏览器打开拍照入库页（无 worker session）→ 页面引导去工人登录页 → 用「工号 + PIN」登录成功后回到入库页
+期望: direct_reply
+数据: 判据 1·**登录前置在 h5 走得通**：工人登录页的提交路径不调用 `Taro.login`（`H5_API_OUTLET_LEDGER` 的 `login` 条目：h5 不走微信换码，直接拒绝并指向账号密码登录）⇒ 浏览器下能拿到 worker session，才谈得上入库。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx（判据 4）+ tests/h5-platform-api-guard.test.ts
+数据: 判据 2·**未登录不静默**：入库页在没有 worker session 时给出可行动文案与入口（不空白页、不转圈、不静默跳转）。
+数据: ⚠️ 关联阻塞（照实登记，不在本单）：工人档案创建（#4869）未闭环前，真实部署里第一个工人建不出来 ⇒ 本链在 POC 阶段需要开发手段直插一条工人档案。
+跳过: [backend-contract] 确定性平台/前置判据（jest: frontend/bmini-app/tests/worker-inbound-page.test.tsx + tests/h5-platform-api-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-09-27 新增（issue #5052 P3）：补齐「拍照入库的登录前置在 h5 可用」这一条（本单发现：入库页的引导入口此前没有判据覆盖）。 ｜ tags: bmini, inbound, login, platform
 
 ## 分类域（3 case）
 
@@ -7228,13 +7365,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：511（活跃 126，跳过 385）
-- tier 分布：smoke 12 / normal 466 / adversarial 31
+- 用例总数：521（活跃 126，跳过 395）
+- tier 分布：smoke 12 / normal 476 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：9
+- B 端小程序域：19
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
