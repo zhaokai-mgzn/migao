@@ -1,0 +1,1322 @@
+{
+ "generated_by": "scripts/output_keys_snapshot.py",
+ "refresh": "python3 scripts/output_keys_snapshot.py --refresh",
+ "schema": 1,
+ "tools": {
+  "after_sales_manage": {
+   "actions": {
+    "detail": {
+     "dynamic": true,
+     "keys": []
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/after_sales_manage.py",
+   "keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "literal_keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=attach_ticket_labels(data)",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "3f6766b67461ee794c0c8acc40d873cd5e8304cefcd8f4adb5510fa98e2de196"
+  },
+  "aftersale_create": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/aftersale_create.py",
+   "keys": [
+    "id",
+    "ticketNo"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data', {})",
+    "ticket_data ← response.get('data', {})"
+   ],
+   "source_sha256": "b19971cf51e40a7dee92ec871f1325addd57466bb6426566b0afa43b05cccb8b"
+  },
+  "aftersale_query": {
+   "actions": {
+    "detail": {
+     "dynamic": true,
+     "keys": [
+      "customerId",
+      "customer_id",
+      "status",
+      "tenantId",
+      "tenant_id",
+      "userId"
+     ]
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/aftersale_query.py",
+   "keys": [
+    "customerId",
+    "customer_id",
+    "items",
+    "page",
+    "size",
+    "status",
+    "tenantId",
+    "tenant_id",
+    "total",
+    "userId"
+   ],
+   "literal_keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=attach_ticket_labels(data)",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "73867a7fbdc39450426c3c9acfd4a96ac1da1aeded246f671f03cefe46892461"
+  },
+  "batch_stock_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/batch_stock_query.py",
+   "keys": [
+    "action",
+    "batch_count",
+    "batches",
+    "filters",
+    "matched_count",
+    "truncated"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "**data",
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "31efbd6f9918544fe614c75452a4f3755c2e42e6147bdfb958036db8d64f5aa0"
+  },
+  "briefing_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/briefing_query.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=dict(data, proactive=findings, proactive_status=status)"
+   ],
+   "source_sha256": "399b96b2dab299e1dd3f320f56be31ad3c69b0610273a0a3d44fcee41ad37c11"
+  },
+  "category_manage": {
+   "actions": {
+    "tree": {
+     "dynamic": false,
+     "keys": [
+      "tree"
+     ]
+    }
+   },
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/category_manage.py",
+   "keys": [
+    "tree"
+   ],
+   "literal_keys": [
+    "tree"
+   ],
+   "source_sha256": "9622fe3bbb5eb483935eb77e36e21330228de24eace816afff9cea59b392559f"
+  },
+  "craft_calc_config_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/craft_calc_config_query.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "88ba4cfc8da6d417b66a4f27cedac7f0b9dc55673f7dfe8040398840765c3e81"
+  },
+  "curtain_calc": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/curtain_calc.py",
+   "keys": [
+    "accessory_cost",
+    "auto_features",
+    "breakdown",
+    "config_source",
+    "craft",
+    "curtain_type",
+    "cutting_mode",
+    "door_width",
+    "door_width_reason",
+    "fabric_cost",
+    "fabric_meters",
+    "formula",
+    "formula_text",
+    "formula_used",
+    "fullness",
+    "install_cost",
+    "is_shaped",
+    "mixed_color_surcharge",
+    "panels",
+    "plan",
+    "processing_cost",
+    "processing_meters",
+    "special_options",
+    "splice",
+    "style",
+    "total",
+    "warning"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "**pleat_fields",
+    "**quote",
+    "**{'panels': panels} if panels is not None else {}",
+    "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
+   ],
+   "source_sha256": "a3abc4f5ef0dbcc961d876a0e1116dfb83dc7c7db97b4d4554eb7fcee46b02ff"
+  },
+  "customer_address_query": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/customer_address_query.py",
+   "keys": [
+    "customer_address",
+    "customer_name",
+    "customer_phone",
+    "has_address",
+    "order_no",
+    "source"
+   ],
+   "literal_keys": [
+    "customer_address",
+    "customer_name",
+    "customer_phone",
+    "has_address",
+    "order_no",
+    "source"
+   ],
+   "source_sha256": "218e940a633051f4bb8a442b7f0edb63f9e969e5c20f7659e1f3927a5fb2e693"
+  },
+  "customer_logistics_track": {
+   "actions": null,
+   "actions_unattributed": [
+    "list"
+   ],
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/customer_logistics_track.py",
+   "keys": [
+    "all_in_transit_total",
+    "logistics",
+    "logistics_list",
+    "total"
+   ],
+   "literal_keys": [
+    "all_in_transit_total",
+    "logistics",
+    "logistics_list",
+    "total"
+   ],
+   "source_sha256": "2d73e97505096cc56033624740d08bc650949bbb29b4b7afc34fe73621def454"
+  },
+  "customer_manage": {
+   "actions": {
+    "detail": {
+     "dynamic": true,
+     "keys": [
+      "name",
+      "nickname",
+      "realName",
+      "wechatNickname"
+     ]
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "customers",
+      "page",
+      "size",
+      "total"
+     ]
+    },
+    "list_tags": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "tags"
+     ]
+    },
+    "profile_view": {
+     "dynamic": true,
+     "keys": []
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/customer_manage.py",
+   "keys": [
+    "count",
+    "customers",
+    "name",
+    "nickname",
+    "page",
+    "realName",
+    "size",
+    "tags",
+    "total",
+    "wechatNickname"
+   ],
+   "literal_keys": [
+    "count",
+    "customers",
+    "page",
+    "size",
+    "tags",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=dict(result)",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "7b5b9c51cab6890ffeec930c5aaaa67b1f1628797f3378c70d759e7b5916e9a4"
+  },
+  "customer_order_query": {
+   "actions": null,
+   "actions_unattributed": [
+    "list"
+   ],
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/customer_order_query.py",
+   "keys": [
+    "orders",
+    "page",
+    "page_size",
+    "total",
+    "total_pages"
+   ],
+   "literal_keys": [
+    "orders",
+    "page",
+    "page_size",
+    "total",
+    "total_pages"
+   ],
+   "source_sha256": "2440e2889041676941a391af66b081c68630c832287f3c8342f4d057b295849b"
+  },
+  "dashboard_stats": {
+   "actions": {
+    "active_sessions": {
+     "dynamic": true,
+     "keys": [
+      "items",
+      "list",
+      "sessions"
+     ]
+    },
+    "order_status": {
+     "dynamic": true,
+     "keys": [
+      "distribution",
+      "items",
+      "list"
+     ]
+    },
+    "order_trend": {
+     "dynamic": true,
+     "keys": [
+      "list",
+      "points",
+      "trend"
+     ]
+    },
+    "overview": {
+     "dynamic": true,
+     "keys": [
+      "list",
+      "todayOrderCount",
+      "todaySalesAmount",
+      "totalAmount",
+      "totalOrders"
+     ]
+    },
+    "pending_shipment_count": {
+     "dynamic": true,
+     "keys": []
+    },
+    "pending_tasks": {
+     "dynamic": true,
+     "keys": []
+    },
+    "processing_shipment_count": {
+     "dynamic": true,
+     "keys": []
+    },
+    "product_ranking": {
+     "dynamic": true,
+     "keys": [
+      "items",
+      "list"
+     ]
+    },
+    "recent_orders": {
+     "dynamic": true,
+     "keys": [
+      "items",
+      "list",
+      "records"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/dashboard_stats.py",
+   "keys": [
+    "distribution",
+    "items",
+    "list",
+    "points",
+    "records",
+    "sessions",
+    "todayOrderCount",
+    "todaySalesAmount",
+    "totalAmount",
+    "totalOrders",
+    "trend"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "06ee8ae315fe968b32e51635353a445e35453a19cab21bec8a6e43fc24a8a3f0"
+  },
+  "employee_manage": {
+   "actions": {
+    "detail": {
+     "dynamic": true,
+     "keys": [
+      "name"
+     ]
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "page",
+      "size",
+      "total",
+      "users"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/employee_manage.py",
+   "keys": [
+    "name",
+    "page",
+    "size",
+    "total",
+    "users"
+   ],
+   "literal_keys": [
+    "page",
+    "size",
+    "total",
+    "users"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "2de4fff75d144fe5d132b597d81ae6bbc8fe87ad5675ee4d633ef57664f4ed1f"
+  },
+  "finance_api": {
+   "actions": {
+    "get_reconciliation": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "total"
+     ]
+    },
+    "get_summary": {
+     "dynamic": true,
+     "keys": [
+      "netIncome",
+      "pendingReceivable",
+      "totalIncome",
+      "totalRefund"
+     ]
+    },
+    "get_transactions": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "total"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/finance_api.py",
+   "keys": [
+    "items",
+    "netIncome",
+    "pendingReceivable",
+    "total",
+    "totalIncome",
+    "totalRefund"
+   ],
+   "literal_keys": [
+    "items",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "0fd92bf1153fc5a6f74ecb04be18d1e76412ea870525e98176cec438ec42dcca"
+  },
+  "human_handoff": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/human_handoff.py",
+   "keys": [
+    "adminNotified",
+    "after_hours",
+    "agentSessionId",
+    "handoff_deferred"
+   ],
+   "literal_keys": [
+    "after_hours",
+    "handoff_deferred"
+   ],
+   "shape_notes": [
+    "data=dict(ticket_data)"
+   ],
+   "source_sha256": "1de7237aad0014e4322ac559696506a91991d78d1161d020ea0c61286d3ab1e2"
+  },
+  "image_recognize": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/image_recognize.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=build_page_fill(target_type, result.get('fields') or [], cat"
+   ],
+   "source_sha256": "3c276b9d0aa1b0a6539030c6c4b60fbc7ed3d6d592d656bfdc5de0620a009448"
+  },
+  "inbound_order_query": {
+   "actions": null,
+   "actions_unattributed": [
+    "batches",
+    "detail",
+    "list"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/inbound_order_query.py",
+   "keys": [
+    "list"
+   ],
+   "literal_keys": [
+    "list"
+   ],
+   "shape_notes": [
+    "data ← response.get('data')",
+    "data=response.get('data')"
+   ],
+   "source_sha256": "104f460f22a4873f4fe63faeefc84d5bad547c32711cafcb0c62f683c2d8d2a7"
+  },
+  "interact": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/interact.py",
+   "keys": [
+    "cancelLabel",
+    "cancelValue",
+    "component",
+    "confirmLabel",
+    "confirmValue",
+    "fields",
+    "formFields",
+    "multiSelect",
+    "multiSelectSkipLabel",
+    "multiSelectSubmitLabel",
+    "multiSelectSubmitPrefix",
+    "options",
+    "pageMeta",
+    "submitLabel",
+    "title"
+   ],
+   "literal_keys": [],
+   "source_sha256": "51a5305de20bb99994c4f08cc725617fe4155fb2b1db69dbacc15a6de28a5a75"
+  },
+  "inventory_manage": {
+   "actions": {
+    "low_stock_alert": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "items",
+      "threshold"
+     ]
+    },
+    "query": {
+     "dynamic": false,
+     "keys": [
+      "product_id",
+      "product_name",
+      "status",
+      "stock",
+      "stock_source"
+     ]
+    }
+   },
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/inventory_manage.py",
+   "keys": [
+    "count",
+    "items",
+    "product_id",
+    "product_name",
+    "status",
+    "stock",
+    "stock_source",
+    "threshold"
+   ],
+   "literal_keys": [
+    "count",
+    "items",
+    "product_id",
+    "product_name",
+    "status",
+    "stock",
+    "stock_source",
+    "threshold"
+   ],
+   "source_sha256": "3ee9b8b777b3265777d34060674653540cb0462e87557f974a82bab8dbdb3aa3"
+  },
+  "knowledge_search": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/knowledge_search.py",
+   "keys": [
+    "cards",
+    "hit"
+   ],
+   "literal_keys": [
+    "cards",
+    "hit"
+   ],
+   "source_sha256": "e5f81c29a272a5329f36e127fb66a9da91990340f48ae1310ce673f6b38f983d"
+  },
+  "logistics_track": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/logistics_track.py",
+   "keys": [
+    "company",
+    "latest",
+    "order_id",
+    "status",
+    "status_text",
+    "traces",
+    "tracking_number"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← self._transform_api_response(api_result, tracking_number, co",
+    "data=self._transform_api_response(api_result, tracking_number, co"
+   ],
+   "source_sha256": "206bfecde86632297de4323a4711e7773ded7f4becb74f82a4db3190282c169c"
+  },
+  "notification_manage": {
+   "actions": {
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ]
+    },
+    "unread_count": {
+     "dynamic": false,
+     "keys": [
+      "unread_count"
+     ]
+    }
+   },
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/notification_manage.py",
+   "keys": [
+    "items",
+    "page",
+    "size",
+    "total",
+    "unread_count"
+   ],
+   "literal_keys": [
+    "items",
+    "page",
+    "size",
+    "total",
+    "unread_count"
+   ],
+   "source_sha256": "5c8f21684b84a56c94f63ea0fb4ed0a9bf4584105e8419f69b4c75634a35a1be"
+  },
+  "operation_catalog_query": {
+   "actions": null,
+   "actions_unattributed": [
+    "operations",
+    "routings"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/operation_catalog_query.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "234f14f4f181f8509aeda6a6a2daf6f45946ecb832712d63f957b873c705be6d"
+  },
+  "order_create": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/order_create.py",
+   "keys": [
+    "id",
+    "orderNo",
+    "replayed"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data', {})",
+    "order_data ← response.get('data', {})"
+   ],
+   "source_sha256": "b0b4053eb9fd0c081d3a4855ba0d5efa11a3152ccd2cc2ecfcafc5aaf9ae2b0e"
+  },
+  "order_manage": {
+   "actions": null,
+   "actions_unattributed": [
+    "cancel",
+    "confirm_payment",
+    "refund",
+    "update_logistics",
+    "update_status"
+   ],
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/order_manage.py",
+   "keys": [
+    "action",
+    "order_id",
+    "result"
+   ],
+   "literal_keys": [
+    "action",
+    "order_id",
+    "result"
+   ],
+   "source_sha256": "eb46b4fc560565a11ca20f6eea6c569286d704b6554324012c60b93bc3d14d98"
+  },
+  "order_query": {
+   "actions": {
+    "follow_status_stats": {
+     "dynamic": true,
+     "keys": [
+      "totalCount"
+     ]
+    },
+    "statistics": {
+     "dynamic": true,
+     "keys": [
+      "totalCount"
+     ]
+    }
+   },
+   "actions_unattributed": [
+    "list"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/order_query.py",
+   "keys": [
+    "orders",
+    "page",
+    "page_size",
+    "total",
+    "totalCount",
+    "total_pages"
+   ],
+   "literal_keys": [
+    "orders",
+    "page",
+    "page_size",
+    "total",
+    "total_pages"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "d64c83ab5e6cb13c81a827901c376a3b50c4f869c035234672e63c47fd6c8191"
+  },
+  "payment_qrcode_query": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/payment_qrcode_query.py",
+   "keys": [
+    "payment_qrcodes"
+   ],
+   "literal_keys": [],
+   "source_sha256": "2945a94cd6972edf6ff3dfa0df9121309d0bec80f84aa02862fd0ed720a10af8"
+  },
+  "piecework_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/piecework_query.py",
+   "keys": [
+    "period",
+    "total",
+    "worker_name"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← response.get('data')",
+    "data=response.get('data')"
+   ],
+   "source_sha256": "f5c83258f5cb39c5664056c40d16b605e47f26396f196c9c606de74c482da4af"
+  },
+  "processing_item_manage": {
+   "actions": {
+    "create_category": {
+     "dynamic": true,
+     "keys": []
+    },
+    "create_processing_item": {
+     "dynamic": true,
+     "keys": []
+    },
+    "delete_category": {
+     "dynamic": false,
+     "keys": [
+      "category_id"
+     ]
+    },
+    "delete_item": {
+     "dynamic": false,
+     "keys": [
+      "item_id"
+     ]
+    },
+    "list_categories": {
+     "dynamic": false,
+     "keys": [
+      "categories"
+     ]
+    },
+    "toggle_item_status": {
+     "dynamic": true,
+     "keys": [
+      "item_id"
+     ]
+    },
+    "update_category": {
+     "dynamic": true,
+     "keys": [
+      "category_id",
+      "description",
+      "name"
+     ]
+    },
+    "update_item": {
+     "dynamic": true,
+     "keys": [
+      "item_id"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/processing_item_manage.py",
+   "keys": [
+    "categories",
+    "category_id",
+    "description",
+    "item_id",
+    "name"
+   ],
+   "literal_keys": [
+    "categories",
+    "category_id",
+    "item_id"
+   ],
+   "shape_notes": [
+    "**json_data",
+    "**response.get('data') or {}",
+    "data=response.get('data') or {}",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "086f69f954ba3654b5f4bcd3c0d580cea8c710bae56e019460baa8cd6f7c8abd"
+  },
+  "processing_item_query": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/processing_item_query.py",
+   "keys": [
+    "item",
+    "items",
+    "page",
+    "pageMeta",
+    "size",
+    "total",
+    "total_pages"
+   ],
+   "literal_keys": [
+    "item",
+    "items",
+    "page",
+    "pageMeta",
+    "size",
+    "total",
+    "total_pages"
+   ],
+   "source_sha256": "f1422e1e20df167e9d57cd2a67b4efba32222e4a3910c467a45491e5d51bb9f0"
+  },
+  "processing_order_generate": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/processing_order_generate.py",
+   "keys": [
+    "results"
+   ],
+   "literal_keys": [
+    "results"
+   ],
+   "source_sha256": "764579235de50706fde2cb69e1ff238dac3724f705bd97ae2f23fd9b33216b9d"
+  },
+  "processing_order_query": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/processing_order_query.py",
+   "keys": [
+    "list"
+   ],
+   "literal_keys": [
+    "list"
+   ],
+   "source_sha256": "f3045fc57c52eb0701291c088192b97ca8cdb5854cda2e91979e9be3e6a6a90a"
+  },
+  "processing_order_set_query": {
+   "actions": null,
+   "actions_unattributed": [
+    "detail",
+    "list",
+    "scan_progress"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/processing_order_set_query.py",
+   "keys": [
+    "list"
+   ],
+   "literal_keys": [
+    "list"
+   ],
+   "shape_notes": [
+    "data ← response.get('data')",
+    "data=response.get('data')"
+   ],
+   "source_sha256": "67e7ed0ccdeb62b6ba442d21f7d190cb00dd62e449cdd828a4580932281e97ed"
+  },
+  "processing_order_update": {
+   "actions": null,
+   "actions_unattributed": [
+    "cancel",
+    "complete",
+    "issue",
+    "start"
+   ],
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/processing_order_update.py",
+   "keys": [
+    "action",
+    "id",
+    "processingOrderNo",
+    "result"
+   ],
+   "literal_keys": [
+    "action",
+    "id",
+    "processingOrderNo",
+    "result"
+   ],
+   "source_sha256": "2484867adba739e3926a5a1c8a34838776c36991a889940e6ae50b93940d0c9e"
+  },
+  "product_batch_update": {
+   "actions": {
+    "execute": {
+     "dynamic": true,
+     "keys": [
+      "results",
+      "revertible",
+      "status"
+     ]
+    },
+    "preview": {
+     "dynamic": true,
+     "keys": [
+      "batchId",
+      "batchType",
+      "fields",
+      "preview"
+     ]
+    },
+    "revert": {
+     "dynamic": true,
+     "keys": [
+      "results"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/product_batch_update.py",
+   "keys": [
+    "batchId",
+    "batchType",
+    "fields",
+    "preview",
+    "results",
+    "revertible",
+    "status"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=dict(response.get('data') or {})"
+   ],
+   "source_sha256": "159290248bbbd8fe637ad46981997da10b480ad3871914bf7c71f0916c0c7559"
+  },
+  "product_detail": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/product_detail.py",
+   "keys": [
+    "name",
+    "price",
+    "stock_source"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=self._format_product(data)",
+    "product ← self._format_product(data)"
+   ],
+   "source_sha256": "decf738668ea2c8e182fac54b331ac8d07e09f04f5aee906b501aeb6aba05e7b"
+  },
+  "product_manage": {
+   "actions": {
+    "create": {
+     "dynamic": false,
+     "keys": [
+      "name",
+      "product_id"
+     ]
+    },
+    "toggle_status": {
+     "dynamic": false,
+     "keys": [
+      "product_id",
+      "status"
+     ]
+    },
+    "update": {
+     "dynamic": false,
+     "keys": [
+      "product_id",
+      "updated_fields"
+     ]
+    }
+   },
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/product_manage.py",
+   "keys": [
+    "name",
+    "product_id",
+    "status",
+    "updated_fields"
+   ],
+   "literal_keys": [
+    "name",
+    "product_id",
+    "status",
+    "updated_fields"
+   ],
+   "source_sha256": "0a7d9edbf73d693b6c59e2d6f5db59bc564eed270f05f082c6775338d624a880"
+  },
+  "product_search": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/product_search.py",
+   "keys": [
+    "page",
+    "products",
+    "size",
+    "total",
+    "total_pages"
+   ],
+   "literal_keys": [
+    "page",
+    "products",
+    "size",
+    "total",
+    "total_pages"
+   ],
+   "source_sha256": "edafb715ed898d50e04f86893ba992563a4928f2127c6d0b85ecc77c350e27e1"
+  },
+  "product_update": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/product_update.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "6b2907342696ce093a3818c1fc74f6f8f9e32e40f7258cb56b452f56454de572"
+  },
+  "production_progress_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/production_progress_query.py",
+   "keys": [
+    "current_operation",
+    "expected_delivery_date",
+    "progress_percent"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← response.get('data')",
+    "data=response.get('data')"
+   ],
+   "source_sha256": "dbdead12a1b51e2956dd40e45e1375fca9d19ef0591f387416db7d60bfa32a54"
+  },
+  "production_worklog_query": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/production_worklog_query.py",
+   "keys": [
+    "operations"
+   ],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← response.get('data')",
+    "data=response.get('data')"
+   ],
+   "source_sha256": "a44722612c63c9debae2a4db548e22440fdaf732995400a5f573726bb7d6d8f4"
+  },
+  "role_manage": {
+   "actions": {
+    "all": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "roles"
+     ]
+    },
+    "detail": {
+     "dynamic": true,
+     "keys": [
+      "name"
+     ]
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "page",
+      "roles",
+      "size",
+      "total"
+     ]
+    },
+    "list_permissions": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "permissions"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/role_manage.py",
+   "keys": [
+    "count",
+    "name",
+    "page",
+    "permissions",
+    "roles",
+    "size",
+    "total"
+   ],
+   "literal_keys": [
+    "count",
+    "page",
+    "permissions",
+    "roles",
+    "size",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
+  },
+  "session_manage": {
+   "actions": {
+    "detail": {
+     "dynamic": true,
+     "keys": []
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ]
+    },
+    "monitor": {
+     "dynamic": true,
+     "keys": []
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/session_manage.py",
+   "keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "literal_keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "shape_notes": [
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "e78f7d9cbeef0148f1619c902ef7c85f49a6e46e7c8edfbefb8ba64636fe116e"
+  },
+  "settings_manage": {
+   "actions": {
+    "get_ai_config": {
+     "dynamic": true,
+     "keys": []
+    },
+    "get_settings": {
+     "dynamic": true,
+     "keys": []
+    },
+    "login_logs": {
+     "dynamic": false,
+     "keys": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ]
+    }
+   },
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/settings_manage.py",
+   "keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "literal_keys": [
+    "items",
+    "page",
+    "size",
+    "total"
+   ],
+   "shape_notes": [
+    "data ← response.get('data', {})",
+    "data=response.get('data', {})"
+   ],
+   "source_sha256": "d3cfbfc4bbc092c0eaee90a5b806c9eae7296af6cc18a5c4f650651b78979e74"
+  },
+  "sku_update": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/sku_update.py",
+   "keys": [
+    "color",
+    "door_width",
+    "new_price"
+   ],
+   "literal_keys": [
+    "color",
+    "door_width",
+    "new_price"
+   ],
+   "source_sha256": "8687c858fd58e98f358f57625ebecd549fe3edb38e58b62381001f70902d090b"
+  },
+  "stock_ledger_query": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/stock_ledger_query.py",
+   "keys": [
+    "list"
+   ],
+   "literal_keys": [
+    "list"
+   ],
+   "source_sha256": "bd4279b839959c6035346e130932b8cdf086816492c5a13be179a489c6847dab"
+  },
+  "validate_input": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/validate_input.py",
+   "keys": [
+    "params",
+    "validated"
+   ],
+   "literal_keys": [
+    "params",
+    "validated"
+   ],
+   "source_sha256": "b805178bfc1725b239e31c4e285406079b6fcff3d25281d4b7143da5be05aa65"
+  }
+ }
+}
