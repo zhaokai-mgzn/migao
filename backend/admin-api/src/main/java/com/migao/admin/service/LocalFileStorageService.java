@@ -2,7 +2,9 @@ package com.migao.admin.service;
 
 import com.migao.admin.dto.UploadedFileInfo;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.time.BusinessClock;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -12,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -26,6 +27,12 @@ public class LocalFileStorageService implements FileStorageService {
     /**
      * 本地存储根目录
      */
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
+
     private static final String UPLOAD_DIR = "uploads";
 
     /**
@@ -84,7 +91,7 @@ public class LocalFileStorageService implements FileStorageService {
                     .name(file.getOriginalFilename())
                     .size(file.getSize())
                     .type(file.getContentType())
-                    .createdAt(LocalDateTime.now())
+                    .createdAt(businessClock.now())
                     .build();
 
         } catch (IOException e) {

@@ -11,18 +11,18 @@ import com.migao.admin.mapper.AgentEmployeeMapper;
 import com.migao.admin.mapper.AgentMessageMapper;
 import com.migao.admin.mapper.AgentSessionMapper;
 import com.migao.admin.mapper.CustomerProfileMapper;
+import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,6 +34,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSession> {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final AgentSessionMapper agentSessionMapper;
     private final AgentMessageMapper agentMessageMapper;
@@ -563,7 +569,7 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         Long waitingCount = agentSessionMapper.selectCount(waitingWrapper);
 
         // 查询今日总会话数
-        OffsetDateTime todayStart = LocalDate.now().atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime todayStart = businessClock.startOfToday();
         LambdaQueryWrapper<AgentSession> todayWrapper = new LambdaQueryWrapper<>();
         todayWrapper.eq(AgentSession::getTenantId, tenantId)
                 .ge(AgentSession::getCreatedAt, todayStart);

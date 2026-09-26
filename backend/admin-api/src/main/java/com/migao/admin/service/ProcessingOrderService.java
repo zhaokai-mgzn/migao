@@ -21,8 +21,10 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,6 +97,12 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 @RequiredArgsConstructor
 public class ProcessingOrderService {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final ProcessingOrderMapper processingOrderMapper;
     private final OrderMapper orderMapper;
@@ -474,7 +482,7 @@ public class ProcessingOrderService {
                 : new LinkedHashSet<>(processingOrderMapper.selectActiveOrderIds(tenantId, ids));
 
         OffsetDateTime now = OffsetDateTime.now();
-        LocalDate today = LocalDate.now();
+        LocalDate today = businessClock.today();
         // 物料键 → 行；顺序 = 先出现的物料在前（确定性输出，便于看板与快照比对）
         Map<String, List<ProductionPoolViews.PoolLine>> linesByMaterial = new LinkedHashMap<>();
         Map<String, String[]> materialOf = new LinkedHashMap<>();
@@ -1007,7 +1015,7 @@ public class ProcessingOrderService {
                                    AutoBatchPolicy policy, String rule, List<String> reasons,
                                    List<String> dispatched, List<String> failedIds,
                                    List<String> failures) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = businessClock.today();
         List<String> dueOrderIds = new ArrayList<>();
         List<String> dueReasons = new ArrayList<>();
         for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByOrder.entrySet()) {
@@ -3460,7 +3468,7 @@ public class ProcessingOrderService {
     }
 
     private String generateOrderNo() {
-        String base = "JG-" + LocalDate.now().format(PO_DATE_FMT) + "-";
+        String base = "JG-" + businessClock.today().format(PO_DATE_FMT) + "-";
         // DB 唯一约束兜底；此处随机化降低同秒碰撞概率
         return base + String.format("%04d", PO_SEQ.incrementAndGet());
     }
@@ -3505,7 +3513,7 @@ public class ProcessingOrderService {
             case "issue":
                 // issue #3901：交期不允许早于今天（前端 date 控件之外的兜底，同时覆盖 agent processing_order_update 路径）
                 if (req.getExpectedDeliveryDate() != null
-                        && req.getExpectedDeliveryDate().isBefore(LocalDate.now())) {
+                        && req.getExpectedDeliveryDate().isBefore(businessClock.today())) {
                     throw BusinessException.validationError("交付日期不能早于今天");
                 }
                 upd.setIssuedAt(now);

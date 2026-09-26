@@ -21,6 +21,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.time.BusinessClock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -59,6 +60,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class OrderService extends ServiceImpl<OrderMapper, Order> {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -807,7 +814,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 格式: 17位纯数字 = yyyyMMdd(8) + 9位随机数，简洁唯一
      */
     private String generateOrderNo() {
-        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String datePart = businessClock.today().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         // 9 位后缀 = 5 位随机数 + 4 位原子序列。
         // 原实现取 nanoTime 尾 9 位：每秒回绕一次、跨实例易碰撞。
         // 改用随机 + 原子计数器，降低碰撞概率并启用原先闲置的 ORDER_SEQ。
@@ -1593,7 +1600,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (content.length() > 2000) {
             throw BusinessException.validationError("备注内容不能超过 2000 个字符");
         }
-        String timestamp = java.time.LocalDateTime.now()
+        String timestamp = businessClock.now()
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         String remarkEntry = "[" + timestamp + "] " + content;
         String existing = order.getRemark() != null ? order.getRemark() : "";
@@ -1657,7 +1664,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 生成资金流水号（防重启重复）：FIN-yyyyMMdd-XXXX，从 DB 查当天最大序号 +1
      */
     private String generateFinanceTransactionNo(Long tenantId) {
-        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String datePart = businessClock.today().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String prefix = "FIN-" + datePart + "-";
         int nextSeq = 1;
         try {
