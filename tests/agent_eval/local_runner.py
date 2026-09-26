@@ -571,6 +571,104 @@ _POSTCLEAN_CONFIG_ERR = "post_clean: 不支持的 type"
 _PRECONDITION_NOT_APPLIED = "pre_clean: 前置未应用"
 _PRECLEAN_BAD_MARKERS = (_PRECLEAN_CONFIG_ERR, _PRECONDITION_NOT_APPLIED)
 
+
+# ── 准备型/复位族「夹具动作未生效」的**显式族判据**（issue #3797，与 #3791 的清理型对称）──
+# 病灶（本表存在的理由）：折叠判据旧形态是**裸前缀**
+# （`str(m).startswith(_PRECLEAN_BAD_MARKERS)`），而两处准备型失败路径的消息是**散文**、
+# **不以稳定标记开头**：
+#   · `aftersales_ticket_prepare`：`未复位：库里没有工单 …` / `未复位工单 …（DB 不可达/失败: …）`
+#   · `user_memories_clear`：`清理长期记忆失败（HTTP 500）…`
+# ⇒ 首次尝试时判「没这回事」（不折 `score`/`failures`），而**重试边界**用
+#   `"未复位" in m or "失败" in m` 的子串判据却捞得到 ⇒ **同一件事、两条口径**，
+#   且首次尝试那一侧是**漏判**（`migao-acceptance`「空跑：绿了但没跑」同族：
+#   用例带着**假前置**跑完，即便绿了也**不可归因于 agent**）。
+# 修法（issue #3797 的改法②，issue 作者倾向的显式族）＝把判据从"裸前缀"扩成
+# **「类型 + 前缀」**：
+#   · 类型 ∈ 本表 ⇒ **只有该类型登记过的失败前缀**才算"夹具动作未生效"（显式、可枚举、
+#     按类型收敛 —— 不会因为别的类型偶然写了「失败」二字而被误折）；
+#   · 类型未登记 / 消息不带类型（旧通道、单测直接喂字符串）⇒ 退回稳定标记前缀
+#     （**不静默放宽**：未知类型的散文不得被当成"未应用"）。
+# 与 #3791 的 `_PRECLEAN_CLEANUP_TYPES` **对称**：#3791 管"目标不存在 = 前置已满足"
+# （良性 no-op，不进结论）；本表管"该在位而不在位 / 该清干净而没清干净"（fail-closed，进结论）。
+# ⚠️ 空元组 = **已逐条核对**「该类型没有独立散文失败前缀」（它的未应用走函数内产出的稳定标记
+# `_PRECONDITION_NOT_APPLIED` / `_clean_not_applied`）。**键集是注册表**：必须恰好覆盖
+# 「全部非清理型 `pre` 动作」——新增一个准备型/复位族动作而**不登记**这里 ⇒ 守卫判红
+# （`tests/unit_ci_workflows/test_eval_preclean_failure_family.py`），不允许默认落到任何一边。
+_PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
+    # 点名的种子工单不在位（栈缺 seed）/ DB 不可达 ⇒ 用例的生成前置**没被应用**。
+    # 与 `_reset_processing_order`（#3781 已正确标记）同族 —— 旧实现只回「未复位：…」
+    # 而**不折结论**（`_reset_aftersales_ticket` 的注释里记着这处有意差异，见 issue #3833）。
+    "aftersales_ticket_prepare": ("未复位：", "未复位工单"),
+    # 长期记忆没清干净（HTTP ≥300 / success=false）⇒ `post_session[user_memories]` 可能被
+    # **上一跑的残留**满足（本动作存在的唯一理由就是消除这种残留）⇒ 必须进结论。
+    # ⚠️ 原文旧措辞是「不计入断言，仅提示 post_session 可能受残留影响」——那是**旧口径**，
+    # 与本单判定冲突，措辞随修法一并改（见 `_run_clean_action` 的 `user_memories_clear` 分支）。
+    "user_memories_clear": ("清理长期记忆失败",),
+    # ── 以下为**已核对**「无独立散文失败前缀」的动作（未应用走稳定标记）──────────────
+    "employee_reactivate": (),      # #3781：`{_PRECONDITION_NOT_APPLIED}: 员工 … 查询 3 次未命中`
+    "processing_order_reset": (),   # #3833：`{_PRECONDITION_NOT_APPLIED}: 库里没有订单 …`
+    "product_status_restore": (),   # 复位族（#4075）：不在位/写失败/回读不符走 `_clean_not_applied`
+    "sku_price_restore": (),        # 同上
+    "product_price_restore": (),    # 同上（#5303）
+    "order_status_restore": (),     # 同上（#4992）
+    "customer_profile_restore": (),  # 同上（#4992）
+    "session_credential_restore": (),  # 同上（#5482）
+    # 幂等型：目标不存在 = **无缺口**（"有重复商品"是待清理物，不是用例依赖的前置）
+    # ⇒ 无「该在位而不在位」的语义，失败形态由动作自身（HTTP 非 2xx → 抛异常 → 通用
+    # `⚠️ pre_clean 失败` 文案）承载。
+    "product_dedupe": (),
+}
+# ⚠️ **残余（如实登记，不在本单射程）**：`_run_clean_specs` 的通用异常分支
+# （`⚠️ pre_clean 失败: {e}` = 动作实现抛异常）同样**不以稳定标记开头** ⇒ 首次尝试时
+# 不折结论（只在重试边界被子串判据捞到）。它与本单修的三条**同族**，但本单只收
+# issue #3797 登记的三条消息 —— 泛化它需要一次真跑校准（"夹具层偶发网络异常"会从
+# 一次重试变成一条 score=0），在无真跑证据前不动。判据见
+# `tests/unit_ci_workflows/test_eval_preclean_failure_family.py`。
+
+
+def _is_preclean_not_applied(entry) -> bool:
+    """「夹具动作未生效（前置未应用/未复位成功）」的**显式族判据**（`类型 + 前缀`）。
+
+    纯函数、单一真值：折叠侧（`check_preclean_not_applied`）与重试边界
+    （`_clean_msg_blocks_retry_equivalence`）都从它取值，避免"同一件事两条口径"漂移
+    （issue #3797 的病灶）。`entry` 可以是 `_CleanMsg`（带类型，走族判据），
+    也可以是旧通道的裸 `str`（只认稳定标记 —— 不静默放宽）。
+    """
+    msg = str(entry)
+    if msg.startswith(_PRECLEAN_BAD_MARKERS):
+        return True
+    prefixes = _PRECLEAN_FAILURE_PREFIXES.get(
+        str(getattr(entry, "clean_type", "") or ""))
+    return bool(prefixes) and msg.startswith(prefixes)
+
+
+class _CleanMsg(str):
+    """带**动作类型**的夹具层消息（issue #3797）。
+
+    为什么必须是 `str` 子类：消息会经用例结果的 `pre_clean` 字段**落盘**、被人读、
+    被既有判据用 `str(m).startswith(...)` 消费 —— 换成元组/对象会动落盘契约与所有读方；
+    子类让**文本逐字不变**，只多带一个 `clean_type` 事实（族判据的"类型"半边）。
+    """
+
+    __slots__ = ("clean_type",)
+
+    def __new__(cls, text, clean_type: str = ""):
+        self = super().__new__(cls, text)
+        self.clean_type = str(clean_type or "")
+        return self
+
+
+def _clean_msg_blocks_retry_equivalence(msg) -> bool:
+    """重试边界判据：该消息是否说明「第二次尝试的前置与首次**不等价**」。
+
+    口径**有意是折叠侧的并集（上界）**：字面含「未复位」/「失败」的**任何**夹具消息都算
+    —— 重试边界是"这次重试的结论能不能归因于 agent"的**保守**判据，宁可多标不可漏标。
+    ⇒ 不变式：**凡被折进结论的，必然也被本判据捞到**（`fold ⊆ retry`），
+    由 `test_eval_preclean_failure_family.py` 的红证钉住（方向反了就是 #3797 的漏判）。
+    """
+    s = str(msg)
+    return ("未复位" in s) or ("失败" in s) or _is_preclean_not_applied(msg)
+
 # ── `post_clean` 的坏标记（issue #4075）───────────────────────────────────────
 # 为什么复用 `PRECONDITION_NOT_RESTORED`（#3751/#3807 的既有标记）而不是新造一个：
 # 语义**完全相同** —— "共享状态没被复位 ⇒ 本用例与后续用例的结论不可信"，
@@ -1476,8 +1574,12 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
                                params={"agent_type": agent_type}, timeout=15)
             body = _safe_json(r, {}) or {}
             if r.status_code >= 300 or body.get("success") is False:
+                # ⚠️ 措辞（issue #3797）：**不得**再说"不计入断言" —— 该动作的唯一目的
+                # 就是消除上一跑的长期记忆残留，否则 `post_session[user_memories]` 会被
+                # 残留满足（假绿）。本消息经 `_PRECLEAN_FAILURE_PREFIXES` 登记 ⇒ 折进结论。
                 return (f"清理长期记忆失败（HTTP {r.status_code}）"
-                        f"—— 不计入断言，仅提示 post_session 可能受残留影响")
+                        f"—— 前置未生效：post_session 可能被上一跑的残留满足，"
+                        f"本次长期记忆结论**不可归因于 agent**")
             return f"已清理长期记忆（agent_type={agent_type}）"
     if _type == "aftersales_ticket_prepare":
         # 把**被用例点名的**工单复位回 seed 初始态（issue #3751 前置等价性）。
@@ -1585,14 +1687,19 @@ async def _run_clean_specs(token: str, specs, phase: str = "pre") -> list:
     bad_markers = _POSTCLEAN_BAD_MARKERS if phase == "post" else _PRECLEAN_BAD_MARKERS
     msgs: list = []
     for spec in (specs or []):
+        # 类型随消息一起带走（issue #3797）：族判据（`_is_preclean_not_applied`）要"类型 + 前缀"
+        # 两半 —— 只带前缀的旧形态是漏判的来源（散文失败消息没有稳定前缀）。
+        # `_CleanMsg` 是 `str` 子类 ⇒ 文本逐字不变、落盘契约不变。
+        _type = str((spec or {}).get("type") or "")
         try:
             _msg = await run(token, spec)
         except Exception as e:
             # 失败同样入结果（此前只有 print → 归因时看不见"夹具动作失败"）。
             # ⚠️ 文案固定为 `⚠️ <phase>_clean 失败: …`：`_reset_for_retry` 靠「失败」
-            # 子串判"重试前置不等价"。
+            # 子串判"重试前置不等价"。⚠️ 本条**仍不折进结论**（同族残余，见
+            # `_PRECLEAN_FAILURE_PREFIXES` 下方的残余登记）。
             print(f"     ⚠️ {phase}_clean 失败（非致命）: {e}")
-            msgs.append(f"⚠️ {phase}_clean 失败: {e}")
+            msgs.append(_CleanMsg(f"⚠️ {phase}_clean 失败: {e}", _type))
             continue
         if not _msg:
             continue
@@ -1600,7 +1707,7 @@ async def _run_clean_specs(token: str, specs, phase: str = "pre") -> list:
         # 前缀沿用既有语义：配置错误/未复位 = 预警（⚠️/⛔），其余（含良性 no-op）= 🧹
         _icon = ("⛔" if phase == "post" else "⚠️") if _bad else "🧹"
         print(f"     {_icon} {phase}_clean: {_msg}")
-        msgs.append(str(_msg))
+        msgs.append(_CleanMsg(str(_msg), _type))
     return msgs
 
 
@@ -3674,6 +3781,18 @@ _CASE_ATOM_RULES = (
     # 「只加不改」—— 旧版 forbidden_text 从不产出这两类消息，故对存量指纹零影响。
     (re.compile(r"^forbidden_text: (?:配置|round)"), "config_error(forbidden_text)"),
     (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
+    # 负向按轮卡片约束（issue #3789）：配置错误与"轮次越界"折叠同族；
+    # 命中（本轮真出现卡）保留轮次 —— 两次尝试若在不同轮抽卡，那是**不同的违反点**，
+    # 折叠成一个 token 会把"同一件事"洗成"两次不同原因"（→ 误判 unstable）。
+    (re.compile(r"^forbidden_interact: (?:配置|round)"), "config_error(forbidden_interact)"),
+    (re.compile(r"^forbidden_interact: R(\d+)"), "forbidden_interact(R{0})"),
+    # 入参**值级**断言（issue #3823 家族，本 PR 接线）：工具 + 字段 = 结构身份
+    # （值/轮次/缺失文案丢弃 —— 与 `required_arg` 同口径，但分属不同原子：
+    # "字段没传"与"传错值"是两种根因）。
+    (re.compile(r"^arg_values: 配置|^arg_values: 未调用"), "config_error(arg_values)"),
+    (re.compile(rf"^arg_values\[({_TOOL})\]: (?:缺/空 values|期望值不得|轨迹里)"),
+     "config_error(arg_values,{0})"),
+    (re.compile(rf"^arg_values\[({_TOOL})\.(.+?)\]\(R\d+\)"), "arg_value({0},{1})"),
     (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
     # 夹具/harness 形状不兼容（issue #3803）：**必须与 agent 行为失败分属不同原子**。
     # 旧形态下这条红会被折成 `no_success(order_create)`（看着像产品不会下单），
@@ -3701,6 +3820,12 @@ _CASE_ATOM_RULES = (
     # 里带 type，使两次尝试的"同一件事"折叠一致（值/号码/商品名不进 token）。
     (re.compile(r"^precondition\[([A-Za-z0-9_]+)\]"), "precondition_not_applied(declared:{0})"),
     # ③ 参数层：工具 + 键名 = 结构身份（值/轮次/缺失值文案丢弃）
+    # ⚠️ **深路径里的 `[]` 必须留在身份里**（issue #3789 的顺带修正）：旧规则
+    # `([^\]]+)` 在第一个 `]` 处截断 ⇒ `items[].processing_info.processingItems[].id` 与
+    # `…[].unit` **折成同一个原子**（`required_arg(order_create,items[)`）⇒ 两次尝试各缺
+    # 不同字段时会被判成"同一违反点确定性复现"。非 `[]` 路径的原子**逐字不变**（下面那条
+    # 精确规则对它们产出同样的 token；旧规则保留作无 `(R{n})` 后缀形态的兜底）。
+    (re.compile(rf"^required_args\[({_TOOL})\.(.+?)\]\(R\d+\)"), "required_arg({0},{1})"),
     (re.compile(rf"^required_args\[({_TOOL})\.([^\]]+)\]"), "required_arg({0},{1})"),
     (re.compile(rf"^forbidden_args\[({_TOOL})\.([^\]]+)\]"), "forbidden_arg({0},{1})"),
     (re.compile(rf"^must_fail: ({_TOOL})"), "must_fail_violated({0})"),
@@ -4984,6 +5109,69 @@ def check_forbidden_card_text(results: list, spec: list) -> list:
     return issues
 
 
+def check_forbidden_interact(results: list, spec: list) -> list:
+    """**负向的按轮卡片约束**：声明的轮次**不得**出现 `interact` 卡（issue #3789）。
+
+    为什么必须补（该用例的红/绿由"agent 当轮是否抽卡"决定，判别性验证**无法复现**）：
+    `OR-014` 的**红路径**要求 R2「加工项提问」是**纯文本**（无 `interact` 卡）⇒ R3 顾客用
+    文本回答「不需要其他加工项」⇒ 该轮**不是答卡轮** ⇒ L1 域逃逸清锁（#3784 的窗口）⇒
+    落到 `product` skill（无 `order_create`）⇒ 判红。而 agent 只要在 R2 **发了 choice 卡**，
+    harness 的 `auto_respond` 就会**答那张卡** ⇒ 答卡轮豁免（#3718）⇒ 留在订单流程 ⇒ 判绿。
+    ⇒ 「修复 #3785 的行为侧判别性验证」**永远可能**走那条安全路径：一次绿不能证明修法有效，
+    一次红也不能稳定复现（issue #3789 原文）。
+
+    既有家族都不是这个语义，不能互相顶替：
+      · `forbidden_card_text` 管**卡里的字**（卡存在才判）；
+      · `forbidden_tools` 管**全程**不得调用某工具（`interact` 是通用发卡工具，全程禁它 = 禁掉
+        整条用例的卡交互，过宽）；
+      · `forbidden_text` 管**回复文本**（纯文本提问恰恰是**期望形态**）。
+    本断言管「**本轮不得出现卡**」—— 它是**用例形状的前置**（把红色形态钉死），
+    不是 agent 能力断言；因此命中即判红，与 `forbidden_*` 家族**同权**
+    （进 `case_issues` → `score=0` + 进 summary 的 `failures`）。
+
+    条目形态（**按轮**，`round` 必填 —— 缺它就是"全程禁卡"，那是另一个语义，本断言不猜）：
+      - `{round: 2}`                 → 第 2 轮不得出现**任何** `interact` 卡
+      - `{round: 2, type: choice}`   → 第 2 轮不得出现 `choice` 卡（其余卡型不管）
+    失败关闭（与 `forbidden_text` 的轮次作用域**同口径**）：`round` 缺失/非法、超出实际
+    轮数（用例提前结束 ⇒ 该轮不存在 ⇒ 约束永不成立）一律判违规，**不静默放过**
+    ——「不会红的断言 = 空断言」。
+    """
+    issues: list = []
+    rounds = list(results or [])
+    for item in spec or []:
+        s = {"round": item} if isinstance(item, (int, str)) else (
+            item if isinstance(item, dict) else {})
+        if not isinstance(s, dict) or not s:
+            issues.append(f"forbidden_interact: 配置非字典/空配置（会静默不检查）: {item!r}")
+            continue
+        rnd = s.get("round")
+        try:
+            idx = int(rnd) - 1
+        except (TypeError, ValueError):
+            issues.append(
+                f"forbidden_interact: 配置缺/非法 round（{rnd!r}）—— 该断言按轮生效，"
+                f"缺 round 会退化成「永不成立」（会静默不检查）: {s!r}")
+            continue
+        if idx < 0 or idx >= len(rounds):
+            issues.append(
+                f"forbidden_interact: round={rnd} 超出实际轮数（{len(rounds)}）"
+                f"—— 断言永不成立，请核对用例轮数")
+            continue
+        want_type = str(s.get("type") or s.get("component") or "")
+        for iv in ((rounds[idx] or {}).get("interactive") or []):
+            iv = iv if isinstance(iv, dict) else {}
+            got = str(iv.get("type") or iv.get("component") or "")
+            if want_type and got != want_type:
+                continue
+            issues.append(
+                f"forbidden_interact: R{rnd} 出现了 interact 卡"
+                f"（type={got or '?'}「{iv.get('title') or ''}」）—— 本轮必须在**纯文本**下"
+                f"完成（该用例的判别性红路径依赖「agent 纯文本提问 ⇒ 顾客文本回答」"
+                f"这一形状；发卡会让 harness 代答那张卡 ⇒ 红路径被绕过，issue #3789）")
+            break
+    return issues
+
+
 def _norm_text(v) -> str:
     """比对前归一化空白（地址里空格差异不该判红）。"""
     return re.sub(r"\s+", "", str(v or ""))
@@ -6146,11 +6334,17 @@ def check_preclean_not_applied(msgs: list) -> list:
     且该用例的红/绿会被读成"agent 能力缺陷"。形态对齐既有
     `db_verify: 不支持的 fetch 配置` → `config_error(db_verify)`。
 
-    判据用**稳定前缀**（`_PRECLEAN_BAD_MARKERS`）而不是宽松的"含『跳过』"：
-    后者会把正常的幂等消息（如「客户无「VIP2活跃」标签，无需清理」）误判成配置错误。
+    判据是**显式族判据**（`_is_preclean_not_applied`，issue #3797 的改法②）——
+    **「类型 + 前缀」**，不是裸前缀、也不是宽松的"含『失败』/『跳过』"：
+      · 稳定标记前缀（`_PRECLEAN_BAD_MARKERS`，与类型无关）恒认；
+      · 否则要求"消息带类型 ∧ 该类型在 `_PRECLEAN_FAILURE_PREFIXES` 里登记了该前缀"
+        —— 后者收的是**散文形态**的准备型失败（工单未复位 / 长期记忆没清干净），
+        旧裸前缀判据对它们**漏判**（首次尝试不进结论），而重试边界却捞得到
+        （同一件事两条口径，issue #3797）。
+    宽松版（"含『跳过』"）**反向**也不可用：它会把正常幂等消息
+    （如「客户无「VIP2活跃」标签，无需清理」）误判成配置错误。
     """
-    return [str(m) for m in (msgs or [])
-            if str(m).startswith(_PRECLEAN_BAD_MARKERS)]
+    return [str(m) for m in (msgs or []) if _is_preclean_not_applied(m)]
 
 
 def check_postclean_not_applied(msgs: list) -> list:
@@ -7443,7 +7637,14 @@ def _compact_write_args(args: dict) -> dict:
 #: 通用入参压缩的边界（轨迹是日志与产物，不是全量存档）
 _ARG_MAX_VALUE = 40      # 单个标量（自由文本）最长字符数
 _ARG_MAX_ITEMS = 6       # 单个容器（dict/list）最多保留的条目数
-_ARG_MAX_DEPTH = 3       # 容器嵌套深度上限（够到 `pageMeta.params.<k>`）
+# 容器嵌套深度上限（issue #3789）：旧值 3 **够不到** `order_create` 的加工项明细
+# （`items[].processing_info.processingItems[].quantity` 是**第 5 层**容器：
+# args→items(3)→item(2)→processing_info(1)→processingItems(0)）⇒ 旧值下这一层被压成
+# `"<list N>"`、条目字段**一个都读不到** ⇒ 「加工项数量 = 面料米数」这条**字段级**结论在
+# 轨迹/产物里没有证据，只能退回自然语言 `data_checks`（issue #3789 的验收判据 2）。
+# 5 层 = 恰好够到 `processingItems[]` 的**条目**（条目 dict 落在深度 1 ⇒ 其标量值原样保留）。
+# 代价如实登记：轨迹 `call_args` 与 artifact 相应变大（有界仍靠 `_ARG_MAX_ITEMS` / `_ARG_MAX_VALUE`）。
+_ARG_MAX_DEPTH = 5
 _ARG_LOG_MAX_CALLS = 6   # 轨迹行 `callargs=` 段每次最多渲染几条调用（超出只报数，不静默丢）
 _ARG_TRUNCATED = "…"     # 截断标记（「到此为止」与「本来就这么长」必须可分）
 
@@ -8079,11 +8280,21 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # ⚠️ 不重置 case_issues：它已承载**跑轮次前**的前提校验结果（多身份，issue #3391）。
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    # 负向**按轮**卡片约束（issue #3789）：把「本轮必须走纯文本」钉成机器判据 ——
+    # 与 `forbidden_*` 家族同权（进 case_issues ⇒ score=0 + 进 summary 的 failures）。
+    case_issues += check_forbidden_interact(
+        results, getattr(case, "forbidden_interact", []) or [])
     # 全程禁用工具（issue #3544 收口批）：`X 未被调用` 写进 data_checks 是「本轮没调用」+
     # 计分「任一轮满足即过」→ 多轮恒真；本断言把「不得尝试」变成跨轮机器判定。
     case_issues += check_forbidden_tools(results, getattr(case, "forbidden_tools", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
+    # 入参**值级**断言（issue #3823 的家族，声明面在本 PR 前**未接线** —— 本 PR 接线）：
+    # 证据面 = **落盘**的 `round_trace[*].call_args`（与 `check_arg_values` 的取证纪律同源；
+    # 内存里的 `results[*].tool_calls[*].args` **不**是本断言的证据面）。
+    # 与 `required_args` 的分工必须写死：#3823 的病灶就是拿"存在性"顶替"值相等"。
+    case_issues += check_arg_values(build_round_trace(results),
+                                    getattr(case, "arg_values", []) or [])
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
     # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
     # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
@@ -8485,8 +8696,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # #3781 扩展：语义从"复位**失败**"扩到"前置**压根没被应用**"
                 # —— 配置错误（type 未知/未实现）与目标状态不存在（员工/标签查不到）时，
                 # 第二次尝试的前置同样 ≠ 首次 ⇒ 结论同样不可归因于 agent。
-                _ok = not any(("未复位" in str(m)) or ("失败" in str(m))
-                              or str(m).startswith(_PRECLEAN_BAD_MARKERS)
+                _ok = not any(_clean_msg_blocks_retry_equivalence(m)
                               for m in (_msgs or []))
             except Exception as e:      # 复位失败不中断评测，但必须可见
                 _msgs = [f"⚠️ 重试前置复位异常: {type(e).__name__}: {e}"]
@@ -9891,6 +10101,15 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             forbidden_tools=c.get("forbidden_tools") or [],
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
+            # 负向按轮卡片约束（issue #3789）：**必须在这里映射** —— CI 走的是本 YAML 装载
+            # 路径（`--cases .github/cases`），不是生成物 `eval_cases.py`；漏映射 = 用例声明了
+            # 「本轮不得抽卡」却在 CI 上**静默不检查**（红/绿又回到"由 agent 当轮是否抽卡决定"
+            # 的原病），与 debug_user / output_verify / namespaces / auto_fill 同款假绿。
+            # 由 `backend/ai-agent-service/tests/test_acceptance_case_checks.py` 的 PROBES 逐字段守住。
+            forbidden_interact=c.get("forbidden_interact") or [],
+            # 入参**值级**断言（issue #3823 的家族，声明面在本 PR 前**未接线**）：同上，
+            # 漏映射 = 值级断言在 CI 上静默不跑（存在性断言顶替值级 = #3823 的病灶本身）。
+            arg_values=c.get("arg_values") or [],
             must_succeed=c.get("must_succeed") or [],
             must_fail=c.get("must_fail") or [],
             amount_verify=c.get("amount_verify") or [],

@@ -159,7 +159,7 @@ python3 scripts/xiaobu_coverage.py --md && python3 scripts/mibao_coverage.py --m
 
 - `expectations[].args.action`（dict 形态；**字符串形态只认单分支** `customer_manage(action=list)`
   —— `A or B` 下 action 归属哪个分支无法从文本判定，宁可不收）；
-- `must_succeed[] / output_verify[] / required_args[] / must_fail[]` 的 `{tool, action}`；
+- `must_succeed[] / output_verify[] / required_args[] / must_fail[] / arg_values[]` 的 `{tool, action}`；
 - `db_verify[].{source｜tool, action}`（`source` 指写工具，同 runner 口径）；
 - `user_inputs[].repeat_until.action`（#3667 的 action 级停条件，停条件悬空 = 用例空转到轮数耗尽）；
 - **工具没有 `action` 维度**时声明 action 同样悬空（`no_action_param`：如 OR-026 一度想写的
@@ -689,6 +689,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 | 顾客可见产物 | 已有断言（可执行） | 状态 |
 |---|---|---|
 | **卡片是否出现** | `expectations: interact`（工具调用或 SSE interactive 事件任一命中，见 §6.2 三发射路径） | ✅ |
+| **某轮是否"不该"出现卡片** | `forbidden_interact` → `check_forbidden_interact`（负向**按轮**约束：整数轮次 + 可选卡型；命中即判红，进 `case_issues`）。用途不是"agent 不许发卡"，而是把某些用例**判别性红路径的形状**钉死（`OR-014`：R2 必须纯文本提问，否则 harness 代答卡片 ⇒ 走卡型豁免的安全路径 ⇒ 红/绿由"当轮是否抽卡"决定，issue #3789） | ✅（#3789 新增） |
 | **卡片数量/同轮重复** | `check_duplicate_cards`（同轮同组件 ≥2 张判红）+ 轨迹 `cards=X,X(⚠️重复)` | ✅（#3445 新增） |
 | **卡片内容不编造** | `check_forbidden_card_text`（卡片文案禁词）；`check_form_prefill`（form 预填值必须来自真实来源） | ✅ |
 | **卡片提问不重复问** | 加工项「已答不再问」（`_user_already_answered_processing`）+ `check_confirm_loop`（同事实 confirm ≥3 次）+ **`check_repeated_card_ask`**（同卡 + 顾客已作答 → 判红，confirm/choice/form 三类卡都覆盖） | ✅（矩阵补行） |

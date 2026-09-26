@@ -75,6 +75,8 @@ RENDERED_AS_LINE: dict[str, str] = {
     "order_before": "时序: ",
     "forbidden_text": "禁词",
     "forbidden_card_text": "禁卡文: ",
+    "forbidden_interact": "禁卡轮: ",
+    "arg_values": "入参值: ",
     "forbidden_tools": "全程禁用: ",
     "want_text": "必须: ",
     "required_args": "必填: ",

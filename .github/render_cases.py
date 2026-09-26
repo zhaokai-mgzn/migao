@@ -266,6 +266,8 @@ def to_eval_py(cases):
            '    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）',
            '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
            '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
+           '    forbidden_interact: List = field(default_factory=list) # 负向**按轮**卡片约束（该轮不得出现 interact 卡 = 用例判别性红路径的形状前提，issue #3789）',
+           '    arg_values: List[dict] = field(default_factory=list) # 入参**值级**断言（值相等；证据 = 落盘的 round_trace[*].call_args，issue #3823）',
            '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
            '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
             '    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）',
@@ -304,6 +306,13 @@ def to_eval_py(cases):
             out.append(f"    debug_permissions={_py_repr(c.get('debug_permissions'))},")
         out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
         out.append(f"    forbidden_card_text={_py_repr(c.get('forbidden_card_text') or [])},")
+        # 负向按轮卡片约束 + 入参值级断言（issue #3789 / #3823）：与 `forbidden_tools` /
+        # `required_args` 同口径 —— 只在**声明时**落字面量（未声明走 dataclass 默认，
+        # 生成物 diff 上"缺省不改变既有行为"可读）。
+        if c.get("forbidden_interact"):
+            out.append(f"    forbidden_interact={c.get('forbidden_interact')!r},")
+        if c.get("arg_values"):
+            out.append(f"    arg_values={c.get('arg_values')!r},")
         if c.get("order_before"):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):
@@ -515,6 +524,18 @@ def to_md(cases):
                 # 卡面禁用文案（issue #3968 ① 同类：声明了的断言在账本上不可见 ⇒ 读者
                 # 不知道这条还管着"卡里不许出现哪些字"）。
                 lines.append(f"禁卡文: {_one_line(fct)}")
+            for fi in (c.get("forbidden_interact") or []):
+                # 负向按轮卡片约束（issue #3789）：读者必须看得见「哪一轮不许抽卡」——
+                # 它是这条用例**判别性红路径的形状前提**（看不见就无从解释它为什么必须纯文本）。
+                _fi_round = fi.get("round") if isinstance(fi, dict) else fi
+                _fi_type = (fi or {}).get("type") if isinstance(fi, dict) else ""
+                lines.append(f"禁卡轮: R{_fi_round}" + (f"({_one_line(_fi_type)})" if _fi_type else ""))
+            for av in (c.get("arg_values") or []):
+                # 入参值级断言（issue #3823 / 本 PR 接线）：账本上必须能读出"哪个参数必须等于什么"，
+                # 否则它与 `required_args`（存在性）在读者眼里同形 —— 而两者的证据强度不同。
+                _av_vals = "、".join(f"{k}={_one_line(v)}" for k, v in (av.get("values") or {}).items())
+                _av_act = f"({av.get('action')})" if av.get("action") else ""
+                lines.append(f"入参值: {av.get('tool')}{_av_act} {_av_vals}")
             for ftl in (c.get("forbidden_tools") or []):
                 _ftl_tool = ftl if isinstance(ftl, str) else (ftl or {}).get("tool")
                 _ftl_act = "" if isinstance(ftl, str) else ((ftl or {}).get("action") or "")
