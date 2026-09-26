@@ -47,10 +47,6 @@ export default defineConfig(async (merge) => {
       },
     },
     h5: {
-      // 红证注入（issue #5650）：h5 构建期的确定性失败 —— 撤回后必须复绿
-      webpackChain() {
-        throw new Error('红证注入：h5 构建必红（issue #5650）')
-      },
       publicPath: '/',
       staticDirectory: 'static',
       postcss: {
