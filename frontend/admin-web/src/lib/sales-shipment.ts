@@ -39,7 +39,14 @@
  * 3. 实发明细挂不到任何订单行 ⇒ 计入 {@link SalesQtyResolution.unmatchedShippedLines}，
  *    由纸面**显式提示行数**，**不静默丢掉**（丢掉 = 纸面与账目对不上的一种形态）。
  */
-import type { OrderItem } from '@/types'
+/**
+ * 订单行的**最小面**：本模块只读 `id`（与实发明细逐行对齐的键）与 `quantity`（下单数量）。
+ * 不绑死 `OrderItem` —— 调用方（页面 / 用例）只提供这两个字段就够，也让「缺值」能被显式喂进来。
+ */
+export interface SalesQtyOrderLine {
+  id?: string | null
+  quantity?: number | null
+}
 
 /** 发货读面上的**一行实发**（后端 `OrderShipmentService.readShipment` 的逐字形状，snake_case） */
 export interface OrderShipmentItemRead {
@@ -93,7 +100,9 @@ export const SALES_QTY_BASIS: Record<SalesQtyState, string> = {
   shipped: '数量列 = 实发数量（已发货）',
   partial: '数量列 = 实发数量（部分发货；未发行的数量列标「未发」）',
   'not-shipped': '未发货：数量列 = 订单数量（尚无可核的实发）',
-  unavailable: '发货明细未取到：数量列 = 订单数量（**不是**实发口径）',
+  // ⚠️ 纸面文案**不带 markdown 强调**（`**`）—— 它直接印在纸上，不经渲染器
+  // （守卫 `tests/unit/lib/copy-no-markdown-emphasis.test.ts`：带标记的文案必须登记接渲染器）
+  unavailable: '发货明细未取到：数量列 = 订单数量（不是实发口径）',
 }
 
 /** 未发行在数量列上的**显式**标记（不是 0、不是空白） */
@@ -167,7 +176,7 @@ function shippedByOrderItem(read: OrderShipmentRead | null | undefined, orderIte
  * @param read  admin 发货读面（`null`/`undefined` = 没取到 ⇒ `unavailable`，**不是**「未发货」）
  */
 export function resolveSalesQuantity(
-  items: ReadonlyArray<Pick<OrderItem, 'id' | 'quantity'>> | null | undefined,
+  items: ReadonlyArray<SalesQtyOrderLine> | null | undefined,
   read: OrderShipmentRead | null | undefined,
 ): SalesQtyResolution {
   const rows = items ?? []

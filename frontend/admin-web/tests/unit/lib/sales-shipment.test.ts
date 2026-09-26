@@ -105,7 +105,8 @@ describe('resolveSalesQuantity（销售单数量口径 · issue #5651）', () =>
   })
 
   it('② 缺值不填 0：订单行数量缺失 ⇒ value = null（纸面显式占位），不是 0', () => {
-    const r = resolveSalesQuantity([{ id: 'item-1', quantity: undefined }], read([]))
+    const rowsWithoutQuantity: { id: string; quantity?: number }[] = [{ id: 'item-1' }]
+    const r = resolveSalesQuantity(rowsWithoutQuantity, read([]))
     expect(r.cells[0].value).toBeNull()
     expect(r.cells[0].value).not.toBe(0)
   })

@@ -94,23 +94,28 @@
   若现场口径实际是「商户订货热线」，则该栏应改读企业设置（而 `SystemSettings` 今天**无电话字段**
   ⇒ 会变成一个**新缺口**）。**不猜**：现场确认后再改取值，并同步本表。
 
-## 6. 与发货链的关系（**未完成项**）
+## 6. 与发货链的关系（**已接线**，2026-09-27 收口）
 
 用户 2026-09-26 裁定销售单要「挂在发货链上」= 随货给客户的那张，数量与**实发**同源。
 
-- **前置依赖**：`order_shipment_items`（issue #5648 / PR #5664 拥有）——**已合入 main**
-  （`backend/admin-api/src/main/java/com/migao/admin/entity/OrderShipmentItem.java`）。
-  它是「这一单实际发了多少」的**唯一真值载体**，且该文件**owner 声明**要求 #5651 **只消费**
-  （读 `OrderShipmentService.readShipment`），**不得另建第二份投影**。
-- 🔴 **仍然卡住的点（实测，2026-09-26）**：该真值今天**只有工人读面** ——
-  `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShipmentController.java`
-  的 `GET /api/worker/shipment/orders/{orderId}`（工人 session 准入）。
-  **admin / 桌面端没有读面** ⇒ 跑在 admin-web 的销售单**拿不到实发数量**。
-- **本单做法**：销售单数量取 `order.items[].quantity` —— 与报价单 / 发货单**同一份**投影
-  （不是第二套口径）；⛔ **不**自造发货明细表、**不**照工人读面猜 DTO 形状（那是编契约）。
-- **接线（后续单）**：新增 **admin 端读面**（后端：controller + DTO + 权限码 + 租户隔离 + 单测），
-  取数走 owner 指定的 `OrderShipmentService.readShipment`；前端把实发数量传给 `SalesDoc` 即可
-  （列清单只有一份，不用改渲染）。「谁生成 / 谁打印 / 发货前还是发货后」的边界与 #5648 一并定死。
+- **真值载体**：`order_shipment_items`（issue #5648 / PR #5664 拥有）——「这一单实际发了多少」的
+  **唯一**真值载体；消费入口 = `OrderShipmentService.readShipment`，**不得另建第二份投影**
+  （类级守卫：`tests/unit_ci_workflows/test_shipment_read_surface_guard.py` 的 C4 ——
+  视图键 `"shipped_quantity"` 在 Java 主源里恰好命中一个文件）。
+- **两个读面（本单补齐第二个）**：
+  | 面 | 端点 | 准入 |
+  |---|---|---|
+  | 工人 | `GET /api/worker/shipment/orders/{orderId}` | 工人 session（`X-Worker-Session-Id`），零商家权限码 |
+  | 管理 | `GET /api/admin/orders/{id}/shipments` | 商家 session，权限码 `order:list`（与同页详情读面同码） |
+  两面**共用同一份** `readShipment` ⇒ 车间记的实发与桌面纸面的实发**逐字同源**；跨租户统一 404
+  （与「订单不存在」逐字同形，不是 403）。
+- **前端消费**：`SalesDoc` 的数量列由 `frontend/admin-web/src/lib/sales-shipment.ts` 的
+  `resolveSalesQuantity` 单点判定，**四态各自可判**（已发货 = 实发 / 部分发货 = 已发行实发 + 未发行
+  标「未发」/ 未发货 = 订单数量**并标明基准** / 读面没取到 = 显式标注，**不冒充「未发货」**）；
+  ⛔ **永不印 0**（`0` = 「实发为零」，与「没有这个数」是两件事）；挂不到订单行的实发行**显式提示行数**。
+- **仍未做的**（照实登记，不属本单）：`order_shipments` 的「谁生成 / 谁打印 / 发货前还是发货后」的
+  **产品口径**由 #5648 侧承载（本单只补读面 + 纸面消费）；「补发第二张发货单时纸面怎么呈现」当前口径 =
+  **实发合计**（`resolveSalesQuantity` 跨全部发货单累加），如现场要求逐单分列，需另立裁定。
 
 ## 7. 新增一份可打印单据的 SOP
 

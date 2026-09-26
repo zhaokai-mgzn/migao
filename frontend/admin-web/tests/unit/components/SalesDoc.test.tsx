@@ -364,7 +364,9 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
         paymentQrcodes={{}}
       />
     )
-    const zeroFilled = String(null ?? 0) // 缺值填 0 = 把「没有这个数」画成「实发为零」
+    // 缺值填 0 = 把「没有这个数」画成「实发为零」
+    const asRendered = (value: number | null | undefined) => String(value ?? 0)
+    const zeroFilled = asRendered(null)
     expect(zeroFilled).toBe('0')
     expect(text('sales-qty-1')).not.toBe(zeroFilled)
     expect(text('sales-qty-1')).not.toBe('')
