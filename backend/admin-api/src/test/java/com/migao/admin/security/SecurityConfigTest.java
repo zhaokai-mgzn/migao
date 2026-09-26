@@ -418,6 +418,14 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.CraftCalcConfigMapper craftCalcConfigMapper;
 
+    // 企业参数变更留痕（issue #5131 P6，V131）。**同族坑第 6 次**：新增 Mapper（此处 =
+    // TenantParamAuditMapper，经 TenantParamAuditService ← CraftCalcConfigService ← CraftCalcConfigController
+    // 被拉进上下文）必须在此 `@MockBean` 顶替 —— 漏了不会在「新增 mapper 的那个测试」里红，
+    // 而是在**本类**全 error（`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`），归因错位。
+    // 本次实测：漏 mock 时本类 43 条全 error（守卫 tests/unit_ci_workflows/test_security_config_mapper_mocks.py 同时判红）。
+    @MockBean
+    private com.migao.admin.mapper.TenantParamAuditMapper tenantParamAuditMapper;
+
     // 未定价实例补价动作账（issue #4709 C，V94）。**同族坑第 5 次**：新增 Mapper 必须在此
     // `@MockBean` 顶替 —— 它是 ProductionInstanceRepricingService（→ ProductionController 的
     // 字段注入依赖）的构造参数，未 mock ⇒ 上下文起不来 ⇒ 本类 26 条安全用例连坐全 error

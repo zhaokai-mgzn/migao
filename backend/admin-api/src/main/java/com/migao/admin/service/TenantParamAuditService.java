@@ -142,7 +142,7 @@ public class TenantParamAuditService {
         for (Map.Entry<String, Object> entry : after.entrySet()) {
             Object oldValue = before == null ? null : before.get(entry.getKey());
             Object newValue = entry.getValue();
-            if (sameValue(oldValue, newValue)) {
+            if (isUnchanged(oldValue, newValue)) {
                 continue;
             }
             rows.add(TenantParamAudit.builder()
@@ -162,16 +162,25 @@ public class TenantParamAuditService {
     }
 
     /**
-     * 两值是否**同一个值**（判据要偏「记下来」这一侧）。
+     * 两值是否**没变**（判据要偏「记下来」这一侧）。
      *
      * <p>数值按<b>数值</b>比（{@code 0.30} 与 {@code 0.3} 是同一个值 —— 改前值来自 {@code NUMERIC} 列
      * 的 {@link BigDecimal}，改后值来自校验后的 {@link BigDecimal}）；其余按 {@code equals}。</p>
      *
-     * <p>⚠️ 已知偏向（**有意的**）：嵌套结构里若两侧数值的**表示类型**不同（如 {@code Integer 2} 与
+     * <p>⚠️ <b>命名是判据的一部分</b>：本方法刻意<b>不</b>与那个<b>价格核对</b>比较器同名 ——
+     * 既有守卫 {@code AgentWriteValuesTest#comparatorHasASingleDefinition} 要求 main 源码里
+     * <b>价格核对</b>的比较器只能有<b>一处定义</b>（方法名见 {@code AgentWriteValues}；返回 {@code boolean}、
+     * 三参 {@code (field, given, current)}）。本方法比的是<b>配置差异</b>（两个语义、不得共享实现），
+     * 同名会被那条既有守卫判红（本次实测踩到；处置 = 改名，<b>不是</b>放宽守卫）。</p>
+     *
+     * <p>⚠️ 连<b>注释里</b>写那个方法名 + 参数括号都会再次触发该守卫（它只剥 {@code //} 行注释、
+     * 不剥块注释；实测踩过一次）⇒ 本节<b>刻意</b>不写出完整签名 —— 「引用即实例」。</p>
+     *
+     * <p>⚠️ 已知偏向（<b>有意的</b>）：嵌套结构里若两侧数值的<b>表示类型</b>不同（如 {@code Integer 2} 与
      * {@code Double 2.0}）会被判成「变了」⇒ 多写一行「2 → 2.0」。这是<b>安全的那一侧</b>：
      * 宁可多留一行，不可漏掉一次真变更。</p>
      */
-    private static boolean sameValue(Object a, Object b) {
+    private static boolean isUnchanged(Object a, Object b) {
         if (a == null || b == null) {
             return a == b;
         }
