@@ -53,7 +53,6 @@ jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
   getOrderPiecework: jest.fn(),
-  reportOperation: jest.fn(),
   shipOrder: jest.fn(),
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
