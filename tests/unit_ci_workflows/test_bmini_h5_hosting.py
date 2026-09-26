@@ -153,15 +153,22 @@ def _unsanctioned_destructive_lines(text: str) -> list:
 
     `docker rm -f <临时容器>` 属**容器**清理（不碰文件系统），且只针对本脚本自己
     `docker create` 出来的容器 ⇒ 单独放行（判据仍要求它出现的行里有 `$cid` 变量名）。
+
+    ⚠️ 注释处理口径（`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的
+    RULE_HASH 同族）：**只跳过整行注释**，**绝不**按 `#` 截断行 —— 朴素截断会让字符串里的
+    `#` 吃掉行尾（判据面因此**假绿**：`echo "#" ; rm -rf /` 这种行会被读成安全的）。
+    本函数不做任何截断 ⇒ 方向只会更严（字符串里的 `#` 不可能藏住破坏性语句）。
     """
     hits = []
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0]
-        if not DESTRUCTIVE_RE.search(line):
+        stripped = raw.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue  # 整行注释：文档里的示例命令不算「脚本会执行的动作」
+        if not DESTRUCTIVE_RE.search(raw):
             continue
-        if re.search(r"\bdocker\s+rm\b", line) and "$cid" in line:
+        if re.search(r"\bdocker\s+rm\b", raw) and "$cid" in raw:
             continue
-        if any(tok in line for tok in ("$TARGET", "$STAGE", "$WORK", "$work", "$TMPDIR", "$out_file")):
+        if any(tok in raw for tok in ("$TARGET", "$STAGE", "$WORK", "$work", "$TMPDIR", "$out_file")):
             continue
         hits.append(raw.strip())
     return hits
