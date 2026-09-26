@@ -58,7 +58,48 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 口径 = 本仓既有「**job 内 diff 门控**」范式（`docs/wiki/CI-CD.md`「变更门控」；
+      # 同 `ai-agent-tests` / `mini-app` / `bmini-app` / 本文件 `admin-web-test`）：
+      # **job 保持运行**（required check 永不悬空），只让实际执行的 step 跳过。
+      # ⛔ 不许改成 workflow 级 `paths:` —— 那会让不碰该路径的 PR **永远拿不到这条
+      # required check**（GitHub 报 "Expected — waiting for status to be reported"，
+      # 而**没有任何东西会变红**）。常驻判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py。
+      - name: Detect admin-api changes
+        id: detect_api
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，全量执行 admin-api 单测"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
+          # ① `backend/admin-api/**` 全覆盖：单测在 `backend/admin-api` 里跑（`./mvnw test`），
+          #    且 `src/test/**` 里按仓根拼出的仓内路径（`Path.of("backend/…")` 一类）经复算
+          #    **全部**落在 `backend/admin-api/` 下 —— 复算：
+          #      grep -rhoE '"(backend|frontend|scripts|tests|docs|\.github)/[^"]*"' \
+          #        backend/admin-api/src/test --include=*.java | sort -u
+          #    该模块**没有**仓内 Maven 父/兄弟模块（`backend/admin-api/pom.xml` 的 parent 是
+          #    `spring-boot-starter-parent`，仓根无 `pom.xml` / `.mvn`）⇒ 不存在「改了别的模块
+          #    而本模块单测该跑」的形态。
+          # ② `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义：改这条腿的 PR 必须能
+          #    验证它自己（否则「把 mvn 命令改坏」这类改动会静默跳过本腿 ⇒ 没跑长得像通过）。
+          # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
+          #   tests/unit_ci_workflows/declaration_gate_registry.json
+          HITS=$(echo "$CHANGED" | grep -E '^(backend/admin-api/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 admin-api 相关变更，执行单测"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 admin-api 相关变更 —— 单测**未跑**（「没跑」不是「通过」）"
+          fi
+
       - name: Set up JDK 21
+        if: steps.detect_api.outputs.run_tests == 'true'
         uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -78,6 +119,7 @@ jobs:
       #   `MIGAO_REQUIRE_REALDB=1`，`PgCluster.startOrAbort()` 据此把「缺 PG」判成 **FAIL**
       #   而不是 skip。两道锁的防回退守卫 = tests/unit_ci_workflows/test_realdb_failclosed.py。
       - name: Assert PostgreSQL binaries exist (fail-closed 前置，issue #5192)
+        if: steps.detect_api.outputs.run_tests == 'true'
         run: |
           # 判据源与 `PgCluster.BIN_DIRS` 同源：PATH + Debian 的 /usr/lib/postgresql/{14,15,16}/bin
           initdb="$(command -v initdb || true)"
@@ -99,6 +141,7 @@ jobs:
           echo "✅ PG 二进制存在 —— 真库判据能真跑"
 
       - name: Run unit tests
+        if: steps.detect_api.outputs.run_tests == 'true'
         working-directory: backend/admin-api
         env:
           # 缺 PG ⇒ `PgCluster.startOrAbort()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
@@ -198,7 +241,46 @@ jobs:
           # 路径门控（下面 Detect admin-web changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
 
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 本步原先**只**门控 `next build`（#4412），其余步骤（`npm ci` / `tsc` / `eslint` /
+      # `vitest`）在**每个** PR 上都跑 —— 实测该 job 在纯文档 / 其他模块 PR 上仍耗
+      # **251.5s 中位**（n=8，复算见 tests/unit_ci_workflows/ci_cost_ledger.json）。
+      # 现改成门控**整条腿**：口径与 `mini-app` / `bmini-app` / `ai-agent-tests` 逐字同款
+      # （`docs/wiki/CI-CD.md`「变更门控」）。
+      # ⛔ 不许改成 workflow 级 `paths:`（required check 会卡 "Waiting" 永不报告，且**不会变红**）。
+      # 常驻判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py。
+      # 另：`next build` 的防回退锁 = tests/unit_ci_workflows/test_admin_web_next_build_gate.py（本步改名/删条件即红）。
+      - name: Detect admin-web changes
+        id: detect_aw
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，执行 admin-web 全量（deps/tsc/eslint/next build/vitest）"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
+          # ① `frontend/admin-web/**`：本腿的 `npm ci` / `tsc --noEmit` / `eslint` /
+          #    `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root=该目录、
+          #    `setupFiles: ./tests/setup.ts` 也在其内；包依赖全是 npm 公共包，无仓内 workspace 依赖）
+          #    ⇒ 不存在「改了仓内别处而本腿该跑」的形态。
+          # ② `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
+          #   tests/unit_ci_workflows/declaration_gate_registry.json
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 admin-web 变更，执行 typecheck / lint / build / 单测"
+          else
+            echo "run_web=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 admin-web 变更 —— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
+          fi
+
       - name: Set up Node.js 20
+        if: steps.detect_aw.outputs.run_web == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
@@ -206,14 +288,17 @@ jobs:
           cache-dependency-path: frontend/admin-web/package-lock.json
 
       - name: Install dependencies
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: TypeScript type check
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npx tsc --noEmit
 
       - name: ESLint
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm run lint
 
@@ -226,35 +311,18 @@ jobs:
       # 期间 #4323/#4383/#4386/#4401 等一批「已合入 main」的前端在测试环境上 404（不可达）。
       # 判据 = 变更后 `next build` 通过（真值 frontend-fix.next-build）；防回退锁见
       # tests/unit_ci_workflows/test_admin_web_next_build_gate.py
-      - name: Detect admin-web changes
-        id: detect_aw
-        run: |
-          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
-          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 非 PR 事件，执行 next build"
-            exit 0
-          fi
-          git fetch origin main --quiet
-          if git diff --name-only origin/main...HEAD | grep -q '^frontend/admin-web/'; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 含 admin-web 变更，执行 next build"
-          else
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 admin-web 变更 —— next build **未跑**（「没跑」不是「通过」）"
-          fi
-
       - name: Production build (Next-only checks)
-        if: steps.detect_aw.outputs.run_build == 'true'
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm run build
 
       - name: Run unit tests
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npx vitest run
 
       - name: Security audit (deps)
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm audit --production --audit-level=high
         continue-on-error: true
@@ -271,21 +339,61 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 路径门控（下面 Detect e2e changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
+          fetch-depth: 0
+
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 本 job 在**每个** PR 上都装两份 node_modules 并跑 Playwright（实测中位 **114.5s**，n=8）
+      # —— 而它读的对象面只有 `tests/**`（spec / fixture / playwright 配置）与
+      # `frontend/admin-web/**`（`webServer` 要真构建 admin-web）。
+      # 口径 = 本仓既有「job 内 diff 门控」范式（`docs/wiki/CI-CD.md`「变更门控」）。
+      # ⛔ **本 job 不是 required check**（不在分支保护 required 集合里）⇒ 本可整层 `paths:`，
+      #   但**仍不用**：一是保持与其余腿同款读法（判据按步骤名定位，见 §23.5），
+      #   二是将来若把它翻成 required，**不需要**再改回 job 内门控（那条顺序不可换）。
+      - name: Detect e2e changes
+        id: detect_e2e
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，全量执行 E2E 质量门禁"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身：
+          # ① `tests/**`（`npx playwright test e2e/specs/…` 的 spec 与 fixture、`tests/package-lock.json`）；
+          # ② `frontend/admin-web/**`（Playwright `webServer` 真构建/启动 admin-web）；
+          # ③ 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）
+          HITS=$(echo "$CHANGED" | grep -E '^(tests/|frontend/admin-web/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 e2e 相关变更，执行质量门禁"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 e2e 相关变更 —— 质量门禁**未跑**（「没跑」不是「通过」）"
+          fi
 
       - name: Setup Node.js
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
 
       - name: Install test deps
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
         run: npm ci
 
       - name: Install admin-web deps (for Playwright webServer)
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: Run quality specs (fixture-only)
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
         env:
           E2E_MOCK_AUTH: 'true'

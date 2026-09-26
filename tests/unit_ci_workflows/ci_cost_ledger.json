@@ -1,0 +1,673 @@
+{
+  "schema": "ci-cost-ledger/v1",
+  "issue": "#3507",
+  "what": "每条 PR 触发的 CI 腿：**实测**近期时长 + 显式上限 + 目标预算 + required 口径。上限 = 该腿自己声明的 `timeout-minutes`（硬杀开关，见 `hard_kill_source`）；预算 = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）；两者都由 tests/unit_ci_workflows/test_ci_cost_ledger.py 与现取 YAML / 读数复比。",
+  "judged_by": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
+  "measured": {
+    "at": "2026-09-26T04:16:13Z",
+    "source": "gh api repos/zhaokai-mgzn/migao/actions/runs?event=pull_request&status=completed",
+    "event": "pull_request",
+    "runs_per_workflow": 8,
+    "recompute": "python3 scripts/ci_cost_ledger.py --measure"
+  },
+  "attribution_policy": {
+    "rule": "某腿**超出预算**（新实测 p90 上取整 > 台账里已冻结的预算）⇒ `--measure` **非零退出且不写台账**（不许静默抬预算；预算是读数的函数，不是人手填的数）",
+    "what_to_check_first": "先查**新增**开销 —— 钉与负载无关的计数：新判据文件数 / 真库 `initdb` 次数 / 语料真解析次数 / 新增依赖安装；**不要**用抬 `timeout-minutes` 交差（与 #5365 同源口径：上限是值班判据，不是成本成绩单）",
+    "how_to_raise": "确有必要抬预算 ⇒ 显式 `python3 scripts/ci_cost_ledger.py --measure --accept-raise`（把该腿预算重冻结为现取 p90，改动在 diff 里可见），并在 PR / 追踪单上写明为什么",
+    "enforced_where": "超预算判红在**能读 Actions API 的环境**（本机 / attended）生效；CI 的 `ci workflow helper unit tests` 读不到历史时长 ⇒ 它只锁「预算 == 实测 p90 上取整」这条**文件不变式**（判据 = tests/unit_ci_workflows/test_ci_cost_ledger.py）"
+  },
+  "workflow_totals": {
+    "ai-agent-tests.yml": {
+      "n": 8,
+      "median_seconds": 265.5,
+      "p90_seconds": 277.0,
+      "max_seconds": 280.0
+    },
+    "bmini-app.yml": {
+      "n": 8,
+      "median_seconds": 122.5,
+      "p90_seconds": 128.0,
+      "max_seconds": 128.0
+    },
+    "demo-evidence.yml": {
+      "n": 6,
+      "median_seconds": 157.0,
+      "p90_seconds": 161.0,
+      "max_seconds": 169.0
+    },
+    "deploy-reconcile.yml": {
+      "n": 7,
+      "median_seconds": 47.0,
+      "p90_seconds": 48.0,
+      "max_seconds": 53.0
+    },
+    "drift-audit.yml": {
+      "n": 8,
+      "median_seconds": 24.5,
+      "p90_seconds": 28.0,
+      "max_seconds": 34.0
+    },
+    "flaky-ledger-reconcile.yml": {
+      "n": 7,
+      "median_seconds": 25.0,
+      "p90_seconds": 26.0,
+      "max_seconds": 27.0
+    },
+    "mechanism-liveness.yml": {
+      "n": 8,
+      "median_seconds": 18.5,
+      "p90_seconds": 24.0,
+      "max_seconds": 26.0
+    },
+    "mini-app.yml": {
+      "n": 8,
+      "median_seconds": 249.0,
+      "p90_seconds": 279.0,
+      "max_seconds": 281.0
+    },
+    "post-merge-verify.yml": {
+      "n": 7,
+      "median_seconds": 365.0,
+      "p90_seconds": 518.0,
+      "max_seconds": 560.0
+    },
+    "pr-check.yml": {
+      "n": 8,
+      "median_seconds": 1316.0,
+      "p90_seconds": 1410.0,
+      "max_seconds": 1429.0
+    },
+    "pr-issue-link.yml": {
+      "n": 8,
+      "median_seconds": 3.0,
+      "p90_seconds": 5.0,
+      "max_seconds": 6.0
+    }
+  },
+  "legs": [
+    {
+      "id": "ai-agent-tests.yml::ai-agent-service-test",
+      "workflow": "ai-agent-tests.yml",
+      "job": "ai-agent-service-test",
+      "check_name": "ai-agent-service unit tests",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 265.5,
+        "p90_seconds": 277.0,
+        "max_seconds": 280.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 277,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=277.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "bmini-app.yml::typecheck-and-test",
+      "workflow": "bmini-app.yml",
+      "job": "typecheck-and-test",
+      "check_name": "bmini-app typecheck + unit tests",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 122.5,
+        "p90_seconds": 128.0,
+        "max_seconds": 128.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 128,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=128.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "demo-evidence.yml::admin-web-demo-path",
+      "workflow": "demo-evidence.yml",
+      "job": "admin-web-demo-path",
+      "check_name": "Demo path specs (admin-web, fixture mode)",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": false,
+      "measured": {
+        "n": 6,
+        "median_seconds": 146.5,
+        "p90_seconds": 151.0,
+        "max_seconds": 157.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 151,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=151.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "demo-evidence.yml::mini-app-e2e-preflight",
+      "workflow": "demo-evidence.yml",
+      "job": "mini-app-e2e-preflight",
+      "check_name": "Mini-app e2e static contract preflight",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": false,
+      "measured": {
+        "n": 6,
+        "median_seconds": 10.5,
+        "p90_seconds": 12.0,
+        "max_seconds": 12.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 12,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=12.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "deploy-reconcile.yml::reconcile",
+      "workflow": "deploy-reconcile.yml",
+      "job": "reconcile",
+      "check_name": "Reconcile and dispatch missing deploys",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": false,
+      "measured": {
+        "n": 7,
+        "median_seconds": 47.0,
+        "p90_seconds": 48.0,
+        "max_seconds": 53.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 48,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=48.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "drift-audit.yml::audit",
+      "workflow": "drift-audit.yml",
+      "job": "audit",
+      "check_name": "Drift Audit (真相源契约)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 24.5,
+        "p90_seconds": 28.0,
+        "max_seconds": 34.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 28,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=28.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "flaky-ledger-reconcile.yml::reconcile",
+      "workflow": "flaky-ledger-reconcile.yml",
+      "job": "reconcile",
+      "check_name": "Flaky Ledger Reconcile (台账领先 main ⇒ 补 approve + 补 arm)",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": false,
+      "measured": {
+        "n": 7,
+        "median_seconds": 25.0,
+        "p90_seconds": 26.0,
+        "max_seconds": 27.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 26,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=26.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "mechanism-liveness.yml::registry",
+      "workflow": "mechanism-liveness.yml",
+      "job": "registry",
+      "check_name": "Mechanism Liveness Registry (登记完整性 + 读数落点)",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 18.5,
+        "p90_seconds": 24.0,
+        "max_seconds": 26.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 24,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=24.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "mechanism-liveness.yml::watchdog",
+      "workflow": "mechanism-liveness.yml",
+      "job": "watchdog",
+      "check_name": "Mechanism Liveness Watchdog (最近一次成功处置是否新鲜)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": null,
+      "measure_status": "样本不足（现取 n=0）",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": "现取 n=0 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+    },
+    {
+      "id": "mini-app.yml::typecheck-and-test",
+      "workflow": "mini-app.yml",
+      "job": "typecheck-and-test",
+      "check_name": "mini-app typecheck + unit tests",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 106.5,
+        "p90_seconds": 124.0,
+        "max_seconds": 126.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 124,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=124.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "mini-app.yml::xiaobu-h5-visual",
+      "workflow": "mini-app.yml",
+      "job": "xiaobu-h5-visual",
+      "check_name": "xiaobu H5 visual regression",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 155.0,
+        "p90_seconds": 157.0,
+        "max_seconds": 159.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 157,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=157.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "post-merge-verify.yml::verify",
+      "workflow": "post-merge-verify.yml",
+      "job": "verify",
+      "check_name": "Post-Merge Verify (定向跑判据面)",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 7,
+        "median_seconds": 365.0,
+        "p90_seconds": 518.0,
+        "max_seconds": 560.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 518,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=518.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::admin-api-test",
+      "workflow": "pr-check.yml",
+      "job": "admin-api-test",
+      "check_name": "admin-api unit tests",
+      "hard_kill_seconds": 600,
+      "hard_kill_source": "workflow `timeout-minutes: 10`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 130.0,
+        "p90_seconds": 138.0,
+        "max_seconds": 141.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 138,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=138.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::admin-web-test",
+      "workflow": "pr-check.yml",
+      "job": "admin-web-test",
+      "check_name": "admin-web typecheck + unit tests",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 281.5,
+        "p90_seconds": 295.0,
+        "max_seconds": 297.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 295,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=295.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::block-env-files",
+      "workflow": "pr-check.yml",
+      "job": "block-env-files",
+      "check_name": "Block .env files (except .env.example)",
+      "hard_kill_seconds": 120,
+      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 10.0,
+        "p90_seconds": 11.0,
+        "max_seconds": 12.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 11,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=11.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::case-coverage-gate",
+      "workflow": "pr-check.yml",
+      "job": "case-coverage-gate",
+      "check_name": "Case Coverage Gate",
+      "hard_kill_seconds": 180,
+      "hard_kill_source": "workflow `timeout-minutes: 3`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 9.0,
+        "p90_seconds": 10.0,
+        "max_seconds": 10.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 10,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=10.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::case-trust-gate",
+      "workflow": "pr-check.yml",
+      "job": "case-trust-gate",
+      "check_name": "Case Trust Gate (断言可信度)",
+      "hard_kill_seconds": 180,
+      "hard_kill_source": "workflow `timeout-minutes: 3`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 29.5,
+        "p90_seconds": 31.0,
+        "max_seconds": 43.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 31,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=31.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::case-truth-check",
+      "workflow": "pr-check.yml",
+      "job": "case-truth-check",
+      "check_name": "Case Contract (truths_ref)",
+      "hard_kill_seconds": 120,
+      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 8.0,
+        "p90_seconds": 8.0,
+        "max_seconds": 9.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 8,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=8.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 699.0,
+        "p90_seconds": 751.0,
+        "max_seconds": 760.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 751,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=751.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::clear-needs-changes",
+      "workflow": "pr-check.yml",
+      "job": "clear-needs-changes",
+      "check_name": "Clear stale needs-changes label",
+      "hard_kill_seconds": 60,
+      "hard_kill_source": "workflow `timeout-minutes: 1`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 3.0,
+        "p90_seconds": 4.0,
+        "max_seconds": 4.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 4,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=4.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::danger-scan",
+      "workflow": "pr-check.yml",
+      "job": "danger-scan",
+      "check_name": "Danger Scan (破坏性变更检测)",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 13.0,
+        "p90_seconds": 16.0,
+        "max_seconds": 19.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 16,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=16.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::e2e-quality-gate",
+      "workflow": "pr-check.yml",
+      "job": "e2e-quality-gate",
+      "check_name": "E2E quality gate",
+      "hard_kill_seconds": 900,
+      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 124.5,
+        "p90_seconds": 129.0,
+        "max_seconds": 135.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 129,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=129.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::gitleaks-scan",
+      "workflow": "pr-check.yml",
+      "job": "gitleaks-scan",
+      "check_name": "Secret Scan (gitleaks)",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 15.0,
+        "p90_seconds": 22.0,
+        "max_seconds": 23.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 22,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=22.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::label-needs-changes",
+      "workflow": "pr-check.yml",
+      "job": "label-needs-changes",
+      "check_name": "Label needs-changes on any CI failure",
+      "hard_kill_seconds": 120,
+      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "required": false,
+      "measured": null,
+      "measure_status": "样本不足（现取 n=2）",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": "现取 n=2 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+    },
+    {
+      "id": "pr-check.yml::llm-sink-ledger",
+      "workflow": "pr-check.yml",
+      "job": "llm-sink-ledger",
+      "check_name": "LLM Sink Ledger (红例→确定性下沉)",
+      "hard_kill_seconds": 180,
+      "hard_kill_source": "workflow `timeout-minutes: 3`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 11.0,
+        "p90_seconds": 12.0,
+        "max_seconds": 13.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 12,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=12.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::qa-growth-gate",
+      "workflow": "pr-check.yml",
+      "job": "qa-growth-gate",
+      "check_name": "QA Growth Gate",
+      "hard_kill_seconds": 180,
+      "hard_kill_source": "workflow `timeout-minutes: 3`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 12.0,
+        "p90_seconds": 14.0,
+        "max_seconds": 16.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 14,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=14.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-check.yml::ui-regression-check",
+      "workflow": "pr-check.yml",
+      "job": "ui-regression-check",
+      "check_name": "UI Regression Check",
+      "hard_kill_seconds": 180,
+      "hard_kill_source": "workflow `timeout-minutes: 3`",
+      "required": true,
+      "measured": {
+        "n": 8,
+        "median_seconds": 9.5,
+        "p90_seconds": 12.0,
+        "max_seconds": 13.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 12,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=12.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "pr-issue-link.yml::issue-link-check",
+      "workflow": "pr-issue-link.yml",
+      "job": "issue-link-check",
+      "check_name": "Check Closes",
+      "hard_kill_seconds": 120,
+      "hard_kill_source": "workflow `timeout-minutes: 2`",
+      "required": false,
+      "measured": {
+        "n": 8,
+        "median_seconds": 3.0,
+        "p90_seconds": 5.0,
+        "max_seconds": 6.0
+      },
+      "measure_status": "ok",
+      "budget_seconds": 5,
+      "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
+      "budget_basis": "budget = ceil(measured.p90_seconds=5.0) @ 2026-09-26T04:16:13Z"
+    },
+    {
+      "id": "worker-h5-tests.yml::worker-h5-test",
+      "workflow": "worker-h5-tests.yml",
+      "job": "worker-h5-test",
+      "check_name": "worker-h5 unit tests (node --test)",
+      "hard_kill_seconds": 300,
+      "hard_kill_source": "workflow `timeout-minutes: 5`",
+      "required": false,
+      "measured": null,
+      "measure_status": "样本不足（现取 n=0）",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": "现取 n=0 < 3（本腿多为 skipped/未触发）⇒ **不编预算**，保持显式留白"
+    }
+  ],
+  "eval_cadence": {
+    "what": "评测型流水线（**非 PR 触发**）每月**实测**触发次数 —— 频率议题的读数基线",
+    "source": "gh api repos/zhaokai-mgzn/migao/actions/workflows/<wf>/runs?per_page=100",
+    "runs_per_month": {
+      "agent-eval.yml": {
+        "2026-08": 21,
+        "2026-09": 3
+      },
+      "agent-eval-adversarial.yml": {
+        "2026-08": 3,
+        "2026-09": 2
+      },
+      "xiaobu-acceptance.yml": {
+        "2026-09": 100
+      }
+    }
+  },
+  "policy_decisions": [
+    {
+      "id": "eval-monthly-frequency-cap",
+      "status": "已裁定：有意不设上限（只登记手动触发现状）",
+      "question": "normal / adversarial 评测的**月度频率上限**定为多少？",
+      "decision": "**不设硬上限**，只登记现状：`agent-eval.yml` 与 `agent-eval-adversarial.yml` 现取**都只有 `workflow_dispatch`**（无 schedule / 无自动触发面）⇒ 频率 = 人跑的频率，**上限本来就撞不到**，设一个数只会是空转的管理数字。",
+      "reopen_condition": "任一评测 workflow 恢复/新增**自动触发**（`schedule` / `push` / `pull_request` / `workflow_call` 被自动面调用）⇒ **重开本裁定**，届时上限才有可撞的对象",
+      "evidence": "见 `eval_cadence.runs_per_month`（实测月度次数）与各 workflow 的 `on:`（现取）",
+      "decided_by": "用户裁定 2026-09-26（经集成侧转达）"
+    },
+    {
+      "id": "per-leg-target-budget",
+      "status": "已裁定：预算 = 实测 p90（向上取整），超了红",
+      "question": "各腿的**目标预算**（低于硬杀上限的期望值）如何取？",
+      "decision": "预算 = 该腿**实测 p90 向上取整**（读数的函数，不是人手填的数）；取不到读数（n < 3）的腿**保持留白**、不编数。新实测 p90 上取整 **>** 已冻结预算 ⇒ `--measure` **非零退出且不写台账**，并要求**先查「新增」开销**、**不得**靠抬 `timeout-minutes` 交差（见 `attribution_policy`）。",
+      "reopen_condition": "预算口径本身变更（例如改用 p95 或引入分位数以外的口径）时重开",
+      "decided_by": "用户裁定 2026-09-26（经集成侧转达）"
+    }
+  ],
+  "external_blockers": [
+    {
+      "id": "ghcr-prebuilt-images",
+      "what": "评测栈 GHCR 预构建镜像（admin-api 与分支无关 ⇒ 可复用；栈步骤实测约 210s，其中构建占大头）",
+      "why_external": "需要 `packages: write` —— 本仓 CI token 不具备该权限（前序调查结论「需新权限」）",
+      "owner_action": "授予 packages 写权限后重启本项。**命令（CLI 身份的 token）**：`gh auth refresh -h github.com -s write:packages`（随后 `gh auth status` 应显示该 scope）；**仓库侧设置**（需 admin）：Settings → Actions → General → Workflow permissions 允许 write，或在容器 job 里显式声明 `permissions: packages: write`。⚠️ 上述两条哪一条是必需，取决于落地时用哪个身份发镜像 —— **未验证**（本包按用户裁定**不尝试**该操作，故没有实证）。",
+      "grant_verified": false,
+      "restart_condition": "① `gh auth status` 显示 `write:packages`（或仓库允许 `permissions: packages: write`）② 一次真实 `docker push ghcr.io/<owner>/…` 成功 ③ 再按 docs/testing/eval-pipeline-performance.md「GHCR 拆分建议」只做 admin-api 一档，并保留现有回落路径 + 用其判定行做前后对照（不满足前置就不上镜像化）",
+      "carrier": "docs/testing/eval-pipeline-performance.md（§2.7「GHCR 预构建镜像」行的 ⏸ 登记）",
+      "issue": "#3507（第 ③ 项）"
+    }
+  ]
+}
