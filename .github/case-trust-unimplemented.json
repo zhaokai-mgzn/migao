@@ -22,16 +22,6 @@
       "expires": "2027-06-30",
       "how_to_verify": "persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为**可判定且不产生假红**的口径，撤本登记并按新口径实装；或双端用例归零⇒ 子集口径 == 全库口径，本登记自动成僵尸。核验命令：`python3 -c \"import sys;sys.path.insert(0,'.github');from render_cases import load_case_dicts;print(sum(1 for c in load_case_dicts('.github/cases') if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。",
       "hit_probe": "dual_leg_no_persona"
-    },
-    {
-      "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
-      "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
-      "why_not": "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定（`migao-acceptance`：LLM 只覆盖语义残留）。静态侧只能判定「它**不计分**」（`is_machine_scored_data_check`）并据此要求效果层断言。",
-      "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
-      "issue": 5505,
-      "expires": "2027-06-30",
-      "how_to_verify": "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」⇒ 撤本登记。核验：存在按用例 ID 产出语义复核结论的脚本/用例，且 `python3 .github/case_trust_gate.py` 的未实装清单里不再需要这一条。",
-      "hit_probe": "prose_data_check"
     }
   ]
 }

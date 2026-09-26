@@ -2047,6 +2047,19 @@ class TestGateShell:
             f"{[u['code'] for u in tax.UNIMPLEMENTED]} —— 与 `.github/case-trust-unimplemented.json` "
             f"必须同源（#4045 落地后撤登记）"
         )
+        # 2026-09-26（用户裁定②）：`CASE-TRUST-PROSE-DATA-CHECK-QUALITY` 是**有意不做**的
+        # 语义复核面 ⇒ 撤登记。⚠️ 撤登记**不是**"已实装"——接受的缺口与重启条件写在
+        # `assertion_taxonomy.py` 的「已撤登记（有意不做）」组里（两份清单必须同源）。
+        # 撤了就不许再登记回来：再登记 = 把"明知不做"读回"还没做"，而且它的追踪单 #5505
+        # 已按撤登记关闭 ⇒ 会连带触发 `ISSUE_CLOSED` 判红（挂 PR 队列，见 #5506）。
+        assert "CASE-TRUST-PROSE-DATA-CHECK-QUALITY" not in text, (
+            "「散文 data_checks 语义质量」的未实装登记未撤 —— 该面已裁定有意不做（2026-09-26）"
+        )
+        assert not [u for u in tax.UNIMPLEMENTED
+                    if u["code"] == "CASE-TRUST-PROSE-DATA-CHECK-QUALITY"], (
+            f"`assertion_taxonomy.UNIMPLEMENTED` 里又出现有意不做的登记："
+            f"{[u['code'] for u in tax.UNIMPLEMENTED]}"
+        )
 
     def test_gate_blocks_unknown_preclean_without_crashing(self):
         """未知 pre_clean type 不得让门禁崩（登记为未实装，不写恒真规则）。
