@@ -448,6 +448,77 @@ public class ProductionService {
         return result;
     }
 
+    /**
+     * **重新生成**已撤销的二维码（issue #4287 —— #4240 交付了「可撤销」，本条补它的**恢复半边**）。
+     *
+     * <p>🔴 <b>不得复用 {@link #instantiate}</b>（本单的硬约束）：它的幂等判据是**工序签名**
+     * （含 {@code unitPrice}）—— 签名不同（工序库改价后**必然**不同，而 #4204 刚让改价成为可能）
+     * 就软删旧实例并重插 ⇒ {@code done_qty} 归零 ⇒ 连带清掉该单已完成的报工与**计件工资**
+     * （计件 = Σ 合格数 × 单价 × 系数），且触发条件（改过价）**完全不显眼**。本方法是**窄**接口：
+     * 只补码 —— 不碰工序实例、不走签名比较、不写任何单价/计件列。</p>
+     *
+     * <p><b>只补缺、不换码</b>（与 {@link #ensureQrToken} 及
+     * {@link com.migao.admin.mapper.ProcessingSetPartTokenMapper#fillMissingToken} 逐字同款）：
+     * 已有 token 的行**复用**它 —— 否则对着一张**仍然有效**的码点一次「重新生成」就会静默作废
+     * 已打印的纸。已撤销的行 {@code token IS NULL} ⇒ 必然产出新码（≠ 作废那张纸上的码）。</p>
+     *
+     * <p><b>印刷品载体一起恢复</b>（{@code processing_set_part_tokens}，issue #4946 的一部位一码）：
+     * 撤销把两者在同一个事务里一起作废 ⇒ 恢复也必须一起恢复，否则界面上「有新码了」而纸上那张
+     * 部位码仍扫不动（又一句假话）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> regenerateQrToken(String orderId, Long tenantId) {
+        Order order = resolveOrder(orderId, tenantId);
+        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (po == null) {
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 尚无加工单，请先生成加工单再重新发码");
+        }
+        String qrToken = ensureQrToken(po);
+        int partCodes = refillRevokedPartTokens(po, tenantId);
+        log.info("重新生成加工单二维码: orderNo={}, po={}, qrToken={}, partCodes={}",
+                order.getOrderNo(), po.getProcessingOrderNo(), qrToken, partCodes);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", order.getId());
+        result.put("qr_token", qrToken);
+        result.put("part_codes", partCodes);
+        return result;
+    }
+
+    /**
+     * 给**已撤销**（{@code token IS NULL}）的部位码行补新码（issue #4287）。
+     *
+     * <p>走既有的 {@link com.migao.admin.mapper.ProcessingSetPartTokenMapper#fillMissingToken}
+     * （SQL 内带 {@code AND token IS NULL}）⇒ 有码的行**一字不动**（已打印的纸不作废）、
+     * 不碰 {@code short_code}（还是那张纸）、不碰任何单价/计件列（不追溯）。</p>
+     *
+     * @return 真正补上码的行数（拼不出「套 × 部位」的行不猜，同 {@code ensurePartTokens} 口径）
+     */
+    private int refillRevokedPartTokens(ProcessingOrder po, Long tenantId) {
+        if (setPartTokenMapper == null) {
+            return 0;   // 未接线（既有单测不过 Spring + 部分装配）⇒ 跳过，与 ensurePartTokens 同款
+        }
+        List<ProcessingSetPartToken> revoked = setPartTokenMapper.selectList(
+                new LambdaQueryWrapper<ProcessingSetPartToken>()
+                        .eq(ProcessingSetPartToken::getProcessingOrderId, po.getId())
+                        .eq(ProcessingSetPartToken::getTenantId, tenantId)
+                        .eq(ProcessingSetPartToken::getDeleted, 0)
+                        .isNull(ProcessingSetPartToken::getToken));
+        if (revoked == null || revoked.isEmpty()) {
+            return 0;
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        int filled = 0;
+        for (ProcessingSetPartToken row : revoked) {
+            if (!StringUtils.hasText(row.getSetId()) || !StringUtils.hasText(row.getOrderItemId())) {
+                continue;   // 归不到「套 × 部位」⇒ 不猜（同 ensurePartTokens）
+            }
+            filled += setPartTokenMapper.fillMissingToken(tenantId, row.getSetId(), row.getOrderItemId(),
+                    UUID.randomUUID().toString().replace("-", ""), now);
+        }
+        return filled;
+    }
+
     private Map<String, Object> instantiateResult(String qrToken, int operationCount) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("qr_token", qrToken);

@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.mockito.stubbing.Answer;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.Banner;
@@ -24,6 +25,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.dao.PermissionDeniedDataAccessException;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,14 +37,17 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -63,7 +68,7 @@ import static org.mockito.Mockito.when;
  * 连锁后果：新迁移没落库 ⇒ 商家改工序单价 **500**（`relation "production_operation_price_versions"
  * does not exist`）⇒ **重启一次（DB 恢复后）该迁移即成功、同一请求立刻 200**。
  *
- * ## 本测试锁什么（四条，缺一即本修法失效）
+ * ## 本测试锁什么（六条，缺一即本修法失效）
  *
  * 1. **连接类首次失败 → 退避重试后迁移完成**（当前实现：一条都不跑且返回正常）；
  * 2. **持续连不上 → 有限次（有上限）重试后 fail-closed** —— 抛错让启动失败，
@@ -72,6 +77,11 @@ import static org.mockito.Mockito.when;
  *    跳过该条、继续其余、记账、ERROR + 「请立即修复并在修复后重跑」，**且不重试、不 fail-closed**；
  * 4. **真·启动失败**（子进程级）：连接持续失败时进程**非 0 退出**且日志有
  *    `Application run failed` —— 这是编排/部署层唯一能看见的信号。
+ * 5. **bootstrap 步骤的非连接类失败同样 fail-closed**（issue #4284）：`ensureHistoryTable`
+ *    （建/查 `schema_migrations` 台账表）失败 ⇒ **整轮一条迁移都不会跑**，与「跳过某一条、
+ *    继续其余」是**不同性质**的事（#4241 判据 2 的那条刻意语义只管**内容类**迁移失败，不受影响）；
+ * 6. **类级固化**（#4284）：把非连接类失败注入到**任一** JDBC 交互位，都不许出现
+ *    「`run()` 正常返回 ∧ 本轮零迁移落地」—— 今后新增/搬动到序段里的步骤同样被这条覆盖。
  *
  * ⚠️ 判据 3 是「防改过头」的守卫：把内容类失败也当连接类重试/拒启动，等于把 #3615 的既有裁定拆了
  * （一条坏迁移会冻结整个 schema，正是 #3270 的原始病灶）。
@@ -86,6 +96,9 @@ class MigrationRunnerConnectionFailClosedTest {
 
     private static final String V90 = "V90__injected_probe_a.sql";
     private static final String V91 = "V91__injected_probe_b.sql";
+
+    /** bootstrap 步骤名（issue #4284）：fail-closed 的信息必须点名**哪一步**失败。 */
+    private static final String ENSURE_HISTORY_STEP = "ensureHistoryTable";
 
     /** #3615 既有裁定的逐字日志（内容类失败必须一字不改地保留）。 */
     private static final String CONTENT_SKIP_LOG = "❌ 迁移失败（已跳过，继续执行其余迁移）";
@@ -298,10 +311,130 @@ class MigrationRunnerConnectionFailClosedTest {
         }
     }
 
+    // ── 判据 5：bootstrap 步骤的**非连接类**失败 ⇒ fail-closed（issue #4284）──
+
+    @Test
+    @DisplayName("bootstrap（ensureHistoryTable）非连接类失败（建台账表权限不足）⇒ fail-closed，且本轮零迁移落地")
+    void nonConnectionBootstrapFailureFailsClosed() throws Exception {
+        givenMigrations(V90, V91);
+        // 真库形态：**连得上**、但没权限建/写 schema_migrations（issue #4284 的触发条件）
+        doAnswer(invocation -> {
+            throw databaseAccessDenied();
+        }).when(jdbc).execute(anyString());
+
+        MigrationRunner runner = newRunner(3, 1L);
+
+        assertThatThrownBy(runner::run)
+                .as("建不出台账表 ⇒ 整轮一条迁移都跑不了；以「schema 未知」状态起来 = #4241 的同形缺陷（#4284）")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("启动")
+                .hasMessageContaining(ENSURE_HISTORY_STEP);
+
+        // ① **零迁移落地**（不是 #3615 的「跳过某一条、继续其余」语义 —— 那是内容类迁移失败）
+        verify(jdbc, never()).execute(contains("-- " + V90));
+        verify(jdbc, never()).execute(contains("-- " + V91));
+        verify(jdbc, never()).update(anyString(), anyString());
+        // ② **不重试**：权限错重试一万次还是权限错（只有连接类才退避重试）
+        verify(jdbc, times(1)).execute(anyString());
+        // ③ 可归因：ERROR 必须点名**哪一步**失败（否则又回到「真失败与噪音同形」）
+        assertThat(appender.list)
+                .as("fail-closed 的 ERROR 必须点名 bootstrap 步骤（%s）", ENSURE_HISTORY_STEP)
+                .anyMatch(e -> e.getLevel() == Level.ERROR && formatted(e).contains(ENSURE_HISTORY_STEP));
+    }
+
+    // ── 判据 6：类级固化 —— 「非连接类失败不得让整轮静默零落地」（issue #4284）──
+
+    /**
+     * 把同一条 `DataAccessDeniedException` 注入到第 1..8 个 JDBC 交互位（覆盖 bootstrap →
+     * 基线判空 → 台账读 → 每条迁移的执行与记账），逐个断言**不许出现**
+     * 「`run()` 正常返回 ∧ 本轮零迁移落地」—— 那正是 #4284 的病
+     * （应用照常 UP、schema 落后、报错后移成业务 500，且没有任何监控看得见）。
+     *
+     * <p>允许的两种结局：① **fail-closed**（抛错 ⇒ 启动失败）；② 这一轮**真的跑了迁移**
+     * （失败只波及那一步 ⇒ 即 #3615 的「跳过并继续」）。台面上「台账读不到 ⇒ 当空台账继续」
+     * 是**有意**保留的：它不会导致零落地（SQL 幂等，重放无害）。</p>
+     *
+     * <p><b>为什么是类级判据</b>：只修 `ensureHistoryTable` 一处 = 只修了一个实例 ——
+     * 任何**新增/搬动**进序段、且失败会让整轮静默放弃的步骤，本用例都会红
+     * （修复前实测：第 3、4 个交互位也红，见 PR 红证）。</p>
+     */
+    @Test
+    @DisplayName("类级：非连接类失败注入到任一 JDBC 交互位 ⇒ 不许「run() 正常返回 ∧ 零迁移落地」")
+    @SuppressWarnings("unchecked")
+    void noNonConnectionFailureSilentlyAbortsTheWholeRound() throws Exception {
+        List<String> outcomes = new ArrayList<>();
+        for (int step = 1; step <= 8; step++) {
+            final int injectAt = step;   // 循环变量本身不是 effectively final ⇒ 进不了下面的 lambda
+            ObjectProvider<JdbcTemplate> provider = org.mockito.Mockito.mock(ObjectProvider.class);
+            JdbcTemplate freshJdbc = org.mockito.Mockito.mock(JdbcTemplate.class);
+            ResourcePatternResolver freshResolver = org.mockito.Mockito.mock(ResourcePatternResolver.class);
+            when(provider.getIfAvailable()).thenReturn(freshJdbc);
+            stubMigrations(freshResolver, V90, V91);
+
+            AtomicInteger calls = new AtomicInteger();
+            AtomicBoolean migrationRan = new AtomicBoolean();
+            // 所有 JDBC 交互共用同一个**逐次计数**的闸门：第 injectAt 次抛「连得上但没权限」
+            Answer<Object> gatedExecute = invocation -> {
+                String sql = invocation.getArgument(0, String.class);
+                if (sql.contains("-- " + V90) || sql.contains("-- " + V91)) {
+                    migrationRan.set(true);
+                }
+                if (calls.incrementAndGet() == injectAt) {
+                    throw databaseAccessDenied();
+                }
+                return null;
+            };
+            doAnswer(gatedExecute).when(freshJdbc).execute(anyString());
+            doAnswer(invocation -> {
+                if (calls.incrementAndGet() == injectAt) throw databaseAccessDenied();
+                return List.of();          // 空台账 ⇒ 基线判空与迁移链都真的走到
+            }).when(freshJdbc).queryForList(anyString(), eq(String.class));
+            doAnswer(invocation -> {
+                if (calls.incrementAndGet() == injectAt) throw databaseAccessDenied();
+                return Boolean.TRUE;       // 哨兵表在 ⇒ 基线判为「存量库」（只记账、不重放建库脚本）
+            }).when(freshJdbc).queryForObject(anyString(), eq(Boolean.class), any());
+            doAnswer(invocation -> {
+                if (calls.incrementAndGet() == injectAt) throw databaseAccessDenied();
+                return 1;
+            }).when(freshJdbc).update(anyString(), anyString());
+
+            boolean failedClosed = false;
+            try {
+                newRunner(provider, freshResolver, 1, 1L).run();
+            } catch (RuntimeException e) {
+                failedClosed = true;
+            }
+            outcomes.add(failedClosed ? "fail-closed" : migrationRan.get() ? "migrated" : "SILENT-ABORT");
+        }
+
+        assertThat(outcomes)
+                .as("注入位 1..8 的结局（%s）：SILENT-ABORT = 应用 UP 且零迁移落地（#4284 的病）", outcomes)
+                .doesNotContain("SILENT-ABORT");
+        assertThat(outcomes.get(0))
+                .as("第 1 个交互位 = ensureHistoryTable（bootstrap）⇒ 必须 fail-closed，"
+                        + "不许靠「后面还有别的步骤兜着」")
+                .isEqualTo("fail-closed");
+    }
+
+    /**
+     * 真库形态：**连得上**但没有建表/写表权限（SQLSTATE 42501 ⇒ Spring 翻成
+     * {@code PermissionDeniedDataAccessException}，issue #4284 点名的「权限类失败」）。
+     */
+    private static PermissionDeniedDataAccessException databaseAccessDenied() {
+        return new PermissionDeniedDataAccessException("权限不足：permission denied for schema public",
+                new SQLException("permission denied for schema public", "42501"));
+    }
+
     // ── 夹具 ──
 
     private MigrationRunner newRunner(int maxAttempts, long backoffMs) {
-        MigrationRunner runner = new MigrationRunner(jdbcProvider, resolver);
+        return newRunner(jdbcProvider, resolver, maxAttempts, backoffMs);
+    }
+
+    private MigrationRunner newRunner(ObjectProvider<JdbcTemplate> provider,
+                                      ResourcePatternResolver resourceResolver,
+                                      int maxAttempts, long backoffMs) {
+        MigrationRunner runner = new MigrationRunner(provider, resourceResolver);
         // 纯单测不走 Spring：`@Value` 注入的字段保留声明处默认值，这里显式压小以缩短测试时长
         ReflectionTestUtils.setField(runner, "migrationPattern", "classpath:db/migration/*.sql");
         // 基线（issue #5243）：`@Value` 字段在纯单测里不会被注入 ⇒ 显式钉上与生产一致的
@@ -330,6 +463,22 @@ class MigrationRunnerConnectionFailClosedTest {
      * `schema_migrations` 查询返回空 ⇒ 所有迁移都进入执行分支（同 LegacyNoiseTest 的夹具口径）。
      */
     private void givenMigrations(String... names) throws Exception {
+        // 基线（issue #5243）同上：本类测连接类失败的重试/fail-closed，与建库脚本无关 ⇒
+        // 钉成「台账已记账 ⇒ 整段跳过」，避免基线分支混进被测行为。
+        stubMigrations(resolver, names);
+        when(jdbc.queryForList("SELECT version FROM schema_migrations", String.class))
+                .thenReturn(List.of("schema.sql"));
+    }
+
+    /**
+     * 造 N 条迁移资源 + 基线资源（**只**打桩 resolver；台账 / 哨兵表由调用方按被测行为决定）。
+     *
+     * <p>基线的桩不能省：`resolver.getResource(…)` 未被桩时返回 `null` ⇒ `applyBaseline` 里
+     * `resource.getFilename()` 抛 NPE ⇒ **夹具自己**就会让整轮静默放弃（测出来的是夹具的病，
+     * 不是被测行为 —— 首版正是这样，红证才会「8 个注入位全 SILENT-ABORT」）。</p>
+     */
+    private static void stubMigrations(ResourcePatternResolver targetResolver, String... names)
+            throws Exception {
         Resource[] resources = new Resource[names.length];
         for (int i = 0; i < names.length; i++) {
             String name = names[i];
@@ -340,15 +489,11 @@ class MigrationRunnerConnectionFailClosedTest {
                     .thenAnswer(inv -> new ByteArrayInputStream(sql.getBytes(StandardCharsets.UTF_8)));
             resources[i] = resource;
         }
-        when(resolver.getResources(anyString())).thenReturn(resources);
-        // 基线（issue #5243）同上：本类测连接类失败的重试/fail-closed，与建库脚本无关 ⇒
-        // 钉成「台账已记账 ⇒ 整段跳过」，避免基线分支混进被测行为。
+        when(targetResolver.getResources(anyString())).thenReturn(resources);
         Resource baseline = org.mockito.Mockito.mock(Resource.class);
         when(baseline.getFilename()).thenReturn("schema.sql");
         when(baseline.exists()).thenReturn(true);
-        when(resolver.getResource(anyString())).thenReturn(baseline);
-        when(jdbc.queryForList("SELECT version FROM schema_migrations", String.class))
-                .thenReturn(List.of("schema.sql"));
+        when(targetResolver.getResource(anyString())).thenReturn(baseline);
     }
 
     private static String formatted(ILoggingEvent e) {

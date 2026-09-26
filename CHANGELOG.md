@@ -6,6 +6,38 @@
 
 ## [Unreleased]
 
+### 撤销二维码后可以「重新生成」了——只补码，报工进度与计件工资一字不动（2026-09-26，issue #4287）
+
+- **改了什么（用户可见）**：加工单生产明细页在**二维码已撤销**（`qr_token` 为空、工序还在）时出现
+  「**重新生成二维码**」入口 ⇒ 加工单码 + 每张洗水码上的**部位码**一并重新发出来，可重新打印任务卡
+  （此前撤销后是死路：#4949 只能在撤销弹窗里写一句「本页无法重新发码」的免责声明，该句**随之删除**——
+  它已不再为真）。入口与「撤销二维码」**同权限口径**（方法级 `processing:manage`）。
+- **它「不是」什么（负控，红线）**：重新发码走**窄**接口
+  `POST /api/admin/production/orders/{orderId}/qr-token/regenerate`，**只补缺失的 token**
+  （`processing_orders.qr_token` + `processing_set_part_tokens.token`），**不碰**工序实例、
+  **不清** `done_qty`、**不走**工序签名比较 ⇒ 该单已完成的报工与计件工资（Σ 合格数 × 单价 × 系数）
+  **逐值不变**。有意**不复用** `instantiate`：它的幂等判据含单价，工序库改价后（#4204 起改价成为可能）
+  点一次「重新生成」就会软删旧实例、把 `done_qty` 清零 ⇒ **静默清掉计件工资**。
+  已有码的行**复用**（不对一张仍然有效的码重发，已打印的纸不作废）。
+- **类级固化**：`ProductionControllerTest#regenerateQrTokenKeepsReportedQuantitiesAndIssuesNewToken`
+  （改前实测 **404 红**）钉死三条 —— `done_qty` **逐值不变**（经读面复核，不是「没调用写方法」）、
+  工序实例**行数不变且零写**、新码**非空且 ≠ 旧码**；同批负控
+  `instantiateStillSoftDeletesWhenSignatureChanges` 钉住「instantiate 的危险语义一字未动」（那是不得复用的原因）。
+
+### 迁移 bootstrap 步骤失败 ⇒ 应用不再「假装健康」地起来（2026-09-26，issue #4284）
+
+- **改了什么（部署可见）**：启动时若 `schema_migrations` 台账表**建不出来 / 记不上**
+  （例：库账号缺权限 ⇒ 连得上但抛 `DataAccessException`）、或**判空库 / 判存量库**那一步失败，
+  admin-api **启动失败（非 0 退出）**，而不是照常 UP、本轮**零迁移落地**、`/actuator/health` 仍报 UP
+  （故障面后移到业务 500，且没有任何监控看得见）。失败日志与异常消息点名**哪一步**失败、为什么致命。
+- **没改什么（负控）**：**连接类**失败的有限退避重试 + 重试耗尽 fail-closed（#4241）一字未动；
+  单条迁移的**内容类**失败（SQL 语法/约束）仍维持 #3615/#3270 的「跳过该条、继续其余、记账 + ERROR」，
+  **不重试、不拒启动**。
+- **类级固化**：`MigrationRunnerConnectionFailClosedTest#noNonConnectionFailureSilentlyAbortsTheWholeRound`
+  —— 把非连接类失败注入到**任一** JDBC 交互位，都不许出现「`run()` 正常返回 ∧ 零迁移落地」；
+  **改前实测注入位 1 / 3 / 4 全是 SILENT-ABORT**（= 同一类缺陷的三个实例：建台账表、判空库、记基线的账），
+  本单一次全部收口。
+
 ### 存量加工单扫部位码报工：回执不再假称「工序都已完成」，改说「本套没有关联工序行」并指路（2026-09-25，issue #4871）
 
 - **改了什么（用户可见）**：工人扫**部位码**报工（`POST /api/worker/production/scan/complete`）时，
