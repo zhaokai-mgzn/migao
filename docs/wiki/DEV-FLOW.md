@@ -295,7 +295,10 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 每-PR 最低消减的**字面口径**（`scope=all_prs`，默认 `case_touching_prs` —— 见该文件登记的理由）、
 未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
 跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
-**全库** persona 标注（有意不做的宽口径）、纯散文 `data_checks` 的**语义**质量（LLM 审计层）。
+**全库** persona 标注（有意不做的宽口径）。
+（纯散文 `data_checks` 的**语义**质量已于 2026-09-26 裁定**有意不做**并撤登记 ——
+不再属本清单；撤登记 **≠** 已实装，接受的缺口与重启条件见 `assertion_taxonomy.py` 的
+「已撤登记（有意不做）」组。）
 
 > **已落地的两条（勿再照抄旧文）**：① 「未登记违规只报告不阻塞」已由 **#4046** 翻转为
 > fail-closed（全库判出、清单没有的码 ⇒ 阻塞）；② `scripts/drift_audit.py` 的同款陈旧口径

@@ -1228,7 +1228,10 @@ def is_single_leg_by_toolset(case: dict) -> bool:
         `TestDegenerateGuardRails::test_mibao_toolset_truth_loaded` 报红。
 
     仍是**下界**：语义单端（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）
-    静态不可判定，登记在 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（#5505）。
+    静态不可判定 —— 该面（含散文 `data_checks` 的语义质量）已于 2026-09-26 裁定
+    **有意不做**并**撤登记**（证据 = #5505 的关单评论；**接受的缺口 + 重启条件**写在本文件
+    `UNIMPLEMENTED` 上方「已撤登记（有意不做）」组的 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY` 条）。
+    ⚠️ 撤登记 **≠** 已实装：本函数仍是**下界**（判不了的照旧判不了），别把"没登记"读成"有判据"。
     """
     if _XIAOBU_TOOLS is None or not _MIBAO_TOOLS:
         return False
@@ -1670,6 +1673,30 @@ RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
 #     的处置：它现在探不到证据 = 正是「已实装」的读数，按探针名检索即可复核），
 #     因此本项**不在**下方 `UNIMPLEMENTED` 里 —— 留着就是「实装了还挂着未实装」的假真值。
 #     判据 = `tests/unit_ci_workflows/test_persona_leg_parity.py`（含撤登记守卫）。
+# 🗑️ **已撤登记（**有意不做**）** —— ⚠️ 与上一组的语义**相反**，别读串（2026-09-26 用户裁定②）：
+#   上一组 = 「**已实装** ⇒ 撤」；本组 = 「**接受缺口、有意不做** ⇒ 撤」—— 本组**不是**
+#   「做完了」，它是**明知不做**（`AGENTS.md` §11(c)⑤：关单证据必须写明**接受的缺口 +
+#   重启条件**；"有意不做"被读成"已解决"是同一条铁律点名的反模式）。
+#   · `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（原追踪单 #5505）—— 撤登记的理由**不是**实装：
+#     静态侧判不出「散文 `data_checks` 是否真在测它声称的东西」（**语义**判断），而
+#     **可执行**的语义复核格（按用例 ID 逐条判定 + 结论落盘可复查）经 2026-09-26 裁定
+#     **有意不做**（成本/收益不成立）⇒ 撤登记，本项**不再**是「待实装」。
+#     ⚠️ 撤登记是**机械必需**、不是措辞偏好：`judge_unimplemented_manifest` 的
+#     `ISSUE_CLOSED` 格（`check_unimplemented_issues`）对**任何**留在册的条目都要求其
+#     `issue` 保持 OPEN —— 实测（本 PR 复算）：保留登记 + 只把 `needs` 改成「有意不做」
+#     的形态，在 #5505 关闭的那一刻**照样判红**（`CASE-TRUST-UNIMPL-ISSUE-CLOSED`）；
+#     而上一组 `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` 之所以能"留着 + 有意不做"，
+#     只因它的追踪单 #4155 是**长期 OPEN 的复核触发器**（口径会随 persona 语义变更复核）。
+#     **接受的缺口**：静态门禁此后**不**把这个语义面登记为待实装 —— 它仍是
+#     `migao-acceptance` 里「LLM 只覆盖语义残留」的那一层，靠**人工 / LLM 评测**兜，
+#     **没有**静态判据（这一句是**边界**，不得读成「已覆盖」）。
+#     **重启条件**：出现**可落盘**的语义复核能力（按用例 ID 出结论、可复查，且对故意写歪的
+#     散文能点名）⇒ **重新开单**并按新能力重新登记（**不是**"本条复活"）。
+#     ⚠️ 僵尸判据 `_probe_prose_data_check` 与其注册项**保留**（同 `DRIFT-AUDIT-STALE-DIFF-SCOPED`
+#     的处置：它现在探不到证据 = 读数，按探针名检索即可复核），因此本项**不在**下方
+#     `UNIMPLEMENTED` 里 —— 留着就是「有意不做被读成还没做」的假真值。
+#     判据 = `tests/unit_ci_workflows/test_case_trust_gate.py` 的
+#     `test_unimplemented_manifest_registers_the_remaining_burn_down_gaps`（含**不许再登记回来**守卫）。
 UNIMPLEMENTED: tuple[dict, ...] = (
     {
         "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
@@ -1723,26 +1750,6 @@ UNIMPLEMENTED: tuple[dict, ...] = (
             "if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。"
         ),
         "hit_probe": "dual_leg_no_persona",
-    },
-    {
-        "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
-        "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
-        "why_not": (
-            "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定"
-            "（`migao-acceptance`：LLM 只覆盖语义残留）。静态侧只能判定「它**不计分**」"
-            "（`is_machine_scored_data_check`）并据此要求效果层断言。"
-        ),
-        "needs": "LLM 用例语义审计（#3483 的 LLM 复核格），不属静态门禁。",
-        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        "issue": 5505,
-        "expires": "2027-06-30",
-        "how_to_verify": (
-            "出现**可执行**的用例语义复核（`#3483` 的 LLM 复核格：逐条判定散文 `data_checks`"
-            "是否真在测它声称的东西，且结论落盘可复查）⇒ 静态侧不再是「无法判定」"
-            "⇒ 撤本登记。核验：存在按用例 ID 产出语义复核结论的脚本/用例，"
-            "且 `python3 .github/case_trust_gate.py` 的未实装清单里不再需要这一条。"
-        ),
-        "hit_probe": "prose_data_check",
     },
 )
 
