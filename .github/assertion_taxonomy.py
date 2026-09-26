@@ -73,7 +73,9 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    不在任何 skill 工具集）⇒ **从本表移除**（本表只列当前可达的工具，见上方幽灵
     #    写工具口径）。工具类文件仍在 `app/tools/human_handoff.py`，但它只能被直测类
     #    单测实例化，用例断言它会永远失败 ⇒ 留在表里只会让"写用例"分类产生假红。
-    #    工具文件删除（阶段二）时无本表改动。
+    #    本表**不会**因「删除工具文件」而改动：2026-09-26 用户裁定「保留现状，不删」
+    #    撤回了 2026-09-19 派生的阶段二删除方向（工具类 / 数据面 / 商家工作台均属有意保留）；
+    #    退场只发生在**可达性**这一半（工具始终不在本表里）。
     # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：`order_manage` /
     #    `product_manage` / `product_update` / `sku_update` / `processing_order_generate` /
     #    `processing_order_update` **已从 B 端全部 skill 解绑** —— 工具类与注册行仍在，

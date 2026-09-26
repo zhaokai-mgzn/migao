@@ -103,7 +103,8 @@ _NO_ACTION_PARAM_TOOL_ACTION: Dict[str, str] = {
     #    但本条目**保留**：本表的判据口径是「源码里 `read_only = False` 的工具」
     #    （`tests/test_write_audit_action_semantics.py::_write_tools` 按**文件**扫，不按注册表）
     #    ⇒ 工具类文件在、映射就必须在（删掉它只会把一条判据换成另一条红）。
-    #    阶段二完全删除 `app/tools/human_handoff.py` 时，本行随之删除。
+    #    工具类与后端能力**均属有意保留**（2026-09-26 用户裁定「保留现状，不删」，
+    #    撤回了 2026-09-19 派生的「阶段二 = 完全删除」方向）⇒ 本条目**长期有效**。
     "human_handoff": "create",
     # processing_order_generate 语义是「批量生成加工单」（description【语义】），
     # 不是 create —— 与 processing_item_manage 的 create_processing_item 区分开

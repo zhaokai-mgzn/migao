@@ -1226,7 +1226,7 @@ _CASE_CH_008 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；会话/工单/上下文/投递语义由 traces 里的工具单测 + admin-api 单测覆盖',
+    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（**有意保留**：2026-09-26 用户裁定「保留现状，不删」，撤回阶段二删除方向），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；会话/工单/上下文/投递语义由 traces 里的工具单测 + admin-api 单测覆盖',
 )
 
 # ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
@@ -1410,7 +1410,7 @@ _CASE_CH_017 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；快照语义由 traces 里的工具单测 + admin-api 单测覆盖',
+    precondition='转人工工具（human_handoff）与后端人工会话端点仍在（**有意保留**：2026-09-26 用户裁定「保留现状，不删」，撤回阶段二删除方向），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；快照语义由 traces 里的工具单测 + admin-api 单测覆盖',
 )
 
 # ── CH-018 [NORMAL] 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）（源: cases/chat.yml）──
