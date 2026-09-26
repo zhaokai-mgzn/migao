@@ -58,6 +58,8 @@ class EvalCase:
     debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）
     form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）
     forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）
+    forbidden_interact: List = field(default_factory=list) # 负向**按轮**卡片约束（该轮不得出现 interact 卡 = 用例判别性红路径的形状前提，issue #3789）
+    arg_values: List[dict] = field(default_factory=list) # 入参**值级**断言（值相等；证据 = 落盘的 round_trace[*].call_args，issue #3823）
     namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）
     precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）
     auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）
@@ -4138,14 +4140,17 @@ _CASE_OR_014 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '选有打孔的那件'}}, {'auto_respond': {'fallback': '不需要其他加工项'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}],
     expectations=['order_create'],
-    data_checks=['加工项数量 = **该订单行面料米数**（issue #4882：计价方式退场后不再派生；#3005 行业口径——行业加工费按米计价、辅料含在加工费中）⇒ 如「打孔 × 3 米」⇒ `quantity=3`；禁止虚构「每米几个」的密度推导', 'processing_info.processingItems 逐项含 `{id, name, quantity, unit}` —— `unitPrice` / `pricingMethod` / `subtotal` 三键已随 issue #4882 退场（订单快照不再承载加工项价与计价方式）', '订单确认/回复展示加工项含「名称 + 数量」（如『打孔 3 米』）—— 数量可见可对账', '加工费**不再**由「加工项单价 × 数量」得出：真值源是**加工费组合**（`processing_fee_combinations`，元/米 × 加工费米数）—— 加工项本身已无价（R10 / issue #4882）；把逐项单价 × 数量当加工费 = 口径错（该账已不存在）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    data_checks=['加工项数量 = **该订单行面料米数**（issue #4882：计价方式退场后不再派生；#3005 行业口径——行业加工费按米计价、辅料含在加工费中）⇒ 如「打孔 × 3 米」⇒ `quantity=3`；禁止虚构「每米几个」的密度推导', '订单确认/回复展示加工项含「名称 + 数量」（如『打孔 3 米』）—— 数量可见可对账', '加工费**不再**由「加工项单价 × 数量」得出：真值源是**加工费组合**（`processing_fee_combinations`，元/米 × 加工费米数）—— 加工项本身已无价（R10 / issue #4882）；把逐项单价 × 数量当加工费 = 口径错（该账已不存在）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_interact=[{'round': 2}],
+    arg_values=[{'tool': 'order_create', 'values': {'items[].processing_info.processingItems[].quantity': 3}}],
     order_before=['interact[confirm] before order_create'],
+    required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.processingItems[].id', 'items[].processing_info.processingItems[].name', 'items[].processing_info.processingItems[].quantity', 'items[].processing_info.processingItems[].unit']}],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],

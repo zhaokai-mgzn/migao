@@ -201,6 +201,12 @@ NON_EFFECT_FIELDS: tuple[str, ...] = (
     "forbidden_text",     # 回复文本反模式词（且是**全程**语义，无轮次作用域 —— 见下）
     "want_text",          # 回复文本正向关键词
     "forbidden_card_text",  # 卡片文本反模式
+    # 负向**按轮**卡片约束（issue #3789）：断言的是**用例形状**（本轮必须纯文本 ⇒ 红路径
+    # 才成立），既不是 agent 能力证据，也不是效果层 —— 与 `forbidden_*` 家族同属非效果层。
+    "forbidden_interact",
+    # 入参**值级**（issue #3823）：证明"该参数传对了值"，仍是「调用了」的一条更精确的
+    # 投影 —— **不构成**效果层证据（写操作真落库才算），故列在非效果层。
+    "arg_values",
     "form_prefill",       # 卡片预填值
     "data_checks",        # 见下：机器计分型才算证据，纯散文不算
 )
