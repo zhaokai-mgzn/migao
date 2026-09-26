@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（10 case）
+## 售后域（9 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -39,10 +39,9 @@
 前置: order_count_for_phone(source=13800138000)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
 必须成功: aftersale_create
-必须成功: aftersale_create（落库面 metadata.tool_results）
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-09-26（issue #4097）：补 **`must_succeed[aftersale_create, source=metadata, only_if_called=true]`** —— 同一件事的**落库面**断言（读 `metadata.tool_results`；读侧 `GET /api/chat/history/{sid}` 自本单起回传该字段，此前只写不读、评测无法断言「确实调了 / 确实成了」）。两面**显式二选一**（`source`），取数不可用 ⇒ fail-closed 判「断言未评估」；本条与既有 SSE 面条目同源同序（写侧一次调用同时产出事件与落库元信息）⇒ 正常路径必然一致、不一致即缺陷。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 查看售后工单（只读；原「更新工单状态-关闭」随 #5247 写能力下线改判） 🔵
 ```
@@ -136,29 +135,6 @@
 ```
 真值: aftersales-flow.status-enums
 溯源: 2026-09-14 新增（#3494 覆盖审计）：AS-008 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖工单数据状态（诚实『暂无』回复不误伤） ｜ tags: query, aftersale
-
-### AS-010. 同会话同键重试建工单 —— 第二次是幂等回放（replayed=true），落库工单恰好一张 🟡
-```
-你: 订单 EVAL-ORD-0001 的窗帘颜色和图片不符，我要退货，帮我建个售后工单
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: (空)
-端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
-期望: aftersale_create
-数据: **同键只落一张工单**（机器断言 db_verify[after_sales_by_client_request_id]，expect_rows=1 + expect_replayed=true）：判据 = 同一会话 + 至少一次 `replayed=true`（服务端 `ClientRequestIdService.replay` 只在同键命中时置位）+ 全部成功调用指向**同一张工单**。
-数据: **回放可见**（机器断言 output_verify[aftersale_create, last]）：第二次调用返回 replayed=true，顾客看到的仍是**同一个工单号**，不得播报成「又建了一张」。
-数据: **可达性（红证方向）**：模型只口头声称已重发、实际没有第二次成功的 aftersale_create ⇒ must_succeed[min_successes=2] 判红（不是绿）。
-数据: ⚠️ 与 dup-guard 的区别（别把两件事混成一件）：`aftersales-flow.dup-guard` 治的是「同订单同类型已有活跃工单 ⇒ 422」这条**业务规则**；本用例治的是**同一次逻辑写请求被重发**时的**同键回放**（在 claim 层就被挡下、`replayed=true`，不会走到 dup-guard 的 422）。两者都要在，缺任何一条都会让另一条看起来像坏了。
-数据: ⚠️ 形态边界（如实登记）：与 OR-049 同 —— 「服务端已落库但 HTTP 客户端超时」需要故障注入（当前无此能力），本用例用「顾客转述页面提示提交失败、要求原样再提交」这一行为层可复现的重试形态作代理，不是等价物。
-前置: order_count_for_phone(source=13800138000)
-命名空间(同键互斥·自动串行): customer_phone:13800138000
-时序: interact[confirm] before aftersale_create
-必须成功: aftersale_create
-落库: after_sales_by_client_request_id → source=aftersale_create; expect_rows=1; expect_replayed=True
-产出: aftersale_create → replayed==True
-```
-真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: 2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。 ｜ tags: aftersale_create, idempotency, retry
 
 ## Agent 核心域（6 case）
 
@@ -1631,7 +1607,7 @@
 真值: customer-list.profile-view-disclosure
 溯源: 2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（米宝 customer_manage(profile_view)）与披露纪律写明。 ｜ tags: query, tool, disclosure, field-truth
 
-## 数据域（18 case）
+## 数据域（20 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -1835,6 +1811,32 @@
 ```
 真值: dashboard-jump.proactive-unwired-disclosure
 溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 未接线如实说明；2026-09-24 文本刷新（issue #5387，容器核查发现的**第三处**同类陈旧口径）：披露面由「未接线」一态扩为**三态各有各的说法**（`not_wired` 不可行动 / `not_enabled` 可行动且与前者分开说 / `incomplete` 本次不完整），枚举句由三态改判为**四态** —— 旧口径「调用方自己可分『未接线 / 本次不完整 / 已接入且完整但无命中』」整条退场 ｜ tags: proactive, briefing, honest-empty
+
+### DA-019. 今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 今天的经营日报里有什么要处理的？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: briefing_query
+数据: success=true
+数据: （散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回空态（success=true + 「今日暂无经营日报数据」）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）
+数据: （散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接
+必须成功: briefing_query
+```
+真值: dashboard-jump.proactive-today-only, dashboard-jump.real-data
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 briefing_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 briefing_query/uncovered，同 PR 删除该条目）。取号 DA-019：DA-001~DA-018 已占用，DA-019 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。旧登记理由「评测栈简报开关可能关闭 ⇒ 场景待定」经读源复核**不成立**（/today 与 /snapshot 都不看 briefing_enabled，未生成简报时同样 HTTP 200 + success=true）⇒ 缺口可销。 ｜ tags: dashboard, briefing, mibao, readonly, llm_behavior
+
+### DA-020. 客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖） 🔵
+```
+你: 现在有哪些客服会话？把会话列表给我看看
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: session_manage(action=list)
+数据: success=true
+数据: （散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回空列表且 success=true，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表
+数据: （散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替
+必须成功: session_manage
+```
+真值: agent-notification.session-status, agent-notification.session-isolation
+溯源: 2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。 ｜ tags: monitor, session, mibao, readonly, llm_behavior
 
 ## 防御域（22 case）
 
@@ -2812,7 +2814,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（49 case）
+## 订单域（47 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3671,63 +3673,7 @@
 ```
 溯源:  ｜ tags: order, image_recognize, sku_select, craft_calc
 
-### OR-049. 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张 🟡
-```
-你: 帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: (空)
-端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
-期望: order_create
-数据: 同键的三维 = 重试窗(600s) × **会话** × **操作**（服务端唯一键 `(tenant_id, client_request_id)`，取自请求头 X-Client-Request-Id）：本用例两次写调用都在**同一会话**内（runner 的 retry_same_session 不换会话）⇒ 取值相同 ⇒ 第二次被去重并回放首次结果。
-数据: **恰好一张单据**：`orders` 里该次下单只有一张（机器断言 db_verify[order_by_client_request_id]，expect_rows=1 + expect_replayed=true）—— 重复下单 = 重复扣款/重复生产，本用例守的就是这一格。
-数据: **回放可见**：第二次调用返回 replayed=true（机器断言 output_verify[order_create, last]），且顾客看到的仍是**同一个订单号**，不得播报成「又下了一单」。
-数据: **可达性（红证方向）**：若模型只口头声称已重发、实际没有第二次 order_create 成功调用 ⇒ must_succeed[min_successes=2] 判红（不是绿）。「声明无消费」与「能力没被触发」都不会被洗成通过。
-数据: ⚠️ 形态边界（如实登记，不当作已覆盖）：本用例制造的是「顾客转述页面提示提交失败、要求原样再提交一次」这一**行为层可稳定复现**的重试形态；真正的「服务端已落库但 HTTP 客户端 25s 超时」需要故障注入（当前无此能力）⇒ 该形态仍由 Java 单测 + 真库证据承载（issue #4037 / PR #4072），本用例是它的**行为层代理形态**，不是等价物。
-清理: product_dedupe(product_keyword=遮光窗帘)
-前置: product_count_for_keyword(source=遮光窗帘、expect=1)
-命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘
-时序: interact[confirm] before order_create
-必须成功: order_create
-落库: order_by_client_request_id → source=order_create; expect_rows=1; expect_replayed=True
-产出: order_create → replayed==True
-载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
-```
-溯源: 2026-09-26 新增（issue #4074「行为层对幂等零覆盖」）：① 新增 db_verify fetch `order_by_client_request_id`（同会话 + 至少一次回放 + 单据张数三条一起判）；② 新增 runner 控制轮 `retry_same_session`（同会话把同一次逻辑写请求再发一遍，停条件 = 目标工具成功 ≥ calls 次）；③ must_succeed 新增 `min_successes`（可达性下界，缺它则该声明不消费也判绿）；④ output_verify 新增 `last: true`（核**最后一次**调用的产出 = 重试那一次的 payload）。断言只增不减；persona 显式标注为 xiaobu（order_create 是 C 端工具）。 ｜ tags: order_create, idempotency, retry
-
-### OR-050. 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉） 🔴
-```
-你: 帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: 再帮我下一单：北欧风窗帘 2 米，米白色，收货信息同上，直接下单吧
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-你: [🤖 按上一轮卡片作答]
-端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
-期望: order_create
-数据: **判据（机器断言 db_verify[order_by_client_request_id]，expect_rows=2 + expect_replayed=false）**：同会话两笔**内容不同**的订单 ⇒ 成功调用必须指向**两张不同的订单**，且**一次回放都不能有**。
-数据: **这条会真的红（红证方向）**：服务端去重键 = `(tenant_id, client_request_id)`，而键 = 重试窗 × 会话 × 操作、**不含内容**（issue #4212 已补操作维度、内容维度按 issue #4229 裁定**暂不做**）⇒ 同会话同窗内第二笔会被当成重试**回放**（顾客看到「订单已创建成功」却只有一张单）⇒ 本用例判红。⚠️ **本用例当前预期为红**：红 = 该残留存在的机器证据（不是回归），红原文落在 db_verify（回放出现 / 张数 1 ≠ 2），可机器分辨。
-数据: **不得用「换新键 ⇒ 落第二单」凑数**：换会话/等窗口之后键本来就不同，那条断言**恒真**，证明不了「合法复购被保障」（issue #4229 的核验评论逐字点名过这个形态）。
-数据: **重启条件（可执行）**：一旦按 issue #4229 的候选 (a)（内容指纹进键）落地 ⇒ 本用例应当转绿；转绿前它是这条缺口的**值守判据**。
-清理: product_dedupe(product_keyword=遮光窗帘)
-清理: product_dedupe(product_keyword=北欧风窗帘)
-前置: product_count_for_keyword(source=遮光窗帘、expect=1)
-前置: product_count_for_keyword(source=北欧风窗帘、expect=1)
-命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘、product_name:北欧风窗帘
-时序: interact[confirm] before order_create
-必须成功: order_create
-落库: order_by_client_request_id → source=order_create; expect_rows=2; expect_replayed=False
-载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
-```
-溯源: 2026-09-26 新增（issue #4074 第 3 条「合法复购负例，缺一不可」）。形态选择：**同会话 + 内容不同的两笔**（而不是「隔一段时间再下一单同样的货」）—— 后者的键本来就不同、断言恒真，构不成证据（依据 = issue #4229 的核验评论，逐字点名）。**本用例当前预期为红**：内容维度按 #4229 裁定「暂时不做，直接关闭 issue」保持现状 ⇒ 第二笔会被回放吞掉，db_verify 报「出现了 1 次回放」「指向 1 张订单 ≠ 期望 2 张」。这不是恒红凑数：它是该残留唯一的机器判据，且修法（内容指纹进键）落地即转绿 —— 重启条件写在 data_checks 里。 ｜ tags: order_create, idempotency, legal_repeat, negative
-
-## 加工项域（13 case）
+## 加工项域（14 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -3950,7 +3896,20 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## 加工单域（55 case）
+### PP-015. 算料配置查询（只读）—— 米宝取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 我们店的算料配置现在是什么？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_calc_config_query
+数据: success=true
+数据: （散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」
+数据: （散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）
+必须成功: craft_calc_config_query
+```
+真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_calc, config, mibao, readonly, llm_behavior
+
+## 加工单域（56 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4668,6 +4627,19 @@
 跳过: [backend-contract] 后端契约（订单行形态 ⇒ 路线/工序实例化/算料输入的确定性单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 执行
 ```
 溯源: 2026-09-25 新增（issue #4916 判据 2 收口，覆盖 issue #4909 的修复 / PR #4918）：#4909 的修复证据齐全（18/18 + 红证）但**没进用例库**，原因如实登记在 #4916（当时 Case Trust 的 burn-down 要求触碰 `.github/cases/**` 的 PR 净销账 ≥1 条存量条目，而存量条目全是别域 LLM 行为用例，凭「缴门禁」去猜别域语义 = 造假断言，验证又要真跑 LLM 评测 ⇒ 按 #4262 不自动跑）。本次是**已经要缴这笔账的触碰** ⇒ 一并补上。① 该文件里三条 `@DisplayName` 原写 `PG-057` —— 而库内 PG-057 = 米宝查加工单过程明细（`production_worklog_query`，随 #4927 于同日 17:32Z 落地，晚于 #4918 的 17:09Z）⇒ 改判为本条 `PG-063`（**只改引用号，断言面一字未动**），并把 `PG-063` 补进文件头 `case_ids:`。② **未固化项（如实登记，本单登记不动）**：同一文件里 5 处 `PG-039` 前缀的布料/未定价用例与库内 PG-039（= 工序作用域 scope）**同名不同义**，且全仓另有数个测试文件以同款方式声明 PG-039（如 tests/unit_ci_workflows/test_fabric_route_seed.py）—— 这是**先于本单**存在的用例号重载，收敛它要动多包共用的号序并需裁定，属「体量超一个包 + 需裁定」（AGENTS.md 铁律 11 的 ①④）。 ｜ tags: processing-order, production, routing, fabric, fixture-drift
+
+### PG-064. 加工套件与扫码循环（只读）—— 米宝按 action=list 查套件列表；未定价原样转述（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 我们店里的加工套件现在有哪些？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: processing_order_set_query(action=list)
+数据: success=true
+数据: （散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具 `success=true` + 「暂无套件记录」⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序
+数据: （散文、不计分）只读 + 未定价口径：三个 action 全部只读（权限码 production:view，工具 read_only=true）⇒ 不得声称已生成 / 已修改加工单；`detail` 的 `unit_price` 为 null = **尚未定价**，必须原样转述（不得说成 0 元、不得估算，#4696）；缺 id / 缺单号时应先向用户确认，不得编造
+必须成功: processing_order_set_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
 ## 商品域（97 case）
 
@@ -6959,9 +6931,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：493（活跃 122，跳过 371）
-- tier 分布：smoke 12 / normal 448 / adversarial 31
-- 售后域：10
+- 用例总数：494（活跃 123，跳过 371）
+- tier 分布：smoke 12 / normal 452 / adversarial 30
+- 售后域：9
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
@@ -6970,7 +6942,7 @@
 - 对话边界域：43
 - 跨域：3
 - 客户域：11
-- 数据域：18
+- 数据域：20
 - 防御域：22
 - 财务对账域：4
 - 人事域：10
@@ -6978,9 +6950,9 @@
 - 杂项域：21
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：49
-- 加工项域：13
-- 加工单域：55
+- 订单域：47
+- 加工项域：14
+- 加工单域：56
 - 商品域：97
 - 工具注册器域：1
 - 设置域：10
@@ -7035,8 +7007,6 @@
 - OR-045: 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）
 - OR-046: 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）
 - OR-048: 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU
-- OR-049: 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张
-- OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

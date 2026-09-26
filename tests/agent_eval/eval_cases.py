@@ -2537,6 +2537,44 @@ _CASE_DA_018 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-019 [NORMAL] 今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）（源: cases/data.yml）──
+_CASE_DA_019 = EvalCase(
+    id='DA-019',
+    legacy_id='',
+    title='今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天的经营日报里有什么要处理的？'],
+    expectations=['briefing_query'],
+    data_checks=['success=true', '（散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回空态（success=true + 「今日暂无经营日报数据」）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）', '（散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接'],
+    skip_reason='',
+    tags=['dashboard', 'briefing', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'briefing_query'}],
+)
+
+# ── DA-020 [NORMAL] 客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）（源: cases/data.yml）──
+_CASE_DA_020 = EvalCase(
+    id='DA-020',
+    legacy_id='',
+    title='客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现在有哪些客服会话？把会话列表给我看看'],
+    expectations=['session_manage(action=list)'],
+    data_checks=['success=true', '（散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回空列表且 success=true，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表', '（散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替'],
+    skip_reason='',
+    tags=['monitor', 'session', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'session_manage'}],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -5929,6 +5967,25 @@ _CASE_PG_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-064 [NORMAL] 加工套件与扫码循环（只读）—— 米宝按 action=list 查套件列表；未定价原样转述（覆盖 #5247 新接入的只读工具）（源: cases/processing-order.yml）──
+_CASE_PG_064 = EvalCase(
+    id='PG-064',
+    legacy_id='',
+    title='加工套件与扫码循环（只读）—— 米宝按 action=list 查套件列表；未定价原样转述（覆盖 #5247 新接入的只读工具）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店里的加工套件现在有哪些？'],
+    expectations=['processing_order_set_query(action=list)'],
+    data_checks=['success=true', '（散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具 `success=true` + 「暂无套件记录」⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序', '（散文、不计分）只读 + 未定价口径：三个 action 全部只读（权限码 production:view，工具 read_only=true）⇒ 不得声称已生成 / 已修改加工单；`detail` 的 `unit_price` 为 null = **尚未定价**，必须原样转述（不得说成 0 元、不得估算，#4696）；缺 id / 缺单号时应先向用户确认，不得编造'],
+    skip_reason='',
+    tags=['processing_order', 'set', 'scan_loop', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'processing_order_set_query'}],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -6166,6 +6223,25 @@ _CASE_PG_043 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── PP-015 [NORMAL] 算料配置查询（只读）—— 米宝取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具）（源: cases/processing.yml）──
+_CASE_PP_015 = EvalCase(
+    id='PP-015',
+    legacy_id='',
+    title='算料配置查询（只读）—— 米宝取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店的算料配置现在是什么？'],
+    expectations=['craft_calc_config_query'],
+    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）'],
+    skip_reason='',
+    tags=['craft_calc', 'config', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_calc_config_query'}],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -9469,6 +9545,8 @@ ALL_CASES = (
     _CASE_DA_016,
     _CASE_DA_017,
     _CASE_DA_018,
+    _CASE_DA_019,
+    _CASE_DA_020,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
@@ -9646,6 +9724,7 @@ ALL_CASES = (
     _CASE_PG_060,
     _CASE_PG_062,
     _CASE_PG_063,
+    _CASE_PG_064,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -9659,6 +9738,7 @@ ALL_CASES = (
     _CASE_PG_040,
     _CASE_PG_042,
     _CASE_PG_043,
+    _CASE_PP_015,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,
