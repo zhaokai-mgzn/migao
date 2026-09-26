@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
 import com.migao.admin.entity.User;
@@ -8,9 +9,12 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.support.LoginIdentifiers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,8 +45,11 @@ public class UserService implements UserDetailsService {
     private final UserMapper userMapper;
     private final RoleMapper roleMapper;
     private final UserRoleMapper userRoleMapper;
+    private final PermissionInterceptor permissionInterceptor;
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * 系统保留角色：商户侧员工管理禁止赋值（防垂直越权，审计 07 P0-2）。
@@ -55,17 +62,51 @@ public class UserService implements UserDetailsService {
 
     /**
      * 校验角色/权限是否允许由商户侧员工管理赋值。
-     * 禁止系统保留角色与通配权限码（"*" 为超管/内部服务全权限）。
+     *
+     * <p>三条护栏（第 3 条 = issue #4104，用户 2026-09-26 裁定
+     * 「授予的权限码必须 ⊆ 操作者自身权限」）：</p>
+     * <ol>
+     *   <li>禁止系统保留角色（防垂直越权，审计 07 P0-2）；</li>
+     *   <li>禁止通配权限码 {@code "*"}（超管 / 内部服务全权限）；</li>
+     *   <li><b>授予集 ⊆ 操作者自身生效权限</b> —— 委托
+     *       {@link PermissionInterceptor#assertGrantable} 判定（与 {@code @RequirePermission}
+     *       同一份身份口径，不写第二份授权实现，issue #4148）。不满足 ⇒ 403
+     *       {@code PERMISSION_ESCALATION_DENIED} + 点名违规码，且**在写库之前抛出**（不落半条）。</li>
+     * </ol>
      *
      * @param role        角色代码（可能为 null，null 表示不指定）
      * @param permissions 权限码 JSON 数组字符串（可能为 null）
+     * @param tenantId    目标租户 ID（所授角色**隐含**的权限码按该租户解析）
      */
-    private void assertAssignableRoleAndPermissions(String role, String permissions) {
+    private void assertAssignableRoleAndPermissions(String role, String permissions, Long tenantId) {
         if (StringUtils.hasText(role) && FORBIDDEN_USER_ROLES.contains(role)) {
             throw BusinessException.validationError("角色 " + role + " 为系统保留角色，禁止在员工管理中分配");
         }
         if (permissions != null && permissions.contains("*")) {
             throw BusinessException.validationError("禁止授予通配权限 (*)，请勾选具体权限码");
+        }
+        permissionInterceptor.assertGrantable(role, parsePermissionSnapshot(permissions), tenantId);
+    }
+
+    /**
+     * 解析 {@code users.permissions} 快照（JSON 数组字符串）为权限码列表。
+     *
+     * <p>解析不出来（不是合法 JSON 数组）⇒ 把整串当成**一个未知权限码**返回：调用方的 ⊆ 门禁
+     * 必然判它「操作者不具备」⇒ 拒绝。**有意 fail-closed** —— 判不出授予集就不放行，
+     * 不静默退化成「没人管」（旧形态：字符串原样落库，运行时
+     * {@code RoleService.parseSnapshotPermissions} 同样解析不出 ⇒ 悄悄回退角色权限，
+     * 谁都不知道实际写进去了什么）。</p>
+     */
+    private static List<String> parsePermissionSnapshot(String permissions) {
+        if (!StringUtils.hasText(permissions)) {
+            return List.of();
+        }
+        try {
+            List<String> codes = OBJECT_MAPPER.readValue(permissions, new TypeReference<List<String>>() { });
+            return codes == null ? List.of() : codes;
+        } catch (Exception e) {
+            log.warn("权限快照不是合法 JSON 数组，按未知权限码处理（fail-closed）: {}", permissions);
+            return List.of(permissions.trim());
         }
     }
 
@@ -305,8 +346,8 @@ public class UserService implements UserDetailsService {
     @Transactional(rollbackFor = Exception.class)
     public User createUser(String phone, String password, String nickname, String role, String position,
                            String permissions, Long tenantId, String username, boolean forceChangePassword) {
-        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
-        assertAssignableRoleAndPermissions(role, permissions);
+        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）+ 授予集 ⊆ 操作者自身权限（#4104）
+        assertAssignableRoleAndPermissions(role, permissions, tenantId);
 
         // 验证手机号唯一性
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
@@ -402,8 +443,13 @@ public class UserService implements UserDetailsService {
     @Transactional(rollbackFor = Exception.class)
     public User updateUser(String userId, String nickname, String avatar, String role, String position,
                            String permissions, String phone, String username) {
-        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
-        assertAssignableRoleAndPermissions(role, permissions);
+        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）+ 授予集 ⊆ 操作者自身权限（#4104）
+        // 租户取自 TenantContext（员工管理写面恒在租户上下文内），且**保持在读取目标用户之前**：
+        // 校验不通过时连目标行都不查（既有语义：越权请求不泄露"该 userId 存不存在"）。
+        assertAssignableRoleAndPermissions(role, permissions, TenantContext.getTenantId());
+        // 目标侧 ⊆ 检查（issue #4104 的另一半）：改资料同样是「管理既有账号」——
+        // 改手机号/用户名就等于改掉别人的登录凭据 ⇒ 与改密同族，必须同一把尺。
+        permissionInterceptor.assertManagesTarget(userId, "修改员工资料");
 
         User user = getUserById(userId);
 
@@ -473,6 +519,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void changePassword(String userId, String newPassword, boolean forceChangePassword) {
+        // 目标侧 ⊆ 检查（issue #4104）：改密 = 取得该账号身份 ⇒ 落库前断言目标权限 ⊆ 自身权限
+        permissionInterceptor.assertManagesTarget(userId, "修改密码");
         User user = getUserById(userId);
         user.setPasswordHash(PASSWORD_ENCODER.encode(newPassword));
         user.setMustChangePassword(forceChangePassword);
@@ -524,6 +572,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public String resetPassword(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：重置成默认密码 = 直接拿到该账号 ⇒ 先过 ⊆ 门禁
+        permissionInterceptor.assertManagesTarget(userId, "重置密码");
         User user = getUserById(userId);
         String phone = user.getPhone();
         // 默认密码：手机号后6位
@@ -542,6 +592,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void disableUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：停用高权限账号 = 让管理员失效（治理动作，同一把尺）
+        permissionInterceptor.assertManagesTarget(userId, "停用账号");
         User user = getUserById(userId);
         if ("disabled".equals(user.getStatus())) {
             throw BusinessException.validationError("用户已处于禁用状态");
@@ -558,6 +610,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void enableUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：与停用同一把尺（同族动作不得一严一松）
+        permissionInterceptor.assertManagesTarget(userId, "启用账号");
         User user = getUserById(userId);
         if ("active".equals(user.getStatus())) {
             throw BusinessException.validationError("用户已处于启用状态");
@@ -574,6 +628,8 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteUser(String userId) {
+        // 目标侧 ⊆ 检查（issue #4104）：不能删掉一个权限高于自己的账号（含管理员）
+        permissionInterceptor.assertManagesTarget(userId, "删除员工");
         User user = getUserById(userId);
         userMapper.deleteById(userId);
 

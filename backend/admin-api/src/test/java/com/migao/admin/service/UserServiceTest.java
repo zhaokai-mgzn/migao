@@ -9,6 +9,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -50,6 +51,15 @@ class UserServiceTest {
 
     @Mock
     private UserRoleMapper userRoleMapper;
+
+    /**
+     * ⊆ 门禁替身（issue #4104）：{@code UserService} 的授权写面依赖它；本类测的是其它行为
+     * ⇒ 用替身（真实判定由 {@code EmployeePermissionGrantGateTest} 覆盖）。
+     * ⚠️ 不声明它 ⇒ {@code @InjectMocks} 注入 null ⇒ NPE（**不是**静默放行）；
+     * 机械判据 = {@code EmployeeGrantChokepointMetaGuardTest#userServiceTestsDeclarePermissionInterceptorStub}。
+     */
+    @Mock
+    private PermissionInterceptor permissionInterceptor;
 
     private User testUser;
 

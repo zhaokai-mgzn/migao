@@ -72,49 +72,6 @@ public class PermissionService {
     }
 
     /**
-     * 根据角色查询权限
-     *
-     * @param roleCode 角色代码
-     * @return 权限列表
-     */
-    public List<Permission> getPermissionsByRole(String roleCode) {
-        // 根据角色代码查询对应的权限
-        // 这里简化处理，实际项目中可以从 role_permissions 中间表查询
-        List<String> permissionCodes = switch (roleCode) {
-            case "admin" -> List.of("*");
-            case "operator" -> List.of(
-                    "dashboard:view",
-                    "order:list", "order:detail", "order:refund",
-                    "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view",
-                    "customer:view",
-                    "finance:view",
-                    "agent:session",
-                    "employee:list",
-                    "system:manage"
-            );
-            case "product_manager" -> List.of(
-                    "dashboard:view",
-                    "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view"
-            );
-            case "knowledge_editor" -> List.of(
-                    "dashboard:view"
-            );
-            default -> List.of();
-        };
-
-        if (permissionCodes.isEmpty()) {
-            return List.of();
-        }
-
-        LambdaQueryWrapper<Permission> wrapper = new LambdaQueryWrapper<>();
-        wrapper.in(Permission::getCode, permissionCodes)
-                .eq(Permission::getDeleted, 0);
-        return permissionMapper.selectList(wrapper);
-    }
-
-    /**
      * 创建权限
      *
      * @param permission 权限实体
