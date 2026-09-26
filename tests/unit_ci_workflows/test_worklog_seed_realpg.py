@@ -228,12 +228,16 @@ def test_three_part_fixture_lands_on_real_postgres(seeded_pg):
     assert logs == "5|3|1|1", f"报工（第 ③ 段）与声明不符（总数|normal|rework|scrap）：{logs}"
 
     # 报工人 = 夹具里的两个人（用例的 forbidden_text 禁的是**编造**的具名报工人 ⇒ 真值必须在库里）
-    workers = seeded_pg.scalar(f"""
-        SELECT string_agg(DISTINCT worker_name, ',' ORDER BY worker_name)
+    # 🔴 **不得**在 SQL 里排序后比字符串：`ORDER BY worker_name` 的次序**随 collation 变**
+    # （本机 macOS 的 en_US 与 CI 的 C/POSIX 对中文的次序**相反** ⇒ 同一份数据一边绿一边红。
+    # 实测：PR #5632 首轮 CI 唯一红点就是它 —— `assert '王秀兰,陈国强' == '陈国强,王秀兰'`。）
+    # ⇒ 取回**集合**，排序交给 Python（按码点，跨环境唯一）。
+    workers = sorted(seeded_pg.run(f"""
+        SELECT DISTINCT worker_name
           FROM production_work_logs
          WHERE tenant_id = 1 AND processing_order_id = '{PROCESSING_ORDER_ID}' AND deleted = 0;
-    """)
-    assert workers == "陈国强,王秀兰", f"报工人集合与声明不符：{workers}"
+    """).split())
+    assert workers == sorted(["王秀兰", "陈国强"]), f"报工人集合与声明不符：{workers}"
 
     # 承载订单在位且 confirmed（工具按 order_no 解析订单 ⇒ 订单缺了整条链路查不到）
     order = seeded_pg.scalar(f"""
@@ -274,7 +278,10 @@ def test_sibling_orders_still_have_no_processing_order(seeded_pg):
            AND o.order_no IN ({', '.join("'" + n + "'" for n in SIBLING_ORDER_NOS)})
          GROUP BY o.order_no ORDER BY o.order_no;
     """)
-    assert rows.split() == [f"{n}=0" for n in SIBLING_ORDER_NOS], (
+    # ⚠️ 与报工人那处同因：**不**拿 DB 的排序当真值 —— 比集合（本仓 CI 的 collation 与开发机不同，
+    # 见同文件 `test_three_part_fixture_lands_on_real_postgres` 的注释；订单号当前是 ASCII ⇒
+    # 两种 collation 次序相同，但把「次序」写进断言等于给未来埋一个跨环境假红）。
+    assert sorted(rows.split()) == sorted(f"{n}=0" for n in SIBLING_ORDER_NOS), (
         f"同行订单的加工单数不为 0：{rows!r}（夹具挤占了 PG-013/015/016 的专用订单）")
 
 
