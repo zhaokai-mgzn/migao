@@ -47,6 +47,16 @@ SUPPORTED_DB_FETCH = {
     "employee_absent"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
+#: `must_succeed[source]` 的词汇表（issue #4097）：**读的是哪一面**。
+#:   · `sse`      = 既有 SSE 事件面（缺省；不写 `source` 时语义一字不变）
+#:   · `metadata` = 落库面（`metadata.tool_results`，由读侧 `GET /api/chat/history/{sid}` 回传）
+#: 取值拼错（`metdata`）/ 声明了未实现的第三面 ⇒ runner 侧 fail-closed 判「断言未评估」，
+#: 故左移到 PR 阶段（本 job 零依赖、零 LLM）判红 —— 与 `output_verify`/`db_verify` 同款左移。
+#: 与 runner 的 `MUST_SUCCEED_SOURCES` 的**一致性**由
+#: `tests/unit_ci_workflows/test_eval_must_succeed_metadata_source.py::TestVocabularyHasSingleSource`
+#: 逐值钉住（两处各写一份就会漂移：静态放行而运行期判红）。
+SUPPORTED_MUST_SUCCEED_SOURCES = {"sse", "metadata"}
+
 
 def _specs(case, field):
     for s in case.get(field) or []:
@@ -117,6 +127,27 @@ class TestAssertionSpecsWellFormed:
                for c in self._cases() for i, s in enumerate(_specs(c, "must_succeed"))
                if not str(s.get("tool") or "")]
         assert not bad, "must_succeed 缺 tool：\n  " + "\n  ".join(bad)
+
+    def test_must_succeed_source_is_supported(self):
+        """`must_succeed[source]`（issue #4097）：读哪一面必须显式二选一。
+
+        这一格是**新断言能力的词汇表左移**：声明了 `source: metdata` 这类拼错取值，
+        运行期会 fail-closed 判「断言未评估」（用例红），但那时已经烧掉一整轮真 LLM 评测。
+        在本 job（零依赖、零 LLM）判红，成本为零。
+        未声明的条目**不进本判据**（缺省 `sse` = 存量语义一字不变）。
+        """
+        bad = []
+        for c in self._cases():
+            for i, s in enumerate(_specs(c, "must_succeed")):
+                src = s.get("source")
+                if src is None:
+                    continue
+                if not isinstance(src, str) or src not in SUPPORTED_MUST_SUCCEED_SOURCES:
+                    bad.append(
+                        f"{c['id']}.must_succeed[{i}]: 不支持的 source={src!r}"
+                        f"（支持 {sorted(SUPPORTED_MUST_SUCCEED_SOURCES)}；"
+                        f"缺省 sse = 存量 SSE 事件面）")
+        assert not bad, "must_succeed source 不合法：\n  " + "\n  ".join(bad)
 
     def test_must_fail_has_tool_and_does_not_contradict(self):
         """`must_fail` 形状 + 与 `must_succeed` 互斥（同一工具既"必须成功"又"必须失败"
