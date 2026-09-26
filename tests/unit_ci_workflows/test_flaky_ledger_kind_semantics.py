@@ -24,7 +24,9 @@
 ② `TestDeterministicCorpus` —— 真正确定性失败（两次尝试**同一断言同一错误**）⇒ 仍能**如实**
    标成确定性（防把分类改成「一律 unknown」）；
 ③ `TestReadSideCompat` —— 改字段后读侧**不许静默降级**（旧值仍在白名单、每个 kind 都有非空的
-   `reason`/`remedy`、`unknown` 在聚合里**单列**且不进归因计数、出厂台账 `selftest`/`reconcile` 仍干净）。
+   `reason`/`remedy`、`unknown` 在聚合里**单列**且不进归因计数、出厂台账 `selftest`/`reconcile` 仍干净）；
+   其中 `test_migration_did_not_rewrite_entries` 的判据形态 = **fact-backed kind 必带 `attempts`**
+   （有结论无凭据即红），**不是**「台账里不许出现这类 kind」—— 后者会把新口径的正常追加判红。
 """
 import importlib.util
 import json
@@ -331,13 +333,24 @@ class TestReadSideCompat:
 
     def test_migration_did_not_rewrite_entries(self):
         """迁移只动顶层 `note`/`_schema`/`version`：历史条目**无** `attempts`（新口径才写），
-        且迁移**没有**给历史条目补结论。"""
+        且迁移**没有**给历史条目补结论。
+
+        ⚠️ 「补结论」的机械形态是**有结论、无凭据**，不是「台账里不许出现 fact-backed kind」：
+        `FACT_BACKED_KINDS` 的定义本就是「必须带**原始事实**（`attempts`）的新口径 kind」
+        （见 `flaky_ledger.py`），而 `decide()` 在 `record_both_red` 时**就应当**产出
+        `kind=unknown` + `attempts`（#5088：两次都红不足以判「确定性失败」⇒ 只记事实、不归因）。
+        ⇒ 本判据只能是「fact-backed kind 必带 `attempts`」。写宽成「台账里不许出现这类 kind」
+        会与 #5088 自己的口径**自相矛盾**：任何一条 `unknown`/`deterministic` 追加都会让台账 PR 的
+        required 检查**恒红** ⇒ 台账**永久落不了 main**（实测：分支 `chore/flaky-ledger` 上 6 条
+        `unknown` 逐条带两次尝试事实、`flaky_ledger.ledger_violations()` 判**零违规**，
+        而台账 PR #5580 的 required 检查因此卡死、分支停在 20:41 +08）。"""
         for entry in REAL_LEDGER["entries"]:
             if entry["kind"] in FL.LEGACY_ENTRY_KINDS:
                 assert "attempts" not in entry, ("历史条目被改写了", entry["run_id"])
-        inferred = [e["run_id"] for e in REAL_LEDGER["entries"]
-                    if e["kind"] in FL.FACT_BACKED_KINDS]
-        assert inferred == [], f"迁移不许给历史条目补结论（那等于用新口径改写历史）：{inferred}"
+        unattested = [e["run_id"] for e in REAL_LEDGER["entries"]
+                      if e["kind"] in FL.FACT_BACKED_KINDS and not e.get("attempts")]
+        assert unattested == [], (
+            f"fact-backed kind 必须带原始事实 `attempts`（有结论无凭据 = 用新口径改写历史）：{unattested}")
         assert REAL_LEDGER["version"] >= 2, "版本号必须显式登记口径变更"
         assert "migration" in REAL_LEDGER["_schema"], "迁移动作与依据必须显式登记"
 
