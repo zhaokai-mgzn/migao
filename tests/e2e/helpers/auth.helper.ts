@@ -131,6 +131,9 @@ export async function injectAuth(
         username: 'admin',
         name: '管理员',
         roles: ['admin'],
+        // 米宝唤出能力位（issue #5642 功能⑤）：admin 角色在后端恒为 ["*"] ⇒ 能力位为真。
+        // 真实 /api/auth/me 就下发它；fixture 不补 ⇒ 授权门渲染成「需要管理员授权」、页面无面板。
+        capabilities: { mibaoChat: true },
         // admin 角色在后端 getUserPermissions 中恒为 ["*"]，mock 需与之对齐，
         // 否则侧边栏/页面按钮级权限（如 employee:create）会误判无权限
         permissions: ['*'],

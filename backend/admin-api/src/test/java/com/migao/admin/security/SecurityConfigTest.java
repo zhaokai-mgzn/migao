@@ -117,7 +117,7 @@ class SecurityConfigTest {
 
     @MockBean
     private com.migao.admin.service.OrderShipmentService orderShipmentService;
-    // 发货单 / 发货明细（issue #5648，V132）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
+    // 发货单 / 发货明细（issue #5648，V133 —— 原 V132 让号给 #5642 的 V132 权限码迁移）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
     // sqlSessionFactory（MybatisPlusAutoConfiguration 已排除）⇒ 不顶替就整个上下文起不来
     // （与上面 StockLedgerMapper / InboundOrderMapper / FabricRemnantMapper 同款口径）。
     @MockBean

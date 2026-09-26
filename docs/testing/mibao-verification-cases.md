@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（7 case）
+## B 端小程序域（8 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -681,6 +681,21 @@
 ```
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：issue #5145 阶段 1（派加工单扣批次库存）的工人端可见面 —— 母单 #5144 的原始诉求「生成加工单时告知裁剪工人去哪个批次裁多少米」。真值源 = 批次消耗台账（生产读面 `ProductionService#stampBatchAssignments` 逐部位追加两键），**不是**订单侧 `processing_info.batchNo`（那是面料批号，V111 明令不得与系统批次号混用）。 ｜ tags: bmini, production, batch, backend_contract
+
+### BM-008. 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导 🔵
+```
+你: 企业管理员唤出米宝对话（持该组权限码 ⇒ 默认可唤）；未获授权的员工进入米宝页 ⇒ 看到「需要管理员授权」以及去哪开通的引导
+期望: direct_reply
+数据: 判据 1·**唯一判定**：管理员权限码集合在服务端**只有一处字面量**（`backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java` 的 `ADMIN_PERMISSION_CODES`），全仓**代码面**语料里该集合三码的**字面量相邻出现**次数 == 1。红证：在第二个文件里再抄一遍三码数组 ⇒ 计数变 2 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ①。
+数据: 判据 2·**前端零副本**：`frontend/bmini-app/src/**` 与 `frontend/admin-web/src/**` 的任一文件里，该集合的**不同成员数 ≤ 1** —— 两端都只消费服务端下发的 `capabilities.mibaoChat` 布尔位，不自己判码。红证：在前端写两个成员参与判定 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ②。
+数据: 判据 3·**码必须真在目录里**：集合每个成员 ∈ `RegistrationService.defaultPermissions` 的码集 ∧ ∈ `PermissionService.ensureFullPermissionCatalog` 的码集（两处目录逐值相等，与既有判据 9 同源复用）；**本单新增的那个成员**还必须由一条迁移落库（否则**存量租户永远拿不到它**）。红证：写一个目录里没有的码 ⇒ 红（**本包开工前的现状正是这一形态**：该码全仓 0 命中）。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ③。
+数据: 判据 4·**只回填 `admin`**（用户 2026-09-26 裁定⑧「严格收窄」）：迁移 `backend/admin-api/src/main/resources/db/migration/V132__add_agent_chat_permission.sql` 的岗位授权谓词恒为 `r.code = 'admin'`，且带终态对账 `DO` 块（多授一个非 admin 岗位 ⇒ `RAISE EXCEPTION` 回滚）；迁移幂等（`WHERE NOT EXISTS` + `ON CONFLICT DO NOTHING`）且头部登记回滚 SQL。红证：把谓词放宽到客服岗位 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ④。
+数据: 判据 5·**既有行为零回归**：`role='admin'` 的账号仍能唤米宝 —— 走的是 `AdminGate` 的 `"*"` **通配判真**分支（`RoleService` 四处分支恒为 `["*"]`），**不是**为 admin 写的特例分支。红证：把判定改成读 `role` 字段 ⇒ 红（引入第二套身份口径）。证据：backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java 的「"*" 通配直接判真」与「三码全持为真、缺一为假」两条。
+数据: 判据 6·**未授权 ⇒ 入口可见 + 逐字「需要管理员授权」+ 可行动引导**（issue 范围 3 逐字「不是静默隐藏，也不是 403 白屏」）：端侧拒绝态**渲染得出来**（稳定锚点 `mibao-gate-denied`）、文案常量逐字等于「需要管理员授权」、引导含「员工管理」（去哪授权）。红证：文案退回泛化「无权限」/ 去掉引导 ⇒ 红。证据：frontend/bmini-app/tests/mibao-access-gate.test.tsx + frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx。
+数据: 判据 7·**两端同源**：小程序端（`frontend/bmini-app`，**一端双编译** ⇒ weapp 与 h5 产物同一份门）与 admin-web 端都从 `GET /api/auth/me` 的 `capabilities.mibaoChat` 取值、都挂上同一形态的门；未授权时**不创建会话、不拉会话列表**（避免「页面看起来正常、一发消息什么都没有」的静默形态）。红证：只在其中一端加门 ⇒ 红。证据：frontend/admin-web/tests/unit/pages/chat-page.test.tsx 的授权门两格。
+跳过: [backend-contract] 确定性契约/机械判据，由 pytest（tests/unit_ci_workflows/test_mibao_chat_gate.py）+ JUnit（backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java）+ jest/vitest（frontend/bmini-app/tests/mibao-access-gate.test.tsx、frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx、frontend/admin-web/tests/unit/pages/chat-page.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-26 新增（issue #5642 功能⑤「按权限码的米宝唤出授权门」；同日用户裁定「微信登录部分搁置，只交付授权门」⇒ 本用例只覆盖授权门，不覆盖小程序端微信手机号登录）。用户逐字：「管理员可以在 H5 上唤出 migao Agent 进行对话，其他员工需要授权才能唤出 migao Agent」。落地：① 新增权限码 `agent:chat`（本包开工前全仓 0 命中 ⇒ 「复用既有码」这个选项不存在）；② 服务端单一真值 `AdminGate`（`"*"` 通配 ⇒ role='admin' 自动落入，零特例分支）；③ `GET /api/auth/me` 下发 `capabilities.mibaoChat`；④ 端侧零权限码副本；⑤ 存量回填**只给 `admin`**（裁定⑧），配套「上线当天批量授权」操作单（写在本包 PR body，不在用例内）。 ｜ tags: bmini, auth, permission, mibao-gate, backend_contract
 
 ## 分类域（3 case）
 
@@ -4723,7 +4738,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（97 case）
+## 商品域（100 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -6004,6 +6019,52 @@
 ```
 溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ tags: batch, threshold, static-guard, evidence-strength
 
+### PR-110. 工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」 🔵
+```
+你: 工人在车间用手机拍上游标签入库（非 LLM 行为，由 admin-api 单测与结构守卫覆盖）
+期望: direct_reply
+数据: 🔴 判据 = **DTO 声明字段集**（不是运行时校验）：`WorkerInboundRecognizeRequest` = {images, barcode}、`WorkerInboundDraftRequest` = {productId, skuId, quantity, unitCost, dyeLot, supplier, supplierDocNo, warehouse, rollLengthM, remark}、`WorkerInboundPostRequest` = {confirmed} —— 三个集**恰好相等**（多一个键就红）；`adjustment` / `delta` / `setStock` / `stock` / `reason` / `operator` / `tenantId` / `targetType` / `source` / `importRunId` 一个都不在集里
+数据: 🔴 零商家权限码（源码判据）：控制器与服务源码里**没有** `@RequirePermission` / `PermissionInterceptor` / `requirePermission`，也不出现任何商家码字面量（`inbound:view` / `inbound:create` / `product:create` / `order:create`）
+数据: 🔴 不复用商家识别端点：源码不引用 `ImageRecognitionController` / `TARGET_PERMISSIONS` / `/api/admin/image-recognition`（复用的是能力 `ImageRecognitionClient`，不是那个人机接口）
+数据: 🔴 不新造库存增减：源码里没有 `receiveStock` / `deductStock` / `restoreStock` / `stock_ledger_entries` / `StockLedgerService`；过账本体必须落到 `inboundOrderService.create(` / `inboundOrderService.post(`
+数据: 路径面：控制器 `@RequestMapping` == `/api/worker/inbound`（不以 `/api/admin` 开头），且本包**只有** `/recognize`、`/drafts`、`/drafts/{id}/post` 三个 POST（标签位图 / 打印计数属 P2，不得顺手落进来）
+数据: 🔴 工人在 `/api/admin/**` 仍被拒：`SecurityConfig.ADMIN_API_REJECTED_ROLES` 含 `WorkerSessionService.WORKER_ROLE`（= `worker`），且该集合不含 `operator`/`admin`/`service`（反向护栏：门禁不是「把所有人都拒了」）
+跳过: [backend-contract] 工人入库面是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与结构守卫覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-09-26 新增（issue #5052 P1，设计真值源 docs/design/inbound-photo-and-label.md §5）：工人可达的入库三端点（recognize / drafts / drafts/{id}/post）。本条钉「载体与边界」：字段集即能力集、零商家权限码、不新造库存增减、路径不与 /api/admin/** 混用。识别与过账的行为判据见 PR-111 / PR-112。 ｜ tags: inventory, inbound, worker, backend-contract
+
+### PR-111. 工人入库识别：解码优先（0 次 LLM）/ 降级不预填 / 零命中 SKU 不自动建品 🔵
+```
+你: 工人拍上游标签 → 系统回候选（品名 / 色号 / 米数 / 条码原文），不落库、不动库存（非 LLM 行为，由 admin-api 单测覆盖）
+期望: direct_reply
+数据: 🔴 成本守卫：请求带前端解码得到的条码原文 ⇒ 走解码路径且 `ImageRecognitionClient.recognize` **零调用**（`verify(..., never())`）；条码按货号精确匹配既有 SKU，零命中 ⇒ 空匹配 + 提示人工录入
+数据: vision 兜底：无条码时才调用，且 target 由服务端固定为 `inbound`（`verify(..., times(1)).recognize(eq("inbound"), any())`）—— 客户端结构上选不了 target
+数据: 🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）
+数据: 🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）
+数据: 张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）
+数据: ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
+跳过: [backend-contract] 入库识别是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first
+溯源: 2026-09-26 新增（issue #5052 P1，设计 §6）：识别策略 = 解码优先 → vision 兜底 → 手输。复用既有 vision 基建（ImageRecognitionClient → ai-agent POST /api/internal/vision/recognize），**只换 schema 与入口**：ai-agent 的 app/vision/targets.py 新增 `inbound` target（不新增第二套识别内核）。 ｜ tags: inventory, inbound, worker, vision, backend-contract
+
+### PR-112. 工人入库过账：复用 #5045 过账 + Idempotency-Key 只加一次库存 + 未确认 / 跨租户拒绝 🔵
+```
+你: 工人确认后提交过账（非 LLM 行为，由 admin-api 单测覆盖）
+期望: direct_reply
+数据: 建草稿**不动库存**：`receiveStock` / `stockLedgerService.record` / `stockBatchMapper.insert` 全部零调用；响应 `status=draft`、`source=purchase`（工人面结构上传不出第二个来源值）、行上 `batchNo=null`
+数据: 🔴 数量准入（#5063 判据）：负数 / 0 / 超 1 位小数 ⇒ **400** 且一行都不落库；`0.5` 米的尾料可如实登记；`skuId` 不存在 ⇒ 400 且不自动建品
+数据: 🔴 过账才动库存：每次过账在 `stock_ledger_entries` 落一行 `reason='inbound'`，`before_qty` = SKU 当时库存、`after_qty − before_qty == 入库量`（`receiveStock` 恰好一次）
+数据: 🔴 幂等：同 `Idempotency-Key` 重复提交 ⇒ `claim` 第二次返回 false、回放首次结果（`replayed=true`），`receiveStock` 与 `record` 仍各只有一次、`markPosted` 只有一次；换新幂等键再提交 ⇒ 409（#5045 的条件更新闸），库存仍只加一次
+数据: 🔴 未确认不落库：`confirmed` 缺失 / false / null / 整个 body 缺失 ⇒ **409**，且 `receiveStock` / `record` / `markPosted` 零调用
+数据: 🔴 跨租户 / 非本人草稿 ⇒ **404**（不是 403，避免存在性泄露），且不写任何库存
+数据: 身份只来自 `X-Worker-Session-Id`：body 里塞 `operator` / `tenantId` 不被读取（`markPosted` 收到的 operator = session 解出的工人 id，tenant = 上下文租户）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-post-idempotent, inbound-order-flow.draft-then-post
+溯源: 2026-09-26 新增（issue #5052 P1，设计 §5.2 / §9.2）：过账**内部复用** #5045 的 `InboundOrderService.post`（不新造库存增减、不直接写台账）；幂等**复用** #4037 的客户端请求幂等实现（不新建第二套幂等表）；状态码按设计单：参数类拒绝 400（口径本体仍是 InboundOrderService.requireItemNumbers 那一处）、未确认 409、跨租户/非本人 404。 ｜ tags: inventory, inbound, worker, idempotency, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -7013,13 +7074,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：497（活跃 126，跳过 371）
-- tier 分布：smoke 12 / normal 452 / adversarial 31
+- 用例总数：501（活跃 126，跳过 375）
+- tier 分布：smoke 12 / normal 456 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：7
+- B 端小程序域：8
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -7035,7 +7096,7 @@
 - 订单域：49
 - 加工项域：14
 - 加工单域：56
-- 商品域：97
+- 商品域：100
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -7053,6 +7114,7 @@
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
 - API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
+- BM-008: 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活

@@ -152,7 +152,7 @@ test.describe('仪表盘页面', () => {
   test.beforeEach(async ({ page }) => {
     // Mock 全部 auth API（storageState 提供初始认证态，mock 防止任何 API 调用清空）
     await page.route('**/api/auth/me', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1 } }) })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1 } }) })
     })
     await page.route('**/api/auth/refresh', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { accessToken: 'e2e-refreshed', refreshToken: 'e2e-refresh' } }) })
@@ -293,7 +293,7 @@ test.describe('仪表盘页面', () => {
     test.beforeEach(async ({ page }) => {
       // Mock auth API（防止重新导航时 auth 状态丢失）
       await page.route('**/api/auth/me', async (route) => {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1 } }) })
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1 } }) })
       })
       await page.route('**/api/auth/refresh', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { accessToken: 'e2e-refreshed', refreshToken: 'e2e-refresh' } }) })
@@ -345,7 +345,7 @@ test.describe('仪表盘空数据状态', () => {
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({
         status: 200, contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }),
+        body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1, tenantName: '测试企业' } }),
       })
     })
     // Mock ALL dashboard APIs to return empty data

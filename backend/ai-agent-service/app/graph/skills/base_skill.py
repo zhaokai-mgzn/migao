@@ -3300,6 +3300,10 @@ PERMISSION_LABELS = {
     "customer:view": "客户管理",
     "finance:view": "财务对账",
     "agent:session": "会话监控",
+    # 米宝唤出码（issue #5642 功能⑤）：名称逐字取 admin-api `RegistrationService.defaultPermissions`
+    # 的同码条目（该行名称列 = 「米宝对话」）。**只读镜像**：不改写、不润色；
+    # 缺标签 / 名称不一致由 `tests/test_permission_scope_injection.py` 的目录守卫机械判红。
+    "agent:chat": "米宝对话",
     "employee:list": "员工列表",
     "employee:create": "新增员工",
     "system:manage": "系统管理",
