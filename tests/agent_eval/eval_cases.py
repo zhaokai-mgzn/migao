@@ -242,6 +242,30 @@ _CASE_AS_009 = EvalCase(
     forbidden_text=['没有权限', '无权限'],
 )
 
+# ── AS-010 [EDGE] 同会话同键重试建工单 —— 第二次是幂等回放（replayed=true），落库工单恰好一张（源: cases/aftersales.yml）──
+_CASE_AS_010 = EvalCase(
+    id='AS-010',
+    legacy_id='',
+    title='同会话同键重试建工单 —— 第二次是幂等回放（replayed=true），落库工单恰好一张',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['订单 EVAL-ORD-0001 的窗帘颜色和图片不符，我要退货，帮我建个售后工单', {'auto_respond': {'fallback': '确认创建'}}, {'auto_respond': {'fallback': '确认'}}, {'retry_same_session': {'tool': 'aftersale_create', 'calls': 2, 'max': 3}, 'fallback': '我这边页面提示『提交失败，请重试』，你帮我把刚才那个售后工单再提交一次，内容不用改'}],
+    expectations=['aftersale_create'],
+    data_checks=['**同键只落一张工单**（机器断言 db_verify[after_sales_by_client_request_id]，expect_rows=1 + expect_replayed=true）：判据 = 同一会话 + 至少一次 `replayed=true`（服务端 `ClientRequestIdService.replay` 只在同键命中时置位）+ 全部成功调用指向**同一张工单**。', '**回放可见**（机器断言 output_verify[aftersale_create, last]）：第二次调用返回 replayed=true，顾客看到的仍是**同一个工单号**，不得播报成「又建了一张」。', '**可达性（红证方向）**：模型只口头声称已重发、实际没有第二次成功的 aftersale_create ⇒ must_succeed[min_successes=2] 判红（不是绿）。', '⚠️ 与 dup-guard 的区别（别把两件事混成一件）：`aftersales-flow.dup-guard` 治的是「同订单同类型已有活跃工单 ⇒ 422」这条**业务规则**；本用例治的是**同一次逻辑写请求被重发**时的**同键回放**（在 claim 层就被挡下、`replayed=true`，不会走到 dup-guard 的 422）。两者都要在，缺任何一条都会让另一条看起来像坏了。', '⚠️ 形态边界（如实登记）：与 OR-049 同 —— 「服务端已落库但 HTTP 客户端超时」需要故障注入（当前无此能力），本用例用「顾客转述页面提示提交失败、要求原样再提交」这一行为层可复现的重试形态作代理，不是等价物。'],
+    skip_reason='',
+    tags=['aftersale_create', 'idempotency', 'retry'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before aftersale_create'],
+    must_succeed=[{'tool': 'aftersale_create', 'min_successes': 2}],
+    db_verify=[{'fetch': 'after_sales_by_client_request_id', 'source': 'aftersale_create', 'expect_rows': 1, 'expect_replayed': True}],
+    output_verify=[{'tool': 'aftersale_create', 'last': True, 'expect': {'replayed': True}}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -4841,6 +4865,57 @@ _CASE_OR_048 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-049 [EDGE] 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张（源: cases/order.yml）──
+_CASE_OR_049 = EvalCase(
+    id='OR-049',
+    legacy_id='',
+    title='同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧', {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'retry_same_session': {'tool': 'order_create', 'calls': 2, 'max': 3}, 'fallback': '我这边页面提示『提交失败，请重试』，你帮我把刚才那单再提交一次，内容不用改'}],
+    expectations=['order_create'],
+    data_checks=['同键的三维 = 重试窗(600s) × **会话** × **操作**（服务端唯一键 `(tenant_id, client_request_id)`，取自请求头 X-Client-Request-Id）：本用例两次写调用都在**同一会话**内（runner 的 retry_same_session 不换会话）⇒ 取值相同 ⇒ 第二次被去重并回放首次结果。', '**恰好一张单据**：`orders` 里该次下单只有一张（机器断言 db_verify[order_by_client_request_id]，expect_rows=1 + expect_replayed=true）—— 重复下单 = 重复扣款/重复生产，本用例守的就是这一格。', '**回放可见**：第二次调用返回 replayed=true（机器断言 output_verify[order_create, last]），且顾客看到的仍是**同一个订单号**，不得播报成「又下了一单」。', '**可达性（红证方向）**：若模型只口头声称已重发、实际没有第二次 order_create 成功调用 ⇒ must_succeed[min_successes=2] 判红（不是绿）。「声明无消费」与「能力没被触发」都不会被洗成通过。', '⚠️ 形态边界（如实登记，不当作已覆盖）：本用例制造的是「顾客转述页面提示提交失败、要求原样再提交一次」这一**行为层可稳定复现**的重试形态；真正的「服务端已落库但 HTTP 客户端 25s 超时」需要故障注入（当前无此能力）⇒ 该形态仍由 Java 单测 + 真库证据承载（issue #4037 / PR #4072），本用例是它的**行为层代理形态**，不是等价物。'],
+    skip_reason='',
+    tags=['order_create', 'idempotency', 'retry'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
+    must_succeed=[{'tool': 'order_create', 'min_successes': 2}],
+    db_verify=[{'fetch': 'order_by_client_request_id', 'source': 'order_create', 'expect_rows': 1, 'expect_replayed': True}],
+    output_verify=[{'tool': 'order_create', 'last': True, 'expect': {'replayed': True}}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
+)
+
+# ── OR-050 [ADVERSARIAL] 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）（源: cases/order.yml）──
+_CASE_OR_050 = EvalCase(
+    id='OR-050',
+    legacy_id='',
+    title='合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧', {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, '再帮我下一单：北欧风窗帘 2 米，米白色，收货信息同上，直接下单吧', {'auto_respond': {'fallback': '确认下单'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}],
+    expectations=['order_create'],
+    data_checks=['**判据（机器断言 db_verify[order_by_client_request_id]，expect_rows=2 + expect_replayed=false）**：同会话两笔**内容不同**的订单 ⇒ 成功调用必须指向**两张不同的订单**，且**一次回放都不能有**。', '**这条会真的红（红证方向）**：服务端去重键 = `(tenant_id, client_request_id)`，而键 = 重试窗 × 会话 × 操作、**不含内容**（issue #4212 已补操作维度、内容维度按 issue #4229 裁定**暂不做**）⇒ 同会话同窗内第二笔会被当成重试**回放**（顾客看到「订单已创建成功」却只有一张单）⇒ 本用例判红。⚠️ **本用例当前预期为红**：红 = 该残留存在的机器证据（不是回归），红原文落在 db_verify（回放出现 / 张数 1 ≠ 2），可机器分辨。', '**不得用「换新键 ⇒ 落第二单」凑数**：换会话/等窗口之后键本来就不同，那条断言**恒真**，证明不了「合法复购被保障」（issue #4229 的核验评论逐字点名过这个形态）。', '**重启条件（可执行）**：一旦按 issue #4229 的候选 (a)（内容指纹进键）落地 ⇒ 本用例应当转绿；转绿前它是这条缺口的**值守判据**。'],
+    skip_reason='',
+    tags=['order_create', 'idempotency', 'legal_repeat', 'negative'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
+    must_succeed=[{'tool': 'order_create', 'min_successes': 2}],
+    db_verify=[{'fetch': 'order_by_client_request_id', 'source': 'order_create', 'expect_rows': 2, 'expect_replayed': False}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}, {'type': 'product_dedupe', 'product_keyword': '北欧风窗帘'}],
+    namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘', 'product_name:北欧风窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '北欧风窗帘', 'expect': 1}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -9272,6 +9347,7 @@ ALL_CASES = (
     _CASE_AS_007,
     _CASE_AS_008,
     _CASE_AS_009,
+    _CASE_AS_010,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,
@@ -9513,6 +9589,8 @@ ALL_CASES = (
     _CASE_OR_046,
     _CASE_OR_047,
     _CASE_OR_048,
+    _CASE_OR_049,
+    _CASE_OR_050,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

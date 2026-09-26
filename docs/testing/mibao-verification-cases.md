@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（9 case）
+## 售后域（10 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -136,6 +136,29 @@
 ```
 真值: aftersales-flow.status-enums
 溯源: 2026-09-14 新增（#3494 覆盖审计）：AS-008 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖工单数据状态（诚实『暂无』回复不误伤） ｜ tags: query, aftersale
+
+### AS-010. 同会话同键重试建工单 —— 第二次是幂等回放（replayed=true），落库工单恰好一张 🟡
+```
+你: 订单 EVAL-ORD-0001 的窗帘颜色和图片不符，我要退货，帮我建个售后工单
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: (空)
+端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
+期望: aftersale_create
+数据: **同键只落一张工单**（机器断言 db_verify[after_sales_by_client_request_id]，expect_rows=1 + expect_replayed=true）：判据 = 同一会话 + 至少一次 `replayed=true`（服务端 `ClientRequestIdService.replay` 只在同键命中时置位）+ 全部成功调用指向**同一张工单**。
+数据: **回放可见**（机器断言 output_verify[aftersale_create, last]）：第二次调用返回 replayed=true，顾客看到的仍是**同一个工单号**，不得播报成「又建了一张」。
+数据: **可达性（红证方向）**：模型只口头声称已重发、实际没有第二次成功的 aftersale_create ⇒ must_succeed[min_successes=2] 判红（不是绿）。
+数据: ⚠️ 与 dup-guard 的区别（别把两件事混成一件）：`aftersales-flow.dup-guard` 治的是「同订单同类型已有活跃工单 ⇒ 422」这条**业务规则**；本用例治的是**同一次逻辑写请求被重发**时的**同键回放**（在 claim 层就被挡下、`replayed=true`，不会走到 dup-guard 的 422）。两者都要在，缺任何一条都会让另一条看起来像坏了。
+数据: ⚠️ 形态边界（如实登记）：与 OR-049 同 —— 「服务端已落库但 HTTP 客户端超时」需要故障注入（当前无此能力），本用例用「顾客转述页面提示提交失败、要求原样再提交」这一行为层可复现的重试形态作代理，不是等价物。
+前置: order_count_for_phone(source=13800138000)
+命名空间(同键互斥·自动串行): customer_phone:13800138000
+时序: interact[confirm] before aftersale_create
+必须成功: aftersale_create
+落库: after_sales_by_client_request_id → source=aftersale_create; expect_rows=1; expect_replayed=True
+产出: aftersale_create → replayed==True
+```
+真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
+溯源: 2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。 ｜ tags: aftersale_create, idempotency, retry
 
 ## Agent 核心域（6 case）
 
@@ -2789,7 +2812,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（47 case）
+## 订单域（49 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3647,6 +3670,62 @@
 跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含 4 条注入式红证实跑）
 ```
 溯源:  ｜ tags: order, image_recognize, sku_select, craft_calc
+
+### OR-049. 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张 🟡
+```
+你: 帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: (空)
+端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
+期望: order_create
+数据: 同键的三维 = 重试窗(600s) × **会话** × **操作**（服务端唯一键 `(tenant_id, client_request_id)`，取自请求头 X-Client-Request-Id）：本用例两次写调用都在**同一会话**内（runner 的 retry_same_session 不换会话）⇒ 取值相同 ⇒ 第二次被去重并回放首次结果。
+数据: **恰好一张单据**：`orders` 里该次下单只有一张（机器断言 db_verify[order_by_client_request_id]，expect_rows=1 + expect_replayed=true）—— 重复下单 = 重复扣款/重复生产，本用例守的就是这一格。
+数据: **回放可见**：第二次调用返回 replayed=true（机器断言 output_verify[order_create, last]），且顾客看到的仍是**同一个订单号**，不得播报成「又下了一单」。
+数据: **可达性（红证方向）**：若模型只口头声称已重发、实际没有第二次 order_create 成功调用 ⇒ must_succeed[min_successes=2] 判红（不是绿）。「声明无消费」与「能力没被触发」都不会被洗成通过。
+数据: ⚠️ 形态边界（如实登记，不当作已覆盖）：本用例制造的是「顾客转述页面提示提交失败、要求原样再提交一次」这一**行为层可稳定复现**的重试形态；真正的「服务端已落库但 HTTP 客户端 25s 超时」需要故障注入（当前无此能力）⇒ 该形态仍由 Java 单测 + 真库证据承载（issue #4037 / PR #4072），本用例是它的**行为层代理形态**，不是等价物。
+清理: product_dedupe(product_keyword=遮光窗帘)
+前置: product_count_for_keyword(source=遮光窗帘、expect=1)
+命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘
+时序: interact[confirm] before order_create
+必须成功: order_create
+落库: order_by_client_request_id → source=order_create; expect_rows=1; expect_replayed=True
+产出: order_create → replayed==True
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
+```
+溯源: 2026-09-26 新增（issue #4074「行为层对幂等零覆盖」）：① 新增 db_verify fetch `order_by_client_request_id`（同会话 + 至少一次回放 + 单据张数三条一起判）；② 新增 runner 控制轮 `retry_same_session`（同会话把同一次逻辑写请求再发一遍，停条件 = 目标工具成功 ≥ calls 次）；③ must_succeed 新增 `min_successes`（可达性下界，缺它则该声明不消费也判绿）；④ output_verify 新增 `last: true`（核**最后一次**调用的产出 = 重试那一次的 payload）。断言只增不减；persona 显式标注为 xiaobu（order_create 是 C 端工具）。 ｜ tags: order_create, idempotency, retry
+
+### OR-050. 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉） 🔴
+```
+你: 帮我下单，遮光窗帘 3 米，米白色，收货人张三，手机号 13800138000，地址浙江省杭州市西湖区文三路1号1幢101室，不用再问了直接下单吧
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: 再帮我下一单：北欧风窗帘 2 米，米白色，收货信息同上，直接下单吧
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+你: [🤖 按上一轮卡片作答]
+端: xiaobu（单端 —— 仅小布腿跑，米宝腿跳过）
+期望: order_create
+数据: **判据（机器断言 db_verify[order_by_client_request_id]，expect_rows=2 + expect_replayed=false）**：同会话两笔**内容不同**的订单 ⇒ 成功调用必须指向**两张不同的订单**，且**一次回放都不能有**。
+数据: **这条会真的红（红证方向）**：服务端去重键 = `(tenant_id, client_request_id)`，而键 = 重试窗 × 会话 × 操作、**不含内容**（issue #4212 已补操作维度、内容维度按 issue #4229 裁定**暂不做**）⇒ 同会话同窗内第二笔会被当成重试**回放**（顾客看到「订单已创建成功」却只有一张单）⇒ 本用例判红。⚠️ **本用例当前预期为红**：红 = 该残留存在的机器证据（不是回归），红原文落在 db_verify（回放出现 / 张数 1 ≠ 2），可机器分辨。
+数据: **不得用「换新键 ⇒ 落第二单」凑数**：换会话/等窗口之后键本来就不同，那条断言**恒真**，证明不了「合法复购被保障」（issue #4229 的核验评论逐字点名过这个形态）。
+数据: **重启条件（可执行）**：一旦按 issue #4229 的候选 (a)（内容指纹进键）落地 ⇒ 本用例应当转绿；转绿前它是这条缺口的**值守判据**。
+清理: product_dedupe(product_keyword=遮光窗帘)
+清理: product_dedupe(product_keyword=北欧风窗帘)
+前置: product_count_for_keyword(source=遮光窗帘、expect=1)
+前置: product_count_for_keyword(source=北欧风窗帘、expect=1)
+命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘、product_name:北欧风窗帘
+时序: interact[confirm] before order_create
+必须成功: order_create
+落库: order_by_client_request_id → source=order_create; expect_rows=2; expect_replayed=False
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
+```
+溯源: 2026-09-26 新增（issue #4074 第 3 条「合法复购负例，缺一不可」）。形态选择：**同会话 + 内容不同的两笔**（而不是「隔一段时间再下一单同样的货」）—— 后者的键本来就不同、断言恒真，构不成证据（依据 = issue #4229 的核验评论，逐字点名）。**本用例当前预期为红**：内容维度按 #4229 裁定「暂时不做，直接关闭 issue」保持现状 ⇒ 第二笔会被回放吞掉，db_verify 报「出现了 1 次回放」「指向 1 张订单 ≠ 期望 2 张」。这不是恒红凑数：它是该残留唯一的机器判据，且修法（内容指纹进键）落地即转绿 —— 重启条件写在 data_checks 里。 ｜ tags: order_create, idempotency, legal_repeat, negative
 
 ## 加工项域（13 case）
 
@@ -6880,9 +6959,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：490（活跃 119，跳过 371）
-- tier 分布：smoke 12 / normal 448 / adversarial 30
-- 售后域：9
+- 用例总数：493（活跃 122，跳过 371）
+- tier 分布：smoke 12 / normal 448 / adversarial 31
+- 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
@@ -6899,7 +6978,7 @@
 - 杂项域：21
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：47
+- 订单域：49
 - 加工项域：13
 - 加工单域：55
 - 商品域：97
@@ -6956,6 +7035,8 @@
 - OR-045: 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）
 - OR-046: 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）
 - OR-048: 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU
+- OR-049: 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张
+- OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

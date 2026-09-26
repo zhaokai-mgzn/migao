@@ -44,7 +44,15 @@ SUPPORTED_DB_FETCH = {
     "processing_order",
     # 负效果断言（issue #4108）：该员工**不得存在**。被权限拒绝的写用例，其效果层真值
     # 是负向的 —— 只有读落库真身能证伪"门禁静默失效后脏数据已落库"（#3778 的反面）。
-    "employee_absent"}
+    "employee_absent",
+    # 幂等（issue #4074）：同键重试**不得产生第二张单据**。两个资源面共用同一套形状约束
+    # （见下方 `_IDEMPOTENT_FETCHES`）；订单/售后两条写路径在服务端也共用同一份去重实现。
+    "order_by_client_request_id", "after_sales_by_client_request_id"}
+
+#: 幂等两个 fetch 的**共用形状约束**（issue #4074）：`expect_rows` 正整数 + `expect_replayed`
+#: 布尔，两个都**必填** —— 缺任一即空断言（"查了一下"而没有判据）；`expect_replayed` 更是
+#: 「同键」唯一的机器证据（服务端只在**同键命中**时置 `replayed=true`）。
+_IDEMPOTENT_FETCHES = {"order_by_client_request_id", "after_sales_by_client_request_id"}
 SUPPORTED_POST_SESSION_FETCH = {"user_memories"}
 
 #: `must_succeed[source]` 的词汇表（issue #4097）：**读的是哪一面**。
@@ -286,6 +294,20 @@ class TestAssertionSpecsWellFormed:
                         bad.append(
                             f"{c['id']}.db_verify[{i}]: employee_absent 缺 id/name/phone"
                             f"（定位不到对象 ⇒ 断言永远绿）")
+                if fetch in _IDEMPOTENT_FETCHES:
+                    # 幂等（issue #4074）：两个形状键都**必填**且类型必须对 —— 缺任一即
+                    # 空断言/静默空转（`expect_rows` 缺失 ⇒ 核对器无从判定张数；
+                    # `expect_replayed` 缺失 ⇒ 「同键」这条最关键的证据没人核）。
+                    _rows = s.get("expect_rows")
+                    if isinstance(_rows, bool) or not isinstance(_rows, int) or _rows < 1:
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: {fetch} 缺/非法 expect_rows（当前 "
+                            f"{_rows!r}）—— 必须是 ≥1 的整数，否则核对器空转通过")
+                    if not isinstance(s.get("expect_replayed"), bool):
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: {fetch} 缺/非法 expect_replayed（当前 "
+                            f"{s.get('expect_replayed')!r}）—— 必须是 true/false："
+                            f"同键回放是「同键」唯一的机器证据")
             for i, s in enumerate(_specs(c, "post_session")):
                 if s.get("fetch") not in SUPPORTED_POST_SESSION_FETCH:
                     bad.append(f"{c['id']}.post_session[{i}]: 不支持的 fetch={s.get('fetch')!r}")
@@ -294,6 +316,13 @@ class TestAssertionSpecsWellFormed:
                     bad.append(f"{c['id']}.output_verify[{i}]: 缺 tool")
                 elif not isinstance(s.get("expect"), dict) or not s.get("expect"):
                     bad.append(f"{c['id']}.output_verify[{i}]: 缺/空 expect（空断言）")
+                elif "last" in s and not isinstance(s.get("last"), bool):
+                    # `last: true` = 核**最后一次**成功调用的产出（issue #4074，幂等重试要核
+                    # 「重试那一次返回了什么」）。形态非法（如 YAML 的 `last: 是`）会被运行期
+                    # 当成 False ⇒ 核到**首次**调用的 payload：红/绿都与用例本意无关。
+                    bad.append(
+                        f"{c['id']}.output_verify[{i}]: `last` 必须是 true/false（当前 "
+                        f"{s.get('last')!r}）—— 非法形态会被当成 False，核到首次调用的产出")
             for i, s in enumerate(_specs(c, "form_prefill")):
                 if not str(s.get("field") or ""):
                     bad.append(f"{c['id']}.form_prefill[{i}]: 缺 field（空断言）")
