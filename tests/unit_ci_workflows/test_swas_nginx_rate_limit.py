@@ -102,7 +102,7 @@ _SINGLETON_ANCHORS: tuple[tuple[str, str], ...] = (
 )
 _SINGLETON_COST = len(_SINGLETON_ANCHORS)
 
-#: 工人端请求锚点：（文件, 端点字面量, 该流程里的请求数上界）
+#: 工人端请求锚点：（文件, 该流程真正会打的端点字面量）—— 端点集大小 = 一次流程的请求数
 _WORKER_SCAN_ENDPOINTS = (
     "frontend/worker-h5/src/api.mjs",
     ("/api/worker/production/scan?", "/api/worker/production/scan/complete"),
@@ -360,6 +360,9 @@ def problems(text: str, page_cost: int, worker_scan_cost: int) -> list[str]:
     worker_total = worker_scan_cost + len(_WORKER_PAGE_LOAD_ENDPOINTS)
     headroom_cases = {
         ("api.migaozn.com", "/", "api_perip"): page_cost,
+        ("ai-api.migaozn.com", "/", "api_perip"): page_cost,
+        ("app.migaozn.com", "/api/", "api_perip"): page_cost,
+        ("app.migaozn.com", "/api/chat/", "api_perip"): page_cost,
         ("api.migaozn.com", "/", "auth_perip"): 1,
         ("api.migaozn.com", "/", "abuse_perip"): 1,
         ("api.migaozn.com", "/", "worker_sess"): worker_total,
