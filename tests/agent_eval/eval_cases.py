@@ -3208,6 +3208,24 @@ _CASE_DF_023 = EvalCase(
     forbidden_tools=['order_create', 'aftersale_create'],
 )
 
+# ── DF-024 [NORMAL] 跨租户访问订单发货读面 ⇒ 404 且与「订单不存在」逐字同一形态（不泄露存在性；403 = 承认 id 存在）（源: cases/defense.yml）──
+_CASE_DF_024 = EvalCase(
+    id='DF-024',
+    legacy_id='',
+    title='跨租户访问订单发货读面 ⇒ 404 且与「订单不存在」逐字同一形态（不泄露存在性；403 = 承认 id 存在）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-26 逐字裁定销售单要挂在发货链上；本单补的 admin 读面按仓内 P2 口径做跨租户判定（404 而非 403）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **跨租户 = 404**：别的租户的订单 ⇒ BusinessException NOT_FOUND / httpStatus 404（**不是** 403 —— 403 等于承认「这个 id 存在，只是不给你看」）。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 crossTenantReadIs404AndIndistinguishableFromMissingOrder。红证（实测 rc=1）：把 OrderShipmentService.loadOrder 的 notFound("订单") 注入为 authFailed("无权访问该订单") ⇒ 该判据具名红。', '判据 2·🔴 **与「不存在」逐字同一形态**：跨租户与不存在的订单必须给出同一个 error.code、同一个 message、同一个 httpStatus（任何差异——含「跨租户」字样——都会让响应体可区分「存在但越权」与「不存在」）。执行点 = 同一条判据的逐字比对（assertThat(crossTenant.getMessage()).isEqualTo(missingOrder.getMessage())）。红证：把跨租户分支的消息写成「订单(跨租户)不存在」⇒ 逐字比对红。', '判据 3·**两层都判**：Service 层（loadOrder 的口径）与端点层（OrderController 的 /shipments 走同一份 readShipment，不另做租户判定）—— 端点层不得自己拼一套 403。执行点 = 同文件 + tests/unit_ci_workflows/test_shipment_read_surface_guard.py（两面都必须调用 owner 方法 readShipment）。', '判据 4·**既有租户面零回归**：order_shipments / order_shipment_items 的 MyBatis-Plus 自动租户过滤与工人面判据一个字不改（WorkerShipmentControllerTest / OrderShipmentServiceTest 全绿）。'],
+    skip_reason='[backend-contract] 纯后端租户边界判据（无 LLM 环节，不进 agent-eval 对抗流水线）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）执行',
+    tags=['defense', 'tenant-isolation', 'existence-leak', 'shipment'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── FN-001 [NORMAL] 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判）（源: cases/finance.yml）──
 _CASE_FN_001 = EvalCase(
     id='FN-001',
@@ -5168,6 +5186,24 @@ _CASE_OR_050 = EvalCase(
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘', 'product_name:北欧风窗帘'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '北欧风窗帘', 'expect': 1}],
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
+)
+
+# ── OR-051 [NORMAL] 管理端发货读面 GET /api/admin/orders/{id}/shipments：与工人面同源（OrderShipmentService.readShipment）+ 权限码 order:list + 只读 + 跨租户 404 不泄露存在性（issue #5651 收口）（源: cases/order.yml）──
+_CASE_OR_051 = EvalCase(
+    id='OR-051',
+    legacy_id='',
+    title='管理端发货读面 GET /api/admin/orders/{id}/shipments：与工人面同源（OrderShipmentService.readShipment）+ 权限码 order:list + 只读 + 跨租户 404 不泄露存在性（issue #5651 收口）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-26 逐字裁定销售单要「挂在发货链上」；issue #5651 正文逐字登记未完成项：「order_shipment_items 开发途中已合入 main，但只有工人读面 ⇒ admin/桌面端没有读面 ⇒ 接线需后端新增 admin 读面（不在纯前端范围）」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**管理面存在且与同族一致**：GET /api/admin/orders/{id}/shipments 落在既有 admin 订单子资源族（/follow-status、/logistics、/refund 同形），{id} 带 [0-9a-fA-F-]+ 约束。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 adminReadFaceLivesOnTheAdminOrderSubResourcePath。红证：删掉端点 ⇒ 该判据具名报出「admin 端没有发货读面」（本单落地前实测 rc=1、3 条失败）。', '判据 2·**权限码 = order:list**（与同页既有详情读面 GET /api/admin/orders/{id} 同码，不新造权限码）：漏 @RequirePermission ⇒ Java 判据红，且 tests/unit_ci_workflows/test_agent_permission_parity.py 判据 8（未注解端点必须登记进 UNANNOTATED_ENDPOINTS）红 —— 本面**不登记豁免**（它有语义正确的既有码）。执行点 = AdminOrderShipmentReadTest.adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage。', '判据 3·**只读**：该路径上只有 GET 一个动词，没有 POST/PUT/PATCH/DELETE（本单不新增写面；写面归 issue #5648 的工人面）。执行点 = AdminOrderShipmentReadTest.adminReadFaceIsReadOnly。', '判据 4·🔴 **两面同源，不新造第二份投影**：管理面与工人面都调用 OrderShipmentService.readShipment（同一份实现），响应形状逐字同源。执行点 = tests/unit_ci_workflows/test_shipment_read_surface_guard.py（真值登记表 order_shipment_items 声明 worker/admin 两面，且视图键 "shipped_quantity" 在 backend/admin-api/src/main/java 下**恰好命中一个文件** = owner）。红证（注入式，随测试常驻）：让 controller 自拼字段（不再调 owner）⇒ C5 判红；在另一个 Java 文件里再拼一份同名视图键 ⇒ C4 判红。', '判据 5·🔴 **跨租户 = 404，且与「订单不存在」逐字同一形态**（不泄露存在性；403 等于承认「这个 id 存在，只是不给你看」）：跨租户与不存在的订单必须给出同一个 code / message / httpStatus。执行点 = AdminOrderShipmentReadTest.crossTenantReadIs404AndIndistinguishableFromMissingOrder + tests/unit_ci_workflows/test_shipment_read_surface_guard.py 的登记面（两面路径前缀 /api/worker/** 与 /api/admin/**）。红证：把 loadOrder 的 notFound("订单") 改成 authFailed（403）⇒ 该判据红；把跨租户消息写成「订单(跨租户)不存在」⇒ 逐字比对红。', '判据 6·**既有面零回归**：工人面的四条判据（WorkerShipmentControllerTest / OrderShipmentServiceTest）与 order_shipment_items 的写序口径一个字不改（本单只加读面）。'],
+    skip_reason='[backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）+ pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行',
+    tags=['order', 'shipment', 'admin-api', 'read-surface', 'tenant-isolation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
@@ -9809,6 +9845,24 @@ _CASE_UI_064 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-065 [NORMAL] 销售单数量列消费**实发**（order_shipment_items，经 admin 读面）：已发货/部分发货/未发货/读面未取到四态各自可判 + 永不印 0 + 缺口显式（issue #5651 收口）（源: cases/ui.yml）──
+_CASE_UI_065 = EvalCase(
+    id='UI-065',
+    legacy_id='',
+    title='销售单数量列消费**实发**（order_shipment_items，经 admin 读面）：已发货/部分发货/未发货/读面未取到四态各自可判 + 永不印 0 + 缺口显式（issue #5651 收口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-26 逐字裁定销售单要「挂在发货链上」= 随货给客户的那张、数量与**实发**同源；issue #5651 正文把「admin 端没有读面 ⇒ admin-web 拿不到实发数量」登记为未完成项，2026-09-27 由 OR-051 补上后端读面后本用例接线'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**已发货 ⇒ 数量列印实发**（不是下单数量）：夹具给实发 7 而下单数量 3 ⇒ 纸面必须印 7。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑧ 已发货 ⇒ 数量列印实发」+「⑧ 红证：退回订单行投影 ⇒ 必红」。', '判据 2·🔴 **部分发货 ⇒ 未发行显式标「未发」**（不是 0、不是空白）：两行订单行、只有一行有实发 ⇒ 该行印实发、另一行印「未发」且**不含任何数字**（印 0 = 把「没有这个数」画成「实发为零」）。执行点 = 同文件「⑨ 部分发货」+「⑨ 红证：写成 0 / 静默留空 ⇒ 必红」。', '判据 3·**未发货 ⇒ 数量列 = 订单数量，且纸面标明基准**（不静默沿用：「未发货：数量列 = 订单数量（尚无可核的实发）」）。执行点 = 同文件「⑩ 未发货」。', '判据 4·🔴 **读面没取到（null）与「未发货」必须分开**：取不到读数 ⇒ 纸面标「发货明细未取到」，不得显示成「未发货」（把取数故障读成业务事实 = 用缺数据冒充业务状态）。执行点 = 同文件「⑪ 读面没取到」+「⑪ 红证：四态合并成一种显示 ⇒ 必红」（四句口径文案两两不同 + 四个业务情形判出四个态）。', '判据 5·**挂不到订单行的实发行显式提示行数**（不静默丢）：一枚实发行 order_item_id 为空 ⇒ 纸面提示「另有 1 行实发明细未挂到订单行（不猜归属，故不在本表）」。执行点 = 同文件「⑫」。', '判据 6·**口径判定是纯函数且有独立判据**：resolveSalesQuantity 的四态/累加/缺值边界由 frontend/admin-web/tests/unit/lib/sales-shipment.test.ts（11 格）钉住 —— 含「补发（第二张发货单）实发累加」与「订单行数量缺失 ⇒ null 而不是 0」。', '判据 7·🔴 **无第二份字段映射**：tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C5（销售单列清单在 src 下**恰好命中一个文件**）零回归。红证（实测 rc=1）：把列清单复制一份到 SalesDocA4.tsx ⇒ C5 判红。', '判据 8·🔴 **金额仍全部取服务端字段**（前端现算 = 第二份真值）：既有判据（SalesDoc.test.tsx 的 ③ 与其红证）零回归。红证（实测 rc=1）：把行金额改成 unitPrice×quantity ⇒ 该判据红。', '判据 9·**类级元守卫**：tests/unit_ci_workflows/test_shipment_read_surface_guard.py 把「同一真值两个读面只落一面」与「缺值被显示成 0」固化 —— 消费方接错面（改调 /api/worker/shipment）/ 数量列写 `?? 0` / 管理面自拼字段 ⇒ 各自判红。'],
+    skip_reason='[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/SalesDoc.test.tsx、frontend/admin-web/tests/unit/lib/sales-shipment.test.ts）与 pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行',
+    tags=['ui', 'order', 'print', 'sales-doc', 'shipment', 'actual-quantity'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -10013,6 +10067,7 @@ ALL_CASES = (
     _CASE_DF_021,
     _CASE_DF_022,
     _CASE_DF_023,
+    _CASE_DF_024,
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,
@@ -10113,6 +10168,7 @@ ALL_CASES = (
     _CASE_OR_048,
     _CASE_OR_049,
     _CASE_OR_050,
+    _CASE_OR_051,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -10365,6 +10421,7 @@ ALL_CASES = (
     _CASE_UI_062,
     _CASE_UI_063,
     _CASE_UI_064,
+    _CASE_UI_065,
     _CASE_UT_001,
     _CASE_UT_002,
 )

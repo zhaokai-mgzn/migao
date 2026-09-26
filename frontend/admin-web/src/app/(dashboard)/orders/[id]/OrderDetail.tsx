@@ -13,6 +13,8 @@ import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, P
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
+// 发货读面（issue #5651）：销售单的数量列消费**实发**，判定在 lib 里
+import type { OrderShipmentRead } from '@/lib/sales-shipment'
 import { cn } from '@/lib/utils'
 
 // 格式化金额（含千分位+两位小数）
@@ -83,6 +85,11 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 发货读面（issue #5651 收口）：`null` = 还没取到 / 取失败 —— 销售单据此显式标「未取到」，
+   * **不**退回「未发货」的无标记形态。
+   */
+  const [shipments, setShipments] = useState<OrderShipmentRead | null>(null)
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
 
@@ -123,6 +130,16 @@ export default function OrderDetailPage() {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
+      // 发货读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = order_shipment_items）。
+      // 🔴 取不到 ⇒ `null`（**不是** `{shipments: []}`）：纸面会显式标「发货明细未取到」，
+      // 绝不把读面故障显示成「未发货」（用缺数据冒充业务状态）。
+      try {
+        const shipmentsRes = await orderApi.getOrderShipments(orderId)
+        setShipments(shipmentsRes.data?.data ?? null)
+      } catch (e) {
+        console.error('加载发货明细失败:', e)
+        setShipments(null)
+      }
     } catch (e) {
       console.error('加载订单失败:', e)
       toastRequestError(e, '加载订单详情失败')
@@ -353,7 +370,7 @@ export default function OrderDetailPage() {
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
           扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
-      <SalesDoc order={order} printTarget={printTarget} />
+      <SalesDoc order={order} shipments={shipments} printTarget={printTarget} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">

@@ -6,6 +6,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
@@ -31,6 +32,7 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderLogisticsService orderLogisticsService;
+    private final OrderShipmentService orderShipmentService;
 
     // ==================== 字面路径（无路径变量） ====================
 
@@ -116,6 +118,45 @@ public class OrderController {
         log.info("查询订单详情: id={}", id);
         OrderDetailResponse order = orderService.getOrderById(id);
         return ApiResponse.success(order);
+    }
+
+    /**
+     * 查询订单的**发货读面**（发货单 + 逐行**实发**套/件/卷 + 汇总）—— issue #5651 收口。
+     *
+     * <pre>GET /api/admin/orders/{id}/shipments</pre>
+     *
+     * <h3>它补的是哪个洞（issue #5651 原话：「挂链差一步且原因已实测」）</h3>
+     * <p>{@code order_shipment_items}（issue #5648）是「这一单实际发了多少」的<b>唯一真值载体</b>，
+     * 但落地时只有<b>工人读面</b>（{@code GET /api/worker/shipment/orders/{orderId}}，工人 session
+     * 准入）⇒ 跑在 admin-web 的销售单（三联纸 241mm × 140mm）拿不到实发数量，数量列只能退回
+     * 订单行数量。<b>本端点就是那一步</b>。</p>
+     *
+     * <h3>🔴 响应形状：与工人读面**逐字同源**，不新造第二套</h3>
+     * <p>直接回 {@link OrderShipmentService#readShipment}（该表 owner 指定的消费入口）——
+     * 两个面共用一份实现 ⇒ 工人 H5 与桌面纸面看到的实发数量逐字相同。任何"顺手改一下字段名"
+     * 都会让两份投影分叉（守卫：{@code tests/unit_ci_workflows/test_shipment_read_surface_guard.py}）。</p>
+     *
+     * <h3>🔴 权限码 = {@code order:list}（取**既有**码，不新造）</h3>
+     * <p>与<b>同页既有读面</b> {@link #getOrderById} 同码：订单详情页读得开、页内单据读不开
+     * 是比"没有读面"更坏的形态。#4727 权限注解面审计的口径是「该放行的登记为有意放行」，
+     * 而本面<b>有</b>语义正确的既有码 ⇒ 挂注解、<b>不</b>登记豁免（漏注解会被
+     * {@code test_agent_permission_parity.py} 判据 8 判红）。</p>
+     * <p>{@code order:detail} 今天只是菜单节点码（{@code MenuController} / {@code RegistrationService}
+     * 里的目录项），<b>没有任何端点在承载</b>；把新读面露挂在它上面等于凭空给一个菜单节点赋予
+     * 端点语义，需连带岗位默认权限 / 菜单 / 目录多处对齐 ⇒ 不属本单范围。</p>
+     *
+     * <h3>🔴 租户隔离：跨租户 = <b>404</b>（不是 403），且与「订单不存在」逐字同一形态</h3>
+     * <p>403 等于承认「这个 id 存在，只是不给你看」= 存在性泄露（P2 刚落的口径）。
+     * 判定在 {@link OrderShipmentService#readShipment} 内（{@code loadOrder}）：
+     * 订单查不到与租户不匹配走<b>同一个</b> {@code BusinessException.notFound("订单")}。</p>
+     *
+     * <p><b>只读</b>：本单只补读面，不新增任何写面（写面归 #5648 的 {@code /api/worker/shipment/**}）。</p>
+     */
+    @RequirePermission("order:list")
+    @GetMapping("/{id:[0-9a-fA-F-]+}/shipments")
+    public ApiResponse<Map<String, Object>> getOrderShipments(@PathVariable String id) {
+        log.info("查询订单发货读面: id={}", id);
+        return ApiResponse.success(orderShipmentService.readShipment(id, TenantContext.getTenantId()));
     }
 
     /**

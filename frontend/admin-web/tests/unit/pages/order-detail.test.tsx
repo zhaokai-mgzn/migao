@@ -6,12 +6,15 @@ import { markErrorToastShown } from '@/lib/api-error'
 
 // Mock API
 const mockGetOrder = vi.fn()
+// 发货读面（issue #5651 收口）：销售单数量列消费的**实发**来源 —— 详情页加载订单时一并取
+const mockGetOrderShipments = vi.fn()
 const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
     getOrder: (...args: any[]) => mockGetOrder(...args),
+    getOrderShipments: (...args: any[]) => mockGetOrderShipments(...args),
     closeOrder: vi.fn(),
     confirmPayment: (...args: any[]) => mockConfirmPayment(...args),
     updateOrderStatus: vi.fn(),
@@ -122,6 +125,11 @@ describe('OrderDetailPage', () => {
     vi.clearAllMocks()
     mockGetOrder.mockResolvedValue({
       data: { data: mockOrder },
+    })
+    // 发货读面：默认给「未发货」（空发货单）—— 本文件验的是页面既有区块；三态纸面判据在
+    // tests/unit/components/SalesDoc.test.tsx（此处只要形状对得上，不让它抛）
+    mockGetOrderShipments.mockResolvedValue({
+      data: { data: { order_id: 'test-order-123', status: 'producing', shipments: [] } },
     })
   })
 

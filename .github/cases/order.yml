@@ -3715,3 +3715,41 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: OR-051
+    legacy_id: ""
+    title: "管理端发货读面 GET /api/admin/orders/{id}/shipments：与工人面同源（OrderShipmentService.readShipment）+ 权限码 order:list + 只读 + 跨租户 404 不泄露存在性（issue #5651 收口）"
+    domains:
+      - order
+      - api
+      - backend
+    tier: normal
+    tags:
+      - order
+      - shipment
+      - admin-api
+      - read-surface
+      - tenant-isolation
+    truths_ref:
+      - order.shipment-read-faces
+      - order.shipment-actual-quantity-owner
+    user_inputs:
+      - "用户 2026-09-26 逐字裁定销售单要「挂在发货链上」；issue #5651 正文逐字登记未完成项：「order_shipment_items 开发途中已合入 main，但只有工人读面 ⇒ admin/桌面端没有读面 ⇒ 接线需后端新增 admin 读面（不在纯前端范围）」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**管理面存在且与同族一致**：GET /api/admin/orders/{id}/shipments 落在既有 admin 订单子资源族（/follow-status、/logistics、/refund 同形），{id} 带 [0-9a-fA-F-]+ 约束。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 adminReadFaceLivesOnTheAdminOrderSubResourcePath。红证：删掉端点 ⇒ 该判据具名报出「admin 端没有发货读面」（本单落地前实测 rc=1、3 条失败）。"
+      - "判据 2·**权限码 = order:list**（与同页既有详情读面 GET /api/admin/orders/{id} 同码，不新造权限码）：漏 @RequirePermission ⇒ Java 判据红，且 tests/unit_ci_workflows/test_agent_permission_parity.py 判据 8（未注解端点必须登记进 UNANNOTATED_ENDPOINTS）红 —— 本面**不登记豁免**（它有语义正确的既有码）。执行点 = AdminOrderShipmentReadTest.adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage。"
+      - "判据 3·**只读**：该路径上只有 GET 一个动词，没有 POST/PUT/PATCH/DELETE（本单不新增写面；写面归 issue #5648 的工人面）。执行点 = AdminOrderShipmentReadTest.adminReadFaceIsReadOnly。"
+      - "判据 4·🔴 **两面同源，不新造第二份投影**：管理面与工人面都调用 OrderShipmentService.readShipment（同一份实现），响应形状逐字同源。执行点 = tests/unit_ci_workflows/test_shipment_read_surface_guard.py（真值登记表 order_shipment_items 声明 worker/admin 两面，且视图键 \"shipped_quantity\" 在 backend/admin-api/src/main/java 下**恰好命中一个文件** = owner）。红证（注入式，随测试常驻）：让 controller 自拼字段（不再调 owner）⇒ C5 判红；在另一个 Java 文件里再拼一份同名视图键 ⇒ C4 判红。"
+      - "判据 5·🔴 **跨租户 = 404，且与「订单不存在」逐字同一形态**（不泄露存在性；403 等于承认「这个 id 存在，只是不给你看」）：跨租户与不存在的订单必须给出同一个 code / message / httpStatus。执行点 = AdminOrderShipmentReadTest.crossTenantReadIs404AndIndistinguishableFromMissingOrder + tests/unit_ci_workflows/test_shipment_read_surface_guard.py 的登记面（两面路径前缀 /api/worker/** 与 /api/admin/**）。红证：把 loadOrder 的 notFound(\"订单\") 改成 authFailed（403）⇒ 该判据红；把跨租户消息写成「订单(跨租户)不存在」⇒ 逐字比对红。"
+      - "判据 6·**既有面零回归**：工人面的四条判据（WorkerShipmentControllerTest / OrderShipmentServiceTest）与 order_shipment_items 的写序口径一个字不改（本单只加读面）。"
+    skip_reason: "[backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）+ pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行"
+    merge_log: "2026-09-27 新增（issue #5651 收口）：补上 admin 端发货读面 —— 该 issue 登记的**唯一**未完成项（正文逐字：「挂链差一步且原因已实测」）。权限码取**既有** order:list（与同页 GET /api/admin/orders/{id} 同码 ⇒ 不会出现「页面打得开、单据 403」的割裂）；order:detail 今天只是菜单节点码、**没有任何端点在承载** ⇒ 不挪用、不新造。只读，不新增写面。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java"
+        - "tests/unit_ci_workflows/test_shipment_read_surface_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
