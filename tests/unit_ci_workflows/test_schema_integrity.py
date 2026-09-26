@@ -1186,6 +1186,28 @@ class TestSchemaFullDeprecation:
     CANONICAL = Path(__file__).parent.parent.parent / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
     @staticmethod
+    def _banner_region(sql: str) -> str:
+        """文件头的**注释横幅**（到第一条非注释、非空行为止）。
+
+        🔴 旧实现写死 `full_sql[:2000]`，而那是**字符数**、不是「横幅」——
+        横幅本身在 2026-09 已长到约 1940 字符，于是**任何人再加一张新表（哪怕只加一行）**
+        都会把既有条目挤出窗口 ⇒ 判红说「标注与事实不符」，而事实是**标注完全正确**
+        （issue #5648 实测：加 `order_shipments` 一条，红的是别人的四条
+        `inbound_order_items` / `stock_batches` / `stock_batch_consumptions` / `user_memories`）。
+        判据把嫌疑指向错误的对象 = 下一个人会去删别人的条目来"修"它。
+
+        ⇒ 判据改成读**整段横幅**：仍然只读注释（不读可执行 DDL —— 那样「表名出现在建表语句里」
+        会被当成"已标注"），但不再有个任意截止点。
+        """
+        lines = []
+        for line in sql.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("--"):
+                break
+            lines.append(line)
+        return "\n".join(lines)
+
+    @staticmethod
     def _tables(p: Path) -> set:
         src = _strip_sql_comments(p.read_text(encoding="utf-8"))
         return {m.lower() for m in
@@ -1212,13 +1234,43 @@ class TestSchemaFullDeprecation:
                 "请撤掉废弃标注（否则标注本身变成错误信息）"
             )
 
+    def test_banner_region_reads_entries_beyond_the_old_2000_char_cut(self):
+        """🔴 注入式自证（issue #5648）：造一份**横幅长度 > 2000 字符**的合成 SQL，
+        表名落在 2000 之后 —— 旧口径（`[:2000]`）读不到它，新口径（整段横幅）读得到。
+
+        用合成语料而不是拿真实文件当夹具：真实文件的行长会随别人改动漂移，
+        那样的「自证」迟早变成空转（判据自己被自己的语料喂绿）。
+        """
+        filler = "\n".join(f"-- 说明行 {i}：本文件已废弃，请勿用于新建库" for i in range(120))
+        assert len(filler) > 2000, "合成语料不够长（本自证的前提）"
+        synthetic = filler + "\n--     zzz_new_table\n\nCREATE TABLE zzz_real (id INT);\n"
+        assert "zzz_new_table" not in synthetic[:2000], "前置不成立：表名落在旧窗口内"
+        assert "zzz_new_table" in self._banner_region(synthetic), \
+            "新口径必须读得到 2000 字符之后的横幅条目（否则它没修掉那个陷阱）"
+        assert "zzz_real" not in self._banner_region(synthetic), \
+            "横幅区必须**止于第一条非注释行** —— 否则「表名出现在建表语句里」会被当成已标注"
+
+    def test_old_cut_off_window_would_have_missed_it(self):
+        """反证：旧的 `[:2000]` 口径对当前文件**确实**丢过东西（否则上一条是空转）。"""
+        full_sql = self.FULL.read_text(encoding="utf-8")
+        missing = self._tables(self.CANONICAL) - self._tables(self.FULL)
+        if not missing:
+            return
+        beyond = [t for t in sorted(missing)
+                  if t in self._banner_region(full_sql) and t not in full_sql[:2000]]
+        assert beyond, (
+            "当前文件里没有「横幅写了、但落在 2000 字符之外」的表 —— "
+            "本判据存在的理由（旧口径会误报）此刻不成立；若确已无人踩到这个坑，"
+            "可连同 `_banner_region` 一起撤掉（豁免必带死亡条件）"
+        )
+
     def test_drift_is_documented_in_banner(self):
         """标注里点名的缺失表必须与实际漂移一致（防写了但写错）"""
         full_sql = self.FULL.read_text(encoding="utf-8")
         missing = self._tables(self.CANONICAL) - self._tables(self.FULL)
         if not missing:
             return  # 已对齐情形由上一条用例负责
-        header = full_sql[:2000]
+        header = self._banner_region(full_sql)
         undocumented = [t for t in sorted(missing) if t not in header]
         assert not undocumented, (
             f"以下缺失表未在废弃标注里列出：{undocumented} —— 标注与事实不符"

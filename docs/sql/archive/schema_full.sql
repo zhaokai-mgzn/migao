@@ -22,6 +22,13 @@
 --     production_option_routings, production_route_rules, production_route_signals,
 --     production_route_templates, production_routing_versions,
 --     production_routings,
+--     order_shipments, order_shipment_items
+--      发货单 + 发货明细（V132，issue #5648 —— 工人拍照生成发货单 + 订单发货状态闭环）：
+--      前者是**服务端留痕**（谁 / 何时 / 哪张单 / 照片引用 / 识别结果），后者是
+--      「这一单**实际发了多少**」（实发套/件/卷 —— 与 order_logistics 分开：后者是物流面、
+--      无数量列，少发/错发曾因此不可核）；该真值的唯一 owner = order_shipment_items，
+--      issue #5651（纸面）只消费。
+--     order_shipment_items（同 V132：实发套/件/卷，唯一 owner）,
 --     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries,
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；
