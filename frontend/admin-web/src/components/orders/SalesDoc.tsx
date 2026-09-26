@@ -195,11 +195,11 @@ export default function SalesDoc({
              报价单 / 加工单藏掉（#4965 实测回归）。 */
           .sales-print-area[data-print-target='sales'],
           .sales-print-area[data-print-target='sales'] * { visibility: visible; }
-          /* 🔴 连续走纸：单据本体固定为**单联**高度 + overflow:hidden ⇒ 浏览器**不会再分页**
+          /* 🔴 连续走纸：单据本体固定为「单联」高度 + overflow:hidden ⇒ 浏览器不会再分页
              （自然分页会让后半截打到下一联 = 跨联错位）。复写三份由压感纸承担，DOM 只有一份。 */
           .sales-sheet { break-inside: avoid; page-break-inside: avoid; }
           .sales-doc-table thead { display: table-header-group; }
-          /* 长名截断**可见**（省略号），不是静默裁掉（issue #5651 硬约束） */
+          /* 长名截断可见（省略号），不是静默裁掉（issue #5651 硬约束） */
           .sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         }
         .sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

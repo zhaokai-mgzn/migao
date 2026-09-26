@@ -2199,6 +2199,7 @@ cases:
       tests:
         - "tests/unit_ci_workflows/test_print_media_matrix_guard.py"
         - "frontend/admin-web/tests/unit/lib/print-media.test.ts"
+        - "tests/unit_ci_workflows/test_orders_barrel_mock_guard.py"
       ci:
         - pr-check.yml
       verifies: []
