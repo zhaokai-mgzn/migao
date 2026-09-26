@@ -73,10 +73,16 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * ## 与发货链的关系（**未完成项**，如实登记）
  *
  * 用户裁定销售单要「挂在发货链上」= 随货给客户的那张、数量与**实发**同源。
- * 前置依赖 = `order_shipment_items`（issue #5648 / PR #5664 拥有，**尚未合并**；
- * 实测 `git grep order_shipment_items origin/main` 零命中）⇒ 本版数量取**订单行**
- * （`order.items[].quantity`），与报价单 / 发货单**同一份**投影（不是第二套口径）。
- * ⛔ **不**自造一套发货明细表去顶替（那会造出第二份真值）—— 待 #5664 落地后改消费它。
+ *
+ * **现状（2026-09-26 复核，如实登记）**：`order_shipment_items`（issue #5648 / PR #5664）
+ * **已落 main** —— 它是「这一单实际发了多少」的**唯一真值载体**，且该表**owner 声明**
+ * 要求 #5651 **只消费**（读 `OrderShipmentService.readShipment`），不得另建第二份投影。
+ * 但它今天**只有工人读面**（`/api/worker/shipment/orders/{orderId}`，工人 session 准入），
+ * **admin / 桌面端没有读面** ⇒ 本组件（跑在 admin-web）拿不到实发数量。
+ * ⇒ 本版数量取**订单行** `order.items[].quantity`（与报价单 / 发货单**同一份**投影，
+ * 不是第二套口径）；⛔ **不**自造发货明细表、也**不**照工人读面猜 DTO 形状。
+ * 接线 = 新增 admin 端读面（**后端改动**），不在本 PR（纯前端）范围 —— 见
+ * `docs/design/print-media-matrix.md` §6。
  */
 interface SalesDocProps {
   order: Order

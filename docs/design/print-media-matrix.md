@@ -98,12 +98,19 @@
 
 用户 2026-09-26 裁定销售单要「挂在发货链上」= 随货给客户的那张，数量与**实发**同源。
 
-- **前置依赖**：`order_shipment_items`（issue #5648 / PR #5664 拥有）。实测
-  `git grep order_shipment_items origin/main` **零命中** ⇒ 本单落地时**尚未合并**。
+- **前置依赖**：`order_shipment_items`（issue #5648 / PR #5664 拥有）——**已合入 main**
+  （`backend/admin-api/src/main/java/com/migao/admin/entity/OrderShipmentItem.java`）。
+  它是「这一单实际发了多少」的**唯一真值载体**，且该文件**owner 声明**要求 #5651 **只消费**
+  （读 `OrderShipmentService.readShipment`），**不得另建第二份投影**。
+- 🔴 **仍然卡住的点（实测，2026-09-26）**：该真值今天**只有工人读面** ——
+  `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShipmentController.java`
+  的 `GET /api/worker/shipment/orders/{orderId}`（工人 session 准入）。
+  **admin / 桌面端没有读面** ⇒ 跑在 admin-web 的销售单**拿不到实发数量**。
 - **本单做法**：销售单数量取 `order.items[].quantity` —— 与报价单 / 发货单**同一份**投影
-  （不是第二套口径），并**不**自造发货明细表（自造 = 第二份真值）。
-- **待办**：`order_shipment_items` 落地后，销售单改消费**实发**数量；
-  「谁生成 / 谁打印 / 发货前还是发货后」的边界与 #5648 一并定死。
+  （不是第二套口径）；⛔ **不**自造发货明细表、**不**照工人读面猜 DTO 形状（那是编契约）。
+- **接线（后续单）**：新增 **admin 端读面**（后端：controller + DTO + 权限码 + 租户隔离 + 单测），
+  取数走 owner 指定的 `OrderShipmentService.readShipment`；前端把实发数量传给 `SalesDoc` 即可
+  （列清单只有一份，不用改渲染）。「谁生成 / 谁打印 / 发货前还是发货后」的边界与 #5648 一并定死。
 
 ## 7. 新增一份可打印单据的 SOP
 
