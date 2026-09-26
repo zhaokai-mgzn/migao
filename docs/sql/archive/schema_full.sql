@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 42 张）：
+--   本文件缺失（schema.sql 已有，共 43 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -23,7 +23,12 @@
 --     production_route_templates, production_routing_versions,
 --     production_routings,
 --     production_work_logs, remnant_small_item_specs, role_permissions,
---     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
+--     session_states, stock_ledger_entries,
+--     tenant_param_audit
+--      企业参数变更留痕（V131，issue #5131 §22 P6 —— 一行 = 一个参数键的一次变更：谁 / 何时 /
+--      哪个键 / 改前→改后；与 worker_report_audits 同族：只追加 + 「身份是怎么确定的」那一列，
+--      且**不在**配置写入的事务里 = 口径 B best-effort），
+--     tenant_payment_qrcodes, user_suggestion_prefs,
 --     inbound_orders, inbound_order_items, stock_batches
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
 --     stock_batch_consumptions

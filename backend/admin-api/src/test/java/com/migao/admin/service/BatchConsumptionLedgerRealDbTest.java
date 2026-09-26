@@ -223,7 +223,9 @@ class BatchConsumptionLedgerRealDbTest {
         // 真装配：上下卷边走**算料配置的单一读面**（真库里的配置行），不是测试里塞的常量。
         // 余料腿显式不装（V122 / issue #5146）：本判据覆盖批次账，余料是附加事实 ⇒ 行为与 #5158 逐字相同。
         CraftCalcConfigService configService = new CraftCalcConfigService(
-                session.getMapper(CraftCalcConfigMapper.class), null);
+                session.getMapper(CraftCalcConfigMapper.class), null,
+                // 审计腿（§22 P6）显式不装：本判据只读配置 / 排料，不写配置
+                null);
         service = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductSkuMapper.class), session.getMapper(StockLedgerMapper.class),

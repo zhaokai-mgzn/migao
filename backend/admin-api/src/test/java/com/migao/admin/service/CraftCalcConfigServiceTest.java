@@ -4,12 +4,20 @@ package com.migao.admin.service;
 
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.CraftCalcConfig;
+import com.migao.admin.entity.TenantParamAudit;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CraftCalcConfigMapper;
+import com.migao.admin.mapper.TenantParamAuditMapper;
+import com.migao.admin.security.SecurityUser;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -19,8 +27,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,13 +53,25 @@ class CraftCalcConfigServiceTest {
 
     private CraftCalcConfigMapper mapper;
     private CraftCalcClient client;
+    private TenantParamAuditMapper auditMapper;
+    private SimpleMeterRegistry meters;
     private CraftCalcConfigService service;
 
     @BeforeEach
     void setUp() {
         mapper = mock(CraftCalcConfigMapper.class);
         client = mock(CraftCalcClient.class);
-        service = new CraftCalcConfigService(mapper, client);
+        // 变更留痕腿（§22 P6）：**真**服务 + mock mapper ⇒ 既能断言「写了哪一行」，
+        // 又能注入写失败（口径 B 的判据需要一个真的会抛的审计腿）。
+        auditMapper = mock(TenantParamAuditMapper.class);
+        meters = new SimpleMeterRegistry();
+        service = new CraftCalcConfigService(mapper, client,
+                new TenantParamAuditService(auditMapper, meters, new ObjectMapper()));
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     /** 一份**合法**的全量配置（PUT 是全量替换 ⇒ 键必须齐）。 */
@@ -391,6 +413,134 @@ class CraftCalcConfigServiceTest {
         assertThat(data).containsEntry("source", CraftCalcConfigService.SOURCE_DEFAULT);
         assertThat(data.get("defaults")).isSameAs(data.get("config"));
         verify(client).defaultConfig();   // 恰好一次（verify 默认 times(1)）
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 判据 7（§22 P6 变更留痕，issue #5131；口径 B = best-effort）：写面留痕
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** 已认证的商家用户（写面的真实形态：控制器 → 服务，SecurityContext 里有 SecurityUser）。 */
+    private static void authenticate() {
+        SecurityUser user = new SecurityUser("u-9", 7L, "13800138000", List.of("admin"), List.of());
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
+    }
+
+    /** 首次保存（无配置行）⇒ 返回**服务真正落进实体**的那一份（当「库里的行」用，不手搓夹具）。 */
+    private CraftCalcConfig saveFirstTime(Map<String, Object> body) {
+        when(mapper.selectActiveByTenant(7L)).thenReturn(null);
+        service.put(7L, body);
+        ArgumentCaptor<CraftCalcConfig> captor = ArgumentCaptor.forClass(CraftCalcConfig.class);
+        verify(mapper).insert(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("PUT 必须把 hem_margin / 两个超阈键**落库**（改前：收下、校验、200，却一个字都没写）")
+    void putPersistsHemMarginAndOversizeThresholds() {
+        Map<String, Object> body = validBody();
+        body.put("hem_margin", 0.25);
+        body.put("oversize_width_threshold", 5.5);
+        body.put("oversize_height_threshold", 3.5);
+
+        // ① 首次保存（insert）：三列必须进实体（改前它们**不在** apply() 里 ⇒ 断言红）
+        CraftCalcConfig inserted = saveFirstTime(body);
+        assertThat(inserted.getHemMargin()).isEqualByComparingTo("0.25");
+        assertThat(inserted.getOversizeWidthThreshold()).isEqualByComparingTo("5.5");
+        assertThat(inserted.getOversizeHeightThreshold()).isEqualByComparingTo("3.5");
+
+        // ② 已有行（updateById）：同样必须落库，且**读面回显**的就是刚存下的值
+        when(mapper.selectActiveByTenant(7L)).thenReturn(inserted);
+        Map<String, Object> changed = validBody();
+        changed.put("hem_margin", 0.2);
+        changed.put("oversize_width_threshold", 5.0);
+        changed.put("oversize_height_threshold", 3.0);
+        Map<String, Object> data = service.put(7L, changed);
+
+        ArgumentCaptor<CraftCalcConfig> updated = ArgumentCaptor.forClass(CraftCalcConfig.class);
+        verify(mapper).updateById(updated.capture());
+        assertThat(updated.getValue().getHemMargin()).isEqualByComparingTo("0.2");
+        assertThat(updated.getValue().getOversizeWidthThreshold()).isEqualByComparingTo("5.0");
+        assertThat(updated.getValue().getOversizeHeightThreshold()).isEqualByComparingTo("3.0");
+        assertThat(configOf(data)).containsEntry("hem_margin", new BigDecimal("0.2"));
+    }
+
+    @Test
+    @DisplayName("只改一个键 ⇒ **恰好一行**审计（改前→改后逐值正确 + 谁改的）；同值的键不写行")
+    void putWritesExactlyOneAuditRowForTheChangedKey() {
+        authenticate();
+        Map<String, Object> first = validBody();          // hem_margin = 0.3
+        CraftCalcConfig stored = saveFirstTime(first);
+        clearInvocations(auditMapper);                     // 只数第二次写（首次是 11 个键全新增）
+
+        when(mapper.selectActiveByTenant(7L)).thenReturn(stored);
+        Map<String, Object> second = validBody();
+        second.put("hem_margin", 0.25);                    // 只改这一个键
+        service.put(7L, second);
+
+        ArgumentCaptor<TenantParamAudit> captor = ArgumentCaptor.forClass(TenantParamAudit.class);
+        verify(auditMapper, times(1)).insert(captor.capture());
+        TenantParamAudit row = captor.getValue();
+        assertThat(row.getParamKey()).isEqualTo("hem_margin");
+        assertThat(row.getOldValue()).isEqualTo("0.3");
+        assertThat(row.getNewValue()).isEqualTo("0.25");
+        assertThat(row.getParamDomain()).isEqualTo(TenantParamAuditService.DOMAIN_CRAFT_CALC);
+        assertThat(row.getOperation()).isEqualTo(TenantParamAuditService.OPERATION_PUT);
+        assertThat(row.getOperationId()).isNotBlank();
+        assertThat(row.getActorId()).isEqualTo("u-9");
+        assertThat(row.getActorName()).isEqualTo("13800138000");
+    }
+
+    @Test
+    @DisplayName("口径 B：审计写失败 ⇒ 配置**照常保存**（值照落库、响应正常），且失败**可观测**")
+    void putSurvivesAuditWriteFailureAndStaysObservable() {
+        authenticate();
+        when(mapper.selectActiveByTenant(7L)).thenReturn(null);
+        when(auditMapper.insert(any(TenantParamAudit.class)))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("审计表不可用"));
+
+        ch.qos.logback.classic.Logger auditLogger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(TenantParamAuditService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        auditLogger.addAppender(appender);
+        Map<String, Object> data;
+        try {
+            // 🔴 本行就是判据 B：审计腿炸了，配置写入**必须不炸**（改前：异常直接冒到控制器 ⇒ 500）
+            data = service.put(7L, validBody());
+        } finally {
+            auditLogger.detachAppender(appender);
+        }
+
+        // 配置照常落库 + 响应照常（商家看到的是「保存成功」）
+        ArgumentCaptor<CraftCalcConfig> saved = ArgumentCaptor.forClass(CraftCalcConfig.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getHemMargin()).isEqualByComparingTo("0.3");
+        assertThat(data).containsEntry("source", CraftCalcConfigService.SOURCE_STORED);
+        assertThat(configOf(data)).containsEntry("hem_margin", new BigDecimal("0.3"));
+
+        // 可观测面 ①：计数（可画线/告警）
+        assertThat(meters.get(TenantParamAuditService.WRITE_FAILED_METRIC)
+                .tag("param_domain", TenantParamAuditService.DOMAIN_CRAFT_CALC)
+                .counter().count()).isEqualTo(1.0d);
+        // 可观测面 ②：结构化 ERROR（可 grep/告警）—— 「配置已保存但变更未留痕」不得静默
+        assertThat(appender.list).anySatisfy(event -> {
+            assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
+            assertThat(event.getFormattedMessage()).contains("PARAM_AUDIT_WRITE_FAILED");
+        });
+    }
+
+    @Test
+    @DisplayName("被 422 拒的写 ⇒ 一行审计都不写（没保存就没有变更可留痕）")
+    void rejectedWriteWritesNoAuditRow() {
+        authenticate();
+        when(mapper.selectActiveByTenant(7L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.put(7L, withKey("min_fullness", 1.0)))
+                .isInstanceOf(BusinessException.class);
+
+        verify(auditMapper, never()).insert(any(TenantParamAudit.class));
     }
 
 }

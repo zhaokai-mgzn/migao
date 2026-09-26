@@ -1105,6 +1105,55 @@ COMMENT ON COLUMN craft_calc_configs.oversize_height_threshold IS
 COMMENT ON COLUMN craft_calc_configs.status IS
     '配置行状态（范式同 production_crafts，V72）。读面按 deleted = 0 取行，不按 status 过滤。';
 
+-- ── 企业参数**变更留痕**（V131，issue #5131 §22 P6；设计 docs/design/tenant-params-center.md §6.3）──
+-- bootstrap 终态同步（同 V127 纪律）：新建库由本文件建表、**不跑迁移链** ⇒ 只写迁移 = 新建库缺表。
+-- **只追加**：一行 = 一个参数键的一次变更（谁 / 何时 / 哪个域哪个键 / 改前 → 改后 / 属于哪一次保存）。
+-- 口径 = **best-effort**（用户 2026-09-26 裁定）：审计写失败只记日志 + 计数，**不让配置保存失败**
+-- ⇒ 本表**不在**配置写入的事务里（残留「改了钱、查不到谁改的」由日志行 PARAM_AUDIT_WRITE_FAILED
+-- 与指标 migao.tenant_param_audit.write_failed 兜可观测性）。
+CREATE TABLE IF NOT EXISTS tenant_param_audit (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    param_domain VARCHAR(32) NOT NULL,               -- craft_calc（算料，当前唯一写面）；增量 2 的六域按同名列追加取值
+    param_key VARCHAR(64) NOT NULL,                  -- 引擎配置键（如 hem_margin）；不做白名单（键集随引擎演进）
+    old_value TEXT,                                  -- NULL = 该键此前**没有**存储值（本租户当时在用引擎默认值）
+    new_value TEXT,
+    actor_id VARCHAR(64),                            -- 取不到认证上下文 ⇒ NULL + actor_source='unknown' + 原因（不编用户）
+    actor_name VARCHAR(64),
+    actor_source VARCHAR(16) NOT NULL,               -- security_context（权威）/ unknown
+    actor_unknown_reason VARCHAR(64),
+    operation VARCHAR(32) NOT NULL,                  -- put（全量替换）
+    operation_id VARCHAR(64) NOT NULL,               -- 一次保存的身份：同一次 PUT 的多行共享（日志行里也打它）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    -- 一行 = 一次变更：两个值不得相同（同值行 = 噪音，且会让「改过没有」判错）
+    CONSTRAINT ck_tenant_param_audit_changed CHECK (old_value IS DISTINCT FROM new_value),
+    CONSTRAINT ck_tenant_param_audit_source CHECK (actor_source IN ('security_context', 'unknown')),
+    -- 🔴 「不知道是谁」必须带原因：两个条件同真同假
+    CONSTRAINT ck_tenant_param_audit_unknown
+        CHECK ((actor_source = 'unknown') = (actor_unknown_reason IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_param_audit_key
+    ON tenant_param_audit (tenant_id, param_domain, param_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_param_audit_operation
+    ON tenant_param_audit (tenant_id, operation_id);
+COMMENT ON TABLE tenant_param_audit IS
+    '企业参数变更留痕（V131，issue #5131 P6，**只追加**）：一行 = 一个参数键的一次变更'
+    '（谁 / 何时 / 哪个域哪个键 / 改前→改后 / 属于哪一次保存）。口径 = **best-effort**'
+    '（用户 2026-09-26 裁定）：审计写失败只记日志 + 计数，**不让配置保存失败**';
+COMMENT ON COLUMN tenant_param_audit.old_value IS
+    '改前值。NULL = 该键此前**没有**存储值（本租户当时在用引擎默认值）—— 不是「值是空」；'
+    '配置行本身不存在时（首次保存）本列全为 NULL';
+COMMENT ON COLUMN tenant_param_audit.actor_source IS
+    '身份**是怎么确定的**（同 worker_report_audits.identity_source 的口径）：'
+    'security_context = 取自 SecurityContext 的 SecurityUser（权威，body 伪造不了）；'
+    'unknown = 无认证上下文（服务令牌 / 定时任务 / 测试），此时 actor_id/actor_name 为 NULL 且 actor_unknown_reason 必非空';
+COMMENT ON COLUMN tenant_param_audit.actor_unknown_reason IS
+    '为什么归因不了（仅 actor_source=''unknown'' 时非空）：如 no_authentication_context —— '
+    '如实记「未知 + 原因」，**不得**编一个用户或写成 system 冒充归属';
+COMMENT ON COLUMN tenant_param_audit.operation_id IS
+    '一次保存的身份：同一次 PUT 写下的多行共享它（应用侧同时把该 id 打进配置写入的日志行 ⇒ 日志 ↔ 账本可对账）';
+
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -2329,6 +2378,11 @@ CREATE POLICY tenant_isolation_agent_batches ON agent_batches
 
 ALTER TABLE agent_batch_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_agent_batch_items ON agent_batch_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 企业参数变更留痕（V131，issue #5131 §22 P6）—— 跨租户不可见
+ALTER TABLE tenant_param_audit ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_tenant_param_audit ON tenant_param_audit
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================
