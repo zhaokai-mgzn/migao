@@ -1,0 +1,12 @@
+[① 建号后] HTTP 200
+[② 库中读（改密前）] 20|au_ua_a|true   ← 期望 must_change_password = true
+[③ 员工登录] HTTP 200 mustChangePassword=True
+[④ 未改密访问业务端点] HTTP 403 {"success":false,"error":{"code":"PASSWORD_CHANGE_REQUIRED","message":"首次登录需先修改密码，请调用 POST /api/auth/password/change"}}
+[⑤ 改密] HTTP 200
+[⑥ 库中读（改密后）] 20|au_ua_a|false   ← 期望 must_change_password = false
+⇒ **行为级翻转证据**：改密前 true → 改密后 false（同一行、真库）
+[⑦ 跨租户探针 hdr=None] HTTP 200 body={"success":true,"data":{"total":1,"page":1,"size":2,"items":[{"id":"bd78c1271bed62a6483d13d81ba2e575","orderNo":"20260902507820031","customerName":"PO | 库中订单数 T20=1 T21=1
+[⑦ 跨租户探针 hdr={'X-Tenant-Id': '21'}] HTTP 200 body={"success":true,"data":{"total":1,"page":1,"size":2,"items":[{"id":"bd78c1271bed62a6483d13d81ba2e575","orderNo":"20260902507820031","customerName":"PO | 库中订单数 T20=1 T21=1
+tenant_id|order_no
+20|20260902507820031
+(1 行记录)
