@@ -17,14 +17,34 @@
 | 2 | 服务端明确「本租户无配置行」⇒ 输出与改动前**逐值相同**（引擎收到的 `config is None`） | 改动前也相同 ⇒ 本条是**零回归**锁（防「顺手把默认值显式发过去」） |
 | 3 | 取配置失败 ⇒ **分两族**：服务端**答复了**读不通（4xx/5xx/形状漂移）= **fail-closed**（不算料 + 可行动话术）；服务端**没答**（不可达/熔断）= **显式降级 + 留痕**（默认口径 + `config_source` + 报价单 warning 明说） | 改动前根本不取配置 ⇒ 两族都恒 `success=True` 且无痕 ⇒ 红 |
 | 4 | 口径**零自造**：引擎收到的 config 就是服务端那一份（键集不变），且规范化复用**唯一实现** | 改动前 `config is None`（recorder 捕获到 None）⇒ 红 |
-| 5 | 同口径（**退化为纯函数级**）：同一 config + 同一入参 ⇒ 工具路径与内部试算端点路径米数逐值相等 | 改动前工具路径用默认口径 ⇒ 红 |
+| 5 | 同口径：同一 config + 同一入参 ⇒ 工具路径与内部试算端点路径米数逐值相等（**函数级**；服务端那一半的真栈覆盖见下方「已知缺口」） | 改动前工具路径用默认口径 ⇒ 红 |
 
 ## 已知缺口（如实登记，不粉饰）
 
-- 判据 5 的**真栈**形态（Java `CraftCalcClient` + 真 `craft_calc_configs` 行 + 真 HTTP）
-  在本机不可得 ⇒ 退化为纯函数级同 config 判据 + **响应形状镜像**
-  （fixture 的键集/形状取自 `CraftCalcConfig#toConfigMap` 与 `CraftCalcConfigController#get` 的
-  `data = {source, config}`）；
+- **判据 5 的覆盖现状（issue #4945 处 1，2026-09-26 更新 —— 原文那句「真栈形态在本机不可得」已不成立）**：
+  · **服务端半边已升到真栈**（真库 + 真装配）：
+    `backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcConfigRealDbTest.java` 在一次性真 PG 上
+    建 `craft_calc_configs` **真行** ⇒ 真 MyBatis 读（谓词 / 列名 / 软删过滤 / JSONB 解码）⇒ 真
+    `toConfigMap()` ⇒ 真 `CraftCalcClient` **出参**逐值核对（另含「无配置行 ⇒ 请求体**没有** config 键」
+    的零回归锁）。它跑在**既有**的 `admin-api-test` job 里 —— 该 job 已注入 `MIGAO_REQUIRE_REALDB=1`
+    ⇒ 缺 PG 判**红**（不是 skip）；
+  · **两侧必须是同一份 config，且有机器钉住**：本文件的 `TENANT_CONFIG_JSON` 与上面那份 Java 判据的
+    声明**逐值一致性**由 `tests/unit_ci_workflows/test_craft_calc_config_contract.py` 的**判据 9** 看住
+    （改一侧不改另一侧 ⇒ CI 必红）—— 否则「同一 config」只是账面成立；
+  · **仍然不覆盖（本判据的残留降级，不许当已覆盖读）**：**跨进程那一跳**，以及「在两个活服务上跑一条
+    判据、逐值比米数」这件事。PR 触发的 job 里**没有一条**同时起 `DB + admin-api + ai-agent` 的腿：
+    `admin-api-test` 无 Python 运行时；`ci workflow helper unit tests` 只装 `pytest pyyaml`
+    （连 `app.tools.curtain_calc` 都 import 不了 —— 它经 `app.tools.base` 依赖 pydantic）；
+    唯一起双服务的是 `.github/workflows/post-deploy-eval.yml` 的 docker 栈，**手动触发 + 真实 LLM 档**
+    （按 issue #4262 不得自动跑；本包也不得跑真实 LLM 评测）。
+    ⇒ 「服务端发出去的 config == 库里那一行」已由那份真库判据覆盖，「同一 config ⇒ 工具路径 ≡
+    内部试算端点路径」由本文件覆盖；两者**拼接起来**才等于判据 5 的真栈形态，而**拼接是论证，
+    不是一次真跑**。
+  · **重启条件（可执行）**：一旦出现一条**零 LLM** 的双服务腿（或在既有 docker 栈腿里加一个零 LLM 步骤），
+    就把双路径判据接进去 —— 形态 = ① 经真 `PUT /api/admin/production/craft-calc-config` 写入本租户配置行
+    ② 同一入参分别走 `POST /api/admin/orders/craft-calc`（`CraftCalcClient` 路径）与
+    `CurtainCalcTool`（米宝工具路径）③ 断言 `fabric_meters` / `total` **逐值相等** ④「删掉配置行 ⇒
+    两侧逐值回到默认口径 13.2 米」的零回归。缺口与重启条件同时登记在 issue #4945。
 - 权限通路（`GET /api/admin/production/craft-calc-config` 的**读码**：issue #5291 起为方法级
   `production:view`，此前与写面同用类级 `processing:manage`）：
   携 `X-User-Id` 且命中本租户商户员工时走**真实角色**（`PermissionInterceptor#hasBypassRole` 旁路失效）

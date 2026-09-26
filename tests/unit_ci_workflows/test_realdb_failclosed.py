@@ -82,6 +82,11 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
+    # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
+    # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
+    # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）
+    # 在 mock 面上**结构性不可见** —— 而 issue #4945 登记的风险正是「入口接线漂移而函数级判据不红」。
+    _SVC + "CraftCalcConfigRealDbTest.java": "direct",
     # issue #5243：基线语义判据（空库建终态 / 存量库不重放）**自带一次性真 PG 集群** ⇒ 登记。
     _SVC + "MigrationBaselineSemanticsTest.java": "direct",
     # issue #4778：**活迁移链的 runner 事务语义**判据（整份单事务 / 失败整份回滚 / 失败不记账 /

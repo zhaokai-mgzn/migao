@@ -4525,16 +4525,18 @@
 
 ### PG-057. 米宝查加工单过程明细：下料（裁剪）做到哪一步/谁报的/合格多少（新工具 production_worklog_query） 🔵
 ```
-你: 订单 EVAL-MB-ORD-0003 的下料（裁剪）做到哪一步了？谁报的？合格多少？
+你: 订单 EVAL-MB-ORD-0007 的下料（裁剪）做到哪一步了？谁报的？合格多少？
 端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
 期望: production_worklog_query
 数据: success=true
-数据: 商家问「下料（裁剪）做到哪一步 / 谁报的 / 合格多少」→ production_worklog_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
+数据: [worklog-seed] order_no=EVAL-MB-ORD-0007 qualified_qty=14.5 rework_qty=2 scrap_qty=1 piecework_amount=26.75
+数据: 商家问「下料（裁剪）做到哪一步 / 谁报的 / 合格多少」→ production_worklog_query(order_no=EVAL-MB-ORD-0007) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
 数据: 工具返回 = `GET /api/admin/agent/production/worklog?order_no=`（#4201 冻结契约键集）：{order_no, processing_order_no, processing_status, operations:[{position, operation_name, logical_name, group_name, seq, status, required_qty, qualified_qty, rework_qty, scrap_qty, is_must_finish, workers, last_work_date}], work_logs:[{operation_name, logical_name, position, worker_name, qty, qualified_qty, work_type, work_date}], totals:{qualified_qty, rework_qty, scrap_qty, piecework_amount}}；**投影纪律**：不下发内部单价/系数/租户字段（金额只以「计件金额」形态出现）—— 证据 `backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentProductionControllerTest.java`（键集 + doesNotContain unit_price/factor/tenant_id）
 数据: 「下料」= 工序库**裁剪组**（operations[].group_name = 裁剪，如 精裁-布 / 裁剪-纱），不新增「下料」数据模型（用户裁定）
 数据: 口径同源（不得自造第二份）：合格 = work_type=normal 的合格数；返工/报废各取该笔报工数量、**不计件不累加**；计件金额由服务端 `ProductionService.aggregate` 计算 ⇒ 与 `GET /api/admin/agent/production/piecework` 的 `total` **恒等** —— 证据 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java` 的 worklogPieceworkAmountSharesSingleAggregate / worklogAggregatesByWorkTypeAndWorkers
-数据: 评测栈 `production_work_logs` 零 seed ⇒ 该单报工明细为空、数量与金额全 0：如实说「暂无工序/报工记录、尚未报工」属**合格**行为；禁止编造报工人姓名或数量（机器断言：forbidden_text 具名指纹 + forbidden_tools）
-数据: 授权面不新增：权限码沿用 `order:list`（AgentProductionController 类级 `@RequirePermission`），C 端 JWT 无码 ⇒ 天然被挡（报工人与计件金额不对顾客开放）—— 证据 `backend/ai-agent-service/tests/test_production_worklog_query.py` 的 TestPermission
+数据: **数值断言（夹具真值，逐值可核）**：该单裁剪组两道工序 —— 精裁-布「应做 12.00 / 合格 10.00 / 返工 2.00 / 报废 0」status=done，裁剪-纱「应做 6.00 / 合格 4.50 / 返工 0 / 报废 1.00」status=in_progress；合计 **合格 14.50、返工 2.00、报废 1.00、计件金额 ¥26.75**（= 8.00×2.00 + 2.00×2.00 + 4.50×1.50；返工/报废不计件）。两种如实答法都算合格：① 直接给合计 14.50 / ¥26.75；② 逐工序给 10.00 + 4.50（相加 = 14.50）与金额 26.75。**不得**报成 0、不得只报数量不报金额（问句明确问了「合格多少」）。**车位组（车缝-布）零报工**：如实说它「还没开工」才对；把它算进已报工数量即错
+数据: **报工人真值**：精裁-布由**王秀兰**报工（8.00 + 2.00 合格、2.00 返工，共三笔），裁剪-纱由**陈国强**报工（4.50 合格 + 1.00 报废）—— 这两个姓名是夹具真值；说出**其他人名**（尤其「X 师傅」形态）即编造（机器断言：forbidden_text 具名指纹）
+数据: 授权面不新增：权限码为方法级 `production:view`（issue #5291 起；#5246 已移除类级 `order:list`），C 端 JWT 无码 ⇒ 天然被挡（报工人与计件金额不对顾客开放）—— 证据 `backend/ai-agent-service/tests/test_production_worklog_query.py` 的 TestPermission
 禁词: 王师傅
 禁词: 李师傅
 禁词: 张师傅
@@ -4546,7 +4548,7 @@
 必须成功: production_worklog_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
-溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
+溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ 2026-09-26（issue #4945 处 2 收口）：**数值断言已落**（上一条「未做」登记的两条阻塞理由逐条解除）——① 「本机无 docker ⇒ 无法验证 seed SQL」**理由不成立**：真库验证要的是二进制不是容器，`initdb`/`pg_ctl`/`psql` 起一次性集群即可；② 三段夹具已落地（`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 4，挂**专用**订单 0007，`user_inputs` 由 0003 改为 0007 —— 0003 是 PG-015 的专用订单且要求「无加工单」）。机器背书 = `tests/unit_ci_workflows/test_worklog_seed_realpg.py`（在**真 PG** 上按评测栈顺序建库 + 幂等二跑 + 把本用例的 worklog-seed 锚行与真库读数逐值对账 + 回滚事务内的注入式红证），CI 的 `ci workflow helper unit tests` job 注入 `MIGAO_REQUIRE_REALDB=1` ⇒ 缺 PG **判红**（不是静默 skip）。**仍未做（如实登记）**：① `price_state='unpriced'`（V90 未定价 ≠ 0 元）路径**不在**本夹具内 —— 它要让「合格多少 / 计件多少」变成两段式答案，与本条钉的三态数量是**两个**面；② 本条**未跑**真实 LLM 评测（issue #4262：手动且用户触发），故「agent 会不会把这几个数如实说出来」这一层**尚未取证**，只有「数值真值 + 判据可判」这一层已取证。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
 ### PG-060. 派工指定批次：与加工单生成同事务扣减 / 重复生成不二次扣 / 缺料 fail-closed 不落半成品 / 作废同事务回补 🔵
 ```
