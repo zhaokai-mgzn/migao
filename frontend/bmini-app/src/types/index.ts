@@ -39,6 +39,10 @@ export interface User {
   tenantId: number
   /** 登录渠道标识（employee/sms/mini_program…） */
   identityType?: string
+  /** 能力位（issue #5642 功能⑤）：能否唤出米宝 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
+   *  🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位。
+   *  `false` ⇒ 必须给「需要管理员授权」+ 可行动引导（不是静默隐藏、不是 403 白屏）。 */
+  capabilities?: { mibaoChat?: boolean }
 }
 
 export interface LoginResult {

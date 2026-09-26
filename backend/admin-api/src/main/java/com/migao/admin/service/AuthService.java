@@ -14,6 +14,7 @@ import com.migao.admin.mapper.PlatformAdminMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.security.AdminGate;
 import com.migao.admin.security.JwtTokenProvider;
 import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.SecurityUser;
@@ -888,6 +889,8 @@ public class AuthService {
                     .roles(securityUser.getRoles())
                     .permissions(permissions)
                     .menus(menus)
+                    // 平台超管恒持 "*" ⇒ 能力位为真（走通配，不是特例分支）
+                    .capabilities(capabilitiesOf(permissions))
                     .build();
         }
 
@@ -928,6 +931,23 @@ public class AuthService {
                 .roles(securityUser.getRoles())
                 .permissions(permissions)
                 .menus(menus)
+                // 米宝唤出能力位（issue #5642）：唯一判定 = `AdminGate.canSummonMibao`
+                // （"*" 通配 ⇒ 管理员自动落入 ⇒ 既有行为零回归；被显式授权的员工也落入）
+                .capabilities(capabilitiesOf(permissions))
+                .build();
+    }
+
+    /**
+     * 由生效权限集合构造能力位（issue #5642 功能⑤）。
+     *
+     * <p>🔴 **只有这一处判定** —— 端侧只消费返回的布尔位，不自己判码（设计单 §8.3）。
+     *
+     * @param permissions 生效权限集合
+     * @return 能力位
+     */
+    private UserInfoResponse.Capabilities capabilitiesOf(List<String> permissions) {
+        return UserInfoResponse.Capabilities.builder()
+                .mibaoChat(AdminGate.canSummonMibao(permissions))
                 .build();
     }
 

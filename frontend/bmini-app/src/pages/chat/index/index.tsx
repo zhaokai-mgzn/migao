@@ -7,6 +7,9 @@ import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
+// 米宝唤出授权门 + 能力位来源（issue #5642 功能⑤）
+import MibaoAccessGate from '../../../components/chat/MibaoAccessGate'
+import { getUserInfo } from '../../../services/userService'
 import './index.scss'
 
 export default function ChatPage() {
@@ -28,6 +31,11 @@ export default function ChatPage() {
   // 状态栏高度（自定义导航栏需要）
   const [statusBarHeight, setStatusBarHeight] = useState(20)
 
+  // 米宝唤出能力位（issue #5642 功能⑤）：**只**取服务端 `capabilities.mibaoChat`
+  // —— 前端不判任何权限码（哪些码算管理员是服务端单一真值，改一处即 h5 与 admin-web 同步）。
+  // `null` = 尚未取到 ⇒ 门不渲染任何一侧（避免把「还没拿到」误报成「没权限」）。
+  const [mibaoAllowed, setMibaoAllowed] = useState<boolean | null>(null)
+
   useEffect(() => {
     try {
       const info = Taro.getSystemInfoSync()
@@ -41,6 +49,22 @@ export default function ChatPage() {
     if (!checkAuth()) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       setTimeout(() => Taro.redirectTo({ url: '/pages/auth/login/index' }), 600)
+      return
+    }
+
+    // 🔴 米宝唤出授权门前置（issue #5642 功能⑤）：未授权 ⇒ **不创建会话、不改路由**
+    // （入口保持可见，页内由 `<MibaoAccessGate>` 给「需要管理员授权」+ 可行动引导
+    //  —— 不是静默隐藏、不是 403 白屏）。
+    let allowed = false
+    try {
+      const me = await getUserInfo()
+      allowed = me?.capabilities?.mibaoChat === true
+    } catch {
+      // 取不到能力位 ⇒ fail-closed（**不**静默放行）
+      allowed = false
+    }
+    setMibaoAllowed(allowed)
+    if (!allowed) {
       return
     }
 
@@ -68,18 +92,26 @@ export default function ChatPage() {
   /** 发送消息 */
   const handleSend = useCallback(
     async (content: string, images?: string[]) => {
+      // 授权门兜底（授权缺失态下输入区本就不渲染；此处防「我的」页待发提示等旁路）
+      if (mibaoAllowed !== true) {
+        return
+      }
       if (!currentSessionId) {
         await ensureLatestSession()
       }
       await sendMessage(content, images)
     },
-    [currentSessionId, ensureLatestSession, sendMessage],
+    [currentSessionId, ensureLatestSession, sendMessage, mibaoAllowed],
   )
 
   /** 新对话（清空当前会话工作状态，不展示会话列表） */
   const handleNewChat = useCallback(async () => {
+    // 导航栏的「新对话」在授权缺失态下仍可见（入口不隐藏）⇒ 这里兜底：未授权不发请求
+    if (mibaoAllowed !== true) {
+      return
+    }
     await createSession()
-  }, [createSession])
+  }, [createSession, mibaoAllowed])
 
   /** 快捷操作 */
   const handleQuickAction = useCallback(
@@ -117,6 +149,8 @@ export default function ChatPage() {
         </View>
       </View>
 
+      {/* 🔴 米宝唤出授权门（issue #5642 功能⑤）：未授权 ⇒ 明确「需要管理员授权」+ 可行动引导 */}
+      <MibaoAccessGate allowed={mibaoAllowed}>
       {/* 错误提示 */}
       {error && (
         <View className='chat-page__error'>
@@ -152,6 +186,7 @@ export default function ChatPage() {
         isStreaming={isStreaming}
         disabled={!currentSessionId}
       />
+      </MibaoAccessGate>
     </View>
   )
 }

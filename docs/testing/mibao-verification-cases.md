@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（7 case）
+## B 端小程序域（8 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -681,6 +681,21 @@
 ```
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：issue #5145 阶段 1（派加工单扣批次库存）的工人端可见面 —— 母单 #5144 的原始诉求「生成加工单时告知裁剪工人去哪个批次裁多少米」。真值源 = 批次消耗台账（生产读面 `ProductionService#stampBatchAssignments` 逐部位追加两键），**不是**订单侧 `processing_info.batchNo`（那是面料批号，V111 明令不得与系统批次号混用）。 ｜ tags: bmini, production, batch, backend_contract
+
+### BM-008. 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导 🔵
+```
+你: 企业管理员唤出米宝对话（持该组权限码 ⇒ 默认可唤）；未获授权的员工进入米宝页 ⇒ 看到「需要管理员授权」以及去哪开通的引导
+期望: direct_reply
+数据: 判据 1·**唯一判定**：管理员权限码集合在服务端**只有一处字面量**（`backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java` 的 `ADMIN_PERMISSION_CODES`），全仓**代码面**语料里该集合三码的**字面量相邻出现**次数 == 1。红证：在第二个文件里再抄一遍三码数组 ⇒ 计数变 2 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ①。
+数据: 判据 2·**前端零副本**：`frontend/bmini-app/src/**` 与 `frontend/admin-web/src/**` 的任一文件里，该集合的**不同成员数 ≤ 1** —— 两端都只消费服务端下发的 `capabilities.mibaoChat` 布尔位，不自己判码。红证：在前端写两个成员参与判定 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ②。
+数据: 判据 3·**码必须真在目录里**：集合每个成员 ∈ `RegistrationService.defaultPermissions` 的码集 ∧ ∈ `PermissionService.ensureFullPermissionCatalog` 的码集（两处目录逐值相等，与既有判据 9 同源复用）；**本单新增的那个成员**还必须由一条迁移落库（否则**存量租户永远拿不到它**）。红证：写一个目录里没有的码 ⇒ 红（**本包开工前的现状正是这一形态**：该码全仓 0 命中）。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ③。
+数据: 判据 4·**只回填 `admin`**（用户 2026-09-26 裁定⑧「严格收窄」）：迁移 `backend/admin-api/src/main/resources/db/migration/V132__add_agent_chat_permission.sql` 的岗位授权谓词恒为 `r.code = 'admin'`，且带终态对账 `DO` 块（多授一个非 admin 岗位 ⇒ `RAISE EXCEPTION` 回滚）；迁移幂等（`WHERE NOT EXISTS` + `ON CONFLICT DO NOTHING`）且头部登记回滚 SQL。红证：把谓词放宽到客服岗位 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ④。
+数据: 判据 5·**既有行为零回归**：`role='admin'` 的账号仍能唤米宝 —— 走的是 `AdminGate` 的 `"*"` **通配判真**分支（`RoleService` 四处分支恒为 `["*"]`），**不是**为 admin 写的特例分支。红证：把判定改成读 `role` 字段 ⇒ 红（引入第二套身份口径）。证据：backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java 的「"*" 通配直接判真」与「三码全持为真、缺一为假」两条。
+数据: 判据 6·**未授权 ⇒ 入口可见 + 逐字「需要管理员授权」+ 可行动引导**（issue 范围 3 逐字「不是静默隐藏，也不是 403 白屏」）：端侧拒绝态**渲染得出来**（稳定锚点 `mibao-gate-denied`）、文案常量逐字等于「需要管理员授权」、引导含「员工管理」（去哪授权）。红证：文案退回泛化「无权限」/ 去掉引导 ⇒ 红。证据：frontend/bmini-app/tests/mibao-access-gate.test.tsx + frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx。
+数据: 判据 7·**两端同源**：小程序端（`frontend/bmini-app`，**一端双编译** ⇒ weapp 与 h5 产物同一份门）与 admin-web 端都从 `GET /api/auth/me` 的 `capabilities.mibaoChat` 取值、都挂上同一形态的门；未授权时**不创建会话、不拉会话列表**（避免「页面看起来正常、一发消息什么都没有」的静默形态）。红证：只在其中一端加门 ⇒ 红。证据：frontend/admin-web/tests/unit/pages/chat-page.test.tsx 的授权门两格。
+跳过: [backend-contract] 确定性契约/机械判据，由 pytest（tests/unit_ci_workflows/test_mibao_chat_gate.py）+ JUnit（backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java）+ jest/vitest（frontend/bmini-app/tests/mibao-access-gate.test.tsx、frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx、frontend/admin-web/tests/unit/pages/chat-page.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-26 新增（issue #5642 功能⑤「按权限码的米宝唤出授权门」；同日用户裁定「微信登录部分搁置，只交付授权门」⇒ 本用例只覆盖授权门，不覆盖小程序端微信手机号登录）。用户逐字：「管理员可以在 H5 上唤出 migao Agent 进行对话，其他员工需要授权才能唤出 migao Agent」。落地：① 新增权限码 `agent:chat`（本包开工前全仓 0 命中 ⇒ 「复用既有码」这个选项不存在）；② 服务端单一真值 `AdminGate`（`"*"` 通配 ⇒ role='admin' 自动落入，零特例分支）；③ `GET /api/auth/me` 下发 `capabilities.mibaoChat`；④ 端侧零权限码副本；⑤ 存量回填**只给 `admin`**（裁定⑧），配套「上线当天批量授权」操作单（写在本包 PR body，不在用例内）。 ｜ tags: bmini, auth, permission, mibao-gate, backend_contract
 
 ## 分类域（3 case）
 
@@ -7059,13 +7074,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：500（活跃 126，跳过 374）
-- tier 分布：smoke 12 / normal 455 / adversarial 31
+- 用例总数：501（活跃 126，跳过 375）
+- tier 分布：smoke 12 / normal 456 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：7
+- B 端小程序域：8
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -7099,6 +7114,7 @@
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
 - API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
+- BM-008: 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活
