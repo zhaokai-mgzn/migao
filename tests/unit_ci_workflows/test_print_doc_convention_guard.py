@@ -42,6 +42,9 @@ PORTALED_PRINT_DOCS: tuple[str, ...] = (
     "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
     "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+    # issue #5651 新增的两份单据（A4 加工单 / 三联纸销售单）—— 与既有三份同一隔离约定
+    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+    "frontend/admin-web/src/components/orders/SalesDoc.tsx",
 )
 
 #: **已登记的非符合形态**（文件, 理由 + **死亡条件**）—— 逐条判断后登记，不是一律加白
