@@ -1041,6 +1041,24 @@ _CASE_BM_007 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-008 [NORMAL] 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导（源: cases/bmini.yml）──
+_CASE_BM_008 = EvalCase(
+    id='BM-008',
+    legacy_id='',
+    title='米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业管理员唤出米宝对话（持该组权限码 ⇒ 默认可唤）；未获授权的员工进入米宝页 ⇒ 看到「需要管理员授权」以及去哪开通的引导'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**唯一判定**：管理员权限码集合在服务端**只有一处字面量**（`backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java` 的 `ADMIN_PERMISSION_CODES`），全仓**代码面**语料里该集合三码的**字面量相邻出现**次数 == 1。红证：在第二个文件里再抄一遍三码数组 ⇒ 计数变 2 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ①。', '判据 2·**前端零副本**：`frontend/bmini-app/src/**` 与 `frontend/admin-web/src/**` 的任一文件里，该集合的**不同成员数 ≤ 1** —— 两端都只消费服务端下发的 `capabilities.mibaoChat` 布尔位，不自己判码。红证：在前端写两个成员参与判定 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ②。', '判据 3·**码必须真在目录里**：集合每个成员 ∈ `RegistrationService.defaultPermissions` 的码集 ∧ ∈ `PermissionService.ensureFullPermissionCatalog` 的码集（两处目录逐值相等，与既有判据 9 同源复用）；**本单新增的那个成员**还必须由一条迁移落库（否则**存量租户永远拿不到它**）。红证：写一个目录里没有的码 ⇒ 红（**本包开工前的现状正是这一形态**：该码全仓 0 命中）。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ③。', "判据 4·**只回填 `admin`**（用户 2026-09-26 裁定⑧「严格收窄」）：迁移 `backend/admin-api/src/main/resources/db/migration/V132__add_agent_chat_permission.sql` 的岗位授权谓词恒为 `r.code = 'admin'`，且带终态对账 `DO` 块（多授一个非 admin 岗位 ⇒ `RAISE EXCEPTION` 回滚）；迁移幂等（`WHERE NOT EXISTS` + `ON CONFLICT DO NOTHING`）且头部登记回滚 SQL。红证：把谓词放宽到客服岗位 ⇒ 红。证据：tests/unit_ci_workflows/test_mibao_chat_gate.py 判据 ④。", '判据 5·**既有行为零回归**：`role=\'admin\'` 的账号仍能唤米宝 —— 走的是 `AdminGate` 的 `"*"` **通配判真**分支（`RoleService` 四处分支恒为 `["*"]`），**不是**为 admin 写的特例分支。红证：把判定改成读 `role` 字段 ⇒ 红（引入第二套身份口径）。证据：backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java 的「"*" 通配直接判真」与「三码全持为真、缺一为假」两条。', '判据 6·**未授权 ⇒ 入口可见 + 逐字「需要管理员授权」+ 可行动引导**（issue 范围 3 逐字「不是静默隐藏，也不是 403 白屏」）：端侧拒绝态**渲染得出来**（稳定锚点 `mibao-gate-denied`）、文案常量逐字等于「需要管理员授权」、引导含「员工管理」（去哪授权）。红证：文案退回泛化「无权限」/ 去掉引导 ⇒ 红。证据：frontend/bmini-app/tests/mibao-access-gate.test.tsx + frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx。', '判据 7·**两端同源**：小程序端（`frontend/bmini-app`，**一端双编译** ⇒ weapp 与 h5 产物同一份门）与 admin-web 端都从 `GET /api/auth/me` 的 `capabilities.mibaoChat` 取值、都挂上同一形态的门；未授权时**不创建会话、不拉会话列表**（避免「页面看起来正常、一发消息什么都没有」的静默形态）。红证：只在其中一端加门 ⇒ 红。证据：frontend/admin-web/tests/unit/pages/chat-page.test.tsx 的授权门两格。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 pytest（tests/unit_ci_workflows/test_mibao_chat_gate.py）+ JUnit（backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java）+ jest/vitest（frontend/bmini-app/tests/mibao-access-gate.test.tsx、frontend/admin-web/tests/unit/components/MibaoAccessGate.test.tsx、frontend/admin-web/tests/unit/pages/chat-page.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'auth', 'permission', 'mibao-gate', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -9521,6 +9539,7 @@ ALL_CASES = (
     _CASE_BM_005,
     _CASE_BM_006,
     _CASE_BM_007,
+    _CASE_BM_008,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

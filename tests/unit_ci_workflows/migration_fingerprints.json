@@ -127,6 +127,7 @@
     "V129__backfill_domain_read_permissions.sql": "sha256:627b840f862727176a0407bfd85390c8a618cf99503ce514d58b5f9ea7184028",
     "V130__update_route_source_comment.sql": "sha256:89db45fd876ef247fba1b6a81898234010b82db9f316b16fb9fd38e88e8f7629",
     "V131__create_tenant_param_audit.sql": "sha256:dbf700a81362719e7a3d82dd090f547510b620b6dcf39bb302374362623a101c",
+    "V132__add_agent_chat_permission.sql": "sha256:a08f58684580a527161722797ae344c230077d9a4b5a06223e247fc8a36ba3ba",
     "schema.sql": "sha256:d715e70784fe055092d33d986fafc82d0a86d4ecf2c5284c61ae8f3a8cb6fa86"
   }
 }

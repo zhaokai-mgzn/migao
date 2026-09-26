@@ -666,10 +666,20 @@ public class RegistrationService {
                 // 财务写码（issue #5246 追加单）：登记收支流水此前挂在读码 finance:view 上
                 // ⇒ 「能看账」等于「能记账」。
                 {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
-                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                // 🔴 描述更正（issue #5642 功能⑤）：原文「米宝对话/会话监控/在线接待」里的**米宝对话**
+                // 那截是 aspirational 的 —— 本码实测只管 `/api/admin/agent-sessions/*`（= 在线接待，
+                // `AgentSessionController` 的**类级**码），从不曾施加在对话入口上。若不更正，目录里会
+                // 同时存在两个「自称管米宝对话」的码（本行 + 新增的 agent:chat），评审必问是否重复。
+                // 存量租户的同一行由 `V132__add_agent_chat_permission.sql` 的 ③ UPDATE 回填。
+                {"会话监控", "agent:session", "agent", "session", "在线接待/会话监控"},
                 // 会话写码（issue #5246 追加单）：转接/结束/发消息此前挂在读码 agent:session 上
                 // ⇒ 只看会话的人能替客服转接与发言。
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
+                // 米宝唤出码（issue #5642 功能⑤）：与上面两个**坐席**码互不蕴含 ——
+                // 持 agent:session **不**自动获得米宝唤出权（客服默认不可唤，符合裁定⓪）；
+                // 管理员靠 `AdminGate.ADMIN_PERMISSION_CODES` 的三码全持（或其 `"*"` 通配）默认可唤，
+                // 其他员工由企业管理员在「员工管理」里勾本码授权。
+                {"米宝对话", "agent:chat", "agent", "chat", "唤出米宝对话（管理员默认/员工需授权）"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 // 岗位权限**读**码（issue #5291）：权限目录读端点（`AdminPermissionController`）与只读

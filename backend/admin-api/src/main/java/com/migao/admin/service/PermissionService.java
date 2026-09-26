@@ -160,8 +160,14 @@ public class PermissionService {
                 {"客户维护", "customer:create", "customer", "create", "编辑/删除客户与标签"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
                 {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
-                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                // 🔴 描述更正（issue #5642 功能⑤）：原文「米宝对话」那截是 aspirational 的（本码实测
+                // 只管 `/api/admin/agent-sessions/*` = 在线接待）⇒ 与 `RegistrationService` 的目录
+                // **逐值相等**地更正为「在线接待/会话监控」（两处目录必须同源，判据 9②）。
+                {"会话监控", "agent:session", "agent", "session", "在线接待/会话监控"},
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
+                // 米宝唤出码（issue #5642 功能⑤）：与 `RegistrationService.defaultPermissions`
+                // 的同码条目**逐字同源**（名称/资源/动作/描述四项一致）。
+                {"米宝对话", "agent:chat", "agent", "chat", "唤出米宝对话（管理员默认/员工需授权）"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"岗位权限查看", "system:view", "system", "view", "查看岗位与权限目录"},
