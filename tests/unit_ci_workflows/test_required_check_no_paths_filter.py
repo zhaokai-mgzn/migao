@@ -254,7 +254,17 @@ def test_snapshot_matches_live_required_set_when_readable() -> None:
             f"   ⇒ 引入/变更分支保护后，请在能读该 API 的环境跑一次 `{REFRESH_CMD}`\n"
             + "=" * 78
         )
-        assert live is None
+        # 退路形态下 snapshot 就是唯一真值 ⇒ 必须自证「它真的可被刷新」：
+        # 刷新命令漂移（改了文件/入口却没人改 snapshot）⇒ 读者按记录去刷会失败 ⇒
+        # 只能手抄 ⇒ 这正是「陈旧且无人刷新」的形态（本判据存在的意义会被掏空）。
+        assert str(snap.get("refresh_command") or "") == REFRESH_CMD, (
+            f"snapshot 记录的刷新命令与现取入口不一致：{snap.get('refresh_command')!r} != {REFRESH_CMD!r}"
+            " ⇒ 照它刷新会失败（读者只能手抄 ⇒ 必然腐烂）"
+        )
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", captured), (
+            f"snapshot 的 `captured_at` 不是可解析的 UTC 时间戳（{captured!r}）"
+            " ⇒ 「读数有多旧」不可判（陈旧就会被读成新鲜）"
+        )
         return
     assert set(live) == set(_snapshot_contexts()), (
         "现取 required 集合与 snapshot **不一致** ⇒ snapshot 陈旧（CI 退路会按旧集合判，新集合的 paths 遮盖查不出来）：\n"
