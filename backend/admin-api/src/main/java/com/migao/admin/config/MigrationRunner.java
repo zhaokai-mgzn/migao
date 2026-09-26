@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -66,6 +67,12 @@ import java.util.stream.Collectors;
  *     DB 恢复后**重启一次即好**），且启动后永不重试 ⇒ 抖动窗口过去也不会自愈。
  *   - **内容类**（SQL 语法/约束，即 `execute` 抛的 `DataAccessException` 子类）：维持既有语义
  *     **逐字不变**（跳过该条 + 继续其余 + 记账 + ERROR，见下条），**不重试、不拒启动**。
+ *   - **bootstrap 步骤的非连接类失败**（建/查 `schema_migrations` 台账表、判空库/记账，issue #4284）：
+ *     这些步骤跑在**任何迁移之前**，失败 ⇒ 整轮一条迁移都不会执行、也无任何记账 ⇒ 与「跳过某一条、
+ *     继续其余」是**不同性质**的事 ⇒ 一律 fail-closed（`MigrationBootstrapFailureException`）。
+ *     旧行为是 fail-open：应用照常 UP、`/actuator/health` 报 UP、零迁移落地 —— 与 #4241 修复前**同形**，
+ *     只是触发条件从「连不上」换成「连得上但没权限/其它 DataAccessException」，且这种失败**没有任何
+ *     监控会看见**。⚠️ 非 `DataAccessException` 的异常（如 classpath 资源读不到）维持既有语义，不擅自升级。
  *
  * ⚠️ **失败分级（issue #3714）**：bootstrap-first 评测栈上，`KNOWN_BENIGN_LEGACY` 里那几条
  * 已诊断的**历史非幂等**迁移**每次起栈必失败**（目标态已由 `backend/admin-api/src/main/resources/db/init/schema.sql` 建出，
@@ -168,6 +175,12 @@ public class MigrationRunner implements CommandLineRunner {
             try {
                 migrate(jdbc);
                 return;
+            } catch (MigrationBootstrapFailureException e) {
+                // fail-closed（issue #4284）：bootstrap 步骤（建台账表 / 判空库 / 记账）失败 ⇒ 本轮
+                // **一条迁移都不会执行**，而应用照常起来就是「schema 未知却报健康」（#4241 修复前同形）。
+                // 不重试：权限/DDL 类错误重试一万次还是错（只有连接类才退避重试，见下面那个分支）。
+                log.error("❌ 迁移失败（bootstrap 步骤）—— 拒绝以「schema 未知」状态启动：{}", e.getMessage(), e);
+                throw e;
             } catch (Exception e) {
                 if (!isConnectionFailure(e)) {
                     // 既有语义**逐字不变**（issue #3714/#3615 口径）：内容类失败不抛异常，允许应用继续启动
@@ -204,9 +217,12 @@ public class MigrationRunner implements CommandLineRunner {
      * 已记账的迁移在下一轮被 `applied.contains` 跳过，不会重复执行。
      */
     private void migrate(JdbcTemplate jdbc) throws Exception {
-        ensureHistoryTable(jdbc);
+        // ⚠️ bootstrap 序段（issue #4284）：跑在**任何迁移之前**、跑不成整轮一条都不跑 ⇒ 走
+        // {@link #bootstrap} 护栏（非连接类失败 = fail-closed）。连接类失败原样抛出 ⇒ 外层有限退避
+        // 重试 / 重试耗尽 fail-closed（#4241，逐字不变）。
+        bootstrap("ensureHistoryTable（建/查 schema_migrations 台账表）", () -> ensureHistoryTable(jdbc));
         List<Failure> failed = new ArrayList<>();
-        applyBaseline(jdbc, failed);
+        bootstrap("applyBaseline（建库基线：判空库 / 判存量库 / 记账）", () -> applyBaseline(jdbc, failed));
         Resource[] resources = resolver.getResources(migrationPattern);
         // 按文件名升序执行（V1 < V2 < ... < V30）：getResources 的返回顺序
         // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
@@ -392,6 +408,73 @@ public class MigrationRunner implements CommandLineRunner {
             t = t.getCause();
         }
         return t;
+    }
+
+    /**
+     * bootstrap 步骤的**统一护栏**（issue #4284）：跑在「任何迁移被记账」之前的步骤，只要失败，
+     * 本轮**一条迁移都不会执行**——这与「跳过某一条、继续其余」（#3615/#3270 对**内容类**迁移失败的
+     * 刻意权衡）是**不同性质**的事，也是它**不能**沿用 fail-open 的理由：
+     * 应用 UP + 零迁移落地 + health 照报 UP ⇒ 故障面后移到业务 500，且**没有任何监控看得见**。
+     *
+     * <p>三种结局：① **连接类** ⇒ 原样抛出，交给外层有限退避重试 / 重试耗尽 fail-closed（#4241 逐字不变）；
+     * ② **非连接类的 `DataAccessException`**（权限不足、DDL 被拒等）⇒ 抛
+     * {@link MigrationBootstrapFailureException} ⇒ 启动失败（非 0 退出，编排层可见）；
+     * ③ 与 DB 无关的异常（classpath 资源读不到等）⇒ 原样抛出，维持既有语义（不擅自升级成拒启动）。</p>
+     *
+     * @param step 人读步骤名（进异常消息与 ERROR 日志 —— 失败必须**可归因到哪一步**）
+     */
+    private static void bootstrap(String step, BootstrapStep body) throws Exception {
+        try {
+            body.run();
+        } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw e;
+            }
+            if (!isDataAccessFailure(e)) {
+                throw e;
+            }
+            throw new MigrationBootstrapFailureException("数据库迁移失败（bootstrap 步骤「" + step + "」失败，"
+                    + "非连接类）—— 台账建不出 / 记不上 ⇒ 本轮迁移一条都不会执行、也没有任何记账 ⇒ "
+                    + "以「schema 未知」状态启动会把故障面后移成业务 500（与 #4241 修复前同形）⇒ 拒绝启动", e);
+        }
+    }
+
+    /** bootstrap 步骤体（允许抛异常）。 */
+    @FunctionalInterface
+    private interface BootstrapStep {
+        void run() throws Exception;
+    }
+
+    /**
+     * 失败原因链上是否有 `DataAccessException` —— 判「这是访问数据库时的失败」，而不是「代码/资源坏了」。
+     *
+     * <p>⚠️ 不复用 {@link #isConnectionFailure}：后者**故意**不把普通 `DataAccessException`
+     * （权限、语法、约束）算连接类（见其注释），而 bootstrap 序段对「非连接类」的处理与它对
+     * **内容类迁移**的处理**不同**（前者 fail-closed、后者跳过并继续）。</p>
+     */
+    private static boolean isDataAccessFailure(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof DataAccessException) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * **bootstrap 步骤**失败（非连接类）—— **拒绝以「schema 未知」状态启动**（issue #4284）。
+     *
+     * <p>与 {@link MigrationConnectionFailureException} 分开两个类型：触发条件不同（那个是重试耗尽，
+     * 这个是权限/DDL 类、**不重试**），但两者的**后果口径相同** —— 抛异常 ⇒ Spring 记
+     * {@code Application run failed} ⇒ 进程非 0 退出 ⇒ `docker compose up --wait` 直接失败。</p>
+     */
+    static class MigrationBootstrapFailureException extends IllegalStateException {
+        MigrationBootstrapFailureException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     /**

@@ -159,10 +159,17 @@ class ProductionControllerTest {
     @Mock
     private com.migao.admin.mapper.ProcessingOrderSetMapper orderSetMapper;
 
+    /**
+     * 被测服务（真实对象，只 mock Mapper）。存成字段是为了让**单条用例**能给它的**可选字段注入**
+     * （如 {@code setPartTokenMapper}）接线 —— 那些字段在既有装配里是 null（不过 Spring），
+     * 于是相关分支会早返回；不接线就测不出「补码」这一半（会放过半修）。
+     */
+    private ProductionService productionService;
+
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
-        ProductionService service = new ProductionService(
+        productionService = new ProductionService(
                 processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
                 orderItemMapper, clientRequestIdService);
         // 工序库读面用**真实对象**（只 mock Mapper）：PUT 的响应形态 = 目录项形态（同一份
@@ -175,7 +182,7 @@ class ProductionControllerTest {
         // 与 generate 路径**同一份**路线解析（不复制第二份）。
         ProcessingOrderService processingOrderService = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
-                orderService, objectMapper, service, queryService, operationQtyClient);
+                orderService, objectMapper, productionService, queryService, operationQtyClient);
         ProductionOperationCommandService commandService = new ProductionOperationCommandService(
                 productionOperationMapper, priceVersionMapper, productionOperationPositionMapper, queryService);
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
@@ -191,7 +198,7 @@ class ProductionControllerTest {
                 new ProcessingFeeCombinationCommandService(
                         processingFeeCombinationMapper, processingFeeCombinationVersionMapper,
                         processingItemMapper, feeQueryService);
-        ProductionController controller = new ProductionController(service, queryService, commandService,
+        ProductionController controller = new ProductionController(productionService, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
@@ -202,14 +209,14 @@ class ProductionControllerTest {
         // 卡点判据（切片 ③，issue #4776）：同样是真实对象（只 mock Mapper）—— 报表与 stalled 键
         // 的响应形状必须是前端消费的那一份（不复制第二份装配、不动既有 6 参构造）。
         ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
-                service, positionOperationMapper, orderSetMapper, 4.0);
+                productionService, positionOperationMapper, orderSetMapper, 4.0);
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionScanService",
                 new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
-                        queryService, service, stuckPointService,
+                        queryService, productionService, stuckPointService,
                         // 套件读面（issue #5247）：真实对象（只 mock Mapper）—— 与商家/agent
                         // 套件读面共用同一份 `set_overview` 聚合。
                         new ProcessingSetReadService(orderSetMapper, positionOperationMapper,
-                                orderItemMapper, processingOrderMapper, orderMapper, service)));
+                                orderItemMapper, processingOrderMapper, orderMapper, productionService)));
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionStuckPointService",
                 stuckPointService);
         // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
@@ -1180,6 +1187,121 @@ class ProductionControllerTest {
         assertThat(regenerated).isNotEqualTo(oldToken);
     }
 
+    // ══════════ #4287：撤销后的「重新生成二维码」窄接口（**不得**复用 instantiate）══════════
+
+    /**
+     * 红证（改前实测）：`POST .../qr-token/regenerate` 不存在 ⇒ 404（该单根本没有重新发码路径）。
+     *
+     * <p>断言的是**服务端真实语义**（走真实 ProductionService、只 mock Mapper），三条硬判据：
+     * ① `done_qty` **逐值不变**（该单已有报工 ⇒ 计件工资的来源）；② 工序实例**行数不变**且零写；
+     * ③ 新码**非空且 ≠ 撤销前的旧码**。这正是「不许复用 instantiate」的原因：`instantiate` 的
+     * 签名幂等判据在工序库改价后会软删旧实例并重插 ⇒ `done_qty` 归零 ⇒ 计件工资被清。</p>
+     */
+    @Test
+    @DisplayName("#4287 重新生成二维码：done_qty 逐值不变 / 实例行数不变 / 新码 ≠ 旧码（不碰工序实例）")
+    void regenerateQrTokenKeepsReportedQuantitiesAndIssuesNewToken() throws Exception {
+        String revokedToken = "e".repeat(32);
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        // 撤销后的加工单：qr_token 已被 revoke 置 NULL
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder(null));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // 工序实例：首道已报满 done_qty=12.30（该单已有报工历史）
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", 1, "精裁-布", "12.30", false, "done", "12.30"),
+                op("op-2", 2, "外帘装袋", "1.00", true, "pending", "0.00")));
+        // 印刷品载体（一部位一码）：撤销后 token IS NULL 的行 —— 只补 token、不换短码
+        when(setPartTokenMapper.selectList(any())).thenReturn(List.of(
+                ProcessingSetPartToken.builder()
+                        .id("pt-1").tenantId(TENANT).processingOrderId(PO_ID)
+                        .setId("set-1").orderItemId("item-1").positionKind("布帘")
+                        .token(null).shortCode("7K3M9QP2").deleted(0).build()));
+        when(setPartTokenMapper.fillMissingToken(eq(TENANT), eq("set-1"), eq("item-1"), any(), any()))
+                .thenReturn(1);
+        // 部位码 mapper 在既有装配里是**可选字段注入**（10 处手工 new 不过 Spring）⇒ 本用例显式接线：
+        // 不接线的话 refillRevokedPartTokens 会直接早返回 ⇒ 「只补了加工单码、没补部位码」的半修会蒙混过关。
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                productionService, "setPartTokenMapper", setPartTokenMapper);
+
+        // ① 重新发码**之前**：读面给出的 (工序, done_qty, 单价) 逐值快照
+        List<Map<String, Object>> before = operationSnapshot();
+
+        String body = mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/qr-token/regenerate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        // ② 新码非空、格式与既有口径一致（32 位去横线 UUID），且 **≠ 撤销前的旧码**
+        String regenerated = objectMapper.readTree(body).path("data").path("qr_token").asText();
+        assertThat(regenerated)
+                .as("重新发码必须产出新的 32 位 token（把已作废的旧码搬回来 = 撤销那句「已失效」是假话）")
+                .matches("[0-9a-f]{32}");
+        assertThat(regenerated).isNotEqualTo(revokedToken);
+
+        // ③ 工序实例一行都不碰：不重插、不软删、不清 done_qty（**不走** instantiate 的签名比较）
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+        verify(positionOperationMapper, never()).update(any(), any());
+        // ④ 印刷品载体（一部位一码）也拿回**新**码：走既有 fillMissingToken（只补 token IS NULL 的行）
+        ArgumentCaptor<String> partToken = ArgumentCaptor.forClass(String.class);
+        verify(setPartTokenMapper).fillMissingToken(eq(TENANT), eq("set-1"), eq("item-1"),
+                partToken.capture(), any());
+        assertThat(partToken.getValue())
+                .as("部位码也必须换成新码（纸面上印的就是它，否则「旧码已失效 + 新码可用」不成立）")
+                .matches("[0-9a-f]{32}");
+
+        // ⑤ 读面复核（不是只看 verify）：done_qty **逐值不变** + 行数不变
+        List<Map<String, Object>> after = operationSnapshot();
+        assertThat(after).as("重新发码不得清掉报工进度（计件 = Σ 合格数 × 单价 × 系数）").isEqualTo(before);
+    }
+
+    /**
+     * 读面快照：每道工序实例的 (工序名, done_qty, 单价) —— 「逐值不变」的判据。
+     *
+     * <p>用**读面**而不是直接读 mock：mock 不会因未调用的写方法而变，所以只有经过
+     * `GET .../operations` 这一条真实读路径，才能证明「页面上看到的报工数字没动」。</p>
+     */
+    private List<Map<String, Object>> operationSnapshot() throws Exception {
+        String body = mockMvc.perform(get("/api/admin/production/orders/" + ORDER_ID + "/operations"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<Map<String, Object>> snapshot = new ArrayList<>();
+        objectMapper.readTree(body).path("data").path("positions").forEach(position ->
+                position.path("operations").forEach(operation -> snapshot.add(Map.of(
+                        "operation", operation.path("operation").asText(),
+                        "done_qty", operation.path("done_qty").asText(),
+                        "unit_price", operation.path("unit_price").asText()))));
+        return snapshot;
+    }
+
+    /**
+     * **负控**（issue #4287 验收标准 3）：`instantiate` 的签名幂等语义**一字未动**。
+     *
+     * <p>工序配置（含单价）变了 ⇒ 仍**软删旧实例 + 重插**（`done_qty` 随之归零）。这不是缺陷，
+     * 而是「重新生成二维码」**不许**复用 `instantiate` 的**原因**（#4287 的硬约束）——
+     * 本用例把那条危险语义钉住：谁若把重新发码接到 `instantiate` 上，上述那条用例会红，
+     * 而本条会告诉你「它本来就会清报工」。</p>
+     */
+    @Test
+    @DisplayName("#4287 负控：instantiate 语义未动 —— 工序签名变化（改价）仍软删旧实例并重插")
+    void instantiateStillSoftDeletesWhenSignatureChanges() throws Exception {
+        List<ProcessingPositionOperation> stale = derivedInstances();
+        stale.get(0).setUnitPrice(new BigDecimal("99.00"));   // 旧价 ≠ 工序库现价 ⇒ 签名不同
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok-keep"));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe()));
+        stubV54BulianHanzheLibrary();
+        when(positionOperationMapper.selectList(any())).thenReturn(stale);
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.operation_count").value(12));
+
+        // 签名不同 ⇒ 软删旧实例（软删走 update）+ 重插 12 道 ⇒ 旧实例上的 done_qty 再也读不到
+        verify(positionOperationMapper).update(any(), any());
+        verify(positionOperationMapper, times(12)).insert(any(ProcessingPositionOperation.class));
+    }
+
     @Test
     @DisplayName("#4202 打印任务卡 ⇒ print_count 原子递增（返回新计数，不是永不递增）")
     void printIncrementsPrintCount() throws Exception {
@@ -1295,6 +1417,11 @@ class ProductionControllerTest {
         RequirePermission revokeAnn = revoke.getAnnotation(RequirePermission.class);
         assertThat(revokeAnn).as("二维码撤销是安全相关写操作（旧码立即失效）").isNotNull();
         assertThat(revokeAnn.value()).isEqualTo("processing:manage");
+        // #4287：重新发码与撤销**同权限口径**（同为会动作废纸件的写操作）
+        Method regenerate = ProductionController.class.getMethod("regenerateQrToken", String.class);
+        RequirePermission regenerateAnn = regenerate.getAnnotation(RequirePermission.class);
+        assertThat(regenerateAnn).as("重新发码是安全相关写操作（撤销的恢复半边）").isNotNull();
+        assertThat(regenerateAnn.value()).isEqualTo("processing:manage");
 
         Method summary = ProductionController.class.getMethod("pieceworkSummary", String.class, String.class);
         RequirePermission summaryAnn = summary.getAnnotation(RequirePermission.class);

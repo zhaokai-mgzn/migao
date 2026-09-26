@@ -35,6 +35,7 @@ describe('productionApi 端点路径（issue #4240）', () => {
     await productionApi.getOrderOperations('order-uuid-1')
     await productionApi.recordPrint('order-uuid-1')
     await productionApi.instantiate('order-uuid-1')
+    await productionApi.regenerateQrToken('order-uuid-1')
 
     expect(mockGet.mock.calls.map((c) => c[0])).toEqual([
       '/api/admin/production/orders/order-uuid-1/operations',
@@ -42,7 +43,23 @@ describe('productionApi 端点路径（issue #4240）', () => {
     expect(mockPost.mock.calls.map((c) => c[0])).toEqual([
       '/api/admin/production/orders/order-uuid-1/print',
       '/api/admin/production/orders/order-uuid-1/instantiate',
+      '/api/admin/production/orders/order-uuid-1/qr-token/regenerate',
     ])
+  })
+
+  // issue #4287：撤销的**恢复半边** —— 路径写错会静默 404（按钮点了没反应），
+  // 而页面测试整模块 mock 了 '@/lib/api' ⇒ 只有这里能钉住 URL/动词。
+  it('regenerateQrToken 打 POST /api/admin/production/orders/{orderId}/qr-token/regenerate', async () => {
+    mockPost.mockResolvedValue({
+      data: { success: true, data: { order_id: 'order-uuid-1', qr_token: 'f'.repeat(32), part_codes: 1 } },
+    })
+
+    const res = await productionApi.regenerateQrToken('order-uuid-1')
+
+    expect(mockPost).toHaveBeenCalledTimes(1)
+    expect(mockPost).toHaveBeenCalledWith('/api/admin/production/orders/order-uuid-1/qr-token/regenerate')
+    // 响应透传：新码 + 重发的部位码张数（前端据此提示「需重新打印任务卡」）
+    expect(res.data.data).toEqual({ order_id: 'order-uuid-1', qr_token: 'f'.repeat(32), part_codes: 1 })
   })
 
   // 卡点报表（切片 ③，issue #4776）：⚠️ 它是**唯一**按**加工单 id**（不是订单 id）取的生产读面

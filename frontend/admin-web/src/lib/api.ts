@@ -1139,6 +1139,15 @@ export const productionApi = {
       `/api/admin/production/orders/${orderId}/qr-token/revoke`,
     ),
 
+  // 重新生成已撤销的加工单二维码（issue #4287，撤销的**恢复半边**）——**只补码**：
+  // 不碰工序实例、不清 done_qty、不走工序签名比较（**有意不复用** instantiate：它含单价的签名
+  // 判据在工序库改价后会软删旧实例 ⇒ 报工进度归零 ⇒ 连计件工资一起清掉）。
+  // 已有码的行复用（不对一张有效的码重发）；权限与 revoke 同口径（方法级 processing:manage）。
+  regenerateQrToken: (orderId: string) =>
+    request.post<ApiResponse<{ order_id?: string; qr_token?: string; part_codes?: number }>>(
+      `/api/admin/production/orders/${orderId}/qr-token/regenerate`,
+    ),
+
   // 打印次数上报（fire-and-forget，失败不得阻断打印）
   recordPrint: (orderId: string) =>
     request.post<ApiResponse<{ order_id?: string; processing_order_no?: string; print_count?: number }>>(

@@ -51,6 +51,10 @@ export default function ProcessingOrderProductionPage() {
   const [revoking, setRevoking] = useState(false)
   const [revokeError, setRevokeError] = useState('')
   const [revokedNotice, setRevokedNotice] = useState('')
+  // 重新生成二维码（issue #4287，撤销的**恢复半边**）：撤销后旧纸作废，但商家必须还能发新码。
+  const [regenerating, setRegenerating] = useState(false)
+  const [regenerateError, setRegenerateError] = useState('')
+  const [regeneratedNotice, setRegeneratedNotice] = useState('')
   // 未定价实例补价（issue #4709 C）：状态 + 结果反馈（补了几道 / 还有几道没定价）
   const [repricing, setRepricing] = useState(false)
   const [repriceError, setRepriceError] = useState('')
@@ -207,6 +211,37 @@ export default function ProcessingOrderProductionPage() {
   }
 
   /**
+   * 重新生成二维码（issue #4287）：撤销把 `qr_token` 与每张部位码都置空，此前页面上**没有**任何
+   * 入口能再发码（#4949 只能写免责声明）⇒ 这里补上恢复路径。
+   *
+   * 🔴 走**窄**接口 `.../qr-token/regenerate`（只补缺失的码）：**不得**复用 `instantiate`
+   * —— 它的幂等判据是工序签名（含单价），工序库改价后一点「重新生成」就会软删旧实例、
+   * 把 `done_qty` 清零 ⇒ 连带清掉该单的计件工资（计件 = Σ 合格数 × 单价 × 系数）。
+   */
+  const handleRegenerate = async () => {
+    if (!po?.orderId) return
+    setRegenerating(true)
+    setRegenerateError('')
+    try {
+      const res = await productionApi.regenerateQrToken(po.orderId)
+      const partCodes = res.data?.data?.part_codes ?? 0
+      // 撤销提示与重发提示互斥（避免同屏同时出现「已撤销」与「已重新生成」两句）
+      setRevokedNotice('')
+      setRegeneratedNotice(
+        partCodes > 0
+          ? `已重新生成二维码（含 ${partCodes} 张部位码），请重新打印任务卡`
+          : '已重新生成二维码，请重新打印任务卡',
+      )
+      await load()
+    } catch (e) {
+      console.error(e)
+      setRegenerateError('重新生成二维码失败，请稍后重试')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  /**
    * 生成二维码（测试用，issue #4726，A 档；**issue #4946 改为逐部位出码**）。
    *
    * 用户诉求（2026-09-20）：「加个按钮生成二维码，这样就能串联起来扫码生产&计件，主要是用来测试」。
@@ -250,13 +285,22 @@ export default function ProcessingOrderProductionPage() {
   const showInstantiate = !operationsError && positionCount === 0 && po?.status !== 'cancelled'
   // 撤销入口：有可撤销的码 + 持有 processing:manage（客服/销售/财务看不到，避免按钮可见却 403）
   const canRevoke = hasPermission('processing:manage') && !!operations?.qr_token
+  // 重新生成入口（issue #4287）：工序还在、码没了（= 撤销后）⇒ 才出现重发对象（不对有效码重发，
+  // 那会静默作废已打印的纸）；cancelled 单不重发（避免又印出可扫的任务卡）。与 revoke 同权限码。
+  const canRegenerate =
+    hasPermission('processing:manage') &&
+    positionCount > 0 &&
+    !operations?.qr_token &&
+    po?.status !== 'cancelled'
   // 生成二维码（测试用，issue #4726）：与「撤销二维码」同级显隐（同为 processing:manage 口径，
   // 避免无权限角色看到按钮却 403；本入口本身不调端点，但保持同一码以免口径分叉）
   const canTestQr = hasPermission('processing:manage')
   // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」。
   // issue #4946：洗水码粒度 = 商品行 ⇒ 该文案**逐张**生效（哪张缺码就写在哪张上）。
   const qrPlaceholderHint =
-    positionCount > 0 && !operations?.qr_token ? '二维码已撤销（旧码已失效）' : undefined
+    positionCount > 0 && !operations?.qr_token
+      ? '二维码已撤销（旧码已失效）—— 在本页点「重新生成二维码」可发新码'
+      : undefined
   // 未定价工序实例（issue #4709 C）：有未定价实例 ⇒ 给「按当前价重算」入口。
   // 没有这个入口时，商家定价后**已实例化的旧单**永远算不出钱（且界面只说「未定价」、不给动作）。
   // 判据与后端同口径（V90 三态）：`price_state === 'unpriced'` 或单价为 null ⇒ 未定价；
@@ -338,6 +382,18 @@ export default function ProcessingOrderProductionPage() {
                   >
                     <QrCode className="w-4 h-4 mr-1.5" />
                     生成二维码（测试用）
+                  </Button>
+                )}
+                {canRegenerate && (
+                  <Button
+                    size="sm"
+                    disabled={regenerating}
+                    loading={regenerating}
+                    data-testid="production-regenerate-button"
+                    onClick={handleRegenerate}
+                  >
+                    {!regenerating && <RefreshCw className="w-4 h-4 mr-1.5" />}
+                    重新生成二维码
                   </Button>
                 )}
                 {canRevoke && (
@@ -431,6 +487,26 @@ export default function ProcessingOrderProductionPage() {
             >
               <ShieldOff className="w-4 h-4" />
               {revokedNotice}
+            </p>
+          )}
+
+          {/* 重新发码反馈（issue #4287）：撤销后恢复路径的可见结果 */}
+          {regeneratedNotice && (
+            <p
+              className="flex items-center gap-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"
+              data-testid="production-regenerate-success"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {regeneratedNotice}
+            </p>
+          )}
+          {regenerateError && (
+            <p
+              className="flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+              data-testid="production-regenerate-error"
+            >
+              <AlertCircle className="w-4 h-4" />
+              {regenerateError}
             </p>
           )}
 
@@ -739,13 +815,13 @@ export default function ProcessingOrderProductionPage() {
                 撤销后<span className="font-medium text-neutral-900">已打印的二维码立即失效</span>
                 （工人扫旧码报工将失败）—— 包括每张洗水码上的部位码。
               </p>
-              {/* issue #4949：这句话此前承诺「需要继续报工时请重新生成二维码」，而页面上**没有**该入口
-                  （「补生成工序」只在 0 部位时渲染；真正的「重新发码」是 #4287 的独立设计任务 ——
-                  直接复用 instantiate 在工艺签名变化时会软删实例并清零报工 ⇒ 连带清掉计件工资）
-                  ⇒ 去掉假承诺，改为如实说明，让商家在撤销**之前**就知道代价。 */}
-              <p className="text-neutral-500" data-testid="production-revoke-reissue-gap">
-                撤销后本页<span className="font-medium text-neutral-900">无法重新发码</span>
-                （当前版本没有该入口），请确认纸面已作废再撤销。
+              {/* issue #4287：本页**有**重新发码入口了（撤销后出现「重新生成二维码」）⇒
+                  #4949 那句「撤销后本页无法重新发码」的免责声明**不再为真**，必须撤掉
+                  （否则它本身就是一句假话）；改为如实说明恢复路径与代价（需重新打印）。 */}
+              <p className="text-neutral-500" data-testid="production-revoke-reissue-hint">
+                撤销后旧码立即失效，但可以重新发码：本页会出现
+                <span className="font-medium text-neutral-900">「重新生成二维码」</span>
+                ，发新码后需重新打印任务卡。
               </p>
               {revokeError && (
                 <p

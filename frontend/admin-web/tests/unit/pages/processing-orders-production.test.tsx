@@ -8,6 +8,9 @@
 // PG-019（issue #4240，前端半边）：真值源 §1「二维码 token 化、可撤销」的 UI 发射点 ——
 // 生产明细页「撤销二维码」入口（二次确认后才发 POST .../qr-token/revoke，按 processing:manage 显隐）
 // → 撤销后刷新回占位态 + 可见「已撤销」反馈。
+// PG-019（issue #4287，前端半边）：撤销的**恢复半边** —— 撤销成功后出现「重新生成二维码」入口
+// → POST .../qr-token/regenerate（同 processing:manage 口径）→ 刷新出新码。
+// 🔴 不得复用 instantiate（改价后软删实例 ⇒ done_qty 归零 ⇒ 计件工资被清）。
 // PP-014（issue #4307 交付物 2，契约所有者 = 后端 4308）：`route_source` **四态**的用户侧可观测面
 // —— derived 不提示 / partial 提示另一半取默认 / missing_route 提示「识别的是 X（route_requested_key）
 // 但库里没这条路线」/ default 高亮提示核对工序与计件单价；字段缺失 = 未知 ⇒ 不得显示成「已派生」。
@@ -31,6 +34,9 @@ const mockGetPiecework = vi.fn()
 const mockInstantiate = vi.fn()
 const mockRecordPrint = vi.fn()
 const mockRevokeQrToken = vi.fn()
+// issue #4287：撤销后的**恢复半边**（重新生成二维码）—— 必须是**窄**接口，不得复用 instantiate
+// （instantiate 的签名幂等判据在改价后会软删实例、清掉 done_qty ⇒ 连带清掉计件工资）。
+const mockRegenerateQrToken = vi.fn()
 const mockRepriceUnpricedInstances = vi.fn()
 // issue #4949 起「卡在哪」（`StuckPointsReport`）也走替身：缺省给空报表，
 // 单条用例可覆盖出「卡点行」—— 那是**实例显示口径**（`逻辑名 · 部位`）的第三个消费面。
@@ -46,6 +52,7 @@ vi.mock('@/lib/api', () => ({
     instantiate: (...args: unknown[]) => mockInstantiate(...args),
     recordPrint: (...args: unknown[]) => mockRecordPrint(...args),
     revokeQrToken: (...args: unknown[]) => mockRevokeQrToken(...args),
+    regenerateQrToken: (...args: unknown[]) => mockRegenerateQrToken(...args),
     repriceUnpricedInstances: (...args: unknown[]) => mockRepriceUnpricedInstances(...args),
     // issue #4949：本 mock 此前**缺** `getStuckPoints` ⇒ 页面调用时抛 TypeError 被 try/catch 吞掉
     // （测试仍 PASS，但 stderr 一直有噪音，且「卡在哪」面板恒走错误分支 —— 假覆盖）。
@@ -80,6 +87,9 @@ const PROCESSING_ORDER = {
 /** issue #4946：纸面/弹层的码 = **该部位自己的** `scan_url`（不是加工单号，也不是单张 qr_token） */
 const PART_SCAN_URL = 'https://app.migaozn.com/s/7K3M9QP2'
 const PART_SHORT_CODE = '7K3M9QP2'
+/** issue #4287：重新发码后该部位拿到的是**新**码（旧纸不作废就成了假话） */
+const PART_SCAN_URL_REISSUED = 'https://app.migaozn.com/s/9Z2X4WQ7'
+const PART_SHORT_CODE_REISSUED = '9Z2X4WQ7'
 
 const OPERATIONS = {
   order_id: 'order-uuid-1',
@@ -151,6 +161,21 @@ const OPERATIONS_REVOKED = {
   })),
 }
 
+/**
+ * issue #4287 重新发码后的读面：`qr_token` 与每张部位码都换成**新的**
+ * （撤销 = 旧纸作废 ⇒ 重新发码**绝不能**把旧码搬回来，否则「已失效」是假话）。
+ */
+const OPERATIONS_REISSUED = {
+  ...OPERATIONS,
+  qr_token: 'qr-token-new',
+  positions: OPERATIONS.positions.map((position) => ({
+    ...position,
+    part_token: 'part-token-2',
+    part_short_code: PART_SHORT_CODE_REISSUED,
+    scan_url: PART_SCAN_URL_REISSUED,
+  })),
+}
+
 describe('加工单生产明细页', () => {
   beforeEach(() => {
     // 默认 operator（持有 processing:manage ⇒ 撤销入口可见）
@@ -163,6 +188,9 @@ describe('加工单生产明细页', () => {
     mockInstantiate.mockReset().mockResolvedValue(ok({ qr_token: 'qr-token-abc123', operation_count: 2 }))
     mockRecordPrint.mockReset().mockResolvedValue(ok({ print_count: 1 }))
     mockRevokeQrToken.mockReset().mockResolvedValue(ok({ order_id: 'order-uuid-1', qr_token: null, revoked: true }))
+    mockRegenerateQrToken.mockReset().mockResolvedValue(
+      ok({ order_id: 'order-uuid-1', qr_token: 'qr-token-new', part_codes: 1 }),
+    )
     mockRepriceUnpricedInstances.mockReset().mockResolvedValue(
       ok({ filled: 1, already_priced: 1, still_unpriced: 0, batch_id: 'batch-1' }),
     )
@@ -492,9 +520,9 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-revoke-button'))
     await screen.findByRole('dialog', { name: '撤销二维码' })
-    // issue #4949：撤销弹层**不得**再承诺页面上不存在的「重新生成二维码」入口（假承诺 ——
-    // 每个有工序实例的单撤销后都无从重新发码；真正的重新发码是 #4287 的独立任务）
-    expect(screen.getByTestId('production-revoke-reissue-gap')).toHaveTextContent('无法重新发码')
+    // issue #4287：入口已落地 ⇒ 弹层不再需要「本页无法重新发码」的免责声明（那是 #4949 的临时措辞），
+    // 改为如实指向撤销成功后可用的入口。
+    expect(screen.getByTestId('production-revoke-reissue-hint')).toHaveTextContent('重新生成二维码')
     await userEvent.click(screen.getByTestId('production-revoke-confirm'))
 
     // 生产端点一律走**订单 id**（不是加工单号），与既有 instantiate/print 同口径
@@ -553,6 +581,74 @@ describe('加工单生产明细页', () => {
     expect(screen.queryByTestId('production-revoke-success')).not.toBeInTheDocument()
     expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
     expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
+  })
+
+  // ── #4287：撤销后的「重新生成二维码」入口（缺口闭合；**不得**复用 instantiate）──
+  // 病根（改前实测）：撤销把 `qr_token` 与**每张部位码**都置空，而页面上没有任何入口能重新发码
+  // （「补生成工序」只在 0 部位时渲染）⇒ 商家撤销后印不出可扫的任务卡（#4949 只能写免责声明）。
+  // 🔴 硬约束：**不得**把「重新生成」接到 instantiate —— 它的签名幂等判据在工序库改价后会
+  // 软删旧实例并重插 ⇒ `done_qty` 归零 ⇒ 连带清掉该单的计件工资。
+
+  it('#4287 撤销成功后：出现「重新生成二维码」入口；点击按 orderId 调 regenerate → 刷新出新码', async () => {
+    mockGetOrderOperations
+      .mockResolvedValueOnce(ok(OPERATIONS)) // 首屏：有码（可撤销）
+      .mockResolvedValueOnce(ok(OPERATIONS_REVOKED)) // 撤销后：占位（此时才该出现重新生成入口）
+      .mockResolvedValue(ok(OPERATIONS_REISSUED)) // 重新发码后：新码上屏
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    // 有码时**没有**可重发的对象（对一张有效的码重发 = 静默作废已打印的纸）
+    expect(screen.queryByTestId('production-regenerate-button')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('production-revoke-button'))
+    await screen.findByRole('dialog', { name: '撤销二维码' })
+    await userEvent.click(screen.getByTestId('production-revoke-confirm'))
+
+    // 红证（改前实测）：撤销后页面上**没有任何**重新发码入口 ⇒ findByTestId 超时必红
+    const entry = await screen.findByTestId('production-regenerate-button')
+    expect(entry).toHaveTextContent('重新生成二维码')
+    expect(entry).toBeVisible()
+
+    await userEvent.click(entry)
+
+    // 生产端点一律走**订单 id**（与 revoke/instantiate/print 同口径）
+    await waitFor(() => expect(mockRegenerateQrToken).toHaveBeenCalledWith('order-uuid-1'))
+    // 红证：把入口接到 instantiate ⇒ 下面两条必红（那会清掉报工 ⇒ 计件工资没了）
+    expect(mockInstantiate).not.toHaveBeenCalled()
+    expect(mockRevokeQrToken).toHaveBeenCalledTimes(1)
+    // 新码来自**服务端刷新**（不是本地编造）：任务卡二维码回来了，且是**新码**而非旧码
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(PART_SCAN_URL_REISSUED)
+    expect(screen.getByTestId('production-regenerate-success')).toBeVisible()
+  })
+
+  it('#4287 重新生成失败：可见错误提示、不误报成功、入口保留（可重试）', async () => {
+    mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_REVOKED))
+    mockRegenerateQrToken.mockRejectedValueOnce(new Error('403 Forbidden'))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-regenerate-button')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('production-regenerate-button'))
+
+    await waitFor(() => expect(screen.getByTestId('production-regenerate-error')).toBeInTheDocument())
+    expect(screen.getByTestId('production-regenerate-error')).toHaveTextContent('重新生成二维码失败')
+    // 失败不得留下「已重新生成」的假反馈
+    expect(screen.queryByTestId('production-regenerate-success')).not.toBeInTheDocument()
+    expect(screen.getByTestId('production-regenerate-button')).toBeInTheDocument()
+  })
+
+  it('#4287 权限显隐：无 processing:manage（客服）时不渲染「重新生成二维码」', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: 'u-2', name: '客服小王', roles: ['customer_service'], permissions: ['order:list'] },
+    })
+    mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_REVOKED))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    // 缺口态（qr_token 为空）也不渲染 —— 与 revoke 同码（方法级 processing:manage），避免可见却 403
+    expect(screen.queryByTestId('production-regenerate-button')).not.toBeInTheDocument()
+    // 其它入口不受影响（打印任务卡沿用类级 order:list 口径）
+    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
   })
 
   // ── #4726：「生成二维码（测试用）」入口（A 档 = 加工单号纯文本码）──

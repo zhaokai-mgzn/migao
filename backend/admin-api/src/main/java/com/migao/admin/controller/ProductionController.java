@@ -208,6 +208,28 @@ public class ProductionController {
     }
 
     /**
+     * **重新生成**已撤销的加工单二维码（issue #4287 —— 撤销的**恢复半边**）
+     * POST /api/admin/production/orders/{orderId}/qr-token/regenerate
+     *
+     * <p>撤销后 qr_token 与每张部位码都被置空 ⇒ 此前**没有任何入口**能再发码（商家撤销后印不出
+     * 可扫的任务卡）。本端点把那个缺口补上：重新发码（新码 ≠ 已作废的旧码）。</p>
+     *
+     * <p>权限与 {@code /qr-token/revoke} **同口径**（方法级 {@code processing:manage}）：
+     * 两者都是会动作废/重发纸件的写操作。</p>
+     *
+     * <p>🔴 <b>与 {@code /instantiate} 的区别（本单硬约束）</b>：本端点**只**补码 ——
+     * 不碰工序实例、不清 {@code done_qty}、不走工序签名比较。{@code instantiate} 的幂等判据含单价，
+     * 工序库改价后一点「重新生成」就会软删旧实例、把 {@code done_qty} 清零 ⇒ 静默清掉该单的计件工资
+     * （计件 = Σ 合格数 × 单价 × 系数）⇒ **不得**复用它实现本入口。</p>
+     */
+    @PostMapping("/orders/{orderId}/qr-token/regenerate")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> regenerateQrToken(@PathVariable String orderId) {
+        return ApiResponse.success(
+                productionService.regenerateQrToken(orderId, TenantContext.getTenantId()));
+    }
+
+    /**
      * 记录一次任务卡打印（issue #4202 边角修复：print_count 此前零写方）
      * POST /api/admin/production/orders/{orderId}/print
      *
