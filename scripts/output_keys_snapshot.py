@@ -468,8 +468,10 @@ def key_verdict(entry, action: str, key: str) -> tuple:
                              f"已知动作：{sorted(entry['actions'])}）—— 拼写错误或该动作无产出声明")
     keys = set((scope or entry).get("keys") or [])
     dynamic = bool((scope or entry).get("dynamic"))
+    _unattributed = bool(action) and action in (entry.get("actions_unattributed") or [])
     if head in keys:
-        return PRODUCIBLE, ""
+        return PRODUCIBLE, ("该 action 未在快照里归属（按**工具级**键集判定；action 级形状见 "
+                            "actions / actions_unattributed）" if _unattributed else "")
     if not dynamic:
         return IMPOSSIBLE, "快照里该工具（该 action）的产出形状是**静态**的，且没有这个键"
     why = "；".join(entry.get("shape_notes") or []) or "含动态/条件出键"
