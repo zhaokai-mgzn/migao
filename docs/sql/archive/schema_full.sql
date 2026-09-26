@@ -36,6 +36,11 @@
 --     tenant_payment_qrcodes, user_suggestion_prefs, worker_sessions,
 --     inbound_orders, inbound_order_items, stock_batches
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
+--     inbound_labels
+--      入库标签（V134，issue #5052 P2 —— 一行 = 一个入库单明细行 = 一张 50×30mm 标签：
+--      短码 = 8 位 Crockford Base32（去 I/L/O/U）、部分唯一索引建在**有效码**
+--      COALESCE(short_code, revoked_code) 上、print_count 原子自增、撤销 = short_code 置 NULL
+--      （原码留档 revoked_code）⇒ 扫码 410），
 --     stock_batch_consumptions
 --      批次消耗台账，V116，issue #5145 阶段 1 —— 一行 = 一次批次余量变更（负 = 派工扣减、
 --      正 = 作废回补）；余量是**派生值** = stock_batches.quantity + Σ(delta)，不原地改批次行；

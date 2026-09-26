@@ -787,6 +787,11 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
     "POST /api/worker/*": "同上",
     "GET /s/{}": "短链跳转（`permitAll`，无租户数据）",
+    "GET /i/{}": "入库标签公开入口（issue #5052 P2，`permitAll`）：标签贴在布卷 / 塑料袋上，"
+                 "纸上的码对**任何持码人等价** ⇒ 服务端 302 到落地页；**只回跳转、不泄露业务字段**"
+                 "（响应体为空，`Location` 里只有落地页 + 短码 + 租户 id）。它与 `/s/{}` 是"
+                 "**两个码空间**（入库标签 vs 报工短链），混用会把「扫标签」变成「进报工页」"
+                 "⇒ 互斥判据见 tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py",
 }
 
 #: `RoleService.getPermissionCodesForRole` 里**有意保留**的历史角色（admin-api 无角色行/无种子）：

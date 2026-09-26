@@ -119,6 +119,15 @@ service:
     secret: ${SERVICE_TOKEN_SECRET:${SERVICE_TOKEN:}}
 
 # 阿里云 OSS 配置
+# 入库标签（issue #5052 P2；设计 docs/design/inbound-photo-and-label.md §7.1）
+# `GET /i/{短码}` 302 到落地页的**相对路径**（单一配置：换前端路由 / 换域名只改这一处，
+# 已打印的码 `https://app.migaozn.com/i/<短码>` 那一跳一个字都不能变）。
+# ⚠️ 用**相对路径**而不是绝对 URL：请求 Host 可伪造，拼绝对 URL = 开放重定向面。
+# `/b/` 的发布腿（B 端 h5 落位）见 issue #5668；本包只保证地址**可配**。
+migao:
+  inbound-label:
+    landing-path: ${INBOUND_LABEL_LANDING_PATH:/b/}
+
 aliyun:
   oss:
     endpoint: ${OSS_ENDPOINT:}

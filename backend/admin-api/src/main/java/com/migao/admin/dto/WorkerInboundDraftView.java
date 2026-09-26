@@ -60,5 +60,16 @@ public class WorkerInboundDraftView {
 
         /** 系统批次号 {@code PC-yyyyMMdd-NNNN}：草稿态为 null（过账才生成，V111 裁定） */
         private String batchNo;
+
+        /**
+         * 入库标签短码（issue #5052 P2）：**草稿态为 null**，过账后每行一个（8 位 Crockford Base32）。
+         *
+         * <p>P3 用它拼 {@code https://<稳定域名>/i/<短码>} 渲染 50×30mm 标签；
+         * 域名由前端单一配置给（服务端不硬编码域名）。</p>
+         */
+        private String shortCode;
+
+        /** 该标签**已打印次数**（服务端计数，重打同样计数；草稿态为 null）。 */
+        private Integer printCount;
     }
 }

@@ -1673,6 +1673,51 @@ CREATE INDEX IF NOT EXISTS idx_inbound_items_tenant_sku ON inbound_order_items (
 COMMENT ON TABLE inbound_order_items IS
     '入库单明细（V111）：一个 SKU 行 = 一个批次。批次粒度取行级而非卷级（缸号的行业粒度本就是「一批布」，卷长是区间值不宜硬折算，见 docs/curtain-selling-method-industry-research.md §8.2 末）';
 
+-- 入库标签（V134，issue #5052 P2；设计 docs/design/inbound-photo-and-label.md §7.1 / §7.3）：
+-- 一行 = 一个入库单明细行 = 一张 50×30mm 标签；标签上的码 = `https://app.migaozn.com/i/<8 位短码>`。
+-- 🔴 与 processing_set_part_tokens（工人报工短链 `/s/`）是**两个码空间**（#5052 边界逐字：
+-- 「照其范式、不复用其表」）—— 本表照其范式（8 位 Crockford Base32 / 部分唯一索引 /
+-- 原子自增计数），但**不复用其表**：混用会把「扫标签」变成「进报工页」。
+-- 撤销 = `short_code` 置 NULL、原码留档 `revoked_code` ⇒ 扫码 **410**（与 404「没这个码」可分辨；
+-- 只置 NULL 会把撤销说成「不存在」）；`uk_inbound_labels_code`（有效码唯一）⇒ 已撤销的码永不复发。
+CREATE TABLE IF NOT EXISTS inbound_labels (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    inbound_order_id VARCHAR(64) NOT NULL REFERENCES inbound_orders(id),
+    inbound_item_id BIGINT NOT NULL,                 -- 入库单明细行（一行 = 一个 SKU = 一个批次 = 一张标签）
+    short_code CHAR(8),                              -- 当前有效短码；撤销 ⇒ 置 NULL（§7.3 逐字）
+    revoked_code CHAR(8),                            -- 撤销时留档的原码 ⇒ 撤销后仍判 410 而不是 404
+    print_count INTEGER NOT NULL DEFAULT 0,          -- 原子自增（COALESCE(print_count,0)+1），重打同样计数
+    created_by VARCHAR(64),
+    revoked_at TIMESTAMP WITH TIME ZONE,
+    revoked_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_inbound_labels_code_exactly_one
+        CHECK ((short_code IS NULL) <> (revoked_code IS NULL)),
+    CONSTRAINT ck_inbound_labels_code_shape
+        CHECK ((short_code IS NULL OR short_code ~ '^[0-9A-HJKMNP-TV-Z]{8}$')
+           AND (revoked_code IS NULL OR revoked_code ~ '^[0-9A-HJKMNP-TV-Z]{8}$'))
+);
+-- 码全局唯一（跨租户：/i/ 那一跳没有租户上下文）：建在**有效码** COALESCE(short_code, revoked_code) 上
+-- ⇒ 活码 / 留档码 / 两者交叉都在同一条约束下（已撤销的码永不复发）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_labels_code
+    ON inbound_labels (COALESCE(short_code, revoked_code))
+    WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_labels_item
+    ON inbound_labels (tenant_id, inbound_item_id)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_inbound_labels_order ON inbound_labels (inbound_order_id);
+COMMENT ON TABLE inbound_labels IS
+    '入库标签（V134，issue #5052 P2）：一行 = 一个入库单明细行 = 一张 50×30mm 标签。短码 = 8 位 Crockford Base32、随机、全局唯一；撤销 = short_code 置 NULL（原码留档 revoked_code）⇒ 扫码 410；print_count 原子自增（设备侧打印前必须先调 POST /api/worker/inbound/labels/{短码}/print）';
+COMMENT ON COLUMN inbound_labels.short_code IS
+    '当前有效短码（印刷品写 https://app.migaozn.com/i/<短码>）。撤销 ⇒ 置 NULL（§7.3），原码留档到 revoked_code ⇒ 扫码仍判 410 而不是 404';
+COMMENT ON COLUMN inbound_labels.revoked_code IS
+    '撤销时留档的原短码：撤销后仍能分辨「已作废（410）」与「不存在（404）」；与 short_code 一起受 uk_inbound_labels_code（有效码唯一）约束 ⇒ 已撤销的码永不复发';
+COMMENT ON COLUMN inbound_labels.print_count IS
+    '打印次数（原子自增 COALESCE(print_count,0)+1；多人同时打印不丢计数；重打同样计数）';
+
 CREATE TABLE IF NOT EXISTS stock_batches (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
