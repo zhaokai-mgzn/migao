@@ -2519,6 +2519,27 @@ export interface Employee {
   mustChangePassword?: boolean
 }
 
+/**
+ * 工人档案（issue #4869）：复用 `users` 表（`worker_no` 非空 + `role=worker`），
+ * **不是**员工 —— 用工号 + PIN 登录工人端扫码报工，零菜单权限、不进管理后台。
+ */
+export interface WorkerProfile {
+  id: string
+  /** 工号（租户内唯一；工人登录时输的就是它） */
+  workerNo: string
+  name: string
+  role: string
+  status: EmployeeStatus
+  createdAt?: string
+}
+
+/** 建工人档案的表单（PIN 由服务端 BCrypt 编码后落 `users.password_hash`） */
+export interface WorkerFormData {
+  workerNo: string
+  name: string
+  pin: string
+}
+
 // 员工列表查询参数
 export interface EmployeeListParams extends PageParams {
   keyword?: string

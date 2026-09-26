@@ -92,6 +92,21 @@ class AdminApiWorkerRoleGateTest {
         assertThat(decide(auth("operator", "worker")).isGranted()).isFalse();
     }
 
+    @Test
+    @DisplayName("🔴 工人档案建号入口（issue #4869）用的角色码 = 本门禁拒绝集合里的那个字面量")
+    void workerArchiveRoleIsDeniedAtTheGate() {
+        // 建号侧（WorkerAdminService）与登录侧（WorkerSessionService）必须用**同一个**角色码，
+        // 且该码被本门禁拒绝 —— 三处漂移任一都会出事：
+        // 写错码 ⇒ 建出来的档案登录侧不认（工人登不进）；或门禁不拒 ⇒ 工人可进管理后台。
+        assertThat(com.migao.admin.service.WorkerAdminService.WORKER_ROLE)
+                .as("建号 / 登录 / 门禁三处必须是同一字面量（单一真值源）")
+                .isEqualTo(com.migao.admin.worker.WorkerSessionService.WORKER_ROLE);
+
+        assertThat(decide(auth(com.migao.admin.service.WorkerAdminService.WORKER_ROLE)).isGranted())
+                .as("新入口 POST/GET /api/admin/workers 与员工管理走同一道门禁 ⇒ 工人身份必拒")
+                .isFalse();
+    }
+
     // ============================================================ ② 既有分支不回归
 
     @Test
