@@ -651,8 +651,8 @@ export default function ProcessingOrderProductionPage() {
             )}
           </div>
 
-          {/* 可打印洗水码（issue #4946：一个商品行/部位一张 60mm×30mm，码 = 该部位自己的 scan_url）；
-              屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
+          {/* 可打印洗水码（issue #4946：一个商品行/部位一张；issue #5646 纸宽 30mm→50mm ⇒ 50mm×60mm，
+              码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
             processingOrderNo={po.processingOrderNo}
             orderNo={po.orderNo}

@@ -1,5 +1,6 @@
 // case_ids: PP-011
-// PP-011（issue #4964，用户裁定 2026-09-21）：洗水码改**竖版 30mm × 60mm 单列**，照**真实工单**
+// PP-011（issue #4964 立版式 / **issue #5646 改判纸宽 30mm → 50mm**，用户裁定 2026-09-26 逐字
+// 「洗水码宽是50，长度根据我们实际需要来定」）：洗水码 = **竖版 50mm × 60mm 单列**，照**真实工单**
 // （亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序。
 // 字段面 = 加工单号 / 客户 / 第N套共M套 / 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 /
 // 交期 / 备注 / 算料公式 + 二维码与**大字**人可读短码。
@@ -8,17 +9,26 @@
 //   ① **工序摘要**（工人扫部位码后在 H5 看该部位工序清单，纸面不印）；
 //   ② **完整套号**（`JG-…-001`，与行①的加工单号重复）。
 //
+// 🔴 **30mm → 50mm 时被推翻的三条「窄版心妥协」**（宽 30→50 把版心由 27.6mm 抬到 47.599mm，+72%）：
+//   ① **件名不再 clamp 到 2 行**（该 clamp 当年只为 27.6mm 版心而设；本版**去掉 clamp**）；
+//   ② **加工方式不再折 2 行**（实测最长形态在 47.599mm 下恰好 1 行，`line-clamp-2` 仅作预算上界）；
+//   ③ **算料公式 clamp 3 行 → 2 行**（两条真公式串在 47.599mm 下都恰好 2 行；容量 2×22.5em=45em
+//      反而 > 旧口径 3×13em=39em，且省下 2.538mm —— 最坏情况能收进 60mm 正是靠这一步）。
+//   色号的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**：50mm 下恢复独立渲染只是多印一遍同名信息。
+//
 // 逐条判据（都能判红）：
 // ① 3 个部位 ⇒ 恰 3 张（`task-card-label-0..2`），加工单公共属性**逐张**都在；
-// ② 三张码三个值（= 各部位自己的 `scan_url`）—— 本单**核心判据**（改回单张/单值 ⇒ 必红）；
+// ② 三张码三个值（= 各部位自己的 `scan_url`）—— 本条**核心判据**（改回单张/单值 ⇒ 必红）；
 // ③ 缺码部位 ⇒ 该张出占位（不画假码），其余张仍出真码；
 // ④ 人可读短码逐张渲染且为**大字**（`text-[8pt]`），缺码位如实「—」；
-// ⑤ 打印样式：`@page { size: 30mm 60mm; margin: 0 }` + 标签本体 30mm×60mm + 逐张分页（最后一张不分页）；
+// ⑤ 打印样式：`@page { size: 50mm 60mm; margin: 0 }` + 标签本体 50mm×60mm + 逐张分页（最后一张不分页）
+//    —— **几何整版改判**（issue #5646 推翻 #4946 的 30mm 宽）；逐值实测读数见组件文件头第 5 条；
 // ⑥ **工序摘要与完整套号不再出现**（防复发守卫）；
 // ⑦ 主标识**不折行不省略**：加工单号 `shrink-0 whitespace-nowrap`、订单号 `whitespace-nowrap`
 //    —— 60×30 横版时代的实测教训（issue #4949：折行吃 2.96mm ⇒ 纸面底部短码被裁 1.25mm）；
 // ⑧ 0 个部位 ⇒ 一张显式占位（不是空白）；
-// ⑨ 缺值不渲染：无对应快照行 / 无键 ⇒ 该行不出现，纸面不出现 `undefined` / `null` / `NaN`。
+// ⑨ 缺值不渲染：无对应快照行 / 无键 ⇒ 该行不出现，纸面不出现 `undefined` / `null` / `NaN`；
+// ⑩ **重算后的字段折行预算**（issue #5646）：件名无 clamp / 加工方式与备注各 ≤2 行 / 算料公式 ≤2 行。
 import type { ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
@@ -132,7 +142,7 @@ const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}
 
 const printArea = () => document.querySelector('.task-card-print-area') as HTMLElement
 
-describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', () => {
+describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → 纸宽改判 #5646）', () => {
   it('3 个部位 ⇒ 恰 3 张洗水码，加工单公共属性**逐张**都在（加工单号/客户/套序/订单号/交期）', () => {
     printCard()
 
@@ -244,7 +254,7 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe('part-token-x')
   })
 
-  it('打印样式：@page 30mm×60mm（竖版）+ 标签本体 30mm×60mm 且逐张分页（最后一张不分页）', () => {
+  it('打印样式：@page 50mm×60mm（竖版）+ 标签本体 50mm×60mm 且逐张分页（最后一张不分页）', () => {
     printCard()
 
     // portal 到 body 的直接子级（打印隔离：容器自身的 class 才能被选择器选中）
@@ -253,8 +263,10 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(area.parentElement).toBe(document.body)
 
     const css = area.querySelector('style')?.textContent ?? ''
-    expect(css).toContain('@page { size: 30mm 60mm; margin: 0; }')
-    expect(css).toContain('.task-card-label { width: 30mm; height: 60mm; overflow: hidden;')
+    // 🔴 几何整版改判（issue #5646）：纸宽 30mm → **50mm**。旧值 30mm 一律不得残留（留一条即假绿）
+    expect(css).toContain('@page { size: 50mm 60mm; margin: 0; }')
+    expect(css).not.toContain('30mm 60mm')
+    expect(css).toContain('.task-card-label { width: 50mm; height: 60mm; overflow: hidden;')
     expect(css).toContain('break-after: page')
     // 最后一张不分页（否则末尾多吐一张空白）
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)
@@ -321,10 +333,12 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('加logo条')
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('防翘扣')
     expect(screen.getByTestId('task-card-label-formula-0')).toHaveTextContent('韩褶公式')
-    // 🔴 算料公式必须给到 **3 行**（渲染实拍实测）：公式串 ≈21.7em，27.6mm 宽下要 3 行才装得下；
-    // clamp 到 2 行会把末端的 `= 13.3米`（**结果**）切掉 ⇒ 纸面成「… = …」（改回 2 ⇒ 本条必红）
-    expect(screen.getByTestId('task-card-label-formula-0').className).toContain('line-clamp-3')
-    expect(screen.getByTestId('task-card-label-formula-0').className).not.toContain('line-clamp-2')
+    // 🔴 算料公式 = **2 行**（issue #5646 实测改判；30mm 时代的 3 行口径作废）：
+    // 两条真公式串（`韩褶公式：…` / `褶倍数公式：…`）在 47.599mm 版心（≈22.5em/行）下都**恰好 2 行**；
+    // 容量 2×22.5em = 45em **反而大于**旧口径 3×13em = 39em ⇒ 不是放宽，是同一真值换了版心。
+    // 改回 3 行 ⇒ 最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）实测需 61.4mm > 60mm ⇒ 本条必红。
+    expect(screen.getByTestId('task-card-label-formula-0').className).toContain('line-clamp-2')
+    expect(screen.getByTestId('task-card-label-formula-0').className).not.toContain('line-clamp-3')
 
     // item-2 没有快照行 ⇒ 第 2 张不出色号/用料/宽高/加工方式/备注/公式（缺值不渲染，不猜）
     expect(screen.queryByTestId('task-card-label-color-1')).toBeNull()
@@ -334,7 +348,32 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(screen.queryByTestId('task-card-label-formula-1')).toBeNull()
   })
 
-  it('色号已包含在件名里 ⇒ 不重复渲染（信息重复问题不再带进 30×60）', () => {
+  it('🔴 版心 30→50mm 后重算的字段折行预算：件名去 clamp / 加工方式与备注 ≤2 行 / 公式 ≤2 行（issue #5646）', () => {
+    printCard()
+
+    // ① **件名不再 clamp**（推翻 #4946 为 27.6mm 版心设的 2 行妥协）：版心 47.599mm ≈ 22.5em/行
+    //    ⇒ 2 行可容 ~45em，实测最长件名只折 2 行；留着 clamp 只会平白砍掉真名。
+    //    正向锚点（避免"查不到元素"被读成"断言通过"的空跑）：该行确实渲染了件名正文。
+    const name = screen.getByTestId('task-card-label-position-0')
+    expect(name).toHaveTextContent('布艺遮光帘A')
+    expect(name.className).not.toContain('line-clamp')
+
+    // ② **加工方式**仍 `line-clamp-2` —— 只作**预算上界**：实测最长形态
+    //    「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈21.5em) 在 47.599mm 下**恰好 1 行**。
+    expect(screen.getByTestId('task-card-label-craft-0').className).toContain('line-clamp-2')
+
+    // ③ **备注**仍 ≤2 行（issue #5646 的最坏口径明写「备注 2 行」）。
+    expect(screen.getByTestId('task-card-label-remark-0').className).toContain('line-clamp-2')
+
+    // ④ 主标识与底部码/短码的**不折行 + shrink-0** 契约一字未动（打印隔离与降级入口是红线）
+    expect(within(screen.getByTestId('task-card-label-0')).getByTestId('task-card-no').className).toContain(
+      'whitespace-nowrap',
+    )
+    const bottomRow = screen.getAllByTestId('task-card-qr')[0].parentElement as HTMLElement
+    expect(bottomRow.className).toContain('shrink-0')
+  })
+
+  it('色号已包含在件名里 ⇒ 不重复渲染（信息重复问题不再带进 50×60）', () => {
     // 先钉**正向**：件名不含色号 ⇒ 色号行必须在（否则本条的"不出现"断言是空断言）
     const { unmount } = printCard()
     expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('米白')
