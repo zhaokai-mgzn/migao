@@ -7,7 +7,7 @@
 import Taro from '@tarojs/taro'
 import { API_BASE_URL, STORAGE_KEYS, REQUEST_CONFIG } from './constants'
 
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 interface RequestOptions {
   /** 自定义 baseURL，不传则使用 API_BASE_URL */
@@ -202,6 +202,15 @@ export function put<T = any>(path: string, data?: any, options?: RequestOptions)
   return request<T>('PUT', path, data, options)
 }
 
+/**
+ * PATCH（issue #5654）：入库单**过账 / 作废**是 `PATCH /api/admin/inbound-orders/{id}`
+ * （`InboundOrderController` 的一个端点承载状态机动作，不为每个动作各开端点）。
+ * 与既有 `get/post/put/del` 同形，不新造网络层。
+ */
+export function patch<T = any>(path: string, data?: any, options?: RequestOptions): Promise<T> {
+  return request<T>('PATCH', path, data, options)
+}
+
 export function del<T = any>(path: string, options?: RequestOptions): Promise<T> {
   return request<T>('DELETE', path, undefined, options)
 }
@@ -210,6 +219,7 @@ export default {
   get,
   post,
   put,
+  patch,
   del,
   request,
 }

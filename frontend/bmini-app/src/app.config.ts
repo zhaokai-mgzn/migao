@@ -13,6 +13,14 @@ export default defineAppConfig({
     'pages/production/index/index',
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',
+    // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
+    // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
+    // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：
+    // 页面没登记进这里 = 死链 ⇒ 红）。4 项都走 `/api/admin/**`（商家会话），不是工人面。
+    'pages/admin/pool/index',
+    'pages/admin/inbound/index',
+    'pages/admin/after-sales/index',
+    'pages/admin/piecework/index',
   ],
   window: {
     backgroundTextStyle: 'light',

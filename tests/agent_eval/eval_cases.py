@@ -1059,6 +1059,24 @@ _CASE_BM_008 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-009 [NORMAL] 管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源（源: cases/bmini.yml）──
+_CASE_BM_009 = EvalCase(
+    id='BM-009',
+    legacy_id='',
+    title='管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员用手机浏览器（h5）打开「我的」→ 智能派单 / 入库过账 / 售后处理 / 计件工资报表：排产派单可勾选并预览成批方案后一键派单；入库单可看详情并对草稿单过账；售后工单可看详情并按状态机推进；计件报表按人/按工序出数'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**4 项端到端可用**（每项至少一条）：① 智能派单——池+加急插区上屏 → 勾选 → 预览（服务端五个米数原样渲染）→ 二次确认 → `POST /api/admin/production/pool/dispatch`（成批 `pooled:true`；**加急单 = 单订单 + `pooled:false`**）；② 入库过账——列表 → 点卡拉详情 → 草稿单出「过账」→ 二次确认 → `PATCH /api/admin/inbound-orders/{id}` `{action:'post'}` → 刷新；③ 售后处理——列表 → 详情（含状态历史）→ **只出状态机允许的下一步** → 二次确认 → `PUT /api/admin/after-sales/{id}/status`；④ 计件工资——`GET /api/admin/production/piecework/summary?period=YYYY-MM` 四块渲染 + 期间切换。证据：frontend/bmini-app/tests/admin-pool-dispatch.test.tsx / admin-inbound-post.test.tsx / admin-after-sales.test.tsx / admin-piecework.test.tsx", '判据 2·**权限拒绝有文案（双面）**：无对应码 ⇒ ①「我的」页入口**不可见**（`GET /api/auth/me` 的 `permissions` 判定；集合**未知**时 fail-open 照显，不静默隐藏）；② 端点 403 ⇒ 页面逐字「无「XX」…权限（需要权限码 …）」（如「无「入库过账」过账权限（需要权限码 inbound:create）」），**不许空白/转圈**。红证：去掉 forbidden 分支 ⇒ admin-pool-dispatch.test.tsx 的 403 用例当场红（实测退出码 1）。证据：frontend/bmini-app/tests/admin-surfaces-permission.test.tsx + admin-surfaces-service.test.ts', '判据 3·**权限码真值在后端注解**：端侧台账（`ADMIN_SURFACES[].readPermission/writePermission`）与 4 个 Controller 的 `@RequirePermission` **逐值相等**（读：processing:view / inbound:view / after_sales:view / processing:manage；写：processing:update / inbound:create / order:refund）。红证：改台账任一码 ⇒ 守卫判据 5 红。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts', '判据 4·**h5 下不调 `Taro.login`**（#5650 既有判据）：h5 编译目标下渲染 4 个管理面，`Taro.login` 一次都不被调；未登录 ⇒ 明说「浏览器环境不支持微信登录，请用「用户名@企业编码 + 密码」登录」并给「去登录」。红证：在池页渲染路径注入 `Taro.login()` ⇒ 运行时判据 + 类级守卫**同时**红（实测退出码 1）。证据：frontend/bmini-app/tests/admin-surfaces-permission.test.tsx + admin-surfaces-guard.test.ts', '判据 5·**平台能力缺口显式**（类级）：射程内实测的 Taro API 集必须**逐值等于**声明集（当前 = `redirectTo` / `showModal`，均 h5 可用），命中 #5650 的两张清单（h5 未实现 / 只走微信 JS-SDK）⇒ 必须在缺口台账登记文案**且由真的调用它的文件接线**。红证：注入 `Taro.login` 不同步声明 ⇒ 判据 2 红；补声明+登记文案但不接线 ⇒ 判据 3 红（两条实测退出码均为 1）。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts', '判据 6·**计件报表与 PC 端同源（不重算）**：手机端与 `/production/piecework` 读**同一个端点、同一份服务端聚合**；页面渲染服务端 `total`。判据夹具刻意让 `per_worker` 之和（1200）≠ `total`（1234.56）⇒ 显示 1234.56 才说明没本地求和。红证：把 `data.total` 换成 Σ`per_worker` ⇒ 显示 1200.00 ⇒ 当场红。证据：frontend/bmini-app/tests/admin-piecework.test.tsx', '判据 7·**写面护栏**：派单 / 过账 / 工单流转三个不可逆动作都有二次确认 —— 弹窗取消 ⇒ **一次都不调**写端点（红证：去掉确认分支 ⇒ admin-inbound-post 用例红）；失败**显式上屏**（派单逐单 `success:false` / 过账 422 / 状态机拒绝的中文文案都逐字透出，不静默）。证据：同判据 1 的四个测试文件', '判据 8·**不新增后端逻辑**：本单 diff **零** `backend/**` 改动（4 项端点全部既有）；登记一处**既有分歧**（不改后端、不改 admin-web）：admin-web 菜单节点码与端点码不一致（智能派单节点 `processing:manage` vs 读端 `processing:view`；计件节点 `production:view` vs 端 `processing:manage`）⇒ 手机端一律以**端点码**为可见性判据（宁可不出死页）。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 jest（frontend/bmini-app/tests/admin-surfaces-guard.test.ts / admin-surfaces-service.test.ts / admin-surfaces-permission.test.tsx / admin-pool-dispatch.test.tsx / admin-inbound-post.test.tsx / admin-after-sales.test.tsx / admin-piecework.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'admin-surface', 'permission', 'h5', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -9540,6 +9558,7 @@ ALL_CASES = (
     _CASE_BM_006,
     _CASE_BM_007,
     _CASE_BM_008,
+    _CASE_BM_009,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

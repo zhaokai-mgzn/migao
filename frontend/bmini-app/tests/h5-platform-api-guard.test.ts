@@ -14,103 +14,18 @@
  *
  * fail-closed：读不到实现包 / 两张清单抽不出来（口径漂移）⇒ 抛错判红，**不允许**退化成「0 命中 = 通过」。
  */
-import fs from 'fs'
-import path from 'path'
 import { H5_API_OUTLET_LEDGER } from '../src/utils/platform'
+import {
+  hasPlatformBranch,
+  jsSdkOnlyApis,
+  taroUsages,
+  unsupportedApis,
+} from './helpers/h5PlatformLists'
 
-const ROOT = path.join(__dirname, '..')
-const SRC_DIR = path.join(ROOT, 'src')
-const TARO_H5_DIST = path.join(ROOT, 'node_modules', '@tarojs', 'taro-h5', 'dist')
-
-const SOURCE_EXT = /\.(ts|tsx)$/
-
-function walk(dir: string, keep: (name: string) => boolean, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) walk(full, keep, out)
-    else if (keep(entry.name)) out.push(full)
-  }
-  return out
-}
-
-/** Taro h5 实现包的全部 `.js`（唯一权威清单的来源） */
-function distJsFiles(): string[] {
-  if (!fs.existsSync(TARO_H5_DIST)) {
-    throw new Error(
-      `找不到 Taro h5 实现包：${TARO_H5_DIST}（守卫 fail-closed：读不到权威清单的「绿」不算绿 —— 先 npm ci）`,
-    )
-  }
-  const files = walk(TARO_H5_DIST, (name) => name.endsWith('.js'))
-  if (files.length === 0) throw new Error(`实现包里一个 .js 都没有：${TARO_H5_DIST}`)
-  return files
-}
-
-/** 清单 A：Taro h5「明确不实现」的 API 名 */
-function unsupportedApis(): Set<string> {
-  const out = new Set<string>()
-  for (const file of distJsFiles()) {
-    const text = fs.readFileSync(file, 'utf8')
-    for (const match of text.matchAll(/temporarilyNotSupport\('([A-Za-z_$][\w$]*)'\)/g)) {
-      out.add(match[1])
-    }
-  }
-  if (out.size < 100) {
-    throw new Error(`清单 A 只抽到 ${out.size} 条（预期数百条）⇒ 抽取口径已漂移，判红而不是判绿`)
-  }
-  return out
-}
-
-/** 清单 B：h5 实现**只**走微信 JS-SDK 的 API 名（`processOpenApi` 且无 `standardMethod`） */
-function jsSdkOnlyApis(): Set<string> {
-  const out = new Set<string>()
-  const re =
-    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\/\* @__PURE__ \*\/\s*processOpenApi\(\{([\s\S]*?)\n\}\);/g
-  for (const file of distJsFiles()) {
-    const text = fs.readFileSync(file, 'utf8')
-    for (const match of text.matchAll(re)) {
-      if (!/standardMethod/.test(match[2])) out.add(match[1])
-    }
-  }
-  // 机制存活读数：抽取口径一漂移就会连扫描码都抽不到 ⇒ 当场判红（而不是「面变窄了但没人知道」）
-  if (!out.has('scanCode')) {
-    throw new Error('清单 B 抽取失效：连 scanCode 都没抽到 ⇒ 判红而不是判绿')
-  }
-  return out
-}
-
-interface Usage {
-  api: string
-  file: string
-}
-
-/**
- * 去掉注释后再扫用法 —— 否则**说明文字里的引用会被当成使用**
- * （`migao-dev-flow` §17.3：内容扫描式机制分不清「引用」与「使用」；
- *  实证：`src/utils/platform.ts` 的 JSDoc 里写了 `Taro.scanCode` 就被算成一处命中）。
- * 只处理 `//` 与块注释；`https://` 里的 `//` 用 `[^:]` 前缀排除。
- */
-function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-}
-
-/** 本仓 `src/**` 里全部 `Taro.<api>` 用法（含类型引用如 `Taro.RequestTask`，无害） */
-function taroUsages(): Usage[] {
-  const out: Usage[] = []
-  for (const file of walk(SRC_DIR, (name) => SOURCE_EXT.test(name))) {
-    const rel = path.relative(ROOT, file)
-    const text = stripComments(fs.readFileSync(file, 'utf8'))
-    for (const match of text.matchAll(/\bTaro\.([A-Za-z_$][\w$]*)/g)) {
-      out.push({ api: match[1], file: rel })
-    }
-  }
-  return out
-}
-
-/** 该文件是否引入了平台判别模块（= 有显式平台分支的机械可判形态） */
-function hasPlatformBranch(relFile: string): boolean {
-  const text = fs.readFileSync(path.join(ROOT, relFile), 'utf8')
-  return /from\s+['"][^'"]*\/platform['"]/.test(text) || /from\s+['"]\.\/platform['"]/.test(text)
-}
+// 抽取实现（两张清单 / 用法扫描 / 注释剥离 / 平台分支判定）**只有一份** ——
+// 共享 helper `tests/helpers/h5PlatformLists.ts`（issue #5654 起被管理面守卫共用；
+// 两处各抄一份 = 第二份会漂的口径，见 `migao-dev-flow` §17.3 与 issue #5346）。
+// 本文件只保留**本守卫的判据**。
 
 describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #5650）', () => {
   const unsupported = unsupportedApis()
