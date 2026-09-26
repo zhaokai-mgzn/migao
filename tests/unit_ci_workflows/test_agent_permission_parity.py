@@ -61,6 +61,14 @@
     `/production/pool|remnants|saving-board` 之前会让三个管理码页面按读码判定）；② 码必须在
     权限目录里（否则该路由对所有角色恒 403）；③ 登记的前缀必须解析到 `config/menu.ts` 的节点、
     且码逐字相等，**未登记的前缀不登记即红**（台账 `ROUTE_MENU_ANCHORS` / `ROUTE_WITHOUT_MENU_NODE`）。
+12. **菜单节点码 ≡ 该页第一屏读端点码**（issue #5675，本单新增）：侧边栏**可见性**只由节点码决定，
+    而点进去成不成由端点码决定 ⇒ 两侧不同就是「可见面与可做面脱钩」（持节点码而不持端点码的人
+    「菜单看得见、点进去 403」）。四段：① 每个带 `path` 的节点必须登记锚点；② 四跳**现取**
+    （页面 → `useEffect` 驱动的调用 → `lib/api.ts` 的 URL → Java 生效码，任一跳解析不出来即红，
+    **不静默跳过**）；③ 节点码必须等于该页第一屏**每个**非 None 端点码，否则具名登记进
+    `MENU_READ_PARITY_RESIDUALS`（**只许缩短**：不一致消失而条目还在也红）；④ **零 403 受害者**
+    —— 持节点码的岗位（种子 ∪ 回退）必须同时持该页第一屏的每个端点码。
+    锚点表 = `MENU_READ_ENDPOINT_ANCHORS`（`path` → 页面 + 逐页读出来的第一屏调用）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -189,6 +197,19 @@ def _source_map() -> dict[str, str]:
     for name in ("mibao", "xiaobu"):
         p = AGENTS_DIR / f"{name}.py"
         srcs[f"agent:{name}"] = p.read_text(encoding="utf8")
+    # 判据 12（issue #5675）：页面源码 + 前端 api 客户端。**必须进源码表**（而不是现读磁盘）——
+    # 否则「改页面第一屏调用」这类注入不会改变判据输入 ⇒ 判据永远不变红（空断言）。
+    assert API_TS.is_file(), f"被判据引用的文件不存在：{API_TS}（路径漂移 ⇒ 红，不得静默跳过）"
+    srcs["frontend:api.ts"] = API_TS.read_text(encoding="utf8")
+    assert V129_SQL.is_file(), f"被判据引用的文件不存在：{V129_SQL}（路径漂移 ⇒ 红，不得静默跳过）"
+    srcs["sql:V129"] = V129_SQL.read_text(encoding="utf8")
+    for path, anchor in MENU_READ_ENDPOINT_ANCHORS.items():
+        page = DASHBOARD_APP / anchor.page
+        assert page.is_file(), (
+            f"判据 12 的锚点指向的页面不存在：{page}（`MENU_READ_ENDPOINT_ANCHORS['{path}']` "
+            "陈旧/路径漂移 ⇒ 红，不得静默跳过）"
+        )
+        srcs[f"page:{path}"] = page.read_text(encoding="utf8")
     return srcs
 
 
@@ -312,16 +333,54 @@ def endpoints_by_tool(index) -> dict[str, tuple[tuple[str, str, str | None], ...
 # ── 2.3 菜单来源（三处现役 + 第四处已删的登记） ──────────────────────────────────────────────────────────
 
 
-def _iter_menu_ts(text: str):
-    """`frontend/admin-web/src/config/menu.ts`：`key` → 其后的 `name` / `permissionCode`。"""
+@dataclass(frozen=True)
+class MenuTsNode:
+    """`config/menu.ts` 的一个节点（判据 3 只用 `name`/`code`；判据 12 还要 `path`）。"""
+
+    key: str
+    name: str
+    path: str | None
+    code: str | None
+
+
+def parse_menu_ts_nodes(text: str) -> tuple[MenuTsNode, ...]:
+    """`frontend/admin-web/src/config/menu.ts` 的**节点表** —— 本文件里 menu.ts 的**唯一**解析。
+
+    🔴 issue #5675：判据 12 要按 `path` 锚「该页第一屏读端点」⇒ 把旧的 `_iter_menu_ts`
+    （只产出 `name → code`）就地扩成结构化节点表，`_iter_menu_ts` 改为它的**投影**。
+    **不另起第二个 menu.ts 解析器**（同一份文件被多处各解析一遍是 issue #3570 的教训）。
+
+    切分口径与旧版**逐字一致**（以 `key:` 为分隔，chunk 内取 `name` / `path` / `permissionCode`）
+    ⇒ 组头（无 `path`）照旧解析出来、`parse_menus` 的读数一字不变。
+    """
     keys = list(re.finditer(r"key:\s*'([^']+)'", text))
+    out: list[MenuTsNode] = []
     for i, m in enumerate(keys):
         end = keys[i + 1].start() if i + 1 < len(keys) else len(text)
         chunk = text[m.end():end]
         nm = re.search(r"name:\s*'([^']+)'", chunk)
+        if not nm:
+            continue
+        pm = re.search(r"path:\s*'([^']+)'", chunk)
         cm = re.search(r"permissionCode:\s*'([^']+)'", chunk)
-        if nm:
-            yield nm.group(1), (cm.group(1) if cm else None)
+        out.append(
+            MenuTsNode(
+                key=m.group(1),
+                name=nm.group(1),
+                path=pm.group(1) if pm else None,
+                code=cm.group(1) if cm else None,
+            )
+        )
+    return tuple(out)
+
+
+def _iter_menu_ts(text: str):
+    """`frontend/admin-web/src/config/menu.ts`：`key` → 其后的 `name` / `permissionCode`。
+
+    （判据 3 的投影 —— 与判据 12 共用 `parse_menu_ts_nodes`，**不是**第二份解析。）
+    """
+    for node in parse_menu_ts_nodes(text):
+        yield node.name, node.code
 
 
 def _iter_menu_controller(text: str):
@@ -1707,6 +1766,462 @@ def problems_route_guard(w: World) -> list[str]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 12 的专属面：菜单节点码 ≡ 该页**第一屏读端点**的生效码（issue #5675）
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: 前端页面目录（Next.js 路由组；`MENU_READ_ENDPOINT_ANCHORS` 的 `page` 相对它拼）。
+DASHBOARD_APP = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)"
+#: 前端 api 客户端（判据 12 的**第二跳**：`xxxApi.fn` → HTTP 端点）。
+API_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "api.ts"
+#: 存量回填迁移（**第三个**岗位来源：读码回填谓词，与种子同谓词）。
+V129_SQL = (
+    REPO_ROOT / "backend/admin-api/src/main/resources/db/migration"
+    / "V129__backfill_domain_read_permissions.sql"
+)
+
+
+@dataclass(frozen=True)
+class MenuReadAnchor:
+    """一条「节点 → 页面」的锚（判据 12 里**唯一**手写的东西）。
+
+    `page` 是相对 `frontend/admin-web/src/app/(dashboard)/` 的页面文件；**端点与码一律现取**：
+      ① `parse_menu_ts_nodes` 给出该节点的 `path` / `permissionCode`；
+      ② 页面源码里**由 `useEffect` 驱动**的 api 调用（第一屏，不是点击才跑）；
+      ③ `lib/api.ts` 把 api 函数解析成 URL；
+      ④ `JavaEndpointIndex` 给出该 URL 的**生效码**（方法级优先）。
+    四跳都是读源码，**没有一处靠推断**（issue #5675 范围①的要求）。
+    """
+
+    node: str
+    page: str
+    calls: tuple[str, ...]
+
+
+#: `menu.ts` 节点 `path` → 页面文件 + **该页第一屏真实调用的 api 函数**（逐页读源码得出，不是推断）：
+#: 只收「挂载即跑」那条链上的调用 —— 勾选/翻页/tab 切换才跑的调用（如 `/production/pool` 的
+#: `preview`、`/knowledge` 的候选/模板、`/production/routings` 的算料配置）**不收**，
+#: 否则会把交互面的码算成第一屏的码（实测踩过：入库单页的「建单表单」商品下拉会让
+#: `product:list` 混进来，凭空造出并不存在的 403 受害者）。
+#: **每个带 `path` 的节点都必须在这里**（未登记即红）。
+MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
+    "/dashboard": MenuReadAnchor("经营看板", "dashboard/page.tsx", (
+        "dashboardApi.getStats", "dashboardApi.getOrderTrend",
+        "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
+        "briefingApi.getConfig")),
+    "/briefing": MenuReadAnchor("每日简报", "briefing/page.tsx", ("briefingApi.getConfig",)),
+    "/agent-workspace/human-sessions": MenuReadAnchor(
+        "在线接待", "agent-workspace/human-sessions/page.tsx",
+        ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
+    "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
+    "/products": MenuReadAnchor("商品列表", "products/page.tsx", ("productApi.getProducts",)),
+    "/production/processing": MenuReadAnchor("加工项管理", "production/processing/page.tsx", (
+        "processingItemApi.getProcessingItems", "productionApi.getFeeCombinations",
+        "productionApi.getFeeGaps", "processingCategoryApi.getProcessingCategories")),
+    "/orders": MenuReadAnchor("订单列表", "orders/page.tsx", ("orderApi.getOrders",)),
+    "/after-sales": MenuReadAnchor("售后工单", "after-sales/page.tsx", ("afterSalesApi.getTickets",)),
+    "/customers": MenuReadAnchor("客户列表", "customers/page.tsx", (
+        "customerApi.getCustomers", "customerApi.getCustomerTags")),
+    "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
+        "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
+    "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
+    "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
+                                       ("poolBoardApi.getBoard",)),
+    "/production/routings": MenuReadAnchor("工艺配置", "production/routings/page.tsx", (
+        "productionApi.getRoutings", "productionApi.getOperationsCatalog",
+        "productionApi.getRouteRules", "productionApi.getRouteRuleOptions",
+        "productionApi.getOperationPositions", "productionApi.getSeedTemplates")),
+    "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
+                                            ("productionApi.getPieceworkSummary",)),
+    "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
+    "/production/remnants": MenuReadAnchor("余料台账", "production/remnants/page.tsx",
+                                           ("remnantApi.ledger",)),
+    "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",
+                                               ("savingBoardApi.board", "savingBoardApi.trend")),
+    "/employees": MenuReadAnchor("员工管理", "employees/page.tsx", (
+        "employeeApi.getEmployees", "employeeApi.loadPositions")),
+    "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (
+        "roleApi.getRoles", "permissionApi.getPermissions")),
+    "/settings": MenuReadAnchor("企业基础信息", "settings/page.tsx", (
+        "settingsApi.getSettings", "settingsApi.getAiConfig", "briefingApi.getConfig")),
+    "/notifications": MenuReadAnchor("通知中心", "notifications/page.tsx",
+                                     ("notificationApi.getNotifications",)),
+}
+
+
+@dataclass(frozen=True)
+class MenuReadResidual:
+    """残留登记的四件套：**理由 + 显形条件 + 谁负责**，外加（有 403 受害者时必需的）**认领**。"""
+
+    reason: str
+    surfaces_when: str
+    owner: str
+    #: 该路径**确有** 403 受害者时，逐条认领（谁、缺什么码、为什么本单不改）——空 ⇒ 受害者段判红；
+    #: 反过来，若无受害者却写了认领 ⇒ 陈旧认领，也判红（它在替未来的真受害者放行）。
+    victims_ack: str = ""
+
+
+#: 🔴 **只许缩短的残留台账**（issue #5675）：`节点码 ≠ 该页第一屏读端点码` 且本单**有意不修**的项。
+#: 两条机械约束（都在 `problems_menu_read_parity` 里判）：
+#:   ① 台账里**每一条**都必须仍然真的不一致 —— 不一致消失而条目还在 ⇒ **红**（逼人删掉它）；
+#:   ② 判据发现的**每一个**不一致都必须在这里具名 —— 未登记 ⇒ **红**。
+#: 于是「新增一处不一致」与「修好了却不销账」都是可红的动作，台账只会变短。
+MENU_READ_PARITY_RESIDUALS: dict[str, MenuReadResidual] = {
+    "/dashboard": MenuReadResidual(
+        reason=(
+            "「经营看板」节点**有意无码**（`frontend/admin-web/src/config/menu.ts` 该行没有 permissionCode"
+            " ⇒ 全员可见），而页面守卫与第一屏读端点都取 `dashboard:view` ⇒ 两侧取值不同。"
+            "本判据**不假定哪一侧为真值**（谁改都能让本项消失，改错方向会判红）——"
+            "判据 11 的 `ROUTE_WITHOUT_MENU_NODE['/dashboard']` 登记的是同一件事。"
+        ),
+        surfaces_when="给该节点补上 `dashboard:view`（两侧同码）⇒ 本项应删除。",
+        owner="菜单面（`frontend/admin-web/src/config/menu.ts` 的 workspace 组）+ 本守卫的残留台账",
+    ),
+    "/production/pool": MenuReadResidual(
+        reason=(
+            "「智能派单」节点挂 `processing:manage`、读端点要 `processing:view` —— issue #5291 的**有意**"
+            "决定（`menu.ts` 的 #5291 注记逐字登记），issue #5675 逐岗位复算后**维持原判**："
+            "两个方向的「对齐」都会改变某个岗位集合 —— ① 节点码改读码 ⇒ 客服/销售/财务（三个来源都持"
+            " `processing:view`）**凭空看见**该菜单，而前端路由守卫 "
+            "（`frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 `/production/pool`）仍是管理码 ⇒ "
+            "正好造出本判据要治的「菜单看得见、点进去 403」；② 端点码改管理码 ⇒ 这三个岗位的 API "
+            "可做性被收窄，且手机端入口（`frontend/bmini-app/src/utils/adminPermission.ts` 按端点码判可见）"
+            "一并消失。两侧**都要有人明确裁定**才动。"
+        ),
+        surfaces_when=(
+            "节点码与 `layout.tsx` 的该前缀**同批**改挂读码（且已确认「只持旧读码的岗位」的可见性变化"
+            "是被裁定的）⇒ 本项删除；单独改一侧 ⇒ 判据 11/12 立刻红。"
+        ),
+        owner="生产域菜单/权限面（下一位改生产组菜单或 ProductionPoolController 读端点的人）+ 本守卫的残留台账",
+        victims_ack=(
+            "回退路径（**无 role_permissions 记录**的历史账号）确实有受害者：`operator@fallback` / "
+            "`product_manager@fallback` 持 `processing:manage` 而不持 `processing:view` "
+            "（`RoleService.getPermissionCodesForRole` 的两个 case 里都没有它）⇒ 它们看得见菜单、"
+            "第一屏被 403。**本单不改**：把该码补进回退表属于**改权限授予**（本单硬约束 1 明令不动），"
+            "且它与「节点码有意保留管理码」是同一处不一致的一体两面（种子路径下无人受害，见 reason）。"
+            "去向：与「节点码是否改挂读码」同批裁定（改一侧就必须改两侧）。"
+        ),
+    ),
+    "/production/saving-board": MenuReadResidual(
+        reason=(
+            "「省料看板」节点挂 `processing:manage`，而该页第一屏两个端点"
+            "（`GET /api/admin/batch-stock/saving-board`、`.../saving-trend`）在 `StockBatchController` 上是"
+            "**类级 `product:list`**（该组注记写「与各自页面的类级码同码」—— 对余料台账成立、对省料看板"
+            "**不成立**）。属 issue #5675 的守卫**首次发现的同族第三处**（#5291 与 #5654 都只登记了另两处）。"
+            "今天零受害：持节点码的 admin/operator 都持 `product:list`（种子/回填/回退三处复算）。"
+        ),
+        surfaces_when=(
+            "节点码改 `product:list` ⇒ 销售（持 `product:list` 而无管理码）凭空看见该菜单（可见性变化）；"
+            "端点码改 `processing:manage` ⇒ 只持 `product:list` 者失去该页可读性 ⇒ 两侧都需裁定。"
+        ),
+        owner="仓储与物料组菜单/权限面（menu.ts 的 inventory-center 组 + StockBatchController）+ 本守卫的残留台账",
+    ),
+    "/production/processing": MenuReadResidual(
+        reason=(
+            "「加工项管理」页第一屏**跨三个码**：加工项 = `production:view`（与节点同码 ✓）、"
+            "加工费组合/缺口 = `ProductionController` 的类级 `order:list`、加工分类 = `processing:manage`"
+            " ⇒ 后两个与节点码不同（#5291 的读码迁移没走到这两个端点族）。今天零受害：持 `production:view` 的"
+            "admin/operator 同时持另两个码（三处逐值复算）。"
+        ),
+        surfaces_when=(
+            "出现「持 `production:view` 而不持 `order:list`/`processing:manage`」的岗位 ⇒ 该页对应 tab 的"
+            "第一屏 403 —— 届时判据 12 的**零 403 受害者**段会先判红（不必依赖本条登记）。"
+        ),
+        owner="生产域读码收口面（#5291 未走完的端点族）+ 本守卫的残留台账",
+        victims_ack=(
+            "回退路径有受害者：`product_manager@fallback` 持 `production:view` 而不持 `order:list` "
+            "⇒ 该页「加工费组合」tab 的第一屏 403。**本单不改**（补码 = 改权限授予，越界；"
+            "种子路径下无人受害 —— 持 `production:view` 的 admin/operator 都持 `order:list`）。"
+        ),
+    ),
+    "/production/routings": MenuReadResidual(
+        reason=(
+            "「工艺配置」节点与两个只读端点（`/routings`、`/operations-catalog`）同码 `production:view` ✓，"
+            "但该页第一屏的路线规则族（`route-rules` / `route-rule-options` / `operation-positions` / "
+            "`seed-templates`）仍是 `processing:manage` —— #5291 的类注记逐字只搬了「两个只读端点」，"
+            "这一族没搬。今天零受害（持读码的 admin/operator 同持管理码）。"
+        ),
+        surfaces_when=(
+            "出现只持读码的岗位 ⇒ 工艺配置页第一屏 403 —— 同上的**零 403 受害者**段会先判红。"
+        ),
+        owner="生产域读码收口面（#5291 未走完的第二个端点族）+ 本守卫的残留台账",
+    ),
+    "/settings": MenuReadResidual(
+        reason=(
+            "「企业基础信息」节点 = `system:manage`，而该页第一屏还读「每日简报开关」"
+            "（`GET /api/admin/briefing/config` = `dashboard:view`）⇒ 跨两个码。今天零受害："
+            "`system:manage` 的持有者（三处来源里只有 admin）恒为 `*`。"
+        ),
+        surfaces_when=(
+            "把 `system:manage` 授给非 `*` 的岗位 ⇒ 该页简报开关读数 403 —— 同上的"
+            "**零 403 受害者**段会先判红。"
+        ),
+        owner="组织管理组菜单/权限面（menu.ts 的 org-center 组 + BriefingController）+ 本守卫的残留台账",
+    ),
+}
+
+
+def _js_block(text: str, open_brace: int) -> str:
+    """从 `{` 起做括号配平取块（TS/JS 源码的粗粒度切分，够用即止）。
+
+    ⚠️ 如实登记：字符串/注释里的裸花括号会干扰配平。失配的后果是**块偏大或偏小**，
+    偏大 ⇒ 多收调用（更容易红），偏小 ⇒ 可能漏判 —— 故有两道补偿：`/notifications` 这类
+    极简页也照样解析出调用（解析出 0 个调用 ⇒ 红），且注入式红证覆盖两个方向。
+    """
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace:i + 1]
+    return text[open_brace:]
+
+
+def _frontend_api_calls_in(text: str) -> tuple[str, ...]:
+    """片段里出现的 `xxxApi.fn(` 调用（去重排序）。"""
+    return tuple(sorted({f"{o}.{f}" for o, f in re.findall(r"\b([A-Za-z]+Api)\.(\w+)\(", text)}))
+
+
+def page_first_screen_text(page_text: str) -> str:
+    """页面源码里**由 `useEffect` 驱动**的可执行面（= 判「第一屏读端点」的语料）。
+
+    = 每个 `useEffect(() => { … }, […])` 的块体 ∪ 这些块体里**被调用**的本地函数定义体
+    （一跳：`useEffect(() => { load() }, [load])` 是仓里最常见的形态）。
+    「点击才跑」的处理函数**不在**这个面里 ⇒ 把第一屏调用挪进按钮不会静默通过。
+
+    ⚠️ 边界（如实登记）：`useEffect` 的依赖形态多样（`[]` / `[loader]` / `[tab]`），本判据**不**逐一
+    证明「该 effect 一定在挂载时跑」；它证明的是「这些调用由某个 effect 驱动、不是纯交互路径」。
+    真正的锚是台账里逐条读过的页面（`MENU_READ_ENDPOINT_ANCHORS`）+ 下面四跳现取的端点码。
+    """
+    parts: list[str] = []
+    driven: set[str] = set()
+    for m in re.finditer(r"useEffect\(\s*\(\)\s*=>\s*\{", page_text):
+        body = _js_block(page_text, m.end() - 1)
+        parts.append(body)
+        driven |= set(re.findall(r"\b(\w+)\s*\(", body))
+    for name in sorted(driven):
+        for pat in (rf"const\s+{name}\s*=\s*useCallback\(", rf"function\s+{name}\s*\("):
+            for m in re.finditer(pat, page_text):
+                brace = page_text.find("{", m.end())
+                if brace != -1:
+                    parts.append(_js_block(page_text, brace))
+    return "\n".join(parts)
+
+
+def parse_frontend_api_calls(text: str) -> dict[tuple[str, str], tuple[str, str]]:
+    """`frontend/admin-web/src/lib/api.ts`：`(api 对象名, 方法名) → (verb, url)`。
+
+    🔴 键**必须带对象名**：方法名跨对象大量重名（`list` / `preview` / `detail` …）——
+    只按方法名解析会把 `processingOrderApi.list` 读成 `inboundOrderApi.list` 的 URL
+    （issue #5675 实测踩过：拿错端点 ⇒ 判据拿别人的码去比）。
+    """
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for m in re.finditer(r"export const (\w+)\s*=\s*\{", text):
+        obj = m.group(1)
+        segment = _js_block(text, m.end() - 1)
+        for call in re.finditer(
+            r"request\.(get|post|put|patch|delete)\s*(?:<[^()]*>)?\s*\(\s*[`'\"]([^`'\"]+)",
+            segment,
+            re.S,
+        ):
+            decls = re.findall(r"\n\s*(\w+)\s*:\s*(?:async\s*)?\(", segment[:call.start()])
+            if decls:
+                out.setdefault((obj, decls[-1]), (call.group(1).upper(), call.group(2)))
+    assert len(out) >= 100, f"api.ts 只解析出 {len(out)} 个调用 ⇒ 判据会空跑（fail-closed）"
+    return out
+
+
+def _norm_endpoint_url(url: str) -> str:
+    """`/api/admin/agent-sessions/${id}` → `…/{}`（与 `JavaEndpointIndex` 的模板口径对齐）。"""
+    return re.sub(r"\$\{[^}]*\}", "{}", url)
+
+
+def _effective_codes(w: World, verb: str, url: str) -> tuple[str | None, ...] | None:
+    """端点的**生效码**（精确命中优先，其次 `{}` 模板正则回退）；端点查不到 ⇒ None。"""
+    path = _norm_endpoint_url(url)
+    exact = w.all_eps.get((verb, path))
+    if exact:
+        return tuple(sorted((ep.permission for ep in exact), key=str))
+    hits: list[str | None] = []
+    for (v, tpl), eps in w.all_eps.items():
+        if v != verb:
+            continue
+        rx = re.compile("^" + re.escape(tpl).replace(re.escape("{}"), "[^/]+") + "$")
+        if rx.match(path):
+            hits.extend(ep.permission for ep in eps)
+    return tuple(sorted(set(hits), key=str)) if hits else None
+
+
+def _holder_roles(w: World, code: str | None) -> tuple[str, ...]:
+    """三处岗位来源（种子 / 硬编码回退）里持该码的岗位（`*` 通配恒真）。"""
+    if code is None:
+        return ()
+    out: set[str] = set()
+    for label, table in (("seed", w.roles), ("fallback", w.role_fallback)):
+        for role, codes in table.items():
+            if "*" in codes or code in codes:
+                out.add(f"{role}@{label}")
+    return tuple(sorted(out))
+
+
+def problems_menu_read_parity(w: World) -> list[str]:
+    """判据 12：`menu.ts` 每个节点的码 ≡ 它 `path` 对应页面**第一屏读端点**的生效码（issue #5675）。
+
+    病根：菜单**可见性**只由节点码决定，而点进去成不成由端点码决定 ⇒ 两侧不同就是「可见面与可做面
+    脱钩」：持节点码而不持端点码的人「菜单看得见、点进去 403」（潜伏；受害人群今天为空，但可显形）。
+    四段（缺任何一段这条判据就有漏网形态）：
+      ① **覆盖**：每个带 `path` 的节点必须登记锚点（未登记 ⇒ 红）；锚点也不得陈旧/错人；
+      ② **四跳现取**：页面 → `useEffect` 驱动的调用 → `lib/api.ts` 的 URL → Java 生效码
+         （任一跳解析不出来 ⇒ 红，**不静默跳过**）；
+      ③ **一致性**：节点码必须等于该页第一屏**每个**非 None 端点码，否则必须具名登记在
+         `MENU_READ_PARITY_RESIDUALS`（台账**只许缩短**：不一致消失而条目还在 ⇒ 红）；
+      ④ **零 403 受害者（逐岗位复算）**：任何持节点码的岗位，必须同时持该页第一屏的每个端点码
+         —— 这是「菜单看得见 ⇒ 点进去一定打得开」的机械形态（种子 + 回退两处来源）。
+    """
+    out: list[str] = []
+    nodes = [n for n in parse_menu_ts_nodes(w.sources["menu:frontend"]) if n.path]
+    by_path = {n.path: n for n in nodes}
+    api_calls = parse_frontend_api_calls(w.sources["frontend:api.ts"])
+
+    # ⓪ 复算的**前提自证**（issue #5675）：存量租户那一路（V129）必须仍是「读码 ← 只授给
+    #    原本持管理码的岗位」。它是「可见性零变化」复算的第三个来源 —— 谓词被改成「授给所有人」
+    #    或「授给只持旧读码的岗位」时，本判据的种子/回退复算**看不出来**，故必须单独钉住。
+    v129 = w.sources.get("sql:V129", "")
+    branch = v129[v129.find("-- ②-b"): v129.find("-- ②-c")] if "-- ②-b" in v129 else ""
+    for literal, why in (
+        ("'production:view'", "生产域读码本身"),
+        ("'processing:manage'", "回填谓词（只授给原本持管理码的岗位）"),
+    ):
+        if literal not in branch:
+            out.append(
+                f"`V129__backfill_domain_read_permissions.sql` 的 ②-b 段（生产域读码回填）里找不到 "
+                f"{literal} —— {why}变了 ⇒ 「持读码的岗位集合 = 持管理码的岗位集合」这条"
+                "可见性零变化复算的前提不再成立（本单的复算以它为前提）"
+            )
+
+    # ① 覆盖 + 锚点卫生（陈旧锚点 / 锚错人都不许静默）
+    for path in sorted(set(MENU_READ_ENDPOINT_ANCHORS) - set(by_path)):
+        out.append(f"`MENU_READ_ENDPOINT_ANCHORS['{path}']` 在 `config/menu.ts` 里找不到该 path（陈旧登记）")
+    for path in sorted(set(by_path) - set(MENU_READ_ENDPOINT_ANCHORS)):
+        out.append(
+            f"菜单节点『{by_path[path].name}』（`{path}`）没有登记「第一屏读端点」锚点 ⇒ "
+            "**新增菜单节点必须先登记**（否则它的节点码与页面读码脱钩时不会有东西变红）"
+        )
+
+    mismatching: list[str] = []
+    endpoint_codes_by_path: dict[str, set[str]] = {}
+    for path, node in sorted(by_path.items()):
+        anchor = MENU_READ_ENDPOINT_ANCHORS.get(path)
+        if anchor is None:
+            continue
+        if anchor.node != node.name:
+            out.append(
+                f"锚点 `{path}` 指的是『{anchor.node}』，而 `config/menu.ts` 该 path 现在是『{node.name}』"
+                "（路径↔节点漂移 ⇒ 锚错人）"
+            )
+            continue
+        page_path = DASHBOARD_APP / anchor.page
+        page_rel = f"frontend/admin-web/src/app/(dashboard)/{anchor.page}"
+        page_text = w.sources.get(f"page:{path}")
+        if page_text is None:
+            out.append(f"锚点 `{path}` 的页面源码没进源码表（{page_rel}）—— 路径漂移 ⇒ 红")
+            continue
+        assert page_path.name  # 仅为可读性保留（真实读数一律走 `w.sources`，注入式红证才有效）
+        # ②-a **声明面自证**：台账声明的每个调用必须仍在该页的「effect 驱动面」上 ——
+        #     挪进纯交互路径（点击/勾选才跑）就不再是第一屏调用 ⇒ 声明陈旧，必须同步台账。
+        corpus = page_first_screen_text(page_text)
+        for call in anchor.calls:
+            if call not in corpus:
+                out.append(
+                    f"锚点 `{path}` 声明的 `{call}` 不在『{node.name}』（`{page_rel}`）的"
+                    " **effect 驱动面**上 ⇒ 它已被挪到纯交互路径（第一屏不再调它）或声明陈旧"
+                    " ⇒ 同步 `MENU_READ_ENDPOINT_ANCHORS`"
+                )
+        codes: list[str | None] = []
+        for call in anchor.calls:
+            obj, fn = call.split(".", 1)
+            target = api_calls.get((obj, fn))
+            if target is None:
+                out.append(
+                    f"『{node.name}』第一屏调了 `{call}`，但 `frontend/admin-web/src/lib/api.ts` 里"
+                    "解析不出它的 URL ⇒ 判据不静默跳过（端点未知即红）"
+                )
+                continue
+            verb, url = target
+            eps = _effective_codes(w, verb, url)
+            if eps is None:
+                out.append(
+                    f"『{node.name}』第一屏的 `{call}` → `{verb} {url}` 在 admin-api 的端点表里查不到"
+                    "（端点未落地/路径漂移 ⇒ 红）"
+                )
+                continue
+            codes.extend(eps)
+        real_codes = sorted({c for c in codes if c is not None})
+        endpoint_codes_by_path[path] = set(real_codes)
+        if not real_codes:
+            # 第一屏全部落在**未注解端点**上（判据 8 已逐条登记那些端点）⇒ 本判据无数可对。
+            continue
+        for code in real_codes:
+            if code == node.code:
+                continue
+            mismatching.append(path)
+            if path not in MENU_READ_PARITY_RESIDUALS:
+                out.append(
+                    f"『{node.name}』（`{path}`）的节点码 = `{node.code}`，而该页第一屏读端点要 "
+                    f"`{code}`（{page_rel}）⇒ 可见面与可做面脱钩。"
+                    "**要么对齐两处码，要么在 `MENU_READ_PARITY_RESIDUALS` 里具名登记"
+                    "（理由 + 显形条件 + 谁负责）**"
+                )
+
+    # ③ 台账只许缩短（不一致消失而条目还在 ⇒ 红）
+    for path in sorted(set(MENU_READ_PARITY_RESIDUALS) - set(mismatching)):
+        out.append(
+            f"`MENU_READ_PARITY_RESIDUALS['{path}']` 已不再不一致（两侧现同码或该节点已不在）"
+            " ⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真回归读成「已登记」）"
+        )
+    for path, residual in sorted(MENU_READ_PARITY_RESIDUALS.items()):
+        empty = [
+            name for name, value in (("reason", residual.reason),
+                                     ("surfaces_when", residual.surfaces_when),
+                                     ("owner", residual.owner))
+            if not value.strip()
+        ]
+        if empty:
+            out.append(f"`MENU_READ_PARITY_RESIDUALS['{path}']` 缺字段 {empty}（理由/显形条件/谁负责缺一即红）")
+
+    # ④ 零 403 受害者：持节点码 ⇒ 必持该页第一屏的每个端点码（逐岗位复算：种子 ∪ 硬编码回退）。
+    #    🔴 **面外不是安全区**（migao-dev-flow §23 G4）：只算种子会漏掉「无 role_permissions 记录的
+    #    历史账号」（回退路径），而那正是「菜单看得见、点进去 403」最容易存活的地方。
+    #    已有具名登记的路径 ⇒ 必须由该条登记的 `victims_ack` **逐条认领**（不认领照样红）。
+    victims_by_path: dict[str, list[str]] = {}
+    for path, node in sorted(by_path.items()):
+        endpoint_codes = endpoint_codes_by_path.get(path, set())
+        if not endpoint_codes or not node.code:
+            continue
+        for role in _holder_roles(w, node.code):
+            missing = sorted(c for c in endpoint_codes if role not in _holder_roles(w, c))
+            if not missing:
+                continue
+            victims_by_path.setdefault(path, []).append(f"{role} 缺 {missing}")
+            residual = MENU_READ_PARITY_RESIDUALS.get(path)
+            if residual is not None and residual.victims_ack.strip():
+                continue  # 已具名认领（见 `victims_ack`）
+            out.append(
+                f"🔴 403 受害者：岗位 `{role}` 持节点码 `{node.code}`（看得见『{node.name}』）"
+                f"却不持该页第一屏读端点码 {missing} ⇒ 「菜单看得见、点进去 403」"
+                "（零受害者段：新增岗位/改码都会在这里变红；确有裁定 ⇒ 在该路径的登记里写 `victims_ack`）"
+            )
+    for path, residual in sorted(MENU_READ_PARITY_RESIDUALS.items()):
+        if residual.victims_ack.strip() and path not in victims_by_path:
+            out.append(
+                f"`MENU_READ_PARITY_RESIDUALS['{path}'].victims_ack` 声称认领了 403 受害者，"
+                "但逐岗位复算**一个都没有** ⇒ 陈旧认领，删掉它（否则它会替未来的真受害者放行）"
+            )
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具必须声明权限码": problems_missing_codes,
     "2 · 工具码 ≡ 端点生效码": problems_endpoint_parity,
@@ -1719,6 +2234,7 @@ JUDGEMENTS = {
     "9 · 解析器自检": problems_self_checks,
     "10 · 三个域读码的锚定（issue #5291）": problems_read_code_anchoring,
     "11 · 页面守卫前缀序 + 码锚定（issue #5291）": problems_route_guard,
+    "12 · 菜单节点码 ≡ 页面第一屏读端点码（issue #5675）": problems_menu_read_parity,
 }
 
 
@@ -1802,6 +2318,12 @@ def _shadow_production_subpaths(text: str) -> str:
     pool = "  { prefix: '/production/pool', code: 'processing:manage' },\n"
     assert pool in text, "注入锚点失配：找不到 `/production/pool` 那一行（同步本判据）"
     return text.replace(wide, "", 1).replace(pool, wide + pool, 1)
+
+
+def _swap(text: str, old: str, new: str) -> str:
+    """判据 12 的注入：**整段换/删**（`old` 出现次数 ≠ 1 ⇒ 注入锚点失配，必须同步本判据）。"""
+    assert text.count(old) == 1, f"注入锚点失配（出现 {text.count(old)} 次）：{old!r}"
+    return text.replace(old, new, 1)
 
 
 def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
@@ -1978,6 +2500,69 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 1,
             ),
             problems_route_guard,
+        ),
+        # ── 判据 12（issue #5675）：四类注入（改节点码 / 删节点码 / 改端点码 / 新增未登记的不一致）
+        #    + 两类面内注入（台账陈旧、页面第一屏调用被换掉）──────────────────────────────
+        "⑲ 改节点码（余料台账 `processing:manage` → `order:list`）⇒ 判据 12 红": (
+            # 形态 = **新增一处未登记的不一致**：节点码与读端点码脱钩而台账里没有它。
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/remnants', permissionCode: 'processing:manage'",
+                "path: '/production/remnants', permissionCode: 'order:list'",
+            ),
+            problems_menu_read_parity,
+        ),
+        "⑳ 删节点码（余料台账的 permissionCode 整段删掉 ⇒ 码变 None）⇒ 判据 12 红": (
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/remnants', permissionCode: 'processing:manage', ",
+                "path: '/production/remnants', ",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉑ 改端点码（**本单修复的回退形态**：计件报表退回 `processing:manage`）⇒ 判据 12 红": (
+            # 这是本单改动的**真实回归形态**（不是假变异）：谁把码改回去，判据立刻红
+            # —— 且要变绿必须显式往台账里加一条登记（评审可见）。
+            "java:controller/ProductionController.java",
+            lambda s: _swap(
+                s,
+                '@GetMapping("/piecework/summary")\n    @RequirePermission("production:view")',
+                '@GetMapping("/piecework/summary")\n    @RequirePermission("processing:manage")',
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉒ 新增未登记的菜单节点 ⇒ 判据 12 红": (
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "{ key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications',",
+                "{ key: 'ghost-surface', name: '幽灵页', icon: 'Bell', path: '/ghost-surface', "
+                "permissionCode: 'order:list', keywords: [] },\n"
+                "  { key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications',",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉓ 台账陈旧（智能派单节点码改挂读端点码 ⇒ 那处不一致已消失）⇒ 判据 12 红": (
+            # 只许缩短的**另一半**：不一致修好了却不销账 ⇒ 红（否则陈旧条目会把下一次真回归
+            # 读成「已登记」）。注入的码 = 该页读端点码 `processing:view`（不是 `production:view`
+            # —— 那仍是「不一致」，测的是 ⑲ 那一类）。
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/pool', permissionCode: 'processing:manage'",
+                "path: '/production/pool', permissionCode: 'processing:view'",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉔ 页面第一屏调用被换成别的端点（计件页改调 per-order 计件）⇒ 判据 12 红": (
+            # 页面侧那一跳的判别力：声明的调用从「effect 驱动面」上消失 ⇒ 声明陈旧 ⇒ 红
+            # （逼人同步台账，而不是让台账继续描述一个已经不存在的第一屏）。
+            "page:/production/piecework",
+            lambda s: _swap(
+                s, "productionApi.getPieceworkSummary", "productionApi.getPiecework"),
+            problems_menu_read_parity,
         ),
     }
 

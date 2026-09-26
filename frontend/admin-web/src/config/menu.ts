@@ -143,7 +143,11 @@ export const menuGroups: MenuGroup[] = [
   // 🔴 issue #5291：生产域新增**读**码 `production:view` —— 「生产看板 / 工艺配置 / 计件工资」
   // 三个节点改用读码（「看得见这一页」与「改得动生产数据」就此分开）；「智能派单」仍按
   // processing:manage（其读端点用 processing:view、且无 Agent 工具调用，不在本单射程）。
-  // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py（判据 3/4/10）。
+  // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py（判据 3/4/10/12）。
+  // 🔴 issue #5675：本组「计件工资」节点码与它页面**第一屏读端点**的码现已逐字同码
+  // （读端点 `GET /api/admin/production/piecework/summary` 由 processing:manage 补齐到本读码
+  //  —— #5291 漏改的第三个只读端点）；「智能派单」那处不一致**有意保留**并在判据 12 的
+  // 残留台账里具名登记（两个方向的对齐都会改变某个岗位集合的可见性或可做性）。
   // issue #4357：「加工单」并入本组 —— 但它**不新增菜单项**：加工单列表页与「生产看板」
   // 是同一实体、同一端点（processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口「生产看板」
   //（列表页能力：关键词/状态筛选、重置、刷新、商品与数量快照摘要、查看跳订单详情 全部并入看板）。
@@ -172,8 +176,10 @@ export const menuGroups: MenuGroup[] = [
   // issue #5271 **新组**：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，是**同一条物流动线**，
   // 原散在「生产管理」组里与加工执行混编（一个仓管找「入库单」时不该在「生产看板」旁边找）。
   // 权限码**不统一**且有意如此：入库单 = `inbound:view`（仓储动作，仓管/财务要看入库单，
-  // 却不需要 processing:manage），另两项 = `processing:manage`（与各自页面的
-  // `@RequirePermission` 类级码同码）。
+  // 却不需要 processing:manage）；余料台账 = `processing:manage`（与 `RemnantController` 的
+  // 类级码逐字同码）。⚠️ **省料看板不是同码**（issue #5675 的判据 12 首次发现并登记）：它的
+  // 读端点在 `StockBatchController` 上沿用 `product:list` ⇒ 节点码与该页**第一屏读端点码**不一致，
+  // 已具名登记在判据 12 的残留台账（本组旧注记「另两项与各自页面的类级码同码」对省料看板不成立）。
   {
     key: 'inventory-center',
     name: '仓储与物料',

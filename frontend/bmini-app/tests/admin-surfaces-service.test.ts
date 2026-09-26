@@ -160,7 +160,7 @@ describe('管理面服务层：三态可区分（无权限 / 失败 / 有数据�
     })
     expect(await getPieceworkReport({ period: '2026-09' })).toEqual({
       status: 'forbidden',
-      message: '无「计件工资报表」查看权限（需要权限码 processing:manage）',
+      message: '无「计件工资报表」查看权限（需要权限码 production:view）',
     })
 
     mockPatch.mockRejectedValue(httpError(403, 'Forbidden'))
@@ -236,7 +236,7 @@ describe('管理面服务层：权限集合与文案', () => {
       '无「售后处理」处理权限（需要权限码 order:refund）',
     )
     expect(missingPermissionText('piecework', 'read')).toBe(
-      '无「计件工资报表」查看权限（需要权限码 processing:manage）',
+      '无「计件工资报表」查看权限（需要权限码 production:view）',
     )
   })
 })

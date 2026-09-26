@@ -44,11 +44,19 @@ import java.util.Map;
  * 真值源：docs/curtain-production-rules.md §1 打印物 / §2 工序库 / §3 工艺路线 / §4 计件 / §5 扫码报工闭环。
  *
  * <p><b>权限口径（本批新增端点逐条声明，见 issue #4104 的控制器级错配台账）</b>：
- * 类级 {@code order:list} 是读口径；写/报表端点用方法级 {@code processing:manage} 覆盖
+ * 类级 {@code order:list} 是读口径；**写**端点用方法级 {@code processing:manage} 覆盖
  * （方法级优先，见 {@code PermissionInterceptor.resolveRequirePermission}）。
  * ⚠️ <b>issue #5291</b>：两个**只读**端点（{@code /operations-catalog}、{@code /routings}）改挂生产域
  * **读**码 {@code production:view}（与「工艺配置」节点、Agent 侧 {@code operation_catalog_query} 同码）
  * —— 它们此前用方法级 {@code processing:manage}，只因当时该域没有读码。
+ * 🔴 <b>issue #5675</b>：**第三个只读端点 {@code /piecework/summary} 同批补齐** ——
+ * 它是「计件工资」页的**第一屏读端点**，而该页的菜单节点码（{@code menu.ts}）与前端路由守卫
+ * 都已是读码 {@code production:view}；同一份工资聚合也早已在 Agent 侧
+ * （{@code /api/admin/agent/production/piecework}，issue #5291 改挂同一读码）可读
+ * ⇒ 它此前的方法级 {@code processing:manage} 是 #5291 的**漏改**（`RegistrationService`
+ * 的生产域读码目录逐字写着「四个页面的读端点同批改挂本码」），留着会让「菜单看得见、点进去 403」
+ * 重新具备可显形条件。**可见性零变化**：三个来源（种子 / V129 回填 / `RoleService` 回退）里
+ * 持读码的岗位集合与持管理码的岗位集合**逐值相等**（admin + operator）⇒ 改它不放宽也不收窄任何岗位。
  * **唯一例外是打印计数**：它沿用类级 {@code order:list} —— 打印按钮今天对客服/销售/财务可见
  * （{@code order:list} 授了 4 个岗位，{@code processing:manage} 只授 operator），
  * 收窄会让「能打开生产明细却打不了卡」变成功能回退；计数只是打印动作的元数据，不涉安全边界。</p>
@@ -396,8 +404,13 @@ public class ProductionController {
      * <p><b>未定价显式可见</b>（V90，issue #4696）：见 {@link #piecework(String)} ——
      * 未定价的报工不进 {@code total}，但必须在报表上列出来 + 给定价入口。</p>
      */
+    // issue #5675：本端点是「计件工资」页的**第一屏读端点**（页面挂载即 GET 它）⇒ 码必须与
+    // 该页菜单节点（`frontend/admin-web/src/config/menu.ts` 的「计件工资」= production:view）
+    // 及前端路由守卫同码。改前是 processing:manage（#5291 漏改的第三个只读端点）。
+    // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 12（菜单节点码 ≡
+    // 页面第一屏读端点码）+ 前端 frontend/bmini-app/tests/admin-surfaces-guard.test.ts 判据 5。
     @GetMapping("/piecework/summary")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> pieceworkSummary(
             @RequestParam(required = false) String period,
             @RequestParam(name = "worker_name", required = false) String workerName) {
