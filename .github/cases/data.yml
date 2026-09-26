@@ -567,3 +567,104 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # DA-019 / DA-020（issue #3592 销账，2026-09-26）—— #5247「B 端米宝只读化」新接入的
+  # 两个 B 端只读工具此前**零 LLM 行为面覆盖**：
+  #   · `briefing_query`（经营日报）缺口登记 = `.github/eval-coverage-baseline.yml` 的
+  #     `briefing_query` / `uncovered`；
+  #   · `session_manage` 是**薄覆盖**（库里只有 DA-004 一条 monitor），登记 = 同文件的 `thin_positive`。
+  #   两条登记与这两条用例**同 PR** 增删（补用例与删条目必须同 PR，否则陈旧登记即红）。
+  #
+  # ⚠️ 为什么现在能写（**推翻**旧登记写的理由「评测栈简报开关可能关闭 ⇒ 场景待定」）——
+  #   读源复核 backend/admin-api/src/main/java/com/migao/admin/controller/BriefingController.java：
+  #   `GET /api/admin/briefing/today` **不看** `tenants.briefing_enabled` 开关 —— 未生成简报时返回
+  #   `generated=false` + `content=null` 且 HTTP 200；工具侧同形返回 `success=True` + 空态消息
+  #   （backend/ai-agent-service/app/tools/briefing_query.py）。⇒ 开关只影响**内容**，
+  #   不影响本用例的计分面（「模型有没有调对工具 + 调用是否成功」）；`/snapshot` 更是零 LLM。
+  #
+  # 断言形态（**机器计分**，不靠散文）：
+  #   ① `expectations` 的工具名/入参（runner 按 `tool(k=v)` 做**值级**比对，见 DA-020 的 action）；
+  #   ② `must_succeed`（「调用了 ≠ 成了」，#3778）；
+  #   ③ `data_checks` 首条 `success=true`（runner 的机器计分关键词，判据源 =
+  #      `.github/assertion_taxonomy.py` 的 `MACHINE_DATA_CHECK_MARKERS`）。
+  #   其余 data_checks 逐条标注「散文、不计分」—— **不冒充**机器判据（#3559 / PR-021 的教训）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: DA-019
+    legacy_id: ""
+    title: "今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）"
+    domains:
+      - data
+    tier: normal
+    persona: mibao
+    tags:
+      - dashboard
+      - briefing
+      - mibao
+      - readonly
+      - llm_behavior
+    truths_ref:
+      - dashboard-jump.proactive-today-only
+      - dashboard-jump.real-data
+    user_inputs:
+      - "今天的经营日报里有什么要处理的？"
+    expectations:
+      - tool: briefing_query
+    must_succeed:
+      # 比「工具名出现过」更强：调了 ≠ 成了（每次尝试的轮次 + 错误码进失败详情）。
+      # 端点无开关前置（见上方读源复核）⇒ 空态也是 success=true，本断言不会因开关而假红。
+      - tool: briefing_query
+    data_checks:
+      - "success=true"
+      - "（散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回**成功空态**（消息「今日暂无经营日报数据」；机器面由上面那条机器计分项覆盖）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）"
+      - "（散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 briefing_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 briefing_query/uncovered，同 PR 删除该条目）。取号 DA-019：DA-001~DA-018 已占用，DA-019 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。旧登记理由「评测栈简报开关可能关闭 ⇒ 场景待定」经读源复核**不成立**（/today 与 /snapshot 都不看 briefing_enabled，未生成简报时同样 HTTP 200 + success=true）⇒ 缺口可销。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_briefing_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/BriefingControllerTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: DA-020
+    legacy_id: ""
+    title: "客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）"
+    domains:
+      - data
+      - notification
+    tier: normal
+    persona: mibao
+    tags:
+      - monitor
+      - session
+      - mibao
+      - readonly
+      - llm_behavior
+    truths_ref:
+      - agent-notification.session-status
+      - agent-notification.session-isolation
+    user_inputs:
+      - "现在有哪些客服会话？把会话列表给我看看"
+    expectations:
+      # **值级**断言：多 action 工具（list / monitor / detail）必须钉住 action ——
+      # 问「有哪些会话」的正解是 list（monitor 只给在线/活跃/排队/今日计数，不给条目）。
+      - tool: session_manage
+        args:
+          action: list
+    must_succeed:
+      - tool: session_manage
+    data_checks:
+      - "success=true"
+      - "（散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回**空列表 + 成功状态**，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表"
+      - "（散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_session_manage.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/AgentSessionControllerTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []

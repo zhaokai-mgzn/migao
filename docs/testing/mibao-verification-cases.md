@@ -1631,7 +1631,7 @@
 真值: customer-list.profile-view-disclosure
 溯源: 2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（米宝 customer_manage(profile_view)）与披露纪律写明。 ｜ tags: query, tool, disclosure, field-truth
 
-## 数据域（18 case）
+## 数据域（20 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -1835,6 +1835,32 @@
 ```
 真值: dashboard-jump.proactive-unwired-disclosure
 溯源: 2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 未接线如实说明；2026-09-24 文本刷新（issue #5387，容器核查发现的**第三处**同类陈旧口径）：披露面由「未接线」一态扩为**三态各有各的说法**（`not_wired` 不可行动 / `not_enabled` 可行动且与前者分开说 / `incomplete` 本次不完整），枚举句由三态改判为**四态** —— 旧口径「调用方自己可分『未接线 / 本次不完整 / 已接入且完整但无命中』」整条退场 ｜ tags: proactive, briefing, honest-empty
+
+### DA-019. 今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 今天的经营日报里有什么要处理的？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: briefing_query
+数据: success=true
+数据: （散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回**成功空态**（消息「今日暂无经营日报数据」；机器面由上面那条机器计分项覆盖）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）
+数据: （散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接
+必须成功: briefing_query
+```
+真值: dashboard-jump.proactive-today-only, dashboard-jump.real-data
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 briefing_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 briefing_query/uncovered，同 PR 删除该条目）。取号 DA-019：DA-001~DA-018 已占用，DA-019 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。旧登记理由「评测栈简报开关可能关闭 ⇒ 场景待定」经读源复核**不成立**（/today 与 /snapshot 都不看 briefing_enabled，未生成简报时同样 HTTP 200 + success=true）⇒ 缺口可销。 ｜ tags: dashboard, briefing, mibao, readonly, llm_behavior
+
+### DA-020. 客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖） 🔵
+```
+你: 现在有哪些客服会话？把会话列表给我看看
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: session_manage(action=list)
+数据: success=true
+数据: （散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回**空列表 + 成功状态**，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表
+数据: （散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替
+必须成功: session_manage
+```
+真值: agent-notification.session-status, agent-notification.session-isolation
+溯源: 2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。 ｜ tags: monitor, session, mibao, readonly, llm_behavior
 
 ## 防御域（22 case）
 
@@ -3727,7 +3753,7 @@
 ```
 溯源: 2026-09-26 新增（issue #4074 第 3 条「合法复购负例，缺一不可」）。形态选择：**同会话 + 内容不同的两笔**（而不是「隔一段时间再下一单同样的货」）—— 后者的键本来就不同、断言恒真，构不成证据（依据 = issue #4229 的核验评论，逐字点名）。**本用例当前预期为红**：内容维度按 #4229 裁定「暂时不做，直接关闭 issue」保持现状 ⇒ 第二笔会被回放吞掉，db_verify 报「出现了 1 次回放」「指向 1 张订单 ≠ 期望 2 张」。这不是恒红凑数：它是该残留唯一的机器判据，且修法（内容指纹进键）落地即转绿 —— 重启条件写在 data_checks 里。 ｜ tags: order_create, idempotency, legal_repeat, negative
 
-## 加工项域（13 case）
+## 加工项域（14 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -3950,7 +3976,20 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## 加工单域（55 case）
+### PP-015. 算料配置查询（只读）—— 米宝取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 我们店的算料配置现在是什么？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_calc_config_query
+数据: success=true
+数据: （散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」
+数据: （散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）
+必须成功: craft_calc_config_query
+```
+真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_calc, config, mibao, readonly, llm_behavior
+
+## 加工单域（56 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4668,6 +4707,19 @@
 跳过: [backend-contract] 后端契约（订单行形态 ⇒ 路线/工序实例化/算料输入的确定性单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 执行
 ```
 溯源: 2026-09-25 新增（issue #4916 判据 2 收口，覆盖 issue #4909 的修复 / PR #4918）：#4909 的修复证据齐全（18/18 + 红证）但**没进用例库**，原因如实登记在 #4916（当时 Case Trust 的 burn-down 要求触碰 `.github/cases/**` 的 PR 净销账 ≥1 条存量条目，而存量条目全是别域 LLM 行为用例，凭「缴门禁」去猜别域语义 = 造假断言，验证又要真跑 LLM 评测 ⇒ 按 #4262 不自动跑）。本次是**已经要缴这笔账的触碰** ⇒ 一并补上。① 该文件里三条 `@DisplayName` 原写 `PG-057` —— 而库内 PG-057 = 米宝查加工单过程明细（`production_worklog_query`，随 #4927 于同日 17:32Z 落地，晚于 #4918 的 17:09Z）⇒ 改判为本条 `PG-063`（**只改引用号，断言面一字未动**），并把 `PG-063` 补进文件头 `case_ids:`。② **未固化项（如实登记，本单登记不动）**：同一文件里 5 处 `PG-039` 前缀的布料/未定价用例与库内 PG-039（= 工序作用域 scope）**同名不同义**，且全仓另有数个测试文件以同款方式声明 PG-039（如 tests/unit_ci_workflows/test_fabric_route_seed.py）—— 这是**先于本单**存在的用例号重载，收敛它要动多包共用的号序并需裁定，属「体量超一个包 + 需裁定」（AGENTS.md 铁律 11 的 ①④）。 ｜ tags: processing-order, production, routing, fabric, fixture-drift
+
+### PG-064. 加工套件与扫码循环（只读）—— 米宝按 action=list 查套件列表；未定价原样转述（覆盖 #5247 新接入的只读工具） 🔵
+```
+你: 我们店里的加工套件现在有哪些？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: processing_order_set_query(action=list)
+数据: success=true
+数据: （散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具**成功 + 空列表**（消息「暂无套件记录」）⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序
+数据: （散文、不计分）只读 + 未定价口径：三个 action 全部只读（权限码 production:view，工具 read_only=true）⇒ 不得声称已生成 / 已修改加工单；`detail` 的 `unit_price` 为 null = **尚未定价**，必须原样转述（不得说成 0 元、不得估算，#4696）；缺 id / 缺单号时应先向用户确认，不得编造
+必须成功: processing_order_set_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
 ## 商品域（97 case）
 
@@ -6959,8 +7011,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：493（活跃 122，跳过 371）
-- tier 分布：smoke 12 / normal 448 / adversarial 31
+- 用例总数：497（活跃 126，跳过 371）
+- tier 分布：smoke 12 / normal 452 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -6970,7 +7022,7 @@
 - 对话边界域：43
 - 跨域：3
 - 客户域：11
-- 数据域：18
+- 数据域：20
 - 防御域：22
 - 财务对账域：4
 - 人事域：10
@@ -6979,8 +7031,8 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：49
-- 加工项域：13
-- 加工单域：55
+- 加工项域：14
+- 加工单域：56
 - 商品域：97
 - 工具注册器域：1
 - 设置域：10

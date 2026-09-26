@@ -2391,3 +2391,69 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-064（issue #3592 销账，2026-09-26）—— #5247「B 端米宝只读化」新接入的只读工具
+  # `processing_order_set_query` 此前**零用例**（缺口登记 = `.github/eval-coverage-baseline.yml`
+  # 的 `processing_order_set_query / uncovered`，与用例**同 PR** 删除）。
+  #
+  # 读源真值（不转述猜测）：backend/ai-agent-service/app/tools/processing_order_set_query.py
+  #   · 三个 action 全是只读、全部转发服务端**同一份** `setOverview` 聚合：
+  #     `list` → `GET /api/admin/processing-order-sets`（可选 order_no / processing_order_no）
+  #     `detail` → `GET /api/admin/processing-order-sets/{id}`
+  #     `scan_progress` → `GET /api/admin/processing-order-sets/scan-progress`（需订单号或加工单号）
+  #   · 权限码 `production:view`（方法级，issue #5291）；
+  #   · `unit_price` 为 null = **尚未定价** ⇒ 必须原样转述（不得折 0、不得估算，issue #4696）；
+  #   · 读不到套件时**不是失败**：空列表 ⇒ `success=true` + 「暂无套件记录」。
+  #
+  # 覆盖面（如实登记，不冒充）：本条只覆盖 **list**。评测栈 `processing_order_sets` 零 seed ⇒
+  #   `detail` 需要真实套件 id、`scan_progress` 需要「加工单 + 套件」夹具 —— 两者属
+  #   **评测栈补 seed** 的后续项（登记在 #4941 总账的用例缺口台账），不在本条内。
+  #
+  # 断言形态（**机器计分**）：`expectations` 的工具名 + **值级**入参 `action: list`
+  #   + `must_succeed`（调了 ≠ 成了）+ `data_checks` 首条 `success=true`；其余标注「散文、不计分」。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-064
+    legacy_id: ""
+    title: "加工套件与扫码循环（只读）—— 米宝按 action=list 查套件列表；未定价原样转述（覆盖 #5247 新接入的只读工具）"
+    domains:
+      - processing-order
+      - processing
+    tier: normal
+    persona: mibao
+    tags:
+      - processing_order
+      - set
+      - scan_loop
+      - mibao
+      - readonly
+      - llm_behavior
+    # ⚠️ 真值缺口（显式标注，同 PG-062 / PG-063 惯例）：`.github/templates/` 里**没有**「加工套件 /
+  #    扫码循环」域的真值条目（套件聚合的设计真值在 docs/design/set-code-and-scan-loop.md，
+  #    尚未 ID 化进模板）⇒ 本条引用两条通用真值，域级真值待补时再改判（不是「已覆盖」）。
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - ai-chat.tool-classes
+    user_inputs:
+      - "我们店里的加工套件现在有哪些？"
+    expectations:
+      # **值级**断言：多 action 工具（list / detail / scan_progress）必须钉住 action ——
+      # 问「有哪些套件」的正解是 list；detail 需要 id、scan_progress 需要单号（用户都没给）。
+      - tool: processing_order_set_query
+        args:
+          action: list
+    must_succeed:
+      - tool: processing_order_set_query
+    data_checks:
+      - "success=true"
+      - "（散文、不计分）空态如实：评测栈 `processing_order_sets` 零 seed ⇒ `GET /api/admin/processing-order-sets` 返回空列表、工具**成功 + 空列表**（消息「暂无套件记录」）⇒ 如实转述属合格行为；不得编造套件 / 部位 / 工序"
+      - "（散文、不计分）只读 + 未定价口径：三个 action 全部只读（权限码 production:view，工具 read_only=true）⇒ 不得声称已生成 / 已修改加工单；`detail` 的 `unit_price` 为 null = **尚未定价**，必须原样转述（不得说成 0 元、不得估算，#4696）；缺 id / 缺单号时应先向用户确认，不得编造"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_order_set_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderSetControllerTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []

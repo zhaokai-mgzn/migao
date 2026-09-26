@@ -843,3 +843,54 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PP-015（issue #3592 销账，2026-09-26）—— #5247「B 端米宝只读化」新接入的只读工具
+  # `craft_calc_config_query` 此前**零用例**（缺口登记 = `.github/eval-coverage-baseline.yml`
+  # 的 `craft_calc_config_query / uncovered`，与用例**同 PR** 删除）。
+  #
+  # 读源真值（不转述猜测）：backend/ai-agent-service/app/tools/craft_calc_config_query.py
+  #   · 无入参（`parameters.properties = {}`），转发 `GET /api/admin/production/craft-calc-config`；
+  #   · 权限码 `production:view`（方法级，issue #5291）；返回体 = 本租户当前算料配置
+  #     （键集与口径见真值 fabric-calc.craft-calc-config）；取不到 ⇒ 「暂未取到算料配置」；
+  #   · **只读**：不做算料、不改配置（改配置的写面在后台「工艺配置」页）。
+  #
+  # 断言形态（**机器计分**）：`expectations`（工具名）+ `must_succeed`（调了 ≠ 成了）
+  #   + `data_checks` 首条 `success=true`（runner 的机器计分关键词）；其余标注「散文、不计分」。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PP-015
+    legacy_id: ""
+    title: "算料配置查询（只读）—— 米宝取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具）"
+    domains:
+      - processing
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - craft_calc
+      - config
+      - mibao
+      - readonly
+      - llm_behavior
+    truths_ref:
+      - fabric-calc.craft-calc-config
+      - ai-chat.tool-classes
+    user_inputs:
+      - "我们店的算料配置现在是什么？"
+    expectations:
+      - tool: craft_calc_config_query
+    must_succeed:
+      - tool: craft_calc_config_query
+    data_checks:
+      - "success=true"
+      - "（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」"
+      - "（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）"
+    skip_reason: ""
+    merge_log: "2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_craft_calc_config_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcConfigControllerTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
