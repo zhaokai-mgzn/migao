@@ -59,7 +59,6 @@ jest.mock('../src/services/productionService', () => ({
   // 锁用真身（issue #4116 §5-1）：页面调用 reportInFlightLock.tryAcquire()，mock 掉会拿到 undefined
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
-  reportOperation: jest.fn(),
   shipOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
   scanResolve: jest.fn(),
@@ -347,6 +346,10 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     expect(queued).toHaveLength(1)
     expect(queued[0].requestId).toBe(requestId)
     expect(queued[0].operationId).toBe('op-cloth')
+    // issue #5647：补传凭证与「要不要补发数量」随队列项落盘 ——
+    // A 模式【开工】在线路径**不传数量**（服务端取剩余应做），补传必须逐字同形
+    expect(queued[0].token).toBe(TOKEN)
+    expect(queued[0].sendQty).toBe(false)
     expect(await screen.findByText(/已存入本机待补传队列/)).toBeTruthy()
   })
 })
