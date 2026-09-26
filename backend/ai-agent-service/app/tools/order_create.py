@@ -145,7 +145,8 @@ CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id"
 #: 幂等键的**操作维度**取值（issue #4212）。改这些值 = 部署窗口内同一次重试的键轮换
 #: （旧 pod 与新 pod 算出不同键 ⇒ 灰度期间那一笔可能重复落库）——不是随手可改的字面量。
 #: ⚠️ `HUMAN_HANDOFF_OP` 的调用点已随 `human_handoff` 退场（模型不可达）不再产生流量，
-#: 但常量**保留**：issue #5246 未执行阶段二删文件（它有 5 个测试模块的活依赖，须与用例/文档同批）。
+#: 但常量**长期保留**：2026-09-26 用户裁定「保留现状，不删」撤回了 2026-09-19 派生的
+#: 「阶段二 = 完全删除」方向（工具类有 5 个测试模块的活依赖；数据面 / 商家工作台同样有意保留）。
 ORDER_CREATE_OP = "order"
 AFTERSALE_CREATE_OP = "aftersale"
 HUMAN_HANDOFF_OP = "handoff"

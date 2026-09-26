@@ -165,9 +165,11 @@ def test_every_tool_class_is_registered_or_marked_deprecated():
     issue #5246 的核查结论（两个「死工具」登记项都**未删除**，各带实测理由）：
     · `confirm_value` **不是**死工具 —— `confirm_value.py` 里根本没有工具类，它是
       `interact.py` / `base_skill.py` 共用的派生契约模块；
-    · `human_handoff` 仍是「未注册 + 显式 `deprecated = True`」的**阶段一**形态（模型不可达、
-      零能力面）；阶段二（删文件）有 5 个测试模块的活依赖（幂等键接线锁 / 行为映射规则 /
-      能力拒绝守卫 / 直测单测 / 用例 covered_by），须与用例文档同批做。
+    · `human_handoff` 仍是「未注册 + 显式 `deprecated = True`」的形态（模型不可达、
+      零能力面）；它**不会被删除** —— 2026-09-26 用户裁定「保留现状，不删」撤回了
+      2026-09-19 派生的「阶段二 = 完全删除」方向（工具类有 5 个测试模块的活依赖：
+      幂等键接线锁 / 行为映射规则 / 能力拒绝守卫 / 直测单测 / 用例 covered_by；
+      数据面与商家工作台「在线接待」同样属有意保留）。
     """
     registered = set(get_tool_registry().get_tool_names())
     defined = _tool_classes_in_source()

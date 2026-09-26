@@ -5,7 +5,11 @@
 > D1 直转 / 人工会话闭环」**均不再成立**：
 > · 卡片已改为「继续受理」形态（把问题整理成售后工单）—— 代码 `app/graph/handoff_offer.py`；
 > · 退场判据：`tests/unit_ci_workflows/test_human_handoff_retired.py`；
-> · 本文件与整个 handoff 子系统的处置（含删除）见阶段二清单。
+> · **本文件与 handoff 子系统没有「待删除」一说**：2026-09-26 用户裁定「**保留现状，不删**」，
+>   撤回了 2026-09-19 派生的「阶段二 = 完全删除」方向 —— 工具类、数据面（存量工单 / 人工会话）、
+>   商家工作台「在线接待」（admin-web `/agent-workspace/human-sessions`）与 GB/T 47746-2026
+>   合规面（mini-app 消息来源标识，GB-02 / issue #2780）**均属有意保留**；
+>   唯一不变的是**模型可达性**：工具不在默认注册表、不在任何 skill 工具集（判据同上）。
 > **不要照本文件实现新功能**；留档仅为回溯当时的决策依据。
 
 > 状态：设计评审中 ｜ 范围：ai-agent-service 为主（admin-api/admin-web 零改动）｜ 目标版本：v1
