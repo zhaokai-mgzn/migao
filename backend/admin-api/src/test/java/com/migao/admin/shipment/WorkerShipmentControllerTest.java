@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("工人发货面：载体分离（/api/worker/**）+ 零商家权限码")
-class WorkerShipmentContractTest {
+class WorkerShipmentControllerTest {
 
     @Mock private com.migao.admin.security.JwtAuthenticationFilter jwtAuthenticationFilter;
     @Mock private com.migao.admin.security.ServiceTokenFilter serviceTokenFilter;

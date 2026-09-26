@@ -69,7 +69,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("工人发货链：打包 / 发货 / 撤销 / 实发明细 / 守卫 / 幂等 / 跨租户")
-class WorkerShipmentFlowTest {
+class OrderShipmentServiceTest {
 
     private static final Long TENANT = 1L;
     private static final Long OTHER_TENANT = 2L;
