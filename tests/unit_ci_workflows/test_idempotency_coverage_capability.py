@@ -417,17 +417,22 @@ class TestTheCasesAreWiredEndToEnd:
                                         "expect_rows": 1, "expect_replayed": True}]
         assert as_010["persona"] == "xiaobu", "aftersale_create 是 C 端工具（B 端只读）"
 
-    def test_the_ci_yaml_loader_carries_the_declaration(self, monkeypatch):
+    def test_the_ci_yaml_loader_carries_the_declaration(self):
         """**CI 走的是 YAML 装载路径**（`--cases .github/cases`）⇒ 漏映射 = 声明在 CI 上消失。
 
         本仓已记载多次同款假绿（`debug_user` / `output_verify` / `auto_fill` / `pre_turns`）。
-        本文件驱动**真实装载体**（只替换它的数据源），声明轮逐值比对。
+        这里驱动**真实装载体 + 真实语料**（不做 monkeypatch：`tests/unit_ci_workflows/conftest.py`
+        装了内容级语料缓存，替换 `render_cases.load_case_dicts` 的替身在整目录跑时会拿到
+        缓存版 —— 实测在整目录跑里判红、单跑却绿，正是"判据自己不稳定"的形态）。
         """
-        synthetic = {"id": "STUB-Y", "title": "t", "tier": "normal", "_domain": "order",
-                     "user_inputs": ["帮我下单", _retry_turn()], "expectations": []}
-        monkeypatch.setattr(render_cases, "load_case_dicts", lambda _d: [dict(synthetic)])
-        loaded = lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))
-        assert [c.user_inputs for c in loaded] == [["帮我下单", _retry_turn()]]
+        loaded = {c.id: c for c in lr.load_cases_from_yaml(str(REPO_ROOT / ".github" / "cases"))}
+        for cid in self.IDS:
+            assert cid in loaded, cid
+        turn = [m for m in loaded["OR-049"].user_inputs
+                if isinstance(m, dict) and m.get("retry_same_session")]
+        assert len(turn) == 1, "声明轮必须在装载后保留（不是「有多少轮」这种存在性）"
+        assert turn[0]["retry_same_session"] == {"tool": "order_create", "calls": 2, "max": 3}
+        assert "提交失败" in str(turn[0].get("fallback") or "")
 
     def test_every_library_case_passes_the_declaration_guard(self):
         """类级元守卫：**全库现取条数**逐条过判据 ⇒ 新判据一条都不误伤。"""
