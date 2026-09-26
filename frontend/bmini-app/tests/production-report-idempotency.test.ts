@@ -7,8 +7,13 @@
  * 小程序侧此前完全不发该头 ⇒ 服务端 `claim(null)` 走 no-op 首执分支 ⇒ 网络层重试/连点
  * 各自成为一次「首次报工」。本文件锁的就是这个接线（缺头 ⇒ 服务端幂等整条失效）。
  *
+ * ## issue #5647 收口后测的是**唯一写入口** `completeByScan`（`POST /api/worker/production/scan/complete`）
+ * URL 定工序的 `.../operations/{id}/report` 那条客户端封装（`reportOperation`）已随 G10 收口退场
+ * —— 它没有码、不校验部位归属、非事务、也不落 `done_at`。幂等键契约两条路径同款，故断言对象换、
+ * **判据一格不放宽**（键必带 / 每次不同 / 长度合法 / 失败分类）。
+ *
  * ## 红证
- * 把 `reportOperation` 的 `headers` 去掉 ⇒ 断言 ① 必红（Taro.request 收到的 header 里没有幂等键）。
+ * 把 `completeByScan` 的 `headers` 去掉 ⇒ 断言 ① 必红（Taro.request 收到的 header 里没有幂等键）。
  * 把 `newReportRequestId()` 写成常量 ⇒ 断言 ② 必红（两次调用同键 = 第二次报工被服务端当重复丢弃）。
  * 把失败分类写成恒 `offline: true`（或删掉该字段）⇒ 「有 HTTP 状态码 ⇒ false」必红 ——
  * 那正是「一次数量超上限的拒绝被当成离线失败、联网后被反复重发」的形态（issue #4206）。
@@ -17,11 +22,12 @@ import Taro from '@tarojs/taro'
 import {
   CLIENT_REQUEST_ID_HEADER,
   ReportInFlightLock,
+  completeByScan,
   newReportRequestId,
-  reportOperation,
 } from '../src/services/productionService'
 
-const ORDER_ID = 'CSO260915-02615'
+/** 部位任务码（一部位一码，issue #4946）——收口后报工的唯一凭证。 */
+const PART_TOKEN = 'part-token-bu-1'
 // 身份**不在请求体里**（issue #4733）：worker_id/worker_name 已从契约移除，
 // 服务端从工人 session（X-Worker-Session-Id）解身份。
 const PAYLOAD = {
@@ -36,7 +42,7 @@ function lastRequestHeader(): Record<string, string> {
   return calls[calls.length - 1][0].header
 }
 
-describe('reportOperation 幂等键（issue #4116 §5-1）', () => {
+describe('completeByScan 幂等键（issue #4116 §5-1）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(Taro.request as jest.Mock).mockResolvedValue({
@@ -49,7 +55,7 @@ describe('reportOperation 幂等键（issue #4116 §5-1）', () => {
   })
 
   it('报工请求带 X-Client-Request-Id（缺头 ⇒ 服务端幂等整条失效）', async () => {
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+    await completeByScan(PART_TOKEN, 'op2', undefined, PAYLOAD)
 
     const header = lastRequestHeader()
     expect(header[CLIENT_REQUEST_ID_HEADER]).toBeTruthy()
@@ -57,10 +63,10 @@ describe('reportOperation 幂等键（issue #4116 §5-1）', () => {
   })
 
   it('每次调用生成**不同**的幂等键（两次合法报工不得被服务端当重复丢弃）', async () => {
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+    await completeByScan(PART_TOKEN, 'op2', undefined, PAYLOAD)
     const first = lastRequestHeader()[CLIENT_REQUEST_ID_HEADER]
 
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+    await completeByScan(PART_TOKEN, 'op2', undefined, PAYLOAD)
     const second = lastRequestHeader()[CLIENT_REQUEST_ID_HEADER]
 
     expect(first).toBeTruthy()
@@ -73,19 +79,39 @@ describe('reportOperation 幂等键（issue #4116 §5-1）', () => {
     expect(key.length).toBeLessThanOrEqual(128)
     expect(key).not.toContain(' ')
   })
+
+  it('🔴 不传数量 ⇒ body 里**没有** qty/qualified_qty（A 模式【开工】= 服务端取剩余应做）', async () => {
+    await completeByScan(PART_TOKEN, 'op2', 'report-no-qty')
+
+    const body = (Taro.request as jest.Mock).mock.calls[0][0].data
+    expect(body).toEqual({ token: PART_TOKEN, operation_id: 'op2' })
+  })
+
+  it('传数量 ⇒ body 逐字带上数量三键（逐道报工那条 UI 的工人确认数量）', async () => {
+    await completeByScan(PART_TOKEN, 'op2', 'report-with-qty', PAYLOAD)
+
+    const body = (Taro.request as jest.Mock).mock.calls[0][0].data
+    expect(body).toEqual({
+      token: PART_TOKEN,
+      operation_id: 'op2',
+      qty: 11,
+      qualified_qty: 11,
+      work_type: 'normal',
+    })
+  })
 })
 
 /**
  * 失败分类（issue #4206）：离线报工队列**只**收「传输层失败」。
  *
- * 为什么这条必须在网络层（真 `reportOperation` + mock `Taro.request`）测：页面的用例会
+ * 为什么这条必须在网络层（真 `completeByScan` + mock `Taro.request`）测：页面的用例会
  * mock 掉整个服务层，`offline` 标记就成了测试自己喂进去的常量 ⇒ 把实现写成
  * `offline: true`（或删掉该标记）页面用例**照样绿**（本会话实测：本条是唯一能红的判据）。
  *
  * 为什么区分这么重要：有 HTTP 状态码 = 服务端**已经答复**（422 数量超上限 / 404 非本部位 /
  * 409 同键在飞），且失败路径上服务端已 `discard` 释放幂等键 ⇒ 换个时机重发会**真的再执行一次**。
  */
-describe('reportOperation 失败分类（issue #4206 弱网降级）', () => {
+describe('completeByScan 失败分类（issue #4206 弱网降级）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
   })
@@ -96,7 +122,7 @@ describe('reportOperation 失败分类（issue #4206 弱网降级）', () => {
     // 全套用例为它多等 7 秒。
     ;(Taro.request as jest.Mock).mockRejectedValue({ errMsg: 'boom' })
 
-    const res = await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+    const res = await completeByScan(PART_TOKEN, 'op2', undefined, PAYLOAD)
 
     expect(res.success).toBe(false)
     expect(res.offline).toBe(true)
@@ -108,7 +134,7 @@ describe('reportOperation 失败分类（issue #4206 弱网降级）', () => {
       data: { success: false, message: '报工数量超上限：本次最多可报 11' },
     })
 
-    const res = await reportOperation(ORDER_ID, 'op2', PAYLOAD)
+    const res = await completeByScan(PART_TOKEN, 'op2', undefined, PAYLOAD)
 
     expect(res.success).toBe(false)
     expect(res.offline).toBe(false)

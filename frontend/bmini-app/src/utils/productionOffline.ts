@@ -13,14 +13,24 @@
  * 首次结果、不再执行。若补传时用 `newReportRequestId()` 重新生成键，同一次报工会被
  * 服务端当成两次「首执」（`done_qty` 翻倍、计件虚高）——这正是本模块要消灭的形态。
  *
+ * ## 凭证语义（issue #5647 G10，与幂等键同等重要）
+ * 唯一写入口是 `scan/complete`，它按**码**定位「哪一套、哪个部位」⇒ 入队时连 `token`
+ * 一起持久化（`sendQty` 记住在线时到底传没传数量）。补传若换成「URL 定工序」的老路，
+ * 等于把防呆④⑤ / 一次事务 / `done_at` 整条丢掉。
+ *
  * ## 为什么业务拒绝不入队
  * 有 HTTP 状态码的失败（422 数量超上限 / 404 非本部位 / 409 同键在飞）是服务端**已经答复**：
  * 失败路径上服务端会 `discard` 释放该键 ⇒ 换个时机重发会**真的再执行一次**（重复报工），
  * 且这类拒绝重试不会有别的结果。故只对「无状态码的传输层失败」降级。
  */
 import Taro from '@tarojs/taro'
-import { reportOperation } from '../services/productionService'
-import type { OrderOperations, ReportPayload, ReportResult } from '../services/productionService'
+import { completeByScan } from '../services/productionService'
+import type {
+  OrderOperations,
+  ProductionResponse,
+  ReportPayload,
+  ReportResult,
+} from '../services/productionService'
 
 /** storage 键（前缀区分命名空间，便于运维一眼看出是报工降级数据） */
 const ORDER_CACHE_PREFIX = 'production:order-cache:'
@@ -34,11 +44,25 @@ export const MAX_WORK_LOGS = 50
 export interface PendingReport {
   /** 幂等键：本次**用户动作**一个键，补传必须复用（服务端据此去重） */
   requestId: string
+  /**
+   * 报工凭证 = 扫码 token（issue #5647 G10）：唯一写入口 `scan/complete` 靠**码**定位
+   * 「哪一套、哪个部位」⇒ 补传必须原样带上（防呆④⑤ / 一次事务 / `done_at` 都挂在它上面）。
+   * 空串 = 旧版本（URL 定工序那条路）入队的条目 ⇒ 补传时显式出队并回报原因。
+   */
+  token: string
   orderId: string
   operationId: string
   operationName: string
   unit: string
+  /** 本机展示用（数量 / 合格数量 / 工种）；**是否随补传发出**见 `sendQty` */
   payload: ReportPayload
+  /**
+   * 补传时是否把数量三键一起发：
+   * - `true` = 工序列表逐道报工（工人在界面上改过数量 ⇒ 必须原样补发）；
+   * - `false` = A 模式一屏【开工】（在线路径**不传数量**，服务端取「剩余应做」）——
+   *   补传要逐字同形，否则「这道已被别人推进」时会被服务端超上限拒（等于改了在线语义）。
+   */
+  sendQty: boolean
   /** 报工发生的本机时间（离线补传时明细用它，而不是补传成功那一刻） */
   createdAt: number
 }
@@ -127,16 +151,32 @@ export function appendWorkLog(orderId: string, entry: WorkLogEntry): void {
   writeJson(WORK_LOG_PREFIX + orderId, [entry, ...list].slice(0, MAX_WORK_LOGS))
 }
 
-/** 补传发送函数（默认走真实网络层；单测注入替身即可断言「复用了同一个键」） */
-export type SendReport = typeof reportOperation
+/** 补传发送函数（默认走真实网络层；单测注入替身即可断言「复用了同一个键 + 同一个凭证」） */
+export type SendReport = (item: PendingReport) => Promise<ProductionResponse<ReportResult>>
 
 /**
- * 补传队列（按入队顺序逐条重发，**复用入队时的幂等键**）。
+ * 默认补传实现 = **唯一写入口** `scan/complete`（issue #5647 G10）。
+ *
+ * <p>补传与在线报工必须走**同一条路**：否则「离线时按老路入队、联网后按新路补传」（或反之）
+ * 会让同一次报工在两条口径下落地 —— 那正是本单要治的病。</p>
+ */
+async function sendByScan(item: PendingReport): Promise<ProductionResponse<ReportResult>> {
+  return completeByScan(
+    item.token,
+    item.operationId,
+    item.requestId,
+    item.sendQty ? item.payload : undefined,
+  )
+}
+
+/**
+ * 补传队列（按入队顺序逐条重发，**复用入队时的幂等键与报工凭证**）。
+ * - 缺凭证（旧版本入队）⇒ 出队并回报原因（不发一个注定被服务端拒的请求，也不静默丢单）；
  * - 成功 ⇒ 出队 + 记一条本机报工明细；
  * - 传输层失败（`offline`）⇒ 原样保留并**停止本轮**（还在断网，继续发只是白等）；
  * - 业务拒绝 ⇒ 出队并把原因回报给调用方（重发不会改变结果，且该键已被服务端释放）。
  */
-export async function flushPendingReports(send: SendReport = reportOperation): Promise<FlushResult> {
+export async function flushPendingReports(send: SendReport = sendByScan): Promise<FlushResult> {
   const pending = listPendingReports()
   const sent: PendingReport[] = []
   const rejected: RejectedReport[] = []
@@ -148,7 +188,13 @@ export async function flushPendingReports(send: SendReport = reportOperation): P
       keep.push(item)
       continue
     }
-    const res = await send(item.orderId, item.operationId, item.payload, item.requestId)
+    if (!item.token) {
+      // 旧版本（`.../operations/{id}/report`）入队的条目：那条路已随 #5647 G10 退场，
+      // 没有凭证就无法按「哪一套、哪个部位」重新定位 ⇒ 显式出队 + 指名原因（不静默丢单）
+      rejected.push({ ...item, message: '这次补传缺少扫码凭证（旧版本入队），请重新报工' })
+      continue
+    }
+    const res = await send(item)
     if (res.success) {
       sent.push(item)
       appendWorkLog(item.orderId, {
