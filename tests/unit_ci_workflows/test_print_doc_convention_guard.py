@@ -42,6 +42,9 @@ PORTALED_PRINT_DOCS: tuple[str, ...] = (
     "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
     "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+    # issue #5651 新增的两份单据（A4 加工单 / 三联纸销售单）—— 与既有三份同一隔离约定
+    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+    "frontend/admin-web/src/components/orders/SalesDoc.tsx",
 )
 
 #: **已登记的非符合形态**（文件, 理由 + **死亡条件**）—— 逐条判断后登记，不是一律加白
@@ -167,8 +170,10 @@ def test_c1_c2_portaled_print_docs_follow_the_shared_convention():
 
 def test_c3_registry_is_not_vacuous():
     """C3：登记表非空 + 每个登记路径**存在**（判据不得在空表 / 漂移路径上静默通过）。"""
-    assert len(PORTALED_PRINT_DOCS) >= 3, (
-        "受管门户式单据清单被清空/缩短到 <3 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    # 下界与成员数**必须同步**（#5007②，判据 = test_gate_coverage_and_same_source.py 的
+    # `test_frozen_declarations_are_pinned_exactly` + declaration_gate_registry.json 的逐项成员）
+    assert len(PORTALED_PRINT_DOCS) >= 5, (
+        "受管门户式单据清单被清空/缩短到 <5 ⇒ 本守卫会空跑通过（判据必须能判红）"
     )
     for rel in PORTALED_PRINT_DOCS:
         _read(rel)  # 不存在 ⇒ 抛错（不静默跳过）

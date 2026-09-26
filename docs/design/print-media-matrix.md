@@ -1,0 +1,133 @@
+# 打印介质矩阵（单据 = 内容，介质 = 参数）
+
+> **状态**：已落地（issue #5651，2026-09-26）。本文是**设计真值源**：新单据先回答
+> 「介质是哪一种」，再谈版式。
+> **真值源（机器可读）**：`frontend/admin-web/src/lib/print-media.json` +
+> `frontend/admin-web/src/lib/print-media.ts`；判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py`。
+
+## 1. 为什么要有这一层
+
+2026-09-26 用户展示客户**现行四张单据**，MIGAO 只有两种半：
+
+| # | 单据 | 介质 | MIGAO 落地 |
+|---|---|---|---|
+| 1 | 水洗码 | 特殊标签 | ✅ `components/production/TaskCardPrint.tsx`（#4964 → #5646 改判 50×60） |
+| 2 | 报价单 | A4 | ✅ `components/orders/QuotationDoc.tsx`（#4965） |
+| 3 | **加工单** | A4 | ✅ **本单新增** `components/orders/ProcessingDoc.tsx` |
+| 4 | **销售单** | **三联纸** | ✅ **本单新增** `components/orders/SalesDoc.tsx`（针式/连续纸/压感复写 = 全仓此前**零支持**） |
+| — | 发货单（MIGAO 自有） | A4 | ✅ `components/orders/ShipmentDoc.tsx`（#3768） |
+
+不显式分层时的实际后果：新单据**再抄一份 A4 模板**，抄出来的 `@page` 与字段映射
+**没有任何东西**会拦住它漂移 —— 纸面尺寸错 = 打废纸；字段错 = 账实不符。两者都不出声。
+
+## 2. 介质矩阵
+
+| 介质 id | 打印技术 | `@page` | 连续走纸 | 复写份数 | 版面预算（正文基准） | 实测状态 |
+|---|---|---|---|---|---|---|
+| `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 12mm` | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
+| `label-50x60` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 60mm; margin: 0` | 否 | 1 | 6pt | **已实测**（#5646：容器 49.998×59.998mm、PDF MediaBox 142.08×169.92pt） |
+| `continuous-241x140` | **针式点阵 + 连续纸 + 压感复写** | `size: 241mm 140mm; margin: 6mm 12mm` | **是** | **3**（纸承担） | 9pt（**通用下限**，待实测） | 🚧 **待现场实测**（见 §5） |
+
+**四条技术要点（三联纸，实现前必读）**
+
+1. 🔴 **复写是纸的特性，不是软件的事** —— 一次打印即复写三份 ⇒ 软件**只渲染一页**。
+   `carbonCopies: 3` 描述的是**纸**，**不是**渲染次数（渲三遍 = 打三张、复写九份）。
+   判据：`SalesDoc.test.tsx` 断言 DOM 里**只有一份** `.sales-sheet`。
+2. **`@page` 按连续纸尺寸**：用户裁定 `241mm × 140mm`（两等分）⇒ `@page { size: 241mm 140mm; … }`。
+   两等分纸的**单联实际高度**需现场核对，**不许**照 A4 比例硬套。
+3. **针打字号独立预算**：针打 180dpi 量级，A4 的 6pt 量级上去会糊 ⇒ 三联纸**不复用** A4 的字号；
+   矩阵按介质给 `minFontPt`，单据只读它、不自己定字号。
+4. **走纸与页边距**：连续纸靠**走纸孔**定位 ⇒ 容器按纸固定高度 + `overflow: hidden`
+   （高度 = `printUsableHeightMm()` = 页长 − 上下边距；`241×140` + `6mm 12mm` ⇒ **128mm**）——
+   内容超高会打到**下一联**，属「纸面与账目对不上」的一种形态，**不许**靠浏览器自然分页兜。
+
+## 3. 分层（三层，别混）
+
+| 层 | 是什么 | 落在哪 | 判据 |
+|---|---|---|---|
+| ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中） |
+| ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记） |
+| ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
+
+🔴 **介质是参数，不是复制粘贴出来的页面**：同一份字段映射可以落不同介质 ⇒
+`SalesDoc` 把介质做成 **prop**（缺省三联纸，可切 A4）。判据两条：
+① 「切介质后逐格取值逐字相同」（`SalesDoc.test.tsx`）；
+② 「列清单全仓唯一」（C5，复制一份映射 ⇒ 红）。
+
+## 4. 字段缺口（**如实登记，不编数**）
+
+客户实证制式里有、而 MIGAO **今天没有口径**的栏位 —— 纸面以**显式标注**呈现
+（`—` / 「未采集」），**绝不**印 `0.00` 或空串（印 0 = 把「没有这个数」画成「余额为零」）：
+
+| 单据 | 栏位 | 为什么是缺口（实测依据） | 纸面处置 |
+|---|---|---|---|
+| 加工单 | **制单人** | `Order` DTO 无该列（`OrderRemark.operator` 是备注操作人，不是制单人） | 「未采集」+ 脚注 |
+| 加工单 | **批号** | `ProcessingOrderItem`（加工单快照明细）**无** `batchNo`；`batchNo` 属入库/库存批次域（`InboundOrderItem` / `InboundBatch`）。生成时的逐行批次指派（#5145）**未落快照列** | 「未采集」 |
+| 销售单 | **上期余额 / 预存抵扣 / 账户余额** | `Order` 只有 `totalAmount` / `discountAmount` / `actualAmount`；`SystemSettings` 只有 `companyName` / `logo` / `notificationEnabled` / `code` —— **无余额面** | 「未采集」+ 脚注（含数字即判红） |
+| 销售单 | 单位 | `OrderItem` 无 `unit`；但 `quantity` 在本系统**恒为米**（发货单表头「数量(米)」、报价单「元/米」）⇒ 取**同一口径**，不算缺口 | 印「米」 |
+
+## 5. 未核实项 / 待现场实测（**升级条件写死在这里**）
+
+### 5.1 三联纸真机参数（`continuous-241x140`，`measurement = pending-field-measurement`）
+
+| # | 待实测项 | 现在的通用值 | 实测后要改的地方 |
+|---|---|---|---|
+| 1 | 走纸长度 / 单联可用高度（撕线位置决定） | 页长 140mm（用户裁定「241mm × 140mm 两等分」） | `print-media.json` 的 `pageSize` + `pendingMeasurements` |
+| 2 | 左 / 右边距（走纸孔带吃掉的可打印宽度） | 12mm | 同上 `pageMargin` |
+| 3 | 上 / 下边距（撕线到首行、末行的留白） | 6mm | 同上 `pageMargin` |
+| 4 | 每行行高（针打行距，与字号绑定） | 未定（随字号） | `print-media.json` + `SalesDoc` 的行高预算 |
+| 5 | 最小可用字号 | **9pt（通用下限，不是实测值）** | 同上 `minFontPt` |
+
+> ⛔ 表格里带数字的项**都是通用值**，不是量出来的读数。**不许**把推定值改写成实测值 ——
+> 那会让下一个读它的人以为已经量过了。
+
+### 5.2 现场核对清单（打印当天照着走）
+
+1. 针打型号 + 驱动里的**自定义纸型**是否就是 `241mm × 140mm`（否则 `@page` 与驱动不一致 ⇒ 整体偏移）；
+2. 装纸后**试打一张空白定位**，量左/上边距（连续纸的孔距与撕线会吃掉几 mm）；
+3. 确认撕线正好落在**两联之间**（错位 = 复写联次串位）；
+4. 走纸长度与「一联 140mm」是否一致（不一致 ⇒ 改 `pageSize` 并重跑判据）。
+
+### 5.3 未核实（**取值口径存疑，已登记、未定论**）
+
+- **销售单「订货电话」**：客户实证 #4 的栏位位置取的是**下单电话**（= `order.customerPhone`）。
+  若现场口径实际是「商户订货热线」，则该栏应改读企业设置（而 `SystemSettings` 今天**无电话字段**
+  ⇒ 会变成一个**新缺口**）。**不猜**：现场确认后再改取值，并同步本表。
+
+## 6. 与发货链的关系（**未完成项**）
+
+用户 2026-09-26 裁定销售单要「挂在发货链上」= 随货给客户的那张，数量与**实发**同源。
+
+- **前置依赖**：`order_shipment_items`（issue #5648 / PR #5664 拥有）——**已合入 main**
+  （`backend/admin-api/src/main/java/com/migao/admin/entity/OrderShipmentItem.java`）。
+  它是「这一单实际发了多少」的**唯一真值载体**，且该文件**owner 声明**要求 #5651 **只消费**
+  （读 `OrderShipmentService.readShipment`），**不得另建第二份投影**。
+- 🔴 **仍然卡住的点（实测，2026-09-26）**：该真值今天**只有工人读面** ——
+  `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShipmentController.java`
+  的 `GET /api/worker/shipment/orders/{orderId}`（工人 session 准入）。
+  **admin / 桌面端没有读面** ⇒ 跑在 admin-web 的销售单**拿不到实发数量**。
+- **本单做法**：销售单数量取 `order.items[].quantity` —— 与报价单 / 发货单**同一份**投影
+  （不是第二套口径）；⛔ **不**自造发货明细表、**不**照工人读面猜 DTO 形状（那是编契约）。
+- **接线（后续单）**：新增 **admin 端读面**（后端：controller + DTO + 权限码 + 租户隔离 + 单测），
+  取数走 owner 指定的 `OrderShipmentService.readShipment`；前端把实发数量传给 `SalesDoc` 即可
+  （列清单只有一份，不用改渲染）。「谁生成 / 谁打印 / 发货前还是发货后」的边界与 #5648 一并定死。
+
+## 7. 新增一份可打印单据的 SOP
+
+1. **先回答「介质是哪一种」** —— 在 `print-media.json` 里选（不够用才加新介质，加则同时补
+   `PRINT_MEDIA_IDS` 与待实测登记）；
+2. 单据里用 `printPageRule('<介质id>')` 生成 `@page`（**不许**自写 `@page size`）；
+3. 容器带 `-print-area` + 共享标记类 `print-doc`，隔离选择器**恰好** `body > *:not(.print-doc)`，
+   `visibility` 防御**限定本单据的 `data-print-target`**（#4983 / #4965）；
+4. 在 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 `PRINT_DOCS` 登记
+   （**未登记 ⇒ C3 判红**）；若该单据有列清单，登记进 `SINGLE_PROJECTION`；
+5. 在 `components/orders/index.ts` 的 `PrintTarget` 加 target，并在页面**点谁置谁**；
+6. 测试要带**红证**（把实现改坏 ⇒ 判据必红）；缺值/缺码/长名的处置见 §4 与
+   `SalesDoc.test.tsx` / `ProcessingDoc.test.tsx` 的判据。
+
+## 8. 边界（本设计**不做**的事）
+
+- ❌ 不改标签类（50×30 / 30×60 / 水洗码）的既有版式 —— 归 #4946 / #5052 / #5646；
+- ❌ 不引入新的打印服务 / 中间件（浏览器打印 + 现场驱动配置是既定口径）；
+- ❌ 不造金额/库存逻辑（金额一律复用服务端字段：`lib/order-amount.ts` + 订单字段）；
+- ❌ 不做工人端页面、不做蓝牙打印通道。

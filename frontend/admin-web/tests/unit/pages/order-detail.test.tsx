@@ -57,6 +57,11 @@ vi.mock('@/components/orders', () => ({
   ShipmentDoc: () => <div data-testid="shipment-doc">ShipmentDoc</div>,
   // 纸质报价单（issue #4965）：同上 —— 入口按钮在本文件，纸面内容由 QuotationDoc.test.tsx 覆盖
   QuotationDoc: () => <div data-testid="quotation-doc">QuotationDoc</div>,
+  // 纸质加工单（A4，issue #5651）/ 纸质销售单（三联纸 241mm×140mm，issue #5651）：同上 ——
+  // 入口按钮在本文件，纸面内容由 ProcessingDoc.test.tsx / SalesDoc.test.tsx 覆盖。
+  // ⚠️ `@/components/orders` 的 mock 少一个导出 ⇒ 渲染期直接抛（同 OrderUrgencyPanel 那条注释）
+  ProcessingDoc: () => <div data-testid="processing-doc">ProcessingDoc</div>,
+  SalesDoc: () => <div data-testid="sales-doc">SalesDoc</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
   RefundOrderModal: ({ open, onConfirm }: any) =>

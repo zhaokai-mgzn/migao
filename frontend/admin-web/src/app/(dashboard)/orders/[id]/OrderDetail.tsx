@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -278,6 +278,8 @@ export default function OrderDetailPage() {
         onRefund={() => setRefundModalOpen(true)}
         onPrintShipment={() => printDoc('shipment')}
         onPrintQuotation={() => printDoc('quotation')}
+        onPrintProcessing={() => printDoc('processing')}
+        onPrintSales={() => printDoc('sales')}
       />
 
       {/* 基础信息 */}
@@ -339,6 +341,19 @@ export default function OrderDetailPage() {
           （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
       <QuotationDoc order={order} printTarget={printTarget} />
+
+      {/* 纸质加工单（A4，issue #5651）：照客户实证制式「按套分块」；右上 QR = 加工单号。
+          页面级挂载一份 —— 与 ShipmentDoc / QuotationDoc 同范式（见 ProcessingDoc 文件头）。 */}
+      <ProcessingDoc
+        order={order}
+        processingOrder={processingOrder}
+        qrValue={processingOrder?.processingOrderNo ?? null}
+        printTarget={printTarget}
+      />
+
+      {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
+          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
+      <SalesDoc order={order} printTarget={printTarget} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">
@@ -471,6 +486,10 @@ interface StatusSectionProps {
   onPrintShipment: () => void
   /** 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */
   onPrintQuotation: () => void
+  /** 打印**加工单**（A4，issue #5651）：车间用的那张，按套分块 */
+  onPrintProcessing: () => void
+  /** 打印**销售单**（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */
+  onPrintSales: () => void
 }
 
 function StatusSection({
@@ -485,6 +504,8 @@ function StatusSection({
   onRefund,
   onPrintShipment,
   onPrintQuotation,
+  onPrintProcessing,
+  onPrintSales,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   const display = displayOrderStatus(order.status as string)
@@ -596,6 +617,16 @@ function StatusSection({
               <Printer className="w-4 h-4" />
               打印报价单
             </Button>
+            {/* 打印加工单（A4，issue #5651）：车间用；与报价单同范式、同一权限口径 */}
+            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印加工单
+            </Button>
+            {/* 打印销售单（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */}
+            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印销售单
+            </Button>
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -626,6 +657,15 @@ function StatusSection({
             <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
               <Printer className="w-4 h-4" />
               打印报价单
+            </Button>
+            {/* 打印加工单 / 销售单（issue #5651）：已完成订单同样可补打 */}
+            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印加工单
+            </Button>
+            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印销售单
             </Button>
           </div>
         </div>

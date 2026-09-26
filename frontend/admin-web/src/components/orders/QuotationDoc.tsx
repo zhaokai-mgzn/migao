@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { craftSpecRows } from '@/lib/craft-display'
 import { lineSubtotal } from '@/lib/order-amount'
-import { settingsApi } from '@/lib/api'
+import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { resolveImageUrl } from '@/lib/utils'
 // 「算料输出」行的标签（原始输入 vs 算料输出的分组口径）—— 从既有那份 import，
 // 不复制一份会漂移的副本（见文件头第 5 条）
@@ -118,44 +118,14 @@ export default function QuotationDoc({
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // 收款码：调用方没给就在**打印时**自取。**失败/为空一律静默** —— 页脚支付块整块不出现，
-  // 绝不画假码（issue #4965 判据）。`/api/admin/settings/payment-qrcodes` 需 `system:manage`
-  // 权限 ⇒ 无权限的账号这里会失败，属预期（不是错误，不弹 toast）。
-  //
-  // 为什么挂在 `beforeprint` 而不是挂载时：① 本组件在订单详情页**常驻挂载**（屏幕态
-  // display:none），挂载即拉会在每次打开订单详情页都发一次请求，而绝大多数打开并不打印；
-  // ② 打印入口（`window.print()`）一定会触发 `beforeprint`，正好是「要纸面了」的时刻。
-  // 兜底：万一 `beforeprint` 没触发（少数环境），点打印时组件已 mounted，自取也来得及。
-  const [fetchedQrcodes, setFetchedQrcodes] = useState<PaymentQrcodeMap | null>(null)
-  useEffect(() => {
-    if (paymentQrcodes !== undefined) return
-    let cancelled = false
-    const load = () => {
-      try {
-        settingsApi
-          .getPaymentQrcodes()
-          .then((res) => {
-            if (!cancelled) setFetchedQrcodes(res?.data?.data ?? {})
-          })
-          .catch(() => {
-            if (!cancelled) setFetchedQrcodes({})
-          })
-      } catch {
-        // 同步抛错（如测试环境未 mock 该 API）同样按「无码」处理
-        if (!cancelled) setFetchedQrcodes({})
-      }
-    }
-    window.addEventListener('beforeprint', load)
-    return () => {
-      cancelled = true
-      window.removeEventListener('beforeprint', load)
-    }
-  }, [paymentQrcodes])
+  // 收款码读取口：与销售单（#5651）**同一份**实现（`lib/use-payment-qrcodes.ts`）——
+  // 口径（调用方注入优先 / 打印时自取 / 失败或为空即「无码」）见该文件头，
+  // **不在组件里再写一遍**（同一件事实两处各写一次 ⇒ 将来改一处、另一处静默不一致）。
+  const qrcodes = usePaymentQrcodes(paymentQrcodes)
 
   if (!mounted) return null
 
   const items = order.items || []
-  const qrcodes = paymentQrcodes ?? fetchedQrcodes ?? {}
   const qrEntries = Object.entries(qrcodes)
     .map(([type, qr]) => ({
       type,

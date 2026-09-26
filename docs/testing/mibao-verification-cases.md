@@ -6271,7 +6271,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（58 case）
+## 前端 UI 域（61 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -7061,6 +7061,54 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-26 新增（用例库补录，关联 #4906 / 行为修复 #4903）：未登录访问 migaozn.com 官网首页被强制跳登录页 —— 公开路由白名单补 '/'（AuthProvider 跳过会话恢复、拦截器不强制跳转），受保护业务页跳转一条不放宽。取号 UI-060（#4906 标题里的 UI-053 已被 #4965「订单详情页打印报价单」占用，按当前最大号 UI-059 顺延）。 ｜ tags: ui, auth, redirect, public-route, admin-web
 
+### UI-061. A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 部位|部位信息|尺寸|组件|货号|用料|批号|备注；@page A4 + 分页不裁切 + 表头重复（issue #5651） 🔵
+```
+你: 客户现行四张单据里的 A4 加工单（2026-09-26 用户提供实物照，去 PII 后登记在 issue #5651 的实证表 #3）；用户逐字裁定「要做，新增 A4 加工单打印」
+期望: direct_reply
+数据: 判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。
+数据: 判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 8 列表，列序逐字等于 PROCESSING_DOC_COLUMNS = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。
+数据: 判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 12mm; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。
+数据: 判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。
+数据: 判据 5·🔴 **缺码不画假码**（洗水码既有判据）：qrValue 缺席 ⇒ 虚线占位框 + 「无码」字样，渲染树里**零个** svg 码，不拿订单号等别的串顶替。执行点 = 同文件「🔴 ⑤ QR：给了值 ⇒ 出码；不给 ⇒ 出占位框、不画假码」+「⑤ QR 判据可红」。
+数据: 判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。
+数据: 🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；缺值分支硬画一个码 ⇒ 判据 5 必须红。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。
+跳过: [backend-contract] 纯前端打印版式（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 执行
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ tags: ui, order, print, processing-doc, a4
+
+### UI-062. 销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|数量|单位|单价|金额|备注 + 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651） 🔵
+```
+你: 客户现行四张单据里的销售单（2026-09-26 用户提供实物照，去 PII 后登记在 issue #5651 的实证表 #4）；用户逐字裁定「要，而且挂在发货链上」并以「241mm × 140mm（两等分）」定连续纸规格
+期望: direct_reply
+数据: 判据 1·**三联纸纸型**：样式里 `@page { size: 241mm 140mm; margin: 6mm 12mm; }`（由 printPageRule('continuous-241x140') 生成），容器带 data-print-media='continuous-241x140'。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「① 介质：@page 241mm × 140mm（两等分）」。
+数据: 判据 2·🔴 **只渲染一页**（复写是纸的特性，不是软件的事）：DOM 里 `.sales-sheet` **恰好一份**；容器高度 = printUsableHeightMm('continuous-241x140') = 128mm（页长 140 − 上下边距 12）且 overflow: hidden ⇒ 浏览器不会再分页（跨联 = 纸面与账目对不上）。执行点 = 同文件「① 介质」+「① 红证：改坏只渲染一页 ⇒ 必红」。
+数据: 判据 3·**介质是参数不是副本**：`media` 是 prop，切到 'a4' 后 @page 变 A4，而**逐格取值（序号/货号/数量/单位/单价/金额/备注）、表头、金额汇总逐字不变** —— 复制一份字段映射给 A4 版本 ⇒ 必红。执行点 = 同文件「② 介质是参数不是副本：切 A4 后 @page 变、而逐格取值逐字不变」+「② 列清单 = SALES_DOC_COLUMNS」。
+数据: 判据 4·🔴 **金额一律取服务端字段**（前端现算 = 第二份真值）：构造的服务端值与前端求和**故意不同**（行 unitPrice×quantity = 30 而服务端 amount = 500；行金额之和 = 500 而 actualAmount = 888.88）⇒ 纸面必须印 500.00 / 888.88 / 999.99 / 111.11。执行点 = 同文件「🔴 ③ 金额取服务端字段」+「🔴 ③ 红证：让前端现算 ⇒ 必红」。
+数据: 判据 5·🔴 **缺口金额栏不编数**：上期余额 / 预存抵扣 / 账户余额 服务端无字段（Order DTO 与 SystemSettings 均无余额面）⇒ 纸面标「未采集」，**不含任何数字**（印 0.00 = 把「没有这个数」画成「余额为零」）。执行点 = 同文件「🔴 ④ 缺口金额栏标未采集且不含数字」+「🔴 ④ 红证：编成 0.00 ⇒ 必红」。
+数据: 判据 6·**缺值可见 / 长名截断可见**：客户 / 电话 / 地址缺失 ⇒ 显式占位 `—`（不是空串）；长客户名**不裁字符串**（全文仍在 DOM）且截断走 CSS 省略号（sales-cut 的 text-overflow: ellipsis + overflow: hidden）。执行点 = 同文件「🔴 ⑤ 缺值可见」+「⑤ 长名截断可见」+两条对应的红证用例。
+数据: 🔴 红证（注入式，随测试文件常驻）：渲三份 .sales-sheet ⇒ 判据 2 红；前端现算行金额/汇总 ⇒ 判据 4 红；缺口栏印 0.00 ⇒ 判据 5 红；长名 slice(0,8) 或去掉 text-overflow ⇒ 判据 6 红。⚠️ **未完成项如实登记**：销售单「挂发货链」（数量与实发同源）的真值载体 order_shipment_items（issue #5648 / PR #5664）**已合入 main**，但它今天**只有工人读面**（GET /api/worker/shipment/orders/{id}，工人 session 准入），**admin 端没有读面** ⇒ 跑在 admin-web 的销售单拿不到实发数量，接线需新增 admin 端读面（后端改动）。⇒ 本版数量取订单行 order.items[].quantity（与报价单/发货单**同一份**投影，**不**自造发货明细表、不照工人读面猜 DTO），消费入口由该表 owner 指定 = OrderShipmentService.readShipment。
+跳过: [backend-contract] 纯前端打印版式与金额取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的销售单 —— 三联纸 241mm × 140mm（针式 + 连续纸 + 压感复写，全仓此前零支持）；介质做成 prop（切 A4 不产生第二份字段映射）；金额一律取服务端字段；上期余额/预存抵扣/账户余额 服务端无字段 ⇒ 标「未采集」不编数；挂发货链待 order_shipment_items（#5648/#5664）落地。 ｜ tags: ui, order, print, sales-doc, continuous-paper, dot-matrix
+
+### UI-063. 打印介质矩阵分层：A4 / 标签 50×60 / 三联纸 241×140 三介质显式在册；可打印单据必须声明介质（未声明即红）+ @page 与矩阵同源 + 三联纸待实测登记 + 同一单据只许一份字段映射（issue #5651） 🔵
+```
+你: 用户 2026-09-26 裁定销售单介质（三联纸 241mm × 140mm 两等分）；issue #5651 要求把「打印介质矩阵」显式建立为后续所有单据打印的分层依据（新单据先回答「介质是哪一种」）
+期望: direct_reply
+数据: 判据 1·**三介质在册且技术口径正确**：介质矩阵（frontend/admin-web/src/lib/print-media.json）登记 a4（激光/喷墨，size A4，不复写）/ label-50x60（热敏，size 50mm 60mm，几何为 #5646 实测）/ continuous-241x140（针式点阵 + 连续纸 + 压感复写，size 241mm 140mm，carbonCopies=3）；TS 侧 id 字面量清单与 JSON 的 id 集逐字一致。执行点 = frontend/admin-web/tests/unit/lib/print-media.test.ts 的「① id 字面量清单与 JSON 的 id 集逐字一致」+「② 三种介质都在册」。
+数据: 判据 2·**介质是参数不是副本**：每张单据的列清单在 src 下**恰好命中一个文件**；把销售单的列清单复制一份（模拟「再写一个 A4 版」）⇒ 判据必红。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 test_c5_each_doc_has_exactly_one_field_projection + test_c6_injected_regressions_are_red 的注入 D。
+数据: 判据 3·**可打印单据必须声明介质（未声明即红）**：扫描 src 下所有门户式单据（createPortal + -print-area），逐个必须在 PRINT_DOCS 登记介质；新增一个不登记的打印组件 ⇒ 必红。执行点 = 同文件 test_c3_new_portaled_print_docs_must_declare_a_media（含反空跑下界：扫描面 ≥4 份单据）。
+数据: 判据 4·**@page 与矩阵同源**：受管单据的 @page 要么由 printPageRule('<介质>') 生成、要么自写字面量与矩阵逐字一致；把矩阵里的 A4 纸型改成 A3、或让单据不再声明纸型 ⇒ 该单据判红。执行点 = 同文件 test_c2_every_print_doc_page_rule_matches_the_media_matrix + test_c6 的注入 A/B。
+数据: 判据 5·🚧 **三联纸真机参数显式登记为待实测**（不是编造的精确值）：continuous-241x140 的 measurement = pending-field-measurement 且 pendingMeasurements ≥3 条（走纸长度 / 边距 / 行高 / 最小字号）；删掉登记 ⇒ 必红。执行点 = 同文件 test_c4_pending_field_measurements_must_be_registered + test_c6 的注入 C，以及 frontend/admin-web/tests/unit/lib/print-media.test.ts 的「🔴 ③ 三联纸的待实测登记必须存在」。
+数据: 判据 6·**三种介质互不串页**（#4983 既有约定扩展到新增的两份单据）：新增的 ProcessingDoc / SalesDoc 与既有三份一样带共享标记类 print-doc、隔离选择器恰好 `body > *:not(.print-doc)`、visibility 防御限定自己的 data-print-target。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 与 SalesDoc.test.tsx 的「⑦ 打印隔离」用例 + tests/unit_ci_workflows/test_print_doc_convention_guard.py（受管清单已含新增两份，C1/C2 判红）。
+数据: 🔴 红证（注入式实跑，随守卫常驻）：test_c6_injected_regressions_are_red 逐条做「注入 → 断言必红」，并用 **sha256 内容指纹**自证注入生效（禁 mtime/size）—— 注入 A 改纸型、B 删纸型声明、C 删待实测登记、D 复制一份字段映射，任一不红即判「守卫是空判据」。
+跳过: [backend-contract] 纯前端打印介质分层 + 源码级元守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/print-media.test.ts 与 tests/unit_ci_workflows/test_print_media_matrix_guard.py 执行
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-26 新增（issue #5651）：把「打印介质矩阵」从注释里的共识落成机器可判的分层 —— 三介质在册、@page 与矩阵同源、未声明介质即红、三联纸待实测登记不许留白、同一单据只许一份字段映射（介质是参数不是副本）。 ｜ tags: ui, print, media-matrix, guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -7090,8 +7138,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：502（活跃 126，跳过 376）
-- tier 分布：smoke 12 / normal 457 / adversarial 31
+- 用例总数：505（活跃 126，跳过 379）
+- tier 分布：smoke 12 / normal 460 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7116,7 +7164,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：58
+- 前端 UI 域：61
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

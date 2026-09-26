@@ -1,0 +1,62 @@
+{
+  "schema": "migao.print-media-matrix/1",
+  "_what": [
+    "打印**介质矩阵**（issue #5651）：单据是内容，介质是**版面参数** —— 同一份字段映射可以落在不同介质上，",
+    "介质**不是**复制粘贴出来的第二份页面（红证：同一单据复制一份字段映射 ⇒ 守卫必红）。",
+    "本文件是介质的**单一真值源**（机器可读）：TS 侧 `print-media.ts` 由它取值；",
+    "守卫 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 把每份受管单据的 `@page` 逐字钉到本表。",
+    "🔴 单据里**不许**另写 `@page size`：那是第二份真值，改一处另一处会静默漂移（纸面尺寸错 = 打废纸）。"
+  ],
+  "_pending_rule": [
+    "真机参数拿不到时**只许**用通用参数 + 在这里显式登记为待实测：`measurement != 'measured'` 的介质",
+    "**必须**有非空 `pendingMeasurements`（守卫判红），且 `note` 里写明哪几个值只是通用下限。",
+    "⛔ 不许把推定值写成实测值 —— 那会让下一个读它的人以为已经量过了。"
+  ],
+  "media": [
+    {
+      "id": "a4",
+      "label": "A4 纸",
+      "technology": "laser-inkjet",
+      "pageSize": "A4",
+      "pageMargin": "12mm",
+      "continuousFeed": false,
+      "carbonCopies": 1,
+      "minFontPt": 9,
+      "measurement": "measured",
+      "pendingMeasurements": [],
+      "note": "激光 / 喷墨 + 浏览器 window.print()（分页由浏览器负责，需抑制页眉页脚）。在用：发货单（#3768）、报价单（#4965）、加工单（#5651）。minFontPt 9pt = 既有 A4 单据的正文 12px 口径（不是量出来的下限）。"
+    },
+    {
+      "id": "label-50x60",
+      "label": "标签 50mm × 60mm（竖版）",
+      "technology": "thermal-transfer",
+      "pageSize": "50mm 60mm",
+      "pageMargin": "0",
+      "continuousFeed": false,
+      "carbonCopies": 1,
+      "minFontPt": 6,
+      "measurement": "measured",
+      "pendingMeasurements": [],
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92 pt）。⛔ 本矩阵只登记**在用**介质：#4946 的 30mm 横版与 #5052-P2 的 50×30 版式各有归属，不在本表重复登记、本单也不动它们的版式。"
+    },
+    {
+      "id": "continuous-241x140",
+      "label": "三联纸 241mm × 140mm（两等分）",
+      "technology": "dot-matrix",
+      "pageSize": "241mm 140mm",
+      "pageMargin": "6mm 12mm",
+      "continuousFeed": true,
+      "carbonCopies": 3,
+      "minFontPt": 9,
+      "measurement": "pending-field-measurement",
+      "pendingMeasurements": [
+        "走纸长度 / 单联可用高度（撕线位置决定；现值按用户 2026-09-26 裁定 241mm × 140mm 两等分）",
+        "左 / 右边距（走纸孔带吃掉的可打印宽度；现值 12mm 是通用值）",
+        "上 / 下边距（撕线到首行、末行的留白；现值 6mm 是通用值）",
+        "每行行高（针打 180dpi 量级的行距，与字号绑定）",
+        "最小可用字号（现值 9pt 是**通用下限**，不是实测读数；A4 的 6pt 量级在针打上会糊）"
+      ],
+      "note": "针式点阵 + 连续纸 + 压感复写（用户 2026-09-26 裁定；全仓此前零支持）。🔴 **复写是纸的特性，不是软件的事**：一次打印即复写三份 ⇒ 软件**只渲染一页**（`carbonCopies` 描述纸的份数，**不是**渲染次数）。🔴 版面预算**不复用 A4**（针打分辨率低，字号不能太小）。pageMargin 6mm 12mm 与 minFontPt 9pt 都是**通用参数**、待现场实测替换（清单见 pendingMeasurements）。"
+    }
+  ]
+}
