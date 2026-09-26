@@ -83,6 +83,12 @@ GH_STUB = '''#!/usr/bin/env python3
 import json, os, sys
 
 args = sys.argv[1:]
+
+
+def absent_workflows():
+    return {w.strip() for w in os.environ.get("STUB_WORKFLOW_ABSENT", "").split(",") if w.strip()}
+
+
 if args[:2] == ["run", "list"]:
     if os.environ.get("STUB_GH_LIST_FAIL") == "1":
         sys.exit(1)          # 模拟查询失败 ⇒ 必须走 fail-open
@@ -94,9 +100,19 @@ if args[:2] == ["run", "list"]:
         runs = json.load(fh)
     sys.stdout.write(json.dumps(runs))
     sys.exit(0)
+if args[:2] == ["workflow", "view"]:
+    # `gh workflow view <wf> --ref main`：workflow 必须**在 default branch 上**才 200
+    # （新增腿的那个 PR 里它还没有 ⇒ 404，见 issue #5668 首轮实测）
+    wf = args[2] if len(args) > 2 else ""
+    sys.exit(1 if wf in absent_workflows() else 0)
 if args[:2] == ["workflow", "run"]:
+    wf = args[2] if len(args) > 2 else ""
+    if wf in absent_workflows():
+        # 与真 gh 同形：default branch 上不存在 ⇒ HTTP 404 + 非零退出
+        sys.stderr.write("HTTP 404: workflow %s not found on the default branch\\n" % wf)
+        sys.exit(1)
     with open(os.environ["STUB_DISPATCH_LOG"], "a", encoding="utf-8") as fh:
-        fh.write(args[2] + "\\n")
+        fh.write(wf + "\\n")
     sys.exit(0)
 sys.exit(3)
 '''
@@ -213,8 +229,14 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
 
 
 def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
-                  image_tags: str = "", list_fail: bool = False, head7: str) -> tuple:
-    """在 `repo` 里执行改后的对账正文（桩 gh/docker），返回 (proc, summary, dispatches)。"""
+                  image_tags: str = "", list_fail: bool = False, head7: str,
+                  absent_workflows: tuple = (), script_text: str = None) -> tuple:
+    """在 `repo` 里执行改后的对账正文（桩 gh/docker），返回 (proc, summary, dispatches)。
+
+    `absent_workflows` = 模拟「还没合并到 default branch 的 workflow」（新增腿的那个 PR 的形态）：
+    此时 `gh workflow view` 返回 404、`gh workflow run` 也返回 404（与真 gh 同形）。
+    `script_text` = 跑变异版正文（红证用）。
+    """
     assert set(runs_by_wf) == set(DEPLOY_WF.values()), "必须给出全部五条对账腿的 run 列表"
     bin_dir = make_stubs(tmp_path)
     runs_dir = tmp_path / "runs"
@@ -224,7 +246,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
     summary_path = tmp_path / "summary.md"
     dispatch_log = tmp_path / "dispatch.log"
     script = tmp_path / "reconcile.sh"
-    script.write_text(reconcile_script(), encoding="utf-8")
+    script.write_text(script_text if script_text is not None else reconcile_script(), encoding="utf-8")
 
     env = os.environ.copy()
     env.update({
@@ -232,6 +254,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
         "STUB_RUNS_DIR": str(runs_dir),
         "STUB_DISPATCH_LOG": str(dispatch_log),
         "STUB_IMAGE_TAGS": image_tags,
+        "STUB_WORKFLOW_ABSENT": ",".join(absent_workflows),
         "GITHUB_STEP_SUMMARY": str(summary_path),
         "GITHUB_EVENT_NAME": "workflow_dispatch",
         "GITHUB_REPOSITORY": "zhaokai-mgzn/migao",
@@ -508,3 +531,52 @@ def test_git_history_loss_fails_open_not_silent(tmp_path):
         f"git 判不了时必须 fail-open（按兜底补部署）→ {dispatches}\n{proc.stdout}"
     )
     assert "判定失败=5" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 三、「新增腿的那个 PR」：目标 workflow 还没合并到 main（issue #5668 首轮实测）
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
+    """新增腿的那个 PR：被对账的 workflow 还没在 default branch 上 ⇒ `gh` 会 404。
+
+    **实测**（issue #5668 的 PR 首轮，run 36251452618）：没有这条前置判据时
+    `gh workflow run bmini-h5-publish.yml --ref main` 返回
+    「HTTP 404: workflow … not found on the default branch」⇒ `set -euo pipefail` 下
+    **整个对账 step 非零退出** —— 而它同轮判对的其它四条腿被一起染红。
+
+    ⇒ 判据三面：① 该腿**不 dispatch**；② **出声**（`::warning::` + summary 明写原因与去向）；
+    ③ 其它四条腿照常补部署、整步 rc=0（一个刚落地的腿不许让对账机制本身停摆）。
+    """
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    others = sorted(w for w in DEPLOY_WF.values() if w != "bmini-h5-publish.yml")
+    # 基准 = C1（代码提交 C2 之前）⇒ 自上次成功部署起五条腿**都有**漂移，缺了前置判据就会去 dispatch
+    proc, summary, dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
+        absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"],
+    )
+    assert proc.returncode == 0, f"新增腿尚未在 main 上时不许让整步红 → {proc.stdout}\n{proc.stderr}"
+    assert sorted(dispatches) == others, f"其它四条腿必须照常补部署 → {dispatches}"
+    assert "::warning::" in proc.stdout and "不在 main 上" in proc.stdout, (
+        f"必须出声（warning + 原因）→ {proc.stdout}"
+    )
+    assert "不在 main=1" in summary and "尚未在 main 上" in summary, f"{summary!r}"
+
+
+def test_not_on_main_criterion_has_discriminating_power(tmp_path):
+    """🔴 红证：去掉那条前置判据 ⇒ 同一输入下 `gh workflow run` **真的 404、整步非零退出**
+    （复现 #5668 首轮 CI 的真实形态，不是纸面推断）。"""
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    text = reconcile_script()
+    broken = text.replace(
+        'if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then', "if false; then"
+    )
+    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据）"
+    proc, _summary, _dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
+        absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"], script_text=broken,
+    )
+    assert proc.returncode != 0, (
+        f"变异版竟判绿 —— 说明该判据的判别力没有被证明（空断言方向）→ {proc.stdout}"
+    )
+    assert "404" in (proc.stdout + proc.stderr), f"期望复现 gh 的 404 → {proc.stdout}\n{proc.stderr}"

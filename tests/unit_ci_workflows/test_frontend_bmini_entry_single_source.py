@@ -223,13 +223,24 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
                 problems.append("无值分支必须逐字说明「未配置」（不许静默什么都不画）")
 
     if isinstance(dockerfile, str):
-        if not re.search(rf"^ARG {ENV_VAR}=", dockerfile, re.M):
-            problems.append(f"Dockerfile 缺 `ARG {ENV_VAR}=…`（缺省值兜底）")
+        # 单一接线点 = Dockerfile 的 ARG 缺省值（**非空 https**）：
+        # 它不是秘密（就是一个公开地址），故刻意**不**走 `secrets.*` —— 见下面的 workflow 判据。
+        if not re.search(rf"^ARG {ENV_VAR}=https://\S+$", dockerfile, re.M):
+            problems.append(f"Dockerfile 缺 `ARG {ENV_VAR}=https://…`（构建期缺省值 = 线上落位；不许为空/非 https）")
         if not re.search(rf"^ENV {ENV_VAR}=\$\{{{ENV_VAR}\}}", dockerfile, re.M):
             problems.append(f"Dockerfile 缺 `ENV {ENV_VAR}=${{{ENV_VAR}}}`（构建期 baked into JS）")
     if isinstance(workflow, str):
-        if f"--build-arg {ENV_VAR}=" not in workflow:
-            problems.append(f"deploy-frontend.yml 缺 `--build-arg {ENV_VAR}=…`（镜像里将没有这个值 ⇒ 页面永远显示未配置）")
+        # 🔴 该值**不是秘密**：`deploy-frontend.yml` 里**不许**出现 `secrets.{ENV_VAR}`。
+        # 实测教训（issue #5668 的 PR 首轮）：新增一处未登记的 secret 引用会被 CI 的
+        # `Danger Scan` 判为**阻塞**（"新增非内置 secrets 引用 —— 需人工审查"），而且那个 secret
+        # 根本不存在 ⇒ 表达式恒落到 `||` 缺省值，等于给部署链加了一层"看起来可配、实际没有"的噪音。
+        # 需要按环境覆盖时：用字面量 `--build-arg`，或先由维护者在仓库里**显式建**该 secret。
+        if f"secrets.{ENV_VAR}" in workflow:
+            problems.append(
+                f"deploy-frontend.yml 引用了 `secrets.{ENV_VAR}` —— 该值不是秘密（公开地址），"
+                "且未登记的 secret 引用会被 Danger Scan 判阻塞；改用 Dockerfile 的 ARG 缺省值"
+                "（或字面量 --build-arg）"
+            )
     if isinstance(env_example, str):
         if not re.search(rf"^{ENV_VAR}=", env_example, re.M):
             problems.append(f".env.example 缺 `{ENV_VAR}=` 一行（本地开发看不到这个配置的存在）")
@@ -281,8 +292,15 @@ def test_mutations_are_all_detected(tmp_path):
     mutations = {
         "前端源码里硬编码域名": dict(files=src_files),
         "Dockerfile 去掉 ENV": dict(dockerfile=dockerfile.replace(f"ENV {ENV_VAR}=${{{ENV_VAR}}}\n", "")),
-        "deploy-frontend 去掉 --build-arg": dict(
-            workflow=workflow.replace(f"            --build-arg {ENV_VAR}=${{{{ secrets.{ENV_VAR} || 'https://app.migaozn.com/b/' }}}} \\\n", "")
+        "Dockerfile 的 ARG 缺省值置空": dict(
+            dockerfile=dockerfile.replace("ARG NEXT_PUBLIC_BMINI_H5_URL=https://app.migaozn.com/b/", "ARG NEXT_PUBLIC_BMINI_H5_URL=")
+        ),
+        "deploy-frontend 新增未登记的 secrets 引用（Danger Scan 阻塞形态）": dict(
+            workflow=workflow.replace(
+                "            --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \\\n",
+                "            --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \\\n"
+                f"            --build-arg {ENV_VAR}=${{{{ secrets.{ENV_VAR} }}}} \\\n",
+            )
         ),
         "把二维码挪进无值分支（画假码）": dict(page_src=fake_qr),
         "二维码内容改成硬编码（不取配置值）": dict(
