@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007, DF-017, PG-020
+// case_ids: DF-007, DF-017, PG-020, PG-018
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -610,6 +610,28 @@ class SecurityConfigTest {
         // 且响应是 200 —— 上面两条断言与下面这条 verify 会同时变红，证明新守卫真的在承重。
         verify(roleService).getUserPermissions("staff-1");
         verify(productService, never()).getProducts(any(), any());
+    }
+
+    @Test
+    @DisplayName("#5641 生产概览端点缺 production:view ⇒ 403（无权限是**拒绝**，不是静默返回空列表）")
+    void todoOverviewWithoutProductionViewIsDenied() throws Exception {
+        when(userMapper.selectById("staff-1")).thenReturn(staffUser("staff-1", 1L, "operator", "active"));
+        // 有经营看板读码、**没有**生产域读码 —— 正是「打开了数据 Tab 但看不到生产待办」的那个角色
+        when(roleService.getUserPermissions("staff-1")).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/production/todo-overview")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+                .andExpect(jsonPath("$.error.details[0].field").value("requiredPermission"))
+                .andExpect(jsonPath("$.error.details[0].message").value("production:view"));
+
+        // 承重判据：拒绝发生在**进业务之前**。「无权限」与「今天没有待处理」必须可区分 ——
+        // `{"success":true,"data":{"todo_total":0}}` 那种静默空列表正是本单要防的形态。
+        verify(roleService).getUserPermissions("staff-1");
     }
 
     @Test
