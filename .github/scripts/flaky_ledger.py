@@ -598,11 +598,12 @@ def align_with_main(ledger_path, branch: str = LEDGER_BRANCH) -> dict:
     main_ledger = _show_json(f"origin/main:{rel}", "main 侧台账")
 
     branch_head, branch_ledger = None, None
-    ls = _git("ls-remote", "--heads", "origin", branch)
-    if ls.returncode != 0:
-        raise RuntimeError(
-            f"git ls-remote 失败（无法判定分支是否存在）：{(ls.stderr or '').strip()[:200]}")
-    if ls.stdout.strip():
+    # #5649：存在性走**唯一读数**（此前这里与 `read_branch_ledger` 各有一份 `ls-remote` 副本
+    # —— 「同一真值两处投影」，两份副本迟早给出两套读数）。
+    presence = branch_presence(branch)
+    if presence == BRANCH_UNKNOWN:
+        raise RuntimeError(f"git ls-remote 失败（无法判定分支 `{branch}` 是否存在）")
+    if presence == BRANCH_EXISTS:
         got = _git("fetch", "--quiet", "origin", branch)
         if got.returncode != 0:
             raise RuntimeError(f"git fetch origin {branch} 失败：{(got.stderr or '').strip()[:200]}")
@@ -1380,18 +1381,67 @@ def _git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True)
 
 
+# ── #5649：台账分支**存在性**的唯一读数（防「同一条件两套读数」） ─────────────────────
+#
+# 病根（2026-09-26 **实测**，run 36237750162 的 CI 日志逐字）：同一个条件（台账分支不存在），
+# 两个子命令给出**两套读数** ——
+#   · `reconcile --branch` ⇒ `ℹ️ 台账分支 \`chore/flaky-ledger\` 不存在 ⇒ 没有可对账的台账（非欠账）`
+#     ⇒ 退 **0**（该步骤**已过** ✅）；
+#   · `approval-queue` 去取分支 tip（`GET /repos/{repo}/branches/{head_branch}`）撞 **404**
+#     ⇒ 与「gh 真失败」**同一分支**被读成「无法判定」⇒ 退 **3** ⇒ 步骤 `::error::` ❌。
+# ⇒ `Flaky Ledger Reconcile`（**不在 required 集合**）**对每个 PR 都红**：不拦合并，但持续
+#   稀释「红 = 有事」的信号。此前的 #5438 / #5417 覆盖的是「欠账」与「审批队列被抑制」，
+#   **「分支已被删」这个形态没被覆盖**。
+#
+# 修法 = **一处读数 + 一张判定表**（不是两处各修一遍，也不是把「无法判定」放宽）：
+#   · `branch_presence()` —— 分支存在性的**唯一读数**（三态 `exists` / `absent` / `unknown`）；
+#   · `BRANCH_PRESENCE_VERDICT` —— **唯一口径表**（状态 → 退出码），两个子命令都查它。
+# ⇒ 两个子命令**结构上不可能**再对同一状态给出两套读数（类级守卫见
+#   `tests/unit_ci_workflows/test_flaky_ledger_branch_presence_consistency.py`）。
+#
+# ⚠️ **不许**把「无法判定」降级成「通过」：只有 `absent`（**确定**不存在）判「无内容」（退 0）；
+#    `unknown`（网络 / 权限 / 命令失败 / 取不到 tip）**照旧退 3**，且两个子命令**同判**。
+BRANCH_EXISTS = "exists"
+BRANCH_ABSENT = "absent"
+BRANCH_UNKNOWN = "unknown"
+
+#: 状态 → 两个子命令**共用**的退出码（`exists` **不在表里** ⇒ 各子命令按自己的语义继续）。
+BRANCH_PRESENCE_VERDICT = {
+    BRANCH_ABSENT: 0,     # 分支都没有 ⇒ 没有属于它的内容：无台账可对账 / 无待批准 run
+    BRANCH_UNKNOWN: 3,    # 读不出 ⇒ 无法判定（**未跑 ≠ 通过**）—— 不许降级成 0
+}
+
+
+def branch_presence(branch: str = LEDGER_BRANCH) -> str:
+    """台账分支存在性的**唯一读数**（三态）—— `git ls-remote --heads origin <branch>`：
+
+    · 命令退出非零 ⇒ `unknown`（**读不出**：网络 / 权限 / 远端不可达 ⇒ fail-closed）；
+    · 输出为空     ⇒ `absent`（**确定**不存在 —— 远端命令正常跑过、它就是没有这一条）；
+    · 否则         ⇒ `exists`。
+
+    唯一读数**只此一处**（本仓的反模式是「同一真值两处投影」：`craft-display` 三份副本 #4393）
+    ⇒ `git ls-remote` 在本模块里**只允许出现一次**，由类级元守卫
+    （`tests/unit_ci_workflows/test_flaky_ledger_branch_presence_consistency.py`）钉住。
+    """
+    ls = _git("ls-remote", "--heads", "origin", branch)
+    if ls.returncode != 0:
+        return BRANCH_UNKNOWN
+    return BRANCH_EXISTS if ls.stdout.strip() else BRANCH_ABSENT
+
+
 def read_branch_ledger(branch: str = LEDGER_BRANCH):
     """取**远端台账分支**上的台账。三态，不许把「读不到」当「无漂移」：
 
     · `dict`  —— 读到了；
     · `None`  —— 分支**不存在**（还没记过账 ⇒ 没有「已记账却未落 main」的内容 ⇒ 非漂移）；
     · 抛 `RuntimeError` —— **无法判定**（网络/权限/文件缺失）⇒ CLI 退 `3`，调用方必须当红读。
+
+    存在性走**唯一读数** `branch_presence()`（#5649）—— 与 `approval-queue` 同源。
     """
-    ls = _git("ls-remote", "--heads", "origin", branch)
-    if ls.returncode != 0:
-        raise RuntimeError(
-            f"git ls-remote 失败（无法判定分支是否存在）：{(ls.stderr or '').strip()[:200]}")
-    if not ls.stdout.strip():
+    presence = branch_presence(branch)          # **一次**读数：同一次调用里不许读两遍（两遍可打架）
+    if presence == BRANCH_UNKNOWN:
+        raise RuntimeError(f"git ls-remote 失败（无法判定分支 `{branch}` 是否存在）")
+    if presence == BRANCH_ABSENT:
         return None
     fetch = _git("fetch", "--quiet", "origin", branch)
     if fetch.returncode != 0:
@@ -1798,6 +1848,28 @@ def main(argv=None) -> int:
     if args.cmd == "approval-queue":
         # #5417 判据 1：**停在 action_required 的 run 必须留下可归因读数**（不许静默）。
         # 只读：本子命令**不发任何 approve**，也不碰 PR / 分支（读数不改变任何状态）。
+        # ── #5649：口径统一（本子命令此前对「分支不存在」判 3，而 `reconcile` 判 0） ──────
+        # 分支存在性走**唯一读数** `branch_presence()`、判定走**唯一口径表**
+        # `BRANCH_PRESENCE_VERDICT`（与 `reconcile --branch` 同源）：
+        #   · `absent`（**确定**不存在）⇒ 分支都没有 ⇒ **没有属于它的待批准 run** ⇒ 退 0，
+        #     并打一句**可读 notice**（不许静默）：与 reconcile 的「没有可对账的台账」同判；
+        #   · `unknown`（`git ls-remote` 真失败）⇒ **照旧退 3**（未跑 ≠ 通过）。
+        # 注意**不是**「把无法判定放宽成通过」：放宽的只有「分支**确定**不存在」这一条。
+        presence = branch_presence(args.head_branch)
+        verdict = BRANCH_PRESENCE_VERDICT.get(presence)
+        if verdict == 0:
+            print(f"::notice::台账分支 `{args.head_branch}` 不存在 ⇒ 无待批准 run"
+                  f"（与 reconcile 同口径：#5649）—— 这是**确定无内容**，不是「未跑」")
+            if args.json_out:
+                _write(args.json_out, json.dumps(
+                    {"state": presence, "head_branch": args.head_branch, "tip": None,
+                     "in_scope": [], "out_of_scope": [], "in_scope_total": 0,
+                     "out_of_scope_total": 0, "stale": 0, "unaged": 0}, ensure_ascii=False))
+            return 0
+        if verdict is not None:
+            print(f"⛔ 读不出台账分支 `{args.head_branch}` 的存在性（`git ls-remote` 失败）⇒ "
+                  f"**无法判定**（不得当「没有待批准 run」读；未跑 ≠ 通过）", file=sys.stderr)
+            return verdict
         try:
             all_runs = (_gh_api(f"repos/{args.repo}/actions/runs"
                                 f"?event=pull_request&branch={args.head_branch}&per_page=100")
@@ -2154,12 +2226,16 @@ def main(argv=None) -> int:
             try:
                 ledger = read_branch_ledger(args.branch)
             except (RuntimeError, ValueError) as exc:
+                # #5649：退出码从**唯一口径表**取（与 `approval-queue` 同一张表 ⇒ 两边不可能两套读数）
                 print(f"⛔ 读不到台账分支 `{args.branch}` 的台账（{exc}）⇒ **无法判定**"
-                      f"（未跑 ≠ 通过 ⇒ 退 3）", file=sys.stderr)
-                return 3
+                      f"（未跑 ≠ 通过 ⇒ 退 {BRANCH_PRESENCE_VERDICT[BRANCH_UNKNOWN]}）",
+                      file=sys.stderr)
+                return BRANCH_PRESENCE_VERDICT[BRANCH_UNKNOWN]
             if ledger is None:
+                # `read_branch_ledger` 返回 `None` ⇔ **唯一读数**已判「**确定**不存在」
+                # ⇒ 查同一张口径表（不是这里另写一个 `return 0`）。
                 print(f"ℹ️ 台账分支 `{args.branch}` 不存在 ⇒ 没有可对账的台账（非欠账）")
-                return 0
+                return BRANCH_PRESENCE_VERDICT[BRANCH_ABSENT]
         else:
             ledger = load_ledger(args.ledger)
         bad = ledger_violations(ledger)
