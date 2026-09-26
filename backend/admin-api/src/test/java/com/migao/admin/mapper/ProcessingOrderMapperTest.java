@@ -106,4 +106,24 @@ class ProcessingOrderMapperTest {
         assertThat(sql).contains("tenant_id = #{tenantId}");
         assertThat(sql).contains("deleted = 0");
     }
+
+    @Test
+    @DisplayName("markInProcessingIfFrom — 首工序报满的**唯一**写路径（#4695/D13）：起始态是 SQL 谓词 ⇒ 并发/重复只转一次")
+    void markInProcessingIfFrom_sqlShape() throws Exception {
+        Method method = ProcessingOrderMapper.class.getMethod(
+                "markInProcessingIfFrom", String.class, Long.class, String.class, OffsetDateTime.class);
+        Update update = method.getAnnotation(Update.class);
+        assertThat(update).isNotNull();
+        String sql = String.join(" ", update.value());
+        // 写的是 processing_orders（**不是** orders：订单状态机是唯一真相源，生产侧不得直写订单状态）
+        assertThat(sql).startsWith("UPDATE processing_orders");
+        assertThat(sql).contains("SET status = 'in_processing'");
+        // 🔴 唯一闸门：谓词取「状态机授权过的那个起始态」——
+        //    没有它就是一个裸 UPDATE（并发双转 / 从 generated 直达 / 复活 cancelled 全部放行）
+        assertThat(sql).contains("AND status = #{fromStatus}");
+        // 首次开工时刻不覆盖（与 markCompletedIfActive 同款幂等写法）
+        assertThat(sql).contains("in_processing_at = COALESCE(in_processing_at, #{inProcessingAt})");
+        assertThat(sql).contains("tenant_id = #{tenantId}");
+        assertThat(sql).contains("deleted = 0");
+    }
 }

@@ -4551,4 +4551,30 @@ class ProcessingOrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("maxWaitHours 必须为正数");
     }
+
+    // ============================================================ 状态机锚点（issue #4695 / D13）
+
+    /**
+     * 🔴 **改这一行 = 改裁定**：能走到 `in_processing` 的**只有 `issued`**。
+     *
+     * <p>首工序报满的自动路径（{@code ProductionService}）按本状态机判合法性 ⇒ 这里多一条
+     * 入边（尤其 `generated → in_processing`）会让「未发加工的单也被首工序报工推进」——
+     * 那正是设计 §8 **A6 未裁定**的那一半，必须**先裁再改**（不是顺手放开）。</p>
+     */
+    @Test
+    @DisplayName("D13 状态机锚点：能走到 in_processing 的只有 issued（放开 generated = 替 A6 裁定 ⇒ 先裁再改）")
+    void onlyIssuedMayEnterInProcessing() {
+        assertThat(ProcessingOrderService.STATUS_IN_PROCESSING).isEqualTo("in_processing");
+        assertThat(ProcessingOrderService.allowsTransition("issued", ProcessingOrderService.STATUS_IN_PROCESSING))
+                .as("首工序报满的自动路径只认这一个起始态")
+                .isTrue();
+        for (String from : List.of("generated", "in_processing", "completed", "cancelled")) {
+            assertThat(ProcessingOrderService.allowsTransition(from, ProcessingOrderService.STATUS_IN_PROCESSING))
+                    .as("from=%s 不得直达 in_processing", from)
+                    .isFalse();
+        }
+        assertThat(ProcessingOrderService.allowsTransition(null, ProcessingOrderService.STATUS_IN_PROCESSING))
+                .as("状态缺失（脏数据）⇒ fail-closed，不推进")
+                .isFalse();
+    }
 }

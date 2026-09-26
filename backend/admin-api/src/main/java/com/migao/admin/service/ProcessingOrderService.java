@@ -385,10 +385,21 @@ public class ProcessingOrderService {
             "主布", CURTAIN_TYPE_CLOTH,
             COMPONENT_ROLE_EDGE, CURTAIN_TYPE_CLOTH);
 
-    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+    /**
+     * 加工单状态：**加工中**。
+     *
+     * <p>它是 `issued → in_processing` 这条迁移的唯一目标态，**手工与自动两条路径共用同一个字符串**：
+     * 手工 = {@link #updateStatus} 的 `action = "start"`；自动 = 首工序报满（issue #4695 / D13，
+     * 落点在 {@code ProductionService}）。两条路径走**同一张状态机**（{@link #STATUS_TRANSITIONS}）——
+     * 自动路径不另立判据、也不裸 UPDATE 绕过。</p>
+     */
+    static final String STATUS_IN_PROCESSING = "in_processing";
+
+    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
-            "issued", Set.of("in_processing", "cancelled"),
-            "in_processing", Set.of("completed", "cancelled"),
+            "issued", Set.of(STATUS_IN_PROCESSING, "cancelled"),
+            STATUS_IN_PROCESSING, Set.of("completed", "cancelled"),
             "completed", Set.of(),
             "cancelled", Set.of()
     );
@@ -396,10 +407,23 @@ public class ProcessingOrderService {
     private static final Map<String, String> STATUS_LABELS = Map.of(
             "generated", "已生成",
             "issued", "已发加工",
-            "in_processing", "加工中",
+            STATUS_IN_PROCESSING, "加工中",
             "completed", "加工完成",
             "cancelled", "已取消"
     );
+
+    /**
+     * 状态机的**唯一读口**（包级可见 ⇒ 同包的生产侧判合法性时不再抄第二份迁移表）。
+     *
+     * <p>为什么要有它：原表是 `private` ⇒ 外部消费者只能自己写一个字面量集合
+     * （「同一真值两处投影」）⇒ 迟早漂移。首工序报满的自动路径（issue #4695 / D13）因此走本方法
+     * 问合法性，落库谓词再取**本次被授权的那一个起始态** ⇒ 既走状态机、又不是裸 UPDATE。</p>
+     *
+     * <p>未知 / 缺失起始态一律 **false**（fail-closed：脏数据不推进，而不是替它挑一个合法起点）。</p>
+     */
+    static boolean allowsTransition(String from, String to) {
+        return from != null && to != null && STATUS_TRANSITIONS.getOrDefault(from, Set.of()).contains(to);
+    }
 
     /** 加工单号序号（JG-YYYYMMDD-XXXX） */
     private static final java.util.concurrent.atomic.AtomicInteger PO_SEQ =
@@ -3476,8 +3500,21 @@ public class ProcessingOrderService {
     // ============================================================ 状态更新
 
     /**
-     * 加工单状态更新（action: issue/start/complete/cancel）。
+     * 加工单状态更新（action: issue/start/complete/cancel）—— **手工端点**。
      * 状态机校验 + 订单联动（issue → 订单 confirmed→producing；cancel → 订单 producing→confirmed 回退）。
+     *
+     * <p>🔴 <b>{@code action = "start"} 的语义（issue #4695 起显式写明）</b>：它是
+     * `issued → in_processing` 这条迁移的**手工入口**，与首工序报满的**自动入口**
+     * （{@code ProductionService}：完成 `is_start_marker` 那道工序 ⇒ 落同一个状态）**目标态相同、
+     * 状态机相同**。二者分工：</p>
+     * <ul>
+     *   <li><b>自动（默认路径）</b>= 首工序报满时由报工链自动落 —— 单进入「生产中」不再依赖人点按钮；</li>
+     *   <li><b>手工（本端点，保留）</b>= 存量单补开工 / 自动路径不适用时的兜底：单里没有任何
+     *       `is_start_marker` 工序、首工序报工时该单尚未「发加工」（`generated` 不得直达，A6 未裁定
+     *       ⇒ 自动路径不动它）、或首工序早在自动路径上线前就报满了。</li>
+     * </ul>
+     * <p>已是 `in_processing` 时本端点**照旧拒绝**（`in_processing → in_processing` 不是合法迁移）——
+     * 与自动路径的幂等语义一致：重复请求得到一句明确的「不允许变更」，而不是静默成功。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public ProcessingOrderResponse updateStatus(String rawId, ProcessingOrderUpdateRequest req,
@@ -3493,7 +3530,7 @@ public class ProcessingOrderService {
         String target;
         switch (action) {
             case "issue": target = "issued"; break;
-            case "start": target = "in_processing"; break;
+            case "start": target = STATUS_IN_PROCESSING; break;
             case "complete": target = "completed"; break;
             case "cancel": target = "cancelled"; break;
             default: throw BusinessException.validationError("无效的加工单操作: " + action);

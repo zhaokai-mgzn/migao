@@ -1316,6 +1316,15 @@ public class ProductionService {
             }
         }
 
+        // 首工序（`is_start_marker`）报满 ⇒ 加工单 `issued → in_processing`（issue #4695 / 设计 §7.3 D13）。
+        // 顺序**必须在完工判定之前**：单工序加工单在这一次报工里就「全部报满」，若先判完工，
+        // `markCompletedIfActive` 会把 active 集里的 `issued` 直接置 `completed` ⇒ 本迁移再也命中
+        // 不到（谓词 `status = #{fromStatus}` 不成立）⇒ `in_processing_at` 永远为空，「生产开始」这
+        // 件事在数据上不存在。先转态、再完工 ⇒ 既留下开工时刻，也不改完工判据（见下）。
+        if (advances && Boolean.TRUE.equals(op.getIsStartMarker()) && isDoneQty(doneQty, op.getQty())) {
+            startProcessingIfAllowed(po, tenantId);
+        }
+
         boolean productionCompleted = false;
         if (advances && allInstancesDone(po.getId(), tenantId)) {
             // 完工 = **加工单**置 completed（issue #4117），**不是**订单状态推进：
@@ -1346,6 +1355,35 @@ public class ProductionService {
         result.put("worker_name", identity.workerName());
         result.put("identity_source", identity.source());
         return result;
+    }
+
+    /**
+     * 首工序报满 ⇒ 加工单 `issued → in_processing` + 落 `in_processing_at`（**issue #4695 / 设计 D13**）。
+     *
+     * <p><b>走状态机，不裸 UPDATE</b>：合法性判据取自加工单状态机的**唯一真相源**
+     * （{@link ProcessingOrderService#allowsTransition} ⇒ 那张 {@code STATUS_TRANSITIONS}）——
+     * 能走到 `in_processing` 的只有 `issued`。`generated` **不得直达**（A6 未裁定 ⇒ 保守不动，仍需
+     * 先「发加工」；登记见 {@code docs/design/set-code-and-scan-loop.md} 的 §8 A6）、`cancelled` /
+     * `completed` 同理 ⇒ 本次不动它，交回既有手工端点
+     * （{@link ProcessingOrderService#updateStatus} 的 `action = "start"`）补开工。
+     * 落库走与 {@code ProcessingOrderMapper.markCompletedIfActive} **同族**的条件更新（CAS），
+     * 谓词正是**本次被状态机授权的那一个起始态** ⇒ 没有第二次投影的迁移表、也不是无条件写。</p>
+     *
+     * <p><b>幂等（重复报工 / 重报 / 并发报工）</b>：① 状态机层 —— 已是 `in_processing` 时该迁移不合法
+     * ⇒ **连写都不发起**；② SQL 层 —— `status = #{fromStatus}` 谓词 + `COALESCE(in_processing_at, …)`
+     * ⇒ 重复/并发报工既不重复转态，也**不改写**首次开工时刻。两层都过不去时报工本身**照常成功**
+     * （转态不是报工的前置条件，失败/不适用都不得让工人的账记不上）。</p>
+     */
+    private void startProcessingIfAllowed(ProcessingOrder po, Long tenantId) {
+        String from = po.getStatus();
+        if (!ProcessingOrderService.allowsTransition(from, ProcessingOrderService.STATUS_IN_PROCESSING)) {
+            return;
+        }
+        int rows = processingOrderMapper.markInProcessingIfFrom(po.getId(), tenantId, from, OffsetDateTime.now());
+        if (rows > 0) {
+            log.info("首工序报满，加工单进入生产中: po={}, {} -> {}", po.getProcessingOrderNo(), from,
+                    ProcessingOrderService.STATUS_IN_PROCESSING);
+        }
     }
 
     /**
