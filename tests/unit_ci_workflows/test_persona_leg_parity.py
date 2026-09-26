@@ -281,16 +281,23 @@ class TestRegistrationWithdrawn:
         for node in ast.walk(tree):
             # `UNIMPLEMENTED: tuple[dict, ...] = (…)` 是 **AnnAssign**（带注解），
             # 只认 `ast.Assign` 会让本判据静默空跑成绿（取空集 ⇒ 断言恒真）。
+            # ⚠️ 2026-09-26 起 `UNIMPLEMENTED` **合法地为空**（#4155 撤登记）⇒ 语料必须扩到
+            # **撤登记台帐** `WITHDRAWN_UNIMPLEMENTED`，否则本判据恒取空集 = 空跑。
             if isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                if not any(isinstance(t, ast.Name) and t.id == "UNIMPLEMENTED" for t in targets):
+                if not any(isinstance(t, ast.Name)
+                           and t.id in ("UNIMPLEMENTED", "WITHDRAWN_UNIMPLEMENTED")
+                           for t in targets):
                     continue
                 value = node.value
                 if value is None:
                     continue
                 assigned |= {n.value for n in ast.walk(value)
                              if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-        assert assigned, "`assertion_taxonomy.UNIMPLEMENTED` 取空 ⇒ 本判据会静默空跑成绿"
+        assert assigned, (
+            "`assertion_taxonomy.UNIMPLEMENTED` 与 `WITHDRAWN_UNIMPLEMENTED` 都取空 ⇒ "
+            "本判据会静默空跑成绿"
+        )
         assert WITHDRAWN_CODE not in assigned, (
             f"`assertion_taxonomy.UNIMPLEMENTED` 里仍留着 {WITHDRAWN_CODE}（两份清单必须一致）")
 

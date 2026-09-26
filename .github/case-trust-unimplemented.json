@@ -1,27 +1,6 @@
 {
   "_comment": "断言可信度护栏的**未实装项**（如实登记）。红线：判据在现有机制下无法判定时，**不得**写成恒真判断凑数 —— 登记在此，写明缺什么。",
   "_source": ".github/assertion_taxonomy.py 的 UNIMPLEMENTED",
-  "_constraints": "**每条登记必须带 `issue`（正整数追踪号）/ `expires`（YYYY-MM-DD）/ `how_to_verify`（怎么算已实装的可执行判据/命令）/ `hit_probe`（僵尸判据）。**四条判据都可红（判据本体 = assertion_taxonomy.judge_unimplemented，门禁壳 = case_trust_gate.judge_unimplemented_manifest）：① 缺任一字段 ⇒ 红（指名缺哪个）；② `expires` 已过 ⇒ 红（到期未实装**不许静默续期**）；③ `issue` 指向的单已 CLOSED（或编号不存在）⇒ 红（借口不能过期不销：实装了就该撤登记，没实装就该开新单）；④ **僵尸登记** ⇒ 红（`hit_probe` 探不到存活证据 = 登记所述口径已不成立，留着会被读成「还没做」）。`why_not`/`needs` 只是理由与缺口，**不构成约束**。",
-  "unimplemented": [
-    {
-      "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
-      "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",
-      "why_not": "#4031 已实装全量对账（陈旧条目阻塞）+ 到期清零（全局生效），但**每-PR 最低消减**的口径默认 `scope=case_touching_prs`：字面口径（**每个** PR，含不改用例的）会让全仓每个 PR 都必须改 `.github/cases/**` + 清单才能合并 —— 与「先把清单清干净再翻 required，避免阻塞所有人」的顺序铁律自相矛盾，且会把 Java 单测 PR 也卡在用例库上（= 假红）。口径是**数据**（`burn_down.scope`），改为 `all_prs` 即字面口径。",
-      "needs": "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，每-PR 口径才有可安全阻塞的目标（drift_audit 侧的同族改造已于 **#4045** 落地：那边同样是 `scope=case_touching_prs` 的数据口径）。",
-      "issue": 4155,
-      "expires": "2027-03-31",
-      "how_to_verify": "前置（豁免清单小文件化 / 可自动重生成）落地 ⇒ 把 `.github/case-trust-baseline.json`的 `burn_down.scope` 改成 `all_prs` 并撤本登记。核验命令：`python3 -c \"import json;print(json.load(open('.github/case-trust-baseline.json'))['burn_down']['scope'])\"` 输出 `all_prs` = 已实装。",
-      "hit_probe": "burn_down_scope_case_touching"
-    },
-    {
-      "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
-      "title": "**全库**用例都必须标注 persona",
-      "why_not": "口径过宽会让全部双端用例（存量 200+ 条）立刻违规 —— 但双端用例**本就不该**被强制标注（`persona: \"\"` 是合法的「双端」语义）。故只对**按工具集可判定为单端**的用例子集实装。",
-      "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。",
-      "issue": 4155,
-      "expires": "2027-06-30",
-      "how_to_verify": "persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为**可判定且不产生假红**的口径，撤本登记并按新口径实装；或双端用例归零⇒ 子集口径 == 全库口径，本登记自动成僵尸。核验命令：`python3 -c \"import sys;sys.path.insert(0,'.github');from render_cases import load_case_dicts;print(sum(1 for c in load_case_dicts('.github/cases') if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。",
-      "hit_probe": "dual_leg_no_persona"
-    }
-  ]
+  "_constraints": "**每条登记必须带 `issue`（正整数追踪号）/ `expires`（YYYY-MM-DD）/ `how_to_verify`（怎么算已实装的可执行判据/命令）/ `hit_probe`（僵尸判据）。**四条判据都可红（判据本体 = assertion_taxonomy.judge_unimplemented，门禁壳 = case_trust_gate.judge_unimplemented_manifest）：① 缺任一字段 ⇒ 红（指名缺哪个）；② `expires` 已过 ⇒ 红（到期未实装**不许静默续期**）；③ `issue` 指向的单已 CLOSED（或编号不存在）⇒ 红（借口不能过期不销：实装了就该撤登记，没实装就该开新单）；④ **僵尸登记** ⇒ 红（`hit_probe` 探不到存活证据 = 登记所述口径已不成立，留着会被读成「还没做」）。`why_not`/`needs` 只是理由与缺口，**不构成约束**。⚠️ 本清单**可以合法地为空**（2026-09-26 起为空）：空 **≠** 全部已实装 —— 撤掉的码连同**接受的缺口 / 重启条件**记在 `.github/assertion_taxonomy.py` 的 `WITHDRAWN_UNIMPLEMENTED`（「已撤登记（有意不做 / 口径已无对象）」组）。",
+  "unimplemented": []
 }

@@ -39,6 +39,9 @@ T1 已有的「case 库静态校验（expectation 引用工具 ∈ persona 工�
 ## 未实装项
 
 见 `.github/case-trust-unimplemented.json`（**如实登记**，不写成恒真判断凑数）。
+⚠️ 该登记册**可以合法地为空**（2026-09-26 起即为空）：**空 ≠ 全部已实装** —— 撤掉的码连同
+**接受的缺口 / 重启条件**逐条记在 `UNIMPLEMENTED` 上方的「已撤登记（**有意不做 / 口径已无对象**）」
+组与其机器可读台帐 `WITHDRAWN_UNIMPLEMENTED`。别把「没登记」读成「有判据」。
 """
 
 from __future__ import annotations
@@ -1230,7 +1233,8 @@ def is_single_leg_by_toolset(case: dict) -> bool:
     仍是**下界**：语义单端（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）
     静态不可判定 —— 该面（含散文 `data_checks` 的语义质量）已于 2026-09-26 裁定
     **有意不做**并**撤登记**（证据 = #5505 的关单评论；**接受的缺口 + 重启条件**写在本文件
-    `UNIMPLEMENTED` 上方「已撤登记（有意不做）」组的 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY` 条）。
+    `UNIMPLEMENTED` 上方「已撤登记（**有意不做 / 口径已无对象**）」组与其台帐
+    `WITHDRAWN_UNIMPLEMENTED` 的 `CASE-TRUST-PROSE-DATA-CHECK-QUALITY` 条）。
     ⚠️ 撤登记 **≠** 已实装：本函数仍是**下界**（判不了的照旧判不了），别把"没登记"读成"有判据"。
     """
     if _XIAOBU_TOOLS is None or not _MIBAO_TOOLS:
@@ -1673,85 +1677,139 @@ RULES_BY_CODE: dict[str, dict] = {r["code"]: r for r in RULES}
 #     的处置：它现在探不到证据 = 正是「已实装」的读数，按探针名检索即可复核），
 #     因此本项**不在**下方 `UNIMPLEMENTED` 里 —— 留着就是「实装了还挂着未实装」的假真值。
 #     判据 = `tests/unit_ci_workflows/test_persona_leg_parity.py`（含撤登记守卫）。
-# 🗑️ **已撤登记（**有意不做**）** —— ⚠️ 与上一组的语义**相反**，别读串（2026-09-26 用户裁定②）：
-#   上一组 = 「**已实装** ⇒ 撤」；本组 = 「**接受缺口、有意不做** ⇒ 撤」—— 本组**不是**
-#   「做完了」，它是**明知不做**（`AGENTS.md` §11(c)⑤：关单证据必须写明**接受的缺口 +
-#   重启条件**；"有意不做"被读成"已解决"是同一条铁律点名的反模式）。
+# 🗑️ **已撤登记（**有意不做 / 口径已无对象**）** —— ⚠️ 与上一组的语义**相反**，别读串（2026-09-26）：
+#   上一组 = 「**已实装** ⇒ 撤」；本组 = 「**接受缺口**（有意不做）**/ 口径已无对象** ⇒ 撤」——
+#   本组**不是**「做完了」：前者是**明知不做**、后者是**暂时没有对象**（`AGENTS.md` §11(c)⑤：
+#   关单证据必须写明**接受的缺口 + 重启条件**；"有意不做"被读成"已解决"是同一条铁律点名的反模式）。
+#   🔑 **机器可读的那一半 = 紧随本组的 `WITHDRAWN_UNIMPLEMENTED`**（本组只写来龙去脉）：
+#   每条必须带 `kind` / `evidence` / `restart_condition`，且**不许再登记回** `UNIMPLEMENTED`
+#   —— 判据 = `tests/unit_ci_workflows/test_case_trust_gate.py::TestWithdrawnRegistrations`。
+#
+#   为什么**必须**撤登记（而不是"留着 + 把理由改成有意不做"）：`judge_unimplemented_manifest`
+#   的 `ISSUE_CLOSED` 格（`check_unimplemented_issues`）对**任何**留在册的条目都要求其 `issue`
+#   保持 OPEN —— 登记册里**没有**「长期豁免」这一档。实测（2026-09-26，两态复算）：两条口径型
+#   登记各自的追踪单一旦关闭，留在册的形态**照样判红**（`CASE-TRUST-UNIMPL-ISSUE-CLOSED`，
+#   即 #5506 那次卡住全队列 6 条 PR 的失败模式：它们的 diff 与登记册**毫无关系**）。⇒ 要既保住
+#   「口径 knowingly 更窄」这条记录、又不让全队列替它承担「追踪单必须永远 OPEN」的代价，
+#   唯一的形态就是**撤登记 + 把接受的缺口与重启条件写进本组**（登记册对 issue 的依赖随之归零）。
+#
 #   · `CASE-TRUST-PROSE-DATA-CHECK-QUALITY`（原追踪单 #5505）—— 撤登记的理由**不是**实装：
 #     静态侧判不出「散文 `data_checks` 是否真在测它声称的东西」（**语义**判断），而
 #     **可执行**的语义复核格（按用例 ID 逐条判定 + 结论落盘可复查）经 2026-09-26 裁定
 #     **有意不做**（成本/收益不成立）⇒ 撤登记，本项**不再**是「待实装」。
-#     ⚠️ 撤登记是**机械必需**、不是措辞偏好：`judge_unimplemented_manifest` 的
-#     `ISSUE_CLOSED` 格（`check_unimplemented_issues`）对**任何**留在册的条目都要求其
-#     `issue` 保持 OPEN —— 实测（本 PR 复算）：保留登记 + 只把 `needs` 改成「有意不做」
-#     的形态，在 #5505 关闭的那一刻**照样判红**（`CASE-TRUST-UNIMPL-ISSUE-CLOSED`）；
-#     而上一组 `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` 之所以能"留着 + 有意不做"，
-#     只因它的追踪单 #4155 是**长期 OPEN 的复核触发器**（口径会随 persona 语义变更复核）。
 #     **接受的缺口**：静态门禁此后**不**把这个语义面登记为待实装 —— 它仍是
 #     `migao-acceptance` 里「LLM 只覆盖语义残留」的那一层，靠**人工 / LLM 评测**兜，
 #     **没有**静态判据（这一句是**边界**，不得读成「已覆盖」）。
 #     **重启条件**：出现**可落盘**的语义复核能力（按用例 ID 出结论、可复查，且对故意写歪的
-#     散文能点名）⇒ **重新开单**并按新能力重新登记（**不是**"本条复活"）。
-#     ⚠️ 僵尸判据 `_probe_prose_data_check` 与其注册项**保留**（同 `DRIFT-AUDIT-STALE-DIFF-SCOPED`
-#     的处置：它现在探不到证据 = 读数，按探针名检索即可复核），因此本项**不在**下方
-#     `UNIMPLEMENTED` 里 —— 留着就是「有意不做被读成还没做」的假真值。
-#     判据 = `tests/unit_ci_workflows/test_case_trust_gate.py` 的
-#     `test_unimplemented_manifest_registers_the_remaining_burn_down_gaps`（含**不许再登记回来**守卫）。
-UNIMPLEMENTED: tuple[dict, ...] = (
+#     散文能点名）⇒ **重新开单**并按新能力重新登记（**不是**「本条复活」）。
+#   · `CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY`（原追踪单 #4155）—— 撤登记的理由**不是**
+#     实装，而是**口径已无对象**：该登记问的是「`burn_down.scope` 该不该改成字面口径 `all_prs`」，
+#     而豁免账本**已清零**（`.github/case-trust-baseline.json` 的 `violations` 为 `{}`、
+#     `violation_case_count` 为 0）⇒ `burn_down_verdict` 的 `if in_scope and after_e == 0` 一格里
+#     两种 `scope` **行为完全一致**（都打印「清单已清零 —— 每 PR 最低消减自动满足」），
+#     即**没有任何 PR 会因这个口径不同而红**。字面口径（`scope=all_prs`）**有意不落地**：
+#     它今天同样不可观测，却会在账本重新非空的那一刻让**每个** PR（含 Java 单测 / 纯文档）
+#     都必须消一条 —— 与 `_scope_note` 写明的顺序铁律（先把清单清干净再翻 required）相冲突，
+#     属**收紧门禁**的动作，该由它自己的 PR 显式承担，不能塞进一次登记簿清理里。
+#     **接受的缺口**：`burn_down.scope` 仍是 `case_touching_prs`（**未**改成 `all_prs`）。
+#     **重启条件**：账本**重新非空**（`violations` 非空）⇒ 该口径重新有对象，届时应**重新开单**
+#     并显式裁定 `scope`（活判据 = `.github/case-trust-baseline.json` 的 `violations` 是否为空；
+#     或 `_probe_burn_down_scope_case_touching` 是否重新探到证据）。
+#   · `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED`（原追踪单 #4155）—— **有意不做**的口径型登记：
+#     「**全库**用例都必须标注 persona」被裁定**有意更窄**（双端用例的 `persona: ""` 是合法语义，
+#     强制标注会让存量 200+ 条双端用例立刻假红），实装的是子集口径
+#     `CASE-TRUST-SINGLE-LEG-NO-PERSONA`（只对按工具集**可判定为单端**的用例要求标注）。
+#     ⚠️ 本条此前靠「追踪单 #4155 长期 OPEN 当复核触发器」留在册 —— 那个形态的代价是
+#     **全队列替它承担**（追踪单一关就红，见上），而它的记录价值（免得被误当遗漏）由本组完整承接。
+#     **接受的缺口**：全库 persona 标注**没有**判据（**不是**「已实装」；双端用例至今允许不标注）。
+#     **重启条件**：persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为
+#     **可判定且不产生假红**的口径；或双端用例归零 ⇒ 子集口径 == 全库口径（本设定自动失效）。
+#     活判据 = `_probe_dual_leg_no_persona` 的读数（`persona` 为空的用例数 > 0 = 重启条件**尚未**发生）。
+#   ⚠️ 本组三条**都不在** `UNIMPLEMENTED` 里 —— 留着就是「有意不做被读成还没做」的假真值；
+#     三条对应的僵尸判据（`_probe_prose_data_check` / `_probe_burn_down_scope_case_touching` /
+#     `_probe_dual_leg_no_persona`）与注册项**保留**（同 `DRIFT-AUDIT-STALE-DIFF-SCOPED` 的处置：
+#     探不到证据 = 读数，按探针名检索即可复核）。
+
+#: 已撤登记的**机器可读**台帐（**不是**「已实装」清单）—— 对应上方「已撤登记（**有意不做 /
+#: 口径已无对象**）」组。为什么要有它（否则本文件只剩散文，而散文会腐烂、没有任何东西会因此变红）：
+#:   ① `UNIMPLEMENTED` 可以**合法地**为空（撤光 ≠ 全做完）⇒ 守卫需要一份「空是被解释过的」真值；
+#:   ② 「不许再登记回来」要能**机械**判（把码与证据 / 重启条件钉在一起，而不是 grep 注释措辞）；
+#:   ③ `tracking_issue` 是**历史**追溯号，**允许已 CLOSED** —— 本台帐**不在**门禁 `ISSUE_CLOSED`
+#:      判据（`check_unimplemented_issues` 只读 `UNIMPLEMENTED` / 登记册 JSON）的射程内，
+#:      那正是撤登记要解除的依赖。
+#: 字段：`code` / `kind`（`deliberate_non_implementation` = 有意不做；`no_object` = 口径已无对象）/
+#: `title` / `why_withdrawn` / `evidence`（**可复算**的撤登记依据）/ `restart_condition`
+#: （什么会让它重新有对象）/ `withdrawn`（YYYY-MM-DD）/ `tracking_issue`（历史追溯号）。
+WITHDRAWN_UNIMPLEMENTED: tuple[dict, ...] = (
+    {
+        "code": "CASE-TRUST-PROSE-DATA-CHECK-QUALITY",
+        "kind": "deliberate_non_implementation",
+        "title": "纯散文 `data_checks` 的**语义**质量（是否真在测它声称的东西）",
+        "why_withdrawn": (
+            "「这条散文断言是不是真的覆盖了业务价值」是**语义**判断，静态无法判定；"
+            "**可执行**的语义复核格经 2026-09-26 裁定**有意不做**（成本/收益不成立）⇒ 撤登记。"
+        ),
+        "evidence": (
+            "裁定与接受的缺口见 #5505 的关单评论；撤登记落地于 PR #5611"
+            "（同一 PR 加了「不许再登记回来」守卫）。"
+        ),
+        "restart_condition": (
+            "出现**可落盘**的语义复核能力（按用例 ID 出结论、可复查，且对故意写歪的散文能点名）"
+            "⇒ **重新开单**并按新能力重新登记（**不是**「本条复活」）。"
+        ),
+        "withdrawn": "2026-09-26",
+        "tracking_issue": 5505,
+    },
     {
         "code": "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",
+        "kind": "no_object",
         "title": "burn-down 预算的「每 PR 最低消减」**默认只对改用例的 PR 生效**",
-        "why_not": (
-            "#4031 已实装全量对账（陈旧条目阻塞）+ 到期清零（全局生效），但**每-PR 最低消减**"
-            "的口径默认 `scope=case_touching_prs`：字面口径（**每个** PR，含不改用例的）"
-            "会让全仓每个 PR 都必须改 `.github/cases/**` + 清单才能合并 —— 与「先把清单清干净"
-            "再翻 required，避免阻塞所有人」的顺序铁律自相矛盾，且会把 Java 单测 PR 也卡在"
-            "用例库上（= 假红）。口径是**数据**（`burn_down.scope`），改为 `all_prs` 即字面口径。"
+        "why_withdrawn": (
+            "豁免账本**已清零** ⇒ `scope` 的两种取值在 `burn_down_verdict` 里走同一个出口"
+            "（`after_e == 0` ⇒ 打印「每 PR 最低消减自动满足」）⇒ 口径**已无对象**；"
+            "字面口径 `all_prs` **有意不落地** —— 它今天同样不可观测，却会在账本重新非空时"
+            "让每个 PR 都必须消一条（= 一次独立的门禁收紧，不能塞进登记簿清理）。"
         ),
-        "needs": (
-            "要先让「清单条目可被多条 PR 各自删除的小文件化 / 自动重生成」落地，"
-            "每-PR 口径才有可安全阻塞的目标（drift_audit 侧的同族改造已于 **#4045** 落地："
-            "那边同样是 `scope=case_touching_prs` 的数据口径）。"
+        "evidence": (
+            "`python3 -c \"import json;d=json.load(open('.github/case-trust-baseline.json'));"
+            "print(d['violation_case_count'], len(d['violations']))\"` ⇒ `0 0`（空账本）；"
+            "`burn_down.scope` 实测仍为 `case_touching_prs`（**未**改）。"
         ),
-        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        # 本项属**口径型**登记（不是代码缺口）：追踪单 #4155 同时承载它与
-        # `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` 的复核触发器。
-        "issue": 4155,
-        "expires": "2027-03-31",
-        "how_to_verify": (
-            "前置（豁免清单小文件化 / 可自动重生成）落地 ⇒ 把 `.github/case-trust-baseline.json`"
-            "的 `burn_down.scope` 改成 `all_prs` 并撤本登记。"
-            "核验命令：`python3 -c \"import json;print(json.load(open("
-            "'.github/case-trust-baseline.json'))['burn_down']['scope'])\"` 输出 `all_prs` = 已实装。"
+        "restart_condition": (
+            "账本**重新非空**（`violations` 非空）⇒ 口径重新有对象，届时应**重新开单**"
+            "并显式裁定 `scope`（含是否落地 `all_prs`）。"
         ),
-        "hit_probe": "burn_down_scope_case_touching",
+        "withdrawn": "2026-09-26",
+        "tracking_issue": 4155,
     },
     {
         "code": "CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED",
+        "kind": "deliberate_non_implementation",
         "title": "**全库**用例都必须标注 persona",
-        "why_not": (
-            "口径过宽会让全部双端用例（存量 200+ 条）立刻违规 —— 但双端用例**本就不该**"
-            "被强制标注（`persona: \"\"` 是合法的「双端」语义）。故只对**按工具集可判定为"
-            "单端**的用例子集实装。"
+        "why_withdrawn": (
+            "**有意更窄**：双端用例的 `persona: \"\"` 是合法语义，强制全库标注会让存量 200+ 条"
+            "双端用例立刻假红；实装的是子集口径 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`"
+            "（只对按工具集**可判定为单端**的用例要求标注）。"
         ),
-        "needs": "无需落地（这是**有意不做**的口径，登记以免被误当遗漏）。",
-        # ── 收紧后的必填四字段（见本元组上方的「可执行约束」）──
-        # **口径型**登记：不是「要做没做」，而是「**有意更窄**」——但「有意」不等于
-        # 「永久」：到期/追踪单 CLOSED 都必须重新裁定一次（不许静默续期）。
-        "issue": 4155,
-        "expires": "2027-06-30",
-        "how_to_verify": (
-            "persona 语义变更（例如引入显式 `persona: both` 双端标注）⇒ 全库标注成为"
-            "**可判定且不产生假红**的口径，撤本登记并按新口径实装；或双端用例归零"
-            "⇒ 子集口径 == 全库口径，本登记自动成僵尸。"
-            "核验命令：`python3 -c \"import sys;sys.path.insert(0,'.github');"
-            "from render_cases import load_case_dicts;"
-            "print(sum(1 for c in load_case_dicts('.github/cases') "
-            "if not str(c.get('persona') or '').strip()))\"`（当前 246 > 0 = 口径仍成立）。"
+        "evidence": (
+            "双端（`persona` 为空）用例数 > 0 ⇒ 全库口径至今会产生假红"
+            "（现取：`_probe_dual_leg_no_persona` 的读数）；原登记靠「#4155 长期 OPEN 当复核"
+            "触发器」在册，该形态的代价是**全队列替它承担** `CASE-TRUST-UNIMPL-ISSUE-CLOSED`。"
         ),
-        "hit_probe": "dual_leg_no_persona",
+        "restart_condition": (
+            "persona 语义变更（如引入显式 `persona: both` 双端标注）⇒ 全库标注成为"
+            "**可判定且不产生假红**的口径；或双端用例归零 ⇒ 子集口径 == 全库口径（本设定自动失效）。"
+        ),
+        "withdrawn": "2026-09-26",
+        "tracking_issue": 4155,
     },
 )
+
+#: ⚠️ **当前为空**（2026-09-26 起）：最后两条口径型登记已撤（理由与证据见上方本组 +
+#: `WITHDRAWN_UNIMPLEMENTED`）。空 **≠** 「全部已实装」，也 **≠** 「没跑」——
+#: 门禁报告会显式打印「未实装登记：**0 条**」（`render_report`），把「读过且为空」与
+#: 「压根没读」分开。新登记照旧按上方四条可执行约束写（`issue` 必须指向**保持 OPEN** 的追踪号）。
+UNIMPLEMENTED: tuple[dict, ...] = ()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
