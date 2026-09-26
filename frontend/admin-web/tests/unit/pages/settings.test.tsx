@@ -1,4 +1,4 @@
-// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054
+// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054, UI-061
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -25,6 +25,8 @@ vi.mock('lucide-react', () => {
     Newspaper: stub('newspaper'),
     // issue #5131: 「参数总览」tab 与参数面板用到的图标
     SlidersHorizontal: stub('sliders-horizontal'),
+    // issue #5668: 「手机端入口」卡片图标
+    Smartphone: stub('smartphone'),
     ChevronDown: stub('chevron-down'),
     AlertCircle: stub('alert-circle'),
     ExternalLink: stub('external-link'),
@@ -755,5 +757,91 @@ describe('SettingsPage — 参数总览 tab（issue #5131，企业参数中心�
     render(<SettingsPage />)
 
     expect(await screen.findByTestId('tenant-params-panel')).toBeInTheDocument()
+  })
+})
+
+// ── 手机端入口二维码（issue #5668，用例 UI-061）───────────────────────────────
+// 用户逐字：「你在商家后端合适的位置搞个二维码，方便用户扫码使用」+「二维码放『系统设置 / 企业设置』页」。
+// 两条判据的**反面**都要在：① 有值 ⇒ 二维码内容**逐字等于**该配置值（不是拼一个大概的地址）；
+// ② 无值 ⇒ 明确「未配置」且**一个二维码都不画**（画假码 = 用户扫出白屏/别的站点，
+//    而页面上一切看起来正常 —— 同族判据：洗水码「缺码不画假码」）。
+describe('SettingsPage — 手机端入口二维码（issue #5668）', () => {
+  // 🔴 用**哨兵值**（与线上域名不同）：若实现把地址写成硬编码/拼接，这条必红。
+  //    （实测教训：夹具值 = 线上域名时，「把 value 改成硬编码线上地址」这种变异**判不出来** ——
+  //     那是空断言方向；线上真实取值由下一格单独覆盖。）
+  const SENTINEL_URL = 'https://bmini-entry.invalid/b/'
+
+  beforeEach(() => {
+    mockApiSuccess()
+    mockSearchParams.mockReturnValue(new URLSearchParams(''))
+    vi.unstubAllEnvs()
+  })
+
+  it('配置了 NEXT_PUBLIC_BMINI_H5_URL ⇒ 二维码内容逐字等于该值（哨兵值 ⇒ 硬编码实现必红）', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
+    render(<SettingsPage />)
+
+    const qr = await screen.findByTestId('bmini-h5-qr')
+    expect(qr.tagName.toLowerCase()).toBe('svg')
+    // `title` 就是二维码承载的内容（同 TaskCardPrint 的既有口径）
+    expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
+    expect(qr.querySelectorAll('path').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
+    expect(screen.getByRole('button', { name: '复制链接' })).toBeInTheDocument()
+  })
+
+  it('线上真实取值（app.migaozn.com/b/）逐字进码 —— 值由配置决定，不由源码决定', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', 'https://app.migaozn.com/b/')
+    render(<SettingsPage />)
+
+    const qr = await screen.findByTestId('bmini-h5-qr')
+    expect(qr.querySelector('title')?.textContent).toBe('https://app.migaozn.com/b/')
+  })
+
+  it('手机端入口挂在「设置 / 企业设置」页（基本设置 tab）—— 且不影响既有 tab', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
+    render(<SettingsPage />)
+
+    expect(await screen.findByTestId('bmini-h5-entry')).toBeInTheDocument()
+    expect(screen.getByText('手机浏览器扫码使用米宝商家端')).toBeInTheDocument()
+    // 既有四个 tab 一个不少（零回归：只加卡片，不动导航）
+    for (const label of ['基本设置', 'AI 客服设置', '参数总览', '通知设置']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
+    }
+  })
+
+  it('未配置 ⇒ 明确「未配置」提示，且**不生成二维码**（缺码不画假码）', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
+    render(<SettingsPage />)
+
+    const entry = await screen.findByTestId('bmini-h5-entry')
+    expect(screen.getByTestId('bmini-h5-unconfigured')).toHaveTextContent('移动端地址未配置')
+    expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
+    // 该卡片里连一个 svg 都没有（空断言方向：不是"没找到 testid"，而是"确实没画"）
+    expect(entry.querySelector('svg')).toBeNull()
+  })
+
+  it('只有空白字符的配置值同样按「未配置」处理（不许画一个指向空白的码）', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '   ')
+    render(<SettingsPage />)
+
+    const entry = await screen.findByTestId('bmini-h5-entry')
+    expect(screen.getByTestId('bmini-h5-unconfigured')).toBeInTheDocument()
+    expect(entry.querySelector('svg')).toBeNull()
+  })
+
+  it('点「复制链接」把**该配置值**逐字写进剪贴板', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    const original = navigator.clipboard
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      render(<SettingsPage />)
+      await user.click(await screen.findByRole('button', { name: '复制链接' }))
+      expect(writeText).toHaveBeenCalledWith(SENTINEL_URL)
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { value: original, configurable: true })
+    }
   })
 })

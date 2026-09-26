@@ -155,6 +155,7 @@ jobs:
             --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_AI_API_BASE_URL=${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \
+            --build-arg NEXT_PUBLIC_BMINI_H5_URL=${{ secrets.NEXT_PUBLIC_BMINI_H5_URL || 'https://app.migaozn.com/b/' }} \
             -t $IMG:$TAG \
             -t $IMG:latest \
             .

@@ -208,6 +208,19 @@ jobs:
           # 「开工」，无红无告警）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响，正是免疫的兜底腿。
           # 代码路径 = `worker-h5-publish.yml` 的 `on.push.paths` 正向项（有动态对齐守卫）。
           reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""
+          # bmini-h5-hosting（issue #5668）—— **第二条静态落地面腿**：把 `frontend/bmini-app/**`
+          # 的 h5 产物发布到 `app.migaozn.com` 静态根下的 `b/`。与 worker-h5 同形（无镜像 ⇒
+          # 判据 ① 对它恒不成立，判定来自漂移判据 ② = 自 `bmini-h5-publish.yml` 上次**成功**发布起
+          # `frontend/bmini-app/**` 有无改动）。
+          # 为什么必须有这条腿：#5001 的同族抑制 —— 该 workflow 的自动触发面只有 `push: main`，
+          # 而 auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ 那个 `push` **不再触发 workflow** ⇒ 改了 B 端 h5
+          # 合并后 `/b/` 会**静默停在旧产物**（无红无告警，正是本单要治的「功能做完浏览器里打不开」
+          # 的近亲）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响。
+          # ⚠️ 腿名**有意**不叫 `bmini-h5`：发布腿的传输镜像正好叫 `<ACR>/<NS>/bmini-h5:sha-<build>`
+          #    ⇒ 若同名，判据 ①（`docker manifest inspect`）会在**发布失败**（镜像已推、`b/` 未更新）
+          #    时命中并返回「已构建 ⇒ 无漂移」⇒ **静默不补发布**。腿名与传输镜像名不同 ⇒
+          #    判据 ① 恒不成立，判定只能来自漂移判据 ②（这条就是「对账不能凭空相信中间产物」的落点）。
+          reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
 
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
@@ -225,12 +238,13 @@ jobs:
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
-          # `--seen` = 本轮的**对账腿数**（4 条：3 条镜像腿 + worker-h5 静态落地面腿，issue #5001）——
-          # 它与读数必须同刻（不加腿就报 4 = 读数与事实相反，#5264 的形态）。
+          # `--seen` = 本轮的**对账腿数**（5 条：3 条镜像腿 + worker-h5 静态落地面腿 + bmini-h5-hosting
+          # 静态落地面腿，issue #5001 / #5668）—— 它与读数必须同刻（不加腿就报 5 = 读数与事实相反，
+          # #5264 的形态）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-            mechanism_liveness_declare --seen 4 --acted "${MISSING}" \
+            mechanism_liveness_declare --seen 5 --acted "${MISSING}" \
               --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）"
 
           fi

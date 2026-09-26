@@ -1,0 +1,126 @@
+name: Publish bmini h5 (app.migaozn.com/b/)
+
+# ── 为什么需要这条腿（issue #5668）─────────────────────────────────────────────
+# `frontend/bmini-app` 的 h5 产物（用户 2026-09-26 裁定「暂时只做 H5 浏览器访问」⇒
+# **h5 就是唯一用户可达形态**）此前**没有任何部署通路**：
+#   · `grep -rln bmini .github/workflows/ deploy/` 只命中 CI（typecheck + 单测 + 构建，**不发布**）；
+#   · `grep -n bmini deploy/swas/nginx.conf` = **0 命中**。
+# ⇒ 功能全做完，浏览器里也打不开。本 workflow 把它真正发布到 `app.migaozn.com/b/`，
+#   并在发布后做**身份 + 不串端**断言（`deploy/scripts/bmini-h5-verify-served.sh`）。
+#
+# ── 为什么不复用工人端那条腿（#4837 的 `worker-h5-publish.yml`）──
+# 形状不同：工人端是**零依赖零构建**的纯 ESM 目录（发布 = 逐字拷贝源码），
+# 而 bmini 是 **Taro 构建产物**，且必须按 `/b/` 前缀构建（`h5.publicPath`）——
+# 否则产物引用根级 `/js/app.js`，那是 **C 端的包**（实测两端资源同名同路径）。
+# ⚠️ 那条腿**线上在跑**（`/w/` 报工面），本单**新增**一条，绝不改它的语义。
+#
+# ── 产物怎么从 CI 到实例（`deploy/bmini-h5/Dockerfile` 里有完整理由）──
+# 实例上没有 node 工具链 ⇒ 产物必须在 CI 构建；CI → 实例的既有通道只有 RunCommand（命令体 64KB，
+# 装不下 ~1.3MB 产物）与 **ACR 镜像**（实例已在用）⇒ 用一个只装 `/dist` 的**传输镜像**搬运，
+# 远端 `docker cp` 取出来 ⇒ **线上字节 == CI 构建字节**（身份断言才成立）。
+#
+# ⚠️ 触发面只有 `push: main` 与 `workflow_dispatch` —— **刻意不加 `pull_request`**：
+#    这条腿写的是**线上静态根**，PR 分流内容不该有机会落上去（与工人端那条腿同口径）。
+#    也因此不产生 required check「Waiting」问题，且**不属于** `declaration_gate_registry.json`
+#    的登记面（那里登记的是"会被路径门控的 PR 门禁"）。
+on:
+  push:
+    branches: [main]
+    paths:
+      # 被测发布物本身（改了 h5 不发布 ⇒ 线上落后，正是本单要治的形态）
+      - 'frontend/bmini-app/**'
+      # 发布链路自身：改了任何一环都要重跑，否则「改坏了没有证据」
+      - 'deploy/bmini-h5/**'
+      - 'deploy/swas/bmini-h5-publish-remote.sh'
+      # nginx 配置：`/b/` 的 fallback 就在这份文件里（改了它必须重新自证「不串端」）
+      - 'deploy/swas/nginx.conf'
+      - 'deploy/scripts/bmini-h5-publish-ci.sh'
+      - 'deploy/scripts/bmini-h5-verify-served.sh'
+      - '.github/workflows/bmini-h5-publish.yml'
+  # 人工补发/排障入口（合并后 main 上的版本才可 dispatch）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 与 deploy-* 同口径：不取消进行中的发布（两个并发发布会让「谁最后落地」不可判定）
+concurrency:
+  group: bmini-h5-publish
+  cancel-in-progress: false
+
+env:
+  # 与 deploy-frontend.yml / deploy-admin-api.yml 同一台 SWAS 实例（测试环境）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  # 静态根（= deploy/swas/nginx.conf 里 app.migaozn.com 的 root）；**只收敛其 b/ 子树**
+  H5_STATIC_ROOT: /opt/migao-deploy/h5
+  H5_SUBDIR: b
+  # 传输镜像的仓库（与 deploy-frontend.yml 同域同命名空间 ⇒ 不新增任何 secret）
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+  IMAGE_NAME: bmini-h5
+  # 构建期变量（见 frontend/bmini-app/config/index.ts）：落在 /b/ ⇒ 资源前缀必须也是 /b/
+  TARO_APP_H5_PUBLIC_PATH: /b/
+  # h5 是**浏览器直连** admin-api（不是微信内）⇒ 必须是公网域名，否则产物里 baked 的是 localhost
+  TARO_APP_API_URL: https://api.migaozn.com
+
+jobs:
+  publish:
+    name: publish bmini h5 → /b/ + identity assertions
+    runs-on: ubuntu-latest
+    # npm ci（Taro 依赖树重）+ 构建 + 镜像搬运 + 发布 + 断言；另含 verify 里**有上界**的
+    # 「等 nginx 配置随 deploy 生效」窗口（默认 900s，见 verify 脚本 §为什么会有等待）
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/bmini-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/bmini-app
+        run: npm ci
+
+      # `TARO_APP_H5_PUBLIC_PATH=/b/` 由 workflow 级 env 注入；漏了它 ⇒ 下面的发布脚本
+      # 会在**发起任何云调用之前**判红（本地产物命名空间断言），不会把串端产物发上线。
+      - name: Build H5 (publicPath=/b/)
+        working-directory: frontend/bmini-app
+        run: npm run build:h5
+
+      - name: Docker login ACR
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      # 传输载体：上下文**只给 dist/**（给 frontend/bmini-app 会把 700MB+ 的 node_modules 灌进上下文）
+      - name: Pack product into transport image and push
+        run: |
+          IMG="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}"
+          TAG="sha-${GITHUB_SHA::7}"
+          docker build -f deploy/bmini-h5/Dockerfile -t "$IMG:$TAG" frontend/bmini-app/dist
+          docker push "$IMG:$TAG"
+          # 推完立刻复验：推失败/推了一半 ⇒ 这里就红（在远端 pull 之前 fail-closed）
+          docker manifest inspect "$IMG:$TAG" >/dev/null
+          echo "传输镜像：\`$IMG:$TAG\`（内容 = 本次 CI 构建的 dist/）" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          file /tmp/aliyun.tgz | grep -q "gzip compressed data"
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          aliyun version
+
+      - name: Publish bmini h5 to SWAS (静态根下的 b/ 子树)
+        env:
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          bash deploy/scripts/bmini-h5-publish-ci.sh \
+            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "sha-${GITHUB_SHA::7}"
+
+      # 发布后身份断言（**不是**「200 就算过」—— 修复前 `/b/` 就是 200 的 C 端页面）
+      - name: Assert served identity (/b/ 是本仓库产物、子路由不串端、根仍是 C 端、worker-h5 零回归)
+        run: bash deploy/scripts/bmini-h5-verify-served.sh https://app.migaozn.com frontend/bmini-app/dist
