@@ -1,4 +1,4 @@
-# case_ids: CH-021, PR-008, OR-008
+# case_ids: CH-021, PR-008, OR-008, OR-048
 """识别内核测试（issue #5321 包 1 · 页面快通道）
 
 判据（issue #5321「验收判据」，逐条对应）：
@@ -414,3 +414,112 @@ class TestBuildMessages:
         # 订单侧字段 schema 与商品侧**不同**（不得做成「一套字段两个页面填」）
         assert "customer_phone" in prompt
         assert "door_width" not in prompt
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 发货侧 target（issue #5648）：识别「订单行 / 商品标签上的文字」
+# ══════════════════════════════════════════════════════════════════════════════════
+
+
+def _shipment_vision_json(**overrides) -> str:
+    """固定夹具：钉住 vision 对**发货侧**那 5 格的输出（模型被换了也不会让本组失真）。"""
+    fields = {
+        "order_no": {"value": "ORD-20260926-0001", "confidence": 0.97, "reason": None},
+        "product_name": {"value": "雪尼尔遮光窗帘", "confidence": 0.95, "reason": None},
+        "quantity": {"value": "10.00 米", "confidence": 0.95, "reason": None},
+        "width": {"value": "2.80 米", "confidence": 0.95, "reason": None},
+        "height": {"value": "2.40 米", "confidence": 0.95, "reason": None},
+    }
+    fields.update(overrides)
+    return json.dumps({"fields": fields}, ensure_ascii=False)
+
+
+def _cell(target: str, key: str, raw_text: str) -> dict:
+    table = extract_fields(target, raw_text)
+    return next(c for c in table if c["key"] == key)
+
+
+class TestExtractFieldsShipment:
+    """发货侧字段表（issue #5648）：键名与订单行既有列**逐字同名**，缺值不猜。"""
+
+    def test_shipment_fixture_maps_to_an_exact_field_table(self):
+        table = extract_fields("shipment", _shipment_vision_json())
+        assert [c["key"] for c in table] == [
+            "order_no", "product_name", "quantity", "width", "height",
+        ]
+        assert [c["value"] for c in table] == [
+            "ORD-20260926-0001", "雪尼尔遮光窗帘", "10", "2.8", "2.4",
+        ]
+        assert all(c["source"] == FIELD_MARKER for c in table)
+
+    def test_shipment_quantity_must_be_a_single_positive_number(self):
+        """数量硬闸（放在置信度闸**之前**）：读不出唯一一个正数 ⇒ 留空 + 给理由。"""
+        for raw, why in (("10 或 12", "两个候选"), ("0", "非正"), ("-3", "非正"), ("看不清", "无数字")):
+            cell = _cell("shipment", "quantity", _shipment_vision_json(
+                quantity={"value": raw, "confidence": 0.99, "reason": None}))
+            assert cell["value"] is None, f"「{raw}」（{why}）不得被填进实发数量"
+            assert cell["source"] is None
+            assert cell["reason"], "留空必须给得出理由（不编造）"
+
+    def test_a_negative_number_is_never_read_as_a_positive_one(self):
+        """🔴 同族加固（先写测试才暴露的形态）：`_SIZE_NUMBER_RE` 只认数字本体 ⇒ `-3` 会被读成 `3`，
+        而「正数闸」`amount <= 0` 对它是**恒真**的。尺寸侧同一个洞（`-2.8` → `2.8`，
+        量程闸 0.2~20 同样恒真）⇒ 两处一起挡。
+        """
+        cell = _cell("shipment", "quantity", _shipment_vision_json(
+            quantity={"value": "-3", "confidence": 0.99, "reason": None}))
+        assert cell["value"] is None
+        assert "负" in cell["reason"]
+
+        size = _cell("shipment", "width", _shipment_vision_json(
+            width={"value": "-2.8", "confidence": 0.99, "reason": None}))
+        assert size["value"] is None
+        assert "负" in size["reason"]
+
+    def test_shipment_quantity_is_normalised_to_a_plain_decimal(self):
+        cell = _cell("shipment", "quantity", _shipment_vision_json(
+            quantity={"value": "约 12.00 米左右", "confidence": 0.95, "reason": None}))
+        assert cell["value"] == "12"
+
+    def test_shipment_quantity_shape_gate_runs_before_the_confidence_gate(self):
+        """「很自信地抄错」也要留空 —— 形状闸必须在置信度闸之前。"""
+        cell = _cell("shipment", "quantity", _shipment_vision_json(
+            quantity={"value": "10 或 12", "confidence": 1.0, "reason": None}))
+        assert cell["value"] is None
+
+    def test_shipment_size_reuses_the_direction_disambiguation(self):
+        """`2.8×2.4` 这种没写明方向的写法在发货侧同样**不猜顺序**（同一份 `_normalise_size`）。"""
+        cell = _cell("shipment", "width", _shipment_vision_json(
+            width={"value": "2.8×2.4", "confidence": 0.99, "reason": None}))
+        assert cell["value"] is None
+        assert "宽" in cell["reason"] or "方向" in cell["reason"]
+
+    def test_shipment_side_is_stricter_than_the_order_side(self):
+        """同一个 0.88 的置信度：订单侧留、发货侧弃（阈值 0.90 > 0.85）。"""
+        raw = _shipment_vision_json(
+            order_no={"value": "ORD-1", "confidence": 0.88, "reason": None})
+        cell = _cell("shipment", "order_no", raw)
+        assert cell["value"] is None
+        assert "0.9" in cell["reason"]
+
+    def test_shipment_low_confidence_is_left_empty_with_a_reason(self):
+        cell = _cell("shipment", "product_name", _shipment_vision_json(
+            product_name={"value": "雪尼尔遮光窗帘", "confidence": 0.5, "reason": None}))
+        assert cell["value"] is None
+        assert cell["source"] is None
+        assert "发货侧" in cell["reason"]
+
+    def test_model_may_not_invent_a_field_outside_the_schema(self):
+        """模型多给的键一律丢弃（字段面是**固定**的整张表，不是"识别到什么返回什么"）。"""
+        raw = json.dumps({"fields": {
+            "order_no": {"value": "ORD-1", "confidence": 0.97, "reason": None},
+            "qty": {"value": "999", "confidence": 1.0, "reason": None},
+        }}, ensure_ascii=False)
+        assert [c["key"] for c in extract_fields("shipment", raw)] == [
+            "order_no", "product_name", "quantity", "width", "height",
+        ]
+
+    def test_build_messages_carries_the_shipment_schema(self):
+        msgs = build_messages("shipment", ["https://cdn/label.jpg"])
+        text = msgs[0].content[0]["text"]
+        for key in ("order_no", "product_name", "quantity", "width", "height"):
+            assert key in text
