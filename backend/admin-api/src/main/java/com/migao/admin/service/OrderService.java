@@ -138,28 +138,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 合法的状态流转定义
      * key: 当前状态, value: 允许流转到的目标状态集合
      */
-    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
-            "pending", Set.of("confirmed", "cancelled"),
-            "confirmed", Set.of("producing", "shipped", "cancelled"),
-            "producing", Set.of("shipped", "cancelled"),
-            "shipped", Set.of("completed"),
-            "completed", Set.of(),
-            "cancelled", Set.of()
-    );
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS =
+            OrderStatusTransitions.STATUS_TRANSITIONS;
 
     /**
      * 订单状态 → 中文业务术语（错误消息用）。
      * 校验/退款等报错会通过 GlobalExceptionHandler 直接展示给企业客户，
      * 必须用中文（如「待付款」），不能用 pending/confirmed 等英文枚举。
      */
-    private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
-            "shipped", "已发货",
-            "completed", "已完成",
-            "cancelled", "已取消"
-    );
+    private static final Map<String, String> ORDER_STATUS_LABELS =
+            OrderStatusTransitions.ORDER_STATUS_LABELS;
 
     /**
      * 分页查询订单列表
@@ -673,21 +661,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.notFound("订单");
         }
 
-        // 校验状态值
-        if (!STATUS_TRANSITIONS.containsKey(status)) {
-            String statusLabel = ORDER_STATUS_LABELS.getOrDefault(status, status);
-            throw BusinessException.validationError("无效的订单状态: " + statusLabel);
-        }
-
-        // 校验状态流转是否合法
+        // 状态值 + 流转合法性：**唯一实现** = OrderStatusTransitions（issue #5648 抽出）。
+        // 抽出的理由不是"好看"：本单新增了**第三条**发货路（工人可达面
+        // OrderShipmentService），两条路各写一张流转表 ⇒ 迟早分叉成
+        // 「工人能走的流转商家走不了」（或反过来：非法流转在某一条路上被放过）。
         String currentStatus = order.getStatus();
-        Set<String> allowedTargets = STATUS_TRANSITIONS.getOrDefault(currentStatus, Set.of());
-        if (!allowedTargets.contains(status)) {
-            String currentLabel = ORDER_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-            String targetLabel = ORDER_STATUS_LABELS.getOrDefault(status, status);
-            throw BusinessException.validationError(
-                    String.format("订单状态不允许从 [%s] 变更为 [%s]", currentLabel, targetLabel));
-        }
+        OrderStatusTransitions.assertTransitionAllowed(currentStatus, status);
 
         // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
         // 防止加工环节被 confirmed→shipped 直跳绕过
@@ -1018,17 +997,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
      */
     private void assertProcessingCompletedBeforeShip(Order order) {
-        // 必须走 BaseMapper 加载（见 loadOrderItems）：自定义 @Select 不经过 JacksonTypeHandler，
-        // processing_info 会以 JSON 字符串返回 → 加工项解析恒为空 → 守卫静默失效
-        // （issue #3340 验收实战：真实对话生成加工单被判「无加工项」）
-        List<OrderItem> items = loadOrderItems(order.getId(), order.getTenantId());
-        boolean hasProcessing = items.stream()
-                .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
-        if (hasProcessing
-                && processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) == 0) {
-            throw BusinessException.validationError(
-                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
-        }
+        // 判定本体在 OrderShipGuard（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
+        // 走的是同一份判定 —— 复制第二份 = 迟早分叉，而分叉方向是「绕过加工环节就发货」（涉钱）。
+        OrderShipGuard.assertProcessingCompletedBeforeShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order);
     }
 
     /**
@@ -1036,11 +1008,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 与 getOrderById 的既有约定一致（见查询明细处的注释）。
      */
     private List<OrderItem> loadOrderItems(String orderId, Long tenantId) {
-        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                .eq(OrderItem::getOrderId, orderId)
-                .eq(OrderItem::getTenantId, tenantId)
-                .eq(OrderItem::getDeleted, 0));
-        return items != null ? items : Collections.emptyList();
+        return OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
     }
 
     /**
@@ -1070,49 +1038,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @SuppressWarnings("unchecked")
     private List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(Object processingInfo) {
-        Object normalized = processingInfo;
-        if (normalized instanceof String s && !s.isBlank()) {
-            try {
-                normalized = objectMapper.readValue(s, Map.class);
-            } catch (Exception e) {
-                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
-                return Collections.emptyList();
-            }
-        }
-        if (!(normalized instanceof Map)) {
-            return Collections.emptyList();
-        }
-        processingInfo = normalized;
-        try {
-            Map<String, Object> info = (Map<String, Object>) processingInfo;
-            Object raw = info.get("processingItems");
-            if (!(raw instanceof List)) {
-                return Collections.emptyList();
-            }
-            List<Object> rawList = (List<Object>) raw;
-            List<OrderDetailResponse.ProcessingItemBrief> result = new ArrayList<>();
-            for (Object element : rawList) {
-                if (!(element instanceof Map)) {
-                    continue;
-                }
-                Map<String, Object> entry = (Map<String, Object>) element;
-                OrderDetailResponse.ProcessingItemBrief brief = new OrderDetailResponse.ProcessingItemBrief();
-                Object id = entry.get("id");
-                brief.setId(id != null ? String.valueOf(id) : null);
-                Object name = entry.get("name");
-                brief.setName(name != null ? String.valueOf(name) : null);
-                // issue #3666：必须走**十进制**解析——旧 toInteger() 把 per_area 的 8.4 截断成 8，
-                // 详情/列表按截断值重算加工费（30×8=240.00）与外层落库 processingFee（252.00）
-                // 自相矛盾。（issue #4882 起不再解析 unitPrice / amount：加工费只有 processingFee 一处口径。）
-                BigDecimal quantity = toBigDecimal(entry.get("quantity"));
-                brief.setQuantity(quantity);
-                result.add(brief);
-            }
-            return result;
-        } catch (Exception e) {
-            log.warn("解析 processingInfo 失败，返回空加工项列表: {}", e.getMessage());
-            return Collections.emptyList();
-        }
+        return OrderShipGuard.extractProcessingItems(objectMapper, processingInfo);
     }
 
     /**
@@ -1132,14 +1058,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     private BigDecimal toBigDecimal(Object value) {
-        if (value == null) return null;
-        if (value instanceof BigDecimal) return (BigDecimal) value;
-        if (value instanceof Number) return BigDecimal.valueOf(((Number) value).doubleValue());
-        try {
-            return new BigDecimal(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return OrderShipGuard.toBigDecimal(value);
     }
 
     /**
@@ -2462,35 +2381,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。
      */
     private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName) {
-        List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
-        if (existing == null || existing.isEmpty()) {
-            OrderLogistics logistics = OrderLogistics.builder()
-                    .tenantId(TenantContext.getTenantId())
-                    .orderId(orderId)
-                    .logisticsCompany(logisticsCompany)
-                    .trackingNo(trackingNo)
-                    .shipperName(resolveShipperName(shipperName))
-                    .status("in_transit")
-                    .shippedAt(OffsetDateTime.now())
-                    .build();
-            orderLogisticsMapper.insert(logistics);
-            log.info("创建物流信息成功: orderId={}, trackingNo={}, shipper={}",
-                    orderId, trackingNo, logistics.getShipperName());
-        } else {
-            OrderLogistics latest = existing.get(0);
-            latest.setLogisticsCompany(logisticsCompany);
-            latest.setTrackingNo(trackingNo);
-            // 仅显式传入才覆盖：兜底值属于「新建时的经手人」，不能用它改写已记录的发货人
-            // （否则改一次运单号/agent 补一次单号就会把经手人换成当次操作人）
-            if (StringUtils.hasText(shipperName)) {
-                latest.setShipperName(shipperName.trim());
-            }
-            if (latest.getStatus() == null) {
-                latest.setStatus("in_transit");
-            }
-            orderLogisticsMapper.updateById(latest);
-            log.info("更新物流信息成功: id={}, trackingNo={}", latest.getId(), trackingNo);
-        }
+        // 写入本体在 OrderLogisticsWriter（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
+        // 走的是同一份「存在则更新、否则新建」口径与同一条发货人规则（不复制坑）。
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
+                logisticsCompany, trackingNo, shipperName,
+                userService::resolveCurrentUserDisplayName);
     }
 
     /**

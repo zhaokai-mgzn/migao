@@ -1,4 +1,4 @@
-// case_ids: OR-036, OR-008
+// case_ids: OR-036, OR-008, OR-046
 /**
  * **图片路径 ⇄ 手工路径 的推导等价性**（issue #5349：图片建单必须接上「自动推导参数」链）。
  *
@@ -276,7 +276,7 @@ describe('下单页的接线点（判据 1 的页面侧半边）(#5349)', () => 
  * 有了这张表，「新 target 该不该带推导输入」就是一个**必须显式回答**的问题
  * （不登记 ⇒ 下面第 1 条断言红），而不是靠人记得去想。
  */
-const TARGETS_WITHOUT_DERIVATION = ['product'] as const
+const TARGETS_WITHOUT_DERIVATION = ['product', 'shipment'] as const
 
 describe('类级元守卫：识别 target ⇄ 推导输入 的接线登记 (#5349 · 铁律 8)', () => {
   it('每个 target 要么登记了推导输入、要么在「不喂推导链」台账里（新 target 不登记 ⇒ 红）', () => {

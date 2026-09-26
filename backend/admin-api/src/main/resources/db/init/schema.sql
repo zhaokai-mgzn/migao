@@ -1930,6 +1930,65 @@ COMMENT ON TABLE agent_batches IS
 COMMENT ON TABLE agent_batch_items IS
     '批量更新的逐条明细（V127，issue #5314）—— old_value = 撤销的唯一依据；逐条 status/error = 部分失败逐条报告的载体，不做整体回滚';
 
+-- 发货单 + 发货明细（V132，issue #5648）—— 工人拍照生成发货单 + 订单发货状态闭环
+-- 「发货明细（实发套/件/卷）」这个真值的**唯一 owner = 这两张表**；issue #5651（纸面）只消费。
+CREATE TABLE IF NOT EXISTS order_shipments (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    order_id VARCHAR(36) NOT NULL,
+    order_no VARCHAR(64),
+    shipment_no VARCHAR(64) NOT NULL,
+    source VARCHAR(32) NOT NULL,                     -- worker_photo / worker / admin
+    photo_refs JSONB,                                -- 照片引用（URL 列表）；无照片 ⇒ 空数组，不编造
+    recognition JSONB,                               -- 识别留痕（vision 原样字段表：逐格 value/source/reason）
+    packed_by_worker_id VARCHAR(64),
+    packed_by_worker_name VARCHAR(64),
+    packed_at TIMESTAMP WITH TIME ZONE,
+    shipped_by_worker_id VARCHAR(64),
+    shipped_by_worker_name VARCHAR(64),
+    shipped_at TIMESTAMP WITH TIME ZONE,
+    tracking_no VARCHAR(64),
+    logistics_company VARCHAR(128),
+    client_request_id VARCHAR(128),                  -- 幂等键（X-Client-Request-Id）
+    unpacked_at TIMESTAMP WITH TIME ZONE,            -- 撤销打包留痕（必带理由）
+    unpacked_by_worker_id VARCHAR(64),
+    unpacked_by_worker_name VARCHAR(64),
+    unpack_reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_shipments_idem
+    ON order_shipments (tenant_id, client_request_id)
+    WHERE client_request_id IS NOT NULL AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_order_shipments_order
+    ON order_shipments (tenant_id, order_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_shipment_items (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    shipment_id VARCHAR(36) NOT NULL REFERENCES order_shipments(id) ON DELETE CASCADE,
+    order_id VARCHAR(36) NOT NULL,
+    order_item_id VARCHAR(36),                       -- 挂在**订单行**上（同商品两行必须分得开）
+    product_name VARCHAR(255),
+    shipped_quantity NUMERIC(10,2) NOT NULL,         -- 🔴 实发数量（与 order_items.quantity 同口径）
+    unit VARCHAR(16) NOT NULL,                       -- 米 / 套 / 件（不从订单行推算）
+    set_count INTEGER,                               -- 实发套数；不适用 ⇒ NULL（缺值不填 0）
+    roll_count INTEGER,                              -- 实发卷数；非整卷 ⇒ NULL（禁止由米数推算）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_order_shipment_items_shipment
+    ON order_shipment_items (shipment_id, id);
+CREATE INDEX IF NOT EXISTS idx_order_shipment_items_order
+    ON order_shipment_items (tenant_id, order_id);
+
+COMMENT ON TABLE order_shipments IS
+    '发货单（V132，issue #5648）—— 服务端留痕：谁/何时/哪张单/照片引用/识别结果；与 order_logistics 分开（后者是物流面）';
+COMMENT ON TABLE order_shipment_items IS
+    '发货明细（V132，issue #5648）—— 这一单**实际发了多少**；真值唯一 owner = 本表，#5651（纸面）只消费';
+
 -- ================================================
 -- 10. 审计日志表
 -- ================================================
@@ -2378,6 +2437,15 @@ CREATE POLICY tenant_isolation_agent_batches ON agent_batches
 
 ALTER TABLE agent_batch_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_agent_batch_items ON agent_batch_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 发货单 + 发货明细（V132，issue #5648）—— 跨租户不可见是契约判据之一
+ALTER TABLE order_shipments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_order_shipments ON order_shipments
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+ALTER TABLE order_shipment_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_order_shipment_items ON order_shipment_items
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- 企业参数变更留痕（V131，issue #5131 §22 P6）—— 跨租户不可见
