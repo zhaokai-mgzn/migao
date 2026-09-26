@@ -192,6 +192,34 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > `/api/admin/menus`（静态目录）与自己的 `/api/admin/user/info`。二者都不含跨用户/租户数据，
 > 且与 `/api/auth/me` 已返回的信息同源 ⇒ 判定为**可接受**；不为此加码（加码会砍掉自助首屏与员工页勾选树）。
 
+## 员工授权面的 ⊆ 门禁（issue #4104，用户 2026-09-26 裁定）
+
+**裁定**：授予的权限码**必须 ⊆ 操作者自身权限**（三选一里最严的一档）。
+
+- **落点**：`backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的
+  `assertAssignableRoleAndPermissions`（`createUser` / `updateUser` 的写面入口，**写库之前**）⇒
+  委托 `backend/admin-api/src/main/java/com/migao/admin/security/PermissionInterceptor.java` 的
+  `assertGrantable`（与 `@RequirePermission` 走**同一份**身份口径：未认证 / 旁路角色 / `RoleService` 取码
+  —— 不新增第二份授权实现）。
+- **授予集** = 显式权限码快照 ∪ **所授角色隐含的生效码**（`role=admin` ⇒ `*`；口径 =
+  `backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java` 的
+  `getEffectivePermissionCodesForRoleCode`，与 `getUserPermissions` 的角色分支**同一份**实现）。
+  只看快照数组会被「授予一个比自己权限更大的角色」绕过。
+- **三态**：① 旁路身份（`super_admin` / `service`）不适用（它们本身就是全权限）；
+  ② **无操作者**（公开注册引导：新租户首个管理员由注册流程创建，不经 `/api/admin/**`）不适用；
+  ③ 商户员工强制 ⊆，且**自身权限解析不出来即拒绝**（fail-closed）。
+  快照不是合法 JSON 数组时同样按未知码 fail-closed（不再原样落库、运行时悄悄回退角色权限）。
+- **拒绝形态**：403 + 独立错误码 `PERMISSION_ESCALATION_DENIED`（不复用 `PERMISSION_DENIED`：
+  后者语义是「调用本端点缺某个码」，前者是「你想写进去的码你自己没有」），文案**点名**违规码，
+  且**不回答**「该码在目录里存不存在」（目录跨租户共享）；角色码 → 码只按**目标租户**查角色行。
+- **判据**：`backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java`
+  （行为面：越权被拒 + `verify(never())` 不落库 + 正向对照 + 三态边界）+
+  `backend/admin-api/src/test/java/com/migao/admin/service/EmployeeGrantChokepointMetaGuardTest.java`
+  （类级元守卫：授权写面普查「未登记即红」+ 门禁调用点台账「只许显式抬高」）。
+- **本单未固化（如实登记，不粉饰）**：① `RoleService.assignPermissions`（岗位 ↔ 权限码写面，
+  由 `system:manage` 把守）不在射程；② **目标侧**护栏（「不得改比自己权限高的账号」：重置密码 /
+  停用 / 删除）未实装 ⇒ 「`employee:create` ≈ 租户内最高权限」的**剩余半**仍需另单或裁定。
+
 ## 服务间调用的授权边界（ai-agent → admin-api，issue #4105）
 
 ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-User-Id`。

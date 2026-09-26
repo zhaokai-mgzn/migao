@@ -194,6 +194,39 @@ public class RoleService {
     }
 
     /**
+     * 角色码 → 该角色**隐含的生效权限码**（issue #4104 的 ⊆ 门禁用它算「授予这个角色会顺带授予哪些码」）。
+     *
+     * <p>口径与 {@link #getUserPermissions(String)} 的角色分支**同一份**实现：先按角色行取
+     * {@code role_permissions}，无关联记录回退内置硬编码映射；{@code admin} 恒为 {@code ["*"]}。
+     * 两处若各写一份，必然漂移成「快照面拦得住、角色面拦不住」。</p>
+     *
+     * <p>租户内查不到该角色码 ⇒ 走内置回退（与运行时一致：运行时的角色解析也走同一回退）；
+     * 但**只按传入租户查角色行** ⇒ 不跨租户解析，不泄露他租户的角色/权限是否存在。</p>
+     *
+     * @param roleCode 角色码（null / 空 ⇒ 空集）
+     * @param tenantId 目标租户（null ⇒ 跳过角色行查询，直接走内置回退）
+     */
+    public List<String> getEffectivePermissionCodesForRoleCode(String roleCode, Long tenantId) {
+        if (!StringUtils.hasText(roleCode)) {
+            return List.of();
+        }
+        if ("admin".equals(roleCode)) {
+            return List.of("*");
+        }
+        if (tenantId != null) {
+            LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(Role::getCode, roleCode)
+                    .eq(Role::getTenantId, tenantId)
+                    .eq(Role::getDeleted, 0);
+            Role role = roleMapper.selectOne(wrapper);
+            if (role != null) {
+                return getPermissionCodesForRoleEntity(role);
+            }
+        }
+        return getPermissionCodesForRole(roleCode);
+    }
+
+    /**
      * 根据用户ID查询用户的所有权限
      *
      * 岗位权限体系（#2969）快照式语义：员工管理保存的权限勾选 = 员工最终权限，
