@@ -108,6 +108,13 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.UserService userService;
 
+    /**
+     * 工人档案服务（issue #4869）：新控制器 {@code AdminWorkerController} 的构造依赖
+     * ⇒ 本上下文必须能装配它（本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
+     */
+    @MockBean
+    private com.migao.admin.service.WorkerAdminService workerAdminService;
+
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 
@@ -872,6 +879,52 @@ class SecurityConfigTest {
 
         mockMvc.perform(get("/api/admin/users")
                         .with(user("operator-6").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
+    }
+
+    // ======================== 工人档案接口（issue #4869）=======================
+
+    @Test
+    @DisplayName("越权防护 - 工人角色（worker）访问 /api/admin/workers 返回 403（新入口被同一道门禁覆盖）")
+    void authorization_workerRole_cannotAccessWorkerEndpoints() throws Exception {
+        mockMvc.perform(get("/api/admin/workers")
+                        .with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("worker-1").roles("WORKER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
+                .andExpect(status().isForbidden());
+
+        // 不是「拒绝了但业务已执行」：请求根本没进到服务层
+        verify(workerAdminService, never()).createWorker(any(), any(), any());
+        verify(workerAdminService, never()).listWorkers(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("工人档案 - operator 持 employee:create 可建工人（正向对照：不是被一刀切死）")
+    void workerCreate_operatorWithPermission_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:create"));
+        when(workerAdminService.createWorker(any(), any(), any()))
+                .thenReturn(new com.migao.admin.entity.User());
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("operator-7").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("工人档案 - operator 无 employee:create 建工人返回 403（权限码复用员工域，不新增权限码）")
+    void workerCreate_operatorWithoutPermission_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:list"));
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("operator-8").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
                 .andExpect(status().isForbidden());
     }
 

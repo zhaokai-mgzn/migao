@@ -119,6 +119,8 @@ import type {
   EmployeeListParams,
   EmployeeFormData,
   EmployeeStatus,
+  WorkerProfile,
+  WorkerFormData,
   ResetPasswordParams,
   Role,
   RoleFormData,
@@ -1499,6 +1501,21 @@ export const employeeApi = {
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/reset-password`, data),
 
   toggleEmployeeStatus: (id: number, status: EmployeeStatus) =>
+    request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
+}
+
+// 工人档案 API（issue #4869）：工人 = users.worker_no 非空 + role=worker，**与员工账号分开**
+// —— 工号 + PIN 登录工人端扫码报工，没有菜单权限、不进管理后台。建号走独立端点
+// POST /api/admin/workers（员工创建路径强制 phone 非空且会走岗位/权限快照，不适合工人）。
+export const workerApi = {
+  listWorkers: (params?: { page?: number; size?: number; keyword?: string; status?: string }) =>
+    request.get<ApiResponse<PageResponse<WorkerProfile>>>('/api/admin/workers', { params }),
+
+  createWorker: (data: WorkerFormData) =>
+    request.post<ApiResponse<WorkerProfile>>('/api/admin/workers', data),
+
+  /** 停用/启用：**复用**既有员工状态端点 PUT /api/admin/users/{id}/status（不另造一套）。 */
+  setWorkerStatus: (id: string, status: EmployeeStatus) =>
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
 }
 
