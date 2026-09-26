@@ -44,6 +44,7 @@ import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.ProcessingSetReadService;
 import com.migao.admin.service.ProductionStuckPointService;
+import com.migao.admin.service.ProductionTodoService;
 import com.migao.admin.service.RoutingModelFixture;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -226,6 +227,13 @@ class ProductionControllerTest {
                 repricingLogMapper);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "productionInstanceRepricingService", repricingService);
+        // 生产待办聚合（issue #5641）：同款字段注入 —— **真实服务**（只 mock Mapper），
+        // 「卡在哪」/三态/threshold_source 全部走上面那个真实卡点服务（不复制第二份装配、
+        // 不动既有 6 参构造）。⚠️ 本类的 orderService 是 @Mock ⇒ 发货/待排产判据的**真实行为**
+        // 由 ProductionTodoServiceTest（真实 OrderService）覆盖；本类只钉端点契约（路径/权限/信封）。
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionTodoService",
+                new ProductionTodoService(stuckPointService, orderService, orderMapper,
+                        processingOrderMapper, positionOperationMapper));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -2115,5 +2123,40 @@ class ProductionControllerTest {
             assertThat(annotation).as("%s 必须声明方法级权限", method.getName()).isNotNull();
             assertThat(annotation.value()).isEqualTo("processing:manage");
         }
+    }
+
+    // ══════════════════ 生产概览（待办优先，issue #5641）══════════════════
+
+    @Test
+    @DisplayName("#5641 GET /production/todo-overview → 200 + 待办清单与第二屏统计（空态如实，不塞占位数）")
+    void todoOverviewReturnsTodoFirstEnvelope() throws Exception {
+        mockMvc.perform(get("/api/admin/production/todo-overview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.todo_total").value(0))
+                .andExpect(jsonPath("$.data.todos").isArray())
+                .andExpect(jsonPath("$.data.todos").isEmpty())
+                // 第一屏 N 与第二屏计数**同一份来源**（同一 list 的长度）
+                .andExpect(jsonPath("$.data.stats.todo_total").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.to_schedule").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.stuck").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.to_ship").value(0))
+                // 三态进度 + 阈值来源透传（不是本端点另设的阈值）
+                .andExpect(jsonPath("$.data.stats.operations.not_started").value(0))
+                .andExpect(jsonPath("$.data.stats.operations.in_progress").value(0))
+                .andExpect(jsonPath("$.data.stats.operations.completed").value(0))
+                .andExpect(jsonPath("$.data.stats.threshold_source").value("default"))
+                .andExpect(jsonPath("$.data.stats.scan.truncated").value(false));
+    }
+
+    @Test
+    @DisplayName("#5641 待办端点权限 = 方法级 production:view（生产域读码 ⇒ 无权限是拒绝，不是静默空列表）")
+    void todoOverviewDeclaresProductionView() throws Exception {
+        Method method = ProductionController.class.getMethod("todoOverview");
+        RequirePermission annotation = method.getAnnotation(RequirePermission.class);
+        assertThat(annotation)
+                .as("生产概览是生产口径读面 ⇒ 必须方法级 production:view（类级 order:list 覆盖不了该语义）")
+                .isNotNull();
+        assertThat(annotation.value()).isEqualTo("production:view");
     }
 }
