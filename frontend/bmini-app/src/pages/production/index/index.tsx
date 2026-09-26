@@ -6,9 +6,9 @@ import {
   completeByScan,
   getOrderOperations,
   getOrderPiecework,
+  getWorkerOrderOperations,
   newReportRequestId,
   reportInFlightLock,
-  reportOperation,
   scanResolve,
   shipOrder,
   type OrderOperations,
@@ -23,6 +23,7 @@ import {
   type WorkLogRow,
 } from '../../../services/productionService'
 import { WorkerBar } from '../../../components/WorkerBar'
+import { hasWorkerSession } from '../../../utils/workerSession'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import {
@@ -281,7 +282,16 @@ export default function ProductionPage() {
       }
       setLoading(true)
       setError('')
-      const res = await getOrderOperations(orderId)
+      // 🔴 读面按**本机有没有工人身份**分流（issue #5647 G4）：
+      //  · 有工人 session ⇒ `GET /api/worker/production/orders/{id}/operations`（工人路径）——
+      //    一张只登录了工号 + PIN 的车间设备没有商家会话，走 `/api/admin/**` 必然 401、页面全空；
+      //    而工人被 `ADMIN_API_REJECTED_ROLES` 拒在 `/api/admin/**` 外（零商家权限，#4727）
+      //    ⇒ 「给工人商家权限」这条出路不存在。
+      //  · 无工人 session（纯商家设备）⇒ 保持 `/api/admin/**` **逐字不变**（商家打不开 = 红线）。
+      // 两条路读的是服务端**同一份**读面（`ProductionService#getOperations`）⇒ 字段面逐字同源。
+      const res = hasWorkerSession()
+        ? await getWorkerOrderOperations(orderId)
+        : await getOrderOperations(orderId)
       if (!res.success || !res.data) {
         // 只有**传输层**失败才用本机缓存顶（断网/超时）；服务端明确答复「不存在/无权限」时
         // 不得拿旧缓存冒充真值（否则工人会对着已作废的清单报工）
@@ -369,11 +379,29 @@ export default function ProductionPage() {
     }
   }, [loadOrder])
 
-  /** 完成报工（数量默认 = 应做数量，可改；前端守上限，服务端仍兜底） */
+  /**
+   * 逐道「完成报工」—— **唯一写入口** `scan/complete`（issue #5647 G10）。
+   *
+   * <p>曾经这条路走 URL 定工序的 `.../orders/{orderId}/operations/{operationId}/report`：
+   * 没有码、不校验部位归属、非事务、也不落 `done_at` ⇒ 防呆④（非本部位码）/ 防呆⑤（工序必须确定）/
+   * 一次事务 / `done_at` **在这条路上全不生效**，同一租户两条报工路径迟早给出不同结果。</p>
+   *
+   * <p>现在：凭证 = 本部位的**任务码** `part_token`（一部位一码，issue #4946），工序由**服务端**
+   * 校验归属（跨部位 ⇒ 422 `OPERATION_NOT_IN_SCAN_TARGET`），数量由工人确认后随 body 传。
+   * **没有码就不提供写入口**（在 JSX 里不渲染按钮）—— 退回 URL 定工序 = 把防呆整条绕开。</p>
+   *
+   * <p>数量默认 = 剩余应做，可改；前端守上限，服务端仍兜底。失败只展示后端 message，不清空列表。</p>
+   */
   const handleReport = useCallback(
-    async (operation: ProductionOperation) => {
+    async (position: ProductionPosition, operation: ProductionOperation) => {
       if (!detail) return
       const orderId = detail.order_id
+      const token = position.part_token
+      if (!token) {
+        // 兜底（按钮本就不渲染）：绝不用「没有凭证」的请求去撞服务端
+        setError('本部位暂无任务码，无法报工：请让管理端重新生成加工单任务码后再报')
+        return
+      }
       const remaining = remainingQty(operation)
       const typed = qtyInputs[operation.id]
       const qty = typed === undefined || typed === '' ? remaining : Number(typed)
@@ -409,17 +437,20 @@ export default function ProductionPage() {
       setReportingId(operation.id)
       setError('')
       try {
-        const res = await reportOperation(orderId, operation.id, payload, requestId)
+        const res = await completeByScan(token, operation.id, requestId, payload)
         if (!res.success) {
           if (res.offline) {
-            // 弱网降级：进本机队列（幂等键随队列项落盘，补传复用它 ⇒ 不会重复计件）
+            // 弱网降级：进本机队列（幂等键 + 报工凭证随队列项落盘，补传复用它们 ⇒ 不会重复计件）
             enqueuePendingReport({
               requestId,
+              token,
               orderId,
               operationId: operation.id,
               operationName: operation.operation,
               unit: operation.unit,
               payload,
+              // 工人在界面上确认过数量 ⇒ 补传原样发出（与在线逐字同形）
+              sendQty: true,
               createdAt: Date.now(),
             })
             setPendingCount(listPendingReports().length)
@@ -463,8 +494,8 @@ export default function ProductionPage() {
    * <p>数量**不传**（服务端缺省取「剩余应做」——「报工只确认，不手工心算」）；
    * 身份**不传**（服务端从工人 session 解）；幂等键随请求头走，重试复用它。</p>
    *
-   * <p>弱网降级：**复用既有补传队列**（幂等键入队，补传复用 ⇒ 不会重复计件），补传走既有
-   * {@code /report} 端点 —— 两条路径共用服务端**同一份**记账核（含 done_at），效果等价。</p>
+   * <p>弱网降级：**复用既有补传队列**（幂等键 + 报工凭证入队，补传复用 ⇒ 不会重复计件），补传走
+   * **同一条** {@code /scan/complete} 端点（issue #5647 G10 起写面只有这一条路）。</p>
    */
   const handleScanComplete = useCallback(async () => {
     if (!scanScreen) return
@@ -488,11 +519,14 @@ export default function ProductionPage() {
           const payload: ReportPayload = { qty, qualified_qty: qty, work_type: 'normal' }
           enqueuePendingReport({
             requestId,
+            token,
             orderId,
             operationId: operation.operation_id,
             operationName: operationLabel(operation),
             unit: operation.unit || '',
             payload,
+            // 在线路径**不传数量**（服务端取剩余应做）⇒ 补传也不传，逐字同形
+            sendQty: false,
             createdAt: Date.now(),
           })
           setPendingCount(listPendingReports().length)
@@ -811,6 +845,15 @@ export default function ProductionPage() {
               {specSummary(position).length > 0 && (
                 <Text className='production-position__spec'>{specSummary(position).join(' · ')}</Text>
               )}
+              {/* 🔴 本部位没有任务码 ⇒ **不提供写入口**（issue #5647 G10）：唯一写入口 `scan/complete`
+                  按码定位「哪一套、哪个部位」，没有码就只能退回 URL 定工序那条路 —— 而那条路上
+                  防呆④⑤ / 一次事务 / `done_at` 全不生效。出口是**可行动**的：管理端重新生成
+                  本单任务码即补齐部位码（`ProductionService#ensurePartTokens`）。 */}
+              {!position.part_token && (
+                <Text className='production-position__no-code'>
+                  本部位暂无任务码，无法报工 —— 请让管理端重新生成本单任务码后再报
+                </Text>
+              )}
               {position.operations.map((operation) => {
                 // 🔴 计件查找键 = **逻辑工序名**（`per_operation[].operation` 是逻辑名，如 `精裁`），
                 // 不是 `operation` 快照名（`精裁-布`）—— 改前拿快照名去比 ⇒ 永远查不到 ⇒
@@ -853,14 +896,17 @@ export default function ProductionPage() {
                       <Text className='operation-item__qty-hint'>
                         {`本次最多 ${formatQty(remainingQty(operation))}${operation.unit}`}
                       </Text>
-                      {/* disabled = in-flight 锁的可见面（issue #4116 §5-1）：报工期间不可再点 */}
-                      <Button
-                        className='operation-item__btn'
-                        disabled={reportingId !== null}
-                        onClick={() => handleReport(operation)}
-                      >
-                        {reportingId === operation.id ? '报工中…' : '完成报工'}
-                      </Button>
+                      {/* disabled = in-flight 锁的可见面（issue #4116 §5-1）：报工期间不可再点。
+                          写入口只在**有部位任务码**时才有（issue #5647 G10，见上方提示行）。 */}
+                      {position.part_token ? (
+                        <Button
+                          className='operation-item__btn'
+                          disabled={reportingId !== null}
+                          onClick={() => handleReport(position, operation)}
+                        >
+                          {reportingId === operation.id ? '报工中…' : '完成报工'}
+                        </Button>
+                      ) : null}
                     </View>
                   </View>
                 )

@@ -67,6 +67,14 @@
   }
 }
 
+/* 无部位任务码（issue #5647 G10）：不提供写入口时的显式提示，出口可行动（管理端重新生成任务码） */
+.production-position__no-code {
+  display: block;
+  margin: 8px 0 0;
+  font-size: 24px;
+  color: #ad6800;
+}
+
 /* 弱网降级（issue #4206）：离线态必须显式可见，不得把本机缓存冒充服务端真值 */
 .production-offline {
   margin: 16px 24px 0;

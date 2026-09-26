@@ -8,12 +8,12 @@
  * （前端零防护），服务端幂等键也挡不住 —— 连点产生的是**两个不同的幂等键**。
  *
  * ## 本文件锁三条（每条都有红证）
- * ① 连点两次 ⇒ `reportOperation` 只被调用**一次**（in-flight 锁）；
+ * ① 连点两次 ⇒ `completeByScan`（唯一写入口，issue #5647 G10）只被调用**一次**（in-flight 锁）；
  * ② 报工在飞期间该按钮 `disabled`（可见面防护，工人点不动）；
  * ③ 报工结束（含失败）⇒ 锁释放、按钮恢复可点（一次网络异常不得把按钮永久锁死）。
  *
- * 另有一条：`reportOperation` 必须带幂等键请求头（服务端同键重放的前提）——
- * 见 `productionService.test.ts`（网络层，本文件 mock 掉服务层故测不到）。
+ * 另有一条：写入口必须带幂等键请求头（服务端同键重放的前提）——
+ * 见 `production-report-idempotency.test.ts`（网络层，本文件 mock 掉服务层故测不到）。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -34,7 +34,7 @@ jest.mock('@tarojs/taro', () => ({
 jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
-  reportOperation: jest.fn(),
+  completeByScan: jest.fn(),
   getOrderPiecework: jest.fn(),
   // 锁用**真身**（不 mock）：本文件的判据就是「锁真的挡住了第二笔」
 }))
@@ -48,9 +48,9 @@ jest.mock('../src/store/authStore', () => ({
 import Taro from '@tarojs/taro'
 import ProductionPage from '../src/pages/production/index/index'
 import {
+  completeByScan,
   getOrderOperations,
   reportInFlightLock,
-  reportOperation,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
 
@@ -63,6 +63,9 @@ function makeDetail(): OrderOperations {
     positions: [
       {
         position_name: '布帘',
+        order_item_id: 'item-A',
+        // 报工凭证 = 本部位任务码（issue #5647 G10：写面只有一个入口 scan/complete）
+        part_token: 'part-token-bu-1',
         operations: [
           {
             id: 'op1', seq: 1, operation: '精裁', group: '裁剪', unit: '米',
@@ -82,7 +85,7 @@ function makeDetail(): OrderOperations {
 }
 
 const mockGet = getOrderOperations as jest.Mock
-const mockReport = reportOperation as jest.Mock
+const mockComplete = completeByScan as jest.Mock
 
 /** 手动可控的 deferred（用于把请求悬停在「在飞」状态） */
 function deferred<T>() {
@@ -116,7 +119,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
     reportInFlightLock.release()
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
     })
@@ -124,7 +127,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
 
   it('连点三次「完成报工」⇒ 只发出一次报工请求（锁本身，非靠 disabled 代偿）', async () => {
     const pending = deferred<any>()
-    mockReport.mockReturnValue(pending.promise)
+    mockComplete.mockReturnValue(pending.promise)
     await openPage()
 
     const button = reportButton()
@@ -139,7 +142,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     }
 
-    expect(mockReport).toHaveBeenCalledTimes(1)
+    expect(mockComplete).toHaveBeenCalledTimes(1)
 
     pending.resolve({
       success: true,
@@ -147,12 +150,12 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
     })
     await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2))
     // 结束之后锁释放：仍是一次调用（没有排队的第二个请求被补发）
-    expect(mockReport).toHaveBeenCalledTimes(1)
+    expect(mockComplete).toHaveBeenCalledTimes(1)
   })
 
   it('报工在飞期间按钮 disabled（工人点不动）且文案切换为「报工中…」', async () => {
     const pending = deferred<any>()
-    mockReport.mockReturnValue(pending.promise)
+    mockComplete.mockReturnValue(pending.promise)
     await openPage()
 
     fireEvent.click(reportButton())
@@ -169,18 +172,18 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
   })
 
   it('报工失败（success=false）⇒ 锁释放，按钮可再次点击（不永久锁死）', async () => {
-    mockReport.mockResolvedValueOnce({ success: false, message: '前道工序「精裁」尚未完成' })
+    mockComplete.mockResolvedValueOnce({ success: false, message: '前道工序「精裁」尚未完成' })
     await openPage()
 
     fireEvent.click(reportButton())
     expect(await screen.findByText('前道工序「精裁」尚未完成')).toBeTruthy()
 
     // 失败后再点 ⇒ 真的会再发一次（锁只在 in-flight 期间生效）
-    mockReport.mockResolvedValueOnce({
+    mockComplete.mockResolvedValueOnce({
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
     })
     fireEvent.click(reportButton())
-    await waitFor(() => expect(mockReport).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(mockComplete).toHaveBeenCalledTimes(2))
   })
 })
