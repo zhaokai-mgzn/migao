@@ -62,6 +62,7 @@ jest.mock('../src/store/authStore', () => ({
 
 import Taro from '@tarojs/taro'
 import ProductionPage from '../src/pages/production/index/index'
+import { H5_SCAN_UNAVAILABLE_HINT } from '../src/utils/platform'
 import {
   getOrderOperations,
   getOrderPiecework,
@@ -385,6 +386,44 @@ describe('ProductionPage（工人扫码报工）', () => {
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
     expect(await screen.findByText('韩褶')).toBeTruthy()
+  })
+
+  it('h5 纯浏览器（Chrome/Safari）：**不调** Taro.scanCode，显式提示 + 手输单号这条路照样通（issue #5650）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    const prevUa = window.navigator.userAgent
+    envBag.TARO_ENV = 'h5'
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
+      configurable: true,
+    })
+    delete (window as any).wx
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      // 显式提示：既不是白屏，也不是「点了没反应」
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_UNAVAILABLE_HINT }),
+        ),
+      )
+      // 一次都不许调：Taro h5 的 scanCode 只走微信 JS-SDK，纯浏览器下调用=静默失败
+      expect(Taro.scanCode).not.toHaveBeenCalled()
+      expect(mockGet).not.toHaveBeenCalled()
+
+      // 替代路径 = 本页**既有**的手输单号（同一条识别链，不平行造第二条）
+      fireEvent.change(screen.getByPlaceholderText('或手输加工单号'), { target: { value: ORDER_ID } })
+      fireEvent.click(screen.getByText('查单'))
+      await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+      expect(await screen.findByText('韩褶')).toBeTruthy()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+      Object.defineProperty(window.navigator, 'userAgent', { value: prevUa, configurable: true })
+      delete (window as any).wx
+    }
   })
 
   it('扫到非加工单二维码 → 提示且不发请求', async () => {

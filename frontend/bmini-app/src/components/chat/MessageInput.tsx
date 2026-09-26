@@ -3,6 +3,7 @@ import { View, Text, Textarea, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
 import { startRecording, stopAndTranscribe, isVoiceSupported } from '../../utils/voice'
+import { isH5, H5_VOICE_UNAVAILABLE_HINT } from '../../utils/platform'
 import {
   ICON_AUDIO_LINES,
   ICON_IMAGE_PLUS,
@@ -39,6 +40,8 @@ export default function MessageInput({
   disabled = false,
 }: MessageInputProps) {
   const voiceSupported = isVoiceSupported()
+  /** 浏览器（h5）里录音不可用 —— 入口保留可见但禁用（见 `handleVoiceUnavailable`） */
+  const voiceBlockedByBrowser = !voiceSupported && isH5()
   const [value, setValue] = useState('')
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -56,6 +59,16 @@ export default function MessageInput({
   const canSend = hasDraft && !disabled && !isUploading && !isRecording
 
   // ── 语音：按住说话 / 松开直接发送（行为保持）/ 上滑取消 ──
+
+  /**
+   * 浏览器（h5）里**没有**录音实现（Taro h5 的 `getRecorderManager` 是 stub，见 `utils/voice.ts`）
+   * ⇒ 入口**保留可见但禁用**，点击给一句显式解释（issue #5650）。
+   * 为什么不直接隐藏：隐藏 = 用户看不到任何解释（点了也没反应才是真问题），
+   * 而这一页的语音键就在拇指下、消失得毫无痕迹。禁用 + 解释是「明确提示」的最小形态。
+   */
+  const handleVoiceUnavailable = useCallback(() => {
+    Taro.showToast({ title: H5_VOICE_UNAVAILABLE_HINT, icon: 'none' })
+  }, [])
 
   const handleTouchStart = useCallback(
     (e: any) => {
@@ -241,13 +254,14 @@ export default function MessageInput({
               <Image className='message-input__icon' src={ICON_ARROW_UP} />
             </View>
           ) : (
-            voiceSupported && (
+            (voiceSupported || voiceBlockedByBrowser) && (
               <View
                 className={`message-input__icon-btn message-input__icon-btn--voice${!canVoice ? ' message-input__icon-btn--disabled' : ''}${isRecording ? ' message-input__icon-btn--recording' : ''}`}
-                aria-label='按住说话'
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
+                aria-label={voiceBlockedByBrowser ? '语音输入（当前浏览器不支持）' : '按住说话'}
+                onTouchStart={voiceBlockedByBrowser ? undefined : handleTouchStart}
+                onTouchMove={voiceBlockedByBrowser ? undefined : handleTouchMove}
+                onTouchEnd={voiceBlockedByBrowser ? undefined : handleTouchEnd}
+                onClick={voiceBlockedByBrowser ? handleVoiceUnavailable : undefined}
               >
                 <Image className='message-input__icon' src={ICON_AUDIO_LINES} />
               </View>

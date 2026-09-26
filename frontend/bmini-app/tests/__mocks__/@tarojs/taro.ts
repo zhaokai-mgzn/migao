@@ -39,6 +39,16 @@ const Taro = {
 
   // Login
   login: jest.fn(() => Promise.resolve({ code: 'mock_wx_code' })),
+
+  // 录音（issue #5650）：本 mock 故意返回**可用**录音器 —— 微信小程序侧真实如此；
+  // h5 侧 `Taro.getRecorderManager` 是 `temporarilyNotSupport('getRecorderManager')` 的 stub，
+  // 故若哪天 h5 分支漏了，能力探测会拿到「可用」⇒ tests/h5-platform-runtime.test.ts 当场判红。
+  getRecorderManager: jest.fn(() => ({
+    start: jest.fn(),
+    stop: jest.fn(),
+    onStop: jest.fn(),
+    onError: jest.fn(),
+  })),
   getUserInfo: jest.fn(() => Promise.resolve({
     userInfo: { nickName: 'TestUser', avatarUrl: '' },
   })),

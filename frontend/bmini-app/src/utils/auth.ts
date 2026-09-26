@@ -7,6 +7,7 @@
 import Taro from '@tarojs/taro'
 import { post } from './request'
 import { API_BASE_URL, STORAGE_KEYS } from './constants'
+import { isH5, H5_WECHAT_LOGIN_UNAVAILABLE_HINT } from './platform'
 import type { User, LoginResult, ApiResponse } from '../types'
 
 /**
@@ -23,13 +24,23 @@ function serverMessage(error: any, fallback: string): string {
 }
 
 /**
- * 微信小程序登录
+ * 微信小程序登录（**weapp 专用** —— h5 下不给微信换码任何机会，见下）
  * 1. 调用 Taro.login() 获取微信 code
  * 2. POST /api/auth/mini/login { code, tenantId }（admin-api camelCase 入参；历史注释误写
  *    的 `tenant_id` 与响应字段无关，勿据它推字段名）
  * 3. 存储 Token 和用户信息（`auth_user` 存 `data.user` 原样 JSON —— 形状见 types 的 `User`）
+ *
+ * 🔴 h5 分支（issue #5650，用户 2026-09-26 裁定「暂时只做 H5 浏览器访问，小程序链路先搁置」）：
+ * Taro h5 的 `login` 是 `temporarilyNotSupport('login')`（实测 `dist/api/open-api/login.js`）
+ * ⇒ 调它只会拿到「暂时不支持 API」的错误对象，用户看到的是「点了没反应」。
+ * 浏览器侧的唯一登录路径是**账号密码**（`employeeLogin` → `POST /api/auth/employee/login`），
+ * 所以这里先判平台、**连一次都不调**，并给出可行动文案。
  */
 export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
+  if (isH5()) {
+    return { success: false, error: H5_WECHAT_LOGIN_UNAVAILABLE_HINT }
+  }
+
   try {
     // 获取微信 code
     const loginRes = await Taro.login()

@@ -265,6 +265,42 @@ describe('SSEClient', () => {
       expect(callbacks.onText).toHaveBeenCalledTimes(2)
       expect(callbacks.onDone).toHaveBeenCalledTimes(1)
     })
+
+    // h5（issue #5650）：Taro.request 在 h5 **没有** `onChunkReceived`，客户端靠能力探测跳过它、
+    // 走 `success` 回调**整段解析** —— 这是 2026-09-26 用户裁定「接受非流式」**有意接受**的降级，
+    // 不是缺陷。本条判据只负责「**不许被平台分支改动改坏**」：
+    // 不抛错、不静默丢内容，且必须显式 `dataType: 'text'`（h5 默认 json 会把 SSE 文本解析失败成 null
+    // ⇒ 流式对话整段消失，这是历史上 visual 回归抓到过的形态）。
+    it('h5 降级路径：无 onChunkReceived 时靠 success 整段解析（dataType=text，多事件一个不丢）', () => {
+      const sseBody = [
+        'event: loading',
+        'data: {"content":"正在查询"}',
+        '',
+        'event: text',
+        'data: {"content":"您好"}',
+        '',
+        'event: card',
+        'data: {"type":"order","data":{"id":"o1"}}',
+        '',
+        'event: done',
+        'data: {"session_id":"s1","message_id":"m1"}',
+        '',
+      ].join('\n')
+
+      ;(Taro.request as jest.Mock).mockImplementation((options: any) => {
+        expect(options.dataType).toBe('text')
+        options.success({ statusCode: 200, data: sseBody })
+        return { abort: jest.fn(), onChunkReceived: undefined }
+      })
+
+      expect(() => client.sendMessage('s1', '你好', undefined, callbacks)).not.toThrow()
+
+      expect(callbacks.onLoading).toHaveBeenCalledWith({ content: '正在查询' })
+      expect(callbacks.onText).toHaveBeenCalledWith({ content: '您好' })
+      expect(callbacks.onCard).toHaveBeenCalledWith({ type: 'order', data: { id: 'o1' } })
+      expect(callbacks.onDone).toHaveBeenCalledWith({ session_id: 's1', message_id: 'm1' })
+      expect(callbacks.onError).not.toHaveBeenCalled()
+    })
   })
 
   // ========== 错误处理 ==========
