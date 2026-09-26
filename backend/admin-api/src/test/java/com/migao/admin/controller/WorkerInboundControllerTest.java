@@ -76,6 +76,7 @@ class WorkerInboundControllerTest {
     @Mock private ProductMapper productMapper;
     @Mock private StockLedgerService stockLedgerService;
     @Mock private ImageRecognitionClient imageRecognitionClient;
+    @Mock private com.migao.admin.service.InboundLabelService inboundLabelService;
     @Mock private ClientRequestIdService clientRequestIdService;
     @Mock private WorkerSessionService workerSessionService;
 
@@ -104,7 +105,7 @@ class WorkerInboundControllerTest {
                 inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper,
                 stockBatchMapper, productSkuMapper, productMapper, stockLedgerService);
         WorkerInboundService service = new WorkerInboundService(inboundOrderService, imageRecognitionClient,
-                clientRequestIdService, productMapper, productSkuMapper);
+                clientRequestIdService, productMapper, productSkuMapper, inboundLabelService);
         WorkerInboundController controller = new WorkerInboundController(service, workerSessionService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())

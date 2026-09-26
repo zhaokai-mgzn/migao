@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007, DF-017, PG-020, PG-018
+// case_ids: DF-007, DF-017, PG-020, PG-018, PR-113
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -171,6 +171,13 @@ class SecurityConfigTest {
     // 本上下文排除了 MybatisPlusAutoConfiguration ⇒ 没有 sqlSessionFactory ⇒ 不顶替会让
     // **整类 42 条断言一起红**，而红的表现是「ApplicationContext failure threshold exceeded」
     // （看不出跟入库单有关，排查会绕远）。同 StockLedgerMapper 的口径。
+    /**
+     * 入库标签（issue #5052 P2，V133）：{@code InboundLabelService} 的构造依赖
+     * ⇒ 本上下文必须能装配它（该 Mapper 在测试环境无 MyBatis 自动配置，必须顶替）。
+     */
+    @MockBean
+    private com.migao.admin.mapper.InboundLabelMapper inboundLabelMapper;
+
     @MockBean
     private com.migao.admin.mapper.InboundOrderMapper inboundOrderMapper;
     @MockBean
@@ -1040,6 +1047,47 @@ class SecurityConfigTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
                 // 不泄露身份/权限：302 的响应体为空
+                .andExpect(content().string(""));
+    }
+
+    /**
+     * 🔴 入库标签公开入口 {@code GET /i/{短码}} 必须是**公开入口**（issue #5052 P2；设计 §5.2 / §7.1）。
+     *
+     * <p><b>为什么这条必须有</b>：标签贴在布卷 / 塑料袋上，纸上的码对**任何**持码人等价
+     * （扫码工具 / 系统相机 / 手输 URL）—— 而它落在 {@code anyRequest().authenticated()} 上
+     * ⇒ 未登录访问只会拿到 <b>401</b>，标签上的码**等于没用**。</p>
+     *
+     * <p><b>判据形态</b>：未认证请求能**到达控制器**（⇒ 未知短码得 404，而不是 401）。
+     * 302 那一半由紧随其后的 {@link #inboundLabelShortLinkRedirectsThroughSecurityChain()} 钉。
+     * <b>红证</b>：从 {@code SecurityConfig} 的 {@code permitAll} 名单里删掉 {@code "/i/**"}
+     * ⇒ 实测 <b>401</b>（不是 404）⇒ 本用例必红。</p>
+     */
+    @Test
+    @DisplayName("公开端点 - 入库标签 /i/{短码} 无需认证（删 permitAll ⇒ 401 ⇒ 必红）")
+    void inboundLabelShortLinkIsPublic() throws Exception {
+        mockMvc.perform(get("/i/ZZZZZZZZ"))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 🔴 全链路（安全过滤链 + 路由 + 控制器 + 服务）：有效标签短码 ⇒ **302** + {@code Location}。
+     *
+     * <p>走的是**真实**控制器 + 真实 {@code InboundLabelService}（本类的
+     * {@code inboundLabelMapper} 是 {@code @MockBean}）⇒ 归一化 / 落地页配置都是生产那一份。
+     * 同时钉「公开入口不泄露业务字段」：响应体为空，{@code Location} 里只有落地页 + 短码 + 租户。</p>
+     */
+    @Test
+    @DisplayName("🔴 公开标签短链全链路：有效短码 ⇒ 302 + Location（且不泄露业务字段）")
+    void inboundLabelShortLinkRedirectsThroughSecurityChain() throws Exception {
+        String shortCode = "4T7Y2BQ9";
+        when(inboundLabelMapper.selectByCode(shortCode))
+                .thenReturn(com.migao.admin.entity.InboundLabel.builder()
+                        .id("label-1").tenantId(7L).inboundOrderId("order-1").inboundItemId(1L)
+                        .shortCode(shortCode).printCount(0).deleted(0).build());
+
+        mockMvc.perform(get("/i/" + shortCode))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "/b/?code=" + shortCode + "&tenant_id=7"))
                 .andExpect(content().string(""));
     }
 

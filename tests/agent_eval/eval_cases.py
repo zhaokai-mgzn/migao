@@ -8145,6 +8145,78 @@ _CASE_PR_112 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-113 [NORMAL] 入库标签短码与公开入口 /i/{短码}：两个码空间互斥（照 /s/ 范式、不复用其表）（源: cases/product.yml）──
+_CASE_PR_113 = EvalCase(
+    id='PR-113',
+    legacy_id='',
+    title='入库标签短码与公开入口 /i/{短码}：两个码空间互斥（照 /s/ 范式、不复用其表）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人过账后拿到 8 位短码、标签上印 https://app.migaozn.com/i/<短码>；任何持码人扫码 ⇒ 服务端 302 到落地页（非 LLM 行为，由 admin-api 单测与结构守卫覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 码形态：短码 = 8 位且每个字符都在 Crockford 字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ` 内（生成面**从不产出** `I/L/O/U`）；手抄形态（小写 / `O` / `I` / `L`）归一化到同一短码（`O→0`、`I,L→1`）；形态不合法（长度不对 / 字符集外）⇒ 一次库都不查', '🔴 唯一与碰撞：分配器查重同时看**活码与留档码**（已撤销的码永不复发，DB 侧由 `uk_inbound_labels_code` 建在有效码 `COALESCE(short_code, revoked_code)` 上兜底）；连续 8 次碰撞 ⇒ 显式 `IllegalStateException`（**拒绝静默造重码**），不落任何标签行', '🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `"/w/"`；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `"/i/"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）', '🔴 公开入口：`GET /i/{短码}` 未认证可达（`permitAll`）—— 未知短码 ⇒ **404**（不是 401）、已撤销 ⇒ **410 Gone**、有效 ⇒ **302** 且 `Location` 为**相对路径**（默认 `/b/?code=<短码>&tenant_id=<id>`）；响应体为空，`Location` 里没有品名 / 米数 / 供应商 / 单号等任何业务字段', '🔴 落地页地址走单一配置：改 `migao.inbound-label.landing-path` 即改 302 目标；解析文件里不出现硬编码域名（`migaozn.com`）', '🔴 未登记即红（类级）：控制器里出现的单字母短码前缀集合必须恰好等于登记表 `CODE_SPACES`（`/s/` + `/i/`）；每个前缀都必须在 `SecurityConfig` 的 permitAll 名单里', '🔴 撤销 = 短码置 NULL + 原码留档（`CHECK ((short_code IS NULL) <> (revoked_code IS NULL))`）⇒ 撤销后扫码仍是 410 而**不是 404**；DB 层码形状正则与 Java 侧字母表**机械等价**（逐字符集合相等）'],
+    skip_reason='[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 静态守卫 + 迁移契约覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'worker', 'label', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-114 [NORMAL] 入库标签打印留痕：print_count 原子自增（并发不丢）+ 每次一行 audit_logs（第几次）（源: cases/product.yml）──
+_CASE_PR_114 = EvalCase(
+    id='PR-114',
+    legacy_id='',
+    title='入库标签打印留痕：print_count 原子自增（并发不丢）+ 每次一行 audit_logs（第几次）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人（设备侧）在打印一张入库标签**之前**调用服务端 /print 端点（非 LLM 行为，由 admin-api 单测与源码守卫覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 原子自增：计数走 SQL 内 `COALESCE(print_count, 0) + 1`（不是读出 +1 再写回）；一次 `/print` 调用恰好一次自增，**重打同样计数**（3 → 4 → 5）', '🔴 并发不丢（**真库**，两层都判）：① mapper 层 24 个连接并发自增 ⇒ 计数 == 24；② **服务调用链**层 24 并发 `recordPrint` ⇒ 计数 == 24（只测 ① 时「服务改成读改写、mapper 仍原子」这种退化不会变红 —— 该洞由红证实测发现并补上）', '🔴 每次打印一行审计：`audit_logs` 落 `action=print` / `resource_type=inbound_label` / `resource_id`=标签 id / `resource_name`=短码，details 带 `shortCode` 与 `printCount`（第几次）与 `itemId`；审计携带的 operator / IP / UA 来自请求（谁 / 何时）', '🔴 打印必留痕（结构判据）：`COALESCE(print_count…)` 只在 `InboundLabelMapper`；`inboundLabelMapper.incrementPrintCount(` 只被 `InboundLabelService` 调用；`inboundLabelService.recordPrint(` 只被 `/print` 端点调用 ⇒ **结构上不存在**第二条写计数的路径；计数与审计在**同一次调用**里', '🔴 本包**不做服务端位图**（`/bitmap` 端点零命中；§7.2 已改判为设备侧 canvas 渲染）⇒ 详情读面只回字段、不回任何可直打的渲染产物（没有「拿到图就本地直打」的旁路）', '拒绝口径：未登录 ⇒ **401**（一次业务调用都不发生）；跨租户 / 不存在 ⇒ **404**；已撤销 ⇒ **410** 且**不计不审**；自增影响 0 行（并发撤销 / 软删）⇒ 404，绝不回一个没落库的计数'],
+    skip_reason='[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 源码守卫覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'worker', 'label', 'audit', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-115 [NORMAL] 入库标签详情读面：按短码回 50×30mm 渲染所需全部字段；跨租户 404 / 已撤销 410（源: cases/product.yml）──
+_CASE_PR_115 = EvalCase(
+    id='PR-115',
+    legacy_id='',
+    title='入库标签详情读面：按短码回 50×30mm 渲染所需全部字段；跨租户 404 / 已撤销 410',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人扫到 / 拍到一张已打印的米高标签 ⇒ 打开单据详情核对后重打一张（功能② 的硬依赖；非 LLM 行为，由 admin-api 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['字段面够渲染一张 50×30mm 标签：短码原文 / 入库单号 / 明细行 id / 货号 / **品名**（实读 `products.name`，商品已删 ⇒ null 不编造）/ 色号 / 门幅 / **米数** / 缸号 / 批次号 / **供应商** / 送货单号 / 仓库 / **入库日期** / 标签生成时间 / 已打印次数', '🔴 跨租户 / 不存在 ⇒ **404**（不是 403：403 等于确认「这码存在，只是不归你」），且在**碰任何单据数据之前**就拒（不拿「单据查不到」冒充租户判据）', '🔴 跨租户去戳一个**已撤销**的码 ⇒ 仍是 404（先判租户、后判撤销 ⇒ 不泄露「这个码存在过」）', '🔴 已撤销（本租户）⇒ **410 Gone** + 错误码 `LABEL_REVOKED` + 可行动建议（补打一张，不静默回落到别的标签）', '零商家权限码：详情面源码里没有 `@RequirePermission` / `PermissionInterceptor` / 任何商家码字面量；准入判据只有有效工人 session（无 / 无效 ⇒ 401）'],
+    skip_reason='[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'worker', 'label', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-116 [NORMAL] 工人可达的照片上传：零商家权限码；非图片 / 超张数 / 超尺寸 ⇒ 400（源: cases/product.yml）──
+_CASE_PR_116 = EvalCase(
+    id='PR-116',
+    legacy_id='',
+    title='工人可达的照片上传：零商家权限码；非图片 / 超张数 / 超尺寸 ⇒ 400',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在车间用手机拍上游标签 / 布卷包装并上传（拿 URL 后喂给识别端点；非 LLM 行为，由 admin-api 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 补的是 P1 留下的真缺口：P1 的 `recognize` 收「已上传好的 URL」，而现有一切上传端点都在 `/api/admin/**` 且带商家权限码 ⇒ 工人够不着；本端点是工人**唯一**可达的照片上传面', '🔴 零商家权限码：源码里没有 `@RequirePermission` / `PermissionInterceptor`；**工人持 session 即可上传**（不是「有码就放行」，而是这条路径根本不查商家码）；无 / 无效 session ⇒ **401** 且一张都不落存储', '🔴 只收真图片：MIME 不是 `image/*` ⇒ 400；MIME 是 `image/png` 但**读不出图像头**（改名 + 伪造类型的文本）⇒ 400（按**内容**判，不按文件名 / Content-Type 判）；空文件 ⇒ 400', '张数：1~3 张（上限 = `WorkerInboundService.MAX_IMAGES`，与识别端点**同一常量**）；0 张 / 4 张 ⇒ 400；单张 >5MB ⇒ 400；单边 >8000px ⇒ 400', '存储**复用**既有 `FileStorageService`（目录 `inbound`），不新造存储 / 不新建桶约定；三张合法照片 ⇒ 200 + 三个 URL（可直接喂 `recognize` 的 `images`）'],
+    skip_reason='[backend-contract] 入库上传是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 结构守卫覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'worker', 'upload', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -9985,6 +10057,10 @@ ALL_CASES = (
     _CASE_PR_110,
     _CASE_PR_111,
     _CASE_PR_112,
+    _CASE_PR_113,
+    _CASE_PR_114,
+    _CASE_PR_115,
+    _CASE_PR_116,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

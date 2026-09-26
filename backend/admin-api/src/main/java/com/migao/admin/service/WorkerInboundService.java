@@ -9,6 +9,7 @@ import com.migao.admin.dto.WorkerInboundPostRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeResponse;
 import com.migao.admin.dto.WorkerInboundSkuMatch;
+import com.migao.admin.entity.InboundLabel;
 import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
@@ -87,8 +88,14 @@ public class WorkerInboundService {
      */
     static final String TARGET_INBOUND = "inbound";
 
-    /** 一次识别最多 3 张（设计 §9.4 图片上限，沿用现状）。 */
-    static final int MAX_IMAGES = 3;
+    /**
+     * 一次识别最多 3 张（设计 §9.4 图片上限，沿用现状）。
+     *
+     * <p>public 是**刻意**的（issue #5052 P2）：工人上传端点
+     * （{@code WorkerInboundUploadController}）的张数上限必须与识别端点**同一个常量**
+     * —— 两处各写一个 3 会在某次「顺手放宽」后漂移（上传放 5 张、识别只收 3 张 = 工人白拍）。</p>
+     */
+    public static final int MAX_IMAGES = 3;
 
     /** vision 字段表的键（与 {@code targets.py} 的 {@code TargetField.key} 同源）。 */
     private static final String FIELD_PRODUCT_NAME = "product_name";
@@ -107,6 +114,8 @@ public class WorkerInboundService {
     private final ClientRequestIdService clientRequestIdService;
     private final ProductMapper productMapper;
     private final ProductSkuMapper productSkuMapper;
+    /** 入库标签（P2）：过账成功后**同一事务**为每一行发短码（缺码不画假码 ⇒ 发不出码就连过账一起回滚）。 */
+    private final InboundLabelService inboundLabelService;
 
     // ============================================================ ① 识别（不落库）
 
@@ -203,7 +212,7 @@ public class WorkerInboundService {
         }
         try {
             InboundOrderResponse created = inboundOrderService.create(toCreateRequest(req), tenantId, operator);
-            WorkerInboundDraftView view = viewOf(created);
+            WorkerInboundDraftView view = viewOf(created, null);
             clientRequestIdService.complete(tenantId, idempotencyKey, view);
             log.info("[工人入库] 草稿已建（未动库存）: tenant={}, inboundNo={}, skuId={}, operator={}",
                     tenantId, created.getInboundNo(), req.getSkuId(), operator);
@@ -238,7 +247,12 @@ public class WorkerInboundService {
         }
         try {
             InboundOrderResponse posted = inboundOrderService.post(draftId, tenantId, operator);
-            WorkerInboundDraftView view = viewOf(posted);
+            // 过账成功后**同一事务**为每一行发码（issue #5052 P2；§7.1「缺码不画假码」）：
+            // 「已过账但永远没有码」是不可恢复的中间态（没有「按单补码」的产品路径）⇒ fail-closed，
+            // 工人带同一个 Idempotency-Key 重试即可（幂等占位随本次事务一起回滚 = 重试仍是首次执行）。
+            List<InboundLabel> labels = inboundLabelService.ensureLabels(
+                    tenantId, posted.getId(), posted.getItems(), operator);
+            WorkerInboundDraftView view = viewOf(posted, labels);
             clientRequestIdService.complete(tenantId, idempotencyKey, view);
             log.info("[工人入库] 过账完成: tenant={}, inboundNo={}, operator={}",
                     tenantId, posted.getInboundNo(), operator);
@@ -384,8 +398,12 @@ public class WorkerInboundService {
         return create;
     }
 
-    /** 入库单 → 工人面视图（两个端点同一形状；{@code needsConfirmation} 只对草稿为 true）。 */
-    private static WorkerInboundDraftView viewOf(InboundOrderResponse order) {
+    /**
+     * 入库单 → 工人面视图（两个端点同一形状；{@code needsConfirmation} 只对草稿为 true）。
+     *
+     * @param labels 过账后为每一行发出的标签（**草稿态为 null** —— 标签只在过账后存在，§4 步骤 11）
+     */
+    private static WorkerInboundDraftView viewOf(InboundOrderResponse order, List<InboundLabel> labels) {
         WorkerInboundDraftView view = new WorkerInboundDraftView();
         view.setDraftId(order.getId());
         view.setInboundNo(order.getInboundNo());
@@ -400,6 +418,13 @@ public class WorkerInboundService {
                 line.setSkuCode(item.getSkuCode());
                 line.setQuantity(item.getQuantity());
                 line.setBatchNo(item.getBatchNo());
+                // 标签短码（P2）：草稿态没有、过账后每行一个；P3 拿它拼 /i/<短码> 出 50×30mm 标签
+                for (InboundLabel label : labels == null ? List.<InboundLabel>of() : labels) {
+                    if (label != null && item.getId() != null && item.getId().equals(label.getInboundItemId())) {
+                        line.setShortCode(label.getShortCode());
+                        line.setPrintCount(label.getPrintCount());
+                    }
+                }
                 lines.add(line);
             }
         }

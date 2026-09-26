@@ -86,6 +86,7 @@ class WorkerInboundServiceTest {
     @Mock private ProductMapper productMapper;
     @Mock private StockLedgerService stockLedgerService;
     @Mock private ImageRecognitionClient imageRecognitionClient;
+    @Mock private com.migao.admin.service.InboundLabelService inboundLabelService;
     @Mock private ClientRequestIdService clientRequestIdService;
 
     private WorkerInboundService service;
@@ -172,7 +173,7 @@ class WorkerInboundServiceTest {
                 inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper,
                 stockBatchMapper, productSkuMapper, productMapper, stockLedgerService);
         service = new WorkerInboundService(inboundOrderService, imageRecognitionClient,
-                clientRequestIdService, productMapper, productSkuMapper);
+                clientRequestIdService, productMapper, productSkuMapper, inboundLabelService);
     }
 
     // ============================================================ 工具
