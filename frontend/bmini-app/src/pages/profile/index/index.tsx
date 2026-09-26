@@ -3,6 +3,8 @@ import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
+import { visibleAdminSurfaces } from '../../../utils/adminPermission'
+import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
 import './index.scss'
 
 /**
@@ -14,6 +16,9 @@ import './index.scss'
  */
 export default function ProfilePage() {
   const { user, isLoggedIn, logout } = useAuthStore()
+  // 服务端下发的权限集合（`GET /api/auth/me`）；`null` = 未知 ⇒ 入口照显（fail-open）
+  const permissions = useAdminPermissions()
+  const adminSurfaces = visibleAdminSurfaces(permissions)
 
   const handleAbout = () => {
     Taro.showModal({
@@ -101,6 +106,24 @@ export default function ProfilePage() {
           <Text className='menu-item__text'>扫码报工</Text>
           <Text className='menu-item__arrow'>›</Text>
         </View>
+
+        {/* ── 管理面 4 项（issue #5654）──
+            管理员离店后仍要能办的事：排产/派单 · 入库过账 · 售后处理 · 计件工资报表。
+            🔴 可见性 = 「能读这一页」的**端点码**（`src/utils/adminPermission.ts` 台账），
+            权限集合来自服务端 `GET /api/auth/me`；**集合未知 ⇒ 照显**（fail-open：
+            判定权威在服务端 403 + 显式文案，静默隐藏入口是 #5642 明令禁止的形态）。 */}
+        {adminSurfaces.map((surface) => (
+          <View
+            key={surface.key}
+            className='menu-item'
+            data-testid={`profile-admin-${surface.key}`}
+            onClick={() => Taro.navigateTo({ url: surface.route })}
+          >
+            <Text className='menu-item__text'>{surface.label}</Text>
+            <Text className='menu-item__arrow'>›</Text>
+          </View>
+        ))}
+
         <View className='menu-item' onClick={handleAbout}>
           <Text className='menu-item__text'>关于我们</Text>
           <Text className='menu-item__arrow'>›</Text>

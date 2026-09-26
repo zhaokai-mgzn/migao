@@ -1,0 +1,300 @@
+/**
+ * 管理面（手机端）样式 —— issue #5654
+ *
+ * 设计口径（用户原话：「其他 ERP 展示了大量的数据信息，我们作为 AI 时代的新产品可以设计的
+ * 更智能一点」+ 车间场景：单手、可能戴手套）：
+ * - **卡片 + 关键数字 + 一步动作**，**没有任何宽表格 / 横向滚动**（本单 4 项零宽表）；
+ * - 主行动按钮高度 ≥ 88rpx（戴手套也能点），一步动作只放一个；
+ * - 危险/不可逆动作（派单 / 过账 / 工单流转）走二次确认，按钮用金色描边与普通「刷新」区分。
+ */
+
+.admin-surface {
+  min-height: 100vh;
+  background: #f5f7fa;
+  padding-bottom: 40rpx;
+}
+
+// ── 页头：一句话说清「这一页在管什么 + 现在多少条」 ──
+.admin-surface__header {
+  padding: 28rpx 24rpx 12rpx;
+  background: linear-gradient(135deg, #0a2540 0%, #1a73e8 100%);
+}
+
+.admin-surface__title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.admin-surface__subtitle {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.admin-surface__body {
+  padding: 16rpx 24rpx;
+}
+
+// ── 卡片 ──
+.admin-card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(10, 37, 64, 0.06);
+
+  &--selectable {
+    border: 1rpx solid #eaeef3;
+  }
+
+  &--selected {
+    border: 2rpx solid #1a73e8;
+    background: #f3f8ff;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    font-size: 30rpx;
+    font-weight: 600;
+    color: #0a2540;
+  }
+
+  &__meta {
+    display: block;
+    margin-top: 8rpx;
+    font-size: 24rpx;
+    color: #5a6b7c;
+  }
+
+  &__note {
+    display: block;
+    margin-top: 8rpx;
+    font-size: 22rpx;
+    color: #9aa5b1;
+  }
+
+  &__amount {
+    font-size: 30rpx;
+    font-weight: 600;
+    color: #c8a24b;
+  }
+}
+
+// ── 状态徽标（订单/单据状态用语义色，不靠颜色单一维度：文案恒在） ──
+.admin-chip {
+  display: inline-block;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+
+  &--draft,
+  &--pending {
+    background: #fff4e0;
+    color: #a05a00;
+  }
+
+  &--posted,
+  &--resolved {
+    background: #e6f6ee;
+    color: #1a7f4b;
+  }
+
+  &--cancelled,
+  &--rejected,
+  &--closed {
+    background: #f2f3f5;
+    color: #5a6b7c;
+  }
+
+  &--processing {
+    background: #e8f1fe;
+    color: #1a73e8;
+  }
+
+  &--urgent {
+    background: #fdeaea;
+    color: #c62828;
+  }
+}
+
+// ── 筛选条（横向可滚动的 chip 行 —— 是**筛选**不是数据表，无需横向滚动看数据） ──
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  padding: 8rpx 0 16rpx;
+}
+
+.admin-filter {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  border: 1rpx solid #eaeef3;
+  font-size: 24rpx;
+  color: #5a6b7c;
+
+  &--active {
+    background: #1a73e8;
+    border-color: #1a73e8;
+    color: #ffffff;
+  }
+}
+
+// ── 动作按钮 ──
+.admin-action {
+  margin-top: 16rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  background: #1a73e8;
+  color: #ffffff;
+
+  &--gold {
+    background: #c8a24b;
+  }
+
+  &--ghost {
+    background: #ffffff;
+    border: 1rpx solid #c8a24b;
+    color: #a05a00;
+  }
+
+  &--inline {
+    display: inline-block;
+    margin: 0;
+    padding: 0 28rpx;
+    height: 64rpx;
+    line-height: 64rpx;
+    font-size: 26rpx;
+    border-radius: 12rpx;
+  }
+
+  &--disabled {
+    background: #d9dee5;
+    color: #ffffff;
+  }
+}
+
+// ── 四态块（SurfaceState） ──
+.surface-state {
+  margin: 24rpx 24rpx 0;
+  padding: 40rpx 24rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  text-align: center;
+
+  &--forbidden {
+    background: #fff8ec;
+    border: 1rpx solid #f0d9a8;
+  }
+
+  &--error {
+    background: #fdf3f3;
+    border: 1rpx solid #f3d0d0;
+  }
+
+  &__text {
+    font-size: 26rpx;
+    color: #5a6b7c;
+    line-height: 40rpx;
+  }
+}
+
+// ── 提示条（写动作被拒 / 校验提示：**必须上屏**，不靠一次性 toast） ──
+.admin-notice {
+  margin: 16rpx 0;
+  padding: 20rpx 24rpx;
+  border-radius: 12rpx;
+  background: #fff8ec;
+  border: 1rpx solid #f0d9a8;
+
+  &__text {
+    font-size: 26rpx;
+    color: #a05a00;
+    line-height: 38rpx;
+  }
+
+  &--error {
+    background: #fdf3f3;
+    border-color: #f3d0d0;
+  }
+
+  &--error &__text {
+    color: #c62828;
+  }
+}
+
+// ── 分组标题 ──
+.admin-section-title {
+  display: block;
+  margin: 24rpx 0 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #0a2540;
+}
+
+.admin-hint {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #9aa5b1;
+  line-height: 34rpx;
+}
+
+// ── 预览/汇总数字块 ──
+.admin-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 12rpx;
+}
+
+.admin-metric {
+  flex: 1 1 46%;
+  background: #f7f9fc;
+  border-radius: 12rpx;
+  padding: 16rpx;
+
+  &__label {
+    display: block;
+    font-size: 22rpx;
+    color: #5a6b7c;
+  }
+
+  &__value {
+    display: block;
+    margin-top: 6rpx;
+    font-size: 30rpx;
+    font-weight: 600;
+    color: #0a2540;
+  }
+}
+
+// ── 底部固定操作条（选中 N 单后的唯一落脚点） ──
+.admin-bottombar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 16rpx;
+  padding: 20rpx 24rpx 28rpx;
+  background: #ffffff;
+  border-top: 1rpx solid #eaeef3;
+
+  &__count {
+    display: block;
+    font-size: 24rpx;
+    color: #5a6b7c;
+    margin-bottom: 12rpx;
+  }
+}
