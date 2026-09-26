@@ -1,4 +1,4 @@
-// case_ids: OR-046, OR-053
+// case_ids: OR-046, OR-047
 package com.migao.admin.mapper;
 
 import com.migao.admin.entity.OrderShipmentItem;
