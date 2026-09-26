@@ -7388,8 +7388,13 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
                        debug_user=getattr(case, "debug_user", "") or "",
                        debug_permissions=_case_debug_permissions(case))
     # 被拒后自愈率（报告型，issue #4097 评论）：放在 end_session 之后 —— 会话关闭**不删**消息，
-    # 历史接口照常可读（真值 = `SessionMemory.close_session` 只改状态）。
-    await _record_denial_recovery(case, token, r)
+    # 历史接口照常可读（真值 = `SessionMemory.close_session` 只改 status 与 ended_at）。
+    # ⚠️ 报告型读数在**用例主链路**上 ⇒ 任何异常都不得中断用例（取数失败只打印一行）；
+    # 这里再包一层兜底，让"旁路不影响主路"成为结构性保证，而不是只靠内部 try。
+    try:
+        await _record_denial_recovery(case, token, r)
+    except Exception as e:                          # pragma: no cover - 兜底路径
+        print(f"     ℹ️ 自愈率记账跳过（{type(e).__name__}: {e}）")
     if not getattr(case, "post_session", None):
         return
     try:
