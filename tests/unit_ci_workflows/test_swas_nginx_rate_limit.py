@@ -1,7 +1,7 @@
-# case_ids: MC-012
+# case_ids: MC-012, PR-117
 # （沿用 tests/unit_ci_workflows/** 既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。
-#   本 PR 不新建用例族。）
+#   PR-117 = `/i/`（入库标签，issue #5052 §7.1）的**限流预算登记**，且该预算**真的计账**。）
 r"""`deploy/swas/nginx.conf` 的**限流防刷**常驻判据（关联 issue #20 第 3 项）。
 
 ## 为什么要一条常驻判据
@@ -23,6 +23,7 @@ r"""`deploy/swas/nginx.conf` 的**限流防刷**常驻判据（关联 issue #20 
 | 5 | 工人面没有小额 per-IP 额度：`/s/` 只挂 worker_entry | `/s/` 挂上 api_perip（10 r/s）⇒ 红 |
 | 6 | **阈值仍 ≥ 10× 重算出来的实测用量**（不是注释里的死数） | admin-web 某个页面并发涨到 21 ⇒ 红（逼着重新推导） |
 | 7 | 注入式红证（本文件内真跑）：删 zone / 砍 burst / 给静态面加限流 | 任一注入**没被检出** ⇒ 红（判据自己空转） |
+| 8 | **挂了限流的 location 必须真的计账**：该 location 的 zone key（`map`）对**登记过的样本请求**求值非空 | `/i/` 挂了 worker_entry 但 `$worker_entry_key` 的 map 不覆盖 `/i/` ⇒ 红（nginx「空 key 不计账」⇒ 限流是空断言） |
 
 ## 阈值是怎么推导的（判据 6 每次**重算**，不是抄注释）
 
@@ -44,6 +45,11 @@ r"""`deploy/swas/nginx.conf` 的**限流防刷**常驻判据（关联 issue #20 
 - 工人端的「一次扫码 = 2 个请求」是按端点字面量**数出来的**，不跟踪调用图：将来若扫码流程多打一个端点，
   本条**不会**自动跟着涨（已登记为残余，见 PR body）。
 - 配置注释里的中文说明与表格**不参与判定** —— 判定只吃结构化解析出来的指令。
+- 判据 8 是**语义求值**（按 nginx 文档把 `map` 在**样本请求**上求一遍：正则按序、首个命中、
+  否则 `default`、**空 key 不计账**），不是文本匹配；但它证明不了 nginx 真的加载了这份配置
+  （本机没有 nginx 二进制、没有 docker）。
+- 判据 8 的样本（`LOCATION_SAMPLES`）是**人写的真实请求形态**：新增一个形态特殊的受限度 location
+  （按域名/头分档）时，样本要跟着核 —— 未登记样本的受限度 location 会判红（不许静默跳过）。
 """
 from __future__ import annotations
 
@@ -79,6 +85,10 @@ DOCUMENTED_LIMITS: dict[tuple[str, str], dict[str, int]] = {
     },
     ("ai-api.migaozn.com", "/"): {"api_perip": 200},
     ("app.migaozn.com", "/s/"): {"worker_entry": 1000},
+    # 入库标签 `/i/<短码>`（issue #5052 §7.1 的码形态）：与 `/s/` **同族** —— 码印在纸/标签上，
+    # 对**任何持码人**等价 ⇒ 与工人入口面共用「很宽的 per-IP 兜底」档，而不是内部管理面的宽预算。
+    # 正常用量 = 扫一次标签 1 个请求（`/i/` 只做 302，落地页请求落在 `/b/`）。
+    ("app.migaozn.com", "/i/"): {"worker_entry": 1000},
     ("app.migaozn.com", "/api/chat/"): {"api_perip": 200},
     ("app.migaozn.com", "/api/"): {
         "api_perip": 200, "auth_perip": 60, "abuse_perip": 10,
@@ -299,6 +309,73 @@ def proxied_locations(text: str) -> set[tuple[str, str]]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 一·b、判据 8 的输入：每个「挂了限流的 location」的**样本请求**，以及 `map` 的求值器
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: 每个被限流的 location 取一个**样本请求**（值 = 该请求下这些请求变量的取值）。
+#: 新增一个挂限流的 location 而不登记样本 ⇒ 判据 8 判红（不许静默跳过）。
+LOCATION_SAMPLES: dict[tuple[str, str], dict[str, str]] = {
+    ("api.migaozn.com", "/"): {"$request_uri": "/api/orders"},
+    ("ai-api.migaozn.com", "/"): {"$request_uri": "/api/chat"},
+    ("app.migaozn.com", "/s/"): {"$request_uri": "/s/7K3M9QP2"},
+    ("app.migaozn.com", "/i/"): {"$request_uri": "/i/7K3M9QP2"},
+    ("app.migaozn.com", "/api/chat/"): {"$request_uri": "/api/chat/x"},
+    ("app.migaozn.com", "/api/"): {
+        "$request_uri": "/api/orders",
+        "$http_x_worker_session_id": "0123456789abcdef0123456789abcdef",
+    },
+}
+
+_MAP_ENTRY_RE = re.compile(r"^(?P<pattern>\S+)\s+(?P<value>\S+)$")
+
+
+def _unquote(token: str) -> str:
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+        return token[1:-1]
+    return token
+
+
+def evaluate_map(text: str, result_var: str, subject: dict[str, str]) -> str | None:
+    """按 nginx 语义求一条 `map`（结果变量 = `$result_var`）：命中的 `~regex` 取**第一个**，否则取 `default`。
+
+    判据源 = nginx 文档（ngx_http_map_module）：「正则表达式按其在配置文件中出现的顺序依次检查，
+    第一个匹配的搜索停止」；无命中时用 `default`。找不到该 map / 源变量在本请求下没有取值 ⇒ None
+    （**无法判定 ≠ 通过**，调用方必须把它当红）。
+    """
+    for _path, block in walk(parse_nginx(text)):
+        if not block.header.startswith("map "):
+            continue
+        parts = block.header.split()
+        if len(parts) < 3 or parts[2] != f"${result_var}":
+            continue
+        subject_value = subject.get(parts[1])
+        if subject_value is None:
+            return None
+        default: str | None = None
+        for statement in block.directives:
+            entry = _MAP_ENTRY_RE.match(statement)
+            if entry is None:
+                continue
+            pattern, raw = _unquote(entry.group("pattern")), _unquote(entry.group("value"))
+            if pattern == "default":
+                default = raw
+                continue
+            if pattern.startswith("~") and re.search(pattern[1:], subject_value):
+                return raw
+        return default
+    return None
+
+
+def zone_accounts_request(text: str, zone: str, subject: dict[str, str]) -> bool:
+    """这个 zone 对样本请求**会不会计账**：key 取到的值非空才计入（空 key 不计账，nginx 文档逐字）。"""
+    key = zones_of(text).get(zone, {}).get("key", "")
+    if not key.startswith("$"):
+        return False
+    value = evaluate_map(text, key[1:], subject)
+    return value is not None and value != ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 二、判据本体（纯函数：吃配置文本 → 产出问题清单；注入式红证直接喂变异文本）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -356,6 +433,25 @@ def problems(text: str, page_cost: int, worker_scan_cost: int) -> list[str]:
     if short_link.get("worker_entry", 0) < _HEADROOM_FACTOR:
         bad.append(f"`/s/` 的 worker_entry burst 太小：{short_link.get('worker_entry')}")
 
+    # 判据 8：挂了限流的 location 必须**真的计账** —— zone 的 key 由 `map` 产生，而 nginx 对
+    # **空 key 的请求不计账**（ngx_http_limit_req_module 逐字 "Requests with an empty key value
+    # are not accounted."）⇒ 「限流挂着但 key 取不到值」= 限流是空断言：看着在、实际全放过。
+    for where, zone_bursts in sorted(got_limits.items()):
+        sample = LOCATION_SAMPLES.get(where)
+        if sample is None:
+            bad.append(
+                f"{where[0]}{where[1]} 挂了限流但没有登记**样本请求**（本文件 LOCATION_SAMPLES）"
+                "⇒ 判据 8 无从判定（无法判定不得当通过）"
+            )
+            continue
+        if not any(zone_accounts_request(text, zone, sample) for zone in zone_bursts):
+            bad.append(
+                f"{where[0]}{where[1]} 挂的限流对样本请求 {sample.get('$request_uri', '')!r} "
+                f"**一个 zone 都不计账**（zone {sorted(zone_bursts)} 的 key map 求值为空）⇒ "
+                "「空 key 不计账」会把它们全部放过：限流看着在、实际不拦。"
+                "把这些前缀加进对应 zone 的 key map（如 `$worker_entry_key` 的 `~^/(s/|i/|api/worker/)`）"
+            )
+
     # 判据 6：阈值仍压得住**重算**出来的实测用量（≥10×）
     worker_total = worker_scan_cost + len(_WORKER_PAGE_LOAD_ENDPOINTS)
     headroom_cases = {
@@ -369,6 +465,7 @@ def problems(text: str, page_cost: int, worker_scan_cost: int) -> list[str]:
         ("api.migaozn.com", "/", "worker_entry"): 1,
         ("app.migaozn.com", "/api/", "worker_sess"): worker_total,
         ("app.migaozn.com", "/s/", "worker_entry"): 1,
+        ("app.migaozn.com", "/i/", "worker_entry"): 1,
     }
     for (domain, target, zone), cost in headroom_cases.items():
         burst = got_limits.get((domain, target), {}).get(zone)
@@ -552,3 +649,20 @@ def test_red_proof_raised_page_cost_tightens_the_requirement() -> None:
     assert any("api_perip" in item and "余量不足" in item for item in found), (
         f"实测用量涨上去后限流没有跟着被判不足（说明余量判据与读数无关）：{found}"
     )
+
+
+def test_red_proof_a_zone_that_counts_nothing_is_detected() -> None:
+    """红证⑤（本单新增）：`/i/` 挂着 worker_entry，但 `$worker_entry_key` 的 map 不覆盖 `/i/`
+    ⇒ 请求 key 为空 ⇒ nginx 不计账 ⇒ 判据必须报「一个 zone 都不计账」。"""
+    text = _live_text()
+    mutated = _inject(text, "~^/(s/|i/|api/worker/)", "~^/(s/|api/worker/)")
+    assert not zone_accounts_request(mutated, "worker_entry", {"$request_uri": "/i/7K3M9QP2"}), (
+        "把 `/i/` 从 map 里去掉后 key 竟然还取到值 ⇒ 求值器与 nginx 语义对不上（本红证会空转）"
+    )
+    assert zone_accounts_request(mutated, "worker_entry", {"$request_uri": "/s/7K3M9QP2"}), (
+        "`/s/` 的计账被连带打断 ⇒ 求值器把 map 读错了"
+    )
+    page_cost, _where, _missing = measured_page_cost()
+    scan_cost, _missing2 = measured_worker_scan_cost()
+    found = problems(mutated, page_cost, scan_cost)
+    assert any("/i/" in item and "不计账" in item for item in found), f"限流不计账没被判红：{found}"

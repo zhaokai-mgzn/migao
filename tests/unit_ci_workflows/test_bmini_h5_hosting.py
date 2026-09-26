@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, PR-117
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。
 #   本 PR 不新建用例族。）
@@ -770,6 +770,7 @@ class _NginxishServer:
       · ``root_hijacked`` —— 根被 `/b/` 规则吃掉（根返回 bmini 产物）
       · ``stale_b``       —— `/b/` 上是**旧产物**（不是本仓库这次构建）
       · ``w_broken``      —— worker-h5 的 `/w/` 坏了
+      · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端小布）
     """
 
     def __init__(self, served_root: Path, mode: str = "ok"):
@@ -802,6 +803,10 @@ class _NginxishServer:
             return c_end
         if path.startswith("/s/"):
             return b'{"error":"short code not found"}'  # admin-api 的 404 形态
+        if path.startswith("/i/"):
+            if self.mode == "i_falls_back":
+                return c_end  # nginx 少了 `location /i/` ⇒ 回落 C 端首页（本条要治的静默串端形态）
+            return None  # admin-api 的 404（未知短码按设计不存在；线上实测就是 404 + 空 body）
         if self.mode == "root_hijacked":
             return bmini
         return c_end
@@ -815,7 +820,10 @@ class _NginxishServer:
         def do_GET(self):  # noqa: N802
             path = self.path.split("?", 1)[0]
             body = self.server.route(path)  # type: ignore[attr-defined]
-            code = 200 if body is not None else 404
+            if body is None:
+                body, code = b"", 404  # 上游/nginx 的 404 形态（空 body）—— 如 admin-api 的未知短码
+            else:
+                code = 200
             self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -877,10 +885,13 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         ("root_hijacked", "GET / 返回的是"),
         ("stale_b", "≠ 本仓库"),
         ("w_broken", "worker-h5 身份断言脚本判红"),
+        # 本单（PR-117）：`/i/` 面少了 nginx 登记 ⇒ 探针必须判红，且**指名**是 SPA fallback
+        # （红得不具体 = 排查时看不出是哪条判据；照 #5668 的口径）。
+        ("i_falls_back", "落到了 location / 的 SPA fallback"),
     ],
 )
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):
-    """判据 7：四种坏形态必须判红（否则上面的绿是空断言）。"""
+    """判据 7：坏形态必须判红（否则上面的绿是空断言）。"""
     dist = _make_bmini_dist(tmp_path)
     root = _served_root_with(tmp_path, dist)
     with _NginxishServer(root, mode) as base:
@@ -890,6 +901,21 @@ def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):
     assert any(line for line in proc.stdout.splitlines() if marker in line), (
         f"判红信息里找不到 {marker!r}（红得不具体 = 排查时看不出是哪条判据）：\n{proc.stdout}"
     )
+
+
+def test_verify_script_probes_the_i_shortlink_face() -> None:
+    """判据 8：落地面断言脚本必须真的探 `/i/` 面（删掉探针 ⇒ 红）。
+
+    为什么这条也要常驻：`/i/` 的落地面**只能**在线上证（离线语义模拟证明不了 nginx 已 reload），
+    探针被静默删掉时不会有别的东西变红 —— 那正是「扫标签串端」重新变得不可见的形态。
+    """
+    text = VERIFY_SCRIPT.read_text(encoding="utf-8")
+    assert 'I_PROBE="/i/' in text, "落地面断言脚本没有 `/i/` 探针（扫标签串端就没有任何线上判据兜）"
+    assert "落到了 location / 的 SPA fallback" in text, (
+        "`/i/` 探针判红时必须**指名**是 SPA fallback（照 #5668：红得不具体 = 排查时看不出是哪条）"
+    )
+    assert "${BASE}${I_PROBE}" in text, "探针常量没被真的请求（写了不用 = 空断言）"
+    assert "i_falls_back" not in text, "断言脚本里不该知道测试模拟器的 mode 名（两套实现会漂）"
 
 
 # ── 传输载体（Dockerfile）的指令文法判据（issue #5668 首次发布实测）──────────────
