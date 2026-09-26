@@ -203,7 +203,9 @@ class HumanHandoffTool(BaseTool):
     #   D3 AI 主动建议 → handoff_offer 节点先发建议卡、**用户点卡确认后**才到本工具。
     # 三条入口都不存在「未确认即转人工」，在工具层再加一道 = 让顾客「求人还要再点一次卡」，
     # 且直接破坏用例锁定的语义（CH-008/CH-015/UI-010/ST-008）。
-    # 该豁免是既有产品决策：docs/design/xiaobu-ai-handoff-guidance.md（第 25/64/244/264 行）
+    # 该豁免是既有产品决策：docs/design/xiaobu-ai-handoff-guidance.md
+    # （§3.1 三类触发 / §4.1 卡片形态 / §7.1 新增行为用例 —— ⚠️ 用**章节锚点**不写行号：
+    #  行号在任何一次插入/删除后即失效，引用纪律见 `migao-dev-flow` §16.7）
     # 明文「D1/D2 直转是产品共识…再加确认是负体验」，并把 requires_confirmation=True
     # 列为「会改变 CH-008 语义，须单独评审」。
     # 残留风险（已登记 #3594）：idempotent=False，重复调用产生重复工单 + 重复管理员通知；

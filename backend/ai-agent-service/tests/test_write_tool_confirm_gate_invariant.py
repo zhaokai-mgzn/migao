@@ -52,7 +52,8 @@ CONFIRM_GATE_EXEMPT_WRITE_TOOLS: dict[str, str] = {
     #   「未确认即转人工」；工具层再加确认会破坏 CH-008/CH-015/UI-010/ST-008 锁定的语义。
     #   残留风险（#3594）：idempotent=False，重复调用产生重复工单/通知 ——
     #   随工具退场而消失（不再有模型侧调用路径；存量数据由 admin-api 承担）。
-    #   产品决策原文：docs/design/xiaobu-ai-handoff-guidance.md（第 25/64/244/264 行）。
+    #   产品决策原文：docs/design/xiaobu-ai-handoff-guidance.md（§3.1 三类触发 / §7.1 新增行为用例；
+    #   ⚠️ 用章节锚点不写行号 —— 行号随任何插入/删除即失效，引用纪律见 `migao-dev-flow` §16.7）。
 }
 
 # 理由必须引用的证据锚点：issue 号（#3594）或用例 ID（CH-015 / PG-013）
