@@ -119,7 +119,7 @@ jobs:
           HEAD_SHA=$(git rev-parse HEAD)
           HEAD7="${HEAD_SHA::7}"
           SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
-          MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0
+          MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0; NOTARGET=0
           {
             echo "## Deploy Reconcile 判定（issue #4827）"
             echo ""
@@ -136,6 +136,19 @@ jobs:
             local image="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
             local runs last p drift reason
             local -a pathspec
+            # ── 判据 ③（前置，最先判）：目标 workflow 必须**已在 default branch 上** ──
+            # 为什么需要（**实测**，issue #5668 的 PR 首轮）：**新增一条腿的那个 PR 里**，被对账的
+            # workflow 还没合并到 main ⇒ `gh workflow run <wf> --ref main` 返回
+            # 「HTTP 404: workflow … not found on the default branch」⇒ `set -euo pipefail` 下
+            # **整个对账 step 非零退出**，把同轮其它四条腿的结果一起染红（而它们本来是对的）。
+            # 这不是「要补的部署」，而是「还轮不到它」⇒ 显式 warn + 落 summary + **不** dispatch
+            # （fail-open 的另一面：本检查自己出错绝不停掉对账，也绝不 dispatch 一个 main 上不存在的 workflow）。
+            if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then
+              echo "::warning::${svc}：目标 workflow ${wf} 不在 main 上（多为「新增腿的那个 PR」）——本轮不对账"
+              echo "| ${svc} | ⚠️ \`${wf}\` 尚未在 main 上（新增腿的那个 PR；gh 会 404） | **不补**（合并后自然接上） |" >> "$SUMMARY"
+              NOTARGET=$((NOTARGET + 1))
+              return 0
+            fi
             # ── 断路器（issue #4767 ③，语义逐字保留）：这个 commit 的部署**已经失败过** ⇒ 不再自动补部署 ──
             # 反复重试同一个坏 commit 会把「已回滚到上一个可用镜像」的环境**再打挂一次**。
             # **fail-open**：查询失败 / 无记录 / 结论不是 failure（含 in_progress、cancelled）⇒
@@ -208,6 +221,19 @@ jobs:
           # 「开工」，无红无告警）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响，正是免疫的兜底腿。
           # 代码路径 = `worker-h5-publish.yml` 的 `on.push.paths` 正向项（有动态对齐守卫）。
           reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""
+          # bmini-h5-hosting（issue #5668）—— **第二条静态落地面腿**：把 `frontend/bmini-app/**`
+          # 的 h5 产物发布到 `app.migaozn.com` 静态根下的 `b/`。与 worker-h5 同形（无镜像 ⇒
+          # 判据 ① 对它恒不成立，判定来自漂移判据 ② = 自 `bmini-h5-publish.yml` 上次**成功**发布起
+          # `frontend/bmini-app/**` 有无改动）。
+          # 为什么必须有这条腿：#5001 的同族抑制 —— 该 workflow 的自动触发面只有 `push: main`，
+          # 而 auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ 那个 `push` **不再触发 workflow** ⇒ 改了 B 端 h5
+          # 合并后 `/b/` 会**静默停在旧产物**（无红无告警，正是本单要治的「功能做完浏览器里打不开」
+          # 的近亲）。本对账由 `schedule` 触发 ⇒ 不受该抑制影响。
+          # ⚠️ 腿名**有意**不叫 `bmini-h5`：发布腿的传输镜像正好叫 `<ACR>/<NS>/bmini-h5:sha-<build>`
+          #    ⇒ 若同名，判据 ①（`docker manifest inspect`）会在**发布失败**（镜像已推、`b/` 未更新）
+          #    时命中并返回「已构建 ⇒ 无漂移」⇒ **静默不补发布**。腿名与传输镜像名不同 ⇒
+          #    判据 ① 恒不成立，判定只能来自漂移判据 ②（这条就是「对账不能凭空相信中间产物」的落点）。
+          reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
 
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
@@ -217,7 +243,7 @@ jobs:
           fi
           {
             echo ""
-            echo "**结论**：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
+            echo "**结论**：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在 main=${NOTARGET}"
             echo ""
             echo "> 没有任何 dispatch 时，上表逐服务给出**判定依据**（镜像名 / 上次成功部署的 commit /"
             echo "> 断路器结论）——不再出现「run 报 success 但看不出它为什么没动」（issue #4827）。"
@@ -225,17 +251,20 @@ jobs:
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
-          # `--seen` = 本轮的**对账腿数**（4 条：3 条镜像腿 + worker-h5 静态落地面腿，issue #5001）——
-          # 它与读数必须同刻（不加腿就报 4 = 读数与事实相反，#5264 的形态）。
+          # `--seen` = 本轮的**对账腿数**（5 条：3 条镜像腿 + worker-h5 静态落地面腿 + bmini-h5-hosting
+          # 静态落地面腿，issue #5001 / #5668）—— 它与读数必须同刻（不加腿就报 5 = 读数与事实相反，
+          # #5264 的形态）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-            mechanism_liveness_declare --seen 4 --acted "${MISSING}" \
+            mechanism_liveness_declare --seen 5 --acted "${MISSING}" \
               --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）"
 
           fi
           if [ "$UNKNOWN" -gt 0 ]; then
             echo "::warning::Deploy Reconcile：${UNKNOWN} 个服务判据不可用——已按 fail-open 兜底补部署，请人工确认"
+          elif [ "$NOTARGET" -gt 0 ]; then
+            echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 不在 main=${NOTARGET}（基准 main HEAD=${HEAD7}；「不在 main」= 新增腿的那个 PR，合并后自然接上）"
           else
             echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED}（基准 main HEAD=${HEAD7}）"
           fi

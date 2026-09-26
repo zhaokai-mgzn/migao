@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Save, Newspaper, SlidersHorizontal } from 'lucide-react'
+import { Building2, Bot, Bell, Save, Newspaper, SlidersHorizontal, Smartphone } from 'lucide-react'
 import Image from 'next/image'
+import { QRCodeSVG } from 'qrcode.react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi } from '@/lib/api'
 import { TenantParamsPanel } from '@/components/settings/TenantParamsPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
+import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { useAuthStore } from '@/store/auth'
 import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 
@@ -206,6 +208,20 @@ export default function SettingsPage() {
     }
   }
 
+  // 手机端入口（issue #5668）：地址来自**单一配置** `NEXT_PUBLIC_BMINI_H5_URL`
+  // （唯一读取点 = @/lib/bmini-h5-url，组件里不硬编码域名）；未配置 ⇒ 空串、**不画码**。
+  const bminiH5Url = getBminiH5Url()
+
+  const handleCopyBminiUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(bminiH5Url)
+      toast.success('链接已复制')
+    } catch {
+      // jsdom / 非安全上下文里没有 clipboard —— 不让复制失败变成一个未捕获异常
+      toast.error('复制失败，请手动选择链接复制')
+    }
+  }
+
   const handleSaveAiConfig = async () => {
     if (!aiConfig.botName.trim()) {
       toast.error('请输入 AI 客服名称')
@@ -334,6 +350,43 @@ export default function SettingsPage() {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  {/* 手机端入口（issue #5668）：B 端 h5 落位 `app.migaozn.com/b/`，让商家**扫码就能用**。
+                      地址取自单一配置 NEXT_PUBLIC_BMINI_H5_URL（唯一读取点 = @/lib/bmini-h5-url）。
+                      🔴 未配置时**不画二维码**（只给一句明确说明）—— 画一个指向空/错地址的码，
+                      用户扫出来是白屏或别的站点，而页面上一切看起来正常（同族判据：缺码不画假码）。 */}
+                  <div className="border-t border-neutral-100 pt-6" data-testid="bmini-h5-entry">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                        <Smartphone className="w-5 h-5 text-primary-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-neutral-900">手机端入口</h3>
+                        <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用米宝商家端</p>
+                      </div>
+                    </div>
+                    {bminiH5Url ? (
+                      <div className="flex items-start gap-4">
+                        <div className="p-2 bg-white border border-neutral-200 rounded-lg">
+                          <QRCodeSVG value={bminiH5Url} size={112} title={bminiH5Url} data-testid="bmini-h5-qr" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-neutral-500">用手机相机或「扫一扫」打开：</p>
+                          <code className="block mt-1 text-xs text-neutral-700 break-all" data-testid="bmini-h5-url">
+                            {bminiH5Url}
+                          </code>
+                          <Button variant="secondary" size="sm" className="mt-2" onClick={handleCopyBminiUrl}>
+                            复制链接
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">
+                        移动端地址未配置 —— 部署时设置 <code className="text-neutral-700">NEXT_PUBLIC_BMINI_H5_URL</code>
+                        后重新构建即可。未配置时这里不显示二维码，以免扫到无效地址。
+                      </p>
+                    )}
                   </div>
 
                   {/* 智能每日经营简报（issue #3468，企业开关） */}
