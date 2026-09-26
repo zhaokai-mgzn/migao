@@ -18,6 +18,7 @@ import com.migao.admin.service.ProductionRoutingReadService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.ProductionStuckPointService;
+import com.migao.admin.service.ProductionTodoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -118,6 +119,16 @@ public class ProductionController {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private ProductionStuckPointService productionStuckPointService;
+
+    /**
+     * 生产待办聚合（「今天要处理的 N 件事」，issue #5641）。
+     *
+     * <p>同上面几条的理由用字段注入：本类构造签名被 {@code ProductionControllerTest} 的
+     * standaloneSetup 显式装配（6 个参数），加构造参数会把既有测试的每一处装配都改一遍 ——
+     * 而本单的改动面**不应**扩到那里（同 #4308 的「不复制第二份装配」口径）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionTodoService productionTodoService;
 
     /**
      * 未定价实例的**显式补价路径**（issue #4709 C）：只补 {@code NULL}、已有价一律不动、进度不清零。
@@ -301,6 +312,26 @@ public class ProductionController {
             @RequestParam(name = "processing_order_id", required = false) String processingOrderId) {
         return ApiResponse.success(productionStuckPointService.report(
                 processingOrderId, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 生产概览（**待办优先**，issue #5641）：一屏回答「今天要处理的 N 件事」，数字退第二屏。
+     * GET /api/admin/production/todo-overview
+     *
+     * <p>响应形状与四类口径见 {@link ProductionTodoService}。要点：每一类待办都**直接消费既有判据**
+     * （「卡在哪」= {@link ProductionStuckPointService}，含其阈值与 {@code threshold_source} 透传；
+     * 「待发货」= {@code OrderService} 的发货守卫）—— 本端点**不新增任何判据**，
+     * 第一屏条数与第二屏计数取自**同一份 list**。</p>
+     *
+     * <p><b>权限 = 方法级 {@code production:view}</b>（生产域**读**码，issue #5291 设立：与
+     * 「生产看板 / 工艺配置 / 计件工资」菜单节点、Agent 侧生产读面同码）。这里**不新增权限码**
+     * （新增要迁移 + 全租户回填，属过度建设）也不沿用类级 {@code order:list} —— 本端点是
+     * <b>生产口径</b>而非订单口径，且无权限必须**拒绝**（403）而不是静默返回空列表。</p>
+     */
+    @GetMapping("/todo-overview")
+    @RequirePermission("production:view")
+    public ApiResponse<Map<String, Object>> todoOverview() {
+        return ApiResponse.success(productionTodoService.overview(TenantContext.getTenantId()));
     }
 
     /**
