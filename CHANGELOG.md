@@ -24,6 +24,22 @@
 - **类级固化**：`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` —— 常驻判据把「zone 表 = 文档表」
   「限流 ⟺ 动态面」「静态面不得挂限流」「工人短链不吃通用档」「burst ≥ 10× **重算**出来的实测用量」
   逐条钉死，并自带四条注入式红证（删 zone / 砍 burst / 给静态面加限流 / 页面长大）。
+### 企业参数改了什么，现在有账可查：谁 / 何时 / 哪个参数 / 从多少改到多少（2026-09-26，issue #5131）
+
+- **改了什么（用户可见 / 可审计）**：算料配置每次保存（`PUT /api/admin/production/craft-calc-config`），
+  凡**真的变了**的参数键都写一行变更账 `tenant_param_audit`：租户 / 哪个域哪个键 / **改前 → 改后** /
+  操作者（取自登录上下文）/ 一次保存的操作 id（同一次 PUT 的多行共享它，日志行里也打它 ⇒ 可对账）。
+- **它「不是」什么（负控，红线）**：① **不影响配置保存** —— 审计写失败只记结构化日志
+  `PARAM_AUDIT_WRITE_FAILED` + 计数指标 `migao.tenant_param_audit.write_failed`，配置照常保存
+  （口径 **B = best-effort**，用户 2026-09-26 裁定：这是配置页、可用性优先，但**不得静默**）；
+  ② 同值的键**不写行**（保存一次不产生 11 行噪音）；③ 取不到登录身份时**如实记 `unknown` + 原因**，
+  不编用户、也不借用库存账的 `system` 冒充归属；④ 本单**只有写面** —— 「这个参数被谁改过」的展示还没做。
+- **附带修复（同批发现即修，判据同批落）**：算料配置写面**漏写三个键** —— `hem_margin` /
+  `oversize_width_threshold` / `oversize_height_threshold`：`PUT` 收下它们、校验它们、返回 200，
+  而**库里一个字都没变**（商家以为改了、引擎按旧值算钱）。改后三个键正常落库并回显。
+- **类级固化**：`backend/admin-api/src/test/java/com/migao/admin/service/TenantParamAuditServiceTest.java`（9 条）+
+  `CraftCalcConfigServiceTest` 的 P6 四条，含注入式红证（抽掉审计调用 / 抽掉 try-catch /
+  还原 `apply(...)` 的三个 setter ⇒ 各自必红）。
 
 ### 员工管理不再能「授予自己没有的权限码」、也不能「管理权限比自己高的账号」——员工授权面加上 ⊆ 门禁（2026-09-26，issue #4104）
 

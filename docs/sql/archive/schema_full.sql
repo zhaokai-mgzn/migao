@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 42 张）：
+--   本文件缺失（schema.sql 已有，共 43 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -23,13 +23,16 @@
 --     production_route_templates, production_routing_versions,
 --     production_routings,
 --     production_work_logs, remnant_small_item_specs, role_permissions,
---     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
+--     session_states, stock_ledger_entries,
+--     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；
+--       与 worker_report_audits 同族 —— 只追加 + 「身份是怎么确定的」，且**不在**配置写入的事务里），
+--     tenant_payment_qrcodes, user_suggestion_prefs, worker_sessions,
 --     inbound_orders, inbound_order_items, stock_batches
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
 --     stock_batch_consumptions
 --      批次消耗台账，V116，issue #5145 阶段 1 —— 一行 = 一次批次余量变更（负 = 派工扣减、
 --      正 = 作废回补）；余量是**派生值** = stock_batches.quantity + Σ(delta)，不原地改批次行；
---     user_memories, worker_report_audits, worker_sessions
+--     user_memories, worker_report_audits
 --      入库单的行业依据见 docs/curtain-selling-method-industry-research.md §1/§8.2）
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
 --       production_route_signals / production_routing_versions = V60，issue #4308 路线可配；

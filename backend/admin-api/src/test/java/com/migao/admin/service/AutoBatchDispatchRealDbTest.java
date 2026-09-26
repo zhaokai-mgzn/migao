@@ -162,7 +162,9 @@ class AutoBatchDispatchRealDbTest {
 
         // 真装配：批次台账（余量 / 排料 / 幂等闸 / 回补都在这一层）
         CraftCalcConfigService configService = new CraftCalcConfigService(
-                session.getMapper(CraftCalcConfigMapper.class), null);
+                session.getMapper(CraftCalcConfigMapper.class), null,
+                // 审计腿（§22 P6）显式不装：本判据只读配置 / 排料，不写配置
+                null);
         batchStock = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductSkuMapper.class), null, configService,

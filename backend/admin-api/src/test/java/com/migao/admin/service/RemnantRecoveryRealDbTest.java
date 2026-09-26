@@ -187,7 +187,9 @@ class RemnantRecoveryRealDbTest {
                 session.getMapper(OrderMapper.class),
                 session.getMapper(OrderItemMapper.class));
         CraftCalcConfigService configService = new CraftCalcConfigService(
-                session.getMapper(CraftCalcConfigMapper.class), null);
+                session.getMapper(CraftCalcConfigMapper.class), null,
+                // 审计腿（§22 P6）显式不装：本判据只读配置 / 排料，不写配置
+                null);
         // 🔴 本单的核心接线：**真装配**余料腿 ⇒ 派工扣批次之后自动登记余料（不需要人手工登记）
         batchStock = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
