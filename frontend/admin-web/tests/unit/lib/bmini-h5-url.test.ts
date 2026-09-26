@@ -1,5 +1,5 @@
-// case_ids: UI-061, MC-012
-// （UI-061 = 「手机端入口二维码」用例；MC-012 = tests/unit_ci_workflows/ 的结构类 L0 不变式惯例。
+// case_ids: UI-064, MC-012
+// （UI-064 = 「手机端入口二维码」用例；MC-012 = tests/unit_ci_workflows/ 的结构类 L0 不变式惯例。
 //   本文件是 growth gate 对 frontend/admin-web/src/lib/bmini-h5-url.ts 要求的同名单测。）
 import { describe, it, expect, vi, afterEach } from 'vitest'
 

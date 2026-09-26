@@ -1,4 +1,4 @@
-// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054, UI-061
+// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054, UI-064
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -760,7 +760,7 @@ describe('SettingsPage — 参数总览 tab（issue #5131，企业参数中心�
   })
 })
 
-// ── 手机端入口二维码（issue #5668，用例 UI-061）───────────────────────────────
+// ── 手机端入口二维码（issue #5668，用例 UI-064）───────────────────────────────
 // 用户逐字：「你在商家后端合适的位置搞个二维码，方便用户扫码使用」+「二维码放『系统设置 / 企业设置』页」。
 // 两条判据的**反面**都要在：① 有值 ⇒ 二维码内容**逐字等于**该配置值（不是拼一个大概的地址）；
 // ② 无值 ⇒ 明确「未配置」且**一个二维码都不画**（画假码 = 用户扫出白屏/别的站点，

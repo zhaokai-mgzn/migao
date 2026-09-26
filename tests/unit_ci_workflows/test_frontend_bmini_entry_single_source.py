@@ -1,6 +1,6 @@
-# case_ids: MC-012, UI-061
+# case_ids: MC-012, UI-064
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012；
-#   UI-061 = 本单新增的「手机端入口二维码」用例，见 .github/cases/ui.yml。）
+#   UI-064 = 本单新增的「手机端入口二维码」用例，见 .github/cases/ui.yml。）
 r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码**常驻判据（issue #5668）。
 
 ## 为什么要有这条判据（不是纸上规范）
@@ -21,14 +21,14 @@ r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码*
 3. **二维码内容取自该单一值**：`value={bminiH5Url}`（不许拼字符串、不许写死域名）。
 4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`，
    假分支渲染「未配置」且**一个 svg 都没有**。行为层的孪生判据在
-   `frontend/admin-web/tests/unit/pages/settings.test.tsx`（UI-061 的 5 格）。
+   `frontend/admin-web/tests/unit/pages/settings.test.tsx`（UI-064 的 5 格）。
 5. **发布链在案**（否则功能在线上静默缺失）：`Dockerfile` 的 `ARG`+`ENV`、
    `deploy-frontend.yml` 的 `--build-arg`、`.env.example` 的说明三者都在；
    任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」（而没人会发现）。
 
 ## 边界（照实登记）
 
-- 判据读的是**源码文本/结构**，不是运行结果 —— 行为层由 vitest（UI-061）承担；
+- 判据读的是**源码文本/结构**，不是运行结果 —— 行为层由 vitest（UI-064）承担；
   两边**判定口径有意一致**（都不许画假码），但本文件证明不了渲染行为，反之亦然。
 - `NEXT_PUBLIC_*` 的构建期替换语义（Next 把 `process.env.NEXT_PUBLIC_X` 文本替换成字面量）
   不在判据面内：它由"值确实出现在构建产物里"这条**运行期**事实承担（CI 的 admin-web 腿 + 浏览器）。
