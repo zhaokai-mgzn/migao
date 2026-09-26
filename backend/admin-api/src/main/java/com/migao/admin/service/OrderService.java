@@ -1014,18 +1014,39 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 该订单是否含加工项（订单明细的 {@code processing_info} 非空）。
+     *
+     * <p><b>这是「含加工项」的唯一一份判据</b>（issue #3340 的发货守卫与 issue #5641 的生产待办
+     * 都读它）—— 自己再写一份 {@code extractProcessingItems} 调用就会是两处口径。</p>
+     *
+     * <p>必须走 BaseMapper 加载（见 {@link #loadOrderItems}）：自定义 {@code @Select} 不经过
+     * {@code JacksonTypeHandler}，{@code processing_info} 会以 JSON <b>字符串</b>返回 ⇒ 加工项解析
+     * 恒为空 ⇒ 判据静默失效（issue #3340 验收实战：真实对话生成加工单被判「无加工项」）。</p>
+     */
+    public boolean hasProcessingItems(Order order) {
+        return loadOrderItems(order.getId(), order.getTenantId()).stream()
+                .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
+    }
+
+    /**
+     * 发货前置判据（**唯一一份**，issue #3340）：含加工项的订单必须已有完成加工单才允许发货。
+     *
+     * <p>{@link #assertProcessingCompletedBeforeShip} 是它的抛异常外壳（发货路径用）；
+     * 生产待办的「待发货」也读它（issue #5641）—— 两处各写一份必然漂移。</p>
+     *
+     * @return {@code true} = 允许发货（无加工项，或加工单已完成）；{@code false} = 被加工单挡住
+     */
+    public boolean isProcessingReadyForShip(Order order) {
+        return !hasProcessingItems(order)
+                || processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) > 0;
+    }
+
+    /**
      * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。
      * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
      */
     private void assertProcessingCompletedBeforeShip(Order order) {
-        // 必须走 BaseMapper 加载（见 loadOrderItems）：自定义 @Select 不经过 JacksonTypeHandler，
-        // processing_info 会以 JSON 字符串返回 → 加工项解析恒为空 → 守卫静默失效
-        // （issue #3340 验收实战：真实对话生成加工单被判「无加工项」）
-        List<OrderItem> items = loadOrderItems(order.getId(), order.getTenantId());
-        boolean hasProcessing = items.stream()
-                .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
-        if (hasProcessing
-                && processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) == 0) {
+        if (!isProcessingReadyForShip(order)) {
             throw BusinessException.validationError(
                     "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
         }
