@@ -4754,7 +4754,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（104 case）
+## 商品域（105 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -6140,6 +6140,22 @@
 真值: inbound-label-flow.worker-detail-read-and-photo-upload
 溯源: 2026-09-26 新增（issue #5052 P2，设计 §5.2 / §9.3）：独立控制器（不挤进 P1 的 `WorkerInboundController` —— 它的结构守卫逐字钉住「只有那三个 POST」）。 ｜ tags: inventory, inbound, worker, upload, backend-contract
 
+### PR-117. 入库标签的码在边缘可用：app.migaozn.com 的 /i/<短码> 走 admin-api（不是 SPA fallback）+ 限流预算真的计账 🔵
+```
+你: 工人把标签贴到布卷 / 塑料袋上；任何人用手机扫 https://app.migaozn.com/i/<短码> ⇒ 服务端 302 到落地页（非 LLM 行为，由 nginx 结构判据 + 线上落地面探针覆盖）
+期望: direct_reply
+数据: 🔴 补的是 P2 留下的**静默串端**缺口：端点（InboundLabelShortLinkController）与 permitAll 都已落好，但 `deploy/swas/nginx.conf` 里 `location /i/` 命中数 = 0 ⇒ 扫码落到 `location /` 的 SPA fallback，**HTTP 200 + C 端小布首页**。线上实测（2026-09-27）：`GET /i/<任意形态>` 的 body 与 `GET /` 逐字节同哈希，而同刻 `/s/<任意>` = 404（到了 admin-api）
+数据: 🔴 边缘归属（离线判据，tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 F1~F3）：登记表 PUBLIC_PREFIX_FACES 覆盖 `/s/`、`/i/`（代理到 admin-api:8080）、`/b/`（静态 + 自己的命名空间 fallback）、`/w/`（由 `location /` 的 root 承载，风险已登记）；三个发现面（控制器短码前缀 / nginx 公开前缀 location / 发布腿 H5_SUBDIR）**未登记即红**
+数据: 🔴 `proxy_pass` **不带 URI 后缀**：语义模拟断言 `/i/<任意形态>` 的转发路径原样（写成 `…:8080/i;` ⇒ 变成 `/i7K3M9QP2`，控制器收不到自己的路径 ⇒ 判据红）
+数据: 🔴 端到端链路（离线语义模拟）：`/i/<短码>` 代理到 admin-api ⇒ 302 → 落地页 `/b/?code=…` → nginx `location /b/` → bmini 的 index.html；探针覆盖 `/i/`、`/i/<任意形态>`、`/s/`、`/b/`、`/b/<子路由>`、`/w/`、`/`（零回归：根仍是 C 端、`/b/` 不串端）
+数据: 🔴 线上活体断言（deploy/scripts/bmini-h5-verify-served.sh ⑤，由 bmini-h5-publish.yml 在 nginx.conf 变更时重跑）：`GET /i/<不可能存在的短码>` 必须到 admin-api（未知短码 404 / 已撤销 410），**不得**返回根页；判定刻意**不用**「状态码是 302」（未知短码本来就 404），而是「body 是否与 `GET /` 同哈希」+ 5xx 判定
+数据: 🔴 限流预算（tests/unit_ci_workflows/test_swas_nginx_rate_limit.py 判据 4/6/8）：`/i/` 与 `/s/` **同族同档**（worker_entry：per-IP 50 r/s + burst 1000；正常用量 = 一次扫码 1 个请求 ⇒ 余量 ≥ 10×），**不**套内部管理面的宽预算；且 `$worker_entry_key` 的 map 必须覆盖 `/i/` —— 否则 key 为空、nginx「空 key 不计账」⇒ 限流是空断言（判据 8 = map 语义求值 + 注入式红证）
+数据: 零回归：`/`（C 端小布）、`/b/` 与 `/b/<子路由>`（bmini）、`/w/`（worker-h5，逐字节）、`/s/`（admin-api 代理）四段既有语义一字未改（判据 = 同一套语义模拟 + 既有 worker-h5 / bmini 身份断言）
+跳过: [backend-contract] 边缘接线与限流预算是**确定性**判据（nginx 语义模拟 + 结构守卫 + 线上落地面探针），由 pytest 单测与发布腿覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 §7.1 的 nginx 面）：P2 把端点与 permitAll 都落了，但边缘没登记 ⇒ 印出去的码会被 `location /` 的 SPA fallback 吃掉（静默串端，与 #5668 的 `/b/` 同类）。本单照 `/s/` 的形态加 `location /i/`（`proxy_pass` 不带 URI 后缀 + Host / X-Real-IP / X-Forwarded-For 覆盖），并按限流判据 3「新增代理面必须连同限流预算一起复核」把 `/i/` 纳进 `$worker_entry_key` 的 map（同一档，不开豁免），另补类级守卫：公开前缀在 nginx 的归属未登记即红。 ｜ tags: inventory, inbound, label, nginx, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -7212,8 +7228,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：510（活跃 126，跳过 384）
-- tier 分布：smoke 12 / normal 465 / adversarial 31
+- 用例总数：511（活跃 126，跳过 385）
+- tier 分布：smoke 12 / normal 466 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7234,7 +7250,7 @@
 - 订单域：49
 - 加工项域：14
 - 加工单域：56
-- 商品域：104
+- 商品域：105
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

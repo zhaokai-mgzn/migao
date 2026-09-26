@@ -8217,6 +8217,24 @@ _CASE_PR_116 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-117 [NORMAL] 入库标签的码在边缘可用：app.migaozn.com 的 /i/<短码> 走 admin-api（不是 SPA fallback）+ 限流预算真的计账（源: cases/product.yml）──
+_CASE_PR_117 = EvalCase(
+    id='PR-117',
+    legacy_id='',
+    title='入库标签的码在边缘可用：app.migaozn.com 的 /i/<短码> 走 admin-api（不是 SPA fallback）+ 限流预算真的计账',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人把标签贴到布卷 / 塑料袋上；任何人用手机扫 https://app.migaozn.com/i/<短码> ⇒ 服务端 302 到落地页（非 LLM 行为，由 nginx 结构判据 + 线上落地面探针覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 补的是 P2 留下的**静默串端**缺口：端点（InboundLabelShortLinkController）与 permitAll 都已落好，但 `deploy/swas/nginx.conf` 里 `location /i/` 命中数 = 0 ⇒ 扫码落到 `location /` 的 SPA fallback，**HTTP 200 + C 端小布首页**。线上实测（2026-09-27）：`GET /i/<任意形态>` 的 body 与 `GET /` 逐字节同哈希，而同刻 `/s/<任意>` = 404（到了 admin-api）', '🔴 边缘归属（离线判据，tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 F1~F3）：登记表 PUBLIC_PREFIX_FACES 覆盖 `/s/`、`/i/`（代理到 admin-api:8080）、`/b/`（静态 + 自己的命名空间 fallback）、`/w/`（由 `location /` 的 root 承载，风险已登记）；三个发现面（控制器短码前缀 / nginx 公开前缀 location / 发布腿 H5_SUBDIR）**未登记即红**', '🔴 `proxy_pass` **不带 URI 后缀**：语义模拟断言 `/i/<任意形态>` 的转发路径原样（写成 `…:8080/i;` ⇒ 变成 `/i7K3M9QP2`，控制器收不到自己的路径 ⇒ 判据红）', '🔴 端到端链路（离线语义模拟）：`/i/<短码>` 代理到 admin-api ⇒ 302 → 落地页 `/b/?code=…` → nginx `location /b/` → bmini 的 index.html；探针覆盖 `/i/`、`/i/<任意形态>`、`/s/`、`/b/`、`/b/<子路由>`、`/w/`、`/`（零回归：根仍是 C 端、`/b/` 不串端）', '🔴 线上活体断言（deploy/scripts/bmini-h5-verify-served.sh ⑤，由 bmini-h5-publish.yml 在 nginx.conf 变更时重跑）：`GET /i/<不可能存在的短码>` 必须到 admin-api（未知短码 404 / 已撤销 410），**不得**返回根页；判定刻意**不用**「状态码是 302」（未知短码本来就 404），而是「body 是否与 `GET /` 同哈希」+ 5xx 判定', '🔴 限流预算（tests/unit_ci_workflows/test_swas_nginx_rate_limit.py 判据 4/6/8）：`/i/` 与 `/s/` **同族同档**（worker_entry：per-IP 50 r/s + burst 1000；正常用量 = 一次扫码 1 个请求 ⇒ 余量 ≥ 10×），**不**套内部管理面的宽预算；且 `$worker_entry_key` 的 map 必须覆盖 `/i/` —— 否则 key 为空、nginx「空 key 不计账」⇒ 限流是空断言（判据 8 = map 语义求值 + 注入式红证）', '零回归：`/`（C 端小布）、`/b/` 与 `/b/<子路由>`（bmini）、`/w/`（worker-h5，逐字节）、`/s/`（admin-api 代理）四段既有语义一字未改（判据 = 同一套语义模拟 + 既有 worker-h5 / bmini 身份断言）'],
+    skip_reason='[backend-contract] 边缘接线与限流预算是**确定性**判据（nginx 语义模拟 + 结构守卫 + 线上落地面探针），由 pytest 单测与发布腿覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'label', 'nginx', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -10079,6 +10097,7 @@ ALL_CASES = (
     _CASE_PR_114,
     _CASE_PR_115,
     _CASE_PR_116,
+    _CASE_PR_117,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

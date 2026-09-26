@@ -18,10 +18,15 @@
 #   ③ **不劫持根**：`GET /` 与 `GET /<根级子路由>` 仍是 **C 端**页面（不得等于 bmini 产物）；
 #   ④ **worker-h5 零回归**：直接复用 `deploy/scripts/worker-h5-verify-served.sh`（**不复制**一份
 #      判定，避免两套真相源）；另加 `/s/<短码面>` 仍被代理（不是静态页）。
+#   ⑤ **入库标签面不串端**（issue #5052 §7.1 的 nginx 面）：`GET /i/<不可能存在的短码>` **必须**走到
+#      admin-api（未知短码 ⇒ 404），**不得**返回根页 —— 少了 nginx 的 `location /i/` 时它会静默
+#      落到 `location /` 的 SPA fallback（200 + C 端小布首页；2026-09-27 线上实测正是这一形态）。
+#      ⚠️ 判据**不是**「状态码是 302」（未知短码本来就 404）—— 判据是「**到了 admin-api**」与
+#      「**落到了 SPA**」可判：落 SPA 时 body 与 `GET /` 同哈希。
 #
 # 用法: bmini-h5-verify-served.sh [BASE_URL] [DIST_DIR]
 #   默认 https://app.migaozn.com 与 frontend/bmini-app/dist
-# 环境变量: BMINI_NGINX_WAIT_SECONDS —— ② 的**等待窗口**（默认 900s，见下方 §为什么会有等待）
+# 环境变量: BMINI_NGINX_WAIT_SECONDS —— ② 与 ⑤ 的**共同等待窗口**（默认 900s，见下方 §为什么会有等待）
 # 退出码：0 = 线上确实是本仓库的 bmini 产物、不串端、根仍是 C 端、worker-h5 零回归；非零 = 逐条打印哪条不成立。
 #
 # §为什么会有等待（不是「重试到绿」）
@@ -45,8 +50,14 @@ SUBDIR=${H5_SUBDIR:-b}
 # 若它返回根 index.html，说明 fallback 指向了别的应用）
 SPA_PROBE="/${SUBDIR}/__bmini_spa_probe__/deep/route"
 ROOT_PROBE="/__c_end_spa_probe__"
+# `/i/` 探针：一个**不可能存在**的短码（8 位 Crockford 字母表之外）⇒ admin-api 回 404。
+# 它证明的是「请求到了 admin-api」而不是「短码有效」—— 后者由 admin-api 的单测与线上日志负责。
+I_PROBE="/i/__i_shortlink_probe__"
 WAIT_SECONDS=${BMINI_NGINX_WAIT_SECONDS:-900}
 POLL_SECONDS=${BMINI_NGINX_POLL_SECONDS:-20}
+# ② 与 ⑤ 依赖**同一次** nginx 配置生效（同一份 nginx.conf）⇒ 共用一个 deadline：
+# 总等待不超过 WAIT_SECONDS（不是各等一份，避免 2×900s 顶到 job 的 30min 超时）。
+DEADLINE=$(( $(date +%s) + WAIT_SECONDS ))
 
 TMPDIR_RUN="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RUN"' EXIT
@@ -102,7 +113,7 @@ else
     echo "     还没随 deploy 腿生效（deploy.sh 会 \`cp nginx.conf\` + reload，与本次发布是两个并发 run）。"
     echo "     最多等待 ${WAIT_SECONDS}s（每 ${POLL_SECONDS}s 探测一次）："
     waited=0
-    while [ "$waited" -lt "$WAIT_SECONDS" ]; do
+    while [ "$(date +%s)" -lt "$DEADLINE" ]; do
       sleep "$POLL_SECONDS"
       waited=$(( waited + POLL_SECONDS ))
       CODE=$(fetch "${BASE}${SPA_PROBE}" "$TMPDIR_RUN/spa.html")
@@ -167,8 +178,40 @@ else
 fi
 echo ""
 
+# ── ⑤ 入库标签面：/i/<短码> 必须到 admin-api（不得落到 location / 的 SPA fallback）──────────
+# 🔴 为什么不能只看「状态码是 302」：未知短码本来就回 **404**（设计 §5.2），而 SPA fallback 回的是
+#    **200 + 根页** ⇒ 可判的是「body 是否等于根页」（= 串端）与「是不是 5xx」（= 代理坏了）。
+#    根页 body 取自 ③（`GET /` 与根级子路由的落地面）。
+echo "⑤ GET $BASE${I_PROBE}（不可能存在的短码 ⇒ admin-api 回 404；SPA fallback 会回根页）"
+ROOT_SHA=$( [ -s "$TMPDIR_RUN/root.html" ] && file_sha256 "$TMPDIR_RUN/root.html" || echo '(空)' )
+if [ "$ROOT_SHA" = "(空)" ]; then
+  bad "拿不到根页 body（③ 未取到）⇒ ⑤ 无法判定 /i/ 是否串端（无法判定不得当通过）"
+else
+  CODE=$(fetch "${BASE}${I_PROBE}" "$TMPDIR_RUN/i.html")
+  I_SHA=$( [ -s "$TMPDIR_RUN/i.html" ] && file_sha256 "$TMPDIR_RUN/i.html" || echo '(空)' )
+  # 与 ② 同因：nginx 配置随 deploy 腿生效（两个并发 run）⇒ 有上界地等，且与 ② 共用同一个 deadline
+  while [ "$I_SHA" = "$ROOT_SHA" ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    echo "     ⏳ HTTP ${CODE}，body 与根页同哈希 ⇒ \`location /i/\` 还没随 nginx 配置生效，继续等…"
+    sleep "$POLL_SECONDS"
+    CODE=$(fetch "${BASE}${I_PROBE}" "$TMPDIR_RUN/i.html")
+    I_SHA=$( [ -s "$TMPDIR_RUN/i.html" ] && file_sha256 "$TMPDIR_RUN/i.html" || echo '(空)' )
+  done
+  if [ "$I_SHA" = "$ROOT_SHA" ]; then
+    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端小布）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
+    echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /i/\` 已在**本次合并的 commit** 上；"
+    echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
+  elif [ "$CODE" -ge 500 ] 2>/dev/null; then
+    bad "GET ${I_PROBE} → HTTP ${CODE}（5xx：/i/ 的代理面坏了，不是「短码不存在」）"
+  elif [ "$CODE" = "404" ] || [ "$CODE" = "410" ]; then
+    ok "GET ${I_PROBE} → HTTP ${CODE}（到了 admin-api：未知短码 404 / 已撤销 410，符合设计 §5.2）"
+  else
+    bad "GET ${I_PROBE} → HTTP ${CODE}，且 body 既不是根页也不是预期的 404/410 ⇒ /i/ 面语义变了（先核端点语义，再改本判据 —— 不许直接把期望改成现状）"
+  fi
+fi
+echo ""
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "❌ bmini h5 落地面断言**失败 ${FAILURES} 条**：$BASE/${SUBDIR}/ 的落地面不符合本仓库产物 / 或串了端"
   exit 1
 fi
-echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归"
+echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api"
