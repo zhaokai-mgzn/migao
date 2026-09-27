@@ -509,6 +509,98 @@ def read_merge_state(number: int, cwd: Path) -> tuple[str, str] | None:
     return str(row.get("state") or ""), str(row.get("mergedAt") or "")
 
 
+# ── ④wait-ci 的判定口径：**只看拦合并的判据**（关联 #5707；病灶实证 = PR #5722）────────────
+#
+# 病灶（现场实证，2026-09-27）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，
+# 包括**不拦合并**的裸判据 —— PR #5722 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`
+# （①rebase✅②gate✅③ready✅④wait-ci❌）⇒ fail-closed 停、未收尾（重跑受影响 run 后 auto-merge
+# 才生效，续跑才 `LAND_RC=0`）。🔴 这是「**一味 fail-closed = 新的假阻塞**」的**第二个实证**
+# （第一个 = `land` 对预设面的假阻塞，#5719）；而 `land` 是**所有 PR 落地都走的工具** ⇒ 一次假阻塞停全线。
+#
+# 口径 = **以 `scripts/merge_gate.py` 为准**（"哪些判据拦合并"的现成真值源）：它读分支保护
+# `required_status_checks`（`parse_required` 归一化两种载荷形态）、把红分成 required / 裸判据
+# （`classify`），pending 的桶口径在 `check_counts`。本步**复用它的纯函数**，**不另写第二套判定**。
+#
+# 🔴 保守方向：required 集合**取不到**（无网络 / 无权限 / 判据本体缺失）⇒ **退回严格行为**（照旧停）
+# ＋**打印为什么** —— **不许**把「读不到」当成「没有 required」。⚠️ 仓内**有**快照退路
+# （`tests/unit_ci_workflows/required_status_snapshot.json`），本步**刻意不用**：快照在**结构上**
+# 可以滞后（新翻成 required 的判据不在里面）⇒ 拿它去证「某条红不拦合并」会制造**假放行**
+# （比假阻塞更危险）。
+REQUIRED_PROTECTION_API = "repos/{owner}/{repo}/branches/main/protection/required_status_checks"
+CI_CHECKS_JSON_FIELDS = "name,state,bucket,link"
+
+
+def _load_merge_gate():
+    """按路径加载 `scripts/merge_gate.py`（**口径真值源**；解析方式与 `_load_guard()` 同源）。"""
+    spec = importlib.util.spec_from_file_location("merge_gate", HERE / "merge_gate.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 merge_gate.py（口径真值源缺失 = 判据空转）：{HERE / 'merge_gate.py'}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _first_line(text: str | None, limit: int = 200) -> str:
+    rows = [r for r in (text or "").strip().splitlines() if r.strip()]
+    return rows[0][:limit] if rows else ""
+
+
+def read_ci_blocking_reading(number: int, root: Path) -> dict:
+    """**单发**读一次「拦合并的判据」（`gh pr checks --watch` 判红之后才走到这里）。
+
+    三态：`readable` = 关键输入是否取到。**读不到 ⇒ 调用方必须退回严格行为**（见调用点）。
+    两条实测口径：① `gh pr checks --json` 的**退出码不可作判据**（实测 PR #5722 有 1 条
+    `bucket=fail`，而 rc=0）⇒ 只看 stdout 可否解析；② `--watch` 与 `--json` 是**先后两次读数**，
+    故调用方还要处理「`--watch` 判红而 JSON 里没有红项」这个**不自洽**形态。
+    """
+    reading: dict = {"readable": False, "why": "", "required": set(),
+                     "required_red": [], "required_pending": [], "bare_red": []}
+    try:
+        mg = _load_merge_gate()
+    except Exception as exc:  # noqa: BLE001 —— 判据本体缺失属**读不到**，不是"没有 required"
+        reading["why"] = f"载入 merge_gate.py 失败（{type(exc).__name__}: {exc}）"
+        return reading
+
+    proc = _run([gh_bin(), "api", REQUIRED_PROTECTION_API], cwd=root, timeout=120)
+    if proc.returncode != 0:
+        reading["why"] = (f"`gh api {REQUIRED_PROTECTION_API}` 退出 {proc.returncode}"
+                          f"（{_first_line(proc.stderr or proc.stdout) or '无输出'}）")
+        return reading
+    try:
+        required = mg.parse_required(json.loads(proc.stdout or ""))
+    except Exception as exc:  # noqa: BLE001 —— 解析不了 = 读不到（空载荷不是"没有 required"）
+        reading["why"] = f"分支保护载荷解析失败（{type(exc).__name__}: {exc}）"
+        return reading
+
+    proc = _run([gh_bin(), "pr", "checks", str(number), "--json", CI_CHECKS_JSON_FIELDS],
+                cwd=root, timeout=120)
+    checks = mg.parse_checks(proc.stdout)
+    if checks is None:
+        reading["why"] = (f"`gh pr checks {number} --json` 读不到可解析 JSON（退出 {proc.returncode}）"
+                          f"（{_first_line(proc.stderr) or '无输出'}）")
+        return reading
+
+    required_red, bare_red = mg.classify(checks, required)
+    # pending 的 required 也**不算绿**（`--watch` 正常会等完，但它提前返回时不许把"没跑完"读成"绿"）；
+    # 桶口径复用 `mg.check_counts`，**不另写第二套**（pending 的拼写只在 merge_gate 里有一份）。
+    pending = [c for c in checks
+               if str(c.get("name")) in required and mg.check_counts([c])["pending"]]
+    reading.update(readable=True, required=required, required_red=required_red,
+                   required_pending=pending, bare_red=bare_red)
+    return reading
+
+
+def _fmt_ci_checks(rows: list) -> str:
+    return "、".join(f"{c.get('name')}[{c.get('state') or c.get('bucket')}]" for c in rows)
+
+
+def _fmt_ci_bare_rows(rows: list) -> str:
+    """非 required 红的**逐条**清单（名 + 状态 + 链接；链接可缺）—— 「如实打印」的那一半。"""
+    return "\n".join("     · {}{}{}".format(
+        c.get("name"), f"  [{c.get('state') or c.get('bucket')}]",
+        f"  {c['link']}" if c.get("link") else "") for c in rows)
+
+
 # ── land：一条命令完成「落地」（顺序 = LAND_STEPS，执行体遍历它）──────────────────
 
 class StepResult:
@@ -608,17 +700,42 @@ def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
     if step == "wait-ci":
         print(f"   ⏳ 一次阻塞等 CI：`gh pr checks {pr.number} --watch`（超时上限 {args.ci_timeout}s；"
               "不写 sleep 轮询；超时 ⇒ exit 3，不得当绿读）")
+        print("   🔎 口径：停/不停**只看拦合并的判据**（现取分支保护 required 集合；分类以 "
+              "`scripts/merge_gate.py` 为准）—— 非 required 红**不**拦合并，但会**如实打印**")
         proc = _run([gh_bin(), "pr", "checks", str(pr.number), "--watch"], cwd=root, timeout=args.ci_timeout)
         if proc.returncode == TIMEOUT_RC:
             return StepResult(step, "stopped",
                               f"CI 在 {args.ci_timeout}s 内没跑完 ⇒ **未判定**（exit 3）。续跑："
                               f"./scripts/issue-lifecycle.sh land {branch} --from wait-ci", EXIT_UNKNOWN)
         print(_tail(proc.stdout))
-        if proc.returncode != 0:
+        if proc.returncode == 0:
+            return StepResult(step, "done", "CI 全绿（`gh pr checks --watch` 退出 0）")
+
+        # 三态读数：读不到 required 集合 ⇒ 退回严格行为（**不许**把「读不到」读成「不拦」）
+        reading = read_ci_blocking_reading(pr.number, root)
+        if not reading["readable"]:
             return StepResult(step, "failed",
-                              f"CI 判红/取消（复核：`gh pr checks {pr.number}`）⇒ 停：不收尾、不猜已合并",
-                              EXIT_UNMERGED)
-        return StepResult(step, "done", "CI 全绿（`gh pr checks --watch` 退出 0）")
+                              f"CI 判红，但**取不到 required 集合**（{reading['why']}）⇒ **退回严格行为**：停。"
+                              f"🔴 读不到 ≠ 没有 required（把「读不到」当成「不拦」= 假放行，比假阻塞更危险）。"
+                              f"复核：`gh pr checks {pr.number}` / "
+                              f"`python3 scripts/merge_gate.py --check {pr.number}`", EXIT_UNMERGED)
+        not_green = list(reading["required_red"]) + list(reading["required_pending"])
+        if not_green:
+            return StepResult(step, "failed",
+                              f"**required 判据未绿**（{_fmt_ci_checks(not_green)}；required 现取 "
+                              f"{len(reading['required'])} 条）⇒ 停：GitHub 侧拦的就是合并本身。复核："
+                              f"`gh pr checks {pr.number}` / "
+                              f"`python3 scripts/merge_gate.py --check {pr.number}`", EXIT_UNMERGED)
+        if not reading["bare_red"]:
+            return StepResult(step, "failed",
+                              f"读数**不自洽**（`--watch` 判红，而 `--json` 里**没有红项** —— 该 PR 可能"
+                              f"根本没有 checks）⇒ 停：**未判定不得当绿**。复核："
+                              f"`gh pr checks {pr.number} --json name,state,bucket`", EXIT_UNMERGED)
+        print(f"   ℹ️ 有 **{len(reading['bare_red'])} 条非 required 红**（不在 required 集合里 ⇒ **不拦合并**）—— 如实打印，不静默忽略：\n{_fmt_ci_bare_rows(reading['bare_red'])}")
+        return StepResult(step, "done",
+                          f"拦合并的判据全绿（required 现取 {len(reading['required'])} 条）；另有 "
+                          f"{len(reading['bare_red'])} 条**非 required** 红 ⇒ **不拦合并**"
+                          f"（清单见上，不静默忽略）")
 
     if step == "wait-merge":
         print(f"   ⏳ 单发读合并状态：`gh pr view {pr.number} --json state,mergedAt`"

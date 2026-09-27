@@ -424,6 +424,27 @@
         "#5649",
         "#5707"
       ]
+    },
+    {
+      "id": "FM-A15",
+      "family": "A",
+      "symptom": "🔴 **一味 fail-closed = 新的假阻塞**（**已两次实证**）：为了让门禁更严，把**非阻塞红 / 无法判定 / 常态落后**也当成失败 ⇒ 工具被**停住**，人开始**绕它**。**实测①**（PR #5719）：`land` 把「分支自己**已提交**的预设改动」当成快照漂移 ⇒ ①步连停 3 次。**实测②**（PR #5722）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，而该 PR 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`（①rebase✅②gate✅③ready✅④wait-ci❌）⇒ fail-closed 停、未收尾；重跑受影响的 run 之后 auto-merge 才生效，续跑才 `LAND_RC=0`。⚠️ 这不是边缘工具：`land` 是**所有 PR 落地都走的工具** ⇒ **一次假阻塞停全线**；而「非 required 红照旧合并」是 GitHub native auto-merge 的既有语义（现取：`python3 scripts/merge_gate.py --required-diff` 列出裸判据）。",
+      "action": "🔴 **加严之前先问一句**：「**这个形态在正常流程里会不会常态出现？**」并给一次**回放**读数：把该判据 / 该停止条件在**最近 N 次成功流程**上回放，数出它会判红 / 会停的次数 —— **>0 ⇒ 它不是绊线，是路障**（正常流量本来就会撞上它）。**本单的落地形态（三条，可复制）**：`land` 的 ④ 步**停/不停只看「拦合并的判据」**（**现取**分支保护 `required` 集合；分类**复用** `python3 scripts/merge_gate.py` 的纯函数 `parse_required` / `classify` / `check_counts`，**不另写第二套判定**）＋ **非 required 红 ⇒ 不停，但如实打印逐条清单**（静默忽略会把「有红」读成「没问题」）＋ **required 集合取不到 ⇒ 退回严格行为并打印原因**（`gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks` 不可用时**不当作**「没有 required」）。复核读数：`./scripts/issue-lifecycle.sh land <分支>` 的 ④ 段（`ℹ️ 有 N 条非 required 红`）+ `python3 scripts/merge_gate.py --required-diff`。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_required_red_still_stops_at_step_four",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_bare_red_continues_and_prints_the_list",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_unreadable_required_set_falls_back_to_strict"
+      ],
+      "evidence": [
+        "scripts/issue_lifecycle.py::read_ci_blocking_reading",
+        "scripts/merge_gate.py::classify",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_criteria_have_discriminating_power"
+      ],
+      "refs": [
+        "#5719",
+        "#5722"
+      ]
     }
   ],
   "ci_findings": [
