@@ -4493,9 +4493,9 @@ _CASE_MC_037 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-039 [NORMAL] C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红（源: cases/misc.yml）──
-_CASE_MC_039 = EvalCase(
-    id='MC-039',
+# ── MC-042 [NORMAL] C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红（源: cases/misc.yml）──
+_CASE_MC_042 = EvalCase(
+    id='MC-042',
     legacy_id='',
     title='C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红',
     skill=Skill.GENERAL,
@@ -10641,7 +10641,7 @@ ALL_CASES = (
     _CASE_MC_035,
     _CASE_MC_036,
     _CASE_MC_037,
-    _CASE_MC_039,
+    _CASE_MC_042,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
