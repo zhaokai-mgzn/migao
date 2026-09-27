@@ -355,11 +355,16 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
 # 断言层
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _require(text: str | None, rel: str) -> str:
+    """路径漂移 ⇒ 红（**不得静默跳过**：判据依赖的语料读不到时，「没东西可判」不是通过）。"""
+    if text is None:
+        raise AssertionError(f"判据依赖的语料不存在：{rel}（路径漂移 ⇒ 红，不得静默跳过）")
+    return text
+
+
 def _live() -> tuple[str, str, dict]:
-    skill_text = real_file_text(SKILL_REL)
-    assert skill_text is not None, f"技能文件不存在：{SKILL_REL}（路径漂移 ⇒ 红，不得静默跳过）"
-    cicd_text = real_file_text(CICD_REL)
-    assert cicd_text is not None, f"{CICD_REL} 不存在（CI 面的落点没了 ⇒ 红）"
+    skill_text = _require(real_file_text(SKILL_REL), SKILL_REL)
+    cicd_text = _require(real_file_text(CICD_REL), CICD_REL)
     ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     return skill_text, cicd_text, ledger
 
@@ -413,8 +418,7 @@ def test_mutation_harness_really_changes_the_text() -> None:
 def test_boundary_section_names_the_out_of_scope_forms() -> None:
     """边界节必须写清「本清单覆盖不到什么」（不是一句「见上文」）。"""
     skill_text, _, _ = _live()
-    bnd = section_text(skill_text, BOUNDARY_HEADING)
-    assert bnd is not None
+    bnd = _require(section_text(skill_text, BOUNDARY_HEADING), BOUNDARY_HEADING)
     for marker in ("kind=action", "FM-", "evidence"):
         assert marker in bnd, f"覆盖面登记缺 `{marker}` 这一面"
 
