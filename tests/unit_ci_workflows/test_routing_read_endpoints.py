@@ -267,11 +267,20 @@ def _eq_targets(entity: str) -> set:
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_operation_positions_endpoint_declares_manage_permission_and_tenant():
-    """判据 1a：`GET /operation-positions` 存在、权限 `processing:manage`、按 TenantContext 隔离。"""
+    """判据 1a：`GET /operation-positions` 存在、**有方法级权限覆盖**、按 TenantContext 隔离。
+
+    🔴 本判据守的是「**这里必须有一个方法级覆盖**」这件事，**不是某一个码名**：
+    类级是 `order:list`（客服/销售/财务都持）⇒ 不覆盖 = 价目矩阵与规则区对所有岗位可见（issue #4500 硬要求 4）。
+    issue #5699 的 **P4** 把本族从 `processing:manage` 收敛到「工艺配置」页的**页面码** `production:view`
+    —— 两个码的**持有岗位集合逐值相同**（admin · operator · product_manager@回退）⇒
+    客服/销售/财务**仍然看不到**这两组数据，本判据的原意一字未变（零 delta 由 P4 判据当场复算：
+    `test_census_recomputes_who_gains_and_who_loses` 对 `/production/routings` 要求 who_gains/who_loses 都为空）。
+    """
     body = _endpoint_body("/operation-positions")
-    assert '@RequirePermission("processing:manage")' in body, (
-        "端点缺方法级 `@RequirePermission(\"processing:manage\")` —— 类级是 `order:list`"
-        "（客服/销售/财务都有）⇒ 不覆盖 = 价目矩阵与规则区对所有岗位可见（issue #4500 硬要求 4）"
+    assert '@RequirePermission("production:view")' in body, (
+        "端点缺方法级 `@RequirePermission(\"production:view\")`（issue #5699 P4 起 = 页面码）"
+        "—— 类级是 `order:list`（客服/销售/财务都有）⇒ 没有方法级覆盖 = 价目矩阵与规则区对所有岗位可见"
+        "（issue #4500 硬要求 4）"
     )
     assert "TenantContext.getTenantId()" in body, (
         "端点没有把 `TenantContext.getTenantId()` 传给服务层 —— 跨租户读价目/规则"
@@ -280,9 +289,11 @@ def test_operation_positions_endpoint_declares_manage_permission_and_tenant():
 
 
 def test_route_rules_endpoint_declares_manage_permission_and_tenant():
-    """判据 1b：`GET /route-rules` 同上。"""
+    """判据 1b：`GET /route-rules` 同上（issue #5699 P4 起方法级覆盖 = 页面码 `production:view`）。"""
     body = _endpoint_body("/route-rules")
-    assert '@RequirePermission("processing:manage")' in body, "端点缺方法级 `processing:manage`"
+    assert '@RequirePermission("production:view")' in body, (
+        "端点缺方法级 `@RequirePermission(\"production:view\")` —— 类级 `order:list` 会让价目/规则区对所有岗位可见"
+    )
     assert "TenantContext.getTenantId()" in body, "端点没有按 `TenantContext.getTenantId()` 隔离租户"
 
 

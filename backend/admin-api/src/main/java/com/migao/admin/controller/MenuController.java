@@ -88,11 +88,11 @@ public class MenuController {
         // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
         // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
         MenuNode pr1 = new MenuNode("production:view", "生产看板");
-        MenuNode prPool = new MenuNode("processing:manage", "智能派单");
+        MenuNode prPool = new MenuNode("processing:view", "智能派单");   // #5699 P4：= 该页读码
         // 🔴 「工艺配置」= issue #4416 把「工序库」+「工艺路线」**合并为单一入口**后的名称
         // （工序库半边 = 该页左栏；旧路径 /production/operations 保留为重定向）。
         // 权限码沿用 processing:manage（不要新造权限码）。
-        MenuNode pr2 = new MenuNode("production:view", "工艺配置");
+        MenuNode pr2 = new MenuNode("production:view", "工艺配置");   // #5699 P4：= 该页唯一码
         MenuNode pr3 = new MenuNode("production:view", "计件工资");
         // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料。
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
@@ -100,7 +100,7 @@ public class MenuController {
         // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
-        MenuNode prSaving = new MenuNode("processing:manage", "省料看板");
+        MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
         // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
         MenuNode e1 = new MenuNode("employee:list", "员工管理");
         // issue #5291：岗位权限节点改挂读码 `system:view`（企业基础信息仍是 system:manage）。

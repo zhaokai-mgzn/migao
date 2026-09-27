@@ -108,9 +108,10 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('空查询 + 受限权限：只列有权项（负控：搜索不是绕过权限的口子）', async () => {
     mockUser = { permissions: ['order:list'], roles: [] }
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(3))
-    // 面非空（不是「全被过滤光」造成的恒真空集）：无权限码的经营看板 + 订单列表 + 独立项
-    expect(renderedKeys()).toEqual(['dashboard', 'orders', 'notifications'])
+    await waitFor(() => expect(renderedKeys()).toHaveLength(2))
+    // 面非空（不是「全被过滤光」造成的恒真空集）：订单列表 + 独立项
+    // 🔴 issue #5699（P4）：经营看板自本阶段起要 `dashboard:view` ⇒ 不再是无权限码项。
+    expect(renderedKeys()).toEqual(['orders', 'notifications'])
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
     expect(screen.queryByTestId('command-palette-item-finance')).toBeNull()
   })

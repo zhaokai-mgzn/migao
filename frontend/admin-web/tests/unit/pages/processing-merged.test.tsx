@@ -117,17 +117,18 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
       '/production/piecework',
     ])
     expect(productionPaths).not.toContain('/production/processing')
-    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage
-    //（同组不同权是有意的：「看得见这一页」与「改得动生产数据」分开）。
+    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；
+    // 🔴 issue #5699（P4）：智能派单 = 该页读码 processing:view（节点码 ≡ 页面第一屏读码）。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',
-      'processing:manage',
+      'processing:view',
       'production:view',
       'production:view',
     ])
     // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
-    // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage），
-    // 余料台账 / 省料看板 = processing:manage（与各自页面的类级 @RequirePermission 同码）。
+    // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage）、
+    // 余料台账 = processing:manage（`RemnantController` 类级码）、
+    // 🔴 省料看板 = product:list（issue #5699 P4：该页两个读端点在 `StockBatchController` 上是方法级 product:list）。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
       '/production/remnants',
@@ -136,7 +137,7 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
       'processing:manage',
-      'processing:manage',
+      'product:list',
     ])
     // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
     // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。

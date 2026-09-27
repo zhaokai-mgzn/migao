@@ -217,7 +217,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径：生产看板/工艺配置/计件工资 = 读码 production:view，智能派单 = processing:manage（#5291）', () => {
+  it('权限码口径（#5291 + #5699 P4）：生产看板/工艺配置/计件工资 = production:view，智能派单 = processing:view，省料看板 = product:list', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
@@ -226,7 +226,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',    // 生产看板（issue #5291）
-      'processing:manage',  // 智能派单（同组不同权：其读端点用 processing:view、无 Agent 工具）
+      'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
       'production:view',    // 工艺配置
       'production:view',    // 计件工资
     ])
@@ -234,11 +234,12 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
       'processing:manage',
-      'processing:manage',
+      'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
     ])
-    // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红
+    // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
+    // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。
     expect(new Set(group!.children.map((c) => c.permissionCode)))
-      .toEqual(new Set(['production:view', 'processing:manage']))
+      .toEqual(new Set(['production:view', 'processing:view']))
   })
 })
 

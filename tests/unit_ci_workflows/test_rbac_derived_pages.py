@@ -113,15 +113,10 @@ ROUTE_PREFIX_EXCEPTIONS = {
     ),
 }
 
-#: 页面存在、但**守卫码 ≠ 该页 `gate`** 的前缀 —— 逐条具名（只许缩短；今天 1 条）。
-#: 这些不是「例外」而是**已知的不一致**：两侧各自的理由都在判据 11③ / 判据 12 的台账里。
-ROUTE_GUARD_GATE_MISMATCHES = {
-    "/dashboard": (
-        "「经营看板」节点**有意无码**（`gate = null` ⇒ 全员可见），而页面守卫要 `dashboard:view` "
-        "⇒ 两侧取值不同。本判据**不裁定哪一侧为真值**：谁改都能让本项消失，而改错方向会同时让"
-        "判据 11③（`ROUTE_WITHOUT_MENU_NODE`）与判据 12（`MENU_READ_PARITY_RESIDUALS`）判红。"
-    ),
-}
+#: 页面存在、但**守卫码 ≠ 该页 `gate`** 的前缀 —— 逐条具名（只许缩短；**P4 后 0 条**）。
+#: 🔴 issue #5699（P4）：`/dashboard` 一处已销账 —— 节点码补成 `dashboard:view`（= 该页第一屏读码
+#: = 守卫码）⇒ 三处同码。本表从此为空：任何新出现的不一致都**未登记即红**。
+ROUTE_GUARD_GATE_MISMATCHES: dict[str, str] = {}
 
 #: **不是页面**的菜单节点（C2 的「动作节点」）—— 逐条具名 + 码冻结（只许缩短；键集与现取逐值相等）。
 #: 它们是「**动作**」（去某个页面里的某个动作），没有 `path` ⇒ 不属「页面 → 码」面；
@@ -149,50 +144,27 @@ ACTION_NODE_CODES: dict[str, dict[str, str]] = {
     },
 }
 
-#: **页面节点**上「码列 ≠ 该页 `gate`」的具名不一致（只许缩短；今天 1 条 = C2 的经营看板）。
-#: 与 `ROUTE_GUARD_GATE_MISMATCHES` 是**同一处不一致的两条出路**（C2 的码列 / 路由守卫），
-#: 两处都具名 ⇒ 谁单方面改一侧都会被拦住。
-MENU_CODE_MISMATCHES = {
-    "经营看板": "「经营看板」节点在 `menu.ts` 里**有意无码**（`gate = null` ⇒ 全员可见），而 `MenuController` 的权限目录给它 `dashboard:view`（路由守卫同码）⇒ 两侧取值不同。本判据**不裁定哪一侧为真值**：改任一侧都要同时改判据 11③ 与判据 12 的登记。",
-}
+#: **页面节点**上「码列 ≠ 该页 `gate`」的具名不一致（只许缩短；**P4 后 0 条**）。
+#: 🔴 issue #5699（P4）：C2 的经营看板一处已销账（`menu.ts` 补上同一码）⇒ 本表为空。
+MENU_CODE_MISMATCHES: dict[str, str] = {}
 
 #: `visibility_rule = node-code`（**投影复现不了现值**）的**逐页理由**（只许缩短；键集与现取逐值相等）。
-#: 前三条是「节点码 ≠ 页面读码」的三页（终端 403 面），`/notifications` 是「第一屏端点全未注解」。
+#: 🔴 issue #5699（P4）：4 条 **→ 1 条** —— `/production/pool`、`/production/saving-board`、
+#: `/production/processing` 三页已按子菜单粒度收敛成**单码**（`visibility_rule` 变成 `all`，
+#: 投影能复现现值 ⇒ 离开 gap 台账）；只剩 `/notifications`（该页**两侧都无码**，见下）。
 VISIBILITY_GAP_REASONS = {
     "/notifications": {
         "reason": (
             "该页第一屏唯一读端点 `GET /api/admin/notifications` **未被任何权限码把守**"
             "（`units` 里只有 `__unannotated__` 一组）⇒ 投影无输入，可见性仍取节点码（今天 `gate = null`"
-            "⇒ 全员可见）。出口 = 给该端点补注解（判据 8 的 `UNANNOTATED_ENDPOINTS` 台账）或明确"
-            "「该页无需权限」—— 两者都是裁定，P3 只登记。"
+            "⇒ 全员可见）。🔴 **issue #5699（P4）的结论：具名保留**（不是漏改）——"
+            "该页**两侧都无码**（节点 `null` ∧ 端点未注解）⇒「看得见」与「调得动」由**同一个空码**决定，"
+            "结构上不可能出现「菜单看得见、点进去 403」；要把它变成「有码」必须**新造一个权限点**"
+            "并给全部岗位授码（= 新增一处需要维护的真值，且对现有使用者是一次收窄/放宽的授权变更）"
+            "⇒ 超出 P4「按子菜单粒度收敛已有码」的范围，须人类单独裁定。"
+            "出口 = 给该端点补注解（判据 8 的 `UNANNOTATED_ENDPOINTS` 台账）或明确「该页无需权限」。"
         ),
         "owner": "通知中心页 + 端点注解面（`NotificationController`）+ 本判据的 gap 台账",
-    },
-    "/production/pool": {
-        "reason": (
-            "节点码 `processing:manage`，而该页第一屏读端点要 `processing:view` ⇒ 两种投影（∩ 与 ∪）"
-            "都复现不了现值：把节点可见性交给读码 ⇒ 客服 / 销售 / 财务（持 `processing:view`）"
-            "**凭空看见**该菜单；交给管理码 ⇒ 投影与现值一致但**不表达**「页面第一屏要什么码」"
-            "（那正是本面存在的意义）。两个方向都要人裁定（判据 12 的残留台账逐字记着）。"
-        ),
-        "owner": "生产域菜单/权限面（`menu.ts` 的 production-center 组 + `ProductionPoolController`）+ 本判据的 gap 台账",
-    },
-    "/production/saving-board": {
-        "reason": (
-            "节点码 `processing:manage`，而该页第一屏两个端点在 `StockBatchController` 上各带**方法级**"
-            "`product:list`（#5145 立的口径）⇒ 两种投影都复现不了现值（∩ 或 ∪ 都会改某个岗位集合的可见性）。"
-            "出口是授权裁定，归 P4。"
-        ),
-        "owner": "仓储与物料组菜单/权限面（`menu.ts` 的 inventory-center 组 + `StockBatchController`）+ 本判据的 gap 台账",
-    },
-    "/production/processing": {
-        "reason": (
-            "第一屏**跨三个码**（3 个 unit：`production:view` / `order:list` / `processing:manage`）"
-            "⇒ `∩` 比现值窄（丢掉只持节点码的 `product_manager@fallback`）、`∪` 比现值宽"
-            "（客服 / 销售 / 财务凭空看见）。这一页正是设计 §2.5 / §3.4 问题 1 的标本："
-            "「整页可见但某个 tab 403」需要 `partial_visibility_ack` 或收窄端点码，两者都归 P4。"
-        ),
-        "owner": "生产域读码收口面（#5291 未走完的端点族）+ 本判据的 gap 台账",
     },
 }
 
@@ -636,10 +608,10 @@ def test_derived_page_faces_match_present_values():
 
 
 def test_multi_code_pages_and_residuals_are_not_flattened():
-    """**多端点页与 6 条残留不被压平**（#5675 / #5682 的结构事实）：派生集 == 现取，逐值。
+    """**多端点页与残留页不被压平**（#5675 / #5682 的结构事实）：派生集 == 现取，逐值。
 
-    多码页：3 页，**码集逐值冻结**（`/production/processing` 3 码、`/production/routings` 2 码、
-    `/settings` 2 码）；残留页：6 页，键集与现取逐值相等。两侧都**只许缩短**（未登记即红 / 陈旧亦红）。
+    🔴 **issue #5699（P4）把两侧都收敛到只剩 1 页**：多码页 3 → 1（`/settings`，具名保留 + 硬理由）、
+    残留页 6 → 1（同上）。**条数上限随之下调**（只许缩短）；「未登记即红 / 陈旧亦红」两半一字未动。
     """
     derived, present, parity = derived_faces(), present_faces(), load_parity_guard()
     multi = {path: sorted(codes) for path, codes in derived["multi_code_pages"].items()}
@@ -668,9 +640,10 @@ def test_multi_code_pages_and_residuals_are_not_flattened():
             f"残留页集不等：派生={residuals} / 现值台账={ledger}"
             "（两侧都只许缩短：不一致消失而条目还在 ⇒ 红；新增不一致未登记 ⇒ 红）"
         )
-    if len(multi) != 3 or len(residuals) != 6:
+    if len(multi) != 1 or len(residuals) != 1:
         problems.append(
-            f"结构性条数漂移：多码页 {len(multi)}（期望 3）/ 残留页 {len(residuals)}（期望 6）"
+            f"结构性条数漂移：多码页 {len(multi)}（期望 1 —— issue #5699 P4 收敛后的上限，只许缩短）"
+            f"/ 残留页 {len(residuals)}（期望 1）"
         )
     assert problems == [], "多端点页 / 残留台账不合规：\n" + "\n".join(f"  · {p}" for p in problems)
 
@@ -854,19 +827,23 @@ def _mutate_page(manifest: dict, path: str, **changes) -> dict:
 
 
 def test_flattening_a_page_is_red():
-    """**把某页压成一个码**（多码页被压平）⇒ 必红；三条分支各单独判一次。"""
+    """**把某页压成一个码**（多码页被压平）⇒ 必红；三条分支各单独判一次。
+
+    🔴 issue #5699（P4）：夹具从 `/production/processing` 换成 **`/settings`** —— P4 把前三页
+    收敛成单码之后，`/settings` 是**唯一**还并发多码的页面（具名保留），夹具必须钉在还活着的形态上。
+    """
     derive, manifest, present = load_derive(), load_manifest(), present_faces()
     assert face_problems(derive.derive_page_faces(manifest), present) == [], "落地态竟不绿（前提不成立）"
 
     flattened = _mutate_page(
-        manifest, "/production/processing", units={"production:view": ["GET /api/admin/processing-items"]}
+        manifest, "/settings",
+        units={"system:manage": ["GET /api/admin/settings", "GET /api/admin/tenant/ai-config"]},
     )
     faces = derive.derive_page_faces(flattened)
     problems = face_problems(faces, present)
     assert any("multi_code_pages" in p for p in problems), f"压平多码页没被报出：{problems}"
-    assert faces["multi_code_pages"] == {"/production/routings": ["processing:manage", "production:view"],
-                                         "/settings": ["dashboard:view", "system:manage"]}, (
-        "压平后多码页集应只剩 2 页（证明 multi_code_pages 是现算的，不是抄来的）"
+    assert faces["multi_code_pages"] == {}, (
+        "压平 `/settings` 后多码页集应为空（P4 后它是最后一个多码页 ⇒ 证明 multi_code_pages 现算）"
     )
     assert any("parity_residual_pages" in p for p in problems), "压平后残留页集变化没被报出"
 
@@ -879,9 +856,15 @@ def test_residual_ledger_only_shrinks():
     """残留台账**只许缩短**：修好一处而不销账 ⇒ 红；新增一处未登记 ⇒ 红。"""
     derive, present, parity = load_derive(), present_faces(), load_parity_guard()
     manifest = load_manifest()
-    fixed = _mutate_page(manifest, "/production/pool", gate="processing:view")
+    # 🔴 issue #5699（P4）：P4 之后台账里只剩 `/settings` 一处不一致 ⇒ 夹具改为「把它收敛掉」
+    #（把该页第一屏压成单码）—— 否则 `_mutate_page(..., "/production/pool", gate="processing:view")`
+    # 在生产值上已是**空变异**（该页 P4 起本来就同码），本判据会退化成空断言。
+    fixed = _mutate_page(
+        manifest, "/settings",
+        units={"system:manage": ["GET /api/admin/settings", "GET /api/admin/tenant/ai-config"]},
+    )
     residuals = derive.derive_page_faces(fixed)["parity_residual_pages"]
-    assert "/production/pool" not in residuals, "对齐两侧后该页应离开残留集（证明派生是现算的）"
+    assert "/settings" not in residuals, "对齐两侧后该页应离开残留集（证明派生是现算的）"
     assert sorted(residuals) != sorted(parity.MENU_READ_PARITY_RESIDUALS), (
         "修好一处后派生集仍与现值台账相等 ⇒ 本判据读的不是派生的残留集（空断言）"
     )

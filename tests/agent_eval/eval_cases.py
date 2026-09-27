@@ -4403,6 +4403,60 @@ _CASE_MC_034 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-035 [NORMAL] RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）（源: cases/misc.yml）──
+_CASE_MC_035 = EvalCase(
+    id='MC-035',
+    legacy_id='',
+    title='RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个子菜单的第一屏端点码不再等于该节点的可见性码、或持该节点码的岗位打不开它某个 unit、或四个菜单/守卫面（menu.ts / MenuController / AuthService / 路由守卫）与页面码不再逐页相等时，必须有东西**具名**报出；而只改清单的散文（_note / _boundary）时**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['**不变量 1（恰好一个可见性码）**：每一页 `gate` 非空 ∧ 第一屏码集 == {gate}；「第一屏一个码都没有」的页必须具名在 FAIL_OPEN_PAGES（现取 1 条 = /notifications：两侧同一个**空码** ⇒ 可见面恒等于可做面）；「真的并发多码」的页必须具名在**既有**台账 MULTI_READ_ENDPOINT_PAGES（现取 1 条 = /settings，具名保留 + 硬理由）—— 本守卫读既有台账，不另立一份', '**不变量 2（零 403）**：持 `gate` 的岗位（种子 ∪ 回退）必须同时持该页每一个 unit 的码；多码页额外要求「可见面投影 == 持 gate 者」。判据当场复算，输出「谁看得见却打不开」的逐岗位点名', '**不变量 3（四面同码）**：C1 前端侧边栏 / C2 权限目录树 / C3 登录下发菜单 / C4 路由守卫，逐页与 pages[].gate 逐值相等（跨面映射复用判据 11 的 ROUTE_MENU_ANCHORS 与 P3 的 ROUTE_PREFIX_ALIASES，本守卫不新建映射）', '**红证（全部内存构造 + 对照读数）**：① 把某页端点改回独立码 ⇒ 「一页多码未登记」；② 给某页塞一个更宽的码 ⇒ 零 403 段点名；③ 抹掉某页 gate ⇒ 「没有可见性码」；④ 改现值里的 C1/C4 码 ⇒ 四面同码段点名；⑤ 只改清单散文 ⇒ 不红（判别力边界，不是判据失效）', '覆盖面显式登记（UNCOVERED_FACES，只许缩短、每条带 reason/owner）：租户自建岗位与员工级快照读不到 · 非约定形态的码表扫不到 · I4 只认命名形态不判语义 · 运行时可见性未取证'],
+    skip_reason='[backend-contract] RBAC 子菜单粒度不变量的离线结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'submenu-granularity', 'p4', 'behaviour-change', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-036 [NORMAL] RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）（源: cases/misc.yml）──
+_CASE_MC_036 = EvalCase(
+    id='MC-036',
+    legacy_id='',
+    title='RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某次授权变更没有被逐页登记（改前码 / 改后码 / 方向 / 理由），或登记里的改后码与现值生效码不符，或某个岗位的可见面/可做面因此变化却没被点名时，必须有东西**具名**报出；而只改登记里的散文措辞时**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['**D1/D3 的机械形态**：P4_AUTHORIZATION_CENSUS 逐页登记 {gate_before, gate_after, direction, reason, units_changed[], menu_nodes[]}；判据拿它与**现值**对账（改后码 == 清单/现值码；每个 units_changed 的改后码 == 端点现取生效码；改前≠改后，禁止凑数）', '**「谁得/谁失」当场复算**：岗位来源 = 种子 ∪ 回退（与判据 12 ④ 同口径）；复算出的每个新增/失去可见性或可做面的岗位都必须在理由里**被点名**，否则红 —— 这条把设计 §1.4 实例 5 的「手写汇总与代码分叉」变成机械可拦', '**红证**：把某页改后码改成与现值不符 ⇒ 红；把 units_changed 换成「改前码 == 改后码」⇒ 红（空变动）；把理由换成一句不点名任何人的散文 ⇒ 判据自己复算并指名报出失去者（本条即「手写汇总不可信」的判别力自证）', '**收窄单列**：凡 direction 含「收窄」的页，PR 正文必须单列一节说明「谁失去什么 / 为什么必须收 / 有没有替代路径」（本仓纪律；判据只能保证登记里点到了岗位，替代路径是散文）'],
+    skip_reason='[backend-contract] 授权变更 census 的离线对账判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'authorization-census', 'd1', 'd3', 'non-repudiation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-037 [NORMAL] RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）（源: cases/misc.yml）──
+_CASE_MC_037 = EvalCase(
+    id='MC-037',
+    legacy_id='',
+    title='RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个写动词（POST/PUT/DELETE/PATCH）端点的生效码是**读**码而没有登记在 WRITE_UNDER_READ_CODE，或登记的条目已不再命中（端点已删/码已改），或台账超过上限时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**射程 = 端点层**（判据 5 只有工具层）：现取 = 动词非 GET 且生效码动作段 ∈ READ_CODE_ACTIONS（list / view / detail / session）的全部端点，逐条端点点名（现取 16 条）', '**逐条带归类**：真写 / 真写（文件面）/ 计算/预览 —— 其中 #5699 发现 ① 点名的四条（建加工单 instantiate / 报工 report / 打印 print / 发货 ship，均只由 ProductionController 的**类级** order:list 把守）必须具名存在', '**台账只许缩短 + 未登记即红 + 陈旧亦红**：清空台账 ⇒ 逐条报出未登记（判据自证覆盖段有效）；条目不再命中 ⇒ 红；超过上限 ⇒ 红', '**本号不改任何行为**：I4 的处置（把写动作改挂写码）是授权变更，须人类裁定；本判据只保证「这一族从那一天起是可点名的」', '覆盖面边界（照实登记）：只认「动词 + 码的动作段」形态，不判「这个动作到底写不写库」；GET 而语义写库的端点不在射程'],
+    skip_reason='[backend-contract] I4 端点层 census 的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'i4', 'endpoint-permission', 'read-write-mismatch', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10528,6 +10582,9 @@ ALL_CASES = (
     _CASE_MC_032,
     _CASE_MC_033,
     _CASE_MC_034,
+    _CASE_MC_035,
+    _CASE_MC_036,
+    _CASE_MC_037,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

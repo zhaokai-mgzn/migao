@@ -184,22 +184,31 @@ class ProductionSeedTemplateControllerTest {
             assertThat(onClass.value()).isEqualTo("processing:manage");
         }
 
-        @Test
-        @DisplayName("两个端点都落在类级权限下（方法上没有更宽松的覆盖）")
-        void endpointsInheritClassPermission() throws Exception {
-            for (String name : new String[]{"list", "apply"}) {
-                Method m = null;
-                for (Method candidate : ProductionSeedTemplateController.class.getDeclaredMethods()) {
-                    if (candidate.getName().equals(name)) {
-                        m = candidate;
-                        break;
-                    }
+        /** 按方法名取端点方法（#5699 P4：读面与写面分别断言，找不到 ⇒ 红）。 */
+        private static Method methodOf(String name) {
+            for (Method candidate : ProductionSeedTemplateController.class.getDeclaredMethods()) {
+                if (candidate.getName().equals(name)) {
+                    return candidate;
                 }
-                assertThat(m).as("端点方法 %s 必须存在", name).isNotNull();
-                assertThat(m.getAnnotation(RequirePermission.class))
-                        .as("方法 %s 未声明更宽松的方法级权限（继承类级 processing:manage）", name)
-                        .isNull();
             }
+            throw new AssertionError("端点方法不存在：" + name);
+        }
+
+        @Test
+        @DisplayName("读端点 list 挂页面码 production:view；写端点 apply 仍继承类级 processing:manage")
+        void endpointsInheritClassPermission() throws Exception {
+            // 🔴 issue #5699（P4）**改判并如实登记**：`list` 是「工艺配置」页第一屏的读端点
+            // ⇒ 按子菜单粒度挂**页面码** production:view（方法级覆盖）。`apply` 是**不可逆的批量写**
+            //（套用会真的落库工序/路线/单价）⇒ **仍继承类级 processing:manage**，一字未动；
+            // 本测试原本要防的就是「写面被放宽到读权限岗位手上」，这条防线在 apply 上原样保留。
+            assertThat(methodOf("list").getAnnotation(RequirePermission.class))
+                    .as("list 是页面读端点 ⇒ 挂页面码 production:view（#5699 P4）")
+                    .isNotNull();
+            assertThat(methodOf("list").getAnnotation(RequirePermission.class).value())
+                    .isEqualTo("production:view");
+            assertThat(methodOf("apply").getAnnotation(RequirePermission.class))
+                    .as("apply 是不可逆批量写 ⇒ 仍继承类级 processing:manage（未被放宽）")
+                    .isNull();
         }
     }
 }

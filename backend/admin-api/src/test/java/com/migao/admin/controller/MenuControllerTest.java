@@ -175,14 +175,17 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage（#5291）")
+    @DisplayName("生产管理组（#5291 + #5699 P4）：节点码 = 各页第一屏读码 —— 生产看板/工艺配置/计件工资 production:view、智能派单 processing:view")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
         assertEquals(List.of("生产看板", "智能派单", "工艺配置", "计件工资"),
                 labels(production.path("children")));
-        // issue #5291：三项导航改挂生产域**读**码；智能派单仍是 processing:manage（同组不同权）。
-        assertEquals(List.of("production:view", "processing:manage",
+        // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
+        //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
+        // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
+        // 仍覆盖生产看板与计件工资。
+        assertEquals(List.of("production:view", "processing:view",
                 "production:view", "production:view"), codes(production.path("children")));
     }
 
@@ -194,7 +197,8 @@ class MenuControllerTest {
         assertEquals(List.of("入库单", "余料台账", "省料看板"), labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
-        assertEquals(List.of("inbound:view", "processing:manage", "processing:manage"),
+        // issue #5699（P4）：省料看板节点码 = 该页第一屏读码 product:list（StockBatchController）。
+        assertEquals(List.of("inbound:view", "processing:manage", "product:list"),
                 codes(inventory.path("children")));
     }
 

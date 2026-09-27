@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P3",
+  "stage": "P4",
   "_note": "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。",
   "codes": {
     "registration": [
@@ -255,7 +255,7 @@
   "menus": {
     "frontend": {
       "工作台": null,
-      "经营看板": null,
+      "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
       "智能客服": null,
       "在线接待": "agent:session",
@@ -270,13 +270,13 @@
       "财务对账": "finance:view",
       "生产管理": null,
       "生产看板": "production:view",
-      "智能派单": "processing:manage",
+      "智能派单": "processing:view",
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "仓储与物料": null,
       "入库单": "inbound:view",
       "余料台账": "processing:manage",
-      "省料看板": "processing:manage",
+      "省料看板": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -298,18 +298,19 @@
       "财务对账": "finance:view",
       "订单详情": "order:detail",
       "生产看板": "production:view",
-      "智能派单": "processing:manage",
+      "智能派单": "processing:view",
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
       "余料台账": "processing:manage",
-      "省料看板": "processing:manage",
+      "省料看板": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
       "新增员工": "employee:create"
     },
     "auth": {
+      "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
@@ -318,9 +319,12 @@
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
       "财务对账": "finance:view",
-      "智能派单": "processing:manage",
+      "智能派单": "processing:view",
+      "工艺配置": "production:view",
+      "计件工资": "production:view",
       "入库单": "inbound:view",
       "余料台账": "processing:manage",
+      "省料看板": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage"
@@ -338,7 +342,7 @@
       "key": "dashboard",
       "name": "经营看板",
       "path": "/dashboard",
-      "code": null
+      "code": "dashboard:view"
     },
     {
       "key": "briefing",
@@ -428,7 +432,7 @@
       "key": "production-pool",
       "name": "智能派单",
       "path": "/production/pool",
-      "code": "processing:manage"
+      "code": "processing:view"
     },
     {
       "key": "production-process",
@@ -464,7 +468,7 @@
       "key": "production-saving-board",
       "name": "省料看板",
       "path": "/production/saving-board",
-      "code": "processing:manage"
+      "code": "product:list"
     },
     {
       "key": "org-center",
@@ -528,7 +532,7 @@
     ],
     [
       "/production/pool",
-      "processing:manage"
+      "processing:view"
     ],
     [
       "/production/remnants",
@@ -536,7 +540,7 @@
     ],
     [
       "/production/saving-board",
-      "processing:manage"
+      "product:list"
     ],
     [
       "/production",
@@ -630,7 +634,7 @@
       "key": "dashboard",
       "name": "经营看板",
       "path": "/dashboard",
-      "gate": null,
+      "gate": "dashboard:view",
       "units": {
         "dashboard:view": [
           "GET /api/admin/briefing/config",
@@ -747,13 +751,13 @@
       "key": "production-pool",
       "name": "智能派单",
       "path": "/production/pool",
-      "gate": "processing:manage",
+      "gate": "processing:view",
       "units": {
         "processing:view": [
           "GET /api/admin/production/pool"
         ]
       },
-      "visibility_rule": "node-code"
+      "visibility_rule": "all"
     },
     {
       "key": "processing",
@@ -761,18 +765,14 @@
       "path": "/production/processing",
       "gate": "production:view",
       "units": {
-        "order:list": [
+        "production:view": [
+          "GET /api/admin/processing-categories",
+          "GET /api/admin/processing-items",
           "GET /api/admin/production/processing-fee-combinations",
           "GET /api/admin/production/processing-fee-gaps"
-        ],
-        "processing:manage": [
-          "GET /api/admin/processing-categories"
-        ],
-        "production:view": [
-          "GET /api/admin/processing-items"
         ]
       },
-      "visibility_rule": "node-code"
+      "visibility_rule": "all"
     },
     {
       "key": "production-remnants",
@@ -792,15 +792,13 @@
       "path": "/production/routings",
       "gate": "production:view",
       "units": {
-        "processing:manage": [
+        "production:view": [
           "GET /api/admin/production/operation-positions",
+          "GET /api/admin/production/operations-catalog",
           "GET /api/admin/production/route-rule-options",
           "GET /api/admin/production/route-rules",
+          "GET /api/admin/production/routings",
           "GET /api/admin/production/seed-templates"
-        ],
-        "production:view": [
-          "GET /api/admin/production/operations-catalog",
-          "GET /api/admin/production/routings"
         ]
       },
       "visibility_rule": "all"
@@ -809,14 +807,14 @@
       "key": "production-saving-board",
       "name": "省料看板",
       "path": "/production/saving-board",
-      "gate": "processing:manage",
+      "gate": "product:list",
       "units": {
         "product:list": [
           "GET /api/admin/batch-stock/saving-board",
           "GET /api/admin/batch-stock/saving-trend"
         ]
       },
-      "visibility_rule": "node-code"
+      "visibility_rule": "all"
     },
     {
       "key": "products",
@@ -863,8 +861,8 @@
     }
   ],
   "ledger_counts": {
-    "MENU_READ_PARITY_RESIDUALS": 6,
-    "MULTI_READ_ENDPOINT_PAGES": 3,
+    "MENU_READ_PARITY_RESIDUALS": 1,
+    "MULTI_READ_ENDPOINT_PAGES": 1,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 15,
@@ -872,6 +870,6 @@
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,
-    "PAGE_VISIBILITY_GAPS": 4
+    "PAGE_VISIBILITY_GAPS": 1
   }
 }
