@@ -327,7 +327,7 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | 场景 | 真值源 | 现取读数 |
 |---|---|---|
 | **S1 新租户** | A1 种子矩阵（写 `role_permissions`；`admin` = `permissionByCode.keySet()` = 全目录） | `admin`=31 码 · `customer_service`=10 · `operator`=25 · `sales`=7 · `finance`=7 |
-| **S2 存量租户** | A4 迁移链并集（V29/V32 基线 ∪ V43/V111/V124/V125/V129/V132 增量） | `customer_service`=**10** · `operator`=**25** · `sales`=**7** · `finance`=**7** —— **与 S1 逐值相等**；🔴 `admin` = **20 码**（缺 11，见下） |
+| **S2 存量租户**（🔴 精确口径 = **跑过 `V29` 的老租户**；在 `db/init/schema.sql` 成为唯一建库路径**之后**创建的租户直接吃种子，其 `admin` = 31 码，不在此列） | A4 迁移链并集（V29/V32 基线 ∪ V43/V111/V124/V125/V129/V132 增量） | `customer_service`=**10** · `operator`=**25** · `sales`=**7** · `finance`=**7** —— **与 S1 逐值相等**；🔴 `admin` = **20 码**（= 31 − 缺的 11，见下） |
 | **S3 无权限快照账号** | A2 回退 switch（三条运行时路径之一） | `admin`=`["*"]` · `customer_service`=10 · `operator`=25 · `sales`=7 · `finance`=7 · 🔴 **`product_manager`=8** · 🔴 **`knowledge_editor`=2** |
 
 **S2 的 `admin` 差距（本单新发现，机器可复算）**：
@@ -336,7 +336,9 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 `customer_service` / `operator` / `sales` / `finance`）。它们引入的 **11** 个码 =
 `processing:view` `processing:update` `inbound:view` `inbound:create` `after_sales:view` `knowledge:view`
 `order:update` `order:create` `customer:create` `finance:create` `agent:session:manage`。
-⇒ **存量租户的「管理员」岗位在岗位权限页回填时缺这 11 个码**（新租户是 31/31）。
+⇒ **跑过 `V29` 的老租户的「管理员」岗位在岗位权限页回填时缺这 11 个码**（新租户是 31/31）。
+（⚠️ 该「缺 11」的推导**不依赖** V29 文件头那句「与 `RegistrationService` 种子权限目录同源：`dashboard:view` 等 **17** 条」——
+那句的条数与今天的 31 码目录对不上（`17 + 11 + 3 + 1 = 32 > 31`），**登记为存疑**，见 §6。）
 **运行时零影响**（`RoleService.getUserPermissions` 对 `admin` 首行短路返回 `["*"]`，`role_permissions` 一字不读），
 **但岗位权限页的勾选树回填、以及「员工管理」弹窗选管理员岗位时的预填会不同**。
 
@@ -554,8 +556,13 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
 
 1. 🔴 **本机没有生产库**，也没有可跑的 `admin-api` 环境 ⇒ §3.1 的 S2 读数是**从迁移文件推算**的
    （谓词 + `INSERT INTO permissions` 的码列表 + `JOIN permissions` 的目录约束），
-   **不是真库查询结果**。重启条件：接上真库后复算「每个租户每个角色的 `role_permissions`」，
+   **不是真库查询结果**；且「S2」的精确口径是**跑过 `V29` 的老租户**，不是「所有已存在租户」。
+   重启条件：接上真库后复算「每个租户每个角色的 `role_permissions`」，
    与 S1/S3 逐值比对，才能确认 S2 的「与 S1 相等（除 admin）」这一条。
+1-bis. **`V29` 文件头那句「同源：`dashboard:view` 等 17 条」的条数存疑**：`17 + 11 + 3 + 1 = 32 > 31`（今天的目录 31 码）
+   ⇒ 要么当时的目录不是 17 条（16 条则恰好闭合：`16 + 11 + 3 + 1 = 31`），要么今天的目录少了 1 条。
+   **本单未取证**（需要 V29 生效时刻的 `permissions` 目录快照，本机没有）。这不影响 §3.1 的「缺 11」结论
+   —— 该结论只由「V43/V111/V124/V125 的 `role_permissions` 语句里没有 `admin`」推出，与条数无关。
 2. 🔴 **「生产上是否真有走回退的账号」源码答不了**（#5683 已登记同一条）。同理，
    `product_manager` / `knowledge_editor` 这两个 `users.role` 值**是否还有活账号**，本单未取证。
 3. **`admin` 的 11 码差距的 `roles` 页面可见性**未实机验证（推断依据：`attachDefaultPermissions`
