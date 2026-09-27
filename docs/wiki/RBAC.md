@@ -146,8 +146,10 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > 但**在四处菜单源里没有任何节点**，也**不是任何 Agent 工具可达读面的门槛** —— 生产域读面自
 > issue #5291 起改挂**新增的生产域读码 `production:view`**（`ProcessingOrderController` 的两个 GET、
 > `AgentProductionController` 的三个 GET、`ProcessingOrderSetController` 三个读端点、
-> `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog` 与 `/routings`、
-> `CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 / 加工项管理」四个节点同码；
+> `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog`、`/routings`
+> 与 **`/piecework/summary`**（最后一条由 issue #5675 补齐 —— 它是「计件工资」页的**第一屏读端点**，
+> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 /
+> 加工项管理」四个节点同码；
 > 写面仍是 `processing:manage` / `processing:update`。现存唯一仍用 `processing:view` 的端点是
 > `ProductionPoolController` 的两个读端点（无 Agent 工具调用，已登记为残留）。**方向只收窄**：
 > 只持 `processing:view` 的岗位（客服 / 销售 / 财务）既无 `processing:manage` 也无 `production:view`
@@ -161,7 +163,10 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > （operator + 历史岗位 `product_manager` 的回退表），`system:view` 只授给 admin；存量租户由迁移
 > `backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql`
 > 按**同一谓词**补齐。机械判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 10
-> （读码五面锚定）+ 判据 5 的例外表台账（`READ_WRITE_EXCEPTIONS` **已清空、只许缩短**）。
+> （读码五面锚定）+ 判据 5 的例外表台账（`READ_WRITE_EXCEPTIONS` **已清空、只许缩短**）
+> + 判据 12（**菜单节点码 ≡ 该页第一屏读端点码**，issue #5675 —— 该判据的残留台账里逐条登记了
+> 「节点码 ≠ 读端点码」的既有项：`/dashboard`、智能派单、省料看板、加工项管理、工艺配置、企业基础信息，
+> 每条带理由 + 显形条件 + 谁负责，且**只许缩短**）。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）

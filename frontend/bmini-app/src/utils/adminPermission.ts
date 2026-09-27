@@ -10,12 +10,17 @@
  *   ⇒ 台账与后端漂移必红（不是靠纪律）。
  * - **可见性判据 = 「能读这一页」的端点码**（不是菜单节点码）：手机端没有 admin-web 那套
  *   服务端下发菜单树，若拿写码判可见，只读角色会看不到页面（#5034/#5246/#5291 反复裁定的同族坑）。
- *   ⚠️ 已登记的两处「菜单节点码 ≠ 端点码」（本单**不动后端、不改 admin-web**，只登记）：
+ *   ⚠️ 已登记的一处「菜单节点码 ≠ 端点码」（issue #5675 复算后仍**有意保留**，两端一致地登记）：
  *     ① 智能派单：`frontend/admin-web/src/config/menu.ts` 节点挂 `processing:manage`，
- *        而其读端点（`GET /api/admin/production/pool`）要 `processing:view`；
- *     ② 计件工资：菜单节点挂 `production:view`，而端点（`GET .../piecework/summary`）
- *        要 `processing:manage` ⇒ 两者取**端点码**，故「PC 上看得见、手机上可能看不见」是
- *        **有意**的（手机上宁可不出入口，也不给一个点进去只有 403 的死页；端点拒绝另有显式文案）。
+ *        而其读端点（`GET /api/admin/production/pool`）要 `processing:view`
+ *        —— 两个方向的「对齐」都会改变某个岗位集合的可见性或可做性（节点码改读码 ⇒
+ *        客服/销售/财务三个持旧读码的岗位**凭空看见**该菜单；端点码改管理码 ⇒ 它们的 API
+ *        可做性被收窄，且手机端入口一并消失）⇒ #5675 判为**有意残留**，写进常驻守卫的残留台账。
+ *     ② 计件工资（**issue #5675 已修**）：本台账的读码随后端注解由 `processing:manage` 改为
+ *        `production:view` —— 该端点是「计件工资」页的**第一屏读端点**，而该页菜单节点码与前端
+ *        路由守卫都已是读码（#5291 漏改）。**可见性零变化**：持 `production:view` 的岗位集合与
+ *        持 `processing:manage` 的集合逐值相等（admin + operator，见 `RegistrationService` 种子 /
+ *        `V129__backfill_domain_read_permissions.sql` 回填谓词 / `RoleService` 回退三处一致）。
  * - 🔴 端侧**只读服务端下发的权限集合**（`GET /api/auth/me` 的 `permissions`），**不自己发明码**；
  *   集合**未知**（拉取失败）⇒ 一律按「可能有」处理（fail-open），把判定交给服务端 403 + 显式文案
  *   —— 静默隐藏入口是 #5642 明令禁止的形态。
@@ -97,7 +102,7 @@ export const ADMIN_SURFACES: AdminSurface[] = [
     pageFile: 'src/pages/admin/piecework/index.tsx',
     controllerFile:
       'backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java',
-    readPermission: 'processing:manage',
+    readPermission: 'production:view',
     readEndpoint: { method: 'GET', path: '/api/admin/production/piecework/summary' },
   },
 ]

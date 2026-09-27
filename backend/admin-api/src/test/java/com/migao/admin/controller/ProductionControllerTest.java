@@ -1414,7 +1414,7 @@ class ProductionControllerTest {
     }
 
     @Test
-    @DisplayName("#4204 PUT /production/operations/{id} → 方法级 processing:manage 护栏（非 processing:manage ⇒ 403）")
+    @DisplayName("#4204/#5675 方法级码逐条：写端点 processing:manage；计件报表端点 = 读码 production:view")
     void updateOperationDeclaresManagePermission() throws Exception {
         Method update = ProductionController.class.getMethod("updateOperation", String.class, Map.class);
         RequirePermission ann = update.getAnnotation(RequirePermission.class);
@@ -1431,10 +1431,16 @@ class ProductionControllerTest {
         assertThat(regenerateAnn).as("重新发码是安全相关写操作（撤销的恢复半边）").isNotNull();
         assertThat(regenerateAnn.value()).isEqualTo("processing:manage");
 
+        // issue #5675：工资报表端点改用生产域**读**码 —— 旧断言的理由（「含全员金额 ⇒ 必须管理码」）
+        // 自 issue #5291 起已不成立：**同一份**聚合早已在 Agent 侧（`AgentProductionController#piecework`）
+        // 挂 `production:view` 可读，而「计件工资」页的菜单节点码与前端路由守卫也都是该读码
+        // ⇒ 方法级管理码才是**漏改**的那一处（判据 = 守卫的判据 12「菜单节点码 ≡ 页面第一屏读端点码」）。
         Method summary = ProductionController.class.getMethod("pieceworkSummary", String.class, String.class);
         RequirePermission summaryAnn = summary.getAnnotation(RequirePermission.class);
-        assertThat(summaryAnn).as("工资报表含全员金额，必须 processing:manage").isNotNull();
-        assertThat(summaryAnn.value()).isEqualTo("processing:manage");
+        assertThat(summaryAnn)
+                .as("计件工资页第一屏读端点 ⇒ 与菜单节点码（production:view）同码，issue #5675")
+                .isNotNull();
+        assertThat(summaryAnn.value()).isEqualTo("production:view");
 
         // 打印计数**故意**沿用类级 order:list（打印按钮今天对客服/销售/财务可见，
         // 收到 processing:manage 会让「能看单却打不了卡」= 功能回退；计数只是打印动作的元数据）

@@ -119,13 +119,13 @@ describe('管理面④计件工资报表（issue #5654）', () => {
     expect(screen.getByTestId('piecework-period').textContent).toContain('2026-08')
   })
 
-  it('无权限有文案：403 ⇒ 逐字「无「计件工资报表」查看权限（需要权限码 processing:manage）」', async () => {
+  it('无权限有文案：403 ⇒ 逐字「无「计件工资报表」查看权限（需要权限码 production:view）」', async () => {
     mockReport.mockResolvedValue({
       status: 'forbidden',
-      message: '无「计件工资报表」查看权限（需要权限码 processing:manage）',
+      message: '无「计件工资报表」查看权限（需要权限码 production:view）',
     })
     render(<AdminPieceworkPage />)
     const block = await screen.findByTestId('admin-surface-forbidden')
-    expect(block.textContent).toBe('无「计件工资报表」查看权限（需要权限码 processing:manage）')
+    expect(block.textContent).toBe('无「计件工资报表」查看权限（需要权限码 production:view）')
   })
 })
