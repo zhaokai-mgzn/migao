@@ -2,7 +2,12 @@
 @use './styles/variables.scss' as *;
 
 // 全局基础样式
-page {
+// ⚠️ 选择器写 `page, body` 是**必须**的（issue #5721 顺带修）：`page` 是小程序的选择器，
+//    在 h5 产物里**一个元素都匹配不到**（实测线上 `/b/css/app.css` 就是一条 `page{…}` 死规则）
+//    ⇒ h5 端的底色 / 正文色 / 基准字号全部落空，正文只能继承浏览器默认值。
+//    补上 `body` 让两端都生效；小程序端 `body` 匹配不到（无害）。
+page,
+body {
   background: $bg-secondary;
   color: $text-primary;
   font-size: 28px;

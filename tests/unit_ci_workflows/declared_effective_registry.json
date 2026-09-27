@@ -60,6 +60,7 @@
       ]
     },
     "entries": [
+      {"site": "backend/admin-api/src/main/java/com/migao/admin/security/SameOriginOriginHeaderFilter.java::isSameOrigin", "catch_blocks": 1, "return_literals": ["false"], "permissive_literal": "true", "direction": "fail-closed", "observability_required": false, "reason": "#5721 新增（同源判定）：Origin 头解析不出来（畸形 / `Origin: null`）⇒ 返回 false = **不摘 Origin**，请求退回改动前的行为（照旧走 CORS 白名单判定），不放大任何权限 ⇒ fail-closed。浏览器不会发畸形 Origin（能造出来的只有脚本/curl），且此处没有『降级到放行』的路径，故不另设 counter。", "issue": "#5721"},
       {"site": "backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java::isTokenBlacklisted", "catch_blocks": 1, "return_literals": [], "permissive_literal": "false", "direction": "fail-closed", "observability_required": true, "reason": "#4866 修复：吊销检查不可执行 ⇒ 返回 null（= 不可判定），调用方按已吊销拒绝（fail-closed）+ ERROR 日志 + counter", "issue": "#4866"},
       {"site": "backend/admin-api/src/main/java/com/migao/admin/security/JwtTokenProvider.java::validateToken", "catch_blocks": 2, "return_literals": ["false", "false"], "permissive_literal": "true", "direction": "fail-closed", "reason": "验签/解析失败 ⇒ 判 Token 无效（拒绝认证）：本来就是 fail-closed，登记以免被「顺手改成放行」", "issue": ""},
       {"site": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::isTokenBlacklisted", "catch_blocks": 1, "return_literals": [], "permissive_literal": "false", "direction": "fail-closed", "observability_required": true, "reason": "#4866 修复：同 JwtAuthenticationFilter；refreshToken 对「不可判定」显式返回 503 AUTH_UNAVAILABLE 而不是 401 已吊销", "issue": "#4866"},

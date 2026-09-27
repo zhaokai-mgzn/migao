@@ -61,8 +61,19 @@ env:
   IMAGE_NAME: bmini-h5
   # 构建期变量（见 frontend/bmini-app/config/index.ts）：落在 /b/ ⇒ 资源前缀必须也是 /b/
   TARO_APP_H5_PUBLIC_PATH: /b/
-  # h5 是**浏览器直连** admin-api（不是微信内）⇒ 必须是公网域名，否则产物里 baked 的是 localhost
-  TARO_APP_API_URL: https://api.migaozn.com
+  # 🔴 API 面必须与**落地面同源**（issue #5721，实测踩过）：
+  #    app.migaozn.com 的 nginx 已把 `/api/` 代理到 admin-api、`/api/chat/` 代理到 ai-agent
+  #    （deploy/swas/nginx.conf），工人端 `/w/` 正是靠这个同源面工作 —— 同源 ⇒ **完全不经过 CORS**。
+  #    反面教材：这里曾注入跨域 `https://api.migaozn.com`，而 admin-api 的 CORS 白名单
+  #    （backend/admin-api/src/main/java/com/migao/admin/security/SecurityConfig.java）不含
+  #    `https://app.migaozn.com`、也不含前端发的 `X-Client-Type` 头 ⇒ 预检 403 `Invalid CORS request`
+  #    ⇒ 浏览器侧所有请求 net::ERR_FAILED，登录页只显示 `Load failed`（Safari）/`Failed to fetch`（Chrome）
+  #    —— 服务端日志里**一条记录都没有**（请求根本没发出去），极易被误判成"后端挂了"。
+  #    判据 = tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py（改成跨域即红）。
+  TARO_APP_API_URL: https://app.migaozn.com
+  # AI 面同理：chat 走 `/api/chat/*`（nginx 里前缀比 `/api/` 长 ⇒ 命中 ai-agent），
+  # 而未配置时产物里 baked 的是 `http://localhost:8001`（真机上必然失败 + 混合内容）。
+  TARO_APP_AI_API_URL: https://app.migaozn.com
 
 jobs:
   publish:

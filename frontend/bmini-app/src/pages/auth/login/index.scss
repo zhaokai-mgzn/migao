@@ -1,11 +1,27 @@
 @use "../../../styles/variables.scss" as *;
 
+// ══════════════════════════════════════════════════════════════════════════
+// 商家端登录页样式（issue #5721：按 750 设计尺度 + 可读性/触控下限重写）
+//
+// 🔴 本单位是**设计尺度**（750 宽设计稿上的 px），编译期由 postcss-pxtransform
+//    折成 rem，实际 CSS px = 值 / 40 × root font-size（响应式接线见 src/index.html）。
+//    ⇒ 下面每个数都按「设计稿 750 宽」读：32 ≈ iPhone 13 上的 16.6 CSS px。
+//
+// 🔴 三条下限（钉在 tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py
+//    与 test_bmini_h5_delivery_contract.py，降下去即红）：
+//    · 输入/正文 ≥ 32（≈16.6 CSS px —— 输入框小于 16 CSS px 时 iOS 聚焦会自动放大整页）
+//    · 次要文字 ≥ 24（≈12.5 CSS px，本仓全端字号基线下限）
+//    · 可点区域 ≥ 88（≈45.8 CSS px —— 手指最小命中区 44 CSS px）
+//
+// 反面教材（本单修掉的形态）：这里曾按**半尺**写（标签 13px / 输入 15px / 按钮高 48px），
+// 叠上缺失的 root font-size ⇒ 真机上是 5.2px 的标签 + 19px 高的按钮，等于不可读、不可点。
+// ══════════════════════════════════════════════════════════════════════════
+
 .login-page {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   background: $bg-primary;
-  overflow: hidden;
 }
 
 // ========== 顶部品牌区域 ==========
@@ -14,40 +30,44 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 40vh;
+  // 用 min-height 而不是固定 height：矮屏（小屏手机 / 横屏 / 键盘弹起）不让品牌区
+  // 把表单挤到折叠线以下；内容高时自然撑开。
+  min-height: 40vh;
+  flex-shrink: 0;
   background: linear-gradient(135deg, $primary-color 0%, $primary-light 100%);
-  border-radius: 0 0 40px 40px;
-  padding: 0 40px;
+  border-radius: 0 0 48px 48px;
+  padding: 72px 48px 56px;
+  box-sizing: border-box;
 
   &__icon {
-    width: 96px;
-    height: 96px;
-    border-radius: 24px;
+    width: 128px;
+    height: 128px;
+    border-radius: 32px;
     background: rgba(255, 255, 255, 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 24px;
+    margin-bottom: 32px;
     backdrop-filter: blur(10px);
   }
 
   &__icon-text {
-    font-size: 36px;
+    font-size: 64px;
     font-weight: 700;
     color: #ffffff;
     letter-spacing: 2px;
   }
 
   &__title {
-    font-size: 28px;
+    font-size: 44px;
     font-weight: 700;
     color: #ffffff;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
     letter-spacing: 1px;
   }
 
   &__subtitle {
-    font-size: 14px;
+    font-size: 26px;
     color: rgba(255, 255, 255, 0.85);
     letter-spacing: 0.5px;
   }
@@ -57,55 +77,147 @@
 .login-form {
   display: flex;
   flex-direction: column;
-  padding: 48px 40px 0;
+  padding: 40px 48px 0;
   flex: 1;
 
   &__hint {
-    font-size: 12px;
+    font-size: 24px;
+    line-height: 1.7;
     color: $text-tertiary;
-    margin-top: 16px;
+    margin-top: 32px;
     text-align: center;
+  }
+}
+
+// 两个入口并列（员工 / 管理员，issue #5721）：管理员身份在设计上是「手机号 + 短信」，
+// 而 #5485 之后 H5 只有员工入口 ⇒ 管理员无路可走（存量账号 username 为 NULL，员工入口也进不去）。
+.login-tabs {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 2px solid $border-color;
+}
+
+.login-tab {
+  flex: 1;
+  // 可点区域下限：88 设计 px ≈ 45.8 CSS px
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+
+  &__text {
+    font-size: 30px;
+    color: $text-secondary;
+  }
+
+  &--active {
+    .login-tab__text {
+      color: $primary-color;
+      font-weight: 600;
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      bottom: -2px;
+      transform: translateX(-50%);
+      width: 96px;
+      height: 6px;
+      border-radius: 3px;
+      background: $primary-color;
+    }
   }
 }
 
 .login-field {
   display: flex;
   flex-direction: column;
-  margin-bottom: 24px;
+  margin-top: 40px;
 
   &__label {
-    font-size: 13px;
+    font-size: 26px;
     color: $text-secondary;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
   }
 
   &__input {
-    height: 44px;
-    padding: 0 16px;
-    font-size: 15px;
+    width: 100%;
+    box-sizing: border-box;
+    height: 96px;
+    padding: 0 28px;
+    font-size: 34px;
+    line-height: 1.2;
     color: $text-primary;
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: $radius-xl;
+    border-radius: $radius-lg;
+  }
+
+  &__input--code {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+// 验证码行：输入框自适应 + 「获取验证码」按钮固定不换行
+.login-code-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.login-code-btn {
+  flex-shrink: 0;
+  margin-left: 20px;
+  height: 96px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid $primary-color;
+  border-radius: $radius-lg;
+
+  &__text {
+    font-size: 28px;
+    color: $primary-color;
+  }
+
+  &--disabled {
+    border-color: $border-color;
+
+    .login-code-btn__text {
+      color: $text-tertiary;
+    }
   }
 }
 
 // ========== 底部操作区域 ==========
 .login-actions {
-  padding: 0 32px 60px;
+  // 底部留白含 iPhone 安全区（home indicator），否则按钮会被手势条压住
+  padding: 40px 48px calc(48px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .login-btn {
   width: 100%;
-  height: 48px;
+  height: 96px;
   display: flex;
   align-items: center;
   justify-content: center;
+  // Taro 的 Button 自带字号/颜色（默认 18px 黑字）——不写死就会出现「渐变底 + 深色字」
+  font-size: 34px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 1px;
   background: linear-gradient(135deg, $primary-color 0%, $primary-light 100%);
-  border-radius: $radius-xl;
+  border-radius: $radius-lg;
   box-shadow: 0 4px 16px rgba(47, 84, 235, 0.3);
   transition: all 0.2s ease;
 
@@ -118,13 +230,6 @@
     opacity: 0.7;
     pointer-events: none;
   }
-
-  &__text {
-    font-size: 17px;
-    font-weight: 600;
-    color: #ffffff;
-    letter-spacing: 1px;
-  }
 }
 
 // ========== 协议区域 ==========
@@ -134,18 +239,19 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  margin-top: 20px;
-  padding: 0 16px;
+  margin-top: 24px;
 
   &__text {
-    font-size: 12px;
+    font-size: 24px;
     color: $text-tertiary;
-    line-height: 1.6;
+    line-height: 1.8;
   }
 
   &__link {
-    font-size: 12px;
+    font-size: 24px;
     color: $primary-color;
-    line-height: 1.6;
+    line-height: 1.8;
+    // 协议链接是**可点**的：给足行内命中高度（外层已有 padding，此处补足到 ~44 CSS px 的可点带）
+    padding: 8px 4px;
   }
 }
