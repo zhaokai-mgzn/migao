@@ -1,4 +1,4 @@
-# case_ids: MC-028
+# case_ids: MC-028, MC-038
 """**容易犯的问题必须固化进研发模式**：技能里的每一条纪律都要有「判别动作 / 判据 / 台账」三选一。
 
 ## 病根（不是「文档写得不够好」，而是**散文拦不住任何东西**）
@@ -30,6 +30,16 @@
 | 8 | **未守护台账只许缩短**：`state=gap` 条数 ≤ **本文件冻结的上限** | 上限**写在本文件里**（台账改不动它） | 新增一条 gap 而不动上限 ⇒ 红 |
 | 9 | **本单未固化项只许缩短**：条数 ≤ 本文件冻结上限，每条须带 `reason` + `restart_when` | 同上 | 加一条「未固化」⇒ 红 |
 | 10 | **fail-closed**：语料为空 / 节为空 ⇒ **非空违规**，不得静默放行 | 空串喂进纯函数 | 空技能文本 ⇒ 红（不许「没东西可判 ⇒ 绿」） |
+
+**另一组（判据 14~18）= §26「转述与派单的纪律（集成侧 / 协调侧）」** —— §25 的**对称面**：
+§25 治的是**执行侧**（包 / agent 把读到的对象读错），而**转述侧**（派单、写提示词、把别人的读数写进
+指令的那一方）此前**没有任何承载体**，实测却是最频繁出错的一方（两个包各核出 7 处不准）。
+这一组沿用**同一套机制**（记号 ⇄ 台账双向绑定 · kind/state 三选一 · 判别动作行现取 · 边界子节 · 只许缩短），
+只把 id 族换成 `FM-R*`、把台账 key 换成 `relay_entries`：
+14 = 节存在 / 边界子节存在；15 = `relay_entries` ⇄ §26 记号**双向相等** + 每条
+`kind`∈{criterion,action,ledger} **且** `state`∈{guarded,registered,gap}（**任一非法 ⇒ 报「只写了劝告」**）
++ `same_family` 里的记号必须真实存在 + `evidence` 可解析；16 = §26 的**判别动作行（现取）**；
+17 = relay 面 `gap` 条数只许缩短；18 = §26 里**不许出现裸行号引用**（行号会腐，`FM-A10` 同因）。
 
 **另有三条（判据 11/12/13）**：11/12 = 抢号唯一性（用例号 / 迁移版本号，见本文件末节）；
 **判据 13 = `FM-E14`** —— `node --test` 的**目标参数必须是 glob**（传**目录**会被 Node 内置 runner
@@ -117,6 +127,27 @@ ARCHIVE_DUP_VERSIONS_FROZEN = 2
 CASE_ID_ALLOCATION_BOUNDARY = "只看**已合并状态** ⇒ 拦不住『main + 在飞分支』的撞号"
 #: 该边界必须随身携带的**实证锚**（撞号涉及的单号；少一个 ⇒ 红）。
 CASE_ID_ALLOCATION_EVIDENCE = ("MC-026", "MC-027", "MC-028")
+
+#: §26（**转述 / 派单面** = §25 的**对称面**）的节标题与边界子节标题（字面；台账 `skill` 之外
+#: 单列，因为两面的**取法不同**：§25 取 `## 25.` 到下一个 `## `，§26 同法但 id 族不同）。
+RELAY_SECTION_HEADING = "## 26. 转述与派单的纪律"
+RELAY_BOUNDARY_HEADING = "### 26.4 覆盖面登记：本节**覆盖不到**什么"
+#: §26 的台账 key（**与 `entries` 分开**：混成一个集合会让「§25 正文里引用一句 `FM-R1`」被读成
+#: 「§26 里写了一条未登记的纪律」⇒ 假红；与 `ENTRY_ID_RE` / `CI_ID_RE` 分开取**同因**）。
+RELAY_LEDGER_KEY = "relay_entries"
+#: 记号形态：`FM-R` + 序号（R = relay / 转述）。
+RELAY_ID_RE = re.compile(r"\bFM-R\d+\b")
+#: 判据 17：relay 面 `state=gap` 的**上限**（冻结在本文件里 —— 台账改不动它；只许缩短）。
+#: 语义与 `GAPS_FROZEN` 逐字同口径：`现取 ≤ 上限`，**抬到高于现取不会红** ⇒「上限 == 现取」靠
+#: 销账时**同批降上限**这个动作。初值 = 建面时的现取条数（**每一次升降都在 diff 里可见**）。
+RELAY_GAPS_FROZEN = 2
+#: 判据 18：「文件 + 冒号 + 数字」形态的**裸行号引用**（行号会腐 —— `FM-A10` 已有实证：
+#: 同一句话的行号几个提交后就指向别的对象）。射程 = §26 节文本。
+#: ⚠️ **本判据自己不许把那个形态原样写进任何仓内文本**（`FM-A11`「举例即实例」）：注入式红证的
+#: 标本串用**拼接**构造（扫描器看不到完整形态），说明文字一律「描述形态而不写出形态」。
+LINE_REF_RE = re.compile(r"\b[\w./-]+\.(?:py|sh|md|json|ya?ml|ts|tsx|java|sql|mjs|txt):\d+")
+#: 红证用的**裸行号**标本（拼接构造，见上）。
+LINE_REF_SPECIMEN = "scripts/verify-all.sh" + ":" + "42"
 
 #: 判据 13（`FM-E14`）的**射程**：本仓会跑 `node --test` 的**测试腿**（本地门禁腿 + 它的 CI 面）。
 #: 收窄 / 扩大射程都要先改这里（frozen），语料是**具名路径**、不是 glob（不触发射程元守卫）。
@@ -354,6 +385,129 @@ def ledger_violations(
         if not str(item.get("restart_when") or "").strip():
             bad.append(f"未固化项 {item.get('id', '?')}：缺 `restart_when`（重启条件）")
 
+    # ── 判据 14~18：§26（**转述 / 派单面**）—— 与 §25 **同一套机制**，两面**各自**双向绑定 ────
+    rsec = section_text(skill_text, RELAY_SECTION_HEADING)
+    if rsec is None:
+        bad.append(f"技能里找不到节标题：{RELAY_SECTION_HEADING!r}（整节被删 ⇒ 转述面的固化失效）")
+        rsec = ""
+    elif not rsec.strip():
+        bad.append(f"技能节 {RELAY_SECTION_HEADING!r} 是空的 ⇒ 固化失效")
+    rbnd = section_text(skill_text, RELAY_BOUNDARY_HEADING)
+    if rbnd is None:
+        bad.append(f"技能里找不到覆盖面登记子节：{RELAY_BOUNDARY_HEADING!r}（删掉边界 ⇒ 红）")
+        rbnd = ""
+    elif not rbnd.strip():
+        bad.append(f"覆盖面登记子节 {RELAY_BOUNDARY_HEADING!r} 是空的（「无边界」= 声称覆盖一切）")
+
+    relay = ledger.get(RELAY_LEDGER_KEY) or []
+    if not relay:
+        bad.append(f"台账缺 `{RELAY_LEDGER_KEY}`（或为空）⇒ 转述面的纪律没有承载体（未登记即红）")
+    relay_ids = {e.get("id") for e in relay}
+    rskill_ids = ids_in(rsec, RELAY_ID_RE)
+    for missing in sorted(relay_ids - rskill_ids):
+        bad.append(f"{missing}：台账里有，技能 §26 里**没有**写 ⇒ 纪律没有落到研发模式")
+    for extra in sorted(rskill_ids - relay_ids):
+        bad.append(f"{extra}：技能 §26 里写了，台账 `{RELAY_LEDGER_KEY}` 里**未登记** ⇒ 未登记即红")
+
+    for e in relay:
+        eid = e.get("id", "?")
+        kind, state = e.get("kind"), e.get("state")
+        if kind not in {"criterion", "action", "ledger"}:
+            bad.append(
+                f"{eid}：`kind`={kind!r} 不在 {{criterion, action, ledger}} 里 ⇒ "
+                f"这一条**只写了劝告**（没有判别动作 / 判据 / 台账）"
+            )
+            continue
+        if state not in {"guarded", "registered", "gap"}:
+            bad.append(
+                f"{eid}：`state`={state!r} 不在 {{guarded, registered, gap}} 里 ⇒ "
+                f"这一条**只写了劝告**（承载体没有形态：有守护 / 有登记 / 是缺口，三选一）"
+            )
+            continue
+        if (kind, state) not in {("criterion", "guarded"), ("ledger", "registered"), ("action", "gap")}:
+            bad.append(
+                f"{eid}：`kind`={kind!r} 与 `state`={state!r} 不配对 "
+                f"（criterion↔guarded · ledger↔registered · action↔gap）"
+            )
+        if not str(e.get("action") or "").strip():
+            bad.append(
+                f"{eid}：`action` 为空 ⇒ 每条都必须给出**判别动作**（一次就能做、可复制），"
+                f"否则它与劝告无异"
+            )
+        for key, why in (("symptom", "症状（一句话）"), ("covers", "它**覆盖到哪一半**")):
+            if not str(e.get(key) or "").strip():
+                bad.append(f"{eid}：缺 `{key}` ⇒ {why}必须写出来，否则承载体不可复核")
+        if state == "guarded":
+            crit = e.get("criteria") or []
+            if not crit:
+                bad.append(f"{eid}：state=guarded 却没给 `criteria`（守护为匿名 ⇒ 不可复核）")
+            for c in crit:
+                reason = _resolve_anchor(c, file_text)
+                if reason:
+                    bad.append(f"{eid}：守护判据不可解析 —— {reason}")
+        elif state == "registered":
+            ref = e.get("ledger_ref")
+            reason = _resolve_anchor(ref, file_text) if isinstance(ref, str) else \
+                "缺 `ledger_ref`（state=registered 必须点名登记载体）"
+            if reason:
+                bad.append(f"{eid}：{reason}")
+        else:
+            if e.get("criteria") or e.get("ledger_ref"):
+                bad.append(
+                    f"{eid}：state=gap 却带着判据/台账引用 ⇒ **陈旧**（要么改成 guarded/registered，"
+                    f"要么它已经不是缺口）"
+                )
+            if not str(e.get("gap_owner") or "").strip():
+                bad.append(f"{eid}：gap 没有 `gap_owner`（缺口不许匿名存在）")
+            if not str(e.get("gap_shows_when") or "").strip():
+                bad.append(f"{eid}：gap 没有 `gap_shows_when`（无守护时的**显形条件**必须写出来）")
+        fam = str(e.get("same_family") or "")
+        if not fam.strip():
+            bad.append(f"{eid}：没有 `same_family` ⇒ 孤立登记会让下一个人读不出它与哪一族同形")
+        for mark in sorted(set(re.findall(r"\bFM-[A-Z]\d+\b", fam))):
+            if mark not in skill_text and mark not in cicd_text:
+                bad.append(f"{eid}：`same_family` 点了 `{mark}`，而它在技能与 {CICD_REL} 里都找不到")
+        if not e.get("evidence"):
+            bad.append(f"{eid}：没有任何 `evidence` ⇒ 这条固化**不可复核**")
+        for ev in e.get("evidence") or []:
+            reason = _resolve_anchor(ev, file_text)
+            if reason:
+                bad.append(f"{eid}：evidence 失效 —— {reason}")
+
+    # ── 判据 16：判别动作行（现取，**§26 面**）────────────────────────────────
+    rdeclared: set[str] = set()
+    rhit_line = False
+    for line in rbnd.split("\n"):
+        if line.strip().startswith(ACTION_LINE_PREFIX):
+            rhit_line = True
+            rdeclared |= ids_in(line, RELAY_ID_RE)
+    if not rhit_line:
+        bad.append(
+            f"§26 覆盖面登记子节里没有 `{ACTION_LINE_PREFIX}` 行 ⇒ "
+            f"「哪些条目只靠人执行」没有现取登记"
+        )
+    else:
+        rlive = {e["id"] for e in relay if e.get("kind") == "action"}
+        for missing in sorted(rlive - rdeclared):
+            bad.append(f"{missing}：只靠人执行的条目不写在 §26 边界节 ⇒ 下一个人读不到这条账")
+        for extra in sorted(rdeclared - rlive):
+            bad.append(f"{extra}：§26 边界节把它登记成「只靠人执行」，而台账里它不是 kind=action ⇒ 陈旧")
+
+    # ── 判据 17：relay 面的 gap 只许缩短 ───────────────────────────────────────
+    rgaps = [e for e in relay if e.get("state") == "gap"]
+    if len(rgaps) > RELAY_GAPS_FROZEN:
+        bad.append(
+            f"转述面未守护（gap）条数 {len(rgaps)} > 上限 {RELAY_GAPS_FROZEN}（上限冻结在本判据里）⇒ "
+            f"新增缺口必须先把它做成判据或并入既有台账，不许默默加"
+        )
+
+    # ── 判据 18：§26 里不许出现裸行号引用（`FM-A10`：行号会腐）──────────────────
+    for hit in sorted(set(LINE_REF_RE.findall(rsec))):
+        bad.append(
+            f"§26 里出现裸行号引用 `{hit}` ⇒ 行号会腐（`FM-A10`）；引用一律给 "
+            f"`<path>::<符号>` 锚（**行号不写**）"
+        )
+
     return bad
 
 
@@ -377,6 +531,30 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
         "id": "FM-E99", "state": "gap", "gap_owner": "x", "gap_shows_when": "y",
     })
 
+    # ── §26（转述面）的坏形态：与 §25 面**对称**的六种 + 一种只属于它的（裸行号）──────
+    relay_base = base.get(RELAY_LEDGER_KEY) or []
+    relay_first = str(relay_base[0].get("id")) if relay_base else "FM-R1"
+    no_relay_section = skill_text.replace(RELAY_SECTION_HEADING, "## 26. （标题被删）", 1)
+    relay_without_one = re.sub(rf"\b{re.escape(relay_first)}\b", "FM-R0", skill_text)
+    relay_unregistered = skill_text.replace(
+        RELAY_SECTION_HEADING, RELAY_SECTION_HEADING + "\n\n- `FM-R99` 一条没登记的纪律\n", 1)
+    relay_prose = json.loads(json.dumps(base))
+    relay_prose.setdefault(RELAY_LEDGER_KEY, [{}])[0]["kind"] = "prose"
+    relay_no_state = json.loads(json.dumps(base))
+    relay_no_state.setdefault(RELAY_LEDGER_KEY, [{}])[0]["state"] = "advice"
+    relay_new_gap = json.loads(json.dumps(base))
+    relay_new_gap.setdefault(RELAY_LEDGER_KEY, []).append({
+        "id": "FM-R98", "kind": "action", "state": "gap", "gap_owner": "x",
+        "gap_shows_when": "y", "same_family": "FM-A10", "evidence": [],
+    })
+    relay_line_ref = skill_text.replace(
+        RELAY_SECTION_HEADING, RELAY_SECTION_HEADING + f"\n\n见 `{LINE_REF_SPECIMEN}` 的读数\n", 1)
+    # 🔴 本条是**红证当场抓出来的**：`same_family` 的记号提取原先用 `[A-ER]`（有意排除别的族），
+    # 于是「点了一个**不存在**的记号」（如 `FM-Z9`）**提取不到 ⇒ 判据静默放行** = 空断言。
+    # 修法 = 提取放宽到 `[A-Z]`，再逐条核「该记号在技能 / CI-CD 里具名存在」。
+    relay_bad_family = json.loads(json.dumps(base))
+    relay_bad_family.setdefault(RELAY_LEDGER_KEY, [{}])[0]["same_family"] = "`FM-Z9`"
+
     return {
         "no_boundary": ledger_violations(skill_text=no_boundary, cicd_text=cicd_text,
                                          ledger=base, file_text=file_text),
@@ -393,6 +571,22 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
         "control_comment_only": ledger_violations(
             skill_text=skill_text + "\n<!-- 只加一条注释：不改任何记号、不改任何声明 -->\n",
             cicd_text=cicd_text, ledger=base, file_text=file_text),
+        "no_relay_section": ledger_violations(skill_text=no_relay_section, cicd_text=cicd_text,
+                                              ledger=base, file_text=file_text),
+        "relay_dropped_id": ledger_violations(skill_text=relay_without_one, cicd_text=cicd_text,
+                                              ledger=base, file_text=file_text),
+        "relay_unregistered": ledger_violations(skill_text=relay_unregistered, cicd_text=cicd_text,
+                                                ledger=base, file_text=file_text),
+        "relay_prose_only": ledger_violations(skill_text=skill_text, cicd_text=cicd_text,
+                                              ledger=relay_prose, file_text=file_text),
+        "relay_no_state": ledger_violations(skill_text=skill_text, cicd_text=cicd_text,
+                                            ledger=relay_no_state, file_text=file_text),
+        "relay_new_gap": ledger_violations(skill_text=skill_text, cicd_text=cicd_text,
+                                           ledger=relay_new_gap, file_text=file_text),
+        "relay_line_ref": ledger_violations(skill_text=relay_line_ref, cicd_text=cicd_text,
+                                            ledger=base, file_text=file_text),
+        "relay_bad_family": ledger_violations(skill_text=skill_text, cicd_text=cicd_text,
+                                              ledger=relay_bad_family, file_text=file_text),
     }
 
 
@@ -459,6 +653,15 @@ def test_discriminating_power_in_memory() -> None:
     assert r["control_comment_only"] == [], (
         "只加一条注释就判红 ⇒ 判据在误伤（对照读数必须为空）"
     )
+    # §26（转述面）的六种坏形态 + 裸行号形态，逐条各自判红
+    assert any("整节被删" in p for p in r["no_relay_section"]), r["no_relay_section"]
+    assert any("§26 里**没有**写" in p for p in r["relay_dropped_id"]), r["relay_dropped_id"]
+    assert any("未登记即红" in p for p in r["relay_unregistered"]), r["relay_unregistered"]
+    assert any("只写了劝告" in p for p in r["relay_prose_only"]), r["relay_prose_only"]
+    assert any("只写了劝告" in p for p in r["relay_no_state"]), r["relay_no_state"]
+    assert any("转述面未守护（gap）条数" in p for p in r["relay_new_gap"]), r["relay_new_gap"]
+    assert any("裸行号引用" in p for p in r["relay_line_ref"]), r["relay_line_ref"]
+    assert any("same_family" in p for p in r["relay_bad_family"]), r["relay_bad_family"]
 
 
 def test_mutation_harness_really_changes_the_text() -> None:
@@ -736,4 +939,100 @@ def test_node_test_glob_guard_has_discriminating_power() -> None:
     # —— 否则本判据会被**它自己的说明文字**喂红（`FM-A11` 的形态：举例即实例）。
     assert node_test_glob_problems("    # 删掉 `node --test` 那一行 ⇒ 必红\n") == []
     assert node_test_glob_problems("    name: worker-h5 unit tests (node --test)\n") == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 14~18（§26 = 转述 / 派单面）：常驻自证 + 判别力自证 + 边界登记
+# ──────────────────────────────────────────────────────────────────────────────
+
+def relay_anchor_problems(*, ledger: dict,
+                          file_text: Callable[[str], str | None] = real_file_text) -> list[str]:
+    """每条 `state=guarded` / `registered` 的 relay 条目：锚**删掉全部出现** ⇒ 必须判红。
+
+    语义与 `registered_anchor_problems`（`ci_findings` 面）**逐条同口径** —— 那里的实测教训是
+    「按『锚恰好出现 1 次』判」是**空断言**（只删其中一处仍解析得到）；真实失效形态是
+    「删掉这条登记所指对象的**全部**出现」。**面内 0 条 ⇒ 红**（未跑 ≠ 通过，fail-closed）。
+    """
+    bad: list[str] = []
+    applicable = 0
+    for e in ledger.get(RELAY_LEDGER_KEY) or []:
+        state = e.get("state")
+        if state not in {"guarded", "registered"}:
+            continue
+        fid = str(e.get("id", "?"))
+        refs = list(e.get("criteria") or []) if state == "guarded" else [e.get("ledger_ref")]
+        for ref in refs:
+            path, _, anchor = str(ref or "").partition(ANCHOR_SEP)
+            if not path or not anchor:
+                bad.append(f"{fid}：锚不是 `<path>::<锚>` 形态：{ref!r}")
+                continue
+            text = file_text(path)
+            if text is None:
+                bad.append(f"{fid}：锚的载体不存在：{path}")
+                continue
+            if anchor not in text:
+                bad.append(f"{fid}：锚在载体里找不到：{ref}")
+                continue
+            applicable += 1
+            stripped = text.replace(anchor, "")
+            reader = (lambda rel, _p=path, _s=stripped, _f=file_text: _s if rel == _p else _f(rel))
+            viol = ledger_violations(skill_text=reader(SKILL_REL) or "",
+                                     cicd_text=reader(CICD_REL) or "",
+                                     ledger=ledger, file_text=reader)
+            if not any(fid in p for p in viol):
+                bad.append(
+                    f"{fid}：删掉锚「{anchor}」的**全部**出现后不判红 ⇒ "
+                    f"这条登记挂在**打不断**的锚上（空断言）"
+                )
+    if applicable == 0:
+        bad.append("§26 面内 0 条 `state=guarded` / `registered` 条目 ⇒ 判据空跑（**未跑 ≠ 通过**）")
+    return bad
+
+
+def test_relay_anchors_are_breakable() -> None:
+    """常驻自证：§26 面每条 `guarded` / `registered` 的锚都**可被打断**（同 `FM-A7` 的口径）。"""
+    _, _, ledger = _live()
+    bad = relay_anchor_problems(ledger=ledger)
+    assert bad == [], "§26 面的登记锚不可打断：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_relay_anchor_check_has_discriminating_power() -> None:
+    """判别力自证（内存构造）：① 面内 0 条 ⇒ 红（防空跑）；② 载体不存在 ⇒ 红；③ 正常 ⇒ 绿。"""
+    _, _, ledger = _live()
+    assert relay_anchor_problems(ledger=ledger) == []
+    empty = json.loads(json.dumps(ledger))
+    empty[RELAY_LEDGER_KEY] = [e for e in empty.get(RELAY_LEDGER_KEY, [])
+                               if e.get("state") not in {"guarded", "registered"}]
+    assert relay_anchor_problems(ledger=empty) != []
+    broken = json.loads(json.dumps(ledger))
+    nxt = next(e for e in broken[RELAY_LEDGER_KEY] if e.get("state") == "guarded")
+    nxt["criteria"] = ["tests/unit_ci_workflows/NO_SUCH_GUARD.py::whatever"]
+    assert relay_anchor_problems(ledger=broken) != []
+
+
+def test_relay_boundary_section_names_the_out_of_scope_forms() -> None:
+    """§26 的边界节必须写清「本节覆盖不到什么」（不是一句「见 §25」）。"""
+    skill_text, _, _ = _live()
+    rbnd = _require(section_text(skill_text, RELAY_BOUNDARY_HEADING), RELAY_BOUNDARY_HEADING)
+    for marker in ("kind=action", "FM-R", "evidence"):
+        assert marker in rbnd, f"§26 覆盖面登记缺 `{marker}` 这一面"
+
+
+def test_relay_line_ref_guard_has_discriminating_power() -> None:
+    """判据 18 的判别力自证（**内存构造**）：裸行号 ⇒ 红；符号锚 / 只加注释 ⇒ 不红。"""
+    skill_text, cicd_text, ledger = _live()
+    injected = skill_text.replace(
+        RELAY_SECTION_HEADING, RELAY_SECTION_HEADING + f"\n\n见 `{LINE_REF_SPECIMEN}` 的读数\n", 1)
+    assert injected != skill_text, "内存构造的变异体与原文本逐字相同"
+    bad = ledger_violations(skill_text=injected, cicd_text=cicd_text, ledger=ledger)
+    assert any("裸行号引用" in p for p in bad), bad
+    # 对照读数①：符号锚形态（`<path>::<符号>`）**不**被判据当行号 ⇒ 判的是「有没有行号」而不是「提没提文件」
+    anchored = skill_text.replace(
+        RELAY_SECTION_HEADING,
+        RELAY_SECTION_HEADING + "\n\n见 `.github/render_cases.py::load_case_dicts` 的读数\n", 1)
+    assert ledger_violations(skill_text=anchored, cicd_text=cicd_text, ledger=ledger) == []
+    # 对照读数②：只加一条注释（无行号形态）⇒ 不红
+    assert ledger_violations(
+        skill_text=skill_text + "\n<!-- 只加一条注释：不改任何记号、不改任何声明 -->\n",
+        cicd_text=cicd_text, ledger=ledger) == []
 

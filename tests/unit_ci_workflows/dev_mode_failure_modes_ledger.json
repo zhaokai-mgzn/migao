@@ -11,9 +11,11 @@
     "#5001",
     "#5668",
     "#5676",
-    "#5695"
+    "#5695",
+    "#5707",
+    "#5713"
   ],
-  "_what": "「容易犯的问题 / CI 与台账反复出错的点」固化台账：每一条都必须落在**三者之一** —— 判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账。⚠️ 本台账**不产生**纪律，它只登记纪律的**承载体**；纪律正文在 `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §25（清单 A~D）与 `docs/wiki/CI-CD.md` 的『CI / 台账反复出错点』节（清单 E）。",
+  "_what": "「容易犯的问题 / CI 与台账反复出错的点」固化台账：每一条都必须落在**三者之一** —— 判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账。⚠️ 本台账**不产生**纪律，它只登记纪律的**承载体**；纪律正文在 `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §25（清单 A~D）与 `docs/wiki/CI-CD.md` 的『CI / 台账反复出错点』节（清单 E）。 §26（**转述 / 派单面** = §25 的对称面）的纪律正文在同文件的 §26，其承载体 = 本台账的 `relay_entries`（CI 面仍是 `ci_findings`）。",
   "_judged_by": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py",
   "_invariants": [
     "`entries`（清单 A~D，skill 面）：每条的 `id` 必须**逐字出现**在技能的 §25 节里，且 §25 里的 `FM-xN` 记号集合必须**等于**本台账的 id 集合（双向；单向会被『技能里写一条永不判的纪律』与『删台账条目』两个方向绕过）",
@@ -23,9 +25,15 @@
     "`ci_findings`（清单 E，doc 面）：每条 `id` 必须具名出现在 `docs/wiki/CI-CD.md`；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）",
     "**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 里，台账改不动它）",
     "`not_solidified`（本单未固化项）**只许缩短**：条数 ≤ 判据里冻结的上限，每条须有 `reason` + `restart_when`（重启条件）",
-    "**已修的不重复登记**：用户点名『已修的不要重复登记』⇒ `state=guarded` 的条目**只点名判据**（并说明它已在别处登记），不新开缺口账"
+    "**已修的不重复登记**：用户点名『已修的不要重复登记』⇒ `state=guarded` 的条目**只点名判据**（并说明它已在别处登记），不新开缺口账",
+    "`relay_entries`（§26，转述面）：每条的 `id` 必须**逐字出现**在技能的 §26 节里，且 §26 里的 `FM-R<序号>` 记号集合必须**等于** `relay_entries` 的 id 集合（双向，与 `entries`⇄§25 同口径；**两面分开取** —— 混成一个集合会把一方正文里的『引用』读成另一方的『未登记纪律』⇒ 假红）",
+    "`relay_entries` 每条的 `state` ∈ {guarded, registered, gap} **与** `kind` ∈ {criterion, action, ledger} **一一配对**（criterion↔guarded · ledger↔registered · action↔gap）；`state` 或 `kind` 缺失/取值非法 ⇒ 报『**这一条只写了劝告**』",
+    "`relay_entries` 每条必须有非空 `action`（判别动作 = 一次就能做、可复制）、`symptom`、`covers`（它**覆盖到哪一半**）、`same_family`（其中点名的 `FM-xN` 必须在技能或 docs/wiki/CI-CD.md 里**具名存在**）与至少一条可解析 `evidence`",
+    "§26 的覆盖面登记子节必须含 `**判别动作行（现取）**：` 行，且该行列出的 `FM-R*` 集合**等于** `kind=action` 的 id 集合（现取；涨跌都红）",
+    "**relay 面的缺口只许缩短**：`relay_entries` 里 `state=gap` 条数 ≤ 判据里**冻结**的 `RELAY_GAPS_FROZEN`（上限写在判据文件里 ⇒ 台账改不动它）",
+    "**§26 不许出现「文件 + 冒号 + 数字」形态的裸行号引用**（判据 18）：行号会腐（`FM-A10`）⇒ 引用一律给 `<path>::<符号>`"
   ],
-  "_boundary": "本台账机械保证的是「每条纪律都有承载体，且这个承载体在磁盘上真实存在」。它**不保证**承载体本身是对的：`criterion` 解析成的是「文件里逐字出现这个名字」，**不是**「该判据真的会为这条纪律变红」（红是那条判据自己的事）。`kind=action` 的条目**靠人执行**，判据只能保证它列在 §25 的边界节里。一条**完全不写 `FM-` 记号**的新纪律（纯散文加进技能）在本台账面内**看不见** —— 这是已知残余，见 §25 的覆盖面登记子节。",
+  "_boundary": "本台账机械保证的是「每条纪律都有承载体，且这个承载体在磁盘上真实存在」。它**不保证**承载体本身是对的：`criterion` 解析成的是「文件里逐字出现这个名字」，**不是**「该判据真的会为这条纪律变红」（红是那条判据自己的事）。`kind=action` 的条目**靠人执行**，判据只能保证它列在 §25 的边界节里。一条**完全不写 `FM-` 记号**的新纪律（纯散文加进技能）在本台账面内**看不见** —— 这是已知残余，见 §25 的覆盖面登记子节。 §26 面同理、并多一条：`relay_entries` 的 `criterion` **只覆盖它自己写明的 `covers`**（例如 `FM-R1` 的判据只管「行号」这一半）—— 「**转述方到底核没核过**」在本判据面内**无法机械判**（判据看得见文本形态，看不见他跑没跑那条命令）。",
   "skill": {
     "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
     "section": "## 25. 判别动作：读数与它声称的对象",
@@ -649,6 +657,142 @@
       ],
       "refs": [
         "#5704"
+      ]
+    }
+  ],
+  "relay_entries": [
+    {
+      "id": "FM-R1",
+      "state": "guarded",
+      "kind": "criterion",
+      "symptom": "**把某时点的读数当常量引**：测试基数 / 行号 / 失败条数都会变。实测：同一条命令（`python3 -m pytest tests/unit_ci_workflows/test_pr_body_guard.py`）在修前记为 `5 failed / 50 passed`、修后同坐标**现取** `3 failed / 36 passed` —— 不只是条数变了，**基数也变了**（55 → 39，说明前后根本不是同一个对象）。",
+      "action": "引用任何读数时**同批给三件**：①来源命令 ②时点（`date '+%F %T %Z'`，本机时区；UTC 读数必须换算并标注）③口径（三态 / `现取 vs 上限`）。**行号一律不写**，只给 `<path>::<符号>`。复算：`python3 -m pytest tests/unit_ci_workflows/test_pr_body_guard.py -q --tb=no -rf`。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_relay_line_ref_guard_has_discriminating_power"
+      ],
+      "covers": "判据 18 **只覆盖「行号」这一半**：§26 里出现「文件 + 冒号 + 数字」形态 ⇒ 红。**另一半（把测试基数 / 失败条数 / 「现取 N 条」当常量引）没有机械锁** —— 那需要语义判定。",
+      "same_family": "`FM-A10`（行号会腐）+ `FM-A5`（从 `--stat` 推「内容也对」）+ `FM-A13`（同一份代码换坐标读数就不同）",
+      "evidence": [
+        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::FM-A10",
+        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::FM-A13",
+        "tests/unit_ci_workflows/test_pr_body_guard.py"
+      ],
+      "refs": [
+        "#5707",
+        "#5709"
+      ]
+    },
+    {
+      "id": "FM-R2",
+      "state": "registered",
+      "kind": "ledger",
+      "symptom": "**把环境问题与门禁缺陷混为一谈**：「本机没装依赖 ⇒ 该腿没跑」是**环境**（CI 上这些腿都真跑），门禁缺陷只是「**变更集命中该模块 + 依赖缺 ⇒ 本地绿**」这一形态 —— 两个口径混着说，接收方会把环境读数当成门禁结论。",
+      "action": "说「这条腿没跑 / 这项没事」之前**先分两层并写出是哪一层**：`./verify-all.sh quick` 的未就绪项要附原因（`.venv` / `node_modules/.bin/*`）；再读 `tests/unit_ci_workflows/local_gate_matrix.json` 的 `_invariants` 第 3 条确认哪几条腿**声明了** `fail_closed`。",
+      "ledger_ref": "docs/wiki/CI-CD.md::FM-E10",
+      "covers": "登记在 `FM-E10`（判据已存在但射程只到声明了 `fail-closed` 的 1 条腿；`gate` 档主路径没有 `report_env` 模块腿）⇒ 本条的承载体是**具名台账 + 现成判据的射程声明**，不是新判据。",
+      "same_family": "`FM-E10`（「未就绪」被当通过）+ §9.2（本地验证防恶化）",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E10",
+        "tests/unit_ci_workflows/local_gate_matrix.json"
+      ],
+      "refs": [
+        "#5707"
+      ]
+    },
+    {
+      "id": "FM-R3",
+      "state": "registered",
+      "kind": "ledger",
+      "symptom": "**想当然判据语义**：没读那条判据的**断言方向与比较符**就替它下结论。实测形态：说「上限高于现取 ⇒ 永不红」并提出用它当红证 —— 而该判据的语义是 `现取 ≤ 上限`，**「抬到高于现取」这件事本身不会红**。",
+      "action": "引用判据语义前**读那条判据的比较符与断言方向**（`grep -n 'GAPS_FROZEN\\|<=' tests/unit_ci_workflows/test_dev_mode_failure_modes.py`）；本仓「只许缩短」类台账的语义 = **`现取 ≤ 上限`** ⇒ 「上限 == 现取」靠**销账时同批降上限**这个动作，**不是**靠判据。",
+      "ledger_ref": "docs/wiki/CI-CD.md::FM-E14",
+      "covers": "口径订正已落在 `FM-E14` 与台账 `policy_decisions` 的 `PD-2` 里（「缺口在**无判据**而非无文字」+ `现取 ≤ 上限`）。**没有机械锁**会拦住「没读判据就替它下结论」。",
+      "same_family": "`FM-E14`（判据语义订正）+ `FM-D2`（自述目的与实现用的是不是同一个关系）",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E14",
+        "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json::PD-2"
+      ],
+      "refs": [
+        "#5707"
+      ]
+    },
+    {
+      "id": "FM-R4",
+      "state": "gap",
+      "kind": "action",
+      "gap_owner": "转述侧（派单 / 写提示词的那一方）；兜底 = 接收侧按 §25 复核",
+      "gap_shows_when": "转述里出现裸的「没有 X / X 未落 / X 不存在」而**不带检索面与命令** ⇒ 接收方没有对象可以反驳，只能照做。实测：一句「现有守护 = 无」让一个包**自造**了一套重复处置，而现成工具就在 `scripts/` 下、且当场判红了它的文本。",
+      "symptom": "**没先检索就下否定性断言**：「没有守护 / X 未落 / 未写进任何地方」—— 而下否定性结论的人手上**没有可点的对象**，接收方更无从反驳。",
+      "action": "下否定性结论**前**给「查了哪几面 + 每面的命令 + **面外还有什么**」；五面清单（`scripts/` 与 `.github/scripts/` → `tests/unit_ci_workflows/` 与 `tests/` → `.github/workflows/` 与 `.github/*.py` → `.agent-presets/` 与 `docs/wiki/` 与 `AGENTS.md` → `.github/cases/` 与 `docs/testing/`）+ `python3 scripts/merge_gate.py --required-diff`（只存在于 CI 服务侧的检查 grep 不到）。",
+      "covers": "**无机械锁**。能机械判的只有「记号/锚是否登记」，判不了「这句话是不是穷举过的」。",
+      "same_family": "`FM-A12`（否定性结论没有对象可指 —— 本节最贵的一条）+ `FM-A9`（引用规范页只给文件名）",
+      "evidence": [
+        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::FM-A12",
+        "scripts/pr_body_guard.py"
+      ],
+      "refs": [
+        "#5707",
+        "#5706"
+      ]
+    },
+    {
+      "id": "FM-R5",
+      "state": "registered",
+      "kind": "ledger",
+      "symptom": "**拿过期状态当现状**：「分支在飞」被读成「产物未落地 / 还在补」。实测：转述里写「另一包**正在补** main 侧守护」，而 `git show origin/main:.github/workflows/main-freshness-guard.yml` 有内容 —— 产物**已在 main 上**。",
+      "action": "说「未落地 / 未交付 / 还在补」之前**逐文件内容级**读主线：`git show origin/main:<path>`（**看内容，不看 commit 可达性**）；搁浅核法 = `bash scripts/stranding-check.sh <PR>`（三态 `0/1/3`，**`3` 不得当 `0` 读**）。",
+      "ledger_ref": "docs/wiki/CI-CD.md::FM-E2",
+      "covers": "登记在 `FM-E2`（内容级核法 + `stranding-check.sh`；**该脚本未接 CI 门禁**）⇒ 承载体是具名登记 + 现成工具，不是新判据。",
+      "same_family": "`FM-E2`（改动搁浅）+ `FM-A5`（从 `--stat`/「提交里含该文件」推「内容也对」）",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E2",
+        ".github/workflows/main-freshness-guard.yml"
+      ],
+      "refs": [
+        "#5707",
+        "#5698",
+        "#5695"
+      ]
+    },
+    {
+      "id": "FM-R6",
+      "state": "guarded",
+      "kind": "criterion",
+      "symptom": "**给出的指令本身会造成冲突**：取号、同写面、同一文件并发改 —— 指令发出时就已经注定要撞（实测：转述给的取号指令「从 `MC-035` 起」，而在飞非 draft 的 PR #5713 已占 `MC-035` / `036` / `037`）。",
+      "action": "派单 / 给取号指令前查三样：①现取已合并最大号 `grep -rhoE '[A-Z]{2}-[0-9]+' .github/cases/ | sort -u | tail -5`；②**在飞 PR 的 diff / 最新内容**（`gh pr list --state open --json number,isDraft,headRefName` 后逐个取 `cases/` 里的 id）；③**rebase 之后再跑一遍 ①②**。同写面 = 派单前确认两个包不碰同一文件。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus"
+      ],
+      "covers": "判据 **只覆盖「已合并侧」**：重号一进 PR 即红，**红在后合的那一个**。**在飞侧没有守护**（判据看不到在飞分支 —— 这是 `FM-E15` 已登记的边界），靠上面的判别动作补；**「同写面 / 同一文件并发改」这一半没有机械锁**。",
+      "same_family": "`FM-E7`（用例号被抢 + 缓解办法）+ `FM-E15`（编号分配只看已合并状态）",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E7",
+        "docs/wiki/CI-CD.md::FM-E15",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus"
+      ],
+      "refs": [
+        "#5705",
+        "#5706",
+        "#5713"
+      ]
+    },
+    {
+      "id": "FM-R7",
+      "state": "gap",
+      "kind": "action",
+      "gap_owner": "转述侧（集成侧 / 派单方）；兜底 = 接收侧要求「给出可点的对象」",
+      "gap_shows_when": "转述链条上出现**无法反驳的「事实句」**（读不到 durable 证据却写成结论）⇒ 接收方分不清「原话 / 复算过 / 没核」。实测形态：转述清单里的标签（`A-b` / `A-d` 一类）**在仓内没有可点的对象**（`A-k` / `A-l` 住在 issue 评论里，是另一套编号）。",
+      "symptom": "**转述链条上不标注「这是转述」**：接收方分不清哪句是别人的结论、哪句是复核过的，于是**照做**并把错的归因写进 main。",
+      "action": "逐句标源，三态**显式**写出来：「某人 / 某包的原话」·「我复算过（命令 + 时点）」·「我没核」；每条声称的对象写成 `<仓库相对路径>::<符号>` 或 `PR #N` / `issue #N`；**读不到 durable 证据的宁缺勿滥**（不写进指令、不写进研发模式）。",
+      "covers": "**无机械锁**（判据不做语义判定，也不联网核 `refs`）。可机械核的只有「记号/锚是否登记」。",
+      "same_family": "铁律 11(a)（转述即未核实）+ `FM-A9`（引用时自己没打开确认）",
+      "evidence": [
+        "AGENTS.md::转述即未核实",
+        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::FM-A9"
+      ],
+      "refs": [
+        "#5707",
+        "#5706"
       ]
     }
   ],
