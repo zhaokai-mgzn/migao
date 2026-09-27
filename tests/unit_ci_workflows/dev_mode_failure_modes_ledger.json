@@ -561,6 +561,19 @@
         "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_allocation_boundary_is_registered"
       ],
       "refs": []
+    },
+    {
+      "id": "FM-E16",
+      "state": "registered",
+      "symptom": "**共享临时路径**：并发包 / 集成侧复用 `/tmp` 下的**固定文件名**（`/tmp/pr_body.md`、`/tmp/issue-*.md`、`/tmp/comment-*.md`、`/tmp/payload.json` …）⇒ 互相覆盖。🔴 **失败是静默的**：后写的覆盖先写的，**双方都不知道**（读到的是别人的内容、或自己的内容被改写）—— 这正是它值得进台账的理由。**本次实证**：交付 #5706 时本包差点覆盖 RBAC P1（#5699）包的 `/tmp/pr_body.md`（改用唯一文件名后无损失）。⚠️ **两侧都在犯**（集成侧一手读数：其自身也长期使用固定临时路径）⇒ 这**不是「某个包的疏忽」**，而是**这个工作模式自带的坑**。",
+      "guards": "无 —— **没有任何判据会拦住它**",
+      "ledger_ref": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::共享临时路径的同族登记锚（FM-E16）",
+      "same_family": "与 `migao-dev-flow` §17.2 的「**写面冲突**」/ §23.6 的工装纪律 / 清单 B 的 `FM-B4`（改动搁浅在工作区）**同族**（**不许孤立登记**）：**你以为你在操作一个私有对象（你的临时文件 / 你的分支时间线），而它其实是共享的**。",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E16",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_real_files_are_clean"
+      ],
+      "refs": []
     }
   ],
   "not_solidified": [

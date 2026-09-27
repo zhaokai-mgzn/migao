@@ -502,6 +502,54 @@ def test_archive_duplicate_versions_are_registered_and_only_shrink() -> None:
     )
 
 
+def registered_anchor_problems(*, skill_text: str, ledger: dict) -> list[str]:
+    """每条 `state=registered` 的 `ledger_ref` 必须是**唯一且会被打断的锚**（`FM-E16` 的教训）。
+
+    实测教训（本单第一次就写错了）：`FM-E16` 的 `ledger_ref` 原先指向一个在文件里**出现多次**的短语
+    ⇒ 只删其中一处，锚照样解析得到 ⇒ 那句「删掉这段 ⇒ 红」是**空断言**。⇒ 两个不变量：
+    ① 锚在该文件里**恰好出现 1 次**；② 把该锚的**全部**出现删掉 ⇒ 必须判红（可被打断）。
+    """
+    bad: list[str] = []
+    for f in ledger.get("ci_findings", []):
+        if f.get("state") != "registered":
+            continue
+        ref = f.get("ledger_ref") or ""
+        path, _, anchor = ref.partition(ANCHOR_SEP)
+        if path != SKILL_REL or not anchor:
+            continue                      # 指向别的载体的 registered 条目不在本判据面内
+        if skill_text.count(anchor) != 1:
+            bad.append(
+                f"{f.get('id')}：登记锚在 `{path}` 里出现 {skill_text.count(anchor)} 次"
+                f"（必须**恰好 1 次**，否则「删掉 ⇒ 红」这句话不成立 —— 空断言）"
+            )
+        stripped = skill_text.replace(anchor, "（锚被删）")
+        if not any(f.get("id", "") in p for p in
+                   ledger_violations(skill_text=stripped, cicd_text=_live()[1], ledger=ledger,
+                                     file_text=lambda rel, _s=stripped: _s if rel == SKILL_REL
+                                     else real_file_text(rel))):
+            bad.append(f"{f.get('id')}：删掉登记锚后**不**判红 ⇒ 这条登记挂在一个打不断的锚上")
+    return bad
+
+
+def test_registered_anchors_are_unique_and_breakable() -> None:
+    """常驻自证：`registered` 条目的登记锚唯一、且删掉必红（本单实测踩过「删一处不红」）。"""
+    skill_text, _, ledger = _live()
+    bad = registered_anchor_problems(skill_text=skill_text, ledger=ledger)
+    assert bad == [], "registered 登记锚不满足唯一 + 可打断：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_registered_anchor_check_has_discriminating_power() -> None:
+    """判别力自证（内存构造）：把锚改成出现过多次的短语 ⇒ 判红；正常锚 ⇒ 不红。"""
+    import json as _json
+    skill_text, _, ledger = _live()
+    assert registered_anchor_problems(skill_text=skill_text, ledger=ledger) == []
+    loose = _json.loads(_json.dumps(ledger))
+    hit = next(f for f in loose["ci_findings"] if f.get("state") == "registered"
+               and str(f.get("ledger_ref", "")).startswith(SKILL_REL + ANCHOR_SEP))
+    hit["ledger_ref"] = SKILL_REL + ANCHOR_SEP + "共享临时路径"
+    assert registered_anchor_problems(skill_text=skill_text, ledger=loose) != []
+
+
 def boundary_problems(doc_text: str, boundary: str = CASE_ID_ALLOCATION_BOUNDARY) -> list[str]:
     """取号判据的**边界声明**必须写在文件里并带实证锚（删掉声明或删掉实证 ⇒ 红）。"""
     bad: list[str] = []
