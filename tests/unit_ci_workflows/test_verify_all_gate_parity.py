@@ -17,7 +17,9 @@
 1. **纯函数** `managed_case_paths()`：文件集合 → 命中的受管面（命中 / 不命中 / 混合 / 空输入 / 前缀边界）；
 2. **同源判据（调用而非复制）**：命中时调用的三个脚本 + 参数 = CI `pr-check` 的 `case-truth-check`
    与 `case-trust-gate` job **同一批**（`case_trust_gate.py --base origin/main` / `truths.py check` /
-   `render_cases.py`），并锁「CI 改了参数而本地没跟」的漂移；
+   **生成物新鲜度的单一实现** `scripts/generated_artifacts_freshness.py` —— CI 的
+   `Verify generated artifacts fresh (render + diff)` 步与本地 `cases_face_gate()` 都调它，
+   渲染口径仍是 `.github/render_cases.py`），并锁「CI 改了参数而本地没跟」的漂移；
 3. **行为判据**：`cases_face_gate()` 把子门禁的**非零退出码传播出去**（stub `python3`，
    非真实门禁、零副作用）；命中时用 `::warning::` 声明**残余未覆盖**；
 4. **反向红线**：不命中受管面时**一个门禁脚本都不调用**、且不红（否则会把不碰用例库的 PR
@@ -44,7 +46,9 @@ _SCRIPT = SCRIPT.read_text(encoding="utf-8")
 # CI `pr-check` 里三个 cases 面门禁的命令片段（**真值取自 workflow 文本**，见 TestCiParity）
 CI_TRUST_CMD = "python3 .github/case_trust_gate.py --base origin/main"
 CI_TRUTHS_CMD = "python3 .github/truths.py check --templates .github/templates --cases .github/cases"
-CI_RENDER_CMD = "python3 .github/render_cases.py --cases .github/cases"
+# 生成物新鲜度的**单一实现**（CI 与本地都调它；渲染口径在它内部仍是 `.github/render_cases.py`）
+SHARED_FRESHNESS_IMPL = "scripts/generated_artifacts_freshness.py"
+CI_FRESHNESS_CMD = f"python3 {SHARED_FRESHNESS_IMPL}"
 GENERATED = ("tests/agent_eval/eval_cases.py", "docs/testing/mibao-verification-cases.md")
 
 _RUN_TIMEOUT = 120
@@ -258,14 +262,14 @@ class TestCiParity:
     def _local_text() -> str:
         return _norm(_code_of(_extract("cases_face_gate")))
 
-    @pytest.mark.parametrize("cmd", [CI_TRUST_CMD, CI_TRUTHS_CMD, CI_RENDER_CMD])
+    @pytest.mark.parametrize("cmd", [CI_TRUST_CMD, CI_TRUTHS_CMD, CI_FRESHNESS_CMD])
     def test_ci_still_runs_this_command(self, cmd):
         """前提断言：CI 侧确实跑这一条（否则本守卫锁的是一条不存在的同源判据）。"""
         assert cmd in self._ci_text(), (
             f"CI pr-check 里找不到 `{cmd}` —— 门禁命令漂移了，请同步本守卫与本函数"
         )
 
-    @pytest.mark.parametrize("cmd", [CI_TRUST_CMD, CI_TRUTHS_CMD, CI_RENDER_CMD])
+    @pytest.mark.parametrize("cmd", [CI_TRUST_CMD, CI_TRUTHS_CMD, CI_FRESHNESS_CMD])
     def test_local_runs_the_same_command(self, cmd):
         """本地命中受管面时必须跑**同一条**命令（调用而非复制规则）。"""
         assert cmd in self._local_text(), (
@@ -274,9 +278,16 @@ class TestCiParity:
 
     @pytest.mark.parametrize("artifact", GENERATED)
     def test_freshness_check_covers_the_same_generated_artifacts(self, artifact):
-        """生成物新鲜度校验的被测对象必须与 CI 一致（改了用例忘重渲染 = 分叉）。"""
-        assert artifact in self._local_text(), f"本地新鲜度校验没覆盖 {artifact}"
-        assert artifact in self._ci_text(), f"CI 新鲜度校验没覆盖 {artifact}（漂移了？）"
+        """生成物新鲜度校验的被测对象必须与 CI 一致（改了用例忘重渲染 = 分叉）。
+
+        ⚠️ 口径已**收敛到单一实现**（`scripts/generated_artifacts_freshness.py`）：被测对象登记在
+        那份实现的 `ARTIFACTS` 表里，CI 与本地都调它 ⇒ 三条断言 = ① 登记表覆盖该产物
+        ② 本地调那份实现 ③ CI 调那份实现（任一侧缺 ⇒ 红）。
+        """
+        impl_text = (REPO_ROOT / SHARED_FRESHNESS_IMPL).read_text(encoding="utf-8")
+        assert artifact in impl_text, f"单一实现的登记表没覆盖 {artifact}（漂移了？）"
+        assert CI_FRESHNESS_CMD in self._local_text(), f"本地新鲜度校验没调单一实现（{artifact}）"
+        assert CI_FRESHNESS_CMD in self._ci_text(), f"CI 新鲜度校验没调单一实现（{artifact}）"
 
     def test_exit_code_is_propagated_to_the_caller(self):
         """子门禁非零 ⇒ 本函数非零（**退出码同源**：#4221 判据 3，不许吞码）。"""
@@ -301,7 +312,7 @@ class TestCaseFaceGateBehaviour:
             f"子门禁非零时 cases_face_gate() 必须非零（本地绿 CI 红就是这个缺陷）：\n{r.stdout}"
         )
         calls = log.read_text(encoding="utf-8") if log.exists() else ""
-        for needle in ("case_trust_gate.py", "truths.py", "render_cases.py"):
+        for needle in ("case_trust_gate.py", "truths.py", "generated_artifacts_freshness.py"):
             assert needle in calls, f"命中受管面却没调用 {needle}：{calls!r}"
 
     def test_hit_declares_residual_non_coverage(self, tmp_path):

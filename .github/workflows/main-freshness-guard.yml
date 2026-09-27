@@ -1,0 +1,206 @@
+name: Main Freshness Guard（main 侧生成物新鲜度）
+
+# ── 这是什么（铁律 9「main 侧没有守护 ⇒ 合并后必须自证」的机械化）────────────────────
+# 生成物新鲜度（render + diff）原先**只在 `pull_request` 面跑** —— 它是 `pr-check.yml` 的
+# `case-truth-check` job（`Case Contract (truths_ref)`）里的一个 step，而那个 job 带
+# `if: github.event_name == 'pull_request'`。
+# ⇒ **main 可以先漂移**（改了 `.github/cases/**` 却没提交生成物），而**第一个撞上它的
+# 无辜 PR 会红**，且红的信息指向那个 PR 自己的 diff（**归因指向错误的对象**）。
+# 实测（2026-09-27，同一天咬了两次）：两个包的首轮 CI 都红在 `Case Contract (truths_ref)`，
+# 其中一次被误归因到另一个无关的 PR —— 每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。
+# 本条残余已被具名登记在 `tests/unit_ci_workflows/test_casebook_summary_is_derived.py` 的
+# 「明确的边界」一节（逐字：「**不覆盖 `main` 侧** …… 本形态的**起源就是「main 上先漂移、
+# 下一个 PR 才红」**」）⇒ 本腿就是那条边界的 burn-down。
+
+# ── 判定本体：**不在这里**（单一实现，两侧调同一个）────────────────────────────────
+# `.github/workflows/pr-check.yml` 的 `Verify generated artifacts fresh (render + diff)` 步
+# 与本腿的判定步**调的是同一个脚本**：`scripts/generated_artifacts_freshness.py`。
+# ⇒ 改口径只有一处可改（同一事实两处实现 = 本单要治的那个病）。
+# 渲染器仍是 `.github/render_cases.py`（既有单一源，本腿不重写渲染）。
+
+# ── 触发面：为什么**必须**含 `schedule`（这是本腿存在的技术理由）──────────────────────
+# `push` 是"当场"的那一面：漂移随合并落到 main，push 触发本腿 ⇒ 当场红。
+# **但它会被吞**（实测，不是推断）：被 `GITHUB_TOKEN` 合并的 auto-merge **不产生 push 事件**
+# —— issue **#3113「push 被吞」**、`#5001`（`worker-h5-publish` 的兜底理由）、
+# `deploy-reconcile.yml` 头部（"近 15 次 deploy run 全是 workflow_dispatch，零 push"）。
+# ⇒ 只挂 `push` 的守护腿 = **多数合并根本不会跑**（"机制静默失效"，本仓点名的形态）。
+# ⇒ 照既有范式补**免疫那一面的 `schedule`**：对账由定时触发，**不受 push 抑制影响**
+#   （`deploy-reconcile.yml` 就是为此存在的）。这正是"为什么不是只写 push"的逐字理由。
+# ⚠️ **刻意不加 `pull_request`**：本腿判的是 **main 的当前状态**，而 PR 只是"下一个撞上它的
+#   无辜 PR"。挂 PR 面会把红重新显示在那个无辜 PR 上（本单要消灭的观感），却拦不住任何东西
+#   （本腿是报告型 + 值班型，不翻 required）。⇒ 让 main 自己红：`push` 当场 + `schedule` 兜底。
+# ⚠️ 周期取**每小时**（错开整点与其它 cron：`*/20`(deploy-reconcile) / `19:17`(post-merge-verify)
+#   / `20:37`(mechanism-liveness)）：本腿成本 = 检出 + 一次渲染（秒级），
+#   而漂移的暴露窗口 = 一个 cron 周期 ⇒ 取"小时级"而不是"天级"。
+
+# ── 判红时说什么（判据 = `scripts/generated_artifacts_freshness.py` 的输出）──────────
+# **具名**：哪个产物（仓库相对全路径）/ 差多少（提交版 vs 现取的行数与不同行数 + 首个差异原文）
+# / 可复制的复算命令 / 可复制的重渲染命令。输出里**不许**出现「生成物不同步」这类不具名的话
+# —— 今天两次归因指错方向，起因都是不具名。
+# **候选区间只给读数**：附「最近 N 个改了 `.github/cases/**` 的提交」，并明写**不下断言**
+# （提交级读数不能证明因果；用它下断言正是本单要治的归因错误）。
+
+# ── 告警面（定时腿红了没人看 = 没守护）──────────────────────────────────────────────
+# 三件齐全（`tests/unit_ci_workflows/test_mechanism_jobs_alerting.py` 的既有口径）：
+#   ① `::error::` 注解（判定步的 stdout，含产物名 + 差量 + 复算命令）；
+#   ② `$GITHUB_STEP_SUMMARY` 落笔（**失败也要有**，读者在 Actions 页面能看见全文）；
+#   ③ 非零退出（`exit "${RC}"`，0 新鲜 / 1 陈旧 / 3 **无法判定**，非 0 一律判红）。
+# 另有两条出口：失败钩子开/更 **P1 值班 issue**（定时腿没有 PR 对象，`block/merge` 无处施加），
+# 以及**存活读数**步（`mechanism-liveness` 定时腿据此判"最近一次真的跑过且出声"，
+# 登记项 = `scripts/mechanism-registry.json` 的 `main-freshness-guard`）。
+
+# ── 本腿**不翻 required**（§2.2 的两条前置）────────────────────────────────────────
+# ① 它**没有** `pull_request` 的稳定判定面（判定基准是 main 的当前状态）⇒ 翻 required 会让
+#    所有 PR 永久 `BLOCKED`（"Expected — waiting for status to be reported"）；
+# ② 判定含 `git` 历史（候选区间）等**环境依赖**。
+# ⇒ 形态 = **报告型 + 判红走值班 issue**。⛔ 本 PR **不动** `pr-check.yml` 的判定语义与
+#   required 集合（只把那一侧的内联命令收敛到**同一个脚本**）。
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 每小时的第 43 分（UTC；= 每小时 :43 CST）—— 错开整点与其它 cron 的分钟位
+    - cron: '43 * * * *'
+  workflow_dispatch:
+    inputs:
+      window:
+        description: '漂移候选区间大小（个提交；只报读数，不参与判定）'
+        required: false
+        default: '20'
+
+permissions:
+  contents: read
+  issues: write   # 判红出口：开/更 P1 值班 issue（缺它 = 钩子自己崩溃、红而不留痕，issue #3834）
+
+concurrency:
+  # **不取消**：每次触发都要算（幂等，且排队比互相取消更好读）
+  group: main-freshness-guard-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: Main Freshness Guard (生成物新鲜度)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main（判定基准 = main 的当前状态）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # 候选区间要 `git log -- .github/cases`；浅检出会让它取不到（那只影响辅助读数，不影响判定）
+          fetch-depth: 0
+
+      - name: 判定（复用 `pull_request` 面的**同一个**判定本体）
+        id: freshness
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_WINDOW: ${{ inputs.window }}
+        run: |
+          set +e
+          WINDOW="${INPUT_WINDOW:-20}"
+          echo "触发事件 = ${EVENT}；判定基准 = main（ref: main）；候选区间 = 最近 ${WINDOW} 个提交"
+          OUT="$(python3 scripts/generated_artifacts_freshness.py --window "${WINDOW}" \
+                   --json main-freshness-report.json 2>&1)"
+          RC=$?
+          printf '%s\n' "${OUT}"
+
+          # 机器可读读数（与负载无关的量；存活读数用同一份报告，不另算）
+          SEEN="$(python3 -c 'import json;print(json.load(open("main-freshness-report.json"))["seen"])' 2>/dev/null || echo unknown)"
+          ACTED="$(python3 -c 'import json;print(json.load(open("main-freshness-report.json"))["acted"])' 2>/dev/null || echo unknown)"
+          VERDICT="$(python3 -c 'import json;print(json.load(open("main-freshness-report.json"))["verdict"])' 2>/dev/null || echo unknown)"
+          echo "退出码 = ${RC}（0 = 全部新鲜 / 1 = 有产物陈旧 / 3 = **无法判定**，非 0 一律判红）"
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            source .github/scripts/mechanism_liveness.sh
+            mechanism_liveness_declare --seen "${SEEN:-unknown}" --acted "${ACTED:-unknown}" \
+              --why "生成物新鲜度：verdict=${VERDICT} rc=${RC}（检查 ${SEEN} 个产物，陈旧 ${ACTED} 个）"
+          else
+            echo "::warning::本轮读数交给发射器失败（发射器不在检出里）—— 末尾的读数步会明说「读数缺失（不是零动作）」"
+          fi
+
+          # 失败也要有 step summary（告警面 ②）：读者在 Actions 页面能看见「哪个产物、差多少、怎么复算」
+          {
+            echo "## Main Freshness Guard（main 侧生成物新鲜度）"
+            echo ''
+            echo "- 触发事件：\`${EVENT}\`；判定基准：main"
+            echo "- 退出码：\`${RC}\`（0 = 全部新鲜 / 1 = 有产物陈旧 / 3 = **无法判定**）"
+            echo "- 读数（与负载无关）：检查产物 \`${SEEN}\` 个 / 陈旧 \`${ACTED}\` 个"
+            echo ''
+            echo '```'
+            printf '%s\n' "${OUT}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${RC}" = "3" ]; then
+            echo "::warning::本腿**无法判定**（退出码 3：渲染器/语料/产物缺失、渲染失败、语料为空之一）—— 这不是「通过」"
+          fi
+          exit "${RC}"
+
+      # ── 判红出口：沿用既有通道（`post-merge-verify` / `mechanism-liveness` 的同一形态）──
+      # 定时腿 / push 腿**没有 PR 对象** ⇒ `block/merge` 无处施加（给"相关 PR"打标会把修它的人
+      # 自己拦死）⇒ 出口 = **P1 值班 issue**（开/更，不新造第二套约定）。
+      - name: 判红 ⇒ 开/更 P1 值班 issue（**值班口径**：本通道不拦合并）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          TITLE="[main-freshness] main 上的生成物与用例单一源漂移（main 侧生成物新鲜度守护腿未通过）"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          BODY=$(mktemp)
+          {
+            echo "main 侧生成物新鲜度守护腿未通过。run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ''
+            echo "触发事件：\`${{ github.event_name }}\`；判定基准：main \`${{ github.sha }}\`"
+            echo ''
+            echo '```'
+            cat main-freshness-report.json 2>/dev/null || echo "(报告缺失 —— 见本 run 的 step summary)"
+            echo '```'
+            echo ''
+            echo "### 这一类是什么（别读成「某个 PR 没写好」）"
+            echo ''
+            echo "- 成因：改了 \`.github/cases/**\`（用例单一源）却**没提交生成物**，而漂移**直接落在 main 上**"
+            echo "  —— \`pr-check\` 的生成物新鲜度校验只在 \`pull_request\` 面跑，**main 上没有任何 run 会报**；"
+            echo "- ⇒ 它此前只会**爆在下一个无辜 PR** 的 required 检查（\`Case Contract (truths_ref)\`）上，"
+            echo "  且归因指向那个 PR 自己的 diff（**归因指向错误的对象**）；"
+            echo "- ⇒ 处置：**重渲染并提交生成物**，不要手改生成物，也不要把锅算到某个 PR 上（归因看 run 日志里的候选区间读数）。"
+            echo ''
+            echo "### 清零判据（怎么算好）"
+            echo ''
+            echo "- 本机复算（零成本、可复制）：\`python3 scripts/generated_artifacts_freshness.py\` 退出 0；"
+            echo "- 或在 Actions 上手动复跑本 workflow（\`workflow_dispatch\`，可带 \`window\` 输入）⇒ 绿；"
+            echo "- **退出码 3 = 无法判定**（渲染器/语料/产物缺失、渲染失败、语料为空）——\`3\` **不得当 0 读**。"
+            echo ''
+            echo "### 谁看"
+            echo ''
+            echo "- 生成物新鲜度的**源面** = \`.github/cases/**\`：谁改了它谁负责同批提交重渲染结果（真值在用例库一侧）；"
+            echo "- 集成侧兜底（本通道是**报告型**：它不拦合并，只负责让 main 的漂移**当场具名可见**）。"
+          } > "$BODY"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --body-file "$BODY" \
+              || echo "::warning::无法在值班 issue #$EXIST 上追加本轮证据（限流/权限）"
+            gh issue edit "$EXIST" --add-label priority/P1 \
+              || echo "::warning::无法给值班 issue #$EXIST 打 priority/P1（限流/权限）"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+              || echo "::warning::无法创建 P1 值班 issue（限流/权限）—— 请人工按本 run 的 step summary 建单"
+          fi
+          exit 0
+
+      # ── 存活读数（issue #5326 判据 1 / 4）：必须是 job 的**最后一步**且 `if: always()` ──
+      # 登记项 = `scripts/mechanism-registry.json` 的 `main-freshness-guard`（本腿含 `schedule` +
+      # `issues: write` ⇒ 命中"无人值守 × 写作用域"的发现面 ⇒ **未登记即红**）。
+      - name: 存活读数（本轮做了什么 / 为什么零动作）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          # 发射器可能不在检出里（固定 ref / 浅检出）⇒ 降级为 warning，**绝不让读数步判红**；
+          # 措辞必须区分「读数缺失」与「零动作」（两者长得一样正是本单要消灭的形态）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit main-freshness-guard \
+              --outcome "$OUTCOME" \
+              --why "main 侧生成物新鲜度守护腿（判定本体 = scripts/generated_artifacts_freshness.py）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=main-freshness-guard）：发射器不在检出里（固定 ref / 浅检出）⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
