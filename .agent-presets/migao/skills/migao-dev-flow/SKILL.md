@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.77.0
+version: 1.78.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2453,7 +2453,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 **宁缺勿滥**（不写进研发模式）。本会话的实测代价：一份转述清单逐条复核后，
 有若干条**读错了对象**（见 §25.6 的边界节与 `FM-A4` / `FM-B3`）。
 
-### 25.2 清单 A：读数与它声称的对象**不是同一个**（14 条；末 7 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标 / 夹具未跟上新增依赖**）
+### 25.2 清单 A：读数与它声称的对象**不是同一个**（15 条；末 8 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标 / 夹具未跟上新增依赖 / 过度加严的假阻塞**）
 
 | 记号 | 形态 | 判别动作（一次就能做） | 判据 / 台账 |
 |---|---|---|---|
@@ -2476,6 +2476,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | **FM-A13** | 🔴 **校验坐标会让判据假红**（**机制已修，v1.72.0**；坐标纪律保留）：**完全相同的代码**，纯检出放在**共享临时根内**（`/tmp/...`）⇒ `pr_body_guard.py scan` 报 **1 处 R1 命中**（`scripts/pr_body_guard.py` 的**模板** token：相对 token 经 `shared_temp_root()` 按**当前工作目录**解析 ⇒ `/tmp/<检出>/{target}` 落进共享根）；检出在 `$HOME` 下 ⇒ **0 处命中**。实测：`/tmp` 下的检出 ⇒ `scan` rc=1 + `test_pr_body_guard.py` **5 failed**；`$HOME/…` ⇒ **50 passed / scan rc=0**。⚠️ 本仓会话惯例**恰恰**把临时 worktree 放 `/tmp` ⇒ 容易把假红读成「main 上有真缺陷」。✅ **机制修复（v1.72.0）**：`is_shared_fixed_path()` 改成「**相对 token = 算不出来 ⇒ 不判**」（`realpath()` 对相对路径按 CWD 解析 ⇒ **坐标不在被判对象里**）；**红证两条** = ① 共享根**内**的纯检出 `scan` rc=0（修前 rc=1）；② **绝对**共享根固定路径**照旧判红**（射程**没**放宽）。⚠️ **坐标纪律仍要留**：检出落在共享根内时 `pr_body_guard.py new` **按设计拒绝**分配载体、`shared_temp_root()` **按设计**判该检出为共享 ⇒ 同一检出仍有 **3 failed**（设计要求，不是缺陷） | **纯检出复算的地点首选共享根之外**，且**先自证坐标再读结论**：`cd <检出> && pwd` → `python3 scripts/pr_body_guard.py scan >/dev/null 2>&1; echo "scan rc=$?"`。**判别规则**：`scan` 报命中时先 `grep -n` 落到具体文件行，确认它是**真实例**还是**被判据自己的输出文案 / 模板**；后者 ⇒ 先怀疑坐标，不要先怀疑 main | 判别动作（见 §25.6 判别动作行） |
 | 记号 | 形态 | 判别动作 | 判据 / 台账 |
 |---|---|---|---|
+| **FM-A15** | 🔴 **一味 fail-closed = 新的假阻塞**（**已两次实证**）：为了让门禁**更严**，把**非阻塞红 / 无法判定 / 常态落后**也当成失败 ⇒ 工具被**停住**、人开始**绕它**。**实测①**（PR #5719）：`land` 把「分支自己**已提交**的预设改动」当成快照漂移 ⇒ ①步连停 3 次。**实测②**（PR #5722）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，而该 PR 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`、未收尾。⚠️ `land` 是**所有 PR 落地都走的工具** ⇒ **一次假阻塞停全线** | 🔴 **加严之前先问一句**：「**这个形态在正常流程里会不会常态出现？**」并给一次**回放**读数：把该判据 / 该停止条件在**最近 N 次成功流程**上回放，数出它会判红 / 会停的次数 —— **>0 ⇒ 它不是绊线，是路障**（正常流量本来就会撞上它）。**落地形态**：停/不停**只看拦合并的判据**（现取 `required` 集合）＋**非 required 红如实打印逐条清单**＋**取不到 `required` 集合 ⇒ 退回严格行为并打印原因** | 判据 = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_required_red_still_stops_at_step_four` · `::test_wait_ci_bare_red_continues_and_prints_the_list` · `::test_wait_ci_unreadable_required_set_falls_back_to_strict`（判别力自证 = `::test_wait_ci_criteria_have_discriminating_power`；覆盖面登记见 §25.6） |
 | **FM-B1** | 路由常量**被声明**、还被判据比对过 `app.config.ts`，却**没有任何跳转用它们** ⇒ 页面在册、可编译、有单测，而用户**一步也走不到** | 声称「某页面 / 入口已交付」先答**三问**（谁发射 / 哪个入口可达 / 有无测试钉住），再跑 `cd frontend/bmini-app && npx jest tests/page-entry-reachability.test.ts`（L2 未登记即红 · L3 登记了没人指向也红 · L3b 定义但从未被调用也红 · L3c HTML 注释里的锚点不算入口） | `frontend/bmini-app/tests/page-entry-reachability.test.ts`（`PAGE_ENTRY_LEDGER`） |
 | **FM-B2** | 一条发布腿**注册了但从未跑过** ≠ 交付（`/b/`、`/w/` 停在旧构建） | 线上复探 + 仓库侧看对账腿：`curl -sI https://app.migaozn.com/b/`（产物哈希 vs 本次构建）+ `grep -n 'reconcile_one' .github/workflows/deploy-reconcile.yml` | `test_bmini_h5_hosting.py::test_real_publish_leg_has_no_problems` |
 | **FM-B3** | **文档写了 ≠ 行为正确** | 逐条答「**交付物可达性判据（v1.11）**」三问：**谁发射**（哪个文件、哪个分支条件）/ **哪个入口可达**（什么话术或路径）/ **有无测试钉住**；**任一答不出记未交付** | 判别动作（正文在 `migao-acceptance` 技能的同名节；⚠️ **不在** `docs/testing/acceptance-protocol.md` 里 —— 本会话实测有人把它读成后者） |
@@ -2545,6 +2546,20 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
   检出落在共享根内时 `pr_body_guard.py new` **按设计拒绝**分配载体、`shared_temp_root()` **按设计**判该检出为共享
   （判据自己断言「本仓不在共享根下」）⇒ 同一检出仍有 **3 failed**，那是**设计要求**、不是缺陷。
   这种红的正确读法是「**先自证坐标**」，不是「main 上有真缺陷」。
+- ❌ **`FM-A15`（「一味 fail-closed = 新的假阻塞」）的覆盖边界**（三条，逐条点名；🔴 **不要把「不阻塞」读成「没问题」**）：
+  ① **`required` 集合的时效性**：`land` 的 ④ 步是**现取**分支保护（不是快照）⇒ 它只保证「**读数那一刻**」的集合。
+     分支保护**随时可被改**（有人在你跑到一半时把某条判据翻成 required ⇒ 你手上的是**旧集合**），
+     且 `--watch` 与 `--json` 是**先后两次读数**、中间有窗口。⚠️ 仓内**有**快照退路
+     （`tests/unit_ci_workflows/required_status_snapshot.json`）但**刻意不用**：快照在**结构上**可以滞后
+     （新翻成 required 的判据不在里面）⇒ 用它去证「某条红不拦合并」是**假放行**（比假阻塞更危险）；
+  ② **非 required 红的清单只覆盖「已上报」的那些**：`gh pr checks` 只列**已创建**的 check ⇒ 被 workflow 级
+     `paths:` 过滤掉、被 job 级 `if:` 排除、或**尚未创建**的 job **不在清单里** ⇒ 「清单完整」这句话**不成立**
+     （它只保证「上报了的红**不静默**」）；
+  ③ 🔴 **「不阻塞」≠「没问题」**：`land` 继续落地**不等于**那些红被认定为无害 —— 它们仍是**真的红**
+     （`Drift Audit` 判红时真相源契约已漂移、`Post-Merge Verify` 判红时那条判据面真的在红），**只是不拦合并**。
+     ⇒ 措辞与出口都按这个口径写（「**不拦合并**」+ **逐条清单** + 可复核命令），**不许**读成「CI 绿」。
+     **面外**：**别的**门禁 / 其它工具的加严动作、以及「某条判据该不该翻成 required」**没有机械锁** ——
+     那一步靠上面那条**回放**判别动作；本条的判据只覆盖 `land` ④ 这一处**实例**。
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
 
@@ -2727,7 +2742,7 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   不经这段读数；④ **说不出「缺的是哪条守卫」**（那要人读 diff）；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
-## 版本沿革（v1.1 → v1.77.0）
+## 版本沿革（v1.1 → v1.78.0）
 
 - v1.76.0（2026-09-27 **新增 `FM-R13`（派单的「环境已同步」断言会过期）+ `land` 的 preflight 打印「工具来源」**，本次；来源 = 本单指令「让 `land` / 派单能看见它用的是哪一份工具」）：
   ① **病根（由本包独立复核，读数见 PR 正文）**：`land` 的 ①步跑的不是你 worktree 里的
@@ -3691,6 +3706,25 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   **未实装 / 边界（照实登记，§19.1）**：`FM-R9`~`FM-R12` 四条**只有纪律 + 判别动作**，没有机械锁；
   `NS-2` 的收窄**不会让任何判据变红或变绿**；判据 21 只管**两份清单标题的条数**（自然语言计数、`merge_log` 历史句
   与别的散文读数仍在面外，见 §26.4 与台账 `NS-4`）。本节**不改任何门禁的通过条件、不新增豁免**。
+- v1.78.0（2026-09-27 **`land` 的 ④`wait-ci` 改成「只看拦合并的判据」+ 新增 `FM-A15`（一味 fail-closed = 新的假阻塞）**，本次；来源 = 本单指令「修 `land` 的 ④`wait-ci`：它看的是**全部** check，而应当只看**拦合并的那些**」）：
+  ① **修法**（`scripts/issue_lifecycle.py`）：④ 步 `gh pr checks --watch` **判红之后**单发读一次分支保护 required 集合
+  （`gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks` —— `{owner}`/`{repo}` 占位符由 `gh` 按当前仓库替换）
+  ＋ `gh pr checks <PR> --json name,state,bucket,link`，分类**复用** `scripts/merge_gate.py` 的纯函数
+  （`parse_required` / `classify` / `check_counts`，**不另写第二套判定**）⇒ **required 未绿仍 fail-closed 停**（零回归）、
+  **非 required 红 ⇒ 不停 + 如实打印逐条清单**、**取不到 required 集合 ⇒ 退回严格行为 + 打印原因**（🔴 读不到 ≠ 没有 required）、
+  **读数不自洽**（`--watch` 判红而 JSON 里没有红项）⇒ 停（未判定不得当绿）；全绿路径**不新增任何调用**（零回归）。
+  两条实测口径入册：`gh pr checks --json` 的**退出码不可作判据**（实测 PR #5722 有 `bucket=fail` 而 rc=0）、
+  仓内**有**快照退路（`tests/unit_ci_workflows/required_status_snapshot.json`）但**刻意不用**（快照可滞后 ⇒ 假放行比假阻塞更危险）。
+  ② **固化**：新增 `FM-A15`（`kind=criterion`；判据 = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py` 的
+  `::test_wait_ci_required_red_still_stops_at_step_four` / `::test_wait_ci_bare_red_continues_and_prints_the_list` /
+  `::test_wait_ci_unreadable_required_set_falls_back_to_strict`，含三条**注入式红证** + 「**只改注释**」对照读数 +
+  「**变异真被读到**」自证）＋ §25.6 的**覆盖边界三条**（`required` 集合的**时效性** / 清单只覆盖「**已上报**」的那些 /
+  🔴「**不阻塞**」≠「没问题」），三条边界由 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_boundary_section_names_the_out_of_scope_forms` 的 marker 钉住。
+  ⚠️ **取号（`FM-E15` 形态的现场复现）**：本条写侧原取 `FM-A14`，而 **#5724**（合并于 2026-09-27 19:52:54 +08）
+  **已占** `FM-A14`（「夹具没跟上新增的运行期依赖」）⇒ 按「**顺延尚未合并的一侧**」改成 `FM-A15`；§25.2 标题的条数
+  由判据 21 现取钉住 ⇒ 同批抬到 **15 条**，本技能 `version` 同批抬到 **1.78.0**（**`1.77.0` 是 #5724 占的，其沿革原文保留不动**）。
+  **未实装 / 边界（照实登记，§19.1）**：`FM-A15` 的**判别动作**（加严前先回放）**没有机械锁** —— 判据只覆盖 `land` ④ 这一处实例；
+  本条是 `criterion` ⇒ `kind=action` 的条数**不动**（§19 索引行 / 用例库那两处读数**不动**）。
 - v1.77.0（2026-09-27 **新增 §25.2 的 `FM-A14`（夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象）**，本次；来源 = #5724 的链内修：required job `ci workflow helper unit tests` 在 main 上恒红、`Post-Merge Verify` 连带判红，复现于**纯 `origin/main` 检出**；真因 = `approval-queue`（#5649）新增的前置事实 `branch_presence()`（真 `git ls-remote`）没有被判据夹具 `_run_cli` 桩掉 ⇒ 远端有没有台账分支决定了判据走哪条路。
   ① **实例修法（同 PR）**：夹具**显式**桩 `branch_presence`（`presence=` 参数，默认「存在」）+ **两面断言**（存在 ⇒ `::warning::` + 人工出口命令，原断言一字未删；**确定不存在** ⇒ `::notice::` + `rc=0`，即 #5649 口径）+ 读数面加一条「桩的是存在却走了不存在早退 ⇒ 报判定顺序与桩不符」的自检。
   ② **类级元守卫**：`tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts`（判据 = `…::fixture_stub_problems`：夹具**桩表**必须含 `branch_presence`；两个方向的断言函数都必须存在**且被测试调用**；附一条**内存构造**的删除红证）。
