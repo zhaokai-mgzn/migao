@@ -1,0 +1,27 @@
+/**
+ * 拍照入库页的补充样式（issue #5052 P3）
+ *
+ * 复用管理面的既有视觉语言（`src/styles/admin-surfaces.scss` 的 `admin-surface` / `admin-card` /
+ * `admin-action` / `admin-notice`），这里只补两件管理面没有的东西：输入行与标签预览。
+ * 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）。
+ */
+.admin-input {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(10, 37, 64, 0.12);
+  border-radius: 8px;
+  font-size: 15px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.admin-label-preview {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid rgba(10, 37, 64, 0.12);
+  border-radius: 6px;
+  background: #ffffff;
+}

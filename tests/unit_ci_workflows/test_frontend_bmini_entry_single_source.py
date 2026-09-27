@@ -52,8 +52,19 @@ DEPLOY_FRONTEND = REPO_ROOT / ".github" / "workflows" / "deploy-frontend.yml"
 ENV_VAR = "NEXT_PUBLIC_BMINI_H5_URL"
 #: 唯一允许读该环境变量的文件（仓库相对路径）—— 单一真值的落点
 SOLE_READER = "frontend/admin-web/src/lib/bmini-h5-url.ts"
-#: 前端源码里的硬编码域名：**未登记即红**。今天没有合法例外（要加必须在这里写理由）。
-ALLOWED_DOMAIN_SITES: dict[str, str] = {}
+#: 前端源码里的硬编码域名：**未登记即红**。
+#: 🔴 登记=豁免，因此**必须写理由**，且条目必须**活着** —— 由
+#: `test_domain_exemptions_are_alive_and_justified` 判（文件不存在 / 理由太短 / 文件里已经
+#: 不再出现域名 ⇒ 红）。没有这条，豁免台账只会越积越长，最后变成一份自我复制的历史文档。
+ALLOWED_DOMAIN_SITES: dict[str, str] = {
+    "frontend/bmini-app/src/utils/inbound/truth.ts": (
+        "入库标签二维码的**码形态一次定死**（#5052 P3；设计 §7.1）：这个域名是**印在纸上的契约**，"
+        "刻意**不跟随** admin-web 的 `NEXT_PUBLIC_BMINI_H5_URL` 部署配置 —— 码一旦打出去，"
+        "换域名会让**已打印的标签全部失效**（必须是一次有意的、带迁移的决策，不能随发布漂移）。"
+        "⚠️ 它 ≠ 手机端入口地址：那条真值仍然只读 `frontend/admin-web/src/lib/bmini-h5-url.ts`；"
+        "本文件的取值形态另由 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C5 钉住。"
+    ),
+}
 DOMAIN_RE = re.compile(r"\bapp\.migaozn\.com\b")
 
 #: 前端源码面（`src/**` + bmini 的构建配置）—— 测试夹具与 e2e 脚本不在面内（它们不是用户可达配置）
@@ -250,6 +261,24 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
 def test_real_single_source_and_wiring_have_no_problems():
     problems = _problems()
     assert problems == [], "手机端入口的单一真值/接线判据不通过：\n  - " + "\n  - ".join(problems)
+
+
+def test_domain_exemptions_are_alive_and_justified():
+    """豁免台账**只许缩短且条目必须活着**（`migao-dev-flow` §23 G1/G2 的同款纪律）。
+
+    三件事同时成立才算一条合法豁免：① 文件在；② 理由写清「为什么不跟随单一真值」；
+    ③ **文件里真的还有那个域名**（已经搬走了却留着豁免 ⇒ 红 —— 否则下一个人会照着它
+    继续写死域名，而「豁免」看起来像是被批准的）。
+    """
+    for rel, reason in ALLOWED_DOMAIN_SITES.items():
+        assert (REPO_ROOT / rel).is_file(), f"豁免台账指向不存在的文件：{rel}（路径漂移不得静默跳过）"
+        assert len(reason.strip()) >= 40, f"{rel} 的豁免理由太短（必须写清为什么不跟随单一真值）"
+        text = _strip_comments((REPO_ROOT / rel).read_text(encoding="utf-8"))
+        assert DOMAIN_RE.search(text), (
+            f"{rel} 里已经没有硬编码域名了 ⇒ 删掉这条豁免（台账只许缩短，不许留历史文档）"
+        )
+    # 反空跑：豁免不是"随手加"，但它也不许把整个面掏空
+    assert len(ALLOWED_DOMAIN_SITES) <= 3, "豁免条目过多 ⇒ 判据正在被绕过（要么收敛实现，要么重新论证）"
 
 
 def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():

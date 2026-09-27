@@ -40,6 +40,12 @@ const Taro = {
   // Login
   login: jest.fn(() => Promise.resolve({ code: 'mock_wx_code' })),
 
+  // 媒体（拍照入库 issue #5052 P3）：h5 里 `chooseImage` / `uploadFile` 都是**真实实现**
+  // （chooseImage → chooseMedia → `<input type=file>`；uploadFile → XHR + FormData）
+  // ⇒ mock 也照「可用」给（默认空结果），具体用例用 `mockResolvedValueOnce` 注入返回。
+  chooseImage: jest.fn(() => Promise.resolve({ tempFilePaths: [], tempFiles: [] })),
+  uploadFile: jest.fn(() => Promise.resolve({ statusCode: 200, data: '{}', errMsg: 'uploadFile:ok' })),
+
   // 录音（issue #5650）：本 mock 故意返回**可用**录音器 —— 微信小程序侧真实如此；
   // h5 侧 `Taro.getRecorderManager` 是 `temporarilyNotSupport('getRecorderManager')` 的 stub，
   // 故若哪天 h5 分支漏了，能力探测会拿到「可用」⇒ tests/h5-platform-runtime.test.ts 当场判红。
