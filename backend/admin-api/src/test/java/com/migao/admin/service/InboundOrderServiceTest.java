@@ -21,6 +21,7 @@ import com.migao.admin.mapper.InboundOrderQueryMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -79,6 +81,18 @@ class InboundOrderServiceTest {
     @Mock private StockLedgerService stockLedgerService;
 
     @InjectMocks private InboundOrderService service;
+    /**
+     * 业务时钟（与生产**同一份**口径，issue #3802）：测试里的「今天 / 现在」只能从这里取。
+     *
+     * <p>⛔ 不许写裸 {@code LocalDate.now()} —— 那读的是 <b>JVM 默认时区</b>，而生产的业务日固定
+     * {@code Asia/Shanghai}（{@link BusinessClock}）；CI runner 的 JVM 默认时区是 <b>UTC</b>
+     * ⇒ 两侧在 <b>UTC 16:00–24:00（北京 00:00–08:00）差一天</b>，本类的日期断言会每天红 8 小时
+     * （实测：2026-09-26T22:14Z / 23:59Z 两轮 required 检查红，期望 2026-09-26 实际 2026-09-27）。
+     * 注入同一个 {@code BusinessClock} ⇒ 夹具与生产**同源同区**，与 runner 时区无关。</p>
+     */
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
+
 
     private static final Long TENANT = 1L;
 
@@ -230,7 +244,7 @@ class InboundOrderServiceTest {
             assertThat(saved.getStatus()).isEqualTo(InboundOrder.STATUS_DRAFT);
             assertThat(saved.getInboundNo()).startsWith("RK-")
                     .matches("RK-\\d{8}-\\d{4}");
-            assertThat(saved.getInboundDate()).isEqualTo(LocalDate.now());
+            assertThat(saved.getInboundDate()).isEqualTo(businessClock.today());
             assertThat(saved.getCreatedBy()).isEqualTo("13800000000");
             // PR-058（V117）：来源缺省 = purchase（存量口径不变）、未带运行标识则不去重
             assertThat(saved.getSource()).isEqualTo(InboundOrder.SOURCE_PURCHASE);
@@ -393,7 +407,7 @@ class InboundOrderServiceTest {
             order.setInboundNo("RK-20260924-0301");
             order.setStatus(InboundOrder.STATUS_DRAFT);
             order.setSource(InboundOrder.SOURCE_OPENING);
-            order.setInboundDate(LocalDate.now());
+            order.setInboundDate(businessClock.today());
             InboundOrderItem line = new InboundOrderItem();
             line.setId(100L);
             line.setTenantId(TENANT);
@@ -434,7 +448,7 @@ class InboundOrderServiceTest {
             o.setTenantId(TENANT);
             o.setInboundNo("RK-20260923-0001");
             o.setStatus(InboundOrder.STATUS_DRAFT);
-            o.setInboundDate(LocalDate.now());
+            o.setInboundDate(businessClock.today());
             o.setSupplier("柯桥××布行");
             return o;
         }
@@ -706,7 +720,7 @@ class InboundOrderServiceTest {
             o.setTenantId(TENANT);
             o.setInboundNo("RK-20260923-0001");
             o.setStatus(InboundOrder.STATUS_DRAFT);
-            o.setInboundDate(LocalDate.now());
+            o.setInboundDate(businessClock.today());
             o.setSupplier("柯桥××布行");
             return o;
         }

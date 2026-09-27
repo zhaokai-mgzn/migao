@@ -11,6 +11,11 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
+import {
+  resolveSalesQuantity,
+  SALES_QTY_NOT_SHIPPED,
+  type OrderShipmentRead,
+} from '@/lib/sales-shipment'
 import { cn, resolveImageUrl } from '@/lib/utils'
 // 页脚「温馨提示」与报价单**同一句**（#4965）—— 从既有那份 import，不复制一份会漂移的副本
 import { QUOTATION_FOOTER_NOTICE } from './QuotationDoc'
@@ -70,22 +75,41 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * `body > *:not(.print-doc)`；`visibility` 防御**限定本次打印目标**
  * `[data-print-target='sales']`。守卫 = `test_print_doc_convention_guard.py`。
  *
- * ## 与发货链的关系（**未完成项**，如实登记）
+ * ## 与发货链的关系（issue #5651 收口：**已接线**）
  *
  * 用户裁定销售单要「挂在发货链上」= 随货给客户的那张、数量与**实发**同源。
+ * 2026-09-26 那版**只落了工人读面**（`/api/worker/shipment/orders/{orderId}`，工人 session 准入）
+ * ⇒ admin-web 拿不到实发数量，数量列只能退回订单行投影（本文件当时如实登记的未完成项）。
  *
- * **现状（2026-09-26 复核，如实登记）**：`order_shipment_items`（issue #5648 / PR #5664）
- * **已落 main** —— 它是「这一单实际发了多少」的**唯一真值载体**，且该表**owner 声明**
- * 要求 #5651 **只消费**（读 `OrderShipmentService.readShipment`），不得另建第二份投影。
- * 但它今天**只有工人读面**（`/api/worker/shipment/orders/{orderId}`，工人 session 准入），
- * **admin / 桌面端没有读面** ⇒ 本组件（跑在 admin-web）拿不到实发数量。
- * ⇒ 本版数量取**订单行** `order.items[].quantity`（与报价单 / 发货单**同一份**投影，
- * 不是第二套口径）；⛔ **不**自造发货明细表、也**不**照工人读面猜 DTO 形状。
- * 接线 = 新增 admin 端读面（**后端改动**），不在本 PR（纯前端）范围 —— 见
- * `docs/design/print-media-matrix.md` §6。
+ * **现状（本单补齐）**：后端新增 admin 读面 `GET /api/admin/orders/{id}/shipments`
+ * （与工人面**共用** `OrderShipmentService.readShipment` —— 「实发套/件/卷」这个真值的唯一 owner），
+ * 本组件经 `shipments` prop 消费它，数量列的取值与**四态**判定全部交给
+ * `lib/sales-shipment.ts`（`resolveSalesQuantity`）：
+ *
+ * | 态 | 数量列印什么 |
+ * |---|---|
+ * | 已发货（发齐） | **实发数量** |
+ * | 部分发货 | 有实发的行印实发；未发行**显式**标「{@link SALES_QTY_NOT_SHIPPED}」 |
+ * | 未发货 | 订单数量，且纸面**标明**「这不是实发」 |
+ * | 发货明细未取到 | 订单数量，且纸面**标明**「读面没取到」（**不许**冒充「未发货」） |
+ *
+ * 🔴 **不出现第二份真值**：销售单**不新增**数量口径 —— 有实发就印实发（印的是
+ * `order_shipment_items.shipped_quantity`），没有才印订单数量并标明基准；
+ * 任何情况下**都不印 0**（`0` = 「实发为零」，与「没有这个数」「这一行没发」是三件事）。
+ *
+ * 🔴 **`shipments` 是必填 prop**（`null` = 读面没取到，是**调用方要做的决定**）：
+ * 让"忘了接读面"在**编译期**就红 —— 那正是本单要修的半成品形态（读面只落了一面）。
  */
 interface SalesDocProps {
   order: Order
+  /**
+   * 发货读面（`GET /api/admin/orders/{id}/shipments`）—— 数量列的**唯一**实发来源。
+   *
+   * 🔴 **必填**：`null` = 调不到 / 还没取到（**调用方必须显式做这个决定**）。
+   * 缺省值会让「忘了接读面」静默退回订单数量 —— 那正是本单要修的半成品形态。
+   * 判定与四态见 `lib/sales-shipment.ts` 的 `resolveSalesQuantity`。
+   */
+  shipments: OrderShipmentRead | null
   /**
    * 介质（缺省三联纸 241mm × 140mm）。切介质**只**改版面参数，字段映射只有一份
    * （见文件头「介质是参数，不是副本」）。
@@ -128,9 +152,17 @@ function paperText(value: unknown, fallback: string = SALES_DOC_MISSING): string
   return fallback
 }
 
-/** 金额格式化（含千分位 + 两位小数）。**只做展示格式化，不做任何算术** */
+/**
+ * 金额格式化（含千分位 + 两位小数）。**只做展示格式化，不做任何算术**。
+ *
+ * 🔴 缺值 ⇒ 显式占位 `—`（**不填 0**）：`0.00` 会被读成「这个数是零」，而「没有这个数」
+ * 是另一件事 —— 两者在纸面上必须可分（同族：缺口金额栏标「{@link SALES_DOC_NOT_COLLECTED}」
+ * 而不是 `0.00`）。守卫：`tests/unit_ci_workflows/test_shipment_read_surface_guard.py` 的
+ * 「数值补位」判据（受管消费方文件里 `?? 0` / `|| 0` 直接进格式化 ⇒ 红）。
+ */
 function formatAmount(amount?: number): string {
-  return (amount ?? 0).toLocaleString('zh-CN', {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return SALES_DOC_MISSING
+  return amount.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
@@ -149,6 +181,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
 
 export default function SalesDoc({
   order,
+  shipments,
   media = 'continuous-241x140',
   paymentQrcodes,
   printTarget,
@@ -163,6 +196,8 @@ export default function SalesDoc({
   if (!mounted) return null
 
   const items = order.items || []
+  // 🔴 数量列的口径判定（四态 + 逐行取值）全在 lib 里 —— 本组件只渲染结果、不自己判
+  const qty = resolveSalesQuantity(items, shipments)
   const continuous = isContinuousFeed(media)
   // 连续纸：容器高度 = 单联可用高度（页长 − 上下边距），超出即裁 —— 绝不跨联
   const sheetHeightMm = continuous ? printUsableHeightMm(media) : null
@@ -243,6 +278,14 @@ export default function SalesDoc({
         </table>
 
         {/* ===== ② 明细：商品行粒度（序号|货号|数量|单位|单价|金额|备注） ===== */}
+        {/* 🔴 数量列的**口径**必须印在纸面上（印的是实发还是订单数量、单据处于什么状态）——
+            静默留空 / 印 0 都会让「账实不符」在纸上不可判（issue #5651 硬约束）。 */}
+        <div className="text-[0.85em] text-neutral-600 mb-0.5" data-testid="sales-qty-basis">
+          {qty.basisLabel}
+          {qty.unmatchedShippedLines > 0
+            ? `；另有 ${qty.unmatchedShippedLines} 行实发明细未挂到订单行（不猜归属，故不在本表）`
+            : ''}
+        </div>
         <table className="sales-doc-table w-full border-collapse mb-1" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr>
@@ -277,8 +320,14 @@ export default function SalesDoc({
                   <DocTd align="right">{idx + 1}</DocTd>
                   {/* 货号：productCode 优先，缺则回落到商品名（两者都缺 ⇒ 显式占位） */}
                   <DocTd cut>{paperText(item.productCode || item.productName)}</DocTd>
-                  {/* 数量 / 单价 / 金额**全部取服务端字段**，前端不重算（文件头口径 1） */}
-                  <DocTd align="right">{paperText(item.quantity)}</DocTd>
+                  {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
+                      未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。
+                      ⛔ 任何情况下都不写 0 —— `0` 会被读成「实发为零」（issue #5651 硬约束）。 */}
+                  <DocTd align="right" testId={`sales-qty-${idx}`}>
+                    {qty.cells[idx]?.basis === 'shipped' && qty.cells[idx]?.value === null
+                      ? SALES_QTY_NOT_SHIPPED
+                      : paperText(qty.cells[idx]?.value)}
+                  </DocTd>
                   {/* 单位：`OrderItem.quantity` 在本系统**恒为米** —— 发货单表头写的就是
                       「数量(米)」、报价单单价写的是「元/米」⇒ 单位取**同一口径**，
                       不新增字段、也不编一个别单位 */}

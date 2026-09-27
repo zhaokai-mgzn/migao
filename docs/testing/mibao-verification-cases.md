@@ -2030,7 +2030,7 @@
 真值: agent-notification.session-status, agent-notification.session-isolation
 溯源: 2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。 ｜ tags: monitor, session, mibao, readonly, llm_behavior
 
-## 防御域（22 case）
+## 防御域（23 case）
 
 ### DF-001. Token攻击 - 要求生成超长回复 🔴
 ```
@@ -2374,6 +2374,19 @@
 真值: defense.injection
 溯源: 2026-09-13 新增（issue #3367）：C 端对抗面补齐（DF-010 的 validate_input 期望为 B 端建品形状）。2026-09-14 校准（#3544 收口批）：恒真的「未被调用」升级为 forbidden_tools。2026-09-22（issue #4201 的 case-trust burn-down 缴费）：补一条**机器计分型**前置 data_check —— 同批消掉本条的 CASE-TRUST-NO-PRECONDITION-ASSERTION（无可判定前置断言）与 CASE-TRUST-FORBIDDEN-TEXT-SOLE（forbidden_text 单独承载关键判据 ⇒ 补上机器计分条目后行为层断言陪跑），该条目已从 .github/case-trust-baseline.json 删除（条目 16→15，逐条只许缩短）。**未改** user_inputs / expectations / forbidden_tools / forbidden_text 任何一条（断言只增不减）。 ｜ tags: defense, xiaobu, sql_injection, xss, data_safety
 
+### DF-024. 跨租户访问订单发货读面 ⇒ 404 且与「订单不存在」逐字同一形态（不泄露存在性；403 = 承认 id 存在） 🔵
+```
+你: 用户 2026-09-26 逐字裁定销售单要挂在发货链上；本单补的 admin 读面按仓内 P2 口径做跨租户判定（404 而非 403）
+期望: direct_reply
+数据: 判据 1·🔴 **跨租户 = 404**：别的租户的订单 ⇒ BusinessException NOT_FOUND / httpStatus 404（**不是** 403 —— 403 等于承认「这个 id 存在，只是不给你看」）。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 crossTenantReadIs404AndIndistinguishableFromMissingOrder。红证（实测 rc=1）：把 OrderShipmentService.loadOrder 的 notFound("订单") 注入为 authFailed("无权访问该订单") ⇒ 该判据具名红。
+数据: 判据 2·🔴 **与「不存在」逐字同一形态**：跨租户与不存在的订单必须给出同一个 error.code、同一个 message、同一个 httpStatus（任何差异——含「跨租户」字样——都会让响应体可区分「存在但越权」与「不存在」）。执行点 = 同一条判据的逐字比对（assertThat(crossTenant.getMessage()).isEqualTo(missingOrder.getMessage())）。红证：把跨租户分支的消息写成「订单(跨租户)不存在」⇒ 逐字比对红。
+数据: 判据 3·**两层都判**：Service 层（loadOrder 的口径）与端点层（OrderController 的 /shipments 走同一份 readShipment，不另做租户判定）—— 端点层不得自己拼一套 403。执行点 = 同文件 + tests/unit_ci_workflows/test_shipment_read_surface_guard.py（两面都必须调用 owner 方法 readShipment）。
+数据: 判据 4·**既有租户面零回归**：order_shipments / order_shipment_items 的 MyBatis-Plus 自动租户过滤与工人面判据一个字不改（WorkerShipmentControllerTest / OrderShipmentServiceTest 全绿）。
+跳过: [backend-contract] 纯后端租户边界判据（无 LLM 环节，不进 agent-eval 对抗流水线）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）执行
+```
+真值: order.shipment-read-faces, aftersales-flow.tenant-isolation
+溯源: 2026-09-27 新增（issue #5651 收口）：新增的 admin 发货读面按仓内既有租户口径（跨租户 = 404 且与不存在逐字同形）落判据 —— 该形态此前只在售后/会话域有判据，订单发货面是新的可达路径（admin-web 直接调它），必须同批钉住。 ｜ tags: defense, tenant-isolation, existence-leak, shipment
+
 ## 财务对账域（4 case）
 
 ### FN-001. 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判） 🔵
@@ -2626,7 +2639,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（21 case）
+## 杂项域（22 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2882,6 +2895,20 @@
 ```
 溯源: 2026-09-24 新增（issue #5247，P4，用户裁定 2026-09-23 B 端只读化）：三处文件族的联合事实此前无人对账（工具 read_only / skill 绑定 / 能力文案），任一处回退都静默。落码 = 五条判据 + 九条注入式红证；同时登记「共享工具只解绑不删除」「C 端零改动」两条硬边界。取号 MC-021：main 上 MC-001~MC-020 已占用。 ｜ tags: ci, permission, readonly, red-proof, fail-closed
 
+### MC-022. 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测） 🔵
+```
+你: 把任一条测试的「今天」写回裸 LocalDate.now()（或再写一份 ZoneId.of("Asia/Shanghai") / 业务时区字面量）时，必须有东西变红
+期望: direct_reply
+数据: 判据 1（L0 静态）：`backend/admin-api/src/test/java/**` 里不得出现五条禁则（无参 LocalDate.now( / LocalDateTime.now( / LocalTime.now( / 业务时区字面量 / ZoneId.of 业务时区），**剥注释后**判定。执行点 = BusinessClockTestSourceGuardTest.testSourcesReadBusinessTimeOnlyViaBusinessClock。
+数据: 判据 2（台账只许缩短）：存量 40 处 / 13 条按「文件 × 规则」登记，**未登记即红 / 超数即红 / 不再命中即红**（销账）。执行点 = 同类的 ledgerOnlyShrinks（三条注入式红证：未登记、超数、残留）。
+数据: 判据 3（实例判据）：本单修掉的三个类（PoolBoardUrgencyTest / InboundOrderServiceTest / ProcessingOrderServiceTest）**在扫描面内且命中为 0**。执行点 = theClassesFixedByThisChangeAreClean。
+数据: 判据 4（判别力）：五条禁则各能命中一个已知坏样本；且注释里的提及**不得**被判违规。执行点 = rulesHaveDiscriminatingPower。
+数据: 判据 5（隔离注入）：把裸 now() 放进隔离目录 ⇒ 扫描器逐条报出且对账判红（守卫自身判别力自证，不碰真源树）。执行点 = detectsInjectedViolationInIsolatedTree。
+数据: 🔴 红证（实跑，2026-09-27）：① 修复前 CI required 检查 admin-api unit tests 在 job 36280962072（跑于 2026-09-26T23:58Z–00:00Z）判红，逐条读数 expected 2026-09-26 / but was 2026-09-27、-3/-4、1/0；② 确定性复现：`TZ=America/Los_Angeles ./mvnw -Dtest=… test`（JVM 默认时区落后 +08 一天，与 runner 在 UTC 16:00–24:00 的处境等价）—— 修复前必红、修复后绿；③ 把 `businessClock.today()` 注回 `LocalDate.now()` ⇒ 判据 1/3 必红。
+跳过: [backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里
+```
+溯源: 2026-09-27 新增（issue #5651 收口时的跨域链内修）：UTC 跨天窗口里 `admin-api unit tests` 必红，根因 = 测试用裸 `LocalDate.now()`（CI runner 的 JVM 默认时区 = UTC）取「今天」，而生产按 +08 业务日算 ⇒ UTC 16:00–24:00（北京 00:00–08:00）两侧差一天。**只改测试**（5 条断言 + 三个类注入 BusinessClock），不动任何被测语义；顺手把这一类固化（实例判据 + 类级守卫 + 存量台账只许缩短）。取号 MC-022：main 上 MC-001~MC-021 已占用。 ｜ tags: ci, time, flaky, business-clock, test-only
+
 ## 商家入驻域（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -3006,7 +3033,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（49 case）
+## 订单域（50 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3920,6 +3947,21 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 溯源: 2026-09-26 新增（issue #4074 第 3 条「合法复购负例，缺一不可」）。形态选择：**同会话 + 内容不同的两笔**（而不是「隔一段时间再下一单同样的货」）—— 后者的键本来就不同、断言恒真，构不成证据（依据 = issue #4229 的核验评论，逐字点名）。**本用例当前预期为红**：内容维度按 #4229 裁定「暂时不做，直接关闭 issue」保持现状 ⇒ 第二笔会被回放吞掉，db_verify 报「出现了 1 次回放」「指向 1 张订单 ≠ 期望 2 张」。这不是恒红凑数：它是该残留唯一的机器判据，且修法（内容指纹进键）落地即转绿 —— 重启条件写在 data_checks 里。 ｜ tags: order_create, idempotency, legal_repeat, negative
+
+### OR-051. 管理端发货读面 GET /api/admin/orders/{id}/shipments：与工人面同源（OrderShipmentService.readShipment）+ 权限码 order:list + 只读 + 跨租户 404 不泄露存在性（issue #5651 收口） 🔵
+```
+你: 用户 2026-09-26 逐字裁定销售单要「挂在发货链上」；issue #5651 正文逐字登记未完成项：「order_shipment_items 开发途中已合入 main，但只有工人读面 ⇒ admin/桌面端没有读面 ⇒ 接线需后端新增 admin 读面（不在纯前端范围）」
+期望: direct_reply
+数据: 判据 1·**管理面存在且与同族一致**：GET /api/admin/orders/{id}/shipments 落在既有 admin 订单子资源族（/follow-status、/logistics、/refund 同形），{id} 带 [0-9a-fA-F-]+ 约束。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 adminReadFaceLivesOnTheAdminOrderSubResourcePath。红证：删掉端点 ⇒ 该判据具名报出「admin 端没有发货读面」（本单落地前实测 rc=1、3 条失败）。
+数据: 判据 2·**权限码 = order:list**（与同页既有详情读面 GET /api/admin/orders/{id} 同码，不新造权限码）：漏 @RequirePermission ⇒ Java 判据红，且 tests/unit_ci_workflows/test_agent_permission_parity.py 判据 8（未注解端点必须登记进 UNANNOTATED_ENDPOINTS）红 —— 本面**不登记豁免**（它有语义正确的既有码）。执行点 = AdminOrderShipmentReadTest.adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage。
+数据: 判据 3·**只读**：该路径上只有 GET 一个动词，没有 POST/PUT/PATCH/DELETE（本单不新增写面；写面归 issue #5648 的工人面）。执行点 = AdminOrderShipmentReadTest.adminReadFaceIsReadOnly。
+数据: 判据 4·🔴 **两面同源，不新造第二份投影**：管理面与工人面都调用 OrderShipmentService.readShipment（同一份实现），响应形状逐字同源。执行点 = tests/unit_ci_workflows/test_shipment_read_surface_guard.py（真值登记表 order_shipment_items 声明 worker/admin 两面，且视图键 "shipped_quantity" 在 backend/admin-api/src/main/java 下**恰好命中一个文件** = owner）。红证（注入式，随测试常驻）：让 controller 自拼字段（不再调 owner）⇒ C5 判红；在另一个 Java 文件里再拼一份同名视图键 ⇒ C4 判红。
+数据: 判据 5·🔴 **跨租户 = 404，且与「订单不存在」逐字同一形态**（不泄露存在性；403 等于承认「这个 id 存在，只是不给你看」）：跨租户与不存在的订单必须给出同一个 code / message / httpStatus。执行点 = AdminOrderShipmentReadTest.crossTenantReadIs404AndIndistinguishableFromMissingOrder + tests/unit_ci_workflows/test_shipment_read_surface_guard.py 的登记面（两面路径前缀 /api/worker/** 与 /api/admin/**）。红证：把 loadOrder 的 notFound("订单") 改成 authFailed（403）⇒ 该判据红；把跨租户消息写成「订单(跨租户)不存在」⇒ 逐字比对红。
+数据: 判据 6·**既有面零回归**：工人面的四条判据（WorkerShipmentControllerTest / OrderShipmentServiceTest）与 order_shipment_items 的写序口径一个字不改（本单只加读面）。
+跳过: [backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）+ pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行
+```
+真值: order.shipment-read-faces, order.shipment-actual-quantity-owner
+溯源: 2026-09-27 新增（issue #5651 收口）：补上 admin 端发货读面 —— 该 issue 登记的**唯一**未完成项（正文逐字：「挂链差一步且原因已实测」）。权限码取**既有** order:list（与同页 GET /api/admin/orders/{id} 同码 ⇒ 不会出现「页面打得开、单据 403」的割裂）；order:detail 今天只是菜单节点码、**没有任何端点在承载** ⇒ 不挪用、不新造。只读，不新增写面。 ｜ tags: order, shipment, admin-api, read-surface, tenant-isolation
 
 ## 加工项域（14 case）
 
@@ -6483,7 +6525,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（62 case）
+## 前端 UI 域（63 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -7336,6 +7378,24 @@
 真值: frontend-fix.layout, frontend-fix.vitest
 溯源: 2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ tags: ui, settings, qrcode, admin-web
 
+### UI-065. 销售单数量列消费**实发**（order_shipment_items，经 admin 读面）：已发货/部分发货/未发货/读面未取到四态各自可判 + 永不印 0 + 缺口显式（issue #5651 收口） 🔵
+```
+你: 用户 2026-09-26 逐字裁定销售单要「挂在发货链上」= 随货给客户的那张、数量与**实发**同源；issue #5651 正文把「admin 端没有读面 ⇒ admin-web 拿不到实发数量」登记为未完成项，2026-09-27 由 OR-051 补上后端读面后本用例接线
+期望: direct_reply
+数据: 判据 1·**已发货 ⇒ 数量列印实发**（不是下单数量）：夹具给实发 7 而下单数量 3 ⇒ 纸面必须印 7。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑧ 已发货 ⇒ 数量列印实发」+「⑧ 红证：退回订单行投影 ⇒ 必红」。
+数据: 判据 2·🔴 **部分发货 ⇒ 未发行显式标「未发」**（不是 0、不是空白）：两行订单行、只有一行有实发 ⇒ 该行印实发、另一行印「未发」且**不含任何数字**（印 0 = 把「没有这个数」画成「实发为零」）。执行点 = 同文件「⑨ 部分发货」+「⑨ 红证：写成 0 / 静默留空 ⇒ 必红」。
+数据: 判据 3·**未发货 ⇒ 数量列 = 订单数量，且纸面标明基准**（不静默沿用：「未发货：数量列 = 订单数量（尚无可核的实发）」）。执行点 = 同文件「⑩ 未发货」。
+数据: 判据 4·🔴 **读面没取到（null）与「未发货」必须分开**：取不到读数 ⇒ 纸面标「发货明细未取到」，不得显示成「未发货」（把取数故障读成业务事实 = 用缺数据冒充业务状态）。执行点 = 同文件「⑪ 读面没取到」+「⑪ 红证：四态合并成一种显示 ⇒ 必红」（四句口径文案两两不同 + 四个业务情形判出四个态）。
+数据: 判据 5·**挂不到订单行的实发行显式提示行数**（不静默丢）：一枚实发行 order_item_id 为空 ⇒ 纸面提示「另有 1 行实发明细未挂到订单行（不猜归属，故不在本表）」。执行点 = 同文件「⑫」。
+数据: 判据 6·**口径判定是纯函数且有独立判据**：resolveSalesQuantity 的四态/累加/缺值边界由 frontend/admin-web/tests/unit/lib/sales-shipment.test.ts（11 格）钉住 —— 含「补发（第二张发货单）实发累加」与「订单行数量缺失 ⇒ null 而不是 0」。
+数据: 判据 7·🔴 **无第二份字段映射**：tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C5（销售单列清单在 src 下**恰好命中一个文件**）零回归。红证（实测 rc=1）：把列清单复制一份到 SalesDocA4.tsx ⇒ C5 判红。
+数据: 判据 8·🔴 **金额仍全部取服务端字段**（前端现算 = 第二份真值）：既有判据（SalesDoc.test.tsx 的 ③ 与其红证）零回归。红证（实测 rc=1）：把行金额改成 unitPrice×quantity ⇒ 该判据红。
+数据: 判据 9·**类级元守卫**：tests/unit_ci_workflows/test_shipment_read_surface_guard.py 把「同一真值两个读面只落一面」与「缺值被显示成 0」固化 —— 消费方接错面（改调 /api/worker/shipment）/ 数量列写 `?? 0` / 管理面自拼字段 ⇒ 各自判红。
+跳过: [backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/SalesDoc.test.tsx、frontend/admin-web/tests/unit/lib/sales-shipment.test.ts）与 pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行
+```
+真值: frontend-fix.vitest, order.shipment-actual-quantity-owner, order.shipment-read-faces
+溯源: 2026-09-27 新增（issue #5651 收口）：销售单数量列从「订单行投影」接到「实发明细」（后端读面由 OR-051 同批补上）。四态口径由 lib/sales-shipment.ts 单点判定，纸面只渲染结果；缺值一律显式（「未发」/「—」/「不适用」），永不印 0。**同批修正**：SalesDoc 的 formatAmount 缺值不再输出 0.00 而输出显式占位（同族：缺数据显示成 0）。 ｜ tags: ui, order, print, sales-doc, shipment, actual-quantity
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -7365,8 +7425,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：521（活跃 126，跳过 395）
-- tier 分布：smoke 12 / normal 476 / adversarial 31
+- 用例总数：525（活跃 126，跳过 399）
+- tier 分布：smoke 12 / normal 480 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7377,21 +7437,21 @@
 - 跨域：3
 - 客户域：11
 - 数据域：20
-- 防御域：22
+- 防御域：23
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：21
+- 杂项域：22
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：49
+- 订单域：50
 - 加工项域：14
 - 加工单域：56
 - 商品域：105
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：62
+- 前端 UI 域：63
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -7429,6 +7489,7 @@
 - MC-019: 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）
 - MC-020: 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
+- MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

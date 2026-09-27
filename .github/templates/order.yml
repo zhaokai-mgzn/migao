@@ -17,6 +17,9 @@ business_truths:
   # ⚠️ 缺口: 订单号生成规则（ORD-yyyyMMdd-XXXX 仅来自用例示例，生成代码未确认；解析侧见 order.no-format）
   - [order.no-format] 订单号以 ORD- 前缀标识；服务端接口支持 ORD-xxx 与 UUID 双格式自动解析（AgentOrderController / AfterSalesTicketService）
   - [order.create-flow] 创建订单前置：必须先调 product_detail 查 SKU；多 SKU 必须让用户选规格（颜色/售卖方式/门幅），单 SKU 直接用；禁止跳过 SKU 选择直接下单（order_create.py）
+  # 发货链真值（issue #5651 收口时登记）：销售单（三联纸）与桌面纸面消费的「实发」
+  - [order.shipment-actual-quantity-owner] 实发数量（这一单**实际**发了多少）的唯一真值载体 = `order_shipment_items`（shipped_quantity / unit / set_count / roll_count），与 `order_items.quantity`（**下单**数量）是两个真值；消费入口 = `OrderShipmentService.readShipment`，任何消费方（工人 H5 / 桌面纸面）不得另建第二份投影；缺值一律 null（**不填 0** —— 0 是「一件都没发」的另一个意思）
+  - [order.shipment-read-faces] 该真值有**两个读面**且共用同一份读实现 `OrderShipmentService.readShipment`：工人面 `GET /api/worker/shipment/orders/{orderId}`（工人 session 准入，零商家权限码）与管理面 `GET /api/admin/orders/{id}/shipments`（商家 session，权限码 `order:list`）；两面响应形状逐字同源；跨租户统一 404（与「订单不存在」**逐字同形**，不是 403 —— 403 等于承认该 id 存在）
 reviewer_asserts:
   - API: POST /api/admin/orders/{id}/confirm-payment（pending 订单）
     expect: data.status = confirmed AND 库存扣减 AND 销量增加

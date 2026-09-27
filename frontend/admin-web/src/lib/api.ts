@@ -6,6 +6,8 @@ import {
   buildRefundPayload,
 } from './data-adapter'
 import type { RefundOrderParams } from './data-adapter'
+// 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
+import type { OrderShipmentRead } from './sales-shipment'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -674,6 +676,22 @@ export const orderApi = {
   // 获取单个订单详情
   getOrder: (id: string) => 
     request.get<ApiResponse<Order>>(`/api/admin/orders/${id}`),
+
+  /**
+   * 获取订单的**发货读面**（发货单 + 逐行**实发**套/件/卷 + 汇总）—— issue #5651 收口。
+   *
+   * `GET /api/admin/orders/{id}/shipments`；响应形状与工人面
+   * （`GET /api/worker/shipment/orders/{orderId}`）**逐字同源**：两端共用
+   * `OrderShipmentService.readShipment`（该真值 owner 指定的唯一消费入口）。
+   *
+   * 🔴 **为什么 admin-web 必须走这一面**：工人面要求 `X-Worker-Session-Id`（工人 session），
+   * 桌面端拿不到那个身份 ⇒ 调工人面只会 401。两面同源保证「桌面看到的实发 = 车间记的实发」。
+   *
+   * 口径消费方 = `SalesDoc` 的数量列（判定见 `lib/sales-shipment.ts`）：有实发印实发，
+   * 未发货才印订单数量**并显式标明基准** —— 不新造第三套数量口径。
+   */
+  getOrderShipments: (id: string) =>
+    request.get<ApiResponse<OrderShipmentRead>>(`/api/admin/orders/${id}/shipments`),
   
   // 创建订单
   createOrder: (data: OrderFormData) => 

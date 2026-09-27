@@ -8,12 +8,14 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -62,6 +64,18 @@ class PoolBoardUrgencyTest {
 
     @InjectMocks
     private ProcessingOrderService processingOrderService;
+    /**
+     * 业务时钟（与生产**同一份**口径，issue #3802）：测试里的「今天 / 现在」只能从这里取。
+     *
+     * <p>⛔ 不许写裸 {@code LocalDate.now()} —— 那读的是 <b>JVM 默认时区</b>，而生产的业务日固定
+     * {@code Asia/Shanghai}（{@link BusinessClock}）；CI runner 的 JVM 默认时区是 <b>UTC</b>
+     * ⇒ 两侧在 <b>UTC 16:00–24:00（北京 00:00–08:00）差一天</b>，本类的日期断言会每天红 8 小时
+     * （实测：2026-09-26T22:14Z / 23:59Z 两轮 required 检查红，期望 2026-09-26 实际 2026-09-27）。
+     * 注入同一个 {@code BusinessClock} ⇒ 夹具与生产**同源同区**，与 runner 时区无关。</p>
+     */
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
+
 
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
@@ -86,7 +100,7 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("判据1/2 缺省不变：无加急单、无到货日 ⇒ 池的成员/计数/行序与今天逐值相同（插队区为空）")
     void defaultsAreUnchangedWhenNothingIsUrgentAndNoDeliveryDate() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = businessClock.nowOffset();
         // 顺序忠于真实查询（pool() 走 orderByAsc(createdAt)）
         when(orderMapper.selectList(any())).thenReturn(List.of(
                 orderOf("o-old", "ORD-0001", now.minusHours(30), false, null),
@@ -117,9 +131,12 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("判据3 加急不进池：加急单只出现在插队区，池的候选集里一行都没有（一张单都不丢）")
     void urgentOrderStaysOutOfPoolAndAppearsInQueueJumpSection() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = businessClock.nowOffset();
+        // ⚠️ 夹具值必须先算好再进 when(...)：businessClock 是 @Spy（= mock），在 stubbing 参数里
+        //    调它会触发 Mockito 的 UnfinishedStubbing（实测：本行内联调用时本类 8 条里 1 条 error）
+        LocalDate urgentDelivery = businessClock.today().plusDays(1);
         when(orderMapper.selectList(any())).thenReturn(List.of(
-                orderOf("o-urgent", "ORD-9001", now.minusHours(20), true, LocalDate.now().plusDays(1)),
+                orderOf("o-urgent", "ORD-9001", now.minusHours(20), true, urgentDelivery),
                 orderOf("o-normal-1", "ORD-9002", now.minusHours(10), false, null),
                 orderOf("o-normal-2", "ORD-9003", now.minusHours(3), false, null)));
         when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
@@ -133,7 +150,7 @@ class PoolBoardUrgencyTest {
                 .as("🔴 加急单在**插队区**（看板上一个动作即可派它）").containsExactly("o-urgent");
         assertThat(pool.urgentLines().get(0).isUrgent()).isTrue();
         assertThat(pool.urgentLines().get(0).requiredDeliveryDate())
-                .as("加急行同样带出到货日（插队区也要能看出临期）").isEqualTo(LocalDate.now().plusDays(1));
+                .as("加急行同样带出到货日（插队区也要能看出临期）").isEqualTo(urgentDelivery);
         assertThat(pool.urgentLines().get(0).deliveryDaysLeft()).isEqualTo(1);
 
         assertThat(pool.orderCount()).as("池内 = 两张**非**加急单").isEqualTo(2);
@@ -152,7 +169,7 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("🔴 判据3 加急混进成批批次 ⇒ /dispatch 与 /preview 都**整批显式拒绝**（fail-closed，不静默少派）")
     void pooledBatchContainingUrgentOrderIsRejectedFailClosed() {
-        Order urgent = orderOf("o-urgent", "ORD-9001", OffsetDateTime.now(), true, null);
+        Order urgent = orderOf("o-urgent", "ORD-9001", businessClock.nowOffset(), true, null);
         when(orderMapper.selectById("o-urgent")).thenReturn(urgent);
 
         assertThatThrownBy(() -> processingOrderService.generate(List.of("o-urgent"), List.of(),
@@ -196,8 +213,8 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("🔴 判据5 排序：到货日升序（null 排最后）→ 等待时长降序；**不是**单号序")
     void orderingPrefersNearestDeliveryDateThenLongestWaitAndPutsNullsLast() {
-        LocalDate today = LocalDate.now();
-        OffsetDateTime now = OffsetDateTime.now();
+        LocalDate today = businessClock.today();
+        OffsetDateTime now = businessClock.nowOffset();
         // 夹具刻意让「单号序 ≠ 期望序」「输入序 ≠ 期望序」——否则这条断言没有判别力
         // 单号序 = o-none-new(0001) < o-none-old(0002) < o-soon(0003) < o-late(0004)
         // 期望序 = o-soon(+2) → o-late(+30) → o-none-old(等 50h) → o-none-new(等 1h)
@@ -230,8 +247,8 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("判据5 加急插队区也走同一把排序键（临期优先），且看板顺序 = 插队区在前")
     void urgentSectionUsesTheSameOrderingKey() {
-        LocalDate today = LocalDate.now();
-        OffsetDateTime now = OffsetDateTime.now();
+        LocalDate today = businessClock.today();
+        OffsetDateTime now = businessClock.nowOffset();
         when(orderMapper.selectList(any())).thenReturn(List.of(
                 orderOf("u-late", "ORD-0101", now.minusHours(9), true, today.plusDays(20)),
                 orderOf("u-soon", "ORD-0102", now.minusHours(1), true, today.plusDays(1)),
@@ -294,7 +311,7 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("存量行 processing_info 为 NULL ⇒ 池读面不得 500（该行不成候选，正常行照旧入池）")
     void poolReadFaceSurvivesLegacyItemWithoutProcessingInfo() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = businessClock.nowOffset();
         when(orderMapper.selectList(any())).thenReturn(List.of(
                 orderOf("o-legacy", "ORD-1001", now.minusHours(30), false, null),
                 orderOf("o-normal", "ORD-1002", now.minusHours(2), false, null)));

@@ -1,4 +1,4 @@
-// case_ids: UI-062
+// case_ids: UI-062, UI-065
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from 'vitest'
@@ -16,6 +16,12 @@ import SalesDoc, {
   SALES_DOC_NOT_COLLECTED,
 } from '@/components/orders/SalesDoc'
 import { printPageRule } from '@/lib/print-media'
+import {
+  SALES_QTY_BASIS,
+  SALES_QTY_NOT_SHIPPED,
+  SALES_QTY_STATES,
+  type OrderShipmentRead,
+} from '@/lib/sales-shipment'
 import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
 
 /**
@@ -33,7 +39,10 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    **不含任何数字**（印 `0.00` = 把「没有这个数」画成「余额为零」）；
  * ⑤ 🔴 **缺值可见 / 长名截断可见**：缺值显式占位 `—`；长名走 CSS 省略号（`sales-cut`）
  *    且**不裁字符串**（纸面是给人看的，静默裁切 = 账实不符的另一种形态）；
- * ⑥ **缺码不画假码** + 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc`）。
+ * ⑥ **缺码不画假码** + 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc`）；
+ * ⑦ **数量列消费实发**（issue #5651 收口）：经 admin 读面 `GET /api/admin/orders/{id}/shipments`
+ *    拿 `order_shipment_items` 的**实发**，四态（已发货 / 部分发货 / 未发货 / 读面没取到）
+ *    **各自可判**、纸面**标明基准**、**永不印 0**、挂不到订单行的实发行**显式提示**。
  */
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
   return {
@@ -73,6 +82,30 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
   }
 }
 
+/** 「未发货」读面（发货单列表非空、但一条实发明细都没有的两种形态都覆盖得到） */
+const NO_SHIPMENT: OrderShipmentRead = { status: 'producing', shipments: [] }
+
+/** 发货读面夹具：一张已发货的发货单 + 给定明细（后端 `readShipment` 的逐字形状，snake_case） */
+function buildRead(
+  items: { order_item_id?: string | null; shipped_quantity: number; unit?: string }[],
+  status = 'shipped',
+): OrderShipmentRead {
+  return {
+    order_id: 'order-1',
+    status,
+    shipments: [
+      {
+        shipment_no: 'SH20260927000001',
+        source: 'worker_photo',
+        shipped_at: '2026-09-27T10:00:00+08:00',
+        tracking_no: 'SF123',
+        items,
+      },
+    ],
+    shipped_totals: { by_unit: {} },
+  }
+}
+
 const doc = (): HTMLElement | null => document.querySelector('.sales-print-area')
 const css = (): string => doc()?.querySelector('style')?.textContent || ''
 const text = (testId: string): string =>
@@ -88,7 +121,7 @@ function rowCells(): string[][] {
 
 describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', () => {
   it('① 介质：@page 241mm × 140mm（两等分）+ 只渲染一页 + 单联高度固定不跨联', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     expect(css()).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
     expect(css()).toContain(printPageRule('continuous-241x140'))
     expect(doc()?.getAttribute('data-print-media')).toBe('continuous-241x140')
@@ -103,14 +136,14 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('① 红证：把三联纸的「只渲染一页」改坏（渲三份）⇒ 上面那条必红', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const sheets = document.querySelectorAll('.sales-sheet')
     // 复写份数是**纸**的属性，不是渲染次数（矩阵里 carbonCopies = 3）⇒ 渲三份即红
     expect(sheets).toHaveLength(1)
   })
 
   it('② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const tri = rowCells()
     const triHeader = Array.from(document.querySelectorAll('.sales-doc-table thead th')).map(
       (th) => th.textContent?.trim()
@@ -118,7 +151,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     const triDue = text('sales-total-due')
     const triTotal = text('sales-total')
     cleanup()
-    render(<SalesDoc order={buildOrder()} media="a4" paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} media="a4" paymentQrcodes={{}} />)
     // 版面参数随介质变
     expect(css()).toContain('@page { size: A4; margin: 12mm; }')
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
@@ -133,7 +166,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('② 列清单 = SALES_DOC_COLUMNS（全仓唯一一份；商品行粒度，不是报价单的按套×部位）', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const headers = Array.from(document.querySelectorAll('.sales-doc-table thead th')).map(
       (th) => th.textContent?.trim()
     )
@@ -144,7 +177,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('🔴 ③ 金额取服务端字段：行金额 = item.amount（≠ 单价×数量），本单应收 = order.actualAmount', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     // 行金额印服务端的 500.00；前端现算会得到 3 × 10 = 30.00
     expect(text('sales-row-amount-0')).toBe('500.00')
     expect(text('sales-row-amount-0')).not.toBe('30.00')
@@ -155,7 +188,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('🔴 ③ 红证：让前端现算（单价×数量 / 行金额求和）⇒ 上面那条必红', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const order = buildOrder()
     const frontEndRow = (order.items?.[0]?.unitPrice ?? 0) * (order.items?.[0]?.quantity ?? 0)
     const frontEndTotal = (order.items ?? []).reduce((sum, it) => sum + (it.amount || 0), 0)
@@ -167,7 +200,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('🔴 ④ 缺口金额栏标「未采集」且**不含数字**（不把「没有这个数」画成「余额为零」）', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     for (const id of ['sales-prev-balance', 'sales-prepay', 'sales-account-balance']) {
       expect(text(id)).toBe(SALES_DOC_NOT_COLLECTED)
       expect(text(id)).not.toMatch(/[0-9]/)
@@ -180,7 +213,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('🔴 ④ 红证：把缺口栏编成 0.00 / 前端硬编码一个余额 ⇒ 上面那条必红', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const fabricated = (0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })
     expect(fabricated).toBe('0.00')
     // 纸面若有 `0.00` 就说明编数了（判据要求 `未采集`，且不许出现数字）
@@ -192,6 +225,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     render(
       <SalesDoc
         order={buildOrder({ customerName: '', customerPhone: '', customerAddress: undefined })}
+        shipments={NO_SHIPMENT}
         paymentQrcodes={{}}
       />
     )
@@ -202,7 +236,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('🔴 ⑤ 红证：把缺值换回静默留空（`|| ""`）⇒ 上面那条必红', () => {
     render(
-      <SalesDoc order={buildOrder({ customerAddress: undefined })} paymentQrcodes={{}} />
+      <SalesDoc order={buildOrder({ customerAddress: undefined })} shipments={NO_SHIPMENT} paymentQrcodes={{}} />
     )
     const silent = (buildOrder({ customerAddress: undefined }).customerAddress || '').trim()
     expect(silent).toBe('') // 旧写法给空串 ⇒ 判据（`—`）红
@@ -211,7 +245,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('⑤ 长名**截断可见**：单元格保留全文 + 走 CSS 省略号（不裁字符串）', () => {
     const longName = '杭州余杭某某某某某某某某某某某某某某某某某某纺织品经营部'
-    render(<SalesDoc order={buildOrder({ customerName: longName })} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder({ customerName: longName })} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     // 不裁字符串：全文仍在 DOM 里（打印/屏幕都拿得到完整值）
     expect(text('sales-customer')).toBe(longName)
     // 截断是**可见**的（省略号），不是静默裁掉
@@ -222,7 +256,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('⑤ 红证：把长名 slice 掉（静默裁切）或去掉省略号 ⇒ 上面那条必红', () => {
     const longName = '杭州余杭某某某某某某某某某某某某某某某某某某纺织品经营部'
-    render(<SalesDoc order={buildOrder({ customerName: longName })} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder({ customerName: longName })} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     expect(text('sales-customer')).not.toBe(longName.slice(0, 8)) // slice = 静默裁切 ⇒ 红
     const withoutEllipsis = css().replace(/text-overflow:\s*ellipsis;?/g, '')
     expect(withoutEllipsis).not.toMatch(/text-overflow/) // 去掉省略号 ⇒ 判据红
@@ -231,7 +265,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   it('⑥ 缺码**不画假码**：无收款码 ⇒ 页脚支付块整块不出现', async () => {
     mockGetPaymentQrcodes.mockReset()
     mockGetPaymentQrcodes.mockResolvedValue({ data: { data: {} } })
-    render(<SalesDoc order={buildOrder()} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} />)
     await act(async () => {
       window.dispatchEvent(new Event('beforeprint'))
     })
@@ -245,13 +279,13 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     const qrcodes: PaymentQrcodeMap = {
       wechat: { paymentType: 'wechat', imageUrl: '/uploads/qr-wechat.png', payeeName: '亿家纺织' },
     }
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={qrcodes} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={qrcodes} />)
     const img = document.querySelector('[data-testid="sales-qr-wechat"]')
     expect(img?.getAttribute('src')).toBe('/uploads/qr-wechat.png')
   })
 
   it('⑦ 打印隔离：portal 到 body + 共享 print-doc + 隔离选择器排除所有打印单据 + 屏幕态隐藏', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const el = doc()
     expect(el?.parentElement).toBe(document.body)
     expect(el?.className).toContain('print-doc')
@@ -262,10 +296,119 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('⑦ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     expect(doc()?.getAttribute('data-print-target')).toBeNull()
     cleanup()
-    render(<SalesDoc order={buildOrder()} paymentQrcodes={{}} printTarget="sales" />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
     expect(doc()?.getAttribute('data-print-target')).toBe('sales')
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ⑧~⑫ 数量列消费**实发**（issue #5651 收口）：四态各自可判 + 永不印 0
+  //   真值 owner = `order_shipment_items`（后端 admin 读面 `GET /api/admin/orders/{id}/shipments`）
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  it('⑧ 已发货 ⇒ 数量列印**实发**（不是下单数量）；纸面标明口径', () => {
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={buildRead([{ order_item_id: 'item-1', shipped_quantity: 7, unit: '米' }])}
+        paymentQrcodes={{}}
+      />
+    )
+    // 实发 7 / 下单 3 —— 印 3 就说明还在用订单行投影（红证载荷）
+    expect(text('sales-qty-0')).toBe('7')
+    expect(text('sales-qty-0')).not.toBe('3')
+    expect(text('sales-qty-basis')).toContain('实发数量')
+  })
+
+  it('⑧ 红证：数量列退回订单行投影（item.quantity）⇒ 上面那条必红', () => {
+    const order = buildOrder()
+    render(
+      <SalesDoc
+        order={order}
+        shipments={buildRead([{ order_item_id: 'item-1', shipped_quantity: 7, unit: '米' }])}
+        paymentQrcodes={{}}
+      />
+    )
+    const orderedProjection = String(order.items?.[0]?.quantity) // 旧写法会印这个
+    expect(orderedProjection).toBe('3')
+    expect(text('sales-qty-0')).not.toBe(orderedProjection)
+  })
+
+  it('⑨ 部分发货 ⇒ 已发行印实发、未发行**显式**「未发」（不是 0、不是空白）', () => {
+    const order = buildOrder({
+      items: [buildItem(), buildItem({ id: 'item-2', productCode: '0013', quantity: 5 })],
+    })
+    render(
+      <SalesDoc
+        order={order}
+        shipments={buildRead([{ order_item_id: 'item-1', shipped_quantity: 3, unit: '米' }])}
+        paymentQrcodes={{}}
+      />
+    )
+    expect(text('sales-qty-0')).toBe('3')
+    expect(text('sales-qty-1')).toBe(SALES_QTY_NOT_SHIPPED)
+    expect(text('sales-qty-1')).not.toMatch(/[0-9]/) // 印 `0` 会被读成「实发为零」
+    expect(text('sales-qty-basis')).toContain('部分发货')
+  })
+
+  it('⑨ 红证：把未发行写成 0 / 静默留空 ⇒ 上面那条必红', () => {
+    const order = buildOrder({
+      items: [buildItem(), buildItem({ id: 'item-2', productCode: '0013', quantity: 5 })],
+    })
+    render(
+      <SalesDoc
+        order={order}
+        shipments={buildRead([{ order_item_id: 'item-1', shipped_quantity: 3, unit: '米' }])}
+        paymentQrcodes={{}}
+      />
+    )
+    // 缺值填 0 = 把「没有这个数」画成「实发为零」
+    const asRendered = (value: number | null | undefined) => String(value ?? 0)
+    const zeroFilled = asRendered(null)
+    expect(zeroFilled).toBe('0')
+    expect(text('sales-qty-1')).not.toBe(zeroFilled)
+    expect(text('sales-qty-1')).not.toBe('')
+  })
+
+  it('⑩ 未发货 ⇒ 数量列 = 订单数量，且纸面**标明**「这不是实发」（不静默沿用）', () => {
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
+    expect(text('sales-qty-0')).toBe('3')
+    expect(text('sales-qty-basis')).toContain('未发货')
+    expect(text('sales-qty-basis')).toContain('订单数量')
+  })
+
+  it('⑪ 读面没取到（null）⇒ 与「未发货」**不同**的显式标注（不冒充业务状态）', () => {
+    render(<SalesDoc order={buildOrder()} shipments={null} paymentQrcodes={{}} />)
+    expect(text('sales-qty-basis')).toContain('未取到')
+    // 退回订单数量是对的（并已标明），但**不许**说成「未发货」——那是把取数故障读成业务事实
+    expect(text('sales-qty-basis')).not.toBe(SALES_QTY_BASIS['not-shipped'])
+    expect(text('sales-qty-0')).toBe('3')
+  })
+
+  it('⑪ 红证：把状态合并成一种显示 ⇒ 上面两条必红', () => {
+    // 四句口径说明必须**两两不同**：合并任意两句 ⇒ 纸面再也判不出「这个数是实发还是下单数量」
+    const labels = SALES_QTY_STATES.map((s) => SALES_QTY_BASIS[s])
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(SALES_QTY_BASIS['not-shipped']).not.toBe(SALES_QTY_BASIS.unavailable)
+    expect(SALES_QTY_BASIS.shipped).not.toBe(SALES_QTY_BASIS.partial)
+    expect([...SALES_QTY_STATES]).toEqual(['shipped', 'partial', 'not-shipped', 'unavailable'])
+  })
+
+  it('⑫ 实发明细挂不到订单行 ⇒ 纸面**显式**提示行数（不静默丢）', () => {
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={buildRead([
+          { order_item_id: 'item-1', shipped_quantity: 3, unit: '米' },
+          { order_item_id: null, shipped_quantity: 2, unit: '米' },
+        ])}
+        paymentQrcodes={{}}
+      />
+    )
+    expect(text('sales-qty-basis')).toContain('1 行实发明细未挂到订单行')
+    // 挂不上的那行**不进**本表（不猜归属），但绝不静默
+    expect(document.querySelectorAll('[data-testid^="sales-item-"]')).toHaveLength(1)
   })
 })

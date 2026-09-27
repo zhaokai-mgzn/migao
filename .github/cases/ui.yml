@@ -2236,3 +2236,48 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-065
+    legacy_id: ""
+    title: "销售单数量列消费**实发**（order_shipment_items，经 admin 读面）：已发货/部分发货/未发货/读面未取到四态各自可判 + 永不印 0 + 缺口显式（issue #5651 收口）"
+    domains:
+      - ui
+      - frontend
+      - order
+      - print
+    tier: normal
+    tags:
+      - ui
+      - order
+      - print
+      - sales-doc
+      - shipment
+      - actual-quantity
+    truths_ref:
+      - frontend-fix.vitest
+      - order.shipment-actual-quantity-owner
+      - order.shipment-read-faces
+    user_inputs:
+      - "用户 2026-09-26 逐字裁定销售单要「挂在发货链上」= 随货给客户的那张、数量与**实发**同源；issue #5651 正文把「admin 端没有读面 ⇒ admin-web 拿不到实发数量」登记为未完成项，2026-09-27 由 OR-051 补上后端读面后本用例接线"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**已发货 ⇒ 数量列印实发**（不是下单数量）：夹具给实发 7 而下单数量 3 ⇒ 纸面必须印 7。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑧ 已发货 ⇒ 数量列印实发」+「⑧ 红证：退回订单行投影 ⇒ 必红」。"
+      - "判据 2·🔴 **部分发货 ⇒ 未发行显式标「未发」**（不是 0、不是空白）：两行订单行、只有一行有实发 ⇒ 该行印实发、另一行印「未发」且**不含任何数字**（印 0 = 把「没有这个数」画成「实发为零」）。执行点 = 同文件「⑨ 部分发货」+「⑨ 红证：写成 0 / 静默留空 ⇒ 必红」。"
+      - "判据 3·**未发货 ⇒ 数量列 = 订单数量，且纸面标明基准**（不静默沿用：「未发货：数量列 = 订单数量（尚无可核的实发）」）。执行点 = 同文件「⑩ 未发货」。"
+      - "判据 4·🔴 **读面没取到（null）与「未发货」必须分开**：取不到读数 ⇒ 纸面标「发货明细未取到」，不得显示成「未发货」（把取数故障读成业务事实 = 用缺数据冒充业务状态）。执行点 = 同文件「⑪ 读面没取到」+「⑪ 红证：四态合并成一种显示 ⇒ 必红」（四句口径文案两两不同 + 四个业务情形判出四个态）。"
+      - "判据 5·**挂不到订单行的实发行显式提示行数**（不静默丢）：一枚实发行 order_item_id 为空 ⇒ 纸面提示「另有 1 行实发明细未挂到订单行（不猜归属，故不在本表）」。执行点 = 同文件「⑫」。"
+      - "判据 6·**口径判定是纯函数且有独立判据**：resolveSalesQuantity 的四态/累加/缺值边界由 frontend/admin-web/tests/unit/lib/sales-shipment.test.ts（11 格）钉住 —— 含「补发（第二张发货单）实发累加」与「订单行数量缺失 ⇒ null 而不是 0」。"
+      - "判据 7·🔴 **无第二份字段映射**：tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C5（销售单列清单在 src 下**恰好命中一个文件**）零回归。红证（实测 rc=1）：把列清单复制一份到 SalesDocA4.tsx ⇒ C5 判红。"
+      - "判据 8·🔴 **金额仍全部取服务端字段**（前端现算 = 第二份真值）：既有判据（SalesDoc.test.tsx 的 ③ 与其红证）零回归。红证（实测 rc=1）：把行金额改成 unitPrice×quantity ⇒ 该判据红。"
+      - "判据 9·**类级元守卫**：tests/unit_ci_workflows/test_shipment_read_surface_guard.py 把「同一真值两个读面只落一面」与「缺值被显示成 0」固化 —— 消费方接错面（改调 /api/worker/shipment）/ 数量列写 `?? 0` / 管理面自拼字段 ⇒ 各自判红。"
+    skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/SalesDoc.test.tsx、frontend/admin-web/tests/unit/lib/sales-shipment.test.ts）与 pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行"
+    merge_log: "2026-09-27 新增（issue #5651 收口）：销售单数量列从「订单行投影」接到「实发明细」（后端读面由 OR-051 同批补上）。四态口径由 lib/sales-shipment.ts 单点判定，纸面只渲染结果；缺值一律显式（「未发」/「—」/「不适用」），永不印 0。**同批修正**：SalesDoc 的 formatAmount 缺值不再输出 0.00 而输出显式占位（同族：缺数据显示成 0）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/sales-shipment.test.ts"
+        - "tests/unit_ci_workflows/test_shipment_read_surface_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []

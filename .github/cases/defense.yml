@@ -1064,3 +1064,38 @@ cases:
       ci:
         - agent-eval-adversarial.yml
       verifies: []
+
+  - id: DF-024
+    legacy_id: ""
+    title: "跨租户访问订单发货读面 ⇒ 404 且与「订单不存在」逐字同一形态（不泄露存在性；403 = 承认 id 存在）"
+    domains:
+      - defense
+      - backend
+      - order
+    tier: normal
+    tags:
+      - defense
+      - tenant-isolation
+      - existence-leak
+      - shipment
+    truths_ref:
+      - order.shipment-read-faces
+      - aftersales-flow.tenant-isolation
+    user_inputs:
+      - "用户 2026-09-26 逐字裁定销售单要挂在发货链上；本单补的 admin 读面按仓内 P2 口径做跨租户判定（404 而非 403）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **跨租户 = 404**：别的租户的订单 ⇒ BusinessException NOT_FOUND / httpStatus 404（**不是** 403 —— 403 等于承认「这个 id 存在，只是不给你看」）。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 crossTenantReadIs404AndIndistinguishableFromMissingOrder。红证（实测 rc=1）：把 OrderShipmentService.loadOrder 的 notFound(\"订单\") 注入为 authFailed(\"无权访问该订单\") ⇒ 该判据具名红。"
+      - "判据 2·🔴 **与「不存在」逐字同一形态**：跨租户与不存在的订单必须给出同一个 error.code、同一个 message、同一个 httpStatus（任何差异——含「跨租户」字样——都会让响应体可区分「存在但越权」与「不存在」）。执行点 = 同一条判据的逐字比对（assertThat(crossTenant.getMessage()).isEqualTo(missingOrder.getMessage())）。红证：把跨租户分支的消息写成「订单(跨租户)不存在」⇒ 逐字比对红。"
+      - "判据 3·**两层都判**：Service 层（loadOrder 的口径）与端点层（OrderController 的 /shipments 走同一份 readShipment，不另做租户判定）—— 端点层不得自己拼一套 403。执行点 = 同文件 + tests/unit_ci_workflows/test_shipment_read_surface_guard.py（两面都必须调用 owner 方法 readShipment）。"
+      - "判据 4·**既有租户面零回归**：order_shipments / order_shipment_items 的 MyBatis-Plus 自动租户过滤与工人面判据一个字不改（WorkerShipmentControllerTest / OrderShipmentServiceTest 全绿）。"
+    skip_reason: "[backend-contract] 纯后端租户边界判据（无 LLM 环节，不进 agent-eval 对抗流水线）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）执行"
+    merge_log: "2026-09-27 新增（issue #5651 收口）：新增的 admin 发货读面按仓内既有租户口径（跨租户 = 404 且与不存在逐字同形）落判据 —— 该形态此前只在售后/会话域有判据，订单发货面是新的可达路径（admin-web 直接调它），必须同批钉住。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java"
+        - "tests/unit_ci_workflows/test_shipment_read_surface_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
