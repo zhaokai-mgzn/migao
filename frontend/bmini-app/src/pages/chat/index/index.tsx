@@ -4,6 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
 import { useAuthStore } from '../../../store/authStore'
 import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
+import { currentLandingCode } from '../../../utils/inbound/deepLink'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
@@ -45,6 +46,13 @@ export default function ChatPage() {
 
   /** 初始化：检查登录 + 续聊/新建会话（B 端：未登录引导去登录页，不做 C 端静默登录） */
   const initialize = useCallback(async () => {
+    // 🔴 **落地页深链优先**（issue #5052 实现 PR）：URL 上带着 `?code=` 时**不抢路由** ——
+    // 本页「未登录 ⇒ 600ms 后去商家登录页」的定时器**在页面卸载后照样触发**，
+    // 会把工人从他的补打落地页一脚踢到商家登录页，而这一步**没有任何东西会变红**
+    // （跳转成功、无异常、无日志 —— 正是本单要治的"静默失败"形态）。
+    // 深链的接手方是 `src/app.tsx`（把码交给补打页）。
+    if (currentLandingCode().present) return
+
     // 检查登录状态（B 端首次登录需账号密码，无微信静默登录）
     if (!checkAuth()) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
