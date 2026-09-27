@@ -1434,7 +1434,11 @@ class ProductionControllerTest {
         // issue #5675：工资报表端点改用生产域**读**码 —— 旧断言的理由（「含全员金额 ⇒ 必须管理码」）
         // 自 issue #5291 起已不成立：**同一份**聚合早已在 Agent 侧（`AgentProductionController#piecework`）
         // 挂 `production:view` 可读，而「计件工资」页的菜单节点码与前端路由守卫也都是该读码
-        // ⇒ 方法级管理码才是**漏改**的那一处（判据 = 守卫的判据 12「菜单节点码 ≡ 页面第一屏读端点码」）。
+        // ⇒ 那一处的形态是**「菜单节点码 ≠ 该页第一屏读端点码」**（判据 = 守卫的判据 12）。
+        // ⚠️ 归因更正（#5675 收口包独立复核）：原写「方法级管理码才是**漏改**的那一处」——「#5291 漏改」
+        // 已**证伪**（#5291 自己的类注记逐字只写「**两个**只读端点」改挂读码；工艺配置页第一屏的配置族
+        // 读端点仍由管理码把守，并有 `ProductionRoutingReadControllerTest#endpointsDeclareManagePermission`
+        // 断言钉住）⇒ 按形态归因。**断言本身（`production:view`）一字未动**。
         Method summary = ProductionController.class.getMethod("pieceworkSummary", String.class, String.class);
         RequirePermission summaryAnn = summary.getAnnotation(RequirePermission.class);
         assertThat(summaryAnn)
