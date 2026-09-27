@@ -1004,7 +1004,7 @@ cases:
   # ==========================================================================
   - id: MC-038
     legacy_id: ""
-    title: "转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R12`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用"
+    title: "转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R13`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用"
     domains:
       - misc
       - ci
@@ -1032,10 +1032,10 @@ cases:
       - "**relay 面缺口只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的 `RELAY_GAPS_FROZEN`（上限写在判据文件里 ⇒ 台账改不动它）"
       - "**§26 不许出现「文件 + 冒号 + 数字」形态的裸行号引用**（行号会腐 = `FM-A10`）：出现即红；**符号锚形态与只加注释不红**（两条对照读数）"
       - "🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删 §26 / 删一条记号 / 加未登记纪律 / 把 `kind` 改成散文 / 把 `state` 改成非三选一 / 多加一条 gap / 注入裸行号，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；`guarded`/`registered` 条目的锚**删掉其全部出现** ⇒ 必红，且**面内 0 条 ⇒ 红**（防空跑）"
-      - "覆盖边界（显式登记在 §26.4）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**；`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12` 六条 `kind=action` **靠人执行**；**「转述方到底核没核过」无法机械判**；判据 18 的射程只到 §26 节文本；完全不写 `FM-R` 记号的纯散文纪律在本判据面内看不见（已知残余）"
+      - "覆盖边界（显式登记在 §26.4）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**；`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13` 七条 `kind=action` **靠人执行**；**「转述方到底核没核过」无法机械判**；判据 18 的射程只到 §26 节文本；完全不写 `FM-R` 记号的纯散文纪律在本判据面内看不见（已知残余）"
       - "`FM-R8`（**派单模板让产物落在收尾半径外**）的**覆盖面登记**必须逐条点名（派单消息在仓外 / 存量半径外 worktree 不在射程 / `--detach` 纯检出豁免 / 路径写在命令之外）：由 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_relay_boundary_section_names_the_out_of_scope_forms` 按**现取标记**比对（删掉任一面 ⇒ 红）"
     skip_reason: "[backend-contract] 转述面承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据（14~18）验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（用户逐字裁定「发现容易犯的问题就应该固化到研发模式中避免再犯」；Refs #5707）：交付形态 = 技能新增 §26（转述 / 派单面，当时七条（`FM-R1` 起），各带症状 / 判别动作 / 证据锚）+ 承接台账 `relay_entries`（`state`/`kind` 一一配对 + `same_family` + `covers`）+ 判据 14~18（含 §26 裸行号守卫）+ 新用例 MC-038。⚠️ **本条的范围端点按「现取」写作 `FM-R1`~`FM-R12`**（2026-09-27 同批补入 `FM-R8` = 收尾半径 + 判据 20）：端点由 `tests/unit_ci_workflows/test_casebook_ledger_claims.py` 判据 2 与台账 `relay_entries` **逐值**比对 ⇒ 台账再长一条而这里不抬就红（这就是它该有的行为）🔴 **2026-09-27 本批再长四条**（`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` = 坐标指错文件 / 影响面低估 / 从没验证的模型提修法 / 只想到一处漏同族，见台账 `PD-5`）：端点已同批抬到 `FM-R12`，`kind=action` 的读数改成六条（`test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）；⚠️ **历史句里也不许出现那个范围形态**（判据只认形态、不认语义 —— 本包写「当时 `FM-R1` 起共七条」时就被它当场判红，改成本写法）。取号 MC-038：现取 main 最大 = MC-034，而**在飞非 draft 的 PR #5713 已占 MC-035/036/037**（本包现取该分支的 `.github/cases/misc.yml` 逐条确认）⇒ 顺延尚未合并的一侧（#5706 的 MC-026 撞号先例）。"
+    merge_log: "2026-09-27 新增（用户逐字裁定「发现容易犯的问题就应该固化到研发模式中避免再犯」；Refs #5707）：交付形态 = 技能新增 §26（转述 / 派单面，当时七条（`FM-R1` 起），各带症状 / 判别动作 / 证据锚）+ 承接台账 `relay_entries`（`state`/`kind` 一一配对 + `same_family` + `covers`）+ 判据 14~18（含 §26 裸行号守卫）+ 新用例 MC-038。⚠️ **本条的范围端点按「现取」写作 `FM-R1`~`FM-R13`**（2026-09-27 同批补入 `FM-R8` = 收尾半径 + 判据 20）：端点由 `tests/unit_ci_workflows/test_casebook_ledger_claims.py` 判据 2 与台账 `relay_entries` **逐值**比对 ⇒ 台账再长一条而这里不抬就红（这就是它该有的行为）🔴 **2026-09-27 本批再长四条**（`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` = 坐标指错文件 / 影响面低估 / 从没验证的模型提修法 / 只想到一处漏同族，见台账 `PD-5`）：端点已同批抬到 `FM-R12`，`kind=action` 的读数改成六条（`test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）；⚠️ **历史句里也不许出现那个范围形态**（判据只认形态、不认语义 —— 本包写「当时 `FM-R1` 起共七条」时就被它当场判红，改成本写法）。取号 MC-038：现取 main 最大 = MC-034，而**在飞非 draft 的 PR #5713 已占 MC-035/036/037**（本包现取该分支的 `.github/cases/misc.yml` 逐条确认）⇒ 顺延尚未合并的一侧（#5706 的 MC-026 撞号先例）。🔴 **2026-09-27 本批再长一条**（`FM-R13` = 派单消息里的「环境已同步」断言会过期）：`land` 侧那一半**已机械** = preflight 每次打印**工具来源**（`scripts/issue_lifecycle.py::tool_provenance_lines`，判据 `tests/unit_ci_workflows/test_land_tool_provenance.py`），派单侧那一半**在仓外** ⇒ 台账 `PD-7` 公开抬 `RELAY_GAPS_FROZEN` 6→7；端点随现取抬到 `FM-R13`，`kind=action` 的读数改成七条（`CLAIMS` 策展表同批改）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_dev_mode_failure_modes.py"
