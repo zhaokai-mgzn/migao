@@ -44,7 +44,7 @@ issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」�
 | **A4** | 迁移链：`V29__backfill_default_positions.sql` / `V32__ensure_default_positions.sql` / `V43__create_processing_orders.sql` / `V111__create_inbound_orders_and_batches.sql`（以上四个在 `backend/admin-api/src/main/resources/db/migration-archive/`）+ `V124__backfill_read_permissions.sql` / `V125__backfill_write_permissions.sql` / `V129__backfill_domain_read_permissions.sql` / `V132__add_agent_chat_permission.sql`（在 `backend/admin-api/src/main/resources/db/migration/`）里的 `INSERT INTO role_permissions … JOIN permissions p ON p.tenant_id = r.tenant_id AND p.code …` | **仅存量租户**，每条按自己的谓词、按 `schema_migrations` 台账**只跑一次** | `RoleService.getUserPermissions` 的 `role_permissions` 分支（**优先级最高**，命中即返回） | **没有任何机制**与 A1 保持同步。判据 14 比的是「**种子 vs 回退**」，**不是**「存量 `role_permissions` vs 种子」（#5683 PR body ⑨ 的「适用边界」逐字登记了这一条）。**实测后果见 §3.1 第三行** |
 | **A5** | `users.permissions` 列（员工级快照）—— 由 `backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的 `createUser` / `updateUser` 写入，由 `RoleService.parseSnapshotPermissions` 读出 | **有非空快照即短路**（`parseSnapshotPermissions` 对 `null`/空白/非 JSON 数组返回 `null` ⇒ 落回退） | `RoleService.getUserPermissions` 的**第一分支**（优先于 `role_permissions` 与 A2） | **有意不参与同步**（#2969 的「快照式语义」：保存的勾选 = 最终权限，与岗位脱钩）。它是**实例**数据，不是**声明** —— 目标架构**不动它** |
 | **A6** | `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `AUTHORIZATION_CENSUS`（现取 **15** 键） | 判据期 | 判据 14 ② 段（与代码机械对照：新增码未登记 ⇒ 红；登记了没新增 ⇒ 红） | 它把「A2/A1 新增了哪些码」**再写一遍**并附「打开了哪几扇门」。这是**必要**的授权变更台账，但它同时是「同一事实的又一份表达」（A7 补登后该事实共 **8** 份，见 §1.1 末注）——目标架构下由清单的 diff 生成 |
-| **A7** | `backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的 `getRolePermissions(String roleCode)`（`switch`：`super_admin` / `admin` → `["*"]`、`agent` → `chat:read` / `chat:write` / `customer:read`、`customer` → `chat:write` / `order:read`） | **登录路径**：`loadUserByUsername`（Spring Security 的 `UserDetailsService`）调它 ⇒ 每次登录都执行 | 登录时挂到 `UserDetails` 上的 authority（C 端角色不经 `PermissionInterceptor` 的权限码校验 —— 见 §2.8 末注） | **没有任何机制**与 A1/A2 同步；而且它授予的码（`chat:read` / `chat:write` / `customer:read` / `order:read`）在权限目录（B1/B2）与迁移链里**各 0 命中**（`super_admin` 只在 `migration-archive/V40` 里作为**角色行**的 `code` 出现，不是权限码）⇒ 这一份副本**已与目录脱钩** |
+| **A7** | `backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的 `getRolePermissions(String roleCode)`（`switch`：`super_admin` / `admin` → `["*"]`、`agent` → `chat:read` / `chat:write` / `customer:read`、`customer` → `chat:write` / `order:read`） | **原写「登录路径：`loadUserByUsername`（Spring Security 的 `UserDetailsService`）调它 ⇒ 每次登录都执行」** —— 🔴 **该断言已被 P2 的取证证伪并更正（2026-09-27）**：`loadUserByUsername` 确实调它，但**那条线在仓内没有调用方**（全仓无 `AuthenticationManager` 的 `authenticate(...)` 调用；过滤链未启用 `formLogin()` / `httpBasic()` / `rememberMe()`）⇒ 更正为「**静态可达、仓内不可达**」。逐条证据与读数**以 §1.6 (c) 为准**（本节保留原写，不抹历史）。 | 登录时挂到 `UserDetails` 上的 authority（C 端角色不经 `PermissionInterceptor` 的权限码校验 —— 见 §2.8 末注）。🔴 **消费面取证已做（P2）**：九处消费方**无一读这些码**，且该授予面在仓内**不可达** —— 逐条证据见 §1.6 | **P2 已收口（2026-09-27）**：① 它的现值已进声明真值源（`rbac/manifest.json` 的 `roles.login`），由既有解析器**复用**读取（`parse_role_fallback` 传 `anchor=`）并逐值对账；② 它授予的四个码在权限目录（B1/B2）与迁移链里**各 0 命中**（`super_admin` 只在 `migration-archive/V40` 里作为**角色行**的 `code` 出现，不是权限码）⇒ 这一份副本**曾与目录脱钩**，**现已按人类裁定退役**（见 §1.6 (d)）：`agent` / `customer` 两个 `case` 已删，只剩 `super_admin` / `admin` 的 `"*"`（通配符、非目录码）。 |
 
 #### B 类 —— 「**码 → 元数据**（中文名 / 资源 / 动作 / 描述）」（这个码叫什么）
 
@@ -157,6 +157,109 @@ D1 端点注解），若该码还要上菜单，再加 C1/C2/C3 + C4 共 **13** 
 ⇒ 我初稿犯的是**与 §1.4 同类**的错：**读到的文本（`parse_menus` 的三份投影长度）与它声称的对象
 （守卫实际断言的关系）不是同一个**。登记在这里是因为本单的验收标准之一就是这一条
 （「每一句『现状』断言都能逐字对上代码」）—— **自我更正也属于该标准的证据，不属于免责**。
+
+---
+
+### 1.6 A7 的消费面取证（**P2 落地**；只取证，不裁存废）
+
+> 归属：设计 §4 的 **P2** 行（A7 按现值登记）+ 本文件 §6 第 7 条的「未取证」项。
+> 取证方式 = `git grep` 命中 + 逐段读代码；**判定一律引证据，不从命名推语义**。
+> 🔴 「保留 or 退役」是**行为问题**，本节**不裁决**（裁定项登记为 **P6 性质**）。
+
+**A7 是什么**：`backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的
+`getRolePermissions(String roleCode)` —— 一个 `switch`：`super_admin` / `admin` → `["*"]`、
+`agent` → `chat:read` / `chat:write` / `customer:read`、`customer` → `chat:write` / `order:read`、`default` → 空。
+
+#### (a) 授予面：它产出什么、被谁调用
+
+| 证据 | 逐字读数 |
+|---|---|
+| 唯一调用方 | `UserService.loadUserByUsername` 里 `List<String> permissions = getRolePermissions(role);` → `authorities.add(new SimpleGrantedAuthority(permission));`（`git grep -n getRolePermissions` 在 `src/main` 只有这一处调用） |
+| 它的身份 | `UserService implements UserDetailsService` ⇒ 这是 Spring Security 的 `UserDetailsService` 实现方法 |
+| 唯一 wire 点 | `SecurityConfig.authenticationProvider(PasswordEncoder)` 里 `authProvider.setUserDetailsService(userDetailsService)`（`DaoAuthenticationProvider`） |
+
+#### (b) 谁读这些 authority（**逐条点名 + 读法**）
+
+| # | 消费方（文件 + 符号） | 读法（逐字） | 真的影响授权判定？ |
+|---|---|---|---|
+| 1 | `backend/admin-api/src/main/java/com/migao/admin/security/PermissionInterceptor.java` 的 `doIntercept` / `requirePermission(String)` | 取码**不走 authorities**：`roleService.getUserPermissions(userId)`（读库 `role_permissions`）；旁路判 `hasBypassRole(authentication)` | ❌ **不读 A7 的码** |
+| 2 | 同上，`hasBypassRole(Authentication)` | 逐字：`String role = name.startsWith("ROLE_") ? name.substring(5) : name;` ⇒ 只与 `"super_admin"` / `"service"` 比 | ❌ 只读**角色名** |
+| 3 | `backend/admin-api/src/main/java/com/migao/admin/security/SecurityConfig.java` 的 `adminApiAuthorizationManager()` | 遍历 `authentication.getAuthorities()`，但**当成角色名**用（`admin` / `super_admin` / `service` 放行；`ADMIN_API_REJECTED_ROLES = Set.of("customer","agent","worker")` 拒绝） | ❌ 声明里没有权限码这一维 |
+| 4 | `backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java` 的 `doFilterInternal` | authorities 只由 JWT 的 **`roles`** claim 构造（`claims.get(JwtTokenProvider.CLAIM_ROLES, List.class)`）；**`CLAIM_PERMISSIONS` 全仓只被写入、没有任何读取方** | ❌ 请求期身份**不含** A7 的码 |
+| 5 | `backend/admin-api/src/main/java/com/migao/admin/security/ServiceTokenFilter.java` 的 `doFilterInternal` | authorities = `SERVICE_AUTHORITIES`（`service` / `internal`）或 `ROLE_<商户员工真实角色>` | ❌ |
+| 6 | C 端 / 身份面常量 | `ServiceTokenFilter.C_END_ROLES = Set.of("customer","agent")`、`SecurityConfig.ADMIN_API_REJECTED_ROLES`、ai-agent 的 `base.CUSTOMER_ONLY_ROLES = frozenset({"customer","agent"})` | ❌ 三处都按**角色**判，与码不相交 |
+| 7 | `/api/customer/**`（`CustomerAgentSessionController`，`@RequestMapping("/api/customer/agent-sessions")`） | 不匹配 `/api/admin/**` ⇒ 不走第 3 行的管理器，落到 `anyRequest().authenticated()` | ❌ 不读码 |
+| 8 | 前端（菜单 / 路由守卫 / 按钮显隐） | 四个码（`chat:read` / `chat:write` / `customer:read` / `order:read`）在 `frontend/**` **0 命中** | ❌ |
+| 9 | ai-agent 工具白名单（`PERMISSION_CATALOG` / `ROLE_PERMISSIONS` / 各工具的 `required_permissions`） | 同上，四个码 **0 命中** | ❌ |
+
+**在仓内出现这四个码的**全部**位置**（`git grep -F`，排除 `docs/**` 与 `rbac/**`）只有三处：
+A7 的声明本体自己 + `backend/admin-api/src/test/java/com/migao/admin/service/TenantIsolationTest.java`
+（把 `agent` 的码**再抄一遍**当 mock 夹具）+ `backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java`
+（一个**同名码** `order:read`，与 A7 无关）。三处都由机制 **M1** 的形态面 `a7-login-codes-consumer` 登记
+（未登记即红）—— 取证结论因此**不会随时间腐烂**。
+
+#### (c) 授予面的**可达性**（本节最出乎意料的一条）
+
+`loadUserByUsername` 只在「有人调 `AuthenticationManager.authenticate(...)`」时才被执行，
+而**全仓没有任何 `.authenticate(` 调用**（`git grep -n "\.authenticate(" -- .` ⇒ **0 命中**），
+且 `SecurityConfig` 的过滤链**没启用** `formLogin()` / `httpBasic()` / `rememberMe()`
+（`UsernamePasswordAuthenticationFilter` 只被当作 `addFilterBefore` 的**位置锚点**引用），
+`authenticateUser(...)`（`AuthService` 的私有方法）与 `loadUserByPhoneAndTenant(...)` 也**各 0 调用方**。
+
+⇒ **静态读数**：A7 的授权面在**本仓**不可达；员工真实登录路径（`AuthService.login`）的权限取自
+`roleService.getUserPermissions(userId)`（库），与 A7 无关。
+🔴 **这是读数不是保证**：本机没有可跑的 `admin-api` 环境，故「外部是否还有别的入口触发它」**未取证**；
+判据 `test_a7_declaration_has_exactly_one_in_repo_caller` 把它做成**机制存活读数** ——
+谁哪天把那条线接上（哪怕一行），它立刻变红并**点名文件**（红证已实跑：注入一行
+`authenticationManager.authenticate(...)` ⇒ 判据 exit 1）。
+
+✅ **本条读数已被人类采信并据以裁定**（2026-09-27：「运行时差量 = 0」是裁定「退役」的前提之一）
+⇒ 它**不是**一条可以随后删掉的「一次性说明」：退役之所以安全，全押在「这条线没人接」上，故必须**常驻**。
+
+#### (d) 🔴 人类裁定：「**退役**」（2026-09-27，已落地）
+
+**裁定（转达原话）**：「**A. 退役（消除唯一一处非目录码，与镜像对齐）**」。**理由**：
+① 它是全仓**唯一**一处授予「目录里不存在的码」的地方；② ai-agent 镜像里 `customer` / `agent` 是**空集**，
+而 A7 给 2 / 3 个码 ⇒ 两面**已不一致**；③ 判据 12 的边界书面写着「C 端**没有**权限码」⇒ **镜像是那个口径，A7 是异类**。
+
+**落地（实际改了哪 6 处）**：
+
+| # | 落点 | 改前 → 改后 |
+|---|---|---|
+| 1 | `UserService.getRolePermissions` 的 `switch` | 删 `agent` / `customer` 两个 `case` ⇒ 落到 `default`（空集）；`super_admin` / `admin` 的 `"*"` **不动**（通配符不是目录码，种子与镜像同款） |
+| 2 | `rbac/manifest.json` 的 `roles.login` | `{admin:["*"], agent:[3 码], customer:[2 码], super_admin:["*"]}` → `{admin:["*"], super_admin:["*"]}` |
+| 3 | 台账 `A7_CODES_BEYOND_CATALOG` | **4 → 0**（上限同步降到 **0** ⇒ 只许缩短；涨回 1 即红） |
+| 4 | 台账 `A7_VS_MIRROR_DIVERGENCES` | **2 → 0** |
+| 5 | `rbac/sources.json` | 销账 2 条**陈旧登记**（`a7-login-codes-consumer` 面下的 `UserService` 与 `TenantIsolationTest`）；`UserService` 在 `role-defaults-fallback` 面的命中数 **4 → 2** |
+| 6 | 测试夹具 `TenantIsolationTest` | mock 的 `List.of("chat:read","chat:write","customer:read")` → `List.of()`（夹具不再测一个**已不存在**的授权形态） |
+
+🔴 **运行时差量 = 0**（§1.6 (b) 的九处消费方无一读这些码 + §1.6 (c) 的授予面仓内不可达）
+—— **这是「人类在知悉零差量之后裁定的声明退役」，不是「发现 bug 顺手修」**；
+可复算前提 = `.authenticate(` 全仓 0 命中 + 九处消费方逐条（两者都由常驻判据守着）。
+
+**曾考虑、未采用的出口（留档）**：
+
+| 处置 | 差量形态 |
+|---|---|
+| ~~**退役**（删 `agent` / `customer` 两个 case）~~ | ✅ **已采用**（上表 1~6） | 登录主体的 authority 少 5 个（`agent` 3 + `customer` 2）。**运行时影响 = 0**（(b) 表九处消费方无一读它们）⇒ 差量全部落在**声明与台账**：`rbac/manifest.json` 的 `roles.login`、`rbac/sources.json` 的三条登记、`A7_CODES_BEYOND_CATALOG`（4 → 0）、`A7_VS_MIRROR_DIVERGENCES`（2 → 0）、以及两个测试夹具（`TenantIsolationTest` / `AuthIntegrationTest`）—— 即：**退役也要动 5 处**，这正是「第 8 份副本」的代价。 |
+| ~~**保留**（身份面专用、不进权限目录）~~ ❌ **未采用** | 差量形态（当时评估）：需逐字写明「它不属于权限目录」；`A7_CODES_BEYOND_CATALOG` 保持 4。🔴 不得为它补目录行（补了 ⇒ 台账降 ⇒ `ledger_count_drift` 判红）。 |
+| ~~**只退役一半**（例如只删 `customer` 的 `order:read`）~~ ❌ **未采用** | 差量形态（当时评估）：`A7_VS_MIRROR_DIVERGENCES` 2 → 1 ⇒ 同样要动清单与台账。**没有「悄悄改一行」这条出口** —— 这条判断在退役落地时被证实：改一处要连带 6 处。 |
+
+#### (e) 与 A3（ai-agent 镜像）已经存在的分歧（**登记，不修**）
+
+`backend/ai-agent-service/tests/test_tool_permission_codes.py` 的 `ROLE_PERMISSIONS` 里
+`customer` / `agent` 都是**空集**，而 A7 给它们 2 / 3 个码 ⇒ 两面**已经不一致**（`A7_VS_MIRROR_DIVERGENCES` = 2）。
+A3 的语义是「商户角色的默认权限码」（该文件的 javadoc 逐字自述为 admin-api 源码的**手抄件**），
+A7 是「登录面 authority」—— **两者本就不是同一个读数**，但**同一个角色名在两处给出不同码集**这件事
+必须由人裁定「以哪一面为准」，本阶段不修（改任何一面都是行为变更）。
+
+#### (f) 本节覆盖不到什么（**照实登记**）
+
+① **运行时授予值**未取证（本机无环境）——重启条件 = 接上真环境后复算「`customer` / `agent` 账号登录后
+实际拿到的 authority 集」，与本节 (a) 的静态读数逐值比对；
+② **存废**未裁定（P6 性质项，须人点头）；
+③ 本节的「0 命中」是**静态 grep** 口径：动态反射 / 配置化的消费方（若将来引入）看不见 ——
+与 M1 的边界同源（§5.3）。
 
 ---
 
@@ -546,6 +649,23 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | **P5 存量收敛（含 `admin` 11 码）** | 由「清单 vs 各迁移累计」的差集**生成**一条新迁移（幂等 + `DO` 块终态对账）；收敛 A4 的路径依赖 | 🔴 **是**（**仅 UI 可见**：岗位权限页回填 / 员工弹窗预填；运行时零影响） | 🔴 **§4.1 的 D1~D4 全满足（缺一不许提交）**；终态对账 `DO` 块在真库上通过；`test_migration_immutability.py` 账本只增不改；「新租户 vs 存量租户」逐角色逐值相等（复算脚本） | revert（迁移只增不改 ⇒ 回滚走**新迁移**，删本文件会让已跑环境错位） |
 | **P6 幽灵角色裁定** | §2.6 的三出口之一 | 🔴 **是**（若选退役 ⇒ 收窄） | 🔴 **§4.1 的 D1~D4 全满足（缺一不许提交）**；出口 (iii) 则是一条只许缩短的 `ghost_roles` 台账；出口 (ii) 需同批处理 `mibao.py` 的 `allowed_roles` 与 bmini 的角色名映射 | revert |
 
+**P2 落地记录（2026-09-27）** —— 本阶段**零 delta、不改行为**，落地内容：
+
+| 落地项 | 位置（符号锚） | 验收读数 |
+|---|---|---|
+| **A7 进清单**（登录面的「角色 → 码」第 8 份副本，登记现值） | `rbac/manifest.json` 的 `roles.login` | 派生 == 现值（`parse_role_fallback` 传 `anchor=` **复用同一个**解析函数）逐值 |
+| **码目录的名称列进清单** | `rbac/manifest.json` 的 `codes.names` | 与 B1/B2 的名称列逐码对齐；B3（`PERMISSION_LABELS`）== 清单名字逐值 |
+| **P2 派生器**（纯函数；**不落盘**生成物） | `rbac/derive.py` | 八个消费面（A1/A2/A7/A3/B1/B2/B3/B4）的派生结果与现值逐项点名比对 |
+| **M1 覆盖面扩大** | `tests/unit_ci_workflows/test_rbac_single_source_manifest.py` 的 `COPY_FACE_SCOPE` / `COPY_FACES` | 射程加入 `backend/admin-api/src/test`（§1.3 明写了测试面的逐码点名断言）；新形态面 `a7-login-codes-consumer` 落地时**先抓出 3 处未登记命中**再登记 |
+| **M2 覆盖面扩大** | 同上判据的 `LEDGER_CEILINGS` + 清单 `ledger_counts` | 新增两张只许缩短的台账：`A7_CODES_BEYOND_CATALOG`（4）/ `A7_VS_MIRROR_DIVERGENCES`（2） |
+
+🔴 **P2 的派生为什么不留生成物**：P2 的消费面（`backend/**` / `frontend/**` / ai-agent 镜像）本阶段
+**照旧读自己的副本**（不改行为）⇒ 落一个没人读的生成物只会多出一份**会陈旧的真值**
+（本仓已有 `test_dead_capability_meta_guard.py` 在治这一类）。派生在判据里**当场算**
+⇒ §5.2 的 **M3 新鲜度**在这里是**结构性质**：没有落盘产物，就没有「陈旧」这种状态。
+本条的覆盖面边界见 §5.3 末条。
+
+
 🔴 **第一次改行为发生在 P4** —— 那是唯一需要人**在看过 §3.3(c) 逐行 census 之后**再点头的地方。
 
 ### 4.1 🔴 改行为阶段的**硬前置**（P4 / P5 / P6，逐阶段落实，做成阶段验收的一部分）
@@ -610,7 +730,22 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
   ⚠️ **M4 不判「那条命令的输出对不对」** —— 它只判**路径存在**。路徑存在而命令本身写错（比如
   `grep` 的模式打错）仍是盲区；这类只能靠 §1.4 式的逐条人工复核，**不得**把 M4 读成覆盖面更大的东西。
 - **M1/M2/M3/M4 都不覆盖 `users.permissions` 快照**（实例数据，不是声明）。
-- 本单**不新增任何守卫文件**（PR diff = 1 个文档）⇒ 上表是**下一阶段（P1 起）**要落的机制，
+- 本单**不新增任何守卫文件**（PR diff = 1 个文档）
+
+**P2 落地后的增补（2026-09-27）** —— 上面四条机制的覆盖面在 P2 阶段的**扩大**与**剩余边界**：
+
+- **M1 扩面**：射程纳入 `backend/admin-api/src/test`（测试面的逐码点名断言）；新增形态面
+  `a7-login-codes-consumer`（扫 A7 的四个码字面量，抓的是**消费**而非声明）。
+  剩余边界不变：**非约定形态**（`Map.of(...)` / YAML / `@ConfigurationProperties`）仍看不见；
+  **散文**仍不可判（没有任何扫描器能判「读者理解对了没有」）。
+- **M2 扩面**：新增两张只许缩短的台账（A7 的码超出目录的条数 / A7 与 ai-agent 镜像的分歧对数）。
+  剩余边界不变：「只许缩短」不保证条目**正确**，只保证它不增长。
+- **M3 在 P2 的形态变了**：P2 的派生器**不落盘** ⇒ 没有「生成物陈旧」这种状态（新鲜度成了结构性质）。
+  代价：**没有任何文件级新鲜度判据**能替它证明「派生没被绕过」—— 靠的是派生器**只有一份实现**
+  （`rbac/derive.py`，生成器与判据共用）且判据每次当场重算。
+- **M4（可复算命令指涉存在的路径）**与 P2 无新增交集：P2 的文档与判据里**不写**带仓库相对路径的复算命令。
+- 🔴 **P2 新增的残余（照实登记）**：**A7 的运行时授予值**与**存废**仍未取证 / 未裁定（§1.6 (f)）；
+  且「派生 == 现值」只证明**零 delta**，**不证明现值对**（§5.3 的 M3 边界逐字同款）。⇒ 上表是**下一阶段（P1 起）**要落的机制，
   **今天没有一条生效**。
 
 ### 5.4 元守卫（覆盖 §5.3 的残余）
@@ -649,14 +784,22 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
    | ③ **存量租户 `admin` 缺 11 码** ⇒ 人类裁定归本架构阶段、**不许单开迁移** | §3.1（含裁定原文要点）+ §4 的 **P5**（由清单 diff 生成，非手写 `INSERT … 'admin'`） |
    | ④ 三个迁移文件头的**可复算判据指向不存在的路径** ⇒ 结构性处置 | §1.4 **实例 6**（含 exit 2 实测）+ §5.2 新增机制 **M4** + §5.3 的 M4 覆盖面边界 |
 
-7. 🔴 **A7（`UserService.getRolePermissions`）的「码存废」未取证，且必须由人裁定**
+7. ✅ **A7（`UserService.getRolePermissions`）的「码存废」已裁定 = 退役，并已落地**（2026-09-27；取证与落地逐条见 §1.6）
+   —— **P2 补了静态取证**；「运行时授予值」仍未取证（见本条末）
    （2026-09-27 由 P1 的 M1 形态面扫出；补登在 §1.1）：
    **机器现取的事实** = ① 它是**活路径**（`loadUserByUsername` 调它 ⇒ 每次登录执行）；
    ② 它授予的 4 个权限码（`chat:read` / `chat:write` / `customer:read` / `order:read`）在
    `RegistrationService.defaultPermissions` 与迁移链里**各 0 命中** ⇒ **不在权限目录里**，
    但它们会作为 authority 挂到登录主体上；③ `ServiceTokenFilter` 的
    `C_END_ROLES = Set.of("customer", "agent")` ⇒ 这两个角色码属**身份面**。
-   **未取证**：这些码是否被任何消费方读（授权判定 / 前端 / 工具白名单）。
+   **已取证（P2，静态面）**：九处消费方（授权判定三处 / 请求期身份构造两处 / C 端身份面三处 / 前端 / 工具白名单）
+   **无一读这些码**（逐条证据 + 逐字读数见 §1.6 的 (b) 表）；且 `loadUserByUsername` 所在的授予面在**本仓不可达**
+   （全仓无 `.authenticate(` 调用、过滤链未启用 formLogin/httpBasic/rememberMe —— §1.6 (c)）。
+   **已裁定（2026-09-27）**：人类选「**退役**」（消除唯一一处非目录码、与镜像对齐）⇒ 已落地 6 处（§1.6 (d) 的表），
+   **运行时差量 = 0**。判据把它钉成三条只许缩短 / 零容忍的读数：`A7_CODES_BEYOND_CATALOG` 上限 **0**、
+   判定面**零容忍**（这四个码一处都不许有）、`A7_VS_MIRROR_DIVERGENCES` 上限 **0**。
+   **仍未取证**：**运行时授予值**（本机无 `admin-api`/真库环境 ⇒ 重启条件 = 接上真环境后复算
+   「`customer` / `agent` 账号登录后实际拿到的 authority 集」，现应为**空**）。
    **必须由人裁定**：保留（身份面专用、不属权限目录）还是退役 —— 这是**行为问题**。
    归类：主体（让「角色 → 码」由单一真源派生）归 **P2**，裁定项归 **P6 性质**。
    重启条件：接上真库/真环境后复算「`customer` / `agent` 账号登录后实际拿到的 authority 集」，

@@ -2753,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（28 case）
+## 杂项域（30 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3113,6 +3113,36 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（用户逐字裁定「容易犯的问题就应该固化到研发模式中避免再犯，而且如果 ci 或者台账经常出错的点也应该固化下来」）：交付形态 = 技能新增 §25（清单 A~D：25.2 读数与它声称的对象不是同一个 7 条 / 25.3 声明存在≠可达 4 条 / 25.4 红证可能是空断言 4 条 / 25.5 意图族级实现点名 2 条 + 25.6 覆盖面登记）+ 承载体台账 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json` + 判据十条（全部内存构造红证 + 只改注释对照 + 变异被读到自证）+ 同批补两条抢号判据（用例号 / 迁移版本号，**原先零守护**）+ 清单 E 落点（docs/wiki/CI-CD.md 的「CI / 台账反复出错点」节，13 条具名，含 3 条未守护缺口与其显形条件）。取号 MC-028（**顺延**）：本单写侧先取 MC-026，而 #5705（RBAC P1）在 2026-09-27 11:41:05 合并时已占 MC-026 / MC-027 ⇒ 按 MC-025 的先例**顺延尚未合并的一侧**（不动已合并的号 —— 那会让已合并的东西改名，代价更大）。⚠️ **这次撞号本身就是取号口径的实证**：取号只看**已合并状态**、看不到在飞分支 ⇒ 已登记为该判据的**边界**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `CASE_ID_ALLOCATION_BOUNDARY`）与 `docs/wiki/CI-CD.md` 的 `FM-E15`。 ｜ tags: ci, dev-mode, solidification, discriminator, red-proof, ledger
+
+### MC-029. RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等 🔵
+```
+你: 当清单里「角色 → 码」或「码目录」的任一项与现值不再相等（哪怕只差一个码、一个名字、一个持有角色）时，必须有东西**具名**报出那一项；而只改清单的说明文字（`_note`）或只改源码注释时，**不得**报红
+期望: direct_reply
+数据: 🔴 **零 delta 是 P2 唯一的验收口径**：八个消费面（A1 种子 / A2 回退 / **A7 登录面** / A3·B3·B4 ai-agent 镜像 / B1·B2 目录）的**派生结果**与**现值**逐值相等，且**逐项点名**（不是「数量相等」）；不等时输出**完整不一致清单**（每项一行：派生值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）
+数据: **A7 进清单**：`roles.login` 由既有解析器 `parse_role_fallback(..., anchor=…)` 读取（**复用同一个函数**，不是第二套解析器）；其四个码 `chat:read` / `chat:write` / `customer:read` / `order:read` 在权限目录里各 0 命中 ⇒ 由 `A7_CODES_BEYOND_CATALOG`（现取 4、只许缩短）钉住
+数据: **码目录**（码 → 名称 + 持有角色）：`codes.names` 进清单并与 B1/B2 的名称列逐码对齐；两处目录的名称列不一致 ⇒ 具名红；持有角色由 `*` 展开成目录全集（admin 恒全部权限）后逐码比对
+数据: **M2 覆盖面在 P2 扩大**：新增两张只许缩短的台账 `A7_CODES_BEYOND_CATALOG`（4）与 `A7_VS_MIRROR_DIVERGENCES`（2，A7 与 ai-agent 镜像对同一角色给出不同码集的对数）——条数涨 ⇒ 红（超上限），涨或跌都要在同 PR 更新清单（`ledger_count_drift`）
+数据: **M1 覆盖面在 P2 扩大**：射程加入 `backend/admin-api/src/test`（设计 §1.3 的 A 类副本清单明写了测试面的逐码点名断言，而 P1 的射程只到 `src/main`），并新增形态面 `a7-login-codes-consumer`（扫 A7 的四个码字面量）⇒ 未登记即红 / 陈旧登记亦红（落地时该面自己先抓出 3 处未登记命中）
+数据: **对照读数（证明变异真的被读到）**：在 `UserService.java` 的**注释**里写一个 A7 的码与一行假的 `getRolePermissions(` 调用 ⇒ 现值读数**逐值不变**（解析器先剥注释再取字面量）；改清单 `_note` 散文 ⇒ 派生读数不变
+数据: 覆盖面显式登记（设计 §5.3）：四条「覆盖不到什么」（A7 的**运行时**授予值未取证 · A7 的**存废**待人类裁定 · 非约定形态的声明看不见 · A4 迁移链的存量授权谓词归 P5）逐条写在 `UNCOVERED_FACES`（含 reason/owner/issue，只许缩短）
+跳过: [backend-contract] RBAC 派生层与现值的逐值对账（既有解析器 + Python 标准库 AST）+ 码目录投影 + 覆盖面登记，全部由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §2.4）：P2 的定义是「由清单派生『角色 → 码』与『码目录』」，P1/P2/P3 三者零 delta、P4 才是第一次改行为。落码 = rbac/derive.py（P2 派生器，纯函数）+ 清单新增 roles.login / roles.mirror_placeholders / codes.names / 两张台账 + 既有解析器的最小扩展（parse_catalog_rows 与 parse_role_fallback 的 anchor 参数，两者都**不改**既有取值）+ 八个消费面的逐值对账 + 注入式红证（含「只改注释 ⇒ 不红」对照）。取号 MC-029：MC-026/027 已被 P1（#5705）占用；MC-028 由同刻在飞的固化单包（#5706）顺延占用 ⇒ 本包从 MC-029 起，MC-030 在其后顺延。 ｜ tags: rbac, single-source, zero-delta, derivation, red-proof, fail-closed
+
+### MC-030. A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判 🔵
+```
+你: 当判定面（admin-api src/main + ai-agent app + frontend）里重新出现 A7 的四个码、或有人把 AuthenticationManager 的 authenticate 调用接上、或身份面常量与这些码混用、或 A7 又授予了目录外的码时，必须有东西变红
+期望: direct_reply
+数据: **判定面零容忍**：`backend/admin-api/src/main` + `backend/ai-agent-service/app` + `frontend` 里出现 `chat:read` / `chat:write` / `customer:read` / `order:read` 的文件数**必须为 0**（退役后现取 = 空）；新增任一处 ⇒ 具名红（内存构造假想 controller 的红证已实跑）
+数据: 🔴 **退役已生效**：A7 授予的码里没有任何一个在权限目录之外（现取 = 0；退役前 = 4）。裁定 = 2026-09-27 人类选「A. 退役」（消除全仓唯一一处授予目录外码的地方、与 ai-agent 镜像对齐）；理由与落地 6 处见设计 §1.6 (d)
+数据: **授予面在仓内不可达（机制存活读数）**：全仓无 `AuthenticationManager` 的 `authenticate(...)` 调用（现取 0）⇒ `UserDetailsService` 那条线没有调用方；谁接上它（哪怕一行）⇒ 红，必须重新取证
+数据: **调用点唯一**：`UserService.getRolePermissions` 的调用点只在声明本体内部（`loadUserByUsername`）—— 口径是**词法**（先剥 Java 注释），注释里写一行假调用**不**算（对照读数已实跑）
+数据: **身份面按角色判、不按码判**：`ServiceTokenFilter.C_END_ROLES` / `SecurityConfig.ADMIN_API_REJECTED_ROLES` / ai-agent `base.CUSTOMER_ONLY_ROLES` 三个常量都必须存在，且与 A7 的码**不相交**
+数据: 🔴 **取证先于裁定**：本判据先出九处消费方逐条证据 + 「授予面在仓内不可达」的读数，**再由人类裁定**（2026-09-27 选「退役」）⇒ 裁定结果被钉成三条只许缩短 / 零容忍的读数，实现者**不得**自行把码放回去
+数据: **未取证项照实登记**：A7 的**运行时**授予值（customer / agent 账号登录后实际拿到的 authority 集）本机没有可跑环境 ⇒ 登记进 `UNCOVERED_FACES` 并写明重启条件，**不得**把本判据读成「A7 已验收」
+跳过: [backend-contract] A7 的静态调用面读数（判定面语料命中表 + 调用点词法 + 身份面常量）由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 §1.4 的 A7 补登注与 §6 第 7 条）：P2 的第一步是**取证**而不是改行为 —— 取证结论 = A7 的四个码在**判定面**只有声明本体自己（无任何授权判定读它们）、`getRolePermissions` 的唯一调用方是 `loadUserByUsername`、而该授予面在仓内**不可达**（全仓无 `AuthenticationManager.authenticate` 调用）、C 端/工人端身份面一律按**角色**判。**人类据此裁定「退役」**（2026-09-27）⇒ 同批落地 6 处（`UserService` 的 `switch` 删两个 `case` / 清单 `roles.login` / 两张台账 **4→0** 与 **2→0** / `rbac/sources.json` 销账 2 条陈旧登记 + 命中数 4→2 / `TenantIsolationTest` 夹具），并在 `rbac/sources.json` 与判据里留下**再引入绊线**（这四个码一旦重新出现在判定面/测试面即红）。落码 = 判定面零容忍 + 退役已生效 + 机制存活读数 + 注入式红证 + 「只改注释 ⇒ 不红」对照 + 未取证项登记（**A7 的运行时授予值**）。取号 MC-030：本 PR 同批占用 MC-029，本号在其后顺延。 ｜ tags: rbac, a7, forensics, retirement, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -7630,8 +7660,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：539（活跃 126，跳过 413）
-- tier 分布：smoke 12 / normal 494 / adversarial 31
+- 用例总数：541（活跃 126，跳过 415）
+- tier 分布：smoke 12 / normal 496 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7646,7 +7676,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：28
+- 杂项域：30
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7701,6 +7731,8 @@
 - MC-026: RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短
 - MC-027: 文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫
 - MC-028: 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）
+- MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
+- MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

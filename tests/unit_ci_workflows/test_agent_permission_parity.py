@@ -147,6 +147,8 @@ AUTH_SERVICE = SERVICE_DIR / "AuthService.java"
 USER_CONTROLLER = CONTROLLER_DIR / "UserController.java"
 REGISTRATION_SERVICE = SERVICE_DIR / "RegistrationService.java"
 PERMISSION_SERVICE = SERVICE_DIR / "PermissionService.java"
+#: 登录面的第二个 `switch` 副本（issue #5699 的 **A7**；P2 由它派生「角色 → 码」的第三面）。
+USER_SERVICE = SERVICE_DIR / "UserService.java"
 ROLE_SERVICE = SERVICE_DIR / "RoleService.java"
 ATTRIBUTION_PATH = AI_SERVICE / "tests" / "tool_http_attribution.py"
 
@@ -208,6 +210,7 @@ def _source_map() -> dict[str, str]:
         ("java:service/RegistrationService.java", REGISTRATION_SERVICE),
         ("java:service/PermissionService.java", PERMISSION_SERVICE),
         ("java:service/RoleService.java", ROLE_SERVICE),
+        ("java:service/UserService.java", USER_SERVICE),
         ("java:service/AuthService.java", AUTH_SERVICE),
         ("menu:frontend", MENU_TS),
         ("menu:controller", MENU_CONTROLLER),
@@ -494,17 +497,33 @@ def parse_menus(sources: dict[str, str]) -> dict[str, dict[str, str | None]]:
 
 # ── 2.4 权限目录与岗位矩阵 ────────────────────────────────────────────────────
 
+#: 权限目录行 = `{ "名称", "码", "资源", "动作", "描述" }`（五列，见 `RegistrationService` 建行处）。
+#: 五个分组**全捕获**：`parse_catalog` 只取第 2 组（码），`parse_catalog_rows` 取全部。
+#: 🔴 这是**同一个**正则——加捕获组不改变码列取值（`parse_catalog` 仍逐值相同），
+#: 目的是让「码 → 元数据」也有**唯一一份**解析实现（issue #5699 的 P2），而不是在别处再写一个。
 _CATALOG_ROW_RE = re.compile(
-    r'\{\s*"[^"]*",\s*"([^"]+)",\s*"[^"]*",\s*"[^"]*",\s*"[^"]*"\s*\}'
+    r'\{\s*"([^"]*)",\s*"([^"]+)",\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\s*\}'
 )
 
 
-def parse_catalog(reg_text: str, perm_text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """权限目录两处：`RegistrationService.defaultPermissions` 与 `PermissionService` 的懒补种目录。"""
+def parse_catalog_rows(
+    reg_text: str, perm_text: str
+) -> tuple[tuple[tuple[str, str, str, str, str], ...], tuple[tuple[str, str, str, str, str], ...]]:
+    """权限目录两处的**整行**读数：`(名称, 码, 资源, 动作, 描述)` 五元组序列。
+
+    与 `parse_catalog` 是**同一份**正则、同一次扫描 —— 后者只是本函数的第 2 列投影
+    （「码 → 元数据」不许有第二份解析实现）。
+    """
     reg = tuple(_CATALOG_ROW_RE.findall(reg_text))
     perm = tuple(_CATALOG_ROW_RE.findall(perm_text))
     assert reg and perm, "权限目录解析出 0 条 ⇒ 判据会空跑（fail-closed）"
     return reg, perm
+
+
+def parse_catalog(reg_text: str, perm_text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """权限目录两处：`RegistrationService.defaultPermissions` 与 `PermissionService` 的懒补种目录。"""
+    rows_reg, rows_perm = parse_catalog_rows(reg_text, perm_text)
+    return tuple(row[1] for row in rows_reg), tuple(row[1] for row in rows_perm)
 
 
 def _java_string_arg(body: str, callee: str) -> str:
@@ -554,21 +573,37 @@ def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
     return out
 
 
-def parse_role_fallback(role_text: str) -> dict[str, frozenset[str]]:
+#: 默认锚点：回退面（`RoleService`）。issue #5699 的 P2 用 `anchor=` 复用**同一个**函数去读
+#: `UserService.getRolePermissions`（形态逐字相同：`case "x" -> List.of(...)`）——
+#: 🔴 复用而不是另写一个：同一形态的第二次实现必然漂移（issue #3570 的教训）。
+ROLE_SWITCH_ANCHOR = "getPermissionCodesForRole(String roleCode)"
+
+#: 第二个 `switch` 副本的锚点 = **A7**（`UserService.getRolePermissions`，登录面）。
+#: 它与回退面**形态逐字相同**（同一种 `case "x" -> List.of(...)`），故复用同一个解析函数。
+ROLE_SWITCH_ANCHOR_USER_SERVICE = "getRolePermissions(String roleCode)"
+
+
+def parse_role_fallback(role_text: str, anchor: str = ROLE_SWITCH_ANCHOR) -> dict[str, frozenset[str]]:
     """S4（回退口径）：`RoleService.getPermissionCodesForRole` 的硬编码 `case "x" -> List.of(...)`。
 
     口径同 `parse_role_defaults`（`#5323` 第 1 条）：先剥注释再按**词法**取字面量 ——
     注释里的 `case "x" -> List.of("y");` 不算回退分支。方法找不到 ⇒ 红（fail-closed；
     旧版这里 `find()` 返回 -1 时静默切片，会让回退表**空表恒绿**）。
+
+    `anchor` 默认 = 回退面；传别的**同形态**方法签名即可读第二个 `switch` 副本
+    （P2 用它读 `UserService.getRolePermissions`，设计真值源 §1.1 的 **A7**）。
+    锚点找不到 ⇒ 红（fail-closed：锚点漂移不得退化成空表恒绿）。
     """
     code = java_code(role_text)
-    start = code.find("getPermissionCodesForRole(String roleCode)")
-    assert start != -1, "`RoleService.getPermissionCodesForRole` 找不到（解析失配 ⇒ 红）"
+    start = code.find(anchor)
+    assert start != -1, f"锚点方法 `{anchor}` 找不到（解析失配 ⇒ 红）"
     body = code[start:]
-    return {
+    out = {
         m.group(1): frozenset(value for _pos, value in java_literals(m.group(2)))
         for m in re.finditer(r'case\s+"([^"]+)"\s*->\s*List\.of\(([^;]*?)\);', body, re.S)
     }
+    assert out, f"锚点 `{anchor}` 下解析出 0 个 `case` ⇒ 判据会空跑（fail-closed）"
+    return out
 
 
 # ── 2.5 skill 绑定（B 端 / C 端可达性的**唯一**真值源）────────────────────────
