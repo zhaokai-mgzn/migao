@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.76.0
+version: 1.77.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2453,7 +2453,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 **宁缺勿滥**（不写进研发模式）。本会话的实测代价：一份转述清单逐条复核后，
 有若干条**读错了对象**（见 §25.6 的边界节与 `FM-A4` / `FM-B3`）。
 
-### 25.2 清单 A：读数与它声称的对象**不是同一个**（13 条；末 6 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标**）
+### 25.2 清单 A：读数与它声称的对象**不是同一个**（14 条；末 7 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标 / 夹具未跟上新增依赖**）
 
 | 记号 | 形态 | 判别动作（一次就能做） | 判据 / 台账 |
 |---|---|---|---|
@@ -2472,6 +2472,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | **FM-A11** | 🔴 **举例即实例**：把某形态的**样例**写进文档 / docstring ⇒ 被**该形态的判据**当成真实例判红（本会话**三次**：① P1 的 M4 docstring 写了「裸 `文件名` + `:` + 行号」⇒ `Case Trust` 规则 G 判红；② 本包把共享固定载体名**原样抄进**技能 / 沿革 / CI-CD / 台账 ⇒ `pr_body_guard` 的 R2 判红，首轮 CI 6 处命中；③ P3 新判据 docstring 的举例被**它自己新加的形态面**抓成未登记副本） | **可复制清单（哪些形态不适合原样写进举例 + 归哪条判据）**：① 会被当语料抓的**路径 / 文件名形态**、**裸 `文件名` + `:` + 行号** ⇒ **打断触发串**（插字 / 占位符 `<...>`）或只给规则名 + 判据名（判据 = `pr_body_guard` R2 / Case Trust 规则 G）；② **引用语料 glob** ⇒ docstring 里点名也要入册（`guard_scope_ledger.json` 的 `kind=mentions`）；③ **关闭关键词 + `#号`** ⇒ 中间插字（§2.2）；④ **弱断言模式字面文本** ⇒ **注释里写也红**（#5284 T2）；⑤ **`case_ids:` 声明形态** ⇒ 首个命中即停。🔴 **纠错**：集成侧「**AST / 编译期不吃举例**」**不成立** —— `test_guard_scope_declaration.py` 判据 1 明取「字符串常量（**含 docstring**）」⇒ AST 面**同样吃**；**真正的分界 = 该判据有没有 prose 豁免** | 判别动作（清单；**无通用机械锁**） |
 | **FM-A12** | 🔴 **否定性结论没有对象可指**：说「**有**守护」时手上有一个**可点的对象**（文件 + 符号）⇒ 复查 = 打开读它；说「**没有**守护」时**没有对象可点** ⇒ 只能靠**穷举面 + 每面的命令**。**实证**：集成侧在指令里写「现有守护 = 无」（**未给检索面与命令**）⇒ 本包据此**自造**了「唯一文件名」处置，而现成工具就在 `scripts/` 下（它还当场判红了本包的文本）。⚠️ **接收方拿到否定性前提时没有对象可以反驳它** ⇒ **这类错最难自查**。与 `FM-A9` **互为镜像** | **否定性结论必须连同「查了哪几面 + 命令 + 面外还有什么」一起说**：`grep -ril '<关键词>' scripts/ .github/scripts/` → `tests/unit_ci_workflows/ tests/` → `.github/workflows/ .github/*.py` → `.agent-presets/ docs/wiki/ AGENTS.md` → `.github/cases/ docs/testing/`，再 `python3 scripts/merge_gate.py --required-diff`（只存在于 CI 服务侧的检查 grep 不到）。**覆盖面声明**：这批面**覆盖不到** ① 只在 CI 服务侧定义的检查 ② 别的仓库 / 外部服务 / 云端配置 ③ **未落码的纪律**（grep 不到，只能问人）④ 只在运行期某分支 / 某时段生效的判据 | 判别动作（见 §25.6 判别动作行） |
 
+| **FM-A14** |**夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象**（2026-09-27 实测）：`.github/scripts/flaky_ledger.py` 的 `approval-queue` 在 #5649 新增了「台账分支存在性」这个**前置事实**（`branch_presence()` ⇒ 真 `git ls-remote` + 真远端），而判据夹具 `tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::_run_cli` 只桩了 `_gh_api` / `approve_runs` / 时钟 ⇒ 新前置**穿透到真远端**：远端**有**台账分支 ⇒ 走队列读取（`::warning::` 那半边能过）；远端**没有**（实测这一态：`chore/flaky-ledger` 不在 origin 上）⇒ `absent` 早退（`::notice::` + `return 0`）⇒「有待批准 run ⇒ 必须告警」**永远走不到** ⇒ required job `ci workflow helper unit tests` 恒红、**卡住所有 PR**（形态 = #5396）。⚠️ 判据**还在跑、名字没变**，但**读数取决于当下远端状态**（同一份代码在不同时刻给出不同结论） | 先问「**我这条判据依赖的外部事实，夹具桩全了吗**」：读夹具源码逐个外部依赖问「它是桩还是真调用」；再在**纯检出**上跑同一判据（`git worktree add --detach … origin/main`）—— 纯检出与工作区给出**不同**结论、或远端状态变化前后给出不同结论，就是这一形态。复算：纯检出跑 `python3 -m pytest tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py -q`（实测：修前 `1 failed / 10 passed` ⇒ 修后 `14 passed`） | `tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts`（夹具**桩表**必须含 `branch_presence` + 两面断言都必须被调用；含内存构造的删除红证）· `…::fixture_stub_problems`（纯函数，红证可内存构造） |
 | **FM-A13** | 🔴 **校验坐标会让判据假红**（**机制已修，v1.72.0**；坐标纪律保留）：**完全相同的代码**，纯检出放在**共享临时根内**（`/tmp/...`）⇒ `pr_body_guard.py scan` 报 **1 处 R1 命中**（`scripts/pr_body_guard.py` 的**模板** token：相对 token 经 `shared_temp_root()` 按**当前工作目录**解析 ⇒ `/tmp/<检出>/{target}` 落进共享根）；检出在 `$HOME` 下 ⇒ **0 处命中**。实测：`/tmp` 下的检出 ⇒ `scan` rc=1 + `test_pr_body_guard.py` **5 failed**；`$HOME/…` ⇒ **50 passed / scan rc=0**。⚠️ 本仓会话惯例**恰恰**把临时 worktree 放 `/tmp` ⇒ 容易把假红读成「main 上有真缺陷」。✅ **机制修复（v1.72.0）**：`is_shared_fixed_path()` 改成「**相对 token = 算不出来 ⇒ 不判**」（`realpath()` 对相对路径按 CWD 解析 ⇒ **坐标不在被判对象里**）；**红证两条** = ① 共享根**内**的纯检出 `scan` rc=0（修前 rc=1）；② **绝对**共享根固定路径**照旧判红**（射程**没**放宽）。⚠️ **坐标纪律仍要留**：检出落在共享根内时 `pr_body_guard.py new` **按设计拒绝**分配载体、`shared_temp_root()` **按设计**判该检出为共享 ⇒ 同一检出仍有 **3 failed**（设计要求，不是缺陷） | **纯检出复算的地点首选共享根之外**，且**先自证坐标再读结论**：`cd <检出> && pwd` → `python3 scripts/pr_body_guard.py scan >/dev/null 2>&1; echo "scan rc=$?"`。**判别规则**：`scan` 报命中时先 `grep -n` 落到具体文件行，确认它是**真实例**还是**被判据自己的输出文案 / 模板**；后者 ⇒ 先怀疑坐标，不要先怀疑 main | 判别动作（见 §25.6 判别动作行） |
 | 记号 | 形态 | 判别动作 | 判据 / 台账 |
 |---|---|---|---|
@@ -2726,7 +2727,7 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   不经这段读数；④ **说不出「缺的是哪条守卫」**（那要人读 diff）；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
-## 版本沿革（v1.1 → v1.76.0）
+## 版本沿革（v1.1 → v1.77.0）
 
 - v1.76.0（2026-09-27 **新增 `FM-R13`（派单的「环境已同步」断言会过期）+ `land` 的 preflight 打印「工具来源」**，本次；来源 = 本单指令「让 `land` / 派单能看见它用的是哪一份工具」）：
   ① **病根（由本包独立复核，读数见 PR 正文）**：`land` 的 ①步跑的不是你 worktree 里的
@@ -3690,3 +3691,7 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   **未实装 / 边界（照实登记，§19.1）**：`FM-R9`~`FM-R12` 四条**只有纪律 + 判别动作**，没有机械锁；
   `NS-2` 的收窄**不会让任何判据变红或变绿**；判据 21 只管**两份清单标题的条数**（自然语言计数、`merge_log` 历史句
   与别的散文读数仍在面外，见 §26.4 与台账 `NS-4`）。本节**不改任何门禁的通过条件、不新增豁免**。
+- v1.77.0（2026-09-27 **新增 §25.2 的 `FM-A14`（夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象）**，本次；来源 = #5724 的链内修：required job `ci workflow helper unit tests` 在 main 上恒红、`Post-Merge Verify` 连带判红，复现于**纯 `origin/main` 检出**；真因 = `approval-queue`（#5649）新增的前置事实 `branch_presence()`（真 `git ls-remote`）没有被判据夹具 `_run_cli` 桩掉 ⇒ 远端有没有台账分支决定了判据走哪条路。
+  ① **实例修法（同 PR）**：夹具**显式**桩 `branch_presence`（`presence=` 参数，默认「存在」）+ **两面断言**（存在 ⇒ `::warning::` + 人工出口命令，原断言一字未删；**确定不存在** ⇒ `::notice::` + `rc=0`，即 #5649 口径）+ 读数面加一条「桩的是存在却走了不存在早退 ⇒ 报判定顺序与桩不符」的自检。
+  ② **类级元守卫**：`tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts`（判据 = `…::fixture_stub_problems`：夹具**桩表**必须含 `branch_presence`；两个方向的断言函数都必须存在**且被测试调用**；附一条**内存构造**的删除红证）。
+  **未实装 / 边界（照实登记，§19.1）**：本条只机械保证**这一个夹具**对**这一个事实**桩了 —— 「所有夹具都桩掉了全部运行期依赖」判不了（需要枚举每个夹具的外部依赖，本仓不做文本层的一刀切）；`FM-A14` 是 `kind=criterion`（有判据），故 §25.6 的 `kind=action` 判别动作行**不变**（仍 9 条）。
