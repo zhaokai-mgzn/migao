@@ -43,6 +43,65 @@
     · **复算 #5687（同一天第二个新守卫，结论：三张面**一张都没命中**）**：新增 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：消红路径未登记即红）时按上面清单自查 —— 面 1 **命中**（声明了 `# case_ids: MC-024`，新用例号顺延自当时最大号 MC-023）；面 2 / 面 3 **未命中**（该文件的模块级字面量注释里没有那七个措辞、也不含 `*.sh` 语料字面量）⇒ 两条 pytest 全绿 ⇒ **无须**动 `declaration_gate_registry.json` / `guard_scope_ledger.json`。⇒ 与上面的「边界 ①」合起来读：**三张面是按形态触发的，不是「新守卫一律要登记三处」**（把它读成后者会去改错册子）。
     · 🔴 **本节只覆盖「新建守卫文件」这一种形态**：往**既有**守卫文件里加判据（如本单同时给 `test_flaky_ledger_kind_semantics.py` 加了 10 条）**不在本节面内** —— 那类改动命中的是各面自己的判据（如用例号真实性、弱断言面），**没有**「新文件三张面」这条路径。
   · **`Flaky Ledger Reconcile` 的红是给人看的，不是拦合并的（issue #5687 顺带登记，**有意不修**）**：该 job **不在** `branches/main/protection` 的 required 集合里（人已裁定：用阻塞换可见性不划算）。它的**唯一**价值是「把 `kind=flaky` 且 `status=open` 且没有 `follow_up` 的欠账渲染成 job summary + `::error::`」。⇒ 🔴 **别把「它没红」读成「没问题」**：`kind=suspect-window-deterministic`（跨时间桶的「重跑通过」）这类**窗口型确定性缺陷**此前**只有这一个信号**，而它可以无限循环（缺陷留在 main 上、明天同一时段再红一次）。真正的护栏改成**在判定侧收紧**：跨桶 ⇒ 不再判普通 `flaky` + **强制跟踪**（缺 `follow_up` ⇒ `selftest` / `append` 判违规，fail-closed）；判据见 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：任何以重跑结果为唯一依据消红/降级的路径**未登记即红**）与 `tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`（实例，含 run `36280962072` 的真实读数复算）。
+## 红证机具的可靠性：改磁盘文件的变异**可能不被读到**（2026-09-27 实测，关联 issue #5687）
+
+**这一节是一个被实测证伪的假设的下场记录**：做红证时我以为「改磁盘上的真文件 → 跑 pytest ⇒ 判据必红」是稳的。**它不是。**
+
+### 形态（现象）
+
+给判据做注入式红证时，用「**改磁盘上的真文件 → 跑 pytest**」这条路：**判据函数直调能判红，而 pytest 跑法下判据拿到的是未变异的文本** ⇒ 该红证**在 CI 上永远绿** = **空断言**（正是「每条断言都要有红证」要防的那个东西本身）。
+
+### 本会话的实测读数（三条红证，逐条）
+
+对 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py::TestWorkflowStructure` 的三条 workflow 红证（被测文件 = `.github/workflows/flaky-triage.yml`）：
+
+| 注入的坏形态 | 期望 | 实测（**改盘后跑 pytest**） | 同一函数**直调**（`python -c`） |
+|---|---|---|---|
+| `mark_suspect` 步骤条件改 `false` | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+| 给 `mark_suspect` 步加 `--add-label "flaky/rerun-green"` | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+| 摘掉 `triage-follow-up` 调用 | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+
+补充读数（说明它不是「注入压根没落盘」）：
+
+- 改盘后**在测试方法里**读回文件，`REAL_WORKFLOW` 与 `WORKFLOW_PATH.read_text()` **都**含注入串（`True`）；把 `bad` 打印出来也**确实非空**；
+- 但把该处的断言换成 `raise AssertionError` ⇒ **测试会失败**。⇒ **同一个测试方法里，"变异被读到"时有时无** —— 不是简单的"文件没改到"。
+- 已排除：`.pyc` 缓存（清空 `__pycache__` 后仍复现）、`tests/unit_ci_workflows/conftest.py` 的文件级缓存（该 conftest 只缓存用例语料解析，不缓存 workflow 文本）。
+
+🔴 **机制未定（如实登记，不编一个听起来对的机制）**：**现象已定、机制未定**。排查到此为止 —— 继续追这条线索的收益低于「换一条结构上不可能出这个问题的做法」（见下）。
+
+### 正确做法（本仓现成范例）
+
+**当场在内存里构造坏形态**，不要改磁盘：
+
+```python
+wf = yaml.safe_load(REAL_WORKFLOW)                       # 真文件当基线
+wf["jobs"]["triage"]["steps"] = [ …按判据语义改结构… ]    # 变异发生在**内存对象**上
+mutant = yaml.safe_dump(wf, allow_unicode=True, sort_keys=False)
+bad = workflow_structure_violations(mutant)              # 判据吃的是**当场构造**的文本
+```
+
+并配一条**判别力自证**（否则「内存构造」也只是"我以为构造成功了"）：
+
+- 判据：`tests/unit_ci_workflows/test_rerun_to_clear_paths.py::TestWorkflowStructure::test_guard_has_discriminating_power_in_memory`
+- 读数（三条各自判红，逐条记在本 PR body）：条件改 `false` ⇒ `没有 action == 'mark_suspect' 的步骤 ⇒ …没有任何动作落地（= 静默放行，红线）`；加 flaky 标签 ⇒ `mark_suspect 打了 flaky/rerun-green ⇒ …⇒ 红线`；摘跟踪单调用 ⇒ `没有调用 flaky_ledger.py triage-follow-up 的步骤 ⇒ 「强制跟踪」没有实体动作`。
+
+### 通用判据（写给下一个包）
+
+> **凡红证涉及"改磁盘文件"，必须额外有一条断言证明「该变异真的被读到了」**（读回文件内容比对 / 断言变异体 ≠ 原文 / 直接喂构造体）；否则**视为空断言**。
+
+本会话出现的**三个同族对照读数**（**读数各不相同**，别混为一谈）：
+
+1. 另一包：「**只改注释**」⇒ 命中**锚失配**而**不是目标分支**（红证打偏 —— 注入了，但打的不是那条判据）；
+2. 「**撤掉整条禁则** ⇒ 主判据**转绿**」⇒ 那才是**真的反向红证**（拿掉实现就变绿 = 该红是它挣来的）；
+3. 本条：**变异没被读到 ⇒ 恒绿**（`bad` 为空、测试通过）。
+
+### 🔴 边界（显式登记：这一节**覆盖不到**什么）
+
+- ❌ **「内存构造」这条路覆盖不到「该文件根本没被任何判据读过」**：那种情况下判据**连红都不会红**，得靠「**语料非空 / 判据非空转**」那条自证（`problems_rerun_to_clear_paths` 的 `语料为空` 分支即此类）。
+- ❌ 本节的结论来自 **workflow 文件（YAML 文本）**的实测 —— **是否适用于所有语料类型（Python / JSON / SQL / 生成物）未逐一验证**。⇒ 别把它读成「所有红证都不可信」，也别读成「只改 workflow 才要小心」。
+- ❌ 本节**不是新门禁、不改任何判据的通过条件**：没有任何东西会拦住「用改磁盘文件做红证」——**只有纪律**。
+- ❌ 本节**不声称**「CI 上跑就一定复现」：观测发生在**本机**（pytest 9.1.1 / Python 3.11）；「CI 上永远绿」是**由形态推出的结论**（若注入不被读到，判据就不会红），**未在 CI 上直接观测**到某条红证恒绿。
+
   · **成本读数 / 上限 / 预算（issue #3507 ②）**：`tests/unit_ci_workflows/ci_cost_ledger.json` 逐条记录 PR 触发腿的**实测**中位/p90/max、**硬杀上限**与**目标预算**。
     · **硬杀上限** = 该腿自己声明的 `timeout-minutes`（判据与现取 YAML 逐条复比 ⇒ 手抄腐烂即红）；
     · **目标预算** = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）—— 预算是**读数的函数**，不是人手填的数；取不到读数（n < 3）的腿保持 `null` + 显式留白，**不编数**（判据 4 手改任一预算即红）；
