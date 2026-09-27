@@ -156,7 +156,18 @@ PERMISSION_CATALOG = frozenset({
     "agent:chat",
 })
 
-#: 商户角色的默认权限码（DB seed 口径；`admin` 运行时恒为 `*`）
+#: 商户角色的默认权限码。
+#:
+#: 🔴 **口径关系（issue #5683 登记，别让它继续隐身）**：本镜像对**不同角色**取**不同来源**，
+#: 两者必须**同时**成立，由本文件的两条判据分别守着：
+#:   · **五个种子岗位**（`admin` / `customer_service` / `operator` / `sales` / `finance`）⇒ 取 **seed 口径**
+#:     （新租户真值，`V29`/`V32`/`V43`/`V124`/`V125` 对存量租户补齐）。判据 =
+#:     `test_seeded_role_defaults_match_the_mirror`（**逐岗相等**，`admin` 的 seed 是全集而镜像是 `*`）。
+#:   · **两个历史遗留角色**（`product_manager` / `knowledge_editor`）⇒ 取 **回退口径**（它们**不在 seed 里**，
+#:     `RoleService.getPermissionCodesForRole` 是它们**唯一**的一份默认定义）。判据 =
+#:     `test_the_hardcoded_fallback_is_covered_by_the_mirror`（**镜像 ⊇ 回退**）。
+#: #5683 之后两条**同时**为真（seed 与回退已逐角色码一致）：`seeded_role_gaps(...) == []`
+#: **且** `fallback_role_gaps(...) == []`。任一侧漂移都会有一条判据变红。
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset({"*"}),
     "operator": frozenset({

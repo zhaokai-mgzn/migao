@@ -749,17 +749,37 @@ class RoleServiceTest {
     }
 
     @Test
-    @DisplayName("回退路径: 客服/销售/财务**没有** case ⇒ 空表（#5683 在册未决项，超出已批准范围）")
-    void fallbackCustomerServiceSalesFinance_AreEmptyTables() {
-        // issue #5683 ④：种子给这三个岗位都授了码，而回退给它们**空表** ⇒ 持这些角色码且无权限快照的
-        // 历史账号**零权限**（连「经营看板」都看不见）。补它们 = 让这批账号从零权限变成有权限 =
-        // **又一次授权放宽**，**不在**本单已批准范围（只批了 operator / product_manager）⇒ 只量化、
-        // 提请人类裁定。本测试把现状**钉住**（不是背书）：人类裁定补齐后，这里与判据 14 的
-        // `ROLE_FALLBACK_DIVERGENCES` 必须**同批**改，否则两层判据都会红。
-        for (String role : List.of("customer_service", "sales", "finance")) {
+    @DisplayName("回退路径: 客服/销售/财务也取到与种子一致的全集（#5683 裁定补齐，逐码点名）")
+    void fallbackCustomerServiceSalesFinance_MatchSeedMatrixExactly() {
+        // 补码前：这三个角色在回退 switch 里**没有 `case`** ⇒ 落 `default -> List.of()` ⇒ **空表**
+        // ⇒ 持这些角色码且无权限快照的历史账号**零权限**（连「经营看板」都看不见）。
+        // #5683 经人类裁定补齐（复核结论 (b) 类：原登记的主题是「写码」、且自述范围是 #5246 那一单的
+        // 可见性变更范围 —— 它没有对「这三个角色在回退里整体为空」作出决定 ⇒ 该面属**未覆盖**）。
+        // 🔴 码集逐字取自 `RegistrationService` 的对应默认列表（不增不减）；逐码点名，不以集合大小充数。
+        assertThat(roleService.getEffectivePermissionCodesForRoleCode("customer_service", null))
+                .containsExactlyInAnyOrder(
+                        "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
+                        "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
+                        "agent:session:manage");
+        assertThat(roleService.getEffectivePermissionCodesForRoleCode("sales", null))
+                .containsExactlyInAnyOrder(
+                        "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
+                        "processing:view", "inbound:view");
+        assertThat(roleService.getEffectivePermissionCodesForRoleCode("finance", null))
+                .containsExactlyInAnyOrder(
+                        "dashboard:view", "order:list", "order:detail", "finance:view",
+                        "processing:view", "inbound:view", "finance:create");
+    }
+
+    @Test
+    @DisplayName("回退路径: 种子的五个岗位码在回退里都**非空** ⇒ 「整角色空表」形态已消灭（#5683）")
+    void fallbackEverySeededRoleHasANonEmptyCase() {
+        // 这是 #5683 判据 14 ① 在**行为面**的对应物：`∅ ⊆ 种子` 恒真 ⇒ 只判「回退不得更宽」会全绿，
+        // 而该角色在回退路径上零权限。补码后每个种子岗位码都必须取到非空集合。
+        for (String role : List.of("admin", "customer_service", "operator", "sales", "finance")) {
             assertThat(roleService.getEffectivePermissionCodesForRoleCode(role, null))
-                    .as("回退路径 `%s` 今天应为空表（在册未决项，见 #5683 ④）", role)
-                    .isEmpty();
+                    .as("回退路径 `%s` 不得为空表（#5683：种子里有的每个岗位码都必须在回退里有 case）", role)
+                    .isNotEmpty();
         }
     }
 

@@ -366,14 +366,19 @@ public class RoleService {
                     "after_sales:view", "knowledge:view",
                     // issue #5246 追加单（写码）：同样与种子矩阵逐值同步 —— 回退路径若不跟上，
                     // 「老员工（无权限快照）改不了单、新员工能改」会成为只在一部分账号上出现的怪状。
-                    // ⚠️ 本 switch 只有 admin/operator/product_manager/knowledge_editor 四个 case：
-                    // finance 与 customer_service **没有**硬编码回退（落 default ⇒ 空表），
-                    // 故本单对这两个岗位的写码只在种子矩阵与 V124 迁移里落地（如实登记，非静默遗漏）。
-                    // 🔴 这条「空表」是 issue #5683 的**在册未决项**：种子给客服/销售/财务都授了码，
-                    // 而回退给它们空表 ⇒ 那些历史账号**零权限**（连「经营看板」都看不见）。
-                    // ⚠️ 上面那句**只点名了 finance 与 customer_service** —— `sales` 从未被登记
-                    // （#5683 全仓核对的结论，如实记在此处）。补它们 = 又一次授权放宽，超出 #5683
-                    // 已批准范围 ⇒ 只量化 + 提请裁定，**有意留空**（由判据 14 的差异台账具名登记，三条）。
+                    // ⚠️ issue #5246（追加单）曾在此登记：「本 switch 只有 admin/operator/
+                    // product_manager/knowledge_editor 四个 case：finance 与 customer_service 没有硬编码
+                    // 回退（落 default ⇒ 空表），故本单对这两个岗位的**写码**只在种子矩阵与 V124 迁移里
+                    // 落地（如实登记，非静默遗漏）」。
+                    // 🔴 issue #5683 的复核结论（(b) 类，依据见 PR 正文）：那条登记的**主题是「写码」**、
+                    // 且自述范围是「本单（#5246）的可见性变更范围」—— 它**没有**对「这三个角色在回退里
+                    // 整体为空」作出决定 ⇒ 该面属**未覆盖**（`sales` 更从未被点名）。人类 2026-09-27
+                    // 因此裁定补齐三岗（V124 只补了两个**读**码，且其自述理由「sales/finance 不在本单的
+                    // 可见性变更范围内（不扩权）」是**当时那一单的范围声明**，不是长期决定）。
+                    // 另一个曾可能的理由（「这些账号必然有 role_permissions 记录 ⇒ 回退永不命中」）
+                    // 已被**证伪**：`getUserPermissions` 在**员工没有 user_roles 行**时直接调本方法
+                    // （根本不经 role_permissions）—— 历史员工 / ai-agent 直接创建的账号正走这条路。
+                    // 补码后本 switch 有 **7 个 case**，与种子矩阵逐角色码一致（判据 14 穷举守着）。
                     "order:update", "order:create", "customer:create", "finance:create",
                     "agent:session:manage"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
@@ -392,6 +397,23 @@ public class RoleService {
                     // 而缺该页第一屏读码 ⇒ 点进去 403。
                     // 🔴 它与「节点码是否有意保留管理码」是同一处不一致的一体两面，需同批裁定。
                     "processing:view"
+            );
+            // ── 以下三个 case 由 issue #5683 新增（人类 2026-09-27 裁定，**授权变更**）──
+            // 补码前它们**没有 case** ⇒ 落 `default -> List.of()` ⇒ **空表** ⇒ 走回退路径的历史账号
+            // **零权限**（连「经营看板」都看不见）。码集**逐字取自** `RegistrationService` 的
+            // 对应默认列表（不增不减），逐角色码的一致性由判据 14 穷举守住。
+            case "customer_service" -> List.of(
+                    "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
+                    "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
+                    "agent:session:manage"
+            );
+            case "sales" -> List.of(
+                    "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
+                    "processing:view", "inbound:view"
+            );
+            case "finance" -> List.of(
+                    "dashboard:view", "order:list", "order:detail", "finance:view",
+                    "processing:view", "inbound:view", "finance:create"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view",

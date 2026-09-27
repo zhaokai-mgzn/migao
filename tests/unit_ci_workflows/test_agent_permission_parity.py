@@ -2615,63 +2615,12 @@ class RoleFallbackDivergence:
 #: 今天在册的三条 = 客服 / 销售 / 财务「种子有码、回退**没有 case**（落 `default` ⇒ 空表）」。
 #: 它们是**超出 #5683 已批准范围**的更大一处授权变更（补码 = 让这三个岗位的历史账号从**零权限**
 #: 变成有权限），#5683 **只量化、只提请裁定**，故**有意留在台账里**，由人类裁定后另行销账。
-ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {
-    "customer_service": RoleFallbackDivergence(
-        missing=frozenset({
-            "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
-            "dashboard:view", "inbound:view", "knowledge:view", "order:detail", "order:list",
-            "processing:view",
-        }),
-        extra=frozenset(),
-        reason=(
-            "回退 switch**没有** `case \"customer_service\"` ⇒ 落 `default` ⇒ **空表**：持该角色码且"
-            "无 `role_permissions` 记录 / 无权限快照的历史账号**零权限**（连「经营看板」都看不见），"
-            "而种子给同一岗位授了 10 个码。补它 = 把这批历史账号从零权限放到有权限 = **改授权**，"
-            "**超出 #5683 用户已批准的范围**（#5683 只批了 operator / product_manager）⇒ 只量化、"
-            "提请人类裁定，本单**不改**。"
-        ),
-        surfaces_when=(
-            "持该角色码且**无 `role_permissions` 记录 / 无 `users.permissions` 快照**的历史客服账号登录 ⇒ 侧边栏**只剩全员可见的节点**（「经营看板」节点有意无码 ⇒ 还在），售后工单 / 在线接待 / 客户列表 / 知识库 / 入库单 / 订单列表全部消失；任何 API 调用 403。"
-        ),
-        owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
-        issue="#5683",
-    ),
-    "sales": RoleFallbackDivergence(
-        missing=frozenset({
-            "customer:view", "dashboard:view", "inbound:view", "order:detail", "order:list",
-            "processing:view", "product:list",
-        }),
-        extra=frozenset(),
-        reason=(
-            "同客服：回退 switch 没有 `case \"sales\"` ⇒ 空表，历史账号零权限；种子授了 7 个码。"
-            "补它同属**超出已批准范围**的授权放宽 ⇒ 只量化、提请裁定，本单**不改**。"
-        ),
-        surfaces_when=(
-            "同客服：历史销售账号登录 ⇒ 商品列表 / 客户列表 / 入库单 / 订单列表全部不可见，API 403。"
-        ),
-        owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
-        issue="#5683",
-    ),
-    "finance": RoleFallbackDivergence(
-        missing=frozenset({
-            "dashboard:view", "finance:create", "finance:view", "inbound:view", "order:detail",
-            "order:list", "processing:view",
-        }),
-        extra=frozenset(),
-        reason=(
-            "同客服：回退 switch 没有 `case \"finance\"` ⇒ 空表，历史账号零权限；种子授了 7 个码。"
-            "补它同属**超出已批准范围**的授权放宽 ⇒ 只量化、提请裁定，本单**不改**。"
-        ),
-        surfaces_when=(
-            "同客服：历史财务账号登录 ⇒ 财务对账 / 入库单 / 订单列表全部不可见，API 403。"
-        ),
-        owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
-        issue="#5683",
-    ),
-}
+ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {}
 
-#: 差异台账的**现取**条数上限（只许缩短）：今天 = 3（客服 / 销售 / 财务）。
-ROLE_FALLBACK_DIVERGENCE_CEILING = 3
+#: 差异台账的**现取**条数上限（只许缩短）：issue #5683 收口后 = **0**
+#: （operator 的 4 码差距对齐、客服/销售/财务三岗补上 case ⇒ 台账已**整表销账**）。
+#: 今天任何一个角色码只要出现未登记的差异 ⇒ 红；「登记了却已补齐」也是红。
+ROLE_FALLBACK_DIVERGENCE_CEILING = 0
 
 #: issue #5683 **生效前**的回退集合逐值冻结（`git show origin/main:<path>` 的读数，2026-09-27）——
 #: 「本单新增了哪些码」= 现取 − 本基线：不许靠提交信息或人的记忆去记（那是不可复算的）。
@@ -2688,6 +2637,11 @@ FALLBACK_BASELINE_BEFORE_5683: dict[str, frozenset[str]] = {
         "dashboard:view", "processing:manage", "product:category", "product:category:view",
         "product:create", "product:list", "production:view",
     }),
+    # 这三个角色**补码前在 switch 里根本没有 `case`** ⇒ 落 `default -> List.of()` ⇒ **空表**。
+    # 「空表」在这里逐字记为空集（不是「没有这一项」）：基线要能区分「当时没有 case」与「当时查不到」。
+    "customer_service": frozenset(),
+    "sales": frozenset(),
+    "finance": frozenset(),
 }
 
 
@@ -2713,64 +2667,110 @@ class AuthorizationCensusEntry:
 #:   · 登记的岗位集必须 == 现取；列的端点必须真存在**且生效码就是本码**；菜单节点同理；工具同理。
 #: 于是「补码」这件事不可能悄悄发生 —— 每一个码都必须同时交代它打开了哪几扇门。
 AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
-    "processing:view": AuthorizationCensusEntry(
-        roles=("operator", "product_manager"),
-        endpoints=("GET /api/admin/production/pool", "POST /api/admin/production/pool/preview"),
+    "after_sales:view": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/after-sales', 'GET /api/admin/after-sales/{}', 'GET /api/admin/agent/after-sales/mine'),
+        menu_nodes=('auth:售后工单', 'controller:售后工单', 'frontend:售后工单'),
+        tools=('after_sales_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「售后工单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/after-sales；GET /api/admin/after-sales/{}；GET /api/admin/agent/after-sales/mine）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（after_sales_manage）。'),
+    ),
+    "agent:session": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/agent-sessions', 'GET /api/admin/agent-sessions/monitor', 'GET /api/admin/agent-sessions/{}', 'POST /api/admin/agent-sessions'),
+        menu_nodes=('auth:在线接待', 'controller:在线接待', 'frontend:在线接待'),
+        tools=('session_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「在线接待」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent-sessions；GET /api/admin/agent-sessions/monitor；GET /api/admin/agent-sessions/{} 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（session_manage）。'),
+    ),
+    "agent:session:manage": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('POST /api/admin/agent-sessions/{}/assign', 'POST /api/admin/agent-sessions/{}/end', 'POST /api/admin/agent-sessions/{}/messages'),
         menu_nodes=(),
         tools=(),
-        reachable=(
-            "「智能派单」页（`/production/pool`）的第一屏读端点 `GET /api/admin/production/pool` 要本码，"
-            "而**节点码是 `processing:manage`** ⇒ 补本码前：回退账号（持管理码）**菜单看得见、点进去 403**；"
-            "补本码后该页可读。本码**不挂任何菜单节点**（`menu.ts` 里无节点用它）⇒ 补它**不改变任何菜单的"
-            "可见性**，只把已有节点背后的 API 打通 —— 这正是「补读码」方向不需要连带改节点码的原因。"
-        ),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/agent-sessions/{}/assign；POST /api/admin/agent-sessions/{}/end；POST /api/admin/agent-sessions/{}/messages）。'),
     ),
-    "processing:update": AuthorizationCensusEntry(
-        roles=("operator",),
-        endpoints=(
-            "PATCH /api/admin/processing-orders/{}",
-            "POST /api/admin/processing-orders/generate",
-            "POST /api/admin/production/pool/dispatch",
-        ),
+    "customer:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'sales'),
+        endpoints=('GET /api/admin/customer-tags', 'GET /api/admin/customers', 'GET /api/admin/customers/profile-view', 'GET /api/admin/customers/{}'),
+        menu_nodes=('auth:客户列表', 'controller:客户列表', 'frontend:客户列表'),
+        tools=('customer_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「客户列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/customer-tags；GET /api/admin/customers；GET /api/admin/customers/profile-view 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（customer_manage）。'),
+    ),
+    "dashboard:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
+        menu_nodes=('auth:每日简报', 'controller:每日简报', 'controller:经营看板', 'frontend:每日简报'),
+        tools=('briefing_query', 'dashboard_stats'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
+    ),
+    "finance:create": AuthorizationCensusEntry(
+        roles=('finance',),
+        endpoints=('POST /api/admin/finance/transactions',),
         menu_nodes=(),
-        tools=("processing_order_generate", "processing_order_update"),
-        reachable=(
-            "加工单更新 / 生成、派单执行三个写端点改用本码判定 ⇒ 补码前回退账号在「加工项管理」"
-            "与「智能派单」上**改不了单**（种子路径的新账号能改）；另有两个 B 端 Agent 工具"
-            "（`processing_order_update` / `processing_order_generate`）声明本码 ⇒ Agent 面对回退账号"
-            "由「拿不到权限」变为「可写」。"
-        ),
+        tools=(),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：1 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/finance/transactions）。'),
     ),
-    "inbound:view": AuthorizationCensusEntry(
-        roles=("operator",),
-        endpoints=(
-            "GET /api/admin/inbound-orders",
-            "GET /api/admin/inbound-orders/batches",
-            "GET /api/admin/inbound-orders/{}",
-        ),
-        menu_nodes=("frontend:入库单", "controller:入库单", "auth:入库单"),
-        tools=("inbound_order_query",),
-        reachable=(
-            "「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**"
-            "（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。"
-            "Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。"
-        ),
+    "finance:view": AuthorizationCensusEntry(
+        roles=('finance',),
+        endpoints=('GET /api/admin/finance/reconciliation', 'GET /api/admin/finance/summary', 'GET /api/admin/finance/transactions'),
+        menu_nodes=('auth:财务对账', 'controller:财务对账', 'frontend:财务对账'),
+        tools=('finance_api',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「财务对账」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/finance/reconciliation；GET /api/admin/finance/summary；GET /api/admin/finance/transactions）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（finance_api）。'),
     ),
     "inbound:create": AuthorizationCensusEntry(
-        roles=("operator",),
-        endpoints=(
-            "GET /api/admin/inbound-orders/opening-template",
-            "PATCH /api/admin/inbound-orders/{}",
-            "POST /api/admin/inbound-orders",
-            "POST /api/admin/inbound-orders/opening-import",
-        ),
+        roles=('operator',),
+        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import'),
         menu_nodes=(),
         tools=(),
-        reachable=(
-            "建单 / 改单 / 期初导入三个写端点（外加期初模板读端点，注解口径如实照录）改用本码 ⇒ "
-            "补码前回退账号进得去「入库单」页（若已持 `inbound:view`）却**建不了单**；"
-            "补码后与种子路径的运营同权。本码不挂菜单节点、无 Agent 工具声明它。"
-        ),
+        reachable=('建单 / 改单 / 期初导入三个写端点（外加期初模板读端点，注解口径如实照录）改用本码 ⇒ 补码前回退账号进得去「入库单」页（若已持 `inbound:view`）却**建不了单**；补码后与种子路径的运营同权。本码不挂菜单节点、无 Agent 工具声明它。'),
+    ),
+    "inbound:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'sales'),
+        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}'),
+        menu_nodes=('auth:入库单', 'controller:入库单', 'frontend:入库单'),
+        tools=('inbound_order_query',),
+        reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
+    ),
+    "knowledge:view": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/knowledge/candidates', 'GET /api/admin/knowledge/candidates/pending-count', 'GET /api/admin/knowledge/cards', 'GET /api/admin/knowledge/cards/search', 'GET /api/admin/knowledge/templates'),
+        menu_nodes=('auth:知识库', 'controller:知识库', 'frontend:知识库'),
+        tools=('knowledge_search',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「知识库」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；5 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/knowledge/candidates；GET /api/admin/knowledge/candidates/pending-count；GET /api/admin/knowledge/cards 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（knowledge_search）。'),
+    ),
+    "order:detail": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=(),
+        menu_nodes=('controller:订单详情',),
+        tools=(),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'),
+    ),
+    "order:list": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/processing-fee-combinations', 'GET /api/admin/production/processing-fee-gaps', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview', 'POST /api/admin/production/orders/{}/instantiate', 'POST /api/admin/production/orders/{}/operations/{}/report', 'POST /api/admin/production/orders/{}/print', 'POST /api/admin/production/orders/{}/ship'),
+        menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
+        tools=('logistics_track', 'order_query'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；25 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+    ),
+    "processing:update": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('PATCH /api/admin/processing-orders/{}', 'POST /api/admin/processing-orders/generate', 'POST /api/admin/production/pool/dispatch'),
+        menu_nodes=(),
+        tools=('processing_order_generate', 'processing_order_update'),
+        reachable=('加工单更新 / 生成、派单执行三个写端点改用本码判定 ⇒ 补码前回退账号在「加工项管理」与「智能派单」上**改不了单**（种子路径的新账号能改）；另有两个 B 端 Agent 工具（`processing_order_update` / `processing_order_generate`）声明本码 ⇒ Agent 面对回退账号由「拿不到权限」变为「可写」。'),
+    ),
+    "processing:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'product_manager', 'sales'),
+        endpoints=('GET /api/admin/production/pool', 'POST /api/admin/production/pool/preview'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('「智能派单」页（`/production/pool`）的第一屏读端点 `GET /api/admin/production/pool` 要本码，而**节点码是 `processing:manage`** ⇒ 补本码前：回退账号（持管理码）**菜单看得见、点进去 403**；补本码后该页可读。本码**不挂任何菜单节点**（`menu.ts` 里无节点用它）⇒ 补它**不改变任何菜单的可见性**，只把已有节点背后的 API 打通 —— 这正是「补读码」方向不需要连带改节点码的原因。'),
+    ),
+    "product:list": AuthorizationCensusEntry(
+        roles=('sales',),
+        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
+        menu_nodes=('auth:商品列表', 'controller:商品列表', 'frontend:商品列表'),
+        tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
     ),
 }
 
@@ -2892,10 +2892,12 @@ def problems_role_default_parity(w: World) -> list[str]:
             )
         if not entry.reachable.strip():
             out.append(f"`AUTHORIZATION_CENSUS['{code}']` 缺 `reachable`（为什么现在可达 —— 人读的理由）")
-        if not entry.endpoints:
+        # census 的核心 = 「这个码因此打开了哪几扇门」⇒ 端点 / 菜单节点 / 工具**至少有一个**，
+        # 否则它一个面都没交代（`order:detail` 这类只作页/路由码、没有专门端点的码由菜单节点交代）。
+        if not (entry.endpoints or entry.menu_nodes or entry.tools):
             out.append(
-                f"`AUTHORIZATION_CENSUS['{code}']` 一个端点都没列 ⇒ census 的核心就是「因此变为可达的面」，"
-                "空 census = 给不出 census"
+                f"`AUTHORIZATION_CENSUS['{code}']` 端点 / 菜单节点 / 工具**一个都没列** ⇒ census 的核心就是"
+                "「因此变为可达的面」，空 census = 给不出 census"
             )
         for key in entry.endpoints:
             verb, _, path = key.partition(" ")
@@ -3820,55 +3822,59 @@ def test_read_parity_victims_ack_is_load_bearing(monkeypatch) -> None:
 
 
 def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:
-    """差异台账**是承载字段**（判据 14 ①，issue #5683）—— 三条红证 + 一条对照组。
+    """差异台账**是承载字段**（判据 14 ①，issue #5683）—— 四段红证 + 一条对照组。
 
-    台账若只是一张没人读的登记表，「只许缩短」就只是纪律。四段：
-      ① **对照组**：现取差异集与登记**逐值相同** ⇒ 全绿；
-      ② **新增未登记差异**（从回退删一个码）⇒ 必须红（差异悄悄变大不许静默）；
-      ③ **陈旧条目**（差异已消失而登记还在）⇒ 必须红（**销账是必须动作，不是可选**）；
-      ④ **台账变长**超上限 ⇒ 必须红（「新增一条差异登记一下就能过关」不成立）。
+    台账若只是一张没人读的登记表，「只许缩短」就只是纪律。issue #5683 收口后台账**已整表销账**
+    （`ROLE_FALLBACK_DIVERGENCES == {}`、上限 **0**）⇒ 今天任何一种差异都会直接撞上它：
+      ① **对照组**：现取差异集为空、登记也为空 ⇒ 全绿；
+      ② **新增未登记差异**（从回退删一个码）⇒ 必须红；
+      ③ **「整角色没有 case ⇒ 空表」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）⇒ 必须**指名**红；
+      ④ **陈旧条目**（差异不存在而登记还在）⇒ 必须红（**销账是必须动作，不是可选**）；
+      ⑤ **台账只许缩短**：先制造一条**真实**差异再登记它 ⇒ 差异合法但**超上限 0** ⇒ 必须红。
     """
     import sys as _sys
     mod = _sys.modules[__name__]
     w = world()
+    assert ROLE_FALLBACK_DIVERGENCES == {}, "前提：issue #5683 收口后差异台账应为空（整表销账）"
     assert not problems_role_default_parity(w), "对照组：当前树判据 14 全绿"
 
     # ② 新增未登记差异：从回退里删掉一个码
     src = _source_map()
     key = "java:service/RoleService.java"
-    src[key] = _drop_fallback_code(src[key], "operator", "processing:view")
-    hits = problems_role_default_parity(build_world(src))
+    dropped = dict(src)
+    dropped[key] = _drop_fallback_code(dropped[key], "operator", "processing:view")
+    hits = problems_role_default_parity(build_world(dropped))
     assert any("未登记" in h and "processing:view" in h for h in hits), (
         f"回退少一个码却没被判「未登记差异」⇒ 台账不是承载字段（hits={hits}）")
 
-    # ③ 陈旧条目：给一个**已无差异**的角色码插一条登记
-    stale = dict(ROLE_FALLBACK_DIVERGENCES)
-    stale["operator"] = RoleFallbackDivergence(
+    # ③ 「整角色没有 case ⇒ 空表」形态（`∅ ⊆ 种子` 恒真）⇒ 必须**指名**红
+    cut = dict(src)
+    cut[key] = _drop_fallback_case(cut[key], "sales")
+    hits = problems_role_default_parity(build_world(cut))
+    assert any("根本没有" in h and "sales" in h for h in hits), (
+        f"删掉整段 `case \"sales\"` 却没被**指名**报出 ⇒ 该形态会静默（hits={hits}）")
+
+    # ④ 陈旧条目：给一个**已无差异**的角色码插一条登记 ⇒ 红
+    stale = {"operator": RoleFallbackDivergence(
         missing=frozenset({"ghost:code"}), extra=frozenset(),
         reason="红证夹具：该差异并不存在", surfaces_when="红证夹具：不会显形",
-        owner="红证夹具", issue="#5683")
+        owner="红证夹具", issue="#5683")}
     monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", stale)
     hits = problems_role_default_parity(w)
     assert any("不再有差异" in h or "与**现取**不符" in h for h in hits), (
         f"差异已消失而条目还在、判据没红 ⇒ 陈旧条目会替下一次真分叉放行（hits={hits}）")
-    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", ROLE_FALLBACK_DIVERGENCES)
 
-    # ④ 台账只许缩短：把上限压到现取条数之下 ⇒ 红
-    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCE_CEILING",
-                        len(ROLE_FALLBACK_DIVERGENCES) - 1)
-    hits = problems_role_default_parity(w)
+    # ⑤ 台账只许缩短：**真实**存在的差异 + 逐值相符的登记 ⇒ 差异合法，但超上限 0 ⇒ 红
+    real = RoleFallbackDivergence(
+        missing=frozenset({"processing:view"}), extra=frozenset(),
+        reason="红证夹具：一条真实存在的差异", surfaces_when="红证夹具：不会显形",
+        owner="红证夹具", issue="#5683")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", {"operator": real})
+    hits = problems_role_default_parity(build_world(dropped))
+    assert not [h for h in hits if "未登记" in h], (
+        f"前提失效：逐值相符的登记不该被判「未登记」（hits={hits}）")
     assert any("又长回来了" in h for h in hits), (
-        f"台账超过只许缩短的上限却没红 ⇒ 「只许缩短」是空断言（hits={hits}）")
-    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCE_CEILING",
-                        ROLE_FALLBACK_DIVERGENCE_CEILING)
-
-    # ⑤ **「整角色没有 case」形态的承载性**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：
-    #    删掉某条「空表」登记 ⇒ 必须**指名**报出该角色（而不是只报一串码）。
-    cut = {k: v for k, v in ROLE_FALLBACK_DIVERGENCES.items() if k != "sales"}
-    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", cut)
-    hits = problems_role_default_parity(w)
-    assert any("根本没有" in h and "sales" in h for h in hits), (
-        f"删掉 `sales` 的空表登记却没被**指名**报出 ⇒ 「整角色无 case ⇒ 空表」形态会静默（hits={hits}）")
+        f"台账已销账（上限 0）却又长回一条、判据没红 ⇒ 「只许缩短」是空断言（hits={hits}）")
     monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", ROLE_FALLBACK_DIVERGENCES)
 
 
