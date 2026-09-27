@@ -115,7 +115,10 @@ ANCHOR_SEP = "::"
 #:   （所以要「上限 == 现取」得靠**销账时同批降上限**这个动作，而不是靠判据；本单就是这么做的）。
 GAPS_FROZEN = 2
 #: 判据 9：`not_solidified` 的**上限**（同上）。
-NOT_SOLIDIFIED_FROZEN = 3
+#: 历史读数（每一次升降都在 diff 里可见）：`3`（#5706 建账）→ **`4`**（#5707 的用例库陈旧读数包新增
+#: `NS-4`：用例库陈旧读数的**覆盖面** —— 面外实例「技能 §19 索引行」+ 面内形态「自由文本计数」，
+#: 见台账 `PD-3`）。
+NOT_SOLIDIFIED_FROZEN = 4
 #: 本单新增的两条 CI 判据的**射程**（判据 11/12；收窄射程要先改这里）。
 CASE_CORPUS_DIR = ".github/cases"
 LIVE_MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
