@@ -141,7 +141,7 @@ export const PRINT_COUNT_REPRINT_NOTICE = '本次已记一次打印次数；重�
  *
  * 🔴 页面**只能**用本函数拼失败文案（不许直接上屏 `result.hint`）——
  * 否则 `printRecorded` 这个结构化事实就没有读者，页面对"记没记"只能靠猜。
- * 判据 = `tests/inbound-print-channel.test.ts` 的「D7 页面必须消费 printRecorded」
+ * 判据 = `tests/inbound-print-channel.test.ts` 的「D9 两个出标签的页面必须消费 `printRecorded`」
  * （射程 = 两个出标签的页面；去掉任何一页的引用 ⇒ 该判据点名判红）。
  */
 export function printFailureText(hint: string, printRecorded: boolean): string {
