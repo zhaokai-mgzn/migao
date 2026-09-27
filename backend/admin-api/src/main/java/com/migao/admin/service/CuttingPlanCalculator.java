@@ -84,7 +84,75 @@ public final class CuttingPlanCalculator {
      */
     private static final int UTILIZATION_SCALE = 4;
 
+    /**
+     * 定宽买高「每幅长」的小数位（中间值：落库存前统一由 {@code StockQuantity.toStockScaleByCeiling}
+     * 归一，本类与调方都不在这里做业务取整）。
+     */
+    private static final int PER_PIECE_SCALE = 6;
+
     private CuttingPlanCalculator() {
+    }
+
+    /**
+     * 订单侧加工类型（中文串）→ 本类的模式常量。**全仓唯一一份映射**。
+     *
+     * <p>真值源 = 算料引擎的 {@code CUTTING_MODE_FIXED_HEIGHT = "定高买宽"} /
+     * {@code CUTTING_MODE_FIXED_WIDTH = "定宽买高"}（订单侧下单时原样透传该中文串）。</p>
+     *
+     * <p>🔴 未知取值 ⇒ {@code null}（**不猜工艺**）—— 猜错会把整窗当成多幅拆开，那是少领；
+     * 读面据此留空，而不是拿 {@code null} 当「1 片」。</p>
+     */
+    public static String modeOf(String rawCuttingMode) {
+        if (rawCuttingMode == null) {
+            return null;
+        }
+        return switch (rawCuttingMode.trim()) {
+            case "定高买宽" -> MODE_FIXED_HEIGHT;
+            case "定宽买高" -> MODE_FIXED_WIDTH;
+            default -> null;
+        };
+    }
+
+    /**
+     * 「这块料要裁<b>几片</b> × <b>每片多长</b>」（沿卷长方向，单位米）—— **分解**引擎的产物，
+     * 不是重新推导算料口径（重算 = 在本仓造出第二份会漂移的算料口径，见类注释「边界」）。
+     *
+     * <ul>
+     *   <li><b>定高买宽</b>（一块 = 整窗）：1 片，长度 = 该行米数（引擎给的 {@code W×N}）；</li>
+     *   <li><b>定宽买高</b>（一块 = 每一幅）：{@code panels} 片，每片 = {@code meters / panels}
+     *       —— 引擎的 {@code M = P × (H + 卷边)} 使「每幅宽」与「每幅长」恒为 {@code M/P}。</li>
+     * </ul>
+     *
+     * <p>返回<b>空列表</b> = 算不出来（米数缺席/非正 · 模式未知 · 定宽买高缺 {@code panels}）
+     * ⇒ 调方留空 + 标原因，**不得**用 0 / 1 冒充（「宁可为 0，不许估」）。</p>
+     *
+     * <p>{@link #plan} 的装箱与「给裁床看几片×多长」共用本方法 ⇒「每片长」全仓只有一份口径
+     * （改这里的除法 ⇒ 排料与读面同时变）。</p>
+     *
+     * @param meters 该行**公式口径**米数（= 算料输出的用料米数）
+     * @param panels 引擎的 {@code panels} 输出（定高买宽无定义 ⇒ 可传 {@code null}，本方法不读它）
+     * @return 逐片长度（同片等长；长度为 {@code n} ⇒ 片数 = {@code n}）
+     */
+    public static List<BigDecimal> pieceLengths(String cuttingMode, BigDecimal meters, Integer panels) {
+        if (meters == null || meters.signum() <= 0) {
+            return List.of();
+        }
+        if (MODE_FIXED_HEIGHT.equals(cuttingMode)) {
+            return List.of(meters);
+        }
+        if (MODE_FIXED_WIDTH.equals(cuttingMode)) {
+            if (panels == null || panels <= 0) {
+                return List.of();
+            }
+            BigDecimal per = meters.divide(BigDecimal.valueOf(panels), PER_PIECE_SCALE,
+                    RoundingMode.HALF_UP);
+            List<BigDecimal> lengths = new ArrayList<>(panels);
+            for (int i = 0; i < panels; i++) {
+                lengths.add(per);
+            }
+            return lengths;
+        }
+        return List.of();
     }
 
     /**

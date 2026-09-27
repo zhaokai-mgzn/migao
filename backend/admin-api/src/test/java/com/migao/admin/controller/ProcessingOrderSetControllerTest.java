@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
@@ -35,6 +36,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
@@ -91,11 +93,16 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
     private static final List<String> PAGE_KEYS = List.of("total", "page", "size", "items");
     private static final List<String> LIST_ROW_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",
             "processing_order_id", "processing_order_no", "order_id", "order_no", "total_operations",
-            "done_operations", "progress_percent", "completed");
+            "done_operations", "progress_percent", "completed", "cut_plan");
     private static final List<String> DETAIL_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",
             "processing_order_id", "processing_order_no", "order_id", "order_no", "completed", "completed_at",
             "set_overview", "progress");
-    private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions");
+    /** ⚠️ `cut_plan`（issue #5693）= 精裁输出清单（给裁床的「裁多长 × 几片」），**新增键**。 */
+    private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions", "cut_plan");
+    /** 精裁输出清单的一行（issue #5693）：九键恒在，缺值 null。 */
+    private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
+            "position_name", "component", "fabric_meters", "panel_count", "panel_length_m", "remark",
+            "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -240,6 +247,47 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
             assertThat(keysOf(operation)).as("工序 9 键冻结（对应设计 §4.1 的应做/单位/单价/状态/已报）")
                     .containsExactlyInAnyOrderElementsOf(OPERATION_KEYS);
         }
+    }
+
+    @Test
+    @DisplayName("🔴 精裁输出清单（issue #5693）：商家端 HTTP 两个读面（详情 / 列表）给**同一份**，缺值 null 不用 0 冒充")
+    void cutPlanIsServedOnMerchantHttpFaces() throws Exception {
+        stubDetail();
+        stubList();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder().id(ITEM_CLOTH)
+                .tenantId(TEST_TENANT_ID).productName("布艺遮光帘A").cuttingMode("定宽买高")
+                .processingInfo(Map.of("panels", 2, "componentRole", "主布")).build());
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(OrderItem.builder().id(ITEM_GAUZE)
+                .tenantId(TEST_TENANT_ID).productName("纱帘-白").cuttingMode("定宽买高")
+                .processingInfo(Map.of("componentRole", "纱")).build());
+
+        String detailBody = mockMvc.perform(get("/api/admin/processing-order-sets/" + SET_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.set_overview.cut_plan[0].order_item_id").value(ITEM_CLOTH))
+                .andExpect(jsonPath("$.data.set_overview.cut_plan[0].position_kind").value("布帘"))
+                .andExpect(jsonPath("$.data.set_overview.cut_plan[0].component").value("主布"))
+                .andExpect(jsonPath("$.data.set_overview.cut_plan[0].missing_reason").value(nullValue()))
+                .andReturn().getResponse().getContentAsString();
+        String listBody = mockMvc.perform(get("/api/admin/processing-order-sets"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode detailPlan = objectMapper.readTree(detailBody).path("data").path("set_overview").path("cut_plan");
+        JsonNode listPlan = objectMapper.readTree(listBody).path("data").path("items").get(0).path("cut_plan");
+        assertThat(listPlan).as("商家端详情面与列表面必须给同一份清单").isEqualTo(detailPlan);
+
+        assertThat(keysOf(detailPlan.get(0))).as("清单行键集冻结：不得删键")
+                .containsExactlyInAnyOrderElementsOf(CUT_PLAN_ROW_KEYS);
+        // 布帘：精裁-布 应做 12.30 米（qty_source=fabric_meters）+ panels=2 ⇒ 6.15 米 × 2 片
+        assertThat(detailPlan.get(0).path("fabric_meters").decimalValue()).isEqualByComparingTo("12.30");
+        assertThat(detailPlan.get(0).path("panel_count").asInt()).isEqualTo(2);
+        assertThat(detailPlan.get(0).path("panel_length_m").decimalValue()).isEqualByComparingTo("6.15");
+        // 纱帘：该套没有「精裁-纱」实例 + 缺幅数 ⇒ 三项留空 + 指名原因（不得用 0 / 1 冒充）
+        JsonNode gauze = detailPlan.get(1);
+        assertThat(gauze.path("fabric_meters").isNull()).as("拿不到用料 ⇒ null").isTrue();
+        assertThat(gauze.path("panel_count").isNull()).as("拿不到用料 ⇒ 不报片数（不放半截数据）").isTrue();
+        assertThat(gauze.path("panel_length_m").isNull()).isTrue();
+        assertThat(gauze.path("missing_reason").asText()).contains("精裁");
     }
 
     @Test
