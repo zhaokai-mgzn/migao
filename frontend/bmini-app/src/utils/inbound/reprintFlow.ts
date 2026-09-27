@@ -50,25 +50,59 @@ export const REPRINT_DETAIL_ERROR_MESSAGE =
  * 「谁可以查入库详情」的**登记表**（类级守卫 `tests/inbound-reprint-code-space.test.ts` 的 G2 逐值核验）。
  *
  * 这一条治的是一类真实缺陷：**新增一处调用点绕过码空间门禁**（比如某个"顺手重查一下"的分支）——
- * 静态上没有任何东西会红，直到工人拍了一张洗水码。⇒ 未登记即红；条目必须**活着**（文件里真的还有该调用）。
+ * 静态上没有任何东西会红，直到工人拍了一张洗水码。
  *
- * `gatedByCodeSpace: true` 的条目必须引用码空间判定（`loadReprintDetail` 或 `classify*Code`）。
+ * 🔴 登记粒度 = **调用点**（`文件` + `所在函数` + `该函数里的出现次数`），不是文件集合。
+ * 历史缺陷（issue #5052 验收 D7-②）：旧口径只比对**文件集合** ⇒ 在**已登记**的
+ * `src/pages/worker/reprint/index.tsx` 里新加一处不经 `loadReprintDetail` 的 `getInboundLabel(...)`
+ * 仍然全绿 —— 而本表的注释宣称的是"调用点级"。⇒ 现在计数也进台账：多一处未登记即红。
+ *
+ * `gatedByCodeSpace: true` 的条目，其**所在函数**（不是整个文件）必须引用码空间判定
+ * （`loadReprintDetail` 或 `classify*Code`）——文件级引用不算：那正是"同一文件里旁路恒绿"的成因。
  */
-export const LABEL_DETAIL_CALLERS: { file: string; why: string; gatedByCodeSpace: boolean }[] = [
+export const LABEL_DETAIL_CALLERS: {
+  file: string
+  /** 调用点所在的函数名（判据按「文件 + 函数」定位，见 `tests/helpers/inboundCallSites.ts`） */
+  in: string
+  /** 该函数里 `getInboundLabel(` 的**出现次数**（多一处 / 少一处都红） */
+  calls: number
+  why: string
+  gatedByCodeSpace: boolean
+}[] = [
   {
     file: 'src/services/workerInboundService.ts',
-    why: '端点唯一封装（`INBOUND_ENDPOINTS.labelDetail`）：它只是 HTTP 面，不做码空间判定（判定在调用方）',
+    in: 'getInboundLabel',
+    calls: 1,
+    why: '端点唯一封装（`INBOUND_ENDPOINTS.labelDetail`）：函数自己就是 HTTP 面，不做码空间判定（判定在调用方）',
     gatedByCodeSpace: false,
   },
   {
     file: 'src/pages/worker/inbound/index.tsx',
+    in: 'onSubmit',
+    calls: 1,
     why: 'P3 过账回执带回的 `shortCode`（不是扫来的码）⇒ 回读详情出标签，与码空间无关',
     gatedByCodeSpace: false,
   },
   {
+    file: 'src/pages/worker/inbound/index.tsx',
+    in: 'onPrint',
+    calls: 1,
+    why: '打印成功后刷新标签详情（短码取自已过账的回执，不经用户输入）',
+    gatedByCodeSpace: false,
+  },
+  {
     file: 'src/pages/worker/reprint/index.tsx',
+    in: 'lookup',
+    calls: 1,
     why: '补打的详情查询：每一次 lookup 都经 `loadReprintDetail` 的码空间门禁（`/s/` 与陌生码在这里就停）',
     gatedByCodeSpace: true,
+  },
+  {
+    file: 'src/pages/worker/reprint/index.tsx',
+    in: 'onPrint',
+    calls: 1,
+    why: '打印成功后刷新标签详情（短码取自**已过门禁**的 reading，不再经用户输入）',
+    gatedByCodeSpace: false,
   },
 ]
 

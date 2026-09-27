@@ -29,7 +29,7 @@
  * | S4 | 手输含 `O`/`I`/`L` 的 8 位 ⇒ 入库空间且**原样**交给服务端归一化 | 用严格字母表 `isValidShortCode` 当闸 ⇒ 红（本单指定的红证） |
  * | S5 | 手输形态不合法（非 8 位 / 含符号）⇒ 明说「8 位」**且一次请求都不发** | 放行任意字符串 ⇒ 红 |
  * | G1 | 两个码空间的**前缀**与后端逐值一致（`/s/` 与 `/i/` 各一处真值） | 客户端另抄一份前缀 ⇒ 红 |
- * | G2 | 🔴 「谁可以查入库详情」有台账：未登记即红、条目必须活着；受门禁的调用点必须引用码空间判定 | 新开一处 `getInboundLabel` 却能绕过码空间 ⇒ 红 |
+ * | G2 | 🔴 「谁可以查入库详情」有台账：**调用点级**（文件 + 所在函数 + 出现次数），未登记即红、条目必须活着；受门禁的调用点**其所在函数**必须引用码空间判定 | 在**已登记页面**里加一处不经 `loadReprintDetail` 的 `getInboundLabel(...)` ⇒ 红 |
  * | G3 | 🔴 同族页面必须复用共用件、不得自带第二份（注入式红证） | 任一页面删掉 `printInboundLabel` 引用 ⇒ 判定函数点名判红 |
  */
 import fs from 'fs'
@@ -49,6 +49,7 @@ import { LABEL_DETAIL_CALLERS } from '../src/utils/inbound/reprintFlow'
 import { isValidShortCode } from '../src/utils/inbound/shortCode'
 import { INBOUND_LABEL_CODE_PATH, inboundLabelGeometry } from '../src/utils/inbound/truth'
 import { BMINI_ROOT, SRC_DIR, stripComments, walk } from './helpers/h5PlatformLists'
+import { callSites } from './helpers/inboundCallSites'
 
 const REPO_ROOT = path.join(BMINI_ROOT, '..', '..')
 
@@ -78,6 +79,91 @@ function srcFiles(): string[] {
 function treatAsInboundShortCode(raw: string): string | null {
   const segment = String(raw).split('/').filter(Boolean).pop() || null
   return segment && segment.length === 8 ? segment : null
+}
+
+/**
+ * 码空间门禁的判定（真判据与注入式红证**共用同一份**，见 `migao-dev-flow` §23.5）。
+ * 坏形态 = 上面那个"裸取路径段"的替身；它**确实**能从 `/s/` 的码里取出一段像模像样的 8 位短码。
+ */
+function spaceGateProblems(take: (raw: string) => string | null): string[] {
+  const washCode = 'https://app.migaozn.com/s/7K3M9QP2'
+  if (take(washCode) === '7K3M9QP2') {
+    return [
+      `没有码空间门禁：洗水码 ${washCode} 被当成了入库短码 ⇒ 会去查一次入库详情，` +
+        `然后报「查无此码」—— 把人引向"是不是抄错了"，而真相是走错了门`,
+    ]
+  }
+  return []
+}
+
+/** 真实现：只有 `inbound-label` 空间谈得上"入库短码" */
+function gatedShortCode(raw: string): string | null {
+  const reading = classifyScannedCode(raw)
+  return reading.space === 'inbound-label' ? reading.shortCode : null
+}
+
+/** 手输长度闸的判定（真判据与注入式红证共用同一份） */
+function lengthGateProblems(classify: (raw: string) => { shortCode: string | null }): string[] {
+  const leaked = ['ABCD2', 'ABCD23456', '短码'].filter((raw) => classify(raw).shortCode !== null)
+  return leaked.length > 0
+    ? [`非 8 位的手输也被放行：${leaked.join(' / ')} ⇒ 会白发一次请求（端侧应先明说"要 8 位"）`]
+    : []
+}
+
+/** 「路径里有 `/i/` 就当入库」这条宽松口径的判定（真判据与注入式红证共用同一份） */
+function loosePathProblems(classify: (raw: string) => { space: string }): string[] {
+  const foreign = 'https://example.com/i/ABCD2345'
+  return classify(foreign).space === 'inbound-label'
+    ? [`别的域名里的 /i/ 被当成了米高标签：${foreign} ⇒ 会去查一次入库详情`]
+    : []
+}
+
+/**
+ * 「谁可以查入库详情」的**调用点级**判定（真判据与注入式红证共用同一份）。
+ *
+ * 历史缺陷（issue #5052 验收 D7-②）：旧口径只比对**文件集合** ⇒ 在**已登记文件**里
+ * 新加一处绕过门禁的调用仍然全绿。现在按「文件 + 所在函数 + 出现次数」逐点核验。
+ */
+function detailCallSiteProblems(
+  files: { file: string; code: string }[],
+  ledger: typeof LABEL_DETAIL_CALLERS,
+): string[] {
+  const problems: string[] = []
+  const actual = new Map<string, { count: number; span: string }>()
+  for (const source of files) {
+    const code = stripComments(source.code)
+    for (const site of callSites(code, /getInboundLabel\s*\(/g)) {
+      const key = `${source.file}::${site.fn || '<模块顶层>'}`
+      const hit = actual.get(key) || { count: 0, span: site.span }
+      hit.count += 1
+      actual.set(key, hit)
+    }
+  }
+  const declared = new Map(ledger.map((item) => [`${item.file}::${item.in}`, item]))
+  for (const [key, hit] of actual) {
+    const item = declared.get(key)
+    if (!item) {
+      problems.push(`${key}: 新增了一个查入库详情的**调用点**却没登记（未登记即红）`)
+      continue
+    }
+    if (item.calls !== hit.count) {
+      problems.push(
+        `${key}: 这个函数里 getInboundLabel(…) 出现 ${hit.count} 次，台账登记 ${item.calls} 次 —— ` +
+          `多一处 / 少一处都要同步台账（**调用点级**，不是文件级）`,
+      )
+    }
+    if (item.gatedByCodeSpace && !/loadReprintDetail|classifyScannedCode|classifyManualCode/.test(hit.span)) {
+      problems.push(
+        `${key}: 这一处调用**所在的函数**没有引用码空间门禁（文件级引用不算）—— ` +
+          `洗水码会在这里被当成入库码查一次`,
+      )
+    }
+  }
+  for (const [key, item] of declared) {
+    if (!actual.has(key)) problems.push(`src 里已经没有这个调用点：${key}（台账只许缩短）`)
+    if (item.why.trim().length <= 8) problems.push(`${key}: 没写清这一处为什么可以不经码空间门禁`)
+  }
+  return problems
 }
 
 /**
@@ -166,10 +252,12 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(reading.message).toContain('报工')
     expect(reading.action).toEqual(WASH_CODE_ACTION)
     expect(reading.action?.route).toBe(REPORT_PAGE_ROUTE)
-    // 🔴 红证：不看码空间的那条路**确实**能从 /s/ 的码里取出一段 8 位短码
-    // （它会被送去查入库详情 ⇒ 404「查无此码」⇒ 把人引向"是不是抄错了"，而真相是走错了门）
-    expect(treatAsInboundShortCode(raw)).toBe('7K3M9QP2')
-    expect(treatAsInboundShortCode(raw)).not.toBe(reading.space)
+    // 🔴 红证（注入式）：把"**不看码空间**的那条路"喂给**同一判定** ⇒ 必须点名
+    expect(spaceGateProblems(treatAsInboundShortCode).join('\n')).toContain('没有码空间门禁')
+    // 对照：真实现下同一判定判绿 —— 这一半让本 case 真的**走被测函数**（把它整体禁用 ⇒ 本 case 必红）
+    expect(gatedShortCode(raw)).toBeNull()
+    expect(gatedShortCode('https://app.migaozn.com/i/7K3M9QP2')).toBe('7K3M9QP2')
+    expect(spaceGateProblems(gatedShortCode)).toEqual([])
   })
 
   it('S3 非米高二维码 ⇒ 明确告知「这不是米高的标签」（别的域名 / 纯文本 / 空）', () => {
@@ -180,10 +268,10 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
       expect(reading.message).toContain('不是米高的标签')
       expect(reading.shortCode).toBeNull()
     }
-    // 红证：靠「路径里有 /i/ 就当入库」的宽松口径会把**别人域名**的 /i/ 当成自家标签
-    const loose = /\/i\//.test('https://example.com/i/ABCD2345')
-    expect(loose).toBe(true)
-    expect(classifyScannedCode('https://example.com/i/ABCD2345').space).not.toBe('inbound-label')
+    // 红证（注入式）：靠「路径里有 /i/ 就当入库」的宽松口径会把**别人域名**的 /i/ 当成自家标签
+    const loosePath = (code: string) => ({ space: /\/i\//.test(code) ? 'inbound-label' : 'foreign' })
+    expect(loosePathProblems(loosePath).join('\n')).toContain('别的域名')
+    expect(loosePathProblems(classifyScannedCode)).toEqual([])
     // 没解出码 ⇒ 明说（不静默、不猜单）
     expect(classifyScannedCode('').space).toBe('undecoded')
     expect(classifyScannedCode(null).message).toBe(UNDECODED_CODE_MESSAGE)
@@ -216,9 +304,11 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
       expect(reading.message).toBe(MANUAL_CODE_INVALID_MESSAGE)
       expect(reading.message).toContain('8 位')
     }
-    // 红证：放行任意字符串（去掉长度闸）⇒ shortCode 非 null ⇒ 上面每一条都会红
-    const withoutLengthGate = (raw: string) => String(raw).trim() || null
-    expect(withoutLengthGate('ABCD2')).toBe('ABCD2')
+    // 🔴 红证（注入式）：放行任意非空串（去掉长度闸）⇒ 同一判定必须点名；
+    //    对照 = 真实现（classifyManualCode）下判绿 —— 这一半让本 case 真的走被测函数
+    const withoutLengthGate = (raw: string) => ({ shortCode: String(raw).trim() || null })
+    expect(lengthGateProblems(withoutLengthGate).join('\n')).toContain('非 8 位')
+    expect(lengthGateProblems(classifyManualCode)).toEqual([])
   })
 
   it('G1 两个码空间各一处真值，且前缀与后端控制器逐值一致', () => {
@@ -233,22 +323,45 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(washPrefixLiteralFiles()).toEqual(['src/utils/inbound/codeSpace.ts'])
   })
 
-  it('G2 🔴 谁可以查入库详情：台账未登记即红、条目必须活着、受门禁的调用点必须引用码空间判定', () => {
-    const callers = srcFiles().filter((rel) => /getInboundLabel\s*\(/.test(stripComments(readSrc(rel)))).sort()
-    const declared = LABEL_DETAIL_CALLERS.map((item) => item.file).sort()
-    expect(callers).toEqual(declared)
-    expect(declared.length).toBeGreaterThanOrEqual(2)
-    for (const item of LABEL_DETAIL_CALLERS) {
-      expect(fs.existsSync(path.join(BMINI_ROOT, item.file))).toBe(true)
-      expect(item.why.trim().length).toBeGreaterThan(8)
-      if (item.gatedByCodeSpace) {
-        const code = stripComments(readSrc(item.file))
-        const gated = /classifyScannedCode|classifyManualCode|loadReprintDetail/.test(code)
-        expect({ file: item.file, gated }).toEqual({ file: item.file, gated: true })
-      }
-    }
+  it('G2 🔴 谁可以查入库详情：台账未登记即红、条目必须活着、受门禁的**调用点所在函数**必须引用码空间判定', () => {
+    const files = srcFiles().map((rel) => ({ file: rel, code: readSrc(rel) }))
+    // 反空跑：射程真的扫到了源码
+    expect(files.length).toBeGreaterThanOrEqual(50)
+    expect(detailCallSiteProblems(files, LABEL_DETAIL_CALLERS)).toEqual([])
     // 反空跑：确实存在**受门禁**的调用点（补打链路），否则这条判据只覆盖了服务层
     expect(LABEL_DETAIL_CALLERS.some((item) => item.gatedByCodeSpace)).toBe(true)
+
+    // 🔴 注入 A（复核方给的 `page-direct-lookup`）：在**已登记页面**里、另一个函数里
+    //    新加一处**不经 loadReprintDetail** 的 getInboundLabel(…) ⇒ 必须红
+    const bypassed = files.map((source) =>
+      source.file === 'src/pages/worker/reprint/index.tsx'
+        ? {
+            ...source,
+            code:
+              `${source.code}\nexport async function quickPeek(shortCode: string) {\n` +
+              `  return getInboundLabel(shortCode)\n}\n`,
+          }
+        : source,
+    )
+    const bypassProblems = detailCallSiteProblems(bypassed, LABEL_DETAIL_CALLERS).join('\n')
+    expect(bypassProblems).toContain('src/pages/worker/reprint/index.tsx::quickPeek')
+    expect(bypassProblems).toContain('没登记')
+
+    // 🔴 注入 B：在**同一个已登记函数**里再加一处（次数变了）⇒ 也必须红
+    const duplicated = files.map((source) =>
+      source.file === 'src/pages/worker/reprint/index.tsx'
+        ? { ...source, code: source.code.replace('const refreshed = await getInboundLabel(shortCode)', 'const refreshed = await getInboundLabel(shortCode)\n      const extra = await getInboundLabel(shortCode)') }
+        : source,
+    )
+    expect(detailCallSiteProblems(duplicated, LABEL_DETAIL_CALLERS).join('\n')).toContain('多一处 / 少一处都要同步台账')
+
+    // 🔴 注入 C：把门禁从那个函数里摘掉（文件里别处仍有门禁 ⇒ 旧的文件级口径照样绿）⇒ 必须红
+    const ungated = files.map((source) =>
+      source.file === 'src/pages/worker/reprint/index.tsx'
+        ? { ...source, code: source.code.replace(/loadReprintDetail\(/g, 'loadDetail(') }
+        : source,
+    )
+    expect(detailCallSiteProblems(ungated, LABEL_DETAIL_CALLERS).join('\n')).toContain('没有引用码空间门禁')
   })
 
   it('G3 🔴 同族页面必须复用共用件（注入式红证：第二套实现会被点名判红）', () => {

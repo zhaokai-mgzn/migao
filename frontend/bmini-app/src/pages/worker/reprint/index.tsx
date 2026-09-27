@@ -43,7 +43,12 @@ import {
 } from '../../../utils/inbound/labelPageKit'
 import { printInboundLabel } from '../../../utils/inbound/labelPrint'
 import { createLpapiTransport, loadLpapi } from '../../../utils/inbound/lpapiTransport'
-import { PRINT_READY_HINT, probePrintCapability, type PrintCapability } from '../../../utils/inbound/printCapability'
+import {
+  PRINT_READY_HINT,
+  printFailureText,
+  probePrintCapability,
+  type PrintCapability,
+} from '../../../utils/inbound/printCapability'
 import {
   MANUAL_CODE_PLACEHOLDER,
   type LabelCodeSpace,
@@ -238,7 +243,8 @@ export default function WorkerReprintPage() {
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
     }
-    setPrintState(result.hint)
+    // 同上（入库页）：失败文案 = 静态 hint + 运行期事实（本次是否已记一次）
+    setPrintState(printFailureText(result.hint, result.printRecorded))
   }, [label, capability])
 
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */

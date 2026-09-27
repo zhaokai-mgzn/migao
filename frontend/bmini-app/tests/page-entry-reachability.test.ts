@@ -18,6 +18,8 @@
  * | L1 | 落地页参数名与后端**逐值同名**（`InboundLabelService.LANDING_CODE_PARAM`） | 后端改名而端侧没跟 ⇒ 红 |
  * | L2 | 🔴 **未登记即红**：每个**非 tabBar** 页面都必须在入口台账里具名（tabBar 页面机械豁免，且不许登记） | 加一个页面不登记 ⇒ 红 |
  * | L3 | 🔴 **登记了没人指向也红**：每条登记都必须能在 `from` 里找到**真导航形态** + 目标记号 | 把入口换回"只声明"（`from` 指向只写着常量的文件）⇒ 红 |
+ * | L3b | 🔴 **形态在但没人调用也红**（调用点级）：导航语句**所在的函数**必须真的会被执行（组件 / hook / 文件内被引用过的具名函数） | 把 `Taro.redirectTo` 挪进一个**没人调用**的导出函数 ⇒ 红 |
+ * | L3c | 🔴 **HTML 注释里的锚点不算入口**：判据先去掉 `<!-- … -->` 再判形态 | 把 `<a href>` 包成 `<!-- … -->` ⇒ 红 |
  * | L4 | `via` 不是路由字面量时，「记号 ⇒ 路由」的绑定必须被 `viaBinding` 钉住（那里出现路由字面量 / 路由常量名） | 把 viaBinding 指向无关文件 ⇒ 红 |
  * | L5 | 跨应用 `href`：`/b/#<路由>` 去掉前缀后必须**逐值等于** bmini 的登记路由（改一边不改另一边 ⇒ 红） | 改 worker-h5 的 href 路由段 ⇒ 红 |
  * | L6 | 平台缺口台账（Taro API 之外那一类）：缺口必须**由真的调用它的文件接线**（`wiredBy` 的**代码**里出现 `wiredToken`） | 只登记不接线 ⇒ 红 |
@@ -31,7 +33,12 @@
  *    「`viaBinding` 那个文件里绑着这条路由」；「运行期它到底解析成哪个路由」由
  *    管理面自己的守卫（`tests/admin-surfaces-guard.test.ts`）负责 —— 两条判据合起来才闭合；
  * ③ tabBar 四页**机械豁免**（依据 = `app.config.ts` 的 `tabBar.list`，不是手写白名单）；
- * ④ 本守卫**不改任何既有门禁的通过条件、不新增豁免**。
+ * ④ L3b 的"会被执行"是**近似判定**（`tests/helpers/inboundCallSites.ts` 的 `reachableFromSpan`）：
+ *    跨文件调用看不见 ⇒ 台账可用 `reachableBy` **显式登记**触发机制（登记优先于猜，
+ *    见 `src/utils/pageEntries.ts` 的字段注释）。它治的是「**定义但从未被调用**」这一形态，
+ *    **不是**"运行期真的到达了"（那仍是真机档 U6）；两种变体本判据都能独立抓住：
+ *    `render.mjs` 侧（`workerEntriesBar()` 定义但调用被摘掉）与 `app.tsx` 侧（挪进没人调用的函数）；
+ * ⑤ 本守卫**不改任何既有门禁的通过条件、不新增豁免**。
  */
 import fs from 'fs'
 import path from 'path'
@@ -43,7 +50,8 @@ import {
 } from '../src/utils/inbound/gaps'
 import { LANDING_CODE_PARAM } from '../src/utils/inbound/deepLink'
 import { PAGE_ENTRY_LEDGER, type EntryNav, type PageEntry } from '../src/utils/pageEntries'
-import { BMINI_ROOT, stripComments } from './helpers/h5PlatformLists'
+import { BMINI_ROOT, stripComments, stripHtmlComments } from './helpers/h5PlatformLists'
+import { callSites, reachableFromSpan } from './helpers/inboundCallSites'
 
 const REPO_ROOT = path.join(BMINI_ROOT, '..', '..')
 const APP_CONFIG = 'src/app.config.ts'
@@ -140,11 +148,24 @@ export function entryProblems(input: EntryGuardInput): string[] {
       problems.push(`${entry.route}: 没写清「从哪个身份出发 / 登录态怎么衔接」`)
     }
     // L3 真导航形态 + 目标记号（"只声明"在这里红）
-    const content = stripComments(input.read(entry.from))
-    if (!navPattern(entry.nav, entry.via).test(content)) {
+    // 🔴 先去掉 **HTML 注释**再判（D2：锚点被包进 `<!-- … -->` 时，"字符串还在"依旧成立，
+    //    而工人看不到 ⇒ 按原文判 = 守卫与事实相反）
+    const content = stripHtmlComments(stripComments(input.read(entry.from)))
+    const pattern = navPattern(entry.nav, entry.via)
+    if (!pattern.test(content)) {
       problems.push(
         `${entry.route}: ${entry.from} 里找不到「${entry.nav} + ${entry.via}」的真跳转 —— **声明存在 ≠ 可达**`,
       )
+    } else {
+      // L3b 形态在，但它**所在的那个函数会不会被执行**？（D3：把调用挪进没人调用的函数 ⇒ 字面量还在）
+      const site = callSites(content, new RegExp(pattern.source, 'g'), { skipDefinitions: true })[0]
+      if (site && !reachableFromSpan(content, site) && !entry.reachableBy) {
+        problems.push(
+          `${entry.route}: ${entry.from} 里的「${entry.nav} + ${entry.via}」落在函数 ` +
+            `${site.fn}() 里，而它在文件内**没有任何调用** —— **写了 ≠ 会被执行**` +
+            `（跨文件调用看不见时，请在台账里显式登记 reachableBy）`,
+        )
+      }
     }
     // L4 记号 ⇒ 路由 的绑定
     if (entry.via !== entry.route) {
@@ -207,7 +228,8 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
   })
 
   it('L5 跨应用入口：`/w/` 上的链接逐值指向 bmini 登记的两页（`/b/#<路由>`）', () => {
-    const workerH5 = stripComments(readReal('frontend/worker-h5/src/render.mjs'))
+    // 🔴 去 JS 注释**且**去 HTML 注释：注释里的锚点不是入口（D2）
+    const workerH5 = stripHtmlComments(stripComments(readReal('frontend/worker-h5/src/render.mjs')))
     for (const route of [INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE]) {
       expect({ route, linked: workerH5.includes(`href="/b/#${route}"`) }).toEqual({ route, linked: true })
     }
@@ -264,6 +286,59 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     const problems = entryProblems({ ...input, read: stripped })
     expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
     expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
+  })
+
+  it('L3c 🔴 红证：把 `/w/` 上的锚点包进 HTML 注释 ⇒ 判红（注释里的链接不是入口）', () => {
+    const input = realInput()
+    // 变异体在**内存里**构造（不改磁盘）：只把那一行锚点包成 HTML 注释
+    const commented: Reader = (rel) =>
+      rel === 'frontend/worker-h5/src/render.mjs'
+        ? readReal(rel).replace(/(<a class="wh5-entry"[^>]*>[^<]*<\/a>)/g, '<!--$1-->')
+        : readReal(rel)
+    // 「变异真的被读到」的自证：变异体里锚点串**还在**（所以"按 includes 判"的那种守卫仍会绿）
+    const mutated = commented('frontend/worker-h5/src/render.mjs')
+    expect(mutated.includes('href="/b/#/pages/worker/inbound/index"')).toBe(true)
+    expect(mutated.includes('<!--<a class="wh5-entry"')).toBe(true)
+    // 对照：真仓库下本判据判绿（否则下面那条"红"可能只是读错了文件）
+    expect(entryProblems(input)).toEqual([])
+    const problems = entryProblems({ ...input, read: commented })
+    expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
+    expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
+  })
+
+  it('L3b 🔴 红证：把 `Taro.redirectTo` 挪进**没人调用**的导出函数 ⇒ 判红（写了 ≠ 会被执行）', () => {
+    const input = realInput()
+    // 变异形态（复核方给的 `redirect-never-called`）：字面量都在，只是**没有一个调用者**
+    const orphaned: Reader = (rel) =>
+      rel === 'src/app.tsx'
+        ? readReal(rel)
+            .replace(/\s*Taro\.redirectTo\(\{ url: reprintLandingUrl\(landing\.raw\) \}\)/, '')
+            .concat(
+              '\nexport function handleLandingNav(landing: { raw: string }) {\n' +
+                '  Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })\n}\n',
+            )
+        : readReal(rel)
+    const mutated = orphaned('src/app.tsx')
+    // 「变异真的被读到」的自证：跳转语句**还在**文件里（只是没人调用它）
+    expect(mutated).toContain('Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })')
+    expect(mutated).toContain('function handleLandingNav')
+    expect(entryProblems(input)).toEqual([])
+    const problems = entryProblems({ ...input, read: orphaned })
+    expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
+    expect(problems.join('\n')).toContain(REPRINT_PAGE_ROUTE)
+  })
+
+  it('L3b 🔴 红证：`render.mjs` 里 `workerEntriesBar()` 定义但调用被摘掉 ⇒ 判红（跨应用侧同族）', () => {
+    const input = realInput()
+    const uncalled: Reader = (rel) =>
+      rel === 'frontend/worker-h5/src/render.mjs'
+        ? readReal(rel).replace('</header>${workerEntriesBar()}', '</header>')
+        : readReal(rel)
+    const mutated = uncalled('frontend/worker-h5/src/render.mjs')
+    expect(mutated).toContain('function workerEntriesBar()')
+    expect(mutated.includes('${workerEntriesBar()}')).toBe(false)
+    const problems = entryProblems({ ...input, read: uncalled })
+    expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
   })
 
   it('L4 🔴 红证：viaBinding 指向无关文件 ⇒ 判红（动态记号必须被钉住）', () => {

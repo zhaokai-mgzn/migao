@@ -11,6 +11,9 @@
  * | D4 | 计数**原样转发**服务端回执（两次不同读数 ⇒ 两次都原样，不做本地 +1） | 本地 +1 ⇒ 红 |
  * | D5 | 失败文案**逐种不同且可行动**（合并成一句通用文案 ⇒ 红） | 两条相同 ⇒ 红 |
  * | D6 | 台账条目活着：`INBOUND_PRINT_GAP_WIRING` 的键集 == 文案表的键集 | 删一条 ⇒ 红 |
+ * | D7 | 🔴 送打印**唯一通道**（调用点级）：全 `src/**` 里 `.print(…)` 只许出现在 `printInboundLabel` 内 | 页面里加一条直连 `createLpapiTransport().print()` ⇒ 红 |
+ * | D8 | 🔴 文案不得对**运行期**事实下结论：静态 hint 里不许出现"记没记打印次数"，该事实只由 `printRecorded` 说 | 把文案改回「重打不会重复计数」⇒ 红 |
+ * | D9 | 🔴 页面必须**消费** `printRecorded`（`printFailureText(result.hint, result.printRecorded)`） | 页面只上屏静态 hint ⇒ 红 |
  */
 import fs from 'fs'
 import path from 'path'
@@ -21,7 +24,9 @@ import {
   type LabelTransport,
 } from '../src/utils/inbound/labelPrint'
 import {
+  PRINT_COUNT_REPRINT_NOTICE,
   PRINT_FAILURE_HINTS,
+  printFailureText,
   probePrintCapability,
   printFailureHint,
   type PrintFailureReason,
@@ -29,8 +34,92 @@ import {
 import { INBOUND_PRINT_GAP_WIRING } from '../src/utils/inbound/gaps'
 import { layoutInboundLabel } from '../src/utils/inbound/labelLayout'
 import { renderInboundLabel, type RenderedLabel } from '../src/utils/inbound/labelCanvas'
+import { stripComments, walk, SRC_DIR } from './helpers/h5PlatformLists'
+import { callSites } from './helpers/inboundCallSites'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
+
+/** `src/**` 全部 `.ts`/`.tsx`（bmini 相对路径 + 源码）—— 调用点级射程用 */
+function srcSources(): { file: string; code: string }[] {
+  return walk(SRC_DIR, (name) => /\.tsx?$/.test(name)).map((abs) => ({
+    file: path.relative(path.join(__dirname, '..'), abs),
+    code: fs.readFileSync(abs, 'utf8'),
+  }))
+}
+
+/**
+ * 送打印**唯一通道**的调用点级判定（真判据与注入式红证共用同一份）。
+ *
+ * 判三件事（射程 = 全 `src/**`，不是只扫 `src/utils/inbound`）：
+ * ① `.print(…)` 只许出现在 `src/utils/inbound/labelPrint.ts` 的 `printInboundLabel` **内**；
+ * ② `printImageData(` 只许出现在传输层实现 `src/utils/inbound/lpapiTransport.ts`；
+ * ③ `createLpapiTransport(` 的每一处调用都必须**喂给 `printInboundLabel`**（不许另起一条通道）。
+ */
+function printChannelProblems(files: { file: string; code: string }[]): string[] {
+  const problems: string[] = []
+  const ENTRY = 'src/utils/inbound/labelPrint.ts'
+  const TRANSPORT = 'src/utils/inbound/lpapiTransport.ts'
+  for (const source of files) {
+    const code = stripComments(source.code)
+    for (const site of callSites(code, /\.print\s*\(/g)) {
+      if (source.file !== ENTRY || site.fn !== 'printInboundLabel') {
+        problems.push(
+          `${source.file} 的 ${site.fn || '<模块顶层>'}() 里有一处**直连送数据**（.print(…)）—— ` +
+            `送打印只许走 printInboundLabel（它先调服务端留痕）`,
+        )
+      }
+    }
+    for (const site of callSites(code, /printImageData\s*\(/g)) {
+      if (source.file !== TRANSPORT) {
+        problems.push(`${source.file} 的 ${site.fn || '<模块顶层>'}() 直接调传输层 API printImageData(…) —— 绕过了送打印入口`)
+      }
+    }
+    for (const site of callSites(code, /createLpapiTransport\s*\(/g, { skipDefinitions: true })) {
+      if (!site.span.includes('printInboundLabel(')) {
+        problems.push(`${source.file} 的 ${site.fn || '<模块顶层>'}() 造了一条传输通道却**没有**喂给 printInboundLabel —— 第二条第 送打印通道`)
+      }
+    }
+  }
+  return problems
+}
+
+/**
+ * 文案方向判定（D8）：静态文案**不许**对"记没记打印次数"下结论。
+ *
+ * 理由：`printRecorded` 是**运行期**事实（取消发生在 `recordPrint()` 之后 ⇒ 已留痕），
+ * 静态文案表说不了它 —— 说了就必然有一半是错的。历史缺陷（验收 D6）正是：
+ * `user-cancelled` 写「重打不会重复计数」、`print-failed` 写「重打会再记一次」，两句相反。
+ */
+const COUNT_CLAIM = /计数|次数|再记|记一次|不重复/
+function printCopyProblems(hints: Record<string, string>): string[] {
+  const problems: string[] = []
+  for (const [reason, hint] of Object.entries(hints)) {
+    if (COUNT_CLAIM.test(hint)) {
+      problems.push(`${reason}: 静态文案对「记没记打印次数」下了结论 —— 那是运行期事实（result.printRecorded），静态文案没有资格说`)
+    }
+    if (/不(会|再|用|需)?\s*重复计数|不再计|不会重复计/.test(hint)) {
+      problems.push(`${reason}: 文案与实现相反（「重打不会重复计数」；实现是留痕**无条件原子自增** ⇒ 重打必再记一次）`)
+    }
+  }
+  if (!COUNT_CLAIM.test(PRINT_COUNT_REPRINT_NOTICE)) {
+    problems.push('PRINT_COUNT_REPRINT_NOTICE: 没把「已记一次 / 重打会再记一次」说清（运行期事实必须有一句准话）')
+  }
+  return problems
+}
+
+/** D9：页面必须消费 `result.printRecorded`（否则「本次记没记」这个事实没有读者） */
+function recordedConsumptionProblems(pages: { file: string; code: string }[]): string[] {
+  const problems: string[] = []
+  for (const page of pages) {
+    const code = stripComments(page.code)
+    if (!/printFailureText\(\s*result\.hint\s*,\s*result\.printRecorded\s*\)/.test(code)) {
+      problems.push(
+        `${page.file}: 打印失败文案没有消费 result.printRecorded（只上屏静态 hint ⇒ 工人看不到"本次已记一次/重打会再记一次"）`,
+      )
+    }
+  }
+  return problems
+}
 
 function fakeLabel(): RenderedLabel {
   const plan = layoutInboundLabel({ shortCode: 'ABCD2345', productName: '遮光布', quantity: '60.5' })
@@ -51,7 +140,23 @@ const OK_CAPABILITY = probePrintCapability({
 })
 
 describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
-  it('D1 顺序 = render → recordPrint → transport（留痕**先于**送数据）', async () => {
+  /**
+   * 顺序判定（真判据与注入式红证**共用同一份**，见 `migao-dev-flow` §23.5）：
+   * 空 `log`（= 一次都没走到）也算红 —— 这样"被测函数被整体禁用"时本判定必然判红。
+   */
+  function printOrderProblems(log: string[]): string[] {
+    const expected = ['render', 'recordPrint', 'transport']
+    if (log.join('>') !== expected.join('>')) {
+      return [
+        `送打印顺序 = ${log.join(' → ') || '（一次都没走到）'}；` +
+          `要求 render → recordPrint → transport（**留痕先于送数据**）`,
+      ]
+    }
+    return []
+  }
+
+  /** 跑一次真通道并记录调用序（D1 与它的红证共用） */
+  async function runLogged() {
     const log: string[] = []
     const transport: LabelTransport = {
       id: 'fake',
@@ -73,16 +178,25 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
         return { shortCode: code, printCount: 7 }
       },
     })
+    return { log, result }
+  }
+
+  it('D1 顺序 = render → recordPrint → transport（留痕**先于**送数据）', async () => {
+    const { log, result } = await runLogged()
     expect(log).toEqual(['render', 'recordPrint', 'transport'])
+    expect(printOrderProblems(log)).toEqual([])
     expect(result).toEqual({ ok: true, printCount: 7, transportId: 'fake', transportLabel: '测试打印机' })
   })
 
-  it('D1 🔴 红证：把送数据排到留痕之前（"先打出来再说"）⇒ 顺序判据必红', async () => {
-    const log: string[] = []
-    // 复刻错误顺序
-    log.push('transport')
-    log.push('recordPrint')
-    expect(log).not.toEqual(['render', 'recordPrint', 'transport'])
+  it('D1 🔴 红证：把送数据排到留痕之前（"先打出来再说"）⇒ 同一判定必红', async () => {
+    // ① 真实现产出的顺序 ⇒ 判定判绿。**这一半让本 case 真的走被测函数**：
+    //    把 printInboundLabel 整体禁用（抛错）⇒ 这里拿不到 log ⇒ 本 case 必红（不再是空断言）。
+    const { log } = await runLogged()
+    expect(printOrderProblems(log)).toEqual([])
+    // ② 坏形态作为**同一判定**的入参 ⇒ 必须点名判红
+    expect(printOrderProblems(['transport', 'recordPrint', 'render']).join('\n')).toContain('留痕先于送数据')
+    // ③ 一次都没走到（= 通道被整体禁用）同样算红 —— 防"没跑也算过"
+    expect(printOrderProblems([]).join('\n')).toContain('一次都没走到')
   })
 
   it('D2 留痕失败 ⇒ 一次都不送数据（不产生无痕打印）', async () => {
@@ -294,5 +408,110 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
     })
     expect(rendered.image.width).toBe(rendered.plan.widthPx)
     expect(rendered.image.height).toBe(rendered.plan.heightPx)
+  })
+
+  it('D7 🔴 送打印唯一通道（**调用点级**，射程 = 全 `src/**` 而不是只扫 `src/utils/inbound`）', () => {
+    const files = srcSources()
+    // 反空跑：射程真的扫到了源码（否则两边都是空集，判据会空转通过）
+    expect(files.length).toBeGreaterThanOrEqual(50)
+    expect(printChannelProblems(files)).toEqual([])
+    // 变异体在**内存里**构造（不改磁盘）：在一个**页面**里加第二条直连送数据的通道（不留痕）
+    const directPrint = files.map((source) =>
+      source.file === 'src/pages/worker/reprint/index.tsx'
+        ? {
+            ...source,
+            code:
+              `${source.code}\nconst __bypass = createLpapiTransport({ lpapi })\n` +
+              `await __bypass.print(label, { printCount: 1 })\n`,
+          }
+        : source,
+    )
+    const problems = printChannelProblems(directPrint).join('\n')
+    expect(problems).toContain('直连送数据')
+    expect(problems).toContain('src/pages/worker/reprint/index.tsx')
+  })
+
+  it('D7 🔴 造了传输通道却没喂给送打印入口 ⇒ 判红（第二条第 送打印通道）', () => {
+    const files = srcSources()
+    const orphan = files.map((source) =>
+      source.file === 'src/pages/worker/inbound/index.tsx'
+        ? { ...source, code: `${source.code}\nconst __orphan = createLpapiTransport({ lpapi })\n` }
+        : source,
+    )
+    expect(printChannelProblems(orphan).join('\n')).toContain('第二条第 送打印通道')
+  })
+
+  it('D8 🔴 文案不得对**运行期**事实下结论（"记没记打印次数"只由 printRecorded 说）', () => {
+    expect(printCopyProblems(PRINT_FAILURE_HINTS)).toEqual([])
+    // 注入：把 D6 修复前的那**一对互相矛盾**的文案喂给**同一判定** ⇒ 必须逐条点名
+    const beforeD6 = {
+      ...PRINT_FAILURE_HINTS,
+      'user-cancelled':
+        '已取消选择打印机。请点「选打印机」重新选择 DP30S 后重试（标签未打印，但打印次数已记一次，重打不会重复计数）。',
+      'print-failed':
+        '打印机已连上但这次没打出来：请检查纸仓是否装好、是否缺纸 / 卡纸，处理好后点「重打」（重打会再记一次打印次数）。',
+    }
+    const problems = printCopyProblems(beforeD6).join('\n')
+    expect(problems).toContain('user-cancelled')
+    expect(problems).toContain('print-failed')
+    expect(problems).toContain('与实现相反')
+  })
+
+  it('D8 🔴 送数据阶段的任何失败 ⇒ **已留痕**，且上屏文案必须说清「重打会再记一次」', async () => {
+    const reasons = Object.keys(PRINT_FAILURE_HINTS) as PrintFailureReason[]
+    const readings: { reason: string; printRecorded: boolean; says: boolean }[] = []
+    for (const reason of reasons) {
+      const result = await printInboundLabel({
+        shortCode: 'ABCD2345',
+        capability: OK_CAPABILITY,
+        transport: {
+          id: 'fake',
+          label: 'x',
+          print: async () => {
+            throw new LabelTransportError(reason)
+          },
+        },
+        render: fakeLabel,
+        recordPrint: async (code) => ({ shortCode: code, printCount: 3 }),
+      })
+      expect(result.ok).toBe(false)
+      if (result.ok) continue
+      const text = printFailureText(result.hint, result.printRecorded)
+      readings.push({ reason, printRecorded: result.printRecorded, says: text.includes(PRINT_COUNT_REPRINT_NOTICE) })
+    }
+    expect(readings).toHaveLength(reasons.length)
+    // 逐条：送数据阶段抛的错 ⇒ 留痕一定已经发生，且文案一定把这件事说出口
+    expect(readings.filter((r) => !(r.printRecorded && r.says))).toEqual([])
+    // 反向：能力不可用（**还没留痕**）⇒ 报告里 printRecorded=false，文案也不许说"已记一次"
+    const ios = probePrintCapability({ platform: 'h5', secureContext: true, hasBluetoothApi: false, isIos: true })
+    const blocked = await printInboundLabel({
+      shortCode: 'ABCD2345',
+      capability: ios,
+      transport: { id: 'fake', label: 'x', print: async () => undefined },
+      render: fakeLabel,
+      recordPrint: async (code) => ({ shortCode: code, printCount: 1 }),
+    })
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) {
+      expect(blocked.printRecorded).toBe(false)
+      expect(printFailureText(blocked.hint, blocked.printRecorded)).not.toContain('已记一次')
+    }
+  })
+
+  it('D9 🔴 两个出标签的页面必须消费 `printRecorded`（否则"本次记没记"没有读者）', () => {
+    const pages = srcSources().filter((source) => /pages\/worker\/(inbound|reprint)\/index\.tsx$/.test(source.file))
+    expect(pages.map((page) => page.file).sort()).toEqual([
+      'src/pages/worker/inbound/index.tsx',
+      'src/pages/worker/reprint/index.tsx',
+    ])
+    expect(recordedConsumptionProblems(pages)).toEqual([])
+    // 注入：页面退回"只上屏静态 hint" ⇒ 同一判定必须点名
+    const reverted = pages.map((page) => ({
+      ...page,
+      code: page.code.replace(/printFailureText\(\s*result\.hint\s*,\s*result\.printRecorded\s*\)/g, 'result.hint'),
+    }))
+    const problems = recordedConsumptionProblems(reverted).join('\n')
+    expect(problems).toContain('没有消费 result.printRecorded')
+    expect(problems).toContain('src/pages/worker/inbound/index.tsx')
   })
 })
