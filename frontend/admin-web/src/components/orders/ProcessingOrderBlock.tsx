@@ -134,7 +134,8 @@ function toPlainText(po: ProcessingOrder): string {
       const opt = Array.isArray(p.options) && p.options.length ? `（${p.options.join('/')}）` : ''
       lines.push(`  加工：${p.name}${opt}${p.quantity != null ? ` × ${p.quantity}${p.unit ?? ''}` : ''}`)
     })
-    if (it.remark) lines.push(`  备注：${it.remark}`)
+    // 部位备注（issue #5685）：缺键 / 空串 / 纯空白 ⇒ 不出现该行（与屏幕上同一口径）
+    if (it.remark?.trim()) lines.push(`  备注：${it.remark}`)
     lines.push('')
   })
   if (po.remark) lines.push(`整体备注：${po.remark}`)
@@ -506,7 +507,12 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
                     ))}
                   </ul>
                 )}
-                {it.remark && <div className="mt-1 text-xs text-neutral-500">备注：{it.remark}</div>}
+                {/* **部位备注**（issue #5685）：快照行键 `remark` —— 生成加工单那一刻从
+                    `order_items.processing_info.remark` 逐字固化（下单页写侧单点构造）。
+                    缺值不渲染：缺键 / 空串 / **纯空白**（= 未填，与写侧 trim 口径一致）⇒ 该行不出现。 */}
+                {it.remark?.trim() && (
+                  <div className="mt-1 text-xs text-neutral-500">备注：{it.remark}</div>
+                )}
               </div>
               )
             })}

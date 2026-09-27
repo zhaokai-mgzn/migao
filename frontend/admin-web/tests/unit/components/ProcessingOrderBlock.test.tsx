@@ -617,3 +617,58 @@ describe('ProcessingOrderBlock 派工指定批次（issue #5145 阶段 1）', ()
     expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: 12, meters: 1.5 })
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// issue #5685：物品行（部位行）的**部位备注** —— 快照行键 `remark`
+//
+// 来源 = 生成加工单那一刻从 `order_items.processing_info.remark` **逐字固化**（下单页写侧单点
+// 构造 `buildLineProcessingInfo`）；DTO `ProcessingOrderItemBrief.remark` 已声明该键。
+// 口径与订单详情一致：**有值才渲染**（缺键 / 空串 / 纯空白 ⇒ 该行不出现，不显示空行）。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe('ProcessingOrderBlock 部位备注（issue #5685）', () => {
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW)
+    vi.clearAllMocks()
+  })
+
+  it('#5685 判据 1（红证）：快照行带 remark ⇒ 物品行显示备注，且「复制全部」的纯文本同源带上', async () => {
+    const remark = '公式--48个折'
+    mockedDetail.mockResolvedValueOnce({
+      data: { data: { ...poIssued, items: [{ ...poIssued.items[0], remark }] } },
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await screen.findByText('JG-20260912-0001')
+
+    // ① 屏幕上（物品行 = 部位行）
+    expect(screen.getByText(`备注：${remark}`)).toBeInTheDocument()
+    // ② 复制给加工方 / 车间的纯文本也要带（车间据此知道「这个数字怎么来的」—— 两个面同源）
+    await userEvent.click(screen.getByText('复制全部'))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(writeText.mock.calls[0][0] as string).toContain(`备注：${remark}`)
+  })
+
+  it('#5685 判据 2（红证）：缺键 / 空串 / 纯空白 ⇒ 不出现备注行（缺值不渲染）', async () => {
+    const states: Array<[string, string | undefined]> = [
+      ['缺键', undefined],
+      ['空串', ''],
+      ['纯空白', '   '],
+    ]
+    for (const [label, remark] of states) {
+      mockedDetail.mockResolvedValueOnce({
+        data: { data: { ...poIssued, items: [{ ...poIssued.items[0], remark }] } },
+      })
+      const { unmount } = render(
+        <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      )
+      await screen.findByText('JG-20260912-0001')
+      // 前提自证：本态下既有内容照常渲染（防「整块没渲染 ⇒ 假绿」）
+      expect(screen.getByText(/打孔/), label).toBeInTheDocument()
+      expect(screen.queryAllByText(/^备注：/), label).toHaveLength(0)
+      unmount()
+    }
+  })
+})
