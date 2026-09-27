@@ -23,6 +23,13 @@ PR 做**部分交付**时按 §23 G9 **有意不写**关闭词 ⇒ issue 悬挂�
 | 去掉 `cmd_close` 里的「未实装登记追踪单 ⇒ 拒关」分支（issue #5506） | `test_close_refuses_when_issue_is_an_unimplemented_tracking_issue` |
 | 把登记册不可解析时的 fail-closed 改成放行 | `test_close_fails_closed_when_registry_unreadable` |
 | 把 `--ack-unimplemented-registry` 的旁路删掉 | `test_close_ack_flag_allows_it` |
+| 去掉 `violates_new_issues_policy` 里的 `not is_bot_authored(r)`（把机器人建的单当违规） | `test_bot_created_issue_stays_out_of_violations_and_is_printed_separately` |
+| 删掉「机器人创建（非会话来源，含本腿的值班单出口）= N 条」那行**单独打印** | 同上一条（读数里找不到该行） |
+| 把 `is_bot_authored` 的「`author` 取不到 ⇒ False」改成 True（作者未知当机器人放过） | `test_missing_author_is_counted_conservatively_with_annotation` |
+| 把 `cmd_check_new_issues` 的 `return 1 if bad else 0` 改成恒 `return 0` | `test_human_created_issue_without_marker_still_fails_and_is_listed` |
+| 把「空集」并进 `rows is None` 的 fail-closed 分支（取不到与 0 条混同） | `test_empty_window_is_rc_zero_not_unknown` |
+| 从 `gh issue list --json` 字段表里删掉 `author`（接线面退化成「来源未知」） | `test_cli_requests_the_author_field` |
+| 让 `bot_created_new_issues` 恒回空集（机器人行**静默丢弃**，既不算违规也不单列） | `test_policy_scope_is_partitioned_between_bot_and_violation` |
 
 `gh` 一律用**替身可执行文件**注入（`MIGAO_GH_BIN`，与 `test_issue_lifecycle_finish.py` 同款）：
 只换 CLI 边界，不 mock 被测函数；命令走**真 argparse + 真 dispatch**（subprocess 跑真 CLI）。
@@ -400,3 +407,154 @@ def test_new_issues_policy_is_not_retroactive():
     bad = mod.violates_new_issues_policy([before, after, human], eff)
     assert [n for n, _c, _t in bad] == [2], f"应只报政策生效后且无标记的 #2，实得 {bad}"
     assert eff == "2026-09-25T12:01:24Z", "生效时刻是政策 PR 的合并时间；改了它等于改了追溯边界，需同步说明"
+
+
+# ── 总体按作者收窄：机器人建的单 ≠ 会话违规（2026-09-27 链内修，实测 #5723 自喂）──────────
+#
+# 病根（现取）：`cmd_check_new_issues` 声称的对象 = 「**会话**新建且无标记的单」，
+# 而它实际读到的总体 = 窗口内**所有**新建且无标记的单，**不论作者是谁** ⇒ 它把
+# `.github/workflows/post-merge-verify.yml` 那条腿自己的出口（「判红 ⇒ 开/更 P1 值班 issue」步
+# 用 `GITHUB_TOKEN` 调 `gh issue create`，作者恒为 `app/github-actions`）读成"会话违规" ⇒
+# **一旦红过就自己把自己喂红**（实测 #5723 = 该值班单，`author = {login: app/github-actions, is_bot: true}`）。
+#
+# 方向 = **收窄到它声称的对象**（会话用人 token ⇒ 不可能机器人身份 ⇒ 机器人单**结构上不可能**是会话违规），
+# **不是**放宽门禁：人开的单照旧逐条列出并判红（见下面第 ② 条）。
+
+def _rows_only(monkeypatch, mod, rows):
+    """内存构造 gh 取数（**不碰磁盘、不碰网络**），顺带记下 argv 供接线面判据用。
+
+    `_gh_json` 的契约 = 成功回 list（可为空集）/ 失败回 `None`；这里只喂成功路径。
+    """
+    seen: dict[str, object] = {}
+
+    def fake(*a, **k):
+        seen["argv"] = list(a[0]) if a else []
+        return rows
+
+    monkeypatch.setattr(mod, "_gh_json", fake)
+    return seen
+
+
+def _run_check(mod, monkeypatch, tmp_path, since="2026-09-27"):
+    """走**真 `cmd_check_new_issues`**（真 `Namespace` + 真打印 + 真退出码）。"""
+    import argparse
+    monkeypatch.chdir(tmp_path)
+    return mod.cmd_check_new_issues(argparse.Namespace(since=since, limit=100))
+
+
+def test_bot_authored_rows_are_recognised_both_ways():
+    """两面断言：`is_bot` / `app/` 前缀 ⇒ True；人 ⇒ False；**取不到 ⇒ False（按保守计入违规）**。"""
+    mod = _load_il()
+    assert mod.is_bot_authored({"author": {"login": "app/github-actions", "is_bot": True}}) is True
+    assert mod.is_bot_authored({"author": {"login": "app/dependabot"}}) is True          # 只有前缀
+    assert mod.is_bot_authored({"author": {"login": "github-actions[bot]", "is_bot": True}}) is True
+    assert mod.is_bot_authored({"author": {"login": "zhaokai-mgzn", "is_bot": False}}) is False
+    assert mod.is_bot_authored({"author": {}}) is False                                   # 空 author
+    assert mod.is_bot_authored({}) is False                                               # 缺字段 ⇒ 保守
+    assert mod.is_bot_authored({"author": "zhaokai-mgzn"}) is False                       # 形态意外 ⇒ 保守
+
+
+def test_bot_created_issue_stays_out_of_violations_and_is_printed_separately(tmp_path, monkeypatch, capsys):
+    """① 窗口内只有机器人建的单 ⇒ **rc=0** + 出现「机器人创建（…）= N 条」那行**单独打印**。
+
+    红证：去掉 `violates_new_issues_policy` 里的 `not is_bot_authored(r)`（命中"按作者收窄"分支）
+    ⇒ rc 立刻变 1；删掉那行打印 ⇒ 本判据的第二个断言变红。
+    """
+    mod = _load_il()
+    _rows_only(monkeypatch, mod, [
+        {"number": 5723, "title": "值班单", "createdAt": "2026-09-27T11:03:22Z", "body": "## 现象",
+         "author": {"login": "app/github-actions", "is_bot": True}},
+    ])
+    rc = _run_check(mod, monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    assert rc == 0, f"机器人创建的单**结构上不可能是会话违规** ⇒ 必须 rc=0（实得 {rc}）\n{out}"
+    assert "机器人创建（非会话来源，含本腿的值班单出口）= 1 条：#5723" in out, out
+    assert "**违规**（生效后新建且无标记）= 0 条" in out, out
+
+
+def test_human_created_issue_without_marker_still_fails_and_is_listed(tmp_path, monkeypatch, capsys):
+    """② 人开的单、正文无标记 ⇒ **照旧 rc=1 且逐条列出**（作者维度**不得**顺手放宽这一半）。"""
+    mod = _load_il()
+    _rows_only(monkeypatch, mod, [
+        {"number": 9001, "title": "人开的单（与会话新建机械上不可分辨）",
+         "createdAt": "2026-09-27T02:00:00Z", "body": "## 现象",
+         "author": {"login": "zhaokai-mgzn", "is_bot": False}},
+    ])
+    rc = _run_check(mod, monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    assert rc == 1, f"人开且无标记 ⇒ 必须仍然判红（实得 {rc}）\n{out}"
+    assert "· #9001 " in out, out
+    assert "机器人创建（非会话来源，含本腿的值班单出口）= 0 条：（无）" in out, out
+
+
+def test_missing_author_is_counted_conservatively_with_annotation(tmp_path, monkeypatch, capsys):
+    """③ `author` 取不到 ⇒ **按保守计入违规**，且那一行标注「来源未知（按保守计入）」（三态不合并）。"""
+    mod = _load_il()
+    _rows_only(monkeypatch, mod, [
+        {"number": 9002, "title": "作者字段缺失", "createdAt": "2026-09-27T02:00:00Z", "body": "## 现象"},
+    ])
+    rc = _run_check(mod, monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    assert rc == 1, f"作者取不到 ⇒ 不得当 0 读（实得 {rc}）\n{out}"
+    assert "来源未知（按保守计入）" in out, out
+    assert "机器人创建（非会话来源，含本腿的值班单出口）= 0 条" in out, out
+    assert mod.unknown_source_new_issues(
+        [{"number": 9002, "createdAt": "2026-09-27T02:00:00Z", "body": ""}]) == [9002]
+
+
+def test_empty_window_is_rc_zero_not_unknown(tmp_path, monkeypatch, capsys):
+    """④ 窗口为空（真取到了、就是 0 条）⇒ **rc=0** —— 「空集」与「取不到（rc=3）」必须分开。"""
+    mod = _load_il()
+    _rows_only(monkeypatch, mod, [])
+    rc = _run_check(mod, monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    assert rc == 0, f"空集 ⇒ 0 条违规（不是「无法判定」）（实得 {rc}）\n{out}"
+    assert "抓到 0 条" in out, out
+    assert "机器人创建（非会话来源，含本腿的值班单出口）= 0 条：（无）" in out, out
+
+
+def test_cli_requests_the_author_field(tmp_path, monkeypatch):
+    """接线面：`gh issue list --json` 必须**带上 `author`**（否则在真实数据上本收窄会静默失效）。
+
+    为什么单列一条：夹具把行直接喂进来，`author` 永远在 ⇒ ①②③④ 全绿；而**真实**取数一旦漏了
+    `author`，每一行都退化成「来源未知」⇒ 按保守计入违规 ⇒ 值班单出口又把本腿喂红
+    （即本判据修的那个形态原样复发，而夹具侧**没有任何东西变红**）。
+    """
+    mod = _load_il()
+    seen = _rows_only(monkeypatch, mod, [])
+    _run_check(mod, monkeypatch, tmp_path)
+    argv = [str(a) for a in seen.get("argv") or []]
+    assert "--json" in argv, f"取数命令结构变了（找不到 `--json`）：{argv}"
+    fields = argv[argv.index("--json") + 1].split(",")
+    assert "author" in fields, f"`--json` 必须含 `author`（实得 {fields}）—— 见本判据 docstring"
+
+
+def test_policy_scope_is_partitioned_between_bot_and_violation():
+    """类级不变式：政策窗口内的每一行**恰好**落进「机器人创建」或「违规」之一（不重不漏）。
+
+    为什么是**类级**（而不是只钉 `#5723` 那一例）：本判据的病根是"新增了一个分类维度就少读一类行"，
+    所以这里钉住**分类是划分**（total + disjoint）—— 以后再加维度（或让某一类静默回空集）都会红，
+    而**不是**只保住今天这一条。
+
+    构造（生效时刻 = 2026-09-25T12:01:24Z）：#1 生效前 ⇒ 窗口外；#4 带 `人为要求：` 标记 ⇒ 窗口外；
+    窗口内 = {#2 机器人, #3 人无标记, #5 `author` 取不到} ⇒ 违规 = {#3,#5}、机器人 = {#2}。
+    """
+    mod = _load_il()
+    eff = mod.NEW_ISSUES_POLICY_EFFECTIVE
+    rows = [
+        {"number": 1, "title": "生效前", "createdAt": "2026-09-25T01:00:00Z", "body": "## 现象",
+         "author": {"login": "zhaokai-mgzn", "is_bot": False}},
+        {"number": 2, "title": "机器人建的值班单", "createdAt": "2026-09-27T11:03:22Z", "body": "## 现象",
+         "author": {"login": "app/github-actions", "is_bot": True}},
+        {"number": 3, "title": "人开的无标记", "createdAt": "2026-09-27T02:00:00Z", "body": "## 现象",
+         "author": {"login": "zhaokai-mgzn", "is_bot": False}},
+        {"number": 4, "title": "人为要求", "createdAt": "2026-09-27T03:00:00Z", "body": "人为要求：用户让开的",
+         "author": {"login": "zhaokai-mgzn", "is_bot": False}},
+        {"number": 5, "title": "作者取不到", "createdAt": "2026-09-27T04:00:00Z", "body": "## 现象"},
+    ]
+    bots = {n for n, _c, _t in mod.bot_created_new_issues(rows, eff)}
+    bad = {n for n, _c, _t in mod.violates_new_issues_policy(rows, eff)}
+    assert bots == {2}, f"机器人分类实得 {sorted(bots)}"
+    assert bad == {3, 5}, f"违规分类应含「人开的无标记」与「作者取不到的（按保守计入）」，实得 {sorted(bad)}"
+    assert bots & bad == set(), f"两类不得重叠（同一行既算机器人又算违规）：{sorted(bots & bad)}"
+    assert bots | bad == {2, 3, 5}, f"窗口内 {sorted(bots | bad)} ≠ 应有的 {[2, 3, 5]}（有行被静默丢弃或误纳）"
