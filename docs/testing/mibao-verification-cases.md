@@ -2767,7 +2767,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（43 case）
+## 杂项域（44 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3163,6 +3163,26 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（用户 2026-09-27 逐字裁定 = 方案 A：给两条发布腿补兜底触发面（周期重建重发布），静态形状判据才变成真绊线、可一并落判据收口；Refs #5707）：交付形态 = ① 两条腿各自补 `on.schedule`（每日档，cron 节流现取读数决定不取高频）② 判据 `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`（判据 1~8 + 判别力自证 + 真语料双向自证）③ 登记表 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`（只许缩短 + 覆盖边界八条）④ 台账 `FM-E17` 由 gap 翻 guarded 并新增 `PD-8`（`GAPS_FROZEN` 公开 2 → 1，`FM-E10` 仍留 gap）⑤ 本页 `docs/wiki/CI-CD.md` 的 FM-E17 节与计数器同批。⛔ **本单不动的**：两条腿的发布脚本与产物路径（只动触发面）· `deploy-reconcile.yml` · `FM-E10` · 那两条腿的路径缺口台账。⚠️ **与铁律 10 的关系（照实说明）**：铁律 10 写「不新增 schedule/cron」，其理由逐字是「无人值守**删除**不安全」⇒ 本单这条 schedule 走的是**重发布**路径，而远端发布脚本**明确不对静态根做清空 / delete**（先建 stage 再整份覆盖）⇒ 该理由不适用；且本单是**人类在本次会话显式裁定**的方案 A（「代价 = 占 CI 分钟」已被接受）。取号 MC-039：现取 main 最大 = MC-038，且现取全部在飞远端分支与在飞 PR 的 diff 都无 MC-039 及以上（`.github/cases/misc.yml` 的 id 逐个确认）⇒ 顺延取 MC-039（不动已合并的号）。 ｜ tags: ci, publish-leg, trigger-surface, fallback, discriminator, red-proof, ledger
+
+### MC-047. 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向 🔵
+```
+你: 当有人给任何 workflow 新增 `on.schedule` 而没有在台账里具名（带非破坏性证据锚）、或把新周期面塞进存量基线、或自创第三类例外、或把证据锚删光 / 复用、或把铁律 10 里的禁令本体删掉（把「收窄」写成「取消」）、或把裁定出处抹成「历来如此」、或在飞实例已经落地却仍留在 `pending`（不升格为 `exceptions`）时，都必须有东西具名报出；而只改注释时不得报红
+期望: direct_reply
+数据: **未登记即红（牙齿）**：现取 `.github/workflows/*.yml` 里任何带 `on.schedule` 的 workflow（**结构性**取 `on.schedule[].cron`，注释里的 `# - cron:` 不算），既不在 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline`、也不是 `exceptions` 的具名实例 ⇒ 判红并给出可行动出口（登记 `exceptions` + 在仓库根 `AGENTS.md` 铁律 10 具名）
+数据: **存量只许缩短（三处冻结）**：台账 `baseline` ⇄ 判据里 `BASELINE_FILES_FROZEN` 必须逐项相等（无多无少无重复）；条数 ≤ `BASELINE_COUNT_MAX` 且台账 `baseline_frozen` 与之相等 ⇒ 把新周期面塞进 `baseline` 必须同时改三处且数字变大（diff 里看得见）
+数据: **陈旧登记即红**：登记的 workflow 现取没有 `on.schedule`（或文件已删）⇒ 红（台账只许缩短；`ghost-leg.yml` 这类死登记不许留着）
+数据: **例外类封闭枚举**：`kind` ∈ {`republish`, `readonly_heartbeat`} ⇒ 自创第三类（如 `cleanup`）判红
+数据: **三个证据锚可解析 + 非破坏性锚唯一**：`non_destructive_anchor` / `idempotency_anchor` / `self_proof_anchor` 都写成 `<仓库相对路径>::<符号或文本片段>`，路径必须存在且片段必须真在该文件里出现（**删光即红**）；`non_destructive_anchor` 不许被两条实例复用（一个锚给所有东西盖章）
+数据: **具名双向（台账 ⇄ 铁律正文）**：`exceptions[].pr` 集合与 `AGENTS.md` 铁律 10 里「📌 已批准具名实例」那行的 `#N` 集合**双向相等** ⇒ 登记了却没具名 / 具名了却没登记，都判红（现取 = PR #5731）
+数据: 🔴 **规则本体不许被删（收窄 ≠ 取消）**：铁律 10 正文里必须**逐字**还有禁令（`⛔ 不新增 schedule/cron` + `无人值守`）与两个裁定日期（`2026-09-21` 原裁定 / `2026-09-27` 收窄裁定）；正文块取不到 ⇒ fail-closed 红
+数据: **声明 ⇄ 现取（双向）**：登记的 `cron` 必须逐字出现在该 workflow 的 `on.schedule` 里，且该 workflow 的**每一条** cron 都被登记覆盖 ⇒ 台账不许给不存在的周期面盖章、也不许漏一条
+数据: 🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `ledger_problems`；本仓已实测「改磁盘 → 跑 pytest」的变异**可能不被读到** ⇒ 判据恒绿 = 空断言）：删光 exceptions / 新造一条未登记的周期面 / 死登记 / 把新 schedule 塞进 baseline / 单改 `baseline_frozen` / 自创第三类 / 锚被删光 / 锚复用 / cron 与现取脱钩 / 删禁令本体 / 删裁定日期 / 删具名行 / 具名成别的 PR / 取不到正文块 / 在飞实例已落地却仍留在 pending / 在飞实例缺升格动作 / 在飞实例的 PR 没在铁律正文里具名，**17 条各自判红并点名命中分支**；**只改注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）
+数据: 🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录台账 JSON + `AGENTS.md`），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码任何时刻同一读数；运行期读数（cron 是否被节流 / 发布是否真跑 / **PR body 里声明了没有**）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在台账 `coverage_boundary`
+数据: 🔴 **在飞实例（`pending`）一落地即须升格**：`pending` **不构成登记**（不满足「未登记即红」的出口），只把跨包交接落成**远端可复原形式**（铁律 12(c)）；其 `pr` 也必须在铁律正文的具名行上；🔴 一旦 `pending[].file` 现取出现 `on.schedule` ⇒ **必须**移入 `exceptions` 并补齐三个证据锚 ⇒ 留在 `pending` 判红（`pending` 不许变成「永远的在飞」）
+数据: 覆盖边界（显式登记在台账 `coverage_boundary`，8 条，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：①「远端执行体到底删不删」是**运行期**事实（判据只核证据锚可解析，判不了远端那份字节与本仓同一）②「幂等」判不了实跑 ③「失败可见」判不了「真的有人看」（`Drift Audit` 不在 required 集合 ⇒ 非阻断 + 3 天延迟）④ 第 ④ 条「PR body 显式声明」判据**读不到** ⑤ **存量 14 条基线是否安全不在面内**（`stale.yml` / `close-linked-issues.yml` 本来就带无人值守写动作；本表只裁新增，不为存量背书）⑥ cron 跑没跑（节流 / concurrency 顶掉）⑦「周期档只报告、不写盘」判不了写盘档的 `if` 在**运行期**真的拦住（这是**声明面**的锁，不是行为面的锁）⑧ 与 MC-039 的 `publish_leg_fallback_ledger.json` **不互为副本、也互不重判**（一个判准入、一个判兜底面在位；判据侧只引用那条腿的登记册，不复制它的判定逻辑）
+跳过: [backend-contract] 规则文本 ⇄ 触发面 ⇄ 台账一致性的静态判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（来源 = 用户 2026-09-27 逐字答复「按你建议的执行即可」⇒ 授权把仓库根 `AGENTS.md` 铁律 10 的适用范围**收窄到「无人值守删除 / 破坏性动作」**，**不是**取消它；Refs #5707）：病 = 铁律 10 原文「⛔ 不新增 schedule/cron（2026-09-21 裁定：无人值守删除不安全）」是**无条件禁令**，而同日 PR #5731 已给两条发布腿落地两条**每日** cron（`.github/workflows/worker-h5-publish.yml` 的 `23 18 * * *` · `.github/workflows/bmini-h5-publish.yml` 的 `43 18 * * *`）⇒ 下一个人要么照旧规则办（挡住合法工作）、要么整条铁律被无视（规则侵蚀），且**没有东西会因此变红**。交付形态 = ① 铁律 10 **保留禁令本体**（收窄 ≠ 取消）+ **具名窄例外**（非破坏性 · 幂等 · 带自证断言的**重发布 / 只读心跳**；四条同时成立：①远端执行体不做删除且有机械自证 ②幂等 ③失败可见 ④**在 PR body 显式声明**）② **三条**具名实例：两条已落地的 cron（PR #5731 / 2026-09-27 / 批准人 = 用户）+ **第三条**（C 端 H5 发布腿的 `53 18 * * *`，**只读心跳 / notify 两态**，随 **PR #5733** 生效 ⇒ 写进铁律具名清单并在台账里放 `pending`，**一落地即须升格为 `exceptions`**）③ **日期 + 出处写明**（2026-09-21 原裁定 / 2026-09-27 收窄裁定，不许写成「历来如此」）④ 判据 `tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py`（判据 1~11 + 17 条内存构造红证 + 「只改注释 ⇒ 不红」对照）⑤ 台账 `tests/unit_ci_workflows/schedule_scope_ledger.json`（存量 14 条冻结快照 + 2 条具名实例 + 1 条在飞实例（`pending`）+ 覆盖边界 8 条）⑥ 同步面：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §23.9 的 C2 行（禁令副本）+ 版本沿革（1.80.0 → 1.81.0；**1.80.0 已被 #5735 占用 ⇒ 本条抬到 1.81.0**，main 上那条 1.80.0 的原文保持不动）。⛔ **本单不动的**：那两条 cron 本身与两条腿的发布脚本 · `deploy-reconcile.yml` · `h5-freshness-guard.yml`（在飞包 `ci/4184-c-end-publish-leg` 的独占写面）· `publish_leg_fallback_ledger.json` / `test_publish_leg_fallback_surface.py`（MC-039 的台账与判据：判「兜底面是否在位」这一**另一个**事实，#5733 把它从 2 条扩到 3 条 ⇒ 本单**只引用、不复制、不重判**，避免两套真值源）。取号 MC-047（时点 = 2026-09-27 21:52 +08，rebase 到 main `f1a6f8567` 之后**现取**）：**差集口径** = 逐 ref 列出 `.github/cases/**` 的**全部** `- id:` 再减 main ⇒ main 的 MC 家族 = 001~039 + **040**（#5737）+ **043/044/045**（#5730）；在飞 = **MC-046 ×2**（`ci/4184-c-end-publish-leg` / `docs/readonly-verification-pack`）⇒ 由**协调侧现取全量差集后定案分配**：**#5733 保留 046、本包取 047、#5734 取 048**。⚠️ **同一个号被三个包同时取到**（每个包都是在**自己那一刻**「现取下一个空号」取到的 ⇒ **单包视角看不出撞车**）—— 这是 `FM-E15` / `FM-E7` 的又一实证：**在飞占号不是单包能判的**。本单初稿曾取 MC-043（与 #5730 撞），第二次取 MC-046（与两个包撞）⇒ **记实，不抹平**。⚠️ **两处自伤，逐条如实登记**：① （`FM-R1` 的形态：**把某时点的读数当常量引**）初稿把读数误写成「#5730 占 MC-040 / MC-041」—— 真因是两个坑叠加：`misc.yml` 里 #5730 那三个块的**注释头**当时逐字写着 `# MC-039` / `# MC-040` / `# MC-041`，而其下的 `- id:` 实际是 **MC-043 / MC-044 / MC-045**（**注释头与块 id 不一致**；该三处已由 #5737 连同一条类级判据修掉），而我当时拿的是 `git diff origin/main...<ref>` 的 `+` 行 + 注释头读数当「本分支新增」⇒ 改用**只读 `- id:` 的差集口径**。② **同一形态当场第二次发作**：改号时我引用了派单消息给的记号 `FM-R14`，而**在我那一刻的基线上它在台账 `relay_entries` 里还不存在**（当时现取 min/max = 1 / 13；`FM-R14` 是随后由 #5735 才入册的）⇒ `tests/unit_ci_workflows/test_casebook_ledger_claims.py::test_real_casebook_matches_the_ledger_readings` **判红**（`记号 FM-R14 在台账 relay_entries 里不存在`），`land` 的 ④`wait-ci` 据此**停在 required 判据未绿**（fail-closed，没有合进去）⇒ 已改引**存在且形态对得上**的 `FM-R1`（「把某时点的读数当常量引」）。**教训与铁律 11 同源：连「别人给你的记号」也要先问「它在我这个基线上真的存在吗」。** ｜ tags: ci, iron-rule-10, schedule, ledger, discriminator, red-proof
 
 ### MC-029. RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等 🔵
 ```
@@ -7857,8 +7877,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：555（活跃 126，跳过 429）
-- tier 分布：smoke 12 / normal 510 / adversarial 31
+- 用例总数：556（活跃 126，跳过 430）
+- tier 分布：smoke 12 / normal 511 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7873,7 +7893,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：43
+- 杂项域：44
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7930,6 +7950,7 @@
 - MC-028: 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）
 - MC-038: 转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R15`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用
 - MC-039: 发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析
+- MC-047: 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向
 - MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
 - MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
 - MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）
