@@ -4583,6 +4583,24 @@ _CASE_MC_040 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-048 [NORMAL] 真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备（源: cases/misc.yml）──
+_CASE_MC_048 = EvalCase(
+    id='MC-048',
+    legacy_id='',
+    title='真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当复核包里的 sql 代码块混进写语句（原文直写 / 注释夹心拼回 / 小写），或删掉「未在真库上验证」声明，或总表多一行而没有对应节、删掉一整节、复制一节造成锚不唯一，或某节缺出处锚、预期形状、安全说明，或条目被清空、sql 块被清空时，都必须有东西具名报出；而只加散文或只改 SQL 注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（本号存在的唯一理由）**：docs/testing/production-readonly-verification-pack.md 里每个 sql 围栏块的**原文**与**去 SQL 注释**两个视图都不得含写 / DDL 动词（大小写不敏感 + 词边界；去注释视图抓 UP/*x*/DATE 这类注释夹心）；注释的剥离复用仓内唯一实现点 strip_sql_comments（tests/unit_ci_workflows/_sql_schema.py），不另起一把尺子', '**判据 2**：文档必须逐字含「未在真库上验证」——否则下一个人会把这份清单读成已取证的读数', '**判据 3**：总表行的条目 id 集合与各节标题的条目 id 集合互相钉住（总表有而各节没有、各节有而总表没有都红），且任一 id 在总表与各节里各自只出现一次（锚唯一）', '**判据 4**：每个条目节必须含出处锚 / 预期形状（判读口径）/ 安全说明三件套，缺失时具名到节', '**判据 5（fail-closed）**：文档不存在 / 文本为空 / 条目数低于下限 / 抽不到 sql 块 ⇒ 红（「没东西可判」不是通过）；另有一条强化：标「必做」的条目必须有 sql 块或显式说明「不开 SQL」', '🔴 红证全部**内存构造**（真文档当基线 → 字符串替换构造变异体 → 直接喂纯函数 pack_problems），逐条断言**命中的分支**（报文含「原文」「去注释后」「总表有而各节没有」「锚不唯一」「R2 节缺」这类点名串）并断言坏形态读数 ≠ 基线读数（防变异没生效 ⇒ 空断言）；对照读数两条：只追加一段散文 ⇒ 不红、往 sql 块里只加一行 SQL 注释 ⇒ 不红'],
+    skip_reason='[backend-contract] 文档结构与 SQL 只读性的静态判据（纯函数、零网络、零时钟、不连任何库）由 tests/unit_ci_workflows/test_readonly_verification_pack.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['readonly', 'verification-pack', 'sql-guard', 'doc-structure', 'red-proof', 'discriminator'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10718,6 +10736,7 @@ ALL_CASES = (
     _CASE_MC_044,
     _CASE_MC_045,
     _CASE_MC_040,
+    _CASE_MC_048,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
