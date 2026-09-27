@@ -374,7 +374,17 @@ public class ProcessingSetReadService {
     private Map<String, Object> cutPlanRow(String orderItemId, List<ProcessingPositionOperation> ops,
                                            Long tenantId) {
         OrderItem item = aliveItem(orderItemId, tenantId);
-        Map<String, Object> info = item == null ? Map.of() : OrderLineCraftFields.normalize(item.getProcessingInfo());
+        // 🔴 存量行：`order_items.processing_info` **可为 NULL**（真库实证 issue #5550：待派明细 15/29 为 NULL），
+        // 且 JSON 字符串解析失败时归一化也返回 null ⇒ **归一化结果是可能为 null 的缺值，不得直接解引用**。
+        //（我第一版写成 `item == null ? Map.of() : normalize(...)` 三元 ⇒ 归一化那一支仍可能返回 null
+        //  ⇒ 下面 `info.get(...)` NPE 500；类级元守卫 `ProcessingInfoNullSafetyMetaGuardTest` 抓的就是它。
+        //  ⚠️ 判据只看**赋值行之后 6 行**内有没有 null 判定 ⇒ 说明性注释必须写在这里、不能插在两者中间。）
+        // 语义：缺值 = 「这一行没有任何工艺键」⇒ 收敛成空表，下面一律按**缺键**读（不造值）。
+        Map<String, Object> info = OrderLineCraftFields.normalize(
+                item == null ? null : item.getProcessingInfo());
+        if (info == null) {
+            info = Map.of();
+        }
         ProcessingPositionOperation cutOp = cutOperationOf(ops);
         BigDecimal fabricMeters = cutOp != null && QTY_SOURCE_FABRIC_METERS.equals(cutOp.getQtySource())
                 ? cutOp.getQty()

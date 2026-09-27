@@ -517,6 +517,31 @@ class ProcessingSetReadServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 存量行 processing_info 为 NULL / 解析失败 ⇒ 清单不 NPE（issue #5550 形态），一律按缺键留空")
+    void cutPlanToleratesMissingProcessingInfo() {
+        stubDetail();
+        // ① 列值就是 null（真库实证：待派明细 15/29 行是 NULL）
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder()
+                .id(ITEM_CLOTH).tenantId(TENANT).productName("布艺遮光帘A").build());
+        // ② 字符串形态但**解析不了**（自定义 @Select 路径的脏数据）⇒ 归一化返回 null
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(OrderItem.builder()
+                .id(ITEM_GAUZE).tenantId(TENANT).productName("纱帘-白")
+                .processingInfo("{不是 JSON").build());
+
+        List<Map<String, Object>> rows = cutPlanOf(service.setDetail(SET_ID, TENANT));
+
+        for (String itemId : List.of(ITEM_CLOTH, ITEM_GAUZE)) {
+            Map<String, Object> row = cutPlanRowOf(rows, itemId);
+            assertThat(row.get("component")).as("缺 processing_info ⇒ 组件留空（不造值）").isNull();
+            assertThat(row.get("panel_count")).as("取不到加工类型 / 幅数 ⇒ 不猜片数").isNull();
+            assertThat(row.get("missing_reason")).as("要指名缺什么（可行动）").isNotNull();
+        }
+        assertThat(cutPlanRowOf(rows, ITEM_CLOTH).get("fabric_meters"))
+                .as("用料与 processing_info 无关（来自「精裁」工序实例）⇒ 照实给")
+                .isEqualTo(new BigDecimal("12.30"));
+    }
+
+    @Test
     @DisplayName("🔴 两处读面 + 列表行：同一份清单**逐值相等**（工人扫码 / 商家套件详情 / 商家列表）")
     void cutPlanIsIdenticalAcrossReadFacesAndListRow() {
         stubScan();
