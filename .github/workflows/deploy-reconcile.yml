@@ -130,9 +130,10 @@ jobs:
           } >> "$SUMMARY"
           echo "🧭 对账基准：main HEAD=${HEAD7}（事件 ${GITHUB_EVENT_NAME}）"
 
-          # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径 $4=额外 pathspec（排除项，可空）
+          # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径
+          # $4=额外 pathspec（空格分隔）：`:(exclude)X` = 排除项，其余 = **附加包含项**（可空）
           reconcile_one() {
-            local svc="$1" wf="$2" svc_path="$3" excl="$4"
+            local svc="$1" wf="$2" svc_path="$3" extra="$4"
             local image="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
             local runs last p drift reason
             local -a pathspec
@@ -179,7 +180,7 @@ jobs:
             drift="?no-baseline"
             if [ -n "$p" ]; then
               pathspec=( "$svc_path" )
-              if [ -n "$excl" ]; then pathspec+=( "$excl" ); fi
+              if [ -n "$extra" ]; then pathspec+=( "$extra" ); fi
               drift=$(git log --oneline -1 "${p}..HEAD" -- "${pathspec[@]}" 2>/dev/null) || drift="?git-failed"
             fi
             if [ -n "$p" ] && [ -z "$drift" ]; then
@@ -199,6 +200,10 @@ jobs:
               echo "::warning::${svc}：${reason}"
             else
               reason="自 ${p:0:7}（上次成功部署）起 ${svc_path} 有代码改动（${drift%% *}）"
+              # 判定所用的 pathspec **逐项点名**（#5001 同族：读数与事实必须一致）：加了附加包含项
+              # 之后 `$svc_path` 只是**其中一个**来源 ⇒ 只看它会把「只改了 deploy/swas/nginx.conf」
+              # 误读成「服务代码改了」，排查方向当场跑偏。
+              reason="${reason} · 判定 pathspec：${pathspec[*]}"
             fi
             echo "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署——${reason} ⇒ dispatch 补部署"
             gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"
@@ -208,7 +213,13 @@ jobs:
           }
 
           # 逐服务（代码路径 = 各自 workflow 的 `on.push.paths` 真值源；有动态对齐守卫）
-          reconcile_one admin-api deploy-admin-api.yml backend/admin-api ""
+          # admin-api 的第 4 个参数是**附加包含项**（不只是排除项）：`deploy/swas` 是「与镜像同源」
+          # 的配置面，`deploy-admin-api.yml` 的 `on.push.paths` 里也有它 —— 只改配置的提交一旦
+          # push 触发被吞（auto-merge 的 GITHUB_TOKEN 抑制 / 连续快合并）就**静默不生效**
+          # （#5668 的 `/b/`、#5676 的 `/i/` 都靠人工 dispatch 才生效）⇒ 触发面与对账面必须同批。
+          # 判据（两处不许脱钩、且不许窄化成不覆盖 nginx.conf 的形态）：
+          # `tests/unit_ci_workflows/test_config_change_triggers_deploy.py`
+          reconcile_one admin-api deploy-admin-api.yml backend/admin-api "deploy/swas"
           reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests"
           reconcile_one admin-web deploy-frontend.yml frontend/admin-web ""
           # worker-h5（issue #5001）—— **静态落地面腿**：发布到 `app.migaozn.com` 静态根的 `w/`，

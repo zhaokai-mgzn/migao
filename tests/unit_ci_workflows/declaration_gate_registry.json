@@ -434,6 +434,13 @@
       "issue": "#4064",
       "criterion": "tests/unit_ci_workflows/test_case_seed_truth_backing.py::test_the_fixtures_read_are_the_ones_the_eval_stack_loads",
       "note": "注释声称「判据真值与考场数据栈同源」⇒ 由该判据钉住：评测栈种子的单一实现 `scripts/eval_stack_seed.sh`（issue #3563）必须逐字引用本文件读的那两个 fixture （xiaobu_eval_seed.sql / mibao_eval_seed.sql）"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_config_change_triggers_deploy.py",
+      "symbol": "CANONICAL_SWAS_CONFIGS",
+      "issue": "#5001",
+      "criterion": "tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_canonical_configs_match_the_deploy_script_surface",
+      "note": "常量上方的 `#` 注释声称「配置与镜像同源（deploy/swas/deploy.sh 第 0/1 段 + #5083）：脚本只认这三份 canonical 配置」⇒ 由该判据承担：从 `deploy/swas/deploy.sh` **现取**`cp src/deploy/swas/<f> ./…` 的应用面集合，与本常量**逐字**比对（脚本多/少应用一份 ⇒ 红）。本条目同时是「只改配置的改动必须能自动生效」这一接线的**前提**：哪几份配置属应用面变了，触发面/对账面的覆盖判据必须同批跟。"
     }
   ],
   "frozen_declarations": [

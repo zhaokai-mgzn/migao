@@ -67,6 +67,34 @@ push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag
   → smoke-test.yml post-deploy 冒烟（api.migaozn.com / ai-api.migaozn.com）
 ```
 
+### 触发面 = 对账面：只改配置也必须能自动生效（关联 #5001）
+
+配置（`deploy/swas/nginx.conf` / `docker-compose*.yml`）与镜像**同源**：`deploy/swas/deploy.sh`
+只取「镜像 tag 那个 commit」的配置（`CONFIG_REF_RESOLVED`，由 `config_ref_for_tag` 解析，见
+issue #5083），把它们 `cp` 到 `nginx/` 与 compose 根，并无条件
+`docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 的初值，
+那段在逐服务循环**之外**）⇒ **配置的应用面只在这条部署腿里**。
+
+⇒ 改 `deploy/swas/**` **必须**触发一条部署腿，否则改动**静默不生效**（实测两次：#5668 的 `/b/`、
+#5676 的 `/i/` 都只能靠人工 `workflow_dispatch` 才生效）。现在两处**同批**接线：
+
+| 面 | 位置 | 内容 |
+|---|---|---|
+| 触发面 | `.github/workflows/deploy-admin-api.yml` 的 `on.push.paths` | `backend/admin-api/**` + `deploy/swas/**` |
+| 对账面 | `.github/workflows/deploy-reconcile.yml` 里 admin-api 腿的第 4 个参数 | `deploy/swas`（**附加包含项**，与 `:(exclude)X` 排除项共用一个口子） |
+
+⚠️ 这两处是**同一事实的两处投影**（「某服务的触发路径集合」）：只改一处 ⇒ 触发面与对账面脱钩，
+而脱钩本身**不会有任何东西变红**（这正是 #5668 / #5676 两次静默生效的成因）。⇒ 常驻判据
+`tests/unit_ci_workflows/test_config_change_triggers_deploy.py`：逐服务**双向**比对两处
+（防静默 / 防空转）+ 三份 canonical 配置的覆盖 + 执行式「只改 `deploy/swas/nginx.conf` 的 commit
+⇒ 判有漂移 ⇒ dispatch」+ 另外 4 条腿逐值不变。存量缺口（另 4 条腿的发布链路文件等）逐条登记在
+`tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`，**只许缩短**。
+
+**登记（本单未修，如实记录）**：`deploy/swas/deploy.sh` 在 `CONFIG_REF_RESOLVED` 处逐字要求
+「配置（compose/nginx）必须与镜像**同一 commit**」⇒ **用旧 tag 重放/回滚一次部署，会把
+`nginx.conf` 一起倒回那个旧 commit 的版本** ——「刚修好的配置被一次回滚静默撤销」。
+它属发布链路语义（与「不许往回走」闸门同一面），本单**只登记、不修**。
+
 ### 镜像 tag 策略（2026-08-30 起）
 
 | 触发 | 镜像 tag | 部署 |

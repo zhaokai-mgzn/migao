@@ -1,0 +1,69 @@
+{
+  "schema": "reconcile-trigger-paths-ledger/v1",
+  "what": "「触发面有、对账面没有」的**存量缺口台账**（关联 #5001）。触发面 = 各 deploy/发布 workflow 的 `on.push.paths` 正向项；对账面 = `deploy-reconcile.yml` 里该服务那条 `reconcile_one` 腿的 pathspec。落在触发面却没落在对账面上的路径 ⇒ 该路径的改动一旦 push 触发被吞，就**静默不部署/不发布**（本台账把存量逐条点名，新出现的缺口**未登记即红**）。",
+  "why_not_fixed": "本单（用户逐字裁定 A）只把 `deploy/swas/**` 接进 `deploy-admin-api` 一处；另 4 条腿的判定语义按裁定**原样不动** ⇒ 它们已有的缺口如实登记在此，不静默、不粉饰。",
+  "frozen_max": 10,
+  "_frozen_max_note": "只许缩短：新增缺口必须先登记（改这个数 + 加条目），而**任何**新增都会被逐条比对（条目必须逐字等于现取缺口）⇒ 涨跌都红。",
+  "entries": [
+    {
+      "svc": "worker-h5",
+      "wf": "worker-h5-publish.yml",
+      "path": "deploy/swas/h5-publish-remote.sh",
+      "why": "发布链路自身（远端执行体）。对账腿的判据口径是「发布物是否落后」，不含发布链路文件 ⇒ 改链路脚本而 push 被吞时不自动补发布（存量缺口）。"
+    },
+    {
+      "svc": "worker-h5",
+      "wf": "worker-h5-publish.yml",
+      "path": "deploy/scripts/swas-h5-publish-ci.sh",
+      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身）。"
+    },
+    {
+      "svc": "worker-h5",
+      "wf": "worker-h5-publish.yml",
+      "path": "deploy/scripts/worker-h5-verify-served.sh",
+      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身：线上产物核对脚本）。"
+    },
+    {
+      "svc": "worker-h5",
+      "wf": "worker-h5-publish.yml",
+      "path": ".github/workflows/worker-h5-publish.yml",
+      "why": "同 `deploy/swas/h5-publish-remote.sh`（发布链路自身的定义文件）。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": "deploy/bmini-h5/**",
+      "why": "h5 传输载体（Dockerfile 等）。同 worker-h5：对账腿只判「发布物是否落后」。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": "deploy/swas/bmini-h5-publish-remote.sh",
+      "why": "同 worker-h5（发布链路自身）。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": "deploy/swas/nginx.conf",
+      "why": "**与 admin-api 同一个文件**：本单把 `deploy/swas/**` 接进 admin-api 腿 ⇒ 改它**会**触发部署并**应用**配置（`deploy.sh` 的 cp + nginx up/reload）。剩下这一角是「bmini 发布腿的重新自证不串端」在 push 被吞时仍不自动补 ⇒ 存量缺口，如实登记（本单不动另外 4 条腿的语义）。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": "deploy/scripts/bmini-h5-publish-ci.sh",
+      "why": "同 worker-h5（发布链路自身）。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": "deploy/scripts/bmini-h5-verify-served.sh",
+      "why": "同 worker-h5（发布链路自身：线上产物核对脚本）。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "path": ".github/workflows/bmini-h5-publish.yml",
+      "why": "同 worker-h5（发布链路自身的定义文件）。"
+    }
+  ]
+}
