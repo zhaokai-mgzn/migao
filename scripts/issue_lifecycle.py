@@ -93,6 +93,8 @@ worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../mig
 
     MIGAO_GH_BIN=...              # gh 可执行文件（沿用既有替身注入点）
     MIGAO_DEVTREE_BIN=...         # dev-worktree.sh（默认 <主仓库根>/scripts/dev-worktree.sh）
+                                  # ⚠️ 默认那份来自**主工作区**（不是你 worktree 里的）⇒ `land` 的 preflight
+                                  # 会**打印它的来源**（路径 + 内容 sha + 与 origin/main 的差，见 tool_provenance_lines）
     MIGAO_VERIFY_BIN=...          # verify-all.sh（默认 <分支检出>/verify-all.sh —— gate 必须在**分支自己的检出**里跑）
     MIGAO_PRESET_REFRESH_BIN=...  # preset-anchor-refresh.sh
     MIGAO_WT_BASE=...             # 工作区根（同 dev-worktree.sh）
@@ -308,6 +310,108 @@ def _verify_script(wt: Path) -> str:
 
 def _preset_refresh_script(root: Path) -> str:
     return os.environ.get(PRESET_REFRESH_ENV) or str(root / "scripts" / "preset-anchor-refresh.sh")
+
+
+# ── 工具来源：`land` 用的是**哪一份**工具（issue #5721）────────────────────────────
+#
+# 病灶（实测；PR #5720 的作者为此**白烧三轮**定位）：`land` 的 ①步（rebase）跑的不是你 worktree 里的
+# `scripts/dev-worktree.sh`，而是 `main_root()` 解析出的**主工作区**那一份（`_devtree_script`）
+# ⇒ **任何包落地一个工具修复后，主工作区就落后了** ⇒ **下一个包的 `land` 跑的是旧工具**。
+# 实测读数：主工作区落后 **3** 个提交（`97f29e43b` #5713 vs `ef8f34606` #5719），旧副本**缺 #5719 的
+# 守卫**（`grep -c preset_has_uncommitted_drift`：主工作区 **0** / worktree **2**）⇒ ①步**连停 3 次**
+# （17:52:41 / 17:55:46 / 17:57:42），而从 worktree 里手动跑同一子命令 rc=0 ⇒ 诊断路径过长（三轮）。
+# ⇒ 落点 = preflight **打印它用的是哪一份**：路径 + 内容 sha + 与 `origin/main` 的差 + behind 计数。
+# 🔴 取舍：**仅打印 + 落后即显式告警，不 fail-closed** —— 落后是会话中的**常态**（每个工具修复都会造成），
+# 一味 fail-closed = **新的假阻塞**（本仓刚修过 `land` 对预设面的假阻塞，见 #5719）；致命的是**诊断路径
+# 太长**，而可见性正好治它；告警随带**可执行**的解除命令。
+# 🔴 口径：对比用**本地** `origin/main` ref（preflight **不联网、不写盘**；①步的 `git fetch` 才刷新它）
+# ⇒ 本地 ref 自身过期时这个读数是**下界**（如实打印在输出里，不许把下界读成「已核」）。
+#: `main_root()` 派生的工具（= 你 worktree 里可能有一份，而 `land` **不用**它）：名字 ⇄ 注入点 ⇄ 解析器。
+MAIN_ROOT_TOOLS = (
+    ("dev-worktree.sh", DEVTREE_ENV, _devtree_script),
+    ("preset-anchor-refresh.sh", PRESET_REFRESH_ENV, _preset_refresh_script),
+)
+
+
+def _short_sha(proc: subprocess.CompletedProcess) -> str | None:
+    out = (proc.stdout or "").strip()
+    return out[:12] if proc.returncode == 0 and out else None
+
+
+def _tool_blob(path: Path, root: Path) -> str | None:
+    """工具文件的**内容** sha（`git hash-object`，前 12 位）。取不到 ⇒ None（**不抛**）。"""
+    if not path.is_file():
+        return None
+    return _short_sha(_run(["git", "hash-object", str(path)], root, timeout=60))
+
+
+def _rev_blob(root: Path, rev_path: str) -> str | None:
+    """`<rev>:<path>` 的 blob sha（前 12 位）。取不到 ⇒ None。"""
+    return _short_sha(_run(["git", "rev-parse", rev_path], root, timeout=60))
+
+
+def _behind_origin_main(root: Path) -> int | None:
+    """`HEAD..origin/main` 的提交数（**本地 ref**）。取不到 ⇒ None（无法判定 ≠ 0）。"""
+    out = (_run(["git", "rev-list", "--count", "HEAD..origin/main"], root, timeout=60).stdout or "").strip()
+    return int(out) if out.isdigit() else None
+
+
+def tool_provenance_lines(root: Path, caller_cwd: Path) -> list[str]:
+    """`land` 的**工具来源**读数（#5721）。取不到的一律如实说「取不到」，**不抛、不阻塞**。"""
+    lines = ["🧰 工具来源（`land` 用的是**主工作区**那一份，不是你 worktree 里的）："]
+    stale: list[str] = []
+    used: dict[str, str | None] = {}
+    for name, env, resolve in MAIN_ROOT_TOOLS:
+        tool = Path(resolve(root))
+        sha = _tool_blob(tool, root)
+        used[name] = sha
+        if os.environ.get(env):
+            lines.append(f"   · {name} ← {tool}  sha={sha or '取不到'}"
+                         f"（**外部注入** `{env}` ⇒ 不是主工作区那一份；来源对比不适用）")
+            continue
+        want = _rev_blob(root, f"origin/main:scripts/{name}")
+        if sha and want and sha == want:
+            lines.append(f"   · {name} ← {tool}  sha={sha}（== origin/main 上的 {want}）")
+            continue
+        why = "**内容 ≠ origin/main**" if (sha and want) else "**无法判定**（该路径在本地取不到）"
+        lines.append(f"   · {name} ← {tool}  sha={sha or '取不到'}"
+                     f"（origin/main 上 = {want or '取不到'} ⇒ {why}）")
+        stale.append(name)
+    behind = _behind_origin_main(root)
+    behind_txt = ("无法判定（本地没有 origin/main ref）" if behind is None
+                  else "0（与本地 origin/main 一致）" if behind == 0 else f"**{behind}** 个提交")
+    lines.append(f"   主工作区 HEAD = {_rev_blob(root, 'HEAD') or '取不到'} · 落后 origin/main：{behind_txt}")
+    lines.append("   口径：对比用**本地** `origin/main` ref（preflight 不联网、不写盘；①步的 "
+                 "`git fetch` 才刷新它 ⇒ 本地 ref 自身过期时本读数是**下界**）")
+    if caller_cwd.resolve() != root.resolve():
+        others: list[str] = []
+        for name, _env, _resolve in MAIN_ROOT_TOOLS:
+            copy_sha = _tool_blob(Path(caller_cwd) / "scripts" / name, root)
+            if copy_sha and copy_sha != used[name]:
+                others.append(f"{name}（sha={copy_sha}）")
+        if others:
+            lines.append(f"   ℹ️  你 worktree 里那份与上面**不同**：{'、'.join(others)}"
+                         f" —— `land` **不用**它（这正是「手动跑 rc=0 而 land 停在①步」的原因）")
+    if stale:
+        lines.append(f"⚠️  你跑的可能是**旧工具**（{'、'.join(stale)} 与 origin/main 不一致）："
+                     f"缺新守卫 ⇒ 可能假阻塞，也可能静默丢守卫")
+        lines.append(f"   ::warning:: land 的工具落后：{'、'.join(stale)} @ {root}"
+                     f"（解除：git -C \"{root}\" fetch origin main && "
+                     f"git -C \"{root}\" merge --ff-only origin/main）")
+    elif behind:
+        lines.append(f"   ℹ️  主工作区落后 {behind} 个提交，但上面这些工具的内容与 origin/main **一致**"
+                     f"（故不告警 —— 假告警会变成新的噪音）")
+    return lines
+
+
+def print_tool_provenance(root: Path, caller_cwd: Path) -> None:
+    """打印工具来源读数。**任何异常都不得拖垮 `land`**（这是可见性，不是判据）。"""
+    try:
+        for line in tool_provenance_lines(root, caller_cwd):
+            print(line)
+    except Exception as exc:  # noqa: BLE001 —— 读数是可见性；失败不许影响 land 本体
+        print(f"⚠️  工具来源读数失败（{type(exc).__name__}: {exc}）—— 不阻塞；"
+              f"但**别把这一行读成「已核」**")
 
 
 def worktree_path_of(branch: str, cwd: Path) -> Path | None:
@@ -567,6 +671,7 @@ def cmd_land(args: argparse.Namespace) -> int:
     os.chdir(root)
     print(f"🚀 land：{branch}")
     print(f"   顺序（顺序即安全顺序）：{' → '.join(LAND_STEPS)}")
+    print_tool_provenance(root, cwd)
 
     wt = worktree_path_of(branch, cwd)
     if wt is None or not wt.is_dir():
