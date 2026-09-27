@@ -40,7 +40,7 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
   'not-h5':
     '小程序端暂不支持打印标签（用户 2026-09-26 裁定：小程序链路搁置）。请用安卓手机或电脑的 Chrome 打开本页再打印；标签仍可在电脑端补打。',
   'insecure-context':
-    '当前页面不是 HTTPS 安全上下文，浏览器禁止蓝牙。请用 https://app.migaozn.com/b/ 打开本页（内网 http 地址一律打不了）。',
+    '当前页面不是 HTTPS 安全上下文，浏览器禁止用蓝牙。请把地址栏的 http:// 换成 https:// 重新打开本站再打印（企业内网的 http 地址一律打不了）。',
   'no-bluetooth-api':
     '这个浏览器没有提供蓝牙接口（Web Bluetooth）。请换 Android 版 Chrome 或桌面版 Chrome / Edge 打开；iPhone 上任何浏览器都不行。',
   'ios-unsupported':
