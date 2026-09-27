@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "issue": "#4221",
+  "_what": "本地门禁覆盖矩阵：模块 → 覆盖它的本地腿（档位 / 腿名）→ 覆盖形态（typecheck / 单测 / 构建）。类 = 「某个模块被改动，但本地门禁矩阵里没有它的腿 ⇒ 只能靠 CI 兜」；未登记的模块 / 未登记的跨目录输入即红。",
+  "_judged_by": "tests/unit_ci_workflows/test_local_gate_matrix.py",
+  "_invariants": [
+    "发现口径（backend/* 与 frontend/* 的第一层目录，冻结在判据里）必须 ⊆ 登记（modules ∪ uncovered_modules ∪ non_modules）；反向：登记项必须活着（模块目录真实存在）",
+    "登记的腿必须活着：leg_names 逐字出现在 verify-all.sh 里，且声明档位 tiers == 「腿名实际出现的档位集合」",
+    "fail-closed 条目的档位分支必须用 report_strict 派发（不得走 report_env 的「未就绪跳过」那条路），且该分支未命中时必须显式声明「未跑」、不得出现 ✅",
+    "触发面闭包：谓词必须命中模块目录本身；模块源码里逃到本模块之外的仓内输入，必须被谓词命中或登记在 trigger_face_uncovered_inputs",
+    "覆盖形态 forms 必须落在冻结集合内；声明 indirect 的条目必须给 note + 逐个消费文件的 import 证据",
+    "未覆盖台账只许缩短：条数 <= 判据里冻结的上限，且 uncovered_frozen 现取读数与逐项长度一致"
+  ],
+  "_boundary": "本判据机械保证的是「每一个被发现的模块都被显式裁定（有腿 / 登记为未覆盖 / 登记为非模块）」+「登记的腿真的活在它声称的档位里」+「跨目录输入的相对路径字面量都被裁定过」。它**不保证**覆盖强度（跑一条弱腿与跑一条强腿在本矩阵里长得一样），也**不保证**触发面 = 全部输入闭包 —— 闭包只机械覆盖「源码里的相对路径字面量」这一形态：tsconfig paths / 运行期拼路径 / 环境变量指向的输入不在面内（假绿方向，不会误伤）。",
+  "modules": {
+    "backend/admin-api": {
+      "tiers": ["quick", "full", "backend"],
+      "leg_names": ["admin-api 单测", "admin-api 全量"],
+      "forms": ["单测"],
+      "note": "Java 21 + mvnw test（quick 档 -q / full 与 backend 档全量）"
+    },
+    "backend/ai-agent-service": {
+      "tiers": ["quick", "full", "agent"],
+      "leg_names": ["ai-agent 单测", "ai-agent 全量"],
+      "forms": ["单测"],
+      "note": "pytest tests/ -q --no-cov -n 4（quick 与 full 同一选择集，见 test_verify_all_quick_scope.py）"
+    },
+    "frontend/admin-web": {
+      "tiers": ["quick", "full", "frontend"],
+      "leg_names": ["admin-web vitest", "admin-web tsc"],
+      "forms": ["typecheck", "单测"],
+      "note": "vitest run + tsc --noEmit（探 node_modules/.bin/{vitest,tsc}，见 probe_ready 的假绿注释）"
+    },
+    "frontend/worker-h5": {
+      "tiers": ["quick", "full", "frontend"],
+      "leg_names": ["worker-h5 页面测试（Node 内置 runner）"],
+      "forms": ["单测"],
+      "note": "零依赖：Node 内置 --test，无 node_modules（#4716）"
+    },
+    "frontend/bmini-app": {
+      "tiers": ["gate"],
+      "leg_names": ["bmini-app 类型检查 + 单测 + 构建（h5 + weapp）"],
+      "forms": ["typecheck", "单测", "构建"],
+      "trigger": {
+        "kind": "diff-face-hit",
+        "hit_fn": "bmini_face_hit",
+        "predicate_fn": "bmini_face_paths",
+        "env": "bmini-app",
+        "fail_closed": true
+      },
+      "note": "本单新增：只在 gate 档（merge gate），按变更集命中触发面时派发；缺依赖 ⇒ fail-closed 记 ❌（不走 ⏭️），四件命令与 CI bmini-app.yml 两条腿逐字一致"
+    },
+    "frontend/shared": {
+      "tiers": ["quick", "full", "frontend"],
+      "leg_names": ["worker-h5 页面测试（Node 内置 runner）"],
+      "forms": ["单测"],
+      "indirect": true,
+      "consumed_by": ["frontend/worker-h5/src/render.mjs"],
+      "note": "间接覆盖：本模块（operation-display.mjs）没有独立腿，被 worker-h5 的 Node 测试**执行**（该测试直接跑这个共享模块）⇒ 靠 worker-h5 腿兜；consumed_by 的 import 由判据逐个核对。⚠️ 与 CI 侧不同：CI 的 worker-h5 workflow 是 **workflow 级 paths**（只认 frontend/worker-h5/**）⇒ 只改共享模块在 CI **不触发**那条腿（该缺口已登记在 declaration_gate_registry.json 的 gates[worker-h5 unit tests].uncovered，issue #4177）；本地腿在 quick/full/frontend 档是**固定跑**的（无 path 门控）⇒ 本地这一面是覆盖的。"
+    }
+  },
+  "uncovered_modules": {
+    "frontend/mini-app": {
+      "reason": "本地门禁矩阵里没有它的腿 —— CI 有 mini-app.yml 的两条腿兜（typecheck+单测 / xiaobu H5 视觉回归），本单只登记不扩面（扩面 = 一条新的本地腿，体量超本单；边界见 PR body 的「未做与存疑」）",
+      "issue": "#5511 / 本单 PR body（会话内提出，按 AGENTS.md 11(a) 不开新单）",
+      "owner": "集成侧（本地门禁 owner）",
+      "ci_workflow": ".github/workflows/mini-app.yml",
+      "ci_leg_names": ["mini-app typecheck + unit tests", "xiaobu H5 visual regression"]
+    }
+  },
+  "trigger_face_uncovered_inputs": {
+    "frontend/admin-web/src/lib/print-media.json": {
+      "reason": "bmini 源码（src/utils/inbound/truth.ts）import 了 admin-web 的这个 JSON ⇒ 它是本腿判定对象的**跨目录输入**，但**有意不**纳入触发面：会把 admin-web 单独改这一个文件的改动拖成一条 3~5 分钟的 bmini 腿，并对没装 bmini 依赖的 worktree 制造 fail-closed 假红。CI 的 bmini 触发面同样不含它（CI 谓词 = frontend/bmini-app/|tests/|.github/）⇒ 该耦合两侧都靠 admin-web 侧兜：print-media.json 自身有守卫 tests/unit_ci_workflows/test_print_media_matrix_guard.py（C1~C6）",
+      "issue": "#5511 / 本单 PR body（会话内提出，按 AGENTS.md 11(a) 不开新单）",
+      "owner": "集成侧（本地门禁 owner）",
+      "consumer": "frontend/bmini-app/src/utils/inbound/truth.ts"
+    }
+  },
+  "non_modules": {},
+  "uncovered_frozen": {
+    "modules": 1,
+    "trigger_face_uncovered_inputs": 1,
+    "non_modules": 0
+  }
+}

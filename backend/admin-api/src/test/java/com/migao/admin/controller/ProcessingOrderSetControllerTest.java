@@ -96,8 +96,9 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
             "processing_order_id", "processing_order_no", "order_id", "order_no", "completed", "completed_at",
             "set_overview", "progress");
     private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions");
+    /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
-            List.of("order_item_id", "position_kind", "position_name", "operations");
+            List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
     private static final List<String> OPERATION_KEYS = List.of("operation_id", "logical_name", "position",
             "seq", "qty", "unit", "unit_price", "status", "done_qty");
     private static final List<String> PROGRESS_KEYS = List.of("total", "done", "percent");

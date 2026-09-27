@@ -58,6 +58,19 @@ function measuredTaroApis(): string[] {
   return Array.from(apis).sort()
 }
 
+/**
+ * 「声明集 == 实测集」的判定（真判据与注入式红证**共用同一份**，见 `migao-dev-flow` §23.5）。
+ * 多一个（未声明就用）与少一个（声明了没用）**都要点名**。
+ */
+function declarationDriftProblems(measured: string[], declared: string[]): string[] {
+  const problems: string[] = []
+  const extra = measured.filter((api) => !declared.includes(api))
+  const missing = declared.filter((api) => !measured.includes(api))
+  if (extra.length > 0) problems.push(`射程内**未声明就用**：${extra.join(', ')}（新增平台调用必须先声明缺口）`)
+  if (missing.length > 0) problems.push(`声明了却**没人用**：${missing.join(', ')}（声明集只许缩短）`)
+  return problems
+}
+
 describe('拍照入库页：平台能力面（声明 == 实测 · 缺口必须接线）', () => {
   const unsupported = unsupportedApis()
   const jsSdkOnly = jsSdkOnlyApis()
@@ -79,14 +92,20 @@ describe('拍照入库页：平台能力面（声明 == 实测 · 缺口必须�
   })
 
   it('G1 声明集 == 射程内实测集（多一个 / 少一个都红）', () => {
-    expect(measured).toEqual([...INBOUND_PAGE_TARO_APIS].sort())
+    const declared = [...INBOUND_PAGE_TARO_APIS].sort()
+    expect(declarationDriftProblems(measured, declared)).toEqual([])
     // 反空跑：射程真的扫到了用法（否则两边都是空集，判据会空跑通过）
     expect(measured.length).toBeGreaterThanOrEqual(4)
   })
 
   it('G1 🔴 红证：往页面加一处未声明的 Taro 调用 ⇒ 实测集与声明集不再相等', () => {
+    const declared = [...INBOUND_PAGE_TARO_APIS].sort()
+    // ① 先跑**真**实测（读射程内的文件）⇒ 同一判定判绿。
+    //    这一半让本 case 真的走被测对象：把 measuredTaroApis 换成"永远抛错"的实现 ⇒ 本 case 必红。
+    expect(declarationDriftProblems(measuredTaroApis(), declared)).toEqual([])
+    // ② 坏形态（页面加一处 Taro.showToast）作为**同一判定**的入参 ⇒ 必须点名
     const injected = Array.from(new Set([...measured, 'showToast'])).sort()
-    expect(injected).not.toEqual([...INBOUND_PAGE_TARO_APIS].sort())
+    expect(declarationDriftProblems(injected, declared).join('\n')).toContain('showToast')
   })
 
   it('G2 命中 #5650 清单的 API 必须**两处**登记，且文案被射程内文件引用', () => {

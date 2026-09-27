@@ -103,6 +103,13 @@ public class ProcessingOrderResponse {
          * 但**缺值不落键** ⇒ 缺键就是 null（未指定）。供 2b-3 的兜底与分段评估读。
          */
         private Object requiredDeliveryDate;
+        /**
+         * **部位级备注**（issue #5685）：商家填的一行说明（现场例：`公式--48个折` = 「这个数字怎么来的」）。
+         *
+         * <p>来源 = 订单行 {@code processing_info.remark}（自由文本），随加工单生成**逐行固化**进
+         * `items_snapshot`（白名单见 {@code ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS}）。
+         * **缺值 = 键缺席 = null**（`copyIfPresent` 不造值）⇒ 页面按「没填」处理，不渲染空行。</p>
+         */
         private String remark;
 
         // ── 工艺规格（craft spec，issue #4354 / 设计文档 §4.9 第③处展示）──────────────

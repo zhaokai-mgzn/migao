@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（24 case）
+## B 端小程序域（26 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -918,6 +918,35 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5640 功能②）：本单最值得固化的一类 —— 「同族页面各写一套流程，第二套必然分叉」，落成语料内省式元守卫（未复用即红）。 ｜ tags: bmini, inbound, reprint, reuse-guard, platform
+
+### BM-025. 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红） 🔵
+```
+你: 工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
+数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
+数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
+数据: 判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）
+数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
+数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
+跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+
+### BM-026. 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流 🔵
+```
+你: 工人扫米高入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）
+期望: direct_reply
+数据: 判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红
+数据: 判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红
+数据: 判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是米高的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红
+数据: 判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）
+数据: 判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）
+跳过: [backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.2/§5.4/§7.1）：把「服务端 302 了、而参数没有任何人读」这条链路接通并钉住（落地页 code 参数 → 码空间分流 → 补打页）。 ｜ tags: bmini, inbound, deeplink, code-space, landing-page
 
 ## 分类域（3 case）
 
@@ -2724,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（24 case）
+## 杂项域（25 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3008,6 +3037,19 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed
+
+### MC-025. 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数 🔵
+```
+你: 改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）
+期望: direct_reply
+数据: 摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红
+数据: 🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）
+数据: fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）
+数据: 对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）
+数据: 🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）
+跳过: [backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（Refs #5683；issue #5687 收尾时实测发现）：main 上 casebook 摘要比源少 1 条，而逐条块与 eval_cases.py 都一致 ⇒ 下一个 PR 的生成物新鲜度校验会对无辜 PR 判红。落码 = 重渲染那 2 行 + 常驻判据（摘要↔现取、tier↔现取、摘要声称条数↔文档真实块数、两条 fail-closed）+ 三条语义红证 + 一条「只改注释」对照。取号 MC-025：main 上 MC-001~MC-024 已占用（MC-024 = 同会话的 #5687 分流语义）。 ｜ tags: ci, casebook, generated-artifact, summary-drift, red-proof
 
 ### MC-024. 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红） 🔵
 ```
@@ -4552,7 +4594,7 @@
 ### PG-058. 扫码后按套展示工序细节——解析响应追加 set_overview（本套 → 部位 → 工序明细） 🔵
 ```
 数据: success=true
-数据: 🔴 `set_overview` 的形状与值（issue #4967 交付物 2，**只加不改**）：`GET /api/admin/production/scan` 与 `GET /api/worker/production/scan`（**同一份** `ProductionScanService.resolve` 实现）的响应**追加** `set_overview = {set_no, set_index, positions:[{order_item_id, position_kind, position_name, operations:[{operation_id, logical_name, position, seq, qty, unit, unit_price, status, done_qty}]}]}`。**本套 → 部位 → 工序明细** 三级；工序明细逐键 = 逻辑名（`logical_name`，与一屏 `operation` / `alternatives` **同一份**读时派生）/ 应做数量+单位（`qty` + `unit`）/ 单价（`unit_price`）/ 状态（`status`）/ 已报数量（`done_qty`）。旧码降级形态**没有**这个键（`granularity` 为 `order` ⇒ 判不出是哪一套 ⇒ **不猜**）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java（resolveCarriesSetOverviewWithOperationDetails / degradedViewHasNoSetOverview）
+数据: 🔴 `set_overview` 的形状与值（issue #4967 交付物 2，**只加不改**；🔴 **2026-09-27 追加一个键 = `positions[].remark`**，issue #5685）：`GET /api/admin/production/scan` 与 `GET /api/worker/production/scan`（**同一份** `ProductionScanService.resolve` 实现）的响应**追加** `set_overview = {set_no, set_index, positions:[{order_item_id, position_kind, position_name, remark, operations:[{operation_id, logical_name, position, seq, qty, unit, unit_price, status, done_qty}]}]}`。**本套 → 部位 → 工序明细** 三级；工序明细逐键 = 逻辑名（`logical_name`，与一屏 `operation` / `alternatives` **同一份**读时派生）/ 应做数量+单位（`qty` + `unit`）/ 单价（`unit_price`）/ 状态（`status`）/ 已报数量（`done_qty`）。🔴 **`positions[].remark`（issue #5685 新增，只加不改）**：= **商家填的部位级备注**（订单行 `processingInfo.remark` 的 JSONB 顶层字符串，服务端原样透传、**trim 后输出**、不造值）；**`null` = 未填**（键恒在，不省键、不折空串）⇒ 客户端（工人端 H5）对 `null` / 缺键 / 空串**一律不渲染**该行。旧码降级形态**没有**这个键（`granularity` 为 `order` ⇒ 判不出是哪一套 ⇒ **不猜**）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java（resolveCarriesSetOverviewWithOperationDetails / degradedViewHasNoSetOverview）+ backend/admin-api/src/test/java/com/migao/admin/service/ProcessingSetReadServiceTest.java（itemRemarkFlowsIntoSetOverview / itemRemarkIsTenantScopedAndTolerant：有值 trim 透传 / 纯空白 ⇒ null / 别的租户读不到）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑩-b / ⑩-c：紧跟本部位标题渲染 / 缺值不渲染 / 长备注不截断）
 数据: 列**全部**工序，不只是待做：已完成（已领走）的道**也在**清单里 —— 工人要一眼看到「这一套还有哪几道没做」，只列待做就答不了这个问题。`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）⇒ 读面**原样 null，不折 0**，前端显式渲染「未定价」。排序沿用既有读面序（`ProductionScanService#listSetOperations` 的部位名 → seq），**不另排**（第二份排序 = 第二份口径）。证据：ProductionScanCompleteServiceTest（setOverviewKeepsUnpricedAsNull / resolveCarriesSetOverviewWithOperationDetails 的已完成道断言）
 数据: 🔴 **单一真值（聚合只有一份）**：`set_overview` 由 `ProductionScanService#setOverview` 一处算出，数据源就是本次解析已读到的 `setOperations`（与「下一道」推断、`set_progress`、`stalled` **逐字同源**）；`POST /api/worker/production/scan/complete` 的回执**原样透传** `scan.get(“set_overview”)` 的那一份 ⇒ 领活成功后**不必再请求一次**。页面（H5 / bmini）**只消费**，**不得**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排 —— 那是第二份聚合口径（部位名怎么取 / 算不算已完成的道 / 按什么排序，两处迟早不同）。证据：ProductionScanCompleteServiceTest + frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-d 领活回执也带本套明细）
 数据: 🔴 **缺值不渲染**（防「undefined 米 / ¥NaN」这种假数据）：`set_overview` 缺失 / `positions` 为空 / 某部位没有任何带 `operation_id` 的工序 ⇒ 明细块（或该行）**一个字节都不出现**。H5 与 bmini 两侧都有独立判据。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-c）+ frontend/bmini-app/tests/production-scan-complete.test.tsx（缺值不渲染）
@@ -7540,13 +7582,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：532（活跃 126，跳过 406）
-- tier 分布：smoke 12 / normal 487 / adversarial 31
+- 用例总数：536（活跃 126，跳过 410）
+- tier 分布：smoke 12 / normal 491 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：24
+- B 端小程序域：26
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -7556,7 +7598,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：24
+- 杂项域：25
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7606,6 +7648,7 @@
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
 - MC-023: 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）
+- MC-025: 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数
 - MC-024: 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染

@@ -41,6 +41,7 @@ export const REPRINT_PAGE_FILE = 'src/pages/worker/reprint/index.tsx'
 export const INBOUND_PAGE_TARO_APIS: string[] = [
   'chooseImage', // 拍照/选图（h5 有真实实现，非 stub）
   'createOffscreenCanvas', // weapp 侧取像素解码（h5 = temporarilyNotSupport 的 stub ⇒ 见下面的缺口文案）
+  'getCurrentInstance', // 读**页面参数**（`router.params.code`）：h5 路由 query 与小程序深链共用这一侧
   'navigateTo', // 未登录工人 ⇒ 跳工人登录页
   'showModal', // 过账前二次确认（复用 utils/adminConfirm）
   'uploadFile', // 照片上传（multipart；h5 有真实 XHR 实现）
@@ -58,6 +59,42 @@ export const INBOUND_PAGE_TARO_APIS: string[] = [
 export const INBOUND_PAGE_PLATFORM_GAP_HINTS: Record<string, string> = {
   createOffscreenCanvas: `${WEAPP_DECODE_UNAVAILABLE_HINT}（h5 不受影响：h5 用 <img> + canvas 取像素解码）`,
 }
+
+/**
+ * **平台能力缺口台账（Taro API 之外的那一类）** —— issue #5052 实现 PR。
+ *
+ * `INBOUND_PAGE_PLATFORM_GAP_HINTS` 管的是「某个 `Taro.*` 在这个平台上用不了」；
+ * 这里管的是「**这条路在某个平台上根本不存在**」（不是 API 缺失，是形态差异）。
+ * 本轮只有一条：**URL query 深链**（`/b/?code=<短码>`，服务端 `/i/` 302 的落点）是
+ * **h5 专有形态** —— 小程序没有 URL query，深链走**页面参数**（`router.params`）。
+ *
+ * 🔴 照本文件的既有范式：缺口**必须有登记**（这里），且**由真的调用它的文件接线**
+ * （`wiredBy` 里必须真的出现 `wiredToken`）—— 「登记而不接线」在本仓被点过名
+ * （#5654 的 P9：台账里写一句，而没有任何东西把它变成用户看得见的路径）。
+ */
+export interface WorkerSurfacePlatformGap {
+  /** 缺口键（登记名，供守卫点名） */
+  key: string
+  /** 给不出这条路的平台 */
+  missingOn: 'weapp' | 'h5'
+  /** 另一侧走什么形态（**具体路径**，不是"以后再说"） */
+  fallback: string
+  /** 接线处（仓库相对 bmini 根路径）—— 守卫核它真的引用了 `wiredToken` */
+  wiredBy: string
+  /** 接线记号：`wiredBy` 的**代码**里必须出现它（注释不算） */
+  wiredToken: string
+}
+
+export const WORKER_SURFACE_PLATFORM_GAPS: WorkerSurfacePlatformGap[] = [
+  {
+    key: 'url-query-deeplink',
+    missingOn: 'weapp',
+    fallback:
+      '小程序没有 URL query ⇒ 深链走**页面参数**：`Taro.getCurrentInstance().router.params.code`（与 h5 共用同一处判定与同一个下游页面 —— `src/utils/inbound/deepLink.ts` 的 `landingCodeFromParams` / `classifyLandingCode`）',
+    wiredBy: 'src/pages/worker/reprint/index.tsx',
+    wiredToken: 'landingCodeFromParams(',
+  },
+]
 
 /** 修图/选图失败时给工人的话（页面直接渲染它，不在页面里另写一句） */
 export const INBOUND_PHOTO_FAILED_HINT = '没能拿到照片（可能没授权相册/相机权限），请重试或换用手机浏览器打开。'
@@ -83,6 +120,7 @@ export const REPRINT_WORKER_LOGIN_REQUIRED =
 export const INBOUND_PAGE_SCOPE_FILES: string[] = [
   INBOUND_PAGE_FILE,
   REPRINT_PAGE_FILE,
+  'src/utils/inbound/deepLink.ts',
   'src/utils/inbound/codeSpace.ts',
   'src/utils/inbound/reprintFlow.ts',
   'src/utils/inbound/labelPageKit.ts',
