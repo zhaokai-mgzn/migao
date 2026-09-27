@@ -692,6 +692,15 @@ export interface ProcessingOrderItem {
   formulaMeters?: number
   plannedMeters?: number
   savedMeters?: number
+  /**
+   * **部位备注**（issue #5685）：商家在下单页写的「这个数字怎么来的」（算料依据的人工说明，
+   * 例：`公式--48个折`）。
+   *
+   * 来源 = 快照行键 `remark`，即下单时 `order_items.processing_info.remark` 的**逐字透传**
+   * （写侧单点构造 = `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 的
+   * `buildLineProcessingInfo`）。存量加工单 / 商家没填 ⇒ **缺键** ⇒
+   * `ProcessingOrderBlock` 按「缺值不渲染」处理（不出现空的备注行）。
+   */
   remark?: string
 }
 

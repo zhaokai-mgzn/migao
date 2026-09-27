@@ -648,6 +648,115 @@ test('🔴 ⑨-d 领活回执也带本套明细（工人不必再请求一次就
   app.destroy()
 })
 
+// ============================================================ ⑩ 部位级备注（issue #5685）
+
+/**
+ * 判据（每条都能红 —— 红证：删掉 `overviewView` 里 `${positionRemark(p)}` 那一行 ⇒ ⑩ 三红）：
+ *   ① 有备注 ⇒ 在**该部位自己**的标题下渲染「部位备注：<原文>」（工人手机上一眼看得到「这个数字怎么来的」）；
+ *   ② 🔴 **缺值不渲染**：`null` / 缺键 / 空串 / 纯空白 ⇒ 「部位备注」四个字**一个字节都不出现**
+ *      （绝不渲染「部位备注：undefined / null」这种假数据，也不留空行）；
+ *   ③ 长备注不破版：**全文**进 DOM（不截断成省略号）+ 样式允许折行、无 nowrap/ellipsis/line-clamp。
+ *
+ * 为什么钉在**装配层**（真实页面渲染）而不是只测纯函数：备注是**部位级**的键
+ * （`set_overview.positions[].remark`）—— 落到别的位置（或落到全屏唯一的那行）就是给错人看，
+ * 工人照着别人的公式下料。故判据取「该部位标题 → 备注」的**相邻**关系。
+ */
+const REMARK_VIEW = {
+  ...CLOTH_VIEW,
+  set_overview: {
+    ...CLOTH_VIEW.set_overview,
+    positions: [
+      { ...CLOTH_VIEW.set_overview.positions[0], remark: '公式--48个折' },
+      { ...CLOTH_VIEW.set_overview.positions[1], remark: null },
+    ],
+  },
+}
+
+test('🔴 ⑩ 部位级备注（issue #5685）：渲染在**该部位**标题下，形如「部位备注：公式--48个折」', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(REMARK_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  // ① 逐字上屏，且**紧跟它自己那个部位**的标题（不是别的部位、也不是全屏随便一处）
+  assert.match(
+    doc.html,
+    /wh5-ov-pos-name">布帘<\/div>\s*<p class="wh5-ov-remark">部位备注：公式--48个折<\/p>/,
+    '备注必须紧跟**它自己那个部位**的标题',
+  )
+  // ② 纱帘的 remark 是 null ⇒ 不得多出一行「部位备注」（全屏恰好一次）
+  assert.equal(doc.html.split('部位备注').length - 1, 1, 'remark 为 null 的部位不得渲染「部位备注」行')
+  assert.match(doc.html, /纱帘/, '部位本身照常在（缺备注不影响既有渲染）')
+
+  // ③ 商家自由文本一律转义（备注进 innerHTML ⇒ 不转义就是注入面）
+  app.dispatch({
+    type: 'resolved',
+    view: {
+      ...CLOTH_VIEW,
+      needs_selection: [],
+      set_overview: {
+        ...CLOTH_VIEW.set_overview,
+        positions: [{ ...CLOTH_VIEW.set_overview.positions[0], remark: '<b>粗</b> & "引号"' }],
+      },
+    },
+  })
+  assert.match(doc.html, /部位备注：&lt;b&gt;粗&lt;\/b&gt; &amp; &quot;引号&quot;/, '备注必须转义后渲染')
+  assert.ok(!/<b>粗<\/b>/.test(doc.html), '备注里的标签不得当成 HTML 渲染')
+  app.destroy()
+})
+
+test('🔴 ⑩-b 缺值不渲染：remark 为 null / undefined / 缺键 / 空串 / 纯空白 ⇒ 「部位备注」一个字节都不出现', () => {
+  const doc = fakeDom()
+  const app = bootPage({ doc, f: routeFetch({}) })
+  const cloth = CLOTH_VIEW.set_overview.positions[0]
+  const { remark: _drop, ...withoutKey } = cloth
+  for (const p of [
+    { ...cloth, remark: null },
+    { ...cloth, remark: undefined },
+    withoutKey,
+    { ...cloth, remark: '' },
+    { ...cloth, remark: '   ' },
+  ]) {
+    app.dispatch({
+      type: 'resolved',
+      view: { ...CLOTH_VIEW, needs_selection: [], set_overview: { ...CLOTH_VIEW.set_overview, positions: [p] } },
+    })
+    assert.ok(!/部位备注/.test(doc.html), `remark=${JSON.stringify(p.remark)} ⇒ 不得渲染「部位备注」行（缺值不造值）`)
+    assert.ok(!/undefined/.test(doc.html), '缺值不得渲染成 undefined')
+    assert.ok(!/null/.test(doc.html), '缺值不得渲染成 null')
+  }
+  app.destroy()
+})
+
+test('🔴 ⑩-c 长备注窄屏不破版：全文进 DOM（不截断成省略号）+ 样式可折行、无 nowrap/ellipsis/line-clamp', async () => {
+  const doc = fakeDom()
+  // 真实形态：中文说明 + 一长串**无空格**的编号（窄屏最容易溢出/被截断的那种）
+  const LONG = '公式--48个折：用料=窗宽2.8×2倍褶÷门幅1.5=3.73米，取整4米，再按48个折均分（编号ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz）'
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk({
+      ...CLOTH_VIEW,
+      set_overview: {
+        ...CLOTH_VIEW.set_overview,
+        positions: [{ ...CLOTH_VIEW.set_overview.positions[0], remark: LONG }],
+      },
+    }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  assert.ok(doc.html.includes(LONG), '长备注必须**全文**进 DOM（截断即工人看不到完整依据）')
+  assert.equal(doc.html.split(LONG).length - 1, 1, '长备注不得被拆成多段/重复渲染')
+  assert.ok(!/部位备注：[^<]*…/.test(doc.html), '不得把长备注截断成省略号')
+
+  // 样式面（真正的破版源头在 CSS）：必须能折行/断词，且不得用 nowrap / 省略号 / 行数钳制掩盖
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+  const block = css.match(/\.wh5-ov-remark\s*\{[^}]*\}/)?.[0] ?? ''
+  assert.ok(block, '.wh5-ov-remark 必须有样式声明（无样式 ⇒ 长串会溢出窄屏）')
+  assert.match(block, /overflow-wrap:\s*anywhere|word-break:\s*break-word/, '长备注必须能换行/断词')
+  assert.ok(!/nowrap|ellipsis|line-clamp/.test(block), '不得用 nowrap / 省略号 / 行数钳制掩盖长备注')
+  app.destroy()
+})
+
 // ============================================================ 静态红线：工人页唯一写入口
 
 test('🔴 静态红线：页面源码里**没有** /report 写入口（唯一写入口 = scan/complete）', () => {

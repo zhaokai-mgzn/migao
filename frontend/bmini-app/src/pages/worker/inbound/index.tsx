@@ -39,6 +39,7 @@ import {
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
 import {
   PRINT_READY_HINT,
+  printFailureText,
   probePrintCapability,
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
@@ -243,7 +244,9 @@ export default function WorkerInboundPage() {
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
     }
-    setPrintState(result.hint)
+    // 「记没记打印次数」是**运行期事实**（留痕在送数据之前）⇒ 由 printRecorded 决定要不要补一句，
+    // 不靠静态文案对运行期下结论（issue #5052 验收 D6）
+    setPrintState(printFailureText(result.hint, result.printRecorded))
   }, [label, capability])
 
   const gate = useMemo(() => evaluateSkuGate(matches), [matches])

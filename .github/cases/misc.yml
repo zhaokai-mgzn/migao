@@ -771,3 +771,94 @@ cases:
         - deploy-admin-api.yml
         - deploy-reconcile.yml
       verifies: []
+
+  # MC-025（Refs #5683，issue #5687 收尾时发现）：**生成物的人读摘要必须由现取推导**。
+  # 病（实测读数）：`docs/testing/mibao-verification-cases.md` 的「覆盖统计（生成）」两行
+  # 在 main 上与源漂移 **1** 条（committed 532 / 现取 533；tier normal 487 / 488），
+  # 而**逐条用例块没少**（源 533 条、块头 533 个）、同一次产出的 `tests/agent_eval/eval_cases.py`
+  # **与源一致** ⇒ 只差摘要那一行。后果 = 下一个 PR 的「生成物新鲜度校验」会判红，
+  # 而归因**指向那个无辜的 PR**（判据读到的对象与它声称的不是同一个）。
+  # ==========================================================================
+  - id: MC-025
+    legacy_id: ""
+    title: "生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - casebook
+      - generated-artifact
+      - summary-drift
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 生成物的**结构事实**（摘要行 ↔ 现取计数 ↔ 块数），
+    # 由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红"
+      - "🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）"
+      - "fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）"
+      - "对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）"
+      - "🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）"
+    skip_reason: "[backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（Refs #5683；issue #5687 收尾时实测发现）：main 上 casebook 摘要比源少 1 条，而逐条块与 eval_cases.py 都一致 ⇒ 下一个 PR 的生成物新鲜度校验会对无辜 PR 判红。落码 = 重渲染那 2 行 + 常驻判据（摘要↔现取、tier↔现取、摘要声称条数↔文档真实块数、两条 fail-closed）+ 三条语义红证 + 一条「只改注释」对照。取号 MC-025：main 上 MC-001~MC-024 已占用（MC-024 = 同会话的 #5687 分流语义）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_casebook_summary_is_derived.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-024（issue #5687）：**「重跑通过」不再单独构成 flaky 的充分条件** —— 窗口型确定性缺陷
+  # 曾被它掩盖。病：`flaky_ledger.decide` 旧口径逐字 `if rerun_result == "success" and
+  # "flaky" in kinds: action, kind = "mark_flaky", "flaky"` ⇒ **只凭重跑绿**就消红。实测：
+  # 测试侧裸 `LocalDate.now()`（runner 的 JVM 默认时区 = UTC）取业务日 vs 生产按 +08
+  # (`BusinessClock.today()`) ⇒ 两侧只在 UTC 16:00–24:00 分叉 ⇒ **每天必红 8 小时**；
+  # run 36280962072 在窗口内红（22:12Z）、重跑落到窗口外绿（00:0xZ）⇒ 判 flaky、PR 的红被消掉，
+  # 缺陷仍在 main 上、明天同一时段对所有人再红一次（可无限循环；唯一信号是那个**非 required**
+  # 的 `Flaky Ledger Reconcile` 红，它自己逐字声明「判红不等于阻塞合并」）。
+  # ==========================================================================
+  - id: MC-024
+    legacy_id: ""
+    title: "「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - time-bucket
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 分流语义的**结构事实**（判定函数 + 台账字段 + workflow 动作），
+    # 由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与
+    # tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读"
+      - "判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）"
+      - "🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）"
+      - "**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**"
+      - "类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）"
+      - "workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红"
+      - "红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）"
+    skip_reason: "[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #5687；用户逐字裁定 A = 给「重跑通过」加限制）：窗口型确定性缺陷被重跑掩盖 ⇒ 缺陷留在 main、明天同时段再红（可无限循环）。落码 = 时间桶判据（实例）+ 强制跟踪（机械落单）+ 类级 meta-guard（消红路径未登记即红 + 台账只许缩短 + 覆盖面显式登记）+ workflow 第三种动作 `mark_suspect` + 七条注入式红证（每条注明命中分支，含「只改注释」对照）。取号 MC-024：main 上 MC-001~MC-023 已占用（MC-022 = 同族时区窗口的实例修复、MC-023 = 部署触发面）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py"
+        - "tests/unit_ci_workflows/test_rerun_to_clear_paths.py"
+      ci:
+        - flaky-triage.yml
+        - flaky-ledger-reconcile.yml
+      verifies: []

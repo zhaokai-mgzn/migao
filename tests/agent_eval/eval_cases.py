@@ -1347,6 +1347,42 @@ _CASE_BM_024 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-025 [NORMAL] 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红）（源: cases/bmini.yml）──
+_CASE_BM_025 = EvalCase(
+    id='BM-025',
+    legacy_id='',
+    title='工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）', '判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）', '判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）', '判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）', '判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）', '判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）'],
+    skip_reason='[backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'entry-reachability', 'meta-guard', 'worker-surface'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-026 [NORMAL] 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流（源: cases/bmini.yml）──
+_CASE_BM_026 = EvalCase(
+    id='BM-026',
+    legacy_id='',
+    title='入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人扫米高入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红', '判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红', "判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是米高的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红", '判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）', '判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）'],
+    skip_reason='[backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'deeplink', 'code-space', 'landing-page'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -4151,6 +4187,42 @@ _CASE_MC_023 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-025 [NORMAL] 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数（源: cases/misc.yml）──
+_CASE_MC_025 = EvalCase(
+    id='MC-025',
+    legacy_id='',
+    title='生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）'],
+    expectations=['direct_reply'],
+    data_checks=['摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红', '🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）', 'fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）', '对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）', '🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）'],
+    skip_reason='[backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'generated-artifact', 'summary-drift', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-024 [NORMAL] 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）（源: cases/misc.yml）──
+_CASE_MC_024 = EvalCase(
+    id='MC-024',
+    legacy_id='',
+    title='「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读', '判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）', '🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）', '**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**', '类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）', 'workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红', '红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）'],
+    skip_reason='[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-triage', 'time-bucket', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -5719,7 +5791,7 @@ _CASE_PG_058 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['success=true', '🔴 `set_overview` 的形状与值（issue #4967 交付物 2，**只加不改**）：`GET /api/admin/production/scan` 与 `GET /api/worker/production/scan`（**同一份** `ProductionScanService.resolve` 实现）的响应**追加** `set_overview = {set_no, set_index, positions:[{order_item_id, position_kind, position_name, operations:[{operation_id, logical_name, position, seq, qty, unit, unit_price, status, done_qty}]}]}`。**本套 → 部位 → 工序明细** 三级；工序明细逐键 = 逻辑名（`logical_name`，与一屏 `operation` / `alternatives` **同一份**读时派生）/ 应做数量+单位（`qty` + `unit`）/ 单价（`unit_price`）/ 状态（`status`）/ 已报数量（`done_qty`）。旧码降级形态**没有**这个键（`granularity` 为 `order` ⇒ 判不出是哪一套 ⇒ **不猜**）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java（resolveCarriesSetOverviewWithOperationDetails / degradedViewHasNoSetOverview）', '列**全部**工序，不只是待做：已完成（已领走）的道**也在**清单里 —— 工人要一眼看到「这一套还有哪几道没做」，只列待做就答不了这个问题。`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）⇒ 读面**原样 null，不折 0**，前端显式渲染「未定价」。排序沿用既有读面序（`ProductionScanService#listSetOperations` 的部位名 → seq），**不另排**（第二份排序 = 第二份口径）。证据：ProductionScanCompleteServiceTest（setOverviewKeepsUnpricedAsNull / resolveCarriesSetOverviewWithOperationDetails 的已完成道断言）', '🔴 **单一真值（聚合只有一份）**：`set_overview` 由 `ProductionScanService#setOverview` 一处算出，数据源就是本次解析已读到的 `setOperations`（与「下一道」推断、`set_progress`、`stalled` **逐字同源**）；`POST /api/worker/production/scan/complete` 的回执**原样透传** `scan.get(“set_overview”)` 的那一份 ⇒ 领活成功后**不必再请求一次**。页面（H5 / bmini）**只消费**，**不得**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排 —— 那是第二份聚合口径（部位名怎么取 / 算不算已完成的道 / 按什么排序，两处迟早不同）。证据：ProductionScanCompleteServiceTest + frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-d 领活回执也带本套明细）', '🔴 **缺值不渲染**（防「undefined 米 / ¥NaN」这种假数据）：`set_overview` 缺失 / `positions` 为空 / 某部位没有任何带 `operation_id` 的工序 ⇒ 明细块（或该行）**一个字节都不出现**。H5 与 bmini 两侧都有独立判据。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-c）+ frontend/bmini-app/tests/production-scan-complete.test.tsx（缺值不渲染）', '工人端按套看到工序细节（H5 + bmini 同步）：扫码后（除「当前这道 + 按钮」外）列出本套各部位的工序明细。H5 = `frontend/worker-h5/src/render.mjs` 的 `overviewView`（`#wh5-set-overview`）；bmini = `frontend/bmini-app/src/pages/production/index/index.tsx` 的 `scanOverviewGroups`（`.production-scan-overview`）。两侧都是**纯消费**（不聚合、不推断）。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ / ⑨-b）+ frontend/bmini-app/tests/production-scan-complete.test.tsx（按套展示工序细节 / 缺值不渲染）', '**未做（如实登记）**：不新造完工信号（那等于回到 C 模式，用户未选）⇒ 明细里**没有**「真做完时刻」这一列（`done_at` 记的是领活时点，见 PG-018 的边界登记）；不改 H5/PAD 的「同一个响应式页」这一点（无 PAD 专属布局）。'],
+    data_checks=['success=true', '🔴 `set_overview` 的形状与值（issue #4967 交付物 2，**只加不改**；🔴 **2026-09-27 追加一个键 = `positions[].remark`**，issue #5685）：`GET /api/admin/production/scan` 与 `GET /api/worker/production/scan`（**同一份** `ProductionScanService.resolve` 实现）的响应**追加** `set_overview = {set_no, set_index, positions:[{order_item_id, position_kind, position_name, remark, operations:[{operation_id, logical_name, position, seq, qty, unit, unit_price, status, done_qty}]}]}`。**本套 → 部位 → 工序明细** 三级；工序明细逐键 = 逻辑名（`logical_name`，与一屏 `operation` / `alternatives` **同一份**读时派生）/ 应做数量+单位（`qty` + `unit`）/ 单价（`unit_price`）/ 状态（`status`）/ 已报数量（`done_qty`）。🔴 **`positions[].remark`（issue #5685 新增，只加不改）**：= **商家填的部位级备注**（订单行 `processingInfo.remark` 的 JSONB 顶层字符串，服务端原样透传、**trim 后输出**、不造值）；**`null` = 未填**（键恒在，不省键、不折空串）⇒ 客户端（工人端 H5）对 `null` / 缺键 / 空串**一律不渲染**该行。旧码降级形态**没有**这个键（`granularity` 为 `order` ⇒ 判不出是哪一套 ⇒ **不猜**）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java（resolveCarriesSetOverviewWithOperationDetails / degradedViewHasNoSetOverview）+ backend/admin-api/src/test/java/com/migao/admin/service/ProcessingSetReadServiceTest.java（itemRemarkFlowsIntoSetOverview / itemRemarkIsTenantScopedAndTolerant：有值 trim 透传 / 纯空白 ⇒ null / 别的租户读不到）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑩-b / ⑩-c：紧跟本部位标题渲染 / 缺值不渲染 / 长备注不截断）', '列**全部**工序，不只是待做：已完成（已领走）的道**也在**清单里 —— 工人要一眼看到「这一套还有哪几道没做」，只列待做就答不了这个问题。`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）⇒ 读面**原样 null，不折 0**，前端显式渲染「未定价」。排序沿用既有读面序（`ProductionScanService#listSetOperations` 的部位名 → seq），**不另排**（第二份排序 = 第二份口径）。证据：ProductionScanCompleteServiceTest（setOverviewKeepsUnpricedAsNull / resolveCarriesSetOverviewWithOperationDetails 的已完成道断言）', '🔴 **单一真值（聚合只有一份）**：`set_overview` 由 `ProductionScanService#setOverview` 一处算出，数据源就是本次解析已读到的 `setOperations`（与「下一道」推断、`set_progress`、`stalled` **逐字同源**）；`POST /api/worker/production/scan/complete` 的回执**原样透传** `scan.get(“set_overview”)` 的那一份 ⇒ 领活成功后**不必再请求一次**。页面（H5 / bmini）**只消费**，**不得**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排 —— 那是第二份聚合口径（部位名怎么取 / 算不算已完成的道 / 按什么排序，两处迟早不同）。证据：ProductionScanCompleteServiceTest + frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-d 领活回执也带本套明细）', '🔴 **缺值不渲染**（防「undefined 米 / ¥NaN」这种假数据）：`set_overview` 缺失 / `positions` 为空 / 某部位没有任何带 `operation_id` 的工序 ⇒ 明细块（或该行）**一个字节都不出现**。H5 与 bmini 两侧都有独立判据。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨-c）+ frontend/bmini-app/tests/production-scan-complete.test.tsx（缺值不渲染）', '工人端按套看到工序细节（H5 + bmini 同步）：扫码后（除「当前这道 + 按钮」外）列出本套各部位的工序明细。H5 = `frontend/worker-h5/src/render.mjs` 的 `overviewView`（`#wh5-set-overview`）；bmini = `frontend/bmini-app/src/pages/production/index/index.tsx` 的 `scanOverviewGroups`（`.production-scan-overview`）。两侧都是**纯消费**（不聚合、不推断）。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ / ⑨-b）+ frontend/bmini-app/tests/production-scan-complete.test.tsx（按套展示工序细节 / 缺值不渲染）', '**未做（如实登记）**：不新造完工信号（那等于回到 C 模式，用户未选）⇒ 明细里**没有**「真做完时刻」这一列（`done_at` 记的是领活时点，见 PG-018 的边界登记）；不改 H5/PAD 的「同一个响应式页」这一点（无 PAD 专属布局）。'],
     skip_reason='[backend-contract] 后端契约 + 前端页面结构用例（解析响应形状 / 页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionScanCompleteServiceTest + frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs + frontend/bmini-app/tests/production-scan-complete.test.tsx 执行',
     tags=['processing-order', 'production', 'scan-report', 'set-overview'],
     persona='',
@@ -10114,6 +10186,8 @@ ALL_CASES = (
     _CASE_BM_022,
     _CASE_BM_023,
     _CASE_BM_024,
+    _CASE_BM_025,
+    _CASE_BM_026,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -10262,6 +10336,8 @@ ALL_CASES = (
     _CASE_MC_021,
     _CASE_MC_022,
     _CASE_MC_023,
+    _CASE_MC_025,
+    _CASE_MC_024,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

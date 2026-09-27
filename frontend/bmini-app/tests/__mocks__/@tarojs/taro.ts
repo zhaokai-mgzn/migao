@@ -40,6 +40,11 @@ const Taro = {
   // Login
   login: jest.fn(() => Promise.resolve({ code: 'mock_wx_code' })),
 
+  // 当前页面实例（issue #5052 实现 PR）：落地页深链读的就是 `router.params.code`
+  // （h5 路由 query 与**小程序页面参数**共用这一侧）⇒ 默认无参，具体用例用
+  // `mockReturnValue` 注入 `{ router: { params: { code: '…' } } }`。
+  getCurrentInstance: jest.fn(() => ({ router: { path: '', params: {} } })),
+
   // 媒体（拍照入库 issue #5052 P3）：h5 里 `chooseImage` / `uploadFile` 都是**真实实现**
   // （chooseImage → chooseMedia → `<input type=file>`；uploadFile → XHR + FormData）
   // ⇒ mock 也照「可用」给（默认空结果），具体用例用 `mockResolvedValueOnce` 注入返回。

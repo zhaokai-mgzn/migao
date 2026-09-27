@@ -39,6 +39,23 @@ html, body {
   margin-bottom: 12px;
 }
 .wh5-worker { flex: 1 1 auto; font-weight: 600; font-size: 16px; }
+/* ---- 工人面两页的入口（issue #5052 实现 PR）：页头下常驻一行 ----
+   工人一天扫几十次码，入口必须在他眼前那一页；触控目标与页头按钮同口径（≥44px）。 */
+.wh5-entries { display: flex; gap: 8px; margin: 0 0 12px; }
+.wh5-entry {
+  flex: 1 1 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--wh5-brand);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
 .wh5-ghost {
   min-height: 44px;
   padding: 0 14px;
@@ -117,6 +134,16 @@ html, body {
 .wh5-ov-title { font-size: 16px; font-weight: 700; color: var(--wh5-muted); }
 .wh5-ov-pos { display: flex; flex-direction: column; gap: 4px; }
 .wh5-ov-pos-name { font-size: 16px; font-weight: 600; }
+/* 部位级备注（issue #5685）：商家写的「这个数字怎么来的」。
+   工人手机上读 ⇒ 长备注必须**折行**（含无空格的长串），绝不 nowrap / 省略号 / 行数钳制。 */
+.wh5-ov-remark {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--wh5-warn);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .wh5-ov-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .wh5-ov-op {
   display: flex;
