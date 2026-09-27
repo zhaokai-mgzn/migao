@@ -1,17 +1,24 @@
-"""RBAC **P2 派生器**：由 `rbac/manifest.json` 派生「角色 → 码」与「码目录」两类事实。
+"""RBAC 派生器：由 `rbac/manifest.json` 派生「角色 → 码」「码目录」与「**页面 → 码**」三类事实。
 
-跟踪单 issue #5699；设计真值源 `docs/design/rbac-single-source.md` 的 §2.4（各消费面怎么派生）
-与 §4 的 **P2** 行。判据 = `tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py`。
+跟踪单 issue #5699；设计真值源 `docs/design/rbac-single-source.md` 的 §2.4（各消费面怎么派生）、
+§4 的 **P2** 行（本文件第二段）与 **P3** 行（本文件第四段：页面 → 码）、§2.5 / §3.4 问题 3 末注
+（逐页 `any|all`、**默认 `all`（fail-closed）**）。
+判据 = `tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py`（P2）与
+`tests/unit_ci_workflows/test_rbac_derived_pages.py`（P3）。
 
 ## 它是什么，不是什么
 
-- ✅ 它是 **P2 派生的唯一实现**：把清单里的声明投影成**各消费面应当长成的样子**
-  （A1 种子 / A2 回退 / A7 登录面 / A3·B3·B4 ai-agent 镜像 / B1·B2 目录），
-  外加两条**值级**原语（「授予的码里哪些不在目录」「两个面对同一角色的码集分歧」），
+- ✅ 它是**派生的唯一实现**：把清单里的声明投影成**各消费面应当长成的样子** ——
+  P2 段（A1 种子 / A2 回退 / A7 登录面 / A3·B3·B4 ai-agent 镜像 / B1·B2 目录）
+  + P3 段（`pages[]` → C1 节点码 / C4 守卫码 / 第一屏码 / 多码页 / 残留页 / 可见性投影），
+  外加**值级**原语（「授予的码里哪些不在目录」「两个面对同一角色的码集分歧」「持码的岗位」），
   由生成器（喂**现值**）与判据（喂**派生值**）**共用同一份实现**。
 - ✅ 它是**纯函数**（输入 = 清单 dict 或两张表，输出 = 可 JSON 化的普通结构）：注入式红证就是喂改过的输入。
-- ❌ 它**不**落盘任何生成物。P2 的消费面（`backend/**` / `frontend/**` / ai-agent 镜像）在本阶段
-  **照旧读自己的副本**（P2 不改行为）⇒ 落一个没人读的生成物只会多出一份**会陈旧的真值**
+  唯一的例外形状是 `page_present(parity, sources)` —— 它**必须**拿既有解析器模块当参数传进来
+  （而不是 import），因为解析器的唯一家在 `tests/unit_ci_workflows/test_agent_permission_parity.py`，
+  而本文件要被生成器与判据**同时**加载（谁 import 谁都会造出第二份实现）。
+- ❌ 它**不**落盘任何生成物。P2/P3 的消费面（`backend/**` / `frontend/**` / ai-agent 镜像）在本阶段
+  **照旧读自己的副本**（P2/P3 都不改行为）⇒ 落一个没人读的生成物只会多出一份**会陈旧的真值**
   （本仓已有 `test_dead_capability_meta_guard.py` 在治这一类）。派生在判据里**当场算**，
   ⇒ 设计 §5.2 的 **M3 新鲜度**在这里是**结构性质**：没有落盘产物，就没有「陈旧」这种状态。
 - ❌ 它**不判现值对不对**（那是 P4/P5/P6 的人类裁定）；它只保证**派生结果 == 现值**（零 delta）。
@@ -23,17 +30,21 @@
 | A1 种子 / A2 回退 / A7 登录面 | `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `parse_role_defaults` / `parse_role_fallback`（后者传 `anchor=` 复用同一实现读 A7） |
 | B1 / B2 目录（码 + 名称） | 同文件的 `parse_catalog_rows`（与 `parse_catalog` **同一份正则**，多取四列） |
 | A3 / B3 / B4 ai-agent 镜像 | `ast.literal_eval` 读那三个模块级字面量（**Python 标准库**，不是第二套 Java 解析器）。为什么不能 import：该模块 `from app.tools.base import …` ⇒ 要装 ai-agent 依赖，而 `ci workflow helper unit tests` job 只装 pytest ⇒ import 失败即静默 skip（= 没跑）。 |
+| **页面 → 码**（P3） | 同文件的 `parse_menu_ts_nodes` / `parse_menus` / `parse_route_guard` / `parse_frontend_api_calls` / `_effective_codes` + 它的页面锚点表 `MENU_READ_ENDPOINT_ANCHORS`（四跳现取，见 `page_present()`） |
 
 ## 边界（**覆盖不到什么**，照实登记）
 
-① 只覆盖**能被既有解析器读到**的形态（`case "x" -> List.of(…)` / 五列目录行 / Python 字面量）。
-   同一事实若写成 `Map.of(...)`、YAML、或从 `@ConfigurationProperties` 注入 ⇒ **看不见**
+① 只覆盖**能被既有解析器读到**的形态（`case "x" -> List.of(…)` / 五列目录行 / Python 字面量 /
+   约定形态的菜单表）。同一事实若写成 `Map.of(...)`、YAML、或从 `@ConfigurationProperties` 注入 ⇒ **看不见**
    （与设计 §5.3 的 M1 边界同源）；
 ② **不覆盖 A4（迁移链的 `role_permissions` 授权）**：它是「存量租户一次性」的**谓词**，
    与「角色 → 默认码」不是同一个读数（设计 §3.1 已登记该差距）；本模块**不**把它算进派生目标；
 ③ **不覆盖 A5（`users.permissions` 快照）**：实例数据，不是声明（设计 §1.1 逐字）；
 ④ `*`（通配）**只在本模块里展开成目录全集**用于比较与分类；它**不改**任何消费面看到的字面量；
-⑤ 本模块**不判断面之间的分歧该以哪一面为准** —— 它只**具名报出**分歧（那是授权决定）。
+⑤ 本模块**不判断面之间的分歧该以哪一面为准** —— 它只**具名报出**分歧（那是授权决定）；
+⑥ **P3 段的岗位全集只有 种子 ∪ 回退**（`role_tables()`）：租户自建的岗位在库里、仓内读不到
+   ⇒ 可见性投影对它们**未取证**（设计 §3.4 问题 3 第 1 行的 `/dashboard` delta 正落在这里）；
+   且 C2（`MenuController`）的**节点集**不属「页面 → 码」面（只判码列，见 P3 判据的 `NON_DERIVED_FACES`）。
 """
 from __future__ import annotations
 
