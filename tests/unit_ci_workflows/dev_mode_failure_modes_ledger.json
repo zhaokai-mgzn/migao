@@ -564,16 +564,20 @@
     },
     {
       "id": "FM-E16",
-      "state": "registered",
-      "symptom": "**共享临时路径**：并发包 / 集成侧复用 `/tmp` 下的**固定文件名**（`/tmp/pr_body.md`、`/tmp/issue-*.md`、`/tmp/comment-*.md`、`/tmp/payload.json` …）⇒ 互相覆盖。🔴 **失败是静默的**：后写的覆盖先写的，**双方都不知道**（读到的是别人的内容、或自己的内容被改写）—— 这正是它值得进台账的理由。**本次实证**：交付 #5706 时本包差点覆盖 RBAC P1（#5699）包的 `/tmp/pr_body.md`（改用唯一文件名后无损失）。⚠️ **两侧都在犯**（集成侧一手读数：其自身也长期使用固定临时路径）⇒ 这**不是「某个包的疏忽」**，而是**这个工作模式自带的坑**。",
-      "guards": "无 —— **没有任何判据会拦住它**",
-      "ledger_ref": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::共享临时路径的同族登记锚（FM-E16）",
+      "state": "guarded",
+      "symptom": "**共享临时路径**：并发包复用共享临时根（`/tmp` / `/var/tmp` / `$TMPDIR`）下的**约定俗成的固定文件名**（`issue-*.md`、`comment-*.md`、`payload.json` … 以及 **`pr-body` 族那一类**）⇒ 互相覆盖。🔴 **失败是静默的**：后写的覆盖先写的，**双方都不知道**（读到的是别人的内容、或自己的内容被改写）—— 这正是它值得进台账的理由。**原始实测**：两个并发会话共用同一个 PR body 载体，A 在 B 覆盖后继续用该文件 ⇒ **A 的 body 被写成 B 的**（若此时被 auto-merge 合了，会**误关 4 个别人的 issue**，issue #4232）。**本单实证**：交付 #5706 时本包**差点覆盖** RBAC P1（#5699）包的同类载体（改用唯一名后无损失）。⚠️ **两侧都在犯**（集成侧一手读数：其自身也长期用固定临时路径）⇒ **不是「某个包的疏忽」，是这个工作模式自带的坑**。",
+      "guards": "`scripts/pr_body_guard.py`（issue #4232）：① **工具** = `new`（在本工作区忽略目录里用 `O_CREAT|O_EXCL` 原子分配**会话/工作区作用域唯一**的载体，含分支名 / issue 号 / pid + 随机后缀）+ `check`（提交前打印首行与关闭关键词命中清单）+ `verify`（写完从 GitHub 回读比对）；② **静态面 R1/R2** = 仓内被跟踪文本里出现「共享临时根 + `pr-body` 族文件名」承载 PR body 的形态 ⇒ 判红（由 `tests/unit_ci_workflows/test_pr_body_guard.py` 在 required 的 `ci workflow helper unit tests` 里代跑）",
       "same_family": "与 `migao-dev-flow` §17.2 的「**写面冲突**」/ §23.6 的工装纪律 / 清单 B 的 `FM-B4`（改动搁浅在工作区）**同族**（**不许孤立登记**）：**你以为你在操作一个私有对象（你的临时文件 / 你的分支时间线），而它其实是共享的**。",
       "evidence": [
-        "docs/wiki/CI-CD.md::FM-E16",
-        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_real_files_are_clean"
+        "tests/unit_ci_workflows/test_pr_body_guard.py::test_scan_flags_fixed_pr_body_path_literal",
+        "scripts/pr_body_guard.py::PR_BODY_BASENAME_RE"
       ],
-      "refs": []
+      "refs": [],
+      "criteria": [
+        "tests/unit_ci_workflows/test_pr_body_guard.py::test_scan_real_repo_has_no_shared_fixed_pr_body_carrier"
+      ],
+      "residual": "⚠️ **残余（守卫自己的边界，照实登记，不粉饰）**：① **agent 在 shell 里临时敲的命令覆盖不到**（而那正是原始形态）；② 变量 / 拼接 / 间接赋值（先 `BODY=<固定名>`、再 `--body-file \"$BODY\"`）**不可判**；③ 非 PR body 的普通临时文件**不判** ⇒ 「两个包在同一固定路径上互相覆盖」**在运行期仍可能发生**，只是不再能从仓内文本里被机械抓到。",
+      "self_report": "🔴 **本条的第一次登记是错的，如实登记**：我初版写「现有守护 = **无**」，并把那个固定文件名**写进了仓内文本** —— 结果被这条**现成**的守卫当场判红（本 PR 首轮 CI：`test_pr_body_guard.py` 两条 fail / 6 处 R2 命中）。**教训 = 下「没有守护」这个结论之前，先 grep 一遍有没有现成守护**（与 `FM-A9`「引用前自己打开确认」同族）；**并且**：把危险字面量原样抄进文档，会被那条守卫当成「在仓内固化了一个共享固定载体」⇒ 判红（**引用即实例**，与 §2.2 的关键词关单同族）。"
     }
   ],
   "not_solidified": [
