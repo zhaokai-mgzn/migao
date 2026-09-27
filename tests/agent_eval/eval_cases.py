@@ -4331,6 +4331,60 @@ _CASE_MC_031 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-032 [NORMAL] RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等（源: cases/misc.yml）──
+_CASE_MC_032 = EvalCase(
+    id='MC-032',
+    legacy_id='',
+    title='RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当清单 pages[] 的任一项（菜单可见码 gate / 第一屏读码 units / 逐页 visibility_rule）与现值不再相等，或菜单三源与路由守卫的码列不再等于该页的 gate 时，必须有东西**具名**报出那一项；而只改清单的说明文字（_note / _boundary）或只改源码注释时，**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 21 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（24 条）/ C3（14 条）/ C4（19 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 24 项、units 27 个端点、可见性 21 页 —— **P3 口径 = 205 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）', '**四跳现取不另造解析器**：菜单节点 → 页面锚点表 → lib/api.ts 的 URL → Java 侧**生效码**（方法级优先），全部调既有守卫 test_agent_permission_workflows 的既有函数（`parse_menu_ts_nodes` / `parse_frontend_api_calls` / `_effective_codes` / `parse_menus` / `parse_route_guard`），判据与生成器共用 rbac/derive.py 的同一份投影实现', '**C2/C3 的节点集不属本面、码列属本面**：MenuController 只有 24 个节点、AuthService 只有 14 个（登录菜单是页面的子集）⇒ 「哪些节点进哪一列」是菜单结构的事实；本判据只判**码**（逐条 38 项），并把 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情）与 1 处具名不一致（经营看板：节点无码而权限目录给 dashboard:view）逐条具名登记（未登记即红 / 陈旧亦红 ⇒ 只许缩短）', '**C4 的路由前缀按三类逐条闭合**：15 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 3 条无页面前缀（/chat / /categories / /processing-orders，逐条带理由）+ 1 条守卫码与该页 gate 不一致的具名项（/dashboard）—— 新增页面守卫不登记即红', '**对照读数（证明变异真的被读到）**：内存里把某页 gate 改掉 ⇒ 派生器读数跟着变（route_guard_codes 现取到新值）且 pages 对账报出；清单 _note / _boundary 只改散文 ⇒ 三条对账全绿（不红）', '覆盖面显式登记（设计 §5.3）：非派生面 1 条（C2 的 MENU_TREE 码列为何不属本面）+ 未覆盖面 5 条（自建岗位读不到 · bmini/worker-h5 不在射程 · units 的 label/icon/组序有意不搬 · 残留与 gap 的存废归 P4 人裁定 · 运行时未取证）逐条写在 NON_DERIVED_FACES / UNCOVERED_FACES（含 reason/owner/issue，只许缩短）'],
+    skip_reason='[backend-contract] RBAC「页面 → 码」派生层与现值的逐值对账（既有解析器四跳现取 + Python 标准库）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'derivation', 'page-codes', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-033 [NORMAL] RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名（源: cases/misc.yml）──
+_CASE_MC_033 = EvalCase(
+    id='MC-033',
+    legacy_id='',
+    title='RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人把某个多端点页压成一个码、把某条已登记的菜单残留悄悄销账、或在现值不要求时把某页的可见性规则改成 any（放宽）时，必须有东西**具名**变红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **多端点页不被压平**：派生出的多码页必须**恰好 3 页**且码集与既有冻结表 MULTI_READ_ENDPOINT_PAGES 逐值相等（/production/processing = order:list + processing:manage + production:view；/production/routings = processing:manage + production:view；/settings = dashboard:view + system:manage）—— 红证：内存里把加工的 3 码压成 1 码 ⇒ 多码页集立刻只剩 2 页 ⇒ 报红', '🔴 **6 条菜单残留由 pages[] 派生、逐条具名**：派生集必须与 MENU_READ_PARITY_RESIDUALS 的键集**逐值相等**（/dashboard · /production/pool · /production/saving-board · /production/processing · /production/routings · /settings）—— 修好一处而不同步销账 ⇒ 红；新增一处不一致而未登记 ⇒ 红（两侧都只许缩短）', '**visibility_rule 逐页 any|all、默认 all（fail-closed）**：规则集 = {all, any, node-code}；**字段缺失 ⇒ 按 all 算**（不是 any、也不是当空）；未登记的规则名 ⇒ fail-closed 抛错（三条都有单测）。现取 = all 17 页 / any 0 页 / node-code 4 页；把某页改成 any 而现值不要求 ⇒ 红', '**机制存活读数**：any（∪）与 all（∩）在同一组 unit 码上必须给出**不同**的岗位集（否则「支持逐页 any|all」是空话）；现取例 = processing:manage ∩/∪ order:list 的真子集关系', '**投影复现不了现值的 4 页必须具名**（/notifications 第一屏端点全未注解 · /production/pool · /production/saving-board · /production/processing 三页「节点码 ≠ 页面读码」）⇒ 进 PAGE_VISIBILITY_GAPS（清单 ledger_counts 与判据台账双向闭合、只许缩短；上限冻结在 P1 守卫的 LEDGER_CEILINGS = 4）'],
+    skip_reason='[backend-contract] 页面面结构事实（多码页 / 残留台账 / 可见性投影规则）的机械对账由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'multi-code-page', 'residual-ledger', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-034 [NORMAL] RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）（源: cases/misc.yml）──
+_CASE_MC_034 = EvalCase(
+    id='MC-034',
+    legacy_id='',
+    title='RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在别处手写一张「页面 → 码」的表、或改了锚点表的条数而不同步登记表、或放宽任一只许缩短的台账上限时，必须有东西**具名**变红'],
+    expectations=['direct_reply'],
+    data_checks=['**M1 扩面（P3）**：新增三个形态面扫判据侧的手写副本 —— page-first-screen-anchors（21 条页面 → 第一屏调用锚点）/ page-parity-residual-ledger（2 张页面面台账）/ route-node-anchor-ledger（2 张路由 → 节点锚定表），共 3 行登记、25 处命中，全部在 rbac/sources.json 具名', '**未登记即红 · 陈旧亦红 · hits 涨跌都红**：注入一个未登记的假命中 ⇒ 具名报出；登记一个已不命中的面 / 文件 ⇒ 报陈旧；把登记的 hits 加 1 ⇒ 报「登记命中数漂移」（三条都是内存构造的红证，已实跑）', '**M2 扩面（P3）**：新增只许缩短台账 PAGE_VISIBILITY_GAPS（现取 4）；上限冻结在 P1 守卫的 LEDGER_CEILINGS 里，清单 ledger_counts 与现取逐值相等（涨跌都要同 PR 更新）', '🔴 **锚条数冻结 + 改名必红（自证）**：每个 P3 形态面的 shape 在目标文件里的出现次数必须 == 登记的 hits；把锚**就地改名**（内存变异、语法仍有效）⇒ 该面命中消失 ⇒ stale_registrations 具名报出 —— 即「删掉会红」是**可复算的断言**而不是空话。（第一版用「逐行删除」做变异，被剥注释器 fail-closed 抓出：删除多行表达式首行会让括号失衡 ⇒ 改为改名。）', '**对照读数**：把锚的写法放进**注释**追加到语料末尾 ⇒ 命中数不变（剥注释是同一份实现）；形态字面量在本判据里**拆开拼**（本文件第一版在 docstring 里举例，被自己的形态面抓成未登记副本 —— 「判据会读进你自己的举例」的现场实证）'],
+    skip_reason='[backend-contract] M1 副本登记表与 M2 台账上限的机械读数（形态面命中数 + 锚自证）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'copy-registry', 'coverage', 'only-shrink', 'red-proof', 'anchor-uniqueness'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10452,6 +10506,9 @@ ALL_CASES = (
     _CASE_MC_029,
     _CASE_MC_030,
     _CASE_MC_031,
+    _CASE_MC_032,
+    _CASE_MC_033,
+    _CASE_MC_034,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

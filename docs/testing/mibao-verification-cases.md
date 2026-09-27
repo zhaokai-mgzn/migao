@@ -2753,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（31 case）
+## 杂项域（34 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3157,6 +3157,46 @@
 跳过: [backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-27 新增（关联 #5687；残余的登记处 = tests/unit_ci_workflows/test_casebook_summary_is_derived.py 边界节逐字写着『不覆盖 main 侧』）：当天两次 CI 红都红在生成物新鲜度，其中一次归因被指到无关 PR 并被写进公开记录，每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。落码 = 新增 main 侧守护腿（push + schedule + workflow_dispatch；schedule 的理由 = push 会被 auto-merge 吞掉，issue #3113/#5001）+ 把 pr-check 面与 verify-all.sh gate 的内联 render+diff **全部**收敛到单一实现 scripts/generated_artifacts_freshness.py（parity 守卫的锚点同批改准）+ 具名报错（产物/差量/复算命令/候选区间只给读数）+ 九条判据（含 fail-closed 红证、恒绿反转红证、坏渲染器边界的行为级证明）。取号 MC-031（rebase 让号，记实）：起草 MC-029，每次 rebase 都被新并入的判据占用 ⇒ 顺延到 MC-031（main 上 MC-001~MC-030 已占用） ｜ tags: ci, freshness, main-side-guard, red-proof, fail-closed
+
+### MC-032. RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等 🔵
+```
+你: 当清单 pages[] 的任一项（菜单可见码 gate / 第一屏读码 units / 逐页 visibility_rule）与现值不再相等，或菜单三源与路由守卫的码列不再等于该页的 gate 时，必须有东西**具名**报出那一项；而只改清单的说明文字（_note / _boundary）或只改源码注释时，**不得**报红
+期望: direct_reply
+数据: 🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 21 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（24 条）/ C3（14 条）/ C4（19 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 24 项、units 27 个端点、可见性 21 页 —— **P3 口径 = 205 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）
+数据: **四跳现取不另造解析器**：菜单节点 → 页面锚点表 → lib/api.ts 的 URL → Java 侧**生效码**（方法级优先），全部调既有守卫 test_agent_permission_workflows 的既有函数（`parse_menu_ts_nodes` / `parse_frontend_api_calls` / `_effective_codes` / `parse_menus` / `parse_route_guard`），判据与生成器共用 rbac/derive.py 的同一份投影实现
+数据: **C2/C3 的节点集不属本面、码列属本面**：MenuController 只有 24 个节点、AuthService 只有 14 个（登录菜单是页面的子集）⇒ 「哪些节点进哪一列」是菜单结构的事实；本判据只判**码**（逐条 38 项），并把 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情）与 1 处具名不一致（经营看板：节点无码而权限目录给 dashboard:view）逐条具名登记（未登记即红 / 陈旧亦红 ⇒ 只许缩短）
+数据: **C4 的路由前缀按三类逐条闭合**：15 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 3 条无页面前缀（/chat / /categories / /processing-orders，逐条带理由）+ 1 条守卫码与该页 gate 不一致的具名项（/dashboard）—— 新增页面守卫不登记即红
+数据: **对照读数（证明变异真的被读到）**：内存里把某页 gate 改掉 ⇒ 派生器读数跟着变（route_guard_codes 现取到新值）且 pages 对账报出；清单 _note / _boundary 只改散文 ⇒ 三条对账全绿（不红）
+数据: 覆盖面显式登记（设计 §5.3）：非派生面 1 条（C2 的 MENU_TREE 码列为何不属本面）+ 未覆盖面 5 条（自建岗位读不到 · bmini/worker-h5 不在射程 · units 的 label/icon/组序有意不搬 · 残留与 gap 的存废归 P4 人裁定 · 运行时未取证）逐条写在 NON_DERIVED_FACES / UNCOVERED_FACES（含 reason/owner/issue，只许缩短）
+跳过: [backend-contract] RBAC「页面 → 码」派生层与现值的逐值对账（既有解析器四跳现取 + Python 标准库）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §2.4/§2.5）：P3 的定义是「由清单 pages[] 生成 C1/C2/C3/C4 的**码列**（不动分组/顺序/icon/keywords）」+「节点码 == pages[].gate 逐值」。落码 = 清单新增 pages[] 段（21 页：gate + units: 码 → 端点 + 逐页 visibility_rule）+ rbac/derive.py 的 P3 派生段（derive_page_faces / page_present，纯函数、不落盘 ⇒ 新鲜度是结构性质）+ 生成器新增 pages 现取 + 判据 test_rbac_derived_pages.py 的 15 条（含注入式红证与「只改散文 ⇒ 不红」对照）+ M1/M2 覆盖面扩面（三个新形态面 25 处命中、PAGE_VISIBILITY_GAPS 台账）。取号 MC-032（**顺延**）：MC-028/029/030 已被 #5706 与 P2 占用；写侧原本取 MC-031，而**在飞**的 PR #5704 已占 MC-031 ⇒ 按 MC-025/#5706 的先例**顺延尚未合并的一侧**（不动在飞分支的号）⇒ 本包用 MC-032~MC-034。⚠️ 这是取号判据「只看已合并状态」边界的第 N 次实证（`CASE_ID_ALLOCATION_BOUNDARY` / docs/wiki/CI-CD.md 的 FM-E15：《用例号全局唯一》拦不住在飞撞号，只能靠推送前对在飞 PR 的 diff 现取一次 —— 本包就是这么查出来的）。 ｜ tags: rbac, single-source, zero-delta, derivation, page-codes, red-proof
+
+### MC-033. RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名 🔵
+```
+你: 当有人把某个多端点页压成一个码、把某条已登记的菜单残留悄悄销账、或在现值不要求时把某页的可见性规则改成 any（放宽）时，必须有东西**具名**变红
+期望: direct_reply
+数据: 🔴 **多端点页不被压平**：派生出的多码页必须**恰好 3 页**且码集与既有冻结表 MULTI_READ_ENDPOINT_PAGES 逐值相等（/production/processing = order:list + processing:manage + production:view；/production/routings = processing:manage + production:view；/settings = dashboard:view + system:manage）—— 红证：内存里把加工的 3 码压成 1 码 ⇒ 多码页集立刻只剩 2 页 ⇒ 报红
+数据: 🔴 **6 条菜单残留由 pages[] 派生、逐条具名**：派生集必须与 MENU_READ_PARITY_RESIDUALS 的键集**逐值相等**（/dashboard · /production/pool · /production/saving-board · /production/processing · /production/routings · /settings）—— 修好一处而不同步销账 ⇒ 红；新增一处不一致而未登记 ⇒ 红（两侧都只许缩短）
+数据: **visibility_rule 逐页 any|all、默认 all（fail-closed）**：规则集 = {all, any, node-code}；**字段缺失 ⇒ 按 all 算**（不是 any、也不是当空）；未登记的规则名 ⇒ fail-closed 抛错（三条都有单测）。现取 = all 17 页 / any 0 页 / node-code 4 页；把某页改成 any 而现值不要求 ⇒ 红
+数据: **机制存活读数**：any（∪）与 all（∩）在同一组 unit 码上必须给出**不同**的岗位集（否则「支持逐页 any|all」是空话）；现取例 = processing:manage ∩/∪ order:list 的真子集关系
+数据: **投影复现不了现值的 4 页必须具名**（/notifications 第一屏端点全未注解 · /production/pool · /production/saving-board · /production/processing 三页「节点码 ≠ 页面读码」）⇒ 进 PAGE_VISIBILITY_GAPS（清单 ledger_counts 与判据台账双向闭合、只许缩短；上限冻结在 P1 守卫的 LEDGER_CEILINGS = 4）
+跳过: [backend-contract] 页面面结构事实（多码页 / 残留台账 / 可见性投影规则）的机械对账由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 §2.5 / §3.4 问题 3 末注 / §3.3(b)）：P3 把「一页多码」与 6 条残留从**人工台账**变成**清单 pages[] 的派生结果**并逐值冻结（派生集 == 现取），同时按设计 §3.4 结论落地**逐页 any|all + 默认 all（fail-closed）**；4 页「投影复现不了现值」具名为 PAGE_VISIBILITY_GAPS（只许缩短，出口归 P4 人裁定）。取号 MC-033：与 MC-032 同 PR 顺延。 ｜ tags: rbac, multi-code-page, residual-ledger, fail-closed, red-proof
+
+### MC-034. RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证） 🔵
+```
+你: 当有人在别处手写一张「页面 → 码」的表、或改了锚点表的条数而不同步登记表、或放宽任一只许缩短的台账上限时，必须有东西**具名**变红
+期望: direct_reply
+数据: **M1 扩面（P3）**：新增三个形态面扫判据侧的手写副本 —— page-first-screen-anchors（21 条页面 → 第一屏调用锚点）/ page-parity-residual-ledger（2 张页面面台账）/ route-node-anchor-ledger（2 张路由 → 节点锚定表），共 3 行登记、25 处命中，全部在 rbac/sources.json 具名
+数据: **未登记即红 · 陈旧亦红 · hits 涨跌都红**：注入一个未登记的假命中 ⇒ 具名报出；登记一个已不命中的面 / 文件 ⇒ 报陈旧；把登记的 hits 加 1 ⇒ 报「登记命中数漂移」（三条都是内存构造的红证，已实跑）
+数据: **M2 扩面（P3）**：新增只许缩短台账 PAGE_VISIBILITY_GAPS（现取 4）；上限冻结在 P1 守卫的 LEDGER_CEILINGS 里，清单 ledger_counts 与现取逐值相等（涨跌都要同 PR 更新）
+数据: 🔴 **锚条数冻结 + 改名必红（自证）**：每个 P3 形态面的 shape 在目标文件里的出现次数必须 == 登记的 hits；把锚**就地改名**（内存变异、语法仍有效）⇒ 该面命中消失 ⇒ stale_registrations 具名报出 —— 即「删掉会红」是**可复算的断言**而不是空话。（第一版用「逐行删除」做变异，被剥注释器 fail-closed 抓出：删除多行表达式首行会让括号失衡 ⇒ 改为改名。）
+数据: **对照读数**：把锚的写法放进**注释**追加到语料末尾 ⇒ 命中数不变（剥注释是同一份实现）；形态字面量在本判据里**拆开拼**（本文件第一版在 docstring 里举例，被自己的形态面抓成未登记副本 —— 「判据会读进你自己的举例」的现场实证）
+跳过: [backend-contract] M1 副本登记表与 M2 台账上限的机械读数（形态面命中数 + 锚自证）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 §5.2 的 M1/M2 与 §5.3）：P3 的 M1 扩面针对的是设计 §1.3 的 C 类**第四份副本**（判据自己的锚点表），此前零登记；M2 扩面新增 PAGE_VISIBILITY_GAPS。红证全部内存构造，含「锚条数冻结 + 改名必红」的自证与「只改注释 ⇒ 不红」对照。取号 MC-034：与 MC-032/032 同 PR 顺延（#5706 的 MC-026 撞号先例 ⇒ rebase 后现取最大号）。 ｜ tags: rbac, copy-registry, coverage, only-shrink, red-proof, anchor-uniqueness
 
 ## 商家入驻域（5 case）
 
@@ -7674,8 +7714,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：542（活跃 126，跳过 416）
-- tier 分布：smoke 12 / normal 497 / adversarial 31
+- 用例总数：545（活跃 126，跳过 419）
+- tier 分布：smoke 12 / normal 500 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7690,7 +7730,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：31
+- 杂项域：34
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7748,6 +7788,9 @@
 - MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
 - MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
 - MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）
+- MC-032: RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等
+- MC-033: RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名
+- MC-034: RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

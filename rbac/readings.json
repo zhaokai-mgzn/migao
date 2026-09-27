@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P2",
+  "stage": "P3",
   "_note": "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。",
   "codes": {
     "registration": [
@@ -575,6 +575,293 @@
       "dashboard:view"
     ]
   ],
+  "pages": [
+    {
+      "key": "after-sales",
+      "name": "售后工单",
+      "path": "/after-sales",
+      "gate": "after_sales:view",
+      "units": {
+        "after_sales:view": [
+          "GET /api/admin/after-sales"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "human-sessions",
+      "name": "在线接待",
+      "path": "/agent-workspace/human-sessions",
+      "gate": "agent:session",
+      "units": {
+        "agent:session": [
+          "GET /api/admin/agent-sessions",
+          "GET /api/admin/agent-sessions/{}"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "briefing",
+      "name": "每日简报",
+      "path": "/briefing",
+      "gate": "dashboard:view",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "gate": "customer:view",
+      "units": {
+        "customer:view": [
+          "GET /api/admin/customer-tags",
+          "GET /api/admin/customers"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "dashboard",
+      "name": "经营看板",
+      "path": "/dashboard",
+      "gate": null,
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config",
+          "GET /api/admin/dashboard/order-trend",
+          "GET /api/admin/dashboard/product-ranking",
+          "GET /api/admin/dashboard/recent-orders",
+          "GET /api/admin/dashboard/stats"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "employees",
+      "name": "员工管理",
+      "path": "/employees",
+      "gate": "employee:list",
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/roles/all"
+        ],
+        "employee:list": [
+          "GET /api/admin/users"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "finance",
+      "name": "财务对账",
+      "path": "/finance",
+      "gate": "finance:view",
+      "units": {
+        "finance:view": [
+          "GET /api/admin/finance/reconciliation",
+          "GET /api/admin/finance/summary",
+          "GET /api/admin/finance/transactions"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "inbound-orders",
+      "name": "入库单",
+      "path": "/inbound-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/inbound-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "knowledge",
+      "name": "知识库",
+      "path": "/knowledge",
+      "gate": "knowledge:view",
+      "units": {
+        "knowledge:view": [
+          "GET /api/admin/knowledge/cards"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "notifications",
+      "name": "通知中心",
+      "path": "/notifications",
+      "gate": null,
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/notifications"
+        ]
+      },
+      "visibility_rule": "node-code"
+    },
+    {
+      "key": "orders",
+      "name": "订单列表",
+      "path": "/orders",
+      "gate": "order:list",
+      "units": {
+        "order:list": [
+          "GET /api/admin/orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-board",
+      "name": "生产看板",
+      "path": "/production",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/processing-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-piecework",
+      "name": "计件工资",
+      "path": "/production/piecework",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/production/piecework/summary"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-pool",
+      "name": "智能派单",
+      "path": "/production/pool",
+      "gate": "processing:manage",
+      "units": {
+        "processing:view": [
+          "GET /api/admin/production/pool"
+        ]
+      },
+      "visibility_rule": "node-code"
+    },
+    {
+      "key": "processing",
+      "name": "加工项管理",
+      "path": "/production/processing",
+      "gate": "production:view",
+      "units": {
+        "order:list": [
+          "GET /api/admin/production/processing-fee-combinations",
+          "GET /api/admin/production/processing-fee-gaps"
+        ],
+        "processing:manage": [
+          "GET /api/admin/processing-categories"
+        ],
+        "production:view": [
+          "GET /api/admin/processing-items"
+        ]
+      },
+      "visibility_rule": "node-code"
+    },
+    {
+      "key": "production-remnants",
+      "name": "余料台账",
+      "path": "/production/remnants",
+      "gate": "processing:manage",
+      "units": {
+        "processing:manage": [
+          "GET /api/admin/production/remnants"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-process",
+      "name": "工艺配置",
+      "path": "/production/routings",
+      "gate": "production:view",
+      "units": {
+        "processing:manage": [
+          "GET /api/admin/production/operation-positions",
+          "GET /api/admin/production/route-rule-options",
+          "GET /api/admin/production/route-rules",
+          "GET /api/admin/production/seed-templates"
+        ],
+        "production:view": [
+          "GET /api/admin/production/operations-catalog",
+          "GET /api/admin/production/routings"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-saving-board",
+      "name": "省料看板",
+      "path": "/production/saving-board",
+      "gate": "processing:manage",
+      "units": {
+        "product:list": [
+          "GET /api/admin/batch-stock/saving-board",
+          "GET /api/admin/batch-stock/saving-trend"
+        ]
+      },
+      "visibility_rule": "node-code"
+    },
+    {
+      "key": "products",
+      "name": "商品列表",
+      "path": "/products",
+      "gate": "product:list",
+      "units": {
+        "product:list": [
+          "GET /api/admin/products"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "roles",
+      "name": "岗位权限",
+      "path": "/roles",
+      "gate": "system:view",
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/roles"
+        ],
+        "system:view": [
+          "GET /api/admin/permissions"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "settings",
+      "name": "企业基础信息",
+      "path": "/settings",
+      "gate": "system:manage",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config"
+        ],
+        "system:manage": [
+          "GET /api/admin/settings",
+          "GET /api/admin/tenant/ai-config"
+        ]
+      },
+      "visibility_rule": "all"
+    }
+  ],
   "ledger_counts": {
     "MENU_READ_PARITY_RESIDUALS": 6,
     "MULTI_READ_ENDPOINT_PAGES": 3,
@@ -584,6 +871,7 @@
     "UNANNOTATED_ENDPOINTS": 21,
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,
-    "A7_VS_MIRROR_DIVERGENCES": 0
+    "A7_VS_MIRROR_DIVERGENCES": 0,
+    "PAGE_VISIBILITY_GAPS": 4
   }
 }

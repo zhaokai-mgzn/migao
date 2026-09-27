@@ -5,6 +5,10 @@ P2（同一跟踪单）在本文件上**加**两段现取，不改任何既有�
 B3 的唯一对照面）与 `roles.login`（**A7** 登录面，由既有 `parse_role_fallback` 传 `anchor=` 复用）；
 `ledger_counts` 另加 P2 的两张只许缩短台账（计数委托 `rbac/derive.py` 的**同一份**值级原语）。
 
+P3（同一跟踪单）再加 `pages` 段（**页面 → 码**：`gate` + 第一屏读码 `units` + 逐页可见性规则），
+现取全部委托 `rbac/derive.py` 的 `page_present()`（四跳：菜单节点 → 页面锚点 → `lib/api.ts` → Java
+生效码，与判据 12 同一口径）；`ledger_counts` 另加 P3 的 `PAGE_VISIBILITY_GAPS`（只许缩短）。
+
 ## 它是什么，不是什么
 
 - ✅ 它是**生成物** `rbac/readings.json` 的唯一产出点：用**仓内既有解析器**（`tests/unit_ci_workflows/`
@@ -31,12 +35,15 @@ python3 rbac/generate_readings.py --check    # 只读：现取 vs 已提交，�
 
 ## 边界（照实登记，**不是**「已覆盖」）
 
-① 本生成器覆盖的**只有** §1 二十处真值源里能被既有解析器读到的那六项（码目录两处 / 岗位种子的码集 /
-   岗位回退的码集 / 三处菜单源 + 第四处的「已删」读数 / `menu.ts` 节点表 / 路由守卫表）。
+① 本生成器覆盖的**只有** §1 二十处真值源里能被既有解析器读到的那些（码目录两处 / 岗位种子的码集 /
+   岗位回退的码集 / 三处菜单源 + 第四处的「已删」读数 / `menu.ts` 节点表 / 路由守卫表 /
+   **P3 的页面表：`gate` + 第一屏读码 → 端点 + 逐页可见性规则（`pages` 段）**）。
    `D1` 端点注解与 `D3` 工具声明是 **co-located 真值**（设计 §2.2 有意不搬），**不在**生成物里；
 ② 它**不判对错**，只搬运现值。「现值对不对」是授权决定（P4/P5/P6 由人裁定）；
 ③ 它不读库、不连网、不 import `app.*`（必须能在只装 pytest 的 `ci workflow helper unit tests`
-   job 里 import —— 引了别的依赖就会 import 失败 ⇒ 静默 skip = 没跑）。
+   job 里 import —— 引了别的依赖就会 import 失败 ⇒ 静默 skip = 没跑）；
+④ `pages` 段的 `visibility_rule` 是**现值要求的**那个规则（由 `required_visibility_rule` 按现值岗位集算），
+   不是「清单声明了什么」的副本 —— 清单若声明了别的规则，两边**必然不等** ⇒ 零 delta 判据判红。
 """
 from __future__ import annotations
 
@@ -112,6 +119,11 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
     - `codes.names` —— 权限目录的**名称列**（B1；与 `parse_catalog` 同一份正则的另四列投影）；
     - `roles.login` —— **A7**（`UserService.getRolePermissions`，登录面）的角色 → 码，
       由既有 `parse_role_fallback` 传 `anchor=` 读取（**复用**，不另写解析器）。
+
+    P3 再加一段现取（设计 §4 的 P3 行）：
+    - `pages` —— **页面 → 码**（21 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点
+      + **现值要求的** `visibility_rule`），全部委托 `rbac/derive.py` 的 `page_present()`
+      （四跳现取，与判据 12 同一口径 ⇒ 不另造第二套解析）。
     """
     p = parity if parity is not None else load_parity_guard()
     d = load_derive()
@@ -128,10 +140,12 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
     mirror = d.mirror_present_values()
     nodes = p.parse_menu_ts_nodes(src["menu:frontend"])
     assert nodes, "`menu.ts` 解析出 0 个节点 ⇒ 生成物会空跑（fail-closed）"
+    pages = d.page_present(p, src)["pages"]
+    assert pages, "「页面 → 码」现值解析出 0 页 ⇒ 生成物会空跑（fail-closed）"
     return {
         "schema": 1,
         "issue": "#5699",
-        "stage": "P2",
+        "stage": "P3",
         "_note": (
             "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。"
             "**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。"
@@ -154,10 +168,16 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
             {"key": n.key, "name": n.name, "path": n.path, "code": n.code} for n in nodes
         ],
         "route_guard": [[prefix, code] for prefix, code in p.parse_route_guard(src["route:layout.tsx"])],
+        "pages": pages,
         "ledger_counts": {
             **{table: len(getattr(p, table, None)) for table in LEDGER_TABLES},
-            # P2 新增的两张台账（**现取**口径：喂的是现值，不是清单）—— 派生器提供唯一一份实现。
-            **d.present_ledger_counts(login, cat_perm, mirror["A3"]),
+            # P2/P3 新增的只许缩短台账（**现取**口径：喂的是现值，不是清单）—— 派生器提供唯一一份实现。
+            **d.present_ledger_counts(
+                login,
+                cat_perm,
+                mirror["A3"],
+                sum(1 for page in pages if page["visibility_rule"] == d.VISIBILITY_NODE_CODE),
+            ),
         },
     }
 

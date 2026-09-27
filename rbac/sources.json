@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P1",
-  "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红、**登记的 `hits` 必须 == 现取**（P2 起机械对账）。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP，现取 0 —— A7 已于 2026-09-27 归类后销账）。",
+  "stage": "P3",
+  "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红、**登记的 `hits` 必须 == 现取**（P2 起机械对账）。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP，现取 0 —— A7 已于 2026-09-27 归类后销账）。**P3 扩面**：新增三个形态面，登记的**都是判据侧**的手写副本（`page-first-screen-anchors` / `page-parity-residual-ledger` / `route-node-anchor-ledger` 共 3 行 25 处命中）—— 设计 §1.3 的 C 类（页面 / 菜单节点 → 码）前三份（`menu.ts` / `MenuController` / `AuthService`）本就在册，**第四份是判据自己的锚点表**，而它在 P3 之前**一处都没登记**（谁新写一张「页面 → 码」的表不会有东西变红）。",
   "sources": [
     {
       "face": "role-defaults-seed",
@@ -243,6 +243,30 @@
       "kind": "consumer",
       "derived_from": "manifest.roles.login",
       "note": "**A7 的四个码在判定面/测试面的最后一个落点**（退役后仅剩此一处，且它**与 A7 无关**）：该用例构造的是**自定义权限集**（`product:read` / `product:write` / `order:read`），`order:read` 只是**同名码字面量**。保留登记 = **再引入即红**的绊线：这四个码一旦重新出现在任何判定面/测试面文件里，M1 的未登记即红会具名报出（退役不等于放任复活）。"
+    },
+    {
+      "face": "page-first-screen-anchors",
+      "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 21,
+      "kind": "declaration",
+      "derived_from": "manifest.pages（P3 派生目标口径）",
+      "note": "**「页面 → 码」的第四份副本**（设计 §1.3 的 C 类第 4 份）：21 条「页面 → 第一屏调用的 api 函数」锚点表（`MENU_READ_ENDPOINT_ANCHORS`）。它是判据 12 的**唯一手写输入**（其余三跳都是现取）⇒ 也是「页面 → 码」这一事实唯一**不在**菜单/注解侧的手写副本。P3 起由清单 `pages[]` 派生（`rbac/derive.py` 的 `derive_page_faces()`），本登记保留为**未登记即红**的绊线：新增一个 `MenuReadAnchor(...)` 而不同步 P3 的页面表 ⇒ 现取 22 ≠ 登记 21 ⇒ 红（`hits` 逐值对账）。"
+    },
+    {
+      "face": "page-parity-residual-ledger",
+      "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 2,
+      "kind": "ledger",
+      "derived_from": "manifest.pages（P3 派生目标口径）",
+      "note": "判据侧的两张**页面面台账**：`MENU_READ_PARITY_RESIDUALS`（6 条，「节点码 ≠ 该页第一屏读码」的唯一登记处）与 `MULTI_READ_ENDPOINT_PAGES`（3 条，「一页多码」这一**结构事实**的唯一登记处）。P3 把两者的**条数与键集**都由 `pages[]` 派生（`parity_residual_pages` / `multi_code_pages`）并逐值对账 ⇒ 这两张表从「手写台账」变成「派生结果 + 只许缩短」。"
+    },
+    {
+      "face": "route-node-anchor-ledger",
+      "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 2,
+      "kind": "ledger",
+      "derived_from": "manifest.pages（P3 派生目标口径）",
+      "note": "判据 11 ③ 的两张**路由 → 节点**锚定表：`ROUTE_MENU_ANCHORS`（15 条，前缀 → 菜单节点名 ⇒ P3 由「节点 → 页」换算成 `pages[].gate`）与 `ROUTE_WITHOUT_MENU_NODE`（4 条，无节点前缀 + `/dashboard` 的码不同）。P3 的 C4 投影（`route_guard_codes`）与它们逐值对上；4 条例外逐条具名在 P3 判据的例外台账里（未登记即红 / 陈旧亦红 ⇒ 只许缩短）。"
     }
   ]
 }
