@@ -2767,7 +2767,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（38 case）
+## 杂项域（39 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3117,7 +3117,7 @@
 数据: 每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』
 数据: 每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**
 数据: 覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）
-数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 16 条（`FM-E1`~`FM-E17`；`FM-E6` 缺号），其中 `state=gap` 2 条**；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
+数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 16 条（`FM-E1`~`FM-E17`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
 数据: **未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`
 数据: **抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）
 数据: **抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）
@@ -3145,6 +3145,24 @@
 跳过: [backend-contract] 转述面承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据（14~18）验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-27 新增（用户逐字裁定「发现容易犯的问题就应该固化到研发模式中避免再犯」；Refs #5707）：交付形态 = 技能新增 §26（转述 / 派单面，当时七条（`FM-R1` 起），各带症状 / 判别动作 / 证据锚）+ 承接台账 `relay_entries`（`state`/`kind` 一一配对 + `same_family` + `covers`）+ 判据 14~18（含 §26 裸行号守卫）+ 新用例 MC-038。⚠️ **本条的范围端点按「现取」写作 `FM-R1`~`FM-R13`**（2026-09-27 同批补入 `FM-R8` = 收尾半径 + 判据 20）：端点由 `tests/unit_ci_workflows/test_casebook_ledger_claims.py` 判据 2 与台账 `relay_entries` **逐值**比对 ⇒ 台账再长一条而这里不抬就红（这就是它该有的行为）🔴 **2026-09-27 本批再长四条**（`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` = 坐标指错文件 / 影响面低估 / 从没验证的模型提修法 / 只想到一处漏同族，见台账 `PD-5`）：端点已同批抬到 `FM-R12`，`kind=action` 的读数改成六条（`test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）；⚠️ **历史句里也不许出现那个范围形态**（判据只认形态、不认语义 —— 本包写「当时 `FM-R1` 起共七条」时就被它当场判红，改成本写法）。取号 MC-038：现取 main 最大 = MC-034，而**在飞非 draft 的 PR #5713 已占 MC-035/036/037**（本包现取该分支的 `.github/cases/misc.yml` 逐条确认）⇒ 顺延尚未合并的一侧（#5706 的 MC-026 撞号先例）。🔴 **2026-09-27 本批再长一条**（`FM-R13` = 派单消息里的「环境已同步」断言会过期）：`land` 侧那一半**已机械** = preflight 每次打印**工具来源**（`scripts/issue_lifecycle.py::tool_provenance_lines`，判据 `tests/unit_ci_workflows/test_land_tool_provenance.py`），派单侧那一半**在仓外** ⇒ 台账 `PD-7` 公开抬 `RELAY_GAPS_FROZEN` 6→7；端点随现取抬到 `FM-R13`，`kind=action` 的读数改成七条（`CLAIMS` 策展表同批改）。 ｜ tags: ci, dev-mode, solidification, relay, discriminator, red-proof, ledger
+
+### MC-039. 发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析 🔵
+```
+你: 当某条发布腿的自动触发面只剩 push（本仓会被 GITHUB_TOKEN 合并吞掉）、或把兜底面换成手动的 workflow_dispatch、或新建一条只靠 push 的腿而没登记、或登记表声明的兜底面与现取脱钩、或 workflow_run 的上游名解析不到时，都必须有东西具名报出；而只改注释时不得报红
+期望: direct_reply
+数据: **自走触发面**口径：顶层事件去掉手动面与被调面（`workflow_dispatch` / `workflow_call` —— 两者都不能让一条腿自己起跑）= 能自己跑起来的面；该面**只剩 push** ⇒ 必须有兜底面（`schedule` 或 `workflow_run` 之一）。手动面**不算兜底**（把它当兜底 = 手动面冒充自动面）
+数据: **登记表只许缩短 + 未登记即红 + 删光即红**：`tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的 `legs` 与判据里的冻结元组 `PUBLISH_LEG_FILES_FROZEN` 双向相等（删一条 / 加一条都必须同批改两处）；`frozen_max` 与判据里的 `LEGS_FROZEN` 两处不符 ⇒ 红；条数超上限 ⇒ 红；`legs` 为空 ⇒ 红（fail-closed：「没东西可判」不是通过）
+数据: **全仓形状扫描（未登记即红）**：`.github/workflows/*.yml` 里任何一个自走面只剩 push 的 workflow 若不在登记表里 ⇒ 红（抓「新造一条 push-only 腿」）。**有意不用宽泛正则一把梭**（那会把无关 workflow 卷进来 ⇒ 噪声判据）⇒ 代价如实登记在覆盖边界第 7 条
+数据: **登记表声明必须与现取双向对上**：声明的兜底事件必须在现取自走面里；声明 schedule 时其 cron 字面量必须逐字出现在该 workflow 的 `on:` 里 ⇒ 台账不许给不存在的保护盖章
+数据: **`workflow_run` 上游名可解析**（全仓面，不限于已登记腿）：每个上游名必须命中仓内某个 workflow 的 `name:` ⇒ 上游改名后该兜底面**静默脱钩**（永不触发）判红（现取 10/10 全部解析成功）
+数据: 🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `fallback_problems`）：删掉兜底面 / 换成 workflow_dispatch / 登记表删一条 / 登记表清空 / 登记的腿文件不存在 / 声明与现取脱钩 / workflow_run 上游名改错 / 新造一条未登记的 push-only 腿，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）
+数据: 🔴 **在真语料上双向自证**（本条与其它判据最不同的一点）：判据跑在**未补兜底面**的语料上会**判红两条腿**（两条腿都报「自走触发面 = [push]，没有兜底面」）；补上 schedule 后 6 passed ⇒ 证明它是**真绊线**而不是纸面判据
+数据: 🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录登记表 JSON），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码在任何时刻给出同一读数；运行期计数（gh run list）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在登记表 `coverage_boundary` 与 `docs/wiki/CI-CD.md` 的 `FM-E17` 节
+数据: 覆盖边界（显式登记在登记表 `coverage_boundary`，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：cron 被 GitHub 节流（现取实测：`*/20` 名义 72 次/日 → 实得 6.3 次/日 = 8.4%，相邻间隔中位 244 / 最大 357 分钟；而每日档两条的中位间隔都是 ≈24.0h ⇒ 未被节流）· cron 到点被 concurrency 顶掉 · 「腿跑了但发布内容不对」（由运行期身份断言承接）· workflow_run 的上游自己没跑 · push 被吞这一运行期事实 · 「兜底面在位」不等于「线上字节与 main HEAD 一致」· 已登记腿之外的新族 · deploy-reconcile 那层不重复判（其调用点与 pathspec 已由 MC-023 冻结）
+跳过: [backend-contract] 触发面静态形状判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_publish_leg_fallback_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-27 新增（用户 2026-09-27 逐字裁定 = 方案 A：给两条发布腿补兜底触发面（周期重建重发布），静态形状判据才变成真绊线、可一并落判据收口；Refs #5707）：交付形态 = ① 两条腿各自补 `on.schedule`（每日档，cron 节流现取读数决定不取高频）② 判据 `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`（判据 1~8 + 判别力自证 + 真语料双向自证）③ 登记表 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`（只许缩短 + 覆盖边界八条）④ 台账 `FM-E17` 由 gap 翻 guarded 并新增 `PD-8`（`GAPS_FROZEN` 公开 2 → 1，`FM-E10` 仍留 gap）⑤ 本页 `docs/wiki/CI-CD.md` 的 FM-E17 节与计数器同批。⛔ **本单不动的**：两条腿的发布脚本与产物路径（只动触发面）· `deploy-reconcile.yml` · `FM-E10` · 那两条腿的路径缺口台账。⚠️ **与铁律 10 的关系（照实说明）**：铁律 10 写「不新增 schedule/cron」，其理由逐字是「无人值守**删除**不安全」⇒ 本单这条 schedule 走的是**重发布**路径，而远端发布脚本**明确不对静态根做清空 / delete**（先建 stage 再整份覆盖）⇒ 该理由不适用；且本单是**人类在本次会话显式裁定**的方案 A（「代价 = 占 CI 分钟」已被接受）。取号 MC-039：现取 main 最大 = MC-038，且现取全部在飞远端分支与在飞 PR 的 diff 都无 MC-039 及以上（`.github/cases/misc.yml` 的 id 逐个确认）⇒ 顺延取 MC-039（不动已合并的号）。 ｜ tags: ci, publish-leg, trigger-surface, fallback, discriminator, red-proof, ledger
 
 ### MC-029. RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等 🔵
 ```
@@ -7784,8 +7802,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：550（活跃 126，跳过 424）
-- tier 分布：smoke 12 / normal 505 / adversarial 31
+- 用例总数：551（活跃 126，跳过 425）
+- tier 分布：smoke 12 / normal 506 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7800,7 +7818,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：38
+- 杂项域：39
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7856,6 +7874,7 @@
 - MC-027: 文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫
 - MC-028: 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）
 - MC-038: 转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R13`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用
+- MC-039: 发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析
 - MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
 - MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
 - MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）

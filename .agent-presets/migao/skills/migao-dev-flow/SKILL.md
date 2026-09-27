@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.78.0
+version: 1.79.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2742,7 +2742,7 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   不经这段读数；④ **说不出「缺的是哪条守卫」**（那要人读 diff）；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
-## 版本沿革（v1.1 → v1.78.0）
+## 版本沿革（v1.1 → v1.79.0）
 
 - v1.76.0（2026-09-27 **新增 `FM-R13`（派单的「环境已同步」断言会过期）+ `land` 的 preflight 打印「工具来源」**，本次；来源 = 本单指令「让 `land` / 派单能看见它用的是哪一份工具」）：
   ① **病根（由本包独立复核，读数见 PR 正文）**：`land` 的 ①步跑的不是你 worktree 里的
@@ -3729,3 +3729,12 @@ git -C <主工作区> rev-parse HEAD                        # 读数要连**坐�
   ① **实例修法（同 PR）**：夹具**显式**桩 `branch_presence`（`presence=` 参数，默认「存在」）+ **两面断言**（存在 ⇒ `::warning::` + 人工出口命令，原断言一字未删；**确定不存在** ⇒ `::notice::` + `rc=0`，即 #5649 口径）+ 读数面加一条「桩的是存在却走了不存在早退 ⇒ 报判定顺序与桩不符」的自检。
   ② **类级元守卫**：`tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts`（判据 = `…::fixture_stub_problems`：夹具**桩表**必须含 `branch_presence`；两个方向的断言函数都必须存在**且被测试调用**；附一条**内存构造**的删除红证）。
   **未实装 / 边界（照实登记，§19.1）**：本条只机械保证**这一个夹具**对**这一个事实**桩了 —— 「所有夹具都桩掉了全部运行期依赖」判不了（需要枚举每个夹具的外部依赖，本仓不做文本层的一刀切）；`FM-A14` 是 `kind=criterion`（有判据），故 §25.6 的 `kind=action` 判别动作行**不变**（仍 9 条）。
+- v1.79.0（2026-09-27 **`FM-E17` 收口：两条发布腿各自补 `schedule` 兜底面 + 落静态形状判据**，本次；来源 = 用户 2026-09-27 逐字裁定 = **方案 A**「给 `worker-h5-publish` / `bmini-h5-publish` 补一个兜底触发面（周期重建重发布）；台账里那条『静态形状判据』才变成真绊线，可一并落判据收口。代价 = 占 CI 分钟」）：
+  ① **为什么非补不可（两次现场实证，不是推断）**：本仓的 `push` **是被吞的** —— auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ push run 不再触发 workflow。**现取 2026-09-27**：`gh run list --branch main --event push --limit 200` 去重 43 个 sha，而同一窗口 `git log origin/main -40` 的 40 个 commit 里**只有 1 个**在其中 ⇒ **39/40 零 push run**；而这两条腿写的是**线上静态根**（`/w/` `/b/`）⇒ 合并后**静默停在旧产物、无红无告警**（两次都靠人工 `workflow_dispatch` 才补上）。`workflow_dispatch` 是**手动面、不算兜底**（口径保留）。
+  ② **三种兜底方案的现取对比**（不是只挑一个就做）：③「让 `deploy-reconcile` 那条 `*/20` 真的派发这两条腿」—— **现取：它本来就会派**（`reconcile_one worker-h5 …` / `reconcile_one bmini-h5-hosting …` 两行），**无需改动**，但它是**共命**兜底（reconcile 挂了 / 它的 cron 被节流 ⇒ 两条腿同时失去兜底）；②「`workflow_run`（reconcile 完成时）」—— **现取否决**：reconcile 完成约 **40~60 次/日**（绝大多数是 `pull_request:[opened,reopened]`），而 `workflow_run` **没有 paths 过滤** ⇒ 两条腿会被无条件重建重发布 40~60 次/日（bmini 那条要跑 Taro 构建 + 推 ACR 传输镜像）；①「各自加 `schedule`」= **选定**。
+  ③ 🔴 **cron 节流实测（这是「取每日档」的依据）**：`*/20 * * * *`（名义 72 次/日）在 158.3h 里实得 **40 次 = 6.3 次/日 = 名义的 8.4%**（相邻间隔 最小 128 / 中位 244 / 最大 357 分钟，**39/39 个间隔 > 60 分钟**）；而两条**每日** cron（`37 20 * * *` / `17 19 * * *`）的中位间隔分别为 **1446 / 1437 分钟（≈24.0h）** ⇒ **每日档未被节流**。⇒ 兜底面 = `worker-h5-publish.yml` 的 `23 18 * * *` + `bmini-h5-publish.yml` 的 `43 18 * * *`（相隔 20 分钟以免抢同一批 CI 分钟；18:23 / 18:43 UTC = 02:23 / 02:43 +08，错开 19:00~21:00 UTC 的每日守护簇）。
+  ④ **判据**（`tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`，判据 1~8；登记表 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`）：任何 workflow 的**自走触发面**（顶层事件去掉 `workflow_dispatch` / `workflow_call`）**只剩 `push` ⇒ 必须有兜底面**；「哪些 workflow 属于发布/守护腿」用**只许缩短的登记表**（`legs` 与判据里的冻结元组双向相等）**而不是宽泛正则一把梭**；**未登记即红** / **删光即红**（fail-closed）/ **声明 ⇄ 现取双向**（声明的 `event` + `cron` 必须逐字出现在该腿的 `on:` 里 ⇒ 台账不许「给不存在的保护盖章」）/ **`workflow_run` 上游名必须命中仓内某 `name:`**（上游改名 ⇒ 兜底面**静默脱钩**，现取 10/10 全部解析成功）。**判定方式是确定的**：只读仓内文件，**零 `gh` / 零网络 / 零时钟** ⇒ 同一份代码任何时刻同一读数；运行期计数（`gh run list`）**刻意不进判据**。
+  ⑤ 🔴 **在真语料上双向自证**：判据跑在**未补兜底面**的语料上**判红两条腿**（两条都报「自走触发面 = [push]，没有兜底面」）；补上 `schedule` 后 **6 passed** ⇒ 它是**真绊线**而不是纸面判据。红证逐条：删掉兜底面 / 换成 `workflow_dispatch` / 登记表删一条 / 清空 / 登记的腿文件不存在 / 声明与现取脱钩 / `workflow_run` 上游名改错 / 新造一条未登记的 push-only 腿 ⇒ 各自判红；**只改注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）。
+  ⑥ **台账 / 文档同批**：`FM-E17` 的 `state` 由 `gap` → `guarded`（`docs/wiki/CI-CD.md` 同批 + 计数器 **2 → 1**）· 新增 `PD-8`（`GAPS_FROZEN` **2 → 1**；`FM-E10` **仍留 `gap`**，**不许**顺手销账）· 用例 **MC-039** · `MC-028` 的 `state=gap` 读数同批改准（2 → 1）。
+  ⑦ **附带收益（现取发现）**：补了 `schedule` 后这两条腿**自动进入** `scripts/drift_audit.py::check_heartbeat()` 的判定面（调度面 14 → **16** 条），阈值 = 周期 + 2 天 = **3 天** ⇒ 停摆 >3 天产出 `stale` finding。🔴 **但它不阻断**：`Drift Audit` **不在 required 集合** ⇒ 判红照旧合并。
+  **未实装 / 边界（照实登记，§19.1）**：判据是**纯静态**的 ⇒ 盖不到 ① cron 被节流（面在位 ≠ 它真跑）② cron 到点被 `concurrency` 顶掉 ③「腿跑了但发布内容不对」④ `workflow_run` 的上游自己没跑 ⑤ `push` 被吞这一运行期事实 ⑥「兜底面在位」≠「线上字节 == main HEAD」⑦ 已登记腿之外的新族（一条腿若同时有 `push` 与 `pull_request` 不在射程内 —— 这正是「不用宽泛正则」的代价）⑧ 兜底面**停摆**由 `drift_audit` 心跳承接但**延迟 3 天且非阻断** ⑨ `deploy-reconcile` 那层**不重复判**（其调用点与 pathspec 已由 `test_config_change_triggers_deploy.py`（MC-023）冻结，另造第二套台账 = 双真相源）。逐条写在登记表 `coverage_boundary`（9 条）并由判据正向核 face + reason + recompute。**本节不改任何门禁的通过条件、不新增豁免。**

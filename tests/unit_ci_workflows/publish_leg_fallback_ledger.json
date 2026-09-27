@@ -1,0 +1,82 @@
+{
+  "schema": "publish-leg-fallback-ledger/v1",
+  "what": "「发布 / 守护腿」的登记表 + 逐条的**兜底面**（`schedule` / `workflow_run` 之一）。判据 = `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`（issue #5707 的 `FM-E17` 收口；用户 2026-09-27 逐字裁定 = 方案 A）。🔴 本表**不是**「哪些腿重要」的排行榜 —— 它只回答一个问题：**这 2 条腿的自动触发面只有 `push` 时，还有没有第二条自动面能让它们跑起来**。",
+  "why": "本仓的 `push` **是被吞的**（现取 2026-09-27：`gh run list --branch main --event push --limit 200` 覆盖 2026-09-25T09:41Z~2026-09-27T07:23Z、去重后 43 个 sha；同一窗口内 `git log origin/main -40` 的 40 个 commit 里**只有 1 个**（08dd30e7）出现在其中 ⇒ **39/40 零 push run**；成因 = auto-merge 用 `GITHUB_TOKEN` 合并）。⇒ 「自走触发面 == {push}」的腿在本仓**等于不会跑**，而它写的是**线上静态根**（`app.migaozn.com` 的 `/w/` 与 `/b/`）⇒ 合并后静默停在旧产物、**无红无告警**。",
+  "frozen_max": 2,
+  "frozen_note": "条数只许缩短；上限同时冻结在判据文件（`LEGS_FROZEN`）与判据里的冻结元组（`PUBLISH_LEG_FILES_FROZEN`）里 ⇒ 删一条 / 加一条必须同批改三处，**diff 里看得见**（口径同 `GAPS_FROZEN`：台账改不动判据）。",
+  "legs": [
+    {
+      "file": "worker-h5-publish.yml",
+      "role": "发布腿（工人端 H5 → 线上静态根 `/w/`）",
+      "live_surface": "app.migaozn.com 静态根（nginx `root` = /opt/migao-deploy/h5）下的 `w/` 子树",
+      "fallback": {
+        "event": "schedule",
+        "cron": "23 18 * * *",
+        "rationale": "**每日**（不是高频）—— 现取实测（2026-09-27）：`*/20 * * * *`（名义 72 次/日）实得 40 次 / 158.3h = **6.3 次/日 = 名义的 8.4%**，相邻间隔 最小 128 / 中位 244 / 最大 357 分钟；而两条**每日** cron 的中位间隔分别是 **1446 分钟（≈24.1h）** 与 **1437 分钟（≈24.0h）** ⇒ **每日档未被节流**。⇒ 兜底面要可靠就取每日。18:23 UTC = 02:23 +08（错开本仓 19:00~21:00 UTC 的每日守护簇，且与 `bmini-h5-publish` 相隔 20 分钟以免两条发布腿抢同一批 CI 分钟 / ACR 操作）。"
+      },
+      "why_this_leg_is_registered": "自走触发面 = {push}（另有一条 `workflow_dispatch`，**手动面、不算兜底**）⇒ 合并后不发布，且无红。",
+      "publish_identity_assertion": "deploy/scripts/worker-h5-verify-served.sh（发布后身份断言：线上确实是工人端 H5，不是 200 就过）",
+      "schedule_safety": "「周期重建重发布」对这条腿是**安全**的：`actions/checkout` 无 `ref` ⇒ `schedule` 事件取**默认分支 HEAD**（= main HEAD，正是线上应有的状态，不是陈旧内容）；远端发布脚本 `deploy/swas/h5-publish-remote.sh` 先建 `$STAGE` 再整份 `cp -R` 到 `$TARGET`，**绝不对静态根做 delete / 清空 / rm -rf** ⇒ 重复发布同一份产物 = 同样的字节再覆盖一次（幂等）；`concurrency: {group: worker-h5-publish, cancel-in-progress: false}` ⇒ 至多 1 running + 1 pending，不会堆。第 5 个参数是 `COMMIT_SHA`（只是一个标签，不拉镜像）⇒ schedule 下 `$GITHUB_SHA` = main HEAD，语义成立。"
+    },
+    {
+      "file": "bmini-h5-publish.yml",
+      "role": "发布腿（商家端 H5 → 线上静态根 `/b/`）",
+      "live_surface": "app.migaozn.com 静态根（同上一处）下的 `b/` 子树",
+      "fallback": {
+        "event": "schedule",
+        "cron": "43 18 * * *",
+        "rationale": "同 `worker-h5-publish.yml`（每日、未被节流的那一档）；与它相隔 20 分钟 —— 这条腿要跑 Taro 构建 + 推 ACR 传输镜像 + 远端 `docker cp`，与上一条错开可避免同一分钟的 runner / ACR 争用。"
+      },
+      "why_this_leg_is_registered": "自走触发面 = {push}（另有一条 `workflow_dispatch`，**手动面、不算兜底**）⇒ 合并后不发布，且无红（2026-09-27 02:25Z 的 `/b/index.html` 就是人工 dispatch 才补上的那次）。",
+      "publish_identity_assertion": "deploy/scripts/bmini-h5-verify-served.sh（发布后身份断言：`/b/` 是本仓产物、子路由不串端、根仍是 C 端、worker-h5 零回归）",
+      "schedule_safety": "「周期重建重发布」对这条腿同样安全：`actions/checkout` 无 `ref` ⇒ `schedule` 下取 main HEAD；镜像 tag `sha-${GITHUB_SHA::7}` 由**同一次 run 自己构建并推送**（`docker build` + `docker push` + 立刻 `docker manifest inspect` 复验），远端再按这个 tag 取 ⇒ **自洽**，schedule 下不会引用不存在的 tag。远端脚本同样先建 `$STAGE` 再整份覆盖，不对静态根做清空 ⇒ 幂等；`concurrency` 同口径。"
+    }
+  ],
+  "coverage_boundary": [
+    {
+      "face": "cron 被 GitHub 节流 —— 兜底面**在位**但未必按名义频率跑",
+      "reason": "静态形状判据只能证明「`schedule` 这个面在」，**判不了它跑没跑**。现取实测（2026-09-27，`gh run list --workflow deploy-reconcile.yml --event schedule`）：`*/20` 名义 72 次/日 → 实得 6.3 次/日（8.4%），相邻间隔中位 244 分钟、最大 357 分钟；而 `37 20 * * *`（每日）与 `17 19 * * *`（每日）两条的中位间隔都是 ≈24.0h（1446 / 1437 分钟）⇒ **每日档未被节流**。本表因此取每日，并把「高频档会被节流」写进 `rationale`。",
+      "recompute": "gh run list --workflow deploy-reconcile.yml --event schedule --limit 60 --json createdAt  # 自行算相邻间隔的中位数"
+    },
+    {
+      "face": "cron 到点但被 concurrency 顶掉 / 排队",
+      "reason": "两条腿都是 `cancel-in-progress: false` ⇒ GitHub 只保留 1 个 running + 1 个 pending，第 3 个 pending 会**顶掉**前一个 ⇒ 「到点了但没跑」是合法结果，本判据看不见。",
+      "recompute": "读 .github/workflows/worker-h5-publish.yml 与 .github/workflows/bmini-h5-publish.yml 的 concurrency 块（现取）"
+    },
+    {
+      "face": "「腿跑了但**发布内容不对**」",
+      "reason": "本判据只读**触发面**，看不见发布结果。发布后的身份断言在 `deploy/scripts/worker-h5-verify-served.sh` / `deploy/scripts/bmini-h5-verify-served.sh`（**运行期**，红在 CI run 上）—— 本判据不覆盖它，也不重复判。",
+      "recompute": "gh run view <publish-run-id> --log  # 看身份断言那一步的结论"
+    },
+    {
+      "face": "`workflow_run` 的**上游自己没跑**",
+      "reason": "判据 7 只核「上游名能解析到仓内某个 `name:`」（防**静默脱钩**），核不了「上游这个 workflow 真的被触发了」。本单选的兜底面是 `schedule` ⇒ 不依赖任何上游；但这一面适用于本仓另 3 条用 `workflow_run` 的腿（`flaky-triage` / `h5-freshness-guard` / `stale-report-reaper`），照实登记。",
+      "recompute": "gh run list --workflow <upstream>.yml --limit 20 --json event,conclusion"
+    },
+    {
+      "face": "`push` 被 `GITHUB_TOKEN` 合并吞掉这一**运行期**事实本身",
+      "reason": "判据是**纯静态**的（只读仓内文件、零网络、零时钟）⇒ 「近 40 次合并里 39 次零 push run」这类读数**刻意不进判据**（同一份代码不能给不同读数）。它只作为**当时的读数 + 复算命令**写在台账 `why` 与 `docs/wiki/CI-CD.md` 的 `FM-E17` 节里。",
+      "recompute": "gh run list --branch main --event push --limit 200 --json headSha  # 去重后与 git log origin/main -40 对比"
+    },
+    {
+      "face": "「兜底面存在」≠「线上字节 == main HEAD」",
+      "reason": "`schedule` 只保证**周期重发 main HEAD**；判不了线上静态根的实际字节。那需要**线上复探**（发布腿自己的身份断言 / `curl`），属运行期面。",
+      "recompute": "curl -sI https://app.migaozn.com/b/index.html  # 看 Last-Modified；内容身份看身份断言脚本"
+    },
+    {
+      "face": "已登记腿之外的**新族**（例如某条腿的自动面变成 {push, pull_request} 而它其实是发布腿）",
+      "reason": "判据 3 只抓「自走面 == {push}」这一种形状（这就是 `FM-E17` 的症状本身）。一条腿若同时有 `push` 与 `pull_request`，它**不**落在判据射程内 —— 「哪些 workflow 属于发布/守护腿」这件事**没有**宽泛正则可判（会把无关 workflow 卷进来 ⇒ 噪声判据），故用本登记表**只许缩短**地人工维护。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_publish_leg_fallback_surface.py -q -s  # 判据 1 打印现取计数"
+    },
+    {
+      "face": "兜底面的**停摆**由别人的心跳判定承接，而那条判据**不拦合并** ⇒ 出声有延迟",
+      "reason": "补了 `schedule` 之后，这两条腿**自动进入** `scripts/drift_audit.py::check_heartbeat()` 的判定面（它遍历所有「头部有 `- cron:` 的 workflow」）—— 阈值 = 有效周期 + 2 天 = 1440 + 2880 分钟 = **3 天**（现取模拟：周期 1440 分钟 ⇒ `eff` 不触发节流校正 ⇒ `threshold = eff + 2*1440`）⇒ 停摆 **>3 天**才会产出一条 `<wf>|stale` finding。🔴 **但它不构成阻断**：`Drift Audit (真相源契约)` **不在分支保护的 required 集合**里 ⇒ 判红照旧合并（`migao-dev-flow` §2.2 的实测口径）。⇒ 这是**附带收益**（多了一层与 push 无关的停摆绊线），**不是**「失败可见」的完整答案：3 天延迟 + 非阻断，如实登记。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_drift_audit_contract.py -q  # 心跳判定的射程与阈值；再 python3 scripts/drift_audit.py --check（需网络）"
+    },
+    {
+      "face": "`deploy-reconcile` 那层兜底**是否真的会派发**这两条腿",
+      "reason": "现取（2026-09-27）**会派**：`deploy-reconcile.yml` 有 `reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5` 与 `reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app` 两行。🔴 但**本判据不重复判它** —— 那两行的调用点与 pathspec 已由 `tests/unit_ci_workflows/test_config_change_triggers_deploy.py`（MC-023）冻结（另造第二套台账 = 双真相源，`migao-dev-flow` §23.7 A6）。",
+      "recompute": "git show origin/main:.github/workflows/deploy-reconcile.yml | grep -n 'reconcile_one worker-h5'"
+    }
+  ]
+}

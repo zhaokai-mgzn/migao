@@ -39,6 +39,23 @@ on:
       - '.github/workflows/bmini-h5-publish.yml'
   # 人工补发/排障入口（合并后 main 上的版本才可 dispatch）
   workflow_dispatch:
+  # ── 兜底触发面（issue #5707 的 FM-E17 收口；用户裁定 = 方案 A）────────────────
+  # 为什么必须补：本仓的 `push` **是被吞的** —— auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ push run
+  # 不再触发 workflow（现取 2026-09-27：`gh run list --branch main --event push --limit 200`
+  # 去重 43 个 sha，而最近 40 个 main commit 里只有 1 个在其中 ⇒ **39/40 零 push run**）。
+  # 而这条腿写的是**线上静态根**（`/b/`）⇒ 合并后会**静默停在旧产物**（无红无告警；
+  # 实测两次都靠人工 `workflow_dispatch` 才补上）。`workflow_dispatch` 是**手动面、不算兜底**。
+  # 为什么是**每日**而不是高频：现取实测 cron 节流 —— `*/20`（名义 72 次/日）实得 6.3 次/日
+  # （8.4%，相邻间隔中位 244 / 最大 357 分钟），而**每日**档（`37 20 * * *` / `17 19 * * *`）
+  # 的中位间隔都是 ≈24.0h ⇒ 每日档未被节流。18:23 / 18:43 UTC = 02:23 / 02:43 +08，
+  # 错开本仓 19:00~21:00 UTC 的每日守护簇，且两条腿相隔 20 分钟以免抢同一批 CI 分钟。
+  # 幂等与内容正确性（照实说明，不是承诺）：`actions/checkout` 无 `ref` ⇒ schedule 取**默认分支
+  # HEAD**（= main HEAD，正是线上应有的状态）；远端发布脚本先建 stage 再整份覆盖、
+  # **不对静态根做清空** ⇒ 重复发布同一份产物只是同样的字节再覆盖一次。
+  # 判据 = tests/unit_ci_workflows/test_publish_leg_fallback_surface.py + 登记表
+  # `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`（删掉这个面 / 换成手动面 ⇒ 红）。
+  schedule:
+    - cron: '43 18 * * *'
 
 permissions:
   contents: read
