@@ -802,6 +802,22 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                   })()}
                   {/* 工艺规格（issue #4355 / 设计文档 §4.9 ②）：直读 processing_info，缺值行已丢弃 */}
                   <CraftSpecList source={row.processingInfo} />
+                  {/* **部位备注**（issue #5685）：商家写的「这个数字怎么来的」（算料依据的人工说明）。
+                      真值 = `order_items.processing_info.remark`（顶层字符串）——**直读、不二次推导**。
+                      **缺值不渲染**：键缺席 / `null` / 空串 / 纯空白 ⇒ 该行不出现（不显示空行、
+                      不显示 `undefined`）。 */}
+                  {typeof (row.processingInfo as any)?.remark === 'string' &&
+                    (row.processingInfo as any).remark.trim() !== '' && (
+                      <div
+                        data-testid="order-item-remark"
+                        className="mt-1 flex flex-wrap gap-x-1.5 text-xs"
+                      >
+                        <span className="text-neutral-400">部位备注</span>
+                        <span className="text-neutral-700">
+                          {(row.processingInfo as any).remark}
+                        </span>
+                      </div>
+                    )}
                 </Td>
                 <Td align="right" className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}

@@ -534,6 +534,47 @@ class ProcessingOrderServiceTest {
                 .apply(eq(TENANT), anyString(), eq("ORD-20260912-0001"), anyList());
     }
 
+    // ── 部位级备注（issue #5685）：订单行 processing_info.remark ⇒ 加工单快照（固化真相）────────
+    //
+    // 病根：`ProcessingOrderItemBrief.remark` 早已声明，但 `CRAFT_SPEC_SNAPSHOT_KEYS` 白名单里**没有**
+    // 这个键 ⇒ 快照恒无该键 ⇒ 读到的是恒 null = **死字段**（现场那张纸上的「部位备注: 公式--48个折」
+    // 在系统里无处可放）。本单把它加进白名单（**零迁移**：processing_info 是自由 JSONB）。
+
+    @Test
+    @DisplayName("🔴 部位备注随加工单固化：processing_info.remark ⇒ 快照逐字带上（issue #5685）")
+    void itemRemarkIsFrozenIntoSnapshot() {
+        stubLibrary();
+        OrderItem item = orderItemWithProcessing("米白");
+        ((Map<String, Object>) item.getProcessingInfo()).putAll(spec("remark", "公式--48个折"));
+        stubGenerate(List.of(item));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("`remark` 进了白名单 ⇒ 快照逐行带上（把它从 CRAFT_SPEC_SNAPSHOT_KEYS 删掉 ⇒ 本断言红）")
+                .containsEntry("remark", "公式--48个折");
+    }
+
+    @Test
+    @DisplayName("🔴 未填备注 ⇒ 快照里**没有** remark 键（缺键就缺，不造值）（issue #5685）")
+    void absentItemRemarkLeavesNoSnapshotKey() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("没填备注 ⇒ 快照不含 `remark`（copyIfPresent 语义：缺键就缺，不落 null / 空串）")
+                .doesNotContainKey("remark");
+    }
+
     @Test
     @DisplayName("PG-060 不重复扣：同一订单重复生成被幂等闸拒 ⇒ 台账只被调用一次")
     void duplicateGenerateDoesNotDeductTwice() {

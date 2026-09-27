@@ -134,6 +134,16 @@ html, body {
 .wh5-ov-title { font-size: 16px; font-weight: 700; color: var(--wh5-muted); }
 .wh5-ov-pos { display: flex; flex-direction: column; gap: 4px; }
 .wh5-ov-pos-name { font-size: 16px; font-weight: 600; }
+/* 部位级备注（issue #5685）：商家写的「这个数字怎么来的」。
+   工人手机上读 ⇒ 长备注必须**折行**（含无空格的长串），绝不 nowrap / 省略号 / 行数钳制。 */
+.wh5-ov-remark {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--wh5-warn);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .wh5-ov-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .wh5-ov-op {
   display: flex;

@@ -264,8 +264,11 @@ public class ProcessingSetReadService {
      * 本套工序总览（issue #4967 交付物 2；设计 {@code docs/design/set-code-and-scan-loop.md} §4.1）。
      *
      * <p><b>形状</b>：{@code {set_no, set_index, positions: [{order_item_id, position_kind,
-     * position_name, operations: [{operation_id, logical_name, position, seq, qty, unit,
+     * position_name, remark, operations: [{operation_id, logical_name, position, seq, qty, unit,
      * unit_price, status, done_qty}]}]}}。</p>
+     *
+     * <p>🔴 {@code remark}（issue #5685）= **商家填的部位级备注**（订单行 {@code processing_info.remark}），
+     * 就地取自订单行现值；**未填 ⇒ {@code null}**（键恒在，不省键、不造空串）。</p>
      *
      * <p><b>口径</b>：① 列**全部**工序（不只是待做）—— 工人要一眼看到「这一套还有哪几道没做」
      * ⇒ 已完成的道必须也在（{@code status} / {@code done_qty} 让页面自己区分）；
@@ -289,6 +292,8 @@ public class ProcessingSetReadService {
             view.put("position_kind", head.getPositionKind());
             view.put("position_name", positionView(entry.getKey(), head.getPositionKind(),
                     setOperations, tenantId).get("position_name"));
+            // 部位级备注（issue #5685）：键**恒在**，未填 ⇒ null（不省键、也不造空串 —— 消费方不必写分支）
+            view.put("remark", remarkOf(entry.getKey(), tenantId));
             view.put("operations", ops.stream().map(ProcessingSetReadService::overviewOperationView).toList());
             positions.add(view);
         }
@@ -561,9 +566,38 @@ public class ProcessingSetReadService {
         return item.getProductName();
     }
 
+    /**
+     * 部位级备注（issue #5685）：读订单行 {@code processing_info.remark}（商家填的自由文本）。
+     *
+     * <p>形态：本类走 {@code OrderItemMapper.selectById}（BaseMapper）⇒ {@code JacksonTypeHandler}
+     * 生效 ⇒ {@code processing_info} 恒为 {@code Map}（字符串形态只在**自定义 @Select 路径**出现，
+     * 本类不经过那条路 ⇒ 非 Map 一律按「未填」处理）。</p>
+     *
+     * <p>取值纪律：非字符串 / 空串 / 纯空白 ⇒ {@code null}（= 未填，**不造值**、不折成空串）；
+     * 有值则 {@code trim} 后返回（存量脏数据的首尾空白不该显示到工人手机上）。</p>
+     */
+    private String remarkOf(String orderItemId, Long tenantId) {
+        if (orderItemId == null) {
+            return null;
+        }
+        OrderItem item = orderItemMapper.selectById(orderItemId);
+        if (item == null || !tenantId.equals(item.getTenantId())
+                || Integer.valueOf(1).equals(item.getDeleted())) {
+            return null;
+        }
+        if (!(item.getProcessingInfo() instanceof Map<?, ?> info)) {
+            return null;
+        }
+        Object raw = info.get("remark");
+        if (!(raw instanceof String text)) {
+            return null;
+        }
+        String trimmed = text.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     /** 加工单（同租户 + 未软删）；不可用 ⇒ {@code null}。 */
-    private ProcessingOrder aliveProcessingOrder(String processingOrderId, Long tenantId) {
-        if (!StringUtils.hasText(processingOrderId)) {
+    private ProcessingOrder aliveProcessingOrder(String processingOrderId, Long tenantId) {        if (!StringUtils.hasText(processingOrderId)) {
             return null;
         }
         ProcessingOrder po = processingOrderMapper.selectById(processingOrderId);
