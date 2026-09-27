@@ -319,14 +319,18 @@ public class RoleService {
     /**
      * 根据角色代码获取权限码列表（直接返回字符串，不依赖 DB 查询）
      *
-     * <p>🔴 <b>不变量（issue #5683）</b>：本方法对某个角色码返回的集合，必须与种子矩阵
-     * {@code RegistrationService.initializeDefaultRolesAndPermissions} 里**同一角色码**的默认权限
-     * <b>逐值相等</b> —— 否则同一个岗位会长出两种行为：<b>有权限快照 / 有岗位权限行的账号</b>
-     * （走种子）与<b>无快照的历史账号</b>（走本回退）看得见 / 做得到的事不一样，显形为
-     * <b>真实 403</b> 与<b>菜单凭空消失</b>。历史上这里靠**注释**声明「逐值同步」，已因此分叉两轮
-     * （issue #5246、#5291）⇒ 现由机械判据守住：
-     * 判据 14 在 {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 里**逐角色码穷举**
-     * 对照两处，任何差异都必须具名登记在只许缩短的台账里（未登记即红、差异消失而条目还在也红）。</p>
+     * <p>🔴 <b>与种子矩阵的关系（issue #5683：两条机械约束）</b>：本方法对某个角色码返回的集合与
+     * {@code RegistrationService.initializeDefaultRolesAndPermissions} 的同一角色码之间的关系，由
+     * 判据 14 在 {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 里**逐角色码穷举**守住 ——
+     * ① <b>本方法不得比种子更宽</b>（多出种子没有的码 = 绕过岗位权限页的放宽，<b>无登记出口</b>）；
+     * ② 两处的<b>逐值差异必须具名登记</b>在只许缩短的台账 {@code ROLE_FALLBACK_DIVERGENCES} 里
+     * （未登记即红、差异变了即红、差异消失而条目还在也红）。</p>
+     *
+     * <p>⚠️ 差异<b>是否应当存在</b>是一次<b>授权决定</b>（改本表 = 改「无权限快照的历史账号」的可见面 /
+     * 可做面），判据不替人做这个决定。issue #5683 之前，{@code operator} 的 4 码差距登记在
+     * {@code backend/ai-agent-service/tests/test_tool_permission_codes.py} 的那条绊线
+     * （{@code test_operator_seed_is_a_superset_of_the_hardcoded_fallback}，断言 {@code fallback < seeded}）里；
+     * 本单按用户批准的「补码」把回退补齐到与种子一致。</p>
      *
      * <p>⚠️ 本方法<b>只做计算、不写库</b>（回退路径不落 {@code role_permissions}）⇒ 改它只影响
      * 「无权限快照 / 无岗位权限行」的那些历史账号，<b>不动任何已存的授予行</b>。</p>
@@ -339,17 +343,19 @@ public class RoleService {
                     "order:list", "order:detail", "order:refund",
                     "product:list", "product:create", "product:category", "product:category:view",
                     "processing:manage", "production:view",
-                    // issue #5683：补齐 4 个码，让回退**追上**种子矩阵 —— 此前 operator 在回退里少这 4 个码，
-                    // 无快照的历史运营账号因此：「智能派单」菜单看得见、点进去 403（本页第一屏读端点要
-                    // `processing:view`，而它持的是节点码 `processing:manage`）、「入库单」菜单凭空消失
-                    //（该节点码就是 `inbound:view`）、改不了加工单、建不了入库单。
+                    // issue #5683（**授权变更**，用户逐字批准「补码」）：把 operator 的回退**补齐到与种子
+                    // 一致** —— 此前回退比种子少这 4 个码（该差距登记在
+                    // backend/ai-agent-service/tests/test_tool_permission_codes.py 的那条绊线里，
+                    // **不是**无人知道的疏漏）。补齐后，无快照的历史运营账号：「智能派单」不再「菜单看得见、
+                    // 点进去 403」（本页第一屏读端点要 `processing:view`，而它持的节点码是 `processing:manage`）、
+                    // 「入库单」菜单不再凭空消失（该节点码就是 `inbound:view`）、改得了加工单、建得了入库单。
                     // ⚠️ 只动本回退表：节点码（`frontend/admin-web/src/config/menu.ts`）与前端路由守卫
                     // 都**不需要**动 —— 受害者持管理码，守卫本来就过，403 来自 API 缺读码。
                     // ⚠️ issue #5291 那处注释曾逐字声称「与种子矩阵逐值同步」而实际少码：改注释无用，
                     // 值级不变量由上面 javadoc 点名的判据 14 机械守住。
                     "processing:view", "processing:update", "inbound:view", "inbound:create",
-                    // issue #5291：两个域读码 —— 回退路径（无 role_permissions 记录）若不跟上，
-                    // 「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
+                    // issue #5291：两个域读码与种子矩阵逐值同步 —— 回退路径（无 role_permissions 记录）
+                    // 若不跟上，「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
                     "customer:view",
                     "finance:view",
                     "agent:session",
@@ -364,8 +370,10 @@ public class RoleService {
                     // finance 与 customer_service **没有**硬编码回退（落 default ⇒ 空表），
                     // 故本单对这两个岗位的写码只在种子矩阵与 V124 迁移里落地（如实登记，非静默遗漏）。
                     // 🔴 这条「空表」是 issue #5683 的**在册未决项**：种子给客服/销售/财务都授了码，
-                    // 而回退给它们空表 ⇒ 那些历史账号**零权限**。补它们 = 又一次授权放宽，超出
-                    // #5683 已批准范围 ⇒ 只量化 + 提请裁定，**有意留空**（由判据 14 的差异台账具名登记）。
+                    // 而回退给它们空表 ⇒ 那些历史账号**零权限**（连「经营看板」都看不见）。
+                    // ⚠️ 上面那句**只点名了 finance 与 customer_service** —— `sales` 从未被登记
+                    // （#5683 全仓核对的结论，如实记在此处）。补它们 = 又一次授权放宽，超出 #5683
+                    // 已批准范围 ⇒ 只量化 + 提请裁定，**有意留空**（由判据 14 的差异台账具名登记，三条）。
                     "order:update", "order:create", "customer:create", "finance:create",
                     "agent:session:manage"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）

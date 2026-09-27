@@ -49,10 +49,9 @@
    `UNANNOTATED_ENDPOINTS` 的某条已登记口径；登记项不得陈旧。同理 `REGISTERED_RESIDUALS`
    逐条登记**已知但本单不修**的残留（带理由 + 去向）。
 9. **解析器自检（防恒绿空跑）**：注解条数守恒 / 两处权限目录逐值相等 / 回退里的角色必须是种子岗位
-   或已登记的历史角色 / 菜单码 ∈ 权限目录 / 各集合非空。⚠️ **岗位默认权限的「值级不变量」已迁到
-   判据 14**（issue #5683）：早先这里持一张**手工维护的 5 个读码白名单**（`SEED_PARITY_READ_CODES`），
-   而它漏掉的那 4 个码正是当时已经分叉的那 4 个 ⇒ 清单式判据本身就是缺陷形态，故删除、改为
-   逐角色码**穷举**对照。
+   或已登记的历史角色 / 菜单码 ∈ 权限目录 / 各集合非空。⚠️ **岗位默认权限的值级判据已迁到判据 14**
+   （issue #5683）：早先这里另持一张**手工维护的 5 个读码白名单**（`SEED_PARITY_READ_CODES`，只在
+   两处都定义该角色时判这 5 个码）—— 覆盖有洞且靠人维护，故删除，改为逐角色码**穷举**。
 10. **三个域的读码「四面锚定」**（issue #5291 收口）：新增的读码在**目录 / 承载工具 / 菜单节点 /
     端点 / 岗位**五处逐面登记（`READ_CODE_ANCHORS`），任一面掉码都红 —— 含「把读码从菜单源删掉」
     与「只读工具退回管理码」两种回归形态。**例外表缩小≠判据失去判别力**：该条与判据 5 的台账
@@ -881,11 +880,10 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
 
 #: `RoleService.getPermissionCodesForRole` 里**有意保留**的历史角色（admin-api 无角色行/无种子）：
 #: 它们是存量库里的岗位码，回退表保住兼容；新增任何角色都必须先落进种子矩阵，否则判据 9 红。
-#: ⚠️ **`SEED_PARITY_READ_CODES` 已删**（issue #5683）：它是一张**手工维护的 5 个码**的白名单，
-#: 而它漏掉的那 4 个码（`processing:view` / `processing:update` / `inbound:view` / `inbound:create`）
-#: **正是当时已经分叉**的那 4 个 —— 清单式判据本身就是这个缺陷的形态（人会忘记往清单里加码）。
-#: 值级不变量改由**判据 14**（`problems_role_default_parity`）承担：逐角色码**穷举**对照两处，
-#: 差异必须具名登记在只许缩短的 `ROLE_FALLBACK_DIVERGENCES` 里 —— 严格强于那张清单，且无需人维护。
+#: ⚠️ **`SEED_PARITY_READ_CODES` 已删**（issue #5683）：它是一张**手工维护的 5 个码**白名单，只在
+#: 「种子与回退都定义了该角色」时判这 5 个码两面一致 —— 覆盖面上有两个洞：① 只管 5 个码，其余码
+#: 漂移看不见；② 手工清单靠人记得往里加码。⇒ 换由**判据 14**（`problems_role_default_parity`）
+#: **逐角色码穷举**承担（`回退 ⊆ 种子` 无条件 + 差异具名登记、只许缩短），无需人维护。
 
 LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {
     "product_manager": "POC 期的历史岗位码（`mibao.py` 的 `allowed_roles` 仍在用）：无 roles 行，只有回退表口径",
@@ -1464,9 +1462,9 @@ def problems_self_checks(w: World) -> list[str]:
             "存量租户的岗位权限页会缺码/多码"
         )
     # ③ 回退里的角色必须是种子岗位或已登记的历史角色。
-    #    🔴 **值级不变量不在这里**（issue #5683）：岗位默认权限「两处逐值相等」由判据 14
-    #    （`problems_role_default_parity`）**穷举**承担 —— 本段此前各持一份 5 码白名单，
-    #    而它漏掉的 4 个码正是当时已经分叉的那 4 个；两套真值源必然分叉，故只留一处。
+    #    🔴 **值级判据不在这里**（issue #5683）：`回退 ⊆ 种子` 与「两处差异具名登记、只许缩短」由
+    #    判据 14（`problems_role_default_parity`）**逐角色码穷举**承担 —— 本段此前另持一张 5 码
+    #    白名单（覆盖面有洞且靠人维护）；两套真值源必然分叉，故只留一处。
     for role in sorted(w.role_fallback):
         if role in w.roles:
             continue
@@ -2544,16 +2542,35 @@ def problems_comment_claims(w: World) -> list[str]:
 # 判据 14 的专属面：**同一岗位默认权限写在两处** ⇒ 逐值不变量 + 授权变更 census（issue #5683）
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# 病根（**类级**，不是一个实例）：同一个岗位的默认权限被写在**两处** ——
+# 同一个岗位的默认权限被写在**两处** ——
 #   ① 种子矩阵 `RegistrationService.initializeDefaultRolesAndPermissions`（新租户建租户时写
-#      `role_permissions`）；
+#      `role_permissions`；镜像 / 存量口径取它）；
 #   ② 回退 switch `RoleService.getPermissionCodesForRole`（无 `role_permissions` 记录的历史账号走它）。
-# 两处**靠注释维持同步**，而注释不会被任何判据读 ⇒ 历史上已分叉**两轮**（issue #5246、#5291），
-# 到 issue #5683 实测 `operator` 在回退里**少 4 个码**（`processing:view` / `processing:update` /
-# `inbound:view` / `inbound:create`），显形形态是**真实 403** 与**菜单凭空消失**。
-# ⚠️ 分叉当时，那处注释逐字写着「与种子矩阵逐值同步」—— 这正是本仓反复出现的缺陷类：
-# **判据读到的文本与它声称的对象不是同一个**（把注释当声明读）。
-# ⇒ 本判据把那句话变成**机器可读的不变量**：两处对同一角色码**逐值相等**，未登记差异即红。
+#
+# 🔴 **本判据的口径**：它**不**主张「两处必须逐值相等」—— 「差异是否应当存在」是一次**授权决定**
+# （改回退 = 改这批历史账号的可见面 / 可做面），判据不能替人做。它主张的是两条**可机械判**的：
+#   ① **回退不得比种子更宽**：`回退 − 种子` 非空 ⇒ **无条件红**（**无登记出口**）—— 那是「绕过岗位
+#      权限页」的真放宽形态，任何理由都不成立；
+#   ② **差异必须具名登记、且只许缩短**：`种子 − 回退` 的**逐值差异集**必须与
+#      `ROLE_FALLBACK_DIVERGENCES` 里那一条登记**逐值相同**（未登记 ⇒ 红；差异变了 ⇒ 红；差异消失
+#      而条目还在 ⇒ 红）⇒「差异悄悄变大」与「悄悄缩小却不销账」都不许静默。
+#
+# ⚠️ **更正留痕（issue #5683 的第一版前提有误，此处如实记录、不抹掉）**：第一版把这处差异写成
+# 「两处靠注释声称同步、已分叉而未登记」。**该前提是错的** ——
+#   · issue #5291 那处注释说的是「**两个域读码**与种子矩阵逐值同步」（`product:category:view` /
+#     `production:view`，二者确实都在回退里），是一句**窄话**，被读成了「全面声明」；
+#   · `operator` 的那 4 码差距**此前已经被登记**：见
+#     `backend/ai-agent-service/tests/test_tool_permission_codes.py` 的
+#     `TestRoleMirrorGuardIsNotVacuous.test_operator_seed_is_a_superset_of_the_hardcoded_fallback`
+#     （docstring 逐字「**登记的现实差异**：seed（25 码）⊃ 回退（21 码…）」，断言 `fallback < seeded`）。
+# ⇒ 本判据的价值不在「发现分叉」，而在把那条**只覆盖 operator、只写在一处测试里**的登记，变成
+# **逐角色码穷举 + 只许缩短 + 带授权变更 census** 的常驻台账（② 段）。
+# 🔴 **那条既有绊线的处置（人类 2026-09-27 裁定，已落地）**：「仍然补码，并同批把那条绊线由 `⊂`
+# 放宽为 `⊆`」—— 理由 = 它的自述目的（「防『回退悄悄比 seed 更宽』被当成等价」）由 `⊆` 就**完整**
+# 满足，写 `⊂` 多禁了一个方向（禁止两处相等）⇒ 属「**意图较宽、实现更严**」形态。该改写**只放宽
+# 这一个方向**，并带三条红证/阴性对照（`test_the_subset_tripwire_is_still_a_tripwire`：
+# 更宽 ⇒ 红 / 相等 ⇒ 不红 / 更窄不由它拦）。本判据与它是**分工**：那条只判「不得更宽」，
+# 本判据判「差异具名登记 + 只许缩短 + 授权变更 census」。
 #
 # 🔴 **明确的边界（不要把本判据读成覆盖面更大）** —— 不登记的限制就是未来的空断言：
 #   ① **只覆盖「两处都有定义」的角色码**。历史遗留岗位（`LEGACY_ROLES_IN_FALLBACK` 里的
@@ -2750,9 +2767,11 @@ def problems_role_default_parity(w: World) -> list[str]:
     """判据 14：**同一岗位默认权限写在两处** ⇒ 逐值不变量 + 授权变更 census（issue #5683）。
 
     两段（缺任何一段这条判据都有一个漏网形态）：
-      ① **不变量**：对**每一个**种子角色码，`种子[role]` 与 `回退[role]` 逐值相等；不等必须具名
-         登记在 `ROLE_FALLBACK_DIVERGENCES`（台账只许缩短：多一个 / 少一个 / 差异消失而条目还在
-         ⇒ 都红；`extra` 非空 ⇒ **无条件红**，不提供登记出口）。
+      ① **⊆ 不变量 + 差异登记**：对**每一个**种子角色码（**穷举**，不只 `operator`）——
+         `extra`（回退有、种子无）非空 ⇒ **无条件红**（真放宽，不提供登记出口）；
+         `missing`（种子有、回退无）非空 ⇒ 必须与 `ROLE_FALLBACK_DIVERGENCES` 的登记**逐值相同**
+         （未登记 / 差异变了 / 差异消失而条目还在 ⇒ 都红；条数上限只许缩短）。
+         🔴 本段**不要求**两处逐值相等 —— 差异是否应存在是**授权决定**（见上方「更正留痕」）。
       ② **授权变更 census**：本单**新增**的每个码必须逐条给出「哪些端点 / 菜单节点 / Agent 工具
          因此变为可达」，且登记与代码**逐值相符**（少列一个新增码 ⇒ 红；列了没真加上去的码 ⇒ 红；
          列的端点生效码不是本码 ⇒ 红）。
@@ -3752,6 +3771,47 @@ def test_read_parity_victims_ack_is_load_bearing(monkeypatch) -> None:
         assert any("403 受害者" in h and victim in h for h in hits), (
             f"把 `processing:view` 收回后 `{victim}` 未被判为 403 受害者 ⇒ 「销账」可以只是"
             f"把那段文字删掉（清空但权限没补必须红）（hits={hits}）")
+
+
+def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:
+    """差异台账**是承载字段**（判据 14 ①，issue #5683）—— 三条红证 + 一条对照组。
+
+    台账若只是一张没人读的登记表，「只许缩短」就只是纪律。四段：
+      ① **对照组**：现取差异集与登记**逐值相同** ⇒ 全绿；
+      ② **新增未登记差异**（从回退删一个码）⇒ 必须红（差异悄悄变大不许静默）；
+      ③ **陈旧条目**（差异已消失而登记还在）⇒ 必须红（**销账是必须动作，不是可选**）；
+      ④ **台账变长**超上限 ⇒ 必须红（「新增一条差异登记一下就能过关」不成立）。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    w = world()
+    assert not problems_role_default_parity(w), "对照组：当前树判据 14 全绿"
+
+    # ② 新增未登记差异：从回退里删掉一个码
+    src = _source_map()
+    key = "java:service/RoleService.java"
+    src[key] = _drop_fallback_code(src[key], "operator", "processing:view")
+    hits = problems_role_default_parity(build_world(src))
+    assert any("已经分叉" in h and "processing:view" in h for h in hits), (
+        f"回退少一个码却没被判「未登记分叉」⇒ 台账不是承载字段（hits={hits}）")
+
+    # ③ 陈旧条目：给一个**已无差异**的角色码插一条登记
+    stale = dict(ROLE_FALLBACK_DIVERGENCES)
+    stale["operator"] = RoleFallbackDivergence(
+        missing=frozenset({"ghost:code"}), extra=frozenset(),
+        reason="红证夹具：该差异并不存在", owner="红证夹具", issue="#5683")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", stale)
+    hits = problems_role_default_parity(w)
+    assert any("不再有差异" in h or "与**现取**不符" in h for h in hits), (
+        f"差异已消失而条目还在、判据没红 ⇒ 陈旧条目会替下一次真分叉放行（hits={hits}）")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", ROLE_FALLBACK_DIVERGENCES)
+
+    # ④ 台账只许缩短：把上限压到现取条数之下 ⇒ 红
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCE_CEILING",
+                        len(ROLE_FALLBACK_DIVERGENCES) - 1)
+    hits = problems_role_default_parity(w)
+    assert any("又长回来了" in h for h in hits), (
+        f"台账超过只许缩短的上限却没红 ⇒ 「只许缩短」是空断言（hits={hits}）")
 
 
 def test_every_judgement_can_go_red() -> None:

@@ -746,7 +746,7 @@ cases:
 
   - id: HR-011
     legacy_id: ""
-    title: "岗位默认权限两处定义逐值一致 - 回退路径（无权限快照的历史账号）与种子矩阵同权（issue #5683）"
+    title: "回退路径岗位默认权限对齐种子矩阵 + 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683）"
     domains:
       - hr
       - backend
@@ -764,18 +764,20 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·🔴 **两处逐值相等**：回退集合（无 role_permissions 记录 / 无权限快照时运行时取到的集合）必须与种子矩阵（RegistrationService.initializeDefaultRolesAndPermissions 的 attachDefaultPermissions）对同一角色码**逐值相等**，逐码点名而非以集合大小充数。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java 的 fallbackOperator_MatchesSeedMatrixExactly（containsExactlyInAnyOrder = 多一个/少一个都红）+ tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14（problems_role_default_parity，逐角色码穷举对照两处源码）。红证（实测）：从回退里删 processing:view ⇒ 判据 14 具名红；从种子里删 processing:view ⇒ 判据 14 具名红（回退多出种子没有的码）；往回退里加一个种子没有的码 ⇒ 判据 14 具名红。"
-      - "判据 2·🔴 **零 403 受害者**：持「智能派单」节点码 processing:manage 的岗位必须同时持该页第一屏读端点码 GET /api/admin/production/pool 的 processing:view ⇒ 「菜单看得见、点进去 403」不再成立。执行点 = 同判据 14 的姊妹段：test_agent_permission_parity.py 的 problems_menu_read_parity 第 ④ 段（零 403 受害者逐岗位复算）。红证（实测）：把补上的 processing:view 从回退收回（同时把残留台账的 victims_ack 清空）⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。"
-      - "判据 3·**回退不得含种子没有的码**（真放宽）：回归形状 = 有人往 switch 里加一个权限目录里没有的码 ⇒ 判据 14 无条件红（该形态**不提供登记出口**）。"
-      - "判据 4·**差异只许缩短**：种子与回退之间仍存的差异（客服/销售/财务在回退 switch 里没有 case ⇒ 落 default ⇒ 空表 ⇒ 历史账号零权限）必须在只许缩短的台账 ROLE_FALLBACK_DIVERGENCES 里具名登记（差异集逐值冻结、差异消失而条目还在也红）。补这三个岗位属于**超出 #5683 已批准范围**的授权放宽 ⇒ 本单只量化、提请人类裁定。"
-      - "判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。执行点 = test_agent_permission_parity.py 的 AUTHORIZATION_CENSUS + problems_role_default_parity 第 ② 段。红证（实测）：删掉 census 的 processing:view 条 ⇒ 具名红。"
-      - "判据 6·**不动任何已存授予行**：本不变量的修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子的既有条目。"
-    skip_reason: "[backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14），无 LLM 环节，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5683）：岗位默认权限写在两处（种子矩阵 vs 硬编码回退）且已分叉 —— operator 在回退里少 4 个码（processing:view / processing:update / inbound:view / inbound:create），显形为真实 403（智能派单第一屏）与菜单凭空消失（入库单节点码即 inbound:view）。本用例把「逐值相等」立成常驻不变量 + 只许缩短的差异台账 + 授权变更 census。"
+      - "判据 1·🔴 **回退不得比种子更宽**（逐角色码穷举，不只 operator）：`回退 − 种子` 非空 ⇒ 无条件红，且**不提供登记出口**（那是绕过岗位权限页的真放宽）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14（problems_role_default_parity ① 段）。红证（实测）：往回退里加一个种子没有的码 ⇒ 具名红。"
+      - "判据 2·🔴 **两处逐值差异必须具名登记、且只许缩短**：`种子 − 回退` 的逐值差异集必须与只许缩短的台账 ROLE_FALLBACK_DIVERGENCES 里那一条逐值相同（未登记 ⇒ 红；差异变了 ⇒ 红；差异消失而条目还在 ⇒ 红；条数超上限 ⇒ 红）。🔴 本判据**不主张**「两处必须逐值相等」—— 差异是否应存在是**授权决定**。执行点 = 判据 14 ① 段 + test_role_fallback_divergence_ledger_is_load_bearing（三条红证 + 对照组）。"
+      - "判据 3·🔴 **零 403 受害者**：持「智能派单」节点码 processing:manage 的岗位必须同时持该页第一屏读端点码 GET /api/admin/production/pool 的 processing:view ⇒ 「菜单看得见、点进去 403」不再成立。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的 problems_menu_read_parity 第 ④ 段（零 403 受害者逐岗位复算）。红证（实测）：把 processing:view 从回退收回 + 把该路径的 victims_ack 置空 ⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。"
+      - "判据 4·**回退路径的行为面可判**（不靠读代码推断）：直接调用真实服务的 getEffectivePermissionCodesForRoleCode(role, null)（= 纯回退路径）与 getUserPermissions（无 user_roles 的历史账号路径），把实际取到的集合逐码点名。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java（operator 逐码点名 containsExactlyInAnyOrder，不以集合大小充数）。"
+      - "判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。执行点 = 判据 14 ② 段 + AUTHORIZATION_CENSUS。红证（实测）：删掉 census 的 processing:view 条 ⇒ 具名红。"
+      - "判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 ROLE_PERMISSIONS 对 product_manager 补 processing:view，使「镜像 ⊇ 回退」重新成立；且**对工具层授权零影响**（TOOL_PERMISSION_CODES 里没有任何工具要求 processing:view）。同一文件的那条绊线由「真子集」放宽为「子集」并带三条红证（更宽 ⇒ 红 / 相等 ⇒ 不红 / 更窄不由它拦）。"
+      - "判据 7·**不动任何已存授予行**：修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子的既有条目。"
+    skip_reason: "[backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14 + 工具层镜像判据 backend/ai-agent-service/tests/test_tool_permission_codes.py），无 LLM 环节，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #5683）：回退路径（无 role_permissions 记录 / 无 users.permissions 快照的历史账号）的岗位默认权限与种子矩阵之间的差异此前**已登记**在一处测试里（ai-agent-service 的镜像绊线，断言回退真子集于 seed），但覆盖只到 operator、且没有「差异台账只许缩短」这一层。本单经人类裁定把 operator 的回退补齐到与种子一致（= 改一个已登记的设计决定，不是修疏漏），并同批：① 把那条绊线由真子集放宽为子集（带三条红证）；② 立判据 14（回退 ⊆ 种子 逐角色码穷举 + 差异具名登记、只许缩短 + 授权变更 census）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java"
         - "tests/unit_ci_workflows/test_agent_permission_parity.py"
+        - "backend/ai-agent-service/tests/test_tool_permission_codes.py"
       ci:
         - pr-check.yml
       verifies: []

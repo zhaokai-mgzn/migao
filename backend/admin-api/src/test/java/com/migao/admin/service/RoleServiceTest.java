@@ -59,11 +59,14 @@ class RoleServiceTest {
     /**
      * 回退路径上 {@code operator} **应当**取到的全部权限码（= 种子矩阵的 operator 默认权限，逐码点名）。
      *
-     * <p>🔴 issue #5683：「种子矩阵 ↔ 硬编码回退**逐值相等**」是硬不变量 —— 否则同一个岗位会长出
-     * 两种行为：有权限快照的账号（走种子）与无快照的历史账号（走本回退）看到/能做到的事不一样，
-     * 显形为**真实 403** 与**菜单凭空消失**。本清单是它的**行为面**判据（走真实服务，不靠读代码
-     * 推断）；静态面（两处源码逐角色码穷举对照 + 授权变更 census）在
-     * {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 的判据 14。两层互相独立。</p>
+     * <p>🔴 issue #5683：回退路径（无 {@code role_permissions} 记录 / 无 {@code users.permissions}
+     * 快照）上的账号**实际取到的权限集合**必须可判、且与种子矩阵对齐 —— 否则同一个岗位会长出两种行为
+     * （有快照的账号走种子、无快照的历史账号走本回退），显形为**真实 403** 与**菜单凭空消失**。
+     * 本清单是它的**行为面**判据（走真实服务，不靠读代码推断）；静态面
+     * （{@code 回退 ⊆ 种子} 逐角色码穷举 + 差异具名登记、只许缩短 + 授权变更 census）在
+     * {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 的判据 14。两层互相独立。
+     * ⚠️ 判据 14 **不主张**「两处必须逐值相等」—— 差异是否应存在是**授权决定**；本清单钉的是
+     * #5683 这次**已批准**的取值。</p>
      */
     private static final List<String> OPERATOR_FALLBACK_SEED_PARITY = List.of(
             "dashboard:view",
@@ -698,7 +701,7 @@ class RoleServiceTest {
     // 的权限集合逐码点名钉住（`tenantId = null` ⇒ 跳过角色行查询 ⇒ 走的正是运行时那条回退）。
 
     @Test
-    @DisplayName("回退路径: operator 取到的权限集合 == 种子矩阵（#5683 逐码点名，不以集合大小充数）")
+    @DisplayName("回退路径: operator 取到的权限集合（#5683 已批准的取值，逐码点名，不以集合大小充数）")
     void fallbackOperator_MatchesSeedMatrixExactly() {
         // when：tenantId=null ⇒ 不查角色行 ⇒ 纯回退路径（运行时路径 (b)/(c) 的同一份实现）
         List<String> result = roleService.getEffectivePermissionCodesForRoleCode("operator", null);
