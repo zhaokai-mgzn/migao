@@ -1,0 +1,119 @@
+{
+  "schema": "schedule-scope-ledger/v1",
+  "what": "仓库根 `AGENTS.md` **铁律 10** 的机械承载体：全仓「谁有 `on.schedule`」的**存量冻结清单** + 「新增 `schedule` 的**具名窄例外**」登记表。判据 = `tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py`。🔴 本表回答的**唯一**问题是「这条周期面**凭什么**获准存在」——它**不是**「哪些 workflow 重要」的排行榜，也**不重判**「兜底面是否在位」（那是 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` / MC-039 的射程；两表互为**不同**事实，不互为副本，也不互相盖章）。",
+  "why": "铁律 10 原本逐字写着「⛔ 不新增 schedule/cron（2026-09-21 裁定：无人值守删除不安全）」，而 **2026-09-27 用户把它的适用范围收窄到「无人值守删除 / 破坏性动作」**（同日 PR #5731 已给两条发布腿落了每日 cron）。规则与事实必须一致，但**规则不许只活在散文里** —— 否则下一个人要么照旧规则办（挡住合法工作），要么整条铁律被无视（规则侵蚀）。⇒ 本表把「**新增** `schedule` 必须具名 + 带**非破坏性证据锚**」变成会变红的东西：**未登记即红**。",
+  "baseline_note": "`baseline` = **先于这次收窄就已存在**的 14 条周期面（现取 2026-09-27 全仓 16 个带 `on.schedule` 的 workflow，去掉下面 `exceptions` 的 2 条具名实例）。🔴 本判据**不为它们的安全性背书** —— 它们只是「冻结快照」，其中 `stale.yml`（自动关单）/ `close-linked-issues.yml`（合并后关单）这类**本来就带无人值守写动作**，它们的**存在**由 2026-09-21 之前的既有事实承担，**不在**本表的裁决范围内（这一条作为覆盖边界第 5 条登记）。本表只裁「**新增**面」。",
+  "baseline_frozen": 14,
+  "baseline_frozen_note": "条数**只许缩短**，且判据侧另有 `BASELINE_COUNT_MAX` 与冻结元组 `BASELINE_FILES_FROZEN` ⇒ 「缩短」= 三处各删一条（条数自然下降）；「增长」= 三处同时改且数字变大（diff 里看得见，且**新增面本来就不许走 `baseline`**，见判据 2/4）。",
+  "baseline": [
+    "automerge.yml",
+    "close-linked-issues.yml",
+    "deploy-admin-api.yml",
+    "deploy-ai-agent-service.yml",
+    "deploy-frontend.yml",
+    "deploy-reconcile.yml",
+    "drift-audit.yml",
+    "fixture-record.yml",
+    "flaky-ledger-reconcile.yml",
+    "main-freshness-guard.yml",
+    "mechanism-liveness.yml",
+    "post-merge-verify.yml",
+    "redproof-sweep.yml",
+    "stale.yml"
+  ],
+  "exceptions": [
+    {
+      "file": "worker-h5-publish.yml",
+      "kind": "republish",
+      "cron": "23 18 * * *",
+      "pr": 5731,
+      "date": "2026-09-27",
+      "approved_by": "用户",
+      "why": "发布腿的**兜底触发面**（`FM-E17` 收口，issue #5707；用户 2026-09-27 逐字裁定 = 方案 A）。**为什么不是「无人值守删除」**：这条腿走的是**重发布**路径 —— 远端执行体只清空/覆盖**它自己的子目录**（`<静态根>/w/`），对静态根**不做** `--delete`/清空/`rm -rf`，且每次发布都在输出里留「父目录 `index.html` 哈希前后一致」的自证（不一致 ⇒ die）。四条判据逐条对应下面的三个锚 + `declared_in_pr`。",
+      "conditions": {
+        "1_non_destructive": "远端执行体的目标守卫 `assert_target_safe()` 拒绝「目标 == 静态根」，唯一允许的清理落在 `purge_target()` 里，且它被两条独立判据重复把关（目标非空 / 目标 != 静态根 / 目标在静态根之下）",
+        "2_idempotent": "先把目标子树收敛为空再整份 `cp -R` 拷入 ⇒ 同一输入连跑两次结果逐字节一致（脚本头部逐字写着该口径）",
+        "3_failure_visible": "发布后跑身份断言脚本：线上字节 != 本仓库产物 / 不是工人端 H5 ⇒ 该步判红（不是「200 就过」）；另有 `scripts/drift_audit.py::check_heartbeat()` 的停摆心跳兜底（阈值 3 天，🔴 但 `Drift Audit` 不在 required 集合 ⇒ **非阻断**，见覆盖边界第 3 条）",
+        "4_declared": "本 PR（#5731）在 PR body 里显式声明了「这是新增 schedule」并给出四条判据；本表的 `declared_in_pr` 登记该 PR。🔴 「PR body 里写了没有」判据读不到（纯静态、零网络）⇒ 覆盖边界第 4 条"
+      },
+      "non_destructive_anchor": "deploy/swas/h5-publish-remote.sh::purge_target",
+      "idempotency_anchor": "deploy/swas/h5-publish-remote.sh::幂等：连跑两次结果逐字节一致",
+      "self_proof_anchor": "deploy/swas/h5-publish-remote.sh::PARENT_INDEX_BEFORE_SHA256",
+      "declared_in_pr": 5731,
+      "identity_assertion": "deploy/scripts/worker-h5-verify-served.sh（发布后身份断言：线上确实是工人端 H5，而不是「200 就过」）"
+    },
+    {
+      "file": "bmini-h5-publish.yml",
+      "kind": "republish",
+      "cron": "43 18 * * *",
+      "pr": 5731,
+      "date": "2026-09-27",
+      "approved_by": "用户",
+      "why": "同 `worker-h5-publish.yml`（商家端 h5 → 同静态根下的 `<静态根>/b/`）：同样是**重发布**而非删除，且**红线条数更多**（除目标守卫外还有「产物必须落在自己的命名空间里」的 `assert_product_scoped()`，逃出 `/<子目录>/` 前缀 ⇒ 在写入目标**之前**拒绝发布）。",
+      "conditions": {
+        "1_non_destructive": "同 `worker-h5`：`assert_target_safe()` + `purge_target()` 两条独立判据把关，清理只落在 `<静态根>/b/` 子树",
+        "2_idempotent": "同口径：先清空目标子树，再整份拷入 ⇒ 连跑两次逐字节一致",
+        "3_failure_visible": "发布后 `deploy/scripts/bmini-h5-verify-served.sh` 逐条判：线上字节 == 本次构建产物 / `/b/<子路由>` 不串端 / 根仍是 C 端 / worker-h5 零回归；失败即该步判红",
+        "4_declared": "同 PR #5731（PR body 显式声明 + 本表登记）"
+      },
+      "non_destructive_anchor": "deploy/swas/bmini-h5-publish-remote.sh::purge_target",
+      "idempotency_anchor": "deploy/swas/bmini-h5-publish-remote.sh::幂等：连跑两次结果逐字节一致",
+      "self_proof_anchor": "deploy/swas/bmini-h5-publish-remote.sh::PARENT_INDEX_BEFORE_SHA256",
+      "declared_in_pr": 5731,
+      "identity_assertion": "deploy/scripts/bmini-h5-verify-served.sh（发布后身份 + 不串端断言）"
+    }
+  ],
+  "pending_note": "🔴 `pending` = **在飞**具名实例（文件还没进 main）—— 它**不构成登记**（**不**满足「未登记即红」的出口），只是把跨包交接**落成远端可复原形式**（铁律 12(c)：不许只活在会话上下文里）。它受两条判据：① `pending[].pr` **也必须**在 `AGENTS.md` 铁律 10 的「📌 已批准具名实例」行上具名（规则正文与台账不许脱钩）；② 🔴 **一落地就必须升格** —— `pending[].file` 一旦在现取语料里出现 `on.schedule`，它**必须**移到 `exceptions` 并补齐三个证据锚，否则判红（`pending` 不许变成「永远的在飞」）。",
+  "pending": [
+    {
+      "file": "c-end-h5-publish.yml",
+      "pr": 5733,
+      "cron": "53 18 * * *",
+      "kind": "readonly_heartbeat",
+      "why": "C 端 H5 发布腿（`frontend/mini-app` 的 `build:h5` 产物 → `app.migaozn.com` **静态根本身** `/`）的**兜底触发面**（`FM-E17` 口径，与上面两条同源）。🔴 **它与上面两条不同**：这条 cron **只报告、绝不写盘** —— 该腿是**显式两态**（`notify` 只报告线上是否落后 / `publish` 才真的发布），而进入 `publish` 档的 `if` **要求 `workflow_dispatch` + 显式 `publish=true`**（用户 2026-09-27 裁定 B：**首次发布由人手动触发**）⇒ 周期档落在 `notify` 上，**这是「只读心跳」类的最强形态**（`kind=readonly_heartbeat`）。⇒ 它是本窄例外条款由**实例校准**出来的加强形态：**周期档自身不得是写盘档**。",
+      "on_merge": "PR #5733 合并后：把本项从 `pending` 移入 `exceptions`，并把 `non_destructive_anchor` / `idempotency_anchor` / `self_proof_anchor` 补成该腿**自己**的三个锚（远端执行体 `deploy/swas/c-end-h5-publish-remote.sh` 的目标守卫 + 幂等口径 + 自证输出），**不许**复用上面两条腿的锚（判据 6 的 `锚不唯一` 会判红）。"
+    }
+  ],
+  "coverage_boundary": [
+    {
+      "face": "「远端执行体到底删不删」是**运行期**事实 —— 判据只核「证据锚可解析」",
+      "reason": "判据是**纯静态**的（只读仓内文件、零网络、零时钟）⇒ 它核的是「`non_destructive_anchor` 指向的那个判定点**在仓里真实存在、且没被删光**」，**判不了**「远端那一份字节与本仓同一」、也判不了「运行时真的走了那条路」。远端脚本是被拼进云助手 RunCommand 执行的（不是本机进程）⇒ 这一层只能由发布腿自己的运行期自证承接（`PARENT_INDEX_*_SHA256` 不一致即 die、`PUBLISHED_INDEX_SHA256` 与身份断言）。",
+      "recompute": "sed -n '/^assert_target_safe/,/^}/p;/^purge_target/,/^}/p' 'deploy/swas/h5-publish-remote.sh'  # 读那个判定点本身；运行期读数看该次发布 run 的日志"
+    },
+    {
+      "face": "「幂等」判不了实跑（只核幂等声明的锚）",
+      "reason": "判据核的是「脚本头部那句幂等口径还在」+「锚指向的文件存在」⇒ 它不能证明「连跑两次真的逐字节一致」。行为级红证在别处（`tests/unit_ci_workflows/test_worker_h5_hosting.py` 用沙箱静态根实跑），本判据**不重复那份实现**（另造第二套 = 双真相源）。",
+      "recompute": "H5_PUBLISH_FROM_DIR=frontend/worker-h5 H5_STATIC_ROOT=/tmp/h5-sandbox bash 'deploy/swas/h5-publish-remote.sh'  # 连跑两次后 diff -r 两次的目标子树"
+    },
+    {
+      "face": "「失败可见」判不了「真的有人看」",
+      "reason": "锚只证「失败会判红」（身份断言）与「停摆有心跳」（`scripts/drift_audit.py::check_heartbeat()`，阈值 = 周期 + 2 天 = 3 天）—— 🔴 但 `Drift Audit (真相源契约)` **不在分支保护的 required 集合**里 ⇒ 判红**不拦合并**，且**延迟 3 天**。⇒ 「失败可见」在本仓是**有延迟、非阻断**的可见性，如实登记，不写成「已守护」。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_drift_audit_contract.py -q  # 心跳射程与阈值；python3 scripts/drift_audit.py --check（需网络）"
+    },
+    {
+      "face": "第 ④ 条「在 PR body 显式声明」判据读不到",
+      "reason": "本判据零网络 ⇒ 读不到 PR body。台账里的 `declared_in_pr` 是**自述**（声称「那个 PR 声明过」），不是机械核查。⇒ 第 ④ 条的机械承载体只有「**本表登记了具名 PR + AGENTS.md 铁律 10 里具名**」这两半；「PR body 里到底写没写」仍是纪律。",
+      "recompute": "gh pr view 5731 --json body --jq .body | grep -n 'schedule'"
+    },
+    {
+      "face": "**存量 14 条基线是否安全**不在本判据面内",
+      "reason": "这正是「只裁新增」的代价：`stale.yml` / `close-linked-issues.yml` 这类存量周期面**本来就有无人值守写动作**，而它们的存在早于本条纪律 ⇒ 本表只冻结、不裁决、也不为它们的安全性背书。⇒ **不要把「本判据绿」读成「全仓没有无人值守删除」**。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py -q -s  # 判据 1 打印现取的存量/例外条数"
+    },
+    {
+      "face": "cron 到底跑没跑（节流 / `concurrency` 顶掉）",
+      "reason": "与 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的 `coverage_boundary` **同口径、不重复登记实现**：静态形状判据只能证明「`schedule` 这个面在」。现取实测（2026-09-27）：`*/20` 名义 72 次/日 → 实得 6.3 次/日（8.4%）；每日档中位间隔 ≈24.0h ⇒ 未被节流。",
+      "recompute": "gh run list --workflow worker-h5-publish.yml --event schedule --limit 30 --json createdAt  # 自算相邻间隔中位数"
+    },
+    {
+      "face": "「周期档只报告、不写盘」这一条（由 PR #5733 的实例校准）判不了「写盘档的 `if` 在**运行期**真的拦住了」",
+      "reason": "判据只读 `on:` 的形状与台账字段 ⇒ 它核的是「这条腿声明了 `kind=readonly_heartbeat`」，**判不了**「该腿的发布步骤在 `schedule` 事件下真的被判据拦住」。后者是运行期事实（那一步的 `if:` 求值 + 该次 run 的日志）。⇒ 本条是**声明面**的锁，不是**行为面**的锁。",
+      "recompute": "gh run list --workflow c-end-h5-publish.yml --event schedule --limit 5 --json databaseId,event  # 再 gh run view <id> --log 看发布步骤是否 skipped"
+    },
+    {
+      "face": "与 MC-039（`publish_leg_fallback_ledger.json`）的关系：两表**不互为副本**",
+      "reason": "本表判**准入**（「这条新的周期面凭什么获准存在」，射程 = 全仓每一个 `on.schedule`）；那张表判**兜底面在位**（「自动触发面只剩 `push` 的腿有没有第二条自动面」，射程 = 已登记的发布/守护腿）。⇒ 本表**不重判**兜底面、那张表**不重判**准入；两处同时出现同一个文件名**不是**双真相源（判的是两个不同事实，`migao-dev-flow` §23.7 A6 的口径是「同一个事实不许两套台账」）。判据侧只**引用**那条腿的登记册，不复制它的判定逻辑。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_publish_leg_fallback_surface.py tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py -q"
+    }
+  ]
+}
