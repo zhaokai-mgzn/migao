@@ -357,7 +357,7 @@
       "id": "FM-A11",
       "family": "A",
       "symptom": "**举例即实例**：把某形态的**样例**写进文档 / docstring ⇒ 被**该形态的判据**当成真实例判红。本会话**三次**（durable 证据逐条）：① **P1**：M4 的 docstring 写了「裸 `文件名` + `:` + 行号」形态 ⇒ `Case Trust` 规则 G 判 `CASE-TRUST-STALE-LINE-REF` 红；② **本包**：把共享固定载体名**原样抄进**技能 §25.6 / 版本沿革 / `docs/wiki/CI-CD.md` / 台账 ⇒ `scripts/pr_body_guard.py` 的 R2 判红（PR #5709 首轮 CI 6 处命中）；③ **P3**：新判据 docstring 里的「举例」被**它自己新加的形态面**抓成未登记副本。",
-      "action": "**可复制清单：哪些形态不适合原样写进文档 / docstring 举例**（逐类给改写办法 + 它归哪条现成判据）：\n1. **会被当语料抓的路径 / 文件名形态**（共享临时根 + 特定词干的文件名；裸 `文件名` + `:` + 行号）⇒ 把**触发串打断**（插字 / 用占位符 `<...>`）或只给规则名 + 判据名，**不给字面量**；判据 = `scripts/pr_body_guard.py` R2 / `Case Trust` 规则 G；\n2. **引用语料 glob**（`*.sh` 这类）⇒ docstring 里点名语料**也要入册**；判据 = `tests/unit_ci_workflows/test_guard_scope_declaration.py`（`guard_scope_ledger.json` 的 `kind=mentions`）；\n3. **关闭关键词 + `#号`**（PR body / 文档）⇒ 两者之间插字（§2.2）；判据 = `close-linked-issues.yml` 的朴素正则；\n4. **弱断言模式字面文本** ⇒ **注释里写也红**（#5284 T2）；判据 = `.github/growth_gate.py --check-weak`；\n5. **`case_ids:` 声明形态** ⇒ 首个命中即停（真声明优先），别在别处复现；判据 = `growth_gate.py:extract_case_ids()`。\n🔴 **纠错（集成侧的分类不成立，实测推翻）**：「**文本扫描器吃举例 / AST 与编译期不吃**」—— **前半对、后半错**：`test_guard_scope_declaration.py` 的判据 1 明取「模块里所有**字符串常量**（**含 docstring** / f-string 片段）」⇒ **AST 面同样吃 docstring 举例**（`guard_scope_ledger.json` 里 4 条 `kind=mentions` 正是这个形态的登记）。**真正的分界 = 该判据有没有 prose 豁免**（剥注释 / 跳过文档字符串），不是「文本 vs AST」。⇒ 三次实例的归属：① 文本正则面（无豁免）；② 文本正则面（无豁免）；③ **形态面**（新判据自己的语料面，无豁免）。",
+      "action": "**可复制清单：哪些形态不适合原样写进文档 / docstring 举例**（逐类给改写办法 + 它归哪条现成判据）：\n1. **会被当语料抓的路径 / 文件名形态**（共享临时根 + 特定词干的文件名；裸 `文件名` + `:` + 行号）⇒ 把**触发串打断**（插字 / 用占位符 `<...>`）或只给规则名 + 判据名，**不给字面量**；判据 = `scripts/pr_body_guard.py` R2 / `Case Trust` 规则 G；\n2. **引用语料 glob**（`*.sh` 这类）⇒ docstring 里点名语料**也要入册**；判据 = `tests/unit_ci_workflows/test_guard_scope_declaration.py`（`guard_scope_ledger.json` 的 `kind=mentions`）；\n3. **关闭关键词 + `#号`**（PR body / 文档）⇒ 两者之间插字（§2.2）；判据 = `close-linked-issues.yml` 的朴素正则；\n4. **弱断言模式字面文本** ⇒ **注释里写也红**（#5284 T2）；判据 = `.github/growth_gate.py --check-weak`；\n5. **`case_ids:` 声明形态** ⇒ 首个命中即停（真声明优先），别在别处复现；判据 = `growth_gate.py:extract_case_ids()`。\n🔴 **纠错（来源链写清：**源头 = P1 的分类**、经**集成侧转述**、由**本包实测推翻**后半 —— 记下来是为了让下一个读它的人知道这条分类**曾经错过一次、错在哪**，否则他可能又凭直觉写成「AST 安全」）：「**文本扫描器吃举例 / AST 与编译期不吃**」—— **前半对、后半错**：`test_guard_scope_declaration.py` 的判据 1 明取「模块里所有**字符串常量**（**含 docstring** / f-string 片段）」⇒ **AST 面同样吃 docstring 举例**（`guard_scope_ledger.json` 里 4 条 `kind=mentions` 正是这个形态的登记）。**真正的分界 = 该判据有没有 prose 豁免**（剥注释 / 跳过文档字符串），不是「文本 vs AST」。⇒ 三次实例的归属：① 文本正则面（无豁免）；② 文本正则面（无豁免）；③ **形态面**（新判据自己的语料面，无豁免）。",
       "kind": "action",
       "evidence": [
         "tests/unit_ci_workflows/test_guard_scope_declaration.py::_string_constants",
@@ -377,6 +377,20 @@
       "evidence": [
         "scripts/merge_gate.py::required_diff",
         "scripts/pr_body_guard.py"
+      ],
+      "refs": [
+        "#5709"
+      ]
+    },
+    {
+      "id": "FM-A13",
+      "family": "A",
+      "symptom": "**校验坐标会让判据假红**：**完全相同的代码**，纯检出放在**共享临时根内**（`/tmp/...`）⇒ `python3 scripts/pr_body_guard.py scan` 报 **1 处 R1 命中**（`scripts/pr_body_guard.py:363` 的**模板** token：`is_shared_fixed_path()` 里相对 token 经 `shared_temp_root()` 按**当前工作目录**解析 ⇒ `/tmp/<检出>/{target}` 落在共享根内 ⇒ 判命中）；同一份代码检出在 `$HOME` 下 ⇒ **0 处命中**。本会话实测：合并后自证时检出落在 `/tmp/solv3` ⇒ `scan` rc=1 + `test_pr_body_guard.py` **5 failed**；换到 `$HOME/migao-verify-5709` ⇒ **50 passed / scan rc=0**。⚠️ 本仓会话惯例**恰恰**把临时 worktree 放 `/tmp` ⇒ 这个假红很容易被读成「main 上有真缺陷」。",
+      "action": "**纯检出复算的地点必须避开共享临时根**，并**先自证坐标再读结论**：\n```bash\ncd <纯检出目录> && pwd          # ① 坐标必须在共享根（/tmp · /var/tmp · $TMPDIR）之外\npython3 scripts/pr_body_guard.py scan >/dev/null 2>&1; echo \"scan rc=$?\"   # ② 再读结论\n```\n**判别规则**：`scan` 报的命中，先 `grep -n` 落到**具体文件行**上确认它是**真实例**还是**模板 token**；行号落在被判据自己的**输出文案 / 模板**里 ⇒ 先怀疑坐标，而不是先怀疑 main。",
+      "kind": "action",
+      "evidence": [
+        "scripts/pr_body_guard.py::is_shared_fixed_path",
+        "scripts/pr_body_guard.py::shared_temp_root"
       ],
       "refs": [
         "#5709"
@@ -644,6 +658,16 @@
       "item": "「`dev-worktree.sh add` 挂死 ⇒ 用裸 `git worktree add`」",
       "reason": "本单只复现了『`add` 路径接在 `issue-lifecycle.sh reap-merged --apply` 上』这一**事实**；**挂死这一读数既未在本机复现、也未被证伪** —— 集成侧一手读数：本会话每个包都被要求用裸 `git worktree add` ⇒ 那条路径**被规避**。⇒ 按「两条路径并存、其中一条被规避」这一**事实**登记，**不**写成「某路径挂死」这一**断言**。",
       "restart_when": "复现出挂死并定位到具体调用链（或该调用被移出 `add` 路径、或两条路径收敛成一条）时，补判据或改为具名登记。"
+    }
+  ],
+  "policy_decisions": [
+    {
+      "id": "PD-1",
+      "what": "`GAPS_FROZEN` **3 → 4**（新增缺口 `FM-E17`）",
+      "decided_by": "集成侧转达的人类裁定（2026-09-27）：**保持 `gap`、上限抬到 4**",
+      "why": "`FM-E17` 是**真缺口**（`push` 唯一触发面 ⇒ 长时间无新 PR 阶段只剩 `*/20` cron，无守护）。🔴 **降级成 `registered` 才是坏事** —— 那等于把一个真缺口藏进「已登记」这个词里，而这正是本台账要防的形态。",
+      "invariant": "上限**冻结在判据文件**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `GAPS_FROZEN`），台账改不动它 ⇒ 新增缺口必须**公开抬一次上限**，且只会在 **diff 里可见**（不可能被静默加入）。",
+      "targets": "清零靶子（**现取**，不写死）：`state=gap` **4** 条（`FM-E4` / `FM-E10` / `FM-E14` / `FM-E17`）· `not_solidified` **3** 条（`NS-1` / `NS-2` / `NS-3`）"
     }
   ]
 }

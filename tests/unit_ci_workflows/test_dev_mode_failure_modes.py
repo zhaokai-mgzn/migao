@@ -299,6 +299,18 @@ def ledger_violations(
             f"新增缺口必须先把它做成判据或并入既有台账，不许默默加"
         )
 
+    # ── 判据 9b：抬上限这类**决策**必须留痕，且条目不可静默删除 ──────────────────
+    pd = ledger.get("policy_decisions", [])
+    if not pd:
+        bad.append(
+            "台账缺 `policy_decisions` ⇒「**抬上限**」这类决策没有留痕"
+            "（条目只许缩短 ⇒ 不可静默删除）"
+        )
+    for d in pd:
+        for key in ("what", "decided_by", "why", "invariant", "targets"):
+            if not str(d.get(key) or "").strip():
+                bad.append(f"决策 {d.get('id', '?')}：缺 `{key}`（决策必须写清 谁裁的 / 为什么 / 不变式 / 靶子）")
+
     # ── 判据 9：本单未固化项只许缩短 ──────────────────────────────────────────
     ns = ledger.get("not_solidified", [])
     if len(ns) > NOT_SOLIDIFIED_FROZEN:
@@ -374,6 +386,19 @@ def test_real_files_are_clean() -> None:
     skill_text, cicd_text, ledger = _live()
     bad = ledger_violations(skill_text=skill_text, cicd_text=cicd_text, ledger=ledger)
     assert bad == [], "研发模式固化台账未通过：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_policy_decision_record_is_load_bearing() -> None:
+    """判别力自证：删掉 `policy_decisions`（抬上限的决策留痕）⇒ 必红。"""
+    skill_text, cicd_text, ledger = _live()
+    folded = json.loads(json.dumps(ledger))
+    folded.pop("policy_decisions", None)
+    bad = ledger_violations(skill_text=skill_text, cicd_text=cicd_text, ledger=folded)
+    assert any("policy_decisions" in p for p in bad), bad
+    stripped = json.loads(json.dumps(ledger))
+    stripped["policy_decisions"][0]["decided_by"] = "  "
+    bad2 = ledger_violations(skill_text=skill_text, cicd_text=cicd_text, ledger=stripped)
+    assert any("decided_by" in p for p in bad2), bad2
 
 
 def test_empty_skill_corpus_is_not_silently_green() -> None:
