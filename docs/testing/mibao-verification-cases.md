@@ -2767,7 +2767,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（40 case）
+## 杂项域（43 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3286,7 +3286,47 @@
 ```
 溯源: 2026-09-27 新增（跟踪单 #5699 的 P4 阶段；设计真值源 §3.4 问题 2 + §5.2 的 M2）：#5699 的发现 ① 实测「判据 5 的射程只有工具层 ⇒ 写端点由读码把守这一族没有任何判据看得见」，本号把它落成端点层 census（16 条具名 + 归类 + 只许缩短），并把四条真写端点（instantiate/report/print/ship）钉成必须存在的条目。取号 MC-037：与 MC-035/036 同 PR 顺延。 ｜ tags: rbac, i4, endpoint-permission, read-write-mismatch, ledger
 
-### MC-042. C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红 🔵
+### MC-043. RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码） 🔵
+```
+你: 当迁移链（V29…V138）推演出的「每个内置岗位累计拿到的码」不再等于清单声明（新租户 seed），或由清单渲染的收敛迁移与提交的产物不再逐字节相同，或 V136 的差集读数与现取不再一致时，必须有东西**具名**报出
+期望: direct_reply
+数据: **生成物新鲜度（M3）**：V136 的内容必须 == `rbac/generate_migration.py` 当场由 `rbac/manifest.json` 渲染的结果（手改产物 ⇒ 红，报首个差异行；改清单没重渲染 ⇒ 红）
+数据: **收敛不变量**：整条链推演（含 V136/V137/V138）后，每个种子岗位累计 == 清单声明（`*` ⇒ 目录全集）⇒ 「新租户 vs 存量租户逐值相等」常驻可判；任一岗位有差 ⇒ 具名报出该岗位与该码
+数据: **差集是现取**（P5 的固定读数 = `admin` 的 11 个码、其余四个岗位 ∅）：给清单某岗位加一个链上没有的码 ⇒ 读数变化即红；`V136` 的授权语句必须逐值等于该差集
+数据: **推演的边界**（照实登记）：只认约定 SQL 形态（`INSERT INTO role_permissions … r.code … p.code …`），语句数 == 解析数（读不懂的新写法 ⇒ 红，不静默放过）；不推演目录懒补种、不推演取消授权；真库读数只能接真库复算（设计 §6.1）
+数据: **红证**：手改产物 ⇒ 新鲜度红；清单加一个链上没有的码 ⇒ 收敛不变量红（具名）；差集读数与现取不符 ⇒ 红；只改清单散文（`_note`）⇒ **不红**（对照）
+跳过: [backend-contract] P5 迁移链收敛的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P5 阶段；人类 2026-09-27 裁定「三项都做」）。落码 = `rbac/derive.py` 的 P5 段（迁移链推演：语句解析 + 条件授权 + 「后加的码不被早先那句『全部码』白送」）+ `rbac/generate_migration.py`（由清单渲染 V136/V137/V138）+ 判据 test_rbac_migration_convergence.py（生成物新鲜度 / 收敛不变量 / 差集现取 / P6 迁移逐值；红证全部内存构造）。现取读数：存量 `admin` 缺 11 码、其余四个岗位 ∅（复算命令写在 V136 文件头）。取号 MC-043：现取 `.github/cases/` 最大号 = MC-038，推送前对在飞 PR（#5725/#5728/#5729）的 diff 现取一次（#5725 占 BM-027，无 MC-043+ 占用）。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。） ｜ tags: rbac, p5, migration-chain, convergence, generated-artifact, red-proof
+
+### MC-044. RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值） 🔵
+```
+你: 当 `product_manager` / `knowledge_editor` 不在种子矩阵（或 seed 与 fallback 不再逐值相等），或 V137 的授权语句与清单声明不逐值相等，或历史角色登记表未销账时，必须有东西**具名**报出
+期望: direct_reply
+数据: **正式定义**：两个角色码必须在 `RegistrationService` 的种子矩阵里（建 roles 行 + 授默认码）⇒ 岗位权限页可编辑、员工弹窗可分配；**账号的有效权限集合逐值不变**（码集取自回退 switch，不增不减）
+数据: **两条口径同码**：`roles.seed[role]` == `roles.fallback[role]` 逐值（与 test_agent_permission_parity.py 判据 14 一起守）
+数据: **存量侧物化**：`V137__formalize_legacy_roles.sql` 的每个角色必须有建 `roles` 行语句 + 授权语句，且授权码集与清单声明**逐值相等**（少授 = 老租户拿不到；多授 = 绕过岗位权限页的放宽）
+数据: **台账销账**：`LEGACY_ROLES_IN_FALLBACK` 必须为空（两个角色已进种子 ⇒ 留着一条不空的登记 = 两套真相）；销账后语义更严（任何种子外的回退角色都判红）
+数据: **红证**：从种子里删掉一个角色 ⇒ 红；让 V137 多授一个码 ⇒ 红（逐值比较分支）；把登记表塞回一条 ⇒ 红；只改散文 ⇒ 不红
+跳过: [backend-contract] P6 历史岗位码正式定义的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 P6 阶段；人类 2026-09-27 裁定出口 (i)「正式定义」）。落码 = `RegistrationService.initializeDefaultRolesAndPermissions` 建两个 roles 行 + 授默认码（码集逐字取自回退 switch）+ 清单 `roles.seed` 补两角色 + 生成器渲染的 `V137__formalize_legacy_roles.sql` + `LEGACY_ROLES_IN_FALLBACK` 整表销账 + 镜像（ai-agent `ROLE_PERMISSIONS` 的两条口径注记改准）。⚠️ 转述更正：派单里「幽灵角色码**数据库里存在**」是错的载体 —— 它们**不在库里**（无 roles 行、无 role_permissions），只在回退 switch / 米宝 allowed_roles / bmini 角色名映射里。取号 MC-044：与 MC-039 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。） ｜ tags: rbac, p6, ghost-roles, formal-definition, red-proof
+
+### MC-045. RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填） 🔵
+```
+你: 当四个真写端点的生效码不再是 production:execute（或被回退成类级读码 order:list），或新码出现在台账之外的端点/菜单/Agent 工具上，或「持旧码的岗位集」≠「持新码的岗位集」，或快照回填丢掉「含旧守卫码」前置条件时，必须有东西**具名**报出
+期望: direct_reply
+数据: **四条对齐**：`POST …/instantiate` · `…/operations/{}/report` · `…/print` · `…/ship` 的生效码逐条 == `production:execute`，且它们的**类级**码仍是读码 `order:list`（证明「改前只由读码把守」这个事实可复核）
+数据: **别处零外溢**：生效码 == 新码的端点集**恰好**是这四条（多一条 ⇒ 红）；新码不出现在任何菜单节点码列、也不被任何 B 端 Agent 工具声明
+数据: **角色面零 403**：持旧码的岗位集 == 持新码的岗位集（现取两侧，种子 ∪ 回退）= admin · 客服 · 运营 · 销售 · 财务 ⇒ 不存在「今天能过、改后 403」
+数据: **快照等价回填（设计 §2.9 的窄例外）**：V138 的 `UPDATE users` 必须同时带三条谓词 —— 严格 JSON 数组形态 / 含旧守卫码 `order:list` / 不含新码；丢掉「含旧码」⇒ 红（那是把窄例外读成放宽）
+数据: **覆盖面照实登记**：判据算声明面 + 注解面，不是运行时授权；快照面只覆盖 `users.permissions` 一种形态；生产库受影响行数只能接真库用 V138 文件头的只读事前/事后 SQL 复核
+数据: **红证**：删掉某端点的方法级写码注解 ⇒ 红；给别的端点也挂新码 ⇒ 「台账之外」红；快照谓词丢掉前置条件 ⇒ 红；只改散文 ⇒ 不红
+跳过: [backend-contract] I4 端点写码对齐的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（跟踪单 #5699 的 I4 阶段；人类 2026-09-27 裁定选 A + 快照等价回填选 a）。落码 = 新写码 `production:execute`（种子 + 回退 switch + V138 迁移 + ai-agent 镜像 + 清单 `codes.names` 31→32 + 权限页勾选项）+ `ProductionController` 四条方法级注解 + `V138` 的**快照等价回填**（只动「含 order:list、不含新码」的严格 JSON 数组快照；等价 = 有效权限集合逐值不变）+ 判据 test_rbac_endpoint_write_codes.py + P4 判据的 I4 台账 16→12（四条真写移出）+ 判据 14 的授权变更 census 新增一条（上限 15→16，显式放宽，diff 里看得见）。取号 MC-045：与 MC-039/040 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。） ｜ tags: rbac, i4, write-code, authorization-change, snapshot-backfill, red-proof
+
+### MC-046. C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红 🔵
 ```
 你: 合并建通路的那个 PR 不发布任何东西；首次发布由人手动触发；发布之后线上 / 是本仓库产物，而 /w/ 与 /b/ 一个字节都没变；把触发面放宽、把 if 闸摘掉、或让删除范围越过托管清单时，必须有东西变红
 期望: direct_reply
@@ -3303,7 +3343,7 @@
 跳过: [backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的 25 条离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-042：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
+溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-046：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
 
 ## 商家入驻域（5 case）
 
@@ -7821,8 +7861,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：552（活跃 126，跳过 426）
-- tier 分布：smoke 12 / normal 507 / adversarial 31
+- 用例总数：555（活跃 126，跳过 429）
+- tier 分布：smoke 12 / normal 510 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7837,7 +7877,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：40
+- 杂项域：43
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7903,7 +7943,10 @@
 - MC-035: RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）
 - MC-036: RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）
 - MC-037: RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）
-- MC-042: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
+- MC-043: RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）
+- MC-044: RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）
+- MC-045: RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）
+- MC-046: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

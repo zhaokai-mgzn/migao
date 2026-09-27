@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P4",
+  "stage": "P5+P6+I4",
   "_note": "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。",
   "codes": {
     "registration": [
@@ -15,6 +15,7 @@
       "processing:view",
       "processing:update",
       "production:view",
+      "production:execute",
       "inbound:view",
       "inbound:create",
       "knowledge:manage",
@@ -48,6 +49,7 @@
       "processing:view",
       "processing:update",
       "production:view",
+      "production:execute",
       "inbound:view",
       "inbound:create",
       "knowledge:manage",
@@ -81,6 +83,7 @@
       "processing:view": "加工单查看",
       "processing:update": "加工单操作",
       "production:view": "生产查看",
+      "production:execute": "生产执行",
       "inbound:view": "入库单查看",
       "inbound:create": "入库单操作",
       "knowledge:manage": "知识库管理",
@@ -119,7 +122,8 @@
         "knowledge:view",
         "order:detail",
         "order:list",
-        "processing:view"
+        "processing:view",
+        "production:execute"
       ],
       "finance": [
         "dashboard:view",
@@ -128,69 +132,8 @@
         "inbound:view",
         "order:detail",
         "order:list",
-        "processing:view"
-      ],
-      "operator": [
-        "after_sales:view",
-        "agent:session",
-        "agent:session:manage",
-        "customer:create",
-        "customer:view",
-        "dashboard:view",
-        "employee:list",
-        "finance:create",
-        "finance:view",
-        "inbound:create",
-        "inbound:view",
-        "knowledge:view",
-        "order:create",
-        "order:detail",
-        "order:list",
-        "order:refund",
-        "order:update",
-        "processing:manage",
-        "processing:update",
         "processing:view",
-        "product:category",
-        "product:category:view",
-        "product:create",
-        "product:list",
-        "production:view"
-      ],
-      "sales": [
-        "customer:view",
-        "dashboard:view",
-        "inbound:view",
-        "order:detail",
-        "order:list",
-        "processing:view",
-        "product:list"
-      ]
-    },
-    "fallback": {
-      "admin": [
-        "*"
-      ],
-      "customer_service": [
-        "after_sales:view",
-        "agent:session",
-        "agent:session:manage",
-        "customer:view",
-        "dashboard:view",
-        "inbound:view",
-        "knowledge:view",
-        "order:detail",
-        "order:list",
-        "processing:view"
-      ],
-      "finance": [
-        "dashboard:view",
-        "finance:create",
-        "finance:view",
-        "inbound:view",
-        "order:detail",
-        "order:list",
-        "processing:view"
+        "production:execute"
       ],
       "knowledge_editor": [
         "dashboard:view",
@@ -221,6 +164,7 @@
         "product:category:view",
         "product:create",
         "product:list",
+        "production:execute",
         "production:view"
       ],
       "product_manager": [
@@ -240,7 +184,88 @@
         "order:detail",
         "order:list",
         "processing:view",
+        "product:list",
+        "production:execute"
+      ]
+    },
+    "fallback": {
+      "admin": [
+        "*"
+      ],
+      "customer_service": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "knowledge:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "finance": [
+        "dashboard:view",
+        "finance:create",
+        "finance:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "knowledge_editor": [
+        "dashboard:view",
         "product:list"
+      ],
+      "operator": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:execute",
+        "production:view"
+      ],
+      "product_manager": [
+        "dashboard:view",
+        "processing:manage",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:view"
+      ],
+      "sales": [
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "product:list",
+        "production:execute"
       ]
     },
     "login": {
@@ -865,7 +890,7 @@
     "MULTI_READ_ENDPOINT_PAGES": 1,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
-    "AUTHORIZATION_CENSUS": 15,
+    "AUTHORIZATION_CENSUS": 16,
     "UNANNOTATED_ENDPOINTS": 21,
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,

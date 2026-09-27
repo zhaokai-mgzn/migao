@@ -328,7 +328,7 @@ class RegistrationServiceTest extends BaseServiceTest {
 
         @Test
         @DisplayName("岗位权限体系（#2969）：审批通过 → 初始化默认五岗 + role_permissions 预置")
-        void successInitializesFiveDefaultPositionsWithPermissions() {
+        void successInitializesSevenDefaultPositionsWithPermissions() {
             when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
             doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
                     .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
@@ -340,22 +340,24 @@ class RegistrationServiceTest extends BaseServiceTest {
 
             registrationService.approveApplication(1L, "reviewer-001");
 
-            // 五岗种子：管理员 / 客服 / 运营 / 销售 / 财务
+            // 七岗种子：管理员 / 客服 / 运营 / 销售 / 财务 + issue #5699 的 **P6** 正式定义的两个历史岗位
             ArgumentCaptor<Role> roleCaptor = ArgumentCaptor.forClass(Role.class);
-            verify(roleMapper, times(5)).insert(roleCaptor.capture());
+            verify(roleMapper, times(7)).insert(roleCaptor.capture());
             List<String> codes = roleCaptor.getAllValues().stream().map(Role::getCode).collect(Collectors.toList());
-            assertThat(codes).contains("admin", "customer_service", "operator", "sales", "finance");
+            assertThat(codes).contains("admin", "customer_service", "operator", "sales", "finance",
+                    "product_manager", "knowledge_editor");
             assertThat(roleCaptor.getAllValues()).allSatisfy(r ->
                     assertThat(r.getStatus()).isEqualTo("active"));
 
             // 每个岗位预置默认权限（role_permissions 落库）
             ArgumentCaptor<RolePermission> rpCaptor = ArgumentCaptor.forClass(RolePermission.class);
-            verify(rolePermissionMapper, atLeast(5)).insert(rpCaptor.capture());
+            verify(rolePermissionMapper, atLeast(7)).insert(rpCaptor.capture());
             assertThat(rpCaptor.getAllValues()).extracting(RolePermission::getRoleId)
-                    .contains("role-admin", "role-customer_service", "role-operator", "role-sales", "role-finance");
+                    .contains("role-admin", "role-customer_service", "role-operator", "role-sales", "role-finance",
+                            "role-product_manager", "role-knowledge_editor");
         }
 
-        /** mock role insert 后回填 id（五岗种子依赖 role.getId() 关联 role_permissions） */
+        /** mock role insert 后回填 id（七岗种子依赖 role.getId() 关联 role_permissions） */
         private void mockRoleInsertIds() {
             doAnswer(inv -> {
                 Role role = inv.getArgument(0);

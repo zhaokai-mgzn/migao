@@ -4493,9 +4493,63 @@ _CASE_MC_037 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-042 [NORMAL] C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红（源: cases/misc.yml）──
-_CASE_MC_042 = EvalCase(
-    id='MC-042',
+# ── MC-043 [NORMAL] RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）（源: cases/misc.yml）──
+_CASE_MC_043 = EvalCase(
+    id='MC-043',
+    legacy_id='',
+    title='RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当迁移链（V29…V138）推演出的「每个内置岗位累计拿到的码」不再等于清单声明（新租户 seed），或由清单渲染的收敛迁移与提交的产物不再逐字节相同，或 V136 的差集读数与现取不再一致时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**生成物新鲜度（M3）**：V136 的内容必须 == `rbac/generate_migration.py` 当场由 `rbac/manifest.json` 渲染的结果（手改产物 ⇒ 红，报首个差异行；改清单没重渲染 ⇒ 红）', '**收敛不变量**：整条链推演（含 V136/V137/V138）后，每个种子岗位累计 == 清单声明（`*` ⇒ 目录全集）⇒ 「新租户 vs 存量租户逐值相等」常驻可判；任一岗位有差 ⇒ 具名报出该岗位与该码', '**差集是现取**（P5 的固定读数 = `admin` 的 11 个码、其余四个岗位 ∅）：给清单某岗位加一个链上没有的码 ⇒ 读数变化即红；`V136` 的授权语句必须逐值等于该差集', '**推演的边界**（照实登记）：只认约定 SQL 形态（`INSERT INTO role_permissions … r.code … p.code …`），语句数 == 解析数（读不懂的新写法 ⇒ 红，不静默放过）；不推演目录懒补种、不推演取消授权；真库读数只能接真库复算（设计 §6.1）', '**红证**：手改产物 ⇒ 新鲜度红；清单加一个链上没有的码 ⇒ 收敛不变量红（具名）；差集读数与现取不符 ⇒ 红；只改清单散文（`_note`）⇒ **不红**（对照）'],
+    skip_reason='[backend-contract] P5 迁移链收敛的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'p5', 'migration-chain', 'convergence', 'generated-artifact', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-044 [NORMAL] RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）（源: cases/misc.yml）──
+_CASE_MC_044 = EvalCase(
+    id='MC-044',
+    legacy_id='',
+    title='RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `product_manager` / `knowledge_editor` 不在种子矩阵（或 seed 与 fallback 不再逐值相等），或 V137 的授权语句与清单声明不逐值相等，或历史角色登记表未销账时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**正式定义**：两个角色码必须在 `RegistrationService` 的种子矩阵里（建 roles 行 + 授默认码）⇒ 岗位权限页可编辑、员工弹窗可分配；**账号的有效权限集合逐值不变**（码集取自回退 switch，不增不减）', '**两条口径同码**：`roles.seed[role]` == `roles.fallback[role]` 逐值（与 test_agent_permission_parity.py 判据 14 一起守）', '**存量侧物化**：`V137__formalize_legacy_roles.sql` 的每个角色必须有建 `roles` 行语句 + 授权语句，且授权码集与清单声明**逐值相等**（少授 = 老租户拿不到；多授 = 绕过岗位权限页的放宽）', '**台账销账**：`LEGACY_ROLES_IN_FALLBACK` 必须为空（两个角色已进种子 ⇒ 留着一条不空的登记 = 两套真相）；销账后语义更严（任何种子外的回退角色都判红）', '**红证**：从种子里删掉一个角色 ⇒ 红；让 V137 多授一个码 ⇒ 红（逐值比较分支）；把登记表塞回一条 ⇒ 红；只改散文 ⇒ 不红'],
+    skip_reason='[backend-contract] P6 历史岗位码正式定义的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'p6', 'ghost-roles', 'formal-definition', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-045 [NORMAL] RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）（源: cases/misc.yml）──
+_CASE_MC_045 = EvalCase(
+    id='MC-045',
+    legacy_id='',
+    title='RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当四个真写端点的生效码不再是 production:execute（或被回退成类级读码 order:list），或新码出现在台账之外的端点/菜单/Agent 工具上，或「持旧码的岗位集」≠「持新码的岗位集」，或快照回填丢掉「含旧守卫码」前置条件时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**四条对齐**：`POST …/instantiate` · `…/operations/{}/report` · `…/print` · `…/ship` 的生效码逐条 == `production:execute`，且它们的**类级**码仍是读码 `order:list`（证明「改前只由读码把守」这个事实可复核）', '**别处零外溢**：生效码 == 新码的端点集**恰好**是这四条（多一条 ⇒ 红）；新码不出现在任何菜单节点码列、也不被任何 B 端 Agent 工具声明', '**角色面零 403**：持旧码的岗位集 == 持新码的岗位集（现取两侧，种子 ∪ 回退）= admin · 客服 · 运营 · 销售 · 财务 ⇒ 不存在「今天能过、改后 403」', '**快照等价回填（设计 §2.9 的窄例外）**：V138 的 `UPDATE users` 必须同时带三条谓词 —— 严格 JSON 数组形态 / 含旧守卫码 `order:list` / 不含新码；丢掉「含旧码」⇒ 红（那是把窄例外读成放宽）', '**覆盖面照实登记**：判据算声明面 + 注解面，不是运行时授权；快照面只覆盖 `users.permissions` 一种形态；生产库受影响行数只能接真库用 V138 文件头的只读事前/事后 SQL 复核', '**红证**：删掉某端点的方法级写码注解 ⇒ 红；给别的端点也挂新码 ⇒ 「台账之外」红；快照谓词丢掉前置条件 ⇒ 红；只改散文 ⇒ 不红'],
+    skip_reason='[backend-contract] I4 端点写码对齐的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'i4', 'write-code', 'authorization-change', 'snapshot-backfill', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-046 [NORMAL] C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红（源: cases/misc.yml）──
+_CASE_MC_046 = EvalCase(
+    id='MC-046',
     legacy_id='',
     title='C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红',
     skill=Skill.GENERAL,
@@ -10641,7 +10695,10 @@ ALL_CASES = (
     _CASE_MC_035,
     _CASE_MC_036,
     _CASE_MC_037,
-    _CASE_MC_042,
+    _CASE_MC_043,
+    _CASE_MC_044,
+    _CASE_MC_045,
+    _CASE_MC_046,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

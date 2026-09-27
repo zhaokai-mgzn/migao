@@ -1446,11 +1446,14 @@ class ProductionControllerTest {
                 .isNotNull();
         assertThat(summaryAnn.value()).isEqualTo("production:view");
 
-        // 打印计数**故意**沿用类级 order:list（打印按钮今天对客服/销售/财务可见，
-        // 收到 processing:manage 会让「能看单却打不了卡」= 功能回退；计数只是打印动作的元数据）
+        // 🔴 issue #5699 的 **I4**（2026-09-27 人类裁定选 A）：打印计数**不再**沿用类级读码 `order:list` ——
+        // 它是**写**动作（`print_count` 落库）⇒ 补方法级**写**码 `production:execute`。
+        // 旧理由（「打印按钮对客服/销售/财务可见，收窄 = 功能回退」）由**授权**承接：
+        // 该写码已同批授予这四个岗位 ⇒ 有效权限集合逐值不变（判据 = test_rbac_endpoint_write_codes.py）。
         Method print = ProductionController.class.getMethod("printOrder", String.class);
-        assertThat(print.getAnnotation(RequirePermission.class))
-                .as("打印计数沿用类级 order:list（不新增方法级注解）").isNull();
+        RequirePermission printAnn = print.getAnnotation(RequirePermission.class);
+        assertThat(printAnn).as("打印计数必须补方法级写码（I4：写动作不得只由读码把守）").isNotNull();
+        assertThat(printAnn.value()).isEqualTo("production:execute");
     }
 
     // ══════════════════ 路线/信号/工序写面 + 缺口查询（issue #4308，PG-032~PG-035）══════════════════

@@ -119,7 +119,8 @@ PERMISSION_CATALOG = frozenset({
     # 生产域**读**码（issue #5291）：生产看板 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
     # `processing:manage`（写面码，只读持有者要么被假拒绝、要么被迫拿到写权）；本次拆出读码。
     "production:view",
-    # 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
+    # 生产执行**写**码（issue #5699 的 I4）：把守建加工单/报工/打印/发货四个真写端点
+    "production:execute",
     "inbound:view",
     "inbound:create",
     "knowledge:manage",
@@ -163,8 +164,10 @@ PERMISSION_CATALOG = frozenset({
 #:   · **五个种子岗位**（`admin` / `customer_service` / `operator` / `sales` / `finance`）⇒ 取 **seed 口径**
 #:     （新租户真值，`V29`/`V32`/`V43`/`V124`/`V125` 对存量租户补齐）。判据 =
 #:     `test_seeded_role_defaults_match_the_mirror`（**逐岗相等**，`admin` 的 seed 是全集而镜像是 `*`）。
-#:   · **两个历史遗留角色**（`product_manager` / `knowledge_editor`）⇒ 取 **回退口径**（它们**不在 seed 里**，
-#:     `RoleService.getPermissionCodesForRole` 是它们**唯一**的一份默认定义）。判据 =
+#:   · **两个历史遗留角色**（`product_manager` / `knowledge_editor`）⇒ **issue #5699 的 P6（出口 i）之后
+#:     也取 seed 口径**（它们已进种子矩阵；`RoleService.getPermissionCodesForRole` 的 `case` 与之一字不差。
+#:     此前它们**不在 seed 里**、只有回退一份定义）。两条判据不变：
+#:     `test_seeded_role_defaults_match_the_mirror`（**逐岗相等**）与
 #:     `test_the_hardcoded_fallback_is_covered_by_the_mirror`（**镜像 ⊇ 回退**）。
 #: #5683 之后两条**同时**为真（seed 与回退已逐角色码一致）：`seeded_role_gaps(...) == []`
 #: **且** `fallback_role_gaps(...) == []`。任一侧漂移都会有一条判据变红。
@@ -177,6 +180,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "inbound:create", "inbound:view", "knowledge:view",
         "order:create", "order:detail", "order:list", "order:refund", "order:update",
         "processing:manage", "processing:update", "processing:view",
+        # issue #5699 的 I4：生产执行写码（运营今日持 order:list；四个端点本来就放行）
+        "production:execute",
         # issue #5291：operator 原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码，
         # 否则拆码会把它的分类 / 生产面**收权**（「只收窄不放宽」的反面：原持管理码者不受影响）。
         # `system:view` **不给** —— 它属 admin 专属，多授 = 让运营读到岗位与权限目录，属放宽，本单不做。
@@ -187,14 +192,20 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
         "dashboard:view", "inbound:view", "knowledge:view",
         "order:detail", "order:list", "processing:view",
+        # issue #5699 的 I4：生产执行**写**码（把守建加工单/报工/打印/发货四个真写端点）
+        "production:execute",
     }),
     "sales": frozenset({
         "customer:view", "dashboard:view", "inbound:view", "order:detail", "order:list",
         "processing:view", "product:list",
+        # issue #5699 的 I4：生产执行写码（销售今日持 order:list ⇒ 这四个端点本来就放行）
+        "production:execute",
     }),
     "finance": frozenset({
         "dashboard:view", "finance:create", "finance:view", "inbound:view",
         "order:detail", "order:list", "processing:view",
+        # issue #5699 的 I4：生产执行写码（财务今日持 order:list）
+        "production:execute",
     }),
     "product_manager": frozenset({
         "dashboard:view", "processing:manage",
@@ -895,7 +906,12 @@ class TestRoleMirrorMatchesTheAdminApiSource:
     def test_seeded_role_defaults_match_the_mirror(self):
         """五岗 seed 与镜像逐岗相等；`admin` 的 seed = 全量目录、镜像 = `*`（运行时通配）。"""
         seeded = java_seeded_role_permissions(_read(_REGISTRATION_SERVICE))
-        assert set(seeded) == {"admin", "customer_service", "operator", "sales", "finance"}, (
+        assert set(seeded) == {
+            "admin", "customer_service", "operator", "sales", "finance",
+            # issue #5699 的 P6（出口 i：正式定义）：两个历史岗位码本单进了种子矩阵
+            # ⇒ 镜像对它们改取 **seed 口径**（此前取回退口径 —— 两处当时逐值相等，故值不变）。
+            "product_manager", "knowledge_editor",
+        }, (
             f"admin-api 默认岗位集合变了：{sorted(seeded)} —— 镜像必须同步评审"
         )
         assert seeded["admin"] == java_catalog_codes(_read(_REGISTRATION_SERVICE)), (

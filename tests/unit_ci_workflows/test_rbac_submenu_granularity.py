@@ -152,26 +152,6 @@ FAIL_OPEN_PAGE_CAP = 1
 
 WRITE_UNDER_READ_CODE: dict[str, tuple[str, str]] = {
     # ── 真写动作（会改库 / 改状态；这四条就是 #5699 发现 ① 点名的四个端点）──────────────
-    "POST /api/admin/production/orders/{}/instantiate": (
-        "真写",
-        "建加工单（`ProductionController` 类级读码 `order:list`，无方法级覆盖）—— #5699 发现 ① 的四条之一；"
-        "owner = 生产域写面权限（`ProductionController`）+ 本台账",
-    ),
-    "POST /api/admin/production/orders/{}/operations/{}/report": (
-        "真写",
-        "扫码报工（同上，类级 `order:list`）—— #5699 发现 ① 的四条之一；"
-        "owner = 生产域写面权限（`ProductionController`）+ 本台账",
-    ),
-    "POST /api/admin/production/orders/{}/print": (
-        "真写",
-        "打印计数（同上；`ProductionControllerTest` 逐字记录「故意沿用类级 `order:list`」的理由："
-        "打印按钮对客服/销售/财务可见）—— #5699 发现 ① 的四条之一；owner = 生产域写面权限 + 本台账",
-    ),
-    "POST /api/admin/production/orders/{}/ship": (
-        "真写",
-        "发货（同上，类级 `order:list`）—— #5699 发现 ① 的四条之一；"
-        "owner = 生产域写面权限（`ProductionController`）+ 本台账",
-    ),
     "POST /api/admin/agent-sessions": (
         "真写",
         "开会话（`AgentSessionController`；`session` 是身份面动作名、落在 `READ_CODE_ACTIONS` 里）"
@@ -216,7 +196,10 @@ WRITE_UNDER_READ_CODE: dict[str, tuple[str, str]] = {
 }
 
 #: `WRITE_UNDER_READ_CODE` 的条数上限（**只许缩短**；现取出现未登记形态 ⇒ 红）。
-WRITE_UNDER_READ_CODE_CAP = 16
+#: 🔴 **16 → 12**（issue #5699 的 **I4**，2026-09-27 人类裁定选 A）：四条**真写**端点
+#:（建加工单 / 报工 / 打印 / 发货）已改挂写码 `production:execute` ⇒ 不再命中本台账；
+#: 四条的去向与逐端点读数登记在 `tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py`。
+WRITE_UNDER_READ_CODE_CAP = 12
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -735,8 +718,21 @@ def test_write_under_read_code_is_named_and_load_bearing():
         f"现取 {len(live)} 条 / 登记 {WRITE_UNDER_READ_CODE_CAP} 条 ⇒ 两边必须逐值同步（未登记即红）"
     )
     for key in live:
-        if key.startswith(("POST /api/admin/production/orders/{}/", "POST /api/admin/agent-sessions")):
+        if key.startswith("POST /api/admin/agent-sessions"):
             assert key in WRITE_UNDER_READ_CODE, f"`{key}` 是 #5699 发现 ① 点名的形态，必须具名登记"
+    # 🔴 issue #5699 的 **I4**（2026-09-27 人类裁定选 A，已落地）：#5699 发现 ① 点名的**四个真写端点**
+    # 已改挂写码 `production:execute` ⇒ 它们必须**不在**本台账里（在 ⇒ 改码被回退或漏改）。
+    # 台账与逐端点读数（改前能过 / 改后能过）的**唯一家** =
+    # `tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py`（本文件只断言这四个**已不再命中**）。
+    for key in (
+        "POST /api/admin/production/orders/{}/instantiate",
+        "POST /api/admin/production/orders/{}/operations/{}/report",
+        "POST /api/admin/production/orders/{}/print",
+        "POST /api/admin/production/orders/{}/ship",
+    ):
+        assert key not in live, (
+            f"`{key}` 又回到「写动词 + 读码」形态（I4 的改码被回退/漏改）—— 它是 #5699 发现 ① 的四条之一"
+        )
     saved = dict(WRITE_UNDER_READ_CODE)
     try:
         WRITE_UNDER_READ_CODE.clear()
@@ -761,12 +757,14 @@ def test_p4_census_only_touches_read_endpoints():
             verb, _, url = str(endpoint).partition(" ")
             assert verb == "GET", (
                 f"`P4_AUTHORIZATION_CENSUS['{path}']` 把**写端点** `{endpoint}` 记成了 P4 的变动项 —— "
-                "子菜单粒度只管**读侧可见性**；写动作的码不在本阶段射程（I4 台账只具名报出、不处置）"
+                "子菜单粒度只管**读侧可见性**；写动作的码不在本阶段射程（I4 台账只具名报出；"
+        "其处置是 #5699 的后续阶段 I4，逐条登记在 test_rbac_endpoint_write_codes.py）"
             )
             assert url.startswith("/"), f"端点 `{endpoint}` 的形态不对（应为 `<VERB> <path>`）"
-    # 写侧的第二个读数：I4 台账（端点层「写动词 + 读码」）是**存量**形态，P4 不动它 ⇒ 条数必须仍是 16。
+    # 写侧的第二个读数：I4 台账（端点层「写动词 + 读码」）在 P4 是**存量**形态（当时 16 条）；
+    # issue #5699 的 **I4** 之后四条**真写**已改挂写码 ⇒ 现取 12 条。
     live = write_under_read_code(load_parity_guard())
-    assert len(live) == WRITE_UNDER_READ_CODE_CAP == 16, (
+    assert len(live) == WRITE_UNDER_READ_CODE_CAP == 12, (
         f"写侧台账条数漂移（现取 {len(live)} / 上限 {WRITE_UNDER_READ_CODE_CAP}）⇒ "
         "要么有人改了写端点的码（本阶段射程外、须人裁），要么漏登记"
     )

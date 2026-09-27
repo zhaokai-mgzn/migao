@@ -920,10 +920,12 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
 #: 漂移看不见；② 手工清单靠人记得往里加码。⇒ 换由**判据 14**（`problems_role_default_parity`）
 #: **逐角色码穷举**承担（`回退 ⊆ 种子` 无条件 + 差异具名登记、只许缩短），无需人维护。
 
-LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {
-    "product_manager": "POC 期的历史岗位码（`mibao.py` 的 `allowed_roles` 仍在用）：无 roles 行，只有回退表口径",
-    "knowledge_editor": "同上（知识库编辑岗）",
-}
+#: 🔴 **已整表销账**（issue #5699 的 **P6**，出口 (i)：正式定义 —— 人类 2026-09-27 裁定）：
+#: `product_manager` / `knowledge_editor` 本单**进了种子矩阵**（`RegistrationService` 建 roles 行 +
+#: 授默认码；存量租户由 `V137__formalize_legacy_roles.sql` 建行授权）⇒ 它们不再是「种子外的历史角色」
+#: ⇒ 本表**清空**（销账，不是留两套真相）。清空后语义**更严**：任何回退里出现、种子里没有的角色码
+#: 都会直接判红（判据 9 ③ 的 `if role not in LEGACY_ROLES_IN_FALLBACK` 分支）。
+LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {}
 
 #: **已知但不修**的残留（判据 8）：带理由 + 去向，禁止沉默。
 REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
@@ -2491,10 +2493,9 @@ def problems_comment_claims(w: World) -> list[str]:
 # 本判据判「差异具名登记 + 只许缩短 + 授权变更 census」。
 #
 # 🔴 **明确的边界（不要把本判据读成覆盖面更大）** —— 不登记的限制就是未来的空断言：
-#   ① **只覆盖「两处都有定义」的角色码**。历史遗留岗位（`LEGACY_ROLES_IN_FALLBACK` 里的
-#      `product_manager` / `knowledge_editor`）**不在种子矩阵里** ⇒ 「两处逐值相等」这个命题对它们
-#      **不适定**（没有第二处可比）⇒ ① 段对它们的取值**一声不响**；它们的可达面变化由 ② 段的
-#      **授权变更 census** 承担（`FALLBACK_BASELINE_BEFORE_5683` 把 `product_manager` 也冻在里面）。
+#   ① **只覆盖「两处都有定义」的角色码**。历史遗留岗位（`product_manager` / `knowledge_editor`）在
+#      issue #5699 的 **P6（出口 i）**之前**不在种子矩阵里** ⇒ 「两处逐值相等」这个命题对它们当时**不适定**；
+#      **P6 之后它们进了种子矩阵** ⇒ 本段对它们**同样适用**（逐角色码穷举守着）。
 #   ② **只解析源码文本**：种子面靠 `parse_role_defaults` 读 `attachDefaultPermissions(…List.of(…))`
 #      与 `permissionByCode.keySet()`，回退面靠 `parse_role_fallback` 读 `case "x" -> List.of(…)`。
 #      换形态（把种子挪进 SQL/YAML、把 switch 改成 Map、用常量变量拼列表）⇒ 解析面**读不到** ——
@@ -2664,10 +2665,17 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "order:list": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
-        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview', 'POST /api/admin/production/orders/{}/instantiate', 'POST /api/admin/production/orders/{}/operations/{}/report', 'POST /api/admin/production/orders/{}/print', 'POST /api/admin/production/orders/{}/ship'),
+        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
         menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
         tools=('logistics_track', 'order_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；23 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+    ),
+    "production:execute": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'sales'),
+        endpoints=('POST /api/admin/production/orders/{}/instantiate', 'POST /api/admin/production/orders/{}/operations/{}/report', 'POST /api/admin/production/orders/{}/print', 'POST /api/admin/production/orders/{}/ship'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5699 的 **I4**（人类 2026-09-27 裁定选 A）：四个**真写**端点此前只由**类级读码** `order:list` 把守 ⇒ 改挂写码 `production:execute`，并同批授予**今日持 `order:list`** 的四个岗位（客服 · 运营 · 销售 · 财务；admin 恒 `*`）⇒ **有效权限集合逐值不变**（这四个端点改前就在这批岗位的放行集里）。新码**只**挂这四个端点（别处一律不挂）⇒ 没有多开任何一扇门：无菜单节点、无 Agent 工具。'),
     ),
     "processing:update": AuthorizationCensusEntry(
         roles=('operator',),
