@@ -26,6 +26,8 @@ r"""本地门禁覆盖矩阵 + bmini 腿接线守卫（issue #4221 族；本单�
 | C6 | 未覆盖台账**只许缩短**（上限冻结在本文件）+ 每条带 reason/issue/owner + 条目**活着**（未覆盖模块要能指认兜它的 CI 腿） | 加一条未覆盖模块 ⇒ 超上限即红 |
 | C7 | **行为**：缺依赖 ⇒ fail-closed（❌ + 非零，**不是** ⏭️）；命中触发面 ⇒ 腿被派发；未命中 ⇒ 不派发、且打印「未跑」 | 藏掉 `node_modules` 后跑 harness ⇒ 必须 ❌；谓词收窄 ⇒ 不派发 |
 | C8 | 与 CI **逐字一致**：本地腿的四条命令 == CI 两条腿的 `run` 原文（现取 YAML），且本地按同序执行 | 改一条命令（`build:h5` → `build:swan`）⇒ 红 |
+| C9 | **快循环档的 fail-closed**（`kind=diff-face-gated-deps`，本单新增）：五条模块腿必须由 `report_gated` 在档位分支**顶层无条件**派发（命中 ⇒ `report_strict`、未命中 ⇒ `report_env`）；行为三态 = 命中+缺依赖 ⇒ ❌/`FAIL=1`、未命中+缺依赖 ⇒ ⏭️/`READY=1`（**不计通过**）、命中+就绪 ⇒ 照旧真跑（**覆盖强度不变**） | 换回 `report_env` ⇒ 红；把腿套进 `if` ⇒ 红；未命中时静默 ✅ ⇒ 红；`if face_hit` 改成 `if false` ⇒ 红 |
+| C10 | **覆盖面登记与事实自洽**：`fail_closed_scope` 要写明「改了什么 / 没改什么 / 覆盖不到什么」，且「redproof 档 9 条实跑腿**未**门控」这一条被**现取**钉住（条数 + 该档无 `report_gated`/`report_strict`） | 把 redproof 某条腿改走 strict ⇒ 红；条数不符 ⇒ 红；删掉登记块 ⇒ 红 |
 
 ## 判别力自证（变异**当场在内存/临时目录里构造**，不靠"改磁盘再改回来"）
 
@@ -36,9 +38,14 @@ r"""本地门禁覆盖矩阵 + bmini 腿接线守卫（issue #4221 族；本单�
 ## 边界（明确的，不要把本判据读成覆盖面更大）
 
 本判据机械保证「每个被发现的模块都被**显式裁定**」+「登记的腿真的活在它声称的档位里」+
-「相对路径字面量形态的跨目录输入都被裁定过」；它**不保证覆盖强度**（一条弱腿与一条强腿在矩阵里
+「相对路径字面量形态的跨目录输入都被裁定过」+「快循环档那五条腿的『依赖缺』判定按变更集分派、
+且派发是**无条件**的」；它**不保证覆盖强度**（一条弱腿与一条强腿在矩阵里
 长得一样），**不保证**触发面 = 全部输入闭包（tsconfig paths / 运行期拼路径 / 环境变量指向的输入
 不在面内 —— 假绿方向，不会误伤），也**不保证**「模块内的腿够不够」。
+🔴 **C9/C10 只管一件事**：「依赖**缺**时记 ❌ 还是 ⏭️」——它们**不改覆盖强度**（依赖齐备时这些腿照旧
+每次都跑；判据读的是**接线与派发深度**，不判腿的强弱），也不改任何档位 / 命令 / CI 面。
+覆盖不到的面逐条登记在台账 `fail_closed_scope.not_covered`（redproof 档实跑腿未门控 · 闭包形态 ·
+「装了但装错」· CI 侧）。
 自查清单（可复制）：
 `python3 -m pytest tests/unit_ci_workflows/test_local_gate_matrix.py -q -s`。
 """
@@ -57,6 +64,23 @@ SCRIPT = REPO / "verify-all.sh"
 LEDGER_PATH = Path(__file__).resolve().parent / "local_gate_matrix.json"
 BMINI_WORKFLOW = REPO / ".github" / "workflows" / "bmini-app.yml"
 BMINI = "frontend/bmini-app"
+
+#: 触发面登记的**两种**形态（C5 的输入闭包对两者都判；派发形态见各自的 C 行）：
+#: · `diff-face-hit`（bmini 范式，gate 档）：**腿本身**按变更集派发 —— 未命中 ⇒ 不派发 + 显式「未跑」；
+#: · `diff-face-gated-deps`（本单新增，快循环档）：腿**照旧每次都跑**（覆盖强度不变），
+#:   只有「依赖**缺**」这一态的判定按变更集分派（命中 ⇒ ❌ fail-closed / 未命中 ⇒ ⏭️ 未就绪）。
+#: ⚠️ 两者都要求 `fail_closed: true` —— 登记的意义就是「这条腿不许静默绿」。
+FACE_TRIGGER_KINDS = ("diff-face-hit", "diff-face-gated-deps")
+#: 档位分支里每行的控制流**开体 / 闭体**（只做词法配对：判据要的是「这条腿在不在条件里」）。
+_OPEN_RE = re.compile(r"^\s*(?:if|for|while)\b")
+_CLOSE_RE = re.compile(r"^\s*(?:fi|done)\b")
+
+#: 快循环档 fail-closed 三态读数用的变更集（命中 / 未命中 `frontend/ai-agent-service` 的触发面，
+#: 都由**脚本里真实的谓词**判定 —— 不是喂给判据的常量）。
+GATED_HIT_PATH = "backend/ai-agent-service/app/graph.py"
+GATED_MISS_PATH = "frontend/worker-h5/src/render.mjs"
+GATED_ENV = "ai-agent"
+GATED_FACE_FN = "ai_agent_face_paths"
 
 #: 模块**发现**口径（本文件冻结）：`backend/*` 与 `frontend/*` 的第一层目录（不以 `.` 开头）。
 #: 用「目录」而不是「有 package.json 的目录」：worker-h5 / shared 没有声明物却**有腿 / 有消费方**，
@@ -295,6 +319,15 @@ def leg_problems(script_text: str, ledger: dict) -> list[str]:
                 "（挪档位/改腿名必须同改台账）"
             )
         trigger = entry.get("trigger") or {}
+        if trigger.get("kind") == "diff-face-gated-deps":
+            problems += gated_trigger_problems(rel, entry, trigger, branches, declared_envs)
+            continue
+        if trigger and trigger.get("kind") not in FACE_TRIGGER_KINDS:
+            problems.append(
+                f"{rel}：trigger.kind={trigger.get('kind')!r} 不在冻结枚举 {FACE_TRIGGER_KINDS} 里"
+                "（触发面形态必须可枚举 —— 否则本判据看不见它的射程）"
+            )
+            continue
         if trigger.get("kind") != "diff-face-hit":
             continue
         env = trigger.get("env") or ""
@@ -316,6 +349,115 @@ def leg_problems(script_text: str, ledger: dict) -> list[str]:
                 problems.append(f"{rel}：{mode} 档未命中触发面时必须显式声明「未跑」（不许静默 ✅）")
             if "✅" in branch:
                 problems.append(f"{rel}：{mode} 档的「未命中」声明里出现 ✅ —— 「没跑」与「通过」必须可区分")
+    return problems
+
+
+def control_flow_depths(branch: str) -> list[tuple[int, str]]:
+    """分支里每行的「**进入该行时**的控制流嵌套深度」（0 = 无条件区）。
+
+    ⚠️ 只做**词法**配对（`if|for|while` 开体 / `fi|done` 闭体；`elif`/`else` 不改深度）——
+    本判据要的不是完整 shell 解析，而是「这条腿**是不是被套在某个条件里**」（`FM-C` 族：
+    判据不许自证，故这里判的是**派发语句的位置**，不是它的措辞）。
+    """
+    depth, out = 0, []
+    for raw in branch.splitlines():
+        out.append((depth, raw))
+        if _OPEN_RE.match(raw):
+            depth += 1
+        elif _CLOSE_RE.match(raw):
+            depth = max(0, depth - 1)
+    return out
+
+
+def gated_trigger_problems(rel: str, entry: dict, trigger: dict,
+                           branches: dict, declared_envs: set) -> list[str]:
+    """C9（静态）：`kind=diff-face-gated-deps` 的条目必须**逐档逐腿**由 `report_gated` 顶层派发。
+
+    三条不变量：① 派发语句是 `report_gated <env> <predicate_fn> "<腿名>"`；
+    ② 它落在**控制流深度 0**（不在任何 `if`/`for` 里 ⇒ 依赖齐备时照旧每次都跑 = 覆盖强度不变）；
+    ③ 该 env key 已在 `probe_ready()` 里声明、且同一档位分支里**不许**再直写 `report_env`/`report_strict`
+    （依赖缺时的判定必须**单点**表达，两条路并存 ⇒ 行为不确定）。
+    """
+    problems: list[str] = []
+    face_fn = trigger.get("predicate_fn") or ""
+    if trigger.get("hit_fn") != "face_hit":
+        problems.append(
+            f"{rel}：trigger.hit_fn 应为共享的 `face_hit`（现取 {trigger.get('hit_fn')!r}）—— "
+            "A/B 两条路（命中判据）必须单点实现"
+        )
+    if trigger.get("fail_closed") is not True:
+        problems.append(f"{rel}：trigger.fail_closed 必须显式为 true（登记的意义就是「这条腿不许静默绿」）")
+    for leg in entry.get("leg_names") or []:
+        # ⚠️ 逐腿的「活着」检查是**必须**的：C3 的档位判定是**条目级**的（`any(leg in branch)`）⇒
+        #    同一模块的另一条腿还在时，把某一条腿的整行派发**删掉**它看不见（实测：删掉三档的
+        #    admin-web tsc 派发行 ⇒ C3 全绿）。这里按「该腿至少在一个声称的档位里出现」兜住。
+        present = [m for m in entry.get("tiers") or [] if f'"{leg}"' in branches[m]]
+        if not present:
+            problems.append(
+                f"{rel}：腿 {leg!r} 在它声称的档位 {entry.get('tiers')} 里**一处都没有** —— "
+                "要么派发行被删了（腿死了），要么档位声明陈旧（同改台账）"
+            )
+    for mode in entry.get("tiers") or []:
+        branch = branches[mode]
+        depths = control_flow_depths(branch)
+        for leg in entry.get("leg_names") or []:
+            if f'"{leg}"' not in branch:
+                continue      # 该腿不在此档（逐腿「至少出现一次」已由上面那条兜住）
+            pat = re.compile(
+                rf'^[ ]{{4}}report_gated\s+(\S+)\s+{re.escape(face_fn)}\s+"{re.escape(leg)}"'
+            )
+            hits = [(d, ln) for d, ln in depths if pat.match(ln)]
+            if not hits:
+                problems.append(
+                    f"{rel}：{mode} 档的腿 {leg!r} 不是由 `report_gated <env> {face_fn} \"{leg}\"`"
+                    " 在**分支顶层**派发的 —— 依赖缺时的判定必须走 report_gated"
+                    "（命中 ⇒ report_strict / 未命中 ⇒ report_env）"
+                )
+                continue
+            depth, line = hits[0]
+            if depth != 0:
+                problems.append(
+                    f"{rel}：{mode} 档的腿 {leg!r} 被套在条件里（控制流深度 {depth}）—— "
+                    "快循环档的腿必须**无条件**派发（按变更集决定跑不跑 = 选择集变成失败开放，issue #3680）"
+                )
+            env = pat.match(line).group(1)
+            if env not in declared_envs:
+                problems.append(f"{rel}：{mode} 档派发用的 env key {env!r} 未在 probe_ready() 里声明")
+            for other in ("report_env", "report_strict"):
+                if f"{other} {env} " in branch:
+                    problems.append(
+                        f"{rel}：{mode} 档里同时存在 `{other} {env}` —— 依赖缺时的判定必须**单点**由"
+                        " report_gated 表达（两条路并存 ⇒ 行为不确定）"
+                    )
+    return problems
+
+
+def gated_wrapper_problems(script_text: str) -> list[str]:
+    """C9（静态）：`report_gated()` 必须是「命中 ⇒ `report_strict` / 未命中 ⇒ `report_env`」的单点实现。
+
+    就绪探测与逐检查项的 ⏭️ 标记**仍只属于** `report_env()`（三态单一实现）—— 包装里出现
+    `probe_ready` 或 ⏭️ 都算它把三态拆散了。
+    """
+    problems: list[str] = []
+    # ⚠️ 只看**代码行**：本判据自己就在包装的注释里写着 `probe_ready` / `⏭️`（说明单一实现的边界）
+    #    ⇒ 不剥注释会把**说明文字**读成「包装自己探测/自己打标记」（`FM-A11` 举例即实例）。
+    body = _code_of(_extract(script_text, "report_gated"))
+    if 'if face_hit "$face_fn"; then' not in body:
+        problems.append(
+            "report_gated() 的命中判定不是 `if face_hit \"$face_fn\"; then` —— 形态变了就同步本判据"
+            "（否则本判据看不见它的判定对象）"
+        )
+    for need, why in (("report_strict", "命中 ⇒ fail-closed（❌ + 可行动文案）"),
+                      ("report_env", "未命中 ⇒ ⏭️ 未就绪（不计通过）")):
+        if need not in body:
+            problems.append(f"report_gated() 里没有 `{need}` —— {why} 这一半丢了")
+    if "⏭️" in body:
+        problems.append(
+            "report_gated() 自己打了 ⏭️ —— 「逐检查项的未就绪标记」只能由 report_env() 打印"
+            "（散到调用点/包装里 = 可绕过 probe_ready() 直接标跳过）"
+        )
+    if "probe_ready" in body:
+        problems.append("report_gated() 自己探测运行环境 —— 就绪探测必须单一实现（report_env/report_strict 里）")
     return problems
 
 
@@ -385,7 +527,7 @@ def trigger_face_problems(script_text: str, ledger: dict, repo: Path = REPO) -> 
     computed_all: set[str] = set()
     for rel, entry in sorted((ledger.get("modules") or {}).items()):
         trigger = entry.get("trigger") or {}
-        if trigger.get("kind") != "diff-face-hit":
+        if trigger.get("kind") not in FACE_TRIGGER_KINDS:
             continue
         fn = trigger.get("predicate_fn") or ""
         pattern = predicate_pattern(script_text, fn)
@@ -472,6 +614,142 @@ def _jest_test_files() -> list[Path]:
     for pat in pats:
         hits += sorted((REPO / BMINI).glob(pat))
     return hits
+
+
+# ── C9/C10：快循环档 fail-closed 的**行为**读数 + 覆盖面登记 ────────────────────────
+
+
+def _fake_module_root(tmp_path: Path, *, env: str, ready: bool) -> Path:
+    """造一个最小 ROOT：`env` 的就绪探测**确定性**地要么满足、要么不满足。
+
+    ⚠️ 只用**只依赖文件**的 env key（`ai-agent` / `admin-web-vitest` / `admin-web-tsc`）：
+    `admin-api`（要 java 在 PATH）与 `worker-h5-node-tests`（要 node 在 PATH）在不同机器上读数不同
+    ⇒ 判据会变得不确定（`FM-E15` 同族：判据不许依赖"本机恰好装了什么"）。
+    """
+    root = tmp_path / ("ready" if ready else "missing")
+    if env == "ai-agent":
+        bin_dir = root / "backend" / "ai-agent-service" / ".venv" / "bin"
+        tool = bin_dir / "python"
+    elif env in ("admin-web-vitest", "admin-web-tsc"):
+        bin_dir = root / "frontend" / "admin-web" / "node_modules" / ".bin"
+        tool = bin_dir / ("vitest" if env == "admin-web-vitest" else "tsc")
+    else:
+        raise AssertionError(f"本 helper 只支持「只依赖文件」的 env key，收到 {env!r}")
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    if ready:
+        tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(0o755)
+    return root
+
+
+def _gated_harness(script_text: str, root: Path, *, env: str, face_fn: str, change_set: str) -> str:
+    """把**脚本里真实的** probe_ready / report / report_env / report_strict / report_gated /
+    face_hit / 谓词装进最小 harness（只注入 ROOT 与 CHANGE_SET）。
+
+    ⚠️ 刻意**不**替身掉任何被测函数：判据判的是「命中 ⇒ report_strict / 未命中 ⇒ report_env」
+    这条**真实现**；替身掉就等于自证（`FM-C1` 族）。
+    """
+    return (
+        "set -uo pipefail\n"
+        f"ROOT={shlex.quote(str(root))}\n"
+        f"CHANGE_SET={shlex.quote(change_set)}\n"
+        "PASS=0; FAIL=0; READY=0; declare -a FAILED; declare -a NOT_READY\n"
+        + _extract(script_text, "probe_ready") + "\n"
+        + _extract(script_text, "report") + "\n"
+        + _extract(script_text, "report_strict") + "\n"
+        + _extract(script_text, "report_env") + "\n"
+        + _extract(script_text, "report_gated") + "\n"
+        + _extract(script_text, "face_hit") + "\n"
+        + _extract(script_text, face_fn) + "\n"
+        + f'report_gated {env} {face_fn} "腿名" true\n'
+        + 'echo "COUNTERS PASS=$PASS FAIL=$FAIL READY=$READY"\n'
+        + "rm -f /tmp/verify-all-$$-*.log\n"
+    )
+
+
+def gated_behavior_reading(script_text: str, tmp_path: Path) -> dict:
+    """三态**实跑**读数：① 命中+缺依赖 ② 未命中+缺依赖 ③ 命中+就绪（三种环境各起一个进程）。"""
+    ready = _fake_module_root(tmp_path / "env-ready", env=GATED_ENV, ready=True)
+    missing = _fake_module_root(tmp_path / "env-missing", env=GATED_ENV, ready=False)
+    return {
+        "hit_missing": _run(_gated_harness(script_text, missing, env=GATED_ENV,
+                                           face_fn=GATED_FACE_FN, change_set=GATED_HIT_PATH)).stdout,
+        "miss_missing": _run(_gated_harness(script_text, missing, env=GATED_ENV,
+                                            face_fn=GATED_FACE_FN, change_set=GATED_MISS_PATH)).stdout,
+        "hit_ready": _run(_gated_harness(script_text, ready, env=GATED_ENV,
+                                         face_fn=GATED_FACE_FN, change_set=GATED_HIT_PATH)).stdout,
+    }
+
+
+def gated_behavior_problems(reading: dict) -> list[str]:
+    """**纯函数**：三态读数 → 问题清单（红证直接喂变异后的读数）。"""
+    problems: list[str] = []
+    hit = reading.get("hit_missing", "")
+    miss = reading.get("miss_missing", "")
+    ready = reading.get("hit_ready", "")
+    if "COUNTERS PASS=0 FAIL=1 READY=0" not in hit or "❌" not in hit:
+        problems.append(
+            "命中触发面 + 依赖缺：必须记 ❌（`PASS=0 FAIL=1 READY=0`）—— 「没跑」不得等于「通过」：\n" + hit
+        )
+    if "⏭️" in hit:
+        problems.append("命中触发面 + 依赖缺：出现了 ⏭️（跳过被读成「这项没事」）：\n" + hit)
+    if "python3 -m venv" not in hit:
+        problems.append("命中触发面 + 依赖缺：文案不可行动（必须给出实测可跑通的恢复命令）：\n" + hit)
+    if "COUNTERS PASS=0 FAIL=0 READY=1" not in miss:
+        problems.append(
+            "未命中触发面 + 依赖缺：必须仍是 ⏭️ 未就绪、且**不计通过**"
+            "（也不许为不碰该模块的 PR 制造假红）：\n" + miss
+        )
+    if "⏭️" not in miss or "不是通过" not in miss:
+        problems.append("未命中触发面 + 依赖缺：控制台必须显式说清「未就绪 / 不是通过」：\n" + miss)
+    if "✅" in miss:
+        problems.append("未命中触发面 + 依赖缺：出现了 ✅（未跑的检查被记成通过）：\n" + miss)
+    if "COUNTERS PASS=1 FAIL=0 READY=0" not in ready:
+        problems.append("命中触发面且依赖齐备：必须**照旧真跑**（`PASS=1` ⇒ 覆盖强度不变）：\n" + ready)
+    return problems
+
+
+def _redproof_env_legs(script_text: str) -> list[str]:
+    """`redproof` 档里用 `report_env` 派发的**实跑**腿名（现取）。"""
+    return re.findall(r'^[ ]{4}report_env\s+\S+\s+"([^"]+)"', _mode_branch(script_text, "redproof"), re.M)
+
+
+def fail_closed_scope_problems(script_text: str, ledger: dict) -> list[str]:
+    """C10：覆盖面登记与**事实**自洽 —— 登记里写的每一条都要能被现取核对，不是散文。"""
+    problems: list[str] = []
+    scope = ledger.get("fail_closed_scope") or {}
+    if not scope:
+        problems.append(
+            "台账缺 `fail_closed_scope`（覆盖面登记：改了什么 / 没改什么 / 覆盖不到什么 —— "
+            "本单的边界必须写明并**被判据钉住**）"
+        )
+        return problems
+    for key in ("_what", "not_changed", "not_covered"):
+        if not scope.get(key):
+            problems.append(f"fail_closed_scope 缺 {key!r}（三件事：改了什么 · 没改什么 · 覆盖不到什么）")
+    if not any("覆盖强度" in s for s in scope.get("not_changed") or []):
+        problems.append("fail_closed_scope.not_changed 没有点名「覆盖强度」—— 这是本单最容易被读错的一条")
+    for item in scope.get("not_covered") or []:
+        if len(item) < 20:
+            problems.append(f"fail_closed_scope.not_covered 有一条太短（说不清边界）：{item!r}")
+    tier = scope.get("redproof_tier") or {}
+    branch = _mode_branch(script_text, "redproof")
+    legs = _redproof_env_legs(script_text)
+    if tier.get("gated") is not False:
+        problems.append("fail_closed_scope.redproof_tier.gated 必须是 false（本单**有意不**门控实跑腿）")
+    if "report_gated" in branch or "report_strict" in branch:
+        problems.append(
+            "redproof 档里出现了 report_gated / report_strict —— 与登记「未门控」不符"
+            "（要么撤掉，要么同批改 fail_closed_scope 与下半段的核对）"
+        )
+    if tier.get("leg_count") != len(legs):
+        problems.append(
+            f"fail_closed_scope.redproof_tier.leg_count = {tier.get('leg_count')!r} ≠ "
+            f"redproof 档 report_env 实跑腿**现取** {len(legs)} 条（涨跌都要同批更新）"
+        )
+    if len(legs) < 2:
+        problems.append(f"redproof 档的实跑腿现取只有 {len(legs)} 条 —— 抽出失效或腿被删（本判据 fail-closed）")
+    return problems
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -627,6 +905,34 @@ def test_bmini_test_face_is_not_empty():
     )
 
 
+def test_gated_legs_dispatch_through_report_gated():
+    """C9（静态）：五条快循环档模块腿必须由 `report_gated` 在档位分支**顶层无条件**派发。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    problems = leg_problems(text, _ledger()) + gated_wrapper_problems(text)
+    print(f"[快循环 fail-closed] 登记的 gated 条目 = "
+          f"{sorted(r for r, e in _ledger()['modules'].items() if (e.get('trigger') or {}).get('kind') == 'diff-face-gated-deps')}")
+    assert problems == [], "快循环档 fail-closed 接线不合格：\n" + "\n".join(f"  · {p}" for p in problems)
+
+
+def test_gated_legs_are_fail_closed_on_hit_and_not_on_miss(tmp_path):
+    """C9（行为）：命中+缺依赖 ⇒ ❌/`FAIL=1`；未命中+缺依赖 ⇒ ⏭️/`READY=1`（**不计通过**）；命中+就绪 ⇒ 照旧真跑。"""
+    reading = gated_behavior_reading(SCRIPT.read_text(encoding="utf-8"), tmp_path)
+    for name in ("hit_missing", "miss_missing", "hit_ready"):
+        print(f"[快循环 fail-closed] {name}：\n{reading[name]}")
+    problems = gated_behavior_problems(reading)
+    assert problems == [], "快循环档 fail-closed 行为不合格：\n" + "\n".join(f"  · {p}" for p in problems)
+
+
+def test_fail_closed_scope_is_pinned_to_the_facts():
+    """C10：覆盖面登记（`fail_closed_scope`）与现取事实自洽（redproof 档「未门控」这一条被钉住）。"""
+    problems = fail_closed_scope_problems(SCRIPT.read_text(encoding="utf-8"), _ledger())
+    scope = _ledger().get("fail_closed_scope") or {}
+    print(f"[覆盖面登记] 不改动的 = {scope.get('not_changed')}")
+    print(f"[覆盖面登记] 覆盖不到 = {scope.get('not_covered')}")
+    print(f"[覆盖面登记] redproof 档 = {scope.get('redproof_tier')}")
+    assert problems == [], "覆盖面登记不合格：\n" + "\n".join(f"  · {p}" for p in problems)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 判别力自证（红证：变异在内存 / 临时目录里当场构造；含「只改注释」的对照）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -736,4 +1042,120 @@ def test_narrowed_predicate_would_not_dispatch():
     )
     assert "STRICT bmini-app " in dispatch_stdout(text, f"{BMINI}/src/app.tsx\n"), (
         "对照组失效：真实脚本在命中触发面时必须派发"
+    )
+
+
+# ── C9/C10 的判别力自证（变异**在内存里**当场构造；含「只改注释」对照与「锚唯一」自证）──────
+
+
+def test_gated_report_env_substitution_is_detected():
+    """C9 判别力：把 `report_gated <env> <face>` 换回 `report_env <env>` ⇒ 判据变红。
+
+    对照：**只改注释**（把同一串写进注释）⇒ **不红** —— 证明判据读的是**代码行的派发形态**，
+    不是「文件变了没有」（`FM-C3`：红证打偏的形态）。
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    anchor = f'report_gated {GATED_ENV} {GATED_FACE_FN} "ai-agent 单测"'
+    assert text.count(anchor) == 1, (
+        f"锚点必须唯一（带腿名才唯一：前缀锚在 quick/full/agent 三档都命中 ⇒ 红证会打偏）："
+        f"现取 {text.count(anchor)} 处"
+    )
+    assert leg_problems(text, _ledger()) == [], "真实脚本必须先是合规的（否则本红证分不清对象）"
+    comment_only = text + f'\n# 说明：两档都用 `{anchor}"ai-agent 单测"` 派发（注释不是派发）\n'
+    assert leg_problems(comment_only, _ledger()) == [], (
+        "「只改注释」的对照红了 ⇒ 本判据被文本巧合喂红，而不是被真形态喂红"
+    )
+    mutated = _mutate(text, anchor, f'report_env {GATED_ENV} "ai-agent 单测"')
+    problems = leg_problems(mutated, _ledger())
+    assert any("report_gated" in p and "分支顶层" in p for p in problems), (
+        f"换回 report_env（依赖缺 ⇒ ⏭️ 跳过）却没让判据变红 ⇒ C9 是空断言：{problems}"
+    )
+
+
+def test_gated_leg_wrapped_in_a_condition_is_detected():
+    """C9 判别力：把一条腿套进 `if …; then`（= 按变更集决定跑不跑）⇒ 判据报「被套在条件里」。
+
+    这一条守的是**覆盖强度**那一半：套进条件后，不碰该模块的改动连腿都不跑了（issue #3680 的失败开放形态）。
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    anchor = f'    report_gated {GATED_ENV} {GATED_FACE_FN} "ai-agent 单测"'
+    assert text.count(anchor) == 1, f"锚点必须唯一（只有 quick 档用短腿名）：现取 {text.count(anchor)} 处"
+    mutated = _mutate(text, anchor, f'    if face_hit {GATED_FACE_FN}; then\n{anchor}\n    fi')
+    problems = leg_problems(mutated, _ledger())
+    assert any("被套在条件里" in p for p in problems), (
+        f"把腿套进条件里却没红 ⇒ 「无条件派发」是空断言（覆盖强度可被静默改小）：{problems}"
+    )
+    assert leg_problems(text, _ledger()) == [], "对照组失效：真实脚本必须先是合规的"
+
+
+def test_removed_gated_dispatch_is_detected():
+    """C9 判别力（**删掉必红**自证）：把三档里的 `admin-web tsc` 派发行全删 ⇒ 判据报档位不符。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    line = '    report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"'
+    assert text.count(line) == 3, f"锚点必须唯一可数（quick/full/frontend 三处）：现取 {text.count(line)}"
+    mutated = text.replace(line, "")
+    assert mutated != text, "变异注入未生效（自证失败 ⇒ 该红证是空断言）"
+    problems = leg_problems(mutated, _ledger())
+    assert any("admin-web tsc" in p for p in problems), (
+        f"整条派发行被删却没红（腿死了没人管）：{problems}"
+    )
+
+
+def test_gated_wrapper_silent_pass_and_never_hit_are_detected(tmp_path):
+    """C9 判别力（行为面两条）：① 未命中时**静默通过**；② 命中判定恒假（`if false`）——都必须变红。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert gated_behavior_problems(gated_behavior_reading(text, tmp_path / "base")) == [], (
+        "真实脚本必须先是合规的（否则本红证分不清对象）"
+    )
+    # ① 「未命中 + 依赖缺」这条路上把它改成静默 ✅（直接 report 一个恒真命令）
+    env_call = 'report_env "$env_key" "$name" "$@"'
+    assert text.count(env_call) == 1, f"锚点必须唯一（只在 report_gated 里）：现取 {text.count(env_call)} 处"
+    silent = _mutate(text, env_call, 'report "$name" true')
+    p1 = gated_behavior_problems(gated_behavior_reading(silent, tmp_path / "silent"))
+    assert any("未命中触发面 + 依赖缺" in p for p in p1), (
+        f"未命中时静默通过（✅ / 计成通过）却没红 ⇒ C9 的「不计通过」那一半是空断言：{p1}"
+    )
+    # ② 命中判定恒假 ⇒ 命中的腿退回 ⏭️（fail-closed 永不生效）
+    hit_guard = 'if face_hit "$face_fn"; then'
+    assert text.count(hit_guard) == 1, f"锚点必须唯一（只在 report_gated 里）：现取 {text.count(hit_guard)} 处"
+    never = _mutate(text, hit_guard, "if false; then")
+    p2 = gated_behavior_problems(gated_behavior_reading(never, tmp_path / "never"))
+    assert any("命中触发面 + 依赖缺" in p for p in p2), (
+        f"命中判定恒假（fail-closed 永不生效）却没红：{p2}"
+    )
+
+
+def test_narrowed_module_face_is_detected(tmp_path):
+    """C5/C9 判别力：把 ai-agent 的谓词收窄成命中不了自己 ⇒ ① C5 报红 ② 命中场景退回 ⏭️（fail-closed 失效）。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    pattern = predicate_pattern(text, GATED_FACE_FN)
+    assert pattern == "^backend/ai-agent-service/", f"谓词现取变了（同步本判据）：{pattern!r}"
+    narrowed = _mutate(text, pattern, "^backend/zz-nope/")
+    problems = trigger_face_problems(narrowed, _ledger())
+    assert any("命中不了模块目录本身" in p for p in problems), (
+        f"谓词收窄后 C5 没红（触发面闭包是空断言）：{problems}"
+    )
+    p2 = gated_behavior_problems(gated_behavior_reading(narrowed, tmp_path))
+    assert any("命中触发面 + 依赖缺" in p for p in p2), (
+        f"谓词收窄后「命中」场景静默退回 ⏭️ 却没红：{p2}"
+    )
+
+
+def test_admin_web_face_covers_its_cross_directory_inputs():
+    """C5 判别力（本单最容易漏的一处）：admin-web 的**测试**会读后端源码 ⇒ 那些文件必须在谓词里。
+
+    对照：只改注释（把路径写进注释）不算输入（`escaping_inputs` 只认字符串字面量）。
+    """
+    text = SCRIPT.read_text(encoding="utf-8")
+    pattern = predicate_pattern(text, "admin_web_face_paths")
+    inputs = escaping_inputs("frontend/admin-web")
+    print(f"[触发面] frontend/admin-web 的跨目录输入现取 {len(inputs)} 条：{sorted(inputs)}")
+    assert len(inputs) >= 8, f"现取跨目录输入少了（源码变了就同步本判据的下限）：{sorted(inputs)}"
+    uncovered = [p for p in inputs if not re.search(pattern, p)]
+    assert uncovered == [], (
+        f"admin-web 的跨目录输入没有全在触发面里：{uncovered}\n"
+        "（出口 = 把它们加进 verify-all.sh 的 admin_web_face_paths —— 它们是这条腿判定对象的输入）"
+    )
+    assert any("migration-archive" in p for p in inputs), (
+        "现取的跨目录输入里没有目录形态（`migration-archive`）—— 判据的形态覆盖与现场不符，同步本判据"
     )

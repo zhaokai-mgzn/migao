@@ -104,10 +104,14 @@ def _mode_block(code: str, mode: str) -> str:
 # `report "名称" bash -c "命令行"`（或带运行环境声明的 `report_env <key> "名称" bash -c "…"`）：
 # 命令行是最外层双引号内的内容（其中单引号是**字面量**，因为 bash 在双引号内不把单引号当引号 ——
 # 故 shlex.split 会直接报 "No closing quotation"，不能用）。
-# ⚠️ `(?:_env\s+\S+)?`：依赖运行环境的检查项现在走 `report_env <env-key> …`（三态里的「未就绪」
-#    由它表达），**命令行的位置与内容不变** —— 本守卫关心的仍是同一件事（选择集）。
+# ⚠️ 三种派发形态都要认（#5707 的 FM-E10 收口后）：`report "名" …` ·
+#    `report_env <env-key> "名" …` · `report_strict <env-key> "名" …` ·
+#    `report_gated <env-key> <face-谓词> "名" …` —— **命令行的位置与内容不变**，
+#    本守卫关心的仍是同一件事（选择集）。判据 = `test_local_gate_matrix.py` 的 C9 负责
+#    「谁该走哪条路」，这里只负责**读得出命令行**。
 _REPORT_RE = re.compile(
-    r"^\s*report(?:_env\s+\S+)?\s+(?:\"[^\"]*\"|\S+)\s+bash\s+-c\s+\"(?P<cmd>[^\"]*)\"\s*$"
+    r"^\s*report(?:_env\s+\S+|_strict\s+\S+|_gated\s+\S+\s+\S+)?\s+"
+    r"(?:\"[^\"]*\"|\S+)\s+bash\s+-c\s+\"(?P<cmd>[^\"]*)\"\s*$"
 )
 
 # 脚本顶层的简单赋值 `NAME="值"` / `NAME=值`（quick/full 共用选择集就靠这个变量）

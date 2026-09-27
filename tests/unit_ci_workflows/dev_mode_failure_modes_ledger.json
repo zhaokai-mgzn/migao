@@ -539,16 +539,17 @@
       "id": "FM-E10",
       "state": "gap",
       "symptom": "**「未就绪」被当通过**：`verify-all.sh` 的 `report_env()` 在依赖没装好时打 `⏭️ 未就绪`（跳过），而在**合并门禁**上「没跑」会被读成「这项没事」。",
-      "guards": "**部分覆盖（判据已存在，但射程只到「声明了 fail-closed 的条目」）**：`tests/unit_ci_workflows/local_gate_matrix.json::_invariants` 第 3 条（判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py` 的 C4）机械要求「`fail_closed: true` 的条目必须走 `report_strict`，未命中时显式声明『未跑』且不得出现 ✅」—— **现取**只有 1 条这样声明（`frontend/bmini-app`，gate 档，缺依赖 ⇒ ❌ + 非零退出）；**其余 5 条 `report_env` 派发的腿**（`admin-api` ×2 档 / `ai-agent` ×2 档 / `admin-web` vitest+tsc / `worker-h5`）**没有任何判据要求它们 fail-closed** ⇒ 未就绪仍打 ⏭️。",
+      "guards": "**本包（`Refs #5707`）已把「快循环档」这半边收口**：`verify-all.sh` 新增 `report_gated()`（一个共享包装 + 每模块一个 face 谓词），把「依赖缺 + **变更集命中该模块**」从 `⏭️ 未就绪` 改成 fail-closed 记 `❌`（+ 实测可跑通的恢复命令）；5 条腿逐条登记在 `tests/unit_ci_workflows/local_gate_matrix.json` 的 `trigger{kind: diff-face-gated-deps, hit_fn: face_hit, predicate_fn, fail_closed: true}`，判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py` 的 **C9**（静态：必须由 `report_gated` 在档位分支**顶层无条件**派发 + 行为：命中+缺依赖 ⇒ `PASS=0 FAIL=1 READY=0` 且给恢复命令 / 未命中+缺依赖 ⇒ `READY=1` 且**不计通过** / 命中+就绪 ⇒ 照旧真跑）与 **C10**（覆盖面登记与现取事实自洽）。**现取读数（本单实跑，零依赖 worktree）**：变更集命中 `backend/ai-agent-service/**` 而缺 `.venv` ⇒ `❌ ai-agent 单测 — 依赖未就绪（fail-closed）`、`quick` rc=1；同环境未命中 ⇒ 仍是 `⏭️ 未就绪` 且不计通过。**残余未守护**：`redproof` 档的 9 条**实跑**腿（未门控，见 `gap_shows_when`）。",
       "gap_owner": "门禁 owner（verify-all.sh 面）",
-      "gap_shows_when": "某模块依赖未装而变更集命中它 ⇒ 本地 `gate` 打 ⏭️ 后仍全绿，问题只在 CI 上爆（本地绿 / CI 红）。**本单现取（2026-09-27，本工作区，`./verify-all.sh quick` 实跑）**：`ai-agent`（缺 `backend/ai-agent-service/.venv/bin/python`）· `admin-web vitest` · `admin-web tsc`（缺 `frontend/admin-web/node_modules/.bin/{vitest,tsc}`）**打 ⏭️**；`admin-api`（`mvnw` + java 21 齐）与 `worker-h5`（node v24 齐）**真跑**。🔴 **两个口径必须分开**：本机「没装依赖 ⇒ ⏭️」是**环境**，**不是门禁缺陷**（CI 上这些腿都真跑）；门禁缺陷只是「变更集命中该模块 + 依赖缺 ⇒ 本地绿」这一形态 —— 而 `gate`（合并门禁）档主路径**一条 `report_env` 模块腿都没有**（唯一模块腿走 `report_strict`），`report_env` 的 ⏭️ 只出现在**开发者快循环**档（quick/full/frontend/backend/agent）与 `redproof` 档。方案与代价见 `docs/wiki/CI-CD.md` 的 `FM-E10` 行。",
+      "gap_shows_when": "**残余（本单有意不做，非「已解决」）**：① `redproof` 档 9 条**实跑**腿仍会在缺 JDK/npm/PG 时打 `⏭️`（入口是**人工** `./verify-all.sh redproof`，不是合并门禁；其**前提面**另由 gate/redproof 档的 `report \"红证机具前提自检\"` **无条件真跑**兜住，故不是无守护面）；把它们也门控会让「没有 PG 的机器」在碰过模块源码后整片红，而实跑单机具 2~30 分钟。② 触发面闭包只机械覆盖「源码里**相对路径字面量**」这一形态（判据 `escaping_inputs` 现取）：tsconfig paths / 运行期拼路径 / 环境变量指向的输入不在面内 ⇒ 缺依赖时那一类耦合**仍可能静默漏**（假绿方向）。③ 「依赖装了但装错了（版本不对 / 装一半）」不在面内（就绪探测只探被调用的可执行文件是否存在）。**重启条件**：实跑巡检接进每 PR 的 required job（或按机具逐个给出零依赖判定）时重估 ①；出现「能机械枚举 tsconfig paths / 运行期输入」的承载体时重估 ②。",
       "evidence": [
-        "verify-all.sh::report_strict",
-        "tests/unit_ci_workflows/local_gate_matrix.json::_invariants",
-        "tests/unit_ci_workflows/test_local_gate_matrix.py::test_report_strict_is_fail_closed_on_missing_deps"
+        "verify-all.sh::report_gated",
+        "tests/unit_ci_workflows/test_local_gate_matrix.py::test_gated_legs_are_fail_closed_on_hit_and_not_on_miss",
+        "tests/unit_ci_workflows/local_gate_matrix.json::fail_closed_scope"
       ],
       "refs": [
-        "#4221"
+        "#4221",
+        "#5707"
       ]
     },
     {
