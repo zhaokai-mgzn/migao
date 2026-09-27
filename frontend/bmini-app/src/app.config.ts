@@ -13,6 +13,12 @@ export default defineAppConfig({
     'pages/production/index/index',
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',
+    // 工人**拍照入库**（issue #5052 P3）：拍上游标签 → 本机解码优先（0 次 LLM）→ 工人确认
+    // → 过账（不可逆，二次确认）→ 出 50×30mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
+    // 走 `/api/worker/inbound/**`（工人零商家权限码，不是管理面）。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `INBOUND_PAGE_ROUTE` 必须逐字等于它
+    // （守卫 tests/inbound-page-platform-gaps.test.ts 判据 G0：没登记进这里 = 死链 ⇒ 红）
+    'pages/worker/inbound/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：
