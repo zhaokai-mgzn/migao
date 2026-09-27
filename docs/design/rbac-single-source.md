@@ -399,7 +399,17 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | (6) `/production/processing` 节点码 → `order:list` | ∅ | ∅ | 加工项管理对 **CS / sales / finance** 由不可见**变可见** | ∅ |
 | (7) `product_manager@fb` 补 `order:list`（**#5683 已判为「不在已批准范围」**） | **product_manager@fb 新增 25 个端点**（17 GET + 8 POST，含建加工单/报工/打印/发货） | ∅ | 订单列表 / 订单详情 / **加工项管理**（该节点码是 `production:view`，本来已可见） | `order_query` · `logistics_track` · 及 4 个 POST 相关工具（**工具面变化需按判据 2 重算**） |
 | (8) `/settings` 简报端点 → `system:manage` | ∅ | **CS / sales / finance / operator / product_manager@fb / knowledge_editor@fb** 失去 `GET /api/admin/briefing/config`（连带 `/briefing` 页与看板简报开关） | ∅ | `briefing_query` |
-| (9) `/production/routings` 的 `processing:manage` 端点 → `production:view` | ∅ | **admin 之外无变化**（`processing:manage` 的持有者 ⊇ 不成立；`ProductionController` 的 `processing:manage` 端点构成需按 (a) 同法现取） | ∅ | ∅ |
+| (9) `/production/routings` 的 `processing:manage` 端点 → `production:view` | ∅ | ∅ | ∅ | ∅ |
+
+> ✅ **第 (9) 行是唯一一条「零 delta」的处置，已机器核实**：`backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java`
+> 的端点现取分布 = `processing:manage` **23** 个（全类级）+ `production:view` **7** 个 + `order:list` **12** 个（全类级）+ 无注解 **5** 个；
+> 而 **`processing:manage` 与 `production:view` 的持有岗位集合在两来源里逐值相同**
+> （seed = {`admin`（`*`）, `operator`}；fallback = {`admin`, `operator`, `product_manager@fb`}）
+> ⇒ 把该控制器任一端点在这两个码之间改挂，**对所有角色的可见面与可做面零 delta**。
+> ⚠️ **不要把这条结论外推到 `processing:view`**：那是**另一个码**（加工单查看），
+> 持有者多出 `customer_service` / `sales` / `finance` ⇒ 第 (1)/(2) 两行的 delta 与它有关，与本行无关。
+> （三个近名码的现取持有者：`processing:view` = admin · CS · operator · sales · finance · product_manager@fb；
+> `production:view` = admin · operator · product_manager@fb；`processing:manage` = 同 `production:view`。）
 
 > ⚠️ 上表每一项都是**授权变更**（放宽或收窄），**必须由人裁定**；本单**一项都不执行**。
 > 表里「变为可达/不可达」的**端点数**取 §3.3(a) 同法现取；标注「∅」= 该码在这条处置里没变。
@@ -456,7 +466,7 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | 2 | `/production/pool` | 节点码 = 该页唯一 unit 的读码 `processing:view`；路由守卫同批 | ❌ 消失 | 🔴 **CS / sales / finance 由不可见变可见**（它们**确实**能读该端点 ⇒ 看得见 == 打得开，不再制造 403） |
 | 3 | `/production/saving-board` | 节点码 = `product:list` | ❌ 消失 | 🔴 **sales / knowledge_editor@fb / product_manager@fb 由不可见变可见** |
 | 4 | `/production/processing` | 3 个 unit 各自声明读码；节点可见 = 任一 unit 可用 | ❌ 消失（不再有「那一个码」） | 见问题 1：`product_manager@fb` 的「加工费组合」tab 仍需 `partial_visibility_ack` 或按 (乙) 收窄 |
-| 5 | `/production/routings` | 2 个 unit（`processing:manage` / `production:view`）；节点可见 = 任一 | ❌ 消失 | 零 delta（两个码的持有者集合现取**逐值相同**：admin · operator · product_manager@fb） |
+| 5 | `/production/routings` | 2 个 unit（`processing:manage` / `production:view`）；节点可见 = 任一 | ❌ 消失 | ✅ **零 delta，已机器核实**：两个码的持有岗位集合在 seed / fallback 两来源里**逐值相同**（`admin` · `operator` · `product_manager@fb`）⇒ 两侧任选一侧对齐都不改变任何角色的可见面或可做面 |
 | 6 | `/settings` | 2 个 unit（`system:manage` / `dashboard:view`）；节点可见 = 任一 | ❌ 消失 | 🔴 **`dashboard:view` 的持有者（CS/sales/finance/operator + 两个幽灵角色）由不可见变可见「企业基础信息」菜单** —— 而该页的「基本设置」tab 仍要 `system:manage` ⇒ **这正是要避免的「看得见做不了」形态**，必须走 `partial_visibility_ack` 或把节点可见性改成**全部 unit 可用**（AND） |
 
 > 🔴 **第 6 行暴露了「OR over units」这一条结构规则的代价**：它对 `/production/processing` 是解药
