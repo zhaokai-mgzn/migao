@@ -369,6 +369,38 @@ def test_config_only_commit_is_judged_as_drift_and_dispatches_a_deploy(tmp_path)
     assert "**结论**：dispatch=1" in summary, f"{summary!r}"
 
 
+def test_judged_pathspec_is_named_in_the_summary(tmp_path):
+    """读数与事实一致：判定行必须**逐项点名**判定所用的 pathspec（承重读数，非装饰）。
+
+    加了附加包含项之后 `$svc_path` 只是**其中一个**来源 ⇒ 只看它会把「只改了
+    `deploy/swas/nginx.conf`」读成「`backend/admin-api` 有代码改动」（#5001 同族：
+    读数与事实不符 ⇒ 排查方向当场跑偏）。
+    """
+    fx = repo_with_single_change(tmp_path, CONFIG_ONLY_FILE, "pathspec-label")
+    proc, summary, _dispatches = run_reconcile_on(tmp_path, fx, "pathspec-label-run")
+    assert proc.returncode == 0, f"{proc.stderr}"
+    assert "判定 pathspec：backend/admin-api deploy/swas" in summary, (
+        f"判定依据没点名「判定所用的 pathspec」（读的人会把配置改动读成服务代码改动）→ {summary!r}"
+    )
+
+
+def test_judged_pathspec_label_criterion_has_discriminating_power(tmp_path):
+    """🔴 红证：把 `reason` 退回只打印 `${svc_path}`（去掉 pathspec 逐项点名）⇒ 上面那条必红。"""
+    real = HARNESS.reconcile_script()
+    anchor = 'reason="${reason} · 判定 pathspec：${pathspec[*]}"'
+    assert anchor in real, f"注入点已漂移（判据过期）：{anchor!r}"
+    broken = real.replace(anchor, "true")
+    assert broken != real, "注入未生效（判据自证）"
+
+    fx = repo_with_single_change(tmp_path, CONFIG_ONLY_FILE, "pathspec-label-2")
+    proc, summary, dispatches = run_reconcile_on(tmp_path, fx, "pathspec-label-run-2", script_text=broken)
+    assert proc.returncode == 0, f"注入后应仍能跑完（只去掉读数）→ {proc.stderr}"
+    assert dispatches == [ADMIN_API_WF], "该注入只该影响读数、不该改变判定（dispatch 仍应发生）"
+    assert "判定 pathspec" not in summary, (
+        "退回只打印 `${svc_path}` 后 summary 里仍有 pathspec 点名 ⇒ 该判据没有判别力（空断言）"
+    )
+
+
 def test_config_only_criterion_has_discriminating_power(tmp_path):
     """🔴 红证①：把 `deploy/swas` 从 admin-api 腿上**拿掉**（= 改回改前的形态）⇒ 同一 diff **零 dispatch**。
 

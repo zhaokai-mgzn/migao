@@ -28,6 +28,18 @@
 - **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。`worker-h5-tests.yml`（只认 `frontend/worker-h5/**`，跑 Node 内置 `--test`，零 install/零构建）是这类信息性 check 的现存例子（**非 required 信息性 check**，#4786）。（原另一个同族例子 `agent-behavior-eval.yml` 已按 **#4275** 整体删除 —— 它的唯一产物是 PR 评论、绑死 PR 上下文，无法改造成有意义的手动档。）
   · **2026-09-26（issue #3507 ①）扩到 `pr-check` 的三条腿**：`admin-api-test`（`detect_api`）/ `admin-web-test`（`detect_aw`，由「只门控 `next build`」扩到**整条腿**）/ `e2e-quality-gate`（`detect_e2e`）。触发谓词、`must_cover` 面与被门控的**步骤名**逐条登记在 `tests/unit_ci_workflows/declaration_gate_registry.json` —— 「未登记即红 / 谓词必须与现取逐字相符 / 触发面必须覆盖断言所读的对象面 / 按**步骤名**定位（改步骤序列必须同改登记册）」四条由 `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 机械执行。
   · **类级锁（为什么这次不会再被烧）**：`tests/unit_ci_workflows/test_required_check_no_paths_filter.py` —— 凡**上报 required 检查名**的 workflow，其 `on.pull_request` **不得**有 `paths:` / `paths-ignore:`（命中即红；红证 = 往 `mini-app.yml` 的 `on.pull_request` 加一行 `paths:`）。required 集合**现取** `gh api …/branches/main/protection`（复用 `scripts/merge_gate.py` 的读法，不另写一套）；CI 里读不到（**需 admin**）⇒ 退回 `tests/unit_ci_workflows/required_status_snapshot.json` 并打印退路横幅 —— **退路不覆盖「分支保护新增了一条 required 而 snapshot 还不知道」**，改分支保护后请在能读该 API 的环境跑一次 `python3 tests/unit_ci_workflows/test_required_check_no_paths_filter.py --refresh`。
+  · **新增 CI 守卫文件要过的三张登记面（2026-09-27 实测，关联 #5001）**：往 `tests/unit_ci_workflows/**`（以及 `.github/`、`scripts/` 的判据面）**新建一个守卫文件**时，同一个文件会命中**三张互不相干的登记面**，缺任何一张 ⇒ **卡合并**。实测代价：本单为第三张**白烧一轮 CI**（run `36281997395` 的 `ci workflow helper unit tests` = 5211 passed / 1 failed）。
+    · **面 1 —— 测试文件头的 `# case_ids: <ID>`**：**任何**新增/修改的测试文件都要。判据 = `QA Growth Gate`（ID 必须是**注释起始行**、落在**前 50 行**内、且真实存在于 `.github/cases/**`；用例号往现有最大号**顺延**）。
+    · **面 2 —— `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `same_source_claims`**：模块级字面量集合**正上方**的 `#` 注释里出现「同源 / 逐字一致 / 必须等于 / 保持一致 / 同一集合 / 单一实现 / 两份实现」任一措辞时。判据 = `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria`（要 `criterion` = **真实存在**的测试，或 `unfixed` + 理由/单号/owner）。
+    · **面 3 —— `tests/unit_ci_workflows/guard_scope_ledger.json` 的 `guards`**：模块里出现**语料字面量**时（当前语料 = `*.sh` ⇒ 任何含 `*.sh` 的字符串常量，**包括红证注入串**）。判据 = `tests/unit_ci_workflows/test_guard_scope_declaration.py`（真扫描语料 ⇒ `kind=scans` + 结构化 `GUARD_SCOPE`；只**点名**语料 ⇒ `kind=mentions` + reason/issue）。
+    · **自查清单（可复制；两条 pytest 都应绿）**：
+      ```bash
+      F=tests/unit_ci_workflows/<你的新守卫>.py
+      grep -nE '^#[[:space:]]*case_ids[[:space:]]*[:=]' "$F" | head -1      # 面 1：必须落在前 50 行
+      python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py -q   # 面 2
+      python3 -m pytest tests/unit_ci_workflows/test_guard_scope_declaration.py -q         # 面 3
+      ```
+    · 🔴 **边界（明确的，不要把本节读成覆盖面更大的东西）**：① `declaration_gate_registry.json` 的 **`gates` 只收 `on.pull_request` 面的门禁**（workflow 级 `paths` / 步骤级门控输出）—— 改 **`on.push.paths`**（部署/发布触发面）**不需要**登记 `gates`（本单即如此，只登记了 `same_source_claims`；别去改错册子）；② 三张面**各自已有 fail-closed 判据**，本节**不是新门禁**、**不改任何判据的通过条件** —— 它只解决「作者事前不知道去哪三处登记」（本单实测：三张面把我**逐一**拦下；事先知道可省一轮 CI）；③ 各面自己的残余照旧（见各判据 docstring，例如「完全不声明射程、也不引用语料字面量的新守卫**不会**有东西变红」）。
   · **成本读数 / 上限 / 预算（issue #3507 ②）**：`tests/unit_ci_workflows/ci_cost_ledger.json` 逐条记录 PR 触发腿的**实测**中位/p90/max、**硬杀上限**与**目标预算**。
     · **硬杀上限** = 该腿自己声明的 `timeout-minutes`（判据与现取 YAML 逐条复比 ⇒ 手抄腐烂即红）；
     · **目标预算** = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）—— 预算是**读数的函数**，不是人手填的数；取不到读数（n < 3）的腿保持 `null` + 显式留白，**不编数**（判据 4 手改任一预算即红）；

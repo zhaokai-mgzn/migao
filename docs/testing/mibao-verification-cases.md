@@ -2918,6 +2918,7 @@
 数据: 类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）
 数据: 红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）
 数据: 另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径
+数据: 读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）
 跳过: [backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
