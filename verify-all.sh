@@ -10,6 +10,8 @@
 #   ./verify-all.sh agent          # 仅 AI Agent
 #   ./verify-all.sh gate           # 本地预检：QA Growth Gate +（命中 cases 受管面时）cases 面门禁
 #                                  +（命中红证面时）红证机具前提自检
+#                                  +（命中 bmini 触发面时）bmini 腿（tsc / jest / build:h5 / build:weapp，
+#                                    与 CI bmini-app.yml 两条腿同命令；缺依赖 ⇒ **fail-closed 记 ❌**）
 #   ./verify-all.sh redproof       # 红证机具实跑（#5193）：逐个真注入 + 跑判据（需 JDK/npm/PG，慢）
 #
 # ⚠️ gate 档的扫描源是**已提交**的 diff（`git diff … origin/main...HEAD`）：工作区有未提交改动
@@ -36,6 +38,13 @@
 #                  `npx tsc --noEmit` 从 npm 拉到**同名占位包** `tsc`，打印
 #                  "This is not the tsc command you are looking for" 后 **exit 0** ⇒ 旧版打 ✅。
 #                  已由 `node_modules/.bin/<tool>` 精确探测**前置消除**，另留同族兜底判据。
+# 另有第四类**失败**形态（与 ⏭️ 语义相反；本单新增，先例 = bmini 腿）：
+#   ❌ 依赖未就绪（fail-closed）—— 该腿落在**变更范围内**（变更集命中它的触发面）而依赖没装好 ⇒
+#                  **不跳过**：把「缺什么 + 实测可跑通的准备命令」打到控制台并记 ❌。
+#                  为什么不能打 ⏭️：在 `gate`（合并门禁）上 ⏭️ 会被读成「这项没事」，而这条腿
+#                  存在的全部意义就是拦住该模块的编译/类型错 —— 「没跑」不得等于「通过」
+#                  （#4221 同族；`⏭️ 未就绪` 是真漏面）。
+#                  适用范围**严格受限**（否则是假红）：只在变更集命中该腿触发面之后。
 #
 # 禁空跑：跑之前先算变更集（`origin/main...HEAD` ∪ 工作区未提交改动，与 QA Growth Gate 预检
 # **同一份判据**）。变更集为空 ⇒ **不跑任何检查**并**非零退出**——在零 diff 的树上跑验证没有边际
@@ -113,6 +122,21 @@ probe_ready() {
       if [ ! -x "$ROOT/frontend/admin-web/node_modules/.bin/tsc" ]; then
         READY_MISSING="缺 $ROOT/frontend/admin-web/node_modules/.bin/tsc（typescript 未装；不探则 npx 会拉到同名占位包并 exit 0 = 假绿）"
         READY_HINT="cd '$ROOT/frontend/admin-web' && npm ci"
+        return 1
+      fi
+      ;;
+    bmini-app)
+      # B 端 Taro 一源双编译（h5 + 小程序，gate 档的 bmini 腿）：本腿要真跑 tsc / jest / taro 三件，
+      # 故逐个探**真正被调用的**可执行文件（不探目录：目录在、工具不在时 `npx` 会去 npm 拉同名
+      # 占位包 ⇒ 假绿，见本函数头部注释）。「装不全」（三个里缺任意一个）同样算未就绪。
+      # ⚠️ 未就绪**不是**跳过：调用方是 report_strict()（fail-closed 记 ❌ + 可行动文案）。
+      local bmini_missing="" t
+      for t in tsc jest taro; do
+        [ -x "$ROOT/frontend/bmini-app/node_modules/.bin/${t}" ] || bmini_missing="${bmini_missing} ${t}"
+      done
+      if [ -n "${bmini_missing}" ]; then
+        READY_MISSING="缺 $ROOT/frontend/bmini-app/node_modules/.bin/ 下的可执行文件：${bmini_missing}（依赖未装 / 装不全）"
+        READY_HINT="cd '$ROOT/frontend/bmini-app' && npm ci"
         return 1
       fi
       ;;
@@ -251,6 +275,36 @@ report_env() {
     # ⚠️ 变量必须用 `${…}` 显式包裹：macOS 自带 bash 3.2 会把**紧跟 $VAR 的非 ASCII 字节**
     #    并进变量名（`$READY_MISSING（` → 变量名 `READY_MISSING\xef` → unbound variable 崩溃）。
     echo "❌ $name — 脚本配置错误：${READY_MISSING}（${READY_HINT}）"
+    FAIL=$((FAIL + 1))
+    FAILED+=("$name")
+    return 0
+  fi
+  report "$name" "$@"
+}
+
+# ── 第四态包装：依赖未就绪 ⇒ **fail-closed**（记 ❌，**不**跳过）──────────────────────
+# 与 report_env() 的**唯一**差别：probe_ready() 返回 1（未就绪）时**不**打 ⏭️ 跳过，而是把
+# 「缺什么 + 准备命令」打到控制台并记 ❌。为什么必须有这一态（#4221 同族；本单落地 bmini 腿）：
+# `⏭️ 未就绪` 在 `gate`（合并门禁）上会被读成「这项没事」，而「没跑」不得等于「通过」——
+# 一条腿存在的全部意义就是拦住它判的那个模块的编译/类型错。
+# ⚠️ 适用范围**严格受限**：只在变更集命中该腿的触发面之后用。否则「不碰这个模块的 PR」会因为
+#    「本机没装它的依赖」变红 = **假红**（失败必须意味着一件真事，见 gate_check() 的同类取舍）。
+# ⚠️ 本函数**不改** report() / report_env() 的既有形态（三处既有契约依赖它们的签名）。
+report_strict() {
+  # 用法：report_strict <env-key> "检查项名" 命令...   （env-key 见 probe_ready()）
+  local env_key="$1"; shift
+  local name="$1"; shift
+  local probe_rc=0
+  probe_ready "$env_key" || probe_rc=$?
+  if [ "$probe_rc" -eq 1 ]; then
+    echo "❌ ${name} — 依赖未就绪（fail-closed：本项**不跳过**，也不计通过）"
+    echo "     缺什么：${READY_MISSING}"
+    echo "     准备：${READY_HINT}"
+    FAIL=$((FAIL + 1))
+    FAILED+=("$name")
+    return 0
+  elif [ "$probe_rc" -ne 0 ]; then
+    echo "❌ ${name} — 脚本配置错误：${READY_MISSING}（${READY_HINT}）"
     FAIL=$((FAIL + 1))
     FAILED+=("$name")
     return 0
@@ -461,6 +515,42 @@ gate_check() {
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
+# ── bmini 腿（本单新增）：本地门禁矩阵的缺口 —— 改 bmini 的包此前只能手工跑 ────────────────
+# 为什么单独成腿（实测缺口，不是推断）：`frontend/bmini-app`（Taro 一源双编译，B 端 h5 + 小程序）
+# 此前在 `./verify-all.sh` 里**没有任何腿** ⇒ 改 bmini 的包在本地拿不到 tsc/jest/build 覆盖，
+# 只能手工跑（最近两个 bmini 包的回报里逐字写着「手工跑了三条」）；而 CI 侧有两条腿
+# （`.github/workflows/bmini-app.yml` 的 typecheck+单测 / build h5+weapp）⇒ **缺口只在本地**，
+# 代价 = 一轮 CI 往返。本块只补本地门禁，**不动 CI**。
+#
+# 触发面 = 该腿**判定对象的输入闭包**（唯一实现就在下面这个函数里）：模块目录本身 + 它 import 到的
+# **跨目录**仓内文件（现取 1 个：frontend/admin-web/src/lib/print-media.json，被 bmini 的
+# src/utils/inbound/truth.ts import）。闭包由判据 `tests/unit_ci_workflows/test_local_gate_matrix.py`
+# 现取（C5：跨目录输入被谓词命中或登记在 local_gate_matrix.json 的 trigger_face_uncovered_inputs，
+# 未登记即红），故**未来新增一条跨目录 import 不会静默漏过**。
+# ⚠️ 触发面**故意不照抄** CI 的谓词（CI = `frontend/bmini-app/|tests/|\.github/`）：`tests/` 与
+#    `.github/` 的改动**影响不到** tsc/jest/build 的结果，照抄只会让不相关的改动多等 3~5 分钟。
+# 命中判定与 cases_face_hit() / redproof_face_hit() **同款**：用变量收结果再判空，**不要**写成
+# `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
+# 「命中」被读成「不命中」= 假绿。
+bmini_face_paths() {
+  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$)' || true
+}
+bmini_face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | bmini_face_paths)"
+  [ -n "$hit" ]
+}
+bmini_leg() {
+  # 四件与 CI 两条腿**逐字同命令**（判据 = test_local_gate_matrix.py::test_local_leg_commands_match_ci，
+  # 现取 CI YAML 逐条比对 ⇒ 两侧漂移即红），顺序同 CI：先 h5（唯一用户可达形态），再 weapp。
+  # ⚠️ 用 `bash -c "cd …"` 而不是在函数里裸 `cd`：后者会改掉本脚本**后续检查**的 cwd（既有腿同款写法）。
+  bash -c "cd '$ROOT/frontend/bmini-app' \
+    && echo '▶ npx tsc --noEmit' && npx tsc --noEmit \
+    && echo '▶ npm test' && npm test \
+    && echo '▶ npm run build:h5' && npm run build:h5 \
+    && echo '▶ npm run build:weapp' && npm run build:weapp"
+}
+
 # ai-agent 测试选择（2026-09-14，issue #3680）：quick 与 full 共用**同一选择集**。
 # ⚠️ 禁止改回 glob 白名单（旧写法：`tests/unit tests/test_tools_*.py tests/test_graph_*.py
 #    tests/test_intent_router.py`）——那是**失败开放**的：当时 `tests/` 顶层 169 个测试文件，
@@ -553,6 +643,13 @@ case "$MODE" in
       report "红证机具前提自检（前提能否成立）" redproof_preflight
     else
       echo "— 红证机具门禁**未跑**：本次变更集未命中红证面（机具 / 被守卫源码）—— 这不是「通过」（CI 的 ci workflow helper unit tests 对每个 PR 无条件跑同名守卫；命中判据 = redproof_face_paths()）"
+    fi
+    # bmini 腿（本单新增）：命中触发面才派发；未命中 ⇒ 控制台显式声明「未跑」（不许静默 ✅）。
+    # ⚠️ 缺依赖时**不跳过**：走 report_strict ⇒ ❌ + 可行动文案（fail-closed，见该函数注释）。
+    if bmini_face_hit; then
+      report_strict bmini-app "bmini-app 类型检查 + 单测 + 构建（h5 + weapp）" bmini_leg
+    else
+      echo "— bmini-app 腿**未跑**：本次变更集未命中它的触发面（frontend/bmini-app/** 及其跨目录输入）—— 这不是「通过」（CI 的两条 bmini 腿仍对每个 PR 跑；命中判据 = bmini_face_paths()）"
     fi
     ;;
   redproof)
