@@ -651,21 +651,18 @@ jobs:
 
       - name: Verify generated artifacts fresh (render + diff)
         run: |
-          # 生成物（eval_cases.py / mibao-verification-cases.md）必须与 cases/ 单一源同步：
-          # 重新渲染后 diff 非空 → 阻塞合并（防止「改了 cases 忘重渲染」导致分叉）
-          if [ -f .github/render_cases.py ] && [ -d .github/cases ]; then
-            python3 .github/render_cases.py \
-              --cases .github/cases \
-              --out-eval tests/agent_eval/eval_cases.py \
-              --out-md docs/testing/mibao-verification-cases.md >/dev/null
-            if ! git diff --exit-code -- tests/agent_eval/eval_cases.py docs/testing/mibao-verification-cases.md; then
-              echo "::error:: 生成物与 cases/ 单一源不同步 — 请运行 .github/render_cases.py 并提交生成物"
-              exit 1
-            fi
-            echo "✅ 生成物与 cases/ 单一源同步"
-          else
-            echo "ℹ️ 无 render_cases.py 或 cases/，跳过生成物新鲜度校验"
-          fi
+          # 判定本体 = `scripts/generated_artifacts_freshness.py`（**单一实现**；不许在这里再内联一份）。
+          # 判定语义**逐字不变**：以 `.github/cases/**` 为唯一源重渲染 → 与提交的生成物**逐字节**比对，
+          # 不同 ⇒ 阻塞合并（防止「改了 cases 忘重渲染」导致分叉）。差别只有两处，都是收紧：
+          #   ① 判红输出**具名**（产物名 + 差量 + 可复制的复算/重渲染命令）—— 旧文案「生成物不同步」
+          #      不具名，实测导致归因指错对象（2026-09-27 同一天两次）；
+          #   ② 原来的 `else 跳过` 分支取消：渲染器/用例库/生成物缺失、渲染失败、语料为空一律
+          #      **fail-closed（非零）**——「跳过然后成功」正是本仓点名的「没跑长得像通过」。
+          # main 侧守护腿 `.github/workflows/main-freshness-guard.yml` 调的是**同一个**脚本
+          # （issue #5687 族的残余：本判据原先只在本 job 跑，而本 job 只在 `pull_request` 触发
+          #  ⇒ **main 可以先漂移**，而第一个撞上它的无辜 PR 才红）。两侧同源由
+          # tests/unit_ci_workflows/test_main_freshness_guard.py 的判据钉住（反向查内联实现）。
+          python3 scripts/generated_artifacts_freshness.py
 
   # ============ 断言可信度门禁（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）============
   #

@@ -7,6 +7,18 @@
   "reading_grammar": "::notice::MECHANISM-LIVENESS mech=<id> run=<run_id> rc=<n> seen=<n|unknown> acted=<n|unknown> why=<单行>（发射器：.github/scripts/mechanism_liveness.sh）",
   "mechanisms": [
     {
+        "id": "main-freshness-guard",
+        "name": "main 侧生成物新鲜度守护（渲染 + 逐字节比对；判定本体与 PR 面同一份）",
+        "workflow": ".github/workflows/main-freshness-guard.yml",
+        "job": "freshness",
+        "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（job 最后一步、if: always()），含 seen=<检查的产物数> acted=<陈旧产物数>；零动作（全部新鲜）时 acted=0 且 why 写明 verdict=fresh。",
+        "criterion": "看门人断言：main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失 / 绑定旧 run / rc 与结论矛盾 ⇒ 红（只用 run 归属与结论，不用挂钟时长）。",
+        "consumer": "值班（mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）；本腿**自身**判红时另开/更 P1 值班 issue（同一形态，不新造第二套约定）。",
+        "reading": "instrumented",
+        "unfixed": [],
+        "reading_site": "emitter"
+    },
+    {
       "id": "automerge",
       "name": "悬空 PR 扫描（arm 后长时间不合并的 PR 必须出声）",
       "workflow": ".github/workflows/automerge.yml",

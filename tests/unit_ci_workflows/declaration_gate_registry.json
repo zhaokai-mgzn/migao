@@ -371,6 +371,13 @@
   ],
   "same_source_claims": [
     {
+        "file": "tests/unit_ci_workflows/test_main_freshness_guard.py",
+        "symbol": "SHARED_CALLERS",
+        "issue": "#5687",
+        "criterion": "tests/unit_ci_workflows/test_main_freshness_guard.py::test_generation_freshness_judgement_has_one_shared_implementation",
+        "note": "模块级注释声明「pr-check 的生成物新鲜度步」与「main-freshness-guard 的判定步」同源（都调 scripts/generated_artifacts_freshness.py，谁也不许再内联一份 render+diff）⇒ 由该判据读两侧**真 YAML** 的 run: 逐条比对承担（含反向：两侧都不得出现内联的 render + git diff）"
+    },
+    {
       "file": "tests/agent_eval/local_runner.py",
       "symbol": "_BLOCKING_VERDICT_KEYS",
       "issue": "#5007",

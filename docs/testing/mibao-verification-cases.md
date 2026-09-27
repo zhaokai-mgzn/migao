@@ -2753,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（30 case）
+## 杂项域（31 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3143,6 +3143,20 @@
 跳过: [backend-contract] A7 的静态调用面读数（判定面语料命中表 + 调用点词法 + 身份面常量）由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 §1.4 的 A7 补登注与 §6 第 7 条）：P2 的第一步是**取证**而不是改行为 —— 取证结论 = A7 的四个码在**判定面**只有声明本体自己（无任何授权判定读它们）、`getRolePermissions` 的唯一调用方是 `loadUserByUsername`、而该授予面在仓内**不可达**（全仓无 `AuthenticationManager.authenticate` 调用）、C 端/工人端身份面一律按**角色**判。**人类据此裁定「退役」**（2026-09-27）⇒ 同批落地 6 处（`UserService` 的 `switch` 删两个 `case` / 清单 `roles.login` / 两张台账 **4→0** 与 **2→0** / `rbac/sources.json` 销账 2 条陈旧登记 + 命中数 4→2 / `TenantIsolationTest` 夹具），并在 `rbac/sources.json` 与判据里留下**再引入绊线**（这四个码一旦重新出现在判定面/测试面即红）。落码 = 判定面零容忍 + 退役已生效 + 机制存活读数 + 注入式红证 + 「只改注释 ⇒ 不红」对照 + 未取证项登记（**A7 的运行时授予值**）。取号 MC-030：本 PR 同批占用 MC-029，本号在其后顺延。 ｜ tags: rbac, a7, forensics, retirement, red-proof, fail-closed
+
+### MC-031. main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令） 🔵
+```
+你: 改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红
+期望: direct_reply
+数据: 守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch；**刻意不挂 pull_request** —— 判定基准是 main 的当前状态，挂 PR 面会把红重新显示在无辜 PR 上而它并不拦任何东西）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）
+数据: 判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）
+数据: 判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）
+数据: 告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）
+数据: 覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）
+数据: 九条判据各配注入式红证；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数
+跳过: [backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（关联 #5687；残余的登记处 = tests/unit_ci_workflows/test_casebook_summary_is_derived.py 边界节逐字写着『不覆盖 main 侧』）：当天两次 CI 红都红在生成物新鲜度，其中一次归因被指到无关 PR 并被写进公开记录，每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。落码 = 新增 main 侧守护腿（push + schedule + workflow_dispatch；schedule 的理由 = push 会被 auto-merge 吞掉，issue #3113/#5001）+ 把 pr-check 面与 verify-all.sh gate 的内联 render+diff **全部**收敛到单一实现 scripts/generated_artifacts_freshness.py（parity 守卫的锚点同批改准）+ 具名报错（产物/差量/复算命令/候选区间只给读数）+ 九条判据（含 fail-closed 红证、恒绿反转红证、坏渲染器边界的行为级证明）。取号 MC-031（rebase 让号，记实）：起草 MC-029，每次 rebase 都被新并入的判据占用 ⇒ 顺延到 MC-031（main 上 MC-001~MC-030 已占用） ｜ tags: ci, freshness, main-side-guard, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -7660,8 +7674,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：541（活跃 126，跳过 415）
-- tier 分布：smoke 12 / normal 496 / adversarial 31
+- 用例总数：542（活跃 126，跳过 416）
+- tier 分布：smoke 12 / normal 497 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7676,7 +7690,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：30
+- 杂项域：31
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7733,6 +7747,7 @@
 - MC-028: 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）
 - MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
 - MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
+- MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
