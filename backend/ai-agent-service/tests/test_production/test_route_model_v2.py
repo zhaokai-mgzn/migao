@@ -58,17 +58,23 @@ from app.production.routing import (
 #: 🔴 **#4937 之后帘种不再参与「价目适用性」筛选**；**#4962 起规则级部位限定加回**
 #: ⇒ 三个帘种的序列**只在「带 `position` 的规则」上分叉**（见 `POSITION_LIMIT_POSITION`）。
 CURTAIN_TYPES = ("布帘", "纱帘", "帘头")
-#: 工艺维（`ROUTINGS` 的键 / `build_route_v2` 的规则触发值）。
-CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
+#: 工艺维（`build_route_v2` 的规则触发值）—— 🔴 「四爪钩」**已退场**（issue #4365，用户裁定
+#: 2026-09-27「移除四爪钩这个场景」）：它是**加工项 / 配件**，不是工艺 ⇒ 不再进本表。
+CRAFTS = ("韩褶", "打孔", "穿杆", "平幔")
+
+#: 旧 `ROUTINGS` 路线表的键集（**历史载体**，仍含 `V54` / `V58` 的 `四爪钩` 两条路线行）：
+#: `build_routing` 在 app 内**零调用者**、`production_routings` 的 mapper 也**零消费者**
+#: ⇒ 保留是为了不破坏归档链（`V54` / `V58` 逐字节冻结）的收敛判据，**不是**「四爪钩还能用」。
+LEGACY_ROUTING_CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 
 # ── ① 主线 ──
 #: 窗帘主线（落库的 **10** 道；`打包` 由 issue #4529 插在 `外帘打卷` 与 `外帘装袋` 之间）。
 MAINLINE = ["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
-#: 🔴 **部位限定（issue #4962 加回）**：`V71` 的 26 条规则种子里**唯一**一条带 `position` 的是
+#: 🔴 **部位限定（issue #4962 加回）**：规则种子里**唯一**一条带 `position` 的是
 #: `韩褶 → insert 上车布`（`position='布帘'`）⇒ **只有「布帘」**的韩褶路线带 `上车布`。
-#: ⚠️ `四爪钩 → insert 上车布` 是**另一条**规则（`position` 为空 = 不限部位）⇒ 它**照旧**对所有
-#: 帘种生效 —— 这两条规则的名字一样、部位语义不同，别混读。
+#: ⚠️ 其它 craft 规则（如 `打孔 → insert 打孔`）的 `position` 为空 = **不限部位** ⇒ 对所有帘种生效
+#: —— 「两条规则名字一样、部位语义不同」的那个形态已随 `四爪钩` 退场（issue #4365）消失。
 POSITION_LIMIT_POSITION = "布帘"
 POSITION_LIMIT_RULE = ("craft", "韩褶", "insert", "上车布", POSITION_LIMIT_POSITION)
 
@@ -79,12 +85,16 @@ EXPECTED_BY_CRAFT = {
              "外帘打卷", "打包", "外帘装袋", "外帘发货"],
     "打孔": ["精裁", "三边", "打孔", "熨烫", "定型", "复烫", "车被",
              "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    "四爪钩": ["精裁", "三边", "上车布", "熨烫", "车被",
-               "外帘打卷", "打包", "外帘装袋", "外帘发货"],
     "穿杆": ["精裁", "三边", "熨烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
     "平幔": ["精裁", "三边", "帘头制作", "熨烫", "定型", "车被",
              "外帘打卷", "打包", "外帘装袋", "外帘发货"],
 }
+
+#: 🔴 **已退场的工艺值**（issue #4365，用户裁定 2026-09-27）：`四爪钩` 今天**不是工艺**
+#: （它是加工项 / 配件）⇒ 不进上面的冻结表、也不在 `CRAFTS` 里。
+#: 但**存量单**（`order_items.craft='四爪钩'`）仍可能带该值来派生 ⇒ 冻结「它会得到什么」
+#: = **主线原样**（少一道 `上车布`、多 `定型 / 复烫`）—— 这是 CHANGELOG 里登记的一次性影响面。
+RETIRED_CRAFT = "四爪钩"
 
 
 def _expected_for(curtain_type: str, craft: str) -> list:
@@ -105,11 +115,11 @@ EXPECTED_REBUILT = {(ct, craft): _expected_for(ct, craft)
 #: 道数**逐条硬编码**（不从上面的序列推导 —— 独立判据才有判别力）。
 #: 唯一分叉 = `韩褶`（布帘 12 / 非布帘 11，差的正是部位限定的那条 `上车布`）。
 EXPECTED_COUNTS = {
-    ("布帘", "韩褶"): 12, ("布帘", "打孔"): 11, ("布帘", "四爪钩"): 9,
+    ("布帘", "韩褶"): 12, ("布帘", "打孔"): 11,
     ("布帘", "穿杆"): 8, ("布帘", "平幔"): 10,
-    ("纱帘", "韩褶"): 11, ("纱帘", "打孔"): 11, ("纱帘", "四爪钩"): 9,
+    ("纱帘", "韩褶"): 11, ("纱帘", "打孔"): 11,
     ("纱帘", "穿杆"): 8, ("纱帘", "平幔"): 10,
-    ("帘头", "韩褶"): 11, ("帘头", "打孔"): 11, ("帘头", "四爪钩"): 9,
+    ("帘头", "韩褶"): 11, ("帘头", "打孔"): 11,
     ("帘头", "穿杆"): 8, ("帘头", "平幔"): 10,
 }
 #: 布料单（`saleForm=布料`）走**独立主线**（「产品形态」分支，与部位维无关）。
@@ -167,14 +177,13 @@ LOGICAL_UNIT_PRICES = {
     "配料": None, "打包": None,
 }
 
-# ── ⑤ 规则表 26 条；元组 = (触发值, 动作, 工序, 锚点)，**无 position**（#4937 / O2）──
+# ── ⑤ 规则表（工艺 7 + 特殊选项 16）；元组 = (触发值, 动作, 工序, 锚点)，**无 position**（#4937 / O2）──
+#: 🔴 工艺规则原为 10 条；`四爪钩` 三条已退场（issue #4365）⇒ 7 条。退场行的冻结值登记在
+#: `tests/unit_ci_workflows/test_production_catalog_seed.py::RETIRED_CRAFT_RULE_KEYS`（只许缩短）。
 EXPECTED_CRAFT_RULES = [
     ("韩褶", "insert", "韩褶", "三边"),
     ("韩褶", "insert", "上车布", "韩褶"),
     ("打孔", "insert", "打孔", "三边"),
-    ("四爪钩", "insert", "上车布", "三边"),
-    ("四爪钩", "remove", "定型", None),
-    ("四爪钩", "remove", "复烫", None),
     ("穿杆", "remove", "定型", None),
     ("穿杆", "remove", "复烫", None),
     ("平幔", "insert", "帘头制作", "三边"),
@@ -227,7 +236,7 @@ class TestPositionFreeRebuild:
 
     @pytest.mark.parametrize("curtain_type,craft", sorted(EXPECTED_REBUILT))
     def test_rebuild_sequence_length(self, curtain_type, craft):
-        """道数逐条钉死（布帘 12/11/9/8/10；非布帘的韩褶少一道 = 部位限定的 `上车布`）。"""
+        """道数逐条钉死（布帘 12/11/8/10；非布帘的韩褶少一道 = 部位限定的 `上车布`）。"""
         got = build_route_v2({"curtain_type": curtain_type, "craft": craft})
         assert len(got) == EXPECTED_COUNTS[(curtain_type, craft)], (
             f"{curtain_type}×{craft} 道数 {len(got)} ≠ {EXPECTED_COUNTS[(curtain_type, craft)]}")
@@ -247,10 +256,12 @@ class TestPositionFreeRebuild:
             assert "上车布" not in seq, (
                 f"{other}×韩褶 带上了 `上车布` ⇒ 部位限定没生效（改前实测就是这一形态："
                 f"筛选不存在 ⇒ 规则对所有部位都生效）：{seq}")
-        # 反向护栏：`position` 为空 = 不限部位 ⇒ 仍然对所有帘种生效
+        # 反向护栏：`position` 为空 = 不限部位 ⇒ 仍然对所有帘种生效。
+        # （`打孔 → insert 打孔` 的 `position` 为空 —— 它取代了随 #4365 退场的
+        #  `四爪钩 → insert 上车布`；判据**判别力不变**：把空值一起筛掉 ⇒ 三个帘种都少这道工序）
         for ct in CURTAIN_TYPES:
-            assert "上车布" in build_route_v2({"curtain_type": ct, "craft": "四爪钩"}), (
-                f"{ct}×四爪钩 少了 `上车布`（那条规则的 `position` 为空 = 不限部位）"
+            assert "打孔" in build_route_v2({"curtain_type": ct, "craft": "打孔"}), (
+                f"{ct}×打孔 少了 `打孔`（那条规则的 `position` 为空 = 不限部位）"
                 f" ⇒ 判据把空值也一起筛掉了")
 
     def test_only_the_position_limited_rules_diverge_across_curtain_types(self):
@@ -269,8 +280,8 @@ class TestPositionFreeRebuild:
                     f"工艺 `{craft}` 在不同帘种上得到不同序列 ⇒ 部位仍在别处参与取路："
                     f"{ {ct: list(r) for ct, r in routes.items()} }")
 
-    def test_fifteen_combinations_all_rebuilt_verbatim(self):
-        """一次性汇总 15/15（PR 证据里贴的就是这条的输出原文）。"""
+    def test_all_combinations_are_rebuilt_verbatim(self):
+        """一次性汇总（PR 证据里贴的就是这条的输出原文）—— 条数**现取**（`四爪钩` 退场后为 12）。"""
         report, mismatched = [], []
         for key in sorted(EXPECTED_REBUILT):
             got = build_route_v2({"curtain_type": key[0], "craft": key[1]})
@@ -279,9 +290,25 @@ class TestPositionFreeRebuild:
             report.append(f"{key[0]}×{key[1]} {len(got)}/{len(expected)} {'OK' if ok else 'NG'}")
             if not ok:
                 mismatched.append(key)
-        print("\n逐字重建 15/15 结果：\n  " + "\n  ".join(report))
+        print(f"\n逐字重建 {len(report)}/{len(EXPECTED_REBUILT)} 结果：\n  " + "\n  ".join(report))
         assert not mismatched, f"以下组合重建不一致：{mismatched}"
-        assert len(report) == 15
+        assert len(report) == len(EXPECTED_REBUILT)
+
+    def test_retired_craft_sig_hook_resolves_to_the_mainline_only(self):
+        """🔴 **已退场的工艺值**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）。
+
+        `四爪钩` 不再是工艺（是加工项 / 配件）⇒ 它的三条规则（`insert 上车布` / `remove 定型` /
+        `remove 复烫`）已由 `V135__retire_craft_sig_hook.sql` 软删 ⇒ 派生结果 = **主线原样**。
+        **存量单**可能仍带该值（下单页自 `V83` 起不可达、agent 工具枚举本次同步收窄）⇒
+        本判据把**已登记的一次性影响面**钉成可见的：少一道「上车布」、多「定型 / 复烫」。
+        """
+        assert RETIRED_CRAFT not in CRAFTS, "退场的工艺值不得回到 `CRAFTS`"
+        assert RETIRED_CRAFT not in EXPECTED_BY_CRAFT, "退场的工艺值不得回到冻结表"
+        for ct in CURTAIN_TYPES:
+            got = build_route_v2({"curtain_type": ct, "craft": RETIRED_CRAFT})
+            assert got == MAINLINE, (
+                f"{ct}×{RETIRED_CRAFT} 的结果 ≠ 主线原样：\n  实测 = {got}\n  期望 = {MAINLINE}\n"
+                f"（该值已退场 ⇒ 只应是主线；若这里变了，说明有规则被加回来）")
 
     def test_fabric_route_starts_from_the_fabric_mainline(self):
         """布料单（`saleForm=布料`）的**主线基底** = `FABRIC_MAINLINE_STEPS`（产品形态分支）。
@@ -428,23 +455,23 @@ class TestPositionPrices:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 4：规则表 26 条（工艺 10 + 特殊选项 16），**无 position**
+# 判据 4：规则表（工艺 7 + 特殊选项 16 = 23 条），**无 position**；条数现取
 # ══════════════════════════════════════════════════════════════════════════════════
 
 class TestRouteRules:
     def test_rule_count_and_kinds(self):
-        """恰好 26 条：工艺 10 + 特殊选项 16；无第三种触发类型。"""
-        assert len(ROUTE_RULES) == 26
+        """恰好 = 工艺 7 + 特殊选项 16（`四爪钩` 三条随 issue #4365 退场）；无第三种触发类型。"""
+        assert len(ROUTE_RULES) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES)
         kinds = [r["trigger_kind"] for r in ROUTE_RULES]
-        assert kinds.count("craft") == 10
+        assert kinds.count("craft") == len(EXPECTED_CRAFT_RULES)
         assert kinds.count("option") == 16
         assert set(kinds) == {"craft", "option"}
 
     def test_exactly_one_rule_carries_a_position_key(self):
-        """🔴 **部位维加回**（issue #4962）：26 条里**恰好一条**带 `position`，且值逐字冻结。
+        """🔴 **部位维加回**（issue #4962）：活跃规则里**恰好一条**带 `position`，且值逐字冻结。
 
-        `V71` 的 26 条种子行里只有 `rr-v70-02`（`韩褶 → insert 上车布`）带 `position='布帘'`；
-        其余 25 条**不得**有该键（有 = 多出一条部位限定，会静默改变别的帘种的工序集）。
+        `V71` 的种子里只有 `rr-v70-02`（`韩褶 → insert 上车布`）带 `position='布帘'`；
+        其余**不得**有该键（有 = 多出一条部位限定，会静默改变别的帘种的工序集）。
         """
         with_position = [(r["trigger_kind"], r["trigger_value"], r["action"], r["operation"],
                           r["position"]) for r in ROUTE_RULES if "position" in r]
@@ -461,7 +488,7 @@ class TestRouteRules:
         assert [r["position"] for r in limited] == [POSITION_LIMIT_POSITION] == ["布帘"]
 
     def test_craft_rules_are_frozen_verbatim(self):
-        """10 条工艺规则逐条等于冻结值（触发键 = ERP 工艺名，逐字一致）。"""
+        """工艺规则逐条等于冻结值（触发键 = ERP 工艺名，逐字一致）—— `四爪钩` 三条已退场（#4365）。"""
         assert _rules_of("craft") == EXPECTED_CRAFT_RULES
 
     def test_option_rules_are_frozen_verbatim(self):
@@ -489,7 +516,7 @@ class TestRouteRules:
     def test_priorities_are_distinct_and_deterministic(self):
         """优先级两两不同（排序完全确定，不依赖 Python 排序稳定性）。"""
         priorities = [r["priority"] for r in ROUTE_RULES]
-        assert len(set(priorities)) == len(priorities) == 26
+        assert len(set(priorities)) == len(priorities) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES)
 
 
 class TestRuleOrdering:
@@ -518,9 +545,9 @@ class TestRoutingTableIsPositionFree:
     """
 
     def test_routings_is_keyed_by_craft_only(self):
-        """键集 = 5 个工艺（**不得**残留 `(部位, 工艺)` 元组键）。"""
-        assert set(ROUTINGS) == set(CRAFTS), (
-            f"`ROUTINGS` 的键集 = {sorted(ROUTINGS)}，期望 5 个工艺 {sorted(CRAFTS)}")
+        """键集 = 旧表的工艺键（**含历史 `四爪钩` 行**；不得残留 `(部位, 工艺)` 元组键）。"""
+        assert set(ROUTINGS) == set(LEGACY_ROUTING_CRAFTS), (
+            f"`ROUTINGS` 的键集 = {sorted(ROUTINGS)}，期望旧表工艺键 {sorted(LEGACY_ROUTING_CRAFTS)}")
         assert all(isinstance(k, str) for k in ROUTINGS), (
             f"仍有非字符串键（旧 `(部位, 工艺)` 形态）：{[k for k in ROUTINGS if not isinstance(k, str)]}")
 
@@ -621,7 +648,7 @@ class TestInjectedDrift:
         import app.production.routing as routing
         pruned = [r for r in ROUTE_RULES
                   if not (r["trigger_value"] == "韩褶" and r["operation"] == "上车布")]
-        assert len(pruned) == 25
+        assert len(pruned) == len(ROUTE_RULES) - 1
         monkeypatch.setattr(routing, "ROUTE_RULES", pruned)
         assert self._rebuild(("布帘", "韩褶")) != EXPECTED_BY_CRAFT["韩褶"]
 

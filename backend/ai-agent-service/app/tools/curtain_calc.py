@@ -171,7 +171,8 @@ FORMULA_LABELS: Dict[str, str] = {
 # 本函数是**唯一**的 `craft → (formula, mounting)` 判断（前端 `craft-calc-request.ts` 的那份是
 # **有守卫的副本**，由 `frontend/admin-web/tests/unit/lib/craft-calc-formula-sync.test.ts`
 # 逐值读本文件比对，漂移即红）；`formula` 入参**保留为显式覆盖**（显式 > 本表 > `default_formula` 兜底）。
-# 未登记工艺（四爪钩/穿杆/平幔）⇒ `(None, None)` = 不推导（调用方按既有 fail-closed 处理）；
+# 未登记工艺（穿杆/平幔）⇒ `(None, None)` = 不推导（调用方按既有 fail-closed 处理）；
+# （「四爪钩」自 issue #4365 起**不是工艺** —— 它是加工项/配件，已移出 craft 合法值域，故不在此列）
 # `''`/`None` ⇒ 同样不推导 ⇒ 兜底默认（韩褶公式 + 调用方给的悬挂方式）。
 
 
@@ -2045,7 +2046,7 @@ def build_quote(
         **({"panels": panels} if panels is not None else {}),
         # ── 工艺规格回显（设计文档 §4.9：报价单与订单落库「同源」）──────────────────
         # **原样透传**，不推导、不补默认值：不传 ⇒ `None`（键恒在，便于前端判空与契约测试）。
-        # 为什么不让本工具去猜：`craft` 必须与工序库枚举（韩褶/打孔/四爪钩/穿杆/平幔）**逐字一致**，
+        # 为什么不让本工具去猜：`craft` 必须与工序库枚举（韩褶/打孔/穿杆/平幔）**逐字一致**，
         # 与 `mounting`（eyelet/s_hook/hook/roman）是**两层**，互相推导会静默给错工序。
         "curtain_type": curtain_type,
         "craft": craft,
@@ -2389,10 +2390,11 @@ class CurtainCalcTool(BaseTool):
             "craft": {
                 "type": "string",
                 "description": (
-                    "安装工艺（引导清单已采集，须与工序库枚举逐字一致）：韩褶/打孔/四爪钩/穿杆/平幔。"
-                    "注意与 mounting 是**两层**（mounting 是悬挂方式英文枚举），**不要互相推导**"
+                    "安装工艺（引导清单已采集，须与工序库枚举逐字一致）：韩褶/打孔/穿杆/平幔。"
+                    "注意与 mounting 是**两层**（mounting 是悬挂方式英文枚举），**不要互相推导**。"
+                    "「四爪钩」不是工艺（是加工项/配件，issue #4365 起不可传）"
                 ),
-                "enum": ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"],
+                "enum": ["韩褶", "打孔", "穿杆", "平幔"],
             },
             "is_shaped": {
                 "type": "boolean",

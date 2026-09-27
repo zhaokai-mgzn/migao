@@ -558,7 +558,7 @@ FABRIC_MAINLINE_STEPS: List[str] = ["裁剪", "打包"]
 FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线"
 
 #: 主线**全貌**（含「工艺槽位」占位）—— 仅文档用途，**不落库**
-#: （槽位 = 打褶那一道：韩褶 / 打孔 / 穿杆 / 四爪钩由 `ROUTE_RULES` 按工艺插入）
+#: （槽位 = 打褶那一道：韩褶 / 打孔 / 穿杆 / 平幔由 `ROUTE_RULES` 按工艺插入；「四爪钩」已退场 —— issue #4365）
 ROUTE_MAINLINE: List[str] = ["精裁", "三边", "⟪工艺槽位⟫", "熨烫", "定型", "复烫",
                              "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
@@ -916,12 +916,13 @@ ROUTE_RULES: List[Dict[str, Any]] = [
      "position": "布帘"},
     {"trigger_kind": "craft", "trigger_value": "打孔", "action": "insert",
      "operation": "打孔", "after_operation": "三边", "priority": 30},
-    {"trigger_kind": "craft", "trigger_value": "四爪钩", "action": "insert",
-     "operation": "上车布", "after_operation": "三边", "priority": 40},
-    {"trigger_kind": "craft", "trigger_value": "四爪钩", "action": "remove",
-     "operation": "定型", "after_operation": None, "priority": 50},
-    {"trigger_kind": "craft", "trigger_value": "四爪钩", "action": "remove",
-     "operation": "复烫", "after_operation": None, "priority": 60},
+    # 🔴 「四爪钩」三条规则**已退场**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：
+    # 它从来不是工艺（是**加工项 / 配件**，真值源 §8；信号层 V63 起本就把 `四爪钩 / 四叉钩`
+    # 两个信号指向 `韩褶`）。原三条 = insert 上车布 / remove 定型 / remove 复烫（priority 40/50/60），
+    # 库侧由 `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql`
+    # **软删**（留痕、可回滚）。
+    # ⚠️ **一次性影响面（用户已知悉并接受）**：存量单（`order_items.craft='四爪钩'`）**重新派生**工序时
+    # 会少一道「上车布」、多「定型 / 复烫」—— 已登记进 `CHANGELOG.md` 与 PR body。
     {"trigger_kind": "craft", "trigger_value": "穿杆", "action": "remove",
      "operation": "定型", "after_operation": None, "priority": 70},
     {"trigger_kind": "craft", "trigger_value": "穿杆", "action": "remove",

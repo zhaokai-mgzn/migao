@@ -136,7 +136,7 @@ class CraftCalcRequest(BaseModel):
         None,
         description=(
             "安装工艺（用户 2026-09-19 追加裁定「**韩褶用韩褶公式算布料，打孔按倍数法算布料**」）："
-            "韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**（唯一口径在算料引擎 `curtain_calc.resolve_craft_rule` + `CRAFT_S_HOOK`/`CRAFT_EYELET` 枚举常量）："
+            "韩褶/打孔/穿杆/平幔（「四爪钩」是加工项/配件、不是工艺 —— issue #4365 起移出值域）。**公式由工艺推导**（唯一口径在算料引擎 `curtain_calc.resolve_craft_rule` + `CRAFT_S_HOOK`/`CRAFT_EYELET` 枚举常量）："
             "韩褶 ⇒ 韩褶公式、打孔 ⇒ 褶倍数公式（默认 2 倍）；本端点只透传，不复制推导表。"
         ),
     )

@@ -960,8 +960,8 @@ class TestCraftSpecToolPassthrough:
         props = CurtainCalcTool.parameters["properties"]
         for key in ("curtain_type", "craft", "is_shaped", "style", "special_options"):
             assert key in props, f"schema 缺 {key} ⇒ LLM 无法传该字段"
-        assert props["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
-            "craft 枚举必须与工序库 production_routings.craft 逐字一致"
+        assert props["craft"]["enum"] == ["韩褶", "打孔", "穿杆", "平幔"], (
+            "craft 枚举必须与工序库逐字一致（`四爪钩` 已退场 —— issue #4365，它是加工项/配件，不是工艺）"
         )
         assert props["curtain_type"]["enum"] == ["布帘", "纱帘", "帘头"]
 

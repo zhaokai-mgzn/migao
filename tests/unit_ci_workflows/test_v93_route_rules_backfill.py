@@ -42,6 +42,7 @@ from pathlib import Path
 
 import pytest
 from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
+from unit_ci_workflows._retired_craft_rules import retired_rule_keys  # noqa: E402  （#4365 单一真相源）
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
@@ -62,6 +63,8 @@ _DERIVED_BLOCK = re.compile(
 _LITERAL_BLOCK = re.compile(
     r"INSERT\s+INTO\s+production_route_rules\s*\(([^)]*)\)\s*VALUES(.*?)(?:ON\s+CONFLICT|;)",
     re.S | re.I)
+#: 规则块 id 的版本前缀（现取：`'rr-v70-01'` / `'rr-v72-' || t.id …` ⇒ `rr-v70` / `rr-v72`）
+_BLOCK_ID_RE = re.compile(r"'(rr-v\d+)-")
 
 
 def _strip_comments(sql: str) -> str:
@@ -152,6 +155,93 @@ def _by_key(rows) -> dict:
     return out
 
 
+#: 工艺「四爪钩」三条规则的退休台账（issue #4365；定义处 = `_retired_craft_rules.py`）。
+def _retired_keys() -> set:
+    """台账 → 本文件的**业务键前缀**（6 字段；`None` → `"NULL"`，与 `_norm` 同款）。
+
+    ⚠️ `_rule_key()` 是 7 字段（含 `priority`），台账按 **6 元组**记（不含 `priority`）⇒ 取 `[:6]`。
+    """
+    return {tuple("NULL" if v is None else str(v) for v in key) for key in retired_rule_keys()}
+
+
+def _drop_retired(rows: list) -> tuple:
+    """按退休台账从**出厂真值**里显式扣除四爪钩三条（issue #4365）→ `(活跃行, 实际被扣掉的行)`。
+
+    🔴 扣除是**合法**的：三条规则的终态由 `db/migration/V135__retire_craft_sig_hook.sql` **软删**
+    表达（`V71` / `V93` 属归档链、**逐字节冻结** ⇒ 不能改，它们仍有那 3 行）。
+    扣除**不放宽**比对：被扣掉的行必须**恰好等于**台账（多退 / 少退 / 改台账不改 V135 都红），
+    扣完仍**逐条逐值**比对（键里带着全部业务值）。
+    """
+    ledger = _retired_keys()
+    kept, removed = [], set()
+    for row in rows:
+        key = _rule_key(row)[:6]
+        if key in ledger:
+            removed.add(key)
+        else:
+            kept.append(row)
+    return kept, removed
+
+
+def _retired_removed(rows: list) -> set:
+    """自证：出厂真值里被扣掉的必须**恰好等于**台账（双向；多退 / 少退都红）。"""
+    _, removed = _drop_retired(rows)
+    assert removed == _retired_keys(), (
+        f"出厂真值里被扣掉的行 ≠ 退休台账（issue #4365）：扣掉 {sorted(removed)}，"
+        f"台账 {sorted(_retired_keys())} —— 台账只许缩短；改台账必须同时改 "
+        f"`V135__retire_craft_sig_hook.sql` 与两侧终态")
+    return removed
+
+
+#: `production_route_rules` 种子块的**冻结来源**（issue #4365 的**类级**判据用）：
+#: 块 id 的版本前缀 → 该块镜像的那份归档迁移。
+#: ⚠️ `rr-v70` ↔ **`V71`** 是历史命名（不是笔误：`V71` 的字面量 id 就是 `rr-v70-*`）。
+#: 🔴 **未登记即红**：`schema.sql` 里新增 / 改名的规则种子块必须在此补一行，否则判据会点名它。
+_RULE_BLOCK_SOURCES = {
+    "rr-v70": V71,
+    "rr-v72": V72,
+    "rr-v84": V84,
+    "rr-v93": MIGRATION,
+}
+
+
+def _literal_rule_rows(chunk: str) -> list:
+    """**字面量**块（`(列清单) VALUES (…), (…)`）→ 逐行 dict；不是字面量块 ⇒ `[]`。"""
+    match = re.match(r"\s*\(([^)]*)\)\s*VALUES(.*)", chunk, re.S | re.I)
+    if not match:
+        return []
+    columns = [c.strip() for c in match.group(1).split(",")]
+    if not all(f in columns for f in RULE_FIELDS):
+        return []
+    return _rows_of(re.split(r"\bON\s+CONFLICT\b", match.group(2), flags=re.I)[0], columns)
+
+
+def _schema_rule_blocks() -> list:
+    """`schema.sql` 里**每一个** `production_route_rules` 种子块 → `[(块名, 逐行规范 dict), …]`。
+
+    块名 = 该块 id 的版本前缀（**现取**，不写死块清单 ⇒ 新增块自动进入射程；未登记由
+    `_RULE_BLOCK_SOURCES` 的「未登记即红」兜底）。两种形态都认：**字面量**（`rr-v70-*` 段）与
+    **派生**（`JOIN (VALUES …)` 段）。
+
+    🔴 必须**逐块**返回：把各块并成一个集合再比时，「只从**一个**块删掉一条活跃行」是**看不见**的
+    —— 别的块会把它补回并集里（实测：删掉 `rr-v70-07` 的两个块、留着第三个块 ⇒ 并集形态照样绿）。
+    """
+    sql = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+    out = []
+    for chunk in re.findall(r"INSERT INTO production_route_rules(.*?);", sql, re.S):
+        derived = _DERIVED_BLOCK.search(chunk)
+        if derived:
+            columns = [c.strip() for c in derived.group(2).split(",")]
+            rows = _rows_of(derived.group(1), columns)
+        else:
+            rows = _literal_rule_rows(chunk)
+        if not rows:
+            continue
+        label = _BLOCK_ID_RE.search(chunk)
+        out.append((label.group(1) if label else f"<未识别 id 前缀的块 #{len(out)}>", _norm_rows(rows)))
+    return out
+
+
 # ══════════════════════ 静态判据（文本层） ══════════════════════
 
 def test_v93_seeds_exactly_the_factory_truth():
@@ -193,10 +283,14 @@ def test_bootstrap_schema_sql_carries_the_same_factory_truth():
     """判据 5：bootstrap 终态（`backend/admin-api/src/main/resources/db/init/schema.sql`，该路径**不跑迁移链**）逐值同款。
 
     ⚠️ bootstrap **不需要** V93 的段落：该文件的 V72 ⑤ 回填块 + V84 块已经在**建库那一刻**
-    给每个租户落齐 26 + 3 条（`schema.sql` 的 `tenants` 是空集也无所谓 —— 回填是
+    给每个租户落齐 (26 − 3) + 3 条（`schema.sql` 的 `tenants` 是空集也无所谓 —— 回填是
     `FROM tenants t`，后续开租时租户行已存在；「先建库、后开租」的时序下由
     `ProductionSeedTemplateService` 承接）。本判据机械核验的正是这一点：
-    **bootstrap 侧 26 + 3 = 29 = 迁移链终态（V93）= 出厂真值**（三处口径一致）。
+    **bootstrap 侧 (26 − 3) + 3 = 23 + 3 = 迁移链终态（V93 + V135）= 出厂真值 − 退休台账**
+    （三处口径一致）。🔴 那个「− 3」= `craft='四爪钩'` 三条（issue #4365，用户裁定 2026-09-27
+    「移除四爪钩这个场景」）—— 由
+    `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删，
+    台账见 `tests/unit_ci_workflows/_retired_craft_rules.py`；扣除**双向可红**（多退 / 少退都红）。
     """
     sql = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
     # 逐段找 `JOIN (VALUES …) AS r(…)`（**段内**首次命中）：不整文件取首个 ——
@@ -210,12 +304,71 @@ def test_bootstrap_schema_sql_carries_the_same_factory_truth():
         got += _norm_rows(_rows_of(match.group(1), columns))
     assert got, "schema.sql 里读不到规则种子段（判据会空跑）"
 
-    want = _by_key(_factory_truth())
+    # 🔴 按退休台账**显式扣除**四爪钩三条（issue #4365）后再比对：`V71` 属归档链、逐字节冻结
+    # ⇒ 出厂真值里仍有那 3 行，真正表达终态的是 `V135` 的软删；扣除**不放宽**比对。
+    _retired_removed(_factory_truth())
+    want = _by_key(_drop_retired(_factory_truth())[0])
     got_keys = _by_key(got)
     assert set(got_keys) == set(want), (
-        "schema.sql 的 bootstrap 终态与出厂真值（V71 ∪ V84）不一致：\n"
-        f"  多出：{sorted(set(got_keys) - set(want))}\n  缺失：{sorted(set(want) - set(got_keys))}")
-    assert len(got_keys) == 29, f"bootstrap 终态不是 29 条：{len(got_keys)}"
+        "schema.sql 的 bootstrap 终态与出厂真值（V71 ∪ V84，已扣退休台账）不一致：\n"
+        f"  多出：{sorted(set(got_keys) - set(want))}\n  缺失：{sorted(set(want) - set(got_keys))}\n"
+        f"  （退休台账里的行两侧都不该有：{sorted(_retired_keys())}）")
+    expected = len(_factory_truth()) - len(retired_rule_keys())
+    assert len(got_keys) == expected, (
+        f"bootstrap 活跃规则不是 {expected} 条（= 出厂真值 {len(_factory_truth())} − 退休台账 "
+        f"{len(retired_rule_keys())}）：{len(got_keys)}")
+
+
+def test_schema_sql_every_rule_block_mirrors_its_frozen_source():
+    """判据 6（**逐块**，issue #4365 的**类级**固化）：`schema.sql` 的**每一个**规则种子块**各自**收敛。
+
+    ## 为什么必须逐块（并集形态的盲区，实测）
+
+    本文件既有判据（`test_bootstrap_schema_sql_carries_the_same_factory_truth` 与其真库版）把各块
+    **并成一个业务键集合**再比 ⇒ 两种形态**看不见**：① 只从**一个**块删掉一条活跃行（别的块把它补回
+    并集）；② 只改**字面量块**（`rr-v70-*` 段：它不进派生块的并集，从不在那两条判据的射程内）。
+    实测：删掉 `rr-v70-07` 的两个块、留着第三个块 ⇒ 并集形态照样绿。
+
+    ## 本判据（逐块，两条各自独立）
+
+      ① 任一块里带着**退休台账**（issue #4365 已退场）里的行 ⇒ 红，**点名是哪一块**；
+      ② 任一块的规则键集合 ≠ 「该块 id 前缀所指的**归档迁移**（`_RULE_BLOCK_SOURCES`）的规则行
+         **减去**退休台账」⇒ 红（缺一条 / 多一条都红），**点名块与差集**；未登记的块同样红。
+
+    ## ⚠️ 比对键用 **6 元组（不含 `position` 维）**
+
+    bootstrap 是**终态**（`rr-v70-02` 已写 `'布帘'`），而 `V71` 是 V108 **之前**的形态（该行仍 `NULL`）
+    ⇒ 带 `position` 比会把「两条路径都正确」误判成漂移。部位维由
+    `test_restore_route_rule_positions_migration.py` 的两条判据**单独**钉（bootstrap 侧有且只有
+    `rr-v70-02` 非 NULL + 迁移链侧 V108 写回），本条不重复、也不放宽它们。
+    """
+    blocks = _schema_rule_blocks()
+    chunk_count = len(re.findall(
+        r"INSERT INTO production_route_rules",
+        _strip_comments(SCHEMA.read_text(encoding="utf-8")), re.I))
+    assert len(blocks) == chunk_count and len(blocks) >= 2, (
+        f"schema.sql 里解析出 {len(blocks)} 个规则种子块，语句却有 {chunk_count} 条"
+        f"（解析失效时本判据会**静默缩小射程**）—— 至少应有 2 个块")
+    ledger = _retired_keys()
+    errors = []
+    for label, rows in blocks:
+        keys = {_rule_key(row)[:6] for row in rows}
+        retired_in_block = sorted(keys & ledger)
+        if retired_in_block:
+            errors.append(f"块 `{label}` 仍带退休行（issue #4365 已退场）：{retired_in_block}")
+        source = _RULE_BLOCK_SOURCES.get(label)
+        if source is None:
+            errors.append(f"块 `{label}` 未登记冻结来源 —— 新增/改名的种子块必须在 "
+                          f"`_RULE_BLOCK_SOURCES` 补一行（并说明它镜像哪份归档迁移）")
+            continue
+        source_rows = _norm_rows(_rule_rows(source.read_text(encoding="utf-8")))
+        assert len(source_rows) > 0, f"冻结来源 {source.name} 里读不到规则行 ⇒ 本判据会空跑"
+        want = {_rule_key(row)[:6] for row in source_rows} - ledger
+        if keys != want:
+            errors.append(
+                f"块 `{label}` 与冻结来源 {source.name}（已扣退休台账）不一致：\n"
+                f"    多出：{sorted(keys - want)}\n    缺失：{sorted(want - keys)}")
+    assert errors == [], "schema.sql 的规则种子块**逐块**判据未通过：\n" + "\n".join(errors)
 
 
 def test_guard_detects_injected_drift():
@@ -450,10 +603,15 @@ def test_v93_does_not_overwrite_merchant_edits(psql):
 
 
 def test_bootstrap_schema_sql_rule_blocks_run_on_real_postgres(psql):
-    """判据 5 真库：bootstrap（不跑迁移链）的规则回填段**真能执行**，且给空工序库租户落齐 29 条。
+    """判据 5 真库：bootstrap（不跑迁移链）的规则回填段**真能执行**，且给空工序库租户落齐活跃规则。
 
-    ⚠️ bootstrap 侧的 29 条 = **V72 ⑤ 的 26 条 + V84 的 3 条**（该文件本就是终态镜像，不需要
-    V93 的段落）—— 本判据把它**真跑一遍**并与出厂真值逐值比对（文本层判据不够，见 V83 的教训）。
+    ⚠️ bootstrap 侧的活跃规则 = **V72 ⑤ 的 23 条 + V84 的 3 条**（该文件本就是终态镜像，不需要
+    V93 的段落）—— 本判据把它**真跑一遍**并与出厂真值（已扣退休台账）逐值比对（文本层判据不够，
+    见 V83 的教训）。
+    🔴 那个「26 → 23」= `craft='四爪钩'` 三条退场（issue #4365，用户裁定 2026-09-27「移除四爪钩
+    这个场景」）：终态由
+    `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删，
+    台账见 `tests/unit_ci_workflows/_retired_craft_rules.py`；扣除**双向可红**（多退 / 少退都红）。
     """
     psql(_DDL)
     _seed_tenants_and_ops(psql)
@@ -465,11 +623,13 @@ def test_bootstrap_schema_sql_rule_blocks_run_on_real_postgres(psql):
     for stmt in stmts:
         psql(stmt)
 
-    want = sorted("|".join(_rule_key(r)) for r in _factory_truth())
+    # 🔴 按退休台账**显式扣除**四爪钩三条（issue #4365）后再比对（`V71` 冻结 ⇒ 出厂真值仍有那 3 行）。
+    _retired_removed(_factory_truth())
+    want = sorted("|".join(_rule_key(r)) for r in _drop_retired(_factory_truth())[0])
     for tenant in (1, 20, 21):
         got = sorted(_rules_of(psql, tenant))
         assert got == want, (
-            f"bootstrap 终态在租户 {tenant} 上 ≠ 出厂真值（29 条）：\n"
+            f"bootstrap 终态在租户 {tenant} 上 ≠ 出厂真值（已扣退休台账）：\n"
             f"  实测 {len(got)} 条 / 期望 {len(want)} 条\n"
             f"  多出：{sorted(set(got) - set(want))}\n  缺失：{sorted(set(want) - set(got))}")
 

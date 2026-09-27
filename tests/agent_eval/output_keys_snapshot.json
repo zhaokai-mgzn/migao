@@ -205,7 +205,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "a3abc4f5ef0dbcc961d876a0e1116dfb83dc7c7db97b4d4554eb7fcee46b02ff"
+   "source_sha256": "7543268b49fb43cce3d574a061c7c493a2afa03d08190656d36d1ad08c6f4e50"
   },
   "customer_address_query": {
    "actions": null,
@@ -724,7 +724,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "b0b4053eb9fd0c081d3a4855ba0d5efa11a3152ccd2cc2ecfcafc5aaf9ae2b0e"
+   "source_sha256": "34f965953da7f5ded9747060233df1d200ff5fe52dd87b3cf877054fdbb76d35"
   },
   "order_manage": {
    "actions": null,

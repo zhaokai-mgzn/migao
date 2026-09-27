@@ -332,9 +332,15 @@ class ProductionRoutingReadServiceTest {
     @Test
     @DisplayName("规则：10 键逐字（含 null 的 position/after_operation 保留为 null，不省略键）")
     void routeRulesCarriesTenKeysVerbatim() {
+        // 第二行 = 一条**普通 remove 规则**的夹具：本判据是「10 键逐字 + null 的 position/after_operation
+        // 保留为 null（不省略键）」，与「四爪钩是否合法工艺」无关。
+        // ⚠️ 原夹具是 `rr-v70-05 craft=四爪钩 remove 定型`（priority 50）—— 该规则随 issue #4365 退场
+        //    （四爪钩是加工项/配件、不是工艺；存量库由 V135__retire_craft_sig_hook.sql 软删）
+        //    ⇒ 换成**终态仍在**的同形态规则 `rr-v70-07 穿杆`（同为 remove + position/after 皆 null），
+        //    断言一字未动（判据强度不变）。
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
                 rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
-                rule("rr-v70-05", "craft", "四爪钩", null, "remove", "定型", null, 50)));
+                rule("rr-v70-07", "craft", "穿杆", null, "remove", "定型", null, 70)));
 
         List<Map<String, Object>> rows = service().routeRules(TENANT);
 

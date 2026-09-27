@@ -136,8 +136,11 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(craftCalcParamsOf(line({ height: 0 }))).toBeNull()
   })
 
-  it('非韩褶工艺（四爪钩/穿杆/平幔）⇒ null（无自动算料口径，后端答不出）', () => {
-    for (const craft of ['四爪钩', '穿杆', '平幔']) {
+  // ⚠️ issue #4365（用户 2026-09-27 裁定「移除四爪钩这个场景」）：`四爪钩` 已从工艺枚举退场
+  // （见 `order-craft-fields.ts` / `order-craft-fields.test.ts`），但**存量单**仍可能带该值
+  // ⇒ 本组**保留**它的 fail-closed 判据（不得因为这些单猜一个米数），并覆盖仍在枚举里的穿杆/平幔。
+  it('非韩褶工艺（穿杆/平幔 + 存量单的 `四爪钩`）⇒ null（无自动算料口径，后端答不出）', () => {
+    for (const craft of ['穿杆', '平幔', '四爪钩']) {
       expect(craftCalcParamsOf(line({ craft: { craft } }))).toBeNull()
     }
   })
@@ -175,6 +178,8 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(isAutoCalcUnavailable(line({ craft: { craft: '韩褶' } }))).toBe(false)
     // issue #4527 追加裁定后：**打孔有自动算料口径**（倍数法）⇒ 不再是「无自动算料」
     expect(isAutoCalcUnavailable(line({ craft: { craft: '打孔' } }))).toBe(false)
+    // 存量单的 `四爪钩`（issue #4365 起它**不再是工艺**）**照旧**判 true ——
+    // 回显 / 试算侧的 fail-closed 不因它退场而放开
     expect(isAutoCalcUnavailable(line({ craft: { craft: '四爪钩' } }))).toBe(true)
     // 纱帘 + 无算料口径的工艺 ⇒ 仍按**工艺**判 true（部位不再是开关）
     expect(

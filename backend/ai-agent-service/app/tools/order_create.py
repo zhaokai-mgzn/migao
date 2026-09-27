@@ -53,13 +53,14 @@ _SELLING_METHODS = ("bulk_cut", "full_roll")
 # ⚠️ 刻意**不**做别名归一化（同 `_SELLING_METHODS` 口径）：`韩式褶`→`韩褶` 这类归一
 # 会把契约藏进工具层，而静默接受的代价是**静默取错路线**。
 # - curtainType: `production_routings.curtain_type`（布帘/纱帘/帘头）
-# - craft:       `production_routings.craft`（韩褶/打孔/四爪钩/穿杆/平幔）——
+# - craft:       `production_routings.craft`（韩褶/打孔/穿杆/平幔）——
 #                与 `mounting`（eyelet/s_hook/hook/roman）是**两层**，禁止互相推导
+#                （「四爪钩」是**加工项/配件**、不是工艺，issue #4365 起不进合法值域）
 # - componentRole: 明细行角色（主布/配布边/纱），设计文档 §4.8
 # - style:       款式（单色/拼色），真值源 `curtain-production-rules.md` §8
 # - metersSource: 配布边米数来源（跟随主布/人工指定），设计文档 §4.8
 _CURTAIN_TYPES = ("布帘", "纱帘", "帘头")
-_CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
+_CRAFTS = ("韩褶", "打孔", "穿杆", "平幔")
 _COMPONENT_ROLES = ("主布", "配布边", "纱")
 _STYLES = ("单色", "拼色")
 _METERS_SOURCES = ("跟随主布", "人工指定")
@@ -459,7 +460,8 @@ class OrderCreateTool(BaseTool):
         "**枚举必须逐字一致**（「韩式褶」非法，应为「韩褶」）—— 错值会让加工单取到**错误工序路线**。"
         # 工艺单值 + 四爪钩归属（issue #4362 阶段 1 / issue #4365 用户裁定）：四爪钩/四叉钩/穿钩是
         # **加工项（配件）**，不是并列工艺；工艺（安装工艺＝打褶/悬挂方式）**单值**。
-        # 模型把它当 craft 填 ⇒ 会取到「四爪钩」这条独立路线（信号层已指向主线，**显式值仍会生效**）。
+        # 🔴 issue #4365（2026-09-27 用户裁定「移除四爪钩这个场景」）**已把该值移出枚举** ⇒
+        # 传 `craft='四爪钩'` 会被 schema 直接拒绝（不再有「显式值仍会生效」这条路径）。
         "【工艺单值·四爪钩是加工项】craft 只能填**安装工艺**（打褶/悬挂方式），且**只能一个值**；"
         "「四爪钩/四叉钩/穿钩」属**加工项（配件）** ⇒ 放进 processingItems（它会驱动穿钩类加工），"
         "**不要**填进 craft。"
@@ -655,8 +657,8 @@ class OrderCreateTool(BaseTool):
                                 },
                                 "craft": {
                                     "type": "string",
-                                    "enum": ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"],
-                                    "description": "安装工艺（引导清单已采集，须与工序库枚举**逐字一致**）。与 mounting（eyelet/s_hook/hook/roman）是**两层**，**不要互相推导**（「韩式褶」不是合法值，应为「韩褶」）",
+                                    "enum": ["韩褶", "打孔", "穿杆", "平幔"],
+                                    "description": "安装工艺（引导清单已采集，须与工序库枚举**逐字一致**）。与 mounting（eyelet/s_hook/hook/roman）是**两层**，**不要互相推导**（「韩式褶」不是合法值，应为「韩褶」；「四爪钩」是加工项/配件、不是工艺）",
                                 },
                                 "isShaped": {
                                     "type": "boolean",

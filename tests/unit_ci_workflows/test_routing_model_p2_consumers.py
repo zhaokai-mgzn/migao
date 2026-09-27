@@ -34,6 +34,7 @@ import pytest
 # 迁移文件的**两个**载体目录（issue #5243）—— 单一事实源 = `_migration_paths.py`
 _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as LIVE_MIGRATION_DIR  # noqa: E402
+from unit_ci_workflows._retired_craft_rules import retired_rule_keys  # noqa: E402  （#4365 单一真相源）
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archive"
@@ -543,13 +544,45 @@ def test_seed_service_fabric_mainline_matches_truth_source():
     )
 
 
+def _craft_rule_drift(java_rows, py_rules) -> list:
+    """Java 播种的 craft 规则 vs `routing.py::ROUTE_RULES` 的 craft 部分 → 违规清单（空 = 一致）。
+
+    🔴 「四爪钩」三条**已退场**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：
+    它从来不是工艺（是**加工项 / 配件**，真值源 §8）⇒ Java 的 `CRAFT_RULES` 由 10 条收窄为 7 条，
+    存量库那三条规则由 `V135__retire_craft_sig_hook.sql` 软删。
+    ⇒ 本判据**不含**那三条（真值源里也没有了），但**不是放宽**：台账
+    （`_retired_craft_rules.py`）里任一条**出现在任一侧**都判红（`leaked`），条数也从真值源**现取**、
+    不写死 10/7；值漂移仍逐条逐值可比（抽成函数是为了让注入自证复用同一份判据）。
+    """
+    errors = []
+    retired_values = {key[1] for key in retired_rule_keys()}   # {'四爪钩'}
+    for label, rows in (("Java `ProductionSeedTemplateService.CRAFT_RULES`", java_rows),
+                        ("`routing.py::ROUTE_RULES` 的 craft 部分", py_rules)):
+        leaked = sorted(r[0] for r in rows if r[0] in retired_values)
+        if leaked:
+            errors.append(f"{label} 仍带退休工艺规则（issue #4365 已退场）：{leaked}")
+    if len(java_rows) != len(py_rules):
+        errors.append(f"工艺规则条数漂移：Java 播种 = {len(java_rows)} 条，真值源 = {len(py_rules)} 条"
+                      "（两侧必须条数一致 —— 少一条 = 新租户少一道条件工序）")
+    if [tuple(r) for r in java_rows] != py_rules:
+        errors.append("工艺变体规则漂移（触发值/部位限定/动作/工序/锚点）—— "
+                      "新租户会插错工序或锚点落空 ⇒ 条件工序静默追加末尾（顺序错）")
+    return errors
+
+
 def test_seed_service_craft_rules_match_truth_source():
-    """判据 E-3：Java 开租播种的 10 条工艺变体规则与 `routing.py::ROUTE_RULES` 的 craft 部分逐条同值。"""
+    """判据 E-3：Java 开租播种的工艺变体规则与 `routing.py::ROUTE_RULES` 的 craft 部分逐条同值。
+
+    🔴 条数由真值源**现取**（`len(craft_rules)`），不写死数字：issue #4365 起为 **7**
+    （原 10 条里 `craft='四爪钩'` 的三条随「移除四爪钩这个场景」退场 —— 四爪钩是加工项/配件、不是工艺；
+    存量库那三条由 `V135__retire_craft_sig_hook.sql` 软删）。
+    台账里那三条**两侧都不许出现**（加回任一侧 ⇒ 红，见 `_craft_rule_drift` 的 `leaked` 判据）。
+    """
     import ast
 
     src = _read(SEED_SERVICE)
     rows = _java_array_rows(src, "CRAFT_RULES")
-    assert len(rows) == 10, f"工艺变体规则应为 10 条，实测 {len(rows)}"
+    assert len(rows) > 0, "Java 的 `CRAFT_RULES` 一行都没解析出来 ⇒ 下面的比对会空跑"
 
     py_src = _read(ROUTING_PY)
     pstart = py_src.index("ROUTE_RULES: List[Dict[str, Any]] = [")
@@ -561,7 +594,7 @@ def test_seed_service_craft_rules_match_truth_source():
             continue
         # 🔴 issue #4962 改判：规则级 `position` **加回**（#4937 / O2 期间它被退场、这里曾断言
         # 「真值源的规则字典没有该键」）⇒ 现在按 `None → "NULL"` 的**同款折算**参与比对
-        # （缺席 = `NULL`/`None` = 不限部位；26 条里恰好一条 `韩褶 → 上车布` = `'布帘'`）。
+        # （缺席 = `NULL`/`None` = 不限部位；活跃规则里恰好一条 `韩褶 → 上车布` = `'布帘'`）。
         craft_rules.append((
             rule["trigger_value"],
             "NULL" if rule.get("position") is None else rule["position"],
@@ -570,10 +603,22 @@ def test_seed_service_craft_rules_match_truth_source():
             "NULL" if rule["after_operation"] is None else rule["after_operation"],
         ))
 
-    assert [tuple(r) for r in rows] == craft_rules, (
-        "工艺变体规则漂移（触发值/部位限定/动作/工序/锚点）—— "
-        "新租户会插错工序或锚点落空 ⇒ 条件工序静默追加末尾（顺序错）"
-    )
+    errors = _craft_rule_drift(rows, craft_rules)
+    assert errors == [], "\n".join(errors)
+
+
+def test_craft_rules_guard_detects_injected_regression():
+    """注入式自证（issue #4365）：退休行加回任一侧 / 单侧少一条 / 值漂移 ⇒ `_craft_rule_drift` 必非空。"""
+    base = [("韩褶", "NULL", "insert", "韩褶", "三边")]
+    assert _craft_rule_drift(base, list(base)) == [], "合规输入被误判 ⇒ 判据不可信"
+    sig_hook_row = ("四爪钩", "NULL", "insert", "上车布", "三边")
+    assert _craft_rule_drift(base + [sig_hook_row], list(base)), \
+        "Java 侧把四爪钩退休行加回来未被识别 ⇒ 判据是空断言"
+    assert _craft_rule_drift(list(base), base + [sig_hook_row]), \
+        "真值源侧把四爪钩退休行加回来未被识别 ⇒ 判据是空断言"
+    assert _craft_rule_drift([], base), "单侧少一条未被识别 ⇒ 判据是空断言"
+    assert _craft_rule_drift(list(base), [("韩褶", "NULL", "insert", "上车布", "三边")]), \
+        "值漂移未被识别 ⇒ 逐值比对是空断言"
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
