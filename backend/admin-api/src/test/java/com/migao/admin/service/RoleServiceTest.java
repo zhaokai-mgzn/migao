@@ -1,4 +1,4 @@
-// case_ids: HR-004, HR-005, HR-006
+// case_ids: HR-004, HR-005, HR-006, HR-011
 package com.migao.admin.service;
 
 import com.migao.admin.dto.PageResponse;
@@ -55,6 +55,28 @@ class RoleServiceTest {
 
     private Role testRole;
     private UserRole testUserRole;
+
+    /**
+     * 回退路径上 {@code operator} **应当**取到的全部权限码（= 种子矩阵的 operator 默认权限，逐码点名）。
+     *
+     * <p>🔴 issue #5683：「种子矩阵 ↔ 硬编码回退**逐值相等**」是硬不变量 —— 否则同一个岗位会长出
+     * 两种行为：有权限快照的账号（走种子）与无快照的历史账号（走本回退）看到/能做到的事不一样，
+     * 显形为**真实 403** 与**菜单凭空消失**。本清单是它的**行为面**判据（走真实服务，不靠读代码
+     * 推断）；静态面（两处源码逐角色码穷举对照 + 授权变更 census）在
+     * {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 的判据 14。两层互相独立。</p>
+     */
+    private static final List<String> OPERATOR_FALLBACK_SEED_PARITY = List.of(
+            "dashboard:view",
+            "order:list", "order:detail", "order:refund", "order:update", "order:create",
+            "product:list", "product:create", "product:category", "product:category:view",
+            "processing:manage", "production:view",
+            "processing:view", "processing:update",   // issue #5683 补齐（此前回退缺这 2 个）
+            "inbound:view", "inbound:create",         // issue #5683 补齐（此前回退缺这 2 个）
+            "customer:view", "customer:create",
+            "finance:view", "finance:create",
+            "agent:session", "agent:session:manage",
+            "employee:list",
+            "after_sales:view", "knowledge:view");
 
     @BeforeEach
     void setUp() {
@@ -667,6 +689,75 @@ class RoleServiceTest {
         // then：恰好是角色管理勾选的权限，不含 operator 等硬编码集合
         assertThat(result).containsExactlyInAnyOrder("dashboard:view", "employee:list");
         assertThat(result).doesNotContain("order:list", "system:manage", "product:list");
+    }
+
+    // ============ 回退路径（无权限快照 / 无岗位权限行）的**行为**判据（issue #5683）============
+    // 病灶：同一个岗位的默认权限写在两处 —— 种子矩阵 `RegistrationService` 与硬编码回退
+    // `RoleService.getPermissionCodesForRole` —— 两处靠**注释**声称同步，实测已分叉（operator 少 4 码，
+    // 且注释当时逐字写着「与种子矩阵逐值同步」）。本段直接调用真实服务，把回退路径上账号**实际取到**
+    // 的权限集合逐码点名钉住（`tenantId = null` ⇒ 跳过角色行查询 ⇒ 走的正是运行时那条回退）。
+
+    @Test
+    @DisplayName("回退路径: operator 取到的权限集合 == 种子矩阵（#5683 逐码点名，不以集合大小充数）")
+    void fallbackOperator_MatchesSeedMatrixExactly() {
+        // when：tenantId=null ⇒ 不查角色行 ⇒ 纯回退路径（运行时路径 (b)/(c) 的同一份实现）
+        List<String> result = roleService.getEffectivePermissionCodesForRoleCode("operator", null);
+
+        // then：**逐码点名**（`containsExactlyInAnyOrder` = 多一个 / 少一个都红）
+        assertThat(result).containsExactlyInAnyOrderElementsOf(OPERATOR_FALLBACK_SEED_PARITY);
+        // 越权守卫不因补码而松：回退同样不得给 system:manage / system:view（admin 专属）
+        assertThat(result).doesNotContain("system:manage", "system:view");
+    }
+
+    @Test
+    @DisplayName("回退路径: 无 user_roles 的历史账号（User.role=operator）拿到同一份集合")
+    void fallbackLegacyAccount_NoUserRoles_GetsSeedParityForOperator() {
+        // given：历史账号形态 —— 没有 user_roles 行、没有 users.permissions 快照（#5683 的受害者人群）
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        User legacy = new User();
+        legacy.setId("u-op-legacy");
+        legacy.setRole("operator");
+        legacy.setPermissions(null);
+        when(userMapper.selectById("u-op-legacy")).thenReturn(legacy);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u-op-legacy");
+
+        // then：与纯回退路径同一份集合（两条运行时路径不得分叉）
+        assertThat(result).containsExactlyInAnyOrderElementsOf(OPERATOR_FALLBACK_SEED_PARITY);
+    }
+
+    @Test
+    @DisplayName("回退路径: product_manager（历史岗位码，不在种子矩阵）补上 processing:view")
+    void fallbackProductManager_AddsProcessingViewOnly() {
+        // 性质与 operator **不同**：本岗位**不在种子矩阵里**（POC 期历史角色码，回退表是它**唯一**的
+        // 一份默认定义）⇒ operator 是「回退落后于种子」，本岗位是「只有一份定义、缺自己链上的读码」。
+        List<String> result = roleService.getEffectivePermissionCodesForRoleCode("product_manager", null);
+
+        assertThat(result).containsExactlyInAnyOrder(
+                "dashboard:view",
+                "product:list", "product:create", "product:category", "product:category:view",
+                "processing:manage", "production:view",
+                // issue #5683：它持节点码 `processing:manage`（看得见「智能派单」）却不持该页第一屏
+                // 读码 ⇒ 点进去 403；本码即为此补。
+                "processing:view");
+        // 有意不给：订单 / 客户 / 员工面 —— 补它们属**另一次**授权放宽，超出 #5683 已批准范围。
+        assertThat(result).doesNotContain("order:list", "customer:view", "employee:list");
+    }
+
+    @Test
+    @DisplayName("回退路径: 客服/销售/财务**没有** case ⇒ 空表（#5683 在册未决项，超出已批准范围）")
+    void fallbackCustomerServiceSalesFinance_AreEmptyTables() {
+        // issue #5683 ④：种子给这三个岗位都授了码，而回退给它们**空表** ⇒ 持这些角色码且无权限快照的
+        // 历史账号**零权限**（连「经营看板」都看不见）。补它们 = 让这批账号从零权限变成有权限 =
+        // **又一次授权放宽**，**不在**本单已批准范围（只批了 operator / product_manager）⇒ 只量化、
+        // 提请人类裁定。本测试把现状**钉住**（不是背书）：人类裁定补齐后，这里与判据 14 的
+        // `ROLE_FALLBACK_DIVERGENCES` 必须**同批**改，否则两层判据都会红。
+        for (String role : List.of("customer_service", "sales", "finance")) {
+            assertThat(roleService.getEffectivePermissionCodesForRoleCode(role, null))
+                    .as("回退路径 `%s` 今天应为空表（在册未决项，见 #5683 ④）", role)
+                    .isEmpty();
+        }
     }
 
     @Test

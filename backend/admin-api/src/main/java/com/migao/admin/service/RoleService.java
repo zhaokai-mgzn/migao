@@ -318,6 +318,18 @@ public class RoleService {
 
     /**
      * 根据角色代码获取权限码列表（直接返回字符串，不依赖 DB 查询）
+     *
+     * <p>🔴 <b>不变量（issue #5683）</b>：本方法对某个角色码返回的集合，必须与种子矩阵
+     * {@code RegistrationService.initializeDefaultRolesAndPermissions} 里**同一角色码**的默认权限
+     * <b>逐值相等</b> —— 否则同一个岗位会长出两种行为：<b>有权限快照 / 有岗位权限行的账号</b>
+     * （走种子）与<b>无快照的历史账号</b>（走本回退）看得见 / 做得到的事不一样，显形为
+     * <b>真实 403</b> 与<b>菜单凭空消失</b>。历史上这里靠**注释**声明「逐值同步」，已因此分叉两轮
+     * （issue #5246、#5291）⇒ 现由机械判据守住：
+     * 判据 14 在 {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 里**逐角色码穷举**
+     * 对照两处，任何差异都必须具名登记在只许缩短的台账里（未登记即红、差异消失而条目还在也红）。</p>
+     *
+     * <p>⚠️ 本方法<b>只做计算、不写库</b>（回退路径不落 {@code role_permissions}）⇒ 改它只影响
+     * 「无权限快照 / 无岗位权限行」的那些历史账号，<b>不动任何已存的授予行</b>。</p>
      */
     private List<String> getPermissionCodesForRole(String roleCode) {
         return switch (roleCode) {
@@ -327,8 +339,17 @@ public class RoleService {
                     "order:list", "order:detail", "order:refund",
                     "product:list", "product:create", "product:category", "product:category:view",
                     "processing:manage", "production:view",
-                    // issue #5291：两个域读码与种子矩阵逐值同步 —— 回退路径（无 role_permissions 记录）
-                    // 若不跟上，「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
+                    // issue #5683：补齐 4 个码，让回退**追上**种子矩阵 —— 此前 operator 在回退里少这 4 个码，
+                    // 无快照的历史运营账号因此：「智能派单」菜单看得见、点进去 403（本页第一屏读端点要
+                    // `processing:view`，而它持的是节点码 `processing:manage`）、「入库单」菜单凭空消失
+                    //（该节点码就是 `inbound:view`）、改不了加工单、建不了入库单。
+                    // ⚠️ 只动本回退表：节点码（`frontend/admin-web/src/config/menu.ts`）与前端路由守卫
+                    // 都**不需要**动 —— 受害者持管理码，守卫本来就过，403 来自 API 缺读码。
+                    // ⚠️ issue #5291 那处注释曾逐字声称「与种子矩阵逐值同步」而实际少码：改注释无用，
+                    // 值级不变量由上面 javadoc 点名的判据 14 机械守住。
+                    "processing:view", "processing:update", "inbound:view", "inbound:create",
+                    // issue #5291：两个域读码 —— 回退路径（无 role_permissions 记录）若不跟上，
+                    // 「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
                     "customer:view",
                     "finance:view",
                     "agent:session",
@@ -342,6 +363,9 @@ public class RoleService {
                     // ⚠️ 本 switch 只有 admin/operator/product_manager/knowledge_editor 四个 case：
                     // finance 与 customer_service **没有**硬编码回退（落 default ⇒ 空表），
                     // 故本单对这两个岗位的写码只在种子矩阵与 V124 迁移里落地（如实登记，非静默遗漏）。
+                    // 🔴 这条「空表」是 issue #5683 的**在册未决项**：种子给客服/销售/财务都授了码，
+                    // 而回退给它们空表 ⇒ 那些历史账号**零权限**。补它们 = 又一次授权放宽，超出
+                    // #5683 已批准范围 ⇒ 只量化 + 提请裁定，**有意留空**（由判据 14 的差异台账具名登记）。
                     "order:update", "order:create", "customer:create", "finance:create",
                     "agent:session:manage"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
@@ -352,7 +376,14 @@ public class RoleService {
                     // `processing:manage` ⇒ 同批回填两个读码，否则拆码会把它的生产/分类面**收权**
                     //（「只收窄不放宽」的反面：原持管理码者不受影响）。
                     "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view"
+                    "processing:manage", "production:view",
+                    // issue #5683：补 `processing:view`。⚠️ 本岗位的性质与 operator **不同** ——
+                    // 它**不在种子矩阵里**（POC 期的历史角色码，本回退表是它**唯一**的一份默认定义）
+                    // ⇒ operator 是「回退落后于种子，补码 = 追上」，本岗位是「只有一份定义、缺的是
+                    // 它自己那条链上的读码」。理由：它持节点码 `processing:manage`（看得见「智能派单」）
+                    // 而缺该页第一屏读码 ⇒ 点进去 403。
+                    // 🔴 它与「节点码是否有意保留管理码」是同一处不一致的一体两面，需同批裁定。
+                    "processing:view"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view",
