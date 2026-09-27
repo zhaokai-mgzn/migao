@@ -2753,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（24 case）
+## 杂项域（25 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3037,6 +3037,19 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed
+
+### MC-025. 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数 🔵
+```
+你: 改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）
+期望: direct_reply
+数据: 摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红
+数据: 🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）
+数据: fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）
+数据: 对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）
+数据: 🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）
+跳过: [backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（Refs #5683；issue #5687 收尾时实测发现）：main 上 casebook 摘要比源少 1 条，而逐条块与 eval_cases.py 都一致 ⇒ 下一个 PR 的生成物新鲜度校验会对无辜 PR 判红。落码 = 重渲染那 2 行 + 常驻判据（摘要↔现取、tier↔现取、摘要声称条数↔文档真实块数、两条 fail-closed）+ 三条语义红证 + 一条「只改注释」对照。取号 MC-025：main 上 MC-001~MC-024 已占用（MC-024 = 同会话的 #5687 分流语义）。 ｜ tags: ci, casebook, generated-artifact, summary-drift, red-proof
 
 ### MC-024. 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红） 🔵
 ```
@@ -7585,7 +7598,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：24
+- 杂项域：25
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7635,6 +7648,7 @@
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
 - MC-023: 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）
+- MC-025: 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数
 - MC-024: 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染

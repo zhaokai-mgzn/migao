@@ -4187,6 +4187,24 @@ _CASE_MC_023 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-025 [NORMAL] 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数（源: cases/misc.yml）──
+_CASE_MC_025 = EvalCase(
+    id='MC-025',
+    legacy_id='',
+    title='生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）'],
+    expectations=['direct_reply'],
+    data_checks=['摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红', '🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）', 'fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）', '对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）', '🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）'],
+    skip_reason='[backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'generated-artifact', 'summary-drift', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-024 [NORMAL] 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）（源: cases/misc.yml）──
 _CASE_MC_024 = EvalCase(
     id='MC-024',
@@ -10318,6 +10336,7 @@ ALL_CASES = (
     _CASE_MC_021,
     _CASE_MC_022,
     _CASE_MC_023,
+    _CASE_MC_025,
     _CASE_MC_024,
     _CASE_OB_001,
     _CASE_OB_002,
