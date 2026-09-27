@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": "#5699",
   "stage": "P1",
-  "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP）。",
+  "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP，现取 0 —— A7 已于 2026-09-27 归类后销账）。",
   "sources": [
     {
       "face": "role-defaults-seed",
@@ -25,8 +25,8 @@
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
       "hits": 4,
       "kind": "declaration",
-      "derived_from": "UNRESOLVED",
-      "note": "🔴 **设计 §1.1 未登记的第三处「角色 → 码」副本**（UserService.getRolePermissions 的 switch：super_admin/admin/agent/customer）。本单只**登记 + 报告**，不改行为（改动属 P2/P6 的裁定面）。"
+      "derived_from": "manifest.roles.*（P2 派生目标口径）",
+      "note": "**A7（设计真值源 §1.1 已补登；2026-09-27 由本形态面扫出）**：`UserService.getRolePermissions` 的 `switch`（`super_admin`/`admin` → `[\"*\"]`、`agent` → `chat:read`/`chat:write`/`customer:read`、`customer` → `chat:write`/`order:read`）。机器现取：它是**活路径**（`loadUserByUsername` 调它 ⇒ 每次登录执行）；其 4 个权限码在 `RegistrationService.defaultPermissions` 与迁移链里**各 0 命中**（`super_admin` 只在 `migration-archive/V40` 里作**角色行**的 code 出现）⇒ **不在权限目录里**但会挂成 authority；`ServiceTokenFilter` 的 `C_END_ROLES = Set.of(\"customer\", \"agent\")` ⇒ 身份面。分类：主体归 **P2**；**码的存废 = 人类裁定项（P6 性质）**，本阶段只登记 + 报告，🔴 不改行为。🔴 纪律：**「授予」≠「校验」** —— 设计 §2.8 末注已把这两件事分开写。"
     },
     {
       "face": "catalog-registration",

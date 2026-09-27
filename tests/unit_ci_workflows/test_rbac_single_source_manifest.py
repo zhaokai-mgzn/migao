@@ -282,8 +282,10 @@ UNCOVERED_FACES: tuple[dict[str, str], ...] = (
 UNCOVERED_FACE_CAP = 3
 
 #: 登记表里 `derived_from == "UNRESOLVED"` 的副本上限（**只许缩短**）：这些是**设计真值源尚未登记**
-#: 的副本（本单只登记 + 报告，不修行为）⇒ 它们的条数是一个「燃尽靶子」，涨了必须显式改这里。
-UNRESOLVED_COPY_CAP = 1
+#: 的副本（只登记 + 报告，不修行为）⇒ 条数是一个「燃尽靶子」，涨了必须显式改这里。
+#: 现取 = **0**：唯一一条（`UserService.getRolePermissions`，设计 §1.1 已补登为 **A7**）已于 2026-09-27
+#: 归类（主体 → P2；码的存废 → 人类裁定项）⇒ 按「只许缩短」销账。
+UNRESOLVED_COPY_CAP = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -562,7 +564,11 @@ def test_manifest_matches_generated_readings():
             counted += 1
             leaf = value if not isinstance(value, list) else f"{len(value)} 项 {value[:4]}{'…' if len(value) > 4 else ''}"
             print(f"    {key} = {leaf}")
-    print(f"── 逐值比对项数 = {counted}（清单与生成物的叶节点总数）；不一致 = 0 ──")
+    print(
+        f"── 逐值比对项数 = {counted}（**口径**：六个对账段摊平到叶的 `(路径, 值)` 对总数 —— "
+        "列表按元素下标逐个展开，如 codes 每码一项、menu_nodes 每节点四项、route_guard 每前缀两项；"
+        "两条读数必须互为镜像）；不一致 = 0 ──"
+    )
     problems = reconcile(manifest, readings)
     assert problems == [], (
         f"清单与现值**不一致**（共 {len(problems)} 项）—— 🔴 本阶段只报告、不修（P4/P5 的活）：\n"
