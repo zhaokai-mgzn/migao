@@ -2639,7 +2639,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（22 case）
+## 杂项域（23 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2908,6 +2908,21 @@
 跳过: [backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里
 ```
 溯源: 2026-09-27 新增（issue #5651 收口时的跨域链内修）：UTC 跨天窗口里 `admin-api unit tests` 必红，根因 = 测试用裸 `LocalDate.now()`（CI runner 的 JVM 默认时区 = UTC）取「今天」，而生产按 +08 业务日算 ⇒ UTC 16:00–24:00（北京 00:00–08:00）两侧差一天。**只改测试**（5 条断言 + 三个类注入 BusinessClock），不动任何被测语义；顺手把这一类固化（实例判据 + 类级守卫 + 存量台账只许缩短）。取号 MC-022：main 上 MC-001~MC-021 已占用。 ｜ tags: ci, time, flaky, business-clock, test-only
+
+### MC-023. 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化） 🔵
+```
+你: 只改 deploy/swas/nginx.conf（或 docker-compose*.yml）的提交合并后，必须有一次部署把它应用到线上；把 paths 改回去、或把对账面窄化成不覆盖 nginx.conf 的形态时，必须有东西变红
+期望: direct_reply
+数据: 端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交
+数据: 应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用
+数据: 类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）
+数据: 红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）
+数据: 另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径
+数据: 读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）
+跳过: [backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -7425,8 +7440,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：525（活跃 126，跳过 399）
-- tier 分布：smoke 12 / normal 480 / adversarial 31
+- 用例总数：526（活跃 126，跳过 400）
+- tier 分布：smoke 12 / normal 481 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7441,7 +7456,7 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：22
+- 杂项域：23
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7490,6 +7505,7 @@
 - MC-020: 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
+- MC-023: 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

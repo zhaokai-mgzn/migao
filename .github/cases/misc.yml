@@ -726,4 +726,48 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
       ci:
         - pr-check.yml
+  # ==========================================================================
+  # MC-023（关联 #5001）：**只改配置**的改动必须能自动生效 —— `deploy/swas/**` 接进部署触发面。
+  # 病：配置（compose/nginx）与镜像**同源**，应用面只在 `deploy/swas/deploy.sh` 里（`cp` 三份
+  # canonical 配置 + 无条件 `up -d nginx` + reload）；而改 `deploy/swas/**` 原先**一条部署腿都不
+  # 触发** ⇒ 改动静默不生效（实测两次：#5668 的 `/b/`、#5676 的 `/i/` 都只能靠人工 dispatch）。
+  # 更隐蔽的一面：同一个事实（某服务的触发路径集合）写在「`deploy-*.yml` 的 `on.push.paths`」
+  # 与「`deploy-reconcile.yml` 里那条腿的参数」两处，只改一处 ⇒ 触发面与对账面脱钩。
+  # ==========================================================================
+  - id: MC-023
+    legacy_id: ""
+    title: "只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - trigger-surface
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI/deploy 的**结构事实**（workflow 的 paths + 对账腿参数 +
+    # deploy.sh 的应用面），由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的
+    # 执行式桩跑判据验证，非 LLM 行为。
+    user_inputs:
+      - "只改 deploy/swas/nginx.conf（或 docker-compose*.yml）的提交合并后，必须有一次部署把它应用到线上；把 paths 改回去、或把对账面窄化成不覆盖 nginx.conf 的形态时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交"
+      - "应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用"
+      - "类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）"
+      - "红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）"
+      - "另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径"
+      - "读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）"
+    skip_reason: "[backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_config_change_triggers_deploy.py"
+      ci:
+        - deploy-admin-api.yml
+        - deploy-reconcile.yml
       verifies: []
