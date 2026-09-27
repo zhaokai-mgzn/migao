@@ -32,7 +32,7 @@ public class ProductionRouting {
     /** 部位/帘种：布帘/纱帘/帘头 */
     private String curtainType;
 
-    /** 工艺：韩褶/打孔/四爪钩/穿杆/平幔 */
+    /** 工艺：韩褶/打孔/四爪钩/穿杆/平幔（**历史表**：`四爪钩` 行是 V54/V58 的存量种子，issue #4365 起新单不再产生该值） */
     private String craft;
 
     /** 工序名有序序列（JSONB 数组） */

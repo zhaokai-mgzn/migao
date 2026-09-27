@@ -224,7 +224,8 @@ class ProcessingOrderServiceTest {
     }
 
     /**
-     * 工序库桩（**新结构**，P2b / issue #4459）：把「默认路线模板 + 规则表 26 行 + 部位价目
+     * 工序库桩（**新结构**，P2b / issue #4459）：把「默认路线模板 + 规则表 23 行
+     * （issue #4365 起：工艺变体 7 + 特殊选项 16）+ 部位价目
      * + 工序库元数据」装进新读面。
      *
      * <p>与旧桩的差别：旧桩直接把 9 条「{@code (部位×工艺)} 展开快照」塞给 {@code findRouting}；
@@ -379,7 +380,7 @@ class ProcessingOrderServiceTest {
     /**
      * 特殊选项读面的桩（P2b：规则表 + 计件系数档 + 工序库元数据，逐字对齐 V71/V72 种子）。
      *
-     * <p>与 {@link #stubLibrary} 的关系：那个已装「模板 + 规则 26 行 + 系数档 + 工序库」；
+     * <p>与 {@link #stubLibrary} 的关系：那个已装「模板 + 规则 23 行 + 系数档 + 工序库」；
      * 本方法**只**为「带特殊选项」的用例再显式声明一遍（可读性：这些用例的判据依赖哪几行一目了然）。</p>
      */
     private void stubOptionTables() {

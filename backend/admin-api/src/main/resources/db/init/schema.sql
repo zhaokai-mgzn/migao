@@ -878,7 +878,7 @@ CREATE TABLE IF NOT EXISTS production_routings (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     curtain_type VARCHAR(16) NOT NULL,               -- 部位/帘种：布帘/纱帘/帘头
-    craft VARCHAR(16) NOT NULL,                      -- 工艺：韩褶/打孔/四爪钩/穿杆/平幔
+    craft VARCHAR(16) NOT NULL,                      -- 工艺：韩褶/打孔/四爪钩/穿杆/平幔（**历史表**：四爪钩行是 V54/V58 的存量种子，issue #4365 起新单不再产生该值）
     operations JSONB NOT NULL DEFAULT '[]',          -- 工序名序列（有序数组）
     status VARCHAR(16) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -2997,9 +2997,10 @@ VALUES
   ('rr-v70-01', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active'),
   ('rr-v70-02', 1, 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20, 'active'),
   ('rr-v70-03', 1, 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30, 'active'),
-  ('rr-v70-04', 1, 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40, 'active'),
-  ('rr-v70-05', 1, 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50, 'active'),
-  ('rr-v70-06', 1, 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60, 'active'),
+  -- 🔴 `rr-v70-04/05/06`（craft='四爪钩' 三条：insert 上车布 / remove 定型 / remove 复烫）
+  -- **已退场**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：四爪钩是**加工项/配件**、
+  -- 不是工艺（真值源 §8）⇒ 建库终态不再种它们；存量库由
+  -- `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删。
   ('rr-v70-07', 1, 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70, 'active'),
   ('rr-v70-08', 1, 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80, 'active'),
   ('rr-v70-09', 1, 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90, 'active'),
@@ -3033,7 +3034,7 @@ INSERT INTO production_crafts (id, tenant_id, name, is_default, status)
 SELECT 'pc-v72-' || t.id, t.id,
        COALESCE(
            (SELECT c.name
-              FROM unnest(ARRAY['韩褶', '打孔', '四爪钩', '穿杆', '平幔']) WITH ORDINALITY AS c(name, ord)
+              FROM unnest(ARRAY['韩褶', '打孔', '穿杆', '平幔']) WITH ORDINALITY AS c(name, ord)
              WHERE EXISTS (
                  SELECT 1 FROM production_operations o
                   WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active'
@@ -3107,9 +3108,7 @@ SELECT 'rr-v72-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
       ('01', 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10),
       ('02', 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20),
       ('03', 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30),
-      ('04', 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40),
-      ('05', 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50),
-      ('06', 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60),
+      -- `04/05/06`（craft='四爪钩'）已退场（issue #4365）⇒ 见 V135 与上方 rr-v70 块的说明
       ('07', 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70),
       ('08', 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80),
       ('09', 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90),
@@ -3454,9 +3453,7 @@ SELECT 'rr-v93-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
       ('01', 'craft', '韩褶',   NULL::varchar, 'insert', '韩褶',     '三边',  10::integer),
       ('02', 'craft', '韩褶',   '布帘'::varchar, 'insert', '上车布', '韩褶',  20::integer),
       ('03', 'craft', '打孔',   NULL::varchar, 'insert', '打孔',     '三边',  30::integer),
-      ('04', 'craft', '四爪钩', NULL::varchar, 'insert', '上车布',   '三边',  40::integer),
-      ('05', 'craft', '四爪钩', NULL::varchar, 'remove', '定型',     NULL::varchar, 50::integer),
-      ('06', 'craft', '四爪钩', NULL::varchar, 'remove', '复烫',     NULL::varchar, 60::integer),
+      -- `04/05/06`（craft='四爪钩'）已退场（issue #4365）⇒ 见 V135 与 rr-v70 块的说明
       ('07', 'craft', '穿杆',   NULL::varchar, 'remove', '定型',     NULL::varchar, 70::integer),
       ('08', 'craft', '穿杆',   NULL::varchar, 'remove', '复烫',     NULL::varchar, 80::integer),
       ('09', 'craft', '平幔',   NULL::varchar, 'insert', '帘头制作', '三边',  90::integer),

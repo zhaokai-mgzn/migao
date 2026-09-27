@@ -85,6 +85,10 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+# 退休台账（issue #4365）—— 定义处在 `_retired_craft_rules.py`（**单一真相源**），本模块只 re-export
+# （判据与注入自证共用同一份；别再在本文件里定义第二份 —— 两套真相源 = 改一处漏一处）。
+from unit_ci_workflows._retired_craft_rules import (  # noqa: E402
+    RETIRED_CRAFT_RULE_KEYS, retired_rule_keys)
 
 
 
@@ -1732,7 +1736,7 @@ def _with_packing_on_default_route(rows: list) -> list:
 
 
 def test_route_rules_converge_across_three_sources(schema_sql):
-    """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。
+    """规则表三源**逐行逐值**一致（工艺 + 特殊选项，含 priority；口径 = **活跃行**）。
 
     🔴 **本判据的比对键不含 `position`**（2026-09-21 / #4962 口径改判）：部位维**保留**在
     `production_route_rules.position` 上（#4962 要用它做「适用条件 = 部位」的筛选），
@@ -1740,23 +1744,36 @@ def test_route_rules_converge_across_three_sources(schema_sql):
     ⇒ 三源比对只能按「去掉该维」的键做；`position` 那一维的终态由
     `test_rule_positions_are_kept_across_seed_and_bootstrap` **单独**钉
     （迁移字面量 ↔ bootstrap 镜像逐条逐值一致 + 唯一那条部位限定必须是 `布帘`）。
+
+    🔴 **「四爪钩」三条工艺规则已退休**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：
+    迁移侧字面量（`V71`，归档链**逐字节冻结**）仍有 26 行，其中 3 行由
+    `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` **软删**
+    ⇒ 比对前按退休台账 `RETIRED_CRAFT_RULE_KEYS` 扣除；扣掉的行**必须恰好等于**台账
+    （多退/少退都红 —— 台账只许缩短、条数现取）。
     """
     truth = _truth_rule_rows()
-    migration = route_rule_rows_multi(RULE_SEED_SQLS)
+    raw_migration = route_rule_rows_multi(RULE_SEED_SQLS)
+    ledger = retired_rule_keys()
+    migration = {k: v for k, v in raw_migration.items() if k not in ledger}
     bootstrap = route_rule_rows(schema_sql)
+    # 自证：退休台账**确实**从迁移侧扣掉了行（否则「扣除」是空操作 ⇒ 判据可能空跑）
+    removed = set(raw_migration) - set(migration)
+    assert removed == set(ledger), (
+        f"迁移侧被扣掉的行 ≠ 退休台账：扣掉 {sorted(removed)}，台账 {sorted(ledger)}"
+        " —— 台账只许缩短；改台账必须同时改 V135 与两侧终态")
     # 比对键统一去掉 `position` 维（真值源没有该键 —— 它不在本单射程内）
     migration = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in migration.items()}
     bootstrap = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in bootstrap.items()}
-    assert len(truth) == 26, f"真值源的规则不是 26 条：{len(truth)}"
-    assert len(migration) == 26, f"迁移侧的规则不是 26 条：{len(migration)}"
-    assert len(bootstrap) == 26, f"bootstrap 的规则不是 26 条：{len(bootstrap)}"
+    expected = len(raw_migration) - len(ledger)
+    assert len(truth) == expected, f"真值源的活跃规则不是 {expected} 条：{len(truth)}"
+    assert len(migration) == expected, f"迁移侧的活跃规则不是 {expected} 条：{len(migration)}"
+    assert len(bootstrap) == expected, f"bootstrap 的活跃规则不是 {expected} 条：{len(bootstrap)}"
     assert migration == truth, f"规则表：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
     assert bootstrap == truth, f"规则表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
     # 自证：真值源里**确实没有** position 键（O2 的判据落点），且迁移侧的原始字面量里**有**一条
     # （否则上面的「去掉该维」是空操作 ⇒ 判据可能空跑）
     py_rules, _, _, _ = _route_v2_truth()
     assert not any("position" in r for r in py_rules), "routing.py 的规则仍有 `position` 键（O2 未完成）"
-    raw_migration = route_rule_rows_multi(RULE_SEED_SQLS)
     assert any(k[2] is not None for k in raw_migration), (
         "迁移侧的字面量里没有任何 `position` 非 NULL 的规则 ⇒ 本判据的「归一」是空操作")
 
@@ -1784,13 +1801,15 @@ def test_rule_positions_are_kept_across_seed_and_bootstrap(schema_sql):
         "见 issue #4936 / #4962 的裁定）⇒ 不得复活；部位维的唯一载体就是这一列")
 
     migration = {(k[0], k[1], k[3], k[4], k[5]): k[2]
-                 for k in route_rule_rows_multi(RULE_SEED_SQLS)}
+                 for k in route_rule_rows_multi(RULE_SEED_SQLS)
+                 if k not in retired_rule_keys()}
     bootstrap = {(k[0], k[1], k[3], k[4], k[5]): k[2] for k in route_rule_rows(schema_sql)}
     assert migration, "迁移侧的规则字面量一行都没解析出来 ⇒ 本判据会空跑"
     assert any(pos is not None for pos in migration.values()), (
         "迁移侧没有任何 `position` 非 NULL 的规则 ⇒ 「逐条比对」是空操作（红证前提不成立）")
-    assert len(migration) == 26, f"迁移侧的规则键数 = {len(migration)}，期望 26（判据会空跑？）"
-    assert len(bootstrap) == 26, f"bootstrap 的规则键数 = {len(bootstrap)}，期望 26"
+    expected = len(route_rule_rows_multi(RULE_SEED_SQLS)) - len(retired_rule_keys())
+    assert len(migration) == expected, f"迁移侧的活跃规则键数 = {len(migration)}，期望 {expected}（判据会空跑？）"
+    assert len(bootstrap) == expected, f"bootstrap 的活跃规则键数 = {len(bootstrap)}，期望 {expected}"
 
     drifted = {k: (migration.get(k), bootstrap.get(k)) for k in set(migration) | set(bootstrap)
                if migration.get(k) != bootstrap.get(k)}
@@ -2185,3 +2204,118 @@ def test_factor_retire_guard_detects_injected_regression(tmp_path):
 
     commented = "-- ALTER TABLE production_route_rules DROP COLUMN IF EXISTS factor;\nSELECT 1;\n"
     assert "DROP COLUMN" not in sql_code(commented), "sql_code 没有剥掉行注释 ⇒ 回滚注释会被读成真删列"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 工艺「四爪钩」场景**退场**（issue #4365，用户裁定 2026-09-27）
+#
+# 用户原话：「**移除四爪钩这个场景**」（选项 A = 彻底移除，含三条规则软删）。
+# 依据：真值源 §8 早已冻结「**四爪钩 / 四叉钩**是**加工项（配件）**，工艺（安装工艺＝打褶/悬挂方式）
+# **单值**」；信号层（`production_route_signals`，`V63` 终态）也早已把这两个信号指向主线工艺「韩褶」。
+# 本次**作废** `V83` 当年那条登记（「存量单照旧派生 ⇒ 3 条 `craft` 规则保持 active」）。
+#
+# 数据侧 = 新迁移软删 `production_route_rules` 里 `trigger_kind='craft' AND trigger_value='四爪钩'`
+# 的**活跃行**（`deleted=1`，留痕不物理删）；真值源（`routing.py::ROUTE_RULES`）与 bootstrap 终态
+# （`backend/admin-api/src/main/resources/db/init/schema.sql`）同步删除那三条。
+# ⚠️ 本段是 **L0 静态**判据（admin-api 无 testcontainers ⇒ 表内容判据落不到真库上）；
+#    「真库里活跃行 = 0」由迁移语句自身的两条 `WHERE` 保证（形态判据见下）。
+# ══════════════════════════════════════════════════════════════════════════════════
+
+# 🔴 退休台账（`RETIRED_CRAFT_RULE_KEYS` / `retired_rule_keys()`）的**唯一定义处**已移到
+# `tests/unit_ci_workflows/_retired_craft_rules.py`（issue #4365 的单一真相源），本模块在**文件顶部**
+# import 后再导出 —— 本文件与 `test_v93_route_rules_backfill.py` /
+# `test_restore_route_rule_positions_migration.py` / `test_routing_model_p2_consumers.py` 共用那一份。
+# 键形不变：`(触发类型, 触发值, 部位, 动作, 工序, 锚点)`（`None` = SQL `NULL`）。
+
+
+def sig_hook_retire_statements(paths=None) -> list:
+    """按**内容**发现「软删 `craft='四爪钩'` 活跃行」的迁移语句（**两个载体目录一起扫**）。
+
+    ⚠️ 必须扫「归档 + 活目录」（`_migration_files()`，issue #5243 的单一事实源）：
+    只看归档 ⇒ 将来的增量迁移不在射程（前向防护消失）；只看活目录 ⇒ 今天扫不到（判据空转）。
+    """
+    out = []
+    for raw_path in (paths if paths is not None else _migration_files()):
+        path = Path(raw_path)
+        for match in re.finditer(
+                r"UPDATE\s+production_route_rules\b(?P<body>[\s\S]*?);",
+                sql_code(path.read_text(encoding="utf-8")), re.I):
+            body = match.group("body")
+            if re.search(r"trigger_value\s*=\s*'四爪钩'", body) and \
+                    re.search(r"\bdeleted\s*=\s*1", body, re.I):
+                out.append((path, body))
+    return out
+
+
+def sig_hook_retire_shape_errors(path_name: str, body: str) -> list:
+    """软删语句的**形态判据** → 违规原因列表（空 = 合规）。抽成函数供注入式用例复用。"""
+    errors = []
+    if re.search(r"DELETE\s+FROM\s+production_route_rules", body, re.I):
+        errors.append("物理删了规则行 —— 本单要求**软删**（`SET deleted = 1`，留痕可回滚/可审计）")
+    if not re.search(r"\bdeleted\s*=\s*1", body, re.I):
+        errors.append("没有把 deleted 置 1")
+    if not re.search(r"trigger_kind\s*=\s*'craft'", body, re.I):
+        errors.append("没有限定 `trigger_kind = 'craft'` ⇒ 会把别的触发类型（特殊选项 / 加工项）的规则也软删")
+    if not re.search(r"trigger_value\s*=\s*'四爪钩'", body, re.I):
+        errors.append("没有限定 `trigger_value = '四爪钩'` ⇒ 会把别的工艺的规则一起软删（路线消失）")
+    if not re.search(r"\bdeleted\s*=\s*0", body, re.I):
+        errors.append("没有限定 `deleted = 0` ⇒ 非幂等（重复执行会刷新已软删行）")
+    if not re.search(r"updated_at\s*=\s*NOW\(\)", body, re.I):
+        errors.append("没有同步 `updated_at`（本仓迁移的既有口径）")
+    return [f"{path_name}: {e}" for e in errors]
+
+
+def test_sig_hook_retire_migration_is_discovered_and_nonempty():
+    """自证（fail-closed）：软删语句必须**被读到**（空集 ⇒ 下面的形态判据全部空转）。"""
+    found = sig_hook_retire_statements()
+    assert found, (
+        "未发现任何「软删 production_route_rules 里 craft='四爪钩' 活跃行」的迁移语句"
+        "（`UPDATE … SET deleted = 1 … WHERE trigger_kind = 'craft' AND trigger_value = '四爪钩'`）"
+        "⇒ 本段判据退化成空跑")
+
+
+def test_sig_hook_rules_are_soft_deleted_not_dropped():
+    """判据 1（#4365）：四爪钩规则**软删**（`deleted = 1`）—— 不物理删，且只碰 craft 四爪钩行。
+
+    四个条件各挡一种误伤：① `DELETE FROM` ⇒ 丢留痕（不可回滚、不可审计）；
+    ② 少 `trigger_kind='craft'` ⇒ 把特殊选项 / 加工项规则也软删；③ 少 `trigger_value='四爪钩'`
+    ⇒ 把别的工艺的规则一起软删（**路线消失**）；④ 少 `deleted = 0` ⇒ 非幂等。
+    """
+    errors = []
+    for path, body in sig_hook_retire_statements():
+        errors += sig_hook_retire_shape_errors(path.name, body)
+    assert errors == [], "软删语句形态不合规：\n" + "\n".join(errors)
+
+
+def test_sig_hook_retire_guard_detects_injected_regression():
+    """注入式自证：三种坏形态必须被判红（否则上面的形态判据是空断言）。"""
+    good = ("UPDATE production_route_rules SET deleted = 1, updated_at = NOW() "
+            "WHERE trigger_kind = 'craft' AND trigger_value = '四爪钩' AND deleted = 0")
+    assert sig_hook_retire_shape_errors("V135__x.sql", good) == [], "合规语句被误判 ⇒ 判据不可信"
+    assert sig_hook_retire_shape_errors(
+        "V1__x.sql", good.replace("UPDATE production_route_rules", "DELETE FROM production_route_rules")
+    ), "物理删未被识别 ⇒ 判据是空断言"
+    assert sig_hook_retire_shape_errors("V1__x.sql", good.replace("AND deleted = 0", "")), \
+        "缺幂等条件未被识别 ⇒ 判据是空断言"
+    assert sig_hook_retire_shape_errors("V1__x.sql", good.replace("trigger_kind = 'craft'", "1 = 1")), \
+        "缺触发类型限定未被识别 ⇒ 判据是空断言"
+
+
+def test_sig_hook_rules_are_absent_in_every_terminal_source(schema_sql):
+    """判据 2（#4365）：**真值源 / bootstrap 终态**都不再有 `craft='四爪钩'` 规则；台账只许缩短。
+
+    双向可红：① 任一侧把四爪钩规则加回来 ⇒ 红；② 台账与迁移侧实际退休行不一致
+    （多退 / 少退 / 改台账不改 V135）⇒ 红。
+    """
+    ledger = retired_rule_keys()
+    assert ledger, "退休台账为空 ⇒ 本判据会空跑"
+    truth = dict(_truth_rule_rows())
+    bootstrap = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in route_rule_rows(schema_sql).items()}
+    for name, rows in (("routing.py::ROUTE_RULES", truth), ("schema.sql 终态", bootstrap)):
+        leaked = sorted(k for k in rows if (k[0], k[1]) == ("craft", "四爪钩"))
+        assert leaked == [], f"{name} 仍带 `craft='四爪钩'` 规则（issue #4365 已退场）：{leaked}"
+    raw_migration = route_rule_rows_multi(RULE_SEED_SQLS)
+    retired_in_migration = {k for k in raw_migration if k in ledger}
+    assert retired_in_migration == ledger, (
+        f"迁移侧（`V71` 字面量）与退休台账不一致：台账 {sorted(ledger)} vs 迁移侧 "
+        f"{sorted(retired_in_migration)} —— 台账**只许缩短**；改台账必须同时改 V135 与两侧终态")
