@@ -35,6 +35,27 @@
 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的既有函数。本文件**一行源码解析都没有**
 （#3570 的教训：第二套解析器 = 第二个真值源）。
 
+## 🔴 「子菜单粒度」管的是**读侧可见性**，**写动作仍由写码把守**（把这句话写清，防止被读成「读码可写」）
+
+用户裁定的原文是「权限粒度到子菜单即可，**不需要细化到页面内功能**」—— 它消掉的是
+**「同一个子菜单的读面被拆成多个码」**（页签 / 第一屏各读端点各挂一个码），
+**不是**「页面内的写动作不再需要写码」。两者的区别是**可做面**与**可见面**：
+
+- **可见面**：侧边栏节点码 = 该页第一屏读码（本守卫的三条不变量管的就是它）；
+- **可做面**：写动作仍由**写码**把守（`POST /pool/dispatch` = `processing:update`、
+  `PUT /operation-positions/{id}` = `processing:manage`、`POST /production/seed-templates/{id}/apply` 继承类级
+  `processing:manage` …）。**P4 一个写端点的码都没改**（见下条的自证读数）。
+
+⇒ 推论（**必须知道，否则会误判**）：一个岗位**可以**「看得见页面、读得到数据、点写按钮 403」——
+这在 P4 之后**仍然存在**，且**不是** P4 引入的（`product_manager`@回退 的「智能派单 → 派单按钮」今天就是这样）。
+要消掉它只有两条路，两条都**不在**本阶段射程：① 把写动作对齐到页面读码（= **放宽写面**，须人类裁定）；
+② 在前端按写码隐藏/禁用写按钮（那是**页内 UI 动作**，不是权限边界 —— 裁定说页内功能不作边界，
+但也不要求把写权限并进读码）。登记在 `UNCOVERED_FACES` 的「页内写动作的边界」一条。
+
+**自证读数（两个方向的对照，实跑）**：把 `origin/main` 与 P4 分支各自解析一遍端点表 ⇒
+**写端点（非 GET）165 → 165，码变化 0 条**；同一把尺子量读端点 ⇒ **恰好 7 条**生效码变化
+（逐条 = 本 PR 的 `units_changed`）。**前者为 0 之所以可信，正是因为后者非 0**（阴性结果必须有阳性对照）。
+
 ## 明确的边界（**不要把本守卫读成覆盖面更大**，照实登记）
 
 ① **岗位全集只有 种子 ∪ 回退**（同判据 12 ④ / P3 的 `UNCOVERED_FACES`）：租户在「岗位权限」页
@@ -337,12 +358,32 @@ UNCOVERED_FACES: tuple[dict[str, str], ...] = (
         "owner": "端点写面权限 + 本判据",
     },
     {
+        "face": "页内写动作的边界",
+        "reason": (
+            "子菜单粒度**不覆盖写动作**：页面内的写按钮仍按各自**写码**拦截（「智能派单」页的派单按钮 = "
+            "`processing:update`）⇒ 持页面读码但无写码的岗位会「看得见页、读得到池、点派单 403」。"
+            "这不是 P4 引入的形态（`product_manager`@回退 今天即如此），P4 让客服/销售/财务**也**落到这个形态。"
+            "两条出口（写动作对齐读码 = 放宽写面须人裁 / 前端按写码隐藏按钮 = 页内 UI 动作）都不在本阶段射程。"
+        ),
+        "owner": "生产域写面权限（`ProductionPoolController` 等）+ 本判据",
+    },
+    {
+        "face": "「省料看板」的域归属",
+        "reason": (
+            "该页第一屏两个读端点（`StockBatchController` 的 `saving-board` / `saving-trend`）是**方法级** "
+            "`product:list`（V116/#5145 的口径：批次/库存属商品域读权限、不新造权限点），而它挂在"
+            "「仓储与物料」组下 —— P4 按子菜单粒度把节点码收敛到该读码（**语义跨度最大**的一条）。"
+            "第三条候选（为它**新造一个专属读码**）不在射程：新造权限点 = 新增一处真值 + 给全部岗位授码（授权变更）。"
+        ),
+        "owner": "仓储与物料组菜单/权限面 + 商品/库存域读码面 + 本判据",
+    },
+    {
         "face": "运行时可见性（真租户 / 真库）",
         "reason": "本机没有 admin-api 运行环境与真库 ⇒ 三条不变量算的是**声明面**（注解 / 菜单表 / 角色表），不是运行时实际授权",
         "owner": "验收面（接真环境后复算）+ 本判据",
     },
 )
-UNCOVERED_FACE_CAP = 4
+UNCOVERED_FACE_CAP = 6
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -706,6 +747,35 @@ def test_write_under_read_code_is_named_and_load_bearing():
         )
     finally:
         WRITE_UNDER_READ_CODE.update(saved)
+
+
+def test_p4_census_only_touches_read_endpoints():
+    """🔴 **写侧零变化**的门禁形态：`units_changed` 里**只许出现读端点（GET）**。
+
+    为什么需要它：用户裁定「页内功能不作为权限边界」极易被读成「读码可写」。
+    写动作的码若被对齐到页面读码，就是一次**放宽写面**（持读码者可写）—— 那是必须人类裁定的授权变更。
+    本判据把「P4 只改读端点」钉成机械事实：任何把写端点写进 census 的改动 ⇒ 红。
+    """
+    for path, entry in sorted(P4_AUTHORIZATION_CENSUS.items()):
+        for endpoint, code_before, code_after in entry["units_changed"]:
+            verb, _, url = str(endpoint).partition(" ")
+            assert verb == "GET", (
+                f"`P4_AUTHORIZATION_CENSUS['{path}']` 把**写端点** `{endpoint}` 记成了 P4 的变动项 —— "
+                "子菜单粒度只管**读侧可见性**；写动作的码不在本阶段射程（I4 台账只具名报出、不处置）"
+            )
+            assert url.startswith("/"), f"端点 `{endpoint}` 的形态不对（应为 `<VERB> <path>`）"
+    # 写侧的第二个读数：I4 台账（端点层「写动词 + 读码」）是**存量**形态，P4 不动它 ⇒ 条数必须仍是 16。
+    live = write_under_read_code(load_parity_guard())
+    assert len(live) == WRITE_UNDER_READ_CODE_CAP == 16, (
+        f"写侧台账条数漂移（现取 {len(live)} / 上限 {WRITE_UNDER_READ_CODE_CAP}）⇒ "
+        "要么有人改了写端点的码（本阶段射程外、须人裁），要么漏登记"
+    )
+    # 读侧：P4 记录在案的变动**恰好 7 条**（6 个方法级覆盖 + 1 个类级码改挂的列表读端点）。
+    # 这个数是本阶段 D1 表的机器影子：多一条（把写端点记进来）或少一条（漏记读端点）都红。
+    changed = sum(len(entry["units_changed"]) for entry in P4_AUTHORIZATION_CENSUS.values())
+    assert changed == 7, (
+        f"P4 的读端点变动应为 7 条，实际 {changed} ⇒ 同步 census（本数与 §一 D1 表逐条对应）"
+    )
 
 
 def test_census_recomputes_who_gains_and_who_loses():

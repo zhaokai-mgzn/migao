@@ -730,6 +730,14 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | **台账只许缩短** | `test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS` **6 → 1** / `MULTI_READ_ENDPOINT_PAGES` **3 → 1** / `ROUTE_WITHOUT_MENU_NODE` 销账 1 条 / `AUTHORIZATION_CENSUS['order:list']` 端点 25 → 23；P3 判据的 `PAGE_VISIBILITY_GAPS` **4 → 1** | 销账是「条目消失」而不是「条目留着」——陈旧条目一律判红 |
 | **清单/生成物同步** | `rbac/manifest.json`（pages/menu_nodes/menus/route_guard/ledger_counts）· `rbac/readings.json`（重渲染）· `rbac/sources.json`（`menu.ts` 带码节点命中 19 → 20） | P1/P2/P3 三个守卫全绿（零 delta 对账在**新现值**上仍然成立） |
 
+🔴 **「子菜单粒度」管读侧，写动作仍由写码把守**（务必别读成「读码可写」）：用户裁定消掉的是
+「同一子菜单的**读面**被拆成多个码」，**不是**「页内写动作不再需要写码」。P4 **一个写端点的码都没改** ——
+对照读数（同一把尺子量两侧）：**写端点（非 GET）165 → 165、码变化 0 条**；**读端点（GET）恰好 7 条**
+生效码变化（= 本阶段声明的 `units_changed`）。⇒ 「看得见页、读得到数、点写按钮 403」这一形态
+**仍然存在**（`product_manager`@回退 的「智能派单 → 派单按钮」今天就是这样），两条出口
+（写动作对齐读码 = 放宽写面须人裁 / 前端按写码隐藏按钮 = 页内 UI 动作）都不在本阶段射程，已登记在
+`test_rbac_submenu_granularity.py` 的 `UNCOVERED_FACES`。
+
 ⚠️ **本阶段动了 5 个既有 Java 测试文件**（`MenuControllerTest` / `AuthServiceTest` /
 `ProductionRoutingReadControllerTest` / `ProductionSeedTemplateControllerTest` /
 `ProductionControllerTest` 的两个注入锚点）：它们钉的是**旧裁定**的取值（节点码 / 族级码 /
