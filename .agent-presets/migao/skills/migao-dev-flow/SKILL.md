@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.71.0
+version: 1.72.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2454,7 +2454,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | **FM-A11** | 🔴 **举例即实例**：把某形态的**样例**写进文档 / docstring ⇒ 被**该形态的判据**当成真实例判红（本会话**三次**：① P1 的 M4 docstring 写了「裸 `文件名` + `:` + 行号」⇒ `Case Trust` 规则 G 判红；② 本包把共享固定载体名**原样抄进**技能 / 沿革 / CI-CD / 台账 ⇒ `pr_body_guard` 的 R2 判红，首轮 CI 6 处命中；③ P3 新判据 docstring 的举例被**它自己新加的形态面**抓成未登记副本） | **可复制清单（哪些形态不适合原样写进举例 + 归哪条判据）**：① 会被当语料抓的**路径 / 文件名形态**、**裸 `文件名` + `:` + 行号** ⇒ **打断触发串**（插字 / 占位符 `<...>`）或只给规则名 + 判据名（判据 = `pr_body_guard` R2 / Case Trust 规则 G）；② **引用语料 glob** ⇒ docstring 里点名也要入册（`guard_scope_ledger.json` 的 `kind=mentions`）；③ **关闭关键词 + `#号`** ⇒ 中间插字（§2.2）；④ **弱断言模式字面文本** ⇒ **注释里写也红**（#5284 T2）；⑤ **`case_ids:` 声明形态** ⇒ 首个命中即停。🔴 **纠错**：集成侧「**AST / 编译期不吃举例**」**不成立** —— `test_guard_scope_declaration.py` 判据 1 明取「字符串常量（**含 docstring**）」⇒ AST 面**同样吃**；**真正的分界 = 该判据有没有 prose 豁免** | 判别动作（清单；**无通用机械锁**） |
 | **FM-A12** | 🔴 **否定性结论没有对象可指**：说「**有**守护」时手上有一个**可点的对象**（文件 + 符号）⇒ 复查 = 打开读它；说「**没有**守护」时**没有对象可点** ⇒ 只能靠**穷举面 + 每面的命令**。**实证**：集成侧在指令里写「现有守护 = 无」（**未给检索面与命令**）⇒ 本包据此**自造**了「唯一文件名」处置，而现成工具就在 `scripts/` 下（它还当场判红了本包的文本）。⚠️ **接收方拿到否定性前提时没有对象可以反驳它** ⇒ **这类错最难自查**。与 `FM-A9` **互为镜像** | **否定性结论必须连同「查了哪几面 + 命令 + 面外还有什么」一起说**：`grep -ril '<关键词>' scripts/ .github/scripts/` → `tests/unit_ci_workflows/ tests/` → `.github/workflows/ .github/*.py` → `.agent-presets/ docs/wiki/ AGENTS.md` → `.github/cases/ docs/testing/`，再 `python3 scripts/merge_gate.py --required-diff`（只存在于 CI 服务侧的检查 grep 不到）。**覆盖面声明**：这批面**覆盖不到** ① 只在 CI 服务侧定义的检查 ② 别的仓库 / 外部服务 / 云端配置 ③ **未落码的纪律**（grep 不到，只能问人）④ 只在运行期某分支 / 某时段生效的判据 | 判别动作（见 §25.6 判别动作行） |
 
-| **FM-A13** | 🔴 **校验坐标会让判据假红**：**完全相同的代码**，纯检出放在**共享临时根内**（`/tmp/...`）⇒ `pr_body_guard.py scan` 报 **1 处 R1 命中**（`scripts/pr_body_guard.py` 的**模板** token：相对 token 经 `shared_temp_root()` 按**当前工作目录**解析 ⇒ `/tmp/<检出>/{target}` 落进共享根）；检出在 `$HOME` 下 ⇒ **0 处命中**。实测：`/tmp/solv3` ⇒ `scan` rc=1 + `test_pr_body_guard.py` **5 failed**；`$HOME/…` ⇒ **50 passed / scan rc=0**。⚠️ 本仓会话惯例**恰恰**把临时 worktree 放 `/tmp` ⇒ 容易把假红读成「main 上有真缺陷」 | **纯检出复算的地点必须在共享根之外**，且**先自证坐标再读结论**：`cd <检出> && pwd` → `python3 scripts/pr_body_guard.py scan >/dev/null 2>&1; echo "scan rc=$?"`。**判别规则**：`scan` 报命中时先 `grep -n` 落到具体文件行，确认它是**真实例**还是**被判据自己的输出文案 / 模板**；后者 ⇒ 先怀疑坐标，不要先怀疑 main | 判别动作（见 §25.6 判别动作行） |
+| **FM-A13** | 🔴 **校验坐标会让判据假红**（**机制已修，v1.72.0**；坐标纪律保留）：**完全相同的代码**，纯检出放在**共享临时根内**（`/tmp/...`）⇒ `pr_body_guard.py scan` 报 **1 处 R1 命中**（`scripts/pr_body_guard.py` 的**模板** token：相对 token 经 `shared_temp_root()` 按**当前工作目录**解析 ⇒ `/tmp/<检出>/{target}` 落进共享根）；检出在 `$HOME` 下 ⇒ **0 处命中**。实测：`/tmp` 下的检出 ⇒ `scan` rc=1 + `test_pr_body_guard.py` **5 failed**；`$HOME/…` ⇒ **50 passed / scan rc=0**。⚠️ 本仓会话惯例**恰恰**把临时 worktree 放 `/tmp` ⇒ 容易把假红读成「main 上有真缺陷」。✅ **机制修复（v1.72.0）**：`is_shared_fixed_path()` 改成「**相对 token = 算不出来 ⇒ 不判**」（`realpath()` 对相对路径按 CWD 解析 ⇒ **坐标不在被判对象里**）；**红证两条** = ① 共享根**内**的纯检出 `scan` rc=0（修前 rc=1）；② **绝对**共享根固定路径**照旧判红**（射程**没**放宽）。⚠️ **坐标纪律仍要留**：检出落在共享根内时 `pr_body_guard.py new` **按设计拒绝**分配载体、`shared_temp_root()` **按设计**判该检出为共享 ⇒ 同一检出仍有 **3 failed**（设计要求，不是缺陷） | **纯检出复算的地点首选共享根之外**，且**先自证坐标再读结论**：`cd <检出> && pwd` → `python3 scripts/pr_body_guard.py scan >/dev/null 2>&1; echo "scan rc=$?"`。**判别规则**：`scan` 报命中时先 `grep -n` 落到具体文件行，确认它是**真实例**还是**被判据自己的输出文案 / 模板**；后者 ⇒ 先怀疑坐标，不要先怀疑 main | 判别动作（见 §25.6 判别动作行） |
 | 记号 | 形态 | 判别动作 | 判据 / 台账 |
 |---|---|---|---|
 | **FM-B1** | 路由常量**被声明**、还被判据比对过 `app.config.ts`，却**没有任何跳转用它们** ⇒ 页面在册、可编译、有单测，而用户**一步也走不到** | 声称「某页面 / 入口已交付」先答**三问**（谁发射 / 哪个入口可达 / 有无测试钉住），再跑 `cd frontend/bmini-app && npx jest tests/page-entry-reachability.test.ts`（L2 未登记即红 · L3 登记了没人指向也红 · L3b 定义但从未被调用也红 · L3c HTML 注释里的锚点不算入口） | `frontend/bmini-app/tests/page-entry-reachability.test.ts`（`PAGE_ENTRY_LEDGER`） |
@@ -2521,7 +2521,10 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 - ❌ **「守护存在」≠「守护覆盖实际形态」（`FM-E16` 的两层，别读成一层）**：`scripts/pr_body_guard.py` **确实存在、也确实判红了本包的登记文本**
   （抓的是**文档形态**），而**实际出事的是命令行形态**（它在射程外）。⇒ 不要把「有守护」读成「这个形态被覆盖了」。
 - ❌ **共享写面出事的形态，往往不是你以为的那个入口**（同族推广）：你防的是**文档里的固定名**，出事的是**命令行里的固定名**。
-- ❌ **纯检出复算的坐标必须在共享根之外**（`FM-A13`）：本仓会话惯例把临时 worktree 放 `/tmp` ⇒ 同一份代码会**假红**；
+- ❌ **纯检出复算的坐标首选共享根之外**（`FM-A13`）：本仓会话惯例把临时 worktree 放 `/tmp` ⇒ 同一份代码会**假红**；
+  ✅ **`scan` 的那条假红已修（v1.72.0：相对 token 判「算不出来 ⇒ 不判」）**，但**坐标纪律仍成立** ——
+  检出落在共享根内时 `pr_body_guard.py new` **按设计拒绝**分配载体、`shared_temp_root()` **按设计**判该检出为共享
+  （判据自己断言「本仓不在共享根下」）⇒ 同一检出仍有 **3 failed**，那是**设计要求**、不是缺陷。
   这种红的正确读法是「**先自证坐标**」，不是「main 上有真缺陷」。
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
@@ -2564,6 +2567,34 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
   清零靶子（现取）= `gap` **4** 条 · `not_solidified` **3** 条。
   **未实装 / 边界（照实登记，§19.1）**：`FM-A13` **只有判别动作**（没有判据会拦住「在共享根里做纯检出」）；
   本版本**不改任何门禁的通过条件、不新增豁免**。
+
+- v1.72.0（2026-09-27 **#5707 清零单：两笔销账（`FM-E4` / `FM-E14`）+ `FM-A13` 机制修复 + `FM-E17` 结论 + `FM-E10` 只取证**，本次；
+  来源 = 人类逐条指令「**把已具备条件的缺口销账、把可机械化的落成判据**」+ 本包**独立复核**（不采信转述））：
+  ① **`FM-E4` 销账 → `guarded`**：main 侧生成物新鲜度守护腿**已落地并真跑过** —— `.github/workflows/main-freshness-guard.yml`
+  （`push: [main]` + `schedule '43 * * * *'` + `workflow_dispatch`，**刻意无 `pull_request`**）；判定本体 = **单一实现**
+  `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，**没有「跳过」这一态**）；run `36295323465` = `workflow_dispatch` **success**；
+  判据 = `tests/unit_ci_workflows/test_main_freshness_guard.py`（六组，逐组有注入式红证）。
+  ② **`FM-E14` 销账 → `guarded`（落**判据**，不是只写散文）**：判据 13 = `node --test` 的**目标参数必须带 glob**
+  （`node --test <目录>` 会被 Node 内置 runner 读成 **1 条失败的假红**）；射程 = `verify-all.sh` + worker-h5 的 CI workflow
+  **两处具名载体**；含 **prose 豁免**（剥 `#` 注释 + 目标参数须**像路径**）—— 否则判据会被**它自己的说明文字**喂红（`FM-A11` 形态）。
+  ⇒ 同批把 `GAPS_FROZEN` **4 → 2**（台账 `PD-2`；`gap` 现取 = `FM-E10` / `FM-E17`）。
+  ③ **`FM-E17` 保持 `gap` + 给出「为什么不能机械判」**：可机械判的只有**静态形状**（自动触发面 == {push}，**现取 2 条**：
+  `worker-h5-publish` / `bmini-h5-publish`；`h5-freshness-guard` / `stale-report-reaper` 另有 `workflow_run` ⇒ 不算），
+  而**静态形状抓不到症状**（症状是运行期：`push` 被 `GITHUB_TOKEN` 合并吞掉 + `*/20` cron 被节流）；
+  静态台账登记的「兜底面」**恰恰就是失效的那一环** ⇒ 落成判据等于「**给不存在的保护盖章**」（比 `gap` 更坏）。
+  **重启条件**：发布/守护腿接上 `mechanism-liveness` 存活读数（或补 `schedule`）后，静态形状判据才成为真绊线。
+  ④ **`FM-A13` 机制修复**：`is_shared_fixed_path()` 改为**相对 token 不判**（`realpath()` 对相对路径按 CWD 解析
+  ⇒ 读数随「你在哪儿跑」漂，**坐标不在被判对象里**）；**红证两条**：① 共享根**内**的纯检出 `scan` rc=0（修前 rc=1）；
+  ② **绝对**共享根固定路径**照旧判红**（射程没放宽，判据里有一组专门钉它）。
+  ⑤ **`FM-E10` 只取证、不改**：**现取** `⏭️` = `ai-agent` / `admin-web vitest` / `admin-web tsc`（**原因全是缺依赖 = 环境**，
+  `admin-api` 与 `worker-h5` 真跑）；门禁侧**判据已存在**（`tests/unit_ci_workflows/local_gate_matrix.json::_invariants` 第 3 条
+  ⇒ `fail_closed: true` 的条目必须走 `report_strict`），但射程只到**声明了 fail-closed 的那 1 条**（`frontend/bmini-app`）；
+  `gate`（**合并门禁**）档主路径**一条 `report_env` 模块腿都没有** ⇒ 「本地绿 / CI 红」的残余面只在开发者快循环档。
+  🔴 **口径订正（照实登记）**：判据语义是 **`现取 ≤ 上限`（只许缩短）** ⇒ **「把上限抬到高于现取条数」本身不会红**；
+  「上限 == 现取」靠**销账时同批降上限**这个动作，**不是**靠判据（要机械化得另立一条等价式判据 —— 本单**未立**）。
+  **未实装 / 边界（照实登记，§19.1）**：`FM-E4` 的守护腿**不拦合并**（报告型 + 判红开 P1 值班 issue；`migao-dev-flow` §2.2 的两条前置它都不满足）；
+  `FM-E14` 的判据射程 = **两处具名载体**（将来新增第三处腿不会被它看见，需先改 `NODE_TEST_GLOB_CARRIERS_FROZEN`）；
+  `FM-E17` **仍无任何机械守护**。本版本**不改任何门禁的通过条件、不新增豁免、不改任何 workflow**。
 ## 版本沿革（v1.1 → v1.71.0）
 
 - v1.69.0（2026-09-27 **§25.6 追加一条同族登记：共享临时路径 ⇒ 静默互相覆盖（`FM-E16`）**，本次；

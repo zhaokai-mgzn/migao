@@ -235,11 +235,16 @@ QA 预检、不跑单测 ⇒ 开发者本地**没有任何一层**能看到它�
 `⏭️ 未就绪`（跳过）—— 这在**开发者快循环**里是合理的，但在**合并门禁**上「没跑」会被读成「这项没事」。
 bmini 一条腿已改成**第四态** `report_strict()`（变更集**命中**它的触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；
 **其余走 `report_env()` 的腿仍是 ⏭️` ⇒ 已具名登记为未守护缺口**，逐条见
-`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节（`FM-E10`，含 owner 与显形条件）。
+`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节（`FM-E10`，含 owner、现取读数与方案）。
+⚠️ **两个口径要分开**：#5707 现取「本机打 ⏭️」的 3 条腿**全是缺依赖**（= 环境，不是门禁缺陷，CI 上它们真跑）；
+门禁缺陷只是「变更集命中某模块 + 依赖缺 ⇒ 本地绿」这一形态，而**合并门禁档（`gate`）主路径已经没有 `report_env` 模块腿**。
 
 **工装坑：`node --test <dir>` 是假红（`FM-E14`）**：Node 内置 runner 传**目录**会被读成 **1 条失败**，
 必须传 glob（`node --test <dir>/*.test.mjs`，本仓 `verify-all.sh` 的 worker-h5 腿就是这么写的）。
-该形态**未写进任何判据** ⇒ 今天实测后登记为未守护缺口（同上一节）。
+✅ **#5707 已落判据**（不再是缺口）：判据 13 =
+`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_node_test_targets_are_globs_in_the_registered_carriers`
+—— 射程 = **两处具名载体**（`verify-all.sh` + `.github/workflows/worker-h5-tests.yml`）；
+把任一处的参数字面量改成目录形态 ⇒ **该判据判红**。逐条见 `docs/wiki/CI-CD.md` 的 `FM-E14`。
 
 **开发中体检**（发现本地验证变慢时按序，秒级）：
 ```bash
