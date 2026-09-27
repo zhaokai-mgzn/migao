@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "issue": "#5699",
+  "stage": "P1",
+  "_note": "M4 的「历史文档 / 迁移注释里的失效路径」台账（**只许缩短**：上限 = 判据里的 STALE_PATH_CAP）。每条须写清真身路径与「谁看」。新增一条坏路径**不会**被这里吸收 —— 它会先判红（未登记即红 + 超上限即红），出口是把命令改对。",
+  "entries": [
+    {
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V75__backfill_legacy_special_option_names_fix.sql",
+      "target": "docs/sql/schema.sql",
+      "kind": "immutable-migration",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "住在**已发布迁移**的文件头（禁改：tests/unit_ci_workflows/migration_fingerprints.json 的内容指纹 fail-closed + .github/danger_scan.py 把改迁移判为 danger、放行需仓库 owner）⇒ 走设计 §5.2 的出口 ②：登记 + 写明真身路径。真身读数同样是 0（结论碰巧对，命令的坐标是错的）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "awk '/^CREATE TABLE orders \\(/,/^\\);/' docs/sql/schema.sql | grep -c processing_info"
+    },
+    {
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V97__soft_delete_orphan_operation_positions.sql",
+      "target": "docs/sql/schema.sql",
+      "kind": "immutable-migration",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "住在**已发布迁移**的文件头（禁改：tests/unit_ci_workflows/migration_fingerprints.json 的内容指纹 fail-closed + .github/danger_scan.py 把改迁移判为 danger、放行需仓库 owner）⇒ 走设计 §5.2 的出口 ②：登记 + 写明真身路径。真身读数同样是 0（结论碰巧对，命令的坐标是错的）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "grep -c 测试22 docs/sql/schema.sql"
+    },
+    {
+      "file": "backend/admin-api/src/main/resources/db/migration/V124__backfill_read_permissions.sql",
+      "target": "docs/sql/schema.sql",
+      "kind": "immutable-migration",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "住在**已发布迁移**的文件头（禁改：tests/unit_ci_workflows/migration_fingerprints.json 的内容指纹 fail-closed + .github/danger_scan.py 把改迁移判为 danger、放行需仓库 owner）⇒ 走设计 §5.2 的出口 ②：登记 + 写明真身路径。真身读数同样是 0（结论碰巧对，命令的坐标是错的）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "grep -c \"INSERT INTO permissions\" docs/sql/schema.sql"
+    },
+    {
+      "file": "backend/admin-api/src/main/resources/db/migration/V125__backfill_write_permissions.sql",
+      "target": "docs/sql/schema.sql",
+      "kind": "immutable-migration",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "住在**已发布迁移**的文件头（禁改：tests/unit_ci_workflows/migration_fingerprints.json 的内容指纹 fail-closed + .github/danger_scan.py 把改迁移判为 danger、放行需仓库 owner）⇒ 走设计 §5.2 的出口 ②：登记 + 写明真身路径。真身读数同样是 0（结论碰巧对，命令的坐标是错的）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "grep -c \"INSERT INTO permissions\" docs/sql/schema.sql"
+    },
+    {
+      "file": "backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql",
+      "target": "docs/sql/schema.sql",
+      "kind": "immutable-migration",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "住在**已发布迁移**的文件头（禁改：tests/unit_ci_workflows/migration_fingerprints.json 的内容指纹 fail-closed + .github/danger_scan.py 把改迁移判为 danger、放行需仓库 owner）⇒ 走设计 §5.2 的出口 ②：登记 + 写明真身路径。真身读数同样是 0（结论碰巧对，命令的坐标是错的）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "grep -c \"INSERT INTO permissions\" docs/sql/schema.sql"
+    },
+    {
+      "file": "docs/design/rbac-single-source.md",
+      "target": "docs/sql/schema.sql",
+      "kind": "quoted-specimen",
+      "true_path": "backend/admin-api/src/main/resources/db/init/schema.sql",
+      "reason": "**引用而非使用**：该处逐字引用这条坏命令作为病灶标本（设计 §1.4 实例 6）⇒ 改它等于改掉证据。本判据不区分「引用」与「使用」（设计 §5.3 已登记这一边界）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "grep -c \"INSERT INTO permissions\" docs/sql/schema.sql"
+    },
+    {
+      "file": "docs/testing/demo-readiness.md",
+      "target": "e2e/specs/orders/shipment-doc.spec.ts",
+      "kind": "relative-to-subdir",
+      "true_path": "tests/e2e/specs/orders/shipment-doc.spec.ts",
+      "reason": "命令里的路径是**相对子目录**的口径（真身见 true_path）；本单只登记，不改文档（零 delta）",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "E2E_MOCK_AUTH=true npx playwright test --project=web e2e/specs/orders/shipment-doc.spec.ts"
+    },
+    {
+      "file": "docs/testing/mibao-verification-cases.md",
+      "target": "tests/unit/pages/processing-orders-production.test.tsx",
+      "kind": "generated-artifact",
+      "true_path": "frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx",
+      "reason": "该文件是 `.github/cases/**` 的**生成物**（casebook）⇒ 修它要改用例源并重渲染；此处路径是相对 frontend/admin-web 的口径。本单只登记（零 delta），不改用例",
+      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
+      "issue": "#5699",
+      "snippet": "npx vitest run tests/unit/pages/processing-orders-production.test.tsx"
+    }
+  ]
+}

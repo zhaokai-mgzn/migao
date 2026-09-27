@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "issue": "#5699",
+  "stage": "P1",
+  "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP）。",
+  "sources": [
+    {
+      "face": "role-defaults-seed",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "hits": 6,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.seed",
+      "note": "A1 新租户种子（RegistrationService.attachDefaultPermissions）"
+    },
+    {
+      "face": "role-defaults-fallback",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java",
+      "hits": 7,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.fallback",
+      "note": "A2 运行时回退（RoleService.getPermissionCodesForRole 的 switch）"
+    },
+    {
+      "face": "role-defaults-fallback",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java",
+      "hits": 4,
+      "kind": "declaration",
+      "derived_from": "UNRESOLVED",
+      "note": "🔴 **设计 §1.1 未登记的第三处「角色 → 码」副本**（UserService.getRolePermissions 的 switch：super_admin/admin/agent/customer）。本单只**登记 + 报告**，不改行为（改动属 P2/P6 的裁定面）。"
+    },
+    {
+      "face": "catalog-registration",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.registration",
+      "note": "B1 权限目录（新租户建库 INSERT INTO permissions）"
+    },
+    {
+      "face": "catalog-lazy-seed",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.permission_service",
+      "note": "B2 权限目录懒补种（存量租户首次取目录时补齐）"
+    },
+    {
+      "face": "menu-tree",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.menus.controller",
+      "note": "C2 权限目录菜单树（GET /api/admin/menus）"
+    },
+    {
+      "face": "menu-auth-build",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.menus.auth",
+      "note": "C3 登录下发导航菜单（/api/auth/me 的 menus）"
+    },
+    {
+      "face": "menu-frontend-nodes",
+      "file": "frontend/admin-web/src/config/menu.ts",
+      "hits": 19,
+      "kind": "declaration",
+      "derived_from": "manifest.menu_nodes",
+      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）"
+    },
+    {
+      "face": "route-guard-map",
+      "file": "frontend/admin-web/src/app/(dashboard)/layout.tsx",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.route_guard",
+      "note": "C4 前端路由守卫前缀表（同一事实的第二份书写）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V111__create_inbound_orders_and_batches.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V29__backfill_default_positions.sql",
+      "hits": 5,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V32__ensure_default_positions.sql",
+      "hits": 5,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V43__create_processing_orders.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V124__backfill_read_permissions.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V125__backfill_write_permissions.sql",
+      "hits": 5,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql",
+      "hits": 3,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V132__add_agent_chat_permission.sql",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性）"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V111__create_inbound_orders_and_batches.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration-archive/V43__create_processing_orders.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration/V124__backfill_read_permissions.sql",
+      "hits": 2,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration/V125__backfill_write_permissions.sql",
+      "hits": 5,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql",
+      "hits": 3,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration/V132__add_agent_chat_permission.sql",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.codes.*",
+      "note": "B5 迁移里逐字抄写的权限目录行"
+    },
+    {
+      "face": "py-role-mirror",
+      "file": "backend/ai-agent-service/tests/test_tool_permission_codes.py",
+      "hits": 1,
+      "kind": "mirror",
+      "derived_from": "manifest.roles.*",
+      "note": "A3 ai-agent 侧手抄件（工具层授权判据的输入）"
+    },
+    {
+      "face": "py-catalog-mirror",
+      "file": "backend/ai-agent-service/tests/test_tool_permission_codes.py",
+      "hits": 1,
+      "kind": "mirror",
+      "derived_from": "manifest.codes.*",
+      "note": "B4 ai-agent 侧目录手抄件（frozenset）"
+    },
+    {
+      "face": "py-permission-labels",
+      "file": "backend/ai-agent-service/app/graph/skills/base_skill.py",
+      "hits": 1,
+      "kind": "mirror",
+      "derived_from": "manifest.codes.*",
+      "note": "B3 权限标签手抄件（拼 system prompt 的权限范围注入块）"
+    },
+    {
+      "face": "bmini-surface-mirror",
+      "file": "frontend/bmini-app/src/utils/adminPermission.ts",
+      "hits": 1,
+      "kind": "mirror",
+      "derived_from": "D1 端点注解（co-located，P1 不动）",
+      "note": "D2 手机端 4 个管理面的权限码镜像"
+    },
+    {
+      "face": "census-ledger",
+      "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 1,
+      "kind": "ledger",
+      "derived_from": "manifest.roles.*",
+      "note": "A6 授权变更台账（判据 14 ② 的输入；P2 起由清单 diff 生成）"
+    },
+    {
+      "face": "role-fallback-ledger",
+      "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 1,
+      "kind": "ledger",
+      "derived_from": "manifest.roles.fallback",
+      "note": "#5683 的回退分叉台账（现取 0 条、上限 0）"
+    }
+  ]
+}
