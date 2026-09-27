@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（24 case）
+## B 端小程序域（26 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -918,6 +918,35 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5640 功能②）：本单最值得固化的一类 —— 「同族页面各写一套流程，第二套必然分叉」，落成语料内省式元守卫（未复用即红）。 ｜ tags: bmini, inbound, reprint, reuse-guard, platform
+
+### BM-025. 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红） 🔵
+```
+你: 工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
+数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
+数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
+数据: 判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）
+数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
+数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
+跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+
+### BM-026. 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流 🔵
+```
+你: 工人扫米高入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）
+期望: direct_reply
+数据: 判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红
+数据: 判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红
+数据: 判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是米高的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红
+数据: 判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）
+数据: 判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）
+跳过: [backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.2/§5.4/§7.1）：把「服务端 302 了、而参数没有任何人读」这条链路接通并钉住（落地页 code 参数 → 码空间分流 → 补打页）。 ｜ tags: bmini, inbound, deeplink, code-space, landing-page
 
 ## 分类域（3 case）
 
@@ -7525,13 +7554,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：532（活跃 126，跳过 406）
-- tier 分布：smoke 12 / normal 487 / adversarial 31
+- 用例总数：534（活跃 126，跳过 408）
+- tier 分布：smoke 12 / normal 489 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：24
+- B 端小程序域：26
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
