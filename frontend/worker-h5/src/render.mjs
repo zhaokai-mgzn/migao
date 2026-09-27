@@ -316,6 +316,19 @@ function mainView(state) {
 }
 
 /**
+ * 部位级备注（issue #5685）：商家在**订单行**（`processingInfo.remark`）上写的「这个数字怎么来的」，
+ * 由服务端随 `set_overview.positions[].remark` 下发 —— 工人扫一次就在**该部位**标题下看见。
+ *
+ * <p>🔴 <b>缺值不渲染</b>：`null` / 缺键 / 空串 / 纯空白 ⇒ 返回空串 ⇒ 整行**一个字节都不出现**
+ * （绝不渲染「部位备注：undefined / null」这种假数据，也不留空行）。</p>
+ * <p>文本是商家自由文本 ⇒ 一律 `esc()` 转义；换行/溢出由 `.wh5-ov-remark` 负责（窄屏可读）。</p>
+ */
+function positionRemark(p) {
+  const text = typeof p?.remark === 'string' ? p.remark.trim() : ''
+  return text ? `<p class="wh5-ov-remark">部位备注：${esc(text)}</p>` : ''
+}
+
+/**
  * 本套工序明细（issue #4967 交付物 2）：**本套 → 部位 → 工序**，工人一眼看到「这一套还有哪几道没做」。
  *
  * <p>数据**只**来自服务端解析响应的 `set_overview`（`ProductionScanService#setOverview`）——
@@ -351,6 +364,7 @@ function overviewView(v) {
         .join('')
       return `<div class="wh5-ov-pos">
         <div class="wh5-ov-pos-name">${esc(p.position_name ?? p.position_kind ?? '')}</div>
+        ${positionRemark(p)}
         <ul class="wh5-ov-ops">${rows}</ul>
       </div>`
     })

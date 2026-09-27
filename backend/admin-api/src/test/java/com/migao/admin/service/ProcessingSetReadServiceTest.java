@@ -81,8 +81,9 @@ class ProcessingSetReadServiceTest {
 
     /** 聚合的三层键集（冻结；`position` 类字段缺值给 null 而不是省键）。 */
     private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions");
+    /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
-            List.of("order_item_id", "position_kind", "position_name", "operations");
+            List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
     private static final List<String> OPERATION_KEYS = List.of("operation_id", "logical_name", "position",
             "seq", "qty", "unit", "unit_price", "status", "done_qty");
     private static final List<String> DETAIL_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",
@@ -164,6 +165,48 @@ class ProcessingSetReadServiceTest {
                         .containsExactlyInAnyOrderElementsOf(OPERATION_KEYS);
             }
         }
+    }
+
+    @Test
+    @DisplayName("🔴 部位级备注（issue #5685）：订单行 processing_info.remark 透传到 positions[]；未填 = null（不造值）")
+    void itemRemarkFlowsIntoSetOverview() {
+        stubDetail();
+        when(orderItemMapper.selectById(ITEM_CLOTH))
+                .thenReturn(orderItemWithRemark(ITEM_CLOTH, "  公式--48个折  "));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithRemark(ITEM_GAUZE, "   "));
+
+        Map<String, Object> detail = service.setDetail(SET_ID, TENANT);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> overview = (Map<String, Object>) detail.get("set_overview");
+
+        assertThat(positionOf(overview, ITEM_CLOTH))
+                .as("填了备注 ⇒ 透传（首尾空白 trim 后逐字）").containsEntry("remark", "公式--48个折");
+        Map<String, Object> gauze = positionOf(overview, ITEM_GAUZE);
+        assertThat(gauze).as("键恒在（消费方不必写分支）").containsKey("remark");
+        assertThat(gauze.get("remark")).as("纯空白 = 未填 ⇒ null（不造空串）").isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 部位级备注：不越租户 + 非 Map 形态按未填处理（issue #5685）")
+    void itemRemarkIsTenantScopedAndTolerant() {
+        stubDetail();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder()
+                .id(ITEM_CLOTH).tenantId(OTHER_TENANT).productName("别人的货")
+                .processingInfo(Map.of("remark", "别家备注")).build());
+        // 字符串形态只在**自定义 @Select 路径**出现（typeHandler 不生效）；本读面走 BaseMapper，
+        // 不经过那条路 ⇒ 非 Map 一律按「未填」处理（不解析、不猜）
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(OrderItem.builder()
+                .id(ITEM_GAUZE).tenantId(TENANT).productName("纱")
+                .processingInfo("{\"remark\":\"字符串形态\"}").build());
+
+        Map<String, Object> detail = service.setDetail(SET_ID, TENANT);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> overview = (Map<String, Object>) detail.get("set_overview");
+
+        assertThat(positionOf(overview, ITEM_CLOTH).get("remark"))
+                .as("别的租户的行 ⇒ 读不到（不越租户）").isNull();
+        assertThat(positionOf(overview, ITEM_GAUZE).get("remark"))
+                .as("非 Map 形态 ⇒ 未填（本类不走自定义 @Select 路径）").isNull();
     }
 
     @Test
@@ -486,6 +529,22 @@ class ProcessingSetReadServiceTest {
     }
 
     @SuppressWarnings("unchecked")
+    /** 按 `order_item_id` 取某一个部位（缺失 ⇒ 断言失败，避免「测试自己空跑」）。 */
+    private static Map<String, Object> positionOf(Map<String, Object> overview, String orderItemId) {
+        for (Map<String, Object> position : positionsOf(overview)) {
+            if (orderItemId.equals(position.get("order_item_id"))) {
+                return position;
+            }
+        }
+        throw new AssertionError("部位不存在：" + orderItemId + "（判据会空跑）");
+    }
+
+    /** 订单行夹具（只带 `processing_info.remark` —— 本判据的唯一输入）。 */
+    private static OrderItem orderItemWithRemark(String itemId, String remark) {
+        return OrderItem.builder().id(itemId).tenantId(TENANT).productName("布艺遮光帘A")
+                .processingInfo(Map.of("remark", remark)).build();
+    }
+
     private static List<Map<String, Object>> positionsOf(Map<String, Object> overview) {
         return (List<Map<String, Object>>) overview.get("positions");
     }

@@ -213,6 +213,15 @@ interface OrderLineItem {
   manualAutoFeatures?: string[]
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
+  /**
+   * **部位备注**（issue #5685）—— 商家自由文本，写「这个数字怎么来的」（算料依据的人工说明，
+   * 例：`公式--48个折`）。**只活在行状态里**：落库载体是 `processingInfo.remark`（JSONB 顶层
+   * 字符串，与 `craft` / `formula` 同层，见 `buildLineProcessingInfo`），**不开新列、不开新端点**。
+   *
+   * 缺值口径：空串 / 纯空白 ⇒ 视为未填 ⇒ **不落键**（写 `""` 会让下游多出一行空值）。
+   * 上限 200 字符由录入控件 `maxLength` 挡住（服务端不截断、页面也不静默截断）。
+   */
+  remark?: string
   // ── 「套窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
   // 代价已如实登记：商家手工路径不再能跨行绑套窗 ⇒ 布 + 纱会算成 2 套窗 ⇒ 套级工序
   // （外帘打卷/装袋/发货）各实例化 2 次（计件工资双付，约 ¥3/套）。见 issue #4486。
@@ -960,12 +969,20 @@ function buildLineProcessingInfo(
         ...(isPaired ? buildMainLineGroupKeys(line.id) : {}),
       }
 
+  // **部位备注**（issue #5685）：商家手写的「这个数字怎么来的」（算料依据说明）——
+  // 落库载体 = `processingInfo.remark`（JSONB 顶层字符串，与 `craft` / `formula` 同层）。
+  // **缺值不落键**（空串 / 纯空白 ⇒ 视为未填）：写 `""` 会被下游读成「填过」，详情页多一行空值。
+  // 上限 200 由录入控件 `maxLength` 挡（服务端不截断，页面也不静默截断）。
+  const remark = line.remark?.trim()
+
   if (
     processingDetails.length === 0 &&
     !sku &&
     !colorName &&
     Object.keys(mainSpec).length === 0 &&
-    !isFabric
+    !isFabric &&
+    // 只填了备注的行**不得**被整份丢掉（否则商家写了「公式--48个折」而 payload 里什么都没有）
+    !remark
   ) {
     return undefined
   }
@@ -986,6 +1003,9 @@ function buildLineProcessingInfo(
     ...(isFabric ? {} : { processingItems: processingDetails }),
     ...mainSpec,
   }
+
+  // 部位备注（issue #5685）：**有值才落键**（缺值不写 `""`）—— 逐字透传商家的输入（只去首尾空白）。
+  if (remark) info.remark = remark
 
   // 加工费米数（裁定 R-b：= 该套窗**主布行**米数）+ 算料输出（#4273：输入与输出都要落）。
   // ⚠️ `ProcessingFeeCalculator.METER_KEYS = (processingMeters, fabric_meters)` ——
@@ -2607,6 +2627,8 @@ export default function NewOrderPage() {
                         onChangeQty={(q) => handleLineQtyChange(line, q)}
                         onRestoreFormula={() => restoreFormulaMeters(line)}
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
+                        // 部位备注（issue #5685）：只进行状态 —— 落库由 `buildLineProcessingInfo` 单点完成
+                        onChangeRemark={(r) => updateLineItem(line.id, { remark: r })}
                         onChangeWidth={(w) => {
                           updateLineItem(line.id, {
                             width: w,
@@ -3387,7 +3409,15 @@ interface LineItemBlockProps {
   onDerivedOptionDecision: (name: string, decision: 'adopt' | 'reject') => void
   /** 「改单价」（元/米，issue #4874）：`null` = 清空（回到未改过） */
   onProcessingFeeOverrideChange: (price: number | null) => void
+  /**
+   * **部位备注**（issue #5685）：行级自由文本 —— 上游原样存进行状态，落库由
+   * `buildLineProcessingInfo` 单点完成（**不在回调里拼 payload**）。
+   */
+  onChangeRemark: (remark: string) => void
 }
+
+/** 部位备注的输入上限（issue #5685）—— 服务端不截断 ⇒ 由录入控件 `maxLength` 挡住 */
+const REMARK_MAX_LENGTH = 200
 
 
 /**
@@ -3969,6 +3999,7 @@ function LineItemBlock({
   onChangePlanOverrides,
   onDerivedOptionDecision,
   onProcessingFeeOverrideChange,
+  onChangeRemark,
 }: LineItemBlockProps) {
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
   const [openStep, setOpenStep] = useState(1)
@@ -4450,6 +4481,30 @@ function LineItemBlock({
                   />
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
+              </div>
+
+              {/* **部位备注**（issue #5685）：商家自由文本 —— 写「**这个数字怎么来的**」
+                  （算料依据的人工说明，例：`公式--48个折`）。客户现行加工单/扫码端就有这一行。
+                  ① 上限 **200 字符**：由 `maxLength` **挡住**超长输入（服务端不截断 ⇒ 前端必须挡；
+                     且**不静默截断**商家已写的内容），字数提示让商家看得见还剩多少；
+                  ② 缺值（空 / 纯空白）⇒ `processingInfo` 里**不落键**（见 `buildLineProcessingInfo`），
+                     下游读侧按「缺值不渲染」处理。
+                  ⚠️ 只加这一个输入位：既有控件、布局与它们落库的语义一字未动。 */}
+              <div className="mt-4">
+                <Label>部位备注</Label>
+                <input
+                  type="text"
+                  data-testid="line-item-remark"
+                  aria-label="部位备注"
+                  maxLength={REMARK_MAX_LENGTH}
+                  value={line.remark ?? ''}
+                  onChange={(e) => onChangeRemark(e.target.value)}
+                  placeholder="如：公式--48个折（写清这个数字怎么来的）"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                />
+                <p data-testid="line-item-remark-counter" className="mt-1 text-xs text-neutral-400">
+                  {(line.remark ?? '').length}/{REMARK_MAX_LENGTH}
+                </p>
               </div>
             </div>
 
