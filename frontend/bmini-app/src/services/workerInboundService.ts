@@ -66,6 +66,16 @@ export interface InboundResponse<T> {
   message: string
   /** 传输层失败（断网/超时）—— 有 HTTP 状态码 = 服务端已答复 */
   offline?: boolean
+  /**
+   * HTTP 状态码（issue #5640）：**404 与 410 是两件事** ——
+   * 「查无此码」（可能是抄错）与「该标签已撤销」（码是对的、纸已失效）的处置完全不同，
+   * 而它们**只**能从状态码/错误码上分辨 ⇒ 不带上它，端侧就只能把两种处境压成一句"标签有问题"。
+   */
+  statusCode?: number
+  /** 服务端错误码（`NOT_FOUND` / `LABEL_REVOKED` …；比状态码更权威的那一半） */
+  code?: string
+  /** 服务端给的可行动建议（`ApiResponse.suggestion`）—— 原样上屏，端侧不另写一份 */
+  suggestion?: string
 }
 
 /** 上传回执（`UploadedFileInfo`） */
@@ -115,7 +125,13 @@ export interface InboundDraftRequest {
 /** 归一化后端响应（HTTP 200 但 `success=false` 的业务拒绝也要把文案透出到页面） */
 function toResponse<T>(res: any, fallback: string): InboundResponse<T> {
   const message = res?.message || res?.error?.message || fallback
-  return { success: !!res?.success && res?.data !== undefined, data: res?.data, message }
+  return {
+    success: !!res?.success && res?.data !== undefined,
+    data: res?.data,
+    message,
+    code: res?.error?.code,
+    suggestion: res?.suggestion,
+  }
 }
 
 function failure<T>(error: any, fallback: string): InboundResponse<T> {
@@ -123,6 +139,9 @@ function failure<T>(error: any, fallback: string): InboundResponse<T> {
     success: false,
     message: error?.data?.error?.message || error?.data?.message || error?.message || fallback,
     offline: !error?.statusCode,
+    statusCode: error?.statusCode,
+    code: error?.data?.error?.code,
+    suggestion: error?.data?.suggestion,
   }
 }
 

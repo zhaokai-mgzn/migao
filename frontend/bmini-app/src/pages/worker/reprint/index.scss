@@ -1,0 +1,10 @@
+/**
+ * 拍照补打页的补充样式（issue #5640）
+ *
+ * 复用 `src/pages/worker/inbound/index.scss` 的两条管理面补充样式（`.admin-input` / `.admin-label-preview`）：
+ * 同族页面**共用同一份视觉语言**，不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）。
+ * ⚠️ 这里是**第二份**同样的规则（Taro 的 scss 不跨页面共享），属于已知的样式重复：
+ * 两页的类名与取值必须逐字一致，改动时两处一起改（守卫见 tests/inbound-reprint-code-space.test.ts 的 G3
+ * 射程外的样式面 —— 如需机械判据，后续可把这两段抽成 `src/styles/admin-label-page.scss` 两端 @import）。
+ */
+@import '../inbound/index.scss';

@@ -28,6 +28,13 @@ export const INBOUND_PAGE_ROUTE = '/pages/worker/inbound/index'
 export const INBOUND_PAGE_FILE = 'src/pages/worker/inbound/index.tsx'
 
 /**
+ * **补打页**路由与文件（issue #5640 功能②）—— 与入库页**同族**，共用下面这一份能力台账。
+ * 两个页面都要在 `app.config.ts` 登记（没登记 = 死链，G0 一并核验）。
+ */
+export const REPRINT_PAGE_ROUTE = '/pages/worker/reprint/index'
+export const REPRINT_PAGE_FILE = 'src/pages/worker/reprint/index.tsx'
+
+/**
  * 射程内**声明**用到的 Taro API（实测集必须与它逐值相等，多一个 / 少一个都红）。
  * 顺序无意义（守卫按排序集合比对）。
  */
@@ -62,9 +69,23 @@ export const INBOUND_WORKER_LOGIN_REQUIRED =
 /** 工人登录页路由（`app.config.ts` 已登记；守卫 G0 一并核验） */
 export const WORKER_LOGIN_ROUTE = '/pages/worker/login/index'
 
-/** 守卫射程：本页 + 它依赖的入库模块（服务 / 门禁 / 解码 / 打印 / 确认框） */
+/** 补打页未登录时的引导（与入库页同一口径，但说清本页是"补打"） */
+export const REPRINT_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再拍照补打标签（商家账号不能走这条路径）。'
+
+/**
+ * 守卫射程：**工人标签面**（入库页 + 补打页）+ 它们依赖的入库模块
+ * （服务 / 门禁 / 解码 / 打印 / 共用件 / 确认框）。
+ *
+ * 🔴 两个页面**共用一份**声明集：新增一处 `Taro.*` 调用而不同步声明 ⇒ 红（判据 G1）。
+ * 「同族页面各写一套台账」本身就是分叉的开始 ⇒ 台账只有这一份。
+ */
 export const INBOUND_PAGE_SCOPE_FILES: string[] = [
   INBOUND_PAGE_FILE,
+  REPRINT_PAGE_FILE,
+  'src/utils/inbound/codeSpace.ts',
+  'src/utils/inbound/reprintFlow.ts',
+  'src/utils/inbound/labelPageKit.ts',
   'src/services/workerInboundService.ts',
   'src/utils/inbound/truth.ts',
   'src/utils/inbound/shortCode.ts',
