@@ -92,8 +92,36 @@ CI_LEG_COMMANDS = (
 
 
 def _code_of(text: str) -> str:
-    """剥掉注释后的**代码行** —— 注释里会引用这些写法，裸 grep 会假绿（#5477 同族）。"""
-    return "\n".join(ln.split("#", 1)[0] for ln in text.splitlines())
+    """剥掉行内注释后的**代码行**（注释里会引用这些写法，裸 grep 会假绿，#5477 同族）。
+
+    ⚠️ **不许**写成朴素截断（先按井号切一刀取前段，未考虑引号）：字符串字面量里出现井号时它会把
+    **行尾**一起吃进"注释" ⇒ 判据读到的"代码"比真实代码短（**假绿方向**，属 `#5323` 那一族）。
+    这正是元守卫 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的
+    `naive-hash-cut` 面，其台账（`guard_parsing_allowlist.json`）明写「**新增**原文口径解析
+    **不许**靠往台账加条目吸收 —— 必须改走语法单元，或**先剥注释与字符串**（顺序不许反）」。
+    故本函数走**引号状态机**：只在**引号之外**把 `#` 当注释起点（`echo "a#b"` 里的 `#` 保留）。
+    """
+    out = []
+    for line in text.splitlines():
+        quote = ""
+        cut = len(line)
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quote:
+                if ch == "\\" and quote == '"':   # 双引号内的转义不结束字符串
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = ""
+            elif ch in "\"'":
+                quote = ch
+            elif ch == "#":
+                cut = i
+                break
+            i += 1
+        out.append(line[:cut])
+    return "\n".join(out)
 
 
 def _extract(text: str, name: str) -> str:
