@@ -30,8 +30,11 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
 
   if (rows.length === 0) {
     return (
+      // ⚠️ 空态文案里**不写** markdown 强调标记：本页没接 `@/lib/inline-markdown`，
+      // 标记会原样上屏（判据 = `tests/unit/lib/copy-no-markdown-emphasis.test.ts` ③「未登记即红」）。
+      // 删标记的理由：这句话的作用是**说清为什么空**，强调本就不必要（加粗不加粗都读得懂）。
       <p className="text-sm text-neutral-500" data-testid="cut-plan-empty">
-        本单还裁不出尺寸：算料没给「用料米数」或「幅数」（清单在服务端算不出来时**不造数**）
+        本单还裁不出尺寸：算料没给「用料米数」或「幅数」（清单在服务端算不出来时不造数）
       </p>
     )
   }
