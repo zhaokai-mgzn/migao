@@ -307,6 +307,17 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
         if mode_steps[0].get("continue-on-error"):
             problems.append("模式判定步带 continue-on-error ⇒ 红被吞")
 
+    # 顺序：模式判定步必须**排在**任何消费它的 step 之前（否则 `steps.mode.outputs.mode` 恒为空 ⇒ 全跳过）
+    all_steps = _steps(wf)
+    if mode_steps:
+        mi = all_steps.index(mode_steps[0])
+        for step in publish_steps + build_steps + verify_steps:
+            if all_steps.index(step) < mi:
+                problems.append(
+                    f"step `{step.get('name')}` 排在模式判定步**之前** ⇒ 它引用的 "
+                    f"`{PUBLISH_IF}` 恒为空（该步会被静默跳过：发布腿变成永远不发布）"
+                )
+
     # 写盘的那一步：必须逐字消费 mode
     for step in publish_steps:
         if PUBLISH_IF not in _if_text(step):
@@ -486,6 +497,13 @@ class TestRedProofs:
         def retarget_cron(mut):
             _triggers(mut)["schedule"] = [{"cron": "0 0 * * *"}]
 
+        def mode_step_last(mut):
+            """把模式判定步挪到最后 ⇒ 所有消费它的 step 都拿不到 mode。"""
+            steps = mut["jobs"][JOB]["steps"]
+            mode = [s for s in steps if MODE_STEP in str(s.get("name") or "")][0]
+            steps.remove(mode)
+            steps.append(mode)
+
         def retarget_root(mut):
             mut["env"]["H5_STATIC_ROOT"] = "/opt/migao-deploy"
 
@@ -529,6 +547,7 @@ class TestRedProofs:
             "notify 步不再因落后判红（兜底面空转）": notify_always_green,
             "删掉 schedule 兜底面": drop_schedule,
             "改 cron（与台账声明脱钩）": retarget_cron,
+            "把模式判定步挪到最后": mode_step_last,
             "把静态根改成上层目录": retarget_root,
             "去掉保留前缀（w/b 不再受保护）": drop_reserved,
             "保留前缀只剩 w（b 失去保护）": reserved_only_w,
