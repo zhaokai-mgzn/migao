@@ -34,6 +34,7 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -79,8 +80,16 @@ class ProcessingSetReadServiceTest {
     private static final String ITEM_GAUZE = "oi-gauze";
     private static final String TOKEN = "read-api-token-5247";
 
-    /** 聚合的三层键集（冻结；`position` 类字段缺值给 null 而不是省键）。 */
-    private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions");
+    /**
+     * 聚合的键集（冻结；`position` 类字段缺值给 null 而不是省键）。
+     * ⚠️ `cut_plan`（issue #5693）= **精裁输出清单**，**新增键**（只加不改）。
+     */
+    private static final List<String> OVERVIEW_KEYS =
+            List.of("set_no", "set_index", "positions", "cut_plan");
+    /** 精裁输出清单的一行（issue #5693）：九键**恒在**，算不出来 ⇒ null + `missing_reason`。 */
+    private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
+            "position_name", "component", "fabric_meters", "panel_count", "panel_length_m", "remark",
+            "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -91,7 +100,7 @@ class ProcessingSetReadServiceTest {
             "set_overview", "progress");
     private static final List<String> LIST_ROW_KEYS = List.of("set_id", "set_no", "set_index", "craft_line_id",
             "processing_order_id", "processing_order_no", "order_id", "order_no", "total_operations",
-            "done_operations", "progress_percent", "completed");
+            "done_operations", "progress_percent", "completed", "cut_plan");
     private static final List<String> SCAN_PROGRESS_KEYS = List.of("order_id", "order_no",
             "processing_order_id", "processing_order_no", "total_sets", "completed_sets", "total_operations",
             "done_operations", "progress_percent", "sets");
@@ -420,11 +429,124 @@ class ProcessingSetReadServiceTest {
         List<String> scanMethods = Arrays.stream(ProductionScanService.class.getDeclaredMethods())
                 .map(Method::getName).toList();
         assertThat(scanMethods)
-                .as("扫码服务里若再长出第二份聚合，本断言必红")
+                .as("扫码服务里若再长出第二份聚合（含精裁输出清单），本断言必红")
                 .doesNotContain("setOverview", "overviewOperationView", "positionView", "positionEntry",
-                        "listSetOperations", "listOrderOperations", "completedAt", "productNameOf");
+                        "listSetOperations", "listOrderOperations", "completedAt", "productNameOf",
+                        "cutPlan", "cutPlanRow");
         assertThat(Arrays.stream(ProcessingSetReadService.class.getDeclaredMethods()).map(Method::getName))
-                .as("聚合本体在共享读面里").contains("setOverview");
+                .as("聚合本体在共享读面里").contains("setOverview", "cutPlan");
+    }
+
+    // ══════════════════ 精裁输出清单（issue #5693：给裁床的「裁多长 × 几片」）
+
+    @Test
+    @DisplayName("🔴 清单行键集冻结（九键恒在）+ 定宽买高 = panels 片 × (用料 / panels)")
+    void cutPlanFreezesKeySetsAndDecomposesFixedWidth() {
+        stubDetail();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithCutting(ITEM_GAUZE, "定宽买高", 4));
+
+        List<Map<String, Object>> rows = cutPlanOf(service.setDetail(SET_ID, TENANT));
+
+        assertThat(rows).as("两个部位各一行（序 = positions 的同一份分组）").hasSize(2);
+        for (Map<String, Object> row : rows) {
+            assertThat(row.keySet()).as("清单行键集冻结（缺值给 null 而不是省键）")
+                    .containsExactlyInAnyOrderElementsOf(CUT_PLAN_ROW_KEYS);
+        }
+        // 布帘：精裁-布 应做 12.30 米（qty_source=fabric_meters）⇒ 12.30 / 2 = 6.15 米 × 2 片
+        assertThat(cutPlanRowOf(rows, ITEM_CLOTH))
+                .containsEntry("position_kind", "布帘")
+                .containsEntry("component", "主布")
+                .containsEntry("fabric_meters", new BigDecimal("12.30"))
+                .containsEntry("panel_count", 2)
+                .containsEntry("panel_length_m", new BigDecimal("6.150000"))
+                .containsEntry("missing_reason", null);
+    }
+
+    @Test
+    @DisplayName("🔴 定高买宽 ⇒ 1 片 × 用料米数（引擎口径「一块 = 整窗」；不拿幅数无定义当缺值）")
+    void cutPlanFixedHeightIsOneWholeWindowPiece() {
+        stubDetail();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定高买宽", null));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithCutting(ITEM_GAUZE, "定高买宽", null));
+
+        List<Map<String, Object>> rows = cutPlanOf(service.setDetail(SET_ID, TENANT));
+
+        assertThat(cutPlanRowOf(rows, ITEM_CLOTH))
+                .as("定高买宽：引擎不产 panels（幅数无定义）⇒ 口径 = 一块整窗，长度 = 用料米数")
+                .containsEntry("panel_count", 1)
+                .containsEntry("panel_length_m", new BigDecimal("12.30"))
+                .containsEntry("missing_reason", null);
+        assertThat(cutPlanRowOf(rows, ITEM_GAUZE).get("missing_reason"))
+                .as("纱帘只有 三边-纱、没有「精裁」实例 ⇒ 用料无从取（留空 + 标原因）").isNotNull();
+    }
+
+    @Test
+    @DisplayName("🔴 缺值不渲染假数据：qty_source 非 fabric_meters / 缺 panels / 未知加工类型 ⇒ 留空 + 指名原因")
+    void cutPlanNeverSubstitutesFakeNumbers() {
+        when(orderSetMapper.selectById(SET_ID)).thenReturn(set());
+        when(processingOrderMapper.selectById(PO_ID)).thenReturn(po());
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                // 布帘：有「精裁」实例，但 qty_source=fallback（= 真兜底 1）⇒ 不是用料
+                opWithQtySource("op-1", ITEM_CLOTH, "布帘", 1, "精裁-布", "米", "1.00", "fallback"),
+                // 纱帘：有「精裁」实例且用料真给了（8.00），但定宽买高缺 panels ⇒ 分不了片
+                opWithQtySource("op-3", ITEM_GAUZE, "纱帘", 1, "精裁-纱", "米", "8.00", "fabric_meters")));
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithCutting(ITEM_GAUZE, "定宽买高", null));
+
+        List<Map<String, Object>> rows = cutPlanOf(service.setDetail(SET_ID, TENANT));
+
+        Map<String, Object> cloth = cutPlanRowOf(rows, ITEM_CLOTH);
+        assertThat(cloth.get("fabric_meters")).as("兜底 1 不是用料 ⇒ 不得拿 1 冒充").isNull();
+        assertThat(cloth.get("panel_count")).as("拿不到用料 ⇒ 不报片数（不放半截数据）").isNull();
+        assertThat(cloth.get("panel_length_m")).isNull();
+        assertThat((String) cloth.get("missing_reason")).as("要指名缺什么（可行动）")
+                .contains("qty_source", "fallback");
+
+        Map<String, Object> gauze = cutPlanRowOf(rows, ITEM_GAUZE);
+        assertThat(gauze.get("fabric_meters")).as("引擎直接供数 ⇒ 用料照实给").isEqualTo(new BigDecimal("8.00"));
+        assertThat(gauze.get("panel_count")).as("定宽买高缺幅数 ⇒ 不自己 ceil(M/门幅)").isNull();
+        assertThat((String) gauze.get("missing_reason")).contains("幅数");
+
+        // 未知加工类型 ⇒ 三项都留空（不猜工艺）
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "四开", 2));
+        Map<String, Object> unknown = cutPlanRowOf(cutPlanOf(service.setDetail(SET_ID, TENANT)), ITEM_CLOTH);
+        assertThat(unknown.get("panel_count")).isNull();
+        assertThat((String) unknown.get("missing_reason")).contains("加工类型");
+    }
+
+    @Test
+    @DisplayName("🔴 两处读面 + 列表行：同一份清单**逐值相等**（工人扫码 / 商家套件详情 / 商家列表）")
+    void cutPlanIsIdenticalAcrossReadFacesAndListRow() {
+        stubScan();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithCutting(ITEM_GAUZE, "定宽买高", 4));
+        when(orderSetMapper.selectPage(any(), any())).thenReturn(setPage());
+        when(processingOrderMapper.selectOne(any())).thenReturn(po());
+
+        Map<String, Object> scan = scanService(service).resolve(TOKEN, null, TENANT);
+        Map<String, Object> detail = service.setDetail(SET_ID, TENANT);
+        Map<String, Object> listRow = service.listSets(null, PO_NO, 1, 20, TENANT).getItems().get(0);
+
+        List<Map<String, Object>> expected = cutPlanOf(detail);
+        assertThat(expected).as("两行都得有值（判据不得空跑）").hasSize(2);
+        assertThat(cutPlanOf(scan)).as("工人扫码面 = 商家详情面（改一处两处同变）").isEqualTo(expected);
+        assertThat(listRow.get("cut_plan")).as("商家列表行 = 商家详情面").isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("🔴 注入式（会红）：单点改 cutPlan ⇒ 工人扫码面与商家读面**同时**变")
+    void mutatingCutPlanChangesBothReadFaces() {
+        stubScan();
+        MutatingCutPlanService mutated = new MutatingCutPlanService();
+
+        Map<String, Object> scan = scanService(mutated).resolve(TOKEN, null, TENANT);
+        Map<String, Object> detail = mutated.setDetail(SET_ID, TENANT);
+
+        List<Map<String, Object>> mutatedRows = cutPlanOf(scan);
+        assertThat(mutatedRows).as("扫码面跟着变").containsExactly(Map.of("marker", "MUTATED-5693"));
+        assertThat(cutPlanOf(detail)).as("商家读面跟着变（哪一侧自己算一份，本断言必红）").isEqualTo(mutatedRows);
     }
 
     // ══════════════════ 夹具 / 装配 / 工具
@@ -467,6 +589,25 @@ class ProcessingSetReadServiceTest {
             Map<String, Object> overview = super.setOverview(set, setOperations, tenantId);
             overview.put("set_no", "MUTATED-5247");
             return overview;
+        }
+    }
+
+    /**
+     * 单点变异（issue #5693）：**只**改精裁输出清单 ⇒ 两个读面必须同时变
+     * （若哪一侧自己算了一份清单，{@code mutatingCutPlanChangesBothReadFaces} 立刻红）。
+     */
+    private final class MutatingCutPlanService extends ProcessingSetReadService {
+
+        private MutatingCutPlanService() {
+            super(orderSetMapper, positionOperationMapper, orderItemMapper, processingOrderMapper,
+                    orderMapper, productionService);
+        }
+
+        @Override
+        List<Map<String, Object>> cutPlan(List<ProcessingPositionOperation> setOperations, Long tenantId) {
+            Map<String, Object> marker = new LinkedHashMap<>();
+            marker.put("marker", "MUTATED-5693");
+            return List.of(marker);
         }
     }
 
@@ -543,6 +684,58 @@ class ProcessingSetReadServiceTest {
     private static OrderItem orderItemWithRemark(String itemId, String remark) {
         return OrderItem.builder().id(itemId).tenantId(TENANT).productName("布艺遮光帘A")
                 .processingInfo(Map.of("remark", remark)).build();
+    }
+
+    /**
+     * 订单行夹具（精裁输出清单的两个输入）：加工类型（**列** `order_items.cutting_mode`）+
+     * 算料输出 `panels`（{@code processing_info.panels}，源头 = 引擎 {@code plan.panels}）。
+     * {@code panels == null} = **键缺席**（定高买宽 / 引擎没给）—— 不是「0 幅」。
+     */
+    private static OrderItem orderItemWithCutting(String itemId, String cuttingMode, Integer panels) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("componentRole", "主布");
+        if (panels != null) {
+            info.put("panels", panels);
+        }
+        return OrderItem.builder().id(itemId).tenantId(TENANT).productName("布艺遮光帘A")
+                .cuttingMode(cuttingMode).processingInfo(info).build();
+    }
+
+    /** 工序实例夹具（指定 `qty_source`：issue #5693 的用料口径判据要逐态造：direct / fallback）。 */
+    private ProcessingPositionOperation opWithQtySource(String id, String orderItemId, String positionKind,
+                                                        int seq, String operationName, String unit, String qty,
+                                                        String qtySource) {
+        return ProcessingPositionOperation.builder().id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .setId(SET_ID).setNo(SET_NO).orderItemId(orderItemId).positionKind(positionKind)
+                .positionName("布帘".equals(positionKind) ? "布艺遮光帘A 米白" : "纱帘-白")
+                .seq(seq).operationName(operationName).groupName("裁剪").unit(unit)
+                .qty(new BigDecimal(qty)).qtySource(qtySource).unitPrice(new BigDecimal("3.50"))
+                .status("pending").doneQty(BigDecimal.ZERO).deleted(0).build();
+    }
+
+    /**
+     * 从响应里取精裁输出清单：{@code set_overview.cut_plan}（扫码面 / 套件详情面）或
+     * 列表行顶层的 {@code cut_plan}。取不到 / 空 ⇒ **断言失败**（不允许判据空跑）。
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> cutPlanOf(Map<String, Object> carrier) {
+        Object cutPlan = carrier.get("set_overview") instanceof Map<?, ?> overview
+                ? overview.get("cut_plan")
+                : carrier.get("cut_plan");
+        if (!(cutPlan instanceof List<?> rows) || rows.isEmpty()) {
+            throw new AssertionError("精裁输出清单不存在或为空（判据会空跑）：" + carrier.keySet());
+        }
+        return (List<Map<String, Object>>) cutPlan;
+    }
+
+    /** 清单里某一个部位的行（缺失 ⇒ 断言失败，避免「测试自己空跑」）。 */
+    private static Map<String, Object> cutPlanRowOf(List<Map<String, Object>> rows, String orderItemId) {
+        for (Map<String, Object> row : rows) {
+            if (orderItemId.equals(row.get("order_item_id"))) {
+                return row;
+            }
+        }
+        throw new AssertionError("清单里没有部位 " + orderItemId + "（判据会空跑）");
     }
 
     private static List<Map<String, Object>> positionsOf(Map<String, Object> overview) {

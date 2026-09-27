@@ -286,6 +286,7 @@ function mainView(state) {
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走 🎉</p>'
       : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待领工序（工序未确定 ⇒ 不得记账）</p>'}
     ${overviewView(v)}
+    ${cutPlanView(v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
@@ -311,6 +312,7 @@ function mainView(state) {
     ${reportButton(state, v)}
     ${alts}
     ${overviewView(v)}
+    ${cutPlanView(v)}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
 }
@@ -373,6 +375,51 @@ function overviewView(v) {
   return `<section class="wh5-overview" id="wh5-set-overview">
     <div class="wh5-ov-title">第 ${esc(v.set_no)} 套 · 本套工序</div>
     ${groups}
+  </section>`
+}
+
+/**
+ * 精裁输出清单（issue #5693）—— 给裁床的「**裁多长（米）× 几片**」。
+ *
+ * <p>数据**只**来自服务端解析响应的 `set_overview.cut_plan`（后端唯一实现
+ * `ProcessingSetReadService`），与商家端加工单详情**同一份** —— 页面不算法、不算第二份、
+ * 不做单位换算（`meters / panels` 由服务端按 `CuttingPlanCalculator` 的同一份分解给出）。</p>
+ *
+ * <p>🔴 <b>缺值不渲染假数据</b>：`panel_count` / `panel_length_m` 任一为 `null`
+ * （算料没给用料米数或幅数）⇒ 该项显示 `—`，**不**显示 0 / 1；`fabric_meters` 为 `null`
+ * 同理。`missing_reason` 只在真缺时渲染一行小字（「缺什么」要看得见）。
+ * `cut_plan` 缺失 / 非数组 / 为空 ⇒ 整块**一个字节都不出现**。</p>
+ */
+function cutPlanView(v) {
+  const rows = Array.isArray(v?.set_overview?.cut_plan)
+    ? v.set_overview.cut_plan.filter((r) => r && r.order_item_id)
+    : []
+  if (rows.length === 0) return ''
+  const items = rows
+    .map((r) => {
+      const name = r.position_name ?? r.position_kind ?? ''
+      const component = typeof r.component === 'string' && r.component.trim() ? ` · ${esc(r.component)}` : ''
+      const size =
+        r.panel_length_m === null || r.panel_length_m === undefined || r.panel_count === null || r.panel_count === undefined
+          ? '—'
+          : `${fmtQty(r.panel_length_m)} 米 × ${esc(String(r.panel_count))} 片`
+      const meters =
+        r.fabric_meters === null || r.fabric_meters === undefined ? '—' : `${fmtQty(r.fabric_meters)} 米`
+      const reason =
+        typeof r.missing_reason === 'string' && r.missing_reason.trim()
+          ? `<p class="wh5-cut-reason">${esc(r.missing_reason)}</p>`
+          : ''
+      return `<li class="wh5-cut-row">
+        <span class="wh5-cut-size">裁 ${size}</span>
+        <span class="wh5-cut-name">${esc(name)}${component}</span>
+        <span class="wh5-cut-meters">用料 ${meters}</span>
+        ${reason}
+      </li>`
+    })
+    .join('')
+  return `<section class="wh5-cutplan" id="wh5-cut-plan">
+    <div class="wh5-cut-title">精裁输出（裁多长 × 几片）</div>
+    <ul class="wh5-cut-rows">${items}</ul>
   </section>`
 }
 

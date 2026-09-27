@@ -757,6 +757,87 @@ test('🔴 ⑩-c 长备注窄屏不破版：全文进 DOM（不截断成省略�
   app.destroy()
 })
 
+// ============================================================ ⑪ 精裁输出清单（issue #5693）
+
+/**
+ * 判据（每条都能红 —— 红证：删掉 `render.mjs` 的 `${cutPlanView(v)}` 两行 ⇒ ⑪ 三红）：
+ *   ① 有清单 ⇒ 逐条上屏，形如「裁 6.15 米 × 2 片」+ 用料米数 + 该部位的组件；
+ *   ② 🔴 **缺值不渲染假数据**：`panel_count` / `panel_length_m` 为 null ⇒ 显式留空（`—`），
+ *      屏上**不得**出现 `裁 0.00 米 × 0 片` / `… × 1 片` 这类由 null 折出来的假数字；
+ *      缺值原因（`missing_reason`）必须可见；
+ *   ③ `cut_plan` 缺失 / null / 空数组 / 非数组 ⇒ 整块（`wh5-cut-plan`）**一个字节都不出现**。
+ *
+ * 为什么钉在**装配层**（真实页面渲染 `doc.html`）：清单是「给裁床照着裁」的数字 ——
+ * 渲染成假数字就是裁错料；而块的位置/存在性只有真实渲染路径才判得出。
+ */
+const CUT_PLAN_VIEW = {
+  ...CLOTH_VIEW,
+  set_overview: {
+    ...CLOTH_VIEW.set_overview,
+    cut_plan: [
+      {
+        order_item_id: 'oi-cloth', position_kind: '布帘', position_name: '布艺遮光帘A',
+        component: '主布', fabric_meters: 12.3, panel_count: 2, panel_length_m: 6.15,
+        remark: null, missing_reason: null,
+      },
+      {
+        order_item_id: 'oi-gauze', position_kind: '纱帘', position_name: '纱帘-白',
+        component: '纱', fabric_meters: null, panel_count: null, panel_length_m: null,
+        remark: null, missing_reason: '本套该部位没有「精裁」工序实例：用料米数无从取（不猜）',
+      },
+    ],
+  },
+}
+
+test('🔴 ⑪ 精裁输出清单（issue #5693）：逐条渲染「裁 6.15 米 × 2 片」+ 用料；缺值显式留空', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CUT_PLAN_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  assert.match(doc.html, /id="wh5-cut-plan"/, '有清单 ⇒ 整块必须在屏上')
+  assert.match(doc.html, /裁 6\.15 米 × 2 片/, '「裁多长 × 几片」逐字上屏（米 / 片）')
+  assert.match(doc.html, /用料 12\.30 米/, '用料米数显示口径与商家端一致（toFixed(2)）')
+  assert.match(doc.html, /布艺遮光帘A · 主布/, '该部位的组件要跟着部位名一起出现')
+
+  assert.match(doc.html, /裁 —/, '算不出来 ⇒ 显式留空（—），不留半截数据')
+  assert.ok(!/裁 0\.00 米 × 0 片/.test(doc.html), '不得把 null 折成 0 冒充')
+  assert.ok(!/裁 0\.00 米 × 1 片/.test(doc.html), '不得把 null 折成 1 片冒充')
+  assert.match(doc.html, /没有「精裁」工序实例/, '缺值原因必须可见（缺什么要说得出来）')
+
+  // 样式面（真正的破版源头在 CSS）：行必须能折行/断词（长部位名 + 长缺值原因在窄屏上会溢出）
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+  const rowBlock = css.match(/\.wh5-cut-row\s*\{[^}]*\}/)?.[0] ?? ''
+  assert.ok(rowBlock, '.wh5-cut-row 必须有样式声明（无样式 ⇒ 长串会溢出窄屏）')
+  assert.match(rowBlock, /overflow-wrap:\s*anywhere|word-break:\s*break-word/, '清单行必须能换行/断词')
+  assert.ok(!/nowrap|ellipsis|line-clamp/.test(rowBlock), '不得用 nowrap / 省略号 / 行数钳制掩盖长串')
+  assert.ok(/\.wh5-cut-size\s*\{[^}]*font-weight:\s*(bold|[6-9]00)/.test(css), '「裁多长 × 几片」必须是加粗大字（车间要一眼看清）')
+  app.destroy()
+})
+
+test('🔴 ⑪-b 清单缺失 / null / 空数组 / 非数组 ⇒ 整块一个字节都不出现（不渲染空壳）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  assert.ok(!/wh5-cut-plan/.test(doc.html), '响应没有 cut_plan 键 ⇒ 不得出现清单块')
+  assert.ok(!/精裁输出/.test(doc.html), '连标题都不该出现')
+
+  for (const cutPlan of [null, undefined, [], 'x', 0]) {
+    app.dispatch({
+      type: 'resolved',
+      view: {
+        ...CLOTH_VIEW,
+        needs_selection: [],
+        set_overview: { ...CLOTH_VIEW.set_overview, cut_plan: cutPlan },
+      },
+    })
+    assert.ok(!/wh5-cut-plan/.test(doc.html), `cut_plan=${JSON.stringify(cutPlan)} ⇒ 不得渲染清单块`)
+  }
+  app.destroy()
+})
+
 // ============================================================ 静态红线：工人页唯一写入口
 
 test('🔴 静态红线：页面源码里**没有** /report 写入口（唯一写入口 = scan/complete）', () => {
