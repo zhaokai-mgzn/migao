@@ -93,7 +93,10 @@ LEDGER_CEILINGS = {
     "MULTI_READ_ENDPOINT_PAGES": 3,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
-    "AUTHORIZATION_CENSUS": 15,
+    # issue #5699 的 **I4**（2026-09-27 人类裁定选 A）：新增写码 `production:execute` 是一次**授权变更**
+    # ⇒ 判据 14 的授权变更 census 必须为它新增一条（15 → 16）。**这是显式放宽**（diff 里看得见）：
+    # 台账条目数增长的原因是「确实发生了一次人已批准的新授权」，不是「有人把台账放宽了」。
+    "AUTHORIZATION_CENSUS": 16,
     "UNANNOTATED_ENDPOINTS": 21,
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,

@@ -50,7 +50,9 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -600,3 +602,234 @@ def load_manifest(path: Path | None = None) -> dict:
     target = path or (REPO_ROOT / "rbac" / "manifest.json")
     assert target.is_file(), f"声明真值源不存在：{target}（fail-closed）"
     return json.loads(target.read_text(encoding="utf-8"))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五、P5 段：「存量租户」的 A4 迁移链 → 「清单 vs 各迁移累计」的差集
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# **本段的定位**（设计真值源 §4 的 **P5** 行 / §2.7 / §3.1）：P5 = 「存量收敛」。存量租户的
+# `role_permissions` 是「该租户**历史跑过的迁移**的并集」（路径依赖）⇒ 要判断某个内置岗位在存量库上
+# **实际拿到哪些码**，只能把迁移链（A4）当作**谓词序列**推演一遍（本机无真库，设计 §6.1 已登记）。
+#
+# 🔴 **它算的是「声明面」，不是真库读数**：本段**不连库** —— 输入 = 清单（岗位声明）+ 迁移文件的
+# 授权谓词，输出 = 「每个内置岗位在链上累计拿到哪些码」。真库复算的重启条件写在本段的边界 ③。
+#
+# 🔴 **它不判现值对不对**：差集非空 = 「链上漏了声明里有的码」；消解它是**授权动作**（P5 的迁移由人批准）。
+# 本段只做两件事：① 把差集**算准**（生成器与判据共用这一份实现）；② 让「漏码」在判据里**具名报出**。
+#
+# ## 推演规则（逐条写清，避免被读成覆盖面更大的东西）
+#
+# 链上每一条 `INSERT INTO role_permissions … SELECT … FROM roles r JOIN permissions p …` 被解析成四元：
+#   · `roles`   = 显式岗位谓词（`r.code = 'x'` / `r.code IN (…)`）；
+#   · `codes`   = 显式码谓词（`p.code = 'x'` / `p.code IN (…)`，JOIN 里或 WHERE 里都收）；
+#                 **缺省 = `None`** ⇒ 「该租户目录里的**全部**码」（V29/V32 授 admin 的那句）。
+#   · `when_has`= **条件授权**（`EXISTS (… p0.code = 'Y' …)`）：该语句还授给「**此刻**已持 `Y` 的岗位」
+#                 （V129 的 ②-a/②-b 就是这个形态：授给「原本持管理码」的岗位）。
+#   · `version` = 迁移号（排序键）。
+# 推演按 `(version, 路径)` 顺序累加：`state[role] |= codes`；`codes is None` 时取 **`available_at(version)`**
+# = 「清单目录里，引入版本 ≤ 本版本（或**不由链引入**）的那些码」—— 这条规则的作用是：
+# **后加的码不会被早先那句「全部码」白送**（否则「存量 admin 缺 11 码」这个事实会被推演抹掉）。
+#
+# ## 边界（照实登记）
+# ① **只认约定形态**（与设计 §5.3 的 M1 形态面同源）：`Map.of` / YAML / 动态拼 SQL 的授权**看不见** ——
+#    但「语句数 == 解析数」是硬断言（`parse_role_grants` 末行），**读不懂的新语句不会静默放过**；
+# ② **不推演目录的懒补种**（`PermissionService.ensureFullPermissionCatalog` 的调用时刻仓内答不了）
+#    ⇒ 目录模型 = 清单的码目录，**不是**「某租户此刻的真实目录」；
+# ③ **不推演取消授权**：链上只有 `INSERT … ON CONFLICT DO NOTHING`；租户在「岗位权限」页手工取消的勾选
+#    （= 删 `role_permissions` 行）**不在射程** ⇒ 差集是「链应当给而没给」的量，**不是**「租户此刻缺什么」
+#    的量。后者只能真库复算（重启条件 = 设计 §6.1 第 1 条：接上真库后逐租户逐岗位复算）；
+# ④ 目录外的授权（`agent:quickreply` 这类历史码）**不参与**差集，单独作为读数返回（`beyond_catalog`）。
+
+#: 迁移链的两个目录（`migration-archive` 是「已归档但仍属链上历史」的那一半；两者**都**在射程）。
+MIGRATION_DIRS = (
+    "backend/admin-api/src/main/resources/db/migration",
+    "backend/admin-api/src/main/resources/db/migration-archive",
+)
+
+_ROLE_GRANT_MARKER = "INSERT INTO role_permissions"
+
+
+@dataclass(frozen=True)
+class RoleGrant:
+    """链上一条「岗位 ← 码」授权语句（**解析结果**，不是原文）。"""
+
+    version: int
+    file: str
+    roles: frozenset[str]
+    #: 显式码谓词；`None` = 「该租户目录的全部码」（推演时按 `available_at(version)` 展开）。
+    codes: frozenset[str] | None
+    #: 条件授权的码（`EXISTS (… p0.code = 'Y' …)`）：另授给「此刻已持 Y」的岗位。
+    when_has: frozenset[str]
+
+
+def _strip_sql_comments(text: str) -> str:
+    """剥 SQL 注释（**唯一实现**在 `tests/unit_ci_workflows/_sql_schema.py`；本函数只是它的加载器）。"""
+    import importlib.util
+    import sys as _sys
+
+    name = "migao_sql_schema_for_derive"
+    mod = _sys.modules.get(name)
+    if mod is None:
+        path = REPO_ROOT / "tests" / "unit_ci_workflows" / "_sql_schema.py"
+        assert path.is_file(), f"SQL 剥注释的唯一实现不存在：{path}（路径漂移 ⇒ 红，不得静默跳过）"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec and spec.loader, f"无法为 {path} 建立加载器（fail-closed）"
+        mod = importlib.util.module_from_spec(spec)
+        _sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return mod.strip_sql_comments(text)
+
+
+def migration_files(root: Path | None = None) -> list[tuple[int, str, str]]:
+    """链上全部迁移：`[(版本号, 仓库相对路径, 原文)]`，按 `(版本号, 路径)` 升序。
+
+    版本号解析不出 ⇒ 抛错（fail-closed）：一条**读不出号**的迁移会让「顺序」变成猜测。
+    """
+    base = root or REPO_ROOT
+    out: list[tuple[int, str, str]] = []
+    for rel in MIGRATION_DIRS:
+        directory = base / rel
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("V*.sql")):
+            match = re.match(r"V(\d+)__", path.name)
+            assert match, f"迁移文件名不合 `V<数字>__…` 形态：{path.name}（顺序无法确定 ⇒ fail-closed）"
+            out.append(
+                (int(match.group(1)), path.relative_to(base).as_posix(), path.read_text(encoding="utf-8"))
+            )
+    assert out, "迁移链解析出 0 个文件 ⇒ 差集会恒为空（空断言，fail-closed）"
+    return sorted(out)
+
+
+def parse_role_grants(version: int, rel_path: str, sql: str) -> list[RoleGrant]:
+    """把一份迁移文本里的 `INSERT INTO role_permissions` 语句解析成 `RoleGrant`（见本段「推演规则」）。"""
+    code = _strip_sql_comments(sql)
+    out: list[RoleGrant] = []
+    idx = 0
+    while True:
+        start = code.find(_ROLE_GRANT_MARKER, idx)
+        if start < 0:
+            break
+        end = code.find(";", start)
+        assert end > start, f"{rel_path}: `{_ROLE_GRANT_MARKER}` 语句没有以 `;` 收尾（解析不了 ⇒ fail-closed）"
+        stmt = code[start:end]
+        idx = end + 1
+        roles = set(re.findall(r"r\.code\s*=\s*'([a-z_]+)'", stmt))
+        for group in re.findall(r"r\.code\s+IN\s*\(([^)]*)\)", stmt):
+            roles.update(re.findall(r"'([a-z_]+)'", group))
+        explicit = set(re.findall(r"(?<![A-Za-z0-9_])p\.code\s*=\s*'([a-z_:]+)'", stmt))
+        for group in re.findall(r"(?<![A-Za-z0-9_])p\.code\s+IN\s*\(([^)]*)\)", stmt):
+            explicit.update(re.findall(r"'([a-z_:]+)'", group))
+        when_has = set(re.findall(r"p0\.code\s*=\s*'([a-z_:]+)'", stmt))
+        assert roles, f"{rel_path}: 一条 role_permissions 语句解析不出任何岗位谓词（fail-closed）"
+        out.append(
+            RoleGrant(
+                version=version,
+                file=rel_path,
+                roles=frozenset(roles),
+                codes=frozenset(explicit) if explicit else None,
+                when_has=frozenset(when_has),
+            )
+        )
+    raw = len(re.findall(_ROLE_GRANT_MARKER, code))
+    assert raw == len(out), (
+        f"{rel_path}: `{_ROLE_GRANT_MARKER}` 语句数 {raw} ≠ 解析数 {len(out)}"
+        "（有语句没被读进来 ⇒ 推演会漏授权，fail-closed）"
+    )
+    return out
+
+
+def catalog_introduction(root: Path | None = None) -> dict[str, int]:
+    """链上「某个码**首次**进入目录」的版本号（`INSERT INTO permissions` 里出现的码字面量）。"""
+    intro: dict[str, int] = {}
+    for version, _rel, sql in migration_files(root):
+        code = _strip_sql_comments(sql)
+        for match in re.finditer(r"INSERT INTO permissions[^;]*;", code, re.S):
+            for found in re.findall(r"'([a-z_]+:[a-z_:]+)'", match.group(0)):
+                intro.setdefault(found, version)
+    return intro
+
+
+def chain_state(manifest: dict, root: Path | None = None, upto: int | None = None) -> dict[str, object]:
+    """推演迁移链：每个岗位**累计**拿到哪些码（返回结构化读数：状态 / 目录外授权 / 语句）。
+
+    `upto` = 只看**版本号 ≤ upto** 的迁移：渲染 `V<n>` 这份产物时必须传 `n - 1`，
+    否则「产物自己在链上」会让差集恒为空（自证式空断言）。
+    """
+    catalog = sorted(set(manifest["codes"]["registration"]))
+    catalog_set = set(catalog)
+    intro = catalog_introduction(root)
+    grants: list[RoleGrant] = []
+    for version, rel, sql in migration_files(root):
+        if upto is not None and version > upto:
+            continue
+        grants.extend(parse_role_grants(version, rel, sql))
+
+    def available_at(version: int) -> set[str]:
+        return {c for c in catalog if intro.get(c) is None or intro[c] <= version}
+
+    state: dict[str, set[str]] = {}
+    beyond: dict[str, set[str]] = {}
+    for grant in grants:
+        target_roles = set(grant.roles)
+        for condition in sorted(grant.when_has):
+            target_roles |= {role for role, codes in state.items() if condition in codes}
+        codes = available_at(grant.version) if grant.codes is None else set(grant.codes)
+        for role in sorted(target_roles):
+            state.setdefault(role, set()).update(codes)
+            beyond.setdefault(role, set()).update(codes - catalog_set)
+    return {
+        "state": {role: sorted(codes & catalog_set) for role, codes in sorted(state.items())},
+        "beyond_catalog": {role: sorted(codes) for role, codes in sorted(beyond.items()) if codes},
+        "grants": grants,
+        "catalog": catalog,
+        "introduction": intro,
+    }
+
+
+def expand_role_codes(manifest: dict, codes: Iterable[str]) -> frozenset[str]:
+    """把声明里的码集展开：`*` ⇒ 清单目录全集（与 `derive_roles` 同一口径）。"""
+    materialized = set(codes)
+    if "*" in materialized:
+        return frozenset(manifest["codes"]["registration"])
+    return frozenset(materialized)
+
+
+def convergence_diff(
+    manifest: dict,
+    root: Path | None = None,
+    upto: int | None = None,
+    skip_introduced_after: int | None = None,
+) -> dict[str, object]:
+    """**「清单 vs 各迁移累计」的差集**（P5 的核心读数 = `声明 − 链累计`，现取、不手写）。
+
+    `skip_introduced_after` = 把「版本号比它更晚才进入目录」的码排除出差集：
+    渲染 `V136` 时必须传 `136` —— 否则它会去授**尚未存在**的码（`V138` 才引入的
+    `production:execute` 会在 `V136` 里被白列一行，靠「权限目录里没有这一行 ⇒ JOIN 空集」侥幸无害）。
+    """
+    chain = chain_state(manifest, root, upto)
+    catalog = set(chain["catalog"])
+    state = {role: set(codes) for role, codes in chain["state"].items()}
+    intro = chain["introduction"]
+    per_role: dict[str, dict[str, list[str]]] = {}
+    for role, declared in sorted(manifest["roles"]["seed"].items()):
+        expected = set(expand_role_codes(manifest, declared))
+        if skip_introduced_after is not None:
+            expected = {
+                code for code in expected
+                if intro.get(code) is None or intro[code] <= skip_introduced_after
+            }
+        actual = state.get(role, set()) & catalog
+        per_role[role] = {
+            "declared": sorted(expected),
+            "chain": sorted(actual),
+            "missing": sorted(expected - actual),
+            "extra": sorted(actual - expected),
+        }
+    return {
+        "roles": per_role,
+        "missing_total": sum(len(entry["missing"]) for entry in per_role.values()),
+        "beyond_catalog": chain["beyond_catalog"],
+        "grants": chain["grants"],
+    }

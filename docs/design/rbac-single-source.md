@@ -1,6 +1,7 @@
 # RBAC 单一真值源：架构设计 + 精确行为差量表（第一阶段）
 
-> **状态：设计阶段。本文件不改任何行为。**
+> **状态：设计阶段已过 —— 本文件仍是真值源，P1~P6 + I4 的落地进度见 §4 的各阶段落地记录。**
+> （2026-09-27 更新：P1/P2/P3/P4/P5/P6/I4 均已落地；本节末的四条「本单不做」在 §2.9 有**一条具名窄例外**。）
 > 本单只做两件事：① 穷举「角色 → 码 / 页面 → 码」现在被写在哪些地方（每处**机器现取的读数**）；
 > ② 给出目标架构、逐角色 × 逐码 × 逐消费面 × 分三场景的**行为差量表**，供人过目后再决定动手。
 > 关联：#5683（已关闭，「岗位默认权限写在两处」）、#5675 / #5682（菜单节点码 vs 页面第一屏读端点码，
@@ -452,6 +453,20 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | 不新增 issue | 会话内零新开（`AGENTS.md` 铁律 11）；需要跟踪单时**在报告里提出**，由人决定 |
 | 不在本单实现目标架构 | 本单是**第一阶段：设计 + 差量表** |
 
+#### 🔴 §2.9 的**具名窄例外**：`users.permissions` 快照的「等价回填」（2026-09-27，issue #5699 的 I4）
+
+「不动 `users.permissions` 快照语义与存量快照」这条**仍然成立**，但它有一个**窄例外**（本单落地、
+人类 2026-09-27 裁定选 a）——**它不是「放宽了 §2.9」，是「守卫码改名时把有效权限集合钉住」**：
+
+| 项 | 内容 |
+|---|---|
+| **理由** | `RoleService.getUserPermissions` 对**有快照**的账号**提前返回快照**（`backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java::getUserPermissions` 的快照分支）⇒ 只补岗位授权（`role_permissions`）**不够**：快照里没有新码的员工照旧 403 |
+| **谓词（逐字）** | `permissions ~ '^\[("[^"]*")(,"[^"]*")*\]$'`（**严格 JSON 字符串数组**，即 `AdminUserController::createUser` 用 `writeValueAsString(list)` 写出的形态）**∧** `permissions LIKE '%"order:list"%'`（**含旧守卫码**）**∧** `permissions NOT LIKE '%"production:execute"%'`（幂等） |
+| **等价性** | 命中快照的账号**今天本来就过得了**那四个端点（旧码就在它们的放行集里）⇒ 补码后有效权限集合**逐值不变**；**不含旧码的账号一个字节都不动**（它今天也过不去 ⇒ 不补 = 不放宽） |
+| **它要防的形态** | 去掉「含旧码」这条前置条件 ⇒ 迁移会**给今天过不去的账号开门**（= 静默放宽）；`V138` 文末的 `DO` 块把它做成 fail-closed 断言：**任何「有新码、无旧码」的快照 ⇒ `RAISE EXCEPTION` 回滚** |
+| **判据** | `tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py::test_snapshot_backfill_predicate_is_load_bearing`（丢掉前置条件 ⇒ 红；含「只改散文 ⇒ 不红」对照） |
+| **覆盖面（照实登记）** | 只覆盖 `users.permissions` 这**一种**快照面；`user_roles` 关联、租户自建岗位、运行期新建账号**不在面内**；**生产库受影响行数本机不可取证**（`V138` 文件头给出只读的事前/事后 SQL，重启条件 = 接真库复核） |
+
 ---
 
 ## 3. ③ 精确行为差量表
@@ -745,6 +760,21 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 `ProductionSeedTemplateControllerTest` 原本要防的「写面被放宽到读权限岗位手上」那条在 `apply` 上**原样保留**，
 `ProductionRoutingReadControllerTest` 的族级断言改为**反向**（改判并逐字登记理由 + 零 delta 的复算依据）。
 
+**P5 / P6 / I4 落地记录（2026-09-27）** —— 三项都由人类当日晚间逐条裁定（原话要点：**「三项都做」**；
+I4 选 **A（新造专用写码）**；P6 选 **(i) 正式定义**；快照处理选 **a（等价迁移）**）。三项**分开提交**（同一 PR，逐项可 revert）：
+
+| 阶段 | 落地形态 | 位置（符号锚） | 现取读数 |
+|---|---|---|---|
+| **P5** | 由清单**渲染**的收敛迁移（幂等 + `DO` 块终态对账，显式 `BEGIN/COMMIT`）＋ 迁移链推演器 ＋ 判据 | `rbac/generate_migration.py` · `rbac/derive.py::convergence_diff` / `chain_state` · `backend/admin-api/src/main/resources/db/migration/V136__converge_builtin_role_permissions.sql` · `tests/unit_ci_workflows/test_rbac_migration_convergence.py` | 差集（声明 − V136 之前的链累计）= **`admin` 的 11 个码**；`customer_service` / `operator` / `sales` / `finance` = **∅**（逐值复算；`operator` 的两个码由 `V129` 的**条件授权**补上，推演器按 `EXISTS (… p0.code …)` 谓词复算得出 —— **本文件的 §3.1 S2 读数由此得到独立验证**） |
+| **P6（出口 i）** | 两个历史岗位码进**种子矩阵**（建 roles 行 + 授默认码）＋ 存量由 `V137` 建行授权 ＋ `LEGACY_ROLES_IN_FALLBACK` **整表销账** | `backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::initializeDefaultRolesAndPermissions` · `V137__formalize_legacy_roles.sql` · `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `LEGACY_ROLES_IN_FALLBACK = {}` | `product_manager` = 8 码 / `knowledge_editor` = 2 码，**seed == fallback 逐值**；持这两个角色码的账号**有效权限集合逐值不变**（码集一字未改） |
+| **I4（选 A）** | 新写码 `production:execute` ＋ `ProductionController` 四条方法级覆盖 ＋ `V138`（目录行 + 岗位授权 + **快照等价回填**）＋ 判据 | `backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java`（四个 `@RequirePermission("production:execute")`） · `V138__add_production_execute_permission.sql` · `rbac/generate_migration.py::render_i4` · `tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py` | 四个端点的**改前守卫码** = 类级 `order:list`（现取 `class_permission`）；**改前能过的岗位集 == 改后能过的岗位集** = `admin` · 客服 · 运营 · 销售 · 财务（两侧现取）；新码**零外溢**（生效码 == 新码的端点恰好 4 条、无菜单节点、无 Agent 工具） |
+
+🔴 **三条边界（照实登记，不是「已覆盖」）**：
+① **P5 的差集是「声明面推演」**，不是真库读数（推演规则与边界逐条写在 `rbac/derive.py` 的 P5 段）；
+② **I4 的快照回填只覆盖 `users.permissions` 一种形态**，且**受影响行数本机不可取证**（见 §2.9 的窄例外表）；
+③ **P4 判据的 I4 台账 16 → 12**（四条真写移出），**判据 14 的授权变更 census 上限 15 → 16**（新增一条授权变更条目）——
+   台账条数的这两处变动都是**显式放宽**（diff 里看得见），理由是「确实发生了一次人已批准的新授权」。
+
 ### 4.1 🔴 改行为阶段的**硬前置**（P4 / P5 / P6，逐阶段落实，做成阶段验收的一部分）
 
 **裁定（2026-09-27，跟踪单 #5699）：凡改行为的阶段，提交前必须先过人。** 落实形态是
@@ -906,6 +936,14 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
    归类：主体（让「角色 → 码」由单一真源派生）归 **P2**，裁定项归 **P6 性质**。
    重启条件：接上真库/真环境后复算「`customer` / `agent` 账号登录后实际拿到的 authority 集」，
    与这些码逐值比对，再决定存废。
+
+8. 🔴 **I4 的存量快照面本机不可取证**（2026-09-27 增）：`V138` 的快照回填谓词**逐字**可判
+   （判据见 §2.9 的窄例外表），但「生产库上有多少行命中、按岗位怎么分布」只能接真库复核 ——
+   `V138` 文件头给出**只读的事前 / 事后 SQL**（含「事后不许出现『有新码、无旧码』」的越界断言）。
+   **重启条件**：接上真库后跑那三条 SQL，把行数与岗位分布写回 PR body / 本文件。
+9. 🔴 **P5 的差集是声明面推演**（2026-09-27 增）：推演器把迁移链当**谓词序列**读（只认约定 SQL 形态、
+  语句数 == 解析数），它**不**知道某租户在「岗位权限」页手工取消过哪些勾选 ⇒
+  差集是「链**应当**给而没给」的量，**不是**「某租户此刻缺什么」的量（后者同样只能真库复算）。
 
 6. 🔴 **本文件与 #5699 的分工**：本文件记**读数与设计**（逐句可复算），#5699 记**人裁定与阶段状态**。
    两边若冲突：**读数以本文件为准，裁定以 #5699 为准**（本文件不得代替人做授权决定）。

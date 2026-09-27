@@ -565,7 +565,7 @@ public class RegistrationService {
     }
 
     /**
-     * 为新租户初始化默认岗位（五岗）和权限
+     * 为新租户初始化默认岗位（**七岗**：五岗 + P6 正式定义的两个历史岗位码）和权限
      *
      * 岗位=角色体系（#2969）：每个岗位在 roles 表落一条记录，role_permissions 即岗位默认权限。
      * 创建员工时选岗位 → 前端预填该岗位默认权限 → 保存为员工个人权限快照。
@@ -573,7 +573,7 @@ public class RegistrationService {
     private void initializeDefaultRolesAndPermissions(Long tenantId) {
         log.info("初始化新租户默认岗位和权限: tenantId={}", tenantId);
 
-        // 创建默认岗位（五岗：管理员/客服/运营/销售/财务）
+        // 创建默认岗位（**七岗**：管理员/客服/运营/销售/财务 + 商品管理员/知识编辑 —— 后两个由 P6 正式定义）
         Role adminRole = Role.builder()
                 .tenantId(tenantId)
                 .name("管理员")
@@ -619,6 +619,30 @@ public class RegistrationService {
                 .build();
         roleMapper.insert(financeRole);
 
+        // 两个**历史岗位码**的正式定义（issue #5699 的 **P6**，出口 (i)：正式定义 —— 人类 2026-09-27 裁定）。
+        // 此前它们**不是岗位**：不在种子里、迁移链一条谓词都不提（⇒ 无 `roles` 行）、岗位权限页无法编辑，
+        // 只靠 `RoleService.getPermissionCodesForRole` 的 `switch` 一行 `case` 拿码（"幽灵角色码"）。
+        // 本单把它们**写进种子矩阵**（与回退 switch **逐值相等**，由判据 14 与镜像判据同时守着）⇒
+        // ① 岗位权限页首次能编辑它们；② 员工弹窗首次能选它们；③ 存量租户由 `V137` 建行授权。
+        // 🔴 **账号的有效权限集合逐值不变**（码集一字未改）—— 变的是**可管理性 / 可分配性**（产品面，人已裁定）。
+        Role productManagerRole = Role.builder()
+                .tenantId(tenantId)
+                .name("商品管理员")
+                .code("product_manager")
+                .description("商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .status("active")
+                .build();
+        roleMapper.insert(productManagerRole);
+
+        Role knowledgeEditorRole = Role.builder()
+                .tenantId(tenantId)
+                .name("知识编辑")
+                .code("knowledge_editor")
+                .description("知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .status("active")
+                .build();
+        roleMapper.insert(knowledgeEditorRole);
+
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
         // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
@@ -648,6 +672,13 @@ public class RegistrationService {
                 //    #5675 收口包复核后已证伪并同批改准（见 `ProductionController` 的「归因更正」段）。
                 // 写面仍是 `processing:manage`。
                 {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
+                // 生产执行**写**码（issue #5699 的 **I4**）：把守四个**真写**端点 —— 建加工单 / 报工 / 打任务卡 / 发货。
+                // 它们此前**只由类级读码** `order:list` 把守（`ProductionController` 的类级注解）⇒「写动作由读码把守」
+                // （判据 5 的射程只有工具层 ⇒ 端点层这一族此前没有任何判据看得见）。
+                // 🔴 授给**今日持 `order:list`** 的四个岗位（客服/运营/销售/财务）⇒ **有效权限集合逐值不变**；
+                // 新码**只**挂这四个端点（别处一律不挂）⇒ 不放宽任何别的面（逐端点读数见
+                // tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 的 I4 台账）。
+                {"生产执行", "production:execute", "production", "execute", "建加工单/报工/打任务卡/发货"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
@@ -737,7 +768,9 @@ public class RegistrationService {
         attachDefaultPermissions(tenantId, csRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
                 "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
-                "agent:session:manage"), permissionByCode);
+                "agent:session:manage",
+                // issue #5699 的 I4：生产执行写码（今日持 order:list ⇒ 建加工单/报工/打印/发货本来就过得了）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "product:category:view",
@@ -749,15 +782,29 @@ public class RegistrationService {
                 "customer:view", "finance:view", "agent:session", "employee:list",
                 "after_sales:view", "knowledge:view",
                 "order:update", "order:create", "customer:create", "finance:create",
-                "agent:session:manage"), permissionByCode);
+                "agent:session:manage",
+                // issue #5699 的 I4：生产执行写码（同上，四个端点今日对运营就是放行的）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
-                "processing:view", "inbound:view"), permissionByCode);
+                "processing:view", "inbound:view",
+                // issue #5699 的 I4：生产执行写码（销售今日持 order:list ⇒ 这 4 个端点本来就放行）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "finance:view",
-                "processing:view", "inbound:view", "finance:create"), permissionByCode);
+                "processing:view", "inbound:view", "finance:create",
+                // issue #5699 的 I4：生产执行写码（财务今日持 order:list ⇒ 同上）
+                "production:execute"), permissionByCode);
 
-        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
+        // ── P6（issue #5699 出口 (i)）：两个历史岗位码的默认码**逐值取自回退 switch**（不增不减）──
+        attachDefaultPermissions(tenantId, productManagerRole, List.of(
+                "dashboard:view", "product:list", "product:create", "product:category",
+                "product:category:view", "processing:manage", "production:view",
+                "processing:view"), permissionByCode);
+        attachDefaultPermissions(tenantId, knowledgeEditorRole, List.of(
+                "dashboard:view", "product:list"), permissionByCode);
+
+        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=7, permissions={}", tenantId, defaultPermissions.length);
     }
 
     /**

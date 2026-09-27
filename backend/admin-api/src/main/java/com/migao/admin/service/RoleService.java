@@ -380,7 +380,9 @@ public class RoleService {
                     // （根本不经 role_permissions）—— 历史员工 / ai-agent 直接创建的账号正走这条路。
                     // 补码后本 switch 有 **7 个 case**，与种子矩阵逐角色码一致（判据 14 穷举守着）。
                     "order:update", "order:create", "customer:create", "finance:create",
-                    "agent:session:manage"
+                    "agent:session:manage",
+                    // issue #5699 的 I4：同客服（运营今日持 order:list ⇒ 这四个端点本来就放行）
+                    "production:execute"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );
             case "product_manager" -> List.of(
@@ -405,15 +407,22 @@ public class RoleService {
             case "customer_service" -> List.of(
                     "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
                     "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
-                    "agent:session:manage"
+                    "agent:session:manage",
+                    // issue #5699 的 I4：生产执行写码 —— 回退路径（无 role_permissions 记录的历史账号）
+                    // 若不跟上，这批账号会在「建加工单/报工/打印/发货」上 403（它们今日靠 order:list 放行）。
+                    "production:execute"
             );
             case "sales" -> List.of(
                     "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
-                    "processing:view", "inbound:view"
+                    "processing:view", "inbound:view",
+                    // issue #5699 的 I4：销售今日持 order:list ⇒ 这四个写端点本来就放行（收窄即现场停线）
+                    "production:execute"
             );
             case "finance" -> List.of(
                     "dashboard:view", "order:list", "order:detail", "finance:view",
-                    "processing:view", "inbound:view", "finance:create"
+                    "processing:view", "inbound:view", "finance:create",
+                    // issue #5699 的 I4：同销售（财务今日持 order:list）
+                    "production:execute"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view",

@@ -73,9 +73,12 @@ import java.util.Map;
  * 把守 —— 那是有断言记录的族级决定
  * （{@code ProductionRoutingReadControllerTest#endpointsDeclareManagePermission}：{@code routeRules} /
  * {@code operationPositions} 必须声明管理码，理由逐字「价目与规则是生产配置面」）⇒ 不存在「第三个漏改」。
- * **唯一例外是打印计数**：它沿用类级 {@code order:list} —— 打印按钮今天对客服/销售/财务可见
- * （{@code order:list} 授了 4 个岗位，{@code processing:manage} 只授 operator），
- * 收窄会让「能打开生产明细却打不了卡」变成功能回退；计数只是打印动作的元数据，不涉安全边界。</p>
+ * 🔴 <b>issue #5699（I4）</b>：四个**真写**端点（{@code /instantiate} 建加工单 · {@code /operations/{}/report}
+ * 报工 · {@code /print} 打印计数 · {@code /ship} 发货）此前**只由类级读码 {@code order:list}** 把守 ⇒ 现在
+ * **逐条补方法级写码** {@code production:execute}。**打印计数**此前那句「故意沿用类级 {@code order:list}」的
+ * 理由（打印按钮对客服/销售/财务可见）由**授权**承接 —— 读码 `order:list` 授了 4 个岗位
+ * （客服 · 运营 · 销售 · 财务），该写码已同批授予这四个岗位 ⇒ 收窄为零；
+ * 新码**只**挂这四个端点（别处一律不挂）。</p>
  */
 @Slf4j
 @RestController
@@ -182,6 +185,7 @@ public class ProductionController {
      * 对已有实例的单仍是**幂等空操作**（不重插行、不清零 done_qty、token 复用）。</p>
      */
     @PostMapping("/orders/{orderId}/instantiate")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> instantiate(@PathVariable String orderId,
                                                         @RequestBody(required = false) Map<String, Object> body) {
         return ApiResponse.success(productionService.instantiate(
@@ -211,16 +215,18 @@ public class ProductionController {
      * 只流转**不记单号** ⇒ 工人发一次货要调两次，中间失败就是「有单号但没发货」或
      * 「发货了没单号」的静默不一致。发货是**一个动作**，就该是一个入口。</p>
      *
-     * <p><b>权限 = 类级 {@code order:list}</b>（与扫码/报工同一权限）：工人身份不需要
-     * {@code processing:update} 或新增「仓管」角色即可发货 —— 能扫码报工的人本来就有
-     * {@code order:list}（实测：{@code ProductionController} 类级 + 既有
-     * {@code PUT /orders/{id}/status} / {@code /logistics} 也都是 {@code order:list}）。</p>
+     * <p><b>权限 = 写码 {@code production:execute}</b>（issue #5699 的 **I4**）：发货是**写**动作
+     * （流转订单状态 + 落单号），此前只由**类级读码** {@code order:list} 把守 ⇒「写动作由读码把守」
+     * （判据 5 的射程只有工具层 ⇒ 端点层这一族此前没有判据看得见）。该写码只把守本控制器的
+     * **四个真写端点**（建加工单 / 报工 / 打印 / 发货），并已授予**今日持 {@code order:list} 的四个岗位**
+     * （客服 · 运营 · 销售 · 财务）⇒ 有效权限集合**逐值不变**。</p>
      *
      * <p><b>守卫不复制</b>：含加工项订单必须有 completed 加工单这条判定在
      * {@link OrderService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
      * 本端点只做转发。</p>
      */
     @PostMapping("/orders/{orderId}/ship")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> ship(@PathVariable String orderId,
                                                  @RequestBody Map<String, String> body) {
         orderService.shipWithLogistics(orderId,
@@ -268,9 +274,12 @@ public class ProductionController {
      * 记录一次任务卡打印（issue #4202 边角修复：print_count 此前零写方）
      * POST /api/admin/production/orders/{orderId}/print
      *
-     * <p>权限**故意**沿用类级 {@code order:list}（见类注释）。</p>
+     * <p>权限 = **写**码 {@code production:execute}（issue #5699 的 **I4**）：打印计数是**写**动作
+     * （{@code print_count} 落库）⇒ 由写码把守。⚠️ 与「方法级覆盖」同批补的是**岗位授权** ——
+     * 打印按钮今天对客服/销售/财务可见 ⇒ 该写码已授予这四个岗位（有效权限集合逐值不变）。</p>
      */
     @PostMapping("/orders/{orderId}/print")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> printOrder(@PathVariable String orderId) {
         return ApiResponse.success(
                 processingOrderService.recordPrint(orderId, TenantContext.getTenantId()));
@@ -369,6 +378,7 @@ public class ProductionController {
      * 与下单/建工单复用**同一套** {@link ClientRequestIdService}（同一张表、同一种占位语义）。</p>
      */
     @PostMapping("/orders/{orderId}/operations/{operationId}/report")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> report(
             @PathVariable String orderId,
             @PathVariable String operationId,

@@ -145,7 +145,7 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
     return {
         "schema": 1,
         "issue": "#5699",
-        "stage": "P4",
+        "stage": "P5+P6+I4",
         "_note": (
             "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。"
             "**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。"

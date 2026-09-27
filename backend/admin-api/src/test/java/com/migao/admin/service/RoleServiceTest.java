@@ -79,7 +79,8 @@ class RoleServiceTest {
             "finance:view", "finance:create",
             "agent:session", "agent:session:manage",
             "employee:list",
-            "after_sales:view", "knowledge:view");
+            "after_sales:view", "knowledge:view",
+            "production:execute");   // issue #5699 的 I4：生产执行**写**码（四个真写端点的守卫码）
 
     @BeforeEach
     void setUp() {
@@ -760,15 +761,18 @@ class RoleServiceTest {
                 .containsExactlyInAnyOrder(
                         "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
                         "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
-                        "agent:session:manage");
+                        "agent:session:manage",
+                        "production:execute");   // issue #5699 的 I4
         assertThat(roleService.getEffectivePermissionCodesForRoleCode("sales", null))
                 .containsExactlyInAnyOrder(
                         "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
-                        "processing:view", "inbound:view");
+                        "processing:view", "inbound:view",
+                        "production:execute");   // issue #5699 的 I4
         assertThat(roleService.getEffectivePermissionCodesForRoleCode("finance", null))
                 .containsExactlyInAnyOrder(
                         "dashboard:view", "order:list", "order:detail", "finance:view",
-                        "processing:view", "inbound:view", "finance:create");
+                        "processing:view", "inbound:view", "finance:create",
+                        "production:execute");   // issue #5699 的 I4
     }
 
     @Test
@@ -776,7 +780,8 @@ class RoleServiceTest {
     void fallbackEverySeededRoleHasANonEmptyCase() {
         // 这是 #5683 判据 14 ① 在**行为面**的对应物：`∅ ⊆ 种子` 恒真 ⇒ 只判「回退不得更宽」会全绿，
         // 而该角色在回退路径上零权限。补码后每个种子岗位码都必须取到非空集合。
-        for (String role : List.of("admin", "customer_service", "operator", "sales", "finance")) {
+        for (String role : List.of("admin", "customer_service", "operator", "sales", "finance",
+                "product_manager", "knowledge_editor")) {
             assertThat(roleService.getEffectivePermissionCodesForRoleCode(role, null))
                     .as("回退路径 `%s` 不得为空表（#5683：种子里有的每个岗位码都必须在回退里有 case）", role)
                     .isNotEmpty();
