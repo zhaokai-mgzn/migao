@@ -352,6 +352,35 @@
       "refs": [
         "#4668"
       ]
+    },
+    {
+      "id": "FM-A11",
+      "family": "A",
+      "symptom": "**举例即实例**：把某形态的**样例**写进文档 / docstring ⇒ 被**该形态的判据**当成真实例判红。本会话**三次**（durable 证据逐条）：① **P1**：M4 的 docstring 写了「裸 `文件名` + `:` + 行号」形态 ⇒ `Case Trust` 规则 G 判 `CASE-TRUST-STALE-LINE-REF` 红；② **本包**：把共享固定载体名**原样抄进**技能 §25.6 / 版本沿革 / `docs/wiki/CI-CD.md` / 台账 ⇒ `scripts/pr_body_guard.py` 的 R2 判红（PR #5709 首轮 CI 6 处命中）；③ **P3**：新判据 docstring 里的「举例」被**它自己新加的形态面**抓成未登记副本。",
+      "action": "**可复制清单：哪些形态不适合原样写进文档 / docstring 举例**（逐类给改写办法 + 它归哪条现成判据）：\n1. **会被当语料抓的路径 / 文件名形态**（共享临时根 + 特定词干的文件名；裸 `文件名` + `:` + 行号）⇒ 把**触发串打断**（插字 / 用占位符 `<...>`）或只给规则名 + 判据名，**不给字面量**；判据 = `scripts/pr_body_guard.py` R2 / `Case Trust` 规则 G；\n2. **引用语料 glob**（`*.sh` 这类）⇒ docstring 里点名语料**也要入册**；判据 = `tests/unit_ci_workflows/test_guard_scope_declaration.py`（`guard_scope_ledger.json` 的 `kind=mentions`）；\n3. **关闭关键词 + `#号`**（PR body / 文档）⇒ 两者之间插字（§2.2）；判据 = `close-linked-issues.yml` 的朴素正则；\n4. **弱断言模式字面文本** ⇒ **注释里写也红**（#5284 T2）；判据 = `.github/growth_gate.py --check-weak`；\n5. **`case_ids:` 声明形态** ⇒ 首个命中即停（真声明优先），别在别处复现；判据 = `growth_gate.py:extract_case_ids()`。\n🔴 **纠错（集成侧的分类不成立，实测推翻）**：「**文本扫描器吃举例 / AST 与编译期不吃**」—— **前半对、后半错**：`test_guard_scope_declaration.py` 的判据 1 明取「模块里所有**字符串常量**（**含 docstring** / f-string 片段）」⇒ **AST 面同样吃 docstring 举例**（`guard_scope_ledger.json` 里 4 条 `kind=mentions` 正是这个形态的登记）。**真正的分界 = 该判据有没有 prose 豁免**（剥注释 / 跳过文档字符串），不是「文本 vs AST」。⇒ 三次实例的归属：① 文本正则面（无豁免）；② 文本正则面（无豁免）；③ **形态面**（新判据自己的语料面，无豁免）。",
+      "kind": "action",
+      "evidence": [
+        "tests/unit_ci_workflows/test_guard_scope_declaration.py::_string_constants",
+        "scripts/pr_body_guard.py::PR_BODY_BASENAME_RE",
+        "tests/unit_ci_workflows/guard_scope_ledger.json::kind"
+      ],
+      "refs": [
+        "#5709"
+      ]
+    },
+    {
+      "id": "FM-A12",
+      "family": "A",
+      "symptom": "**否定性结论没有对象可指**：说「**有**守护」时手上有一个**可点的对象**（文件 + 符号）⇒ 复查动作 = 打开它、读它；说「**没有**守护」时**没有对象可点** ⇒ 无法用「打开确认」复查 ⇒ 只能靠**穷举面 + 每面的检索命令**。**本会话实证**：集成侧在指令里写「现有守护 = 无」（**未给检索面与命令**）⇒ 本包据此**自造**了一套「唯一文件名」处置，而现成工具 `scripts/pr_body_guard.py` 就在 `scripts/` 下，并且它还**当场判红了**本包的登记文本。⚠️ **这类错最难自查**：接收方拿到一个否定性前提时，**没有对象可以反驳它** ⇒ **照实登记：本次是前提出错**，不是「我没想到」。与 `FM-A9`（存在性结论没核实对象）**互为镜像**。",
+      "action": "**否定性结论必须连同「查了哪几面 + 命令 + 面外还有什么」一起说**（最小检索面清单，逐面给命令）：\n```bash\n# ① 脚本与工具面\ngrep -ril '<关键词或能力名>' scripts/ .github/scripts/ 2>/dev/null\n# ② 判据面（tests/unit_ci_workflows/** 是判据的家）\ngrep -ril '<关键词>' tests/unit_ci_workflows/ tests/ 2>/dev/null | head -20\n# ③ workflow 面\ngrep -ril '<关键词>' .github/workflows/ .github/*.py 2>/dev/null\n# ④ 研发模式面（技能 / 预设 / 文档）\ngrep -ril '<关键词>' .agent-presets/ docs/wiki/ AGENTS.md 2>/dev/null\n# ⑤ 用例与生成物面（结论可能已被写死在那里）\ngrep -ril '<关键词>' .github/cases/ docs/testing/ 2>/dev/null\n# ⑥ 只存在于 CI 服务侧的检查（grep 不到，必须现查）\npython3 scripts/merge_gate.py --required-diff\n```\n**覆盖面声明（这批面覆盖不到什么）**：① **只在 CI 服务侧定义的检查**（分支保护 required 集合 —— 要用 ⑥ 现查）；② 别的仓库 / 外部服务 / 云端配置；③ **未落码的纪律**（它不在任何文件里 ⇒ grep 不到，只能问人）；④ 判据是**运行期**才生效的形态（如只在某分支 / 某时段触发）。",
+      "kind": "action",
+      "evidence": [
+        "scripts/merge_gate.py::required_diff",
+        "scripts/pr_body_guard.py"
+      ],
+      "refs": [
+        "#5709"
+      ]
     }
   ],
   "ci_findings": [
@@ -445,7 +474,8 @@
       "evidence": [
         "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_duplicate_is_detected_in_memory"
       ],
-      "refs": []
+      "refs": [],
+      "mitigation": "🔴 **有可行的缓解办法，且已实测有效**（RBAC P3：写侧原取 `MC-031`，推送前查到在飞 PR #5704 已占 `MC-031` ⇒ 顺延 `MC-032`~`MC-034`，**这次没撞**）。三步（**不是「注意别撞」，是可复制命令**）：\n1. **现取已合并的最大号**：`grep -rhoE \"\\b(BM|UI|MC|PR|OR|DF|HR)-[0-9]+\" .github/cases/ | sort -u | tail`；\n2. 🔴 **再查一遍在飞 PR 的 diff / 最新内容**：`gh pr list --state open --json number,headRefName` 后逐个取 `.github/cases/` 里的 id（**这一步就是能拦住「main + 在飞」的那一步**）；\n3. **rebase 后再查一次**（在飞集会变）。\n⇒ 与 `CASE_ID_ALLOCATION_BOUNDARY` 的关系：**判据只看已合并状态、拦不住在飞** ⇒ **判据拦不住的地方，判别动作补上**（#5707 的设计意图：面的适用性判断仍靠人，但人能照着命令做）。"
     },
     {
       "id": "FM-E8",
@@ -561,6 +591,39 @@
         "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_allocation_boundary_is_registered"
       ],
       "refs": []
+    },
+    {
+      "id": "FM-E16",
+      "state": "guarded",
+      "symptom": "**共享临时路径**：并发包复用共享临时根（`/tmp` / `/var/tmp` / `$TMPDIR`）下的**约定俗成的固定文件名**（`issue-*.md`、`comment-*.md`、`payload.json` … 以及 **`pr-body` 族那一类**）⇒ 互相覆盖。🔴 **失败是静默的**：后写的覆盖先写的，**双方都不知道**。**两例实证（第 2 例已有实际损害）**：① 原始实测（issue #4232）：两个并发会话共用同一个 PR body 载体，A 在 B 覆盖后继续用该文件 ⇒ **A 的 body 被写成 B 的**（若此时被 auto-merge 合了，会**误关 4 个别人的 issue**）；② **已实质性发生（PR #5704 的包报告）**：其共享临时根下的 PR body 载体被**另一并发会话覆盖** ⇒ `gh pr edit 5704 --body-file <该文件>` **把别人的 PR 正文贴到了 #5704 上约 90 秒** —— **损害形态 = 另一个包的交付说明被公开发布在别人的 PR 上**（读者会当成 #5704 的正文）；**发现方式 = 当场发现并改回**；**最终核验 = 83 行、关闭关键词命中 0**。**本包侧**：交付 #5706 时**差点覆盖** RBAC P1（#5699）包的同类载体（改用唯一名后无损失）。⚠️ **两侧都在犯**（集成侧一手读数：其自身也长期用固定临时路径）⇒ **不是「某个包的疏忽」，是这个工作模式自带的坑**。",
+      "guards": "`scripts/pr_body_guard.py`（issue #4232）：① **工具** = `new`（在本工作区忽略目录里用 `O_CREAT|O_EXCL` 原子分配**会话/工作区作用域唯一**的载体，含分支名 / issue 号 / pid + 随机后缀）+ `check`（提交前打印首行与关闭关键词命中清单）+ `verify`（写完从 GitHub 回读比对）；② **静态面 R1/R2** = 仓内被跟踪文本里出现「共享临时根 + `pr-body` 族文件名」承载 PR body 的形态 ⇒ 判红（由 `tests/unit_ci_workflows/test_pr_body_guard.py` 在 required 的 `ci workflow helper unit tests` 里代跑）",
+      "same_family": "与 `migao-dev-flow` §17.2「**写面冲突**」/ §17.3 ④「共享写面」/ §2.3「会话之间零共享写路径」（**`/tmp` 就是一条共享写路径**）/ §23.6 工装纪律 / 清单 B 的 `FM-B4`（改动搁浅）**同族**（**不许孤立登记**）：一句话 = **你以为你在操作一个私有对象（你的临时文件 / 你的分支时间线），而它其实是共享的**；🔴 **本次推广 = 「共享写面出事的形态，往往不是你以为的那个入口」** —— 你防的是**文档里的固定名**，出事的是**命令行里的固定名**。",
+      "evidence": [
+        "tests/unit_ci_workflows/test_pr_body_guard.py::test_scan_flags_fixed_pr_body_path_literal",
+        "scripts/pr_body_guard.py::PR_BODY_BASENAME_RE"
+      ],
+      "refs": [],
+      "criteria": [
+        "tests/unit_ci_workflows/test_pr_body_guard.py::test_scan_real_repo_has_no_shared_fixed_pr_body_carrier"
+      ],
+      "residual": "🔴 **残余已从「边界」升级为「主路径」—— 第 2 例就出在这里（照实登记，不粉饰）**：`scripts/pr_body_guard.py` 的静态面射程是**仓内被跟踪文本**，**管不到 agent 在 shell 里手敲的** 「`gh pr edit <N> --body-file <共享临时根下的固定名>`」—— **而手敲命令正是原始形态**。**显形条件**：两个并发会话在**命令行**上用同一固定路径承载 PR body / 评论 / payload，且**无新 PR 打开**时更易撞。**能降低概率的判别动作（照 PR #5704 那个包自己的做法，它实测这样就稳了）**：**PR body 临时文件一律用会话唯一路径**（例如 `<共享临时根>/migao-<单号>-body.md` 这类含单号 / 分支 / pid 的名字），并优先用现成工具 `python3 scripts/pr_body_guard.py new --issue <N>` 分配。⚠️ **这只是降低概率，不是机械守护** —— 手敲命令仍在射程外（上面三条射程边界一条都没变）。",
+      "self_report": "🔴 **本条的第一次登记是错的，如实登记**：我初版写「现有守护 = **无**」，并把那个固定文件名**写进了仓内文本** —— 结果被这条**现成**的守卫当场判红（本 PR 首轮 CI：`test_pr_body_guard.py` 两条 fail / 6 处 R2 命中）。**教训 = 下「没有守护」这个结论之前，先 grep 一遍有没有现成守护**（与 `FM-A9`「引用前自己打开确认」同族）；**并且**：把危险字面量原样抄进文档，会被那条守卫当成「在仓内固化了一个共享固定载体」⇒ 判红（**引用即实例**，与 §2.2 的关键词关单同族）。",
+      "two_layer_note": "🔴 **「守护存在」与「守护覆盖实际形态」是两件事（本单亲历）**：`pr_body_guard.py` **确实存在、确实判红了本包的登记文本**（抓的是**文档形态**），而**实际出事的是命令行形态** —— 它在射程外。⇒ **不要把「有守护」读成「这个形态被覆盖了」**（同 §19.1 元规则）。"
+    },
+    {
+      "id": "FM-E17",
+      "state": "gap",
+      "symptom": "把 **`push` 面当唯一触发面**的守护腿在本仓**仍是默认写法**（`worker-h5-publish` / `bmini-h5-publish` 靠 `deploy-reconcile` 兜底），而后者的 `pull_request:[opened,reopened]` **只在新 PR 打开时**兜 ⇒ 对**长时间没有新 PR 打开**的仓库阶段，实际只剩 `*/20` 的 schedule cron（不稳定触发）在兜。⚠️ **本单只登记，不改任何 workflow**（属另一条线的裁定）。",
+      "guards": "无（部分兜底：`deploy-reconcile.yml` 的 schedule；其 `pull_request:[opened,reopened]` 面在无新 PR 阶段不生效）",
+      "gap_owner": "CI 门禁 owner（deploy-reconcile / 发布腿触发面）",
+      "gap_shows_when": "长时间无新 PR 打开的阶段里，一次被吞掉的 `push` 只能等 schedule cron 兜（实测 cron 会被 GitHub 节流）；此时「发布腿没跑」不会有任何红。判据侧的自证 = 统计近 N 次合并中 `push: main` run 的**实际产生次数**（`migao-dev-flow` §23.10 D2 的取证法）。",
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E17",
+        ".github/workflows/deploy-reconcile.yml::pull_request"
+      ],
+      "refs": [
+        "#5704"
+      ]
     }
   ],
   "not_solidified": [

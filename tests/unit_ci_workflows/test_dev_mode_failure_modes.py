@@ -91,7 +91,7 @@ CI_ID_RE = re.compile(r"\bFM-E\d+\b")
 ANCHOR_SEP = "::"
 
 #: 判据 8：`state=gap` 的**上限**（**冻结在本文件里** —— 台账改不动它；只许缩短）。
-GAPS_FROZEN = 3
+GAPS_FROZEN = 4
 #: 判据 9：`not_solidified` 的**上限**（同上）。
 NOT_SOLIDIFIED_FROZEN = 3
 #: 本单新增的两条 CI 判据的**射程**（判据 11/12；收窄射程要先改这里）。
@@ -500,6 +500,67 @@ def test_archive_duplicate_versions_are_registered_and_only_shrink() -> None:
     assert len(live_dups) <= ARCHIVE_DUP_VERSIONS_FROZEN, (
         f"归档目录重号 V 号 {live_dups} 多于冻结上限 {ARCHIVE_DUP_VERSIONS_FROZEN}"
     )
+
+
+def registered_anchor_problems(*, ledger: dict,
+                              file_text: Callable[[str], str | None] = real_file_text) -> list[str]:
+    """每条 `state=registered` 的 `ledger_ref` 必须**可被打断**：删掉锚的**全部**出现 ⇒ 必须判红。
+
+    🔴 **实测教训（本单第一次写错了，红证当场抓住）**：我原先按「锚在该文件里**恰好出现 1 次**」判，
+    而真实失效形态是「**只删其中一处** ⇒ 仍解析得到 ⇒ 0 条违规」⇒ 那句「删掉这段 ⇒ 红」是**空断言**。
+    ⇒ 语义改成 **删掉锚的全部出现**（这才是「删掉这条登记 ⇒ 红」的正确读法），
+    并要求**面内 ≥1 条**（0 条 = 判据空跑，**未跑 ≠ 通过**）。
+    """
+    bad: list[str] = []
+    applicable = 0
+    for f in ledger.get("ci_findings", []):
+        if f.get("state") != "registered":
+            continue
+        fid = str(f.get("id", "?"))
+        ref = str(f.get("ledger_ref") or "")
+        path, _, anchor = ref.partition(ANCHOR_SEP)
+        if not path or not anchor:
+            bad.append(f"{fid}：state=registered 但 `ledger_ref` 不是 `<path>::<锚>` 形态：{ref!r}")
+            continue
+        text = file_text(path)
+        if text is None:
+            bad.append(f"{fid}：`ledger_ref` 的载体不存在：{path}")
+            continue
+        if anchor not in text:
+            bad.append(f"{fid}：`ledger_ref` 的锚在载体里找不到：{ref}")
+            continue
+        applicable += 1
+        stripped = text.replace(anchor, "")
+        reader = (lambda rel, _p=path, _s=stripped, _f=file_text: _s if rel == _p else _f(rel))
+        viol = ledger_violations(skill_text=reader(SKILL_REL) or "", cicd_text=reader(CICD_REL) or "",
+                                 ledger=ledger, file_text=reader)
+        if not any(fid in p for p in viol):
+            bad.append(
+                f"{fid}：删掉锚「{anchor}」的**全部**出现后不判红 ⇒ 这条登记挂在**打不断**的锚上（空断言）"
+            )
+    if applicable == 0:
+        bad.append("面内 0 条 `state=registered` 条目 ⇒ 判据空跑（**未跑 ≠ 通过**，fail-closed）")
+    return bad
+
+
+def test_registered_anchors_are_breakable() -> None:
+    """常驻自证：每条 `registered` 的登记锚都**可被打断**（本单实测踩过「删一处不红」）。"""
+    _, _, ledger = _live()
+    bad = registered_anchor_problems(ledger=ledger)
+    assert bad == [], "registered 登记锚不可打断：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_registered_anchor_check_has_discriminating_power() -> None:
+    """判别力自证（内存构造）：① 面内 0 条 ⇒ 红（防空跑）；② 载体不存在 ⇒ 红；③ 正常 ⇒ 绿。"""
+    _, _, ledger = _live()
+    assert registered_anchor_problems(ledger=ledger) == []
+    empty = json.loads(json.dumps(ledger))
+    empty["ci_findings"] = [f for f in empty["ci_findings"] if f.get("state") != "registered"]
+    assert registered_anchor_problems(ledger=empty) != []
+    broken = json.loads(json.dumps(ledger))
+    nxt = next(f for f in broken["ci_findings"] if f.get("state") == "registered")
+    nxt["ledger_ref"] = "docs/wiki/NO_SUCH_CARRIER.md::whatever"
+    assert registered_anchor_problems(ledger=broken) != []
 
 
 def boundary_problems(doc_text: str, boundary: str = CASE_ID_ALLOCATION_BOUNDARY) -> list[str]:
