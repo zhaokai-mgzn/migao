@@ -4259,6 +4259,24 @@ _CASE_MC_027 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-028 [NORMAL] 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）（源: cases/misc.yml）──
+_CASE_MC_028 = EvalCase(
+    id='MC-028',
+    legacy_id='',
+    title='容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把「容易犯的问题」与「CI/台账反复出错的点」固化进研发模式时，不许只写一段劝告：每条必须落到判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账之一；删掉技能里的那一节、删掉某条纪律、把某条改成劝告、或在技能里加一条台账没记的纪律，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['记号 ⇄ 台账**双向**相等：技能 §25 里的 `FM-<族字母><序号>` 集合必须等于台账 `entries` 的 id 集合（单向会被『技能里写一条永不判的纪律』与『删台账条目』两个方向绕过）', '每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』', '每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**', '覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）', 'CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）', '**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`', '**抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）', '**抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）', '🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删边界子节 / 删一条纪律 / 加未登记纪律 / 把某条改成劝告 / 多加一条 gap 各自判红，且 **只加一条注释 ⇒ 不红**（对照读数），并有『变异真的被读到』的自证；空语料 ⇒ 非空违规（fail-closed，不许『没东西可判 ⇒ 绿』）', '覆盖边界（显式登记在 §25.6）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**（`criterion` 解析 = 符号在文件里逐字出现，不是『该判据真会为这条纪律变红』）；`kind=action` 的 4 条**靠人执行**；**完全不写 `FM-` 记号的纯散文纪律在本判据面内看不见**（已知残余）'],
+    skip_reason='[backend-contract] 研发模式承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-mode', 'solidification', 'discriminator', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10376,6 +10394,7 @@ ALL_CASES = (
     _CASE_MC_024,
     _CASE_MC_026,
     _CASE_MC_027,
+    _CASE_MC_028,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

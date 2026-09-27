@@ -231,6 +231,16 @@ QA 预检、不跑单测 ⇒ 开发者本地**没有任何一层**能看到它�
 **已登记缺口（本单只登记、不扩面）**：`frontend/mini-app` 本地无腿（CI 的 `mini-app.yml`
 两条腿兜）—— 见 `uncovered_modules`。
 
+**「未就绪」不得等于「通过」（同族，`FM-E10`）**：`verify-all.sh` 的 `report_env()` 在依赖没装好时打
+`⏭️ 未就绪`（跳过）—— 这在**开发者快循环**里是合理的，但在**合并门禁**上「没跑」会被读成「这项没事」。
+bmini 一条腿已改成**第四态** `report_strict()`（变更集**命中**它的触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；
+**其余走 `report_env()` 的腿仍是 ⏭️` ⇒ 已具名登记为未守护缺口**，逐条见
+`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节（`FM-E10`，含 owner 与显形条件）。
+
+**工装坑：`node --test <dir>` 是假红（`FM-E14`）**：Node 内置 runner 传**目录**会被读成 **1 条失败**，
+必须传 glob（`node --test <dir>/*.test.mjs`，本仓 `verify-all.sh` 的 worker-h5 腿就是这么写的）。
+该形态**未写进任何判据** ⇒ 今天实测后登记为未守护缺口（同上一节）。
+
 **开发中体检**（发现本地验证变慢时按序，秒级）：
 ```bash
 cd backend/ai-agent-service
