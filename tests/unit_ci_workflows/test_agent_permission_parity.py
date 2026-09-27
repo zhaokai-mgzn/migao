@@ -2597,6 +2597,9 @@ class RoleFallbackDivergence:
     #: 字段在这里只为「逐值冻结」的比对形态完整，非空即红。
     extra: frozenset[str]
     reason: str
+    #: **显形条件**：这条差异在**什么情况下**会让用户看见（照 `MenuReadResidual` 的三件套形态；
+    #: 缺它就是「登记了却没人知道它会怎么爆」）。空 ⇒ 红。
+    surfaces_when: str
     owner: str
     issue: str
 
@@ -2627,6 +2630,9 @@ ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {
             "**超出 #5683 用户已批准的范围**（#5683 只批了 operator / product_manager）⇒ 只量化、"
             "提请人类裁定，本单**不改**。"
         ),
+        surfaces_when=(
+            "持该角色码且**无 `role_permissions` 记录 / 无 `users.permissions` 快照**的历史客服账号登录 ⇒ 侧边栏**只剩全员可见的节点**（「经营看板」节点有意无码 ⇒ 还在），售后工单 / 在线接待 / 客户列表 / 知识库 / 入库单 / 订单列表全部消失；任何 API 调用 403。"
+        ),
         owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
         issue="#5683",
     ),
@@ -2640,6 +2646,9 @@ ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {
             "同客服：回退 switch 没有 `case \"sales\"` ⇒ 空表，历史账号零权限；种子授了 7 个码。"
             "补它同属**超出已批准范围**的授权放宽 ⇒ 只量化、提请裁定，本单**不改**。"
         ),
+        surfaces_when=(
+            "同客服：历史销售账号登录 ⇒ 商品列表 / 客户列表 / 入库单 / 订单列表全部不可见，API 403。"
+        ),
         owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
         issue="#5683",
     ),
@@ -2652,6 +2661,9 @@ ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {
         reason=(
             "同客服：回退 switch 没有 `case \"finance\"` ⇒ 空表，历史账号零权限；种子授了 7 个码。"
             "补它同属**超出已批准范围**的授权放宽 ⇒ 只量化、提请裁定，本单**不改**。"
+        ),
+        surfaces_when=(
+            "同客服：历史财务账号登录 ⇒ 财务对账 / 入库单 / 订单列表全部不可见，API 403。"
         ),
         owner="岗位权限面（RoleService 回退 switch 的 default 分支）+ 待人类裁定（#5683 ④）",
         issue="#5683",
@@ -2770,8 +2782,13 @@ def problems_role_default_parity(w: World) -> list[str]:
       ① **⊆ 不变量 + 差异登记**：对**每一个**种子角色码（**穷举**，不只 `operator`）——
          `extra`（回退有、种子无）非空 ⇒ **无条件红**（真放宽，不提供登记出口）；
          `missing`（种子有、回退无）非空 ⇒ 必须与 `ROLE_FALLBACK_DIVERGENCES` 的登记**逐值相同**
-         （未登记 / 差异变了 / 差异消失而条目还在 ⇒ 都红；条数上限只许缩短）。
+         （未登记 / 差异变了 / 差异消失而条目还在 ⇒ 都红；条数上限只许缩短；三件套
+         reason / surfaces_when / owner 缺一即红）。
          🔴 本段**不要求**两处逐值相等 —— 差异是否应存在是**授权决定**（见上方「更正留痕」）。
+         ⚠️ **`missing` 这一半不是可有可无**：它拦的是最危险的形态 ——「XX 在种子里有码，而回退里
+         **根本没有这个 case**」⇒ 落 `default -> List.of()` ⇒ **空表**。该形态的危害正在于
+         `∅ ⊆ 种子` **恒真**：只判「回退不得更宽」会**全绿**，而该角色在回退路径上**零权限**
+         （今天的 `customer_service` / `sales` / `finance` 就是，三条已具名登记）。
       ② **授权变更 census**：本单**新增**的每个码必须逐条给出「哪些端点 / 菜单节点 / Agent 工具
          因此变为可达」，且登记与代码**逐值相符**（少列一个新增码 ⇒ 红；列了没真加上去的码 ⇒ 红；
          列的端点生效码不是本码 ⇒ 红）。
@@ -2804,12 +2821,21 @@ def problems_role_default_parity(w: World) -> list[str]:
                     "⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真分叉读成「已登记」）"
                 )
             continue
+        # 🔴 **最危险的形态单列文案**：「回退里根本没有这个 case」⇒ `default -> List.of()` ⇒ **空表**。
+        #    它的危害恰恰在于 `∅ ⊆ 种子` **恒真** —— 只看「回退不得更宽」这一条会**全绿**
+        #    （本判据之所以同时管 `missing`，就是为了拦它；这里把它**指名报出**，便于归因）。
+        form = (
+            f"回退 switch 里**根本没有 `case \"{role}\"`** ⇒ 落 `default -> List.of()` ⇒ **空表** "
+            f"（⇒ 该角色在回退路径上**零权限**）"
+            if role not in w.role_fallback
+            else f"少授（种有回退无）{sorted(missing)}"
+        )
         if entry is None:
             out.append(
-                f"岗位 `{role}` 的默认权限在**两处已经分叉**且未登记：少授（种有回退无）{sorted(missing)} / "
+                f"岗位 `{role}` 的默认权限在**两处不一致**且未登记：{form} / "
                 f"多授（回退有种子无）{sorted(extra)} ⇒ 同一岗位「有权限快照的账号」与「无快照的历史账号」"
-                "行为不同（真实 403 / 菜单凭空消失）。**要么补齐两处，要么在 "
-                "`ROLE_FALLBACK_DIVERGENCES` 里具名登记（差异集 + 理由 + 谁负责 + 单号）**"
+                "行为不同（真实 403 / 菜单凭空消失）。**要么对齐两处，要么在 "
+                "`ROLE_FALLBACK_DIVERGENCES` 里具名登记（差异集 + 理由 + 显形条件 + 谁负责 + 单号）**"
             )
         elif entry.missing != missing or entry.extra != extra:
             out.append(
@@ -2824,10 +2850,13 @@ def problems_role_default_parity(w: World) -> list[str]:
             "已不在比对面内）⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真分叉读成「已登记」）"
         )
     for role, entry in sorted(ROLE_FALLBACK_DIVERGENCES.items()):
-        empty = [n for n, v in (("reason", entry.reason), ("owner", entry.owner), ("issue", entry.issue))
-                 if not v.strip()]
+        empty = [n for n, v in (("reason", entry.reason), ("surfaces_when", entry.surfaces_when),
+                                ("owner", entry.owner), ("issue", entry.issue)) if not v.strip()]
         if empty:
-            out.append(f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 缺字段 {empty}（理由 / 谁负责 / 单号缺一即红）")
+            out.append(
+                f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 缺字段 {empty}"
+                "（理由 / 显形条件 / 谁负责 / 单号缺一即红 —— 照 `MenuReadResidual` 的三件套形态）"
+            )
     if len(ROLE_FALLBACK_DIVERGENCES) > ROLE_FALLBACK_DIVERGENCE_CEILING:
         out.append(
             f"差异台账**又长回来了**：现有 {len(ROLE_FALLBACK_DIVERGENCES)} 条 > 上限 "
@@ -3036,6 +3065,17 @@ def _drop_fallback_code(text: str, role: str, code: str) -> str:
     return head + "\n".join(lines) + tail
 
 
+def _drop_fallback_case(text: str, role: str) -> str:
+    """把 `RoleService` 回退 switch 里某个角色的**整个 `case`** 删掉（落 `default -> List.of()` ⇒ 空表）。
+
+    判据 14 ① 里**最危险**的形态：`∅ ⊆ 种子` **恒真** ⇒ 只判「回退不得更宽」会全绿，
+    而该角色在回退路径上零权限。必须有一条注入能**单独**打到它（⑭f）。
+    """
+    idx, end = _fallback_case_span(text, role)
+    line_start = text.rfind("\n", 0, idx) + 1
+    return text[:line_start] + text[end + len(");"):]
+
+
 def _add_fallback_code(text: str, role: str, code: str) -> str:
     """往 `RoleService` 的某个回退 `case` 的列表**开头**加一个码（判据 14 的注入面）。"""
     idx, _end = _fallback_case_span(text, role)
@@ -3063,6 +3103,12 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
         "⑭c 往回退里加一个**种子没有的**码（operator += ghost:code）⇒ 判据 14 红": (
             "java:service/RoleService.java",
             lambda s: _add_fallback_code(s, "operator", "ghost:code"),
+            problems_role_default_parity,
+        ),
+        # ⑭f 打的是「**整角色没有 case** ⇒ 空表」形态 —— `∅ ⊆ 种子` 恒真，只判 ⊆ 会全绿。
+        "⑭f 从 switch 里**删掉整个 case**（operator 落 default ⇒ 空表）⇒ 判据 14 红": (
+            "java:service/RoleService.java",
+            lambda s: _drop_fallback_case(s, "operator"),
             problems_role_default_parity,
         ),
         "① 工具码与目标端点不一致 ⇒ 判据 2 红": (
@@ -3792,14 +3838,15 @@ def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:
     key = "java:service/RoleService.java"
     src[key] = _drop_fallback_code(src[key], "operator", "processing:view")
     hits = problems_role_default_parity(build_world(src))
-    assert any("已经分叉" in h and "processing:view" in h for h in hits), (
-        f"回退少一个码却没被判「未登记分叉」⇒ 台账不是承载字段（hits={hits}）")
+    assert any("未登记" in h and "processing:view" in h for h in hits), (
+        f"回退少一个码却没被判「未登记差异」⇒ 台账不是承载字段（hits={hits}）")
 
     # ③ 陈旧条目：给一个**已无差异**的角色码插一条登记
     stale = dict(ROLE_FALLBACK_DIVERGENCES)
     stale["operator"] = RoleFallbackDivergence(
         missing=frozenset({"ghost:code"}), extra=frozenset(),
-        reason="红证夹具：该差异并不存在", owner="红证夹具", issue="#5683")
+        reason="红证夹具：该差异并不存在", surfaces_when="红证夹具：不会显形",
+        owner="红证夹具", issue="#5683")
     monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", stale)
     hits = problems_role_default_parity(w)
     assert any("不再有差异" in h or "与**现取**不符" in h for h in hits), (
@@ -3812,6 +3859,17 @@ def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:
     hits = problems_role_default_parity(w)
     assert any("又长回来了" in h for h in hits), (
         f"台账超过只许缩短的上限却没红 ⇒ 「只许缩短」是空断言（hits={hits}）")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCE_CEILING",
+                        ROLE_FALLBACK_DIVERGENCE_CEILING)
+
+    # ⑤ **「整角色没有 case」形态的承载性**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：
+    #    删掉某条「空表」登记 ⇒ 必须**指名**报出该角色（而不是只报一串码）。
+    cut = {k: v for k, v in ROLE_FALLBACK_DIVERGENCES.items() if k != "sales"}
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", cut)
+    hits = problems_role_default_parity(w)
+    assert any("根本没有" in h and "sales" in h for h in hits), (
+        f"删掉 `sales` 的空表登记却没被**指名**报出 ⇒ 「整角色无 case ⇒ 空表」形态会静默（hits={hits}）")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", ROLE_FALLBACK_DIVERGENCES)
 
 
 def test_every_judgement_can_go_red() -> None:
