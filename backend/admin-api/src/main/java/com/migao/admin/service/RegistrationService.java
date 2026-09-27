@@ -635,8 +635,18 @@ public class RegistrationService {
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
-                // 生产域**读**码（issue #5291）：生产看板 / 加工项管理 / 工艺配置 / 计件工资四个侧边栏
-                // 节点、四个页面的读端点、以及 8 个只读工具同批改挂本码（写面仍是 `processing:manage`）。
+                // 生产域**读**码（issue #5291）：同批改挂本码的是**三件不同的事**，逐件点名 ——
+                //   ① **四个侧边栏节点**（生产看板 / 加工项管理 / 工艺配置 / 计件工资）的 permissionCode；
+                //   ② **两个**只读端点：`/operations-catalog`、`/routings`（逐字同 `ProductionController`
+                //      类注记的「两个**只读**端点」）。⚠️ **不是**「该四个页面的读端点」：工艺配置页第一屏的
+                //      配置族读端点（`/route-rules` 等）今天仍由方法级 `processing:manage` 把守，且那是有
+                //      断言记录的族级决定（`ProductionRoutingReadControllerTest#endpointsDeclareManagePermission`）。
+                //   ③ 承载本码的**只读工具**（`backend/ai-agent-service/app/tools/` 下声明 `production:view` 者）——
+                //      **不写死条数**：工具会增删，写死的数字只会腐烂（判据 1/2/5/10 逐条覆盖它们）。
+                // ⚠️ 本段曾写「四个侧边栏节点、四个页面的读端点、以及 8 个只读工具同批改挂本码」：把「节点」
+                //    与「端点」混成一句（过宽/歧义），#5675 据此把计件端点的归因误写成「#5291 漏改」——
+                //    #5675 收口包复核后已证伪并同批改准（见 `ProductionController` 的「归因更正」段）。
+                // 写面仍是 `processing:manage`。
                 {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
