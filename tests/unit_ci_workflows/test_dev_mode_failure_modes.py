@@ -41,6 +41,19 @@
 + `same_family` 里的记号必须真实存在 + `evidence` 可解析；16 = §26 的**判别动作行（现取）**；
 17 = relay 面 `gap` 条数只许缩短；18 = §26 里**不许出现裸行号引用**（行号会腐，`FM-A10` 同因）。
 
+**另两条（判据 19/20）= 「承载体自己会不会腐烂 / 产物在不在工具的半径里」**：
+
+- **判据 19 = §19 索引表第 19 行（活索引）的读数 ≡ 台账现取**：范围端点 `FM-<族><i>`~`FM-<族><j>`
+  必须等于该族 id 的**现取 min/max**（⚠️ **端点不是条数** —— 该族有缺号时两者必然不等，这正是
+  `FM-A4`/`FM-A8` 的形态），`INDEX_CLAIMS` 策展表里登记的计数必须等于现取，**未登记的读数形态 ⇒ 红**
+  （只许缩短）；行被删 / 读数取不到 ⇒ 红（fail-closed）。病灶实测：那一行与台账**脱钩**
+  （端点停在旧号、`kind=action` 的条数停在 4），而**没有任何判据管它** ⇒ 腐烂是静默的。
+- **判据 20 = 技能里**教的**建 worktree 命令必须落在**收尾半径**内**（`FM-R8`）：路径参数必须在
+  `WT_BASE`（= `MIGAO_WT_BASE`，或默认 `<仓库根>/../migao-wt`）之下；`--detach` **纯检出豁免**
+  （只读、用完即删，不产生需要收尾的分支产物）。病灶实测：`scripts/issue-lifecycle.sh reap-merged`
+  **存在**、也真在跑，而本会话**每个** worktree 都被判「不在工作区根下 ⇒ 自动收尾半径外」
+  —— 派单模板给的命令让检出落在**仓库里面** ⇒ **工具存在 ≠ 产物可达**。
+
 **另有三条（判据 11/12/13）**：11/12 = 抢号唯一性（用例号 / 迁移版本号，见本文件末节）；
 **判据 13 = `FM-E14`** —— `node --test` 的**目标参数必须是 glob**（传**目录**会被 Node 内置 runner
 读成 **1 条失败的假红**），承载体 = `verify-all.sh` 与 `.github/workflows/worker-h5-tests.yml` 两处。
@@ -151,6 +164,9 @@ RELAY_GAPS_FROZEN = 2
 LINE_REF_RE = re.compile(r"\b[\w./-]+\.(?:py|sh|md|json|ya?ml|ts|tsx|java|sql|mjs|txt):\d+")
 #: 红证用的**裸行号**标本（拼接构造，见上）。
 LINE_REF_SPECIMEN = "scripts/verify-all.sh" + ":" + "42"
+#: §26.4 覆盖面登记必须**点名**的面（**正向**：防「把边界删光了事」，同
+#: `test_dev_worktree_preset_wording.py` 判据 2 的口径）。删掉任一面 ⇒ 红。
+RELAY_BOUNDARY_MARKERS = ("kind=action", "FM-R", "evidence", "收尾半径", "reap-merged", "派单消息")
 
 #: 判据 13（`FM-E14`）的**射程**：本仓会跑 `node --test` 的**测试腿**（本地门禁腿 + 它的 CI 面）。
 #: 收窄 / 扩大射程都要先改这里（frozen），语料是**具名路径**、不是 glob（不触发射程元守卫）。
@@ -1013,12 +1029,20 @@ def test_relay_anchor_check_has_discriminating_power() -> None:
     assert relay_anchor_problems(ledger=broken) != []
 
 
+def relay_boundary_missing_markers(skill_text: str) -> list[str]:
+    """§26.4 覆盖面登记缺哪几个面（空列表 = 该点名的都点名了）。**纯函数**，红证可内存构造。"""
+    rbnd = section_text(skill_text, RELAY_BOUNDARY_HEADING)
+    if rbnd is None:
+        return ["§26.4 覆盖面登记子节被删（边界不存在 ⇒ 红）"]
+    return [m for m in RELAY_BOUNDARY_MARKERS if m not in rbnd]
+
+
 def test_relay_boundary_section_names_the_out_of_scope_forms() -> None:
     """§26 的边界节必须写清「本节覆盖不到什么」（不是一句「见 §25」）。"""
     skill_text, _, _ = _live()
-    rbnd = _require(section_text(skill_text, RELAY_BOUNDARY_HEADING), RELAY_BOUNDARY_HEADING)
-    for marker in ("kind=action", "FM-R", "evidence"):
-        assert marker in rbnd, f"§26 覆盖面登记缺 `{marker}` 这一面"
+    _require(section_text(skill_text, RELAY_BOUNDARY_HEADING), RELAY_BOUNDARY_HEADING)
+    missing = relay_boundary_missing_markers(skill_text)
+    assert missing == [], f"§26 覆盖面登记缺这些面：{missing}"
 
 
 def test_relay_line_ref_guard_has_discriminating_power() -> None:
@@ -1038,4 +1062,309 @@ def test_relay_line_ref_guard_has_discriminating_power() -> None:
     assert ledger_violations(
         skill_text=skill_text + "\n<!-- 只加一条注释：不改任何记号、不改任何声明 -->\n",
         cicd_text=cicd_text, ledger=ledger) == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 19：§19 **活索引行**的读数 ≡ 台账现取（治「索引自己腐烂」）
+#
+# 病灶（本单实测，具名登记在台账 `NS-4` 的 ①）：§19 是**活索引**（指向各节与承载体），
+# 而它**自己腐烂了** —— 第 19 行与台账脱钩：范围端点停在旧号、`kind=action` 的条数停在 4，
+# 而**没有任何判据管它** ⇒ 腐烂是静默的（§19 的「现状」列因此开始说谎）。
+#
+# 治法 = **新鲜度判据**（口径同 `scripts/generated_artifacts_freshness.py`：真值源只有一个）：
+# 这一行里每一处**结构化**读数都要与现取逐值相等；**未登记的读数形态 ⇒ 红**（只许缩短）。
+# 🔴 为什么**不**做成「从台账渲染进技能」的落盘生成器：技能面是**活锚**
+# （`scripts/preset-anchor-check.sh` 逐字节比对仓库 ⇄ `$HOME/.dsh`），而「渲染进技能」会给
+# **每一个改技能的包**新增一道必跑的渲染步骤 —— §19 正是**多包共写的活文档**（§17.2 写面冲突 /
+# §23.9 C1「重复动作收敛」）。判据治的是**同一件事**（读数与现取脱钩）而**不引入这道写面**：
+# 腐烂**写得出、活不下来**（这就是本单选择的上限，如实登记，不宣称「结构上不可能腐烂」）。
+# ──────────────────────────────────────────────────────────────────────────────
+
+INDEX_SECTION_HEADING = "## 19. 范式总纲与 enforcement 锚点"
+#: 判据 19 的**覆盖面登记**子节（**正向**：边界写不出来 ⇒ 红；见 `INDEX_BOUNDARY_MARKERS`）。
+INDEX_BOUNDARY_HEADING = "### 19.3 活索引读数（判据 19）：覆盖面登记"
+INDEX_BOUNDARY_MARKERS = ("只覆盖本表第 19 行", "结构化", "自然语言计数", "INDEX_CLAIMS",
+                          "活锚", "写得出", "活不下来")
+#: §19 索引表里**第 19 行**（= 「固化必须有承载体」那一行，本台账在技能面的索引行）的前缀。
+INDEX_ROW_PREFIX = "| 19 |"
+#: 范围写法（与 `test_casebook_ledger_claims.py` 的 `RANGE_RE` **同形**：记号与 `~` 之间允许反引号 / 空白）。
+INDEX_RANGE_RE = re.compile(r"\bFM-([A-Z])(\d+)\b[`\s]*[~～][`\s]*FM-([A-Z])(\d+)\b")
+#: **结构化**的两种计数形态：键绑定（`` `kind=action` 的 9 条 ``）与列表计数（`现取 16 条`）。
+#: ⚠️ 自然语言计数（「十几条」这类）刻意**不在面内** —— 与叙述句在文本层不可区分（同 `CLAIMS` 的边界口径）。
+#: `[^\n|]` 同时保证不跨 markdown 表格的单元格（这一行是一行一行的表格行）。
+INDEX_KEY_COUNT_RE = re.compile(r"`(kind|state)=([A-Za-z_]+)`[^\n|]{0,40}?([0-9]+)\s*条")
+INDEX_LIST_COUNT_RE = re.compile(r"现取\s*\*{0,2}([0-9]+)\*{0,2}\s*条")
+#: 记号族 → 台账表（`entries` 一个表覆盖 A~D 四个族）。
+FAMILY_TABLE = {"A": "entries", "B": "entries", "C": "entries", "D": "entries",
+                "E": "ci_findings", "R": "relay_entries"}
+#: **策展表**（口径同 `test_agent_permission_parity.py` 判据 13 的 `COMMENT_CLAIMS` /
+#: `test_casebook_ledger_claims.py` 的 `CLAIMS`）：索引行里**每一处计数读数**都要在这里登记
+#: 「锚 + 取哪张表 + 口径」。**未登记即红**（新增一处陈旧读数逃不掉）。
+#: 每项 = (正则，**恰好一个捕获组** = 文本里写的那个数 · 台账表 · 字段 · 值 · 口径说明)。
+INDEX_CLAIMS = (
+    (r"现取\s*\*{0,2}([0-9]+)\*{0,2}\s*条", "ci_findings", "", "",
+     "清单 E 的**条数** —— `ci_findings` 的现取条数（⚠️ **不是**范围端点的号：该族有缺号 ⇒ 两者必然不等）"),
+    (r"`kind=action`[^\n|]{0,40}?([0-9]+)\s*条", "entries", "kind", "action",
+     "`entries` 里 `kind=action`（只靠人执行）的现取条数 —— 与 §25.6 判别动作行是同一个集合"),
+)
+
+
+def index_row(skill_text: str) -> str | None:
+    """§19 索引表里第 19 行的原文；取不到 ⇒ None（交给判据判红，**不静默跳过**）。"""
+    sec = section_text(skill_text, INDEX_SECTION_HEADING)
+    if sec is None:
+        return None
+    for line in sec.split("\n"):
+        if line.strip().startswith(INDEX_ROW_PREFIX):
+            return line
+    return None
+
+
+def family_numbers(ledger: dict, fam: str) -> list[int]:
+    """某记号族在台账里的序号（**现取**，升序）。该族可以**有缺号**（如 `E` 族的 6）。"""
+    table = FAMILY_TABLE.get(fam)
+    out: list[int] = []
+    for e in (ledger.get(table) or []) if table else []:
+        m = re.fullmatch(rf"FM-{re.escape(fam)}(\d+)", str(e.get("id", "")))
+        if m:
+            out.append(int(m.group(1)))
+    return sorted(out)
+
+
+def _ledger_count(ledger: dict, table: str, field: str = "", value: str = "") -> int:
+    rows = ledger.get(table) or []
+    if not field:
+        return len(rows)
+    return sum(1 for e in rows if e.get(field) == value)
+
+
+def live_index_reading_problems(*, skill_text: str, ledger: dict) -> list[str]:
+    """判据 19：§19 活索引行的每一处台账读数 ≡ 台账现取。空列表 = 全绿。**纯函数**。"""
+    row = index_row(skill_text)
+    if row is None:
+        return ["§19 索引表里找不到第 19 行（`| 19 |` 开头）⇒ 活索引的读数无从判定"
+                "（fail-closed：**未跑 ≠ 通过**，删行 / 改前缀都红）"]
+    bad: list[str] = []
+
+    # ── ① 范围端点 == 该族 id 的现取 min / max（**端点不是条数**）────────────────
+    spans = INDEX_RANGE_RE.findall(row)
+    if not spans:
+        bad.append("§19 索引行里没有 `FM-<族><i>`~`FM-<族><j>` 形态的范围读数 ⇒ 判据无从判定"
+                   "（形态被改掉 ⇒ 红，不许静默空跑）")
+    for fam_a, lo, fam_b, hi in spans:
+        if fam_a != fam_b:
+            bad.append(f"§19 索引行的范围两端不是同一族：`FM-{fam_a}{lo}`~`FM-{fam_b}{hi}`")
+            continue
+        nums = family_numbers(ledger, fam_a)
+        if not nums:
+            bad.append(f"§19 索引行写了 `FM-{fam_a}` 族的范围，而台账里该族 **0 条** ⇒ 指向了不存在的表")
+            continue
+        if int(lo) != nums[0] or int(hi) != nums[-1]:
+            bad.append(
+                f"§19 索引行范围端点陈旧：写 `FM-{fam_a}{lo}`~`FM-{fam_a}{hi}`，"
+                f"现取 = `FM-{fam_a}{nums[0]}`~`FM-{fam_a}{nums[-1]}`"
+                f"（端点 = 该族 id 的现取 min/max，**不是条数**；该族条数 = {len(nums)}）"
+            )
+
+    # ── ② 已登记的读数 == 现取；**未登记即红**（只许缩短）────────────────────────
+    covered: list[tuple[int, int]] = []
+    for pattern, table, field, value, why in INDEX_CLAIMS:
+        found = list(re.finditer(pattern, row))
+        if not found:
+            bad.append(f"§19 索引行里取不到已登记的读数 `{pattern}`（{why}）⇒ 判据空跑（未跑 ≠ 通过）")
+            continue
+        want = _ledger_count(ledger, table, field, value)
+        for m in found:
+            covered.append((m.start(), m.end()))
+            got = int(m.group(1))
+            if got != want:
+                bad.append(f"§19 索引行的读数陈旧：写 **{got} 条**，现取 **{want} 条**"
+                           f"（{why}；改台账而不改这行 ⇒ 红，改这行写旧数 ⇒ 红）")
+    for rx, label in ((INDEX_KEY_COUNT_RE, "键绑定计数（`` `kind=` / `state=` `` 形态）"),
+                      (INDEX_LIST_COUNT_RE, "`现取 N 条` 计数")):
+        for m in rx.finditer(row):
+            if not any(a <= m.start() and m.end() <= b for a, b in covered):
+                bad.append(f"§19 索引行里有一处**未登记**的{label}：`{m.group(0).strip()}` ⇒ "
+                           f"未登记即红（登记进 `INDEX_CLAIMS`，或别在这一行写这个数）")
+    return bad
+
+
+def test_live_index_readings_equal_the_ledger() -> None:
+    """判据 19（常驻）：§19 活索引行的读数 ≡ 台账现取（端点 / 条数 / `kind=action` 条数）。"""
+    skill_text, _, ledger = _live()
+    bad = live_index_reading_problems(skill_text=skill_text, ledger=ledger)
+    assert bad == [], "§19 活索引行与台账脱钩：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def index_boundary_missing_markers(skill_text: str) -> list[str]:
+    """§19.3 覆盖面登记缺哪几个面（空列表 = 该点名的都点名了）。**纯函数**，红证可内存构造。"""
+    sec = section_text(skill_text, INDEX_BOUNDARY_HEADING)
+    if sec is None:
+        return ["§19.3 覆盖面登记子节被删（判据 19 的边界不存在 ⇒ 红）"]
+    return [m for m in INDEX_BOUNDARY_MARKERS if m not in sec]
+
+
+def test_live_index_boundary_section_names_the_out_of_scope_forms() -> None:
+    """判据 19 的**覆盖面登记**必须存在且点名（**正向**：删掉边界 / 删掉任一面 ⇒ 红）。"""
+    skill_text, _, _ = _live()
+    _require(section_text(skill_text, INDEX_BOUNDARY_HEADING), INDEX_BOUNDARY_HEADING)
+    missing = index_boundary_missing_markers(skill_text)
+    assert missing == [], f"§19.3 覆盖面登记缺这些面：{missing}"
+
+
+def test_live_index_reading_guard_has_discriminating_power() -> None:
+    """判据 19 的判别力自证（**内存构造**，不改磁盘）：四种坏形态各自判红 + 对照读数。"""
+    skill_text, _, ledger = _live()
+    row = index_row(skill_text)
+    if row is None:
+        raise AssertionError("定位 §19 第 19 行失败（fail-closed）")
+    assert live_index_reading_problems(skill_text=skill_text, ledger=ledger) == []
+
+    nums = family_numbers(ledger, "E")
+    # ① **端点**退回旧值（本单实际修的那处：端点的号 ≠ 条数）
+    stale = skill_text.replace(f"FM-E{nums[-1]}", f"FM-E{nums[-1] - 3}", 1)
+    assert stale != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
+    got = live_index_reading_problems(skill_text=stale, ledger=ledger)
+    assert any("范围端点陈旧" in p for p in got), got
+
+    # ② 把**条数**写成**端点的号**（`FM-E6` 缺号 ⇒ 两者不是同一个对象 ⇒ 必须红）
+    list_hit = INDEX_LIST_COUNT_RE.search(row)
+    if list_hit is None:
+        raise AssertionError("§19 索引行里没有 `现取 N 条` 形态的读数（fail-closed）")
+    conflated = skill_text.replace(list_hit.group(0), f"现取 {nums[-1]} 条", 1)
+    assert conflated != skill_text
+    got = live_index_reading_problems(skill_text=conflated, ledger=ledger)
+    assert any("读数陈旧" in p for p in got), got
+
+    # ③ **只靠人执行**那批的条数陈旧（本单实际修的第二处）
+    key_hit = re.search(INDEX_CLAIMS[1][0], row)
+    if key_hit is None:
+        raise AssertionError("§19 索引行里没有 `kind=action` 的条数读数（fail-closed）")
+    stale_key = skill_text.replace(
+        key_hit.group(0), key_hit.group(0).replace(key_hit.group(1), "4", 1), 1)
+    assert stale_key != skill_text
+    got = live_index_reading_problems(skill_text=stale_key, ledger=ledger)
+    assert any("只靠人执行" in p for p in got), got
+
+    # ④ 行被删 ⇒ fail-closed 红；⑤ **未登记**的读数形态 ⇒ 红（只许缩短）
+    assert live_index_reading_problems(
+        skill_text=skill_text.replace(INDEX_ROW_PREFIX, "| 19x |", 1), ledger=ledger) != []
+    unregistered = skill_text.replace(
+        row, row + "`state=gap` 3 条", 1)
+    assert unregistered != skill_text
+    got = live_index_reading_problems(skill_text=unregistered, ledger=ledger)
+    assert any("未登记" in p for p in got), got
+
+    # ⑥ 对照读数：**只加一条注释**（不动任何读数）⇒ 不红
+    assert live_index_reading_problems(
+        skill_text=skill_text + "\n<!-- 只加一条注释：不改任何读数、不改任何登记 -->\n",
+        ledger=ledger) == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 20：技能里**教的**建 worktree 命令必须落在**收尾半径**内（`FM-R8`）
+#
+# 病灶（本单实测）：`scripts/issue-lifecycle.sh reap-merged` **存在**、也真在跑，
+# 而本会话**每一个** worktree 都被判「不在工作区根（`WT_BASE`）下 ⇒ 自动收尾半径外」——
+# 派单模板让包用「裸 `worktree add` + 裸相对名」（CWD = 仓库）⇒ 检出落在**仓库里面**。
+# ⇒ **工具存在 ≠ 产物可达**：收不掉不是工具坏了，是**产物不在它的半径里**。
+#
+# 治法 = 把**半径口径**做成对**模板**的机械判据（半径真值源 = `scripts/dev-worktree.sh` 的
+# `WT_BASE` 与 `scripts/issue_lifecycle.py` 的 `wt_base_dir`，两处都认 `MIGAO_WT_BASE`）。
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: 一处 `worktree add` 调用：到行尾 / 反引号 / `;` / `&` / `|` 为止（选项与位置参数都在这一段里）。
+WORKTREE_ADD_RE = re.compile(r"git\s+worktree\s+add\s+([^\n`;&|]*)")
+#: 会**吃掉一个参数**的选项（`-b <branch>` / `-B <branch>`）—— 剥掉它们才能取到位置参数（路径）。
+WORKTREE_FLAG_TAKES_VALUE = frozenset({"-b", "-B", "--reason"})
+#: **半径内**的形态：`../migao-wt/<slug>`（默认根的尾段）、或显式 `MIGAO_WT_BASE` / `WT_BASE`。
+#: 口径与 `scripts/dev-worktree.sh` 的 `WT_BASE="${MIGAO_WT_BASE:-$REPO_ROOT/../migao-wt}"` 一致。
+WORKTREE_RADIUS_SAFE_RE = re.compile(r"migao-wt/|MIGAO_WT_BASE|WT_BASE")
+
+
+def worktree_add_paths(text: str) -> list[str]:
+    """技能里每一条**带路径参数**的 worktree 调用 ⇒ 它的路径参数（第一个位置参数）。
+
+    `--detach` **纯检出豁免**：只读、用完即删，不产生需要收尾的分支产物
+    （它的纪律是**坐标**（避开共享临时根），由 `FM-A13` 承担 —— 见 §26.4 的登记）。
+    """
+    out: list[str] = []
+    for m in WORKTREE_ADD_RE.finditer(text or ""):
+        tokens = m.group(1).split()
+        if "--detach" in tokens:
+            continue
+        positional: list[str] = []
+        skip = False
+        for t in tokens:
+            if skip:
+                skip = False
+                continue
+            if t in WORKTREE_FLAG_TAKES_VALUE:
+                skip = True
+                continue
+            if t.startswith("-"):
+                continue
+            positional.append(t)
+        if positional:
+            out.append(positional[0])
+    return out
+
+
+def worktree_radius_problems(*, skill_text: str) -> list[str]:
+    """判据 20：技能里教的建 worktree 命令的路径必须在**收尾半径**内。空列表 = 全绿。**纯函数**。"""
+    paths = worktree_add_paths(skill_text)
+    if not paths:
+        return ["技能里**没有任何**带路径参数的建 worktree 命令 ⇒ 判据空跑（未跑 ≠ 通过）："
+                "本条要求技能把**半径安全**的形态写出来（删光 = 没有模板可抄，同 `FM-R8` 的病灶）"]
+    bad: list[str] = []
+    for p in paths:
+        if not WORKTREE_RADIUS_SAFE_RE.search(p):
+            bad.append(f"技能里教的 worktree 路径 `{p}` 不在**收尾半径**内 ⇒ 产物收不掉（`FM-R8`）："
+                       f"从仓库根调用并把路径放在 `../migao-wt/<slug>`（或显式 `MIGAO_WT_BASE=<根>`）下，"
+                       f"否则 `scripts/issue-lifecycle.sh reap-merged` 一律判「半径外」")
+    return bad
+
+
+def test_worktree_templates_stay_inside_the_reap_radius() -> None:
+    """判据 20（常驻）：技能里教的建 worktree 命令，路径必须在**收尾半径**内（`FM-R8`）。"""
+    skill_text, _, _ = _live()
+    bad = worktree_radius_problems(skill_text=skill_text)
+    assert bad == [], "技能里教的 worktree 形态会让产物落在收尾半径外：\n" + \
+        "\n".join(f"  - {p}" for p in bad)
+
+
+def test_worktree_radius_guard_has_discriminating_power() -> None:
+    """判据 20 的判别力自证（**内存构造**）：裸相对名 ⇒ 红；正例 / `--detach` / 注释 ⇒ 不红。"""
+    skill_text, _, _ = _live()
+    assert worktree_radius_problems(skill_text=skill_text) == []
+
+    # ① **裸相对名**（CWD = 仓库 ⇒ 落在仓库里面）⇒ 红。标本**拼接构造**，避免扫描器把
+    #    本文件的举例读成实例（`FM-A11`：举例即实例）。
+    bare = "git worktree add -b " + "<br>" + " " + "bare-slug"
+    assert bare not in skill_text, "标本串已经在技能里 ⇒ 该形态本来就在半径外"
+    injected = skill_text.replace(RELAY_SECTION_HEADING, RELAY_SECTION_HEADING + "\n\n" + bare + "\n", 1)
+    assert injected != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
+    got = worktree_radius_problems(skill_text=injected)
+    assert any("不在**收尾半径**内" in p for p in got), got
+
+    # ② 对照读数①：`--detach` **纯检出**（同为裸相对名）⇒ **不**判 —— 判的是「建分支的产物」
+    detached = skill_text.replace(
+        RELAY_SECTION_HEADING,
+        RELAY_SECTION_HEADING + "\n\n" + "git worktree add --detach " + "pure-checkout" + " origin/main\n", 1)
+    assert worktree_radius_problems(skill_text=detached) == []
+
+    # ③ 对照读数②：把正例删光 ⇒ fail-closed 红（「没有模板可抄」也是坏形态：同 `FM-R8` 的病灶）
+    assert worktree_radius_problems(skill_text="\n## 26. 转述与派单的纪律\n\n（没有命令示例）\n") != []
+
+    # ④ 对照读数③：**只加一条注释** ⇒ 不红
+    assert worktree_radius_problems(
+        skill_text=skill_text + "\n<!-- 只加一条注释：不改任何命令示例 -->\n") == []
+
+    # ⑤ 覆盖面登记被判据**钉住**：删掉§26.4 里点名「收尾半径 / reap-merged / 派单消息」的那一面 ⇒ 红
+    assert relay_boundary_missing_markers(skill_text) == []
+    stripped_markers = skill_text.replace("收尾半径", "半径")
+    assert stripped_markers != skill_text
+    assert relay_boundary_missing_markers(skill_text=stripped_markers) != []
+    no_boundary = skill_text.replace(RELAY_BOUNDARY_HEADING, "### 26.4 （标题被删）", 1)
+    assert relay_boundary_missing_markers(skill_text=no_boundary) != []
 

@@ -184,12 +184,14 @@ UNCOVERED_FORMS: tuple[dict, ...] = (
         "out_of_corpus": "",
     },
     {
-        "form": "`.github/cases/**` 之外的同类文本（技能 §19 索引行 · `docs/**` · 源码注释）",
-        "reason": "本判据射程 = 用例库；技能面是**活锚**（改它要走 version 抬号 + 活锚刷新，且与在飞包共面）"
-                  "⇒ 本单不改，**具名登记**在台账 `NS-4`（`not_solidified`）。",
-        "owner": "研发模式（预设）线",
+        "form": "`.github/cases/**` 之外的同类文本（`docs/**` · 源码注释 · 技能里**未被判据 19 覆盖的**节）",
+        "reason": "本判据射程 = 用例库。🔴 **技能 §19 索引行这一半已销账**（#5707 同批）：它现在由 "
+                  "`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_live_index_readings_equal_the_ledger`"
+                  "（判据 19）按**现取**逐值钉住（端点 ≡ 该族 id 的现取 min/max · 计数走 `INDEX_CLAIMS` 策展表 · 未登记即红），"
+                  "覆盖面登记在技能 §19.3 —— 两边**不重复判**；剩下的 `docs/**` 与源码注释仍在面外（具名登记在台账 `NS-4`）。",
+        "owner": "研发模式（预设）线 / 文档线",
         "issue": "#5707",
-        "restart_when": "下一单改预设时同批改准该行，或把索引行改成**从台账渲染**的形态。",
+        "restart_when": "出现「`docs/**` 的同类读数也由现取钉住」的承载体时（判据 19 的射程扩到该面，或另立同款判据）。",
         "out_of_corpus": ".agent-presets/",
     },
     {
