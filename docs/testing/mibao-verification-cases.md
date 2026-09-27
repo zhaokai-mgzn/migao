@@ -2767,7 +2767,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（46 case）
+## 杂项域（47 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -7927,8 +7927,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：558（活跃 126，跳过 432）
-- tier 分布：smoke 12 / normal 513 / adversarial 31
+- 用例总数：559（活跃 126，跳过 433）
+- tier 分布：smoke 12 / normal 514 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7943,7 +7943,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：46
+- 杂项域：47
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
