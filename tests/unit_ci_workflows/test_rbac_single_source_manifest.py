@@ -79,6 +79,11 @@ RECONCILED_SEGMENTS = (
 )
 
 #: 台账「只许缩短」的**上限**（= 落地时的现取条数；要放宽必须改本判据，diff 里看得见）。
+#: P2（issue #5699）新增两张，**上限已于 2026-09-27 随人类裁定「退役 A7 的目录外码」降到 0**：
+#: `A7_CODES_BEYOND_CATALOG`（A7 授予但不在目录里的码）与 `A7_VS_MIRROR_DIVERGENCES`
+#: （A7 与 ai-agent 镜像对同一角色给出不同码集的对数）—— 这两条是 §5.3 里「M2 的覆盖面在 P2 扩大」的落点：
+#: 退役前现取分别是 **4 / 2**，退役后 **0 / 0**。🔴 **上限只许缩短** ⇒ 现在**任何**「给 A7 重新加一个
+#: 目录外的码」或「让两面再次不一致」都会立刻判红（涨回 1 就超上限）—— 这正是「退役不等于放任复活」。
 LEDGER_CEILINGS = {
     "MENU_READ_PARITY_RESIDUALS": 6,
     "MULTI_READ_ENDPOINT_PAGES": 3,
@@ -87,6 +92,8 @@ LEDGER_CEILINGS = {
     "AUTHORIZATION_CENSUS": 15,
     "UNANNOTATED_ENDPOINTS": 21,
     "REGISTERED_RESIDUALS": 9,
+    "A7_CODES_BEYOND_CATALOG": 0,
+    "A7_VS_MIRROR_DIVERGENCES": 0,
 }
 
 #: M1 的**形态面**（副本长什么样）：每条 = 一个「事实被写下来」的形态 + 扫描它的语料。
@@ -221,13 +228,32 @@ COPY_FACES = (
         "glob": "*.py",
         "kind": "ledger",
     },
+    {
+        # P2 扩面（issue #5699）：**A7 的四个目录外码的落点**。这四个码在权限目录里各 0 命中
+        # ⇒ 它们不是「权限码」，任何出现处都意味着授权面/身份面被改动 ⇒ 必须具名登记（未登记即红）。
+        # 形态 = 这四个码的**字面量**，不是「某个声明形态」—— 这是 §5.3 里 M1 那句「只覆盖用了约定
+        # 形态的副本」的**有意例外**：要抓的是**消费/再引入**而不是**声明**，故按码字面量扫。
+        # 🔴 2026-09-27（人类裁定「退役」）：`UserService` 的授予已删、测试夹具已同步 ⇒ 现取只剩
+        # 一处**与 A7 无关**的同名码字面量；本形态面从此是**再引入绊线**（谁把这四个码写回任何
+        # 判定面/测试面文件，未登记即红）。
+        "id": "a7-login-codes-consumer",
+        "shape": r'"(?:chat:read|chat:write|customer:read|order:read)"',
+        "trace": ':read',
+        "roots": ("backend/admin-api/src/main", "backend/admin-api/src/test"),
+        "glob": "*.java",
+        "kind": "consumer",
+    },
 )
 
 #: M1 的**射程声明**（结构化；与 `scanned_files()` 的实际枚举集互相钉住 —— 见
 #: `test_copy_face_scope_equals_actual_scan`）。收窄射程或扩大剪枝都得先改这里，diff 里看得见。
+#: 🔴 P2 扩面（issue #5699）：加 `backend/admin-api/src/test` —— 设计 §1.3 的 A 类副本清单里
+#: 明写了「各岗位的 `RoleServiceTest` / `test_tool_permission_codes` 逐码点名断言」，
+#: 而 P1 的射程只到 `src/main` ⇒ 那些手抄件**在当时根本不在射程内**（假绿方向）。
 COPY_FACE_SCOPE = {
     "roots": (
         "backend/admin-api/src/main",
+        "backend/admin-api/src/test",
         "backend/ai-agent-service",
         "frontend/admin-web/src",
         "frontend/bmini-app/src",
@@ -417,6 +443,22 @@ def unregistered_copies(hits: list[dict], registry: dict) -> list[str]:
         "② 或改用派生（P2/P3 的生成器）"
         for h in hits
         if (h["face"], h["file"]) not in registered
+    ]
+
+
+def copy_hit_count_drift(hits: list[dict], registry: dict) -> list[str]:
+    """**M1 的 P2 硬化**：登记的 `hits` 必须 == 现取（否则那个数字会变成**没人核的散文**）。
+
+    P1 只判「这处副本还在不在」；`hits` 字段当时**没有任何判据读它** —— 而它恰恰是最容易腐烂的一格
+    （2026-09-27 退役 A7 的两个 `case` 时，`UserService` 的 `role-defaults-fallback` 命中数由 4 变 2，
+    旧口径**一声不响**）。⇒ 现口径：涨或跌都报出，并在同 PR 更新登记表（diff 里看得见）。
+    """
+    current = {(h["face"], h["file"]): h["count"] for h in hits}
+    return [
+        f"登记命中数漂移：{e['face']} @ {e['file']} 登记 {e['hits']} 处 / 现取 {current[(e['face'], e['file'])]} 处"
+        "（涨跌都要在同 PR 更新 `rbac/sources.json`）"
+        for e in registry["sources"]
+        if (e["face"], e["file"]) in current and current[(e["face"], e["file"])] != e["hits"]
     ]
 
 
@@ -616,7 +658,11 @@ def test_every_copy_face_hit_is_registered():
     print(f"M1 形态面命中 {len(hits)} 处；登记 {len(registry['sources'])} 条")
     for h in hits:
         print(f"  {h['face']:26s} {h['file']}")
-    problems = unregistered_copies(hits, registry) + stale_registrations(hits, registry)
+    problems = (
+        unregistered_copies(hits, registry)
+        + stale_registrations(hits, registry)
+        + copy_hit_count_drift(hits, registry)
+    )
     problems += [
         f"登记条目缺 {key!r}（必须写清每处副本的来源与去向）：{e.get('file')}"
         for e in registry["sources"]
@@ -727,7 +773,7 @@ def test_freshness_detects_hand_edited_artifact():
     gen = load_generator()
     text = gen.dumps(gen.build_readings())
     assert freshness_problems(text, text) == [], "原样比对竟报陈旧 ⇒ 新鲜度判据是空断言"
-    mutated = text.replace('"stage": "P1"', '"stage": "P1-hand-edited"', 1)
+    mutated = text.replace('"stage": "', '"stage": "hand-edited-', 1)
     assert mutated != text, "变异注入未生效（自证失败 ⇒ 本红证是空断言）"
     problems = freshness_problems(mutated, text)
     assert problems and "首个差异在第" in problems[1], f"手改生成物没被报出：{problems}"
@@ -751,6 +797,21 @@ def test_registry_detects_unregistered_and_stale():
     ]
     stale = stale_registrations(hits, ghost)
     assert any("ghost.ts" in x and "陈旧登记" in x for x in stale), f"陈旧登记没被具名报出：{stale}"
+
+
+def test_registry_hit_count_drift_is_red():
+    """**M1 的 P2 硬化红证**：登记的 `hits` 与现取不符 ⇒ 必红（两个方向）；原样 ⇒ 不红（对照）。"""
+    hits = list(repo_copy_face_hits())
+    registry = load_json(SOURCES_PATH)
+    assert copy_hit_count_drift(hits, registry) == [], "落地态命中数已漂移（前提不成立）"
+    target = hits[0]
+    drifted = copy.deepcopy(registry)
+    for entry in drifted["sources"]:
+        if (entry["face"], entry["file"]) == (target["face"], target["file"]):
+            entry["hits"] = target["count"] + 1
+    assert any(target["file"] in x and "命中数漂移" in x for x in copy_hit_count_drift(hits, drifted)), (
+        "登记的命中数被改却没被报出"
+    )
 
 
 def test_copy_face_comment_only_is_not_a_hit():

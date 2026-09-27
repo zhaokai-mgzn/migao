@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+### C 端登录不再被授予「目录里不存在」的权限码（2026-09-27，跟踪单 #5699 的 P2；**人类裁定的声明退役**）
+
+- **改了什么（运行时不可见）**：`backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的
+  `getRolePermissions` 此前给 `agent` / `customer` 两个角色各挂 3 / 2 个码
+  （`chat:read` / `chat:write` / `customer:read` / `order:read`）—— 这四个码**不在权限目录里**
+  （`RegistrationService.defaultPermissions` 与 `PermissionService.ensureFullPermissionCatalog` 各 0 命中），
+  是全仓**唯一**一处授予「目录外的码」的地方，且与 ai-agent 镜像（`ROLE_PERMISSIONS` 里 `customer` / `agent`
+  均为空集）**已经不一致**。现按人类裁定**退役**：这两个角色落到 `default`（空集），与镜像对齐；
+  `super_admin` / `admin` 的 `"*"` 是**通配符、不是目录码**，未动。
+- **为什么运行时不可见（可复算前提）**：九处消费方**无一读这些码**（授权判定取码走
+  `roleService.getUserPermissions` 读库；`JwtAuthenticationFilter` 只读 JWT 的 `roles` claim、
+  `CLAIM_PERMISSIONS` 全仓无读取方；C 端/工人端身份面一律按**角色**判），且该授予面**在仓内不可达**
+  （`.authenticate(` 全仓 **0 命中**；过滤链未启用 `formLogin` / `httpBasic` / `rememberMe`）
+  ⇒ **人类是在知悉「运行时差量为 0」之后作出的裁定**，不是「发现 bug 顺手修」。
+- **连带落点（6 处，逐处点名）**：`UserService` 的 `switch` · `rbac/manifest.json` 的 `roles.login` ·
+  台账 `A7_CODES_BEYOND_CATALOG`（**4 → 0**）· 台账 `A7_VS_MIRROR_DIVERGENCES`（**2 → 0**）·
+  `rbac/sources.json`（销账 2 条陈旧登记、`UserService` 命中数 4 → 2）· 测试夹具 `TenantIsolationTest`。
+- **边界（照实登记）**：`agent` / `customer` 账号登录后实际拿到的 authority 集**未在真环境复算**
+  （本机没有可跑的 `admin-api`/真库环境）；设计真值源 `docs/design/rbac-single-source.md` 的 §1.6 逐条
+  登记了取证与重启条件，`(f)` 节写明「覆盖不到什么」。
+
 ### 重打确实会**再记一次**打印次数：工人看到的提示不再说反话（2026-09-27，issue #5052）
 
 - **改了什么（用户可见：工人看到的文案）**：「已取消选择打印机」这条提示原先写着「…但打印次数已记一次，

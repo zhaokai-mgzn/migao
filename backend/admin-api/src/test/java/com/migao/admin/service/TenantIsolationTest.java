@@ -470,7 +470,11 @@ class TenantIsolationTest {
     @Test
     @DisplayName("权限隔离 - agent 角色无法修改租户配置（无 tenant:manage 权限）")
     void testAgentCannotModifyTenantConfig() {
-        // Given: agent 角色只有 chat 和 customer:read 权限
+        // Given: agent 是 **C 端身份角色**，不承载任何权限目录码。
+        // 🔴 issue #5699 的 P2（人类裁定「退役」，2026-09-27）：本夹具此前 mock 的
+        // `chat:read` / `chat:write` / `customer:read` 是 `UserService.getRolePermissions` 授予的
+        // **目录外码**（权限目录各 0 命中），已随该处一起退役 ⇒ 夹具同步改成「空集」，
+        // 否则它测的是一个**已经不存在的授权形态**。
         SecurityUser agentUser = new SecurityUser(
                 "user-agent", TENANT_A, "agent01",
                 List.of("agent"),
@@ -482,8 +486,7 @@ class TenantIsolationTest {
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         // When: 检查 agent 是否有管理权限
-        when(roleService.getUserPermissions("user-agent"))
-                .thenReturn(List.of("chat:read", "chat:write", "customer:read"));
+        when(roleService.getUserPermissions("user-agent")).thenReturn(List.of());
 
         // Then: agent 角色不应有 product:write 或 tenant:manage 权限
         List<String> permissions = roleService.getUserPermissions("user-agent");
