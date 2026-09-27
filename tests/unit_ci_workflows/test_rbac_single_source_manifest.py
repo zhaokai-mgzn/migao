@@ -75,6 +75,7 @@ RECONCILED_SEGMENTS = (
     "menus",
     "menu_nodes",
     "route_guard",
+    "pages",
     "ledger_counts",
 )
 
@@ -84,6 +85,9 @@ RECONCILED_SEGMENTS = (
 #: （A7 与 ai-agent 镜像对同一角色给出不同码集的对数）—— 这两条是 §5.3 里「M2 的覆盖面在 P2 扩大」的落点：
 #: 退役前现取分别是 **4 / 2**，退役后 **0 / 0**。🔴 **上限只许缩短** ⇒ 现在**任何**「给 A7 重新加一个
 #: 目录外的码」或「让两面再次不一致」都会立刻判红（涨回 1 就超上限）—— 这正是「退役不等于放任复活」。
+#: P3（同一跟踪单）再加一张 `PAGE_VISIBILITY_GAPS`（现取 **4**）：**可见性投影复现不了现值**的页面
+#: （`/notifications` 第一屏全落在未注解端点 / `/production/pool`、`/production/saving-board`、
+#: `/production/processing` 三个「节点码 ≠ 页面读码」页）—— 它们的出口各是一条授权裁定，归 P4。
 LEDGER_CEILINGS = {
     "MENU_READ_PARITY_RESIDUALS": 6,
     "MULTI_READ_ENDPOINT_PAGES": 3,
@@ -94,6 +98,7 @@ LEDGER_CEILINGS = {
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,
+    "PAGE_VISIBILITY_GAPS": 4,
 }
 
 #: M1 的**形态面**（副本长什么样）：每条 = 一个「事实被写下来」的形态 + 扫描它的语料。
@@ -242,6 +247,42 @@ COPY_FACES = (
         "roots": ("backend/admin-api/src/main", "backend/admin-api/src/test"),
         "glob": "*.java",
         "kind": "consumer",
+    },
+    {
+        # P3 扩面（issue #5699）：**「页面 → 码」在判据侧的三处手写副本**。设计 §1.3 的 C 类
+        # （页面 / 菜单节点 → 码，4 份）里，前三份（`menu.ts` / `MenuController` / `AuthService`）
+        # 早就在册；**第四份是判据自己的锚点表**（`MENU_READ_ENDPOINT_ANCHORS` 的 21 条页面 → 第一屏调用），
+        # 而它此前**一处都没登记** ⇒ 「谁新写一份页面 → 码 的表」不会有东西变红（假绿方向）。
+        # 形态 = **构造函数调用**（每条锚点一次）⇒ `hits` 是**条目数**，加/删一条锚点必须同 PR 更新登记。
+        "id": "page-first-screen-anchors",
+        "shape": r"MenuReadAnchor\(",
+        "trace": "MenuReadAnchor",
+        "roots": ("tests/unit_ci_workflows",),
+        "glob": "*.py",
+        "kind": "declaration",
+    },
+    {
+        # P3 扩面：判据侧的两张**页面面台账**（残留 / 多码页）—— `MULTI_READ_ENDPOINT_PAGES` 是
+        # 「一页多码」这一结构事实的唯一登记处，`MENU_READ_PARITY_RESIDUALS` 是「节点码 ≠ 页面读码」
+        # 的唯一登记处；P3 把两张都**由 `pages[]` 派生**（`parity_residual_pages` / `multi_code_pages`），
+        # 但登记本体仍在判据侧 ⇒ 必须具名（否则「另写一张页面残留表」无人拦）。
+        "id": "page-parity-residual-ledger",
+        "shape": r"^(?:MENU_READ_PARITY_RESIDUALS|MULTI_READ_ENDPOINT_PAGES)\s*[:=]",
+        "trace": "MENU_READ_PARITY_RESIDUALS",
+        "roots": ("tests/unit_ci_workflows",),
+        "glob": "*.py",
+        "kind": "ledger",
+    },
+    {
+        # P3 扩面：判据侧的两张**路由 → 节点**锚定表（判据 11 ③ 的真值面）—— P3 的 C4 投影
+        # （`route_guard_codes`）要与它们逐值对上：15 条锚定前缀的码必须 == 该页 `gate`；
+        # 4 条无节点的前缀（含 `/dashboard`）必须具名在 P3 判据的例外台账里。
+        "id": "route-node-anchor-ledger",
+        "shape": r"^(?:ROUTE_MENU_ANCHORS|ROUTE_WITHOUT_MENU_NODE)\s*[:=]",
+        "trace": "ROUTE_MENU_ANCHORS",
+        "roots": ("tests/unit_ci_workflows",),
+        "glob": "*.py",
+        "kind": "ledger",
     },
 )
 

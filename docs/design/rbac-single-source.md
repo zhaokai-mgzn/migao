@@ -668,6 +668,33 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 
 🔴 **第一次改行为发生在 P4** —— 那是唯一需要人**在看过 §3.3(c) 逐行 census 之后**再点头的地方。
 
+**P3 落地记录（2026-09-27）** —— 本阶段**零 delta、不改行为**，落地内容：
+
+| 落地项 | 位置（符号锚） | 验收读数 |
+|---|---|---|
+| **「页面 → 码」进清单**（21 页：`gate` 菜单可见码 + 第一屏读码 `units` + 逐页 `visibility_rule`） | `rbac/manifest.json` 的 `pages[]` | 清单 == 生成物 == 现值（逐值；P1 守卫的对账叶数 **434 → 581**） |
+| **P3 派生器**（纯函数；**不落盘**，与 P2 同款） | `rbac/derive.py` 的 `derive_page_faces` / `page_present` | C1/C2/C3/C4 码列 + 第一屏码 + 多码页 + 残留页 + 可见性：**205 项逐值**、不一致 **0** |
+| **逐页 `visibility_rule` 落地**（§3.4 问题 3 末注的结论） | `pages[].visibility_rule` + `derive.py` 的 `project_visibility` / `required_visibility_rule` | 现取 `all` **17** 页 / `any` **0** 页 / `node-code` **4** 页（后者 = 投影复现不了现值 ⇒ `PAGE_VISIBILITY_GAPS`，只许缩短） |
+| **一页多码与 6 条残留从「人工台账」变成「派生结果」** | `derive.py` 的 `multi_code_pages` / `parity_residual_pages` | 与 `MULTI_READ_ENDPOINT_PAGES`（3 条）逐值、与 `MENU_READ_PARITY_RESIDUALS`（6 条）逐值 —— 把某页压成**一个**码 ⇒ 红 |
+| **M1 覆盖面扩大**（射程与形态面） | `tests/unit_ci_workflows/test_rbac_single_source_manifest.py` 的 `COPY_FACES` + `rbac/sources.json` | 三个新形态面（页面锚点表 21 处 / 页面面台账 2 / 路由锚定表 2）= 登记 **30 → 33** 行、25 处命中 |
+| **M2 覆盖面扩大** | 同判据的 `LEDGER_CEILINGS` + 清单的 `ledger_counts` | 新增只许缩短台账 `PAGE_VISIBILITY_GAPS`（现取 **4**） |
+| **P3 判据** | `tests/unit_ci_workflows/test_rbac_derived_pages.py`（15 条，用例 MC-032 / MC-033 / MC-034） | 零 delta + 不压平 + `all` 默认 fail-closed + 覆盖面（红证全部**内存构造** + 「只改散文 ⇒ 不红」对照） |
+
+🔴 **P3 的派生为什么也不留生成物**：与 P2 同一条理由 —— `backend/**` / `frontend/**` 在本阶段**照旧读自己的副本**
+（不改行为）⇒ 落一个没人读的生成物只会多出一份**会陈旧的真值**。派生在判据里当场算 ⇒ §5.2 的 **M3 新鲜度**
+在这里同样是**结构性质**：没有落盘产物，就没有「陈旧」这种状态。
+
+🔴 **P3 的实际落地形态与 §2.3 的 YAML 草稿有两处**有意**差异**（照实登记，不假装一致）：
+
+1. **`units` 落成 `{码: [端点]}`**（按第一屏读端点的**生效码**分组），而不是带 `label` 的数组 —— `label`
+   （tab 中文名）是**散文**（判据读不到就只能靠人核），而本阶段的行逐字要求「**不动**分组/顺序/icon/keywords」
+   ⇒ P3 只搬**码列**；需要 tab 名的场合（`partial_visibility_ack`）由 P4 带理由引入。
+2. **C2（`MenuController` 的 `MENU_TREE`）的码列不由 `pages[]` 单方面派生**：它含 **4 个动作节点**
+   （新增商品 / 商品分类管理 / 新增员工 / 订单详情 —— 不是页面），且「经营看板」节点无码而控制器给
+   `dashboard:view` ⇒ P3 判的是「**页面节点**的码 == 该页 `gate`」+ 动作节点逐条具名，**不是**「整列派生」。
+   「哪些节点进哪一列」本来就是**菜单结构**的事实，不属「页面 → 码」面（登记在判据的 `NON_DERIVED_FACES`）。
+
+
 ### 4.1 🔴 改行为阶段的**硬前置**（P4 / P5 / P6，逐阶段落实，做成阶段验收的一部分）
 
 **裁定（2026-09-27，跟踪单 #5699）：凡改行为的阶段，提交前必须先过人。** 落实形态是
@@ -747,6 +774,31 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
 - 🔴 **P2 新增的残余（照实登记）**：**A7 的运行时授予值**与**存废**仍未取证 / 未裁定（§1.6 (f)）；
   且「派生 == 现值」只证明**零 delta**，**不证明现值对**（§5.3 的 M3 边界逐字同款）。⇒ 上表是**下一阶段（P1 起）**要落的机制，
   **今天没有一条生效**。
+
+**P3 落地后的增补（2026-09-27）** —— 四条机制的覆盖面在 P3 阶段的**扩大**与**剩余边界**：
+
+- **M1 扩面**：新增三个形态面，扫的是设计 §1.3 的 C 类**第四份副本**（判据自己的手写表）——
+  `page-first-screen-anchors`（21 条「页面 → 第一屏调用」锚点）/ `page-parity-residual-ledger`
+  （`MENU_READ_PARITY_RESIDUALS` + `MULTI_READ_ENDPOINT_PAGES`）/ `route-node-anchor-ledger`
+  （`ROUTE_MENU_ANCHORS` + `ROUTE_WITHOUT_MENU_NODE`）。**落地当场就抓到一个实例**：本阶段新写的判据文件
+  在 docstring 里**举例**写了一次锚点构造调用 ⇒ 立刻被判成「未登记副本」⇒ 形态字面量改为**拆开拼**
+  （`"MenuReadAnchor" + "("`）。这正是 M1 设计意图的现场实证（也与 #5707 的 §25「判据会读进你自己的举例」同族）。
+  剩余边界不变：**非约定形态**（`Map.of(...)` / YAML / `@ConfigurationProperties`）仍看不见；**散文**仍不可判。
+- **M2 扩面**：新增一张只许缩短的台账 `PAGE_VISIBILITY_GAPS`（现取 **4**：`/notifications` 第一屏端点全未注解，
+  `/production/pool` · `/production/saving-board` · `/production/processing` 三页「节点码 ≠ 页面读码」）。
+  剩余边界不变：「只许缩短」不保证条目**正确**，只保证它不增长。
+- **M3 在 P3 的形态与 P2 相同**：派生器**不落盘** ⇒ 没有「生成物陈旧」这种状态；代价同样是
+  「没有任何文件级新鲜度判据能替它证明派生没被绕过」—— 靠 `derive_page_faces()` / `page_present()`
+  **只有一份实现**且判据每次当场重算。
+- **M4 与 P3 无新增交集**：P3 的文档与判据里**不写**带仓库相对路径的复算命令。
+- 🔴 **P3 新增的残余（照实登记）**：① **租户自建岗位**（`roles` 表里新建的角色）读不到 ⇒ 可见性投影的岗位全集
+  只有 **种子 ∪ 回退**（7 个），设计 §3.4 问题 3 第 1 行的 `/dashboard` delta 正落在这个缺口里；
+  ② `frontend/bmini-app` / `frontend/worker-h5` 的页面面不在射程（后者另有裁定 13）；
+  ③ 4 条 gap 与 6 条残留的**存废**是授权裁定，P3 只登记、不消解；
+  ④ 运行时可复算的可见性（真租户 / 真库）未取证。
+  ⇒ 逐条写在 `test_rbac_derived_pages.py` 的 `UNCOVERED_FACES`（含 reason / owner / issue，只许缩短）
+  与 `NON_DERIVED_FACES`（C2 为何不属本面），由 `test_non_derived_and_uncovered_faces_are_registered` 钉住。
+
 
 ### 5.4 元守卫（覆盖 §5.3 的残余）
 

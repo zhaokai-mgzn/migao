@@ -249,17 +249,338 @@ def present_ledger_counts(
     login_present: Mapping[str, Iterable[str]],
     catalog_present: Iterable[str],
     mirror_roles_present: Mapping[str, Iterable[str]],
+    page_visibility_gaps: int,
 ) -> dict[str, int]:
-    """P2 新增的两张**只许缩短**台账的**现取**条数（设计 §5.2 的 M2 覆盖面在 P2 的扩大）。
+    """P2/P3 新增的**只许缩短**台账的**现取**条数（设计 §5.2 的 M2 覆盖面在 P2/P3 的扩大）。
 
     - `A7_CODES_BEYOND_CATALOG`：A7 授予但不在目录里的码数（现取 4）；
     - `A7_VS_MIRROR_DIVERGENCES`：A7 与 ai-agent 镜像对**同一角色**给出不同码集的对数（现取 2）。
+    - `PAGE_VISIBILITY_GAPS`（**P3 新增**）：可见性**投影复现不了现值**的页面数 —— 即
+      `required_visibility_rule()` 判成 `node-code` 的那些页（现取 3：`/production/pool`、
+      `/production/saving-board`、`/production/processing`）。🔴 只许缩短。
+      它是**必填位置参数而不是带默认值的关键字参数**：默认 0 会让调用方忘记喂它 ⇒ 台账静默归零（假绿）。
     """
     return {
         "A7_CODES_BEYOND_CATALOG": len(codes_beyond_catalog(login_present, catalog_present)),
         "A7_VS_MIRROR_DIVERGENCES": len(
             role_set_divergences(login_present, mirror_roles_present, "A7(login)", "A3(镜像)")
         ),
+        "PAGE_VISIBILITY_GAPS": int(page_visibility_gaps),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 四、P3 派生：「页面 → 码」（设计 §4 的 **P3** 行 / §2.4 的 C1~C4 投影 / §2.5 与 §3.4 的可见性规则）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# P3 的**单一真值源** = 清单的 `pages[]` 段（每页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点
+# + `visibility_rule` 逐页投影规则）。本段把它投影成各消费面**应当长成的样子**：
+#   C1 `menu_node_codes` / C3 `auth_menu_codes` / C4 `route_guard_codes` / 第一屏码 + 多码页 + 残留页
+#   + 可见性（按规则把 units 投影成「看得见该菜单的岗位集」）。
+# 现值一律由既有解析器现取（`page_present()`，只调 `test_agent_permission_parity.py` 的既有函数）。
+# 🔴 与 P2 同款：**不落盘任何生成物**（新鲜度是结构性质），派生在判据里当场算。
+
+#: 逐页可见性规则（设计 §3.4 问题 3 末注的裁定：`pages[]` 必须支持**逐页** `any|all`，
+#: 且**默认 `all`（fail-closed）** —— 「允许半个页面可见」会造出新的「看得见做不了」，
+#: 故**不**默认 OR；这条正是第 6 条残留（`/settings`）自我推翻上一稿结论的地方）。
+VISIBILITY_ALL = "all"
+VISIBILITY_ANY = "any"
+#: **未收敛**：该页的可见性仍由手写节点码（`gate`）决定 —— `∩` / `∪` 两种投影**都复现不了现值**
+#: ⇒ 必须具名登记（清单 `ledger_counts.PAGE_VISIBILITY_GAPS`，只许缩短），出口由 P4 逐条人裁定。
+VISIBILITY_NODE_CODE = "node-code"
+VISIBILITY_RULES = (VISIBILITY_ALL, VISIBILITY_ANY, VISIBILITY_NODE_CODE)
+DEFAULT_VISIBILITY_RULE = VISIBILITY_ALL
+
+#: 生效码为 `None` 的端点（未被任何权限码把守）在 `units` 里的组键。它**不是权限码** ⇒
+#: 显式与码空间分开（`page_unit_codes()` 排除它；那批端点由判据 8 的 `UNANNOTATED_ENDPOINTS` 台账管）。
+UNANNOTATED_UNIT_KEY = "__unannotated__"
+
+
+def role_tables(manifest: dict) -> tuple[dict[str, list[str]], ...]:
+    """可见性投影用的**两个岗位来源**（种子 / 硬编码回退）—— 与设计 §3.3(b) 的「持码的岗位」同口径。
+
+    🔴 **不含** `roles` 表里租户自建的岗位（**不可从仓内读到**）：那是本段的**覆盖面边界**，
+    逐条登记在 P3 判据的 `UNCOVERED_FACES` 里（含设计 §3.4 问题 3 第 1 行的 `/dashboard` delta）。
+    """
+    return (_role_section(manifest, "seed"), _role_section(manifest, "fallback"))
+
+
+def all_role_names(*tables: Mapping[str, Iterable[str]]) -> list[str]:
+    """岗位全集（**角色名去重**）：各来源里出现过的全部角色。"""
+    return sorted({role for table in tables for role in table})
+
+
+def code_holders(code: str | None, *tables: Mapping[str, Iterable[str]]) -> list[str]:
+    """持该码的岗位（角色名去重、升序；`*` 通配恒真 = 该来源的全部角色）。
+
+    与既有守卫 `_holder_roles` 的口径差**只有一处且是具名的**：那边带 `@seed` / `@fallback` 后缀
+    （设计 §3.3(b) 要区分来源），本函数按设计 §3.4 差量表的「按角色去重」口径。
+    """
+    if code is None:
+        return []
+    out: set[str] = set()
+    for table in tables:
+        for role, codes in table.items():
+            if WILDCARD in codes or code in codes:
+                out.add(role)
+    return sorted(out)
+
+
+def page_unit_codes(page: Mapping[str, object]) -> list[str]:
+    """该页 `units` 里的**权限码**（升序；排除未注解端点组）。多码页 ⟺ 本列表长度 ≥ 2。"""
+    units = page["units"]
+    assert isinstance(units, dict), (
+        f"清单 pages[] 的 `units` 必须是「码 → 端点列表」的对象（fail-closed）：path={page.get('path')!r}"
+    )
+    return sorted(str(code) for code in units if code != UNANNOTATED_UNIT_KEY)
+
+
+def effective_visibility_rule(page: Mapping[str, object]) -> str:
+    """逐页规则；**字段缺失 / 为空 ⇒ `all`（fail-closed 默认）**（设计 §3.4 问题 3 末注）。
+
+    默认值走**函数**而不是「取值时 `.get(…, 'all')` 散在各处」：这样「默认是 fail-closed 的」
+    本身可被判据单测（红证 = 删掉字段后投影必须按 `all` 算，而不是按 `any` 或当空）。
+    """
+    rule = page.get("visibility_rule") or DEFAULT_VISIBILITY_RULE
+    assert rule in VISIBILITY_RULES, (
+        f"pages[] 的 `visibility_rule` = {rule!r} 不在 {VISIBILITY_RULES} 里（fail-closed："
+        f"未登记的规则名不许静默当默认）：path={page.get('path')!r}"
+    )
+    return str(rule)
+
+
+def project_visibility(
+    rule: str,
+    unit_codes: Iterable[str],
+    tables: Iterable[Mapping[str, Iterable[str]]],
+) -> list[str] | None:
+    """把 units 按规则投影成「看得见该菜单的岗位集」。
+
+    - `all`：**每个** unit 的码都持有（`∩`）—— fail-closed 默认；
+    - `any`：**任一** unit 的码持有（`∪`）；
+    - `node-code`：**不由 units 决定** ⇒ 返回 `None`（该页的可见性现取口径 = 手写节点码 `gate`）；
+    - 一个码都没有（第一屏全落在未注解端点）⇒ 同样返回 `None`（投影无输入，不许把空集当答案）。
+    """
+    codes = list(unit_codes)
+    if rule == VISIBILITY_NODE_CODE or not codes:
+        return None
+    sets = [set(code_holders(code, *tables)) for code in codes]
+    combined = set.intersection(*sets) if rule == VISIBILITY_ALL else set.union(*sets)
+    return sorted(combined)
+
+
+def required_visibility_rule(
+    unit_codes: Iterable[str],
+    present_roles: Iterable[str],
+    tables: Iterable[Mapping[str, Iterable[str]]],
+) -> str:
+    """**现值要求**的逐页规则：能复现现值岗位集的规则里取 fail-closed 优先的那个。
+
+    优先级 = `all` > `any` > `node-code`（设计 §3.4 问题 3 末注的「默认 `all`（fail-closed）」）：
+    两种投影都能复现时（单码页 / 两个码的持有者集合逐值相同，如 `/production/routings`）**取 `all`**；
+    只有 `∪` 能复现时取 `any`；都复现不了 ⇒ `node-code`（**未收敛** ⇒ 进 gap 台账）。
+    现取结果：`all` **17** 页 / `any` **0** 页 / `node-code` **4** 页。
+    """
+    present = set(present_roles)
+    for rule in (VISIBILITY_ALL, VISIBILITY_ANY):
+        projected = project_visibility(rule, unit_codes, tables)
+        if projected is not None and set(projected) == present:
+            return rule
+    return VISIBILITY_NODE_CODE
+
+
+def visible_roles(
+    page: Mapping[str, object],
+    rule: str,
+    tables: Iterable[Mapping[str, Iterable[str]]],
+    known_roles: Iterable[str],
+) -> list[str]:
+    """「**谁看得见这个菜单**」—— `visibility_rule` 投影；`node-code` 时退回手写节点码的口径。
+
+    `node-code` 页的读数不是「算不出来」（那是 `roles = null`），而是**今天实际生效的那套**：
+    `gate` 为空（有意无码）⇒ 全员可见；否则 = 持 `gate` 者。这样派生与现值在**同一个键**上可比，
+    而「规则是 `node-code`」这件事由 `visibility.<path>.rule` 单独表达（两者的分工是判据可判的）。
+    """
+    projected = project_visibility(rule, page_unit_codes(page), tables)
+    if projected is not None:
+        return projected
+    gate = page["gate"]
+    return code_holders(str(gate), *tables) if gate else sorted(set(known_roles))
+
+
+def page_units_view(page: Mapping[str, object]) -> dict[str, list[str]]:
+    """规范化一页的 `units`（码 → 升序端点列表）—— 生成器、判据、清单三边共用同一份投影。"""
+    units = page["units"]
+    assert isinstance(units, dict), f"pages[] 的 `units` 必须是对象：path={page.get('path')!r}"
+    return {str(code): sorted(str(e) for e in endpoints) for code, endpoints in sorted(units.items())}
+
+
+def normalize_page(raw: Mapping[str, object]) -> dict[str, object]:
+    """把「一页」规范化成可逐值比对的形态（生成器与判据共用，避免两边各写一份键序）。"""
+    return {
+        "key": raw["key"],
+        "name": raw["name"],
+        "path": raw["path"],
+        "gate": raw["gate"],
+        "units": page_units_view(raw),
+        "visibility_rule": effective_visibility_rule(raw),
+    }
+
+
+def derive_pages(manifest: dict) -> list[dict[str, object]]:
+    """**派生：页面表**（清单 `pages[]` 的规范化投影，按 `path` 升序）。"""
+    pages = manifest["pages"]
+    assert isinstance(pages, list) and pages, "清单 pages[] 为空 ⇒ 派生会空跑（fail-closed）"
+    return [normalize_page(page) for page in sorted(pages, key=lambda p: str(p["path"]))]
+
+
+def derive_page_faces(manifest: dict) -> dict[str, object]:
+    """**P3 的全部派生结果**（判据拿它与现值逐项比对）—— 每一面都是清单 `pages[]` 的投影。
+
+    | 面 | 投影规则 | 对照的现值 |
+    |---|---|---|
+    | `menu_node_codes` | 带 `path` 的节点 → 该页 `gate`；组头（无 `path`）→ `null` | C1（`parse_menu_ts_nodes`）|
+    | `auth_menu_codes` | `gate` 非空的页 → `gate`（登录菜单只下发有码的节点） | C3（`parse_menus()['auth']`）|
+    | `route_guard_codes` | 每页 `path → gate`（全 21 页；比对面过滤别名/例外，见判据台账） | C4（`parse_route_guard`）|
+    | `first_screen_codes` | 每页 `units` 的码集 | 判据 12 的四跳现取 |
+    | `units` | 每页 码 → 端点列表 | 同上（逐端点） |
+    | `multi_code_pages` | 码集长度 ≥ 2 的页 → 码集 | `MULTI_READ_ENDPOINT_PAGES`（3 条，逐值冻结） |
+    | `parity_residual_pages` | 「存在某个第一屏码 ≠ 该页 `gate`」的页 | `MENU_READ_PARITY_RESIDUALS`（6 条，只许缩短） |
+    | `visibility` | 每页 `visibility_rule` + 按它投影出的岗位集 | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
+    """
+    pages = derive_pages(manifest)
+    tables = role_tables(manifest)
+    by_path = {str(page["path"]): page for page in pages}
+
+    menu_node_codes: dict[str, str | None] = {}
+    for node in manifest["menu_nodes"]:
+        if node["path"] is None:
+            menu_node_codes[str(node["name"])] = None
+            continue
+        page = by_path.get(str(node["path"]))
+        assert page is not None, (
+            f"菜单节点『{node['name']}』（`{node['path']}`）在清单 `pages[]` 里没有声明 ⇒ "
+            "「页面 → 码」面漏了一页（fail-closed；未登记即红）"
+        )
+        assert page["name"] == node["name"], (
+            f"清单 `pages[]` 的 `{node['path']}` 写的是『{page['name']}』，而 `menu_nodes` 是"
+            f"『{node['name']}』（路径 ↔ 节点漂移 ⇒ 锚错人）"
+        )
+        menu_node_codes[str(node["name"])] = page["gate"]
+
+    first_screen_codes = {path: page_unit_codes(page) for path, page in by_path.items()}
+    known_roles = all_role_names(*tables)
+    return {
+        "menu_node_codes": dict(sorted(menu_node_codes.items())),
+        "route_guard_codes": {path: page["gate"] for path, page in sorted(by_path.items())},
+        "first_screen_codes": dict(sorted(first_screen_codes.items())),
+        "units": {path: dict(page["units"]) for path, page in sorted(by_path.items())},
+        "multi_code_pages": {
+            path: codes for path, codes in sorted(first_screen_codes.items()) if len(codes) >= 2
+        },
+        "parity_residual_pages": sorted(
+            path
+            for path, page in by_path.items()
+            if any(code != page["gate"] for code in first_screen_codes[path])
+        ),
+        "visibility": {
+            path: {
+                "rule": page["visibility_rule"],
+                "roles": visible_roles(page, str(page["visibility_rule"]), tables, known_roles),
+            }
+            for path, page in sorted(by_path.items())
+        },
+    }
+
+
+def page_present(parity, sources: Mapping[str, str] | None = None) -> dict[str, object]:
+    """**「页面 → 码」的现值**（只调既有解析器；`parity` = `test_agent_permission_parity` 模块）。
+
+    四跳现取（与判据 12 逐字同口径，**不另造解析器**）：菜单节点 → 页面锚点 → `lib/api.ts` 的 URL
+    → Java 端的**生效码**（方法级优先）。角色面走现值 `parse_role_defaults` / `parse_role_fallback`。
+
+    返回 `pages`（21 页，含**现值要求的** `visibility_rule`）/ C1 / C3 / C4（源序）/ 可见性现值。
+    """
+    src = sources if sources is not None else parity._source_map()
+    world = parity.build_world(src)
+    nodes = parity.parse_menu_ts_nodes(src["menu:frontend"])
+    api_calls = parity.parse_frontend_api_calls(src["frontend:api.ts"])
+    tables = (
+        {role: sorted(codes) for role, codes in parity.parse_role_defaults(
+            src["java:service/RegistrationService.java"]).items()},
+        {role: sorted(codes) for role, codes in parity.parse_role_fallback(
+            src["java:service/RoleService.java"]).items()},
+    )
+    known_roles = all_role_names(*tables)
+
+    pages: list[dict[str, object]] = []
+    for node in nodes:
+        if node.path is None:
+            continue
+        anchor = parity.MENU_READ_ENDPOINT_ANCHORS.get(node.path)
+        assert anchor is not None, (
+            f"菜单节点『{node.name}』（`{node.path}`）没有登记第一屏锚点 ⇒ 现值无从现取（fail-closed）"
+        )
+        grouped: dict[str, set[str]] = {}
+        for call in anchor.calls:
+            obj, fn = call.split(".", 1)
+            target = api_calls.get((obj, fn))
+            assert target is not None, f"`{call}` 在 `lib/api.ts` 里解析不出 URL（fail-closed）"
+            verb, url = target
+            effective = parity._effective_codes(world, verb, url)
+            assert effective is not None, f"`{call}` → `{verb} {url}` 在端点表里查不到（fail-closed）"
+            endpoint = f"{verb} {parity._norm_endpoint_url(url)}"
+            for code in effective:
+                grouped.setdefault(code or UNANNOTATED_UNIT_KEY, set()).add(endpoint)
+        units = {code: sorted(endpoints) for code, endpoints in sorted(grouped.items())}
+        unit_codes = sorted(code for code in units if code != UNANNOTATED_UNIT_KEY)
+        present_roles = code_holders(node.code, *tables) if node.code else list(known_roles)
+        pages.append(
+            {
+                "key": node.key,
+                "name": node.name,
+                "path": node.path,
+                "gate": node.code,
+                "units": units,
+                "visibility_rule": required_visibility_rule(unit_codes, present_roles, tables),
+            }
+        )
+    pages.sort(key=lambda page: str(page["path"]))
+    by_path = {str(page["path"]): page for page in pages}
+    first_screen_codes = {path: page_unit_codes(page) for path, page in by_path.items()}
+    return {
+        "pages": pages,
+        "menu_node_codes": {node.name: node.code for node in nodes},
+        "menu_controller_codes": {
+            name: code for name, code in parity.parse_menus(src)["controller"].items()
+        },
+        "auth_menu_codes": {
+            name: code for name, code in parity.parse_menus(src)["auth"].items() if code is not None
+        },
+        "route_guard": [
+            [prefix, code] for prefix, code in parity.parse_route_guard(src["route:layout.tsx"])
+        ],
+        # 下面四面是**现值页面表的投影**（与派生侧同一套规则 ⇒ 逐值比对的键空间一致）；
+        # 它们的**独立对照**另有其人：多码页 / 残留页 = 既有守卫的两张冻结表，units / 第一屏码 = 四跳现取。
+        "units": {path: dict(page["units"]) for path, page in sorted(by_path.items())},
+        "first_screen_codes": dict(sorted(first_screen_codes.items())),
+        "multi_code_pages": {
+            path: codes for path, codes in sorted(first_screen_codes.items()) if len(codes) >= 2
+        },
+        "parity_residual_pages": sorted(
+            path
+            for path, page in by_path.items()
+            if any(code != page["gate"] for code in first_screen_codes[path])
+        ),
+        "visibility": {
+            path: {
+                "rule": page["visibility_rule"],
+                "roles": visible_roles(
+                    page, str(page["visibility_rule"]), tables, known_roles
+                ),
+            }
+            for path, page in sorted(by_path.items())
+        },
     }
 
 
