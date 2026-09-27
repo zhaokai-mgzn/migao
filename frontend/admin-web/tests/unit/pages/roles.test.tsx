@@ -173,9 +173,11 @@ describe('RolesPage', () => {
     expect(tree.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
-    // 工作台组只含带权限码的项（经营看板无码、全员可见 ⇒ 不进权限树；每日简报要 dashboard:view）
+    // 工作台组两项**都**进权限树：每日简报要 dashboard:view；
+    // 🔴 issue #5699（P4）：经营看板自本阶段起**有码**（dashboard:view）⇒ 从「无码不进树」变为可勾选
+    //（否则「勾得动 / 看不到」会漂移：它现在确实决定一个菜单项与 5 个读端点的可见性）。
     expect(tree.getByText('每日简报')).toBeInTheDocument()
-    expect(tree.queryByText('经营看板')).not.toBeInTheDocument()
+    expect(tree.getByText('经营看板')).toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
     // issue #4490：「加工项管理」+「加工费管理」合并为单一入口；#4542 起菜单名 =「加工项管理」
     // （权限树与真实侧边栏同源）
