@@ -17,12 +17,21 @@
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
  * | C1 | 逐值正确 + **派生关系自洽**（8 dots/mm × 50/48/30mm） | 把 `effectiveWidthPx` 改成 400 ⇒ 红 |
- * | C2 | **全仓只有一处**同时写着 384 与 240（= 介质矩阵自己） | 在渲染器里复制一份 `384/240` ⇒ 红 |
+ * | C2 | 🔴 **任一份**像素口径字面量都只许来自真值源：出图链路里 400 / 384 / 240 **一个都不许有** | 在 `labelPageKit.ts` 写一行 `const x = 384`（**只写 384**）⇒ 红 |
+ * | C2b | 全仓范围内 `384` 只出现在介质矩阵（另外两个数与无关业务重号，口径见下） | 别处复制一份 `effectiveWidthPx = 384` ⇒ 红 |
  * | C3 | 渲染/版面模块源码里**不出现**这组像素字面量（只能从 `truth` 取） | 同上（C3 会点名文件） |
  * | C4 | 判据本身能红（注入式：改坏真值 ⇒ 同一个判定函数判红） | 注入未生效 ⇒ 红（空断言） |
  *
  * ⚠️ C2 的语料**排除本文件自己**（`migao-dev-flow` §23.8 B1：判据语料必须排除判据自身，
  * 否则断言里的数字会把探针数成违规 ⇒ 判据永远是红的或永远抓不到真违规）。
+ *
+ * ⚠️ **D5 修复的口径变化（照实登记，不粉饰）**：旧 C2 的谓词是「**同时**出现 384 与 240」——
+ * 于是**只写一个数**的第二份字面量会静默落地（验收方 L1 实测：在 `labelPageKit.ts` 追加
+ * `const __probeWidthPx = 384` ⇒ 旧判据 6/6 全绿）。现在改成**逐字面量**判。
+ * 而"逐字面量扫全仓"只对 `384` 成立：`240` 与 `400` 在无关业务里合法重号
+ * （`frontend/admin-web/src/components/dashboard/TrendChart.tsx` 的图表高度 = 240；
+ * HTTP 400 遍布各处）⇒ 这两个数的**全仓**白名单会造大量假红，故收窄到**出图链路**内判
+ * （那正是"第二份像素口径"会落地的地方，也正是旧口径漏掉的地方）。
  */
 import fs from 'fs'
 import path from 'path'
@@ -46,6 +55,13 @@ const RENDER_FILES = [
   'frontend/bmini-app/src/utils/inbound/labelCanvas.ts',
   'frontend/bmini-app/src/utils/inbound/truth.ts',
 ]
+/** **出图链路**：标签版面 / 渲染 / 画布 / 两个工人页 —— 这里一个像素字面量都不许有 */
+const PIPELINE_DIRS = [
+  'frontend/bmini-app/src/utils/inbound',
+  'frontend/bmini-app/src/pages/worker',
+]
+/** 像素口径字面量（**分别**判，不再是"两个数同时出现才算"） */
+const PIXEL_LITERALS = [400, 384, 240]
 const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|json)$/
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.next', 'build', '.git'])
 
@@ -60,20 +76,43 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-/** 全仓（frontend + backend）代码文件里，**同时**出现 `384` 与 `240` 的那些（相对路径） */
-function filesWithBothPixelLiterals(): string[] {
-  const hits: string[] = []
-  for (const root of ['frontend', 'backend']) {
-    const abs = path.join(REPO_ROOT, root)
-    if (!fs.existsSync(abs)) continue
-    for (const file of walk(abs)) {
-      const rel = path.relative(REPO_ROOT, file)
-      if (rel === GUARD_REL) continue
-      const code = stripComments(fs.readFileSync(file, 'utf8'))
-      if (/\b384\b/.test(code) && /\b240\b/.test(code)) hits.push(rel)
+/**
+ * 逐字面量判定（真判据与注入式红证**共用同一份**）：
+ * 每个数字**各自**统计，凡它出现在 `allow` 之外的文件 ⇒ 点名。
+ */
+function pixelLiteralProblems(
+  files: { rel: string; code: string }[],
+  literals: number[] = PIXEL_LITERALS,
+  allow: string[] = [],
+): string[] {
+  const problems: string[] = []
+  for (const file of files) {
+    if (file.rel === GUARD_REL) continue
+    const code = stripComments(file.code)
+    for (const literal of literals) {
+      if (new RegExp(`\\b${literal}\\b`).test(code) && !allow.includes(file.rel)) {
+        problems.push(`${file.rel}: 自带像素口径字面量 ${literal}（只能从真值源 ${MATRIX_REL} 取）`)
+      }
     }
   }
-  return hits.sort()
+  return problems
+}
+
+/** 读某组根目录下的全部代码文件（相对仓库根） */
+function readCorpus(roots: string[]): { rel: string; code: string }[] {
+  const out: { rel: string; code: string }[] = []
+  for (const root of roots) {
+    const abs = path.join(REPO_ROOT, root)
+    if (!fs.existsSync(abs)) continue
+    if (fs.statSync(abs).isFile()) {
+      out.push({ rel: root, code: fs.readFileSync(abs, 'utf8') })
+      continue
+    }
+    for (const file of walk(abs)) {
+      out.push({ rel: path.relative(REPO_ROOT, file), code: fs.readFileSync(file, 'utf8') })
+    }
+  }
+  return out
 }
 
 /** 与 C1 同口径的纯判定（供注入式红证复用；真实判据 = 上面的断言） */
@@ -113,8 +152,33 @@ describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () =>
     expect((spec.pendingMeasurements || []).join('\n')).toContain('有效打印宽度')
   })
 
-  it('C2 全仓只有一处同时写着这组像素口径（= 介质矩阵；别处复制 ⇒ 红）', () => {
-    expect(filesWithBothPixelLiterals()).toEqual([MATRIX_REL])
+  it('C2 出图链路里**一个**像素字面量都没有（400 / 384 / 240 逐个数，不放过"只写一个"）', () => {
+    const pipeline = readCorpus(PIPELINE_DIRS)
+    // 反空跑：射程真的扫到了出图链路的源码
+    expect(pipeline.length).toBeGreaterThanOrEqual(10)
+    expect(pixelLiteralProblems(pipeline)).toEqual([])
+  })
+
+  it('C2 🔴 红证：链路里写第二份像素字面量 ⇒ 判红（**只写 384** 也算，这正是旧口径漏掉的形态）', () => {
+    // ① 坏形态作为**同一判定**的入参（复核方 L1 实测的注入：只写 384、不写 240）
+    const injected = [
+      { rel: 'frontend/bmini-app/src/utils/inbound/labelPageKit.ts', code: 'export const __probeWidthPx = 384\n' },
+    ]
+    const problems = pixelLiteralProblems(injected).join('\n')
+    expect(problems).toContain('labelPageKit.ts')
+    expect(problems).toContain('384')
+    // 只写 240 / 只写 400 也各自命中（旧口径在这两种形态下同样恒绿）
+    expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const h = 240\n' }]).join('\n')).toContain('240')
+    expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const w = 400\n' }]).join('\n')).toContain('400')
+    // ② 对照：真仓库的出图链路下同一判定判绿（否则上面那条"红"可能只是读错了语料）
+    expect(pixelLiteralProblems(readCorpus(PIPELINE_DIRS))).toEqual([])
+  })
+
+  it('C2b 全仓 `384` 只许出现在介质矩阵（另外两个数与无关业务重号，故按链路判，口径见文件头）', () => {
+    const problems = pixelLiteralProblems(readCorpus(['frontend', 'backend']), [384], [MATRIX_REL])
+    expect(problems).toEqual([])
+    // 反空跑：真值源里**确实**写着这个数（否则"全仓 0 命中"会假绿）
+    expect(readCorpus([MATRIX_REL]).some((file) => /\b384\b/.test(file.code))).toBe(true)
   })
 
   it('C3 版面/渲染模块里没有像素字面量（只能从 truth 取）', () => {

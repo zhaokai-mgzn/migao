@@ -47,14 +47,17 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
     'iPhone / iPad 上的浏览器（含 Safari）不支持本打印通道 —— 这是 Apple 未实现 Web Bluetooth，不是本页的故障。请改用安卓手机打印，或在电脑端补打。',
   'sdk-unavailable':
     '打印组件没加载起来（离线或被网络拦截）。请保持联网后刷新页面重试；已生成的标签不会丢，可稍后重打。',
+  // ⚠️ 这一条**不许**对"记没记打印次数"下结论：取消发生在**留痕之后**（顺序见 `./labelPrint`），
+  //    所以"这次记了没有"取决于 `result.printRecorded`，由 `printFailureText` 统一补一句。
+  //    历史缺陷（issue #5052 验收 D6）：这里曾写「重打不会重复计数」——与实现和 `print-failed` 两条都相反。
   'user-cancelled':
-    '已取消选择打印机。请点「选打印机」重新选择 DP30S 后重试（标签未打印，但打印次数已记一次，重打不会重复计数）。',
+    '已取消选择打印机（这次没打成）。请点「选打印机」重新选择 DP30S 后重试。',
   'device-unsupported':
     '选中的设备不是标签打印机（或不是 DP30S 系列）。请在系统弹出的设备列表里选择名字以 DP 开头的标签机。',
   'connect-failed':
     '连不上打印机：请确认打印机已开机、在 3 米内、且没被别的手机占用，然后重试。',
   'print-failed':
-    '打印机已连上但这次没打出来：请检查纸仓是否装好、是否缺纸 / 卡纸，处理好后点「重打」（重打会再记一次打印次数）。',
+    '打印机已连上但这次没打出来：请检查纸仓是否装好、是否缺纸 / 卡纸，处理好后点「重打」。',
   'render-failed':
     '标签图没画出来，已中止打印（不会打出空白标签）。请重试；若反复失败请把单号报给文员在电脑端补打。',
 }
@@ -120,6 +123,29 @@ export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapab
 /** 取某原因的文案；未知原因 ⇒ 回落到 `print-failed`（**不返回空串**：空提示 = 静默失败） */
 export function printFailureHint(reason: PrintFailureReason): string {
   return PRINT_FAILURE_HINTS[reason] || PRINT_FAILURE_HINTS['print-failed']
+}
+
+/**
+ * 「这次已经记过打印次数了」的**唯一说法**（issue #5052 验收 D6 修复）。
+ *
+ * 为什么是一句话常量而不是散在各条文案里：`PRINT_FAILURE_HINTS` 是**静态**文案表，
+ * 而"记没记"是**运行期**事实（`InboundPrintResult.printRecorded`）——
+ * 静态文案**没有资格**对运行期事实下结论。历史缺陷正是如此：`user-cancelled` 写了
+ * 「重打不会重复计数」，而同表 `print-failed` 写「重打会再记一次」，两句**互相矛盾**，
+ * 且实现（取消发生在 `recordPrint()` **之后**）站在后者一边 ⇒ 工人被误导。
+ */
+export const PRINT_COUNT_REPRINT_NOTICE = '本次已记一次打印次数；重打会再记一次。'
+
+/**
+ * 给工人看的**失败文案**：静态 hint + 运行期事实（是否已留痕）。
+ *
+ * 🔴 页面**只能**用本函数拼失败文案（不许直接上屏 `result.hint`）——
+ * 否则 `printRecorded` 这个结构化事实就没有读者，页面对"记没记"只能靠猜。
+ * 判据 = `tests/inbound-print-channel.test.ts` 的「D9 两个出标签的页面必须消费 `printRecorded`」
+ * （射程 = 两个出标签的页面；去掉任何一页的引用 ⇒ 该判据点名判红）。
+ */
+export function printFailureText(hint: string, printRecorded: boolean): string {
+  return printRecorded ? `${hint}${PRINT_COUNT_REPRINT_NOTICE}` : hint
 }
 
 /** 页面文案：动手前的能力说明（h5 且可用时的正向说法也固定一句，免得页面各写一份） */

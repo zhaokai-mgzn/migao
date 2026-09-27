@@ -209,7 +209,7 @@
 | `POST` | `/api/worker/inbound/recognize` | 上传照片（1~3 张）→ 解码优先 / vision 兜底 → 回**候选**（品名/色号/米数/条码原文 + 不确定度）；**不落库、不动库存** | 无/过期工人 session ⇒ 401；非图片或超 3 张 ⇒ 400；图片超尺寸 ⇒ 400；**任何情况下不返回「凭空构造的 SKU」**（只回候选 + 是否需要人工确认） |
 | `POST` | `/api/worker/inbound/drafts` | 建**入库单草稿**（一个入库单行 = 一个 SKU）；**复用 `InboundOrderService.create`** | **负数 / 0 / 超 1 位小数 ⇒ 400**（沿用 #5063 判据：`> 0` 且最多 1 位小数）；`skuId` 不存在或**零命中匹配** ⇒ 400/409，**不自动建品**；请求体**没有** `adjustment` / `reason` / `operator` 这类字段（**结构上不可表达**） |
 | `POST` | `/api/worker/inbound/drafts/{id}/post` | **提交过账**（过账才动库存）；**复用 `InboundOrderService.post`**；带 `Idempotency-Key` | 未确认（缺人工确认标记）⇒ 409；非本人/非本租户草稿 ⇒ 404；同 `Idempotency-Key` 重复提交 ⇒ **幂等命中，不再加库存**（回同结果）；已过账再提交 ⇒ 409 |
-| `GET` | `/api/worker/inbound/labels/{shortCode}/bitmap` | 出**标签位图**（PNG，50×30mm，像素口径 §7.2） | 跨租户 ⇒ **404**（不是 403，避免存在性泄露）；**已撤销 ⇒ 410**；归属非本人可打范围 ⇒ 403 |
+| ~~`GET`~~ | 🔴 **【已作废 · 用户改判】`/api/worker/inbound/labels/{shortCode}/bitmap`（服务端出 PNG）—— 本端点不实现** | 出图侧已由用户改判为**设备侧（客户端 canvas）渲染**（见 §7.2 的改判块与 `frontend/admin-web/src/lib/print-media.json` 的 `note`）：标签位图由端侧按 §7.2 的像素口径**照抄**画出来 | 端点不存在 ⇒ 无拒绝口径。**留档**：原设计口径是「跨租户 ⇒ 404（不是 403，避免存在性泄露）；已撤销 ⇒ 410；归属非本人可打范围 ⇒ 403」；今天 `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerInboundLabelController.java` 只有 `GET /{shortCode}` 与 `POST /{shortCode}/print`，全仓 `bitmap` **零命中** |
 | `POST` | `/api/worker/inbound/labels/{shortCode}/print` | **打印计数原子自增 + 审计留痕**（设备侧打印**前**必须先调它） | 未登录 ⇒ 401；已撤销 ⇒ 410；同短码并发调用 ⇒ **计数不丢**（原子自增） |
 | `GET` | `/i/{shortCode}` | **公开**短码入口（302 到落地页 / 410） | 不存在 ⇒ 404；已撤销 ⇒ **410**；**公开入口必须绕过多租户拦截器**（照 `WorkerShortLinkService` 既有注释的口径），但**只回跳转、不泄露业务字段** |
 
@@ -289,7 +289,7 @@
 | 全宽像素 | **400px**（50mm × 8） | 若机器能打满 50mm |
 | **有效打印宽** | **48mm ⇒ 384px** | 203dpi 的 2 英寸头常见有效打宽 |
 | 高度像素 | **240px**（30mm × 8） | — |
-| 出图口径 | **服务端按目标机 dpi 精确出图**，**1:1 不缩放不裁切** | 位图 = 服务端**单一真值源**；设备侧只负责「把这张图打出来」 |
+| 出图口径 | 🔴 **【用户已改判：设备侧渲染】** 出图在**设备侧（客户端 canvas：`frontend/bmini-app/src/utils/inbound/labelCanvas.ts`）**按本表像素口径 **1:1 不缩放不裁切**画完，直接经 Web Bluetooth 送点阵。**留档（不要抹掉历史）**：本节原口径是「**服务端按目标机 dpi 精确出图**」+ §5.2 的 `…/bitmap` 端点 —— 两者都在 #5052 实现期被用户**改判作废**（依据见 `frontend/admin-web/src/lib/print-media.json` 的 `note`：「出图侧已由用户改判为**设备侧渲染**（设计 §7.2 的『服务端出图』作废，**像素口径照抄**）」） | 位图的**像素口径**仍是单一真值（本表 = 介质矩阵 `frontend/admin-web/src/lib/print-media.json`，守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`）；**出图位置**由服务端改为设备侧。⚠️ 改判后**没有**服务端端点可查 ⇒ 下一个读者不要再去全仓找 `/bitmap` |
 | ⚠️ **待核** | DP30S 的**精确打印宽度（dots/mm）**与纸宽范围 | §3.3「4 条必须先确认」之①；**未核实前按有效版心 ≤48mm 设计**（安全侧） |
 
 ### 7.3 打印计数 / 审计 / 撤销（**复用既有范式，不新造**）

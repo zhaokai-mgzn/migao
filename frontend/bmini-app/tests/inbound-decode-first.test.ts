@@ -71,6 +71,14 @@ function fakeServer() {
 const PHOTO_A = { tempFilePath: 'blob:photo-a', file: 'blob:photo-a' }
 const PHOTO_B = { tempFilePath: 'blob:photo-b', file: 'blob:photo-b' }
 
+/**
+ * LLM 成本判定（真判据与注入式红证**共用同一份**，见 `migao-dev-flow` §23.5）：
+ * 照片里有可解条码时，**一次 vision 都不许有**。
+ */
+function llmCostProblems(llmCalls: number): string[] {
+  return llmCalls > 0 ? [`照片含可解条码却仍调了 ${llmCalls} 次 LLM/vision（本链要求 0 次）`] : []
+}
+
 describe('识别主链：解码优先（0 次 LLM 调用）', () => {
   it('C3 解码库真能解出码（encode → decode 真往返，不是替身）', () => {
     const url = 'https://app.migaozn.com/i/ABCD2345'
@@ -103,12 +111,33 @@ describe('识别主链：解码优先（0 次 LLM 调用）', () => {
     expect(result.decodedBarcode).toBe('MG-1001')
   })
 
-  it('C1 🔴 红证：把识别排到解码之前（"先问模型，省事"）⇒ 判据必红', async () => {
+  it('C1 🔴 红证：把识别排到解码之前（"先问模型，省事"）⇒ 同一判定必红', async () => {
     const server = fakeServer()
-    // 复刻「先调 vision」的错误顺序：不带 barcode 直接请求
-    await server.recognize({ images: [await server.upload()] })
-    expect(server.state.llmCalls).toBe(1) // 这就是被禁的那一次调用
-    // 而正确顺序下同一个假服务端计数是 0（上面 C1 已断言）⇒ 判据有判别力
+    // 坏形态 = "先问模型"：`decode` 自己**先去调一次 vision**（正是被判据禁止的那一步）。
+    // 它作为 `deps.decode` 喂给**真函数** `runInboundRecognize` ⇒ 真函数照样会调它 ⇒ 成本计数变正。
+    const wrongOrderDecode = async () => {
+      await server.recognize({ images: [await server.upload()] })
+      return { text: null, source: null, hint: '' }
+    }
+    const result = await runInboundRecognize({
+      photos: [PHOTO_A],
+      decode: wrongOrderDecode,
+      upload: server.upload,
+      recognize: server.recognize,
+    })
+    expect(llmCostProblems(server.state.llmCalls).join('\n')).toContain('LLM/vision')
+    // 走的是**贵的**那条路（vision 兜底），而不是解码优先那条 0 成本的路
+    expect(result.route).toBe('server-vision')
+    // 对照：正确顺序（解码优先，真函数自带的语义）下**同一判定**判绿 ——
+    // 这一半让本 case 真的走被测函数（把它整体禁用 ⇒ 本 case 必红，不再是空断言）
+    const ok = fakeServer()
+    await runInboundRecognize({
+      photos: [PHOTO_A],
+      decode: async () => ({ text: 'MG-1001', source: 'h5-dom-canvas' as const, hint: '' }),
+      upload: ok.upload,
+      recognize: ok.recognize,
+    })
+    expect(llmCostProblems(ok.state.llmCalls)).toEqual([])
   })
 
   it('C2 解码失败 ⇒ 全量上传（≤3）+ 不带 barcode ⇒ 服务端 vision 兜底', async () => {

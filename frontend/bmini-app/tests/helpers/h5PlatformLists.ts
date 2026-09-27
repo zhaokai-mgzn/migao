@@ -89,6 +89,17 @@ export function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 }
 
+/**
+ * 去掉 **HTML 注释**（`<!-- … -->`）——`stripComments` 只处理 JS 注释，看不见它。
+ *
+ * 存在的理由（issue #5052 验收 D2）：入口锚点被包进 `<!-- … -->` 后，
+ * 「源码里有这个字符串」依旧成立（判据按 `includes` 判 ⇒ 绿），而**工人看不到**它。
+ * 所以「入口可达」这类判据必须**先去掉 HTML 注释**再判形态是否还在。
+ */
+export function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, '')
+}
+
 export interface TaroUsage {
   api: string
   file: string
