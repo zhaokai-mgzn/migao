@@ -1246,8 +1246,12 @@ public class AuthService {
 
         // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
         List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
-        // 经营看板：全员可见（无权限码，与 menu.ts 一致）
-        workspaceChildren.add(menuItem("dashboard", "经营看板", "/dashboard"));
+        // 经营看板（issue #5699 **P4**）：子菜单粒度 = 节点码 ≡ 该页第一屏读码 `dashboard:view`
+        // —— 此前节点**无码**（全员可见），而该页 5 个读端点与前端路由守卫都取 `dashboard:view`
+        // ⇒ 「菜单看得见、点进去 403」（零权限的自建岗位即真受害者）；本次收敛为同码。
+        if (isAll || permissions.contains("dashboard:view")) {
+            workspaceChildren.add(menuItem("dashboard", "经营看板", "/dashboard"));
+        }
         // 每日简报（issue #3468）：按 dashboard:view 判定（与 menu.ts 的 permissionCode 同码）。
         // ⚠️ **企业开关有意不在此实现** —— 服务端拿不到该开关；开关由前端按 `menu.ts` 的
         // `briefingToggle` 读取后过滤显隐，服务端只负责权限这一维。
@@ -1322,15 +1326,22 @@ public class AuthService {
             // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
             productionChildren.add(menuItem("production-board", "生产看板", "/production"));
         }
-        // 智能派单（issue #5177）：池化派单的决策屏，权限码沿用 processing:manage
-        //（其读端点 `ProductionPoolController` 是 processing:view、无 Agent 工具 ⇒ 不在 #5291 射程）。
-        if (isAll || permissions.contains("processing:manage")) {
+        // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
+        // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
+        // `processing:manage` 而端点挂读码 = 「节点码 ≠ 页面读码」；P4 按子菜单粒度收敛为同码。
+        if (isAll || permissions.contains("processing:view")) {
             productionChildren.add(menuItem("production-pool", "智能派单", "/production/pool"));
         }
+        // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
+        // （旧路径 /production/operations 是重定向）—— 服务端此前仍是合并前的两个节点。
+        // issue #5699 **P4**：该页第一屏 6 个读端点此前跨两个码（路线规则族 4 个是 `processing:manage`）
+        // ⇒ 整页收敛到**页面码** `production:view`（两码持有岗位集合逐值相同 ⇒ 对所有角色的可见面与
+        // 可做面零 delta；写面 POST/DELETE 路线规则、PUT 工序部位仍由 processing:manage 拦）。
+        // **节点顺序**必须仍是 menu.ts 的顺序（三源同构守卫）⇒ 本项落在与生产看板/计件工资同码的判定里。
         if (isAll || permissions.contains("production:view")) {
-            // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
-            // （旧路径 /production/operations 是重定向）—— 服务端此前仍是合并前的两个节点。
             productionChildren.add(menuItem("production-process", "工艺配置", "/production/routings"));
+        }
+        if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
         }
         if (!productionChildren.isEmpty()) {
@@ -1346,10 +1357,15 @@ public class AuthService {
         if (isAll || permissions.contains("inbound:view")) {
             inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
-        // 余料台账（issue #5191）/ 省料看板（issue #5159）：权限码沿用 processing:manage ——
-        // 与各自页面的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
+        // 余料台账（issue #5191）：权限码沿用 processing:manage —— 与 RemnantController 的类级
+        // @RequirePermission 同码（门禁不放宽也不收紧）。
         if (isAll || permissions.contains("processing:manage")) {
             inventoryChildren.add(menuItem("production-remnants", "余料台账", "/production/remnants"));
+        }
+        // 省料看板（issue #5159；issue #5699 **P4** 收敛）：该页第一屏两个读端点
+        //（StockBatchController 的 `/saving-board`、`/saving-trend`）是**方法级** `product:list`
+        // ⇒ 按子菜单粒度把节点码收敛到该读码（此前节点挂 processing:manage = 节点码 ≠ 页面读码）。
+        if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
         }
         if (!inventoryChildren.isEmpty()) {

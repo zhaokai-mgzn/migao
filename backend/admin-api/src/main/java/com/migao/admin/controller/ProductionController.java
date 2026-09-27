@@ -49,6 +49,15 @@ import java.util.Map;
  * ⚠️ <b>issue #5291</b>：两个**只读**端点（{@code /operations-catalog}、{@code /routings}）改挂生产域
  * **读**码 {@code production:view}（与「工艺配置」节点、Agent 侧 {@code operation_catalog_query} 同码）
  * —— 它们此前用方法级 {@code processing:manage}，只因当时该域没有读码。
+ * 🔴 <b>issue #5699（P4）</b>：「工艺配置」页第一屏的**配置族读端点**
+ *（{@code /operation-positions}、{@code /route-rules}、{@code /route-rule-options}）与
+ * 「加工项管理」页第一屏的两个加工费读端点（{@code /processing-fee-combinations}、
+ * {@code /processing-fee-gaps}）按**子菜单粒度**收敛到各自页面的那**一个**码
+ *（前者 {@code production:view}、后者亦 {@code production:view}）—— 用户的裁定是
+ *「权限粒度到子菜单即可，页内功能不作为权限边界」⇒ 同一子菜单下的端点必须同码，
+ * 否则就是判据 12 要治的「菜单看得见、点进去 403」。两个码的持有岗位集合逐值相同 ⇒ **零 delta**；
+ * 加工费组合那两个端点此前是**类级** {@code order:list}（授权面 25 个端点）⇒ 这是一处**收窄**，
+ * 逐条差量见 P4 的 D1/D2/D3 表。
  * 🔴 <b>issue #5675</b>：{@code /piecework/summary} 改挂本**读**码 ——
  * 它是「计件工资」页的**第一屏读端点**，而该页的菜单节点码（{@code menu.ts}）与前端路由守卫
  * 都已是读码 {@code production:view}；同一份工资聚合也早已在 Agent 侧
@@ -733,6 +742,12 @@ public class ProductionController {
      * <p>用户裁定（2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」——
      * 本表是商家**配置时**自行组合并定价的写面，也是下单侧按选配结果取价的匹配表。</p>
      */
+    // issue #5699（P4）：本端点与 {@code /processing-fee-gaps} 是「加工项管理」页**第一屏**的读端点
+    // ⇒ 与菜单节点码 / 前端路由守卫同码 {@code production:view}（判据 12「节点码 ≡ 该页第一屏读码」）。
+    // 此前沿用**类级**读码 {@code order:list}（授权面 25 个端点），而本次收敛只支撑本页 2 个端点
+    // —— 授权面与理由不匹配正是 P4 的 D2 判据；写端点（POST/PUT/DELETE 本族）仍为方法级
+    // {@code processing:manage}，一字未动。
+    @RequirePermission("production:view")
     @GetMapping("/processing-fee-combinations")
     public ApiResponse<Map<String, Object>> processingFeeCombinations() {
         return ApiResponse.success(processingFeeQueryService.combinations(TenantContext.getTenantId()));
@@ -788,6 +803,7 @@ public class ProductionController {
      * <p>与 {@code GET /production/routing-gaps} 同构：把「只会在顾客下单后才发现漏配价」
      * 变成商家在配置阶段就能看见的待办。**不发明任何默认价** —— 缺口就是缺口。</p>
      */
+    @RequirePermission("production:view")
     @GetMapping("/processing-fee-gaps")
     public ApiResponse<Map<String, Object>> processingFeeGaps() {
         return ApiResponse.success(processingFeeQueryService.feeGaps(TenantContext.getTenantId()));
@@ -806,8 +822,11 @@ public class ProductionController {
      * {@code (operation, position)} 稳定排序。{@code applicable=false} = 该部位**明确不做**
      * （{@code unit_price=null}）—— 与「没定价」可区分（前端两态渲染）。</p>
      */
+    // issue #5699（P4）：与下面两个读端点同批收敛到「工艺配置」页的**页面码** {@code production:view}
+    //（该页第一屏 6 个读端点此前跨两个码 ⇒ 判据 12 的多码页台账）。两个码的持有岗位集合
+    //（种子 / 回退两来源）逐值相同 ⇒ 对所有角色的可见面与可做面**零 delta**；写端点（PUT 本端点）不变。
     @GetMapping("/operation-positions")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<List<Map<String, Object>>> operationPositions() {
         return ApiResponse.success(
                 productionRoutingReadService.operationPositions(TenantContext.getTenantId()));
@@ -883,7 +902,7 @@ public class ProductionController {
      * 存量变体名行不再上屏）。</p>
      */
     @GetMapping("/route-rules")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<List<Map<String, Object>>> routeRules() {
         return ApiResponse.success(
                 productionRoutingReadService.routeRules(TenantContext.getTenantId()));
@@ -901,7 +920,7 @@ public class ProductionController {
      * 此前**没有任何读端点**）+ 活跃加工项目录。特殊选项名**不在此列**（可新建，没有第二份词表）。</p>
      */
     @GetMapping("/route-rule-options")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> routeRuleOptions() {
         return ApiResponse.success(
                 productionRoutingReadService.triggerOptions(TenantContext.getTenantId()));

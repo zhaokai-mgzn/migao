@@ -596,7 +596,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工艺配置/计件工资 = 读码 production:view；智能派单 = processing:manage（#5291）")
+    @DisplayName("生产管理组（#5291 + #5699 P4）：节点码 = 各页第一屏读码 —— production:view 组 = 生产看板/工艺配置/计件工资，智能派单 = processing:view")
     void currentUserMenusExposeProductionGroup() {
         // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
         // 就此分开；**智能派单**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
@@ -614,19 +614,28 @@ class AuthServiceTest {
         // 加工项管理（product-center 组）同批改用读码 ⇒ 也随 production:view 可见
         assertThat(allNames(readOnly)).contains("加工项管理");
 
-        // 反向（原管理码持有者仍看得见它本来那几页）：只持 processing:manage ⇒ 生产组只剩智能派单，
-        // 「仓储与物料」组只剩余料台账/省料看板；入库单（inbound:view）**不出现** —— 证明入库单
-        // 确实挂在**独立的**权限判定上，而不是被并进了 processing:manage。
+        // 🔴 issue #5699（P4，子菜单粒度）之后**各页按自己的码**门控（不再「同组一起放行」）：
+        //   · production:view ⇒ 生产看板 + 工艺配置 + 计件工资
+        //   · processing:view ⇒ 智能派单（其页面读码）
+        //   · product:list ⇒ 省料看板（其页面读码）
+        // 反向断言（只持 processing:manage）：生产管理组**整组不出现**（该组没有任何节点再挂 manage），
+        // 「仓储与物料」组只剩余料台账；入库单（inbound:view）**不出现** —— 证明入库单确实挂在
+        // **独立的**权限判定上，而不是被并进 processing:manage。
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> manageOnly = menusForPermissions("processing:manage");
-        var productionManageOnly = groupByKey(manageOnly, "production-center");
-        assertThat(namesOf(productionManageOnly.getChildren())).containsExactly("智能派单");
+        assertThat(keysOf(manageOnly)).doesNotContain("production-center");
         var inventory = groupByKey(manageOnly, "inventory-center");
-        assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账", "省料看板");
-        assertThat(allNames(manageOnly)).doesNotContain("入库单");
+        assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账");
+        assertThat(allNames(manageOnly)).doesNotContain("入库单", "智能派单", "省料看板", "工艺配置");
+
+        // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
+        var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");
+        assertThat(namesOf(poolOnly.getChildren())).containsExactly("智能派单");
+        var savingOnly = groupByKey(menusForPermissions("product:list"), "inventory-center");
+        assertThat(namesOf(savingOnly.getChildren())).containsExactly("省料看板");
     }
 
     @Test
-    @DisplayName("工作台组：经营看板（全员）+ 每日简报（dashboard:view）")
+    @DisplayName("工作台组：经营看板 + 每日简报（同码 dashboard:view；#5699 P4 起经营看板也按该码门控）")
     void currentUserMenusGateBriefingByDashboardView() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("dashboard:view");
 
@@ -643,11 +652,10 @@ class AuthServiceTest {
     void currentUserMenusHideGroupsWithoutPermission() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("order:list");
 
-        // 顶层只有「工作台 + 交易管理 + 通知中心」
-        assertThat(keysOf(menus)).containsExactly("workspace", "trade-center", "notifications");
-        // 无 dashboard:view ⇒ 每日简报隐藏（但工作台组因经营看板仍在）
-        var workspace = groupByKey(menus, "workspace");
-        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板");
+        // 顶层只有「交易管理 + 通知中心」—— #5699 P4 起经营看板也按 dashboard:view 门控
+        // ⇒ 无该码时工作台组**整组**不出现（不再有「组内只剩经营看板」这一形态）。
+        assertThat(keysOf(menus)).containsExactly("trade-center", "notifications");
+        assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报");
         // 负控（整组不出现，不得漏权限门控）
         assertThat(allNames(menus)).doesNotContain(
                 "每日简报", "生产管理", "智能客服", "商品与加工项", "仓储与物料", "组织管理");
@@ -668,8 +676,8 @@ class AuthServiceTest {
         assertThat(inventory.getName()).isEqualTo("仓储与物料");
         assertThat(namesOf(inventory.getChildren())).containsExactly("入库单");
         assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders");
-        // 自证渲染面非空 + 反向：processing:manage 的两项确实被门控挡在外面
-        assertThat(allNames(menus)).contains("经营看板");
+        // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
+        assertThat(allNames(menus)).contains("入库单");
         assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "生产看板");
     }
 

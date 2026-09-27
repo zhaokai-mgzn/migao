@@ -45,7 +45,12 @@ public class ProductionSeedTemplateController {
 
     private final ProductionSeedTemplateService productionSeedTemplateService;
 
-    /** 平台预置生产种子模板目录。 */
+    /**
+     * 平台预置生产种子模板目录（「工艺配置」页第一屏读端点，issue #5699 P4 起挂页面码
+     * {@code production:view}；{@code apply} 仍继承类级 {@code processing:manage} ——
+     * 读面收敛、写面（不可逆批量落库）一字未动）。
+     */
+    @RequirePermission("production:view")
     @GetMapping
     public ApiResponse<List<ProductionSeedTemplateInfo>> list() {
         return ApiResponse.success(productionSeedTemplateService.listTemplates());

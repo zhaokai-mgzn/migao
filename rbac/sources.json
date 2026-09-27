@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P3",
+  "stage": "P4",
   "_note": "M1 副本登记表：形态面（见判据的 COPY_FACES）命中的每一处副本都在这里具名登记；未登记即红、陈旧登记亦红、**登记的 `hits` 必须 == 现取**（P2 起机械对账）。`derived_from` = 该副本**应当**由谁派生（P2/P3 落地），`UNRESOLVED` = 设计真值源尚未登记的副本（只许缩短：UNRESOLVED_COPY_CAP，现取 0 —— A7 已于 2026-09-27 归类后销账）。**P3 扩面**：新增三个形态面，登记的**都是判据侧**的手写副本（`page-first-screen-anchors` / `page-parity-residual-ledger` / `route-node-anchor-ledger` 共 3 行 25 处命中）—— 设计 §1.3 的 C 类（页面 / 菜单节点 → 码）前三份（`menu.ts` / `MenuController` / `AuthService`）本就在册，**第四份是判据自己的锚点表**，而它在 P3 之前**一处都没登记**（谁新写一张「页面 → 码」的表不会有东西变红）。",
   "sources": [
     {
@@ -63,10 +63,10 @@
     {
       "face": "menu-frontend-nodes",
       "file": "frontend/admin-web/src/config/menu.ts",
-      "hits": 19,
+      "hits": 20,
       "kind": "declaration",
       "derived_from": "manifest.menu_nodes",
-      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）"
+      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）。P4：『经营看板』节点补上 `permissionCode` ⇒ 带码节点命中数 19→20（涨跌都要在同 PR 更新本表）"
     },
     {
       "face": "route-guard-map",

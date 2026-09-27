@@ -5,7 +5,7 @@ P2（同一跟踪单）在本文件上**加**两段现取，不改任何既有�
 B3 的唯一对照面）与 `roles.login`（**A7** 登录面，由既有 `parse_role_fallback` 传 `anchor=` 复用）；
 `ledger_counts` 另加 P2 的两张只许缩短台账（计数委托 `rbac/derive.py` 的**同一份**值级原语）。
 
-P3（同一跟踪单）再加 `pages` 段（**页面 → 码**：`gate` + 第一屏读码 `units` + 逐页可见性规则），
+P3（同一跟踪单）再加 `pages` 段（**P4 把该段的值改成收敛后的目标态**）（**页面 → 码**：`gate` + 第一屏读码 `units` + 逐页可见性规则），
 现取全部委托 `rbac/derive.py` 的 `page_present()`（四跳：菜单节点 → 页面锚点 → `lib/api.ts` → Java
 生效码，与判据 12 同一口径）；`ledger_counts` 另加 P3 的 `PAGE_VISIBILITY_GAPS`（只许缩短）。
 
@@ -145,7 +145,7 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
     return {
         "schema": 1,
         "issue": "#5699",
-        "stage": "P3",
+        "stage": "P4",
         "_note": (
             "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。"
             "**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。"

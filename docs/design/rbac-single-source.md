@@ -695,6 +695,48 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
    「哪些节点进哪一列」本来就是**菜单结构**的事实，不属「页面 → 码」面（登记在判据的 `NON_DERIVED_FACES`）。
 
 
+**P4 落地记录（2026-09-27）** —— **本阶段改行为**（授权来源 = 用户逐字裁定「直接按目标改，
+权限粒度到子菜单即可，不需要细化到页面内功能」）。逐页终态（**每一页都有结论，没有「以后再说」**）：
+
+| 页面 | 改前（节点码 / 第一屏码） | 改后 | 方向 | 端点变动 |
+|---|---|---|---|---|
+| `/dashboard` | `null` / `dashboard:view` | `dashboard:view` / `dashboard:view` | 收窄（可见面） | 无 |
+| `/production/pool` | `processing:manage` / `processing:view` | `processing:view` / `processing:view` | **放宽** | 无 |
+| `/production/saving-board` | `processing:manage` / `product:list` | `product:list` / `product:list` | **放宽** | 无 |
+| `/production/processing` | `production:view` / 3 码 | `production:view` / `production:view` | 收窄 + 放宽 | 3 个端点改码（2 个 `order:list`、1 个 `processing:manage`） |
+| `/production/routings` | `production:view` / 2 码 | `production:view` / `production:view` | **零 delta** | 4 个端点改码（`processing:manage` → `production:view`，两码持有者逐值相同） |
+| `/settings` | `system:manage` / 2 码 | **不变（具名保留）** | 零 delta | 无（三条出口逐条列在残留台账里） |
+| `/notifications` | `null` / 无码 | **不变（具名保留）** | 零 delta | 无（两侧同一个空码 ⇒ 结构上不可能 403） |
+| 其余 14 页 | — | 不变 | 零 delta | 无 |
+
+🔴 **收敛方向不是随便定的**（D2 的「授权面 vs 理由」逐条算过）：
+① **单码页且节点码 ≠ 端点码** ⇒ 取**端点码**为页面码（`/production/pool`、`/production/saving-board`、
+`/dashboard`）—— 端点码是「谁真能读这一页」的能力真值，节点码过严会让能读的人看不见入口
+（静默的能力浪费），且**放宽不夺走任何人的能力**；
+② **多码页** ⇒ 端点向**节点码**对齐（`/production/processing`、`/production/routings`）—— 页面级裁定优先，
+且这两页的两个码持有者集合**逐值相同**（routings）或收敛后**治好**了 `product_manager@fallback`
+的半碎页面（processing）。
+③ **唯一不收敛的 `/settings`** 是因为三条出口都会在**别的页**造出 403（逐条见残留台账）；
+`/notifications` 是因为「两侧同一个空码」本身就是自洽形态。
+
+**P4 落地内容**：
+
+| 落地项 | 位置（符号锚） | 验收读数 |
+|---|---|---|
+| **三条不变量 + 两张台账 + 7 条判据** | `tests/unit_ci_workflows/test_rbac_submenu_granularity.py`（用例 MC-035 / MC-036 / MC-037） | 每个子菜单恰好一个可见性码 · 持码者必能打开全部 unit · 四面同码；红证全部**内存构造** + 「只改散文 ⇒ 不红」对照 |
+| **D1/D3 的授权变更 census**（逐页 + 逐端点 + **当场复算谁得/谁失**） | 同判据的 `P4_AUTHORIZATION_CENSUS` | 改后码 == 现值；每个变动端点的改后码 == 端点现取生效码；复算出的每个得/失岗位必须在理由里**被点名** |
+| **I4（端点层「写动作只由读码把守」具名报出）** | 同判据的 `WRITE_UNDER_READ_CODE`（现取 **16** 条，逐条带归类） | #5699 发现 ① 的四条（建加工单 / 报工 / 打印 / 发货）必须具名存在；未登记即红 / 陈旧亦红 / 只许缩短 |
+| **行为改动**：4 个端点改挂页面码 + 4 个菜单源同批改码 | `backend/admin-api/.../ProductionController.java`（加工费两读端点补方法级覆盖、配置族三读端点改码）· `ProcessingCategoryController.java`（列表读端点补方法级覆盖）· `ProductionSeedTemplateController.java`（`list` 补方法级覆盖，`apply` 继承类级写码）· `frontend/admin-web/src/config/menu.ts` · `MenuController.java` · `AuthService.java` · `(dashboard)/layout.tsx` | 判据 11 / 12 / 13 / 14 全绿；判据 12 ④ **零 403 受害者**且 `victims_ack` **销账** |
+| **台账只许缩短** | `test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS` **6 → 1** / `MULTI_READ_ENDPOINT_PAGES` **3 → 1** / `ROUTE_WITHOUT_MENU_NODE` 销账 1 条 / `AUTHORIZATION_CENSUS['order:list']` 端点 25 → 23；P3 判据的 `PAGE_VISIBILITY_GAPS` **4 → 1** | 销账是「条目消失」而不是「条目留着」——陈旧条目一律判红 |
+| **清单/生成物同步** | `rbac/manifest.json`（pages/menu_nodes/menus/route_guard/ledger_counts）· `rbac/readings.json`（重渲染）· `rbac/sources.json`（`menu.ts` 带码节点命中 19 → 20） | P1/P2/P3 三个守卫全绿（零 delta 对账在**新现值**上仍然成立） |
+
+⚠️ **本阶段动了 5 个既有 Java 测试文件**（`MenuControllerTest` / `AuthServiceTest` /
+`ProductionRoutingReadControllerTest` / `ProductionSeedTemplateControllerTest` /
+`ProductionControllerTest` 的两个注入锚点）：它们钉的是**旧裁定**的取值（节点码 / 族级码 /
+「方法级不得有更宽松覆盖」），P4 的裁定改变后必须同批改准 —— **判据的语义没有放宽**：
+`ProductionSeedTemplateControllerTest` 原本要防的「写面被放宽到读权限岗位手上」那条在 `apply` 上**原样保留**，
+`ProductionRoutingReadControllerTest` 的族级断言改为**反向**（改判并逐字登记理由 + 零 delta 的复算依据）。
+
 ### 4.1 🔴 改行为阶段的**硬前置**（P4 / P5 / P6，逐阶段落实，做成阶段验收的一部分）
 
 **裁定（2026-09-27，跟踪单 #5699）：凡改行为的阶段，提交前必须先过人。** 落实形态是
