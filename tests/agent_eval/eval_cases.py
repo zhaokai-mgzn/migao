@@ -4313,6 +4313,24 @@ _CASE_MC_030 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-031 [NORMAL] main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）（源: cases/misc.yml）──
+_CASE_MC_031 = EvalCase(
+    id='MC-031',
+    legacy_id='',
+    title='main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch；**刻意不挂 pull_request** —— 判定基准是 main 的当前状态，挂 PR 面会把红重新显示在无辜 PR 上而它并不拦任何东西）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）', '判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）', '判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）', '告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）', '覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）', '九条判据各配注入式红证；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数'],
+    skip_reason='[backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'freshness', 'main-side-guard', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10433,6 +10451,7 @@ ALL_CASES = (
     _CASE_MC_028,
     _CASE_MC_029,
     _CASE_MC_030,
+    _CASE_MC_031,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

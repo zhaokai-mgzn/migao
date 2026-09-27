@@ -412,18 +412,13 @@ cases_face_gate() {
   printf '%s\n' "$hit" | sed 's/^/     /'
   python3 .github/case_trust_gate.py --base origin/main || rc=1
   python3 .github/truths.py check --templates .github/templates --cases .github/cases || rc=1
-  local tmp_eval tmp_md
-  tmp_eval="$(mktemp)"; tmp_md="$(mktemp)"
-  if python3 .github/render_cases.py --cases .github/cases \
-       --out-eval "$tmp_eval" --out-md "$tmp_md" >/dev/null \
-     && cmp -s "$tmp_eval" tests/agent_eval/eval_cases.py \
-     && cmp -s "$tmp_md" docs/testing/mibao-verification-cases.md; then
-    echo "  ✅ 生成物与 cases/ 单一源同步"
-  else
-    echo "  ❌ 生成物与 cases/ 单一源不同步（或渲染失败）—— 跑 .github/render_cases.py 重渲染并提交生成物"
-    rc=1
-  fi
-  rm -f "$tmp_eval" "$tmp_md"
+  # 生成物新鲜度 = **单一实现**（`scripts/generated_artifacts_freshness.py`）—— CI 的
+  # `pr-check` 同名步（`Verify generated artifacts fresh (render + diff)`）与 **main 侧守护腿**
+  # `.github/workflows/main-freshness-guard.yml` 调的是**同一个脚本**（不许各写一份 render+diff）。
+  # 它自己负责「以 `.github/cases/**` 为唯一源重渲染 → 与提交的生成物逐字节比对 + 具名报错」，
+  # 且缺渲染器/语料/产物、渲染失败、语料为空一律 **fail-closed（非零）**（不许静默跳过）。
+  # 退出码同源：非零 ⇒ rc=1（吞码 = 假绿，issue #4221 判据 3）。
+  python3 scripts/generated_artifacts_freshness.py || rc=1
   # 残余未覆盖必须显式声明（issue #4221 判据 2）：report() 会把 `::warning::` 抬到控制台，
   # 免得 ✅ 被读成「CI 也会绿」。
   echo "::warning:: 本地 cases 面门禁**未覆盖**：CI 侧还有本地跑不了的格子 —— Case Trust 的 L0 退化守卫单测（tests/unit_ci_workflows/test_case_trust_gate.py）、追踪单状态查询（需网络；取不到时门禁自行打印「未跑判定」且不计入退出码）、以及 pr-check 的其它 job。**另：Case Trust 的逐条判定只读已提交 diff** —— 用例改动若尚未 commit，该判定是「未跑」而非「通过」（实测：未提交的注释型用例改动此处仍 ✅），故本项须在 commit 之后重跑（migao-dev-flow §2.1）。CI 仍是权威（issue #4221 边界）。"
