@@ -671,7 +671,9 @@ class AuthServiceTest {
         // 且该组只含它一项
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("inbound:view");
 
-        assertThat(keysOf(menus)).containsExactly("workspace", "inventory-center", "notifications");
+        // #5699 P4：经营看板也按 `dashboard:view` 门控 ⇒ 只持 inbound:view 时工作台组**整组不出现**
+        //（本条因此顺带成为「经营看板不再无条件出现」的负控）。
+        assertThat(keysOf(menus)).containsExactly("inventory-center", "notifications");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(inventory.getName()).isEqualTo("仓储与物料");
         assertThat(namesOf(inventory.getChildren())).containsExactly("入库单");
@@ -687,7 +689,8 @@ class AuthServiceTest {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
                 menusForPermissions("customer:view", "finance:view");
 
-        assertThat(keysOf(menus)).containsExactly("workspace", "trade-center", "notifications");
+        // #5699 P4：经营看板按 `dashboard:view` 门控 ⇒ 本组权限集不含它时工作台组不出现。
+        assertThat(keysOf(menus)).containsExactly("trade-center", "notifications");
         var trade = groupByKey(menus, "trade-center");
         assertThat(trade.getName()).isEqualTo("交易管理");
         assertThat(namesOf(trade.getChildren())).containsExactly("客户列表", "财务对账");
