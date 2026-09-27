@@ -81,13 +81,17 @@ export function defaultIsShapedForBody(body: CurtainBody): boolean {
  *
  * ⚠️ issue #4566（用户 2026-09-19 裁定「工艺…直接通过加工项来勾选」）：下单页**不再让商家选工艺**
  * ⇒ 本清单不再是下单选项目，而是**加工项 `craftHint` 的合法值域**（V78 的
- * `processing_items.craft_hint`，目录里 5 个工艺项声明它）。工艺值的写侧来源 = 页面侧
- * `craftFromItems`（勾选的工艺项的 `craftHint`），本文件**不再提供默认工艺**。
+ * `processing_items.craft_hint`，目录里 5 个工艺项声明它、去重后 = 本清单 4 个值）。工艺值的写侧
+ * 来源 = 页面侧 `craftFromItems`（勾选的工艺项的 `craftHint`），本文件**不再提供默认工艺**。
  *
- * ⚠️ `四爪钩` 仍是合法工艺枚举，但 **V83 加工项目录里没有对应项**（它是配件、不是打褶方式）
- * ⇒ 下单页暂时不可达（已知取舍，归属 issue #4365 阶段 2）；存量单的 `craft='四爪钩'` 照旧派生。
+ * ⚠️ issue #4365（用户 2026-09-27 裁定「**移除四爪钩这个场景**」）：`四爪钩` **不是工艺**，它是
+ * **加工项 / 配件**（打孔的选项「纳米圈 / 四爪钩 / 韩式S钩」、算料的悬挂方式 key `hook`、历史数据
+ * 回显 —— 这些语义**保留**）；但作为**工艺值**它已退场（本枚举 4 个值：韩褶 / 打孔 / 穿杆 / 平幔），
+ * 它驱动的三条工艺规则已由
+ * `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删。
+ * **存量单**（`order_items.craft='四爪钩'`）仍能照旧回显（该值还能显示出来），但**不可再新建**。
  */
-export const CRAFT_OPTIONS = ['韩褶', '打孔', '四爪钩', '穿杆', '平幔'] as const
+export const CRAFT_OPTIONS = ['韩褶', '打孔', '穿杆', '平幔'] as const
 
 /** 加工类型（§4.2 `cuttingMode`） */
 export const CUTTING_MODE_OPTIONS = ['定高买宽', '定宽买高'] as const

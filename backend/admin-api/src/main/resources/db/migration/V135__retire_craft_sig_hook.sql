@@ -1,0 +1,63 @@
+-- 工艺「四爪钩」场景退场：它不是工艺（是加工项 / 配件）（issue #4365，用户裁定 2026-09-27）
+--
+-- ## 用户裁定（原话）
+-- 「**移除四爪钩这个场景**」（选项 A = 彻底移除，含三条规则软删）。
+--
+-- ## 背景（为什么这件事要单独一个迁移，而不是「删掉就算」）
+-- 真值源 §8 早已冻结「**四爪钩 / 四叉钩**是**加工项（配件）**，工艺（安装工艺＝打褶/悬挂方式）**单值**」；
+-- 信号层（`production_route_signals`，`V63` 终态）也早已把这两个信号指向主线工艺「韩褶」。
+-- 但 `V83__seed_processing_item_catalog.sql` 当年**显式登记**了一条取舍（逐字）：
+--   「下单页的工艺选择器随本单退场 ⇒ 新单**暂时无法把「四爪钩」标记出来**；
+--     **存量单不受影响（`order_items.craft='四爪钩'` 照旧派生，其 3 条 `craft` 规则保持 active**）」
+-- ⇒ 本迁移**作废**那条「规则保持 active」的登记：规则退场，四爪钩不再驱动任何工序。
+--
+-- ## 本迁移做什么（**只软删，不物理删**）
+-- 把 `production_route_rules` 里 `trigger_kind='craft' AND trigger_value='四爪钩'` 的**活跃行**
+-- 软删（`deleted = 1`），留痕可查。三条 = `V71` 的 `rr-v70-04/05/06`
+-- （`insert 上车布` / `remove 定型` / `remove 复烫`，priority 40/50/60）。
+--
+-- ## 为什么不物理删（两条）
+--   ① **留痕**：软删可回滚、可审计（「这三条曾经存在并生效过」是事实，删掉就查不到了）；
+--   ② 归档链（`V54` / `V58` / `V60` / `V63` / `V71` / `V83` …）被
+--      `tests/unit_ci_workflows/migration_fingerprints.json` **逐字节冻结** ⇒ 只能靠新的软删表达终态。
+--
+-- ## 🔴 一次性影响面（用户已知悉并接受，登记在案）
+-- 存量单（`order_items.craft='四爪钩'`）**重新派生**工序时：**少一道「上车布」、多「定型 / 复烫」**
+-- ⇒ **计件工资随之变**（工序主线 `ROUTE_MAINLINE_STEPS` 含 定型/复烫、不含 上车布）。
+-- 这类单**今天不可新建**：下单页自 `V83` 起不可达该值，agent 工具枚举（`order_create` / `curtain_calc`）
+-- 与前端 `CRAFT_OPTIONS` 本次同步收窄 ⇒ 新单不可能再产生该值。
+--
+-- ## 为什么是新增 V135 而不是改 V71
+-- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记账、已应用的文件**整份跳过**
+-- ⇒ 改已发布迁移只对**全新库**生效，存量环境永远拿不到 = 「CI 全绿、功能静默缺失」（issue #4235）。
+--
+-- ## 幂等（MigrationRunner 硬要求所有迁移可重复执行）
+-- `WHERE … AND deleted = 0` ⇒ 第二次执行匹配 0 行，净效果相同（空操作）。
+--
+-- ## 不在本单射程（显式登记，避免被读成「漏了」）
+--   · `production_route_signals` 的 `四爪钩 / 四叉钩` 两个**信号名**：下游 join key，且 `V63` 终态
+--     已把它们指向「韩褶」⇒ **不动**；
+--   · `production_crafts`（商家可编辑的工艺配置行）**不动**：四爪钩从来不是工序库里的一道逻辑工序
+--     （`production_operations` 无该名）⇒ 播种用的 `COALESCE(… unnest(ARRAY[…] …))` 不会产生该行；
+--     若某租户手工建过，保留其配置（那是商家的数据，不属于「场景退场」）；
+--   · `production_routings`（旧 `(部位×工艺)` 路线表）与 `V54` / `V58` 的历史路线行：**不动**
+--     （历史载体 + 归档冻结）。
+--
+-- ## 回滚 SQL（保留于注释；按需手工执行）
+-- ```sql
+-- UPDATE production_route_rules SET deleted = 0, updated_at = NOW()
+--  WHERE trigger_kind = 'craft' AND trigger_value = '四爪钩' AND deleted = 1;
+-- ```
+--
+-- ## 与测试的关系（红证）
+--   · `tests/unit_ci_workflows/test_production_catalog_seed.py`：规则三源比对按**活跃行**收敛
+--     （真值源 `routing.py::ROUTE_RULES` 23 条 ↔ 迁移侧 26 − 退休 3 ↔ `schema.sql` 终态 23），
+--     另有退休行**只许缩短**的台账判据 + 本语句的**软删形态**判据（条件缺一即红）。
+--     ⚠️ 本迁移是 **L0 静态**判据（admin-api 无 testcontainers ⇒ 表内容判据落不到真库上）；
+--     「真库里活跃行 = 0」由语句本身的两条 `WHERE` 保证。
+UPDATE production_route_rules
+   SET deleted = 1,
+       updated_at = NOW()
+ WHERE trigger_kind = 'craft'
+   AND trigger_value = '四爪钩'
+   AND deleted = 0;

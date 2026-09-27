@@ -33,6 +33,8 @@ import {
   INBOUND_PAGE_SCOPE_FILES,
   INBOUND_PAGE_TARO_APIS,
   INBOUND_PRINT_GAP_WIRING,
+  REPRINT_PAGE_FILE,
+  REPRINT_PAGE_ROUTE,
   WORKER_LOGIN_ROUTE,
 } from '../src/utils/inbound/gaps'
 import { H5_API_OUTLET_LEDGER } from '../src/utils/platform'
@@ -63,13 +65,17 @@ describe('拍照入库页：平台能力面（声明 == 实测 · 缺口必须�
 
   it('G0 路由登记在 app.config.ts（没登记 = 死链），页面与页面配置都在', () => {
     expect(read(APP_CONFIG)).toContain(`'${INBOUND_PAGE_ROUTE.replace(/^\//, '')}'`)
+    // 同族的**补打页**（issue #5640）也在，否则「同族共用一份台账」只覆盖了一半
+    expect(read(APP_CONFIG)).toContain(`'${REPRINT_PAGE_ROUTE.replace(/^\//, '')}'`)
     // 工人登录页也在（未登录时跳它 —— 跳一个没登记的路由 = 点了没反应）
     expect(read(APP_CONFIG)).toContain(`'${WORKER_LOGIN_ROUTE.replace(/^\//, '')}'`)
     for (const rel of INBOUND_PAGE_SCOPE_FILES) {
       expect(fs.existsSync(path.join(BMINI_ROOT, rel))).toBe(true)
     }
     expect(fs.existsSync(path.join(BMINI_ROOT, 'src/pages/worker/inbound/index.config.ts'))).toBe(true)
+    expect(fs.existsSync(path.join(BMINI_ROOT, 'src/pages/worker/reprint/index.config.ts'))).toBe(true)
     expect(INBOUND_PAGE_FILE).toBe('src/pages/worker/inbound/index.tsx')
+    expect(REPRINT_PAGE_FILE).toBe('src/pages/worker/reprint/index.tsx')
   })
 
   it('G1 声明集 == 射程内实测集（多一个 / 少一个都红）', () => {

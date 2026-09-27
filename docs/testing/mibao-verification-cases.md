@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（19 case）
+## B 端小程序域（24 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -849,6 +849,75 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface
 溯源: 2026-09-27 新增（issue #5052 P3）：补齐「拍照入库的登录前置在 h5 可用」这一条（本单发现：入库页的引导入口此前没有判据覆盖）。 ｜ tags: bmini, inbound, login, platform
+
+### BM-020. 拍照补打标签·第一跳 - 解码优先（0 次 LLM 调用）且只有入库码才去查单据详情 🔵
+```
+你: 工人登录 B 端（H5 / 小程序）后打开「拍照补打标签」→ 拍一张米高入库标签 → 本机解码优先（jsQR，**0 次 LLM**）→ 解出短码后按短码读单据详情
+期望: direct_reply
+数据: 判据 1·**解码优先、0 次 LLM**：`runReprintResolve` 的 `expectedLlmCalls === 0`，且假服务端的 `llmCalls` / `recognizeCalls` 均为 0；补打链的依赖里**没有**上传/识别回调（结构事实：解不出码的正确答案是「重拍 / 手输」，不是「让模型猜单」）。红证（对照实跑）：复刻「先问模型」⇒ 同一个假服务端立刻记 1 次 LLM 调用。证据：frontend/bmini-app/tests/inbound-reprint-flow.test.ts
+数据: 判据 2·**是真解码**：qrcode-generator 编码 → jsQR 解码真往返，解出 `https://app.migaozn.com/i/<短码>`（不是替身对替身）。
+数据: 判据 3·🔴 **只有入库码才查详情**：`/s/` 洗水码与陌生二维码 ⇒ `lookup` **一次都不调用**（`detailCalls === []`），状态是 `blocked` 而不是 404。红证（变异注入实跑退出码 1）：把 `loadReprintDetail` 的码空间门禁改掉 ⇒ 判据红。
+数据: 判据 4·**解码失败不猜单**：`route === 'manual-required'`、短码为 null、屏上给重拍要点 + 手输入口（不预填任何单据字段）。
+跳过: [backend-contract] 确定性成本守卫与门禁判据（jest: frontend/bmini-app/tests/inbound-reprint-flow.test.ts + tests/inbound-reprint-code-space.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first, inbound-label-flow.worker-detail-read-and-photo-upload
+溯源: 2026-09-27 新增（issue #5640 功能②）：拍照补打的第一跳 —— 复用 P3 的 `decodeBarcodeFromPhoto`，把「解码优先」与「码空间门禁」做成纯函数 + 假服务端计数判据。 ｜ tags: bmini, inbound, reprint, cost-guard
+
+### BM-021. 码空间分清 - /s/ 洗水码绝不当入库标签查（给报工入口）；非米高二维码明确告知 🔵
+```
+你: 工人拍到的码有两种可能：入库标签 `https://app.migaozn.com/i/<短码>`（承载入库单）与洗水码 / 报工短链 `https://app.migaozn.com/s/<短码>`（302 → 报工页，承载加工部位）。两者的短码规格**故意同款**（8 位 Crockford Base32）—— 同款是为了人可读可抄，不是为了可以互相串。另有一种：根本不是米高的二维码
+期望: direct_reply
+数据: 判据 1·🔴 **`/s/` ⇒ 洗水码空间**：判定为 `wash-code`、文案点明「洗水码 / 报工短链」并给出**报工页入口**（路由已登记进 `src/app.config.ts`），且**不查入库详情**（页面判据：`getInboundLabel` 0 次调用）。红证（变异注入实跑退出码 1）：不看码空间、拿 URL 末段直接查 ⇒ 判据红。证据：frontend/bmini-app/tests/inbound-reprint-code-space.test.ts + tests/worker-reprint-page.test.tsx
+数据: 判据 2·**非米高二维码明确告知**：别的域名的 `/i/<码>`、纯文本二维码 ⇒ `foreign` + 「这不是米高的标签」+ 引导手输；**绝不**拿去查入库接口（红证：变异注入「认路径不认主机」⇒ 判据红，退出码 1）。
+数据: 判据 3·**前缀单一来源**：`/s/` 在端侧只出现一处（`src/utils/inbound/codeSpace.ts`），且与后端控制器 `@GetMapping('/s/{shortCode}')`、`@GetMapping('/i/{shortCode}')` **逐值一致**（红证：客户端另抄一份前缀 / 后端换前缀 ⇒ 判据红）。
+数据: 判据 4·**类级元守卫（两套码空间被当成一套用）**：「谁可以查入库详情」有台账（`LABEL_DETAIL_CALLERS`）—— 未登记即红、条目必须活着、受门禁的调用点必须引用码空间判定。证据同上（同文件的 G1/G2）。
+跳过: [backend-contract] 确定性码空间判据（jest: frontend/bmini-app/tests/inbound-reprint-code-space.test.ts 等），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5640 功能②）：把「/i/ 与 /s/ 是两个码空间」这条（服务端已有 `test_public_code_spaces_are_disjoint.py`）补到**端侧判定**这一半。 ｜ tags: bmini, inbound, reprint, code-space
+
+### BM-022. 手输短码兜底 - 标签磨花时手输 8 位短码，抄错形态（O/I/L）原样交给服务端归一化 🔵
+```
+你: 标签磨花 / 破损 ⇒ 二维码根本解不出来（这就是补打的主场景）⇒ 工人照抄纸面上的 8 位短码并手输；抄写必然出错：`0` 抄成 `O`、`1` 抄成 `I/L`
+期望: direct_reply
+数据: 判据 1·🔴 **抄错形态必须能解析**：`classifyManualCode('ABCDO234')` ⇒ `inbound-label` 且短码**原样**（客户端不做别名映射）；服务端 `WorkerShortLinkService.normalize`（`O→0`、`I/L→1`）归一化后仍能查到单据（假服务端逐字复刻该映射，断言拿到的 `shortCode` 是服务端归一化后的那一个）。红证（变异注入实跑退出码 1）：把客户端闸改成只认严格字母表（`isValidShortCode` 那种）⇒ 判据红，且页面判据同时红（**这个码永远送不到服务端**）。证据：frontend/bmini-app/tests/inbound-reprint-code-space.test.ts + tests/inbound-reprint-flow.test.ts + tests/worker-reprint-page.test.tsx
+数据: 判据 2·**客户端不归一化、不生成**：新文件里不存在 `O→0` / `I/L→1` 的映射，也不存在短码生成（生成面唯一写方 = 服务端 `allocateUniqueCode()`）。
+数据: 判据 3·**抄写分隔符容忍**：`ABCD 2345` / `abcd-2345` / 整条 `/i/` URL 粘进来 ⇒ 都能取到候选短码（大小写与别名一律留给服务端）。
+数据: 判据 4·**形态不合法 ⇒ 一次请求都不发**：非 8 位字母数字 ⇒ `invalid-input` + 「8 位」的可行动文案，`lookup` 0 次（红证：变异注入「去掉长度闸」⇒ 判据红，退出码 1）。
+跳过: [backend-contract] 确定性手输/归一化口径判据（jest: frontend/bmini-app/tests/inbound-reprint-code-space.test.ts 等），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5640 功能②）：手输兜底是补打的**主路径**（码磨花了才要补打），抄错归一化的真值留在服务端、端侧只负责原样送达。 ｜ tags: bmini, inbound, reprint, manual-entry
+
+### BM-023. 补打详情与打印 - 404/410 分开呈现（查无此码 vs 已撤销）+ 打印必留痕且前端不自行计数 🔵
+```
+你: 工人拍到 / 手输一张入库标签短码 → 页面展示服务端给的**单据详情**（品名 / 色号 / 门幅 / 米数 / 货号 / 缸号 / 批次 / 单号 / 供应商 / 已打印次数）→ 点「打印新标签」补打；短码不存在与已撤销会分别出现
+期望: direct_reply
+数据: 判据 1·🔴 **404 / 410 分开**：跨租户 / 不存在 ⇒ `not-found`（「查无此码…核对纸面短码」）；已撤销 ⇒ `revoked`（「该标签已撤销…请文员按单据重新补打」）。两者是**两种状态、两句不同的话**，页面上是两个不同的块（`reprint-not-found` / `reprint-revoked`，实测两句文本不相等）；服务端建议（`ApiResponse.suggestion`）原样上屏。红证（变异注入实跑退出码 1）：把 410 也报成 404 ⇒ 判据红。证据：frontend/bmini-app/tests/inbound-reprint-flow.test.ts + tests/worker-reprint-page.test.tsx
+数据: 判据 2·**200 但无 data 不算 ready**（不返回空详情、不画假标签）⇒ `error` 态。
+数据: 判据 3·🔴 **打印必留痕**：补打的详情走**同一个** `printInboundLabel`（P3/P4 的唯一送打印入口），调用序 `render → recordPrint → transport`；留痕失败 ⇒ **一次都不送数据**；能力不可用 ⇒ 既不调留痕也不连蓝牙。红证（变异注入实跑退出码 1）：把 `recordPrint` 换成「自己造一个计数」 ⇒ 判据与 P3 的 D1 同时红。
+数据: 判据 4·**前端不自行计数**：两次不同服务端读数（3 / 9）原样转发，屏上显示服务端那次；源码面判据扫新增文件与页面（`printCount` 算术 ⇒ 红）。红证（变异注入实跑退出码 1）：页面写 `printCount + 1` ⇒ 行为判据与源码面判据同时红。
+数据: 判据 5·**字段真值只从服务端来**：屏上字段全部取自 `GET /api/worker/inbound/labels/{短码}` 的响应（端侧不拼第二份），短码以服务端归一化后的值为准。
+数据: 判据 6·**零后端改动**：本单只消费已合并的 P1/P2 端点（`INBOUND_ENDPOINTS` 与后端控制器逐值一致由既有守卫钉住），未新增任何端点。
+跳过: [backend-contract] 确定性详情/留痕判据（jest: frontend/bmini-app/tests/inbound-reprint-flow.test.ts + tests/worker-reprint-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.print-count-and-audit, inbound-label-flow.worker-detail-read-and-photo-upload
+溯源: 2026-09-27 新增（issue #5640 功能②）：补打的详情面与打印面 —— 撤销（410）与查无（404）是两种处置，打印沿用 P3 的先留痕后送数据。 ｜ tags: bmini, inbound, reprint, print, audit
+
+### BM-024. 同族页面不分叉 - 补打页复用 P3 的版面/渲染/打印件（类级元守卫）且 h5 不调 Taro.login 🔵
+```
+你: 补打页（`pages/worker/reprint/index`）与入库页（`pages/worker/inbound/index`）是同族页面：都要把服务端详情渲染成 50×30mm 位图并送打印。判据要能拦住「复制一份而不复用」
+期望: direct_reply
+数据: 判据 1·🔴 **同族页面必须复用**：射程内渲染标签的页面（现为入库页 + 补打页）必须 ① 引用唯一送打印入口 `printInboundLabel`；② 不得自带第二份二维码版面（`qrcode(`）、不得直连传输层（`printImageData`）、不得手写端点字面量、不得自带像素/纸型字面量（纸型走 `inboundLabelPageSize()`）、不得对 `printCount` 做本地算术；③ 必须用共用画布工厂。红证（变异注入实跑退出码 1，逐条）：删掉 `printInboundLabel` 引用 / 页面自带第二份画布工厂 / 手写 `/api/worker/...` ⇒ 判据点名判红。证据：frontend/bmini-app/tests/inbound-reprint-code-space.test.ts（G3）+ tests/inbound-page-platform-gaps.test.ts
+数据: 判据 2·**画布工厂唯一定义处** = `src/utils/inbound/labelPageKit.ts`（全仓扫描）；入库页已改为引用同一份共用件（不再自带第二份）。
+数据: 判据 3·**版面/渲染/打印三件零改动**：`labelLayout.ts` / `labelCanvas.ts` / `labelPrint.ts` 在本分支**未被修改**（补打只换数据源：入参从「过账回执 + 详情」换成「扫到的短码 → GET …/labels/{短码}」）⇒ 「缺码不画假码」「长名截断可见」「1:1 送打印」由复用直接继承；若为补打改这三件，即证明该层抽取有误（本单未改）。
+数据: 判据 4·**页面的平台能力台账只有一份**：补打页与入库页共用 `INBOUND_PAGE_SCOPE_FILES` / 声明集（新增一处 `Taro.*` 而未声明 ⇒ 红）；两页路由都在 `src/app.config.ts` 登记（没登记 = 死链）。
+数据: 判据 5·**h5 不调 `Taro.login`**（#5650 判据）：页面与实测 Taro 集都不含 `login`。红证（变异注入实跑退出码 1）：页面加一处 `Taro.login` ⇒ 页面判据与平台守卫同时红。
+数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）。
+跳过: [backend-contract] 确定性复用/平台判据（jest: frontend/bmini-app/tests/inbound-reprint-code-space.test.ts + tests/inbound-page-platform-gaps.test.ts + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5640 功能②）：本单最值得固化的一类 —— 「同族页面各写一套流程，第二套必然分叉」，落成语料内省式元守卫（未复用即红）。 ｜ tags: bmini, inbound, reprint, reuse-guard, platform
 
 ## 分类域（3 case）
 
@@ -2639,7 +2708,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（22 case）
+## 杂项域（23 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2908,6 +2977,21 @@
 跳过: [backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里
 ```
 溯源: 2026-09-27 新增（issue #5651 收口时的跨域链内修）：UTC 跨天窗口里 `admin-api unit tests` 必红，根因 = 测试用裸 `LocalDate.now()`（CI runner 的 JVM 默认时区 = UTC）取「今天」，而生产按 +08 业务日算 ⇒ UTC 16:00–24:00（北京 00:00–08:00）两侧差一天。**只改测试**（5 条断言 + 三个类注入 BusinessClock），不动任何被测语义；顺手把这一类固化（实例判据 + 类级守卫 + 存量台账只许缩短）。取号 MC-022：main 上 MC-001~MC-021 已占用。 ｜ tags: ci, time, flaky, business-clock, test-only
+
+### MC-023. 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化） 🔵
+```
+你: 只改 deploy/swas/nginx.conf（或 docker-compose*.yml）的提交合并后，必须有一次部署把它应用到线上；把 paths 改回去、或把对账面窄化成不覆盖 nginx.conf 的形态时，必须有东西变红
+期望: direct_reply
+数据: 端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交
+数据: 应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用
+数据: 类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）
+数据: 红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）
+数据: 另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径
+数据: 读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）
+跳过: [backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -3698,7 +3782,7 @@
 数据: **缺值不写（硬约束 1）**：用户没填 ⇒ 该键**不出现**，不写空串 / `0` / `false` 占位（下游会把它们当成真值）；空串 / 纯空白字符串 / `0` / `NaN` / 非数值一律不写。
 数据: **显式「否」是真值**：`isShaped=false` / `hasPattern=false` **必须写**（不得当成「未填」丢弃）—— 与上一条是同一枚硬币的两面，两条一起才钉住「缺值」与「假值」的区别。
 数据: **键名 camelCase（§4.5）**：`buildCraftSpec` 产出的键与订单/快照层、Java 侧逐字一致。
-数据: **枚举逐字 = 库侧**（错一个字下游取不到路线）：部位 = 布帘/纱帘/帘头；工艺 = 韩褶/打孔/四爪钩/穿杆/平幔（**2026-09-19 起工艺不再由本卡片录入** —— 它由勾选的加工项的 `craft_hint` **派生**后照旧写 `craft` 键，值域不变；`四爪钩` 在重建后的加工项目录里暂缺 ⇒ 页面不可达，归属见关联 #4365 阶段 2）；加工类型 = 定高买宽/定宽买高；打开方式 = 单开(1)/双开(2)/三开(3)/四开(4)（含三开 = #4387 判据 1）；款式 = 单色/拼色；特殊选项 19 项逐字等于真值源 §1 清单且**不得残留旧写法**（选项名是 join key，与库侧差一个字 ⇒ 静默失效，issue #4389）。
+数据: **枚举逐字 = 库侧**（错一个字下游取不到路线）：部位 = 布帘/纱帘/帘头；工艺 = 韩褶/打孔/穿杆/平幔（**2026-09-19 起工艺不再由本卡片录入** —— 它由勾选的加工项的 `craft_hint` **派生**后照旧写 `craft` 键；**2026-09-27 起值域收窄为 4 个**：`四爪钩` 是**加工项/配件**、不是工艺 ⇒ 按用户裁定「移除四爪钩这个场景」移出枚举（issue #4365），其三条工艺规则由 `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删）；加工类型 = 定高买宽/定宽买高；打开方式 = 单开(1)/双开(2)/三开(3)/四开(4)（含三开 = #4387 判据 1）；款式 = 单色/拼色；特殊选项 19 项逐字等于真值源 §1 清单且**不得残留旧写法**（选项名是 join key，与库侧差一个字 ⇒ 静默失效，issue #4389）。
 数据: **录入控件 → 回调是确定性行为**：本卡片渲染 **加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花（+ 花距）** 五个录入位（⚠️ **2026-09-21 改判（issue #4874）**：「**褶距**」录入位随「移除订单工艺规格中的褶距字段」退场，替换位 = **用料公式** chips）；⚠️ **2026-09-19 起「工艺」「是否定型」两个控件已移除**（用户裁定「工艺规格中的 工艺、定型 直接通过加工项来勾选，其他保留」）—— 它们的真值改由**加工项派生**：`craft` ← 选中加工项的 `craft_hint`、`isShaped` ← 「定型」加工项是否勾选（目录里没有该加工项 ⇒ 键不落库，与旧「未指定」档同语义）；这两条等价断言落在 `tests/unit/pages/orders-new.test.tsx`。其余不变：选「双开」⇒ `openCount` 是**数字** 2（不是字符串）；选「三开」⇒ 数字 3；花距输入框只在「是否对花 = 是」时出现；特殊选项默认收起但**收起 ≠ 隐藏已选事实**（显示「已选 N 项」摘要），展开后 19 项齐全。**对花保留在本卡片**：它是**算料输入**（定宽买高时每幅 +1 个花距，`curtain_calc.py`），且 ERP 91 项加工费名单里 **0 行**含对花。
 数据: **默认档常量与算料引擎的同步守卫**（issue #4420，同族 #4393）：前端默认档 / 算料常量**逐值读** `backend/ai-agent-service/app/tools/curtain_calc.py` 源文件比对，漂移即红 —— 前端自己写一份算料常量而库侧改了不跟 ⇒ **静默漂移**（页面显示的用料与加工单不一致，且没有任何东西变红）。判据取**值级**比对（读真值源，不抄现值），不是「与源码等值」的形态判据。⚠️ **2026-09-21 改判（issue #4874）**：默认档由「加工类型定高买宽 / 款式单色 / **褶距 0.125**」三条改为「加工类型定高买宽 / 款式单色 / **用料公式 `pleat`（韩褶公式·褶数法）**」两条 + 「算料档位落在**配置里真实存在的键**上」；`DEFAULT_PLEAT_SPACING` 常量随字段**整体删除**（不是留着不写）。
 数据: **用料公式 + 算料档位（issue #4874，2026-09-21 新增判据）**：①「用料公式」chips 的**值域** = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`（`pleat` / `fullness`）、**文案** = `CRAFT_CALC_FORMULA_LABELS`（韩褶公式（褶数法）/ 褶倍数公式（倍数法））—— **唯一一份**，工艺配置页的「兜底用料公式」下拉**复用同一张表**（`routings/page.tsx` 不再自带副本；原副本逐字相同但**无守卫**，issue #4878 独立复核销账）；② 生效公式 = 商家显式选 ⇒ **工艺推导**（`CRAFT_CALC_FORMULA_BY_CRAFT` 的有守卫副本）⇒ 算料配置 `default_formula` ⇒ 常量 `pleat`（`effectiveCraftCalcFormula`，与引擎的「显式 > 推导表 > 兜底」**同序**）；③ 选 `pleat` ⇒ 展示**自动算出的褶数**（试算响应 `pleat_count`，无结果写 `—`、**不编数**）、选 `fullness` ⇒ 展示**档位 chips**（值域 = 算料配置 `tiers` 的**键**、文案 = `tiers[key].label`；**显示的是生效值** `craftTier ?? defaultCraftCalcTier(config)` 而非「一个都不选中」—— issue #4878 独立复核）；④ 档位缺省必须落在**算料配置里真实存在的档位键**上（`standard` 在则用它、否则取首个键，配置读不到才回落常量）；⑤ 两个键**都落库**：`formula` / `craftTier` 进 `processingInfo`（缺值不写；`craftTier` 同时作为算料请求的 `craft_tier`），并**同 PR 补进加工单快照白名单** `ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS`（否则「加工单能看出按哪档算料」是半截迁移）；⑥ 算料配置**未加载** ⇒ 显式提示（`craft-calc-config-missing`）且**不阻断录入**（不静默按缺省走）。承载测试：`frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx`、`frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx`、`frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts`。
@@ -3715,7 +3799,7 @@
 数据: **判据 2·改宽 ⇒ 重新试算并更新「用料米数」**（防抖后）；**判据 3·手改「用料米数」⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。⚠️ 措辞同步（issue #4598）：同上，指帘行米数输入框（label 现为「用料米数」），断言强度不变。红证（实现前）：手改后被试算静默覆盖回公式值。
 数据: **判据 4·试算失败 ⇒ 行内显式提示，「用料米数」保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。
 数据: **判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。
-数据: **判据 6·工艺 ⇒ 公式 / 悬挂方式（issue #4527 改判：原判据把「打孔」列为不发请求 = 过期断言、给的是假信号）**：打孔 ⇒ **照常发请求**，且 `formula='fullness'` + `mounting='eyelet'`（倍数法，默认 2 倍）；韩褶 ⇒ `formula='pleat'` + `mounting='s_hook'`；**未指定工艺 ⇒ 默认韩褶公式**（`pleat` + `s_hook`）；**未登记工艺（四爪钩 / 穿杆 / 平幔）⇒ 不发请求**（`craftCalcParamsOf` 返回 `null` —— 这些工艺无自动算料口径，后端答不出）。依据 = `frontend/admin-web/src/lib/craft-calc-request.ts` 的 `CALC_CRAFTS`（`{'韩褶','打孔',''}`）/ `CRAFT_CALC_FORMULA_BY_CRAFT` / `CRAFT_CALC_MOUNTING_BY_CRAFT`。红证：把打孔改回「不发请求」的旧口径 ⇒ `craft-calc-request.test.ts` 的「#4527 打孔 ⇒ 必须发请求且走倍数法」与 `orders-new-craft-calc.test.tsx` 的打孔用例（勾加工项后 `craft='打孔'` / `mounting='eyelet'` / `formula='fullness'`）同时红。
+数据: **判据 6·工艺 ⇒ 公式 / 悬挂方式（issue #4527 改判：原判据把「打孔」列为不发请求 = 过期断言、给的是假信号）**：打孔 ⇒ **照常发请求**，且 `formula='fullness'` + `mounting='eyelet'`（倍数法，默认 2 倍）；韩褶 ⇒ `formula='pleat'` + `mounting='s_hook'`；**未指定工艺 ⇒ 默认韩褶公式**（`pleat` + `s_hook`）；**未登记工艺（穿杆 / 平幔）⇒ 不发请求**（`四爪钩` 自 2026-09-27 起**不是工艺** —— issue #4365，它已在 craft 枚举之外）（`craftCalcParamsOf` 返回 `null` —— 这些工艺无自动算料口径，后端答不出）。依据 = `frontend/admin-web/src/lib/craft-calc-request.ts` 的 `CALC_CRAFTS`（`{'韩褶','打孔',''}`）/ `CRAFT_CALC_FORMULA_BY_CRAFT` / `CRAFT_CALC_MOUNTING_BY_CRAFT`。红证：把打孔改回「不发请求」的旧口径 ⇒ `craft-calc-request.test.ts` 的「#4527 打孔 ⇒ 必须发请求且走倍数法」与 `orders-new-craft-calc.test.tsx` 的打孔用例（勾加工项后 `craft='打孔'` / `mounting='eyelet'` / `formula='fullness'`）同时红。
 数据: **判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。
 数据: **判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。
 数据: **判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。
@@ -3817,7 +3901,7 @@
 数据: **判据 a1·自动触发 + 写回该行「用料米数」**：宽高齐全后**自动**发试算（无需点任何按钮），把后端 `fabric_meters` **写回该行米数输入框**（issue #4598 起其 label = 「用料米数」，旧文案「数量」；断言强度不变）；改尺寸 / 改开数 / **勾选工艺加工项** ⇒ 触发签名（`craftCalcSignature`）变化 ⇒ **自动重发**试算并再次写回。签名只含**入参**（写回 `quantity` 不进签名）⇒ 写回本身不会再触发请求（防请求风暴）。红证：把「勾加工项」移出签名 / 移出 effect 依赖 ⇒ 勾了「打孔」仍用旧口径的米数（`orders-new-craft-calc.test.tsx` 的 `#4527 打孔` 用例红：勾选后未重发、请求数不涨）。
 数据: **判据 a2·来源标注两态 + 手改后不得被静默改回**（真值源 §8「用料必须带来源」）：试算写回 ⇒ 来源 `公式计算`（`METERS_SOURCE_FORMULA`）；商家手改「用料米数」（同 a1 的字段口径）⇒ 来源切 `人工指定`（`METERS_SOURCE_MANUAL`）、行内显示「人工指定」，此后**改尺寸不再重发试算、不得静默改回**；唯一回切通道 = 显式点「恢复按公式计算」（该按钮只在 `人工指定` 态出现）。红证：手改后被试算静默覆盖回公式值（`orders-new-craft-calc.test.tsx` 判据 3 红）；两态被合并成一个真值（判据 9 / `craft-calc-request.test.ts` 的用料来源两态用例红）。
 数据: **判据 b·对花 / 花距进试算（issue #4573，PR #4574 已修代码、此前零用例覆盖）**：`craft.hasPattern === true` ⇒ 请求带 `has_pattern=true`，且花距为正数时带 `pattern_repeat`；**「对花 = 否」/「未指定」⇒ 两个键都不带**（对花为否时留着花距是自相矛盾的输入）；**「对花 = 是」但花距缺失 / 非正数 ⇒ 只带 `has_pattern`、不发明花距**；`has_pattern` / `pattern_repeat` **进触发签名**（改任一项必须重发试算，否则页面留着旧口径的米数）。口径依据 = 算料引擎 `backend/ai-agent-service/app/tools/curtain_calc.py`：**定宽买高**（`window_height + HEM_MARGIN > fabric_width`）时 `每幅长 = 窗高 + 卷边 + 花距`、`总用料 = 幅数 × 每幅长` ⇒ 不传花距会**少算「幅数 × 花距」**（试算米数偏小 = 少收面料钱，`has_pattern` 是该分支的**唯一**开关）；**定高买宽**下走的是按宽买米分支、花距不参与 ⇒ 对花**不改变用料**。红证：把 `has_pattern` / `pattern_repeat` 从 `craftCalcParamsOf` 去掉（= #4573 改前形态）⇒ `craft-calc-request.test.ts` 的「对花 / 花距进算料入参（issue #4573）」4 条全红；把花距也写进「对花 = 否」⇒ 第 2 条红。
-数据: **判据 c·fail-closed 复核（四条；`craftCalcParamsOf` 返回 `null` ⇒ 调用方**不得**发请求）**：① **未登记工艺**（`穿杆` / `平幔` / 四爪钩）⇒ 不发请求（`CALC_CRAFTS` 只放行 `韩褶` / `打孔` / 未指定）；② **缺宽或高** ⇒ 不发请求（**不得**用默认窗宽猜一个米数）；③ 宽 / 高**非正数**（0 与负数）⇒ 不发请求；④ ~~**纱帘不算料**（issue #4521「买多少就是多少」）⇒ 不发请求，且页面**不给**「恢复按公式计算」~~ —— **2026-09-21 该条作废**（issue #4875 用户裁定：「订单中选择**纱帘**时，**用料算法和布帘的用料算法完全一致**，之前给的信息是错误的」）⇒ 本判据由**四条收敛为三条**（① 未登记工艺 ② 缺宽或高 ③ 宽/高非正数），**纱帘与布帘同参同算**（反向断言见 OR-038 判据 A5）。红证：把任一条放行 ⇒ 对应负向断言（`mockCraftCalcPreview` 的调用次数保持 0）红。
+数据: **判据 c·fail-closed 复核（四条；`craftCalcParamsOf` 返回 `null` ⇒ 调用方**不得**发请求）**：① **未登记工艺**（`穿杆` / `平幔`）⇒ 不发请求（`四爪钩` 已不是工艺 —— issue #4365）（`CALC_CRAFTS` 只放行 `韩褶` / `打孔` / 未指定）；② **缺宽或高** ⇒ 不发请求（**不得**用默认窗宽猜一个米数）；③ 宽 / 高**非正数**（0 与负数）⇒ 不发请求；④ ~~**纱帘不算料**（issue #4521「买多少就是多少」）⇒ 不发请求，且页面**不给**「恢复按公式计算」~~ —— **2026-09-21 该条作废**（issue #4875 用户裁定：「订单中选择**纱帘**时，**用料算法和布帘的用料算法完全一致**，之前给的信息是错误的」）⇒ 本判据由**四条收敛为三条**（① 未登记工艺 ② 缺宽或高 ③ 宽/高非正数），**纱帘与布帘同参同算**（反向断言见 OR-038 判据 A5）。红证：把任一条放行 ⇒ 对应负向断言（`mockCraftCalcPreview` 的调用次数保持 0）红。
 数据: **与 OR-036 的分工**：`OR-036` 锚试算接线的**接线形态**（预填、两态、失败不退回估算值、签名去重）；本条锚**自动算料的触发面与口径面**（a 触发/写回/来源、b 对花·花距、c fail-closed 复核）。两条的 traces 有交集（同一批测试文件），但判据不重复。
 数据: **红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；`craftCalcParamsOf` 不带 `has_pattern` / `pattern_repeat` ⇒ 判据 b 红（这正是 #4573 改前的形态）。
 跳过: [backend-contract] 前端写侧契约（admin-web 下单页接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行
@@ -4802,7 +4886,7 @@
 数据: 判据 7·**重复判定按 kind + 触发值 + 动作 + 目标工序**（对齐 DB 唯一索引 `uk_production_route_rules_tenant_trigger_operation`）⇒ 同一条 craft 规则重复建 ⇒ **409**（不是撞索引变 500）。证据：ProductionRoutingCommandServiceOptionCreateTest「duplicateCraftRuleIsConflict」
 数据: 判据 8·**端到端：订单实例化真的插了那道工序**（建库成功 ≠ 规则生效 —— 触发键/动作/目标工序/锚点在实例化路径各有一处口径）。craft「罗马帘」+ 规则「插 定型 after 三边」⇒ 实例序列里 `定型-布` **紧跟 `布三边`** 且**恰好一次**（规则是**取代**语义：先移除序列里已有的该工序再按锚点插入）；craft 不匹配 ⇒ 序列逐字回到基线。证据：ProcessingOrderServiceTest「craftRuleInsertsConditionalOperationOnInstantiation」
 数据: 判据 9·**前端入口 + 取值域同源**（`GET /api/admin/production/route-rule-options` ⇒ `{crafts, processing_items, positions}`；🔴 **2026-09-21 改判（issue #4962）**：响应**新增 `positions` 键** = 部位闭词表 —— 前端「什么时候 ▸ 部位」的取值**从这里取**，**不得**硬编码成三值/四值字面量）：**入口已改判到工序抽屉的「适用条件」**（🔴 **2026-09-25 改判（issue #4650 阶段 1，随 issue #4369 收口）**：独立规则表与其创建入口 `route-rules-new` / 弹窗**整块退场**（`route-rules` / `route-rules-body` / `route-rules-total` / `route-rules-new` / `route-rule-create-modal` 一族 testid 一律 `toBeNull()`）⇒ 条件改为在**工序抽屉**里「添加条件」呈现与编辑；后端端点**一字未动**（`GET/POST/DELETE /route-rules` 与 `GET /route-rule-options` 保留，抽屉复用**同一份**写面、**不新造第二套**））；触发值**按类型从对应词表取**（craft / processing_item / **position** 是**下拉**，选项逐字来自后端；option 可新建 ⇒ 输入框 + 既有选项名候选）；**只有特殊选项**显示「对客单价（元/套）」（可空 = 未定价）；动作切「移除」⇒ 锚点字段消失；目标工序 / 插入锚点复用主线同一份**逻辑工序名**取值域（`GET /operation-positions` 的行键，**不拼变体名**）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「⑱-①~⑱-⑥」+ **「⑱′-①~⑱′-⑤」（#4962 新增组）** + ㉗组（#4650 阶段 1：独立表与 `route-rules-new` 一族一律 `toBeNull()`、条件改由抽屉承载）+ ProductionRoutingReadControllerTest「routeRuleOptionsReturnsTriggerVocabulary」（**红证**：改前 `route-rules-new` 不存在 ⇒ `Unable to find an element by: [data-testid="route-rules-new"]`，实测 —— ⚠️ 该 testid 随 #4650 阶段 1 已整块退场、这条红证**不可复现**（历史留痕）；**现行红证** = 把独立规则表或入口加回 ⇒ `frontend/admin-web/tests/unit/pages/production-routings.test.tsx` 的㉗组 `toBeNull()` 断言红；**#4962 红证**：改前 `condition-kind-position` 不存在 ⇒ `Unable to find an accessible element with the role "radio" and name "部位"`，实测）
-数据: 判据 11·🔴 **部位维（issue #4962 加回）—— 生效 / 不生效 / 空值三态**（本条改判**只加不删**，既有判据 1~10 一字未动）：26 条规则种子里**恰好一条**带 `position`（`韩褶 → insert 上车布` = `'布帘'`）；`ProcessingOrderService.buildRoute` / `insertConditionalOperations` 按 `rule.getPosition()` **逐字匹配当前实例化部位**筛选（真值源 `backend/ai-agent-service/app/production/routing.py::_rule_position_matches` **同款同序同判据**）⇒ ① 布帘×韩褶 **有** `上车布-布`、纱帘×韩褶 **没有** `上车布-纱`（**改前实测**：两者**都**有 —— 筛选不存在 ⇒ 规则对所有部位都生效）；② **空 `position` = 不限部位**（反向护栏：`四爪钩 → insert 上车布` 的 `position` 为空 ⇒ 两帘种**都**生效，判据不得把空值一起筛掉）；③ 分叉面**只有**这一条 ⇒ 其余工艺在帘种间逻辑序列逐字相同（#4937 的「部位无关」在**未限定**的规则上照旧成立）。排除在**触发类型分派之后** ⇒ 未知/未实现触发类型照旧 **422 显式失败**（**不静默跳过**，「规则落库但永不生效」是明令要失败的形态）。三源同值由 `tests/unit_ci_workflows/test_production_catalog_seed.py::test_route_rules_converge_across_three_sources` + `test_rule_positions_are_restored_in_every_terminal_source` 钉（真值源 ↔ V71 字面量 ↔ `docs/sql/schema.sql` 终态；迁移链终态 = `V103` 清空 + **`V108__restore_route_rule_positions.sql`** 写回 ⇒ 净效果恒等）。证据：ProductionRouteParityTest「新判据（#4962）：带 position 的规则只在**逐字匹配**的部位生效；空 position = 不限」`positionLimitedRuleFiresOnlyOnItsOwnPosition` + 注入式自证「抹掉 position ⇒ 纱帘×韩褶 多出 上车布」`droppingThePositionLimitLeaksClothOnlyOperationsIntoSheerRoute` + 「规则的 position 重新承重」`rulePositionFiltersAgain` + 真值源 tests/test_production/test_route_model_v2.py「部位限定规则只在自己部位生效」`test_position_limited_rule_fires_only_on_its_own_position`（**红证**：把 origin/main 的 routing.py 换回来实测 **10 条红**，含 `纱帘×韩褶 带上了 上车布`）+ tests/unit_ci_workflows/test_restore_route_rule_positions_migration.py（V108 真库两遍幂等 + V109 放开 trigger_kind 的 CHECK）
+数据: 判据 11·🔴 **部位维（issue #4962 加回）—— 生效 / 不生效 / 空值三态**（本条改判**只加不删**，既有判据 1~10 一字未动）：活跃规则种子（23 条 = 工艺 7 + 特殊选项 16；原 26 条，`四爪钩` 三条随 issue #4365 退场）里**恰好一条**带 `position`（`韩褶 → insert 上车布` = `'布帘'`）；`ProcessingOrderService.buildRoute` / `insertConditionalOperations` 按 `rule.getPosition()` **逐字匹配当前实例化部位**筛选（真值源 `backend/ai-agent-service/app/production/routing.py::_rule_position_matches` **同款同序同判据**）⇒ ① 布帘×韩褶 **有** `上车布-布`、纱帘×韩褶 **没有** `上车布-纱`（**改前实测**：两者**都**有 —— 筛选不存在 ⇒ 规则对所有部位都生效）；② **空 `position` = 不限部位**（反向护栏：`打孔 → insert 打孔` 的 `position` 为空 ⇒ 两帘种**都**生效，判据不得把空值一起筛掉；该反向护栏原用 `四爪钩 → insert 上车布`，随 issue #4365 退场后改用 `打孔`）；③ 分叉面**只有**这一条 ⇒ 其余工艺在帘种间逻辑序列逐字相同（#4937 的「部位无关」在**未限定**的规则上照旧成立）。排除在**触发类型分派之后** ⇒ 未知/未实现触发类型照旧 **422 显式失败**（**不静默跳过**，「规则落库但永不生效」是明令要失败的形态）。三源同值由 `tests/unit_ci_workflows/test_production_catalog_seed.py::test_route_rules_converge_across_three_sources` + `test_rule_positions_are_restored_in_every_terminal_source` 钉（真值源 ↔ V71 字面量 ↔ `docs/sql/schema.sql` 终态；迁移链终态 = `V103` 清空 + **`V108__restore_route_rule_positions.sql`** 写回 ⇒ 净效果恒等）。证据：ProductionRouteParityTest「新判据（#4962）：带 position 的规则只在**逐字匹配**的部位生效；空 position = 不限」`positionLimitedRuleFiresOnlyOnItsOwnPosition` + 注入式自证「抹掉 position ⇒ 纱帘×韩褶 多出 上车布」`droppingThePositionLimitLeaksClothOnlyOperationsIntoSheerRoute` + 「规则的 position 重新承重」`rulePositionFiltersAgain` + 真值源 tests/test_production/test_route_model_v2.py「部位限定规则只在自己部位生效」`test_position_limited_rule_fires_only_on_its_own_position`（**红证**：把 origin/main 的 routing.py 换回来实测 **10 条红**，含 `纱帘×韩褶 带上了 上车布`）+ tests/unit_ci_workflows/test_restore_route_rule_positions_migration.py（V108 真库两遍幂等 + V109 放开 trigger_kind 的 CHECK）
 数据: 判据 12·**部位值非法 ⇒ 422 + 可行动理由**（`POST /route-rules` 的 `position` 键与 `trigger_kind='position'` 的 `trigger_value` **同一份**闭词表判据）：写一个不在词表里的部位 ⇒ **422** 且理由**点名闭词表全表**（「这条规则对**任何**订单都不生效 —— 商家以为限定住了，实际是黑洞」）；`trigger_kind='position'` 时 `position` 与 `trigger_value` 不一致 ⇒ **422**（不静默取其一）；省略/空 `position` = **不限部位**（**不**渲染成某个默认部位）。证据：ProductionRoutingCommandServiceOptionCreateTest「positionRuleMirrorsTriggerValueIntoPositionColumn」「positionTriggerValueOutsideVocabularyIsRejected」「positionAndTriggerValueMismatchIsRejected」
 数据: 判据 10·**本地预检 + 后端 422 逐条就地展示**：未选触发值 / 未选目标工序 ⇒ 就地理由 + **不发请求**；后端 422 ⇒ `error.details[].message` **逐条**就地展示，且**不刷新、不改页面数据**（静默写回 = 商家以为建好了、订单侧其实没生效）；建完 `load()` 刷新 ⇒ 新规则立刻出现在表里。证据：production-routings.test.tsx「⑱-⑤」「⑱-⑥」
 数据: **边界（如实登记）**：① 本单**不新增创建端点**（只通用化既有 `POST /route-rules`）；② 新增一个**只读**端点 `GET /route-rule-options`（工艺词表此前**没有任何读端点**，而「触发值按类型从对应词表取、不手输」需要它）—— 这是对「不新增端点」的最小偏离，已在 PR 描述显式登记；③ **不动**规则表结构、**不动**主线选择器、**不动** `routings/page.tsx` 里 #4613（常驻展开）/ #4615（页头入口）涉及的按钮与外壳（#4618 已合入，本单只在其之上新增入口与弹框）。
@@ -7425,13 +7509,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：525（活跃 126，跳过 399）
-- tier 分布：smoke 12 / normal 480 / adversarial 31
+- 用例总数：531（活跃 126，跳过 405）
+- tier 分布：smoke 12 / normal 486 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：19
+- B 端小程序域：24
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -7441,7 +7525,7 @@
 - 财务对账域：4
 - 人事域：10
 - 知识问答域：7
-- 杂项域：22
+- 杂项域：23
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7490,6 +7574,7 @@
 - MC-020: 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
+- MC-023: 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

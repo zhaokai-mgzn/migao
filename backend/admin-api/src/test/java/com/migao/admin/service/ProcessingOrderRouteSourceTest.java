@@ -193,7 +193,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     /**
-     * 路线库桩（**新结构**，P2b / issue #4459）：默认路线模板 + 规则 26 行 + 部位价目 + 工序库。
+     * 路线库桩（**新结构**，P2b / issue #4459）：默认路线模板 + 规则 23 行（issue #4365 起）+ 部位价目 + 工序库。
      *
      * <p>与旧桩的差别：旧桩把 9 条「{@code (部位×工艺)} 展开快照」直接塞给 {@code findRouting}；
      * 新桩只给**输入**，展开由生产代码做（{@code ProcessingOrderService.buildRoute}）。</p>

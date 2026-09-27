@@ -194,6 +194,8 @@ describe('OrderCraftFields', () => {
   // 加工项来勾选**，其他保留」）：修复前这两个 radiogroup 存在（`name="工艺"` / `name="是否定型"`）
   // ⇒ 本判据必红。搬走后它们由**加工项**承载（页面侧 `craftFromItems` / 加工项「定型」勾选态）
   // ⇒ 本组件再渲染它们 = 与加工项派生出的第二份口径打架。
+  // issue #4365（2026-09-27 起 `四爪钩` **不再是工艺**）**不改**本判据：它今天更不该出现
+  // （连枚举都不在）⇒ 负向断言**保留**（删掉才是降级）。
   it('#4566 **不再有**「工艺」与「是否定型」控件（红证：修复前两个 radiogroup 存在）', () => {
     render(<Harness />)
     expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()

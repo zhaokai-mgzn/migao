@@ -2044,7 +2044,7 @@ export default function NewOrderPage() {
   // ===== 自动特征判定（issue #4976 包 2b：判定移到服务端）=====
   //
   // 与上面的试算 effect **同形态**（防抖 + 取消 + 只按入参签名触发），但**入参不同**：
-  // 试算受 `CALC_CRAFTS` 门控（四爪钩/穿杆/平幔 不发），判定**每一行都发**。
+  // 试算受 `CALC_CRAFTS` 门控（穿杆/平幔 不发；存量单的 `四爪钩` 同理），判定**每一行都发**。
   const autoFeatureSignature = useMemo(
     () =>
       lineItems

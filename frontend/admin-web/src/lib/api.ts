@@ -325,7 +325,8 @@ export interface CraftCalcParams {
   formula?: string
   /**
    * 安装工艺（用户 2026-09-19 追加裁定「韩褶用韩褶公式算布料，打孔按倍数法算布料」）：
-   * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
+   * 韩褶/打孔/穿杆/平幔（issue #4365 起**不含** `四爪钩` —— 它是加工项/配件，不是工艺）。
+   * **公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
    */
   craft?: string
   /**
@@ -497,8 +498,8 @@ export const autoFeaturesApi = {
   /**
    * 自动特征判定（**不落库、不算用料**）—— issue #4976 包 2b，用户裁定 B「判定移到服务端」。
    *
-   * ⚠️ 与 `craftCalcApi` **分开**是有意的：算料试算对**四爪钩 / 穿杆 / 平幔**没有口径
-   * （那三类工艺不发试算请求），而自动特征是**每一行**都要判的 —— 挂在试算上会让那些行
+   * ⚠️ 与 `craftCalcApi` **分开**是有意的：算料试算对**无自动算料口径**的工艺（穿杆 / 平幔，
+   * 存量单的 `四爪钩` 同理）**不发请求**，而自动特征是**每一行**都要判的 —— 挂在试算上会让那些行
    * **丢特征** ⇒ 加工费组合键少一项 ⇒ 匹配不到组合价。
    */
   preview: (params: AutoFeaturesParams) =>
@@ -561,8 +562,8 @@ export const doorWidthPlanApi = {
    * 门幅规则（**只读**：不算钱、不落库）—— issue #5043 包 2b。
    *
    * ⚠️ 与 `craftCalcApi` **分开**是有意的：规则要在**发试算请求之前**用（靠它决定选哪个 SKU/门幅），
-   * 而试算请求本身要带门幅 ⇒ 鸡生蛋；且 **四爪钩 / 穿杆 / 平幔** 不发试算请求
-   * （用户 2026-09-21 裁定：这三类工艺**不影响用料和门幅**）⇒ 规则面不能挂在试算上。
+   * 而试算请求本身要带门幅 ⇒ 鸡生蛋；且**无自动算料口径**的工艺（穿杆 / 平幔；存量单 `四爪钩` 同理）
+   * 不发试算请求（用户 2026-09-21 裁定：这类工艺**不影响用料和门幅**）⇒ 规则面不能挂在试算上。
    */
   preview: (params: DoorWidthPlanParams) =>
     request.post<ApiResponse<DoorWidthPlanResult>>('/api/admin/orders/door-width-plan', params),

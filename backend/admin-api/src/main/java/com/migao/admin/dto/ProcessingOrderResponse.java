@@ -117,7 +117,7 @@ public class ProcessingOrderResponse {
 
         /** 部位/帘种（`布帘` / `纱帘` / `帘头`，与工序库 `production_routings.curtain_type` 同枚举）。 */
         private Object curtainType;
-        /** 安装工艺（`韩褶` / `打孔` / `四爪钩` / `穿杆` / `平幔`）。 */
+        /** 安装工艺（`韩褶` / `打孔` / `穿杆` / `平幔`；`四爪钩` 是**加工项/配件**、不是工艺 —— issue #4365 起不再进合法值域，存量值仍原样透传）。 */
         private Object craft;
         /** 加工类型（`定高买宽` / `定宽买高`）。 */
         private Object cuttingMode;

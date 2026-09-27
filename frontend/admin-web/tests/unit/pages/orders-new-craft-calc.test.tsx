@@ -313,9 +313,10 @@ describe('下单页算料试算接线（#4434）', () => {
   it('判据 7：无自动算料口径的工艺（穿杆）⇒ 不发请求（后端答不出）', async () => {
     // ⚠️ #4566：工艺从加工项派生 ⇒ 本判据改用 V83 目录里的「穿杆」（`craftHint='穿杆'`，
     // `curtain_calc` 无该工艺的自动算料口径）。
-    // 原判据用「四爪钩」——它**不在** V83 加工项目录里（是配件，不是打褶方式；归属 #4365 阶段 2）
-    // ⇒ 下单页已不可达（已知取舍）。`isAutoCalcUnavailable('四爪钩')` 的**纯函数**判据仍保留在
-    // `craft-calc-request.test.ts`（口径本身没丢，只是页面入口随裁定退场）。
+    // 原判据用「四爪钩」——它**不是工艺**（是配件 / 加工项），issue #4365（2026-09-27 用户裁定
+    // 「移除四爪钩这个场景」）已把它移出工艺枚举 ⇒ 下单页不可达（不是「阶段 2 待办」）。
+    // `isAutoCalcUnavailable('四爪钩')` 的**纯函数**判据仍保留在
+    // `craft-calc-request.test.ts`（存量单的回显 / fail-closed 口径没丢，只是页面入口随裁定退场）。
     mockGetProcessingItems.mockResolvedValue({
       data: {
         data: {

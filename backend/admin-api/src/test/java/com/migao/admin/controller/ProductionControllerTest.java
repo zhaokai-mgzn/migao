@@ -1024,7 +1024,7 @@ class ProductionControllerTest {
             sort++;
         }
         // P2b（issue #4459）：消费路径读**新结构** ⇒ 桩也要装新结构
-        // （模板 + 规则 26 行 + 部位价目 + 工序库），展开由生产代码做。
+        // （模板 + 规则 23 行（issue #4365 起）+ 部位价目 + 工序库），展开由生产代码做。
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
                 RoutingModelFixture.defaultTemplate(TENANT)));
         when(productionRouteRuleMapper.selectList(any())).thenReturn(
