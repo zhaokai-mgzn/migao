@@ -25,8 +25,8 @@
  * `printInboundLabel` 全部从 `utils/inbound/**` 复用（含画布工厂与其他页面共用的 `labelPageKit`）
  * —— 同族页面各写一套必然分叉，判据见 `tests/inbound-reprint-code-space.test.ts` 的 G3。
  */
-import { useCallback, useMemo, useState } from 'react'
-import Taro from '@tarojs/taro'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import {
@@ -58,6 +58,11 @@ import {
   REPRINT_WORKER_LOGIN_REQUIRED,
   WORKER_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
+import {
+  classifyLandingCode,
+  landingCodeFromParams,
+  type LandingCode,
+} from '../../../utils/inbound/deepLink'
 import { getInboundLabel, recordInboundLabelPrint } from '../../../services/workerInboundService'
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
@@ -134,6 +139,39 @@ export default function WorkerReprintPage() {
       setBusy(false)
     }
   }, [])
+
+  // ── 落地页深链 / 小程序页面参数（issue #5052 实现 PR；设计 §5.4）──
+  // `/b/?code=<短码>` 由 `src/app.tsx`（h5 落地）搬进来，或由**小程序页面参数**带进来 ——
+  // 两侧都落在 `router.params.code`，**共用下面这一处判定**（不各写一套分流）。
+  const landing = useMemo<LandingCode>(
+    () => landingCodeFromParams((Taro.getCurrentInstance() as any)?.router?.params),
+    [],
+  )
+  const landingConsumed = useRef(false)
+
+  /**
+   * 消费深链（**至多一次**）。
+   *
+   * 🔴 未登录 ⇒ **不消费**（码就地留着，登录回来再消费）：直接查会拿 401，
+   * 而工人看到的是"读取失败"，与"码不存在 / 已撤销"混在一起 = 把身份问题说成业务问题。
+   * 登录回来（`navigateBack` 重挂 / `useDidShow`）时 `hasWorkerSession()` 变真 ⇒ 自动接着消费。
+   */
+  const consumeLanding = useCallback(() => {
+    if (landingConsumed.current || !landing.present) return
+    if (!hasWorkerSession()) return
+    landingConsumed.current = true
+    const next = classifyLandingCode(landing.raw)
+    setReading(next)
+    void lookup(next)
+  }, [landing, lookup])
+
+  useEffect(() => {
+    consumeLanding()
+  }, [consumeLanding])
+  // weapp 的页面栈返回时组件可能不重挂 ⇒ 再挂一次 `useDidShow`（h5 侧是 no-op 语义）
+  useDidShow(() => {
+    consumeLanding()
+  })
 
   const onRecognize = useCallback(async () => {
     if (!photo) {

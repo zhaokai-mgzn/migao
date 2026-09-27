@@ -743,10 +743,14 @@ class TestFollowUpRedProofs:
     """注入式红证：把坏实现 / 旧形态注回 ⇒ 上述判据**必须**红（不会红的判据 = 空断言）。"""
 
     def test_red_proof_reconcile_widened_to_ignore_missing_follow_up(self):
-        """把「flaky 且 open 却没 follow_up」这条对账判据**摘掉**（= 为了变绿而放宽本意）⇒ 必红。"""
+        """把「flaky 且 open 却没 follow_up」这条对账判据**摘掉**（= 为了变绿而放宽本意）⇒ 必红。
+
+        ⚠️ 注入锚跟着实现走（#5687 给该条件加了「`suspect-window-deterministic` 也要求跟踪单」⇒
+        条件本身扩成两行）——**锚失配会让这条红证变成空断言**，故锚必须与当前实现逐字一致。
+        """
         mutated = REAL_SCRIPT_SOURCE.replace(
-            'if entry.get("kind") == "flaky" and entry.get("status") != "fixed" '
-            'and not entry.get("follow_up"):',
+            'if entry.get("kind") in ("flaky", SUSPECT_WINDOW_KIND) and '
+            'entry.get("status") != "fixed" and not entry.get("follow_up"):',
             "if False:", 1)
         assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
         widened = _load_mutant(mutated, "m_flaky_widened")

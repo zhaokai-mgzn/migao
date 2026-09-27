@@ -400,6 +400,200 @@ class TestReadSideCompat:
         assert produced.isdisjoint(FL.LEGACY_ENTRY_KINDS)
 
 
+# ── ⑤ #5687：跨时间桶的「重跑通过」不再是充分条件（含**本会话真实读数**的复算） ──────
+#
+# 病灶（实测，别再重新猜）：`decide` 旧口径逐字是
+#     `if rerun_result == "success" and "flaky" in kinds: action, kind = "mark_flaky", "flaky"`
+# ⇒ **只凭「重跑通过」**就消红。而窗口型确定性缺陷（测试侧裸 `LocalDate.now()` 取 UTC 日 vs
+# 生产按 +08 算业务日 ⇒ **UTC 16:00–24:00 每天必红**）的重跑**恰好落到窗口外就绿**
+# ⇒ PR 的红被消掉，缺陷仍在 main 上、明天同一时段再红一次（可无限循环）。
+#
+# 时间桶 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（粒度与边界的**理由**写在
+# `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方；覆盖面登记见
+# `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`）。
+
+#: 本会话的**真实读数**（run `36280962072`，`admin-api unit tests`）：首次失败落在窗口内
+#: （UTC 22:12 = 北京 06:12 ⇒ ❌），重跑落在窗口外（UTC 00:05 = 北京 08:05 ⇒ ✅）。
+REAL_SESSION_FAILURE_UTC = "2026-09-26T22:12:00Z"
+REAL_SESSION_RERUN_UTC = "2026-09-27T00:05:00Z"
+
+
+def make_timed_job(name="admin-api unit tests", conclusion="failure",
+                   failed_step="Run unit tests", completed_at=None):
+    """带**时刻**的 job 夹具（形状与 GitHub REST `/jobs` 同源：job 级 + 每步都有 `completed_at`）。
+
+    ⚠️ `completed_at` 挂在 job 上**也**挂在每一步上 —— 自动重跑只重跑**失败**的 job，
+    故重跑绿那一次的 job 是**全绿**的（没有失败步骤）：`job_timestamp` 若只认失败步骤，
+    「重跑时刻」就会恒为空（本单实测踩过这一形态）。
+    """
+    steps = [{"name": "Set up job", "conclusion": "success", "completed_at": completed_at}]
+    steps.append({"name": failed_step if conclusion == "failure" else "Run unit tests",
+                  "conclusion": conclusion, "completed_at": completed_at})
+    return {"name": name, "conclusion": conclusion, "steps": steps,
+            "completed_at": completed_at}
+
+
+def rerun_green_bundle(failure_utc, rerun_utc, *, run_id=36280962072, job="admin-api unit tests"):
+    return bundle(
+        run=make_run(name="PR Check", attempt=2, conclusion="success", run_id=run_id),
+        jobs=[make_timed_job(name=job, conclusion="success", completed_at=rerun_utc)],
+        prior_jobs=[make_timed_job(name=job, conclusion="failure", completed_at=failure_utc)],
+    )
+
+
+class TestRerunGreenTimeBucket:
+    def test_real_session_readings_are_recomputed_as_suspect(self):
+        """🔴 **验收第 5 条（本会话实例可复算）**：喂真实读数「失败 22:12Z / 重跑 00:05Z」
+        ⇒ 必须产出 `suspect-window-deterministic`（**不是** `flaky`）。
+
+        红证：把时间桶判据去掉（`classify_rerun_green` 直接 `return "flaky", …`）⇒ 本用例必红。
+        """
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        entry = decision["entries"][0]
+        assert decision["action"] == "mark_suspect", decision
+        assert decision["kind"] == FL.SUSPECT_WINDOW_KIND, decision
+        assert entry["kind"] == FL.SUSPECT_WINDOW_KIND, entry
+        # 判定所依据的两个时刻必须**逐字**进条目（可离线复算，不必信 `kind` 这个结论）
+        assert entry["failed_at"] == REAL_SESSION_FAILURE_UTC, entry
+        assert entry["rerun_at"] == REAL_SESSION_RERUN_UTC, entry
+        assert entry["rerun_bucket_verdict"] is False, entry
+        # 失败落在 UTC 16:00–24:00（+08 已是次日）—— 这正是实测窗口
+        assert entry["failed_bucket"]["biz_date"] == "2026-09-27", entry["failed_bucket"]
+        assert entry["failed_bucket"]["utc_date"] == "2026-09-26", entry["failed_bucket"]
+
+    def test_same_bucket_still_marks_flaky(self):
+        """🔴 **验收第 2 条（安全边界）**：**同一时间桶内**的失败→重跑通过 **仍然** 判 flaky。
+
+        红证：把真 flaky 也判成 suspect（如 `classify_rerun_green` 恒返回新类）⇒ 本用例必红
+        —— 那是「把真 flaky 一起关掉」，本单明令不许。
+        """
+        decision = FL.decide(rerun_green_bundle("2026-09-26T22:12:00Z", "2026-09-26T22:12:08Z"))
+        assert decision["action"] == "mark_flaky", decision
+        assert decision["kind"] == "flaky", decision
+        assert decision["entries"][0]["rerun_bucket_verdict"] is True, decision["entries"][0]
+
+    def test_crossing_only_the_business_day_is_enough(self):
+        """**同 UTC 日、只跨 +08 业务日**（北京 15:59 → 16:01 两分钟）也必须降级。
+
+        为什么单独钉它：这正是**本单实测的窗口口径**（+08 业务日与 UTC 日分叉的那 8 小时）
+        —— 只比 UTC 日期会**漏**掉它。
+        """
+        decision = FL.decide(rerun_green_bundle("2026-09-26T07:59:00Z", "2026-09-26T08:01:00Z"))
+        assert decision["kind"] == FL.SUSPECT_WINDOW_KIND, decision
+
+    def test_missing_timestamps_keep_the_old_verdict_and_say_so(self):
+        """**证据不足**层：两个时刻都取不到（历史 fixture / 调用点）⇒ 沿用旧口径判 `flaky`，
+        但 `reason` 必须**逐字声明**「证据不足」（否则读的人会把「没数」读成「已排除窗口型缺陷」）。"""
+        decision = FL.decide(rerun_green_bundle(None, None))
+        entry = decision["entries"][0]
+        assert decision["kind"] == "flaky", decision
+        assert entry["rerun_bucket_verdict"] is None, entry
+        assert entry["failed_at"] == "" and entry["rerun_at"] == "", entry
+        assert "证据不足" in entry["reason"], entry["reason"]
+
+    def test_infra_first_failure_is_not_relabelled_as_suspect(self):
+        """首次失败落在「装依赖」步骤 ⇒ 仍走 `infra_suspect`（环境问题优先于时间桶判定）。
+
+        判据顺序是判据的一部分：`job_is_infra` 问的是「**这一次的失败**是不是环境问题」，
+        而「重跑通过」这条路径上被记的 job 就是**首次失败**那个 ⇒ 必须先判它。
+        """
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        assert decision["kind"] == FL.SUSPECT_WINDOW_KIND  # 前提：默认夹具不是 infra
+        infra = bundle(
+            run=make_run(name="PR Check", attempt=2, conclusion="success", run_id=1),
+            jobs=[make_timed_job(conclusion="success", completed_at=REAL_SESSION_RERUN_UTC)],
+            prior_jobs=[make_timed_job(conclusion="failure", failed_step="Install dependencies",
+                                       completed_at=REAL_SESSION_FAILURE_UTC)])
+        got = FL.decide(infra)
+        assert got["action"] == "record_infra", got
+        assert got["kind"] == "infra_suspect", got
+
+    def test_suspect_entry_without_follow_up_is_a_violation(self):
+        """🔴 **验收第 3 条**：判为 `suspect-window-deterministic` 时**必须**落 `follow_up`。
+
+        红证：允许空 `follow_up`（摘掉 `ledger_violations` 里那条）⇒ 本用例必红。
+        """
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        entry = decision["entries"][0]
+        assert entry["follow_up"] is None, "CI 生成时为 null，由 `triage-follow-up` 注入"
+        bad = FL.ledger_violations(ledger_with(entry))
+        assert any("强制跟踪" in b for b in bad), bad
+        entry["follow_up"] = 5687
+        assert FL.ledger_violations(ledger_with(entry)) == []
+
+    def test_tracking_issue_is_injected_defensively(self, tmp_path):
+        """跟踪单注入是**fail-closed** 的：条目不合法 / 已被人工填了别的号 ⇒ 拒绝。"""
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        entries = decision["entries"]
+        for bad_issue in (0, -1, None, "5687"):
+            try:
+                FL.apply_tracking_issue(entries, bad_issue)
+            except FL.FollowUpError as exc:
+                # ⚠️ 这里**不能**只写 `pass`（弱断言形态，Growth Gate 的 `--check-weak` 会把它
+                # 记成一处弱断言 ⇒ 存量锚点只许非增 ⇒ 卡合并）。断言错误文本 = 触业务数据的断言。
+                assert "正整数" in str(exc), (bad_issue, exc)
+            else:  # pragma: no cover
+                raise AssertionError(f"issue={bad_issue!r} 应被拒绝（本命令不替它编单号）")
+        assert FL.apply_tracking_issue(entries, 5687)[0]["after"] == 5687
+        assert FL.apply_tracking_issue(entries, 5687) == [], "重复注入同一单号 ⇒ 幂等（无改动）"
+        try:
+            FL.apply_tracking_issue(entries, 9999)
+        except FL.FollowUpError as exc:
+            assert "拒绝覆盖" in str(exc), exc
+        else:  # pragma: no cover
+            raise AssertionError("已填的人工值被覆盖 ⇒ 比不回填更坏")
+
+    def test_triage_follow_up_cli_is_fail_closed_and_idempotent(self, tmp_path, monkeypatch):
+        """`triage-follow-up` 的 CLI 三态：无该类条目 ⇒ 零动作退 0；条目文件读不到 ⇒ 退 1；
+        有该类条目 ⇒ 注入单号并**原地重写**（幂等）。"""
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        path = tmp_path / "entries.json"
+        # ① 空列表 ⇒ 零动作（不建单、不写文件）
+        path.write_text("[]", encoding="utf-8")
+        assert FL.main(["triage-follow-up", "--repo", "o/r", "--entries", str(path)]) == 0
+        # ② 读不到 ⇒ fail-closed
+        assert FL.main(["triage-follow-up", "--repo", "o/r",
+                        "--entries", str(tmp_path / "nope.json")]) == 1
+        # ③ 有该类条目 ⇒ 注入（桩掉 gh：先查 open 单【空】⇒ 新建，返回 #5687）
+        calls = []
+        monkeypatch.setattr(FL, "_gh_api",
+                            lambda path, **kw: calls.append((path, kw)) or (
+                                {"number": 5687} if kw.get("method") == "POST" else []))
+        path.write_text(json.dumps(decision["entries"], ensure_ascii=False), encoding="utf-8")
+        assert FL.main(["triage-follow-up", "--repo", "o/r", "--entries", str(path)]) == 0
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert saved[0]["follow_up"] == 5687, saved[0]
+        assert FL.ledger_violations(ledger_with(saved[0])) == []
+        assert any("marker" not in str(c) and "issues" in c[0] for c in calls), calls
+
+    def test_reconcile_treats_the_new_kind_like_an_unregistered_fix_path(self):
+        """`reconcile` 的新事件态：该类条目 open 且没跟踪单 ⇒ 与 `flaky` **同判**（欠账）。"""
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        ledger = ledger_with(decision["entries"][0])
+        rows = FL.reconcile(ledger)["new_events"]
+        assert len(rows) == 1, rows
+        assert FL.SUSPECT_WINDOW_KIND in rows[0]["why"], rows[0]
+        ledger["entries"][0]["follow_up"] = 5687
+        assert FL.reconcile(ledger)["new_events"] == []
+
+    def test_comment_renders_a_dedicated_section(self):
+        """可见面：该类必须有**独占**的评论段（否则跨桶疑似在唯一的人读面上又变回「重跑才绿」）。
+
+        判据三件（缺任何一件，「判据对了但可见面又在消红」就没人拦）：
+          ① marker 里的 `action`/`kind` 是**新类**（读的人一眼看出不是 flaky）；
+          ② 逐字写出「**不是定罪**」（免得被读成自动定罪）；
+          ③ 把**跟踪单号**印出来 + 明说「不许把本次的红当成已澄清」。
+        """
+        decision = FL.decide(rerun_green_bundle(REAL_SESSION_FAILURE_UTC, REAL_SESSION_RERUN_UTC))
+        decision["entries"][0]["follow_up"] = 5687
+        body = FL.render_comment(decision)
+        assert body.startswith(f"<!-- flaky-triage: action=mark_suspect "
+                               f"kind={FL.SUSPECT_WINDOW_KIND}"), body[:200]
+        assert "不是定罪" in body, body
+        assert "#5687" in body, body
+        assert "不许" in body and "已澄清" in body, body
+
+
 # ── ④ CLI 面：fail-closed（不许静默无操作）+ happy path ─────────────────────────
 
 

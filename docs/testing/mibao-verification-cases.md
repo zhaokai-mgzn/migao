@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（24 case）
+## B 端小程序域（26 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -918,6 +918,35 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5640 功能②）：本单最值得固化的一类 —— 「同族页面各写一套流程，第二套必然分叉」，落成语料内省式元守卫（未复用即红）。 ｜ tags: bmini, inbound, reprint, reuse-guard, platform
+
+### BM-025. 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红） 🔵
+```
+你: 工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
+数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
+数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
+数据: 判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）
+数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
+数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
+跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+
+### BM-026. 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流 🔵
+```
+你: 工人扫米高入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）
+期望: direct_reply
+数据: 判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红
+数据: 判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红
+数据: 判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是米高的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红
+数据: 判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）
+数据: 判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）
+跳过: [backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-label-flow.short-code-and-public-entry
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.2/§5.4/§7.1）：把「服务端 302 了、而参数没有任何人读」这条链路接通并钉住（落地页 code 参数 → 码空间分流 → 补打页）。 ｜ tags: bmini, inbound, deeplink, code-space, landing-page
 
 ## 分类域（3 case）
 
@@ -2500,7 +2529,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（10 case）
+## 人事域（11 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -2642,6 +2671,22 @@
 真值: ai-chat.permission-layers, employee-role.write-require-admin
 溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create) or role_manage` 改判为存活的只读路径 `role_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。**退役理由（逐字）**：本用例原为 HR-009（拒绝半）的「**有能力时必须执行**」正向对照（允许半）；写能力下线后**对照前提消失**（持什么权限都不再能创建员工）⇒ 退役。HR-009 已同批改判为「如实说明 + 后台路径」。`db_verify[employee]`（李四落库）在新事实下不可能满足，按「不删历史」保留原样并已在原位标注（退役后不执行；un-retire 时必须同步改判）。 ｜ tags: permission, create, positive-control
 
+### HR-011. 回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683） 🔵
+```
+你: 历史账号（无 user_roles 行 / 无 users.permissions 快照）以 operator / customer_service / sales / finance 岗位登录后打开侧边栏
+期望: direct_reply
+数据: 判据 1·🔴 **回退不得比种子更宽**（逐角色码穷举）：`回退 − 种子` 非空 ⇒ 无条件红，且**不提供登记出口**（绕过岗位权限页的真放宽）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的 problems_role_default_parity ① 段。红证（实测）：往回退里加一个种子没有的码 ⇒ 具名红。
+数据: 判据 2·🔴 **「整角色没有 case」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：种子里出现的每个角色码在回退里都必须有显式 case；没有的必须具名登记（理由 + 显形条件 + owner），台账只许缩短。执行点 = 同 ① 段（`missing` 一半 + ROLE_FALLBACK_DIVERGENCES 台账，issue #5683 收口后**整表销账、上限 0**）。红证（实测）：`_drop_fallback_case` 删掉整段 case ⇒ **指名**红（报「回退 switch 里根本没有 case … ⇒ 空表 ⇒ 该角色在回退路径上零权限」）；登记了却已补齐 ⇒ 陈旧红；含对照组。
+数据: 判据 3·🔴 **零 403 受害者**：持某菜单节点码的岗位必须同时持该页第一屏的每个读端点码 ⇒ 「菜单看得见、点进去 403」不成立。执行点 = 同文件的 problems_menu_read_parity 第 ④ 段（逐岗位复算，种子 ∪ 回退）。红证（实测）：把补上的 processing:view 从回退收回 + 把该路径的 victims_ack 置空 ⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。
+数据: 判据 4·**回退路径的行为面可判**（不靠读代码推断）：直接调真实服务的 getEffectivePermissionCodesForRoleCode(role, null)（= 纯回退路径）与 getUserPermissions（无 user_roles 的历史账号路径），逐码点名。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java（operator / 客服 / 销售 / 财务各 containsExactlyInAnyOrder；另有「五个种子岗位码在回退里都非空」一条）。
+数据: 判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。本次共 15 个码（含 operator / product_manager 的 4 个 + 客服/销售/财务三岗的 11 个新增键）。执行点 = 判据 14 ② 段 + AUTHORIZATION_CENSUS。红证（实测）：删掉 census 里任一条 ⇒ 具名红。
+数据: 判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 ROLE_PERMISSIONS 对五个种子岗位取 seed 口径、对两个历史角色取回退口径；补码后 seeded_role_gaps(...) == [] 与 fallback_role_gaps(...) == [] 同时成立。
+数据: 判据 7·**不动任何已存授予行**：修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子矩阵、不改任何 V 迁移。
+跳过: [backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14 + 工具层镜像判据 backend/ai-agent-service/tests/test_tool_permission_codes.py），无 LLM 环节，不进入 agent-eval 冒烟
+```
+真值: employee-role.fallback-seed-parity, employee-role.snapshot-permissions
+溯源: 2026-09-27 新增（issue #5683）：回退路径与种子矩阵之间的差异此前**三处形态**：① operator 少 4 个码（已登记在 ai-agent 的镜像绊线里）；② 客服/销售/财务**没有 case ⇒ 空表 ⇒ 历史账号零权限**（#5246 的注释只点名了 finance 与 customer_service，且主题是「写码」⇒ 该面属**未覆盖**，sales 更从未被点名）。人类 2026-09-27 两次裁定：先「补 operator/product_manager + 同批改写那条绊线由真子集放宽为子集」，再「把三岗回退也补齐」。本用例把「回退 ⊆ 种子 + 差异具名登记、只许缩短 + 授权变更 census」立成常驻判据（判据 14），台账现为**空表、上限 0**。 ｜ tags: role, permission, fallback, rbac
+
 ## 知识问答域（7 case）
 
 ### KN-001. 小布知识问答 - 面料问题先检索本店知识卡片（query 必填） 🟢
@@ -2708,7 +2753,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（23 case）
+## 杂项域（24 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2992,6 +3037,21 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed
+
+### MC-024. 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红） 🔵
+```
+你: 一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红
+期望: direct_reply
+数据: 时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读
+数据: 判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）
+数据: 🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）
+数据: **强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**
+数据: 类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）
+数据: workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红
+数据: 红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）
+跳过: [backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-27 新增（issue #5687；用户逐字裁定 A = 给「重跑通过」加限制）：窗口型确定性缺陷被重跑掩盖 ⇒ 缺陷留在 main、明天同时段再红（可无限循环）。落码 = 时间桶判据（实例）+ 强制跟踪（机械落单）+ 类级 meta-guard（消红路径未登记即红 + 台账只许缩短 + 覆盖面显式登记）+ workflow 第三种动作 `mark_suspect` + 七条注入式红证（每条注明命中分支，含「只改注释」对照）。取号 MC-024：main 上 MC-001~MC-023 已占用（MC-022 = 同族时区窗口的实例修复、MC-023 = 部署触发面）。 ｜ tags: ci, flaky-triage, time-bucket, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -7509,13 +7569,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：531（活跃 126，跳过 405）
-- tier 分布：smoke 12 / normal 486 / adversarial 31
+- 用例总数：534（活跃 126，跳过 408）
+- tier 分布：smoke 12 / normal 489 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：24
+- B 端小程序域：26
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -7523,9 +7583,9 @@
 - 数据域：20
 - 防御域：23
 - 财务对账域：4
-- 人事域：10
+- 人事域：11
 - 知识问答域：7
-- 杂项域：23
+- 杂项域：24
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50
@@ -7575,6 +7635,7 @@
 - MC-021: B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动
 - MC-022: 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）
 - MC-023: 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）
+- MC-024: 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

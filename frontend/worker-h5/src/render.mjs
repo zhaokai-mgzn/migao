@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, BM-025
 //
 // 工人端 H5 报工页 —— 状态机 + 一屏渲染（设计 #4716 §4.2 两断点 / §5.1 一屏 / §1.5 旧码降级）。
 //
@@ -181,6 +181,36 @@ export function doneNotice(receipt) {
   return '已领活'
 }
 
+/**
+ * 工人面两页的入口（issue #5052 实现 PR；设计 §5.4 路线 (a)）。
+ *
+ * 治的形态：两个功能（拍照入库 / 拍照补打标签）**页面都做完了、都合并了**，而工人
+ * **一步也走不到** —— 没有入口的功能按验收口径（交付物可达性三问之②）**不算交付**。
+ *
+ * 🔴 为什么入口在这里：`/w/` 是工人在车间**手里唯一常开的那一页**（他一天扫几十次
+ * 洗水码报工）；把入口挂在他眼前的那一页，才叫动线。（另一条候选「入库另配短码入口」
+ * 需要新造服务端短链面 + 再印一张纸，本单边界明令不新造后端端点 ⇒ 选 (a)。）
+ *
+ * 🔴 跨应用**静态链接**（不是框架路由）：`/w/` 与 `/b/` 同源（同一台 nginx、同一个静态根）
+ * ⇒ 用相对路径、**不写死域名**。目标是 bmini-app 的页面路由，Taro h5 默认 hash 路由 ⇒ `/b/#<路由>`。
+ * 本文件保持**零依赖**（裁定 13「不重写 worker-h5」）：一行 `<a href>` + 一条 CSS，不引任何包。
+ *
+ * ⚠️ 登录态**不跨应用**：`/w/` 的工人 session 在 `localStorage['migao:worker-h5:session']`，
+ * bmini 侧在 `worker_session_id` —— 两个键、两条链路（各自服务端 `worker_sessions` 行）。
+ * 因此工人到 `/b/` 通常**还没有** bmini 侧的工人 session ⇒ 页面显式给「去登录工人身份」
+ * （工号 + PIN），登录后回来继续。**刻意不打通**：让一个页面替另一个页面写身份键 =
+ * 把两条链路的真值源合成一个，而两侧的闲置登出 / 切换工人语义并不相同。
+ *
+ * 判据 = `frontend/bmini-app/tests/page-entry-reachability.test.ts`（把这里的路由段与
+ * bmini 的路由常量**逐值比对**：改一边不改另一边 ⇒ 红）。
+ */
+function workerEntriesBar() {
+  return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
+    <a class="wh5-entry" href="/b/#/pages/worker/inbound/index">拍照入库</a>
+    <a class="wh5-entry" href="/b/#/pages/worker/reprint/index">补打入库标签</a>
+  </nav>`
+}
+
 /** 页头：**服务端**带来的「当前工人」+ 一步切换 + 登出（共用 PAD 三条，设计 §3.1~§3.3）。 */
 function header(state) {
   if (!state.worker) return ''
@@ -190,7 +220,7 @@ function header(state) {
     <span class="wh5-worker" id="wh5-current-worker">当前工人：${name}${no ? `（工号 ${no}）` : ''}</span>
     <button id="wh5-switch" class="wh5-ghost" type="button">切换</button>
     <button id="wh5-logout" class="wh5-ghost" type="button">登出</button>
-  </header>`
+  </header>${workerEntriesBar()}`
 }
 
 function loginView(state) {

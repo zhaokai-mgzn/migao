@@ -39,6 +39,23 @@ html, body {
   margin-bottom: 12px;
 }
 .wh5-worker { flex: 1 1 auto; font-weight: 600; font-size: 16px; }
+/* ---- 工人面两页的入口（issue #5052 实现 PR）：页头下常驻一行 ----
+   工人一天扫几十次码，入口必须在他眼前那一页；触控目标与页头按钮同口径（≥44px）。 */
+.wh5-entries { display: flex; gap: 8px; margin: 0 0 12px; }
+.wh5-entry {
+  flex: 1 1 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--wh5-brand);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
 .wh5-ghost {
   min-height: 44px;
   padding: 0 14px;

@@ -1347,6 +1347,42 @@ _CASE_BM_024 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-025 [NORMAL] 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红）（源: cases/bmini.yml）──
+_CASE_BM_025 = EvalCase(
+    id='BM-025',
+    legacy_id='',
+    title='工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）', '判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）', '判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）', '判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）', '判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）', '判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）'],
+    skip_reason='[backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'entry-reachability', 'meta-guard', 'worker-surface'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-026 [NORMAL] 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流（源: cases/bmini.yml）──
+_CASE_BM_026 = EvalCase(
+    id='BM-026',
+    legacy_id='',
+    title='入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人扫米高入库标签上的码（`https://app.migaozn.com/i/<短码>`）→ 服务端 302 到 `/b/?code=<短码>&tenant_id=…` → h5 启动器读到该参数并按码空间分流；小程序侧走页面参数（`router.params.code`）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **参数真的被读到**（修复前全仓 `params.code`/`query.code`/`searchParams` 零命中 ⇒ 工人扫了自家标签却停在商家首页，且没有任何东西会变红）：`/b/?code=<合法入库短码>` ⇒ 启动器 `Taro.redirectTo` 到补打页并把短码**原样**带走（不归一化，归一化在服务端 `WorkerShortLinkService.normalize`）。红证：删掉 app.tsx 里那两行消费逻辑 ⇒ frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx 的 D5 判红', '判据 2·🔴 **按码空间分流（复用 `codeSpace.ts`，不新造判定）**：`/s/<短码>` 洗水码 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**（页面测：`getInboundLabel` 调用数 = 0）。红证：不看码空间直接取路径段（`treatAsInboundShortCode` 形态）⇒ 判红', "判据 3·🔴 **失败方向不静默**：别域名 / 纯文本 ⇒ 「这不是米高的标签」；**出现但为空**（`/b/?code=`）⇒ 「8 位短码」提示（`present` 与 `raw === ''` 必须可区分）。红证：读不到就 `return`（静默当没有参数）或把两者合并 ⇒ 判红", '判据 4·**两侧都给得出路径**：h5 读 URL query（`landingCodeFromSearch`），小程序读页面参数（`landingCodeFromParams`）—— 共用同一个下游页面与同一处码空间判定；小程序侧的形态差异登记在 `WORKER_SURFACE_PLATFORM_GAPS`（h5 专有形态 ⇒ 显式登记，不留白）', '判据 5·**商家首页不抢路由**：URL 上带 `?code=` 时，商家首页不再排「未登录 ⇒ 600ms 后去商家登录页」的定时器（该定时器在页面卸载后照样触发，会把工人从他自己的落地页踢走，而**没有任何东西会变红**）。红证：删掉那道闸 ⇒ 行为面判据红（工人被送到 `/pages/auth/login/index`）'],
+    skip_reason='[backend-contract] 确定性深链/分流判据（jest: frontend/bmini-app/tests/inbound-landing-deeplink.test.tsx + tests/worker-reprint-page.test.tsx 的 R1~R4），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'deeplink', 'code-space', 'landing-page'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -3593,6 +3629,24 @@ _CASE_HR_010 = EvalCase(
     precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:create'}],
 )
 
+# ── HR-011 [NORMAL] 回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683）（源: cases/hr.yml）──
+_CASE_HR_011 = EvalCase(
+    id='HR-011',
+    legacy_id='',
+    title='回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['历史账号（无 user_roles 行 / 无 users.permissions 快照）以 operator / customer_service / sales / finance 岗位登录后打开侧边栏'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **回退不得比种子更宽**（逐角色码穷举）：`回退 − 种子` 非空 ⇒ 无条件红，且**不提供登记出口**（绕过岗位权限页的真放宽）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的 problems_role_default_parity ① 段。红证（实测）：往回退里加一个种子没有的码 ⇒ 具名红。', '判据 2·🔴 **「整角色没有 case」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：种子里出现的每个角色码在回退里都必须有显式 case；没有的必须具名登记（理由 + 显形条件 + owner），台账只许缩短。执行点 = 同 ① 段（`missing` 一半 + ROLE_FALLBACK_DIVERGENCES 台账，issue #5683 收口后**整表销账、上限 0**）。红证（实测）：`_drop_fallback_case` 删掉整段 case ⇒ **指名**红（报「回退 switch 里根本没有 case … ⇒ 空表 ⇒ 该角色在回退路径上零权限」）；登记了却已补齐 ⇒ 陈旧红；含对照组。', '判据 3·🔴 **零 403 受害者**：持某菜单节点码的岗位必须同时持该页第一屏的每个读端点码 ⇒ 「菜单看得见、点进去 403」不成立。执行点 = 同文件的 problems_menu_read_parity 第 ④ 段（逐岗位复算，种子 ∪ 回退）。红证（实测）：把补上的 processing:view 从回退收回 + 把该路径的 victims_ack 置空 ⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。', '判据 4·**回退路径的行为面可判**（不靠读代码推断）：直接调真实服务的 getEffectivePermissionCodesForRoleCode(role, null)（= 纯回退路径）与 getUserPermissions（无 user_roles 的历史账号路径），逐码点名。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java（operator / 客服 / 销售 / 财务各 containsExactlyInAnyOrder；另有「五个种子岗位码在回退里都非空」一条）。', '判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。本次共 15 个码（含 operator / product_manager 的 4 个 + 客服/销售/财务三岗的 11 个新增键）。执行点 = 判据 14 ② 段 + AUTHORIZATION_CENSUS。红证（实测）：删掉 census 里任一条 ⇒ 具名红。', '判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 ROLE_PERMISSIONS 对五个种子岗位取 seed 口径、对两个历史角色取回退口径；补码后 seeded_role_gaps(...) == [] 与 fallback_role_gaps(...) == [] 同时成立。', '判据 7·**不动任何已存授予行**：修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子矩阵、不改任何 V 迁移。'],
+    skip_reason='[backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14 + 工具层镜像判据 backend/ai-agent-service/tests/test_tool_permission_codes.py），无 LLM 环节，不进入 agent-eval 冒烟',
+    tags=['role', 'permission', 'fallback', 'rbac'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
 _CASE_KN_001 = EvalCase(
     id='KN-001',
@@ -4127,6 +4181,24 @@ _CASE_MC_023 = EvalCase(
     data_checks=['端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交', '应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用', '类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）', '红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）', '另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径', '读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）'],
     skip_reason='[backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'deploy', 'trigger-surface', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-024 [NORMAL] 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）（源: cases/misc.yml）──
+_CASE_MC_024 = EvalCase(
+    id='MC-024',
+    legacy_id='',
+    title='「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读', '判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）', '🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）', '**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**', '类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）', 'workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红', '红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）'],
+    skip_reason='[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-triage', 'time-bucket', 'red-proof', 'fail-closed'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -10096,6 +10168,8 @@ ALL_CASES = (
     _CASE_BM_022,
     _CASE_BM_023,
     _CASE_BM_024,
+    _CASE_BM_025,
+    _CASE_BM_026,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -10213,6 +10287,7 @@ ALL_CASES = (
     _CASE_HR_008,
     _CASE_HR_009,
     _CASE_HR_010,
+    _CASE_HR_011,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
@@ -10243,6 +10318,7 @@ ALL_CASES = (
     _CASE_MC_021,
     _CASE_MC_022,
     _CASE_MC_023,
+    _CASE_MC_024,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -716,6 +716,11 @@ public class RegistrationService {
         // 岗位默认权限（role_permissions 预置）：
         // 管理员=全部；客服=会话+客户+订单查看+售后/知识库查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
+        // ⚠️ 本段是**新租户**的岗位默认权限（seed 口径）。它与回退路径
+        // （`backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java` 的
+        // `getPermissionCodesForRole`）之间的**逐值差异**必须具名登记 + 只许缩短，判据见
+        // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 14
+        // （另有 `backend/ai-agent-service/tests/test_tool_permission_codes.py` 的镜像口径判据守着工具层）。
         // issue #5246：客服与运营加授两个**读**码（after_sales:view / knowledge:view）——
         // 两者本就是售后工单与知识库的日常使用方，此前因读写同码只能靠 order:refund / knowledge:manage
         // 才能看到菜单（= 顺带拿到写权）⇒ 本次给读码即恢复「看得见」，写权不再被动外溢。
