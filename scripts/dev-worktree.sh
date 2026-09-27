@@ -252,7 +252,7 @@ discard_preset_snapshot() {
   #    全是**已提交**内容 ⇒ 直接放行（HEAD 与 origin/main 的差由 rebase 重放并保留）。
   #    这一步**没有放宽任何丢弃语义**：此处跳过的 `checkout HEAD --` 本来就是 no-op。
   if ! preset_has_uncommitted_drift "$wt"; then
-    echo "ℹ️  `.agent-presets/**` 相对 HEAD 无未提交漂移 ⇒ 跳过「丢弃快照」（分支内容是**已提交**的，rebase 会保留）"
+    echo "ℹ️  \`.agent-presets/**\` 相对 HEAD 无未提交漂移 ⇒ 跳过「丢弃快照」（分支内容是**已提交**的，rebase 会保留）"
     return 0
   fi
   if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then

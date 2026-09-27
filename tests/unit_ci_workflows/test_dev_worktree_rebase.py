@@ -270,7 +270,8 @@ def test_rebase_at_zero_behind_keeps_committed_preset_edits(preset_pr):
 
     红证（改坏 ⇒ 必红）：把 `scripts/dev-worktree.sh` 的零漂移守卫改成 `if false` ⇒ rc≠0 且
     输出含「拒绝自动丢弃」（见 `test_mutation_dropping_the_zero_drift_guard_brings_the_false_block_back`）；
-    把刷新守卫改成 `if false` ⇒ 工作区被 origin/main 覆盖、`status` 出现 `M `（见 M2）。
+    把刷新守卫改成 `if false` ⇒ 工作区被 origin/main 覆盖、`status` 出现 `M `（见 M2）；
+    把放行提示里的反引号**改回未转义** ⇒ 提示正文被命令替换吃掉、stderr 出现 `is a directory`（见本函数末两条）。
     """
     repo, env, wt = preset_pr
     before = _preset_readings(wt)
@@ -282,6 +283,20 @@ def test_rebase_at_zero_behind_keeps_committed_preset_edits(preset_pr):
     )
     assert "拒绝自动丢弃" not in (out.stdout + out.stderr), "走了「拒绝自动丢弃」分支 ⇒ #5707 的假阻塞仍在"
     assert "✅ rebase 完成" in out.stdout
+
+    # 🔴 本批实测：**放行提示自己把主语吃掉了**（#5719 新增的那句）—— 提示正文在**双引号里**，
+    #    却带了**未转义**的反引号 ⇒ bash 当**命令替换**执行 ⇒ ① stderr 打出
+    #    `<脚本>: line N: .agent-presets/<...>: is a directory`（读输出的人会以为预设检查**失败**了）；
+    #    ② 提示里的主语路径被替换成空 ⇒ 「跳过的是**哪个路径**」当场消失。
+    #    修法 = 反引号**转义**（与 §23.6「含反引号的文本不走双引号参数」同源）；
+    #    本仓实测普查：`scripts/**/*.sh` 里该形态共 5 处，**只有这 1 处会被执行**（其余 4 处在 Python heredoc 里，惰性）。
+    assert "is a directory" not in (out.stdout + out.stderr), (
+        "提示里的反引号被 bash 当命令替换执行了（stderr 出现 `is a directory`）——"
+        f"读输出的人会以为预设检查失败：\n{out.stdout}\n{out.stderr}"
+    )
+    assert "`.agent-presets/**`" in out.stdout, (
+        f"放行提示没有把它说的**路径**打出来（正文被命令替换吃掉）：\n{out.stdout}"
+    )
 
     after = _preset_readings(wt)
     assert after["head"] == before["head"], "0 behind 时不应改写历史（HEAD 必须原地不动）"
