@@ -115,6 +115,38 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 - **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034；**#4275** 之后 PR 层连**零 LLM 的映射信号**也没有了 —— `agent-behavior-eval.yml` 已整体删除，PR 上**不再有任何自动行为信号**，代价已知并接受）。判定走**单一入口** `post-deploy-eval`（**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删掉最后一条每周一 cron** ⇒ 全仓自动真实 LLM 触发 = **0 条**）；映射能力保留在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，本机可调）。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
+## CI / 台账反复出错点：具名清单（2026-09-27 固化，用户逐字「**如果 ci 或者台账经常出错的点也应该固化下来**」）
+
+**这一节不是劝告**：下面每一条都带 `FM-EN` 记号，**逐条**给出「现状（有无守护）→ 守护是什么 →
+证据」。记号与 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json` 的 `ci_findings` **双向绑定**，
+判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py`：
+
+- **未守护（`state=gap`）条目只许缩短**：条数 ≤ 判据里**冻结**的上限（上限写在判据里，台账改不动它），
+  且每条必须带 `gap_owner` + **显形条件**（`gap_shows_when`，即"无守护时它会长成什么样"）；
+- 🔴 **已修的不重复登记**：`state=guarded` 的条目**只点名判据**（说明它已在别处登记），不新开缺口账；
+- `state=registered` = 有具名台账登记但**未接 CI 门禁**（人工 / 集成环节调用）。
+
+| 记号 | 现状 | 守护 / 登记 | 要点 |
+|---|---|---|---|
+| **FM-E1** | ✅ **已有守护** | `.github/workflows/deploy-reconcile.yml` 的 schedule 对账（4 条腿）；判据 `tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_every_deploy_trigger_path_reaches_its_reconcile_leg` | auto-merge 吞掉 `push`（`GITHUB_TOKEN` 合并的 push **不产生 run**）⇒ 唯一的自动触发面失效；对账由 `schedule` 触发 ⇒ **免疫该抑制** |
+| **FM-E2** | ⚠️ **已登记，未接 CI** | `scripts/stranding-check.sh`（内容级三态 `0/1/3`，`3` 不得当 `0` 读）+ `migao-dev-flow` §2.2 的硬规则（改完全部 commit 再开 PR / 全程 draft） | **auto-merge 抢在 `commit` 之前**合并 ⇒ 改动**搁浅在工作区**（实证：包声称「已随 #5695 合并」而两处文档改动没进 main，补 PR #5698）。**显形条件**：PR ready 后补 commit ⇒ 本地有、`origin/main` 无、且**无 PR 承接**；核法 = 逐文件 `git show origin/main:<path>`（**不是**看 commit 可达性） |
+| **FM-E3** | ✅ **已修（本会话），不重复登记** | 触发面 `deploy-admin-api.yml` 的 `on.push.paths` + 对账面 `deploy-reconcile.yml` 的 pathspec **两处同批**接线；判据 `...::test_config_only_commit_is_judged_as_drift_and_dispatches_a_deploy` | 只改 `deploy/swas/**` 原先**一条部署腿都不触发** ⇒ 改动静默不生效（#5668 的 `/b/`、#5676 的 `/i/` 都只靠人工 dispatch 才生效）。两处是**同一事实的两处投影**，常驻双向比对（`reconcile_trigger_paths_ledger.json` 的存量缺口**只许缩短**） |
+| **FM-E4** | 🔴 **未守护（gap）** | owner = CI 门禁 owner（生成物新鲜度面）；**另一包正在补 main 侧守护**（分支 `ci/main-side-freshness-guard`） | **生成物新鲜度只在 `pull_request` 面** ⇒ main 上先漂移、**下一个无辜 PR 才红**，而红的信息指向那个 PR 的 diff（**归因指向错误的对象**）。今天咬了两次；本页「生成物摘要必须由现取推导」那条判据的边界节里逐字登记了「❌ 不覆盖 `main` 侧」。**显形条件**：`git diff --exit-code` 比较重渲染产物与 main 上的提交版本时不为空 |
+| **FM-E5** | ✅ **已修（#5695），不重复登记** | 时间桶判据（跨桶 ⇒ `suspect-window-deterministic` + **强制跟踪**）+ 类级 meta-guard；判据 `test_rerun_to_clear_paths.py::test_unregistered_clear_path_turns_red` | flaky 分类只凭「重跑通过」⇒ 掩盖**窗口型确定性缺陷**（缺陷留在 main、明天同一时段再红，可无限循环）。**唯一信号**是那个**非 required** 的 `Flaky Ledger Reconcile` 红 —— 它逐字声明「判红不等于阻塞合并」 |
+| **FM-E6** | ⚪ **未固化（转述未获 durable 证据）** | — | 转述里有一条「`burn-down` 与生成物陈旧耦合 ⇒ 报错误导（同一审计两条红、其中一条是次生后果）」，**本机只读复核未找到**可复核读数 ⇒ 按「找不到 durable 证据的 ⇒ 不写进技能」的口径**不入册**；重启条件写在台账 `not_solidified` 的 `NS-1` |
+| **FM-E7** | 🔴→✅ **本单补判据（原先零守护）** | `test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus` | **用例号被抢**：两个并行包各自「取现取最大号 +1」⇒ 双双写成同一个新号；先合的无事，**后合的**把重号带进 main（本会话实测 7 次：UI-061 / UI-064 / MC-022 / MC-023 / BM-019…）。**修法不是「rebase 后再查一次」这句劝告** —— 而是把唯一性变成判据：重号一进 PR 就红（**红在后合的那一个**，正是它需要改号的那一个） |
+| **FM-E8** | 🔴→✅ **本单补判据（原先零守护）** | `test_dev_mode_failure_modes.py::test_migration_versions_are_unique_in_the_live_dir`（**射程 = 活的 `db/migration/`**） | 两包同抢 V132 ⇒ 改名 V133/V134。既有 `test_migration_immutability.py` 只判**文件名**在两个载体目录间不重复 + 已登记文件逐字节冻结，**不判版本号**。**边界**：`migration-archive/` **存量**就有版本号重复（同一 V 号两份、文件名不同）⇒ 把唯一性套到归档上会是存量假红，故**只登记为只许缩短的常量** |
+| **FM-E9** | ✅ **已有守护** | 三张面**各自**已有 fail-closed 判据（本单实测三张面全绿）+ 本页『新增 CI 守卫文件要过的三张登记面』节（作者事前自查清单） | `case_ids` / `same_source_claims` / `guard_scope_ledger` —— 新守卫文件**常同时命中多面**；今天有包为此多烧一轮 CI。判据：`test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria` + `test_guard_scope_declaration.py::test_every_corpus_referencing_module_is_registered` |
+| **FM-E10** | 🔴 **未守护（gap）** | owner = 门禁 owner（`verify-all.sh` 面） | **「未就绪」被当通过**：`report_env()` 在依赖没装好时打 `⏭️ 未就绪`（跳过），而在**合并门禁**上「没跑」会被读成「这项没事」。bmini 一条腿已改**第四态**（`report_strict()`：变更集命中触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；**其余走 `report_env()` 的腿仍是 ⏭️**。**显形条件**：某模块依赖未装而变更集命中它 ⇒ 本地 `gate` 全绿、问题只在 CI 爆（本地绿 / CI 红） |
+| **FM-E11** | ✅ **已有守护** | 内容指纹账本（已登记文件被改 ⇒ `exit 1` **拒绝重生成**）+ `.github/danger_scan.py` 的 `/danger-ack rewrite-migration`（**只有仓库 owner** 的评论算数）；判据 `test_migration_immutability.py::test_registered_migrations_are_byte_identical` | **迁移文件不可改**：改已应用迁移会被按文件名**整份 skip**（CI 绿、功能静默缺失）。⚠️ 连带后果：住在已发布迁移里**注释**中的失效判据**改不了** ⇒ 处置必须是**结构性**的（见 `docs/design/rbac-single-source.md` §1.4 实例 6 与跟踪单 #5699），不是"改注释" |
+| **FM-E12** | ✅ **已有守护** | 建库终态脚本判据（表/列真值）+ 跨源逐键守卫；判据 `test_schema_integrity.py::test_schema_has_expected_tables` | **新建库路径不跑迁移链**：`backend/admin-api/src/main/resources/db/init/schema.sql` 与迁移链是**同一事实的两条路** —— 只改一路会让两种建库方式分叉（两条路的登记见 `docs/wiki/Database.md` 的「建库脚本（唯一）」） |
+| **FM-E13** | ⚠️ **已登记，未接 CI** | `scripts/sync-main.sh` 的**前置拒绝**（本分支与 `origin/main` 都改过受管用例面 ⇒ **拒绝 merge** 并给出 `--rebase`；本单实测命中一次，改用 `--rebase`）+ 「生成物新鲜度校验」 | 工装级反复出错点：**裸 `git merge/rebase origin/main`** vs `./scripts/sync-main.sh`；**生成物不许手改**（要重渲染）；`dev-worktree.sh add` 与「裸 `git worktree add`」**两条路径并存**（集成侧一手读数：本会话每个包都被要求用裸命令 ⇒ 那条路径**被规避**，`add` 路径上的挂死**既未复现也未证伪** —— 按**事实**登记，不写成「某路径挂死」这一**断言**）；**仓库路径含空格** ⇒ 工具抽风（用软链）。**后两条无判据**（台账 `not_solidified` 的 `NS-2` / `NS-3`） |
+| **FM-E14** | 🔴 **未守护（gap）** | owner = 门禁 owner（`verify-all.sh` / worker-h5 腿面） | **`node --test <dir>` 会被读成 1 条失败的假红**（必须用 glob：`node --test <dir>/*.test.mjs`）。今天实测，**未写进任何地方** —— `verify-all.sh` 用的是 glob 写法，但那条纪律本身没有落点。**显形条件**：有人把该腿的参数字面量改成目录形态 ⇒ 该腿报 1 条失败（假红），而**没有任何判据会拦住这次改写** |
+| **FM-E15** | ⚠️ **已登记（本单补判据 + 边界）** | 本单补的两条唯一性判据（用例号 / 活的迁移目录版本号）+ 顺延口径；边界声明 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::CASE_ID_ALLOCATION_BOUNDARY`（**删掉即红**） | **编号分配只看已合并状态**：取号时现取「main 上最大号 + 1」，**看不到在飞分支** ⇒ 两个并行包取到同一个号；先合的无事，**后合的**把重号带进 main。本会话用例号已撞 **7~8 次**（UI-061 / UI-064 / MC-022 / MC-023 / BM-019 / MC-025 / MC-026），迁移号 1 次（V132 两包同抢）。🔴 **本单自己中招**：写侧取 `MC-026`（当时现取最大 = `MC-025`），#5705 合并时已占 `MC-026`/`MC-027` ⇒ 顺延 `MC-028`。**为什么不加强判据**：在飞分支在 CI 的 `actions/checkout` 下**不可见** ⇒ 同一份代码会给出不同读数（判定不确定）；走 API 则引入网络依赖 ⇒ 与「判定方式必须确定」冲突。**显形条件**：main 上已合并占号 且 某个在飞分支同号 |
+
+**计数器（现取）**：`state=gap` 的条目共 **3** 条（`FM-E4` / `FM-E10` / `FM-E14`）—— 这个数**只许缩短**，
+上限冻结在判据 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的常量里，**台账改不动它**。
+
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
 
 | 服务 | 目标 | 技术 |

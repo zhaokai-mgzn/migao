@@ -1,0 +1,586 @@
+{
+  "schema": 1,
+  "refs": [
+    "#5687",
+    "#5052",
+    "#5703",
+    "#5698",
+    "#5689",
+    "#5683",
+    "#5291",
+    "#5001",
+    "#5668",
+    "#5676",
+    "#5695"
+  ],
+  "_what": "「容易犯的问题 / CI 与台账反复出错的点」固化台账：每一条都必须落在**三者之一** —— 判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账。⚠️ 本台账**不产生**纪律，它只登记纪律的**承载体**；纪律正文在 `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §25（清单 A~D）与 `docs/wiki/CI-CD.md` 的『CI / 台账反复出错点』节（清单 E）。",
+  "_judged_by": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py",
+  "_invariants": [
+    "`entries`（清单 A~D，skill 面）：每条的 `id` 必须**逐字出现**在技能的 §25 节里，且 §25 里的 `FM-xN` 记号集合必须**等于**本台账的 id 集合（双向；单向会被『技能里写一条永不判的纪律』与『删台账条目』两个方向绕过）",
+    "`entries` 每条 `kind` ∈ {criterion, action, ledger}：criterion ⇒ `criteria` 非空且每个 `<path>::<symbol>` 可解析（文件在 + symbol 逐字出现）；action ⇒ `action` 非空；ledger ⇒ `ledger_ref` 形如 `<path>::<记号>` 且可解析。**kind 缺失/取值非法 = 这一条只写了劝告 ⇒ 红**",
+    "`entries` 每条至少一条 `evidence`，形态同 `criteria`（机器可核到磁盘）；`refs` 里的 `#NNNN` 是**叙述性引用**，本判据不联网核",
+    "§25 的覆盖面登记子节必须含 `**判别动作行（现取）**：` 行，且该行列出的 id 集合**等于** `kind=action` 的 id 集合（现取；涨跌都红）",
+    "`ci_findings`（清单 E，doc 面）：每条 `id` 必须具名出现在 `docs/wiki/CI-CD.md`；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）",
+    "**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 里，台账改不动它）",
+    "`not_solidified`（本单未固化项）**只许缩短**：条数 ≤ 判据里冻结的上限，每条须有 `reason` + `restart_when`（重启条件）",
+    "**已修的不重复登记**：用户点名『已修的不要重复登记』⇒ `state=guarded` 的条目**只点名判据**（并说明它已在别处登记），不新开缺口账"
+  ],
+  "_boundary": "本台账机械保证的是「每条纪律都有承载体，且这个承载体在磁盘上真实存在」。它**不保证**承载体本身是对的：`criterion` 解析成的是「文件里逐字出现这个名字」，**不是**「该判据真的会为这条纪律变红」（红是那条判据自己的事）。`kind=action` 的条目**靠人执行**，判据只能保证它列在 §25 的边界节里。一条**完全不写 `FM-` 记号**的新纪律（纯散文加进技能）在本台账面内**看不见** —— 这是已知残余，见 §25 的覆盖面登记子节。",
+  "skill": {
+    "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+    "section": "## 25. 判别动作：读数与它声称的对象",
+    "boundary_heading": "### 25.6 覆盖面登记：本清单**覆盖不到**什么"
+  },
+  "doc_surfaces": {
+    "ci": "docs/wiki/CI-CD.md",
+    "dev": "docs/wiki/Development.md"
+  },
+  "entries": [
+    {
+      "id": "FM-A1",
+      "family": "A",
+      "symptom": "把**注释**当成它声称的那个注释读：`StockBatchController` 的类 javadoc 写「权限复用商品域 `product:list`」，被读成「类级 `@RequirePermission`」—— 实为**方法级**注解（类声明上方零命中）。同一处另有「四个读面」实为 7 个 GET 端点。",
+      "action": "grep -n 'RequirePermission' backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java  ⇒ 全部命中都缩进在方法前；类声明行上方 0 命中 ⇒ 结论只能是「方法级」。带条数的反例（「四个读面」）由策展表逐条复核。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_agent_permission_parity.py::test_every_judgement_is_green"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_agent_permission_parity.py::COMMENT_CLAIMS",
+        "backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java"
+      ],
+      "refs": [
+        "docs/design/rbac-single-source.md §1.4 实例④",
+        "#5675"
+      ]
+    },
+    {
+      "id": "FM-A2",
+      "family": "A",
+      "symptom": "把**窄注释**读成**全面声明**：`RoleService` 里 `issue #5291` 那句「**两个域读码**与种子矩阵逐值同步」字面为真（两个码都在），却被读成「整个回退表与种子全面同步」—— 当时 `operator` 还差 4 码。⇒ 两个包据此把错误归因写进了 main 的代码注释。",
+      "action": "读那句注释时先问「它的主语是谁」：`sed -n '/两个域读码/,+3p' backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java`（主语 = 两个域读码）对比同文件上方 javadoc 里判据 14 的穷举口径（主语 = 逐角色码全表）⇒ 两个主语不同 ⇒ 不能互相顶替。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_agent_permission_parity.py::test_role_fallback_divergence_ledger_is_load_bearing"
+      ],
+      "evidence": [
+        "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java::两个域读码",
+        "tests/unit_ci_workflows/test_agent_permission_parity.py::ROLE_FALLBACK_DIVERGENCES"
+      ],
+      "refs": [
+        "docs/design/rbac-single-source.md §1.4 实例①",
+        "#5291",
+        "#5683"
+      ]
+    },
+    {
+      "id": "FM-A3",
+      "family": "A",
+      "symptom": "用**子串匹配**代替**标识符匹配**：判据里的裸 `d_eff` 命中了无关文件名 `declared_effective_registry.json`（`declare` + `d_eff` + `ective`）。",
+      "action": "写任何标识符模式时，两侧加边界并配**正负对照**：`(?<![0-9A-Za-z_])d_eff(?![0-9A-Za-z_])`；负控 = 文件名那一串**不得**命中，正控 = 独立的 `d_eff` 标识符**必须**命中（治误判不许把判据治没）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_join_height_legacy_wording_residual.py::test_negative_control_unrelated_identifier_substring_is_not_flagged"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_join_height_legacy_wording_residual.py::unretired_legacy_hits",
+        "tests/unit_ci_workflows/test_join_height_legacy_sync.py::LEGACY_A_PATTERNS"
+      ],
+      "refs": [
+        "#5683"
+      ]
+    },
+    {
+      "id": "FM-A4",
+      "family": "A",
+      "symptom": "用**非等价计数对象**下结论：想用 `grep -c '^### '` 判「casebook 摘要是否跟上」。现取实测：`^### ` 的条数 = 用例块数 **+1**（那 1 条是 `### 真值缺口用例（truths_ref 为空…）` 这个**非用例标题**）⇒ 直接相减永远差 1 ⇒ 两个计数不是同一个对象。",
+      "action": "python3 -c \"import re,sys;t=open('docs/testing/mibao-verification-cases.md',encoding='utf-8').read();a=len(re.findall(r'^### ',t,re.M));b=len(re.findall(r'^### [A-Z]+-\\\\d+\\\\. ',t,re.M));print('all',a,'blocks',b,'delta',a-b)\"  ⇒ delta 恒为 1（可复算：该 1 条已具名）；读数偏移**不为零但稳定** ⇒ 先具名扣掉那 1 条，再与摘要比。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_casebook_summary_is_derived.py::test_block_count_must_agree_with_the_summary_claim"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_casebook_summary_is_derived.py",
+        "docs/testing/mibao-verification-cases.md::真值缺口用例"
+      ],
+      "refs": [
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-A5",
+      "family": "A",
+      "symptom": "从 `--stat` / 「提交里含该文件」推出「**内容**也对」。该推断**不成立**：本会话有包据 `--stat` 断言「尾块数字也对」，随后在 `#5052` 的更正评论里撤回。",
+      "action": "凡声称「已交付 / 已合并 / 内容正确」，必须给一次**内容级**读数：git show origin/main:<path>（看内容，不看 commit 可达性）；三态工具 bash scripts/stranding-check.sh <PR>（0/1/3，**3 不得当 0 读**）。",
+      "kind": "action",
+      "evidence": [
+        "scripts/stranding-check.sh::STRANDED",
+        "docs/wiki/CI-CD.md::FM-E2"
+      ],
+      "refs": [
+        "#5698",
+        "#5052"
+      ]
+    },
+    {
+      "id": "FM-A6",
+      "family": "A",
+      "symptom": "把 **job 结束时刻**当成**断言执行时刻** ⇒ 把红窗口说反（判成 flaky 的那次重跑，实际落在窗口**外**）。",
+      "action": "读 flaky 台账条目时只看 `failed_at` / `rerun_at` / `failed_bucket` / `rerun_bucket`（判定依据在条目里，可离线复算），不看 run 的收尾时间；三态 `None` = 证据不足，**不得当「跨桶」读**。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py::test_crossing_only_the_business_day_is_enough"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py::test_real_session_readings_are_recomputed_as_suspect",
+        ".github/scripts/flaky_ledger.py::bucket_of"
+      ],
+      "refs": [
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-A7",
+      "family": "A",
+      "symptom": "**报错不具名** ⇒ 归因指向错误的对象：「生成物不同步」这类红把矛头指向无关的下一个 PR（同一审计两条红，一条是次生后果）。",
+      "action": "判红文案必须三件齐：① 具名对象（哪个文件 / 哪一行 / 哪个数）② 差多少（现取 vs 期望，两侧都打出来）③ 一条**可复制**的复算命令。本台账自己遵守这条：每条 `kind=criterion` 都要 `<path>::<symbol>` 可解析，解析不到即红。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::ledger_violations"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::_resolve_anchor",
+        "docs/wiki/CI-CD.md::FM-E4"
+      ],
+      "refs": [
+        "#5052"
+      ]
+    },
+    {
+      "id": "FM-B1",
+      "family": "B",
+      "symptom": "**声明存在 ≠ 可达**：两条工人面路由常量**被声明**、还被判据比对过 `app.config.ts`，却**没有任何跳转用它们** ⇒ 页面在册、可编译、有单测，而工人一步也走不到。",
+      "action": "声称「某页面/入口已交付」时，先答三问（谁发射 / 哪个入口可达 / 有无测试钉住），并跑入口台账判据：cd frontend/bmini-app && npx jest tests/page-entry-reachability.test.ts（L2 未登记即红、L3 登记了没人指向也红、L3b 定义但从未被调用也红、L3c HTML 注释里的锚点不算入口）。",
+      "kind": "criterion",
+      "criteria": [
+        "frontend/bmini-app/tests/page-entry-reachability.test.ts::L3 🔴 红证：把入口换回「只声明」"
+      ],
+      "evidence": [
+        "frontend/bmini-app/src/utils/pageEntries.ts::PAGE_ENTRY_LEDGER",
+        "frontend/bmini-app/tests/page-entry-reachability.test.ts"
+      ],
+      "refs": [
+        "#5052"
+      ]
+    },
+    {
+      "id": "FM-B2",
+      "family": "B",
+      "symptom": "一条发布腿**注册了但从未跑过** ≠ 交付：`/b/` 与 `/w/` 停在旧构建（auto-merge 吞掉 `push` ⇒ 唯一的自动触发面没响）。",
+      "action": "复探线上：curl -sI https://app.migaozn.com/b/ 与 /w/ 的产物哈希 vs 本次构建产物；仓库侧看对账腿有没有兜住：grep -n 'reconcile_one' .github/workflows/deploy-reconcile.yml。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_bmini_h5_hosting.py::test_real_publish_leg_has_no_problems"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_bmini_h5_hosting.py::test_verify_served_is_red_on_broken_landings",
+        ".github/workflows/deploy-reconcile.yml::reconcile_one bmini-h5-hosting"
+      ],
+      "refs": [
+        "#5668",
+        "#5001"
+      ]
+    },
+    {
+      "id": "FM-B3",
+      "family": "B",
+      "symptom": "**文档写了 ≠ 行为正确**：文档说某能力已交付，而它没有发射点、没有可达入口、没有测试钉住。",
+      "action": "按「交付物可达性判据（v1.11）」逐条答：谁发射（哪个文件、哪个分支条件）/ 哪个入口可达（什么话术或路径）/ 有无测试钉住；任一答不出记**未交付**。",
+      "kind": "action",
+      "evidence": [
+        ".agent-presets/migao/skills/migao-acceptance/SKILL.md::交付物可达性判据（v1.11 新增"
+      ],
+      "refs": []
+    },
+    {
+      "id": "FM-B4",
+      "family": "B",
+      "symptom": "**改动搁浅在工作区**：auto-merge 在 `git commit` **之前**就把 PR 合了 ⇒ 包声称「已随某 PR 合并」而改动实际没进 main。",
+      "action": "落地后逐文件内容级核验（同 FM-A5）；判据面的登记见下一条（登记在 CI-CD.md 的 FM-E2，**未接 CI 门禁**）。",
+      "kind": "ledger",
+      "ledger_ref": "docs/wiki/CI-CD.md::FM-E2",
+      "evidence": [
+        "scripts/stranding-check.sh"
+      ],
+      "refs": [
+        "#5698",
+        "#5695"
+      ]
+    },
+    {
+      "id": "FM-C1",
+      "family": "C",
+      "symptom": "**自称红证恒绿**：把被测函数**整体禁用**后，自称红证仍 `✓ passed`，而同文件里的真判据 `✕` —— 那条「红证」是空断言（不会红的断言 = 空断言）。",
+      "action": "每条注入式红证必须给**读数**，不能只写「已注入」：改坏 ⇒ 必须红；说明命中的是**哪个分支**；给「只改注释 / 不改真东西」的**对照读数**（应当不红）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_rerun_to_clear_paths.py::test_guard_has_discriminating_power_in_memory"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_rerun_to_clear_paths.py::test_comment_only_injection_does_not_turn_red"
+      ],
+      "refs": [
+        "#5052",
+        "#5703"
+      ]
+    },
+    {
+      "id": "FM-C2",
+      "family": "C",
+      "symptom": "**改磁盘文件的变异可能不被读到** ⇒ 红证在 CI 上永远绿（现象已定、机制未定：同一测试方法里「变异被读到」时有时无）。",
+      "action": "红证一律**当场在内存里构造坏形态**：拿真文件当基线 → 改内存对象 → 直接喂给判据函数；并额外证明**变异真的被读到了**（断言变异体 ≠ 原文 / 读回内容比对）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_rerun_to_clear_paths.py::test_mutation_harness_really_changes_the_text"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::红证机具的可靠性",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_mutation_harness_really_changes_the_text"
+      ],
+      "refs": [
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-C3",
+      "family": "C",
+      "symptom": "**只改注释**会命中「锚失配」而**不是**目标分支 ⇒ 那条分支其实是空断言（红证打偏：注入了，但打的不是那条判据）。",
+      "action": "每种坏形态都要有**对照读数**：只改注释 ⇒ 不红（证明判据判的是语义，不是「文件变了没有」）。本台账的判据把这条做成常驻自证（check_discriminating_power 的 control_comment_only）。",
+      "kind": "action",
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::check_discriminating_power"
+      ],
+      "refs": [
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-C4",
+      "family": "C",
+      "symptom": "**计数类红证必须改代码**：改注释只命中锚失配，改不出「计数变了」这个分支（拿不出一条真正会红的读数）。",
+      "action": "计数类判据的红证要动**被计数的那个源**（而不是它的说明文字），并给两条读数：改坏后的值与期望值。本台账的判据 8/9（gap 上限 / 未固化上限）就是计数类：红证 = 内存里多加一条 gap ⇒ 报「条数 4 > 上限 3」。",
+      "kind": "action",
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::check_discriminating_power"
+      ],
+      "refs": [
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-D1",
+      "family": "D",
+      "symptom": "**意图是族级的、实现是点名的**：时钟守卫按**事故现场的拼写**枚举禁则 ⇒ 漏掉同族 `OffsetDateTime.now()` / `ZonedDateTime.now()` / `Instant.now()`，而事故现场用的正是漏掉的那个。",
+      "action": "写禁则时先写出「我声称覆盖什么」，再按**族**枚举（不是按「我见过哪个」），并把**覆盖清单本身**做成可判的：裁定 ≡ 实现（裁定为禁的 needle 集合必须等于禁则表）、族级兜底能抓到没预先想到的兄弟拼写。",
+      "kind": "criterion",
+      "criteria": [
+        "backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java::familyRulesSeparateBusinessBasisFromDurationBrackets"
+      ],
+      "evidence": [
+        "backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java::manifestAndForbiddenRulesCannotDrift",
+        "backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java::commentOnlyMentionsAreNotViolations"
+      ],
+      "refs": [
+        "#5689"
+      ]
+    },
+    {
+      "id": "FM-D2",
+      "family": "D",
+      "symptom": "一条绊线用 **⊂**（真子集）而它的**自述目的**由 **⊆** 就能满足 ⇒ **多禁了一个方向**（把「不得更宽」误写成「必须严格更窄」，于是补齐后反而误红）。",
+      "action": "写不变量时逐条问「这一族的**其它方向**呢」：把自述目的一句话译成集合式（这里是 fallback ⊆ seeded），再用它反查实现用的是不是同一个关系；放宽后必须证明**它仍是绊线**（不是恒真）。",
+      "kind": "criterion",
+      "criteria": [
+        "backend/ai-agent-service/tests/test_tool_permission_codes.py::test_the_subset_tripwire_is_still_a_tripwire"
+      ],
+      "evidence": [
+        "backend/ai-agent-service/tests/test_tool_permission_codes.py::test_operator_seed_is_a_superset_of_the_hardcoded_fallback"
+      ],
+      "refs": [
+        "#5683"
+      ]
+    },
+    {
+      "id": "FM-A8",
+      "family": "A",
+      "symptom": "**镜像形态**：读数与它声称的对象之间**存在一个具名可扣的差**，却被当成「不可比」。判「两者不是同一个对象」的依据只是「偏移不为零」—— 而**偏移不为零只说明两者不同名，推不出不可换算**。",
+      "action": "先**枚举差量的可能构成**，能具名就具名；**具名之后才谈可比性**。实测：`^### ` 条数 − 1（那条具名标题 `### 真值缺口用例（truths_ref 为空…）`，全文件恰好 1 条）= 用例块数，与尾块「用例总数」逐一对上（逐 ref 复算 `2fc81b8d2` −1 / `1b3d67f9e` −1 / `382218e41` 0）。",
+      "kind": "action",
+      "evidence": [
+        "tests/unit_ci_workflows/test_casebook_summary_is_derived.py::test_block_count_must_agree_with_the_summary_claim",
+        "docs/testing/mibao-verification-cases.md::真值缺口用例"
+      ],
+      "refs": [
+        "#5052"
+      ]
+    },
+    {
+      "id": "FM-A9",
+      "family": "A",
+      "symptom": "引用规范页 / 技能时**只给文件名、不给自己打开确认**：本会话多个包（含一份已落公开记录的验收报告）把「v1.11 三问」引成 `docs/testing/acceptance-protocol.md`，而该页**没有**这一节。",
+      "action": "引用时给到**「文件 + 节标题」**，并且引用前自己 grep 一次那一节确实存在：`grep -c '<节关键词>' <file>` ≥ 1。对那份 md 实测 `grep -c '交付物可达性' docs/testing/acceptance-protocol.md` = **0** ⇒ 引用错了对象。",
+      "kind": "action",
+      "evidence": [
+        ".agent-presets/migao/skills/migao-acceptance/SKILL.md::交付物可达性判据（v1.11 新增"
+      ],
+      "refs": [
+        "#5052"
+      ]
+    },
+    {
+      "id": "FM-A10",
+      "family": "A",
+      "symptom": "**行号会腐**：同一句话的行号几个提交后就变了（`RoleService` 那句从 `:330` 漂到 `:357`），照抄行号会指向**别的对象**。",
+      "action": "引用一律给**符号锚 / 可检索文本**，行号最多作为「当时的读数」附带。判据面：drift 的 `ref-freshness` 对裸引用 / 悬空引用判红，`Case Trust` 规则 G 对**裸文件名 + 冒号 + 行号**判 `CASE-TRUST-STALE-LINE-REF`（阻塞）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_drift_audit_ref_surface.py::test_real_scan_has_no_bare_or_oor_refs_in_the_two_dirs"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_drift_audit_ref_surface.py::test_meta_guard_ref_bearing_dirs_are_declared"
+      ],
+      "refs": [
+        "#4668"
+      ]
+    }
+  ],
+  "ci_findings": [
+    {
+      "id": "FM-E1",
+      "state": "guarded",
+      "symptom": "auto-merge 吞掉 `push` ⇒ 发布腿不触发（`GITHUB_TOKEN` 合并的 push 不产生 run）。",
+      "guards": "deploy-reconcile.yml 的 schedule 对账（4 条静态/镜像腿）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_every_deploy_trigger_path_reaches_its_reconcile_leg"
+      ],
+      "evidence": [
+        ".github/workflows/deploy-reconcile.yml::reconcile_one worker-h5"
+      ],
+      "refs": [
+        "#5001",
+        "#3113"
+      ]
+    },
+    {
+      "id": "FM-E2",
+      "state": "registered",
+      "symptom": "auto-merge **抢在 commit 之前**合并 ⇒ 改动搁浅在工作区（包声称「已随 #5695 合并」而两处文档改动没进 main）。",
+      "guards": "scripts/stranding-check.sh（内容级三态 0/1/3）+ §2.2 硬规则（改完全部 commit 再开 PR / 全程 draft）",
+      "ledger_ref": "docs/wiki/CI-CD.md::FM-E2",
+      "evidence": [
+        "scripts/stranding-check.sh"
+      ],
+      "refs": [
+        "#5698",
+        "#5695",
+        "#4689"
+      ]
+    },
+    {
+      "id": "FM-E3",
+      "state": "guarded",
+      "symptom": "只改配置的改动**无应用面**：改 `deploy/swas/**` 原先一条部署腿都不触发 ⇒ 静默不生效（靠人工 dispatch 才生效过两次）。",
+      "guards": "触发面 `deploy-admin-api.yml` 的 `on.push.paths` + 对账面 `deploy-reconcile.yml` 的 pathspec，两处**同批**接线 + 常驻双向比对判据",
+      "criteria": [
+        "tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_config_only_commit_is_judged_as_drift_and_dispatches_a_deploy"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json::frozen_max"
+      ],
+      "refs": [
+        "#5001",
+        "#5668",
+        "#5676"
+      ]
+    },
+    {
+      "id": "FM-E4",
+      "state": "gap",
+      "symptom": "**生成物新鲜度只在 `pull_request` 面** ⇒ main 上先漂移、**下一个无辜 PR 才红**（红的信息指向那个 PR 的 diff —— 归因指向错误的对象）。今天咬了两次。",
+      "guards": "无 main 侧守护（`tests/unit_ci_workflows/test_casebook_summary_is_derived.py` 的边界节里逐字登记了这一条：『❌ 不覆盖 main 侧』）；另一包正在补 main 侧守护（分支 `ci/main-side-freshness-guard`）。",
+      "gap_owner": "CI 门禁 owner（生成物新鲜度面）",
+      "gap_shows_when": "main 上的生成物与源漂移后，**在下一个改别的文件的 PR 上**由「生成物新鲜度校验」判红（该 PR 无辜）；判据侧的自证 = git diff --exit-code 比较重渲染产物与 main 上的提交版本。",
+      "evidence": [
+        "tests/unit_ci_workflows/test_casebook_summary_is_derived.py::test_the_drifted_readings_are_reproducible"
+      ],
+      "refs": [
+        "#5687",
+        "#5698"
+      ]
+    },
+    {
+      "id": "FM-E5",
+      "state": "guarded",
+      "symptom": "flaky 分类只凭「重跑通过」 ⇒ 掩盖**窗口型确定性缺陷**（缺陷留在 main，明天同一时段再红）。",
+      "guards": "时间桶判据（跨桶 ⇒ suspect-window-deterministic + 强制跟踪）+ 类级 meta-guard（任何以重跑结果为唯一依据消红/降级的路径**未登记即红**）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_rerun_to_clear_paths.py::test_unregistered_clear_path_turns_red"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_rerun_to_clear_paths.py::test_stale_registry_entry_turns_red"
+      ],
+      "refs": [
+        "#5695",
+        "#5687"
+      ]
+    },
+    {
+      "id": "FM-E7",
+      "state": "guarded",
+      "symptom": "**用例号被抢**：两个并行包各自「取现取最大号 +1」⇒ 双双写成同一个新号；先合的无事，**后合的**把重号带进 main（本会话实测 7 次：UI-061 / UI-064 / MC-022 / MC-023 / BM-019…）。",
+      "guards": "**本单补的判据**（原先零守护：现取 536 个用例号、零重号，但**没有任何判据断言唯一性**）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_duplicate_is_detected_in_memory"
+      ],
+      "refs": []
+    },
+    {
+      "id": "FM-E8",
+      "state": "guarded",
+      "symptom": "**迁移版本号被抢**：两包同抢 V132（各自「取现取最大号 +1」）⇒ 改名 V133/V134。",
+      "guards": "**本单补的判据**（射程 = 活的 `db/migration/`；既有 `test_migration_immutability.py` 只判**文件名**在两个载体目录间不重复 + 已登记文件逐字节冻结，**不判版本号**）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_migration_versions_are_unique_in_the_live_dir"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_archive_duplicate_versions_are_registered_and_only_shrink"
+      ],
+      "refs": []
+    },
+    {
+      "id": "FM-E9",
+      "state": "guarded",
+      "symptom": "**三个登记面漏一个就卡合并**（`case_ids` / `same_source_claims` / `guard_scope_ledger`）—— 新守卫文件**常同时命中多面**；今天有包为此多烧一轮 CI。",
+      "guards": "三张面**各自**已有 fail-closed 判据（本单实测三张面全绿）+ `docs/wiki/CI-CD.md` 的『新增 CI 守卫文件要过的三张登记面』节（作者事前自查清单）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::新增 CI 守卫文件要过的三张登记面",
+        "tests/unit_ci_workflows/test_guard_scope_declaration.py::test_every_corpus_referencing_module_is_registered"
+      ],
+      "refs": [
+        "#5001"
+      ]
+    },
+    {
+      "id": "FM-E10",
+      "state": "gap",
+      "symptom": "**「未就绪」被当通过**：`verify-all.sh` 的 `report_env()` 在依赖没装好时打 `⏭️ 未就绪`（跳过），而在**合并门禁**上「没跑」会被读成「这项没事」。",
+      "guards": "bmini 一条腿已改成**第四态**（`report_strict()`：变更集命中触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；**其余走 `report_env()` 的腿仍是 ⏭️**",
+      "gap_owner": "门禁 owner（verify-all.sh 面）",
+      "gap_shows_when": "某模块依赖未装而变更集命中它 ⇒ 本地 `gate` 打 ⏭️ 后仍全绿，问题只在 CI 上爆（本地绿 / CI 红）。判据侧的自证 = 逐腿比对用的是 report_strict 还是 report_env。",
+      "evidence": [
+        "verify-all.sh::report_strict",
+        "tests/unit_ci_workflows/local_gate_matrix.json::_invariants"
+      ],
+      "refs": [
+        "#4221"
+      ]
+    },
+    {
+      "id": "FM-E11",
+      "state": "guarded",
+      "symptom": "**迁移文件不可改**：改已应用迁移会被按文件名整份 skip（CI 绿、功能静默缺失）；且注释里的失效判据改不了（改注释要过指纹账本 + danger_scan 的 owner 放行）。",
+      "guards": "内容指纹账本（已登记文件被改 ⇒ exit 1 拒绝重生成）+ `.github/danger_scan.py` 的 `/danger-ack rewrite-migration`（只有仓库 owner 的评论算数）",
+      "criteria": [
+        "tests/unit_ci_workflows/test_migration_immutability.py::test_registered_migrations_are_byte_identical"
+      ],
+      "evidence": [
+        "tests/unit_ci_workflows/migration_fingerprints.json",
+        ".github/danger_scan.py::MIGRATION_ACK_MARKER"
+      ],
+      "refs": [
+        "#4936",
+        "#4235",
+        "#5699"
+      ]
+    },
+    {
+      "id": "FM-E12",
+      "state": "guarded",
+      "symptom": "**新建库路径不跑迁移链**：`db/init/schema.sql` 是「新建库」那条路，与迁移链是**同一事实的两条路** —— 只改一路会让两种建库方式分叉。",
+      "guards": "建库终态脚本判据（表/列真值）+ 跨源逐键守卫（引擎键集 ↔ 迁移列 ↔ schema.sql 列 ↔ 实体字段）；两条路的登记在 Database.md 与本台账引用",
+      "criteria": [
+        "tests/unit_ci_workflows/test_schema_integrity.py::test_schema_has_expected_tables"
+      ],
+      "evidence": [
+        "docs/wiki/Database.md::建库脚本（唯一）",
+        "tests/unit_ci_workflows/test_craft_calc_config_contract.py"
+      ],
+      "refs": [
+        "#5346"
+      ]
+    },
+    {
+      "id": "FM-E13",
+      "state": "registered",
+      "symptom": "工装级反复出错点：裸 `git merge/rebase origin/main` vs `./scripts/sync-main.sh`；生成物**不许手改**（要重渲染）；`dev-worktree.sh add` 与本单口径**两条路径并存**（集成侧一手读数：本会话每个包都被要求用裸 `git worktree add` ⇒ 那条路径**被规避**，`add` 路径上的挂死**既未复现也未证伪**）；**仓库路径含空格** ⇒ 工具抽风（用软链）。",
+      "guards": "sync-main 有**前置拒绝**（本分支与 origin/main 都改过受管用例面 ⇒ **拒绝 merge** 并给出 `--rebase`；本单实测命中一次）；生成物由「生成物新鲜度校验」判红；后两条**无判据**（见 not_solidified）",
+      "ledger_ref": "scripts/sync-main.sh::前置拒绝",
+      "evidence": [
+        "scripts/sync-main.sh",
+        "scripts/dev-worktree.sh::refresh_presets"
+      ],
+      "refs": [
+        "#5690"
+      ]
+    },
+    {
+      "id": "FM-E14",
+      "state": "gap",
+      "symptom": "`node --test <dir>` 会被读成 **1 条失败的假红**（必须用 glob：`node --test <dir>/*.test.mjs`）。今天实测，**未写进任何地方**（`verify-all.sh` 用的是 glob 写法，但那条纪律本身没有落点）。",
+      "guards": "无（`verify-all.sh` 只用了 glob 写法，没有任何判据/文档解释为什么要用 glob）",
+      "gap_owner": "门禁 owner（verify-all.sh / worker-h5 腿面）",
+      "gap_shows_when": "有人把 `verify-all.sh` 的 `node --test frontend/worker-h5/tests/*.test.mjs` 改成目录形态 ⇒ 该腿报 1 条失败（假红），而**没有任何判据会拦住这次改写**；判据侧的自证 = 断言该腿的参数字面量里带 glob。",
+      "evidence": [
+        "verify-all.sh::worker-h5-node-tests"
+      ],
+      "refs": []
+    },
+    {
+      "id": "FM-E15",
+      "state": "registered",
+      "symptom": "**编号分配只看已合并状态**（用例号 + 迁移号同族）：取号时现取「main 上的最大号 + 1」，而**看不到在飞分支** ⇒ 两个并行包取到同一个号；先合的无事，**后合的**把重号带进 main。本会话用例号已撞 **7~8 次**（UI-061 / UI-064 / MC-022 / MC-023 / BM-019 / MC-025 / MC-026），迁移号撞过 1 次（V132 两包同抢 ⇒ V133/V134）。**本单自己中招**：写侧取 MC-026（当时现取最大 = MC-025），#5705 合并时已占 MC-026/MC-027 ⇒ 顺延 MC-028。",
+      "guards": "本单补的两条唯一性判据（用例号 / 活的迁移目录版本号：重号**红在后合的那个 PR** 上）+ 顺延口径（**顺延尚未合并的一侧**，不动已合并的号）",
+      "ledger_ref": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::CASE_ID_ALLOCATION_BOUNDARY",
+      "evidence": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_allocation_boundary_is_registered"
+      ],
+      "refs": []
+    }
+  ],
+  "not_solidified": [
+    {
+      "id": "NS-1",
+      "item": "清单 E 的 E6（『burn-down 与生成物陈旧耦合 ⇒ 报错误导，同一审计两条红、其中一条是次生后果』）",
+      "reason": "🔴 **转述未获 durable 证据**：本机只读复核（`docs/wiki/CI-CD.md` / `Development.md` / `DEV-FLOW.md` 的 burn-down 各节 + `scripts/drift_audit.py`）**未找到**「同一审计两条红、一条是次生后果」的可复核读数。按「找不到 durable 证据的 ⇒ 不写进技能」的口径，**不固化**。",
+      "restart_when": "取到该次审计的 run id / job summary 或 issue 评论锚（能复算出那两条红及其因果）时再入册。"
+    },
+    {
+      "id": "NS-2",
+      "item": "「仓库路径含空格 ⇒ read/edit 工具抽风（用软链绕）」",
+      "reason": "这是本机工具体验（`/Users/guangzhen.zk/ai native/...`），**不是仓库里的可判对象** —— 写不出判据，也不该由仓库判据承担。",
+      "restart_when": "工具侧把它做成确定性行为（例如工具按路径长度/空格给出显式提示）时，改为在技能里给**命令**而不是劝告。"
+    },
+    {
+      "id": "NS-3",
+      "item": "「`dev-worktree.sh add` 挂死 ⇒ 用裸 `git worktree add`」",
+      "reason": "本单只复现了『`add` 路径接在 `issue-lifecycle.sh reap-merged --apply` 上』这一**事实**；**挂死这一读数既未在本机复现、也未被证伪** —— 集成侧一手读数：本会话每个包都被要求用裸 `git worktree add` ⇒ 那条路径**被规避**。⇒ 按「两条路径并存、其中一条被规避」这一**事实**登记，**不**写成「某路径挂死」这一**断言**。",
+      "restart_when": "复现出挂死并定位到具体调用链（或该调用被移出 `add` 路径、或两条路径收敛成一条）时，补判据或改为具名登记。"
+    }
+  ]
+}
