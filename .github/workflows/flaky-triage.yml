@@ -184,6 +184,68 @@ jobs:
             echo "::error::auto-merge 仍在 arm（$AUTO）⇒ **自动放行未被阻止** ⇒ fail-closed"; exit 1; }
           echo "::notice::🎈 flaky 已标注（flaky/rerun-green + block/merge + 已卸 auto-merge）—— 第二次绿 ≠ 通过"
 
+      # ── ②′ #5687：跨时间桶的「重跑通过」⇒ **强制跟踪** + 仍然不许自动放行 ──────────
+      # 病根（实测，别再重新猜）：旧口径 `if rerun_result == "success" and "flaky" in kinds`
+      # ⇒ **只凭「重跑通过」**就判 `flaky` ⇒ 窗口型确定性缺陷（如「UTC 16:00–24:00 每天必红」）
+      # 被重跑掩盖：重跑落到窗口外就绿、PR 的红被消掉，而缺陷**仍在 main 上**，明天同一时段
+      # 对所有人**再红一次** —— 不设限就可以**无限循环**（唯一的信号是那个**非 required** 的
+      # `Flaky Ledger Reconcile` 红，而它自己逐字声明「判红不等于阻塞合并」）。
+      # 分工：②′a **机械落跟踪单**（把单号注入 `/tmp/flaky-entries.json` 的 `follow_up`）；
+      #       ②′b **拦住自动放行** + 复核（**不**打 `flaky/rerun-green` —— 它不是 flaky）。
+      - name: ②′a #5687 落跟踪单（跨时间桶 ⇒ 强制跟踪；缺它 ⇒ 台账写入即判违规）
+        id: triage_follow_up
+        if: steps.decide.outputs.action == 'mark_suspect'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # 幂等：同 job 已有 open 的跟踪单则**复用**（marker 精确匹配），否则新建一张。
+          # fail-closed：落不出单 ⇒ 红 —— `ledger_violations` 把「该类条目缺 follow_up」判成
+          # **违规**（`append` 直接非零退出），所以「静默继续」在这条链上根本走不通。
+          python3 .github/scripts/flaky_ledger.py triage-follow-up \
+            --repo "$GITHUB_REPOSITORY" --entries /tmp/flaky-entries.json \
+            --gh-output "$GITHUB_OUTPUT" || {
+            echo "::error::落窗口型疑似的跟踪单失败 ⇒ 该类条目**必须**带跟踪单（#5687 判据③），fail-closed、不静默"; exit 1; }
+          echo "::notice::🕒 跟踪单已落（issue #$(sed -n 's/^issue=//p' "$GITHUB_OUTPUT" | tail -1)）—— 单号已注入条目的 follow_up"
+
+      - name: ②′b #5687 拦住自动放行 + 复核（不是 flaky，也不许消红）
+        if: steps.decide.outputs.action == 'mark_suspect'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.decide.outputs.pr }}
+          ISSUE: ${{ steps.triage_follow_up.outputs.issue }}
+        run: |
+          set -uo pipefail
+          # ②′b-1 先**真的停住**（与 ② 同一实体动作：`--disable-auto` 停住已 arm 的 auto-merge，
+          #        `block/merge` 防再次 arm；#4248 实证：光靠标签拦不住已 arm 的 auto-merge）
+          gh pr merge "$PR_NUMBER" --disable-auto --repo "$GITHUB_REPOSITORY" 2>&1 \
+            || echo "ℹ️ --disable-auto 无操作（未 arm 或已卸下）—— 非错误"
+          gh label create "block/merge" --force --color B60205 \
+            --description "人工闸：禁止 auto-merge" \
+            --repo "$GITHUB_REPOSITORY"
+          gh label create "flaky/tracking" --force --color 1D76DB \
+            --description "窗口型疑似（跨时间桶的重跑通过）的跟踪标签，见 issue #5687" \
+            --repo "$GITHUB_REPOSITORY"
+          gh pr edit "$PR_NUMBER" --add-label "block/merge" --repo "$GITHUB_REPOSITORY"
+          # ②′b-2 **复核 + fail-closed**：阻断必须**真的落地**，否则本 job 红（同 ② 的理由：
+          #         标不上却继续 = 静默放行 = 本仓库最贵的形态）
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]|join(",")' \
+            --repo "$GITHUB_REPOSITORY")
+          AUTO=$(gh pr view "$PR_NUMBER" --json autoMergeRequest \
+            --jq '.autoMergeRequest // "none"' --repo "$GITHUB_REPOSITORY")
+          echo "复核：labels=[$LABELS] autoMergeRequest=$AUTO 跟踪单=#${ISSUE:-}"
+          case ",$LABELS," in *",block/merge,"*) ;; *)
+            echo "::error::可见标注未落地：block/merge 不在 [$LABELS] ⇒ fail-closed"; exit 1;; esac
+          [ "$AUTO" = "none" ] || {
+            echo "::error::auto-merge 仍在 arm（$AUTO）⇒ 跨桶疑似的红被当成已澄清 ⇒ fail-closed"; exit 1; }
+          # 🔴 反向判据（**本类与 flaky 的可读差异**）：本类**不得**拿到 `flaky/rerun-green`
+          #    —— 那个标签读作「已查清是重跑才绿」，会把「跨桶疑似」误读成「与本次改动无关」。
+          case ",$LABELS," in *",flaky/rerun-green,"*)
+            echo "::error::本类**不得**打 flaky/rerun-green（跨时间桶 ≠ flaky，#5687）⇒ fail-closed"; exit 1;; esac
+          [ -n "${ISSUE:-}" ] || {
+            echo "::error::本类必须带跟踪单，但 ②′a 没给出单号（未跑 ≠ 通过）⇒ fail-closed"; exit 1; }
+          echo "::notice::🕒 跨时间桶的「重跑通过」已按 suspect-window-deterministic 处置（记账 + 跟踪单 + 未自动放行）—— 第二次绿 ≠ 通过，也 ≠ flaky"
+
       # ── ③ 可见评论（幂等：同 marker 已存在则**更新**，不重复堆积 ⇒ 不再造噪音）──
       - name: ③ PR 评论（幂等：同 marker 更新而非重复创建）
         if: steps.decide.outputs.entry_count != '0'

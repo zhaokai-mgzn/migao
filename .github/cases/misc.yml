@@ -771,3 +771,52 @@ cases:
         - deploy-admin-api.yml
         - deploy-reconcile.yml
       verifies: []
+
+  # MC-024（issue #5687）：**「重跑通过」不再单独构成 flaky 的充分条件** —— 窗口型确定性缺陷
+  # 曾被它掩盖。病：`flaky_ledger.decide` 旧口径逐字 `if rerun_result == "success" and
+  # "flaky" in kinds: action, kind = "mark_flaky", "flaky"` ⇒ **只凭重跑绿**就消红。实测：
+  # 测试侧裸 `LocalDate.now()`（runner 的 JVM 默认时区 = UTC）取业务日 vs 生产按 +08
+  # (`BusinessClock.today()`) ⇒ 两侧只在 UTC 16:00–24:00 分叉 ⇒ **每天必红 8 小时**；
+  # run 36280962072 在窗口内红（22:12Z）、重跑落到窗口外绿（00:0xZ）⇒ 判 flaky、PR 的红被消掉，
+  # 缺陷仍在 main 上、明天同一时段对所有人再红一次（可无限循环；唯一信号是那个**非 required**
+  # 的 `Flaky Ledger Reconcile` 红，它自己逐字声明「判红不等于阻塞合并」）。
+  # ==========================================================================
+  - id: MC-024
+    legacy_id: ""
+    title: "「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - time-bucket
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 分流语义的**结构事实**（判定函数 + 台账字段 + workflow 动作），
+    # 由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与
+    # tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读"
+      - "判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）"
+      - "🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）"
+      - "**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**"
+      - "类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）"
+      - "workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红"
+      - "红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）"
+    skip_reason: "[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #5687；用户逐字裁定 A = 给「重跑通过」加限制）：窗口型确定性缺陷被重跑掩盖 ⇒ 缺陷留在 main、明天同时段再红（可无限循环）。落码 = 时间桶判据（实例）+ 强制跟踪（机械落单）+ 类级 meta-guard（消红路径未登记即红 + 台账只许缩短 + 覆盖面显式登记）+ workflow 第三种动作 `mark_suspect` + 七条注入式红证（每条注明命中分支，含「只改注释」对照）。取号 MC-024：main 上 MC-001~MC-023 已占用（MC-022 = 同族时区窗口的实例修复、MC-023 = 部署触发面）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py"
+        - "tests/unit_ci_workflows/test_rerun_to_clear_paths.py"
+      ci:
+        - flaky-triage.yml
+        - flaky-ledger-reconcile.yml
+      verifies: []
