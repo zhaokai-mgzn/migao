@@ -190,21 +190,27 @@ public class UserService implements UserDetailsService {
     /**
      * 获取角色的权限列表
      *
+     * <p>🔴 <b>issue #5699 的 P2：人类裁定「退役」（2026-09-27）</b> —— 此前 `agent` 被授予
+     * `chat:read` / `chat:write` / `customer:read`、`customer` 被授予 `chat:write` / `order:read`。
+     * 这四个码**不在权限目录里**（`RegistrationService.defaultPermissions` 与
+     * `PermissionService.ensureFullPermissionCatalog` 各 0 命中）⇒ 这里是全仓**唯一**一处授予
+     * 「目录里不存在的码」的地方，且与 ai-agent 镜像（`ROLE_PERMISSIONS` 里 `customer` / `agent`
+     * 均为**空集**）**已经不一致**。</p>
+     *
+     * <p>裁定依据 = 消费面取证（设计真值源 `docs/design/rbac-single-source.md` 的 §1.6）：
+     * **九处消费方无一读这些码**，且该授予面在**本仓不可达**（全仓无 `AuthenticationManager`
+     * 的 `authenticate(...)` 调用）⇒ <b>运行时差量 = 0</b>；差量全部落在声明、台账与测试夹具。</p>
+     *
+     * <p>退役后 `agent` / `customer` 落到 `default`（空集），与镜像对齐；`super_admin` / `admin`
+     * 的 `"*"` 是**通配符、不是目录码**，**本次不动**（种子与镜像同款）。</p>
+     *
      * @param roleCode 角色代码
-     * @return 权限列表
+     * @return 权限列表（`"*"` = 全部权限；未登记的角色 = 空集）
      */
     public List<String> getRolePermissions(String roleCode) {
         return switch (roleCode) {
             case "super_admin" -> List.of("*");
             case "admin" -> List.of("*");
-            case "agent" -> List.of(
-                    "chat:read", "chat:write",
-                    "customer:read"
-            );
-            case "customer" -> List.of(
-                    "chat:write",
-                    "order:read"
-            );
             default -> List.of();
         };
     }

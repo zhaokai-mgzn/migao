@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "issue": "#5699",
-  "stage": "P1",
+  "stage": "P2",
   "_note": "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。",
   "codes": {
     "registration": [
@@ -69,7 +69,40 @@
       "employee:create",
       "system:view",
       "system:manage"
-    ]
+    ],
+    "names": {
+      "dashboard:view": "仪表板查看",
+      "product:manage": "商品管理",
+      "product:list": "商品列表",
+      "product:create": "新增商品",
+      "product:category": "商品分类",
+      "product:category:view": "商品分类查看",
+      "processing:manage": "加工管理",
+      "processing:view": "加工单查看",
+      "processing:update": "加工单操作",
+      "production:view": "生产查看",
+      "inbound:view": "入库单查看",
+      "inbound:create": "入库单操作",
+      "knowledge:manage": "知识库管理",
+      "knowledge:view": "知识库查看",
+      "order:list": "订单列表",
+      "order:detail": "订单详情",
+      "order:update": "订单操作",
+      "order:create": "新增订单",
+      "order:refund": "订单退款",
+      "after_sales:view": "售后查看",
+      "customer:view": "客户管理",
+      "customer:create": "客户维护",
+      "finance:view": "财务对账",
+      "finance:create": "财务操作",
+      "agent:session": "会话监控",
+      "agent:session:manage": "会话操作",
+      "agent:chat": "米宝对话",
+      "employee:list": "员工列表",
+      "employee:create": "新增员工",
+      "system:view": "岗位权限查看",
+      "system:manage": "系统管理"
+    }
   },
   "roles": {
     "seed": {
@@ -208,6 +241,14 @@
         "order:list",
         "processing:view",
         "product:list"
+      ]
+    },
+    "login": {
+      "admin": [
+        "*"
+      ],
+      "super_admin": [
+        "*"
       ]
     }
   },
@@ -541,6 +582,8 @@
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 15,
     "UNANNOTATED_ENDPOINTS": 21,
-    "REGISTERED_RESIDUALS": 9
+    "REGISTERED_RESIDUALS": 9,
+    "A7_CODES_BEYOND_CATALOG": 0,
+    "A7_VS_MIRROR_DIVERGENCES": 0
   }
 }

@@ -4277,6 +4277,42 @@ _CASE_MC_028 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-029 [NORMAL] RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等（源: cases/misc.yml）──
+_CASE_MC_029 = EvalCase(
+    id='MC-029',
+    legacy_id='',
+    title='RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当清单里「角色 → 码」或「码目录」的任一项与现值不再相等（哪怕只差一个码、一个名字、一个持有角色）时，必须有东西**具名**报出那一项；而只改清单的说明文字（`_note`）或只改源码注释时，**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P2 唯一的验收口径**：八个消费面（A1 种子 / A2 回退 / **A7 登录面** / A3·B3·B4 ai-agent 镜像 / B1·B2 目录）的**派生结果**与**现值**逐值相等，且**逐项点名**（不是「数量相等」）；不等时输出**完整不一致清单**（每项一行：派生值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）', '**A7 进清单**：`roles.login` 由既有解析器 `parse_role_fallback(..., anchor=…)` 读取（**复用同一个函数**，不是第二套解析器）；其四个码 `chat:read` / `chat:write` / `customer:read` / `order:read` 在权限目录里各 0 命中 ⇒ 由 `A7_CODES_BEYOND_CATALOG`（现取 4、只许缩短）钉住', '**码目录**（码 → 名称 + 持有角色）：`codes.names` 进清单并与 B1/B2 的名称列逐码对齐；两处目录的名称列不一致 ⇒ 具名红；持有角色由 `*` 展开成目录全集（admin 恒全部权限）后逐码比对', '**M2 覆盖面在 P2 扩大**：新增两张只许缩短的台账 `A7_CODES_BEYOND_CATALOG`（4）与 `A7_VS_MIRROR_DIVERGENCES`（2，A7 与 ai-agent 镜像对同一角色给出不同码集的对数）——条数涨 ⇒ 红（超上限），涨或跌都要在同 PR 更新清单（`ledger_count_drift`）', '**M1 覆盖面在 P2 扩大**：射程加入 `backend/admin-api/src/test`（设计 §1.3 的 A 类副本清单明写了测试面的逐码点名断言，而 P1 的射程只到 `src/main`），并新增形态面 `a7-login-codes-consumer`（扫 A7 的四个码字面量）⇒ 未登记即红 / 陈旧登记亦红（落地时该面自己先抓出 3 处未登记命中）', '**对照读数（证明变异真的被读到）**：在 `UserService.java` 的**注释**里写一个 A7 的码与一行假的 `getRolePermissions(` 调用 ⇒ 现值读数**逐值不变**（解析器先剥注释再取字面量）；改清单 `_note` 散文 ⇒ 派生读数不变', '覆盖面显式登记（设计 §5.3）：四条「覆盖不到什么」（A7 的**运行时**授予值未取证 · A7 的**存废**待人类裁定 · 非约定形态的声明看不见 · A4 迁移链的存量授权谓词归 P5）逐条写在 `UNCOVERED_FACES`（含 reason/owner/issue，只许缩短）'],
+    skip_reason='[backend-contract] RBAC 派生层与现值的逐值对账（既有解析器 + Python 标准库 AST）+ 码目录投影 + 覆盖面登记，全部由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'derivation', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-030 [NORMAL] A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判（源: cases/misc.yml）──
+_CASE_MC_030 = EvalCase(
+    id='MC-030',
+    legacy_id='',
+    title='A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当判定面（admin-api src/main + ai-agent app + frontend）里重新出现 A7 的四个码、或有人把 AuthenticationManager 的 authenticate 调用接上、或身份面常量与这些码混用、或 A7 又授予了目录外的码时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['**判定面零容忍**：`backend/admin-api/src/main` + `backend/ai-agent-service/app` + `frontend` 里出现 `chat:read` / `chat:write` / `customer:read` / `order:read` 的文件数**必须为 0**（退役后现取 = 空）；新增任一处 ⇒ 具名红（内存构造假想 controller 的红证已实跑）', '🔴 **退役已生效**：A7 授予的码里没有任何一个在权限目录之外（现取 = 0；退役前 = 4）。裁定 = 2026-09-27 人类选「A. 退役」（消除全仓唯一一处授予目录外码的地方、与 ai-agent 镜像对齐）；理由与落地 6 处见设计 §1.6 (d)', '**授予面在仓内不可达（机制存活读数）**：全仓无 `AuthenticationManager` 的 `authenticate(...)` 调用（现取 0）⇒ `UserDetailsService` 那条线没有调用方；谁接上它（哪怕一行）⇒ 红，必须重新取证', '**调用点唯一**：`UserService.getRolePermissions` 的调用点只在声明本体内部（`loadUserByUsername`）—— 口径是**词法**（先剥 Java 注释），注释里写一行假调用**不**算（对照读数已实跑）', '**身份面按角色判、不按码判**：`ServiceTokenFilter.C_END_ROLES` / `SecurityConfig.ADMIN_API_REJECTED_ROLES` / ai-agent `base.CUSTOMER_ONLY_ROLES` 三个常量都必须存在，且与 A7 的码**不相交**', '🔴 **取证先于裁定**：本判据先出九处消费方逐条证据 + 「授予面在仓内不可达」的读数，**再由人类裁定**（2026-09-27 选「退役」）⇒ 裁定结果被钉成三条只许缩短 / 零容忍的读数，实现者**不得**自行把码放回去', '**未取证项照实登记**：A7 的**运行时**授予值（customer / agent 账号登录后实际拿到的 authority 集）本机没有可跑环境 ⇒ 登记进 `UNCOVERED_FACES` 并写明重启条件，**不得**把本判据读成「A7 已验收」'],
+    skip_reason='[backend-contract] A7 的静态调用面读数（判定面语料命中表 + 调用点词法 + 身份面常量）由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'a7', 'forensics', 'retirement', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10395,6 +10431,8 @@ ALL_CASES = (
     _CASE_MC_026,
     _CASE_MC_027,
     _CASE_MC_028,
+    _CASE_MC_029,
+    _CASE_MC_030,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

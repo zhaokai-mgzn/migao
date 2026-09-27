@@ -1,5 +1,9 @@
 # case_ids: MC-026
-"""RBAC 清单的**单一生成器**（issue #5699 的 P1；机制 = 设计真值源 §5.2 的 **M3**）。
+"""RBAC 清单的**单一生成器**（issue #5699 的 P1 起；机制 = 设计真值源 §5.2 的 **M3**）。
+
+P2（同一跟踪单）在本文件上**加**两段现取，不改任何既有取值：`codes.names`（目录名称列，
+B3 的唯一对照面）与 `roles.login`（**A7** 登录面，由既有 `parse_role_fallback` 传 `anchor=` 复用）；
+`ledger_counts` 另加 P2 的两张只许缩短台账（计数委托 `rbac/derive.py` 的**同一份**值级原语）。
 
 ## 它是什么，不是什么
 
@@ -44,6 +48,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PARITY_GUARD = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_agent_permission_parity.py"
 READINGS_PATH = REPO_ROOT / "rbac" / "readings.json"
+RBAC_DIR = REPO_ROOT / "rbac"
+
+#: P2 的派生器（**同一份实现**给生成器与判据共用：值级原语 `codes_beyond_catalog` /
+#: `role_set_divergences` / `present_ledger_counts`；本文件**不复制**它们）。
+DERIVE_MODULE = "migao_rbac_derive"
 
 #: 既有解析器的**唯一家**（本文件与守卫都从这一处加载；`sys.modules` 先注册是 `@dataclass`
 #: 解析 `cls.__module__` 的前提 —— 不注册会 `AttributeError: 'NoneType' object has no attribute '__dict__'`）。
@@ -74,6 +83,20 @@ def load_parity_guard():
     return mod
 
 
+def load_derive():
+    """按路径加载 **P2 派生器**（`rbac/derive.py`；同款加载纪律，避免与别的 `derive` 同名模块撞车）。"""
+    if DERIVE_MODULE in sys.modules:
+        return sys.modules[DERIVE_MODULE]
+    path = RBAC_DIR / "derive.py"
+    assert path.is_file(), f"P2 派生器不存在：{path}（路径漂移 ⇒ 红）"
+    spec = importlib.util.spec_from_file_location(DERIVE_MODULE, path)
+    assert spec and spec.loader, f"无法为 {path} 建立加载器（fail-closed）"
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[DERIVE_MODULE] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _sorted_role_map(table: dict[str, frozenset[str]]) -> dict[str, list[str]]:
     """角色码 → 码清单（`frozenset` 无固有顺序 ⇒ 排序后落盘，保证生成物逐字节可复现）。"""
     assert table, "岗位表解析出 0 个角色 ⇒ 生成物会空跑（fail-closed）"
@@ -84,19 +107,31 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
     """**现取读数**（纯函数：输入源码表，输出可 JSON 化的字典；注入式红证就是喂改过的源码表）。
 
     键序 = 落盘顺序（`json.dumps` 不排序 ⇒ 生成物逐字节稳定，`--check` 才有意义）。
+
+    P2 新增两段现取（设计 §4 的 P2 行）：
+    - `codes.names` —— 权限目录的**名称列**（B1；与 `parse_catalog` 同一份正则的另四列投影）；
+    - `roles.login` —— **A7**（`UserService.getRolePermissions`，登录面）的角色 → 码，
+      由既有 `parse_role_fallback` 传 `anchor=` 读取（**复用**，不另写解析器）。
     """
     p = parity if parity is not None else load_parity_guard()
+    d = load_derive()
     src = sources if sources is not None else p._source_map()
-    cat_reg, cat_perm = p.parse_catalog(
+    cat_rows_reg, cat_rows_perm = p.parse_catalog_rows(
         src["java:service/RegistrationService.java"],
         src["java:service/PermissionService.java"],
     )
+    cat_reg = tuple(row[1] for row in cat_rows_reg)
+    cat_perm = tuple(row[1] for row in cat_rows_perm)
+    login = _sorted_role_map(
+        p.parse_role_fallback(src["java:service/UserService.java"], anchor=p.ROLE_SWITCH_ANCHOR_USER_SERVICE)
+    )
+    mirror = d.mirror_present_values()
     nodes = p.parse_menu_ts_nodes(src["menu:frontend"])
     assert nodes, "`menu.ts` 解析出 0 个节点 ⇒ 生成物会空跑（fail-closed）"
     return {
         "schema": 1,
         "issue": "#5699",
-        "stage": "P1",
+        "stage": "P2",
         "_note": (
             "生成物（机制 M3）：由 `rbac/generate_readings.py` 调既有解析器现取。"
             "**不得手改** —— 判据 test_generated_readings_are_fresh 会重新生成并逐字节比对。"
@@ -104,10 +139,12 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
         "codes": {
             "registration": list(cat_reg),
             "permission_service": list(cat_perm),
+            "names": {row[1]: row[0] for row in cat_rows_reg},
         },
         "roles": {
             "seed": _sorted_role_map(p.parse_role_defaults(src["java:service/RegistrationService.java"])),
             "fallback": _sorted_role_map(p.parse_role_fallback(src["java:service/RoleService.java"])),
+            "login": login,
         },
         "menus": {
             label: {name: code for name, code in nodes_.items()}
@@ -118,8 +155,9 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
         ],
         "route_guard": [[prefix, code] for prefix, code in p.parse_route_guard(src["route:layout.tsx"])],
         "ledger_counts": {
-            table: len(getattr(p, table, None))
-            for table in LEDGER_TABLES
+            **{table: len(getattr(p, table, None)) for table in LEDGER_TABLES},
+            # P2 新增的两张台账（**现取**口径：喂的是现值，不是清单）—— 派生器提供唯一一份实现。
+            **d.present_ledger_counts(login, cat_perm, mirror["A3"]),
         },
     }
 
