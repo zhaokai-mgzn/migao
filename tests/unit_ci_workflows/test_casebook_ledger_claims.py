@@ -144,9 +144,9 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         file="misc.yml", case_id="MC-038",
-        pattern=r"`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`\s*(六|6)\s*条\s*`kind=action`",
+        pattern=r"`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13`\s*(七|7)\s*条\s*`kind=action`",
         face="kind-count", arg=("relay_entries", "action"),
-        why="§26 面「靠人执行」的那批条目数（本批由 2 条长到 6 条，见台账 `PD-5`）—— 台账 `relay_entries` 里 `kind=action` 的条数（现取）",
+        why="§26 面「靠人执行」的那批条目数（由 2 条长到 6 条见台账 `PD-5`、再长到 7 条见 `PD-7`）—— 台账 `relay_entries` 里 `kind=action` 的条数（现取）",
     ),
 )
 

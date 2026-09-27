@@ -916,6 +916,28 @@
         "#5707",
         "#5719"
       ]
+    },
+    {
+      "id": "FM-R13",
+      "state": "gap",
+      "kind": "action",
+      "gap_owner": "转述侧（派单 / 协调的那一方 —— 它给的「环境铁律」里的新鲜度断言）；兜底 = 接收侧在 `land` 前自己跑一次判别动作，或直接读 `land` preflight 打印出来的工具来源",
+      "gap_shows_when": "派单消息里写着「仓库根已同步 `origin/main`」这类**环境新鲜度**断言，而它是**按旧快照**写的（派单方确实同步过，但此后又有工具修复合并进 main）⇒ 接收方的 `land` 跑的是**旧工具**。实测（#5719 / PR #5720 的作者）：这条不实断言 + 「`land` 的工具来源是**主工作区**那份」⇒ **白烧三轮**才定位（①步连停 3 次 17:52:41 / 17:55:46 / 17:57:42，而从 worktree 手动跑同一子命令 rc=0、失败后 5 秒六个判据全「无漂移」）。",
+      "symptom": "**把「环境已同步」当常量写进派单**：派单消息里的新鲜度断言是**某个时点的快照**，而它与「接收方动手那一刻」之间还会合并进新的工具修复 ⇒ 断言在接收方那里**已过期却看不出来**（同族 `FM-R1`：把某时点的读数当常量引）。",
+      "action": "派单前 / `land` 前**各跑一次**（一条命令、零成本）：`git -C <主工作区> rev-list --count HEAD..origin/main` ⇒ **必须为 0**；派单消息里给的是这条命令的**读数 + 时点**，而不是「已同步」这句结论。⚠️ 该读数用**本地** `origin/main` ref ⇒ 它自己也可能过期，故 `land` 的 preflight 把口径与「落后」告警一起打出来。复算命令见 §26.3 ⑨。",
+      "covers": "**两半分开说**：① **`land` 侧那一半已机械** —— `land` 的 preflight 每次都打印工具来源（路径 + 内容 sha + 与 `origin/main` 的差 + behind 计数；落后即显式告警并给解除命令），判据 = `tests/unit_ci_workflows/test_land_tool_provenance.py`（含复现原洞的实跑与对照 rc=0）；② **派单侧那一半无机械锁** —— 派单**消息在仓外**（不 durable、判据读不到），判据只能保证本条有 `action` / `symptom` / `covers` 且被 §26.4 判别动作行现取到；「派单方到底跑没跑那条命令」**判不了**（同 `FM-R4` 的残余）。",
+      "same_family": "`FM-R1`（把某时点的读数当常量引 —— 本条是它在**环境新鲜度**面的子形态）+ `FM-A5`（从「提交里含该文件」推出「内容也对」）+ `FM-A12`（过期前提没有对象可反驳）+ `FM-R7`（转述链条上不标注「这是转述」）",
+      "evidence": [
+        "scripts/issue_lifecycle.py::tool_provenance_lines",
+        "scripts/issue_lifecycle.py::_devtree_script",
+        "tests/unit_ci_workflows/test_land_tool_provenance.py::test_reproduces_the_original_hole_and_shows_it_at_a_glance"
+      ],
+      "refs": [
+        "#5707",
+        "#5713",
+        "#5719",
+        "#5720"
+      ]
     }
   ],
   "not_solidified": [
@@ -992,6 +1014,14 @@
       "why": "原条目把**调用方的写法**（未加引号的 shell 路径 / 未用 `-z` 解析 git 输出）记成了**工具的确定行为** ⇒ 派生出「每包建 `/tmp/<唯一名>` 软链」这条**无根据的规矩**：每单白做一步，且它**掩盖真实问题**（真出问题时会以为是「没建软链」）。按 §25 的口径「找不到 durable 证据的宁缺勿滥」，**不写成规矩**；但**不销账** —— 保留的真实内核（shell 引号纪律 / `git status -z`）**无机械锁**，故**缩窄后保留**（条数不变 ⇒ 上限不动，与 `PD-4` 同形）。",
       "invariant": "上限**冻结在判据文件**（`NOT_SOLIDIFIED_FROZEN`），台账改不动它 ⇒ 与 `PD-1` ~ `PD-5` **同一条不变式**：升降都只在 **diff 里可见**、不可能静默；判据语义 = `现取 ≤ 上限`。🔴 **本条自带一条口径订正**：这次**收窄本身不会让任何判据变红或变绿**（文本层无机械锁）—— 它的可核部分只有「条数 ≤ 上限」与「`reason` / `restart_when` 非空」；不许把它读成「已由判据保证」。",
       "targets": "清零靶子（**现取**）：`not_solidified` **4** 条（`NS-1` / `NS-2`（已收窄）/ `NS-3` / `NS-4`）· `relay_entries` `state=gap` **6** 条"
+    },
+    {
+      "id": "PD-7",
+      "what": "`RELAY_GAPS_FROZEN` **6 → 7**（§26 面新增一条**只靠人执行**的纪律：`FM-R13` = 派单消息里的「环境已同步」断言会过期）",
+      "decided_by": "人类（本单指令：「固化『主工作区是 `land` 的工具来源』这条结构性事实」+「判别动作必须可复制：派单前 / `land` 前 `git -C <主工作区> rev-list --count HEAD..origin/main` ⇒ 必须为 0」）+ 本包**独立复核**读数（复现原洞与对照 rc=0 的实跑 = `tests/unit_ci_workflows/test_land_tool_provenance.py::test_reproduces_the_original_hole_and_shows_it_at_a_glance`）",
+      "why": "该条是**动作类**（派单前跑一次命令）。🔴 **不给它 `criterion` 是如实登记**：`land` 侧那一半**已经机械**（preflight 每次打印工具来源 + 落后即告警，判据 = `tests/unit_ci_workflows/test_land_tool_provenance.py`），但**派单侧那一半判不了** —— 派单消息在**仓外**、不 durable（与 `FM-R8` 同因）。若把整条塞进 `guarded`，等于把「派单方到底跑没跑那条命令」写成「已守护」—— 那正是本台账要防的形态（`PD-1` / `PD-5` 同口径）。⇒ 用一条 gap 换一条**可见性**：代价 = `land` 每次多打 3~5 行（**零网络、零写盘**），收益 = 诊断从**三轮**降到**一屏**。",
+      "invariant": "上限**冻结在判据文件**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `RELAY_GAPS_FROZEN`），台账改不动它 ⇒ 新增缺口必须**公开抬一次上限**，且只会在 **diff 里可见**（不可能被静默加入）。判据语义 = `现取 ≤ 上限`（只许缩短）⇒ **「上限高于现取」本身不会红**；要「上限 == 现取」得靠**销账时同批降上限**这个动作（`FM-R3` / `PD-2` 的口径）。",
+      "targets": "清零靶子（**现取**，不写死）：`relay_entries` 里 `state=gap` **7** 条（`FM-R4` / `FM-R7` / `FM-R9` / `FM-R10` / `FM-R11` / `FM-R12` / `FM-R13`）· `kind=action` **7** 条（与 §26.4 判别动作行是同一个集合）"
     }
   ]
 }

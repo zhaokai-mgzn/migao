@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.76.0
+version: 1.77.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2573,7 +2573,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 **③口径**（值域 / 三态 / `现取 vs 上限`）。缺任何一件 ⇒ 那句话在接收方那里**不可反驳**，
 而不可反驳的前提**必然**被当成事实执行。
 
-### 26.2 清单 R：转述 / 派单的纪律（12 条）
+### 26.2 清单 R：转述 / 派单的纪律（13 条）
 
 | 记号 | 症状（一句话） | 判别动作（一次就能做） | 证据锚（可复核） |
 |---|---|---|---|
@@ -2589,6 +2589,8 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | **FM-R10** | **影响面低估**：说「只影响 X / 只在那一种情况下」时用的是**估计**而不是**检索面 + 命中数** ⇒ 窄口径被当成事实。**实测**（#5719 的独立复核）：说成「固化 PR 用不了 `land`」，而机制上**任何基点早于那次预设改动的在飞分支**都会在 `land` ①步停住（含完全没碰预设的分支） | 说影响面时给「**检索面 + 命中数 + 一条可复算的命令**」：逐个点名被影响的调用方，或给一条能复算出条数的命令。实测口径 = 「谁会被这条路径停住」⇒ 点 `land` 的**调用面**（`scripts/issue_lifecycle.py::_land_do_step`）与 `scripts/dev-worktree.sh` 里 `.agent-presets/**` 的**两个写面**。复算见 §26.3 ⑥ | `scripts/issue_lifecycle.py::_land_do_step`（①步 = `rebase`，rc≠0 ⇒ `failed`，三态码 `EXIT_UNMERGED` = 2 —— ⚠️ **该码不唯一**，认因要看打出来的那句）· `scripts/dev-worktree.sh::preset_has_uncommitted_drift` · `scripts/dev-worktree.sh::preset_touched_by_branch`；同族 `FM-R4`（**否定**性面）· `FM-A12` · `FM-D1` |
 | **FM-R11** | **从没验证的心智模型去提修法 / 发规则**：修法所依据的机制是**推想**的（没读源码、没实测）⇒ 修法与真实判据不是同一个东西。**实测两处**：① 提议「0 behind ⇒ 不该停在 `[rebase]`」—— 而 0 behind + **未提交**漂移时 `git rebase` 照样被 git 拒；② 发规则「每包建 `/tmp/<唯一名>` 软链绕开路径空格」—— 逐工具直连取证**未复现** | 提修法（或发**新规矩**）前**先复现缺陷**：命令 + 原始读数，**复现不出就写「未复现」、不写成规矩**；并说明「**修法所依据的机制**」是**读源码 / 实测**得到的（给 `path::symbol` 或一条命令）。判别动作 = 把修法的判据写成可执行式再对一次：`git -C <wt> diff --quiet HEAD -- <路径>; echo rc=$?`。复算见 §26.3 ⑦ | `scripts/dev-worktree.sh::preset_has_uncommitted_drift`（真判据 = 相对 **HEAD** 的漂移，不是 behind 数）· 台账 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json::NS-2`（**未复现 + 已收窄**）；同族 `FM-C1` / `FM-C2`（那两条治**判据**，本条治**修法**）· `FM-A5` |
 | **FM-R12** | **只想到一处、漏同族**：报缺陷时按「我看到的那个现场」收口，不问「同一机制在**同一个改动的下游 / 上游**还有没有第二处」。**实测**（#5719 的独立复核）：只报了 `discard_preset_snapshot` 挡住 rebase，而下游**更危险的第二处** = rebase 后**无条件**的 `refresh_presets` 会把分支自己**已提交**的预设产物覆盖成 origin/main 版本、留下「**把自己改回去**」的**已暂存**改动（一条 `git commit -a` 即**静默回退固化工作**） | 报缺陷时**先问「同一机制还有没有第二处」**，并给出该机制的**检索命令 + 命中数**（不是「我检查过了」）：`grep -n 'refresh_presets\|discard_preset_snapshot' scripts/dev-worktree.sh` 逐个命中问「它会不会也把分支产物当漂移」，命中数写进结论。复算见 §26.3 ⑧ | `scripts/dev-worktree.sh::refresh_presets` · `scripts/dev-worktree.sh::discard_preset_snapshot`；同族 `FM-D1` / `FM-D2`（**静态设计面**的族级纪律 ⇒ 与本条**不合并**，只在 `same_family` 互指）· `FM-R6` |
+
+| **FM-R13** | 🔴 **把「环境已同步」当常量写进派单**：派单消息里的新鲜度断言是**某个时点的快照**，而它与「接收方动手那一刻」之间还会合并进新的工具修复 ⇒ 断言已过期却看不出来。**实测**（#5719 / PR #5720 的作者）：派单方给的「环境铁律」写着「仓库根已同步 `origin/main`」（他确实同步过，但 #5719 在那之后才合并）＋「`land` 的工具来源是**主工作区**那一份」⇒ 接收方**白烧三轮**才定位（①步连停 3 次、从 worktree 手动跑同一子命令 rc=0、六个判据全「无漂移」） | 派单前 / `land` 前**各跑一次**（一条命令、零成本）：`git -C <主工作区> rev-list --count HEAD..origin/main` ⇒ **必须为 0**；派单消息里给这条命令的**读数 + 时点**，而不是「已同步」这句结论。`land` 自己也会打印工具来源（复算见 §26.3 ⑨） | `scripts/issue_lifecycle.py::tool_provenance_lines`（`land` 的 preflight：路径 + 内容 sha + 与 `origin/main` 的差 + behind；落后即显式告警 + 给解除命令）· `scripts/issue_lifecycle.py::_devtree_script`（工具来源 = **主工作区**那份，不是 worktree 里的）· 判据 = `tests/unit_ci_workflows/test_land_tool_provenance.py::test_reproduces_the_original_hole_and_shows_it_at_a_glance`（复现原洞 + 对照 rc=0）；同族 `FM-R1` / `FM-A5` / `FM-A12` / `FM-R7` |
 
 ### 26.3 可复制命令（判别动作落地成命令，不许停在口号）
 
@@ -2653,6 +2655,17 @@ grep -c 'refresh_presets\|discard_preset_snapshot' scripts/dev-worktree.sh      
 git show origin/main:scripts/dev-worktree.sh \| grep -n 'checkout .* -- .agent-presets/'   # 同族的写面普查
 ```
 
+⑨ **派单 / `land` 前的环境新鲜度**（`FM-R13`）—— 「已同步」是**快照**，不是现取；两条读数一起给：
+
+```bash
+git -C <主工作区> rev-list --count HEAD..origin/main    # ⇒ 必须为 0（派单前 / land 前各跑一次）
+git -C <主工作区> rev-parse HEAD                        # 读数要连**坐标与时点**一起给（FM-R1）
+```
+
+⚠️ 这条读的是**本地** `origin/main` ref（不联网、不写盘）⇒ 它自己也可能过期；`land` 的 preflight 会把
+**口径**与「落后」告警一起打出来（并给解除命令 `fetch` + `merge --ff-only`），所以「工具来源」这件事
+**不必再靠人推理**——但仍**只覆盖 `land` 这条入口**（见 §26.4）。
+
 ### 26.4 覆盖面登记：本节**覆盖不到**什么
 
 🔴 **不要把本节读成覆盖面更大的东西**（写法与 §25.6 同口径）：
@@ -2661,7 +2674,7 @@ git show origin/main:scripts/dev-worktree.sh \| grep -n 'checkout .* -- .agent-p
   `evidence` 可解析、判别动作行现取、relay 缺口只许缩短），**不保证承载体本身是对的** ——
   与 §23 G7 同口径：**红是那条判据自己的事**；
 - ❌ **`kind=action` 的条目靠人执行**：判据只能保证它列在下面这一行里、且台账里带 `action` 文本。
-  **判别动作行（现取）**：`FM-R4`、`FM-R7`、`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` —— 这 6 条的 id 集合由判据**现取比对**
+  **判别动作行（现取）**：`FM-R4`、`FM-R7`、`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12`、`FM-R13` —— 这 7 条的 id 集合由判据**现取比对**
   （新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）；
 - ❌ **「转述方到底核没核过」无法机械判**：判据看得见的是**文本形态**（记号登记 / 锚可解析 / §26 有没有裸行号），
   **看不见**「他到底跑没跑那条命令」。这一节的真实执行力来自**接收方按 §25 复核**
@@ -2701,9 +2714,41 @@ git show origin/main:scripts/dev-worktree.sh \| grep -n 'checkout .* -- .agent-p
   `not_solidified` 而不是销账的原因）；
 - ❌ **「坐标指的是壳还是实现」的语义判不了**（`FM-R9` 的另一半）：判据读的是锚**能不能解析**，不是「转述方
   那句话的主语是谁」—— 后者要靠接收侧按 §25.1 打开那一处（`FM-A9` 的同一动作）；
+- ❌ **派单消息里的「环境已同步」断言不在判据射程内**（`FM-R13` 的**转述侧**那一半）：判据看得见
+  「台账里有没有 `action` 文本 / §26.4 判别动作行有没有现取到它」，**看不见**派单方到底跑没跑那条命令
+  —— 派单**消息在仓外**（不 durable，与 `FM-R8` 同因）；
+- ❌ **`land` 的「工具来源」读数只覆盖它读得出来的那一半**（`FM-R13` 的**执行侧**那一半，已机械）：
+  `land` 的 preflight 会打印**工具来源**（哪一份 + 路径 + 内容 sha + 与 `origin/main` 的差 + behind；
+  落后即显式告警 + 给解除命令），判据 = `tests/unit_ci_workflows/test_land_tool_provenance.py`
+  （含复现原洞的实跑与对照 rc=0）。但它 ① **不联网、不写盘**：对比的是**本地** `origin/main` ref
+  ⇒ 本地 ref 自身过期时这个读数是**下界**（口径随读数一起打印）；② **不阻塞** `land`（落后是会话中的
+  常态，fail-closed 会变成**新的假阻塞**）⇒ 「落后」只是**被看见**，不是**被拦住**；
+  ③ **只覆盖 `land` 这条入口** —— 直接手跑 `<主工作区>/scripts/<工具>`、或别的 `main_root()` 派生调用方
+  不经这段读数；④ **说不出「缺的是哪条守卫」**（那要人读 diff）；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
-## 版本沿革（v1.1 → v1.76.0）
+## 版本沿革（v1.1 → v1.77.0）
+
+- v1.76.0（2026-09-27 **新增 `FM-R13`（派单的「环境已同步」断言会过期）+ `land` 的 preflight 打印「工具来源」**，本次；来源 = 本单指令「让 `land` / 派单能看见它用的是哪一份工具」）：
+  ① **病根（由本包独立复核，读数见 PR 正文）**：`land` 的 ①步跑的不是你 worktree 里的
+  `scripts/dev-worktree.sh`，而是 `scripts/issue_lifecycle.py::_devtree_script` 解析出的
+  **`main_root()`/scripts/** 那一份 ⇒ **任何包落地一个工具修复后，主工作区就落后了**，下一个包的
+  `land` 跑的是**旧工具**（实测：主工作区落后 3 个提交、旧副本缺 #5719 的守卫 ⇒ ①步连停 3 次 ⇒
+  作者**白烧三轮**才定位）；
+  ② **落地**：`scripts/issue_lifecycle.py::tool_provenance_lines` —— `land` 的 preflight 每次打印
+  **路径 + 内容 sha + 与 `origin/main` 的差 + behind 计数**，落后即显式 `::warning::` 告警 + 给**可执行**
+  的解除命令；**同类入口一并点名**（`dev-worktree.sh` 与 `preset-anchor-refresh.sh` **同源**，
+  `_devtree_script` / `_preset_refresh_script` 都取主工作区根）；判据 =
+  `tests/unit_ci_workflows/test_land_tool_provenance.py`（11 条：两种形态的实跑读数 + 复现原洞 + 红证变异体 + 只改注释对照）；
+  ③ **取舍（有意不 fail-closed）**：落后是会话中的常态，fail-closed = **新的假阻塞**（本仓刚修过同类）
+  ⇒ 该取舍被**钉成判据**（落后形态下 `land --dry-run` 仍 rc=0），改成 fail-closed 必须是有意的；
+  ④ **`FM-R13`（`kind=action` / `state=gap`）** + §26.3 ⑨ 复算命令 + §26.4 两条覆盖面登记；
+  `RELAY_GAPS_FROZEN` **6 → 7**（见台账 `PD-7`，含「为什么不给 `criterion`」的公开理由）；
+  §26.2 标题条数随现取抬到 13（判据 21）；用例库面 `MC-038` 的端点随现取抬到 `FM-R13`、
+  `kind=action` 读数改成七条（`test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）。
+  **未实装 / 边界（照实登记，§19.1）**：`FM-R13` 的**派单侧**那一半**无机械锁**（派单消息在仓外）；
+  preflight 的读数是**下界**（本地 ref）、**不阻塞**、**只说「可能是旧工具」说不出缺哪条守卫**、
+  **只覆盖 `land` 这条入口** —— 逐条登记在 §26.4。
 
 - v1.74.0（2026-09-27 **§19 活索引行的读数改成「现取」并由判据 19 钉住 + 新增 `FM-R8`（收尾半径）+ §19.3 / §26.4 覆盖面登记**，本次；三件同批，来源 = #5707 本单指令）：
   ① **治「活索引自己腐烂」**（台账 `NS-4` 的 ①「面外具名实例」⇒ **销账**）：§19 表第 19 行的两处读数与台账**脱钩**
@@ -3646,7 +3691,7 @@ git show origin/main:scripts/dev-worktree.sh \| grep -n 'checkout .* -- .agent-p
   **未实装 / 边界（照实登记，§19.1）**：`FM-R9`~`FM-R12` 四条**只有纪律 + 判别动作**，没有机械锁；
   `NS-2` 的收窄**不会让任何判据变红或变绿**；判据 21 只管**两份清单标题的条数**（自然语言计数、`merge_log` 历史句
   与别的散文读数仍在面外，见 §26.4 与台账 `NS-4`）。本节**不改任何门禁的通过条件、不新增豁免**。
-- v1.76.0（2026-09-27 **新增 §25.2 的 `FM-A14`（夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象）**，本次；来源 = #5724 的链内修：`ci workflow helper unit tests`（required）在 main 上恒红、`Post-Merge Verify` 连带判红，复现于**纯 `origin/main` 检出**；真因 = `approval-queue`（#5649）新增的前置事实 `branch_presence()`（真 `git ls-remote`）没有被判据夹具 `_run_cli` 桩掉 ⇒ 远端有没有台账分支决定了判据走哪条路。
+- v1.77.0（2026-09-27 **新增 §25.2 的 `FM-A14`（夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象）**，本次；来源 = #5724 的链内修：required job `ci workflow helper unit tests` 在 main 上恒红、`Post-Merge Verify` 连带判红，复现于**纯 `origin/main` 检出**；真因 = `approval-queue`（#5649）新增的前置事实 `branch_presence()`（真 `git ls-remote`）没有被判据夹具 `_run_cli` 桩掉 ⇒ 远端有没有台账分支决定了判据走哪条路。
   ① **实例修法（同 PR）**：夹具**显式**桩 `branch_presence`（`presence=` 参数，默认「存在」）+ **两面断言**（存在 ⇒ `::warning::` + 人工出口命令，原断言一字未删；**确定不存在** ⇒ `::notice::` + `rc=0`，即 #5649 口径）+ 读数面加一条「桩的是存在却走了不存在早退 ⇒ 报判定顺序与桩不符」的自检。
   ② **类级元守卫**：`tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts`（判据 = `…::fixture_stub_problems`：夹具**桩表**必须含 `branch_presence`；两个方向的断言函数都必须存在**且被测试调用**；附一条**内存构造**的删除红证）。
   **未实装 / 边界（照实登记，§19.1）**：本条只机械保证**这一个夹具**对**这一个事实**桩了 —— 「所有夹具都桩掉了全部运行期依赖」判不了（需要枚举每个夹具的外部依赖，本仓不做文本层的一刀切）；`FM-A14` 是 `kind=criterion`（有判据），故 §25.6 的 `kind=action` 判别动作行**不变**（仍 9 条）。
