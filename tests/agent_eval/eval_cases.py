@@ -4007,6 +4007,24 @@ _CASE_MC_021 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-022 [NORMAL] 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）（源: cases/misc.yml）──
+_CASE_MC_022 = EvalCase(
+    id='MC-022',
+    legacy_id='',
+    title='业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把任一条测试的「今天」写回裸 LocalDate.now()（或再写一份 ZoneId.of("Asia/Shanghai") / 业务时区字面量）时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（L0 静态）：`backend/admin-api/src/test/java/**` 里不得出现五条禁则（无参 LocalDate.now( / LocalDateTime.now( / LocalTime.now( / 业务时区字面量 / ZoneId.of 业务时区），**剥注释后**判定。执行点 = BusinessClockTestSourceGuardTest.testSourcesReadBusinessTimeOnlyViaBusinessClock。', '判据 2（台账只许缩短）：存量 40 处 / 13 条按「文件 × 规则」登记，**未登记即红 / 超数即红 / 不再命中即红**（销账）。执行点 = 同类的 ledgerOnlyShrinks（三条注入式红证：未登记、超数、残留）。', '判据 3（实例判据）：本单修掉的三个类（PoolBoardUrgencyTest / InboundOrderServiceTest / ProcessingOrderServiceTest）**在扫描面内且命中为 0**。执行点 = theClassesFixedByThisChangeAreClean。', '判据 4（判别力）：五条禁则各能命中一个已知坏样本；且注释里的提及**不得**被判违规。执行点 = rulesHaveDiscriminatingPower。', '判据 5（隔离注入）：把裸 now() 放进隔离目录 ⇒ 扫描器逐条报出且对账判红（守卫自身判别力自证，不碰真源树）。执行点 = detectsInjectedViolationInIsolatedTree。', '🔴 红证（实跑，2026-09-27）：① 修复前 CI required 检查 admin-api unit tests 在 job 36280962072（跑于 2026-09-26T23:58Z–00:00Z）判红，逐条读数 expected 2026-09-26 / but was 2026-09-27、-3/-4、1/0；② 确定性复现：`TZ=America/Los_Angeles ./mvnw -Dtest=… test`（JVM 默认时区落后 +08 一天，与 runner 在 UTC 16:00–24:00 的处境等价）—— 修复前必红、修复后绿；③ 把 `businessClock.today()` 注回 `LocalDate.now()` ⇒ 判据 1/3 必红。'],
+    skip_reason='[backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里',
+    tags=['ci', 'time', 'flaky', 'business-clock', 'test-only'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10110,6 +10128,7 @@ ALL_CASES = (
     _CASE_MC_019,
     _CASE_MC_020,
     _CASE_MC_021,
+    _CASE_MC_022,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -23,6 +23,7 @@ import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
+import com.migao.admin.time.BusinessClock;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +63,18 @@ class ProcessingOrderServiceTest {
 
     @InjectMocks
     private ProcessingOrderService processingOrderService;
+    /**
+     * 业务时钟（与生产**同一份**口径，issue #3802）：测试里的「今天 / 现在」只能从这里取。
+     *
+     * <p>⛔ 不许写裸 {@code LocalDate.now()} —— 那读的是 <b>JVM 默认时区</b>，而生产的业务日固定
+     * {@code Asia/Shanghai}（{@link BusinessClock}）；CI runner 的 JVM 默认时区是 <b>UTC</b>
+     * ⇒ 两侧在 <b>UTC 16:00–24:00（北京 00:00–08:00）差一天</b>，本类的日期断言会每天红 8 小时
+     * （实测：2026-09-26T22:14Z / 23:59Z 两轮 required 检查红，期望 2026-09-26 实际 2026-09-27）。
+     * 注入同一个 {@code BusinessClock} ⇒ 夹具与生产**同源同区**，与 runner 时区无关。</p>
+     */
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
+
 
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
@@ -3501,7 +3514,7 @@ class ProcessingOrderServiceTest {
         // 交期用**相对日期**（issue #4911）：写死 `LocalDate.of(2026, 9, 20)` 会被「发加工交期不得早于今天」
         // （#3901）在**第二天**判红 —— 测试对墙钟敏感 = 定时炸弹（本地 CST 2026-09-21 实测红；
         // CI 用 UTC ⇒ 只是晚 8 小时红）。本用例要断言的是「交期**原样落库**」，不是某个具体日历日。
-        LocalDate deliveryDate = LocalDate.now().plusDays(3);
+        LocalDate deliveryDate = businessClock.today().plusDays(3);
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
         issue.setAction("issue");
         issue.setProcessor("朝阳加工厂");
@@ -3573,7 +3586,7 @@ class ProcessingOrderServiceTest {
 
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
         issue.setAction("issue");
-        issue.setExpectedDeliveryDate(LocalDate.now().minusDays(1));
+        issue.setExpectedDeliveryDate(businessClock.today().minusDays(1));
 
         assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
                 .isInstanceOf(BusinessException.class)
@@ -3591,13 +3604,13 @@ class ProcessingOrderServiceTest {
         // 今天
         ProcessingOrderUpdateRequest today = new ProcessingOrderUpdateRequest();
         today.setAction("issue");
-        today.setExpectedDeliveryDate(LocalDate.now());
+        today.setExpectedDeliveryDate(businessClock.today());
         processingOrderService.updateStatus("po-1", today, TENANT, "u1");
 
         // 未来
         ProcessingOrderUpdateRequest future = new ProcessingOrderUpdateRequest();
         future.setAction("issue");
-        future.setExpectedDeliveryDate(LocalDate.now().plusDays(7));
+        future.setExpectedDeliveryDate(businessClock.today().plusDays(7));
         processingOrderService.updateStatus("po-1", future, TENANT, "u1");
 
         // 空（交期可选）
@@ -3607,8 +3620,8 @@ class ProcessingOrderServiceTest {
 
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper, times(3)).updateById(captor.capture());
-        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(LocalDate.now());
-        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(LocalDate.now().plusDays(7));
+        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(businessClock.today());
+        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(businessClock.today().plusDays(7));
         assertThat(captor.getAllValues().get(2).getExpectedDeliveryDate()).isNull();
     }
 
