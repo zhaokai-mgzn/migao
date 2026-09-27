@@ -19,6 +19,11 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `INBOUND_PAGE_ROUTE` 必须逐字等于它
     // （守卫 tests/inbound-page-platform-gaps.test.ts 判据 G0：没登记进这里 = 死链 ⇒ 红）
     'pages/worker/inbound/index',
+    // 工人**拍照补打标签**（issue #5640 功能②）：拍米高入库标签（或手输 8 位短码）→ 看单据详情
+    // → 补打一张新标签。标签贴丢 / 磨花 / 贴错时，工人不必再回电脑端管理后台。
+    // 版面 / 渲染 / 打印三件与入库页**共用**（`src/utils/inbound/labelLayout|labelCanvas|labelPrint`）
+    // ⇒ 只换数据源（过账回执 ⇒ 按短码读详情）。路由字面量同上：gaps.ts 的 `REPRINT_PAGE_ROUTE` 必须逐字等于它。
+    'pages/worker/reprint/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：

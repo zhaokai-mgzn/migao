@@ -27,8 +27,8 @@ import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { confirmAdminAction } from '../../../utils/adminConfirm'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { decodeBarcodeFromPhoto, type PendingPhoto } from '../../../utils/inbound/barcodeDecode'
-import { layoutInboundLabel, type InboundLabelView } from '../../../utils/inbound/labelLayout'
-import { renderInboundLabel, type LabelCanvasElementLike } from '../../../utils/inbound/labelCanvas'
+import { inboundLabelPageSize, layoutInboundLabel, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   evaluateSkuGate,
   prefillFromRecognize,
@@ -39,10 +39,14 @@ import {
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
 import {
   PRINT_READY_HINT,
-  printFailureHint,
   probePrintCapability,
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
+import {
+  SDK_UNAVAILABLE_HINT,
+  createH5CanvasFactory,
+  renderLabelPreview,
+} from '../../../utils/inbound/labelPageKit'
 import { printInboundLabel } from '../../../utils/inbound/labelPrint'
 import { createLpapiTransport, loadLpapi } from '../../../utils/inbound/lpapiTransport'
 import {
@@ -62,20 +66,10 @@ import {
 import '../../../styles/admin-surfaces.scss'
 import './index.scss'
 
-/** `lpapi-ble` 加载不出来时的文案（取能力台账里 `sdk-unavailable` 那一条，页面不另写一句） */
-const SDK_UNAVAILABLE_HINT = printFailureHint('sdk-unavailable')
-
-/** 画布工厂：h5 用真 DOM canvas；无 DOM（weapp）⇒ 返回 null 由渲染器显式抛错 */
-function createH5CanvasFactory(): (w: number, h: number) => LabelCanvasElementLike {
-  return (widthPx: number, heightPx: number) => {
-    const doc: any = typeof document === 'undefined' ? null : document
-    if (!doc) throw new Error('当前平台没有 DOM canvas（标签预览仅 h5 可用）')
-    const canvas = doc.createElement('canvas')
-    canvas.width = widthPx
-    canvas.height = heightPx
-    return canvas as LabelCanvasElementLike
-  }
-}
+/** 画布工厂 / 组件缺失文案 / 预览渲染 = **共用件**（`utils/inbound/labelPageKit`）。
+ * 补打页（`pages/worker/reprint/index.tsx`）是**同族页面**，两页必须引用同一份 ——
+ * 各写一份画布工厂的下场是「一边修了另一边没修」，而两边都不会报错
+ * （守卫 `tests/inbound-reprint-code-space.test.ts` 的 G3）。 */
 
 type Step = 'photo' | 'confirm' | 'label'
 
@@ -205,15 +199,10 @@ export default function WorkerInboundPage() {
       if (!detail.success || !detail.data) throw new Error(detail.message || '读标签详情失败')
       setLabel(detail.data)
       setStep('label')
-      // 出图（预览）：与送打印**同一份**绘制计划（不另写一份版面）
-      try {
-        const rendered = renderInboundLabel(detail.data, createH5CanvasFactory())
-        const url = (rendered.canvas as any)?.toDataURL?.('image/png')
-        setPreviewUrl(url || '')
-      } catch (e: any) {
-        setPreviewUrl('')
-        setNotices((prev) => [...prev, '标签已生成，但本机画不出预览（打印仍会按同一份版式送图）。'])
-      }
+      // 出图（预览）：与送打印**同一份**绘制计划（不另写一份版面，也不各写一份画布工厂）
+      const preview = renderLabelPreview(detail.data)
+      setPreviewUrl(preview.url)
+      if (preview.notice) setNotices((prev) => [...prev, preview.notice])
     } catch (e: any) {
       setError(e?.message || '过账失败，请重试')
     } finally {
@@ -286,7 +275,7 @@ export default function WorkerInboundPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照入库</Text>
         <Text className='admin-surface__subtitle'>
-          拍上游标签 → 核对 → 过账（加库存）→ 打印 50×30mm 标签
+          拍上游标签 → 核对 → 过账（加库存）→ 打印 {inboundLabelPageSize()} 标签
         </Text>
       </View>
 
@@ -421,7 +410,7 @@ export default function WorkerInboundPage() {
 
         {step === 'label' && label && (
           <View className='admin-card' data-testid='inbound-step-label'>
-            <Text className='admin-card__title'>入库标签 50×30mm</Text>
+            <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
             <Text className='admin-card__meta'>
               短码 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
               {label.printCount ?? 0} 次
