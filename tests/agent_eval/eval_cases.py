@@ -4331,9 +4331,9 @@ _CASE_MC_039 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-046 [NORMAL] 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向（源: cases/misc.yml）──
-_CASE_MC_046 = EvalCase(
-    id='MC-046',
+# ── MC-047 [NORMAL] 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向（源: cases/misc.yml）──
+_CASE_MC_047 = EvalCase(
+    id='MC-047',
     legacy_id='',
     title='铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向',
     skill=Skill.GENERAL,
@@ -10704,7 +10704,7 @@ ALL_CASES = (
     _CASE_MC_028,
     _CASE_MC_038,
     _CASE_MC_039,
-    _CASE_MC_046,
+    _CASE_MC_047,
     _CASE_MC_029,
     _CASE_MC_030,
     _CASE_MC_031,
