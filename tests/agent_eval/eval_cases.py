@@ -4331,6 +4331,24 @@ _CASE_MC_039 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-047 [NORMAL] 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向（源: cases/misc.yml）──
+_CASE_MC_047 = EvalCase(
+    id='MC-047',
+    legacy_id='',
+    title='铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人给任何 workflow 新增 `on.schedule` 而没有在台账里具名（带非破坏性证据锚）、或把新周期面塞进存量基线、或自创第三类例外、或把证据锚删光 / 复用、或把铁律 10 里的禁令本体删掉（把「收窄」写成「取消」）、或把裁定出处抹成「历来如此」、或在飞实例已经落地却仍留在 `pending`（不升格为 `exceptions`）时，都必须有东西具名报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**未登记即红（牙齿）**：现取 `.github/workflows/*.yml` 里任何带 `on.schedule` 的 workflow（**结构性**取 `on.schedule[].cron`，注释里的 `# - cron:` 不算），既不在 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline`、也不是 `exceptions` 的具名实例 ⇒ 判红并给出可行动出口（登记 `exceptions` + 在仓库根 `AGENTS.md` 铁律 10 具名）', '**存量只许缩短（三处冻结）**：台账 `baseline` ⇄ 判据里 `BASELINE_FILES_FROZEN` 必须逐项相等（无多无少无重复）；条数 ≤ `BASELINE_COUNT_MAX` 且台账 `baseline_frozen` 与之相等 ⇒ 把新周期面塞进 `baseline` 必须同时改三处且数字变大（diff 里看得见）', '**陈旧登记即红**：登记的 workflow 现取没有 `on.schedule`（或文件已删）⇒ 红（台账只许缩短；`ghost-leg.yml` 这类死登记不许留着）', '**例外类封闭枚举**：`kind` ∈ {`republish`, `readonly_heartbeat`} ⇒ 自创第三类（如 `cleanup`）判红', '**三个证据锚可解析 + 非破坏性锚唯一**：`non_destructive_anchor` / `idempotency_anchor` / `self_proof_anchor` 都写成 `<仓库相对路径>::<符号或文本片段>`，路径必须存在且片段必须真在该文件里出现（**删光即红**）；`non_destructive_anchor` 不许被两条实例复用（一个锚给所有东西盖章）', '**具名双向（台账 ⇄ 铁律正文）**：`exceptions[].pr` 集合与 `AGENTS.md` 铁律 10 里「📌 已批准具名实例」那行的 `#N` 集合**双向相等** ⇒ 登记了却没具名 / 具名了却没登记，都判红（现取 = PR #5731）', '🔴 **规则本体不许被删（收窄 ≠ 取消）**：铁律 10 正文里必须**逐字**还有禁令（`⛔ 不新增 schedule/cron` + `无人值守`）与两个裁定日期（`2026-09-21` 原裁定 / `2026-09-27` 收窄裁定）；正文块取不到 ⇒ fail-closed 红', '**声明 ⇄ 现取（双向）**：登记的 `cron` 必须逐字出现在该 workflow 的 `on.schedule` 里，且该 workflow 的**每一条** cron 都被登记覆盖 ⇒ 台账不许给不存在的周期面盖章、也不许漏一条', '🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `ledger_problems`；本仓已实测「改磁盘 → 跑 pytest」的变异**可能不被读到** ⇒ 判据恒绿 = 空断言）：删光 exceptions / 新造一条未登记的周期面 / 死登记 / 把新 schedule 塞进 baseline / 单改 `baseline_frozen` / 自创第三类 / 锚被删光 / 锚复用 / cron 与现取脱钩 / 删禁令本体 / 删裁定日期 / 删具名行 / 具名成别的 PR / 取不到正文块 / 在飞实例已落地却仍留在 pending / 在飞实例缺升格动作 / 在飞实例的 PR 没在铁律正文里具名，**17 条各自判红并点名命中分支**；**只改注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）', '🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录台账 JSON + `AGENTS.md`），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码任何时刻同一读数；运行期读数（cron 是否被节流 / 发布是否真跑 / **PR body 里声明了没有**）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在台账 `coverage_boundary`', '🔴 **在飞实例（`pending`）一落地即须升格**：`pending` **不构成登记**（不满足「未登记即红」的出口），只把跨包交接落成**远端可复原形式**（铁律 12(c)）；其 `pr` 也必须在铁律正文的具名行上；🔴 一旦 `pending[].file` 现取出现 `on.schedule` ⇒ **必须**移入 `exceptions` 并补齐三个证据锚 ⇒ 留在 `pending` 判红（`pending` 不许变成「永远的在飞」）', '覆盖边界（显式登记在台账 `coverage_boundary`，8 条，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：①「远端执行体到底删不删」是**运行期**事实（判据只核证据锚可解析，判不了远端那份字节与本仓同一）②「幂等」判不了实跑 ③「失败可见」判不了「真的有人看」（`Drift Audit` 不在 required 集合 ⇒ 非阻断 + 3 天延迟）④ 第 ④ 条「PR body 显式声明」判据**读不到** ⑤ **存量 14 条基线是否安全不在面内**（`stale.yml` / `close-linked-issues.yml` 本来就带无人值守写动作；本表只裁新增，不为存量背书）⑥ cron 跑没跑（节流 / concurrency 顶掉）⑦「周期档只报告、不写盘」判不了写盘档的 `if` 在**运行期**真的拦住（这是**声明面**的锁，不是行为面的锁）⑧ 与 MC-039 的 `publish_leg_fallback_ledger.json` **不互为副本、也互不重判**（一个判准入、一个判兜底面在位；判据侧只引用那条腿的登记册，不复制它的判定逻辑）'],
+    skip_reason='[backend-contract] 规则文本 ⇄ 触发面 ⇄ 台账一致性的静态判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'iron-rule-10', 'schedule', 'ledger', 'discriminator', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-029 [NORMAL] RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等（源: cases/misc.yml）──
 _CASE_MC_029 = EvalCase(
     id='MC-029',
@@ -4559,6 +4577,24 @@ _CASE_MC_040 = EvalCase(
     data_checks=['**头 == 块**：围栏形态（`# ====…` 紧跟 `# <ID>（…`）的注释头，其号必须等于下方第一个 `- id:` 的号（不等 ⇒ 红，**两个号都点名**）', '**头号唯一**：同一个号不得出现在两条围栏注释头里（重复 ⇒ 红 —— 读号的人分不清它指哪一块）', '**散文不是头**（判别力边界，实测依据）：全语料有 14 处以 `# <ID>` 开头的**散文引用**（上一行不是围栏）⇒ 不得被判成块头（否则判据被自己的语料喂红）', '**fail-closed**：语料里一条围栏头都没有 ⇒ 红（不许静默退化成空断言）；现取围栏头 35 处、相符 32 处', '**红证**：头≠块 ⇒ 红；头号重复 ⇒ 红；空语料 ⇒ 红；散文引用 ⇒ **不红**；只改散文 ⇒ **不红**'],
     skip_reason='[backend-contract] 用例语料的号一致性判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_case_header_ids_match_block_ids.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['casebook', 'case-id', 'header-consistency', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-048 [NORMAL] 真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备（源: cases/misc.yml）──
+_CASE_MC_048 = EvalCase(
+    id='MC-048',
+    legacy_id='',
+    title='真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当复核包里的 sql 代码块混进写语句（原文直写 / 注释夹心拼回 / 小写），或删掉「未在真库上验证」声明，或总表多一行而没有对应节、删掉一整节、复制一节造成锚不唯一，或某节缺出处锚、预期形状、安全说明，或条目被清空、sql 块被清空时，都必须有东西具名报出；而只加散文或只改 SQL 注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（本号存在的唯一理由）**：docs/testing/production-readonly-verification-pack.md 里每个 sql 围栏块的**原文**与**去 SQL 注释**两个视图都不得含写 / DDL 动词（大小写不敏感 + 词边界；去注释视图抓 UP/*x*/DATE 这类注释夹心）；注释的剥离复用仓内唯一实现点 strip_sql_comments（tests/unit_ci_workflows/_sql_schema.py），不另起一把尺子', '**判据 2**：文档必须逐字含「未在真库上验证」——否则下一个人会把这份清单读成已取证的读数', '**判据 3**：总表行的条目 id 集合与各节标题的条目 id 集合互相钉住（总表有而各节没有、各节有而总表没有都红），且任一 id 在总表与各节里各自只出现一次（锚唯一）', '**判据 4**：每个条目节必须含出处锚 / 预期形状（判读口径）/ 安全说明三件套，缺失时具名到节', '**判据 5（fail-closed）**：文档不存在 / 文本为空 / 条目数低于下限 / 抽不到 sql 块 ⇒ 红（「没东西可判」不是通过）；另有一条强化：标「必做」的条目必须有 sql 块或显式说明「不开 SQL」', '🔴 红证全部**内存构造**（真文档当基线 → 字符串替换构造变异体 → 直接喂纯函数 pack_problems），逐条断言**命中的分支**（报文含「原文」「去注释后」「总表有而各节没有」「锚不唯一」「R2 节缺」这类点名串）并断言坏形态读数 ≠ 基线读数（防变异没生效 ⇒ 空断言）；对照读数两条：只追加一段散文 ⇒ 不红、往 sql 块里只加一行 SQL 注释 ⇒ 不红'],
+    skip_reason='[backend-contract] 文档结构与 SQL 只读性的静态判据（纯函数、零网络、零时钟、不连任何库）由 tests/unit_ci_workflows/test_readonly_verification_pack.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['readonly', 'verification-pack', 'sql-guard', 'doc-structure', 'red-proof', 'discriminator'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -10704,6 +10740,7 @@ ALL_CASES = (
     _CASE_MC_028,
     _CASE_MC_038,
     _CASE_MC_039,
+    _CASE_MC_047,
     _CASE_MC_029,
     _CASE_MC_030,
     _CASE_MC_031,
@@ -10717,6 +10754,7 @@ ALL_CASES = (
     _CASE_MC_044,
     _CASE_MC_045,
     _CASE_MC_040,
+    _CASE_MC_048,
     _CASE_MC_046,
     _CASE_OB_001,
     _CASE_OB_002,

@@ -455,6 +455,13 @@
       "issue": "#4221",
       "criterion": "tests/unit_ci_workflows/test_local_gate_matrix.py::test_local_leg_commands_match_ci",
       "note": "常量上方的 `#` 注释声称与 `.github/workflows/bmini-app.yml` 两条腿的 run 原文**逐字一致**（本地腿不许自创第三套口径）⇒ 由该判据从 CI YAML **现取**四条命令逐条比对（`npm ci` 不算判定内容），同序执行另由 `test_local_leg_runs_them_in_order` 钉住；CI 改了命令而本地声明/本地腿没跟 ⇒ 红。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py",
+      "symbol": "BASELINE_FILES_FROZEN",
+      "issue": "#5707",
+      "criterion": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py::test_baseline_matches_the_frozen_snapshot_in_two_places",
+      "note": "常量上方的 `#` 注释声称「台账 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline` 与本冻结快照**必须等于**（逐项相等、无重复、无多无少）」⇒ 由该判据承担：它把**真台账**喂给纯函数 `ledger_problems`，比对 `baseline` ⇄ `BASELINE_FILES_FROZEN`（逐项）＋条数 ≤ `BASELINE_COUNT_MAX` ＋台账 `baseline_frozen` 与之相等（**三处一起改才生效**：把新周期面塞进存量基线必须同时改三处且数字变大，diff 里看得见）⇒ 「新 schedule 混进存量基线」这条捷径被堵死。配套红证 = `test_discriminating_power_in_memory` 的两条（台账侧单改 / 单改 `baseline_frozen`，各自判红）。"
     }
   ],
   "frozen_declarations": [
