@@ -734,7 +734,7 @@ def test_mutation_harness_really_changes_the_text() -> None:
 def test_boundary_section_names_the_out_of_scope_forms() -> None:
     """边界节必须写清「本清单覆盖不到什么」（不是一句「见上文」）。
 
-    ⚠️ marker 表是**正向**判据（写不出来 ⇒ 红）：本单（`FM-A14`）新登记的三条覆盖边界
+    ⚠️ marker 表是**正向**判据（写不出来 ⇒ 红）：本单（`FM-A15`）新登记的三条覆盖边界
     （`required` 集合的**时效性** / 非 required 红的清单只覆盖「**已上报**」的 / 「**不阻塞**」≠「没问题」）
     各带一个 marker ⇒ **删掉那三条登记就红**（判据 14 的常驻面）。
     """
