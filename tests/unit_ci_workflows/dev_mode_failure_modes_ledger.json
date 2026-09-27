@@ -543,15 +543,18 @@
       "id": "FM-E7",
       "state": "guarded",
       "symptom": "**用例号被抢**：两个并行包各自「取现取最大号 +1」⇒ 双双写成同一个新号；先合的无事，**后合的**把重号带进 main（本会话实测 7 次：UI-061 / UI-064 / MC-022 / MC-023 / BM-019…）。",
-      "guards": "**本单补的判据**（原先零守护：现取 536 个用例号、零重号，但**没有任何判据断言唯一性**）",
+      "guards": "**两条判据 + 一条事前出口**。① **事后拦网**（原先零守护：重号一进 PR 就红在**后合的那个**上）：`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus` （+ `::test_case_id_duplicate_is_detected_in_memory` 的判别力自证）；② **事前出口（机械化，本单补）**：只读工具 `scripts/next_case_id.py` —— 候选 = main ∪ **全部 open PR 的分支** ∪ 本工作区，取**最小空闲号**，并在同一次调用里断言「返回的号 ∉ 候选集」；🔴 **看不到在飞面**（gh 不可用 / 未登录 / 离线 / 某个 PR 内容读不到）⇒ 打印「无法判定 ⇒ 不许取号」+ `exit 3`（**禁止**乐观给号）。取法：`python3 scripts/next_case_id.py MC`（缺省 = 全部前缀）；判据 = `tests/unit_ci_workflows/test_next_case_id_allocator.py`（只读性 / 三态 / 内部自证 / **内存构造复现「main+在飞」现场** / `scripts/**` 单一实现 / 技能面口径唯一；用例 `MC-041`）。⇒ 与本条原先那句「取号前也 `gh pr` 查一遍在飞 PR 的 diff」的关系：**那句是手工动作、并发 5~6 个包时必然失效**（今天 `MC-046` 被三个包同时取到就是实证），已由工具取代。",
       "criteria": [
         "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus"
       ],
       "evidence": [
-        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_duplicate_is_detected_in_memory"
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_duplicate_is_detected_in_memory",
+        "scripts/next_case_id.py",
+        "tests/unit_ci_workflows/test_next_case_id_allocator.py::test_todays_incident_is_reproduced_in_memory",
+        "tests/unit_ci_workflows/test_next_case_id_allocator.py::test_min_free_is_not_max_plus_one_and_counts_all_sources"
       ],
       "refs": [],
-      "mitigation": "🔴 **有可行的缓解办法，且已实测有效**（RBAC P3：写侧原取 `MC-031`，推送前查到在飞 PR #5704 已占 `MC-031` ⇒ 顺延 `MC-032`~`MC-034`，**这次没撞**）。三步（**不是「注意别撞」，是可复制命令**）：\n1. **现取已合并的最大号**：`grep -rhoE \"\\b(BM|UI|MC|PR|OR|DF|HR)-[0-9]+\" .github/cases/ | sort -u | tail`；\n2. 🔴 **再查一遍在飞 PR 的 diff / 最新内容**：`gh pr list --state open --json number,headRefName` 后逐个取 `.github/cases/` 里的 id（**这一步就是能拦住「main + 在飞」的那一步**）；\n3. **rebase 后再查一次**（在飞集会变）。\n⇒ 与 `CASE_ID_ALLOCATION_BOUNDARY` 的关系：**判据只看已合并状态、拦不住在飞** ⇒ **判据拦不住的地方，判别动作补上**（#5707 的设计意图：面的适用性判断仍靠人，但人能照着命令做）。"
+      "mitigation": "🔴 **已机械化（本单）：取号 = 一条只读命令 `python3 scripts/next_case_id.py <PREFIX>`** —— 候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区、取最小空闲号、看不到在飞面 ⇒ `exit 3` 拒答；**下面这套三步手工动作已被它取代**（保留原文只为记实：它曾实测有效，但并发 5~6 个包时必然失效）。原手工缓解（RBAC P3：写侧原取 `MC-031`，推送前查到在飞 PR #5704 已占 `MC-031` ⇒ 顺延 `MC-032`~`MC-034`，**这次没撞**）：\n1. **现取已合并的最大号**：`grep -rhoE \"\\b(BM|UI|MC|PR|OR|DF|HR)-[0-9]+\" .github/cases/ | sort -u | tail`；\n2. 🔴 **再查一遍在飞 PR 的 diff / 最新内容**：`gh pr list --state open --json number,headRefName` 后逐个取 `.github/cases/` 里的 id（**这一步就是能拦住「main + 在飞」的那一步**）；\n3. **rebase 后再查一次**（在飞集会变）。\n⇒ 与 `CASE_ID_ALLOCATION_BOUNDARY` 的关系：**判据只看已合并状态、拦不住在飞** ⇒ **判据拦不住的地方，判别动作补上**（#5707 的设计意图：面的适用性判断仍靠人，但人能照着命令做）。"
     },
     {
       "id": "FM-E8",
@@ -668,10 +671,12 @@
       "id": "FM-E15",
       "state": "registered",
       "symptom": "**编号分配只看已合并状态**（用例号 + 迁移号同族）：取号时现取「main 上的最大号 + 1」，而**看不到在飞分支** ⇒ 两个并行包取到同一个号；先合的无事，**后合的**把重号带进 main。本会话用例号已撞 **7~8 次**（UI-061 / UI-064 / MC-022 / MC-023 / BM-019 / MC-025 / MC-026），迁移号撞过 1 次（V132 两包同抢 ⇒ V133/V134）。**本单自己中招**：写侧取 MC-026（当时现取最大 = MC-025），#5705 合并时已占 MC-026/MC-027 ⇒ 顺延 MC-028。",
-      "guards": "本单补的两条唯一性判据（用例号 / 活的迁移目录版本号：重号**红在后合的那个 PR** 上）+ 顺延口径（**顺延尚未合并的一侧**，不动已合并的号）",
+      "guards": "本单补的两条唯一性判据（用例号 / 活的迁移目录版本号：重号**红在后合的那个 PR** 上）+ 顺延口径（**顺延尚未合并的一侧**，不动已合并的号）；**事前出口（本单补）** = 只读工具 `scripts/next_case_id.py`（候选含**全部 open PR 的分支** + 本工作区；看不到在飞面 ⇒ `exit 3` 拒答）；判据 = `tests/unit_ci_workflows/test_next_case_id_allocator.py`（用具例 `MC-041`）",
       "ledger_ref": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::CASE_ID_ALLOCATION_BOUNDARY",
       "evidence": [
-        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_allocation_boundary_is_registered"
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_id_allocation_boundary_is_registered",
+        "scripts/next_case_id.py",
+        "tests/unit_ci_workflows/test_next_case_id_allocator.py::test_todays_incident_is_reproduced_in_memory"
       ],
       "refs": []
     },
