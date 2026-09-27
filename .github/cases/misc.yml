@@ -862,3 +862,87 @@ cases:
         - flaky-triage.yml
         - flaky-ledger-reconcile.yml
       verifies: []
+
+  # MC-026（Refs #5699 的 P1；design 真值源 docs/design/rbac-single-source.md §4 的 P1 行 + §5.2 的 M1/M2/M3）。
+  # 病（定量，设计 §1.3）：同一事实（角色 → 码 / 码目录 / 菜单节点 → 码）在仓里有 20 处副本 ⇒ 副本数
+  # 使「改一个码要动 9~13 处」，每次分叉都靠人发现（§1.4 六条实例）。本用例锁的是 P1 = **零 delta**：
+  # 清单（声明）与由它派生的对账读数（生成物）必须与**现值逐值相等**。
+  # ==========================================================================
+  - id: MC-026
+    legacy_id: ""
+    title: "RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短"
+    domains:
+      - misc
+      - ci
+      - auth
+    tier: normal
+    tags:
+      - rbac
+      - single-source
+      - zero-delta
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 RBAC **声明清单**的结构事实（清单 ↔ 既有解析器的现取 ↔ 副本登记表），
+    # 由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "新增一处「角色 → 码」的手抄副本、或手改生成物 rbac/readings.json、或让台账条目增长时，必须有东西变红；而清单与现值不一致时必须**逐项点名**报出（不是「数量相等」）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **零 delta 是 P1 唯一的验收口径**：rbac/manifest.json（声明）与 rbac/readings.json（生成物）**逐值相等**，且生成物 == 由 rbac/generate_readings.py 当场重新生成的结果；不等时判据输出**完整不一致清单**（每项一行：清单值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）"
+      - "M1 副本登记表（rbac/sources.json）：形态面（Java attachDefaultPermissions / switch case / 菜单树 / 路由守卫 / SQL INSERT INTO role_permissions|permissions / Python ROLE_PERMISSIONS|PERMISSION_CATALOG|PERMISSION_LABELS|AUTHORIZATION_CENSUS / bmini ADMIN_SURFACES）命中的每一处副本都须具名登记；**未登记即红 / 陈旧登记亦红 / UNRESOLVED 上限只许缩短**；红证 = 注入一处未登记命中 ⇒ 具名红"
+      - "M1 的射程元判据：结构化声明 COPY_FACE_SCOPE == 判据实际枚举的语料集（收窄声明 ⇒ 必红）；**对照读数**：只写在注释里的同形文本**不**算副本（形态面在剥注释后的代码上匹配，不吃自己的说明文字）"
+      - "M3 生成物新鲜度：手改 rbac/readings.json 一个字 ⇒ 必红并报出首个差异行；原样 ⇒ 不红（对照）"
+      - "M2 台账只许缩短：既有七张台账（MENU_READ_PARITY_RESIDUALS 6 / MULTI_READ_ENDPOINT_PAGES 3 / READ_WRITE_EXCEPTIONS 0 / ROLE_FALLBACK_DIVERGENCES 0 / AUTHORIZATION_CENSUS 15 / UNANNOTATED_ENDPOINTS 21 / REGISTERED_RESIDUALS 9）现取条数 ≤ 上限，且清单里的条数 == 现取；**本阶段不改这些表本体、不动任何既有判据**"
+      - "覆盖面显式登记（设计 §5.3）：M1 覆盖不到的三类形态（Map.of/YAML/@ConfigurationProperties 的非约定形态 · 副本注释里的散文 · frontend/worker-h5）逐条写在判据的 UNCOVERED_FACES（含 reason/owner/issue，只许缩短）"
+      - "🔴 不新增并行真值：清单里出现任何**未被对账覆盖**的段 ⇒ 必红（新增段必须先让生成器也产出它，diff 里看得见）"
+    skip_reason: "[backend-contract] RBAC 声明清单与既有解析器读数的逐值对账 + 副本登记表 + 生成物新鲜度，全部由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P1 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §5.2）：P1 的定义是「清单落地 + 只读对账」，P1/P2/P3 三者零 delta、P4 才是第一次改行为。落码 = rbac/manifest.json（声明）+ rbac/readings.json（M3 生成物）+ rbac/generate_readings.py（单一生成器，解析器沿用 tests/unit_ci_workflows/test_agent_permission_parity.py 的既有一套）+ rbac/sources.json（M1 登记表，现取 29 处命中、1 处 UNRESOLVED）+ 注入式红证（含「只改注释 ⇒ 不红」对照）。取号 MC-026：main 上 MC-001~MC-025 已占用，本号在 main 与全部在飞分支均未占用。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_single_source_manifest.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-027（Refs #5699 的 P1；设计真值源 §5.2 的 M4，源自该文件 §1.4 实例 6 的实测）。
+  # 病：V124/V125/V129 三个**已发布迁移**的文件头都写着「可复算判据：grep -c … docs/sql/schema.sql ⇒ 0」，
+  # 而 docs/sql/schema.sql **不存在** ⇒ 实跑 = No such file + exit 2 + 打印 0 ⇒「读不到 ⇒ 0 ⇒ 通过」
+  # 把空断言伪装成绿灯，**永远不会红**。本用例修的是**这一类句子**，不是那三条实例（禁改，走台账）。
+  # ==========================================================================
+  - id: MC-027
+    legacy_id: ""
+    title: "文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - stale-reference
+      - recomputable-command
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**文档坐标**的结构事实（反引号内的命令 + 仓库相对路径字面量 + 该路径是否存在），
+    # 由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "文档或迁移注释里写下一条指向已归档/已迁移路径的「可复算命令」时，必须当场变红（而不是打印 0 装作通过）；既有失效路径必须逐条登记真身路径与「谁看」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "识别形态（设计 §5.2）= 反引号内的命令词（grep/rg/python3/pytest/sha256sum/sh/bash/node/npx/cat/wc/sed/awk/jq/find）+ **仓库相对路径字面量**；语料 = docs/**/*.md（全文本）+ 已发布迁移 *.sql（**只扫注释**）"
+      - "🔴 **现成靶子（设计 §1.4 实例 6）**：台账**置空**时三条迁移（V124/V125/V129）必须被**具名**报出（真语料、只在内存里换掉台账）；真台账下它们**不**报红（出口 ② 生效）—— 两个读数都要有"
+      - "台账（tests/unit_ci_workflows/recomputable_path_ledger.json）每条须有 kind/true_path/reason/owner/issue，且**只许缩短**（上限 = 落地现取 8 条）；条目已不命中 ⇒ 陈旧红；把仍在命中的条目删掉 ⇒ 未登记红（两个方向都判）"
+      - "射程元判据：声明的语料集 == 判据实际读入的语料集（收窄 ⇒ 必红）；对照读数三条：指向**存在**路径不红 · 不带反引号的散文不红 · `~` / `/opt` 这类**非仓库相对**路径不红；`.sql` 的**代码**里的字符串不被当注释读"
+      - "覆盖面（**覆盖不到什么**，照设计 §5.3 逐条登记）：裸文件名引用、不带反引号/不带仓库相对路径的命令、命令本身写错（路径存在但 grep 模式错）、以及 Java/Python/TS 注释与 workflow YAML 两个面 ⇒ 全部登记在判据的 UNCOVERED_FACES（只许缩短）"
+      - "本判据**不区分「引用」与「使用」**：设计 §1.4 实例 6 逐字引用了那条坏命令当病灶标本 ⇒ 这类条目以 kind=quoted-specimen 登记（改它等于改掉证据）"
+    skip_reason: "[backend-contract] 「可复算命令」的路径坐标（正则命中 + 路径存在性 + 台账）由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P1；设计真值源 §5.2 的 M4）：修的是「判据读的是一个不存在的对象」这一类句子。落码 = 语料声明（文档 + 迁移注释）+ 失效路径台账 8 条（5 条禁改迁移 / 1 条引用标本 / 1 条相对子目录 / 1 条生成物）+ 未覆盖面 4 条 + 注入式红证（含 `.sql` 注释 vs 代码、非仓库相对路径三条对照）。取号 MC-027：MC-026 由本 PR 同批占用，本号在其后顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_recomputable_command_paths.py"
+      ci:
+        - pr-check.yml
+      verifies: []

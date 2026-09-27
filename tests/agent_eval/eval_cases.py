@@ -4223,6 +4223,42 @@ _CASE_MC_024 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-026 [NORMAL] RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短（源: cases/misc.yml）──
+_CASE_MC_026 = EvalCase(
+    id='MC-026',
+    legacy_id='',
+    title='RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新增一处「角色 → 码」的手抄副本、或手改生成物 rbac/readings.json、或让台账条目增长时，必须有东西变红；而清单与现值不一致时必须**逐项点名**报出（不是「数量相等」）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P1 唯一的验收口径**：rbac/manifest.json（声明）与 rbac/readings.json（生成物）**逐值相等**，且生成物 == 由 rbac/generate_readings.py 当场重新生成的结果；不等时判据输出**完整不一致清单**（每项一行：清单值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）', 'M1 副本登记表（rbac/sources.json）：形态面（Java attachDefaultPermissions / switch case / 菜单树 / 路由守卫 / SQL INSERT INTO role_permissions|permissions / Python ROLE_PERMISSIONS|PERMISSION_CATALOG|PERMISSION_LABELS|AUTHORIZATION_CENSUS / bmini ADMIN_SURFACES）命中的每一处副本都须具名登记；**未登记即红 / 陈旧登记亦红 / UNRESOLVED 上限只许缩短**；红证 = 注入一处未登记命中 ⇒ 具名红', 'M1 的射程元判据：结构化声明 COPY_FACE_SCOPE == 判据实际枚举的语料集（收窄声明 ⇒ 必红）；**对照读数**：只写在注释里的同形文本**不**算副本（形态面在剥注释后的代码上匹配，不吃自己的说明文字）', 'M3 生成物新鲜度：手改 rbac/readings.json 一个字 ⇒ 必红并报出首个差异行；原样 ⇒ 不红（对照）', 'M2 台账只许缩短：既有七张台账（MENU_READ_PARITY_RESIDUALS 6 / MULTI_READ_ENDPOINT_PAGES 3 / READ_WRITE_EXCEPTIONS 0 / ROLE_FALLBACK_DIVERGENCES 0 / AUTHORIZATION_CENSUS 15 / UNANNOTATED_ENDPOINTS 21 / REGISTERED_RESIDUALS 9）现取条数 ≤ 上限，且清单里的条数 == 现取；**本阶段不改这些表本体、不动任何既有判据**', '覆盖面显式登记（设计 §5.3）：M1 覆盖不到的三类形态（Map.of/YAML/@ConfigurationProperties 的非约定形态 · 副本注释里的散文 · frontend/worker-h5）逐条写在判据的 UNCOVERED_FACES（含 reason/owner/issue，只许缩短）', '🔴 不新增并行真值：清单里出现任何**未被对账覆盖**的段 ⇒ 必红（新增段必须先让生成器也产出它，diff 里看得见）'],
+    skip_reason='[backend-contract] RBAC 声明清单与既有解析器读数的逐值对账 + 副本登记表 + 生成物新鲜度，全部由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-027 [NORMAL] 文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫（源: cases/misc.yml）──
+_CASE_MC_027 = EvalCase(
+    id='MC-027',
+    legacy_id='',
+    title='文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['文档或迁移注释里写下一条指向已归档/已迁移路径的「可复算命令」时，必须当场变红（而不是打印 0 装作通过）；既有失效路径必须逐条登记真身路径与「谁看」'],
+    expectations=['direct_reply'],
+    data_checks=['识别形态（设计 §5.2）= 反引号内的命令词（grep/rg/python3/pytest/sha256sum/sh/bash/node/npx/cat/wc/sed/awk/jq/find）+ **仓库相对路径字面量**；语料 = docs/**/*.md（全文本）+ 已发布迁移 *.sql（**只扫注释**）', '🔴 **现成靶子（设计 §1.4 实例 6）**：台账**置空**时三条迁移（V124/V125/V129）必须被**具名**报出（真语料、只在内存里换掉台账）；真台账下它们**不**报红（出口 ② 生效）—— 两个读数都要有', '台账（tests/unit_ci_workflows/recomputable_path_ledger.json）每条须有 kind/true_path/reason/owner/issue，且**只许缩短**（上限 = 落地现取 8 条）；条目已不命中 ⇒ 陈旧红；把仍在命中的条目删掉 ⇒ 未登记红（两个方向都判）', '射程元判据：声明的语料集 == 判据实际读入的语料集（收窄 ⇒ 必红）；对照读数三条：指向**存在**路径不红 · 不带反引号的散文不红 · `~` / `/opt` 这类**非仓库相对**路径不红；`.sql` 的**代码**里的字符串不被当注释读', '覆盖面（**覆盖不到什么**，照设计 §5.3 逐条登记）：裸文件名引用、不带反引号/不带仓库相对路径的命令、命令本身写错（路径存在但 grep 模式错）、以及 Java/Python/TS 注释与 workflow YAML 两个面 ⇒ 全部登记在判据的 UNCOVERED_FACES（只许缩短）', '本判据**不区分「引用」与「使用」**：设计 §1.4 实例 6 逐字引用了那条坏命令当病灶标本 ⇒ 这类条目以 kind=quoted-specimen 登记（改它等于改掉证据）'],
+    skip_reason='[backend-contract] 「可复算命令」的路径坐标（正则命中 + 路径存在性 + 台账）由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'stale-reference', 'recomputable-command', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10338,6 +10374,8 @@ ALL_CASES = (
     _CASE_MC_023,
     _CASE_MC_025,
     _CASE_MC_024,
+    _CASE_MC_026,
+    _CASE_MC_027,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -11,7 +11,8 @@
 
 ## 0. 一句话
 
-「**某岗位有哪些码**」这一事实，仓库里现在**写在 7 处**；「**某页面/端点要哪些码**」这一事实，
+「**某岗位有哪些码**」这一事实，仓库里现在**写在 8 处**（2026-09-27 校正：初稿写的是 7 处 ——
+P1 的 **M1 形态面**当天扫出漏登的第 8 份 **A7**，见 §1.1 的 A7 与其后的注）；「**某页面/端点要哪些码**」这一事实，
 现在**写在 8 处**；两处事实之间靠**注释、绊线、只许缩短的台账**维持一致。
 issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」这一对的**两个副本**钉住了 ——
 但副本仍然是两个，而且同一事实的另外 5 个副本（ai-agent 镜像、迁移链、`AUTHORIZATION_CENSUS` …）
@@ -42,7 +43,8 @@ issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」�
 | **A3** | `backend/ai-agent-service/tests/test_tool_permission_codes.py` 的 `ROLE_PERMISSIONS` | **测试/CI 期**（工具层授权判据的输入）；不参与运行时 | `tests/test_tool_permission_codes.py` 的 `TestRoleMirrorMatchesTheAdminApiSource`（6 条）+ `TestRoleMirrorGuardIsNotVacuous`（8 条） | **手抄件**（该文件 javadoc 逐字自述「`admin-api` 源码的**手抄件**」）。与 A1/A2 靠 `java_seeded_role_permissions()` / `java_fallback_role_permissions()` 现取解析 Java 源码后**集合比较**；`seeded_role_gaps == []` ∧ `fallback_role_gaps == []` |
 | **A4** | 迁移链：`V29__backfill_default_positions.sql` / `V32__ensure_default_positions.sql` / `V43__create_processing_orders.sql` / `V111__create_inbound_orders_and_batches.sql`（以上四个在 `backend/admin-api/src/main/resources/db/migration-archive/`）+ `V124__backfill_read_permissions.sql` / `V125__backfill_write_permissions.sql` / `V129__backfill_domain_read_permissions.sql` / `V132__add_agent_chat_permission.sql`（在 `backend/admin-api/src/main/resources/db/migration/`）里的 `INSERT INTO role_permissions … JOIN permissions p ON p.tenant_id = r.tenant_id AND p.code …` | **仅存量租户**，每条按自己的谓词、按 `schema_migrations` 台账**只跑一次** | `RoleService.getUserPermissions` 的 `role_permissions` 分支（**优先级最高**，命中即返回） | **没有任何机制**与 A1 保持同步。判据 14 比的是「**种子 vs 回退**」，**不是**「存量 `role_permissions` vs 种子」（#5683 PR body ⑨ 的「适用边界」逐字登记了这一条）。**实测后果见 §3.1 第三行** |
 | **A5** | `users.permissions` 列（员工级快照）—— 由 `backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的 `createUser` / `updateUser` 写入，由 `RoleService.parseSnapshotPermissions` 读出 | **有非空快照即短路**（`parseSnapshotPermissions` 对 `null`/空白/非 JSON 数组返回 `null` ⇒ 落回退） | `RoleService.getUserPermissions` 的**第一分支**（优先于 `role_permissions` 与 A2） | **有意不参与同步**（#2969 的「快照式语义」：保存的勾选 = 最终权限，与岗位脱钩）。它是**实例**数据，不是**声明** —— 目标架构**不动它** |
-| **A6** | `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `AUTHORIZATION_CENSUS`（现取 **15** 键） | 判据期 | 判据 14 ② 段（与代码机械对照：新增码未登记 ⇒ 红；登记了没新增 ⇒ 红） | 它把「A2/A1 新增了哪些码」**再写一遍**并附「打开了哪几扇门」。这是**必要**的授权变更台账，但它同时是「同一事实的第 7 份表达」——目标架构下由清单的 diff 生成 |
+| **A6** | `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `AUTHORIZATION_CENSUS`（现取 **15** 键） | 判据期 | 判据 14 ② 段（与代码机械对照：新增码未登记 ⇒ 红；登记了没新增 ⇒ 红） | 它把「A2/A1 新增了哪些码」**再写一遍**并附「打开了哪几扇门」。这是**必要**的授权变更台账，但它同时是「同一事实的又一份表达」（A7 补登后该事实共 **8** 份，见 §1.1 末注）——目标架构下由清单的 diff 生成 |
+| **A7** | `backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的 `getRolePermissions(String roleCode)`（`switch`：`super_admin` / `admin` → `["*"]`、`agent` → `chat:read` / `chat:write` / `customer:read`、`customer` → `chat:write` / `order:read`） | **登录路径**：`loadUserByUsername`（Spring Security 的 `UserDetailsService`）调它 ⇒ 每次登录都执行 | 登录时挂到 `UserDetails` 上的 authority（C 端角色不经 `PermissionInterceptor` 的权限码校验 —— 见 §2.8 末注） | **没有任何机制**与 A1/A2 同步；而且它授予的码（`chat:read` / `chat:write` / `customer:read` / `order:read`）在权限目录（B1/B2）与迁移链里**各 0 命中**（`super_admin` 只在 `migration-archive/V40` 里作为**角色行**的 `code` 出现，不是权限码）⇒ 这一份副本**已与目录脱钩** |
 
 #### B 类 —— 「**码 → 元数据**（中文名 / 资源 / 动作 / 描述）」（这个码叫什么）
 
@@ -90,7 +92,7 @@ issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」�
 
 | 事实 | 副本数 | 副本清单 |
 |---|---|---|
-| **角色 → 默认码** | **7** | A1（种子）· A2（回退）· A3（ai-agent 镜像）· A4（迁移链，8 个文件各一份谓词）· A5（员工快照，实例数据）· A6（census 台账）· 各岗位的 `RoleServiceTest` / `test_tool_permission_codes` 逐码点名断言 |
+| **角色 → 默认码** | **8** | A1（种子）· A2（回退）· A3（ai-agent 镜像）· A4（迁移链，8 个文件各一份谓词）· A5（员工快照，实例数据）· A6（census 台账）· **A7（`UserService.getRolePermissions` 的登录路径副本，2026-09-27 补登）** · 各岗位的 `RoleServiceTest` / `test_tool_permission_codes` 逐码点名断言 |
 | **权限码目录（码 + 元数据）** | **5** | B1 · B2 · B3 · B4 · B5（迁移里的逐字抄写，6 个文件） |
 | **菜单节点 → 码** | **4** | C1 · C2 · C3 · C4（`ROUTE_PERMISSION_MAP` 是同一事实的前缀形态） |
 | **页面 → 第一屏读端点** | **3** | C5（锚点台账）· 页面源码本体 · `frontend/admin-web/src/lib/api.ts` 的符号表 |
@@ -99,6 +101,8 @@ issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」�
 ⇒ **「改一个码要动几个文件」的现取答案**：新增一个「域读码」最少要动 **9** 处
 （B1 目录 + B2 目录 + A1 种子 + A2 回退 + A3 镜像 + B3 标签 + B4 目录 + A4 一条新迁移 +
 D1 端点注解），若该码还要上菜单，再加 C1/C2/C3 + C4 共 **13** 处。
+（**2026-09-27 复算**：A7 补登后这两个数字**不变** —— A7 不承载域读码，故九处逐条未变；
+但「角色 → 码」的授权面变更必须多看 A7 一眼，见 §1.1 末注 ③。）
 **这正是历史上 #5246 / #5291 / #5675 / #5683 反复分叉的机制成因**（不是谁不细心）。
 
 ### 1.4 已发生的「散文与判据会分叉」实例（含本单新增的两条）
@@ -111,6 +115,18 @@ D1 端点注解），若该码还要上菜单，再加 C1/C2/C3 + C4 共 **13** 
 | 4 | `StockBatchController` 的类 javadoc | 「权限复用商品域 `product:list`」 | 是**方法级**注解，**不是**类级 —— 残留登记此前写成「类级」 | ❌ 当时没有；#5675 收口包更正 |
 | 5 | **`#5690` PR body §⑨ census 表** | **`order:list` 行写「6」（端点）** | **`AUTHORIZATION_CENSUS['order:list'].endpoints` 现取 = 25（17 GET + 8 POST）** | ❌ **没有**。判据用 `len(entry.endpoints)` 现取，**不看那句手写汇总** ⇒ 少报 19 个端点、其中 8 个 POST（建加工单/报工/打印/发货）无人察觉。已在 #5683 补更正评论 |
 | 6 | **V124 / V125 / V129 三个迁移文件头**里的「可复算判据」 | 「判据（可复算）：`grep -c "INSERT INTO permissions" docs/sql/schema.sql` ⇒ 0」 | **`docs/sql/schema.sql` 这个文件不存在**（`docs/sql/` 下只剩 `archive/`；建库脚本真身已迁到 `backend/admin-api/src/main/resources/db/init/schema.sql`，判据见 `tests/unit_ci_workflows/test_schema_integrity.py`）。实跑该命令 = `grep: No such file or directory`、**exit 2**、打印 **0**。真身那份的实际读数也确实是 0（`INSERT INTO permissions` 0 行、`INSERT INTO role_permissions` 0 行）⇒ **结论碰巧对** | ❌ **没有，而且它永远不会红**：命令读的对象（不存在的文件）与它声称的对象（建库终态脚本）不是同一个，而「读不到 ⇒ 0 ⇒ 判据成立」正好把**空断言**伪装成绿灯 —— 若哪天有人往**真身**里塞了 `INSERT INTO permissions`，这条「可复算判据」照样打印 0 |
+
+> 🔴 **A7 是本设计初稿漏掉的一处副本**（2026-09-27 补登；跟踪单 #5699 的 **P1 落地当天**由 M1 的形态面扫出，
+> 取证与处置记在那边）：
+> ① **副本数 7 → 8**（§0 / §1.3 / §2.1 / §5.1 的同款读数已同批校正）；
+> ② **归类**：主体归 **P2**（让「角色 → 码」由单一真源派生）；但它有一半是 **P6 性质** ⇒ 另立一条
+> **人类裁定项**：**「这几个码不在目录里 —— 保留（身份面专用、不属权限目录）还是退役？」** ——
+> 那是**行为问题**，🔴 **本设计不裁决**（与 §2.6 的两个幽灵角色同款处置）；
+> ③ **「新增一个域读码要动几处」按实算**：A7 **不承载**域读码（它只有身份面/会话面那几个）⇒ §1.3 的
+> 该读数**仍为 9 处**（九处逐条未变）；但**任何「角色 → 码」类的授权面变更都要多看它一眼** ——
+> 这正是「同一事实第 8 份」的代价；
+> ④ 🔴 **「授予」≠「校验」**（§2.8 末注）：说「C 端不在射程」指的是**校验面**，A7 讲的是**登录时授予的
+> authority** —— 两句**不矛盾**，但极易被读成矛盾，故分开写。
 
 > 🔴 **第 5 条是本单的形态标本**：同一事实（`order:list` 打开了多少扇门）存在两份 —— 判据里的真值
 > 与 PR 正文里的手写汇总 —— 而**两份的分叉没有任何判据会报**。目标架构下，这类汇总必须**由清单生成**
@@ -153,7 +169,7 @@ D1 端点注解），若该码还要上菜单，再加 C1/C2/C3 + C4 共 **13** 
 | **A. 声明式单清单**（仓库内一份机器可读的 RBAC 清单，含码目录 / 岗位矩阵 / 页面表；各消费面**由它派生**） | 文件（YAML/JSON） | ✅ 天然 | ✅ 天然 | ✅ 零依赖纯文本 | 需要一次「清单 = 现取」的对齐工作；清单本身要进新鲜度判据 |
 | **B. DB 为唯一真值源**（`permissions` + `role_permissions` 表） | 运行时状态 | ✅ | ❌ 菜单码不在库里 | ❌ **判据面读不到** | ① CI 与本机无库，「唯一的机械判据面」会被拆掉；② 新建库路径（`db/init/schema.sql`）**不跑迁移链** ⇒ 库里根本没有种子；③ 「新租户该有什么」是**声明**不是**状态** —— 今天 `admin` 的新租户/存量差异（§3.1）正是「用状态当声明」的实证 |
 | **C. 端点注解为唯一真值源**（反向生成岗位矩阵与菜单码） | 代码注解 | ❌ **不能** | ⚠️ 部分 | ✅ | ① 注解只表达「这个端点要哪个码」，**不表达「哪个岗位该持哪个码」** —— 而后者正是本单的病灶；② 目录里有**零端点**的码（现取：`order:detail` 的 census 端点数 = **0**；`agent:chat` 是米宝唤出码）⇒ 会被判成孤儿；③ 反向生成要求「改端点必须改清单」，把 co-located 的真值外置 ⇒ **新造一个分叉面** |
-| **D. 只加判据、不动结构**（把 #5683 的做法推广到每一对副本） | 加强守卫 | ✅ 已做到 | ✅ 已做到 | ✅ | **这正是已经打过两次补丁的路**。用户 2026-09-27 明确叫停「不要打补丁了」：#5683 之后副本仍是 7 份，**判据数随副本对数平方增长**，而每加一条判据就多一处「判据读到的文本与它声称的对象不是同一个」的风险（§1.4 五条实例里有四条是这类） |
+| **D. 只加判据、不动结构**（把 #5683 的做法推广到每一对副本） | 加强守卫 | ✅ 已做到 | ✅ 已做到 | ✅ | **这正是已经打过两次补丁的路**。用户 2026-09-27 明确叫停「不要打补丁了」：#5683 之后副本仍是 8 份（A7 补登后；见 §1.1 末注），**判据数随副本对数平方增长**，而每加一条判据就多一处「判据读到的文本与它声称的对象不是同一个」的风险（§1.4 五条实例里有四条是这类） |
 
 ### 2.2 选型：**A′（A 为主 + 端点注解保持 co-located + DB 为该清单的物化）**
 
@@ -307,6 +323,13 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
   **不覆盖**：`users.permissions` 快照的取值、`platform_admins` 的 `super_admin` 直通、`ServiceTokenFilter`
   的 `X-User-Id` 身份解析与 `hasBypassRole`、C 端（`customer` / `agent`）无 `permissions` claim 的
   不可判形态、`worker` 的拒绝分支 —— 它们是**身份/边界**问题，不是**声明重复**问题。
+
+> ⚠️ **「授予」与「校验」是两件事，不要读成互相矛盾**（2026-09-27 补，来源 = §1.1 的 A7）：
+> 上一段的「C 端无 `permissions` claim / 不在射程」讲的是**校验面** —— `PermissionInterceptor`
+> 不对 C 端角色做**权限码校验**；而 **A7 讲的是「登录时授予的 authority」**（`loadUserByUsername`
+> 路径上 `getRolePermissions` 给出的那几个码；`ServiceTokenFilter` 的 `C_END_ROLES` 也把
+> `customer` / `agent` 判为 C 端身份）。⇒ **「不校验」不蕴含「没授予」，反之亦然**；
+> 两者合起来才谈得上「这份副本该不该留」（裁定项见 §1.1 末注 ②）。
 - 清单**不承诺**消除「同一件事需要改多处」：`codes` 里加一个码，仍然要让某个端点注解用它
   （D1 是 co-located 的，架构**有意**不把它搬走）。清单消除的是**同一事实的副本**，
   不是**同一变更的多处落地**。
@@ -505,7 +528,7 @@ ledger:                     # 只许缩短的登记（把今天散在三张表�
 | 端点准入 D1 | 注解一字不动 | 判据 1/2/8 |
 | `users.permissions` 快照 | 明确不做（§2.9） | — |
 | 三源菜单同构 | 只改「码从哪来」，不改分组 / 组名 / 组序 / 节点顺序 | `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` |
-| `super_admin` / `service` / `worker` / C 端 | 身份边界，不在四类事实内（§2.8） | — |
+| `super_admin` / `service` / `worker` / C 端 | 身份边界，不在四类事实内（§2.8；⚠️ **授予 vs 校验**的区分见 §2.8 末注 —— A7 的「登录时授予」在射程外，但它是**同一事实的第 8 份副本**，见 §1.1） | — |
 
 ---
 
@@ -551,7 +574,7 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
 
 > **同一事实（角色 → 码 / 页面 → 码 / 码 → 元数据）写在 N 处，靠注释、绊线与只许缩短的台账维持同步。**
 
-类的判据是**副本计数**（§1.3）：`角色→码` 7 份 · `码目录` 5 份 · `菜单节点→码` 4 份 ·
+类的判据是**副本计数**（§1.3）：`角色→码` 8 份（A7 补登后）· `码目录` 5 份 · `菜单节点→码` 4 份 ·
 `页面→首屏端点` 3 份 · `端点→码` 3 份。**修一个副本不会让计数下降** ⇒ 只修实例 = 没修。
 
 ### 5.2 让新的真值源**进不来**的机制（四件）
@@ -625,6 +648,19 @@ P1–P3 全部是「**让结构对，但不让人察觉**」；P4 之后每一�
    | ② **幽灵角色码**必须有**结构性**结论（正式定义 or 明确退役），不是再补一个码 | §2.6（三出口 (i)/(ii)/(iii) + 全仓现取事实表） |
    | ③ **存量租户 `admin` 缺 11 码** ⇒ 人类裁定归本架构阶段、**不许单开迁移** | §3.1（含裁定原文要点）+ §4 的 **P5**（由清单 diff 生成，非手写 `INSERT … 'admin'`） |
    | ④ 三个迁移文件头的**可复算判据指向不存在的路径** ⇒ 结构性处置 | §1.4 **实例 6**（含 exit 2 实测）+ §5.2 新增机制 **M4** + §5.3 的 M4 覆盖面边界 |
+
+7. 🔴 **A7（`UserService.getRolePermissions`）的「码存废」未取证，且必须由人裁定**
+   （2026-09-27 由 P1 的 M1 形态面扫出；补登在 §1.1）：
+   **机器现取的事实** = ① 它是**活路径**（`loadUserByUsername` 调它 ⇒ 每次登录执行）；
+   ② 它授予的 4 个权限码（`chat:read` / `chat:write` / `customer:read` / `order:read`）在
+   `RegistrationService.defaultPermissions` 与迁移链里**各 0 命中** ⇒ **不在权限目录里**，
+   但它们会作为 authority 挂到登录主体上；③ `ServiceTokenFilter` 的
+   `C_END_ROLES = Set.of("customer", "agent")` ⇒ 这两个角色码属**身份面**。
+   **未取证**：这些码是否被任何消费方读（授权判定 / 前端 / 工具白名单）。
+   **必须由人裁定**：保留（身份面专用、不属权限目录）还是退役 —— 这是**行为问题**。
+   归类：主体（让「角色 → 码」由单一真源派生）归 **P2**，裁定项归 **P6 性质**。
+   重启条件：接上真库/真环境后复算「`customer` / `agent` 账号登录后实际拿到的 authority 集」，
+   与这些码逐值比对，再决定存废。
 
 6. 🔴 **本文件与 #5699 的分工**：本文件记**读数与设计**（逐句可复算），#5699 记**人裁定与阶段状态**。
    两边若冲突：**读数以本文件为准，裁定以 #5699 为准**（本文件不得代替人做授权决定）。
