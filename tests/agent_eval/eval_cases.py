@@ -4547,6 +4547,24 @@ _CASE_MC_045 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-040 [NORMAL] 用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）（源: cases/misc.yml）──
+_CASE_MC_040 = EvalCase(
+    id='MC-040',
+    legacy_id='',
+    title='用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个用例块上方的围栏注释头写的号与它下面 `- id:` 的号不一致，或同一个号出现在两条注释头里，或语料里一条围栏头都没有（判据空跑）时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**头 == 块**：围栏形态（`# ====…` 紧跟 `# <ID>（…`）的注释头，其号必须等于下方第一个 `- id:` 的号（不等 ⇒ 红，**两个号都点名**）', '**头号唯一**：同一个号不得出现在两条围栏注释头里（重复 ⇒ 红 —— 读号的人分不清它指哪一块）', '**散文不是头**（判别力边界，实测依据）：全语料有 14 处以 `# <ID>` 开头的**散文引用**（上一行不是围栏）⇒ 不得被判成块头（否则判据被自己的语料喂红）', '**fail-closed**：语料里一条围栏头都没有 ⇒ 红（不许静默退化成空断言）；现取围栏头 35 处、相符 32 处', '**红证**：头≠块 ⇒ 红；头号重复 ⇒ 红；空语料 ⇒ 红；散文引用 ⇒ **不红**；只改散文 ⇒ **不红**'],
+    skip_reason='[backend-contract] 用例语料的号一致性判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_case_header_ids_match_block_ids.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['casebook', 'case-id', 'header-consistency', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -10680,6 +10698,7 @@ ALL_CASES = (
     _CASE_MC_043,
     _CASE_MC_044,
     _CASE_MC_045,
+    _CASE_MC_040,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
