@@ -74,6 +74,14 @@
     已不再多码 ⇒ 都红）。该表登记的是**结构事实**、**不是豁免**：多端点页的不一致照样要进 ③ 的
     残留台账、受害者照样要 ④ 的认领。
     锚点表 = `MENU_READ_ENDPOINT_ANCHORS`（`path` → 页面 + 逐页读出来的第一屏调用）。
+13. **注释里的「计数 / 点名」声明 ≡ 代码现值**（#5675 收口包新增）：说明文字先写对、代码后来变了，
+    而**没有任何东西会红** —— 本单实测两例（生产域读码目录的「8 个只读工具」已漂成 9；
+    `StockBatchController` 类 javadoc 的「四个读面」实为 7 个 GET 端点）。
+    机制 = 策展表 `COMMENT_CLAIMS`（逐条登记：源码键 + 逐字锚 + 复核口径），
+    漂移 / 锚被改写 / 该处出现写死条数 ⇒ 红。⚠️ **边界（如实登记）**：只覆盖**已登记**的声明
+    （全仓按「N 个……」扫会命中大量叙述句与**引用的历史文本** ⇒ 噪声淹掉判据），未登记的计数声明
+    **不在射程**。与判据面「注释不是代码」（#5272）**方向相反、不冲突**：那条禁止把注释当声明**读**，
+    本条的对象**就是注释文本**、真值在代码那一侧（读注释是为了**证伪**注释）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -2390,6 +2398,166 @@ def problems_menu_read_parity(w: World) -> list[str]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 13 的专属面：**注释里的「计数 / 点名」声明 ≡ 代码现值**（#5675 收口包）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病根（本单实测两例，形态完全相同）：说明文字**先写对**、代码**后来变了**，而**没有任何东西会红**——
+#   ① `RegistrationService` 的生产域读码目录写「四个侧边栏节点、四个页面的读端点、以及 8 个只读工具」：
+#      端点那一半**从来就不成立**（#5291 只搬了两个），工具那一半 **8 → 9** 也漂了（且没有判据守着它）；
+#   ② `StockBatchController` 的类 javadoc 写「四个读面……另有一个消耗台账分页端点」：
+#      该控制器今天有 **7 个** GET 端点（#5159 的两个省料端点根本没被写进去）。
+# 两句都是**给后来人读的**，而后来人（#5675 的包）正是照第 ① 句把归因写成了「#5291 漏改」——
+# **一次漂移的注释 = 下一次误判的输入**。
+#
+# 🔴 与 #5272「注释不是代码」**不冲突**（方向相反）：那条禁止把注释当权限声明**读**；
+# 本条的对象**就是注释文本本身**，真值在**代码**那一侧 —— 读注释是为了**证伪**注释，不是拿它当证据。
+#
+# ⚠️ 覆盖面（如实登记，不粉饰）：**只覆盖已登记的声明** —— 本表是**策展**清单，不是全仓扫描。
+# 全仓按「N 个……」扫会命中大量叙述句与**引用的历史文本**（例如本单同时改准的那段「本段曾写……」），
+# 噪声会把判据淹掉；**未登记的计数声明不在射程**（这就是本判据的边界）。
+
+
+@dataclass(frozen=True)
+class CommentClaim:
+    """一条注释声明的登记：`anchor` 是它在源码里的**逐字锚**，`kind` + `arg` 决定**现取**怎么复核它。"""
+
+    source: str
+    anchor: str
+    kind: str
+    arg: object
+    why: str
+
+
+#: 本单（#5675 收口包）**逐条复核过**、并从此**钉住**的注释声明。
+#: 新增条目 = 声明「这段文字的条数/点名必须与代码一致」；改动被钉的代码 ⇒ 这里立刻红。
+COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="① **四个侧边栏节点**",
+        kind="menu-node-count",
+        arg=("production:view", 4),
+        why="生产域读码的四个侧边栏节点（生产看板 / 加工项管理 / 工艺配置 / 计件工资）",
+    ),
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="**两个**只读端点：`/operations-catalog`、`/routings`",
+        kind="endpoint-code",
+        arg=(("GET", "/api/admin/production/operations-catalog"),
+             ("GET", "/api/admin/production/routings"), "production:view"),
+        why="#5291 声称只搬了这两个只读端点 —— 点名的端点必须真的存在、且真的挂该读码",
+    ),
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="**不写死条数**",
+        kind="no-hardcoded-count",
+        arg=(r"[0-9]+ ?个只读工具",),
+        why="承载该码的只读工具条数会随工具增删变化（实测 8→9）⇒ 这段刻意不写数字；写回来即红",
+    ),
+    CommentClaim(
+        source="java:controller/ProductionController.java",
+        anchor="两个**只读**端点（{@code /operations-catalog}、{@code /routings}）",
+        kind="endpoint-code",
+        arg=(("GET", "/api/admin/production/operations-catalog"),
+             ("GET", "/api/admin/production/routings"), "production:view"),
+        why="同一份声明在 `ProductionController` 的类注记里也有一份（两处都得能被现取复核）",
+    ),
+    CommentClaim(
+        source="java:controller/ProductionController.java",
+        anchor="授了 4 个岗位",
+        kind="seed-role-count",
+        arg=("order:list", 4),
+        why="「打印计数沿用类级 order:list」的理由里那个岗位数（非 admin 的内置岗位）",
+    ),
+    CommentClaim(
+        source="java:controller/StockBatchController.java",
+        anchor="**7 个 GET 端点**",
+        kind="get-endpoint-count",
+        arg=("/api/admin/batch-stock/", 7),
+        why="该控制器的读面条数（本单改准：原写「四个读面……另有一个」而实测 7 个）",
+    ),
+)
+
+
+def problems_comment_claims(w: World) -> list[str]:
+    """判据 13：注释里的声明必须能被**现取**复核（漂移 / 锚被改写 / 违规数字 ⇒ 红）。
+
+    四类出口（都只读源码文本 ⇒ 与判据 12 同款、零依赖）：
+      · `menu-node-count`：声明「N 个节点」⇒ 与 `menu.ts` 现取的同码节点数比；
+      · `get-endpoint-count` / `seed-role-count`：与端点表 / 种子矩阵的现取计数比；
+      · `endpoint-code`：注释**点名**的端点必须存在，且生效码逐值等于声明值；
+      · `no-hardcoded-count`：该处**刻意不写死**的条数，若被写回来（匹配 `arg` 的正则）即红。
+    锚找不到 ⇒ 也是红（声明被改写/删除却没同步登记 —— 否则本表会静默过期）。
+    """
+    out: list[str] = []
+    menu_nodes = parse_menu_ts_nodes(w.sources["menu:frontend"])
+    for claim in COMMENT_CLAIMS:
+        text = w.sources.get(claim.source)
+        if text is None:
+            out.append(f"判据 13 的登记指向的源不在源码表里：`{claim.source}`（路径漂移 ⇒ 红）")
+            continue
+        idx = text.find(claim.anchor)
+        if idx == -1:
+            out.append(
+                f"判据 13：「{claim.anchor}」这条声明在 `{claim.source}` 里已找不到**逐字锚** "
+                f"⇒ 它被改写/删除却没有同步登记（{claim.why}）"
+            )
+            continue
+        if claim.kind == "menu-node-count":
+            code, expected = claim.arg
+            live = sum(1 for n in menu_nodes if n.code == code)
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个，而 `menu.ts` 里 "
+                    f"code == `{code}` 的节点**现值 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        elif claim.kind == "endpoint-code":
+            *eps, code = claim.arg
+            for verb, path in eps:
+                got = w.all_eps.get((verb, path))
+                codes = sorted({e.permission for e in got}) if got else None
+                if codes is None:
+                    out.append(f"判据 13：注释点名的 `{verb} {path}` 在 admin-api 里**查不到** ⇒ 点名失实（{claim.why}）")
+                elif code not in codes:
+                    out.append(
+                        f"判据 13：注释点名 `{verb} {path}` 声称挂 `{code}`，**现值 {codes}** "
+                        f"⇒ 声明与代码不符（{claim.why}）"
+                    )
+        elif claim.kind == "no-hardcoded-count":
+            (pattern,) = claim.arg
+            # 扫**该声明的本行与上一行**（不含其后）：后面常是**引用的历史文本**
+            # （本单实测：留档那句「本段曾写……8 个只读工具……」会把本判据**喂红** ——
+            #   §17.3「判据被自己的文案喂红」的同款，故射程刻意收在声明本行 + 上一行）。
+            line_start = text.rfind("\n", 0, idx) + 1
+            prev_start = text.rfind("\n", 0, max(0, line_start - 1)) + 1
+            line_end = text.find("\n", idx)
+            span = text[prev_start: line_end if line_end != -1 else len(text)]
+            if re.search(pattern, span):
+                out.append(
+                    f"判据 13：`{claim.source}` 的「{claim.anchor}」所在两行里出现了**写死的条数**"
+                    f"（匹配 `{pattern}`）⇒ 它没有判据守着、只会腐烂（{claim.why}）"
+                )
+        elif claim.kind == "get-endpoint-count":
+            prefix, expected = claim.arg
+            live = sum(1 for (verb, path) in w.all_eps if verb == "GET" and path.startswith(prefix))
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个，而 `{prefix}` 前缀下"
+                    f"的 GET 端点**现值 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        elif claim.kind == "seed-role-count":
+            code, expected = claim.arg
+            live = len([r for r, codes in w.roles.items() if r != "admin" and code in codes])
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个内置岗位持 `{code}`，"
+                    f"**现取 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        else:
+            out.append(f"判据 13：登记里的 kind `{claim.kind}` 未知（登记写错 ⇒ 本判据对它是空跑）")
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具必须声明权限码": problems_missing_codes,
     "2 · 工具码 ≡ 端点生效码": problems_endpoint_parity,
@@ -2403,6 +2571,7 @@ JUDGEMENTS = {
     "10 · 三个域读码的锚定（issue #5291）": problems_read_code_anchoring,
     "11 · 页面守卫前缀序 + 码锚定（issue #5291）": problems_route_guard,
     "12 · 菜单节点码 ≡ 页面第一屏读端点码（issue #5675）": problems_menu_read_parity,
+    "13 · 注释里的计数/点名声明 ≡ 代码现值（#5675 收口）": problems_comment_claims,
 }
 
 
@@ -2755,6 +2924,49 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 '    @GetMapping("/route-rules")\n    @RequirePermission("product:list")',
             ),
             problems_menu_read_parity,
+        ),
+        # ── 判据 13（#5675 收口包）：注释里的计数 / 点名声明必须与代码现值一致 ────────────────
+        #    🔴 **每一个 kind 都要有自己的红证**（否则那一支就是空断言）：计数类的红证必须改**代码**
+        #    （改注释只会命中「锚失配」那一支），点名类的红证改**端点注解**，另有「锚被改写」一支。
+        "㉗ 代码漂了而注释没跟（余料台账节点改挂 `production:view` ⇒ `menu.ts` 里该码节点 4→5）⇒ 判据 13 红（menu-node-count）": (
+            "menu:frontend",
+            lambda s: _swap(s, "path: '/production/remnants', permissionCode: 'processing:manage'",
+                            "path: '/production/remnants', permissionCode: 'production:view'"),
+            problems_comment_claims,
+        ),
+        "㉘ 注释里的声明被改写（`**两个**只读端点：…` 去掉加粗标记）⇒ 逐字锚失配 ⇒ 判据 13 红（锚卫生）": (
+            "java:service/RegistrationService.java",
+            lambda s: _swap(s, "**两个**只读端点：`/operations-catalog`、`/routings`",
+                            "两处只读端点：`/operations-catalog`、`/routings`"),
+            problems_comment_claims,
+        ),
+        "㉙ 点名的端点掉了码（`/operations-catalog` 改回 `processing:manage`）⇒ 判据 13 红（endpoint-code）": (
+            "java:controller/ProductionController.java",
+            lambda s: _swap(s, '    @GetMapping("/operations-catalog")\n    @RequirePermission("production:view")',
+                            '    @GetMapping("/operations-catalog")\n    @RequirePermission("processing:manage")'),
+            problems_comment_claims,
+        ),
+        "㉚ 把刻意不写死的条数写回来（该行加「今天 9 个只读工具」）⇒ 判据 13 红（no-hardcoded-count）": (
+            "java:service/RegistrationService.java",
+            lambda s: _swap(s, "**不写死条数**：工具会增删", "**不写死条数**（今天 9 个只读工具）：工具会增删"),
+            problems_comment_claims,
+        ),
+        "㉛ 新增端点而注释没跟（该控制器加一个 GET ⇒ 7→8）⇒ 判据 13 红（get-endpoint-count）": (
+            # 真实回归形态 = #5159 当年就是「加了端点没改类 javadoc」；本注入把它复现成一次改动。
+            "java:controller/StockBatchController.java",
+            lambda s: _swap(
+                s,
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
+                '    @RequirePermission("product:list")\n    @GetMapping("/ghost-read-face")\n'
+                '    public ApiResponse<String> ghostReadFace() {\n        return ApiResponse.success("x");\n    }\n\n'
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
+            ),
+            problems_comment_claims,
+        ),
+        "㉜ 岗位权限变了而注释没跟（finance 去掉 `order:list` ⇒ 该码内置岗位 4→3）⇒ 判据 13 红（seed-role-count）": (
+            "java:service/RegistrationService.java",
+            lambda s: _drop_role_code(s, "financeRole", "order:list"),
+            problems_comment_claims,
         ),
     }
 
