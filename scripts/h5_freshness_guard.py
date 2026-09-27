@@ -20,10 +20,18 @@ $ git log -1 --format=%cI origin/main -- frontend/mini-app
 - **fail-closed**：取不到 Last-Modified / 取不到源码改动时间 ⇒ 判 **无法判定**（exit 3），**不得当"新鲜"读**
   —— 网络与部署都可能让人误以为"没红就是好的"。
 
-## 告警 vs 判红
+## 判红（gate）—— 默认口径，issue #4184 用户裁定 B
 
-默认**报告型**（`::warning::` + exit 0）：本仓的 C 端 H5 **当前没有部署通路**（#4184 主体待属主裁定），
-永久红腿只会变成噪音。要当门禁用 ⇒ 加 `--gate`（超期即 exit 2）。
+超期 ⇒ **判红**：`::error::` + **exit 2**（默认就是 gate）。
+理由（用户 2026-09-27 逐字裁定「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：
+C 端 H5 的**发布通路已经建好**（`.github/workflows/c-end-h5-publish.yml`）⇒ 「没有通路所以只告警」这个
+前提**已不成立**；此时只告警 = 让「线上落后 28 天」继续长得像健康。
+
+🔴 **后果如实登记（不粉饰）**：通路建好而**首次发布尚未发生**之前，这条腿在 `main` 上**会红**，
+直到有人手动发布一次（`gh workflow run c-end-h5-publish.yml --ref main -f publish=true`）。
+这是**真实且可操作的**红 —— 不许再用「先 warning 一段时间」把它藏起来（那正是用户否掉的那个选项）。
+
+人工排障 / 一次性诊断要看「不判红的读数」⇒ `--no-gate`（只 `::warning::` + exit 0）。
 
 ## 读数（本仓机制协议）
 
@@ -98,11 +106,12 @@ def summarise(rc: int, seen: int, acted: int, why: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="h5-freshness-guard",
-                                 description="C 端 H5 产物新鲜度守卫（默认报告型；--gate 才判红）")
+                                 description="C 端 H5 产物新鲜度守卫（默认判红 = gate；--no-gate 仅人工诊断）")
     ap.add_argument("--url", default=os.environ.get(URL_ENV) or DEFAULT_URL)
     ap.add_argument("--ref", default="origin/main")
     ap.add_argument("--grace-hours", type=int, default=6)
-    ap.add_argument("--gate", action="store_true", help="超期即 exit 2（默认只 ::warning::）")
+    ap.add_argument("--no-gate", dest="gate", action="store_false",
+                    help="只 ::warning:: 并 exit 0（**仅**人工诊断用；默认是判红）")
     args = ap.parse_args(argv)
 
     live = fetch_last_modified(args.url)
@@ -116,7 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_UNKNOWN
     if verdict == "stale":
         acted = 1
-        print(f"::warning:: {why}（URL={args.url}；C 端 H5 发布通路见 issue #4184）")
+        # 判红 vs 报告型：**同一份读数**，两种出口。默认判红（gate）；`--no-gate` 只给人工诊断。
+        level = "warning" if not args.gate else "error"
+        print(f"::{level}:: {why}（URL={args.url}；发布通路 = .github/workflows/c-end-h5-publish.yml，"
+              f"人工发布：gh workflow run c-end-h5-publish.yml --ref main -f publish=true）")
     print(f"{'✅' if verdict == 'fresh' else '⚠️ '} {why}")
     if verdict == "stale" and args.gate:
         summarise(EXIT_STALE, seen, acted, why)

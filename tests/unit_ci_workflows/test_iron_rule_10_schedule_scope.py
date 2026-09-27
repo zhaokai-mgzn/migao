@@ -484,10 +484,26 @@ def _mutants() -> list[tuple[str, str, dict, dict, str]]:
     add("铁律 10 的具名实例行被删", "具名双向", tx=agents.replace(INSTANCE_MARKER, "（摘掉了）"))
     add("铁律 10 具名了另一个 PR", "具名双向", tx=agents.replace("#5731", "#9999"))
     add("取不到铁律 10 正文块", "规则本体", tx=agents.replace("\n10. ", "\n十、 "))
-    add("在飞实例已经落地却仍留在 pending", "在飞即红", dc={**docs, "c-end-h5-publish.yml": ("53 18 * * *",)})
-    add("在飞实例的 PR 没在铁律正文里具名", "具名双向", tx=agents.replace("#5733", "#9999"))
+    # 判据 11 的红证必须**自造**在飞实例：本单（#4184）落地时把 `pending` 清空了 ⇒ 旧写法在**空 pending** 上
+    # 恒不命中（实测「无任何问题 ⇒ 变异没生效」），那是**红证自己坏了**、不是判据变强。「空 pending 合法」的语义未动。
     led = copy.deepcopy(ledger)
-    del led["pending"][0]["on_merge"]
+    led["pending"] = [{
+        "file": "c-end-h5-publish.yml", "pr": 5733, "cron": "53 18 * * *",
+        "kind": "readonly_heartbeat", "why": "红证自造：这条腿**已经落地**（语料里有它的 on.schedule）却仍留在 pending",
+        "on_merge": "（红证）本应已升格",
+    }]
+    add("在飞实例已经落地却仍留在 pending", "在飞即红", led=led)
+    add("在飞实例的 PR 没在铁律正文里具名", "具名双向", tx=agents.replace("#5733", "#9999"))
+    # ⚠️ 本红证**自造**一条在飞实例，不依赖台账当下是否恰好有 `pending` 条目
+    #    （issue #4184 的实例落地后 `pending` 变空 ⇒ 旧写法 `pending[0]` 会 IndexError，
+    #     那是**红证自己坏了**、不是判据变强；判据 11 的「空 pending 合法」语义一字未动）。
+    led = copy.deepcopy(ledger)
+    led.setdefault("pending", []).append({
+        "file": "forged-in-flight.yml", "pr": 5731, "cron": "0 0 * * *",
+        "kind": "readonly_heartbeat", "why": "红证自造的在飞实例（只为验「缺升格动作」这一条）",
+        "on_merge": "占位：下面当场删掉，模拟「没有升格动作」",
+    })
+    del led["pending"][-1]["on_merge"]
     add("在飞实例缺升格动作", "在飞登记", led=led)
     return out
 

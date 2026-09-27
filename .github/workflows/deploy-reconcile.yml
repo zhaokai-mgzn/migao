@@ -245,6 +245,28 @@ jobs:
           #    时命中并返回「已构建 ⇒ 无漂移」⇒ **静默不补发布**。腿名与传输镜像名不同 ⇒
           #    判据 ① 恒不成立，判定只能来自漂移判据 ②（这条就是「对账不能凭空相信中间产物」的落点）。
           reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app ""
+          # c-end-h5（issue #4184）—— **第三条静态落地面腿**：把 `frontend/mini-app/**` 的 h5 产物发布到
+          # `app.migaozn.com` 的**静态根本身**（此前这条腿**不存在** ⇒ 线上 `/js/app.js` 的
+          # `Last-Modified`=08-30，落后源码 **28 天**而无人知道）。与 worker-h5 / bmini 同形：
+          # 全程无镜像 ⇒ 判据 ①（镜像已存在）对它恒不成立，判定来自漂移判据 ②（自
+          # `c-end-h5-publish.yml` 上次**成功**发布起 `frontend/mini-app/**` 有无改动）。
+          # 🔴 **本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）**：`c-end-h5-publish.yml`
+          #    的**发布步骤**只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 ⇒
+          #    本对账 dispatch 出去的 run 会走「Manual gate」判红并说明「没有发布任何东西」，
+          #    **不会发布**。也就是说：对账面**只报告、不发布**（这一条是本单唯一允许的「dispatch 了但
+          #    什么都不会发生」形态，已在 PR body 显式论证）。
+          # ⚠️ 第 4 个参数**显式纳入发布链路自身的两个文件**（而不像 worker-h5 / bmini 那样登记为缺口）：
+          #    本腿是**手动发布**腿 —— 对账面 dispatch 出去的 run 只会在「Manual gate」判红并说明
+          #    「没有发布任何东西」，**不会**误发布；反过来，把这两个文件登记成缺口等于承认
+          #    「改了发布链路而 push 被吞 ⇒ 静默」—— 而本单的判据要求是**触发面 ≡ 对账面**（未登记即红）。
+          #    代价（如实登记）：改这两个文件时对账会 dispatch 一次「必然判红说明」的 run —— 这是**可归因**
+          #    的红（文案直接给出「要发布请手动 -f publish=true」），不是静默。
+          # ⚠️ 第 4 个参数**有意为空**（与 worker-h5 / bmini 两条腿同形）：本腿的触发面只允许
+          #    `frontend/mini-app/**` ⇒ 发布链路自身的两个文件**永远不进触发面**，也就**不能**写进
+          #    本腿的 pathspec（写了会被判「对账腿判了触发面里没有的路径」）。它们按同一口径逐条登记在
+          #    `tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`（且标 `never_in_trigger`）。
+          # ⚠️ 必须**单行**：`test_swas_deploy_ci_hardening.py::parse_reconcile_calls` 按行解析。
+          reconcile_one c-end-h5 c-end-h5-publish.yml frontend/mini-app ""
 
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
@@ -262,13 +284,13 @@ jobs:
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
-          # `--seen` = 本轮的**对账腿数**（5 条：3 条镜像腿 + worker-h5 静态落地面腿 + bmini-h5-hosting
-          # 静态落地面腿，issue #5001 / #5668）—— 它与读数必须同刻（不加腿就报 5 = 读数与事实相反，
+          # `--seen` = 本轮的**对账腿数**（6 条：3 条镜像腿 + worker-h5 静态落地面腿 + bmini-h5-hosting
+          # 静态落地面腿 + c-end-h5 静态落地面腿，issue #5001 / #5668 / #4184）—— 它与读数必须同刻（不加腿就报 5 = 读数与事实相反，
           # #5264 的形态）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-            mechanism_liveness_declare --seen 5 --acted "${MISSING}" \
+            mechanism_liveness_declare --seen 6 --acted "${MISSING}" \
               --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）"
 
           fi

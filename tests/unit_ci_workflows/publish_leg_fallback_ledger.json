@@ -2,8 +2,8 @@
   "schema": "publish-leg-fallback-ledger/v1",
   "what": "「发布 / 守护腿」的登记表 + 逐条的**兜底面**（`schedule` / `workflow_run` 之一）。判据 = `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`（issue #5707 的 `FM-E17` 收口；用户 2026-09-27 逐字裁定 = 方案 A）。🔴 本表**不是**「哪些腿重要」的排行榜 —— 它只回答一个问题：**这 2 条腿的自动触发面只有 `push` 时，还有没有第二条自动面能让它们跑起来**。",
   "why": "本仓的 `push` **是被吞的**（现取 2026-09-27：`gh run list --branch main --event push --limit 200` 覆盖 2026-09-25T09:41Z~2026-09-27T07:23Z、去重后 43 个 sha；同一窗口内 `git log origin/main -40` 的 40 个 commit 里**只有 1 个**（08dd30e7）出现在其中 ⇒ **39/40 零 push run**；成因 = auto-merge 用 `GITHUB_TOKEN` 合并）。⇒ 「自走触发面 == {push}」的腿在本仓**等于不会跑**，而它写的是**线上静态根**（`app.migaozn.com` 的 `/w/` 与 `/b/`）⇒ 合并后静默停在旧产物、**无红无告警**。",
-  "frozen_max": 2,
-  "frozen_note": "条数只许缩短；上限同时冻结在判据文件（`LEGS_FROZEN`）与判据里的冻结元组（`PUBLISH_LEG_FILES_FROZEN`）里 ⇒ 删一条 / 加一条必须同批改三处，**diff 里看得见**（口径同 `GAPS_FROZEN`：台账改不动判据）。",
+  "frozen_max": 3,
+  "frozen_note": "条数只许缩短（2026-09-27 由 issue #4184 从 2 抬到 3：新增 C 端 h5 发布腿 —— 它同样只有 `push` 这一条自动面，`push` 被吞时同样不会跑且无红）；上限同时冻结在判据文件（`LEGS_FROZEN`）与判据里的冻结元组（`PUBLISH_LEG_FILES_FROZEN`）里 ⇒ 删一条 / 加一条必须同批改三处，**diff 里看得见**（口径同 `GAPS_FROZEN`：台账改不动判据）。",
   "legs": [
     {
       "file": "worker-h5-publish.yml",
@@ -30,6 +30,17 @@
       "why_this_leg_is_registered": "自走触发面 = {push}（另有一条 `workflow_dispatch`，**手动面、不算兜底**）⇒ 合并后不发布，且无红（2026-09-27 02:25Z 的 `/b/index.html` 就是人工 dispatch 才补上的那次）。",
       "publish_identity_assertion": "deploy/scripts/bmini-h5-verify-served.sh（发布后身份断言：`/b/` 是本仓产物、子路由不串端、根仍是 C 端、worker-h5 零回归）",
       "schedule_safety": "「周期重建重发布」对这条腿同样安全：`actions/checkout` 无 `ref` ⇒ `schedule` 下取 main HEAD；镜像 tag `sha-${GITHUB_SHA::7}` 由**同一次 run 自己构建并推送**（`docker build` + `docker push` + 立刻 `docker manifest inspect` 复验），远端再按这个 tag 取 ⇒ **自洽**，schedule 下不会引用不存在的 tag。远端脚本同样先建 `$STAGE` 再整份覆盖，不对静态根做清空 ⇒ 幂等；`concurrency` 同口径。"
+    },
+    {
+      "file": "c-end-h5-publish.yml",
+      "role": "发布腿（C 端小布 h5 → 线上静态根**本身** `app.migaozn.com/`，issue #4184）",
+      "live_surface": "app.migaozn.com 静态根（nginx `root` = /opt/migao-deploy/h5）**本身**（`/index.html` + `/js/` + `/css/`）",
+      "fallback": {
+        "event": "schedule",
+        "cron": "53 18 * * *",
+        "rationale": "**每日**（同 `FM-E17` 的节流实测口径：`*/20` 名义 72 次/日实得 ~6.3 次/日 = 名义的 8.4%，而每日档未被节流）。18:53 UTC = 02:53 +08，错开 worker-h5 的 18:23 与 bmini 的 18:43，避免三条发布腿抢同一批 CI 分钟。🔴 **本腿的 cron 只报告、绝不发布** —— 发布步骤的 `if` 要求 `workflow_dispatch` + `inputs.publish=='true'`（用户 2026-09-27 裁定 B：首次发布由人手动触发）⇒ 兜底面替它回答「线上是否落后」，落后就判红并给出可复制的手动发布命令。"
+      },
+      "why_this_leg_is_registered": "自走触发面 = {push}（`workflow_dispatch` 是手动面、不计）：`push` 被 `GITHUB_TOKEN` 合并吞掉时这条腿**不会跑且无红**，而它写的是线上静态根**本身** ⇒ 「C 端已部署」这个说法会继续被当真。"
     }
   ],
   "coverage_boundary": [

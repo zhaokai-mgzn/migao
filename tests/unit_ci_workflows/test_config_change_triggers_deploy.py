@@ -244,7 +244,23 @@ def check_trigger_paths_are_in_sync(calls: dict, wf_paths: dict, ledger: dict) -
         assert sorted(excludes) == sorted(negatives), (
             f"{svc} 的排除项 {excludes} 与 `{wf}` 的 `on.push.paths` 排除项 {negatives} 不一致"
         )
-        stale = sorted(p for (s, p) in entries if s == svc and p not in missing)
+        # ⚠️ `never_in_trigger` 条目**豁免**「陈旧」判定，且方向是**更严**而不是更松（issue #4184）：
+        #    常规缺口（`why` 说「对账不含发布链路」）存在一条**出路** —— 把路径加进触发面就「消账」了；
+        #    而本单新增的 C 端发布腿是**手动发布**腿：它的**发布步骤**只在
+        #    `workflow_dispatch` + `inputs.publish=='true'` 时执行（用户裁定 B：首次发布由人手动触发），
+        #    且本 PR 的硬要求是 **`on.push.paths` 只允许命中 `frontend/mini-app/**`** ⇒ 发布链路自身的
+        #    两个文件**永远不许**进触发面。这类条目标 `never_in_trigger: true` ⇒ 台账**明文禁止**那条出路。
+        #    判据（与常规条目同样能变红）：标了 `never_in_trigger` 而该路径**确实在**触发面里 ⇒ 下面第一条红。
+        wrong = sorted(p for e in ledger["entries"] if e.get("never_in_trigger")
+                       and (str(e["svc"]) == svc) and norm(str(e["path"])) in positives)
+        assert not wrong, (
+            f"{svc}：台账条目标了 `never_in_trigger`，但该路径**已经出现在** `{wf}` 的 `on.push.paths` 里：{wrong}\n"
+            f"   ⇒ 要么撤回该标记，要么把路径从触发面里拿掉（标了就是「永远不许进」，两条不能并存）"
+        )
+        stale = sorted(p for (s, p) in entries
+                       if s == svc and p not in missing
+                       and not any(e.get("never_in_trigger") and str(e["svc"]) == s
+                                   and norm(str(e["path"])) == p for e in ledger["entries"]))
         assert not stale, (
             f"{svc} 的缺口台账里有**已不是缺口**的条目 {stale}（已被覆盖 / 已不是触发路径）"
             f"⇒ 台账只许缩短，请删掉它们"
@@ -608,7 +624,13 @@ def test_applied_surface_criterion_has_discriminating_power():
 # ══════════════════════════════════════════════════════════════════════════
 
 def check_other_legs_frozen(calls: dict) -> None:
-    """另外 4 条腿的调用点必须**逐字**等于冻结表（本单裁定：只加 admin-api 一条）。"""
+    """另外 4 条腿的调用点必须**逐字**等于冻结表（本单裁定：只加 admin-api 一条）。
+
+    ⚠️ 冻结表是**「#5001 当时那 5 条腿」的快照**，不是「全部对账腿」：**新引入**的腿（如 issue #4184 的
+    `c-end-h5`）按设计**不在**其中 —— 它由 `test_swas_deploy_ci_hardening.py::SVC_TO_DEPLOY_WORKFLOW`
+    登记册（条数**派生**、不写死）与 `reconcile_trigger_paths_ledger.json` 的缺口台账承担。
+    本判据拦的是「**改动既有腿的调用点**」，不是「不许加腿」。
+    """
     actual = {svc: {"wf": calls[svc]["wf"], "path": calls[svc]["path"], "extra": calls[svc]["excl"]}
               for svc in OTHER_LEGS_FROZEN if svc in calls}
     assert set(actual) == set(OTHER_LEGS_FROZEN), f"另外 4 条腿有缺失：{sorted(set(OTHER_LEGS_FROZEN) - set(actual))}"

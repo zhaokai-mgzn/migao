@@ -56,9 +56,9 @@ FALLBACK_EVENTS = frozenset({"schedule", "workflow_run"})
 # 触发面只有它 ⇒ 需要兜底（这就是要判的形状本身）。
 PUSH_ONLY = frozenset({"push"})
 # 发布 / 守护腿的冻结元组（现取 2 条）。改它必须同批改登记表 ⇒ diff 里看得见。
-PUBLISH_LEG_FILES_FROZEN = ("worker-h5-publish.yml", "bmini-h5-publish.yml")
+PUBLISH_LEG_FILES_FROZEN = ("worker-h5-publish.yml", "bmini-h5-publish.yml", "c-end-h5-publish.yml")
 # 登记条数上限（只许缩短）；与登记表 `frozen_max` 两处一起改才生效。
-LEGS_FROZEN = 2
+LEGS_FROZEN = 3
 #: 覆盖面登记每条必须带的键（缺一 ⇒ 红；「缺口不许匿名存在」）。
 BOUNDARY_KEYS = ("face", "reason", "recompute")
 
