@@ -1,4 +1,4 @@
-// case_ids: BM-023, BM-024
+// case_ids: BM-023, BM-024, BM-026
 /**
  * 工人**拍照补打**页的行为判据（issue #5640；验收判据 2~11）
  *
@@ -17,7 +17,7 @@
  * | P8 | h5 下不调 `Taro.login`（工人身份走工号 + PIN） | 页面加 `Taro.login` ⇒ 红 |
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import Taro from '@tarojs/taro'
 
 const ORIGINAL_TARO_ENV = process.env.TARO_ENV
@@ -363,5 +363,97 @@ describe('工人拍照补打页', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
     expect(code).not.toContain('/api/admin/')
+  })
+})
+
+/**
+ * 落地页深链的**页面侧**（issue #5052 实现 PR；设计 §5.4）。
+ *
+ * 启动器（`src/app.tsx`）只做搬运，判定与分文都在本页：`router.params.code` ⇒ 码空间 ⇒
+ * 入库码才查详情（非入库码**一次请求都不发**）。启动器那一半的判据在
+ * `tests/inbound-landing-deeplink.test.tsx`（D5/D6）；两半合起来才是「扫标签 → 看到那张单」的整条链。
+ *
+ * | # | 判据 | 红证 |
+ * |---|---|---|
+ * | R1 | 🔴 入库短码落地 ⇒ **自动**查详情并上屏（短码原样带走，不归一化） | 不消费参数 ⇒ 停在拍照步（红） |
+ * | R2 | 🔴 洗水码落地 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情** | 当入库码查 ⇒ 红 |
+ * | R3 | 别域名 / 纯文本 / 空值 ⇒ 明确提示（`foreign` / `invalid-input`），都不查详情 | 静默当没有参数 ⇒ 红 |
+ * | R4 | 未登录 ⇒ **不消费**（不拿 401 当"查无此单"），登录入口照给 | 无 session 也发请求 ⇒ 红 |
+ */
+describe('落地页深链的页面侧（`?code=` 被消费且按码空间分流）', () => {
+  const mockTaroCurrent = Taro.getCurrentInstance as jest.Mock
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    printLog.length = 0
+    process.env.TARO_ENV = 'h5'
+    mockHasWorkerSession.mockReturnValue(true)
+    mockGetLabel.mockResolvedValue({ success: true, message: '', data: VIEW })
+    setPrintEnv({ ios: false })
+    mockTaroCurrent.mockReturnValue({ router: { path: 'pages/worker/reprint/index', params: {} } })
+  })
+
+  afterAll(() => {
+    mockTaroCurrent.mockReturnValue({ router: { path: '', params: {} } })
+    process.env.TARO_ENV = ORIGINAL_TARO_ENV
+  })
+
+  /** 从启动器/小程序带进来的页面参数（两条路都落在这一处） */
+  function landWith(code: string) {
+    mockTaroCurrent.mockReturnValue({ router: { path: 'pages/worker/reprint/index', params: { code } } })
+  }
+
+  it('R1 🔴 入库短码落地 ⇒ 自动查详情并上屏（短码原样带走）', async () => {
+    landWith('ABCD0234')
+    render(<WorkerReprintPage />)
+    await waitFor(() => expect(mockGetLabel).toHaveBeenCalledWith('ABCD0234'))
+    await waitFor(() => expect(screen.getByTestId('reprint-step-detail')).toBeTruthy())
+    // 抄错形态（O/I/L）也照样原样送服务端（归一化在服务端）
+    cleanup()
+    jest.clearAllMocks()
+    landWith('ABCDO234')
+    render(<WorkerReprintPage />)
+    await waitFor(() => expect(mockGetLabel).toHaveBeenCalledWith('ABCDO234'))
+  })
+
+  it('R2 🔴 洗水码落地 ⇒ 洗水码文案 + 报工入口，**一次都不查入库详情**', async () => {
+    landWith('https://app.migaozn.com/s/7K3M9QP2')
+    render(<WorkerReprintPage />)
+    await waitFor(() => expect(screen.getByTestId('reprint-wash-code')).toBeTruthy())
+    expect(mockGetLabel).not.toHaveBeenCalled()
+    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('洗水码')
+    fireEvent.click(screen.getByTestId('reprint-go-report'))
+    expect(mockNavigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
+  })
+
+  it('R3 🔴 别域名 / 纯文本 ⇒ 「这不是米高的标签」；空值 ⇒ 「8 位短码」提示（都不查详情）', async () => {
+    for (const [raw, testId] of [
+      ['https://evil.example/i/ABCD2345', 'reprint-foreign'],
+      ['MG-1001', 'reprint-foreign'],
+      ['', 'reprint-manual-invalid'],
+    ] as [string, string][]) {
+      cleanup()
+      jest.clearAllMocks()
+      landWith(raw)
+      render(<WorkerReprintPage />)
+      await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy())
+      expect({ raw, called: mockGetLabel.mock.calls.length }).toEqual({ raw, called: 0 })
+    }
+  })
+
+  it('R4 未登录 ⇒ 不消费深链（不拿 401 当"查无此单"），登录入口照给', async () => {
+    mockHasWorkerSession.mockReturnValue(false)
+    landWith('ABCD0234')
+    render(<WorkerReprintPage />)
+    await waitFor(() => expect(screen.getByTestId('reprint-worker-login-required')).toBeTruthy())
+    expect(mockGetLabel).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('reprint-go-worker-login'))
+    expect(mockNavigateTo).toHaveBeenCalledWith({ url: '/pages/worker/login/index' })
+  })
+
+  it('R1 没有 `code` 参数 ⇒ 页面照旧（不自动查询、空跑反证）', async () => {
+    render(<WorkerReprintPage />)
+    await waitFor(() => expect(screen.getByTestId('reprint-step-photo')).toBeTruthy())
+    expect(mockGetLabel).not.toHaveBeenCalled()
   })
 })
