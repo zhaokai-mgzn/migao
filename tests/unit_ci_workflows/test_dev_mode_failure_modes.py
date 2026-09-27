@@ -91,7 +91,7 @@ CI_ID_RE = re.compile(r"\bFM-E\d+\b")
 ANCHOR_SEP = "::"
 
 #: 判据 8：`state=gap` 的**上限**（**冻结在本文件里** —— 台账改不动它；只许缩短）。
-GAPS_FROZEN = 3
+GAPS_FROZEN = 4
 #: 判据 9：`not_solidified` 的**上限**（同上）。
 NOT_SOLIDIFIED_FROZEN = 3
 #: 本单新增的两条 CI 判据的**射程**（判据 11/12；收窄射程要先改这里）。
