@@ -1,21 +1,34 @@
 name: H5 Freshness Guard（C 端产物新鲜度）
 
 # 病灶与判据：scripts/h5_freshness_guard.py（issue #4184 判据 2）
-#   线上 app.migaozn.com/js/app.js 的 Last-Modified = 08-30，而 frontend/mini-app 最近改动 = 09-21
-#   ⇒ 线上落后 ~22 天，**没有任何东西会因此变红**（「C 端已部署」的说法一直被当真）。
-# 触发面：产物发布腿完成时（workflow_run）+ main 有新合并 + 手动；⛔ 无 cron（用户 2026-09-21 裁定）。
+#   线上 app.migaozn.com/js/app.js 的 Last-Modified = 08-30，而 frontend/mini-app 最近改动 = 09-28 前
+#   ⇒ 线上落后 ~28 天，**没有任何东西会因此变红**（「C 端已部署」的说法一直被当真）。
+#
+# 🔴 口径已按用户裁定 **B** 从 `::warning::` **翻成判红（gate）**（2026-09-27）：
+#   「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」。
+#   翻红的理由：本腿原先只告警的**唯一**理由是「C 端 H5 暂无发布通路」（#4184 主体待裁定）——
+#   而通路已随 `.github/workflows/c-end-h5-publish.yml` 建好 ⇒ 那个前提不成立。
+#   ⚠️ **后果如实登记**：**首次发布尚未发生之前，这条腿在 main 上会红**（线上仍 08-30），
+#   直到有人手动发布一次：`gh workflow run c-end-h5-publish.yml --ref main -f publish=true`。
+#   这是**真实且可操作的**红；**不许**用「先 warning 一段时间」把它藏起来（= 用户否掉的那个选项）。
+#   一次性诊断要看「不判红的读数」⇒ dispatch 时把 `no_gate` 勾上（或本地加 `--no-gate`）。
+#
+# 触发面：产物发布腿完成时（workflow_run：Mini-App CI / 两个已完成腿 / 本单新增的 C 端发布腿）
+#   + main 有新合并 + 手动；⛔ **无 cron**（用户 2026-09-21 裁定，未被推翻）。
 on:
   workflow_run:
     workflows:
       - "Mini-App CI"
       - "Publish worker-h5 (app.migaozn.com/w/)"
+      # 本单新增的 C 端发布腿：它发布完成后立刻重判新鲜度（否则要等下一次 push 才知道好了）
+      - "Publish C-end H5 (app.migaozn.com 根)"
     types: [completed]
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      gate:
-        description: "超期即判红（默认只 ::warning:: —— C 端 H5 暂无发布通路，#4184 主体待裁定）"
+      no_gate:
+        description: "只 ::warning:: 不判红（**仅**一次性诊断用；默认判红 = gate）"
         type: boolean
         default: false
 
@@ -45,9 +58,10 @@ jobs:
           set +e
           source .github/scripts/mechanism_liveness.sh
 
+          # 默认判红（gate，用户 2026-09-27 裁定 B）；只有显式勾 no_gate 才退回报告型。
           GATE_FLAG=""
-          if [ "${{ github.event.inputs.gate }}" = "true" ]; then
-            GATE_FLAG="--gate"
+          if [ "${{ github.event.inputs.no_gate }}" = "true" ]; then
+            GATE_FLAG="--no-gate"
           fi
 
           OUT="$(python3 scripts/h5_freshness_guard.py ${GATE_FLAG})"

@@ -1,0 +1,134 @@
+name: Publish C-end H5 (app.migaozn.com 根)
+
+# ── 为什么需要这条腿（issue #4184）─────────────────────────────────────────────
+# `frontend/mini-app`（C 端小布）的 h5 产物此前**没有任何部署通路**：
+#   · `grep -rln '/opt/migao-deploy' .github/workflows/` = 0 命中；
+#   · `mini-app.yml` 的两个 job（typecheck+单测 / 视觉回归）都只 `npm run build:h5`，**不发布**；
+#   · 而它的产物是 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）——
+#     历史遗留的落地面，谁也没有清单说明它由谁托管。
+# 实测后果（2026-09-27）：线上 `/js/app.js` 的 `Last-Modified` = **08-30**，比源码最近改动早 **28 天**
+# ⇒ 「C 端已部署」这个说法一直被当真，而**没有任何东西会因此变红**（`h5-freshness-guard.yml` 此前
+# 只能 `::warning::`，理由正是「C 端 H5 暂无发布通路，#4184 主体待裁定」）。本 workflow 把通路建起来；
+# 判据同批翻成 gate（`scripts/h5_freshness_guard.py` 的默认口径）。
+#
+# ── 🔴 触发面只有 `push: main`（paths 只有 `frontend/mini-app/**`）与 `workflow_dispatch` ──
+#   · **没有 `pull_request`**：这条腿写的是**线上静态根**，PR 分流内容不该有机会落上去
+#     （与 `worker-h5-publish.yml` / `bmini-h5-publish.yml` 同口径）；
+#   · **paths 只有被测产物本身**（不登记发布链路自身）：改 `deploy/**` 或本 workflow
+#     **不会**触发它 ⇒ 合并建通路的那个 PR 本身**不会**发布一次（#4184 用户裁定 B：首次发布由人手动触发）；
+#   · 但 `push` 面本身**也不发布**：发布步骤带 `if: … inputs.publish == 'true' && event_name == 'workflow_dispatch'`
+#     ⇒ 合并之后的每一次 C 端改动都只是**跑一遍并显式告知「没有发布」**，直到有人手动确认为止。
+#     （为什么连 push 面也不自动发：首次发布还没发生，线上根上仍是**无人认领**的旧产物 ——
+#       远端脚本的 `TAKEOVER_REQUIRED` 闸会拒绝接管 ⇒ 自动发布只会得到一条红，不如显式不发布。）
+#
+# ── 首次发布由人触发（用户 2026-09-27 裁定 B）──
+#   `gh workflow run c-end-h5-publish.yml --ref main -f publish=true`
+#   然后看 `Publish C-end h5 …` 那一步的输出自证读数（见 PR body 的发布清单）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # 被测发布物本身（改了 C 端不发布 ⇒ 线上落后，正是本单要治的形态；但**首发前不自动发**，见上）
+      - 'frontend/mini-app/**'
+  # 人工入口：默认**只报告不发布**（`publish=false`），要发布必须显式 `-f publish=true`
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "真的发布（把本次构建发到 app.migaozn.com 的静态根）。默认 false = 只报告不发布"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# 与 deploy-* 同口径：不取消进行中的发布（两个并发发布会让「谁最后落地」不可判定）
+concurrency:
+  group: c-end-h5-publish
+  cancel-in-progress: false
+
+env:
+  # 与 deploy-frontend.yml / worker-h5-publish.yml 同一台 SWAS 实例（测试环境）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  # 静态根（= `deploy/swas/nginx.conf` 里 `app.migaozn.com` 的 `root`）——**本腿的目标就是它本身**
+  H5_STATIC_ROOT: /opt/migao-deploy/h5
+  # 托管物台账（远端脚本写回；它的 `managed_top_level` 就是下一次发布的删除范围）
+  H5_MANIFEST: .migao-c-end-h5-manifest.json
+  # 保留前缀：`w/` 工人端（#4837，线上有工人在用）与 `b/` 商家端（#5668）**一个字节都不许动**
+  H5_RESERVED_PREFIXES: "w b"
+
+jobs:
+  publish:
+    name: publish c-end h5 → 静态根 + identity/protected assertions
+    runs-on: ubuntu-latest
+    # npm ci（Taro 依赖树重）+ build:h5 + 云调用 + 发布后落地面断言
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # 手动入口闸（**不是**「恒真条件占位」）：只有 `workflow_dispatch` **且** `publish=true` 才往下走。
+      # 两种触发都不满足时 **job 判红**并把两条可复制命令打出来 —— 「什么都没做」必须长得像
+      # 「什么都没做」，不能报 success（否则 `deploy-reconcile.yml` 的兜底 dispatch 会被读成「已发布」）。
+      # 判据：tests/unit_ci_workflows/test_c_end_h5_hosting.py
+      #   ::test_publish_is_manual_only_and_refuses_the_exit_loudly
+      - name: Manual gate（非手动 publish=true ⇒ 判红并说明）
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish }}" = "true" ]; then
+            echo "✅ 手动发布已授权（workflow_dispatch + publish=true）"
+            exit 0
+          fi
+          echo "::error::本 workflow **只在手动授权时发布**（issue #4184 用户裁定 B：首次发布由人手动触发）。"
+          echo "本次触发：event=${{ github.event_name }} · publish=${{ inputs.publish }}（未授权）⇒ **没有发布任何东西**。"
+          echo "要发布（人手动）：gh workflow run c-end-h5-publish.yml --ref main -f publish=true"
+          exit 1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/mini-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/mini-app
+        run: npm ci
+
+      # 🔴 API 面必须**同源**（照 #5721 / #5668 实测的教训）：`app.migaozn.com` 的 nginx 已把
+      # `/api/` 代理到 admin-api、`/api/chat/` 代理到 ai-agent ⇒ 同源**完全不经过 CORS**。
+      # 漏了这两个变量 ⇒ `frontend/mini-app/src/utils/constants.ts` 的兜底
+      # （`process.env.TARO_APP_API_URL || 'http://localhost:8080'`）会被 baked 进产物 ⇒
+      # 真机上所有请求打到 localhost（浏览器侧 ERR_FAILED，服务端日志一条都没有）。
+      # ⚠️ 本腿**刻意不注入** `TARO_APP_H5_PUBLIC_PATH`：C 端 `config/index.ts` 的 `h5.publicPath`
+      #    是 `'/'`（它就是根），禁止靠改 `deploy/**` 去动别人的构建配置。
+      - name: Build H5 (publicPath='/'，API 同源)
+        working-directory: frontend/mini-app
+        env:
+          TARO_APP_API_URL: https://app.migaozn.com
+          TARO_APP_AI_API_URL: https://app.migaozn.com
+        run: npm run build:h5
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          file /tmp/aliyun.tgz | grep -q "gzip compressed data"
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          aliyun version
+
+      - name: Publish c-end h5 to SWAS (静态根本身；保留 w/ 与 b/)
+        # 🔴 纵深防线（第二道）：**写盘的那一步自己**必须逐字要求手动授权 ——
+        #    即使有人挪走 / 删掉上面的 Manual gate，这一步也不会在 push 或对账 dispatch 下发布。
+        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
+        env:
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          bash deploy/scripts/c-end-h5-publish-ci.sh \
+            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "$GITHUB_SHA"
+
+      # 落地面断言（**不是**「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）
+      - name: Assert served identity (线上 = 本次构建；不串端；/w/ 与 /b/ 仍在且未被覆盖)
+        # 同上一道闸：没有发布就不该有「落地面是新产物」的断言（否则它会在非手动触发下假绿/假红）
+        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
+        run: bash deploy/scripts/c-end-h5-verify-served.sh https://app.migaozn.com frontend/mini-app/dist

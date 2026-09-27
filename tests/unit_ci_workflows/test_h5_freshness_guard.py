@@ -13,9 +13,17 @@
 | # | 断言 | 红证（注入 ⇒ 必红） |
 |---|---|---|
 | 1 | 线上时间 ≥ 源码改动时间 − 宽限 ⇒ `fresh` | 把 `judge` 改成恒 `fresh` ⇒ 第 2 条红 |
-| 2 | 线上时间**早于**源码改动（超出宽限）⇒ `stale`（报告型 `::warning::`；`--gate` ⇒ exit 2） | 同上 |
+| 2 | 线上时间**早于**源码改动（超出宽限）⇒ `stale` ⇒ **默认判红**（`::error::` + exit 2） | 把默认等级改回 `warning` / 去掉判红出口 ⇒ 本组红 |
 | 3 | **取不到** `Last-Modified`（无该头 / 连不上）⇒ `unknown` + exit 3（**不等于**新鲜） | 把 fail-closed 改成 `fresh` ⇒ 本组红 |
 | 4 | 宽限边界：差恰好 = 宽限 ⇒ `fresh`（不苛刻） | 把 `>=` 改成 `>` ⇒ 本组红 |
+| 5 | `--no-gate` ⇒ 报告型（`::warning::` + exit 0），**仅**人工诊断用 | 把 `--no-gate` 也判红 ⇒ 本组红 |
+
+## 口径沿革（issue #4184，用户 2026-09-27 裁定 B）
+
+原口径 = **报告型**（`::warning::` + exit 0），**唯一**理由是「C 端 H5 暂无发布通路」（#4184 主体待裁定）。
+通路已随 `.github/workflows/c-end-h5-publish.yml` 建好 ⇒ 该前提不成立 ⇒ **默认翻成判红**（gate）。
+🔴 **后果如实登记（不粉饰）**：**首次发布尚未发生之前，这条腿在 `main` 上会红**（线上仍 08-30），
+直到有人手动发布一次。这是**真实且可操作的**红，**不许**用「先 warning 一段时间」把它藏起来。
 
 网络用**本机 `http.server`**（真 HTTP、零外网），git 用**真临时仓库** —— 不 mock 被测函数。
 """
@@ -50,7 +58,7 @@ def test_judge_fresh_when_live_is_newer():
 
 
 def test_judge_stale_when_live_is_older_beyond_grace():
-    """本单的**核心形态**：线上落后 22 天 ⇒ 必须判 stale（红证：judge 恒 fresh ⇒ 本用例红）。"""
+    """本单的**核心形态**：线上落后 ~28 天 ⇒ 必须判 stale（红证：judge 恒 fresh ⇒ 本用例红）。"""
     live, src = datetime(2026, 8, 30, 6, 54, tzinfo=UTC), datetime(2026, 9, 21, 6, 13, tzinfo=UTC)
     verdict, why = mod.judge(live, src, grace_hours=6)
     assert verdict == "stale", why
@@ -143,33 +151,44 @@ def _run_cli(repo: Path, url: str, *args: str) -> subprocess.CompletedProcess:
                           cwd=str(repo), capture_output=True, text=True, timeout=60)
 
 
-def test_cli_reports_stale_as_warning_without_failing(tmp_path):
-    """陈旧 ⇒ 默认**报告型**：`::warning::` + exit 0 + 读数行（不把 main 判红）。"""
+def test_cli_defaults_to_red_when_stale(tmp_path):
+    """陈旧 ⇒ **默认判红**（issue #4184 裁定 B）：`::error::` + exit 2 + 读数行 + 可行动出口。
+
+    🔴 这是本单翻口径后的**承重用例**：首次发布尚未发生 ⇒ main 上这条腿会红（有意，不许藏）。
+    """
     repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
     httpd, url = _serve(tmp_path, "Sun, 30 Aug 2026 06:54:48 GMT")
     try:
         out = _run_cli(repo, url)
     finally:
         httpd.shutdown()
-    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
-    assert "::warning::" in out.stdout and "陈旧" in out.stdout, out.stdout
-    assert "MIGAO-H5FRESH-SUMMARY seen=1 acted=1 rc=0" in out.stdout, out.stdout
+    assert out.returncode == 2, (out.returncode, out.stdout, out.stderr)
+    assert "::error::" in out.stdout and "陈旧" in out.stdout, out.stdout
+    assert "::warning::" not in out.stdout, f"默认出口仍是告警（翻红被撤回？）：{out.stdout}"
+    assert "MIGAO-H5FRESH-SUMMARY seen=1 acted=1 rc=2" in out.stdout, out.stdout
+    # 判红必须**可行动**：给出发布入口的**可复制命令**（否则红得没法办）
+    assert "gh workflow run c-end-h5-publish.yml --ref main -f publish=true" in out.stdout, out.stdout
 
 
-def test_cli_gate_mode_exits_nonzero_when_stale(tmp_path):
-    """`--gate` ⇒ 超期即 exit 2（供将来 C 端 H5 有发布通路后切门禁用）。"""
+def test_cli_no_gate_is_report_only_for_manual_diagnosis(tmp_path):
+    """`--no-gate` ⇒ 报告型（`::warning::` + exit 0）—— **仅**一次性人工诊断用。"""
     repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
     httpd, url = _serve(tmp_path, "Sun, 30 Aug 2026 06:54:48 GMT")
     try:
-        out = _run_cli(repo, url, "--gate")
+        out = _run_cli(repo, url, "--no-gate")
     finally:
         httpd.shutdown()
-    assert out.returncode == 2, (out.returncode, out.stdout)
-    assert "rc=2" in out.stdout, out.stdout
+    assert out.returncode == 0, (out.returncode, out.stdout, out.stderr)
+    assert "::warning::" in out.stdout and "::error::" not in out.stdout, out.stdout
+    assert "rc=0" in out.stdout, out.stdout
 
 
 def test_cli_fails_closed_when_live_unreachable(tmp_path):
-    """取不到线上时间 ⇒ exit 3 + `rc=3` 读数（「没跑/取不到」必须长得像「没跑」）。"""
+    """取不到线上时间 ⇒ exit 3 + `rc=3` 读数（「没跑/取不到」必须长得像「没跑」）。
+
+    ⚠️ 翻成 gate **不得**把三态压成两态：`unknown` 是 **3**（无法判定），**不是** 2（判红 =
+    「确实陈旧」）。两者混在一个退出码里，人就看不出「线上到底陈不陈旧」。
+    """
     repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
     out = _run_cli(repo, "http://127.0.0.1:9/js/app.js")
     assert out.returncode == 3, (out.returncode, out.stdout, out.stderr)

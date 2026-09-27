@@ -3286,6 +3286,24 @@
 ```
 溯源: 2026-09-27 新增（跟踪单 #5699 的 P4 阶段；设计真值源 §3.4 问题 2 + §5.2 的 M2）：#5699 的发现 ① 实测「判据 5 的射程只有工具层 ⇒ 写端点由读码把守这一族没有任何判据看得见」，本号把它落成端点层 census（16 条具名 + 归类 + 只许缩短），并把四条真写端点（instantiate/report/print/ship）钉成必须存在的条目。取号 MC-037：与 MC-035/036 同 PR 顺延。 ｜ tags: rbac, i4, endpoint-permission, read-write-mismatch, ledger
 
+### MC-039. C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红 🔵
+```
+你: 合并建通路的那个 PR 不发布任何东西；首次发布由人手动触发；发布之后线上 / 是本仓库产物，而 /w/ 与 /b/ 一个字节都没变；把触发面放宽、把 if 闸摘掉、或让删除范围越过托管清单时，必须有东西变红
+期望: direct_reply
+数据: **合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**写盘那一步的 `if` 逐字要求 `github.event_name == 'workflow_dispatch'` 与 `inputs.publish == 'true'`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 摘掉 if，各自必红
+数据: **非手动触发必须判红说明**（不许静默 success）：`Manual gate` 步在非授权触发下 `exit 1` 并打印 `gh workflow run c-end-h5-publish.yml --ref main -f publish=true`（否则 deploy-reconcile 的兜底 dispatch 会被读成「已发布」）
+数据: 🔴 **红线：绝不删/覆盖静态根**：删除集 = 上一次发布写下的托管清单 ∩ 磁盘现值（首次发布无清单 ⇒ 空集）；根上有**无人认领**的条目时判 `TAKEOVER_REQUIRED`（exit 2）并打印将要替换的计划。沙箱红证 = 预置根内容 ⇒ 不接管、逐字节不变
+数据: 🔴 **红线：不碰 `w/` 与 `b/`**：三层判据 —— ① 保留前缀（产物顶层/托管清单出现即 die）② 根 index.html 不许引用 `/<保留前缀>/…` ③ 发布前后逐子树的**规范化摘要**（路径+内容，不吃 mtime/顺序）与各自 `index.html` 哈希**逐字相等**（CI 侧四条读数缺一即判红）。沙箱红证 = 预置 `w/` `b/` ⇒ 发布后哈希不变；模拟器红证 = `/w/`（或 `/b/`）被覆盖成 C 端产物 ⇒ 落地面断言判红并指名
+数据: **发布真的生效**有判据（不是「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）：线上 body 哈希 == **本次构建**的 `dist/index.html`（陈旧 ⇒ 判红）；根级深层路径仍回 C 端自己的 index（路由面不串端）
+数据: **新鲜度判据翻成 gate**（同批，用户裁定 B）：陈旧 ⇒ 默认 `::error::` + exit 2（`--no-gate` 仅人工诊断），且 **⛔ 无 cron** 不变、`workflow_run` 清单新增本腿；三态分离保持（取不到读数 = exit **3**，不得当新鲜、也不得与「确实陈旧」的 2 混在一起）
+数据: **对账面同批接线**（FM-E3）：`deploy-reconcile.yml` 新增 `c-end-h5` 腿（走漂移判据 ②）+ 进 `SVC_TO_DEPLOY_WORKFLOW` 登记册 + 存活读数 `--seen` 随腿数改 6；触发面 ≠ 对账面那两条发布链路文件逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 `never_in_trigger`（明文禁止「加进触发面消账」这条出路）
+数据: **类级元守卫**：`h5_freshness_guard.py` 的默认口径与 workflow 的输入语义、三态、无 cron 由常驻判据钉住（改回 warning / 加 cron / 把反向开关改回 `gate` ⇒ 红）
+数据: **没跑 ≠ 通过**（如实登记）：本单**没有**真实发布过一次；线上 `/` 的 `last-modified` 是否变化、`RunCommand` 那一段能否跑通、`nginx -t`，本机都没有取证（没有 aliyun CLI / docker / nginx），属「没跑」
+跳过: [backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的 25 条离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 25 条注入式红证（含「只改注释 ⇒ 不红」对照与 6 种坏形态的落地面判红）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-039：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
+
 ## 商家入驻域（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -7884,6 +7902,7 @@
 - MC-035: RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）
 - MC-036: RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）
 - MC-037: RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）
+- MC-039: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
