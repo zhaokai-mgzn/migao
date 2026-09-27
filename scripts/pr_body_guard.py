@@ -68,7 +68,9 @@ macOS 是 `/var/folders/…/T`、Linux 常是 `/tmp`）—— 不硬编码 `/pri
 只扫 **`git ls-files` 的被跟踪文本文件**，三条规则：
 
 - **R1**：同一逻辑行（含 `\\` 续行）里既有 `gh pr create|edit`，又有 `--body-file <共享临时根下的固定路径>`
-  （路径含 `$`/反引号/`%`/`<(`/`mktemp` 视为「计算出来的」⇒ 不判）；
+  （路径含 `$`/反引号/`%`/`<(`/`mktemp` 视为「计算出来的」⇒ 不判；🔴 **相对路径同样不判** ——
+  `realpath()` 对相对路径按**当前工作目录**解析 ⇒ 读数会随「你在哪儿跑」漂，坐标不在被判对象里。
+  见 `is_shared_fixed_path()` 的 ② 与下方边界 ⑥）；
 - **R2**：共享临时根下、文件名词干是 `pr-body` / `pr_body` 族的**任何**出现（如 `cat > …/pr-body.md`）。
 - **R3**（issue #5239）：**行首**的 Git 合并冲突标记（开 / 分隔 / 闭三种，见 `CONFLICT_*_RE`）。
   实测病灶两处：① `CHANGELOG.md` 在 `origin/main` 上带着**已提交的冲突块**（三行，且分隔与闭合之间**为空**
@@ -90,7 +92,11 @@ macOS 是 `/var/folders/…/T`、Linux 常是 `/tmp`）—— 不硬编码 `/pri
 ② 变量/拼接/间接赋值（先 `BODY=/tmp/<固定名>`、再 `gh pr create --body-file "$BODY"`）**不可判**；
 ③ 非 PR body 的普通临时文件（如 workflow 里给 issue comment 用的 `--body-file`）**不判**（CI runner 内的
 `/tmp` 不跨会话，且改 `.github/**` 不属本包所有权）；④ 引用/否定式说明文字**照样命中**（与 §2.2 同族，
-不区分语义）；⑤ R3 的边界见上（孤立分隔标记与合法 setext 静态不可区分 ⇒ 有意不判；缩进/行中的标记不判）。
+不区分语义）；⑤ R3 的边界见上（孤立分隔标记与合法 setext 静态不可区分 ⇒ 有意不判；缩进/行中的标记不判）；
+⑥ **相对路径不判**（`FM-A13` 的机制修复，2026-09-27）：判据的读数**不得随 CWD 漂** ——
+实测「同一份仓内文本、同一个 `--root`」在共享临时根**内**跑 ⇒ 1 处 R1 命中（命中的是脚本自己的
+**模板** token），在 `$HOME` 下跑 ⇒ 0 处。⇒ 相对 token = 「算不出来 ⇒ 不判」；R1 的射程 = **绝对**的
+共享根固定路径（照旧判，判据 6 组里有一组专门钉它没被放宽）。
 ⚠️ **R3 与 R1/R2 的门禁档位不同**：R3 是**全仓面**，且单测
 `tests/unit_ci_workflows/test_pr_body_guard.py` 跑在 `ci workflow helper unit tests`
 （**required 集合里**）⇒ R3 判红**卡合并**；R1/R2 仍是人工/流程调用
@@ -194,9 +200,19 @@ def find_close_keywords(text: str) -> "list[tuple[int, str]]":
 
 
 def is_shared_fixed_path(token: str) -> bool:
-    """该 token 是否是「共享临时根下的**写死**路径」（含变量/命令替换的算不出来 ⇒ 不判）。"""
+    """该 token 是否是「共享临时根下的**写死**路径」；**算不出来 ⇒ 不判**（两个来源）。
+
+    ① 含变量 / 命令替换的（`$BODY` / 反引号 / `mktemp` …）—— 运行期才知道（既有口径）；
+    ② 🔴 **相对路径**（`FM-A13` 的机制修复，2026-09-27）：`os.path.realpath()` 对相对路径按
+       **当前工作目录**解析 ⇒ **同一份仓内文本、同一个 `--root`**，只因「你在哪儿跑」不同而得到
+       不同读数：纯检出落在共享临时根**内**时，脚本自己的**模板** token（如 `{target}`）会被判成
+       命中（`scan` rc=1，`test_pr_body_guard.py` 连带 5 failed）；落在 `$HOME` 下 ⇒ 0 命中。
+       ⇒ **坐标不在被判对象里** ⇒ 一律不判。R1 要抓的形态是**绝对**的共享根固定路径（照旧判）。
+    """
     tok = token.strip().strip("\"'").rstrip("\\;,")
     if not tok or any(marker in tok for marker in COMPUTED_MARKERS):
+        return False
+    if not os.path.isabs(tok):
         return False
     return shared_temp_root(tok) is not None
 

@@ -448,17 +448,23 @@
     },
     {
       "id": "FM-E4",
-      "state": "gap",
-      "symptom": "**生成物新鲜度只在 `pull_request` 面** ⇒ main 上先漂移、**下一个无辜 PR 才红**（红的信息指向那个 PR 的 diff —— 归因指向错误的对象）。今天咬了两次。",
-      "guards": "无 main 侧守护（`tests/unit_ci_workflows/test_casebook_summary_is_derived.py` 的边界节里逐字登记了这一条：『❌ 不覆盖 main 侧』）；另一包正在补 main 侧守护（分支 `ci/main-side-freshness-guard`）。",
-      "gap_owner": "CI 门禁 owner（生成物新鲜度面）",
-      "gap_shows_when": "main 上的生成物与源漂移后，**在下一个改别的文件的 PR 上**由「生成物新鲜度校验」判红（该 PR 无辜）；判据侧的自证 = git diff --exit-code 比较重渲染产物与 main 上的提交版本。",
+      "state": "guarded",
+      "symptom": "**生成物新鲜度只在 `pull_request` 面** ⇒ main 上先漂移、**下一个无辜 PR 才红**（红的信息指向那个 PR 的 diff —— 归因指向错误的对象）。2026-09-27 咬了两次。",
+      "guards": "**main 侧守护已落地并真跑过**（本单**独立复核**，不采信转述）：`.github/workflows/main-freshness-guard.yml` —— 触发面 = `push: [main]` + `schedule: '43 * * * *'` + `workflow_dispatch`，**刻意不含 `pull_request`**（挂 PR 面会把红重新显示在无辜 PR 上，且拦不住任何东西）；判定本体 = `scripts/generated_artifacts_freshness.py`（**单一实现**，`pr-check` 的生成物新鲜度步与它调**同一个脚本**；三态 `0/1/3`，**没有「跳过」这一态**）。实测读数：run `36295323465`（`workflow_dispatch`、`headBranch=main`、2026-09-27T04:47:19Z = **12:47 +08**）`conclusion=success`；本机复算 rc=0。判据 = `tests/unit_ci_workflows/test_main_freshness_guard.py`（触发面 / 单一实现 / fail-closed 三态 / 告警面 / 覆盖面 / **不翻 required** 六组，逐组带注入式红证）。",
+      "criteria": [
+        ".github/workflows/main-freshness-guard.yml::Main Freshness Guard (生成物新鲜度)",
+        "scripts/generated_artifacts_freshness.py::RC_UNDECIDABLE",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::TestTriggerFaces",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::TestFailClosed",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::TestDoesNotRelaxExistingGates"
+      ],
       "evidence": [
         "tests/unit_ci_workflows/test_casebook_summary_is_derived.py::test_the_drifted_readings_are_reproducible"
       ],
       "refs": [
         "#5687",
-        "#5698"
+        "#5698",
+        "#5707"
       ]
     },
     {
@@ -524,12 +530,13 @@
       "id": "FM-E10",
       "state": "gap",
       "symptom": "**「未就绪」被当通过**：`verify-all.sh` 的 `report_env()` 在依赖没装好时打 `⏭️ 未就绪`（跳过），而在**合并门禁**上「没跑」会被读成「这项没事」。",
-      "guards": "bmini 一条腿已改成**第四态**（`report_strict()`：变更集命中触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；**其余走 `report_env()` 的腿仍是 ⏭️**",
+      "guards": "**部分覆盖（判据已存在，但射程只到「声明了 fail-closed 的条目」）**：`tests/unit_ci_workflows/local_gate_matrix.json::_invariants` 第 3 条（判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py` 的 C4）机械要求「`fail_closed: true` 的条目必须走 `report_strict`，未命中时显式声明『未跑』且不得出现 ✅」—— **现取**只有 1 条这样声明（`frontend/bmini-app`，gate 档，缺依赖 ⇒ ❌ + 非零退出）；**其余 5 条 `report_env` 派发的腿**（`admin-api` ×2 档 / `ai-agent` ×2 档 / `admin-web` vitest+tsc / `worker-h5`）**没有任何判据要求它们 fail-closed** ⇒ 未就绪仍打 ⏭️。",
       "gap_owner": "门禁 owner（verify-all.sh 面）",
-      "gap_shows_when": "某模块依赖未装而变更集命中它 ⇒ 本地 `gate` 打 ⏭️ 后仍全绿，问题只在 CI 上爆（本地绿 / CI 红）。判据侧的自证 = 逐腿比对用的是 report_strict 还是 report_env。",
+      "gap_shows_when": "某模块依赖未装而变更集命中它 ⇒ 本地 `gate` 打 ⏭️ 后仍全绿，问题只在 CI 上爆（本地绿 / CI 红）。**本单现取（2026-09-27，本工作区，`./verify-all.sh quick` 实跑）**：`ai-agent`（缺 `backend/ai-agent-service/.venv/bin/python`）· `admin-web vitest` · `admin-web tsc`（缺 `frontend/admin-web/node_modules/.bin/{vitest,tsc}`）**打 ⏭️**；`admin-api`（`mvnw` + java 21 齐）与 `worker-h5`（node v24 齐）**真跑**。🔴 **两个口径必须分开**：本机「没装依赖 ⇒ ⏭️」是**环境**，**不是门禁缺陷**（CI 上这些腿都真跑）；门禁缺陷只是「变更集命中该模块 + 依赖缺 ⇒ 本地绿」这一形态 —— 而 `gate`（合并门禁）档主路径**一条 `report_env` 模块腿都没有**（唯一模块腿走 `report_strict`），`report_env` 的 ⏭️ 只出现在**开发者快循环**档（quick/full/frontend/backend/agent）与 `redproof` 档。方案与代价见 `docs/wiki/CI-CD.md` 的 `FM-E10` 行。",
       "evidence": [
         "verify-all.sh::report_strict",
-        "tests/unit_ci_workflows/local_gate_matrix.json::_invariants"
+        "tests/unit_ci_workflows/local_gate_matrix.json::_invariants",
+        "tests/unit_ci_workflows/test_local_gate_matrix.py::test_report_strict_is_fail_closed_on_missing_deps"
       ],
       "refs": [
         "#4221"
@@ -585,15 +592,20 @@
     },
     {
       "id": "FM-E14",
-      "state": "gap",
-      "symptom": "`node --test <dir>` 会被读成 **1 条失败的假红**（必须用 glob：`node --test <dir>/*.test.mjs`）。今天实测，**未写进任何地方**（`verify-all.sh` 用的是 glob 写法，但那条纪律本身没有落点）。",
-      "guards": "无（`verify-all.sh` 只用了 glob 写法，没有任何判据/文档解释为什么要用 glob）",
-      "gap_owner": "门禁 owner（verify-all.sh / worker-h5 腿面）",
-      "gap_shows_when": "有人把 `verify-all.sh` 的 `node --test frontend/worker-h5/tests/*.test.mjs` 改成目录形态 ⇒ 该腿报 1 条失败（假红），而**没有任何判据会拦住这次改写**；判据侧的自证 = 断言该腿的参数字面量里带 glob。",
-      "evidence": [
-        "verify-all.sh::worker-h5-node-tests"
+      "state": "guarded",
+      "symptom": "`node --test <目录>` 会被读成 **1 条失败的假红**（必须用 glob：`node --test <目录>/*.test.mjs`）。2026-09-27 实测。原文写「**未写进任何地方**」—— 本单**复核后订正**：`docs/wiki/Development.md` 的「工装坑」节**已经写了这个坑**（散文），但**没有任何判据**会拦住「把腿的参数字面量改成目录形态」这次改写 ⇒ 缺口在「无判据」，不在「无文字」。",
+      "guards": "**判据 13（本单落码）**：`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_node_test_targets_are_globs_in_the_registered_carriers` —— 射程 = 两处载体（`verify-all.sh` + worker-h5 的 CI workflow，逐字见该判据的 `NODE_TEST_GLOB_CARRIERS_FROZEN`）；`node --test` 的**目标参数不含 glob** 且不在只许缩短的载体台账（`NODE_TEST_TARGET_ALLOWLIST_FROZEN`，现取 1 条 = 就绪探针的 `/dev/null`）里 ⇒ **红**。两条收紧防止「判据被自己的说明文字喂红」：① 剥 `#` 注释（prose 豁免）；② 目标参数须**像路径**（含 `/` 或 `.`），故 job 名里的 `(node --test)` 不被读成调用。**登记边界（假绿方向）**：`node --test <裸目录名>`（既无 `/` 也无 `.`）不判。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_node_test_targets_are_globs_in_the_registered_carriers"
       ],
-      "refs": []
+      "evidence": [
+        "verify-all.sh::worker-h5-node-tests",
+        ".github/workflows/worker-h5-tests.yml::worker-h5 unit tests (node --test)",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::node_test_glob_problems"
+      ],
+      "refs": [
+        "#5707"
+      ]
     },
     {
       "id": "FM-E15",
@@ -628,9 +640,9 @@
       "id": "FM-E17",
       "state": "gap",
       "symptom": "把 **`push` 面当唯一触发面**的守护腿在本仓**仍是默认写法**（`worker-h5-publish` / `bmini-h5-publish` 靠 `deploy-reconcile` 兜底），而后者的 `pull_request:[opened,reopened]` **只在新 PR 打开时**兜 ⇒ 对**长时间没有新 PR 打开**的仓库阶段，实际只剩 `*/20` 的 schedule cron（不稳定触发）在兜。⚠️ **本单只登记，不改任何 workflow**（属另一条线的裁定）。",
-      "guards": "无（部分兜底：`deploy-reconcile.yml` 的 schedule；其 `pull_request:[opened,reopened]` 面在无新 PR 阶段不生效）",
+      "guards": "无（部分兜底：`deploy-reconcile.yml` 的 schedule `*/20`；其 `pull_request:[opened,reopened]` 面在无新 PR 阶段不生效）。**本单现取（2026-09-27，静态面、可复算）**：全仓 `.github/workflows/*.yml` 里**自动触发面 == {push}** 的只有 **2 条**：`worker-h5-publish.yml` / `bmini-h5-publish.yml`（`workflow_dispatch` 是**手动**面、不算自动兜底；`h5-freshness-guard.yml` / `stale-report-reaper.yml` 另有 `workflow_run` ⇒ **不算** push-only）。🔴 **为什么不落判据（本单评估结论，不是「没想到」）**：(a) 可机械判的只有**静态形状**（「自动面 == {push}」），而它**恰恰抓不到本缺口的症状** —— 症状是**运行期**事实（`push` 被 `GITHUB_TOKEN` 合并吞掉 + `*/20` cron 被 GitHub 节流 ⇒ 腿没跑**且无红**）：判它要么走 GitHub API 取 run 计数（**网络依赖 ⇒ 同一份代码给不同读数**，与「翻 required / 写判据前先确认判定方式是确定的」冲突），要么把发布腿接进 `mechanism-liveness` 的存活读数（= **改 workflow**，本单明令不改）；(b) 静态形状若落成台账，登记的「兜底面」只会是 `deploy-reconcile` 的 `*/20` —— 而**那个兜底正是失效的那一环** ⇒ 会变成一条「**给不存在的保护盖章**」的假判据（比 gap 更坏，正是本台账要防的形态）；(c) 那 2 条腿的**路径**缺口已在 `tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json` 逐条登记（同族守卫已存在 ⇒ 另造第二套台账 = 双真相源，`migao-dev-flow` §23.7 A6）。**重启条件**：发布/守护腿接上 `mechanism-liveness` 存活读数（或补 `schedule`）之后，静态形状判据才成为**真绊线** ⇒ 届时再落。",
       "gap_owner": "CI 门禁 owner（deploy-reconcile / 发布腿触发面）",
-      "gap_shows_when": "长时间无新 PR 打开的阶段里，一次被吞掉的 `push` 只能等 schedule cron 兜（实测 cron 会被 GitHub 节流）；此时「发布腿没跑」不会有任何红。判据侧的自证 = 统计近 N 次合并中 `push: main` run 的**实际产生次数**（`migao-dev-flow` §23.10 D2 的取证法）。",
+      "gap_shows_when": "长时间无新 PR 打开的阶段里，一次被吞掉的 `push` 只能等 schedule cron 兜（实测 cron 会被 GitHub 节流）；此时「发布腿没跑」**不会有任何红**。当前**唯一**可行的取证是**运行期读数**（统计近 N 次合并中 `push: main` run 的**实际产生次数**，`migao-dev-flow` §23.10 D2 的取证法）—— 它**只能人做一次**、不能进判据（见 `guards` 的 (a)）。",
       "evidence": [
         "docs/wiki/CI-CD.md::FM-E17",
         ".github/workflows/deploy-reconcile.yml::pull_request"
@@ -668,6 +680,14 @@
       "why": "`FM-E17` 是**真缺口**（`push` 唯一触发面 ⇒ 长时间无新 PR 阶段只剩 `*/20` cron，无守护）。🔴 **降级成 `registered` 才是坏事** —— 那等于把一个真缺口藏进「已登记」这个词里，而这正是本台账要防的形态。",
       "invariant": "上限**冻结在判据文件**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `GAPS_FROZEN`），台账改不动它 ⇒ 新增缺口必须**公开抬一次上限**，且只会在 **diff 里可见**（不可能被静默加入）。",
       "targets": "清零靶子（**现取**，不写死）：`state=gap` **4** 条（`FM-E4` / `FM-E10` / `FM-E14` / `FM-E17`）· `not_solidified` **3** 条（`NS-1` / `NS-2` / `NS-3`）"
+    },
+    {
+      "id": "PD-2",
+      "what": "`GAPS_FROZEN` **4 → 2**（两笔**销账**：`FM-E4` → `guarded`、`FM-E14` → `guarded`）",
+      "decided_by": "人类（#5707 本单指令：`FM-E4` 从 `gap` 改判 `guarded` 并把上限降到现取条数；`FM-E14` 允许「落判据或判别动作」，本单选**落判据**）+ 本包**独立复核**读数（见两条 `guards` 字段：`FM-E4` 的 run `36295323465` / `FM-E14` 的判据 13）",
+      "why": "两条的缺口都已闭合 ⇒ 按本台账口径**必须**从 `gap` 降为 `guarded`：① `FM-E4` —— main 侧守护腿 `main-freshness-guard.yml` 已落地并真跑过（含 `schedule '43 * * * *'`，**免疫 push 被吞**）；② `FM-E14` —— 判据 13 落码（改写腿的参数字面量为目录形态 ⇒ 红）。继续挂在 `gap` 里 = 把「已守护」记成「未守护」（与本台账要防的『把真缺口藏进 registered』是**同一枚硬币的另一面**）。",
+      "invariant": "上限**冻结在判据文件**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `GAPS_FROZEN`）⇒ **降**上限与 `PD-1` 的**抬**上限受同一条不变式约束：升降都在 **diff 里可见**、都不可能静默。🔴 **如实登记一条口径订正**：判据语义是 `现取 gap 条数 ≤ GAPS_FROZEN`（**只许缩短**）⇒ **「把上限抬到高于现取条数」这件事本身不会红**（验收里若写成「上限改回 4 而台账只有 3 ⇒ 必须红」，那条红**不存在** —— 实测 `2 ≤ 4`、`3 ≤ 4` 皆为真）。能红的是「台账 gap 数 **>** 上限」；而「上限虚高」要靠**销账时同批降上限**这个动作来消除，**不是**靠判据（若要把它做成判据，需另立一条 `现取 == 上限` 的等价式判据 —— 本单**未立**，如实登记为边界）。",
+      "targets": "清零靶子（**现取**）：`state=gap` **2** 条（`FM-E10` / `FM-E17`）· `not_solidified` **3** 条（`NS-1` / `NS-2` / `NS-3`）"
     }
   ]
 }

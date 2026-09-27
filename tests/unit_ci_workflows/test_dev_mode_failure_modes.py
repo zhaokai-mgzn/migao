@@ -31,6 +31,12 @@
 | 9 | **本单未固化项只许缩短**：条数 ≤ 本文件冻结上限，每条须带 `reason` + `restart_when` | 同上 | 加一条「未固化」⇒ 红 |
 | 10 | **fail-closed**：语料为空 / 节为空 ⇒ **非空违规**，不得静默放行 | 空串喂进纯函数 | 空技能文本 ⇒ 红（不许「没东西可判 ⇒ 绿」） |
 
+**另有三条（判据 11/12/13）**：11/12 = 抢号唯一性（用例号 / 迁移版本号，见本文件末节）；
+**判据 13 = `FM-E14`** —— `node --test` 的**目标参数必须是 glob**（传**目录**会被 Node 内置 runner
+读成 **1 条失败的假红**），承载体 = `verify-all.sh` 与 `.github/workflows/worker-h5-tests.yml` 两处。
+⚠️ 这条**不是**「把纪律写成散文」：写成散文的那一版（`docs/wiki/Development.md` 里已有该坑）**拦不住**
+任何人把参数字面量改成目录形态 —— 判据 13 才是那个「拦住」（`FM-E14` 的 gap 就是按这个口径销账的）。
+
 ## 为什么判据 3/6/7 要**双向**
 
 单向（只判「台账里的条目在技能里有没有写」）会被两种形态绕过：
@@ -91,7 +97,13 @@ CI_ID_RE = re.compile(r"\bFM-E\d+\b")
 ANCHOR_SEP = "::"
 
 #: 判据 8：`state=gap` 的**上限**（**冻结在本文件里** —— 台账改不动它；只许缩短）。
-GAPS_FROZEN = 4
+#: 历史读数（**每一次升降都在 diff 里可见**，这正是「不许默默加」的设计）：
+#:   `3`（#5706 建账）→ `4`（#5709 新增 `FM-E17`，见台账 `PD-1`）→ **`2`**（本单两笔**销账**，见 `PD-2`：
+#:   `FM-E4` → `guarded`（main 侧生成物新鲜度守护腿已落地并真跑过）·
+#:   `FM-E14` → `guarded`（判据 13 落码，见本文件末节））。
+#: ⚠️ 判据语义 = `现取 gap 条数 ≤ GAPS_FROZEN` ⇒ **只许缩短**：把上限**抬到高于现取条数**不会红
+#:   （所以要「上限 == 现取」得靠**销账时同批降上限**这个动作，而不是靠判据；本单就是这么做的）。
+GAPS_FROZEN = 2
 #: 判据 9：`not_solidified` 的**上限**（同上）。
 NOT_SOLIDIFIED_FROZEN = 3
 #: 本单新增的两条 CI 判据的**射程**（判据 11/12；收窄射程要先改这里）。
@@ -105,6 +117,27 @@ ARCHIVE_DUP_VERSIONS_FROZEN = 2
 CASE_ID_ALLOCATION_BOUNDARY = "只看**已合并状态** ⇒ 拦不住『main + 在飞分支』的撞号"
 #: 该边界必须随身携带的**实证锚**（撞号涉及的单号；少一个 ⇒ 红）。
 CASE_ID_ALLOCATION_EVIDENCE = ("MC-026", "MC-027", "MC-028")
+
+#: 判据 13（`FM-E14`）的**射程**：本仓会跑 `node --test` 的**测试腿**（本地门禁腿 + 它的 CI 面）。
+#: 收窄 / 扩大射程都要先改这里（frozen），语料是**具名路径**、不是 glob（不触发射程元守卫）。
+NODE_TEST_GLOB_CARRIERS_FROZEN = ("verify-all.sh", ".github/workflows/worker-h5-tests.yml")
+#: 判据 13 的**载体台账**（**只许缩短**）：目标参数**有意不是**测试文件集的调用点 ——
+#: 就绪探针 `node --test --test-only /dev/null` 探的是「node 支不支持 `--test`」，不是测试集。
+NODE_TEST_TARGET_ALLOWLIST_FROZEN = ("/dev/null",)
+#: 一处 `node --test` 调用：到行尾 / `;` / `&` / `|` 为止（选项与位置参数都在这一段里）。
+NODE_TEST_INVOCATION_RE = re.compile(r"\bnode\s+--test\b([^\n;&|]*)")
+#: 「像路径」的目标参数（含 `/` 或 `.`）—— 散文里的**提及**（如 `(node --test)` 这种 job 名、
+#: 注释里的 `` `node --test` 步 ``）不含这两者 ⇒ 不会被读成调用（**prose 豁免**，同 `FM-A11` 的分界）。
+NODE_TEST_PATHLIKE_RE = re.compile(r"[/.]")
+
+
+def strip_hash_comments(text: str) -> str:
+    """剥掉 `#` 注释段（只认**行首或空白后**的 `#`；URL 里的 `#` 前面不是空白 ⇒ 不剥）。"""
+    out: list[str] = []
+    for line in (text or "").split("\n"):
+        m = re.search(r"(?:^|\s)#", line)
+        out.append(line[: m.start()] if m else line)
+    return "\n".join(out)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -625,3 +658,82 @@ def test_migration_duplicate_is_detected_in_memory() -> None:
         counts[v] = counts.get(v, 0) + 1
     assert {k: v for k, v in counts.items() if v > 1} == {"133": 2}
     assert migration_versions(["V132__x.sql"]) == ["132"]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 13（`FM-E14`）：`node --test <目录>` 的**假红**必须被拦住（散文不算落点）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def node_test_targets(text: str) -> list[str]:
+    """取出每处 `node --test` 的**目标参数**（跳过 `-` 开头的选项，取第一个位置参数）。
+
+    **两处收紧**（都是「读数与它声称的对象不是同一个」的形态，`FM-A1`/`FM-A11` 同族）：
+    ① 先剥 `#` 注释 —— 注释里的**提及**不是调用；
+    ② 目标参数必须**像路径**（含 `/` 或 `.`）—— job 名里的 `(node --test)` 取其位置参数会得到 `)`。
+    ⚠️ **登记边界**：因此 `node --test <裸目录名>`（既无 `/` 也无 `.`，如 `tests`）**不判**
+    （假绿方向：它不会误伤散文，代价是漏掉这一种更窄的写法；本仓两处载体的写法都是仓库相对路径）。
+    """
+    out: list[str] = []
+    for m in NODE_TEST_INVOCATION_RE.finditer(strip_hash_comments(text)):
+        for tok in m.group(1).split():
+            if tok.startswith("-"):
+                continue
+            tok = tok.strip("\"'")
+            if NODE_TEST_PATHLIKE_RE.search(tok):
+                out.append(tok)
+            break
+    return out
+
+
+def node_test_glob_problems(
+    text: str, *, allowlist: tuple[str, ...] = NODE_TEST_TARGET_ALLOWLIST_FROZEN
+) -> list[str]:
+    """`node --test` 的目标参数不含 glob（且不在只许缩短的载体台账里）⇒ 违规。
+
+    **治的形态**（实测，不是推断）：`node --test <目录>` 会被 Node 内置 runner 读成 **1 条失败**
+    —— 它长得像「测试挂了」，其实一条用例都没跑（假红）。⇒ 目标参数必须是**测试文件集**
+    （glob，如 `<目录>/*.test.mjs`），或登记在 `NODE_TEST_TARGET_ALLOWLIST_FROZEN` 里。
+    """
+    bad: list[str] = []
+    for tok in node_test_targets(text):
+        if "*" in tok or tok in allowlist:
+            continue
+        bad.append(
+            f"`node --test {tok}`：目标参数不是 glob ⇒ 传**目录**会被 Node 内置 runner 读成 "
+            f"**1 条失败的假红**（`FM-E14`）—— 改回 `<目录>/*.test.mjs`，或在只许缩短的载体台账里登记"
+        )
+    return bad
+
+
+def test_node_test_targets_are_globs_in_the_registered_carriers() -> None:
+    """判据 13 常驻：两处载体里的 `node --test` 目标参数都是 glob（`FM-E14`）。
+
+    **反空跑**：每条载体至少取到 1 个目标参数 —— 取不到 ⇒ 解析口径失效 ⇒ 红
+    （「没东西可判」不许长得像「通过」）。
+    """
+    for rel in NODE_TEST_GLOB_CARRIERS_FROZEN:
+        text = _require(real_file_text(rel), rel)
+        assert node_test_targets(text), (
+            f"{rel} 里一个 `node --test` 目标参数都没取到 ⇒ 判据空跑（解析口径失效或该腿被删）"
+        )
+        bad = node_test_glob_problems(text)
+        assert bad == [], f"{rel}：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_node_test_glob_guard_has_discriminating_power() -> None:
+    """判据 13 的判别力自证（**内存构造**，不改磁盘）+ 两条对照读数。"""
+    good = "run: node --test frontend/worker-h5/tests/*.test.mjs\n"
+    directory_form = "run: node --test frontend/worker-h5/tests\n"
+    assert node_test_glob_problems(good) == [], "glob 形态被误判 ⇒ 判据在误伤"
+    assert node_test_glob_problems(directory_form) != [], "目录形态不判红 ⇒ 判据是空断言"
+    # 对照读数①：只加一条注释 ⇒ **不红**（判据判的是调用形态，不是「文件变了没有」）
+    assert node_test_glob_problems(good + "# 只加一条注释：不改任何调用\n") == []
+    # 对照读数②：就绪探针的 `/dev/null` 在**只许缩短**的载体台账里 ⇒ 不判；
+    # 台账之外的**新**目录形态仍判红（射程没有被放宽成「凡不是 glob 都不判」）。
+    assert node_test_glob_problems("node --test --test-reporter=dot --test-only /dev/null\n") == []
+    assert node_test_glob_problems("node --test frontend/other/tests\n") != []
+    # 对照读数③（**prose 豁免**）：注释里的提及、以及 job 名里的 `(node --test)` ⇒ 不判
+    # —— 否则本判据会被**它自己的说明文字**喂红（`FM-A11` 的形态：举例即实例）。
+    assert node_test_glob_problems("    # 删掉 `node --test` 那一行 ⇒ 必红\n") == []
+    assert node_test_glob_problems("    name: worker-h5 unit tests (node --test)\n") == []
+
