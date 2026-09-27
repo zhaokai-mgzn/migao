@@ -404,6 +404,26 @@
       "refs": [
         "#5709"
       ]
+    },
+    {
+      "id": "FM-A14",
+      "family": "A",
+      "symptom": "**夹具没跟上「新增的运行期依赖」⇒ 判据静默改判另一个对象**（2026-09-27 实测；纯 `origin/main` 检出同样复现）：`.github/scripts/flaky_ledger.py` 的 `approval-queue` 在 #5649 新增了「台账分支存在性」这个**前置事实**（`branch_presence()` ⇒ 真 `git ls-remote` + 真远端），而判据夹具 `tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::_run_cli` 只桩了 `_gh_api` / `approve_runs` / 时钟 ⇒ 新前置**穿透到真远端**：远端**有**台账分支 ⇒ 走队列读取（`::warning::` 那半边能过）；远端**没有**（实测这一态：`chore/flaky-ledger` 不在 origin 上）⇒ `absent` 早退（`::notice::` + `return 0`）⇒「有待批准 run ⇒ 必须告警」**永远走不到** ⇒ required job `ci workflow helper unit tests` 恒红、**卡住所有 PR**（形态 = #5396）。⚠️ 判据**还在跑、名字没变**，但**读数取决于当下远端状态**（同一份代码在不同时刻给出不同结论）—— 与 `FM-A13`（坐标不对）· `FM-C2`（变异没被读到）同族，触发条件却是「**依赖新增**」。",
+      "action": "先问「**我这条判据依赖的外部事实，夹具桩全了吗**」：读夹具源码（`inspect.getsource` 或直接打开）逐个外部依赖问「它是**桩**还是**真调用**」；再在**纯检出**上跑同一判据（`git worktree add --detach <路径> origin/main`）—— 判据在纯检出与工作区给出**不同**结论、或在远端状态变化前后给出不同结论，就是这一形态。复算：纯检出里 `python3 -m pytest tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py -q`（实测：修前 `1 failed / 10 passed` ⇒ 修后 `14 passed`）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::TestFixtureStubsTheRuntimeFacts",
+        "tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::fixture_stub_problems"
+      ],
+      "evidence": [
+        ".github/scripts/flaky_ledger.py::branch_presence",
+        ".github/scripts/flaky_ledger.py::BRANCH_PRESENCE_VERDICT",
+        "tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py::_run_cli"
+      ],
+      "refs": [
+        "#5649",
+        "#5707"
+      ]
     }
   ],
   "ci_findings": [
