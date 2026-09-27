@@ -339,6 +339,27 @@ def test_rebase_still_refuses_uncommitted_drift_on_a_preset_branch(preset_pr):
     assert _git(wt, "rev-parse", "HEAD").stdout.strip() == head_before, "停手时 HEAD 不得移动"
 
 
+def test_rebase_still_refuses_staged_preset_drift_on_a_preset_branch(preset_pr):
+    """⑥b 同上，且钉住**已暂存但未提交**这个形态（原始代码点名的「陷阱形态正是已暂存」）。
+
+    它专门拦一个**放宽方向**：把「已提交」的口径写成「只要不在工作区未暂存改动里就算已提交」
+    ⇒ 暂存区里的在办改动会被当成产物放行。
+    """
+    repo, env, wt = preset_pr
+    head_before = _git(wt, "rev-parse", "HEAD").stdout.strip()
+    staged = "version: 9.9.9-staged\n"
+    (wt / PRESET_FILE).write_text(staged, encoding="utf-8")
+    _git(wt, "add", ".agent-presets")
+    assert _git(wt, "diff", "--cached", "--name-only").stdout.strip() != "", "夹具没造出「已暂存」形态"
+    assert _worktree_sha(wt, PRESET_FILE) == _sha(wt, f":{PRESET_FILE}"), "夹具的暂存内容与工作区不一致"
+
+    out = _script(repo, "rebase", "presetpr", env=env, check=False)
+    assert out.returncode != 0, "已暂存的预设改动必须仍被拒（不得因「已提交才算产物」而放行）"
+    assert "拒绝自动丢弃" in (out.stdout + out.stderr)
+    assert (wt / PRESET_FILE).read_text(encoding="utf-8") == staged, "停手必须保留暂存区里的在办改动"
+    assert _git(wt, "rev-parse", "HEAD").stdout.strip() == head_before, "停手时 HEAD 不得移动"
+
+
 # ── 类级元守卫（铁律 8）：`.agent-presets/**` 的**写面未登记即红** ─────────────────────────
 #: 写面登记：函数 → 它必须调用的守卫。**新增写面必须先登记**（否则将来又会长出一处
 #: 「把分支已提交的预设产物写回 origin/main 版本」的路径，而没有任何东西会红）。
