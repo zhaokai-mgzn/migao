@@ -3593,6 +3593,24 @@ _CASE_HR_010 = EvalCase(
     precondition=[{'type': 'debug_permissions_effective', 'source': 'employee:create'}],
 )
 
+# ── HR-011 [NORMAL] 回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683）（源: cases/hr.yml）──
+_CASE_HR_011 = EvalCase(
+    id='HR-011',
+    legacy_id='',
+    title='回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['历史账号（无 user_roles 行 / 无 users.permissions 快照）以 operator / customer_service / sales / finance 岗位登录后打开侧边栏'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **回退不得比种子更宽**（逐角色码穷举）：`回退 − 种子` 非空 ⇒ 无条件红，且**不提供登记出口**（绕过岗位权限页的真放宽）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的 problems_role_default_parity ① 段。红证（实测）：往回退里加一个种子没有的码 ⇒ 具名红。', '判据 2·🔴 **「整角色没有 case」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：种子里出现的每个角色码在回退里都必须有显式 case；没有的必须具名登记（理由 + 显形条件 + owner），台账只许缩短。执行点 = 同 ① 段（`missing` 一半 + ROLE_FALLBACK_DIVERGENCES 台账，issue #5683 收口后**整表销账、上限 0**）。红证（实测）：`_drop_fallback_case` 删掉整段 case ⇒ **指名**红（报「回退 switch 里根本没有 case … ⇒ 空表 ⇒ 该角色在回退路径上零权限」）；登记了却已补齐 ⇒ 陈旧红；含对照组。', '判据 3·🔴 **零 403 受害者**：持某菜单节点码的岗位必须同时持该页第一屏的每个读端点码 ⇒ 「菜单看得见、点进去 403」不成立。执行点 = 同文件的 problems_menu_read_parity 第 ④ 段（逐岗位复算，种子 ∪ 回退）。红证（实测）：把补上的 processing:view 从回退收回 + 把该路径的 victims_ack 置空 ⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。', '判据 4·**回退路径的行为面可判**（不靠读代码推断）：直接调真实服务的 getEffectivePermissionCodesForRoleCode(role, null)（= 纯回退路径）与 getUserPermissions（无 user_roles 的历史账号路径），逐码点名。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java（operator / 客服 / 销售 / 财务各 containsExactlyInAnyOrder；另有「五个种子岗位码在回退里都非空」一条）。', '判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。本次共 15 个码（含 operator / product_manager 的 4 个 + 客服/销售/财务三岗的 11 个新增键）。执行点 = 判据 14 ② 段 + AUTHORIZATION_CENSUS。红证（实测）：删掉 census 里任一条 ⇒ 具名红。', '判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 ROLE_PERMISSIONS 对五个种子岗位取 seed 口径、对两个历史角色取回退口径；补码后 seeded_role_gaps(...) == [] 与 fallback_role_gaps(...) == [] 同时成立。', '判据 7·**不动任何已存授予行**：修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子矩阵、不改任何 V 迁移。'],
+    skip_reason='[backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14 + 工具层镜像判据 backend/ai-agent-service/tests/test_tool_permission_codes.py），无 LLM 环节，不进入 agent-eval 冒烟',
+    tags=['role', 'permission', 'fallback', 'rbac'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
 _CASE_KN_001 = EvalCase(
     id='KN-001',
@@ -10213,6 +10231,7 @@ ALL_CASES = (
     _CASE_HR_008,
     _CASE_HR_009,
     _CASE_HR_010,
+    _CASE_HR_011,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,

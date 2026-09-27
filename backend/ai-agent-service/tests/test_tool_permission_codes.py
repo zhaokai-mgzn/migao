@@ -1,4 +1,4 @@
-# case_ids: DF-017, DF-007
+# case_ids: DF-017, DF-007, HR-011
 """工具访问由 **admin-api 权限码**（JWT `permissions` claim）驱动 — 常驻 L0/L2 守卫（issue #4106 F3/F4）。
 
 ## 病灶形状（`[ai-chat.permission-layers]` 契约与实现不符）
@@ -156,7 +156,18 @@ PERMISSION_CATALOG = frozenset({
     "agent:chat",
 })
 
-#: 商户角色的默认权限码（DB seed 口径；`admin` 运行时恒为 `*`）
+#: 商户角色的默认权限码。
+#:
+#: 🔴 **口径关系（issue #5683 登记，别让它继续隐身）**：本镜像对**不同角色**取**不同来源**，
+#: 两者必须**同时**成立，由本文件的两条判据分别守着：
+#:   · **五个种子岗位**（`admin` / `customer_service` / `operator` / `sales` / `finance`）⇒ 取 **seed 口径**
+#:     （新租户真值，`V29`/`V32`/`V43`/`V124`/`V125` 对存量租户补齐）。判据 =
+#:     `test_seeded_role_defaults_match_the_mirror`（**逐岗相等**，`admin` 的 seed 是全集而镜像是 `*`）。
+#:   · **两个历史遗留角色**（`product_manager` / `knowledge_editor`）⇒ 取 **回退口径**（它们**不在 seed 里**，
+#:     `RoleService.getPermissionCodesForRole` 是它们**唯一**的一份默认定义）。判据 =
+#:     `test_the_hardcoded_fallback_is_covered_by_the_mirror`（**镜像 ⊇ 回退**）。
+#: #5683 之后两条**同时**为真（seed 与回退已逐角色码一致）：`seeded_role_gaps(...) == []`
+#: **且** `fallback_role_gaps(...) == []`。任一侧漂移都会有一条判据变红。
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset({"*"}),
     "operator": frozenset({
@@ -187,9 +198,18 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     }),
     "product_manager": frozenset({
         "dashboard:view", "processing:manage",
-        # issue #5291：该岗位的码由 `RoleService` 的硬编码回退给出（seed 里没有它）——
-        # 原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码，矩阵与回退逐值同步。
+        # 🔴 **本岗位的镜像口径来源（issue #5683 登记，别让它继续隐身）**：它**不在 seed 里**
+        # （seed 只有 admin / customer_service / operator / sales / finance）⇒ 镜像对它的口径
+        # **独立于 seed**，唯一来源是 `RoleService.getPermissionCodesForRole` 的硬编码回退
+        # （与 `product_manager` 同类的还有 `knowledge_editor`，二者在 admin-api 侧都只有回退一份定义）。
+        # 判据 = 本文件的 `test_the_hardcoded_fallback_is_covered_by_the_mirror`（镜像 ⊇ 回退）。
+        # issue #5291：原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码。
         "production:view",
+        # issue #5683：回退侧补了 `processing:view`（它持节点码 `processing:manage` 却缺该页第一屏
+        # 读码 ⇒ 「智能派单」菜单看得见、点进去 403）⇒ 镜像同批补上，否则工具层会对它假拒绝。
+        # ⚠️ **对工具层授权零影响**：`TOOL_PERMISSION_CODES` 里**没有任何工具**要求
+        # `processing:view`（本文件可复算）⇒ 本次是纯镜像口径同步。
+        "processing:view",
         "product:category", "product:category:view",
         "product:create", "product:list",
     }),
@@ -1013,14 +1033,77 @@ class TestRoleMirrorGuardIsNotVacuous:
             java_fallback_role_permissions(role_service), ROLE_PERMISSIONS) == []
 
     def test_operator_seed_is_a_superset_of_the_hardcoded_fallback(self):
-        """登记的现实差异：seed（25 码）⊃ 回退（21 码，缺加工单查看/操作与入库单两码）。
+        """**回退不得比 seed 更宽**（`fallback ⊆ seeded`）—— 防「回退悄悄比 seed 更宽」被当成等价。
 
-        镜像取 **seed 口径**（新租户真值，`V29`/`V32`/`V43` 对存量租户补齐）⇒
-        回退是它的子集；本断言把这条关系钉住，防「回退悄悄比 seed 更宽」被当成等价。
+        ## 一、本断言的目的（**逐字保留**原目的）
+
+        「**防『回退悄悄比 seed 更宽』被当成等价**」—— 回退比 seed 更宽 = 回退路径**绕过岗位权限页**
+        多授权限 = 真放宽。镜像取 **seed 口径**（新租户真值，`V29`/`V32`/`V43` 对存量租户补齐）⇒
+        回退必须是它的子集，这条关系必须被钉住。
+
+        ## 二、为什么原来的 `⊂` 是**过度严格**（issue #5683 重新评审）
+
+        上面那条自述目的由 `⊆` 就**完整**满足：`⊂`（**真**子集）在「不得更宽」之外**多禁了一个方向**
+        —— 禁止回退与 seed **相等**。这正是本仓反复出现的形态：**意图是较宽的，实现是更严的**
+        ⇒ 一个本不该被拦的动作（把两处对齐）会被拦下，而报错文案（「差异必须重新评审后再改镜像」）
+        还会把「有人把两处对齐了」读成「有人在放宽」。
+
+        ## 三、谁批准的、为什么（issue #5683，人类裁定；2026-09-27）
+
+        `operator` 在回退里比 seed 少 4 个码（`processing:view` / `processing:update` /
+        `inbound:view` / `inbound:create`，**机器算出的逐值差集**）。那 4 码差距让
+        `operator@fallback` / `product_manager@fallback` 在「智能派单」页出现**真实 403**
+        （它们持节点码 `processing:manage` ⇒ 前端路由守卫已过，而该页第一屏读端点
+        `GET /api/admin/production/pool` 要 `processing:view`）。人类裁定「**仍然补码，并同批把这条
+        绊线由 `⊂` 放宽为 `⊆`**」—— 本单改的是**一个已登记的设计决定**，不是修一个无人知道的疏漏。
+
+        ## 四、它**仍然是绊线**（不是恒真）
+
+        * 红证（实跑）：给回退加一个 seed 没有的码 ⇒ 本条**红**（原始目的不许丢）；
+        * 阴性对照（实跑）：`fallback == seeded` ⇒ **不红**（#5683 之后的目标态；它此前在这里误伤过）；
+        * ⚠️ **本条只判「不得更宽」这一个方向**：更窄（少码）不由本条拦 —— 那一路由
+          `tests/unit_ci_workflows/test_agent_permission_parity.py` 的**判据 14** 承担
+          （逐角色码穷举 + 差异具名登记 + 台账只许缩短；差异消失而条目还在也红）。
+          两处**合起来**才完整，任一单独读都会漏掉一半。
+        * 🔴 同批放宽的**只有这一条**：本类其余断言（镜像 ⊇ 回退 / 逐岗 seed == 镜像 /
+          无码角色登记 / 目录逐字一致）**一字未动**。
         """
         seeded = java_seeded_role_permissions(_read(_REGISTRATION_SERVICE))["operator"]
         fallback = java_fallback_role_permissions(_read(_ROLE_SERVICE))["operator"]
-        assert fallback < seeded, (
-            f"回退不再是 seed 的真子集（seed={sorted(seeded)} / fallback={sorted(fallback)}）"
-            "—— 这两个口径的差异必须重新评审后再改镜像"
+        assert fallback <= seeded, (
+            f"回退比 seed **更宽**了（seed={sorted(seeded)} / fallback={sorted(fallback)}，"
+            f"多出 {sorted(fallback - seeded)}）—— 回退会绕过岗位权限页，这是**真放宽**；"
+            "两处差异的登记与销账见 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14"
         )
+
+    def test_the_subset_tripwire_is_still_a_tripwire(self):
+        """绊线三条红证/阴性对照（issue #5683）：`⊂ → ⊆` **不是**把它变成恒真。
+
+        ① **原始目的不丢**：给回退加一个 seed 没有的码 ⇒ 必须红；
+        ② **阴性对照**：当前树（回退与 seed 逐值相等）⇒ 必须**不红**（这正是 #5683 之后的目标态，
+           它此前在这里误伤过一次）；
+        ③ **边界自证**：更窄（从回退删一个码）本条**不红** —— 「不得更宽」与「差异登记」是两件事，
+           后者由判据 14 承担；这里把边界钉住，防两处都以为对方在管。
+        """
+        registration, role_service = _read(_REGISTRATION_SERVICE), _read(_ROLE_SERVICE)
+
+        def tripwire(reg_text: str, role_text: str) -> bool:
+            seeded = java_seeded_role_permissions(reg_text)["operator"]
+            fallback = java_fallback_role_permissions(role_text)["operator"]
+            return fallback <= seeded
+
+        # ② 阴性对照先行（当前树就是目标态）
+        assert tripwire(registration, role_service), (
+            "当前树回退与 seed 已逐值相等却仍被判红 ⇒ 绊线仍在误伤（`⊂` 的残留语义没清干净）")
+
+        # ① 原始目的：更宽 ⇒ 红
+        wider = role_service.replace(
+            'case "operator" -> List.of(', 'case "operator" -> List.of("ghost:code", ', 1)
+        assert wider != role_service, '注入锚点失配：找不到 case "operator" -> List.of( 这个锚点'
+        assert not tripwire(registration, wider), "回退比 seed 更宽却通过 ⇒ 绊线不再是绊线（退化成恒真）"
+
+        # ③ 边界自证：更窄不由本条拦（那一路在判据 14 的差异台账里）
+        narrower = role_service.replace('"processing:view", "processing:update", ', "", 1)
+        assert narrower != role_service, '注入锚点失配：找不到 processing:view / processing:update 那一对码'
+        assert tripwire(registration, narrower), (
+            "更窄被本条拦下 ⇒ 本条仍在替人做授权决定（它只该判「不得更宽」）")

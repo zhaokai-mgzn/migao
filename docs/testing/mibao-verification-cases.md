@@ -2500,7 +2500,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（10 case）
+## 人事域（11 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -2641,6 +2641,22 @@
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
 溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`employee_manage` 的写 action `create` 已删除（工具收窄为只读 `{list, detail}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `employee_manage(action=create) or role_manage` 改判为存活的只读路径 `role_manage(action=list)`，`must_succeed[employee_manage(action=create)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。**退役理由（逐字）**：本用例原为 HR-009（拒绝半）的「**有能力时必须执行**」正向对照（允许半）；写能力下线后**对照前提消失**（持什么权限都不再能创建员工）⇒ 退役。HR-009 已同批改判为「如实说明 + 后台路径」。`db_verify[employee]`（李四落库）在新事实下不可能满足，按「不删历史」保留原样并已在原位标注（退役后不执行；un-retire 时必须同步改判）。 ｜ tags: permission, create, positive-control
+
+### HR-011. 回退路径岗位默认权限与种子矩阵对齐（含客服/销售/财务三岗从空表补齐）+ 立「回退 ⊆ 种子 / 差异具名登记」常驻判据（issue #5683） 🔵
+```
+你: 历史账号（无 user_roles 行 / 无 users.permissions 快照）以 operator / customer_service / sales / finance 岗位登录后打开侧边栏
+期望: direct_reply
+数据: 判据 1·🔴 **回退不得比种子更宽**（逐角色码穷举）：`回退 − 种子` 非空 ⇒ 无条件红，且**不提供登记出口**（绕过岗位权限页的真放宽）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 的 problems_role_default_parity ① 段。红证（实测）：往回退里加一个种子没有的码 ⇒ 具名红。
+数据: 判据 2·🔴 **「整角色没有 case」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）：种子里出现的每个角色码在回退里都必须有显式 case；没有的必须具名登记（理由 + 显形条件 + owner），台账只许缩短。执行点 = 同 ① 段（`missing` 一半 + ROLE_FALLBACK_DIVERGENCES 台账，issue #5683 收口后**整表销账、上限 0**）。红证（实测）：`_drop_fallback_case` 删掉整段 case ⇒ **指名**红（报「回退 switch 里根本没有 case … ⇒ 空表 ⇒ 该角色在回退路径上零权限」）；登记了却已补齐 ⇒ 陈旧红；含对照组。
+数据: 判据 3·🔴 **零 403 受害者**：持某菜单节点码的岗位必须同时持该页第一屏的每个读端点码 ⇒ 「菜单看得见、点进去 403」不成立。执行点 = 同文件的 problems_menu_read_parity 第 ④ 段（逐岗位复算，种子 ∪ 回退）。红证（实测）：把补上的 processing:view 从回退收回 + 把该路径的 victims_ack 置空 ⇒ 零 403 受害者段具名报出 operator@fallback / product_manager@fallback。
+数据: 判据 4·**回退路径的行为面可判**（不靠读代码推断）：直接调真实服务的 getEffectivePermissionCodesForRoleCode(role, null)（= 纯回退路径）与 getUserPermissions（无 user_roles 的历史账号路径），逐码点名。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java（operator / 客服 / 销售 / 财务各 containsExactlyInAnyOrder；另有「五个种子岗位码在回退里都非空」一条）。
+数据: 判据 5·🔴 **授权变更 census**：本次新增的每个权限码必须逐条列出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」，且登记与代码逐值相符（census 少列一个新增码 ⇒ 红；列的端点生效码不是本码 ⇒ 红）。本次共 15 个码（含 operator / product_manager 的 4 个 + 客服/销售/财务三岗的 11 个新增键）。执行点 = 判据 14 ② 段 + AUTHORIZATION_CENSUS。红证（实测）：删掉 census 里任一条 ⇒ 具名红。
+数据: 判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 ROLE_PERMISSIONS 对五个种子岗位取 seed 口径、对两个历史角色取回退口径；补码后 seeded_role_gaps(...) == [] 与 fallback_role_gaps(...) == [] 同时成立。
+数据: 判据 7·**不动任何已存授予行**：修复方向只动「计算」出来的回退表（回退路径不落 role_permissions）⇒ 不新增迁移、不改 role_permissions、不改种子矩阵、不改任何 V 迁移。
+跳过: [backend-contract] 岗位默认权限的静态契约 + 行为契约（admin-api 单测 backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java + CI 工作流静态守卫 tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 14 + 工具层镜像判据 backend/ai-agent-service/tests/test_tool_permission_codes.py），无 LLM 环节，不进入 agent-eval 冒烟
+```
+真值: employee-role.fallback-seed-parity, employee-role.snapshot-permissions
+溯源: 2026-09-27 新增（issue #5683）：回退路径与种子矩阵之间的差异此前**三处形态**：① operator 少 4 个码（已登记在 ai-agent 的镜像绊线里）；② 客服/销售/财务**没有 case ⇒ 空表 ⇒ 历史账号零权限**（#5246 的注释只点名了 finance 与 customer_service，且主题是「写码」⇒ 该面属**未覆盖**，sales 更从未被点名）。人类 2026-09-27 两次裁定：先「补 operator/product_manager + 同批改写那条绊线由真子集放宽为子集」，再「把三岗回退也补齐」。本用例把「回退 ⊆ 种子 + 差异具名登记、只许缩短 + 授权变更 census」立成常驻判据（判据 14），台账现为**空表、上限 0**。 ｜ tags: role, permission, fallback, rbac
 
 ## 知识问答域（7 case）
 
@@ -7509,8 +7525,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：531（活跃 126，跳过 405）
-- tier 分布：smoke 12 / normal 486 / adversarial 31
+- 用例总数：532（活跃 126，跳过 406）
+- tier 分布：smoke 12 / normal 487 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7523,7 +7539,7 @@
 - 数据域：20
 - 防御域：23
 - 财务对账域：4
-- 人事域：10
+- 人事域：11
 - 知识问答域：7
 - 杂项域：23
 - 商家入驻域：5
