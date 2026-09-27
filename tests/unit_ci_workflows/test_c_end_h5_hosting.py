@@ -66,6 +66,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import http.server
+import json
 import os
 import re
 import shutil
@@ -88,6 +89,8 @@ RECONCILE_WF = REPO_ROOT / ".github" / "workflows" / "deploy-reconcile.yml"
 RECONCILE_LEDGER = REPO_ROOT / "tests" / "unit_ci_workflows" / "reconcile_trigger_paths_ledger.json"
 
 WORKFLOW_NAME = "c-end-h5-publish.yml"
+# 兜底面（`FM-E17` 收口口径）：cron 的**单一真值**在台账里，判据两边互钉
+FALLBACK_LEDGER = REPO_ROOT / "tests" / "unit_ci_workflows" / "publish_leg_fallback_ledger.json"
 WORKFLOW_DISPLAY_NAME = "Publish C-end H5 (app.migaozn.com 根)"
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/c-end-h5-publish-ci.sh"
@@ -101,9 +104,14 @@ STRAY_GLOBS = ("deploy/**",)
 # 发布链路自身的两个文件**永远不许**进 `on.push.paths`（见 ledger 的 `never_in_trigger`）
 CHAIN_FORBIDDEN_IN_TRIGGER = (".github/workflows/c-end-h5-publish.yml", PUBLISH_SCRIPT)
 
-# 单条 step 级闸的逐字形态（两条都必须逐字在 workflow 里 —— 这是「合并即发布」的唯一拦截点）
-GATE_EVENT = "github.event_name == 'workflow_dispatch'"
-GATE_INPUT = "inputs.publish == 'true'"
+# 模式判定步（**唯一**决定「会不会发布」的地方）：它必须逐字包含这两条判据
+MODE_STEP = "Resolve mode"
+GATE_EVENT = "github.event_name"
+GATE_INPUT = "inputs.publish"
+MODE_PUBLISH = 'echo "mode=publish" >> "$GITHUB_OUTPUT"'
+MODE_NOTIFY = 'echo "mode=notify" >> "$GITHUB_OUTPUT"'
+PUBLISH_IF = "steps.mode.outputs.mode == 'publish'"
+NOTIFY_IF = "steps.mode.outputs.mode != 'publish'"
 
 DESTRUCTIVE_RE = re.compile(r"(rm\s+-[A-Za-z]*[rf][A-Za-z]*\b|--delete\b|-delete\b)")
 
@@ -223,6 +231,31 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
     for glob in STRAY_GLOBS:
         if glob in paths:
             problems.append(f"🔴 on.push.paths 含 {glob!r}（本 PR 的变更集落在 deploy/** ⇒ 会命中）")
+
+    # —— 兜底面：`push` 在本仓会被吞 ⇒ 必须有 `schedule`（且 cron 与台账声明逐字一致）——
+    # 真值只有一份（台账 `publish_leg_fallback_ledger.json`），判据从那里取 cron 再回到 YAML 里比对；
+    # 取不到台账 ⇒ 判红（不是「跳过」）。
+    schedule = on.get("schedule")
+    crons = [str(e.get("cron")) for e in schedule if isinstance(e, dict)] if isinstance(schedule, list) else []
+    if not crons:
+        problems.append(
+            "🔴 缺 `schedule` 兜底面：`push` 被 `GITHUB_TOKEN` 合并吞掉时这条腿**不会跑且无红**"
+            "（FM-E17 口径；兜底面只报告不发布，见 notify 步）"
+        )
+    else:
+        try:
+            ledger = json.loads(FALLBACK_LEDGER.read_text(encoding="utf-8"))
+            declared = next(
+                (leg.get("fallback", {}).get("cron") for leg in ledger.get("legs", [])
+                 if leg.get("file") == WORKFLOW_NAME), None
+            )
+        except Exception as exc:                     # 台账读不出来 ⇒ 宁可红，不猜
+            declared = None
+            problems.append(f"兜底面台账读不出来（{FALLBACK_LEDGER.name}）：{exc}")
+        if declared is None:
+            problems.append(f"台账 `{FALLBACK_LEDGER.name}` 里没有 {WORKFLOW_NAME} 的 `fallback.cron` 声明")
+        elif declared not in crons:
+            problems.append(f"兜底面 cron 与台账脱钩：台账声明 `{declared}`，现取 {crons}")
     if "pull_request" in on or "pull_request_target" in on:
         problems.append("不得有 pull_request 触发：本 workflow 写的是**线上静态根**，PR 分流内容不该有机会落上去")
 
@@ -247,25 +280,43 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
     # —— 发布链路两步的 if：逐字要求 workflow_dispatch + publish==true ——
     publish_steps = [s for s in _steps(wf) if PUBLISH_SCRIPT in _run_text(s)]
     verify_steps = [s for s in _steps(wf) if VERIFY_SERVED in _run_text(s)]
-    build_steps = [s for s in _steps(wf) if "build:h5" in _run_text(s)]
+    build_steps = [s for s in _steps(wf) if "build:h5" in _run_text(s) and "npm run build:h5" in _run_text(s)]
     if len(publish_steps) != 1:
         problems.append(f"job `{JOB}` 里必须有且只有 1 个跑 {PUBLISH_SCRIPT} 的 step，实际 {len(publish_steps)}")
     if len(verify_steps) != 1:
         problems.append(f"job `{JOB}` 里必须有且只有 1 个跑 {VERIFY_SERVED} 的落地面断言 step，实际 {len(verify_steps)}")
     if len(build_steps) != 1:
         problems.append(f"job `{JOB}` 里必须有且只有 1 个 `npm run build:h5` step（产物必须在 CI 构建），实际 {len(build_steps)}")
-    # ⚠️ 闸的口径（有意**只**钉发布步）：**写盘**的只有发布步 ⇒ 它必须逐字带两道闸
-    #    （event 是 workflow_dispatch **且** inputs.publish == 'true'）。构建步 / 落地面断言步**不写盘**
-    #    （前者只在 runner 里 build，后者只 GET），上游的 Manual gate 已在非手动触发时判红中止 ⇒
-    #    给它们也加 if 只是重复表述（会在变异表里制造「改了也不影响安全」的假判据）。
+    # ⚠️ 闸的口径（**模式判定 + 逐 step 消费**，两处都要钉）：
+    #    ① 判定步 `Resolve mode` 是唯一决定「会不会发布」的地方 ⇒ 它必须逐字含两条判据
+    #       （`github.event_name` 是 workflow_dispatch **且** `inputs.publish` 为 true）并**双向**写 mode；
+    #    ② **写盘 / 依赖构建 / 落地面断言**的三步（build:h5 / 发布 / 断言）必须逐字 `if: <mode == 'publish'>`
+    #       ⇒ 就算有人把判定步改成恒 publish，仍然要靠这个 if 才能发布（纵深防线）。
+    mode_steps = [s for s in _steps(wf) if MODE_STEP in str(s.get("name") or "")]
+    if len(mode_steps) != 1:
+        problems.append(f"必须有且只有 1 个「{MODE_STEP}」step（模式判定 = 唯一决定会不会发布的地方），实际 {len(mode_steps)}")
+    else:
+        mode_run = _run_text(mode_steps[0])
+        for token in (GATE_EVENT, GATE_INPUT, MODE_PUBLISH, MODE_NOTIFY,
+                      "gh workflow run c-end-h5-publish.yml"):
+            if token not in mode_run:
+                problems.append(f"模式判定步的 run 缺 `{token}`")
+        if str(mode_steps[0].get("id") or "") != "mode":
+            problems.append(f"模式判定步的 `id` 必须是 `mode`（下游 if 引用它），实际 {mode_steps[0].get('id')!r}")
+        if mode_steps[0].get("continue-on-error"):
+            problems.append("模式判定步带 continue-on-error ⇒ 红被吞")
+
+    # 写盘的那一步：必须逐字消费 mode
     for step in publish_steps:
-        cond = _if_text(step)
-        for token in (GATE_EVENT, GATE_INPUT):
-            if token not in cond:
-                problems.append(
-                    f"🔴 step `{step.get('name')}` 的 `if` 缺 `{token}` ⇒ 这条发布腿可能在**非手动**触发下发布"
-                )
-    for step in publish_steps + verify_steps + build_steps:
+        if PUBLISH_IF not in _if_text(step):
+            problems.append(
+                f"🔴 step `{step.get('name')}` 的 `if` 缺 `{PUBLISH_IF}` ⇒ 这条发布腿可能在**非发布模式**下发布"
+            )
+    # 构建 / 落地面断言：同样只在 publish 模式跑（否则 notify 模式会空跑构建或在没发布时假绿/假红）
+    for step in build_steps + verify_steps:
+        if PUBLISH_IF not in _if_text(step):
+            problems.append(f"step `{step.get('name')}` 的 `if` 缺 `{PUBLISH_IF}`（非发布模式不该跑它）")
+    for step in publish_steps + verify_steps + build_steps + mode_steps:
         cond = _if_text(step)
         if step.get("continue-on-error"):
             problems.append(f"step `{step.get('name')}` 带 continue-on-error ⇒ 红被吞")
@@ -274,18 +325,21 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
         if cond.strip().lower() in ("false", "0"):
             problems.append(f"step `{step.get('name')}` 的 if 恒假 ⇒ 红被吞")
 
-    # —— 「非手动触发 ⇒ 判红并说明」的闸（负向形态同样要判据）——
-    gate_steps = [s for s in _steps(wf) if "Manual gate" in str(s.get("name") or "")]
-    if len(gate_steps) != 1:
-        problems.append(f"缺「Manual gate」step（非手动触发时必须判红说明，而不是静默 success），实际 {len(gate_steps)}")
+    # —— notify 面：**唯一**会因为「线上落后」判红的地方 + 必须给出可复制命令 ——
+    notify_steps = [s for s in _steps(wf) if "Notify" in str(s.get("name") or "")]
+    if len(notify_steps) != 1:
+        problems.append(f"缺「Notify」step（兜底面必须能报出「线上落后」，否则 cron 是空转），实际 {len(notify_steps)}")
     else:
-        gate_run = _run_text(gate_steps[0])
-        for token in ("github.event_name", "inputs.publish", "exit 1",
-                      "gh workflow run c-end-h5-publish.yml"):
-            if token not in gate_run:
-                problems.append(f"Manual gate 的 run 缺 `{token}`（判红 + 给出可复制命令）")
-        if gate_steps[0].get("continue-on-error"):
-            problems.append("Manual gate 带 continue-on-error ⇒ 非手动触发会静默变绿（对账会读成「已发布」）")
+        nt = notify_steps[0]
+        if NOTIFY_IF not in _if_text(nt):
+            problems.append(f"Notify 步的 `if` 必须是 `{NOTIFY_IF}`（只在非发布模式跑）")
+        nrun = _run_text(nt)
+        for token in ("::error::", "gh workflow run c-end-h5-publish.yml",
+                      "scripts/h5_freshness_guard.py", "--ref origin/main", 'exit "$rc"'):
+            if token not in nrun:
+                problems.append(f"Notify 步的 run 缺 `{token}`（判红 / 可复制命令 / 事实基准 / 「没跑≠通过」）")
+        if nt.get("continue-on-error"):
+            problems.append("Notify 步带 continue-on-error ⇒ 线上落后也不会红（兜底面变空转）")
 
     # —— env：目标 / 清单 / 保留前缀 ——
     env = wf.get("env") or {}
@@ -405,13 +459,31 @@ class TestRedProofs:
 
         def silence_gate(mut):
             for step in _steps(mut):
-                if "Manual gate" in str(step.get("name") or ""):
+                if MODE_STEP in str(step.get("name") or ""):
                     step["continue-on-error"] = True
 
         def drop_gate_step(mut):
             mut["jobs"][JOB]["steps"] = [
-                s for s in _steps(mut) if "Manual gate" not in str(s.get("name") or "")
+                s for s in _steps(mut) if MODE_STEP not in str(s.get("name") or "")
             ]
+
+        def mode_always_publish(mut):
+            """把模式判定改成恒 publish（= 闸失效）。"""
+            for step in _steps(mut):
+                if MODE_STEP in str(step.get("name") or ""):
+                    step["run"] = 'echo "mode=publish" >> "$GITHUB_OUTPUT"'
+
+        def notify_always_green(mut):
+            """notify 步不再会因为「线上落后」判红（兜底面变空转）。"""
+            for step in _steps(mut):
+                if "Notify" in str(step.get("name") or ""):
+                    step["run"] = "echo 'nothing to see here'"
+
+        def drop_schedule(mut):
+            _triggers(mut).pop("schedule")
+
+        def retarget_cron(mut):
+            _triggers(mut)["schedule"] = [{"cron": "0 0 * * *"}]
 
         def retarget_root(mut):
             mut["env"]["H5_STATIC_ROOT"] = "/opt/migao-deploy"
@@ -450,8 +522,12 @@ class TestRedProofs:
             "删掉 workflow_dispatch（人的入口）": drop_dispatch_face,
             "发布步骤去掉 if（任何触发都会发）": drop_gate_on_publish,
             "发布步骤 if 只判 event 不判 publish": gate_only_event,
-            "Manual gate continue-on-error（非手动静默变绿）": silence_gate,
-            "删掉 Manual gate 步": drop_gate_step,
+            "模式判定步 continue-on-error": silence_gate,
+            "删掉模式判定步": drop_gate_step,
+            "模式判定恒 publish（闸失效）": mode_always_publish,
+            "notify 步不再因落后判红（兜底面空转）": notify_always_green,
+            "删掉 schedule 兜底面": drop_schedule,
+            "改 cron（与台账声明脱钩）": retarget_cron,
             "把静态根改成上层目录": retarget_root,
             "去掉保留前缀（w/b 不再受保护）": drop_reserved,
             "保留前缀只剩 w（b 失去保护）": reserved_only_w,
@@ -553,7 +629,9 @@ def test_reconcile_leg_dispatches_are_safe_manual_only():
     assert inputs["publish"]["default"] is False, "publish 默认不是 false ⇒ 对账 dispatch 会直接发布"
     publish_steps = [s for s in _steps(wf) if PUBLISH_SCRIPT in _run_text(s)]
     assert len(publish_steps) == 1
-    assert GATE_INPUT in _if_text(publish_steps[0]), "发布步骤没有要求 publish==true"
+    assert PUBLISH_IF in _if_text(publish_steps[0]), "发布步骤没有消费 `mode == 'publish'`"
+    mode = [s for s in _steps(wf) if MODE_STEP in str(s.get("name") or "")]
+    assert len(mode) == 1 and GATE_INPUT in _run_text(mode[0]), "模式判定步没有读 `inputs.publish`"
 
 
 def test_chain_files_are_registered_as_never_in_trigger():

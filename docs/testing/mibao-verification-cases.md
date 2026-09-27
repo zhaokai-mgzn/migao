@@ -2767,7 +2767,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（39 case）
+## 杂项域（40 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3290,8 +3290,9 @@
 ```
 你: 合并建通路的那个 PR 不发布任何东西；首次发布由人手动触发；发布之后线上 / 是本仓库产物，而 /w/ 与 /b/ 一个字节都没变；把触发面放宽、把 if 闸摘掉、或让删除范围越过托管清单时，必须有东西变红
 期望: direct_reply
-数据: **合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**写盘那一步的 `if` 逐字要求 `github.event_name == 'workflow_dispatch'` 与 `inputs.publish == 'true'`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 摘掉 if，各自必红
-数据: **非手动触发必须判红说明**（不许静默 success）：`Manual gate` 步在非授权触发下 `exit 1` 并打印 `gh workflow run c-end-h5-publish.yml --ref main -f publish=true`（否则 deploy-reconcile 的兜底 dispatch 会被读成「已发布」）
+数据: **合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**「模式判定」步（唯一决定会不会发布的地方）逐字读 `github.event_name` 与 `inputs.publish`、双向写 `mode=publish|notify`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 把模式判定改成恒 publish / 删掉模式判定步，各自必红
+数据: **三种触发形态只有一种会发布**：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（只报告）；`publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步必须逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线：判定步与 if 两处都要过）
+数据: **兜底面必须在位且不是空转**（`FM-E17` 收口口径）：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿必须有 `schedule`（cron 与 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的声明**逐字一致**），且 notify 步要真的会因「线上落后」判红（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径**）并给出可复制命令。红证 = 删 schedule / 改 cron / 把 notify 改成恒绿 / 把 notify 的 `::error::` 摘掉，各自必红。⚠️ **为什么 notify 不比 `dist/index.html`**：`dist/` 在 `.gitignore` 里 ⇒ CI 检出里没有它，那样写会**恒走「没跑」分支** = 空转的兜底面（本包初版踩过）
 数据: 🔴 **红线：绝不删/覆盖静态根**：删除集 = 上一次发布写下的托管清单 ∩ 磁盘现值（首次发布无清单 ⇒ 空集）；根上有**无人认领**的条目时判 `TAKEOVER_REQUIRED`（exit 2）并打印将要替换的计划。沙箱红证 = 预置根内容 ⇒ 不接管、逐字节不变
 数据: 🔴 **红线：不碰 `w/` 与 `b/`**：三层判据 —— ① 保留前缀（产物顶层/托管清单出现即 die）② 根 index.html 不许引用 `/<保留前缀>/…` ③ 发布前后逐子树的**规范化摘要**（路径+内容，不吃 mtime/顺序）与各自 `index.html` 哈希**逐字相等**（CI 侧四条读数缺一即判红）。沙箱红证 = 预置 `w/` `b/` ⇒ 发布后哈希不变；模拟器红证 = `/w/`（或 `/b/`）被覆盖成 C 端产物 ⇒ 落地面断言判红并指名
 数据: **发布真的生效**有判据（不是「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）：线上 body 哈希 == **本次构建**的 `dist/index.html`（陈旧 ⇒ 判红）；根级深层路径仍回 C 端自己的 index（路由面不串端）
@@ -3302,7 +3303,7 @@
 跳过: [backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的 25 条离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 25 条注入式红证（含「只改注释 ⇒ 不红」对照与 6 种坏形态的落地面判红）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-039：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
+溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-039：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
 
 ## 商家入驻域（5 case）
 
@@ -7820,8 +7821,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：551（活跃 126，跳过 425）
-- tier 分布：smoke 12 / normal 506 / adversarial 31
+- 用例总数：552（活跃 126，跳过 426）
+- tier 分布：smoke 12 / normal 507 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -7836,7 +7837,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：39
+- 杂项域：40
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：50

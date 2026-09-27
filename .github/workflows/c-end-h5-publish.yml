@@ -31,6 +31,13 @@ on:
     paths:
       # 被测发布物本身（改了 C 端不发布 ⇒ 线上落后，正是本单要治的形态；但**首发前不自动发**，见上）
       - 'frontend/mini-app/**'
+  # 兜底面（`FM-E17` 收口口径，issue #5707 裁定 A）：`push` 在本仓**会被吞**（auto-merge 用
+  # `GITHUB_TOKEN` 合并 ⇒ push run 不触发 workflow）⇒ 只靠 push 的腿等于**不会跑且无红**。
+  # 🔴 本腿的 cron **只报告、绝不发布**（发布步骤的 `if` 要求 `workflow_dispatch` + `publish=true`）
+  #    —— 它替这条腿回答「线上是否落后本仓库」，落后就 **判红并给出可复制的手动发布命令**。
+  # 每日 18:53 UTC = 02:53 +08（错开 worker-h5 的 18:23 / bmini 的 18:43，避免三条腿抢同一批 CI 分钟）。
+  schedule:
+    - cron: '53 18 * * *'
   # 人工入口：默认**只报告不发布**（`publish=false`），要发布必须显式 `-f publish=true`
   workflow_dispatch:
     inputs:
@@ -67,21 +74,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 手动入口闸（**不是**「恒真条件占位」）：只有 `workflow_dispatch` **且** `publish=true` 才往下走。
-      # 两种触发都不满足时 **job 判红**并把两条可复制命令打出来 —— 「什么都没做」必须长得像
-      # 「什么都没做」，不能报 success（否则 `deploy-reconcile.yml` 的兜底 dispatch 会被读成「已发布」）。
-      # 判据：tests/unit_ci_workflows/test_c_end_h5_hosting.py
-      #   ::test_publish_is_manual_only_and_refuses_the_exit_loudly
-      - name: Manual gate（非手动 publish=true ⇒ 判红并说明）
+      # 模式判定（**三种触发各自的出口**，见文件头「三种形态」）：
+      #   · `push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`：**只报告，不发布**
+      #   · `workflow_dispatch` + `publish=true` ⇒ `publish`：人在签字后真发布
+      # 🔴 关键：`notify` 模式**不判红**（判红改由下面的 notify 步按**事实**判）——
+      #    因为兜底面的 cron 必然每轮跑一次，若它无条件判红，就会变成一个「每天必红一次」的噪音腿，
+      #    把「线上确实落后」这个**真实信号**淹掉。真正该红的是「**线上落后**」，不是「有 cron 在跑」。
+      # 判据：tests/unit_ci_workflows/test_c_end_h5_hosting.py::TestNotifyAndPublishModes
+      - name: Resolve mode（publish vs notify）
+        id: mode
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish }}" = "true" ]; then
-            echo "✅ 手动发布已授权（workflow_dispatch + publish=true）"
-            exit 0
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
+            echo "✅ 手动发布已授权（workflow_dispatch + publish=true）⇒ mode=publish"
+          else
+            echo "mode=notify" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ 本次**没有发布任何东西**（event=${{ github.event_name }} · publish=${{ inputs.publish }}）。"
+            echo "   本腿只在手动授权时发布（issue #4184 用户裁定 B：首次发布由人手动触发）。"
+            echo "   要发布（人手动）：gh workflow run c-end-h5-publish.yml --ref main -f publish=true"
           fi
-          echo "::error::本 workflow **只在手动授权时发布**（issue #4184 用户裁定 B：首次发布由人手动触发）。"
-          echo "本次触发：event=${{ github.event_name }} · publish=${{ inputs.publish }}（未授权）⇒ **没有发布任何东西**。"
-          echo "要发布（人手动）：gh workflow run c-end-h5-publish.yml --ref main -f publish=true"
-          exit 1
 
       - uses: actions/setup-node@v7
         with:
@@ -90,6 +101,7 @@ jobs:
           cache-dependency-path: frontend/mini-app/package-lock.json
 
       - name: Install dependencies
+        if: steps.mode.outputs.mode == 'publish'
         working-directory: frontend/mini-app
         run: npm ci
 
@@ -101,6 +113,7 @@ jobs:
       # ⚠️ 本腿**刻意不注入** `TARO_APP_H5_PUBLIC_PATH`：C 端 `config/index.ts` 的 `h5.publicPath`
       #    是 `'/'`（它就是根），禁止靠改 `deploy/**` 去动别人的构建配置。
       - name: Build H5 (publicPath='/'，API 同源)
+        if: steps.mode.outputs.mode == 'publish'
         working-directory: frontend/mini-app
         env:
           TARO_APP_API_URL: https://app.migaozn.com
@@ -108,6 +121,7 @@ jobs:
         run: npm run build:h5
 
       - name: Install Aliyun CLI
+        if: steps.mode.outputs.mode == 'publish'
         run: |
           curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
           file /tmp/aliyun.tgz | grep -q "gzip compressed data"
@@ -119,7 +133,7 @@ jobs:
       - name: Publish c-end h5 to SWAS (静态根本身；保留 w/ 与 b/)
         # 🔴 纵深防线（第二道）：**写盘的那一步自己**必须逐字要求手动授权 ——
         #    即使有人挪走 / 删掉上面的 Manual gate，这一步也不会在 push 或对账 dispatch 下发布。
-        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
@@ -130,5 +144,28 @@ jobs:
       # 落地面断言（**不是**「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）
       - name: Assert served identity (线上 = 本次构建；不串端；/w/ 与 /b/ 仍在且未被覆盖)
         # 同上一道闸：没有发布就不该有「落地面是新产物」的断言（否则它会在非手动触发下假绿/假红）
-        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         run: bash deploy/scripts/c-end-h5-verify-served.sh https://app.migaozn.com frontend/mini-app/dist
+
+      # ── notify 模式（push / schedule / 不带 publish=true 的 dispatch）────────────────
+      # 🔴 **只判一件事**：线上产物是否落后于 `frontend/mini-app` 的最近改动 —— 判据本体 =
+      #    `scripts/h5_freshness_guard.py`（**单一实现**，与 `h5-freshness-guard.yml` 跑的是同一份；
+      #    本腿**不**再写第二份口径）。落后 ⇒ 判红 + 给出可复制的手动发布命令（这就是兜底面的意义）。
+      # ⚠️ 为什么**不**比 `frontend/mini-app/dist/index.html`：`dist/` 在 `.gitignore` 里
+      #    （`.gitignore:42`）⇒ CI 检出里根本没有它，那样写出来的判定会**恒走「没跑」分支** = 空转的兜底面。
+      # 判据：`tests/unit_ci_workflows/test_c_end_h5_hosting.py::TestNotifyAndPublishModes`
+      - name: Notify（线上产物是否落后本仓库；**只报告不发布**）
+        if: steps.mode.outputs.mode != 'publish'
+        run: |
+          set +e
+          python3 scripts/h5_freshness_guard.py --url https://app.migaozn.com/js/app.js --ref origin/main
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "✅ 线上产物不落后于 frontend/mini-app 的最近改动（判据本体 = scripts/h5_freshness_guard.py）"
+            exit 0
+          fi
+          echo "::error::线上产物落后 / 无法判定（判据本体 rc=$rc；rc=2 陈旧、rc=3 无法判定、rc=1 参数错）。"
+          echo "   本腿**不会**自动发布（用户 2026-09-27 裁定 B：首次发布由人手动触发）。要发布（人手动）："
+          echo "     gh workflow run c-end-h5-publish.yml --ref main -f publish=true"
+          exit "$rc"
