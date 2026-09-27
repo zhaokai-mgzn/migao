@@ -441,6 +441,13 @@
       "issue": "#5001",
       "criterion": "tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_canonical_configs_match_the_deploy_script_surface",
       "note": "常量上方的 `#` 注释声称「配置与镜像同源（deploy/swas/deploy.sh 第 0/1 段 + #5083）：脚本只认这三份 canonical 配置」⇒ 由该判据承担：从 `deploy/swas/deploy.sh` **现取**`cp src/deploy/swas/<f> ./…` 的应用面集合，与本常量**逐字**比对（脚本多/少应用一份 ⇒ 红）。本条目同时是「只改配置的改动必须能自动生效」这一接线的**前提**：哪几份配置属应用面变了，触发面/对账面的覆盖判据必须同批跟。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_local_gate_matrix.py",
+      "symbol": "CI_LEG_COMMANDS",
+      "issue": "#4221",
+      "criterion": "tests/unit_ci_workflows/test_local_gate_matrix.py::test_local_leg_commands_match_ci",
+      "note": "常量上方的 `#` 注释声称与 `.github/workflows/bmini-app.yml` 两条腿的 run 原文**逐字一致**（本地腿不许自创第三套口径）⇒ 由该判据从 CI YAML **现取**四条命令逐条比对（`npm ci` 不算判定内容），同序执行另由 `test_local_leg_runs_them_in_order` 钉住；CI 改了命令而本地声明/本地腿没跟 ⇒ 红。"
     }
   ],
   "frozen_declarations": [
