@@ -136,6 +136,75 @@ export async function employeeLogin(identifier: string, password: string): Promi
 }
 
 /**
+ * 发送短信验证码（企业管理员登录用，issue #5721）
+ *
+ * `POST /api/auth/sms/send`，body `{ phone }`。
+ * 手机号格式 / 频控（每号 1 次/60s + 每日上限）/ 是否已注册，**单一真值都在服务端** ——
+ * 端侧不复制校验规则（否则就是第二套真值），失败文案原样回显。
+ */
+export async function sendSmsCode(phone: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const data = await post<ApiResponse<void>>(
+      '/api/auth/sms/send',
+      { phone },
+      { baseURL: API_BASE_URL, skipAuth: true },
+    )
+
+    if (!data.success) {
+      return { success: false, error: data.error?.message || '验证码发送失败' }
+    }
+    return { success: true }
+  } catch (error: any) {
+    console.error('短信验证码发送失败:', error)
+    return { success: false, error: serverMessage(error, '验证码发送失败，请稍后重试') }
+  }
+}
+
+/**
+ * 企业管理员短信登录（issue #5721）
+ *
+ * 1. `POST /api/auth/sms/login`，body `{ phone, code }`（响应体与员工登录同形：
+ *    `data.accessToken` + `data.user`）
+ * 2. **为什么商家 H5 需要它**：管理员身份在设计上是「手机号 + 短信」（员工是
+ *    「用户名@企业编码 + 密码」），而 issue #5485 之后 H5 只保留了员工入口 ⇒ 管理员
+ *    在**唯一可达的 H5** 上无路可走（存量账号 `users.username` 为 NULL，员工入口同样进不去）。
+ * 3. 角色门禁在服务端：非管理员手机号 ⇒ `401` + 明确引导文案，端侧原样展示、**不自行判角色**。
+ * 4. **不传 `tenantId`** —— 租户由服务端按手机号解析（与员工登录同纪律：前端不解析租户）。
+ */
+export async function adminSmsLogin(phone: string, code: string): Promise<LoginResult> {
+  try {
+    const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
+      '/api/auth/sms/login',
+      { phone, code },
+      { baseURL: API_BASE_URL, skipAuth: true },
+    )
+
+    if (!data.success || !data.data) {
+      return {
+        success: false,
+        error: data.error?.message || '登录失败',
+      }
+    }
+
+    const { accessToken: token, user } = data.data
+
+    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
+    if (user?.tenantId != null) {
+      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
+    }
+
+    return { success: true, user }
+  } catch (error: any) {
+    console.error('管理员短信登录失败:', error)
+    return {
+      success: false,
+      error: serverMessage(error, '登录失败，请稍后重试'),
+    }
+  }
+}
+
+/**
  * 自助改密（首登强制改密的**唯一端侧出口**，issue #5485）
  *
  * 1. POST /api/auth/password/change，body `{ oldPassword, newPassword }` —— **需认证**

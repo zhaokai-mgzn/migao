@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（26 case）
+## B 端小程序域（27 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -933,6 +933,20 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+
+### BM-027. 商家 H5 登录可用：同源 API 面（同源 POST 不被 CORS 误判）+ 两入口（员工 / 管理员短信）+ 可读字号与触控目标 🔵
+```
+你: 商家员工/管理员在手机浏览器打开 `https://app.migaozn.com/b/`：员工填「用户名@企业编码 + 密码」；管理员切到「管理员登录」填「手机号 + 验证码」。两条路都能登进去，且字号/触控目标随屏幕宽度合理缩放
+期望: direct_reply
+数据: 判据 1·🔴 **同源请求不被判成跨域**（修复前线上 403 `Invalid CORS request`、前端只显示 `Load failed`、服务端零日志）：带 `Origin: https://app.migaozn.com` 的同源 POST 必须与不带 Origin 的同一请求同结果。实现 = backend/admin-api/src/main/java/com/migao/admin/security/SameOriginOriginHeaderFilter.java（按浏览器口径逐项比 scheme+host+port，代理不在场时退回本地视角 ⇒ 本地开发的真跨域不受影响）。红证：把 `isSameOrigin` 恒 false ⇒ SameOriginOriginHeaderFilterTest 8 条里 3 条红（实跑过）；还原即复绿
+数据: 判据 2·🔴 **H5 产物的 API/AI 基址与落地面同源**（跨域既要多一次预检、又要求白名单里有它；AI 面未配置时会 baked 成 `http://localhost:8001`）：判据 = tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py 的 test_h5_api_base_is_same_origin_as_landing_surface（落地面取自发布后断言 step，不写死常量）。红证：改回 `https://api.migaozn.com` / 删掉 `TARO_APP_AI_API_URL` ⇒ 红（实跑过）
+数据: 判据 3·**「字号太小」这一类进不来**：h5 模板必须带响应式 root font-size（Taro rem 方案缺的另一半；修复前 root 从未设置 ⇒ 全端按设计值 40% 渲染、标签实测 5.2 CSS px），且 750 设计尺度字号下限 24px、台账**只许缩短**。判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py + test_bmini_h5_delivery_contract.py；红证：写回 `font-size: 13px` / 删掉根字号脚本 / 下调 `MIN_FONT_SIZE` ⇒ 红（实跑过）
+数据: 判据 4·**触控目标与输入字号**：登录页交互件 ≥ 88 设计 px（≈45.8 CSS px，手指最小命中区 44 CSS px）、输入与按钮字号 ≥ 32（≈16.6 CSS px —— 输入框小于 16 CSS px 时 iOS 聚焦会放大整页）。实测 5 个视口（320/360/390/430/1024）全达标
+数据: 判据 5·**两个入口各自可登、失败方向正确**：管理员短信入口走 `POST /api/auth/sms/send` + `POST /api/auth/sms/login`（角色门禁在服务端，非管理员 401 + 引导文案，端侧不自行判角色）；员工入口失败展示服务端反枚举文案（`账号或密码错误`），**不是** `Load failed` 这类网络层文案
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/login-page.test.tsx；JUnit: SameOriginOriginHeaderFilterTest；pytest: tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py 与 test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth.employee-login
+溯源: 2026-09-27 新增（issue #5721）：商家 H5 线上登录全线失败（跨域 403 → `Load failed`）+ 全端字号只有设计值四成且不响应式 + 管理员在 H5 无入口 —— 三条一并修，并落类级判据（同源基址 / 根字号接线 / 字号下限台账 / 触控目标 / 同源判定）。 ｜ tags: bmini, login, admin-sms, same-origin, responsive, typography
 
 ### BM-026. 入库标签落地页深链（/b/?code=<短码>）被消费且按码空间分流 🔵
 ```
@@ -7770,13 +7784,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：549（活跃 126，跳过 423）
-- tier 分布：smoke 12 / normal 504 / adversarial 31
+- 用例总数：550（活跃 126，跳过 424）
+- tier 分布：smoke 12 / normal 505 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：26
+- B 端小程序域：27
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
