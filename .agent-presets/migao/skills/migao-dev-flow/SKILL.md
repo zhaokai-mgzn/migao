@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.74.0
+version: 1.75.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2572,7 +2572,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 **③口径**（值域 / 三态 / `现取 vs 上限`）。缺任何一件 ⇒ 那句话在接收方那里**不可反驳**，
 而不可反驳的前提**必然**被当成事实执行。
 
-### 26.2 清单 R：转述 / 派单的七条
+### 26.2 清单 R：转述 / 派单的纪律（12 条）
 
 | 记号 | 症状（一句话） | 判别动作（一次就能做） | 证据锚（可复核） |
 |---|---|---|---|
@@ -2584,6 +2584,10 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | **FM-R6** | **给出的指令本身会造成冲突**：取号、同写面、同一文件并发改 —— 指令发出时就已经注定撞 | 派单 / 给取号指令前查三样：现取已合并最大号 → **在飞 PR 的 diff / 最新内容** → rebase **后**再查一次（§26.3 ④）；同写面 = 先确认两个包不碰同一文件 | 判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus`（**只覆盖已合并侧**）；`docs/wiki/CI-CD.md::FM-E7` 的缓解办法（实测有效）+ `docs/wiki/CI-CD.md::FM-E15`（判据拦不住在飞 ⇒ 判别动作补上） |
 | **FM-R7** | **转述链条上不标注「这是转述」**：接收方分不清哪句是别人的结论、哪句是复核过的 | 逐句标源，三态**显式**写出来：「某人 / 某包的原话」·「我复算过（命令 + 时点）」·「我没核」；读不到 durable 证据的**宁缺勿滥** | 铁律 11(a) = `AGENTS.md::转述即未核实`；同族 `FM-A9`（引用规范页只给文件名 ⇒ 引错了对象） |
 | **FM-R8** | **派单模板给的命令，让产物落在工具的收尾半径之外** —— `scripts/issue-lifecycle.sh reap-merged` **存在**、也真在跑，而本会话**每一个** worktree 都被它判「**不在工作区根**（`WT_BASE`）**下 ⇒ 自动收尾半径外**」：模板让包用「裸 `worktree add` + 裸相对名」（CWD = 仓库）⇒ 检出落在**仓库里面**。⇒ **工具存在 ≠ 产物可达**（收不掉不是工具坏了，是产物不在它的半径里） | 建 worktree 一律**从仓库根**调用、路径放**半径内**：`git worktree add -b <branch> ../migao-wt/<slug> origin/main`（等价入口 `./scripts/dev-worktree.sh add <branch>`；或显式 `MIGAO_WT_BASE=<根>` —— `scripts/dev-worktree.sh` 与 `scripts/issue_lifecycle.py` **两处都认它**）。**判别**：`./scripts/issue-lifecycle.sh reap-merged`（默认 dry-run、零删除）对本会话的 worktree 报「半径外」⇒ 路径错了；⚠️ **「半径外」与「可收尾」是两回事**（前者只是收不着） | 判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_worktree_templates_stay_inside_the_reap_radius`；半径口径两处 = `scripts/dev-worktree.sh::WT_BASE` · `scripts/issue_lifecycle.py::wt_base_dir`（本包独立复核：两处默认根同形、都吃 `MIGAO_WT_BASE`）；同族 `FM-B4`（产物搁浅）/ `FM-E16`（**你以为在操作一个私有对象**） |
+| **FM-R9** | **坐标指错文件**：说「某处 / 某函数 / 某判据」时**只给文件名**（或在**转发壳**与**实现**之间指了壳）⇒ 接收方打开那个文件**找不到那个东西**，只能自己猜。**实测**（#5719 的独立复核）：坐标被说成 `scripts/issue-lifecycle.sh` / `scripts/issue_lifecycle.py`，而真凶 = `scripts/dev-worktree.sh::discard_preset_snapshot` | 说坐标一律给 `<仓库相对路径>::<符号>`，**并自己打开那一处确认符号在那里**：`git show origin/main:<path> \| grep -n '<符号>'`（只读核查走 git 对象，**禁读工作树**）；**壳与实现不同文件 ⇒ 指实现**（判壳：`wc -l <path>` + `grep -n '^exec ' <path>`）。复算见 §26.3 ⑤ | 真凶 = `scripts/dev-worktree.sh::discard_preset_snapshot` · 转发壳 = `scripts/issue-lifecycle.sh::exec "${PY}" "${impl}" "$@"` · 只做映射 = `scripts/issue_lifecycle.py::_land_do_step`；同族 `FM-A9` / `FM-A7` / `FM-A13` |
+| **FM-R10** | **影响面低估**：说「只影响 X / 只在那一种情况下」时用的是**估计**而不是**检索面 + 命中数** ⇒ 窄口径被当成事实。**实测**（#5719 的独立复核）：说成「固化 PR 用不了 `land`」，而机制上**任何基点早于那次预设改动的在飞分支**都会在 `land` ①步停住（含完全没碰预设的分支） | 说影响面时给「**检索面 + 命中数 + 一条可复算的命令**」：逐个点名被影响的调用方，或给一条能复算出条数的命令。实测口径 = 「谁会被这条路径停住」⇒ 点 `land` 的**调用面**（`scripts/issue_lifecycle.py::_land_do_step`）与 `scripts/dev-worktree.sh` 里 `.agent-presets/**` 的**两个写面**。复算见 §26.3 ⑥ | `scripts/issue_lifecycle.py::_land_do_step`（①步 = `rebase`，rc≠0 ⇒ `failed`，三态码 `EXIT_UNMERGED` = 2 —— ⚠️ **该码不唯一**，认因要看打出来的那句）· `scripts/dev-worktree.sh::preset_has_uncommitted_drift` · `scripts/dev-worktree.sh::preset_touched_by_branch`；同族 `FM-R4`（**否定**性面）· `FM-A12` · `FM-D1` |
+| **FM-R11** | **从没验证的心智模型去提修法 / 发规则**：修法所依据的机制是**推想**的（没读源码、没实测）⇒ 修法与真实判据不是同一个东西。**实测两处**：① 提议「0 behind ⇒ 不该停在 `[rebase]`」—— 而 0 behind + **未提交**漂移时 `git rebase` 照样被 git 拒；② 发规则「每包建 `/tmp/<唯一名>` 软链绕开路径空格」—— 逐工具直连取证**未复现** | 提修法（或发**新规矩**）前**先复现缺陷**：命令 + 原始读数，**复现不出就写「未复现」、不写成规矩**；并说明「**修法所依据的机制**」是**读源码 / 实测**得到的（给 `path::symbol` 或一条命令）。判别动作 = 把修法的判据写成可执行式再对一次：`git -C <wt> diff --quiet HEAD -- <路径>; echo rc=$?`。复算见 §26.3 ⑦ | `scripts/dev-worktree.sh::preset_has_uncommitted_drift`（真判据 = 相对 **HEAD** 的漂移，不是 behind 数）· 台账 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json::NS-2`（**未复现 + 已收窄**）；同族 `FM-C1` / `FM-C2`（那两条治**判据**，本条治**修法**）· `FM-A5` |
+| **FM-R12** | **只想到一处、漏同族**：报缺陷时按「我看到的那个现场」收口，不问「同一机制在**同一个改动的下游 / 上游**还有没有第二处」。**实测**（#5719 的独立复核）：只报了 `discard_preset_snapshot` 挡住 rebase，而下游**更危险的第二处** = rebase 后**无条件**的 `refresh_presets` 会把分支自己**已提交**的预设产物覆盖成 origin/main 版本、留下「**把自己改回去**」的**已暂存**改动（一条 `git commit -a` 即**静默回退固化工作**） | 报缺陷时**先问「同一机制还有没有第二处」**，并给出该机制的**检索命令 + 命中数**（不是「我检查过了」）：`grep -n 'refresh_presets\|discard_preset_snapshot' scripts/dev-worktree.sh` 逐个命中问「它会不会也把分支产物当漂移」，命中数写进结论。复算见 §26.3 ⑧ | `scripts/dev-worktree.sh::refresh_presets` · `scripts/dev-worktree.sh::discard_preset_snapshot`；同族 `FM-D1` / `FM-D2`（**静态设计面**的族级纪律 ⇒ 与本条**不合并**，只在 `same_family` 互指）· `FM-R6` |
 
 ### 26.3 可复制命令（判别动作落地成命令，不许停在口号）
 
@@ -2620,6 +2624,34 @@ gh pr list --state open --json number,isDraft,headRefName         # ②在飞面
 # ③ rebase 之后再跑一遍 ①②（判据只看已合并状态，这一步判据替你不了）
 ```
 
+⑤ **说「某处 / 某函数 / 某判据」时自己打开那一处确认**（`FM-R9`）—— 坐标给 `path::symbol`，**壳与实现不同文件时指实现**：
+
+```bash
+git show origin/main:scripts/dev-worktree.sh \| grep -n 'discard_preset_snapshot'   # ① 符号真在那个文件里
+wc -l scripts/issue-lifecycle.sh; grep -n '^exec ' scripts/issue-lifecycle.sh        # ② 这个文件是不是转发壳
+```
+
+⑥ **说影响面时给检索面与命中数**（`FM-R10`）—— 命中数写进结论，不许写「我估计」：
+
+```bash
+grep -n 'refresh_presets\|discard_preset_snapshot' scripts/dev-worktree.sh   # 该机制的全部写面（含下游）
+grep -n 'def _land_do_step' scripts/issue_lifecycle.py                       # land ①步的入口 = 调用面
+```
+
+⑦ **提修法 / 发规则前先复现**（`FM-R11`）—— 复现读数 + 「修法依据的机制是读源码 / 实测得到的」：
+
+```bash
+git -C <wt> diff --quiet HEAD -- .agent-presets/; echo "drift rc=$?"   # 真判据 = 相对 HEAD 的漂移（不是 behind 数）
+python3 -m pytest <该形态的判据> -q --tb=line -rf                       # 「修好了」要有红 → 绿两条读数
+```
+
+⑧ **报缺陷先问「同一机制还有没有第二处」**（`FM-R12`）—— 检索命令 + 命中数：
+
+```bash
+grep -c 'refresh_presets\|discard_preset_snapshot' scripts/dev-worktree.sh                # 命中数 = 结论的一部分
+git show origin/main:scripts/dev-worktree.sh \| grep -n 'checkout .* -- .agent-presets/'   # 同族的写面普查
+```
+
 ### 26.4 覆盖面登记：本节**覆盖不到**什么
 
 🔴 **不要把本节读成覆盖面更大的东西**（写法与 §25.6 同口径）：
@@ -2628,7 +2660,7 @@ gh pr list --state open --json number,isDraft,headRefName         # ②在飞面
   `evidence` 可解析、判别动作行现取、relay 缺口只许缩短），**不保证承载体本身是对的** ——
   与 §23 G7 同口径：**红是那条判据自己的事**；
 - ❌ **`kind=action` 的条目靠人执行**：判据只能保证它列在下面这一行里、且台账里带 `action` 文本。
-  **判别动作行（现取）**：`FM-R4`、`FM-R7` —— 这 2 条的 id 集合由判据**现取比对**
+  **判别动作行（现取）**：`FM-R4`、`FM-R7`、`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` —— 这 6 条的 id 集合由判据**现取比对**
   （新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）；
 - ❌ **「转述方到底核没核过」无法机械判**：判据看得见的是**文本形态**（记号登记 / 锚可解析 / §26 有没有裸行号），
   **看不见**「他到底跑没跑那条命令」。这一节的真实执行力来自**接收方按 §25 复核**
@@ -2654,9 +2686,23 @@ gh pr list --state open --json number,isDraft,headRefName         # ②在飞面
   ⇒ 判据 20 只保证「不再教坏形态」，**不保证存量被收掉**。存量的判别动作 = 把半径根指到旧根再做一次 dry-run 复核
   （`MIGAO_WT_BASE=<旧根> ./scripts/issue-lifecycle.sh reap-merged`），⚠️ **「半径外」只说明收不着**，
   删不删由「**可收尾**」那一档（已合并 PR + 无 open PR + 无保护位）判 —— 两档**不可互换**；
+- ❌ **`FM-R9` ~ `FM-R12` 四条（本单回灌的转述错法）全是 “**无机械锁**”**：判据只能保证「记号已登记 / `action` 非空 / `evidence` 锚可解析 / 判别动作行现取」，
+  **判不了**「转述方有没有真去打开那个文件、有没有真跑那条检索、提修法前有没有复现」。⇒ 用「有判据」读这四条
+  ＝ 把**无机械锁**读成**已守护**（本台账最贵的那种误读，同 `PD-5` 的登记口径）；
+- ❌ **「转发壳 vs 实现」（`FM-R9`）只覆盖到「锚要落在被点名的文件里」这一半**：写「壳的路径 + 只存在于实现里的符号」
+  会因 `_resolve_anchor` 解析失败被判红；而**只给壳、不给符号**（实测出事的正是这个形态）在文本层**不可判**
+  —— 文件名的散文化提及在本仓大量存在（同 `FM-A11` 的 prose 边界）；
+- ❌ **「影响面 / 同族第二处」的穷举性判不了**（`FM-R10` / `FM-R12`）：判据看得见「台账里有没有写检索命令与命中数」，
+  **看不见**「那条检索是不是覆盖了该机制的**全部**写面」—— 出口是接收侧按 §25.1 自己复算一次；
+- ❌ **「未复现的 workaround 不许以规矩形态传播」这一条也没有机械锁**（`FM-R11` + 台账 `NS-2` / `PD-6`）：本单已把
+  「路径含空格 ⇒ 建软链」**收窄**成「**先直连**；只有**实测失败**（附命令 + 原始报错）才绕」，而**没有任何判据**
+  会拦住下一个人再把它写回**无条件步骤** —— 账在 `NS-2`、`PD-6` 与 `docs/wiki/CI-CD.md::FM-E13`（这也是它留在
+  `not_solidified` 而不是销账的原因）；
+- ❌ **「坐标指的是壳还是实现」的语义判不了**（`FM-R9` 的另一半）：判据读的是锚**能不能解析**，不是「转述方
+  那句话的主语是谁」—— 后者要靠接收侧按 §25.1 打开那一处（`FM-A9` 的同一动作）；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
 
-## 版本沿革（v1.1 → v1.74.0）
+## 版本沿革（v1.1 → v1.75.0）
 
 - v1.74.0（2026-09-27 **§19 活索引行的读数改成「现取」并由判据 19 钉住 + 新增 `FM-R8`（收尾半径）+ §19.3 / §26.4 覆盖面登记**，本次；三件同批，来源 = #5707 本单指令）：
   ① **治「活索引自己腐烂」**（台账 `NS-4` 的 ①「面外具名实例」⇒ **销账**）：§19 表第 19 行的两处读数与台账**脱钩**
@@ -3575,3 +3621,27 @@ gh pr list --state open --json number,isDraft,headRefName         # ②在飞面
   ③ 判据 = `tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py`（11 条，**5 条注入式红证**实跑过）。
   **未实装 / 边界（如实登记，§19.1）**：`pending-close` 的判定是**启发式**（body 里的 `#N` 引用，
   `关联 #N` 与"真该关"不可机器区分）⇒ 刻意**只做发现**；点号 worktree **真删**的判据未实现（用户裁定不做无人值守删除）。
+
+
+- v1.75.0（2026-09-27 **§26 清单 R 回灌 4 条转述错法（`FM-R9`~`FM-R12`）+ 处置一条无根据的 workaround（`NS-2` 收窄）+ 两份清单标题的条数改由判据 21 钉住**，本次；来源 = 本单指令「把 #5719 独立复核出的转述 / 派单错法回灌进研发模式」）：
+  ① **`FM-R9`~`FM-R12` 四条**（各带症状 / 判别动作 / 证据锚，**判别动作不是劝告**）：坐标指错文件（**转发壳 vs 实现**）·
+  影响面低估（给**检索面 + 命中数**）· 从没验证的心智模型提修法（**先复现** + 说明机制来源）· 只想到一处漏同族
+  （先问「**同一机制还有没有第二处**」+ 检索命令 + 命中数）。四条**无机械锁** ⇒ `kind=action` / `state=gap` 入册，
+  `RELAY_GAPS_FROZEN` **2 → 6**（`PD-5` 公开抬上限，只许缩短的语义不变）。
+  **与 `FM-A9` / `FM-A13` / `FM-A11` / `FM-D` 的关系 = 补强，不是重复条目**：那几条住在 §25 的**执行侧**（A~D 族），
+  本单这四条是**转述侧**的对称面（R 族）；两面**各自双向绑定**（台账 `_invariants` 明写「两面分开取」，
+  混成一个集合会把一方正文里的『引用』读成另一方的『未登记纪律』⇒ 假红）⇒ 每条在 `same_family` 里互指 + `covers` 写清**覆盖到哪一半**。
+  ② **`NS-2` 收窄**（`PD-6`，**不是销账**）：原条目把**调用方的写法**记成了**工具的确定行为** ⇒ 派生出「每包建
+  `/tmp/<唯一名>` 软链」这条**无根据的规矩**（本单逐工具**直连**取证：含空格路径下 `write` / `read` / `edit` /
+  `grep` / `glob` **全部成功**；真正会失败的是**未加引号的 shell 路径**与**未用 `-z` 解析 git 输出**）。
+  ⇒ 改成「**先直连**；只有**实测失败**才绕」，条数不变 ⇒ `NOT_SOLIDIFIED_FROZEN` **不动**（同 `PD-4` 的「缩窄、不销账」）。
+  ③ **两份清单标题的条数改成现取读数**：§26.2 原标题写「七条」而台账 `relay_entries` 现取 **8** 条（**陈旧**，
+  且此前**没有任何判据管它** —— 同 §19 索引行腐烂的形态）⇒ §25.2（A 族）/ §26.2（R 族）两处标题的条数
+  由**判据 21** 钉在台账现取上（条数不符 ⇒ 红；标题被删 / 取不到 ⇒ fail-closed 红）。
+  ④ 用例库面同批对齐：`MC-038` 的范围端点随现取抬到 `FM-R12`，`kind=action` 的读数改成六条
+  （`tests/unit_ci_workflows/test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）—— 端点由该文件判据 2
+  **逐值**判 ⇒ 不抬就红。
+
+  **未实装 / 边界（照实登记，§19.1）**：`FM-R9`~`FM-R12` 四条**只有纪律 + 判别动作**，没有机械锁；
+  `NS-2` 的收窄**不会让任何判据变红或变绿**；判据 21 只管**两份清单标题的条数**（自然语言计数、`merge_log` 历史句
+  与别的散文读数仍在面外，见 §26.4 与台账 `NS-4`）。本节**不改任何门禁的通过条件、不新增豁免**。

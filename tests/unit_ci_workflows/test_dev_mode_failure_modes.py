@@ -41,7 +41,7 @@
 + `same_family` 里的记号必须真实存在 + `evidence` 可解析；16 = §26 的**判别动作行（现取）**；
 17 = relay 面 `gap` 条数只许缩短；18 = §26 里**不许出现裸行号引用**（行号会腐，`FM-A10` 同因）。
 
-**另两条（判据 19/20）= 「承载体自己会不会腐烂 / 产物在不在工具的半径里」**：
+**另三条（判据 19/20/21）= 「承载体自己会不会腐烂 / 产物在不在工具的半径里 / 清单标题的条数会不会腐烂」**：
 
 - **判据 19 = §19 索引表第 19 行（活索引）的读数 ≡ 台账现取**：范围端点 `FM-<族><i>`~`FM-<族><j>`
   必须等于该族 id 的**现取 min/max**（⚠️ **端点不是条数** —— 该族有缺号时两者必然不等，这正是
@@ -53,6 +53,11 @@
   （只读、用完即删，不产生需要收尾的分支产物）。病灶实测：`scripts/issue-lifecycle.sh reap-merged`
   **存在**、也真在跑，而本会话**每个** worktree 都被判「不在工作区根下 ⇒ 自动收尾半径外」
   —— 派单模板给的命令让检出落在**仓库里面** ⇒ **工具存在 ≠ 产物可达**。
+- **判据 21 = 两份清单标题里的条数 ≡ 台账现取**（`LIST_COUNT_CLAIMS` 策展表：§25.2 的 **A 族** /
+  §26.2 的 **R 族**）：标题里的 `（N 条）` 必须等于现取；**标题被删 / 读数形态被删 ⇒ 红**（fail-closed）。
+  病灶 = 本单**现取到的实况**：§26.2 的标题写着「七条」而台账 `relay_entries` 现取 **8** 条，
+  **此前没有任何判据管它** —— 与判据 19 治的「§19 索引行腐烂」**同族**（对象从索引行换成清单标题）。
+  **边界**：只认 `（N 条）` 这一种**结构化**形态；自然语言计数与叙述句仍在面外（台账 `NS-4` 的 ②）。
 
 **另有三条（判据 11/12/13）**：11/12 = 抢号唯一性（用例号 / 迁移版本号，见本文件末节）；
 **判据 13 = `FM-E14`** —— `node --test` 的**目标参数必须是 glob**（传**目录**会被 Node 内置 runner
@@ -87,6 +92,10 @@
   ⇒ 同一份代码在 CI 与本机会得到**不同读数**），走 GitHub API 则引入网络依赖 ⇒ 违反「翻 required / 写判据要先
   确认**判定方式是确定的**」（`migao-dev-flow` §2.2）。⇒ **选择显式登记边界**，不硬凑。
   **显形条件**：main 上已合并占号 且 某个在飞分支同号（本会话用例号已撞 7~8 次、迁移号 1 次）。
+- **判据 21 只覆盖两份清单标题里的 `（N 条）`**（§25.2 的 A 族 / §26.2 的 R 族）：`merge_log` 的历史句、
+  正文里的自然语言计数（「两条」「七条」这类）**不在面内** —— 与 `FM-A11` 的 prose 边界同因
+  （要覆盖得**逐条进策展表**，不是放宽正则）；本单实测的那处病灶（§26.2 写「七条」而现取 8 条）
+  正是靠**人工复核**发现的，判据 21 保证的是它**不会再静默腐烂**，不是「结构上不可能出现」。
 - 本判据**不改任何门禁的通过条件、不新增豁免**。
 """
 from __future__ import annotations
@@ -156,7 +165,11 @@ RELAY_ID_RE = re.compile(r"\bFM-R\d+\b")
 #: 判据 17：relay 面 `state=gap` 的**上限**（冻结在本文件里 —— 台账改不动它；只许缩短）。
 #: 语义与 `GAPS_FROZEN` 逐字同口径：`现取 ≤ 上限`，**抬到高于现取不会红** ⇒「上限 == 现取」靠
 #: 销账时**同批降上限**这个动作。初值 = 建面时的现取条数（**每一次升降都在 diff 里可见**）。
-RELAY_GAPS_FROZEN = 2
+#: 历史读数：`2`（#5707 建面：`FM-R4` / `FM-R7`）→ **`6`**（本单回灌四条**只靠人执行**的转述纪律
+#:   `FM-R9` ~ `FM-R12`，见台账 `PD-5`：四条都能机械核「记号已登记 / `action` 非空 / 判别动作行现取」，
+#:   但**判不了**「转述方有没有真去打开那个文件 / 有没有真跑那条检索 / 提修法前有没有复现」
+#:   ⇒ 是**真缺口**，不许塞进 `guarded` 把「无机械锁」写成「已守护」）。
+RELAY_GAPS_FROZEN = 6
 #: 判据 18：「文件 + 冒号 + 数字」形态的**裸行号引用**（行号会腐 —— `FM-A10` 已有实证：
 #: 同一句话的行号几个提交后就指向别的对象）。射程 = §26 节文本。
 #: ⚠️ **本判据自己不许把那个形态原样写进任何仓内文本**（`FM-A11`「举例即实例」）：注入式红证的
@@ -166,7 +179,10 @@ LINE_REF_RE = re.compile(r"\b[\w./-]+\.(?:py|sh|md|json|ya?ml|ts|tsx|java|sql|mj
 LINE_REF_SPECIMEN = "scripts/verify-all.sh" + ":" + "42"
 #: §26.4 覆盖面登记必须**点名**的面（**正向**：防「把边界删光了事」，同
 #: `test_dev_worktree_preset_wording.py` 判据 2 的口径）。删掉任一面 ⇒ 红。
-RELAY_BOUNDARY_MARKERS = ("kind=action", "FM-R", "evidence", "收尾半径", "reap-merged", "派单消息")
+RELAY_BOUNDARY_MARKERS = ("kind=action", "FM-R", "evidence", "收尾半径", "reap-merged", "派单消息",
+                          # 本单（`FM-R9` ~ `FM-R12`）新增的面：四条**无机械锁** / workaround 的收窄
+                          # （**先直连**，只有实测失败才绕）/ 转发壳与实现不同文件
+                          "无机械锁", "先直连", "转发壳")
 
 #: 判据 13（`FM-E14`）的**射程**：本仓会跑 `node --test` 的**测试腿**（本地门禁腿 + 它的 CI 面）。
 #: 收窄 / 扩大射程都要先改这里（frozen），语料是**具名路径**、不是 glob（不触发射程元守卫）。
@@ -573,6 +589,15 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
     # 修法 = 提取放宽到 `[A-Z]`，再逐条核「该记号在技能 / CI-CD 里具名存在」。
     relay_bad_family = json.loads(json.dumps(base))
     relay_bad_family.setdefault(RELAY_LEDGER_KEY, [{}])[0]["same_family"] = "`FM-Z9`"
+    # 🔴 判据 16 的**定点**红证（本单新增，针对回灌的四条）：把某条 `kind=action` 的条目从
+    #    **判别动作行**里删掉（只删那一行里的它，不碰 §26.2 的表格行）⇒ 必须报
+    #    「只靠人执行的条目不写在 §26 边界节」。那一行与那个 id 都**现取**，不写死内容。
+    _bnd_line = next(l for l in (section_text(skill_text, RELAY_BOUNDARY_HEADING) or "").split("\n")
+                     if l.strip().startswith(ACTION_LINE_PREFIX))
+    _last_action_id = sorted(e["id"] for e in relay_base if e.get("kind") == "action")[-1]
+    relay_action_line_gap = skill_text.replace(
+        _bnd_line, _bnd_line.replace(f"`{_last_action_id}`", ""), 1)
+    assert relay_action_line_gap != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
 
     return {
         "no_boundary": ledger_violations(skill_text=no_boundary, cicd_text=cicd_text,
@@ -606,6 +631,9 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
                                             ledger=base, file_text=file_text),
         "relay_bad_family": ledger_violations(skill_text=skill_text, cicd_text=cicd_text,
                                               ledger=relay_bad_family, file_text=file_text),
+        "relay_action_line_gap": ledger_violations(skill_text=relay_action_line_gap,
+                                                   cicd_text=cicd_text, ledger=base,
+                                                   file_text=file_text),
     }
 
 
@@ -681,6 +709,9 @@ def test_discriminating_power_in_memory() -> None:
     assert any("转述面未守护（gap）条数" in p for p in r["relay_new_gap"]), r["relay_new_gap"]
     assert any("裸行号引用" in p for p in r["relay_line_ref"]), r["relay_line_ref"]
     assert any("same_family" in p for p in r["relay_bad_family"]), r["relay_bad_family"]
+    # 判据 16 的**定点**红证：判别动作行里少一条 `kind=action` 的条目 ⇒ 红（本单新增）
+    assert any("只靠人执行的条目不写在 §26 边界节" in p for p in r["relay_action_line_gap"]), \
+        r["relay_action_line_gap"]
 
 
 def test_mutation_harness_really_changes_the_text() -> None:
@@ -1367,4 +1398,88 @@ def test_worktree_radius_guard_has_discriminating_power() -> None:
     assert relay_boundary_missing_markers(skill_text=stripped_markers) != []
     no_boundary = skill_text.replace(RELAY_BOUNDARY_HEADING, "### 26.4 （标题被删）", 1)
     assert relay_boundary_missing_markers(skill_text=no_boundary) != []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 21：两份清单标题的**条数** ≡ 台账现取（治「标题里的条数自己腐烂」）
+#
+# 病灶（本单**现取**到的实况）：§26.2 的标题写着「七条」，而台账 `relay_entries` 现取 **8** 条
+#   —— 与判据 19 治的「§19 索引行腐烂」**同族**，只是对象从「索引行」换成了「清单标题」；
+#   差别在于：**此前没有任何判据管它**（判据 19 只读 §19 那一张表格的第 19 行）。
+# 治法同判据 19 的口径：**结构化**读数（标题里的 `（N 条）`）必须等于台账现取；取不到 / 标题被删 ⇒ 红
+#   （fail-closed：**未跑 ≠ 通过**）。口径走**策展表**而不是放宽正则 —— 自然语言计数（「十几条」这类
+#   叙述句）刻意**不在面内**（同 `CLAIMS` / `COMMENT_CLAIMS` 的边界口径）。
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: 清单标题里的**结构化**条数读数：``（13 条；…）`` / ``（11 条）``。
+LIST_COUNT_RE = re.compile(r"（\s*([0-9]+)\s*条")
+#: 策展表：每项 = (标题前缀, **族字母**（`family_numbers` 的族）, 口径说明)。
+#: ⚠️ §25.2 那个数说的是 **A 族**的条数，**不是** `entries` 全部（两回事：`entries` 覆盖 A~D）。
+#: 标题前缀**逐字**出现在技能里；删标题 / 改前缀 ⇒ 红。
+LIST_COUNT_CLAIMS = (
+    ("### 25.2 清单 A", "A",
+     "§25.2 清单 A 的条数 —— `entries` 里 **A 族**的现取条数（不是 `entries` 全部：它覆盖 A~D）"),
+    ("### 26.2 清单 R", "R",
+     "§26.2 清单 R 的条数 —— 台账 `relay_entries` 的现取条数"),
+)
+
+
+def list_count_problems(*, skill_text: str, ledger: dict) -> list[str]:
+    """判据 21：每份清单标题里的条数 ≡ 台账现取。空列表 = 全绿。**纯函数**，红证可内存构造。"""
+    bad: list[str] = []
+    for heading, fam, why in LIST_COUNT_CLAIMS:
+        lines = [l for l in (skill_text or "").split("\n") if l.strip().startswith(heading)]
+        if not lines:
+            bad.append(f"技能里找不到清单标题 `{heading}`（{why}）⇒ 判据无从判定"
+                       f"（fail-closed：删标题 / 改前缀都红，**未跑 ≠ 通过**）")
+            continue
+        m = LIST_COUNT_RE.search(lines[0])
+        if m is None:
+            bad.append(f"清单标题 `{heading}` 里取不到 `（N 条）` 形态的条数读数（{why}）⇒ "
+                       f"判据空跑（形态被改掉 ⇒ 红，不许静默放行）")
+            continue
+        got, want = int(m.group(1)), len(family_numbers(ledger, fam))
+        if got != want:
+            bad.append(f"清单标题的条数陈旧：`{heading}` 写 **{got} 条**，现取 **{want} 条**"
+                       f"（{why}；改台账而不改标题 ⇒ 红，改标题写旧数 ⇒ 红）")
+    return bad
+
+
+def test_list_heading_counts_equal_the_ledger() -> None:
+    """判据 21（常驻）：§25.2 / §26.2 两份清单标题的条数 ≡ 台账现取。"""
+    skill_text, _, ledger = _live()
+    bad = list_count_problems(skill_text=skill_text, ledger=ledger)
+    assert bad == [], "清单标题的条数与台账脱钩：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_list_count_guard_has_discriminating_power() -> None:
+    """判据 21 的判别力自证（**内存构造**，不改磁盘）：陈旧条数 / 删标题 / 删读数各自判红 + 对照读数。"""
+    skill_text, _, ledger = _live()
+    assert list_count_problems(skill_text=skill_text, ledger=ledger) == []
+
+    # ① **条数退回旧值**（本单实际修的那处：§26.2 曾写 7，而现取 = 台账 `relay_entries` 条数）
+    heading = LIST_COUNT_CLAIMS[1][0]
+    line = next(l for l in skill_text.split("\n") if l.strip().startswith(heading))
+    stale_line = LIST_COUNT_RE.sub("（7 条", line, count=1)
+    assert stale_line != line, "内存构造的变异体与原文本逐字相同（变异没生效）"
+    stale = skill_text.replace(line, stale_line, 1)
+    assert stale != skill_text
+    got = list_count_problems(skill_text=stale, ledger=ledger)
+    assert any("条数陈旧" in p for p in got), got
+
+    # ② 标题被删 ⇒ fail-closed 红（**未跑 ≠ 通过**）
+    assert list_count_problems(skill_text=skill_text.replace(heading, "### 26.2 （标题被删）", 1),
+                               ledger=ledger) != []
+    # ③ 读数形态被删（只剩标题、没有 `（N 条）`）⇒ 红（不许静默空跑）
+    assert list_count_problems(
+        skill_text=skill_text.replace(line, heading + "：转述 / 派单的纪律", 1), ledger=ledger) != []
+    # ④ 对照读数：**只加一条注释**（不动任何读数）⇒ 不红
+    assert list_count_problems(
+        skill_text=skill_text + "\n<!-- 只加一条注释：不改任何读数、不改任何标题 -->\n",
+        ledger=ledger) == []
+    # ⑤ 对照读数：**改台账而不改标题**同样红（两个方向都判 —— 与判据 19 同口径）
+    thinner = json.loads(json.dumps(ledger))
+    thinner[RELAY_LEDGER_KEY] = thinner[RELAY_LEDGER_KEY][:-1]
+    got = list_count_problems(skill_text=skill_text, ledger=thinner)
+    assert any("条数陈旧" in p for p in got), got
 
