@@ -970,6 +970,49 @@ export interface PieceworkSummary {
  * （后者会被任何更新污染 ⇒ 会静默给出错数，设计 §6.1 逐字点名）。`threshold_source` 恒为
  * `default`（S3 全局兜底）—— **不得**在前端把它渲染成「业务标准工时」。
  */
+/**
+ * 精裁输出清单的一行（issue #5693）—— 给裁床的「**裁多长（米）× 几片**」。
+ *
+ * 服务端唯一实现在后端 `ProcessingSetReadService`，与工人端扫码详情**同一份**
+ * （同一实现 ⇒ 两处读面逐字段一致）。🔴 九键**恒在**：算不出来时
+ * `fabric_meters` / `panel_count` / `panel_length_m` 一律 `null`（服务端**不用 0 / 1 冒充**），
+ * 并由 `missing_reason` 指名缺的是什么 ⇒ 前端按「显式留空」渲染，不造值。
+ */
+export interface CutPlanRow {
+  order_item_id: string
+  /** 部位（布帘 / 纱帘 / 帘头 / 布料） */
+  position_kind?: string | null
+  /** 部位名 / 货号（商品名） */
+  position_name?: string | null
+  /** 组件（明细行角色：主布 / 配布边 / 纱） */
+  component?: string | null
+  /** 用料（米）—— 唯一来源 = 「精裁」工序实例的 qty（且 qty_source = fabric_meters） */
+  fabric_meters?: number | null
+  /** 几片（定高买宽 = 1 片整窗；定宽买高 = 算料输出的 panels） */
+  panel_count?: number | null
+  /** 裁多长（米 / 片） */
+  panel_length_m?: number | null
+  /** 部位级备注（与工序明细的 `remark` 同源） */
+  remark?: string | null
+  /** 缺值原因（`null` = 齐全）—— 算不出来时才非空 */
+  missing_reason?: string | null
+}
+
+/** 加工套件只读行（后端 issue #5247 的读面；#5693 起带精裁输出清单）。 */
+export interface ProcessingOrderSetRow {
+  set_id: string
+  set_no: string
+  set_index?: number | null
+  processing_order_no?: string | null
+  order_no?: string | null
+  completed?: boolean
+  total_operations?: number
+  done_operations?: number
+  progress_percent?: number
+  /** 精裁输出清单（issue #5693）：键恒在；空数组 = 本套一个部位都算不出 */
+  cut_plan?: CutPlanRow[]
+}
+
 export interface StuckPointsReport {
   /** 判定模式：`A`（A 模式只查「没开工」那一种） */
   mode?: string

@@ -49,6 +49,7 @@ import type {
   ProcessingOrder,
   ProcessingOrderGenerateResult,
   ProcessingOrderGenerateBatch,
+  ProcessingOrderSetRow,
   ProcessingOrderUpdateParams,
   InboundOrder,
   InboundOrderLine,
@@ -955,6 +956,25 @@ export const processingOrderApi = {
   // 状态更新：issue(发加工)/start/complete/cancel
   update: (id: string, data: ProcessingOrderUpdateParams) =>
     request.patch<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`, data),
+}
+
+// 加工套件只读 API（后端 issue #5247 的三个读端点；#5693 起响应带**精裁输出清单**）
+//
+// 🔴 为什么商家端加工单详情经它取精裁输出：清单的行粒度 = **套 × 部位**，而服务端的唯一实现
+// 在 `ProcessingSetReadService`（与工人端扫码详情**同一份** `set_overview`）。前端**不**自己
+// 按订单行的用料再算第二份（那就是两份会漂移的口径）。权限 `production:view` —— 与本页
+// （`/processing-orders/{id}/production`）的路由守卫同码。
+export const processingOrderSetApi = {
+  list: (params: {
+    processingOrderNo?: string
+    orderNo?: string
+    page?: number
+    size?: number
+  }) =>
+    request.get<ApiResponse<PageResponse<ProcessingOrderSetRow>>>(
+      '/api/admin/processing-order-sets',
+      { params },
+    ),
 }
 
 // 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）

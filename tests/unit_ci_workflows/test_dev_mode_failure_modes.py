@@ -175,8 +175,13 @@ RELAY_ID_RE = re.compile(r"\bFM-R\d+\b")
 #:   ⇒ 是**真缺口**，不许塞进 `guarded` 把「无机械锁」写成「已守护」）→ **`7`**（#5721 新增 `FM-R13` =
 #:   「派单消息里的『环境已同步』断言会过期」，见台账 `PD-7`：`land` 侧那一半**已机械** —— preflight 每次
 #:   打印工具来源（路径 + sha + 与 `origin/main` 的差），判据 `tests/unit_ci_workflows/test_land_tool_provenance.py`；
-#:   而**派单侧那一半在仓外**（不 durable、判据读不到）⇒ 仍是**真缺口**）。
-RELAY_GAPS_FROZEN = 7
+#:   而**派单侧那一半在仓外**（不 durable、判据读不到）⇒ 仍是**真缺口**）→ **`9`**（本单把**协调侧派单的
+#:   7 处实测错法**回灌成两条，见台账 `PD-9`：`FM-R14` = 报集合成员 / 条数 / 全称量词 / 现状 / 载体前
+#:   **先现取**、把**原始输出行**贴进结论（五处实测逐条写在它的 `symptom` / `gap_shows_when` 里）；
+#:   `FM-R15` = **交出去的命令**先核**口径与前置**、把适用面写进派单。两条治的都是「**转述方到底跑没跑
+#:   那条命令**」这一层 —— 判据看得见文本形态（记号已登记 / `action` 非空 / 判别动作行现取 /
+#:   `evidence` 锚可解析），**看不见他跑没跑** ⇒ 是**真缺口**，不许塞进 `guarded` 把「无机械锁」写成「已守护」）。
+RELAY_GAPS_FROZEN = 9
 #: 判据 18：「文件 + 冒号 + 数字」形态的**裸行号引用**（行号会腐 —— `FM-A10` 已有实证：
 #: 同一句话的行号几个提交后就指向别的对象）。射程 = §26 节文本。
 #: ⚠️ **本判据自己不许把那个形态原样写进任何仓内文本**（`FM-A11`「举例即实例」）：注入式红证的
@@ -191,7 +196,11 @@ RELAY_BOUNDARY_MARKERS = ("kind=action", "FM-R", "evidence", "收尾半径", "re
                           # （**先直连**，只有实测失败才绕）/ 转发壳与实现不同文件
                           "无机械锁", "先直连", "转发壳",
                           # #5721（`FM-R13`）新增的面：`land` 的**工具来源**读数（哪一份 / sha / behind）
-                          "工具来源")
+                          "工具来源",
+                          # 本单（`FM-R14` / `FM-R15`）新增的三面：① 「现取得出的**原始输出行**」这一形态
+                          # 判不了（判据看不见他跑没跑）；② 「**交出去的命令**」的适用面（口径 / 前置）在仓外；
+                          # ③ **载体**（值住在哪个数据源）要人知道有哪几个候选
+                          "原始输出行", "交出去的命令", "载体")
 
 #: 判据 13（`FM-E14`）的**射程**：本仓会跑 `node --test` 的**测试腿**（本地门禁腿 + 它的 CI 面）。
 #: 收窄 / 扩大射程都要先改这里（frozen），语料是**具名路径**、不是 glob（不触发射程元守卫）。
@@ -1496,4 +1505,111 @@ def test_list_count_guard_has_discriminating_power() -> None:
     thinner[RELAY_LEDGER_KEY] = thinner[RELAY_LEDGER_KEY][:-1]
     got = list_count_problems(skill_text=skill_text, ledger=thinner)
     assert any("条数陈旧" in p for p in got), got
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 判据 22（本单新增）：**回灌的两条转述纪律（`FM-R14` / `FM-R15`）双向在位、且是 `action`/`gap`**
+#
+# 病灶（本单实测，来源 = 协调侧派单的 7 处错法）：§26 此前只到 `FM-R13`，而**实测最频繁出错**的那一层
+# （「转述方到底跑没跑那条命令」）没有条目 —— 于是同一批交付里，派单侧对两个包各核出 7 处不准。
+# 本判据**不新增门禁**（承载体仍是判据 14~18 / 21 那一套），它只把**本批回灌的对象**钉成断言：
+#   ① 两条的 id **逐字**出现在 §26、且在台账里**恰好一条**（锚唯一）；
+#   ② `kind`/`state` = `action`/`gap` —— **不许**塞进 `guarded` 把「无机械锁」写成「已守护」；
+#   ③ 它们是台账**末两条**（§26.2 标题条数与用例库端点都按现取对齐它们）；
+#   ④ §26.4 的三张新覆盖面逐字在位（删任一面 ⇒ 红）。
+# 红证**全部内存构造**（真文件当基线 → 改内存对象 → 直接喂纯函数），逐条点名命中的分支。
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: 本单回灌的两条（顺序即现取顺序；在台账里必须是**最后两条**）。
+RELAY_BACKFILL_IDS = ("FM-R14", "FM-R15")
+
+
+def relay_backfill_problems(*, skill_text: str, ledger: dict) -> list[str]:
+    """本批回灌面的自检（空列表 = 全绿）。**纯函数**，红证可内存构造。"""
+    bad: list[str] = []
+    relay = ledger.get(RELAY_LEDGER_KEY) or []
+    rsec = section_text(skill_text, RELAY_SECTION_HEADING) or ""
+    for rid in RELAY_BACKFILL_IDS:
+        hits = [e for e in relay if e.get("id") == rid]
+        if len(hits) != 1:
+            bad.append(f"{rid}：台账 `{RELAY_LEDGER_KEY}` 里的命中数 = {len(hits)}（必须恰好 1）")
+            continue
+        if rsec.count(rid) == 0:
+            bad.append(f"{rid}：§26 正文里一次都没出现 ⇒ 下一个人读不到这条纪律（双向绑定断了）")
+            continue
+        e = hits[0]
+        if (e.get("kind"), e.get("state")) != ("action", "gap"):
+            bad.append(
+                f"{rid}：`kind`/`state` = {e.get('kind')!r}/{e.get('state')!r}，而本批两条"
+                f"**只有纪律 + 判别动作、没有机械锁** ⇒ 必须是 `action`/`gap`"
+                f"（塞进 `guarded` 就是把**无机械锁**写成**已守护**）"
+            )
+    tail = [e.get("id") for e in relay][-len(RELAY_BACKFILL_IDS):]
+    if tail != list(RELAY_BACKFILL_IDS):
+        bad.append(
+            f"本批两条不是台账末两条（现取末两条 = {tail}）⇒ §26.2 标题条数与用例库端点会脱钩"
+        )
+    return bad
+
+
+def test_relay_backfill_entries_are_registered_and_unlocked() -> None:
+    """常驻：本批回灌的两条在技能与台账里**双向在位**、是 `action`/`gap`、且就是台账末两条。"""
+    skill_text, _, ledger = _live()
+    bad = relay_backfill_problems(skill_text=skill_text, ledger=ledger)
+    assert bad == [], "本批回灌面自检失败：\n" + "\n".join(f"  - {p}" for p in bad)
+
+
+def test_relay_backfill_guard_has_discriminating_power() -> None:
+    """红证（**内存构造**，不改磁盘）：四种坏形态各自判红 + 只改注释对照 + 「变异真被读到」自证。"""
+    skill_text, _, ledger = _live()
+    assert relay_backfill_problems(skill_text=skill_text, ledger=ledger) == []
+
+    # ① 删掉 §26 里 `FM-R14` 的**全部出现** ⇒ 红（命中分支 = 「§26 正文里一次都没出现」）
+    stripped = skill_text.replace("FM-R14", "FM-R0")
+    assert stripped != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
+    got = relay_backfill_problems(skill_text=stripped, ledger=ledger)
+    assert any("FM-R14" in p and "一次都没出现" in p for p in got), got
+
+    # ② 台账里把 `FM-R15` 升成 `criterion`/`guarded`（= 把「无机械锁」写成「已守护」）⇒ 红
+    #    ⚠️ 这是本批**最贵的那种误读**，必须能红；命中分支 = `kind`/`state` 不是 action/gap
+    promoted = json.loads(json.dumps(ledger))
+    nxt = next(e for e in promoted[RELAY_LEDGER_KEY] if e["id"] == "FM-R15")
+    nxt["state"], nxt["kind"] = "guarded", "criterion"
+    got = relay_backfill_problems(skill_text=skill_text, ledger=promoted)
+    assert any("FM-R15" in p and "无机械锁" in p for p in got), got
+
+    # ③ 台账里把 `FM-R14` **复制一份**（锚不唯一）⇒ 红（命中分支 = 命中数 != 1）
+    dup = json.loads(json.dumps(ledger))
+    dup[RELAY_LEDGER_KEY].append(json.loads(json.dumps(
+        next(e for e in dup[RELAY_LEDGER_KEY] if e["id"] == "FM-R14"))))
+    got = relay_backfill_problems(skill_text=skill_text, ledger=dup)
+    assert any("FM-R14" in p and "恰好 1" in p for p in got), got
+
+    # ④ 台账末两条被换成别的（标题条数 / 用例库端点会因此脱钩）⇒ 红（命中分支 = 不是末两条）
+    reordered = json.loads(json.dumps(ledger))
+    reordered[RELAY_LEDGER_KEY] = list(reversed(reordered[RELAY_LEDGER_KEY]))
+    got = relay_backfill_problems(skill_text=skill_text, ledger=reordered)
+    assert any("不是台账末两条" in p for p in got), got
+
+    # ⑤ 自证「变异真被读到」：基线含 `FM-R14` 而 ① 的变异体不含它（防变异没生效的空断言）
+    assert "FM-R14" in skill_text and "FM-R14" not in stripped
+    # ⑥ 对照读数：**只加一条注释**（不动任何记号、不改任何声明）⇒ 不红
+    assert relay_backfill_problems(
+        skill_text=skill_text + "\n<!-- 只加一条注释：不改任何记号、不改任何声明 -->\n",
+        ledger=ledger) == []
+
+
+def test_relay_boundary_new_faces_are_named() -> None:
+    """§26.4 的三张新覆盖面（**原始输出行** / **交出去的命令** / **载体**）逐字在位；删任一面 ⇒ 红。"""
+    skill_text, _, _ = _live()
+    assert relay_boundary_missing_markers(skill_text) == []
+    for marker in ("原始输出行", "交出去的命令", "载体"):
+        assert marker in RELAY_BOUNDARY_MARKERS, f"{marker} 没进 marker 表 ⇒ 删了也不会红"
+        stripped = skill_text.replace(marker, "·")
+        assert stripped != skill_text, f"内存构造的变异体与原文本逐字相同（{marker} 没被替换到）"
+        missing = relay_boundary_missing_markers(stripped)
+        assert marker in missing, (
+            f"删掉 `{marker}` 却没红（分支 = relay_boundary_missing_markers："
+            f"§26.4 缺这些面 {missing}）"
+        )
 

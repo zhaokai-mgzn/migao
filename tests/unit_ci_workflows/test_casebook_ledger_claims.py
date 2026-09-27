@@ -144,9 +144,9 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         file="misc.yml", case_id="MC-038",
-        pattern=r"`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13`\s*(七|7)\s*条\s*`kind=action`",
+        pattern=r"`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13`/`FM-R14`/`FM-R15`\s*([0-9]+|七|九)\s*条\s*`kind=action`",
         face="kind-count", arg=("relay_entries", "action"),
-        why="§26 面「靠人执行」的那批条目数（由 2 条长到 6 条见台账 `PD-5`、再长到 7 条见 `PD-7`）—— 台账 `relay_entries` 里 `kind=action` 的条数（现取）",
+        why="§26 面「靠人执行」的那批条目数（由 2 条长到 6 条见台账 `PD-5`、再长到 7 条见 `PD-7`、再长到 9 条见 `PD-9`）—— 台账 `relay_entries` 里 `kind=action` 的条数（现取）",
     ),
 )
 
@@ -549,3 +549,43 @@ def test_uncovered_forms_registered_and_frozen():
         f"登记为「面外」的路径其实在射程内（声明与事实脱钩）：{leaked} ⇒ "
         "要么把它移出 `UNCOVERED_FORMS`（已覆盖），要么收窄射程前先想清楚"
     )
+
+
+def test_relay_action_count_claim_is_pinned_and_can_go_red():
+    """本批改的那处读数（`MC-038` 的 `kind-count`）自证：现取 == 文本；**两个方向**都能红 + 注释对照。
+
+    ⚠️ 本批把数值位的 alternation 从「只认当时那个值」放宽成 `([0-9]+|七|九)`：旧形态**只认旧值**，
+    于是「文本退回上一个读数」这种**最该被抓住**的形态会让锚**直接失配** —— 红是红了，但报文落在
+    「锚必须恰好命中一次」这个分支，**归因指向的不是真因**。放宽后两个方向各命中各自的分支。
+    """
+    texts, ledger = _real()
+    claim = next(c for c in CLAIMS if c.case_id == "MC-038" and c.face == "kind-count")
+    hits = _claim_hits(texts[MISC], claim)
+    assert len(hits) == 1, f"锚必须恰好命中一次，实得 {len(hits)}"
+    live = _count(ledger, "relay_entries", "kind", "action")
+    assert _as_int(str(hits[0].group(1))) == live, (
+        f"文本读数与现取脱钩：文本 {hits[0].group(1)} / 现取 {live}"
+    )
+
+    # ① **文本侧**退回上一个读数（九 → 七）⇒ 红（命中分支 = `计数与现取脱钩`）
+    stale = dict(texts)
+    stale[MISC] = texts[MISC][: hits[0].start(1)] + "七" + texts[MISC][hits[0].end(1):]
+    assert stale[MISC] != texts[MISC], "内存构造的变异体与原文本逐字相同（变异没生效）"
+    got = problems(stale, ledger)
+    assert any("计数与现取脱钩" in p for p in got), got
+    # ② **台账侧**变瘦（去掉末一条）⇒ 同一分支红（两个方向都判，与判据 19 同口径）
+    thinner = json.loads(json.dumps(ledger))
+    thinner["relay_entries"] = thinner["relay_entries"][:-1]
+    got = problems(texts, thinner)
+    assert any("计数与现取脱钩" in p for p in got), got
+    # ③ 自证「变异真被读到」：命中位置的原文确实是那个中文数（不是别的字符）
+    assert texts[MISC][hits[0].start(1):hits[0].end(1)] == "九"
+    # ④ 端点面同批自证：把末一条 relay 条目在内存里换成新号 ⇒ **范围端点**判据红（端点不是硬编码的）
+    moved = json.loads(json.dumps(ledger))
+    moved["relay_entries"][-1]["id"] = "FM-R16"
+    got = problems(texts, moved)
+    assert any("范围端点" in p for p in got), got
+    # ⑤ 对照读数：**只加一条注释**（不动任何读数）⇒ 不红
+    commented = dict(texts)
+    commented[MISC] = texts[MISC] + "\n# 注释：本行没有任何读数，不该被读成声明\n"
+    assert problems(commented, ledger) == []

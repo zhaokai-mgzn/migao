@@ -42,10 +42,17 @@ const mockRepriceUnpricedInstances = vi.fn()
 // issue #4949 起「卡在哪」（`StuckPointsReport`）也走替身：缺省给空报表，
 // 单条用例可覆盖出「卡点行」—— 那是**实例显示口径**（`逻辑名 · 部位`）的第三个消费面。
 const mockGetStuckPoints = vi.fn()
+// 精裁输出清单（issue #5693）：本页经**套件只读端点**取该单各套的清单（行粒度 = 套 × 部位）——
+// 服务端唯一实现，与工人端扫码详情同一份。缺省给空清单，单条用例可覆盖出清单行。
+const mockListSets = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
     detail: (...args: unknown[]) => mockDetail(...args),
+  },
+  // issue #5693：精裁输出清单的取数入口（后端 `GET /api/admin/processing-order-sets`）。
+  processingOrderSetApi: {
+    list: (...args: unknown[]) => mockListSets(...args),
   },
   productionApi: {
     getOrderOperations: (...args: unknown[]) => mockGetOrderOperations(...args),
@@ -206,6 +213,76 @@ describe('加工单生产明细页', () => {
         stuck: [],
       }),
     )
+    // 精裁输出清单缺省 = 空（issue #5693：不抛错、走真实渲染路径）
+    mockListSets.mockReset().mockResolvedValue(ok({ total: 0, page: 1, size: 100, items: [] }))
+  })
+
+  it('🔴 精裁输出清单（issue #5693）：按加工单号取该单各套的清单并渲染「裁多长 × 几片」；缺值留空', async () => {
+    mockListSets.mockResolvedValue(
+      ok({
+        total: 1,
+        page: 1,
+        size: 100,
+        items: [
+          {
+            set_id: 'set-14',
+            set_no: 'CSO260915-02615-014',
+            cut_plan: [
+              {
+                order_item_id: 'oi-cloth',
+                position_kind: '布帘',
+                position_name: '布艺遮光帘A',
+                component: '主布',
+                fabric_meters: 12.3,
+                panel_count: 2,
+                panel_length_m: 6.15,
+                remark: null,
+                missing_reason: null,
+              },
+              {
+                order_item_id: 'oi-gauze',
+                position_kind: '纱帘',
+                position_name: '纱帘-白',
+                component: '纱',
+                fabric_meters: null,
+                panel_count: null,
+                panel_length_m: null,
+                remark: null,
+                missing_reason: '缺幅数（panels）',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-cut-plan')).toBeInTheDocument())
+    // 🔴 取数入口必须点名**加工单号**（行粒度 = 套 × 部位；不按订单号猜）
+    expect(mockListSets).toHaveBeenCalledWith(
+      expect.objectContaining({ processingOrderNo: 'JG-20260917-0001' }),
+    )
+
+    const cloth = screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-cloth')
+    expect(within(cloth).getByText('6.15 米 × 2 片')).toBeInTheDocument()
+    expect(within(cloth).getByText('12.30 米')).toBeInTheDocument()
+
+    // 缺值不渲染假数据：留空 + 原因可见，**不**折 0 / 1
+    const gauzeRow = screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-gauze')
+    const size = within(gauzeRow).getByTestId('cut-plan-size-CSO260915-02615-014-oi-gauze')
+    expect(size).toHaveTextContent('—')
+    expect(size).toHaveTextContent('缺幅数')
+    expect(size.textContent).not.toContain('× 1 片')
+  })
+
+  it('🔴 精裁输出清单接口失败 ⇒ 只该块降级（其余面板照常，页面不白屏）', async () => {
+    mockListSets.mockRejectedValue(new Error('boom'))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-cut-plan-error')).toBeInTheDocument())
+    // 其余面板不受影响（清单失败不吞掉工序/计件）
+    expect(screen.getByTestId('production-header')).toBeInTheDocument()
+    expect(mockGetOrderOperations).toHaveBeenCalled()
   })
 
   it('渲染头部信息：加工单号/订单号/状态/交期 + 进度百分比', async () => {
