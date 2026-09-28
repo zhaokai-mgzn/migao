@@ -3143,7 +3143,7 @@
 数据: 每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』
 数据: 每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**
 数据: 覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）
-数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 19 条（`FM-E1`~`FM-E20`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
+数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 20 条（`FM-E1`~`FM-E21`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
 数据: **未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`
 数据: **抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）
 数据: **抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）
