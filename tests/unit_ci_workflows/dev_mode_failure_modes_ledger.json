@@ -451,6 +451,27 @@
         "#5719",
         "#5722"
       ]
+    },
+    {
+      "id": "FM-A16",
+      "family": "A",
+      "symptom": "🔴 **源码里的写法正确，构建产物里的写法是另一个对象**（2026-09-28 实测：PR #5755 → #5756）：`frontend/bmini-app/src/styles/tabbar.scss` 写的是 `calc(var(--taro-tabbar-height) + env(safe-area-inset-bottom))`，而构建流水线（`postcss-pxtransform`）把**这个变量名**改写成 `var(--50PX)` ⇒ 变量解析不到 ⇒ 该声明在**计算值阶段失效**（`unset` → `auto`）⇒ 线上底栏条高塌成 26px、标签被挤出视口（实测 label 底超出 9.5px；线上坏了约 29 分钟）。⚠️ **三种「看起来没问题」的读数一起骗过了我**：① jest / tsc 全绿；② **产物没看**（本地 dist 当时被随后的 weapp 构建覆盖，我读的是被覆盖后的文件）；③ CI 全绿（**没有任何判据读产物**）。⚠️ **探针定界**（同一份构建里放对照组）：`var(--my-thing)` / `var(--foo-height)` **原样保留** ⇒ 被特殊处理的**只有 Taro 那一个名字**，不是「var + 兜底值」这个形态（修前第一版诊断就错在这里）。",
+      "action": "🔴 **改了「引用第三方注入的 CSS 变量 / 构建期会替换的东西」的样式之后，把产物当第二个对象核对**：① `npm run build:h5` 后**逐字读产物**（`grep -o '<选择器>{[^}]*}' dist/css/app.css`）；② 拿不准就**放对照组**（同一条规则里写一个自造变量 + 一个第三方变量，看谁被改写 —— 只凭「源码里这么写」推不出「产物里还这么写」）；③ 线上复探（`curl` 线上 css）—— 三者缺一都不算「看过了」。**判据**（本例已落码，可照搬）：`frontend/bmini-app/tests/tabbar-layout.test.ts` 的 ①b（本仓 scss 出现`var(--taro-tabbar-height` 即红）+ ①c（字面量必须等于 Taro 实现包的现取值；找不到定义 fail-closed）。",
+      "kind": "criterion",
+      "criteria": [
+        "frontend/bmini-app/tests/tabbar-layout.test.ts",
+        "tests/unit_ci_workflows/test_local_gate_matrix.py"
+      ],
+      "evidence": [
+        "frontend/bmini-app/src/styles/tabbar.scss",
+        "frontend/bmini-app/tests/tabbar-layout.test.ts",
+        "tests/unit_ci_workflows/declaration_gate_registry.json"
+      ],
+      "refs": [
+        "#5754",
+        "#5755",
+        "#5756"
+      ]
     }
   ],
   "ci_findings": [
