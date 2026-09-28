@@ -1073,3 +1073,132 @@ def test_wait_ci_criteria_have_discriminating_power(tmp_path: Path):
         proc, log, _ = _wait_ci_run(fx, checks_json=checks, api_rc=api_rc, module=mutant)
         assert predicate(proc, log) == [], (
             f"只改注释 ⇒ 判据必须照旧（对照读数非空 = 判据判的是文本不是语义）：{predicate(proc, log)}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据（台账 `NS-3` 的承载体）：远程**读/删**的往返次数必须与目标数**无关**
+#   —— 逐分支 `git ls-remote` 实测 3.70s/次（本机 SSH）⇒ 41 个目标 ≈ 5 分钟，
+#      而 `dev-worktree.sh add` 接在 `reap-merged --apply` 上 ⇒ 整条命令 ~7 分钟（用户侧 = 「挂死」）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _count_remote_calls(module, fn) -> tuple[object, list[tuple]]:
+    """在一个计数用的 `git` 替身下跑 `fn()` ⇒ `(返回值, 调用清单)`（**不 mock 语义，只数调用**）。"""
+    real_git = module.git
+    calls: list[tuple] = []
+
+    def counting(*args, **kwargs):
+        calls.append(tuple(args))
+        return real_git(*args, **kwargs)
+
+    module.git = counting
+    try:
+        return fn(), calls
+    finally:
+        module.git = real_git
+
+
+def test_remote_round_trips_are_constant_not_per_branch(fx: Fixture):
+    """删 3 个远程分支 ⇒ `push --delete` **恰好 1 次**、`ls-remote` **≤ 2 次**（删前 + 删后各一次批量读数）。"""
+    module = _load_module(MODULE)
+    branches = ["round-1", "round-2", "round-3"]
+    for b in branches:
+        _git(fx.repo, "branch", b)
+        fx.push_branch(b)
+
+    module._REMOTE_HEADS.clear()
+    gone, calls = _count_remote_calls(module, lambda: module.batch_delete_remote_branches(branches, fx.repo))
+
+    assert gone == {b: "deleted" for b in branches}, gone
+    pushes = [c for c in calls if c[:2] == ("push", "origin")]
+    reads = [c for c in calls if c[0] == "ls-remote"]
+    assert len(pushes) == 1, f"远程删除必须**一次 push**（实测 {len(pushes)} 次）：{pushes}"
+    assert len(reads) <= 2, f"远程读数必须**恒为常数次**（删前 + 删后 ≤ 2；实测 {len(reads)} 次）：{reads}"
+
+
+def test_remote_round_trips_do_not_grow_with_target_count(fx: Fixture):
+    """**不变性半边**：目标数 1 → 3，往返次数**不增长**（增长 = 又回到「逐分支轮询」）。"""
+    module = _load_module(MODULE)
+
+    def counts_for(n: int) -> tuple[int, int]:
+        # 每一轮用**互不相同**的分支名（`batch_delete_remote_branches` 只删远程 ⇒ 同名本地分支会撞）
+        names = [f"scale-{n}-{i}" for i in range(n)]
+        for b in names:
+            _git(fx.repo, "branch", b)
+            fx.push_branch(b)
+        module._REMOTE_HEADS.clear()
+        _gone, calls = _count_remote_calls(module, lambda: module.batch_delete_remote_branches(names, fx.repo))
+        return (len([c for c in calls if c[:2] == ("push", "origin")]),
+                len([c for c in calls if c[0] == "ls-remote"]))
+
+    assert counts_for(1) == counts_for(3), "往返次数随目标数增长 ⇒ 又回到「逐分支轮询」（NS-3 复发）"
+
+
+def test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe(fx: Fixture):
+    """自证的另一半：`verify_clean` 必须走**批量读数**（退回逐分支 = 又慢回去）。"""
+    module = _load_module(MODULE)
+    _git(fx.repo, "branch", "probe-me")
+    fx.push_branch("probe-me")
+
+    module._REMOTE_HEADS.clear()
+    target = module.Target("probe-me", None, False, True, True)
+    ok, calls = _count_remote_calls(module, lambda: module.verify_clean(target, fx.repo, fx.repo))
+
+    assert ok is False, "本地/远程都还在 ⇒ 自证必须判「未清」（这是靶子，不是通过）"
+    per_branch = [c for c in calls if c[0] == "ls-remote" and len(c) == 4]  # ("ls-remote","--heads","origin",<b>)
+    assert per_branch == [], f"`verify_clean` 退回了逐分支探测（批量读数没被用上）：{per_branch}"
+
+
+def test_batch_reading_unavailable_is_marked_undecidable(fx: Fixture):
+    """🔴 **红证半边**：批量读数取不到 ⇒ 必须显式返回「无法判定」（`None`）⇒ 调用方才知道要退回。
+
+    ⇒ 上面三条的「常数次往返」来自**批量读数真的被用上了**，不是恒真。
+    """
+    module = _load_module(MODULE)
+    module._REMOTE_HEADS[str(fx.repo)] = None
+    assert module.remote_branch_gone("any-branch", fx.repo) is None, \
+        "批量读数取不到却给了确定答案 ⇒ 调用方不会退回，判定会静默变错"
+    module._REMOTE_HEADS.clear()
+    heads = module.remote_heads(fx.repo)
+    assert isinstance(heads, set), f"批量读数可用时必须给确定集合（实测 {heads!r}）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据（台账 `FM-E20` 的承载体）：活锚自检**之前**必须先 fetch 基线仓的 `${REF}`
+#   —— 拿未 fetch 的旧 ref 自检 ⇒ 「刚合并的预设改动」被读成「活锚落后」
+#      （2026-09-28 实测：`land` 的 ⑦ `preset-refresh` 步因此判红，而活锚只差一次 fetch）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+PRESET_REFRESH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
+
+#: 判据的两根锚：fetch 行 + 自检调用行（措辞与脚本同批改 ⇒ 锚失效即红，不静默）。
+PRESET_FETCH_NEEDLE = 'git -C "${BASELINE}" fetch'
+PRESET_CHECK_NEEDLE = '"${CHECK}" --anchor'
+
+
+def preset_refresh_order_problems(text: str) -> list[str]:
+    """**纯函数**：自检前必须先 fetch 基线仓（顺序即正确性：fetch 在自检之后 = 自检读的还是旧 ref）。"""
+    problems: list[str] = []
+    if PRESET_FETCH_NEEDLE not in text:
+        problems.append("缺基线仓 fetch ⇒ 自检会对着**未 fetch 的旧 ref** 判（2026-09-28 实测的假红形态）")
+    elif PRESET_CHECK_NEEDLE in text and text.index(PRESET_FETCH_NEEDLE) > text.index(PRESET_CHECK_NEEDLE):
+        problems.append("fetch 排在自检**之后** ⇒ 自检读的仍是旧 ref（顺序反了）")
+    if PRESET_CHECK_NEEDLE not in text:
+        problems.append("找不到自检调用（脚本结构变了 ⇒ 本判据需同批改）")
+    return problems
+
+
+def test_preset_refresh_fetches_the_baseline_before_self_check():
+    text = PRESET_REFRESH.read_text(encoding="utf-8")
+    assert preset_refresh_order_problems(text) == [], "\n".join(preset_refresh_order_problems(text))
+
+
+def test_preset_refresh_order_criterion_is_red_when_fetch_moves_or_goes():
+    """**红证（内存构造，不碰磁盘）**：删掉 fetch 行 / 把它挪到自检之后 ⇒ 各能单独变红。"""
+    text = PRESET_REFRESH.read_text(encoding="utf-8")
+    assert preset_refresh_order_problems(text) == [], "基线本身应当绿"
+    lines = [ln for ln in text.splitlines() if PRESET_FETCH_NEEDLE in ln]
+    assert lines, f"锚点失配（找不到 {PRESET_FETCH_NEEDLE!r}）—— 红证不得是空断言"
+    removed = text.replace(lines[0], "# （已变异：fetch 行被删）", 1)
+    assert removed != text and preset_refresh_order_problems(removed) != [], "删掉 fetch 却不红 ⇒ 空断言"
+    moved = text.replace(lines[0], "", 1) + "\n" + lines[0] + "\n"
+    assert preset_refresh_order_problems(moved) != [], "把 fetch 挪到自检之后却不红 ⇒ 空断言"
