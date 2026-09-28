@@ -27,8 +27,10 @@
  * - 只跑**未登录**形态（本腿不连后端）：`/#/pages/profile/index/index` 与 `/#/pages/dashboard/index/index`
  *   两个 tab 页在未登录时都**不跳转**（已核对页面代码），tabBar 照常渲染。
  * - iOS 安全区那一侧的读数仍靠复测（Chromium 取不到 `env(safe-area-inset-bottom)`）。
- * - 🔴 本文件**不许出现弱断言**（`toBeTruthy` / `not.toBeNull` 这类）：QA Growth Gate 对新文件的
- *   弱断言是 fail-closed（`migao-dev-flow` §3.4）。「取不到就抛」用下面的 `must()`，别用 `expect(x).not.toBeNull()`。
+ * - 🔴 本文件**不许出现弱断言**（「非空 / 存在」这类只证明「东西在」的期望式）：QA Growth Gate 对新文件的
+ *   弱断言判定是 **fail-closed**（`migao-dev-flow` §3.4）。
+ *   ⚠️ 连**注释里的示例**也会被文本扫描当成实例（本文件初版就这么红过一次）⇒
+ *   这一节只描述形态、**不写那个形态的字面量**；「取不到就抛」统一用下面的 `must()`。
  */
 import { test, expect } from '@playwright/test'
 
