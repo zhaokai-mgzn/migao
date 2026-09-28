@@ -102,6 +102,8 @@ from __future__ import annotations
 
 import json
 import re
+
+import yaml
 from pathlib import Path
 from typing import Callable
 
@@ -1613,3 +1615,119 @@ def test_relay_boundary_new_faces_are_named() -> None:
             f"§26.4 缺这些面 {missing}）"
         )
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 22（台账 `FM-E23`）：**控制流里的管道必须显式表态**
+#
+# 病灶（2026-09-28 当天在两个地方各咬一次）：
+#   ① `pr-check` 的门控步原先写 `if git diff origin/main...HEAD | grep -qE '<路径>'` ——
+#      `git diff` **真失败**（rc≠0，如 `origin/main` 不在检出里）时，管道 rc 取的是 `grep` 的 0
+#      ⇒ 落进 else 并把原因写成「未命中受管用例面」= **归因写错 + 静默跳过**（已修：改成判 `git diff` 的 rc）。
+#   ② 侦察命令 `gh pr checks --watch | grep … | tail` —— 同理把**判红**吞成「退出 0」，
+#      于是「两条 dependabot 都红」被我一度读成「有一条绿」（当场更正过）。
+# ⇒ 类级口径：`if/elif/while` 里出现「**被判定命令** | grep/head/tail/wc/sort/uniq/sed/awk」时，
+#    该 run 块**必须** `set -o pipefail`，**或者**登记进下面的豁免表（= 明说「本条判的是**管道末端**的结果」）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+PIPE_CONTROL_RE = re.compile(r"^\s*(?:if|elif|while)\b.*\|\s*(?:grep|head|tail|wc|sort|uniq|sed|awk)\b")
+JUDGED_CMD_RE = re.compile(r"\b(git\s+\w+|gh\s+\w+|npm\s+\w+|python3?|bash|node)\b")
+PIPEFAIL_RE = re.compile(r"-o\s+pipefail")
+
+#: 豁免登记（**只许缩短**；每条必须写明「为什么这里判的确实是管道末端的结果」）。
+#: `where` = `<workflow 相对路径>::<job id>`；条目若在现取命中里找不到 ⇒ 判**陈旧**（红）。
+PIPE_RC_EXEMPTIONS: tuple[dict, ...] = (
+    {
+        "where": ".github/workflows/flaky-ledger-reconcile.yml::reconcile",
+        "reason": "**刻意判管道末端**：`python3 … reconcile --help | grep -q -- '--branch'` 问的是"
+                  "「help 里有没有这个开关」；加 `pipefail` 会让「取不到 help」被读成「有 --branch」（结论反了）。",
+    },
+    {
+        "where": ".github/workflows/pr-check.yml::label-needs-changes",
+        "reason": "**刻意判管道末端**：`gh pr view … --json labels | grep -qx 'review/needs-changes'` 问的是"
+                  "「这个标签在不在」；`gh` 自身失败与「标签不在」在这一步的处置相同（都不打标签）。",
+    },
+)
+
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+def _workflow_docs() -> dict[str, dict]:
+    """现取的 workflow 文档（`{仓库相对路径: 解析后的 YAML}`）。"""
+    out: dict[str, dict] = {}
+    for f in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        out[f".github/workflows/{f.name}"] = yaml.safe_load(f.read_text(encoding="utf-8"))
+    return out
+
+
+def pipe_rc_problems(workflows: dict[str, dict]) -> list[str]:
+    """**纯函数**：控制流管道必须 `pipefail` 或登记豁免；豁免**只许缩短**（陈旧即红）。"""
+    problems: list[str] = []
+    hits: dict[str, list[str]] = {}
+    for rel, doc in workflows.items():
+        for jid, job in ((doc or {}).get("jobs") or {}).items():
+            if not isinstance(job, dict):
+                continue
+            for step in (job.get("steps") or []):
+                if not isinstance(step, dict):
+                    continue
+                run = str(step.get("run") or "")
+                if not run or "|" not in run:
+                    continue
+                body = "\n".join(ln for ln in run.splitlines() if not ln.strip().startswith("#"))
+                if PIPEFAIL_RE.search(body):
+                    continue
+                hot = [ln.strip() for ln in body.splitlines()
+                       if PIPE_CONTROL_RE.match(ln) and JUDGED_CMD_RE.search(ln)]
+                if hot:
+                    hits[f"{rel}::{jid}"] = hot
+    registered = {str(e["where"]) for e in PIPE_RC_EXEMPTIONS}
+    for where, lines in sorted(hits.items()):
+        if where in registered:
+            continue
+        problems.append(
+            f"{where}：控制流里用管道判红，却既没有 `set -o pipefail` 也没登记豁免 ⇒ "
+            "「命令自身失败」会被管道末端（grep/head…）吞成「没匹配」（FM-E23）：\n     - "
+            + "\n     - ".join(lines))
+    for e in PIPE_RC_EXEMPTIONS:
+        if not str(e.get("reason") or "").strip():
+            problems.append(f"豁免 {e.get('where')} 缺 `reason`（必须写明为什么判的是管道末端）")
+        if str(e["where"]) not in hits:
+            problems.append(f"豁免登记**陈旧**：{e['where']} 已不在现取命中里 ⇒ 删掉它（台账只许缩短）")
+    return problems
+
+
+class TestPipeRcGuard:
+    def test_real_workflows_have_no_unregistered_control_flow_pipe(self):
+        problems = pipe_rc_problems(_workflow_docs())
+        assert problems == [], "\n".join(problems)
+
+    def _docs_with(self, run: str) -> dict:
+        """**真 workflow + 一个合成块**（真文件必须在场，否则真实豁免登记会被判「陈旧」而干扰读数）。"""
+        return {**_workflow_docs(),
+                ".github/workflows/fixture.yml": {"jobs": {"j": {"steps": [{"name": "probe", "run": run}]}}}}
+
+    def test_new_control_flow_pipe_turns_it_red(self):
+        """**红证**：新加一处「被判定命令 | grep」且无 `pipefail` ⇒ 非空（未登记即红）。"""
+        got = pipe_rc_problems(self._docs_with(
+            'if git diff --name-only "origin/main...HEAD" | grep -qE "x"; then\n  echo ok\nfi\n'))
+        assert any("fixture.yml" in p for p in got), got
+
+    def test_pipefail_marks_it_fine(self):
+        """**对照读数**：同一段加上 `set -o pipefail` ⇒ 不红（判的是「命令 rc 有没有被保住」）。"""
+        assert pipe_rc_problems(self._docs_with(
+            'set -o pipefail\nif git diff --name-only "origin/main...HEAD" | grep -qE "x"; then\n  echo ok\nfi\n')) == []
+
+    def test_comment_only_mention_does_not_count(self):
+        """**对照读数**：只在注释里写那种管道 ⇒ 不红（注释里的提及不算实现）。"""
+        assert pipe_rc_problems(self._docs_with(
+            '# if git diff --name-only origin/main | grep -qE "x"; then\necho ok\n')) == []
+
+    def test_stale_exemption_turns_it_red(self):
+        """**红证（只许缩短）**：把现取命中抹掉 ⇒ 对应的豁免登记变**陈旧** ⇒ 非空。"""
+        docs = _workflow_docs()
+        for entry in PIPE_RC_EXEMPTIONS:
+            rel = str(entry["where"]).split("::", 1)[0]
+            docs[rel] = {"jobs": {"j": {"steps": [{"run": "echo 无管道"}]}}}
+        got = pipe_rc_problems(docs)
+        assert got and any("陈旧" in p for p in got), got
