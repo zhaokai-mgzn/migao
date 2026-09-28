@@ -59,6 +59,9 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import synthetic_processing_fee_data as synthetic  # noqa: E402
+#: 加工项/组合的**改名迁移**读取器（单一实现点，与加工项目录那条守卫共用 —— 不各抄一份映射）
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from unit_ci_workflows import _migration_renames as migration_renames  # noqa: E402
 
 MIGRATION = REPO / "backend/admin-api/src/main/resources/db/migration-archive/V77__customer_option_unit_price.sql"
 V82 = REPO / "backend/admin-api/src/main/resources/db/migration-archive/V82__seed_option_customer_unit_price.sql"
@@ -363,12 +366,24 @@ def test_seed_rows_match_the_deterministic_generator():
 
     反例（本测试要挡的形态）：种子被手改一个字（改价 / 改名 / 改 source）⇒ 定价不再可复现，
     而取价逻辑照样绿（它只读库）⇒ 缺陷只有本判据照得出来。
+
+    ⚠️ 2026-09-28（用户裁定「**把加工项和加工费组合里面叫韩折的都改成韩褶**」）：V77 是**冻结面**
+    （逐字节冻结，写的是旧名「韩折」），生成器说的是**今天**的名字 ⇒ 比较必须带上
+    `backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql`
+    的**净效果**（映射读取 = `_migration_renames.py` 的单一实现点，与加工项目录那条守卫共用）。
     """
     expected = {row["composition_key"]: (row["unit_price"], row["source"], tuple(row["items"]))
                 for row in synthetic.combination_rows()}
     assert len(expected) == 92
-    assert combination_seed_rows(migration_text()) == expected, \
-        "V77 的组合价目与固定种子生成器不一致（改价/改名必须同时改生成器，反之亦然）"
+    renames = migration_renames.processing_item_renames()
+    assert renames, "V139 的改名映射读不出来 ⇒ 下面的比对会退化成空断言"
+    seeded = combination_seed_rows(migration_text())
+    # 冻结面（V77）→ 今天：键逐字替换旧名；成员名逐项替换（**不重排**，见 `_migration_renames` 的口径一节）
+    effective = {migration_renames.rename_key(key, renames):
+                 (price, source, migration_renames.rename_names(items, renames))
+                 for key, (price, source, items) in seeded.items()}
+    assert effective == expected, \
+        "V77 的组合价目（按 V139 改名后的净效果）与固定种子生成器不一致（改价/改名必须同时改生成器，反之亦然）"
 
 
 def test_seed_is_deterministic_across_two_runs():

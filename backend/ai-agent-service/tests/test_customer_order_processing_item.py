@@ -210,7 +210,7 @@ class TestProductDetailIronRule:
     → 直接问颜色 → 下一步就发 confirm 卡，**全程没调 product_detail**。
     product_search 的列表数据**不含** processing_items / colorId / skus，
     于是 agent 向顾客断言「这款商品暂未查询到可选加工项」（该商品实际有 2 个加工项：
-    打孔 ¥8/米、韩折 ¥12/米）→ 顾客永远选不到加工项，加工费也进不了单。
+    打孔 ¥8/米、韩褶 ¥12/米）→ 顾客永远选不到加工项，加工费也进不了单。
 
     单独加「要问加工项」不够 —— 必须先强制拿到详情，否则规则没有数据可依据。
     """

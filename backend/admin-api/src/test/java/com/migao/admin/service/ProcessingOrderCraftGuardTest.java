@@ -19,17 +19,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <h2>为什么必须有这条护栏（不是洁癖）</h2>
  * 路线键的工艺维是**单值**（`production_route_templates` 按 部位×工艺 取主线）。加工项目录里
- * 有 5 个项会**声明**工艺（`processing_items.craft_hint`：打孔/韩折/韩定+S钩/穿杆/平幔），
- * 若一张单里同时勾了「韩折」与「打孔」：
+ * 有 5 个项会**声明**工艺（`processing_items.craft_hint`：打孔/韩褶/韩定+S钩/穿杆/平幔），
+ * 若一张单里同时勾了「韩褶」与「打孔」：
  * <ul>
- *   <li>取价侧按**全部**加工项名算组合键（`韩折+打孔+…`）——那是**另一个组合**，价目里没有 ⇒ 未定价；</li>
+ *   <li>取价侧按**全部**加工项名算组合键（`韩褶+打孔+…`）——那是**另一个组合**，价目里没有 ⇒ 未定价；</li>
  *   <li>路线侧只能取**一个**工艺 ⇒ 实际工序与另一维的意图不符；</li>
  * </ul>
  * ⇒ 同一单**两套口径**（钱按一套、工序按另一套）。故：**两个不同声明 ⇒ 422**，
  * 而不是「静默取第一个」（静默取第一个 = 让商家以为两维都生效了）。
  *
  * <h2>判据的边界（**只认「不同」**）</h2>
- * 同一工艺被多个加工项声明是**合法**的：「韩折」与「韩定+S钩」都声明 `韩褶`
+ * 同一工艺被多个加工项声明是**合法**的：「韩褶」与「韩定+S钩」都声明工艺 `韩褶`
  * （两者是同一打褶方式的两种做法，ERP 名字不同、工艺相同）⇒ 不冲突、取 `韩褶`。
  *
  * <h2>红证（不会红的断言 = 空断言）</h2>
@@ -81,7 +81,7 @@ class ProcessingOrderCraftGuardTest {
     }
 
     @Test
-    @DisplayName("PG-049 多个加工项声明**同一个**工艺 ⇒ 不冲突（韩折 与 韩定+S钩 都是韩褶）")
+    @DisplayName("PG-049 多个加工项声明**同一个**工艺 ⇒ 不冲突（韩褶 与 韩定+S钩 声明的工艺相同）")
     void sameDeclarationFromSeveralItemsIsNotAConflict() {
         assertThat(ProcessingOrderService.craftHintOf(entryWithDeclarations("韩褶", "韩褶")))
                 .as("同一工艺被多个加工项声明是合法的：它们是同一打褶方式的两种做法")

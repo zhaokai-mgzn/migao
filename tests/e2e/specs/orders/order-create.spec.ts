@@ -182,7 +182,7 @@ test.describe('订单创建', () => {
      * 2026-09-28 版面重排的两条**真浏览器**判据（§15.2）：
      * ① 净尺寸排在**推导读数之前**（`用料米数` 在步骤 1 里，净尺寸在它上方）；
      * ② 推导读数（用料米数 / 单价）常态 `readonly`，点「改」才可输入。
-     * ⚠️ 这里**不**断言「推荐组合条」（`processing-recommended`）：它只在目录里真有「韩折」时渲染，
+     * ⚠️ 这里**不**断言「推荐组合条」（`processing-recommended`）：它只在目录里真有「韩褶」时渲染（目录名 2026-09-28 由 ERP 写法「韩折」统一为「韩褶」，见 db/migration/V139），
      * 而本 spec 的加工项目录来自 fixture（`铅坠安装` / `罗马杆环安装`）⇒ 由 vitest 的确定性目录桩钉住
      * （`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`，用例 OR-052）。
      */

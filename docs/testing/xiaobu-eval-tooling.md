@@ -217,7 +217,7 @@ B 端评测跑**生产**（有真实数据），C 端跑**全新 bootstrap 空�
 | 实体 | 内容 | 服务的用例 |
 |---|---|---|
 | `categories` | 窗帘布艺 | 商品分类 |
-| `processing_categories` / `processing_items` | 打孔 ¥8/米、韩折 ¥12/米、定型 ¥10/米（**店铺级目录**） | 下单加工项环节（OR-016 / OR-017） |
+| `processing_categories` / `processing_items` | 打孔 ¥8/米、韩褶 ¥12/米、定型 ¥10/米（**店铺级目录**；目录名 2026-09-28 由 ERP 写法「韩折」统一为「韩褶」，见 db/migration/V139） | 下单加工项环节（OR-016 / OR-017） |
 | `products` | **遮光窗帘**（on_sale/per_meter）、北欧风窗帘 | PR-001 / PR-003 |
 | `product_colors` / `product_skus` | 米白/浅灰/雾霾蓝 × 散剪 2.8m | 选品规格收集（colorId 等） |
 | `users` | `debug_customer_1`（与 `auth.py` DEBUG customer 身份同 id） | C 端身份一致性 |

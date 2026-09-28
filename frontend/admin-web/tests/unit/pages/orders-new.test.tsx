@@ -75,9 +75,9 @@ const FEE_UNIT_PRICE: Record<string, number> = {
   打孔加工: 5,
   韩式定型: 3,
   帘头加工: 50,
-  // V83 种子形状的名字（#4566 起本文件多处用真名建目录：`打孔` / `韩折`）
+  // V83 种子形状的名字（#4566 起本文件多处用真名建目录：`打孔` / `韩褶`）
   打孔: 5,
-  韩折: 5,
+  韩褶: 5,
 }
 
 vi.mock('@/lib/api', () => ({
@@ -1082,8 +1082,9 @@ describe('NewOrderPage', () => {
       mockGetProduct.mockResolvedValue({
         data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
       })
-      // #4566：目录按 V83 种子形状给 —— 工艺项「韩折」（名字按 ERP 写「韩折」、`craftHint` 用
-      // MIGAO 工艺枚举「韩褶」）+ 手选特征「定型」（勾选态 = `isShaped`）。
+      // #4566：目录按 V83 种子形状给 + V139 改名 —— 工艺项「韩褶」（V139 起**目录名**也写作「韩褶」；
+      // V83 原文照 ERP 附件写「韩折」、`craftHint` 一直是 MIGAO 工艺枚举「韩褶」）
+      // + 手选特征「定型」（勾选态 = `isShaped`）。
       // ⚠️ 不给「超高/超宽/倒幅」以外的自动项：手选列表过滤判据在 `orders-new-auto-features.test.tsx`。
       mockGetProcessingItems.mockResolvedValue({
         data: {
@@ -1091,7 +1092,7 @@ describe('NewOrderPage', () => {
             items: [
               {
                 id: 'pi1',
-                name: '韩折',
+                name: '韩褶',
                 craftHint: '韩褶',
                 unit: '米',
               },
@@ -1178,14 +1179,14 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
       expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
       // 它们的默认档改在**加工项**上「可见可改」：布帘 ⇒ 「定型」默认勾上（真值源 §10）
-      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认预选**韩折
-      // （改前默认不勾）—— 断言改为钉住新默认：推荐条与勾选态两侧同时钉（`韩折 + 定型`）。
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩褶」（craftHint=韩褶）⇒ 推荐组合**默认预选**韩褶
+      // （改前默认不勾）—— 断言改为钉住新默认：推荐条与勾选态两侧同时钉（`韩褶 + 定型`）。
       openWizardStep('加工项')
-      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩折 + 定型')
+      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩褶 + 定型')
       expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
         true
       )
-      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+      expect((screen.getByRole('checkbox', { name: '韩褶' }) as HTMLInputElement).checked).toBe(
         true
       )
     })
@@ -1252,7 +1253,7 @@ describe('NewOrderPage', () => {
     it('判据 7（#4874 改判）：纱帘**不再由主布行派生** —— 费用明细里没有「纱帘」汇总行', async () => {
       await setupCurtain() // 主布 ¥100/米 × 1 米
       pickBody('纱帘')
-      // ⚠️ 2026-09-28 布局重排：纱帘也默认预选推荐组合「韩折」（组合价 ¥5/米 ⇒ 会多算 5 元加工费）。
+      // ⚠️ 2026-09-28 布局重排：纱帘也默认预选推荐组合「韩褶」（组合价 ¥5/米 ⇒ 会多算 5 元加工费）。
       // 本判据只验「**纱帘不派生汇总行**」这一件事 ⇒ 先「全不采纳」把推荐项撤掉，
       // 让订单额回到单变量（主布 100），否则被推荐默认挡在后面验不到。
       // （新默认本身由判据 4b / 判据 4 钉住 —— 那是它的归属判据。）
@@ -1350,12 +1351,13 @@ describe('NewOrderPage', () => {
   // 硬证据（为什么必须这么改）：加工费组合键的**唯一来源**是
   // `processingInfo.processingItems[].name`（服务端 `ProcessingFeeQueryService.featureNames()`
   // 只读这个数组，**不补工艺**），而 ERP 的 91 项加工费名字全是「工艺+特征」形态
-  // （`韩折+超高+定型`）⇒ 只要工艺还留在「工艺规格」里，ERP 的名字一行都匹配不上。
+  // （ERP 附件写法 `韩折+超高+定型`；V139 起目录名改名「韩褶」⇒ 与该写法差一字，对照见 V139 迁移头注）
+  // ⇒ 只要工艺还留在「工艺规格」里，组合键就少一段，ERP 那一行的名字凑不出来。
   describe('#4566 工艺 / 定型从加工项派生', () => {
-    /** 加工项目录（逐字 = `V83__seed_processing_item_catalog.sql` 的名字 / craftHint） */
+    /** 加工项目录（V83 种子的名字 / craftHint；「韩褶」一项经 V139 改名 —— V83 原文写「韩折」） */
     const V83_CATALOG = [
       { id: 'pi-01', name: '打孔', craftHint: '打孔', unit: '米' },
-      { id: 'pi-02', name: '韩折', craftHint: '韩褶', unit: '米' },
+      { id: 'pi-02', name: '韩褶', craftHint: '韩褶', unit: '米' },
       { id: 'pi-06', name: '定型', unit: '米' },
       // 自动推导特征：**必须存在于目录**（商家配「加工费组合」要能选到），但不得出手选控件
       { id: 'pi-14', name: '超高', unit: '米' },
@@ -1402,7 +1404,7 @@ describe('NewOrderPage', () => {
       expandProcessing()
       expect(screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))).toEqual([
         '打孔',
-        '韩折',
+        '韩褶',
         '定型',
       ])
       for (const auto of ['超高', '超宽', '倒幅']) {
@@ -1421,37 +1423,39 @@ describe('NewOrderPage', () => {
       expect(within(block).getByText(/系统未识别出特征/)).toBeInTheDocument()
     })
 
-    it('判据 2：勾「韩折」⇒ 落库 `processingItems[].name` 含「韩折」且 `craft=「韩褶」`（**派生**，不是页面选的）', async () => {
+    it('判据 2：勾「韩褶」⇒ 落库 `processingItems[].name` 含「韩褶」且 `craft=「韩褶」`（**派生**，不是页面选的）', async () => {
       await setup()
-      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
-      // ⇒ 先「全不采纳」撤掉推荐，再手勾「韩折」（这才是本条判据要验的动作）
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩褶」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
+      // ⇒ 先「全不采纳」撤掉推荐，再手勾「韩褶」（这才是本条判据要验的动作）
       expandProcessing()
       fireEvent.click(screen.getByTestId('processing-recommended-reject'))
       expect(checkedNames()).toEqual([])
-      toggle('韩折')
+      toggle('韩褶')
       const info = await submitAndGetInfo()
 
       const names = (info.processingItems as Array<{ name: string }>).map((i) => i.name)
-      expect(names).toContain('韩折')
-      // 名字按 **ERP 逐字**（组合键必须与 ERP 91 项一致）；craft 用 **MIGAO 工艺枚举**（路线键）
+      expect(names).toContain('韩褶')
+      // 名字 = **目录名**（V139 起「韩褶」）；craft 用 **MIGAO 工艺枚举**（路线键）。
+      // ⚠️ V139 后目录名与 craft 枚举**同字** ⇒ 下面这条 `not.toBe` 只剩「别回退到改名前的串」的作用
+      // （它不再能区分「名字」与「工艺」两侧的口径）。
       expect(info.craft).toBe('韩褶')
       expect(info.craft).not.toBe('韩折')
     })
 
-    it('判据 3：先勾「打孔」再勾「韩折」⇒ 只剩一个带工艺的项（旧的被自动取消 + toast 说明）', async () => {
+    it('判据 3：先勾「打孔」再勾「韩褶」⇒ 只剩一个带工艺的项（旧的被自动取消 + toast 说明）', async () => {
       await setup()
       toggle('打孔')
       expect(checkedNames()).toEqual(['打孔', '定型'])
 
-      toggle('韩折')
+      toggle('韩褶')
       // 单值护栏：新的工艺声明生效，旧的**自动取消**（工艺维是单值，两张声明 = 两套工序）
-      expect(checkedNames()).toEqual(['韩折', '定型'])
+      expect(checkedNames()).toEqual(['韩褶', '定型'])
       // **不静默**：必须让商家看见换了哪一个
-      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩折」')
+      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩褶」')
 
       const info = await submitAndGetInfo()
       const names = (info.processingItems as Array<{ name: string }>).map((i) => i.name)
-      expect(names).toContain('韩折')
+      expect(names).toContain('韩褶')
       expect(names).not.toContain('打孔')
       expect(info.craft).toBe('韩褶')
     })
@@ -1472,10 +1476,10 @@ describe('NewOrderPage', () => {
       expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
         false
       )
-      // ⚠️ 2026-09-28 布局重排：纱帘**只**默认预选工艺项「韩折」（不带定型）—— 钉住新默认
-      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩折')
+      // ⚠️ 2026-09-28 布局重排：纱帘**只**默认预选工艺项「韩褶」（不带定型）—— 钉住新默认
+      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩褶')
       expect(screen.getByTestId('processing-recommended-names')).not.toHaveTextContent('定型')
-      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+      expect((screen.getByRole('checkbox', { name: '韩褶' }) as HTMLInputElement).checked).toBe(
         true
       )
       expect((await submitAndGetInfo()).isShaped).toBe(false)
@@ -1528,7 +1532,7 @@ describe('NewOrderPage', () => {
     /** 加工项目录：**两个分类**（`加工费` / `安装服务`），工艺项带 `craftHint` */
     const CATEGORIZED_CATALOG = [
       { id: 'pi-01', name: '打孔', craftHint: '打孔', categoryId: 'c1', categoryName: '加工费', unit: '米' },
-      { id: 'pi-02', name: '韩折', craftHint: '韩褶', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+      { id: 'pi-02', name: '韩褶', craftHint: '韩褶', categoryId: 'c1', categoryName: '加工费', unit: '米' },
       { id: 'pi-06', name: '定型', categoryId: 'c1', categoryName: '加工费', unit: '米' },
       { id: 'pi-20', name: '罗马杆安装', categoryId: 'c2', categoryName: '安装服务', unit: '米' },
     ]
@@ -1571,13 +1575,13 @@ describe('NewOrderPage', () => {
       expect(screen.getByTestId('processing-category-c1')).toBeInTheDocument()
       expect(screen.getByTestId('processing-category-c2')).toBeInTheDocument()
       // 默认落在**第一类**（目录顺序），其项可见
-      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      expect(visibleNames()).toEqual(['打孔', '韩褶', '定型'])
     })
 
     it('判据 1b：**只有一类** ⇒ 不渲染分类选择器（一个 tab 是噪音），该类项照常平铺', async () => {
       await setup(CATEGORIZED_CATALOG.filter((i) => i.categoryId === 'c1'))
       expect(screen.queryByTestId('processing-category-selector')).toBeNull()
-      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      expect(visibleNames()).toEqual(['打孔', '韩褶', '定型'])
     })
 
     it('判据 1c：目录**没配分类** ⇒ 不渲染选择器、不报错，全部平铺（老租户目录）', async () => {
@@ -1591,13 +1595,13 @@ describe('NewOrderPage', () => {
 
     it('判据 2：选分类 ⇒ 只显示该分类下的加工项', async () => {
       await setup()
-      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      expect(visibleNames()).toEqual(['打孔', '韩褶', '定型'])
 
       fireEvent.click(screen.getByTestId('processing-category-c2'))
       expect(visibleNames()).toEqual(['罗马杆安装'])
 
       fireEvent.click(screen.getByTestId('processing-category-c1'))
-      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      expect(visibleNames()).toEqual(['打孔', '韩褶', '定型'])
     })
 
     it('判据 3：搜索**跨分类**命中（并标出所属分类）；清空后回到当前选中的分类', async () => {
@@ -1643,7 +1647,7 @@ describe('NewOrderPage', () => {
 
     it('判据 5：「单选」标记**只**出现在带 `craftHint` 的工艺项上，且配一句换选提示', async () => {
       await setup()
-      // 工艺项（打孔 / 韩折）有标记；手选特征（定型）没有
+      // 工艺项（打孔 / 韩褶）有标记；手选特征（定型）没有
       expect(screen.getByTestId('processing-single-badge-pi-01')).toBeInTheDocument()
       expect(screen.getByTestId('processing-single-badge-pi-02')).toBeInTheDocument()
       expect(screen.queryByTestId('processing-single-badge-pi-06')).toBeNull()
@@ -1658,14 +1662,14 @@ describe('NewOrderPage', () => {
     it('判据 6（回归）：工艺单值护栏不变 —— 勾第二个工艺项 ⇒ 自动取消前一个 + toast 说明', async () => {
       await setup()
       fireEvent.click(screen.getByRole('checkbox', { name: '打孔' }))
-      fireEvent.click(screen.getByRole('checkbox', { name: '韩折' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
       expect((screen.getByRole('checkbox', { name: '打孔' }) as HTMLInputElement).checked).toBe(
         false
       )
-      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+      expect((screen.getByRole('checkbox', { name: '韩褶' }) as HTMLInputElement).checked).toBe(
         true
       )
-      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩折」')
+      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩褶」')
     })
 
     it('判据 7（回归）：自动推导特征仍**不在**手选控件里（分类目录下也一样）', async () => {
@@ -1675,7 +1679,7 @@ describe('NewOrderPage', () => {
         { id: 'pi-15', name: '超宽', categoryId: 'c1', categoryName: '加工费', unit: '米' },
         { id: 'pi-16', name: '倒幅', categoryId: 'c1', categoryName: '加工费', unit: '米' },
       ])
-      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      expect(visibleNames()).toEqual(['打孔', '韩褶', '定型'])
       for (const auto of ['超高', '超宽', '倒幅']) {
         expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
       }
@@ -1711,9 +1715,9 @@ describe('NewOrderPage', () => {
     it('判据 9a：已选摘要带出**工艺名**（`已选 N 项 · 工艺：X`）', async () => {
       // 去掉「定型」⇒ 布帘默认勾选不会占一格，计数只反映工艺项
       await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '定型'))
-      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩褶」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
       // （改前要手点一下）—— 断言改为钉住新默认；摘要口径（已选 N 项 · 工艺：X）一字未动
-      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+      expect((screen.getByRole('checkbox', { name: '韩褶' }) as HTMLInputElement).checked).toBe(
         true
       )
       collapseProcessing()
@@ -1722,9 +1726,9 @@ describe('NewOrderPage', () => {
     })
 
     it('判据 9b：没选工艺项 ⇒ 摘要只写「已选 N 项」（不出现空的「工艺：」）', async () => {
-      // ⚠️ 2026-09-28 布局重排：目录里的「韩折」现在**默认已勾选**（推荐组合）⇒ 要验「没选工艺项」
+      // ⚠️ 2026-09-28 布局重排：目录里的「韩褶」现在**默认已勾选**（推荐组合）⇒ 要验「没选工艺项」
       // 需要一份**没有工艺项**的目录（只留 打孔 / 定型 / 罗马杆安装）
-      await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '韩折'))
+      await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '韩褶'))
       // 布帘 ⇒ 「定型」默认勾上（1 项，无 `craftHint`）
       collapseProcessing()
       expect(screen.getByText('已选 1 项')).toBeInTheDocument()

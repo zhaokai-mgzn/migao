@@ -6,6 +6,15 @@
 > `craft-routing-customization.md`（路线可配）· `processing-order-design.md`（加工单）· 真值源 `curtain-production-rules.md`。
 > 上游裁定清单：issue **#4341**（待裁定 6 项，本文件收口其中第 3 项「特殊选项加价」）。
 
+> 🔴 **命名口径（2026-09-28 用户裁定：「把加工项和加工费组合里面叫韩折的都改成韩褶」）**：
+> **加工项目录名与加工费组合的成员名统一写作「韩褶」**。本文件下面引用的 ERP 附件 / 截图**原文**
+> 里写作「韩折」（`韩折+超高+定型` 等）—— 那是 **ERP 的写法**，作为实证**保留不改**；
+> 我们库里的名字自
+> `backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql`
+> 起一律是「韩褶」（存量库的**加工费组合键**由该迁移连带重算 —— 键 = 加工项名集合，名字是取价 join key）。
+> ⇒ 按 ERP 名称做导入 / 核对时需要一张 **「韩折 → 韩褶」对照**（本项是唯一差字的一处）。
+> 判据：`.github/cases/processing.yml` 的 `PG-044` 与真值 `order.processing-item-name-canonical`。
+
 ---
 
 ## 0. 一句话结论

@@ -5935,7 +5935,7 @@ _CASE_OR_052 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户 2026-09-28 逐字：「订单这里的布局得优化，正常用户提供净窗高/窗宽，然后再确认是否要韩折/打孔 定型等信息即可，其他信息尽量推导，加工项组合可以让用户确认是否采纳」+「还有这个拍照/上传识别功能应该放到商品信息那，见附件图片红框，你再做个合理的布局」'],
     expectations=[],
-    data_checks=['判据 1·**净尺寸前置**：`窗宽 (米)` / `窗高 (米)` 两格排在 `门幅 / 规格` 与 `用料米数` **之前**（DOM 顺序，不是「存在性」），且排在 `颜色` 之后。理由：门幅规则要等尺寸填齐才能自动选最省门幅（改前尺寸在门幅之下 ⇒ 商家先撞上「选门幅」而规则还判不了）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx。红证：把净尺寸块放回门幅之下 ⇒ 该判据红。', '判据 2·**识别入口挂商品信息卡**：`image-recognize-button` 在「商品信息」卡的容器内、**不在**「收货信息」卡内（两张卡的存在性作为前置自证，防「两边都没有」也判绿）。执行点同上。', '判据 3·**推导读数只读 + 就地「改」**：`用料米数` / `单价 (¥/米)` 常态 `readOnly=true`；点 `meters-edit` / `price-edit` 后翻为可编辑，改完仍照旧落 payload（`processingInfo.processingMeters` / `unitPrice`）。⚠️ 刻意**不**断言「只读态下 fireEvent.change 不生效」—— jsdom 的 fireEvent 绕过 readOnly，那种断言测不到被测行为（假判据）。执行点同上。', '判据 4·**门幅只读摘要 + 改**：已选中规格时渲染 `sku-summary`（`门幅 2.8米` 等）与来源 `sku-summary-source`（`系统按门幅规则自动选中` / `人工选定`），常态**不出** chips；点 `sku-picker-toggle` 才展开 chips，换一支再收起 ⇒ 来源翻「人工选定」。', '判据 5·**推荐组合预选 + 采纳 / 全不采纳**：推荐条 `processing-recommended-names` 逐字 `韩折 + 定型`（布帘），且这两项**默认已勾选**；`processing-recommended-reject` ⇒ 两项取消且落库不再含它们（勾「打孔」作对照面：落库 `processingItems` = 仅 `打孔`、`craft=打孔`）；`processing-recommended-adopt` ⇒ 两项勾回，并按**工艺单值护栏**顶掉已选的别的工艺项（toast 说明）。', '判据 6·**手改留痕**：点过「全不采纳」（`craftItemTouched` / `shapedItemTouched`）之后改帘体（布帘→纱帘→布帘）**不得**把推荐组合勾回来。红证：删掉留痕位 ⇒ 该判据红。', '判据 7·**「其他」默认收起**：`3 其他` 的 `aria-expanded=false`，首屏没有 `line-item-remark`、也没有特殊选项的任一选项按钮（`加铅块`）；展开后两块都在（特殊选项那块无标题，用选项名当锚）。'],
+    data_checks=['判据 1·**净尺寸前置**：`窗宽 (米)` / `窗高 (米)` 两格排在 `门幅 / 规格` 与 `用料米数` **之前**（DOM 顺序，不是「存在性」），且排在 `颜色` 之后。理由：门幅规则要等尺寸填齐才能自动选最省门幅（改前尺寸在门幅之下 ⇒ 商家先撞上「选门幅」而规则还判不了）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx。红证：把净尺寸块放回门幅之下 ⇒ 该判据红。', '判据 2·**识别入口挂商品信息卡**：`image-recognize-button` 在「商品信息」卡的容器内、**不在**「收货信息」卡内（两张卡的存在性作为前置自证，防「两边都没有」也判绿）。执行点同上。', '判据 3·**推导读数只读 + 就地「改」**：`用料米数` / `单价 (¥/米)` 常态 `readOnly=true`；点 `meters-edit` / `price-edit` 后翻为可编辑，改完仍照旧落 payload（`processingInfo.processingMeters` / `unitPrice`）。⚠️ 刻意**不**断言「只读态下 fireEvent.change 不生效」—— jsdom 的 fireEvent 绕过 readOnly，那种断言测不到被测行为（假判据）。执行点同上。', '判据 4·**门幅只读摘要 + 改**：已选中规格时渲染 `sku-summary`（`门幅 2.8米` 等）与来源 `sku-summary-source`（`系统按门幅规则自动选中` / `人工选定`），常态**不出** chips；点 `sku-picker-toggle` 才展开 chips，换一支再收起 ⇒ 来源翻「人工选定」。', '判据 5·**推荐组合预选 + 采纳 / 全不采纳**：推荐条 `processing-recommended-names` 逐字 `韩褶 + 定型`（布帘；目录名 2026-09-28 由「韩折」改「韩褶」，见 V139），且这两项**默认已勾选**；`processing-recommended-reject` ⇒ 两项取消且落库不再含它们（勾「打孔」作对照面：落库 `processingItems` = 仅 `打孔`、`craft=打孔`）；`processing-recommended-adopt` ⇒ 两项勾回，并按**工艺单值护栏**顶掉已选的别的工艺项（toast 说明）。', '判据 6·**手改留痕**：点过「全不采纳」（`craftItemTouched` / `shapedItemTouched`）之后改帘体（布帘→纱帘→布帘）**不得**把推荐组合勾回来。红证：删掉留痕位 ⇒ 该判据红。', '判据 7·**「其他」默认收起**：`3 其他` 的 `aria-expanded=false`，首屏没有 `line-item-remark`、也没有特殊选项的任一选项按钮（`加铅块`）；展开后两块都在（特殊选项那块无标题，用选项名当锚）。'],
     skip_reason='[backend-contract] 本用例是**管理端下单页版面与默认预选**的确定性 DOM 判据（**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`（vitest），与库内其余 426 条同用这一个标记 —— 标记名是历史遗留的窄名，**它判的是「不进 agent-eval、判据在 traces.tests」这件事**，不是「被后端拥有」',
     tags=['order', 'admin-web', 'layout', 'derivation', 'processing-items'],
     persona='',
@@ -7232,6 +7232,24 @@ _CASE_PP_015 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'craft_calc_config_query'}],
+)
+
+# ── PG-044 [NORMAL] 加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed（源: cases/processing.yml）──
+_CASE_PG_044 = EvalCase(
+    id='PG-044',
+    legacy_id='',
+    title='加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-28 逐字：「成品帘行默认带 韩褶+ 定型 ，**把加工项和加工费组合里面叫韩折的都改成韩褶**」'],
+    expectations=[],
+    data_checks=["判据 1·**目录改名**：`processing_items.name = '韩折'` 的存活行一律变 `'韩褶'`（`deleted = 0`），且 **`craft_hint` 一字不动**（本来就是「韩褶」）。执行点 = backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql（真 PG 执行判据见 traces.tests 的第一条）。红证：把 `SET name = '韩褶'` 改成别的字 / 删掉该 UPDATE ⇒ 终态对账与静态判据双红。", '判据 2·🔴 **组合键跟着重算（不改这一步 = 报价整体落空）**：`processing_fee_combinations` 里含「韩折」的存活行，`items` 成员名替换后按**码点序**（`COLLATE "C"`，与 Java `compositionKey()` 的 `TreeSet` 同序）去重重排，`composition_key = array_to_string(names, \'+\')`。红证：把 `COLLATE "C"` 去掉 ⇒ 中文按 locale 序排 ⇒ 同一个组合在「迁移写出的键」与「商家再保存一次得到的键」之间分叉（两行价）。', '判据 3·**不改价**：只写 `items` / `composition_key` / `updated_at`（组合表）与 `name` / `updated_at`（目录表）；`unit_price` / `status` / `sort_order` / `source` / `id` 逐值不变。执行点 = 该迁移的真 PG 判据（跑前跑后逐列比对）。红证：顺手带上 `unit_price = …` ⇒ 静态红线判据红。', '判据 4·**撞键 fail-closed，不静默合并两笔价**：同租户已存在改名后的组合键时，迁移在**改名之前**抛异常并点名「租户 + 两条现行组合键」，整份回滚（两行都还在、名字未改）。', '判据 5·**幂等**：连跑两遍净效果相同（第二遍合法地认领 0 行）；空跑自证由文末**终态对账**承担（两遍都成立）。', '判据 6·**历史不改（显式登记）**：已成交订单的加工项快照（`order_items.processing_info`）与组合版本账 `processing_fee_combination_versions` **一字不动** —— 历史单据仍显示「韩折」（当时的写法），重启条件 = 用户要求历史也统一（需一次显式回填 + 影响面确认）。', '判据 7·**三源收敛（冻结面 + 迁移 + 今天）**：`db/init/schema.sql` 基线的第 02 项 = 「韩褶」；归档 V83（冻结、写「韩折」）+ V139 的**净效果** == `tests/e2e/fixtures/processing-list.json`（由生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 渲染）== 两条守卫独立重写的期望表。红证：只改 fixture 不改基线 / 只改基线不落 V139 ⇒ 对应守卫红。'],
+    skip_reason='[backend-contract] 纯数据迁移与目录/组合种子契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_v139_rename_hanzhe_item_and_fee_keys.py（真 PG 执行 + 静态红线）、tests/unit_ci_workflows/test_processing_catalog_seed.py、tests/unit_ci_workflows/test_option_fee_seed.py 执行',
+    tags=['processing', 'catalog', 'fee-combination', 'migration', 'naming'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
 )
 
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
@@ -11018,6 +11036,7 @@ ALL_CASES = (
     _CASE_PG_042,
     _CASE_PG_043,
     _CASE_PP_015,
+    _CASE_PG_044,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

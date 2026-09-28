@@ -43,7 +43,7 @@
               "openCount": 2,
               "hasPattern": false,
               "cuttingMode": "定高买宽",
-              "formulaText": "韩折公式：(3.2+0.3)×2 → 24折 → 0.25×24+0.3 = 6.3米",
+              "formulaText": "韩褶公式：(3.2+0.3)×2 → 24折 → 0.25×24+0.3 = 6.3米",
               "fabric_meters": 6.3,
               "processingFee": 75.6,
               "sellingMethod": "bulk_cut",
@@ -59,7 +59,7 @@
                 },
                 {
                   "id": "pi-v83-1-02",
-                  "name": "韩折",
+                  "name": "韩褶",
                   "unit": "米",
                   "quantity": 6.3
                 },
@@ -74,14 +74,14 @@
                 "items": [
                   "定型",
                   "超高",
-                  "韩折"
+                  "韩褶"
                 ],
                 "amount": 75.6,
                 "meters": 6.3,
                 "set_key": "#0",
                 "fee_source": "manual",
                 "unit_price": 12,
-                "composition": "定型+超高+韩折",
+                "composition": "定型+超高+韩褶",
                 "price_source": "manual",
                 "meters_source": "processingMeters",
                 "special_options": [
@@ -141,7 +141,7 @@
                 },
                 {
                   "id": "pi-v83-1-02",
-                  "name": "韩折",
+                  "name": "韩褶",
                   "unit": "米",
                   "quantity": 9
                 }
@@ -150,14 +150,14 @@
               "processingFeeDetail": {
                 "items": [
                   "定型",
-                  "韩折"
+                  "韩褶"
                 ],
                 "amount": 108.0,
                 "meters": 9,
                 "set_key": "#1",
                 "fee_source": "matched",
                 "unit_price": 12.0,
-                "composition": "定型+韩折",
+                "composition": "定型+韩褶",
                 "meters_source": "processingMeters",
                 "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
                 "special_options": [
@@ -250,7 +250,7 @@
               "openCount": 2,
               "hasPattern": true,
               "cuttingMode": "定高买宽",
-              "formulaText": "韩折公式：(9+0.3)×2 → 72折 → 0.25×72+0.3 = 18.3米",
+              "formulaText": "韩褶公式：(9+0.3)×2 → 72折 → 0.25×72+0.3 = 18.3米",
               "pleatSpacing": 0.1,
               "fabric_meters": 18.3,
               "patternRepeat": 0.3,
@@ -507,7 +507,7 @@
               "openCount": 1,
               "hasPattern": false,
               "cuttingMode": "定高买宽",
-              "formulaText": "韩折公式：(4.5+0.2)×2 → 35折 → 0.25×35+0.2 = 9米",
+              "formulaText": "韩褶公式：(4.5+0.2)×2 → 35折 → 0.25×35+0.2 = 9米",
               "pleatSpacing": 0.125,
               "fabric_meters": 9,
               "processingFee": 110,
@@ -527,7 +527,7 @@
                 },
                 {
                   "id": "pi-v83-1-02",
-                  "name": "韩折",
+                  "name": "韩褶",
                   "unit": "米",
                   "quantity": 9,
                   "subtotal": 0,
@@ -539,13 +539,13 @@
               "processingFeeDetail": {
                 "items": [
                   "定型",
-                  "韩折"
+                  "韩褶"
                 ],
                 "amount": 108.0,
                 "meters": 9,
                 "fee_source": "matched",
                 "unit_price": 12.0,
-                "composition": "定型+韩折",
+                "composition": "定型+韩褶",
                 "meters_source": "processingMeters",
                 "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
                 "special_options": [
@@ -599,7 +599,7 @@
                 },
                 {
                   "id": "pi-v83-1-02",
-                  "name": "韩折",
+                  "name": "韩褶",
                   "unit": "米",
                   "quantity": 3.5,
                   "subtotal": 0,
@@ -611,13 +611,13 @@
               "processingFeeDetail": {
                 "items": [
                   "定型",
-                  "韩折"
+                  "韩褶"
                 ],
                 "amount": 42.0,
                 "meters": 3.5,
                 "fee_source": "matched",
                 "unit_price": 12.0,
-                "composition": "定型+韩折",
+                "composition": "定型+韩褶",
                 "meters_source": "processingMeters",
                 "matched_rule_id": "39c772fd817a3df1fefe87d39077004d",
                 "special_options": [

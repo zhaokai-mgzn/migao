@@ -3,7 +3,7 @@
 /**
  * 下单页**版面重排**（2026-09-28 用户裁定，逐字见 `.github/cases/order.yml` 的 OR-052）。
  *
- * 用户口径：「订单这里的布局得优化，正常用户提供净窗高/窗宽，然后再确认是否要韩折/打孔
+ * 用户口径（**原话**）：「订单这里的布局得优化，正常用户提供净窗高/窗宽，然后再确认是否要韩折/打孔
  * 定型等信息即可，其他信息尽量推导，加工项组合可以让用户确认是否采纳」+「这个拍照/上传识别
  * 功能应该放到商品信息那」。
  *
@@ -11,7 +11,7 @@
  * ① **净尺寸**（窗宽 / 窗高）提到**组级**：紧跟在「选择商品 / 颜色」之后、**门幅之前**
  *    —— 门幅规则要等尺寸填齐才能自动选最省门幅（#4877 裁定 C / #4899），改前是「先撞上选门幅」；
  * ② 门幅、用料米数、单价**常态只读**（「其他信息尽量推导」），各自一个「改」入口就地变输入框；
- * ③ 加工项区顶部是**系统推荐组合**（韩折 + 布帘「定型」）并**预选**，商家一键**采纳 / 全不采纳**；
+ * ③ 加工项区顶部是**系统推荐组合**（韩褶 + 布帘「定型」）并**预选**，商家一键**采纳 / 全不采纳**；
  * ④ 特殊选项 / 部位备注收进第三步「其他」（默认收起）；
  * ⑤ 「拍照 / 上传识别」从「收货信息」卡移到**「商品信息」卡标题行**（它一次产出明细 + 收货信息 + 备注）。
  *
@@ -189,7 +189,7 @@ const submittedLine = async (idx = 0) => {
 
 /**
  * 选商品 → 选颜色（**单 SKU 颜色** ⇒ 规格自动选中）→ 填净尺寸（触发算料写回用料米数）。
- * 目录里给「韩折 / 定型 / 打孔」三项（V83 种子形状的名字，见 `orders-new.test.tsx` 的同类注释）。
+ * 目录里给「韩褶 / 定型 / 打孔」三项（V83 种子形状的名字，见 `orders-new.test.tsx` 的同类注释）。
  */
 async function setupLine() {
   render(<NewOrderPage />)
@@ -223,7 +223,7 @@ const stubApis = () => {
     data: {
       data: {
         items: [
-          { id: 'pi-hz', name: '韩折', craftHint: '韩褶', unit: '米' },
+          { id: 'pi-hz', name: '韩褶', craftHint: '韩褶', unit: '米' },
           { id: 'pi-dx', name: '定型', unit: '米' },
           { id: 'pi-dk', name: '打孔', craftHint: '打孔', unit: '米' },
         ],
@@ -298,11 +298,11 @@ describe('#OR-052 下单页版面重排（尺寸优先 / 推导只读可就地�
     )
   })
 
-  it('判据 5：推荐组合**默认预选**（韩折 + 布帘定型），推荐条逐字给出这组名字', async () => {
+  it('判据 5：推荐组合**默认预选**（韩褶 + 布帘定型），推荐条逐字给出这组名字', async () => {
     await setupLine()
     openStep(/^\d+ 加工项/)
-    expect(checkedItems()).toEqual(['韩折', '定型'])
-    expect(screen.getByTestId('processing-recommended-names').textContent).toBe('韩折 + 定型')
+    expect(checkedItems()).toEqual(['韩褶', '定型'])
+    expect(screen.getByTestId('processing-recommended-names').textContent).toBe('韩褶 + 定型')
   })
 
   it('判据 5b：「全不采纳」⇒ 两项都取消，且落库不再含它们', async () => {
@@ -311,7 +311,7 @@ describe('#OR-052 下单页版面重排（尺寸优先 / 推导只读可就地�
     fireEvent.click(screen.getByTestId('processing-recommended-reject'))
     expect(checkedItems()).toEqual([])
 
-    // 勾一个**非推荐**项，让本行仍有选配（否则「落库不含韩折/定型」缺少对照面）
+    // 勾一个**非推荐**项，让本行仍有选配（否则「落库不含韩褶/定型」缺少对照面）
     fireEvent.click(screen.getByRole('checkbox', { name: '打孔' }))
     const line = await submittedLine()
     expect(line.processingInfo.processingItems.map((i: { name: string }) => i.name)).toEqual(['打孔'])
@@ -326,9 +326,9 @@ describe('#OR-052 下单页版面重排（尺寸优先 / 推导只读可就地�
     expect(checkedItems()).toEqual(['打孔'])
 
     fireEvent.click(screen.getByTestId('processing-recommended-adopt'))
-    // 韩折（工艺项）顶掉打孔；定型（非工艺项）不受单值护栏影响
-    expect(checkedItems()).toEqual(['韩折', '定型'])
-    expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩折」')
+    // 韩褶（工艺项）顶掉打孔；定型（非工艺项）不受单值护栏影响
+    expect(checkedItems()).toEqual(['韩褶', '定型'])
+    expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩褶」')
   })
 
   it('判据 6：撤销过（手改留痕）⇒ 改帘体**不再**把推荐组合勾回来', async () => {

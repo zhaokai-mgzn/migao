@@ -3778,7 +3778,7 @@ cases:
       - "判据 2·**识别入口挂商品信息卡**：`image-recognize-button` 在「商品信息」卡的容器内、**不在**「收货信息」卡内（两张卡的存在性作为前置自证，防「两边都没有」也判绿）。执行点同上。"
       - "判据 3·**推导读数只读 + 就地「改」**：`用料米数` / `单价 (¥/米)` 常态 `readOnly=true`；点 `meters-edit` / `price-edit` 后翻为可编辑，改完仍照旧落 payload（`processingInfo.processingMeters` / `unitPrice`）。⚠️ 刻意**不**断言「只读态下 fireEvent.change 不生效」—— jsdom 的 fireEvent 绕过 readOnly，那种断言测不到被测行为（假判据）。执行点同上。"
       - "判据 4·**门幅只读摘要 + 改**：已选中规格时渲染 `sku-summary`（`门幅 2.8米` 等）与来源 `sku-summary-source`（`系统按门幅规则自动选中` / `人工选定`），常态**不出** chips；点 `sku-picker-toggle` 才展开 chips，换一支再收起 ⇒ 来源翻「人工选定」。"
-      - "判据 5·**推荐组合预选 + 采纳 / 全不采纳**：推荐条 `processing-recommended-names` 逐字 `韩折 + 定型`（布帘），且这两项**默认已勾选**；`processing-recommended-reject` ⇒ 两项取消且落库不再含它们（勾「打孔」作对照面：落库 `processingItems` = 仅 `打孔`、`craft=打孔`）；`processing-recommended-adopt` ⇒ 两项勾回，并按**工艺单值护栏**顶掉已选的别的工艺项（toast 说明）。"
+      - "判据 5·**推荐组合预选 + 采纳 / 全不采纳**：推荐条 `processing-recommended-names` 逐字 `韩褶 + 定型`（布帘；目录名 2026-09-28 由「韩折」改「韩褶」，见 V139），且这两项**默认已勾选**；`processing-recommended-reject` ⇒ 两项取消且落库不再含它们（勾「打孔」作对照面：落库 `processingItems` = 仅 `打孔`、`craft=打孔`）；`processing-recommended-adopt` ⇒ 两项勾回，并按**工艺单值护栏**顶掉已选的别的工艺项（toast 说明）。"
       - "判据 6·**手改留痕**：点过「全不采纳」（`craftItemTouched` / `shapedItemTouched`）之后改帘体（布帘→纱帘→布帘）**不得**把推荐组合勾回来。红证：删掉留痕位 ⇒ 该判据红。"
       - "判据 7·**「其他」默认收起**：`3 其他` 的 `aria-expanded=false`，首屏没有 `line-item-remark`、也没有特殊选项的任一选项按钮（`加铅块`）；展开后两块都在（特殊选项那块无标题，用选项名当锚）。"
     skip_reason: "[backend-contract] 本用例是**管理端下单页版面与默认预选**的确定性 DOM 判据（**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`（vitest），与库内其余 426 条同用这一个标记 —— 标记名是历史遗留的窄名，**它判的是「不进 agent-eval、判据在 traces.tests」这件事**，不是「被后端拥有」"
