@@ -424,6 +424,26 @@ def _comment_block_above(lines: list[str], lineno: int) -> str:
     return "\n".join(reversed(out))
 
 
+def test_module_literals_include_single_element_collections() -> None:
+    """判据（issue #5771）：**一元组**的「单一实现」声明必须进登记面。
+
+    病根（`#5740` §3-5 的原始读数）：`_module_literals` 只收 `len(elts) >= 2` 的字面量集合
+    ⇒ `X_FROZEN = ("only-one.py",)` 这类**一元组**既不进「注释声称同源」面、也不进「只设下界」面
+    ⇒ 「只此一份实现」的声明在**元素只有 1 个时无人核**。
+    """
+    src = 'A_FROZEN = ("only-one.py",)\nB_FROZEN = ("a.py", "b.py")\nC_NOT_LITERAL = make("x")\n'
+    got = {name for name, _ in _module_literals(ast.parse(src))}
+    assert "A_FROZEN" in got, "一元组没进面（下界还是 2）—— #5740 §3-5 的缺口没修"
+    assert "B_FROZEN" in got
+    assert "C_NOT_LITERAL" not in got, "非字面量集合混进来了（面被放宽到不该收的东西）"
+
+
+def test_module_literals_bound_is_one() -> None:
+    """判据（fail-closed）：下界一旦被改回 2 ⇒ 红（否则本单修的缺口会静默复发）。"""
+    text = (REPO / "tests/unit_ci_workflows" / "test_gate_coverage_and_same_source.py").read_text(encoding="utf-8")
+    assert "len(value.elts) < 1" in text, "下界被改回 2 ⇒ 一元组声明又漏在面外（issue #5771）"
+
+
 def _module_literals(tree: ast.Module) -> list[tuple[str, int]]:
     """模块级「字面量字符串集合」声明（符号名 + 行号）；成员级名字回指也算（`IMPLEMENTATIONS` 形态）。"""
     out: list[tuple[str, int]] = []
@@ -433,7 +453,7 @@ def _module_literals(tree: ast.Module) -> list[tuple[str, int]]:
         value = node.value
         if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and len(value.args) == 1:
             value = value.args[0]
-        if not isinstance(value, (ast.Tuple, ast.List, ast.Set)) or len(value.elts) < 2:
+        if not isinstance(value, (ast.Tuple, ast.List, ast.Set)) or len(value.elts) < 1:
             continue
         if not all(isinstance(e, (ast.Constant, ast.Name)) for e in value.elts):
             continue
