@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（30 case）
+## B 端小程序域（31 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -998,11 +998,24 @@
 数据: 判据 1c·字面量 == Taro 运行时值（现取 `@tarojs/{components,router}` 的 dist 里的 `--taro-tabbar-height:<n>px`；找不到 ⇒ fail-closed 判红，不许猜一个数补上）—— Taro 升级改了它 ⇒ 判红，逼人同步这一格
 数据: 判据 2·🔴 **图标 + 文字在可视区垂直居中**（修复前 item 是 `padding:5px 0` = 上 5 下 0 ⇒ **无安全区时文字直接贴着屏幕底边**，安卓 / 桌面 / 老 iPhone 同样不居中）：`.weui-tabbar__item` 必须是 flex 纵列居中（`display:flex` + `flex-direction:column` + `align-items:center` + `justify-content:center` + `padding-top:0`），且**保留** `padding-bottom: env(safe-area-inset-bottom)` —— 与判据 1 合起来才是「只补一次」（把两处一起删掉 ⇒ 判红）
 数据: 判据 3·覆盖样式必须被 frontend/bmini-app/src/app.scss **真的引入**（写在别处但没接线 ⇒ 判红）；类级：`src/styles/*.scss` 里不许出现第二份 `taro-tabbar__` 覆盖（第二份口径会漂）
-数据: 判据 4·**几何面（人工复测读数，记在 issue #5754 与 PR 正文）**：无安全区 ⇒ 图标上方与文字下方留白对称（各 2.5px）；iOS 安全区 34 ⇒ 条高 84 = 50+34、图标相对条顶 ≈+2.5px、文字底距屏幕底 ≈ 36.5px（= 34 安全区 + 2.5 居中留白）。⚠️ 本仓 bmini **没有 e2e 腿**：这两组读数是**复测结论**，不是机器判据 —— 判据 1~3 只保证「三条不变量在位」，别把本用例读成「布局已被机器验过」
+数据: 判据 4·**几何面**：（a）🔴 **机器判据（issue #5759 起）** = tests/e2e/specs/bmini/bmini-tabbar.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job）—— 判条贴底（±1px）、每格图标与文字相对本格水平居中（±1px）、**图标上方留白 == 文字下方留白（±2px）且两者都 > 0**、条高 ∈ [49,51]；Chromium 里 `env(safe-area-inset-bottom)` 恒 0 ⇒ 这些数字**跨平台确定**。（b）**iOS 安全区那一侧仍是复测读数**（该腿环境取不到 env()）：安全区 34 ⇒ 条高 84 = 50+34、图标相对条顶 ≈+2.5px、文字底距屏幕底 ≈36.5px（= 34 安全区 + 2.5 居中留白）。⚠️ 本腿**不做像素基线**（darwin/linux 双平台基线本机生成不齐全）⇒ 颜色 / 观感类回归仍无机器判据
 跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/tabbar-layout.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-28 新增（issue #5754）：用户反馈「页面底部菜单栏的文字和底部菜单区域未居中，看起来不对」⇒ headless 实测定位两条同族病灶（安全区算两遍：iOS 图标溢出条外 + 文字下 51px 空白；item 上 5 下 0：无安全区时文字贴底边），加 app 级覆盖样式（三条不变量）+ 文本级守卫。边界如实登记：几何是否真居中只能复测（本仓 bmini 无 e2e 腿），本用例不含机器几何判据。 ｜ 2026-09-28 同日 follow-up（PR #5756）：首版（PR #5755）把条高写成 `var(--taro-tabbar-height, 50px)`，发布后线上实测该规则被构建改成 `var(--50PX, 1.25rem)` ⇒ 变量解析不到、声明在计算值阶段失效 ⇒ **条高塌成 26px、标签被挤出视口**（比修复前更糟）⇒ 改用 CSS 尺度字面量 `50PX`，并补两条判据：①b 禁止本仓 scss 引用 `var(--taro-tabbar-height`（探针实验定界：只有这个名字被特殊处理，普通变量不受影响）；①c 字面量必须与 Taro 运行时值逐值相等。**判据一格不放宽**（三条不变量与几何读数口径未变，变的是实现写法；几何读数已按 follow-up 之后的产物复测）。 ｜ tags: bmini, tabbar, layout, safe-area, responsive
+溯源: 2026-09-28 新增（issue #5754）：用户反馈「页面底部菜单栏的文字和底部菜单区域未居中，看起来不对」⇒ headless 实测定位两条同族病灶（安全区算两遍：iOS 图标溢出条外 + 文字下 51px 空白；item 上 5 下 0：无安全区时文字贴底边），加 app 级覆盖样式（三条不变量）+ 文本级守卫。边界如实登记：几何是否真居中只能复测（本仓 bmini 无 e2e 腿），本用例不含机器几何判据。 ｜ 2026-09-28 同日 follow-up（PR #5756）：首版（PR #5755）把条高写成 `var(--taro-tabbar-height, 50px)`，发布后线上实测该规则被构建改成 `var(--50PX, 1.25rem)` ⇒ 变量解析不到、声明在计算值阶段失效 ⇒ **条高塌成 26px、标签被挤出视口**（比修复前更糟）⇒ 改用 CSS 尺度字面量 `50PX`，并补两条判据：①b 禁止本仓 scss 引用 `var(--taro-tabbar-height`（探针实验定界：只有这个名字被特殊处理，普通变量不受影响）；①c 字面量必须与 Taro 运行时值逐值相等。**判据一格不放宽**（三条不变量与几何读数口径未变，变的是实现写法；几何读数已按 follow-up 之后的产物复测）。 ｜ 2026-09-28（issue #5759）：本用例的几何面由「只能人工复测」升级为 **e2e 机器判据**（新增 tests/playwright.bmini.config.ts + tests/e2e/specs/bmini/bmini-tabbar.spec.ts + .github/workflows/bmini-app.yml 的 `tabbar-geometry` job）⇒ 判据 4 改写为「(a) 机器判据 / (b) iOS 安全区侧复测读数」；三条不变量的口径与台账读数**一格未动**。 ｜ tags: bmini, tabbar, layout, safe-area, responsive
+
+### BM-031. B 端 H5 tabBar：四张图标两两不同 + 新增 e2e 几何腿（底栏居中第一次有了机器判据） 🔵
+```
+你: 商家在手机浏览器打开 `https://app.migaozn.com/b/`：底栏四个入口（问米宝 / 数据 / 坐席 / 我的）**图标各不相同**（此前「问米宝」与「坐席」共用同一张对话气泡图 ⇒ 两个入口长得一模一样）；底栏整体居中，不出现「文字贴屏幕底边」或「下方一大块空白」
+期望: direct_reply
+数据: 判据 1·🔴 **四个 tab 四张不同图标**（修复前「问米宝」与「坐席」同指 frontend/bmini-app/src/assets/tabbar/chat.png，线上实测两处 `img.src` 的 base64 完全相同）：单测 = frontend/bmini-app/tests/tabbar-icons.test.ts（app.config.ts 文本里 `iconPath` / `selectedIconPath` 两两不同 + 文件存在 + 81×81 + 不留零引用图标）；e2e = tests/e2e/specs/bmini/bmini-tabbar.spec.ts 断言**渲染出来的**四个 `img.src` 两两不同。红证（实跑过）：把「坐席」改回 chat.png ⇒ 单测 3 failed / 2 passed；e2e 2 failed（Expected 4 / Received 3）
+数据: 判据 2·**素材规格与图标家族一致**：新图标（数据 = 柱状图）81×81 RGBA、单色（未选 #999999 / 选中 #2F54EB，与既有六张同色；active 与 inactive 同形换色），由判据读 PNG 头现取尺寸；换设计稿只需替换 PNG，判据只锁规格与唯一性
+数据: 判据 3·**e2e 腿在位且真的跑得起来**：tests/playwright.bmini.config.ts（复用 C 端 tests/xiaobu_dist_freshness.py 的 `--project` 做产物新鲜度前置断言，**不重写第二份实现**；`channel: 'chrome'`；webServer 只服务不构建、`reuseExistingServer: false`）+ tests/e2e/specs/bmini/bmini-tabbar.spec.ts + .github/workflows/bmini-app.yml 的 `tabbar-geometry` job（与另两条腿同一 PR/push 门控口径）
+数据: 判据 4·**几何判据**（Chromium 里 `env(safe-area-inset-bottom)` 恒 0 ⇒ 跨平台确定）：条贴底（±1px）、每格图标与文字相对本格水平居中（±1px）、**图标上方留白 == 文字下方留白（±2px）且两者都 > 0**、条高 ∈ [49,51]（#5756 那次「条高塌成 26px」会被这一条抓住）。几何侧红证读数见 BM-030 判据 4
+跳过: [backend-contract] 确定性判据（jest: frontend/bmini-app/tests/tabbar-icons.test.ts；playwright: tests/e2e/specs/bmini/bmini-tabbar.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-28 新增（issue #5759）：用户逐字裁定「本仓 bmini 没有 e2e 腿 要补，另一个观察（未修） 修掉」⇒（a）图标：「坐席」改用现成的列表字形、「数据」改用新建的柱状图字形（此前「坐席」与「问米宝」同图、「数据」借用 sessions）；（b）e2e：新增 B 端几何腿（复用 C 端基建与新鲜度护栏），把「底栏是否真的居中」从只能人工复测变成机器判据。边界如实登记：不做像素基线（darwin/linux 双平台基线本机生成不齐全）；iOS 安全区一侧仍靠复测；颜色 / 观感类回归无机器判据。 ｜ tags: bmini, tabbar, icons, e2e, geometry
 
 ## 分类域（3 case）
 
@@ -7986,13 +7999,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：563（活跃 126，跳过 437）
-- tier 分布：smoke 12 / normal 518 / adversarial 31
+- 用例总数：564（活跃 126，跳过 438）
+- tier 分布：smoke 12 / normal 519 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：30
+- B 端小程序域：31
 - 分类域：3
 - 对话边界域：43
 - 跨域：3

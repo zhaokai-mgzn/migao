@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+### B 端 H5 补 e2e 几何腿（底栏居中/图标唯一性有了机器判据）+ 底栏四个入口不再共用图标（2026-09-28，issue #5759）
+
+- 🔴 **底栏图标重复**：`frontend/bmini-app/src/app.config.ts` 里「问米宝」与「坐席」指向同一张
+  `assets/tabbar/chat.png`（线上实测两处 `img.src` 的 base64 完全相同）⇒ 两个入口长得一模一样。
+  现「坐席」改用列表字形、「数据」改用新建的柱状图字形（81×81、同色家族、active 同形换色），
+  **四个 tab 四张不同图标**。
+- 🔴 **B 端此前零 e2e**（#5754 的「底栏是否真的居中」只能人眼 + 手工量）⇒ 新增
+  `tests/playwright.bmini.config.ts` + `tests/e2e/specs/bmini/bmini-tabbar.spec.ts` +
+  `.github/workflows/bmini-app.yml` 的 `tabbar-geometry` job：判**条贴底、每格图标与文字水平居中、
+  上下留白对称（且都 > 0）、条高 50、四张图标两两不同**（Chromium 里 `env(safe-area-inset-bottom)` 恒 0
+  ⇒ 这些数字跨平台确定）。产物新鲜度复用 C 端 `tests/xiaobu_dist_freshness.py`（不重写第二份实现）。
+  ⚠️ 本腿**不做像素基线**（darwin/linux 双平台基线本机生成不齐全）⇒ 颜色/观感类回归仍无机器判据。
+
 ### 新增订单页版面重排：先填净窗宽 / 净窗高，门幅·用料·单价由系统推导（只读可就地改），加工项给推荐组合可一键采纳（2026-09-28，人为要求）
 
 - 🔴 **净尺寸提到最前**：`窗宽 / 窗高` 从行内「区块 1」移到**商品 / 颜色之后、门幅之前**。

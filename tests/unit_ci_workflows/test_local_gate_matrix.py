@@ -107,6 +107,9 @@ CI_LEG_COMMANDS = (
     "npm test",
     "npm run build:h5",
     "npm run build:weapp",
+    # 几何 e2e 腿（issue #5759）：装依赖（含 chromium 安装）→ 跑 spec（构建由腿自己完成）
+    "npm ci\nnpx playwright install chromium --with-deps",
+    "npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts",
 )
 
 
