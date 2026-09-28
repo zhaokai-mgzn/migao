@@ -719,6 +719,27 @@
       "refs": [
         "#5704"
       ]
+    },
+    {
+      "id": "FM-E18",
+      "state": "guarded",
+      "symptom": "**生成物文件的 git 三方合并产物**：两个**各自自洽**的分支合并后，**块 hunk 取并集**（46 + 1 = 47），而**两侧同值的汇总 hunk 干净合并、不重算** ⇒ 落进 main 的 casebook 汇总读数比 `.github/cases/**` **少 1**；而 `git merge-tree` **零冲突**、文件**语法合法**、且**内部自洽**（分域合计 == 总数）⇒ PR 面与 `Case Contract (truths_ref)` 都不会红。**现场（2026-09-28，issue #5741）**：`docs/testing/mibao-verification-cases.md` 提交版 558（杂项域 46）/ 现取 559（47），而**行数两侧同为 8112、仅 4 行不同** ⇒ 「行数相同」与「文件内部自洽」都**不能**当新鲜度证据。**一条命令复现（零冲突、幂等）**：`git fetch origin refs/pull/5733/head e3d35c130 && tree=$(git merge-tree --write-tree 2550bc4f4 e3d35c130 | head -1)` ⇒ 该树与落进 main 的那份 casebook **逐字节相同**（`diff` 0 行），而它的用例源已是 47 条。",
+      "guards": "**判据**：`tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count`（行为级：夹具把汇总读数整体减 1、**不增减任何行**、且分域合计仍等于总数 ⇒ 判定本体必须 `rc=1`、**具名**报出该产物、并给出「提交版 N 行 / 现取 N 行」这一**相同**的行数读数）+ `::test_line_count_compare_mutant_turns_that_fixture_green`（**判别力自证**：把「逐字节相等」换成「只比行数」的**内存变异体** ⇒ 同一夹具**变绿** ⇒ 上面那条红是这条比较挣来的）；夹具构造函数 `::make_summary_stale_in_place`（渲染格式变了就 fail-closed，不做静默）。**判定本体不新增第二份实现**：仍是 `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，**没有「跳过」这一态**）。🔴 **为什么「再加一条判据」不是这道题的答案**：漏点在**时序** —— 「**检查跑的那份快照 ≠ 实际落地的那份合并结果**」（PR 面校验的是发起时的 merge 快照，native auto-merge 落下的是基线前进之后的新合并结果）。两条真出口（都会动合并门禁 / 仓库设置，**需人裁定**，本包有意不做）：① 分支保护打开 **Require branches to be up to date before merging**（基线前进 ⇒ 强制重跑，代价 = 每次合并多一轮 CI）；② 合并落地后**即时**重渲染校验，把 main 侧那条腿从「报告型 + ≤1 个 cron 周期延迟」改成「即时 + 阻断」。**现状承接面** = `Main Freshness Guard（main 侧生成物新鲜度）`（判红自动开 P1 值班单 —— 本条的现场正是它的产物），**报告型、非阻断**。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::test_line_count_compare_mutant_turns_that_fixture_green",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::make_summary_stale_in_place",
+        "scripts/generated_artifacts_freshness.py::divergence_report"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E18",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py"
+      ],
+      "refs": [
+        "#5741",
+        "#5742",
+        "#5704"
+      ]
     }
   ],
   "relay_entries": [
@@ -1038,9 +1059,9 @@
     },
     {
       "id": "NS-3",
-      "item": "「`dev-worktree.sh add` 挂死 ⇒ 用裸 `git worktree add`」",
-      "reason": "本单只复现了『`add` 路径接在 `issue-lifecycle.sh reap-merged --apply` 上』这一**事实**；**挂死这一读数既未在本机复现、也未被证伪** —— 集成侧一手读数：本会话每个包都被要求用裸 `git worktree add` ⇒ 那条路径**被规避**。⇒ 按「两条路径并存、其中一条被规避」这一**事实**登记，**不**写成「某路径挂死」这一**断言**。",
-      "restart_when": "复现出挂死并定位到具体调用链（或该调用被移出 `add` 路径、或两条路径收敛成一条）时，补判据或改为具名登记。"
+      "item": "「`dev-worktree.sh add` 挂死 ⇒ 用裸 `git worktree add`」——🔴 **2026-09-28 已复现并证伪「死锁」**：真因是它自动接的 C2 清理（`reap-merged --apply`）**逐个分支串行**跑 `git ls-remote`，而单次实测 **3.70s**（本机 SSH，无连接复用）⇒ 全程 ≈ O(分支数) × 3.7s。**形态 = 分钟级慢，不是死锁**；任何 60s 级的等待窗口都会把它读成「挂死」（这正是「看似时好时坏」的来源）。",
+      "reason": "**量化读数（现取，2026-09-28 07:26 +08 起）**：`./scripts/dev-worktree.sh add <branch>` 在 **60s 超时被杀**后仍持续运行、**约 7 分钟**才完成并打印全部输出；`ps` 采到的实际子进程链 = `scripts/issue_lifecycle.py reap-merged --apply --no-artifacts --except <分支>` → `git ls-remote --heads origin <分支>`（逐个）；单次 `git ls-remote --heads origin main` 实测 `real 3.70s`。⇒ 两条路径（`dev-worktree.sh add` / 裸 `git worktree add`）**并存且都可用**（本包为省 7 分钟走的是裸命令 + 独立的 `preset-guard`）。**出口候选（本包不擅自改码，登记待裁）**：① 一次 `git ls-remote origin` 取全仓 refs 后本地比对 ⇒ **1 次往返**替代 N 次（推荐）；② 或把 `add` 路径里的 reap 降级为「只报不删」。",
+      "restart_when": "落码上述任一出口（或该清理被移出 `add` 路径）时，把本条移出 `not_solidified` 并补判据（判据口径 = 「`add` 路径的远端往返次数 ≤ 1」，可用内存构造的 `ps` / 调用计数夹具钉住）。"
     },
     {
       "id": "NS-4",
