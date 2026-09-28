@@ -779,6 +779,26 @@
       "refs": [
         "#5744"
       ]
+    },
+    {
+      "id": "FM-E21",
+      "state": "guarded",
+      "symptom": "**判红输出把自己的出口压垮**（2026-09-28 实测）：`post-merge-verify` 的判定步把**完整 pytest 输出**（现取 **17613k**）灌进 step summary ⇒ 超过 GitHub 的 **1024k** 上限 ⇒ **整份摘要上传被拒**（逐字 `##[error]$GITHUB_STEP_SUMMARY upload aborted, supports content up to a size of 1024k, got 17613k`）⇒ 那次 **9 条失败明细既不在摘要、也不在日志摘要**里（「红了但看不到红在哪」，要人重跑才看得见）。同一份输出还被**承接面**（判红 ⇒ 开/更 P1 值班 issue）整段贴进 issue body，而 issue body 上限是 **65536 字符** ⇒ 超了会**开不出值班单**（判红无人接盘）。",
+      "guards": "**修法**（`.github/workflows/post-merge-verify.yml`）：三处出口各给**显式预算** —— ① **失败清单落 stdout**（`grep -E '^(FAILED|ERROR) '` + `head -n \"$FAILED_MAX\"`，`FAILED_MAX=40` ⇒ 判红**可 grep**，不依赖摘要）② step summary 只附**尾部摘录**（`tail -c \"$SUMMARY_EXCERPT_BYTES\"`，=200000）并明说「仅附尾部」③ **承接单**专用更短的摘录文件（`ISSUE_EXCERPT_BYTES=30000` ⇒ `/tmp/post-merge-verify-issue-excerpt.txt`），钩子只读它、**不再** `cat` 完整输出。**判据** = `tests/unit_ci_workflows/test_post_merge_verify_leg.py::summary_budget_problems`（纯函数：三处预算齐备 + `tail -c` / `grep` / `head -n` 形态齐备 + 承接单不得读完整输出）+ `::test_real_workflow_has_the_three_budgets`（跑**真 YAML**）+ `::test_each_budget_mutation_turns_it_red`（**6 条注入式红证**：摘要不截断 / 摘要预算超 1024k / 承接单预算超 65536 / 清单不打 stdout / 清单无条数上限 / 承接单读完整输出）+ `::test_comment_only_change_does_not_turn_red`（对照读数）。🔴 **预算值是判据的一部分**（不是只看「有没有常量」）：把 `SUMMARY_EXCERPT_BYTES` 改成 `2000000` 会红 —— 那正是实测的失败形态。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_post_merge_verify_leg.py::summary_budget_problems",
+        "tests/unit_ci_workflows/test_post_merge_verify_leg.py::test_real_workflow_has_the_three_budgets",
+        "tests/unit_ci_workflows/test_post_merge_verify_leg.py::test_each_budget_mutation_turns_it_red",
+        ".github/workflows/post-merge-verify.yml::SUMMARY_EXCERPT_BYTES"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E21",
+        ".github/workflows/post-merge-verify.yml"
+      ],
+      "refs": [
+        "#5707",
+        "#5745"
+      ]
     }
   ],
   "relay_entries": [
