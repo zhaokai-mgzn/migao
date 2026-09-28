@@ -7,7 +7,7 @@
 import Taro from '@tarojs/taro'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { miniAppLogin, employeeLogin, changePassword, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
+import { miniAppLogin, employeeLogin, adminSmsLogin, changePassword, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
 import { STORAGE_KEYS, DEFAULT_TENANT_ID } from '../utils/constants'
 import type { User } from '../types'
 
@@ -22,6 +22,8 @@ interface AuthState {
   login: (tenantId?: number) => Promise<boolean>
   /** B 端员工登录（issue #5485）：identifier = `用户名@企业编码`，原样发服务端（前端不解析租户） */
   employeeLoginAction: (identifier: string, password: string) => Promise<boolean>
+  /** 企业管理员短信登录（issue #5721）：手机号 + 验证码 → `POST /api/auth/sms/login` */
+  smsLoginAction: (phone: string, code: string) => Promise<boolean>
   /** 首登强制改密（issue #5485）：成功后用**响应里的新凭据**覆盖本地凭据 */
   changePasswordAction: (oldPassword: string, newPassword: string) => Promise<boolean>
   logout: () => void
@@ -125,6 +127,40 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           const result = await employeeLogin(identifier, password)
+
+          if (result.success && result.user) {
+            set({
+              token: getToken(),
+              user: result.user,
+              isLoggedIn: true,
+              isLoading: false,
+            })
+            return true
+          }
+
+          set({ isLoading: false })
+          Taro.showToast({ title: result.error || '登录失败', icon: 'none' })
+          return false
+        } catch (error: any) {
+          set({ isLoading: false })
+          Taro.showToast({ title: '登录失败，请稍后重试', icon: 'none' })
+          return false
+        }
+      },
+
+      /**
+       * 企业管理员短信登录（issue #5721）：手机号 + 验证码。
+       * 角色门禁在服务端（非管理员 ⇒ 401 + 引导文案），此处原样展示服务端文案、不自行判角色。
+       * 与员工登录同款收尾：本层**不决定去向**，由登录页读 `user.mustChangePassword` 后路由。
+       */
+      smsLoginAction: async (phone: string, code: string) => {
+        const { isLoading } = get()
+        if (isLoading) return false
+
+        set({ isLoading: true })
+
+        try {
+          const result = await adminSmsLogin(phone, code)
 
           if (result.success && result.user) {
             set({

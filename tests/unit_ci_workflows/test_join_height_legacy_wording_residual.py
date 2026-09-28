@@ -246,6 +246,24 @@ class TestCriterion3OversizeDocBothDirections:
     def test_design_dir_does_not_present_legacy_as_current(self):
         assert unretired_legacy_in_design_dir() == {}
 
+    def test_negative_control_unrelated_identifier_substring_is_not_flagged(self):
+        """负控（2026-09-26 实测补，issue #5642 链内修）：**无关标识符的子串**不得被判旧口径 A。
+
+        实证：`docs/design/b-end-wechat-login-and-agent-gate.md` 里出现文件名
+        `declared_effective_registry.json`，其 `declare` + `d_eff` + `ective` 恰好包含裸 `d_eff`
+        ⇒ 该设计文档被判「未退役的旧口径 A」而红（PR #5644 的 required job
+        `ci workflow helper unit tests`：`5116 passed / 1 failed`）。
+        同族形态：**「引用即实例」——正则守卫对「引用」与「使用」一视同仁**（`migao-dev-flow` §2.2）。
+        """
+        unrelated = ("降级方向已登记在 `tests/unit_ci_workflows/"
+                     "declared_effective_registry.json` 的 `security_degradation` 台账")
+        assert unretired_legacy_hits(unrelated) == [], (
+            "无关标识符 `declared_effective_registry` 的子串被误判成旧口径 A "
+            "⇒ `d_eff` 模式缺标识符边界")
+        # 正控：修误判**不许削弱判据** —— 独立的 `d_eff` 标识符仍必须命中。
+        assert unretired_legacy_hits("加宽量 d_eff 计入用料") != [], (
+            "加了标识符边界后真正的 `d_eff` 不再命中 ⇒ 判据被削弱（治误判不能把判据治没）")
+
     def test_reachability_conclusion_is_still_in_the_doc(self):
         assert reachability_conclusion_present(read(OVERSIZE_DOC_PATH)), (
             "可达性结论（工具 schema / `execute` 签名 / chips 都没有「接高」这一档）被删掉了 —— "

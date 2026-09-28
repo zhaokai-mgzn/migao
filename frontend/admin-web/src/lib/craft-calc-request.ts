@@ -524,7 +524,8 @@ export function craftCalcTierOptions(
  * 为什么前端还要有一份：试算是**纯函数半边**（`craftCalcParamsOf`）—— 不查表就凑不出入参；
  * 但**推导逻辑只有一份**（Python），前端只做「名字 → 名字」的搬运，不做任何数值计算。
  *
- * 未登记工艺（四爪钩/穿杆/平幔）⇒ **不发请求**（与既有 fail-closed 一致：这些工艺无自动算料口径）。
+ * 未登记工艺（穿杆/平幔）⇒ **不发请求**（与既有 fail-closed 一致：这些工艺无自动算料口径；
+ * 存量单的 `四爪钩` 同理 —— issue #4365 起它**不是工艺**，见 `order-craft-fields.ts`）。
  */
 export const CRAFT_CALC_FORMULA_BY_CRAFT: Record<string, string> = {
   韩褶: CRAFT_CALC_FORMULA_PLEAT,
@@ -603,7 +604,7 @@ export interface CalcLineInput {
  *
  * 三条 fail-closed（都用 `null` 表达，**绝不**用默认窗宽/默认开数猜一个米数）：
  * 1. 缺宽或高（宽高是必填的「不可推导的原始输入」，§5.9.3）；
- * 2. 工艺明确是**无自动算料口径**的（四爪钩/穿杆/平幔）—— 试算没有意义；
+ * 2. 工艺明确是**无自动算料口径**的（穿杆/平幔；存量单的 `四爪钩` 同理）—— 试算没有意义；
  * 3. 宽/高非正数。
  *
  * ⚠️ **2026-09-21 用户裁定（口径反转）**：「订单中选择纱帘时，用料算法和布帘的用料算法完全一致，

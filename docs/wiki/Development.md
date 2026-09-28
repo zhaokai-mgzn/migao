@@ -199,6 +199,53 @@ QA 预检、不跑单测 ⇒ 开发者本地**没有任何一层**能看到它�
 守卫：`tests/unit_ci_workflows/test_verify_all_quick_scope.py`（L0，含真实 `--collect-only`
 行为验证 + 旧白名单变异测试），改回去必红。
 
+### `gate` 档的 bmini 腿 + 本地门禁覆盖矩阵（2026-09-27 固化，issue #4221 族）
+
+`frontend/bmini-app`（Taro 一源双编译，B 端 h5 + 小程序）此前在 `./verify-all.sh` 里
+**没有任何腿** ⇒ 改 bmini 的包在本地拿不到 `tsc` / `jest` / `build` 覆盖，只能手工跑
+（最近两个 bmini 包的回报里逐字写着「手工跑了三条」）；而 CI 侧有两条腿
+（`.github/workflows/bmini-app.yml`）⇒ **缺口只在本地**，代价 = 一轮 CI 往返。
+
+现在 **`gate` 档**按「变更集命中触发面」派发一条 bmini 腿，四件与 CI **逐字同命令**：
+`npx tsc --noEmit` / `npm test` / `npm run build:h5` / `npm run build:weapp`。
+
+- **只在 `gate` 档**：`quick` 是开发者快循环，3~5 分钟的构建不进快档（用户裁定）；
+- **触发面 = 该腿判定对象的输入闭包**：`frontend/bmini-app/**` ＋ 它 import 到的**跨目录**仓内文件
+  （现取 1 个：`frontend/admin-web/src/lib/print-media.json`）。**有意不照抄** CI 的谓词
+  （CI 是 `frontend/bmini-app/|tests/|\.github/` —— 后两类改动**影响不到** tsc/jest/build，
+  照抄只会让不相关的改动多等 3~5 分钟）。⚠️ 这个差异**不会**制造「本地绿 / CI 红」：CI 的触发面
+  比本地**更宽**，而两侧跑的是**同一批命令**（同源判据见下）—— 本地省掉的只是「在不相关的 PR 上
+  白跑一遍 bmini」；反过来，任何**可能改变判定结果**的输入（模块目录 + 跨目录 import）都在本地
+  触发面内，且新增未裁定的跨目录输入会**判红**；
+- 🔴 **缺依赖 ⇒ fail-closed（记 ❌，**不**跳过）**：`node_modules` 缺失/装不全时打印「缺什么 +
+  `cd frontend/bmini-app && npm ci`」并让 `gate` 非零退出 —— `⏭️ 未就绪` 在**合并门禁**上会被读成
+  「这项没事」，而这条腿存在的全部意义就是拦住 bmini 的编译/类型错（**「没跑」不得等于「通过」**）。
+  这是三态之外的**第四态**，适用范围严格受限：只在变更集命中该腿触发面之后（否则是假红）；
+- 未命中触发面时控制台**显式声明「未跑」**（不是 ✅）。
+
+**覆盖面本身也是一张具名登记的矩阵**：`tests/unit_ci_workflows/local_gate_matrix.json`
+（模块 → 档位 / 腿名 / 覆盖形态；`uncovered_modules` 与 `trigger_face_uncovered_inputs` 登记缺口）。
+判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py`：**新增一个模块目录而不登记 ⇒ 红**；
+登记的腿从 `verify-all.sh` 里消失或换档（声称档位 ≠ 实际出现档位）⇒ 红；新增跨目录输入而没裁定
+⇒ 红；未覆盖台账**只许缩短**（上限现取、写死在判据里）；本地腿的四条命令与 CI YAML 漂移 ⇒ 红。
+**已登记缺口（本单只登记、不扩面）**：`frontend/mini-app` 本地无腿（CI 的 `mini-app.yml`
+两条腿兜）—— 见 `uncovered_modules`。
+
+**「未就绪」不得等于「通过」（同族，`FM-E10`）**：`verify-all.sh` 的 `report_env()` 在依赖没装好时打
+`⏭️ 未就绪`（跳过）—— 这在**开发者快循环**里是合理的，但在**合并门禁**上「没跑」会被读成「这项没事」。
+bmini 一条腿已改成**第四态** `report_strict()`（变更集**命中**它的触发面 ⇒ 依赖缺 ⇒ 记 ❌ 且非零退出）；
+**其余走 `report_env()` 的腿仍是 ⏭️` ⇒ 已具名登记为未守护缺口**，逐条见
+`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节（`FM-E10`，含 owner、现取读数与方案）。
+⚠️ **两个口径要分开**：#5707 现取「本机打 ⏭️」的 3 条腿**全是缺依赖**（= 环境，不是门禁缺陷，CI 上它们真跑）；
+门禁缺陷只是「变更集命中某模块 + 依赖缺 ⇒ 本地绿」这一形态，而**合并门禁档（`gate`）主路径已经没有 `report_env` 模块腿**。
+
+**工装坑：`node --test <dir>` 是假红（`FM-E14`）**：Node 内置 runner 传**目录**会被读成 **1 条失败**，
+必须传 glob（`node --test <dir>/*.test.mjs`，本仓 `verify-all.sh` 的 worker-h5 腿就是这么写的）。
+✅ **#5707 已落判据**（不再是缺口）：判据 13 =
+`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_node_test_targets_are_globs_in_the_registered_carriers`
+—— 射程 = **两处具名载体**（`verify-all.sh` + `.github/workflows/worker-h5-tests.yml`）；
+把任一处的参数字面量改成目录形态 ⇒ **该判据判红**。逐条见 `docs/wiki/CI-CD.md` 的 `FM-E14`。
+
 **开发中体检**（发现本地验证变慢时按序，秒级）：
 ```bash
 cd backend/ai-agent-service

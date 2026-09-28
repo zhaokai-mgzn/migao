@@ -939,6 +939,11 @@ action: {'insert': 21, 'remove': 5}
 
 **5 条 `remove` 逐条**（全部是**工艺**触发，没有一条来自特殊选项）：
 
+> 🔴 **2026-09-27 订正（issue #4365）**：下面这一节是**当时（V71 的 26 条种子）的分析快照**。
+> 用户裁定「移除四爪钩这个场景」后，`craft=四爪钩` 的三条（`remove 定型` / `remove 复烫` /
+> `insert 上车布`）**已软删**（`backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql`），
+> 活跃规则 = **23 条**（工艺 7 + 特殊选项 16）。本节其余描述作为**历史分析**保留，不再代表当前终态。
+
 ```
 craft=四爪钩 → remove 定型 (priority 50)
 craft=四爪钩 → remove 复烫 (priority 60)

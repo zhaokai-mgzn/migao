@@ -146,8 +146,10 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > 但**在四处菜单源里没有任何节点**，也**不是任何 Agent 工具可达读面的门槛** —— 生产域读面自
 > issue #5291 起改挂**新增的生产域读码 `production:view`**（`ProcessingOrderController` 的两个 GET、
 > `AgentProductionController` 的三个 GET、`ProcessingOrderSetController` 三个读端点、
-> `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog` 与 `/routings`、
-> `CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 / 加工项管理」四个节点同码；
+> `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog`、`/routings`
+> 与 **`/piecework/summary`**（最后一条由 issue #5675 补齐 —— 它是「计件工资」页的**第一屏读端点**，
+> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 /
+> 加工项管理」四个节点同码；
 > 写面仍是 `processing:manage` / `processing:update`。现存唯一仍用 `processing:view` 的端点是
 > `ProductionPoolController` 的两个读端点（无 Agent 工具调用，已登记为残留）。**方向只收窄**：
 > 只持 `processing:view` 的岗位（客服 / 销售 / 财务）既无 `processing:manage` 也无 `production:view`
@@ -161,7 +163,10 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > （operator + 历史岗位 `product_manager` 的回退表），`system:view` 只授给 admin；存量租户由迁移
 > `backend/admin-api/src/main/resources/db/migration/V129__backfill_domain_read_permissions.sql`
 > 按**同一谓词**补齐。机械判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 10
-> （读码五面锚定）+ 判据 5 的例外表台账（`READ_WRITE_EXCEPTIONS` **已清空、只许缩短**）。
+> （读码五面锚定）+ 判据 5 的例外表台账（`READ_WRITE_EXCEPTIONS` **已清空、只许缩短**）
+> + 判据 12（**菜单节点码 ≡ 该页第一屏读端点码**，issue #5675 —— 该判据的残留台账里逐条登记了
+> 「节点码 ≠ 读端点码」的既有项：`/dashboard`、智能派单、省料看板、加工项管理、工艺配置、企业基础信息，
+> 每条带理由 + 显形条件 + 谁负责，且**只许缩短**）。
 
 **完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
 （issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）
@@ -191,6 +196,46 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > **残余风险（照实登记，本轮不修）**：分支 ③ + 上表第 6/7 行意味着**零权限的商户员工**仍能读
 > `/api/admin/menus`（静态目录）与自己的 `/api/admin/user/info`。二者都不含跨用户/租户数据，
 > 且与 `/api/auth/me` 已返回的信息同源 ⇒ 判定为**可接受**；不为此加码（加码会砍掉自助首屏与员工页勾选树）。
+
+## 员工授权面的 ⊆ 门禁（issue #4104，用户 2026-09-26 裁定）
+
+**裁定**：授予的权限码**必须 ⊆ 操作者自身权限**；同一口径的另一半 = **不得管理权限高于自己的账号**。
+两条判定共用**一份**身份解析与**一个**子集比较原语（`PermissionInterceptor` 的 `currentActor()` /
+`codesBeyondOwn`）—— 不写第二份授权实现。
+
+- **授予侧**：`backend/admin-api/src/main/java/com/migao/admin/service/UserService.java` 的
+  `assertAssignableRoleAndPermissions`（`createUser` / `updateUser` 的写面入口，**写库之前**）⇒
+  委托 `backend/admin-api/src/main/java/com/migao/admin/security/PermissionInterceptor.java` 的
+  `assertGrantable`（与 `@RequirePermission` 走**同一份**身份口径：未认证 / 旁路角色 / `RoleService` 取码）。
+- **授予集** = 显式权限码快照 ∪ **所授角色隐含的生效码**（`role=admin` ⇒ `*`；口径 =
+  `backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java` 的
+  `getEffectivePermissionCodesForRoleCode`，与 `getUserPermissions` 的角色分支**同一份**实现）。
+  只看快照数组会被「授予一个比自己权限更大的角色」绕过。
+- **目标侧**：`assertManagesTarget(userId, 动作)` 挂在针对**既有账号**的写方法上（`updateUser` /
+  `changePassword` / `resetPassword` / `disableUser` / `enableUser` / `deleteUser`）—— 落库前断言
+  **目标账号的生效权限集 ⊆ 操作者自身权限集**。为什么授予侧不够：改密 / 重置 / 改手机号都能**取得该账号身份**
+  ⇒ 低权限者重置管理员密码 = 租户内最高权限（探针实测：改前可复现）。
+  **有意不做成「只有管理员能改别人密码」那种粗规则**：子集比较 ⇒ 同权限同事、下级岗位、自助（目标=自己）照常可用。
+- **三态**（两条判定逐条相同）：① 旁路身份（`super_admin` / `service`）不适用（它们本身就是全权限）；
+  ② **无操作者**（公开注册引导：新租户首个管理员由注册流程创建，不经 `/api/admin/**`；匿名系统路径同）不适用；
+  ③ 商户员工强制 ⊆，且**自身权限解析不出来即拒绝**（fail-closed）。
+  快照不是合法 JSON 数组时同样按未知码 fail-closed（不再原样落库、运行时悄悄回退角色权限）。
+- **拒绝形态**：403 + **各自独立**的错误码 `PERMISSION_ESCALATION_DENIED`（授予侧，点名越界码）/
+  `PERMISSION_OUTRANK_DENIED`（目标侧，点名账号+动作、**不回显**目标账号持有哪些码）—— 与
+  「调用本端点缺某个码」的 `PERMISSION_DENIED` 分开（出口不同）；授予侧**不回答**「该码在目录里存不存在」
+  （目录跨租户共享），角色码 → 码只按**目标租户**查角色行。
+- **判据**：`backend/admin-api/src/test/java/com/migao/admin/service/EmployeePermissionGrantGateTest.java`（12 条）、
+  `backend/admin-api/src/test/java/com/migao/admin/service/EmployeeTargetSideGuardTest.java`（7 条：三条负向 +
+  **正向对照**（同权限同事 / 自助 / 旁路 / 匿名）+ fail-closed）+
+  `backend/admin-api/src/test/java/com/migao/admin/service/EmployeeGrantChokepointMetaGuardTest.java`
+  （类级元守卫 11 条：授权写面与目标侧写面**两份普查**「未登记即红」、调用点台账「只许显式抬高」、
+  门禁本体不得被掏空、比较原语只许一份、**角色→码映射单源**、测试侧替身纪律、合成语料红证）。
+- **同批收口（#4104 §4 的 `knowledge_editor` 漂移）**：`PermissionService.getPermissionsByRole` **零调用方**
+  且其角色→码表已与 `RoleService.getPermissionCodesForRole` 漂移（一处 2 码 / 一处 1 码）⇒ **删除死码**
+  （「删死码比修死码更诚实」），并由元守卫判据 9 钉住「角色→码映射全仓只许一份真值」（第二份 ⇒ 红）。
+- **本单未固化（如实登记，不粉饰）**：① `RoleService.assignPermissions`（岗位 ↔ 权限码写面，
+  由 `system:manage` 把守）不在射程；② 未连 DB 的存量读数（`permissions` / `role_permissions` 行数等）
+  保持**未取证**（重启条件：有人接上真库复算才发现差异 ⇒ 届时重开）。
 
 ## 服务间调用的授权边界（ai-agent → admin-api，issue #4105）
 

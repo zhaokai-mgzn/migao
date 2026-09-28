@@ -9,12 +9,12 @@
 | 端点 | 形状 | 顺序口径 |
 |---|---|---|
 | `GET /api/admin/production/operation-positions` | `[{id, operation, position, unit_price, applicable, variant_operation_id, unit, group, scope, is_must_finish}]`（物理表 30 逻辑工序 × 4 部位 = 120 行；**去部位化后端点收敛为「一道逻辑工序一行」= 30 行**，issue #4883；`id` + 变体元数据 = issue #4587 追加；**`variant_name` 已按 issue #4622 去掉**） | **先收敛**（`collapseToLogical`）**再按逻辑工序名** |
-| `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status, customer_unit_price}]`（**26 条**；末键 = issue #4567 追加的**元/套**价，`null` = 未定价 ≠ 0 元） | `(priority, id)` |
+| `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status, customer_unit_price}]`（**23 条** = 工艺 7 + 特殊选项 16；原 26 条，`四爪钩` 三条随 issue #4365 退场；末键 = issue #4567 追加的**元/套**价，`null` = 未定价 ≠ 0 元） | `(priority, id)` |
 
 ## 为什么需要本文件（三条**结构性**失效形态，各自不会自己变红）
 
 ① **第二份口径漂移**：真值源是 `app/production/routing.py` 的 `OPERATION_POSITION_PRICES` /
-   `ROUTE_RULES`，落库快照是 V71 的 84 + 26 行。**端点把哪一份呈现给前端**决定了商家看到的价目与
+   `ROUTE_RULES`，落库快照是 V71 的 84 + 26 行（规则侧扣掉退休台账后 = 23 行，issue #4365）。**端点把哪一份呈现给前端**决定了商家看到的价目与
    规则 —— 两份额外的可能（端点自行过滤/改名/换源）**没有任何既有判据**会红。
    （值层面的三源收敛已由 `test_production_catalog_seed.py` 守；本文件守的是
    「**端点能不能看见全部 84/26 行**」这一层 —— 两者是不同的失效面。）
@@ -31,7 +31,7 @@
 | 2 | 数据源**只**是新两表（旧表 entity/mapper 零命中） | 把服务改成 `ProductionOptionRoutingMapper` ⇒ 红 |
 | 3 | 顺序口径落码：**收敛**（适用优先 → 布帘列 → `position` → `id`）**+ 按逻辑工序名排序** / `(priority, id)` | 去掉收敛或排序 ⇒ 红 |
 | 4 | **无行丢弃过滤**：`eq` 目标集恰为 `{TenantId, Deleted, Status}`（规则表另加 `action IN (insert, remove)`） | 加 `.eq(...getApplicable, true)` ⇒ 红（120 格变少） |
-| 5 | 端点可见性 = 真值源**全集**：V71 的 84/26 行逐值等于 `routing.py` 且每行对端点可见 | 改一格价目（0.4 → 0.45）⇒ 红；把一行种成 `status='disabled'` ⇒ 红 |
+| 5 | 端点可见性 = 真值源**全集**：V71 的 84 格 + 26 行（规则侧扣退休台账 ⇒ 23）逐值等于 `routing.py` 且每行对端点可见 | 改一格价目（0.4 → 0.45）⇒ 红；把一行种成 `status='disabled'` ⇒ 红 |
 
 红证原文（本文件对当前树的运行结果）见 PR body —— 本单按 TDD 先落本文件、确认**红**，再实现。
 """
@@ -47,6 +47,7 @@ REPO = Path(__file__).resolve().parents[2]
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._sql_schema import parse_created_tables  # noqa: E402
+from unit_ci_workflows._retired_craft_rules import retired_rule_keys  # noqa: E402  （#4365 单一真相源）
 CONTROLLER = REPO / "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java"
 SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java"
 #: 收敛实现的**唯一**出处（issue #4883 去部位化）：读面 / 实例化 / 补价三处共用它。
@@ -266,11 +267,20 @@ def _eq_targets(entity: str) -> set:
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_operation_positions_endpoint_declares_manage_permission_and_tenant():
-    """判据 1a：`GET /operation-positions` 存在、权限 `processing:manage`、按 TenantContext 隔离。"""
+    """判据 1a：`GET /operation-positions` 存在、**有方法级权限覆盖**、按 TenantContext 隔离。
+
+    🔴 本判据守的是「**这里必须有一个方法级覆盖**」这件事，**不是某一个码名**：
+    类级是 `order:list`（客服/销售/财务都持）⇒ 不覆盖 = 价目矩阵与规则区对所有岗位可见（issue #4500 硬要求 4）。
+    issue #5699 的 **P4** 把本族从 `processing:manage` 收敛到「工艺配置」页的**页面码** `production:view`
+    —— 两个码的**持有岗位集合逐值相同**（admin · operator · product_manager@回退）⇒
+    客服/销售/财务**仍然看不到**这两组数据，本判据的原意一字未变（零 delta 由 P4 判据当场复算：
+    `test_census_recomputes_who_gains_and_who_loses` 对 `/production/routings` 要求 who_gains/who_loses 都为空）。
+    """
     body = _endpoint_body("/operation-positions")
-    assert '@RequirePermission("processing:manage")' in body, (
-        "端点缺方法级 `@RequirePermission(\"processing:manage\")` —— 类级是 `order:list`"
-        "（客服/销售/财务都有）⇒ 不覆盖 = 价目矩阵与规则区对所有岗位可见（issue #4500 硬要求 4）"
+    assert '@RequirePermission("production:view")' in body, (
+        "端点缺方法级 `@RequirePermission(\"production:view\")`（issue #5699 P4 起 = 页面码）"
+        "—— 类级是 `order:list`（客服/销售/财务都有）⇒ 没有方法级覆盖 = 价目矩阵与规则区对所有岗位可见"
+        "（issue #4500 硬要求 4）"
     )
     assert "TenantContext.getTenantId()" in body, (
         "端点没有把 `TenantContext.getTenantId()` 传给服务层 —— 跨租户读价目/规则"
@@ -279,9 +289,11 @@ def test_operation_positions_endpoint_declares_manage_permission_and_tenant():
 
 
 def test_route_rules_endpoint_declares_manage_permission_and_tenant():
-    """判据 1b：`GET /route-rules` 同上。"""
+    """判据 1b：`GET /route-rules` 同上（issue #5699 P4 起方法级覆盖 = 页面码 `production:view`）。"""
     body = _endpoint_body("/route-rules")
-    assert '@RequirePermission("processing:manage")' in body, "端点缺方法级 `processing:manage`"
+    assert '@RequirePermission("production:view")' in body, (
+        "端点缺方法级 `@RequirePermission(\"production:view\")` —— 类级 `order:list` 会让价目/规则区对所有岗位可见"
+    )
     assert "TenantContext.getTenantId()" in body, "端点没有按 `TenantContext.getTenantId()` 隔离租户"
 
 
@@ -569,7 +581,7 @@ def test_rule_query_has_no_row_dropping_filter():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 5：端点可见性 = 真值源全集（120 格 / 26 条，逐值）
+# 判据 5：端点可见性 = 真值源全集（120 格 / 23 条；规则侧已扣 #4365 退休台账，逐值）
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_position_seed_is_visible_and_matches_truth_source():
@@ -602,15 +614,26 @@ def test_position_seed_is_visible_and_matches_truth_source():
 
 
 def test_rule_seed_is_visible_and_matches_truth_source():
-    """判据 5b：V71 的 26 条规则**逐值**等于 `ROUTE_RULES`，且每行都落在端点的 `action` 过滤内。"""
+    """判据 5b：V71 的规则**扣掉退休台账后**逐值等于 `ROUTE_RULES`，且每行都落在端点的 `action` 过滤内。
+
+    🔴 **issue #4365（2026-09-27 用户裁定「移除四爪钩这个场景」）**：`craft='四爪钩'` 的三条规则已由
+    `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` **软删**
+    ⇒ 归档链的字面量（`V71`，逐字节冻结）仍有它们，而真值源与终态没有。
+    扣除必须**恰好等于**退休台账（多扣/少扣都红 ⇒ 台账只许缩短、条数现取）。
+    """
     seed = _rule_seed_rows()
-    assert len(seed) == 26, (
-        f"规则种子行数 = {len(seed)}，期望 26（工艺变体 10 + 特殊选项 16，母单 #4423 冻结数字）"
-    )
+    ledger = set(retired_rule_keys())
+    retired = {key for key in seed if key in ledger}
+    assert retired == ledger, (
+        f"归档链里被当作退休扣掉的行 ≠ 退休台账：扣掉 {sorted(retired)}，台账 {sorted(ledger)}"
+        " —— 台账只许缩短；改台账必须同时改 V135 与两侧终态")
+    seed = {key: value for key, value in seed.items() if key not in ledger}
     # 🔴 issue #4962 改判：比对键**含** `position`（#4937 期间曾去掉该维；现在真值源里恰好一条
     # `韩褶 → insert 上车布 = '布帘'`，与 V71 字面量同值 ⇒ 不再投影掉它）。
     truth = _truth_rules()
-    assert len(truth) == 26, f"真值源 ROUTE_RULES 条数 = {len(truth)}，期望 26"
+    assert len(truth) == len(seed), (
+        f"真值源 ROUTE_RULES 条数 = {len(truth)}，扣除退休台账后期望 {len(seed)}"
+        "（工艺 7 + 特殊选项 16；原 26 条，`四爪钩` 三条随 issue #4365 退场）")
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
                if (seed.get(key) or (None, None))[0] != truth.get(key)}
     assert not drifted, (

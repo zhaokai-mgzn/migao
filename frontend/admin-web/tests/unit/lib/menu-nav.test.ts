@@ -149,16 +149,15 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
   })
 
   it('空组**整组**剔除（组内一项不剩 ⇒ 组名也不渲染）', () => {
-    // 只有 order:list ⇒ 只剩「工作台」（经营看板无权限码，全员可见）与「交易管理」（仅订单列表）
+    // 只有 order:list ⇒ 只剩「交易管理」（仅订单列表）
+    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 无该码时「工作台」**整组消失**
+    //（此前它无码 ⇒ 全员可见，与页面/路由守卫的码不一致）。
     const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list'] })
-    expect(groups.map((g) => g.key)).toEqual(['workspace', 'trade-center'])
+    expect(groups.map((g) => g.key)).toEqual(['trade-center'])
     expect(
       groups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
-    ).toEqual([
-      { key: 'workspace', keys: ['dashboard'] },
-      { key: 'trade-center', keys: ['orders'] },
-    ])
-    // 反恒真：确实被削过（7 组 → 2 组，5 个空组整组消失）
+    ).toEqual([{ key: 'trade-center', keys: ['orders'] }])
+    // 反恒真：确实被削过（7 组 → 1 组，6 个空组整组消失）
     expect(menuGroups).toHaveLength(7)
   })
 
@@ -371,8 +370,8 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
 
   it('命中面**只**来自传入的项：无权限项不在输入面 ⇒ 搜不到（搜索不是绕过权限的口子）', () => {
     const restricted = allItems({ permissions: ['order:list'], roles: [] })
-    // 经营看板无权限码（全员可见）⇒ 受限面 = 工作台的经营看板 + 交易管理的订单列表 + 独立项
-    expect(restricted.map((i) => i.key)).toEqual(['dashboard', 'orders', 'notifications'])
+    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 受限面 = 交易管理的订单列表 + 独立项
+    expect(restricted.map((i) => i.key)).toEqual(['orders', 'notifications'])
     // `splb`（商品列表的拼音）在全量面里命中，在受限面里必须为空
     expect(searchMenu(items, 'splb').map((i) => i.key)).toEqual(['products'])
     expect(searchMenu(restricted, 'splb')).toEqual([])
@@ -400,9 +399,11 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ALL_KEYS.filter((k) => k !== 'briefing'),
     ],
     [
-      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 4 项 + 仓储与物料组 3 项 + 加工项管理',
-      // issue #5291：生产看板/工艺配置/计件工资改挂**读**码 production:view，
-      // 智能派单/余料台账/省料看板仍是 processing:manage（同组不同权）。
+      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 3 项 + 仓储与物料组 2 项 + 加工项管理',
+      // issue #5291：生产看板/工艺配置/计件工资改挂**读**码 production:view。
+      // 🔴 issue #5699（P4）：**每个子菜单恰好一个码** —— 智能派单 = processing:view（该页读码）、
+      // 省料看板 = product:list（该页读码）⇒ 本组权限（读码+管理码、无 product:list、无 processing:view）
+      // 里这两项**都不在**。
       {
         permissions: ['dashboard:view', 'production:view', 'processing:manage', 'inbound:view'],
         roles: ['operator'],
@@ -411,36 +412,27 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
         'dashboard',
         'processing',
         'production-board',
-        'production-pool',
         'production-process',
         'production-piecework',
         'inbound-orders',
         'production-remnants',
-        'production-saving-board',
         'notifications',
       ],
     ],
     [
-      '只有 inbound:view ⇒ 「仓储与物料」组**只剩入库单**（余料/省料要 processing:manage）',
+      '只有 inbound:view ⇒ 「仓储与物料」组**只剩入库单**（余料要 processing:manage、省料要 product:list）',
       { permissions: ['inbound:view'] },
-      ['dashboard', 'inbound-orders', 'notifications'],
+      ['inbound-orders', 'notifications'],
     ],
     [
-      '只有 processing:manage ⇒ 入库单**不在**（inbound:view 是独立门禁）；生产组只剩智能派单（#5291 同组不同权）',
+      '只有 processing:manage ⇒ 入库单**不在**（inbound:view 是独立门禁）；生产组整组消失、仓储组只剩余料台账（#5699 P4）',
       { permissions: ['processing:manage'] },
-      [
-        'dashboard',
-        'production-pool',
-        'production-remnants',
-        'production-saving-board',
-        'notifications',
-      ],
+      ['production-remnants', 'notifications'],
     ],
     [
       '只持生产**读**码 production:view ⇒ 生产看板/工艺配置/计件工资 + 加工项管理在；智能派单/余料/省料**不在**',
       { permissions: ['production:view'] },
       [
-        'dashboard',
         'processing',
         'production-board',
         'production-process',
@@ -451,24 +443,24 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
     [
       '客服域两码（在线接待 agent:session + 知识库读码 knowledge:view）⇒ 智能客服组 2 项',
       { permissions: ['agent:session', 'knowledge:view'] },
-      ['dashboard', 'human-sessions', 'knowledge', 'notifications'],
+      ['human-sessions', 'knowledge', 'notifications'],
     ],
     [
       '只持知识库**写**码 knowledge:manage（无读码）⇒ 知识库入口隐藏（issue #5246 读写分权）',
       { permissions: ['knowledge:manage'] },
-      ['dashboard', 'notifications'],
+      ['notifications'],
     ],
     [
       '只持售后**读**码 after_sales:view ⇒ 售后工单可见（issue #5246：节点码是读码）',
       { permissions: ['after_sales:view'] },
-      ['dashboard', 'after-sales', 'notifications'],
+      ['after-sales', 'notifications'],
     ],
     [
       '只持售后**写**码 order:refund ⇒ 售后工单隐藏（写码不再等于页面可见性）',
       { permissions: ['order:refund'] },
-      ['dashboard', 'notifications'],
+      ['notifications'],
     ],
-    ['零权限 ⇒ 仅无码项（经营看板）与独立项（通知中心）', { permissions: [], roles: [] }, ['dashboard', 'notifications']],
+    ['零权限 ⇒ 只剩「两侧都无码」的通知中心（#5699 P4：经营看板不再是无码项）', { permissions: [], roles: [] }, ['notifications']],
   ])('%s', (_name, opts, expected) => {
     expect(visibleKeys(opts as MenuFilterOptions)).toEqual(expected)
   })

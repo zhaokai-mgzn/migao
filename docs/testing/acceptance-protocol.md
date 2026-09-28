@@ -325,6 +325,30 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   「工具层失败」与「模型层漏调」在一行里可区分。**C 端写用例必须声明**（由
   `tests/unit_ci_workflows/test_xiaobu_case_set.py::TestWriteToolSuccessAssertions` 强制）。
 
+  **读的是哪一面（`source`，issue #4097）**：缺省 `sse` = 上面的 SSE 事件面；声明
+  `source: metadata` 则改读**落库面** —— 写侧 #4052 起落进会话消息的
+  `metadata.tool_results`（`{tool, success, error}`，与 `metadata.tool_calls` 逐项对齐），
+  由读侧 `GET /api/chat/history/{session_id}` 回传（本单起），runner 经
+  `rounds_from_history_payload` 还原成**同形** rounds 走**同一段**判定（两面共用一份口径，
+  不存在两套语义）。两面**显式二选一**：同一条用例可以两条都声明（一面流上、一面库里），
+  不一致即缺陷。
+
+  ```yaml
+  must_succeed:
+    - tool: aftersale_create
+      only_if_called: true              # SSE 面：去建了就必须成了
+    - tool: aftersale_create
+      source: metadata                  # 落库面：会话记录里也必须记着成了
+      only_if_called: true
+  ```
+
+  ⚠️ **取数不可用 = 判红**（fail-closed，原子 `config_error(must_succeed_metadata)`）：
+  读侧未暴露该键 / HTTP 失败 / 用例跨会话（`new_session` ⇒ 只能取到最后一个会话）⇒
+  判「断言未评估」，**不静默放过**。静态词汇表 = `source ∈ {sse, metadata}`，
+  由 `tests/unit_ci_workflows/test_assertion_specs_wellformed.py` 在 PR 阶段（零 LLM）判红；
+  「写侧落库的字段必须被读侧回传」的类级锁见
+  `tests/unit_ci_workflows/test_tool_results_write_read_agreement.py`。
+
 #### 3.2.1 入参**值级**断言（`arg_values` → `check_arg_values`，issue #3823）
 
 三级证据**不得互相顶替** —— 这正是 #3320 判据 2 只能"闭合一半"的根因：
@@ -345,15 +369,25 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   job log 的 `callargs=` 段（评测腿设 `AGENT_EVAL_TRACE_ALL=1` ⇒ **通过用例也打**）；
   artifact `eval-summary-*.json` 的 `cases[].call_args`。入参中的手机号按
   `backend/ai-agent-service/app/utils/pii_mask.py` 的口径掩码、自由文本截断、容器条目有界。
-- **本次落地的边界（如实登记）**：证据通道 + 校验函数已落码；
-  用例库的**声明面**（`.github/cases/*.yml` 的 `arg_values`）**未接线** ——
-  改用例面需同步渲染生成物与两条用例账本，属独立单。
+- **本次落地的边界（如实登记，2026-09-26 更新）**：证据通道 + 校验函数已落码；
+  用例库的**声明面**（`.github/cases/*.yml` 的 `arg_values`）**已接线**（issue #3789 的
+  验收判据 2 需要它：OR-014 的「加工项数量 = 面料米数」是**值级**判据，拿 `required_args`
+  的存在性顶替正是 #3823 的病灶）—— 渲染器 / CI 装载器 / 生成物 / 装载探针 / 用例账本五处同步。
+  ⚠️ 同时把入参证据的**压缩深度上限**从 3 提到 5：旧值恰好停在
+  `items[].processing_info`（`processingItems` 落在深度 0）⇒ 加工项条目**一个字段都读不到**，
+  值级断言在 `order_create` 这条链路上**无从取证**（"args 只是摘要形态"的机制半边）。
 
 ### 3.3 反模式断言（负向）
 
 - "禁止/不得"类行为显式断言：禁止提前弹 confirm、禁止跳过加工项询问（商品绑定加工项时）、
   禁止只取第一个名称、禁止二次询问、禁止重复查询同一商品；
 - 负向断言必须与正向断言配对，防止"该做的没做，不该做的做了"两头漏。
+- **按轮**的负向卡片约束（`forbidden_interact` → `check_forbidden_interact`，issue #3789）：
+  声明「第 N 轮**不得**出现 `interact` 卡」（可限定卡型：`{round: 2, type: choice}`）。
+  它不是 agent 能力断言，而是**用例形状的前提**：某些用例的**判别性红路径**只有在某轮
+  **纯文本**提问时才成立（agent 一发卡，harness 的 `auto_respond` 就会答那张卡 ⇒ 走卡型豁免
+  这条**安全路径** ⇒ 红/绿由"当轮是否抽卡"决定，判别性验证不可复现 —— OR-014 实证）。
+  命中即判红，与 `forbidden_*` 家族同权；`round` 缺失/越界一律判违规（不会红的断言 = 空断言）。
 
 ### 3.4 final_text 断言
 

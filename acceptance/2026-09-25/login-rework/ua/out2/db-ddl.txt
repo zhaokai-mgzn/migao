@@ -1,0 +1,47 @@
+### ① DB DDL 原始输出（\d users + 索引定义）
+                                        数据表 "public.users"
+         栏位         |           类型           | 校对规则 |  可空的  |            预设             
+----------------------+--------------------------+----------+----------+-----------------------------
+ id                   | character varying(64)    |          | not null | 
+ tenant_id            | bigint                   |          | not null | 
+ phone                | character varying(32)    |          |          | 
+ password_hash        | character varying(255)   |          |          | 
+ nickname             | character varying(128)   |          |          | 
+ avatar               | character varying(512)   |          |          | 
+ role                 | character varying(64)    |          |          | 
+ session_ttl          | integer                  |          |          | 3600
+ status               | character varying(32)    |          |          | 'active'::character varying
+ created_at           | timestamp with time zone |          |          | now()
+ updated_at           | timestamp with time zone |          |          | now()
+ deleted              | integer                  |          |          | 0
+ position             | character varying(50)    |          |          | 
+ permissions          | text                     |          |          | 
+ worker_no            | character varying(64)    |          |          | 
+ username             | character varying(64)    |          |          | 
+ must_change_password | boolean                  |          | not null | false
+索引：
+    "users_pkey" PRIMARY KEY, btree (id)
+    "idx_users_deleted" btree (deleted)
+    "idx_users_phone" btree (phone)
+    "idx_users_phone_tenant" btree (phone, tenant_id)
+    "idx_users_status" btree (status)
+    "idx_users_tenant" btree (tenant_id)
+    "uk_users_tenant_username" UNIQUE, btree (tenant_id, username) WHERE username IS NOT NULL AND deleted = 0
+    "uk_users_tenant_worker_no" UNIQUE, btree (tenant_id, worker_no) WHERE worker_no IS NOT NULL AND deleted = 0
+外部键(FK)限制：
+    "users_tenant_id_fkey" FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+由引用：
+    TABLE "agent_employees" CONSTRAINT "agent_employees_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "tenant_applications" CONSTRAINT "tenant_applications_reviewed_by_fkey" FOREIGN KEY (reviewed_by) REFERENCES users(id)
+    TABLE "user_identities" CONSTRAINT "user_identities_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "user_roles" CONSTRAINT "user_roles_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "worker_sessions" CONSTRAINT "worker_sessions_worker_id_fkey" FOREIGN KEY (worker_id) REFERENCES users(id)
+策略：
+    POLICY "tenant_isolation_users"
+      USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text)))
+
+                                                                    indexdef                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE UNIQUE INDEX uk_users_tenant_username ON public.users USING btree (tenant_id, username) WHERE ((username IS NOT NULL) AND (deleted = 0))
+(1 行记录)
+

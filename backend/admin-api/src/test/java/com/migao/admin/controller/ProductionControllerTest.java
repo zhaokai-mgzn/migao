@@ -44,6 +44,7 @@ import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.ProcessingSetReadService;
 import com.migao.admin.service.ProductionStuckPointService;
+import com.migao.admin.service.ProductionTodoService;
 import com.migao.admin.service.RoutingModelFixture;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -226,6 +227,13 @@ class ProductionControllerTest {
                 repricingLogMapper);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "productionInstanceRepricingService", repricingService);
+        // 生产待办聚合（issue #5641）：同款字段注入 —— **真实服务**（只 mock Mapper），
+        // 「卡在哪」/三态/threshold_source 全部走上面那个真实卡点服务（不复制第二份装配、
+        // 不动既有 6 参构造）。⚠️ 本类的 orderService 是 @Mock ⇒ 发货/待排产判据的**真实行为**
+        // 由 ProductionTodoServiceTest（真实 OrderService）覆盖；本类只钉端点契约（路径/权限/信封）。
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionTodoService",
+                new ProductionTodoService(stuckPointService, orderService, orderMapper,
+                        processingOrderMapper, positionOperationMapper));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -1016,7 +1024,7 @@ class ProductionControllerTest {
             sort++;
         }
         // P2b（issue #4459）：消费路径读**新结构** ⇒ 桩也要装新结构
-        // （模板 + 规则 26 行 + 部位价目 + 工序库），展开由生产代码做。
+        // （模板 + 规则 23 行（issue #4365 起）+ 部位价目 + 工序库），展开由生产代码做。
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
                 RoutingModelFixture.defaultTemplate(TENANT)));
         when(productionRouteRuleMapper.selectList(any())).thenReturn(
@@ -1406,7 +1414,7 @@ class ProductionControllerTest {
     }
 
     @Test
-    @DisplayName("#4204 PUT /production/operations/{id} → 方法级 processing:manage 护栏（非 processing:manage ⇒ 403）")
+    @DisplayName("#4204/#5675 方法级码逐条：写端点 processing:manage；计件报表端点 = 读码 production:view")
     void updateOperationDeclaresManagePermission() throws Exception {
         Method update = ProductionController.class.getMethod("updateOperation", String.class, Map.class);
         RequirePermission ann = update.getAnnotation(RequirePermission.class);
@@ -1423,16 +1431,29 @@ class ProductionControllerTest {
         assertThat(regenerateAnn).as("重新发码是安全相关写操作（撤销的恢复半边）").isNotNull();
         assertThat(regenerateAnn.value()).isEqualTo("processing:manage");
 
+        // issue #5675：工资报表端点改用生产域**读**码 —— 旧断言的理由（「含全员金额 ⇒ 必须管理码」）
+        // 自 issue #5291 起已不成立：**同一份**聚合早已在 Agent 侧（`AgentProductionController#piecework`）
+        // 挂 `production:view` 可读，而「计件工资」页的菜单节点码与前端路由守卫也都是该读码
+        // ⇒ 那一处的形态是**「菜单节点码 ≠ 该页第一屏读端点码」**（判据 = 守卫的判据 12）。
+        // ⚠️ 归因更正（#5675 收口包独立复核）：原写「方法级管理码才是**漏改**的那一处」——「#5291 漏改」
+        // 已**证伪**（#5291 自己的类注记逐字只写「**两个**只读端点」改挂读码；工艺配置页第一屏的配置族
+        // 读端点仍由管理码把守，并有 `ProductionRoutingReadControllerTest#endpointsDeclareManagePermission`
+        // 断言钉住）⇒ 按形态归因。**断言本身（`production:view`）一字未动**。
         Method summary = ProductionController.class.getMethod("pieceworkSummary", String.class, String.class);
         RequirePermission summaryAnn = summary.getAnnotation(RequirePermission.class);
-        assertThat(summaryAnn).as("工资报表含全员金额，必须 processing:manage").isNotNull();
-        assertThat(summaryAnn.value()).isEqualTo("processing:manage");
+        assertThat(summaryAnn)
+                .as("计件工资页第一屏读端点 ⇒ 与菜单节点码（production:view）同码，issue #5675")
+                .isNotNull();
+        assertThat(summaryAnn.value()).isEqualTo("production:view");
 
-        // 打印计数**故意**沿用类级 order:list（打印按钮今天对客服/销售/财务可见，
-        // 收到 processing:manage 会让「能看单却打不了卡」= 功能回退；计数只是打印动作的元数据）
+        // 🔴 issue #5699 的 **I4**（2026-09-27 人类裁定选 A）：打印计数**不再**沿用类级读码 `order:list` ——
+        // 它是**写**动作（`print_count` 落库）⇒ 补方法级**写**码 `production:execute`。
+        // 旧理由（「打印按钮对客服/销售/财务可见，收窄 = 功能回退」）由**授权**承接：
+        // 该写码已同批授予这四个岗位 ⇒ 有效权限集合逐值不变（判据 = test_rbac_endpoint_write_codes.py）。
         Method print = ProductionController.class.getMethod("printOrder", String.class);
-        assertThat(print.getAnnotation(RequirePermission.class))
-                .as("打印计数沿用类级 order:list（不新增方法级注解）").isNull();
+        RequirePermission printAnn = print.getAnnotation(RequirePermission.class);
+        assertThat(printAnn).as("打印计数必须补方法级写码（I4：写动作不得只由读码把守）").isNotNull();
+        assertThat(printAnn.value()).isEqualTo("production:execute");
     }
 
     // ══════════════════ 路线/信号/工序写面 + 缺口查询（issue #4308，PG-032~PG-035）══════════════════
@@ -2115,5 +2136,40 @@ class ProductionControllerTest {
             assertThat(annotation).as("%s 必须声明方法级权限", method.getName()).isNotNull();
             assertThat(annotation.value()).isEqualTo("processing:manage");
         }
+    }
+
+    // ══════════════════ 生产概览（待办优先，issue #5641）══════════════════
+
+    @Test
+    @DisplayName("#5641 GET /production/todo-overview → 200 + 待办清单与第二屏统计（空态如实，不塞占位数）")
+    void todoOverviewReturnsTodoFirstEnvelope() throws Exception {
+        mockMvc.perform(get("/api/admin/production/todo-overview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.todo_total").value(0))
+                .andExpect(jsonPath("$.data.todos").isArray())
+                .andExpect(jsonPath("$.data.todos").isEmpty())
+                // 第一屏 N 与第二屏计数**同一份来源**（同一 list 的长度）
+                .andExpect(jsonPath("$.data.stats.todo_total").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.to_schedule").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.stuck").value(0))
+                .andExpect(jsonPath("$.data.stats.by_type.to_ship").value(0))
+                // 三态进度 + 阈值来源透传（不是本端点另设的阈值）
+                .andExpect(jsonPath("$.data.stats.operations.not_started").value(0))
+                .andExpect(jsonPath("$.data.stats.operations.in_progress").value(0))
+                .andExpect(jsonPath("$.data.stats.operations.completed").value(0))
+                .andExpect(jsonPath("$.data.stats.threshold_source").value("default"))
+                .andExpect(jsonPath("$.data.stats.scan.truncated").value(false));
+    }
+
+    @Test
+    @DisplayName("#5641 待办端点权限 = 方法级 production:view（生产域读码 ⇒ 无权限是拒绝，不是静默空列表）")
+    void todoOverviewDeclaresProductionView() throws Exception {
+        Method method = ProductionController.class.getMethod("todoOverview");
+        RequirePermission annotation = method.getAnnotation(RequirePermission.class);
+        assertThat(annotation)
+                .as("生产概览是生产口径读面 ⇒ 必须方法级 production:view（类级 order:list 覆盖不了该语义）")
+                .isNotNull();
+        assertThat(annotation.value()).isEqualTo("production:view");
     }
 }

@@ -6,6 +6,8 @@ import {
   buildRefundPayload,
 } from './data-adapter'
 import type { RefundOrderParams } from './data-adapter'
+// 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
+import type { OrderShipmentRead } from './sales-shipment'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -47,6 +49,7 @@ import type {
   ProcessingOrder,
   ProcessingOrderGenerateResult,
   ProcessingOrderGenerateBatch,
+  ProcessingOrderSetRow,
   ProcessingOrderUpdateParams,
   InboundOrder,
   InboundOrderLine,
@@ -119,6 +122,8 @@ import type {
   EmployeeListParams,
   EmployeeFormData,
   EmployeeStatus,
+  WorkerProfile,
+  WorkerFormData,
   ResetPasswordParams,
   Role,
   RoleFormData,
@@ -321,7 +326,8 @@ export interface CraftCalcParams {
   formula?: string
   /**
    * 安装工艺（用户 2026-09-19 追加裁定「韩褶用韩褶公式算布料，打孔按倍数法算布料」）：
-   * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
+   * 韩褶/打孔/穿杆/平幔（issue #4365 起**不含** `四爪钩` —— 它是加工项/配件，不是工艺）。
+   * **公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
    */
   craft?: string
   /**
@@ -493,8 +499,8 @@ export const autoFeaturesApi = {
   /**
    * 自动特征判定（**不落库、不算用料**）—— issue #4976 包 2b，用户裁定 B「判定移到服务端」。
    *
-   * ⚠️ 与 `craftCalcApi` **分开**是有意的：算料试算对**四爪钩 / 穿杆 / 平幔**没有口径
-   * （那三类工艺不发试算请求），而自动特征是**每一行**都要判的 —— 挂在试算上会让那些行
+   * ⚠️ 与 `craftCalcApi` **分开**是有意的：算料试算对**无自动算料口径**的工艺（穿杆 / 平幔，
+   * 存量单的 `四爪钩` 同理）**不发请求**，而自动特征是**每一行**都要判的 —— 挂在试算上会让那些行
    * **丢特征** ⇒ 加工费组合键少一项 ⇒ 匹配不到组合价。
    */
   preview: (params: AutoFeaturesParams) =>
@@ -557,8 +563,8 @@ export const doorWidthPlanApi = {
    * 门幅规则（**只读**：不算钱、不落库）—— issue #5043 包 2b。
    *
    * ⚠️ 与 `craftCalcApi` **分开**是有意的：规则要在**发试算请求之前**用（靠它决定选哪个 SKU/门幅），
-   * 而试算请求本身要带门幅 ⇒ 鸡生蛋；且 **四爪钩 / 穿杆 / 平幔** 不发试算请求
-   * （用户 2026-09-21 裁定：这三类工艺**不影响用料和门幅**）⇒ 规则面不能挂在试算上。
+   * 而试算请求本身要带门幅 ⇒ 鸡生蛋；且**无自动算料口径**的工艺（穿杆 / 平幔；存量单 `四爪钩` 同理）
+   * 不发试算请求（用户 2026-09-21 裁定：这类工艺**不影响用料和门幅**）⇒ 规则面不能挂在试算上。
    */
   preview: (params: DoorWidthPlanParams) =>
     request.post<ApiResponse<DoorWidthPlanResult>>('/api/admin/orders/door-width-plan', params),
@@ -672,6 +678,22 @@ export const orderApi = {
   // 获取单个订单详情
   getOrder: (id: string) => 
     request.get<ApiResponse<Order>>(`/api/admin/orders/${id}`),
+
+  /**
+   * 获取订单的**发货读面**（发货单 + 逐行**实发**套/件/卷 + 汇总）—— issue #5651 收口。
+   *
+   * `GET /api/admin/orders/{id}/shipments`；响应形状与工人面
+   * （`GET /api/worker/shipment/orders/{orderId}`）**逐字同源**：两端共用
+   * `OrderShipmentService.readShipment`（该真值 owner 指定的唯一消费入口）。
+   *
+   * 🔴 **为什么 admin-web 必须走这一面**：工人面要求 `X-Worker-Session-Id`（工人 session），
+   * 桌面端拿不到那个身份 ⇒ 调工人面只会 401。两面同源保证「桌面看到的实发 = 车间记的实发」。
+   *
+   * 口径消费方 = `SalesDoc` 的数量列（判定见 `lib/sales-shipment.ts`）：有实发印实发，
+   * 未发货才印订单数量**并显式标明基准** —— 不新造第三套数量口径。
+   */
+  getOrderShipments: (id: string) =>
+    request.get<ApiResponse<OrderShipmentRead>>(`/api/admin/orders/${id}/shipments`),
   
   // 创建订单
   createOrder: (data: OrderFormData) => 
@@ -934,6 +956,25 @@ export const processingOrderApi = {
   // 状态更新：issue(发加工)/start/complete/cancel
   update: (id: string, data: ProcessingOrderUpdateParams) =>
     request.patch<ApiResponse<ProcessingOrder>>(`/api/admin/processing-orders/${id}`, data),
+}
+
+// 加工套件只读 API（后端 issue #5247 的三个读端点；#5693 起响应带**精裁输出清单**）
+//
+// 🔴 为什么商家端加工单详情经它取精裁输出：清单的行粒度 = **套 × 部位**，而服务端的唯一实现
+// 在 `ProcessingSetReadService`（与工人端扫码详情**同一份** `set_overview`）。前端**不**自己
+// 按订单行的用料再算第二份（那就是两份会漂移的口径）。权限 `production:view` —— 与本页
+// （`/processing-orders/{id}/production`）的路由守卫同码。
+export const processingOrderSetApi = {
+  list: (params: {
+    processingOrderNo?: string
+    orderNo?: string
+    page?: number
+    size?: number
+  }) =>
+    request.get<ApiResponse<PageResponse<ProcessingOrderSetRow>>>(
+      '/api/admin/processing-order-sets',
+      { params },
+    ),
 }
 
 // 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）
@@ -1499,6 +1540,21 @@ export const employeeApi = {
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/reset-password`, data),
 
   toggleEmployeeStatus: (id: number, status: EmployeeStatus) =>
+    request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
+}
+
+// 工人档案 API（issue #4869）：工人 = users.worker_no 非空 + role=worker，**与员工账号分开**
+// —— 工号 + PIN 登录工人端扫码报工，没有菜单权限、不进管理后台。建号走独立端点
+// POST /api/admin/workers（员工创建路径强制 phone 非空且会走岗位/权限快照，不适合工人）。
+export const workerApi = {
+  listWorkers: (params?: { page?: number; size?: number; keyword?: string; status?: string }) =>
+    request.get<ApiResponse<PageResponse<WorkerProfile>>>('/api/admin/workers', { params }),
+
+  createWorker: (data: WorkerFormData) =>
+    request.post<ApiResponse<WorkerProfile>>('/api/admin/workers', data),
+
+  /** 停用/启用：**复用**既有员工状态端点 PUT /api/admin/users/{id}/status（不另造一套）。 */
+  setWorkerStatus: (id: string, status: EmployeeStatus) =>
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
 }
 

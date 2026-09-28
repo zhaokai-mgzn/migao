@@ -10,6 +10,11 @@
 #   ./verify-all.sh agent          # 仅 AI Agent
 #   ./verify-all.sh gate           # 本地预检：QA Growth Gate +（命中 cases 受管面时）cases 面门禁
 #                                  +（命中红证面时）红证机具前提自检
+#                                  +（命中 bmini 触发面时）bmini 腿（tsc / jest / build:h5 / build:weapp，
+#                                    与 CI bmini-app.yml 两条腿同命令；缺依赖 ⇒ **fail-closed 记 ❌**）
+#   quick/full/frontend/backend/agent 档的模块腿（admin-api / ai-agent / admin-web vitest+tsc /
+#                                  worker-h5）：走 report_gated —— **依赖缺 + 变更集命中该模块** ⇒
+#                                  fail-closed 记 ❌（+ 可行动文案）；未命中 ⇒ 仍是 ⏭️ 未就绪（不计通过）。
 #   ./verify-all.sh redproof       # 红证机具实跑（#5193）：逐个真注入 + 跑判据（需 JDK/npm/PG，慢）
 #
 # ⚠️ gate 档的扫描源是**已提交**的 diff（`git diff … origin/main...HEAD`）：工作区有未提交改动
@@ -36,6 +41,19 @@
 #                  `npx tsc --noEmit` 从 npm 拉到**同名占位包** `tsc`，打印
 #                  "This is not the tsc command you are looking for" 后 **exit 0** ⇒ 旧版打 ✅。
 #                  已由 `node_modules/.bin/<tool>` 精确探测**前置消除**，另留同族兜底判据。
+# 另有第四类**失败**形态（与 ⏭️ 语义相反；本单新增，先例 = bmini 腿）：
+#   ❌ 依赖未就绪（fail-closed）—— 该腿落在**变更范围内**（变更集命中它的触发面）而依赖没装好 ⇒
+#                  **不跳过**：把「缺什么 + 实测可跑通的准备命令」打到控制台并记 ❌。
+#                  为什么不能打 ⏭️：在 `gate`（合并门禁）上 ⏭️ 会被读成「这项没事」，而这条腿
+#                  存在的全部意义就是拦住该模块的编译/类型错 —— 「没跑」不得等于「通过」
+#                  （#4221 同族；`⏭️ 未就绪` 是真漏面）。
+#                  适用范围**严格受限**（否则是假红）：只在变更集命中该腿触发面之后。
+#                  两种派发形态（都在 `local_gate_matrix.json` 的 trigger 里登记、由判据现取核对）：
+#                  ① `diff-face-hit`（bmini 腿，gate 档）：**腿本身**按变更集派发 —— 未命中 ⇒ 不派发 +
+#                     控制台显式声明「未跑」；
+#                  ② `diff-face-gated-deps`（快循环档五条模块腿）：腿**照旧每次都跑**（覆盖强度不变），
+#                     只有「依赖**缺**」这一态的判定按变更集分派（`report_gated()`，命中 ⇒ 本态 / 未命中
+#                     ⇒ ⏭️ 未就绪且不计通过）。
 #
 # 禁空跑：跑之前先算变更集（`origin/main...HEAD` ∪ 工作区未提交改动，与 QA Growth Gate 预检
 # **同一份判据**）。变更集为空 ⇒ **不跑任何检查**并**非零退出**——在零 diff 的树上跑验证没有边际
@@ -113,6 +131,21 @@ probe_ready() {
       if [ ! -x "$ROOT/frontend/admin-web/node_modules/.bin/tsc" ]; then
         READY_MISSING="缺 $ROOT/frontend/admin-web/node_modules/.bin/tsc（typescript 未装；不探则 npx 会拉到同名占位包并 exit 0 = 假绿）"
         READY_HINT="cd '$ROOT/frontend/admin-web' && npm ci"
+        return 1
+      fi
+      ;;
+    bmini-app)
+      # B 端 Taro 一源双编译（h5 + 小程序，gate 档的 bmini 腿）：本腿要真跑 tsc / jest / taro 三件，
+      # 故逐个探**真正被调用的**可执行文件（不探目录：目录在、工具不在时 `npx` 会去 npm 拉同名
+      # 占位包 ⇒ 假绿，见本函数头部注释）。「装不全」（三个里缺任意一个）同样算未就绪。
+      # ⚠️ 未就绪**不是**跳过：调用方是 report_strict()（fail-closed 记 ❌ + 可行动文案）。
+      local bmini_missing="" t
+      for t in tsc jest taro; do
+        [ -x "$ROOT/frontend/bmini-app/node_modules/.bin/${t}" ] || bmini_missing="${bmini_missing} ${t}"
+      done
+      if [ -n "${bmini_missing}" ]; then
+        READY_MISSING="缺 $ROOT/frontend/bmini-app/node_modules/.bin/ 下的可执行文件：${bmini_missing}（依赖未装 / 装不全）"
+        READY_HINT="cd '$ROOT/frontend/bmini-app' && npm ci"
         return 1
       fi
       ;;
@@ -258,6 +291,61 @@ report_env() {
   report "$name" "$@"
 }
 
+# ── 第四态包装：依赖未就绪 ⇒ **fail-closed**（记 ❌，**不**跳过）──────────────────────
+# 与 report_env() 的**唯一**差别：probe_ready() 返回 1（未就绪）时**不**打 ⏭️ 跳过，而是把
+# 「缺什么 + 准备命令」打到控制台并记 ❌。为什么必须有这一态（#4221 同族；本单落地 bmini 腿）：
+# `⏭️ 未就绪` 在 `gate`（合并门禁）上会被读成「这项没事」，而「没跑」不得等于「通过」——
+# 一条腿存在的全部意义就是拦住它判的那个模块的编译/类型错。
+# ⚠️ 适用范围**严格受限**：只在变更集命中该腿的触发面之后用。否则「不碰这个模块的 PR」会因为
+#    「本机没装它的依赖」变红 = **假红**（失败必须意味着一件真事，见 gate_check() 的同类取舍）。
+# ⚠️ 本函数**不改** report() / report_env() 的既有形态（三处既有契约依赖它们的签名）。
+report_strict() {
+  # 用法：report_strict <env-key> "检查项名" 命令...   （env-key 见 probe_ready()）
+  local env_key="$1"; shift
+  local name="$1"; shift
+  local probe_rc=0
+  probe_ready "$env_key" || probe_rc=$?
+  if [ "$probe_rc" -eq 1 ]; then
+    echo "❌ ${name} — 依赖未就绪（fail-closed：本项**不跳过**，也不计通过）"
+    echo "     缺什么：${READY_MISSING}"
+    echo "     准备：${READY_HINT}"
+    FAIL=$((FAIL + 1))
+    FAILED+=("$name")
+    return 0
+  elif [ "$probe_rc" -ne 0 ]; then
+    echo "❌ ${name} — 脚本配置错误：${READY_MISSING}（${READY_HINT}）"
+    FAIL=$((FAIL + 1))
+    FAILED+=("$name")
+    return 0
+  fi
+  report "$name" "$@"
+}
+
+# ── 第五态包装（快循环档）：依赖缺时**按变更集分派**两种判定（#5707 的 FM-E10 收口）──────────
+# 病根（实测）：quick/full/frontend/backend/agent 档的模块腿走 `report_env()` ⇒ 依赖没装好时一律打
+# `⏭️ 未就绪`（跳过）。**本机缺依赖是环境、不是缺陷**，但在「变更集**命中**该模块」时它变成一条
+# **静默绿**：那条腿存在的全部意义（拦住该模块的编译 / 类型 / 单测错）一条都没执行，而控制台与
+# 退出码跟「真跑绿」无法区分 ⇒ 推到 CI 才爆（本地绿 / CI 红）。
+#
+# 本包装把 bmini 腿（第 4 态 `report_strict`）的范式复制过来：**一个 face 谓词 + 一个 if 分支**
+#   · 变更集**命中**该腿判的对象 ⇒ `report_strict`：依赖缺 ⇒ ❌ + 可行动文案（**不跳过**）；
+#   · 未命中 ⇒ `report_env`：依赖缺 ⇒ ⏭️ 未就绪（**不计通过**，也不为不碰该模块的 PR 制造假红）。
+# ⚠️ 为什么**不**照抄 bmini 的 `if … then report_strict … else 显式「未跑」`：bmini 是**新增**腿
+#    （未命中本来就不跑），而这五条是**既跑腿** —— 「未命中就不跑」会把快循环档的选择集变成
+#    **失败开放**（issue #3680 的形态：本地没跑、CI 红）。故这里**只改「依赖缺时怎么算」**：
+#    依赖齐备时照旧每次都跑 = **覆盖强度不变**（判据现取核对派发语句在分支顶层、不在任何 if 里）。
+# ⚠️ 就绪探测与「逐检查项的 ⏭️ 标记」仍只属于 `probe_ready()` / `report_env()`（单一实现）——
+#    本函数只做**分派**：不自己探测、不自己打标记、不改 report()/report_env()/report_strict() 的签名。
+report_gated() {
+  # 用法：report_gated <env-key> <face-hit-fn> "检查项名" 命令...   （env-key 见 probe_ready()）
+  local env_key="$1" face_fn="$2" name="$3"; shift 3
+  if face_hit "$face_fn"; then
+    report_strict "$env_key" "$name" "$@"
+  else
+    report_env "$env_key" "$name" "$@"
+  fi
+}
+
 # 评测用例覆盖体检（B/C 两端）—— 与 pr-check 的 `Case Coverage Gate` job **同一脚本、
 # 同一参数**（判据在 scripts/case_coverage.py 单一实现），避免「本地绿 CI 红」。
 # 拦什么（结构性缺失）：工具 0 用例 / 只有拒绝式断言而没有任何正向用例 / 用例挂错端 /
@@ -358,18 +446,13 @@ cases_face_gate() {
   printf '%s\n' "$hit" | sed 's/^/     /'
   python3 .github/case_trust_gate.py --base origin/main || rc=1
   python3 .github/truths.py check --templates .github/templates --cases .github/cases || rc=1
-  local tmp_eval tmp_md
-  tmp_eval="$(mktemp)"; tmp_md="$(mktemp)"
-  if python3 .github/render_cases.py --cases .github/cases \
-       --out-eval "$tmp_eval" --out-md "$tmp_md" >/dev/null \
-     && cmp -s "$tmp_eval" tests/agent_eval/eval_cases.py \
-     && cmp -s "$tmp_md" docs/testing/mibao-verification-cases.md; then
-    echo "  ✅ 生成物与 cases/ 单一源同步"
-  else
-    echo "  ❌ 生成物与 cases/ 单一源不同步（或渲染失败）—— 跑 .github/render_cases.py 重渲染并提交生成物"
-    rc=1
-  fi
-  rm -f "$tmp_eval" "$tmp_md"
+  # 生成物新鲜度 = **单一实现**（`scripts/generated_artifacts_freshness.py`）—— CI 的
+  # `pr-check` 同名步（`Verify generated artifacts fresh (render + diff)`）与 **main 侧守护腿**
+  # `.github/workflows/main-freshness-guard.yml` 调的是**同一个脚本**（不许各写一份 render+diff）。
+  # 它自己负责「以 `.github/cases/**` 为唯一源重渲染 → 与提交的生成物逐字节比对 + 具名报错」，
+  # 且缺渲染器/语料/产物、渲染失败、语料为空一律 **fail-closed（非零）**（不许静默跳过）。
+  # 退出码同源：非零 ⇒ rc=1（吞码 = 假绿，issue #4221 判据 3）。
+  python3 scripts/generated_artifacts_freshness.py || rc=1
   # 残余未覆盖必须显式声明（issue #4221 判据 2）：report() 会把 `::warning::` 抬到控制台，
   # 免得 ✅ 被读成「CI 也会绿」。
   echo "::warning:: 本地 cases 面门禁**未覆盖**：CI 侧还有本地跑不了的格子 —— Case Trust 的 L0 退化守卫单测（tests/unit_ci_workflows/test_case_trust_gate.py）、追踪单状态查询（需网络；取不到时门禁自行打印「未跑判定」且不计入退出码）、以及 pr-check 的其它 job。**另：Case Trust 的逐条判定只读已提交 diff** —— 用例改动若尚未 commit，该判定是「未跑」而非「通过」（实测：未提交的注释型用例改动此处仍 ✅），故本项须在 commit 之后重跑（migao-dev-flow §2.1）。CI 仍是权威（issue #4221 边界）。"
@@ -461,6 +544,77 @@ gate_check() {
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
+# ── bmini 腿（本单新增）：本地门禁矩阵的缺口 —— 改 bmini 的包此前只能手工跑 ────────────────
+# 为什么单独成腿（实测缺口，不是推断）：`frontend/bmini-app`（Taro 一源双编译，B 端 h5 + 小程序）
+# 此前在 `./verify-all.sh` 里**没有任何腿** ⇒ 改 bmini 的包在本地拿不到 tsc/jest/build 覆盖，
+# 只能手工跑（最近两个 bmini 包的回报里逐字写着「手工跑了三条」）；而 CI 侧有两条腿
+# （`.github/workflows/bmini-app.yml` 的 typecheck+单测 / build h5+weapp）⇒ **缺口只在本地**，
+# 代价 = 一轮 CI 往返。本块只补本地门禁，**不动 CI**。
+#
+# 触发面 = 该腿**判定对象的输入闭包**（唯一实现就在下面这个函数里）：模块目录本身 + 它 import 到的
+# **跨目录**仓内文件（现取 1 个：frontend/admin-web/src/lib/print-media.json，被 bmini 的
+# src/utils/inbound/truth.ts import）。闭包由判据 `tests/unit_ci_workflows/test_local_gate_matrix.py`
+# 现取（C5：跨目录输入被谓词命中或登记在 local_gate_matrix.json 的 trigger_face_uncovered_inputs，
+# 未登记即红），故**未来新增一条跨目录 import 不会静默漏过**。
+# ⚠️ 触发面**故意不照抄** CI 的谓词（CI = `frontend/bmini-app/|tests/|\.github/`）：`tests/` 与
+#    `.github/` 的改动**影响不到** tsc/jest/build 的结果，照抄只会让不相关的改动多等 3~5 分钟。
+# 命中判定与 cases_face_hit() / redproof_face_hit() **同款**：用变量收结果再判空，**不要**写成
+# `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
+# 「命中」被读成「不命中」= 假绿。
+bmini_face_paths() {
+  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$)' || true
+}
+bmini_face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | bmini_face_paths)"
+  [ -n "$hit" ]
+}
+
+# ── 模块触发面（快循环档 fail-closed 的**单一实现**，#5707 的 FM-E10 收口）───────────────────
+# 谓词 = 「本次变更集是否命中这条腿**判的对象**」。三件事必须一起成立（判据现取核对，见
+# tests/unit_ci_workflows/test_local_gate_matrix.py 的 C5/C9）：
+#   ① 谓词至少命中该模块目录本身；
+#   ② 该模块源码里逃到本模块之外的**仓内输入**必须在谓词内（C5 现取 `escaping_inputs`，未登记即红）；
+#   ③ 射程要能被判据读出（每条谓词里恰一条 `grep -E '<谓词>'`）。
+# ⚠️ 新增一处跨目录 import / 新增一处「测试读后端源码」⇒ C5 判红 ⇒ 把路径加进对应谓词
+#    （**不要**往 `trigger_face_uncovered_inputs` 加条目：那张台账只许缩短）。
+admin_api_face_paths() {
+  grep -E '^backend/admin-api/' || true
+}
+ai_agent_face_paths() {
+  grep -E '^backend/ai-agent-service/' || true
+}
+admin_web_face_paths() {
+  # ⚠️ 后 8 条是**现取**（判据 C5 的 escaping_inputs）的跨目录输入：admin-web 的**测试**直接读这些
+  #    后端源码做逐值比对（例：tests/unit/lib/craft-calc-glossary.test.ts 读 CraftCalcConfig*.java /
+  #    schema.sql / routing.py；craft-auto-features.test.ts 读 curtain_calc.py）⇒ 改了它们而
+  #    node_modules 缺，那些比对一条都不会跑 = 同一形态的静默绿。`migration-archive` 是**目录**形态，
+  #    故不写尾斜杠：它自身与它下面的文件都被命中。
+  grep -E '^(frontend/admin-web/|backend/ai-agent-service/app/(tools/curtain_calc|production/routing|vision/targets)\.py|backend/admin-api/src/main/(resources/db/(init/schema\.sql|migration-archive)|java/com/migao/admin/(entity/CraftCalcConfig|service/CraftCalcConfigService)\.java))' || true
+}
+worker_h5_face_paths() {
+  # frontend/shared 是本腿的跨目录输入（operation-display.mjs 被 render.mjs 与测试执行）。
+  grep -E '^(frontend/worker-h5/|frontend/shared/)' || true
+}
+# 命中判定与 cases_face_hit() / redproof_face_hit() / bmini_face_hit() **同款**：用变量收结果再判空，
+# **不要**写成 `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
+# 「命中」被读成「不命中」= 假绿。⚠️ 参数是**谓词函数名**（不是谓词本身）：四个谓词共用这一处判定。
+face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | "$1")"
+  [ -n "$hit" ]
+}
+bmini_leg() {
+  # 四件与 CI 两条腿**逐字同命令**（判据 = test_local_gate_matrix.py::test_local_leg_commands_match_ci，
+  # 现取 CI YAML 逐条比对 ⇒ 两侧漂移即红），顺序同 CI：先 h5（唯一用户可达形态），再 weapp。
+  # ⚠️ 用 `bash -c "cd …"` 而不是在函数里裸 `cd`：后者会改掉本脚本**后续检查**的 cwd（既有腿同款写法）。
+  bash -c "cd '$ROOT/frontend/bmini-app' \
+    && echo '▶ npx tsc --noEmit' && npx tsc --noEmit \
+    && echo '▶ npm test' && npm test \
+    && echo '▶ npm run build:h5' && npm run build:h5 \
+    && echo '▶ npm run build:weapp' && npm run build:weapp"
+}
+
 # ai-agent 测试选择（2026-09-14，issue #3680）：quick 与 full 共用**同一选择集**。
 # ⚠️ 禁止改回 glob 白名单（旧写法：`tests/unit tests/test_tools_*.py tests/test_graph_*.py
 #    tests/test_intent_router.py`）——那是**失败开放**的：当时 `tests/` 顶层 169 个测试文件，
@@ -506,11 +660,11 @@ echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/
 case "$MODE" in
   quick)
     echo "========== MIGAO 快速验证 =========="
-    report_env admin-api "admin-api 单测"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test -q"
-    report_env ai-agent "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
-    report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
-    report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
-    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
+    report_gated admin-api admin_api_face_paths "admin-api 单测"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test -q"
+    report_gated ai-agent ai_agent_face_paths "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
+    report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
+    report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_gated worker-h5-node-tests worker_h5_face_paths "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
@@ -518,26 +672,26 @@ case "$MODE" in
     ;;
   full)
     echo "========== MIGAO 全量验证 =========="
-    report_env admin-api "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
-    report_env ai-agent "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
-    report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
-    report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
-    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
+    report_gated admin-api admin_api_face_paths "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
+    report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
+    report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
+    report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_gated worker-h5-node-tests worker_h5_face_paths "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
     report "评测覆盖体检（B/C 两端）" bash -c "cd '$ROOT' && for p in xiaobu mibao; do python3 scripts/\${p}_coverage.py --check || exit 1; done"
     ;;
   frontend)
-    report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
-    report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
-    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
+    report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
+    report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_gated worker-h5-node-tests worker_h5_face_paths "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     ;;
   backend)
-    report_env admin-api "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
+    report_gated admin-api admin_api_face_paths "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
     ;;
   agent)
-    report_env ai-agent "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
+    report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     ;;
   gate)
     report "QA Growth Gate 预检"  gate_check
@@ -553,6 +707,13 @@ case "$MODE" in
       report "红证机具前提自检（前提能否成立）" redproof_preflight
     else
       echo "— 红证机具门禁**未跑**：本次变更集未命中红证面（机具 / 被守卫源码）—— 这不是「通过」（CI 的 ci workflow helper unit tests 对每个 PR 无条件跑同名守卫；命中判据 = redproof_face_paths()）"
+    fi
+    # bmini 腿（本单新增）：命中触发面才派发；未命中 ⇒ 控制台显式声明「未跑」（不许静默 ✅）。
+    # ⚠️ 缺依赖时**不跳过**：走 report_strict ⇒ ❌ + 可行动文案（fail-closed，见该函数注释）。
+    if bmini_face_hit; then
+      report_strict bmini-app "bmini-app 类型检查 + 单测 + 构建（h5 + weapp）" bmini_leg
+    else
+      echo "— bmini-app 腿**未跑**：本次变更集未命中它的触发面（frontend/bmini-app/** 及其跨目录输入）—— 这不是「通过」（CI 的两条 bmini 腿仍对每个 PR 跑；命中判据 = bmini_face_paths()）"
     fi
     ;;
   redproof)

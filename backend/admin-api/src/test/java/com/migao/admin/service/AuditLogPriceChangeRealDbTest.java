@@ -30,13 +30,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.Statement;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.migao.admin.time.BusinessClock;
 
 /**
  * issue #5388 真库判据：**改价审计读面**（`audit_logs.action_details` JSONB → 快照行）+ 让利订单读面。
@@ -231,8 +230,8 @@ class AuditLogPriceChangeRealDbTest {
 
     /** 「近期」窗口起点：与 `aggregateSnapshot` 同一算式（同 `SNAPSHOT_RECENT_WINDOW_DAYS`）。 */
     private static OffsetDateTime windowStart() {
-        return LocalDate.now(DailyBriefingService.CST).atStartOfDay()
-                .atOffset(ZoneOffset.ofHours(8))
+        BusinessClock clock = new BusinessClock();
+        return clock.startOfDay(clock.today())
                 .minusDays(DailyBriefingService.SNAPSHOT_RECENT_WINDOW_DAYS);
     }
 

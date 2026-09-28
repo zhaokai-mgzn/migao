@@ -31,6 +31,7 @@ GitHub 把台账 PR 的 `pull_request` run 放进审批队列（`conclusion=acti
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import io
 import json
 import re
@@ -103,8 +104,18 @@ def _mutant_ns(*replacements) -> dict:
     return ns
 
 
-def _run_cli(ns, argv, *, runs_rounds, tip=PUSH_SHA, approve_fails=False, keep_queued=False):
-    """桩掉 `_gh_api` / `approve_runs` / 时钟，跑一次 CLI（**绝不发真 POST**）。
+def _run_cli(ns, argv, *, runs_rounds, tip=PUSH_SHA, approve_fails=False, keep_queued=False,
+             presence=None):
+    """桩掉 `_gh_api` / `approve_runs` / **`branch_presence`** / 时钟，跑一次 CLI（**绝不发真 POST**）。
+
+    ⚠️ `branch_presence` **必须**桩掉（2026-09-27 实测的判据失效形态）：它的真实现是
+    `_git("ls-remote", "--heads", "origin", <branch>)` —— 一次**真子进程 + 真远端**读数
+    ⇒ 夹具不桩它时，判据的结论取决于**当下远端有没有台账分支**：
+      · 有   ⇒ `exists` ⇒ 走队列读取 ⇒ `::warning::` 那半边能过；
+      · 没有 ⇒ `absent` ⇒ #5649 的早退（`::notice::` + `return 0`）⇒ **静默改判另一条路** ⇒ 必红。
+    实测（纯 `origin/main` 检出、`git ls-remote --heads origin chore/flaky-ledger` 输出为空）：
+    该状态让 `test_reading_cli_is_actionable` 变成「同一份代码、不同时刻给出不同读数」。
+    ⇒ 本夹具**显式**桩掉这个事实，且**两个方向都断言**（`presence=` 传 `BRANCH_ABSENT` 即另一面）。
 
     `runs_rounds` = 每次「查 run 列表」依次返回的数组（用完之后**重复最后一轮**，模拟
     「队列一直没清空」/「GitHub 一直没把 run 标成 action_required」两种形态）。
@@ -113,6 +124,9 @@ def _run_cli(ns, argv, *, runs_rounds, tip=PUSH_SHA, approve_fails=False, keep_q
     返回 `(rc, stdout, stderr, 批准调用记录列表, 查询次数)`。
     """
     approved, rounds, clock = [], {"n": 0}, {"t": 0.0}
+    # `presence=None` ⇒ 默认「分支存在」；取值走 `ns`（**不许**在测试模块顶层引用 CLI 的常量：
+    # 那是另一个模块的命名空间，顶层引用会在收集期 NameError）。
+    presence = ns["BRANCH_EXISTS"] if presence is None else presence
 
     def fake_api(path):
         if "/branches/" in path:
@@ -135,12 +149,17 @@ def _run_cli(ns, argv, *, runs_rounds, tip=PUSH_SHA, approve_fails=False, keep_q
         clock["t"] += 1.0
         return clock["t"]
 
+    def fake_presence(branch=None):
+        # 只回一个**确定**的三态值：调用方再也不会穿透到真 `git ls-remote` + 真远端。
+        return presence
+
     # 只桩**存在**的键（修复前的实现里没有 `_monotonic` / `APPROVE_POLL_SECONDS` ——
     # 「把修复前的实现喂给本判据」是红证的一部分，桩不能因为缺键就崩）。
-    keys = ("_gh_api", "approve_runs", "APPROVE_POLL_SECONDS", "_monotonic")
+    keys = ("_gh_api", "approve_runs", "APPROVE_POLL_SECONDS", "_monotonic", "branch_presence")
     saved = {k: ns[k] for k in keys if k in ns}
     (ns["_gh_api"], ns["approve_runs"], ns["APPROVE_POLL_SECONDS"],
-     ns["_monotonic"]) = fake_api, fake_approve, 0.0, fake_clock
+     ns["_monotonic"], ns["branch_presence"]) = (fake_api, fake_approve, 0.0, fake_clock,
+                                                 fake_presence)
     out, err, old = io.StringIO(), io.StringIO(), (sys.stdout, sys.stderr)
     sys.stdout, sys.stderr = out, err
     try:
@@ -272,12 +291,37 @@ def reading_cli_violations(ns) -> list:
         bad.append(f"读数没报出面外的具体 run（清单不可归因）：{out!r}")
     if "gh api -X POST" not in out:
         bad.append(f"读数没带**唯一入口**（人工出口命令）：{out!r}")
+    if "不存在" in out and "::warning::" not in out:
+        # 夹具桩的是 `exists`（分支存在）⇒ 走到「分支不存在」那条早退就说明**判定顺序与桩不符**
+        # （读数指向的对象已经换了，而判据还在按旧对象断言）。
+        bad.append(f"桩的是「分支存在」而读数走了「分支不存在」那条早退（判定顺序与桩不符）：{out!r}")
     if "故意不批" not in out:
         bad.append(f"读数没把「按设计不批」这一类显式标出：{out!r}")
     # tip 取不到 ⇒ 三态退出码 `3`（不许把「无法判定」读成「没有待批准 run」）
     rc2, out2, err2, _, _ = _run_cli(ns, argv, runs_rounds=[_frozen_queue()], tip=None)
     if rc2 != 3:
         bad.append(f"tip 取不到时应退 3（无法判定），实际 {rc2}（stdout={out2!r}）")
+    return bad
+
+
+def reading_cli_branch_absent_violations(ns) -> list:
+    """**判据③b（#5649 口径）**：分支**确定不存在** ⇒ `::notice::` + 退 0（「确定无内容 ≠ 未跑」）。
+
+    ⚠️ 这一面**必须**有：只断言「存在 + 有待批准 run ⇒ 告警」这一半时，另一半（absent 早退）
+    会被静默当成同一条路 —— 2026-09-27 的实测红就是这一形态（判据还在跑、名字没变，
+    但读数取决于当下远端状态）。
+    """
+    bad = []
+    argv = ["approval-queue", "--repo", "o/r", "--head-branch", ns["LEDGER_BRANCH"],
+            "--min-age-minutes", "0"]
+    rc, out, err, _, _ = _run_cli(ns, argv, runs_rounds=[_frozen_queue()],
+                                  presence=ns["BRANCH_ABSENT"])
+    if rc != 0:
+        bad.append(f"分支**确定不存在**时应退 0（#5649 口径），实际 {rc}（stderr={err!r}）")
+    if "::notice::" not in out:
+        bad.append(f"分支确定不存在时必须留下**可读 notice**（不许静默）：{out!r}")
+    if "::warning::" in out:
+        bad.append(f"分支确定不存在时不该报告警（那是「有待批准 run」那一面）：{out!r}")
     return bad
 
 
@@ -341,6 +385,9 @@ class TestApprovalQueueFix:
     def test_reading_cli_is_actionable(self):
         assert reading_cli_violations(vars(FL)) == []
 
+    def test_reading_cli_distinguishes_an_absent_branch(self):
+        assert reading_cli_branch_absent_violations(vars(FL)) == []
+
     def test_workflows_carry_the_retry_and_the_reading(self):
         assert workflow_violations(TRIAGE_SRC, RECONCILE_SRC) == []
 
@@ -355,6 +402,64 @@ class TestApprovalQueueFix:
         assert approved == [], "缺省无窗口时不许偷偷重试（窗口是显式的）"
         assert queries == 1, f"缺省无窗口应只查一轮，实际 {queries} 轮"
         assert json.loads(out_json.read_text(encoding="utf-8")) == []
+
+
+def fixture_stub_problems(cli_src: str, fixture_code: str, file_src: str) -> list:
+    """**纯函数**（红证直接喂变异文本，不碰磁盘）：夹具桩得够不够。
+
+    形态 = 「判据夹具没跟上它要断言的对象」：CLI 新增了一个**运行期事实**（分支存在性），
+    而夹具只桩了 `_gh_api` / `approve_runs` / 时钟 ⇒ 那个新前置穿透到真远端，
+    判据的结论随之取决于**当下远端状态**（同一份代码不同时刻不同结论），
+    而它**仍然在跑、名字没变** —— 读数指向的对象已经不是它声称的那条路。
+    """
+    bad: list[str] = []
+    if "presence = branch_presence(" not in cli_src:
+        bad.append("CLI 里找不到「分支存在性」这个运行期事实的读数 —— 形态变了就同步本判据（否则本条假绿）")
+    if not re.search(r'keys = \([^)]*"branch_presence"', fixture_code):
+        bad.append(
+            "夹具的**桩表**（`keys` 元组）里没有 `branch_presence` ⇒ 判据读数穿透到真 `git ls-remote` + 真远端"
+            "（2026-09-27 实测：台账分支不存在 ⇒ 同一份代码给出不同结论）"
+        )
+    for face, why in (("reading_cli_violations", "存在 + 有待批准 run ⇒ 告警 + 人工出口命令"),
+                      ("reading_cli_branch_absent_violations", "确定不存在 ⇒ notice + rc=0（#5649 口径）")):
+        if f"def {face}(" not in file_src:
+            bad.append(f"缺少「{why}」那一面：{face}()")
+        elif f"{face}(vars(FL))" not in file_src:
+            bad.append(f"{face}() 没有被测试调用（写而不断言 = 空断言）")
+    return bad
+
+
+class TestFixtureStubsTheRuntimeFacts:
+    """**类级固化**：夹具必须桩掉它断言对象所依赖的**运行期事实**（远端状态、时钟、网络……）。
+
+    ⚠️ 边界（如实登记）：本条只机械保证**这一个夹具**（`_run_cli`）对**这一个事实**
+    （`branch_presence`）桩了、且两个方向都有断言 —— 「所有夹具都桩掉了所有运行期事实」
+    判不了（那需要枚举每个夹具的全部外部依赖，本仓不做文本层的一刀切）。
+    """
+
+    def test_fixture_stubs_every_runtime_fact_the_cli_reads(self):
+        problems = fixture_stub_problems(
+            SCRIPT.read_text(encoding="utf-8"),
+            # ⚠️ 只判**代码**：夹具 docstring 里就写着 `branch_presence`（本条自己的说明）
+            #    ⇒ 不剥会把「说明文字」读成「已桩掉」（本仓已踩三次的形态）。
+            inspect.getsource(_run_cli).replace(_run_cli.__doc__ or "", ""),
+            Path(__file__).read_text(encoding="utf-8"),
+        )
+        assert problems == [], "夹具桩面不合格：\n" + "\n".join(f"  · {p}" for p in problems)
+
+    def test_removing_the_branch_presence_stub_is_detected(self):
+        """判别力自证（**内存构造**）：把 `branch_presence` 从夹具的桩表里删掉 ⇒ 必须红。"""
+        fixture_code = inspect.getsource(_run_cli).replace(_run_cli.__doc__ or "", "")
+        mutant = fixture_code.replace(', "branch_presence"', "")
+        stub_entry = re.search(r'keys = \([^)]*"branch_presence"', fixture_code)
+        assert stub_entry and not re.search(r'keys = \([^)]*"branch_presence"', mutant), (
+            "变异未生效（自证失败）：桩表里的那条登记没被删掉"
+        )
+        problems = fixture_stub_problems(SCRIPT.read_text(encoding="utf-8"), mutant,
+                                        Path(__file__).read_text(encoding="utf-8"))
+        assert any("没有 `branch_presence`" in p for p in problems), (
+            f"删掉桩却没红 ⇒ 本条是空断言：{problems}"
+        )
 
 
 class TestEveryJudgmentCanGoRed:

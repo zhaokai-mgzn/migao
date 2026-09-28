@@ -264,11 +264,12 @@ class ProductionSeedTemplateServiceTest {
                     .map(com.migao.admin.entity.ProductionOperationPosition::getPosition).toList())
                     .as("`打包` 的 4 格一格不少（交付工序绝不能用「删格」处理，issue #4676 ⑦）")
                     .containsExactlyInAnyOrder("布帘", "布料", "纱帘", "帘头");
-            // 规则表：工艺变体 10 + 特殊选项 16 + 加工项触发 3（issue #4577）+ 计件系数档 1 = 30
-            // （逐条按该租户工序库过滤）
+            // 规则表：工艺变体 **7**（原 10 条里 `craft='四爪钩'` 的 3 条随 issue #4365 退场 ——
+            // 四爪钩是加工项/配件、不是工艺；存量库由 V135__retire_craft_sig_hook.sql 软删）
+            // + 特殊选项 16 + 加工项触发 3（issue #4577）+ 计件系数档 1 = **27**（逐条按该租户工序库过滤）
             ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
                     ArgumentCaptor.forClass(com.migao.admin.entity.ProductionRouteRule.class);
-            verify(productionRouteRuleMapper, times(30)).insert(ruleCaptor.capture());
+            verify(productionRouteRuleMapper, times(27)).insert(ruleCaptor.capture());
             // 加工项触发规则逐值（与 V84 迁移 / backend/admin-api/src/main/resources/db/init/schema.sql 三源同值；`拼接`/`双眼皮` 不建行）
             assertThat(ruleCaptor.getAllValues().stream()
                     .filter(r -> "processing_item".equals(r.getTriggerKind()))

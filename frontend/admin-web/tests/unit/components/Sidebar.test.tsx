@@ -507,37 +507,44 @@ describe('Sidebar', () => {
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       expect(screen.queryByText('岗位权限')).not.toBeInTheDocument()
       expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
-      // #5271: 生产管理 / 仓储与物料整组隐藏（无 processing:manage / inbound:view）
+      // 生产管理整组隐藏（四项都要 production:view / processing:view，本组权限一个都不持）
       expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
-      expect(screen.queryByText('仓储与物料')).not.toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
+      // 🔴 issue #5699（P4）：省料看板节点码 = 该页读码 `product:list`（不再是 processing:manage）
+      // ⇒ 本组权限含它 ⇒ 「仓储与物料」只剩省料看板一项（不再是「整组隐藏」）。
+      expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+      expandGroups('inventory-center')
+      expect(screen.getByText('省料看板')).toBeInTheDocument()
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 可见项**精确**清单：经营看板（无码）+ 商品列表 + 订单列表 + 通知中心
-      expect(menuKeys()).toEqual(['dashboard', 'products', 'orders', 'notifications'])
+      // 可见项**精确**清单：经营看板 + 商品列表 + 订单列表 + 省料看板 + 通知中心
+      expect(menuKeys()).toEqual(
+        ['dashboard', 'products', 'orders', 'production-saving-board', 'notifications'])
       // UI-005/UI-011: 无 agent:session / knowledge:view → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
 
-    it('should show only dashboard when user has no permissions', () => {
+    it('零权限 ⇒ 只剩「通知中心」（#5699 P4：经营看板也按 dashboard:view 门控，不再是「无码全员可见」）', () => {
       mockUseAuthStore.mockReturnValue({
         user: { id: '3', username: 'newbie', name: '新人', permissions: [], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('工作台')).toBeInTheDocument()
-      expect(screen.getByText('经营看板')).toBeInTheDocument()
-      // 分组标题应该都不在（除工作台外六组全空 ⇒ 整组剔除）
-      for (const name of ['商品与加工项', '交易管理', '订单管理', '智能客服', '生产管理', '仓储与物料', '组织管理', '客户管理']) {
+      // 🔴 #5699 P4：经营看板节点码 = `dashboard:view` ⇒ 零权限时**工作台整组不渲染**
+      //（此前它无码 ⇒ 全员可见，而页面/路由守卫都要码 = 「看得见、点进去 403」）。
+      expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+      expect(screen.queryByText('经营看板')).not.toBeInTheDocument()
+      // 分组标题应该都不在（含工作台在内，七组全空 ⇒ 整组剔除）
+      for (const name of ['工作台', '商品与加工项', '交易管理', '订单管理', '智能客服', '生产管理', '仓储与物料', '组织管理', '客户管理']) {
         expect(screen.queryByText(name)).not.toBeInTheDocument()
       }
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
-      // 零权限也可见：通知中心（无权限码，全员）；经营看板同理
+      // 零权限唯一可见项：通知中心（**两侧都无码**，见 RBAC 的 FAIL_OPEN_PAGES 台账）
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
+      expect(menuKeys()).toEqual(['notifications'])
       // 零权限不可见：知识库（需 knowledge:view —— issue #5246 起节点用读码）、每日简报（需 dashboard:view + 开关）
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
@@ -554,7 +561,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
       // 组内**只有**在线接待（知识库要 knowledge:view —— issue #5246 起节点用读码）
-      expect(menuKeys()).toEqual(['dashboard', 'human-sessions', 'notifications'])
+      expect(menuKeys()).toEqual(['human-sessions', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
     })
 
     it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
@@ -569,7 +576,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['dashboard', 'knowledge', 'notifications'])
+      expect(menuKeys()).toEqual(['knowledge', 'notifications'])   // #5699 P4：同上
     })
 
     it('仅 knowledge:manage（**写**码、无读码）→ 知识库入口隐藏（issue #5246 的读写分权口径）', () => {
@@ -582,8 +589,8 @@ describe('Sidebar', () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      // 组内两项都不可见 ⇒ 智能客服**整组剔除**（空组不渲染）
-      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
+      // 组内两项都不可见 ⇒ 智能客服**整组剔除**（空组不渲染）；#5699 P4 后经营看板也需 dashboard:view
+      expect(menuKeys()).toEqual(['notifications'])
     })
 
     it('售后工单走**读**码 after_sales:view；只持写码 order:refund ⇒ 入口隐藏（issue #5246）', () => {
@@ -596,7 +603,7 @@ describe('Sidebar', () => {
       expandGroups('trade-center')
       expect(screen.getByText('售后工单')).toBeInTheDocument()
       expect(screen.queryByText('订单列表')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['dashboard', 'after-sales', 'notifications'])
+      expect(menuKeys()).toEqual(['after-sales', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
       unmount()
 
       mockUseAuthStore.mockReturnValue({
@@ -604,9 +611,9 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // 组内无可见项 ⇒ 交易管理整组剔除
+      // 组内无可见项 ⇒ 交易管理整组剔除；#5699 P4 后经营看板也需 dashboard:view
       expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['dashboard', 'notifications'])
+      expect(menuKeys()).toEqual(['notifications'])
     })
 
     it('两个子菜单均不可见时「智能客服」大类整组隐藏（#3094）', () => {
@@ -658,7 +665,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('入库单')).toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       expect(screen.queryByText('省料看板')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['dashboard', 'inbound-orders', 'notifications'])
+      expect(menuKeys()).toEqual(['inbound-orders', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
       unmount()
 
       // ② 只有 processing:manage ⇒ 入库单**不在**（独立门禁，不因同组而放行），余料台账/省料看板在
@@ -666,19 +673,18 @@ describe('Sidebar', () => {
         user: { id: '9', username: 'op', name: '生产', permissions: ['processing:manage'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expandGroups('inventory-center', 'production-center')
+      // ⚠️ 只展开仓储组：生产组在本组权限下**整组被剔除**（没有 toggle 可点）——
+      // 这本身就是 #5699 P4 后的读数（生产组四项分别要 production:view / processing:view）。
+      expandGroups('inventory-center')
       expect(screen.getByText('余料台账')).toBeInTheDocument()
-      expect(screen.getByText('省料看板')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
-      // issue #5291：生产看板/工艺配置/计件工资 改挂读码 production:view ⇒
-      // 只持 processing:manage 时它们**不在**（生产组只剩智能派单），生产组与仓储组仍各自成立。
-      expect(menuKeys()).toEqual([
-        'dashboard',
-        'production-pool',
-        'production-remnants',
-        'production-saving-board',
-        'notifications',
-      ])
+      // issue #5291：生产看板/工艺配置/计件工资 改挂读码 production:view ⇒ 只持 processing:manage 时不在；
+      // 🔴 issue #5699（P4）：省料看板节点码 = 该页读码 `product:list`，**智能派单节点码 = processing:view**
+      // ⇒ 只持 processing:manage 时两者都**不在**（仓储组只剩余料台账、生产组整组剔除）。
+      expect(screen.queryByText('省料看板')).not.toBeInTheDocument()
+      expect(screen.queryByText('智能派单')).not.toBeInTheDocument()
+      expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
+      expect(menuKeys()).toEqual(['production-remnants', 'notifications'])
     })
   })
 

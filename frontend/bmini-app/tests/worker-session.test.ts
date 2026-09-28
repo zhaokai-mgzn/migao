@@ -14,7 +14,7 @@
 import Taro from '@tarojs/taro'
 import {
   CLIENT_REQUEST_ID_HEADER,
-  reportOperation,
+  completeByScan,
 } from '../src/services/productionService'
 import { workerLogin, workerLogout, switchWorker } from '../src/services/workerService'
 import {
@@ -51,10 +51,17 @@ describe('工人登录态（issue #4733）', () => {
   it('报工请求体**不含** worker_id/worker_name（身份由服务端从 session 解）', async () => {
     ;(Taro.request as jest.Mock).mockResolvedValue(ok())
 
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD, 'report-key-1')
+    await completeByScan('part-token-bu-1', 'op2', 'report-key-1', PAYLOAD)
 
     const request = lastRequest()
-    expect(request.data).toEqual({ qty: 11, qualified_qty: 11, work_type: 'normal' })
+    // 唯一写入口的 body：凭证 + 工序 + 数量三键（issue #5647 G10）
+    expect(request.data).toEqual({
+      token: 'part-token-bu-1',
+      operation_id: 'op2',
+      qty: 11,
+      qualified_qty: 11,
+      work_type: 'normal',
+    })
     expect(request.data).not.toHaveProperty('worker_id')
     expect(request.data).not.toHaveProperty('worker_name')
   })
@@ -62,7 +69,7 @@ describe('工人登录态（issue #4733）', () => {
   it('报工走**工人路径** /api/worker/**（工人身份到不了 /api/admin/**）', async () => {
     ;(Taro.request as jest.Mock).mockResolvedValue(ok())
 
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD, 'report-key-1')
+    await completeByScan('part-token-bu-1', 'op2', 'report-key-1', PAYLOAD)
 
     const url = String(lastRequest().url)
     expect(url).toContain('/api/worker/production/')
@@ -75,7 +82,7 @@ describe('工人登录态（issue #4733）', () => {
     ;(Taro.request as jest.Mock).mockResolvedValue(ok())
     Taro.setStorageSync(STORAGE_KEYS.WORKER_SESSION, 'sess-abc')
 
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD, 'report-key-1')
+    await completeByScan('part-token-bu-1', 'op2', 'report-key-1', PAYLOAD)
 
     const header = lastRequest().header
     expect(header[WORKER_SESSION_HEADER]).toBe('sess-abc')
@@ -85,7 +92,7 @@ describe('工人登录态（issue #4733）', () => {
   it('未登录工人 ⇒ **不带**该头（由服务端 401 显式拒绝；前端不补默认工人）', async () => {
     ;(Taro.request as jest.Mock).mockResolvedValue(ok())
 
-    await reportOperation(ORDER_ID, 'op2', PAYLOAD, 'report-key-1')
+    await completeByScan('part-token-bu-1', 'op2', 'report-key-1', PAYLOAD)
 
     expect(lastRequest().header[WORKER_SESSION_HEADER]).toBeUndefined()
   })

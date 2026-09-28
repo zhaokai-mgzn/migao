@@ -8,9 +8,24 @@
 |---|---|---|
 | `product` | 色卡 / 布料实拍 / 供应商图 | 名称 / 颜色 / 材质 / 工艺 / 门幅 / 售价 |
 | `order` | 手写单 / 微信聊天截图 / 旧系统单据 | 客户名 / 电话 / 地址 / 商品明细 / 数量 / 帘宽 / 帘高 |
+| `inbound`（issue #5052 P1） | **上游标签**（布卷 / 包装上原有的、带 SKU 信息的标签） | 品名 / 色号 / 米数 / 条码原文 |
 
 **风险不对称**：订单侧客户信息错 ⇒ **货发错人** ⇒ 「不确定的宁可不填」的阈值更严
 （见 `TARGET_POLICY` 的 `min_confidence`，以及 `recognizer.py` 对手机号形状与尺寸的硬校验）。
+
+## 入库侧（`inbound`）为什么是**第三个** target 而不是复用 `product`（issue #5052 P1）
+
+① **图片形态不同** —— 上游标签是一张**印刷标签**（品名 + 色号 + 米数 + 条码），
+不是色卡 / 布料实拍；② **风险不同** —— 这一格的读数经工人确认后**直接进库存**
+（`InboundOrderService.post` 加 SKU 库存 + 落 `stock_ledger_entries`），
+米数错 = 账实不符 ⇒ 取**严**档（0.85，与订单侧同档，不跟商品侧的 0.60）；
+③ **下游判据不同** —— 识别出的**品名 + 色号必须命中既有 `product_skus`**
+（`docs/design/inbound-photo-and-label.md` §6.3 的 SKU 匹配门禁：零命中 ⇒ 拒绝入库、
+**不自动建品**），命中判定在 admin-api 侧**读库**完成，识别侧只负责「抄清楚」。
+
+⚠️ **本 target 不带推导链输入**（不是订单那种「驱动算料推导的结构化数值」）⇒
+按既有类级元守卫登记进 `TARGETS_WITHOUT_DERIVATION` 台账
+（`frontend/admin-web/tests/unit/lib/image-recognize-derivation-equivalence.test.ts`）。
 
 ## 订单侧的字段为什么是「帘宽 / 帘高」而不是一个自由文本「规格」（issue #5349）
 
@@ -67,6 +82,68 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
             "与帘宽同一条：**方向**不明 ⇒ 留空（宁可不填）",
         ),
     ),
+    # 入库侧（issue #5052 P1）：上游标签 → 工人确认 → 库存。⚠️ 字段键**不与**前两个 target 重叠
+    # （「一套字段两个页面填」的机械判据见 tests/test_vision/test_targets.py）。
+    "inbound": (
+        TargetField("product_name", "品名", "标签上的商品名称；只抄图上写明的，不推算、不联想"),
+        TargetField("color_name", "色号", "色号 + 颜色名（如「01 米白」）；一位看不清就留空"),
+        TargetField("quantity_meters", "米数",
+                    "标签上的米数（只抄数字，不要单位）；布卷标签常写「60.5」这种 1 位小数。"
+                    "图上没有米数 ⇒ 留空"),
+        TargetField("barcode", "条码原文",
+                    "标签上条码 / 二维码**旁边的人可读数字**，一字不差地抄；"
+                    "只有图形没有可读数字 ⇒ 留空（**不要**猜条码内容）"),
+    ),
+    # ── 发货侧（issue #5648）────────────────────────────────────────────────────
+    # 用户 2026-09-26 裁定：拍照识别的是「**订单行 / 商品标签上的文字**」（不是扫箱唛上的码）
+    # ⇒ 需要有自己字段面的第三个 target，而**不是**复用 `order`（那种图的客户名/电话/地址
+    # 根本不在上面，整格留空只是噪声；两张图的形态与风险都不同）。
+    #
+    # 🔴 字段键**逐字取自既有列名**（`orders.order_no` / `order_items.product_name` /
+    # `order_items.quantity` / `order_items.width` / `order_items.height`）——
+    # 自造字段名 = 第二套口径（同一个「数量」在识别面叫 qty、在库里叫 quantity，
+    # 迟早有人按名字对齐错）。
+    "shipment": (
+        TargetField("order_no", "订单号", "订单号（如 ORD-20260926-0001），一字不差地抄；看不清就留空"),
+        TargetField("product_name", "商品名称", "订单行 / 商品标签上的商品名，一字不差地抄"),
+        TargetField(
+            "quantity", "数量",
+            "这一行**实际发出**的数量（米 / 套 / 件，保留图上的单位写法）；"
+            "只抄图上写明的数字，模糊/涂改/看不清 ⇒ 留空",
+        ),
+        TargetField(
+            "width", "宽",
+            "成品宽 / 窗宽（米）；**只抄图上写明「宽」的那个数字**（带单位也行）。"
+            "只有 `2.8×2.4` 这种**没标方向**的写法 ⇒ 本格留空，并在 reason 里说明「方向不明、不猜顺序」",
+        ),
+        TargetField(
+            "height", "高",
+            "成品高 / 窗高（米）；**只抄图上写明「高」的那个数字**。与宽同一条：**方向**不明 ⇒ 留空",
+        ),
+    ),
+}
+
+#: **跨 target 共享的字段键**（登记表，issue #5648）。
+#:
+#: 用户 2026-09-24 裁定「不要做成一套字段两个页面填」⇒ 那条裁定的机械判据是「两个 target
+#: 的字段表零交集」。但 `shipment` 与 `order` 在 `quantity` 上**必然同名** ——
+#: 因为「数量」在库里就叫 `order_items.quantity`，而本单要求字段面与订单行**同名**
+#: （不许自造第二套口径）。两者是**同一列名、两个不同的事实**：`order.quantity` = 下单数量，
+#: `shipment.quantity` = 实发数量（「下单 12 米、实发 10 米」的差额正是本单要能核出来的东西）。
+#:
+#: ⇒ 判据改为「**未登记的共享键即红**」：共享必须逐条登记（这里），登记项**只许缩短**
+#: （哪天某条不再共享了就必须删掉本行）。这样「一套字段两个页面填」仍然进不来
+#: （把 shipment 整份字段表改成与 order 逐字相同 ⇒ 五格全部未登记 ⇒ 红）。
+SHARED_FIELD_KEYS: Dict[str, Tuple[str, ...]] = {
+    "quantity": ("order", "shipment"),
+    # 🔴 `inbound`（#5052 P1）与 `shipment`（#5648）**各自**都不与任何 target 共享键，
+    # 但两者合并后 `product_name` 相交 —— 这是**合并态才出现的新交互**（两个分支各自绿、
+    # 合起来被本判据抓到，实测 `AssertionError: [('inbound','shipment','product_name')]`）。
+    # 与 `quantity` 同族：**同一列名、两个不同的事实** ——
+    # `inbound.product_name` = 上游布卷标签上的品名（收货对象），
+    # `shipment.product_name` = 订单行 / 商品标签上的商品名（发货对象）。
+    # 两者都逐字取自既有列名（`order_items.product_name` / 商品名），**不许自造第二套口径**。
+    "product_name": ("inbound", "shipment"),
 }
 
 #: 「**驱动下游推导链的原始输入**」的登记表（issue #5349）—— 识别只产出推导的**输入**。
@@ -91,15 +168,24 @@ DERIVATION_INPUT_KEYS: Dict[str, Tuple[str, ...]] = {
 #
 # `min_confidence` = **采纳下限**：低于它一律**留空 + 给理由**（错填比留空贵得多）。
 # 订单侧 0.85 严于商品侧 0.60 —— 同一个 0.70 的置信度，商品留、订单弃。
+# 入库侧同样取 0.85（issue #5052 P1）：这一格经工人确认后**直接进库存 + 落台账**，
+# 米数抄错就是账实不符 ⇒ 与订单侧同档严，不跟商品侧的 0.60。
 TARGET_POLICY: Dict[str, Dict[str, float]] = {
     "product": {"min_confidence": 0.60},
     "order": {"min_confidence": 0.85},
+    # 发货侧 0.90 **严于**订单侧：订单侧认错 ⇒ 客户信息错（货发错人）；
+    # 发货侧认错 ⇒ **数量/规格错**（少发、多发、发错规格），而那是已经出了车间的既成事实
+    # —— 追回来比改一张单贵得多。⇒ 宁可留空让工人手输。
+    "shipment": {"min_confidence": 0.90},
+    "inbound": {"min_confidence": 0.85},
 }
 
 # 人类可读的「哪一侧」——进留空理由，让商家看得懂为什么这格没填。
 TARGET_SIDE_LABEL: Dict[str, str] = {
     "product": "商品侧",
     "order": "订单侧",
+    "shipment": "发货侧",
+    "inbound": "入库侧",
 }
 
 

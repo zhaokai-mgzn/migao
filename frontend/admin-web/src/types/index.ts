@@ -53,6 +53,12 @@ export interface User {
   mustChangePassword?: boolean
   /** 身份类型：employee=员工 / admin=企业管理员 / super_admin=平台超管（#5485） */
   identityType?: string
+  /**
+   * 能力位（issue #5642 功能⑤）：能否唤出米宝 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
+   * 🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位
+   * （⇒ 改一处即小程序端与 admin-web 两端同步）。`false` ⇒ 必须给「需要管理员授权」+ 可行动引导。
+   */
+  capabilities?: { mibaoChat?: boolean }
 }
 
 // 菜单项类型
@@ -686,6 +692,15 @@ export interface ProcessingOrderItem {
   formulaMeters?: number
   plannedMeters?: number
   savedMeters?: number
+  /**
+   * **部位备注**（issue #5685）：商家在下单页写的「这个数字怎么来的」（算料依据的人工说明，
+   * 例：`公式--48个折`）。
+   *
+   * 来源 = 快照行键 `remark`，即下单时 `order_items.processing_info.remark` 的**逐字透传**
+   * （写侧单点构造 = `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` 的
+   * `buildLineProcessingInfo`）。存量加工单 / 商家没填 ⇒ **缺键** ⇒
+   * `ProcessingOrderBlock` 按「缺值不渲染」处理（不出现空的备注行）。
+   */
   remark?: string
 }
 
@@ -955,6 +970,49 @@ export interface PieceworkSummary {
  * （后者会被任何更新污染 ⇒ 会静默给出错数，设计 §6.1 逐字点名）。`threshold_source` 恒为
  * `default`（S3 全局兜底）—— **不得**在前端把它渲染成「业务标准工时」。
  */
+/**
+ * 精裁输出清单的一行（issue #5693）—— 给裁床的「**裁多长（米）× 几片**」。
+ *
+ * 服务端唯一实现在后端 `ProcessingSetReadService`，与工人端扫码详情**同一份**
+ * （同一实现 ⇒ 两处读面逐字段一致）。🔴 九键**恒在**：算不出来时
+ * `fabric_meters` / `panel_count` / `panel_length_m` 一律 `null`（服务端**不用 0 / 1 冒充**），
+ * 并由 `missing_reason` 指名缺的是什么 ⇒ 前端按「显式留空」渲染，不造值。
+ */
+export interface CutPlanRow {
+  order_item_id: string
+  /** 部位（布帘 / 纱帘 / 帘头 / 布料） */
+  position_kind?: string | null
+  /** 部位名 / 货号（商品名） */
+  position_name?: string | null
+  /** 组件（明细行角色：主布 / 配布边 / 纱） */
+  component?: string | null
+  /** 用料（米）—— 唯一来源 = 「精裁」工序实例的 qty（且 qty_source = fabric_meters） */
+  fabric_meters?: number | null
+  /** 几片（定高买宽 = 1 片整窗；定宽买高 = 算料输出的 panels） */
+  panel_count?: number | null
+  /** 裁多长（米 / 片） */
+  panel_length_m?: number | null
+  /** 部位级备注（与工序明细的 `remark` 同源） */
+  remark?: string | null
+  /** 缺值原因（`null` = 齐全）—— 算不出来时才非空 */
+  missing_reason?: string | null
+}
+
+/** 加工套件只读行（后端 issue #5247 的读面；#5693 起带精裁输出清单）。 */
+export interface ProcessingOrderSetRow {
+  set_id: string
+  set_no: string
+  set_index?: number | null
+  processing_order_no?: string | null
+  order_no?: string | null
+  completed?: boolean
+  total_operations?: number
+  done_operations?: number
+  progress_percent?: number
+  /** 精裁输出清单（issue #5693）：键恒在；空数组 = 本套一个部位都算不出 */
+  cut_plan?: CutPlanRow[]
+}
+
 export interface StuckPointsReport {
   /** 判定模式：`A`（A 模式只查「没开工」那一种） */
   mode?: string
@@ -2517,6 +2575,27 @@ export interface Employee {
   employeeUsername?: string
   /** 该员工当前是否处于「首登未改密」状态（#5485）：列表据此提示需重新设密码 */
   mustChangePassword?: boolean
+}
+
+/**
+ * 工人档案（issue #4869）：复用 `users` 表（`worker_no` 非空 + `role=worker`），
+ * **不是**员工 —— 用工号 + PIN 登录工人端扫码报工，零菜单权限、不进管理后台。
+ */
+export interface WorkerProfile {
+  id: string
+  /** 工号（租户内唯一；工人登录时输的就是它） */
+  workerNo: string
+  name: string
+  role: string
+  status: EmployeeStatus
+  createdAt?: string
+}
+
+/** 建工人档案的表单（PIN 由服务端 BCrypt 编码后落 `users.password_hash`） */
+export interface WorkerFormData {
+  workerNo: string
+  name: string
+  pin: string
 }
 
 // 员工列表查询参数

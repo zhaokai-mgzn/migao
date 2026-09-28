@@ -3,6 +3,9 @@ import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
+import { visibleAdminSurfaces } from '../../../utils/adminPermission'
+import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+import { INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
 
 /**
@@ -11,9 +14,15 @@ import './index.scss'
  * 员工信息（昵称/角色/租户）+ 快捷入口 + 退出登录。
  * 与 C 端消费者 profile 不同：不展示订单/售后/手机号绑定（B 端员工管理他人的订单，
  * 个人消费数据无意义），聚焦员工身份与安全退出。
+ *
+ * issue #5747：工人面**三页**都要从这里可达 —— 此前只有「扫码报工」，拍照入库与补打
+ * 入库标签在 `/b/` 内**零入口**（只在 `/w/` 报工页页头，见 src/utils/pageEntries.ts）。
  */
 export default function ProfilePage() {
   const { user, isLoggedIn, logout } = useAuthStore()
+  // 服务端下发的权限集合（`GET /api/auth/me`）；`null` = 未知 ⇒ 入口照显（fail-open）
+  const permissions = useAdminPermissions()
+  const adminSurfaces = visibleAdminSurfaces(permissions)
 
   const handleAbout = () => {
     Taro.showModal({
@@ -54,6 +63,16 @@ export default function ProfilePage() {
   /** 工人扫码报工入口（issue #3997，M4-G-3） */
   const handleProduction = () => {
     Taro.navigateTo({ url: '/pages/production/index/index' })
+  }
+
+  /** 拍照入库入口（issue #5747；未登录工人身份时由该页自己引导去工号 + PIN 登录） */
+  const handleInbound = () => {
+    Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })
+  }
+
+  /** 补打入库标签入口（issue #5747；同上，标签不在手边时不必先扫洗水码） */
+  const handleReprint = () => {
+    Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })
   }
 
   // ========== 未登录 ==========
@@ -101,6 +120,37 @@ export default function ProfilePage() {
           <Text className='menu-item__text'>扫码报工</Text>
           <Text className='menu-item__arrow'>›</Text>
         </View>
+
+        {/* ── 工人面另外两页（issue #5747）──
+            拍照入库 / 补打入库标签此前只在 `/w/` 报工页页头可达，站在 `/b/` 里的人
+            一步也走不到（用户 2026-09-28 反馈）。两页自身会按身份分流：
+            未登录工人 ⇒ 显式引导去工号 + PIN 登录，登录后回原页继续。 */}
+        <View className='menu-item' onClick={handleInbound}>
+          <Text className='menu-item__text'>拍照入库</Text>
+          <Text className='menu-item__arrow'>›</Text>
+        </View>
+        <View className='menu-item' onClick={handleReprint}>
+          <Text className='menu-item__text'>补打入库标签</Text>
+          <Text className='menu-item__arrow'>›</Text>
+        </View>
+
+        {/* ── 管理面 4 项（issue #5654）──
+            管理员离店后仍要能办的事：排产/派单 · 入库过账 · 售后处理 · 计件工资报表。
+            🔴 可见性 = 「能读这一页」的**端点码**（`src/utils/adminPermission.ts` 台账），
+            权限集合来自服务端 `GET /api/auth/me`；**集合未知 ⇒ 照显**（fail-open：
+            判定权威在服务端 403 + 显式文案，静默隐藏入口是 #5642 明令禁止的形态）。 */}
+        {adminSurfaces.map((surface) => (
+          <View
+            key={surface.key}
+            className='menu-item'
+            data-testid={`profile-admin-${surface.key}`}
+            onClick={() => Taro.navigateTo({ url: surface.route })}
+          >
+            <Text className='menu-item__text'>{surface.label}</Text>
+            <Text className='menu-item__arrow'>›</Text>
+          </View>
+        ))}
+
         <View className='menu-item' onClick={handleAbout}>
           <Text className='menu-item__text'>关于我们</Text>
           <Text className='menu-item__arrow'>›</Text>

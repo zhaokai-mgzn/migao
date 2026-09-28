@@ -1,17 +1,22 @@
+// case_ids: BM-028
 /**
- * 快捷操作组件测试
+ * B 端「问米宝」快捷入口组件测试（issue #5747）
  *
- * 覆盖: 渲染默认操作（含 POC 算料报价全宽主入口）、点击触发回调
+ * 形态真值与 C 端**现行**判据一致（`.github/cases/ui.yml` 的 UI-014 / UI-044；用户 2026-09-18
+ * 裁定「上个 2 列 × 3 行更好看」）：**六格等权、2 列 × 3 行**，无全宽主入口、无分组结构。
  *
- * UI-010: 小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询
- * UI-014: 小布聊天主页快捷入口新增「算料报价」全宽主入口（POC 算料闭环直达）
+ * ⚠️ 本文件此前声明 `# case_ids: UI-010, UI-014` —— 那是 **C 端（小布）的用例号**：
+ * 连用例号一起被抄进 B 端，正是 issue #5747 的形态。现改钉 B 端自己的用例 BM-028。
+ *
+ * 第 6 格 = **查库存**（B 端专属能力：`batch_stock_query` / `stock_ledger_query` 挂
+ * `product:list` 权限码，C 端 JWT 无权限码 ⇒ 不在 C 端面，见
+ * `backend/ai-agent-service/app/graph/skills/product_skill.py`），补上「六格」的差额。
  */
-// case_ids: UI-010, UI-014
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import QuickActions from '../src/components/chat/QuickActions'
 
-describe('QuickActions', () => {
+describe('QuickActions（B 端六格）', () => {
   const mockOnAction = jest.fn()
 
   beforeEach(() => {
@@ -23,27 +28,29 @@ describe('QuickActions', () => {
     expect(screen.getByText('您可以试试以下问题')).toBeTruthy()
   })
 
-  it('应渲染默认快捷操作（算料报价/查订单/找产品/售后咨询/查物流）', () => {
-    render(<QuickActions onAction={mockOnAction} />)
-
-    expect(screen.getByText('算料报价')).toBeTruthy()
-    expect(screen.getByText('查订单')).toBeTruthy()
-    expect(screen.getByText('找产品')).toBeTruthy()
-    expect(screen.getByText('售后咨询')).toBeTruthy()
-    expect(screen.getByText('查物流')).toBeTruthy()
-
-    // UI-010：无「退换货」「转人工」文案残留
-    expect(screen.queryByText('退换货')).toBeNull()
-    expect(screen.queryByText('转人工')).toBeNull()
-  })
-
-  it('算料报价为主入口：首项且带 wide 全宽样式（2 列网格中跨整行）', () => {
+  it('恰好六格等权（2 列 × 3 行）', () => {
     const { container } = render(<QuickActions onAction={mockOnAction} />)
     const items = container.querySelectorAll('.quick-actions__item')
-    expect(items.length).toBe(5)
-    const first = items[0]
-    expect(first.textContent).toContain('算料报价')
-    expect(first.className).toContain('quick-actions__item--wide')
+    expect(items.length).toBe(6)
+    for (const item of Array.from(items)) {
+      // 全宽主入口已撤下（C 端 #4236 同款裁定）—— 留在 B 端就是「旧版 C 端页面」
+      expect(item.className).not.toContain('quick-actions__item--wide')
+    }
+    // 负向：两栏分组结构（C 端 #4209 中间态）不得残留
+    expect(container.querySelector('.quick-actions__group')).toBeNull()
+    expect(container.querySelector('.quick-actions__row')).toBeNull()
+  })
+
+  it('六个入口齐全（含 B 端专属「查库存」）', () => {
+    render(<QuickActions onAction={mockOnAction} />)
+
+    for (const label of ['算料报价', '查订单', '查库存', '找产品', '售后咨询', '查物流']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+
+    // UI-010 口径沿用：无「退换货」「转人工」文案残留
+    expect(screen.queryByText('退换货')).toBeNull()
+    expect(screen.queryByText('转人工')).toBeNull()
   })
 
   it('应渲染操作图标', () => {
@@ -56,43 +63,21 @@ describe('QuickActions', () => {
     expect(screen.getByText('🚚')).toBeTruthy()
   })
 
-  it('点击"算料报价"应触发算料 prompt（含 quote 路由关键词）', () => {
+  it('点击各入口应发送对应 prompt（逐格可断言）', () => {
     render(<QuickActions onAction={mockOnAction} />)
 
-    fireEvent.click(screen.getByText('算料报价'))
-
-    expect(mockOnAction).toHaveBeenCalledWith('帮我算一下窗帘用料和价格')
-  })
-
-  it('点击"查订单"应触发对应 prompt', () => {
-    render(<QuickActions onAction={mockOnAction} />)
-
-    fireEvent.click(screen.getByText('查订单'))
-
-    expect(mockOnAction).toHaveBeenCalledWith('帮我查一下最近的订单')
-  })
-
-  it('点击"找产品"应触发对应 prompt', () => {
-    render(<QuickActions onAction={mockOnAction} />)
-
-    fireEvent.click(screen.getByText('找产品'))
-
-    expect(mockOnAction).toHaveBeenCalledWith('推荐一下热门窗帘产品')
-  })
-
-  it('点击"售后咨询"应触发售后 prompt', () => {
-    render(<QuickActions onAction={mockOnAction} />)
-
-    fireEvent.click(screen.getByText('售后咨询'))
-
-    expect(mockOnAction).toHaveBeenCalledWith('我想咨询售后问题')
-  })
-
-  it('点击"查物流"应触发物流查询 prompt', () => {
-    render(<QuickActions onAction={mockOnAction} />)
-
-    fireEvent.click(screen.getByText('查物流'))
-
-    expect(mockOnAction).toHaveBeenCalledWith('帮我查一下物流')
+    const cases: [string, string][] = [
+      ['算料报价', '帮我算一下窗帘用料和价格'],
+      ['查订单', '帮我查一下最近的订单'],
+      ['查库存', '帮我查一下库存'],
+      ['找产品', '推荐一下热门窗帘产品'],
+      ['售后咨询', '我想咨询售后问题'],
+      ['查物流', '帮我查一下物流'],
+    ]
+    for (const [label, prompt] of cases) {
+      mockOnAction.mockClear()
+      fireEvent.click(screen.getByText(label))
+      expect(mockOnAction).toHaveBeenCalledWith(prompt)
+    }
   })
 })

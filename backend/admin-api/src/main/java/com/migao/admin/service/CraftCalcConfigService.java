@@ -34,6 +34,12 @@ import java.util.Set;
  * 缺键 ⇒ 422 逐键报缺，<b>不</b>把缺的键悄悄按默认值存 —— 那正是「静默回退默认值」的形态：
  * 商家以为只改了一项、其实另一项被重置（或反过来以为改了却没改）。未知键同样 422
  * （拼错的键被静默忽略 = 商家以为改了却没改）。
+ *
+ * <h3>变更留痕（§22 <b>P6</b>，issue #5131；口径 <b>B</b> = best-effort）</h3>
+ * 每次写都把 {@code 改前 → 改后} 交给 {@link TenantParamAuditService}（一行 = 一个真正变了的键）。
+ * <b>审计写失败不让配置保存失败</b>（用户 2026-09-26 裁定：配置页可用性优先）—— 该调用恒不抛，
+ * 失败时由 {@code TenantParamAuditService} 打 {@code PARAM_AUDIT_WRITE_FAILED} + 给
+ * {@code migao.tenant_param_audit.write_failed} 计数（<b>不静默</b>）。
  */
 @Slf4j
 @Service
@@ -92,6 +98,7 @@ public class CraftCalcConfigService {
 
     private final CraftCalcConfigMapper craftCalcConfigMapper;
     private final CraftCalcClient craftCalcClient;
+    private final TenantParamAuditService tenantParamAuditService;
 
     /** 读面响应里「生效配置」那一格的键名（`get()` 的返回形态；只在这里写一次）。 */
     public static final String KEY_CONFIG = "config";
@@ -193,6 +200,11 @@ public class CraftCalcConfigService {
         requireTenant(tenantId);
         Map<String, Object> config = validate(body);
         CraftCalcConfig row = craftCalcConfigMapper.selectActiveByTenant(tenantId);
+        // 🔴 改前的值必须在覆盖**之前**取到（§22 P6 留痕的「A → B」那一半）。
+        //    无行 ⇒ 空映射 ⇒ 每个键的改前值都是 null（= 本租户当时在用引擎默认值）。
+        //    刻意**不**在这里去问引擎要默认值：那是第二份会漂的口径，且给写路径加了新的失败面。
+        Map<String, Object> before = row == null ? Map.of() : row.toConfigMap();
+        String operationId = TenantParamAuditService.newOperationId();
         OffsetDateTime now = OffsetDateTime.now();
         if (row == null) {
             row = CraftCalcConfig.builder()
@@ -205,14 +217,24 @@ public class CraftCalcConfigService {
             apply(row, config);
             row.setUpdatedAt(now);
             craftCalcConfigMapper.insert(row);
-            log.info("算料配置新建: tenantId={} perFoldSingle={} minFullness={}",
-                    tenantId, config.get("per_fold_single"), config.get("min_fullness"));
+            log.info("算料配置新建: tenantId={} perFoldSingle={} minFullness={} operationId={}",
+                    tenantId, config.get("per_fold_single"), config.get("min_fullness"), operationId);
         } else {
             apply(row, config);
             row.setUpdatedAt(now);
             craftCalcConfigMapper.updateById(row);
-            log.info("算料配置更新: tenantId={} perFoldSingle={} minFullness={}",
-                    tenantId, config.get("per_fold_single"), config.get("min_fullness"));
+            log.info("算料配置更新: tenantId={} perFoldSingle={} minFullness={} operationId={}",
+                    tenantId, config.get("per_fold_single"), config.get("min_fullness"), operationId);
+        }
+        // §22 P6 变更留痕（口径 B = best-effort）：本调用**恒不抛** —— 审计写失败只打
+        // PARAM_AUDIT_WRITE_FAILED + 计数，配置照常保存（用户 2026-09-26 裁定）。
+        int audited = tenantParamAuditService.recordChanges(tenantId,
+                TenantParamAuditService.DOMAIN_CRAFT_CALC, TenantParamAuditService.OPERATION_PUT,
+                operationId, before, row.toConfigMap());
+        if (audited == 0) {
+            // 0 = 本次一个键都没变（正常：商家点了保存但没改）**或**审计写失败（已由其自己大声记日志）。
+            log.info("算料配置写入完成但无变更行: tenantId={} operationId={}（无键变化，或审计写入失败见 "
+                    + "PARAM_AUDIT_WRITE_FAILED）", tenantId, operationId);
         }
         return response(SOURCE_STORED, row.toConfigMap());
     }
@@ -360,6 +382,13 @@ public class CraftCalcConfigService {
         row.setTiers(config.get("tiers"));
         row.setDefaultFormula((String) config.get("default_formula"));
         row.setMetersRoundingStep((BigDecimal) config.get("meters_rounding_step"));
+        // 🔴 下面三列曾**漏在这里**（#4528 只落了 8 个键，#5133 把 hem_margin / 两个超阈键加进
+        //    CONFIG_KEYS 与校验、却**没**加进本方法）⇒ PUT 收下它们、校验它们、返回 200，而
+        //    **一个字都没落库**（商家以为改了、引擎按旧值算钱），且没有任何东西会因此变红。
+        //    判据：CraftCalcConfigServiceTest#putPersistsHemMarginAndOversizeThresholds（改前实测红）。
+        row.setHemMargin((BigDecimal) config.get("hem_margin"));
+        row.setOversizeWidthThreshold((BigDecimal) config.get("oversize_width_threshold"));
+        row.setOversizeHeightThreshold((BigDecimal) config.get("oversize_height_threshold"));
     }
 
     private static Map<String, Object> response(String source, Map<String, Object> config) {

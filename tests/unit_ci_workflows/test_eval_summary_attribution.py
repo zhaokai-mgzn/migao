@@ -112,7 +112,9 @@ NEW_CASE_KEYS = {
 NEW_COST_KEY = "cost"
 NEW_RUN_KEY_KEY = "run_key"
 NEW_EVIDENCE_KEY = "evidence_window"
-NEW_TOP_KEYS = {NEW_COST_KEY, NEW_RUN_KEY_KEY, NEW_EVIDENCE_KEY}
+# #4097：被拒后自愈率（报告型读数；`denial_recovery_summary()` 的结果，跨分片按计数相加合并）
+NEW_DENIAL_RECOVERY_KEY = "denial_recovery"
+NEW_TOP_KEYS = {NEW_COST_KEY, NEW_RUN_KEY_KEY, NEW_EVIDENCE_KEY, NEW_DENIAL_RECOVERY_KEY}
 
 
 # ── fixtures ────────────────────────────────────────────────────────────────
@@ -138,9 +140,13 @@ def _round(rnd, calls, results):
     }
 
 
-def _write(tmp_path, results, label="post-deploy"):
+def _write(tmp_path, results, label="post-deploy", denial=False):
     out = tmp_path / "eval-summary.json"
-    lr.write_summary_json(str(out), label, "", results)
+    # #4097：自愈率是**可选**顶层键（调用方不传就不出现）⇒ 用 denial 开关覆盖两种形态。
+    lr.write_summary_json(str(out), label, "", results,
+                          denial_recovery=({"cases": 1, "denials": 0,
+                                            "recovered": 0, "recovery_rate": None,
+                                            "unrecovered_cases": []} if denial else None))
     return json.loads(out.read_text(encoding="utf-8"))
 
 
@@ -453,6 +459,12 @@ class TestLegacyBytesUnchanged:
         assert NEW_EVIDENCE_KEY in new, (
             "证据窗口缺失（#3805）→ Diagnose 无法按用例窗口取容器日志，"
             "本锚点也会退化成空断言")
+        # #4097：自愈率只在**调用方传了**的时候出现（`denial_recovery=None` 时不该凭空造键）——
+        # 故这里给 `_write` 显式传一份，验证"传了就落盘、且不改变任何既有字段"。
+        assert NEW_DENIAL_RECOVERY_KEY in _write(tmp_path, [_case("AS-003", 1.0)], denial=True), (
+            "#4097 的自愈率没落盘 ⇒ 汇总只能靠日志（日志有保留期），跨 run 无法对账")
+        assert NEW_DENIAL_RECOVERY_KEY not in new, (
+            "未传 denial_recovery 时凭空造了键 —— 与「只加不改、按需出现」的口径不符")
         assert _dump(_strip_new(new)) == _dump(legacy), (
             "除新增字段外 summary 变了（既有字段/键顺序被改动）—— "
             "与历史 run 的对比会失效，且 report job 等消费者可能受影响")

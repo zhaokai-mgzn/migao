@@ -7,14 +7,14 @@
 
 | 工作流 | 触发 | 说明 |
 |--------|------|------|
-| `pr-check` | PR → main | 多 job 门禁: 拦截 .env / admin-api 单测 / admin-web tsc+lint+vitest / E2E 质量门禁(4 个 fixture spec) / UI 回退检测 / QA Growth Gate(G1+G5+弱断言) / Case Contract 校验 / needs-changes 打标（**agent-eval-smoke 已于 #3653 移除**：B 端云冒烟评的是已部署 main、与本 PR 无因果；B 端行为信号**不再挂在 PR 上** —— 原 `agent-behavior-eval` 映射 workflow 已按 #4275 整体删除，改由**本机按 §13.2 映射**承担） |
+| `pr-check` | PR → main | 多 job 门禁: 拦截 .env / admin-api 单测 / admin-web tsc+lint+vitest / E2E 质量门禁(4 个 fixture spec) / UI 回退检测 / QA Growth Gate(G1+G5+弱断言) / Case Contract 校验 / needs-changes 打标（**agent-eval-smoke 已于 #3653 移除**：B 端云冒烟评的是已部署 main、与本 PR 无因果；B 端行为信号**不再挂在 PR 上** —— 原 `agent-behavior-eval` 映射 workflow 已按 #4275 整体删除，改由**本机按 §13.2 映射**承担）。**2026-09-26（#3507 ①）**：`admin-api unit tests` / `admin-web typecheck + unit tests` / `E2E quality gate` 三条腿改为 **job 内 diff 门控**（原先 `admin-web` 只门控 `next build`，其余步骤每个 PR 都跑） |
 | `ai-agent-tests` | PR → main | ai-agent-service 单测全量（排除 integration / e2e-real / 4 个 ignore 文件）；**v1.3 起 job 内门控**：无 ai-agent 相关变更时跳过实际单测（required check 仍报告 success，防 dependabot 空跑） |
 | `deploy-admin-api` | push main `backend/admin-api/**` | 单测 → Maven 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
 | `deploy-ai-agent-service` | push main `backend/ai-agent-service/**` | 单测全量 → 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
 | `deploy-frontend` | push main `frontend/admin-web/**` | tsc + vitest → 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` |
 | `smoke-test` | workflow_call (可复用) | P0 冒烟 (pytest+httpx)，被 deploy 工作流调用 |
 | `agent-eval` | workflow_dispatch（按需） | 米宝能力评测（normal tier 按需手动，真实 LLM + `cases/*.yml` 单一源；2026-08-29 起取消每日定时） |
-| `agent-eval-adversarial` | schedule 每周六 03:00 | 对抗用例评测（只追踪不阻塞） |
+| `agent-eval-adversarial` | workflow_dispatch（按需） | 对抗用例评测（只追踪不阻塞）。⚠️ **口径订正（2026-09-26，#3507 ②）**：本行原写「schedule 每周六 03:00」**已不成立** —— 现取 `origin/main` 的 `on:` 只有 `workflow_dispatch`（每周一 cron 已按 #4974 删除，与本文件「真实 LLM 成本」段「全仓自动真实 LLM 触发 = 0 条」一致）；频率读数见 `tests/unit_ci_workflows/ci_cost_ledger.json` 的 `eval_cadence` |
 | `e2e-real` | schedule 每日 00:00 + 手动 | backend `tests/e2e/real/` 真实 LLM 测试，失败自动建 Issue |
 | `mini-app` | PR/push `frontend/mini-app/**` | tsc + 单测 + xiaobu H5 视觉回归；**v1.3 起 job 内门控**（同 ai-agent-tests） |
 | `issue-contract-check` | issue opened | 校验 CONTRACT_JSON → needs-verification / needs-truths + cases 引用校验 |
@@ -26,10 +26,147 @@
 
 - **concurrency 取消旧 run**：`pr-check`/`ai-agent-tests`/`mini-app` 均加 `concurrency.group`（按 PR 号），同 PR 新 push 自动取消旧 run，防多 commit 并发打满 runner 队列。
 - **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。`worker-h5-tests.yml`（只认 `frontend/worker-h5/**`，跑 Node 内置 `--test`，零 install/零构建）是这类信息性 check 的现存例子（**非 required 信息性 check**，#4786）。（原另一个同族例子 `agent-behavior-eval.yml` 已按 **#4275** 整体删除 —— 它的唯一产物是 PR 评论、绑死 PR 上下文，无法改造成有意义的手动档。）
+  · **2026-09-26（issue #3507 ①）扩到 `pr-check` 的三条腿**：`admin-api-test`（`detect_api`）/ `admin-web-test`（`detect_aw`，由「只门控 `next build`」扩到**整条腿**）/ `e2e-quality-gate`（`detect_e2e`）。触发谓词、`must_cover` 面与被门控的**步骤名**逐条登记在 `tests/unit_ci_workflows/declaration_gate_registry.json` —— 「未登记即红 / 谓词必须与现取逐字相符 / 触发面必须覆盖断言所读的对象面 / 按**步骤名**定位（改步骤序列必须同改登记册）」四条由 `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 机械执行。
+  · **类级锁（为什么这次不会再被烧）**：`tests/unit_ci_workflows/test_required_check_no_paths_filter.py` —— 凡**上报 required 检查名**的 workflow，其 `on.pull_request` **不得**有 `paths:` / `paths-ignore:`（命中即红；红证 = 往 `mini-app.yml` 的 `on.pull_request` 加一行 `paths:`）。required 集合**现取** `gh api …/branches/main/protection`（复用 `scripts/merge_gate.py` 的读法，不另写一套）；CI 里读不到（**需 admin**）⇒ 退回 `tests/unit_ci_workflows/required_status_snapshot.json` 并打印退路横幅 —— **退路不覆盖「分支保护新增了一条 required 而 snapshot 还不知道」**，改分支保护后请在能读该 API 的环境跑一次 `python3 tests/unit_ci_workflows/test_required_check_no_paths_filter.py --refresh`。
+  · **本地孪生：`verify-all.sh gate` 的 bmini 腿（2026-09-27，issue #4221 族）**：CI 的 `bmini-app` 两条腿此前**在本地没有任何腿**（改 bmini 的包只能手工跑 tsc/jest/build，实测两个 bmini 包都如此）⇒ `gate` 档按「变更集命中触发面」派发一条与 CI **逐字同命令**的本地腿（`npx tsc --noEmit` / `npm test` / `npm run build:h5` / `npm run build:weapp`）。三条口径：① **只在 `gate` 档**（`quick` 是开发者快循环，刻意不塞）；② 触发面 = 该腿**判定对象的输入闭包**（`frontend/bmini-app/**` ∪ 它 import 到的跨目录仓内文件，现取 `frontend/admin-web/src/lib/print-media.json`）—— **不照抄** CI 谓词（CI 含 `tests/|.github/`，那两类改动影响不到 tsc/jest/build）；③ 🔴 **缺依赖 ⇒ fail-closed 记 ❌**（不是「未就绪」跳过 —— 在合并门禁上「没跑」不得被读成「通过」），未命中触发面时控制台显式声明「未跑」。覆盖面登记在 `tests/unit_ci_workflows/local_gate_matrix.json`，判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py`（新增模块目录 / 登记已死的腿 / 未裁定的跨目录输入 ⇒ 红；未覆盖台账只许缩短）。⚠️ 与本节同口径：本地腿也是**job 内 diff 门控**（未命中 ⇒ 显式「未跑」），**不动任何 workflow**、也不改回 workflow 级 `paths` 过滤。
+  · **新增 CI 守卫文件要过的三张登记面（2026-09-27 实测，关联 #5001）**：往 `tests/unit_ci_workflows/**`（以及 `.github/`、`scripts/` 的判据面）**新建一个守卫文件**时，同一个文件会命中**三张互不相干的登记面**，缺任何一张 ⇒ **卡合并**。实测代价：本单为第三张**白烧一轮 CI**（run `36281997395` 的 `ci workflow helper unit tests` = 5211 passed / 1 failed）。
+    · **面 1 —— 测试文件头的 `# case_ids: <ID>`**：**任何**新增/修改的测试文件都要。判据 = `QA Growth Gate`（ID 必须是**注释起始行**、落在**前 50 行**内、且真实存在于 `.github/cases/**`；用例号往现有最大号**顺延**）。
+    · **面 2 —— `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `same_source_claims`**：模块级字面量集合**正上方**的 `#` 注释里出现「同源 / 逐字一致 / 必须等于 / 保持一致 / 同一集合 / 单一实现 / 两份实现」任一措辞时。判据 = `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria`（要 `criterion` = **真实存在**的测试，或 `unfixed` + 理由/单号/owner）。
+    · **面 3 —— `tests/unit_ci_workflows/guard_scope_ledger.json` 的 `guards`**：模块里出现**语料字面量**时（当前语料 = `*.sh` ⇒ 任何含 `*.sh` 的字符串常量，**包括红证注入串**）。判据 = `tests/unit_ci_workflows/test_guard_scope_declaration.py`（真扫描语料 ⇒ `kind=scans` + 结构化 `GUARD_SCOPE`；只**点名**语料 ⇒ `kind=mentions` + reason/issue）。
+    · **自查清单（可复制；两条 pytest 都应绿）**：
+      ```bash
+      F=tests/unit_ci_workflows/<你的新守卫>.py
+      grep -nE '^#[[:space:]]*case_ids[[:space:]]*[:=]' "$F" | head -1      # 面 1：必须落在前 50 行
+      python3 -m pytest tests/unit_ci_workflows/test_gate_coverage_and_same_source.py -q   # 面 2
+      python3 -m pytest tests/unit_ci_workflows/test_guard_scope_declaration.py -q         # 面 3
+      ```
+    · 🔴 **边界（明确的，不要把本节读成覆盖面更大的东西）**：① `declaration_gate_registry.json` 的 **`gates` 只收 `on.pull_request` 面的门禁**（workflow 级 `paths` / 步骤级门控输出）—— 改 **`on.push.paths`**（部署/发布触发面）**不需要**登记 `gates`（本单即如此，只登记了 `same_source_claims`；别去改错册子）；② 三张面**各自已有 fail-closed 判据**，本节**不是新门禁**、**不改任何判据的通过条件** —— 它只解决「作者事前不知道去哪三处登记」（本单实测：三张面把我**逐一**拦下；事先知道可省一轮 CI）；③ 各面自己的残余照旧（见各判据 docstring，例如「完全不声明射程、也不引用语料字面量的新守卫**不会**有东西变红」）。
+    · **复算 #5687（同一天第二个新守卫，结论：三张面**一张都没命中**）**：新增 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：消红路径未登记即红）时按上面清单自查 —— 面 1 **命中**（声明了 `# case_ids: MC-024`，新用例号顺延自当时最大号 MC-023）；面 2 / 面 3 **未命中**（该文件的模块级字面量注释里没有那七个措辞、也不含 `*.sh` 语料字面量）⇒ 两条 pytest 全绿 ⇒ **无须**动 `declaration_gate_registry.json` / `guard_scope_ledger.json`。⇒ 与上面的「边界 ①」合起来读：**三张面是按形态触发的，不是「新守卫一律要登记三处」**（把它读成后者会去改错册子）。
+    · 🔴 **本节只覆盖「新建守卫文件」这一种形态**：往**既有**守卫文件里加判据（如本单同时给 `test_flaky_ledger_kind_semantics.py` 加了 10 条）**不在本节面内** —— 那类改动命中的是各面自己的判据（如用例号真实性、弱断言面），**没有**「新文件三张面」这条路径。
+  · **`Flaky Ledger Reconcile` 的红是给人看的，不是拦合并的（issue #5687 顺带登记，**有意不修**）**：该 job **不在** `branches/main/protection` 的 required 集合里（人已裁定：用阻塞换可见性不划算）。它的**唯一**价值是「把 `kind=flaky` 且 `status=open` 且没有 `follow_up` 的欠账渲染成 job summary + `::error::`」。⇒ 🔴 **别把「它没红」读成「没问题」**：`kind=suspect-window-deterministic`（跨时间桶的「重跑通过」）这类**窗口型确定性缺陷**此前**只有这一个信号**，而它可以无限循环（缺陷留在 main 上、明天同一时段再红一次）。真正的护栏改成**在判定侧收紧**：跨桶 ⇒ 不再判普通 `flaky` + **强制跟踪**（缺 `follow_up` ⇒ `selftest` / `append` 判违规，fail-closed）；判据见 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：任何以重跑结果为唯一依据消红/降级的路径**未登记即红**）与 `tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`（实例，含 run `36280962072` 的真实读数复算）。
+## 红证机具的可靠性：改磁盘文件的变异**可能不被读到**（2026-09-27 实测，关联 issue #5687）
+
+**这一节是一个被实测证伪的假设的下场记录**：做红证时我以为「改磁盘上的真文件 → 跑 pytest ⇒ 判据必红」是稳的。**它不是。**
+
+### 形态（现象）
+
+给判据做注入式红证时，用「**改磁盘上的真文件 → 跑 pytest**」这条路：**判据函数直调能判红，而 pytest 跑法下判据拿到的是未变异的文本** ⇒ 该红证**在 CI 上永远绿** = **空断言**（正是「每条断言都要有红证」要防的那个东西本身）。
+
+### 本会话的实测读数（三条红证，逐条）
+
+对 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py::TestWorkflowStructure` 的三条 workflow 红证（被测文件 = `.github/workflows/flaky-triage.yml`）：
+
+| 注入的坏形态 | 期望 | 实测（**改盘后跑 pytest**） | 同一函数**直调**（`python -c`） |
+|---|---|---|---|
+| `mark_suspect` 步骤条件改 `false` | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+| 给 `mark_suspect` 步加 `--add-label "flaky/rerun-green"` | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+| 摘掉 `triage-follow-up` 调用 | 判红 | `1 passed`（`bad` 为空） | **正确判红** |
+
+补充读数（说明它不是「注入压根没落盘」）：
+
+- 改盘后**在测试方法里**读回文件，`REAL_WORKFLOW` 与 `WORKFLOW_PATH.read_text()` **都**含注入串（`True`）；把 `bad` 打印出来也**确实非空**；
+- 但把该处的断言换成 `raise AssertionError` ⇒ **测试会失败**。⇒ **同一个测试方法里，"变异被读到"时有时无** —— 不是简单的"文件没改到"。
+- 已排除：`.pyc` 缓存（清空 `__pycache__` 后仍复现）、`tests/unit_ci_workflows/conftest.py` 的文件级缓存（该 conftest 只缓存用例语料解析，不缓存 workflow 文本）。
+
+🔴 **机制未定（如实登记，不编一个听起来对的机制）**：**现象已定、机制未定**。排查到此为止 —— 继续追这条线索的收益低于「换一条结构上不可能出这个问题的做法」（见下）。
+
+### 正确做法（本仓现成范例）
+
+**当场在内存里构造坏形态**，不要改磁盘：
+
+```python
+wf = yaml.safe_load(REAL_WORKFLOW)                       # 真文件当基线
+wf["jobs"]["triage"]["steps"] = [ …按判据语义改结构… ]    # 变异发生在**内存对象**上
+mutant = yaml.safe_dump(wf, allow_unicode=True, sort_keys=False)
+bad = workflow_structure_violations(mutant)              # 判据吃的是**当场构造**的文本
+```
+
+并配一条**判别力自证**（否则「内存构造」也只是"我以为构造成功了"）：
+
+- 判据：`tests/unit_ci_workflows/test_rerun_to_clear_paths.py::TestWorkflowStructure::test_guard_has_discriminating_power_in_memory`
+- 读数（三条各自判红，逐条记在本 PR body）：条件改 `false` ⇒ `没有 action == 'mark_suspect' 的步骤 ⇒ …没有任何动作落地（= 静默放行，红线）`；加 flaky 标签 ⇒ `mark_suspect 打了 flaky/rerun-green ⇒ …⇒ 红线`；摘跟踪单调用 ⇒ `没有调用 flaky_ledger.py triage-follow-up 的步骤 ⇒ 「强制跟踪」没有实体动作`。
+
+### 通用判据（写给下一个包）
+
+> **凡红证涉及"改磁盘文件"，必须额外有一条断言证明「该变异真的被读到了」**（读回文件内容比对 / 断言变异体 ≠ 原文 / 直接喂构造体）；否则**视为空断言**。
+
+本会话出现的**三个同族对照读数**（**读数各不相同**，别混为一谈）：
+
+1. 另一包：「**只改注释**」⇒ 命中**锚失配**而**不是目标分支**（红证打偏 —— 注入了，但打的不是那条判据）；
+2. 「**撤掉整条禁则** ⇒ 主判据**转绿**」⇒ 那才是**真的反向红证**（拿掉实现就变绿 = 该红是它挣来的）；
+3. 本条：**变异没被读到 ⇒ 恒绿**（`bad` 为空、测试通过）。
+
+### 🔴 边界（显式登记：这一节**覆盖不到**什么）
+
+- ❌ **「内存构造」这条路覆盖不到「该文件根本没被任何判据读过」**：那种情况下判据**连红都不会红**，得靠「**语料非空 / 判据非空转**」那条自证（`problems_rerun_to_clear_paths` 的 `语料为空` 分支即此类）。
+- ❌ 本节的结论来自 **workflow 文件（YAML 文本）**的实测 —— **是否适用于所有语料类型（Python / JSON / SQL / 生成物）未逐一验证**。⇒ 别把它读成「所有红证都不可信」，也别读成「只改 workflow 才要小心」。
+- ❌ 本节**不是新门禁、不改任何判据的通过条件**：没有任何东西会拦住「用改磁盘文件做红证」——**只有纪律**。
+- ❌ 本节**不声称**「CI 上跑就一定复现」：观测发生在**本机**（pytest 9.1.1 / Python 3.11）；「CI 上永远绿」是**由形态推出的结论**（若注入不被读到，判据就不会红），**未在 CI 上直接观测**到某条红证恒绿。
+
+  · **成本读数 / 上限 / 预算（issue #3507 ②）**：`tests/unit_ci_workflows/ci_cost_ledger.json` 逐条记录 PR 触发腿的**实测**中位/p90/max、**硬杀上限**与**目标预算**。
+    · **硬杀上限** = 该腿自己声明的 `timeout-minutes`（判据与现取 YAML 逐条复比 ⇒ 手抄腐烂即红）；
+    · **目标预算** = 该腿**实测 p90 向上取整**（owner 裁定 2026-09-26）—— 预算是**读数的函数**，不是人手填的数；取不到读数（n < 3）的腿保持 `null` + 显式留白，**不编数**（判据 4 手改任一预算即红）；
+    · **超预算判红**：新实测 p90 上取整 > 已冻结预算 ⇒ `--measure` **非零退出且不写台账**，并要求**先查「新增」开销**（钉与负载无关的计数：新判据文件数 / 真库 `initdb` 次数 / 语料真解析次数 / 新增依赖安装），**不得**靠抬 `timeout-minutes` 交差（与 #5365 同源）；确有必要抬 ⇒ 显式 `--measure --accept-raise`（改动在 diff 里可见）。⚠️ 该判红在**能读 Actions API 的环境**（本机/attended）生效 —— CI 读不到历史时长，只锁「预算 == 实测 p90 上取整」这条文件不变式（边界写在台账 `attribution_policy.enforced_where`，判据 5 核它非空）；
+    · **频率议题**：`agent-eval` / `agent-eval-adversarial` 现取都只有 `workflow_dispatch` ⇒ 裁定**有意不设月度上限**（只登记手动触发现状），条件 = 任一评测 workflow 恢复/新增自动触发面时**重开**（见台账 `policy_decisions`，判据 6 核裁定人 + 重开条件）；
+    · 判据 = `tests/unit_ci_workflows/test_ci_cost_ledger.py`（7 条，含超预算判定的纯函数红证）；复算 = `python3 scripts/ci_cost_ledger.py --measure`。
   · **静态落地面腿**：`worker-h5-publish.yml`（`push: main` + paths 只认 `frontend/worker-h5/**` 与发布链路自身；**刻意不加 `pull_request`** —— 它写的是**线上静态根**，PR 分流内容不该有机会落上去，故也没有「required 卡 Waiting」的形态）把 `frontend/worker-h5/` 的 `index.html` + `src/**` **逐字**发布到 `app.migaozn.com` 静态根下的 `w/`（零构建，**不引 npm build**），发布后断言线上 `/w/` 的 body 哈希 == 仓库文件且不含 C 端标识（issue #4837；nginx `root` 与 `w/` 子树的红线见 `deploy/swas/h5-publish-remote.sh` 的目标守卫）。**发布兜底（issue #5001）**：该腿唯一的自动触发面是 `push: main`，而被 `GITHUB_TOKEN` 合并的 auto-merge **吞掉那个 push**（#3113 同族）⇒ `deploy-reconcile.yml` 把它列为**第四条对账腿**（`reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""`；它不构建镜像 ⇒ 镜像判据对它恒不成立，判定走**漂移判据**：自上次成功发布起 `frontend/worker-h5/**` 有无改动，有则 `gh workflow run worker-h5-publish.yml`）—— 对账由 `schedule` 触发，免疫该抑制。
+  · **第二条静态落地面腿（issue #5668）**：`bmini-h5-publish.yml`（`push: main` + paths 只认 `frontend/bmini-app/**`、`deploy/swas/nginx.conf` 与发布链路自身；同样**刻意不加 `pull_request`**）把 B 端 h5（`npm run build:h5`，按 `TARO_APP_H5_PUBLIC_PATH=/b/` 构建）发布到 `app.migaozn.com` 静态根下的 `b/`（nginx 的 `location /b/` 带**自己的** fallback `/b/index.html` —— 借用根的 fallback 会让 `/b/<子路由>` 静默渲染出 C 端）。产物经**ACR 传输镜像**（`deploy/bmini-h5/Dockerfile`，实例无 node 工具链）搬到实例，发布后断言「线上 body 哈希 == 本次构建产物」+ `/b/<子路由>` 不串端 + `/` 仍是 C 端 + worker-h5 零回归。**发布兜底**：同 worker-h5，它已登记进 `deploy-reconcile.yml`（腿名 `bmini-h5-hosting`，走漂移判据 ②；腿名与传输镜像名有意不同，见该 workflow 内的注释）。
+  · **第三条静态落地面腿（issue #4184）—— 第一条「拥有静态根**本身**」的腿**：`c-end-h5-publish.yml` 把 C 端小布 h5（`frontend/mini-app` 的 `npm run build:h5`，`publicPath: '/'`）发布到 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）。建腿前的现取读数：`curl -sI …/js/app.js` 的 `Last-Modified` = **08-30 06:54 GMT**，而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 线上落后 **~28 天**而**没有任何东西会因此变红**（「C 端已部署」一直被当真）。
+    🔴 **红线（本腿特有）**：同根下**已经住着**工人端 `w/`（#4837，线上有工人在用）与商家端 `b/`（#5668）⇒ 远端执行体 `deploy/swas/c-end-h5-publish-remote.sh` **只删/只替换「上一次由本脚本登记过的顶层条目」**（删除集 = 托管清单 `∩` 磁盘现值；首次发布无清单 ⇒ **空集**，且根上有无人认领的条目时判 `TAKEOVER_REQUIRED` = 要人**显式签字**），并对 `w` `b` 两个**保留前缀**做三层判据：① 结构层（产物顶层/托管清单出现保留前缀 ⇒ 立刻 die）② 产物层（根 `index.html` 不许引用 `/<保留前缀>/…` = 串端）③ 自证层（发布前后逐子树的**规范化摘要**——路径+内容，不吃 mtime/顺序——与各自 `index.html` 哈希**逐字相等**，CI 侧四条读数缺一即判红）。
+    🔴 **只手动发布**（用户 2026-09-27 裁定 B「通路建好并自证，但首次发布由人手动触发」）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（**刻意不含** `deploy/**` 与 workflow 自身 ⇒ **合并建通路的那个 PR 不会发布任何东西**）。**三种触发形态只有一种会发布**（模式判定步 `Resolve mode` 是唯一决定点，它逐字读 `github.event_name` 与 `inputs.publish`）：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（**只报告**）；`workflow_dispatch` + `publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步都逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线）。`publish` 默认 `false` ⇒ 连 `deploy-reconcile.yml` 的兜底 dispatch 也**不会**发布（它只会跑 notify）。**发布入口**：`gh workflow run c-end-h5-publish.yml --ref main -f publish=true`。
+    **兜底面（`FM-E17` 同批）**：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿也有每日 `schedule`（`53 18 * * *` = 02:53 +08），登记在 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`；它的 notify 步判的是**线上产物是否落后**（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径** —— 比 `dist/index.html` 会是**空转**：`dist/` 在 `.gitignore` 里，CI 检出里没有它）。
+    **兜底对账（FM-E3 同批）**：`deploy-reconcile.yml` 新增第六条腿 `c-end-h5`（无镜像 ⇒ 走漂移判据 ②），并在 `test_swas_deploy_ci_hardening.py::SVC_TO_DEPLOY_WORKFLOW` 登记；发布链路自身的两个文件（CI 包装 / workflow）按同口径逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 **`never_in_trigger`** —— 该标记 = 明文**禁止**「把它们加进触发面来消账」这条出路（它们的标法比常规缺口**更严**：加了就红）。
+    **判据**：`tests/unit_ci_workflows/test_c_end_h5_hosting.py`（25 条：结构层真 YAML/真脚本 + **行为层在 `tmp_path` 沙箱真跑远端执行体** + 本地 http server 上落地面断言的红绿两面 + 「只改注释 ⇒ 不红」对照）。
 - **把 paths 门控的信息性 check 提升为 required 的顺序（2026-09-20 固化，#4786）**：**必须先删掉 workflow 级 `paths:`、改成 job 内 diff 门控**（`git diff --name-only origin/main...HEAD` + `GITHUB_OUTPUT`，同 `pr-check.yml` 的 `Detect admin-web changes` 步），**再改分支保护** —— **顺序不可换**：先改分支保护 ⇒ required check 在不命中 `paths` 的 PR 上**卡在 "Waiting" 永不报告** ⇒ 形态 =「**没有任何检查会变红，但 PR 合不了**」（#4231 同族）。
 - **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034；**#4275** 之后 PR 层连**零 LLM 的映射信号**也没有了 —— `agent-behavior-eval.yml` 已整体删除，PR 上**不再有任何自动行为信号**，代价已知并接受）。判定走**单一入口** `post-deploy-eval`（**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删掉最后一条每周一 cron** ⇒ 全仓自动真实 LLM 触发 = **0 条**）；映射能力保留在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，本机可调）。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
+
+## CI / 台账反复出错点：具名清单（2026-09-27 固化，用户逐字「**如果 ci 或者台账经常出错的点也应该固化下来**」）
+
+**这一节不是劝告**：下面每一条都带 `FM-EN` 记号，**逐条**给出「现状（有无守护）→ 守护是什么 →
+证据」。记号与 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json` 的 `ci_findings` **双向绑定**，
+判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py`：
+
+- **未守护（`state=gap`）条目只许缩短**：条数 ≤ 判据里**冻结**的上限（上限写在判据里，台账改不动它），
+  且每条必须带 `gap_owner` + **显形条件**（`gap_shows_when`，即"无守护时它会长成什么样"）；
+- 🔴 **已修的不重复登记**：`state=guarded` 的条目**只点名判据**（说明它已在别处登记），不新开缺口账；
+- `state=registered` = 有具名台账登记但**未接 CI 门禁**（人工 / 集成环节调用）。
+
+| 记号 | 现状 | 守护 / 登记 | 要点 |
+|---|---|---|---|
+| **FM-E1** | ✅ **已有守护** | `.github/workflows/deploy-reconcile.yml` 的 schedule 对账（4 条腿）；判据 `tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_every_deploy_trigger_path_reaches_its_reconcile_leg` | auto-merge 吞掉 `push`（`GITHUB_TOKEN` 合并的 push **不产生 run**）⇒ 唯一的自动触发面失效；对账由 `schedule` 触发 ⇒ **免疫该抑制** |
+| **FM-E2** | ⚠️ **已登记，未接 CI** | `scripts/stranding-check.sh`（内容级三态 `0/1/3`，`3` 不得当 `0` 读）+ `migao-dev-flow` §2.2 的硬规则（改完全部 commit 再开 PR / 全程 draft） | **auto-merge 抢在 `commit` 之前**合并 ⇒ 改动**搁浅在工作区**（实证：包声称「已随 #5695 合并」而两处文档改动没进 main，补 PR #5698）。**显形条件**：PR ready 后补 commit ⇒ 本地有、`origin/main` 无、且**无 PR 承接**；核法 = 逐文件 `git show origin/main:<path>`（**不是**看 commit 可达性） |
+| **FM-E3** | ✅ **已修（本会话），不重复登记** | 触发面 `deploy-admin-api.yml` 的 `on.push.paths` + 对账面 `deploy-reconcile.yml` 的 pathspec **两处同批**接线；判据 `...::test_config_only_commit_is_judged_as_drift_and_dispatches_a_deploy` | 只改 `deploy/swas/**` 原先**一条部署腿都不触发** ⇒ 改动静默不生效（#5668 的 `/b/`、#5676 的 `/i/` 都只靠人工 dispatch 才生效）。两处是**同一事实的两处投影**，常驻双向比对（`reconcile_trigger_paths_ledger.json` 的存量缺口**只许缩短**） |
+| **FM-E4** | ✅ **已修（#5707 销账，`guarded`）** | `.github/workflows/main-freshness-guard.yml`（`push: [main]` + `schedule '43 * * * *'` + `workflow_dispatch`，**刻意无 `pull_request`**）+ **单一实现** `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，**没有「跳过」这一态**）；判据 = `tests/unit_ci_workflows/test_main_freshness_guard.py` | **生成物新鲜度原先只在 `pull_request` 面** ⇒ main 上先漂移、**下一个无辜 PR 才红**，而红的信息指向那个 PR 的 diff（**归因指向错误的对象**）。2026-09-27 咬了两次。**现取读数（本单独立复核）**：run `36295323465`（`workflow_dispatch`、`headBranch=main`、2026-09-27T04:47:19Z = **12:47 +08**）`conclusion=success`；本机 `python3 scripts/generated_artifacts_freshness.py` ⇒ rc=0。⚠️ **本腿不拦合并**（报告型 + 判红开 P1 值班 issue：§2.2 的两条前置它都不满足 —— 无 `pull_request` 稳定判定面、判定含 `git` 历史） |
+| **FM-E5** | ✅ **已修（#5695），不重复登记** | 时间桶判据（跨桶 ⇒ `suspect-window-deterministic` + **强制跟踪**）+ 类级 meta-guard；判据 `test_rerun_to_clear_paths.py::test_unregistered_clear_path_turns_red` | flaky 分类只凭「重跑通过」⇒ 掩盖**窗口型确定性缺陷**（缺陷留在 main、明天同一时段再红，可无限循环）。**唯一信号**是那个**非 required** 的 `Flaky Ledger Reconcile` 红 —— 它逐字声明「判红不等于阻塞合并」 |
+| **FM-E6** | ⚪ **未固化（转述未获 durable 证据）** | — | 转述里有一条「`burn-down` 与生成物陈旧耦合 ⇒ 报错误导（同一审计两条红、其中一条是次生后果）」，**本机只读复核未找到**可复核读数 ⇒ 按「找不到 durable 证据的 ⇒ 不写进技能」的口径**不入册**；重启条件写在台账 `not_solidified` 的 `NS-1` |
+| **FM-E7** | 🔴→✅ **本单补判据（原先零守护）** | `test_dev_mode_failure_modes.py::test_case_ids_are_unique_across_the_corpus` | **用例号被抢**：两个并行包各自「取现取最大号 +1」⇒ 双双写成同一个新号；先合的无事，**后合的**把重号带进 main（本会话实测 7 次：UI-061 / UI-064 / MC-022 / MC-023 / BM-019…）。**修法不是「rebase 后再查一次」这句劝告** —— 而是把唯一性变成判据：重号一进 PR 就红（**红在后合的那一个**，正是它需要改号的那一个） 🔴 **缓解办法（实测有效，RBAC P3）**：① 现取已合并最大号 `grep -rhoE "\b(BM|UI|MC|PR|OR|DF|HR)-[0-9]+" .github/cases/ | sort -u`；② **再查一遍在飞 PR 的 diff / 最新内容**（`gh pr list --state open` 后逐个取 `cases/` 里的 id）—— **这一步就是能拦住「main + 在飞」的那一步**；③ **rebase 后再查一次**。⇒ 与 `CASE_ID_ALLOCATION_BOUNDARY` 的关系：**判据只看已合并状态、拦不住在飞 ⇒ 判据拦不住的地方，判别动作补上**。 🔴→⚙️ **上面的三步手工动作已于 2026-09-27 被机械化**（`MC-046` 被三个包同时取到之后）：取号 = **一条只读命令** `python3 scripts/next_case_id.py <PREFIX>` —— 候选 = main ∪ **全部 open PR 的分支** ∪ 本工作区、取**最小空闲号**、并在同一次调用里断言「返回的号 ∉ 候选集」；**看不到在飞面**（`gh` 不可用 / 未登录 / 离线 / 某个 PR 内容读不到）⇒ 打印「**无法判定 ⇒ 不许取号**」并 `exit 3`（**禁止**乐观给号）。判据 = `tests/unit_ci_workflows/test_next_case_id_allocator.py`（只读性 / 三态 / 内部自证 / **内存构造复现「main + 在飞」现场** / `scripts/**` 单一实现 / 技能面口径唯一），用例 `MC-041`；用法与输出形态见 `migao-dev-flow` §26.3 ⑫，**盖不到的事**见 §26.4 |
+| **FM-E8** | 🔴→✅ **本单补判据（原先零守护）** | `test_dev_mode_failure_modes.py::test_migration_versions_are_unique_in_the_live_dir`（**射程 = 活的 `db/migration/`**） | 两包同抢 V132 ⇒ 改名 V133/V134。既有 `test_migration_immutability.py` 只判**文件名**在两个载体目录间不重复 + 已登记文件逐字节冻结，**不判版本号**。**边界**：`migration-archive/` **存量**就有版本号重复（同一 V 号两份、文件名不同）⇒ 把唯一性套到归档上会是存量假红，故**只登记为只许缩短的常量** |
+| **FM-E9** | ✅ **已有守护** | 三张面**各自**已有 fail-closed 判据（本单实测三张面全绿）+ 本页『新增 CI 守卫文件要过的三张登记面』节（作者事前自查清单） | `case_ids` / `same_source_claims` / `guard_scope_ledger` —— 新守卫文件**常同时命中多面**；今天有包为此多烧一轮 CI。判据：`test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria` + `test_guard_scope_declaration.py::test_every_corpus_referencing_module_is_registered` |
+| **FM-E10** | 🟡 **部分守护（gap 收窄：快循环档 5 条模块腿已收口；残余 = redproof 档 9 条实跑腿）** | owner = 门禁 owner（`verify-all.sh` 面）。**本包落码**：`verify-all.sh::report_gated`（一个共享包装 + 每模块一个 face 谓词）+ `tests/unit_ci_workflows/local_gate_matrix.json` 的 5 条 `trigger{kind: diff-face-gated-deps, hit_fn: face_hit, predicate_fn, fail_closed: true}`；判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py` 的 **C9**（静态接线：必须由 `report_gated` 在档位分支**顶层无条件**派发 + 三态行为：命中+缺依赖 ⇒ ❌/`FAIL=1`、未命中+缺依赖 ⇒ ⏭️/`READY=1` 不计通过、命中+就绪 ⇒ 照旧真跑）与 **C10**（覆盖面登记与现取事实自洽）。原先那段「判据已存在但射程有限」的论述（C4 只管声明了 `fail_closed: true` 的条目）**仍然成立**，只是射程现已覆盖快循环档：`tests/unit_ci_workflows/local_gate_matrix.json::_invariants` 第 3 条（判据 = `test_local_gate_matrix.py` 的 C4）机械要求「`fail_closed: true` 的条目必须走 `report_strict`」—— **现取只有 1 条这样声明**（`frontend/bmini-app`） | **「未就绪」被当通过**：`report_env()` 在依赖没装好时打 `⏭️ 未就绪`（跳过），而在**合并门禁**上「没跑」会被读成「这项没事」。**本单现取（2026-09-27，`./verify-all.sh quick` 实跑）**：`ai-agent` / `admin-web vitest` / `admin-web tsc` **打 ⏭️**（原因**全是缺依赖**：`.venv` / `node_modules/.bin/{vitest,tsc}`），`admin-api` 与 `worker-h5` **真跑**。🔴 **两个口径必须分开**：本机「没装依赖 ⇒ ⏭️」是**环境**、**不是门禁缺陷**（CI 上这些腿都真跑）；门禁缺陷只是「变更集命中该模块 + 依赖缺 ⇒ 本地绿」这一形态 —— 而 `gate`（合并门禁）档主路径**一条 `report_env` 模块腿都没有**（唯一模块腿走 `report_strict`）。**落码口径（本包已实现；与上面预案有一处**不同**）**：触发面只决定「依赖**缺**时记 ❌ 还是 ⏭️」——**未命中仍走 `report_env`（依赖齐备时照旧每次都跑）**，故 kind 取 `diff-face-gated-deps` 而非预案里的 `diff-face-hit`（后者「未命中就不跑」会让快循环档的选择集变成**失败开放**，issue #3680 的形态）；谓词含**跨目录输入**（admin-web 的测试直接读后端源码 = 现取 8 条；worker-h5 腿含 `frontend/shared/**`），由 C5 现取钉住。原预案：把「变更集**命中**某模块 ⇒ 该腿用 `report_strict`」逐条落成 `local_gate_matrix.json` 的 `trigger{kind: diff-face-hit, hit_fn, predicate_fn, fail_closed: true}`（bmini 已是这个范式，基础设施与判据 C4 都在）—— 代价 = 每个模块写一个 face 谓词 + 一处 `if/else` 分支；**不建议**给整档无条件套 `report_strict`（本机只启 3 组件，会让快循环档在缺依赖时整片变红） |
+| **FM-E11** | ✅ **已有守护** | 内容指纹账本（已登记文件被改 ⇒ `exit 1` **拒绝重生成**）+ `.github/danger_scan.py` 的 `/danger-ack rewrite-migration`（**只有仓库 owner** 的评论算数）；判据 `test_migration_immutability.py::test_registered_migrations_are_byte_identical` | **迁移文件不可改**：改已应用迁移会被按文件名**整份 skip**（CI 绿、功能静默缺失）。⚠️ 连带后果：住在已发布迁移里**注释**中的失效判据**改不了** ⇒ 处置必须是**结构性**的（见 `docs/design/rbac-single-source.md` §1.4 实例 6 与跟踪单 #5699），不是"改注释" |
+| **FM-E12** | ✅ **已有守护** | 建库终态脚本判据（表/列真值）+ 跨源逐键守卫；判据 `test_schema_integrity.py::test_schema_has_expected_tables` | **新建库路径不跑迁移链**：`backend/admin-api/src/main/resources/db/init/schema.sql` 与迁移链是**同一事实的两条路** —— 只改一路会让两种建库方式分叉（两条路的登记见 `docs/wiki/Database.md` 的「建库脚本（唯一）」） |
+| **FM-E13** | ⚠️ **已登记，未接 CI** | `scripts/sync-main.sh` 的**前置拒绝**（本分支与 `origin/main` 都改过受管用例面 ⇒ **拒绝 merge** 并给出 `--rebase`；本单实测命中一次，改用 `--rebase`）+ 「生成物新鲜度校验」 | 工装级反复出错点：**裸 `git merge/rebase origin/main`** vs `./scripts/sync-main.sh`；**生成物不许手改**（要重渲染）；`dev-worktree.sh add` 与「裸 `git worktree add`」**两条路径并存**（集成侧一手读数：本会话每个包都被要求用裸命令 ⇒ 那条路径**被规避**，`add` 路径上的挂死**既未复现也未证伪** —— 按**事实**登记，不写成「某路径挂死」这一**断言**）；**仓库路径含空格** ⇒ 🔴 **先直连**（**逐工具取证**：`write` / `read` / `edit` / `grep` / `glob` 在含空格路径下**全部正常**，见台账 `NS-2` 的证伪读数）；**只有实测失败**（附命令 + 原始报错）才绕 —— 真正会失败的是**未加引号的 shell 路径**与**未用 `-z` 解析 git 输出**，那是**写法**、**不是**工具的确定行为。⛔ **不许再把「建软链」写成无条件步骤**（无根据的规矩：每单白做一步，且**会掩盖真实问题** —— 真出问题时会以为是「没建软链」），口径见台账 `NS-2` 的收窄与 `PD-6`。**后两条无判据**（台账 `not_solidified` 的 `NS-2` / `NS-3`） |
+| **FM-E14** | ✅ **已修（#5707 销账，`guarded`）** | **判据 13** = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_node_test_targets_are_globs_in_the_registered_carriers` —— 射程 = **两处具名载体**（`verify-all.sh` + `.github/workflows/worker-h5-tests.yml`，见判据常量 `NODE_TEST_GLOB_CARRIERS_FROZEN`）；目标参数不含 glob 且不在**只许缩短**的载体台账（`NODE_TEST_TARGET_ALLOWLIST_FROZEN`，现取 1 条 = 就绪探针的 `/dev/null`）里 ⇒ **红** | **`node --test <目录>` 会被读成 1 条失败的假红**（必须用 glob：`node --test <目录>/*.test.mjs`）。2026-09-27 实测。🔴 **本单复核后订正原文的「未写进任何地方」**：`docs/wiki/Development.md` 的「工装坑」节**已经写了这个坑**（散文）—— 缺口在「**无判据**」而不在「无文字」；散文拦不住任何人对腿的参数字面量做改写。判据含两条收紧以免**被自己的说明文字喂红**（`FM-A11` 形态）：① 剥 `#` 注释（**prose 豁免**）；② 目标参数须**像路径**（含 `/` 或 `.`），故 job 名里的 `(node --test)` 不被读成调用。**登记边界（假绿方向）**：`node --test <裸目录名>`（既无 `/` 也无 `.`）**不判** |
+| **FM-E15** | ⚠️ **已登记（本单补判据 + 边界）** | 本单补的两条唯一性判据（用例号 / 活的迁移目录版本号）+ 顺延口径；边界声明 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::CASE_ID_ALLOCATION_BOUNDARY`（**删掉即红**） | **编号分配只看已合并状态**：取号时现取「main 上最大号 + 1」，**看不到在飞分支** ⇒ 两个并行包取到同一个号；先合的无事，**后合的**把重号带进 main。本会话用例号已撞 **7~8 次**（UI-061 / UI-064 / MC-022 / MC-023 / BM-019 / MC-025 / MC-026），迁移号 1 次（V132 两包同抢）。🔴 **本单自己中招**：写侧取 `MC-026`（当时现取最大 = `MC-025`），#5705 合并时已占 `MC-026`/`MC-027` ⇒ 顺延 `MC-028`。**为什么不加强判据**：在飞分支在 CI 的 `actions/checkout` 下**不可见** ⇒ 同一份代码会给出不同读数（判定不确定）；走 API 则引入网络依赖 ⇒ 与「判定方式必须确定」冲突。**显形条件**：main 上已合并占号 且 某个在飞分支同号 |
+| **FM-E16** | ✅ **已有守护（本单初版写错、被它当场抓住）；但「守护存在」≠「覆盖实际形态」** | `scripts/pr_body_guard.py`（issue #4232）：**工具** = `python3 scripts/pr_body_guard.py new --issue <N>`（**会话/工作区作用域唯一**、`O_CREAT|O_EXCL` 原子创建）+ 提交前 `check` + 写完 `verify`；**静态面 R1/R2** = 仓内被跟踪文本里出现「共享临时根 + `pr-body` 族文件名」的形态 ⇒ 判红，由 `tests/unit_ci_workflows/test_pr_body_guard.py::test_scan_real_repo_has_no_shared_fixed_pr_body_carrier` 在 required 的 `ci workflow helper unit tests` 里代跑 | **共享临时路径**：并发包复用共享临时根下的**约定俗成的固定文件名**承载 PR body / 评论 / payload ⇒ 互相覆盖；🔴 **失败是静默的**（后写覆盖先写、**双方都不知道**）。**两例实证，第 2 例已有实际损害**：① issue #4232 的原始实测（A 的 body 被写成 B 的；若此时被 auto-merge 合了会**误关 4 个别人的 issue**）；② **已实质性发生（PR #5704 的包报告）**：其 PR body 载体被**另一并发会话覆盖** ⇒ `gh pr edit` 把**别人的正文贴到了 #5704 上约 90 秒**（损害 = 另一个包的交付说明被公开发布在别人的 PR 上；发现 = 当场改回；最终核验 = 83 行 / 关闭关键词 0）。⚠️ **两侧都在犯**（集成侧也长期用固定临时路径）⇒ 不是某个包的疏忽，是这个工作模式自带的坑。🔴 **残余已从「边界」升级为「主路径」**：静态面射程是**仓内文本**，**管不到手敲的命令行** —— 而手敲命令正是原始形态。**判别动作（降低概率，非机械守护）**：PR body 临时文件一律用**会话唯一路径**（含单号 / 分支 / pid），优先 `pr_body_guard.py new`。**同族**：§17.2 写面冲突 / §17.3 ④ 共享写面 / §2.3 零共享写路径 / §23.6 工装纪律 / 清单 B 的 `FM-B4`；**本次推广 = 「共享写面出事的形态，往往不是你以为的那个入口」**（你防文档里的固定名，出事在命令行里的固定名） |
+
+| **FM-E17** | ✅ **已收口（#5707 按用户 2026-09-27 逐字裁定 = 方案 A「给 `worker-h5-publish` / `bmini-h5-publish` 补一个兜底触发面（周期重建重发布）……静态形状判据才变成真绊线，可一并落判据收口」）** | **兜底面** = 两条腿**各自**的 `on.schedule`（每日档：`.github/workflows/worker-h5-publish.yml` 的 `23 18 * * *` · `.github/workflows/bmini-h5-publish.yml` 的 `43 18 * * *`）+ **判据** = `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py::test_real_workflows_and_ledger_are_clean`（判据 1~8：未登记即红 / 删光即红 / 只许缩短 / 兜底面必须在位 / 声明 ⇄ 现取双向 / `workflow_run` 上游名可解析；判别力与对照读数见 `::test_discriminating_power_in_memory`）+ **登记表** = `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` | **把 `push` 面当唯一自动触发面的**发布腿写的是**线上静态根**，而本仓的 `push` **是被吞的**（auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ push run 不再触发 workflow）⇒ 合并后**静默停在旧产物、无红无告警**。**现取（2026-09-27）**：`gh run list --branch main --event push --limit 200` 覆盖 2026-09-25T09:41Z~2026-09-27T07:23Z、去重 43 个 sha，而同一窗口 `git log origin/main -40` 的 40 个 commit 里**只有 1 个**（`08dd30e7`）在其中 ⇒ **39/40 零 push run**；**两次现场咬过**（`/b/` 与 `/w/` 停在接线前的旧构建，都由人工 `workflow_dispatch` 补）。🔴 **原文的「重启条件」已达成 ⇒ 落判据**：原文写「发布/守护腿接上 `mechanism-liveness` 存活读数（**或补 `schedule`**）之后，静态形状判据才成为真绊线 ⇒ 届时再落」—— 本单走的正是括号里那一条，原文担心的 (b)（「登记的兜底面只会是 `deploy-reconcile` 的 `*/20`，而那**正是失效的那一环** ⇒ 给不存在的保护盖章」）因此**不再成立**（现在核的是这条腿**自己**的 `on:` 且**声明 ⇄ 现取双向**）。**三种兜底方案的现取对比**：③「让 `deploy-reconcile` 那条 `*/20` 真的派发这两条腿」—— **现取：它本来就会派**（`reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5` 与 `reconcile_one bmini-h5-hosting bmini-h5-publish.yml frontend/bmini-app`），**无需改动**，但它是**共命**兜底（reconcile 挂了 / 它的 cron 被节流 ⇒ 两条腿同时失去兜底）；②「`workflow_run`（reconcile 完成时）」—— **现取否决**：reconcile 的完成次数约 **40~60 次/日**（绝大多数是 `pull_request:[opened,reopened]`），而 `workflow_run` **没有 paths 过滤** ⇒ 两条腿会被无条件重建重发布 40~60 次/日（bmini 那条要跑 Taro 构建 + 推 ACR 传输镜像）；①「各自加 `schedule`」= **选定**。🔴 **为什么取每日档（cron 节流现取实测）**：`*/20 * * * *`（名义 72 次/日）在 158.3h 里实得 **40 次 = 6.3 次/日 = 名义的 8.4%**（相邻间隔 最小 128 / 中位 244 / 最大 357 分钟，39/39 个间隔 > 60 分钟）；而两条**每日** cron（`mechanism-liveness.yml` 的 `37 20 * * *` / `post-merge-verify.yml` 的 `17 19 * * *`）的中位间隔分别为 **1446 / 1437 分钟（≈24.0h）** ⇒ **每日档未被节流**。**幂等与内容正确性**：`actions/checkout` 无 `ref` ⇒ `schedule` 取**默认分支 HEAD**（= main HEAD，线上应有的状态，不是陈旧内容）；远端发布脚本先建 stage 再整份覆盖、**不对静态根做清空** ⇒ 重复发布同一份产物只是同样的字节再覆盖一次。**失败可见**：两条腿发布后都有**身份断言**（`deploy/scripts/worker-h5-verify-served.sh` / `deploy/scripts/bmini-h5-verify-served.sh`）⇒ 发布错了会判红（不是静默）。🔴 **覆盖面（照实登记，**不是**「已全覆盖」；逐条写在登记表 `coverage_boundary`，由 `::test_coverage_boundary_is_registered` 正向核 face + reason + recompute）**：① **cron 被节流** —— 判据只证明「`schedule` 这个面在」，判不了它跑没跑（8.4% 就是这一面）；② **cron 到点被 `concurrency` 顶掉**（两条腿 `cancel-in-progress: false` ⇒ 至多 1 running + 1 pending）；③ **「腿跑了但发布内容不对」**（由运行期身份断言承接，判据不覆盖）；④ **`workflow_run` 的上游自己没跑**（判据只核上游名可解析，防**静默脱钩**）；⑤ **`push` 被 `GITHUB_TOKEN` 吞掉这一运行期事实本身**（刻意不进判据）；⑥ **「兜底面在位」≠「线上字节 == main HEAD」**（需线上复探）；⑦ **已登记腿之外的新族**（一条腿若同时有 `push` 与 `pull_request`，不在判决射程内 —— 这正是「不用宽泛正则一把梭」的代价，登记表**只许缩短**地人工维护）；⑧ **`deploy-reconcile` 那层是否真派发**（现取**会**，但本判据**不重复判它**：那两行的调用点与 pathspec 已由 `tests/unit_ci_workflows/test_config_change_triggers_deploy.py`（MC-023）冻结，另造第二套台账 = 双真相源）。**判定方式是确定的**：判据只读仓内文件（`.github/workflows/*.yml` + 同目录登记表 JSON），**零 `gh` / 零网络 / 零时钟**。**在真语料上双向自证**：判据跑在**未补兜底面**的语料上**判红两条腿**；补上 `schedule` 后 6 passed ⇒ 它是**真绊线**。**附带收益（本包现取发现）**：补了 `schedule` 之后这两条腿**自动进入** `scripts/drift_audit.py::check_heartbeat()` 的判定面（它遍历所有「头部有 `- cron:` 的 workflow」⇒ 现取调度面由 **14** 条变 **16** 条）；阈值 = 有效周期 + 2 天 = 1440 + 2880 分钟 = **3 天** ⇒ 停摆 >3 天产出 `<wf>|stale` finding。🔴 **但它不构成阻断**：`Drift Audit (真相源契约)` **不在 required 集合**里 ⇒ 判红照旧合并 ⇒ 这是**多了一层与 push 无关的停摆绊线**（真收益），**不是**「失败可见」的完整答案（3 天延迟 + 非阻断）；已作为第 8 条覆盖面登记。**同批**：台账 `FM-E17` 的 `state` 由 `gap` → `guarded`（`PD-8` 公开降 `GAPS_FROZEN` 2 → 1）· `GAPS_FROZEN` **2 → 1** · 用例 MC-039。⚠️ **本单未动的**：两条腿的**发布脚本**与产物路径（只动触发面）· `deploy-reconcile.yml`（属另一条在飞线的登记面）· `FM-E10`（**仍留 `gap`**，不许顺手销账）· 那 2 条腿的**路径**缺口（照旧在 `reconcile_trigger_paths_ledger.json`） |｜⚠️ **2026-09-27（issue #4184）现取复核**：新增的 `c-end-h5-publish.yml` 是**第三种形态** —— 它有 `push` 面，但**发布步骤只手动授权时才写盘**（模式判定步 + `if: mode == 'publish'`，`publish` 默认 `false`）⇒ 它**不是**「push 面 = 唯一生效触发面」那两条之一。🔴 **但它照样受本判据约束**：`push` 被吞时它同样**不会跑且无红** ⇒ 本单同批给它补了每日 `schedule`（`53 18 * * *`，只报告不发布）并登记进 `publish_leg_fallback_ledger.json`（`frozen_max`/`LEGS_FROZEN`/`PUBLISH_LEG_FILES_FROZEN` 三处 2 → 3），其 notify 步判的是「线上产物是否落后」（判据本体 = `scripts/h5_freshness_guard.py`，不写第二份口径）。 |
+| **FM-E18** | ✅ **本单补判据（原先是「无判据可加」的**时序**漏点）** | 判据 = `tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count`（**行数相同** + **分域合计 == 总数** ⇒ 仍必红且具名）+ `::test_line_count_compare_mutant_turns_that_fixture_green`（**判别力自证**：把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具**变绿**）+ 夹具构造函数 `::make_summary_stale_in_place`；判定本体仍是**单一实现** `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，没有「跳过」） | **生成物文件的 git 三方合并产物**：两个**各自自洽**的分支合并后，**块 hunk 取并集**（46 + 1 = 47）、而**两侧同值的汇总 hunk 干净合并、不重算** ⇒ 落地的 casebook 汇总读数比 `.github/cases/**` **少 1**，且 `git merge-tree` **零冲突**、文件**语法合法**、**内部自洽**（分域合计 == 总数）⇒ PR 面与 `Case Contract (truths_ref)` **都不会红**。**现场（2026-09-28，issue #5741）**：提交版 558（杂项域 46）/ 现取 559（47），**行数两侧同为 8112、仅 4 行不同**。**一条命令复现（零网络、幂等）**：`git fetch origin refs/pull/5733/head e3d35c130 && tree=$(git merge-tree --write-tree 2550bc4f4 e3d35c130 \| head -1)` ⇒ 该树与落进 main 的那份 casebook **逐字节相同**（`diff` 0 行），而它的用例源已是 47 条。🔴 **为什么「再加一条判据」不是这道题的答案**：漏点在**时序** —— 「**检查跑的那份快照 ≠ 实际落地的那份合并结果**」。两条真出口（**都会动合并门禁 / 仓库设置 ⇒ 需人裁定**，本包有意不做）：① 分支保护打开 **Require branches to be up to date before merging**（基线前进 ⇒ 强制重跑，代价 = 每次合并多一轮 CI）；② 合并落地后**即时**重渲染校验，把 main 侧那条腿从「报告型 + ≤1 个 cron 周期延迟」改成「即时 + 阻断」。**现状承接面** = `Main Freshness Guard（main 侧生成物新鲜度）`（判红自动开 P1 值班单 —— 本条的现场正是它的产物），**报告型、非阻断** |
+
+| **FM-E19** | ✅ **本单补判据 + 真修** | 判据 = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_remote_round_trips_are_constant_not_per_branch`（3 个远程分支 ⇒ `push --delete` **1 次**、批量读数 **≤ 2 次**）+ `::test_remote_round_trips_do_not_grow_with_target_count`（**不变性**：1 → 3 不增长）+ `::test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe` + `::test_batch_reading_unavailable_is_marked_undecidable`（红证半边）；实现 = `scripts/issue_lifecycle.py::remote_heads` / `::batch_delete_remote_branches`（**四态**真值 `deleted`/`already-absent`/`absent-unverified`/`failed`，**不解析 stderr**；🔴 独立验收抓出两条并在同批修掉：**回退路径曾把幽灵分支谎报成 `deleted`**（现只给 `absent-unverified`）、**一个坏 ref 会让整批 push 被拒**（现对「仍在」的逐个补删，上限 20）） | **逐分支网络往返**：`reap-merged --apply` 原先每个目标各一次「删远程 + 探远程」= **2 × 目标数**次往返；单次实测 **3.70s**（本机 SSH）⇒ `dev-worktree.sh add`（把 reap 接在 add 上）整条命令 **~7 分钟**，用户侧表现 = **「挂死」**（`NS-3` 卡在「既未复现也未证伪」）。**前后对照（同一现场）**：修前 dry-run **55 个「可收尾」**、apply ≈ **6.8 分钟**；修后 apply **17.7s**、再跑 dry-run **可收尾 0**。🔴 **顺带销账的另一半**：**陈旧 remote-tracking ref**（现取 55 个：本地 `refs/remotes/origin/*` 有、远程没有）原先**常驻删除面**、每轮被尝试删除并「自证通过」⇒ 现在**不进候选**并具名给出真出口 `git fetch --prune origin`（候选 72 → 17）。**覆盖面**：判据只判**调用形状**（往返次数与目标数无关）⇒ 判不了「网络真的通」「远端权限够」；**显式退回**逐分支探测（慢；且**语义不变只对主路径成立** —— 回退路径判不了「是不是我删的」，只会给 `absent-unverified`，不会给 `deleted`） |
+| **FM-E20** | ✅ **本单修 + 补判据（结构面）** | 判据 = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_preset_refresh_fetches_the_baseline_before_self_check`（`preset_refresh_order_problems` 纯函数：`git -C "${BASELINE}" fetch` 必须在**自检调用之前**；红证 = 删掉 / 挪后各能单独变红）；修法 = `scripts/preset-anchor-refresh.sh` ⑤ 之前先 fetch（失败只降级打印，不静默） | **拿未 fetch 的旧 ref 当判定基线** ⇒ 「刚合并」被读成「落后」：2026-09-28 `land` 的 ⑦ `preset-refresh` 判红（逐字「❌ 活锚内容与 origin/main 不一致：1 个文件内容不同」，而该文件正是刚合并的 `SKILL.md`），**只差一次 fetch**；基线仓 fetch 后同一条命令立刻转绿。与 `FM-E18` 同族：**判据没错，错在它读的那份东西已过期**。🔴 **覆盖面**：文本顺序判定 ⇒ **证明不了**运行期真 fetch 成功，也不覆盖其它「对旧快照判定」的形态 |
+
+| **FM-E21** | ✅ **本单修 + 补判据（含预算值域）** | 判据 = `tests/unit_ci_workflows/test_post_merge_verify_leg.py::summary_budget_problems`（三处预算齐备 + `tail -c`/`grep`/`head -n` 形态齐备 + 承接单不得读完整输出）+ `::test_real_workflow_has_the_three_budgets`（真 YAML）+ `::test_each_budget_mutation_turns_it_red`（**6 条注入式红证**：摘要不截断 / 摘要超 1024k / 承接单超 65536 / 清单不打 stdout / 清单无上限 / 承接单读完整输出）+ `::test_comment_only_change_does_not_turn_red`（对照）；实现 = `.github/workflows/post-merge-verify.yml` 的 `FAILED_MAX=40` / `SUMMARY_EXCERPT_BYTES=200000` / `ISSUE_EXCERPT_BYTES=30000` | **判红输出把自己的出口压垮**：判定步把**完整 pytest 输出**（现取 **17613k**）灌进 step summary ⇒ 超过 GitHub 的 **1024k** 上限 ⇒ **整份摘要上传被拒**（逐字 `$GITHUB_STEP_SUMMARY upload aborted … got 17613k`）⇒ 那次 **9 条失败明细在人默认读的两个面（step summary / job summary）都没有**（原始 job 日志里其实有，要人知道去 `grep FAILED`；**订正**：「哪都看不到」是过头写法，失效的是**默认阅读面**）；同一份输出还被**承接面**（P1 值班 issue）整段贴进 body，而 issue body 上限 **65536 字符** ⇒ 超了**开不出单**（判红无人接盘）。🔴 **预算值是判据的一部分**：把摘要预算改成 `2000000` 就红（那正是实测形态）—— 不是只看「有没有常量」。**覆盖面**：结构 + 值域判定 ⇒ 判不了「摘录够不够长到看得见根因」（人读的问题），也判不了 GitHub 未来改上限 |
+
+| **FM-E22** | ✅ **本单补判据（PR 面可拦；**不改门禁配置**）** | 判据 = `tests/unit_ci_workflows/test_main_freshness_guard.py::probe_wiring_problems`（纯函数：探测在跑 + 路径门控在 + `fetch-depth: 0` + 门控覆盖四条路径 + 先取 main）+ `::TestMergeProbe`（**真 git 夹具**：两侧各自新鲜、合并结果陈旧 ⇒ `drifted`；自比 ⇒ `fresh`；基线取不到 ⇒ `undecidable`；CLI 退出码 1/0）+ **6 条接线变异红证**（含 `drop_rc_judge`） + 对照读数；实现 = `scripts/generated_artifacts_freshness.py::probe_merge`（`--merge-probe <ref>`，**同一份实现**）+ `.github/workflows/pr-check.yml` 的探测步 | **合并结果这一面原先无判据**（`FM-E18` 的时序根因）：两个**各自新鲜**的分支合并后，块 hunk 取并集、而两侧**同值的汇总 hunk 干净合并不重算** ⇒ **落地那份比源陈旧**（现场：**8112 行 / 8112 行、仅 4 行不同**，`git merge-tree` **零冲突**）。**探测只读**：`git merge-tree --write-tree` 取合并树 → `git archive` + `tarfile` 解到临时目录 → 跑同一个 `evaluate()`（不落工作区、不写仓内对象）。三态 `0` 仍新鲜 / `1` **会**陈旧 / `3` 无法判定（取不到基线 **或**与基线冲突 —— GitHub 侧本来也拦合并）。**归因两面都给读数**（本树 / 合并结果）。🔴 **路径门控（`.github/cases` / 渲染器 / 两个生成物）是有意的**：不碰受管用例面的 PR **不替 main 侧的漂移背锅**（`FM-E4`）。**门控面本身也要登记**：`tests/unit_ci_workflows/declaration_gate_registry.json` 的 `gates` 新增 `case-truth-check-merge-probe`（逐字路径谓词 + `must_cover` 四条 + `uncovered` 两条）—— **未登记即红**。**与 `FM-E18` 的关系**：`FM-E18` 的两条真出口（分支保护 `Require branches to be up to date` / 落地后即时阻断）**仍未被采用**（要动门禁配置），本条是不动配置的第三条出口。⚠️ **夹具环境读数（本单实测一次）**：真 git 夹具的提交必须**注入身份**（`GIT_AUTHOR_*` / `GIT_COMMITTER_*`）—— runner 上没有 `user.name/email` ⇒ `git commit` 报 `Author identity unknown` ⇒ **本机全绿、CI 整片红**（同族 `FM-A14`）。**覆盖面**：探测判不了「本该重渲染但两侧都没动」（无差分）与「GitHub 的合并不是 git 三方合并」的极端差异 |
+
+**计数器（现取）**：`state=gap` 的条目共 **1** 条（`FM-E10`）—— 这个数**只许缩短**，
+上限冻结在判据 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `GAPS_FROZEN` 里，**台账改不动它**。
+（沿革：#5706 建账 = 3 → #5709 新增 `FM-E17` 抬到 4（台账 `PD-1`）→ #5707 两笔销账降到 2（台账 `PD-2`：
+`FM-E4` / `FM-E14` 转 `guarded`）→ **#5707 本包再销一笔降到 1**（台账 `PD-8`：`FM-E17` → `guarded`，
+两条发布腿各自补 `schedule` 兜底面 + 落静态形状判据）。🔴 **口径订正**：判据语义是 **`现取 ≤ 上限`**（只许缩短）⇒
+「把上限抬到高于现取条数」**本身不会红**；「上限 == 现取」靠**销账时同批降上限**这个动作，不是靠判据。）
 
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
 
@@ -57,6 +194,34 @@ push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag
   → CI 轮询 DescribeInvocationResult 至 Success
   → smoke-test.yml post-deploy 冒烟（api.migaozn.com / ai-api.migaozn.com）
 ```
+
+### 触发面 = 对账面：只改配置也必须能自动生效（关联 #5001）
+
+配置（`deploy/swas/nginx.conf` / `docker-compose*.yml`）与镜像**同源**：`deploy/swas/deploy.sh`
+只取「镜像 tag 那个 commit」的配置（`CONFIG_REF_RESOLVED`，由 `config_ref_for_tag` 解析，见
+issue #5083），把它们 `cp` 到 `nginx/` 与 compose 根，并无条件
+`docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 的初值，
+那段在逐服务循环**之外**）⇒ **配置的应用面只在这条部署腿里**。
+
+⇒ 改 `deploy/swas/**` **必须**触发一条部署腿，否则改动**静默不生效**（实测两次：#5668 的 `/b/`、
+#5676 的 `/i/` 都只能靠人工 `workflow_dispatch` 才生效）。现在两处**同批**接线：
+
+| 面 | 位置 | 内容 |
+|---|---|---|
+| 触发面 | `.github/workflows/deploy-admin-api.yml` 的 `on.push.paths` | `backend/admin-api/**` + `deploy/swas/**` |
+| 对账面 | `.github/workflows/deploy-reconcile.yml` 里 admin-api 腿的第 4 个参数 | `deploy/swas`（**附加包含项**，与 `:(exclude)X` 排除项共用一个口子） |
+
+⚠️ 这两处是**同一事实的两处投影**（「某服务的触发路径集合」）：只改一处 ⇒ 触发面与对账面脱钩，
+而脱钩本身**不会有任何东西变红**（这正是 #5668 / #5676 两次静默生效的成因）。⇒ 常驻判据
+`tests/unit_ci_workflows/test_config_change_triggers_deploy.py`：逐服务**双向**比对两处
+（防静默 / 防空转）+ 三份 canonical 配置的覆盖 + 执行式「只改 `deploy/swas/nginx.conf` 的 commit
+⇒ 判有漂移 ⇒ dispatch」+ 另外 4 条腿逐值不变。存量缺口（另 4 条腿的发布链路文件等）逐条登记在
+`tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`，**只许缩短**。
+
+**登记（本单未修，如实记录）**：`deploy/swas/deploy.sh` 在 `CONFIG_REF_RESOLVED` 处逐字要求
+「配置（compose/nginx）必须与镜像**同一 commit**」⇒ **用旧 tag 重放/回滚一次部署，会把
+`nginx.conf` 一起倒回那个旧 commit 的版本** ——「刚修好的配置被一次回滚静默撤销」。
+它属发布链路语义（与「不许往回走」闸门同一面），本单**只登记、不修**。
 
 ### 镜像 tag 策略（2026-08-30 起）
 

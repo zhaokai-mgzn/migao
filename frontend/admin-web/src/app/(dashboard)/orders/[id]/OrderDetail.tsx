@@ -9,10 +9,12 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
+// 发货读面（issue #5651）：销售单的数量列消费**实发**，判定在 lib 里
+import type { OrderShipmentRead } from '@/lib/sales-shipment'
 import { cn } from '@/lib/utils'
 
 // 格式化金额（含千分位+两位小数）
@@ -83,6 +85,11 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 发货读面（issue #5651 收口）：`null` = 还没取到 / 取失败 —— 销售单据此显式标「未取到」，
+   * **不**退回「未发货」的无标记形态。
+   */
+  const [shipments, setShipments] = useState<OrderShipmentRead | null>(null)
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
 
@@ -123,6 +130,16 @@ export default function OrderDetailPage() {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
+      // 发货读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = order_shipment_items）。
+      // 🔴 取不到 ⇒ `null`（**不是** `{shipments: []}`）：纸面会显式标「发货明细未取到」，
+      // 绝不把读面故障显示成「未发货」（用缺数据冒充业务状态）。
+      try {
+        const shipmentsRes = await orderApi.getOrderShipments(orderId)
+        setShipments(shipmentsRes.data?.data ?? null)
+      } catch (e) {
+        console.error('加载发货明细失败:', e)
+        setShipments(null)
+      }
     } catch (e) {
       console.error('加载订单失败:', e)
       toastRequestError(e, '加载订单详情失败')
@@ -278,6 +295,8 @@ export default function OrderDetailPage() {
         onRefund={() => setRefundModalOpen(true)}
         onPrintShipment={() => printDoc('shipment')}
         onPrintQuotation={() => printDoc('quotation')}
+        onPrintProcessing={() => printDoc('processing')}
+        onPrintSales={() => printDoc('sales')}
       />
 
       {/* 基础信息 */}
@@ -339,6 +358,19 @@ export default function OrderDetailPage() {
           （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
       <QuotationDoc order={order} printTarget={printTarget} />
+
+      {/* 纸质加工单（A4，issue #5651）：照客户实证制式「按套分块」；右上 QR = 加工单号。
+          页面级挂载一份 —— 与 ShipmentDoc / QuotationDoc 同范式（见 ProcessingDoc 文件头）。 */}
+      <ProcessingDoc
+        order={order}
+        processingOrder={processingOrder}
+        qrValue={processingOrder?.processingOrderNo ?? null}
+        printTarget={printTarget}
+      />
+
+      {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
+          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
+      <SalesDoc order={order} shipments={shipments} printTarget={printTarget} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">
@@ -471,6 +503,10 @@ interface StatusSectionProps {
   onPrintShipment: () => void
   /** 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */
   onPrintQuotation: () => void
+  /** 打印**加工单**（A4，issue #5651）：车间用的那张，按套分块 */
+  onPrintProcessing: () => void
+  /** 打印**销售单**（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */
+  onPrintSales: () => void
 }
 
 function StatusSection({
@@ -485,6 +521,8 @@ function StatusSection({
   onRefund,
   onPrintShipment,
   onPrintQuotation,
+  onPrintProcessing,
+  onPrintSales,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   const display = displayOrderStatus(order.status as string)
@@ -596,6 +634,16 @@ function StatusSection({
               <Printer className="w-4 h-4" />
               打印报价单
             </Button>
+            {/* 打印加工单（A4，issue #5651）：车间用；与报价单同范式、同一权限口径 */}
+            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印加工单
+            </Button>
+            {/* 打印销售单（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */}
+            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印销售单
+            </Button>
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -626,6 +674,15 @@ function StatusSection({
             <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
               <Printer className="w-4 h-4" />
               打印报价单
+            </Button>
+            {/* 打印加工单 / 销售单（issue #5651）：已完成订单同样可补打 */}
+            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印加工单
+            </Button>
+            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印销售单
             </Button>
           </div>
         </div>
@@ -745,6 +802,22 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                   })()}
                   {/* 工艺规格（issue #4355 / 设计文档 §4.9 ②）：直读 processing_info，缺值行已丢弃 */}
                   <CraftSpecList source={row.processingInfo} />
+                  {/* **部位备注**（issue #5685）：商家写的「这个数字怎么来的」（算料依据的人工说明）。
+                      真值 = `order_items.processing_info.remark`（顶层字符串）——**直读、不二次推导**。
+                      **缺值不渲染**：键缺席 / `null` / 空串 / 纯空白 ⇒ 该行不出现（不显示空行、
+                      不显示 `undefined`）。 */}
+                  {typeof (row.processingInfo as any)?.remark === 'string' &&
+                    (row.processingInfo as any).remark.trim() !== '' && (
+                      <div
+                        data-testid="order-item-remark"
+                        className="mt-1 flex flex-wrap gap-x-1.5 text-xs"
+                      >
+                        <span className="text-neutral-400">部位备注</span>
+                        <span className="text-neutral-700">
+                          {(row.processingInfo as any).remark}
+                        </span>
+                      </div>
+                    )}
                 </Td>
                 <Td align="right" className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}

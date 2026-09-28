@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007, DF-017, PG-020
+// case_ids: DF-007, DF-017, PG-020, PG-018, PR-113
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -108,6 +108,22 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.UserService userService;
 
+    /**
+     * 工人档案服务（issue #4869）：新控制器 {@code AdminWorkerController} 的构造依赖
+     * ⇒ 本上下文必须能装配它（本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
+     */
+    @MockBean
+    private com.migao.admin.service.WorkerAdminService workerAdminService;
+
+    @MockBean
+    private com.migao.admin.service.OrderShipmentService orderShipmentService;
+    // 发货单 / 发货明细（issue #5648，V133 —— 原 V132 让号给 #5642 的 V132 权限码迁移）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
+    // sqlSessionFactory（MybatisPlusAutoConfiguration 已排除）⇒ 不顶替就整个上下文起不来
+    // （与上面 StockLedgerMapper / InboundOrderMapper / FabricRemnantMapper 同款口径）。
+    @MockBean
+    private com.migao.admin.mapper.OrderShipmentMapper orderShipmentMapper;
+    @MockBean
+    private com.migao.admin.mapper.OrderShipmentItemMapper orderShipmentItemMapper;
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 
@@ -155,6 +171,13 @@ class SecurityConfigTest {
     // 本上下文排除了 MybatisPlusAutoConfiguration ⇒ 没有 sqlSessionFactory ⇒ 不顶替会让
     // **整类 42 条断言一起红**，而红的表现是「ApplicationContext failure threshold exceeded」
     // （看不出跟入库单有关，排查会绕远）。同 StockLedgerMapper 的口径。
+    /**
+     * 入库标签（issue #5052 P2，V133）：{@code InboundLabelService} 的构造依赖
+     * ⇒ 本上下文必须能装配它（该 Mapper 在测试环境无 MyBatis 自动配置，必须顶替）。
+     */
+    @MockBean
+    private com.migao.admin.mapper.InboundLabelMapper inboundLabelMapper;
+
     @MockBean
     private com.migao.admin.mapper.InboundOrderMapper inboundOrderMapper;
     @MockBean
@@ -418,6 +441,14 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.CraftCalcConfigMapper craftCalcConfigMapper;
 
+    // 企业参数变更留痕（issue #5131 P6，V131）。**同族坑第 6 次**：新增 Mapper（此处 =
+    // TenantParamAuditMapper，经 TenantParamAuditService ← CraftCalcConfigService ← CraftCalcConfigController
+    // 被拉进上下文）必须在此 `@MockBean` 顶替 —— 漏了不会在「新增 mapper 的那个测试」里红，
+    // 而是在**本类**全 error（`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`），归因错位。
+    // 本次实测：漏 mock 时本类 43 条全 error（守卫 tests/unit_ci_workflows/test_security_config_mapper_mocks.py 同时判红）。
+    @MockBean
+    private com.migao.admin.mapper.TenantParamAuditMapper tenantParamAuditMapper;
+
     // 未定价实例补价动作账（issue #4709 C，V94）。**同族坑第 5 次**：新增 Mapper 必须在此
     // `@MockBean` 顶替 —— 它是 ProductionInstanceRepricingService（→ ProductionController 的
     // 字段注入依赖）的构造参数，未 mock ⇒ 上下文起不来 ⇒ 本类 26 条安全用例连坐全 error
@@ -602,6 +633,28 @@ class SecurityConfigTest {
         // 且响应是 200 —— 上面两条断言与下面这条 verify 会同时变红，证明新守卫真的在承重。
         verify(roleService).getUserPermissions("staff-1");
         verify(productService, never()).getProducts(any(), any());
+    }
+
+    @Test
+    @DisplayName("#5641 生产概览端点缺 production:view ⇒ 403（无权限是**拒绝**，不是静默返回空列表）")
+    void todoOverviewWithoutProductionViewIsDenied() throws Exception {
+        when(userMapper.selectById("staff-1")).thenReturn(staffUser("staff-1", 1L, "operator", "active"));
+        // 有经营看板读码、**没有**生产域读码 —— 正是「打开了数据 Tab 但看不到生产待办」的那个角色
+        when(roleService.getUserPermissions("staff-1")).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/production/todo-overview")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "staff-1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+                .andExpect(jsonPath("$.error.details[0].field").value("requiredPermission"))
+                .andExpect(jsonPath("$.error.details[0].message").value("production:view"));
+
+        // 承重判据：拒绝发生在**进业务之前**。「无权限」与「今天没有待处理」必须可区分 ——
+        // `{"success":true,"data":{"todo_total":0}}` 那种静默空列表正是本单要防的形态。
+        verify(roleService).getUserPermissions("staff-1");
     }
 
     @Test
@@ -867,6 +920,52 @@ class SecurityConfigTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ======================== 工人档案接口（issue #4869）=======================
+
+    @Test
+    @DisplayName("越权防护 - 工人角色（worker）访问 /api/admin/workers 返回 403（新入口被同一道门禁覆盖）")
+    void authorization_workerRole_cannotAccessWorkerEndpoints() throws Exception {
+        mockMvc.perform(get("/api/admin/workers")
+                        .with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("worker-1").roles("WORKER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
+                .andExpect(status().isForbidden());
+
+        // 不是「拒绝了但业务已执行」：请求根本没进到服务层
+        verify(workerAdminService, never()).createWorker(any(), any(), any());
+        verify(workerAdminService, never()).listWorkers(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("工人档案 - operator 持 employee:create 可建工人（正向对照：不是被一刀切死）")
+    void workerCreate_operatorWithPermission_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:create"));
+        when(workerAdminService.createWorker(any(), any(), any()))
+                .thenReturn(new com.migao.admin.entity.User());
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("operator-7").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("工人档案 - operator 无 employee:create 建工人返回 403（权限码复用员工域，不新增权限码）")
+    void workerCreate_operatorWithoutPermission_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:list"));
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .with(user("operator-8").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerNo\":\"W-1001\",\"name\":\"张三\",\"pin\":\"246810\"}"))
+                .andExpect(status().isForbidden());
+    }
+
     // ======================== CORS 测试 ========================
 
     @Test
@@ -948,6 +1047,47 @@ class SecurityConfigTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
                 // 不泄露身份/权限：302 的响应体为空
+                .andExpect(content().string(""));
+    }
+
+    /**
+     * 🔴 入库标签公开入口 {@code GET /i/{短码}} 必须是**公开入口**（issue #5052 P2；设计 §5.2 / §7.1）。
+     *
+     * <p><b>为什么这条必须有</b>：标签贴在布卷 / 塑料袋上，纸上的码对**任何**持码人等价
+     * （扫码工具 / 系统相机 / 手输 URL）—— 而它落在 {@code anyRequest().authenticated()} 上
+     * ⇒ 未登录访问只会拿到 <b>401</b>，标签上的码**等于没用**。</p>
+     *
+     * <p><b>判据形态</b>：未认证请求能**到达控制器**（⇒ 未知短码得 404，而不是 401）。
+     * 302 那一半由紧随其后的 {@link #inboundLabelShortLinkRedirectsThroughSecurityChain()} 钉。
+     * <b>红证</b>：从 {@code SecurityConfig} 的 {@code permitAll} 名单里删掉 {@code "/i/**"}
+     * ⇒ 实测 <b>401</b>（不是 404）⇒ 本用例必红。</p>
+     */
+    @Test
+    @DisplayName("公开端点 - 入库标签 /i/{短码} 无需认证（删 permitAll ⇒ 401 ⇒ 必红）")
+    void inboundLabelShortLinkIsPublic() throws Exception {
+        mockMvc.perform(get("/i/ZZZZZZZZ"))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 🔴 全链路（安全过滤链 + 路由 + 控制器 + 服务）：有效标签短码 ⇒ **302** + {@code Location}。
+     *
+     * <p>走的是**真实**控制器 + 真实 {@code InboundLabelService}（本类的
+     * {@code inboundLabelMapper} 是 {@code @MockBean}）⇒ 归一化 / 落地页配置都是生产那一份。
+     * 同时钉「公开入口不泄露业务字段」：响应体为空，{@code Location} 里只有落地页 + 短码 + 租户。</p>
+     */
+    @Test
+    @DisplayName("🔴 公开标签短链全链路：有效短码 ⇒ 302 + Location（且不泄露业务字段）")
+    void inboundLabelShortLinkRedirectsThroughSecurityChain() throws Exception {
+        String shortCode = "4T7Y2BQ9";
+        when(inboundLabelMapper.selectByCode(shortCode))
+                .thenReturn(com.migao.admin.entity.InboundLabel.builder()
+                        .id("label-1").tenantId(7L).inboundOrderId("order-1").inboundItemId(1L)
+                        .shortCode(shortCode).printCount(0).deleted(0).build());
+
+        mockMvc.perform(get("/i/" + shortCode))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "/b/?code=" + shortCode + "&tenant_id=7"))
                 .andExpect(content().string(""));
     }
 

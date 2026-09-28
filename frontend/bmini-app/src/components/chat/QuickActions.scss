@@ -1,5 +1,7 @@
 @use '../../styles/variables.scss' as *;
 
+// 六格等权快捷入口（issue #5747：与 C 端现行形态一致 —— 2 列 × 3 行；
+// 旧的「算料报价全宽主入口」已删，`--wide` 样式不留残骸）
 .quick-actions {
   padding: 16px 24px 24px;
 
@@ -35,31 +37,7 @@
     }
   }
 
-  // 算料报价全宽主入口（UI-014，POC 核心动作）：2 列网格中跨整行 + 品牌强调
-  &__item--wide {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    gap: 12px;
-    padding: 18px 24px;
-    background: linear-gradient(135deg, $primary-color 0%, #3b82f6 100%);
-    border-color: transparent;
-
-    .quick-actions__icon {
-      font-size: 36px;
-      margin-bottom: 0;
-    }
-
-    .quick-actions__label {
-      color: #ffffff;
-      font-size: 30px;
-      font-weight: 600;
-    }
-
-    &:active {
-      background: linear-gradient(135deg, $primary-color 0%, #3b82f6 100%);
-      border-color: transparent;
-    }
-  }
+  // 算料报价全宽主入口已移除（issue #5747：与 C 端 #4236 同款裁定 —— 六格等权，不再跨整行）
 
   &__icon {
     font-size: 40px;

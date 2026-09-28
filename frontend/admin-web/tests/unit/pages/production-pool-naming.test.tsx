@@ -70,17 +70,22 @@ describe('智能派单：命名与去内部隐喻（issue #5576）', () => {
     const menuLine = MENU_TS.split('\n').find((l) => l.includes("key: 'production-pool'"))
     expect(menuLine, 'config/menu.ts 缺 production-pool 菜单项').toBeTruthy()
     expect(menuLine).toContain(`name: '${NAME}'`)
-    expect(MENU_CONTROLLER).toContain(`new MenuNode("processing:manage", "${NAME}")`)
+    // issue #5699（P4）：三源的**权限码**同批收敛到该页读码 processing:view（本用例只判「三处同名」，
+    // 码的逐值对账在 permission-code 类判据里；这里同批改准，避免用旧码锚一个已改的事实）。
+    expect(MENU_CONTROLLER).toContain(`new MenuNode("processing:view", "${NAME}")`)
     expect(AUTH_SERVICE).toContain(`menuItem("production-pool", "${NAME}", "/production/pool")`)
     // 面包屑同批（页面上的名字与侧边栏一致）
     expect(HEADER).toContain(`{ label: '${NAME}' }`)
   })
 
-  it('🔴 只改文案：路由 / 菜单 key / 权限码 / 接口路径与字段名一律未动（负控）', () => {
+  it('🔴 路由 / 菜单 key / 接口路径与字段名一律未动（负控）；权限码随 #5699 P4 收敛到页面读码', () => {
+    // ⚠️ P4 之前本用例的名字含「权限码…未动」—— 那是**改名那次改动**（#5576）的负控；
+    // issue #5699 的 P4 **有意**动了这个码（节点码 ≡ 该页读码），故本用例只保留「路由 / key / 接口契约未动」，
+    // 权限码改为钉**新值**（旧值由 P4 的判据与台账负责，不再在这里锚）。
     const menuLine = MENU_TS.split('\n').find((l) => l.includes("key: 'production-pool'")) ?? ''
     expect(menuLine).toContain("path: '/production/pool'")
-    expect(menuLine).toContain("permissionCode: 'processing:manage'")
-    expect(MENU_CONTROLLER).toContain('new MenuNode("processing:manage", "智能派单")')
+    expect(menuLine).toContain("permissionCode: 'processing:view'")
+    expect(MENU_CONTROLLER).toContain('new MenuNode("processing:view", "智能派单")')
     // 接口契约（前端调用面）逐字未动
     expect(API_TS).toContain("request.get<ApiResponse<PoolBoard>>('/api/admin/production/pool'")
     expect(API_TS).toContain("'/api/admin/production/pool/preview'")

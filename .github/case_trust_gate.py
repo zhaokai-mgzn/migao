@@ -1105,6 +1105,16 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
                        f"（存活证据 {len(ev) if ev is not None else '?'} 项"
                        f"{'，如 ' + ev[0] if ev else ''}）")
             out.append(f"    怎么算已实装：{u.get('how_to_verify')}")
+    elif unimpl_guard is not None and not (unimpl_guard.get("violations")
+                                          or unimpl_guard.get("sync")):
+        # 「读过且为空」必须与「压根没读 / 读失败」长得不一样（§16.7 禁空跑的同一条纪律，
+        # 只是这次的对象是**空的登记册**）：2026-09-26 起最后两条口径型登记已撤
+        # ⇒ 空是**正常态**，而报告若什么都不打印，读者无法区分它与「门禁没跑这一步」。
+        out.append("")
+        out.append("ℹ️ 未实装登记：**0 条**（`.github/case-trust-unimplemented.json` 为空 —— "
+                   "这是**读过且为空**，不是「未跑」；也不是「全部已实装」：撤掉的码连同"
+                   "**接受的缺口 / 重启条件**见 `assertion_taxonomy.py` 的 "
+                   "「已撤登记（有意不做 / 口径已无对象）」组与其台帐 `WITHDRAWN_UNIMPLEMENTED`）")
     if unimpl_guard is not None:
         guard = unimpl_guard
         if guard.get("violations") or guard.get("sync") or guard.get("closed"):
@@ -1302,6 +1312,9 @@ def write_unimplemented_manifest(path: Path = UNIMPLEMENTED_PATH) -> dict:
             "实装了就该撤登记，没实装就该开新单）；④ **僵尸登记** ⇒ 红"
             "（`hit_probe` 探不到存活证据 = 登记所述口径已不成立，留着会被读成「还没做」）。"
             "`why_not`/`needs` 只是理由与缺口，**不构成约束**。"
+            "⚠️ 本清单**可以合法地为空**（2026-09-26 起为空）：空 **≠** 全部已实装 —— 撤掉的码"
+            "连同**接受的缺口 / 重启条件**记在 `.github/assertion_taxonomy.py` 的 "
+            "`WITHDRAWN_UNIMPLEMENTED`（「已撤登记（有意不做 / 口径已无对象）」组）。"
         ),
         "unimplemented": list(tax.UNIMPLEMENTED),
     }

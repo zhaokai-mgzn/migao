@@ -73,12 +73,16 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
 from unit_ci_workflows import pg_cluster  # noqa: E402  （起/停集群的唯一收口，issue #5263）
+from unit_ci_workflows._retired_craft_rules import retired_rule_keys  # noqa: E402  （#4365 单一真相源）
 
 
 
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
 V108 = MIGRATION_DIR / "V108__restore_route_rule_positions.sql"
 V109 = MIGRATION_DIR / "V109__allow_position_trigger_kind.sql"
+#: 工艺「四爪钩」三条规则**退场**的迁移（issue #4365；活目录里的**增量**迁移，不是归档链一员）。
+#: 它在链里的位置 = V71 种子 ⇒ V103/V108 部位维 → **V135 软删那三条** ⇒ bootstrap 终态。
+V135 = _LIVE_MIGRATION_DIR / "V135__retire_craft_sig_hook.sql"
 SCHEMA_SQL = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
@@ -118,6 +122,37 @@ def _strip_comments(sql: str) -> str:
 def _rule_rows(sql: str) -> list:
     """`rr-v70-*` 种子字面量行 → [{id, position, …}]（锚定 id 前缀，避免误吃别处的括号）。"""
     return [m.groupdict() for m in _RULE_ROW_RE.finditer(sql)]
+
+
+def _ledger_key_of(row: dict) -> tuple:
+    """`_rule_rows()` 的一行 → 退休台账的 6 元组形态（`'x'` 去引号、裸 `NULL` → `None`）。"""
+    def _value(raw) -> object:
+        text = (raw or "").strip()
+        if text.upper() == "NULL":
+            return None
+        if len(text) >= 2 and text.startswith("'") and text.endswith("'"):
+            return text[1:-1]
+        return text
+
+    return (row["kind"], row["value"], _value(row["position"]), row["action"],
+            _value(row["operation"]), _value(row["after"]))
+
+
+def _retired_ids(rows) -> set:
+    """V71 冻结种子里命中退休台账（issue #4365）的规则 id —— 台账 → id 的**唯一**推导点。
+
+    🔴 扣除是**合法**的：`V71` 属归档链、**逐字节冻结**（不能改）⇒ 它仍有 `craft='四爪钩'` 那 3 行；
+    真正表达终态的是 `V135__retire_craft_sig_hook.sql` 的软删（`deleted = 1`，留痕可回滚）。
+    ⇒ 迁移侧 26 − 3 = 23 = bootstrap 终态。
+    ⚠️ **双向可红**：台账多一条（V71 里不存在）⇒ 命中数 ≠ 台账条数即红；少一条 ⇒ 同样红
+    （台账只许缩短；改台账必须同时改 V135 与两侧终态）。
+    """
+    ledger = retired_rule_keys()
+    hits = {row["id"] for row in rows if _ledger_key_of(row) in ledger}
+    assert len(hits) == len(ledger), (
+        f"退休台账（{len(ledger)} 条）在 V71 冻结种子里命中 {len(hits)} 条 id = {sorted(hits)}"
+        " —— 台账只许缩短；改台账必须同时改 `V135__retire_craft_sig_hook.sql` 与两侧终态（issue #4365）")
+    return hits
 
 
 def _as_literal(position: str) -> str:
@@ -784,34 +819,46 @@ def test_v109_lets_position_trigger_kind_rows_land_and_leaves_data_untouched(psq
 # ══════════════════ ⑥ bootstrap 镜像（两条路径终态一致） ══════════════════
 
 def test_bootstrap_schema_sql_is_the_terminal_state_of_the_migration_chain(psql):
-    """`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，**不跑迁移链**）的 V70 规则终态 == 迁移链（V71 种子 + V103 + V108）终态。
+    """`backend/admin-api/src/main/resources/db/init/schema.sql`（bootstrap，**不跑迁移链**）的 V70 规则终态 == 迁移链（V71 种子 + V108 + V135）终态。
 
     核对方式（**机械**，不靠人读）：
-      ① **bootstrap 侧**：解析 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `rr-v70-*` 26 行字面量 ⇒
-         **有且只有 1 行**非 `NULL`，且必是 `rr-v70-02` = `'布帘'`（其余 25 行 `NULL`）；
-      ② **迁移链侧**：把 **V71 冻结种子**的 26 行喂进真库 ⇒ 跑 V103 ⇒（此时必须**全 NULL**，
-         否则本判据在「两边恰好都是 NULL」时也会绿 = 空断言）⇒ 跑 V108 ⇒ 终态；
-      ③ **逐值相等**：两边的 `{id: position 字面量}` 映射必须**完全相等**。
+      ① **bootstrap 侧**：解析 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `rr-v70-*` 字面量
+         ⇒ `26 − 3` 行（那 3 条 = `craft='四爪钩'`，issue #4365 已退场、终态由 `V135` 软删表达），
+         且其中**有且只有 1 行**非 `NULL`、必是 `rr-v70-02` = `'布帘'`（其余 `NULL`）；
+         退休行**一条都不许回到 bootstrap**（双向判据，见下方 `leaked`）。
+      ② **迁移链侧**：把 **V71 冻结种子**的 26 行喂进真库 ⇒ 注入「V103 真跑过」的形态
+         （`rr-v70-02` 置 `NULL`）⇒ 跑 V108 ⇒ 跑 **`V135`**（软删那 3 条，留痕可回滚）⇒ 终态；
+         被 `V135` 软删的 id 必须**恰好等于**退休台账（`_retired_ids`）推出的那几条（多退 / 少退都红）。
+      ③ **逐值相等**：两边的**活跃行** `{id: position 字面量}` 映射必须**完全相等**。
     """
     schema = _read(SCHEMA_SQL)
     boot_rows = _rule_rows(schema)
-    assert len(boot_rows) == 26, (
-        f"schema.sql 的 `rr-v70-*` 规则解析出 {len(boot_rows)} 行，期望 26 ⇒ 解析失效或种子被改")
+    frozen = _rule_rows(_read(V71))
+    # 🔴 退休台账（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：`craft='四爪钩'` 三条
+    # 的终态由 `V135__retire_craft_sig_hook.sql` **软删**表达（`V71` 属归档链、逐字节冻结 ⇒ 仍有那 3 行）。
+    # 扣除**不放宽**比对：被扣掉的 id 必须**恰好**是台账推出来的那几条（多退 / 少退都红，见 `_retired_ids`）。
+    retired = _retired_ids(frozen)
+    active_frozen = [r for r in frozen if r["id"] not in retired]
+    assert len(boot_rows) == len(active_frozen), (
+        f"schema.sql 的 `rr-v70-*` 规则解析出 {len(boot_rows)} 行，期望 {len(active_frozen)}"
+        f"（= V71 冻结种子 {len(frozen)} 行 − 退休台账 {len(retired)} 条）⇒ 解析失效或种子被改")
+    leaked = sorted({r["id"] for r in boot_rows} & retired)
+    assert leaked == [], (
+        f"schema.sql 里仍有退休行（issue #4365 已退场 ⇒ 不得回到 bootstrap）：{leaked}")
     boot_positions = {r["id"]: _as_literal(r["position"]) for r in boot_rows}
     boot_non_null = sorted(k for k, v in boot_positions.items() if v != "NULL")
-    print(f"[#4962 bootstrap] schema.sql 的 rr-v70-* 26 行里非 NULL 的 = {boot_non_null}；"
+    print(f"[#4962 bootstrap] schema.sql 的 rr-v70-* {len(boot_positions)} 行里非 NULL 的 = {boot_non_null}；"
           f"取值 = {[boot_positions[k] for k in boot_non_null]}")
     assert boot_non_null == ["rr-v70-02"], (
         f"schema.sql 的 V70 规则段非 NULL 的行 = {boot_non_null}，期望恰好 `['rr-v70-02']`"
-        f"（V108 只写回这一条；其余 25 行仍 NULL）")
+        f"（V108 只写回这一条；其余 {len(boot_positions) - 1} 行仍 NULL）")
     assert boot_positions["rr-v70-02"] == _as_literal(RESTORED_VALUE), (
         f"schema.sql 的 `rr-v70-02` = {boot_positions['rr-v70-02']}，"
         f"与 V108 写回值 `{_as_literal(RESTORED_VALUE)}` 不同 ⇒ 两条路径终态分裂")
 
-    # ② 迁移链侧：V71 冻结种子 ⇒ V103 ⇒ V108
+    # ② 迁移链侧：V71 冻结种子 ⇒ V103 ⇒ V108 ⇒ **V135**
     psql(_DDL)
     psql("INSERT INTO tenants (id) VALUES (1);")
-    frozen = _rule_rows(_read(V71))
     assert len(frozen) == 26, f"V71 的 `rr-v70-*` 种子解析出 {len(frozen)} 行，期望 26"
     for r in frozen:
         psql(f"INSERT INTO {TABLE} (id, tenant_id, trigger_kind, trigger_value, position, "
@@ -831,10 +878,17 @@ def test_bootstrap_schema_sql_is_the_terminal_state_of_the_migration_chain(psql)
     assert mid["rr-v70-02"] == "NULL", (
         f"注入失败：`rr-v70-02` 的 position 仍 = {mid['rr-v70-02']} ⇒ 下面的 V108 写回判据会**空跑**")
     _apply(psql, V108)
+    # 🔴 链的**最后一步** = `V135` 的软删（issue #4365）：不跑它，链侧会留着那 3 行而 bootstrap 侧没有。
+    # 这条断言同时把 V135 拖进**真库**射程（它的 `WHERE` 写窄/写错 ⇒ 下面的软删集合判据红）。
+    _apply(psql, V135)
     chain = _chain_positions(psql)
+    chain_soft_deleted = set(_chain_positions(psql, active_only=False)) - set(chain)
+    assert chain_soft_deleted == retired, (
+        f"链上被 V135 软删的 id ≠ 退休台账推出的 id：软删 {sorted(chain_soft_deleted)}"
+        f" / 台账 {sorted(retired)} —— 多退 / 少退都红（issue #4365）")
     chain_non_null = sorted(k for k, v in chain.items() if v != "NULL")
-    print(f"[#4962 迁移链] V71 种子 ⇒ 注入 rr-v70-02=NULL ⇒ V108 后非 NULL 的 = {chain_non_null}；"
-          f"取值 = {[chain[k] for k in chain_non_null]}")
+    print(f"[#4962 迁移链] V71 种子 ⇒ 注入 rr-v70-02=NULL ⇒ V108 ⇒ V135（软删 {sorted(chain_soft_deleted)}）"
+          f" 后非 NULL 的 = {chain_non_null}；取值 = {[chain[k] for k in chain_non_null]}")
 
     assert chain_non_null == boot_non_null, (
         f"两条路径的**非 NULL 行集合**分裂：bootstrap = {boot_non_null}，迁移链 = {chain_non_null}")
@@ -843,9 +897,16 @@ def test_bootstrap_schema_sql_is_the_terminal_state_of_the_migration_chain(psql)
         f"{ {k: (boot_positions[k], chain[k]) for k in boot_positions if boot_positions[k] != chain[k]} }")
 
 
-def _chain_positions(run) -> dict:
+def _chain_positions(run, *, active_only: bool = True) -> dict:
+    """真库回读 `{id: position 字面量}`。
+
+    `active_only=True`（默认）只看**活跃行**（`deleted = 0`）—— 链的终态口径（issue #4365：
+    `V135` 软删的四爪钩 3 行**不算**终态的一部分，与 bootstrap 侧「根本没有这些行」等价）；
+    `active_only=False` 拿全量 ⇒ 两者之差 = 被软删的 id 集合（自证用）。
+    """
+    where = f"WHERE tenant_id = 1 AND deleted = 0" if active_only else f"WHERE tenant_id = 1"
     out = run(f"SELECT id || '|' || COALESCE(position, '<null>') FROM {TABLE} "
-              f"WHERE tenant_id = 1 ORDER BY id;")
+              f"{where} ORDER BY id;")
     return {line.split("|")[0]: _as_literal(line.split("|")[1])
             for line in out.splitlines() if line.strip()}
 
@@ -870,12 +931,21 @@ def test_bootstrap_trigger_kind_vocabulary_includes_position():
 
 
 def test_v108_written_value_matches_the_bootstrap_literal_exactly():
-    """V108 写回值 / V71 冻结种子 / bootstrap 字面量 **三处逐字一致**（防单侧漂移）。"""
+    """V108 写回值 / V71 冻结种子 / bootstrap 字面量 **三处逐字一致**（防单侧漂移）。
+
+    🔴 比对前按退休台账（issue #4365）从 **V71 侧**扣除 `craft='四爪钩'` 三条：那三条的终态由
+    `V135__retire_craft_sig_hook.sql` **软删**表达（`V71` 逐字节冻结 ⇒ 仍有那 3 行），而 bootstrap
+    终态里**根本没有**这三行 ⇒ 不扣就是拿 26 行比 23 行。扣除**双向可红**：被扣掉的必须**恰好**是
+    台账推出来的那几条（`_retired_ids` 断言「命中数 == 台账条数」，多退 / 少退都红）。
+    """
     boot = {r["id"]: r for r in _rule_rows(_read(SCHEMA_SQL))}
-    frozen = {r["id"]: r for r in _rule_rows(_read(V71))}
+    frozen_all = {r["id"]: r for r in _rule_rows(_read(V71))}
+    retired = _retired_ids(frozen_all.values())
+    frozen = {k: v for k, v in frozen_all.items() if k not in retired}
     assert sorted(boot) == sorted(frozen), (
-        f"bootstrap 与冻结 V71 的规则 id 集合不同：仅 bootstrap = "
-        f"{sorted(set(boot) - set(frozen))}，仅 V71 = {sorted(set(frozen) - set(boot))}")
+        f"bootstrap 与冻结 V71（已扣退休台账 {len(retired)} 条 = {sorted(retired)}）的规则 id 集合不同："
+        f"仅 bootstrap = {sorted(set(boot) - set(frozen))}，"
+        f"仅 V71（扣后）= {sorted(set(frozen) - set(boot))} —— 退休行（issue #4365）两侧都不该有")
     assert boot["rr-v70-02"]["position"] == frozen["rr-v70-02"]["position"], (
         f"`rr-v70-02` 的 position：bootstrap = {boot['rr-v70-02']['position']}，"
         f"V71 = {frozen['rr-v70-02']['position']}")
@@ -895,7 +965,7 @@ def test_referenced_migrations_exist():
     而本模块当时按文件名硬编码读它 ⇒ 测试直接抛 `FileNotFoundError`（回溯指向 `pathlib.read_text`），
     读者要翻栈才知道「是迁移被删了」而不是「迁移写错了」。
     """
-    refs = {"V71": V71, "V108": V108, "V109": V109}
+    refs = {"V71": V71, "V108": V108, "V109": V109, "V135": V135}
     missing = sorted(name for name, path in refs.items() if not path.is_file())
     assert missing == [], (
         f"本模块引用的迁移文件不存在：{missing}（实际路径见模块顶部的常量）—— "

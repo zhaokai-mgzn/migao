@@ -11,6 +11,7 @@ import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import WorkerProfilesPanel from '@/components/employees/WorkerProfilesPanel'
 
 // #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（每岗位含默认权限），不再用硬编码预设
 export default function EmployeesPage() {
@@ -60,6 +61,11 @@ export default function EmployeesPage() {
 
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
+
+  // 员工 / 工人档案分两个面（issue #4869）：工人复用 users 表但**不是**员工
+  //（零菜单权限、无登录用户名、只能用工号 + PIN 进工人端扫码报工）⇒ 混在同一张表里会
+  //「看起来像员工」（点编辑还能改岗位/权限，而那条路对工人根本不成立）。
+  const [activeTab, setActiveTab] = useState<'employee' | 'worker'>('employee')
 
   // 加载菜单权限树
   useEffect(() => {
@@ -409,16 +415,46 @@ export default function EmployeesPage() {
           <h1 className="text-xl font-semibold text-neutral-900">员工管理</h1>
           <p className="text-sm text-neutral-500 mt-1">管理系统用户和员工账号</p>
         </div>
-        {canWrite ? (
+        {activeTab === 'employee' && (canWrite ? (
           <Button onClick={handleAdd}>
             <Plus className="w-4 h-4 mr-1.5" />
             新增员工
           </Button>
         ) : (
           <span className="text-xs text-neutral-400">仅拥有 employee:create 权限的员工可管理账号</span>
-        )}
+        ))}
       </div>
 
+      {/* 两个面分开（issue #4869）：工人不是员工 —— 各有各的列表与入口 */}
+      <div className="flex items-center gap-1 mb-4 border-b border-neutral-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('employee')}
+          className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'employee'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700'
+          }`}
+        >
+          员工
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('worker')}
+          className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'worker'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-neutral-500 hover:text-neutral-700'
+          }`}
+        >
+          工人档案
+        </button>
+      </div>
+
+      {activeTab === 'worker' ? (
+        <WorkerProfilesPanel canWrite={canWrite} />
+      ) : (
+      <>
       {/* 搜索筛选栏 */}
       <div className="bg-neutral-50 p-4 rounded-lg mb-4" data-testid="search-area">
         <div className="flex flex-wrap items-end gap-4">
@@ -597,6 +633,8 @@ export default function EmployeesPage() {
           />
         </div>
       </Modal>
+      </>
+      )}
     </div>
   )
 }

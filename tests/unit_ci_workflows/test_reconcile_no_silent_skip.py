@@ -32,7 +32,7 @@
 2. **改后行为（桩化真跑 `run:` 正文）**：把 workflow 里**当前**的对账 `run:` 正文抽出来，
    在真实 git 仓库 + 桩 `gh`/`docker` 下执行，断言五个场景的**动作**与**判定依据**：
    - 注入「HEAD 镜像缺失 + 自上次成功部署起有代码改动」（= 事故形态）⇒ **真 dispatch**（3 条镜像腿
-     + worker-h5 静态落地面腿，issue #5001）；
+     + worker-h5 静态落地面腿，issue #5001 + bmini-h5-hosting / c-end-h5 两条静态落地面腿，issue #5668 / #4184）；
    - 「无漂移」（HEAD 是 docs 提交，但自上次成功部署起该服务代码没动）⇒ 零 dispatch
      **但 summary 明写依据**（不是静默 success）；
    - 「断路器命中」（同一 headSha 已 failure）⇒ 零 dispatch + 记明原因；
@@ -83,6 +83,12 @@ GH_STUB = '''#!/usr/bin/env python3
 import json, os, sys
 
 args = sys.argv[1:]
+
+
+def absent_workflows():
+    return {w.strip() for w in os.environ.get("STUB_WORKFLOW_ABSENT", "").split(",") if w.strip()}
+
+
 if args[:2] == ["run", "list"]:
     if os.environ.get("STUB_GH_LIST_FAIL") == "1":
         sys.exit(1)          # 模拟查询失败 ⇒ 必须走 fail-open
@@ -94,9 +100,19 @@ if args[:2] == ["run", "list"]:
         runs = json.load(fh)
     sys.stdout.write(json.dumps(runs))
     sys.exit(0)
+if args[:2] == ["workflow", "view"]:
+    # `gh workflow view <wf> --ref main`：workflow 必须**在 default branch 上**才 200
+    # （新增腿的那个 PR 里它还没有 ⇒ 404，见 issue #5668 首轮实测）
+    wf = args[2] if len(args) > 2 else ""
+    sys.exit(1 if wf in absent_workflows() else 0)
 if args[:2] == ["workflow", "run"]:
+    wf = args[2] if len(args) > 2 else ""
+    if wf in absent_workflows():
+        # 与真 gh 同形：default branch 上不存在 ⇒ HTTP 404 + 非零退出
+        sys.stderr.write("HTTP 404: workflow %s not found on the default branch\\n" % wf)
+        sys.exit(1)
     with open(os.environ["STUB_DISPATCH_LOG"], "a", encoding="utf-8") as fh:
-        fh.write(args[2] + "\\n")
+        fh.write(wf + "\\n")
     sys.exit(0)
 sys.exit(3)
 '''
@@ -115,7 +131,8 @@ if args[:2] == ["manifest", "inspect"]:
 sys.exit(3)
 '''
 
-# 有镜像的三条腿（真值源 = `deploy-*.yml`）；worker-h5 **不在其中**（它发布静态文件，不构建镜像）
+# 有镜像的三条腿（真值源 = `deploy-*.yml`）；三条**静态落地面腿**（worker-h5 / bmini-h5-hosting /
+# c-end-h5）**不在其中**（它们发布静态文件，不构建镜像）
 IMAGE_LEGS = ("admin-api", "ai-agent-service", "admin-web")
 
 
@@ -130,6 +147,13 @@ DEPLOY_WF = {
     # worker-h5（issue #5001）：**静态落地面腿**（无镜像）⇒ 判据 ① 对它恒不成立，判定来自漂移
     # 判据 ②（自 `worker-h5-publish.yml` 上次成功发布起 `frontend/worker-h5/**` 有无改动）。
     "worker-h5": "worker-h5-publish.yml",
+    # bmini-h5-hosting（issue #5668）：第二条静态落地面腿（`frontend/bmini-app/**` 的 h5 产物 → 静态根 `b/`）。
+    # 有意的「腿名 ≠ 传输镜像名」：同名会让判据 ① 在「镜像已推、发布失败」时命中 ⇒ 静默不补发布。
+    "bmini-h5-hosting": "bmini-h5-publish.yml",
+    # c-end-h5（issue #4184）：**第三条静态落地面腿**（`frontend/mini-app/**` 的 h5 产物 → 静态根**本身**）。
+    # 同样无镜像（判据 ① 对它恒不成立 ⇒ 走漂移判据 ②）；它的发布步骤只在手动 `publish=true` 时执行
+    # （用户裁定 B）⇒ 本对账的兜底 dispatch **只报告、不发布**。
+    "c-end-h5": "c-end-h5-publish.yml",
 }
 
 
@@ -183,7 +207,7 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
         p.write_text(rel, encoding="utf-8")
 
     for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts",
-                "frontend/worker-h5/a.mjs"):
+                "frontend/worker-h5/a.mjs", "frontend/bmini-app/a.ts", "frontend/mini-app/a.ts"):
         touch(rel)
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
@@ -210,9 +234,15 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
 
 
 def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
-                  image_tags: str = "", list_fail: bool = False, head7: str) -> tuple:
-    """在 `repo` 里执行改后的对账正文（桩 gh/docker），返回 (proc, summary, dispatches)。"""
-    assert set(runs_by_wf) == set(DEPLOY_WF.values()), "必须给出全部四条对账腿的 run 列表"
+                  image_tags: str = "", list_fail: bool = False, head7: str,
+                  absent_workflows: tuple = (), script_text: str = None) -> tuple:
+    """在 `repo` 里执行改后的对账正文（桩 gh/docker），返回 (proc, summary, dispatches)。
+
+    `absent_workflows` = 模拟「还没合并到 default branch 的 workflow」（新增腿的那个 PR 的形态）：
+    此时 `gh workflow view` 返回 404、`gh workflow run` 也返回 404（与真 gh 同形）。
+    `script_text` = 跑变异版正文（红证用）。
+    """
+    assert set(runs_by_wf) == set(DEPLOY_WF.values()), "必须给出全部五条对账腿的 run 列表"
     bin_dir = make_stubs(tmp_path)
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir(exist_ok=True)
@@ -221,7 +251,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
     summary_path = tmp_path / "summary.md"
     dispatch_log = tmp_path / "dispatch.log"
     script = tmp_path / "reconcile.sh"
-    script.write_text(reconcile_script(), encoding="utf-8")
+    script.write_text(script_text if script_text is not None else reconcile_script(), encoding="utf-8")
 
     env = os.environ.copy()
     env.update({
@@ -229,6 +259,7 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
         "STUB_RUNS_DIR": str(runs_dir),
         "STUB_DISPATCH_LOG": str(dispatch_log),
         "STUB_IMAGE_TAGS": image_tags,
+        "STUB_WORKFLOW_ABSENT": ",".join(absent_workflows),
         "GITHUB_STEP_SUMMARY": str(summary_path),
         "GITHUB_EVENT_NAME": "workflow_dispatch",
         "GITHUB_REPOSITORY": "zhaokai-mgzn/migao",
@@ -383,7 +414,7 @@ def test_current_workflow_has_no_pipefail_grep_q_construct():
 # ══════════════════════════════════════════════════════════════════════════
 
 ALL_DRIFT_PATHS = ("backend/admin-api/b.py", "backend/ai-agent-service/b.py", "frontend/admin-web/b.ts",
-                   "frontend/worker-h5/b.mjs")
+                   "frontend/worker-h5/b.mjs", "frontend/bmini-app/b.ts", "frontend/mini-app/b.ts")
 
 
 def test_incident_shape_now_dispatches(tmp_path):
@@ -400,21 +431,21 @@ def test_incident_shape_now_dispatches(tmp_path):
     assert dispatches == ["deploy-admin-api.yml"], (
         f"应只 dispatch 被吞的那条腿（事故里一条都没动）→ 实得 {dispatches}\n{proc.stdout}"
     )
-    assert "**结论**：dispatch=1 · 无漂移=3" in summary, f"summary 结论行不对 → {summary!r}"
+    assert "**结论**：dispatch=1 · 无漂移=5" in summary, f"summary 结论行不对 → {summary!r}"
     assert "已 dispatch 补部署" in summary and "backend/admin-api 有代码改动" in summary, (
         f"summary 没写清「为什么补」（判定依据）→ {summary!r}"
     )
 
 
 def test_all_reconciled_legs_dispatch_when_code_changed(tmp_path):
-    """四条对账腿都有代码改动（+ 镜像缺失）⇒ 四条都补（事故里 3 个服务的镜像都没构建）。"""
+    """六条对账腿都有代码改动（+ 镜像缺失）⇒ 六条都补（事故里 3 个服务的镜像都没构建）。"""
     fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), f"→ {dispatches}\n{proc.stdout}"
-    assert "**结论**：dispatch=4" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=6" in summary, f"{summary!r}"
 
 
 def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
@@ -425,30 +456,33 @@ def test_docs_head_without_drift_does_not_dispatch_but_explains(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"无漂移不该 dispatch（否则每个 docs 提交都空转重建）→ {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=4" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 4, f"四条「无漂移」依据都要落表 → {summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=6" in summary, f"{summary!r}"
+    assert summary.count("无漂移：自") == 6, f"六条「无漂移」依据都要落表 → {summary!r}"
     assert "::notice::" in proc.stdout, "零 dispatch 时必须给一条 notice（可观测）"
 
 
 def test_head_image_present_does_not_dispatch(tmp_path):
     """HEAD 的镜像已存在 ⇒ 零 dispatch + 记明依据（镜像名）。
 
-    ⚠️ worker-h5 **没有镜像**（静态落地面腿，issue #5001）⇒ 判据 ① 对它恒不成立，
-    它这一轮的「无漂移」来自**漂移判据 ②**——这是该腿的结构事实，不是本测试的偶然。
+    ⚠️ 三条**静态落地面腿**（worker-h5 / bmini-h5-hosting / c-end-h5，issue #5001 / #5668 / #4184）
+    **没有镜像** ⇒ 判据 ① 对它们恒不成立，它们这一轮的「无漂移」来自**漂移判据 ②**——
+    这是这些腿的结构事实，不是本测试的偶然。
     """
     fx = commit_repos(tmp_path)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D1"], "success"),
-        # 只让**有镜像**的三条腿的镜像存在（worker-h5 无镜像 —— 这正是 #5001 的结构事实）
+        # 只让**有镜像**的三条腿的镜像存在（三条静态落地面腿无镜像 —— 这正是 #5001/#5668/#4184 的结构事实）
         image_tags=",".join(image_ref(svc, fx["head7"]) for svc in IMAGE_LEGS),
         head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == []
-    assert "**结论**：dispatch=0 · 无漂移=4" in summary
+    assert "**结论**：dispatch=0 · 无漂移=6" in summary
     assert summary.count("镜像已存在") == 3 and f"sha-{fx['head7']}" in summary, f"{summary!r}"
-    assert summary.count("无漂移：自") == 1 and "| worker-h5 |" in summary, (
-        f"无镜像的 worker-h5 腿必须落到漂移判据（而不是「镜像已存在」）→ {summary!r}"
+    assert summary.count("无漂移：自") == 3 and "| worker-h5 |" in summary \
+        and "| bmini-h5-hosting |" in summary and "| c-end-h5 |" in summary, (
+        f"三条无镜像的静态落地面腿（worker-h5 / bmini-h5-hosting / c-end-h5）必须落到漂移判据"
+        f"（而不是「镜像已存在」）→ {summary!r}"
     )
 
 
@@ -460,8 +494,8 @@ def test_breaker_skips_and_records_reason(tmp_path):
     )
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"断路器命中后不该 dispatch → {dispatches}"
-    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=4" in summary, f"{summary!r}"
-    assert summary.count("断路器：") == 4 and "已失败过" in proc.stdout, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert summary.count("断路器：") == 6 and "已失败过" in proc.stdout, f"{summary!r}"
 
 
 def test_cancelled_is_not_treated_as_failure(tmp_path):
@@ -488,7 +522,7 @@ def test_query_failure_fails_open_with_warning(tmp_path):
         f"查询失败必须 fail-open 照旧补部署（本检查出错绝不停掉对账）→ {dispatches}"
     )
     assert "::warning::" in proc.stdout, "判据不可用必须出声（warning），不许静默"
-    assert "判定失败=4" in summary, f"{summary!r}"
+    assert "判定失败=6" in summary, f"{summary!r}"
 
 
 def test_git_history_loss_fails_open_not_silent(tmp_path):
@@ -502,4 +536,53 @@ def test_git_history_loss_fails_open_not_silent(tmp_path):
     assert sorted(dispatches) == sorted(DEPLOY_WF.values()), (
         f"git 判不了时必须 fail-open（按兜底补部署）→ {dispatches}\n{proc.stdout}"
     )
-    assert "判定失败=4" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+    assert "判定失败=6" in summary and "::warning::" in proc.stdout, f"{summary!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 三、「新增腿的那个 PR」：目标 workflow 还没合并到 main（issue #5668 首轮实测）
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
+    """新增腿的那个 PR：被对账的 workflow 还没在 default branch 上 ⇒ `gh` 会 404。
+
+    **实测**（issue #5668 的 PR 首轮，run 36251452618）：没有这条前置判据时
+    `gh workflow run bmini-h5-publish.yml --ref main` 返回
+    「HTTP 404: workflow … not found on the default branch」⇒ `set -euo pipefail` 下
+    **整个对账 step 非零退出** —— 而它同轮判对的其它四条腿被一起染红。
+
+    ⇒ 判据三面：① 该腿**不 dispatch**；② **出声**（`::warning::` + summary 明写原因与去向）；
+    ③ 其它四条腿照常补部署、整步 rc=0（一个刚落地的腿不许让对账机制本身停摆）。
+    """
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    others = sorted(w for w in DEPLOY_WF.values() if w != "bmini-h5-publish.yml")
+    # 基准 = C1（代码提交 C2 之前）⇒ 自上次成功部署起五条腿**都有**漂移，缺了前置判据就会去 dispatch
+    proc, summary, dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
+        absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"],
+    )
+    assert proc.returncode == 0, f"新增腿尚未在 main 上时不许让整步红 → {proc.stdout}\n{proc.stderr}"
+    assert sorted(dispatches) == others, f"其它四条腿必须照常补部署 → {dispatches}"
+    assert "::warning::" in proc.stdout and "不在 main 上" in proc.stdout, (
+        f"必须出声（warning + 原因）→ {proc.stdout}"
+    )
+    assert "不在 main=1" in summary and "尚未在 main 上" in summary, f"{summary!r}"
+
+
+def test_not_on_main_criterion_has_discriminating_power(tmp_path):
+    """🔴 红证：去掉那条前置判据 ⇒ 同一输入下 `gh workflow run` **真的 404、整步非零退出**
+    （复现 #5668 首轮 CI 的真实形态，不是纸面推断）。"""
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    text = reconcile_script()
+    broken = text.replace(
+        'if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then', "if false; then"
+    )
+    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据）"
+    proc, _summary, _dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
+        absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"], script_text=broken,
+    )
+    assert proc.returncode != 0, (
+        f"变异版竟判绿 —— 说明该判据的判别力没有被证明（空断言方向）→ {proc.stdout}"
+    )
+    assert "404" in (proc.stdout + proc.stderr), f"期望复现 gh 的 404 → {proc.stdout}\n{proc.stderr}"

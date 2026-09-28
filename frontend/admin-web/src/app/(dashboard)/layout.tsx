@@ -30,9 +30,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 生产看板 / 工艺配置 / 计件工资按读码；
   // **智能派单 / 余料台账 / 省料看板仍是 `processing:manage`**（同组不同权）⇒ 更具体的子路径
   // 必须排在 `/production` 之前（前缀匹配先命中），否则会把它们一起收权。
-  { prefix: '/production/pool', code: 'processing:manage' },
+  // issue #5699（P4）：与 menu.ts 的节点码同批收敛到页面读码（节点码 ≠ 页面读码 = 判据 12 的残留）。
+  { prefix: '/production/pool', code: 'processing:view' },
   { prefix: '/production/remnants', code: 'processing:manage' },
-  { prefix: '/production/saving-board', code: 'processing:manage' },
+  // issue #5699（P4）：同上 —— 省料看板页面码 = product:list。
+  { prefix: '/production/saving-board', code: 'product:list' },
   { prefix: '/production', code: 'production:view' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },

@@ -72,49 +72,6 @@ public class PermissionService {
     }
 
     /**
-     * 根据角色查询权限
-     *
-     * @param roleCode 角色代码
-     * @return 权限列表
-     */
-    public List<Permission> getPermissionsByRole(String roleCode) {
-        // 根据角色代码查询对应的权限
-        // 这里简化处理，实际项目中可以从 role_permissions 中间表查询
-        List<String> permissionCodes = switch (roleCode) {
-            case "admin" -> List.of("*");
-            case "operator" -> List.of(
-                    "dashboard:view",
-                    "order:list", "order:detail", "order:refund",
-                    "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view",
-                    "customer:view",
-                    "finance:view",
-                    "agent:session",
-                    "employee:list",
-                    "system:manage"
-            );
-            case "product_manager" -> List.of(
-                    "dashboard:view",
-                    "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view"
-            );
-            case "knowledge_editor" -> List.of(
-                    "dashboard:view"
-            );
-            default -> List.of();
-        };
-
-        if (permissionCodes.isEmpty()) {
-            return List.of();
-        }
-
-        LambdaQueryWrapper<Permission> wrapper = new LambdaQueryWrapper<>();
-        wrapper.in(Permission::getCode, permissionCodes)
-                .eq(Permission::getDeleted, 0);
-        return permissionMapper.selectList(wrapper);
-    }
-
-    /**
      * 创建权限
      *
      * @param permission 权限实体
@@ -186,6 +143,7 @@ public class PermissionService {
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
                 {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
+                {"生产执行", "production:execute", "production", "execute", "建加工单/报工/打任务卡/发货"},
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
@@ -203,8 +161,14 @@ public class PermissionService {
                 {"客户维护", "customer:create", "customer", "create", "编辑/删除客户与标签"},
                 {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
                 {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
-                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                // 🔴 描述更正（issue #5642 功能⑤）：原文「米宝对话」那截是 aspirational 的（本码实测
+                // 只管 `/api/admin/agent-sessions/*` = 在线接待）⇒ 与 `RegistrationService` 的目录
+                // **逐值相等**地更正为「在线接待/会话监控」（两处目录必须同源，判据 9②）。
+                {"会话监控", "agent:session", "agent", "session", "在线接待/会话监控"},
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
+                // 米宝唤出码（issue #5642 功能⑤）：与 `RegistrationService.defaultPermissions`
+                // 的同码条目**逐字同源**（名称/资源/动作/描述四项一致）。
+                {"米宝对话", "agent:chat", "agent", "chat", "唤出米宝对话（管理员默认/员工需授权）"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 {"岗位权限查看", "system:view", "system", "view", "查看岗位与权限目录"},

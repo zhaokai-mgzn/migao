@@ -3276,6 +3276,8 @@ PERMISSION_LABELS = {
     "processing:manage": "加工管理",
     "processing:view": "加工单查看",
     "processing:update": "加工单操作",
+    # 生产执行**写**码（issue #5699 的 I4）：名称逐字取 admin-api `RegistrationService` 的同码条目
+    "production:execute": "生产执行",
     # 入库单（V111，issue #5034）：名称逐字取 admin-api RegistrationService 的同码条目
     "inbound:view": "入库单查看",
     "inbound:create": "入库单操作",
@@ -3300,6 +3302,10 @@ PERMISSION_LABELS = {
     "customer:view": "客户管理",
     "finance:view": "财务对账",
     "agent:session": "会话监控",
+    # 米宝唤出码（issue #5642 功能⑤）：名称逐字取 admin-api `RegistrationService.defaultPermissions`
+    # 的同码条目（该行名称列 = 「米宝对话」）。**只读镜像**：不改写、不润色；
+    # 缺标签 / 名称不一致由 `tests/test_permission_scope_injection.py` 的目录守卫机械判红。
+    "agent:chat": "米宝对话",
     "employee:list": "员工列表",
     "employee:create": "新增员工",
     "system:manage": "系统管理",

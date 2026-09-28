@@ -32,6 +32,7 @@ public class ProcessingCategoryController {
      *
      * GET /api/admin/processing-categories
      */
+    @RequirePermission("production:view")
     @GetMapping
     public ApiResponse<List<ProcessingCategoryResponse>> getProcessingCategories() {
         Long tenantId = TenantContext.getTenantId();

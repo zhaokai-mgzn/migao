@@ -1,0 +1,906 @@
+{
+  "schema": 1,
+  "issue": "#5699",
+  "stage": "P5+P6+I4",
+  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。",
+  "codes": {
+    "registration": [
+      "dashboard:view",
+      "product:manage",
+      "product:list",
+      "product:create",
+      "product:category",
+      "product:category:view",
+      "processing:manage",
+      "processing:view",
+      "processing:update",
+      "production:view",
+      "production:execute",
+      "inbound:view",
+      "inbound:create",
+      "knowledge:manage",
+      "knowledge:view",
+      "order:list",
+      "order:detail",
+      "order:update",
+      "order:create",
+      "order:refund",
+      "after_sales:view",
+      "customer:view",
+      "customer:create",
+      "finance:view",
+      "finance:create",
+      "agent:session",
+      "agent:session:manage",
+      "agent:chat",
+      "employee:list",
+      "employee:create",
+      "system:view",
+      "system:manage"
+    ],
+    "permission_service": [
+      "dashboard:view",
+      "product:manage",
+      "product:list",
+      "product:create",
+      "product:category",
+      "product:category:view",
+      "processing:manage",
+      "processing:view",
+      "processing:update",
+      "production:view",
+      "production:execute",
+      "inbound:view",
+      "inbound:create",
+      "knowledge:manage",
+      "knowledge:view",
+      "order:list",
+      "order:detail",
+      "order:update",
+      "order:create",
+      "order:refund",
+      "after_sales:view",
+      "customer:view",
+      "customer:create",
+      "finance:view",
+      "finance:create",
+      "agent:session",
+      "agent:session:manage",
+      "agent:chat",
+      "employee:list",
+      "employee:create",
+      "system:view",
+      "system:manage"
+    ],
+    "names": {
+      "dashboard:view": "仪表板查看",
+      "product:manage": "商品管理",
+      "product:list": "商品列表",
+      "product:create": "新增商品",
+      "product:category": "商品分类",
+      "product:category:view": "商品分类查看",
+      "processing:manage": "加工管理",
+      "processing:view": "加工单查看",
+      "processing:update": "加工单操作",
+      "production:view": "生产查看",
+      "production:execute": "生产执行",
+      "inbound:view": "入库单查看",
+      "inbound:create": "入库单操作",
+      "knowledge:manage": "知识库管理",
+      "knowledge:view": "知识库查看",
+      "order:list": "订单列表",
+      "order:detail": "订单详情",
+      "order:update": "订单操作",
+      "order:create": "新增订单",
+      "order:refund": "订单退款",
+      "after_sales:view": "售后查看",
+      "customer:view": "客户管理",
+      "customer:create": "客户维护",
+      "finance:view": "财务对账",
+      "finance:create": "财务操作",
+      "agent:session": "会话监控",
+      "agent:session:manage": "会话操作",
+      "agent:chat": "米宝对话",
+      "employee:list": "员工列表",
+      "employee:create": "新增员工",
+      "system:view": "岗位权限查看",
+      "system:manage": "系统管理"
+    }
+  },
+  "roles": {
+    "seed": {
+      "admin": [
+        "*"
+      ],
+      "customer_service": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "knowledge:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "finance": [
+        "dashboard:view",
+        "finance:create",
+        "finance:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "knowledge_editor": [
+        "dashboard:view",
+        "product:list"
+      ],
+      "operator": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:execute",
+        "production:view"
+      ],
+      "product_manager": [
+        "dashboard:view",
+        "processing:manage",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:view"
+      ],
+      "sales": [
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "product:list",
+        "production:execute"
+      ]
+    },
+    "fallback": {
+      "admin": [
+        "*"
+      ],
+      "customer_service": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "knowledge:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "finance": [
+        "dashboard:view",
+        "finance:create",
+        "finance:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "knowledge_editor": [
+        "dashboard:view",
+        "product:list"
+      ],
+      "operator": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:execute",
+        "production:view"
+      ],
+      "product_manager": [
+        "dashboard:view",
+        "processing:manage",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:view"
+      ],
+      "sales": [
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "product:list",
+        "production:execute"
+      ]
+    },
+    "login": {
+      "admin": [
+        "*"
+      ],
+      "super_admin": [
+        "*"
+      ]
+    },
+    "mirror_placeholders": {
+      "agent": [],
+      "customer": [],
+      "tenant_admin": []
+    }
+  },
+  "menus": {
+    "frontend": {
+      "工作台": null,
+      "经营看板": "dashboard:view",
+      "每日简报": "dashboard:view",
+      "智能客服": null,
+      "在线接待": "agent:session",
+      "知识库": "knowledge:view",
+      "商品与加工项": null,
+      "商品列表": "product:list",
+      "加工项管理": "production:view",
+      "交易管理": null,
+      "订单列表": "order:list",
+      "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
+      "财务对账": "finance:view",
+      "生产管理": null,
+      "生产看板": "production:view",
+      "智能派单": "processing:view",
+      "工艺配置": "production:view",
+      "计件工资": "production:view",
+      "仓储与物料": null,
+      "入库单": "inbound:view",
+      "余料台账": "processing:manage",
+      "省料看板": "product:list",
+      "组织管理": null,
+      "员工管理": "employee:list",
+      "岗位权限": "system:view",
+      "企业基础信息": "system:manage",
+      "通知中心": null
+    },
+    "controller": {
+      "经营看板": "dashboard:view",
+      "每日简报": "dashboard:view",
+      "在线接待": "agent:session",
+      "知识库": "knowledge:view",
+      "商品列表": "product:list",
+      "加工项管理": "production:view",
+      "新增商品": "product:create",
+      "商品分类管理": "product:category",
+      "订单列表": "order:list",
+      "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
+      "财务对账": "finance:view",
+      "订单详情": "order:detail",
+      "生产看板": "production:view",
+      "智能派单": "processing:view",
+      "工艺配置": "production:view",
+      "计件工资": "production:view",
+      "入库单": "inbound:view",
+      "余料台账": "processing:manage",
+      "省料看板": "product:list",
+      "员工管理": "employee:list",
+      "岗位权限": "system:view",
+      "企业基础信息": "system:manage",
+      "新增员工": "employee:create"
+    },
+    "auth": {
+      "经营看板": "dashboard:view",
+      "每日简报": "dashboard:view",
+      "在线接待": "agent:session",
+      "知识库": "knowledge:view",
+      "商品列表": "product:list",
+      "订单列表": "order:list",
+      "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
+      "财务对账": "finance:view",
+      "智能派单": "processing:view",
+      "工艺配置": "production:view",
+      "计件工资": "production:view",
+      "入库单": "inbound:view",
+      "余料台账": "processing:manage",
+      "省料看板": "product:list",
+      "员工管理": "employee:list",
+      "岗位权限": "system:view",
+      "企业基础信息": "system:manage"
+    },
+    "user": {}
+  },
+  "menu_nodes": [
+    {
+      "key": "workspace",
+      "name": "工作台",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "dashboard",
+      "name": "经营看板",
+      "path": "/dashboard",
+      "code": "dashboard:view"
+    },
+    {
+      "key": "briefing",
+      "name": "每日简报",
+      "path": "/briefing",
+      "code": "dashboard:view"
+    },
+    {
+      "key": "smart-customer-service",
+      "name": "智能客服",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "human-sessions",
+      "name": "在线接待",
+      "path": "/agent-workspace/human-sessions",
+      "code": "agent:session"
+    },
+    {
+      "key": "knowledge",
+      "name": "知识库",
+      "path": "/knowledge",
+      "code": "knowledge:view"
+    },
+    {
+      "key": "product-center",
+      "name": "商品与加工项",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "products",
+      "name": "商品列表",
+      "path": "/products",
+      "code": "product:list"
+    },
+    {
+      "key": "processing",
+      "name": "加工项管理",
+      "path": "/production/processing",
+      "code": "production:view"
+    },
+    {
+      "key": "trade-center",
+      "name": "交易管理",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "orders",
+      "name": "订单列表",
+      "path": "/orders",
+      "code": "order:list"
+    },
+    {
+      "key": "after-sales",
+      "name": "售后工单",
+      "path": "/after-sales",
+      "code": "after_sales:view"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "code": "customer:view"
+    },
+    {
+      "key": "finance",
+      "name": "财务对账",
+      "path": "/finance",
+      "code": "finance:view"
+    },
+    {
+      "key": "production-center",
+      "name": "生产管理",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "production-board",
+      "name": "生产看板",
+      "path": "/production",
+      "code": "production:view"
+    },
+    {
+      "key": "production-pool",
+      "name": "智能派单",
+      "path": "/production/pool",
+      "code": "processing:view"
+    },
+    {
+      "key": "production-process",
+      "name": "工艺配置",
+      "path": "/production/routings",
+      "code": "production:view"
+    },
+    {
+      "key": "production-piecework",
+      "name": "计件工资",
+      "path": "/production/piecework",
+      "code": "production:view"
+    },
+    {
+      "key": "inventory-center",
+      "name": "仓储与物料",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "inbound-orders",
+      "name": "入库单",
+      "path": "/inbound-orders",
+      "code": "inbound:view"
+    },
+    {
+      "key": "production-remnants",
+      "name": "余料台账",
+      "path": "/production/remnants",
+      "code": "processing:manage"
+    },
+    {
+      "key": "production-saving-board",
+      "name": "省料看板",
+      "path": "/production/saving-board",
+      "code": "product:list"
+    },
+    {
+      "key": "org-center",
+      "name": "组织管理",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "employees",
+      "name": "员工管理",
+      "path": "/employees",
+      "code": "employee:list"
+    },
+    {
+      "key": "roles",
+      "name": "岗位权限",
+      "path": "/roles",
+      "code": "system:view"
+    },
+    {
+      "key": "settings",
+      "name": "企业基础信息",
+      "path": "/settings",
+      "code": "system:manage"
+    },
+    {
+      "key": "notifications",
+      "name": "通知中心",
+      "path": "/notifications",
+      "code": null
+    }
+  ],
+  "route_guard": [
+    [
+      "/chat",
+      "agent:session"
+    ],
+    [
+      "/after-sales",
+      "after_sales:view"
+    ],
+    [
+      "/orders",
+      "order:list"
+    ],
+    [
+      "/products",
+      "product:list"
+    ],
+    [
+      "/categories",
+      "product:category:view"
+    ],
+    [
+      "/processing-orders",
+      "production:view"
+    ],
+    [
+      "/processing",
+      "production:view"
+    ],
+    [
+      "/production/pool",
+      "processing:view"
+    ],
+    [
+      "/production/remnants",
+      "processing:manage"
+    ],
+    [
+      "/production/saving-board",
+      "product:list"
+    ],
+    [
+      "/production",
+      "production:view"
+    ],
+    [
+      "/customers",
+      "customer:view"
+    ],
+    [
+      "/finance",
+      "finance:view"
+    ],
+    [
+      "/employees",
+      "employee:list"
+    ],
+    [
+      "/settings",
+      "system:manage"
+    ],
+    [
+      "/knowledge",
+      "knowledge:view"
+    ],
+    [
+      "/roles",
+      "system:view"
+    ],
+    [
+      "/briefing",
+      "dashboard:view"
+    ],
+    [
+      "/dashboard",
+      "dashboard:view"
+    ]
+  ],
+  "pages": [
+    {
+      "key": "after-sales",
+      "name": "售后工单",
+      "path": "/after-sales",
+      "gate": "after_sales:view",
+      "units": {
+        "after_sales:view": [
+          "GET /api/admin/after-sales"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "human-sessions",
+      "name": "在线接待",
+      "path": "/agent-workspace/human-sessions",
+      "gate": "agent:session",
+      "units": {
+        "agent:session": [
+          "GET /api/admin/agent-sessions",
+          "GET /api/admin/agent-sessions/{}"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "briefing",
+      "name": "每日简报",
+      "path": "/briefing",
+      "gate": "dashboard:view",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "gate": "customer:view",
+      "units": {
+        "customer:view": [
+          "GET /api/admin/customer-tags",
+          "GET /api/admin/customers"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "dashboard",
+      "name": "经营看板",
+      "path": "/dashboard",
+      "gate": "dashboard:view",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config",
+          "GET /api/admin/dashboard/order-trend",
+          "GET /api/admin/dashboard/product-ranking",
+          "GET /api/admin/dashboard/recent-orders",
+          "GET /api/admin/dashboard/stats"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "employees",
+      "name": "员工管理",
+      "path": "/employees",
+      "gate": "employee:list",
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/roles/all"
+        ],
+        "employee:list": [
+          "GET /api/admin/users"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "finance",
+      "name": "财务对账",
+      "path": "/finance",
+      "gate": "finance:view",
+      "units": {
+        "finance:view": [
+          "GET /api/admin/finance/reconciliation",
+          "GET /api/admin/finance/summary",
+          "GET /api/admin/finance/transactions"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "inbound-orders",
+      "name": "入库单",
+      "path": "/inbound-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/inbound-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "knowledge",
+      "name": "知识库",
+      "path": "/knowledge",
+      "gate": "knowledge:view",
+      "units": {
+        "knowledge:view": [
+          "GET /api/admin/knowledge/cards"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "notifications",
+      "name": "通知中心",
+      "path": "/notifications",
+      "gate": null,
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/notifications"
+        ]
+      },
+      "visibility_rule": "node-code"
+    },
+    {
+      "key": "orders",
+      "name": "订单列表",
+      "path": "/orders",
+      "gate": "order:list",
+      "units": {
+        "order:list": [
+          "GET /api/admin/orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-board",
+      "name": "生产看板",
+      "path": "/production",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/processing-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-piecework",
+      "name": "计件工资",
+      "path": "/production/piecework",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/production/piecework/summary"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-pool",
+      "name": "智能派单",
+      "path": "/production/pool",
+      "gate": "processing:view",
+      "units": {
+        "processing:view": [
+          "GET /api/admin/production/pool"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "processing",
+      "name": "加工项管理",
+      "path": "/production/processing",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/processing-categories",
+          "GET /api/admin/processing-items",
+          "GET /api/admin/production/processing-fee-combinations",
+          "GET /api/admin/production/processing-fee-gaps"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-remnants",
+      "name": "余料台账",
+      "path": "/production/remnants",
+      "gate": "processing:manage",
+      "units": {
+        "processing:manage": [
+          "GET /api/admin/production/remnants"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-process",
+      "name": "工艺配置",
+      "path": "/production/routings",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/production/operation-positions",
+          "GET /api/admin/production/operations-catalog",
+          "GET /api/admin/production/route-rule-options",
+          "GET /api/admin/production/route-rules",
+          "GET /api/admin/production/routings",
+          "GET /api/admin/production/seed-templates"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "production-saving-board",
+      "name": "省料看板",
+      "path": "/production/saving-board",
+      "gate": "product:list",
+      "units": {
+        "product:list": [
+          "GET /api/admin/batch-stock/saving-board",
+          "GET /api/admin/batch-stock/saving-trend"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "products",
+      "name": "商品列表",
+      "path": "/products",
+      "gate": "product:list",
+      "units": {
+        "product:list": [
+          "GET /api/admin/products"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "roles",
+      "name": "岗位权限",
+      "path": "/roles",
+      "gate": "system:view",
+      "units": {
+        "__unannotated__": [
+          "GET /api/admin/roles"
+        ],
+        "system:view": [
+          "GET /api/admin/permissions"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "settings",
+      "name": "企业基础信息",
+      "path": "/settings",
+      "gate": "system:manage",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/briefing/config"
+        ],
+        "system:manage": [
+          "GET /api/admin/settings",
+          "GET /api/admin/tenant/ai-config"
+        ]
+      },
+      "visibility_rule": "all"
+    }
+  ],
+  "ledger_counts": {
+    "MENU_READ_PARITY_RESIDUALS": 1,
+    "MULTI_READ_ENDPOINT_PAGES": 1,
+    "READ_WRITE_EXCEPTIONS": 0,
+    "ROLE_FALLBACK_DIVERGENCES": 0,
+    "AUTHORIZATION_CENSUS": 16,
+    "UNANNOTATED_ENDPOINTS": 21,
+    "REGISTERED_RESIDUALS": 9,
+    "A7_CODES_BEYOND_CATALOG": 0,
+    "A7_VS_MIRROR_DIVERGENCES": 0,
+    "PAGE_VISIBILITY_GAPS": 1
+  },
+  "_boundary": "本清单**只**覆盖既有解析器能读到的八段事实（码目录两处 + **它们的名称列（P2 新增）** / 岗位种子的码集 / 岗位回退的码集 / **登录面 A7 的码集（P2 新增）** / 三处菜单源 + 第四处的「已删」读数 / `menu.ts` 节点表 / 路由守卫表 / 菜单树与登录菜单 / 路由守卫 / **`pages[]`：页面 → 码（P3 新增：`gate` + 第一屏读码 `units` → 端点 + 逐页 `visibility_rule`）**）+ 既有台账的条数（含 P2/P3 新增的三张只许缩短的台账）。**不含**：D1 端点注解与 D3 工具声明（co-located 真值，设计 §2.2 有意不搬）、码的 resource_type / action / description（三列与 name 同源，喂进清单不增加判别力 —— 名称列才是 B3 标签的对照面）、`roles.mirror_placeholders` 之外的镜像键（A3 的键集 = seed ∪ fallback ∪ 该占位表，由 P2 判据逐值钉住）、`users.permissions` 快照（实例数据，不是声明）、A4 迁移链的存量授权谓词（与「角色 → 默认码」不是同一个读数 —— 设计 §3.1 已登记该差距，归 P5）。**P3 的额外边界**：① C2（`MenuController` 的 `MENU_TREE` 码列）**不由 `pages[]` 派生** —— 它有 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情，不是页面）且『经营看板』节点无码而控制器有码 ⇒ 码列不属「页面 → 码」面（现值由 M1 形态面 `menu-tree` 登记）；② `pages[].units` 的 `label`（tab 中文名）/ icon / 关键词 / 组序**不搬进清单**（散文与展示属性，判据读不到就只能靠人核 —— 要它们时由 P4 的 `partial_visibility_ack` 带理由引入）；③ 可见性投影的岗位全集 = **种子 ∪ 回退**（租户自建岗位读不到 ⇒ 见 P3 判据的 `UNCOVERED_FACES`）。**未对账的段一律不许进本文件**（判据 test_manifest_segments_are_all_reconciled 会红）。"
+}

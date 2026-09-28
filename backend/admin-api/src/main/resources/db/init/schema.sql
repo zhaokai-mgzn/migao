@@ -878,7 +878,7 @@ CREATE TABLE IF NOT EXISTS production_routings (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     curtain_type VARCHAR(16) NOT NULL,               -- 部位/帘种：布帘/纱帘/帘头
-    craft VARCHAR(16) NOT NULL,                      -- 工艺：韩褶/打孔/四爪钩/穿杆/平幔
+    craft VARCHAR(16) NOT NULL,                      -- 工艺：韩褶/打孔/四爪钩/穿杆/平幔（**历史表**：四爪钩行是 V54/V58 的存量种子，issue #4365 起新单不再产生该值）
     operations JSONB NOT NULL DEFAULT '[]',          -- 工序名序列（有序数组）
     status VARCHAR(16) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1104,6 +1104,55 @@ COMMENT ON COLUMN craft_calc_configs.oversize_height_threshold IS
     '⚠️ issue #5130 起「超高」**不再**由「成品高 + 上下卷边 > 门幅」判定（该门幅判据已退役）。';
 COMMENT ON COLUMN craft_calc_configs.status IS
     '配置行状态（范式同 production_crafts，V72）。读面按 deleted = 0 取行，不按 status 过滤。';
+
+-- ── 企业参数**变更留痕**（V131，issue #5131 §22 P6；设计 docs/design/tenant-params-center.md §6.3）──
+-- bootstrap 终态同步（同 V127 纪律）：新建库由本文件建表、**不跑迁移链** ⇒ 只写迁移 = 新建库缺表。
+-- **只追加**：一行 = 一个参数键的一次变更（谁 / 何时 / 哪个域哪个键 / 改前 → 改后 / 属于哪一次保存）。
+-- 口径 = **best-effort**（用户 2026-09-26 裁定）：审计写失败只记日志 + 计数，**不让配置保存失败**
+-- ⇒ 本表**不在**配置写入的事务里（残留「改了钱、查不到谁改的」由日志行 PARAM_AUDIT_WRITE_FAILED
+-- 与指标 migao.tenant_param_audit.write_failed 兜可观测性）。
+CREATE TABLE IF NOT EXISTS tenant_param_audit (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    param_domain VARCHAR(32) NOT NULL,               -- craft_calc（算料，当前唯一写面）；增量 2 的六域按同名列追加取值
+    param_key VARCHAR(64) NOT NULL,                  -- 引擎配置键（如 hem_margin）；不做白名单（键集随引擎演进）
+    old_value TEXT,                                  -- NULL = 该键此前**没有**存储值（本租户当时在用引擎默认值）
+    new_value TEXT,
+    actor_id VARCHAR(64),                            -- 取不到认证上下文 ⇒ NULL + actor_source='unknown' + 原因（不编用户）
+    actor_name VARCHAR(64),
+    actor_source VARCHAR(16) NOT NULL,               -- security_context（权威）/ unknown
+    actor_unknown_reason VARCHAR(64),
+    operation VARCHAR(32) NOT NULL,                  -- put（全量替换）
+    operation_id VARCHAR(64) NOT NULL,               -- 一次保存的身份：同一次 PUT 的多行共享（日志行里也打它）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    -- 一行 = 一次变更：两个值不得相同（同值行 = 噪音，且会让「改过没有」判错）
+    CONSTRAINT ck_tenant_param_audit_changed CHECK (old_value IS DISTINCT FROM new_value),
+    CONSTRAINT ck_tenant_param_audit_source CHECK (actor_source IN ('security_context', 'unknown')),
+    -- 🔴 「不知道是谁」必须带原因：两个条件同真同假
+    CONSTRAINT ck_tenant_param_audit_unknown
+        CHECK ((actor_source = 'unknown') = (actor_unknown_reason IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_param_audit_key
+    ON tenant_param_audit (tenant_id, param_domain, param_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_param_audit_operation
+    ON tenant_param_audit (tenant_id, operation_id);
+COMMENT ON TABLE tenant_param_audit IS
+    '企业参数变更留痕（V131，issue #5131 P6，**只追加**）：一行 = 一个参数键的一次变更'
+    '（谁 / 何时 / 哪个域哪个键 / 改前→改后 / 属于哪一次保存）。口径 = **best-effort**'
+    '（用户 2026-09-26 裁定）：审计写失败只记日志 + 计数，**不让配置保存失败**';
+COMMENT ON COLUMN tenant_param_audit.old_value IS
+    '改前值。NULL = 该键此前**没有**存储值（本租户当时在用引擎默认值）—— 不是「值是空」；'
+    '配置行本身不存在时（首次保存）本列全为 NULL';
+COMMENT ON COLUMN tenant_param_audit.actor_source IS
+    '身份**是怎么确定的**（同 worker_report_audits.identity_source 的口径）：'
+    'security_context = 取自 SecurityContext 的 SecurityUser（权威，body 伪造不了）；'
+    'unknown = 无认证上下文（服务令牌 / 定时任务 / 测试），此时 actor_id/actor_name 为 NULL 且 actor_unknown_reason 必非空';
+COMMENT ON COLUMN tenant_param_audit.actor_unknown_reason IS
+    '为什么归因不了（仅 actor_source=''unknown'' 时非空）：如 no_authentication_context —— '
+    '如实记「未知 + 原因」，**不得**编一个用户或写成 system 冒充归属';
+COMMENT ON COLUMN tenant_param_audit.operation_id IS
+    '一次保存的身份：同一次 PUT 写下的多行共享它（应用侧同时把该 id 打进配置写入的日志行 ⇒ 日志 ↔ 账本可对账）';
 
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
@@ -1624,6 +1673,51 @@ CREATE INDEX IF NOT EXISTS idx_inbound_items_tenant_sku ON inbound_order_items (
 COMMENT ON TABLE inbound_order_items IS
     '入库单明细（V111）：一个 SKU 行 = 一个批次。批次粒度取行级而非卷级（缸号的行业粒度本就是「一批布」，卷长是区间值不宜硬折算，见 docs/curtain-selling-method-industry-research.md §8.2 末）';
 
+-- 入库标签（V134，issue #5052 P2；设计 docs/design/inbound-photo-and-label.md §7.1 / §7.3）：
+-- 一行 = 一个入库单明细行 = 一张 50×30mm 标签；标签上的码 = `https://app.migaozn.com/i/<8 位短码>`。
+-- 🔴 与 processing_set_part_tokens（工人报工短链 `/s/`）是**两个码空间**（#5052 边界逐字：
+-- 「照其范式、不复用其表」）—— 本表照其范式（8 位 Crockford Base32 / 部分唯一索引 /
+-- 原子自增计数），但**不复用其表**：混用会把「扫标签」变成「进报工页」。
+-- 撤销 = `short_code` 置 NULL、原码留档 `revoked_code` ⇒ 扫码 **410**（与 404「没这个码」可分辨；
+-- 只置 NULL 会把撤销说成「不存在」）；`uk_inbound_labels_code`（有效码唯一）⇒ 已撤销的码永不复发。
+CREATE TABLE IF NOT EXISTS inbound_labels (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    inbound_order_id VARCHAR(64) NOT NULL REFERENCES inbound_orders(id),
+    inbound_item_id BIGINT NOT NULL,                 -- 入库单明细行（一行 = 一个 SKU = 一个批次 = 一张标签）
+    short_code CHAR(8),                              -- 当前有效短码；撤销 ⇒ 置 NULL（§7.3 逐字）
+    revoked_code CHAR(8),                            -- 撤销时留档的原码 ⇒ 撤销后仍判 410 而不是 404
+    print_count INTEGER NOT NULL DEFAULT 0,          -- 原子自增（COALESCE(print_count,0)+1），重打同样计数
+    created_by VARCHAR(64),
+    revoked_at TIMESTAMP WITH TIME ZONE,
+    revoked_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_inbound_labels_code_exactly_one
+        CHECK ((short_code IS NULL) <> (revoked_code IS NULL)),
+    CONSTRAINT ck_inbound_labels_code_shape
+        CHECK ((short_code IS NULL OR short_code ~ '^[0-9A-HJKMNP-TV-Z]{8}$')
+           AND (revoked_code IS NULL OR revoked_code ~ '^[0-9A-HJKMNP-TV-Z]{8}$'))
+);
+-- 码全局唯一（跨租户：/i/ 那一跳没有租户上下文）：建在**有效码** COALESCE(short_code, revoked_code) 上
+-- ⇒ 活码 / 留档码 / 两者交叉都在同一条约束下（已撤销的码永不复发）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_labels_code
+    ON inbound_labels (COALESCE(short_code, revoked_code))
+    WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_labels_item
+    ON inbound_labels (tenant_id, inbound_item_id)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_inbound_labels_order ON inbound_labels (inbound_order_id);
+COMMENT ON TABLE inbound_labels IS
+    '入库标签（V134，issue #5052 P2）：一行 = 一个入库单明细行 = 一张 50×30mm 标签。短码 = 8 位 Crockford Base32、随机、全局唯一；撤销 = short_code 置 NULL（原码留档 revoked_code）⇒ 扫码 410；print_count 原子自增（设备侧打印前必须先调 POST /api/worker/inbound/labels/{短码}/print）';
+COMMENT ON COLUMN inbound_labels.short_code IS
+    '当前有效短码（印刷品写 https://app.migaozn.com/i/<短码>）。撤销 ⇒ 置 NULL（§7.3），原码留档到 revoked_code ⇒ 扫码仍判 410 而不是 404';
+COMMENT ON COLUMN inbound_labels.revoked_code IS
+    '撤销时留档的原短码：撤销后仍能分辨「已作废（410）」与「不存在（404）」；与 short_code 一起受 uk_inbound_labels_code（有效码唯一）约束 ⇒ 已撤销的码永不复发';
+COMMENT ON COLUMN inbound_labels.print_count IS
+    '打印次数（原子自增 COALESCE(print_count,0)+1；多人同时打印不丢计数；重打同样计数）';
+
 CREATE TABLE IF NOT EXISTS stock_batches (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1880,6 +1974,65 @@ COMMENT ON TABLE agent_batches IS
     '批量更新的批次（V127，issue #5314）—— 状态机 preview → executing → done | partial → reverted | revert_partial；不可撤销 = 状态非 done/partial 或已 reverted';
 COMMENT ON TABLE agent_batch_items IS
     '批量更新的逐条明细（V127，issue #5314）—— old_value = 撤销的唯一依据；逐条 status/error = 部分失败逐条报告的载体，不做整体回滚';
+
+-- 发货单 + 发货明细（V132，issue #5648）—— 工人拍照生成发货单 + 订单发货状态闭环
+-- 「发货明细（实发套/件/卷）」这个真值的**唯一 owner = 这两张表**；issue #5651（纸面）只消费。
+CREATE TABLE IF NOT EXISTS order_shipments (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    order_id VARCHAR(36) NOT NULL,
+    order_no VARCHAR(64),
+    shipment_no VARCHAR(64) NOT NULL,
+    source VARCHAR(32) NOT NULL,                     -- worker_photo / worker / admin
+    photo_refs JSONB,                                -- 照片引用（URL 列表）；无照片 ⇒ 空数组，不编造
+    recognition JSONB,                               -- 识别留痕（vision 原样字段表：逐格 value/source/reason）
+    packed_by_worker_id VARCHAR(64),
+    packed_by_worker_name VARCHAR(64),
+    packed_at TIMESTAMP WITH TIME ZONE,
+    shipped_by_worker_id VARCHAR(64),
+    shipped_by_worker_name VARCHAR(64),
+    shipped_at TIMESTAMP WITH TIME ZONE,
+    tracking_no VARCHAR(64),
+    logistics_company VARCHAR(128),
+    client_request_id VARCHAR(128),                  -- 幂等键（X-Client-Request-Id）
+    unpacked_at TIMESTAMP WITH TIME ZONE,            -- 撤销打包留痕（必带理由）
+    unpacked_by_worker_id VARCHAR(64),
+    unpacked_by_worker_name VARCHAR(64),
+    unpack_reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_shipments_idem
+    ON order_shipments (tenant_id, client_request_id)
+    WHERE client_request_id IS NOT NULL AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_order_shipments_order
+    ON order_shipments (tenant_id, order_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_shipment_items (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    shipment_id VARCHAR(36) NOT NULL REFERENCES order_shipments(id) ON DELETE CASCADE,
+    order_id VARCHAR(36) NOT NULL,
+    order_item_id VARCHAR(36),                       -- 挂在**订单行**上（同商品两行必须分得开）
+    product_name VARCHAR(255),
+    shipped_quantity NUMERIC(10,2) NOT NULL,         -- 🔴 实发数量（与 order_items.quantity 同口径）
+    unit VARCHAR(16) NOT NULL,                       -- 米 / 套 / 件（不从订单行推算）
+    set_count INTEGER,                               -- 实发套数；不适用 ⇒ NULL（缺值不填 0）
+    roll_count INTEGER,                              -- 实发卷数；非整卷 ⇒ NULL（禁止由米数推算）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_order_shipment_items_shipment
+    ON order_shipment_items (shipment_id, id);
+CREATE INDEX IF NOT EXISTS idx_order_shipment_items_order
+    ON order_shipment_items (tenant_id, order_id);
+
+COMMENT ON TABLE order_shipments IS
+    '发货单（V132，issue #5648）—— 服务端留痕：谁/何时/哪张单/照片引用/识别结果；与 order_logistics 分开（后者是物流面）';
+COMMENT ON TABLE order_shipment_items IS
+    '发货明细（V132，issue #5648）—— 这一单**实际发了多少**；真值唯一 owner = 本表，#5651（纸面）只消费';
 
 -- ================================================
 -- 10. 审计日志表
@@ -2329,6 +2482,20 @@ CREATE POLICY tenant_isolation_agent_batches ON agent_batches
 
 ALTER TABLE agent_batch_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_agent_batch_items ON agent_batch_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 发货单 + 发货明细（V132，issue #5648）—— 跨租户不可见是契约判据之一
+ALTER TABLE order_shipments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_order_shipments ON order_shipments
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+ALTER TABLE order_shipment_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_order_shipment_items ON order_shipment_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 企业参数变更留痕（V131，issue #5131 §22 P6）—— 跨租户不可见
+ALTER TABLE tenant_param_audit ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_tenant_param_audit ON tenant_param_audit
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
 -- ================================================
@@ -2830,9 +2997,10 @@ VALUES
   ('rr-v70-01', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active'),
   ('rr-v70-02', 1, 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20, 'active'),
   ('rr-v70-03', 1, 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30, 'active'),
-  ('rr-v70-04', 1, 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40, 'active'),
-  ('rr-v70-05', 1, 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50, 'active'),
-  ('rr-v70-06', 1, 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60, 'active'),
+  -- 🔴 `rr-v70-04/05/06`（craft='四爪钩' 三条：insert 上车布 / remove 定型 / remove 复烫）
+  -- **已退场**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：四爪钩是**加工项/配件**、
+  -- 不是工艺（真值源 §8）⇒ 建库终态不再种它们；存量库由
+  -- `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删。
   ('rr-v70-07', 1, 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70, 'active'),
   ('rr-v70-08', 1, 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80, 'active'),
   ('rr-v70-09', 1, 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90, 'active'),
@@ -2866,7 +3034,7 @@ INSERT INTO production_crafts (id, tenant_id, name, is_default, status)
 SELECT 'pc-v72-' || t.id, t.id,
        COALESCE(
            (SELECT c.name
-              FROM unnest(ARRAY['韩褶', '打孔', '四爪钩', '穿杆', '平幔']) WITH ORDINALITY AS c(name, ord)
+              FROM unnest(ARRAY['韩褶', '打孔', '穿杆', '平幔']) WITH ORDINALITY AS c(name, ord)
              WHERE EXISTS (
                  SELECT 1 FROM production_operations o
                   WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active'
@@ -2940,9 +3108,7 @@ SELECT 'rr-v72-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
       ('01', 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10),
       ('02', 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20),
       ('03', 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30),
-      ('04', 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40),
-      ('05', 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50),
-      ('06', 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60),
+      -- `04/05/06`（craft='四爪钩'）已退场（issue #4365）⇒ 见 V135 与上方 rr-v70 块的说明
       ('07', 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70),
       ('08', 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80),
       ('09', 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90),
@@ -3287,9 +3453,7 @@ SELECT 'rr-v93-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
       ('01', 'craft', '韩褶',   NULL::varchar, 'insert', '韩褶',     '三边',  10::integer),
       ('02', 'craft', '韩褶',   '布帘'::varchar, 'insert', '上车布', '韩褶',  20::integer),
       ('03', 'craft', '打孔',   NULL::varchar, 'insert', '打孔',     '三边',  30::integer),
-      ('04', 'craft', '四爪钩', NULL::varchar, 'insert', '上车布',   '三边',  40::integer),
-      ('05', 'craft', '四爪钩', NULL::varchar, 'remove', '定型',     NULL::varchar, 50::integer),
-      ('06', 'craft', '四爪钩', NULL::varchar, 'remove', '复烫',     NULL::varchar, 60::integer),
+      -- `04/05/06`（craft='四爪钩'）已退场（issue #4365）⇒ 见 V135 与 rr-v70 块的说明
       ('07', 'craft', '穿杆',   NULL::varchar, 'remove', '定型',     NULL::varchar, 70::integer),
       ('08', 'craft', '穿杆',   NULL::varchar, 'remove', '复烫',     NULL::varchar, 80::integer),
       ('09', 'craft', '平幔',   NULL::varchar, 'insert', '帘头制作', '三边',  90::integer),

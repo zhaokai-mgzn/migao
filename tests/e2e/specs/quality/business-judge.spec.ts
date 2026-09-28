@@ -49,7 +49,7 @@ describeOrSkip('LLM 业务裁判', () => {
     })
     await page.route('**/api/auth/**', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify(ok({ id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' })) })
+        body: JSON.stringify(ok({ id: '1', username: 'admin', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1, tenantName: '测试企业' })) })
     })
     await page.route('**/api/settings/**', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json',

@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.migao.admin.config.SmsConfig;
+import com.migao.admin.time.BusinessClock;
 import com.aliyun.dysmsapi20170525.Client;
 // TODO: 接入阿里云短信服务后恢复以下导入
 // import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
@@ -14,8 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +45,12 @@ public class SmsService {
     private static final long LIMIT_TTL_SECONDS = 60;  // 60 秒防刷
     private static final int DAILY_LIMIT = 10;          // 每日上限
     private static final int MAX_VERIFY_FAILS = 5;      // 验证码校验最大失败次数（防暴力破解）
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final StringRedisTemplate redisTemplate;
     private final SmsConfig smsConfig;
@@ -105,8 +110,8 @@ public class SmsService {
         Long count = redisTemplate.opsForValue().increment(dailyKey);
         if (count != null && count == 1) {
             // 首次发送，设置 TTL 到当天结束
-            Duration ttl = Duration.between(LocalDateTime.now(),
-                    LocalDate.now().plusDays(1).atTime(LocalTime.MIDNIGHT));
+            Duration ttl = Duration.between(businessClock.now(),
+                    businessClock.today().plusDays(1).atTime(LocalTime.MIDNIGHT));
             redisTemplate.expire(dailyKey, ttl);
         }
 

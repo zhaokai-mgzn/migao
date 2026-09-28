@@ -129,9 +129,6 @@ public class StockBatchConsumptionService {
      */
     private static final int SHARE_SCALE = 10;
 
-    /** 定宽买高「每幅」的小数位（同上：中间值，落库存前统一由 {@code toStockScaleByCeiling} 归一）。 */
-    private static final int PER_PIECE_SCALE = 6;
-
     private final StockBatchMapper stockBatchMapper;
     private final StockBatchConsumptionMapper consumptionMapper;
     private final ProductSkuMapper productSkuMapper;
@@ -1170,7 +1167,7 @@ public class StockBatchConsumptionService {
         Map<Long, Double> doorWidthBySkuId = doorWidthsBySkuId(tenantId, byNo.values());
         Map<String, PlanGroup> groups = new LinkedHashMap<>();
         for (Designation d : designations) {
-            String mode = cuttingModeOf(d.cuttingMode());
+            String mode = CuttingPlanCalculator.modeOf(d.cuttingMode());
             StockBatch batch = StringUtils.hasText(d.batchNo()) ? byNo.get(d.batchNo().trim()) : null;
             Double doorWidth = mode == null || batch == null ? null : doorWidthBySkuId.get(batch.getSkuId());
             if (doorWidth == null) {
@@ -1338,8 +1335,11 @@ public class StockBatchConsumptionService {
      */
     private static List<CuttingPlanCalculator.Piece> piecesOf(Designation d, String mode,
                                                               double doorWidth, BigDecimal hemMargin) {
-        BigDecimal formula = StockQuantity.orZero(d.meters());
-        if (formula.signum() <= 0) {
+        // 「几片 × 每片多长」= **排料器与读面共用的同一份分解**
+        // （`CuttingPlanCalculator.pieceLengths`）：在这里再写一遍除法 = 第二份会漂移的口径
+        // （给裁床看的清单与真扣的料可能对不上，而漂移的那一份不会变红）。
+        List<BigDecimal> lengths = CuttingPlanCalculator.pieceLengths(mode, d.meters(), d.panels());
+        if (lengths.isEmpty()) {
             return List.of();
         }
         if (CuttingPlanCalculator.MODE_FIXED_HEIGHT.equals(mode)) {
@@ -1348,43 +1348,18 @@ public class StockBatchConsumptionService {
                 return List.of();
             }
             return List.of(new CuttingPlanCalculator.Piece(d.orderItemId() + "#1", mode,
-                    height.add(hemMargin).doubleValue(), formula.doubleValue()));
+                    height.add(hemMargin).doubleValue(), lengths.get(0).doubleValue()));
         }
         if (CuttingPlanCalculator.MODE_FIXED_WIDTH.equals(mode)) {
-            int panels = d.panels() == null ? 0 : d.panels();
-            if (panels <= 0) {
-                return List.of();
-            }
-            BigDecimal per = formula.divide(BigDecimal.valueOf(panels), PER_PIECE_SCALE,
-                    RoundingMode.HALF_UP);
-            List<CuttingPlanCalculator.Piece> pieces = new ArrayList<>(panels);
-            for (int i = 1; i <= panels; i++) {
-                pieces.add(new CuttingPlanCalculator.Piece(d.orderItemId() + "#" + i, mode,
+            List<CuttingPlanCalculator.Piece> pieces = new ArrayList<>(lengths.size());
+            for (int i = 0; i < lengths.size(); i++) {
+                BigDecimal per = lengths.get(i);
+                pieces.add(new CuttingPlanCalculator.Piece(d.orderItemId() + "#" + (i + 1), mode,
                         per.doubleValue(), per.doubleValue()));
             }
             return pieces;
         }
         return List.of();
-    }
-
-    /**
-     * 订单侧加工类型（{@code processing_info.cuttingMode}，中文串）→
-     * {@link CuttingPlanCalculator} 的模式常量。
-     *
-     * <p>真值源 = 算料引擎的 {@code CUTTING_MODE_FIXED_HEIGHT = "定高买宽"} /
-     * {@code CUTTING_MODE_FIXED_WIDTH = "定宽买高"}（订单侧下单时原样透传该中文串）。
-     * 映射**只在这里写一次**；未知取值 ⇒ {@code null}（不排料，**不猜工艺** —— 猜错会把整窗
-     * 当成多幅拆开，那是少领）。</p>
-     */
-    private static String cuttingModeOf(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        return switch (raw.trim()) {
-            case "定高买宽" -> CuttingPlanCalculator.MODE_FIXED_HEIGHT;
-            case "定宽买高" -> CuttingPlanCalculator.MODE_FIXED_WIDTH;
-            default -> null;
-        };
     }
 
     /** 批次 SKU → 门幅（米）。只有**批次**的 SKU 才作数（扣的是这批布，不是订单行上写的那个）。 */

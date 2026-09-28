@@ -500,13 +500,22 @@ class ProductionRoutingReadControllerTest {
     @Test
     @DisplayName("两个端点都声明 processing:manage（类级 order:list 会被方法级覆盖）")
     void endpointsDeclareManagePermission() throws Exception {
+        // 🔴 issue #5699（P4）**改判并如实登记**：用户裁定「权限粒度到子菜单即可，页内功能不作为
+        // 权限边界」⇒「工艺配置」页第一屏 6 个读端点必须同码。本族此前挂 processing:manage
+        //（理由逐字「价目与规则是生产配置面」），而同页另两个端点与节点码 / 路由守卫都是
+        // production:view ⇒ 收敛方向取**页面码** production:view。
+        // 零 delta 的证据：processing:manage 与 production:view 的持有岗位集合在种子 / 回退
+        // 两来源里逐值相同（admin · operator · product_manager@fallback）⇒ 对所有角色的可见面与
+        // 可做面**没有任何变化**（不是放宽、也不是收窄，是**同义码的统一**）。
+        // 写面未动：POST /route-rules、DELETE /route-rules/{id}、PUT /operation-positions/{id}
+        // 仍是方法级 processing:manage（见下面各条断言）。
         for (String name : List.of("operationPositions", "routeRules")) {
             Method method = ProductionController.class.getMethod(name);
             RequirePermission ann = method.getAnnotation(RequirePermission.class);
             assertThat(ann).as("%s 必须声明方法级 @RequirePermission", name).isNotNull();
             assertThat(ann.value())
-                    .as("%s 的权限必须是 processing:manage（价目与规则是生产配置面）", name)
-                    .isEqualTo("processing:manage");
+                    .as("%s 的权限必须是页面码 production:view（#5699 P4：子菜单粒度）", name)
+                    .isEqualTo("production:view");
         }
     }
 

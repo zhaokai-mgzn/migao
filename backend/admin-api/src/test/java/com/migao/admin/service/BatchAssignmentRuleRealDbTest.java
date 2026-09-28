@@ -145,7 +145,9 @@ class BatchAssignmentRuleRealDbTest {
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
         session = factory.openSession(true);
         configService = new CraftCalcConfigService(
-                session.getMapper(CraftCalcConfigMapper.class), null);
+                session.getMapper(CraftCalcConfigMapper.class), null,
+                // 审计腿（§22 P6）显式不装：本判据只读配置 / 排料，不写配置
+                null);
         service = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductSkuMapper.class), null, configService,

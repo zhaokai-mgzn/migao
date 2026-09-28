@@ -10,6 +10,24 @@ on:
       - 'v*'
     paths:
       - 'backend/admin-api/**'
+      # ── 只改配置也必须触发一次部署（关联 #5001；实测两次的病）──────────────────────
+      # **为什么配置改动要走部署腿**：配置（compose/nginx）与镜像**同源** ——
+      # `deploy/swas/deploy.sh` 只取「镜像 tag 那个 commit」的配置（`CONFIG_REF_RESOLVED`，
+      # 见该脚本第 0/1 段与 issue #5083），把它们 `cp` 到 `nginx/` 与 compose 根，并无条件
+      # `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES`
+      # 的初值，那段在逐服务循环**之外**）⇒ **配置的应用面只在这条部署腿里**。
+      # 而改 `deploy/swas/**` 原先**一条部署腿都不触发**：`bmini-h5-publish.yml` 的 paths 里
+      # 虽有 `deploy/swas/nginx.conf`，但那条腿只往静态根发文件（全程没有 cp / reload、
+      # 不跑 deploy.sh）⇒ 配置**不被应用**，该文件的改动**静默不生效**，只能靠人工
+      # `workflow_dispatch`（实测：#5668 的 `/b/`、#5676 的 `/i/`）。
+      # 覆盖面（`ls deploy/swas/`）：nginx.conf · docker-compose.yml ·
+      # docker-compose.bluegreen.yml · deploy.sh · h5-publish-remote.sh ·
+      # bmini-h5-publish-remote.sh —— 全是「与镜像同源」那一面，改了就得由一次部署应用/自证。
+      # ⚠️ 这一行与 `deploy-reconcile.yml` 里 admin-api 腿的第 4 个参数是**同一事实的两处投影**
+      #    （触发面 / 对账面）⇒ 必须同批改；只改一处、或写成不覆盖 `nginx.conf` 的形态
+      #    （如 `deploy/swas/*.sh`）⇒ 判红：
+      #    `tests/unit_ci_workflows/test_config_change_triggers_deploy.py`
+      - 'deploy/swas/**'
   # 部署对账（issue #2947）：连续快速合并时 GitHub 可能吞掉 push 触发
   # （2026-09-05 实测 #2927 合并后 admin-api 部署未自动触发——镜像从未构建，#2936 只覆盖 ai-agent）。
   # 定时兜底：检查 main HEAD 对应的 sha-xxx 镜像是否已存在，缺失则补一次构建部署。

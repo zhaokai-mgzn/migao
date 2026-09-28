@@ -1128,6 +1128,16 @@ def route_by_intent(state: AgentState) -> str:
         if str((state.get("intent_result") or {}).get("source") or "") == "rule":
             _rule_domain = _rule_intent_domain(intent, state.get("agent_type", ""))
         if _rule_domain and _rule_domain != _pending_domain:
+            # 🔴 **已知窗口（有意不修，2026-09-26 用户裁定 ②「只做缓解 + 登记口径」）**：
+            # 本行会把「顾客在回答本流程刚问的问题」误判成话题切换（伪域切换）——
+            # 最小复现 = OR-014 R3「不需要其他加工项」命中商品域关键词「加工项」。
+            # 刻意**不**在这里加判据：被证伪的候选判据（"写流程不许逃逸到服务不了该写的域"）
+            # 会连**合法换域**一起拦（#3784 的反例表）；真正的区分需要一个**新的会话状态事实**
+            # （"本 skill 在纯文本轮里问过问题"），该事实已被用户裁定不做（误吞合法换域的风险）。
+            # 口径与本窗口的可执行证据（逐条复算 + 会红的判据）见：
+            #   docs/wiki/AI-Agent.md「意图路由流程 / 已知窗口：L1 域逃逸的『伪域切换』」
+            #   backend/ai-agent-service/tests/test_or014_pseudo_domain_switch_window.py
+            # 缓解在**下游**（#3782 熔断 + 回锁，见 base_skill 的 `_flow_owner_skill`）。
             logger.info(
                 f"[route_by_intent] Escape hatch: L1 高置信域切换 "
                 f"'{_pending_domain}' → '{_rule_domain}' (intent={intent}) | session={session_id}"

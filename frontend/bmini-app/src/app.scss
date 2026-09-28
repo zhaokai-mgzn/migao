@@ -1,8 +1,15 @@
 // 全局样式入口：引入设计变量（@use 而非 @import，兼容 sass 1.99）
 @use './styles/variables.scss' as *;
+// 底部 tabBar 的居中修正（issue #5754：Taro h5 把 iOS 安全区算了两遍 + 文字贴底边）
+@use './styles/tabbar.scss';
 
 // 全局基础样式
-page {
+// ⚠️ 选择器写 `page, body` 是**必须**的（issue #5721 顺带修）：`page` 是小程序的选择器，
+//    在 h5 产物里**一个元素都匹配不到**（实测线上 `/b/css/app.css` 就是一条 `page{…}` 死规则）
+//    ⇒ h5 端的底色 / 正文色 / 基准字号全部落空，正文只能继承浏览器默认值。
+//    补上 `body` 让两端都生效；小程序端 `body` 匹配不到（无害）。
+page,
+body {
   background: $bg-secondary;
   color: $text-primary;
   font-size: 28px;

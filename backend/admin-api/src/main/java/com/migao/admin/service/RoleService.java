@@ -194,6 +194,39 @@ public class RoleService {
     }
 
     /**
+     * 角色码 → 该角色**隐含的生效权限码**（issue #4104 的 ⊆ 门禁用它算「授予这个角色会顺带授予哪些码」）。
+     *
+     * <p>口径与 {@link #getUserPermissions(String)} 的角色分支**同一份**实现：先按角色行取
+     * {@code role_permissions}，无关联记录回退内置硬编码映射；{@code admin} 恒为 {@code ["*"]}。
+     * 两处若各写一份，必然漂移成「快照面拦得住、角色面拦不住」。</p>
+     *
+     * <p>租户内查不到该角色码 ⇒ 走内置回退（与运行时一致：运行时的角色解析也走同一回退）；
+     * 但**只按传入租户查角色行** ⇒ 不跨租户解析，不泄露他租户的角色/权限是否存在。</p>
+     *
+     * @param roleCode 角色码（null / 空 ⇒ 空集）
+     * @param tenantId 目标租户（null ⇒ 跳过角色行查询，直接走内置回退）
+     */
+    public List<String> getEffectivePermissionCodesForRoleCode(String roleCode, Long tenantId) {
+        if (!StringUtils.hasText(roleCode)) {
+            return List.of();
+        }
+        if ("admin".equals(roleCode)) {
+            return List.of("*");
+        }
+        if (tenantId != null) {
+            LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(Role::getCode, roleCode)
+                    .eq(Role::getTenantId, tenantId)
+                    .eq(Role::getDeleted, 0);
+            Role role = roleMapper.selectOne(wrapper);
+            if (role != null) {
+                return getPermissionCodesForRoleEntity(role);
+            }
+        }
+        return getPermissionCodesForRole(roleCode);
+    }
+
+    /**
      * 根据用户ID查询用户的所有权限
      *
      * 岗位权限体系（#2969）快照式语义：员工管理保存的权限勾选 = 员工最终权限，
@@ -285,6 +318,22 @@ public class RoleService {
 
     /**
      * 根据角色代码获取权限码列表（直接返回字符串，不依赖 DB 查询）
+     *
+     * <p>🔴 <b>与种子矩阵的关系（issue #5683：两条机械约束）</b>：本方法对某个角色码返回的集合与
+     * {@code RegistrationService.initializeDefaultRolesAndPermissions} 的同一角色码之间的关系，由
+     * 判据 14 在 {@code tests/unit_ci_workflows/test_agent_permission_parity.py} 里**逐角色码穷举**守住 ——
+     * ① <b>本方法不得比种子更宽</b>（多出种子没有的码 = 绕过岗位权限页的放宽，<b>无登记出口</b>）；
+     * ② 两处的<b>逐值差异必须具名登记</b>在只许缩短的台账 {@code ROLE_FALLBACK_DIVERGENCES} 里
+     * （未登记即红、差异变了即红、差异消失而条目还在也红）。</p>
+     *
+     * <p>⚠️ 差异<b>是否应当存在</b>是一次<b>授权决定</b>（改本表 = 改「无权限快照的历史账号」的可见面 /
+     * 可做面），判据不替人做这个决定。issue #5683 之前，{@code operator} 的 4 码差距登记在
+     * {@code backend/ai-agent-service/tests/test_tool_permission_codes.py} 的那条绊线
+     * （{@code test_operator_seed_is_a_superset_of_the_hardcoded_fallback}，断言 {@code fallback < seeded}）里；
+     * 本单按用户批准的「补码」把回退补齐到与种子一致。</p>
+     *
+     * <p>⚠️ 本方法<b>只做计算、不写库</b>（回退路径不落 {@code role_permissions}）⇒ 改它只影响
+     * 「无权限快照 / 无岗位权限行」的那些历史账号，<b>不动任何已存的授予行</b>。</p>
      */
     private List<String> getPermissionCodesForRole(String roleCode) {
         return switch (roleCode) {
@@ -294,6 +343,17 @@ public class RoleService {
                     "order:list", "order:detail", "order:refund",
                     "product:list", "product:create", "product:category", "product:category:view",
                     "processing:manage", "production:view",
+                    // issue #5683（**授权变更**，用户逐字批准「补码」）：把 operator 的回退**补齐到与种子
+                    // 一致** —— 此前回退比种子少这 4 个码（该差距登记在
+                    // backend/ai-agent-service/tests/test_tool_permission_codes.py 的那条绊线里，
+                    // **不是**无人知道的疏漏）。补齐后，无快照的历史运营账号：「智能派单」不再「菜单看得见、
+                    // 点进去 403」（本页第一屏读端点要 `processing:view`，而它持的节点码是 `processing:manage`）、
+                    // 「入库单」菜单不再凭空消失（该节点码就是 `inbound:view`）、改得了加工单、建得了入库单。
+                    // ⚠️ 只动本回退表：节点码（`frontend/admin-web/src/config/menu.ts`）与前端路由守卫
+                    // 都**不需要**动 —— 受害者持管理码，守卫本来就过，403 来自 API 缺读码。
+                    // ⚠️ issue #5291 那处注释曾逐字声称「与种子矩阵逐值同步」而实际少码：改注释无用，
+                    // 值级不变量由上面 javadoc 点名的判据 14 机械守住。
+                    "processing:view", "processing:update", "inbound:view", "inbound:create",
                     // issue #5291：两个域读码与种子矩阵逐值同步 —— 回退路径（无 role_permissions 记录）
                     // 若不跟上，「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
                     "customer:view",
@@ -306,11 +366,23 @@ public class RoleService {
                     "after_sales:view", "knowledge:view",
                     // issue #5246 追加单（写码）：同样与种子矩阵逐值同步 —— 回退路径若不跟上，
                     // 「老员工（无权限快照）改不了单、新员工能改」会成为只在一部分账号上出现的怪状。
-                    // ⚠️ 本 switch 只有 admin/operator/product_manager/knowledge_editor 四个 case：
-                    // finance 与 customer_service **没有**硬编码回退（落 default ⇒ 空表），
-                    // 故本单对这两个岗位的写码只在种子矩阵与 V124 迁移里落地（如实登记，非静默遗漏）。
+                    // ⚠️ issue #5246（追加单）曾在此登记：「本 switch 只有 admin/operator/
+                    // product_manager/knowledge_editor 四个 case：finance 与 customer_service 没有硬编码
+                    // 回退（落 default ⇒ 空表），故本单对这两个岗位的**写码**只在种子矩阵与 V124 迁移里
+                    // 落地（如实登记，非静默遗漏）」。
+                    // 🔴 issue #5683 的复核结论（(b) 类，依据见 PR 正文）：那条登记的**主题是「写码」**、
+                    // 且自述范围是「本单（#5246）的可见性变更范围」—— 它**没有**对「这三个角色在回退里
+                    // 整体为空」作出决定 ⇒ 该面属**未覆盖**（`sales` 更从未被点名）。人类 2026-09-27
+                    // 因此裁定补齐三岗（V124 只补了两个**读**码，且其自述理由「sales/finance 不在本单的
+                    // 可见性变更范围内（不扩权）」是**当时那一单的范围声明**，不是长期决定）。
+                    // 另一个曾可能的理由（「这些账号必然有 role_permissions 记录 ⇒ 回退永不命中」）
+                    // 已被**证伪**：`getUserPermissions` 在**员工没有 user_roles 行**时直接调本方法
+                    // （根本不经 role_permissions）—— 历史员工 / ai-agent 直接创建的账号正走这条路。
+                    // 补码后本 switch 有 **7 个 case**，与种子矩阵逐角色码一致（判据 14 穷举守着）。
                     "order:update", "order:create", "customer:create", "finance:create",
-                    "agent:session:manage"
+                    "agent:session:manage",
+                    // issue #5699 的 I4：同客服（运营今日持 order:list ⇒ 这四个端点本来就放行）
+                    "production:execute"
                     // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );
             case "product_manager" -> List.of(
@@ -319,7 +391,38 @@ public class RoleService {
                     // `processing:manage` ⇒ 同批回填两个读码，否则拆码会把它的生产/分类面**收权**
                     //（「只收窄不放宽」的反面：原持管理码者不受影响）。
                     "product:list", "product:create", "product:category", "product:category:view",
-                    "processing:manage", "production:view"
+                    "processing:manage", "production:view",
+                    // issue #5683：补 `processing:view`。⚠️ 本岗位的性质与 operator **不同** ——
+                    // 它**不在种子矩阵里**（POC 期的历史角色码，本回退表是它**唯一**的一份默认定义）
+                    // ⇒ operator 是「回退落后于种子，补码 = 追上」，本岗位是「只有一份定义、缺的是
+                    // 它自己那条链上的读码」。理由：它持节点码 `processing:manage`（看得见「智能派单」）
+                    // 而缺该页第一屏读码 ⇒ 点进去 403。
+                    // 🔴 它与「节点码是否有意保留管理码」是同一处不一致的一体两面，需同批裁定。
+                    "processing:view"
+            );
+            // ── 以下三个 case 由 issue #5683 新增（人类 2026-09-27 裁定，**授权变更**）──
+            // 补码前它们**没有 case** ⇒ 落 `default -> List.of()` ⇒ **空表** ⇒ 走回退路径的历史账号
+            // **零权限**（连「经营看板」都看不见）。码集**逐字取自** `RegistrationService` 的
+            // 对应默认列表（不增不减），逐角色码的一致性由判据 14 穷举守住。
+            case "customer_service" -> List.of(
+                    "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
+                    "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
+                    "agent:session:manage",
+                    // issue #5699 的 I4：生产执行写码 —— 回退路径（无 role_permissions 记录的历史账号）
+                    // 若不跟上，这批账号会在「建加工单/报工/打印/发货」上 403（它们今日靠 order:list 放行）。
+                    "production:execute"
+            );
+            case "sales" -> List.of(
+                    "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
+                    "processing:view", "inbound:view",
+                    // issue #5699 的 I4：销售今日持 order:list ⇒ 这四个写端点本来就放行（收窄即现场停线）
+                    "production:execute"
+            );
+            case "finance" -> List.of(
+                    "dashboard:view", "order:list", "order:detail", "finance:view",
+                    "processing:view", "inbound:view", "finance:create",
+                    // issue #5699 的 I4：同销售（财务今日持 order:list）
+                    "production:execute"
             );
             case "knowledge_editor" -> List.of(
                     "dashboard:view",

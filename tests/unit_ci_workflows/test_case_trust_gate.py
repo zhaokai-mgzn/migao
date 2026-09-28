@@ -1587,8 +1587,17 @@ class TestDegenerateGuardRails:
         本次收紧：只有 `why_not` + `needs` 时，「未实装」可以**永久**当借口
         （无追踪号、无到期日、无「怎么算已实装」⇒ 没有任何东西会因此变红）。
         判据本体 = `tax.judge_unimplemented`；逐条红证见 `TestUnimplementedRegistrations`。
+
+        2026-09-26（#4155 撤登记）：清单**可以合法为空** —— 但**空必须是被解释过的**：
+        撤掉的码连同依据 + 重启条件落在 `tax.WITHDRAWN_UNIMPLEMENTED` 台帐里
+        （判据 = `TestWithdrawnRegistrations`）。⇒ 原来的「为空 ⇒ 直接判红」精确化为
+        「为空**且**台帐也没写 ⇒ 判红」，判别力不降（两句都可能红）。
         """
-        assert tax.UNIMPLEMENTED, "未实装清单为空 —— 若确实全部落地，请显式说明"
+        assert tax.UNIMPLEMENTED or tax.WITHDRAWN_UNIMPLEMENTED, (
+            "未实装清单为空**且**撤登记台帐也为空 —— 若确实全部落地 / 全部撤登记，请显式说明："
+            "把撤掉的码连同**依据 + 重启条件**写进 `assertion_taxonomy.WITHDRAWN_UNIMPLEMENTED`"
+            "（否则「空」无法与「忘了写」区分）"
+        )
         for item in tax.UNIMPLEMENTED:
             assert item.get("why_not") and item.get("needs"), f"未实装项缺理由/缺口：{item}"
             missing = [f for f in tax.UNIMPLEMENTED_REQUIRED_FIELDS
@@ -2023,11 +2032,28 @@ class TestGateShell:
         必须换成真实残留缺口：每-PR 口径的 scope（未登记违规已 fail-closed、drift_audit 已同步）。
         同时**不得**再留着「只告警」这类与实现相反的措辞（`migao-acceptance`：
         注释漂移 = 假绿来源）。
+
+        2026-09-26：该「每-PR 口径」登记亦已撤（账本清零 ⇒ 口径**已无对象**），且**不是**
+        实装 —— 断言从「必须在册」翻转为「必须不在册 **且** 已记进撤登记台帐」。
         """
         assert UNIMPLEMENTED.exists(), f"未实装清单缺失：{UNIMPLEMENTED}"
         text = UNIMPLEMENTED.read_text(encoding="utf-8")
-        for needle in ("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY",):
-            assert needle in text, f"未实装清单缺了 #4031 后的真实残留缺口登记：{needle}"
+        # 2026-09-26（#4155 撤登记）：burn-down 的「每-PR 口径」登记撤了 —— 理由是**口径已无对象**
+        # （豁免账本清零 ⇒ `burn_down_verdict` 里两种 `scope` 走同一个出口），**不是**已实装。
+        # 撤了就不许再登记回来：再登记 = 又把它绑回一条必须永远 OPEN 的追踪单上
+        # （那条单一关 ⇒ `CASE-TRUST-UNIMPL-ISSUE-CLOSED` 挂住全队列，见 #5506）。
+        assert "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY" not in text, (
+            "burn-down 每-PR 口径的未实装登记未撤 —— 账本已清零，「口径已无对象」（2026-09-26）"
+        )
+        assert not [u for u in tax.UNIMPLEMENTED
+                    if u["code"] == "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY"], (
+            f"`assertion_taxonomy.UNIMPLEMENTED` 里仍留着口径型登记："
+            f"{[u['code'] for u in tax.UNIMPLEMENTED]}"
+        )
+        assert "CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY" in [
+            str(w["code"]) for w in tax.WITHDRAWN_UNIMPLEMENTED], (
+            "撤登记台帐里没有这条 ⇒ 「空」失去解释（读者会以为它被实装了）"
+        )
         assert "CASE-TRUST-BASELINE-PRUNING-ENFORCEMENT" not in text, (
             "旧的「无机械强制，只告警」登记未撤 —— 与实现相反，是假真值"
         )
@@ -2576,6 +2602,23 @@ class TestMetricOnlyTightens:
 # 五之四、未实装登记的**可执行约束**（本次收紧：字段 / 到期 / 僵尸 / 追踪单 CLOSED）
 # ══════════════════════════════════════════════════════════════════════════════
 
+#: 红证夹具（**不是**真实登记，**不得**被读成「待实装项」）。
+#: 2026-09-26 之前，本组红证直接拿**现行登记册**当语料；登记册清空（#4155 两条口径型登记撤）
+#: 之后，那批红证会集体退化成 `IndexError` 或 `0 == 0` 的空断言（`migao-acceptance`：
+#: 不会红的判据 = 空断言）⇒ 语料改为**显式夹具**，四条判据的判别力一字不变。
+#: `issue` 有意取**已撤登记的原追踪单**号：它正是「追踪单一关就红」那一格的靶子。
+_FIXTURE_ENTRY: dict = {
+    "code": "CASE-TRUST-FIXTURE-RED-PROOF",
+    "title": "（注入夹具）未实装登记四条判据的红证载体",
+    "why_not": "夹具：本条**不是**真实登记，只为让四条判据有语料（真实登记册当前为空）。",
+    "needs": "夹具：无。",
+    "issue": 4155,
+    "expires": "2099-12-31",
+    "how_to_verify": "夹具：无（**不得**当真实登记的样板照抄）。",
+    "hit_probe": "dual_leg_no_persona",
+}
+
+
 class TestUnimplementedRegistrations:
     """四条判据都要能红（R5），每条配负例（R2），且「取不到」必须长得像「取不到」。
 
@@ -2598,8 +2641,31 @@ class TestUnimplementedRegistrations:
     def _live_entries(self):
         return json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))["unimplemented"]
 
+    # ── 红证语料（**显式夹具**，不再借现行登记册）──────────────────────────────
+    # 登记册清空（#4155 撤登记）后，借现行登记册当语料 = 红证集体变成空断言：
+    # `entries[0]` ⇒ IndexError、`len(...) == len([])` ⇒ `0 == 0` 恒真。夹具用**活着的**探针
+    # （现行库上非空）⇒「僵尸判据」那一格仍能真红。
+    def _fixture_entries(self):
+        return [copy.deepcopy(_FIXTURE_ENTRY)]
+
+    def _fixture_registry(self, tmp_path, entries=None):
+        """夹具登记册落盘（供 `judge_unimplemented_manifest(path=…)` 与 CLI
+        `--unimplemented <path>` 走**外壳**路径；判据本体不读文件，只有外壳读）。"""
+        p = tmp_path / "unimplemented-fixture.json"
+        p.write_text(json.dumps(
+            {"_comment": "红证夹具（**不是**真实登记）", "_source": "test fixture",
+             "unimplemented": self._fixture_entries() if entries is None else entries},
+            ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return p
+
     # ── 负例：现行清单必须全绿（main 不许被自己的收紧判红）──────────────────
     def test_live_manifest_passes_all_judgements(self):
+        """现行登记册在四格判据下全绿（收紧不得把 main 弄红）。
+
+        ⚠️ 2026-09-26 起登记册**为空** ⇒ 本条是「空集上的负例」（`v == []` 恒真）。有意保留：
+        它现在证的是「空登记册不被判违规」。**红证的判别力**由上面那批夹具用例承担
+        （`_fixture_entries()`），**「空是被解释过的」**由 `TestWithdrawnRegistrations` 承担。
+        """
         v = tax.judge_unimplemented(self._live_entries(), today="2026-09-18",
                                     probe_context=self._ctx())
         assert v == [], f"现行未实装登记被判违规（收紧把 main 弄红了）：{v}"
@@ -2614,7 +2680,7 @@ class TestUnimplementedRegistrations:
 
     # ── 红证 ①：缺任一字段 ⇒ 红，并指名缺哪个 ────────────────────────────────
     def test_missing_field_names_the_missing_field(self):
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         del entries[0]["issue"]
         v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
         codes_hit = {x["code"] for x in v}
@@ -2626,7 +2692,7 @@ class TestUnimplementedRegistrations:
         assert {x["entry"] for x in v} == {entries[0]["code"]}, v
 
     def test_blank_how_to_verify_is_a_missing_field(self):
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         entries[0]["how_to_verify"] = "   "  # 空串/空白 = 没写（不许用空值凑数）
         v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
         assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["MISSING_FIELD"]["code"]
@@ -2634,7 +2700,7 @@ class TestUnimplementedRegistrations:
 
     def test_issue_must_be_a_positive_int(self):
         for bad in ("4045", 0, -3, True):
-            entries = copy.deepcopy(self._live_entries())
+            entries = self._fixture_entries()
             entries[0]["issue"] = bad
             v = tax.judge_unimplemented(entries, today="2026-09-18",
                                         probe_context=self._ctx())
@@ -2643,7 +2709,7 @@ class TestUnimplementedRegistrations:
 
     # ── 红证 ②：expires 已过 ⇒ 红（非法/缺失按已到期处理）────────────────────
     def test_expired_registration_blocks(self):
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         entries[0]["expires"] = "2026-09-17"  # 昨天
         v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
         assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["EXPIRED"]["code"]
@@ -2655,7 +2721,7 @@ class TestUnimplementedRegistrations:
                        for x in v2), v2
 
     def test_malformed_expires_is_treated_as_expired(self):
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         entries[0]["expires"] = "下个月"  # 乱码 = 按已到期（fail-closed）
         v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
         assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["EXPIRED"]["code"]
@@ -2663,46 +2729,66 @@ class TestUnimplementedRegistrations:
         assert tax.iso_date_or_expired("2026-13-45") == "0000-00-00"
 
     # ── 红证 ③：追踪单已 CLOSED ⇒ 红（网络格，注入 fetcher）──────────────────
-    def test_closed_issue_blocks(self):
+    def test_closed_issue_blocks(self, tmp_path):
+        """**判别力对照臂**：登记册里只要有条目指向一条**已 CLOSED** 的追踪单 ⇒ 判红。
+
+        ⚠️ 这条就是「撤登记 vs 留登记」的分水岭：2026-09-26 之前两条口径型登记都指向 #4155
+        ⇒ #4155 一关，**全队列**的 PR 都会因此红（`CASE-TRUST-UNIMPL-ISSUE-CLOSED`，#5506 实测）。
+        本判据打的是**夹具**（登记册已清空）：它证明「留在册 + 追踪单 CLOSED」**照样会红**
+        —— 即撤登记不是措辞偏好，而是唯一能解除 issue 依赖的形态。
+        """
         g = self._g()
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         closed_no = entries[0]["issue"]
         # 期望集 = **所有**指向该单的登记（不假定 `entries[0]` 的单号在清单里独一份）：
         # 原写法写死了「只有 entries[0] 会被判 closed」⇒ 一旦多条登记共用一个追踪单
         # （现实形态：#4155 同时承载两条口径型登记）就假红。判据的判别力不变：
         # 该单的登记必须**全部**被判 closed、其它单的登记一条都不许被连坐。
         expect = [e["code"] for e in entries if e["issue"] == closed_no]
+        assert expect == [_FIXTURE_ENTRY["code"]], expect  # 夹具非空（否则本用例会退化成空跑）
         res = g.check_unimplemented_issues(entries, fetcher=lambda n: (True, "closed")
                                            if n == closed_no else (True, "open"))
         assert [c["entry"] for c in res["closed"]] == expect, res
         assert res["unverifiable"] == [], res
         # 端到端（不碰网络）：把 fetcher 注入到外壳 → blocking
         guard = g.judge_unimplemented_manifest(
-            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            self._fixture_registry(tmp_path, entries), today="2026-09-18", cases=self._cases(),
             baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
             fetcher=lambda n: (True, "closed") if n == closed_no else (True, "open"))
         assert guard["blocking"], "追踪单已 CLOSED 却未阻塞（借口可以过期不销）"
+        assert [c["entry"] for c in guard["closed"]] == expect, guard["closed"]
+        text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
+        assert tax.UNIMPLEMENTED_VIOLATION_CODES["ISSUE_CLOSED"]["code"] in text, text[-1200:]
 
     def test_missing_issue_number_is_blocking_too(self):
         """编号不存在（404 笔误）= 假借口 ⇒ 阻塞（否则 `issue: 1` 就能买永久豁免）。"""
         g = self._g()
-        res = g.check_unimplemented_issues(self._live_entries(),
+        entries = self._fixture_entries()
+        res = g.check_unimplemented_issues(entries,
                                           fetcher=lambda n: (True, "missing"))
-        assert len(res["closed"]) == len(self._live_entries()), res
+        assert len(res["closed"]) == len(entries) == 1, res
 
-    def test_unverifiable_issue_state_is_printed_not_passed(self):
+    def test_unverifiable_issue_state_is_printed_not_passed(self, tmp_path):
         """三态照实读：取不到 ⇒ `unverifiable` + 报告打印「⏭️ 未跑判定 … 不是「通过」」。
 
         **不**因此判红（网络抖动/匿名限额不该制造假红），但**也不静默** ——
         断开网络就能绕过这条判据的口子，由「到期即红」「僵尸即红」两条零网络判据兜住。
+
+        ⚠️ **夹具语料 ⇒ 另一个独立阻塞格会亮**：夹具登记册 ≠ 空 `tax.UNIMPLEMENTED`
+        ⇒ `sync`（同源格）非空。故断言必须打到「取不到」**自己**那一格
+        （`violations == [] and closed == []` + `blocking` 只由同源格决定）——
+        直接写 `not blocking` 会把同源格的红算到本格头上（§23 B1 的反面）。
         """
         g = self._g()
         guard = g.judge_unimplemented_manifest(
-            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            self._fixture_registry(tmp_path), today="2026-09-18", cases=self._cases(),
             baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
             fetcher=lambda n: (False, "gh 未接线（夹具）"))
-        assert not guard["blocking"], guard
-        assert len(guard["unverifiable"]) == len(self._live_entries()), guard
+        assert guard["violations"] == [] and guard["closed"] == [], guard
+        assert bool(guard["sync"]) is guard["blocking"], (
+            f"除「同源格」之外还有别的格在阻塞（取不到**本身**不该判红）：{guard}"
+        )
+        assert len(guard["unverifiable"]) == len(guard["entries"]) == 1, guard
         text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
         assert "⏭️ 未跑判定" in text and "不是「通过」" in text, text[-1200:]
 
@@ -2714,28 +2800,34 @@ class TestUnimplementedRegistrations:
         # drift 那条的口径在**别处**（`scripts/drift_audit.py`）⇒ 用「已复用统一对账」的
         # 源码文本把它一并置为不成立（否则本用例只证了 4/5 条探针会红）
         empty_ctx["drift_audit_source"] = "from case_trust_gate import reconcile_baseline"
-        v = tax.judge_unimplemented(self._live_entries(), today="2026-09-18",
+        entries = self._fixture_entries()
+        v = tax.judge_unimplemented(entries, today="2026-09-18",
                                     probe_context=empty_ctx)
         zombies = [x for x in v if x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["ZOMBIE"]["code"]]
-        assert len(zombies) == len(self._live_entries()), (
+        assert len(zombies) == len(entries) == 1, (
             f"口径全不成立时仍不判僵尸：{v}"
         )
         assert all("探不到任何存活证据" in x["detail"] for x in zombies), zombies
 
     def test_unregistered_probe_is_a_zombie(self):
         """`hit_probe` 未注册 ⇒ 僵尸（不许用「探针永远为真」凑数）。"""
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         entries[0]["hit_probe"] = "always_true_please"
         v = tax.judge_unimplemented(entries, today="2026-09-18", probe_context=self._ctx())
         assert any(x["code"] == tax.UNIMPLEMENTED_VIOLATION_CODES["ZOMBIE"]["code"]
                    and "未注册" in x["detail"] for x in v), v
 
     def test_every_registered_probe_can_go_empty(self):
-        """退化守卫：每条探针**在使用它的登记上**都必须能变空（否则判据不会红）。"""
+        """退化守卫：每条探针**在使用它的登记上**都必须能变空（否则判据不会红）。
+
+        ⚠️ 语料 = **夹具 + 现行 `tax.UNIMPLEMENTED`**：登记册清空后只遍历后者 = 零条 = 空跑。
+        """
         g = self._g()
         ctx_zombie = g.unimplemented_probe_context([], {})   # 空用例库 + 空清单
         ctx_zombie["drift_audit_source"] = "from case_trust_gate import reconcile_baseline"
-        for item in tax.UNIMPLEMENTED:
+        corpus = self._fixture_entries() + list(tax.UNIMPLEMENTED)
+        assert corpus, "探针退化守卫没有语料 ⇒ 空跑成绿"
+        for item in corpus:
             probe = tax.UNIMPLEMENTED_HIT_PROBES[item["hit_probe"]]
             assert probe(ctx_zombie) == [], (
                 f"探针 {item['hit_probe']} 在「口径不成立」的上下文里仍非空 ⇒ 它不会红"
@@ -2752,7 +2844,7 @@ class TestUnimplementedRegistrations:
     def test_manifest_must_match_taxonomy(self):
         """登记清单必须与 `tax.UNIMPLEMENTED` **同源**（判据读的与人读的是一份）。"""
         g = self._g()
-        entries = copy.deepcopy(self._live_entries())
+        entries = self._fixture_entries()
         entries.append({**entries[0], "code": "FAKE-CODE-FOR-RED-PROOF"})
         issues = g.unimplemented_sync_issues(entries, tax.UNIMPLEMENTED)
         assert issues, "清单比 taxonomy 多一条却不同源报错 ⇒ 两处口径可静默分叉"
@@ -2765,22 +2857,28 @@ class TestUnimplementedRegistrations:
 
     # ── 端到端：真跑脚本、真退出码（函数级绿 ≠ CI 绿）────────────────────────
     def test_script_exits_1_on_missing_field_and_on_expired(self, tmp_path):
-        live = json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))
-        for i, (name, mutate, needle) in enumerate((
-            ("缺 issue", lambda e: e.pop("issue"), "issue"),
-            ("已到期", lambda e: e.update({"expires": "2026-09-17"}), "到期"),
-        )):
-            data = copy.deepcopy(live)
-            mutate(data["unimplemented"][0])
-            tmp = tmp_path / f"unimpl-{i}.json"
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-                        # 进程内真跑（#5365）：argv 逐字不变，含 `--unimplemented <tmp>`
+        """端到端契约：缺字段 / 已到期 ⇒ 真脚本 exit 1，且报错**指名**。
+
+        ⚠️ 夹具登记册与 `tax.UNIMPLEMENTED`（空）必然「**不同源**」⇒ 退出码是
+        「同源格 + 目标格」两个**独立**阻塞格的共同结果。故判据必须打在**目标格自己的 detail**
+        （`缺必填字段：issue` / `已到期：expires` 那两句）上，**不能只看 exit code** ——
+        只看退出码 = 把同源格的红记到目标格头上（`migao-dev-flow` §23 B1
+        「判据语料必须排除判据自身」的反面：红证变了红，但不是你要证的那条）。
+        """
+        for name, mutate, needle in (
+            ("缺 issue", lambda e: e.pop("issue"), "缺必填字段：issue"),
+            ("已到期", lambda e: e.update({"expires": "2026-09-17"}), "已到期：`expires`"),
+        ):
+            entries = self._fixture_entries()
+            mutate(entries[0])
+            tmp = self._fixture_registry(tmp_path, entries)
+            # 进程内真跑（#5365）：argv 逐字不变，含 `--unimplemented <tmp>`
             r = run_gate(["--base", "HEAD", "--unimplemented", str(tmp), "--no-issue-check"])
             assert r.returncode == 1, (
                 f"「{name}」未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}"
             )
             assert needle in r.stdout, f"「{name}」的报错未指名：\n{r.stdout[-1500:]}"
-        # 负例（R2）：原样清单 ⇒ 必须 exit 0（收紧不得把现行登记判红）
+        # 负例（R2）：**现行**清单（空）⇒ 必须 exit 0（收紧不得把现行登记判红）
         # ⚠️ **本文件有意保留的唯一一次真子进程调用**（#5365 削减后仍留作锚点）：
         # 其余调用点都走进程内 `run_gate()`（同一次真执行，只省解释器启动 / 冷导入 /
         # 子进程侧无 memo 的全量语料重解析），而 **CLI 外壳**本身
@@ -2790,13 +2888,21 @@ class TestUnimplementedRegistrations:
                              "--unimplemented", str(UNIMPLEMENTED), "--no-issue-check"],
                             capture_output=True, text=True, cwd=str(REPO_ROOT))
         assert ok.returncode == 0, f"现行登记被判红：\n{ok.stdout[-2000:]}"
+        assert "未实装登记：**0 条**" in ok.stdout, (
+            f"空登记册在报告里不可见（与「压根没读」同形）：\n{ok.stdout[-2000:]}"
+        )
 
-    def test_report_lists_the_contract_for_each_registration(self):
-        """报告必须打印追踪单/到期/探针/存活证据（否则「为什么说它活着」无据可查）。"""
+    def test_report_lists_the_contract_for_each_registration(self, tmp_path):
+        """报告必须打印追踪单/到期/探针/存活证据（否则「为什么说它活着」无据可查）。
+
+        ⚠️ 语料 = **夹具登记册**：登记册清空后拿现行文件跑 ⇒ `for item in guard["entries"]`
+        零轮 = 空跑（下面两条「跑了要长得像跑了」的断言也会失去对象）。
+        """
         g = self._g()
         guard = g.judge_unimplemented_manifest(
-            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            self._fixture_registry(tmp_path), today="2026-09-18", cases=self._cases(),
             baseline=json.loads(BASELINE.read_text(encoding="utf-8")), issue_check=False)
+        assert len(guard["entries"]) == 1, guard
         text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
         for item in guard["entries"]:
             assert f"追踪单 #{item['issue']}" in text, text[-1500:]
@@ -2805,11 +2911,159 @@ class TestUnimplementedRegistrations:
             assert "存活证据" in text and "怎么算已实装" in text, text[-1500:]
         # 「跑了」也要长得像「跑了」：核过 N 条全 OPEN 必须打印（否则与「压根没跑」同形）
         guard2 = g.judge_unimplemented_manifest(
-            UNIMPLEMENTED, today="2026-09-18", cases=self._cases(),
+            self._fixture_registry(tmp_path), today="2026-09-18", cases=self._cases(),
             baseline=json.loads(BASELINE.read_text(encoding="utf-8")),
             fetcher=lambda n: (True, "open"))
         text2 = g.render_report([], [], [], set(), guard2["entries"], unimpl_guard=guard2)
         assert "追踪单状态已核" in text2 and "全部 **OPEN**" in text2, text2[-1200:]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 五之四之二、**撤登记**台帐（2026-09-26：#4155 两条口径型登记撤 ⇒ 登记册清空）
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestWithdrawnRegistrations:
+    """撤登记**不是**「已实装」：接受的缺口 + 重启条件必须落在**机器可读**的台帐里。
+
+    病灶（两条，互为镜像）：
+      · **留登记 + 追踪单 CLOSED ⇒ 全队列红**（#5506 实测 6 条 PR 同时 BLOCKED，而它们的 diff
+        与登记册毫无关系）⇒ 要解除对 issue 的依赖，**唯一**的形态就是撤登记；
+      · **撤完就没人记得** —— 登记册空了以后，若没有任何判据读「撤了什么、为什么、什么条件下重启」，
+        空就会被读成「全部已实装」（`AGENTS.md` §11(c)⑤ 点名的反模式）。
+    ⇒ 台帐 `assertion_taxonomy.WITHDRAWN_UNIMPLEMENTED` + 本组判据：**空必须是被解释过的**。
+    """
+
+    def _g(self):
+        return _gate_module()
+
+    WITHDRAWN_FIELDS = ("code", "kind", "title", "why_withdrawn", "evidence",
+                        "restart_condition", "withdrawn", "tracking_issue")
+
+    def test_ledger_entries_are_complete_and_carry_evidence_and_restart(self):
+        """每条撤登记必须带**可复算依据**与**重启条件**（否则「有意不做」会腐烂成「已解决」）。"""
+        led = tax.WITHDRAWN_UNIMPLEMENTED
+        assert led, "撤登记台帐为空 —— 而登记册已空 ⇒ 「空」没有任何解释（空跑成绿的形态）"
+        for w in led:
+            missing = [f for f in self.WITHDRAWN_FIELDS if w.get(f) in (None, "", [], {})]
+            assert not missing, f"撤登记 {w.get('code')} 缺字段：{missing}"
+            assert w["kind"] in ("deliberate_non_implementation", "no_object"), (
+                f"{w['code']} 的 kind 未知：{w['kind']!r} —— 只有「有意不做」与「口径已无对象」两类"
+                "进本台帐（「已实装 ⇒ 撤」在上一组，语义相反）"
+            )
+            assert len(str(w["evidence"])) >= 20, (
+                f"{w['code']} 的 evidence 太短（无法复算）：{w['evidence']!r}"
+            )
+            assert len(str(w["restart_condition"])) >= 20, (
+                f"{w['code']} 的 restart_condition 太短（说不出什么会让它重启）："
+                f"{w['restart_condition']!r}"
+            )
+            assert isinstance(w["tracking_issue"], int) and w["tracking_issue"] > 0, w
+            assert str(w["withdrawn"]).count("-") == 2, w
+
+    def test_withdrawn_codes_cannot_be_registered_again(self):
+        """**不许再登记回来**（两份清单一起判：登记册 JSON + `tax.UNIMPLEMENTED`）。
+
+        再登记 = 把「明知不做」读回「还没做」，而且它的追踪单已按撤登记关闭 ⇒ 会连带触发
+        `ISSUE_CLOSED` 判红（挂 PR 队列，见 #5506）。判据 = 结构化读台帐（**不** grep 注释措辞）。
+        """
+        g = self._g()
+        codes = [str(w["code"]) for w in tax.WITHDRAWN_UNIMPLEMENTED]
+        assert codes, "撤登记台帐为空 ⇒ 本判据静默空跑成绿"
+        live_json = json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))
+        live_codes = [str(e.get("code")) for e in (live_json.get("unimplemented") or [])]
+        live_tax = [str(e.get("code")) for e in tax.UNIMPLEMENTED]
+        for code in codes:
+            assert code not in live_codes, (
+                f"{code} 已裁定**有意不做 / 无对象**并撤登记 ⇒ 不许再登记回 "
+                f"{UNIMPLEMENTED.name}（再登记会让它的追踪单一关就判红）"
+            )
+            assert code not in live_tax, (
+                f"`assertion_taxonomy.UNIMPLEMENTED` 里又出现 {code}（两份清单必须同源）"
+            )
+        # 反向：现行登记册里**每条**都得是真登记（有 issue/expires/探针），不能借台帐混淆
+        assert g.unimplemented_sync_issues(live_json.get("unimplemented") or [],
+                                           tax.UNIMPLEMENTED) == []
+
+    def test_the_two_persona_burn_down_gaps_are_recorded_as_withdrawn(self):
+        """本包的两条（#4155 的登记）必须在台帐里**指名**（防「悄悄删掉」被读成已实装）。"""
+        by_code = {str(w["code"]): w for w in tax.WITHDRAWN_UNIMPLEMENTED}
+        burn = by_code.get("CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY")
+        persona = by_code.get("CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED")
+        assert burn is not None and persona is not None, sorted(by_code)
+        # ① burn-down：撤的理由是**口径已无对象**（空账本 ⇒ 两种 scope 行为一致），且**未**改成 all_prs
+        assert burn["kind"] == "no_object", burn["kind"]
+        baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
+        assert baseline["violations"] == {} and baseline["violation_case_count"] == 0, (
+            "账本已非空 ⇒ 「口径已无对象」不再成立，该口径重新有了对象（重启条件已发生）"
+        )
+        assert baseline["burn_down"]["scope"] == "case_touching_prs", (
+            "scope 变了 ⇒ 撤登记的理由（口径不可观测）已不成立，台帐必须同步改判"
+        )
+        # ② persona：撤的理由是**有意不做**（不是已实装），且双端用例仍然存在
+        assert persona["kind"] == "deliberate_non_implementation", persona["kind"]
+        g = self._g()
+        ctx = g.unimplemented_probe_context(g.load_cases_from_dir(), baseline)
+        dual_leg = tax.UNIMPLEMENTED_HIT_PROBES["dual_leg_no_persona"](ctx)
+        assert dual_leg, (
+            "双端（persona 为空）用例归零 ⇒ 子集口径 == 全库口径（该设定已自动失效）"
+            "⇒ 台帐必须改判，不能继续写「有意不做」"
+        )
+        assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" in str(persona["why_withdrawn"]), (
+            "台帐必须写明**实装的是子集口径**（否则读者会把「没登记」读成「没有判据」）"
+        )
+
+    def test_live_registry_has_no_issue_dependency_while_empty(self):
+        """登记册为空 ⇒ 门禁**零** issue 依赖（fetcher 一次都不许被调用）。
+
+        这就是「两态皆绿」的可执行形态：**不看** #4155 是 OPEN 还是 CLOSED —— 压根不查它。
+        非空时本条退回不适用（新登记照旧由 `ISSUE_CLOSED` 格管），故先判前提再判结论。
+        """
+        g = self._g()
+        entries = json.loads(UNIMPLEMENTED.read_text(encoding="utf-8"))["unimplemented"]
+        seen: list[int] = []
+
+        def spy(n):
+            seen.append(n)
+            return (True, "closed")   # 最坏情形：**所有**追踪单都当作已关闭
+
+        guard = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=g.load_cases_from_dir(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")), fetcher=spy)
+        assert not guard["blocking"], guard
+        if entries == []:
+            assert seen == [], (
+                f"登记册为空却仍去查追踪单 {seen} ⇒ 「解除 issue 依赖」没有成立"
+            )
+            assert guard["checked"] == 0, guard
+            assert guard["closed"] == [] and guard["unverifiable"] == [], guard
+
+    def test_report_makes_an_empty_registry_visible(self):
+        """空登记册必须在报告里**看得见**，且与「压根没读」不同形（§16.7 禁空跑的第二面）。"""
+        g = self._g()
+        guard = g.judge_unimplemented_manifest(
+            UNIMPLEMENTED, today="2026-09-18", cases=g.load_cases_from_dir(),
+            baseline=json.loads(BASELINE.read_text(encoding="utf-8")), issue_check=False)
+        assert guard["entries"] == [], guard["entries"]
+        text = g.render_report([], [], [], set(), guard["entries"], unimpl_guard=guard)
+        assert "未实装登记：**0 条**" in text, text[-1200:]
+        assert "不是「未跑」" in text and "不是「全部已实装」" in text, text[-1200:]
+        assert "WITHDRAWN_UNIMPLEMENTED" in text, (
+            f"空登记册没指向撤登记台帐 ⇒ 读者只能自己猜「是没登记还是已实装」：{text[-1200:]}"
+        )
+
+    def test_withdrawal_ledger_is_not_a_second_unimplemented_registry(self):
+        """台帐**不是**待实装清单：它的 tracking_issue **允许**已 CLOSED（这正是撤登记的目的）。"""
+        g = self._g()
+        # 把台帐条目硬塞进登记册 ⇒ 必须被判红（否则「撤登记」可以被当成「换个地方挂着」）
+        v = tax.judge_unimplemented(
+            [dict(w) for w in tax.WITHDRAWN_UNIMPLEMENTED],
+            today="2026-09-18",
+            probe_context=g.unimplemented_probe_context(g.load_cases_from_dir(), {}))
+        assert v, "台帐条目塞进登记册却全绿 ⇒ 台帐会被当成第二份登记册（issue 依赖又回来了）"
+        # 而台帐自身的 `tracking_issue` 已 CLOSED **不**参与任何判据（门禁只读 UNIMPLEMENTED）
+        seen: list[int] = []
+        g.check_unimplemented_issues([], fetcher=lambda n: (seen.append(n), (True, "closed"))[1])
+        assert seen == [], "空登记册不该查任何追踪单"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

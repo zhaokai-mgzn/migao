@@ -49,6 +49,7 @@ VERBATIM_FIELDS = (
     "title", "user_inputs", "data_checks", "skip_reason", "legacy_id", "tags", "persona",
     "debug_user", "debug_permissions", "form_prefill", "forbidden_card_text", "order_before",
     "forbidden_text", "forbidden_tools", "want_text", "required_args", "forbidden_args",
+    "forbidden_interact", "arg_values",
     "must_succeed", "must_fail", "amount_verify", "db_verify", "output_verify", "pre_clean",
     "post_clean", "post_session", "namespaces", "precondition", "auto_fill",
 )

@@ -153,4 +153,29 @@ public class BusinessException extends RuntimeException {
     public static BusinessException tenantInvalid() {
         return new BusinessException("TENANT_INVALID", "租户无效", 401);
     }
+
+    /**
+     * 越权授予：写进去的权限码超出操作者自身权限（issue #4104，用户 2026-09-26 裁定
+     * 「授予的权限码必须 ⊆ 操作者自身权限」）。
+     *
+     * <p>403 + <b>独立错误码</b>（不复用 {@code PERMISSION_DENIED}）：后者的语义是
+     * 「调用本端点缺某个码」，本码的语义是「你想写进去的码你自己没有」——
+     * 两者的可行动出口不同（一个是去要权限，一个是别授予自己没有的权限），
+     * 故分开，调用方与 LLM 都能分辨该改什么。</p>
+     */
+    public static BusinessException permissionEscalationDenied(String message, String suggestion) {
+        return new BusinessException("PERMISSION_ESCALATION_DENIED", message, 403, suggestion);
+    }
+
+    /**
+     * 越权管理：被操作的账号权限高于操作者本人（issue #4104 第 2 节的目标侧半，
+     * 用户 2026-09-26 裁定「不得管理权限高于自己的账号」）。
+     *
+     * <p>403 + **独立错误码**（与 {@code PERMISSION_ESCALATION_DENIED} 分开）：前者是
+     * 「你想授予的码你自己没有」，本码是「你想管理的账号权限比你高」——
+     * 出口不同（一个是别授予，一个是找更高权限的管理员来做），调用方与 LLM 都该分辨得出。</p>
+     */
+    public static BusinessException permissionOutrankDenied(String message, String suggestion) {
+        return new BusinessException("PERMISSION_OUTRANK_DENIED", message, 403, suggestion);
+    }
 }

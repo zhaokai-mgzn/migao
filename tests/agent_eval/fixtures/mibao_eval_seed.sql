@@ -496,6 +496,169 @@ END $$;
 --   · 判据（运行期）：真库按 `eval_stack_seed.sh` 的顺序跑 xiaobu → mibao ⇒ rc=0（连跑 2 次一致）。
 
 -- ============================================================================
+-- Phase 4：加工单**过程明细**三段夹具（PG-057 点名，issue #4945 处 2 / 承 #4927）
+-- ============================================================================
+-- 病灶：评测栈 `production_work_logs` **零 seed** ⇒ PG-057 只能断言「明细为空、数量与金额全 0」
+--   —— 「合格/返工/报废数量 + 计件金额」这条**涉钱**读数在评测里**永远不被断言**，计数错了没人知道。
+-- 旧登记的阻塞理由（issue #4945 表格第 2 行）：「补 seed 需写三段夹具，而本机无 docker
+--   ⇒ 无法验证新增 seed SQL 的语法，写错会打挂整个 mibao 套件」。
+-- 🔴 **该阻塞理由已不成立**：真库验证不需要 docker —— `initdb`/`pg_ctl`/`psql` 直接起一次性集群即可
+--   （本机 PostgreSQL 16.15 实测：schema + xiaobu seed + 本文件 连跑 `ON_ERROR_STOP=1`，逐条 exit=0）。
+--   判据 = tests/unit_ci_workflows/test_worklog_seed_realpg.py（在 CI 的
+--   `ci workflow helper unit tests` job 里真跑；该 job 注入 MIGAO_REQUIRE_REALDB=1
+--   ⇒ 缺 PG **判红**，不是静默 skip）。
+--
+-- 三段 = 加工单 → 工序实例 → 报工，挂**专用订单** EVAL-MB-ORD-0007。
+--   为什么**不**挂 EVAL-MB-ORD-0003（PG-057 原输入点名的订单）：
+--     · 0003 是 PG-015 的专用订单，其判据逐字要求「**无加工单** ⇒ 返回 0%/空工序」；
+--     · 0003 另有一条「生成加工单」写用例（前置 `processing_order_reset` 要求「confirmed 且
+--       **无**加工单」）⇒ 给它种一张加工单会同时打挂那两条用例的**前置**，且本夹具会被那次
+--       复位清掉 ⇒ 用例结论随**执行顺序**漂移。
+--   ⇒ 本夹具用**无人写入**的 0007，与 0003 的既有语义零交集（PG-057 的输入同步改为 0007）。
+--
+-- 数值（= PG-057 的数值断言；改这里任一个 ⇒ test_worklog_seed_realpg.py 必红）：
+--   operations[精裁-布] required=12.00 qualified=10.00 rework=2.00 scrap=0.00 status=done
+--   operations[裁剪-纱] required=6.00  qualified=4.50  rework=0.00 scrap=1.00 status=in_progress
+--   operations[车缝-布] required=12.00 qualified=0.00  （车位组，**无报工** ⇒ 下料之外的对照面）
+--   totals: qualified_qty=**14.50** rework_qty=**2.00** scrap_qty=**1.00** piecework_amount=**26.75**
+--   计件金额口径（与 `ProductionService.aggregate` **同一份**，本文件不自造第二份）：
+--     只算 work_type='normal'；金额 = Σ(合格数量 × **报工自己的单价快照** × **系数快照**)
+--       · 精裁-布：8.00×2.00 + 2.00×2.00 = 20.00
+--       · 裁剪-纱：4.50×1.50            =  6.75
+--       ⇒ 20.00 + 6.75 = **26.75**（返工 2.00 / 报废 1.00 **不计件**、**不累加**合格）
+--   ⚠️ 报工**有意不写** `factor`（#4589 起新报工不再写该列 ⇒ 快照恒 NULL ⇒ 自然 1×）——
+--      写死 `1.00` 就测不到「有单价快照 + factor 为 NULL ⇒ 取 1」这条**真实**分支。
+--   ⚠️ 边界（如实登记，不冒充已覆盖）：`price_state='unpriced'`（V90 未定价 ≠ 0 元）那条路径
+--      **不在**本夹具内 —— 它会让「合格多少 / 计件多少」的答案变成两段式（合格里有一部分不计件），
+--      与本夹具要钉的「三态数量 + 计件金额」是**两个**面；未覆盖项见 issue #4945。
+--
+-- 幂等：`ON CONFLICT (id) DO NOTHING`，可重复执行（与全文件同款）。
+
+-- ① 承载订单 + 明细（**本段自带**，不往 Phase 2 的订单块里塞 —— 那段是 PG-013/015/016 的竞态修复
+--    产物，改动面越小越好；本订单的 id 与 order_no 全局唯一 ⇒ 与 Phase 2 的 `ON CONFLICT (id)` 无交集）。
+--    声明：`EVAL-MB-ORD-0007` 客户 = **赵六 / 13600136000**（与 0001~0004 各自不同的手机号同款做法，
+--    避免污染 AS-003/AS-007 的「张三 13800138000 最近订单」定位）。
+INSERT INTO orders
+  (id, tenant_id, order_no, user_id, customer_name, customer_phone, customer_address,
+   total_amount, status, follow_status, remark,
+   created_at, updated_at, deleted)
+VALUES
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000007', 1, 'EVAL-MB-ORD-0007', NULL, '赵六', '13600136000',
+   '浙江省杭州市西湖区教工路 4 号 4 幢 404 室', 540.00, 'confirmed', 'completed',
+   'B 端评测 fixture：PG-057 加工单过程明细（下料/裁剪组 + 报工）专用订单',
+   TIMESTAMPTZ '2026-09-13 10:00:00+08', TIMESTAMPTZ '2026-09-13 10:00:00+08', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 明细：带 processing_info（与 0003 同形：韩折 pi_eval_hem ¥12/米 × 3 米 = 36 ⇒ 504 + 36 = 540）
+INSERT INTO order_items
+  (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
+   width, height, processing_info, subtotal, deleted)
+VALUES
+  ('oit_mb_0007', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000007', 'prod_eval_blackout', '遮光窗帘',
+   3, 168.00, 3.00, 2.80,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩折","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
+   504.00, 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- ② 加工单（承载订单 = 上面那张 0007；状态 in_processing ⇒「正在做」）
+INSERT INTO processing_orders
+  (id, tenant_id, order_id, processing_order_no, processor, expected_delivery_date,
+   status, items_snapshot, remark, generated_by, qr_token,
+   generated_at, in_processing_at, deleted)
+VALUES
+  ('po_eval_wl_0007', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000007', 'JG-EVAL-0007', '米高加工厂',
+   DATE '2026-09-30', 'in_processing', '[]'::jsonb,
+   'B 端评测 fixture：PG-057 加工单过程明细（下料/裁剪组 + 报工）；三段夹具的第 ① 段',
+   'eval-fixture', '4f7a1c9e2b6d4a83b5c0e1d2f3a4b5c7',
+   TIMESTAMPTZ '2026-09-19 10:00:00+08', TIMESTAMPTZ '2026-09-19 14:00:00+08', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- ③ 工序实例（裁剪组两道 + 车位组一道；`done_qty` = 合格累计，返工/报废不累加）
+INSERT INTO processing_position_operations
+  (id, tenant_id, processing_order_id, position_name, position_kind, seq,
+   operation_name, group_name, unit, qty, qty_source, unit_price, factor,
+   status, done_qty, done_at, deleted)
+VALUES
+  ('ppo_wl_0007_1', 1, 'po_eval_wl_0007', '布帘', '布帘', 1,
+   '精裁-布', '裁剪', '米', 12.00, 'fabric_meters', 2.00, 1.00,
+   'done', 10.00, TIMESTAMPTZ '2026-09-21 15:00:00+08', 0),
+  ('ppo_wl_0007_2', 1, 'po_eval_wl_0007', '纱帘', '纱帘', 2,
+   '裁剪-纱', '裁剪', '米', 6.00, 'fabric_meters', 1.50, 1.00,
+   'in_progress', 4.50, NULL, 0),
+  ('ppo_wl_0007_3', 1, 'po_eval_wl_0007', '布帘', '布帘', 3,
+   '车缝-布', '车位', '米', 12.00, 'fabric_meters', 3.00, 1.00,
+   'pending', 0.00, NULL, 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- ④ 报工（normal ×3 + rework ×1 + scrap ×1；`created_at` 显式给定 ⇒ 倒序展示可预测）
+INSERT INTO production_work_logs
+  (id, tenant_id, processing_order_id, operation_id, operation_name,
+   worker_id, worker_name, qty, qualified_qty, unit_price, price_state,
+   work_type, work_date, created_at, deleted)
+VALUES
+  ('pwl_wl_0007_1', 1, 'po_eval_wl_0007', 'ppo_wl_0007_1', '精裁-布',
+   'w_eval_0001', '王秀兰', 8.00, 8.00, 2.00, 'priced',
+   'normal', DATE '2026-09-20', TIMESTAMPTZ '2026-09-20 09:00:00+08', 0),
+  ('pwl_wl_0007_2', 1, 'po_eval_wl_0007', 'ppo_wl_0007_1', '精裁-布',
+   'w_eval_0001', '王秀兰', 2.00, 2.00, 2.00, 'priced',
+   'normal', DATE '2026-09-21', TIMESTAMPTZ '2026-09-21 09:00:00+08', 0),
+  -- 返工：取**报工数量**（2.00）计入 rework，不累加合格、不计件
+  ('pwl_wl_0007_3', 1, 'po_eval_wl_0007', 'ppo_wl_0007_1', '精裁-布',
+   'w_eval_0001', '王秀兰', 2.00, 0.00, 2.00, 'priced',
+   'rework', DATE '2026-09-21', TIMESTAMPTZ '2026-09-21 15:00:00+08', 0),
+  ('pwl_wl_0007_4', 1, 'po_eval_wl_0007', 'ppo_wl_0007_2', '裁剪-纱',
+   'w_eval_0002', '陈国强', 4.50, 4.50, 1.50, 'priced',
+   'normal', DATE '2026-09-22', TIMESTAMPTZ '2026-09-22 09:00:00+08', 0),
+  -- 报废：同上，取报工数量（1.00）计入 scrap
+  ('pwl_wl_0007_5', 1, 'po_eval_wl_0007', 'ppo_wl_0007_2', '裁剪-纱',
+   'w_eval_0002', '陈国强', 1.00, 0.00, 1.50, 'priced',
+   'scrap', DATE '2026-09-22', TIMESTAMPTZ '2026-09-22 15:00:00+08', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- 数据核对（Phase 4）—— 三段**都在位**才往下走（fail-fast；`scripts/eval_stack_seed.sh` 用 ON_ERROR_STOP=1）
+DO $$
+DECLARE
+  v_po     INTEGER;
+  v_ops    INTEGER;
+  v_logs   INTEGER;
+  v_qual   NUMERIC;
+  v_rework NUMERIC;
+  v_scrap  NUMERIC;
+  v_amount NUMERIC;
+BEGIN
+  SELECT count(*) INTO v_po FROM processing_orders
+   WHERE tenant_id = 1 AND id = 'po_eval_wl_0007' AND deleted = 0;
+  SELECT count(*) INTO v_ops FROM processing_position_operations
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0;
+  SELECT count(*) INTO v_logs FROM production_work_logs
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0;
+  -- 数量三态（键口径与 `ProductionService.worklog` 同源：合格取 normal 的 qualified_qty，
+  -- 返工/报废各取该笔报工数量）—— 本块只核**夹具落地**，不冒充服务端口径判据
+  SELECT COALESCE(sum(qualified_qty), 0) INTO v_qual FROM production_work_logs
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0
+     AND work_type = 'normal';
+  SELECT COALESCE(sum(qty), 0) INTO v_rework FROM production_work_logs
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0
+     AND work_type = 'rework';
+  SELECT COALESCE(sum(qty), 0) INTO v_scrap FROM production_work_logs
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0
+     AND work_type = 'scrap';
+  -- 计件金额 = Σ(合格 × 单价快照 × COALESCE(系数快照, 1))，只算 normal
+  SELECT COALESCE(sum(qualified_qty * unit_price * COALESCE(factor, 1)), 0) INTO v_amount
+   FROM production_work_logs
+   WHERE tenant_id = 1 AND processing_order_id = 'po_eval_wl_0007' AND deleted = 0
+     AND work_type = 'normal';
+  RAISE NOTICE 'B 端 Phase 4 核对: 加工单=% 工序实例=% 报工=% 合格=% 返工=% 报废=% 计件=%',
+    v_po, v_ops, v_logs, v_qual, v_rework, v_scrap, v_amount;
+  IF v_po < 1 OR v_ops <> 3 OR v_logs <> 5
+     OR v_qual <> 14.50 OR v_rework <> 2.00 OR v_scrap <> 1.00 OR v_amount <> 26.75 THEN
+    RAISE EXCEPTION 'B 端 Phase 4 注入失败：三段夹具或数值与声明不符
+（加工单=% 工序=% 报工=% 合格=% 返工=% 报废=% 计件=%；期望 1 / 3 / 5 / 14.50 / 2.00 / 1.00 / 26.75）',
+      v_po, v_ops, v_logs, v_qual, v_rework, v_scrap, v_amount;
+  END IF;
+END $$;
+
+-- ============================================================================
 -- 遗留 TODO（#3496 / #3519 剩余失败）：
 --   · AS-004 工单 seed —— ✅ 已完成（本文件 Phase 3 段，issue #3519）。
 --     ⚠️ 数据到位 ≠ 用例必过，另有 2 个**非种子**缺口需单独处理（本次已核实，勿误判为

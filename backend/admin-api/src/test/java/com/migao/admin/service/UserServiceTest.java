@@ -9,6 +9,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.security.SecurityUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -50,6 +51,15 @@ class UserServiceTest {
 
     @Mock
     private UserRoleMapper userRoleMapper;
+
+    /**
+     * ⊆ 门禁替身（issue #4104）：{@code UserService} 的授权写面依赖它；本类测的是其它行为
+     * ⇒ 用替身（真实判定由 {@code EmployeePermissionGrantGateTest} 覆盖）。
+     * ⚠️ 不声明它 ⇒ {@code @InjectMocks} 注入 null ⇒ NPE（**不是**静默放行）；
+     * 机械判据 = {@code EmployeeGrantChokepointMetaGuardTest#userServiceTestsDeclarePermissionInterceptorStub}。
+     */
+    @Mock
+    private PermissionInterceptor permissionInterceptor;
 
     private User testUser;
 
@@ -220,6 +230,31 @@ class UserServiceTest {
         LambdaQueryWrapper<User> wrapper = captor.getValue();
         assertThat(wrapper.getSqlSegment()).contains("role <>");
         assertThat(wrapper.getParamNameValuePairs()).containsValue("customer");
+    }
+
+    @Test
+    @DisplayName("员工分页查询 - 默认排除工人档案（role=worker，issue #4869）")
+    void getUserPage_ExcludesWorkerArchives() {
+        // given（员工列表：行政/运营等员工角色）
+        Page<User> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testUser));
+        mockPage.setTotal(1);
+        when(userMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when：不传角色筛选（员工管理默认列表）
+        userService.getUserPage(1, 20, null, null, null, 1L);
+
+        // then：工人复用 users 表（worker_no 非空 + role=worker）⇒ 必须被排除，
+        // 否则工人会以「员工」的样子出现在员工列表里（改前只排除了 customer ⇒ 必红）
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<User>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(userMapper).selectPage(any(Page.class), captor.capture());
+
+        LambdaQueryWrapper<User> wrapper = captor.getValue();
+        assertThat(wrapper.getSqlSegment()).contains("role <>");
+        assertThat(wrapper.getParamNameValuePairs()).containsValue("worker");
     }
 
     // ======================== createUser 测试 ========================

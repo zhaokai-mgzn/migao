@@ -571,6 +571,104 @@ _POSTCLEAN_CONFIG_ERR = "post_clean: 不支持的 type"
 _PRECONDITION_NOT_APPLIED = "pre_clean: 前置未应用"
 _PRECLEAN_BAD_MARKERS = (_PRECLEAN_CONFIG_ERR, _PRECONDITION_NOT_APPLIED)
 
+
+# ── 准备型/复位族「夹具动作未生效」的**显式族判据**（issue #3797，与 #3791 的清理型对称）──
+# 病灶（本表存在的理由）：折叠判据旧形态是**裸前缀**
+# （`str(m).startswith(_PRECLEAN_BAD_MARKERS)`），而两处准备型失败路径的消息是**散文**、
+# **不以稳定标记开头**：
+#   · `aftersales_ticket_prepare`：`未复位：库里没有工单 …` / `未复位工单 …（DB 不可达/失败: …）`
+#   · `user_memories_clear`：`清理长期记忆失败（HTTP 500）…`
+# ⇒ 首次尝试时判「没这回事」（不折 `score`/`failures`），而**重试边界**用
+#   `"未复位" in m or "失败" in m` 的子串判据却捞得到 ⇒ **同一件事、两条口径**，
+#   且首次尝试那一侧是**漏判**（`migao-acceptance`「空跑：绿了但没跑」同族：
+#   用例带着**假前置**跑完，即便绿了也**不可归因于 agent**）。
+# 修法（issue #3797 的改法②，issue 作者倾向的显式族）＝把判据从"裸前缀"扩成
+# **「类型 + 前缀」**：
+#   · 类型 ∈ 本表 ⇒ **只有该类型登记过的失败前缀**才算"夹具动作未生效"（显式、可枚举、
+#     按类型收敛 —— 不会因为别的类型偶然写了「失败」二字而被误折）；
+#   · 类型未登记 / 消息不带类型（旧通道、单测直接喂字符串）⇒ 退回稳定标记前缀
+#     （**不静默放宽**：未知类型的散文不得被当成"未应用"）。
+# 与 #3791 的 `_PRECLEAN_CLEANUP_TYPES` **对称**：#3791 管"目标不存在 = 前置已满足"
+# （良性 no-op，不进结论）；本表管"该在位而不在位 / 该清干净而没清干净"（fail-closed，进结论）。
+# ⚠️ 空元组 = **已逐条核对**「该类型没有独立散文失败前缀」（它的未应用走函数内产出的稳定标记
+# `_PRECONDITION_NOT_APPLIED` / `_clean_not_applied`）。**键集是注册表**：必须恰好覆盖
+# 「全部非清理型 `pre` 动作」——新增一个准备型/复位族动作而**不登记**这里 ⇒ 守卫判红
+# （`tests/unit_ci_workflows/test_eval_preclean_failure_family.py`），不允许默认落到任何一边。
+_PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
+    # 点名的种子工单不在位（栈缺 seed）/ DB 不可达 ⇒ 用例的生成前置**没被应用**。
+    # 与 `_reset_processing_order`（#3781 已正确标记）同族 —— 旧实现只回「未复位：…」
+    # 而**不折结论**（`_reset_aftersales_ticket` 的注释里记着这处有意差异，见 issue #3833）。
+    "aftersales_ticket_prepare": ("未复位：", "未复位工单"),
+    # 长期记忆没清干净（HTTP ≥300 / success=false）⇒ `post_session[user_memories]` 可能被
+    # **上一跑的残留**满足（本动作存在的唯一理由就是消除这种残留）⇒ 必须进结论。
+    # ⚠️ 原文旧措辞是「不计入断言，仅提示 post_session 可能受残留影响」——那是**旧口径**，
+    # 与本单判定冲突，措辞随修法一并改（见 `_run_clean_action` 的 `user_memories_clear` 分支）。
+    "user_memories_clear": ("清理长期记忆失败",),
+    # ── 以下为**已核对**「无独立散文失败前缀」的动作（未应用走稳定标记）──────────────
+    "employee_reactivate": (),      # #3781：`{_PRECONDITION_NOT_APPLIED}: 员工 … 查询 3 次未命中`
+    "processing_order_reset": (),   # #3833：`{_PRECONDITION_NOT_APPLIED}: 库里没有订单 …`
+    "product_status_restore": (),   # 复位族（#4075）：不在位/写失败/回读不符走 `_clean_not_applied`
+    "sku_price_restore": (),        # 同上
+    "product_price_restore": (),    # 同上（#5303）
+    "order_status_restore": (),     # 同上（#4992）
+    "customer_profile_restore": (),  # 同上（#4992）
+    "session_credential_restore": (),  # 同上（#5482）
+    # 幂等型：目标不存在 = **无缺口**（"有重复商品"是待清理物，不是用例依赖的前置）
+    # ⇒ 无「该在位而不在位」的语义，失败形态由动作自身（HTTP 非 2xx → 抛异常 → 通用
+    # `⚠️ pre_clean 失败` 文案）承载。
+    "product_dedupe": (),
+}
+# ⚠️ **残余（如实登记，不在本单射程）**：`_run_clean_specs` 的通用异常分支
+# （`⚠️ pre_clean 失败: {e}` = 动作实现抛异常）同样**不以稳定标记开头** ⇒ 首次尝试时
+# 不折结论（只在重试边界被子串判据捞到）。它与本单修的三条**同族**，但本单只收
+# issue #3797 登记的三条消息 —— 泛化它需要一次真跑校准（"夹具层偶发网络异常"会从
+# 一次重试变成一条 score=0），在无真跑证据前不动。判据见
+# `tests/unit_ci_workflows/test_eval_preclean_failure_family.py`。
+
+
+def _is_preclean_not_applied(entry) -> bool:
+    """「夹具动作未生效（前置未应用/未复位成功）」的**显式族判据**（`类型 + 前缀`）。
+
+    纯函数、单一真值：折叠侧（`check_preclean_not_applied`）与重试边界
+    （`_clean_msg_blocks_retry_equivalence`）都从它取值，避免"同一件事两条口径"漂移
+    （issue #3797 的病灶）。`entry` 可以是 `_CleanMsg`（带类型，走族判据），
+    也可以是旧通道的裸 `str`（只认稳定标记 —— 不静默放宽）。
+    """
+    msg = str(entry)
+    if msg.startswith(_PRECLEAN_BAD_MARKERS):
+        return True
+    prefixes = _PRECLEAN_FAILURE_PREFIXES.get(
+        str(getattr(entry, "clean_type", "") or ""))
+    return bool(prefixes) and msg.startswith(prefixes)
+
+
+class _CleanMsg(str):
+    """带**动作类型**的夹具层消息（issue #3797）。
+
+    为什么必须是 `str` 子类：消息会经用例结果的 `pre_clean` 字段**落盘**、被人读、
+    被既有判据用 `str(m).startswith(...)` 消费 —— 换成元组/对象会动落盘契约与所有读方；
+    子类让**文本逐字不变**，只多带一个 `clean_type` 事实（族判据的"类型"半边）。
+    """
+
+    __slots__ = ("clean_type",)
+
+    def __new__(cls, text, clean_type: str = ""):
+        self = super().__new__(cls, text)
+        self.clean_type = str(clean_type or "")
+        return self
+
+
+def _clean_msg_blocks_retry_equivalence(msg) -> bool:
+    """重试边界判据：该消息是否说明「第二次尝试的前置与首次**不等价**」。
+
+    口径**有意是折叠侧的并集（上界）**：字面含「未复位」/「失败」的**任何**夹具消息都算
+    —— 重试边界是"这次重试的结论能不能归因于 agent"的**保守**判据，宁可多标不可漏标。
+    ⇒ 不变式：**凡被折进结论的，必然也被本判据捞到**（`fold ⊆ retry`），
+    由 `test_eval_preclean_failure_family.py` 的红证钉住（方向反了就是 #3797 的漏判）。
+    """
+    s = str(msg)
+    return ("未复位" in s) or ("失败" in s) or _is_preclean_not_applied(msg)
+
 # ── `post_clean` 的坏标记（issue #4075）───────────────────────────────────────
 # 为什么复用 `PRECONDITION_NOT_RESTORED`（#3751/#3807 的既有标记）而不是新造一个：
 # 语义**完全相同** —— "共享状态没被复位 ⇒ 本用例与后续用例的结论不可信"，
@@ -1476,8 +1574,12 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
                                params={"agent_type": agent_type}, timeout=15)
             body = _safe_json(r, {}) or {}
             if r.status_code >= 300 or body.get("success") is False:
+                # ⚠️ 措辞（issue #3797）：**不得**再说"不计入断言" —— 该动作的唯一目的
+                # 就是消除上一跑的长期记忆残留，否则 `post_session[user_memories]` 会被
+                # 残留满足（假绿）。本消息经 `_PRECLEAN_FAILURE_PREFIXES` 登记 ⇒ 折进结论。
                 return (f"清理长期记忆失败（HTTP {r.status_code}）"
-                        f"—— 不计入断言，仅提示 post_session 可能受残留影响")
+                        f"—— 前置未生效：post_session 可能被上一跑的残留满足，"
+                        f"本次长期记忆结论**不可归因于 agent**")
             return f"已清理长期记忆（agent_type={agent_type}）"
     if _type == "aftersales_ticket_prepare":
         # 把**被用例点名的**工单复位回 seed 初始态（issue #3751 前置等价性）。
@@ -1585,14 +1687,19 @@ async def _run_clean_specs(token: str, specs, phase: str = "pre") -> list:
     bad_markers = _POSTCLEAN_BAD_MARKERS if phase == "post" else _PRECLEAN_BAD_MARKERS
     msgs: list = []
     for spec in (specs or []):
+        # 类型随消息一起带走（issue #3797）：族判据（`_is_preclean_not_applied`）要"类型 + 前缀"
+        # 两半 —— 只带前缀的旧形态是漏判的来源（散文失败消息没有稳定前缀）。
+        # `_CleanMsg` 是 `str` 子类 ⇒ 文本逐字不变、落盘契约不变。
+        _type = str((spec or {}).get("type") or "")
         try:
             _msg = await run(token, spec)
         except Exception as e:
             # 失败同样入结果（此前只有 print → 归因时看不见"夹具动作失败"）。
             # ⚠️ 文案固定为 `⚠️ <phase>_clean 失败: …`：`_reset_for_retry` 靠「失败」
-            # 子串判"重试前置不等价"。
+            # 子串判"重试前置不等价"。⚠️ 本条**仍不折进结论**（同族残余，见
+            # `_PRECLEAN_FAILURE_PREFIXES` 下方的残余登记）。
             print(f"     ⚠️ {phase}_clean 失败（非致命）: {e}")
-            msgs.append(f"⚠️ {phase}_clean 失败: {e}")
+            msgs.append(_CleanMsg(f"⚠️ {phase}_clean 失败: {e}", _type))
             continue
         if not _msg:
             continue
@@ -1600,7 +1707,7 @@ async def _run_clean_specs(token: str, specs, phase: str = "pre") -> list:
         # 前缀沿用既有语义：配置错误/未复位 = 预警（⚠️/⛔），其余（含良性 no-op）= 🧹
         _icon = ("⛔" if phase == "post" else "⚠️") if _bad else "🧹"
         print(f"     {_icon} {phase}_clean: {_msg}")
-        msgs.append(str(_msg))
+        msgs.append(_CleanMsg(str(_msg), _type))
     return msgs
 
 
@@ -3066,7 +3173,186 @@ def _tool_name_matches(name: str, tool: str) -> bool:
     return n == t or n.endswith("." + t)
 
 
-def check_must_succeed(results: list, must_succeed: list) -> list:
+# ══════════════════════════════════════════════════════════════════════════════
+# 落库面（read side）取数：`metadata.tool_results`（issue #4097）
+# ══════════════════════════════════════════════════════════════════════════════
+# 写侧自 #4052 起就把 `{tool, success, error}` 落进会话消息的 `metadata.tool_results`
+# （与 `metadata.tool_calls` **逐项对齐**），但读侧一直没暴露、runner 也从不读它 ⇒
+# 「调了 order_create」可判、「order_create 真成了」在**落库审计真值**上不可判
+# （#4097 的原话：只能断言「模型说了它调了」）。本组函数补上读侧消费：
+# 用例在 `must_succeed` 条目上显式声明 `source: metadata`（落库面）或 `source: sse`
+# （缺省，SSE 事件面）——**两面显式二选一**，不并存、不互相顶替。
+#
+# **为什么不做成第二套断言**（#4097：「避免两处各写一份口径漂移」）：落库面先被还原成与
+# SSE 面**同形**的 rounds（`tool_calls` + `tool_results`），再交给 `check_must_succeed`
+# 的**同一段**判定 —— tool / action / only_if_called 的作用域两边天然一致，不存在两份口径。
+#
+# ⚠️ 已知边界（如实登记）：落库面是**按会话**取的，而用例可能跨会话（`new_session` 轮会
+# 关掉旧会话再开新的）⇒ 只能取到**最后一个会话**。这种情况由调用方**fail-closed**
+# （报「断言未评估」），不做静默的局部覆盖（局部覆盖会把"早期会话里成了"读成"从未被调用"）。
+MUST_SUCCEED_SOURCES = frozenset({"sse", "metadata"})
+
+#: 「被拒」的错误码白名单（**显式枚举**，不宽正则）：判据源 = 后端工具层真实返回的拒码。
+#: `cross_skill_target` = `validate_input` 判「这次诉求不属本 skill」时回给模型的码
+#: （`backend/ai-agent-service/app/tools/validate_input.py`）；#4123 的 AS-003 失败链
+#: （被拒后模型直接放弃、链路再未推进）就是它。未登记的码**不计入**自愈率分母。
+DENIAL_ERROR_CODES = frozenset({"cross_skill_target"})
+
+
+def rounds_from_history_payload(payload: dict) -> tuple:
+    """`GET /api/chat/history/{sid}` 响应 → 与 SSE 面**同形**的 rounds（issue #4097）。
+
+    返回 `(rounds, error)`；`error` 非空 ⇒ 断言**不可评估**（fail-closed，绝不当"没问题"）。
+
+    还原口径（逐项对齐是**写侧**的契约，这里只做形状翻译，不做裁剪/合并）：
+      · 每条消息的 `tool_calls`（`[{tool, args}]`，落库键名）→ SSE 形态 `[{name, args}]`；
+      · 每条消息的 `tool_results`（`[{tool, success, error}]`）→ SSE 形态
+        `[{tool, result: {success, error}}]`（`__round` = 该消息在历史里的序号，
+        **不是**用例轮次号 —— 落库面没有轮次概念，用「第 n 条消息」定位）。
+      · 只有带 `tool_results` 的消息才成为一轮（无消息 = 无落库证据）。
+
+    🔴 **「读侧没暴露该键」必须与「确实没有工具结果」区分开**：前者是本 issue 的缺陷形态
+    （写侧落库了、读侧没回传），若被读成「空 = 没有调用」，断言会退化成一句
+    「从未被调用」的行为失败 —— 归因错人且掩盖读侧回归。故这里按**键是否存在**
+    （`"tool_results" in msg`）判，缺键即报错。
+    """
+    data = (payload or {}).get("data") if isinstance(payload, dict) else None
+    messages = data.get("messages") if isinstance(data, dict) else None
+    if not isinstance(messages, list):
+        return [], ("读侧响应里没有 data.messages —— 断言未评估（fail-closed）")
+    exposed = False
+    rounds = []
+    for idx, msg in enumerate(messages, start=1):
+        if not isinstance(msg, dict):
+            continue
+        if "tool_results" in msg:
+            exposed = True
+        results = msg.get("tool_results")
+        if not isinstance(results, list) or not results:
+            continue
+        calls = msg.get("tool_calls") if isinstance(msg.get("tool_calls"), list) else []
+        rounds.append({
+            "__round": idx,
+            "tool_calls": [
+                {"name": c.get("tool") or c.get("name"), "args": c.get("args") or {}}
+                for c in calls if isinstance(c, dict)
+            ],
+            "tool_results": [
+                {"tool": t.get("tool"),
+                 "result": {"success": bool(t.get("success")), "error": t.get("error")}}
+                for t in results if isinstance(t, dict)
+            ],
+            "__source": "metadata",
+        })
+    if not exposed:
+        return [], ("历史消息里**没有** `tool_results` 键 —— 写侧落库了但读侧未暴露"
+                    "（issue #4097 的缺陷形态）⇒ 断言未评估（fail-closed）")
+    return rounds, ""
+
+
+async def fetch_session_tool_result_rounds(token: str, session_id: str,
+                                           debug_user: str = "",
+                                           debug_permissions: str = "") -> tuple:
+    """读侧取数（issue #4097）：`GET /api/chat/history/{session_id}` → `(rounds, error)`。
+
+    `limit=100`（接口上限）：评测用例的会话长度远小于该值，取满即不会截断早期消息
+    （截断会让"早期轮成了"被读成"从未被调用" = 假红）。
+    """
+    if not session_id:
+        return [], "取不到会话 id —— 断言未评估（fail-closed）"
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{AI_API}/api/chat/history/{session_id}",
+                            headers=_chat_headers(token, debug_user, debug_permissions),
+                            params={"limit": 100}, timeout=20)
+    except Exception as e:
+        return [], f"读侧取数请求失败 {type(e).__name__}: {e}"
+    if r.status_code != 200:
+        return [], f"读侧取数 HTTP {r.status_code}"
+    return rounds_from_history_payload(_safe_json(r, {}) or {})
+
+
+def denial_recovery_stats(rounds: list, window: int = 3,
+                          codes: frozenset = DENIAL_ERROR_CODES) -> dict:
+    """被拒后自愈率（issue #4097 评论）——**报告型读数，不产生任何断言、不改用例分数**。
+
+    ## 为什么需要
+
+    #4123 的 AS-003 由 pass → reproducible：`validate_input` 回 `cross_skill_target` 之后
+    **没有任何路由动作**、模型直接放弃链路。这类失败真正的代价不是"被拒"（拒是护栏在起作用），
+    而是"**被拒之后链路没有恢复**" —— 两者在旧证据面上都读不到（读侧未暴露 `tool_results`）。
+
+    ## 口径（本函数的定义即判据，写清楚以便复算）
+
+    · 事件序 = 按 rounds 顺序摊平的 `(tool, success, error)`；
+    · **被拒** = `success=false` 且 `error` 命中 `codes` 白名单（默认只有 `cross_skill_target`）；
+    · **自愈** = 该次被拒之后 `window` 个事件内出现**至少一次成功调用**（链路继续推进）；
+    · **未自愈** = 窗口内零成功（模型被拒后放弃 → 用户办不成事）。
+
+    ⚠️ 边界（如实登记）：① 自愈的判据是"窗口内**任一**成功"，不是"同一目标工具成功"
+    （`cross_skill_target` 的正确恢复本来就是**换域**再调，同工具重试恰恰是错的行为）；
+    ② 按 skill 域分组的汇总**未实现**（落库记录里没有 skill 字段，须另补口径，不猜）。
+    """
+    events = []
+    for r in rounds or []:
+        for t in (r or {}).get("tool_results") or []:
+            if not isinstance(t, dict):
+                continue
+            res = t.get("result") if isinstance(t.get("result"), dict) else {}
+            events.append((str(t.get("tool") or ""), bool(res.get("success")),
+                           str(res.get("error") or "")))
+    denials = [i for i, (_t, ok, err) in enumerate(events)
+               if not ok and err and err in codes]
+    recovered = 0
+    unrecovered = []
+    by_code = {}
+    for i in denials:
+        tool, _ok, err = events[i]
+        by_code[err] = by_code.get(err, 0) + 1
+        if any(ok for _t, ok, _e in events[i + 1:i + 1 + max(int(window), 0)]):
+            recovered += 1
+        else:
+            unrecovered.append({"tool": tool, "error": err, "at": i})
+    n = len(denials)
+    return {
+        "denials": n,
+        "recovered": recovered,
+        "recovery_rate": (recovered / n) if n else None,
+        "by_code": by_code,
+        "unrecovered": unrecovered,
+    }
+
+
+def denial_recovery_summary() -> dict:
+    """本轮（本进程 = 本分片）「被拒后自愈」汇总 —— 报告型（issue #4097 评论）。
+
+    跨分片合并 = 各分片计数**相加**（率由合并后的两个计数重算，**不要**对率取平均）。
+    台账按 `case.id` 记账 ⇒ 重试只覆盖不累加（同一用例的两次尝试不重复计入分母）。
+    """
+    per_case = dict(_DENIAL_RECOVERY_BY_CASE)
+    denials = sum(s.get("denials") or 0 for s in per_case.values())
+    recovered = sum(s.get("recovered") or 0 for s in per_case.values())
+    return {
+        "cases": len(per_case),
+        "denials": denials,
+        "recovered": recovered,
+        "recovery_rate": (recovered / denials) if denials else None,
+        "unrecovered_cases": sorted(
+            cid for cid, s in per_case.items() if s.get("denials") and not s.get("recovered")),
+    }
+
+
+#: 用例 id → 该用例最后一次尝试的「被拒后自愈」读数（报告型台账；见 `denial_recovery_summary`）
+_DENIAL_RECOVERY_BY_CASE: dict = {}
+
+#: session_id → 已取到的落库面 rounds（`run_case` 为 `source: metadata` 取过一次 ⇒
+#: 报告型的自愈率台账**复用**同一份结果，不重复发一次 HTTP）。
+_TOOL_RESULT_ROUNDS_CACHE: dict = {}
+
+
+def check_must_succeed(results: list, must_succeed: list,
+                       metadata_rounds: list = None,
+                       metadata_error: str = "") -> list:
     """写工具**成功**断言：声明的工具必须至少真正成功一次（「调了」≠「成了」）。
 
     背景（CI 实证 run 34686905546 / 34685247189，issue #3361）：
@@ -3099,6 +3385,12 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
     最忌讳的形态：**不写**（则该分支无论怎么失败都判绿 —— #3778 的原病）或**无条件写**
     （`direct_reply` 那一支的合格行为被误判成失败 = 假红）。
     未声明该键 ⇒ 语义一字不变（缺省 `False` = 无条件「必须至少成功一次」）。
+
+    声明 `source` 时（issue #4097）：`sse`（缺省）= 上面这条 SSE 事件面路径；`metadata` =
+    **落库面**（`metadata.tool_results`，由读侧 `GET /api/chat/history/{sid}` 回传，经
+    `rounds_from_history_payload` 还原成同形 rounds）。两面**显式二选一**：
+    落库面取数不可用（读侧未暴露该键 / HTTP 失败 / 用例跨会话）⇒ **判「断言未评估」**
+    （fail-closed），绝不当通过 —— 否则"落库了但没人读"这类缺陷会静默消失。
     """
     issues = []
     for spec in must_succeed or []:
@@ -3107,13 +3399,15 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
         if not isinstance(spec, dict):
             issues.append(f"must_succeed: 配置非字符串/字典: {spec!r}")
             continue
-        unknown = sorted(set(spec) - {"tool", "action", "only_if_called"})
+        unknown = sorted(set(spec) - {"tool", "action", "only_if_called", "source",
+                                      "min_successes"})
         if unknown:
             # 与 `check_must_fail` 的同一处硬化对称（那边早有白名单）：未支持的键**过去被静默
             # 忽略** ⇒ 断言降级/空转而用例照旧判绿（同 `must_fail` 的 `条目含未支持的键` 码）。
             issues.append(
                 f"must_succeed: 条目含未支持的键 {unknown}（会被静默忽略 → 断言降级/空转）: {spec!r}"
-                f"—— 支持 tool/action/only_if_called；值级作用域见 issue #3689")
+                f"—— 支持 tool/action/only_if_called/source/min_successes；"
+                f"值级作用域见 issue #3689")
             continue
         only_if_called = bool(spec.get("only_if_called"))
         tool = str(spec.get("tool", ""))
@@ -3121,9 +3415,41 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
         if not tool:
             issues.append(f"must_succeed: 配置缺 tool: {spec!r}")
             continue
+        # 读哪一面（issue #4097）：缺省 `sse` = 既有 SSE 事件面，语义一字不变；
+        # `metadata` = 落库面（`metadata.tool_results`）。**显式二选一**，不并存。
+        source = str(spec.get("source") or "sse")
+        if source not in MUST_SUCCEED_SOURCES:
+            issues.append(
+                f"must_succeed: 配置 source={source!r} 不在支持集 "
+                f"{sorted(MUST_SUCCEED_SOURCES)}（读的是哪一面必须显式二选一）: {spec!r}")
+            continue
+        face = results
+        face_note = ""
+        if source == "metadata":
+            face_note = "（落库面 source=metadata）"
+            if metadata_rounds is None:
+                # fail-closed：「断言未评估」也是失败 —— 否则读侧一挂，落库面断言静默消失、
+                # 用例照旧判绿（本仓最忌讳的"声称查过而其实没查"）。
+                issues.append(
+                    f"must_succeed[source=metadata]: {tool} 的落库面取数不可用"
+                    f"（{metadata_error or '未取数'}）—— 断言未评估（fail-closed）")
+                continue
+            face = metadata_rounds
+        # 成功**次数**下界（issue #4074）：默认 1（= 既有语义，一字不变）；`2` = 「同一次
+        # 逻辑写请求真的被发了第二遍」——幂等重试形态**唯一的可达性证据**。形态非法 ⇒ 判红
+        # （不静默退回 1：那会把「声明了 2 次却只发了 1 次」洗成绿，正是本仓库反复踩的假绿）。
+        need_successes = 1
+        if "min_successes" in spec:
+            _ms = spec.get("min_successes")
+            if isinstance(_ms, bool) or not isinstance(_ms, int) or _ms < 1:
+                issues.append(
+                    f"must_succeed: min_successes 必须是 ≥1 的整数（当前 {_ms!r}）"
+                    f"—— 形态非法会被静默忽略 → 断言降级: {spec!r}")
+                continue
+            need_successes = _ms
 
         attempts: list = []   # [(round, ok, error)]
-        for r in results or []:
+        for r in face or []:
             rnd = r.get("__round")
             # 调用侧：LLM 是否发起了该工具（按 action 过滤）
             called = False
@@ -3165,7 +3491,7 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
             for st in matched_results:
                 attempts.append((rnd, bool(st.get("ok")), st.get("error")))
 
-        if any(ok for _, ok, _ in attempts):
+        if sum(1 for _r, ok, _e in attempts if ok) >= need_successes:
             continue
         if not attempts:
             if only_if_called:
@@ -3174,14 +3500,23 @@ def check_must_succeed(results: list, must_succeed: list) -> list:
                 continue
             issues.append(
                 f"must_succeed: {tool} 从未被调用 → 没有发生任何写操作"
-                "（期望里的工具名出现≠工具真的跑了）")
+                f"（期望里的工具名出现≠工具真的跑了）{face_note}")
         else:
             detail = ", ".join(
                 f"R{rnd}:{err or 'failed'}" for rnd, _ok, err in attempts
             )
-            issues.append(
-                f"must_succeed: {tool} 共 {len(attempts)} 次调用**无一成功**（{detail}）"
-                "—— 调了 ≠ 成了")
+            _ok_n = sum(1 for _r, ok, _e in attempts if ok)
+            if _ok_n:
+                # 有成功但没到次数下界（issue #4074）：不能复用下面那句「无一成功」——
+                # 「只发了 1 次」与「一次都没成」的修法完全不同，必须一眼可分。
+                issues.append(
+                    f"must_succeed: {tool} 共 {len(attempts)} 次调用、成功 {_ok_n} 次 < 要求"
+                    f" {need_successes} 次（{detail}）—— 同一次逻辑写请求没有被重发，"
+                    f"幂等断言（同键重放）因此没有对象可判{face_note}")
+            else:
+                issues.append(
+                    f"must_succeed: {tool} 共 {len(attempts)} 次调用**无一成功**（{detail}）"
+                    f"—— 调了 ≠ 成了{face_note}")
     return issues
 
 
@@ -3651,6 +3986,11 @@ _CASE_ATOM_RULES = (
     (re.compile(rf"^db_verify\[[^\]]+\]: 找不到 ({_TOOL})"), "no_success({0})"),
     # ② 断言**配置错误**（与业务行为无关，但必须可辨、稳定；不含 repr 细节）
     (re.compile(r"^must_succeed: 配置"), "config_error(must_succeed)"),
+    # 落库面取数不可用（issue #4097）：读侧没暴露 `metadata.tool_results` / 取数失败 / 用例跨会话
+    # ⇒ 「断言未评估」。**必须与行为失败分属不同原子**：原文看着像"工具没跑"，
+    # 真相却是**读侧回归**（写侧落库了、读侧没回传）—— 归因错人会让修复方向整个反过来。
+    (re.compile(r"^must_succeed\[source=metadata\]: .*断言未评估"),
+     "config_error(must_succeed_metadata)"),
     (re.compile(r"^must_fail: 配置"), "config_error(must_fail)"),
     (re.compile(r"^must_fail: 条目含未支持的键"), "config_error(must_fail)"),
     (re.compile(r"^forbidden_tools: 配置"), "config_error(forbidden_tools)"),
@@ -3674,6 +4014,18 @@ _CASE_ATOM_RULES = (
     # 「只加不改」—— 旧版 forbidden_text 从不产出这两类消息，故对存量指纹零影响。
     (re.compile(r"^forbidden_text: (?:配置|round)"), "config_error(forbidden_text)"),
     (re.compile(r"^forbidden_card_text: 空配置"), "config_error(forbidden_card_text)"),
+    # 负向按轮卡片约束（issue #3789）：配置错误与"轮次越界"折叠同族；
+    # 命中（本轮真出现卡）保留轮次 —— 两次尝试若在不同轮抽卡，那是**不同的违反点**，
+    # 折叠成一个 token 会把"同一件事"洗成"两次不同原因"（→ 误判 unstable）。
+    (re.compile(r"^forbidden_interact: (?:配置|round)"), "config_error(forbidden_interact)"),
+    (re.compile(r"^forbidden_interact: R(\d+)"), "forbidden_interact(R{0})"),
+    # 入参**值级**断言（issue #3823 家族，本 PR 接线）：工具 + 字段 = 结构身份
+    # （值/轮次/缺失文案丢弃 —— 与 `required_arg` 同口径，但分属不同原子：
+    # "字段没传"与"传错值"是两种根因）。
+    (re.compile(r"^arg_values: 配置|^arg_values: 未调用"), "config_error(arg_values)"),
+    (re.compile(rf"^arg_values\[({_TOOL})\]: (?:缺/空 values|期望值不得|轨迹里)"),
+     "config_error(arg_values,{0})"),
+    (re.compile(rf"^arg_values\[({_TOOL})\.(.+?)\]\(R\d+\)"), "arg_value({0},{1})"),
     (re.compile(r"^order_before: 无法解析"), "config_error(order_before)"),
     # 夹具/harness 形状不兼容（issue #3803）：**必须与 agent 行为失败分属不同原子**。
     # 旧形态下这条红会被折成 `no_success(order_create)`（看着像产品不会下单），
@@ -3701,6 +4053,12 @@ _CASE_ATOM_RULES = (
     # 里带 type，使两次尝试的"同一件事"折叠一致（值/号码/商品名不进 token）。
     (re.compile(r"^precondition\[([A-Za-z0-9_]+)\]"), "precondition_not_applied(declared:{0})"),
     # ③ 参数层：工具 + 键名 = 结构身份（值/轮次/缺失值文案丢弃）
+    # ⚠️ **深路径里的 `[]` 必须留在身份里**（issue #3789 的顺带修正）：旧规则
+    # `([^\]]+)` 在第一个 `]` 处截断 ⇒ `items[].processing_info.processingItems[].id` 与
+    # `…[].unit` **折成同一个原子**（`required_arg(order_create,items[)`）⇒ 两次尝试各缺
+    # 不同字段时会被判成"同一违反点确定性复现"。非 `[]` 路径的原子**逐字不变**（下面那条
+    # 精确规则对它们产出同样的 token；旧规则保留作无 `(R{n})` 后缀形态的兜底）。
+    (re.compile(rf"^required_args\[({_TOOL})\.(.+?)\]\(R\d+\)"), "required_arg({0},{1})"),
     (re.compile(rf"^required_args\[({_TOOL})\.([^\]]+)\]"), "required_arg({0},{1})"),
     (re.compile(rf"^forbidden_args\[({_TOOL})\.([^\]]+)\]"), "forbidden_arg({0},{1})"),
     (re.compile(rf"^must_fail: ({_TOOL})"), "must_fail_violated({0})"),
@@ -3755,6 +4113,20 @@ _CASE_ATOM_RULES = (
     (re.compile(r"^db_verify\[after_sales_ticket\]: 工单 \S+ 落库 closeReason"),
      "db_mismatch(after_sales_ticket,close_reason)"),
     (re.compile(r"^db_verify\[product_by_name\]"), "db_mismatch(product_by_name)"),
+    # 幂等（issue #4074）：三件事**分族**（同一根因不碎成多个原子，不同根因不同形）：
+    #   · 同键重试**跨了会话** → 该用例证明不了幂等（用例/形态问题，不是产品缺陷）；
+    #   · **没有任何一次回放** → 第二次写请求换了新键（重复落库的资金损失形态）；
+    #   · **张数不符** → 同键重试真的落下了第二张（本断言要抓的正主）。
+    (re.compile(r"^db_verify\[(?:order|after_sales)_by_client_request_id\]: .*跨了"),
+     "idempotency_cross_session"),
+    (re.compile(r"^db_verify\[(?:order|after_sales)_by_client_request_id\]: .*没有任何一次回放"),
+     "idempotency_no_replay"),
+    (re.compile(r"^db_verify\[(?:order|after_sales)_by_client_request_id\]: .*出现了 \d+ 次回放"),
+     "idempotency_unexpected_replay"),
+    (re.compile(r"^db_verify\[(?:order|after_sales)_by_client_request_id\]: .*读不回落库真身"),
+     "db_missing(idempotency)"),
+    (re.compile(r"^db_verify\[(?:order|after_sales)_by_client_request_id\]"),
+     "db_mismatch(idempotency)"),
     # ⑦ 时序 / 文本 / 卡片 / 能力类
     (re.compile(r"^order_before\[(.+?) before .+?\]: 全程未调用"), "order_before_missing({0})"),
     (re.compile(r"^order_before\[(.+?) before .+?\]: .+?[(（]R\d+[)）] 晚于"),
@@ -4984,6 +5356,69 @@ def check_forbidden_card_text(results: list, spec: list) -> list:
     return issues
 
 
+def check_forbidden_interact(results: list, spec: list) -> list:
+    """**负向的按轮卡片约束**：声明的轮次**不得**出现 `interact` 卡（issue #3789）。
+
+    为什么必须补（该用例的红/绿由"agent 当轮是否抽卡"决定，判别性验证**无法复现**）：
+    `OR-014` 的**红路径**要求 R2「加工项提问」是**纯文本**（无 `interact` 卡）⇒ R3 顾客用
+    文本回答「不需要其他加工项」⇒ 该轮**不是答卡轮** ⇒ L1 域逃逸清锁（#3784 的窗口）⇒
+    落到 `product` skill（无 `order_create`）⇒ 判红。而 agent 只要在 R2 **发了 choice 卡**，
+    harness 的 `auto_respond` 就会**答那张卡** ⇒ 答卡轮豁免（#3718）⇒ 留在订单流程 ⇒ 判绿。
+    ⇒ 「修复 #3785 的行为侧判别性验证」**永远可能**走那条安全路径：一次绿不能证明修法有效，
+    一次红也不能稳定复现（issue #3789 原文）。
+
+    既有家族都不是这个语义，不能互相顶替：
+      · `forbidden_card_text` 管**卡里的字**（卡存在才判）；
+      · `forbidden_tools` 管**全程**不得调用某工具（`interact` 是通用发卡工具，全程禁它 = 禁掉
+        整条用例的卡交互，过宽）；
+      · `forbidden_text` 管**回复文本**（纯文本提问恰恰是**期望形态**）。
+    本断言管「**本轮不得出现卡**」—— 它是**用例形状的前置**（把红色形态钉死），
+    不是 agent 能力断言；因此命中即判红，与 `forbidden_*` 家族**同权**
+    （进 `case_issues` → `score=0` + 进 summary 的 `failures`）。
+
+    条目形态（**按轮**，`round` 必填 —— 缺它就是"全程禁卡"，那是另一个语义，本断言不猜）：
+      - `{round: 2}`                 → 第 2 轮不得出现**任何** `interact` 卡
+      - `{round: 2, type: choice}`   → 第 2 轮不得出现 `choice` 卡（其余卡型不管）
+    失败关闭（与 `forbidden_text` 的轮次作用域**同口径**）：`round` 缺失/非法、超出实际
+    轮数（用例提前结束 ⇒ 该轮不存在 ⇒ 约束永不成立）一律判违规，**不静默放过**
+    ——「不会红的断言 = 空断言」。
+    """
+    issues: list = []
+    rounds = list(results or [])
+    for item in spec or []:
+        s = {"round": item} if isinstance(item, (int, str)) else (
+            item if isinstance(item, dict) else {})
+        if not isinstance(s, dict) or not s:
+            issues.append(f"forbidden_interact: 配置非字典/空配置（会静默不检查）: {item!r}")
+            continue
+        rnd = s.get("round")
+        try:
+            idx = int(rnd) - 1
+        except (TypeError, ValueError):
+            issues.append(
+                f"forbidden_interact: 配置缺/非法 round（{rnd!r}）—— 该断言按轮生效，"
+                f"缺 round 会退化成「永不成立」（会静默不检查）: {s!r}")
+            continue
+        if idx < 0 or idx >= len(rounds):
+            issues.append(
+                f"forbidden_interact: round={rnd} 超出实际轮数（{len(rounds)}）"
+                f"—— 断言永不成立，请核对用例轮数")
+            continue
+        want_type = str(s.get("type") or s.get("component") or "")
+        for iv in ((rounds[idx] or {}).get("interactive") or []):
+            iv = iv if isinstance(iv, dict) else {}
+            got = str(iv.get("type") or iv.get("component") or "")
+            if want_type and got != want_type:
+                continue
+            issues.append(
+                f"forbidden_interact: R{rnd} 出现了 interact 卡"
+                f"（type={got or '?'}「{iv.get('title') or ''}」）—— 本轮必须在**纯文本**下"
+                f"完成（该用例的判别性红路径依赖「agent 纯文本提问 ⇒ 顾客文本回答」"
+                f"这一形状；发卡会让 harness 代答那张卡 ⇒ 红路径被绕过，issue #3789）")
+            break
+    return issues
+
+
 def _norm_text(v) -> str:
     """比对前归一化空白（地址里空格差异不该判红）。"""
     return re.sub(r"\s+", "", str(v or ""))
@@ -5190,6 +5625,38 @@ def repeat_stop_met(results: list, spec: dict) -> bool:
     return False
 
 
+def retry_stop_met(results: list, spec: dict) -> bool:
+    """`retry_same_session` 的停条件：目标工具**已经成功**调用过 ≥ `calls` 次（issue #4074）。
+
+    与 `repeat_stop_met`（成功 ≥1 次即停）的**唯一**差别 = 计数下界：幂等重试形态要求
+    「同一次逻辑写请求真的被发出了第二遍」—— 只发一遍证明不了任何事，而"证明不了"在报告里
+    与"agent 没重试"同形（正是「声明无消费」的静默失效形态）。`action` 的收窄语义与
+    `repeat_stop_met` 逐字一致：只数**那个 action 自己**成功的调用，别的 action 不能顶替。
+    """
+    want = str((spec or {}).get("tool") or "").strip().lower()
+    if not want:
+        return False
+    want_action = str((spec or {}).get("action") or "").strip()
+    try:
+        need = int((spec or {}).get("calls") or 2)
+    except (TypeError, ValueError):
+        need = 2
+    seen = 0
+    for r in results or []:
+        if want_action:
+            called, aligned, _legacy = _round_action_result(r, want, want_action)
+            if not called:
+                continue
+            res = (aligned or {}).get("result") if aligned is not None else None
+            if isinstance(res, dict) and res.get("success"):
+                seen += 1
+        else:
+            seen += sum(1 for ok in _round_call_success(r, want) if ok)
+        if seen >= need:
+            return True
+    return False
+
+
 def resolve_repeat_turn(results: list, opts: dict, case_form_values: dict | None = None) -> str:
     """协作型顾客的「统一一轮」：**有什么卡答什么卡 → 被问验证码就供码 → 否则说 fallback**。
 
@@ -5264,8 +5731,19 @@ def resolve_auto_select_turn(results: list, form_values: dict,
                                 form_values=form_values, prefer_text=False)
 
 
+#: 「展开成 N 份『运行时决定发什么』的轮次」的控制键 → 展开标记（issue #3430 / **#4074**）。
+#: 两个键共用**同一套**展开 / 作答（`resolve_repeat_turn`）/ 计数机器，差别只在停条件：
+#:   · `repeat_until`       = 顾客继续配合，直到目标工具**成功过 1 次**；
+#:   · `retry_same_session` = **同一会话**里把**同一次逻辑写请求再发一遍**（幂等重试形态，
+#:     issue #4074）。服务端幂等键 = f(重试窗, 会话, 操作)（`backend/ai-agent-service/app/tools/
+#:     order_create.py::_request_window_id`）⇒ 同会话同窗内取值相同 ⇒ 第二次被去重/回放。
+#:     **绝不换会话**（换会话 = 换键 = 这一格结构上测不到 —— 那正是 runner 自带重试的形态：
+#:     `get_or_create_session(..., prefer_new=True)`，见 issue #4195 的核验评论）。
+_EXPANDABLE_TURNS = {"repeat_until": "__repeat__", "retry_same_session": "__retry__"}
+
+
 def expand_repeat_turns(user_inputs: list) -> list:
-    """把 `repeat_until` 轮展开成 N 份「运行时决定发什么」的轮次（issue #3430）。
+    """把 `repeat_until` / `retry_same_session` 轮展开成 N 份「运行时决定发什么」的轮次。
 
     `max` 上限收紧到 8（run 34769925078 实测：OR-021 的协作流程把 6 轮用光后**还差一步**就
     能供码成功；跑通的用例会因停条件提前结束，不吃满上限，故放宽一档对墙钟影响很小）。
@@ -5273,15 +5751,18 @@ def expand_repeat_turns(user_inputs: list) -> list:
     """
     out = []
     for msg in user_inputs or []:
-        if isinstance(msg, dict) and isinstance(msg.get("repeat_until"), dict):
-            spec = msg["repeat_until"]
+        key = ""
+        if isinstance(msg, dict):
+            key = next((k for k in _EXPANDABLE_TURNS if isinstance(msg.get(k), dict)), "")
+        if key:
+            spec = msg[key]
             try:
                 n = int(spec.get("max") or 3)
             except (TypeError, ValueError):
                 n = 3
             n = max(1, min(8, n))
-            opts = {k: v for k, v in msg.items() if k != "repeat_until"}
-            out.extend([{"__repeat__": spec, "opts": opts} for _ in range(n)])
+            opts = {k: v for k, v in msg.items() if k != key}
+            out.extend([{_EXPANDABLE_TURNS[key]: spec, "opts": opts} for _ in range(n)])
         else:
             out.append(msg)
     return out
@@ -5296,6 +5777,10 @@ _CONTROL_TURN_KEYS = frozenset({
     "auto_select", "auto_respond", "repeat_until", "new_session", "auto_fill",
     "text", "images", "code", "fallback", "form_values", "prefer_text",
     "__repeat__", "opts",
+    # 同会话同键重试（issue #4074）：与 `repeat_until` 同族，故**必须**同在这张表里 ——
+    # 漏登记 ⇒ 写成 JSON 字符串的 `retry_same_session` 轮会被当**纯文本**发给 agent，
+    # 该声明静默失效（本函数的判据就是这张表）。
+    "retry_same_session", "__retry__",
 })
 
 
@@ -5357,6 +5842,62 @@ def check_pre_turns_declared(pre_turns) -> list:
     # 变成缺陷。生成物侧也不落空列表字面量（`render_cases` 只在非空时落）⇒ 这一格没有
     # 静默失效面：真声明了历史却给空列表，在 yml 里就已经退化成"没声明"。
     return check_control_turns_declared(pre_turns, field="pre_turns")
+
+
+#: `retry_same_session` 的**允许键**（issue #4074）。与 `must_succeed` 的未知键硬化同族：
+#: 未支持的键**过去会被静默忽略** ⇒ 该声明退化成「多发一轮没人断言的顾客消息」（绿得没有证据）。
+_RETRY_DECL_KEYS = frozenset({"tool", "action", "calls", "max"})
+
+
+def check_retry_same_session_declared(user_inputs: list, field: str = "user_inputs") -> list:
+    """`retry_same_session`（同会话同键重试）声明的**形态自断言**（issue #4074，fail-closed）。
+
+    为什么必须有（与 `check_pre_turns_declared` / `check_control_turns_declared` 同族同因）：
+    本控制轮的存在意义是「**制造一次真实的同键重试**」，而它的全部证据都落在**第二次**写调用上
+    （`replayed=true` + 只有一张单据）。形态错时该轮要么构造不出第二次调用、要么**永远不可能停**
+    —— 两种都表现为"断言没命中"，归因却会落到 agent 头上。故在这里折进 `case_issues`
+    （fail-closed、不进 agent 归因）：
+
+      · `calls < 2` = **不是重试**（只要求 1 次成功 ⇒ 与 `repeat_until` 无异，却挂着幂等的名）；
+      · `max < calls` = 该声明**永远不可能满足**（跑满轮数也凑不齐成功次数）= 恒红用例；
+      · `calls > 8` = 展开上限（`expand_repeat_turns` 封顶 8）之下同样永不可满足。
+    """
+    issues = []
+    for i, msg in enumerate(user_inputs or [], 1):
+        if not isinstance(msg, dict):
+            continue
+        spec = msg.get("retry_same_session")
+        if spec is None:
+            continue
+        if not isinstance(spec, dict):
+            issues.append(
+                f"{field} 第 {i} 轮的 `retry_same_session` 必须是**字典**（当前 "
+                f"{type(spec).__name__}）—— runner 只把 dict 当展开声明 ⇒ 该轮不会被重发，"
+                f"同键重试形态构造不出来")
+            continue
+        unknown = sorted(set(spec) - _RETRY_DECL_KEYS)
+        if unknown:
+            issues.append(
+                f"{field} 第 {i} 轮 `retry_same_session` 含未支持的键 {unknown}"
+                f"（会被静默忽略 → 断言降级）—— 支持 tool/action/calls/max")
+            continue
+        if not str(spec.get("tool") or "").strip():
+            issues.append(
+                f"{field} 第 {i} 轮 `retry_same_session` 缺 tool（停条件无从判定 ⇒ 该轮空转）")
+            continue
+        calls = spec.get("calls", 2)
+        if isinstance(calls, bool) or not isinstance(calls, int) or calls < 2 or calls > 8:
+            issues.append(
+                f"{field} 第 {i} 轮 `retry_same_session.calls` 必须是 2..8 的整数（当前 "
+                f"{calls!r}）—— 小于 2 就不是重试（证明不了第二次写请求真的发生过），"
+                f"大于 8 则受展开上限封顶、永远凑不齐")
+            continue
+        mx = spec.get("max", 3)
+        if isinstance(mx, bool) or not isinstance(mx, int) or mx < calls:
+            issues.append(
+                f"{field} 第 {i} 轮 `retry_same_session.max` 必须是不小于 calls({calls}) 的整数"
+                f"（当前 {mx!r}）—— 否则该声明**永远不可能满足**（跑满轮数也凑不齐成功次数）")
+    return issues
 
 
 async def check_debug_user_precondition(token: str, case) -> list:
@@ -6146,11 +6687,17 @@ def check_preclean_not_applied(msgs: list) -> list:
     且该用例的红/绿会被读成"agent 能力缺陷"。形态对齐既有
     `db_verify: 不支持的 fetch 配置` → `config_error(db_verify)`。
 
-    判据用**稳定前缀**（`_PRECLEAN_BAD_MARKERS`）而不是宽松的"含『跳过』"：
-    后者会把正常的幂等消息（如「客户无「VIP2活跃」标签，无需清理」）误判成配置错误。
+    判据是**显式族判据**（`_is_preclean_not_applied`，issue #3797 的改法②）——
+    **「类型 + 前缀」**，不是裸前缀、也不是宽松的"含『失败』/『跳过』"：
+      · 稳定标记前缀（`_PRECLEAN_BAD_MARKERS`，与类型无关）恒认；
+      · 否则要求"消息带类型 ∧ 该类型在 `_PRECLEAN_FAILURE_PREFIXES` 里登记了该前缀"
+        —— 后者收的是**散文形态**的准备型失败（工单未复位 / 长期记忆没清干净），
+        旧裸前缀判据对它们**漏判**（首次尝试不进结论），而重试边界却捞得到
+        （同一件事两条口径，issue #3797）。
+    宽松版（"含『跳过』"）**反向**也不可用：它会把正常幂等消息
+    （如「客户无「VIP2活跃」标签，无需清理」）误判成配置错误。
     """
-    return [str(m) for m in (msgs or [])
-            if str(m).startswith(_PRECLEAN_BAD_MARKERS)]
+    return [str(m) for m in (msgs or []) if _is_preclean_not_applied(m)]
 
 
 def check_postclean_not_applied(msgs: list) -> list:
@@ -6388,8 +6935,10 @@ def _round_action_result(r: dict, tool: str, action: str) -> tuple:
     return True, results[hit[0]], bool(own.get("success") if isinstance(own, dict) else False)
 
 
-def _first_successful_payload(results: list, tool: str, action: str = "") -> dict:
-    """首个**成功**调用的 `result.data`（可按 `args.action` 限定是**哪一次**调用）。
+def _first_successful_payload(results: list, tool: str, action: str = "",
+                              last: bool = False) -> dict:
+    """首个（`last=True` 时 = **最后一个**）**成功**调用的 `result.data`（可按 `args.action`
+    限定是**哪一次**调用）。
 
     为什么需要 action 限定（issue #3544 实测 run 34809483940）：`output_verify` 原先只按
     **工具名**取首个成功结果，而工具是**多 action** 的（`processing_item_manage` 的
@@ -6398,10 +6947,17 @@ def _first_successful_payload(results: list, tool: str, action: str = "") -> dic
     `{'categories': [...]}` → **假红**（真建成功的 R5 payload 从未被核对）；反之若字段名
     撞上（如都叫 `items`）就会**假绿**（核对了错的 action 还说"产出对"）。
 
+    `last=True`（issue #4074）：**幂等重试**要核的正是**重试那一次**的产出
+    （`replayed=true`）—— 取首个 ⇒ 核到的是**首次创建**的 payload（它当然不是回放）
+    ⇒ 断言恒红/恒绿，且红的表现像"幂等坏了"。语义一字不改，只是**从哪一头取**。
+
     声明 action 时按 `_round_action_result` **对齐到那一次调用**：该 action 这次没成功
     → 换下一轮（**不借同轮别的 action 的 payload** —— 那正是 #3667 修的同轮取错）。
     """
-    for r in results or []:
+    rows = list(results or [])
+    if last:
+        rows.reverse()
+    for r in rows:
         if action:
             called, aligned, _legacy = _round_action_result(r, tool, action)
             if not called:
@@ -6471,11 +7027,21 @@ def check_output_verify(results: list, output_verify: list) -> list:
             continue
         tol = float(spec.get("tolerance", 0.01))
         action = str(spec.get("action") or "").strip()
-        payload = _first_successful_payload(results, tool, action)
+        # 取哪一次的产出（issue #4074）：缺省 = 首次（既有语义一字不变）；`last: true` =
+        # **最后一次**成功调用 —— 幂等重试要核的是「重试那一次返回了什么」（replayed=true）。
+        # 形态非法 ⇒ 判红（当成 False 会核到首次调用 ⇒ 假红/假绿，正是本仓库最忌讳的形态）。
+        _last = spec.get("last", False)
+        if not isinstance(_last, bool):
+            issues.append(
+                f"output_verify[{tool}]: `last` 必须是 true/false（当前 {_last!r}）—— "
+                f"形态非法会被当成 False ⇒ 核到**首次**调用的产出（假红/假绿）")
+            continue
+        payload = _first_successful_payload(results, tool, action, last=_last)
         if not payload:
             _scope = f"(action={action})" if action else ""
+            _which = "(最后一次)" if _last else ""
             issues.append(
-                f"output_verify[{tool}]{_scope}: 找不到成功调用的结果（无从核对产出）")
+                f"output_verify[{tool}]{_scope}{_which}: 找不到成功调用的结果（无从核对产出）")
             continue
         for key, want in expect.items():
             found, got = _payload_lookup(payload, key)
@@ -6497,6 +7063,118 @@ def check_output_verify(results: list, output_verify: list) -> list:
                 continue
             if str(got) != str(want):
                 issues.append(f"output_verify[{tool}]: {key} 期望 {want!r}，实际 {got!r}")
+    return issues
+
+
+def _successful_payloads(results: list, tool: str) -> list:
+    """该工具**每一次**成功调用的 `result.data`（按轮次顺序）+ 该轮的**会话纪元**。
+
+    与 `_first_successful_data`（只取**首个**）的差别就是「第一次」与「每一次」：幂等重试断言
+    判的正是**第二次**写请求发生了什么 —— 只取首个 ⇒ 断言看不见第二次 ⇒ 恒绿（issue #4074，
+    与「声明无消费」同族）。返回 `[(round, session_epoch, data), …]`。
+    `__session_epoch` 由 `run_case` 逐轮记入（见那里的说明）；合成轨迹没有该键 ⇒ 取 0
+    （与"从未换过会话"同值，不会把合成轨迹误判成跨会话）。
+    """
+    out = []
+    for r in results or []:
+        for tr in r.get("tool_results") or []:
+            if not _tool_name_matches(tr.get("tool"), tool):
+                continue
+            res = tr.get("result") if isinstance(tr.get("result"), dict) else {}
+            if res.get("success") and isinstance(res.get("data"), dict):
+                out.append((r.get("__round"), int(r.get("__session_epoch") or 0), res["data"]))
+    return out
+
+
+def _order_ref_of(data) -> str:
+    """订单引用（**单一实现**）：`id`（UUID）优先，回退订单号 —— `_resolve_order_detail`
+    的候选口径同源（两者都可能是 admin-api 接受的那个形态）。"""
+    d = data if isinstance(data, dict) else {}
+    return str(d.get("id") or d.get("orderNo") or "").strip()
+
+
+async def _read_back_order(token: str, ref: str) -> bool:
+    return bool(await _fetch_order_detail(token, ref))
+
+
+async def _read_back_ticket(token: str, ref: str) -> bool:
+    return bool(await _fetch_ticket_detail(token, ref))
+
+
+#: 幂等落库断言的**两个资源面**（issue #4074）：fetch → (默认 source, 单据引用取值口径,
+#: 落库回读, 单据的中文名)。订单 / 售后两条写路径**共用同一套判定**（服务端也共用
+#: `ClientRequestIdService` 这一份实现），只有「引用长什么样 / 去哪读回」不同。
+_IDEMPOTENCY_FETCHES = {
+    "order_by_client_request_id": ("order_create", _order_ref_of, _read_back_order, "订单"),
+    "after_sales_by_client_request_id": (
+        "aftersale_create", _ticket_ref_of, _read_back_ticket, "工单"),
+}
+
+
+async def _check_idempotent_rows(token: str, spec: dict, results: list, fetch: str) -> list:
+    """「同键重试不得产生第二张单据」的**唯一实现**（issue #4074；订单 / 售后共用）。
+
+    为什么是这个形状：`orders` / `after_sales_tickets` 上**没有** `client_request_id` 列 ——
+    去重键在基础设施表 `client_request_keys`（`backend/admin-api/src/main/resources/db/
+    migration-archive/V50__create_client_request_keys.sql`），表里没有单据外键。故
+    「该键名下有几行单据」只能由**同键回放**这一可观测事实建立关联（三条一起才成立）：
+
+      ① **同一会话**：幂等键 = f(重试窗, 会话, 操作)（`order_create.py::_request_window_id`）⇒
+         跨会话的两次写调用**必然是两把键**，本断言对它们没有判别力（那正是 runner 自带重试
+         `prefer_new=True` 的形态，issue #4195 的核验评论已把这条钉死）；
+      ② **其中至少一次是回放**（`data.replayed=true`）：服务端 `ClientRequestIdService.replay`
+         只在**同键**命中时置位 ⇒ 这是"同键"唯一的机器证据；
+      ③ 全部成功调用指向的**单据引用去重后**恰好 `expect_rows` 张，且每张都能从 admin-api
+         读回（落库真身）⇒ 张数多了 = 重试真的落了第二张（重复下单 / 重复建单）。
+
+    `expect_replayed: false`（合法复购负例）把 ② **反向**：这 N 张必须**都是新建** ——
+    出现回放 = 合法复购被当成重试吞掉了。
+
+    ⚠️ 残留（如实登记，见 PR body）：本判定**不是**「按列直查该键名下有 N 行」，而是
+    「同键回放 ⇒ 两次调用指向同一张单据」。前者在当前 schema 下不可表达（无列可查），
+    后者能抓住的失败形态是**换新键重试**（= F19 真正要防的那一种）。
+    """
+    default_source, ref_of, read_back, label = _IDEMPOTENCY_FETCHES[fetch]
+    want_rows = spec.get("expect_rows")
+    if isinstance(want_rows, bool) or not isinstance(want_rows, int) or want_rows < 1:
+        return [f"db_verify[{fetch}]: expect_rows 必须是 ≥1 的整数（当前 {want_rows!r}）"
+                f"—— 拿不到期望值 ⇒ 检查会空转通过"]
+    want_replayed = spec.get("expect_replayed")
+    if not isinstance(want_replayed, bool):
+        return [f"db_verify[{fetch}]: expect_replayed 必须是 true/false（当前 {want_replayed!r}）"
+                f"—— 同键回放是「同键」唯一的机器证据，省略它 = 空断言"]
+    src = str(spec.get("source") or default_source)
+    calls = _successful_payloads(results, src)
+    if not calls:
+        return [f"db_verify[{fetch}]: 找不到 {src} 的成功调用（无单据可核对）—— 判失败而非跳过"]
+    issues: list = []
+    rounds = [r for r, _e, _d in calls]
+    if len({e for _r, e, _d in calls}) > 1:
+        issues.append(
+            f"db_verify[{fetch}]: {src} 的成功调用跨了多个会话（轮次 {rounds}）—— 不同会话"
+            f"取值必然不同，本断言无法证明「同键」，该用例的红/绿**不可归因于幂等能力**")
+    replayed = [(r, d) for r, _e, d in calls if d.get("replayed") is True]
+    if want_replayed and not replayed:
+        issues.append(
+            f"db_verify[{fetch}]: {src} 的成功调用里**没有任何一次回放**（replayed=true，"
+            f"轮次 {rounds}）—— 同一次逻辑写请求没有被重发，或重发时**换了新键**"
+            f"（重复落库 = 直接资金损失，正是本断言要拦的形态）")
+    if not want_replayed and replayed:
+        issues.append(
+            f"db_verify[{fetch}]: 出现了 {len(replayed)} 次回放（轮次 {[r for r, _d in replayed]}），"
+            f"但本用例要求这 {want_rows} 张都是**新建** —— 合法复购被当成重试吞掉了")
+    refs: list = []
+    for _r, _e, d in calls:
+        ref = ref_of(d)
+        if ref and ref not in refs:
+            refs.append(ref)
+    if len(refs) != want_rows:
+        issues.append(
+            f"db_verify[{fetch}]: {src} 的成功调用指向 {len(refs)} 张{label} {refs} ≠ 期望 "
+            f"{want_rows} 张 —— 同键重试产生了第二张单据（重复下单 / 重复建单）")
+    for ref in refs:
+        if not await read_back(token, ref):
+            issues.append(f"db_verify[{fetch}]: {label} {ref} 读不回落库真身（未落库？）")
     return issues
 
 
@@ -6830,6 +7508,10 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                     f"用户点名的关闭原因必须落到 closeReason")
             continue
 
+        if fetch in _IDEMPOTENCY_FETCHES:
+            issues.extend(await _check_idempotent_rows(token, spec, results or [], fetch))
+            continue
+
         if fetch != "product_by_name":
             issues.append(f"db_verify: 不支持的 fetch 配置: {spec!r}")
             continue
@@ -6943,6 +7625,36 @@ async def check_post_session(token: str, post_session: list) -> list:
     return issues
 
 
+async def _record_denial_recovery(case, token: str, r: dict) -> None:
+    """报告型（issue #4097 评论）：把本用例的「被拒后自愈」读数记进本轮台账。
+
+    **刻意不碰分数**（与 post_session 断言分属两类）：取数失败只打印一行 ——
+    基础设施波动不该把用例判红（那是"报错当失败"的老毛病）；但**必须可见**，
+    否则"指标恒为 0"会被读成"从来没被拒过"。
+    """
+    sid = str(r.get("final_session_id") or "")
+    rounds = _TOOL_RESULT_ROUNDS_CACHE.get(sid)
+    if rounds is None:
+        try:
+            rounds, err = await fetch_session_tool_result_rounds(
+                token, sid,
+                debug_user=getattr(case, "debug_user", "") or "",
+                debug_permissions=_case_debug_permissions(case))
+        except Exception as e:                      # 取数是旁路，绝不外抛
+            rounds, err = [], f"{type(e).__name__}: {e}"
+        if err:
+            print(f"     ℹ️ 自愈率取数跳过（{err}）")
+            return
+    stats = denial_recovery_stats(rounds)
+    _DENIAL_RECOVERY_BY_CASE[case.id] = stats
+    if stats["denials"]:
+        _rate = stats["recovery_rate"]
+        print(f"     📉 被拒后自愈（#4097 读数）：被拒 {stats['denials']} 次 / "
+              f"自愈 {stats['recovered']} 次（率 {_rate:.0%}，窗口 3 个事件）"
+              + (f" ❌ 未自愈（{stats['unrecovered'][0]['error']}"
+                 f"@R{stats['unrecovered'][0]['at']}）" if stats["unrecovered"] else ""))
+
+
 async def _close_and_verify_session(case, token: str, r: dict, session_id: str) -> None:
     """关闭用例会话并执行关闭后置断言（失败按用例级失败计入 r）。
 
@@ -6953,6 +7665,14 @@ async def _close_and_verify_session(case, token: str, r: dict, session_id: str) 
     await _end_session(token, r.get("final_session_id") or session_id,
                        debug_user=getattr(case, "debug_user", "") or "",
                        debug_permissions=_case_debug_permissions(case))
+    # 被拒后自愈率（报告型，issue #4097 评论）：放在 end_session 之后 —— 会话关闭**不删**消息，
+    # 历史接口照常可读（真值 = `SessionMemory.close_session` 只改 status 与 ended_at）。
+    # ⚠️ 报告型读数在**用例主链路**上 ⇒ 任何异常都不得中断用例（取数失败只打印一行）；
+    # 这里再包一层兜底，让"旁路不影响主路"成为结构性保证，而不是只靠内部 try。
+    try:
+        await _record_denial_recovery(case, token, r)
+    except Exception as e:                          # pragma: no cover - 兜底路径
+        print(f"     ℹ️ 自愈率记账跳过（{type(e).__name__}: {e}）")
     if not getattr(case, "post_session", None):
         return
     try:
@@ -7443,7 +8163,14 @@ def _compact_write_args(args: dict) -> dict:
 #: 通用入参压缩的边界（轨迹是日志与产物，不是全量存档）
 _ARG_MAX_VALUE = 40      # 单个标量（自由文本）最长字符数
 _ARG_MAX_ITEMS = 6       # 单个容器（dict/list）最多保留的条目数
-_ARG_MAX_DEPTH = 3       # 容器嵌套深度上限（够到 `pageMeta.params.<k>`）
+# 容器嵌套深度上限（issue #3789）：旧值 3 **够不到** `order_create` 的加工项明细
+# （`items[].processing_info.processingItems[].quantity` 是**第 5 层**容器：
+# args→items(3)→item(2)→processing_info(1)→processingItems(0)）⇒ 旧值下这一层被压成
+# `"<list N>"`、条目字段**一个都读不到** ⇒ 「加工项数量 = 面料米数」这条**字段级**结论在
+# 轨迹/产物里没有证据，只能退回自然语言 `data_checks`（issue #3789 的验收判据 2）。
+# 5 层 = 恰好够到 `processingItems[]` 的**条目**（条目 dict 落在深度 1 ⇒ 其标量值原样保留）。
+# 代价如实登记：轨迹 `call_args` 与 artifact 相应变大（有界仍靠 `_ARG_MAX_ITEMS` / `_ARG_MAX_VALUE`）。
+_ARG_MAX_DEPTH = 5
 _ARG_LOG_MAX_CALLS = 6   # 轨迹行 `callargs=` 段每次最多渲染几条调用（超出只报数，不静默丢）
 _ARG_TRUNCATED = "…"     # 截断标记（「到此为止」与「本来就这么长」必须可分）
 
@@ -7908,6 +8635,16 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # 历史轮次的**声明形态**（issue #5482）：`pre_turns` 声明了却构造不出来 = 前置**静默失效**
     # （用例带着假前置跑）⇒ 与上面同族，fail-closed 报出来。
     case_issues += check_pre_turns_declared(getattr(case, "pre_turns", None))
+    # 同会话同键重试的**声明形态**（issue #4074）：`retry_same_session` 形态错 ⇒ 第二次写请求
+    # 构造不出来（或轮数永远凑不齐）⇒ 幂等断言恒绿。与上面两条同族，fail-closed 报出来。
+    # ⚠️ 两个字段都**逐个判 list**（不是直接相加）：非列表形态由上面两条各自的判据负责报出，
+    #    在这里再 `+` 一次会当场抛 TypeError（把"用例写错了"变成"runner 崩了"，归因全错 —— 实测踩到）。
+    _declared_turns: list = []
+    for _field in ("user_inputs", "pre_turns"):
+        _v = getattr(case, _field, None)
+        if isinstance(_v, list):
+            _declared_turns.extend(_v)
+    case_issues += check_retry_same_session_declared(_declared_turns)
 
     # case 级表单值：所有 `auto_fill` 轮声明的并集 —— auto_respond 轮回答表单时复用，
     # 避免同一份收货信息在用例里重复声明（少一处漂移）
@@ -7975,6 +8712,18 @@ async def run_case(case, token: str, session_id: str) -> dict:
             text = unwrap_harness_signature(
                 resolve_repeat_turn(results, _ropts, case_form_values),
                 str(_ropts.get("fallback") or "确认下单"), harness_incompat)
+        elif isinstance(msg, dict) and msg.get("__retry__"):
+            # `retry_same_session` 展开出的轮次（issue #4074）：**同一会话**里把同一次逻辑写
+            # 请求再发一遍 —— 幂等键 = f(重试窗, 会话, 操作) ⇒ 两轮取值相同 ⇒ 服务端去重并
+            # 回放首次结果。与 `repeat_until` 共用「有什么卡答什么卡」的作答器（`resolve_repeat_turn`，
+            # 故「确认卡重复点击」形态也走这一格）；差别只在停条件（成功 ≥ `calls` 次）与
+            # **绝不换会话**（换会话 = 换键 = 这一格测不到）。
+            if retry_stop_met(results, msg.get("__retry__") or {}):
+                continue
+            _xopts = msg.get("opts") or {}
+            text = unwrap_harness_signature(
+                resolve_repeat_turn(results, _xopts, case_form_values),
+                str(_xopts.get("fallback") or "确认"), harness_incompat)
         elif isinstance(msg, dict) and msg.get("auto_respond"):
             # 合作型用户：优先回答上一轮的待答卡片，无卡则用 fallback 文本
             spec = msg.get("auto_respond") or {}
@@ -8028,6 +8777,10 @@ async def run_case(case, token: str, session_id: str) -> dict:
                                debug_permissions=_case_debug_permissions(case))
         r["__round"] = i + 1
         r["__pre_turn"] = _is_pre
+        # 会话纪元（issue #4074）：每遇到一次 `new_session` 轮 +1。幂等断言要判「两次写调用
+        # 是不是**同一个会话**」—— 幂等键的会话维度（#4195）只有在这里才可机器核对，
+        # 否则"同会话"只是文档里的一句话（跨会话重试 = 换键 = 测不到幂等）。
+        r["__session_epoch"] = session_breaks
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])
         results.append(r)
@@ -8079,15 +8832,46 @@ async def run_case(case, token: str, session_id: str) -> dict:
     # ⚠️ 不重置 case_issues：它已承载**跑轮次前**的前提校验结果（多身份，issue #3391）。
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    # 负向**按轮**卡片约束（issue #3789）：把「本轮必须走纯文本」钉成机器判据 ——
+    # 与 `forbidden_*` 家族同权（进 case_issues ⇒ score=0 + 进 summary 的 failures）。
+    case_issues += check_forbidden_interact(
+        results, getattr(case, "forbidden_interact", []) or [])
     # 全程禁用工具（issue #3544 收口批）：`X 未被调用` 写进 data_checks 是「本轮没调用」+
     # 计分「任一轮满足即过」→ 多轮恒真；本断言把「不得尝试」变成跨轮机器判定。
     case_issues += check_forbidden_tools(results, getattr(case, "forbidden_tools", []) or [])
     case_issues += check_want_text(results, getattr(case, "want_text", []) or [])
     case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
+    # 入参**值级**断言（issue #3823 的家族，声明面在本 PR 前**未接线** —— 本 PR 接线）：
+    # 证据面 = **落盘**的 `round_trace[*].call_args`（与 `check_arg_values` 的取证纪律同源；
+    # 内存里的 `results[*].tool_calls[*].args` **不**是本断言的证据面）。
+    # 与 `required_args` 的分工必须写死：#3823 的病灶就是拿"存在性"顶替"值相等"。
+    case_issues += check_arg_values(build_round_trace(results),
+                                    getattr(case, "arg_values", []) or [])
     case_issues += check_forbidden_args(results, getattr(case, "forbidden_args", []) or [])
     # 写工具成功断言（issue #3361）：期望里有写工具 ≠ 写操作真的发生。
     # 放在 required_args 之后：先证明「参数给对了」，再证明「东西真做出来了」。
-    case_issues += check_must_succeed(results, getattr(case, "must_succeed", []) or [])
+    # `source: metadata` 的条目（issue #4097）**先取落库面**（读侧 `metadata.tool_results`）
+    # 再进同一段判定 —— 取数失败/跨会话 ⇒ 把原因交给断言层报「未评估」（fail-closed）。
+    _ms_specs = getattr(case, "must_succeed", []) or []
+    _meta_rounds, _meta_err = None, ""
+    if any(isinstance(s, dict) and str(s.get("source") or "") == "metadata" for s in _ms_specs):
+        if session_breaks:
+            # 跨会话用例：读侧只能取到**最后一个**会话的落库记录 ⇒ 局部覆盖会把"早期会话里成了"
+            # 读成"从未被调用"（假红）或反之（假绿）。不猜：判「断言未评估」。
+            _meta_err = f"用例跨会话（{session_breaks} 次 new_session）⇒ 落库面只能取到最后一个会话"
+        else:
+            _meta_rounds, _meta_err = await fetch_session_tool_result_rounds(
+                token, session_id,
+                debug_user=getattr(case, "debug_user", "") or "",
+                debug_permissions=_case_debug_permissions(case))
+            if _meta_err:
+                _meta_rounds = None
+            else:
+                # 自愈率台账复用同一份取数（报告型，见 `_record_denial_recovery`）
+                _TOOL_RESULT_ROUNDS_CACHE[session_id] = _meta_rounds
+    case_issues += check_must_succeed(results, _ms_specs,
+                                      metadata_rounds=_meta_rounds,
+                                      metadata_error=_meta_err)
     # 必须失败（issue #3544 收口批）：must_succeed 的镜像 —— 「业务不得发生」也要机器可判，
     # 最坏形态是"调了且成了"（脏数据落库），而"调了但失败"/"压根没调"都算合格拒绝。
     case_issues += check_must_fail(results, getattr(case, "must_fail", []) or [])
@@ -8485,8 +9269,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 # #3781 扩展：语义从"复位**失败**"扩到"前置**压根没被应用**"
                 # —— 配置错误（type 未知/未实现）与目标状态不存在（员工/标签查不到）时，
                 # 第二次尝试的前置同样 ≠ 首次 ⇒ 结论同样不可归因于 agent。
-                _ok = not any(("未复位" in str(m)) or ("失败" in str(m))
-                              or str(m).startswith(_PRECLEAN_BAD_MARKERS)
+                _ok = not any(_clean_msg_blocks_retry_equivalence(m)
                               for m in (_msgs or []))
             except Exception as e:      # 复位失败不中断评测，但必须可见
                 _msgs = [f"⚠️ 重试前置复位异常: {type(e).__name__}: {e}"]
@@ -9651,7 +10434,7 @@ def _evidence_window(results: list) -> dict:
 
 
 def write_summary_json(path: str, label: str, shard: str, results: list,
-                       elapsed_s: float = None) -> None:
+                       elapsed_s: float = None, denial_recovery: dict = None) -> None:
     """写机器可读的本次运行汇总（issue #3361 分片基建）。
 
     为什么需要：分片后每个 job 只跑一部分用例，后续步骤（DB 审计、假绿告警）若按
@@ -9732,6 +10515,10 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
     payload["cost"] = _cost_block(results, elapsed_s)
     # verdict ledger 的键（#3769）：同一 SHA 已有结论 ⇒ 派发侧据此拒绝重复跑。
     payload["run_key"] = _run_key(results, label)
+    # 被拒后自愈率（#4097 评论）：**只加**顶层键，报告型（不参与 `completion`/`ok` 的任何判定）。
+    # 跨分片合并 = 各分片计数相加后重算率（不要对率取平均）；见 `denial_recovery_summary`。
+    if denial_recovery is not None:
+        payload["denial_recovery"] = denial_recovery
     try:
         with open(path, "w", encoding="utf-8") as f:
             _json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -9891,6 +10678,15 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             forbidden_tools=c.get("forbidden_tools") or [],
             required_args=c.get("required_args") or [],
             forbidden_args=c.get("forbidden_args") or [],
+            # 负向按轮卡片约束（issue #3789）：**必须在这里映射** —— CI 走的是本 YAML 装载
+            # 路径（`--cases .github/cases`），不是生成物 `eval_cases.py`；漏映射 = 用例声明了
+            # 「本轮不得抽卡」却在 CI 上**静默不检查**（红/绿又回到"由 agent 当轮是否抽卡决定"
+            # 的原病），与 debug_user / output_verify / namespaces / auto_fill 同款假绿。
+            # 由 `backend/ai-agent-service/tests/test_acceptance_case_checks.py` 的 PROBES 逐字段守住。
+            forbidden_interact=c.get("forbidden_interact") or [],
+            # 入参**值级**断言（issue #3823 的家族，声明面在本 PR 前**未接线**）：同上，
+            # 漏映射 = 值级断言在 CI 上静默不跑（存在性断言顶替值级 = #3823 的病灶本身）。
+            arg_values=c.get("arg_values") or [],
             must_succeed=c.get("must_succeed") or [],
             must_fail=c.get("must_fail") or [],
             amount_verify=c.get("amount_verify") or [],
@@ -10093,11 +10889,21 @@ async def main():
     ok, msg = _ci_verdict(results)
     print(f"\n{'✅' if ok else '❌'} {msg}")
 
+    # 被拒后自愈率（报告型，issue #4097 评论）：**只打印、不参与判定** —— 分母（被拒次数）
+    # 取决于被测 agent 的真实行为，把它写进通过条件会让"没有拒绝发生"变成失败（假红）。
+    _dr = denial_recovery_summary()
+    if _dr["denials"] or _dr["cases"]:
+        _rate = _dr["recovery_rate"]
+        print(f"📉 被拒后自愈率（#4097）：被拒 {_dr['denials']} 次 / 自愈 {_dr['recovered']} 次"
+              f"（率 {'n/a' if _rate is None else format(_rate, '.0%')}，覆盖 {_dr['cases']} 条用例）"
+              + (f"；未自愈用例 {_dr['unrecovered_cases']}" if _dr["unrecovered_cases"] else ""))
+
     # 机器可读汇总（分片审计/报告消费；env 未设则跳过）
     _sum_path = os.environ.get("AGENT_EVAL_SUMMARY_JSON")
     if _sum_path:
         write_summary_json(_sum_path, args.suite, args.shard, results,
-                           elapsed_s=time.monotonic() - _run_t0)
+                           elapsed_s=time.monotonic() - _run_t0,
+                           denial_recovery=_dr)
 
     sys.exit(0 if ok else 1)
 

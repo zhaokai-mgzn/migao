@@ -220,8 +220,43 @@ class TestDeclaredCasesAreWired:
                 return c
         raise AssertionError(f"用例库解析不到 {case_id} —— 判据坐标失效")
 
+    def _declared_issues(self, spec: list, sse_rounds: list) -> list:
+        """按**条目自己声明的面**逐条判定（issue #4097：`source` 缺省 = SSE 面）。
+
+        为什么要按面分发：`source: metadata` 的条目读的是**落库面**，用 SSE 轨迹喂它必然
+        fail-closed 报「断言未评估」（那是设计使然，不是缺陷）—— 本判据的目标是
+        「用例里声明的 == 运行期判的」，所以每条都要在**它自己的面**上被判定；
+        只喂 SSE 面会让新增的落库面条目在这一格恒红（并把真实信号淹掉）。
+        落库面 rounds 由 SSE 同形 rounds **反投影**（同一份事实两种投影，
+        与 runner 的 `rounds_from_history_payload` 产出的形状一致）。
+        """
+        sse = [s for s in spec if not (isinstance(s, dict) and s.get("source") == "metadata")]
+        meta = [s for s in spec if isinstance(s, dict) and s.get("source") == "metadata"]
+        issues = lr.check_must_succeed(sse_rounds, sse)
+        if meta:
+            issues += lr.check_must_succeed([], meta, metadata_rounds=self._as_metadata(sse_rounds))
+        return issues
+
+    @staticmethod
+    def _as_metadata(rounds: list) -> list:
+        """SSE 同形 rounds → 落库面同形 rounds（`{tool, result:{success,error}}`）。"""
+        out = []
+        for r in rounds or []:
+            out.append({
+                "__round": r.get("__round"),
+                "tool_calls": [{"name": tc.get("name"), "args": tc.get("args") or {}}
+                               for tc in r.get("tool_calls") or []],
+                "tool_results": [
+                    {"tool": t.get("tool"),
+                     "result": {"success": bool((t.get("result") or {}).get("success")),
+                                "error": (t.get("result") or {}).get("error")}}
+                    for t in r.get("tool_results") or []],
+                "__source": "metadata",
+            })
+        return out
+
     def test_declared_effect_assertions_catch_the_failed_write(self):
-        """三条用例声明的 `must_succeed` 在「写失败」轨迹上**逐条**判红。"""
+        """三条用例声明的 `must_succeed` 在「写失败」轨迹上**逐条**判红（各在自己的面）。"""
         probes = {
             "AS-003": "aftersale_create",
             "AS-005": "aftersale_create",
@@ -232,8 +267,9 @@ class TestDeclaredCasesAreWired:
             assert spec, f"{cid} 未声明 must_succeed —— #3778 的效果层断言被移除"
             declared_tools = [str(s.get("tool")) for s in spec]
             assert tool in declared_tools, f"{cid} 声明的写工具不含 {tool}：{declared_tools}"
-            issues = lr.check_must_succeed([_failed_create_round(tool)], spec)
-            assert len(issues) == 1, f"{cid} 在写失败轨迹上未判红（效果层是空断言）：{issues}"
+            issues = self._declared_issues(spec, [_failed_create_round(tool)])
+            assert len(issues) == len(spec), (
+                f"{cid} 在写失败轨迹上未判红（效果层是空断言）：{issues}")
 
     def test_declared_effect_assertions_stay_green_when_the_write_succeeded(self):
         """反向护栏：同一批声明在「写成功」轨迹上不报（防「加断言 = 恒红」）。"""
@@ -242,4 +278,4 @@ class TestDeclaredCasesAreWired:
             spec = self._case(cid).get("must_succeed") or []
             r = _round(3, [("order_query", {}), (tool, {})],
                        [("order_query", True), (tool, True)], text="已建单")
-            assert lr.check_must_succeed([r], spec) == [], f"{cid} 写成功时不应报"
+            assert self._declared_issues(spec, [r]) == [], f"{cid} 写成功时不应报"

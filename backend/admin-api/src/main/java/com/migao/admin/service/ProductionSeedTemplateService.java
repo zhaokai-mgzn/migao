@@ -122,11 +122,17 @@ public class ProductionSeedTemplateService {
     /** 布料路线模板名（与 V79 / schema.sql 种子逐字一致）。 */
     private static final String FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线";
 
-    /** 规范工艺词表（默认工艺的候选序；与 V72 迁移的 {@code unnest(ARRAY[...])} 逐字一致）。 */
-    private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "四爪钩", "穿杆", "平幔");
+    /**
+     * 规范工艺词表（默认工艺的候选序；与 V72 迁移的 {@code unnest(ARRAY[...])} 逐字一致）。
+     *
+     * <p>🔴 「四爪钩」已退场（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：它是
+     * <b>加工项 / 配件</b>，不是工艺（真值源 §8）⇒ 不再进词表（存量租户已有的工艺行不动，
+     * 由 {@code V135__retire_craft_sig_hook.sql} 只处理规则行）。</p>
+     */
+    private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "穿杆", "平幔");
 
     /**
-     * 规范工艺变体规则（10 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
+     * 规范工艺变体规则（7 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
      *
      * <p>与 {@code routing.py::ROUTE_RULES} 的 {@code trigger_kind='craft'} 部分逐条同源
      * （{@code priority} 由播种顺序 10/20/… 生成，与 V71/V72 种子同值）。</p>
@@ -139,9 +145,9 @@ public class ProductionSeedTemplateService {
             // ⚠️ 历史（照实留痕）：issue #4937 / O2 曾把它改成 `NULL`（部位维退场），本单把它改回来。
             {"韩褶", "布帘", "insert", "上车布", "韩褶"},
             {"打孔", "NULL", "insert", "打孔", "三边"},
-            {"四爪钩", "NULL", "insert", "上车布", "三边"},
-            {"四爪钩", "NULL", "remove", "定型", "NULL"},
-            {"四爪钩", "NULL", "remove", "复烫", "NULL"},
+            // 🔴 「四爪钩」三条规则（insert 上车布 / remove 定型 / remove 复烫）**已退场**
+            // （issue #4365，用户裁定 2026-09-27）：四爪钩是加工项、不是工艺 ⇒ 新租户不再播种它们；
+            // 存量租户由 `V135__retire_craft_sig_hook.sql` 软删。影响面见该迁移与 CHANGELOG。
             {"穿杆", "NULL", "remove", "定型", "NULL"},
             {"穿杆", "NULL", "remove", "复烫", "NULL"},
             {"平幔", "NULL", "insert", "帘头制作", "三边"},

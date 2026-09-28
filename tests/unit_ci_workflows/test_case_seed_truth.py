@@ -360,7 +360,16 @@ NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
 #: 不许悄悄落入盲区（盲区长得像通过，R5 禁的正是这种静默失效）
 DB_FETCH_JUDGED = (DB_FETCH_PRODUCT, DB_FETCH_ORDER_ITEMS)
-DB_FETCH_OUT_OF_SCOPE = ("employee", "employee_absent", "order_phone", "after_sales_ticket")
+#: 幂等两个 fetch（issue #4074）**显式登记为范围外**（登记而非沉默，口径同 `customer_order:`
+#: 与 `account_password:`）：本判据覆盖的是「商品 / 加工项 / 色名 / 客户」四类**实体字面量**，
+#: 而 `order_by_client_request_id` / `after_sales_by_client_request_id` 读的是**单据行**
+#: （`orders` / `after_sales_tickets`），且**不按任何实体字面量定位** —— 它的锚点是
+#: 「该次成功写调用回显的单据引用 + 同会话 + 是否回放」，故 `extract_seed_catalog` 里
+#: 没有可判的对象（拿种子真值判它只会得到恒假结论）。
+#: ⚠️ 真要把它纳入本判据，需要的是"单据目录"而不是种子实体目录 ⇒ 那是一次判据扩面，
+#: 应在 `DB_FETCH_OUT_OF_SCOPE` 里销账并同批补断言，**不得**靠这条注释长期挂账。
+DB_FETCH_OUT_OF_SCOPE = ("employee", "employee_absent", "order_phone", "after_sales_ticket",
+                         "order_by_client_request_id", "after_sales_by_client_request_id")
 OUTPUT_VERIFY_NAME_TOOLS_JUDGED = (TOOL_PROCESSING_MANAGE,)
 OUTPUT_VERIFY_NAME_TOOLS_OUT_OF_SCOPE = ()
 

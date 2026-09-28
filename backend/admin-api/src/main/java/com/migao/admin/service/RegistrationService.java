@@ -21,10 +21,12 @@ import com.migao.admin.mapper.RolePermissionMapper;
 import com.migao.admin.mapper.TenantApplicationMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +35,6 @@ import org.springframework.util.StringUtils;
 import java.security.SecureRandom;
 import java.text.Normalizer;
 import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -62,6 +62,12 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class RegistrationService {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final TenantApplicationMapper applicationMapper;
     private final TenantMapper tenantMapper;
@@ -208,8 +214,8 @@ public class RegistrationService {
         String phoneKey = REG_PHONE_KEY + phone;
         Long phoneCount = redisTemplate.opsForValue().increment(phoneKey);
         if (phoneCount != null && phoneCount == 1) {
-            Duration ttl = Duration.between(LocalDateTime.now(),
-                    LocalDate.now().plusDays(1).atTime(LocalTime.MIDNIGHT));
+            Duration ttl = Duration.between(businessClock.now(),
+                    businessClock.today().plusDays(1).atTime(LocalTime.MIDNIGHT));
             redisTemplate.expire(phoneKey, ttl);
         }
         if (phoneCount != null && phoneCount > PHONE_DAILY_SUBMIT_LIMIT) {
@@ -559,7 +565,7 @@ public class RegistrationService {
     }
 
     /**
-     * 为新租户初始化默认岗位（五岗）和权限
+     * 为新租户初始化默认岗位（**七岗**：五岗 + P6 正式定义的两个历史岗位码）和权限
      *
      * 岗位=角色体系（#2969）：每个岗位在 roles 表落一条记录，role_permissions 即岗位默认权限。
      * 创建员工时选岗位 → 前端预填该岗位默认权限 → 保存为员工个人权限快照。
@@ -567,7 +573,7 @@ public class RegistrationService {
     private void initializeDefaultRolesAndPermissions(Long tenantId) {
         log.info("初始化新租户默认岗位和权限: tenantId={}", tenantId);
 
-        // 创建默认岗位（五岗：管理员/客服/运营/销售/财务）
+        // 创建默认岗位（**七岗**：管理员/客服/运营/销售/财务 + 商品管理员/知识编辑 —— 后两个由 P6 正式定义）
         Role adminRole = Role.builder()
                 .tenantId(tenantId)
                 .name("管理员")
@@ -613,6 +619,30 @@ public class RegistrationService {
                 .build();
         roleMapper.insert(financeRole);
 
+        // 两个**历史岗位码**的正式定义（issue #5699 的 **P6**，出口 (i)：正式定义 —— 人类 2026-09-27 裁定）。
+        // 此前它们**不是岗位**：不在种子里、迁移链一条谓词都不提（⇒ 无 `roles` 行）、岗位权限页无法编辑，
+        // 只靠 `RoleService.getPermissionCodesForRole` 的 `switch` 一行 `case` 拿码（"幽灵角色码"）。
+        // 本单把它们**写进种子矩阵**（与回退 switch **逐值相等**，由判据 14 与镜像判据同时守着）⇒
+        // ① 岗位权限页首次能编辑它们；② 员工弹窗首次能选它们；③ 存量租户由 `V137` 建行授权。
+        // 🔴 **账号的有效权限集合逐值不变**（码集一字未改）—— 变的是**可管理性 / 可分配性**（产品面，人已裁定）。
+        Role productManagerRole = Role.builder()
+                .tenantId(tenantId)
+                .name("商品管理员")
+                .code("product_manager")
+                .description("商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .status("active")
+                .build();
+        roleMapper.insert(productManagerRole);
+
+        Role knowledgeEditorRole = Role.builder()
+                .tenantId(tenantId)
+                .name("知识编辑")
+                .code("knowledge_editor")
+                .description("知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .status("active")
+                .build();
+        roleMapper.insert(knowledgeEditorRole);
+
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
         // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
@@ -629,9 +659,26 @@ public class RegistrationService {
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
-                // 生产域**读**码（issue #5291）：生产看板 / 加工项管理 / 工艺配置 / 计件工资四个侧边栏
-                // 节点、四个页面的读端点、以及 8 个只读工具同批改挂本码（写面仍是 `processing:manage`）。
+                // 生产域**读**码（issue #5291）：同批改挂本码的是**三件不同的事**，逐件点名 ——
+                //   ① **四个侧边栏节点**（生产看板 / 加工项管理 / 工艺配置 / 计件工资）的 permissionCode；
+                //   ② **两个**只读端点：`/operations-catalog`、`/routings`（逐字同 `ProductionController`
+                //      类注记的「两个**只读**端点」）。⚠️ **不是**「该四个页面的读端点」：工艺配置页第一屏的
+                //      配置族读端点（`/route-rules` 等）今天仍由方法级 `processing:manage` 把守，且那是有
+                //      断言记录的族级决定（`ProductionRoutingReadControllerTest#endpointsDeclareManagePermission`）。
+                //   ③ 承载本码的**只读工具**（`backend/ai-agent-service/app/tools/` 下声明 `production:view` 者）——
+                //      **不写死条数**：工具会增删，写死的数字只会腐烂（判据 1/2/5/10 逐条覆盖它们）。
+                // ⚠️ 本段曾写「四个侧边栏节点、四个页面的读端点、以及 8 个只读工具同批改挂本码」：把「节点」
+                //    与「端点」混成一句（过宽/歧义），#5675 据此把计件端点的归因误写成「#5291 漏改」——
+                //    #5675 收口包复核后已证伪并同批改准（见 `ProductionController` 的「归因更正」段）。
+                // 写面仍是 `processing:manage`。
                 {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
+                // 生产执行**写**码（issue #5699 的 **I4**）：把守四个**真写**端点 —— 建加工单 / 报工 / 打任务卡 / 发货。
+                // 它们此前**只由类级读码** `order:list` 把守（`ProductionController` 的类级注解）⇒「写动作由读码把守」
+                // （判据 5 的射程只有工具层 ⇒ 端点层这一族此前没有任何判据看得见）。
+                // 🔴 授给**今日持 `order:list`** 的四个岗位（客服/运营/销售/财务）⇒ **有效权限集合逐值不变**；
+                // 新码**只**挂这四个端点（别处一律不挂）⇒ 不放宽任何别的面（逐端点读数见
+                // tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 的 I4 台账）。
+                {"生产执行", "production:execute", "production", "execute", "建加工单/报工/打任务卡/发货"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
@@ -660,10 +707,20 @@ public class RegistrationService {
                 // 财务写码（issue #5246 追加单）：登记收支流水此前挂在读码 finance:view 上
                 // ⇒ 「能看账」等于「能记账」。
                 {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
-                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/在线接待"},
+                // 🔴 描述更正（issue #5642 功能⑤）：原文「米宝对话/会话监控/在线接待」里的**米宝对话**
+                // 那截是 aspirational 的 —— 本码实测只管 `/api/admin/agent-sessions/*`（= 在线接待，
+                // `AgentSessionController` 的**类级**码），从不曾施加在对话入口上。若不更正，目录里会
+                // 同时存在两个「自称管米宝对话」的码（本行 + 新增的 agent:chat），评审必问是否重复。
+                // 存量租户的同一行由 `V132__add_agent_chat_permission.sql` 的 ③ UPDATE 回填。
+                {"会话监控", "agent:session", "agent", "session", "在线接待/会话监控"},
                 // 会话写码（issue #5246 追加单）：转接/结束/发消息此前挂在读码 agent:session 上
                 // ⇒ 只看会话的人能替客服转接与发言。
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
+                // 米宝唤出码（issue #5642 功能⑤）：与上面两个**坐席**码互不蕴含 ——
+                // 持 agent:session **不**自动获得米宝唤出权（客服默认不可唤，符合裁定⓪）；
+                // 管理员靠 `AdminGate.ADMIN_PERMISSION_CODES` 的三码全持（或其 `"*"` 通配）默认可唤，
+                // 其他员工由企业管理员在「员工管理」里勾本码授权。
+                {"米宝对话", "agent:chat", "agent", "chat", "唤出米宝对话（管理员默认/员工需授权）"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 // 岗位权限**读**码（issue #5291）：权限目录读端点（`AdminPermissionController`）与只读
@@ -690,6 +747,11 @@ public class RegistrationService {
         // 岗位默认权限（role_permissions 预置）：
         // 管理员=全部；客服=会话+客户+订单查看+售后/知识库查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
         // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
+        // ⚠️ 本段是**新租户**的岗位默认权限（seed 口径）。它与回退路径
+        // （`backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java` 的
+        // `getPermissionCodesForRole`）之间的**逐值差异**必须具名登记 + 只许缩短，判据见
+        // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 14
+        // （另有 `backend/ai-agent-service/tests/test_tool_permission_codes.py` 的镜像口径判据守着工具层）。
         // issue #5246：客服与运营加授两个**读**码（after_sales:view / knowledge:view）——
         // 两者本就是售后工单与知识库的日常使用方，此前因读写同码只能靠 order:refund / knowledge:manage
         // 才能看到菜单（= 顺带拿到写权）⇒ 本次给读码即恢复「看得见」，写权不再被动外溢。
@@ -706,7 +768,9 @@ public class RegistrationService {
         attachDefaultPermissions(tenantId, csRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
                 "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
-                "agent:session:manage"), permissionByCode);
+                "agent:session:manage",
+                // issue #5699 的 I4：生产执行写码（今日持 order:list ⇒ 建加工单/报工/打印/发货本来就过得了）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "product:category:view",
@@ -718,15 +782,29 @@ public class RegistrationService {
                 "customer:view", "finance:view", "agent:session", "employee:list",
                 "after_sales:view", "knowledge:view",
                 "order:update", "order:create", "customer:create", "finance:create",
-                "agent:session:manage"), permissionByCode);
+                "agent:session:manage",
+                // issue #5699 的 I4：生产执行写码（同上，四个端点今日对运营就是放行的）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
-                "processing:view", "inbound:view"), permissionByCode);
+                "processing:view", "inbound:view",
+                // issue #5699 的 I4：生产执行写码（销售今日持 order:list ⇒ 这 4 个端点本来就放行）
+                "production:execute"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "finance:view",
-                "processing:view", "inbound:view", "finance:create"), permissionByCode);
+                "processing:view", "inbound:view", "finance:create",
+                // issue #5699 的 I4：生产执行写码（财务今日持 order:list ⇒ 同上）
+                "production:execute"), permissionByCode);
 
-        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
+        // ── P6（issue #5699 出口 (i)）：两个历史岗位码的默认码**逐值取自回退 switch**（不增不减）──
+        attachDefaultPermissions(tenantId, productManagerRole, List.of(
+                "dashboard:view", "product:list", "product:create", "product:category",
+                "product:category:view", "processing:manage", "production:view",
+                "processing:view"), permissionByCode);
+        attachDefaultPermissions(tenantId, knowledgeEditorRole, List.of(
+                "dashboard:view", "product:list"), permissionByCode);
+
+        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=7, permissions={}", tenantId, defaultPermissions.length);
     }
 
     /**

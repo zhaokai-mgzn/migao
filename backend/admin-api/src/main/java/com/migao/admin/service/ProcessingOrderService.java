@@ -21,8 +21,10 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,6 +97,12 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 @RequiredArgsConstructor
 public class ProcessingOrderService {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final ProcessingOrderMapper processingOrderMapper;
     private final OrderMapper orderMapper;
@@ -272,7 +280,13 @@ public class ProcessingOrderService {
             // 售卖形态（issue #4529）：`saleForm === '布料'` ⇒ 选**布料基础路线**（第 4 部位）。
             // 与「部位/工艺」同一载体（`processing_info` 顶层，订单侧下单时原样落库）——
             // 不进白名单 ⇒ 派生链读不到它 ⇒ 布料单永远落窗帘路线。
-            "saleForm");
+            "saleForm",
+            // 部位级备注（issue #5685）：客户现行系统的加工单/工人扫码端上有 `部位备注: 公式--48个折`
+            // —— 它装的是「**这个数字怎么来的**」（算料依据的人工说明）。订单侧把它落在
+            // `processing_info.remark`（自由文本）⇒ 不进白名单就**不会进快照**，而快照是加工单的
+            // 固化真相（`ProcessingOrderItemBrief.remark` 早已声明，只是此前**没有任何写入方** = 死字段）。
+            // 缺值不落键（`copyIfPresent` 语义）⇒ 没填备注的单在快照里**没有**该键。
+            "remark");
 
     /**
      * **订单级**字段进加工单快照的键（issue #5177 范围 5「透传」）—— 与
@@ -377,10 +391,21 @@ public class ProcessingOrderService {
             "主布", CURTAIN_TYPE_CLOTH,
             COMPONENT_ROLE_EDGE, CURTAIN_TYPE_CLOTH);
 
-    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+    /**
+     * 加工单状态：**加工中**。
+     *
+     * <p>它是 `issued → in_processing` 这条迁移的唯一目标态，**手工与自动两条路径共用同一个字符串**：
+     * 手工 = {@link #updateStatus} 的 `action = "start"`；自动 = 首工序报满（issue #4695 / D13，
+     * 落点在 {@code ProductionService}）。两条路径走**同一张状态机**（{@link #STATUS_TRANSITIONS}）——
+     * 自动路径不另立判据、也不裸 UPDATE 绕过。</p>
+     */
+    static final String STATUS_IN_PROCESSING = "in_processing";
+
+    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
-            "issued", Set.of("in_processing", "cancelled"),
-            "in_processing", Set.of("completed", "cancelled"),
+            "issued", Set.of(STATUS_IN_PROCESSING, "cancelled"),
+            STATUS_IN_PROCESSING, Set.of("completed", "cancelled"),
             "completed", Set.of(),
             "cancelled", Set.of()
     );
@@ -388,10 +413,23 @@ public class ProcessingOrderService {
     private static final Map<String, String> STATUS_LABELS = Map.of(
             "generated", "已生成",
             "issued", "已发加工",
-            "in_processing", "加工中",
+            STATUS_IN_PROCESSING, "加工中",
             "completed", "加工完成",
             "cancelled", "已取消"
     );
+
+    /**
+     * 状态机的**唯一读口**（包级可见 ⇒ 同包的生产侧判合法性时不再抄第二份迁移表）。
+     *
+     * <p>为什么要有它：原表是 `private` ⇒ 外部消费者只能自己写一个字面量集合
+     * （「同一真值两处投影」）⇒ 迟早漂移。首工序报满的自动路径（issue #4695 / D13）因此走本方法
+     * 问合法性，落库谓词再取**本次被授权的那一个起始态** ⇒ 既走状态机、又不是裸 UPDATE。</p>
+     *
+     * <p>未知 / 缺失起始态一律 **false**（fail-closed：脏数据不推进，而不是替它挑一个合法起点）。</p>
+     */
+    static boolean allowsTransition(String from, String to) {
+        return from != null && to != null && STATUS_TRANSITIONS.getOrDefault(from, Set.of()).contains(to);
+    }
 
     /** 加工单号序号（JG-YYYYMMDD-XXXX） */
     private static final java.util.concurrent.atomic.AtomicInteger PO_SEQ =
@@ -474,7 +512,7 @@ public class ProcessingOrderService {
                 : new LinkedHashSet<>(processingOrderMapper.selectActiveOrderIds(tenantId, ids));
 
         OffsetDateTime now = OffsetDateTime.now();
-        LocalDate today = LocalDate.now();
+        LocalDate today = businessClock.today();
         // 物料键 → 行；顺序 = 先出现的物料在前（确定性输出，便于看板与快照比对）
         Map<String, List<ProductionPoolViews.PoolLine>> linesByMaterial = new LinkedHashMap<>();
         Map<String, String[]> materialOf = new LinkedHashMap<>();
@@ -1007,7 +1045,7 @@ public class ProcessingOrderService {
                                    AutoBatchPolicy policy, String rule, List<String> reasons,
                                    List<String> dispatched, List<String> failedIds,
                                    List<String> failures) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = businessClock.today();
         List<String> dueOrderIds = new ArrayList<>();
         List<String> dueReasons = new ArrayList<>();
         for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByOrder.entrySet()) {
@@ -3460,7 +3498,7 @@ public class ProcessingOrderService {
     }
 
     private String generateOrderNo() {
-        String base = "JG-" + LocalDate.now().format(PO_DATE_FMT) + "-";
+        String base = "JG-" + businessClock.today().format(PO_DATE_FMT) + "-";
         // DB 唯一约束兜底；此处随机化降低同秒碰撞概率
         return base + String.format("%04d", PO_SEQ.incrementAndGet());
     }
@@ -3468,8 +3506,21 @@ public class ProcessingOrderService {
     // ============================================================ 状态更新
 
     /**
-     * 加工单状态更新（action: issue/start/complete/cancel）。
+     * 加工单状态更新（action: issue/start/complete/cancel）—— **手工端点**。
      * 状态机校验 + 订单联动（issue → 订单 confirmed→producing；cancel → 订单 producing→confirmed 回退）。
+     *
+     * <p>🔴 <b>{@code action = "start"} 的语义（issue #4695 起显式写明）</b>：它是
+     * `issued → in_processing` 这条迁移的**手工入口**，与首工序报满的**自动入口**
+     * （{@code ProductionService}：完成 `is_start_marker` 那道工序 ⇒ 落同一个状态）**目标态相同、
+     * 状态机相同**。二者分工：</p>
+     * <ul>
+     *   <li><b>自动（默认路径）</b>= 首工序报满时由报工链自动落 —— 单进入「生产中」不再依赖人点按钮；</li>
+     *   <li><b>手工（本端点，保留）</b>= 存量单补开工 / 自动路径不适用时的兜底：单里没有任何
+     *       `is_start_marker` 工序、首工序报工时该单尚未「发加工」（`generated` 不得直达，A6 未裁定
+     *       ⇒ 自动路径不动它）、或首工序早在自动路径上线前就报满了。</li>
+     * </ul>
+     * <p>已是 `in_processing` 时本端点**照旧拒绝**（`in_processing → in_processing` 不是合法迁移）——
+     * 与自动路径的幂等语义一致：重复请求得到一句明确的「不允许变更」，而不是静默成功。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public ProcessingOrderResponse updateStatus(String rawId, ProcessingOrderUpdateRequest req,
@@ -3485,7 +3536,7 @@ public class ProcessingOrderService {
         String target;
         switch (action) {
             case "issue": target = "issued"; break;
-            case "start": target = "in_processing"; break;
+            case "start": target = STATUS_IN_PROCESSING; break;
             case "complete": target = "completed"; break;
             case "cancel": target = "cancelled"; break;
             default: throw BusinessException.validationError("无效的加工单操作: " + action);
@@ -3505,7 +3556,7 @@ public class ProcessingOrderService {
             case "issue":
                 // issue #3901：交期不允许早于今天（前端 date 控件之外的兜底，同时覆盖 agent processing_order_update 路径）
                 if (req.getExpectedDeliveryDate() != null
-                        && req.getExpectedDeliveryDate().isBefore(LocalDate.now())) {
+                        && req.getExpectedDeliveryDate().isBefore(businessClock.today())) {
                     throw BusinessException.validationError("交付日期不能早于今天");
                 }
                 upd.setIssuedAt(now);

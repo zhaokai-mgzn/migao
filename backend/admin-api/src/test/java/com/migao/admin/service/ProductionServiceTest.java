@@ -28,10 +28,13 @@ import static org.mockito.ArgumentMatchers.isNull;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -122,13 +125,61 @@ class ProductionServiceTest {
 
     private ProcessingPositionOperation op(String id, String name, String qty, boolean mustFinish,
                                           String status, String doneQty, String unitPrice, String factor) {
+        return op(id, name, qty, mustFinish, status, doneQty, unitPrice, factor, false);
+    }
+
+    /** 同 {@link #op} 的九参形态：`isStartMarker`（首工序标记，issue #4695 / D13 的触发器）显式传入。 */
+    private ProcessingPositionOperation op(String id, String name, String qty, boolean mustFinish,
+                                          String status, String doneQty, String unitPrice, String factor,
+                                          boolean startMarker) {
         return ProcessingPositionOperation.builder()
                 .id(id).tenantId(TENANT).processingOrderId(PO_ID)
                 .positionName("布帘").seq(1).operationName(name).groupName("后道").unit("套")
                 .qty(new BigDecimal(qty)).unitPrice(new BigDecimal(unitPrice)).factor(new BigDecimal(factor))
-                .isMustFinish(mustFinish).isStartMarker(false)
+                .isMustFinish(mustFinish).isStartMarker(startMarker)
                 .status(status).doneQty(new BigDecimal(doneQty)).deleted(0)
                 .build();
+    }
+
+    // ============================================================ D13 夹具（issue #4695）
+
+    /**
+     * 加工单那一行的**内存态替身**（只模拟本单用到的写面语义）。
+     *
+     * <p>为什么需要它：`verify(mapper)` 只证明「调了哪个方法」，证明不了「状态真的变了没有、
+     * 开工时刻有没有被重复报工改写」—— 而 #4695 的两条判据恰恰是后者。</p>
+     */
+    private static final class PoRow {
+        final AtomicReference<String> status = new AtomicReference<>("issued");
+        /** 每次**真的**落笔的 `in_processing_at`（`COALESCE` 语义 ⇒ 只应有第一次那笔）。 */
+        final List<OffsetDateTime> inProcessingStamps = new ArrayList<>();
+    }
+
+    /**
+     * D13 夹具：`issued` 的加工单 + 写面替身。
+     *
+     * <p>替身逐条模拟 `ProcessingOrderMapper.markInProcessingIfFrom` 的 SQL 语义：
+     * ① 谓词 `status = #{fromStatus}`（不成立 ⇒ 0 行 = 不转态，并发/重复报工在这里被挡掉）；
+     * ② `COALESCE(in_processing_at, …)`（只有第一次落笔）；
+     * ③ 读面 `selectActiveByOrderId` 跟着这行状态走（不是固定夹具值）。</p>
+     */
+    private PoRow stubIssuedProcessingOrder() {
+        PoRow row = new PoRow();
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenAnswer(invocation -> {
+            ProcessingOrder po = processingOrder();
+            po.setStatus(row.status.get());
+            return po;
+        });
+        when(processingOrderMapper.markInProcessingIfFrom(eq(PO_ID), eq(TENANT), any(), any()))
+                .thenAnswer(invocation -> {
+                    if (!Objects.equals(invocation.getArgument(2), row.status.get())) {
+                        return 0;
+                    }
+                    row.status.set("in_processing");
+                    row.inProcessingStamps.add(invocation.getArgument(3));
+                    return 1;
+                });
+        return row;
     }
 
     private Map<String, Object> reportBody(String qty, String qualifiedQty, String workType) {
@@ -1494,5 +1545,159 @@ class ProductionServiceTest {
         assertThat(positions.get(0))
                 .as("未指派 ⇒ 不显示批次行（与规格可见面同一条「缺键就缺」口径）")
                 .doesNotContainKeys("batch_no", "batch_meters");
+    }
+
+    // ============================================================ D13：首工序报满 ⇒ 加工单进生产中
+    //                                                              （issue #4695；状态机联动）
+    //
+    // 病灶：`is_start_marker`（工序库的「标记生产开始」开关）落到实例上、读面也带得出来，
+    // 但**没有任何消费者** —— 首工序报满之后加工单仍是 `issued`，在产单被当成「未开工」。
+    // 目标态（用户裁定「落 D13」）= 首工序报满 ⇒ 加工单 `issued → in_processing` + 落
+    // `in_processing_at`；且**走状态机**（合法性取自 `ProcessingOrderService` 的
+    // `STATUS_TRANSITIONS`，不裸 UPDATE 绕过）、**幂等**（重复/并发只转一次、不改写开工时刻）。
+
+    @Test
+    @DisplayName("D13 红证①（#4695）：首工序（is_start_marker）报满 ⇒ 加工单 issued → in_processing + 落 in_processing_at")
+    void firstOperationReportedDoneStartsProduction() {
+        PoRow row = stubIssuedProcessingOrder();
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "1.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "1.00", false, "done", "1.00", "0.40", "1.00", true)));
+
+        service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(row.status.get())
+                .as("首工序报满 ⇒ 加工单进入生产中（改前恒为 issued = 在产单被当成未开工）")
+                .isEqualTo("in_processing");
+        assertThat(row.inProcessingStamps).as("开工时刻必须落笔（且只有一笔）").hasSize(1);
+        // 起始态由**状态机**给出（issued 是该迁移的唯一合法起点），不是裸 UPDATE
+        verify(processingOrderMapper).markInProcessingIfFrom(eq(PO_ID), eq(TENANT), eq("issued"), any());
+        // #4117 红线一字不动：订单表仍一字不写（生产侧不得直写订单状态）
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("D13 顺序判据：单工序加工单 ⇒ 先进 in_processing 再 completed（开工时刻不得被完工判定跳过）")
+    void singleOperationOrderEntersProductionBeforeCompletion() {
+        PoRow row = stubIssuedProcessingOrder();
+        // 完工写面替身：把「完工那一刻加工单是什么状态」记下来 —— 顺序错了这里会看到 issued
+        List<String> statusSeenAtCompletion = new ArrayList<>();
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any()))
+                .thenAnswer(invocation -> {
+                    statusSeenAtCompletion.add(row.status.get());
+                    row.status.set("completed");
+                    return 1;
+                });
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "1.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "1.00", false, "done", "1.00", "0.40", "1.00", true)));
+
+        Map<String, Object> result =
+                service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(statusSeenAtCompletion)
+                .as("完工判定跑之前，加工单必须已经进过 in_processing（否则 in_processing_at 永远为空）")
+                .containsExactly("in_processing");
+        assertThat(row.status.get()).isEqualTo("completed");
+        assertThat(result.get("order_completed")).isEqualTo(true);
+        assertThat(row.inProcessingStamps).as("进了生产中又完工 ⇒ 开工时刻仍在").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("D13 幂等红证（#4695）：重复报工 ⇒ 状态只转一次、写面只被触碰一次")
+    void repeatedReportTransitionsOnlyOnce() {
+        PoRow row = stubIssuedProcessingOrder();
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "1.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "1.00", false, "done", "1.00", "0.40", "1.00", true)));
+
+        service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+        // 第二次：不同幂等键 ⇒ 真的执行（不是被幂等回放挡掉），但状态机已不许 in_processing → in_processing
+        service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(row.status.get()).isEqualTo("in_processing");
+        assertThat(row.inProcessingStamps).as("开工时刻只有第一次那笔").hasSize(1);
+        verify(processingOrderMapper, times(1))
+                .markInProcessingIfFrom(eq(PO_ID), eq(TENANT), eq("issued"), any());
+    }
+
+    @Test
+    @DisplayName("D13 并发红证（#4695）：状态已被别处推进（读到的仍是旧状态）⇒ 写面 0 行，状态与开工时刻都不动")
+    void staleReadDoesNotDoubleTransitionNorMoveStamp() {
+        OffsetDateTime firstStamp = OffsetDateTime.parse("2026-09-26T09:00:00+08:00");
+        PoRow row = stubIssuedProcessingOrder();
+        // 模拟并发：库里已经转过（in_processing + 首笔开工时刻），而本次报工读到的是**旧**状态 issued
+        row.status.set("in_processing");
+        row.inProcessingStamps.add(firstStamp);
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenAnswer(invocation -> {
+            ProcessingOrder stale = processingOrder();
+            stale.setStatus("issued");
+            return stale;
+        });
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "1.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "1.00", false, "done", "1.00", "0.40", "1.00", true)));
+
+        service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(row.status.get()).as("不得二次转态").isEqualTo("in_processing");
+        assertThat(row.inProcessingStamps)
+                .as("不得改写首次开工时刻（CAS 谓词不成立 ⇒ 0 行）")
+                .containsExactly(firstStamp);
+        // 尝试过写、但被 SQL 谓词挡下（0 行）—— 断言写面被调用次数 = 1，证明「只转一次」不是靠不调用
+        verify(processingOrderMapper, times(1))
+                .markInProcessingIfFrom(eq(PO_ID), eq(TENANT), eq("issued"), any());
+    }
+
+    @Test
+    @DisplayName("D13/A6 保守读法：加工单还是 generated（未发加工）⇒ 首工序报满**不动它**（不绕过状态机直达）")
+    void generatedProcessingOrderDoesNotJumpIntoProduction() {
+        PoRow row = stubIssuedProcessingOrder();
+        row.status.set("generated");
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "1.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "1.00", false, "done", "1.00", "0.40", "1.00", true)));
+
+        service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(row.status.get())
+                .as("generated 不能直达 in_processing（A6 未裁定 ⇒ 保守不动，仍需先「发加工」）")
+                .isEqualTo("generated");
+        verify(processingOrderMapper, never()).markInProcessingIfFrom(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("D13 负例：**非**首工序（is_start_marker=false）报满 ⇒ 不触发（触发器是那道标记工序）")
+    void nonStartMarkerOperationDoneDoesNotStartProduction() {
+        PoRow row = stubIssuedProcessingOrder();
+        when(positionOperationMapper.selectById("op-1"))
+                .thenReturn(op("op-1", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00")));
+
+        service.report(ORDER_ID, "op-1", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(row.status.get()).isEqualTo("issued");
+        verify(processingOrderMapper, never()).markInProcessingIfFrom(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("D13 负例：首工序**部分**报工（4/10 米）⇒ 不触发（触发点是「报满」，不是认领）")
+    void partialReportOnStartMarkerDoesNotStartProduction() {
+        PoRow row = stubIssuedProcessingOrder();
+        when(positionOperationMapper.selectById("op-s"))
+                .thenReturn(op("op-s", "精裁-布", "10.00", false, "pending", "0.00", "0.40", "1.00", true));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-s", "精裁-布", "10.00", false, "done", "4.00", "0.40", "1.00", true)));
+
+        service.report(ORDER_ID, "op-s", reportBody("4", "4", "normal"), TENANT, null);
+
+        assertThat(row.status.get()).as("4/10 米不是「报满」").isEqualTo("issued");
+        verify(processingOrderMapper, never()).markInProcessingIfFrom(any(), any(), any(), any());
     }
 }

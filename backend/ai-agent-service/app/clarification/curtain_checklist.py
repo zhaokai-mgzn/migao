@@ -32,7 +32,7 @@ CHECKLIST: List[Dict[str, Any]] = [
     {"id": "open_count", "label": "打开方式", "ui": "choice", "default_src": "industry",
      "default_rule": "width", "note": "≤2.2m 默认单开 / >2.2m 双开 / >5m 四开（可覆盖）"},
     {"id": "craft", "label": "安装工艺", "ui": "choice", "default_src": "industry",
-     "default": "韩褶", "note": "韩褶/打孔/四爪钩/穿杆"},
+     "default": "韩褶", "note": "韩褶/打孔/穿杆"},
     {"id": "is_shaped", "label": "定型", "ui": "choice", "default_src": "industry",
      "default_rule": "curtain_type", "note": "布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）"},
     # 用料公式（issue #4873，用户 2026-09-21 需求）：**替换**退役的褶距问项 ——
@@ -91,7 +91,10 @@ CALC_OUTPUT_PASSTHROUGH_KEYS = ("fullness", "fullness_actual", "pleat_count")
 MIN_FULLNESS = 1.5          # 褶皱倍数下限
 WIDTH_SINGLE_MAX = 2.2      # 单开默认上限（2026-09 客户实证：2.05m 单开）
 WIDTH_FOUR_MIN = 5.0        # 四开默认下限
-VALID_CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆")
+# ⚠️ 「四爪钩」**不在**合法工艺里（issue #4365，用户裁定 2026-09-27）：它是**加工项/配件**，
+# 真值源 §8 把它指向主线工艺「韩褶」（信号层 V63 起同口径）⇒ 口语「四爪钩/四叉钩」在
+# 术语表那一层就归一到「韩褶」，本表只放**工艺**本身。
+VALID_CRAFTS = ("韩褶", "打孔", "穿杆")
 ASK_PER_ROUND = 3           # 每轮最多问 2~3 个（认知负担上限）
 MAX_ROUNDS = 3              # 追问轮次上限 → 转复尺/人工
 
@@ -121,7 +124,7 @@ def conflicts(collector: Dict[str, Any]) -> List[str]:
         warns.append(f"褶数 {pleats} 无法被开数 {open_count} 整除，将取最近可行褶数")
     craft = collector.get("craft")
     if craft is not None and craft not in VALID_CRAFTS:
-        warns.append(f"工艺「{craft}」不在可选范围（韩褶/打孔/四爪钩/穿杆）")
+        warns.append(f"工艺「{craft}」不在可选范围（韩褶/打孔/穿杆）")
     if craft == "打孔" and pleats is not None:
         warns.append("打孔工艺按孔数计（不按褶数），褶数信息将被忽略")
     fullness = collector.get("fullness")

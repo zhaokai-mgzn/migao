@@ -31,7 +31,8 @@ import java.util.Set;
  *       ⇒ {@code applicable=true} + 该道工序的单价；其余 {@code false}）。
  *       之所以派生而不是抄 84 行：夹具只覆盖 3 条路线（11 + 10 + 6 道）用到的工序，
  *       抄全量矩阵会带进一堆本夹具没有库行的逻辑工序 ⇒ {@code missing_operations} 假红；</li>
- *   <li>{@link #rules()} —— 规则表**逐条抄自 V71/V72 种子的 26 行**（工艺变体 10 + 特殊选项 16），
+ *   <li>{@link #rules()} —— 规则表**逐条抄自 V71/V72 种子的 23 行**（工艺变体 7 + 特殊选项 16；
+ *       原 10 条工艺变体里 {@code craft='四爪钩'} 的 3 条随 issue #4365 退场），
  *       工序名与锚点都是逻辑名；</li>
  *   <li>{@link #mainline()} —— 规范主线 9 道（{@code ROUTE_MAINLINE_STEPS}）。</li>
  * </ul>
@@ -435,7 +436,15 @@ public final class RoutingModelFixture {
         return plan;
     }
 
-    /** 旧结构的 9 条「(部位 × 工艺) 展开路线」冻结期望（真值源 routing.py::ROUTINGS 逐字快照）。 */
+    /**
+     * 旧结构的 9 条「(部位 × 工艺) 展开路线」冻结期望（旧 `(部位×工艺)` 载体 `routing.py::ROUTINGS`
+     * 与旧表 `production_routings` 的历史留痕快照）。
+     *
+     * <p>🔴 **历史载体 ⇒ 保留不动**（issue #4365 的显式保留项）：本表**零生产消费者**（没有测试读它），
+     * 服务的是**旧表**而不是新模型（主线 + `production_route_rules`）。其中
+     * `布帘×四爪钩` / `纱帘×四爪钩` 两行是 V54/V58 的**存量历史行** —— 「四爪钩退场」退的是**工艺规则**
+     * （见 {@link #RULES} 与 `V135__retire_craft_sig_hook.sql`），不退历史行（V135 已逐字登记该边界）。</p>
+     */
     public static final String[][] LEGACY_ROUTINGS = {
             {"布帘", "韩褶", "精裁-布,布三边,韩褶-布,上车布-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
             {"布帘", "打孔", "精裁-布,布三边,打孔-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
@@ -464,16 +473,22 @@ public final class RoutingModelFixture {
      *   <li>纱帘/帘头路线**再没有**「纱帘不做熨烫/定型/复烫/车被」这层差异
      *       （那层差异正是「部位参与取路」，已退场）；帘头路线也不再被
      *       {@code 定型 × 帘头} 的适用性影响。</li>
+     *   <li>🔴 两条 `四爪钩` 组合（issue #4365）：它**不是工艺**（是加工项/配件）⇒ 那 3 条规则
+     *       退场后，这两个组合 = **主线原样**（**少一道 `上车布`、多 `定型` / `复烫`**）。
+     *       保留这两行是**有意**的：存量单 {@code order_items.craft='四爪钩'} 仍可能被重新派生，
+     *       而这次「一次性影响面」是用户**已知悉并接受**的
+     *       （见 {@code V135__retire_craft_sig_hook.sql} 与 {@code CHANGELOG.md}）——
+     *       把它**钉成判据**才不会再漂。新单不可能产生该值（下单页/工具枚举已同步收窄）。</li>
      * </ul>
      */
     public static final String[][] DEPOSITIONED_ROUTINGS = {
             {"布帘", "韩褶", "精裁-布,布三边,韩褶-布,上车布-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
             {"布帘", "打孔", "精裁-布,布三边,打孔-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
-            {"布帘", "四爪钩", "精裁-布,布三边,上车布-布,熨烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
+            {"布帘", "四爪钩", "精裁-布,布三边,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
             {"布帘", "穿杆", "精裁-布,布三边,熨烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
             {"纱帘", "韩褶", "精裁-纱,纱三边,韩褶-纱,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
             {"纱帘", "打孔", "精裁-纱,纱三边,打孔-纱,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
-            {"纱帘", "四爪钩", "精裁-纱,纱三边,上车布-纱,熨烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
+            {"纱帘", "四爪钩", "精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
             {"纱帘", "穿杆", "精裁-纱,纱三边,熨烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
             {"帘头", "平幔", "精裁-布,布三边,帘头制作,熨烫-布,定型-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货"},
     };
@@ -482,27 +497,37 @@ public final class RoutingModelFixture {
      * 纱帘列的冻结序列（issue #4962 **改判**）：分叉面只有那条带 `position='布帘'` 的规则
      * （`韩褶 → insert 上车布`）⇒ **纱帘×韩褶 没有 `上车布-纱`**；其余工艺与布帘列逐道同类、
      * 只差变体名（#4937 的「部位无关」在**未限定**的规则上照旧成立）。
+     *
+     * <p>🔴 `四爪钩` 行与 {@link #DEPOSITIONED_ROUTINGS} 同步改为**主线原样**（issue #4365：
+     * 那 3 条 `craft='四爪钩'` 规则退场 ⇒ 不再有 `insert 上车布`，`定型-纱` / `复烫-纱` 也不再被 remove）。</p>
      */
     public static final String[][] DEPOSITIONED_ROUTINGS_SHEER = {
             {"纱帘", "韩褶", "精裁-纱,纱三边,韩褶-纱,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
             {"纱帘", "打孔", "精裁-纱,纱三边,打孔-纱,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
-            {"纱帘", "四爪钩", "精裁-纱,纱三边,上车布-纱,熨烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
+            {"纱帘", "四爪钩", "精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
             {"纱帘", "穿杆", "精裁-纱,纱三边,熨烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货"},
     };
 
     // ══════════════════════════ 规则表 ══════════════════════════
 
     /**
-     * 规则表 26 行（**逐条抄自 V71/V72 种子**）：工艺变体 10 + 特殊选项 16。
+     * 规则表 23 行（**逐条抄自 V71/V72 种子**）：工艺变体 7 + 特殊选项 16。
+     *
+     * <p>🔴 **「四爪钩」三条已退场**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）：
+     * 它是**加工项 / 配件**、不是工艺 ⇒ 原 priority 40/50/60 的三条
+     * （`insert 上车布` / `remove 定型` / `remove 复烫`）在建库终态（
+     * {@code backend/admin-api/src/main/resources/db/init/schema.sql}）与真值源
+     * （{@code backend/ai-agent-service/app/production/routing.py::ROUTE_RULES}）里都不再播种；
+     * 存量库由 {@code backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql}
+     * 软删。本表是**新模型**（主线 + {@code production_route_rules}）的输入 ⇒ 必须与终态同源
+     * （10 − 3 = 7 条 craft 规则）。</p>
+     *
      * 字段序：{@code {trigger_kind, trigger_value, position|NULL, action, operation, after|NULL, priority}}。
      */
     private static final String[][] RULES = {
             {"craft", "韩褶", "NULL", "insert", "韩褶", "三边", "10"},
             {"craft", "韩褶", "布帘", "insert", "上车布", "韩褶", "20"},
             {"craft", "打孔", "NULL", "insert", "打孔", "三边", "30"},
-            {"craft", "四爪钩", "NULL", "insert", "上车布", "三边", "40"},
-            {"craft", "四爪钩", "NULL", "remove", "定型", "NULL", "50"},
-            {"craft", "四爪钩", "NULL", "remove", "复烫", "NULL", "60"},
             {"craft", "穿杆", "NULL", "remove", "定型", "NULL", "70"},
             {"craft", "穿杆", "NULL", "remove", "复烫", "NULL", "80"},
             {"craft", "平幔", "NULL", "insert", "帘头制作", "三边", "90"},
@@ -524,7 +549,7 @@ public final class RoutingModelFixture {
             {"option", "扣环", "NULL", "insert", "扣环", "三边", "250"},
             {"option", "防翘扣", "NULL", "insert", "防翘扣", "三边", "260"}};
 
-    /** 规则表（26 行；{@code id} 用 {@code rr-<priority>} 的确定性命名，保证 {@code (priority, id)} 稳定）。 */
+    /** 规则表（23 行 = 工艺变体 7 + 特殊选项 16；{@code id} 用 {@code rr-<priority>} 的确定性命名，保证 {@code (priority, id)} 稳定）。 */
     public static List<ProductionRouteRule> rules(Long tenantId) {
         List<ProductionRouteRule> rows = new ArrayList<>();
         for (String[] row : RULES) {
@@ -563,7 +588,7 @@ public final class RoutingModelFixture {
      * **加工项触发**规则（3 条，issue #4577）：与
      * {@code V84__seed_processing_item_route_rules.sql} / {@code backend/admin-api/src/main/resources/db/init/schema.sql} 逐条同值。
      *
-     * <p>刻意**不并进** {@link #rules()}：那张表被守卫钉为「V71 字面量种子的 26 行镜像」
+     * <p>刻意**不并进** {@link #rules()}：那张表被守卫钉为「V71 字面量种子的 23 行镜像」
      * （{@code test_production_catalog_seed.py::test_route_rules_converge_across_three_sources}）
      * —— 加工项规则的种子在 V84（按租户派生），不在 V71 的字面量里。</p>
      */
