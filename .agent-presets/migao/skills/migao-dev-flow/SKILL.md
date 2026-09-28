@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.86.0
+version: 1.87.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -2453,7 +2453,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 **宁缺勿滥**（不写进研发模式）。本会话的实测代价：一份转述清单逐条复核后，
 有若干条**读错了对象**（见 §25.6 的边界节与 `FM-A4` / `FM-B3`）。
 
-### 25.2 清单 A：读数与它声称的对象**不是同一个**（15 条；末 8 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标 / 夹具未跟上新增依赖 / 过度加严的假阻塞**）
+### 25.2 清单 A：读数与它声称的对象**不是同一个**（16 条；末 9 条是**镜像形态 / 引用面 / 否定性结论 / 校验坐标 / 夹具未跟上新增依赖 / 过度加严的假阻塞 / 源码与产物不是同一对象**）
 
 | 记号 | 形态 | 判别动作（一次就能做） | 判据 / 台账 |
 |---|---|---|---|
@@ -2477,6 +2477,7 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 | 记号 | 形态 | 判别动作 | 判据 / 台账 |
 |---|---|---|---|
 | **FM-A15** | 🔴 **一味 fail-closed = 新的假阻塞**（**已两次实证**）：为了让门禁**更严**，把**非阻塞红 / 无法判定 / 常态落后**也当成失败 ⇒ 工具被**停住**、人开始**绕它**。**实测①**（PR #5719）：`land` 把「分支自己**已提交**的预设改动」当成快照漂移 ⇒ ①步连停 3 次。**实测②**（PR #5722）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，而该 PR 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`、未收尾。⚠️ `land` 是**所有 PR 落地都走的工具** ⇒ **一次假阻塞停全线** | 🔴 **加严之前先问一句**：「**这个形态在正常流程里会不会常态出现？**」并给一次**回放**读数：把该判据 / 该停止条件在**最近 N 次成功流程**上回放，数出它会判红 / 会停的次数 —— **>0 ⇒ 它不是绊线，是路障**（正常流量本来就会撞上它）。**落地形态**：停/不停**只看拦合并的判据**（现取 `required` 集合）＋**非 required 红如实打印逐条清单**＋**取不到 `required` 集合 ⇒ 退回严格行为并打印原因** | 判据 = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_wait_ci_required_red_still_stops_at_step_four` · `::test_wait_ci_bare_red_continues_and_prints_the_list` · `::test_wait_ci_unreadable_required_set_falls_back_to_strict`（判别力自证 = `::test_wait_ci_criteria_have_discriminating_power`；覆盖面登记见 §25.6） |
+| **FM-A16** | 🔴 **源码里的写法正确，构建产物里是另一个对象**：`frontend/bmini-app/src/styles/tabbar.scss` 写 `calc(var(--taro-tabbar-height) + …)`，构建把**这个变量名**改写成 `var(--50PX)` ⇒ 变量解析不到 ⇒ 声明在计算值阶段失效（`unset`→`auto`）⇒ 线上条高塌成 26px、标签出屏（坏了约 29 分钟）。⚠️ 三种「看起来没问题」的读数一起骗过了我：jest/tsc 全绿 · **产物没看** · CI 全绿（没有判据读产物）。⚠️ 探针定界：`var(--my-thing)` 原样保留 ⇒ 只有那个名字被特殊处理 | 🔴 **改了引用第三方注入变量的样式后，把产物当第二个对象核对**：① `npm run build:h5` 后 `grep -o '<选择器>{[^}]*}' dist/css/app.css` ② 拿不准就**放对照组**（自造变量 vs 第三方变量同规则并置）③ 线上 `curl` css 复探 —— 三者缺一都不算「看过了」 | `frontend/bmini-app/tests/tabbar-layout.test.ts`（①b 禁引该变量名 + ①c 字面量 ≡ Taro 现值） |
 | **FM-B1** | 路由常量**被声明**、还被判据比对过 `app.config.ts`，却**没有任何跳转用它们** ⇒ 页面在册、可编译、有单测，而用户**一步也走不到** | 声称「某页面 / 入口已交付」先答**三问**（谁发射 / 哪个入口可达 / 有无测试钉住），再跑 `cd frontend/bmini-app && npx jest tests/page-entry-reachability.test.ts`（L2 未登记即红 · L3 登记了没人指向也红 · L3b 定义但从未被调用也红 · L3c HTML 注释里的锚点不算入口） | `frontend/bmini-app/tests/page-entry-reachability.test.ts`（`PAGE_ENTRY_LEDGER`） |
 | **FM-B2** | 一条发布腿**注册了但从未跑过** ≠ 交付（`/b/`、`/w/` 停在旧构建） | 线上复探 + 仓库侧看对账腿：`curl -sI https://app.migaozn.com/b/`（产物哈希 vs 本次构建）+ `grep -n 'reconcile_one' .github/workflows/deploy-reconcile.yml` | `test_bmini_h5_hosting.py::test_real_publish_leg_has_no_problems` |
 | **FM-B3** | **文档写了 ≠ 行为正确** | 逐条答「**交付物可达性判据（v1.11）**」三问：**谁发射**（哪个文件、哪个分支条件）/ **哪个入口可达**（什么话术或路径）/ **有无测试钉住**；**任一答不出记未交付** | 判别动作（正文在 `migao-acceptance` 技能的同名节；⚠️ **不在** `docs/testing/acceptance-protocol.md` 里 —— 本会话实测有人把它读成后者） |
@@ -2508,6 +2509,11 @@ git show origin/main:<path> | grep -n '<符号>'   # 只读核查一律走 git �
 
 - ❌ **判据只保证「每条纪律都有承载体」，不保证「承载体本身是对的」** —— `criterion` 解析成的是
   「文件里**逐字出现**这个名字」，**不是**「该判据真的会为这条纪律变红」（红是那条判据自己的事，见 §23 G7）；
+- ❌ **`FM-A16`（源码正确 ≠ 产物正确）的判据只覆盖「那一个变量名 + 那一个包」**：
+  `frontend/bmini-app/tests/tabbar-layout.test.ts` 的 ①b/①c 钉的是 `--taro-tabbar-height` 在
+  `frontend/bmini-app/**` 的 scss 里不得被引用（+ 字面量须等于 Taro 实现包现值）。**其它包 / 其它第三方注入变量 /
+  其它构建期改写**（`postcss-pxtransform` 只改了那一个名字；换插件就换名字 ⇒ 换一个新面）**没有通用判据**
+  ⇒ 这一类只能靠**判别动作**（读产物 + 对照探针 + 线上复探）逐个核；
 - ❌ **`kind=action` 的条目靠人执行**：判据只能保证它列在下面这行里、且带可复制命令；
   **没有任何东西**会拦住「人不去执行它」。
   **判别动作行（现取）**：`FM-A5`、`FM-A8`、`FM-A9`、`FM-A11`、`FM-A12`、`FM-A13`、`FM-B3`、`FM-C3`、`FM-C4`
@@ -2829,6 +2835,10 @@ python3 scripts/next_case_id.py --help    # 三态退出码：0 = 已给号 / 2 
 
 ## 版本沿革（v1.1 → v1.82.0）
 
+- v1.87.0（2026-09-28 **新增 §25.2 的 `FM-A16`（源码正确 ≠ 产物正确：构建期把第三方注入了的变量名改写成另一个对象）**，本次；来源 = #5754 的链内修：底栏居中首版引用 Taro 的 `var(--taro-tabbar-height)`，构建改写成 `var(--50PX)` ⇒ 规则失效、线上条高塌成 26px，靠**线上复探**才发现（本会话第三次「三种绿读数一起骗过」）。
+  ① **承载体**：`tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json` 的 `entries` + 本表 + §25.6 覆盖面登记；`kind=criterion` ⇒ `gap` 计数**不动**（只许缩短的语义不变），§19 活索引行的读数（`FM-E` 端点 / CI 面条数 / `kind=action` 条数）也**不动**。
+  ② **判据（可照搬的形态）**：`frontend/bmini-app/tests/tabbar-layout.test.ts` 的 ①b「本仓 scss 出现 `var(--taro-tabbar-height` 即红」+ ①c「字面量必须等于 Taro 实现包现取值，找不到定义 fail-closed」。
+  ③ **判别动作**：改了「引用第三方注入变量」的样式后，必须 **读产物** + **放对照组**（探针）+ **线上复探** 三件套；同一 PR 里还要把该腿登记进 `declaration_gate_registry`（凡路径门控的 PR 门禁未登记即红）。
 - v1.86.0（2026-09-28 **把「合并结果」这一面变成 PR 面可拦：`FM-E22` 的合并探测（不改门禁配置）**，本次；来源 = 用户 2026-09-28 逐字「**根据你的建议继续推进即可**」）：
   ① **病（`FM-E18` 的时序根因）**：两个**各自新鲜**的分支合并后，块 hunk 取并集、而两侧**同值的汇总 hunk 干净合并不重算** ⇒ **落地那份生成物比源陈旧**（现场：**8112 行 / 8112 行、仅 4 行不同**，`git merge-tree` **零冲突**）；而 PR 面的新鲜度判定只看**本树** ⇒ 中间有一段**无人判**的窗口，首撞者常是**下一个无辜 PR**。
   ② **修法（第三条出口，不改分支保护）**：`scripts/generated_artifacts_freshness.py --merge-probe <ref>` —— `git merge-tree --write-tree` 取**合并树** → `git archive` + `tarfile` 解到临时目录 → 对**它**跑同一个 `evaluate()`（**只读**：不落工作区、不写仓内对象）；三态 `0/1/3`（取不到基线 **或**与基线冲突 ⇒ 3，且**出声**）；**归因两面都给读数**（本树 / 合并结果）。
