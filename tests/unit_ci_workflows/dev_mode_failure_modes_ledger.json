@@ -472,6 +472,25 @@
         "#5755",
         "#5756"
       ]
+    },
+    {
+      "id": "FM-A17",
+      "family": "A",
+      "symptom": "🔴 **改了门禁面，却没跑「门禁自己的判据集」**（2026-09-28 实测：为一个 bmini 包连烧 **3 轮** CI，每轮 `ci workflow helper unit tests` ≈ **16.5 分钟**）：CI 那条 job 跑的是 `tests/unit_ci_workflows/**` 一整套判据，而本地 `./verify-all.sh gate` **一条都不跑** —— 它只在控制台打一行「残余未覆盖 …」⇒ 改 `.github/**` 的包**只能等 CI 才知道红**，而三次红的内容**全部可在本地复现**：① 新 job 未登记进 `tests/unit_ci_workflows/declaration_gate_registry.json`（凡路径门控的 PR 门禁必须在册）；② 撞「CI 腿 ⇄ 本地腿」同源契约（`test_local_gate_matrix.py::CI_LEG_COMMANDS`）；③ **我自己注释里写的**弱断言字面量被文本扫描当成实例（`FM-A11`「举例即实例」同族）。⚠️ 三种「看起来没问题」的读数一起骗过我：本地 gate ✅（**它明明打印了那一面「未跑」**）、tsc/jest 全绿、直到 CI 才红。⚠️ 这条与 `FM-A12`（否定性结论没有对象可指）**互为镜像**：「未跑」是一个**没有对象可点的读数**，所以它最容易被读成「没问题」。",
+      "action": "🔴 **变更集命中 `.github/**` 或 `tests/unit_ci_workflows/**` 时，开 PR 前先本地跑一遍 CI 的同名 job**（`python3 -m pytest tests/unit_ci_workflows -q`，≈16 分钟）；**本地 gate 的「未跑」行是路标，不是绿灯** ——它的含义是「这条面本地一条都没跑」，而不是「这条面没问题」。**落地形态（已落码）**：`verify-all.sh` 新增 ci-helper 腿 —— 命中上述两个面 ⇒ 真跑同一条命令；未命中 ⇒ 控制台**显式声明「未跑」**（不许静默 ✅）。触发面**刻意不纳入** `frontend/**`：那会让每个前端 PR 多等 ≈16 分钟，而前端面的弱断言已由 gate 档的 growth gate 扫到（实测那次正是它先抓到的）。",
+      "kind": "criterion",
+      "criteria": [
+        "tests/unit_ci_workflows/test_ci_helper_leg.py"
+      ],
+      "evidence": [
+        "verify-all.sh",
+        "tests/unit_ci_workflows/test_ci_helper_leg.py",
+        ".github/workflows/pr-check.yml"
+      ],
+      "refs": [
+        "#5770",
+        "#5762"
+      ]
     }
   ],
   "ci_findings": [

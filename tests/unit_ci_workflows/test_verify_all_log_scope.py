@@ -51,6 +51,11 @@ TMP = Path("/tmp")
 
 # 产物命名（`verify-all.sh` 的 `report()`）与「失败时才把路径打进控制台」的形态。
 PID_LOG_GLOB = "verify-all-%s-*.log"
+
+#: `run_gate()` 默认要读的**检查项日志 slug**（`report()` 用它拼日志名）。
+# 🔴 issue #5770 起 gate 档**不止一条**日志（新增 ci-helper 腿）⇒「本次运行**恰好一条**自己的日志」
+# 这个旧前提**已经不成立** ⇒ 改为**按 slug 选**（「找不到 / 日志为空」两道保护原样保留）。
+DEFAULT_LOG_SLUG = "QA-Growth-Gate"
 LOG_LINE_RE = re.compile(r"日志: (?P<path>\S+)")
 
 # 被禁形态**拼接构造**：本文件自己会被 `test_no_unscoped_tmp_log_cleanup_in_test_dir` 扫描
@@ -139,14 +144,25 @@ def _locate_report(pid, pre, hits, own, console) -> str:
     ])
 
 
-def locate_own_logs(pid, pre, run_start_ns, console="") -> list:
-    """按 PID 通配定位 + **归属过滤**；拿不到**恰好一条**自己的日志 ⇒ `VerifyAllLogNotFound`。"""
+def locate_own_logs(pid, pre, run_start_ns, console="", expect_slug=None) -> list:
+    """按 PID 通配定位 + **归属过滤**；`expect_slug` 给定时**按检查项 slug 选**（issue #5770）。
+
+    · `expect_slug=None`（缺省）⇒ 旧口径：**恰好一条**自己的日志，否则报红（兼容既有调用方）；
+    · `expect_slug="<slug>"` ⇒ 在「自己的日志」里按 slug 选出**恰好一条** ——
+      gate 档现在有多条日志（growth gate / ci-helper 腿…），旧的「恰好一条」前提已不成立。
+    """
     pattern = PID_LOG_GLOB % pid
     hits = sorted(TMP.glob(pattern))
     own = [p for p in hits if is_own_log(p, pre, run_start_ns)]
-    if len(own) == 1:
-        return own
-    raise VerifyAllLogNotFound(_locate_report(pid, pre, hits, own, console))
+    if expect_slug is None:
+        if len(own) == 1:
+            return own
+    else:
+        wanted = [p for p in own if expect_slug in p.name]
+        if len(wanted) == 1:
+            return wanted
+    raise VerifyAllLogNotFound(_locate_report(pid, pre, hits, own, console)
+                               + "\n  期望日志（按检查项 slug）: %s" % (expect_slug or "（未指定，按恰好一条）"))
 
 
 def run_gate(repo, *, mode="gate", env=None, plant_foreign_stale=False,
@@ -198,10 +214,14 @@ def run_gate(repo, *, mode="gate", env=None, plant_foreign_stale=False,
         if p.exists() and p not in own:
             own.append(p)
 
-    if len(own) != 1:
-        raise VerifyAllLogNotFound(_locate_report(pid, pre, hits, own, out))
+    wanted = [p for p in own if DEFAULT_LOG_SLUG in p.name]
+    if len(wanted) != 1:
+        raise VerifyAllLogNotFound(
+            _locate_report(pid, pre, hits, own, out)
+            + "\n  期望日志（按检查项 slug）: %s ⇒ 命中 %d 条（issue #5770 起 gate 档不止一条日志）"
+            % (DEFAULT_LOG_SLUG, len(wanted)))
 
-    log_path = own[0]
+    log_path = wanted[0]
     try:
         log = log_path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
