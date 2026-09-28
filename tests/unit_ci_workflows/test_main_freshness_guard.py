@@ -31,6 +31,21 @@ r"""**main 侧生成物新鲜度守护腿**的判据（issue #5687 族的 burn-d
 | 7 | **零新开闭环**：本腿登记进 `scripts/mechanism-registry.json`（含 `schedule` + 写作用域 ⇒ 未登记即红），读数步是 job 的最后一步且 `if: always()` | 删登记 / 改读数步位置 ⇒ 非空 |
 | 8 | **不放宽既有门禁**：本腿不得出现在 `pr-check.yml`，不得挂 `pull_request` 面，不得进 required snapshot | 各注入一次 ⇒ 非空 |
 | 9 | **覆盖面显式登记**：边界表逐条带 `face`/`reason`/`owner`/`restart`，且**第 3 条边界被行为级证明是真的** | 去掉表头 / 去掉字段 ⇒ 非空 |
+| 10 | **「行数相同」不是新鲜度证据**：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = `8112 行 / 8112 行，不同 4 行`）⇒ 仍必红且具名 | 把「逐字节相等」换成「**只比行数**」的内存变异体 ⇒ 同一夹具**变绿** |
+| 11 | **「文件内部自洽」也不是证据**：同一夹具的分域合计**仍等于**总数（读文档看不出来）⇒ 不影响判红 | 同判据 10（同一条比较挣来的） |
+
+## 2026-09-28 的第三例（issue #5741）：**两个各自自洽的分支合并** ⇒ 「块进了、汇总没进」
+
+`git merge-tree --write-tree 2550bc4f4 e3d35c130` 的结果与实际落进 main 的那份 casebook **逐字节相同**
+（`diff` 0 行、**零冲突**）：块 hunk 取并集（46 + 1 = 47），而**两侧同值的汇总 hunk 干净合并、不重算**
+⇒ 落地的汇总读数比 `.github/cases/**` **少 1**。判据 10/11 把这次学到的两条伪装钉住：
+
+- 伪装 ①：**行数相同**（提交版 8112 行 / 现取 8112 行 —— 拿行数当新鲜度证据会漏掉它）；
+- 伪装 ②：**文件内部自洽**（分域合计 == 总数 —— 拿「读文档」当证据同样会漏掉它）。
+
+唯一的证据只有一条：**与 `.github/cases/**` 重渲染的结果逐字节相等**。
+🔴 这道题的根因在**时序**（「检查跑的那份快照 ≠ 实际落地的那份合并结果」），**不是**「少了一条判据」——
+两条真出口（分支保护要求分支最新 / 落地后即时校验并阻断）登记在 `docs/wiki/CI-CD.md` 的 `FM-E18` 一节。
 
 ## 🔴 明确的边界（**不要**把本判据读成覆盖面更大）
 
@@ -863,3 +878,104 @@ class TestBoundaryIsRegistered:
         rc_broken, out_broken, rep_broken = _run(broken)
         assert rc_broken == 0 and rep_broken.get("verdict") == "fresh", (
             f"坏渲染器下本应「两侧一致 ⇒ 绿」（这正是登记的边界）：rc={rc_broken}\n{out_broken}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 10/11：合并产物的两种伪装 —— 「行数相同」与「文件内部自洽」
+# （issue #5741 的现场：两个各自自洽的分支合并 ⇒ 块进了、汇总没进）
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: casebook 的汇总节标题。「分域合计」**只在这一节里取** —— 否则正文里的 `- xx：N` 也会被数进来。
+SUMMARY_HEADING = "## 覆盖统计（生成）"
+TOTAL_RE = re.compile(r"- 用例总数：(\d+)（活跃 (\d+)，跳过 (\d+)）")
+TIER_RE = re.compile(r"- tier 分布：smoke (\d+) / normal (\d+) / adversarial (\d+)")
+DOMAIN_RE = re.compile(r"^- ([^：\n]+)：(\d+)$", re.MULTILINE)
+
+
+def summary_block(text: str) -> str:
+    """casebook 的**汇总节**（`SUMMARY_HEADING` 起）。取不到 ⇒ 大声失败（夹具不许静默）。"""
+    return text[text.index(SUMMARY_HEADING):]
+
+
+def summary_self_consistency(text: str) -> tuple[int, int]:
+    """`(总数, 分域合计)` —— 「文件内部自洽」这条伪装的机械读数。"""
+    block = summary_block(text)
+    total = TOTAL_RE.search(block)
+    assert total, "取不到总数行（用例库渲染格式变了 ⇒ 本判据需同批改）"
+    return int(total.group(1)), sum(int(m.group(2)) for m in DOMAIN_RE.finditer(block))
+
+
+def make_summary_stale_in_place(text: str) -> tuple[str, dict]:
+    """把 casebook 的**汇总读数整体减 1**、**不增减任何行** —— 复现 git 三方合并产出的形态。
+
+    与真实现场**同一处**的五个数：① 该域的分域行 ② 它的分域标题（`## <域>（N case）`）
+    ③ 用例总数 ④ `跳过`数 ⑤ `tier` 的 normal 数。⇒ 文本**行数不变**，且**分域合计仍等于总数**。
+    """
+    block = summary_block(text)
+    total = TOTAL_RE.search(block)
+    tier = TIER_RE.search(block)
+    domains = list(DOMAIN_RE.finditer(block))
+    assert total and tier and domains, "夹具锚点不在了（用例库渲染格式变了 ⇒ 本判据需同批改）"
+
+    name, n = domains[-1].group(1), int(domains[-1].group(2))
+    stale = text
+    for old, new in (
+        (total.group(0),
+         f"- 用例总数：{int(total.group(1)) - 1}（活跃 {total.group(2)}，跳过 {int(total.group(3)) - 1}）"),
+        (tier.group(0),
+         f"- tier 分布：smoke {tier.group(1)} / normal {int(tier.group(2)) - 1} / adversarial {tier.group(3)}"),
+        (domains[-1].group(0), f"- {name}：{n - 1}"),
+        (f"## {name}（{n} case）", f"## {name}（{n - 1} case）"),
+    ):
+        assert old in stale, f"夹具锚点不在了：{old!r}"
+        stale = stale.replace(old, new, 1)
+    return stale, {"domain": name, "total": int(total.group(1)), "skipped": int(total.group(3)),
+                   "normal": int(tier.group(2)), "domain_n": n}
+
+
+class TestMergeUnionShape:
+    """**判据 10/11**：git 三方合并产出的「块进了、汇总没进」（issue #5741 的现场形态）。"""
+
+    def _stale_repo(self, root: Path) -> tuple[Path, dict]:
+        repo = _build_repo(root)
+        md = repo / COVERED_ARTIFACTS[1]
+        original = md.read_text(encoding="utf-8")
+        stale, readings = make_summary_stale_in_place(original)
+        assert stale != original, "变异没生效（红证会是空断言）"
+        assert len(stale.splitlines()) == len(original.splitlines()), "本夹具要求**行数不变**"
+        md.write_text(stale, encoding="utf-8")
+        return repo, readings
+
+    def test_merge_union_shape_is_red_even_with_equal_line_count(self, tmp_path):
+        """**判据 10/11（行为级）**：行数相同 + 文件内部自洽 ⇒ **仍必红且具名**。"""
+        repo, readings = self._stale_repo(tmp_path / "union")
+        md_text = (repo / COVERED_ARTIFACTS[1]).read_text(encoding="utf-8")
+        # 伪装 ②：文件内部自洽（分域合计 == 总数）—— 真实现场就是这样，读文档看不出来
+        got = summary_self_consistency(md_text)
+        assert got == (readings["total"] - 1, readings["total"] - 1), \
+            f"夹具没有复现「内部自洽」这条伪装（红证会是空断言）：{got}"
+
+        rc, out, report = _run(repo)
+        assert rc == 1, f"行数相同、内部自洽的合并产物没判红（rc={rc}）：\n{out}"
+        rows = {d["artifact"]: d for d in report["drifted"]}
+        assert COVERED_ARTIFACTS[1] in rows, f"没具名报出 casebook：{report['drifted']}"
+        row = rows[COVERED_ARTIFACTS[1]]
+        # 伪装 ①：行数相同（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同）
+        assert row["committed_lines"] == row["renewed_lines"], (
+            f"本夹具要的正是「行数相同」（实测 {row}）—— 行数不同就证不到判据 10")
+        assert row["changed_lines"] >= 1, row
+        assert named_report_problems(list(report["problems"])) == [], "\n".join(report["problems"])
+
+    def test_line_count_compare_mutant_turns_that_fixture_green(self, tmp_path):
+        """**红证（判据 10/11）**：把「逐字节相等」换成「**只比行数**」⇒ 同一夹具**变绿**。
+
+        ⇒ 上一条的红是**这条比较**挣来的（判别力证明）。变异在**内存里** exec，不碰磁盘
+        （依据 `docs/wiki/CI-CD.md`「改磁盘文件的变异可能不被读到」）。
+        """
+        repo, _readings = self._stale_repo(tmp_path / "union-mutant")
+        mutant = _mutate(_script_source(), "            if committed == renewed:",
+                         "            if len(committed.splitlines()) == len(renewed.splitlines()):"
+                         "  # 变异：只比行数")
+        module = _exec_mutant(mutant)
+        rc = module.main(["--repo", str(repo)])
+        assert rc == 0, f"只比行数的变异体仍判红（rc={rc}）⇒ 判据 10 的判别力证明不成立"

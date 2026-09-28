@@ -3117,7 +3117,7 @@
 数据: 每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』
 数据: 每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**
 数据: 覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）
-数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 16 条（`FM-E1`~`FM-E17`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
+数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 17 条（`FM-E1`~`FM-E18`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
 数据: **未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`
 数据: **抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）
 数据: **抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）
@@ -3240,7 +3240,8 @@
 数据: 判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）
 数据: 告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）
 数据: 覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）
-数据: 九条判据各配注入式红证；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数
+数据: 十一条判据各配注入式红证；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数
+数据: **合并产物的两种伪装**（issue #5741 的现场，判据 10/11）：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同；且**分域合计仍等于总数** ⇒ 内部自洽）⇒ 仍必红且具名；把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具变绿（判别力自证）。🔴 根因在**时序**（检查跑的快照 ≠ 落地的合并结果），两条出口登记在 docs/wiki/CI-CD.md 的 FM-E18（需人裁定）
 跳过: [backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-27 新增（关联 #5687；残余的登记处 = tests/unit_ci_workflows/test_casebook_summary_is_derived.py 边界节逐字写着『不覆盖 main 侧』）：当天两次 CI 红都红在生成物新鲜度，其中一次归因被指到无关 PR 并被写进公开记录，每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。落码 = 新增 main 侧守护腿（push + schedule + workflow_dispatch；schedule 的理由 = push 会被 auto-merge 吞掉，issue #3113/#5001）+ 把 pr-check 面与 verify-all.sh gate 的内联 render+diff **全部**收敛到单一实现 scripts/generated_artifacts_freshness.py（parity 守卫的锚点同批改准）+ 具名报错（产物/差量/复算命令/候选区间只给读数）+ 九条判据（含 fail-closed 红证、恒绿反转红证、坏渲染器边界的行为级证明）。取号 MC-031（rebase 让号，记实）：起草 MC-029，每次 rebase 都被新并入的判据占用 ⇒ 顺延到 MC-031（main 上 MC-001~MC-030 已占用） ｜ tags: ci, freshness, main-side-guard, red-proof, fail-closed
