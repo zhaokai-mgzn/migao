@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -850,3 +851,141 @@ class TestVolumeBudgets:
                                           "grep -E '^(FAILED|ERROR) ' 都不算实现\n    steps:", 1)
         assert noisy != text, "注释注入没生效"
         assert summary_budget_problems(yaml.safe_load(noisy)) == [], "只加注释却判红 ⇒ 判据在读原文"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 19（**行为级**，`FM-E21` 的第二半）：把 workflow 里那两段 shell **抠出来真跑**，量真实字节数
+#   为什么还要这一层：上面 16~18 只判「结构 + 值域」（常量在不在、值在不在限内）。独立验收指出
+#   「`FM-E21` 的通过在**生产**上没有重放（没遇到 17.6MB 输出的场景）」⇒ 本判据把判定步的预算段
+#   与钩子的 body 拼装段在沙箱里执行，把「摘录 / 清单 / 承接单 body 都在限内」变成**行为读数**，
+#   并配「换回 `cat` ⇒ 真的溢界」的红证（否则仍是纸面判据）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+BUDGET_BLOCK_START = "FAILED_MAX=40"
+BUDGET_BLOCK_END = 'if [ "$RC" = "3" ]; then'
+HOOK_BLOCK_START = "BODY=$(mktemp)"
+HOOK_BLOCK_END = "exit 0"          # 连 gh 调用段一起（body 组装只是前半段）
+GH_EXPR_RE = re.compile(r"\$\{\{[^}]+\}\}")
+
+
+def _step_run(marker: str) -> str:
+    """含 `marker` 的那个 step 的 `run` 文本（锚点缺失 ⇒ 大声失败）。"""
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for step in _budget_job(doc).get("steps") or []:
+        run = str(step.get("run") or "")
+        if marker in run:
+            return run
+    raise AssertionError(f"找不到含 {marker!r} 的 step（结构变了 ⇒ 本判据需同批改）")
+
+
+def _slice(run: str, start: str, end: str, *, include_end: bool = False) -> str:
+    """抠出 `[start, end)`；`include_end=True` 时**连 end 行一起**（`{ … } > file` 这种成对结构必须带上）。"""
+    assert start in run, f"锚点缺失：{start!r}"
+    assert end in run, f"锚点缺失：{end!r}"
+    i = run.index(start)
+    j = run.index(end, i)
+    return run[i:(j + len(end)) if include_end else j]
+
+
+def _sandbox(tmp: Path) -> Path:
+    tmp.mkdir(parents=True, exist_ok=True)
+    (tmp / "summary.md").write_text("", encoding="utf-8")
+    return tmp
+
+
+def _bash(script: str, cwd: Path, env: dict) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", "-c", script], cwd=str(cwd), capture_output=True, text=True, env=env)
+
+
+def _big_output(tmp: Path, *, noise: int = 60000, failed: int = 40) -> None:
+    """造一份「像真实判红那样大」的输出：> 1MiB，且带可 grep 的 `FAILED` 行。"""
+    lines = [f"pytest noise line {i}" for i in range(noise)]
+    lines += [f"FAILED tests/unit_ci_workflows/test_case_{i}.py::test_x - assert {i} == {i + 1}"
+              for i in range(failed)]
+    (tmp / "post-merge-verify.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _budget_shell(tmp: Path) -> tuple[Path, str, dict]:
+    tmp = _sandbox(tmp)
+    _big_output(tmp)
+    script = _slice(_step_run("FAILED_MAX="), BUDGET_BLOCK_START, BUDGET_BLOCK_END)
+    script = script.replace("/tmp/", f"{tmp}/")
+    env = {**os.environ, "GITHUB_STEP_SUMMARY": str(tmp / "summary.md"), "GITHUB_ENV": str(tmp / "env"),
+           "SEEN": "3", "ACTED": "2", "EVENT": "pull_request", "BASE": "abc1234",
+           "BASE_SOURCE": "test", "RC": "1"}
+    return tmp, script, env
+
+
+class TestBudgetBehaviour:
+    def test_summary_list_and_excerpts_are_byte_bounded(self, tmp_path):
+        tmp, script, env = _budget_shell(tmp_path / "sandbox")
+        proc = _bash("set -u\n" + script, tmp, env)
+        assert proc.returncode == 0, proc.stderr[-600:]
+
+        summary = (tmp / "summary.md").stat().st_size
+        assert summary <= SUMMARY_HARD_LIMIT, f"摘要 {summary} B 超过 GitHub 上限 {SUMMARY_HARD_LIMIT}"
+        text = (tmp / "summary.md").read_text(encoding="utf-8")
+        assert "仅附**尾部**" in text, "摘要没有声明「仅附尾部」（读者会以为看到了全文）"
+
+        excerpt = (tmp / "post-merge-verify-excerpt.txt").stat().st_size
+        assert excerpt == 200000, f"摘要摘录应等于 SUMMARY_EXCERPT_BYTES（实测 {excerpt}）"
+        issue_excerpt = (tmp / "post-merge-verify-issue-excerpt.txt").stat().st_size
+        assert issue_excerpt <= ISSUE_BODY_HARD_LIMIT, f"承接单摘录 {issue_excerpt} 超过 issue body 上限"
+
+        failed_list = (tmp / "post-merge-verify-failed.txt").read_text(encoding="utf-8").splitlines()
+        assert len(failed_list) == 40, f"失败清单必须被 head -n 限到 40 条（实测 {len(failed_list)}）"
+        assert "FAILED tests/unit_ci_workflows/test_case_0.py" in proc.stdout, \
+            "失败清单必须打到 **stdout**（判红要可 grep，不能只躺在摘要里）"
+
+    def test_unbounded_variant_really_overflows(self, tmp_path):
+        """**红证（判据 19）**：把 `tail -c` 换回 `cat` ⇒ 摘要**真的**溢界（证明上面那条不是恒真）。"""
+        tmp, script, env = _budget_shell(tmp_path / "sandbox-mutant")
+        mutated = script.replace('tail -c "$SUMMARY_EXCERPT_BYTES"', "cat", 1)
+        assert mutated != script, "锚点失配（没换成 cat）"
+        proc = _bash("set -u\n" + mutated, tmp, env)
+        assert proc.returncode == 0, proc.stderr[-400:]
+        summary = (tmp / "summary.md").stat().st_size
+        assert summary > SUMMARY_HARD_LIMIT, (
+            f"换回 `cat` 之后摘要仍只有 {summary} B ⇒ 上面那条「≤ 上限」不是这条截断挣来的（空断言）")
+
+
+class TestHookBodyBehaviour:
+    def _hook_sandbox(self, tmp: Path, *, fallback: str) -> tuple[Path, str, dict]:
+        tmp = _sandbox(tmp)
+        # 只放**摘要摘录**（200000 B），不放 issue 摘录 ⇒ 强制走**兜底路径**
+        (tmp / "post-merge-verify-excerpt.txt").write_text("x" * 200000, encoding="utf-8")
+        shim = tmp / "bin"
+        shim.mkdir(exist_ok=True)
+        gh = shim / "gh"
+        gh.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$GH_LOG"\nexit 0\n', encoding="utf-8")
+        gh.chmod(0o755)
+        hook = _slice(_step_run("gh issue list --state open --search"), HOOK_BLOCK_START, HOOK_BLOCK_END,
+                      include_end=True)
+        hook = GH_EXPR_RE.sub("stub", hook)                     # GitHub 表达式在沙箱里没有值
+        hook = hook.replace("/tmp/", f"{tmp}/").replace("BODY=$(mktemp)", f"BODY={tmp}/body.txt")
+        if fallback == "cat":
+            hook = hook.replace('tail -c "${ISSUE_EXCERPT_BYTES:-30000}"', "cat", 1)
+        env = {**os.environ, "PATH": f"{shim}:{os.environ.get('PATH', '')}",
+               "GH_LOG": str(tmp / "gh.log"), "ISSUE_EXCERPT_BYTES": "30000",
+               "GITHUB_TOKEN": "stub"}
+        return tmp, hook, env
+
+    def test_issue_body_stays_below_the_limit_even_on_the_fallback_path(self, tmp_path):
+        tmp, hook, env = self._hook_sandbox(tmp_path / "hook", fallback="tail")
+        proc = _bash('TITLE="stub"; EXIST=""\n' + hook, tmp, env)
+        assert proc.returncode == 0, proc.stderr[-600:]
+        body = (tmp / "body.txt").stat().st_size
+        assert body <= ISSUE_BODY_HARD_LIMIT, (
+            f"兜底路径的承接单 body = {body} B > issue body 上限 {ISSUE_BODY_HARD_LIMIT} ⇒ 还是开不出单")
+        log = (tmp / "gh.log").read_text(encoding="utf-8") if (tmp / "gh.log").exists() else ""
+        assert "issue create" in log or "issue comment" in log, \
+            f"钩子没有真调 gh（说明这一段没被跑到 ⇒ 本判据会是空断言）：{log[:200]!r}"
+
+    def test_pre_fix_fallback_really_overflows(self, tmp_path):
+        """**红证**：把兜底换回 `cat`（修复前的形态）⇒ body **真的**超 65536。"""
+        tmp, hook, env = self._hook_sandbox(tmp_path / "hook-mutant", fallback="cat")
+        proc = _bash('TITLE="stub"; EXIST=""\n' + hook, tmp, env)
+        assert proc.returncode == 0, proc.stderr[-400:]
+        body = (tmp / "body.txt").stat().st_size
+        assert body > ISSUE_BODY_HARD_LIMIT, (
+            f"换回 `cat` 兜底后 body 仍只有 {body} B ⇒ 上面那条限长不是兜底挣来的（空断言）")
