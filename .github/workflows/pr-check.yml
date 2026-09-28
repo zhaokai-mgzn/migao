@@ -673,12 +673,20 @@ jobs:
           # `FM-E22`：**合并结果**这一面原先无判据（`FM-E18` 的时序根因）—— 两个各自新鲜的分支合并后，
           # 生成物可能比源陈旧，而 PR 面的新鲜度判定只看**本树**。探测**只在受管用例面改动时**跑：
           # 不碰它的 PR **不替 main 侧的漂移背锅**（`FM-E4` 的归因纪律）。
+          # 🔴 **先取基线，再判 rc**（独立验收 P2-1 实测）：`origin/main` 不在检出里时
+          #    `git diff origin/main...HEAD` 会 **rc≠0**，而管道里的 rc 被 `grep` 吃掉 ⇒ 落进 else 并把原因
+          #    写成「未命中」= **归因写错**（「算不出」≠「没命中」）。⇒ 基线自己取、diff 的 rc 自己判。
+          git fetch --no-tags --quiet origin main
           PROBE_FACE_RE='(\.github/cases/|\.github/render_cases\.py|docs/testing/mibao-verification-cases\.md|tests/agent_eval/eval_cases\.py)'
-          if git diff --name-only "origin/main...HEAD" | grep -qE "$PROBE_FACE_RE"; then
+          if ! CHANGED="$(git diff --name-only "origin/main...HEAD")"; then
+            echo "::error::算不出「本次改动是否命中受管用例面」（\`git diff origin/main...HEAD\` rc≠0）⇒ **不得当「未命中」**；检查 fetch-depth: 0 / \`origin/main\` 是否可得"
+            exit 1
+          fi
+          if printf '%s\n' "$CHANGED" | grep -qE "$PROBE_FACE_RE"; then
             echo "probe=true" >> "$GITHUB_OUTPUT"
           else
             echo "probe=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ 本次改动未命中受管用例面 ⇒ **合并探测未跑**（这不是「通过」；判定面 = \`.github/cases/**\` / 渲染器 / 两个生成物）"
+            echo "ℹ️ 本次改动**算得出**且未命中受管用例面 ⇒ **合并探测未跑**（这不是「通过」；判定面 = \`.github/cases/**\` / 渲染器 / 两个生成物）"
           fi
 
       - name: Merge-result freshness（把本树合并到 main 之后，生成物还会新鲜吗）

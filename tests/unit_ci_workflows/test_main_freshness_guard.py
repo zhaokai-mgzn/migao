@@ -1043,9 +1043,15 @@ def probe_wiring_problems(pr_check_text: str) -> list[str]:
     if "probe_face" not in job or PROBE_GATE_NEEDLE not in job:
         problems.append("合并探测没有**路径门控** ⇒ 不碰受管用例面的 PR 会替 main 侧的漂移背锅"
                         "（`FM-E4` 的归因纪律）")
-    if "fetch-depth: 0" not in job:
-        problems.append("本 job 的 checkout 没有 `fetch-depth: 0` ⇒ `origin/main...HEAD` / merge-base 不可得，"
-                        "探测会退化为「无法判定」（新的假阻塞）")
+    # 🔴 必须**看结构**（checkout 步的 `with.fetch-depth`），不能只看 job 文本里有没有那个串 ——
+    #    本 job 的错误提示里就写着 `fetch-depth: 0`（引用 ≠ 实现，同族 `FM-A11`）。
+    doc = yaml.safe_load(pr_check_text)
+    steps = [s for s in (((doc.get("jobs") or {}).get("case-truth-check") or {}).get("steps") or [])
+             if isinstance(s, dict)]
+    checkouts = [s for s in steps if str(s.get("uses") or "").startswith("actions/checkout")]
+    if not any(str((s.get("with") or {}).get("fetch-depth")) == "0" for s in checkouts):
+        problems.append("本 job 的 checkout **步**没有 `fetch-depth: 0`（`with.fetch-depth`）⇒ "
+                        "`origin/main...HEAD` / merge-base 不可得，探测会退化为「无法判定」（新的假阻塞）")
     predicate = _probe_predicate(job)
     if not predicate:
         problems.append(f"门控没有可解析的路径谓词（缺 `{PROBE_RE_NEEDLE}`）⇒ 判不了它到底覆盖哪些面")
@@ -1057,6 +1063,12 @@ def probe_wiring_problems(pr_check_text: str) -> list[str]:
             problems.append(f"触发谓词**不覆盖**这几条：{missing}（受管用例面漏一条 ⇒ 该面改动不跑探测）")
     if "git fetch --no-tags --quiet origin main" not in job:
         problems.append("探测步没有先取 `origin/main` ⇒ 取不到基线（3 = 无法判定）")
+    # 🔴 验收 P2-1：门控**必须判 `git diff` 的 rc** —— 管道形态的 rc 会被 `grep` 吃掉 ⇒「算不出改动面」
+    #    被写成「未命中」（归因写错）且静默跳过。
+    if 'CHANGED="$(git diff --name-only "origin/main...HEAD")"' not in job:
+        problems.append("门控没有把 `git diff` 的 rc 判出来（管道形态 ⇒ 「算不出」会被写成「未命中」）")
+    if "算不出" not in job:
+        problems.append("门控缺 fail-closed 出口（算不出改动面时**不得**当「未命中」）")
     return problems
 
 
@@ -1151,6 +1163,18 @@ class TestMergeProbe:
         probe = module.probe_merge(two_fresh_branches, "origin/does-not-exist")
         assert probe["verdict"] == "undecidable" and "取不到" in "\n".join(probe["problems"]), probe
 
+    def test_json_carries_the_overall_verdict(self, two_fresh_branches, tmp_path):
+        """**判据（验收 P2-3）**：`--json` 顶层 `verdict` 是本树的，另须有 `verdict_overall` + `exit_code`。"""
+        out = tmp_path / "probe.json"
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(two_fresh_branches),
+                               "--merge-probe", "main", "--json", str(out)],
+                              capture_output=True, text=True, timeout=900)
+        assert proc.returncode == 1, proc.stdout[-600:]
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["verdict"] == "fresh", "顶层 `verdict` = **本树**（语义未改，向后兼容）"
+        assert payload["verdict_overall"] == "drifted" and payload["exit_code"] == 1, \
+            f"机读面缺「合起来看」的那一格 ⇒ 读的人会把合并结果的结论漏掉：{sorted(payload)}"
+
     @pytest.mark.parametrize("ref,expect_rc", [("main", 1), ("pr", 0)])
     def test_cli_exit_codes(self, two_fresh_branches, ref, expect_rc):
         """**判据 13**：CLI 把探测结论带出去（1 = 合并结果会陈旧 / 0 = 仍新鲜）。"""
@@ -1164,7 +1188,8 @@ class TestProbeWiring:
         assert probe_wiring_problems(PR_CHECK.read_text(encoding="utf-8")) == [], \
             "\n".join(probe_wiring_problems(PR_CHECK.read_text(encoding="utf-8")))
 
-    @pytest.mark.parametrize("mutation", ["drop_probe", "drop_gate", "drop_depth", "drop_one_path", "drop_fetch"])
+    @pytest.mark.parametrize("mutation", ["drop_probe", "drop_gate", "drop_depth", "drop_one_path",
+                                      "drop_fetch", "drop_rc_judge"])
     def test_each_wiring_mutation_turns_it_red(self, mutation):
         """**红证（判据 14）**：逐条破坏接线 ⇒ 各能单独变红。"""
         text = PR_CHECK.read_text(encoding="utf-8")
@@ -1181,9 +1206,15 @@ class TestProbeWiring:
                 "drop_gate": (f"        if: {PROBE_GATE_NEEDLE}\n", ""),
                 "drop_one_path": (r"\.github/render_cases\.py|", ""),
                 "drop_fetch": ("git fetch --no-tags --quiet origin main", "true  # 基线不取"),
+                "drop_rc_judge": ('          if ! CHANGED="$(git diff --name-only "origin/main...HEAD")"; then',
+                                  '          CHANGED="$(git diff --name-only "origin/main...HEAD" || true)"; if false; then'),
             }[mutation]
-            assert text.count(old) == 1, f"变异锚点失配（{mutation}）：{old!r} × {text.count(old)}"
-            mutated = text.replace(old, new, 1)
+            hits = text.count(old)
+            assert hits >= 1, f"变异锚点失配（{mutation}）：{old!r} × {hits}"
+            if mutation == "drop_fetch":
+                # 该 needle 在**本 job 里出现两次**（门控步 + 探测步）⇒ 全部撤掉才算真撤
+                assert hits == 2, f"`drop_fetch` 期望 2 处（门控 + 探测），实测 {hits} —— 结构变了就同批改"
+            mutated = text.replace(old, new) if mutation == "drop_fetch" else text.replace(old, new, 1)
         assert mutated != text, "变异没落到文本上（红证会是空断言）"
         assert probe_wiring_problems(mutated) != [], f"{mutation} 注入后判据没红 ⇒ 空断言"
 

@@ -298,6 +298,9 @@ jobs:
           FAILED_MAX=40
           SUMMARY_EXCERPT_BYTES=200000
           ISSUE_EXCERPT_BYTES=30000
+          # 承接单在**另一个 step** 里拼 body ⇒ 预算常量必须**传出去**（否则兜底路径只能读未限长的文件）
+          echo "ISSUE_EXCERPT_BYTES=$ISSUE_EXCERPT_BYTES" >> "$GITHUB_ENV"
+          echo "SUMMARY_EXCERPT_BYTES=$SUMMARY_EXCERPT_BYTES" >> "$GITHUB_ENV"
           grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt | head -n "$FAILED_MAX" \
             > /tmp/post-merge-verify-failed.txt || true
           echo "── 失败清单（前 ${FAILED_MAX} 条；判红必须可 grep，**不要**只看 step summary）──"
@@ -355,8 +358,10 @@ jobs:
             echo ''
             echo '```'
             cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \
-              || cat /tmp/post-merge-verify-excerpt.txt 2>/dev/null \
+              || tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt 2>/dev/null \
               || echo "(报告缺失 —— 见本 run 的 step summary)"
+            # 🔴 兜底**也必须限长**：`ISSUE_EXCERPT_BYTES` 由判定步经 `$GITHUB_ENV` 传进来；
+            #    原来兜底直接 `cat` 摘录（200000 B）⇒ 撞 issue body 上限 65536 ⇒ **还是开不出单**（验收 P2-2）
             echo ''
             echo "（仅附**尾部**摘录 —— 全文见 run 日志；\`FM-E21\`：承接单 body 也有体积上限，超了会**开不出单**）"
             echo '```'

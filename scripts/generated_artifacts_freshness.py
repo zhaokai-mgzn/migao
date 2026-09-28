@@ -466,6 +466,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         payload = dict(report)
+        # 🔴 验收 P2-3：只带 `--merge-probe` 时，**退出码可能是 1 而顶层 `verdict` 仍是本树的 `fresh`**
+        #    ⇒ 机读面必须自带「合起来看」的那一格，否则读的人会把合并结果的结论漏掉。
+        payload["verdict_overall"] = {RC_FRESH: "fresh", RC_DRIFT: "drifted"}.get(rc, "undecidable")
+        payload["exit_code"] = rc
         if probe is not None:
             payload["merge_probe"] = probe
         Path(args.json).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")

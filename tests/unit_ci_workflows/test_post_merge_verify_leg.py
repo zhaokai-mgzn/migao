@@ -795,6 +795,8 @@ def summary_budget_problems(doc: dict) -> list[str]:
         problems.append("失败清单没打到 stdout（缺 `grep -E '^(FAILED|ERROR) '`）⇒ 判红不可 grep")
     elif 'head -n "$FAILED_MAX"' not in judging:
         problems.append('失败清单没有条数上限（缺 `head -n "$FAILED_MAX"`）⇒ 清单自身也会压垮输出')
+    if 'echo "ISSUE_EXCERPT_BYTES=$ISSUE_EXCERPT_BYTES" >> "$GITHUB_ENV"' not in judging:
+        problems.append("预算常量没有经 `$GITHUB_ENV` 传给承接单那一步 ⇒ **兜底路径**只能读未限长文件")
     hook = _marker_run(doc, HOOK_STEP_MARKER)
     if not hook:
         problems.append("找不到判红出口（P1 值班钩子）step（结构变了 ⇒ 本判据需同批改）")
@@ -802,6 +804,11 @@ def summary_budget_problems(doc: dict) -> list[str]:
         problems.append("承接单仍在读**完整**输出（`cat /tmp/post-merge-verify.txt`）⇒ 超 issue body 上限、开不出单")
     elif ISSUE_EXCERPT_FILE not in hook:
         problems.append(f"承接单没有用限长摘录文件（{ISSUE_EXCERPT_FILE}）")
+    # 🔴 验收 P2-2：**兜底路径也必须限长** —— 原兜底直接 `cat` 摘录（200000 B）⇒ 仍会超 65536
+    if "cat /tmp/post-merge-verify-excerpt.txt" in hook:
+        problems.append("承接单的**兜底**路径仍直接 `cat` 摘录（200000 B > issue body 上限 65536）")
+    elif 'tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt' not in hook:
+        problems.append("承接单兜底路径没有限长（缺 `tail -c \"${ISSUE_EXCERPT_BYTES:-30000}\"`）")
     return problems
 
 
@@ -819,6 +826,8 @@ class TestVolumeBudgets:
         "drop_failure_list": ("grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt", "true  # 清单被删"),
         "drop_failure_cap": ('head -n "$FAILED_MAX" \\\n            > /tmp/post-merge-verify-failed.txt',
                              '> /tmp/post-merge-verify-failed.txt'),
+        "hook_fallback_uncapped": ('tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt',
+                                   "cat /tmp/post-merge-verify-excerpt.txt"),
         "hook_reads_full_output": ("cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \\",
                                    "cat /tmp/post-merge-verify.txt 2>/dev/null \\"),
     }
