@@ -43,7 +43,7 @@
     flex-shrink: 0;
     padding: 2px 10px;
     border-radius: $radius-full;
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 500;
 
     &--pending {
@@ -117,19 +117,19 @@
 
   &__item-qty {
     flex-shrink: 0;
-    font-size: 22px;
+    font-size: 24px;
     color: $text-secondary;
   }
 
   &__item-amount {
     flex-shrink: 0;
-    font-size: 22px;
+    font-size: 26px;
     color: $text-secondary;
   }
 
   &__item-more {
     display: block;
-    font-size: 22px;
+    font-size: 24px;
     color: $text-tertiary;
     padding: $space-xs 0;
   }
@@ -143,12 +143,12 @@
   }
 
   &__customer {
-    font-size: 22px;
+    font-size: 24px;
     color: $text-secondary;
   }
 
   &__customer-phone {
-    font-size: 22px;
+    font-size: 24px;
     color: $text-secondary;
   }
 
@@ -163,7 +163,7 @@
   }
 
   &__date {
-    font-size: 20px;
+    font-size: 24px;
     color: $text-tertiary;
   }
 
@@ -174,7 +174,7 @@
   }
 
   &__total-label {
-    font-size: 22px;
+    font-size: 24px;
     color: $text-secondary;
   }
 

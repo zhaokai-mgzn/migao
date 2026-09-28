@@ -67,7 +67,7 @@
   }
 
   &__chip-text {
-    font-size: 20px;
+    font-size: 24px;
     color: $text-secondary;
   }
 
@@ -84,25 +84,25 @@
   }
 
   &__price-unit {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 500;
     color: $brand-gold;
   }
 
   // 划线原价（「预计到手」时展示）
   &__price-original {
-    font-size: 20px;
+    font-size: 24px;
     color: $text-tertiary;
     text-decoration: line-through;
   }
 
   &__price-hint {
-    font-size: 20px;
+    font-size: 24px;
     color: $text-tertiary;
   }
 
   &__sales {
-    font-size: 20px;
+    font-size: 24px;
     color: $text-tertiary;
   }
 

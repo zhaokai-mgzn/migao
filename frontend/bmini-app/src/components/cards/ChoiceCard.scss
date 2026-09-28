@@ -11,7 +11,7 @@
 
   &__title {
     display: block;
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: #0a2540;
     margin-bottom: 12px;
@@ -52,18 +52,18 @@
   }
 
   &__option-label {
-    font-size: 14px;
+    font-size: 26px;
     font-weight: 500;
     color: #0a2540;
   }
 
   &__option-desc {
-    font-size: 12px;
+    font-size: 24px;
     color: #6b7280;
   }
 
   &__option-arrow {
-    font-size: 18px;
+    font-size: 24px;
     color: #9aa5b1;
   }
 
@@ -87,7 +87,7 @@
   }
 
   &__page-btn-text {
-    font-size: 13px;
+    font-size: 26px;
     font-weight: 500;
     color: #ffffff;
 
@@ -97,7 +97,7 @@
   }
 
   &__page-indicator {
-    font-size: 13px;
+    font-size: 24px;
     color: #6b7280;
   }
 
@@ -118,7 +118,7 @@
   }
 
   &__submit-text {
-    font-size: 14px;
+    font-size: 28px;
     font-weight: 600;
     color: #ffffff;
   }
@@ -131,7 +131,7 @@
   }
 
   &__skip-text {
-    font-size: 14px;
+    font-size: 26px;
     color: #4b5563;
   }
 }

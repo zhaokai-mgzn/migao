@@ -941,7 +941,7 @@
 期望: direct_reply
 数据: 判据 1·🔴 **同源请求不被判成跨域**（修复前线上 403 `Invalid CORS request`、前端只显示 `Load failed`、服务端零日志）：带 `Origin: https://app.migaozn.com` 的同源 POST 必须与不带 Origin 的同一请求同结果。实现 = backend/admin-api/src/main/java/com/migao/admin/security/SameOriginOriginHeaderFilter.java（按浏览器口径逐项比 scheme+host+port，代理不在场时退回本地视角 ⇒ 本地开发的真跨域不受影响）。红证：把 `isSameOrigin` 恒 false ⇒ SameOriginOriginHeaderFilterTest 8 条里 3 条红（实跑过）；还原即复绿
 数据: 判据 2·🔴 **H5 产物的 API/AI 基址与落地面同源**（跨域既要多一次预检、又要求白名单里有它；AI 面未配置时会 baked 成 `http://localhost:8001`）：判据 = tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py 的 test_h5_api_base_is_same_origin_as_landing_surface（落地面取自发布后断言 step，不写死常量）。红证：改回 `https://api.migaozn.com` / 删掉 `TARO_APP_AI_API_URL` ⇒ 红（实跑过）
-数据: 判据 3·**「字号太小」这一类进不来**：h5 模板必须带响应式 root font-size（Taro rem 方案缺的另一半；修复前 root 从未设置 ⇒ 全端按设计值 40% 渲染、标签实测 5.2 CSS px），且 750 设计尺度字号下限 24px、台账**只许缩短**。判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py + test_bmini_h5_delivery_contract.py；红证：写回 `font-size: 13px` / 删掉根字号脚本 / 下调 `MIN_FONT_SIZE` ⇒ 红（实跑过）
+数据: 判据 3·**「字号太小」这一类进不来**：h5 模板必须带响应式 root font-size（Taro rem 方案缺的另一半；修复前 root 从未设置 ⇒ 全端按设计值 40% 渲染、标签实测 5.2 CSS px），且 750 设计尺度字号下限 24px、台账**只许缩短**（现取 **0** —— issue #5769 收口后全库清零）。判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py + test_bmini_h5_delivery_contract.py；红证：写回 `font-size: 13px` / 删掉根字号脚本 / 下调 `MIN_FONT_SIZE` ⇒ 红（实跑过）
 数据: 判据 4·**触控目标与输入字号**：登录页交互件 ≥ 88 设计 px（≈45.8 CSS px，手指最小命中区 44 CSS px）、输入与按钮字号 ≥ 32（≈16.6 CSS px —— 输入框小于 16 CSS px 时 iOS 聚焦会放大整页）。实测 5 个视口（320/360/390/430/1024）全达标
 数据: 判据 5·**两个入口各自可登、失败方向正确**：管理员短信入口走 `POST /api/auth/sms/send` + `POST /api/auth/sms/login`（角色门禁在服务端，非管理员 401 + 引导文案，端侧不自行判角色）；员工入口失败展示服务端反枚举文案（`账号或密码错误`），**不是** `Load failed` 这类网络层文案
 跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/login-page.test.tsx；JUnit: SameOriginOriginHeaderFilterTest；pytest: tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py 与 test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟
@@ -982,12 +982,12 @@
 期望: direct_reply
 数据: 判据 1·🔴 拍照入库与补打入库标签在 `/b/` 内**有显式入口**（修复前只有「扫码报工」；这两页只从 `/w/` 报工页页头或扫标签深链可达 ⇒ 站在商家 H5 里的人一步也走不到）：判据 = frontend/bmini-app/tests/profile-page.test.tsx 断言两项在册且分别 `Taro.navigateTo` 到 `INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`（路由字面量取自 frontend/bmini-app/src/utils/inbound/gaps.ts，单一真值）。红证：删掉任一条菜单项 ⇒ 该用例判红
 数据: 判据 2·入口台账同批登记：frontend/bmini-app/src/utils/pageEntries.ts 新增两条（from = 「我的」页，nav = navigateTo，viaBinding = gaps.ts）—— 守卫 frontend/bmini-app/tests/page-entry-reachability.test.ts 判「登记了没人指向也红 / 没登记即红」
-数据: 判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 85 → 68。红证：把 15px 写回 ⇒ 该用例判红（实跑过）
+数据: 判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 **85 → 68 → 0**（第二轮收口见 issue #5769：聊天卡片与各页共 68 处一并达标，台账已清零）。红证：把 15px 写回 ⇒ 该用例判红（实跑过）
 数据: 判据 4·同批清掉从顾客端 profile 抄来、本页零引用的整块样式（CSS 尺度小字号的来源），菜单行高按手指命中区口径取 96 设计 px（≈50 CSS px，同 BM-027 的 ≥88 口径）
 跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/profile-page.test.tsx + pytest: tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-28 新增（issue #5747）：用户反馈「B 端 H5 没有拍照入库和打印标签的功能」「我的页面中的菜单列表字体太小了」⇒ 补两条工人面入口（并把它们登记进入口台账）+ 该页字号按设计尺度重写、台账份额清零。 ｜ tags: bmini, profile, worker, page-entry, typography
+溯源: 2026-09-28 新增（issue #5747）：用户反馈「B 端 H5 没有拍照入库和打印标签的功能」「我的页面中的菜单列表字体太小了」⇒ 补两条工人面入口（并把它们登记进入口台账）+ 该页字号按设计尺度重写、台账份额清零。 ｜ 2026-09-28（issue #5769，第二轮收口）：全库剩余 68 处 sub-floor 一并达标（元信息 24 / 正文选项 26 / 标题主按钮 28 / 输入框主按钮 32），并同批修掉被字号顶破的几何（改密页输入框 44 → 88、主按钮 48 → 96 设计 px）；台账 **68 → 0**。**判据一格不放宽**：下限 24 与「台账只许缩短」逐字未变。 ｜ tags: bmini, profile, worker, page-entry, typography
 
 ### BM-030. B 端 H5 底部 tabBar 居中：iOS 安全区只补一次 + 图标/文字在可视区垂直居中 🔵
 ```

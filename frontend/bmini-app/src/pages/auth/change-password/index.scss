@@ -17,7 +17,7 @@
 }
 
 .cp-desc {
-  font-size: 14px;
+  font-size: 26px;
   color: $text-secondary;
   line-height: 1.8;
   margin: 12px 0 32px;
@@ -29,15 +29,16 @@
   margin-bottom: 24px;
 
   &__label {
-    font-size: 13px;
+    font-size: 26px;
     color: $text-secondary;
     margin-bottom: 8px;
   }
 
   &__input {
-    height: 44px;
-    padding: 0 16px;
-    font-size: 15px;
+    // 设计尺度：88 = 45.8 CSS px（手指最小命中区 44 CSS px；同登录页口径 BM-027）
+    height: 88px;
+    padding: 0 32px;
+    font-size: 32px;
     color: $text-primary;
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.08);
@@ -47,11 +48,11 @@
 
 .cp-btn {
   width: 100%;
-  height: 48px;
+  height: 96px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: 32px;
   font-weight: 600;
   color: #ffffff;
   background: linear-gradient(135deg, $primary-color 0%, $primary-light 100%);
@@ -69,7 +70,7 @@
   text-align: center;
 
   &__link {
-    font-size: 13px;
+    font-size: 26px;
     color: $primary-color;
   }
 }
