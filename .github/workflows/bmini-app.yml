@@ -137,3 +137,80 @@ jobs:
         if: steps.detect.outputs.run_build == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm run build:weapp
+
+  # ── 底部 tabBar 的**几何 / 结构** e2e 腿（issue #5759）──────────────────────────
+  # 为什么要有：C 端早有 `xiaobu-h5-visual`（`mini-app.yml`），而 B 端**零 e2e** ⇒
+  #   #5754 的「底栏是否真的居中」只能人眼 + 手工量（那次连着两条 tabbar 病灶 + 一次构建陷阱）。
+  # 与 C 端那条腿的**有意差别**：本腿判几何数字（留白对称 / 每格居中 / 条贴底 / 四张图标两两不同），
+  #   **不做像素基线** —— 截图的 darwin/linux 双平台基线本机生成不齐全，几何判据跨平台确定性更好。
+  # ⚠️ 只加腿、**不动 required 集合**（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
+  tabbar-geometry:
+    name: bmini H5 tabBar geometry (e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect bmini-app changes
+        id: detect
+        run: |
+          # 与另两条腿同一门控口径：仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑。
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行几何腿"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/bmini-app/|tests/|\.github/)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 bmini-app 相关变更，执行几何腿"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 bmini-app 相关变更（其他模块 PR），跳过几何腿空跑"
+          fi
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.run_tests == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install bmini-app deps
+        if: steps.detect.outputs.run_tests == 'true'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Install Playwright deps
+        if: steps.detect.outputs.run_tests == 'true'
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Build H5
+        if: steps.detect.outputs.run_tests == 'true'
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          TARO_APP_API_URL: http://localhost:8080
+          TARO_APP_AI_API_URL: http://localhost:8001
+        run: npm run build:h5
+
+      - name: Run tabBar geometry e2e
+        if: steps.detect.outputs.run_tests == 'true'
+        working-directory: tests
+        env:
+          CI: 'true'
+        run: npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts
+
+      - name: Upload e2e artifacts (failure)
+        if: failure() && steps.detect.outputs.run_tests == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bmini-e2e-artifacts
+          path: tests/test-results/bmini/

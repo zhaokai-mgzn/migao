@@ -55,14 +55,17 @@ export default defineAppConfig({
       {
         pagePath: 'pages/dashboard/index/index',
         text: '数据',
-        iconPath: 'assets/tabbar/sessions.png',
-        selectedIconPath: 'assets/tabbar/sessions-active.png',
+        // 看板字形（issue #5759）：此前借用 sessions 的「列表」图标，语义不符，现用新建的柱状图
+        iconPath: 'assets/tabbar/dashboard.png',
+        selectedIconPath: 'assets/tabbar/dashboard-active.png',
       },
       {
         pagePath: 'pages/sessions/index/index',
         text: '坐席',
-        iconPath: 'assets/tabbar/chat.png',
-        selectedIconPath: 'assets/tabbar/chat-active.png',
+        // 🔴 此前与「问米宝」共用 chat.png（两处 img.src 的 base64 实测完全相同）⇒ 底栏两个入口长得一样；
+        // 现用「列表」字形（客服坐席列表），与问米宝的对话气泡区分开。判据 = tests/tabbar-icons.test.ts
+        iconPath: 'assets/tabbar/sessions.png',
+        selectedIconPath: 'assets/tabbar/sessions-active.png',
       },
       {
         pagePath: 'pages/profile/index/index',
