@@ -7,6 +7,7 @@
 import Taro from '@tarojs/taro'
 import { post } from './request'
 import { API_BASE_URL, STORAGE_KEYS } from './constants'
+import { isH5, H5_WECHAT_LOGIN_UNAVAILABLE_HINT } from './platform'
 import type { User, LoginResult, ApiResponse } from '../types'
 
 /**
@@ -23,13 +24,23 @@ function serverMessage(error: any, fallback: string): string {
 }
 
 /**
- * 微信小程序登录
+ * 微信小程序登录（**weapp 专用** —— h5 下不给微信换码任何机会，见下）
  * 1. 调用 Taro.login() 获取微信 code
  * 2. POST /api/auth/mini/login { code, tenantId }（admin-api camelCase 入参；历史注释误写
  *    的 `tenant_id` 与响应字段无关，勿据它推字段名）
  * 3. 存储 Token 和用户信息（`auth_user` 存 `data.user` 原样 JSON —— 形状见 types 的 `User`）
+ *
+ * 🔴 h5 分支（issue #5650，用户 2026-09-26 裁定「暂时只做 H5 浏览器访问，小程序链路先搁置」）：
+ * Taro h5 的 `login` 是 `temporarilyNotSupport('login')`（实测 `dist/api/open-api/login.js`）
+ * ⇒ 调它只会拿到「暂时不支持 API」的错误对象，用户看到的是「点了没反应」。
+ * 浏览器侧的唯一登录路径是**账号密码**（`employeeLogin` → `POST /api/auth/employee/login`），
+ * 所以这里先判平台、**连一次都不调**，并给出可行动文案。
  */
 export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
+  if (isH5()) {
+    return { success: false, error: H5_WECHAT_LOGIN_UNAVAILABLE_HINT }
+  }
+
   try {
     // 获取微信 code
     const loginRes = await Taro.login()
@@ -117,6 +128,75 @@ export async function employeeLogin(identifier: string, password: string): Promi
     return { success: true, user }
   } catch (error: any) {
     console.error('B 端员工登录失败:', error)
+    return {
+      success: false,
+      error: serverMessage(error, '登录失败，请稍后重试'),
+    }
+  }
+}
+
+/**
+ * 发送短信验证码（企业管理员登录用，issue #5721）
+ *
+ * `POST /api/auth/sms/send`，body `{ phone }`。
+ * 手机号格式 / 频控（每号 1 次/60s + 每日上限）/ 是否已注册，**单一真值都在服务端** ——
+ * 端侧不复制校验规则（否则就是第二套真值），失败文案原样回显。
+ */
+export async function sendSmsCode(phone: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const data = await post<ApiResponse<void>>(
+      '/api/auth/sms/send',
+      { phone },
+      { baseURL: API_BASE_URL, skipAuth: true },
+    )
+
+    if (!data.success) {
+      return { success: false, error: data.error?.message || '验证码发送失败' }
+    }
+    return { success: true }
+  } catch (error: any) {
+    console.error('短信验证码发送失败:', error)
+    return { success: false, error: serverMessage(error, '验证码发送失败，请稍后重试') }
+  }
+}
+
+/**
+ * 企业管理员短信登录（issue #5721）
+ *
+ * 1. `POST /api/auth/sms/login`，body `{ phone, code }`（响应体与员工登录同形：
+ *    `data.accessToken` + `data.user`）
+ * 2. **为什么商家 H5 需要它**：管理员身份在设计上是「手机号 + 短信」（员工是
+ *    「用户名@企业编码 + 密码」），而 issue #5485 之后 H5 只保留了员工入口 ⇒ 管理员
+ *    在**唯一可达的 H5** 上无路可走（存量账号 `users.username` 为 NULL，员工入口同样进不去）。
+ * 3. 角色门禁在服务端：非管理员手机号 ⇒ `401` + 明确引导文案，端侧原样展示、**不自行判角色**。
+ * 4. **不传 `tenantId`** —— 租户由服务端按手机号解析（与员工登录同纪律：前端不解析租户）。
+ */
+export async function adminSmsLogin(phone: string, code: string): Promise<LoginResult> {
+  try {
+    const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
+      '/api/auth/sms/login',
+      { phone, code },
+      { baseURL: API_BASE_URL, skipAuth: true },
+    )
+
+    if (!data.success || !data.data) {
+      return {
+        success: false,
+        error: data.error?.message || '登录失败',
+      }
+    }
+
+    const { accessToken: token, user } = data.data
+
+    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
+    if (user?.tenantId != null) {
+      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
+    }
+
+    return { success: true, user }
+  } catch (error: any) {
+    console.error('管理员短信登录失败:', error)
     return {
       success: false,
       error: serverMessage(error, '登录失败，请稍后重试'),

@@ -9,7 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import { chipToneClasses } from '@/lib/status-chip'
 import { processingOrderStatusChipFor } from '@/lib/processing-order'
-import { processingOrderApi, productionApi } from '@/lib/api'
+import { processingOrderApi, processingOrderSetApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import { useRouteId } from '@/lib/use-route-id'
 import { routeSourceNotice } from '@/lib/route-source'
@@ -19,8 +19,22 @@ import { routeSourceNotice } from '@/lib/route-source'
 import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
 import PieceworkTable from '@/components/production/PieceworkTable'
+import CutPlanTable from '@/components/production/CutPlanTable'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
-import type { PieceworkSummary, ProcessingOrder, ProductionOperations, StuckPointsReport } from '@/types'
+import type {
+  PieceworkSummary,
+  ProcessingOrder,
+  ProcessingOrderSetRow,
+  ProductionOperations,
+  StuckPointsReport,
+} from '@/types'
+
+/**
+ * 精裁输出清单一次性拉取的套数上限（服务端 `size` 上限 = 100，超出按上限收敛不报错）。
+ * 🔴 超出时**显式提示被截断**（`cutPlanTotal > cutPlanSets.length`）—— 静默少显示几套
+ * 会让裁床按一份不完整的清单下料，那是本仓最忌的静默错误。
+ */
+const CUT_PLAN_SET_PAGE_SIZE = 100
 
 /**
  * 加工单生产明细（issue #4000，M4-H 按需单据渲染）
@@ -68,6 +82,12 @@ export default function ProcessingOrderProductionPage() {
   // 「卡在哪」卡点报表（切片 ③，issue #4776；只读；设计 §6）
   const [stuckPoints, setStuckPoints] = useState<StuckPointsReport | null>(null)
   const [stuckPointsError, setStuckPointsError] = useState('')
+  // 精裁输出清单（issue #5693）：按**加工单号**取该单各套的清单（行粒度 = 套 × 部位）。
+  // 数据源 = 服务端唯一实现（后端 `ProcessingSetReadService`）—— 与工人端扫码详情**同一份**；
+  // 前端不算第二份、不做单位换算。`cutPlanTotal` 只用于「被截断」的显式提示。
+  const [cutPlanSets, setCutPlanSets] = useState<ProcessingOrderSetRow[]>([])
+  const [cutPlanTotal, setCutPlanTotal] = useState(0)
+  const [cutPlanError, setCutPlanError] = useState('')
 
   const load = useCallback(async () => {
     if (!id) return
@@ -75,6 +95,7 @@ export default function ProcessingOrderProductionPage() {
     setError('')
     setOperationsError('')
     setStuckPointsError('')
+    setCutPlanError('')
     try {
       const detailRes = await processingOrderApi.detail(id)
       const detail = detailRes.data?.data ?? null
@@ -115,6 +136,24 @@ export default function ProcessingOrderProductionPage() {
         console.error(e)
         setStuckPoints(null)
         setStuckPointsError('卡点报表加载失败，请稍后重试')
+      }
+
+      // 精裁输出清单（issue #5693）：按**加工单号**取该单各套的清单（行粒度 = 套 × 部位）。
+      // 单独一条 try：清单失败不吞掉工序/计件/卡点（页面不白屏）。
+      try {
+        const setsRes = await processingOrderSetApi.list({
+          processingOrderNo: detail.processingOrderNo,
+          size: CUT_PLAN_SET_PAGE_SIZE,
+        })
+        const items = setsRes.data?.data?.items ?? []
+        setCutPlanSets(items)
+        setCutPlanTotal(setsRes.data?.data?.total ?? items.length)
+        setCutPlanError('')
+      } catch (e) {
+        console.error(e)
+        setCutPlanSets([])
+        setCutPlanTotal(0)
+        setCutPlanError('精裁输出清单加载失败，请稍后重试')
       }
     } catch (e) {
       console.error(e)
@@ -583,6 +622,37 @@ export default function ProcessingOrderProductionPage() {
             )}
           </div>
 
+          {/* 精裁输出清单（issue #5693）：给裁床的「裁多长（米）× 几片」。
+              数据 = 服务端唯一实现（`ProcessingSetReadService`，与工人端扫码详情**同一份**
+              `set_overview.cut_plan`）—— 本页只渲染，不算法、不折算单位。
+              算不出来的格子留空 + 原因（服务端 `missing_reason`），**不**用 0 冒充。 */}
+          <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="production-cut-plan">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-base font-medium text-neutral-900">精裁输出清单</h2>
+              <span className="text-xs text-neutral-500">
+                按套 × 部位 · 算不出来的格子留空（不造数）
+              </span>
+            </div>
+            {cutPlanError ? (
+              <div
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-600"
+                data-testid="production-cut-plan-error"
+              >
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                {cutPlanError}
+              </div>
+            ) : (
+              <>
+                {cutPlanTotal > cutPlanSets.length && (
+                  <p className="mb-2 text-xs text-neutral-500" data-testid="production-cut-plan-truncated">
+                    本单共 {cutPlanTotal} 套，这里只显示前 {cutPlanSets.length} 套（请分页核对后再下料）
+                  </p>
+                )}
+                <CutPlanTable sets={cutPlanSets} />
+              </>
+            )}
+          </div>
+
           {/* 计件汇总 */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
             <h2 className="mb-3 text-base font-medium text-neutral-900">计件汇总</h2>
@@ -651,8 +721,8 @@ export default function ProcessingOrderProductionPage() {
             )}
           </div>
 
-          {/* 可打印洗水码（issue #4946：一个商品行/部位一张 60mm×30mm，码 = 该部位自己的 scan_url）；
-              屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
+          {/* 可打印洗水码（issue #4946：一个商品行/部位一张；issue #5646 纸宽 30mm→50mm ⇒ 50mm×60mm，
+              码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
             processingOrderNo={po.processingOrderNo}
             orderNo={po.orderNo}

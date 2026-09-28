@@ -71,7 +71,7 @@
 | **P3** | 默认值可见（**租户级 + 逐键**） | 租户级：读面 `source !== 'stored'` ⇒ 逐键标「未配置（正在用引擎默认值）」；**逐键**：`GET …?with_defaults=true` 附 `defaults` + `defaults_source` ⇒ 标「已改（默认 X）」/「默认」 | 未配置的键必须渲染出标记；引擎默认值**取不到**时**显式**显示「判不了」，**不得**画成「就是默认值」 |
 | **P4** | 改钱的参数给护栏 + 预览 | 算料域给**算例预览**：复用既有服务端真值（自动特征判定 / 算料试算），**不前端自拼** | 改阈值后预览数字跟着变；预览串**逐字来自服务端** |
 | **P5** | 术语可就地查 | 参数旁「说明」锚点到术语条目（复用 `glossaryAnchorOf` / `glossaryTermAnchorOf`） | 锚点 id 存在且唯一（两组同名术语用独立命名空间） |
-| **P6** | 变更留痕 | **本增量不做**（下一增量：`tenant_param_audit` 表） | 见 §6 未实装登记 |
+| **P6** | 变更留痕 | ✅ **已落**（写面，见 §6.3；口径 **B = best-effort**） | 改一个键 ⇒ 恰好一行审计且改前→改后正确；审计写失败 ⇒ 配置照常保存 **且** 失败可观测（日志 + 计数） |
 | **P7** | 复杂配置可交给 AI | **本增量不做**（复用 `docs/design/ai-craft-config.md` 阶段 2，另有单） | 见 §6 未实装登记 |
 
 ---
@@ -96,9 +96,11 @@
 
 | 增量 | 内容 | 状态 |
 |---|---|---|
-| **增量 1（本 PR）** | 企业参数中心页（四域分组 + 算料/AI 客服逐参数三件套 + **默认值可见** + 行式配置入口）+ **§22 P4 阈值试算块**（当前口径 vs 调整后阈值，服务端判定真值、不保存） | 🔨 本单 |
-| 增量 2 | 写面收口（一套 PUT 覆盖六域）+ **把 P4 推广到其余算料参数**（前置：给算料试算端点加 `config` 透传）+ **P6 变更留痕** | 后续 |
-| 增量 3 | P6 变更留痕（`tenant_param_audit`）+ P7 AI 辅助改配置 | 后续 |
+| **增量 1（PR #5135）** | 企业参数中心页（四域分组 + 算料/AI 客服逐参数三件套 + **默认值可见** + 行式配置入口）+ **§22 P4 阈值试算块**（当前口径 vs 调整后阈值，服务端判定真值、不保存） | ✅ 已交付 |
+| **增量 1.5（PR #5140 / `9b4e3a1bd`）** | §22 **P3 逐键「我改过没有」**：读面 `?with_defaults=true` 按需附引擎默认值 | ✅ 已交付 |
+| **增量 2（P6）** | §22 **P6 变更留痕**：`tenant_param_audit` + 当前唯一写面的留痕（口径 **B = best-effort**）+ 身份来源 / 「未知 + 原因」 | ✅ 本 PR（**只落写面**，读面见增量 3） |
+| 增量 3 | 写面收口（一套 PUT 覆盖六域）+ **把 P4 推广到其余算料参数**（前置：给算料试算端点加 `config` 透传）+ **P6 的读面**（「这个参数被谁改过」的展示） | 后续 |
+| 增量 4 | P7 AI 辅助改配置（复用 `docs/design/ai-craft-config.md` 阶段 2） | 后续 |
 
 ---
 
@@ -119,12 +121,69 @@
    （**不得**把「拿不到」画成「就是默认值」；这条有 Java 与前端两侧测试 + 红证）。
    ⚠️ **边界**：只覆盖**算料域标量键**；AI 客服域那两个字段（名称 / 欢迎语）没有「引擎默认值」这个概念
    （它们是租户文案，不是算料口径）⇒ **不标**。
-3. 🔴 **P6 变更留痕未落码** —— 今天**没有任何**配置变更审计，改错了无法归因。
-   ⚠️ **前置未决（开工前必须先裁定，本次已登记在 issue #5131）**：① 今天**没有「当前用户」上下文**
-   （`TenantContext` 只有 `tenantId`）⇒「谁改的」要先补一层；② `CraftCalcConfigService.put` **无
-   `@Transactional`** ⇒ 审计写入与配置写入**不原子**，必须显式选「同事务 fail-closed」还是「尽力而为」。
+3. ✅ **P6 变更留痕已落**（**只落写面**；口径 **B = best-effort**，用户 2026-09-26 裁定，见下「A/B 裁定留档」）。
+   - **表**：`backend/admin-api/src/main/resources/db/migration/V131__create_tenant_param_audit.sql`
+     （同批同步进建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态）。
+     **一行 = 一个参数键的一次变更**：`tenant_id` / `param_domain` / `param_key` / `old_value` → `new_value` /
+     `operation` + `operation_id` / `actor_id` + `actor_name` + `actor_source` + `actor_unknown_reason` / `created_at`；
+     同一次 PUT 的多行共享 `operation_id`（应用侧把同一个 id 打进配置写入的日志行 ⇒ 日志 ↔ 账本可对账）。
+     形状**照既有家法**：只追加旁路账同 `worker_report_audits`（V98，含「身份是怎么确定的」那一列）、
+     逐键 before→after 同 `agent_batch_items`（V127）。
+   - **谁改的**：**复用既有机制**（读 `SecurityContextHolder` 的 `SecurityUser`，与
+     `backend/admin-api/src/main/java/com/migao/admin/service/StockLedgerService.java` 的 `resolveOperator` **同源**；
+     同源由单测 `actorSourceStaysHomologousWithStockLedgerOperator` 钉住），并**多记一列身份来源**
+     （`actor_source`：`security_context` / `unknown`）。取不到身份 ⇒ 如实记 `unknown` + **原因**
+     （`no_authentication_context`），**不编用户**、也**不**借用库存账的 `"system"` 冒充归属
+     （DB 侧 `ck_tenant_param_audit_unknown` 钉住「未知必带原因」）。
+   - **口径 B 的落码**：审计写在 `TenantParamAuditService` 内**吞掉一切 RuntimeException** ⇒ **配置保存照常成功**；
+     失败**必须显眼** ⇒ 结构化日志 `PARAM_AUDIT_WRITE_FAILED`（含 tenant / domain / operation / operationId /
+     待写行数 / **已写行数** / 异常栈）+ 计数指标 `migao.tenant_param_audit.write_failed`。
+     ⚠️ `CraftCalcConfigService.put` 仍**无** `@Transactional`（**同事务那条口径**的前提一字未动：
+     本单**不改**事务语义）。
+   - 判据：`backend/admin-api/src/test/java/com/migao/admin/service/TenantParamAuditServiceTest.java` 九条 +
+     `CraftCalcConfigServiceTest` 的 P6 四条（改一个键 ⇒ **恰好一行**且改前→改后逐值正确 / 审计写失败 ⇒ **保存照常**
+     且计数 + ERROR 日志都在 / 422 被拒的写不写行 / 首次保存的改前值为 `null`）。
+   - ⚠️ **边界（如实登记）**：① 只覆盖**当前唯一写面** `PUT /api/admin/production/craft-calc-config`（算料域）；
+     其余域随**增量 3** 的写面收口接入（表已按 `param_domain` 预留，接域**不需要**新迁移）；
+     ② **本单没有任何读面** —— 「这个参数被谁改过」的展示属增量 3；
+     ③ 口径 B 的残留：可能出现「改了钱、查不到谁改的」—— 它**不会**让任何门禁变红，
+     可观测性只有上面那条日志与那个计数（这是 B 的**已知代价**，不是缺陷被发现后的说辞）；
+     ④ 「同一次 PUT 的多行」是**逐条 insert**（各自 autocommit）：极端情况下可能只落一部分 ——
+     这些行共享 `operation_id`，且失败日志会报「已写行数」，故**部分落库可被发现**。
 4. 🔴 **P7 AI 辅助未落码** —— 归 `docs/design/ai-craft-config.md` 阶段 2，另一单。
 5. ⚠️ **行式配置（加工费组合 / 工序库 / 工序路线 / 特殊选项价 / 计件）本增量只给入口**，
    不做统一读面 —— 它们是列表编辑，与标量参数的交互不同类。
-6. ⚠️ **只有 P2 的键集守卫是机械判据**，P1/P3/P5 由页面测试钉住，**P4/P6/P7 是纪律**。
+6. ⚠️ **只有 P2 的键集守卫是机械判据**，P1/P3/P5 由页面测试钉住；**P6 这一格现有机械判据**
+   （上面点名的 Java 测试，含注入式红证），P4/P7 仍是纪律。
 7. ⚠️ 本设计**不改任何门禁的通过条件**、**不新增豁免**。
+8. 🔴 **附带修复（本 PR 内独立提交，发现即修）**：`CraftCalcConfigService.apply(...)` **漏写三个键**
+   —— `hem_margin` / `oversize_width_threshold` / `oversize_height_threshold` 在 `CONFIG_KEYS` 里（`PUT` 缺它们 ⇒ 422）、
+   在 `validate(...)` 里被校验，但 `apply(...)` 自 #4528 起只落 8 个键，而 #5133（issue #5130）加键时**没同步加进 apply**
+   ⇒ **商家改了这三个参数、接口返回 200、库里一个字都没变**（引擎按旧值算钱），且当时**没有任何东西会因此变红**。
+   判据 = `CraftCalcConfigServiceTest#putPersistsHemMarginAndOversizeThresholds`（**改前实测红**：`insert`/`updateById`
+   拿到的实体这三个字段仍是旧值/null，响应也回显旧值）；修法是补三行 `setXxx(...)`（**不**新增任何口径）。
+   ⚠️ 这条是 P6 的**前置正确性**：留痕记的是「库里真的变了什么」，写面漏写会让账本如实记下「没变」而商家以为改了 —— 两条合起来才是「改了什么 = 记了什么」。
+
+---
+
+## 7. 裁定留档：P6 的 A/B 二选一取 **B = best-effort**（用户 2026-09-26）
+
+**问题的形态**（技术摸底时登记在 issue #5131 评论）：`CraftCalcConfigService.put` **无** `@Transactional`
+⇒ 审计写入与配置写入**天然不原子**，只有两个口径可选，必须显式选一个：
+
+| 口径 | 语义 | 代价 |
+|---|---|---|
+| A · 同事务（fail-closed） | 给 `put` 加 `@Transactional`；审计写不进去 ⇒ **配置也不保存** | 「改了钱却没留痕」不可能发生；**但给钱的写路径新增一个失败面** |
+| **B · 尽力而为（best-effort）** ✅ **裁定** | 审计失败只记日志（+ 计数），不影响配置保存 | 钱的写路径零新增失败面；**但可能出现「改了钱、查不到谁改的」** |
+
+**用户裁定（2026-09-26）：取 B。** 理由（逐字口径 → 落码形态）：
+
+1. **这是配置页，不是资金流转** ⇒ **可用性优先**：审计表抖动不该让商家改不了配置；
+2. **审计表是主要留痕载体** ⇒ 写入失败**必须以显眼的方式留痕**：
+   结构化日志 `PARAM_AUDIT_WRITE_FAILED` + 计数 `migao.tenant_param_audit.write_failed`；
+3. **不得静默** ⇒ 吞异常**只能**发生在这一处（`TenantParamAuditService`），且同一段代码里
+   必有日志 + 计数 —— 「静默失败」与「大声失败」的差别就是这条判据的落点。
+
+**残留（如实登记，不粉饰）**：B 允许「改了钱、查不到谁改的」这一形态存在，
+且它**不会**让任何门禁/探活变红。它的可观测面只有上面那条日志与那个计数 ——
+本单**不声称**「变更 100% 可归因」。

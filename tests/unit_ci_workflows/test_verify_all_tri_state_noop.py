@@ -188,8 +188,13 @@ class TestNoopGuard:
         """静态不变式：禁空跑判定必须在**任何** `report`/`report_env` 调用之前。"""
         # 只看**调用点**（4 空格缩进）——`report_env` 内部也有 `report "$name" "$@"`，
         # 用 `^\s*` 会先命中它，断言就恒真了。
-        first = re.search(r"^\s{4}report(_env)?\s+\S+\s+\"", _SCRIPT, re.M)
-        assert first, "verify-all.sh 里找不到 report/report_env 调用"
+        # ⚠️ 剥掉三个包装的**函数体**再找：包装体内也有 4 空格缩进的 `report_strict "$env_key" …`
+        #    ⇒ 不剥会把「函数定义」读成「已经派发过了」（假红，本判据自己的说明就踩过）。
+        scanned = _SCRIPT
+        for wrapper in ("report_env", "report_strict", "report_gated"):
+            scanned = scanned.replace(_extract(wrapper), "")
+        first = re.search(r"^\s{4}report(?:_env|_strict|_gated)?\s+\S+\s+\"", scanned, re.M)
+        assert first, "verify-all.sh 里找不到 report/report_env/report_strict/report_gated 调用点"
         guard = _SCRIPT.index("无变更 ⇒ 未执行任何检查")
         assert guard < first.start(), (
             "禁空跑判定出现在第一个检查项调用之后 —— 空跑时检查已经被执行了"
@@ -254,8 +259,20 @@ class TestTriState:
         """
         declared = set(re.findall(r"^\s{4}([A-Za-z0-9_-]+)\)", _extract("probe_ready"), re.M))
         assert declared >= set(_ENV_KEYS), f"probe_ready() 声明的 key 缺项：{sorted(declared)}"
-        used = set(re.findall(r"^\s*report_env\s+(\S+)\s+\"", _SCRIPT, re.M))
-        assert used, "解析不到任何 report_env 调用 —— 守卫的解析逻辑需要同步更新"
+        # ⚠️ 判定面必须是**调用点**：三个包装（report_env / report_strict / report_gated）**体内**也有
+        #    对彼此的调用（`report_gated` 里就有 `report_env "$env_key" …`）⇒ 不剥掉包装体的话，
+        #    解析出的「env key」会是 `"$env_key"` 这种**形参**（未声明 ⇒ 假红）。剥法同下一条判据。
+        scanned = _SCRIPT
+        for wrapper in ("report_env", "report_strict", "report_gated"):
+            scanned = scanned.replace(_extract(wrapper), "")
+        used = set(re.findall(r"^\s*report_(?:env|strict)\s+(\S+)\s+\"", scanned, re.M))
+        # `report_gated <env-key> <face-谓词> "检查项名" …` 多一个位置参数 ⇒ 单独一条形态。
+        used |= set(re.findall(r"^\s*report_gated\s+(\S+)\s+\S+\s+\"", scanned, re.M))
+        assert used, "解析不到任何 report_env/report_strict/report_gated 调用 —— 守卫的解析逻辑需要同步更新"
+        assert set(_ENV_KEYS) <= used, (
+            f"调用点解析只拿到 {sorted(used)}，缺 {sorted(set(_ENV_KEYS) - used)}"
+            " —— 解析口径与脚本形态漂移了（先同步本守卫，别放宽它）"
+        )
         undeclared = used - declared
         assert not undeclared, (
             f"这些 report_env 的 env key 未在 probe_ready() 里声明：{sorted(undeclared)}"

@@ -98,6 +98,14 @@ export interface ProductionPosition {
   batch_no?: string | null
   /** 该行的裁剪米数（派工净额，可能带小数，如 `2.7`）—— 与 `batch_no` 同时下发 */
   batch_meters?: number | string | null
+  /**
+   * 本部位的**任务码**（一部位一码，issue #4946；行在 `processing_set_part_tokens`）。
+   *
+   * <p>键**恒在**、未知/已撤销 ⇒ `null`（不编造）。issue #5647 起它是 bmini 报工写面的
+   * **唯一凭证**：报工只走 `scan/complete`，而该端点按**码**定位「哪一套、哪个部位」
+   * （防呆④ 非本部位码 / 防呆⑤ 工序必须确定 / 一次事务 / `done_at` 全挂在它上面）。</p>
+   */
+  part_token?: string | null
   operations: ProductionOperation[]
 }
 
@@ -359,57 +367,8 @@ export class ReportInFlightLock {
   }
 }
 
-/** 报工发送签名（在线报工与离线补传**共用同一份**实现 —— 两处各写一份必然漂移） */
-export type ReportSender = (
-  orderId: string,
-  operationId: string,
-  payload: ReportPayload,
-  requestId?: string,
-) => Promise<ProductionResponse<ReportResult>>
-
 /** 报工在飞锁实例（页面级单例：报工页同时只服务一个加工单） */
 export const reportInFlightLock = new ReportInFlightLock()
-
-/**
- * 报工（一次扫码同时推进工序进度 + 记录个人计件）
- *
- * 幂等（issue #4116 §5-1）：每次调用生成一个幂等键随请求头发出 ⇒ 工具/网络层重试
- * 同一动作时服务端只真正报工一次（响应带 `replayed:true`，调用方据此不要重复刷新/播报）。
- * **连点**由调用方的 {@link reportInFlightLock} 拦（连点 = 两个不同幂等键，服务端去重挡不住）。
- *
- * @param requestId 本次动作的幂等键（issue #4206）：**调用方生成并在重发时复用同一个键**。
- *   不传则内部生成 —— 离线补传队列必须传（复用入队时的键，否则服务端记两遍）。
- */
-export async function reportOperation(
-  orderId: string,
-  operationId: string,
-  payload: ReportPayload,
-  requestId?: string,
-): Promise<ProductionResponse<ReportResult>> {
-  try {
-    const res = await post<ProductionResponse<ReportResult>>(
-      // 🔴 工人路径（issue #4733）：`/api/worker/**` —— 与 `/api/admin/**` 彻底分离，
-      // 工人身份到不了管理后台。身份随 `X-Worker-Session-Id` 走，**不在 body 里**。
-      `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
-      payload,
-      {
-        baseURL: API_BASE_URL,
-        headers: {
-          [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId(),
-          ...workerSessionHeaders(),
-        },
-      },
-    )
-    return toResponse(res, '报工失败，请重试')
-  } catch (error: any) {
-    return {
-      success: false,
-      message: error?.data?.message || error?.message || '报工失败，请重试',
-      // 无 HTTP 状态码 = 传输层失败（断网/超时）；有状态码 = 服务端已答复（业务拒绝）
-      offline: !error?.statusCode,
-    }
-  }
-}
 
 /**
  * 扫码解析 + 工序推断（**只读**，切片 ① 的实现；切片 ② 在工人端接线）。
@@ -443,11 +402,16 @@ export async function scanResolve(
 }
 
 /**
- * 扫码**完成**（A 模式闭环的唯一写入口，切片 ② / 设计 §4 / §5）。
+ * 扫码**开工 / 领活**（**全端唯一写入口**，切片 ② / 设计 §4 / §5）。
  *
  * <p>「做完扫一次 = 完工」：请求只带码 + 工序（系统推断或一键改），**不带数量**
- * —— 数量缺省由服务端取「剩余应做」（零额外交互）。要改数量请用既有工序列表里的
- * 「完成报工」（同一条记账核，见 `ProductionService.applyReport`）。</p>
+ * —— 数量缺省由服务端取「剩余应做」（零额外交互）。</p>
+ *
+ * <p>🔴 <b>issue #5647（G10）</b>：bmini 的**报工写面只有这一条路**。曾经并存的
+ * `.../orders/{orderId}/operations/{operationId}/report`（URL 定工序）没有码、不校验部位归属、
+ * 非事务、也不落 `done_at` ⇒ 防呆④/⑤、一次事务、`done_at` 在那条路上**全不生效**。
+ * 「工序列表逐道报工」那条 UI 也走本函数：凭证 = 读面下发的**部位任务码** `part_token`
+ * （一部位一码，issue #4946），工序由服务端校验归属（跨部位 ⇒ 422）、数量由工人确认后传入。</p>
  *
  * <p>服务端一次事务做四件事：防呆 → 工序确定性校验（**未确定 ⇒ 拒绝记账**）→ 写报工明细（数量 ×
  * 快照单价 + 价态）→ CAS 推进 `done_qty`/`status` + `done_at`（A 模式完工时刻）→ 必完全绿则加工单完工。
@@ -455,16 +419,29 @@ export async function scanResolve(
  *
  * <p>幂等：每次调用生成一个幂等键随请求头发出（重试复用同一个键 ⇒ 服务端不重复计件）；
  * **连点**由调用方的 {@link reportInFlightLock} 拦。</p>
+ *
+ * @param requestId 本次动作的幂等键（issue #4206）：**调用方生成并在重发时复用同一个键**。
+ *   不传则内部生成 —— 离线补传队列必须传（复用入队时的键，否则服务端记两遍）。
+ * @param payload   可选：数量三键（`qty` / `qualified_qty` / `work_type`）。不传 ⇒ 服务端取
+ *   「剩余应做」——A 模式一屏【开工】走的就是这条（工人在屏上只确认，不心算数量）。
+ *   传 ⇒ 逐道报工那条 UI 的工人确认数量。**只加不改**：服务端 `scan/complete` 早已接受这三键。
  */
 export async function completeByScan(
   token: string,
   operationId: string,
   requestId?: string,
+  payload?: ReportPayload,
 ): Promise<ProductionResponse<ScanCompleteResult>> {
+  const body: Record<string, unknown> = { token, operation_id: operationId }
+  if (payload) {
+    body.qty = payload.qty
+    body.qualified_qty = payload.qualified_qty
+    body.work_type = payload.work_type
+  }
   try {
     const res = await post<ProductionResponse<ScanCompleteResult>>(
       '/api/worker/production/scan/complete',
-      { token, operation_id: operationId },
+      body,
       {
         baseURL: API_BASE_URL,
         headers: {
@@ -597,4 +574,4 @@ export async function shipOrder(
   }
 }
 
-export default { getOrderOperations, getOrderPiecework, reportOperation, shipOrder, scanResolve, completeByScan }
+export default { getOrderOperations, getWorkerOrderOperations, getOrderPiecework, shipOrder, scanResolve, completeByScan }

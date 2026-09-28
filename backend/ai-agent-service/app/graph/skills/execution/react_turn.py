@@ -53,6 +53,13 @@ from app.utils.remedy_registry import remedy_for
 # 也**必然**返回 False（纯函数真值表见 `tests/test_base_skill.py`）⇒ 仍不会写。
 UNBOUND = object()
 
+#: 写门禁链的**求值探针**（issue #4081）：每次进入一条门禁前，以该门禁的**身份名**回调一次。
+#: 生产恒为 None（循环里只多一次 `is not None` 判断 ⇒ 零行为改变）；测试把它设成 `list.append`，
+#: 用来机械证明「链上每条门禁都真的被求值、且求值顺序 = 链表的声明顺序」——
+#: 没有它，「表里少了一条 / 某条其实进不去」只能靠人读代码（本仓最忌讳的「判据自己选择沉默」）。
+#: 判据：`tests/test_skill_skills/test_react_turn.py`（删掉这个机制会让那条判据当场报错）。
+GATE_EVAL_HOOK = None
+
 
 async def react_turn(
     state: AgentState,
@@ -461,82 +468,134 @@ async def react_turn(
                                      "error": "sms_code_not_from_customer"})
                     if args is not tool_call.get("args"):
                         tool_call = {**tool_call, "args": args}
-                    # ── 缺参等待期拦截（issue #3365，OR-017）──
-                    # 顾客欠参数期间：不放行同一个写工具（注定失败）、不放行逐字重发的同一张
-                    # 确认卡（死循环）。见 _write_input_recovery_block 的实证说明。
-                    _blocked = await _write_input_recovery_block(
-                        tool_name, args, tool_call, session_id, skill_name, last_user_msg)
-                    if _blocked is not None:
-                        return _blocked
-                    _blocked2 = await _card_loop_block(
-                        tool_name, args, tool_call, session_id, skill_name)
-                    if _blocked2 is not None:
-                        return _blocked2
-                    # ── 掩码形态手机号拦截（issue #3386，DB 实证静默脏数据）──
-                    # 在写工具真正执行**之前**：`13800008000` 这种"星号填 0"的形态能通过
-                    # 11 位格式校验，一旦放行就是无告警的错号码落库。
-                    # 只拦**写**工具：脏数据风险来自"用掩码值建单"，只读查询用掩码值只是
-                    # 查不到，拦它反而多一轮往返。判据用 `tool.read_only`（`tool` 就在下面
-                    # 解析 —— 放到解析之后，守卫内不再查 registry，避免"注册表拿不到工具
-                    # → 静默放行"的假守卫）。
+                    # ── 写调用门禁链（GATES，#4081）──
+                    # 本工具调用内**唯一的**会话状态快照：链上门禁的 `load` 至多 1 次
+                    # （改前同一次调用内联 load 6 次）。失败语义与逐站点各自 load 时
+                    # **逐站点**一致 —— 这里让异常继续抛出（第二次起抛**同一个**异常对象，
+                    # 不再多打一次存储往返），由各站点原有的 `except` 按既有降级口径处置
+                    # （有的放行、有的拦截）。
+                    _ss_cache: dict = {}
+
+                    async def _gate_session_state() -> dict:
+                        if not _ss_cache:
+                            try:
+                                from app.memory.session_state_store import SessionStateStore
+                                _ss_cache["state"] = await SessionStateStore().load(session_id) or {}
+                            except Exception as _e:
+                                _ss_cache["error"] = _e
+                        if "error" in _ss_cache:
+                            raise _ss_cache["error"]
+                        return _ss_cache["state"]
+
+                    # ── 工具解析（**纯查表**：`SkillRegistry.get_tool` = `self._tools.get(name)`）──
+                    # 提到链前只是把"纯读"提前；**拦不拦仍由门禁 3 `tool_available` 按原顺序决定**
+                    # （拦截点、话术、顺序一字未变）。放这里还守着一条既有位置纪律：掩码手机号 /
+                    # 校验失败两条**写**门禁必须在解析**之后** —— 守卫内不再查 registry，避免
+                    # 「注册表拿不到工具 → 静默放行」的假守卫。
+                    # ⚠️ 不要把它挪回门禁闭包里靠 `nonlocal tool` 写回：`tool` 是 `_run_one_tool`
+                    # 的局部（不是 `react_turn` 的参数），会撞上 `tests/unit/test_execute_skill_split.py`
+                    # 的 `nonlocal` 目标守卫。
                     tool = skill_registry.get_tool(tool_name)
-                    if tool is None:
-                        logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
-                        # ── 订单写工具跨 skill 缺失的恢复（issue #3976，P2）──
-                        # 实证（sess_202d55d49a254a10）：product skill 内完成
-                        # validate_input(order_create)+确认卡后，模型按执行提示调
-                        # order_create → 本 skill 注册表没有 → tool_not_found →
-                        # 旧逻辑只回失败，模型随后空头承诺「请稍候，我这就提交」、
-                        # 订单永不落库。与转人工守卫（见下 :4300/:4328 同族）一致：
-                        # 订单在办时 relock 到归属 skill（含确认卡归属迁移），
-                        # 下一轮即走下单流程；话术给出**可执行**下一步（不得空头承诺）。
-                        if tool_name == ORDER_WRITE_TOOL and await _order_flow_in_progress(
-                                session_id, state, last_user_msg):
-                            _relocked_this_round = True
-                            await _relock_order_skill(session_id, state, migrate_card_owner=True)
-                            _recover_msg = (
-                                "订单流程已切换到订单模块，请再回复「继续」，我马上为您提交。"
-                                if not _is_customer_role(state)
-                                else "您的订单已确认，请再回复「继续」，我马上为您提交。")
-                            return (tool_call,
-                                    json.dumps({"success": False,
-                                                "error": "tool_not_found_relocked",
-                                                "message": _recover_msg},
-                                               ensure_ascii=False),
-                                    {"success": False, "error": "tool_not_found_relocked"})
-                        # 话术取自**族 6 的失败登记表**（issue #5441）。原先这里回给模型的是
-                        # `f"工具 {tool_name} 不可用"` —— 那是把**英文短码**（工具名）回灌给模型，
-                        # 而 `references/base/principles.md` 的核心原则 4 明令回复里不得出现工具名
-                        # ⇒ 只差一步就被念给用户听。登记表给的是**纯中文短句 + 可照做的下一步**，
-                        # 且该文本已在 `test_dead_capability_meta_guard` 的引用面射程内
-                        # （点名不可达工具会判红）。
-                        _unavailable = remedy_for("tool_not_found")
-                        return tool_call, json.dumps(
-                            {"success": False, "error": "tool_not_found",
-                             "message": f"{_unavailable.reason}。{_unavailable.remedy}"},
-                            ensure_ascii=False), {"success": False}
-                    # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
-                    _blocked_q = await _quantity_choice_block(
-                        tool_name, args, tool_call, session_id, skill_name, state)
-                    if _blocked_q is not None:
-                        return _blocked_q
-                    # 收货信息预填保真守卫（issue #3397）：interact 是只读工具，单独接。
-                    _blocked_prefill = await _form_prefill_fidelity_block(
-                        tool_name, args, tool_call, session_id, skill_name,
-                        last_user_msg, state)
-                    if _blocked_prefill is not None:
-                        return _blocked_prefill
-                    # 算料前提守卫（issue #3395）：只读工具，故在读写分流之前单独接。
-                    _blocked_calc = await _curtain_calc_dimension_block(
-                        tool_name, args, tool_call, session_id, skill_name, state)
-                    if _blocked_calc is not None:
-                        return _blocked_calc
-                    if not getattr(tool, "read_only", False):
+
+                    # 门禁 1/11 `write_input_recovery`：缺参等待期拦截（issue #3365，OR-017）：不放行注定失败的写、不放行逐字重发的同一张卡
+                    async def _gate_write_input_recovery():
+                        # ── 缺参等待期拦截（issue #3365，OR-017）──
+                        # 顾客欠参数期间：不放行同一个写工具（注定失败）、不放行逐字重发的同一张
+                        # 确认卡（死循环）。见 _write_input_recovery_block 的实证说明。
+                        _blocked = await _write_input_recovery_block(
+                            tool_name, args, tool_call, session_id, skill_name, last_user_msg)
+                        if _blocked is not None:
+                            return _blocked
+
+                    # 门禁 2/11 `card_loop`：同一张卡重复下发（死循环）
+                    async def _gate_card_loop():
+                        _blocked2 = await _card_loop_block(
+                            tool_name, args, tool_call, session_id, skill_name)
+                        if _blocked2 is not None:
+                            return _blocked2
+
+                    # 门禁 3/11 `tool_available`：工具不可用 ⇒ 拦（并给可执行的恢复路径）
+                    async def _gate_tool_available():
+                        # `_relocked_this_round` 是本门禁里唯一的跨函数状态（回锁必须同时置位，
+                        # issue #4126）：**漏了 nonlocal 就会创建一个新局部 ⇒ 置位静默丢失**，
+                        # 轮末 pending_skill 又被覆盖回原 skill（正是本条守卫要防的形态）。
+                        nonlocal _relocked_this_round
+                        if tool is None:
+                            logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
+                            # ── 订单写工具跨 skill 缺失的恢复（issue #3976，P2）──
+                            # 实证（sess_202d55d49a254a10）：product skill 内完成
+                            # validate_input(order_create)+确认卡后，模型按执行提示调
+                            # order_create → 本 skill 注册表没有 → tool_not_found →
+                            # 旧逻辑只回失败，模型随后空头承诺「请稍候，我这就提交」、
+                            # 订单永不落库。与转人工守卫（见下 :4300/:4328 同族）一致：
+                            # 订单在办时 relock 到归属 skill（含确认卡归属迁移），
+                            # 下一轮即走下单流程；话术给出**可执行**下一步（不得空头承诺）。
+                            if tool_name == ORDER_WRITE_TOOL and await _order_flow_in_progress(
+                                    session_id, state, last_user_msg):
+                                _relocked_this_round = True
+                                await _relock_order_skill(session_id, state, migrate_card_owner=True)
+                                _recover_msg = (
+                                    "订单流程已切换到订单模块，请再回复「继续」，我马上为您提交。"
+                                    if not _is_customer_role(state)
+                                    else "您的订单已确认，请再回复「继续」，我马上为您提交。")
+                                return (tool_call,
+                                        json.dumps({"success": False,
+                                                    "error": "tool_not_found_relocked",
+                                                    "message": _recover_msg},
+                                                   ensure_ascii=False),
+                                        {"success": False, "error": "tool_not_found_relocked"})
+                            # 话术取自**族 6 的失败登记表**（issue #5441）。原先这里回给模型的是
+                            # `f"工具 {tool_name} 不可用"` —— 那是把**英文短码**（工具名）回灌给模型，
+                            # 而 `references/base/principles.md` 的核心原则 4 明令回复里不得出现工具名
+                            # ⇒ 只差一步就被念给用户听。登记表给的是**纯中文短句 + 可照做的下一步**，
+                            # 且该文本已在 `test_dead_capability_meta_guard` 的引用面射程内
+                            # （点名不可达工具会判红）。
+                            _unavailable = remedy_for("tool_not_found")
+                            return tool_call, json.dumps(
+                                {"success": False, "error": "tool_not_found",
+                                 "message": f"{_unavailable.reason}。{_unavailable.remedy}"},
+                                ensure_ascii=False), {"success": False}
+
+                    # 门禁 4/11 `quantity_choice`：数量口径产出层守卫（issue #3402）
+                    async def _gate_quantity_choice():
+                        # 数量口径产出层守卫（issue #3402）：顾客已报数量时不得给"用量/褶皱倍数"选项
+                        _blocked_q = await _quantity_choice_block(
+                            tool_name, args, tool_call, session_id, skill_name, state)
+                        if _blocked_q is not None:
+                            return _blocked_q
+
+                    # 门禁 5/11 `form_prefill_fidelity`：收货信息预填保真守卫（issue #3397）—— interact 是只读工具，单独接
+                    async def _gate_form_prefill_fidelity():
+                        # 收货信息预填保真守卫（issue #3397）：interact 是只读工具，单独接。
+                        _blocked_prefill = await _form_prefill_fidelity_block(
+                            tool_name, args, tool_call, session_id, skill_name,
+                            last_user_msg, state)
+                        if _blocked_prefill is not None:
+                            return _blocked_prefill
+
+                    # 门禁 6/11 `curtain_calc_dimension`：算料前提守卫（issue #3395）—— 只读工具，故在读写分流之前单独接
+                    async def _gate_curtain_calc_dimension():
+                        # 算料前提守卫（issue #3395）：只读工具，故在读写分流之前单独接。
+                        _blocked_calc = await _curtain_calc_dimension_block(
+                            tool_name, args, tool_call, session_id, skill_name, state)
+                        if _blocked_calc is not None:
+                            return _blocked_calc
+
+                    # 门禁 7/11 `masked_phone_write`：掩码形态手机号拦截（issue #3386）：必须在 tool 解析之后（守卫内不再查 registry）
+                    async def _gate_masked_phone_write():
+                        if getattr(tool, "read_only", False):
+                            # 只拦**写**工具：脏数据风险来自「用掩码值建单」（读工具用掩码值只是查不到）
+                            return None
                         _blocked3 = await _masked_phone_write_block(
                             tool_name, args, tool_call, session_id, skill_name,
                             last_user_msg, state)
                         if _blocked3 is not None:
                             return _blocked3
+
+                    # 门禁 8/11 `validation_failed_write`：校验失败禁止写（issue #4073，S2）：**故意在确认门禁之外、之前**（点卡也不得放行）
+                    async def _gate_validation_failed_write():
+                        if getattr(tool, "read_only", False):
+                            return None
                         # ── 校验失败禁止写（issue #4073，S2：prompt 铁律落成代码闸门）──
                         # 铁律原文（`app/graph/skills/references/PROMPT-rules.md`）：
                         # 「**铁律：validate_input 校验失败时，禁止继续执行写工具。**」
@@ -559,9 +618,7 @@ async def react_turn(
                                 matched_failure)
                             _act = str((args or {}).get("action") or "")
                             try:
-                                from app.memory.session_state_store import (
-                                    SessionStateStore as _S7)
-                                _f7 = await _S7().load(session_id) or {}
+                                _f7 = await _gate_session_state()
                             except Exception as _e7:
                                 # 读不到会话状态 ⇒ 无账可查 ⇒ 放行（与 `_write_input_recovery_block`
                                 # /`_card_loop_block` 既有降级口径一致）。这里**刻意**不 fail-closed：
@@ -588,509 +645,564 @@ async def react_turn(
                                                     )},
                                                    ensure_ascii=False),
                                         {"success": False, "error": _err7})
-                    # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
-                    # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
-                    # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
-                    # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
-                    # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
-                    #
-                    # 适用性判据（issue #3477 根治）：旧实现是 `skill_name in
-                    # ("customer_order", "customer_aftersales")` 这一**字面量白名单** ——
-                    # 会话被 choice 卡锁在 `customer_product` 时整段失效（C-A1 run 34791767013
-                    # 实测：顾客「确认下单」→ 转人工照过、建了工单）。现在由
-                    # `_handoff_guard_applies` 按**事实/状态**判定（见其 docstring）。
-                    # ⚠️ 只在真是 human_handoff 时才查会话状态：本函数对**每个** tool 调用
-                    # 都会跑，而下单流程本身就在办（必然有 pending 锁）→ 无条件查会白加 N 次存储往返。
-                    _order_in_progress = (
-                        await _order_flow_in_progress(session_id, state, last_user_msg)
-                        if tool_name == "human_handoff" else False)
-                    _denial_now = _capability_denial_reason(args)
-                    if (tool_name == "human_handoff"
-                            and _handoff_guard_applies(
-                                skill_registry, order_in_progress=_order_in_progress,
-                                denial_reason_hit=_denial_now)):
-                        from app.graph.handoff_judge import has_escalation_signal
-                        # 在办判据两条取并集（issue #3361 实证）：
-                        #   ① 消息历史里能扫到未完结的交互卡（原实现）；
-                        #   ② **跨轮持久化的 pending_interact_skill 非空** —— 这是
-                        #      「流程锁定中」的权威标记（卡片发出即写、写操作成功即清），
-                        #      不依赖 state["messages"] 是否带回上一轮的 ToolMessage。
-                        # 为何 ② 必需（CI run 34689293179，CH-012）：R1 已下发选单卡、
-                        # R2 顾客点明订单、R3 顾客只回退货原因「质量问题」，agent 直接
-                        # human_handoff（并建了投诉工单）→ 流程被放弃、aftersale_create
-                        # 未发生；当时 ① 判为 False（历史里扫不到那张卡）→ 兜底形同虚设。
-                        _inflight = _flow_state_in_progress(state)
-                        # 能力误宣（issue #3389）：以"我下不了单/无法代为提交订单"为理由转人工，
-                        # 无论有没有在办卡都拦 —— 这是**能力否定**，不是顾客诉求。
-                        _denial = _capability_denial_reason(args)
-                        if _denial and not has_escalation_signal(last_user_msg):
-                            # 能力误宣分域给话术（issue #3931）：商品图片域的理由用商品域纠正话术，
-                            # 否则会把「设主图」诉求错引向 order_create（消息按域区分）。
-                            # ⚠️ #5318：本支**必须**与上面文本级守卫用同一个**事实门**（图片写能力
-                            # 是否真的不在手里）—— 旧实现漏了这道门，于是这条被注入的纠正话术
-                            # 把模型推向已从 B 端解绑的 product_manage。若该能力将来被补回
-                            # （属另一次产品裁定），本支的话术要一并重新裁定。
-                            _reason_img = (_product_image_denial_hit(str(args.get("reason") or ""))
-                                           or _product_image_denial_hit(str(args.get("summary") or "")))
-                            if (_reason_img
-                                    and not _product_image_capability_available(skill_registry)):
+
+                    # 门禁 9/11 `handoff_guard`：兜底：在办流程中禁止「无信号误转人工」（CH-012 / issue #3361/#3477）
+                    async def _gate_handoff_guard():
+                        nonlocal _relocked_this_round
+                        # ── 兜底：C 端在办流程中禁止「无信号误转人工」（CH-012 实证）──
+                        # R1 已下发选单卡、R3 用户仅回「质量问题」，agent 却 human_handoff
+                        # （还创建了投诉工单）→ 流程被放弃、轮数耗尽、aftersale_create 未发生。
+                        # 判据与 handoff_judge 同源：显式请求 / 负面情绪 / 能力外诉求 三者皆无
+                        # → 不是用户要的转人工，而是模型放弃流程 → 阻止并给出可执行指引。
+                        #
+                        # 适用性判据（issue #3477 根治）：旧实现是 `skill_name in
+                        # ("customer_order", "customer_aftersales")` 这一**字面量白名单** ——
+                        # 会话被 choice 卡锁在 `customer_product` 时整段失效（C-A1 run 34791767013
+                        # 实测：顾客「确认下单」→ 转人工照过、建了工单）。现在由
+                        # `_handoff_guard_applies` 按**事实/状态**判定（见其 docstring）。
+                        # ⚠️ 只在真是 human_handoff 时才查会话状态：本函数对**每个** tool 调用
+                        # 都会跑，而下单流程本身就在办（必然有 pending 锁）→ 无条件查会白加 N 次存储往返。
+                        _order_in_progress = (
+                            await _order_flow_in_progress(session_id, state, last_user_msg)
+                            if tool_name == "human_handoff" else False)
+                        _denial_now = _capability_denial_reason(args)
+                        if (tool_name == "human_handoff"
+                                and _handoff_guard_applies(
+                                    skill_registry, order_in_progress=_order_in_progress,
+                                    denial_reason_hit=_denial_now)):
+                            from app.graph.handoff_judge import has_escalation_signal
+                            # 在办判据两条取并集（issue #3361 实证）：
+                            #   ① 消息历史里能扫到未完结的交互卡（原实现）；
+                            #   ② **跨轮持久化的 pending_interact_skill 非空** —— 这是
+                            #      「流程锁定中」的权威标记（卡片发出即写、写操作成功即清），
+                            #      不依赖 state["messages"] 是否带回上一轮的 ToolMessage。
+                            # 为何 ② 必需（CI run 34689293179，CH-012）：R1 已下发选单卡、
+                            # R2 顾客点明订单、R3 顾客只回退货原因「质量问题」，agent 直接
+                            # human_handoff（并建了投诉工单）→ 流程被放弃、aftersale_create
+                            # 未发生；当时 ① 判为 False（历史里扫不到那张卡）→ 兜底形同虚设。
+                            _inflight = _flow_state_in_progress(state)
+                            # 能力误宣（issue #3389）：以"我下不了单/无法代为提交订单"为理由转人工，
+                            # 无论有没有在办卡都拦 —— 这是**能力否定**，不是顾客诉求。
+                            _denial = _capability_denial_reason(args)
+                            if _denial and not has_escalation_signal(last_user_msg):
+                                # 能力误宣分域给话术（issue #3931）：商品图片域的理由用商品域纠正话术，
+                                # 否则会把「设主图」诉求错引向 order_create（消息按域区分）。
+                                # ⚠️ #5318：本支**必须**与上面文本级守卫用同一个**事实门**（图片写能力
+                                # 是否真的不在手里）—— 旧实现漏了这道门，于是这条被注入的纠正话术
+                                # 把模型推向已从 B 端解绑的 product_manage。若该能力将来被补回
+                                # （属另一次产品裁定），本支的话术要一并重新裁定。
+                                _reason_img = (_product_image_denial_hit(str(args.get("reason") or ""))
+                                               or _product_image_denial_hit(str(args.get("summary") or "")))
+                                if (_reason_img
+                                        and not _product_image_capability_available(skill_registry)):
+                                    logger.warning(
+                                        f"[{skill_name}] 拦截商品图片域能力误宣式转人工 | "
+                                        f"session={session_id} reason={_reason_img!r}")
+                                    return (tool_call,
+                                            json.dumps({"success": False,
+                                                        "error": "handoff_blocked_capability_denial",
+                                                        "message": _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE},
+                                                       ensure_ascii=False),
+                                            {"success": False,
+                                             "error": "handoff_blocked_capability_denial"})
                                 logger.warning(
-                                    f"[{skill_name}] 拦截商品图片域能力误宣式转人工 | "
-                                    f"session={session_id} reason={_reason_img!r}")
+                                    f"[{skill_name}] 拦截能力误宣式转人工 | session={session_id} "
+                                    f"reason={_denial!r}")
+                                _msg = (
+                                    f"你的转人工理由写的是「{_denial}」—— 但**你能下单**："
+                                    f"`order_create` 就是本流程的写工具（参数齐了就能真实落单）。"
+                                    f"「无法代为提交订单」属**能力误宣**：顾客明明要买，"
+                                    f"却被告知系统做不到，转化路径被自己掐断。"
+                                    f"正确做法：缺收货信息就先 `customer_address_query` 查历史地址，"
+                                    f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
+                                    f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
+                                    f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                                if _order_in_progress and not _order_write_tool_here(skill_registry):
+                                    # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
+                                    # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
+                                    _relocked_this_round = True
+                                    await _relock_order_skill(session_id, state,
+                                                              migrate_card_owner=True)
                                 return (tool_call,
                                         json.dumps({"success": False,
                                                     "error": "handoff_blocked_capability_denial",
-                                                    "message": _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE},
-                                                   ensure_ascii=False),
-                                        {"success": False,
-                                         "error": "handoff_blocked_capability_denial"})
-                            logger.warning(
-                                f"[{skill_name}] 拦截能力误宣式转人工 | session={session_id} "
-                                f"reason={_denial!r}")
-                            _msg = (
-                                f"你的转人工理由写的是「{_denial}」—— 但**你能下单**："
-                                f"`order_create` 就是本流程的写工具（参数齐了就能真实落单）。"
-                                f"「无法代为提交订单」属**能力误宣**：顾客明明要买，"
-                                f"却被告知系统做不到，转化路径被自己掐断。"
-                                f"正确做法：缺收货信息就先 `customer_address_query` 查历史地址，"
-                                f"没有再发 `interact(component=form)` 或用自然语言问姓名/手机号/地址；"
-                                f"参数齐了走 confirm 卡 → `validate_input` → `order_create`（含 sms_code）。"
-                                f"只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
-                            if _order_in_progress and not _order_write_tool_here(skill_registry):
-                                # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
-                                # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
-                                _relocked_this_round = True
-                                await _relock_order_skill(session_id, state,
-                                                          migrate_card_owner=True)
-                            return (tool_call,
-                                    json.dumps({"success": False,
-                                                "error": "handoff_blocked_capability_denial",
-                                                "message": _msg}, ensure_ascii=False),
-                                    {"success": False, "error": "handoff_blocked_capability_denial"})
-                        # 补一条（issue #3421，C-A1 实证）：顾客**正在下单**且流程**已真实启动**
-                        # （查过商品详情）时，即使没有待答卡片，无信号转人工也是放弃流程。
-                        # 不这么做会漏掉 C-A1 的形态：卡片已被顾客点掉 → `_inflight` 为假 →
-                        # 放行转人工 → 9 轮不下单（L1 违规 3 条）。
-                        # 判据用**状态驱动**的 `_order_in_progress`（#3477）：旧写法
-                        # `_has_ordering_intent(last_user_msg) and _order_flow_started(...)`
-                        # 由**本轮措辞关键词**决定，顾客改说「好的，就按这个来」即失效。
-                        if (not has_escalation_signal(last_user_msg)
-                                and not _inflight
-                                and _order_in_progress):
-                            logger.warning(
-                                f"[{skill_name}] 拦截「顾客在下单却无信号转人工」 | "
-                                f"session={session_id} last_msg={last_user_msg[:30]!r}")
-                            _msg2 = (
-                                "顾客正在下单（本轮消息仍在推进下单），且本会话已经查过商品详情 —— "
-                                "**不要转人工**：`order_create` 就是本流程的写工具，参数齐了就能真实落单。"
-                                "缺收货信息就先 `customer_address_query` 查历史地址，没有再发 "
-                                "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
-                                "`validate_input` → `order_create`（含 sms_code）。"
-                                "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
-                            if _order_in_progress and not _order_write_tool_here(skill_registry):
-                                # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
-                                # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
-                                _relocked_this_round = True
-                                await _relock_order_skill(session_id, state,
-                                                          migrate_card_owner=True)
-                            return (tool_call,
-                                    json.dumps({"success": False,
-                                                "error": "handoff_blocked_inflight",
-                                                "message": _msg2}, ensure_ascii=False),
-                                    {"success": False, "error": "handoff_blocked_inflight"})
-                        if not has_escalation_signal(last_user_msg) and _inflight:
-                            logger.warning(
-                                f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
-                                f"last_msg={last_user_msg[:30]!r}"
-                            )
-                            # 拦截话术必须**可执行**（issue #3361，CI run 34703192730 实证）：
-                            # CH-012 R2/R3/R4 每轮都被拦（handoff_blocked_inflight ×3），
-                            # 但模型只是**反复重试 human_handoff**、始终不调 aftersale_create
-                            # → 流程原地打转、售后单永不创建（复现型红灯）。
-                            # 原话术只说"请继续完成当前流程"，没点出**下一步该调哪个工具** ——
-                            # 模型读到了"不许转人工"，却不知道"那该干什么"。
-                            # 与确认门禁同一手法：把可执行动作（工具名）写进 tool result。
-                            _flow_hint = ""
-                            for _flow_tool, _hint in (
-                                ("aftersale_create",
-                                 "顾客是在办**售后**（退货/换货/退款/维修）：请先与顾客确认订单与原因"
-                                 "（interact 卡），然后调用 aftersale_create 创建工单"
-                                 "（order_id 用已查到的订单号）"),
-                                ("order_create",
-                                 "顾客是在办**下单**：请继续收齐信息并调用 order_create 完成下单"),
-                            ):
-                                try:
-                                    if skill_registry.get_tool(_flow_tool) is not None:
-                                        _flow_hint = _hint
-                                        break
-                                except Exception:
-                                    continue
-                            _msg = (
-                                "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
-                                "没有情绪激动、也不涉及赔偿/法律。**不要再次调用 human_handoff**，"
-                                "继续完成当前流程。"
-                                + (_flow_hint + "。" if _flow_hint else "请按交互卡与提示继续下一步。")
-                                + "若顾客确实要求人工，需其明确说出「转人工/找人工/找客服」"
-                                "后再调用本工具。"
-                            )
-                            return tool_call, json.dumps({
-                                "success": False,
-                                "error": "handoff_blocked_inflight",
-                                "message": _msg,
-                            }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
-
-                    # ── 下单接地闸门（issue #3361，OR-014 复现型红灯）──
-                    # 实证：C 端「帮我下单，遮光窗帘 3 米，要打孔加工」时模型**一次都没查商品**
-                    # （R1 tools=-），凭记忆发确认卡（金额 ¥95.4，而该商品真实单价 ¥168/米）
-                    # 并直接下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
-                    # prompt 里的「商品详情铁律（confirm 前必须先调 product_detail）」模型不守，
-                    # 故加代码闸门：本会话没成功查过商品详情 → 不许下单，并把可执行步骤写进结果。
-                    # B 端（order）同守此闸门（run 34916256903 OR-014：B 端也查过详情但编造
-                    # 分色价 150 落单）—— 未接地与单价不接地都是"金额不可信"的同族形态。
-                    #
-                    # 适用性判据（issue #4079 S4）：旧实现是字面量白名单
-                    # `skill_name in ("customer_order", "order")`（新增 skill 会被判成"不适用"）
-                    # ⇒ 改读**事实**：本 skill 工具子集里有没有下单写工具（`_order_write_tool_here`）。
-                    # 等价性：能到这里的前提就是 `skill_registry.get_tool("order_create")` 非空
-                    # （见上方 tool 解析）⇒ 判据此刻恒真，保留只为把"覆盖哪些 skill"写在事实上。
-                    if tool_name == "order_create" and _order_write_tool_here(skill_registry) and session_id:
-                        _grounded = True
-                        try:
-                            from app.memory.session_state_store import SessionStateStore as _SG
-                            _sg = await _SG().load(session_id) or {}
-                            _grounded = bool(_sg.get("grounded_product_detail"))
-                        except Exception as _ge:
-                            logger.debug(f"[{skill_name}] ground gate check failed (non-fatal): {_ge}")
-                        # 内层分支只给 **C 端（顾客本人）**：B 端店员代客下单的接地由上面
-                        # 单价校验兜（`skill_name == "customer_order"` 的旧字面量 → 端判据
-                        # `_is_customer_role(state)`，同一事实、同一个函数里既有守卫在用）。
-                        if not _grounded and _is_customer_role(state):
-                            logger.warning(
-                                f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
-                                f"| session={session_id}"
-                            )
-                            # ── 接地自动驾驶（issue #3365 候选修法 1）──
-                            # 实证：闸门拦下后模型**只是反复重试 order_create**（CI run 34707941520
-                            # 里被拦 6 次仍不搜索），提示词与拦截话术都劝不动 → 属模型层不遵从。
-                            # 代码层直接代跑 product_search → product_detail（**只读**），落接地标记，
-                            # 并把查到的真实单价/商品 id 回给模型，让它基于真值重新下单。
-                            # 只在"能确定唯一商品"时落地（多命中则把候选交回模型，不猜）。
-                            _pilot = None
-                            # 关键词来自**会话里对商品的提及**，而不只是本轮消息：
-                            # 实证（CI run 34709584877）—— 被拦那一轮用户发的是「确认下单」/表单回传，
-                            # 本轮抽不到商品词 → 自动驾驶根本没触发（order_create 仍被拦 5 次）。
-                            # 取**最早**一次商品提及（顾客最初要买什么），比最近一次更稳。
-                            _kw = extract_product_keyword(last_user_msg)
-                            if not _kw:
-                                try:
-                                    for _m in (state.get("messages") or []):
-                                        if not isinstance(_m, HumanMessage):
-                                            continue
-                                        _kw = extract_product_keyword(_extract_content(_m) or "")
-                                        if _kw:
-                                            logger.info(
-                                                f"[{skill_name}] 接地自动驾驶：从会话历史取得商品关键词"
-                                                f"'{_kw}' | session={session_id}"
-                                            )
-                                            break
-                                except Exception:
-                                    _kw = ""
-                            if _kw:
-                                try:
-                                    _ps = skill_registry.get_tool("product_search")
-                                    _pd = skill_registry.get_tool("product_detail")
-                                except Exception:
-                                    _ps = _pd = None
-                                if _ps is not None and _pd is not None:
+                                                    "message": _msg}, ensure_ascii=False),
+                                        {"success": False, "error": "handoff_blocked_capability_denial"})
+                            # 补一条（issue #3421，C-A1 实证）：顾客**正在下单**且流程**已真实启动**
+                            # （查过商品详情）时，即使没有待答卡片，无信号转人工也是放弃流程。
+                            # 不这么做会漏掉 C-A1 的形态：卡片已被顾客点掉 → `_inflight` 为假 →
+                            # 放行转人工 → 9 轮不下单（L1 违规 3 条）。
+                            # 判据用**状态驱动**的 `_order_in_progress`（#3477）：旧写法
+                            # `_has_ordering_intent(last_user_msg) and _order_flow_started(...)`
+                            # 由**本轮措辞关键词**决定，顾客改说「好的，就按这个来」即失效。
+                            if (not has_escalation_signal(last_user_msg)
+                                    and not _inflight
+                                    and _order_in_progress):
+                                logger.warning(
+                                    f"[{skill_name}] 拦截「顾客在下单却无信号转人工」 | "
+                                    f"session={session_id} last_msg={last_user_msg[:30]!r}")
+                                _msg2 = (
+                                    "顾客正在下单（本轮消息仍在推进下单），且本会话已经查过商品详情 —— "
+                                    "**不要转人工**：`order_create` 就是本流程的写工具，参数齐了就能真实落单。"
+                                    "缺收货信息就先 `customer_address_query` 查历史地址，没有再发 "
+                                    "`interact(component=form)` 或直接问；然后走 confirm 卡 → "
+                                    "`validate_input` → `order_create`（含 sms_code）。"
+                                    "只有当顾客**显式**要求人工、情绪激烈或诉求超出能力时，才允许转人工。")
+                                if _order_in_progress and not _order_write_tool_here(skill_registry):
+                                    # issue #4126：回锁必须**同时置位** `_relocked_this_round` —— finalize_turn 第 10 节
+                                    # 只在该标志为真时才不把 pending_skill 覆盖回本轮 skill（不置位 = 说了却没做）。
+                                    _relocked_this_round = True
+                                    await _relock_order_skill(session_id, state,
+                                                              migrate_card_owner=True)
+                                return (tool_call,
+                                        json.dumps({"success": False,
+                                                    "error": "handoff_blocked_inflight",
+                                                    "message": _msg2}, ensure_ascii=False),
+                                        {"success": False, "error": "handoff_blocked_inflight"})
+                            if not has_escalation_signal(last_user_msg) and _inflight:
+                                logger.warning(
+                                    f"[{skill_name}] 拦截在办流程中的无信号转人工 | session={session_id} "
+                                    f"last_msg={last_user_msg[:30]!r}"
+                                )
+                                # 拦截话术必须**可执行**（issue #3361，CI run 34703192730 实证）：
+                                # CH-012 R2/R3/R4 每轮都被拦（handoff_blocked_inflight ×3），
+                                # 但模型只是**反复重试 human_handoff**、始终不调 aftersale_create
+                                # → 流程原地打转、售后单永不创建（复现型红灯）。
+                                # 原话术只说"请继续完成当前流程"，没点出**下一步该调哪个工具** ——
+                                # 模型读到了"不许转人工"，却不知道"那该干什么"。
+                                # 与确认门禁同一手法：把可执行动作（工具名）写进 tool result。
+                                _flow_hint = ""
+                                for _flow_tool, _hint in (
+                                    ("aftersale_create",
+                                     "顾客是在办**售后**（退货/换货/退款/维修）：请先与顾客确认订单与原因"
+                                     "（interact 卡），然后调用 aftersale_create 创建工单"
+                                     "（order_id 用已查到的订单号）"),
+                                    ("order_create",
+                                     "顾客是在办**下单**：请继续收齐信息并调用 order_create 完成下单"),
+                                ):
                                     try:
-                                        _rs, _rd = await _execute_tool_safe(
-                                            _ps, {"keyword": _kw}, tool_context, state)
-                                        _prods = ((_rd.get("data") or {}).get("products")
-                                                  if isinstance(_rd.get("data"), dict) else None) or []
-                                        if isinstance(_prods, list) and len(_prods) == 1:
-                                            _pid = _prods[0].get("id") or _prods[0].get("productId")
-                                            if _pid:
-                                                _ds, _dd = await _execute_tool_safe(
-                                                    _pd, {"product_id": _pid}, tool_context, state)
-                                                if _dd.get("success"):
-                                                    _data = _dd.get("data") or {}
-                                                    _pilot = {
-                                                        "product_id": _pid,
-                                                        "name": _data.get("name") or _prods[0].get("name"),
-                                                        "price": _data.get("price"),
-                                                    }
-                                                    from app.memory.session_state_store import (
-                                                        SessionStateStore as _SP)
-                                                    _sp = await _SP().load(session_id) or {}
-                                                    _sp["grounded_product_detail"] = {"product_id": _pid}
-                                                    await _SP().commit(session_id, _sp)
-                                                    logger.warning(
-                                                        f"[{skill_name}] 接地自动驾驶：代跑 "
-                                                        f"product_search('{_kw}')→product_detail 完成，"
-                                                        f"接地标记已落 | session={session_id}"
-                                                    )
-                                    except Exception as _pe:
-                                        logger.debug(f"[{skill_name}] 接地自动驾驶失败（回落到话术）: {_pe}")
-                            if _pilot:
+                                        if skill_registry.get_tool(_flow_tool) is not None:
+                                            _flow_hint = _hint
+                                            break
+                                    except Exception:
+                                        continue
+                                _msg = (
+                                    "顾客正在办理的业务尚未完成，且本轮消息没有要求转人工、"
+                                    "没有情绪激动、也不涉及赔偿/法律。**不要再次调用 human_handoff**，"
+                                    "继续完成当前流程。"
+                                    + (_flow_hint + "。" if _flow_hint else "请按交互卡与提示继续下一步。")
+                                    + "若顾客确实要求人工，需其明确说出「转人工/找人工/找客服」"
+                                    "后再调用本工具。"
+                                )
+                                return tool_call, json.dumps({
+                                    "success": False,
+                                    "error": "handoff_blocked_inflight",
+                                    "message": _msg,
+                                }, ensure_ascii=False), {"success": False, "error": "handoff_blocked_inflight"}
+
+                    # 门禁 10/11 `order_grounding`：下单接地闸门（issue #3361，OR-014 复现型红灯）：本会话没查过商品详情不许下单
+                    async def _gate_order_grounding():
+                        # ── 下单接地闸门（issue #3361，OR-014 复现型红灯）──
+                        # 实证：C 端「帮我下单，遮光窗帘 3 米，要打孔加工」时模型**一次都没查商品**
+                        # （R1 tools=-），凭记忆发确认卡（金额 ¥95.4，而该商品真实单价 ¥168/米）
+                        # 并直接下单 → 单价/加工项/金额全不可信，且用例期望的 product_detail 缺失。
+                        # prompt 里的「商品详情铁律（confirm 前必须先调 product_detail）」模型不守，
+                        # 故加代码闸门：本会话没成功查过商品详情 → 不许下单，并把可执行步骤写进结果。
+                        # B 端（order）同守此闸门（run 34916256903 OR-014：B 端也查过详情但编造
+                        # 分色价 150 落单）—— 未接地与单价不接地都是"金额不可信"的同族形态。
+                        #
+                        # 适用性判据（issue #4079 S4）：旧实现是字面量白名单
+                        # `skill_name in ("customer_order", "order")`（新增 skill 会被判成"不适用"）
+                        # ⇒ 改读**事实**：本 skill 工具子集里有没有下单写工具（`_order_write_tool_here`）。
+                        # 等价性：能到这里的前提就是 `skill_registry.get_tool("order_create")` 非空
+                        # （见上方 tool 解析）⇒ 判据此刻恒真，保留只为把"覆盖哪些 skill"写在事实上。
+                        if tool_name == "order_create" and _order_write_tool_here(skill_registry) and session_id:
+                            _grounded = True
+                            try:
+                                _sg = await _gate_session_state()
+                                _grounded = bool(_sg.get("grounded_product_detail"))
+                            except Exception as _ge:
+                                logger.debug(f"[{skill_name}] ground gate check failed (non-fatal): {_ge}")
+                            # 内层分支只给 **C 端（顾客本人）**：B 端店员代客下单的接地由上面
+                            # 单价校验兜（`skill_name == "customer_order"` 的旧字面量 → 端判据
+                            # `_is_customer_role(state)`，同一事实、同一个函数里既有守卫在用）。
+                            if not _grounded and _is_customer_role(state):
+                                logger.warning(
+                                    f"[{skill_name}] 下单接地闸门：本会话未查商品详情，拦截 order_create "
+                                    f"| session={session_id}"
+                                )
+                                # ── 接地自动驾驶（issue #3365 候选修法 1）──
+                                # 实证：闸门拦下后模型**只是反复重试 order_create**（CI run 34707941520
+                                # 里被拦 6 次仍不搜索），提示词与拦截话术都劝不动 → 属模型层不遵从。
+                                # 代码层直接代跑 product_search → product_detail（**只读**），落接地标记，
+                                # 并把查到的真实单价/商品 id 回给模型，让它基于真值重新下单。
+                                # 只在"能确定唯一商品"时落地（多命中则把候选交回模型，不猜）。
+                                _pilot = None
+                                # 关键词来自**会话里对商品的提及**，而不只是本轮消息：
+                                # 实证（CI run 34709584877）—— 被拦那一轮用户发的是「确认下单」/表单回传，
+                                # 本轮抽不到商品词 → 自动驾驶根本没触发（order_create 仍被拦 5 次）。
+                                # 取**最早**一次商品提及（顾客最初要买什么），比最近一次更稳。
+                                _kw = extract_product_keyword(last_user_msg)
+                                if not _kw:
+                                    try:
+                                        for _m in (state.get("messages") or []):
+                                            if not isinstance(_m, HumanMessage):
+                                                continue
+                                            _kw = extract_product_keyword(_extract_content(_m) or "")
+                                            if _kw:
+                                                logger.info(
+                                                    f"[{skill_name}] 接地自动驾驶：从会话历史取得商品关键词"
+                                                    f"'{_kw}' | session={session_id}"
+                                                )
+                                                break
+                                    except Exception:
+                                        _kw = ""
+                                if _kw:
+                                    try:
+                                        _ps = skill_registry.get_tool("product_search")
+                                        _pd = skill_registry.get_tool("product_detail")
+                                    except Exception:
+                                        _ps = _pd = None
+                                    if _ps is not None and _pd is not None:
+                                        try:
+                                            _rs, _rd = await _execute_tool_safe(
+                                                _ps, {"keyword": _kw}, tool_context, state)
+                                            _prods = ((_rd.get("data") or {}).get("products")
+                                                      if isinstance(_rd.get("data"), dict) else None) or []
+                                            if isinstance(_prods, list) and len(_prods) == 1:
+                                                _pid = _prods[0].get("id") or _prods[0].get("productId")
+                                                if _pid:
+                                                    _ds, _dd = await _execute_tool_safe(
+                                                        _pd, {"product_id": _pid}, tool_context, state)
+                                                    if _dd.get("success"):
+                                                        _data = _dd.get("data") or {}
+                                                        _pilot = {
+                                                            "product_id": _pid,
+                                                            "name": _data.get("name") or _prods[0].get("name"),
+                                                            "price": _data.get("price"),
+                                                        }
+                                                        from app.memory.session_state_store import (
+                                                            SessionStateStore as _SP)
+                                                        # 就地改**共享快照**再提交：与本调用内后续
+                                                        # 站点「提交后可见」的既有语义一致 —— 不要
+                                                        # 改成复制（那会让确认事实核对看不到刚记的）。
+                                                        _sp = await _gate_session_state()
+                                                        _sp["grounded_product_detail"] = {"product_id": _pid}
+                                                        await _SP().commit(session_id, _sp)
+                                                        logger.warning(
+                                                            f"[{skill_name}] 接地自动驾驶：代跑 "
+                                                            f"product_search('{_kw}')→product_detail 完成，"
+                                                            f"接地标记已落 | session={session_id}"
+                                                        )
+                                        except Exception as _pe:
+                                            logger.debug(f"[{skill_name}] 接地自动驾驶失败（回落到话术）: {_pe}")
+                                if _pilot:
+                                    return tool_call, json.dumps({
+                                        "success": False,
+                                        "error": "product_not_grounded",
+                                        "message": (
+                                            f"下单被拦截，但**已代为查询商品**："
+                                            f"{_pilot.get('name')}（product_id={_pilot.get('product_id')}，"
+                                            f"单价 ¥{_pilot.get('price')}）。请基于该真实商品与单价"
+                                            f"重新组织 items 并调用 order_create；"
+                                            f"加工项/规格请用 product_detail 结果中的值，不要凭记忆填。"
+                                        ),
+                                    }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
                                 return tool_call, json.dumps({
                                     "success": False,
                                     "error": "product_not_grounded",
                                     "message": (
-                                        f"下单被拦截，但**已代为查询商品**："
-                                        f"{_pilot.get('name')}（product_id={_pilot.get('product_id')}，"
-                                        f"单价 ¥{_pilot.get('price')}）。请基于该真实商品与单价"
-                                        f"重新组织 items 并调用 order_create；"
-                                        f"加工项/规格请用 product_detail 结果中的值，不要凭记忆填。"
+                                        "下单被拦截：本会话还没有**成功查询过商品详情**"
+                                        "（价格/规格/加工项都无从确认）。请**立即**按顺序执行，"
+                                        "**不要重复调用 order_create**（重复无效，这是硬性前置条件）：\n"
+                                        "1) product_search(keyword=顾客提到的商品名) —— 顾客说"
+                                        "「遮光窗帘 3 米」就用 keyword=\"遮光窗帘\"；\n"
+                                        "2) product_detail(product_id=第 1 步选中的商品)；\n"
+                                        "3) 拿到真实单价/加工项/规格后，按顾客确认的信息再下单。\n"
+                                        "禁止凭记忆填价格或加工项。"
                                     ),
                                 }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
-                            return tool_call, json.dumps({
-                                "success": False,
-                                "error": "product_not_grounded",
-                                "message": (
-                                    "下单被拦截：本会话还没有**成功查询过商品详情**"
-                                    "（价格/规格/加工项都无从确认）。请**立即**按顺序执行，"
-                                    "**不要重复调用 order_create**（重复无效，这是硬性前置条件）：\n"
-                                    "1) product_search(keyword=顾客提到的商品名) —— 顾客说"
-                                    "「遮光窗帘 3 米」就用 keyword=\"遮光窗帘\"；\n"
-                                    "2) product_detail(product_id=第 1 步选中的商品)；\n"
-                                    "3) 拿到真实单价/加工项/规格后，按顾客确认的信息再下单。\n"
-                                    "禁止凭记忆填价格或加工项。"
-                                ),
-                            }, ensure_ascii=False), {"success": False, "error": "product_not_grounded"}
-                        # ── 单价接地校验（issue OR-014，run 34916256903 归因）──
-                        # 已查过商品详情（grounded）但 items 单价 ≠ 库价（含编造的分色价）：
-                        # 查详情 ≠ 金额可信 —— 规格卡上的「米白 ¥150/米」就是查完详情后编的。
-                        # 拦截并回填库价（用 product_detail 结果里的真值，不写死任何金额）。
-                        else:
-                            try:
-                                _pg = await _SG().load(session_id) or {}
-                                _grounded_detail = _pg.get("grounded_product_detail") or {}
-                                _price_err = unit_price_grounding_error(
-                                    (args or {}).get("items") or [], _grounded_detail)
-                                if _price_err:
-                                    logger.warning(
-                                        f"[{skill_name}] 单价接地校验拦截 order_create: {_price_err[:80]}"
-                                        f" | session={session_id}"
-                                    )
-                                    return tool_call, json.dumps({
-                                        "success": False,
-                                        "error": "unit_price_not_grounded",
-                                        "message": f"下单被拦截（单价与商品库不符）：{_price_err}",
-                                    }, ensure_ascii=False), {
-                                        "success": False,
-                                        "error": "unit_price_not_grounded",
-                                    }
-                            except Exception as _pe2:
-                                logger.debug(f"[{skill_name}] 单价接地校验失败（非致命）: {_pe2}")
-
-                    # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
-                    # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
-                    # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
-                    # 卡片确认优先：用户消息**精确等于**最近确认卡的 confirmValue = 用户点了
-                    # 确认按钮 → 最强确认信号，直接放行（长 confirmValue 过不了 24 字上限，
-                    # 见 _is_card_confirm_value —— 不加这个，mini-app 点确认卡写操作永不落库）。
-                    _card_confirmed = False
-                    if _requires_confirmation(tool, args, last_user_msg):
-                        try:
-                            from app.memory.session_state_store import SessionStateStore
-                            _store = SessionStateStore()
-                            _full = await _store.load(session_id) or {}
-                            _card_confirmed = _is_card_confirm_value(
-                                last_user_msg, _full.get("last_confirm_value"))
-                            if _card_confirmed:
-                                # 记录「该写工具已获确认」：确认卡点击后，后续轮补充信息
-                                # （如 customer 下单需 sms_code）不再重复要求确认。
-                                # CI 实证（run 34682324499 诊断）：confirmValue 点击在上一轮，
-                                # 本轮消息是验证码「123456」→ 未记录的话 order_create 被门禁拦。
-                                #
-                                # 记的是**「工具名 + 被确认的值」**（issue #5414）：值优先取
-                                # **卡片来源**（`pending_validated_input.params` —— 门禁话术要求
-                                # "原样用作卡片 fields"，即商家在卡上看到的那一份）；没有 pending
-                                # 时退化为本次调用参数（价面卡由 `interact` 发出、系统无从机器判定
-                                # 卡上那个值：边界登记在 tests/test_price_confirm_value_fact.py）。
-                                # ⚠️ 值**不得**一律取自本次调用：那会让下面的核对退化成"自比自"
-                                # （把本单的嫌疑摘掉也不会红）。
-                                _clicksrc = args
+                            # ── 单价接地校验（issue OR-014，run 34916256903 归因）──
+                            # 已查过商品详情（grounded）但 items 单价 ≠ 库价（含编造的分色价）：
+                            # 查详情 ≠ 金额可信 —— 规格卡上的「米白 ¥150/米」就是查完详情后编的。
+                            # 拦截并回填库价（用 product_detail 结果里的真值，不写死任何金额）。
+                            else:
                                 try:
-                                    from app.graph.pending_validated import PENDING_KEY as _PK5
-                                    _p5 = _full.get(_PK5) or {}
-                                    if (str(_p5.get("target_tool") or "") == str(tool_name)
-                                            and _p5.get("params")):
-                                        _clicksrc = _p5["params"]
-                                except Exception as _e5:
+                                    _pg = await _gate_session_state()
+                                    _grounded_detail = _pg.get("grounded_product_detail") or {}
+                                    _price_err = unit_price_grounding_error(
+                                        (args or {}).get("items") or [], _grounded_detail)
+                                    if _price_err:
+                                        logger.warning(
+                                            f"[{skill_name}] 单价接地校验拦截 order_create: {_price_err[:80]}"
+                                            f" | session={session_id}"
+                                        )
+                                        return tool_call, json.dumps({
+                                            "success": False,
+                                            "error": "unit_price_not_grounded",
+                                            "message": f"下单被拦截（单价与商品库不符）：{_price_err}",
+                                        }, ensure_ascii=False), {
+                                            "success": False,
+                                            "error": "unit_price_not_grounded",
+                                        }
+                                except Exception as _pe2:
+                                    logger.debug(f"[{skill_name}] 单价接地校验失败（非致命）: {_pe2}")
+
+                    # 门禁 11/11 `write_confirmation`：确认门禁：写操作必须经顾客确认卡放行（审计 07 P0-L1 / issue #5414）
+                    async def _gate_write_confirmation():
+                        nonlocal _no_card_blocked_args
+                        nonlocal _no_card_blocked_tool
+                        nonlocal _no_card_blocked_facts
+                        # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
+                        # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
+                        # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
+                        # 卡片确认优先：用户消息**精确等于**最近确认卡的 confirmValue = 用户点了
+                        # 确认按钮 → 最强确认信号，直接放行（长 confirmValue 过不了 24 字上限，
+                        # 见 _is_card_confirm_value —— 不加这个，mini-app 点确认卡写操作永不落库）。
+                        # 确认判定**只求一次**（issue #4081）：同一 (tool, args, last_user_msg)
+                        # 的结果必然相同 ⇒ 一次求值、链内复用（改前这一段重复求值 3 次）。
+                        _needs_confirmation = _requires_confirmation(tool, args, last_user_msg)
+                        _card_confirmed = False
+                        if _needs_confirmation:
+                            try:
+                                from app.memory.session_state_store import SessionStateStore
+                                _store = SessionStateStore()      # 只用于下面的 commit
+                                _full = await _gate_session_state()
+                                _card_confirmed = _is_card_confirm_value(
+                                    last_user_msg, _full.get("last_confirm_value"))
+                                if _card_confirmed:
+                                    # 记录「该写工具已获确认」：确认卡点击后，后续轮补充信息
+                                    # （如 customer 下单需 sms_code）不再重复要求确认。
+                                    # CI 实证（run 34682324499 诊断）：confirmValue 点击在上一轮，
+                                    # 本轮消息是验证码「123456」→ 未记录的话 order_create 被门禁拦。
+                                    #
+                                    # 记的是**「工具名 + 被确认的值」**（issue #5414）：值优先取
+                                    # **卡片来源**（`pending_validated_input.params` —— 门禁话术要求
+                                    # "原样用作卡片 fields"，即商家在卡上看到的那一份）；没有 pending
+                                    # 时退化为本次调用参数（价面卡由 `interact` 发出、系统无从机器判定
+                                    # 卡上那个值：边界登记在 tests/test_price_confirm_value_fact.py）。
+                                    # ⚠️ 值**不得**一律取自本次调用：那会让下面的核对退化成"自比自"
+                                    # （把本单的嫌疑摘掉也不会红）。
+                                    _clicksrc = args
+                                    try:
+                                        from app.graph.pending_validated import PENDING_KEY as _PK5
+                                        _p5 = _full.get(_PK5) or {}
+                                        if (str(_p5.get("target_tool") or "") == str(tool_name)
+                                                and _p5.get("params")):
+                                            _clicksrc = _p5["params"]
+                                    except Exception as _e5:
+                                        logger.warning(
+                                            f"[{skill_name}] 卡片来源取值失败（非致命）: {_e5}")
+                                    _base.record_confirmed_write(_full, tool_name, _clicksrc)
+                                    await _store.commit(session_id, _full)
+                                    # 点卡只对**卡上那些值**有效（issue #5414）：本次调用带了别的值
+                                    # ⇒ 这张卡的确认不成立（否则="点了价 A 的卡，放行价 B 的改动"）。
+                                    if not _base.confirmed_write_release(_full, tool_name, args):
+                                        _card_confirmed = False
+                                        logger.warning(
+                                            f"[{skill_name}] 点卡的卡值与本次调用不符 → 视为未确认 "
+                                            f"{tool_name} | session={session_id} "
+                                            f"args={json.dumps(args, ensure_ascii=False, default=str)[:200]}"
+                                        )
+                                    else:
+                                        logger.info(
+                                            f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
+                                            f"{tool_name} | session={session_id}"
+                                        )
+                            except Exception as e:
+                                logger.warning(f"[{skill_name}] card-confirm check failed (non-fatal): {e}")
+                        _write_was_confirmed = False
+                        if _card_confirmed is False and _needs_confirmation:
+                            try:
+                                _f3 = await _gate_session_state()
+                                # 唯一放行判据（issue #5414）：工具名对 **且** 被确认的值与本次 args
+                                # 逐值核对 —— 只比工具名就是本单的病灶（点过价 A 的卡放行价 B 的改动）。
+                                _write_was_confirmed = _base.confirmed_write_release(_f3, tool_name, args)
+                                if _write_was_confirmed:
+                                    logger.info(
+                                        f"[{skill_name}] 写工具 {tool_name} 前轮已确认（值一致）→ 放行 "
+                                        f"| session={session_id}"
+                                    )
+                                elif _f3.get("confirmed_write_tool"):
                                     logger.warning(
-                                        f"[{skill_name}] 卡片来源取值失败（非致命）: {_e5}")
-                                _base.record_confirmed_write(_full, tool_name, _clicksrc)
-                                await _store.commit(session_id, _full)
-                                # 点卡只对**卡上那些值**有效（issue #5414）：本次调用带了别的值
-                                # ⇒ 这张卡的确认不成立（否则="点了价 A 的卡，放行价 B 的改动"）。
-                                if not _base.confirmed_write_release(_full, tool_name, args):
-                                    _card_confirmed = False
-                                    logger.warning(
-                                        f"[{skill_name}] 点卡的卡值与本次调用不符 → 视为未确认 "
-                                        f"{tool_name} | session={session_id} "
+                                        f"[{skill_name}] 前轮确认记录不覆盖本次调用（工具名或值不符）→ "
+                                        f"仍需新卡 | session={session_id} tool={tool_name} "
                                         f"args={json.dumps(args, ensure_ascii=False, default=str)[:200]}"
                                     )
-                                else:
-                                    logger.info(
-                                        f"[{skill_name}] 确认卡 confirmValue 精确匹配 → 放行写操作 "
-                                        f"{tool_name} | session={session_id}"
-                                    )
-                        except Exception as e:
-                            logger.warning(f"[{skill_name}] card-confirm check failed (non-fatal): {e}")
-                    _write_was_confirmed = False
-                    if _card_confirmed is False and _requires_confirmation(tool, args, last_user_msg):
-                        try:
-                            from app.memory.session_state_store import SessionStateStore as _S3
-                            _f3 = await _S3().load(session_id) or {}
-                            # 唯一放行判据（issue #5414）：工具名对 **且** 被确认的值与本次 args
-                            # 逐值核对 —— 只比工具名就是本单的病灶（点过价 A 的卡放行价 B 的改动）。
-                            _write_was_confirmed = _base.confirmed_write_release(_f3, tool_name, args)
-                            if _write_was_confirmed:
-                                logger.info(
-                                    f"[{skill_name}] 写工具 {tool_name} 前轮已确认（值一致）→ 放行 "
+                            except Exception as _e3:
+                                logger.warning(f"[{skill_name}] confirmed_write_tool check failed (non-fatal): {_e3}")
+                        # ── 确认卡↔落库一致性守护（issue #4037 / F22）──
+                        # 在确认门禁**之后**：门禁管"有没有确认过"，本守护管"确认过什么 vs
+                        # 要执行什么"（放行条件一字未动）。理由与判据见 _confirmed_facts_reject。
+                        if ((_card_confirmed or _write_was_confirmed)
+                                and _needs_confirmation):
+                            _facts_reject = None
+                            try:
+                                _f10 = await _gate_session_state()
+                                _facts_reject = _confirmed_facts_reject(tool_name, args, _f10)
+                            except Exception as _e10:
+                                logger.warning(
+                                    f"[{skill_name}] 确认事实核对失败（非致命）: {_e10}")
+                            if _facts_reject:
+                                logger.warning(
+                                    f"[{skill_name}] 拦截「确认事实已变」的下单 {tool_name} "
+                                    f"| session={session_id} {_facts_reject[:120]}"
+                                )
+                                return tool_call, json.dumps({
+                                    "success": False,
+                                    "error": "order_confirmation_mismatch",
+                                    "message": (
+                                        "下单被拦截：本次要执行的明细与**顾客确认过的那一份**不一致。"
+                                        "顾客确认后明细（数量/单价/加工项/手机号）一旦变化，"
+                                        "那张确认卡的确认即失效。"
+                                    ),
+                                    "suggestion": (
+                                        "把 items 改回顾客确认过的值；确实要改，就**重新发一张"
+                                        "确认卡**（interact component=confirm）让顾客再点一次，"
+                                        "不要直接落库。"
+                                    ),
+                                }, ensure_ascii=False), {
+                                    "success": False,
+                                    "error": "order_confirmation_mismatch",
+                                }
+                        if _needs_confirmation and not _card_confirmed and not _write_was_confirmed:
+                            logger.warning(
+                                f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
+                                f"last_msg={last_user_msg[:30]!r}"
+                            )
+                            # 诊断：为什么卡片确认没放行（stored 值 vs 本轮消息）
+                            try:
+                                _f2 = await _gate_session_state()
+                                logger.warning(
+                                    f"[{skill_name}] card-confirm 诊断: stored={str(_f2.get('last_confirm_value'))[:40]!r} "
+                                    f"msg={last_user_msg[:40]!r} equal={_is_card_confirm_value(last_user_msg, _f2.get('last_confirm_value'))} "
                                     f"| session={session_id}"
                                 )
-                            elif _f3.get("confirmed_write_tool"):
-                                logger.warning(
-                                    f"[{skill_name}] 前轮确认记录不覆盖本次调用（工具名或值不符）→ "
-                                    f"仍需新卡 | session={session_id} tool={tool_name} "
-                                    f"args={json.dumps(args, ensure_ascii=False, default=str)[:200]}"
-                                )
-                        except Exception as _e3:
-                            logger.warning(f"[{skill_name}] confirmed_write_tool check failed (non-fatal): {_e3}")
-                    # ── 确认卡↔落库一致性守护（issue #4037 / F22）──
-                    # 在确认门禁**之后**：门禁管"有没有确认过"，本守护管"确认过什么 vs
-                    # 要执行什么"（放行条件一字未动）。理由与判据见 _confirmed_facts_reject。
-                    if ((_card_confirmed or _write_was_confirmed)
-                            and _requires_confirmation(tool, args, last_user_msg)):
-                        _facts_reject = None
-                        try:
-                            from app.memory.session_state_store import SessionStateStore as _S10
-                            _f10 = await _S10().load(session_id) or {}
-                            _facts_reject = _confirmed_facts_reject(tool_name, args, _f10)
-                        except Exception as _e10:
-                            logger.warning(
-                                f"[{skill_name}] 确认事实核对失败（非致命）: {_e10}")
-                        if _facts_reject:
-                            logger.warning(
-                                f"[{skill_name}] 拦截「确认事实已变」的下单 {tool_name} "
-                                f"| session={session_id} {_facts_reject[:120]}"
+                            except Exception as _e2:
+                                logger.warning(f"[{skill_name}] card-confirm 诊断失败: {_e2}")
+                            # ── 确认话术**唯一形态 = 确认卡**（交互形态统一，产品裁定 2026-09-14）──
+                            # 历史（issue #3317）：这里曾按「本 Skill 是否绑 `interact`」分流 ——
+                            # 没绑的（B 端 staff/settings/data）退化成"用文本完整复述并请用户口头确认"。
+                            # 该处置**已被产品裁定推翻**（「写操作应该安全、交互形态要统一」），
+                            # 处置改为**配置层统一**：staff/settings/data 补绑 `interact`
+                            # （#3577 / PR #3590，squash 851e63ce），并由
+                            # `tests/test_skill_config_registry.py` 的三条不变式机械守护
+                            #   · `test_confirmed_write_tools_require_interact_in_same_skill`
+                            #     （绑需确认写工具 → 必须绑 interact）
+                            #   · `test_prompt_promising_confirm_card_requires_interact`
+                            #   · interact 缺席台账（缺席必须写明只读理由）
+                            # ⇒ **"无 interact" 的降级分支对全部已注册 Skill 已不可达**，故整段删除
+                            #   （唯一还能触发门禁却不绑 interact 的 skill 不存在：只剩
+                            #    knowledge/customer_knowledge 未绑，它们只有只读工具 → 门禁不会触发）。
+                            # ⚠️ 不要重新引入按 skill 能力分流的话术分支：那会让"交互形态"再次不统一，
+                            #   且新增 skill 会静默落进降级态 —— 正确做法是补绑 `interact`（配置层）。
+                            #
+                            # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
+                            # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
+                            # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
+                            #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
+                            #   ③ 回填**已校验参数**（pending_validated_input）与
+                            #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
+                            _pending_hint = ""
+                            try:
+                                from app.graph.pending_validated import PENDING_KEY as _PK
+                                from app.graph.pending_validated import is_pending_for as _is_pending
+                                _f4 = await _gate_session_state()
+                                _pend4 = _f4.get(_PK) or {}
+                                if _is_pending(_pend4, tool_name) and _pend4.get("params"):
+                                    _pending_hint = (
+                                        " 已校验的参数（**原样**用作卡片 fields，不要改写）："
+                                        + json.dumps(_pend4["params"], ensure_ascii=False,
+                                                     default=str)[:400])
+                            except Exception as _e4:
+                                logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
+                            msg = (
+                                f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
+                                f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
+                                f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
+                                f"interact(component=confirm, fields=[…]) "
+                                f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
+                                # 涉钱面（issue #5317）：改价**只认卡值** —— 商家打字「确认」不算。
+                                # 不写这句，模型会拿"顾客已经说过确认"当放行条件反复重试同一个调用。
+                                + ("⚠️ 本次是**涉钱面（改价）**：确认形态**只认卡片点击**，"
+                                   "商家打字「确认」不算（改价门禁只认卡值，issue #5317）。"
+                                   if _card_only_confirmation(tool, args) else "")
+                                + _confirm_card_fields_hint(args)
+                                + _pending_hint
                             )
-                            return tool_call, json.dumps({
-                                "success": False,
-                                "error": "order_confirmation_mismatch",
-                                "message": (
-                                    "下单被拦截：本次要执行的明细与**顾客确认过的那一份**不一致。"
-                                    "顾客确认后明细（数量/单价/加工项/手机号）一旦变化，"
-                                    "那张确认卡的确认即失效。"
-                                ),
-                                "suggestion": (
-                                    "把 items 改回顾客确认过的值；确实要改，就**重新发一张"
-                                    "确认卡**（interact component=confirm）让顾客再点一次，"
-                                    "不要直接落库。"
-                                ),
-                            }, ensure_ascii=False), {
-                                "success": False,
-                                "error": "order_confirmation_mismatch",
-                            }
-                    if _requires_confirmation(tool, args, last_user_msg) and not _card_confirmed and not _write_was_confirmed:
-                        logger.warning(
-                            f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
-                            f"last_msg={last_user_msg[:30]!r}"
-                        )
-                        # 诊断：为什么卡片确认没放行（stored 值 vs 本轮消息）
-                        try:
-                            from app.memory.session_state_store import SessionStateStore as _S2
-                            _f2 = await _S2().load(session_id) or {}
-                            logger.warning(
-                                f"[{skill_name}] card-confirm 诊断: stored={str(_f2.get('last_confirm_value'))[:40]!r} "
-                                f"msg={last_user_msg[:40]!r} equal={_is_card_confirm_value(last_user_msg, _f2.get('last_confirm_value'))} "
-                                f"| session={session_id}"
-                            )
-                        except Exception as _e2:
-                            logger.warning(f"[{skill_name}] card-confirm 诊断失败: {_e2}")
-                        # ── 确认话术**唯一形态 = 确认卡**（交互形态统一，产品裁定 2026-09-14）──
-                        # 历史（issue #3317）：这里曾按「本 Skill 是否绑 `interact`」分流 ——
-                        # 没绑的（B 端 staff/settings/data）退化成"用文本完整复述并请用户口头确认"。
-                        # 该处置**已被产品裁定推翻**（「写操作应该安全、交互形态要统一」），
-                        # 处置改为**配置层统一**：staff/settings/data 补绑 `interact`
-                        # （#3577 / PR #3590，squash 851e63ce），并由
-                        # `tests/test_skill_config_registry.py` 的三条不变式机械守护
-                        #   · `test_confirmed_write_tools_require_interact_in_same_skill`
-                        #     （绑需确认写工具 → 必须绑 interact）
-                        #   · `test_prompt_promising_confirm_card_requires_interact`
-                        #   · interact 缺席台账（缺席必须写明只读理由）
-                        # ⇒ **"无 interact" 的降级分支对全部已注册 Skill 已不可达**，故整段删除
-                        #   （唯一还能触发门禁却不绑 interact 的 skill 不存在：只剩
-                        #    knowledge/customer_knowledge 未绑，它们只有只读工具 → 门禁不会触发）。
-                        # ⚠️ 不要重新引入按 skill 能力分流的话术分支：那会让"交互形态"再次不统一，
-                        #   且新增 skill 会静默落进降级态 —— 正确做法是补绑 `interact`（配置层）。
-                        #
-                        # 可执行下一步（issue #3445）：CI 实测 `confirmation_required_no_card ×3`
-                        # —— 模型**从没发过确认卡**就直接写单，被拦回后仍反复重试同一个写调用、
-                        # 把轮数烧完（R10 时订单仍未落库）。故话术给出**唯一可执行的下一步**：
-                        #   ① 明确"再调写工具没用"（防重试）；② 指明必须调 interact(confirm)；
-                        #   ③ 回填**已校验参数**（pending_validated_input）与
-                        #      **本次被拦调用的字段骨架**（它自己传过的值），让它照抄即可发卡。
-                        _pending_hint = ""
-                        try:
-                            from app.graph.pending_validated import PENDING_KEY as _PK
-                            from app.graph.pending_validated import is_pending_for as _is_pending
-                            from app.memory.session_state_store import SessionStateStore as _S4
-                            _f4 = await _S4().load(session_id) or {}
-                            _pend4 = _f4.get(_PK) or {}
-                            if _is_pending(_pend4, tool_name) and _pend4.get("params"):
-                                _pending_hint = (
-                                    " 已校验的参数（**原样**用作卡片 fields，不要改写）："
-                                    + json.dumps(_pend4["params"], ensure_ascii=False,
-                                                 default=str)[:400])
-                        except Exception as _e4:
-                            logger.warning(f"[{skill_name}] pending 参数回填失败（非致命）: {_e4}")
-                        msg = (
-                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示"
-                            f"确认卡片并取得明确确认。**不要再次调用 {tool_name}** —— 在顾客点击"
-                            f"确认卡之前它会被同样拦下、白烧一轮。本轮唯一的下一步是：调用 "
-                            f"interact(component=confirm, fields=[…]) "
-                            f"把将要执行的内容展示给顾客，等顾客**点击确认卡**之后再调用 {tool_name}。"
-                            # 涉钱面（issue #5317）：改价**只认卡值** —— 商家打字「确认」不算。
-                            # 不写这句，模型会拿"顾客已经说过确认"当放行条件反复重试同一个调用。
-                            + ("⚠️ 本次是**涉钱面（改价）**：确认形态**只认卡片点击**，"
-                               "商家打字「确认」不算（改价门禁只认卡值，issue #5317）。"
-                               if _card_only_confirmation(tool, args) else "")
-                            + _confirm_card_fields_hint(args)
-                            + _pending_hint
-                        )
-                        # 归因细分（issue #3445）：保留 `confirmation_required` 前缀
-                        # （既有断言按子串匹配），后缀说明**是哪一种**：
-                        #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
-                        #   · _card_not_clicked → 发过卡，但这次回复不是卡值（顾客回文本/未点卡）
-                        # 会话卡片证据取自**落库的会话状态**（issue #3750）：`state["messages"]`
-                        # 里不会有跨轮 `interact` 的 ToolMessage（原因见 `_confirm_card_seen`），
-                        # 只靠它会让细分码恒为 `_no_card`。
-                        _card_state3 = {}
-                        try:
-                            from app.memory.session_state_store import SessionStateStore as _S6
-                            _card_state3 = await _S6().load(session_id) or {}
-                        except Exception as _e6:
-                            logger.warning(f"[{skill_name}] 最近确认卡读取失败（非致命）: {_e6}")
-                        _err3 = ("confirmation_required_card_not_clicked"
-                                 if _confirm_card_seen(state.get("messages", []), _card_state3)
-                                 else "confirmation_required_no_card")
-                        if _err3 == "confirmation_required_no_card":
-                            # 代码兜底（issue #3445）：本轮模型**从没发过确认卡**就写了单 ——
-                            # 拦截话术已给"可执行下一步"，但实测它仍会跳过发卡（3 次复验 2 次命中）。
-                            # 收尾时由代码把确认卡 XML 追加到回复文本（发射点在 chat.py 解析
-                            # `<interact>` 块），顾客因此始终有点卡的入口。
-                            _no_card_blocked_args = dict(args or {})
-                            # 同处固定"被拦工具 + 金额事实"（F22）：收尾补卡要落这两样，
-                            # 而 read args 会被后续迭代覆盖（并发下读到别的调用）。
-                            _no_card_blocked_tool = tool_name
-                            _no_card_blocked_facts = confirmed_order_facts_of(tool_name, args or {})
-                        return tool_call, json.dumps(
-                            {"success": False, "error": _err3, "message": msg},
-                            ensure_ascii=False,
-                        ), {"success": False, "error": _err3}
+                            # 归因细分（issue #3445）：保留 `confirmation_required` 前缀
+                            # （既有断言按子串匹配），后缀说明**是哪一种**：
+                            #   · _no_card          → 本会话从没发过确认卡（模型跳过确认直接写）
+                            #   · _card_not_clicked → 发过卡，但这次回复不是卡值（顾客回文本/未点卡）
+                            # 会话卡片证据取自**落库的会话状态**（issue #3750）：`state["messages"]`
+                            # 里不会有跨轮 `interact` 的 ToolMessage（原因见 `_confirm_card_seen`），
+                            # 只靠它会让细分码恒为 `_no_card`。
+                            _card_state3 = {}
+                            try:
+                                _card_state3 = await _gate_session_state()
+                            except Exception as _e6:
+                                logger.warning(f"[{skill_name}] 最近确认卡读取失败（非致命）: {_e6}")
+                            _err3 = ("confirmation_required_card_not_clicked"
+                                     if _confirm_card_seen(state.get("messages", []), _card_state3)
+                                     else "confirmation_required_no_card")
+                            if _err3 == "confirmation_required_no_card":
+                                # 代码兜底（issue #3445）：本轮模型**从没发过确认卡**就写了单 ——
+                                # 拦截话术已给"可执行下一步"，但实测它仍会跳过发卡（3 次复验 2 次命中）。
+                                # 收尾时由代码把确认卡 XML 追加到回复文本（发射点在 chat.py 解析
+                                # `<interact>` 块），顾客因此始终有点卡的入口。
+                                _no_card_blocked_args = dict(args or {})
+                                # 同处固定"被拦工具 + 金额事实"（F22）：收尾补卡要落这两样，
+                                # 而 read args 会被后续迭代覆盖（并发下读到别的调用）。
+                                _no_card_blocked_tool = tool_name
+                                _no_card_blocked_facts = confirmed_order_facts_of(tool_name, args or {})
+                            return tool_call, json.dumps(
+                                {"success": False, "error": _err3, "message": msg},
+                                ensure_ascii=False,
+                            ), {"success": False, "error": _err3}
+
+                    # ── 门禁链的**顺序唯一真相源**（issue #4081）────────────────────
+                    # 每条 = (身份名, 实现)；调用点只做「按序求值 + 首个非空即拦」（见下方循环）。
+                    # 加/删/挪一条门禁 = 改这张表一行（+ 它自己的 `_gate_*` 实现）。
+                    #
+                    # **为什么是这个顺序**（顺序即语义，动顺序前先读这段）：
+                    #   ① 先两条只读会话态的短路门禁（缺参恢复 / 卡循环）：只依赖会话状态，
+                    #      最便宜，且防的是「注定失败的写」与「死循环」；
+                    #   ② 工具解析 `tool_available`：注册表里没有 ⇒ 拦（并给可执行恢复路径）。
+                    #      ⚠️ **掩码手机号门禁必须在它之后** —— 守卫内不再查 registry，避免
+                    #      「注册表拿不到工具 → 静默放行」的假守卫（原注释见该门禁上方）；
+                    #   ③ 三条产出层守卫（数量口径 / 收货信息预填 / 算料前提）：作用于**只读**
+                    #      工具（interact 等），故在读写分流之前单独接；
+                    #   ④ 写侧两条（掩码手机号 → 校验失败禁止写）：`validation_failed_write`
+                    #      的位置纪律是**故意在确认门禁之外、之前** —— 顾客点了确认卡也
+                    #      **不得**放行（确认只解决「要不要做」，不解决「参数对不对」）；
+                    #   ⑤ 转人工兜底：在办流程里「无信号误转人工」是模型放弃流程，不是顾客诉求；
+                    #   ⑥ 下单接地：本会话没查过商品详情就下单 ⇒ 金额/加工项都不可信；
+                    #   ⑦ 确认门禁放**链尾**：它要在链上落 pending 状态、并把「唯一可执行的
+                    #      下一步」（发确认卡）写回给模型；前面任何一条拦下来都轮不到它。
+                    #
+                    # ⚠️ 同组件卡片判重（`card_already_emitted_this_turn`）**不在链上**：它的结论
+                    # 由调用侧在 args 归一化**之前**算好（`allow_card`，见本函数开头注释）——
+                    # 放进链里会读到归一化后的 args，且它不是「写门禁」而是发卡额度。
+                    _WRITE_GATE_CHAIN = (
+                        ("write_input_recovery", _gate_write_input_recovery),
+                        ("card_loop", _gate_card_loop),
+                        ("tool_available", _gate_tool_available),
+                        ("quantity_choice", _gate_quantity_choice),
+                        ("form_prefill_fidelity", _gate_form_prefill_fidelity),
+                        ("curtain_calc_dimension", _gate_curtain_calc_dimension),
+                        ("masked_phone_write", _gate_masked_phone_write),
+                        ("validation_failed_write", _gate_validation_failed_write),
+                        ("handoff_guard", _gate_handoff_guard),
+                        ("order_grounding", _gate_order_grounding),
+                        ("write_confirmation", _gate_write_confirmation),
+                    )
+                    for _gate_name, _gate in _WRITE_GATE_CHAIN:
+                        if GATE_EVAL_HOOK is not None:   # 求值探针：默认 None ⇒ 生产零行为改变
+                            GATE_EVAL_HOOK(_gate_name)
+                        _block = await _gate()
+                        if _block is not None:           # 首个非空即拦（fail-closed）
+                            return _block
+
                     # ── 同轮重复写调用合并（issue #3361）──
                     # 模型有时在**同一次回复**里对同一个写工具发多次**完全相同**的调用
                     # （CI 实证 CH-010：一轮里 order_create ×3 → 2 次 tool_execution_failed、

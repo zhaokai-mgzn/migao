@@ -3,10 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>米高窗帘 · 小布智能助手</title>
+  <title>米宝商家助手</title>
   <script>
     // Taro H5 需要 window 环境变量占位
     window.TARO_ENV = 'h5'
+  </script>
+  <script>
+    /* ── 响应式根字号（issue #5721）────────────────────────────────────────────
+       为什么必须有这一脚本：Taro H5 的 rem 方案**只做了编译期那一半** ——
+       `postcss-pxtransform` 把样式里的 px 折算成 rem（750 设计宽 ⇒ `1px = 1/40 rem`），
+       而「1rem 到底是多少」**从来没有东西设置过**（产物里既无脚本、Taro 运行时也不设）
+       ⇒ 浏览器用默认 16px 兜底：全端字号只有设计值的 **40%**（2026-09-27 线上实测：
+       登录页字段标签 5.2 CSS px、页脚 4.8px、登录按钮高 19px），而且**完全不随屏宽变化**
+       —— 大屏小屏一个样，"响应式"只剩布局那一半。
+
+       这里补上另一半：`1rem = 40 × 有效宽度 / 750`（40 = baseFontSize 20 × 2，与
+       `@tarojs/taro-h5` 的 pxTransform 同源）。两条边界都是**有意的**：
+         · 有效宽度 = min(视口宽, 480)：平板 / 桌面不把手机界面等比放大成"老人机"；
+         · 下限 20px（≈375 宽设备的效果）：320 / 360 的窄屏不把字缩到看不清
+           （小屏宁可相对大一点，也不要不可读）。
+
+       ⚠️ 常量与 `frontend/bmini-app/config/index.ts` 的 `designWidth` / `deviceRatio` 必须一致；
+       判据 = `tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py`（删掉本脚本即红）。
+       ⚠️ 只随 h5 走：本文件是小程序**不**消费的 h5 模板，小程序端字号由 rpx 自己缩放。 */
+    (function () {
+      var DESIGN_WIDTH = 750
+      var BASE_FONT_SIZE = 20
+      var MAX_WIDTH = 480
+      var MIN_FONT_SIZE = 20
+
+      function applyRootFontSize() {
+        var width = document.documentElement.clientWidth || window.innerWidth || DESIGN_WIDTH
+        var effective = Math.min(width, MAX_WIDTH)
+        var size = (BASE_FONT_SIZE * 2 * effective) / DESIGN_WIDTH
+        document.documentElement.style.fontSize = Math.max(size, MIN_FONT_SIZE).toFixed(4) + 'px'
+      }
+
+      applyRootFontSize()
+      window.addEventListener('resize', applyRootFontSize)
+      window.addEventListener('orientationchange', applyRootFontSize)
+    })()
   </script>
 </head>
 <body>

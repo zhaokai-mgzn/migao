@@ -60,6 +60,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "issue-lifecycle.sh"
 MODULE = REPO_ROOT / "scripts" / "issue_lifecycle.py"
 GUARD_MODULE = REPO_ROOT / "scripts" / "agent-presets-guard.py"
+#: `land` 的 ④ 步复用 `merge_gate` 的纯函数（required 集合的解析 + 红/裸判据的分类）⇒
+#: 变异副本旁边也必须有一份，否则变异体会在「载入真值源」这一步就失败（红的原因不对）。
+MERGE_GATE_MODULE = REPO_ROOT / "scripts" / "merge_gate.py"
 DEV_WORKTREE = REPO_ROOT / "scripts" / "dev-worktree.sh"
 ANCHOR_REL = Path(".dsh") / ".agent-presets" / "migao"
 
@@ -164,6 +167,7 @@ def _mutate_module(dest_dir: Path, anchor: str, replacement: str) -> Path:
     target = dest_dir / "issue_lifecycle.py"
     target.write_text(mutated, encoding="utf-8")
     shutil.copy(GUARD_MODULE, dest_dir / "agent-presets-guard.py")
+    shutil.copy(MERGE_GATE_MODULE, dest_dir / "merge_gate.py")
     compile(mutated, str(target), "exec")
     return target
 
@@ -209,7 +213,20 @@ if argv[:2] == ["pr", "ready"]:
     sys.exit(int(state.get("ready_rc") or 0))
 
 if argv[:2] == ["pr", "checks"]:
+    if "--json" in argv:
+        emit(list(state.get("checks_json") or []))
     sys.exit(int(state.get("checks_rc") or 0))
+
+if argv[:1] == ["api"]:
+    endpoint = argv[1] if len(argv) > 1 else ""
+    if not endpoint.endswith("/protection/required_status_checks"):
+        sys.stderr.write("替身 gh：未实现的端点 " + endpoint + "\n")
+        sys.exit(1)
+    if int(state.get("api_rc") or 0):
+        sys.stderr.write(str(state.get("api_stderr")
+                              or "HTTP 403: Resource not accessible by integration") + "\n")
+        sys.exit(int(state["api_rc"]))
+    emit(state.get("required_payload") or {"contexts": []})
 
 if argv[:2] == ["pr", "view"]:
     emit(state.get("view") or {})
@@ -866,3 +883,380 @@ def test_finish_accepts_a_worktree_path(fx: Fixture):
     assert "AttributeError" not in out, f"不得再抛 AttributeError：\n{out}"
     assert "fix/by-path" in proc.stdout, f"必须解析出该路径所在的分支：\n{proc.stdout}"
     assert str(wt) in _worktree_paths(fx.repo), "dry-run 竟然动了工作区"
+
+
+# ── ⑨ ④wait-ci：停/不停**只看拦合并的判据**（关联 #5707；病灶实证 = PR #5722）───────────
+#
+# 病灶（现场实证，2026-09-27）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，
+# 包括**不拦合并**的裸判据 —— PR #5722 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`
+# （①rebase✅②gate✅③ready✅④wait-ci❌）⇒ fail-closed 停、未收尾（重跑受影响 run 后 auto-merge
+# 才生效，续跑才 `LAND_RC=0`）。🔴 这是「**一味 fail-closed = 新的假阻塞**」的**第二个实证**
+# （第一个 = `land` 对预设面的假阻塞，#5719）；而 `land` 是**所有 PR 落地都走的工具** ⇒ 一次假阻塞停全线。
+#
+# 口径 = **以 `scripts/merge_gate.py` 为准**（「哪些判据拦合并」的现成真值源）。三个方向各自钉住：
+# ① 真 required 红 ⇒ **仍停在 ④**（那是这一步的价值 · 零回归）；② 非 required 红 ⇒ **不停 + 如实打印**；
+# ③ required 集合**取不到** ⇒ **退回严格行为**（停 + 打印为什么）—— 🔴 读不到 ≠ 没有 required。
+#
+# 夹具读数（替身 gh）：`required_payload`（分支保护载荷）/ `checks_json`（`pr checks --json` 输出）/
+# `checks_rc`（`--watch` 退出码）/ `api_rc`（读分支保护的退出码，非 0 ⇒ stderr 给 403 读数的默认串）。
+# 两个判据名**逐字取自现取**（2026-09-27）：
+#   · `REQ_SAMPLE` ∈ `gh api repos/<owner>/<repo>/branches/main/protection/required_status_checks`
+#     `.contexts[]`（现取 15 条，此处只取 1 条作夹具 —— 口径同 `test_merge_gate.py` 的 `REQUIRED_SAMPLE`：
+#     **不写死全集**，分支保护一变写死全集的断言就会腐烂）；
+#   · `BARE_SAMPLE` ∈ `python3 scripts/merge_gate.py --required-diff` 的**裸判据**清单（现取 17 条）。
+REQ_SAMPLE = "ci workflow helper unit tests"
+BARE_SAMPLE = "Drift Audit (真相源契约)"
+
+
+def _check_row(name: str, bucket: str = "fail") -> dict:
+    return {"name": name, "bucket": bucket,
+            "state": {"pass": "SUCCESS", "fail": "FAILURE", "pending": "PENDING"}[bucket],
+            "link": f"https://example.invalid/{name}"}
+
+
+def _wait_ci_run(fx: Fixture, *, checks_rc: int = 1, checks_json: list | None = None,
+                 required: list | None = None, api_rc: int = 0, module: Path | None = None):
+    """跑一遍**真** `land`（只换 gh CLI 边界）⇒ `(proc, 调用日志, worktree)`。"""
+    wt = _land_shape(fx, files=[".agent-presets/migao/preset.yml"])
+    fx.set_state(checks_rc=checks_rc, api_rc=api_rc,
+                 required_payload={"contexts": [REQ_SAMPLE] if required is None else list(required)},
+                 checks_json=list(checks_json or []))
+    proc = fx.run_module(module, "land", BRANCH) if module else fx.run("land", BRANCH)
+    return proc, fx.log_text(), wt
+
+
+def _bare_red_problems(proc, log: str) -> list[str]:
+    """判据②：非 required 红 ⇒ **不停**（继续到 wait-merge）**且如实打印清单**。"""
+    problems: list[str] = []
+    if proc.returncode != 0:
+        problems.append(f"非 required 红**不得**拦落地：exit={proc.returncode}（应 0）")
+    if f"· {BARE_SAMPLE}" not in proc.stdout:
+        problems.append("没有**如实打印**非 required 红的**清单**（必须逐条给出 —— 静默忽略会把「有红」读成「没问题」）")
+    if "非 required" not in proc.stdout:
+        problems.append("没有点明这些红**不在 required 集合里**（口径要可读）")
+    if "不拦合并" not in proc.stdout:
+        problems.append("没有点明「不拦合并」")
+    if _marker_index(log, "gh:pr view") < 0:
+        problems.append("停在 ④ 了（`wait-merge` 的读数调用没出现）—— 非 required 红不该停")
+    return problems
+
+
+def _required_red_problems(proc, log: str) -> list[str]:
+    """判据①：**真 required 红 ⇒ 仍停在 ④**（fail-closed 是这一步的价值）。"""
+    problems: list[str] = []
+    if proc.returncode != 2:
+        problems.append(f"required 红必须 fail-closed（exit 2）：exit={proc.returncode}")
+    if REQ_SAMPLE not in proc.stdout:
+        problems.append("没有**具名**点出哪条 required 未绿（归因要可行动）")
+    if "required" not in proc.stdout:
+        problems.append("没有点明「required」这件事")
+    if _marker_index(log, "gh:pr view") >= 0:
+        problems.append("required 红却继续跑到 wait-merge（fail-closed 破了）")
+    return problems
+
+
+def _unreadable_problems(proc, log: str) -> list[str]:
+    """判据③：required 集合**取不到** ⇒ 退回严格行为 **且打印为什么**。"""
+    out = proc.stdout + proc.stderr
+    problems: list[str] = []
+    if proc.returncode != 2:
+        problems.append(f"取不到 required 集合 ⇒ 必须退回严格行为（exit 2）：exit={proc.returncode}")
+    for needle in ("取不到 required 集合", "退回严格行为", "403"):
+        if needle not in out:
+            problems.append(f"没有打印**为什么**（缺 {needle!r}）—— 静默的 fail-closed 会被读成「工具坏了」")
+    if _marker_index(log, "gh:pr view") >= 0:
+        problems.append("取不到 required 集合却继续 = 把「读不到」当成「不拦」（假放行，比假阻塞更危险）")
+    return problems
+
+
+def test_wait_ci_required_red_still_stops_at_step_four(fx: Fixture):
+    """判据①（零回归）：真 required 红 ⇒ **仍停在 ④**：不收尾、不猜已合并。"""
+    proc, log, wt = _wait_ci_run(fx, checks_json=[_check_row(REQ_SAMPLE)])
+
+    assert _required_red_problems(proc, log) == [], (
+        f"required 红必须停在 ④：{_required_red_problems(proc, log)}\n--- out ---\n{proc.stdout}\n--- log ---\n{log}")
+    assert str(wt) in _worktree_paths(fx.repo), "停在 ④ ⇒ 不得收尾（worktree 应原样保留）"
+    assert BRANCH in _branches(fx.repo), "停在 ④ ⇒ 不得删本地分支"
+
+
+def test_wait_ci_bare_red_continues_and_prints_the_list(fx: Fixture):
+    """判据②：**非 required 红 ⇒ 不停**，**且如实打印清单**（不许静默忽略）。
+
+    病灶实证（PR #5722）：2 条非 required 红 ⇒ `LAND_RC=2`、fail-closed 停、未收尾。
+    """
+    proc, log, wt = _wait_ci_run(fx, checks_json=[_check_row(BARE_SAMPLE)])
+
+    assert _bare_red_problems(proc, log) == [], (
+        f"非 required 红不该拦落地：{_bare_red_problems(proc, log)}\n--- out ---\n{proc.stdout}\n--- log ---\n{log}")
+
+
+def test_wait_ci_unreadable_required_set_falls_back_to_strict(fx: Fixture):
+    """判据③：required 集合**取不到**（无权限 / 无网络）⇒ **退回严格行为** + **打印为什么**。
+
+    🔴 保守方向：**不许**把「读不到」当成「没有 required」—— 那是**假放行**，比假阻塞更危险。
+    """
+    proc, log, wt = _wait_ci_run(fx, checks_json=[_check_row(BARE_SAMPLE)], api_rc=1)
+
+    assert _unreadable_problems(proc, log) == [], (
+        f"取不到 required 集合必须退回严格行为：{_unreadable_problems(proc, log)}\n--- out ---\n{proc.stdout}")
+
+
+def test_wait_ci_inconsistent_reading_stops(fx: Fixture):
+    """读数**不自洽**（`--watch` 判红，而 `--json` 里没有红项）⇒ 停（**未判定不得当绿**）。"""
+    proc, log, wt = _wait_ci_run(fx, checks_json=[])
+
+    assert proc.returncode == 2, f"不自洽必须 fail-closed：exit={proc.returncode}\n{proc.stdout}"
+    assert "不自洽" in proc.stdout, f"必须点明是「读数不自洽」：\n{proc.stdout}"
+
+
+def test_wait_ci_green_path_adds_no_reading(fx: Fixture):
+    """对照（零回归）：全绿 ⇒ 照旧 done，且**不新增任何读数调用**（happy path 一个都不加）。"""
+    proc, log, wt = _wait_ci_run(fx, checks_rc=0)
+
+    assert proc.returncode == 0, f"全绿应当 exit 0：\n{proc.stdout}\n{proc.stderr}"
+    assert "gh:api" not in log, f"全绿不该去读分支保护（多一次调用 = 多一个失败面）：\n{log}"
+
+
+#: 注入锚点（**逐字**取自 `scripts/issue_lifecycle.py`；每条都是**单行**，注入后仍是合法 Python）。
+WAIT_CI_ANCHORS = {
+    # 判据② 的坏形态：把「非 required 红的清单」整条删掉（= 静默忽略，会把「有红」读成「没问题」）
+    "bare_print": (
+        '        print(f"   ℹ️ 有 **{len(reading[\'bare_red\'])} 条非 required 红**（不在 required 集合里 ⇒ **不拦合并**）—— 如实打印，不静默忽略：\\n{_fmt_ci_bare_rows(reading[\'bare_red\'])}")',
+        "        pass  # 变异：删掉非 required 红的清单（静默忽略）",
+    ),
+    # 判据① 的坏形态：把所有红都当**裸判据**（= 本单要修的 bug 的镜像）
+    "required_as_bare": (
+        "    required_red, bare_red = mg.classify(checks, required)",
+        "    required_red, bare_red = mg.classify(checks, set())  # 变异：所有红都当裸判据",
+    ),
+    # 判据③ 的坏形态：把「读不到」当成「没有 required」（假放行）
+    "unreadable_continues": (
+        '        if not reading["readable"]:',
+        '        if False:  # 变异：读不到也继续（把「读不到」当成「不拦」）',
+    ),
+    # 对照：**只改注释**（语义完全不变 ⇒ 三条判据都必须照旧）
+    "comment_only": (
+        "        # 三态读数：读不到 required 集合 ⇒ 退回严格行为（**不许**把「读不到」读成「不拦」）",
+        "        # 三态读数（只改措辞，语义不变）：读不到 required 集合 ⇒ 退回严格行为",
+    ),
+}
+
+
+def test_wait_ci_criteria_have_discriminating_power(tmp_path: Path):
+    """**红证**：三条判据各自改坏 ⇒ 必须红（且红的**来源**可归因）；**只改注释** ⇒ 必须不红。
+
+    注入一律**实跑**（真 `land` + 替身 gh + 独立 worktree），自证三件由 `_mutate_module` 保证：
+    ① 锚**恰好命中 1 次** ② 变异体 ≠ 原文 ③ 仍是合法 Python。
+    """
+    for key, predicate, checks, expect in (
+        ("bare_print", _bare_red_problems, [_check_row(BARE_SAMPLE)], "如实打印"),
+        ("required_as_bare", _required_red_problems, [_check_row(REQ_SAMPLE)], "fail-closed"),
+        ("unreadable_continues", _unreadable_problems, [_check_row(BARE_SAMPLE)], "退回严格行为"),
+    ):
+        anchor, replacement = WAIT_CI_ANCHORS[key]
+        mutant = _mutate_module(tmp_path / f"mut-{key}", anchor, replacement)
+        fx = Fixture(tmp_path / f"red-{key}")
+        proc, log, _ = _wait_ci_run(fx, checks_json=checks, module=mutant,
+                                    api_rc=1 if key == "unreadable_continues" else 0)
+        problems = predicate(proc, log)
+        assert problems, (f"注入 `{key}` 之后判据必须红（否则那条判据是空断言）"
+                          f"\n--- out ---\n{proc.stdout}\n--- log ---\n{log}")
+        assert any(expect in p for p in problems), f"红的必须是 `{expect}` 这件事：{problems}"
+
+    # 对照读数：**只改注释** ⇒ 三个形态都必须照旧（证明判据判的是语义，不是「文件变了没有」）
+    anchor, replacement = WAIT_CI_ANCHORS["comment_only"]
+    mutant = _mutate_module(tmp_path / "mut-comment", anchor, replacement)
+    for key, predicate, checks, api_rc in (("bare", _bare_red_problems, [_check_row(BARE_SAMPLE)], 0),
+                                           ("req", _required_red_problems, [_check_row(REQ_SAMPLE)], 0),
+                                           ("unread", _unreadable_problems, [_check_row(BARE_SAMPLE)], 1)):
+        fx = Fixture(tmp_path / f"ctrl-{key}")
+        proc, log, _ = _wait_ci_run(fx, checks_json=checks, api_rc=api_rc, module=mutant)
+        assert predicate(proc, log) == [], (
+            f"只改注释 ⇒ 判据必须照旧（对照读数非空 = 判据判的是文本不是语义）：{predicate(proc, log)}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据（台账 `NS-3` 的承载体）：远程**读/删**的往返次数必须与目标数**无关**
+#   —— 逐分支 `git ls-remote` 实测 3.70s/次（本机 SSH）⇒ 41 个目标 ≈ 5 分钟，
+#      而 `dev-worktree.sh add` 接在 `reap-merged --apply` 上 ⇒ 整条命令 ~7 分钟（用户侧 = 「挂死」）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _count_remote_calls(module, fn) -> tuple[object, list[tuple]]:
+    """在一个计数用的 `git` 替身下跑 `fn()` ⇒ `(返回值, 调用清单)`（**不 mock 语义，只数调用**）。"""
+    real_git = module.git
+    calls: list[tuple] = []
+
+    def counting(*args, **kwargs):
+        calls.append(tuple(args))
+        return real_git(*args, **kwargs)
+
+    module.git = counting
+    try:
+        return fn(), calls
+    finally:
+        module.git = real_git
+
+
+def test_remote_round_trips_are_constant_not_per_branch(fx: Fixture):
+    """删 3 个远程分支 ⇒ `push --delete` **恰好 1 次**、`ls-remote` **≤ 2 次**（删前 + 删后各一次批量读数）。"""
+    module = _load_module(MODULE)
+    branches = ["round-1", "round-2", "round-3"]
+    for b in branches:
+        _git(fx.repo, "branch", b)
+        fx.push_branch(b)
+
+    module._REMOTE_HEADS.clear()
+    gone, calls = _count_remote_calls(module, lambda: module.batch_delete_remote_branches(branches, fx.repo))
+
+    assert gone == {b: "deleted" for b in branches}, gone
+    pushes = [c for c in calls if c[:2] == ("push", "origin")]
+    reads = [c for c in calls if c[0] == "ls-remote"]
+    assert len(pushes) == 1, f"远程删除必须**一次 push**（实测 {len(pushes)} 次）：{pushes}"
+    assert len(reads) <= 2, f"远程读数必须**恒为常数次**（删前 + 删后 ≤ 2；实测 {len(reads)} 次）：{reads}"
+
+
+def test_remote_round_trips_do_not_grow_with_target_count(fx: Fixture):
+    """**不变性半边**：目标数 1 → 3，往返次数**不增长**（增长 = 又回到「逐分支轮询」）。"""
+    module = _load_module(MODULE)
+
+    def counts_for(n: int) -> tuple[int, int]:
+        # 每一轮用**互不相同**的分支名（`batch_delete_remote_branches` 只删远程 ⇒ 同名本地分支会撞）
+        names = [f"scale-{n}-{i}" for i in range(n)]
+        for b in names:
+            _git(fx.repo, "branch", b)
+            fx.push_branch(b)
+        module._REMOTE_HEADS.clear()
+        _gone, calls = _count_remote_calls(module, lambda: module.batch_delete_remote_branches(names, fx.repo))
+        return (len([c for c in calls if c[:2] == ("push", "origin")]),
+                len([c for c in calls if c[0] == "ls-remote"]))
+
+    base1, base3 = counts_for(1), counts_for(3)
+    assert base1[0] >= 1 and base1[1] >= 1, (
+        f"基线读数不成立（push={base1[0]} / ls-remote={base1[1]}）—— 零调用的桩会让关系式断言"
+        "**空集恒真**（独立验收 P2-②）")
+    assert base1 == base3, "往返次数随目标数增长 ⇒ 又回到「逐分支轮询」（NS-3 复发）"
+
+
+def test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe(fx: Fixture):
+    """自证的另一半：`verify_clean` 必须走**批量读数**（退回逐分支 = 又慢回去）。"""
+    module = _load_module(MODULE)
+    _git(fx.repo, "branch", "probe-me")
+    fx.push_branch("probe-me")
+
+    module._REMOTE_HEADS.clear()
+    target = module.Target("probe-me", None, False, True, True)
+    ok, calls = _count_remote_calls(module, lambda: module.verify_clean(target, fx.repo, fx.repo))
+
+    assert ok is False, "本地/远程都还在 ⇒ 自证必须判「未清」（这是靶子，不是通过）"
+    per_branch = [c for c in calls if c[0] == "ls-remote" and len(c) == 4]  # ("ls-remote","--heads","origin",<b>)
+    assert per_branch == [], f"`verify_clean` 退回了逐分支探测（批量读数没被用上）：{per_branch}"
+
+
+def test_verify_clean_remote_check_is_load_bearing(fx: Fixture, tmp_path: Path):
+    """🔴 **验收 P2-① 的承载体**：原判据可被「整段删掉远程自证」绕过（本地分支兜住 `ok=False` + 空集恒真）
+    ⇒ 这里用**只剩远程**的夹具 + 变异红证，让「远程检查」成为承重项。"""
+    module = _load_module(MODULE)
+    branch = "remote-only-probe"
+    _git(fx.repo, "branch", branch)
+    fx.push_branch(branch)
+    _git(fx.repo, "branch", "-D", branch)                     # 本地删掉 ⇒ **只剩远程**
+    module._REMOTE_HEADS.clear()
+    target = module.Target(branch, None, False, False, True)
+    ok, calls = _count_remote_calls(module, lambda: module.verify_clean(target, fx.repo, fx.repo))
+    assert ok is False, "只剩远程还在 ⇒ 自证必须判「未清」（本地已没了 ⇒ 这个 False **只能**来自远程检查）"
+    assert [c for c in calls if c[0] == "ls-remote" and len(c) == 4] == [], "退回了逐分支探测"
+
+    dest = _mutate_module(tmp_path / "mut-remote", "    ok = ok and gone_remote", "    pass  # 变异：不判远程")
+    mutant = _load_module(dest)
+    module._REMOTE_HEADS.clear()
+    assert mutant.verify_clean(target, fx.repo, fx.repo) is True, \
+        "把远程判定删掉后仍是 False ⇒ 上面那条 False 不是远程检查挣来的（空断言）"
+
+
+def test_ghost_branch_is_never_reported_as_deleted(fx: Fixture, tmp_path: Path):
+    """🔴 **验收 P2-④ 的承载体**（真反例）：幽灵分支（从未推送）在任何路径下**都不许**被报成 `deleted`。
+
+    - 正常路径（读数可用）⇒ `already-absent`；
+    - **回退路径**（删后批量读数取不到）⇒ 原版**曾谎报 `deleted`** ⇒ 现在只许 `absent-unverified`。
+    """
+    module = _load_module(MODULE)
+    ghost = "ghost-never-pushed"
+
+    module._REMOTE_HEADS.clear()
+    normal, _c1 = _count_remote_calls(module, lambda: module.batch_delete_remote_branches([ghost], fx.repo))
+    assert normal == {ghost: "already-absent"}, normal
+
+    module._REMOTE_HEADS.clear()
+    real = module.remote_heads
+    module.remote_heads = lambda cwd, refresh=False: None if refresh else real(cwd)
+    try:
+        fallback, _c2 = _count_remote_calls(
+            module, lambda: module.batch_delete_remote_branches([ghost], fx.repo))
+    finally:
+        module.remote_heads = real
+        module._REMOTE_HEADS.clear()
+    assert fallback == {ghost: "absent-unverified"}, (
+        f"回退路径把幽灵分支报成 {fallback} —— `deleted` 是**假陈述**（判不了「是不是我删的」）")
+
+    dest = _mutate_module(tmp_path / "mut-ghost",
+                          '            results[b] = "already-absent"', '            results[b] = "deleted"')
+    mutant = _load_module(dest)
+    mutant._REMOTE_HEADS.clear()
+    mutated, _c3 = _count_remote_calls(mutant, lambda: mutant.batch_delete_remote_branches([ghost], fx.repo))
+    assert mutated == {ghost: "deleted"}, f"变异体没改判（锚点失效）：{mutated}"
+
+
+def test_batch_reading_unavailable_is_marked_undecidable(fx: Fixture):
+    """🔴 **红证半边**：批量读数取不到 ⇒ 必须显式返回「无法判定」（`None`）⇒ 调用方才知道要退回。
+
+    ⇒ 上面三条的「常数次往返」来自**批量读数真的被用上了**，不是恒真。
+    """
+    module = _load_module(MODULE)
+    module._REMOTE_HEADS[str(fx.repo)] = None
+    assert module.remote_branch_gone("any-branch", fx.repo) is None, \
+        "批量读数取不到却给了确定答案 ⇒ 调用方不会退回，判定会静默变错"
+    module._REMOTE_HEADS.clear()
+    heads = module.remote_heads(fx.repo)
+    assert isinstance(heads, set), f"批量读数可用时必须给确定集合（实测 {heads!r}）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据（台账 `FM-E20` 的承载体）：活锚自检**之前**必须先 fetch 基线仓的 `${REF}`
+#   —— 拿未 fetch 的旧 ref 自检 ⇒ 「刚合并的预设改动」被读成「活锚落后」
+#      （2026-09-28 实测：`land` 的 ⑦ `preset-refresh` 步因此判红，而活锚只差一次 fetch）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+PRESET_REFRESH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
+
+#: 判据的两根锚：fetch 行 + 自检调用行（措辞与脚本同批改 ⇒ 锚失效即红，不静默）。
+PRESET_FETCH_NEEDLE = 'git -C "${BASELINE}" fetch'
+PRESET_CHECK_NEEDLE = '"${CHECK}" --anchor'
+
+
+def preset_refresh_order_problems(text: str) -> list[str]:
+    """**纯函数**：自检前必须先 fetch 基线仓（顺序即正确性：fetch 在自检之后 = 自检读的还是旧 ref）。"""
+    problems: list[str] = []
+    if PRESET_FETCH_NEEDLE not in text:
+        problems.append("缺基线仓 fetch ⇒ 自检会对着**未 fetch 的旧 ref** 判（2026-09-28 实测的假红形态）")
+    elif PRESET_CHECK_NEEDLE in text and text.index(PRESET_FETCH_NEEDLE) > text.index(PRESET_CHECK_NEEDLE):
+        problems.append("fetch 排在自检**之后** ⇒ 自检读的仍是旧 ref（顺序反了）")
+    if PRESET_CHECK_NEEDLE not in text:
+        problems.append("找不到自检调用（脚本结构变了 ⇒ 本判据需同批改）")
+    return problems
+
+
+def test_preset_refresh_fetches_the_baseline_before_self_check():
+    text = PRESET_REFRESH.read_text(encoding="utf-8")
+    assert preset_refresh_order_problems(text) == [], "\n".join(preset_refresh_order_problems(text))
+
+
+def test_preset_refresh_order_criterion_is_red_when_fetch_moves_or_goes():
+    """**红证（内存构造，不碰磁盘）**：删掉 fetch 行 / 把它挪到自检之后 ⇒ 各能单独变红。"""
+    text = PRESET_REFRESH.read_text(encoding="utf-8")
+    assert preset_refresh_order_problems(text) == [], "基线本身应当绿"
+    lines = [ln for ln in text.splitlines() if PRESET_FETCH_NEEDLE in ln]
+    assert lines, f"锚点失配（找不到 {PRESET_FETCH_NEEDLE!r}）—— 红证不得是空断言"
+    removed = text.replace(lines[0], "# （已变异：fetch 行被删）", 1)
+    assert removed != text and preset_refresh_order_problems(removed) != [], "删掉 fetch 却不红 ⇒ 空断言"
+    moved = text.replace(lines[0], "", 1) + "\n" + lines[0] + "\n"
+    assert preset_refresh_order_problems(moved) != [], "把 fetch 挪到自检之后却不红 ⇒ 空断言"

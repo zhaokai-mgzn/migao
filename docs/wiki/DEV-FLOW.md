@@ -292,19 +292,24 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 ```
 
 **未实装项**（见 `.github/case-trust-unimplemented.json`，**不写恒真规则凑数**）：
-每-PR 最低消减的**字面口径**（`scope=all_prs`，默认 `case_touching_prs` —— 见该文件登记的理由）、
-未知 `pre_clean.type` 静默跳过（#3797）、`pre_clean` 失败路径未折叠判据（#3797）、
-跨腿窄跑的运行期判定（#3822，属 runner 归因自动化即 #3483 的 T2）、
-**全库** persona 标注（有意不做的宽口径）。
-（纯散文 `data_checks` 的**语义**质量已于 2026-09-26 裁定**有意不做**并撤登记 ——
-不再属本清单；撤登记 **≠** 已实装，接受的缺口与重启条件见 `assertion_taxonomy.py` 的
-「已撤登记（有意不做）」组。）
+**空**（2026-09-26 起）—— 最后两条口径型登记已撤
+（`CASE-TRUST-BURN-DOWN-SCOPE-CASE-TOUCHING-ONLY` / `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED`）。
+⚠️ **空 ≠ 全部已实装**，也 **≠ 没跑**：撤掉的码连同**接受的缺口 + 重启条件**逐条记在
+`assertion_taxonomy.py` 的「已撤登记（**有意不做 / 口径已无对象**）」组与其**机器可读台帐**
+`WITHDRAWN_UNIMPLEMENTED`（判据 = `tests/unit_ci_workflows/test_case_trust_gate.py` 的
+`TestWithdrawnRegistrations`）；门禁报告同时显式打印「未实装登记：**0 条**」，把「读过且为空」
+与「压根没读」分开。
 
-> **已落地的两条（勿再照抄旧文）**：① 「未登记违规只报告不阻塞」已由 **#4046** 翻转为
-> fail-closed（全库判出、清单没有的码 ⇒ 阻塞）；② `scripts/drift_audit.py` 的同款陈旧口径
-> 已由 **#4045** 同步（全量对账 + 反向对账 + burn-down 预算，判据 **import 复用**
-> `case_trust_gate.reconcile_baseline` / `burn_down_verdict`）。两条都从
-> `.github/case-trust-unimplemented.json` 撤了登记 —— 留着就是与实现相反的假真值。
+> **两类撤登记（语义相反，勿读串）**：
+> ① **已实装 ⇒ 撤**：`pre_clean` 未知 type 静默跳过 + `pre_clean` 失败路径未折叠判据（#3797）、
+> `DRIFT-AUDIT-STALE-DIFF-SCOPED`（#4045：全量对账 + 反向对账 + burn-down 预算，判据 **import 复用**
+> `case_trust_gate.reconcile_baseline` / `burn_down_verdict`）、跨腿窄跑的运行期判定（#3822 / #5504，
+> 属 runner 归因自动化即 #3483 的 T2）、纯散文 `data_checks` 的**语义**质量（#5505）。
+> ② **有意不做 / 口径已无对象 ⇒ 撤**（**不是**「做完了」）：上面那两条来自 #4155 的登记 ——
+> 「每-PR 最低消减的**字面口径**（`scope=all_prs`）」在**豁免账本清零**后**已无对象**
+> （两种 `scope` 行为一致，且字面口径**有意不落地**），「**全库** persona 标注」是**有意更窄**
+> 的宽口径（双端用例允许不标注）。
+> 另：「未登记违规只报告不阻塞」已由 **#4046** 翻转为 fail-closed（全库判出、清单没有的码 ⇒ 阻塞）。
 > ⚠️ 本节（及全页）**不是** `migao-dev-flow` 技能的同步副本：**已停止同步**（issue #4315），
 > 本节口径**可能已过期**，一律**以技能为准**。章节差异由 `drift_audit` 的 `sync-copy` 判据持续报告
 > （版本**不写死** —— 用页头那条命令现取，别再往本页抄版本号）。

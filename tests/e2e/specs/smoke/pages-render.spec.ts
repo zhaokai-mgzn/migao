@@ -11,7 +11,7 @@ test.describe('冒烟：页面基础渲染', () => {
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({
         status: 200, contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }),
+        body: JSON.stringify({ code: 200, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1, tenantName: '测试企业' } }),
       })
     })
   })

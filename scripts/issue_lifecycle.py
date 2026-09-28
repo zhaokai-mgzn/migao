@@ -93,6 +93,8 @@ worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../mig
 
     MIGAO_GH_BIN=...              # gh 可执行文件（沿用既有替身注入点）
     MIGAO_DEVTREE_BIN=...         # dev-worktree.sh（默认 <主仓库根>/scripts/dev-worktree.sh）
+                                  # ⚠️ 默认那份来自**主工作区**（不是你 worktree 里的）⇒ `land` 的 preflight
+                                  # 会**打印它的来源**（路径 + 内容 sha + 与 origin/main 的差，见 tool_provenance_lines）
     MIGAO_VERIFY_BIN=...          # verify-all.sh（默认 <分支检出>/verify-all.sh —— gate 必须在**分支自己的检出**里跑）
     MIGAO_PRESET_REFRESH_BIN=...  # preset-anchor-refresh.sh
     MIGAO_WT_BASE=...             # 工作区根（同 dev-worktree.sh）
@@ -310,6 +312,108 @@ def _preset_refresh_script(root: Path) -> str:
     return os.environ.get(PRESET_REFRESH_ENV) or str(root / "scripts" / "preset-anchor-refresh.sh")
 
 
+# ── 工具来源：`land` 用的是**哪一份**工具（issue #5721）────────────────────────────
+#
+# 病灶（实测；PR #5720 的作者为此**白烧三轮**定位）：`land` 的 ①步（rebase）跑的不是你 worktree 里的
+# `scripts/dev-worktree.sh`，而是 `main_root()` 解析出的**主工作区**那一份（`_devtree_script`）
+# ⇒ **任何包落地一个工具修复后，主工作区就落后了** ⇒ **下一个包的 `land` 跑的是旧工具**。
+# 实测读数：主工作区落后 **3** 个提交（`97f29e43b` #5713 vs `ef8f34606` #5719），旧副本**缺 #5719 的
+# 守卫**（`grep -c preset_has_uncommitted_drift`：主工作区 **0** / worktree **2**）⇒ ①步**连停 3 次**
+# （17:52:41 / 17:55:46 / 17:57:42），而从 worktree 里手动跑同一子命令 rc=0 ⇒ 诊断路径过长（三轮）。
+# ⇒ 落点 = preflight **打印它用的是哪一份**：路径 + 内容 sha + 与 `origin/main` 的差 + behind 计数。
+# 🔴 取舍：**仅打印 + 落后即显式告警，不 fail-closed** —— 落后是会话中的**常态**（每个工具修复都会造成），
+# 一味 fail-closed = **新的假阻塞**（本仓刚修过 `land` 对预设面的假阻塞，见 #5719）；致命的是**诊断路径
+# 太长**，而可见性正好治它；告警随带**可执行**的解除命令。
+# 🔴 口径：对比用**本地** `origin/main` ref（preflight **不联网、不写盘**；①步的 `git fetch` 才刷新它）
+# ⇒ 本地 ref 自身过期时这个读数是**下界**（如实打印在输出里，不许把下界读成「已核」）。
+#: `main_root()` 派生的工具（= 你 worktree 里可能有一份，而 `land` **不用**它）：名字 ⇄ 注入点 ⇄ 解析器。
+MAIN_ROOT_TOOLS = (
+    ("dev-worktree.sh", DEVTREE_ENV, _devtree_script),
+    ("preset-anchor-refresh.sh", PRESET_REFRESH_ENV, _preset_refresh_script),
+)
+
+
+def _short_sha(proc: subprocess.CompletedProcess) -> str | None:
+    out = (proc.stdout or "").strip()
+    return out[:12] if proc.returncode == 0 and out else None
+
+
+def _tool_blob(path: Path, root: Path) -> str | None:
+    """工具文件的**内容** sha（`git hash-object`，前 12 位）。取不到 ⇒ None（**不抛**）。"""
+    if not path.is_file():
+        return None
+    return _short_sha(_run(["git", "hash-object", str(path)], root, timeout=60))
+
+
+def _rev_blob(root: Path, rev_path: str) -> str | None:
+    """`<rev>:<path>` 的 blob sha（前 12 位）。取不到 ⇒ None。"""
+    return _short_sha(_run(["git", "rev-parse", rev_path], root, timeout=60))
+
+
+def _behind_origin_main(root: Path) -> int | None:
+    """`HEAD..origin/main` 的提交数（**本地 ref**）。取不到 ⇒ None（无法判定 ≠ 0）。"""
+    out = (_run(["git", "rev-list", "--count", "HEAD..origin/main"], root, timeout=60).stdout or "").strip()
+    return int(out) if out.isdigit() else None
+
+
+def tool_provenance_lines(root: Path, caller_cwd: Path) -> list[str]:
+    """`land` 的**工具来源**读数（#5721）。取不到的一律如实说「取不到」，**不抛、不阻塞**。"""
+    lines = ["🧰 工具来源（`land` 用的是**主工作区**那一份，不是你 worktree 里的）："]
+    stale: list[str] = []
+    used: dict[str, str | None] = {}
+    for name, env, resolve in MAIN_ROOT_TOOLS:
+        tool = Path(resolve(root))
+        sha = _tool_blob(tool, root)
+        used[name] = sha
+        if os.environ.get(env):
+            lines.append(f"   · {name} ← {tool}  sha={sha or '取不到'}"
+                         f"（**外部注入** `{env}` ⇒ 不是主工作区那一份；来源对比不适用）")
+            continue
+        want = _rev_blob(root, f"origin/main:scripts/{name}")
+        if sha and want and sha == want:
+            lines.append(f"   · {name} ← {tool}  sha={sha}（== origin/main 上的 {want}）")
+            continue
+        why = "**内容 ≠ origin/main**" if (sha and want) else "**无法判定**（该路径在本地取不到）"
+        lines.append(f"   · {name} ← {tool}  sha={sha or '取不到'}"
+                     f"（origin/main 上 = {want or '取不到'} ⇒ {why}）")
+        stale.append(name)
+    behind = _behind_origin_main(root)
+    behind_txt = ("无法判定（本地没有 origin/main ref）" if behind is None
+                  else "0（与本地 origin/main 一致）" if behind == 0 else f"**{behind}** 个提交")
+    lines.append(f"   主工作区 HEAD = {_rev_blob(root, 'HEAD') or '取不到'} · 落后 origin/main：{behind_txt}")
+    lines.append("   口径：对比用**本地** `origin/main` ref（preflight 不联网、不写盘；①步的 "
+                 "`git fetch` 才刷新它 ⇒ 本地 ref 自身过期时本读数是**下界**）")
+    if caller_cwd.resolve() != root.resolve():
+        others: list[str] = []
+        for name, _env, _resolve in MAIN_ROOT_TOOLS:
+            copy_sha = _tool_blob(Path(caller_cwd) / "scripts" / name, root)
+            if copy_sha and copy_sha != used[name]:
+                others.append(f"{name}（sha={copy_sha}）")
+        if others:
+            lines.append(f"   ℹ️  你 worktree 里那份与上面**不同**：{'、'.join(others)}"
+                         f" —— `land` **不用**它（这正是「手动跑 rc=0 而 land 停在①步」的原因）")
+    if stale:
+        lines.append(f"⚠️  你跑的可能是**旧工具**（{'、'.join(stale)} 与 origin/main 不一致）："
+                     f"缺新守卫 ⇒ 可能假阻塞，也可能静默丢守卫")
+        lines.append(f"   ::warning:: land 的工具落后：{'、'.join(stale)} @ {root}"
+                     f"（解除：git -C \"{root}\" fetch origin main && "
+                     f"git -C \"{root}\" merge --ff-only origin/main）")
+    elif behind:
+        lines.append(f"   ℹ️  主工作区落后 {behind} 个提交，但上面这些工具的内容与 origin/main **一致**"
+                     f"（故不告警 —— 假告警会变成新的噪音）")
+    return lines
+
+
+def print_tool_provenance(root: Path, caller_cwd: Path) -> None:
+    """打印工具来源读数。**任何异常都不得拖垮 `land`**（这是可见性，不是判据）。"""
+    try:
+        for line in tool_provenance_lines(root, caller_cwd):
+            print(line)
+    except Exception as exc:  # noqa: BLE001 —— 读数是可见性；失败不许影响 land 本体
+        print(f"⚠️  工具来源读数失败（{type(exc).__name__}: {exc}）—— 不阻塞；"
+              f"但**别把这一行读成「已核」**")
+
+
 def worktree_path_of(branch: str, cwd: Path) -> Path | None:
     """该分支已注册 worktree 的路径（无 ⇒ None）。复用守卫的解析，不另写第二套。"""
     for entry in GUARD._worktrees(cwd):
@@ -403,6 +507,98 @@ def read_merge_state(number: int, cwd: Path) -> tuple[str, str] | None:
     if not isinstance(row, dict):
         return None
     return str(row.get("state") or ""), str(row.get("mergedAt") or "")
+
+
+# ── ④wait-ci 的判定口径：**只看拦合并的判据**（关联 #5707；病灶实证 = PR #5722）────────────
+#
+# 病灶（现场实证，2026-09-27）：④`wait-ci` 用 `gh pr checks --watch` ⇒ **任何**判据判红都会让它停，
+# 包括**不拦合并**的裸判据 —— PR #5722 当时有 **2 条非 required 红** ⇒ `LAND_RC=2`
+# （①rebase✅②gate✅③ready✅④wait-ci❌）⇒ fail-closed 停、未收尾（重跑受影响 run 后 auto-merge
+# 才生效，续跑才 `LAND_RC=0`）。🔴 这是「**一味 fail-closed = 新的假阻塞**」的**第二个实证**
+# （第一个 = `land` 对预设面的假阻塞，#5719）；而 `land` 是**所有 PR 落地都走的工具** ⇒ 一次假阻塞停全线。
+#
+# 口径 = **以 `scripts/merge_gate.py` 为准**（"哪些判据拦合并"的现成真值源）：它读分支保护
+# `required_status_checks`（`parse_required` 归一化两种载荷形态）、把红分成 required / 裸判据
+# （`classify`），pending 的桶口径在 `check_counts`。本步**复用它的纯函数**，**不另写第二套判定**。
+#
+# 🔴 保守方向：required 集合**取不到**（无网络 / 无权限 / 判据本体缺失）⇒ **退回严格行为**（照旧停）
+# ＋**打印为什么** —— **不许**把「读不到」当成「没有 required」。⚠️ 仓内**有**快照退路
+# （`tests/unit_ci_workflows/required_status_snapshot.json`），本步**刻意不用**：快照在**结构上**
+# 可以滞后（新翻成 required 的判据不在里面）⇒ 拿它去证「某条红不拦合并」会制造**假放行**
+# （比假阻塞更危险）。
+REQUIRED_PROTECTION_API = "repos/{owner}/{repo}/branches/main/protection/required_status_checks"
+CI_CHECKS_JSON_FIELDS = "name,state,bucket,link"
+
+
+def _load_merge_gate():
+    """按路径加载 `scripts/merge_gate.py`（**口径真值源**；解析方式与 `_load_guard()` 同源）。"""
+    spec = importlib.util.spec_from_file_location("merge_gate", HERE / "merge_gate.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 merge_gate.py（口径真值源缺失 = 判据空转）：{HERE / 'merge_gate.py'}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _first_line(text: str | None, limit: int = 200) -> str:
+    rows = [r for r in (text or "").strip().splitlines() if r.strip()]
+    return rows[0][:limit] if rows else ""
+
+
+def read_ci_blocking_reading(number: int, root: Path) -> dict:
+    """**单发**读一次「拦合并的判据」（`gh pr checks --watch` 判红之后才走到这里）。
+
+    三态：`readable` = 关键输入是否取到。**读不到 ⇒ 调用方必须退回严格行为**（见调用点）。
+    两条实测口径：① `gh pr checks --json` 的**退出码不可作判据**（实测 PR #5722 有 1 条
+    `bucket=fail`，而 rc=0）⇒ 只看 stdout 可否解析；② `--watch` 与 `--json` 是**先后两次读数**，
+    故调用方还要处理「`--watch` 判红而 JSON 里没有红项」这个**不自洽**形态。
+    """
+    reading: dict = {"readable": False, "why": "", "required": set(),
+                     "required_red": [], "required_pending": [], "bare_red": []}
+    try:
+        mg = _load_merge_gate()
+    except Exception as exc:  # noqa: BLE001 —— 判据本体缺失属**读不到**，不是"没有 required"
+        reading["why"] = f"载入 merge_gate.py 失败（{type(exc).__name__}: {exc}）"
+        return reading
+
+    proc = _run([gh_bin(), "api", REQUIRED_PROTECTION_API], cwd=root, timeout=120)
+    if proc.returncode != 0:
+        reading["why"] = (f"`gh api {REQUIRED_PROTECTION_API}` 退出 {proc.returncode}"
+                          f"（{_first_line(proc.stderr or proc.stdout) or '无输出'}）")
+        return reading
+    try:
+        required = mg.parse_required(json.loads(proc.stdout or ""))
+    except Exception as exc:  # noqa: BLE001 —— 解析不了 = 读不到（空载荷不是"没有 required"）
+        reading["why"] = f"分支保护载荷解析失败（{type(exc).__name__}: {exc}）"
+        return reading
+
+    proc = _run([gh_bin(), "pr", "checks", str(number), "--json", CI_CHECKS_JSON_FIELDS],
+                cwd=root, timeout=120)
+    checks = mg.parse_checks(proc.stdout)
+    if checks is None:
+        reading["why"] = (f"`gh pr checks {number} --json` 读不到可解析 JSON（退出 {proc.returncode}）"
+                          f"（{_first_line(proc.stderr) or '无输出'}）")
+        return reading
+
+    required_red, bare_red = mg.classify(checks, required)
+    # pending 的 required 也**不算绿**（`--watch` 正常会等完，但它提前返回时不许把"没跑完"读成"绿"）；
+    # 桶口径复用 `mg.check_counts`，**不另写第二套**（pending 的拼写只在 merge_gate 里有一份）。
+    pending = [c for c in checks
+               if str(c.get("name")) in required and mg.check_counts([c])["pending"]]
+    reading.update(readable=True, required=required, required_red=required_red,
+                   required_pending=pending, bare_red=bare_red)
+    return reading
+
+
+def _fmt_ci_checks(rows: list) -> str:
+    return "、".join(f"{c.get('name')}[{c.get('state') or c.get('bucket')}]" for c in rows)
+
+
+def _fmt_ci_bare_rows(rows: list) -> str:
+    """非 required 红的**逐条**清单（名 + 状态 + 链接；链接可缺）—— 「如实打印」的那一半。"""
+    return "\n".join("     · {}{}{}".format(
+        c.get("name"), f"  [{c.get('state') or c.get('bucket')}]",
+        f"  {c['link']}" if c.get("link") else "") for c in rows)
 
 
 # ── land：一条命令完成「落地」（顺序 = LAND_STEPS，执行体遍历它）──────────────────
@@ -504,17 +700,42 @@ def _land_do_step(step: str, ctx: dict, args: argparse.Namespace) -> StepResult:
     if step == "wait-ci":
         print(f"   ⏳ 一次阻塞等 CI：`gh pr checks {pr.number} --watch`（超时上限 {args.ci_timeout}s；"
               "不写 sleep 轮询；超时 ⇒ exit 3，不得当绿读）")
+        print("   🔎 口径：停/不停**只看拦合并的判据**（现取分支保护 required 集合；分类以 "
+              "`scripts/merge_gate.py` 为准）—— 非 required 红**不**拦合并，但会**如实打印**")
         proc = _run([gh_bin(), "pr", "checks", str(pr.number), "--watch"], cwd=root, timeout=args.ci_timeout)
         if proc.returncode == TIMEOUT_RC:
             return StepResult(step, "stopped",
                               f"CI 在 {args.ci_timeout}s 内没跑完 ⇒ **未判定**（exit 3）。续跑："
                               f"./scripts/issue-lifecycle.sh land {branch} --from wait-ci", EXIT_UNKNOWN)
         print(_tail(proc.stdout))
-        if proc.returncode != 0:
+        if proc.returncode == 0:
+            return StepResult(step, "done", "CI 全绿（`gh pr checks --watch` 退出 0）")
+
+        # 三态读数：读不到 required 集合 ⇒ 退回严格行为（**不许**把「读不到」读成「不拦」）
+        reading = read_ci_blocking_reading(pr.number, root)
+        if not reading["readable"]:
             return StepResult(step, "failed",
-                              f"CI 判红/取消（复核：`gh pr checks {pr.number}`）⇒ 停：不收尾、不猜已合并",
-                              EXIT_UNMERGED)
-        return StepResult(step, "done", "CI 全绿（`gh pr checks --watch` 退出 0）")
+                              f"CI 判红，但**取不到 required 集合**（{reading['why']}）⇒ **退回严格行为**：停。"
+                              f"🔴 读不到 ≠ 没有 required（把「读不到」当成「不拦」= 假放行，比假阻塞更危险）。"
+                              f"复核：`gh pr checks {pr.number}` / "
+                              f"`python3 scripts/merge_gate.py --check {pr.number}`", EXIT_UNMERGED)
+        not_green = list(reading["required_red"]) + list(reading["required_pending"])
+        if not_green:
+            return StepResult(step, "failed",
+                              f"**required 判据未绿**（{_fmt_ci_checks(not_green)}；required 现取 "
+                              f"{len(reading['required'])} 条）⇒ 停：GitHub 侧拦的就是合并本身。复核："
+                              f"`gh pr checks {pr.number}` / "
+                              f"`python3 scripts/merge_gate.py --check {pr.number}`", EXIT_UNMERGED)
+        if not reading["bare_red"]:
+            return StepResult(step, "failed",
+                              f"读数**不自洽**（`--watch` 判红，而 `--json` 里**没有红项** —— 该 PR 可能"
+                              f"根本没有 checks）⇒ 停：**未判定不得当绿**。复核："
+                              f"`gh pr checks {pr.number} --json name,state,bucket`", EXIT_UNMERGED)
+        print(f"   ℹ️ 有 **{len(reading['bare_red'])} 条非 required 红**（不在 required 集合里 ⇒ **不拦合并**）—— 如实打印，不静默忽略：\n{_fmt_ci_bare_rows(reading['bare_red'])}")
+        return StepResult(step, "done",
+                          f"拦合并的判据全绿（required 现取 {len(reading['required'])} 条）；另有 "
+                          f"{len(reading['bare_red'])} 条**非 required** 红 ⇒ **不拦合并**"
+                          f"（清单见上，不静默忽略）")
 
     if step == "wait-merge":
         print(f"   ⏳ 单发读合并状态：`gh pr view {pr.number} --json state,mergedAt`"
@@ -567,6 +788,7 @@ def cmd_land(args: argparse.Namespace) -> int:
     os.chdir(root)
     print(f"🚀 land：{branch}")
     print(f"   顺序（顺序即安全顺序）：{' → '.join(LAND_STEPS)}")
+    print_tool_provenance(root, cwd)
 
     wt = worktree_path_of(branch, cwd)
     if wt is None or not wt.is_dir():
@@ -814,6 +1036,24 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     self_branches = {b for b in (current_branch(cwd), current_branch(root), *args.exclude) if b}
     candidates = reap_candidates(cwd, root)
 
+    # 🔴 **陈旧 remote-tracking ref**：本地 `refs/remotes/origin/*` 有、**远程没有**（对方删了 / 本仓删过
+    # 但没 prune）⇒ 它不是「远程还在」：把它当远程目标会**每轮都尝试删一个不存在的分支**，并让
+    # 「可收尾」清单里常驻一堆幻影（实测 2026-09-28：55 个「可收尾」里绝大多数是这种）。
+    # 出口是 `git fetch --prune origin`（一次），**不是**「删除」⇒ 这里只把 `remote` 标志清掉，
+    # 候选**只靠 stale ref 存在**的会被下面的 `exists` 过滤掉（零额外网络：读的是同一份批量读数）。
+    heads = remote_heads(cwd)
+    if heads is not None:
+        stale_refs = [c.branch for c in candidates if c.remote and c.branch not in heads]
+        for c in candidates:
+            if c.remote and c.branch not in heads:
+                c.remote = False
+        if stale_refs:
+            print(f"\nℹ️  陈旧 remote-tracking ref {len(stale_refs)} 个（远程已无此分支）⇒ **不进删除面**"
+                  "（出口：`git fetch --prune origin`）。例："
+                  + "、".join(stale_refs[:5]) + ("…" if len(stale_refs) > 5 else ""))
+        # `Candidate` 没有 `exists`（那是 `Target` 的）⇒ 用它的三个存在面判：worktree 路径 / 本地分支 / 远程
+        candidates = [c for c in candidates if c.path is not None or c.local or c.remote]
+
     reapable: list[Candidate] = []
     skipped: list[tuple[Candidate, str, str]] = []
     for c in candidates:
@@ -854,6 +1094,8 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
         return EXIT_UNMERGED if anchor_hits else EXIT_OK
 
     failures = 0
+    local_failed: set[str] = set()
+    remote_targets: list[Candidate] = []
     for c in reapable:
         print(f"\n🧹 收尾：{c.branch}" + (f"（{c.path}）" if c.path else "（无注册 worktree）"))
         try:
@@ -862,11 +1104,23 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
                 print(f"✅ 已移除工作区：{c.path}")
             if c.local and delete_local_branch(c.branch, cwd):
                 print(f"✅ 已删除本地分支：{c.branch}")
-            if c.remote and delete_remote_branch(c.branch, cwd):
-                print(f"✅ 已删除远程分支：origin/{c.branch}")
+            if c.remote:
+                # 远程删除**攒到循环外一次 push**（`NS-3`：逐分支往返 3.70s/次 ⇒ 分钟级）
+                remote_targets.append(c)
         except RuntimeError as exc:
             print(f"❌ 收尾失败：{exc}")
             failures += 1
+            local_failed.add(c.branch)
+            continue
+
+    if remote_targets:
+        results = batch_delete_remote_branches([c.branch for c in remote_targets], cwd)
+        for c in remote_targets:
+            if results.get(c.branch) == "deleted":
+                print(f"✅ 已删除远程分支：origin/{c.branch}")
+
+    for c in reapable:
+        if c.branch in local_failed:
             continue
         ledger_add(c.branch, cwd)
         target = Target(c.branch, str(c.path) if c.path else None, c.path is not None, c.local, c.remote)
@@ -971,6 +1225,122 @@ def delete_remote_branch(branch: str, cwd: Path) -> bool:
 
 # ── 自证干净 ──────────────────────────────────────────────────────────────────
 
+# ── 远程分支读数 / 删除：**批量一次**（`NS-3`：逐分支往返 = 分钟级慢，会被读成「挂死」）──────
+#
+# 实测（2026-09-28）：单次 `git ls-remote --heads origin <b>` = **3.70s**（本机 SSH，无连接复用），
+# 而 `reap-merged --apply` 原先**每个目标**各做一次「删远程 + 探远程」⇒ 41 个目标 ≈ **5 分钟**，
+# `dev-worktree.sh add`（它接在 reap 上）因此整条命令 **~7 分钟**。⇒ 两条读/写都收敛成**常数次**：
+#   ① 读：一次 `git ls-remote --heads origin` 取全量，进程内缓存；
+#   ② 写：一次 `git push origin --delete <b1> <b2> …`，每个分支的真值来自**删除后的一次批量读数**。
+
+#: `origin` 远程分支名的**进程内缓存**（`None` = **无法判定** ⇒ 调用方退回逐分支探测，语义不变）。
+_REMOTE_HEADS: dict[str, set[str] | None] = {}
+
+
+def remote_heads(cwd: Path, *, refresh: bool = False) -> set[str] | None:
+    """`origin` 的全部远程分支名 —— **一次** `git ls-remote --heads origin`（进程内缓存）。
+
+    返回 `None` = 无法判定（git 抖动 / 离线）⇒ 调用方**退回逐分支探测**（判定语义逐字不变，只是慢）。
+    """
+    key = str(cwd)
+    if refresh or key not in _REMOTE_HEADS:
+        proc = git("ls-remote", "--heads", "origin", cwd=cwd, check=False)
+        if proc.returncode != 0:
+            _REMOTE_HEADS[key] = None
+        else:
+            _REMOTE_HEADS[key] = {ln.split("refs/heads/", 1)[1].strip()
+                                  for ln in proc.stdout.splitlines() if "refs/heads/" in ln}
+    return _REMOTE_HEADS[key]
+
+
+def remote_branch_gone(branch: str, cwd: Path) -> bool | None:
+    """该远程分支是否已不存在。`None` = 无法判定（批量读数取不到 ⇒ 调用方逐分支探测）。"""
+    heads = remote_heads(cwd)
+    return None if heads is None else branch not in heads
+
+
+#: 「批量删除被坏 ref 毒化」时的**逐个补删上限**（只补「此刻仍在」的；超过就不补并出声）。
+_REMOTE_DELETE_RETRY_MAX = 20
+
+
+def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, str]:
+    """**一次** `git push origin --delete <b1> <b2> …` ⇒ 四态 `{分支: verdict}`。
+
+    verdict 与**各自能证明什么**（本函数是删除的唯一闸门 ⇒ 每一态都必须能被它自己证实）：
+
+    | verdict | 含义 | 谁证实 |
+    |---|---|---|
+    | `deleted` | **本次真的删掉**（删前在、删后不在） | 删前 + 删后两次批量读数 |
+    | `already-absent` | **删前就不在**（陈旧 remote-tracking ref；出口 = `git fetch --prune origin`） | 删前读数 |
+    | `absent-unverified` | **删前读数取不到**，只知道此刻不在 ⇒ **不许**报成「已删除」 | 逐分支探测（只看「此刻」） |
+    | `failed` | 此刻仍在（含 push 被拒 / 读不出存在性） | 删后读数或逐分支探测 |
+
+    🔴 **两条实测教训（都来自独立验收，2026-09-28）**：
+    ① **回退路径曾谎报**（P2-④ 反例）：删后批量读数取不到而走逐分支探测时，「删前就不在」的幽灵分支
+       被报成 `deleted`（`{'ghost-never-pushed': 'deleted'}`）—— 那是**假陈述** ⇒ 现在这一路只给
+       `absent-unverified`（**判不了「是不是我删的」就不说**）。
+    ② **一批会被一个坏 ref 毒化**（P2-⑤ 实测）：`push --delete a b c` 里只要有一个不存在的 ref，
+       **整批被拒**（连本该删掉的也留着）⇒ 对「此刻仍在」的逐个**补删**（上限 `_REMOTE_DELETE_RETRY_MAX`），
+       不把失败面从 1 个放大到 N 个。
+    """
+    if not branches:
+        return {}
+    before = remote_heads(cwd)
+    proc = git("push", "origin", "--delete", *branches, cwd=cwd, check=False)
+    after = remote_heads(cwd, refresh=True)
+    if after is None:
+        # 删后读数取不到 ⇒ 逐分支探测：只判「此刻在不在」，**判不了**「是不是我删的」
+        results: dict[str, str] = {}
+        for b in branches:
+            probe = git("ls-remote", "--heads", "origin", b, cwd=cwd, check=False)
+            if probe.returncode != 0:
+                print(f"⚠️  读不出远程分支 `{b}` 的存在性（ls-remote rc={probe.returncode}）"
+                      "⇒ 不得当「已删」（无法判定 ≠ 通过）")
+                results[b] = "failed"
+            elif probe.stdout.strip():
+                print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")
+                results[b] = "failed"
+            else:
+                print(f"ℹ️  远程分支 `{b}` 此刻已不在 —— 但**删前读数取不到** ⇒ 判不了是不是本次删掉的，"
+                      "**不报「已删除」**")
+                results[b] = "absent-unverified"
+        return results
+
+    results = {}
+    for b in branches:
+        if b in after:
+            results[b] = "failed"
+        elif before is not None and b in before:
+            results[b] = "deleted"
+        else:
+            results[b] = "already-absent"
+
+    still = [b for b, v in results.items() if v == "failed"]
+    if still:
+        if len(still) <= _REMOTE_DELETE_RETRY_MAX:
+            print(f"ℹ️  批量删除后有 {len(still)} 个仍在远程 ⇒ **逐个补删**（一个坏 ref 不该拖累整批）")
+            for b in still:
+                git("push", "origin", "--delete", b, cwd=cwd, check=False)
+            after2 = remote_heads(cwd, refresh=True)
+            if after2 is not None:
+                for b in still:
+                    if b not in after2:
+                        results[b] = "deleted"
+        else:
+            print(f"⚠️  仍在远程的分支有 {len(still)} 个 > 补删上限 {_REMOTE_DELETE_RETRY_MAX} ⇒ "
+                  "**不逐个补删**（如实登记为「失败面未逐个收敛」；出口 = 人工/下一轮 reap）")
+
+    for b, verdict in results.items():
+        if verdict == "failed":
+            print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")
+        elif verdict == "already-absent":
+            print(f"ℹ️  远程分支 `{b}` **本就不存在**（本地 remote-tracking ref 陈旧 "
+                  f"⇒ 出口 = `git fetch --prune origin`，不是「删除」）")
+    if proc.returncode != 0 and any(v == "deleted" for v in results.values()):
+        print(f"     git push 原始输出：{(proc.stderr or proc.stdout).strip()[:400]}")
+    return results
+
+
 def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
     """收尾后**自证**：worktree / 本地分支 / 远程分支 三项都为空或不存在。"""
     print("\n── 自证干净 ──")
@@ -986,8 +1356,11 @@ def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
     print(f"  {'✅' if gone_local else '❌'} 本地分支不存在：{target.branch}")
     ok = ok and gone_local
 
-    ls_remote = git("ls-remote", "--heads", "origin", target.branch, cwd=cwd, check=False)
-    gone_remote = not ls_remote.stdout.strip()
+    gone_remote = remote_branch_gone(target.branch, cwd)
+    if gone_remote is None:
+        # 批量读数不可用 ⇒ **退回逐分支探测**（判定语义不变，只是慢）
+        ls_remote = git("ls-remote", "--heads", "origin", target.branch, cwd=cwd, check=False)
+        gone_remote = not ls_remote.stdout.strip()
     print(f"  {'✅' if gone_remote else '❌'} 远程分支不存在：origin/{target.branch}")
     ok = ok and gone_remote
 
@@ -1218,13 +1591,43 @@ def is_human_requested(body: str) -> bool:
 NEW_ISSUES_POLICY_EFFECTIVE = "2026-09-25T12:01:24Z"
 
 
-def violates_new_issues_policy(rows: list[dict],
-                               effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
-    """纯函数（可单测）：挑出**政策生效之后**创建、且正文无 `人为要求：` 标记的 issue。
+#: 机器人 / GitHub App 作者的 login 前缀（冗余判据；主判据是 `author.is_bot`）。
+#: 实测来源：Actions 用 `GITHUB_TOKEN` 调 `gh issue create` 开出来的单，`author.login` = `app/github-actions`。
+BOT_LOGIN_PREFIX = "app/"
 
-    三态之外的第四条纪律：**规则不追溯**（新规则只在生效之后适用）—— 判据不得拿历史存量开刀，
-    否则"让机制上线"本身就制造了一条天天红的腿（实测过一次）。
+
+def is_bot_authored(row: dict) -> bool:
+    """该行是否由**机器人 / GitHub App** 创建（`author.is_bot == true`，或 `author.login` 形如 `app/…`）。
+
+    ## 为什么这条维度是**结构性**的（而不是"放宽门禁"）
+
+    会话在 GitHub 上用的是**人的 token** ⇒ 它**不可能**是机器人身份 ⇒ 机器人建的单
+    **结构上不可能是会话违规**。最要紧的那一例正是本判据自己的出口：
+    `.github/workflows/post-merge-verify.yml` 的「判红 ⇒ 开/更 P1 值班 issue」步用 `GITHUB_TOKEN`
+    调 `gh issue create` ⇒ 作者恒为 `app/github-actions`；而本判据的窗口是 `created:>=$(date -u +%F)`
+    ⇒ 修之前**一旦红过，这条腿就会把值班单自己读成"会话违规" ⇒ 自己把自己喂红**
+    （实测 #5723：`author.login = app/github-actions`、`is_bot = true`）。
+
+    ## 三态（不许把"取不到"当 0 读）
+
+    `author` 字段缺失 / 取不到 ⇒ **返回 False** = 按保守**计入违规**（调用方在那一行标注
+    「来源未知（按保守计入）」）。⇒ 「取不到」既不当机器人放过、也不静默成 0 条。
+
+    ## 反向不成立（不许被读成"已能分辨会话来源"）
+
+    会话用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」在机械上**不可分辨** ⇒
+    人自己开的单**照样**被判红（本判据已知的代价，见 `violates_new_issues_policy`）。
     """
+    author = row.get("author")
+    if not isinstance(author, dict):
+        return False                                  # 取不到 ⇒ 保守：不算机器人（仍计入违规）
+    if author.get("is_bot") is True or author.get("isBot") is True:
+        return True
+    return str(author.get("login") or "").startswith(BOT_LOGIN_PREFIX)
+
+
+def _new_issues_scope(rows: list[dict], effective: str) -> list[dict]:
+    """政策**实际约束的总体**：生效后创建、且正文无 `人为要求：` 标记的行（不追溯 + 唯一例外先剔除）。"""
     out = []
     for r in rows:
         if not isinstance(r, dict) or not r.get("number"):
@@ -1234,8 +1637,48 @@ def violates_new_issues_policy(rows: list[dict],
             continue                                  # 生效前 ⇒ 豁免（不追溯）
         if is_human_requested(r.get("body") or ""):
             continue
-        out.append((int(r["number"]), created[:19], str(r.get("title") or "")[:70]))
-    return sorted(out)
+        out.append(r)
+    return out
+
+
+def _issue_triple(r: dict) -> tuple[int, str, str]:
+    """读数三元组 `(number, createdAt[:19], title[:70])` —— 两种分类**共用同一投影**（防两处漂移）。"""
+    return (int(r["number"]), str(r.get("createdAt") or "")[:19], str(r.get("title") or "")[:70])
+
+
+def violates_new_issues_policy(rows: list[dict],
+                               effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：挑出**政策生效之后**创建、正文无 `人为要求：` 标记、**且非机器人创建**的 issue。
+
+    三态之外的第四条纪律：**规则不追溯**（新规则只在生效之后适用）—— 判据不得拿历史存量开刀，
+    否则"让机制上线"本身就制造了一条天天红的腿（实测过一次）。
+
+    ⚠️ **如实登记：本函数声称的对象是「会话新建的单」，但它机械上只能给出「非机器人建的无标记单」** ——
+    会话用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」在机械上**不可分辨** ⇒
+    **人自己开的单也会被判红**（宁可误伤、不可放过的**已知代价**）。**这不是"已能分辨会话来源"**。
+    机器人创建的行由 `bot_created_new_issues()` 单列，理由见 `is_bot_authored`（结构上不可能是会话违规）。
+    """
+    return sorted(_issue_triple(r) for r in _new_issues_scope(rows, effective) if not is_bot_authored(r))
+
+
+def bot_created_new_issues(rows: list[dict],
+                           effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：政策窗口内**机器人 / GitHub App 创建**的行 ⇒ 单独打印（**不计违规**）。
+
+    与其配对的是 `violates_new_issues_policy`（人 / 来源未知的行）；两者一起构成窗口内**生效后**总体的划分。
+    """
+    return sorted(_issue_triple(r) for r in _new_issues_scope(rows, effective) if is_bot_authored(r))
+
+
+def unknown_source_new_issues(rows: list[dict],
+                              effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[int]:
+    """纯函数（可单测）：政策窗口内 `author` **取不到**的行号 ⇒ 供打印侧标注「来源未知（按保守计入）」。
+
+    刻意**不**在这里判定是否违规（那是 `violates_new_issues_policy` 的事，且口径是**计入违规**）——
+    本函数只提供标注集合，专治"取不到 ⇒ 静默放过"（三态不许合并）。
+    """
+    return sorted(int(r["number"]) for r in _new_issues_scope(rows, effective)
+                  if not isinstance(r.get("author"), dict))
 
 
 def non_human_requested(rows: list[dict]) -> list[tuple[int, str, str]]:
@@ -1415,11 +1858,25 @@ def cmd_close(args: argparse.Namespace) -> int:
 
 
 def cmd_check_new_issues(args: argparse.Namespace) -> int:
-    """报告型：现取「新建但**没有**人为要求标记」的 issue（会话内零新开政策的机械判据）。
+    """报告型：现取「新建但**没有**人为要求标记、**且非机器人创建**」的 issue（会话内零新开政策的机械判据）。
 
     口径（2026-09-25 用户裁定）：一次 agent 会话**不得新建 issue**，唯一例外 = 人类显式要求，
     且该单正文里要有 `人为要求：…` 标记。本命令**只报告、零写**：
       · 退出码 0 = 窗口内没有违规；1 = 有违规（逐条列出）；3 = **无法判定**（gh 取不到 ⇒ 不得当 0 读）。
+
+    ## 总体按作者收窄（2026-09-27 链内修，实测 #5723；方向 = 收窄到它声称的对象，不是放宽门禁）
+
+    **机器人 / GitHub App 创建的单不计入违规**、单独打印一行（理由见 `is_bot_authored` 的"结构性"一节）——
+    修之前这条腿把**本腿自己的出口**（P1 值班单，作者恒为 `app/github-actions`）读成"会话违规" ⇒
+    **一旦红过就会自己把自己喂红**（实测 #5723 在窗口内被逐条列为违规）。人开的单**照旧逐条列出并判红**。
+
+    ## ⚠️ 如实登记：会话来源**不可分辨**（禁止读成"已能分辨会话来源"）
+
+    会话在 GitHub 上用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」机械上**不可分辨**
+    ⇒ **人自己开的单照样被判红**；处置面留人（这正是本命令"报告型、不自动关"的原因）。
+    三态不许合并：`author` 取不到 ⇒ **按保守计入违规**并在该行标注「来源未知（按保守计入）」；
+    `gh` 取不到列表 ⇒ 3（「取不到」既不当 0 条、也不当"没有违规"）。
+
     为什么是报告型而不是"自动关"：判"这单到底有没有人为要求"要人看（人可能在对话里要求过但没写标记）
     ⇒ 本仓口径一贯是**发现面自动、处置面留人**。
     """
@@ -1428,7 +1885,10 @@ def cmd_check_new_issues(args: argparse.Namespace) -> int:
     rows = _gh_json([
         "issue", "list", "--state", "all", "--limit", str(args.limit),
         "--search", f"created:>={args.since}",
-        "--json", "number,title,body,createdAt",
+        # ⚠️ `author` 是**必需**字段：少了它，机器人创建的行会退化成"来源未知" ⇒ 按保守计入违规
+        # ⇒ 值班单出口又把本腿喂红（2026-09-27 修的就是这个形态；判据 =
+        # tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py::test_cli_requests_the_author_field）。
+        "--json", "number,title,body,createdAt,author",
     ], cwd)
     if rows is None:
         print("❌ 无法判定：取不到 issue 列表（gh 不可用 / 未认证 / 输出非 JSON）—— **不得当 0 读**")
@@ -1438,10 +1898,16 @@ def cmd_check_new_issues(args: argparse.Namespace) -> int:
     grandfathered = [r for r in rows if isinstance(r, dict)
                      and str(r.get('createdAt') or '') < NEW_ISSUES_POLICY_EFFECTIVE]
     bad = violates_new_issues_policy(rows, NEW_ISSUES_POLICY_EFFECTIVE)
+    bots = bot_created_new_issues(rows, NEW_ISSUES_POLICY_EFFECTIVE)
+    unknown = set(unknown_source_new_issues(rows, NEW_ISSUES_POLICY_EFFECTIVE))
     print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条；其中**政策生效前**（{NEW_ISSUES_POLICY_EFFECTIVE}）"
           f"创建 ⇒ **豁免**（规则不追溯）= {len(grandfathered)} 条；**违规**（生效后新建且无标记）= {len(bad)} 条")
+    # 单独一行：机器人创建的行**不算违规**（会话用人 token ⇒ 不可能机器人身份），但**不静默丢弃**。
+    print(f"  · 机器人创建（非会话来源，含本腿的值班单出口）= {len(bots)} 条："
+          + ("；".join(f"#{n} {c} {t}" for n, c, t in bots) or "（无）"))
     for num, created, title in bad:
-        print(f"  · #{num} {created} {title}")
+        print(f"  · #{num} {created} {title}"
+              + ("（**来源未知（按保守计入）**：`author` 取不到 ⇒ 不当作「非机器人」放过）" if num in unknown else ""))
         print(f"    ↳ 处置：① 链内修 ② 并入既有台账 ③ 在会话里向人类提出；若确系人为要求 ⇒ 在该单正文补 `人为要求：…`")
     return 1 if bad else 0
 
@@ -1498,7 +1964,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_new = sub.add_parser(
         "check-new-issues",
-        help="报告型：现取「新建但没有 `人为要求：` 标记」的 issue（会话内零新开政策的机械判据）",
+        help="报告型：现取「新建但无 `人为要求：` 标记**且非机器人创建**」的 issue（会话内零新开政策的机械判据）",
     )
     p_new.add_argument("--since", default=str(date.today()), help="窗口起点（created:>= 的值，默认今天）")
     p_new.add_argument("--limit", type=int, default=200, help="抓最近 N 条（默认 200）")

@@ -249,7 +249,9 @@ class AutoBatchDueScanRealDbTest {
 
     private static StockBatchConsumptionService batchStockOf(SqlSession own) {
         CraftCalcConfigService configService = new CraftCalcConfigService(
-                own.getMapper(CraftCalcConfigMapper.class), null);
+                own.getMapper(CraftCalcConfigMapper.class), null,
+                // 审计腿（§22 P6）显式不装：本判据只读配置 / 排料，不写配置
+                null);
         return new StockBatchConsumptionService(own.getMapper(StockBatchMapper.class),
                 own.getMapper(StockBatchConsumptionMapper.class),
                 own.getMapper(ProductSkuMapper.class), null, configService,

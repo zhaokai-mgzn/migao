@@ -224,4 +224,48 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     // 也不得把内部键名兜底渲染出来（`isCraftSpecKey` 认它 ⇒ 不进「其它字段」行）
     expect(container.textContent).not.toMatch(/formulaText/)
   })
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // issue #5685：**部位备注**（`processingInfo.remark`）
+  //
+  // 客户现行系统（加工单 / 工人扫码端）有一行「部位备注: 公式--48个折」—— 它装的是
+  // 「**这个数字是怎么来的**」（算料依据的人工说明）。落库载体 = `order_items.processing_info`
+  // 顶层字符串 `remark`（与 `craft` / `formula` 同层）⇒ 详情页**直读这一份**，不二次推导。
+  // ⚠️ 查询一律限定在本行容器里：报价单（`QuotationDoc`，issue #4965）的表头也有一列叫
+  // 「部位备注」⇒ 全页 `getByText('部位备注')` 会歧义（假红/假绿都可能）。
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+
+  it('#5685 判据 1（红证）：有备注 ⇒ 「部位备注」行显示，且串**逐字**来自 processingInfo.remark', async () => {
+    const remark = '公式--48个折'
+    mockGetOrder.mockResolvedValue({
+      data: { data: orderWith({ craft: '韩褶', fabric_meters: 13.3, remark }) },
+    })
+
+    render(<OrderDetailPage />)
+
+    // ⚠️ 显式压到 2s：`tests/setup.ts` 把 `asyncUtilTimeout` 提到了 5s，与 vitest 默认单测超时
+    // **相等** ⇒ 未命中时会报「Test timed out」而不是「找不到元素」，红证里读不出判据。
+    const row = await screen.findByTestId('order-item-remark', {}, { timeout: 2000 })
+    expect(within(row).getByText('部位备注')).toBeInTheDocument()
+    expect(within(row).getByText(remark)).toBeInTheDocument()
+    // 只加不改：既有的「工艺规格」块照常在同一格里
+    expect(await screen.findByTestId('order-craft-spec')).toBeInTheDocument()
+  })
+
+  it('#5685 判据 2（红证）：缺值不渲染 —— 缺键 / null / 空串 / 纯空白 四态都不出现该行', async () => {
+    const states: Array<[string, Record<string, unknown>]> = [
+      ['缺键', { craft: '韩褶' }],
+      ['null', { craft: '韩褶', remark: null }],
+      ['空串', { craft: '韩褶', remark: '' }],
+      ['纯空白', { craft: '韩褶', remark: '   ' }],
+    ]
+    for (const [label, processingInfo] of states) {
+      mockGetOrder.mockResolvedValue({ data: { data: orderWith(processingInfo) } })
+      const { unmount } = render(<OrderDetailPage />)
+      // 前提自证：本态下工艺规格块照常渲染（否则「没渲染」可能只是整行没渲染 ⇒ 空断言）
+      await screen.findByTestId('order-craft-spec')
+      expect(screen.queryAllByTestId('order-item-remark'), label).toHaveLength(0)
+      unmount()
+    }
+  })
 })

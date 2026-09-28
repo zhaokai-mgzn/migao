@@ -7,7 +7,8 @@
  * - 按住语音键开始录音（录音条出现）、松开转写直接发送、上滑取消
  * - 自适应主动作键：草稿空=按住说话、有草稿=发送、流式中=停止
  * - 添图统一进草稿（预览可删），纯图消息（UI-013）协议不变
- * - H5 不支持录音时语音键隐藏，键盘路径完整可用
+ * - 录音不可用时：**浏览器（h5）**保留语音键但禁用 + 点击给显式提示（issue #5650：不许静默消失、
+ *   不许「点了没反应」）；**其它未识别目标**不渲染语音入口
  */
 import React from 'react'
 import '@testing-library/jest-dom'
@@ -16,6 +17,7 @@ import Taro from '@tarojs/taro'
 import MessageInput from '../src/components/chat/MessageInput'
 import { startRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
 import { chooseImages, uploadImages } from '../src/utils/imageUpload'
+import { H5_VOICE_UNAVAILABLE_HINT } from '../src/utils/platform'
 
 jest.mock('../src/utils/voice', () => ({
   startRecording: jest.fn(),
@@ -76,13 +78,36 @@ describe('MessageInput — 单容器（textarea 常驻，无模式切换）', ()
     expect(screen.queryByLabelText('发送')).not.toBeInTheDocument()
   })
 
-  it('H5 不支持录音：无语音键，textarea 常驻且键盘路径完整', () => {
+  it('h5 不支持录音：语音键保留可见但禁用 + 点击给显式提示，键盘路径完整可用（issue #5650）', () => {
     ;(isVoiceSupported as jest.Mock).mockReturnValue(false)
-    const { props } = renderInput()
+    const prevEnv = process.env.TARO_ENV
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    envBag.TARO_ENV = 'h5'
+    try {
+      const { props } = renderInput()
+
+      const voiceBtn = screen.getByLabelText('语音输入（当前浏览器不支持）')
+      expect(voiceBtn).toBeInTheDocument()
+      expect(String(voiceBtn.className)).toContain('message-input__icon-btn--disabled')
+
+      fireEvent.click(voiceBtn)
+      expect(mockToast).toHaveBeenCalledWith({ title: H5_VOICE_UNAVAILABLE_HINT, icon: 'none' })
+      expect(mockStartRecording).not.toHaveBeenCalled()
+
+      typeText('你好')
+      fireEvent.click(screen.getByLabelText('发送'))
+      expect(props.onSend).toHaveBeenCalledWith('你好')
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('非浏览器目标（编译目标未识别）不支持录音：不渲染语音入口', () => {
+    ;(isVoiceSupported as jest.Mock).mockReturnValue(false)
+    renderInput()
     expect(screen.queryByLabelText('按住说话')).not.toBeInTheDocument()
-    typeText('你好')
-    fireEvent.click(screen.getByLabelText('发送'))
-    expect(props.onSend).toHaveBeenCalledWith('你好')
+    expect(screen.queryByLabelText('语音输入（当前浏览器不支持）')).not.toBeInTheDocument()
   })
 })
 

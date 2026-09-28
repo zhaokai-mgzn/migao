@@ -144,9 +144,29 @@ public class WorkerShortLinkService {
      * @throws IllegalStateException 连续 {@value #MAX_ALLOCATE_ATTEMPTS} 次碰撞（fail-closed，不造重码）
      */
     public static String allocateUnique(ProcessingSetPartTokenMapper mapper) {
+        return allocateUnique(code -> mapper.selectByShortCode(code) != null);
+    }
+
+    /**
+     * 分配一个**未被占用**的短码（判据由调用方给）—— 生成/查重口径的**唯一实现**。
+     *
+     * <p><b>为什么收一个 {@code Predicate} 而不是各码空间各写一份循环</b>（issue #5052 P2）：
+     * 入库标签的码空间（{@code /i/}）与报工短链（{@code /s/}）**不是同一张表**（#5052 边界：
+     * 「照其范式、不复用其表」），但「随机生成 + 查重 + 碰撞重试 + 到顶 fail-closed」这四件事
+     * 必须**只有一份**：复制第二份 = 第二条真相源，日后改一处漏一处（「同一个短码分配器，
+     * 两个码空间的碰撞策略不同」这种缺陷不会有任何东西变红）。</p>
+     *
+     * <p>{@code /s/} 的既有调用方一字不改地走上面那个重载（行为逐字相同：同一 {@code MAX_ALLOCATE_ATTEMPTS}、
+     * 同一异常文案），本重载只是把那四件事抽出来给第二个码空间复用。</p>
+     *
+     * @param isTaken 该短码是否已被占用（跨租户查重：短码全局唯一）
+     * @return 未被占用的短码
+     * @throws IllegalStateException 连续 {@value #MAX_ALLOCATE_ATTEMPTS} 次碰撞（fail-closed，不造重码）
+     */
+    public static String allocateUnique(java.util.function.Predicate<String> isTaken) {
         for (int i = 0; i < MAX_ALLOCATE_ATTEMPTS; i++) {
             String code = randomCode();
-            if (mapper.selectByShortCode(code) == null) {
+            if (!isTaken.test(code)) {
                 return code;
             }
         }

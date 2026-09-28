@@ -103,6 +103,13 @@ public class ProcessingOrderResponse {
          * 但**缺值不落键** ⇒ 缺键就是 null（未指定）。供 2b-3 的兜底与分段评估读。
          */
         private Object requiredDeliveryDate;
+        /**
+         * **部位级备注**（issue #5685）：商家填的一行说明（现场例：`公式--48个折` = 「这个数字怎么来的」）。
+         *
+         * <p>来源 = 订单行 {@code processing_info.remark}（自由文本），随加工单生成**逐行固化**进
+         * `items_snapshot`（白名单见 {@code ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS}）。
+         * **缺值 = 键缺席 = null**（`copyIfPresent` 不造值）⇒ 页面按「没填」处理，不渲染空行。</p>
+         */
         private String remark;
 
         // ── 工艺规格（craft spec，issue #4354 / 设计文档 §4.9 第③处展示）──────────────
@@ -117,7 +124,7 @@ public class ProcessingOrderResponse {
 
         /** 部位/帘种（`布帘` / `纱帘` / `帘头`，与工序库 `production_routings.curtain_type` 同枚举）。 */
         private Object curtainType;
-        /** 安装工艺（`韩褶` / `打孔` / `四爪钩` / `穿杆` / `平幔`）。 */
+        /** 安装工艺（`韩褶` / `打孔` / `穿杆` / `平幔`；`四爪钩` 是**加工项/配件**、不是工艺 —— issue #4365 起不再进合法值域，存量值仍原样透传）。 */
         private Object craft;
         /** 加工类型（`定高买宽` / `定宽买高`）。 */
         private Object cuttingMode;

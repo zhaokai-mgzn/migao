@@ -23,6 +23,7 @@ import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
+import com.migao.admin.time.BusinessClock;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +63,18 @@ class ProcessingOrderServiceTest {
 
     @InjectMocks
     private ProcessingOrderService processingOrderService;
+    /**
+     * 业务时钟（与生产**同一份**口径，issue #3802）：测试里的「今天 / 现在」只能从这里取。
+     *
+     * <p>⛔ 不许写裸 {@code LocalDate.now()} —— 那读的是 <b>JVM 默认时区</b>，而生产的业务日固定
+     * {@code Asia/Shanghai}（{@link BusinessClock}）；CI runner 的 JVM 默认时区是 <b>UTC</b>
+     * ⇒ 两侧在 <b>UTC 16:00–24:00（北京 00:00–08:00）差一天</b>，本类的日期断言会每天红 8 小时
+     * （实测：2026-09-26T22:14Z / 23:59Z 两轮 required 检查红，期望 2026-09-26 实际 2026-09-27）。
+     * 注入同一个 {@code BusinessClock} ⇒ 夹具与生产**同源同区**，与 runner 时区无关。</p>
+     */
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
+
 
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
@@ -224,7 +237,8 @@ class ProcessingOrderServiceTest {
     }
 
     /**
-     * 工序库桩（**新结构**，P2b / issue #4459）：把「默认路线模板 + 规则表 26 行 + 部位价目
+     * 工序库桩（**新结构**，P2b / issue #4459）：把「默认路线模板 + 规则表 23 行
+     * （issue #4365 起：工艺变体 7 + 特殊选项 16）+ 部位价目
      * + 工序库元数据」装进新读面。
      *
      * <p>与旧桩的差别：旧桩直接把 9 条「{@code (部位×工艺)} 展开快照」塞给 {@code findRouting}；
@@ -379,7 +393,7 @@ class ProcessingOrderServiceTest {
     /**
      * 特殊选项读面的桩（P2b：规则表 + 计件系数档 + 工序库元数据，逐字对齐 V71/V72 种子）。
      *
-     * <p>与 {@link #stubLibrary} 的关系：那个已装「模板 + 规则 26 行 + 系数档 + 工序库」；
+     * <p>与 {@link #stubLibrary} 的关系：那个已装「模板 + 规则 23 行 + 系数档 + 工序库」；
      * 本方法**只**为「带特殊选项」的用例再显式声明一遍（可读性：这些用例的判据依赖哪几行一目了然）。</p>
      */
     private void stubOptionTables() {
@@ -518,6 +532,47 @@ class ProcessingOrderServiceTest {
         ordered.verify(processingOrderMapper).insert(any(ProcessingOrder.class));
         ordered.verify(stockBatchConsumptionService)
                 .apply(eq(TENANT), anyString(), eq("ORD-20260912-0001"), anyList());
+    }
+
+    // ── 部位级备注（issue #5685）：订单行 processing_info.remark ⇒ 加工单快照（固化真相）────────
+    //
+    // 病根：`ProcessingOrderItemBrief.remark` 早已声明，但 `CRAFT_SPEC_SNAPSHOT_KEYS` 白名单里**没有**
+    // 这个键 ⇒ 快照恒无该键 ⇒ 读到的是恒 null = **死字段**（现场那张纸上的「部位备注: 公式--48个折」
+    // 在系统里无处可放）。本单把它加进白名单（**零迁移**：processing_info 是自由 JSONB）。
+
+    @Test
+    @DisplayName("🔴 部位备注随加工单固化：processing_info.remark ⇒ 快照逐字带上（issue #5685）")
+    void itemRemarkIsFrozenIntoSnapshot() {
+        stubLibrary();
+        OrderItem item = orderItemWithProcessing("米白");
+        ((Map<String, Object>) item.getProcessingInfo()).putAll(spec("remark", "公式--48个折"));
+        stubGenerate(List.of(item));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("`remark` 进了白名单 ⇒ 快照逐行带上（把它从 CRAFT_SPEC_SNAPSHOT_KEYS 删掉 ⇒ 本断言红）")
+                .containsEntry("remark", "公式--48个折");
+    }
+
+    @Test
+    @DisplayName("🔴 未填备注 ⇒ 快照里**没有** remark 键（缺键就缺，不造值）（issue #5685）")
+    void absentItemRemarkLeavesNoSnapshotKey() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("没填备注 ⇒ 快照不含 `remark`（copyIfPresent 语义：缺键就缺，不落 null / 空串）")
+                .doesNotContainKey("remark");
     }
 
     @Test
@@ -3501,7 +3556,7 @@ class ProcessingOrderServiceTest {
         // 交期用**相对日期**（issue #4911）：写死 `LocalDate.of(2026, 9, 20)` 会被「发加工交期不得早于今天」
         // （#3901）在**第二天**判红 —— 测试对墙钟敏感 = 定时炸弹（本地 CST 2026-09-21 实测红；
         // CI 用 UTC ⇒ 只是晚 8 小时红）。本用例要断言的是「交期**原样落库**」，不是某个具体日历日。
-        LocalDate deliveryDate = LocalDate.now().plusDays(3);
+        LocalDate deliveryDate = businessClock.today().plusDays(3);
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
         issue.setAction("issue");
         issue.setProcessor("朝阳加工厂");
@@ -3573,7 +3628,7 @@ class ProcessingOrderServiceTest {
 
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
         issue.setAction("issue");
-        issue.setExpectedDeliveryDate(LocalDate.now().minusDays(1));
+        issue.setExpectedDeliveryDate(businessClock.today().minusDays(1));
 
         assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
                 .isInstanceOf(BusinessException.class)
@@ -3591,13 +3646,13 @@ class ProcessingOrderServiceTest {
         // 今天
         ProcessingOrderUpdateRequest today = new ProcessingOrderUpdateRequest();
         today.setAction("issue");
-        today.setExpectedDeliveryDate(LocalDate.now());
+        today.setExpectedDeliveryDate(businessClock.today());
         processingOrderService.updateStatus("po-1", today, TENANT, "u1");
 
         // 未来
         ProcessingOrderUpdateRequest future = new ProcessingOrderUpdateRequest();
         future.setAction("issue");
-        future.setExpectedDeliveryDate(LocalDate.now().plusDays(7));
+        future.setExpectedDeliveryDate(businessClock.today().plusDays(7));
         processingOrderService.updateStatus("po-1", future, TENANT, "u1");
 
         // 空（交期可选）
@@ -3607,8 +3662,8 @@ class ProcessingOrderServiceTest {
 
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper, times(3)).updateById(captor.capture());
-        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(LocalDate.now());
-        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(LocalDate.now().plusDays(7));
+        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(businessClock.today());
+        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(businessClock.today().plusDays(7));
         assertThat(captor.getAllValues().get(2).getExpectedDeliveryDate()).isNull();
     }
 
@@ -4550,5 +4605,31 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.pool(TENANT, BigDecimal.ZERO))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("maxWaitHours 必须为正数");
+    }
+
+    // ============================================================ 状态机锚点（issue #4695 / D13）
+
+    /**
+     * 🔴 **改这一行 = 改裁定**：能走到 `in_processing` 的**只有 `issued`**。
+     *
+     * <p>首工序报满的自动路径（{@code ProductionService}）按本状态机判合法性 ⇒ 这里多一条
+     * 入边（尤其 `generated → in_processing`）会让「未发加工的单也被首工序报工推进」——
+     * 那正是设计 §8 **A6 未裁定**的那一半，必须**先裁再改**（不是顺手放开）。</p>
+     */
+    @Test
+    @DisplayName("D13 状态机锚点：能走到 in_processing 的只有 issued（放开 generated = 替 A6 裁定 ⇒ 先裁再改）")
+    void onlyIssuedMayEnterInProcessing() {
+        assertThat(ProcessingOrderService.STATUS_IN_PROCESSING).isEqualTo("in_processing");
+        assertThat(ProcessingOrderService.allowsTransition("issued", ProcessingOrderService.STATUS_IN_PROCESSING))
+                .as("首工序报满的自动路径只认这一个起始态")
+                .isTrue();
+        for (String from : List.of("generated", "in_processing", "completed", "cancelled")) {
+            assertThat(ProcessingOrderService.allowsTransition(from, ProcessingOrderService.STATUS_IN_PROCESSING))
+                    .as("from=%s 不得直达 in_processing", from)
+                    .isFalse();
+        }
+        assertThat(ProcessingOrderService.allowsTransition(null, ProcessingOrderService.STATUS_IN_PROCESSING))
+                .as("状态缺失（脏数据）⇒ fail-closed，不推进")
+                .isFalse();
     }
 }

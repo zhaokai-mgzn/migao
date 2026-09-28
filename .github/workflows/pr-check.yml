@@ -58,7 +58,48 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 口径 = 本仓既有「**job 内 diff 门控**」范式（`docs/wiki/CI-CD.md`「变更门控」；
+      # 同 `ai-agent-tests` / `mini-app` / `bmini-app` / 本文件 `admin-web-test`）：
+      # **job 保持运行**（required check 永不悬空），只让实际执行的 step 跳过。
+      # ⛔ 不许改成 workflow 级 `paths:` —— 那会让不碰该路径的 PR **永远拿不到这条
+      # required check**（GitHub 报 "Expected — waiting for status to be reported"，
+      # 而**没有任何东西会变红**）。常驻判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py。
+      - name: Detect admin-api changes
+        id: detect_api
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，全量执行 admin-api 单测"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
+          # ① `backend/admin-api/**` 全覆盖：单测在 `backend/admin-api` 里跑（`./mvnw test`），
+          #    且 `src/test/**` 里按仓根拼出的仓内路径（`Path.of("backend/…")` 一类）经复算
+          #    **全部**落在 `backend/admin-api/` 下 —— 复算：
+          #      grep -rhoE '"(backend|frontend|scripts|tests|docs|\.github)/[^"]*"' \
+          #        backend/admin-api/src/test --include=*.java | sort -u
+          #    该模块**没有**仓内 Maven 父/兄弟模块（`backend/admin-api/pom.xml` 的 parent 是
+          #    `spring-boot-starter-parent`，仓根无 `pom.xml` / `.mvn`）⇒ 不存在「改了别的模块
+          #    而本模块单测该跑」的形态。
+          # ② `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义：改这条腿的 PR 必须能
+          #    验证它自己（否则「把 mvn 命令改坏」这类改动会静默跳过本腿 ⇒ 没跑长得像通过）。
+          # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
+          #   tests/unit_ci_workflows/declaration_gate_registry.json
+          HITS=$(echo "$CHANGED" | grep -E '^(backend/admin-api/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 admin-api 相关变更，执行单测"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 admin-api 相关变更 —— 单测**未跑**（「没跑」不是「通过」）"
+          fi
+
       - name: Set up JDK 21
+        if: steps.detect_api.outputs.run_tests == 'true'
         uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -78,6 +119,7 @@ jobs:
       #   `MIGAO_REQUIRE_REALDB=1`，`PgCluster.startOrAbort()` 据此把「缺 PG」判成 **FAIL**
       #   而不是 skip。两道锁的防回退守卫 = tests/unit_ci_workflows/test_realdb_failclosed.py。
       - name: Assert PostgreSQL binaries exist (fail-closed 前置，issue #5192)
+        if: steps.detect_api.outputs.run_tests == 'true'
         run: |
           # 判据源与 `PgCluster.BIN_DIRS` 同源：PATH + Debian 的 /usr/lib/postgresql/{14,15,16}/bin
           initdb="$(command -v initdb || true)"
@@ -99,6 +141,7 @@ jobs:
           echo "✅ PG 二进制存在 —— 真库判据能真跑"
 
       - name: Run unit tests
+        if: steps.detect_api.outputs.run_tests == 'true'
         working-directory: backend/admin-api
         env:
           # 缺 PG ⇒ `PgCluster.startOrAbort()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
@@ -198,7 +241,46 @@ jobs:
           # 路径门控（下面 Detect admin-web changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
           fetch-depth: 0
 
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 本步原先**只**门控 `next build`（#4412），其余步骤（`npm ci` / `tsc` / `eslint` /
+      # `vitest`）在**每个** PR 上都跑 —— 实测该 job 在纯文档 / 其他模块 PR 上仍耗
+      # **251.5s 中位**（n=8，复算见 tests/unit_ci_workflows/ci_cost_ledger.json）。
+      # 现改成门控**整条腿**：口径与 `mini-app` / `bmini-app` / `ai-agent-tests` 逐字同款
+      # （`docs/wiki/CI-CD.md`「变更门控」）。
+      # ⛔ 不许改成 workflow 级 `paths:`（required check 会卡 "Waiting" 永不报告，且**不会变红**）。
+      # 常驻判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py。
+      # 另：`next build` 的防回退锁 = tests/unit_ci_workflows/test_admin_web_next_build_gate.py（本步改名/删条件即红）。
+      - name: Detect admin-web changes
+        id: detect_aw
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，执行 admin-web 全量（deps/tsc/eslint/next build/vitest）"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身。
+          # ① `frontend/admin-web/**`：本腿的 `npm ci` / `tsc --noEmit` / `eslint` /
+          #    `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root=该目录、
+          #    `setupFiles: ./tests/setup.ts` 也在其内；包依赖全是 npm 公共包，无仓内 workspace 依赖）
+          #    ⇒ 不存在「改了仓内别处而本腿该跑」的形态。
+          # ② `\.github/workflows/pr-check\.yml$` = 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          # 登记册（谓词逐字 + must_cover 覆盖 + 未登记即红）=
+          #   tests/unit_ci_workflows/declaration_gate_registry.json
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/admin-web/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 admin-web 变更，执行 typecheck / lint / build / 单测"
+          else
+            echo "run_web=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 admin-web 变更 —— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
+          fi
+
       - name: Set up Node.js 20
+        if: steps.detect_aw.outputs.run_web == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
@@ -206,14 +288,17 @@ jobs:
           cache-dependency-path: frontend/admin-web/package-lock.json
 
       - name: Install dependencies
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: TypeScript type check
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npx tsc --noEmit
 
       - name: ESLint
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm run lint
 
@@ -226,35 +311,18 @@ jobs:
       # 期间 #4323/#4383/#4386/#4401 等一批「已合入 main」的前端在测试环境上 404（不可达）。
       # 判据 = 变更后 `next build` 通过（真值 frontend-fix.next-build）；防回退锁见
       # tests/unit_ci_workflows/test_admin_web_next_build_gate.py
-      - name: Detect admin-web changes
-        id: detect_aw
-        run: |
-          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
-          # （origin/main 与 HEAD 相同，diff 无意义）—— 同 ai-agent-tests.yml 既有写法
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 非 PR 事件，执行 next build"
-            exit 0
-          fi
-          git fetch origin main --quiet
-          if git diff --name-only origin/main...HEAD | grep -q '^frontend/admin-web/'; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "✅ 含 admin-web 变更，执行 next build"
-          else
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 无 admin-web 变更 —— next build **未跑**（「没跑」不是「通过」）"
-          fi
-
       - name: Production build (Next-only checks)
-        if: steps.detect_aw.outputs.run_build == 'true'
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm run build
 
       - name: Run unit tests
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npx vitest run
 
       - name: Security audit (deps)
+        if: steps.detect_aw.outputs.run_web == 'true'
         working-directory: frontend/admin-web
         run: npm audit --production --audit-level=high
         continue-on-error: true
@@ -271,21 +339,61 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 路径门控（下面 Detect e2e changes）要 diff origin/main...HEAD，浅克隆拿不到 merge-base
+          fetch-depth: 0
+
+      # ── 路径门控（issue #3507 ①，2026-09-26）────────────────────────────────
+      # 本 job 在**每个** PR 上都装两份 node_modules 并跑 Playwright（实测中位 **114.5s**，n=8）
+      # —— 而它读的对象面只有 `tests/**`（spec / fixture / playwright 配置）与
+      # `frontend/admin-web/**`（`webServer` 要真构建 admin-web）。
+      # 口径 = 本仓既有「job 内 diff 门控」范式（`docs/wiki/CI-CD.md`「变更门控」）。
+      # ⛔ **本 job 不是 required check**（不在分支保护 required 集合里）⇒ 本可整层 `paths:`，
+      #   但**仍不用**：一是保持与其余腿同款读法（判据按步骤名定位，见 §23.5），
+      #   二是将来若把它翻成 required，**不需要**再改回 job 内门控（那条顺序不可换）。
+      - name: Detect e2e changes
+        id: detect_e2e
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件，全量执行 E2E 质量门禁"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 触发面 = 本 job 断言**真读**的对象面 ∪ 本 job 自身：
+          # ① `tests/**`（`npx playwright test e2e/specs/…` 的 spec 与 fixture、`tests/package-lock.json`）；
+          # ② `frontend/admin-web/**`（Playwright `webServer` 真构建/启动 admin-web）；
+          # ③ 本 job 自己的定义（改这条腿的 PR 必须能验证它自己）。
+          # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）
+          HITS=$(echo "$CHANGED" | grep -E '^(tests/|frontend/admin-web/|\.github/workflows/pr-check\.yml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 e2e 相关变更，执行质量门禁"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 e2e 相关变更 —— 质量门禁**未跑**（「没跑」不是「通过」）"
+          fi
 
       - name: Setup Node.js
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
 
       - name: Install test deps
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
         run: npm ci
 
       - name: Install admin-web deps (for Playwright webServer)
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: Run quality specs (fixture-only)
+        if: steps.detect_e2e.outputs.run_tests == 'true'
         working-directory: tests
         env:
           E2E_MOCK_AUTH: 'true'
@@ -527,6 +635,9 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `FM-E22` 的合并探测要算 merge-base / `origin/main...HEAD` ⇒ 浅克隆不够
+          fetch-depth: 0
 
       - name: Verify case truths_ref resolve
         run: |
@@ -543,21 +654,49 @@ jobs:
 
       - name: Verify generated artifacts fresh (render + diff)
         run: |
-          # 生成物（eval_cases.py / mibao-verification-cases.md）必须与 cases/ 单一源同步：
-          # 重新渲染后 diff 非空 → 阻塞合并（防止「改了 cases 忘重渲染」导致分叉）
-          if [ -f .github/render_cases.py ] && [ -d .github/cases ]; then
-            python3 .github/render_cases.py \
-              --cases .github/cases \
-              --out-eval tests/agent_eval/eval_cases.py \
-              --out-md docs/testing/mibao-verification-cases.md >/dev/null
-            if ! git diff --exit-code -- tests/agent_eval/eval_cases.py docs/testing/mibao-verification-cases.md; then
-              echo "::error:: 生成物与 cases/ 单一源不同步 — 请运行 .github/render_cases.py 并提交生成物"
-              exit 1
-            fi
-            echo "✅ 生成物与 cases/ 单一源同步"
-          else
-            echo "ℹ️ 无 render_cases.py 或 cases/，跳过生成物新鲜度校验"
+          # 判定本体 = `scripts/generated_artifacts_freshness.py`（**单一实现**；不许在这里再内联一份）。
+          # 判定语义**逐字不变**：以 `.github/cases/**` 为唯一源重渲染 → 与提交的生成物**逐字节**比对，
+          # 不同 ⇒ 阻塞合并（防止「改了 cases 忘重渲染」导致分叉）。差别只有两处，都是收紧：
+          #   ① 判红输出**具名**（产物名 + 差量 + 可复制的复算/重渲染命令）—— 旧文案「生成物不同步」
+          #      不具名，实测导致归因指错对象（2026-09-27 同一天两次）；
+          #   ② 原来的 `else 跳过` 分支取消：渲染器/用例库/生成物缺失、渲染失败、语料为空一律
+          #      **fail-closed（非零）**——「跳过然后成功」正是本仓点名的「没跑长得像通过」。
+          # main 侧守护腿 `.github/workflows/main-freshness-guard.yml` 调的是**同一个**脚本
+          # （issue #5687 族的残余：本判据原先只在本 job 跑，而本 job 只在 `pull_request` 触发
+          #  ⇒ **main 可以先漂移**，而第一个撞上它的无辜 PR 才红）。两侧同源由
+          # tests/unit_ci_workflows/test_main_freshness_guard.py 的判据钉住（反向查内联实现）。
+          python3 scripts/generated_artifacts_freshness.py
+
+      - name: Detect 受管用例面 changes（决定是否跑**合并探测**；未命中 ⇒ 显式打印「未跑」）
+        id: probe_face
+        run: |
+          # `FM-E22`：**合并结果**这一面原先无判据（`FM-E18` 的时序根因）—— 两个各自新鲜的分支合并后，
+          # 生成物可能比源陈旧，而 PR 面的新鲜度判定只看**本树**。探测**只在受管用例面改动时**跑：
+          # 不碰它的 PR **不替 main 侧的漂移背锅**（`FM-E4` 的归因纪律）。
+          # 🔴 **先取基线，再判 rc**（独立验收 P2-1 实测）：`origin/main` 不在检出里时
+          #    `git diff origin/main...HEAD` 会 **rc≠0**，而管道里的 rc 被 `grep` 吃掉 ⇒ 落进 else 并把原因
+          #    写成「未命中」= **归因写错**（「算不出」≠「没命中」）。⇒ 基线自己取、diff 的 rc 自己判。
+          git fetch --no-tags --quiet origin main
+          PROBE_FACE_RE='(\.github/cases/|\.github/render_cases\.py|docs/testing/mibao-verification-cases\.md|tests/agent_eval/eval_cases\.py)'
+          if ! CHANGED="$(git diff --name-only "origin/main...HEAD")"; then
+            echo "::error::算不出「本次改动是否命中受管用例面」（\`git diff origin/main...HEAD\` rc≠0）⇒ **不得当「未命中」**；检查 fetch-depth: 0 / \`origin/main\` 是否可得"
+            exit 1
           fi
+          if printf '%s\n' "$CHANGED" | grep -qE "$PROBE_FACE_RE"; then
+            echo "probe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "probe=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ 本次改动**算得出**且未命中受管用例面 ⇒ **合并探测未跑**（这不是「通过」；判定面 = \`.github/cases/**\` / 渲染器 / 两个生成物）"
+          fi
+
+      - name: Merge-result freshness（把本树合并到 main 之后，生成物还会新鲜吗）
+        if: steps.probe_face.outputs.probe == 'true'
+        run: |
+          # 判定本体仍是**同一份实现**（`scripts/generated_artifacts_freshness.py`，只多一个 `--merge-probe`）。
+          # 三态：`0` = 合并结果仍新鲜 / `1` = 合并结果**会**陈旧（先 rebase 到最新 main，**再重渲染一次**）/
+          # `3` = 无法判定（取不到 main，或与 main 冲突 —— 后者 GitHub 侧本来也会拦合并）。
+          git fetch --no-tags --quiet origin main
+          python3 scripts/generated_artifacts_freshness.py --merge-probe origin/main
 
   # ============ 断言可信度门禁（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）============
   #

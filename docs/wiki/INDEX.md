@@ -33,6 +33,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **LLM 发现 → 确定性下沉（红例必须落成确定性断言；台账 + 机械检查）** | **[llm-finding-sinking](../testing/llm-finding-sinking.md)** |
 | **C 端对抗评测基线与反模式（B 端形状断言为何误判）** | **[xiaobu-adversarial-baseline](../testing/xiaobu-adversarial-baseline.md)** |
 | **检查功能自洽性（闭环谓词 P0/P1/P2）** | **[self-consistency-checklist](self-consistency-checklist.md)** |
+| **真库 / 现场只读复核包（人在生产库/现场做的那几步，一次跑完）** | **[production-readonly-verification-pack](../testing/production-readonly-verification-pack.md)** |
 | 遇到问题 | [Troubleshooting](Troubleshooting.md) |
 
 ## 深入阅读

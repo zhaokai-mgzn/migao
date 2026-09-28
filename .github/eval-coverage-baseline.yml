@@ -30,7 +30,7 @@
 #     "补了用例的那个包"（它不知道本清单存在）把 main 变红 —— 用工作清单给别人下绊子。
 #
 # ⚠️ 这是**工作清单**，不是免死金牌：补完用例 → 删条目 → job 保持绿。
-#    清单应**单调缩短**；entries 变长需要 review 说明（当前 1 条阻塞 + 3 条薄覆盖，全部有归属；
+#    清单应**单调缩短**；entries 变长需要 review 说明（当前 1 条阻塞 + 1 条薄覆盖，全部有归属；
 #    #3667 引入的 customer_manage/action_dangling 已由 #3683/#3669 销账删除，
 #    #3701 新暴露的 order_query/action_dangling 已由 #3702 销账删除，留档见文件末）。
 
@@ -38,45 +38,40 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 4 条阻塞（#5247 新接入的 3 个 B 端只读工具 craft_calc_config_query / briefing_query / processing_order_set_query + #5368 包 2 新增的 image_recognize，均暂无评测用例，跟踪 #3592）+ 2 条薄覆盖（validate_input / session_manage），全部有归属。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **1 条阻塞**（image_recognize，跟踪 #4941 —— 需 vision 能力模型 + 一次真实 LLM 批量评测，按 #4262 手动、用户显式触发，本仓不自动派发）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
-  # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：下列 3 条是**新接入**的
-  #    只读工具首次登记 —— 它们替代了 B 端下线的写能力（库存台账/入库批次/工序库分别由
-  #    PR-005、PP-002 两条**改判**用例覆盖；这三条暂无用例）。登记 = 让缺口**可见且可收缩**
+  # ✅ 销账（2026-09-26，issue #3592 / 本 PR）：`briefing_query` / `craft_calc_config_query` /
+  #    `processing_order_set_query` 三条 **uncovered** 条目**已删除** —— 配套用例
+  #    **DA-019**（今日经营日报 → briefing_query）/ **PP-015**（算料配置查询）/
+  #    **PG-064**（加工套件列表）在**同一个 PR** 里补上（`.github/cases/data.yml` /
+  #    `processing.yml` / `processing-order.yml`）。补用例与删条目必须同 PR：分开做会出现
+  #    「main 带陈旧登记」（`baseline_stale_blocking` 判红）或「main 带零覆盖缺口」的红窗口。
+  #    ⚠️ `briefing_query` 原登记写的理由「评测栈简报开关可能关闭 ⇒ 场景待定」经**读源复核不成立**：
+  #    `BriefingController` 的 `GET /api/admin/briefing/today` 不看 `tenants.briefing_enabled`
+  #    （未生成简报时 HTTP 200 + `generated=false`），工具侧同样 `success=True` ⇒ 开关只影响
+  #    **内容**，不影响「模型有没有调对工具、调用是否成功」这一计分面（见 DA-019 的覆盖说明注释）。
+  #    原第 4 条注释留档：「2026-09-24（issue #5247，用户裁定 2026-09-23『B 端米宝只读化』）：
+  #    下列 3 条是新接入的只读工具首次登记 —— 它们替代了 B 端下线的写能力（库存台账/入库批次/
+  #    工序库分别由 PR-005、PP-002 两条改判用例覆盖；这三条暂无用例）」。
+
+  # ⚠️ 2026-09-24（issue #5368 包 2，Agent 深通道）本条首次登记：登记 = 让缺口**可见且可收缩**
   #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
-  #    销账归属 = #3592（B 端剩余覆盖缺口销账）。
-  - tool: briefing_query
-    kind: uncovered
-    persona: mibao
-    issue: "#3592"
-    reason: "#5247 新接入的经营日报只读工具，尚无评测用例（评测栈简报开关可能关闭 ⇒ 场景待定，不先写不可跑的用例）"
-    added: "2026-09-24"
-
-  - tool: craft_calc_config_query
-    kind: uncovered
-    persona: mibao
-    issue: "#3592"
-    reason: "#5247 新接入的算料配置只读工具（褶数法档位/工艺档位），尚无评测用例；销账方式 = 补一条「查算料配置」正常档用例"
-    added: "2026-09-24"
-
-  - tool: processing_order_set_query
-    kind: uncovered
-    persona: mibao
-    issue: "#3592"
-    reason: "#5247 新接入的加工套件/扫码循环只读工具，尚无评测用例；B 端已不能生成加工单 ⇒ 套件数据依赖种子，场景待定"
-    added: "2026-09-24"
-
-  # ⚠️ 2026-09-24（issue #5368 包 2，Agent 深通道）第 4 条首次登记：登记 = 让缺口**可见且可收缩**
-  #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
-  #    销账归属 = #3592（B 端剩余覆盖缺口销账）—— 销账方式 = 补一条「发图让米宝识别并同页填表」
-  #    的 B 端用例（需真实 LLM + vision，属评测栈集中跑批次）。
+  #    **本条目是本清单当前唯一的阻断型条目**，销账方式 = 补一条「发图让米宝识别并同页填表」的用例。
+  #    🔴 **重启条件（= 什么条件下这件事才做得成，不是「正在做」）**：该用例需要
+  #    ① **vision 能力模型**（图片 → 字段/候选）与 ② **一次真实 LLM 批量评测**（识别内核本身是
+  #    纯本地纯函数，但「用户发图后模型会不会调 image_recognize、会不会把上下文里的图片 URL 逐字传进去」
+  #    只有真跑才判得了）。按 issue #4262 的裁定，真实 LLM 评测**手动、由用户显式触发**，本仓不自动派发
+  #    ⇒ 触发动作 = **用户要求跑一次 B 端批量评测时同批补用例**；届时本条销账、`#4941` 台账同步收口。
+  #    跟踪单（2026-09-26 改判）：`#4941`（米宝用例缺口总账 —— 承接「评测栈零 seed / 只能集中跑批」
+  #    这一类残留）。原指向 `#3592`，而 #3592 名下其余 4 条已在本 PR 全部销账、该单随之关闭 ⇒
+  #    继续挂在已关单上会让「条目指向的追踪单已关」被读成「该条目早该销账」，故改判到仍 open 的总账。
   - tool: image_recognize
     kind: uncovered
     persona: mibao
-    issue: "#3592"
-    reason: "#5368 包 2 新增的纯本地识别工具（图 → 同页填充计划），尚无评测用例；本包按用户裁定不派发真实 LLM 评测，且用例库（.github/cases/**）由并发包独占 ⇒ 待集中跑批时补用例"
+    issue: "#4941"
+    reason: "#5368 包 2 新增的纯本地识别工具（图 → 同页填充计划），尚无评测用例；本包按用户裁定不派发真实 LLM 评测，且用例库（.github/cases/**）由并发包独占 ⇒ 待集中跑批时补用例。重启条件 = 用户显式要求跑一次 B 端批量评测（#4262：手动、用户触发）时同批补「发图 → 米宝调 image_recognize → 同页填表」用例；缺口现由 #4941 总账跟踪"
     added: "2026-09-24"
 
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
@@ -108,12 +103,11 @@ entries:
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_generate` 的
   #    thin_positive 条目**已删除** —— 该工具现由 PG-013 + PG-015 + PG-016 三条覆盖
   #    （不再「仅 PG-013 一条」）；且原条目追踪的 `#3589` 是本 PR，合并后即非 open。
-  - tool: session_manage
-    kind: thin_positive
-    persona: mibao
-    issue: "#3592"
-    reason: 仅 DA-004 一条（正向）；在线会话/排队/历史会话其它动作无覆盖（#3592 跟踪）
-    added: "2026-09-14"
+  # ✅ 销账（2026-09-26，issue #3592 / 本 PR）：`session_manage` 的 **thin_positive** 条目
+  #    **已删除** —— 该工具现由 DA-004（monitor）+ **DA-020**（list）两条覆盖（不再「仅一条」）。
+  #    ⚠️ 残留（如实登记；**不**登记成条目 = 它不是阻断项，只是覆盖厚度）：第三个 action `detail`
+  #    需要真实 `session_id`，而评测栈 `agent_sessions` 零 seed ⇒ 物理不可满足；补它要先补评测栈
+  #    seed，属 `#4941` 台账的「评测栈零 seed 导致的断言降级」那一类（不是本 PR 能销的）。
 
   # ✅ 销账（2026-09-24，issue #5247）：`sku_update` 的 **thin_positive** 条目**已删除** ——
   #    该工具已从 B 端解绑（不再是 B 端工具 ⇒ 条目被判「登记无效」并阻塞门禁）；其唯一用例

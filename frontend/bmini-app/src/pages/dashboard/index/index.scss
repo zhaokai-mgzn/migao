@@ -93,6 +93,33 @@
     color: #0a2540;
     margin-bottom: 8px;
   }
+
+  &__sub {
+    display: block;
+    margin-top: 4px;
+    font-size: 22px;
+    color: #667085;
+  }
+
+  &__note {
+    display: block;
+    margin-top: 8px;
+    font-size: 20px;
+    color: #9aa5b1;
+  }
+}
+
+/* 在制工序三态进度（issue #5641：只作进度，不作告警） */
+.production-progress {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 12px;
+
+  &__item {
+    margin-right: 24px;
+    font-size: 24px;
+    color: #0a2540;
+  }
 }
 
 .dashboard-empty {

@@ -13,7 +13,10 @@ import type { ApiResponse, User } from '../types'
 export async function getUserInfo(): Promise<User> {
   const res = await get<ApiResponse<User>>(
     '/api/auth/me',
-    { baseURL: AI_API_BASE_URL },
+    // 🔴 baseURL 更正（issue #5642 功能⑤）：`/api/auth/me` 由 **admin-api** 提供，
+    // 此前误用 `AI_API_BASE_URL`（= ai-agent-service，该服务**没有**这个路由）
+    // ⇒ 端侧永远取不到用户信息，米宝唤出授权门的能力位也就永远拿不到。改用 `API_BASE_URL`。
+    { baseURL: API_BASE_URL },
   )
   if (!res.success || !res.data) {
     throw new Error(res.error?.message || '获取用户信息失败')

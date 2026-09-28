@@ -287,7 +287,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { id: '1', username: '13800138000', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
+          data: { id: '1', username: '13800138000', name: '管理员', roles: ['admin'], capabilities: { mibaoChat: true }, tenantId: 1, tenantName: '测试企业' },
         }),
       })
     })

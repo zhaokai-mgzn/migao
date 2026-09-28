@@ -4122,3 +4122,302 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-110
+    legacy_id: ""
+    title: "工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - backend-contract
+    truths_ref:
+      - inbound-order-flow.worker-narrow-surface
+    user_inputs:
+      - "工人在车间用手机拍上游标签入库（非 LLM 行为，由 admin-api 单测与结构守卫覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 = **DTO 声明字段集**（不是运行时校验）：`WorkerInboundRecognizeRequest` = {images, barcode}、`WorkerInboundDraftRequest` = {productId, skuId, quantity, unitCost, dyeLot, supplier, supplierDocNo, warehouse, rollLengthM, remark}、`WorkerInboundPostRequest` = {confirmed} —— 三个集**恰好相等**（多一个键就红）；`adjustment` / `delta` / `setStock` / `stock` / `reason` / `operator` / `tenantId` / `targetType` / `source` / `importRunId` 一个都不在集里"
+      - "🔴 零商家权限码（源码判据）：控制器与服务源码里**没有** `@RequirePermission` / `PermissionInterceptor` / `requirePermission`，也不出现任何商家码字面量（`inbound:view` / `inbound:create` / `product:create` / `order:create`）"
+      - "🔴 不复用商家识别端点：源码不引用 `ImageRecognitionController` / `TARGET_PERMISSIONS` / `/api/admin/image-recognition`（复用的是能力 `ImageRecognitionClient`，不是那个人机接口）"
+      - "🔴 不新造库存增减：源码里没有 `receiveStock` / `deductStock` / `restoreStock` / `stock_ledger_entries` / `StockLedgerService`；过账本体必须落到 `inboundOrderService.create(` / `inboundOrderService.post(`"
+      - "路径面：控制器 `@RequestMapping` == `/api/worker/inbound`（不以 `/api/admin` 开头），且本包**只有** `/recognize`、`/drafts`、`/drafts/{id}/post` 三个 POST（标签位图 / 打印计数属 P2，不得顺手落进来）"
+      - "🔴 工人在 `/api/admin/**` 仍被拒：`SecurityConfig.ADMIN_API_REJECTED_ROLES` 含 `WorkerSessionService.WORKER_ROLE`（= `worker`），且该集合不含 `operator`/`admin`/`service`（反向护栏：门禁不是「把所有人都拒了」）"
+    skip_reason: "[backend-contract] 工人入库面是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与结构守卫覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P1，设计真值源 docs/design/inbound-photo-and-label.md §5）：工人可达的入库三端点（recognize / drafts / drafts/{id}/post）。本条钉「载体与边界」：字段集即能力集、零商家权限码、不新造库存增减、路径不与 /api/admin/** 混用。识别与过账的行为判据见 PR-111 / PR-112。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundSurfaceGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-111
+    legacy_id: ""
+    title: "工人入库识别：解码优先（0 次 LLM）/ 降级不预填 / 零命中 SKU 不自动建品"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - vision
+      - backend-contract
+    truths_ref:
+      - inbound-order-flow.worker-recognize-decoding-first
+    user_inputs:
+      - "工人拍上游标签 → 系统回候选（品名 / 色号 / 米数 / 条码原文），不落库、不动库存（非 LLM 行为，由 admin-api 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 成本守卫：请求带前端解码得到的条码原文 ⇒ 走解码路径且 `ImageRecognitionClient.recognize` **零调用**（`verify(..., never())`）；条码按货号精确匹配既有 SKU，零命中 ⇒ 空匹配 + 提示人工录入"
+      - "vision 兜底：无条码时才调用，且 target 由服务端固定为 `inbound`（`verify(..., times(1)).recognize(eq(\"inbound\"), any())`）—— 客户端结构上选不了 target"
+      - "🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）"
+      - "🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）"
+      - "张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）"
+      - "ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」"
+    skip_reason: "[backend-contract] 入库识别是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P1，设计 §6）：识别策略 = 解码优先 → vision 兜底 → 手输。复用既有 vision 基建（ImageRecognitionClient → ai-agent POST /api/internal/vision/recognize），**只换 schema 与入口**：ai-agent 的 app/vision/targets.py 新增 `inbound` target（不新增第二套识别内核）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java"
+        - "backend/ai-agent-service/tests/test_vision/test_targets_inbound.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-112
+    legacy_id: ""
+    title: "工人入库过账：复用 #5045 过账 + Idempotency-Key 只加一次库存 + 未确认 / 跨租户拒绝"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - idempotency
+      - backend-contract
+    truths_ref:
+      - inbound-order-flow.worker-post-idempotent
+      - inbound-order-flow.draft-then-post
+    user_inputs:
+      - "工人确认后提交过账（非 LLM 行为，由 admin-api 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "建草稿**不动库存**：`receiveStock` / `stockLedgerService.record` / `stockBatchMapper.insert` 全部零调用；响应 `status=draft`、`source=purchase`（工人面结构上传不出第二个来源值）、行上 `batchNo=null`"
+      - "🔴 数量准入（#5063 判据）：负数 / 0 / 超 1 位小数 ⇒ **400** 且一行都不落库；`0.5` 米的尾料可如实登记；`skuId` 不存在 ⇒ 400 且不自动建品"
+      - "🔴 过账才动库存：每次过账在 `stock_ledger_entries` 落一行 `reason='inbound'`，`before_qty` = SKU 当时库存、`after_qty − before_qty == 入库量`（`receiveStock` 恰好一次）"
+      - "🔴 幂等：同 `Idempotency-Key` 重复提交 ⇒ `claim` 第二次返回 false、回放首次结果（`replayed=true`），`receiveStock` 与 `record` 仍各只有一次、`markPosted` 只有一次；换新幂等键再提交 ⇒ 409（#5045 的条件更新闸），库存仍只加一次"
+      - "🔴 未确认不落库：`confirmed` 缺失 / false / null / 整个 body 缺失 ⇒ **409**，且 `receiveStock` / `record` / `markPosted` 零调用"
+      - "🔴 跨租户 / 非本人草稿 ⇒ **404**（不是 403，避免存在性泄露），且不写任何库存"
+      - "身份只来自 `X-Worker-Session-Id`：body 里塞 `operator` / `tenantId` 不被读取（`markPosted` 收到的 operator = session 解出的工人 id，tenant = 上下文租户）"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P1，设计 §5.2 / §9.2）：过账**内部复用** #5045 的 `InboundOrderService.post`（不新造库存增减、不直接写台账）；幂等**复用** #4037 的客户端请求幂等实现（不新建第二套幂等表）；状态码按设计单：参数类拒绝 400（口径本体仍是 InboundOrderService.requireItemNumbers 那一处）、未确认 409、跨租户/非本人 404。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PR-113
+    legacy_id: ""
+    title: "入库标签短码与公开入口 /i/{短码}：两个码空间互斥（照 /s/ 范式、不复用其表）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - label
+      - backend-contract
+    truths_ref:
+      - inbound-label-flow.short-code-and-public-entry
+    user_inputs:
+      - "工人过账后拿到 8 位短码、标签上印 https://app.migaozn.com/i/<短码>；任何持码人扫码 ⇒ 服务端 302 到落地页（非 LLM 行为，由 admin-api 单测与结构守卫覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 码形态：短码 = 8 位且每个字符都在 Crockford 字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ` 内（生成面**从不产出** `I/L/O/U`）；手抄形态（小写 / `O` / `I` / `L`）归一化到同一短码（`O→0`、`I,L→1`）；形态不合法（长度不对 / 字符集外）⇒ 一次库都不查"
+      - "🔴 唯一与碰撞：分配器查重同时看**活码与留档码**（已撤销的码永不复发，DB 侧由 `uk_inbound_labels_code` 建在有效码 `COALESCE(short_code, revoked_code)` 上兜底）；连续 8 次碰撞 ⇒ 显式 `IllegalStateException`（**拒绝静默造重码**），不落任何标签行"
+      - "🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `\"/w/\"`；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `\"/i/\"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）"
+      - "🔴 公开入口：`GET /i/{短码}` 未认证可达（`permitAll`）—— 未知短码 ⇒ **404**（不是 401）、已撤销 ⇒ **410 Gone**、有效 ⇒ **302** 且 `Location` 为**相对路径**（默认 `/b/?code=<短码>&tenant_id=<id>`）；响应体为空，`Location` 里没有品名 / 米数 / 供应商 / 单号等任何业务字段"
+      - "🔴 落地页地址走单一配置：改 `migao.inbound-label.landing-path` 即改 302 目标；解析文件里不出现硬编码域名（`migaozn.com`）"
+      - "🔴 未登记即红（类级）：控制器里出现的单字母短码前缀集合必须恰好等于登记表 `CODE_SPACES`（`/s/` + `/i/`）；每个前缀都必须在 `SecurityConfig` 的 permitAll 名单里"
+      - "🔴 撤销 = 短码置 NULL + 原码留档（`CHECK ((short_code IS NULL) <> (revoked_code IS NULL))`）⇒ 撤销后扫码仍是 410 而**不是 404**；DB 层码形状正则与 Java 侧字母表**机械等价**（逐字符集合相等）"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 静态守卫 + 迁移契约覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P2，设计真值源 docs/design/inbound-photo-and-label.md §5.2 / §7.1 / §7.3）：入库标签码空间 `/i/`（V134 建表 `inbound_labels`）—— 照 `WorkerShortLinkService` 的**范式**（8 位 Crockford Base32 / 部分唯一索引 / 原子自增计数），但**不复用其表**（#5052 边界逐字：「照其范式、不复用其表」）。生成/归一化/碰撞重试**复用同一份实现**（`ALPHABET` / `normalize` / `allocateUnique` 收 `Predicate` 的新重载），不复制第二份字母表。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/InboundLabelShortLinkControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/InboundLabelSurfaceGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/migration/InboundLabelMigrationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/InboundLabelMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundLabelPrintCountRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java"
+        - "tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-114
+    legacy_id: ""
+    title: "入库标签打印留痕：print_count 原子自增（并发不丢）+ 每次一行 audit_logs（第几次）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - label
+      - audit
+      - backend-contract
+    truths_ref:
+      - inbound-label-flow.print-count-and-audit
+    user_inputs:
+      - "工人（设备侧）在打印一张入库标签**之前**调用服务端 /print 端点（非 LLM 行为，由 admin-api 单测与源码守卫覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 原子自增：计数走 SQL 内 `COALESCE(print_count, 0) + 1`（不是读出 +1 再写回）；一次 `/print` 调用恰好一次自增，**重打同样计数**（3 → 4 → 5）"
+      - "🔴 并发不丢（**真库**，两层都判）：① mapper 层 24 个连接并发自增 ⇒ 计数 == 24；② **服务调用链**层 24 并发 `recordPrint` ⇒ 计数 == 24（只测 ① 时「服务改成读改写、mapper 仍原子」这种退化不会变红 —— 该洞由红证实测发现并补上）"
+      - "🔴 每次打印一行审计：`audit_logs` 落 `action=print` / `resource_type=inbound_label` / `resource_id`=标签 id / `resource_name`=短码，details 带 `shortCode` 与 `printCount`（第几次）与 `itemId`；审计携带的 operator / IP / UA 来自请求（谁 / 何时）"
+      - "🔴 打印必留痕（结构判据）：`COALESCE(print_count…)` 只在 `InboundLabelMapper`；`inboundLabelMapper.incrementPrintCount(` 只被 `InboundLabelService` 调用；`inboundLabelService.recordPrint(` 只被 `/print` 端点调用 ⇒ **结构上不存在**第二条写计数的路径；计数与审计在**同一次调用**里"
+      - "🔴 本包**不做服务端位图**（`/bitmap` 端点零命中；§7.2 已改判为设备侧 canvas 渲染）⇒ 详情读面只回字段、不回任何可直打的渲染产物（没有「拿到图就本地直打」的旁路）"
+      - "拒绝口径：未登录 ⇒ **401**（一次业务调用都不发生）；跨租户 / 不存在 ⇒ **404**；已撤销 ⇒ **410** 且**不计不审**；自增影响 0 行（并发撤销 / 软删）⇒ 404，绝不回一个没落库的计数"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 源码守卫覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P2，设计 §7.3 / §9.2）：打印计数与审计**复用既有范式**（`processing_set_part_tokens.print_count` 的列注释口径 + `AuditLogService`），不新造计数/审计机制。设备侧那一半（壳 / 小程序不得本地直打绕过）在 P4 打印适配层的包里钉。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundLabelServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundLabelControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/InboundLabelSurfaceGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/InboundLabelMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundLabelPrintCountRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-115
+    legacy_id: ""
+    title: "入库标签详情读面：按短码回 50×30mm 渲染所需全部字段；跨租户 404 / 已撤销 410"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - label
+      - backend-contract
+    truths_ref:
+      - inbound-label-flow.worker-detail-read-and-photo-upload
+    user_inputs:
+      - "工人扫到 / 拍到一张已打印的米高标签 ⇒ 打开单据详情核对后重打一张（功能② 的硬依赖；非 LLM 行为，由 admin-api 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "字段面够渲染一张 50×30mm 标签：短码原文 / 入库单号 / 明细行 id / 货号 / **品名**（实读 `products.name`，商品已删 ⇒ null 不编造）/ 色号 / 门幅 / **米数** / 缸号 / 批次号 / **供应商** / 送货单号 / 仓库 / **入库日期** / 标签生成时间 / 已打印次数"
+      - "🔴 跨租户 / 不存在 ⇒ **404**（不是 403：403 等于确认「这码存在，只是不归你」），且在**碰任何单据数据之前**就拒（不拿「单据查不到」冒充租户判据）"
+      - "🔴 跨租户去戳一个**已撤销**的码 ⇒ 仍是 404（先判租户、后判撤销 ⇒ 不泄露「这个码存在过」）"
+      - "🔴 已撤销（本租户）⇒ **410 Gone** + 错误码 `LABEL_REVOKED` + 可行动建议（补打一张，不静默回落到别的标签）"
+      - "零商家权限码：详情面源码里没有 `@RequirePermission` / `PermissionInterceptor` / 任何商家码字面量；准入判据只有有效工人 session（无 / 无效 ⇒ 401）"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P2，设计 §5.2）：功能②「拍照米高标签 → 显示单据详情 → 打印新标签」的**硬依赖读面**。字段集刻意只放渲染与核对要用的东西（不返回单据金额 / 成本 —— 工人不需要，也不该看到）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundLabelServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundLabelControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-116
+    legacy_id: ""
+    title: "工人可达的照片上传：零商家权限码；非图片 / 超张数 / 超尺寸 ⇒ 400"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - worker
+      - upload
+      - backend-contract
+    truths_ref:
+      - inbound-label-flow.worker-detail-read-and-photo-upload
+    user_inputs:
+      - "工人在车间用手机拍上游标签 / 布卷包装并上传（拿 URL 后喂给识别端点；非 LLM 行为，由 admin-api 单测覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 补的是 P1 留下的真缺口：P1 的 `recognize` 收「已上传好的 URL」，而现有一切上传端点都在 `/api/admin/**` 且带商家权限码 ⇒ 工人够不着；本端点是工人**唯一**可达的照片上传面"
+      - "🔴 零商家权限码：源码里没有 `@RequirePermission` / `PermissionInterceptor`；**工人持 session 即可上传**（不是「有码就放行」，而是这条路径根本不查商家码）；无 / 无效 session ⇒ **401** 且一张都不落存储"
+      - "🔴 只收真图片：MIME 不是 `image/*` ⇒ 400；MIME 是 `image/png` 但**读不出图像头**（改名 + 伪造类型的文本）⇒ 400（按**内容**判，不按文件名 / Content-Type 判）；空文件 ⇒ 400"
+      - "张数：1~3 张（上限 = `WorkerInboundService.MAX_IMAGES`，与识别端点**同一常量**）；0 张 / 4 张 ⇒ 400；单张 >5MB ⇒ 400；单边 >8000px ⇒ 400"
+      - "存储**复用**既有 `FileStorageService`（目录 `inbound`），不新造存储 / 不新建桶约定；三张合法照片 ⇒ 200 + 三个 URL（可直接喂 `recognize` 的 `images`）"
+    skip_reason: "[backend-contract] 入库上传是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 结构守卫覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P2，设计 §5.2 / §9.3）：独立控制器（不挤进 P1 的 `WorkerInboundController` —— 它的结构守卫逐字钉住「只有那三个 POST」）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundUploadControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/InboundLabelSurfaceGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-117
+    legacy_id: ""
+    title: "入库标签的码在边缘可用：app.migaozn.com 的 /i/<短码> 走 admin-api（不是 SPA fallback）+ 限流预算真的计账"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - label
+      - nginx
+      - backend-contract
+    truths_ref:
+      - inbound-label-flow.short-code-and-public-entry
+    user_inputs:
+      - "工人把标签贴到布卷 / 塑料袋上；任何人用手机扫 https://app.migaozn.com/i/<短码> ⇒ 服务端 302 到落地页（非 LLM 行为，由 nginx 结构判据 + 线上落地面探针覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 补的是 P2 留下的**静默串端**缺口：端点（InboundLabelShortLinkController）与 permitAll 都已落好，但 `deploy/swas/nginx.conf` 里 `location /i/` 命中数 = 0 ⇒ 扫码落到 `location /` 的 SPA fallback，**HTTP 200 + C 端小布首页**。线上实测（2026-09-27）：`GET /i/<任意形态>` 的 body 与 `GET /` 逐字节同哈希，而同刻 `/s/<任意>` = 404（到了 admin-api）"
+      - "🔴 边缘归属（离线判据，tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 F1~F3）：登记表 PUBLIC_PREFIX_FACES 覆盖 `/s/`、`/i/`（代理到 admin-api:8080）、`/b/`（静态 + 自己的命名空间 fallback）、`/w/`（由 `location /` 的 root 承载，风险已登记）；三个发现面（控制器短码前缀 / nginx 公开前缀 location / 发布腿 H5_SUBDIR）**未登记即红**"
+      - "🔴 `proxy_pass` **不带 URI 后缀**：语义模拟断言 `/i/<任意形态>` 的转发路径原样（写成 `…:8080/i;` ⇒ 变成 `/i7K3M9QP2`，控制器收不到自己的路径 ⇒ 判据红）"
+      - "🔴 端到端链路（离线语义模拟）：`/i/<短码>` 代理到 admin-api ⇒ 302 → 落地页 `/b/?code=…` → nginx `location /b/` → bmini 的 index.html；探针覆盖 `/i/`、`/i/<任意形态>`、`/s/`、`/b/`、`/b/<子路由>`、`/w/`、`/`（零回归：根仍是 C 端、`/b/` 不串端）"
+      - "🔴 线上活体断言（deploy/scripts/bmini-h5-verify-served.sh ⑤，由 bmini-h5-publish.yml 在 nginx.conf 变更时重跑）：`GET /i/<不可能存在的短码>` 必须到 admin-api（未知短码 404 / 已撤销 410），**不得**返回根页；判定刻意**不用**「状态码是 302」（未知短码本来就 404），而是「body 是否与 `GET /` 同哈希」+ 5xx 判定"
+      - "🔴 限流预算（tests/unit_ci_workflows/test_swas_nginx_rate_limit.py 判据 4/6/8）：`/i/` 与 `/s/` **同族同档**（worker_entry：per-IP 50 r/s + burst 1000；正常用量 = 一次扫码 1 个请求 ⇒ 余量 ≥ 10×），**不**套内部管理面的宽预算；且 `$worker_entry_key` 的 map 必须覆盖 `/i/` —— 否则 key 为空、nginx「空 key 不计账」⇒ 限流是空断言（判据 8 = map 语义求值 + 注入式红证）"
+      - "零回归：`/`（C 端小布）、`/b/` 与 `/b/<子路由>`（bmini）、`/w/`（worker-h5，逐字节）、`/s/`（admin-api 代理）四段既有语义一字未改（判据 = 同一套语义模拟 + 既有 worker-h5 / bmini 身份断言）"
+    skip_reason: "[backend-contract] 边缘接线与限流预算是**确定性**判据（nginx 语义模拟 + 结构守卫 + 线上落地面探针），由 pytest 单测与发布腿覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #5052 §7.1 的 nginx 面）：P2 把端点与 permitAll 都落了，但边缘没登记 ⇒ 印出去的码会被 `location /` 的 SPA fallback 吃掉（静默串端，与 #5668 的 `/b/` 同类）。本单照 `/s/` 的形态加 `location /i/`（`proxy_pass` 不带 URI 后缀 + Host / X-Real-IP / X-Forwarded-For 覆盖），并按限流判据 3「新增代理面必须连同限流预算一起复核」把 `/i/` 纳进 `$worker_entry_key` 的 map（同一档，不开豁免），另补类级守卫：公开前缀在 nginx 的归属未登记即红。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py"
+        - "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"
+        - "tests/unit_ci_workflows/test_bmini_h5_hosting.py"
+      ci:
+        - pr-check.yml
+        - bmini-h5-publish.yml
+      verifies: []

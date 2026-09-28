@@ -746,6 +746,16 @@ SVC_TO_DEPLOY_WORKFLOW = {
     # 无镜像 ⇒ 对账走漂移判据 ②；它的触发面只有 `push: main` + `workflow_dispatch`，而被
     # `GITHUB_TOKEN` 合并的 auto-merge **吞掉那个 push** ⇒ 缺了这条腿就等于「改动静默不发布」。
     "worker-h5": "worker-h5-publish.yml",
+    # bmini-h5-hosting（issue #5668）：第二条静态落地面腿（发布 `frontend/bmini-app/**` 的 h5 产物到
+    # 静态根 `b/`），抑制与判定口径同 worker-h5（无镜像 ⇒ 漂移判据 ②）。
+    # ⚠️ 腿名与发布腿的**传输镜像**名（`bmini-h5`）有意不同：同名会让判据 ①（镜像已存在）在
+    #    「发布失败但镜像已推」时命中 ⇒ 静默不补发布（见 deploy-reconcile.yml 该腿的注释）。
+    "bmini-h5-hosting": "bmini-h5-publish.yml",
+    # c-end-h5（issue #4184）：**第三条静态落地面腿**（发布 `frontend/mini-app/**` 的 h5 产物到
+    # `app.migaozn.com` 的**静态根本身** —— 此前这条腿不存在，线上落后源码 28 天而无人知道）。
+    # 无镜像 ⇒ 同样走漂移判据 ②。⚠️ 它的**发布步骤**只在 `workflow_dispatch` + `inputs.publish=='true'`
+    # 时执行（用户裁定 B：首次发布由人手动触发）⇒ 本对账的兜底 dispatch **只报告、不发布**。
+    "c-end-h5": "c-end-h5-publish.yml",
 }
 
 

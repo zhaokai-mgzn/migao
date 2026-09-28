@@ -62,12 +62,26 @@ _NON_DIGIT_RE = re.compile(r"\D")
 #: 填一个 `2.8米` 进数字框 = `NaN` ⇒ 推导链 fail-closed（页面看着"填了"，实际一个推导项都不产出）。
 _SIZE_FIELDS = frozenset({"curtain_width", "curtain_height"})
 
+#: 发货侧的尺寸字段（issue #5648）—— 键名逐字取自 `order_items.width` / `order_items.height`。
+#: 走**同一份** `_normalise_size`（消歧口径一致：方向不明就不猜顺序）。
+_SHIPMENT_SIZE_FIELDS = frozenset({"width", "height"})
+
+#: target → 需要过尺寸硬闸的字段（**唯一登记表**；新增 target 要过闸就登记在这里）。
+_SIZE_FIELDS_BY_TARGET: Dict[str, frozenset] = {
+    "order": _SIZE_FIELDS,
+    "shipment": _SHIPMENT_SIZE_FIELDS,
+}
+
 #: 尺寸的合理量程（米）—— 越界即视为「认错了 / 图上根本不是尺寸」。
 #: 下限 0.2：比这更小的窗帘不存在；上限 20：家用 / 商用布艺的极端值，
 #: 同时能抓住「漏了小数点」的形态（`2.8` → `28`）。
 _SIZE_RANGE_M: Tuple[float, float] = (0.2, 20.0)
 
 _SIZE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+#: 负数形态（`-3` / `- 3` / `负3`）—— `_SIZE_NUMBER_RE` 只认数字本体，负号会被吃掉
+#: ⇒ 不单独挡的话 `-3` 会被当成 `3` 填进去（正数闸对它是恒真的）。
+_NEGATIVE_RE = re.compile(r"-\s*\d|负\s*\d")
 
 #: 留空理由：模型没给该字段 / 模型自己说看不清
 _NOT_RECOGNISED = "图片未给出该字段"
@@ -208,11 +222,20 @@ def _resolve(
     # 订单侧的第二道硬闸（issue #5349）：**尺寸**必须是能直接进推导链的数。
     # 同样放在置信度闸**之前**：一个「很自信地抄成 `2.8×2.4`」的尺寸，置信度再高也不能填
     # —— 形状错 ⇒ 下游一定错（成品尺寸 ⇒ 米数 ⇒ 钱）。
-    if target_type == "order" and field.key in _SIZE_FIELDS:
+    if field.key in _SIZE_FIELDS_BY_TARGET.get(target_type, frozenset()):
         size, size_reason = _normalise_size(value)
         if size is None:
             return None, size_reason
         value = size
+
+    # 发货侧的第三道硬闸（issue #5648）：**实发数量**必须是正数。
+    # 同样放在置信度闸**之前** —— 一个「很自信地抄错」的数量，置信度再高也不能填：
+    # 数量错 = 少发/多发，而货已经出了车间（追回来比改一张单贵得多）。
+    if target_type == "shipment" and field.key == "quantity":
+        qty, qty_reason = _normalise_quantity(value)
+        if qty is None:
+            return None, qty_reason
+        value = qty
 
     min_confidence = policy["min_confidence"]
     if confidence < min_confidence:
@@ -238,6 +261,8 @@ def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:
     （`Number(value)`），原文带中文单位 ⇒ `NaN` ⇒ 推导链静默不发试算 —— 那比留空更糟
     （商家看着格子是"填上了"的）。
     """
+    if _NEGATIVE_RE.search(value):
+        return None, f"「{value}」是负数 ⇒ 宁可不填"
     numbers = _SIZE_NUMBER_RE.findall(value)
     if len(numbers) >= 2:
         return None, (
@@ -251,6 +276,30 @@ def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:
     if not low <= metres <= high:
         return None, f"「{value}」不在帘宽 / 帘高的合理量程（{low}~{high} 米）内 ⇒ 宁可不填"
     return f"{metres:g}", None
+
+
+def _normalise_quantity(value: str) -> Tuple[Optional[str], Optional[str]]:
+    """实发数量原文 → `(规范十进制串, None)`；**不合法 ⇒ `(None, 留空理由)`**。
+
+    三条（issue #5648；每条都有会红的夹具，见 `tests/test_vision/test_recognizer.py`）：
+
+    1. 读不出**唯一一个**数（没有数字 / 两个以上的候选）⇒ 留空（`10 或 12` 这种涂改件**不猜**）；
+    2. 非正数（`0` / 负数）⇒ 留空（「发了 0 米」不是一次发货）；
+    3. 归一（`10.00 米` → `10`、`约 12 米` → `12`）—— 与尺寸同一族：页面的数量框是**数字框**
+       （`Number(value)`），原文带中文单位会变成 `NaN` ⇒ 提交时被服务端拒（比留空更糟：
+       工人看着格子是"填上了"的）。
+    """
+    if _NEGATIVE_RE.search(value):
+        return None, f"数量「{value}」是负数 ⇒ 宁可不填（负数不是一次发货）"
+    numbers = _SIZE_NUMBER_RE.findall(value)
+    if len(numbers) != 1:
+        return None, (
+            f"数量「{value}」读不出唯一一个数（识别到 {len(numbers)} 个候选）⇒ 宁可不填，请手工填写"
+        )
+    amount = float(numbers[0])
+    if amount <= 0:
+        return None, f"数量「{value}」不是正数 ⇒ 宁可不填（「发了 0」不是一次发货）"
+    return f"{amount:g}", None
 
 
 def _normalise_phone(value: str) -> str:

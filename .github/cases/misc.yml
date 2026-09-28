@@ -688,3 +688,1068 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-022
+    legacy_id: ""
+    title: "业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）"
+    domains:
+      - ci
+      - backend
+    tier: normal
+    tags:
+      - ci
+      - time
+      - flaky
+      - business-clock
+      - test-only
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**测试源码的静态事实**（日期基准来自哪里），非 LLM/业务真值，
+    # 由 admin-api 的驻留守卫 BusinessClockTestSourceGuardTest（JUnit，跑在 admin-api 单测 job 里）验证。
+    user_inputs:
+      - "把任一条测试的「今天」写回裸 LocalDate.now()（或再写一份 ZoneId.of(\"Asia/Shanghai\") / 业务时区字面量）时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1（L0 静态）：`backend/admin-api/src/test/java/**` 里不得出现五条禁则（无参 LocalDate.now( / LocalDateTime.now( / LocalTime.now( / 业务时区字面量 / ZoneId.of 业务时区），**剥注释后**判定。执行点 = BusinessClockTestSourceGuardTest.testSourcesReadBusinessTimeOnlyViaBusinessClock。"
+      - "判据 2（台账只许缩短）：存量 40 处 / 13 条按「文件 × 规则」登记，**未登记即红 / 超数即红 / 不再命中即红**（销账）。执行点 = 同类的 ledgerOnlyShrinks（三条注入式红证：未登记、超数、残留）。"
+      - "判据 3（实例判据）：本单修掉的三个类（PoolBoardUrgencyTest / InboundOrderServiceTest / ProcessingOrderServiceTest）**在扫描面内且命中为 0**。执行点 = theClassesFixedByThisChangeAreClean。"
+      - "判据 4（判别力）：五条禁则各能命中一个已知坏样本；且注释里的提及**不得**被判违规。执行点 = rulesHaveDiscriminatingPower。"
+      - "判据 5（隔离注入）：把裸 now() 放进隔离目录 ⇒ 扫描器逐条报出且对账判红（守卫自身判别力自证，不碰真源树）。执行点 = detectsInjectedViolationInIsolatedTree。"
+      - "🔴 红证（实跑，2026-09-27）：① 修复前 CI required 检查 admin-api unit tests 在 job 36280962072（跑于 2026-09-26T23:58Z–00:00Z）判红，逐条读数 expected 2026-09-26 / but was 2026-09-27、-3/-4、1/0；② 确定性复现：`TZ=America/Los_Angeles ./mvnw -Dtest=… test`（JVM 默认时区落后 +08 一天，与 runner 在 UTC 16:00–24:00 的处境等价）—— 修复前必红、修复后绿；③ 把 `businessClock.today()` 注回 `LocalDate.now()` ⇒ 判据 1/3 必红。"
+    skip_reason: "[backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里"
+    merge_log: "2026-09-27 新增（issue #5651 收口时的跨域链内修）：UTC 跨天窗口里 `admin-api unit tests` 必红，根因 = 测试用裸 `LocalDate.now()`（CI runner 的 JVM 默认时区 = UTC）取「今天」，而生产按 +08 业务日算 ⇒ UTC 16:00–24:00（北京 00:00–08:00）两侧差一天。**只改测试**（5 条断言 + 三个类注入 BusinessClock），不动任何被测语义；顺手把这一类固化（实例判据 + 类级守卫 + 存量台账只许缩短）。取号 MC-022：main 上 MC-001~MC-021 已占用。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+      ci:
+        - pr-check.yml
+  # ==========================================================================
+  # MC-023（关联 #5001）：**只改配置**的改动必须能自动生效 —— `deploy/swas/**` 接进部署触发面。
+  # 病：配置（compose/nginx）与镜像**同源**，应用面只在 `deploy/swas/deploy.sh` 里（`cp` 三份
+  # canonical 配置 + 无条件 `up -d nginx` + reload）；而改 `deploy/swas/**` 原先**一条部署腿都不
+  # 触发** ⇒ 改动静默不生效（实测两次：#5668 的 `/b/`、#5676 的 `/i/` 都只能靠人工 dispatch）。
+  # 更隐蔽的一面：同一个事实（某服务的触发路径集合）写在「`deploy-*.yml` 的 `on.push.paths`」
+  # 与「`deploy-reconcile.yml` 里那条腿的参数」两处，只改一处 ⇒ 触发面与对账面脱钩。
+  # ==========================================================================
+  - id: MC-023
+    legacy_id: ""
+    title: "只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - trigger-surface
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI/deploy 的**结构事实**（workflow 的 paths + 对账腿参数 +
+    # deploy.sh 的应用面），由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的
+    # 执行式桩跑判据验证，非 LLM 行为。
+    user_inputs:
+      - "只改 deploy/swas/nginx.conf（或 docker-compose*.yml）的提交合并后，必须有一次部署把它应用到线上；把 paths 改回去、或把对账面窄化成不覆盖 nginx.conf 的形态时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交"
+      - "应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用"
+      - "类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）"
+      - "红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）"
+      - "另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径"
+      - "读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）"
+    skip_reason: "[backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（关联 #5001；用户逐字裁定 A = 只把 deploy/swas/** 加进 deploy-admin-api 的 paths）：配置与镜像同源 ⇒ 配置的应用面只在部署腿里，而改配置原先不触发任何部署腿（#5668 的 /b/、#5676 的 /i/ 均靠人工 workflow_dispatch 才生效）。落码 = 触发面 + 对账面同批接线 + 类级 meta-guard（逐服务双向比对 + 缺口台账只许缩短）+ 五类注入式红证（含执行式）。取号 MC-023：本单按当时最大号先取 MC-022，写完时该号已被 #5651 收口包占用（rebase 冲突实测）⇒ 顺延一位（MC-023 在 main 与全部在飞分支均未占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_config_change_triggers_deploy.py"
+      ci:
+        - deploy-admin-api.yml
+        - deploy-reconcile.yml
+      verifies: []
+
+  # MC-025（Refs #5683，issue #5687 收尾时发现）：**生成物的人读摘要必须由现取推导**。
+  # 病（实测读数）：`docs/testing/mibao-verification-cases.md` 的「覆盖统计（生成）」两行
+  # 在 main 上与源漂移 **1** 条（committed 532 / 现取 533；tier normal 487 / 488），
+  # 而**逐条用例块没少**（源 533 条、块头 533 个）、同一次产出的 `tests/agent_eval/eval_cases.py`
+  # **与源一致** ⇒ 只差摘要那一行。后果 = 下一个 PR 的「生成物新鲜度校验」会判红，
+  # 而归因**指向那个无辜的 PR**（判据读到的对象与它声称的不是同一个）。
+  # ==========================================================================
+  - id: MC-025
+    legacy_id: ""
+    title: "生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - casebook
+      - generated-artifact
+      - summary-drift
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 生成物的**结构事实**（摘要行 ↔ 现取计数 ↔ 块数），
+    # 由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红"
+      - "🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）"
+      - "fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）"
+      - "对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）"
+      - "🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）"
+    skip_reason: "[backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（Refs #5683；issue #5687 收尾时实测发现）：main 上 casebook 摘要比源少 1 条，而逐条块与 eval_cases.py 都一致 ⇒ 下一个 PR 的生成物新鲜度校验会对无辜 PR 判红。落码 = 重渲染那 2 行 + 常驻判据（摘要↔现取、tier↔现取、摘要声称条数↔文档真实块数、两条 fail-closed）+ 三条语义红证 + 一条「只改注释」对照。取号 MC-025：main 上 MC-001~MC-024 已占用（MC-024 = 同会话的 #5687 分流语义）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_casebook_summary_is_derived.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-024（issue #5687）：**「重跑通过」不再单独构成 flaky 的充分条件** —— 窗口型确定性缺陷
+  # 曾被它掩盖。病：`flaky_ledger.decide` 旧口径逐字 `if rerun_result == "success" and
+  # "flaky" in kinds: action, kind = "mark_flaky", "flaky"` ⇒ **只凭重跑绿**就消红。实测：
+  # 测试侧裸 `LocalDate.now()`（runner 的 JVM 默认时区 = UTC）取业务日 vs 生产按 +08
+  # (`BusinessClock.today()`) ⇒ 两侧只在 UTC 16:00–24:00 分叉 ⇒ **每天必红 8 小时**；
+  # run 36280962072 在窗口内红（22:12Z）、重跑落到窗口外绿（00:0xZ）⇒ 判 flaky、PR 的红被消掉，
+  # 缺陷仍在 main 上、明天同一时段对所有人再红一次（可无限循环；唯一信号是那个**非 required**
+  # 的 `Flaky Ledger Reconcile` 红，它自己逐字声明「判红不等于阻塞合并」）。
+  # ==========================================================================
+  - id: MC-024
+    legacy_id: ""
+    title: "「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - flaky-triage
+      - time-bucket
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 分流语义的**结构事实**（判定函数 + 台账字段 + workflow 动作），
+    # 由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与
+    # tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读"
+      - "判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）"
+      - "🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）"
+      - "**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**"
+      - "类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）"
+      - "workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红"
+      - "红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）"
+    skip_reason: "[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #5687；用户逐字裁定 A = 给「重跑通过」加限制）：窗口型确定性缺陷被重跑掩盖 ⇒ 缺陷留在 main、明天同时段再红（可无限循环）。落码 = 时间桶判据（实例）+ 强制跟踪（机械落单）+ 类级 meta-guard（消红路径未登记即红 + 台账只许缩短 + 覆盖面显式登记）+ workflow 第三种动作 `mark_suspect` + 七条注入式红证（每条注明命中分支，含「只改注释」对照）。取号 MC-024：main 上 MC-001~MC-023 已占用（MC-022 = 同族时区窗口的实例修复、MC-023 = 部署触发面）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py"
+        - "tests/unit_ci_workflows/test_rerun_to_clear_paths.py"
+      ci:
+        - flaky-triage.yml
+        - flaky-ledger-reconcile.yml
+      verifies: []
+
+  # MC-026（Refs #5699 的 P1；design 真值源 docs/design/rbac-single-source.md §4 的 P1 行 + §5.2 的 M1/M2/M3）。
+  # 病（定量，设计 §1.3）：同一事实（角色 → 码 / 码目录 / 菜单节点 → 码）在仓里有 20 处副本 ⇒ 副本数
+  # 使「改一个码要动 9~13 处」，每次分叉都靠人发现（§1.4 六条实例）。本用例锁的是 P1 = **零 delta**：
+  # 清单（声明）与由它派生的对账读数（生成物）必须与**现值逐值相等**。
+  # ==========================================================================
+  - id: MC-026
+    legacy_id: ""
+    title: "RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短"
+    domains:
+      - misc
+      - ci
+      - auth
+    tier: normal
+    tags:
+      - rbac
+      - single-source
+      - zero-delta
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 RBAC **声明清单**的结构事实（清单 ↔ 既有解析器的现取 ↔ 副本登记表），
+    # 由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "新增一处「角色 → 码」的手抄副本、或手改生成物 rbac/readings.json、或让台账条目增长时，必须有东西变红；而清单与现值不一致时必须**逐项点名**报出（不是「数量相等」）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **零 delta 是 P1 唯一的验收口径**：rbac/manifest.json（声明）与 rbac/readings.json（生成物）**逐值相等**，且生成物 == 由 rbac/generate_readings.py 当场重新生成的结果；不等时判据输出**完整不一致清单**（每项一行：清单值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）"
+      - "M1 副本登记表（rbac/sources.json）：形态面（Java attachDefaultPermissions / switch case / 菜单树 / 路由守卫 / SQL INSERT INTO role_permissions|permissions / Python ROLE_PERMISSIONS|PERMISSION_CATALOG|PERMISSION_LABELS|AUTHORIZATION_CENSUS / bmini ADMIN_SURFACES）命中的每一处副本都须具名登记；**未登记即红 / 陈旧登记亦红 / UNRESOLVED 上限只许缩短**；红证 = 注入一处未登记命中 ⇒ 具名红"
+      - "M1 的射程元判据：结构化声明 COPY_FACE_SCOPE == 判据实际枚举的语料集（收窄声明 ⇒ 必红）；**对照读数**：只写在注释里的同形文本**不**算副本（形态面在剥注释后的代码上匹配，不吃自己的说明文字）"
+      - "M3 生成物新鲜度：手改 rbac/readings.json 一个字 ⇒ 必红并报出首个差异行；原样 ⇒ 不红（对照）"
+      - "M2 台账只许缩短：既有七张台账（MENU_READ_PARITY_RESIDUALS 6 / MULTI_READ_ENDPOINT_PAGES 3 / READ_WRITE_EXCEPTIONS 0 / ROLE_FALLBACK_DIVERGENCES 0 / AUTHORIZATION_CENSUS 15 / UNANNOTATED_ENDPOINTS 21 / REGISTERED_RESIDUALS 9）现取条数 ≤ 上限，且清单里的条数 == 现取；**本阶段不改这些表本体、不动任何既有判据**"
+      - "覆盖面显式登记（设计 §5.3）：M1 覆盖不到的三类形态（Map.of/YAML/@ConfigurationProperties 的非约定形态 · 副本注释里的散文 · frontend/worker-h5）逐条写在判据的 UNCOVERED_FACES（含 reason/owner/issue，只许缩短）"
+      - "🔴 不新增并行真值：清单里出现任何**未被对账覆盖**的段 ⇒ 必红（新增段必须先让生成器也产出它，diff 里看得见）"
+    skip_reason: "[backend-contract] RBAC 声明清单与既有解析器读数的逐值对账 + 副本登记表 + 生成物新鲜度，全部由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P1 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §5.2）：P1 的定义是「清单落地 + 只读对账」，P1/P2/P3 三者零 delta、P4 才是第一次改行为。落码 = rbac/manifest.json（声明）+ rbac/readings.json（M3 生成物）+ rbac/generate_readings.py（单一生成器，解析器沿用 tests/unit_ci_workflows/test_agent_permission_parity.py 的既有一套）+ rbac/sources.json（M1 登记表，现取 29 处命中、1 处 UNRESOLVED）+ 注入式红证（含「只改注释 ⇒ 不红」对照）。取号 MC-026：main 上 MC-001~MC-025 已占用，本号在 main 与全部在飞分支均未占用。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_single_source_manifest.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-027（Refs #5699 的 P1；设计真值源 §5.2 的 M4，源自该文件 §1.4 实例 6 的实测）。
+  # 病：V124/V125/V129 三个**已发布迁移**的文件头都写着「可复算判据：grep -c … docs/sql/schema.sql ⇒ 0」，
+  # 而 docs/sql/schema.sql **不存在** ⇒ 实跑 = No such file + exit 2 + 打印 0 ⇒「读不到 ⇒ 0 ⇒ 通过」
+  # 把空断言伪装成绿灯，**永远不会红**。本用例修的是**这一类句子**，不是那三条实例（禁改，走台账）。
+  # ==========================================================================
+  - id: MC-027
+    legacy_id: ""
+    title: "文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - stale-reference
+      - recomputable-command
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**文档坐标**的结构事实（反引号内的命令 + 仓库相对路径字面量 + 该路径是否存在），
+    # 由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "文档或迁移注释里写下一条指向已归档/已迁移路径的「可复算命令」时，必须当场变红（而不是打印 0 装作通过）；既有失效路径必须逐条登记真身路径与「谁看」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "识别形态（设计 §5.2）= 反引号内的命令词（grep/rg/python3/pytest/sha256sum/sh/bash/node/npx/cat/wc/sed/awk/jq/find）+ **仓库相对路径字面量**；语料 = docs/**/*.md（全文本）+ 已发布迁移 *.sql（**只扫注释**）"
+      - "🔴 **现成靶子（设计 §1.4 实例 6）**：台账**置空**时三条迁移（V124/V125/V129）必须被**具名**报出（真语料、只在内存里换掉台账）；真台账下它们**不**报红（出口 ② 生效）—— 两个读数都要有"
+      - "台账（tests/unit_ci_workflows/recomputable_path_ledger.json）每条须有 kind/true_path/reason/owner/issue，且**只许缩短**（上限 = 落地现取 8 条）；条目已不命中 ⇒ 陈旧红；把仍在命中的条目删掉 ⇒ 未登记红（两个方向都判）"
+      - "射程元判据：声明的语料集 == 判据实际读入的语料集（收窄 ⇒ 必红）；对照读数三条：指向**存在**路径不红 · 不带反引号的散文不红 · `~` / `/opt` 这类**非仓库相对**路径不红；`.sql` 的**代码**里的字符串不被当注释读"
+      - "覆盖面（**覆盖不到什么**，照设计 §5.3 逐条登记）：裸文件名引用、不带反引号/不带仓库相对路径的命令、命令本身写错（路径存在但 grep 模式错）、以及 Java/Python/TS 注释与 workflow YAML 两个面 ⇒ 全部登记在判据的 UNCOVERED_FACES（只许缩短）"
+      - "本判据**不区分「引用」与「使用」**：设计 §1.4 实例 6 逐字引用了那条坏命令当病灶标本 ⇒ 这类条目以 kind=quoted-specimen 登记（改它等于改掉证据）"
+    skip_reason: "[backend-contract] 「可复算命令」的路径坐标（正则命中 + 路径存在性 + 台账）由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P1；设计真值源 §5.2 的 M4）：修的是「判据读的是一个不存在的对象」这一类句子。落码 = 语料声明（文档 + 迁移注释）+ 失效路径台账 8 条（5 条禁改迁移 / 1 条引用标本 / 1 条相对子目录 / 1 条生成物）+ 未覆盖面 4 条 + 注入式红证（含 `.sql` 注释 vs 代码、非仓库相对路径三条对照）。取号 MC-027：MC-026 由本 PR 同批占用，本号在其后顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_recomputable_command_paths.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-028（用户逐字裁定 2026-09-27：「发现容易犯的问题就应该固化到研发模式中避免再犯，
+  # 而且如果 ci 或者台账经常出错的点也应该固化下来」）：**固化本身必须有承载体**。
+  # 病：一句写着「与种子矩阵逐值同步」的注释（RoleService 的 issue #5291 那处）骗过了两个包，
+  # 其中一个据此把错误归因写进了 main 的代码注释 ⇒ **散文拦不住任何东西**。
+  # ==========================================================================
+  - id: MC-028
+    legacy_id: ""
+    title: "容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - dev-mode
+      - solidification
+      - discriminator
+      - red-proof
+      - ledger
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**研发模式承载体**的结构事实（技能记号 ⇄ 台账 ⇄ 磁盘锚点），
+    # 由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "把「容易犯的问题」与「CI/台账反复出错的点」固化进研发模式时，不许只写一段劝告：每条必须落到判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账之一；删掉技能里的那一节、删掉某条纪律、把某条改成劝告、或在技能里加一条台账没记的纪律，都必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "记号 ⇄ 台账**双向**相等：技能 §25 里的 `FM-<族字母><序号>` 集合必须等于台账 `entries` 的 id 集合（单向会被『技能里写一条永不判的纪律』与『删台账条目』两个方向绕过）"
+      - "每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』"
+      - "每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**"
+      - "覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）"
+      - "CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 21 条（`FM-E1`~`FM-E22`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）"
+      - "**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`"
+      - "**抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）"
+      - "**抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）"
+      - "🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删边界子节 / 删一条纪律 / 加未登记纪律 / 把某条改成劝告 / 多加一条 gap 各自判红，且 **只加一条注释 ⇒ 不红**（对照读数），并有『变异真的被读到』的自证；空语料 ⇒ 非空违规（fail-closed，不许『没东西可判 ⇒ 绿』）"
+      - "用例文本（`.github/cases/**`）里的**台账读数必须等于现取**（判据 `tests/unit_ci_workflows/test_casebook_ledger_claims.py`）：`FM-<族字母><序号>` 记号必须在台账对应表里存在 · 范围写法 `FM-<族字母><i>`~`FM-<族字母><j>` 的端点必须等于该表现取 min/max · `kind=`/`state=` 键绑定的「N 条」必须在策展表 `CLAIMS` 里登记且等于现取（**未登记即红**，出口 = 改准或登记）· 锚必须**恰好命中一次**（删掉 / 复制都红）；覆盖面登记照判据 12 的写法：未覆盖面台账**只许缩短**、上限冻结在判据文件里"
+      - "覆盖边界（显式登记在 §25.6）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**（`criterion` 解析 = 符号在文件里逐字出现，不是『该判据真会为这条纪律变红』）；`kind=action` 的**现取 9 条**（口径 = 台账 `entries` 里 `kind=action` 的条数）**靠人执行**；**完全不写 `FM-` 记号的纯散文纪律在本判据面内看不见**（已知残余）"
+    skip_reason: "[backend-contract] 研发模式承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（用户逐字裁定「容易犯的问题就应该固化到研发模式中避免再犯，而且如果 ci 或者台账经常出错的点也应该固化下来」）：交付形态 = 技能新增 §25（清单 A~D：25.2 读数与它声称的对象不是同一个 7 条 / 25.3 声明存在≠可达 4 条 / 25.4 红证可能是空断言 4 条 / 25.5 意图族级实现点名 2 条 + 25.6 覆盖面登记）+ 承载体台账 `tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json` + 判据十条（全部内存构造红证 + 只改注释对照 + 变异被读到自证）+ 同批补两条抢号判据（用例号 / 迁移版本号，**原先零守护**）+ 清单 E 落点（docs/wiki/CI-CD.md 的「CI / 台账反复出错点」节，13 条具名，含 3 条未守护缺口与其显形条件）。⚠️ **本段里的全部计数（清单 A~D 各子清单的条数 · 清单 E 的条数 · 判据条数）都是 #5706 新增时的读数**（历史记录，不追改 —— 此后 #5709 / #5715 / #5707 本包都抬过它们；例：清单 A 的条数现取写在 §25.2 的标题里，本段仍是旧值）；**现行现取一律以承载体为准**：`FM-` 记号与各子清单条数 ⇄ `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` 的 §25 / §26 子清单标题、清单 E ⇄ `docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节、用例文本里的台账读数 ⇄ 本用例 `data_checks` 的「CI 面」行 —— 由 `tests/unit_ci_workflows/test_casebook_ledger_claims.py` 与台账逐值对照（#5707 本包同批改准了「覆盖边界」行里 `kind=action` 的条数）。取号 MC-028（**顺延**）：本单写侧先取 MC-026，而 #5705（RBAC P1）在 2026-09-27 11:41:05 合并时已占 MC-026 / MC-027 ⇒ 按 MC-025 的先例**顺延尚未合并的一侧**（不动已合并的号 —— 那会让已合并的东西改名，代价更大）。⚠️ **这次撞号本身就是取号口径的实证**：取号只看**已合并状态**、看不到在飞分支 ⇒ 已登记为该判据的**边界**（`tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `CASE_ID_ALLOCATION_BOUNDARY`）与 `docs/wiki/CI-CD.md` 的 `FM-E15`。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_dev_mode_failure_modes.py"
+        - "tests/unit_ci_workflows/test_casebook_ledger_claims.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-038（Refs #5707；本单 = 「转述与派单的纪律」固化，§26 = §25 的对称面）
+  # 病：§25 只覆盖**执行侧**；**转述侧**（派单 / 写提示词 / 转述读数的那一方）此前没有任何承载体，
+  #     而它是实测最频繁出错的一方（同一批交付里，两个包各核出 7 处不准，全部有现取读数）。
+  # ⚠️ **物理位置**：按取号本应排在末尾（MC-034 之后），但那正是**在飞 PR #5713 的同一处写面**
+  #     （它已在分支上追加 MC-035/036/037）⇒ 本用例**插在 MC-028 之后**，避开并发追加冲突
+  #     —— 这正是本单 §26 的 `FM-R6`（「给出的指令本身会造成冲突」）在用例库上的落地。
+  # ==========================================================================
+  - id: MC-038
+    legacy_id: ""
+    title: "转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R15`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - dev-mode
+      - solidification
+      - relay
+      - discriminator
+      - red-proof
+      - ledger
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**研发模式承载体**的结构事实（§26 记号 ⇄ `relay_entries` ⇄ 磁盘锚点），
+    # 由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据（14~18）验证，非 LLM 行为。
+    user_inputs:
+      - "把「转述 / 派单」这一类容易犯的问题固化进研发模式时，不许只写一段劝告：每条必须落到判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账之一；删掉 §26、删掉某条纪律、把某条改成劝告、把 state 去掉、在 §26 里加一条台账没记的纪律、或在 §26 里写裸行号引用，都必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "记号 ⇄ 台账**双向**相等：技能 §26 里的 `FM-R<序号>` 集合必须等于台账 `relay_entries` 的 id 集合（**两面各自绑定**：§25⇄`entries` · §26⇄`relay_entries`；混成一个集合会把一方正文里的『引用』读成另一方的未登记纪律 ⇒ 假红）"
+      - "每条 `state` ∈ {guarded, registered, gap} **与** `kind` ∈ {criterion, action, ledger} **一一配对**（criterion↔guarded · ledger↔registered · action↔gap）；任一缺失或取值非法 ⇒ 报『这一条只写了劝告』。`guarded` ⇒ `criteria` 可解析；`registered` ⇒ `ledger_ref` 可解析；`gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带判据/台账引用"
+      - "每条必须有非空 `action`（判别动作 = 一次就能做、可复制）、`symptom`（症状）、`covers`（**它覆盖到哪一半**）、`same_family`（其中点名的记号必须在技能或 docs/wiki/CI-CD.md 里具名存在）与至少一条可解析 `evidence`"
+      - "§26 的覆盖面登记子节必须存在且非空，并含 `**判别动作行（现取）**：` 行 —— 该行列出的 `FM-R*` 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；升级成判据后不移出 ⇒ 红）"
+      - "**relay 面缺口只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的 `RELAY_GAPS_FROZEN`（上限写在判据文件里 ⇒ 台账改不动它）"
+      - "**§26 不许出现「文件 + 冒号 + 数字」形态的裸行号引用**（行号会腐 = `FM-A10`）：出现即红；**符号锚形态与只加注释不红**（两条对照读数）"
+      - "🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删 §26 / 删一条记号 / 加未登记纪律 / 把 `kind` 改成散文 / 把 `state` 改成非三选一 / 多加一条 gap / 注入裸行号，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；`guarded`/`registered` 条目的锚**删掉其全部出现** ⇒ 必红，且**面内 0 条 ⇒ 红**（防空跑）"
+      - "覆盖边界（显式登记在 §26.4）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**；`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13`/`FM-R14`/`FM-R15` 九条 `kind=action` **靠人执行**；**「转述方到底核没核过」无法机械判**；判据 18 的射程只到 §26 节文本；完全不写 `FM-R` 记号的纯散文纪律在本判据面内看不见（已知残余）"
+      - "`FM-R8`（**派单模板让产物落在收尾半径外**）的**覆盖面登记**必须逐条点名（派单消息在仓外 / 存量半径外 worktree 不在射程 / `--detach` 纯检出豁免 / 路径写在命令之外）：由 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_relay_boundary_section_names_the_out_of_scope_forms` 按**现取标记**比对（删掉任一面 ⇒ 红）"
+    skip_reason: "[backend-contract] 转述面承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据（14~18）验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（用户逐字裁定「发现容易犯的问题就应该固化到研发模式中避免再犯」；Refs #5707）：交付形态 = 技能新增 §26（转述 / 派单面，当时七条（`FM-R1` 起），各带症状 / 判别动作 / 证据锚）+ 承接台账 `relay_entries`（`state`/`kind` 一一配对 + `same_family` + `covers`）+ 判据 14~18（含 §26 裸行号守卫）+ 新用例 MC-038。⚠️ **本条的范围端点按「现取」写作当时的末号**（判据只认那个**范围形态**、不认语义 ⇒ 历史句里一律不写该形态；2026-09-27 同批补入 `FM-R8` = 收尾半径 + 判据 20）：端点由 `tests/unit_ci_workflows/test_casebook_ledger_claims.py` 判据 2 与台账 `relay_entries` **逐值**比对 ⇒ 台账再长一条而这里不抬就红（这就是它该有的行为）🔴 **2026-09-27 本批再长四条**（`FM-R9`、`FM-R10`、`FM-R11`、`FM-R12` = 坐标指错文件 / 影响面低估 / 从没验证的模型提修法 / 只想到一处漏同族，见台账 `PD-5`）：端点已同批抬到 `FM-R12`，`kind=action` 的读数改成六条（`test_casebook_ledger_claims.py` 的 `CLAIMS` 策展表同批改）；⚠️ **历史句里也不许出现那个范围形态**（判据只认形态、不认语义 —— 本包写「当时 `FM-R1` 起共七条」时就被它当场判红，改成本写法）。取号 MC-038：现取 main 最大 = MC-034，而**在飞非 draft 的 PR #5713 已占 MC-035/036/037**（本包现取该分支的 `.github/cases/misc.yml` 逐条确认）⇒ 顺延尚未合并的一侧（#5706 的 MC-026 撞号先例）。🔴 **2026-09-27 本批再长一条**（`FM-R13` = 派单消息里的「环境已同步」断言会过期）：`land` 侧那一半**已机械** = preflight 每次打印**工具来源**（`scripts/issue_lifecycle.py::tool_provenance_lines`，判据 `tests/unit_ci_workflows/test_land_tool_provenance.py`），派单侧那一半**在仓外** ⇒ 台账 `PD-7` 公开抬 `RELAY_GAPS_FROZEN` 6→7；端点随现取抬到 `FM-R13`，`kind=action` 的读数改成七条（`CLAIMS` 策展表同批改）。🔴 **2026-09-27 本批再长两条**（`FM-R14` = 报集合成员 / 条数 / 全称量词 / 现状 / 载体之前**先现取**、把**原始输出行**贴进结论；`FM-R15` = **交出去的命令**先核**口径与前置**、把适用面写进派单 —— 取证口径 `gh run list --event push` 数的是 **run 不是 push**、`sync-main.sh` **拒绝在 main 分支上运行**。来源 = 协调侧派单的 7 处实测错法，逐条独立复核后**只登记两条**：五类断言共享同一个判别动作 ⇒ 合并进 `FM-R14`，而「交出去的工具」对象与修法产物都不同 ⇒ 独立成 `FM-R15`）：台账 `PD-9` 公开抬 `RELAY_GAPS_FROZEN` 7→9（**不许**塞进 `guarded`——两条都是「转述方跑没跑」这一层，判据看不见）；端点随现取抬到 `FM-R15`，`kind=action` 的读数改成九条（`CLAIMS` 策展表同批改）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_dev_mode_failure_modes.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-039（Refs #5707；本单 = `FM-E17` 的收口：给两条发布腿补兜底触发面 + 一并落静态形状判据）
+  # 病：`worker-h5-publish` / `bmini-h5-publish` 的**自走触发面只有 `push`**，而本仓的 `push` 是被吞的
+  #     （auto-merge 用 GITHUB_TOKEN 合并）⇒ 合并后写**线上静态根**的腿静默停在旧产物、无红无告警。
+  #     现取：最近 40 个 main commit 里只有 1 个产生了 push run；两次都靠人工 workflow_dispatch 才补上。
+  # ==========================================================================
+  - id: MC-039
+    legacy_id: ""
+    title: "发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - publish-leg
+      - trigger-surface
+      - fallback
+      - discriminator
+      - red-proof
+      - ledger
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**触发面静态形状**这一结构事实（`.github/workflows/*.yml` 的 `on:` ⇄ 登记表），
+    # 由 tests/unit_ci_workflows/test_publish_leg_fallback_surface.py 的离线判据（判据 1~8）验证，非 LLM 行为。
+    user_inputs:
+      - "当某条发布腿的自动触发面只剩 push（本仓会被 GITHUB_TOKEN 合并吞掉）、或把兜底面换成手动的 workflow_dispatch、或新建一条只靠 push 的腿而没登记、或登记表声明的兜底面与现取脱钩、或 workflow_run 的上游名解析不到时，都必须有东西具名报出；而只改注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**自走触发面**口径：顶层事件去掉手动面与被调面（`workflow_dispatch` / `workflow_call` —— 两者都不能让一条腿自己起跑）= 能自己跑起来的面；该面**只剩 push** ⇒ 必须有兜底面（`schedule` 或 `workflow_run` 之一）。手动面**不算兜底**（把它当兜底 = 手动面冒充自动面）"
+      - "**登记表只许缩短 + 未登记即红 + 删光即红**：`tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的 `legs` 与判据里的冻结元组 `PUBLISH_LEG_FILES_FROZEN` 双向相等（删一条 / 加一条都必须同批改两处）；`frozen_max` 与判据里的 `LEGS_FROZEN` 两处不符 ⇒ 红；条数超上限 ⇒ 红；`legs` 为空 ⇒ 红（fail-closed：「没东西可判」不是通过）"
+      - "**全仓形状扫描（未登记即红）**：`.github/workflows/*.yml` 里任何一个自走面只剩 push 的 workflow 若不在登记表里 ⇒ 红（抓「新造一条 push-only 腿」）。**有意不用宽泛正则一把梭**（那会把无关 workflow 卷进来 ⇒ 噪声判据）⇒ 代价如实登记在覆盖边界第 7 条"
+      - "**登记表声明必须与现取双向对上**：声明的兜底事件必须在现取自走面里；声明 schedule 时其 cron 字面量必须逐字出现在该 workflow 的 `on:` 里 ⇒ 台账不许给不存在的保护盖章"
+      - "**`workflow_run` 上游名可解析**（全仓面，不限于已登记腿）：每个上游名必须命中仓内某个 workflow 的 `name:` ⇒ 上游改名后该兜底面**静默脱钩**（永不触发）判红（现取 10/10 全部解析成功）"
+      - "🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `fallback_problems`）：删掉兜底面 / 换成 workflow_dispatch / 登记表删一条 / 登记表清空 / 登记的腿文件不存在 / 声明与现取脱钩 / workflow_run 上游名改错 / 新造一条未登记的 push-only 腿，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）"
+      - "🔴 **在真语料上双向自证**（本条与其它判据最不同的一点）：判据跑在**未补兜底面**的语料上会**判红两条腿**（两条腿都报「自走触发面 = [push]，没有兜底面」）；补上 schedule 后 6 passed ⇒ 证明它是**真绊线**而不是纸面判据"
+      - "🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录登记表 JSON），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码在任何时刻给出同一读数；运行期计数（gh run list）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在登记表 `coverage_boundary` 与 `docs/wiki/CI-CD.md` 的 `FM-E17` 节"
+      - "覆盖边界（显式登记在登记表 `coverage_boundary`，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：cron 被 GitHub 节流（现取实测：`*/20` 名义 72 次/日 → 实得 6.3 次/日 = 8.4%，相邻间隔中位 244 / 最大 357 分钟；而每日档两条的中位间隔都是 ≈24.0h ⇒ 未被节流）· cron 到点被 concurrency 顶掉 · 「腿跑了但发布内容不对」（由运行期身份断言承接）· workflow_run 的上游自己没跑 · push 被吞这一运行期事实 · 「兜底面在位」不等于「线上字节与 main HEAD 一致」· 已登记腿之外的新族 · deploy-reconcile 那层不重复判（其调用点与 pathspec 已由 MC-023 冻结）"
+    skip_reason: "[backend-contract] 触发面静态形状判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_publish_leg_fallback_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（用户 2026-09-27 逐字裁定 = 方案 A：给两条发布腿补兜底触发面（周期重建重发布），静态形状判据才变成真绊线、可一并落判据收口；Refs #5707）：交付形态 = ① 两条腿各自补 `on.schedule`（每日档，cron 节流现取读数决定不取高频）② 判据 `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py`（判据 1~8 + 判别力自证 + 真语料双向自证）③ 登记表 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`（只许缩短 + 覆盖边界八条）④ 台账 `FM-E17` 由 gap 翻 guarded 并新增 `PD-8`（`GAPS_FROZEN` 公开 2 → 1，`FM-E10` 仍留 gap）⑤ 本页 `docs/wiki/CI-CD.md` 的 FM-E17 节与计数器同批。⛔ **本单不动的**：两条腿的发布脚本与产物路径（只动触发面）· `deploy-reconcile.yml` · `FM-E10` · 那两条腿的路径缺口台账。⚠️ **与铁律 10 的关系（照实说明）**：铁律 10 写「不新增 schedule/cron」，其理由逐字是「无人值守**删除**不安全」⇒ 本单这条 schedule 走的是**重发布**路径，而远端发布脚本**明确不对静态根做清空 / delete**（先建 stage 再整份覆盖）⇒ 该理由不适用；且本单是**人类在本次会话显式裁定**的方案 A（「代价 = 占 CI 分钟」已被接受）。取号 MC-039：现取 main 最大 = MC-038，且现取全部在飞远端分支与在飞 PR 的 diff 都无 MC-039 及以上（`.github/cases/misc.yml` 的 id 逐个确认）⇒ 顺延取 MC-039（不动已合并的号）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_publish_leg_fallback_surface.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-041（Refs #5707 的链内收口；`FM-E7` / `FM-E15` —— 用例号被抢）。
+  # 病：取号在**每个包里手工做**（「现取最大号 + 1」），而唯一性判据**只看已合并状态** ⇒
+  #     并发的几个包各自「现取」都得到**同一个答案**（实测：`MC-046` 被三个包同时取到）。
+  # ==========================================================================
+  - id: MC-041
+    legacy_id: ""
+    title: "取下一个用例号是**一条只读命令**：候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区，取**最小空闲号**并在同一次调用里断言「返回的号 ∉ 候选集」；看不到在飞面（gh 不可用 / 未登录 / 离线）⇒ 拒绝给号并非零退出；`scripts/**` 里取号只有一个实现点"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - case-id
+      - allocator
+      - readonly
+      - discriminator
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**工具源码的只读性 + 纯函数的分配语义 + 技能面口径唯一**这一静态事实，
+    # 由 tests/unit_ci_workflows/test_next_case_id_allocator.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当有人在看不到在飞分支时仍然给出一个号（乐观给号）、或把取号退回「已合并最大号 + 1」、或让工具写盘 / 发 gh 写子命令、或把「返回的号 ∉ 候选集」这条自证删掉、或在本工作区已先占某号时仍把该号判成空闲、或在 `scripts/**` 里落第二份算号实现、或把手工取号的旧配方重新教回技能里时，都必须有东西具名报出；而只改注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**只读（源码层，结构性）**：`scripts/next_case_id.py` 里**所有** `gh` / `git` 调用都必须经 `gh()` / `git()` 两个外壳，且外壳的 argv 白名单（`GH_READ_ONLY` / `GIT_READ_ONLY`）必须拒绝白名单外的子命令与 `gh api` 的写动词（`POST/PATCH/PUT/DELETE`）⇒ 源码里出现写文件 API（`write_text` / `open(...,'w')` / `os.remove` / `shutil`）或 `gh` 写子命令 ⇒ 红（判据把 argv 喂进外壳**实调**一次，断言抛错）"
+      - "🔴 **三态：看不到在飞面 ⇒ 不许取号**：`NCI_GH_BIN` 指向「不可用 / 未登录 / 离线」的替身可执行文件 ⇒ 必须打印「无法判定 ⇒ 不许取号」且 **exit 3**，并且输出里**一个号都不许出现**（`→ 取 ` 零命中）；某个 PR 的内容读不到（`gh pr diff` 非零退出）⇒ 同样 exit 3 ⇒ 「乐观给号」这条路径在判据面内**不存在**"
+      - "🔴 **「返回的号 ∉ 候选集」这条自证自身有断言**：`allocate()` 把该断言写在函数**内部**（不靠调用方记得核）；判据用内存构造把 `min_free` 换成「返回一个已被占用的号」⇒ 断言必须真的炸（`pytest.raises(AssertionError)`）⇒ 断言被删 / 被挪到调用方 ⇒ 红"
+      - "🔴 **用内存构造的语料复现「今天」的现场（核心牙齿）**：main 占 039/040/043/044/045/047、在飞 A 占 046、在飞 B 占 048 ⇒ 必须返回 **041**；把在飞 A 改成 041 ⇒ 必须返回 **042**（后者证明它**真的看得到在飞** —— 只看 main 的实现会两次都答 041），坏形态读数必须 ≠ 基线读数（防变异没生效 ⇒ 空断言）"
+      - "**最小空闲号 ≠ 最大号 + 1**：同一次调用里 `allocate()` 的答案必须**等于**该前缀占用集的补集最小值（内存构造 gap 语料逐值核对），且「取尾部 + 1」的实现在同一语料上会给出**不同的**读数 ⇒ 口径不是口号"
+      - "**本工作区已先占的号必须计入**：内存构造一份「工作区来源占 041」的候选集 ⇒ 答案必须是 042（把自己刚占的号判成空闲 = 本地先占失效）"
+      - "🔴 **类级：`scripts/**` 里取号只有一个实现点**（双向）：① 任何 `scripts/**` 模块里出现「用例号形态的正则字面量（真能匹配 `  - id: MC-041` / `MC-041`，且带数字类）」**且**带号空间的后继 / 极值运算 ⇒ 必须登记在判据里冻结的实现点元组里（未登记 ⇒ 红：「不许有第二个脚本各自算号」）；② 工具自己的 `ALLOCATION_SITE` 记号必须逐字等于它自己的仓库相对路径（删光 / 指到别处 ⇒ 红），且只有它一处声明"
+      - "**技能面口径唯一（防旧配方回来）**：`migao-dev-flow` §26.3 的取号命令必须调用 `scripts/next_case_id.py`；且技能里**不得**再出现手工取号的旧配方（「取已合并最大号 + 1」那一串）⇒ 两者都判红（否则下一个人照旧配方做，工具等于白造）"
+      - "🔴 **判定方式是确定的 + 红证全部内存构造**：判据本体**零 gh / 零网络 / 零时钟**（真语料只用于「解析口径 ⇄ 判据侧 `case_id_lines` 逐值对账」这一条离线等价检查，且 `origin/main` **刻意不读** —— CI 的 checkout 是 `fetch-depth: 1`）；红证逐条走内存构造（删三态分支 / 删自证 / 把答案换成已占号 / 只看 main / 只改注释 ⇒ 不红对照）"
+    skip_reason: "[backend-contract] 取号工具的只读性（源码 / 外壳白名单）+ 纯函数分配语义 + 技能面口径唯一的静态判据（零网络、零时钟）由 tests/unit_ci_workflows/test_next_case_id_allocator.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（来源 = 本单指令「把『取下一个用例号』这一步**机械化**」；病根逐字来自 `FM-E7` / `FM-E15` 与 MC-047 / MC-048 的 `merge_log` 现场）：交付形态 = ① 新增只读工具 `scripts/next_case_id.py`（候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区；取**最小空闲号**；同一次调用里断言「返回的号 ∉ 候选集」；看不到在飞面 ⇒ 「无法判定 ⇒ 不许取号」+ exit 3）② 判据 `tests/unit_ci_workflows/test_next_case_id_allocator.py`（含内存构造复现今天现场的牙齿 + 类级单一实现 + 技能面口径唯一）③ 三处登记：技能 §26.3 取号命令 / §26.4 覆盖面登记 / 台账 `FM-E7` 的 `guards`。**取号用工具自己跑**（狗粮）：2026-09-27 22:14:44 +0800 现取 ⇒ main 的 MC 家族 = 001-040,043-045,047-048、在飞 PR #5733 占 046 ⇒ 返回 **MC-041**（历史空档）。⚠️ **本单复核出的派单不准之处，逐条记实**：① 派单写「在飞 #5734 = MC-048」，而 #5734 **已于 2026-09-27T14:04:44Z = 22:04:44 +08 合并**（工具跑之前 1 分钟），MC-048 已在 main 上 ⇒ 期望答案仍是 041，但**理由不同**（不是「048 在飞占着」，而是 main 自己占了 048）；② 派单把 main 的 MC 家族写成「039·040·043/044/045·047」，现取实为「001-040 + 043-045 + 047-048」（**漏了 048**，且 001-038 一直都在）；③ 派单说 #5736 是「在飞写面」之一，它**也已合并**（`MC-047` 那条，落 main）。⇒ 三条都属 `FM-R14` / 铁律 11(a) 的形态：**派单里的时点读数必须自己现取一遍再动手**。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_next_case_id_allocator.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-047（Refs #5707 的链内收口；铁律 10 的**窄例外**必须有机械承载体）。
+  # 病：铁律 10 原文「⛔ 不新增 schedule/cron（2026-09-21 裁定：无人值守删除不安全）」是**无条件禁令**，
+  #     而同一天 PR #5731 已给两条发布腿落地两条**每日** cron ⇒ 规则与事实不一致，且**没有任何东西会因此变红**
+  #     ⇒ 下一个人要么照旧规则办（挡住合法工作）、要么整条铁律被无视（规则侵蚀）。
+  # ==========================================================================
+  - id: MC-047
+    legacy_id: ""
+    title: "铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - iron-rule-10
+      - schedule
+      - ledger
+      - discriminator
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**规则文本 ⇄ 触发面 ⇄ 台账**三者一致这一结构事实，由
+    # tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py 的离线判据（判据 1~10）验证，非 LLM 行为。
+    user_inputs:
+      - "当有人给任何 workflow 新增 `on.schedule` 而没有在台账里具名（带非破坏性证据锚）、或把新周期面塞进存量基线、或自创第三类例外、或把证据锚删光 / 复用、或把铁律 10 里的禁令本体删掉（把「收窄」写成「取消」）、或把裁定出处抹成「历来如此」、或在飞实例已经落地却仍留在 `pending`（不升格为 `exceptions`）时，都必须有东西具名报出；而只改注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**未登记即红（牙齿）**：现取 `.github/workflows/*.yml` 里任何带 `on.schedule` 的 workflow（**结构性**取 `on.schedule[].cron`，注释里的 `# - cron:` 不算），既不在 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline`、也不是 `exceptions` 的具名实例 ⇒ 判红并给出可行动出口（登记 `exceptions` + 在仓库根 `AGENTS.md` 铁律 10 具名）"
+      - "**存量只许缩短（三处冻结）**：台账 `baseline` ⇄ 判据里 `BASELINE_FILES_FROZEN` 必须逐项相等（无多无少无重复）；条数 ≤ `BASELINE_COUNT_MAX` 且台账 `baseline_frozen` 与之相等 ⇒ 把新周期面塞进 `baseline` 必须同时改三处且数字变大（diff 里看得见）"
+      - "**陈旧登记即红**：登记的 workflow 现取没有 `on.schedule`（或文件已删）⇒ 红（台账只许缩短；`ghost-leg.yml` 这类死登记不许留着）"
+      - "**例外类封闭枚举**：`kind` ∈ {`republish`, `readonly_heartbeat`} ⇒ 自创第三类（如 `cleanup`）判红"
+      - "**三个证据锚可解析 + 非破坏性锚唯一**：`non_destructive_anchor` / `idempotency_anchor` / `self_proof_anchor` 都写成 `<仓库相对路径>::<符号或文本片段>`，路径必须存在且片段必须真在该文件里出现（**删光即红**）；`non_destructive_anchor` 不许被两条实例复用（一个锚给所有东西盖章）"
+      - "**具名双向（台账 ⇄ 铁律正文）**：`exceptions[].pr` 集合与 `AGENTS.md` 铁律 10 里「📌 已批准具名实例」那行的 `#N` 集合**双向相等** ⇒ 登记了却没具名 / 具名了却没登记，都判红（现取 = PR #5731）"
+      - "🔴 **规则本体不许被删（收窄 ≠ 取消）**：铁律 10 正文里必须**逐字**还有禁令（`⛔ 不新增 schedule/cron` + `无人值守`）与两个裁定日期（`2026-09-21` 原裁定 / `2026-09-27` 收窄裁定）；正文块取不到 ⇒ fail-closed 红"
+      - "**声明 ⇄ 现取（双向）**：登记的 `cron` 必须逐字出现在该 workflow 的 `on.schedule` 里，且该 workflow 的**每一条** cron 都被登记覆盖 ⇒ 台账不许给不存在的周期面盖章、也不许漏一条"
+      - "🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `ledger_problems`；本仓已实测「改磁盘 → 跑 pytest」的变异**可能不被读到** ⇒ 判据恒绿 = 空断言）：删光 exceptions / 新造一条未登记的周期面 / 死登记 / 把新 schedule 塞进 baseline / 单改 `baseline_frozen` / 自创第三类 / 锚被删光 / 锚复用 / cron 与现取脱钩 / 删禁令本体 / 删裁定日期 / 删具名行 / 具名成别的 PR / 取不到正文块 / 在飞实例已落地却仍留在 pending / 在飞实例缺升格动作 / 在飞实例的 PR 没在铁律正文里具名，**17 条各自判红并点名命中分支**；**只改注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）"
+      - "🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录台账 JSON + `AGENTS.md`），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码任何时刻同一读数；运行期读数（cron 是否被节流 / 发布是否真跑 / **PR body 里声明了没有**）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在台账 `coverage_boundary`"
+      - "🔴 **在飞实例（`pending`）一落地即须升格**：`pending` **不构成登记**（不满足「未登记即红」的出口），只把跨包交接落成**远端可复原形式**（铁律 12(c)）；其 `pr` 也必须在铁律正文的具名行上；🔴 一旦 `pending[].file` 现取出现 `on.schedule` ⇒ **必须**移入 `exceptions` 并补齐三个证据锚 ⇒ 留在 `pending` 判红（`pending` 不许变成「永远的在飞」）"
+      - "覆盖边界（显式登记在台账 `coverage_boundary`，8 条，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：①「远端执行体到底删不删」是**运行期**事实（判据只核证据锚可解析，判不了远端那份字节与本仓同一）②「幂等」判不了实跑 ③「失败可见」判不了「真的有人看」（`Drift Audit` 不在 required 集合 ⇒ 非阻断 + 3 天延迟）④ 第 ④ 条「PR body 显式声明」判据**读不到** ⑤ **存量 14 条基线是否安全不在面内**（`stale.yml` / `close-linked-issues.yml` 本来就带无人值守写动作；本表只裁新增，不为存量背书）⑥ cron 跑没跑（节流 / concurrency 顶掉）⑦「周期档只报告、不写盘」判不了写盘档的 `if` 在**运行期**真的拦住（这是**声明面**的锁，不是行为面的锁）⑧ 与 MC-039 的 `publish_leg_fallback_ledger.json` **不互为副本、也互不重判**（一个判准入、一个判兜底面在位；判据侧只引用那条腿的登记册，不复制它的判定逻辑）"
+    skip_reason: "[backend-contract] 规则文本 ⇄ 触发面 ⇄ 台账一致性的静态判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（来源 = 用户 2026-09-27 逐字答复「按你建议的执行即可」⇒ 授权把仓库根 `AGENTS.md` 铁律 10 的适用范围**收窄到「无人值守删除 / 破坏性动作」**，**不是**取消它；Refs #5707）：病 = 铁律 10 原文「⛔ 不新增 schedule/cron（2026-09-21 裁定：无人值守删除不安全）」是**无条件禁令**，而同日 PR #5731 已给两条发布腿落地两条**每日** cron（`.github/workflows/worker-h5-publish.yml` 的 `23 18 * * *` · `.github/workflows/bmini-h5-publish.yml` 的 `43 18 * * *`）⇒ 下一个人要么照旧规则办（挡住合法工作）、要么整条铁律被无视（规则侵蚀），且**没有东西会因此变红**。交付形态 = ① 铁律 10 **保留禁令本体**（收窄 ≠ 取消）+ **具名窄例外**（非破坏性 · 幂等 · 带自证断言的**重发布 / 只读心跳**；四条同时成立：①远端执行体不做删除且有机械自证 ②幂等 ③失败可见 ④**在 PR body 显式声明**）② **三条**具名实例：两条已落地的 cron（PR #5731 / 2026-09-27 / 批准人 = 用户）+ **第三条**（C 端 H5 发布腿的 `53 18 * * *`，**只读心跳 / notify 两态**，随 **PR #5733** 生效 ⇒ 写进铁律具名清单并在台账里放 `pending`，**一落地即须升格为 `exceptions`**）③ **日期 + 出处写明**（2026-09-21 原裁定 / 2026-09-27 收窄裁定，不许写成「历来如此」）④ 判据 `tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py`（判据 1~11 + 17 条内存构造红证 + 「只改注释 ⇒ 不红」对照）⑤ 台账 `tests/unit_ci_workflows/schedule_scope_ledger.json`（存量 14 条冻结快照 + 2 条具名实例 + 1 条在飞实例（`pending`）+ 覆盖边界 8 条）⑥ 同步面：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §23.9 的 C2 行（禁令副本）+ 版本沿革（1.80.0 → 1.81.0；**1.80.0 已被 #5735 占用 ⇒ 本条抬到 1.81.0**，main 上那条 1.80.0 的原文保持不动）。⛔ **本单不动的**：那两条 cron 本身与两条腿的发布脚本 · `deploy-reconcile.yml` · `h5-freshness-guard.yml`（在飞包 `ci/4184-c-end-publish-leg` 的独占写面）· `publish_leg_fallback_ledger.json` / `test_publish_leg_fallback_surface.py`（MC-039 的台账与判据：判「兜底面是否在位」这一**另一个**事实，#5733 把它从 2 条扩到 3 条 ⇒ 本单**只引用、不复制、不重判**，避免两套真值源）。取号 MC-047（时点 = 2026-09-27 21:52 +08，rebase 到 main `f1a6f8567` 之后**现取**）：**差集口径** = 逐 ref 列出 `.github/cases/**` 的**全部** `- id:` 再减 main ⇒ main 的 MC 家族 = 001~039 + **040**（#5737）+ **043/044/045**（#5730）；在飞 = **MC-046 ×2**（`ci/4184-c-end-publish-leg` / `docs/readonly-verification-pack`）⇒ 由**协调侧现取全量差集后定案分配**：**#5733 保留 046、本包取 047、#5734 取 048**。⚠️ **同一个号被三个包同时取到**（每个包都是在**自己那一刻**「现取下一个空号」取到的 ⇒ **单包视角看不出撞车**）—— 这是 `FM-E15` / `FM-E7` 的又一实证：**在飞占号不是单包能判的**。本单初稿曾取 MC-043（与 #5730 撞），第二次取 MC-046（与两个包撞）⇒ **记实，不抹平**。⚠️ **两处自伤，逐条如实登记**：① （`FM-R1` 的形态：**把某时点的读数当常量引**）初稿把读数误写成「#5730 占 MC-040 / MC-041」—— 真因是两个坑叠加：`misc.yml` 里 #5730 那三个块的**注释头**当时逐字写着 `# MC-039` / `# MC-040` / `# MC-041`，而其下的 `- id:` 实际是 **MC-043 / MC-044 / MC-045**（**注释头与块 id 不一致**；该三处已由 #5737 连同一条类级判据修掉），而我当时拿的是 `git diff origin/main...<ref>` 的 `+` 行 + 注释头读数当「本分支新增」⇒ 改用**只读 `- id:` 的差集口径**。② **同一形态当场第二次发作**：改号时我引用了派单消息给的记号 `FM-R14`，而**在我那一刻的基线上它在台账 `relay_entries` 里还不存在**（当时现取 min/max = 1 / 13；`FM-R14` 是随后由 #5735 才入册的）⇒ `tests/unit_ci_workflows/test_casebook_ledger_claims.py::test_real_casebook_matches_the_ledger_readings` **判红**（`记号 FM-R14 在台账 relay_entries 里不存在`），`land` 的 ④`wait-ci` 据此**停在 required 判据未绿**（fail-closed，没有合进去）⇒ 已改引**存在且形态对得上**的 `FM-R1`（「把某时点的读数当常量引」）。**教训与铁律 11 同源：连「别人给你的记号」也要先问「它在我这个基线上真的存在吗」。**"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # MC-029（Refs #5699 的 P2；设计真值源 docs/design/rbac-single-source.md §4 的 P2 行 + §2.4）。
+  # 病：P1 把「角色 → 码 / 码目录」的现值搬进清单并对账，但清单当时只覆盖**两面**（种子 A1 / 回退 A2）——
+  # A7（UserService.getRolePermissions，登录面）与「码目录的名称列」（B3 的唯一对照面）**根本没有声明**。
+  # 本用例锁的是 P2：由清单**派生**这两类事实，且**派生结果 == 现值逐值**（零 delta，不改行为）。
+  # ==========================================================================
+  - id: MC-029
+    legacy_id: ""
+    title: "RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等"
+    domains:
+      - misc
+      - ci
+      - auth
+    tier: normal
+    tags:
+      - rbac
+      - single-source
+      - zero-delta
+      - derivation
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 RBAC **派生层**的结构事实（清单 → 八个消费面的投影 ↔ 既有解析器/标准库 AST
+    # 读出的现值），由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当清单里「角色 → 码」或「码目录」的任一项与现值不再相等（哪怕只差一个码、一个名字、一个持有角色）时，必须有东西**具名**报出那一项；而只改清单的说明文字（`_note`）或只改源码注释时，**不得**报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **零 delta 是 P2 唯一的验收口径**：八个消费面（A1 种子 / A2 回退 / **A7 登录面** / A3·B3·B4 ai-agent 镜像 / B1·B2 目录）的**派生结果**与**现值**逐值相等，且**逐项点名**（不是「数量相等」）；不等时输出**完整不一致清单**（每项一行：派生值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）"
+      - "**A7 进清单**：`roles.login` 由既有解析器 `parse_role_fallback(..., anchor=…)` 读取（**复用同一个函数**，不是第二套解析器）；其四个码 `chat:read` / `chat:write` / `customer:read` / `order:read` 在权限目录里各 0 命中 ⇒ 由 `A7_CODES_BEYOND_CATALOG`（现取 4、只许缩短）钉住"
+      - "**码目录**（码 → 名称 + 持有角色）：`codes.names` 进清单并与 B1/B2 的名称列逐码对齐；两处目录的名称列不一致 ⇒ 具名红；持有角色由 `*` 展开成目录全集（admin 恒全部权限）后逐码比对"
+      - "**M2 覆盖面在 P2 扩大**：新增两张只许缩短的台账 `A7_CODES_BEYOND_CATALOG`（4）与 `A7_VS_MIRROR_DIVERGENCES`（2，A7 与 ai-agent 镜像对同一角色给出不同码集的对数）——条数涨 ⇒ 红（超上限），涨或跌都要在同 PR 更新清单（`ledger_count_drift`）"
+      - "**M1 覆盖面在 P2 扩大**：射程加入 `backend/admin-api/src/test`（设计 §1.3 的 A 类副本清单明写了测试面的逐码点名断言，而 P1 的射程只到 `src/main`），并新增形态面 `a7-login-codes-consumer`（扫 A7 的四个码字面量）⇒ 未登记即红 / 陈旧登记亦红（落地时该面自己先抓出 3 处未登记命中）"
+      - "**对照读数（证明变异真的被读到）**：在 `UserService.java` 的**注释**里写一个 A7 的码与一行假的 `getRolePermissions(` 调用 ⇒ 现值读数**逐值不变**（解析器先剥注释再取字面量）；改清单 `_note` 散文 ⇒ 派生读数不变"
+      - "覆盖面显式登记（设计 §5.3）：四条「覆盖不到什么」（A7 的**运行时**授予值未取证 · A7 的**存废**待人类裁定 · 非约定形态的声明看不见 · A4 迁移链的存量授权谓词归 P5）逐条写在 `UNCOVERED_FACES`（含 reason/owner/issue，只许缩短）"
+    skip_reason: "[backend-contract] RBAC 派生层与现值的逐值对账（既有解析器 + Python 标准库 AST）+ 码目录投影 + 覆盖面登记，全部由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §2.4）：P2 的定义是「由清单派生『角色 → 码』与『码目录』」，P1/P2/P3 三者零 delta、P4 才是第一次改行为。落码 = rbac/derive.py（P2 派生器，纯函数）+ 清单新增 roles.login / roles.mirror_placeholders / codes.names / 两张台账 + 既有解析器的最小扩展（parse_catalog_rows 与 parse_role_fallback 的 anchor 参数，两者都**不改**既有取值）+ 八个消费面的逐值对账 + 注入式红证（含「只改注释 ⇒ 不红」对照）。取号 MC-029：MC-026/027 已被 P1（#5705）占用；MC-028 由同刻在飞的固化单包（#5706）顺延占用 ⇒ 本包从 MC-029 起，MC-030 在其后顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-030（Refs #5699 的 P2；设计真值源 §1.4 的 A7 补登注 + §1.6 + §6 第 7 条）。
+  # 病：A7 授予的四个码**不在权限目录里**却被挂成登录主体的 authority，而**没有任何机制**与 A1/A2 同步
+  # （设计 §1.3 的「角色 → 码」第 8 份副本）。本用例把「谁读它们」钉成机器可判的读数。
+  # ==========================================================================
+  - id: MC-030
+    legacy_id: ""
+    title: "A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判"
+    domains:
+      - auth
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - rbac
+      - a7
+      - forensics
+      - retirement
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 A7 的**静态调用面**读数（判定面语料里这些码出现的位置 + 调用点词法），
+    # 由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当判定面（admin-api src/main + ai-agent app + frontend）里重新出现 A7 的四个码、或有人把 AuthenticationManager 的 authenticate 调用接上、或身份面常量与这些码混用、或 A7 又授予了目录外的码时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判定面零容忍**：`backend/admin-api/src/main` + `backend/ai-agent-service/app` + `frontend` 里出现 `chat:read` / `chat:write` / `customer:read` / `order:read` 的文件数**必须为 0**（退役后现取 = 空）；新增任一处 ⇒ 具名红（内存构造假想 controller 的红证已实跑）"
+      - "🔴 **退役已生效**：A7 授予的码里没有任何一个在权限目录之外（现取 = 0；退役前 = 4）。裁定 = 2026-09-27 人类选「A. 退役」（消除全仓唯一一处授予目录外码的地方、与 ai-agent 镜像对齐）；理由与落地 6 处见设计 §1.6 (d)"
+      - "**授予面在仓内不可达（机制存活读数）**：全仓无 `AuthenticationManager` 的 `authenticate(...)` 调用（现取 0）⇒ `UserDetailsService` 那条线没有调用方；谁接上它（哪怕一行）⇒ 红，必须重新取证"
+      - "**调用点唯一**：`UserService.getRolePermissions` 的调用点只在声明本体内部（`loadUserByUsername`）—— 口径是**词法**（先剥 Java 注释），注释里写一行假调用**不**算（对照读数已实跑）"
+      - "**身份面按角色判、不按码判**：`ServiceTokenFilter.C_END_ROLES` / `SecurityConfig.ADMIN_API_REJECTED_ROLES` / ai-agent `base.CUSTOMER_ONLY_ROLES` 三个常量都必须存在，且与 A7 的码**不相交**"
+      - "🔴 **取证先于裁定**：本判据先出九处消费方逐条证据 + 「授予面在仓内不可达」的读数，**再由人类裁定**（2026-09-27 选「退役」）⇒ 裁定结果被钉成三条只许缩短 / 零容忍的读数，实现者**不得**自行把码放回去"
+      - "**未取证项照实登记**：A7 的**运行时**授予值（customer / agent 账号登录后实际拿到的 authority 集）本机没有可跑环境 ⇒ 登记进 `UNCOVERED_FACES` 并写明重启条件，**不得**把本判据读成「A7 已验收」"
+    skip_reason: "[backend-contract] A7 的静态调用面读数（判定面语料命中表 + 调用点词法 + 身份面常量）由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 §1.4 的 A7 补登注与 §6 第 7 条）：P2 的第一步是**取证**而不是改行为 —— 取证结论 = A7 的四个码在**判定面**只有声明本体自己（无任何授权判定读它们）、`getRolePermissions` 的唯一调用方是 `loadUserByUsername`、而该授予面在仓内**不可达**（全仓无 `AuthenticationManager.authenticate` 调用）、C 端/工人端身份面一律按**角色**判。**人类据此裁定「退役」**（2026-09-27）⇒ 同批落地 6 处（`UserService` 的 `switch` 删两个 `case` / 清单 `roles.login` / 两张台账 **4→0** 与 **2→0** / `rbac/sources.json` 销账 2 条陈旧登记 + 命中数 4→2 / `TenantIsolationTest` 夹具），并在 `rbac/sources.json` 与判据里留下**再引入绊线**（这四个码一旦重新出现在判定面/测试面即红）。落码 = 判定面零容忍 + 退役已生效 + 机制存活读数 + 注入式红证 + 「只改注释 ⇒ 不红」对照 + 未取证项登记（**A7 的运行时授予值**）。取号 MC-030：本 PR 同批占用 MC-029，本号在其后顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # MC-031（issue #5687 族的残余登记）：**main 侧生成物新鲜度守护腿** ——「生成物新鲜度（render + diff）」
+  # 原先只在 `pull_request` 面跑（`pr-check.yml` 的 `case-truth-check` job 里的一个 step）
+  # ⇒ **main 可以先漂移**，而第一个撞上它的无辜 PR 才红，且红的信息指向那个 PR 自己的 diff
+  # （归因指向错误的对象；2026-09-27 实测两次，其中一次的错归因被写进了公开记录）。
+  # 该残余已被具名登记在 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的边界节。
+  - id: MC-031
+    legacy_id: ""
+    title: "main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - freshness
+      - main-side-guard
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    user_inputs:
+      - "改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch；**刻意不挂 pull_request** —— 判定基准是 main 的当前状态，挂 PR 面会把红重新显示在无辜 PR 上而它并不拦任何东西）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）"
+      - "判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）"
+      - "判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）"
+      - "告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）"
+      - "覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）"
+      - "每条判据各配注入式红证（清单见 tests/unit_ci_workflows/test_main_freshness_guard.py 的「本文件锁什么」表，不写死条数）；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数"
+      - "**合并产物的两种伪装**（issue #5741 的现场，判据 10/11）：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同；且**分域合计仍等于总数** ⇒ 内部自洽）⇒ 仍必红且具名；把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具变绿（判别力自证）。🔴 根因在**时序**（检查跑的快照 ≠ 落地的合并结果），两条出口登记在 docs/wiki/CI-CD.md 的 FM-E18（需人裁定）"
+      - "**独立验收驱动的订正**（2026-09-28，双 AI 交叉验证）：① `reap` 的远程删除是**四态**（`deleted`/`already-absent`/`absent-unverified`/`failed`）—— 回退路径（删前读数取不到）**判不了**「是不是我删的」，故**不许**报 `deleted`；② 一个坏 ref 会让整批 `push --delete` 被拒 ⇒ 对「仍在」的逐个补删（上限 20）；③ `pr-check` 的门控必须**判 `git diff` 的 rc**（「算不出」≠「未命中」）；④ `--merge-probe --json` 顶层补 `verdict_overall`/`exit_code`；⑤ `NS-3` 销账同批降 `NOT_SOLIDIFIED_FROZEN` 4→3（PD-10）"
+    skip_reason: "[backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（关联 #5687；残余的登记处 = tests/unit_ci_workflows/test_casebook_summary_is_derived.py 边界节逐字写着『不覆盖 main 侧』）：当天两次 CI 红都红在生成物新鲜度，其中一次归因被指到无关 PR 并被写进公开记录，每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。落码 = 新增 main 侧守护腿（push + schedule + workflow_dispatch；schedule 的理由 = push 会被 auto-merge 吞掉，issue #3113/#5001）+ 把 pr-check 面与 verify-all.sh gate 的内联 render+diff **全部**收敛到单一实现 scripts/generated_artifacts_freshness.py（parity 守卫的锚点同批改准）+ 具名报错（产物/差量/复算命令/候选区间只给读数）+ 九条判据（含 fail-closed 红证、恒绿反转红证、坏渲染器边界的行为级证明）。取号 MC-031（rebase 让号，记实）：起草 MC-029，每次 rebase 都被新并入的判据占用 ⇒ 顺延到 MC-031（main 上 MC-001~MC-030 已占用）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_main_freshness_guard.py"
+      ci:
+        - main-freshness-guard.yml
+      verifies: []
+
+  # MC-032（Refs #5699 的 P3；设计真值源 docs/design/rbac-single-source.md §4 的 P3 行 + §2.4 + §2.5）。
+  # 病：「某页面要什么码」这个事实在仓里有 4 份手写副本（menu.ts / MenuController / AuthService /
+  # 判据自己的页面锚点表），而 P1/P2 只把「角色 → 码」与「码目录」搬进了清单 ⇒ P3 把**页面 → 码**
+  # 搬进清单 `pages[]` 并派生各消费面的码列，且**派生结果 == 现值逐值**（零 delta，不改行为）。
+  # ==========================================================================
+  - id: MC-032
+    legacy_id: ""
+    title: "RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等"
+    domains:
+      - misc
+      - ci
+      - ui
+    tier: normal
+    tags:
+      - rbac
+      - single-source
+      - zero-delta
+      - derivation
+      - page-codes
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 RBAC **派生层**的结构事实（清单 pages[] → C1/C2/C3/C4 码列 + 可见性投影
+    # ↔ 既有解析器的四跳现取），由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当清单 pages[] 的任一项（菜单可见码 gate / 第一屏读码 units / 逐页 visibility_rule）与现值不再相等，或菜单三源与路由守卫的码列不再等于该页的 gate 时，必须有东西**具名**报出那一项；而只改清单的说明文字（_note / _boundary）或只改源码注释时，**不得**报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 21 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（24 条）/ C3（14 条）/ C4（19 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 24 项、units 27 个端点、可见性 21 页 —— **P3 口径 = 205 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）"
+      - "**四跳现取不另造解析器**：菜单节点 → 页面锚点表 → lib/api.ts 的 URL → Java 侧**生效码**（方法级优先），全部调既有守卫 test_agent_permission_workflows 的既有函数（`parse_menu_ts_nodes` / `parse_frontend_api_calls` / `_effective_codes` / `parse_menus` / `parse_route_guard`），判据与生成器共用 rbac/derive.py 的同一份投影实现"
+      - "**C2/C3 的节点集不属本面、码列属本面**：MenuController 只有 24 个节点、AuthService 只有 14 个（登录菜单是页面的子集）⇒ 「哪些节点进哪一列」是菜单结构的事实；本判据只判**码**（逐条 38 项），并把 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情）与 1 处具名不一致（经营看板：节点无码而权限目录给 dashboard:view）逐条具名登记（未登记即红 / 陈旧亦红 ⇒ 只许缩短）"
+      - "**C4 的路由前缀按三类逐条闭合**：15 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 3 条无页面前缀（/chat / /categories / /processing-orders，逐条带理由）+ 1 条守卫码与该页 gate 不一致的具名项（/dashboard）—— 新增页面守卫不登记即红"
+      - "**对照读数（证明变异真的被读到）**：内存里把某页 gate 改掉 ⇒ 派生器读数跟着变（route_guard_codes 现取到新值）且 pages 对账报出；清单 _note / _boundary 只改散文 ⇒ 三条对账全绿（不红）"
+      - "覆盖面显式登记（设计 §5.3）：非派生面 1 条（C2 的 MENU_TREE 码列为何不属本面）+ 未覆盖面 5 条（自建岗位读不到 · bmini/worker-h5 不在射程 · units 的 label/icon/组序有意不搬 · 残留与 gap 的存废归 P4 人裁定 · 运行时未取证）逐条写在 NON_DERIVED_FACES / UNCOVERED_FACES（含 reason/owner/issue，只许缩短）"
+    skip_reason: "[backend-contract] RBAC「页面 → 码」派生层与现值的逐值对账（既有解析器四跳现取 + Python 标准库）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 = docs/design/rbac-single-source.md 的 §4 与 §2.4/§2.5）：P3 的定义是「由清单 pages[] 生成 C1/C2/C3/C4 的**码列**（不动分组/顺序/icon/keywords）」+「节点码 == pages[].gate 逐值」。落码 = 清单新增 pages[] 段（21 页：gate + units: 码 → 端点 + 逐页 visibility_rule）+ rbac/derive.py 的 P3 派生段（derive_page_faces / page_present，纯函数、不落盘 ⇒ 新鲜度是结构性质）+ 生成器新增 pages 现取 + 判据 test_rbac_derived_pages.py 的 15 条（含注入式红证与「只改散文 ⇒ 不红」对照）+ M1/M2 覆盖面扩面（三个新形态面 25 处命中、PAGE_VISIBILITY_GAPS 台账）。取号 MC-032（**顺延**）：MC-028/029/030 已被 #5706 与 P2 占用；写侧原本取 MC-031，而**在飞**的 PR #5704 已占 MC-031 ⇒ 按 MC-025/#5706 的先例**顺延尚未合并的一侧**（不动在飞分支的号）⇒ 本包用 MC-032~MC-034。⚠️ 这是取号判据「只看已合并状态」边界的第 N 次实证（`CASE_ID_ALLOCATION_BOUNDARY` / docs/wiki/CI-CD.md 的 FM-E15：《用例号全局唯一》拦不住在飞撞号，只能靠推送前对在飞 PR 的 diff 现取一次 —— 本包就是这么查出来的）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-033（Refs #5699 的 P3；设计真值源 §2.5 + §3.4 问题 3 末注 + §3.3(b)）。
+  # 病：判据 12 的命题「节点码 ≡ 该页第一屏读端点码」只在「恰好一个读码」的页面上适定；一页多码
+  # （3 页）与 6 条菜单残留此前只能靠人工台账维持 —— 把它们压成「一个页面一个码」正是本用例要拦的形态。
+  # ==========================================================================
+  - id: MC-033
+    legacy_id: ""
+    title: "RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名"
+    domains:
+      - misc
+      - ci
+      - ui
+    tier: normal
+    tags:
+      - rbac
+      - multi-code-page
+      - residual-ledger
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是页面面结构事实（一页多码 / 节点码 ≠ 页面读码 / 可见性投影规则）的机械对账，
+    # 由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当有人把某个多端点页压成一个码、把某条已登记的菜单残留悄悄销账、或在现值不要求时把某页的可见性规则改成 any（放宽）时，必须有东西**具名**变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **多端点页不被压平**：派生出的多码页必须**恰好 3 页**且码集与既有冻结表 MULTI_READ_ENDPOINT_PAGES 逐值相等（/production/processing = order:list + processing:manage + production:view；/production/routings = processing:manage + production:view；/settings = dashboard:view + system:manage）—— 红证：内存里把加工的 3 码压成 1 码 ⇒ 多码页集立刻只剩 2 页 ⇒ 报红"
+      - "🔴 **6 条菜单残留由 pages[] 派生、逐条具名**：派生集必须与 MENU_READ_PARITY_RESIDUALS 的键集**逐值相等**（/dashboard · /production/pool · /production/saving-board · /production/processing · /production/routings · /settings）—— 修好一处而不同步销账 ⇒ 红；新增一处不一致而未登记 ⇒ 红（两侧都只许缩短）"
+      - "**visibility_rule 逐页 any|all、默认 all（fail-closed）**：规则集 = {all, any, node-code}；**字段缺失 ⇒ 按 all 算**（不是 any、也不是当空）；未登记的规则名 ⇒ fail-closed 抛错（三条都有单测）。现取 = all 17 页 / any 0 页 / node-code 4 页；把某页改成 any 而现值不要求 ⇒ 红"
+      - "**机制存活读数**：any（∪）与 all（∩）在同一组 unit 码上必须给出**不同**的岗位集（否则「支持逐页 any|all」是空话）；现取例 = processing:manage ∩/∪ order:list 的真子集关系"
+      - "**投影复现不了现值的 4 页必须具名**（/notifications 第一屏端点全未注解 · /production/pool · /production/saving-board · /production/processing 三页「节点码 ≠ 页面读码」）⇒ 进 PAGE_VISIBILITY_GAPS（清单 ledger_counts 与判据台账双向闭合、只许缩短；上限冻结在 P1 守卫的 LEDGER_CEILINGS = 4）"
+    skip_reason: "[backend-contract] 页面面结构事实（多码页 / 残留台账 / 可见性投影规则）的机械对账由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 §2.5 / §3.4 问题 3 末注 / §3.3(b)）：P3 把「一页多码」与 6 条残留从**人工台账**变成**清单 pages[] 的派生结果**并逐值冻结（派生集 == 现取），同时按设计 §3.4 结论落地**逐页 any|all + 默认 all（fail-closed）**；4 页「投影复现不了现值」具名为 PAGE_VISIBILITY_GAPS（只许缩短，出口归 P4 人裁定）。取号 MC-033：与 MC-032 同 PR 顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # MC-034（Refs #5699 的 P3；设计真值源 §5.2 的 M1/M2 + §5.3 覆盖面登记 + #5707 的 §25 红证规则）。
+  # 病：「页面 → 码」的第四份副本是**判据自己的锚点表**，而它在 P3 之前一处都没登记 ⇒
+  # 谁新写一张页面 → 码 的表不会有东西变红（未登记即红的方向缺失）。
+  # ==========================================================================
+  - id: MC-034
+    legacy_id: ""
+    title: "RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - rbac
+      - copy-registry
+      - coverage
+      - only-shrink
+      - red-proof
+      - anchor-uniqueness
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 M1 副本登记表 / M2 台账上限的机械读数（形态面命中数 + 锚自证），
+    # 由 tests/unit_ci_workflows/test_rbac_derived_pages.py 与 test_rbac_single_source_manifest.py 验证，非 LLM 行为。
+    user_inputs:
+      - "当有人在别处手写一张「页面 → 码」的表、或改了锚点表的条数而不同步登记表、或放宽任一只许缩短的台账上限时，必须有东西**具名**变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**M1 扩面（P3）**：新增三个形态面扫判据侧的手写副本 —— page-first-screen-anchors（21 条页面 → 第一屏调用锚点）/ page-parity-residual-ledger（2 张页面面台账）/ route-node-anchor-ledger（2 张路由 → 节点锚定表），共 3 行登记、25 处命中，全部在 rbac/sources.json 具名"
+      - "**未登记即红 · 陈旧亦红 · hits 涨跌都红**：注入一个未登记的假命中 ⇒ 具名报出；登记一个已不命中的面 / 文件 ⇒ 报陈旧；把登记的 hits 加 1 ⇒ 报「登记命中数漂移」（三条都是内存构造的红证，已实跑）"
+      - "**M2 扩面（P3）**：新增只许缩短台账 PAGE_VISIBILITY_GAPS（现取 4）；上限冻结在 P1 守卫的 LEDGER_CEILINGS 里，清单 ledger_counts 与现取逐值相等（涨跌都要同 PR 更新）"
+      - "🔴 **锚条数冻结 + 改名必红（自证）**：每个 P3 形态面的 shape 在目标文件里的出现次数必须 == 登记的 hits；把锚**就地改名**（内存变异、语法仍有效）⇒ 该面命中消失 ⇒ stale_registrations 具名报出 —— 即「删掉会红」是**可复算的断言**而不是空话。（第一版用「逐行删除」做变异，被剥注释器 fail-closed 抓出：删除多行表达式首行会让括号失衡 ⇒ 改为改名。）"
+      - "**对照读数**：把锚的写法放进**注释**追加到语料末尾 ⇒ 命中数不变（剥注释是同一份实现）；形态字面量在本判据里**拆开拼**（本文件第一版在 docstring 里举例，被自己的形态面抓成未登记副本 —— 「判据会读进你自己的举例」的现场实证）"
+    skip_reason: "[backend-contract] M1 副本登记表与 M2 台账上限的机械读数（形态面命中数 + 锚自证）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P3 阶段；设计真值源 §5.2 的 M1/M2 与 §5.3）：P3 的 M1 扩面针对的是设计 §1.3 的 C 类**第四份副本**（判据自己的锚点表），此前零登记；M2 扩面新增 PAGE_VISIBILITY_GAPS。红证全部内存构造，含「锚条数冻结 + 改名必红」的自证与「只改注释 ⇒ 不红」对照。取号 MC-034：与 MC-032/032 同 PR 顺延（#5706 的 MC-026 撞号先例 ⇒ rebase 后现取最大号）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-035（Refs #5699 的 P4；设计真值源 docs/design/rbac-single-source.md §4 的 P4 行 + §4.1 的 D1~D4）。
+  # 病：权限单位此前没有机械边界 —— 「每个子菜单恰好一个码」这件事**没有任何判据**（P3 只把现值
+  # 搬进清单，零 delta）；于是「节点码 ≠ 页面读码」的页只能靠一张只许缩短的残留台账兜着，
+  # 而「菜单看得见、点进去 403」正是它漏掉的形态。
+  # 本号覆盖：子菜单粒度不变量（每页恰好一个可见性码 + 持码者必能打开全部 unit + 四个面同码）。
+  # ==========================================================================
+  - id: MC-035
+    legacy_id: ""
+    title: "RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）"
+    domains:
+      - misc
+      - ci
+      - ui
+    tier: normal
+    tags: [rbac, submenu-granularity, p4, behaviour-change, red-proof]
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据的对象是**声明面**（注解 / 菜单表 / 角色表）的结构不变量，由
+    # tests/unit_ci_workflows/test_rbac_submenu_granularity.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当某个子菜单的第一屏端点码不再等于该节点的可见性码、或持该节点码的岗位打不开它某个 unit、或四个菜单/守卫面（menu.ts / MenuController / AuthService / 路由守卫）与页面码不再逐页相等时，必须有东西**具名**报出；而只改清单的散文（_note / _boundary）时**不得**报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**不变量 1（恰好一个可见性码）**：每一页 `gate` 非空 ∧ 第一屏码集 == {gate}；「第一屏一个码都没有」的页必须具名在 FAIL_OPEN_PAGES（现取 1 条 = /notifications：两侧同一个**空码** ⇒ 可见面恒等于可做面）；「真的并发多码」的页必须具名在**既有**台账 MULTI_READ_ENDPOINT_PAGES（现取 1 条 = /settings，具名保留 + 硬理由）—— 本守卫读既有台账，不另立一份"
+      - "**不变量 2（零 403）**：持 `gate` 的岗位（种子 ∪ 回退）必须同时持该页每一个 unit 的码；多码页额外要求「可见面投影 == 持 gate 者」。判据当场复算，输出「谁看得见却打不开」的逐岗位点名"
+      - "**不变量 3（四面同码）**：C1 前端侧边栏 / C2 权限目录树 / C3 登录下发菜单 / C4 路由守卫，逐页与 pages[].gate 逐值相等（跨面映射复用判据 11 的 ROUTE_MENU_ANCHORS 与 P3 的 ROUTE_PREFIX_ALIASES，本守卫不新建映射）"
+      - "**红证（全部内存构造 + 对照读数）**：① 把某页端点改回独立码 ⇒ 「一页多码未登记」；② 给某页塞一个更宽的码 ⇒ 零 403 段点名；③ 抹掉某页 gate ⇒ 「没有可见性码」；④ 改现值里的 C1/C4 码 ⇒ 四面同码段点名；⑤ 只改清单散文 ⇒ 不红（判别力边界，不是判据失效）"
+      - "覆盖面显式登记（UNCOVERED_FACES，只许缩短、每条带 reason/owner）：租户自建岗位与员工级快照读不到 · 非约定形态的码表扫不到 · I4 只认命名形态不判语义 · 运行时可见性未取证"
+    skip_reason: "[backend-contract] RBAC 子菜单粒度不变量的离线结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P4 阶段，**第一次改行为**；授权来源 = 用户逐字裁定「直接按目标改，权限粒度到子菜单即可，不需要细化到页面内功能」）。落码 = 判据 test_rbac_submenu_granularity.py 的三条不变量 + 两张台账 + 7 条判据（红证全部内存构造，含「只改散文 ⇒ 不红」对照）。取号 MC-035：现取 .github/cases/ 的最大号 = MC-034（P3 占用），并按 FM-E7 的缓解动作在**推送前**对在飞 PR 现取一次（当时 open PR 只有 2 条 dependabot，无 MC-035+ 占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_submenu_granularity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-036（Refs #5699 的 P4；设计真值源 §4.1 的 D1/D2/D3 + §1.4 实例 5）。
+  # 病：授权变更的「谁被放宽 / 谁被收窄」此前靠 **PR 正文里的手写汇总**（#5690 把 order:list 的
+  # 25 个端点写成 6 个，其中 8 个 POST 无人察觉）—— 没有任何判据会报。
+  # ==========================================================================
+  - id: MC-036
+    legacy_id: ""
+    title: "RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags: [rbac, authorization-census, d1, d3, non-repudiation]
+    truths_ref: []
+    user_inputs:
+      - "当某次授权变更没有被逐页登记（改前码 / 改后码 / 方向 / 理由），或登记里的改后码与现值生效码不符，或某个岗位的可见面/可做面因此变化却没被点名时，必须有东西**具名**报出；而只改登记里的散文措辞时**不得**报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**D1/D3 的机械形态**：P4_AUTHORIZATION_CENSUS 逐页登记 {gate_before, gate_after, direction, reason, units_changed[], menu_nodes[]}；判据拿它与**现值**对账（改后码 == 清单/现值码；每个 units_changed 的改后码 == 端点现取生效码；改前≠改后，禁止凑数）"
+      - "**「谁得/谁失」当场复算**：岗位来源 = 种子 ∪ 回退（与判据 12 ④ 同口径）；复算出的每个新增/失去可见性或可做面的岗位都必须在理由里**被点名**，否则红 —— 这条把设计 §1.4 实例 5 的「手写汇总与代码分叉」变成机械可拦"
+      - "**红证**：把某页改后码改成与现值不符 ⇒ 红；把 units_changed 换成「改前码 == 改后码」⇒ 红（空变动）；把理由换成一句不点名任何人的散文 ⇒ 判据自己复算并指名报出失去者（本条即「手写汇总不可信」的判别力自证）"
+      - "**收窄单列**：凡 direction 含「收窄」的页，PR 正文必须单列一节说明「谁失去什么 / 为什么必须收 / 有没有替代路径」（本仓纪律；判据只能保证登记里点到了岗位，替代路径是散文）"
+    skip_reason: "[backend-contract] 授权变更 census 的离线对账判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P4 阶段；设计真值源 §4.1 的 D1/D2/D3 + §1.4 实例 5）：#5690 的 PR 正文把 `order:list` 的授权面写成 6 个端点而现取是 25 个（17 GET + 8 POST，含建加工单/报工/打印/发货），少报 19 个且**没有任何判据会报**。本号把「逐页 + 逐端点的授权变更 census」落成判据，并把「谁得/谁失」改成当场复算 + 逐岗位点名。取号 MC-036：与 MC-035 同 PR 顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_submenu_granularity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-037（Refs #5699 的 P4；设计真值源 §3.4 问题 2 与 §5.2 的 M2）。
+  # 病：判据 5（读写码不错配）的射程**只有工具层** ⇒ 「写端点只由读码把守」在端点层
+  # **没有任何判据看得见**（现取问题数 0、例外台账 0 条）—— 目标架构的不变量 I4 就是补这一格。
+  # ==========================================================================
+  - id: MC-037
+    legacy_id: ""
+    title: "RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）"
+    domains:
+      - misc
+      - ci
+      - security
+    tier: normal
+    tags: [rbac, i4, endpoint-permission, read-write-mismatch, ledger]
+    truths_ref: []
+    user_inputs:
+      - "当某个写动词（POST/PUT/DELETE/PATCH）端点的生效码是**读**码而没有登记在 WRITE_UNDER_READ_CODE，或登记的条目已不再命中（端点已删/码已改），或台账超过上限时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**射程 = 端点层**（判据 5 只有工具层）：现取 = 动词非 GET 且生效码动作段 ∈ READ_CODE_ACTIONS（list / view / detail / session）的全部端点，逐条端点点名（现取 16 条）"
+      - "**逐条带归类**：真写 / 真写（文件面）/ 计算/预览 —— 其中 #5699 发现 ① 点名的四条（建加工单 instantiate / 报工 report / 打印 print / 发货 ship，均只由 ProductionController 的**类级** order:list 把守）必须具名存在"
+      - "**台账只许缩短 + 未登记即红 + 陈旧亦红**：清空台账 ⇒ 逐条报出未登记（判据自证覆盖段有效）；条目不再命中 ⇒ 红；超过上限 ⇒ 红"
+      - "**本号不改任何行为**：I4 的处置（把写动作改挂写码）是授权变更，须人类裁定；本判据只保证「这一族从那一天起是可点名的」"
+      - "覆盖面边界（照实登记）：只认「动词 + 码的动作段」形态，不判「这个动作到底写不写库」；GET 而语义写库的端点不在射程"
+    skip_reason: "[backend-contract] I4 端点层 census 的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P4 阶段；设计真值源 §3.4 问题 2 + §5.2 的 M2）：#5699 的发现 ① 实测「判据 5 的射程只有工具层 ⇒ 写端点由读码把守这一族没有任何判据看得见」，本号把它落成端点层 census（16 条具名 + 归类 + 只许缩短），并把四条真写端点（instantiate/report/print/ship）钉成必须存在的条目。取号 MC-037：与 MC-035/036 同 PR 顺延。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_submenu_granularity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-043（Refs #5699 的 **P5**；设计真值源 §4 的 P5 行 / §2.7 / §3.1）。
+  # 病：存量租户的 role_permissions = 「该租户历史跑过的迁移之并集」（路径依赖）⇒
+  # `V43`/`V111`/`V124`/`V125` 四条新码引入迁移**都没给 admin 授码** ⇒ 跑过 `V29` 的老租户里
+  # 「管理员」岗位缺 11 个码（新租户 31/31），而**没有任何判据**看得见这件事。
+  # ==========================================================================
+  - id: MC-043
+    legacy_id: ""
+    title: "RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags: [rbac, p5, migration-chain, convergence, generated-artifact, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当迁移链（V29…V138）推演出的「每个内置岗位累计拿到的码」不再等于清单声明（新租户 seed），或由清单渲染的收敛迁移与提交的产物不再逐字节相同，或 V136 的差集读数与现取不再一致时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**生成物新鲜度（M3）**：V136 的内容必须 == `rbac/generate_migration.py` 当场由 `rbac/manifest.json` 渲染的结果（手改产物 ⇒ 红，报首个差异行；改清单没重渲染 ⇒ 红）"
+      - "**收敛不变量**：整条链推演（含 V136/V137/V138）后，每个种子岗位累计 == 清单声明（`*` ⇒ 目录全集）⇒ 「新租户 vs 存量租户逐值相等」常驻可判；任一岗位有差 ⇒ 具名报出该岗位与该码"
+      - "**差集是现取**（P5 的固定读数 = `admin` 的 11 个码、其余四个岗位 ∅）：给清单某岗位加一个链上没有的码 ⇒ 读数变化即红；`V136` 的授权语句必须逐值等于该差集"
+      - "**推演的边界**（照实登记）：只认约定 SQL 形态（`INSERT INTO role_permissions … r.code … p.code …`），语句数 == 解析数（读不懂的新写法 ⇒ 红，不静默放过）；不推演目录懒补种、不推演取消授权；真库读数只能接真库复算（设计 §6.1）"
+      - "**红证**：手改产物 ⇒ 新鲜度红；清单加一个链上没有的码 ⇒ 收敛不变量红（具名）；差集读数与现取不符 ⇒ 红；只改清单散文（`_note`）⇒ **不红**（对照）"
+    skip_reason: "[backend-contract] P5 迁移链收敛的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P5 阶段；人类 2026-09-27 裁定「三项都做」）。落码 = `rbac/derive.py` 的 P5 段（迁移链推演：语句解析 + 条件授权 + 「后加的码不被早先那句『全部码』白送」）+ `rbac/generate_migration.py`（由清单渲染 V136/V137/V138）+ 判据 test_rbac_migration_convergence.py（生成物新鲜度 / 收敛不变量 / 差集现取 / P6 迁移逐值；红证全部内存构造）。现取读数：存量 `admin` 缺 11 码、其余四个岗位 ∅（复算命令写在 V136 文件头）。取号 MC-043：现取 `.github/cases/` 最大号 = MC-038，推送前对在飞 PR（#5725/#5728/#5729）的 diff 现取一次（#5725 占 BM-027，无 MC-043+ 占用）。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_migration_convergence.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-044（Refs #5699 的 **P6**；设计真值源 §2.6 的三出口 + §4 的 P6 行）。
+  # 病：`product_manager` / `knowledge_editor` 是**幽灵角色码** —— 不在种子里、迁移链一条谓词都不提
+  #（⇒ 无 roles 行、岗位权限页无法编辑），只靠 `RoleService` 回退 switch 一行 case 拿 8 / 2 个码。
+  # 人类 2026-09-27 裁定**出口 (i) 正式定义**。
+  # ==========================================================================
+  - id: MC-044
+    legacy_id: ""
+    title: "RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags: [rbac, p6, ghost-roles, formal-definition, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当 `product_manager` / `knowledge_editor` 不在种子矩阵（或 seed 与 fallback 不再逐值相等），或 V137 的授权语句与清单声明不逐值相等，或历史角色登记表未销账时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**正式定义**：两个角色码必须在 `RegistrationService` 的种子矩阵里（建 roles 行 + 授默认码）⇒ 岗位权限页可编辑、员工弹窗可分配；**账号的有效权限集合逐值不变**（码集取自回退 switch，不增不减）"
+      - "**两条口径同码**：`roles.seed[role]` == `roles.fallback[role]` 逐值（与 test_agent_permission_parity.py 判据 14 一起守）"
+      - "**存量侧物化**：`V137__formalize_legacy_roles.sql` 的每个角色必须有建 `roles` 行语句 + 授权语句，且授权码集与清单声明**逐值相等**（少授 = 老租户拿不到；多授 = 绕过岗位权限页的放宽）"
+      - "**台账销账**：`LEGACY_ROLES_IN_FALLBACK` 必须为空（两个角色已进种子 ⇒ 留着一条不空的登记 = 两套真相）；销账后语义更严（任何种子外的回退角色都判红）"
+      - "**红证**：从种子里删掉一个角色 ⇒ 红；让 V137 多授一个码 ⇒ 红（逐值比较分支）；把登记表塞回一条 ⇒ 红；只改散文 ⇒ 不红"
+    skip_reason: "[backend-contract] P6 历史岗位码正式定义的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P6 阶段；人类 2026-09-27 裁定出口 (i)「正式定义」）。落码 = `RegistrationService.initializeDefaultRolesAndPermissions` 建两个 roles 行 + 授默认码（码集逐字取自回退 switch）+ 清单 `roles.seed` 补两角色 + 生成器渲染的 `V137__formalize_legacy_roles.sql` + `LEGACY_ROLES_IN_FALLBACK` 整表销账 + 镜像（ai-agent `ROLE_PERMISSIONS` 的两条口径注记改准）。⚠️ 转述更正：派单里「幽灵角色码**数据库里存在**」是错的载体 —— 它们**不在库里**（无 roles 行、无 role_permissions），只在回退 switch / 米宝 allowed_roles / bmini 角色名映射里。取号 MC-044：与 MC-039 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_migration_convergence.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-045（Refs #5699 的 **I4**；设计真值源 §3.4 问题 2 + §4 的 P4 行 + §2.9 的窄例外）。
+  # 病：四个**真写**端点（建加工单 / 报工 / 打印 / 发货）只由 `ProductionController` 的**类级读码**
+  # `order:list` 把守 ⇒ 「写动作由读码把守」，且判据 5 的射程只有工具层 ⇒ 端点层没有判据看得见。
+  # 人类 2026-09-27 裁定选 A：**新造专用写码** `production:execute`。
+  # ==========================================================================
+  - id: MC-045
+    legacy_id: ""
+    title: "RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）"
+    domains:
+      - misc
+      - ci
+      - security
+    tier: normal
+    tags: [rbac, i4, write-code, authorization-change, snapshot-backfill, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当四个真写端点的生效码不再是 production:execute（或被回退成类级读码 order:list），或新码出现在台账之外的端点/菜单/Agent 工具上，或「持旧码的岗位集」≠「持新码的岗位集」，或快照回填丢掉「含旧守卫码」前置条件时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**四条对齐**：`POST …/instantiate` · `…/operations/{}/report` · `…/print` · `…/ship` 的生效码逐条 == `production:execute`，且它们的**类级**码仍是读码 `order:list`（证明「改前只由读码把守」这个事实可复核）"
+      - "**别处零外溢**：生效码 == 新码的端点集**恰好**是这四条（多一条 ⇒ 红）；新码不出现在任何菜单节点码列、也不被任何 B 端 Agent 工具声明"
+      - "**角色面零 403**：持旧码的岗位集 == 持新码的岗位集（现取两侧，种子 ∪ 回退）= admin · 客服 · 运营 · 销售 · 财务 ⇒ 不存在「今天能过、改后 403」"
+      - "**快照等价回填（设计 §2.9 的窄例外）**：V138 的 `UPDATE users` 必须同时带三条谓词 —— 严格 JSON 数组形态 / 含旧守卫码 `order:list` / 不含新码；丢掉「含旧码」⇒ 红（那是把窄例外读成放宽）"
+      - "**覆盖面照实登记**：判据算声明面 + 注解面，不是运行时授权；快照面只覆盖 `users.permissions` 一种形态；生产库受影响行数只能接真库用 V138 文件头的只读事前/事后 SQL 复核"
+      - "**红证**：删掉某端点的方法级写码注解 ⇒ 红；给别的端点也挂新码 ⇒ 「台账之外」红；快照谓词丢掉前置条件 ⇒ 红；只改散文 ⇒ 不红"
+    skip_reason: "[backend-contract] I4 端点写码对齐的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 I4 阶段；人类 2026-09-27 裁定选 A + 快照等价回填选 a）。落码 = 新写码 `production:execute`（种子 + 回退 switch + V138 迁移 + ai-agent 镜像 + 清单 `codes.names` 31→32 + 权限页勾选项）+ `ProductionController` 四条方法级注解 + `V138` 的**快照等价回填**（只动「含 order:list、不含新码」的严格 JSON 数组快照；等价 = 有效权限集合逐值不变）+ 判据 test_rbac_endpoint_write_codes.py + P4 判据的 I4 台账 16→12（四条真写移出）+ 判据 14 的授权变更 census 新增一条（上限 15→16，显式放宽，diff 里看得见）。取号 MC-045：与 MC-039/040 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-040（Refs #5699 的 P5/P6/I4 收口；PR #5730 合并后由集成侧复核发现）：
+  # **围栏注释头的号必须等于它下面那一块的 `- id:`** —— 让号时只改了 `- id:`、漏改注释头
+  # ⇒ 读号的人（与 agent）被引到错的块，实测已让另一个在飞包误报撞号。
+  # ==========================================================================
+  - id: MC-040
+    legacy_id: ""
+    title: "用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags: [casebook, case-id, header-consistency, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当某个用例块上方的围栏注释头写的号与它下面 `- id:` 的号不一致，或同一个号出现在两条注释头里，或语料里一条围栏头都没有（判据空跑）时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**头 == 块**：围栏形态（`# ====…` 紧跟 `# <ID>（…`）的注释头，其号必须等于下方第一个 `- id:` 的号（不等 ⇒ 红，**两个号都点名**）"
+      - "**头号唯一**：同一个号不得出现在两条围栏注释头里（重复 ⇒ 红 —— 读号的人分不清它指哪一块）"
+      - "**散文不是头**（判别力边界，实测依据）：全语料有 14 处以 `# <ID>` 开头的**散文引用**（上一行不是围栏）⇒ 不得被判成块头（否则判据被自己的语料喂红）"
+      - "**fail-closed**：语料里一条围栏头都没有 ⇒ 红（不许静默退化成空断言）；现取围栏头 35 处、相符 32 处"
+      - "**红证**：头≠块 ⇒ 红；头号重复 ⇒ 红；空语料 ⇒ 红；散文引用 ⇒ **不红**；只改散文 ⇒ **不红**"
+    skip_reason: "[backend-contract] 用例语料的号一致性判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_case_header_ids_match_block_ids.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（#5699 的 P5/P6/I4 包 #5730 合并后，集成侧内容级复核发现：rebase 让号时只改了 `- id:`、漏改三处围栏注释头 ⇒ 另一个在飞包读到 `# MC-039` 误报撞号并误判在飞占用）。落码 = 三处注释头改准（`MC-039/040/041` → `MC-043/044/045`）+ 判据 test_case_header_ids_match_block_ids.py（头==块 / 头号唯一 / fail-closed 空跑即红 / 散文引用不判红 / 只改散文不红；红证全部内存构造）。取号 MC-040：现取 main 的 MC 家族 = 001~039 + 043~045（空号 040/041/042），在飞 PR #5733 占 MC-042、#5734/#5736 占 MC-043（两者都需让号）⇒ 取最小空号；推送前再取一次。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_case_header_ids_match_block_ids.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  - id: MC-048
+    legacy_id: ""
+    title: "真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备"
+    domains:
+      - misc
+      - ci
+      - security
+    tier: normal
+    tags: [readonly, verification-pack, sql-guard, doc-structure, red-proof, discriminator]
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**文档结构 + SQL 文本只读性**这一静态事实，
+    # 由 tests/unit_ci_workflows/test_readonly_verification_pack.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "当复核包里的 sql 代码块混进写语句（原文直写 / 注释夹心拼回 / 小写），或删掉「未在真库上验证」声明，或总表多一行而没有对应节、删掉一整节、复制一节造成锚不唯一，或某节缺出处锚、预期形状、安全说明，或条目被清空、sql 块被清空时，都必须有东西具名报出；而只加散文或只改 SQL 注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1（本号存在的唯一理由）**：docs/testing/production-readonly-verification-pack.md 里每个 sql 围栏块的**原文**与**去 SQL 注释**两个视图都不得含写 / DDL 动词（大小写不敏感 + 词边界；去注释视图抓 UP/*x*/DATE 这类注释夹心）；注释的剥离复用仓内唯一实现点 strip_sql_comments（tests/unit_ci_workflows/_sql_schema.py），不另起一把尺子"
+      - "**判据 2**：文档必须逐字含「未在真库上验证」——否则下一个人会把这份清单读成已取证的读数"
+      - "**判据 3**：总表行的条目 id 集合与各节标题的条目 id 集合互相钉住（总表有而各节没有、各节有而总表没有都红），且任一 id 在总表与各节里各自只出现一次（锚唯一）"
+      - "**判据 4**：每个条目节必须含出处锚 / 预期形状（判读口径）/ 安全说明三件套，缺失时具名到节"
+      - "**判据 5（fail-closed）**：文档不存在 / 文本为空 / 条目数低于下限 / 抽不到 sql 块 ⇒ 红（「没东西可判」不是通过）；另有一条强化：标「必做」的条目必须有 sql 块或显式说明「不开 SQL」"
+      - "🔴 红证全部**内存构造**（真文档当基线 → 字符串替换构造变异体 → 直接喂纯函数 pack_problems），逐条断言**命中的分支**（报文含「原文」「去注释后」「总表有而各节没有」「锚不唯一」「R2 节缺」这类点名串）并断言坏形态读数 ≠ 基线读数（防变异没生效 ⇒ 空断言）；对照读数两条：只追加一段散文 ⇒ 不红、往 sql 块里只加一行 SQL 注释 ⇒ 不红"
+    skip_reason: "[backend-contract] 文档结构与 SQL 只读性的静态判据（纯函数、零网络、零时钟、不连任何库）由 tests/unit_ci_workflows/test_readonly_verification_pack.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（用户 2026-09-27 裁定「打包成一份，我一次跑完」）：交付形态 = ① 新增复核包文档 docs/testing/production-readonly-verification-pack.md（总表 + 六节：存量差集 / 快照回填命中面 / 回退路径账号普查 / 三联纸与 A4 现场四项 / C 端 H5 线上新鲜度（可选）/ RBAC 运行时授予值（可选））；② 判据 tests/unit_ci_workflows/test_readonly_verification_pack.py（五条判据 + 注入式红证 + 两条对照读数）；③ 文档里逐字写明「未在真库上验证」，并登记验证到什么程度（只读性 = 静态判、语法 = 一次性本地 PG 空库上跑过、真库读数与现场参数 = 没跑）。取号 MC-048（**rebase 让号 ×2，记实**）：起草时现取 main 最大 = MC-039 ⇒ 当时取 MC-043；落地前 main 并入 #5730（它占 MC-043~MC-045）⇒ 改 MC-046；再用「逐 ref 全量 `- id:` 差集」扫 main + 全部在飞分支，发现同一轮三个包都取到 046（在飞 #5733 已 rebase 占 MC-046、在飞 #5736 改 MC-047）⇒ 协调侧现取差集后定案 **本包取 MC-048**（取号判据只看已合并状态，拦不住在飞撞号 —— 本会话第 3 次同形实证）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_readonly_verification_pack.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-046（issue #4184）：C 端小布 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
+  # 病（现取复算，2026-09-27）：线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` = 08-30 06:54 GMT，
+  # 而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 落后 ~28 天；而建腿前 `grep -rln '/opt/migao-deploy' .github/workflows/`
+  # **0 命中** ⇒ **没有任何东西会因此变红**（「C 端已部署」一直被当真）。
+  # 更危险的一面：它的落地面是 nginx 静态根**本身**（`/opt/migao-deploy/h5`），而同根下**已经住着**
+  # 工人端 `w/`（#4837，线上有工人在用）与商家端 `b/`（#5668）⇒ 本腿是第一条「拥有静态根本身」的腿。
+  # ==========================================================================
+  - id: MC-046
+    legacy_id: ""
+    title: "C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红"
+    domains:
+      - misc
+      - ci
+      - deploy
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - trigger-surface
+      - red-proof
+      - fail-closed
+      - manual-only
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI/deploy 的**结构 + 行为事实**（真 YAML 的触发面与 if 闸、真脚本文本、
+    # 以及 `tmp_path` 沙箱里**真跑**远端执行体的读写结果），由
+    # tests/unit_ci_workflows/test_c_end_h5_hosting.py 承担，非 LLM 行为。
+    user_inputs:
+      - "合并建通路的那个 PR 不发布任何东西；首次发布由人手动触发；发布之后线上 / 是本仓库产物，而 /w/ 与 /b/ 一个字节都没变；把触发面放宽、把 if 闸摘掉、或让删除范围越过托管清单时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**「模式判定」步（唯一决定会不会发布的地方）逐字读 `github.event_name` 与 `inputs.publish`、双向写 `mode=publish|notify`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 把模式判定改成恒 publish / 删掉模式判定步，各自必红"
+      - "**三种触发形态只有一种会发布**：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（只报告）；`publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步必须逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线：判定步与 if 两处都要过）"
+      - "**兜底面必须在位且不是空转**（`FM-E17` 收口口径）：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿必须有 `schedule`（cron 与 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的声明**逐字一致**），且 notify 步要真的会因「线上落后」判红（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径**）并给出可复制命令。红证 = 删 schedule / 改 cron / 把 notify 改成恒绿 / 把 notify 的 `::error::` 摘掉，各自必红。⚠️ **为什么 notify 不比 `dist/index.html`**：`dist/` 在 `.gitignore` 里 ⇒ CI 检出里没有它，那样写会**恒走「没跑」分支** = 空转的兜底面（本包初版踩过）"
+      - "🔴 **红线：绝不删/覆盖静态根**：删除集 = 上一次发布写下的托管清单 ∩ 磁盘现值（首次发布无清单 ⇒ 空集）；根上有**无人认领**的条目时判 `TAKEOVER_REQUIRED`（exit 2）并打印将要替换的计划。沙箱红证 = 预置根内容 ⇒ 不接管、逐字节不变"
+      - "🔴 **红线：不碰 `w/` 与 `b/`**：三层判据 —— ① 保留前缀（产物顶层/托管清单出现即 die）② 根 index.html 不许引用 `/<保留前缀>/…` ③ 发布前后逐子树的**规范化摘要**（路径+内容，不吃 mtime/顺序）与各自 `index.html` 哈希**逐字相等**（CI 侧四条读数缺一即判红）。沙箱红证 = 预置 `w/` `b/` ⇒ 发布后哈希不变；模拟器红证 = `/w/`（或 `/b/`）被覆盖成 C 端产物 ⇒ 落地面断言判红并指名"
+      - "**发布真的生效**有判据（不是「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）：线上 body 哈希 == **本次构建**的 `dist/index.html`（陈旧 ⇒ 判红）；根级深层路径仍回 C 端自己的 index（路由面不串端）"
+      - "**新鲜度判据翻成 gate**（同批，用户裁定 B）：陈旧 ⇒ 默认 `::error::` + exit 2（`--no-gate` 仅人工诊断），且 **⛔ 无 cron** 不变、`workflow_run` 清单新增本腿；三态分离保持（取不到读数 = exit **3**，不得当新鲜、也不得与「确实陈旧」的 2 混在一起）"
+      - "**对账面同批接线**（FM-E3）：`deploy-reconcile.yml` 新增 `c-end-h5` 腿（走漂移判据 ②）+ 进 `SVC_TO_DEPLOY_WORKFLOW` 登记册 + 存活读数 `--seen` 随腿数改 6；触发面 ≠ 对账面那两条发布链路文件逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 `never_in_trigger`（明文禁止「加进触发面消账」这条出路）"
+      - "**类级元守卫**：`h5_freshness_guard.py` 的默认口径与 workflow 的输入语义、三态、无 cron 由常驻判据钉住（改回 warning / 加 cron / 把反向开关改回 `gate` ⇒ 红）"
+      - "**没跑 ≠ 通过**（如实登记）：本单**没有**真实发布过一次；线上 `/` 的 `last-modified` 是否变化、`RunCommand` 那一段能否跑通、`nginx -t`，本机都没有取证（没有 aliyun CLI / docker / nginx），属「没跑」"
+    skip_reason: "[backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的 25 条离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-046：main 上 MC-001~MC-038 已占用（现取）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_c_end_h5_hosting.py"
+        - "tests/unit_ci_workflows/test_h5_freshness_guard.py"
+      ci:
+        - c-end-h5-publish.yml
+        - h5-freshness-guard.yml
+        - deploy-reconcile.yml
+      verifies: []

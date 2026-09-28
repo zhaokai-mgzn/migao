@@ -375,8 +375,8 @@ class TestCraftSpecEnumGate:
         for key in ("curtainType", "craft", "isShaped", "style", "specialOptions",
                     "componentRole", "craftLineId", "metersSource", "processingMeters"):
             assert key in pi_props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来"
-        assert pi_props["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
-            "craft 枚举必须与工序库 production_routings.craft 逐字一致"
+        assert pi_props["craft"]["enum"] == ["韩褶", "打孔", "穿杆", "平幔"], (
+            "craft 枚举必须与工序库逐字一致（`四爪钩` 已退场 —— issue #4365）"
         )
         desc = OrderCreateTool.description
         for token in ("工艺规格", "componentRole", "craftLineId", "主布米数"):
@@ -596,8 +596,8 @@ class TestCraftSpecKeyCompletion:
 # 工艺**单值** + 「四爪钩是加工项不是工艺」（issue #4362 阶段 1 / issue #4365 用户裁定）
 # ══════════════════════════════════════════════════════════════════════════════
 # 用户裁定：① 一条单的「工艺」**单值**；② 「四爪钩/穿钩」是**加工项（配件）**，不是并列工艺。
-# 信号映射层已把它指向主线（V63）；**描述层**负责不让模型把它当 `craft` 填
-# （显式值仍会生效 ⇒ 填错就取到那条独立路线）。
+# 信号映射层已把它指向主线（V63）；**枚举层**（issue #4365，用户裁定 2026-09-27）已把它**移出**
+# craft 合法值域，**描述层**负责不让模型把它当 `craft` 填。
 ORDER_LINE_CRAFT_SPEC_KEYS = (
     "curtainType", "craft", "openCount", "cuttingMode", "isShaped",
     "formula", "craftTier", "pleat_count", "fullness", "fullness_actual", "hasPattern", "corner",
@@ -615,16 +615,23 @@ class TestCraftIsSingleValuedAndHookIsAnItem:
             "描述未说清「四爪钩/四叉钩是加工项（配件）」⇒ 模型会把它当 craft 填"
         )
 
-    def test_craft_enum_still_matches_routing_library(self):
-        """反向护栏：`四爪钩` **保留**在 craft 枚举里（阶段 3 才迁移路线数据）。
+    def test_craft_enum_is_retired_of_sig_hook_and_matches_the_truth_source(self):
+        """🔴 **口径改判**（issue #4365，用户裁定 2026-09-27「移除四爪钩这个场景」）。
 
-        枚举必须与 `production_routings.craft` 逐字一致（上面 `test_schema_declares_craft_spec_keys…`
-        同口径）。有人为了「四爪钩不是工艺」把枚举删掉 ⇒ 枚举与库漂移 ⇒ 本断言红。
-        修法是改**描述**引导 + 信号层指向主线，**不是**悄悄改枚举。
+        改写前本判据钉的是「`四爪钩` **保留**在 craft 枚举里（阶段 3 才迁移路线数据）」——
+        那条口径**已由用户裁定作废**：四爪钩是**加工项 / 配件**（真值源 §8），不是工艺
+        ⇒ 枚举里**不得**再有它；它的三条工艺规则已由
+        `backend/admin-api/src/main/resources/db/migration/V135__retire_craft_sig_hook.sql` 软删。
+
+        **判别力不减**（换对象、不削弱）：① 枚举与真值源 `_CRAFTS` **逐字一致**（任一侧漂移即红）；
+        ② `四爪钩` 出现在枚举里即红（防「悄悄加回来」）。
         """
-        assert _pi_props()["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
-            "craft 枚举必须与工序库 production_routings.craft 逐字一致（阶段 3 才收敛）"
-        )
+        from app.tools.order_create import _CRAFTS
+
+        assert _pi_props()["craft"]["enum"] == list(_CRAFTS) == ["韩褶", "打孔", "穿杆", "平幔"], (
+            "craft 枚举与真值源 `_CRAFTS` 必须逐字一致")
+        assert "四爪钩" not in _CRAFTS, (
+            "`四爪钩` 不是工艺（issue #4365：它是加工项/配件）⇒ 不得回到 craft 枚举")
 
     def test_every_order_line_element_is_declared_and_taught(self):
         """真值源 §1 的下单行要素（11 项）+ 用料公式/算料档位（issue #4873）必须**声明 + 教学**同时存在（#4362 S1）。"""

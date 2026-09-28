@@ -12,7 +12,7 @@
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
-#   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃预设快照差异 → rebase origin/main → 重新刷新预设（issue #3972）
+#   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃**未提交**的预设快照差异 → rebase origin/main → （未改预设的分支才）重刷（#3972 / #5707）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
@@ -40,6 +40,9 @@
 #   会被 git 拒绝（未跟踪快照挡 checkout / 已跟踪但版本旧= unstaged changes）⇒ 新增 `rebase`
 #   子命令：丢弃预设快照差异 → rebase → 重新刷新（只丢弃与 origin/main 一致的纯刷新产物，
 #   内容不一致即停手，避免丢掉别人正在改的研发模式）。
+#   ⚠️ v1.13（2026-09-27，关联 #5707）改判：**已提交**的预设改动不算「快照差异」——
+#   丢弃只在「相对 HEAD 有未提交漂移」时才有对象；分支自己改过预设时 `refresh_presets` 一并跳过
+#   （否则 0 behind 的预设面 PR 会被判「与 origin/main 不一致」而停在 [rebase]，`land` 整条走不通）。
 #   也不用「让 git 忽略这些文件的改动」那类手法（索引标记 / 本地忽略）：那会把**合法的预设改动**
 #   （改研发模式本身）一起吞掉 —— 「眼不见为净」在这里等于把正事也堵死。
 #   详见 docs/wiki/DEV-FLOW.md「预设快照地雷」节（落地单 #3859，事实单 #3851）。
@@ -183,6 +186,14 @@ refresh_presets() {
   if ! git -C "$wt" fetch --quiet origin main 2>/dev/null; then
     echo "⚠️  fetch origin main 失败（离线/无权限？）—— 下面按**本地已知的** origin/main 刷新。"
   fi
+  # 🔴 v1.13（2026-09-27，关联 #5707）：分支**自己**改过 `.agent-presets/**` ⇒ 覆盖它 = 静默回退自己的
+  #   固化工作（工作区会留下「把分支产物改回去」的**已暂存**改动，一条 `git commit -a` 就落盘）。
+  #   判据 = 与**合并基点**比：分支没碰过（只是 main 前进）⇒ 快照确实过期 ⇒ 照旧刷新。
+  if preset_touched_by_branch "$wt"; then
+    echo "⏭️  跳过刷新：本分支自己改过 .agent-presets/**（相对合并基点有已提交改动）——"
+    echo "    那是**分支产物**、不是创建时刻快照 ⇒ 覆盖它会让工作区出现「把自己改回去」的改动。"
+    return 0
+  fi
   # 列出将要被刷新的文件（`head` 兜底：`grep -c` 无匹配会 exit 1 且 set -e 会中止）
   local changed
   changed="$(git -C "$wt" ls-files --others --exclude-standard -- .agent-presets/ 2>/dev/null | head -20 || true)"
@@ -212,9 +223,38 @@ refresh_presets() {
 # 刻意不用「本地忽略 / 索引标记」手法（见文件头 v1.8 说明：那会把合法的预设改动一起吞掉）。
 # 安全护栏：只丢弃**与 origin/main 完全一致**的快照（= 纯刷新产物）；一旦不一致，
 # 视为开发者自己的研发模式改动 ⇒ 停手，交人工处置（不静默丢别人的活）。
+#
+# 🔴 v1.13（2026-09-27，关联 #5707）：「**已提交**的分支产物」不是漂移，判据见下面两个函数。
+#   原先只用 origin/main 当参照物 ⇒ 分支**自己已提交**的 `.agent-presets/**` 改动（而它正是所有
+#   「研发模式固化」工作的落点）被读成「与 origin/main 不一致」⇒ ① 分支**0 behind 也停在 [rebase]**
+#   （`scripts/issue-lifecycle.sh` 的 `land` ①步）；② rebase 之后无条件的 `refresh_presets`
+#   又把它覆盖成 origin/main 版本（工作区留下「把自己改回去」的已暂存改动）。
+preset_has_uncommitted_drift() {
+  local wt="$1"
+  git -C "$wt" diff --quiet HEAD -- .agent-presets/ 2>/dev/null || return 0
+  git -C "$wt" diff --cached --quiet HEAD -- .agent-presets/ 2>/dev/null || return 0
+  [ -z "$(git -C "$wt" ls-files --others --exclude-standard -- .agent-presets/ 2>/dev/null | head -1)" ] || return 0
+  return 1
+}
+
+preset_touched_by_branch() {
+  local wt="$1" base
+  base="$(git -C "$wt" merge-base HEAD origin/main 2>/dev/null || true)"
+  # 算不出基点 ⇒ 保守当作「改过」（宁可不刷新，也不覆盖分支产物）
+  [ -n "$base" ] || return 0
+  ! git -C "$wt" diff --quiet "$base" HEAD -- .agent-presets/ 2>/dev/null
+}
+
 discard_preset_snapshot() {
   local wt="$1"
   local drifted=0 f h1 h2
+  # ① 先问「有没有**可丢弃之物**」：工作区 + 索引相对 HEAD 无漂移 ⇒ 分支上的 `.agent-presets/**`
+  #    全是**已提交**内容 ⇒ 直接放行（HEAD 与 origin/main 的差由 rebase 重放并保留）。
+  #    这一步**没有放宽任何丢弃语义**：此处跳过的 `checkout HEAD --` 本来就是 no-op。
+  if ! preset_has_uncommitted_drift "$wt"; then
+    echo "ℹ️  \`.agent-presets/**\` 相对 HEAD 无未提交漂移 ⇒ 跳过「丢弃快照」（分支内容是**已提交**的，rebase 会保留）"
+    return 0
+  fi
   if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then
     git -C "$wt" diff --quiet origin/main -- .agent-presets/ 2>/dev/null || drifted=1
   else
@@ -375,7 +415,8 @@ cmd_add() {
   [ -f "$REPO_ROOT/package.json" ] && echo "      npm ci"
   [ -d "$REPO_ROOT/frontend/mini-app" ] && echo "      cd frontend/mini-app && npm ci"
   echo "   ⚠️  build 产物（dist/）不入库，worktree 之间互不影响。"
-  echo "   ⚠️  本工作区已刷新 .agent-presets/**（相对本分支 HEAD 即「改动」）——要 rebase 请用："
+  echo "   ⚠️  本工作区已把 .agent-presets/** 对齐 origin/main（**本分支自己改过预设 ⇒ 跳过刷新**："
+  echo "      那是分支产物、不是创建时刻快照）。要 rebase 请用："
   echo "      ./scripts/dev-worktree.sh rebase ${branch}"
   echo "      （该子命令会先丢弃预设快照差异再 rebase，否则 git 会以「本地改动会被覆盖」拒绝；issue #3972）"
   # v1.12（2026-09-25 包实测）：**创建之后** main 若再抬技能版本，本 worktree 的 `.agent-presets/`

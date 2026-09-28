@@ -1,5 +1,6 @@
 package com.migao.admin.dto;
 
+import com.migao.admin.time.BusinessClock;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -64,7 +65,7 @@ public final class SavingMetricViews {
     public static final String GRANULARITY_WEEK = "week";
 
     /** 时区口径（与 {@code application.yml} 的 {@code spring.jackson.time-zone} 同源）。 */
-    public static final String TIMEZONE = "Asia/Shanghai";
+    public static final String TIMEZONE = BusinessClock.BUSINESS_ZONE.getId();
 
     /** 剩余量一档（{@code key} 机器可判、{@code label} 给人看）。 */
     public record Bucket(String key, String label, int batchCount, BigDecimal share,

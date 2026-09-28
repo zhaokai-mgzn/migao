@@ -18,6 +18,7 @@ import com.migao.admin.mapper.InboundOrderQueryMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -29,7 +30,6 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -75,6 +75,12 @@ public class InboundOrderService {
     private static final int LIST_LIMIT = 200;
     /** 批次查询一次最多返回的行数 */
     private static final int BATCH_LIMIT = 200;
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final InboundOrderMapper inboundOrderMapper;
     private final InboundOrderItemMapper inboundOrderItemMapper;
@@ -132,7 +138,7 @@ public class InboundOrderService {
                 .supplier(trimToNull(req.getSupplier()))
                 .supplierDocNo(trimToNull(req.getSupplierDocNo()))
                 .warehouse(trimToNull(req.getWarehouse()))
-                .inboundDate(req.getInboundDate() != null ? req.getInboundDate() : LocalDate.now())
+                .inboundDate(req.getInboundDate() != null ? req.getInboundDate() : businessClock.today())
                 .status(InboundOrder.STATUS_DRAFT)
                 .totalAmount(BigDecimal.ZERO)
                 .source(source)
@@ -583,7 +589,7 @@ public class InboundOrderService {
      * （同 {@code ProcessingOrderService.generateOrderNo} 的既有口径）。</p>
      */
     private String generateInboundNo() {
-        return "RK-" + LocalDate.now().format(DATE_FMT) + "-"
+        return "RK-" + businessClock.today().format(DATE_FMT) + "-"
                 + String.format("%04d", INBOUND_SEQ.incrementAndGet() % 10_000);
     }
 
@@ -648,7 +654,7 @@ public class InboundOrderService {
      * 由 {@link #post} 在明细行循环内**逐行**取 —— 同一 SKU 的两行若缸号不同，本就是两批。</p>
      */
     private String generateBatchNo() {
-        return "PC-" + LocalDate.now().format(DATE_FMT) + "-"
+        return "PC-" + businessClock.today().format(DATE_FMT) + "-"
                 + String.format("%04d", BATCH_SEQ.incrementAndGet() % 10_000);
     }
 

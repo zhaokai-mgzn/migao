@@ -36,6 +36,31 @@ public class UserInfoResponse {
     private List<MenuItem> menus;
 
     /**
+     * 能力位（issue #5642 功能⑤「米宝唤出授权门」）。
+     *
+     * <p>🔴 **这是端侧唯一的判定来源**：前端**不得**自己判权限码（哪些码算管理员是服务端
+     * {@code AdminGate.ADMIN_PERMISSION_CODES} 的单一真值）⇒ 改一处即 h5 与 admin-web 两端同步。
+     * <p>⚠️ 它只是**能力位（UI 显隐与文案）**，不是授权本身；数据面仍由 {@code @RequirePermission}
+     * 与 {@code PermissionInterceptor} 拦（既有架构契约，不砍）。
+     */
+    private Capabilities capabilities;
+
+    /**
+     * 能力位内部类
+     */
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class Capabilities {
+        /**
+         * 能否唤出米宝（{@code AdminGate.canSummonMibao}）。
+         * {@code true} ⇒ 端侧进对话；{@code false} ⇒ 端侧必须给「需要管理员授权」+ 可行动引导
+         * （**不是**静默隐藏入口、**不是** 403 白屏）。
+         */
+        private Boolean mibaoChat;
+    }
+
+    /**
      * 用户信息内部类
      */
     @Data

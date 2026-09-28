@@ -3,9 +3,13 @@
  * 工人端扫码报工页测试（issue #3997 M4-G-3 / issue #4206 补齐，消费 M4-G-2 冻结契约）
  *
  * 链路：扫一扫 / 手输单号 / 深链带参直达 → GET .../operations → 按部位分组工序
- *       → 改「完成数量」→ 点「完成报工」→ POST .../report → 刷新进度 + 计件累计 + 报工明细。
+ *       → 改「完成数量」→ 点「完成报工」→ **唯一写入口** POST /api/worker/production/scan/complete
+ *       （凭证 = 本部位 `part_token`，issue #5647 G10）→ 刷新进度 + 计件累计 + 报工明细。
  * 断言口径：报工参数**逐字**断言（冻结字段名不可改）；失败时列表**不清空**（工人可继续）。
  * mock：Taro API（scanCode + **真内存 storage**）+ productionService（网络层）+ authStore。
+ *
+ * ⚠️ 本文件不种工人 session ⇒ 读面按「无工人 session」分流走**商家路径**（向后兼容那条）。
+ * 工人路径与「写面唯一入口」的判据在 `production-worker-entry.test.tsx` / `production-single-write-entry.test.ts`。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -21,6 +25,8 @@ jest.mock('@tarojs/taro', () => {
     __esModule: true,
     default: {
       scanCode: jest.fn(),
+      // 非微信浏览器下的扫码降级 = 拍照识别（issue #5750）：h5 里 chooseImage 是**真实实现**
+      chooseImage: jest.fn(),
       showToast: jest.fn(),
       navigateTo: jest.fn(),
       getStorageSync: jest.fn((key: string) => (key in store ? store[key] : '')),
@@ -46,10 +52,9 @@ jest.mock('../src/services/productionService', () => ({
   // 若一并 mock 掉会拿到 undefined ⇒ 点「完成报工」直接抛错
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
-  // 扫码主闭环（切片 ②）：本文件只测既有逐道报工链路 ⇒ 默认返回 undefined ⇒ 页面回落既有形态
+  // 扫码主闭环（切片 ②）：本文件测逐道报工链路 ⇒ 解析面默认返回 undefined ⇒ 页面回落既有形态
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
-  reportOperation: jest.fn(),
   shipOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
 }))
@@ -60,15 +65,32 @@ jest.mock('../src/store/authStore', () => ({
   })),
 }))
 
+// 拍照降级复用**既有**解码模块（issue #5750）：这里只替身它，判据关心的是「有没有复用」与
+// 「解出来的原文有没有交给同一条 scanResolve」，解码算法本身的判据在 inbound-decode-first.test.ts。
+jest.mock('../src/utils/inbound/barcodeDecode', () => ({
+  loadPixelsFromFileH5: jest.fn(),
+  decodeQrFromImageData: jest.fn(),
+}))
+
 import Taro from '@tarojs/taro'
 import ProductionPage from '../src/pages/production/index/index'
 import {
+  H5_SCAN_PHOTO_FAILED_HINT,
+  H5_SCAN_PHOTO_HINT,
+} from '../src/utils/platform'
+import {
+  completeByScan,
   getOrderOperations,
   getOrderPiecework,
-  reportOperation,
+  scanResolve,
   shipOrder,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
+import { decodeQrFromImageData, loadPixelsFromFileH5 } from '../src/utils/inbound/barcodeDecode'
+
+const mockLoadPixels = loadPixelsFromFileH5 as jest.Mock
+const mockDecodeQr = decodeQrFromImageData as jest.Mock
+const mockScanResolve = scanResolve as jest.Mock
 
 const ORDER_ID = 'CSO260915-02615'
 
@@ -82,6 +104,8 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
         position_name: '布帘',
         // 规格可见面（issue #4347 §3.1）：后端按 order_item_id 回查订单行后带出
         order_item_id: 'item-A',
+        // 报工凭证 = 本部位任务码（一部位一码，issue #4946；写面唯一入口靠它定位部位）
+        part_token: 'part-token-bu-1',
         position_kind: '布帘',
         width: 6.6,
         height: 2.92,
@@ -107,6 +131,8 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
       },
       {
         position_name: '纱帘',
+        order_item_id: 'item-B',
+        part_token: 'part-token-sha-1',
         operations: [
           {
             id: 'op3', seq: 3, operation: '定型', group: '后道', unit: '米',
@@ -139,7 +165,7 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
 }
 
 const mockGet = getOrderOperations as jest.Mock
-const mockReport = reportOperation as jest.Mock
+const mockComplete = completeByScan as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
 const mockShip = shipOrder as jest.Mock
 
@@ -159,7 +185,7 @@ describe('ProductionPage（工人扫码报工）', () => {
       },
     })
     mockShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
@@ -298,7 +324,7 @@ describe('ProductionPage（工人扫码报工）', () => {
     qtyInputs.forEach((el) => expect(el.getAttribute('type')).toBe('digit'))
   })
 
-  it('点「完成报工」→ 调用 reportOperation（qty 默认=应做数量、work_type=normal）', async () => {
+  it('点「完成报工」→ 调唯一写入口 completeByScan（凭证=部位码、qty 默认=应做数量、work_type=normal）', async () => {
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -308,9 +334,13 @@ describe('ProductionPage（工人扫码报工）', () => {
     fireEvent.click(buttons[1])
 
     await waitFor(() =>
-      expect(mockReport).toHaveBeenCalledWith(
-        ORDER_ID,
+      expect(mockComplete).toHaveBeenCalledWith(
+        // 第 1 参 = 本部位任务码（issue #5647 G10）：写面不再由 URL 定工序
+        'part-token-bu-1',
         'op2',
+        // 第 3 参 = 本次动作的幂等键（issue #4206：页面生成并随请求发出，
+        // 传输层失败时同一个键随队列项持久化，补传复用它 ⇒ 服务端不重复计件）
+        expect.stringMatching(/^report-/),
         {
           // 身份**不在请求体里**（issue #4733）：服务端从工人 session 解身份 ——
           // 旧契约的 worker_id/worker_name 已移除，传它们 = 计件记错人的根因
@@ -318,9 +348,6 @@ describe('ProductionPage（工人扫码报工）', () => {
           qualified_qty: 11,
           work_type: 'normal',
         },
-        // 第 4 参 = 本次动作的幂等键（issue #4206：页面生成并随请求发出，
-        // 传输层失败时同一个键随队列项持久化，补传复用它 ⇒ 服务端不重复计件）
-        expect.stringMatching(/^report-/),
       ),
     )
   })
@@ -337,7 +364,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('order_completed=true → 展示「✅ 订单生产完成」', async () => {
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: true },
     })
@@ -352,7 +379,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('报工失败（success=false）→ 展示后端 message 且不清空工序列表', async () => {
-    mockReport.mockResolvedValue({ success: false, message: '该工序已报工完成，无需重复报工' })
+    mockComplete.mockResolvedValue({ success: false, message: '该工序已报工完成，无需重复报工' })
 
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
@@ -385,6 +412,142 @@ describe('ProductionPage（工人扫码报工）', () => {
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
     expect(await screen.findByText('韩褶')).toBeTruthy()
+  })
+
+  it('h5 纯浏览器（Chrome/Safari）：点「扫一扫」降级为**拍照识别** → 本机解码 → 同一条 scanResolve（issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    const prevUa = window.navigator.userAgent
+    envBag.TARO_ENV = 'h5'
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1',
+      configurable: true,
+    })
+    delete (window as any).wx
+
+    const code = `migao://production/${ORDER_ID}`
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({
+      tempFilePaths: ['blob:photo'],
+      tempFiles: [{ originalFileObj: new Blob(['x']) }],
+    })
+    mockLoadPixels.mockResolvedValueOnce({ data: new Uint8ClampedArray(4), width: 1, height: 1 })
+    mockDecodeQr.mockReturnValueOnce(code)
+    mockScanResolve.mockResolvedValueOnce({
+      success: true,
+      data: { order_id: ORDER_ID, granularity: 'order' },
+    })
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      // ① 降级**先告知**（不静默、不白屏、不留「点了没反应」）
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_PHOTO_HINT }),
+        ),
+      )
+      // ② 走的是**本机解码**链（0 次 LLM；判据 = 既有模块被复用）
+      expect((Taro as any).chooseImage).toHaveBeenCalledTimes(1)
+      expect(mockLoadPixels).toHaveBeenCalledTimes(1)
+      expect(mockDecodeQr).toHaveBeenCalledTimes(1)
+      // ③ 解出来的**原文**交给同一条 scanResolve（不平行造第二条识别链）
+      await waitFor(() => expect(mockScanResolve).toHaveBeenCalledWith(code))
+      // ④ Taro.scanCode 一次都不许调：纯浏览器上调它 = 静默失败（Taro h5 走微信 JS-SDK）
+      expect(Taro.scanCode).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+      Object.defineProperty(window.navigator, 'userAgent', { value: prevUa, configurable: true })
+      delete (window as any).wx
+    }
+  })
+
+  it('h5 纯浏览器：照片里没解出码 → 可行动文案（重拍 / 手输两个出口），不发请求（issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    delete (window as any).wx
+
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({
+      tempFilePaths: ['blob:photo'],
+      tempFiles: [{ originalFileObj: new Blob(['x']) }],
+    })
+    mockLoadPixels.mockResolvedValueOnce({ data: new Uint8ClampedArray(4), width: 1, height: 1 })
+    mockDecodeQr.mockReturnValueOnce(null) // 解码失败
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_PHOTO_FAILED_HINT }),
+        ),
+      )
+      // 失败方向必须指向**既有**的手输路径，且不发任何请求
+      expect(H5_SCAN_PHOTO_FAILED_HINT).toContain('手输')
+      expect(mockScanResolve).not.toHaveBeenCalled()
+      expect(mockGet).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('h5 纯浏览器：取不到照片（用户取消 / 没权限）→ 显式文案，不静默、不发请求（issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    delete (window as any).wx
+
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({ tempFilePaths: [], tempFiles: [] })
+    mockLoadPixels.mockClear()
+    mockDecodeQr.mockClear()
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_PHOTO_FAILED_HINT }),
+        ),
+      )
+      // 没拿到照片就**不进**解码（不拿 undefined 去解）
+      expect(mockLoadPixels).not.toHaveBeenCalled()
+      expect(mockDecodeQr).not.toHaveBeenCalled()
+      expect(mockScanResolve).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('微信内置浏览器：仍走 Taro.scanCode 原通道，**不走**拍照（零回归，issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    ;(window as any).wx = { scanQRCode: jest.fn() }
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) MicroMessenger/8.0.49',
+      configurable: true,
+    })
+    ;(Taro.scanCode as jest.Mock).mockResolvedValueOnce({ result: ORDER_ID })
+    ;(Taro as any).chooseImage.mockClear()
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() => expect(Taro.scanCode).toHaveBeenCalledTimes(1))
+      expect((Taro as any).chooseImage).not.toHaveBeenCalled()
+      expect(mockDecodeQr).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+      delete (window as any).wx
+    }
   })
 
   it('扫到非加工单二维码 → 提示且不发请求', async () => {
@@ -425,7 +588,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockPiecework.mockResolvedValue({ success: true, data: { total: 0, per_worker: {}, per_operation: [] } })
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       data: { operation_id: 'op2', done_qty: 8, status: 'done', order_completed: false, worker_name: '张师傅' },
     })
@@ -453,15 +616,15 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
     fireEvent.click(screen.getAllByText('完成报工')[1])
 
     await waitFor(() =>
-      expect(mockReport).toHaveBeenCalledWith(
-        ORDER_ID,
+      expect(mockComplete).toHaveBeenCalledWith(
+        'part-token-bu-1',
         'op2',
+        expect.stringMatching(/^report-/),
         {
           qty: 8,
           qualified_qty: 8,
           work_type: 'normal',
         },
-        expect.stringMatching(/^report-/),
       ),
     )
   })
@@ -475,7 +638,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
     fireEvent.click(screen.getAllByText('完成报工')[1])
 
     expect(await screen.findByText(/数量超上限：本次最多可报 11米/)).toBeTruthy()
-    expect(mockReport).not.toHaveBeenCalled()
+    expect(mockComplete).not.toHaveBeenCalled()
   })
 
   it('已报过的工序默认 = 剩余待报（应做 − 已报），不会一报就撞服务端上限', async () => {
@@ -529,7 +692,7 @@ describe('ProductionPage 计件累计与报工明细（issue #4206 判据 3）',
         per_operation: [{ operation: '韩褶', amount: 55 }, { operation: '精裁', amount: 38.5 }],
       },
     })
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
@@ -578,7 +741,7 @@ describe('ProductionPage 深链带参直达（issue #4206 判据 4）', () => {
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockPiecework.mockResolvedValue({ success: true, data: { total: 0, per_worker: {}, per_operation: [] } })
-    mockReport.mockResolvedValue({
+    mockComplete.mockResolvedValue({
       success: true,
       // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },

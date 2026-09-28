@@ -18,6 +18,7 @@
 import Taro from '@tarojs/taro'
 import { getToken } from './auth'
 import { AI_API_BASE_URL } from './constants'
+import { isH5 } from './platform'
 
 export interface VoiceResult {
   text: string
@@ -41,6 +42,13 @@ let recording = false
 
 function getRecorder(): any {
   if (recorderManager) return recorderManager
+  // 🔴 h5 分支（issue #5650）：Taro h5 的 `getRecorderManager` 是
+  // `temporarilyNotSupport('getRecorderManager')`（实测 `dist/api/media/recorder.js`）——
+  // 调用会触发 Taro 的 `__taroNotSupport` 事件 + `console.warn`，返回值也没有 `onStop`/`start`。
+  // **平台分支放在能力探测之前**：探测只能回答「这个对象缺什么方法」，回答不了「该不该给用户这个入口」
+  // （探测为假时既可能是「浏览器没实现」，也可能是「这台设备没麦克风」⇒ 只能静默隐藏入口 = 静默失败）。
+  // h5 的出路在 UI 层：入口保留可见但禁用 + 点击给显式提示（`H5_VOICE_UNAVAILABLE_HINT`）。
+  if (isH5()) return null
   try {
     recorderManager = Taro.getRecorderManager()
   } catch {

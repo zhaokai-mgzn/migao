@@ -623,3 +623,69 @@ def test_shared_temp_root_classification(tmp_path, monkeypatch):
     assert mod.shared_temp_root(TMP_TOKEN + "/x.md") is None, "注入后默认清单被整体替换"
     monkeypatch.setenv(mod.SHARED_ROOTS_ENV, "")
     assert mod.shared_temp_roots() == () and mod.shared_temp_root(TMP_TOKEN + "/x.md") is None
+
+
+# ── ⑥ 判据的**坐标**：相对 token 不得按 CWD 解析（`FM-A13` 的机制修复）─────────────
+#
+# 病灶（实测，2026-09-27）：`is_shared_fixed_path()` 把 token 直接喂 `os.path.realpath()`；
+# 对**相对** token，realpath 按**当前工作目录**解析 ⇒ **同一份仓内文本**、同一个 `--root`，
+# 只因「你在哪儿跑」不同而得到不同读数：检出落在共享临时根内 ⇒ 判命中（rc=1），在 `$HOME` 下 ⇒ 0 命中。
+# 实证：纯检出放共享临时根内跑 `scan` ⇒ rc=1（命中项 = 脚本自己的**模板** token），
+# `tests/unit_ci_workflows/test_pr_body_guard.py` 也连带 **5 failed**（换到 `$HOME` 下 ⇒ 50 passed）。
+# ⇒ 修法 = **相对 token 判「算不出来 ⇒ 不判」**（与既有的 `$VAR` / 反引号 / `mktemp` 同一条口径：
+# 相对路径的参照系不在被判对象里）。R1 要抓的形态是**绝对**的共享根固定路径 —— 下面两组一守一攻。
+
+def test_relative_token_is_not_judged_even_when_cwd_is_inside_a_shared_root(tmp_path, monkeypatch):
+    """相对 token ⇒ 不判；**同一个 token 换 CWD 必须给同一个读数**（否则判的是坐标，不是对象）。"""
+    mod = _load_module()
+    shared = tmp_path / "shared-root"
+    shared.mkdir()
+    monkeypatch.setenv(mod.SHARED_ROOTS_ENV, str(shared))
+
+    # ① CWD 在共享根**内**：相对 token 仍不判（修复前这里是 True ⇒ 假红）
+    monkeypatch.chdir(shared)
+    assert mod.is_shared_fixed_path("payload-notes.md") is False
+    assert mod.is_shared_fixed_path("./pr-body-abc123.md") is False
+    # ② CWD 换到共享根**外**：同一个 token 的读数**不变**（判据的读数不得随坐标漂）
+    monkeypatch.chdir(tmp_path)
+    assert mod.is_shared_fixed_path("payload-notes.md") is False
+    # ③ 射程**没被放宽**：**绝对**路径落在共享根里 ⇒ 仍判（这才是 R1 要抓的形态）
+    assert mod.is_shared_fixed_path(str(shared / "pr-body.md")) is True
+    assert mod.is_shared_fixed_path(str(shared / "payload-notes.md")) is True
+    # ④ 既有的「算不出来 ⇒ 不判」口径原样不变
+    assert mod.is_shared_fixed_path("$BODY") is False
+    assert mod.is_shared_fixed_path("") is False
+
+
+def test_scan_verdict_is_cwd_independent_for_relative_tokens(tmp_path):
+    """端到端：同一个检出、同一个 `--root`，站在共享根内 / 外，`scan` 读数**必须一致**。"""
+    shared = tmp_path / "shared-root"
+    shared.mkdir()
+    repo = tmp_path / "r-cwd"
+    repo.mkdir()
+    _init_git_repo(repo, {"notes.md": "gh pr edit 7 --body-file payload-notes.md\n"})
+    env = _roots_env(shared)
+
+    outside = run_cli("scan", "--root", str(repo), cwd=repo.parent, env=env)
+    assert outside.returncode == 0, _out(outside)
+    inside = run_cli("scan", "--root", str(repo), cwd=shared, env=env)
+    assert inside.returncode == 0, (
+        "相对的 `--body-file <文件名>` 在共享根内被读成命中 ⇒ 判据判的是**坐标**而不是仓内文本：\n"
+        + _out(inside)
+    )
+
+
+def test_scan_still_flags_absolute_shared_fixed_path(tmp_path):
+    """射程**保持**：**绝对**路径落在共享根里 ⇒ 站在共享根内 / 外**都**判红（修复不是放宽）。"""
+    shared = tmp_path / "shared-root"
+    shared.mkdir()
+    target = shared / "payload-notes.md"
+    repo = tmp_path / "r-abs"
+    repo.mkdir()
+    _init_git_repo(repo, {"notes.md": f"gh pr edit 7 --body-file {target}\n"})
+    env = _roots_env(shared)
+
+    for cwd in (shared, repo.parent):
+        r = run_cli("scan", "--root", str(repo), cwd=cwd, env=env)
+        assert r.returncode == 1, f"绝对固定路径未被判红（cwd={cwd}）：\n" + _out(r)
+        assert "notes.md" in r.stdout and "命中 1 处" in r.stdout, _out(r)

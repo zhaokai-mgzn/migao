@@ -113,6 +113,32 @@
       ]
     },
     {
+      "id": "bmini-app-build",
+      "workflow": "bmini-app.yml",
+      "job": "build",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect bmini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/bmini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/bmini-app",
+          "reason": "门禁自己住的模块（h5 + weapp 两端 `taro build` 的对象；issue #5650 起 h5 编译产物 = 唯一用户可达形态）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "bmini-app build (h5 + weapp)",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install dependencies",
+        "Build H5",
+        "Build weapp"
+      ]
+    },
+    {
       "id": "mini-app-typecheck-and-test",
       "workflow": "mini-app.yml",
       "job": "typecheck-and-test",
@@ -167,26 +193,32 @@
       ]
     },
     {
-      "id": "pr-check-admin-web-build",
+      "id": "pr-check-admin-web-tests",
       "workflow": "pr-check.yml",
       "job": "admin-web-test",
       "trigger": {
-        "kind": "step-detect-grep",
+        "kind": "step-detect-regex",
         "step": "Detect admin-web changes",
         "emit_id": "detect_aw",
-        "predicate": "^frontend/admin-web/"
+        "predicate": "^(frontend/admin-web/|\\.github/workflows/pr-check\\.yml$)"
       },
       "must_cover": [
         {
           "path": "frontend/admin-web",
-          "reason": "被门控的**只有** `Production build (Next-only checks)` 这一步；typecheck / ESLint / 单测无条件跑"
+          "reason": "本腿的 `npm ci` / `tsc --noEmit` / `eslint` / `next build` / `vitest` **全部**以 `frontend/admin-web` 为根（vitest root = 该目录，`setupFiles: ./tests/setup.ts` 亦在其内；依赖全是 npm 公共包，无仓内 workspace 依赖）"
         }
       ],
       "uncovered": [],
       "auto_discover_root": null,
       "check_name": "admin-web typecheck + unit tests",
       "gated_steps": [
-        "Production build (Next-only checks)"
+        "Set up Node.js 20",
+        "Install dependencies",
+        "TypeScript type check",
+        "ESLint",
+        "Production build (Next-only checks)",
+        "Run unit tests",
+        "Security audit (deps)"
       ]
     },
     {
@@ -280,9 +312,118 @@
       "gated_steps": [
         "Run worker-h5 unit tests (node --test)"
       ]
+    },
+    {
+      "id": "pr-check-admin-api-tests",
+      "workflow": "pr-check.yml",
+      "job": "admin-api-test",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect admin-api changes",
+        "emit_id": "detect_api",
+        "predicate": "^(backend/admin-api/|\\.github/workflows/pr-check\\.yml$)"
+      },
+      "must_cover": [
+        {
+          "path": "backend/admin-api",
+          "reason": "本腿在 `backend/admin-api` 里跑 `./mvnw test`；`backend/admin-api/src/test/**` 里按仓根拼出的仓内路径经复算**全部**落在本目录下（复算：`grep -rhoE '\"(backend|frontend|scripts|tests|docs|\\.github)/[^\"]*\"' backend/admin-api/src/test --include=*.java | sort -u`）；该模块无仓内 Maven 父/兄弟模块（parent = `spring-boot-starter-parent`，仓根无 `pom.xml` / `.mvn`）"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "admin-api unit tests",
+      "gated_steps": [
+        "Set up JDK 21",
+        "Assert PostgreSQL binaries exist (fail-closed 前置，issue",
+        "Run unit tests"
+      ]
+    },
+    {
+      "id": "pr-check-e2e-quality-gate",
+      "workflow": "pr-check.yml",
+      "job": "e2e-quality-gate",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect e2e changes",
+        "emit_id": "detect_e2e",
+        "predicate": "^(tests/|frontend/admin-web/|\\.github/workflows/pr-check\\.yml$)"
+      },
+      "must_cover": [
+        {
+          "path": "tests",
+          "reason": "`npx playwright test e2e/specs/…` 的 spec / fixture / 配置与 `tests/package-lock.json` 都在这里"
+        },
+        {
+          "path": "frontend/admin-web",
+          "reason": "Playwright `webServer` 真构建并启动 admin-web —— 它坏了本腿必红"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "E2E quality gate",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install test deps",
+        "Install admin-web deps (for Playwright webServer)",
+        "Run quality specs (fixture-only)"
+      ]
+    },
+    {
+      "id": "case-truth-check-merge-probe",
+      "workflow": "pr-check.yml",
+      "job": "case-truth-check",
+      "check_name": "Case Contract (truths_ref)",
+      "gated_steps": [
+        "Merge-result freshness（把本树合并到 main 之后，生成物还会新鲜吗）"
+      ],
+      "trigger": {
+        "kind": "step-detect-grep",
+        "step": "Detect 受管用例面 changes（决定是否跑**合并探测**；未命中 ⇒ 显式打印「未跑」）",
+        "emit_id": "probe_face",
+        "predicate": "(\\.github/cases/|\\.github/render_cases\\.py|docs/testing/mibao-verification-cases\\.md|tests/agent_eval/eval_cases\\.py)"
+      },
+      "must_cover": [
+        {
+          "path": ".github/cases",
+          "reason": "**唯一源**：合并探测判的就是「把本树合并之后，生成物与它同源吗」"
+        },
+        {
+          "path": ".github/render_cases.py",
+          "reason": "渲染器（判定口径的唯一实现）—— 它变了，合并结果的新鲜度口径也变"
+        },
+        {
+          "path": "docs/testing/mibao-verification-cases.md",
+          "reason": "被判的生成物之一（块进了、汇总没进的载体）"
+        },
+        {
+          "path": "tests/agent_eval/eval_cases.py",
+          "reason": "被判的生成物之二"
+        }
+      ],
+      "uncovered": [
+        {
+          "path": "（其它所有路径）",
+          "issue": "#5707",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "**有意**不纳入：合并探测只在「受管用例面」改动时跑 —— 不碰它的 PR **不替 main 侧的漂移背锅**（`FM-E4` 的归因纪律）。代价 = 有人改了生成物却没改用例源时探测不跑（那种形态由本树判定兜住）。"
+        },
+        {
+          "path": "（本 gate 的断言面自动发现）",
+          "issue": "#5707",
+          "owner": "CI 门禁 owner（pr-check 面）",
+          "reason": "**未开启** `auto_discover_root`：探测的判据与判定本体住在 `tests/unit_ci_workflows/test_main_freshness_guard.py` / `scripts/generated_artifacts_freshness.py`，而前者**同时**断言 main 侧守护腿等别的事实面 ⇒ 开启自动发现会把与探测无关的读取面一并要求纳入触发面（会假红）。"
+        }
+      ]
     }
   ],
   "same_source_claims": [
+    {
+      "file": "tests/unit_ci_workflows/test_main_freshness_guard.py",
+      "symbol": "SHARED_CALLERS",
+      "issue": "#5687",
+      "criterion": "tests/unit_ci_workflows/test_main_freshness_guard.py::test_generation_freshness_judgement_has_one_shared_implementation",
+      "note": "模块级注释声明「pr-check 的生成物新鲜度步」与「main-freshness-guard 的判定步」同源（都调 scripts/generated_artifacts_freshness.py，谁也不许再内联一份 render+diff）⇒ 由该判据读两侧**真 YAML** 的 run: 逐条比对承担（含反向：两侧都不得出现内联的 render + git diff）"
+    },
     {
       "file": "tests/agent_eval/local_runner.py",
       "symbol": "_BLOCKING_VERDICT_KEYS",
@@ -347,6 +488,27 @@
       "issue": "#4064",
       "criterion": "tests/unit_ci_workflows/test_case_seed_truth_backing.py::test_the_fixtures_read_are_the_ones_the_eval_stack_loads",
       "note": "注释声称「判据真值与考场数据栈同源」⇒ 由该判据钉住：评测栈种子的单一实现 `scripts/eval_stack_seed.sh`（issue #3563）必须逐字引用本文件读的那两个 fixture （xiaobu_eval_seed.sql / mibao_eval_seed.sql）"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_config_change_triggers_deploy.py",
+      "symbol": "CANONICAL_SWAS_CONFIGS",
+      "issue": "#5001",
+      "criterion": "tests/unit_ci_workflows/test_config_change_triggers_deploy.py::test_canonical_configs_match_the_deploy_script_surface",
+      "note": "常量上方的 `#` 注释声称「配置与镜像同源（deploy/swas/deploy.sh 第 0/1 段 + #5083）：脚本只认这三份 canonical 配置」⇒ 由该判据承担：从 `deploy/swas/deploy.sh` **现取**`cp src/deploy/swas/<f> ./…` 的应用面集合，与本常量**逐字**比对（脚本多/少应用一份 ⇒ 红）。本条目同时是「只改配置的改动必须能自动生效」这一接线的**前提**：哪几份配置属应用面变了，触发面/对账面的覆盖判据必须同批跟。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_local_gate_matrix.py",
+      "symbol": "CI_LEG_COMMANDS",
+      "issue": "#4221",
+      "criterion": "tests/unit_ci_workflows/test_local_gate_matrix.py::test_local_leg_commands_match_ci",
+      "note": "常量上方的 `#` 注释声称与 `.github/workflows/bmini-app.yml` 两条腿的 run 原文**逐字一致**（本地腿不许自创第三套口径）⇒ 由该判据从 CI YAML **现取**四条命令逐条比对（`npm ci` 不算判定内容），同序执行另由 `test_local_leg_runs_them_in_order` 钉住；CI 改了命令而本地声明/本地腿没跟 ⇒ 红。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py",
+      "symbol": "BASELINE_FILES_FROZEN",
+      "issue": "#5707",
+      "criterion": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py::test_baseline_matches_the_frozen_snapshot_in_two_places",
+      "note": "常量上方的 `#` 注释声称「台账 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline` 与本冻结快照**必须等于**（逐项相等、无重复、无多无少）」⇒ 由该判据承担：它把**真台账**喂给纯函数 `ledger_problems`，比对 `baseline` ⇄ `BASELINE_FILES_FROZEN`（逐项）＋条数 ≤ `BASELINE_COUNT_MAX` ＋台账 `baseline_frozen` 与之相等（**三处一起改才生效**：把新周期面塞进存量基线必须同时改三处且数字变大，diff 里看得见）⇒ 「新 schedule 混进存量基线」这条捷径被堵死。配套红证 = `test_discriminating_power_in_memory` 的两条（台账侧单改 / 单改 `baseline_frozen`，各自判红）。"
     }
   ],
   "frozen_declarations": [
@@ -380,11 +542,13 @@
     {
       "file": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",
       "symbol": "PORTALED_PRINT_DOCS",
-      "bound": 3,
+      "bound": 5,
       "members": [
         "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
         "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
-        "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
+        "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+        "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+        "frontend/admin-web/src/components/orders/SalesDoc.tsx"
       ],
       "issue": "#5007",
       "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"

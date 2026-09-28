@@ -5038,6 +5038,16 @@ class TestAssertionVocabularyIsMappedByLoader:
         "debug_permissions": ('    debug_permissions: "employee:list"\n', "employee:list"),
         "form_prefill": ('    form_prefill:\n      - field: customer_phone\n        expect: "13800138000"\n', None),
         "forbidden_card_text": ('    forbidden_card_text:\n      - "用量"\n', ["用量"]),
+        # 负向**按轮**卡片约束（issue #3789）：漏映射 = 「本轮不得抽卡」在 CI 上静默不检查
+        # ⇒ OR-014 的红/绿又回到"由 agent 当轮是否抽卡决定"（本单要钉住的正是这个）。
+        "forbidden_interact": ('    forbidden_interact:\n      - round: 2\n',
+                               [{"round": 2}]),
+        # 入参**值级**断言（issue #3823 的家族，本 PR 接线声明面）：漏映射 = 值级断言
+        # 静默不跑 ⇒「数量 = 面料米数」只能退回存在性断言（= #3823 的病灶本身）。
+        # ⚠️ YAML 用具块式（`yaml_light` 不解析 flow 映射 —— 同 `_normalize_amount_checks` 的教训）。
+        "arg_values": ('    arg_values:\n      - tool: order_create\n'
+                       '        values:\n          quantity: 3\n',
+                       [{"tool": "order_create", "values": {"quantity": 3}}]),
         # 并行污染隔离 + 运行期前置断言（issue #3781）：两者都必须经 CI 的 YAML 装载路径
         # 活下来 —— 漏映射 = 隔离静默失效 / 前置断言静默不跑（#3391/#3417 同款假绿）。
         "namespaces": ('    namespaces:\n      - "customer_phone:13800138000"\n',

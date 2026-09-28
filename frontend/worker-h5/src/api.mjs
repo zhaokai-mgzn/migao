@@ -224,5 +224,71 @@ export function createApi(opts = {}) {
         nextOperation: data.next_operation,
       }
     },
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // 发货面（issue #5648）：拍照识别 → 打包 / 发货 / 撤销 → 读实发
+    //
+    // 🔴 与报工**同一份**客户端、同一套纪律：身份只由 `X-Worker-Session-Id` 解，
+    //    body 里**没有** worker_id / worker_name（发货留痕是责任凭证，不能由前端自称）。
+    // 🔴 也**没有**商家权限码：这四个端点在 `/api/worker/shipment/**` 上，
+    //    准入判据 = 有效工人 session（后端 `WorkerShipmentController` 的类注释有完整理由）。
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 拍照识别：图 → 订单行 / 商品标签上的**文字**候选（**不落库、不提交**）。
+     *
+     * 识别不确定 ⇒ 服务端**不预填**（那一格 `value` 为 null + 给 reason）⇒
+     * 页面用 `prefillFromRecognition()` 把它显示成**空框 + 「请手工填写」**，绝不猜。
+     *
+     * @param {string[]} images 已上传图片的 URL 列表
+     */
+    async recognizeShipment(images) {
+      return request('/api/worker/shipment/recognize', {
+        method: 'POST',
+        body: { images: [...(images ?? [])] },
+      })
+    },
+
+    /** 打包：`confirmed|producing → packed`（用户裁定：打包与发货都是工人的动作）。 */
+    async packOrder(orderId, clientRequestId) {
+      return request(`/api/worker/shipment/orders/${encodeURIComponent(orderId)}/pack`, {
+        method: 'POST',
+        extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
+      })
+    },
+
+    /**
+     * 发货：记**实发**明细 + 物流 + 原子流转 `shipped`（一次事务，一个入口）。
+     *
+     * 🔴 无 session ⇒ **抛错且一个请求都不发**（fail-closed，与报工同口径）。
+     * 🔴 body 由 `shipment.mjs` 的 `buildShipBody()` **白名单**构造后传入 ——
+     *    本方法不再展开入参（避免调用方硬塞 `worker_id` 之类）。
+     */
+    async shipOrder(orderId, body, clientRequestId) {
+      if (!session?.sessionId) {
+        const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
+        err.code = SESSION_EXPIRED
+        throw err
+      }
+      return request(`/api/worker/shipment/orders/${encodeURIComponent(orderId)}/ship`, {
+        method: 'POST',
+        body,
+        extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
+      })
+    },
+
+    /** 撤销打包：`packed → producing`（**必带理由** —— 已打包是涉责任状态，不留痕不给撤）。 */
+    async unpackOrder(orderId, reason, clientRequestId) {
+      return request(`/api/worker/shipment/orders/${encodeURIComponent(orderId)}/unpack`, {
+        method: 'POST',
+        body: { reason },
+        extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
+      })
+    },
+
+    /** 发货读面：状态 + 发货单（照片引用 / 识别留痕 / 撤销留痕）+ **实发套/件/卷**。 */
+    async readShipment(orderId) {
+      return request(`/api/worker/shipment/orders/${encodeURIComponent(orderId)}`)
+    },
   }
 }

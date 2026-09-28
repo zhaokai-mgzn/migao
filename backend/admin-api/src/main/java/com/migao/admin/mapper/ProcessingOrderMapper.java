@@ -104,6 +104,36 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
                               @Param("completedAt") OffsetDateTime completedAt);
 
     /**
+     * 首工序（`is_start_marker`）**报满** ⇒ 加工单 `issued → in_processing` + 落 `in_processing_at`
+     * —— 「生产开始」的**唯一**自动写路径（issue #4695 / 设计 D13）。
+     *
+     * <p>没它之前：`is_start_marker` 从工序库落进实例、读面也带得出来，**却没有任何消费者**
+     * ⇒ 首工序报满后加工单仍是 `issued`，在产单被当成「未开工」。</p>
+     *
+     * <p>🔴 <b>为什么谓词是参数而不是字面量</b>：合法的起始态**只有状态机说了算**
+     * （{@code ProcessingOrderService.STATUS_TRANSITIONS}）。调用方先问
+     * {@code ProcessingOrderService.allowsTransition(from, "in_processing")}，再把**那个被授权的起始态**
+     * 传进来做 CAS 谓词 ⇒ 迁移表**只有一份**（写死 `status = 'issued'` 就是第二份投影，迟早漂移）；
+     * 同时本次写只在行**仍是那个态**时命中 ⇒ 不裸 UPDATE 绕过状态机（#4117 的教训：绕过 ⇒ 订单
+     * 既发不了货也回不去）。`generated` / `cancelled` / `completed` / 已是 `in_processing` ⇒ 0 行。</p>
+     *
+     * <p><b>幂等（重复报工 / 并发报工）</b>：① 谓词不成立 ⇒ 0 行（并发双写里只有一个能命中）；
+     * ② {@code COALESCE(in_processing_at, …)} ⇒ 首次开工时刻**不被改写**（与
+     * {@link #markCompletedIfActive} 同款写法）。返回影响行数（0 ⇒ 本次没有发生迁移）。</p>
+     *
+     * <p>手工入口一字未动：{@code ProcessingOrderService.updateStatus} 的 `action = "start"`
+     * 仍是同一条迁移的手工路径（存量单补开工 / 兜底），语义写在那个方法的 javadoc 里。</p>
+     */
+    @Update("UPDATE processing_orders SET status = 'in_processing', " +
+            "in_processing_at = COALESCE(in_processing_at, #{inProcessingAt}), " +
+            "updated_at = #{inProcessingAt} " +
+            "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 " +
+            "AND status = #{fromStatus}")
+    int markInProcessingIfFrom(@Param("id") String id, @Param("tenantId") Long tenantId,
+                               @Param("fromStatus") String fromStatus,
+                               @Param("inProcessingAt") OffsetDateTime inProcessingAt);
+
+    /**
      * 打印计数原子递增（issue #4202 边角修复）—— {@code print_count} 此前**零 UPDATE 写方**：
      * 真值源 §1 要求加工单打印物「记录打印次数」，而全仓只有建单时的 {@code printCount(0)}
      * 与响应映射 ⇒ 打印次数在数据层永不可观测。

@@ -209,15 +209,34 @@ def repeat_until_bindings(case) -> list:
 
 
 def case_action_bindings(case) -> dict:
-    """用例声明的**全部** `tool → {action}`：机器可判断言 + `repeat_until.action`。
+    """用例声明的**全部** `tool → {action}`：机器可判断言 + `repeat_until.action`
+    + `arg_values[].action`。
+
+    三个来源的共同点 = **声明的 action 会真的被拿去过滤调用**（悬空即断言永不满足）：
+      · 机器可判断言（`expectations` / `must_succeed` / `output_verify` / `required_args` /
+        `must_fail` / `db_verify`）；
+      · `repeat_until.action`（#3667 的 action 级停条件）；
+      · `arg_values[].action`（#3823 的值级断言；声明面 2026-09-26 随 #3789 接线）。
 
     与 `case_declared_actions` 的分工（有意分开，别合并）：后者是**覆盖证据**
-    （skip 的用例不算证据、停条件也不算证据）；本函数只喂 `action_binding_violations`
-    这一配置合法性判据 —— 把停条件也算成覆盖会让 `action_uncovered` 静默缩水。
+    （skip 的用例不算证据、停条件/值级断言也不算证据）；本函数只喂
+    `action_binding_violations` 这一配置合法性判据 —— 把停条件也算成覆盖会让
+    `action_uncovered` 静默缩水。
     """
     out = {t: set(a) for t, a in case_declared_actions(case).items()}
     for tool, action in repeat_until_bindings(case):
         out.setdefault(tool, set()).add(action)
+    # 入参**值级**断言的 `{tool, action}`（issue #3823 的家族，声明面 2026-09-26 随
+    # issue #3789 接线）：与 `required_args` 同形同义 —— 声明的 action 悬空 = 断言永不满足
+    # （`check_arg_values` 按 `a.get("action") != action` 过滤调用）⇒ 必须进**合法性**判据。
+    # ⚠️ **只进合法性面，不进覆盖证据面**（`case_declared_actions`）：值级断言只证明"参数传对了"，
+    # 不构成"该 action 被测过"的效果层证据（同 `repeat_until` 的分工，别合并）。
+    for spec in (case.get("arg_values") if isinstance(case, dict)
+                 else getattr(case, "arg_values", None)) or []:
+        if isinstance(spec, dict) and str(spec.get("action") or "").strip():
+            tool = str(spec.get("tool") or "").strip()
+            if tool:
+                out.setdefault(tool, set()).add(str(spec["action"]).strip())
     return out
 
 

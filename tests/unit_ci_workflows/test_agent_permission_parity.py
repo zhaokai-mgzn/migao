@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, HR-011
 """**Agent 功能权限 ≡ 页面权限** 的机械对账（issue #5246）。
 
 ## 用户裁定（本守卫的唯一理由，2026-09-23）
@@ -48,9 +48,10 @@
 8. **未注解端点 = 显式登记的决定**（不是沉默）：每个生效码为 `None` 的端点必须命中
    `UNANNOTATED_ENDPOINTS` 的某条已登记口径；登记项不得陈旧。同理 `REGISTERED_RESIDUALS`
    逐条登记**已知但本单不修**的残留（带理由 + 去向）。
-9. **解析器自检（防恒绿空跑）**：注解条数守恒 / 两处权限目录逐值相等 / 岗位硬编码回退 ⊆ 种子矩阵 /
-   菜单码 ∈ 权限目录 / 各集合非空，且**每个读码**在种子矩阵与硬编码回退里**两面一致**
-   （`SEED_PARITY_READ_CODES`）。
+9. **解析器自检（防恒绿空跑）**：注解条数守恒 / 两处权限目录逐值相等 / 回退里的角色必须是种子岗位
+   或已登记的历史角色 / 菜单码 ∈ 权限目录 / 各集合非空。⚠️ **岗位默认权限的值级判据已迁到判据 14**
+   （issue #5683）：早先这里另持一张**手工维护的 5 个读码白名单**（`SEED_PARITY_READ_CODES`，只在
+   两处都定义该角色时判这 5 个码）—— 覆盖有洞且靠人维护，故删除，改为逐角色码**穷举**。
 10. **三个域的读码「四面锚定」**（issue #5291 收口）：新增的读码在**目录 / 承载工具 / 菜单节点 /
     端点 / 岗位**五处逐面登记（`READ_CODE_ANCHORS`），任一面掉码都红 —— 含「把读码从菜单源删掉」
     与「只读工具退回管理码」两种回归形态。**例外表缩小≠判据失去判别力**：该条与判据 5 的台账
@@ -61,6 +62,27 @@
     `/production/pool|remnants|saving-board` 之前会让三个管理码页面按读码判定）；② 码必须在
     权限目录里（否则该路由对所有角色恒 403）；③ 登记的前缀必须解析到 `config/menu.ts` 的节点、
     且码逐字相等，**未登记的前缀不登记即红**（台账 `ROUTE_MENU_ANCHORS` / `ROUTE_WITHOUT_MENU_NODE`）。
+12. **菜单节点码 ≡ 该页第一屏读端点码**（issue #5675 新增；#5675 收口包补第 ⑤ 段）：侧边栏
+    **可见性**只由节点码决定，而点进去成不成由端点码决定 ⇒ 两侧不同就是「可见面与可做面脱钩」
+    （持节点码而不持端点码的人「菜单看得见、点进去 403」）。五段：① 每个带 `path` 的节点必须登记
+    锚点；② 四跳**现取**（页面 → `useEffect` 驱动的调用 → `lib/api.ts` 的 URL → Java 生效码，
+    任一跳解析不出来即红，**不静默跳过**）；③ 节点码必须等于该页第一屏**每个**非 None 端点码，
+    否则具名登记进 `MENU_READ_PARITY_RESIDUALS`（**只许缩短**：不一致消失而条目还在也红）；
+    ④ **零 403 受害者** —— 持节点码的岗位（种子 ∪ 回退）必须同时持该页第一屏的每个端点码
+    （确有受害者 ⇒ 必须在该路径的 `victims_ack` 里逐条认领）；⑤ **多端点页的适用面前提**：
+    ③ 的命题只在「第一屏**恰好一个**读端点码」的页面上适定 —— 第一屏并发 ≥2 个不同码的页面
+    必须具名登记在 `MULTI_READ_ENDPOINT_PAGES` 且码集**逐值冻结**（未登记 / 与现取不符 /
+    已不再多码 ⇒ 都红）。该表登记的是**结构事实**、**不是豁免**：多端点页的不一致照样要进 ③ 的
+    残留台账、受害者照样要 ④ 的认领。
+    锚点表 = `MENU_READ_ENDPOINT_ANCHORS`（`path` → 页面 + 逐页读出来的第一屏调用）。
+13. **注释里的「计数 / 点名」声明 ≡ 代码现值**（#5675 收口包新增）：说明文字先写对、代码后来变了，
+    而**没有任何东西会红** —— 本单实测两例（生产域读码目录的「8 个只读工具」已漂成 9；
+    `StockBatchController` 类 javadoc 的「四个读面」实为 7 个 GET 端点）。
+    机制 = 策展表 `COMMENT_CLAIMS`（逐条登记：源码键 + 逐字锚 + 复核口径），
+    漂移 / 锚被改写 / 该处出现写死条数 ⇒ 红。⚠️ **边界（如实登记）**：只覆盖**已登记**的声明
+    （全仓按「N 个……」扫会命中大量叙述句与**引用的历史文本** ⇒ 噪声淹掉判据），未登记的计数声明
+    **不在射程**。与判据面「注释不是代码」（#5272）**方向相反、不冲突**：那条禁止把注释当声明**读**，
+    本条的对象**就是注释文本**、真值在代码那一侧（读注释是为了**证伪**注释）。
 
 ## 明确的边界（**不要**把本守卫读成覆盖面更大）
 
@@ -82,6 +104,17 @@
   token** 取 skill 名：注释里的带引号 skill 名、文档字符串里的举例都**不算绑定**。修前它按双引号
   字面量扫**原文** ⇒ `mibao.py` 解绑说明注释里的 `"settings"` 被读成「仍绑定」，得到**与事实相反**的
   假红（判据 1 报 2 条），当时只能靠「本注释不得给 skill 名加双引号」的规避说明绕过。
+- **判据 12 的两条适用面限制（#5675 收口：如实登记，不粉饰 —— 不登记的限制就是未来的空断言）**：
+  ① **只对「第一屏恰好一个读端点码」的页面适定**。第一屏**并发**多个码时，「节点码 ≡ 该页第一屏
+     读端点码」这个命题本身**不适定**（不存在「那一个」码）⇒ 这类页面必须具名登记在
+     `MULTI_READ_ENDPOINT_PAGES`（码集逐值冻结），而不是被硬凑一个码糊过去。附带一层：
+     「`useEffect` 一定在**挂载时**跑」也没有机械证明（依赖形态多样）—— 停靠点是逐页读过的锚点 +
+     「该调用由某个 effect 驱动、不是纯交互路径」。
+  ② **受害者复算的岗位来源只有两处**（`RegistrationService` 种子 ∪ `RoleService` 硬编码回退，
+     外加 V129 ②-b 谓词的前提自证）。`users.permissions` 的**员工级权限快照**（员工管理勾选即最终
+     权限，按设计**与岗位脱钩**）与租户**自建岗位**的 `role_permissions` 都**读不到** ⇒ 一个在
+     「岗位权限 / 员工管理」页里**手工只勾了读码、没勾管理码**的岗位，今天就是多码页面上的真受害者，
+     而 ④ 看不见它。本条是**已知缺口**（`0 受害者` 的读数只在上述两处来源上成立），不是「已覆盖」。
 - 本守卫**只读源码文本**（零依赖：只用标准库 + 共用的静态归属机具
   `backend/ai-agent-service/tests/tool_http_attribution.py`），不连库、不跑 LLM。
 """
@@ -94,7 +127,7 @@ import io
 import re
 import sys
 import tokenize
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -114,6 +147,8 @@ AUTH_SERVICE = SERVICE_DIR / "AuthService.java"
 USER_CONTROLLER = CONTROLLER_DIR / "UserController.java"
 REGISTRATION_SERVICE = SERVICE_DIR / "RegistrationService.java"
 PERMISSION_SERVICE = SERVICE_DIR / "PermissionService.java"
+#: 登录面的第二个 `switch` 副本（issue #5699 的 **A7**；P2 由它派生「角色 → 码」的第三面）。
+USER_SERVICE = SERVICE_DIR / "UserService.java"
 ROLE_SERVICE = SERVICE_DIR / "RoleService.java"
 ATTRIBUTION_PATH = AI_SERVICE / "tests" / "tool_http_attribution.py"
 
@@ -175,6 +210,7 @@ def _source_map() -> dict[str, str]:
         ("java:service/RegistrationService.java", REGISTRATION_SERVICE),
         ("java:service/PermissionService.java", PERMISSION_SERVICE),
         ("java:service/RoleService.java", ROLE_SERVICE),
+        ("java:service/UserService.java", USER_SERVICE),
         ("java:service/AuthService.java", AUTH_SERVICE),
         ("menu:frontend", MENU_TS),
         ("menu:controller", MENU_CONTROLLER),
@@ -189,6 +225,19 @@ def _source_map() -> dict[str, str]:
     for name in ("mibao", "xiaobu"):
         p = AGENTS_DIR / f"{name}.py"
         srcs[f"agent:{name}"] = p.read_text(encoding="utf8")
+    # 判据 12（issue #5675）：页面源码 + 前端 api 客户端。**必须进源码表**（而不是现读磁盘）——
+    # 否则「改页面第一屏调用」这类注入不会改变判据输入 ⇒ 判据永远不变红（空断言）。
+    assert API_TS.is_file(), f"被判据引用的文件不存在：{API_TS}（路径漂移 ⇒ 红，不得静默跳过）"
+    srcs["frontend:api.ts"] = API_TS.read_text(encoding="utf8")
+    assert V129_SQL.is_file(), f"被判据引用的文件不存在：{V129_SQL}（路径漂移 ⇒ 红，不得静默跳过）"
+    srcs["sql:V129"] = V129_SQL.read_text(encoding="utf8")
+    for path, anchor in MENU_READ_ENDPOINT_ANCHORS.items():
+        page = DASHBOARD_APP / anchor.page
+        assert page.is_file(), (
+            f"判据 12 的锚点指向的页面不存在：{page}（`MENU_READ_ENDPOINT_ANCHORS['{path}']` "
+            "陈旧/路径漂移 ⇒ 红，不得静默跳过）"
+        )
+        srcs[f"page:{path}"] = page.read_text(encoding="utf8")
     return srcs
 
 
@@ -312,16 +361,54 @@ def endpoints_by_tool(index) -> dict[str, tuple[tuple[str, str, str | None], ...
 # ── 2.3 菜单来源（三处现役 + 第四处已删的登记） ──────────────────────────────────────────────────────────
 
 
-def _iter_menu_ts(text: str):
-    """`frontend/admin-web/src/config/menu.ts`：`key` → 其后的 `name` / `permissionCode`。"""
+@dataclass(frozen=True)
+class MenuTsNode:
+    """`config/menu.ts` 的一个节点（判据 3 只用 `name`/`code`；判据 12 还要 `path`）。"""
+
+    key: str
+    name: str
+    path: str | None
+    code: str | None
+
+
+def parse_menu_ts_nodes(text: str) -> tuple[MenuTsNode, ...]:
+    """`frontend/admin-web/src/config/menu.ts` 的**节点表** —— 本文件里 menu.ts 的**唯一**解析。
+
+    🔴 issue #5675：判据 12 要按 `path` 锚「该页第一屏读端点」⇒ 把旧的 `_iter_menu_ts`
+    （只产出 `name → code`）就地扩成结构化节点表，`_iter_menu_ts` 改为它的**投影**。
+    **不另起第二个 menu.ts 解析器**（同一份文件被多处各解析一遍是 issue #3570 的教训）。
+
+    切分口径与旧版**逐字一致**（以 `key:` 为分隔，chunk 内取 `name` / `path` / `permissionCode`）
+    ⇒ 组头（无 `path`）照旧解析出来、`parse_menus` 的读数一字不变。
+    """
     keys = list(re.finditer(r"key:\s*'([^']+)'", text))
+    out: list[MenuTsNode] = []
     for i, m in enumerate(keys):
         end = keys[i + 1].start() if i + 1 < len(keys) else len(text)
         chunk = text[m.end():end]
         nm = re.search(r"name:\s*'([^']+)'", chunk)
+        if not nm:
+            continue
+        pm = re.search(r"path:\s*'([^']+)'", chunk)
         cm = re.search(r"permissionCode:\s*'([^']+)'", chunk)
-        if nm:
-            yield nm.group(1), (cm.group(1) if cm else None)
+        out.append(
+            MenuTsNode(
+                key=m.group(1),
+                name=nm.group(1),
+                path=pm.group(1) if pm else None,
+                code=cm.group(1) if cm else None,
+            )
+        )
+    return tuple(out)
+
+
+def _iter_menu_ts(text: str):
+    """`frontend/admin-web/src/config/menu.ts`：`key` → 其后的 `name` / `permissionCode`。
+
+    （判据 3 的投影 —— 与判据 12 共用 `parse_menu_ts_nodes`，**不是**第二份解析。）
+    """
+    for node in parse_menu_ts_nodes(text):
+        yield node.name, node.code
 
 
 def _iter_menu_controller(text: str):
@@ -410,17 +497,33 @@ def parse_menus(sources: dict[str, str]) -> dict[str, dict[str, str | None]]:
 
 # ── 2.4 权限目录与岗位矩阵 ────────────────────────────────────────────────────
 
+#: 权限目录行 = `{ "名称", "码", "资源", "动作", "描述" }`（五列，见 `RegistrationService` 建行处）。
+#: 五个分组**全捕获**：`parse_catalog` 只取第 2 组（码），`parse_catalog_rows` 取全部。
+#: 🔴 这是**同一个**正则——加捕获组不改变码列取值（`parse_catalog` 仍逐值相同），
+#: 目的是让「码 → 元数据」也有**唯一一份**解析实现（issue #5699 的 P2），而不是在别处再写一个。
 _CATALOG_ROW_RE = re.compile(
-    r'\{\s*"[^"]*",\s*"([^"]+)",\s*"[^"]*",\s*"[^"]*",\s*"[^"]*"\s*\}'
+    r'\{\s*"([^"]*)",\s*"([^"]+)",\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\s*\}'
 )
 
 
-def parse_catalog(reg_text: str, perm_text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """权限目录两处：`RegistrationService.defaultPermissions` 与 `PermissionService` 的懒补种目录。"""
+def parse_catalog_rows(
+    reg_text: str, perm_text: str
+) -> tuple[tuple[tuple[str, str, str, str, str], ...], tuple[tuple[str, str, str, str, str], ...]]:
+    """权限目录两处的**整行**读数：`(名称, 码, 资源, 动作, 描述)` 五元组序列。
+
+    与 `parse_catalog` 是**同一份**正则、同一次扫描 —— 后者只是本函数的第 2 列投影
+    （「码 → 元数据」不许有第二份解析实现）。
+    """
     reg = tuple(_CATALOG_ROW_RE.findall(reg_text))
     perm = tuple(_CATALOG_ROW_RE.findall(perm_text))
     assert reg and perm, "权限目录解析出 0 条 ⇒ 判据会空跑（fail-closed）"
     return reg, perm
+
+
+def parse_catalog(reg_text: str, perm_text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """权限目录两处：`RegistrationService.defaultPermissions` 与 `PermissionService` 的懒补种目录。"""
+    rows_reg, rows_perm = parse_catalog_rows(reg_text, perm_text)
+    return tuple(row[1] for row in rows_reg), tuple(row[1] for row in rows_perm)
 
 
 def _java_string_arg(body: str, callee: str) -> str:
@@ -470,21 +573,37 @@ def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
     return out
 
 
-def parse_role_fallback(role_text: str) -> dict[str, frozenset[str]]:
+#: 默认锚点：回退面（`RoleService`）。issue #5699 的 P2 用 `anchor=` 复用**同一个**函数去读
+#: `UserService.getRolePermissions`（形态逐字相同：`case "x" -> List.of(...)`）——
+#: 🔴 复用而不是另写一个：同一形态的第二次实现必然漂移（issue #3570 的教训）。
+ROLE_SWITCH_ANCHOR = "getPermissionCodesForRole(String roleCode)"
+
+#: 第二个 `switch` 副本的锚点 = **A7**（`UserService.getRolePermissions`，登录面）。
+#: 它与回退面**形态逐字相同**（同一种 `case "x" -> List.of(...)`），故复用同一个解析函数。
+ROLE_SWITCH_ANCHOR_USER_SERVICE = "getRolePermissions(String roleCode)"
+
+
+def parse_role_fallback(role_text: str, anchor: str = ROLE_SWITCH_ANCHOR) -> dict[str, frozenset[str]]:
     """S4（回退口径）：`RoleService.getPermissionCodesForRole` 的硬编码 `case "x" -> List.of(...)`。
 
     口径同 `parse_role_defaults`（`#5323` 第 1 条）：先剥注释再按**词法**取字面量 ——
     注释里的 `case "x" -> List.of("y");` 不算回退分支。方法找不到 ⇒ 红（fail-closed；
     旧版这里 `find()` 返回 -1 时静默切片，会让回退表**空表恒绿**）。
+
+    `anchor` 默认 = 回退面；传别的**同形态**方法签名即可读第二个 `switch` 副本
+    （P2 用它读 `UserService.getRolePermissions`，设计真值源 §1.1 的 **A7**）。
+    锚点找不到 ⇒ 红（fail-closed：锚点漂移不得退化成空表恒绿）。
     """
     code = java_code(role_text)
-    start = code.find("getPermissionCodesForRole(String roleCode)")
-    assert start != -1, "`RoleService.getPermissionCodesForRole` 找不到（解析失配 ⇒ 红）"
+    start = code.find(anchor)
+    assert start != -1, f"锚点方法 `{anchor}` 找不到（解析失配 ⇒ 红）"
     body = code[start:]
-    return {
+    out = {
         m.group(1): frozenset(value for _pos, value in java_literals(m.group(2)))
         for m in re.finditer(r'case\s+"([^"]+)"\s*->\s*List\.of\(([^;]*?)\);', body, re.S)
     }
+    assert out, f"锚点 `{anchor}` 下解析出 0 个 `case` ⇒ 判据会空跑（fail-closed）"
+    return out
 
 
 # ── 2.5 skill 绑定（B 端 / C 端可达性的**唯一**真值源）────────────────────────
@@ -787,25 +906,26 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
     "POST /api/worker/*": "同上",
     "GET /s/{}": "短链跳转（`permitAll`，无租户数据）",
+    "GET /i/{}": "入库标签公开入口（issue #5052 P2，`permitAll`）：标签贴在布卷 / 塑料袋上，"
+                 "纸上的码对**任何持码人等价** ⇒ 服务端 302 到落地页；**只回跳转、不泄露业务字段**"
+                 "（响应体为空，`Location` 里只有落地页 + 短码 + 租户 id）。它与 `/s/{}` 是"
+                 "**两个码空间**（入库标签 vs 报工短链），混用会把「扫标签」变成「进报工页」"
+                 "⇒ 互斥判据见 tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py",
 }
 
 #: `RoleService.getPermissionCodesForRole` 里**有意保留**的历史角色（admin-api 无角色行/无种子）：
 #: 它们是存量库里的岗位码，回退表保住兼容；新增任何角色都必须先落进种子矩阵，否则判据 9 红。
-#: 「种子矩阵 ↔ 硬编码回退」必须**两面一致**的**读**码（判据 9③）：
-#: issue #5246 拆出的两个 + issue #5291 拆出的三个。两面不一致的形态 =
-#: 「有权限快照的账号看得见、没有的账号看不见」——同一岗位两种行为，只在老账号上出现。
-SEED_PARITY_READ_CODES = (
-    "after_sales:view",
-    "knowledge:view",
-    "product:category:view",
-    "production:view",
-    "system:view",
-)
+#: ⚠️ **`SEED_PARITY_READ_CODES` 已删**（issue #5683）：它是一张**手工维护的 5 个码**白名单，只在
+#: 「种子与回退都定义了该角色」时判这 5 个码两面一致 —— 覆盖面上有两个洞：① 只管 5 个码，其余码
+#: 漂移看不见；② 手工清单靠人记得往里加码。⇒ 换由**判据 14**（`problems_role_default_parity`）
+#: **逐角色码穷举**承担（`回退 ⊆ 种子` 无条件 + 差异具名登记、只许缩短），无需人维护。
 
-LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {
-    "product_manager": "POC 期的历史岗位码（`mibao.py` 的 `allowed_roles` 仍在用）：无 roles 行，只有回退表口径",
-    "knowledge_editor": "同上（知识库编辑岗）",
-}
+#: 🔴 **已整表销账**（issue #5699 的 **P6**，出口 (i)：正式定义 —— 人类 2026-09-27 裁定）：
+#: `product_manager` / `knowledge_editor` 本单**进了种子矩阵**（`RegistrationService` 建 roles 行 +
+#: 授默认码；存量租户由 `V137__formalize_legacy_roles.sql` 建行授权）⇒ 它们不再是「种子外的历史角色」
+#: ⇒ 本表**清空**（销账，不是留两套真相）。清空后语义**更严**：任何回退里出现、种子里没有的角色码
+#: 都会直接判红（判据 9 ③ 的 `if role not in LEGACY_ROLES_IN_FALLBACK` 分支）。
+LEGACY_ROLES_IN_FALLBACK: dict[str, str] = {}
 
 #: **已知但不修**的残留（判据 8）：带理由 + 去向，禁止沉默。
 REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
@@ -1378,27 +1498,18 @@ def problems_self_checks(w: World) -> list[str]:
             f"（差集 {sorted(set(w.catalog) ^ set(w.catalog_perm_service))}）—— "
             "存量租户的岗位权限页会缺码/多码"
         )
-    # ③ 岗位硬编码回退 ⊆ 种子矩阵；`SEED_PARITY_READ_CODES` 的持有岗位两边一致
-    for role, fallback in sorted(w.role_fallback.items()):
-        seeded = w.roles.get(role)
-        if seeded is None:
-            if role not in LEGACY_ROLES_IN_FALLBACK:
-                out.append(
-                    f"`RoleService` 回退里的角色 `{role}` 既不在种子岗位矩阵、也没登记为历史角色"
-                    f"（岗位码漂移）—— 登记进 LEGACY_ROLES_IN_FALLBACK 或补种子"
-                )
+    # ③ 回退里的角色必须是种子岗位或已登记的历史角色。
+    #    🔴 **值级判据不在这里**（issue #5683）：`回退 ⊆ 种子` 与「两处差异具名登记、只许缩短」由
+    #    判据 14（`problems_role_default_parity`）**逐角色码穷举**承担 —— 本段此前另持一张 5 码
+    #    白名单（覆盖面有洞且靠人维护）；两套真值源必然分叉，故只留一处。
+    for role in sorted(w.role_fallback):
+        if role in w.roles:
             continue
-        if "*" in seeded:
-            continue
-        extra = sorted(fallback - seeded)
-        if extra:
-            out.append(f"岗位 `{role}` 的硬编码回退多出种子矩阵没有的码 {extra}（回退会绕过岗位权限页）")
-        for code in SEED_PARITY_READ_CODES:
-            if (code in seeded) != (code in fallback):
-                out.append(
-                    f"岗位 `{role}` 的 `{code}` 在种子矩阵与硬编码回退里不一致"
-                    f"（种子={code in seeded} / 回退={code in fallback}）"
-                )
+        if role not in LEGACY_ROLES_IN_FALLBACK:
+            out.append(
+                f"`RoleService` 回退里的角色 `{role}` 既不在种子岗位矩阵、也没登记为历史角色"
+                f"（岗位码漂移）—— 登记进 LEGACY_ROLES_IN_FALLBACK 或补种子"
+            )
     # ④ 菜单码必须都在权限目录里（打错一个字母就查不到）
     known = set(w.catalog)
     for source, nodes in sorted(w.menus.items()):
@@ -1616,6 +1727,10 @@ def parse_route_guard(text: str) -> tuple[tuple[str, str], ...]:
 #: 真值在**菜单源**一侧（复用同一份 `parse_menus`，不造第二个解析器）：本表只登记
 #: 「这个页面在侧边栏里是哪个节点」，**不复写码** —— 码由菜单源现取比对。
 ROUTE_MENU_ANCHORS: dict[str, str] = {
+    # issue #5699（P4）：『经营看板』节点在 P4 之前**无码**（两侧取值不同 ⇒ 曾登记在
+    # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
+    # ⇒ 销账后回到「有节点锚」这一侧。
+    "/dashboard": "经营看板",
     "/after-sales": "售后工单",
     "/orders": "订单列表",
     "/products": "商品列表",
@@ -1638,7 +1753,6 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     "/chat": "会话页没有侧边栏节点（「在线接待」的路径是 `/agent-workspace/human-sessions`）⇒ 守卫码 `agent:session` 无节点可钉",
     "/categories": "分类管理**没有独立侧边栏节点**（入口在商品列表页内，同 `READ_CODE_ANCHORS`）⇒ 该码由判据 10 的 `PAGE_READ_CODES['product:list']` 承担",
     "/processing-orders": "加工单唯一入口已并入「生产看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「生产看板」",
-    "/dashboard": "菜单节点『经营看板』的码是 `None`（menu.ts 该行无 `permissionCode`），而页面守卫要 `dashboard:view` —— 两侧取值**不同**；本判据不假定哪一侧为真值（谁改都对不上时仍由②保证码在目录里），登记为残留",
 }
 
 
@@ -1702,6 +1816,1049 @@ def problems_route_guard(w: World) -> list[str]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 12 的专属面：菜单节点码 ≡ 该页**第一屏读端点**的生效码（issue #5675）
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: 前端页面目录（Next.js 路由组；`MENU_READ_ENDPOINT_ANCHORS` 的 `page` 相对它拼）。
+DASHBOARD_APP = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)"
+#: 前端 api 客户端（判据 12 的**第二跳**：`xxxApi.fn` → HTTP 端点）。
+API_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "api.ts"
+#: 存量回填迁移（**第三个**岗位来源：读码回填谓词，与种子同谓词）。
+V129_SQL = (
+    REPO_ROOT / "backend/admin-api/src/main/resources/db/migration"
+    / "V129__backfill_domain_read_permissions.sql"
+)
+
+
+@dataclass(frozen=True)
+class MenuReadAnchor:
+    """一条「节点 → 页面」的锚（判据 12 里**唯一**手写的东西）。
+
+    `page` 是相对 `frontend/admin-web/src/app/(dashboard)/` 的页面文件；**端点与码一律现取**：
+      ① `parse_menu_ts_nodes` 给出该节点的 `path` / `permissionCode`；
+      ② 页面源码里**由 `useEffect` 驱动**的 api 调用（第一屏，不是点击才跑）；
+      ③ `lib/api.ts` 把 api 函数解析成 URL；
+      ④ `JavaEndpointIndex` 给出该 URL 的**生效码**（方法级优先）。
+    四跳都是读源码，**没有一处靠推断**（issue #5675 范围①的要求）。
+    """
+
+    node: str
+    page: str
+    calls: tuple[str, ...]
+
+
+#: `menu.ts` 节点 `path` → 页面文件 + **该页第一屏真实调用的 api 函数**（逐页读源码得出，不是推断）：
+#: 只收「挂载即跑」那条链上的调用 —— 勾选/翻页/tab 切换才跑的调用（如 `/production/pool` 的
+#: `preview`、`/knowledge` 的候选/模板、`/production/routings` 的算料配置）**不收**，
+#: 否则会把交互面的码算成第一屏的码（实测踩过：入库单页的「建单表单」商品下拉会让
+#: `product:list` 混进来，凭空造出并不存在的 403 受害者）。
+#: **每个带 `path` 的节点都必须在这里**（未登记即红）。
+MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
+    "/dashboard": MenuReadAnchor("经营看板", "dashboard/page.tsx", (
+        "dashboardApi.getStats", "dashboardApi.getOrderTrend",
+        "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
+        "briefingApi.getConfig")),
+    "/briefing": MenuReadAnchor("每日简报", "briefing/page.tsx", ("briefingApi.getConfig",)),
+    "/agent-workspace/human-sessions": MenuReadAnchor(
+        "在线接待", "agent-workspace/human-sessions/page.tsx",
+        ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
+    "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
+    "/products": MenuReadAnchor("商品列表", "products/page.tsx", ("productApi.getProducts",)),
+    "/production/processing": MenuReadAnchor("加工项管理", "production/processing/page.tsx", (
+        "processingItemApi.getProcessingItems", "productionApi.getFeeCombinations",
+        "productionApi.getFeeGaps", "processingCategoryApi.getProcessingCategories")),
+    "/orders": MenuReadAnchor("订单列表", "orders/page.tsx", ("orderApi.getOrders",)),
+    "/after-sales": MenuReadAnchor("售后工单", "after-sales/page.tsx", ("afterSalesApi.getTickets",)),
+    "/customers": MenuReadAnchor("客户列表", "customers/page.tsx", (
+        "customerApi.getCustomers", "customerApi.getCustomerTags")),
+    "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
+        "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
+    "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
+    "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
+                                       ("poolBoardApi.getBoard",)),
+    "/production/routings": MenuReadAnchor("工艺配置", "production/routings/page.tsx", (
+        "productionApi.getRoutings", "productionApi.getOperationsCatalog",
+        "productionApi.getRouteRules", "productionApi.getRouteRuleOptions",
+        "productionApi.getOperationPositions", "productionApi.getSeedTemplates")),
+    "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
+                                            ("productionApi.getPieceworkSummary",)),
+    "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
+    "/production/remnants": MenuReadAnchor("余料台账", "production/remnants/page.tsx",
+                                           ("remnantApi.ledger",)),
+    "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",
+                                               ("savingBoardApi.board", "savingBoardApi.trend")),
+    "/employees": MenuReadAnchor("员工管理", "employees/page.tsx", (
+        "employeeApi.getEmployees", "employeeApi.loadPositions")),
+    "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (
+        "roleApi.getRoles", "permissionApi.getPermissions")),
+    "/settings": MenuReadAnchor("企业基础信息", "settings/page.tsx", (
+        "settingsApi.getSettings", "settingsApi.getAiConfig", "briefingApi.getConfig")),
+    "/notifications": MenuReadAnchor("通知中心", "notifications/page.tsx",
+                                     ("notificationApi.getNotifications",)),
+}
+
+
+@dataclass(frozen=True)
+class MenuReadResidual:
+    """残留登记的四件套：**理由 + 显形条件 + 谁负责**，外加（有 403 受害者时必需的）**认领**。"""
+
+    reason: str
+    surfaces_when: str
+    owner: str
+    #: 该路径**确有** 403 受害者时，逐条认领（谁、缺什么码、为什么本单不改）——空 ⇒ 受害者段判红；
+    #: 反过来，若无受害者却写了认领 ⇒ 陈旧认领，也判红（它在替未来的真受害者放行）。
+    victims_ack: str = ""
+
+
+#: 🔴 **只许缩短的残留台账**（issue #5675）：`节点码 ≠ 该页第一屏读端点码` 且本单**有意不修**的项。
+#: 两条机械约束（都在 `problems_menu_read_parity` 里判）：
+#:   ① 台账里**每一条**都必须仍然真的不一致 —— 不一致消失而条目还在 ⇒ **红**（逼人删掉它）；
+#:   ② 判据发现的**每一个**不一致都必须在这里具名 —— 未登记 ⇒ **红**。
+#: 于是「新增一处不一致」与「修好了却不销账」都是可红的动作，台账只会变短。
+#:
+#: ⚠️ 与 `MULTI_READ_ENDPOINT_PAGES` 的分工（#5675 收口包）：**本台账装「不一致性」**（设计上要被
+#: 销掉的债 ⇒ 只许缩短）；**那张表装「结构性事实」**（一页第一屏并发哪几个码，冻结、不承诺缩短）。
+#: 分工不是修辞：把结构事实塞进本台账，「只许缩短」的压力会变成「硬凑一个码」的动机 —— 而硬凑
+#: 一个码就得改某侧注解 ⇒ 改某个岗位集合的可见性或可做性（本台账三条多端点项的 `reason` 逐条记着
+#: 为什么两个方向都不能走）。
+MENU_READ_PARITY_RESIDUALS: dict[str, MenuReadResidual] = {
+    "/settings": MenuReadResidual(
+        reason=(
+            "「企业基础信息」节点 = `system:manage`，而该页第一屏**并发三个读端点、跨两个码**"
+            "（`MULTI_READ_ENDPOINT_PAGES['/settings']` 逐值冻结）：企业设置 + AI 配置 = `system:manage` ✓，"
+            "每日简报开关（`GET /api/admin/briefing/config`）= `dashboard:view`。"
+            "🔴 **issue #5699 的 P4 逐条算过之后有意保留**（具名保留 + 硬理由，不是漏改）："
+            "① 简报端点改挂 `system:manage` ⇒ 只持 `dashboard:view` 的六个岗位失去 `/briefing` 页与看板的"
+            "简报开关（那是**另一条边**的 403）⇒ 会被本判据的零 403 段拦下；② 节点码改 `dashboard:view` "
+            "⇒ 全员看见「企业基础信息」而该页两个管理端点 403 ⇒ 同款 403；③ 唯一的结构性出口 = 把"
+            "「每日简报开关」从本页搬到 `/briefing` 页（产品 / 信息架构变更 —— `tests/e2e/specs/settings/"
+            "settings.spec.ts` 与 `/briefing` 页的空态文案都钉着「企业基础信息 → 基本设置」这个入口）"
+            "⇒ **超出权限模型阶段的射程**，须人类单独裁定（P4 的 PR 正文「未做与存疑」段登记）。"
+            "现状**零 403**：`system:manage` 的持有者（种子 ∪ 回退两来源）只有 admin，而 admin 恒 `*` ⇒ "
+            "看得见 ⇔ 打得开；这条投影等式由 P4 判据 "
+            "`tests/unit_ci_workflows/test_rbac_submenu_granularity.py` 钉成机器判据（不是本条的注释承诺）。"
+        ),
+        surfaces_when=(
+            "① 把 `system:manage` 授给非 `*` 的岗位（或在种子 / 回退里出现这样的岗位）⇒ 该页简报开关读数 "
+            "403 ⇒ 同上的**零 403 受害者**段会先判红；② 或把简报开关搬出本页（产品裁定）⇒ 本项删除。"
+        ),
+        owner="组织管理组菜单/权限面（frontend/admin-web/src/config/menu.ts 的 org-center 组 + BriefingController）+ 本守卫的残留台账",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class MultiReadEndpointPage:
+    """一页第一屏**并发多个不同码**的读端点时的**结构性**登记（#5675 收口包新增）。"""
+
+    node: str
+    #: 该页第一屏**现取**到的全部非 None 端点码（判据逐值比对 ⇒ 多一个 / 少一个都红）。
+    codes: frozenset[str]
+    reason: str
+    owner: str
+
+
+#: 🔴 多端点页登记表（#5675 收口包）：判据 12 的命题「节点码 ≡ 该页**第一屏读端点码**」只在
+#: 「第一屏**恰好一个**读端点码」的页面上适定。#5675 正是按这个前提修的「计件工资」页 ——
+#: 它的 PR body 逐字写着「两页第一屏都**只调一个读端点**（无聚合旁路），故不存在『硬凑一对』的情形」。
+#: 而下面这些页面在同一时刻**并发** ≥2 个不同码的第一屏读端点 ⇒ 不存在「那一个」码可对齐；
+#: 硬凑一个码 = 改某个岗位集合的可见性或可做性（每条的 `reason` 记着两个方向各会改谁）。
+#:
+#: 三条机械约束（都在 `problems_menu_read_parity` 里判）：
+#:   ① **覆盖**：第一屏现取到 ≥2 个不同码的页面**必须**在此具名（未登记 ⇒ 红）—— 判据 12 的
+#:      「单端点」前提被打破时必须有东西提醒，否则它会在无人察觉时退化成空断言；
+#:   ② **冻结**：登记的码集必须与**现取**逐值相等（多一个 / 少一个 ⇒ 红）—— 给某页新增或改挂一个
+#:      第一屏端点码，不会被「这页已经登记过了」吞掉；
+#:   ③ **陈旧**：已不再并发多码的页面（或 path 已不在 `menu.ts`）必须删掉本条（⇒ 红）——
+#:      结构性登记与残留台账同口径，**只许缩短**。
+#: 🔴 **本表不是豁免**：它**不解释任何不一致**。节点码只命中其中一个码 ⇒ 该页**同时**进
+#: `MENU_READ_PARITY_RESIDUALS`（判据 12 第 ③ 段）；持节点码却缺其余码的岗位 ⇒ 照旧走第 ④ 段
+#: 的零 403 受害者与 `victims_ack` 认领。表里今天只剩 `/settings` 一条（P4 把另外两条按子菜单粒度收敛掉了），它同时仍在残留台账里。
+MULTI_READ_ENDPOINT_PAGES: dict[str, MultiReadEndpointPage] = {
+    "/settings": MultiReadEndpointPage(
+        node="企业基础信息",
+        codes=frozenset({"dashboard:view", "system:manage"}),
+        reason=(
+            "第一屏并发三跳，落两个码：企业设置 + AI 配置 = `system:manage`（与节点同码）；"
+            "每日简报开关 = `dashboard:view`（`BriefingController` 的读码 —— `/briefing` 页与经营看板也读它）。"
+            "🔴 **issue #5699 的 P4 逐条算过之后有意保留**（具名保留 + 硬理由）：两个方向都不能走 —— "
+            "① 简报端点改 `system:manage` ⇒ 只持 `dashboard:view` 的六个岗位（客服 / 运营 / 销售 / 财务 /"
+            "`product_manager`@回退 / `knowledge_editor`@回退）失去 `/briefing` 页与看板的简报开关可读性；"
+            "② 节点码改 `dashboard:view` ⇒ 全员看见「企业基础信息」。唯一的结构性出口 = 把「每日简报开关」"
+            "搬到 `/briefing` 页（产品 / 信息架构裁定，超出权限模型阶段射程）。"
+            "**零 403 的机器证据**：`∩ holders(units) == holders(gate)`（P4 判据 "
+            "`tests/unit_ci_workflows/test_rbac_submenu_granularity.py`）—— 可见面仍由**那一个**码"
+            "（`system:manage`）决定，且持有者恒 `*` ⇒ 每个 unit 都打得开。"
+        ),
+        owner="组织管理组菜单/权限面（frontend/admin-web/src/config/menu.ts 的 org-center 组 + BriefingController）+ 本守卫的多端点登记表",
+    ),
+}
+
+
+def _js_block(text: str, open_brace: int) -> str:
+    """从 `{` 起做括号配平取块（TS/JS 源码的粗粒度切分，够用即止）。
+
+    ⚠️ 如实登记：字符串/注释里的裸花括号会干扰配平。失配的后果是**块偏大或偏小**，
+    偏大 ⇒ 多收调用（更容易红），偏小 ⇒ 可能漏判 —— 故有两道补偿：`/notifications` 这类
+    极简页也照样解析出调用（解析出 0 个调用 ⇒ 红），且注入式红证覆盖两个方向。
+    """
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace:i + 1]
+    return text[open_brace:]
+
+
+def page_first_screen_text(page_text: str) -> str:
+    """页面源码里**由 `useEffect` 驱动**的可执行面（= 判「第一屏读端点」的语料）。
+
+    = 每个 `useEffect(() => { … }, […])` 的块体 ∪ 这些块体里**被调用**的本地函数定义体
+    （一跳：`useEffect(() => { load() }, [load])` 是仓里最常见的形态）。
+    「点击才跑」的处理函数**不在**这个面里 ⇒ 把第一屏调用挪进按钮不会静默通过。
+
+    ⚠️ 边界（如实登记）：`useEffect` 的依赖形态多样（`[]` / `[loader]` / `[tab]`），本判据**不**逐一
+    证明「该 effect 一定在挂载时跑」；它证明的是「这些调用由某个 effect 驱动、不是纯交互路径」。
+    真正的锚是台账里逐条读过的页面（`MENU_READ_ENDPOINT_ANCHORS`）+ 下面四跳现取的端点码。
+    """
+    parts: list[str] = []
+    driven: set[str] = set()
+    for m in re.finditer(r"useEffect\(\s*\(\)\s*=>\s*\{", page_text):
+        body = _js_block(page_text, m.end() - 1)
+        parts.append(body)
+        driven |= set(re.findall(r"\b(\w+)\s*\(", body))
+    for name in sorted(driven):
+        for pat in (rf"const\s+{name}\s*=\s*useCallback\(", rf"function\s+{name}\s*\("):
+            for m in re.finditer(pat, page_text):
+                brace = page_text.find("{", m.end())
+                if brace != -1:
+                    parts.append(_js_block(page_text, brace))
+    return "\n".join(parts)
+
+
+def parse_frontend_api_calls(text: str) -> dict[tuple[str, str], tuple[str, str]]:
+    """`frontend/admin-web/src/lib/api.ts`：`(api 对象名, 方法名) → (verb, url)`。
+
+    🔴 键**必须带对象名**：方法名跨对象大量重名（`list` / `preview` / `detail` …）——
+    只按方法名解析会把 `processingOrderApi.list` 读成 `inboundOrderApi.list` 的 URL
+    （issue #5675 实测踩过：拿错端点 ⇒ 判据拿别人的码去比）。
+    """
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for m in re.finditer(r"export const (\w+)\s*=\s*\{", text):
+        obj = m.group(1)
+        segment = _js_block(text, m.end() - 1)
+        for call in re.finditer(
+            r"request\.(get|post|put|patch|delete)\s*(?:<[^()]*>)?\s*\(\s*[`'\"]([^`'\"]+)",
+            segment,
+            re.S,
+        ):
+            decls = re.findall(r"\n\s*(\w+)\s*:\s*(?:async\s*)?\(", segment[:call.start()])
+            if decls:
+                out.setdefault((obj, decls[-1]), (call.group(1).upper(), call.group(2)))
+    assert len(out) >= 100, f"api.ts 只解析出 {len(out)} 个调用 ⇒ 判据会空跑（fail-closed）"
+    return out
+
+
+def _norm_endpoint_url(url: str) -> str:
+    """`/api/admin/agent-sessions/${id}` → `…/{}`（与 `JavaEndpointIndex` 的模板口径对齐）。"""
+    return re.sub(r"\$\{[^}]*\}", "{}", url)
+
+
+def _effective_codes(w: World, verb: str, url: str) -> tuple[str | None, ...] | None:
+    """端点的**生效码**（精确命中优先，其次 `{}` 模板正则回退）；端点查不到 ⇒ None。"""
+    path = _norm_endpoint_url(url)
+    exact = w.all_eps.get((verb, path))
+    if exact:
+        return tuple(sorted((ep.permission for ep in exact), key=str))
+    hits: list[str | None] = []
+    for (v, tpl), eps in w.all_eps.items():
+        if v != verb:
+            continue
+        rx = re.compile("^" + re.escape(tpl).replace(re.escape("{}"), "[^/]+") + "$")
+        if rx.match(path):
+            hits.extend(ep.permission for ep in eps)
+    return tuple(sorted(set(hits), key=str)) if hits else None
+
+
+def _holder_roles(w: World, code: str | None) -> tuple[str, ...]:
+    """三处岗位来源（种子 / 硬编码回退）里持该码的岗位（`*` 通配恒真）。"""
+    if code is None:
+        return ()
+    out: set[str] = set()
+    for label, table in (("seed", w.roles), ("fallback", w.role_fallback)):
+        for role, codes in table.items():
+            if "*" in codes or code in codes:
+                out.add(f"{role}@{label}")
+    return tuple(sorted(out))
+
+
+def problems_menu_read_parity(w: World) -> list[str]:
+    """判据 12：`menu.ts` 每个节点的码 ≡ 它 `path` 对应页面**第一屏读端点**的生效码（issue #5675）。
+
+    病根：菜单**可见性**只由节点码决定，而点进去成不成由端点码决定 ⇒ 两侧不同就是「可见面与可做面
+    脱钩」：持节点码而不持端点码的人「菜单看得见、点进去 403」（潜伏；受害人群今天为空，但可显形）。
+    五段（缺任何一段这条判据就有漏网形态）：
+      ① **覆盖**：每个带 `path` 的节点必须登记锚点（未登记 ⇒ 红）；锚点也不得陈旧/错人；
+      ② **四跳现取**：页面 → `useEffect` 驱动的调用 → `lib/api.ts` 的 URL → Java 生效码
+         （任一跳解析不出来 ⇒ 红，**不静默跳过**）；
+      ③ **一致性**：节点码必须等于该页第一屏**每个**非 None 端点码，否则必须具名登记在
+         `MENU_READ_PARITY_RESIDUALS`（台账**只许缩短**：不一致消失而条目还在 ⇒ 红）；
+      ④ **零 403 受害者（逐岗位复算）**：任何持节点码的岗位，必须同时持该页第一屏的每个端点码
+         —— 这是「菜单看得见 ⇒ 点进去一定打得开」的机械形态（种子 + 回退两处来源）；
+      ⑤ **多端点页的适用面前提**：第一屏现取到 ≥2 个不同码的页面必须具名在
+         `MULTI_READ_ENDPOINT_PAGES` 且码集逐值冻结（未登记 / 与现取不符 / 已不再多码 ⇒ 红）。
+         ⚠️ ⑤ **不替代** ③④：本表**不是豁免**（多端点页的不一致照样要进残留台账、受害者照样要认领）；
+         它保证的是「③ 的『那一个码』前提在哪些页面上不成立」这件事**一直被记着**。
+    """
+    out: list[str] = []
+    nodes = [n for n in parse_menu_ts_nodes(w.sources["menu:frontend"]) if n.path]
+    by_path = {n.path: n for n in nodes}
+    api_calls = parse_frontend_api_calls(w.sources["frontend:api.ts"])
+
+    # ⓪ 复算的**前提自证**（issue #5675）：存量租户那一路（V129）必须仍是「读码 ← 只授给
+    #    原本持管理码的岗位」。它是「可见性零变化」复算的第三个来源 —— 谓词被改成「授给所有人」
+    #    或「授给只持旧读码的岗位」时，本判据的种子/回退复算**看不出来**，故必须单独钉住。
+    v129 = w.sources.get("sql:V129", "")
+    branch = v129[v129.find("-- ②-b"): v129.find("-- ②-c")] if "-- ②-b" in v129 else ""
+    for literal, why in (
+        ("'production:view'", "生产域读码本身"),
+        ("'processing:manage'", "回填谓词（只授给原本持管理码的岗位）"),
+    ):
+        if literal not in branch:
+            out.append(
+                f"`V129__backfill_domain_read_permissions.sql` 的 ②-b 段（生产域读码回填）里找不到 "
+                f"{literal} —— {why}变了 ⇒ 「持读码的岗位集合 = 持管理码的岗位集合」这条"
+                "可见性零变化复算的前提不再成立（本单的复算以它为前提）"
+            )
+
+    # ① 覆盖 + 锚点卫生（陈旧锚点 / 锚错人都不许静默）
+    for path in sorted(set(MENU_READ_ENDPOINT_ANCHORS) - set(by_path)):
+        out.append(f"`MENU_READ_ENDPOINT_ANCHORS['{path}']` 在 `config/menu.ts` 里找不到该 path（陈旧登记）")
+    for path in sorted(set(by_path) - set(MENU_READ_ENDPOINT_ANCHORS)):
+        out.append(
+            f"菜单节点『{by_path[path].name}』（`{path}`）没有登记「第一屏读端点」锚点 ⇒ "
+            "**新增菜单节点必须先登记**（否则它的节点码与页面读码脱钩时不会有东西变红）"
+        )
+
+    mismatching: list[str] = []
+    endpoint_codes_by_path: dict[str, set[str]] = {}
+    for path, node in sorted(by_path.items()):
+        anchor = MENU_READ_ENDPOINT_ANCHORS.get(path)
+        if anchor is None:
+            continue
+        if anchor.node != node.name:
+            out.append(
+                f"锚点 `{path}` 指的是『{anchor.node}』，而 `config/menu.ts` 该 path 现在是『{node.name}』"
+                "（路径↔节点漂移 ⇒ 锚错人）"
+            )
+            continue
+        page_rel = f"frontend/admin-web/src/app/(dashboard)/{anchor.page}"
+        page_text = w.sources.get(f"page:{path}")
+        if page_text is None:
+            out.append(f"锚点 `{path}` 的页面源码没进源码表（{page_rel}）—— 路径漂移 ⇒ 红")
+            continue
+        # ②-a **声明面自证**：台账声明的每个调用必须仍在该页的「effect 驱动面」上 ——
+        #     挪进纯交互路径（点击/勾选才跑）就不再是第一屏调用 ⇒ 声明陈旧，必须同步台账。
+        corpus = page_first_screen_text(page_text)
+        for call in anchor.calls:
+            if call not in corpus:
+                out.append(
+                    f"锚点 `{path}` 声明的 `{call}` 不在『{node.name}』（`{page_rel}`）的"
+                    " **effect 驱动面**上 ⇒ 它已被挪到纯交互路径（第一屏不再调它）或声明陈旧"
+                    " ⇒ 同步 `MENU_READ_ENDPOINT_ANCHORS`"
+                )
+        codes: list[str | None] = []
+        for call in anchor.calls:
+            obj, fn = call.split(".", 1)
+            target = api_calls.get((obj, fn))
+            if target is None:
+                out.append(
+                    f"『{node.name}』第一屏调了 `{call}`，但 `frontend/admin-web/src/lib/api.ts` 里"
+                    "解析不出它的 URL ⇒ 判据不静默跳过（端点未知即红）"
+                )
+                continue
+            verb, url = target
+            eps = _effective_codes(w, verb, url)
+            if eps is None:
+                out.append(
+                    f"『{node.name}』第一屏的 `{call}` → `{verb} {url}` 在 admin-api 的端点表里查不到"
+                    "（端点未落地/路径漂移 ⇒ 红）"
+                )
+                continue
+            codes.extend(eps)
+        real_codes = sorted({c for c in codes if c is not None})
+        endpoint_codes_by_path[path] = set(real_codes)
+        if not real_codes:
+            # 第一屏全部落在**未注解端点**上（判据 8 已逐条登记那些端点）⇒ 本判据无数可对。
+            continue
+        for code in real_codes:
+            if code == node.code:
+                continue
+            mismatching.append(path)
+            if path not in MENU_READ_PARITY_RESIDUALS:
+                out.append(
+                    f"『{node.name}』（`{path}`）的节点码 = `{node.code}`，而该页第一屏读端点要 "
+                    f"`{code}`（{page_rel}）⇒ 可见面与可做面脱钩。"
+                    "**要么对齐两处码，要么在 `MENU_READ_PARITY_RESIDUALS` 里具名登记"
+                    "（理由 + 显形条件 + 谁负责）**"
+                )
+
+    # ③ 台账只许缩短（不一致消失而条目还在 ⇒ 红）
+    for path in sorted(set(MENU_READ_PARITY_RESIDUALS) - set(mismatching)):
+        out.append(
+            f"`MENU_READ_PARITY_RESIDUALS['{path}']` 已不再不一致（两侧现同码或该节点已不在）"
+            " ⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真回归读成「已登记」）"
+        )
+    for path, residual in sorted(MENU_READ_PARITY_RESIDUALS.items()):
+        empty = [
+            name for name, value in (("reason", residual.reason),
+                                     ("surfaces_when", residual.surfaces_when),
+                                     ("owner", residual.owner))
+            if not value.strip()
+        ]
+        if empty:
+            out.append(f"`MENU_READ_PARITY_RESIDUALS['{path}']` 缺字段 {empty}（理由/显形条件/谁负责缺一即红）")
+
+    # ④ 零 403 受害者：持节点码 ⇒ 必持该页第一屏的每个端点码（逐岗位复算：种子 ∪ 硬编码回退）。
+    #    🔴 **面外不是安全区**（migao-dev-flow §23 G4）：只算种子会漏掉「无 role_permissions 记录的
+    #    历史账号」（回退路径），而那正是「菜单看得见、点进去 403」最容易存活的地方。
+    #    已有具名登记的路径 ⇒ 必须由该条登记的 `victims_ack` **逐条认领**（不认领照样红）。
+    victims_by_path: dict[str, list[str]] = {}
+    for path, node in sorted(by_path.items()):
+        endpoint_codes = endpoint_codes_by_path.get(path, set())
+        if not endpoint_codes or not node.code:
+            continue
+        for role in _holder_roles(w, node.code):
+            missing = sorted(c for c in endpoint_codes if role not in _holder_roles(w, c))
+            if not missing:
+                continue
+            victims_by_path.setdefault(path, []).append(f"{role} 缺 {missing}")
+            residual = MENU_READ_PARITY_RESIDUALS.get(path)
+            if residual is not None and residual.victims_ack.strip():
+                continue  # 已具名认领（见 `victims_ack`）
+            out.append(
+                f"🔴 403 受害者：岗位 `{role}` 持节点码 `{node.code}`（看得见『{node.name}』）"
+                f"却不持该页第一屏读端点码 {missing} ⇒ 「菜单看得见、点进去 403」"
+                "（零受害者段：新增岗位/改码都会在这里变红；确有裁定 ⇒ 在该路径的登记里写 `victims_ack`）"
+            )
+    for path, residual in sorted(MENU_READ_PARITY_RESIDUALS.items()):
+        if residual.victims_ack.strip() and path not in victims_by_path:
+            out.append(
+                f"`MENU_READ_PARITY_RESIDUALS['{path}'].victims_ack` 声称认领了 403 受害者，"
+                "但逐岗位复算**一个都没有** ⇒ 陈旧认领，删掉它（否则它会替未来的真受害者放行）"
+            )
+
+    # ⑤ 多端点页的**结构性**登记（#5675 收口包）：判据 12 的命题只在「第一屏恰好一个读端点码」的
+    #    页面上适定。并发多码的页面必须具名，且码集**逐值冻结** —— 这一段的判别力形态是
+    #    「某页悄悄多/少一个第一屏码」（节点码恰好命中新码时 ③ 一声不响 ⇒ 只有这里看得见）。
+    #    🔴 本段**不是豁免**：它放行的每一条都仍受 ③（不一致即登记）与 ④（受害者认领）管辖。
+    live_multi = {p: set(c) for p, c in endpoint_codes_by_path.items() if len(c) >= 2}
+    for path in sorted(set(live_multi) - set(MULTI_READ_ENDPOINT_PAGES)):
+        out.append(
+            f"`{path}` 的第一屏现取到 {sorted(live_multi[path])} —— **多个不同码**，但没登记在 "
+            "`MULTI_READ_ENDPOINT_PAGES` ⇒ 多端点页必须具名（判据 12 的「节点码 ≡ 那**一个**读端点码」"
+            "命题对多端点页不适定；本表登记**结构事实**、不是豁免，不一致仍须进 "
+            "`MENU_READ_PARITY_RESIDUALS`）"
+        )
+    for path in sorted(set(MULTI_READ_ENDPOINT_PAGES) - set(live_multi)):
+        if path not in by_path:
+            out.append(
+                f"`MULTI_READ_ENDPOINT_PAGES['{path}']` 的 path 已不在 `config/menu.ts` ⇒ 删掉本条"
+                "（结构性登记也**只许缩短**）"
+            )
+        elif path in endpoint_codes_by_path:
+            out.append(
+                f"`MULTI_READ_ENDPOINT_PAGES['{path}']` 已**不再并发多码**（该页第一屏现取 "
+                f"{sorted(endpoint_codes_by_path[path])}）⇒ **删掉这条登记**"
+                "（陈旧的结构性登记会把下一次真漂移读成「已登记」）"
+            )
+        # path 在菜单里、却没有现取码（锚点段已红）⇒ 本段不重复报，避免给出错误读数。
+    for path, entry in sorted(MULTI_READ_ENDPOINT_PAGES.items()):
+        node = by_path.get(path)
+        if node is not None and node.name != entry.node:
+            out.append(
+                f"`MULTI_READ_ENDPOINT_PAGES['{path}']` 指的是『{entry.node}』，而 `config/menu.ts` "
+                f"该 path 现在是『{node.name}』（路径↔节点漂移 ⇒ 锚错人）"
+            )
+        live = live_multi.get(path)
+        if live is not None and live != set(entry.codes):
+            out.append(
+                f"`MULTI_READ_ENDPOINT_PAGES['{path}']` 登记的码集 {sorted(entry.codes)} 与**现取** "
+                f"{sorted(live)} 不符 ⇒ 同步登记（多一个 / 少一个都必须有人看一眼：这页的"
+                "「第一屏读端点码集」变了）"
+            )
+        empty = [name for name, value in (("reason", entry.reason), ("owner", entry.owner))
+                 if not value.strip()]
+        if empty:
+            out.append(f"`MULTI_READ_ENDPOINT_PAGES['{path}']` 缺字段 {empty}（理由/谁负责缺一即红）")
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 13 的专属面：**注释里的「计数 / 点名」声明 ≡ 代码现值**（#5675 收口包）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病根（本单实测两例，形态完全相同）：说明文字**先写对**、代码**后来变了**，而**没有任何东西会红**——
+#   ① `RegistrationService` 的生产域读码目录写「四个侧边栏节点、四个页面的读端点、以及 8 个只读工具」：
+#      端点那一半**从来就不成立**（#5291 只搬了两个），工具那一半 **8 → 9** 也漂了（且没有判据守着它）；
+#   ② `StockBatchController` 的类 javadoc 写「四个读面……另有一个消耗台账分页端点」：
+#      该控制器今天有 **7 个** GET 端点（#5159 的两个省料端点根本没被写进去）。
+# 两句都是**给后来人读的**，而后来人（#5675 的包）正是照第 ① 句把归因写成了「#5291 漏改」——
+# **一次漂移的注释 = 下一次误判的输入**。
+#
+# 🔴 与 #5272「注释不是代码」**不冲突**（方向相反）：那条禁止把注释当权限声明**读**；
+# 本条的对象**就是注释文本本身**，真值在**代码**那一侧 —— 读注释是为了**证伪**注释，不是拿它当证据。
+#
+# ⚠️ 覆盖面（如实登记，不粉饰）：**只覆盖已登记的声明** —— 本表是**策展**清单，不是全仓扫描。
+# 全仓按「N 个……」扫会命中大量叙述句与**引用的历史文本**（例如本单同时改准的那段「本段曾写……」），
+# 噪声会把判据淹掉；**未登记的计数声明不在射程**（这就是本判据的边界）。
+
+
+@dataclass(frozen=True)
+class CommentClaim:
+    """一条注释声明的登记：`anchor` 是它在源码里的**逐字锚**，`kind` + `arg` 决定**现取**怎么复核它。"""
+
+    source: str
+    anchor: str
+    kind: str
+    arg: object
+    why: str
+
+
+#: 本单（#5675 收口包）**逐条复核过**、并从此**钉住**的注释声明。
+#: 新增条目 = 声明「这段文字的条数/点名必须与代码一致」；改动被钉的代码 ⇒ 这里立刻红。
+COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="① **四个侧边栏节点**",
+        kind="menu-node-count",
+        arg=("production:view", 4),
+        why="生产域读码的四个侧边栏节点（生产看板 / 加工项管理 / 工艺配置 / 计件工资）",
+    ),
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="**两个**只读端点：`/operations-catalog`、`/routings`",
+        kind="endpoint-code",
+        arg=(("GET", "/api/admin/production/operations-catalog"),
+             ("GET", "/api/admin/production/routings"), "production:view"),
+        why="#5291 声称只搬了这两个只读端点 —— 点名的端点必须真的存在、且真的挂该读码",
+    ),
+    CommentClaim(
+        source="java:service/RegistrationService.java",
+        anchor="**不写死条数**",
+        kind="no-hardcoded-count",
+        arg=(r"[0-9]+ ?个只读工具",),
+        why="承载该码的只读工具条数会随工具增删变化（实测 8→9）⇒ 这段刻意不写数字；写回来即红",
+    ),
+    CommentClaim(
+        source="java:controller/ProductionController.java",
+        anchor="两个**只读**端点（{@code /operations-catalog}、{@code /routings}）",
+        kind="endpoint-code",
+        arg=(("GET", "/api/admin/production/operations-catalog"),
+             ("GET", "/api/admin/production/routings"), "production:view"),
+        why="同一份声明在 `ProductionController` 的类注记里也有一份（两处都得能被现取复核）",
+    ),
+    CommentClaim(
+        source="java:controller/ProductionController.java",
+        anchor="授了 4 个岗位",
+        kind="seed-role-count",
+        arg=("order:list", 4),
+        why="「打印计数沿用类级 order:list」的理由里那个岗位数（非 admin 的内置岗位）",
+    ),
+    CommentClaim(
+        source="java:controller/StockBatchController.java",
+        anchor="**7 个 GET 端点**",
+        kind="get-endpoint-count",
+        arg=("/api/admin/batch-stock/", 7),
+        why="该控制器的读面条数（本单改准：原写「四个读面……另有一个」而实测 7 个）",
+    ),
+)
+
+
+def problems_comment_claims(w: World) -> list[str]:
+    """判据 13：注释里的声明必须能被**现取**复核（漂移 / 锚被改写 / 违规数字 ⇒ 红）。
+
+    四类出口（都只读源码文本 ⇒ 与判据 12 同款、零依赖）：
+      · `menu-node-count`：声明「N 个节点」⇒ 与 `menu.ts` 现取的同码节点数比；
+      · `get-endpoint-count` / `seed-role-count`：与端点表 / 种子矩阵的现取计数比；
+      · `endpoint-code`：注释**点名**的端点必须存在，且生效码逐值等于声明值；
+      · `no-hardcoded-count`：该处**刻意不写死**的条数，若被写回来（匹配 `arg` 的正则）即红。
+    锚找不到 ⇒ 也是红（声明被改写/删除却没同步登记 —— 否则本表会静默过期）。
+    """
+    out: list[str] = []
+    menu_nodes = parse_menu_ts_nodes(w.sources["menu:frontend"])
+    for claim in COMMENT_CLAIMS:
+        text = w.sources.get(claim.source)
+        if text is None:
+            out.append(f"判据 13 的登记指向的源不在源码表里：`{claim.source}`（路径漂移 ⇒ 红）")
+            continue
+        idx = text.find(claim.anchor)
+        if idx == -1:
+            out.append(
+                f"判据 13：「{claim.anchor}」这条声明在 `{claim.source}` 里已找不到**逐字锚** "
+                f"⇒ 它被改写/删除却没有同步登记（{claim.why}）"
+            )
+            continue
+        if claim.kind == "menu-node-count":
+            code, expected = claim.arg
+            live = sum(1 for n in menu_nodes if n.code == code)
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个，而 `menu.ts` 里 "
+                    f"code == `{code}` 的节点**现值 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        elif claim.kind == "endpoint-code":
+            *eps, code = claim.arg
+            for verb, path in eps:
+                got = w.all_eps.get((verb, path))
+                codes = sorted({e.permission for e in got}) if got else None
+                if codes is None:
+                    out.append(f"判据 13：注释点名的 `{verb} {path}` 在 admin-api 里**查不到** ⇒ 点名失实（{claim.why}）")
+                elif code not in codes:
+                    out.append(
+                        f"判据 13：注释点名 `{verb} {path}` 声称挂 `{code}`，**现值 {codes}** "
+                        f"⇒ 声明与代码不符（{claim.why}）"
+                    )
+        elif claim.kind == "no-hardcoded-count":
+            (pattern,) = claim.arg
+            # 扫**该声明的本行与上一行**（不含其后）：后面常是**引用的历史文本**
+            # （本单实测：留档那句「本段曾写……8 个只读工具……」会把本判据**喂红** ——
+            #   §17.3「判据被自己的文案喂红」的同款，故射程刻意收在声明本行 + 上一行）。
+            line_start = text.rfind("\n", 0, idx) + 1
+            prev_start = text.rfind("\n", 0, max(0, line_start - 1)) + 1
+            line_end = text.find("\n", idx)
+            span = text[prev_start: line_end if line_end != -1 else len(text)]
+            if re.search(pattern, span):
+                out.append(
+                    f"判据 13：`{claim.source}` 的「{claim.anchor}」所在两行里出现了**写死的条数**"
+                    f"（匹配 `{pattern}`）⇒ 它没有判据守着、只会腐烂（{claim.why}）"
+                )
+        elif claim.kind == "get-endpoint-count":
+            prefix, expected = claim.arg
+            live = sum(1 for (verb, path) in w.all_eps if verb == "GET" and path.startswith(prefix))
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个，而 `{prefix}` 前缀下"
+                    f"的 GET 端点**现值 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        elif claim.kind == "seed-role-count":
+            code, expected = claim.arg
+            live = len([r for r, codes in w.roles.items() if r != "admin" and code in codes])
+            if live != expected:
+                out.append(
+                    f"判据 13：`{claim.source}` 声明「{claim.anchor}」= {expected} 个内置岗位持 `{code}`，"
+                    f"**现取 {live} 个** ⇒ 注释与代码不符（{claim.why}）"
+                )
+        else:
+            out.append(f"判据 13：登记里的 kind `{claim.kind}` 未知（登记写错 ⇒ 本判据对它是空跑）")
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 14 的专属面：**同一岗位默认权限写在两处** ⇒ 逐值不变量 + 授权变更 census（issue #5683）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 同一个岗位的默认权限被写在**两处** ——
+#   ① 种子矩阵 `RegistrationService.initializeDefaultRolesAndPermissions`（新租户建租户时写
+#      `role_permissions`；镜像 / 存量口径取它）；
+#   ② 回退 switch `RoleService.getPermissionCodesForRole`（无 `role_permissions` 记录的历史账号走它）。
+#
+# 🔴 **本判据的口径**：它**不**主张「两处必须逐值相等」—— 「差异是否应当存在」是一次**授权决定**
+# （改回退 = 改这批历史账号的可见面 / 可做面），判据不能替人做。它主张的是两条**可机械判**的：
+#   ① **回退不得比种子更宽**：`回退 − 种子` 非空 ⇒ **无条件红**（**无登记出口**）—— 那是「绕过岗位
+#      权限页」的真放宽形态，任何理由都不成立；
+#   ② **差异必须具名登记、且只许缩短**：`种子 − 回退` 的**逐值差异集**必须与
+#      `ROLE_FALLBACK_DIVERGENCES` 里那一条登记**逐值相同**（未登记 ⇒ 红；差异变了 ⇒ 红；差异消失
+#      而条目还在 ⇒ 红）⇒「差异悄悄变大」与「悄悄缩小却不销账」都不许静默。
+#
+# ⚠️ **更正留痕（issue #5683 的第一版前提有误，此处如实记录、不抹掉）**：第一版把这处差异写成
+# 「两处靠注释声称同步、已分叉而未登记」。**该前提是错的** ——
+#   · issue #5291 那处注释说的是「**两个域读码**与种子矩阵逐值同步」（`product:category:view` /
+#     `production:view`，二者确实都在回退里），是一句**窄话**，被读成了「全面声明」；
+#   · `operator` 的那 4 码差距**此前已经被登记**：见
+#     `backend/ai-agent-service/tests/test_tool_permission_codes.py` 的
+#     `TestRoleMirrorGuardIsNotVacuous.test_operator_seed_is_a_superset_of_the_hardcoded_fallback`
+#     （docstring 逐字「**登记的现实差异**：seed（25 码）⊃ 回退（21 码…）」，断言 `fallback < seeded`）。
+# ⇒ 本判据的价值不在「发现分叉」，而在把那条**只覆盖 operator、只写在一处测试里**的登记，变成
+# **逐角色码穷举 + 只许缩短 + 带授权变更 census** 的常驻台账（② 段）。
+# 🔴 **那条既有绊线的处置（人类 2026-09-27 裁定，已落地）**：「仍然补码，并同批把那条绊线由 `⊂`
+# 放宽为 `⊆`」—— 理由 = 它的自述目的（「防『回退悄悄比 seed 更宽』被当成等价」）由 `⊆` 就**完整**
+# 满足，写 `⊂` 多禁了一个方向（禁止两处相等）⇒ 属「**意图较宽、实现更严**」形态。该改写**只放宽
+# 这一个方向**，并带三条红证/阴性对照（`test_the_subset_tripwire_is_still_a_tripwire`：
+# 更宽 ⇒ 红 / 相等 ⇒ 不红 / 更窄不由它拦）。本判据与它是**分工**：那条只判「不得更宽」，
+# 本判据判「差异具名登记 + 只许缩短 + 授权变更 census」。
+#
+# 🔴 **明确的边界（不要把本判据读成覆盖面更大）** —— 不登记的限制就是未来的空断言：
+#   ① **只覆盖「两处都有定义」的角色码**。历史遗留岗位（`product_manager` / `knowledge_editor`）在
+#      issue #5699 的 **P6（出口 i）**之前**不在种子矩阵里** ⇒ 「两处逐值相等」这个命题对它们当时**不适定**；
+#      **P6 之后它们进了种子矩阵** ⇒ 本段对它们**同样适用**（逐角色码穷举守着）。
+#   ② **只解析源码文本**：种子面靠 `parse_role_defaults` 读 `attachDefaultPermissions(…List.of(…))`
+#      与 `permissionByCode.keySet()`，回退面靠 `parse_role_fallback` 读 `case "x" -> List.of(…)`。
+#      换形态（把种子挪进 SQL/YAML、把 switch 改成 Map、用常量变量拼列表）⇒ 解析面**读不到** ——
+#      届时由各自的 fail-closed 断言兜（`len(out) >= 5`、方法找不到即红），不是静默通过。
+#   ③ **不判「值本身对不对」**：两处一起把某个码写错（都多 / 都少）本判据**看不出来** ——
+#      那一半由判据 2/3/4/10 承担（工具码 ≡ 端点码 ≡ 菜单节点码 / 零权限泄露 / 读码四面锚定）。
+#   ④ **运行时快照面不在射程**：`users.permissions`（员工级快照，按设计**与岗位脱钩**）与租户
+#      **自建岗位**的 `role_permissions` 都不是本判据的来源 —— 只判「内置岗位的两处默认定义」。
+
+
+@dataclass(frozen=True)
+class RoleFallbackDivergence:
+    """一个角色码上「种子矩阵 ↔ 硬编码回退」的逐值差异（issue #5683 的**只许缩短**台账条目）。"""
+
+    #: 种子有、回退无 —— 回退路径上的账号**少拿到** ⇒ 「菜单看得见、点进去 403」的形态。
+    missing: frozenset[str]
+    #: 回退有、种子无 —— **真放宽**（回退绕过岗位权限页）。🔴 本判据**不给它登记出口**：
+    #: 字段在这里只为「逐值冻结」的比对形态完整，非空即红。
+    extra: frozenset[str]
+    reason: str
+    #: **显形条件**：这条差异在**什么情况下**会让用户看见（照 `MenuReadResidual` 的三件套形态；
+    #: 缺它就是「登记了却没人知道它会怎么爆」）。空 ⇒ 红。
+    surfaces_when: str
+    owner: str
+    issue: str
+
+
+#: 🔴 **只许缩短的差异台账**（issue #5683）：种子矩阵 ↔ 硬编码回退逐值对照后**仍存**的差异。
+#: 三条机械约束（都在 `problems_role_default_parity` 里判）：
+#:   ① **未登记即红**：现取到的任何差异（多授 / 少授）必须在此具名；
+#:   ② **逐值冻结**：登记项的 `missing` / `extra` 必须与**现取**逐值相同 —— 多一个、少一个都红
+#:      （「差异悄悄变大」与「差异悄悄变小却不销账」都不许静默）；`extra` 非空则**无条件红**；
+#:   ③ **陈旧即红**：差异已消失而条目还在 ⇒ 红（逼人删掉它 ⇒ 台账只会变短，**销账是必须动作**）。
+#: 条数上限 `ROLE_FALLBACK_DIVERGENCE_CEILING` **现取**（只许缩短）。
+#:
+#: 今天在册的三条 = 客服 / 销售 / 财务「种子有码、回退**没有 case**（落 `default` ⇒ 空表）」。
+#: 它们是**超出 #5683 已批准范围**的更大一处授权变更（补码 = 让这三个岗位的历史账号从**零权限**
+#: 变成有权限），#5683 **只量化、只提请裁定**，故**有意留在台账里**，由人类裁定后另行销账。
+ROLE_FALLBACK_DIVERGENCES: dict[str, RoleFallbackDivergence] = {}
+
+#: 差异台账的**现取**条数上限（只许缩短）：issue #5683 收口后 = **0**
+#: （operator 的 4 码差距对齐、客服/销售/财务三岗补上 case ⇒ 台账已**整表销账**）。
+#: 今天任何一个角色码只要出现未登记的差异 ⇒ 红；「登记了却已补齐」也是红。
+ROLE_FALLBACK_DIVERGENCE_CEILING = 0
+
+#: issue #5683 **生效前**的回退集合逐值冻结（`git show origin/main:<path>` 的读数，2026-09-27）——
+#: 「本单新增了哪些码」= 现取 − 本基线：不许靠提交信息或人的记忆去记（那是不可复算的）。
+#: 🔴 本基线是**历史事实**，任何后续改动都**不得**改它（要记新变更就另开一段基线）。
+FALLBACK_BASELINE_BEFORE_5683: dict[str, frozenset[str]] = {
+    "operator": frozenset({
+        "after_sales:view", "agent:session", "agent:session:manage", "customer:create",
+        "customer:view", "dashboard:view", "employee:list", "finance:create", "finance:view",
+        "knowledge:view", "order:create", "order:detail", "order:list", "order:refund",
+        "order:update", "processing:manage", "product:category", "product:category:view",
+        "product:create", "product:list", "production:view",
+    }),
+    "product_manager": frozenset({
+        "dashboard:view", "processing:manage", "product:category", "product:category:view",
+        "product:create", "product:list", "production:view",
+    }),
+    # 这三个角色**补码前在 switch 里根本没有 `case`** ⇒ 落 `default -> List.of()` ⇒ **空表**。
+    # 「空表」在这里逐字记为空集（不是「没有这一项」）：基线要能区分「当时没有 case」与「当时查不到」。
+    "customer_service": frozenset(),
+    "sales": frozenset(),
+    "finance": frozenset(),
+}
+
+
+@dataclass(frozen=True)
+class AuthorizationCensusEntry:
+    """一个**被新增**到回退集合的权限码 → 它使哪些面变为可达（#5683 硬约束 2：给不出就不许合并）。"""
+
+    #: 哪些岗位码的回退集合里新增了它（逐值比对现取 —— 多写 / 少写都红）。
+    roles: tuple[str, ...]
+    #: 生效码 == 本码的 admin-api 端点（`VERB 路径`，路径用 `{}` 表模板）。必须非空。
+    endpoints: tuple[str, ...]
+    #: 挂本码的菜单节点（`<菜单源>:<节点名>`）。无节点 ⇒ 空（本码不决定任何菜单可见性）。
+    menu_nodes: tuple[str, ...]
+    #: 声明本码的 B 端 Agent 工具。无 ⇒ 空（Agent 面不因本码变宽）。
+    tools: tuple[str, ...]
+    #: 为什么「现在可达」（给人读的理由；机械判据**不依赖**它，故它写错不会假绿）。
+    reachable: str
+
+
+#: 🔴 **授权变更 census**（issue #5683 硬约束 2）：回退集合**新增**的每个码逐条列出「哪些端点 /
+#: 菜单节点 / Agent 工具因此变为可达」。机械判据（`problems_role_default_parity` ② 段）：
+#:   · 新增了码却没登记 ⇒ **红**；登记了并没真新增的码 ⇒ **红**（陈旧）；
+#:   · 登记的岗位集必须 == 现取；列的端点必须真存在**且生效码就是本码**；菜单节点同理；工具同理。
+#: 于是「补码」这件事不可能悄悄发生 —— 每一个码都必须同时交代它打开了哪几扇门。
+AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
+    "after_sales:view": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/after-sales', 'GET /api/admin/after-sales/{}', 'GET /api/admin/agent/after-sales/mine'),
+        menu_nodes=('auth:售后工单', 'controller:售后工单', 'frontend:售后工单'),
+        tools=('after_sales_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「售后工单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/after-sales；GET /api/admin/after-sales/{}；GET /api/admin/agent/after-sales/mine）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（after_sales_manage）。'),
+    ),
+    "agent:session": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/agent-sessions', 'GET /api/admin/agent-sessions/monitor', 'GET /api/admin/agent-sessions/{}', 'POST /api/admin/agent-sessions'),
+        menu_nodes=('auth:在线接待', 'controller:在线接待', 'frontend:在线接待'),
+        tools=('session_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「在线接待」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent-sessions；GET /api/admin/agent-sessions/monitor；GET /api/admin/agent-sessions/{} 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（session_manage）。'),
+    ),
+    "agent:session:manage": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('POST /api/admin/agent-sessions/{}/assign', 'POST /api/admin/agent-sessions/{}/end', 'POST /api/admin/agent-sessions/{}/messages'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/agent-sessions/{}/assign；POST /api/admin/agent-sessions/{}/end；POST /api/admin/agent-sessions/{}/messages）。'),
+    ),
+    "customer:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'sales'),
+        endpoints=('GET /api/admin/customer-tags', 'GET /api/admin/customers', 'GET /api/admin/customers/profile-view', 'GET /api/admin/customers/{}'),
+        menu_nodes=('auth:客户列表', 'controller:客户列表', 'frontend:客户列表'),
+        tools=('customer_manage',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「客户列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/customer-tags；GET /api/admin/customers；GET /api/admin/customers/profile-view 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（customer_manage）。'),
+    ),
+    "dashboard:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
+        menu_nodes=('auth:每日简报', 'controller:每日简报', 'controller:经营看板', 'frontend:每日简报'),
+        tools=('briefing_query', 'dashboard_stats'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
+    ),
+    "finance:create": AuthorizationCensusEntry(
+        roles=('finance',),
+        endpoints=('POST /api/admin/finance/transactions',),
+        menu_nodes=(),
+        tools=(),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：1 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/finance/transactions）。'),
+    ),
+    "finance:view": AuthorizationCensusEntry(
+        roles=('finance',),
+        endpoints=('GET /api/admin/finance/reconciliation', 'GET /api/admin/finance/summary', 'GET /api/admin/finance/transactions'),
+        menu_nodes=('auth:财务对账', 'controller:财务对账', 'frontend:财务对账'),
+        tools=('finance_api',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「财务对账」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/finance/reconciliation；GET /api/admin/finance/summary；GET /api/admin/finance/transactions）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（finance_api）。'),
+    ),
+    "inbound:create": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('建单 / 改单 / 期初导入三个写端点（外加期初模板读端点，注解口径如实照录）改用本码 ⇒ 补码前回退账号进得去「入库单」页（若已持 `inbound:view`）却**建不了单**；补码后与种子路径的运营同权。本码不挂菜单节点、无 Agent 工具声明它。'),
+    ),
+    "inbound:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'sales'),
+        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}'),
+        menu_nodes=('auth:入库单', 'controller:入库单', 'frontend:入库单'),
+        tools=('inbound_order_query',),
+        reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
+    ),
+    "knowledge:view": AuthorizationCensusEntry(
+        roles=('customer_service',),
+        endpoints=('GET /api/admin/knowledge/candidates', 'GET /api/admin/knowledge/candidates/pending-count', 'GET /api/admin/knowledge/cards', 'GET /api/admin/knowledge/cards/search', 'GET /api/admin/knowledge/templates'),
+        menu_nodes=('auth:知识库', 'controller:知识库', 'frontend:知识库'),
+        tools=('knowledge_search',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「知识库」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；5 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/knowledge/candidates；GET /api/admin/knowledge/candidates/pending-count；GET /api/admin/knowledge/cards 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（knowledge_search）。'),
+    ),
+    "order:detail": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=(),
+        menu_nodes=('controller:订单详情',),
+        tools=(),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'),
+    ),
+    "order:list": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'sales'),
+        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
+        menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
+        tools=('logistics_track', 'order_query'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+    ),
+    "production:execute": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'sales'),
+        endpoints=('POST /api/admin/production/orders/{}/instantiate', 'POST /api/admin/production/orders/{}/operations/{}/report', 'POST /api/admin/production/orders/{}/print', 'POST /api/admin/production/orders/{}/ship'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5699 的 **I4**（人类 2026-09-27 裁定选 A）：四个**真写**端点此前只由**类级读码** `order:list` 把守 ⇒ 改挂写码 `production:execute`，并同批授予**今日持 `order:list`** 的四个岗位（客服 · 运营 · 销售 · 财务；admin 恒 `*`）⇒ **有效权限集合逐值不变**（这四个端点改前就在这批岗位的放行集里）。新码**只**挂这四个端点（别处一律不挂）⇒ 没有多开任何一扇门：无菜单节点、无 Agent 工具。'),
+    ),
+    "processing:update": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('PATCH /api/admin/processing-orders/{}', 'POST /api/admin/processing-orders/generate', 'POST /api/admin/production/pool/dispatch'),
+        menu_nodes=(),
+        tools=('processing_order_generate', 'processing_order_update'),
+        reachable=('加工单更新 / 生成、派单执行三个写端点改用本码判定 ⇒ 补码前回退账号在「加工项管理」与「智能派单」上**改不了单**（种子路径的新账号能改）；另有两个 B 端 Agent 工具（`processing_order_update` / `processing_order_generate`）声明本码 ⇒ Agent 面对回退账号由「拿不到权限」变为「可写」。'),
+    ),
+    "processing:view": AuthorizationCensusEntry(
+        roles=('customer_service', 'finance', 'operator', 'product_manager', 'sales'),
+        endpoints=('GET /api/admin/production/pool', 'POST /api/admin/production/pool/preview'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('「智能派单」页（`/production/pool`）的第一屏读端点 `GET /api/admin/production/pool` 要本码，而**节点码是 `processing:manage`** ⇒ 补本码前：回退账号（持管理码）**菜单看得见、点进去 403**；补本码后该页可读。本码**不挂任何菜单节点**（`menu.ts` 里无节点用它）⇒ 补它**不改变任何菜单的可见性**，只把已有节点背后的 API 打通 —— 这正是「补读码」方向不需要连带改节点码的原因。'),
+    ),
+    "product:list": AuthorizationCensusEntry(
+        roles=('sales',),
+        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
+        menu_nodes=('auth:商品列表', 'controller:商品列表', 'frontend:商品列表'),
+        tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
+    ),
+}
+
+
+def problems_role_default_parity(w: World) -> list[str]:
+    """判据 14：**同一岗位默认权限写在两处** ⇒ 逐值不变量 + 授权变更 census（issue #5683）。
+
+    两段（缺任何一段这条判据都有一个漏网形态）：
+      ① **⊆ 不变量 + 差异登记**：对**每一个**种子角色码（**穷举**，不只 `operator`）——
+         `extra`（回退有、种子无）非空 ⇒ **无条件红**（真放宽，不提供登记出口）；
+         `missing`（种子有、回退无）非空 ⇒ 必须与 `ROLE_FALLBACK_DIVERGENCES` 的登记**逐值相同**
+         （未登记 / 差异变了 / 差异消失而条目还在 ⇒ 都红；条数上限只许缩短；三件套
+         reason / surfaces_when / owner 缺一即红）。
+         🔴 本段**不要求**两处逐值相等 —— 差异是否应存在是**授权决定**（见上方「更正留痕」）。
+         ⚠️ **`missing` 这一半不是可有可无**：它拦的是最危险的形态 ——「XX 在种子里有码，而回退里
+         **根本没有这个 case**」⇒ 落 `default -> List.of()` ⇒ **空表**。该形态的危害正在于
+         `∅ ⊆ 种子` **恒真**：只判「回退不得更宽」会**全绿**，而该角色在回退路径上**零权限**
+         （今天的 `customer_service` / `sales` / `finance` 就是，三条已具名登记）。
+      ② **授权变更 census**：本单**新增**的每个码必须逐条给出「哪些端点 / 菜单节点 / Agent 工具
+         因此变为可达」，且登记与代码**逐值相符**（少列一个新增码 ⇒ 红；列了没真加上去的码 ⇒ 红；
+         列的端点生效码不是本码 ⇒ 红）。
+    """
+    out: list[str] = []
+    # ── ① 不变量：**穷举**逐一对照（不抽样） ──
+    # 回退面「没有 case」不等于「没有差异」：运行时会落 `default -> List.of()` ⇒ 口径是**空表**。
+    live: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    for role in sorted(set(w.roles) | set(w.role_fallback)):
+        seeded = w.roles.get(role)
+        if seeded is None:
+            continue                      # 只有回退一份定义（历史遗留岗位）⇒ 命题不适定，见 docstring ①
+        if "*" in seeded:
+            continue                      # admin：`*` 是通配（恒为全部权限），集合不可逐值比较
+        fallback = frozenset(w.role_fallback.get(role, frozenset()))
+        live[role] = (frozenset(seeded - fallback), frozenset(fallback - seeded))
+
+    for role, (missing, extra) in sorted(live.items()):
+        if extra:
+            out.append(
+                f"🔴 岗位 `{role}` 的**硬编码回退多出**种子矩阵没有的码 {sorted(extra)} ⇒ **真放宽**"
+                "（回退路径绕过岗位权限页）。本判据**不给这条登记出口**：回退集合里不得出现种子"
+                "（= 权限目录）没有的码"
+            )
+        entry = ROLE_FALLBACK_DIVERGENCES.get(role)
+        if not missing and not extra:
+            if entry is not None:
+                out.append(
+                    f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 已**不再有差异**（两处现逐值相等）"
+                    "⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真分叉读成「已登记」）"
+                )
+            continue
+        # 🔴 **最危险的形态单列文案**：「回退里根本没有这个 case」⇒ `default -> List.of()` ⇒ **空表**。
+        #    它的危害恰恰在于 `∅ ⊆ 种子` **恒真** —— 只看「回退不得更宽」这一条会**全绿**
+        #    （本判据之所以同时管 `missing`，就是为了拦它；这里把它**指名报出**，便于归因）。
+        form = (
+            f"回退 switch 里**根本没有 `case \"{role}\"`** ⇒ 落 `default -> List.of()` ⇒ **空表** "
+            f"（⇒ 该角色在回退路径上**零权限**）"
+            if role not in w.role_fallback
+            else f"少授（种有回退无）{sorted(missing)}"
+        )
+        if entry is None:
+            out.append(
+                f"岗位 `{role}` 的默认权限在**两处不一致**且未登记：{form} / "
+                f"多授（回退有种子无）{sorted(extra)} ⇒ 同一岗位「有权限快照的账号」与「无快照的历史账号」"
+                "行为不同（真实 403 / 菜单凭空消失）。**要么对齐两处，要么在 "
+                "`ROLE_FALLBACK_DIVERGENCES` 里具名登记（差异集 + 理由 + 显形条件 + 谁负责 + 单号）**"
+            )
+        elif entry.missing != missing or entry.extra != extra:
+            out.append(
+                f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 登记的差异与**现取**不符："
+                f"missing 登记 {sorted(entry.missing)} / 现取 {sorted(missing)}；"
+                f"extra 登记 {sorted(entry.extra)} / 现取 {sorted(extra)} ⇒ 同步登记"
+                "（差异集**逐值冻结**：多一个 / 少一个都必须有人看一眼）"
+            )
+    for role in sorted(set(ROLE_FALLBACK_DIVERGENCES) - set(live)):
+        out.append(
+            f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 已**不再有差异**（两处现逐值相等，或该角色码"
+            "已不在比对面内）⇒ **删掉这条登记**（台账只许缩短；陈旧条目会把下一次真分叉读成「已登记」）"
+        )
+    for role, entry in sorted(ROLE_FALLBACK_DIVERGENCES.items()):
+        empty = [n for n, v in (("reason", entry.reason), ("surfaces_when", entry.surfaces_when),
+                                ("owner", entry.owner), ("issue", entry.issue)) if not v.strip()]
+        if empty:
+            out.append(
+                f"`ROLE_FALLBACK_DIVERGENCES['{role}']` 缺字段 {empty}"
+                "（理由 / 显形条件 / 谁负责 / 单号缺一即红 —— 照 `MenuReadResidual` 的三件套形态）"
+            )
+    if len(ROLE_FALLBACK_DIVERGENCES) > ROLE_FALLBACK_DIVERGENCE_CEILING:
+        out.append(
+            f"差异台账**又长回来了**：现有 {len(ROLE_FALLBACK_DIVERGENCES)} 条 > 上限 "
+            f"{ROLE_FALLBACK_DIVERGENCE_CEILING} ⇒ 台账**只许缩短**（新增一条差异不是「登记一下」"
+            "就能过关的，得先有人裁定这次授权变更）"
+        )
+
+    # ── ② 授权变更 census：新增的码逐条给出「打开了哪几扇门」 ──
+    added: dict[str, set[str]] = {}
+    for role, before in FALLBACK_BASELINE_BEFORE_5683.items():
+        now = frozenset(w.role_fallback.get(role, frozenset()))
+        for code in sorted(now - before):
+            added.setdefault(code, set()).add(role)
+    for code in sorted(set(added) - set(AUTHORIZATION_CENSUS)):
+        out.append(
+            f"回退集合里**新增了**码 `{code}`（岗位 {sorted(added[code])}），但没有登记在 "
+            "`AUTHORIZATION_CENSUS` ⇒ 授权变更必须逐条给出「哪些端点 / 菜单节点 / Agent 工具因此变为"
+            "可达」（#5683 硬约束 2：给不出 census 就不许合并）"
+        )
+    by_name = _by_name(w)
+    for code, entry in sorted(AUTHORIZATION_CENSUS.items()):
+        roles_now = added.get(code)
+        if roles_now is None:
+            out.append(
+                f"`AUTHORIZATION_CENSUS['{code}']` 的码**并没有**被新增到任何回退集合里 ⇒ 陈旧登记，"
+                "删掉它（否则 census 会替一次不存在的授权变更背书）"
+            )
+            continue
+        if set(entry.roles) != roles_now:
+            out.append(
+                f"`AUTHORIZATION_CENSUS['{code}']` 登记的岗位 {sorted(entry.roles)} 与**现取** "
+                f"{sorted(roles_now)} 不符 ⇒ 同步登记（census 说的「谁被放宽了」必须与代码一致）"
+            )
+        if not entry.reachable.strip():
+            out.append(f"`AUTHORIZATION_CENSUS['{code}']` 缺 `reachable`（为什么现在可达 —— 人读的理由）")
+        # census 的核心 = 「这个码因此打开了哪几扇门」⇒ 端点 / 菜单节点 / 工具**至少有一个**，
+        # 否则它一个面都没交代（`order:detail` 这类只作页/路由码、没有专门端点的码由菜单节点交代）。
+        if not (entry.endpoints or entry.menu_nodes or entry.tools):
+            out.append(
+                f"`AUTHORIZATION_CENSUS['{code}']` 端点 / 菜单节点 / 工具**一个都没列** ⇒ census 的核心就是"
+                "「因此变为可达的面」，空 census = 给不出 census"
+            )
+        for key in entry.endpoints:
+            verb, _, path = key.partition(" ")
+            eps = w.all_eps.get((verb, path))
+            if eps is None:
+                out.append(
+                    f"`AUTHORIZATION_CENSUS['{code}']` 列的端点 `{key}` 在 admin-api 端点表里查不到"
+                    "（路径漂移 / 该端点不存在 ⇒ 红）"
+                )
+                continue
+            codes = sorted({str(ep.permission) for ep in eps})
+            if codes != [code]:
+                out.append(
+                    f"`AUTHORIZATION_CENSUS['{code}']` 列的端点 `{key}` 生效码实为 {codes} ≠ `{code}` ⇒ "
+                    "census 与代码不一致（census 必须逐条是**这个码**打开的面）"
+                )
+        for key in entry.menu_nodes:
+            src, _, node = key.partition(":")
+            if w.menus.get(src, {}).get(node) != code:
+                out.append(
+                    f"`AUTHORIZATION_CENSUS['{code}']` 列的菜单节点 `{key}` 实挂 "
+                    f"`{w.menus.get(src, {}).get(node)}` ≠ `{code}`（或该节点已不在该菜单源里）"
+                )
+        for name in entry.tools:
+            tool = by_name.get(name)
+            if tool is None:
+                out.append(f"`AUTHORIZATION_CENSUS['{code}']` 列的工具 `{name}` 不存在（改名 / 删除 ⇒ 红）")
+            elif code not in (tool.required_permissions or ()):
+                out.append(
+                    f"`AUTHORIZATION_CENSUS['{code}']` 列的工具 `{name}` 并未声明本码 "
+                    f"（现声明 {sorted(tool.required_permissions or ())}）"
+                )
+    return out
+
+
 JUDGEMENTS = {
     "1 · B 端工具必须声明权限码": problems_missing_codes,
     "2 · 工具码 ≡ 端点生效码": problems_endpoint_parity,
@@ -1714,6 +2871,9 @@ JUDGEMENTS = {
     "9 · 解析器自检": problems_self_checks,
     "10 · 三个域读码的锚定（issue #5291）": problems_read_code_anchoring,
     "11 · 页面守卫前缀序 + 码锚定（issue #5291）": problems_route_guard,
+    "12 · 菜单节点码 ≡ 页面第一屏读端点码（issue #5675）": problems_menu_read_parity,
+    "13 · 注释里的计数/点名声明 ≡ 代码现值（#5675 收口）": problems_comment_claims,
+    "14 · 岗位默认权限两处定义的不变量 + 授权变更 census（issue #5683）": problems_role_default_parity,
 }
 
 
@@ -1790,18 +2950,96 @@ def _shadow_production_subpaths(text: str) -> str:
     """判据 11 ① 的注入：把 `/production`（**更宽**）挪到 `/production/pool` 之前。
 
     这是 #5291 的**顺序回归形态**（不是改一个字的假变异）：`find()` 先命中 `/production`
-    ⇒ `/production/pool|remnants|saving-board` 三个**管理码**页面全部按读码判定。
+    ⇒ 排在它后面的 `/production/remnants`（管理码）/ `/production/saving-board`（商品读码）
+    被短路成死条目 —— ① 判的是**前缀序**，与两侧码是否相同无关。
     """
     wide = "  { prefix: '/production', code: 'production:view' },\n"
     assert wide in text, "注入锚点失配：找不到 `/production` 那一行（同步本判据）"
-    pool = "  { prefix: '/production/pool', code: 'processing:manage' },\n"
+    pool = "  { prefix: '/production/pool', code: 'processing:view' },\n"
     assert pool in text, "注入锚点失配：找不到 `/production/pool` 那一行（同步本判据）"
     return text.replace(wide, "", 1).replace(pool, wide + pool, 1)
+
+
+def _swap(text: str, old: str, new: str) -> str:
+    """判据 12 的注入：**整段换/删**（`old` 出现次数 ≠ 1 ⇒ 注入锚点失配，必须同步本判据）。"""
+    assert text.count(old) == 1, f"注入锚点失配（出现 {text.count(old)} 次）：{old!r}"
+    return text.replace(old, new, 1)
+
+
+def _fallback_case_span(text: str, role: str) -> tuple[int, int]:
+    """`RoleService` 回退 switch 里 `case "<role>" -> List.of(` … `);` 的区间（判据 14 的注入锚点）。"""
+    anchor = f'case "{role}" -> List.of('
+    idx = text.find(anchor)
+    assert idx != -1, f"注入锚点失配：找不到 `{anchor}`（同步本夹具）"
+    end = text.find(");", idx)
+    assert end != -1, "注入锚点失配：找不到该 case 的 `List.of(...)` 结尾"
+    return idx, end
+
+
+def _drop_fallback_code(text: str, role: str, code: str) -> str:
+    """从 `RoleService` 的某个回退 `case` 里删掉一个码（判据 14 的注入面）。
+
+    只删**非注释行**里的码（`#5323`：注释里的码不是声明）—— 否则注入会打在注释上，
+    「注入没生效」与「判据不红」将无法区分（那正是空断言的形态）。
+    """
+    idx, end = _fallback_case_span(text, role)
+    head, block, tail = text[:idx], text[idx:end], text[end:]
+    lines, removed = [], 0
+    for line in block.split("\n"):
+        if removed == 0 and not line.lstrip().startswith("//") and f'"{code}"' in line:
+            line = re.sub(rf'"{re.escape(code)}"\s*,?\s*', "", line, count=1)
+            removed += 1
+        lines.append(line)
+    assert removed == 1, f'注入锚点失配：`case "{role}"` 的代码行里没有 `{code}`（同步本夹具）'
+    return head + "\n".join(lines) + tail
+
+
+def _drop_fallback_case(text: str, role: str) -> str:
+    """把 `RoleService` 回退 switch 里某个角色的**整个 `case`** 删掉（落 `default -> List.of()` ⇒ 空表）。
+
+    判据 14 ① 里**最危险**的形态：`∅ ⊆ 种子` **恒真** ⇒ 只判「回退不得更宽」会全绿，
+    而该角色在回退路径上零权限。必须有一条注入能**单独**打到它（⑭f）。
+    """
+    idx, end = _fallback_case_span(text, role)
+    line_start = text.rfind("\n", 0, idx) + 1
+    return text[:line_start] + text[end + len(");"):]
+
+
+def _add_fallback_code(text: str, role: str, code: str) -> str:
+    """往 `RoleService` 的某个回退 `case` 的列表**开头**加一个码（判据 14 的注入面）。"""
+    idx, _end = _fallback_case_span(text, role)
+    at = text.find("List.of(", idx)
+    assert at != -1, "注入锚点失配：该 case 里找不到 `List.of(`"
+    at += len("List.of(")
+    return text[:at] + f'\n                    "{code}",' + text[at:]
 
 
 def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
     """`label` → (被判据读取的源键, 文本变异, 目标判据)。"""
     return {
+        # ── 判据 14（issue #5683）：同一岗位默认权限写在两处 ⇒ 逐值不变量 ──
+        # 三条注入分别打在不变量段与不变量的两个方向（少授 / 多授）上：
+        "⑭a 从**回退**里删掉一个码（operator − processing:view）⇒ 判据 14 红": (
+            "java:service/RoleService.java",
+            lambda s: _drop_fallback_code(s, "operator", "processing:view"),
+            problems_role_default_parity,
+        ),
+        "⑭b 从**种子**里删掉一个码（operator − processing:view）⇒ 判据 14 红": (
+            "java:service/RegistrationService.java",
+            lambda s: _drop_role_code(s, "operatorRole", "processing:view"),
+            problems_role_default_parity,
+        ),
+        "⑭c 往回退里加一个**种子没有的**码（operator += ghost:code）⇒ 判据 14 红": (
+            "java:service/RoleService.java",
+            lambda s: _add_fallback_code(s, "operator", "ghost:code"),
+            problems_role_default_parity,
+        ),
+        # ⑭f 打的是「**整角色没有 case** ⇒ 空表」形态 —— `∅ ⊆ 种子` 恒真，只判 ⊆ 会全绿。
+        "⑭f 从 switch 里**删掉整个 case**（operator 落 default ⇒ 空表）⇒ 判据 14 红": (
+            "java:service/RoleService.java",
+            lambda s: _drop_fallback_case(s, "operator"),
+            problems_role_default_parity,
+        ),
         "① 工具码与目标端点不一致 ⇒ 判据 2 红": (
             "tool:order_query.py",
             lambda s: _set_codes(s, "order_query.py", '["dashboard:view"]'),
@@ -1973,6 +3211,150 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 1,
             ),
             problems_route_guard,
+        ),
+        # ── 判据 12（issue #5675）：四类注入（改节点码 / 删节点码 / 改端点码 / 新增未登记的不一致）
+        #    + 两类面内注入（台账陈旧、页面第一屏调用被换掉）──────────────────────────────
+        "⑲ 改节点码（余料台账 `processing:manage` → `order:list`）⇒ 判据 12 红": (
+            # 形态 = **新增一处未登记的不一致**：节点码与读端点码脱钩而台账里没有它。
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/remnants', permissionCode: 'processing:manage'",
+                "path: '/production/remnants', permissionCode: 'order:list'",
+            ),
+            problems_menu_read_parity,
+        ),
+        "⑳ 删节点码（余料台账的 permissionCode 整段删掉 ⇒ 码变 None）⇒ 判据 12 红": (
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/remnants', permissionCode: 'processing:manage', ",
+                "path: '/production/remnants', ",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉑ 改端点码（**本单修复的回退形态**：计件报表退回 `processing:manage`）⇒ 判据 12 红": (
+            # 这是本单改动的**真实回归形态**（不是假变异）：谁把码改回去，判据立刻红
+            # —— 且要变绿必须显式往台账里加一条登记（评审可见）。
+            "java:controller/ProductionController.java",
+            lambda s: _swap(
+                s,
+                '@GetMapping("/piecework/summary")\n    @RequirePermission("production:view")',
+                '@GetMapping("/piecework/summary")\n    @RequirePermission("processing:manage")',
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉒ 新增未登记的菜单节点 ⇒ 判据 12 红": (
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "{ key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications',",
+                "{ key: 'ghost-surface', name: '幽灵页', icon: 'Bell', path: '/ghost-surface', "
+                "permissionCode: 'order:list', keywords: [] },\n"
+                "  { key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications',",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉓ 改节点码（智能派单从**页面读码**改回独立码 `production:view`）⇒ 新增一处未登记的不一致 ⇒ 判据 12 红": (
+            # issue #5699（P4）后该页节点码 = 该页唯一读码 `processing:view`；把它改成别的码
+            # = 「新增一处未登记的不一致」（与 ⑲ 同类）。⚠️ P4 **之前**本注入测的是「陈旧」那一半
+            #（把节点码改成读码让不一致消失）；P4 之后本注入的形态变了，陈旧那一半由 ㉓-bis 覆盖。
+            "menu:frontend",
+            lambda s: _swap(
+                s,
+                "path: '/production/pool', permissionCode: 'processing:view'",
+                "path: '/production/pool', permissionCode: 'production:view'",
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉓-bis 台账陈旧（`/settings` 的简报读端点被收敛到页面码 ⇒ 那处不一致消失而登记还在）⇒ 判据 12 红": (
+            # 只许缩短的**另一半**：不一致修好了却不销账 ⇒ 红（否则陈旧条目会把下一次真回归
+            # 读成「已登记」）。注入 = 把 `/settings` 第一屏的简报开关端点改挂页面码 `system:manage`
+            # —— 那正是 P4 **讨论过但有意未做**的那条出口（见 `/settings` 的残留登记）⇒ 该页变单码
+            # ⇒ 残留台账与多端点登记表**双双陈旧**。
+            "java:controller/BriefingController.java",
+            lambda s: _swap(
+                s,
+                '    @RequirePermission("dashboard:view")\n    @GetMapping("/config")',
+                '    @RequirePermission("system:manage")\n    @GetMapping("/config")',
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉔ 页面第一屏调用被换成别的端点（计件页改调 per-order 计件）⇒ 判据 12 红": (
+            # 页面侧那一跳的判别力：声明的调用从「effect 驱动面」上消失 ⇒ 声明陈旧 ⇒ 红
+            # （逼人同步台账，而不是让台账继续描述一个已经不存在的第一屏）。
+            "page:/production/piecework",
+            lambda s: _swap(
+                s, "productionApi.getPieceworkSummary", "productionApi.getPiecework"),
+            problems_menu_read_parity,
+        ),
+        # ── 判据 12 的**多端点页适用面**（#5675 收口包）：结构事实未登记 / 登记与现取不符 ────────
+        "㉕ 单端点页变多端点页（省料看板的 saving-trend 改挂 `processing:manage`）⇒ 多端点页未登记 ⇒ 判据 12 红": (
+            # 形态 = 判据 12 的「第一屏恰好一个读端点码」**前提被打破**（issue #5699 P4 后该页
+            # 已收敛为单码 `product:list` ⇒ 本注入把它变回两码）⇒ 一致性段（③）与新登记表都要报，
+            # 而「多端点页未登记」这一支**只有**多端点登记表拦得住。本注入就是这张表自己的判别力证明。
+            "java:controller/StockBatchController.java",
+            lambda s: _swap(
+                s,
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
+                '    @RequirePermission("processing:manage")\n    @GetMapping("/saving-trend")',
+            ),
+            problems_menu_read_parity,
+        ),
+        "㉖ 单码页重新变多码页（工艺配置的 `route-rules` 读端点改挂 `product:list`）⇒ 多端点页未登记 / 登记与现取不符 ⇒ 判据 12 红": (
+            # 形态 = 某页的「第一屏读端点码集」变了而登记没跟：issue #5699（P4）把该页收敛成
+            # 单码 `production:view` ⇒ 本注入让它重新变成 `production:view` + `product:list` 两码
+            # ⇒ 「多端点页未登记」与「与现取不符」两支都必须看得见。
+            "java:controller/ProductionController.java",
+            lambda s: _swap(
+                s,
+                '    @GetMapping("/route-rules")\n    @RequirePermission("production:view")',
+                '    @GetMapping("/route-rules")\n    @RequirePermission("product:list")',
+            ),
+            problems_menu_read_parity,
+        ),
+        # ── 判据 13（#5675 收口包）：注释里的计数 / 点名声明必须与代码现值一致 ────────────────
+        #    🔴 **每一个 kind 都要有自己的红证**（否则那一支就是空断言）：计数类的红证必须改**代码**
+        #    （改注释只会命中「锚失配」那一支），点名类的红证改**端点注解**，另有「锚被改写」一支。
+        "㉗ 代码漂了而注释没跟（余料台账节点改挂 `production:view` ⇒ `menu.ts` 里该码节点 4→5）⇒ 判据 13 红（menu-node-count）": (
+            "menu:frontend",
+            lambda s: _swap(s, "path: '/production/remnants', permissionCode: 'processing:manage'",
+                            "path: '/production/remnants', permissionCode: 'production:view'"),
+            problems_comment_claims,
+        ),
+        "㉘ 注释里的声明被改写（`**两个**只读端点：…` 去掉加粗标记）⇒ 逐字锚失配 ⇒ 判据 13 红（锚卫生）": (
+            "java:service/RegistrationService.java",
+            lambda s: _swap(s, "**两个**只读端点：`/operations-catalog`、`/routings`",
+                            "两处只读端点：`/operations-catalog`、`/routings`"),
+            problems_comment_claims,
+        ),
+        "㉙ 点名的端点掉了码（`/operations-catalog` 改回 `processing:manage`）⇒ 判据 13 红（endpoint-code）": (
+            "java:controller/ProductionController.java",
+            lambda s: _swap(s, '    @GetMapping("/operations-catalog")\n    @RequirePermission("production:view")',
+                            '    @GetMapping("/operations-catalog")\n    @RequirePermission("processing:manage")'),
+            problems_comment_claims,
+        ),
+        "㉚ 把刻意不写死的条数写回来（该行加「今天 9 个只读工具」）⇒ 判据 13 红（no-hardcoded-count）": (
+            "java:service/RegistrationService.java",
+            lambda s: _swap(s, "**不写死条数**：工具会增删", "**不写死条数**（今天 9 个只读工具）：工具会增删"),
+            problems_comment_claims,
+        ),
+        "㉛ 新增端点而注释没跟（该控制器加一个 GET ⇒ 7→8）⇒ 判据 13 红（get-endpoint-count）": (
+            # 真实回归形态 = #5159 当年就是「加了端点没改类 javadoc」；本注入把它复现成一次改动。
+            "java:controller/StockBatchController.java",
+            lambda s: _swap(
+                s,
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
+                '    @RequirePermission("product:list")\n    @GetMapping("/ghost-read-face")\n'
+                '    public ApiResponse<String> ghostReadFace() {\n        return ApiResponse.success("x");\n    }\n\n'
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
+            ),
+            problems_comment_claims,
+        ),
+        "㉜ 岗位权限变了而注释没跟（finance 去掉 `order:list` ⇒ 该码内置岗位 4→3）⇒ 判据 13 红（seed-role-count）": (
+            "java:service/RegistrationService.java",
+            lambda s: _drop_role_code(s, "financeRole", "order:list"),
+            problems_comment_claims,
         ),
     }
 
@@ -2266,6 +3648,205 @@ def test_pending_endpoint_registry_is_self_clearing(monkeypatch) -> None:
     hits = problems_registered_decisions(w)
     assert any("缺 `reason`" in h or "缺 `owner`" in h or "缺 `issue`" in h for h in hits), (
         f"登记项缺必填字段却未报 ⇒ 登记表会退化成垃圾场（hits={hits}）")
+
+
+def test_multi_endpoint_registry_is_self_clearing(monkeypatch) -> None:
+    """多端点页登记表（判据 12 ⑤）的**三态**都能单独变红：未登记 / 现取不符 / 已不再多码（#5675 收口包）。
+
+    为什么单独成例：「未登记」那一态的**真实回归形态**由注入 ㉕㉖ 走（改注解 ⇒ 某页码集变化）；
+    本例外加的三态是**登记表自身**的卫生 —— ②「现取不符」的两侧（多一个 / 少一个码）与 ③「陈旧」
+    今天在真实源码里**没有**对应坏形态，只能靠合成登记来压（同 `test_pending_endpoint_registry_is_self_clearing`
+    的做法：不合成 = 这三态永远是空断言）。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    w = world()
+    assert not problems_menu_read_parity(w), "前提：当前树判据 12 全绿（否则本条的读数无从归因）"
+    # ⚠️ 先留一份**未被 monkeypatch 过的**原表：下面每一态都替换模块级名字，裸名读到的已是被换掉那份。
+    pristine = dict(MULTI_READ_ENDPOINT_PAGES)
+
+    # ① 未登记：把登记表清空 ⇒ 每一个**真的**并发多码的页面都必须被点名（登记表不是装饰）。
+    #    🔴 issue #5699（P4）后真表只剩 `/settings` 一条（另外两页已按子菜单粒度收敛成单码）
+    #    ⇒ 本段同时反向断言那两页**不再**被点名（"已收敛"与"未登记"必须是两个读数）。
+    monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", {})
+    hits = problems_menu_read_parity(w)
+    for path in ("/settings",):
+        assert any(path in h and "多个不同码" in h for h in hits), (
+            f"清空登记表后 `{path}` 未被判「多端点页未登记」⇒ ⑤ 的覆盖段失效（hits={hits}）")
+    for path in ("/production/processing", "/production/routings", "/production/pool"):
+        assert not any(path in h and "多个不同码" in h for h in hits), (
+            f"`{path}` 已收敛为单码（issue #5699 P4）却仍被判「多端点页未登记」⇒ "
+            f"登记表的覆盖段把「已收敛」读成了「未登记」（hits={hits}）")
+
+    # ② 现取不符：把真登记里某一页的码集**改宽一个**（多一个码）⇒ 必须报「与现取不符」。
+    widened = dict(pristine)
+    widened["/settings"] = replace(
+        widened["/settings"], codes=widened["/settings"].codes | {"order:list"})
+    monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", widened)
+    hits = problems_menu_read_parity(w)
+    assert any("与**现取**" in h and "order:list" in h for h in hits), (
+        f"登记的码集比现取多一个码却未报 ⇒ ⑤ 的冻结段失效（hits={hits}）")
+
+    # ③ 陈旧：把一个**单端点**页登记成多端点页 ⇒ 必须报「已不再并发多码 ⇒ 删掉这条登记」。
+    monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", {
+        "/production/saving-board": MultiReadEndpointPage(
+            node="省料看板", codes=frozenset({"product:list"}),
+            reason="红证夹具（单端点页）", owner="本判据"),
+    })
+    hits = problems_menu_read_parity(w)
+    assert any("已**不再并发多码**" in h for h in hits), (
+        f"单端点页被登记成多端点页却未报「陈旧」⇒ ⑤ 的只许缩短段失效（hits={hits}）")
+
+    # ④ path 已不在菜单里 ⇒ 同一段的另一个出口（删除而不是留着）。
+    monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", {
+        "/ghost-surface": MultiReadEndpointPage(
+            node="幽灵页", codes=frozenset({"order:list"}),
+            reason="红证夹具（path 不存在）", owner="本判据"),
+    })
+    hits = problems_menu_read_parity(w)
+    assert any("已不在 `config/menu.ts`" in h for h in hits), (
+        f"登记了一个不在菜单里的 path 却未报 ⇒ 陈旧登记会永久留存（hits={hits}）")
+
+
+def test_read_parity_victims_ack_is_load_bearing(monkeypatch) -> None:
+    """`victims_ack` 是**承载字段**（判据 12 ④，#5675 收口包）：清空它 ⇒ 受害者必须立刻报出来。
+
+    🔴 **issue #5699（P4）改了本夹具的取材方式**（如实登记）：P4 之前真表里唯一带认领的路径是
+    `/production/processing`（`product_manager@fallback` 缺 `order:list` ⇒ 「加工费组合」tab 403）；
+    P4 把该页收敛成**单码** `production:view` ⇒ 那个受害者**真的消失了**、认领也**销账**了
+    （台账整表清空 ⇒ 再也拿不到「真认领」当夹具）。⇒ 本夹具改为**内存构造**：把
+    `ProductionPoolController` 的读端点码在源码表里改成 `processing:manage`（**不落盘**），
+    于是「节点码 processing:view ≠ 端点码 processing:manage」⇒ 持节点码而不持端点码的岗位
+    （客服 / 销售 / 财务）重新成为真受害者 —— 这正是「菜单看得见、点进去 403」的机械形态。
+
+    四段（缺任何一段这条「认领」就只是注释）：
+      ① 基线：当前树判据 12 全绿、且**一个受害者都没有**（P4 的目标形态：每个子菜单恰好一个码）；
+      ② 注入坏形态 + 具名登记（认领留空）⇒ 逐岗位复算必须报出受害者；
+      ③ 反向：给一条**没有**受害者的路径写认领 ⇒ 判「陈旧认领」（否则它会替未来的真受害者放行）；
+      ④ 认领是**有效出口**：同一处坏形态配上具名认领 ⇒ 必须变绿（否则该字段形同虚设）。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    w = world()
+    baseline = problems_menu_read_parity(w)
+    assert not baseline, "前提：当前树判据 12 全绿"
+    assert not [h for h in baseline if "403 受害者" in h], "基线不得已有受害者读数"
+    # ⚠️ 先留一份**未被 monkeypatch 过的**原表（下面每段都替换模块级名字）。
+    pristine = dict(MENU_READ_PARITY_RESIDUALS)
+
+    # ② 🔴 **内存构造**坏形态（不落盘）：把「智能派单」的读端点码改成管理码
+    #    ⇒ 节点码（processing:view，menu.ts）≠ 端点码（processing:manage）
+    #    ⇒ 持节点码而不持端点码的岗位重新变成真受害者。改磁盘的变异可能不被读到（见
+    #    `docs/wiki/CI-CD.md`「红证机具的可靠性」），故本夹具**当场构造源码表**。
+    pool_key = "java:controller/ProductionPoolController.java"
+    mutated = _source_map()
+    mutated[pool_key] = mutated[pool_key].replace(
+        '@RequirePermission("processing:view")\n    @GetMapping',
+        '@RequirePermission("processing:manage")\n    @GetMapping',
+    )
+    assert mutated[pool_key] != _source_map()[pool_key], (
+        "内存注入没生效（锚点失配）—— 同步本夹具（ProductionPoolController 的读端点注解形态）")
+    mutated_world = build_world(mutated)
+    # 坏形态下该页确实两侧不同 ⇒ ③ 要求具名登记；本段先给一条**认领留空**的登记。
+    bad = dict(MENU_READ_PARITY_RESIDUALS)
+    bad["/production/pool"] = MenuReadResidual(
+        reason="红证夹具（内存构造）：读端点码被改成管理码 ⇒ 节点码 ≠ 端点码",
+        surfaces_when="夹具专用，不落盘",
+        owner="本判据的红证夹具",
+    )
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", bad)
+    hits = problems_menu_read_parity(mutated_world)
+    assert any("403 受害者" in h for h in hits), (
+        "构造出「节点码 ≠ 端点码」后 ④ 的零 403 受害者段没有报出任何受害者 ⇒ "
+        f"该段是空断言（hits={hits}）")
+    assert any("403 受害者" in h and "processing:manage" in h for h in hits), (
+        f"受害者读数没有指名缺的那个码（hits={hits}）")
+
+    # ③ 反向：给一条**没有**受害者的路径写认领 ⇒ 陈旧认领必红。
+    stale = dict(pristine)
+    stale["/settings"] = replace(
+        pristine["/settings"], victims_ack="红证夹具：本路径无受害者")
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", stale)
+    hits = problems_menu_read_parity(w)
+    assert any("陈旧认领" in h for h in hits), (
+        f"无受害者却写了认领、判据没红 ⇒ 陈旧认领会替未来的真受害者放行（hits={hits}）")
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", pristine)
+
+    # ④ 认领是**有效出口**：同一处坏形态配上具名认领 ⇒ 零 403 受害者段必须放行（否则认领形同虚设）。
+    acked = dict(bad)
+    acked["/production/pool"] = replace(
+        bad["/production/pool"],
+        victims_ack="红证夹具：本次注入的受害者由本段认领（真实场景 = 与端点码归属同批裁定）",
+    )
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", acked)
+    hits = problems_menu_read_parity(mutated_world)
+    assert not [h for h in hits if "403 受害者" in h], (
+        f"写了具名认领后受害者段仍判红 ⇒ 认领字段不是出口（hits={hits}）")
+
+    # ⑤ P4 的目标形态（issue #5699）：当前树上**没有任何**路径带认领 —— 每个子菜单恰好一个码
+    #    ⇒ 不存在「看得见却打不开」的岗位。回归形态 = 有人把某个码拆回去（② 的机械形态会先红）。
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", pristine)
+    assert not any(r.victims_ack.strip() for r in pristine.values()), (
+        "P4 之后不应再有带 `victims_ack` 的残留登记（销账是目标）；"
+        "若确有受害者，说明这次收敛被回退或新引入了一处多码页"
+    )
+
+
+def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:
+    """差异台账**是承载字段**（判据 14 ①，issue #5683）—— 四段红证 + 一条对照组。
+
+    台账若只是一张没人读的登记表，「只许缩短」就只是纪律。issue #5683 收口后台账**已整表销账**
+    （`ROLE_FALLBACK_DIVERGENCES == {}`、上限 **0**）⇒ 今天任何一种差异都会直接撞上它：
+      ① **对照组**：现取差异集为空、登记也为空 ⇒ 全绿；
+      ② **新增未登记差异**（从回退删一个码）⇒ 必须红；
+      ③ **「整角色没有 case ⇒ 空表」形态**（`∅ ⊆ 种子` 恒真 ⇒ 只看 ⊆ 会全绿）⇒ 必须**指名**红；
+      ④ **陈旧条目**（差异不存在而登记还在）⇒ 必须红（**销账是必须动作，不是可选**）；
+      ⑤ **台账只许缩短**：先制造一条**真实**差异再登记它 ⇒ 差异合法但**超上限 0** ⇒ 必须红。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    w = world()
+    assert ROLE_FALLBACK_DIVERGENCES == {}, "前提：issue #5683 收口后差异台账应为空（整表销账）"
+    assert not problems_role_default_parity(w), "对照组：当前树判据 14 全绿"
+
+    # ② 新增未登记差异：从回退里删掉一个码
+    src = _source_map()
+    key = "java:service/RoleService.java"
+    dropped = dict(src)
+    dropped[key] = _drop_fallback_code(dropped[key], "operator", "processing:view")
+    hits = problems_role_default_parity(build_world(dropped))
+    assert any("未登记" in h and "processing:view" in h for h in hits), (
+        f"回退少一个码却没被判「未登记差异」⇒ 台账不是承载字段（hits={hits}）")
+
+    # ③ 「整角色没有 case ⇒ 空表」形态（`∅ ⊆ 种子` 恒真）⇒ 必须**指名**红
+    cut = dict(src)
+    cut[key] = _drop_fallback_case(cut[key], "sales")
+    hits = problems_role_default_parity(build_world(cut))
+    assert any("根本没有" in h and "sales" in h for h in hits), (
+        f"删掉整段 `case \"sales\"` 却没被**指名**报出 ⇒ 该形态会静默（hits={hits}）")
+
+    # ④ 陈旧条目：给一个**已无差异**的角色码插一条登记 ⇒ 红
+    stale = {"operator": RoleFallbackDivergence(
+        missing=frozenset({"ghost:code"}), extra=frozenset(),
+        reason="红证夹具：该差异并不存在", surfaces_when="红证夹具：不会显形",
+        owner="红证夹具", issue="#5683")}
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", stale)
+    hits = problems_role_default_parity(w)
+    assert any("不再有差异" in h or "与**现取**不符" in h for h in hits), (
+        f"差异已消失而条目还在、判据没红 ⇒ 陈旧条目会替下一次真分叉放行（hits={hits}）")
+
+    # ⑤ 台账只许缩短：**真实**存在的差异 + 逐值相符的登记 ⇒ 差异合法，但超上限 0 ⇒ 红
+    real = RoleFallbackDivergence(
+        missing=frozenset({"processing:view"}), extra=frozenset(),
+        reason="红证夹具：一条真实存在的差异", surfaces_when="红证夹具：不会显形",
+        owner="红证夹具", issue="#5683")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", {"operator": real})
+    hits = problems_role_default_parity(build_world(dropped))
+    assert not [h for h in hits if "未登记" in h], (
+        f"前提失效：逐值相符的登记不该被判「未登记」（hits={hits}）")
+    assert any("又长回来了" in h for h in hits), (
+        f"台账已销账（上限 0）却又长回一条、判据没红 ⇒ 「只许缩短」是空断言（hits={hits}）")
+    monkeypatch.setattr(mod, "ROLE_FALLBACK_DIVERGENCES", ROLE_FALLBACK_DIVERGENCES)
 
 
 def test_every_judgement_can_go_red() -> None:

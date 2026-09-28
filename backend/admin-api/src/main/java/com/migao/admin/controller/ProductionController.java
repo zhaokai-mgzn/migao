@@ -18,6 +18,7 @@ import com.migao.admin.service.ProductionRoutingReadService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.ProductionStuckPointService;
+import com.migao.admin.service.ProductionTodoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -43,14 +44,41 @@ import java.util.Map;
  * 真值源：docs/curtain-production-rules.md §1 打印物 / §2 工序库 / §3 工艺路线 / §4 计件 / §5 扫码报工闭环。
  *
  * <p><b>权限口径（本批新增端点逐条声明，见 issue #4104 的控制器级错配台账）</b>：
- * 类级 {@code order:list} 是读口径；写/报表端点用方法级 {@code processing:manage} 覆盖
+ * 类级 {@code order:list} 是读口径；**写**端点用方法级 {@code processing:manage} 覆盖
  * （方法级优先，见 {@code PermissionInterceptor.resolveRequirePermission}）。
  * ⚠️ <b>issue #5291</b>：两个**只读**端点（{@code /operations-catalog}、{@code /routings}）改挂生产域
  * **读**码 {@code production:view}（与「工艺配置」节点、Agent 侧 {@code operation_catalog_query} 同码）
  * —— 它们此前用方法级 {@code processing:manage}，只因当时该域没有读码。
- * **唯一例外是打印计数**：它沿用类级 {@code order:list} —— 打印按钮今天对客服/销售/财务可见
- * （{@code order:list} 授了 4 个岗位，{@code processing:manage} 只授 operator），
- * 收窄会让「能打开生产明细却打不了卡」变成功能回退；计数只是打印动作的元数据，不涉安全边界。</p>
+ * 🔴 <b>issue #5699（P4）</b>：「工艺配置」页第一屏的**配置族读端点**
+ *（{@code /operation-positions}、{@code /route-rules}、{@code /route-rule-options}）与
+ * 「加工项管理」页第一屏的两个加工费读端点（{@code /processing-fee-combinations}、
+ * {@code /processing-fee-gaps}）按**子菜单粒度**收敛到各自页面的那**一个**码
+ *（前者 {@code production:view}、后者亦 {@code production:view}）—— 用户的裁定是
+ *「权限粒度到子菜单即可，页内功能不作为权限边界」⇒ 同一子菜单下的端点必须同码，
+ * 否则就是判据 12 要治的「菜单看得见、点进去 403」。两个码的持有岗位集合逐值相同 ⇒ **零 delta**；
+ * 加工费组合那两个端点此前是**类级** {@code order:list}（授权面 25 个端点）⇒ 这是一处**收窄**，
+ * 逐条差量见 P4 的 D1/D2/D3 表。
+ * 🔴 <b>issue #5675</b>：{@code /piecework/summary} 改挂本**读**码 ——
+ * 它是「计件工资」页的**第一屏读端点**，而该页的菜单节点码（{@code menu.ts}）与前端路由守卫
+ * 都已是读码 {@code production:view}；同一份工资聚合也早已在 Agent 侧
+ * （{@code /api/admin/agent/production/piecework}，issue #5291 改挂同一读码）可读
+ * ⇒ 改前那处不一致的**形态 = 菜单节点码 ≠ 该页第一屏读端点码**：节点 / 路由守卫 / Agent 侧都按读码
+ * 放行，只有这个端点仍要管理码 ⇒ 具备「菜单看得见、点进去 403」的显形条件。
+ * **可见性零变化**：三个来源（种子 / V129 回填 / `RoleService` 回退）里
+ * 持读码的岗位集合与持管理码的岗位集合**逐值相等**（admin + operator）⇒ 改它不放宽也不收窄任何岗位。
+ * ⚠️ <b>归因更正（#5675 收口包独立复核）</b>：本段原写「#5291 的**漏改**的第三个只读端点」—— 该归因
+ * **已证伪**，故改按形态归因。它的来源是 {@code RegistrationService} 读码目录里过宽的一句（原写
+ * 「四个页面的读端点同批改挂本码」，已同批改准）；而 #5291 自己的类注记（本节上一条）逐字只写
+ * 「**两个**只读端点」，且工艺配置页第一屏的配置族读端点今天仍由方法级 {@code processing:manage}
+ * 把守 —— 那是有断言记录的族级决定
+ * （{@code ProductionRoutingReadControllerTest#endpointsDeclareManagePermission}：{@code routeRules} /
+ * {@code operationPositions} 必须声明管理码，理由逐字「价目与规则是生产配置面」）⇒ 不存在「第三个漏改」。
+ * 🔴 <b>issue #5699（I4）</b>：四个**真写**端点（{@code /instantiate} 建加工单 · {@code /operations/{}/report}
+ * 报工 · {@code /print} 打印计数 · {@code /ship} 发货）此前**只由类级读码 {@code order:list}** 把守 ⇒ 现在
+ * **逐条补方法级写码** {@code production:execute}。**打印计数**此前那句「故意沿用类级 {@code order:list}」的
+ * 理由（打印按钮对客服/销售/财务可见）由**授权**承接 —— 读码 `order:list` 授了 4 个岗位
+ * （客服 · 运营 · 销售 · 财务），该写码已同批授予这四个岗位 ⇒ 收窄为零；
+ * 新码**只**挂这四个端点（别处一律不挂）。</p>
  */
 @Slf4j
 @RestController
@@ -120,6 +148,16 @@ public class ProductionController {
     private ProductionStuckPointService productionStuckPointService;
 
     /**
+     * 生产待办聚合（「今天要处理的 N 件事」，issue #5641）。
+     *
+     * <p>同上面几条的理由用字段注入：本类构造签名被 {@code ProductionControllerTest} 的
+     * standaloneSetup 显式装配（6 个参数），加构造参数会把既有测试的每一处装配都改一遍 ——
+     * 而本单的改动面**不应**扩到那里（同 #4308 的「不复制第二份装配」口径）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionTodoService productionTodoService;
+
+    /**
      * 未定价实例的**显式补价路径**（issue #4709 C）：只补 {@code NULL}、已有价一律不动、进度不清零。
      *
      * <p>同上面几个字段的理由用字段注入：本类构造签名被 {@code ProductionControllerTest} 的
@@ -147,6 +185,7 @@ public class ProductionController {
      * 对已有实例的单仍是**幂等空操作**（不重插行、不清零 done_qty、token 复用）。</p>
      */
     @PostMapping("/orders/{orderId}/instantiate")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> instantiate(@PathVariable String orderId,
                                                         @RequestBody(required = false) Map<String, Object> body) {
         return ApiResponse.success(productionService.instantiate(
@@ -176,16 +215,18 @@ public class ProductionController {
      * 只流转**不记单号** ⇒ 工人发一次货要调两次，中间失败就是「有单号但没发货」或
      * 「发货了没单号」的静默不一致。发货是**一个动作**，就该是一个入口。</p>
      *
-     * <p><b>权限 = 类级 {@code order:list}</b>（与扫码/报工同一权限）：工人身份不需要
-     * {@code processing:update} 或新增「仓管」角色即可发货 —— 能扫码报工的人本来就有
-     * {@code order:list}（实测：{@code ProductionController} 类级 + 既有
-     * {@code PUT /orders/{id}/status} / {@code /logistics} 也都是 {@code order:list}）。</p>
+     * <p><b>权限 = 写码 {@code production:execute}</b>（issue #5699 的 **I4**）：发货是**写**动作
+     * （流转订单状态 + 落单号），此前只由**类级读码** {@code order:list} 把守 ⇒「写动作由读码把守」
+     * （判据 5 的射程只有工具层 ⇒ 端点层这一族此前没有判据看得见）。该写码只把守本控制器的
+     * **四个真写端点**（建加工单 / 报工 / 打印 / 发货），并已授予**今日持 {@code order:list} 的四个岗位**
+     * （客服 · 运营 · 销售 · 财务）⇒ 有效权限集合**逐值不变**。</p>
      *
      * <p><b>守卫不复制</b>：含加工项订单必须有 completed 加工单这条判定在
      * {@link OrderService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
      * 本端点只做转发。</p>
      */
     @PostMapping("/orders/{orderId}/ship")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> ship(@PathVariable String orderId,
                                                  @RequestBody Map<String, String> body) {
         orderService.shipWithLogistics(orderId,
@@ -233,9 +274,12 @@ public class ProductionController {
      * 记录一次任务卡打印（issue #4202 边角修复：print_count 此前零写方）
      * POST /api/admin/production/orders/{orderId}/print
      *
-     * <p>权限**故意**沿用类级 {@code order:list}（见类注释）。</p>
+     * <p>权限 = **写**码 {@code production:execute}（issue #5699 的 **I4**）：打印计数是**写**动作
+     * （{@code print_count} 落库）⇒ 由写码把守。⚠️ 与「方法级覆盖」同批补的是**岗位授权** ——
+     * 打印按钮今天对客服/销售/财务可见 ⇒ 该写码已授予这四个岗位（有效权限集合逐值不变）。</p>
      */
     @PostMapping("/orders/{orderId}/print")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> printOrder(@PathVariable String orderId) {
         return ApiResponse.success(
                 processingOrderService.recordPrint(orderId, TenantContext.getTenantId()));
@@ -304,6 +348,26 @@ public class ProductionController {
     }
 
     /**
+     * 生产概览（**待办优先**，issue #5641）：一屏回答「今天要处理的 N 件事」，数字退第二屏。
+     * GET /api/admin/production/todo-overview
+     *
+     * <p>响应形状与四类口径见 {@link ProductionTodoService}。要点：每一类待办都**直接消费既有判据**
+     * （「卡在哪」= {@link ProductionStuckPointService}，含其阈值与 {@code threshold_source} 透传；
+     * 「待发货」= {@code OrderService} 的发货守卫）—— 本端点**不新增任何判据**，
+     * 第一屏条数与第二屏计数取自**同一份 list**。</p>
+     *
+     * <p><b>权限 = 方法级 {@code production:view}</b>（生产域**读**码，issue #5291 设立：与
+     * 「生产看板 / 工艺配置 / 计件工资」菜单节点、Agent 侧生产读面同码）。这里**不新增权限码**
+     * （新增要迁移 + 全租户回填，属过度建设）也不沿用类级 {@code order:list} —— 本端点是
+     * <b>生产口径</b>而非订单口径，且无权限必须**拒绝**（403）而不是静默返回空列表。</p>
+     */
+    @GetMapping("/todo-overview")
+    @RequirePermission("production:view")
+    public ApiResponse<Map<String, Object>> todoOverview() {
+        return ApiResponse.success(productionTodoService.overview(TenantContext.getTenantId()));
+    }
+
+    /**
      * 扫码报工（推进工序进度 + 记录个人计件）
      * POST /api/admin/production/orders/{orderId}/operations/{operationId}/report
      * body: {worker_id, worker_name, qty, qualified_qty, work_type(normal/rework/scrap)}
@@ -314,6 +378,7 @@ public class ProductionController {
      * 与下单/建工单复用**同一套** {@link ClientRequestIdService}（同一张表、同一种占位语义）。</p>
      */
     @PostMapping("/orders/{orderId}/operations/{operationId}/report")
+    @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> report(
             @PathVariable String orderId,
             @PathVariable String operationId,
@@ -365,8 +430,16 @@ public class ProductionController {
      * <p><b>未定价显式可见</b>（V90，issue #4696）：见 {@link #piecework(String)} ——
      * 未定价的报工不进 {@code total}，但必须在报表上列出来 + 给定价入口。</p>
      */
+    // issue #5675：本端点是「计件工资」页的**第一屏读端点**（页面挂载即 GET 它）⇒ 码必须与
+    // 该页菜单节点（`frontend/admin-web/src/config/menu.ts` 的「计件工资」= production:view）
+    // 及前端路由守卫同码。改前是 processing:manage —— 归因是**「节点码 ≠ 该页第一屏读端点码」这一形态**；
+    // ⚠️ 原写「#5291 漏改的第三个只读端点」，该说法经 #5675 收口包独立复核**已证伪**（理由见本类类注记的
+    // 「⚠️ 归因更正」段：`ProductionRoutingReadControllerTest#endpointsDeclareManagePermission` 钉住的
+    // 族级管理码不是漏的）⇒ 按形态归因，不按「漏」归因。
+    // 判据：tests/unit_ci_workflows/test_agent_permission_parity.py 的判据 12（菜单节点码 ≡
+    // 页面第一屏读端点码）+ 前端 frontend/bmini-app/tests/admin-surfaces-guard.test.ts 判据 5。
     @GetMapping("/piecework/summary")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> pieceworkSummary(
             @RequestParam(required = false) String period,
             @RequestParam(name = "worker_name", required = false) String workerName) {
@@ -679,6 +752,12 @@ public class ProductionController {
      * <p>用户裁定（2026-09-19）：「不是每个加工项收取一个费用，而且通常是组合」——
      * 本表是商家**配置时**自行组合并定价的写面，也是下单侧按选配结果取价的匹配表。</p>
      */
+    // issue #5699（P4）：本端点与 {@code /processing-fee-gaps} 是「加工项管理」页**第一屏**的读端点
+    // ⇒ 与菜单节点码 / 前端路由守卫同码 {@code production:view}（判据 12「节点码 ≡ 该页第一屏读码」）。
+    // 此前沿用**类级**读码 {@code order:list}（授权面 25 个端点），而本次收敛只支撑本页 2 个端点
+    // —— 授权面与理由不匹配正是 P4 的 D2 判据；写端点（POST/PUT/DELETE 本族）仍为方法级
+    // {@code processing:manage}，一字未动。
+    @RequirePermission("production:view")
     @GetMapping("/processing-fee-combinations")
     public ApiResponse<Map<String, Object>> processingFeeCombinations() {
         return ApiResponse.success(processingFeeQueryService.combinations(TenantContext.getTenantId()));
@@ -734,6 +813,7 @@ public class ProductionController {
      * <p>与 {@code GET /production/routing-gaps} 同构：把「只会在顾客下单后才发现漏配价」
      * 变成商家在配置阶段就能看见的待办。**不发明任何默认价** —— 缺口就是缺口。</p>
      */
+    @RequirePermission("production:view")
     @GetMapping("/processing-fee-gaps")
     public ApiResponse<Map<String, Object>> processingFeeGaps() {
         return ApiResponse.success(processingFeeQueryService.feeGaps(TenantContext.getTenantId()));
@@ -752,8 +832,11 @@ public class ProductionController {
      * {@code (operation, position)} 稳定排序。{@code applicable=false} = 该部位**明确不做**
      * （{@code unit_price=null}）—— 与「没定价」可区分（前端两态渲染）。</p>
      */
+    // issue #5699（P4）：与下面两个读端点同批收敛到「工艺配置」页的**页面码** {@code production:view}
+    //（该页第一屏 6 个读端点此前跨两个码 ⇒ 判据 12 的多码页台账）。两个码的持有岗位集合
+    //（种子 / 回退两来源）逐值相同 ⇒ 对所有角色的可见面与可做面**零 delta**；写端点（PUT 本端点）不变。
     @GetMapping("/operation-positions")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<List<Map<String, Object>>> operationPositions() {
         return ApiResponse.success(
                 productionRoutingReadService.operationPositions(TenantContext.getTenantId()));
@@ -829,7 +912,7 @@ public class ProductionController {
      * 存量变体名行不再上屏）。</p>
      */
     @GetMapping("/route-rules")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<List<Map<String, Object>>> routeRules() {
         return ApiResponse.success(
                 productionRoutingReadService.routeRules(TenantContext.getTenantId()));
@@ -847,7 +930,7 @@ public class ProductionController {
      * 此前**没有任何读端点**）+ 活跃加工项目录。特殊选项名**不在此列**（可新建，没有第二份词表）。</p>
      */
     @GetMapping("/route-rule-options")
-    @RequirePermission("processing:manage")
+    @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> routeRuleOptions() {
         return ApiResponse.success(
                 productionRoutingReadService.triggerOptions(TenantContext.getTenantId()));

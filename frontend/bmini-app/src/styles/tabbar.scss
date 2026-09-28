@@ -1,0 +1,54 @@
+// B 端 H5 底部 tabBar 的**居中修正**（issue #5754）
+//
+// ## 治的形态（headless chromium 对**线上** `/b/` 实测，viewport 390×844）
+//
+// Taro h5 的 tabBar 样式由运行时注入（`@tarojs/router` 的 `style.js`；产物里在 `js/724.js`），
+// 它把 iOS 安全区（`viewport-fit=cover` 下 `env(safe-area-inset-bottom)`，带 home indicator 的机型 = 34px）
+// **算了两遍**：
+//   ① `.taro-tabbar__tabbar-bottom{margin-bottom:env(safe-area-inset-bottom)}` —— 把**整条**抬起来；
+//   ② `.weui-tabbar__item{padding-bottom:env(safe-area-inset-bottom)}` —— 条内**再垫一次**。
+// ⇒ iPhone 上实测：图标 y 相对条顶 **−12px**（溢出到条外）、文字下方留 **51px** 空白。
+// 同族还有一条更普遍的：item 是 `padding:5px 0`（上 5 下 0）⇒ **无安全区时文字直接贴着屏幕底边**
+// （安卓 / 桌面 / 老 iPhone：gapTop=5px、gapBottom=0px，仍然不是居中的）。
+//
+// ## 修法（三条不变量，缺一即回到旧形态）
+//   ① **安全区只补一次**：条自身**覆盖**安全区（高度 = `--taro-tabbar-height` + safe），不再整体抬起；
+//   ② **图标 + 文字在可视区里垂直居中**：item 改 flex 纵列居中，不依赖「上 5 下 0」的固定留白；
+//   ③ 底部的安全区衬垫**保留在 item 上**（②里只清 `padding-top`）——它与 ① 合起来才是「一次」。
+// 与 Taro 自己的面板算式逐项对齐：`.taro_page.taro_tabbar_page{max-height: calc(100vh - var(--taro-tabbar-height) - env(safe-area-inset-bottom))}`
+// ⇒ 可视内容区 = `100vh − 50 − safe`，与修后的条高 `50 + safe` 相等（不遮内容、不留缝）。
+//
+// ## 边界（照实登记）
+// · 选择器只在 **h5 产物**里匹配到元素（小程序端 tabBar 是原生的，DOM 里没有这些类名）⇒ 对小程序零影响。
+// · `--taro-tabbar-height` 由 Taro 运行时注入到 `:root`（值 50px）；这里用 `var(…, 50px)` 的**兜底值**，
+//   不自己声明同名变量（否则可能与运行时的值打架）。
+// · 判据（**文本级**）= `frontend/bmini-app/tests/tabbar-layout.test.ts`；
+//   「是否真的居中」只有几何复测能回答 —— 本仓 bmini **没有** e2e 腿，本文件不假装它有。
+// · 实测读数（改前/改后）记在 issue #5754 与 PR 正文里（四组：有/无安全区 × 修前/修后）。
+
+// ① 安全区只补一次：不再把整条抬起来，改为让条**覆盖**它
+.taro-tabbar__tabbar-bottom {
+  margin-bottom: 0;
+}
+
+.taro-tabbar__tabbar {
+  // 🔴 **不许给这个变量写兜底值**（PR #5755 发布后实测的构建陷阱）：
+  //   写 `var(--taro-tabbar-height, 50px)` ⇒ `postcss-pxtransform` 会把它揉成
+  //   `var(--50PX, 1.25rem)`（兜底值进了**变量名**）⇒ 变量解析不到 ⇒ 该声明在计算值阶段
+  //   失效（`unset` → `auto`）⇒ 条高塌成 26px、标签被挤出屏幕（线上实测：label 底超出视口 9.5px）。
+  //   ⚠️ 探针实测（PR #5755 修 forward）：**连不带兜底的 `var(--taro-tabbar-height)` 也会**被改成
+  //   `var(--50PX)` —— 所以这一格**不能**引用 Taro 的变量名，只能用 **CSS 尺度字面量**（大写 PX）。
+  //   50 与 Taro 运行时注入值（`@tarojs/router` 的 `--taro-tabbar-height:50px`）**逐值相等**，
+  //   由判据现取 Taro 包核对（改 Taro 版本若把它变成别的值 ⇒ 判红，逼人同步这一格）。
+  height: calc(50PX + env(safe-area-inset-bottom));
+}
+
+// ② 图标 + 文字在可视区垂直居中（保留 Taro 的 item 底部安全区衬垫 = ③）
+.weui-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}

@@ -57,7 +57,16 @@ LEGACY_A_PATTERNS = (
     r"floor\(\s*g_(?:eff|max)\s*/\s*d_eff\s*\)",   # 段数算式里的并排条数
     r"ceil\(\s*k\s*/\s*floor\(",                    # 段数 = ceil(k / floor(...))
     r"段数\s*[×x*]\s*(?:Wp|片宽|\d)",                # M = T + 段数 × Wp
-    r"d_eff",                                       # 旧口径的「缺口 + 花距」加宽量（现行口径无此量）
+    # 旧口径的「缺口 + 花距」加宽量（现行口径无此量）。
+    # 🔴 **必须带标识符边界**（2026-09-26 实测补）：裸 `d_eff` 会命中**无关标识符的子串** ——
+    # 实证 `docs/design/b-end-wechat-login-and-agent-gate.md` 里提到文件名
+    # `declared_effective_registry.json`，其 `declare` + `d_eff` + `ective` 恰好含裸 `d_eff`
+    # ⇒ 该设计文档被判「未退役的旧口径 A」而红（PR #5644 的 required job
+    # `ci workflow helper unit tests` 实测：`5116 passed / 1 failed`）。
+    # 这是仓库已登记的形态「**引用即实例**」——正则守卫对「引用」与「使用」一视同仁
+    # （`migao-dev-flow` §2.2）。⇒ 修法是**给模式加边界**，**不是**改文档措辞
+    # （§2.2 逐字：「『靠改措辞规避门禁』的 workaround 已失效，不要再教」）。
+    r"(?<![0-9A-Za-z_])d_eff(?![0-9A-Za-z_])",
     r"加高条按片宽另买",
     r"口径\s*A(?![0-9A-Za-z])",
 )

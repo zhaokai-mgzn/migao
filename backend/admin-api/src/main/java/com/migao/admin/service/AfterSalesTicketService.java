@@ -14,6 +14,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
+import com.migao.admin.time.BusinessClock;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -22,12 +23,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -41,6 +42,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper, AfterSalesTicket> {
+
+    /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
+     * （@WebMvcTest / ApplicationContextRunner）与直接 new 构造的既有单测没有该 bean ⇒ required=false +
+     * 默认实例（同为 +08 口径，行为一致），不因引入时钟让任何既有上下文启动失败（实测 OssEmptyConfigContextTest）。 */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderMapper orderMapper;
@@ -736,7 +743,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * 格式: AS-yyyyMMdd-XXXX，从 DB 查询当天最大序号 +1
      */
     private String generateTicketNo() {
-        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String datePart = businessClock.today().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String prefix = "AS-" + datePart + "-";
 
         // 从 DB 查当天最大工单号，防止重启后 AtomicInteger 归零导致重复

@@ -1,0 +1,15 @@
+{
+ "_doc": [
+  "output_verify.expect 键名的「形状不定」登记台账（issue #3729）。",
+  "为什么需要：产出键快照（output_keys_snapshot.json）只能从工具源码推导 —— 后端透传",
+  "（data=response.get('data')）与条件出键的键名它看不见。判据在",
+  "tests/unit_ci_workflows/test_assertion_specs_wellformed.py::TestOutputKeysAreProducible：",
+  "快照判「形状不定」的声明键，**未登记即红**（fail-closed，不许静默放行）。",
+  "纪律：每个条目必须写明「这个键由谁产出、为什么快照看不见它」；条目一旦不再对应任何",
+  "「形状不定」的声明键即判红（过期豁免只许缩短，不许留着凑数）。",
+  "键格式 = <用例 ID>:<工具名>:<expect 键名>。"
+ ],
+ "entries": {
+  "AS-010:aftersale_create:replayed": "该键由 admin-api 的幂等回放产出：ClientRequestIdService.replay 往工单快照 JSON 里注入 replayed=true，DTO AfterSalesDetailResponse 亦声明该字段（backend/admin-api/src/main/java/com/migao/admin/dto/AfterSalesDetailResponse.java）。工具侧只是把 POST /api/admin/agent/after-sales 的 response['data'] 原样透传（backend/ai-agent-service/app/tools/aftersale_create.py 的 ticket_data），Python 源码里既不写这个键、也不读它 ⇒ 静态推导只能给「形状不定」。要把它变成 producible 需要解析 Java DTO（本 PR 刻意不做：那是第二份真相源，见 PR body「看不到什么」）。"
+ }
+}
