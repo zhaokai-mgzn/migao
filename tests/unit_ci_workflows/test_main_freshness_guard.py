@@ -979,3 +979,210 @@ class TestMergeUnionShape:
         module = _exec_mutant(mutant)
         rc = module.main(["--repo", str(repo)])
         assert rc == 0, f"只比行数的变异体仍判红（rc={rc}）⇒ 判据 10 的判别力证明不成立"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 12~14（台账 `FM-E22`）：**合并探测** —— 把「本树 × 基线」的**合并结果**物化出来再判一次
+#   病灶 = `FM-E18` 的时序面：两个**各自新鲜**的分支合并后，块 hunk 取并集、而两侧同值的汇总 hunk
+#   干净合并不重算 ⇒ **落地那份比源陈旧**，而 PR 面的新鲜度判定只看**本树**。
+# ══════════════════════════════════════════════════════════════════════════════
+
+PROBE_FACE_PATHS = (".github/cases", ".github/render_cases.py",
+                    "docs/testing/mibao-verification-cases.md", "tests/agent_eval/eval_cases.py")
+PROBE_STEP_NEEDLE = "--merge-probe origin/main"
+PROBE_GATE_NEEDLE = "steps.probe_face.outputs.probe == 'true'"
+PROBE_RE_NEEDLE = "PROBE_FACE_RE='"
+
+
+def _probe_predicate(job_text: str) -> str:
+    """从 job 文本里取出**路径谓词原文**（门控的触发面口径只有一处事实源）。"""
+    if PROBE_RE_NEEDLE not in job_text:
+        return ""
+    return job_text.split(PROBE_RE_NEEDLE, 1)[1].split("'", 1)[0]
+
+
+def _job_text(text: str, job_id: str) -> str:
+    """该 job 的 YAML 片段（到下一个顶层 job 键为止），**去掉整行注释**（注释里的提及不算实现）。"""
+    marker = f"\n  {job_id}:\n"
+    if marker not in text:
+        return ""
+    rest = text.split(marker, 1)[1]
+    end = len(rest)
+    for i, line in enumerate(rest.splitlines(keepends=True)):
+        if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":"):
+            end = sum(len(x) for x in rest.splitlines(keepends=True)[:i])
+            break
+    body = rest[:end]
+    return "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+
+
+def _job_span(text: str, job_id: str = "case-truth-check") -> tuple[int, int]:
+    """该 job 在原文里的 `[start, end)` 区间（供**只在它内部**做变异用；别的 job 有同名 needle）。"""
+    marker = f"\n  {job_id}:\n"
+    assert marker in text, f"找不到 job `{job_id}`（结构变了）"
+    start = text.index(marker)
+    rest = text[start + len(marker):]
+    lines = rest.splitlines(keepends=True)
+    end = len(text)
+    for i, line in enumerate(lines):
+        if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":"):
+            end = start + len(marker) + sum(len(x) for x in lines[:i])
+            break
+    return start, end
+
+
+def probe_wiring_problems(pr_check_text: str) -> list[str]:
+    """**纯函数**：`pr-check` 必须 ① 跑合并探测 ② **路径门控** ③ checkout 够历史 ④ 门控覆盖受管用例面。"""
+    problems: list[str] = []
+    job = _job_text(pr_check_text, "case-truth-check")
+    if not job:
+        return ["找不到 `case-truth-check` job（结构变了 ⇒ 本判据需同批改）"]
+    if PROBE_STEP_NEEDLE not in job:
+        problems.append(f"没有跑合并探测（缺 `{PROBE_STEP_NEEDLE}`）⇒ `FM-E18` 的时序面仍无人判")
+    if "probe_face" not in job or PROBE_GATE_NEEDLE not in job:
+        problems.append("合并探测没有**路径门控** ⇒ 不碰受管用例面的 PR 会替 main 侧的漂移背锅"
+                        "（`FM-E4` 的归因纪律）")
+    if "fetch-depth: 0" not in job:
+        problems.append("本 job 的 checkout 没有 `fetch-depth: 0` ⇒ `origin/main...HEAD` / merge-base 不可得，"
+                        "探测会退化为「无法判定」（新的假阻塞）")
+    predicate = _probe_predicate(job)
+    if not predicate:
+        problems.append(f"门控没有可解析的路径谓词（缺 `{PROBE_RE_NEEDLE}`）⇒ 判不了它到底覆盖哪些面")
+    else:
+        rx = re.compile(predicate)
+        missing = [path for path in PROBE_FACE_PATHS
+                   if not (rx.search(path) or rx.search(path + "/__probe__"))]
+        if missing:
+            problems.append(f"触发谓词**不覆盖**这几条：{missing}（受管用例面漏一条 ⇒ 该面改动不跑探测）")
+    if "git fetch --no-tags --quiet origin main" not in job:
+        problems.append("探测步没有先取 `origin/main` ⇒ 取不到基线（3 = 无法判定）")
+    return problems
+
+
+def _git_fixture(root: Path) -> Path:
+    """真 git 夹具：真渲染器 + 真用例库 + 真生成物，**真提交、真分支**（合并语义只能真验）。"""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".github").mkdir(exist_ok=True)
+    for name in _RENDERER_DEPS:
+        shutil.copy2(REPO / ".github" / name, root / ".github" / name)
+    shutil.copytree(REPO / ".github" / "cases", root / ".github" / "cases")
+    for rel in COVERED_ARTIFACTS:
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text((REPO / rel).read_text(encoding="utf-8"), encoding="utf-8")
+    _git_in(root, "init", "-q", ".")
+    _git_in(root, "add", "-A")
+    _git_in(root, "-c", "user.email=case@example.invalid", "-c", "user.name=case", "commit", "-qm", "base")
+    _git_in(root, "branch", "-m", "main")
+    return root
+
+
+def _git_in(repo: Path, *args: str) -> None:
+    proc = subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True)
+    assert proc.returncode == 0, f"夹具 git {' '.join(args)} 失败：{proc.stderr[:300]}"
+
+
+def _add_one_case_and_rerender(repo: Path, new_id: str, *, at_end: bool) -> None:
+    """在用例库**新增一条用例**（`at_end=False` 时插在最后一条之前）+ **重渲染** ⇒ 本侧**新鲜**。"""
+    case = repo / ".github" / "cases" / "misc.yml"
+    text = case.read_text(encoding="utf-8")
+    i = text.rindex("\n  - id: ")
+    block = text[i:]
+    old_id = block.split("id: ")[1].split("\n")[0]
+    block = block.replace(old_id, new_id, 1).replace('title: "', f'title: "（{new_id}）', 1)
+    if not block.endswith("\n"):
+        block += "\n"
+    case.write_text((text + "\n" + block) if at_end else (text[:i] + "\n" + block + text[i:]),
+                    encoding="utf-8")
+    proc = subprocess.run([sys.executable, ".github/render_cases.py", "--cases", ".github/cases",
+                           "--out-eval", COVERED_ARTIFACTS[0], "--out-md", COVERED_ARTIFACTS[1]],
+                          cwd=str(repo), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[:400]
+
+
+@pytest.fixture(scope="module")
+def two_fresh_branches(tmp_path_factory) -> Path:
+    """**两侧各自新鲜**、而**合并结果会陈旧**的真夹具（`FM-E18` 的现场形态）。"""
+    repo = _git_fixture(tmp_path_factory.mktemp("probe") / "repo")
+    _git_in(repo, "checkout", "-q", "-b", "pr")
+    _add_one_case_and_rerender(repo, "MC-900", at_end=True)
+    _git_in(repo, "commit", "-qam", "pr：新增一条并重渲染")
+    _git_in(repo, "checkout", "-q", "main")
+    _add_one_case_and_rerender(repo, "MC-901", at_end=False)
+    _git_in(repo, "commit", "-qam", "main：新增一条并重渲染")
+    _git_in(repo, "checkout", "-q", "pr")
+    return repo
+
+
+class TestMergeProbe:
+    def test_both_sides_are_fresh_on_their_own(self, two_fresh_branches):
+        """**前提自证**：两侧**各自的树**都新鲜 —— 否则测到的不是「合并结果」这一面。"""
+        rc, out, report = _run(two_fresh_branches)
+        assert rc == 0 and report.get("verdict") == "fresh", f"前提不成立：\n{out}"
+
+    def test_probe_flags_the_merge_result_that_would_be_stale(self, two_fresh_branches):
+        """🔴 **判据 12（行为级）**：本树新鲜 + 合并结果陈旧 ⇒ `drifted`，且**归因指对本树那一侧**。"""
+        module = _load_script()
+        probe = module.probe_merge(two_fresh_branches, "main")
+        assert probe["verdict"] == "drifted", probe
+        assert probe["tree_verdict"] == "fresh" and probe["merge_verdict"] == "drifted", probe
+        joined = "\n".join(probe["problems"])
+        assert "合并探测" in joined and "不同源" in joined, joined
+        assert "提交版" in joined and "现取" in joined, joined          # 具名差量（与 FM-E5 同口径）
+        assert "FM-E18" in probe["attribution"] and "重渲染" in probe["attribution"], probe["attribution"]
+
+    def test_probe_on_own_branch_is_fresh(self, two_fresh_branches):
+        """**对照读数**：探测自己的分支 ⇒ 合并结果 == 本树 ⇒ 新鲜（不是恒判红）。"""
+        module = _load_script()
+        assert module.probe_merge(two_fresh_branches, "pr")["verdict"] == "fresh"
+
+    def test_probe_says_undecidable_when_the_base_is_missing(self, two_fresh_branches):
+        """**取不到 ≠ 通过**：基线取不到 ⇒ `undecidable`（调用方按三态处理）。"""
+        module = _load_script()
+        probe = module.probe_merge(two_fresh_branches, "origin/does-not-exist")
+        assert probe["verdict"] == "undecidable" and "取不到" in "\n".join(probe["problems"]), probe
+
+    @pytest.mark.parametrize("ref,expect_rc", [("main", 1), ("pr", 0)])
+    def test_cli_exit_codes(self, two_fresh_branches, ref, expect_rc):
+        """**判据 13**：CLI 把探测结论带出去（1 = 合并结果会陈旧 / 0 = 仍新鲜）。"""
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(two_fresh_branches),
+                               "--merge-probe", ref], capture_output=True, text=True, timeout=900)
+        assert proc.returncode == expect_rc, proc.stdout[-800:] + proc.stderr[-400:]
+
+
+class TestProbeWiring:
+    def test_pr_check_runs_the_probe_with_path_gating(self):
+        assert probe_wiring_problems(PR_CHECK.read_text(encoding="utf-8")) == [], \
+            "\n".join(probe_wiring_problems(PR_CHECK.read_text(encoding="utf-8")))
+
+    @pytest.mark.parametrize("mutation", ["drop_probe", "drop_gate", "drop_depth", "drop_one_path", "drop_fetch"])
+    def test_each_wiring_mutation_turns_it_red(self, mutation):
+        """**红证（判据 14）**：逐条破坏接线 ⇒ 各能单独变红。"""
+        text = PR_CHECK.read_text(encoding="utf-8")
+        if mutation == "drop_depth":
+            # `fetch-depth: 0` 在**别的 job** 里也有 ⇒ 只在 `case-truth-check` 内变异
+            start, end = _job_span(text)
+            block = text[start:end]
+            needle = "          fetch-depth: 0\n"
+            assert block.count(needle) == 1, f"本 job 内锚点失配：{block.count(needle)}"
+            mutated = text[:start] + block.replace(needle, "", 1) + text[end:]
+        else:
+            old, new = {
+                "drop_probe": (PROBE_STEP_NEEDLE, "--merge-probe（已变异）"),
+                "drop_gate": (f"        if: {PROBE_GATE_NEEDLE}\n", ""),
+                "drop_one_path": (r"\.github/render_cases\.py|", ""),
+                "drop_fetch": ("git fetch --no-tags --quiet origin main", "true  # 基线不取"),
+            }[mutation]
+            assert text.count(old) == 1, f"变异锚点失配（{mutation}）：{old!r} × {text.count(old)}"
+            mutated = text.replace(old, new, 1)
+        assert mutated != text, "变异没落到文本上（红证会是空断言）"
+        assert probe_wiring_problems(mutated) != [], f"{mutation} 注入后判据没红 ⇒ 空断言"
+
+    def test_comment_only_change_does_not_turn_red(self):
+        """**对照读数**：只加注释（哪怕里面出现 needle 字样）⇒ 不红（判据读的是 job 里的真实现）。"""
+        text = PR_CHECK.read_text(encoding="utf-8")
+        assert probe_wiring_problems(text) == [], "基线本身应当绿"
+        noisy = text.replace("  case-truth-check:\n",
+                             "  case-truth-check:\n    # 注释里提到 --merge-probe origin/main 与 "
+                             "steps.probe_face.outputs.probe == 'true' 都不算实现\n", 1)
+        assert noisy != text and probe_wiring_problems(noisy) == [], "只加注释却判红 ⇒ 判据在读原文"
