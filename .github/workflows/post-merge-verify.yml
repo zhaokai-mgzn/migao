@@ -288,15 +288,38 @@ jobs:
             echo "::warning::本轮读数交给发射器失败（发射器不在检出里）—— 末尾的读数步会明说「读数缺失（不是零动作）」"
           fi
 
+          # ── 判红必须**可行动**（`FM-E21`，2026-09-28 实测）：完整输出现取 **17613k** 超过 GitHub 的
+          #    step summary 上限 **1024k** ⇒ **整份摘要上传被拒**（`##[error]$GITHUB_STEP_SUMMARY upload
+          #    aborted, supports content up to a size of 1024k, got 17613k`）⇒ 9 条失败明细既不在摘要、
+          #    也不在日志摘要里（「红了但看不到红在哪」，要人重跑才看得见）。而**承接面**（P1 值班 issue）
+          #    的 body 也有 **65536 字符**上限 ⇒ 超了会**开不出值班单**（判红无人接盘）。
+          #    ⇒ 三处出口各给**显式预算**：① 失败清单落 **stdout** ② step summary 附**限长摘录**
+          #    ③ 承接单用**更短的限长摘录文件**（由本步一次生成，钩子只读它）。
+          FAILED_MAX=40
+          SUMMARY_EXCERPT_BYTES=200000
+          ISSUE_EXCERPT_BYTES=30000
+          grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt | head -n "$FAILED_MAX" \
+            > /tmp/post-merge-verify-failed.txt || true
+          echo "── 失败清单（前 ${FAILED_MAX} 条；判红必须可 grep，**不要**只看 step summary）──"
+          cat /tmp/post-merge-verify-failed.txt
+          if [ ! -s /tmp/post-merge-verify-failed.txt ]; then
+            echo "（本文件输出里没有 FAILED/ERROR 行 —— 见下方 pytest 的 short summary 段）"
+          fi
+          tail -c "$SUMMARY_EXCERPT_BYTES" /tmp/post-merge-verify.txt > /tmp/post-merge-verify-excerpt.txt
+          tail -c "$ISSUE_EXCERPT_BYTES" /tmp/post-merge-verify.txt > /tmp/post-merge-verify-issue-excerpt.txt
+
           {
             echo "## Post-Merge Verify（main 侧守护腿，issue #5423）"
             echo ''
             echo "- 窗口起点：\`${BASE:-HEAD~${LOOKBACK}}\`（来源：${BASE_SOURCE}）"
             echo "- 触发事件：\`$EVENT\`"
             echo "- 读数（与负载无关）：变更文件 \`$SEEN\` / 命中判据 \`$ACTED\`"
+            echo "- 失败清单（前 ${FAILED_MAX} 条）已打到**判定步 stdout**（`FM-E21`：别只读摘要）"
             echo ''
             echo '```'
-            cat /tmp/post-merge-verify.txt
+            cat /tmp/post-merge-verify-excerpt.txt
+            echo ''
+            echo "（仅附**尾部** ${SUMMARY_EXCERPT_BYTES} 字节 —— 全文见 job 日志；上限见判定步常量）"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$RC" = "3" ]; then
@@ -331,7 +354,11 @@ jobs:
             echo "触发事件：\`${{ github.event_name }}\`；判定基准：main \`${{ github.sha }}\`"
             echo ''
             echo '```'
-            cat /tmp/post-merge-verify.txt 2>/dev/null || echo "(报告缺失 —— 见本 run 的 step summary)"
+            cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \
+              || cat /tmp/post-merge-verify-excerpt.txt 2>/dev/null \
+              || echo "(报告缺失 —— 见本 run 的 step summary)"
+            echo ''
+            echo "（仅附**尾部**摘录 —— 全文见 run 日志；\`FM-E21\`：承接单 body 也有体积上限，超了会**开不出单**）"
             echo '```'
             echo ''
             echo "### 这一类是什么（别读成「某个 PR 没写好」）"

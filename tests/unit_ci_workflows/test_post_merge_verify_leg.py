@@ -48,6 +48,7 @@ import json
 import re
 import subprocess
 import sys
+import pytest
 from pathlib import Path
 
 import yaml
@@ -734,3 +735,109 @@ def test_every_gh_using_step_declares_a_token():
         "这些步会（直接或间接）跑 `gh` 却没带 GH_TOKEN（未认证 ⇒ 退出码 3「无法判定」⇒ 本腿每次合并都红）：\n  "
         + "\n  ".join(missing)
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 16~18（台账 `FM-E21`）：**判红出口的体积预算** —— 三处出口都不能被输出压垮
+#   实测 2026-09-28：完整 pytest 输出现取 **17613k** > GitHub 的 step summary 上限 **1024k**
+#   ⇒ 整份摘要上传被拒（`$GITHUB_STEP_SUMMARY upload aborted … got 17613k`）
+#   ⇒ 「红了但看不到红在哪」；而承接面（P1 值班 issue）的 body 上限 **65536 字符**
+#   ⇒ 超了会**开不出值班单**（判红无人接盘）。三处出口 = stdout 失败清单 / 摘要摘录 / 承接单摘录。
+# ══════════════════════════════════════════════════════════════════════════════
+
+SUMMARY_HARD_LIMIT = 1024 * 1024      # GitHub step summary 硬上限（1 MiB）
+ISSUE_BODY_HARD_LIMIT = 65536         # GitHub issue body 上限（字符）
+FAILURE_LIST_NEEDLE = "grep -E '^(FAILED|ERROR) '"
+EXCERPT_FILE = "/tmp/post-merge-verify-excerpt.txt"
+ISSUE_EXCERPT_FILE = "/tmp/post-merge-verify-issue-excerpt.txt"
+BUDGET_RE = re.compile(r"^\s*(SUMMARY_EXCERPT_BYTES|ISSUE_EXCERPT_BYTES|FAILED_MAX)=(\d+)\s*$", re.MULTILINE)
+BUDGET_STEP_MARKER = "GITHUB_STEP_SUMMARY"
+HOOK_STEP_MARKER = "gh issue list --state open --search"
+
+
+def _budget_job(doc: dict) -> dict:
+    jobs = doc.get("jobs") or {}
+    assert len(jobs) == 1, f"本 workflow 应当只有一个 job（实测 {list(jobs)}）—— 结构变了，判据需同批改"
+    return next(iter(jobs.values()))
+
+
+def _marker_run(doc: dict, marker: str) -> str:
+    """含 `marker` 的那个 step 的 `run` 文本，**去掉整行注释**（注释里的提及不算实现）。"""
+    for step in (_budget_job(doc).get("steps") or []):
+        run = str(step.get("run") or "")
+        if marker in run:
+            return "\n".join(ln for ln in run.splitlines() if not ln.strip().startswith("#"))
+    return ""
+
+
+def summary_budget_problems(doc: dict) -> list[str]:
+    """**纯函数**：三处判红出口各带**显式体积预算**，且预算值真的在硬上限之内。"""
+    problems: list[str] = []
+    judging = _marker_run(doc, BUDGET_STEP_MARKER)
+    if not judging:
+        return ["找不到写 step summary 的 step（结构变了 ⇒ 本判据需同批改）"]
+    budgets = {m.group(1): int(m.group(2)) for m in BUDGET_RE.finditer(judging)}
+    missing = [k for k in ("SUMMARY_EXCERPT_BYTES", "ISSUE_EXCERPT_BYTES", "FAILED_MAX") if k not in budgets]
+    if missing:
+        problems.append(f"缺体积预算常量：{missing}（判红出口必须自带显式预算）")
+    else:
+        if budgets["SUMMARY_EXCERPT_BYTES"] > SUMMARY_HARD_LIMIT:
+            problems.append(f"SUMMARY_EXCERPT_BYTES={budgets['SUMMARY_EXCERPT_BYTES']} > step summary 上限 "
+                            f"{SUMMARY_HARD_LIMIT} ⇒ 摘录本身仍会被拒（这就是实测形态）")
+        if budgets["ISSUE_EXCERPT_BYTES"] > ISSUE_BODY_HARD_LIMIT:
+            problems.append(f"ISSUE_EXCERPT_BYTES={budgets['ISSUE_EXCERPT_BYTES']} > issue body 上限 "
+                            f"{ISSUE_BODY_HARD_LIMIT} ⇒ 承接单开不出来")
+    if 'tail -c "$SUMMARY_EXCERPT_BYTES"' not in judging:
+        problems.append("摘要没有按 SUMMARY_EXCERPT_BYTES 截断（`tail -c` 缺）⇒ 完整输出会压垮摘要上传")
+    if ISSUE_EXCERPT_FILE not in judging:
+        problems.append(f"没有为承接单生成限长摘录（{ISSUE_EXCERPT_FILE}）")
+    if FAILURE_LIST_NEEDLE not in judging:
+        problems.append("失败清单没打到 stdout（缺 `grep -E '^(FAILED|ERROR) '`）⇒ 判红不可 grep")
+    elif 'head -n "$FAILED_MAX"' not in judging:
+        problems.append('失败清单没有条数上限（缺 `head -n "$FAILED_MAX"`）⇒ 清单自身也会压垮输出')
+    hook = _marker_run(doc, HOOK_STEP_MARKER)
+    if not hook:
+        problems.append("找不到判红出口（P1 值班钩子）step（结构变了 ⇒ 本判据需同批改）")
+    elif "cat /tmp/post-merge-verify.txt" in hook:
+        problems.append("承接单仍在读**完整**输出（`cat /tmp/post-merge-verify.txt`）⇒ 超 issue body 上限、开不出单")
+    elif ISSUE_EXCERPT_FILE not in hook:
+        problems.append(f"承接单没有用限长摘录文件（{ISSUE_EXCERPT_FILE}）")
+    return problems
+
+
+class TestVolumeBudgets:
+    def test_real_workflow_has_the_three_budgets(self):
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        assert summary_budget_problems(doc) == [], "\n".join(summary_budget_problems(doc))
+
+    BUDGET_MUTATIONS = {
+        "drop_summary_tail": (
+            'tail -c "$SUMMARY_EXCERPT_BYTES" /tmp/post-merge-verify.txt > /tmp/post-merge-verify-excerpt.txt',
+            'cp /tmp/post-merge-verify.txt /tmp/post-merge-verify-excerpt.txt'),
+        "summary_over_limit": ("SUMMARY_EXCERPT_BYTES=200000", "SUMMARY_EXCERPT_BYTES=2000000"),
+        "issue_over_limit": ("ISSUE_EXCERPT_BYTES=30000", "ISSUE_EXCERPT_BYTES=999999"),
+        "drop_failure_list": ("grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt", "true  # 清单被删"),
+        "drop_failure_cap": ('head -n "$FAILED_MAX" \\\n            > /tmp/post-merge-verify-failed.txt',
+                             '> /tmp/post-merge-verify-failed.txt'),
+        "hook_reads_full_output": ("cat /tmp/post-merge-verify-issue-excerpt.txt 2>/dev/null \\",
+                                   "cat /tmp/post-merge-verify.txt 2>/dev/null \\"),
+    }
+
+    @pytest.mark.parametrize("mutation", sorted(BUDGET_MUTATIONS))
+    def test_each_budget_mutation_turns_it_red(self, mutation):
+        """**红证（判据 16~18）**：逐条破坏三处出口 ⇒ 各能单独变红（**预算值是判据的一部分**）。"""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        old, new = self.BUDGET_MUTATIONS[mutation]
+        assert text.count(old) == 1, f"变异锚点失配（{mutation}）：{old!r}"
+        mutated = text.replace(old, new, 1)
+        assert mutated != text, "变异没落到文本上（红证会是空断言）"
+        assert summary_budget_problems(yaml.safe_load(mutated)) != [], f"{mutation} 注入后判据没红 ⇒ 空断言"
+
+    def test_comment_only_change_does_not_turn_red(self):
+        """**对照读数**：只加注释（文字里出现 needle 也不算实现）⇒ **不**红。"""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        assert summary_budget_problems(yaml.safe_load(text)) == [], "基线本身应当绿"
+        noisy = text.replace("    steps:", "    # 注释里提到 tail -c \"$SUMMARY_EXCERPT_BYTES\" 与 "
+                                          "grep -E '^(FAILED|ERROR) ' 都不算实现\n    steps:", 1)
+        assert noisy != text, "注释注入没生效"
+        assert summary_budget_problems(yaml.safe_load(noisy)) == [], "只加注释却判红 ⇒ 判据在读原文"
