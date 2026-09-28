@@ -25,6 +25,8 @@ jest.mock('@tarojs/taro', () => {
     __esModule: true,
     default: {
       scanCode: jest.fn(),
+      // 非微信浏览器下的扫码降级 = 拍照识别（issue #5750）：h5 里 chooseImage 是**真实实现**
+      chooseImage: jest.fn(),
       showToast: jest.fn(),
       navigateTo: jest.fn(),
       getStorageSync: jest.fn((key: string) => (key in store ? store[key] : '')),
@@ -63,16 +65,32 @@ jest.mock('../src/store/authStore', () => ({
   })),
 }))
 
+// 拍照降级复用**既有**解码模块（issue #5750）：这里只替身它，判据关心的是「有没有复用」与
+// 「解出来的原文有没有交给同一条 scanResolve」，解码算法本身的判据在 inbound-decode-first.test.ts。
+jest.mock('../src/utils/inbound/barcodeDecode', () => ({
+  loadPixelsFromFileH5: jest.fn(),
+  decodeQrFromImageData: jest.fn(),
+}))
+
 import Taro from '@tarojs/taro'
 import ProductionPage from '../src/pages/production/index/index'
-import { H5_SCAN_UNAVAILABLE_HINT } from '../src/utils/platform'
+import {
+  H5_SCAN_PHOTO_FAILED_HINT,
+  H5_SCAN_PHOTO_HINT,
+} from '../src/utils/platform'
 import {
   completeByScan,
   getOrderOperations,
   getOrderPiecework,
+  scanResolve,
   shipOrder,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
+import { decodeQrFromImageData, loadPixelsFromFileH5 } from '../src/utils/inbound/barcodeDecode'
+
+const mockLoadPixels = loadPixelsFromFileH5 as jest.Mock
+const mockDecodeQr = decodeQrFromImageData as jest.Mock
+const mockScanResolve = scanResolve as jest.Mock
 
 const ORDER_ID = 'CSO260915-02615'
 
@@ -396,40 +414,138 @@ describe('ProductionPage（工人扫码报工）', () => {
     expect(await screen.findByText('韩褶')).toBeTruthy()
   })
 
-  it('h5 纯浏览器（Chrome/Safari）：**不调** Taro.scanCode，显式提示 + 手输单号这条路照样通（issue #5650）', async () => {
+  it('h5 纯浏览器（Chrome/Safari）：点「扫一扫」降级为**拍照识别** → 本机解码 → 同一条 scanResolve（issue #5750）', async () => {
     const envBag = process.env as unknown as Record<string, string | undefined>
     const prevEnv = envBag.TARO_ENV
     const prevUa = window.navigator.userAgent
     envBag.TARO_ENV = 'h5'
     Object.defineProperty(window.navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1',
       configurable: true,
     })
     delete (window as any).wx
+
+    const code = `migao://production/${ORDER_ID}`
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({
+      tempFilePaths: ['blob:photo'],
+      tempFiles: [{ originalFileObj: new Blob(['x']) }],
+    })
+    mockLoadPixels.mockResolvedValueOnce({ data: new Uint8ClampedArray(4), width: 1, height: 1 })
+    mockDecodeQr.mockReturnValueOnce(code)
+    mockScanResolve.mockResolvedValueOnce({
+      success: true,
+      data: { order_id: ORDER_ID, granularity: 'order' },
+    })
 
     try {
       render(<ProductionPage />)
       fireEvent.click(screen.getByText('扫一扫'))
 
-      // 显式提示：既不是白屏，也不是「点了没反应」
+      // ① 降级**先告知**（不静默、不白屏、不留「点了没反应」）
       await waitFor(() =>
         expect(Taro.showToast).toHaveBeenCalledWith(
-          expect.objectContaining({ title: H5_SCAN_UNAVAILABLE_HINT }),
+          expect.objectContaining({ title: H5_SCAN_PHOTO_HINT }),
         ),
       )
-      // 一次都不许调：Taro h5 的 scanCode 只走微信 JS-SDK，纯浏览器下调用=静默失败
+      // ② 走的是**本机解码**链（0 次 LLM；判据 = 既有模块被复用）
+      expect((Taro as any).chooseImage).toHaveBeenCalledTimes(1)
+      expect(mockLoadPixels).toHaveBeenCalledTimes(1)
+      expect(mockDecodeQr).toHaveBeenCalledTimes(1)
+      // ③ 解出来的**原文**交给同一条 scanResolve（不平行造第二条识别链）
+      await waitFor(() => expect(mockScanResolve).toHaveBeenCalledWith(code))
+      // ④ Taro.scanCode 一次都不许调：纯浏览器上调它 = 静默失败（Taro h5 走微信 JS-SDK）
       expect(Taro.scanCode).not.toHaveBeenCalled()
-      expect(mockGet).not.toHaveBeenCalled()
-
-      // 替代路径 = 本页**既有**的手输单号（同一条识别链，不平行造第二条）
-      fireEvent.change(screen.getByPlaceholderText('或手输加工单号'), { target: { value: ORDER_ID } })
-      fireEvent.click(screen.getByText('查单'))
-      await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
-      expect(await screen.findByText('韩褶')).toBeTruthy()
     } finally {
       if (prevEnv === undefined) delete envBag.TARO_ENV
       else envBag.TARO_ENV = prevEnv
       Object.defineProperty(window.navigator, 'userAgent', { value: prevUa, configurable: true })
+      delete (window as any).wx
+    }
+  })
+
+  it('h5 纯浏览器：照片里没解出码 → 可行动文案（重拍 / 手输两个出口），不发请求（issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    delete (window as any).wx
+
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({
+      tempFilePaths: ['blob:photo'],
+      tempFiles: [{ originalFileObj: new Blob(['x']) }],
+    })
+    mockLoadPixels.mockResolvedValueOnce({ data: new Uint8ClampedArray(4), width: 1, height: 1 })
+    mockDecodeQr.mockReturnValueOnce(null) // 解码失败
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_PHOTO_FAILED_HINT }),
+        ),
+      )
+      // 失败方向必须指向**既有**的手输路径，且不发任何请求
+      expect(H5_SCAN_PHOTO_FAILED_HINT).toContain('手输')
+      expect(mockScanResolve).not.toHaveBeenCalled()
+      expect(mockGet).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('h5 纯浏览器：取不到照片（用户取消 / 没权限）→ 显式文案，不静默、不发请求（issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    delete (window as any).wx
+
+    ;(Taro as any).chooseImage.mockResolvedValueOnce({ tempFilePaths: [], tempFiles: [] })
+    mockLoadPixels.mockClear()
+    mockDecodeQr.mockClear()
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() =>
+        expect(Taro.showToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: H5_SCAN_PHOTO_FAILED_HINT }),
+        ),
+      )
+      // 没拿到照片就**不进**解码（不拿 undefined 去解）
+      expect(mockLoadPixels).not.toHaveBeenCalled()
+      expect(mockDecodeQr).not.toHaveBeenCalled()
+      expect(mockScanResolve).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('微信内置浏览器：仍走 Taro.scanCode 原通道，**不走**拍照（零回归，issue #5750）', async () => {
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    const prevEnv = envBag.TARO_ENV
+    envBag.TARO_ENV = 'h5'
+    ;(window as any).wx = { scanQRCode: jest.fn() }
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) MicroMessenger/8.0.49',
+      configurable: true,
+    })
+    ;(Taro.scanCode as jest.Mock).mockResolvedValueOnce({ result: ORDER_ID })
+    ;(Taro as any).chooseImage.mockClear()
+
+    try {
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+
+      await waitFor(() => expect(Taro.scanCode).toHaveBeenCalledTimes(1))
+      expect((Taro as any).chooseImage).not.toHaveBeenCalled()
+      expect(mockDecodeQr).not.toHaveBeenCalled()
+    } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
       delete (window as any).wx
     }
   })
