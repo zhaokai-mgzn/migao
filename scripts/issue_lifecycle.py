@@ -1273,9 +1273,21 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
     proc = git("push", "origin", "--delete", *branches, cwd=cwd, check=False)
     after = remote_heads(cwd, refresh=True)
     if after is None:
-        results = {b: ("deleted" if not git("ls-remote", "--heads", "origin", b,
-                                            cwd=cwd, check=False).stdout.strip() else "failed")
-                   for b in branches}
+        # 读不到批量读数 ⇒ 逐分支探测。🔴 **必须判 `.returncode`**：`check=False` 的 stdout 不是证据
+        # （§19.1「无法判定 ≠ 通过」；这条形态正是 `test_unchecked_rc_evidence_guard` 的射程）。
+        results = {}
+        for b in branches:
+            probe = git("ls-remote", "--heads", "origin", b, cwd=cwd, check=False)
+            if probe.returncode != 0:
+                print(f"⚠️  读不出远程分支 `{b}` 的存在性（ls-remote rc={probe.returncode}）"
+                      "⇒ 不得当「已删」（无法判定 ≠ 通过）")
+                results[b] = "failed"
+            elif probe.stdout.strip():
+                print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")
+                results[b] = "failed"
+            else:
+                results[b] = "deleted"
+        return results
     else:
         results = {}
         for b in branches:
