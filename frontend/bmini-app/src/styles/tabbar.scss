@@ -32,7 +32,15 @@
 }
 
 .taro-tabbar__tabbar {
-  height: calc(var(--taro-tabbar-height, 50px) + env(safe-area-inset-bottom));
+  // 🔴 **不许给这个变量写兜底值**（PR #5755 发布后实测的构建陷阱）：
+  //   写 `var(--taro-tabbar-height, 50px)` ⇒ `postcss-pxtransform` 会把它揉成
+  //   `var(--50PX, 1.25rem)`（兜底值进了**变量名**）⇒ 变量解析不到 ⇒ 该声明在计算值阶段
+  //   失效（`unset` → `auto`）⇒ 条高塌成 26px、标签被挤出屏幕（线上实测：label 底超出视口 9.5px）。
+  //   ⚠️ 探针实测（PR #5755 修 forward）：**连不带兜底的 `var(--taro-tabbar-height)` 也会**被改成
+  //   `var(--50PX)` —— 所以这一格**不能**引用 Taro 的变量名，只能用 **CSS 尺度字面量**（大写 PX）。
+  //   50 与 Taro 运行时注入值（`@tarojs/router` 的 `--taro-tabbar-height:50px`）**逐值相等**，
+  //   由判据现取 Taro 包核对（改 Taro 版本若把它变成别的值 ⇒ 判红，逼人同步这一格）。
+  height: calc(50PX + env(safe-area-inset-bottom));
 }
 
 // ② 图标 + 文字在可视区垂直居中（保留 Taro 的 item 底部安全区衬垫 = ③）

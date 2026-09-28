@@ -42,17 +42,78 @@ function code(scss: string): string {
 
 const tabbarCode = () => code(read(TABBAR_SCSS))
 
+/** 遍历 `src/**` 的 scss，逐行回调（类级陷阱判据用） */
+function walkScss(dir: string, visit: (file: string, line: string) => void): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) walkScss(full, visit)
+    else if (entry.name.endsWith('.scss')) {
+      for (const line of code(fs.readFileSync(full, 'utf-8')).split('\n')) visit(full, line)
+    }
+  }
+}
+
+/**
+ * `--taro-tabbar-height` 的**运行时取值**（从装好的 Taro 实现包现取，**不写死**）。
+ *
+ * 为什么要现取：本仓那一格只能用 **CSS 尺度字面量**（见 ①b：引用变量名会被构建改坏），
+ * 于是它与 Taro 之间只剩「数值相等」这一条联系 ⇒ 必须有一条判据盯着它（Taro 升级改了值 ⇒ 判红）。
+ * fail-closed：找不到就抛错判红（口径漂移不许静默变成「没检查」）。
+ */
+function taroTabbarHeightPx(): number {
+  const packages = ['components', 'router']
+  const pattern = /--taro-tabbar-height:\s*(\d+)px/
+  for (const pkg of packages) {
+    const root = path.resolve(__dirname, '..', 'node_modules', '@tarojs', pkg, 'dist')
+    if (!fs.existsSync(root)) continue
+    const stack = [root]
+    while (stack.length) {
+      const dir = stack.pop() as string
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) stack.push(full)
+        else if (/\.(css|js)$/.test(entry.name)) {
+          const hit = fs.readFileSync(full, 'utf-8').match(pattern)
+          if (hit) return Number(hit[1])
+        }
+      }
+    }
+  }
+  throw new Error(
+    '在 @tarojs/{components,router} 的 dist 里找不到 `--taro-tabbar-height:<n>px` —— 口径漂移，判红（去核对 Taro 的 tabBar 实现，别猜一个数补上）',
+  )
+}
+
 describe('B 端 H5 tabBar 居中不变量（issue #5754）', () => {
   it('覆盖样式必须被 app.scss 真的引入（写在别处但没接线 ⇒ 红）', () => {
     expect(code(read(APP_SCSS))).toMatch(/@use\s+['"]\.\/styles\/tabbar\.scss['"]/)
   })
 
-  it('① 安全区只补一次：条不再吃 margin-bottom，条高 = --taro-tabbar-height + 安全区', () => {
+  it('① 安全区只补一次：条不再吃 margin-bottom，条高 = Taro 的 tabBar 高 + 安全区', () => {
     const scss = tabbarCode()
     expect(scss).toMatch(/\.taro-tabbar__tabbar-bottom\s*\{[^}]*margin-bottom:\s*0\s*;/)
     expect(scss).toMatch(
-      /\.taro-tabbar__tabbar\s*\{[^}]*height:\s*calc\(\s*var\(--taro-tabbar-height[^)]*\)\s*\+\s*env\(safe-area-inset-bottom\)\s*\)/,
+      /\.taro-tabbar__tabbar\s*\{[^}]*height:\s*calc\(\s*\d+PX\s*\+\s*env\(safe-area-inset-bottom\)\s*\)/,
     )
+  })
+
+  it('①b 🔴 构建陷阱：**不许**引用 `var(--taro-tabbar-height)`（构建会改成 `var(--50PX)` ⇒ 规则失效）', () => {
+    // 实证（PR #5755 发布后线上 + 探针实验）：
+    //   `.x{width:var(--taro-tabbar-height)}` 编译成 `var(--50PX)` —— 变量名解析不到 ⇒
+    //   该声明**在计算值阶段失效**（`unset` → `auto`）⇒ 线上条高塌成 26px、标签被挤出视口（实测超出 9.5px）。
+    //   对照组：`var(--my-thing)` / `var(--foo-height)` **原样保留** ⇒ 被特殊处理的是**这个名字**。
+    //   ⇒ 本仓 scss 里一律不得出现它；要那个高度就用 CSS 尺度字面量（大写 PX，见 ①c）。
+    const offenders: string[] = []
+    walkScss(SRC, (file, line) => {
+      if (line.includes('var(--taro-tabbar-height')) offenders.push(`${path.relative(SRC, file)}: ${line.trim()}`)
+    })
+    expect(offenders).toEqual([])
+  })
+
+  it('①c 字面量必须与 Taro 运行时注入值**逐值相等**（Taro 升级把 50px 改成别的值 ⇒ 判红）', () => {
+    const ours = Number(tabbarCode().match(/calc\(\s*(\d+)PX/)?.[1])
+    expect(Number.isFinite(ours)).toBe(true)
+    expect(ours).toBe(taroTabbarHeightPx())
   })
 
   it('② 图标 + 文字在可视区垂直居中（flex 纵列居中，不靠「上 5 下 0」）', () => {
