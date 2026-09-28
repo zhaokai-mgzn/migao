@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1078,7 +1079,15 @@ def _git_fixture(root: Path) -> Path:
 
 
 def _git_in(repo: Path, *args: str) -> None:
-    proc = subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True)
+    """夹具里的 git 调用 —— **一律注入提交身份**。
+
+    🔴 实测（2026-09-28，CI）：runner 上**没有** `user.email` / `user.name` ⇒ `git commit` 报
+    `Author identity unknown` ⇒ 本文件在 CI 的 `ci workflow helper unit tests` 上整片红，而本机（有全局身份）全绿。
+    形态属「夹具没跟上运行期环境」（同族 `FM-A14`）⇒ 判据不依赖任何环境态。
+    """
+    env = {**os.environ, "GIT_AUTHOR_NAME": "case", "GIT_AUTHOR_EMAIL": "case@example.invalid",
+           "GIT_COMMITTER_NAME": "case", "GIT_COMMITTER_EMAIL": "case@example.invalid"}
+    proc = subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True, env=env)
     assert proc.returncode == 0, f"夹具 git {' '.join(args)} 失败：{proc.stderr[:300]}"
 
 
