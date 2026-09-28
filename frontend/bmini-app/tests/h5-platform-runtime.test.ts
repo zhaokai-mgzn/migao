@@ -11,7 +11,10 @@
  * 本文件钉住三件事，每件都必须**显式**（不许静默失败、不许白屏、不许「点了没反应」）：
  *   1. `Taro.login` —— h5 一次都不调用，改走账号密码（BM-001 / BM-005）；
  *   2. `Taro.getRecorderManager` —— h5 一次都不调用，语音入口保留可见但禁用 + 点击给解释；
- *   3. `Taro.scanCode` —— h5 纯浏览器不调用，降级到手输单号这条**既有**路径（BM-006）；
+ *   3. `Taro.scanCode` —— h5 纯浏览器不调用，降级为**拍照识别**（本机 jsQR，0 次 LLM），
+ *      再不行才回落到手输单号这条**既有**路径（BM-006；issue #5750 改判：
+ *      原先只有「手输」一条降级 ⇒ iPhone Safari 用户只能一个字符一个字符敲，而本仓
+ *      在拍照入库那条链路上**早已验证**任何浏览器都能拍照解码）；
  * 另：h5 的 SSE 是「整段解析（非流式）」—— 那是 2026-09-26 用户裁定**有意接受**的降级，
  * 判据在 `tests/sse.test.ts`（`dataType: 'text'` + 无 `onChunkReceived` 时不抛错、不丢内容）。
  */
@@ -21,7 +24,8 @@ import {
   isH5,
   isWeapp,
   isWechatWebview,
-  H5_SCAN_UNAVAILABLE_HINT,
+  H5_SCAN_PHOTO_FAILED_HINT,
+  H5_SCAN_PHOTO_HINT,
   H5_WECHAT_LOGIN_UNAVAILABLE_HINT,
   H5_VOICE_UNAVAILABLE_HINT,
 } from '../src/utils/platform'
@@ -169,8 +173,14 @@ describe('h5 运行时平台适配（issue #5650）', () => {
       expect(canUseNativeScan()).toBe(true)
     })
 
-    it('降级文案必须指到**既有**的手输单号路径（不平行造第二条识别链）', () => {
-      expect(H5_SCAN_UNAVAILABLE_HINT).toContain('手输')
+    it('纯浏览器的**首选**降级 = 拍照识别，且失败文案给两个可行动出口（issue #5750）', () => {
+      // 降级告知：说清「不能直接扫」+「已改用拍照」
+      expect(H5_SCAN_PHOTO_HINT).toContain('不能直接扫码')
+      expect(H5_SCAN_PHOTO_HINT).toContain('拍照')
+      // 失败出口：重拍 + 手输（一句「不支持」不可行动 ⇒ 既有手输路径必须仍被点名）
+      expect(H5_SCAN_PHOTO_FAILED_HINT).toContain('重拍')
+      expect(H5_SCAN_PHOTO_FAILED_HINT).toContain('手输')
+      expect(H5_SCAN_PHOTO_FAILED_HINT).not.toBe(H5_SCAN_PHOTO_HINT)
     })
   })
 })

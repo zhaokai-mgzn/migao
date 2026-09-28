@@ -26,7 +26,10 @@ import { WorkerBar } from '../../../components/WorkerBar'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
-import { canUseNativeScan, H5_SCAN_UNAVAILABLE_HINT } from '../../../utils/platform'
+import { canUseNativeScan, H5_SCAN_PHOTO_FAILED_HINT, H5_SCAN_PHOTO_HINT } from '../../../utils/platform'
+// 非微信浏览器的扫码降级 = **复用**拍照入库那套本机解码（issue #5750）：
+// 同一条链在任何浏览器（含 iOS Safari）都能用，且 0 次 LLM。
+import { decodeQrFromImageData, loadPixelsFromFileH5 } from '../../../utils/inbound/barcodeDecode'
 import {
   appendWorkLog,
   cacheOrderOperations,
@@ -333,7 +336,7 @@ export default function ProductionPage() {
   }, [loadOrder])
 
   /**
-   * 扫一扫（切片 ② A 模式接线；失败/无相机时走手输单号兜底）。
+   * 扫码结果 → 页面（**原生扫码与拍照识别共用这一条**）。
    *
    * <p>三级优先（与后端「新码优先，未命中只回落」逐字同序）：</p>
    * <ol>
@@ -344,25 +347,8 @@ export default function ProductionPage() {
    *   <li>其余（码里带加工单号/单号本身）⇒ 既有形态，逐道报工。</li>
    * </ol>
    */
-  const handleScan = useCallback(async () => {
-    // 🔴 h5 降级（issue #5650）：`Taro.scanCode` 在 h5 的实现是
-    // `processOpenApi({ name: 'scanQRCode', … })`（实测 `dist/api/device/scan.js`）—— 那是**微信 JS-SDK**，
-    // 只在微信内置浏览器可用；纯浏览器（Chrome/Safari）里 `window.wx` 不存在，Taro 直接走
-    // `weixinCorpSupport` 的 notSupported 分支 ⇒ 调用只会「什么都没发生」。
-    // 所以这里**先判平台再调**，并把工人引到本页**既有**的第二条路径（下方「或手输加工单号」→ `loadOrder`）：
-    // 不白屏、不静默失败，也**不平行造第二条识别链**（拒绝路径与手输路径都汇到同一个 `loadOrder` / `scanResolve`）。
-    if (!canUseNativeScan()) {
-      Taro.showToast({ title: H5_SCAN_UNAVAILABLE_HINT, icon: 'none' })
-      return
-    }
-
-    try {
-      const res = await Taro.scanCode({ scanType: ['qrCode'] })
-      const raw = String(res?.result || '').trim()
-      if (!raw) {
-        Taro.showToast({ title: '无法识别该二维码，请手动输入单号', icon: 'none' })
-        return
-      }
+  const resolveScannedCode = useCallback(
+    async (raw: string) => {
       const scan = await scanResolve(raw)
       if (scan?.success && scan.data) {
         const view = scan.data
@@ -386,10 +372,64 @@ export default function ProductionPage() {
         return
       }
       await loadOrder(orderId)
+    },
+    [loadOrder],
+  )
+
+  /**
+   * 非微信浏览器（含 iPhone Safari）的降级：**拍照识别**（issue #5750）。
+   *
+   * <p>此前这里只有一条路：toast「当前浏览器不支持扫码，请在手输框输入加工单号」——
+   * 而「在不在微信里」与手机品牌无关 ⇒ iPhone / Android / 桌面浏览器**一视同仁**都要手敲单号。</p>
+   *
+   * <p>现在：`Taro.chooseImage`（h5 真实实现，拉起相机/相册）→ `<img>`/canvas 取像素 →
+   * `jsQR` **本机解码**（0 次 LLM）→ 解出来的原文交给 {@link resolveScannedCode}
+   * —— 与原生扫码**同一条**识别链，不平行造第二条。</p>
+   */
+  const handlePhotoScan = useCallback(async () => {
+    Taro.showToast({ title: H5_SCAN_PHOTO_HINT, icon: 'none' })
+    try {
+      const res: any = await Taro.chooseImage({ count: 1, sourceType: ['camera', 'album'] })
+      // h5：`tempFiles[].originalFileObj` 是真 File（优先用它，免得再走一次 blob URL 拉取）；
+      // 小程序侧只有路径 ⇒ 回落 `tempFilePaths[0]`。
+      const src = res?.tempFiles?.[0]?.originalFileObj || res?.tempFilePaths?.[0]
+      const pixels = src ? await loadPixelsFromFileH5(src) : null
+      const text = pixels ? decodeQrFromImageData(pixels) : null
+      if (!text) {
+        // 取消 / 没权限 / 照片里没码：一律给**可行动**文案（重拍 + 手输），不静默
+        Taro.showToast({ title: H5_SCAN_PHOTO_FAILED_HINT, icon: 'none' })
+        return
+      }
+      await resolveScannedCode(text)
+    } catch {
+      Taro.showToast({ title: H5_SCAN_PHOTO_FAILED_HINT, icon: 'none' })
+    }
+  }, [resolveScannedCode])
+
+  /**
+   * 扫一扫（切片 ② A 模式接线）。
+   *
+   * <p>微信内置浏览器 ⇒ `Taro.scanCode` 原生通道；其余 h5 环境 ⇒ {@link handlePhotoScan}。
+   * issue #5650 的「先判平台再调」保持不变：纯浏览器下调 `Taro.scanCode` 只会「什么都没发生」。</p>
+   */
+  const handleScan = useCallback(async () => {
+    if (!canUseNativeScan()) {
+      await handlePhotoScan()
+      return
+    }
+
+    try {
+      const res = await Taro.scanCode({ scanType: ['qrCode'] })
+      const raw = String(res?.result || '').trim()
+      if (!raw) {
+        Taro.showToast({ title: '无法识别该二维码，请手动输入单号', icon: 'none' })
+        return
+      }
+      await resolveScannedCode(raw)
     } catch {
       Taro.showToast({ title: '扫码未完成，请手动输入单号', icon: 'none' })
     }
-  }, [loadOrder])
+  }, [handlePhotoScan, resolveScannedCode])
 
   /**
    * 逐道「完成报工」—— **唯一写入口** `scan/complete`（issue #5647 G10）。

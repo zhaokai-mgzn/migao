@@ -65,8 +65,23 @@ export function canUseNativeScan(): boolean {
   return isH5() ? isWechatWebview() : true
 }
 
-/** h5 扫码不可用时的**显式**出路文案（降级到手输单号 —— `production/index/index.tsx` 既有的第二条路径） */
-export const H5_SCAN_UNAVAILABLE_HINT = '当前浏览器不支持扫码，请在手输框输入加工单号'
+/**
+ * 非微信浏览器（含 iPhone Safari）下的**降级告知**（issue #5750）。
+ *
+ * 不是一句「不支持」，而是「已换一条路」：本仓在拍照入库链路上早已验证
+ * 「`Taro.chooseImage`（h5 真实实现）+ `<img>`/canvas + `jsQR` 本机解码」在任何浏览器都能走通
+ * ⇒ 报工页把扫码降级成**拍照识别**，而不是把工人丢回手输。
+ * 判据（行为面）= `tests/production-page.test.tsx` 的「降级为拍照识别 → 同一条 scanResolve」。
+ */
+export const H5_SCAN_PHOTO_HINT = '当前浏览器不能直接扫码：已改用拍照识别，对准二维码拍一张即可'
+
+/**
+ * 拍照识别**也没成功**时的可行动文案（用户取消 / 没给权限 / 照片里没码）。
+ *
+ * 两个出口都要写出来（重拍 + 手输），否则又回到「一句话不可行动」的老形态。
+ */
+export const H5_SCAN_PHOTO_FAILED_HINT =
+  '照片里没识别出二维码：请对准二维码重拍一张，或在下框手输加工单号'
 
 /** h5 语音不可用时的**显式**提示（入口保留可见但禁用，点击给解释 —— 不静默消失、不留「点了没反应」） */
 export const H5_VOICE_UNAVAILABLE_HINT = '浏览器暂不支持语音输入，请用文字发送'
@@ -90,7 +105,7 @@ export const H5_API_OUTLET_LEDGER: Record<string, string> = {
   getRecorderManager:
     'h5 不调用它（stub）：语音入口保留可见但禁用，点击给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
   scanCode:
-    'h5 仅微信内置浏览器可用（JS-SDK）；纯浏览器降级为手输单号，点「扫一扫」给显式提示（H5_SCAN_UNAVAILABLE_HINT）',
+    'h5 仅微信内置浏览器可用（JS-SDK）；纯浏览器降级为**拍照识别**（`Taro.chooseImage` + `<img>`/canvas + jsQR 本机解码，**0 次 LLM** —— 复用 `src/utils/inbound/barcodeDecode.ts`，不新写第二份解码实现），失败/取消再回落到手输单号（文案 = H5_SCAN_PHOTO_HINT / H5_SCAN_PHOTO_FAILED_HINT；issue #5750 起「只给手输」不再是合格出路）',
   createOffscreenCanvas:
     'h5 不调用它（未实现的 stub）：拍照入库的**本机解码**在 h5 走 <img> + canvas 取像素，只有小程序端才用它；小程序端取不到像素时明说「已改用服务端识别」（src/utils/inbound/barcodeDecode.ts 的平台分支）',
 }

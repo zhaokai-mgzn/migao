@@ -14,6 +14,8 @@
  *
  * fail-closed：读不到实现包 / 两张清单抽不出来（口径漂移）⇒ 抛错判红，**不允许**退化成「0 命中 = 通过」。
  */
+import fs from 'fs'
+import path from 'path'
 import { H5_API_OUTLET_LEDGER } from '../src/utils/platform'
 import {
   hasPlatformBranch,
@@ -71,5 +73,27 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
       .filter(([, outlet]) => String(outlet).trim().length < 10)
       .map(([api]) => api)
     expect(empty).toEqual([])
+  })
+
+  // ── issue #5750：扫码降级不许退回「只给手输」────────────────────────────
+  // 用户在 iPhone 上点「扫一扫」只得到一句「当前浏览器不支持扫码」⇒ 只能手敲单号。
+  // 而本仓在拍照入库链路上**早已验证**「拍照 + 本机 jsQR 解码」在任何浏览器都能走通。
+  it('scanCode 的 h5 出路必须写清「拍照识别」这条首选降级（退回只给手输 ⇒ 红）', () => {
+    expect(H5_API_OUTLET_LEDGER.scanCode).toContain('拍照')
+  })
+
+  it('降级必须复用既有解码模块：报工页不得出现第二份解码实现（直接依赖 jsQR ⇒ 红）', () => {
+    const page = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'pages', 'production', 'index', 'index.tsx'),
+      'utf8',
+    )
+    // ① 复用：两个既有导出都真的被调用（只 import 不用 = 假接线）
+    expect(page).toContain('utils/inbound/barcodeDecode')
+    expect(page).toMatch(/loadPixelsFromFileH5\(/)
+    expect(page).toMatch(/decodeQrFromImageData\(/)
+    // ② 不许绕过它直接依赖解码库（那会与拍照入库那套的平台分支/失败方向分叉成第二份实现）。
+    //    判据锚在**依赖形态**上而不是 `jsQR` 这个词 —— 注释里说明「用 jsQR 解码」是合法的。
+    expect(page).not.toMatch(/from\s+['"]jsqr['"]/)
+    expect(page).not.toMatch(/require\(\s*['"]jsqr['"]\s*\)/)
   })
 })
