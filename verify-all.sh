@@ -570,6 +570,28 @@ bmini_face_hit() {
   [ -n "$hit" ]
 }
 
+# ── ci-helper 腿（issue #5770）：CI 的 `ci workflow helper unit tests` 在本地**没有对应腿** ────────
+# 病根（本会话实测：为它白烧 3 轮 CI，每轮 ≈16.5 分钟）：那条 job 跑的是 `tests/unit_ci_workflows/**`
+# 一整套判据，而本地 gate **一条都不跑**（只在控制台打一行「残余未覆盖」）⇒ 改 `.github/**` 的包
+# 只能等 CI 才知道红；而三次红的内容**全部**可在本地复现（未登记 / 同源契约 / 弱断言字面量）。
+# 触发面 = 那条 job 判的对象：`.github/**`（workflows 与用例工具）与 `tests/unit_ci_workflows/**`（判据本体）。
+#   ⚠️ 刻意**不**纳入 `frontend/**` 之类：那会让每个前端 PR 都多等 ≈16 分钟，而前端面的弱断言
+#   已由 gate 档的 growth gate 扫到（实测：本会话那次正是它先抓到的）。
+ci_helper_face_paths() {
+  grep -E '^(\.github/|tests/unit_ci_workflows/)' || true
+}
+ci_helper_face_hit() {
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | ci_helper_face_paths)"
+  [ -n "$hit" ]
+}
+ci_helper_leg() {
+  # 与 CI 的 `Run ci workflow helper tests` **同一条 pytest 命令**（argv 逐字一致；
+  # 判据 = tests/unit_ci_workflows/test_ci_helper_leg.py 现取 pr-check.yml 比对）。
+  # 本机未装 pytest ⇒ 非零 ⇒ 记 ❌（fail-closed：命中面时不许静默绿）。
+  python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider
+}
+
 # ── 模块触发面（快循环档 fail-closed 的**单一实现**，#5707 的 FM-E10 收口）───────────────────
 # 谓词 = 「本次变更集是否命中这条腿**判的对象**」。三件事必须一起成立（判据现取核对，见
 # tests/unit_ci_workflows/test_local_gate_matrix.py 的 C5/C9）：
@@ -724,6 +746,12 @@ case "$MODE" in
       report_strict bmini-app "bmini-app 类型检查 + 单测 + 构建（h5 + weapp）" bmini_leg
     else
       echo "— bmini-app 腿**未跑**：本次变更集未命中它的触发面（frontend/bmini-app/** 及其跨目录输入）—— 这不是「通过」（CI 的两条 bmini 腿仍对每个 PR 跑；命中判据 = bmini_face_paths()）"
+    fi
+    # ci-helper 腿（issue #5770）：命中门禁面才派发；未命中 ⇒ 控制台显式声明「未跑」（不许静默）。
+    if ci_helper_face_hit; then
+      report "ci workflow helper 判据集（本地跑 CI 同名 job）" ci_helper_leg
+    else
+      echo "— ci workflow helper 腿**未跑**：本次变更集未命中它的触发面（.github/** 与 tests/unit_ci_workflows/**）—— 这不是「通过」（CI 那条 job 对每个 PR 都跑；命中判据 = ci_helper_face_paths()）"
     fi
     ;;
   redproof)
