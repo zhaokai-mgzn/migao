@@ -7999,8 +7999,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：563（活跃 126，跳过 437）
-- tier 分布：smoke 12 / normal 518 / adversarial 31
+- 用例总数：564（活跃 126，跳过 438）
+- tier 分布：smoke 12 / normal 519 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
