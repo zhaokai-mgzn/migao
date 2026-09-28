@@ -95,14 +95,18 @@ WHERE pc.product_id = 'prod_eval_2699'
 --   · **ERP 目录 16 项一律由 V83 提供**（产品口径不动：目录无价，R10）；
 --     其余 13 项（`韩定+S钩`/`穿杆`/`平幔`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/
 --     `换货`/`超高`/`超宽`/`倒幅`）**不在本文件重复插入**。
---   · 评测种子**只保留 3 条目录夹具**（`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米，
+--   · 评测种子**只保留 3 条目录夹具**（`打孔` ¥8/米 · `韩褶` ¥12/米 · `定型` ¥10/米，
 --     id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 评测夹具的职责是给 eval 断言
 --     提供**金额接地**（订单总额 / 加工费 / `calculate_price`），产品侧「目录无价」不适用于夹具；
 --     **id 保留** ⇒ 引用面最小（金额断言逐值不变：OR-014 的 528 = 168×3 + 8×3 等）。
 --   · 插入**之前**先删掉 V83 为这 3 个名字种的行 ⇒ **同名只有一行**。
 --     ⚠️ **两种执行顺序都安全**（双保险，不是只靠 DELETE）：
---       ① 先注种子后跑 V83 ⇒ V83 的 `NOT EXISTS (tenant_id, name)` 业务键去重会**跳过**这 3 项；
---       ② 先跑 V83 后注种子 ⇒ 本 DELETE 把 V83 那 3 行删掉再插带价行。
+--       ① 先注种子、后跑 V83 ⇒ V83 的业务键去重（`NOT EXISTS (tenant_id, name)`）会**跳过**这 3 项；
+--          ⚠️ 2026-09-28（V139 把目录第 02 项由「韩折」改名为「韩褶」）后：V83 已在**归档链**里、
+--          不再随新库重放，且它的去重谓词按**它自己的**名字判 —— 故本 DELETE 的名单必须写**改名后的**
+--          「韩褶」（否则删不掉 V139 改过名的那一行，终态会同名两行；判据见
+--          `tests/unit_ci_workflows/test_eval_seed_catalog.py` 的判据 d）；
+--       ② 先跑 V83 后注种子 ⇒ 本 DELETE 先删 V83 那 3 行（含改名后的「韩褶」）再插带价行。
 --     V83 没跑过时 DELETE 影响 0 行（安全）；`processing_items` **没有任何外键引用它**
 --     （已核 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
 --   · `刺绣工艺`（`pi_eval_embroidery`，per_area）**已按用户裁定真删** —— 它原是 PR-020 /
@@ -113,10 +117,10 @@ WHERE pc.product_id = 'prod_eval_2699'
 --   名字」+「3 条目录夹具在」+「`DELETE … pi-v83-%` 那行在且在 INSERT 之前」+「真库无重名」。
 -- 幂等：`ON CONFLICT (id) DO NOTHING`（与本节既有写法一致）。
 DELETE FROM processing_items
- WHERE tenant_id = 1 AND name IN ('打孔', '韩折', '定型') AND id LIKE 'pi-v83-%';
+ WHERE tenant_id = 1 AND name IN ('打孔', '韩褶', '定型') AND id LIKE 'pi-v83-%';
 -- #4882（用户裁定）：加工项目录**不再有** `pricing_method` / `unit_price`（V101 已删列）⇒
 --   本夹具的 INSERT **不得**再写这两列（写了真库直接 `column does not exist`）。
---   保留下来的 3 条（打孔 / 韩折 / 定型）职责改为：给按名字定位的用例提供**目录接地对象**
+--   保留下来的 3 条（打孔 / 韩褶 / 定型）职责改为：给按名字定位的用例提供**目录接地对象**
 --   （`unit='米'` / `status='active'` / `craft_hint`），**不再是金额接地** —— 加工项已无价，
 --   金额接地真值源是「加工费组合」（R10）。
 
@@ -126,8 +130,8 @@ INSERT INTO processing_items
 VALUES
   ('pi_eval_punch', 1, '打孔', 'pcat_eval_curtain', '米',
    1, 999, '顶部打孔（#4572 由「纳米圈打孔」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '打孔', '[]'::jsonb, TRUE, 'active', 0),
-  ('pi_eval_hem', 1, '韩折', 'pcat_eval_curtain', '米',
-   1, 999, '韩式褶皱（#4572 由「韩式波浪折边」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '韩褶', '[]'::jsonb, TRUE, 'active', 0),
+  ('pi_eval_hem', 1, '韩褶', 'pcat_eval_curtain', '米',
+   1, 999, '韩式褶皱（#4572 由「韩式波浪折边」改名为目录项名；2026-09-28 目录名与 ERP 写法「韩折」统一为「韩褶」；价格保留，同名 V83 行已删）', '韩褶', '[]'::jsonb, TRUE, 'active', 0),
   ('pi_eval_iron', 1, '定型', 'pcat_eval_curtain', '米',
    1, 999, '高温定型加工（#4572 由「高温定型」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', NULL, '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
@@ -152,10 +156,10 @@ BEGIN
   SELECT count(*) INTO v_n FROM processing_items
    WHERE tenant_id = 1 AND deleted = 0
      AND ((id = 'pi_eval_punch' AND name = '打孔' AND unit = '米')
-       OR (id = 'pi_eval_hem'   AND name = '韩折' AND unit = '米')
+       OR (id = 'pi_eval_hem'   AND name = '韩褶' AND unit = '米')
        OR (id = 'pi_eval_iron'  AND name = '定型' AND unit = '米'));
   IF v_n <> 3 THEN
-    RAISE EXCEPTION '目录评测夹具不成立：应恰好 3 条（打孔 / 韩折 / 定型，均 unit=米），实为 %', v_n;
+    RAISE EXCEPTION '目录评测夹具不成立：应恰好 3 条（打孔 / 韩褶 / 定型，均 unit=米），实为 %', v_n;
   END IF;
   RAISE NOTICE '加工项目录去冲突核对: tenant1 重名=0 目录夹具=3/3';
 END $$;
@@ -220,7 +224,7 @@ BEGIN
   -- 读数改为**ERP 加工项目录**（issue #4572：编造夹具 `pi_eval_embroidery` 已按用户裁定删除
   -- ⇒ 不能再拿它当「目录非空」的读数）。前提口径不变：目录非空即会询问加工项（#4371 解耦后
   -- 加工项是店铺级目录，与商品是否绑过无关）。
-  -- 目录 = **16 项**（#4572 裁定后：**V83 提供全部 16 项**，其中 `打孔`/`韩折`/`定型`
+  -- 目录 = **16 项**（#4572 裁定后：**V83 提供全部 16 项**，其中 `打孔`/`韩褶`/`定型`
   -- 三行被本种子的**目录夹具**替换 —— 故整表仍是 16 行）。
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
@@ -279,7 +283,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 订单明细：第二笔带 processing_info（PG-013「需要加工的订单」的判定依据）；
 -- 加工项与 pi_eval_punch（打孔 ¥8/米）一致，quantity=3 米 → subtotal=24。
--- 0003/0004 的 processing_info 分别用种子里真实存在的 pi_eval_hem（韩折 ¥12/米，
+-- 0003/0004 的 processing_info 分别用种子里真实存在的 pi_eval_hem（韩褶 ¥12/米，
 -- quantity=3 → 36）与 pi_eval_iron（定型 ¥10/米，quantity=2 → 20），金额与 total 对齐。
 INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
@@ -293,7 +297,7 @@ VALUES
    504.00, 0),
   ('oit_mb_0003', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
-   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩折","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩褶","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
    504.00, 0),
   ('oit_mb_0004', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000004', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
@@ -549,14 +553,14 @@ VALUES
    TIMESTAMPTZ '2026-09-13 10:00:00+08', TIMESTAMPTZ '2026-09-13 10:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
--- 明细：带 processing_info（与 0003 同形：韩折 pi_eval_hem ¥12/米 × 3 米 = 36 ⇒ 504 + 36 = 540）
+-- 明细：带 processing_info（与 0003 同形：韩褶 pi_eval_hem ¥12/米 × 3 米 = 36 ⇒ 504 + 36 = 540）
 INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
    width, height, processing_info, subtotal, deleted)
 VALUES
   ('oit_mb_0007', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000007', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
-   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩折","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩褶","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
    504.00, 0)
 ON CONFLICT (id) DO NOTHING;
 

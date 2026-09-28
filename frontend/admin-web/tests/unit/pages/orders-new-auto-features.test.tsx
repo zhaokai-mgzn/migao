@@ -1025,14 +1025,14 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
 
   // issue #4566（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**……直接通过加工项来勾选」）：
   // 加工项目录里的**自动推导特征**（超高/超宽/倒幅）**必须存在**（商家配「加工费组合」时要能选到
-  // `韩折+超高+定型` 这种名字），但**下单页的手选控件必须没有它们**（判据 8：手选项 ⇒ 红）。
+  // `韩褶+超高+定型` 这种名字），但**下单页的手选控件必须没有它们**（判据 8：手选项 ⇒ 红）。
   // 单一真值 = `lib/craft-auto-features.ts` 的 `AUTO_FEATURE_NAMES`（页面不抄第二份名字数组）。
   it('#4566 目录里的「超高/超宽/倒幅」**不出手选控件**（只出现在②只读的系统识别块里）', async () => {
     mockGetProcessingItems.mockResolvedValue({
       data: {
         data: {
           items: [
-            { id: 'pi-02', name: '韩折', craftHint: '韩褶', unit: '米' },
+            { id: 'pi-02', name: '韩褶', craftHint: '韩褶', unit: '米' },
             { id: 'pi-06', name: '定型', unit: '米' },
             { id: 'pi-14', name: '超高', unit: '米' },
             { id: 'pi-15', name: '超宽', unit: '米' },
@@ -1046,19 +1046,19 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     // ③加工项：手选列表 = 目录 − 自动推导特征（红证：修复前这里会出现 5 个 checkbox）
     openStep('加工项')
     expect(screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))).toEqual([
-      '韩折',
+      '韩褶',
       '定型',
     ])
     for (const auto of ['超高', '超宽', '倒幅']) {
       expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
     }
-    // 🔴 **2026-09-28 工艺默认变更（有意，非回归）**：「韩折」（`craftHint='韩褶'`）在目录里 ⇒
+    // 🔴 **2026-09-28 工艺默认变更（有意，非回归）**：「韩褶」（`craftHint='韩褶'`）在目录里 ⇒
     // 成品帘行**默认已勾选**它（布帘同时默认「定型」）—— 直接读勾选态（最硬的读数面）。
-    // 本文件其余 fixture 的加工项目录里没有韩折 ⇒ 这里是**唯一**能观测到该新默认的地方。
-    expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(true)
+    // 本文件其余 fixture 的加工项目录里没有韩褶 ⇒ 这里是**唯一**能观测到该新默认的地方。
+    expect((screen.getByRole('checkbox', { name: '韩褶' }) as HTMLInputElement).checked).toBe(true)
     expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(true)
     // 系统推荐条（本步顶部）如实列出被预选的两项，并给出「全不采纳」出口
-    expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩折 + 定型')
+    expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩褶 + 定型')
     expect(screen.getByTestId('processing-recommended-reject')).toHaveTextContent('全不采纳')
     // 计数口径（有意变更）：预选项**计入**「已选 N 项」且摘要带上工艺名。
     // 摘要只在**收起**态可见（`CollapsibleHeader` 打开时换成了内容）⇒ 收起本步再读。

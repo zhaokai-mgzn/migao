@@ -56,7 +56,7 @@ const line = (over: Partial<Parameters<typeof craftCalcParamsOf>[0]> = {}) => ({
 })
 
 describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () => {
-  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）+ 默认公式（韩折）', () => {
+  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）+ 默认公式（韩褶）', () => {
     expect(craftCalcParamsOf(line())).toEqual({
       width: 6.6,
       height: 2.6,
@@ -68,7 +68,7 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
   })
 
   it('#4527 公式选择：缺省 ⇒ 韩褶公式（pleat）；显式指定 ⇒ 原样带出（不认的取值也不静默改写）', () => {
-    // 缺省 = 韩折（用户裁定「默认用韩折的」）
+    // 缺省 = 韩褶（用户裁定原话「默认用韩折的」，口语转写）
     expect(craftCalcParamsOf(line())?.formula).toBe('pleat')
     expect(CRAFT_CALC_FORMULA_PLEAT).toBe('pleat')
     expect(CRAFT_CALC_FORMULA_FULLNESS).toBe('fullness')

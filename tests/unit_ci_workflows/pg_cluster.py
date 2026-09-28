@@ -111,6 +111,9 @@ REALDB_TEST_MODULES: frozenset[str] = frozenset({
     "test_v97_orphan_positions_cleanup.py",
     # issue #5230：「接高」撤出加工项目录项（V123）—— 真库两遍幂等 + 存量组合不静默变价
     "test_v123_retire_join_height_item.py",
+    # 2026-09-28 用户裁定「把加工项和加工费组合里面叫韩折的都改成韩褶」（V139）—— 真库两遍幂等 +
+    # 撞键 fail-closed + **不改价** 的逐值判据；缺 PG ⇒ CI 判红（不是静默跳过）。
+    "test_v139_rename_hanzhe_item_and_fee_keys.py",
     # issue #5263：孤儿集群的判据文件 —— 其中两条**行为级**红证真起集群（失败用例 ⇒ 无残留 /
     # 去掉 teardown ⇒ 真残留），故它**本身就是**真库判据（也经 `realdb_binaries` 夹具取二进制）。
     "test_pg_orphan_sweep.py",

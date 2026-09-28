@@ -61,7 +61,7 @@ PROCESSING_ITEM_CARD = {
     "title": "是否需要加工项？（可多选，不需要请点「不需要加工项」）",
     "options": [
         {"label": "打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"},
-        {"label": "韩折 · ¥12/米", "value": "proc_item_pi_eval_wave"},
+        {"label": "韩褶 · ¥12/米", "value": "proc_item_pi_eval_wave"},
     ],
     "multiSelect": True,
     "multiSelectSubmitPrefix": "已选加工项：",

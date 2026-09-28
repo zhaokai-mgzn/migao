@@ -260,7 +260,7 @@ interface OrderLineItem {
    */
   shapedItemTouched: boolean
   /**
-   * 商家**手改过工艺项**（2026-09-28 下单页布局：工艺默认「韩折」由系统**预选**）—— 落在**行状态**里
+   * 商家**手改过工艺项**（2026-09-28 下单页布局：工艺默认「韩褶」由系统**预选**）—— 落在**行状态**里
    * （同 `shapedItemTouched`，收起/展开重挂不丢）。
    *
    * 手改过（勾 / 取消 / 点「全不采纳」）⇒ 换商品 / 改帘体 / 目录到达**不得**再把推荐组合勾回来
@@ -429,17 +429,21 @@ const FEE_SOURCE_LABELS: Record<string, string> = {
 const SHAPED_ITEM_NAME = '定型'
 
 /**
- * 「韩折」加工项名（**V83 目录逐字** —— `api_admin_processing-items` 契约快照里 `pi-v83-1-02`）——
+ * 「韩褶」加工项名（**目录名** —— V83 种子第 02 项；契约快照 `api_admin_processing-items` 里 `pi-v83-1-02`；
+ * 原名照 ERP 附件逐字写「韩折」，V139 迁移改名为「韩褶」）——
  * 系统**推荐组合**里的那个工艺项（2026-09-28 用户裁定）。
+ *
+ * 🔴 **按目录名匹配**（{@link withCraftItemDefault}：`pi.name === DEFAULT_CRAFT_ITEM_NAME`）⇒
+ * 目录改名（V139）而本常量不改 = 找不到项 = 推荐组合**静默不预选**（无报错、无提示）。
  *
  * 它的 `craftHint = 韩褶`（= `lib/craft-calc-request.ts::DEFAULT_CRAFT_NAME`）⇒ 勾它 = 工艺是韩褶；
  * 工艺的唯一派生点仍是「勾选的工艺项的 `craftHint`」（{@link craftFromItems}）⇒
  * **预选加工项**不新增第二份工艺口径（#4566 的纪律：前端不补一份默认工艺）。
  *
- * 用户 2026-09-28（下单页布局）：「正常用户提供净窗高 / 窗宽，然后再确认是否要韩折 / 打孔 /
+ * 用户 2026-09-28（下单页布局，**原话**）：「正常用户提供净窗高 / 窗宽，然后再确认是否要韩折 / 打孔 /
  * 定型等信息即可」⇒ 这套推荐组合由系统**预选**、商家一键「全不采纳」可撤（撤过即留痕，不再勾回）。
  */
-const DEFAULT_CRAFT_ITEM_NAME = '韩折'
+const DEFAULT_CRAFT_ITEM_NAME = '韩褶'
 
 /**
  * 该行的**手选加工项**清单 —— 滤掉**自动推导特征**（`超高`/`超宽`/`倒幅`）。
@@ -569,7 +573,7 @@ function withShapedDefault(
 }
 
 /**
- * 「韩折」加工项的**默认勾选**（2026-09-28 用户裁定：商家只提供净窗宽 / 净窗高，再确认
+ * 「韩褶」加工项的**默认勾选**（2026-09-28 用户裁定：商家只提供净窗宽 / 净窗高，再确认
  * 「是否要韩折 / 打孔 / 定型」即可 ⇒ 推荐组合由系统**预选**，一键「全不采纳」可撤）。
  *
  * 与 {@link withShapedDefault} 三条边界**逐字同构**（手改留痕 / 目录无此项 / 已是目标态），
@@ -591,7 +595,7 @@ function withCraftItemDefault(
 }
 
 /**
- * **推荐组合的预选**（下单页的唯一入口）= 定型（真值源 §10：按帘体）∪ 韩折（工艺默认）。
+ * **推荐组合的预选**（下单页的唯一入口）= 定型（真值源 §10：按帘体）∪ 韩褶（工艺默认）。
  *
  * 三处调用点（目录到达 / 改帘体 / 换商品 / 布料切回成品帘）共用同一个入口 ——
  * 避免两套默认各补一半（同 #4489 的「默认只能有一个来源」纪律）。
@@ -604,7 +608,7 @@ function withRecommendedItemDefaults(
 }
 
 /**
- * **推荐组合的项名**（目录名，2026-09-28）= 工艺默认「韩折」+ 帘体的定型默认（真值源 §10：布帘是 /
+ * **推荐组合的项名**（目录名，2026-09-28）= 工艺默认「韩褶」+ 帘体的定型默认（真值源 §10：布帘是 /
  * 纱帘否）；布料组整组无加工（#4493）⇒ 空。
  *
  * 与 {@link withRecommendedItemDefaults} 是**同一份口径的两个读法**（预选 / 界面展示）——
@@ -1642,7 +1646,7 @@ export default function NewOrderPage() {
       prev.map((it) => {
         if (it.processingItems === processingCatalog) return it
         const next: OrderLineItem = { ...it, processingItems: processingCatalog }
-        // 目录到达 ⇒ 补**推荐组合**的默认勾选（定型 #4566 + 韩折，2026-09-28；商家手改过的不覆盖）
+        // 目录到达 ⇒ 补**推荐组合**的默认勾选（定型 #4566 + 韩褶，2026-09-28；商家手改过的不覆盖）
         return { ...next, selectedProcessing: withRecommendedItemDefaults(next) }
       })
     )
@@ -1770,7 +1774,7 @@ export default function NewOrderPage() {
           metersSource: METERS_SOURCE_FORMULA,
         }
         // 定型默认随帘体（#4566）：写「定型」加工项的勾选态，商家手改过则不覆盖
-        // （⚠️ 与用料算法无关，不动）；韩折（工艺默认，2026-09-28）同批按同一入口补
+        // （⚠️ 与用料算法无关，不动）；韩褶（工艺默认，2026-09-28）同批按同一入口补
         next.selectedProcessing = withRecommendedItemDefaults(next)
         return next
       })
@@ -2033,7 +2037,7 @@ export default function NewOrderPage() {
         productLoading: next.productLoading,
         unitPrice: next.unitPrice,
         processingItems: next.processingItems,
-        // 换商品 = 清空勾选 ⇒ 按帘体补**推荐组合**的默认勾选（定型 #4566 + 韩折，2026-09-28）
+        // 换商品 = 清空勾选 ⇒ 按帘体补**推荐组合**的默认勾选（定型 #4566 + 韩褶，2026-09-28）
         selectedProcessing: withRecommendedItemDefaults(next),
       }
     })
@@ -2122,7 +2126,7 @@ export default function NewOrderPage() {
    * ⇒ 本函数**一次**算完整份对象再写。
    *
    * 两条留痕：删过 / 采纳过都算商家的表态 —— `craftItemTouched` / `shapedItemTouched`
-   * 只在**该项真在推荐集里**时才置位（否则「纱帘只推荐韩折」会把定型也锁死）。
+   * 只在**该项真在推荐集里**时才置位（否则「纱帘只推荐韩褶」会把定型也锁死）。
    */
   const decideRecommendedItems = (line: OrderLineItem, decision: 'adopt' | 'reject') => {
     const names = recommendedItemNamesOf(line)
@@ -5250,7 +5254,7 @@ function LineItemBlock({
             >
               {/* ===== **系统推荐组合**（2026-09-28 用户裁定）=====
                   用户口径：「正常用户提供净窗高 / 窗宽，然后再确认是否要韩折 / 打孔 / 定型等信息即可」
-                  ⇒ 推荐组合（韩折 + 布帘「定型」）由系统**预选**，商家在这里一键**采纳 / 全不采纳**。
+                  ⇒ 推荐组合（韩褶 + 布帘「定型」）由系统**预选**，商家在这里一键**采纳 / 全不采纳**。
                   撤过就留痕（`craftItemTouched` / `shapedItemTouched`）⇒ 换商品 / 改帘体不再勾回。
                   为什么预选的是**加工项**：工艺的唯一派生点仍是「勾选的工艺项的 `craftHint`」（#4566）。 */}
               {recommendedItems.length > 0 && (

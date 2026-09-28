@@ -63,17 +63,43 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+from unit_ci_workflows._migration_renames import processing_item_renames as v139_renames
 
 
 
 #: 期望的迁移文件名（主会话落地的那个）；解析时按 `V83__*.sql` 发现 ⇒ 文件名微调不至于让本判据静默跳过。
 MIGRATION_NAME = "V83__seed_processing_item_catalog.sql"
 
-#: 权威清单（ERP 附件逐字照抄）—— **本文件独立重写一份**，不从生成器 import：
+#: **V83（归档、逐字节冻结）里的名字 = ERP 附件逐字**（2026-09-19 重建时照抄；归档不可改
+#: ⇒ 它永远长这样）。「今天的目录」= ERP 附件 + V139 的改名迁移（见 {@link v139_renames}）。
+ERP_ATTACHMENT_CATALOG = (
+    ("打孔", "打孔"),
+    ("韩折", "韩褶"),   # 名字照 ERP 写「韩折」、工艺声明是「韩褶」—— **不同字**
+    ("韩定+S钩", "韩褶"),
+    ("穿杆", "穿杆"),
+    ("平幔", "平幔"),
+    ("定型", None),
+    ("花边", None),
+    ("扣环", None),
+    ("接高", None),
+    ("拼接", None),
+    ("双眼皮", None),
+    ("缎带", None),
+    ("换货", None),
+    ("超高", None),
+    ("超宽", None),
+    ("倒幅", None),
+)
+ERP_ATTACHMENT_HINTS = dict(ERP_ATTACHMENT_CATALOG)
+
+#: **今天的目录**（= ERP 附件 + V139 的用户裁定改名）—— **本文件独立重写一份**，不从生成器 import：
 #: 生成器改了这里不改 ⇒ 红。这就是判据 a 的可红性来源。
+#: 🔴 2026-09-28 用户裁定（逐字）：「**把加工项和加工费组合里面叫韩折的都改成韩褶**」
+#: ⇒ 第 02 项**名字**改「韩褶」（工艺声明本来就是「韩褶」）；与 ERP 附件**差一字**是**有意**的
+#: ⇒ 由 `V139__rename_hanzhe_item_and_fee_keys.sql`（存量库改名 + 加工费组合键重算）承接。
 EXPECTED_CATALOG = (
     ("打孔", "打孔"),
-    ("韩折", "韩褶"),
+    ("韩褶", "韩褶"),
     ("韩定+S钩", "韩褶"),
     ("穿杆", "穿杆"),
     ("平幔", "平幔"),
@@ -91,7 +117,7 @@ EXPECTED_CATALOG = (
 )
 EXPECTED_HINTS = dict(EXPECTED_CATALOG)
 #: 带**工艺声明**的 5 项（路线键「工艺」维的受控来源）；其余 11 项 = 未声明（`None`）。
-CRAFT_DECLARED = {"打孔", "韩折", "韩定+S钩", "穿杆", "平幔"}
+CRAFT_DECLARED = {"打孔", "韩褶", "韩定+S钩", "穿杆", "平幔"}
 #: **不在**目录里：`四爪钩` 是配件、不是打褶方式（归属 issue #4365 阶段 2）⇒ 出现即红。
 OUT_OF_CATALOG_BY_DESIGN = ("四爪钩",)
 
@@ -285,6 +311,10 @@ def migration_path():
     return hits[0] if hits else None
 
 
+#: 「韩折」→「韩褶」统一（2026-09-28 用户裁定）那条**增量迁移**的改名映射 ——
+#: 读取实现在 `_migration_renames.py`（**单一真值 = 迁移本身**；组合价目那条守卫共用同一实现）。
+
+
 def _sample_sql(catalog, columns=("id", "tenant_id", "name", "craft_hint")) -> str:
     """把 `catalog` 渲染成**字面量 VALUES 形态**的样本 SQL（供解析器自证）。"""
     values = ",\n".join(
@@ -374,20 +404,54 @@ def test_fixture_has_no_stale_fabricated_entries():
 # ══════════════════════════ ③ 迁移 V83 收敛（判据 e）══════════════════════════
 
 def test_v83_migration_converges_with_fixture():
-    """V83 的 `(name, craft_hint)` 集合 == fixture 的 `(name, craftHint)` 集合（逐条同源）。
+    """**V83（ERP 附件逐字）+ V139 的改名** == fixture 的 `(name, craftHint)` 集合（逐条同源）。
 
     V83 由**另一个包**落地；此刻还没落地 ⇒ **显式 skip**（不伪造通过）。
+    ⚠️ 2026-09-28 起这条判据的右边**必须带上 V139 的净效果**：V83 在归档里（逐字节冻结、写的是
+    ERP 的「韩折」），而 fixture / 生成器说的是**今天的目录**（用户裁定后的「韩褶」）。
+    只比 V83 ⇒ 要么永远红、要么把 fixture 改回旧名（那才是两份真值）。
     """
     path = migration_path()
     if path is None:
         pytest.skip("V83 尚未落地")
     parsed = migration_catalog(path.read_text(encoding="utf-8"))
-    assert parsed == EXPECTED_HINTS, (
-        f"{path.name} 的种子行 ≠ ERP 附件目录（issue #4566）：\n"
-        f"  多出：{sorted(set(parsed) - set(EXPECTED_HINTS))}\n"
-        f"  缺少：{sorted(set(EXPECTED_HINTS) - set(parsed))}\n"
-        f"  craftHint 不同：{ {n: (parsed.get(n), EXPECTED_HINTS.get(n)) for n in set(parsed) & set(EXPECTED_HINTS) if parsed.get(n) != EXPECTED_HINTS.get(n)} }")
-    assert parsed == fixture_catalog(fixture_document()), "迁移与 fixture 分叉（两份真值）"
+    assert parsed == ERP_ATTACHMENT_HINTS, (
+        f"{path.name} 的种子行 ≠ ERP 附件目录（issue #4566；归档是冻结面，不应变）：\n"
+        f"  多出：{sorted(set(parsed) - set(ERP_ATTACHMENT_HINTS))}\n"
+        f"  缺少：{sorted(set(ERP_ATTACHMENT_HINTS) - set(parsed))}\n"
+        f"  craftHint 不同：{ {n: (parsed.get(n), ERP_ATTACHMENT_HINTS.get(n)) for n in set(parsed) & set(ERP_ATTACHMENT_HINTS) if parsed.get(n) != ERP_ATTACHMENT_HINTS.get(n)} }")
+    renames = v139_renames()
+    effective = {renames.get(name, name): hint for name, hint in parsed.items()}
+    assert effective == fixture_catalog(fixture_document()), (
+        "迁移（V83 + V139）与 fixture 分叉（两份真值）：\n"
+        f"  只差这些：{ {n: (effective.get(n), fixture_catalog(fixture_document()).get(n)) for n in set(effective) ^ set(fixture_catalog(fixture_document()))} }")
+
+
+def test_v139_carries_the_user_ruling_and_reaches_the_expected_catalog():
+    """2026-09-28 用户裁定「把加工项和加工费组合里面叫韩折的都改成韩褶」的**可执行判据**。
+
+    三条一起钉（缺一条这条裁定就可能「绿了但没落地」）：
+    ① 增量迁移 V139 的改名映射**恰好** `{韩折: 韩褶}`（改别的字 / 少改 / 多改 ⇒ 红）；
+    ② 它作用在 V83（ERP 附件）上得到的**终态** == 本文件的期望目录 `EXPECTED_HINTS`；
+    ③ 被改的名字**真的在** V83 里（不在 ⇒ 这条迁移是**空跑** —— 判据不许空转）。
+    红证：把 V139 的 `SET name = '韩褶'` 改成别的字 ⇒ ① 红；删掉整条 UPDATE ⇒ `v139_renames()` 抛。
+    """
+    path = migration_path()
+    if path is None:
+        pytest.skip("V83 尚未落地")
+    erp = migration_catalog(path.read_text(encoding="utf-8"))
+    renames = v139_renames()
+    assert renames == {"韩折": "韩褶"}, f"V139 的改名映射与用户裁定不符：{renames}"
+    assert set(renames) <= set(erp), (
+        f"V139 要改的名字不在 V83 目录里 ⇒ 迁移空跑：{sorted(set(renames) - set(erp))}")
+    effective = {renames.get(name, name): hint for name, hint in erp.items()}
+    assert effective == EXPECTED_HINTS, (
+        "V83 + V139 的终态 ≠ 期望目录：\n"
+        f"  多出：{sorted(set(effective) - set(EXPECTED_HINTS))}\n"
+        f"  缺少：{sorted(set(EXPECTED_HINTS) - set(effective))}\n"
+        f"  craftHint 不同：{ {n: (effective.get(n), EXPECTED_HINTS.get(n)) for n in set(effective) & set(EXPECTED_HINTS) if effective.get(n) != EXPECTED_HINTS.get(n)} }")
+    # 「韩折」**不得**再作为「今天的目录名」出现（它只剩「ERP 附件的历史写法」这一重身份）
+    assert "韩折" not in effective, "终态里仍有「韩折」—— 用户裁定未落全（组合名侧见 V139 的第 ③ 段）"
 
 
 # ══════════════════════════ ④ 注入式自证（判据 f，红证）══════════════════════════
@@ -430,7 +494,8 @@ def test_parsers_detect_injected_drift():
     # ⑤ **V83 的别名 VALUES 形态**（值在 VALUES 行、外层 SELECT 只做列映射）也必须解析得出来
     alias_sample = _sample_alias_sql(EXPECTED_CATALOG)
     assert migration_catalog(alias_sample) == EXPECTED_HINTS, "别名 VALUES 形态解析不出来"
-    assert migration_catalog(alias_sample)["韩折"] == "韩褶", "别名映射错位（名字↔craft_hint 串了）"
+    assert migration_catalog(alias_sample)["韩定+S钩"] == "韩褶", "别名映射错位（名字↔craft_hint 串了）"
+    assert migration_catalog(alias_sample)["韩褶"] == "韩褶", "改名后的那一项名字↔craft_hint 对不上"
     assert migration_catalog(alias_sample.replace("'韩褶'::varchar(16)", "'打孔'::varchar(16)", 1)) != EXPECTED_HINTS, \
         "别名形态改 craft_hint 读不出差异"
     assert migration_catalog(alias_sample.replace("'打孔'::text", "'打洞'::text", 1)) != EXPECTED_HINTS, \
@@ -444,11 +509,17 @@ def test_parsers_detect_injected_drift():
     assert migration_catalog(loop) == {"打孔": "打孔"}, "按租户 SELECT 循环的行解析不出来"
 
     # ⑦ **真实 V83**（已落地时）上注入一处漂移也必须读得出 —— 样本自证不替代真文件
+    #    ⚠️ 2026-09-28：V83 在归档里（写的是 ERP 的「韩折」）⇒ 与「今天的目录」比时必须带上
+    #    V139 的净效果（`renames`）；与**冻结面自身**比时才用 `ERP_ATTACHMENT_HINTS`。
     path = migration_path()
     if path is not None:
         real = path.read_text(encoding="utf-8")
-        assert migration_catalog(real) == EXPECTED_HINTS, "真实 V83 与 ERP 附件目录不等"
-        assert migration_catalog(real.replace("'韩褶'::varchar(16)", "'打孔'::varchar(16)", 1)) != EXPECTED_HINTS, \
+        parsed_real = migration_catalog(real)
+        assert parsed_real == ERP_ATTACHMENT_HINTS, "真实 V83 与 ERP 附件目录不等"
+        renames = v139_renames()
+        assert {renames.get(name, name): hint for name, hint in parsed_real.items()} == EXPECTED_HINTS, \
+            "真实 V83 + V139 的净效果 ≠ 今天期望的目录（用户 2026-09-28 裁定）"
+        assert migration_catalog(real.replace("'韩褶'::varchar(16)", "'打孔'::varchar(16)", 1)) != ERP_ATTACHMENT_HINTS, \
             "在真实 V83 上改一个 craft_hint 读不出差异"
 
 

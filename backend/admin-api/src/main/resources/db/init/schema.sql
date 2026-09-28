@@ -3408,7 +3408,7 @@ SELECT 'pi-v83-' || t.id || '-' || v.seq,
   FROM tenants t
   JOIN (VALUES
       ('01'::text, '打孔'::text,      '打孔'::varchar(16), 'ERP 加工费项（工艺声明：打孔）'::text),
-      ('02'::text, '韩折'::text,      '韩褶'::varchar(16), 'ERP 加工费项（工艺声明：韩褶；名字按 ERP 写「韩折」）'::text),
+      ('02'::text, '韩褶'::text,      '韩褶'::varchar(16), 'ERP 加工费项（工艺声明：韩褶）'::text),
       ('03'::text, '韩定+S钩'::text,  '韩褶'::varchar(16), 'ERP 加工费项（工艺声明：韩褶）'::text),
       ('04'::text, '穿杆'::text,      '穿杆'::varchar(16), 'ERP 加工费项（工艺声明：穿杆）'::text),
       ('05'::text, '平幔'::text,      '平幔'::varchar(16), 'ERP 加工费项（工艺声明：平幔）'::text),

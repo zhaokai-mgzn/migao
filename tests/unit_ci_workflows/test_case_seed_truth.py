@@ -641,7 +641,8 @@ class TestPremises:
                             FIXTURES_DIR / "mibao_eval_seed.sql"])
         assert {"遮光窗帘", "北欧风窗帘", "夏日清风窗帘", "2699系列雪尼尔窗帘面料"} <= inv["product"], inv["product"]
         # #4572：`刺绣工艺`(pi_eval_embroidery) 已按用户裁定真删 ⇒ 前提集只留 3 项改名夹具
-        assert {"打孔", "韩折", "定型"} <= inv["processing_item"], inv["processing_item"]
+        # 2026-09-28 用户裁定：目录名统一为「韩褶」（种子夹具 = 迁移链跑完后的名字）
+        assert {"打孔", "韩褶", "定型"} <= inv["processing_item"], inv["processing_item"]
         # 行注释穿插在 VALUES 之间 ⇒ 不剥注释会漏掉后两条（本断言正是那条解析回归的红证）
         assert {"米白", "浅灰", "雾霾蓝", "白色", "米白色", "2699-03暖米色", "2699-01本白"} <= inv["color"], inv["color"]
         assert {"13800138000", "张三"} <= inv["customer"], inv["customer"]

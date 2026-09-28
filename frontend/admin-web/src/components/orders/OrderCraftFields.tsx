@@ -12,7 +12,8 @@
  * - **工艺**：加工项里 5 个工艺项**显式声明** `craftHint`（V78 的 `processing_items.craft_hint`）
  *   ⇒ 页面侧由勾选项派生（`craftFromItems`）。**必须**这么改：加工费组合键的唯一来源是
  *   `processingInfo.processingItems[].name`，而 ERP 91 项加工费名字全是「工艺+特征」形态
- *   （`韩折+超高+定型`）—— 工艺留在本组件里 ⇒ ERP 的名字一行都匹配不上。
+ *   （ERP 附件写法 `韩折+超高+定型`；V139 起目录名改名「韩褶」⇒ 与该写法差一字，对照见 V139 迁移头注）
+ *   —— 工艺留在本组件里 ⇒ ERP 的名字一行都匹配不上。
  * - **是否定型**：加工项目录里的 `定型` 项勾选态即 `isShaped`（后端
  *   `ProcessingOrderService` 读的就是这个键）。
  *

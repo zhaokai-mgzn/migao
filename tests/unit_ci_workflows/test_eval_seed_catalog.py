@@ -8,7 +8,7 @@
 
 第一轮修法是「往两个评测种子各插 16 行」—— **真库实测证明这个修法本身是错的**：
 `backend/admin-api/src/main/resources/db/init/schema.sql` / 迁移链**已经**由 V83 为每个活跃租户种了那 16 项 ⇒ 评测栈上
-`processing_items` = **32 行**，其中 `打孔`/`韩折`/`定型` **各重名 2 条**
+`processing_items` = **32 行**，其中 `打孔`/`韩褶`/`定型` **各重名 2 条**
 （`pi_eval_punch` ¥8 与 `pi-v83-1-01` ¥0）⇒
 ① `processing_item_query(打孔)` 返 2 条、金额断言不确定；
 ② `processing_item_count_for_keyword: 打孔, expect: 1`（**PP-008 的前置**）**运行期必红**。
@@ -18,8 +18,9 @@
 
 | 谁提供 | 内容 |
 |---|---|
-| **V83 迁移**（产品口径不动：目录无价，R10） | ERP 目录 **16 项**（`打孔`/`韩折`/`韩定+S钩`/`穿杆`/`平幔`/`定型`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/`换货`/`超高`/`超宽`/`倒幅`） |
-| **评测种子**（两个文件各一份） | **只有 3 条带价夹具**：`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米（id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 夹具的职责是给 eval 断言提供**金额接地**；**id 保留** ⇒ 引用面最小（`528 = 168×3 + 8×3` 等金额逐值不变） |
+| **V83 迁移**（**归档、逐字节冻结**、不可改；产品口径不动：目录无价，R10） | ERP 目录 **16 项**（`打孔`/`韩折`/`韩定+S钩`/`穿杆`/`平幔`/`定型`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/`换货`/`超高`/`超宽`/`倒幅`）—— **逐字 = ERP 附件**（第 02 项名字写「韩折」，`craft_hint` 本来就是「韩褶」，**不同字**） |
+| **V139 改名迁移**（2026-09-28 用户裁定：目录名与组合名统一为「韩褶」；ERP 附件写作「韩折」） | 把 V83 的第 02 项改名为「韩褶」（+ 加工费组合名/键重算）⇒ **今天的目录** = V83 过一遍该改名（与 ERP 附件**差一字是刻意的**），见 `backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql` |
+| **评测种子**（两个文件各一份） | **只有 3 条带价夹具**：`打孔` ¥8/米 · `韩褶` ¥12/米 · `定型` ¥10/米（id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 夹具的职责是给 eval 断言提供**金额接地**；**id 保留** ⇒ 引用面最小（`528 = 168×3 + 8×3` 等金额逐值不变） |
 
 **去冲突**：种子在插入**之前**先 `DELETE … WHERE tenant_id = 1 AND name IN (…) AND id LIKE 'pi-v83-%'`
 ⇒ 同名只有一行。**两种执行顺序都安全**（双保险）：先种子后 V83 ⇒ V83 的业务键 `NOT EXISTS`
@@ -33,7 +34,7 @@
 
 | 判据 | 内容 |
 |---|---|
-| a | **无重名**：`V83 的 16 个名字` 与 `种子插入的名字` 的交集**恰好**是那 3 条带价夹具（且被 DELETE 覆盖）⇒ 并集无重复 |
+| a | **无重名**：`V83 的 16 个名字（过 V139 改名后的运行时名字）` 与 `种子插入的名字` 的交集**恰好**是那 3 条带价夹具（且被 DELETE 覆盖）⇒ 并集无重复 |
 | b | 3 条带价夹具**在**且 `unit=米`、id 保留、active/未删、**且不再写已退场的两列** |
 | c | 种子**不**重复插 V83 已种的名字（那 13 项由 V83 提供；种子出现 `pi_eval_cat_*` 即红） |
 | d | `DELETE … pi-v83-%` 那行**在**且在 INSERT **之前**（去冲突机制没被删掉） |
@@ -69,6 +70,9 @@ REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "agent_eval" / "fixtures"
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from unit_ci_workflows._migration_paths import find_migration  # noqa: E402
+#: 「韩折」→「韩褶」改名映射（2026-09-28 用户裁定）—— **单一实现点**在读迁移的那个模块里
+#: （`unit_ci_workflows/_migration_renames.py`），本文件不另抄一份（否则改 V139 时两处静默漂移）。
+from unit_ci_workflows._migration_renames import processing_item_renames  # noqa: E402
 
 #: 定位走**全仓单一事实源**（归档 ∪ 活目录；issue #5243）—— 判据本身一字未改
 V83 = find_migration("V83__seed_processing_item_catalog.sql")
@@ -76,9 +80,10 @@ V83 = find_migration("V83__seed_processing_item_catalog.sql")
 #: 两个评测种子（xiaobu 栈只注 C 端；mibao 栈 = C 端 + B 端）—— 两份都只该有那 3 条带价夹具。
 SEED_FILES = ("xiaobu_eval_seed.sql", "mibao_eval_seed.sql")
 
-#: 权威清单（ERP 附件逐字照抄）—— **本文件独立重写一份**，不从 V83 或任何生成器 import：
-#: 那两处改了这里不改 ⇒ 红。
-EXPECTED_CATALOG = (
+#: **V83（归档、逐字节冻结）里的名字 = ERP 附件逐字照抄** —— 第 02 项永远写「韩折」
+#: （`craft_hint` 本来就是「韩褶」，**不同字**）。归档不可改 ⇒ 「今天的目录」由 V139 承接（见下）。
+#: **本文件独立重写一份**，不从 V83 或任何生成器 import：那两处改了这里不改 ⇒ 红。
+ERP_ATTACHMENT_CATALOG = (
     ("打孔", "打孔"),
     ("韩折", "韩褶"),
     ("韩定+S钩", "韩褶"),
@@ -96,13 +101,49 @@ EXPECTED_CATALOG = (
     ("超宽", None),
     ("倒幅", None),
 )
+ERP_ATTACHMENT_HINTS = dict(ERP_ATTACHMENT_CATALOG)
+
+#: **今天的目录** = ERP 附件 + 改名迁移 V139 的净效果。
+#: 🔴 **2026-09-28 用户裁定**（逐字）：「**把加工项和加工费组合里面叫韩折的都改成韩褶**」
+#: ⇒ 目录名与组合名统一为「韩褶」（ERP 附件写作「韩折」，见
+#: `backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql`）。
+#: 同样**独立重写一份**：V83 过完 `v139_renames()` 的结果 ≠ 这份表 ⇒ 红。
+EXPECTED_CATALOG = (
+    ("打孔", "打孔"),
+    ("韩褶", "韩褶"),
+    ("韩定+S钩", "韩褶"),
+    ("穿杆", "穿杆"),
+    ("平幔", "平幔"),
+    ("定型", None),
+    ("花边", None),
+    ("扣环", None),
+    ("接高", None),
+    ("拼接", None),
+    ("双眼皮", None),
+    ("缎带", None),
+    ("换货", None),
+    ("超高", None),
+    ("超宽", None),
+    ("倒幅", None),
+)
 EXPECTED_HINTS = dict(EXPECTED_CATALOG)
+
+def runtime_catalog(catalog: dict) -> dict:
+    """V83 解析结果（ERP 逐字名）→ **跑完迁移链后的运行时目录名**（过一遍 V139 的改名）。
+
+    映射从**单一实现点**读（`unit_ci_workflows/_migration_renames.py`，缺失/读不出 ⇒ fail-closed）。
+    """
+    renames = processing_item_renames()
+    return {renames.get(name, name): hint for name, hint in catalog.items()}
+
 
 #: 评测种子**只**提供这 3 条目录夹具：名字 → (id, 历史单价)。id **保留**（引用面最小）。
 #: #4882 后加工项**已无价** ⇒ 这里的单价只作历史留档，**不再**是任何断言的接地真值
 #: （金额接地真值源 = 加工费组合，R10）；断言改用 `unit` / `status` / `craft_hint`。
+#: ⚠️ 名字是**改名后**的「韩褶」（= 迁移链跑完后的运行时名字）—— 去冲突 DELETE 必须用这个名字，
+#: 否则删不到 V139 改过名的 V83 基线行（旧名「韩折」在库里已不存在）。
 PRICED_FIXTURES = {"打孔": ("pi_eval_punch", 8.00),
-                   "韩折": ("pi_eval_hem", 12.00),
+                   "韩褶": ("pi_eval_hem", 12.00),
                    "定型": ("pi_eval_iron", 10.00)}
 #: 其余 13 项**由 V83 提供**，评测种子**不得**重复插入（真库实测的 32 行/重名 2 条就是这么来的）。
 V83_ONLY = tuple(sorted(set(EXPECTED_HINTS) - set(PRICED_FIXTURES)))
@@ -297,14 +338,24 @@ def _v83_text() -> str:
 # ══════════════════════════ 判据 e：V83 提供整个 ERP 目录 ══════════════════════════
 
 def test_v83_provides_the_whole_erp_catalog():
-    """V83 解析出的目录 == ERP 附件 16 项（逐值含 `craft_hint`）—— 它现在是**唯一**目录来源。"""
-    source = v83_catalog(_v83_text())
-    assert len(source) == 16, f"V83 解析出 {len(source)} 项（应为 16）：{sorted(source)}"
-    assert source == EXPECTED_HINTS, (
+    """V83 解析出的目录 == ERP 附件 16 项（逐值含 `craft_hint`）—— 它现在是**唯一**目录来源。
+
+    ⚠️ 右侧对照的是 **V83（归档）自己的基线** `ERP_ATTACHMENT_HINTS`（第 02 项写「韩折」）；
+    再过一遍 V139 的改名必须得到**今天的目录** `EXPECTED_HINTS`（V83 漂了 / 改名迁移丢了 ⇒ 红）。
+    """
+    raw = v83_catalog(_v83_text())
+    assert len(raw) == 16, f"V83 解析出 {len(raw)} 项（应为 16）：{sorted(raw)}"
+    assert raw == ERP_ATTACHMENT_HINTS, (
         "V83 的目录 ≠ 本文件自持的 ERP 附件清单（两者必有一个错了）：\n"
-        f"  多出：{sorted(set(source) - set(EXPECTED_HINTS))}\n"
-        f"  缺少：{sorted(set(EXPECTED_HINTS) - set(source))}\n"
-        f"  craft_hint 不同：{ {n: (source.get(n), EXPECTED_HINTS.get(n)) for n in set(source) & set(EXPECTED_HINTS) if source.get(n) != EXPECTED_HINTS.get(n)} }")
+        f"  多出：{sorted(set(raw) - set(ERP_ATTACHMENT_HINTS))}\n"
+        f"  缺少：{sorted(set(ERP_ATTACHMENT_HINTS) - set(raw))}\n"
+        f"  craft_hint 不同：{ {n: (raw.get(n), ERP_ATTACHMENT_HINTS.get(n)) for n in set(raw) & set(ERP_ATTACHMENT_HINTS) if raw.get(n) != ERP_ATTACHMENT_HINTS.get(n)} }")
+    effective = runtime_catalog(raw)
+    assert effective == EXPECTED_HINTS, (
+        "V83 + V139 的**终态** ≠ 今天的目录（2026-09-28 裁定后的名字）：\n"
+        f"  多出：{sorted(set(effective) - set(EXPECTED_HINTS))}\n"
+        f"  缺少：{sorted(set(EXPECTED_HINTS) - set(effective))}\n"
+        f"  craft_hint 不同：{ {n: (effective.get(n), EXPECTED_HINTS.get(n)) for n in set(effective) & set(EXPECTED_HINTS) if effective.get(n) != EXPECTED_HINTS.get(n)} }")
     assert set(V83_ONLY) == set(EXPECTED_HINTS) - set(PRICED_FIXTURES) and len(V83_ONLY) == 13
 
 
@@ -339,7 +390,7 @@ def test_deconflict_delete_is_present_and_precedes_the_insert():
         if parsed is None:
             raise AssertionError(
                 f"{seed} 里没有去冲突语句 `DELETE FROM processing_items WHERE tenant_id = 1 AND "
-                "name IN ('打孔','韩折','定型') AND id LIKE 'pi-v83-%'` —— 没有它，V83 先跑时"
+                "name IN ('打孔','韩褶','定型') AND id LIKE 'pi-v83-%'` —— 没有它，V83 先跑时"
                 "（评测栈的常态：admin-api 启动即跑迁移）同名就是**两行**，PP-008 的前置恒红")
         names, pattern = parsed
         assert set(names) == set(PRICED_FIXTURES), (
@@ -388,10 +439,12 @@ def test_catalog_names_have_no_duplicate_across_v83_and_seeds():
 
     真实去重由种子里的 `DELETE … pi-v83-%` + V83 的业务键 `NOT EXISTS` 保证；
     本判据钉住**前提**：两者名字的交集恰好是那 3 条（= 会被 DELETE 覆盖的那 3 条）。
+    ⚠️ V83 是归档（写的是 ERP 逐字的「韩折」）、种子用**改名后**的「韩褶」⇒ 交集必须在
+    **运行时名字**上取（先过一遍 V139 的改名），否则会把同一项读成两个名字。
     """
-    v83_names = set(v83_catalog(_v83_text()))
+    v83_names = set(runtime_catalog(v83_catalog(_v83_text())))
     assert set(PRICED_FIXTURES) <= v83_names, (
-        f"带价夹具的名字 {sorted(set(PRICED_FIXTURES) - v83_names)} 不在 V83 目录里 —— "
+        f"带价夹具的名字 {sorted(set(PRICED_FIXTURES) - v83_names)} 不在 V83 目录里（过 V139 改名后）—— "
         "那样 DELETE 删不到东西、同名会变成「V83 一行 + 夹具一行」两行（除非 V83 先跑）")
     for seed in SEED_FILES:
         seed_names = set(seed_catalog(_seed_text(seed)))
@@ -477,8 +530,8 @@ def _catalog_or_none_on_fail(text: str):
 def test_parsers_detect_injected_drift():
     """在**真实种子/V83 文本**上注入一处 ⇒ 解析函数/判据必须**读得出差异**。"""
     v83_text = _v83_text()
-    source = v83_catalog(v83_text)
-    assert source == EXPECTED_HINTS, "起点就不等 ⇒ 先修 V83 或本文件的对照表"
+    source = v83_catalog(v83_text)          # ← **V83 的原始解析**（ERP 逐字名，含「韩折」）
+    assert source == ERP_ATTACHMENT_HINTS, "起点就不等 ⇒ 先修 V83 或本文件的对照表"
 
     for seed in SEED_FILES:
         text = _seed_text(seed)
@@ -529,12 +582,12 @@ def test_parsers_detect_injected_drift():
         "在真实 V83 上改一个 craft_hint 读不出差异"
     drifted = v83_catalog(v83_text.replace("'打孔'::text", "'打洞'::text", 1))
     assert drifted != source, "在真实 V83 上改一个 name 读不出差异"
-    # ⚠️ 对照的是 **V83 自己的基线**（`EXPECTED_HINTS`），不是种子：裁定后种子只带 3 条
-    # 带价夹具，其余 13 项由 V83 提供 ⇒ 「V83 漂了」只能由判据 e 在 V83 上读出。
+    # ⚠️ 对照的是 **V83 自己的基线**（`ERP_ATTACHMENT_HINTS`），不是种子也不是「今天的目录」：
+    # 裁定后种子只带 3 条带价夹具、其余 13 项由 V83 提供 ⇒ 「V83 漂了」只能在这两处读出。
     assert "打洞" in drifted and "打孔" not in drifted, \
         f"V83 改名后读出的集合不对：{sorted(set(drifted) ^ set(source))}"
-    assert sorted(set(drifted) - set(EXPECTED_HINTS)) == ["打洞"], \
-        "V83 漂了名字 ⇒ 判据 e 必须把多出的名字报出来（对照表 = EXPECTED_HINTS）"
+    assert sorted(set(drifted) - set(ERP_ATTACHMENT_HINTS)) == ["打洞"], \
+        "V83 漂了名字 ⇒ 判据 e 必须把多出的名字报出来（对照表 = ERP_ATTACHMENT_HINTS）"
 
 
 def test_parser_is_not_vacuous_on_the_real_files():
