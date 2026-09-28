@@ -414,6 +414,42 @@
           "reason": "**未开启** `auto_discover_root`：探测的判据与判定本体住在 `tests/unit_ci_workflows/test_main_freshness_guard.py` / `scripts/generated_artifacts_freshness.py`，而前者**同时**断言 main 侧守护腿等别的事实面 ⇒ 开启自动发现会把与探测无关的读取面一并要求纳入触发面（会假红）。"
         }
       ]
+    },
+    {
+      "id": "bmini-app-tabbar-geometry",
+      "workflow": "bmini-app.yml",
+      "job": "tabbar-geometry",
+      "trigger": {
+        "kind": "step-detect-regex",
+        "step": "Detect bmini-app changes",
+        "emit_id": "detect",
+        "predicate": "^(frontend/bmini-app/|tests/|\\.github/)"
+      },
+      "must_cover": [
+        {
+          "path": "frontend/bmini-app",
+          "reason": "几何腿跑的就是它的 H5 构建产物（issue #5759：底栏居中 / 图标唯一性第一次有机器判据）"
+        },
+        {
+          "path": "tests/e2e/specs/bmini",
+          "reason": "判据本体（spec）住在测试树里 —— 改了 spec 而门禁不按同一谓词跑，断言会整段不跑且无人知"
+        },
+        {
+          "path": "tests/playwright.bmini.config.ts",
+          "reason": "腿的配置（webServer / 视口 / 产物新鲜度前置断言）—— 配置改坏 ⇒ 腿整段不跑"
+        }
+      ],
+      "uncovered": [],
+      "auto_discover_root": null,
+      "check_name": "bmini H5 tabBar geometry (e2e)",
+      "gated_steps": [
+        "Setup Node.js",
+        "Install bmini-app deps",
+        "Install Playwright deps",
+        "Build H5",
+        "Run tabBar geometry e2e",
+        "Upload e2e artifacts (failure)"
+      ]
     }
   ],
   "same_source_claims": [
