@@ -5713,16 +5713,16 @@ _CASE_OR_042 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-043 [NORMAL] 下单页两步化 —— 四段手风琴合并为「尺寸与数量 · 工艺规格」+「加工项 · 特殊选项」两个区块（源: cases/order.yml）──
+# ── OR-043 [NORMAL] 下单页分区块化 —— 四段手风琴合并为「用料与规格（系统推导）」+「加工项」+「其他」三个区块（#4874 两步化 → 2026-09-28 三步化；净尺寸提到组级）（源: cases/order.yml）──
 _CASE_OR_043 = EvalCase(
     id='OR-043',
     legacy_id='',
-    title='下单页两步化 —— 四段手风琴合并为「尺寸与数量 · 工艺规格」+「加工项 · 特殊选项」两个区块',
+    title='下单页分区块化 —— 四段手风琴合并为「用料与规格（系统推导）」+「加工项」+「其他」三个区块（#4874 两步化 → 2026-09-28 三步化；净尺寸提到组级）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['判据 1·**只有两个步骤区块**：`wizard-step-1`（标题含「尺寸与数量 · 工艺规格」）与 `wizard-step-2`（标题含「加工项 · 特殊选项」）各恰好一个；**反向断言** `wizard-step-3` / `wizard-step-4` **不存在**（合并 = 真的合并，不是并存）。红证：把四段手风琴改回去 ⇒ 反向断言红。', '判据 2·**录入面一件不丢**：原四段里的控件（宽/高/用料米数/单价、加工类型/打开方式/款式/用料公式/是否对花、加工项勾选、特殊选项 19 项）仍全部可达 —— 变的是**信息层次**，不是能力。承载测试 = `orders-new.test.tsx`（原四段锚点改写为两段**等价**锚点，**不删断言**）与 `orders-new-fee-preview.test.tsx` 的 `expandProcessing()`（区块 2 默认收起、`aria-expanded` 可切）。', '判据 3·**真实浏览器走查**（migao-dev-flow §15.2）：`tests/e2e/specs/orders/order-create.spec.ts` 的真浏览器用例断言两个区块标题可见、③④ 步骤号不存在、且「用料公式」chips 在位而「褶距」已移除。', '判据 4·**布局遮挡几何探针**（§15.3）：展开两个区块后米宝 FAB 与「提交订单」按钮矩形**两个方向都不重叠**。'],
+    data_checks=['判据 1·**只有三个步骤区块**（2026-09-28 现状）：`wizard-step-1`（标题含「用料与规格（系统推导）」）/ `wizard-step-2`（「加工项」）/ `wizard-step-3`（「其他」）各恰好一个；**反向断言** `wizard-step-4` **不存在**（合并 = 真的合并，不是并存）。**净尺寸（窗宽 / 窗高）不在任何一步里** —— 2026-09-28 起提到**组级常显**（商品 / 颜色之后、门幅之前）。红证：把某一段拆回去 / 把净尺寸塞回步骤 1 ⇒ 对应断言红。执行点 = frontend/admin-web/tests/unit/pages/orders-new.test.tsx 与 tests/e2e/specs/orders/order-create.spec.ts。', '判据 2·**录入面一件不丢**：原四段里的控件（宽/高/用料米数/单价、加工类型/打开方式/款式/用料公式/是否对花、加工项勾选、特殊选项 19 项）仍全部可达 —— 变的是**信息层次**，不是能力。承载测试 = `orders-new.test.tsx`（原四段锚点改写为两段**等价**锚点，**不删断言**）与 `orders-new-fee-preview.test.tsx` 的 `expandProcessing()`（区块 2 默认收起、`aria-expanded` 可切）。', '判据 3·**真实浏览器走查**（migao-dev-flow §15.2）：`tests/e2e/specs/orders/order-create.spec.ts` 的真浏览器用例断言三个步骤标题可见、④ 步骤号不存在、净尺寸常显、推导读数常态 `readonly`（点「改」可输入）、且「用料公式」chips 在位而「褶距」已移除。', '判据 4·**布局遮挡几何探针**（§15.3）：展开两个区块后米宝 FAB 与「提交订单」按钮矩形**两个方向都不重叠**。'],
     skip_reason='[backend-contract] 前端页面结构契约（admin-web vitest + Playwright 真浏览器，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new.test.tsx 与 tests/e2e/specs/orders/order-create.spec.ts 执行',
     tags=['order', 'craft_spec', 'ui_structure', 'backend_contract'],
     persona='',
@@ -5884,6 +5884,24 @@ _CASE_OR_051 = EvalCase(
     data_checks=['判据 1·**管理面存在且与同族一致**：GET /api/admin/orders/{id}/shipments 落在既有 admin 订单子资源族（/follow-status、/logistics、/refund 同形），{id} 带 [0-9a-fA-F-]+ 约束。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java 的 adminReadFaceLivesOnTheAdminOrderSubResourcePath。红证：删掉端点 ⇒ 该判据具名报出「admin 端没有发货读面」（本单落地前实测 rc=1、3 条失败）。', '判据 2·**权限码 = order:list**（与同页既有详情读面 GET /api/admin/orders/{id} 同码，不新造权限码）：漏 @RequirePermission ⇒ Java 判据红，且 tests/unit_ci_workflows/test_agent_permission_parity.py 判据 8（未注解端点必须登记进 UNANNOTATED_ENDPOINTS）红 —— 本面**不登记豁免**（它有语义正确的既有码）。执行点 = AdminOrderShipmentReadTest.adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage。', '判据 3·**只读**：该路径上只有 GET 一个动词，没有 POST/PUT/PATCH/DELETE（本单不新增写面；写面归 issue #5648 的工人面）。执行点 = AdminOrderShipmentReadTest.adminReadFaceIsReadOnly。', '判据 4·🔴 **两面同源，不新造第二份投影**：管理面与工人面都调用 OrderShipmentService.readShipment（同一份实现），响应形状逐字同源。执行点 = tests/unit_ci_workflows/test_shipment_read_surface_guard.py（真值登记表 order_shipment_items 声明 worker/admin 两面，且视图键 "shipped_quantity" 在 backend/admin-api/src/main/java 下**恰好命中一个文件** = owner）。红证（注入式，随测试常驻）：让 controller 自拼字段（不再调 owner）⇒ C5 判红；在另一个 Java 文件里再拼一份同名视图键 ⇒ C4 判红。', '判据 5·🔴 **跨租户 = 404，且与「订单不存在」逐字同一形态**（不泄露存在性；403 等于承认「这个 id 存在，只是不给你看」）：跨租户与不存在的订单必须给出同一个 code / message / httpStatus。执行点 = AdminOrderShipmentReadTest.crossTenantReadIs404AndIndistinguishableFromMissingOrder + tests/unit_ci_workflows/test_shipment_read_surface_guard.py 的登记面（两面路径前缀 /api/worker/** 与 /api/admin/**）。红证：把 loadOrder 的 notFound("订单") 改成 authFailed（403）⇒ 该判据红；把跨租户消息写成「订单(跨租户)不存在」⇒ 逐字比对红。', '判据 6·**既有面零回归**：工人面的四条判据（WorkerShipmentControllerTest / OrderShipmentServiceTest）与 order_shipment_items 的写序口径一个字不改（本单只加读面）。'],
     skip_reason='[backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java）+ pytest（tests/unit_ci_workflows/test_shipment_read_surface_guard.py）执行',
     tags=['order', 'shipment', 'admin-api', 'read-surface', 'tenant-isolation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-052 [NORMAL] 下单页版面重排（2026-09-28 用户裁定）：净尺寸前置 + 门幅/用料/单价只读可就地改 + 加工项推荐组合可采纳/全不采纳 + 特殊选项与部位备注收进「其他」+ 识别入口挂商品信息（源: cases/order.yml）──
+_CASE_OR_052 = EvalCase(
+    id='OR-052',
+    legacy_id='',
+    title='下单页版面重排（2026-09-28 用户裁定）：净尺寸前置 + 门幅/用料/单价只读可就地改 + 加工项推荐组合可采纳/全不采纳 + 特殊选项与部位备注收进「其他」+ 识别入口挂商品信息',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-28 逐字：「订单这里的布局得优化，正常用户提供净窗高/窗宽，然后再确认是否要韩折/打孔 定型等信息即可，其他信息尽量推导，加工项组合可以让用户确认是否采纳」+「还有这个拍照/上传识别功能应该放到商品信息那，见附件图片红框，你再做个合理的布局」'],
+    expectations=[],
+    data_checks=['判据 1·**净尺寸前置**：`窗宽 (米)` / `窗高 (米)` 两格排在 `门幅 / 规格` 与 `用料米数` **之前**（DOM 顺序，不是「存在性」），且排在 `颜色` 之后。理由：门幅规则要等尺寸填齐才能自动选最省门幅（改前尺寸在门幅之下 ⇒ 商家先撞上「选门幅」而规则还判不了）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx。红证：把净尺寸块放回门幅之下 ⇒ 该判据红。', '判据 2·**识别入口挂商品信息卡**：`image-recognize-button` 在「商品信息」卡的容器内、**不在**「收货信息」卡内（两张卡的存在性作为前置自证，防「两边都没有」也判绿）。执行点同上。', '判据 3·**推导读数只读 + 就地「改」**：`用料米数` / `单价 (¥/米)` 常态 `readOnly=true`；点 `meters-edit` / `price-edit` 后翻为可编辑，改完仍照旧落 payload（`processingInfo.processingMeters` / `unitPrice`）。⚠️ 刻意**不**断言「只读态下 fireEvent.change 不生效」—— jsdom 的 fireEvent 绕过 readOnly，那种断言测不到被测行为（假判据）。执行点同上。', '判据 4·**门幅只读摘要 + 改**：已选中规格时渲染 `sku-summary`（`门幅 2.8米` 等）与来源 `sku-summary-source`（`系统按门幅规则自动选中` / `人工选定`），常态**不出** chips；点 `sku-picker-toggle` 才展开 chips，换一支再收起 ⇒ 来源翻「人工选定」。', '判据 5·**推荐组合预选 + 采纳 / 全不采纳**：推荐条 `processing-recommended-names` 逐字 `韩折 + 定型`（布帘），且这两项**默认已勾选**；`processing-recommended-reject` ⇒ 两项取消且落库不再含它们（勾「打孔」作对照面：落库 `processingItems` = 仅 `打孔`、`craft=打孔`）；`processing-recommended-adopt` ⇒ 两项勾回，并按**工艺单值护栏**顶掉已选的别的工艺项（toast 说明）。', '判据 6·**手改留痕**：点过「全不采纳」（`craftItemTouched` / `shapedItemTouched`）之后改帘体（布帘→纱帘→布帘）**不得**把推荐组合勾回来。红证：删掉留痕位 ⇒ 该判据红。', '判据 7·**「其他」默认收起**：`3 其他` 的 `aria-expanded=false`，首屏没有 `line-item-remark`、也没有特殊选项的任一选项按钮（`加铅块`）；展开后两块都在（特殊选项那块无标题，用选项名当锚）。'],
+    skip_reason='[backend-contract] 本用例是**管理端下单页版面与默认预选**的确定性 DOM 判据（**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`（vitest），与库内其余 426 条同用这一个标记 —— 标记名是历史遗留的窄名，**它判的是「不进 agent-eval、判据在 traces.tests」这件事**，不是「被后端拥有」',
+    tags=['order', 'admin-web', 'layout', 'derivation', 'processing-items'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -10891,6 +10909,7 @@ ALL_CASES = (
     _CASE_OR_049,
     _CASE_OR_050,
     _CASE_OR_051,
+    _CASE_OR_052,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

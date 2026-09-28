@@ -132,6 +132,16 @@ const inputOf = (label: string, idx = 0) =>
 // 它就是**加工费米数**（`info.processingMeters = line.quantity`），也是试算写回的目标字段。
 const qtyInput = (idx = 0) => inputOf('用料米数', idx)
 
+/**
+ * 2026-09-28 布局重排：「用料米数」常态 = **只读展示**（值由算料引擎推导 ⇒ 用户口径
+ * 「其他信息尽量推导」）⇒ **要输入先点「改」**（`meters-edit`）把它变回输入框。
+ * 只读态的**读值**断言（`toHaveValue` / 试算写回）照旧成立 —— 框还在，只是 `readOnly`。
+ */
+const openMetersEdit = () => {
+  const btn = screen.getAllByTestId('meters-edit')[0]
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 const pickProduct = async () => {
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
@@ -218,7 +228,8 @@ describe('下单页算料试算接线（#4434）', () => {
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
-    // 商家手改（真值源 §8：用料必须带来源）
+    // 商家手改（真值源 §8：用料必须带来源）—— 2026-09-28 布局重排：常态只读 ⇒ 先点「改」
+    openMetersEdit()
     fireEvent.change(qtyInput(), { target: { value: '20' } })
     expect(qtyInput()).toHaveValue('20')
     expect(screen.getByText('人工指定')).toBeInTheDocument()
@@ -238,6 +249,8 @@ describe('下单页算料试算接线（#4434）', () => {
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
+    // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」再手改（回切通道判据一字未变）
+    openMetersEdit()
     fireEvent.change(qtyInput(), { target: { value: '20' } })
     fireEvent.click(screen.getByRole('button', { name: '恢复按公式计算' }))
 
@@ -409,10 +422,16 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
   })
 
-  /** 展开**区块 1**（尺寸与数量 · 工艺规格）—— issue #4874 两步化后的新锚点 */
+  /**
+   * 展开**步骤 1「用料与规格（系统推导）」**（2026-09-28 布局重排：原标题「尺寸与数量 · 工艺规格」
+   * 已退场，净尺寸提到**组级**常显）+ 按需展开「改工艺参数」区（`用料公式` / 档位由
+   * `components/orders/OrderCraftFields.tsx` 渲染在它里面 —— 算料响应无 `plan` 时该区缺省展开）。
+   */
   const openStep1 = () => {
-    const btn = screen.getAllByRole('button', { name: /^\d+ 尺寸与数量/ })[0]
+    const btn = screen.getAllByRole('button', { name: /^\d+ 用料与规格/ })[0]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+    const craftEdit = screen.queryAllByTestId('craft-plan-edit')[0]
+    if (craftEdit?.getAttribute('aria-expanded') === 'false') fireEvent.click(craftEdit)
   }
   const formulaRadio = (name: string) =>
     within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
