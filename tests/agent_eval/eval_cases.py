@@ -1437,6 +1437,24 @@ _CASE_BM_029 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-030 [NORMAL] B 端 H5 底部 tabBar 居中：iOS 安全区只补一次 + 图标/文字在可视区垂直居中（源: cases/bmini.yml）──
+_CASE_BM_030 = EvalCase(
+    id='BM-030',
+    legacy_id='',
+    title='B 端 H5 底部 tabBar 居中：iOS 安全区只补一次 + 图标/文字在可视区垂直居中',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器打开 `https://app.migaozn.com/b/`：底部四个 tab（问米宝 / 数据 / 坐席 / 我的）在条内垂直居中 —— 图标与文字上下留白对称；在带 home indicator 的 iPhone 上，条覆盖安全区、文字既不被顶到条外、下方也不留大块空白'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **安全区只补一次**（修复前 Taro h5 的 tabBar 把它算了**两遍**：`.taro-tabbar__tabbar-bottom{margin-bottom:env(safe-area-inset-bottom)}` 把整条抬起 + `.weui-tabbar__item{padding-bottom:env(...)}` 条内再垫一次 ⇒ 线上 390×844 实测：图标相对条顶 −12px（溢出条外）、文字下方留 51px 空白）：判据 = frontend/bmini-app/tests/tabbar-layout.test.ts 断言 frontend/bmini-app/src/styles/tabbar.scss 里条 `margin-bottom: 0` 且条高 = `calc(var(--taro-tabbar-height, 50px) + env(safe-area-inset-bottom))`。红证：把该文件移开（= 改前状态）⇒ 同一文件 3 条判据判红（实跑过：3 failed / 2 passed）', '判据 2·🔴 **图标 + 文字在可视区垂直居中**（修复前 item 是 `padding:5px 0` = 上 5 下 0 ⇒ **无安全区时文字直接贴着屏幕底边**，安卓 / 桌面 / 老 iPhone 同样不居中）：`.weui-tabbar__item` 必须是 flex 纵列居中（`display:flex` + `flex-direction:column` + `align-items:center` + `justify-content:center` + `padding-top:0`），且**保留** `padding-bottom: env(safe-area-inset-bottom)` —— 与判据 1 合起来才是「只补一次」（把两处一起删掉 ⇒ 判红）', '判据 3·覆盖样式必须被 frontend/bmini-app/src/app.scss **真的引入**（写在别处但没接线 ⇒ 判红）；类级：`src/styles/*.scss` 里不许出现第二份 `taro-tabbar__` 覆盖（第二份口径会漂）', '判据 4·**几何面（人工复测读数，记在 issue #5754 与 PR 正文）**：无安全区 ⇒ 图标上方与文字下方留白对称（各 2.5px）；iOS 安全区 34 ⇒ 条高 84 = 50+34、图标相对条顶 ≈+2.5px、文字底距屏幕底 ≈ 36.5px（= 34 安全区 + 2.5 居中留白）。⚠️ 本仓 bmini **没有 e2e 腿**：这两组读数是**复测结论**，不是机器判据 —— 判据 1~3 只保证「三条不变量在位」，别把本用例读成「布局已被机器验过」'],
+    skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/tabbar-layout.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'tabbar', 'layout', 'safe-area', 'responsive'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -10641,6 +10659,7 @@ ALL_CASES = (
     _CASE_BM_026,
     _CASE_BM_028,
     _CASE_BM_029,
+    _CASE_BM_030,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
