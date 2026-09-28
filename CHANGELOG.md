@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+### B 端 H5 字号收口（第二轮）：全库 sub-floor 字号 **68 → 0**（聊天卡片为主）（2026-09-28，issue #5769）
+
+- 🔴 全库仍有 **68 处**低于**设计尺度下限 24** 的字号（`frontend/bmini-app/src/**/*.scss`），集中在聊天卡片与各页：
+  `ChoiceCard`（**12 / 13 / 14** ⇒ 真机 **6.2~7.3 CSS px**）、`OrderCard` / `ProductCard` / `ProductFormList` /
+  `LogisticsCard` / `KnowledgeCard` / `MessageBubble` / `dashboard` / `production` / `sessions` 等（20 / 22 ⇒ 10.4~11.4 CSS px）。
+  其中 `12/13/14/15/17` 这一组与 #5747 修掉的「我的」页**是同一个病**（按 CSS 尺度写进了设计尺度表）。
+- 现按层级统一达标：**24** 元信息（≈12.5 CSS px）· **26** 正文/选项 · **28** 标题与主按钮 ·
+  **32** 输入框与页面主按钮（≥16 CSS px ⇒ **iOS 聚焦不再放大整页**）。
+- 🔴 同批修掉被字号顶破的几何：改密页输入框高 **44 → 88** 设计 px（22.9 → **45.8 CSS px**，达手指命中区 44 CSS px）、
+  主按钮 **48 → 96**。
+- 台账 `tests/unit_ci_workflows/bmini_typography_baseline.json`：**68 → 0**（只许缩短，现已清零）。
+- ⚠️ **登记（不在本单）**：全库约 20 个样式文件仍**整份按 CSS 尺度**写（中位 px 12~22、8~24 占比 60~82%）
+  ⇒ 它们的 padding / 间距 / 图标尺寸只有设计值的约 40~50%（`MessageList` / 登录页 / 「我的」页已是设计尺度）。
+  这是**几何面**的同类缺陷，改动面大且需真机过眼，另行跟踪。
+
 ### B 端 H5 补 e2e 几何腿（底栏居中/图标唯一性有了机器判据）+ 底栏四个入口不再共用图标（2026-09-28，issue #5759）
 
 - 🔴 **底栏图标重复**：`frontend/bmini-app/src/app.config.ts` 里「问米宝」与「坐席」指向同一张

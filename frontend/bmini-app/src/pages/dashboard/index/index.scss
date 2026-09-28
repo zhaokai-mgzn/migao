@@ -17,7 +17,7 @@
   &__sub {
     display: block;
     margin-top: 8px;
-    font-size: 22px;
+    font-size: 24px;
     color: #9aa5b1;
   }
 }
@@ -60,14 +60,14 @@
 
   &__unit {
     margin-left: 4px;
-    font-size: 20px;
+    font-size: 24px;
     color: #667085;
   }
 
   &__change {
     display: block;
     margin-top: 8px;
-    font-size: 22px;
+    font-size: 24px;
     color: #667085;
 
     &--up {
@@ -97,14 +97,14 @@
   &__sub {
     display: block;
     margin-top: 4px;
-    font-size: 22px;
+    font-size: 24px;
     color: #667085;
   }
 
   &__note {
     display: block;
     margin-top: 8px;
-    font-size: 20px;
+    font-size: 24px;
     color: #9aa5b1;
   }
 }
@@ -153,7 +153,7 @@
     flex-shrink: 0;
 
     &-text {
-      font-size: 22px;
+      font-size: 24px;
       color: #1a73e8;
     }
   }
@@ -175,7 +175,7 @@
 
     > .task-item__time {
       margin-top: 4px;
-      font-size: 20px;
+      font-size: 24px;
       color: #9aa5b1;
     }
   }
@@ -184,7 +184,7 @@
     margin-left: 8px;
 
     &-text {
-      font-size: 20px;
+      font-size: 24px;
       color: #f04438;
     }
   }
