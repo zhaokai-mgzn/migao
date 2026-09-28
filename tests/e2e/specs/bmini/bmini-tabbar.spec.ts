@@ -18,7 +18,8 @@
  * | 2 | 条**贴底**（底边 == 视口底边 ±1px） | 安全区被算两遍（条被抬起 34px）⇒ 红 |
  * | 3 | 每格：图标上方留白 == 文字下方留白（±2px）且**两者都 > 0** | 回到 `padding:5px 0` ⇒ 下方 0 ⇒ 红 |
  * | 4 | 每格：图标与文字相对该格**水平居中**（±1px） | 布局改写歪 ⇒ 红 |
- * | 5 | 🔴 **四个 tab 四张不同图标**（`img.src` 两两不同） | 再出现「问米宝与坐席共用一张图」⇒ 红 |
+ * | 5 | 条高 ∈ [49,51] | 条高塌成 26px（#5756 的构建陷阱）⇒ 红 |
+ * | 6 | 🔴 **四个 tab 四张不同图标**（`img.src` 两两不同） | 再出现「问米宝与坐席共用一张图」⇒ 红 |
  *
  * ## 边界（照实登记）
  *
@@ -26,6 +27,8 @@
  * - 只跑**未登录**形态（本腿不连后端）：`/#/pages/profile/index/index` 与 `/#/pages/dashboard/index/index`
  *   两个 tab 页在未登录时都**不跳转**（已核对页面代码），tabBar 照常渲染。
  * - iOS 安全区那一侧的读数仍靠复测（Chromium 取不到 `env(safe-area-inset-bottom)`）。
+ * - 🔴 本文件**不许出现弱断言**（`toBeTruthy` / `not.toBeNull` 这类）：QA Growth Gate 对新文件的
+ *   弱断言是 fail-closed（`migao-dev-flow` §3.4）。「取不到就抛」用下面的 `must()`，别用 `expect(x).not.toBeNull()`。
  */
 import { test, expect } from '@playwright/test'
 
@@ -34,6 +37,14 @@ const TAB_PAGES = {
   dashboard: '/#/pages/dashboard/index/index',
 }
 const TAB_LABELS = ['问米宝', '数据', '坐席', '我的']
+
+/** 取不到就**抛**（不是弱断言）：后面的数值断言必须跑在真实取到的 box 上 */
+function must<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(`拿不到 ${what} —— 底栏没渲染出来？（页面白屏 / tabBar 未挂载）`)
+  }
+  return value
+}
 
 test.describe('B 端 H5 底部 tabBar（几何 + 图标）', () => {
   test('四个 tab：条贴底、每格图标/文字居中、上下留白对称、四张图标两两不同', async ({ page }) => {
@@ -44,13 +55,14 @@ test.describe('B 端 H5 底部 tabBar（几何 + 图标）', () => {
     const items = page.locator('.weui-tabbar__item')
     await expect(items).toHaveCount(4)
 
-    const viewport = page.viewportSize()
-    expect(viewport).not.toBeNull()
-    const barBox = await bar.boundingBox()
-    expect(barBox).not.toBeNull()
+    const viewport = must(page.viewportSize(), 'viewport')
+    const barBox = must(await bar.boundingBox(), 'tabBar 的 box')
 
     // 判据 2：条贴底（Chromium 无安全区 ⇒ 底边就是视口底边）
-    expect(Math.abs((barBox as any).y + (barBox as any).height - (viewport as any).height)).toBeLessThanOrEqual(1)
+    expect(Math.abs(barBox.y + barBox.height - viewport.height)).toBeLessThanOrEqual(1)
+    // 判据 5：条高 = Taro 的 --taro-tabbar-height（50 CSS px）
+    expect(barBox.height).toBeGreaterThanOrEqual(49)
+    expect(barBox.height).toBeLessThanOrEqual(51)
 
     const srcs: string[] = []
     for (let i = 0; i < 4; i++) {
@@ -59,30 +71,27 @@ test.describe('B 端 H5 底部 tabBar（几何 + 图标）', () => {
       const icon = item.locator('img').first()
 
       await expect(label).toHaveText(TAB_LABELS[i]) // 判据 1
-      const itemBox = await item.boundingBox()
-      const iconBox = await icon.boundingBox()
-      const labelBox = await label.boundingBox()
-      expect(itemBox && iconBox && labelBox).toBeTruthy()
+      const itemBox = must(await item.boundingBox(), `第 ${i + 1} 格的 box`)
+      const iconBox = must(await icon.boundingBox(), `第 ${i + 1} 格的图标 box`)
+      const labelBox = must(await label.boundingBox(), `第 ${i + 1} 格的文字 box`)
 
-      const gapTop = (iconBox as any).y - (barBox as any).y
-      const gapBottom = (barBox as any).y + (barBox as any).height - ((labelBox as any).y + (labelBox as any).height)
+      const gapTop = iconBox.y - barBox.y
+      const gapBottom = barBox.y + barBox.height - (labelBox.y + labelBox.height)
       // 判据 3：上下留白对称且都不为 0（修前是 5 / 0 与 -12 / 17）
       expect(Math.abs(gapTop - gapBottom)).toBeLessThanOrEqual(2)
       expect(gapTop).toBeGreaterThan(0)
       expect(gapBottom).toBeGreaterThan(0)
 
       // 判据 4：图标与文字相对该格水平居中
-      const itemCenter = (itemBox as any).x + (itemBox as any).width / 2
-      const iconOffset = (iconBox as any).x + (iconBox as any).width / 2 - itemCenter
-      const labelOffset = (labelBox as any).x + (labelBox as any).width / 2 - itemCenter
-      expect(Math.abs(iconOffset)).toBeLessThanOrEqual(1)
-      expect(Math.abs(labelOffset)).toBeLessThanOrEqual(1)
+      const itemCenter = itemBox.x + itemBox.width / 2
+      expect(Math.abs(iconBox.x + iconBox.width / 2 - itemCenter)).toBeLessThanOrEqual(1)
+      expect(Math.abs(labelBox.x + labelBox.width / 2 - itemCenter)).toBeLessThanOrEqual(1)
 
-      srcs.push((await icon.getAttribute('src')) || '')
+      srcs.push(must(await icon.getAttribute('src'), `第 ${i + 1} 格的图标 src`))
     }
 
-    // 判据 5：四个 tab 四张不同图标（issue #5759 的病灶：问米宝与坐席同图）
-    expect(srcs.every((s) => s.length > 0)).toBe(true)
+    // 判据 6：四个 tab 四张不同图标（issue #5759 的病灶：问米宝与坐席同图）
+    expect(srcs.filter((s) => s.length > 0)).toHaveLength(4)
     expect(new Set(srcs).size).toBe(4)
   })
 
@@ -94,15 +103,15 @@ test.describe('B 端 H5 底部 tabBar（几何 + 图标）', () => {
     const items = page.locator('.weui-tabbar__item')
     await expect(items).toHaveCount(4)
 
-    const barBox = await bar.boundingBox()
-    expect(barBox).not.toBeNull()
-    // 条高 = Taro 的 --taro-tabbar-height（50 CSS px）—— 塌成 26px 那种回归（#5756 的构建陷阱）会被这条抓住
-    expect((barBox as any).height).toBeGreaterThanOrEqual(49)
-    expect((barBox as any).height).toBeLessThanOrEqual(51)
+    const barBox = must(await bar.boundingBox(), 'tabBar 的 box')
+    // 条高塌成 26px 那种回归（#5756 的构建陷阱）会被这条抓住
+    expect(barBox.height).toBeGreaterThanOrEqual(49)
+    expect(barBox.height).toBeLessThanOrEqual(51)
 
     const srcs = await items
       .locator('img')
       .evaluateAll((els) => els.map((el) => (el as HTMLImageElement).getAttribute('src') || ''))
+    expect(srcs.filter((s) => s.length > 0)).toHaveLength(4)
     expect(new Set(srcs).size).toBe(4)
   })
 })
