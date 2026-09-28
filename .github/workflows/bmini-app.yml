@@ -193,14 +193,12 @@ jobs:
           npm ci
           npx playwright install chromium --with-deps
 
-      - name: Build H5
-        if: steps.detect.outputs.run_tests == 'true'
-        working-directory: ${{ env.WORKING_DIR }}
-        env:
-          TARO_APP_API_URL: http://localhost:8080
-          TARO_APP_AI_API_URL: http://localhost:8001
-        run: npm run build:h5
-
+      # 🔴 这里**没有**单独的 Build H5 步骤：本腿的配置在加载期用 `tests/xiaobu_dist_freshness.py ensure`
+      #   自己构建 + 落指纹（构建失败 fail-closed）。两条理由：
+      #   ① 与 C 端那条腿的 `check` 档不同 —— 那条把构建交给 workflow 步骤，是因为它「无权改 .github/**」；
+      #      本腿的作者拥有该 workflow ⇒ 让**腿自己**对「产物是不是当前源码的」负责，比"祈祷上一步跑过"更硬；
+      #   ② 同一 worktree 里再出现一次 `npm run build:h5` 会让 `test_local_gate_matrix` 的**同序**判据失效
+      #      （它按首次出现取位置）⇒ 同源契约要求每个命令在 CI 腿里只出现一次。
       - name: Run tabBar geometry e2e
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests

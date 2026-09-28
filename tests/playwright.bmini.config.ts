@@ -30,7 +30,10 @@ import { defineConfig, devices } from '@playwright/test'
 const BMINI_DIR = path.resolve(__dirname, '../frontend/bmini-app')
 const DIST_GUARD = path.resolve(__dirname, 'xiaobu_dist_freshness.py')
 
-const freshnessMode = process.env.CI ? 'check' : 'ensure'
+// CI 也走 `ensure`（与 C 端那条腿不同，**有意为之**）：本腿自建自证 ——
+// 新鲜 runner 上没有 dist，`check` 会 exit 3「未判定」而被容忍 ⇒ 服务一个不存在的 dist；
+// `ensure` 则当场构建、构建失败 fail-closed（且与本腿的"命令只在 CI 腿里出现一次"契约相容）。
+const freshnessMode = 'ensure'
 const freshness = spawnSync('python3', [DIST_GUARD, freshnessMode, '--project', BMINI_DIR], {
   encoding: 'utf8',
   env: {

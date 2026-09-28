@@ -446,7 +446,6 @@
         "Setup Node.js",
         "Install bmini-app deps",
         "Install Playwright deps",
-        "Build H5",
         "Run tabBar geometry e2e",
         "Upload e2e artifacts (failure)"
       ]

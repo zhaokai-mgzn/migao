@@ -605,14 +605,24 @@ face_hit() {
   [ -n "$hit" ]
 }
 bmini_leg() {
-  # 四件与 CI 两条腿**逐字同命令**（判据 = test_local_gate_matrix.py::test_local_leg_commands_match_ci，
-  # 现取 CI YAML 逐条比对 ⇒ 两侧漂移即红），顺序同 CI：先 h5（唯一用户可达形态），再 weapp。
+  # 六件与 CI **逐字同命令**（判据 = test_local_gate_matrix.py::test_local_leg_commands_match_ci，
+  # 现取 CI YAML 逐条比对 ⇒ 两侧漂移即红），顺序同 CI：
+  #   typecheck/单测 → h5 构建 → weapp 构建 → 几何 e2e 腿（issue #5759：装依赖 → 跑 spec）。
+  # ⚠️ 几何腿**自己构建**（配置加载期用 `tests/xiaobu_dist_freshness.py ensure`）：CI 侧因此**没有**
+  #    独立的 Build H5 步骤 —— 同一命令在 CI 腿里只许出现一次（同序判据按首次出现取位置）。
   # ⚠️ 用 `bash -c "cd …"` 而不是在函数里裸 `cd`：后者会改掉本脚本**后续检查**的 cwd（既有腿同款写法）。
+  # ⚠️ 几何腿首次会下 chromium（约 130MB；已装则秒过）。
   bash -c "cd '$ROOT/frontend/bmini-app' \
     && echo '▶ npx tsc --noEmit' && npx tsc --noEmit \
     && echo '▶ npm test' && npm test \
     && echo '▶ npm run build:h5' && npm run build:h5 \
-    && echo '▶ npm run build:weapp' && npm run build:weapp"
+    && echo '▶ npm run build:weapp' && npm run build:weapp" \
+  && bash -c "cd '$ROOT/tests' \
+    && echo '▶ npm ci（tests 依赖）' \
+    && npm ci
+npx playwright install chromium --with-deps \
+    && echo '▶ npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts' \
+    && npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts"
 }
 
 # ai-agent 测试选择（2026-09-14，issue #3680）：quick 与 full 共用**同一选择集**。
