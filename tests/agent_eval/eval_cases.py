@@ -1401,6 +1401,42 @@ _CASE_BM_026 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-028 [NORMAL] B 端「问米宝」= C 端现行形态 + 不混入 C 端 agent 内容（六格等权 · 无商品推荐卡 · 默认「米宝」）（源: cases/bmini.yml）──
+_CASE_BM_028 = EvalCase(
+    id='BM-028',
+    legacy_id='',
+    title='B 端「问米宝」= C 端现行形态 + 不混入 C 端 agent 内容（六格等权 · 无商品推荐卡 · 默认「米宝」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：看到六个等权快捷入口（算料报价 / 查订单 / 查库存 / 找产品 / 售后咨询 / 查物流）与商家语义的欢迎语；**看不到**任何商品推荐卡、价格符号，也看不到顾客端 agent 名「小布」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 空态**不得**出现 C 端商品推荐卡（修复前渲染 `.new-arrivals` 商品卡并提示「点一下问问小布」= 把顾客端入口与顾客端 agent 名搬进商家端）：结构性判据 = 空态无 `.new-arrivals` / `.new-arrivals__card` / `.new-arrivals__img`、无「新品推荐」文本、无 `¥`。红证：把该组件挂回 frontend/bmini-app/src/components/chat/MessageList.tsx 的空态 ⇒ frontend/bmini-app/tests/chat-empty-state.test.tsx 判红（实跑过）', '判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**，与顾客端现行判据同形（cases/ui.yml 的 UI-014 / UI-044）：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐条可断言。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）', '判据 3·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）', '判据 4·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名 —— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内'],
+    skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'chat', 'quick-actions', 'empty-state', 'c-end-isolation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-029 [NORMAL] 「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24）（源: cases/bmini.yml）──
+_CASE_BM_029 = EvalCase(
+    id='BM-029',
+    legacy_id='',
+    title='「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家员工在 `/b/` 的「我的」页：菜单里能直接点到「扫码报工」「拍照入库」「补打入库标签」三页（未登录工人身份时由页面自身引导用工号 + PIN 登录）；菜单文字在手机上清晰可读，不再是挤在一起的小字'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 拍照入库与补打入库标签在 `/b/` 内**有显式入口**（修复前只有「扫码报工」；这两页只从 `/w/` 报工页页头或扫标签深链可达 ⇒ 站在商家 H5 里的人一步也走不到）：判据 = frontend/bmini-app/tests/profile-page.test.tsx 断言两项在册且分别 `Taro.navigateTo` 到 `INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`（路由字面量取自 frontend/bmini-app/src/utils/inbound/gaps.ts，单一真值）。红证：删掉任一条菜单项 ⇒ 该用例判红', '判据 2·入口台账同批登记：frontend/bmini-app/src/utils/pageEntries.ts 新增两条（from = 「我的」页，nav = navigateTo，viaBinding = gaps.ts）—— 守卫 frontend/bmini-app/tests/page-entry-reachability.test.ts 判「登记了没人指向也红 / 没登记即红」', '判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 85 → 68。红证：把 15px 写回 ⇒ 该用例判红（实跑过）', '判据 4·同批清掉从顾客端 profile 抄来、本页零引用的整块样式（CSS 尺度小字号的来源），菜单行高按手指命中区口径取 96 设计 px（≈50 CSS px，同 BM-027 的 ≥88 口径）'],
+    skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/profile-page.test.tsx + pytest: tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'profile', 'worker', 'page-entry', 'typography'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -10603,6 +10639,8 @@ ALL_CASES = (
     _CASE_BM_025,
     _CASE_BM_027,
     _CASE_BM_026,
+    _CASE_BM_028,
+    _CASE_BM_029,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

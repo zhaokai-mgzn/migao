@@ -134,6 +134,29 @@ def test_baseline_entries_still_violate() -> None:
     )
 
 
+def test_profile_page_has_no_sub_floor_font_size() -> None:
+    """「我的」页（issue #5747）**零** sub-floor 字号 —— 用户点名那一页的实例判据。
+
+    红证（实跑过）：把 `frontend/bmini-app/src/pages/profile/index/index.scss` 的
+    `.menu-item__text` 写回 `font-size: 15px` ⇒ 本条红。
+
+    与 `test_no_new_below_floor_font_size` 的分工：那条判**全库增量**（新增违规进不来，
+    存量走台账），本条把**这一页**钉到零 —— 该页再退回 CSS 尺度会**独立**报红，
+    归因不必从 60+ 条台账里去翻（本页的台账份额已随 issue #5747 清零，**不接受**重新登记）。
+    """
+    offenders = sorted(
+        key
+        for key in scan_violations()
+        if "frontend/bmini-app/src/pages/profile/index/index.scss" in key
+    )
+    assert not offenders, _render_diff(
+        "❌ 「我的」页又出现低于下限的字号（设计尺度 < "
+        f"{DESIGN_PX_FLOOR}px ≈ {DESIGN_PX_FLOOR * 0.52:.1f} CSS px @390 宽）：",
+        offenders,
+        "出口：把这些字号调到 ≥ 24（设计尺度）；该页不接收台账新增。",
+    )
+
+
 def test_baseline_header_metrics_are_current() -> None:
     """台账头部的计数/口径必须与**现取**读数一致（防台账自述与现实脱节）。"""
     baseline = _load_baseline()

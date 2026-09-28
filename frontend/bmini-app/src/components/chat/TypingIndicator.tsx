@@ -5,7 +5,8 @@ interface TypingIndicatorProps {
   text?: string
 }
 
-export default function TypingIndicator({ text = '小布正在思考...' }: TypingIndicatorProps) {
+/** 默认文案用 **B 端** agent 名（「米宝」；C 端才默认「小布」，见 `src/utils/brand.ts`）—— issue #5747 */
+export default function TypingIndicator({ text = '米宝正在思考...' }: TypingIndicatorProps) {
   return (
     <View className='typing-indicator'>
       <View className='typing-indicator__bubble'>
