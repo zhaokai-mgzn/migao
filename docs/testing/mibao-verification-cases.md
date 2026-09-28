@@ -594,7 +594,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（27 case）
+## B 端小程序域（29 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -961,6 +961,32 @@
 ```
 真值: inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.2/§5.4/§7.1）：把「服务端 302 了、而参数没有任何人读」这条链路接通并钉住（落地页 code 参数 → 码空间分流 → 补打页）。 ｜ tags: bmini, inbound, deeplink, code-space, landing-page
+
+### BM-028. B 端「问米宝」= C 端现行形态 + 不混入 C 端 agent 内容（六格等权 · 无商品推荐卡 · 默认「米宝」） 🔵
+```
+你: 商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：看到六个等权快捷入口（算料报价 / 查订单 / 查库存 / 找产品 / 售后咨询 / 查物流）与商家语义的欢迎语；**看不到**任何商品推荐卡、价格符号，也看不到顾客端 agent 名「小布」
+期望: direct_reply
+数据: 判据 1·🔴 空态**不得**出现 C 端商品推荐卡（修复前渲染 `.new-arrivals` 商品卡并提示「点一下问问小布」= 把顾客端入口与顾客端 agent 名搬进商家端）：结构性判据 = 空态无 `.new-arrivals` / `.new-arrivals__card` / `.new-arrivals__img`、无「新品推荐」文本、无 `¥`。红证：把该组件挂回 frontend/bmini-app/src/components/chat/MessageList.tsx 的空态 ⇒ frontend/bmini-app/tests/chat-empty-state.test.tsx 判红（实跑过）
+数据: 判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**，与顾客端现行判据同形（cases/ui.yml 的 UI-014 / UI-044）：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐条可断言。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）
+数据: 判据 3·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）
+数据: 判据 4·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名 —— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。 ｜ tags: bmini, chat, quick-actions, empty-state, c-end-isolation
+
+### BM-029. 「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24） 🔵
+```
+你: 商家员工在 `/b/` 的「我的」页：菜单里能直接点到「扫码报工」「拍照入库」「补打入库标签」三页（未登录工人身份时由页面自身引导用工号 + PIN 登录）；菜单文字在手机上清晰可读，不再是挤在一起的小字
+期望: direct_reply
+数据: 判据 1·🔴 拍照入库与补打入库标签在 `/b/` 内**有显式入口**（修复前只有「扫码报工」；这两页只从 `/w/` 报工页页头或扫标签深链可达 ⇒ 站在商家 H5 里的人一步也走不到）：判据 = frontend/bmini-app/tests/profile-page.test.tsx 断言两项在册且分别 `Taro.navigateTo` 到 `INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`（路由字面量取自 frontend/bmini-app/src/utils/inbound/gaps.ts，单一真值）。红证：删掉任一条菜单项 ⇒ 该用例判红
+数据: 判据 2·入口台账同批登记：frontend/bmini-app/src/utils/pageEntries.ts 新增两条（from = 「我的」页，nav = navigateTo，viaBinding = gaps.ts）—— 守卫 frontend/bmini-app/tests/page-entry-reachability.test.ts 判「登记了没人指向也红 / 没登记即红」
+数据: 判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 85 → 68。红证：把 15px 写回 ⇒ 该用例判红（实跑过）
+数据: 判据 4·同批清掉从顾客端 profile 抄来、本页零引用的整块样式（CSS 尺度小字号的来源），菜单行高按手指命中区口径取 96 设计 px（≈50 CSS px，同 BM-027 的 ≥88 口径）
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/profile-page.test.tsx + pytest: tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-28 新增（issue #5747）：用户反馈「B 端 H5 没有拍照入库和打印标签的功能」「我的页面中的菜单列表字体太小了」⇒ 补两条工人面入口（并把它们登记进入口台账）+ 该页字号按设计尺度重写、台账份额清零。 ｜ tags: bmini, profile, worker, page-entry, typography
 
 ## 分类域（3 case）
 
@@ -7928,13 +7954,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：559（活跃 126，跳过 433）
-- tier 分布：smoke 12 / normal 514 / adversarial 31
+- 用例总数：561（活跃 126，跳过 435）
+- tier 分布：smoke 12 / normal 516 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
-- B 端小程序域：27
+- B 端小程序域：29
 - 分类域：3
 - 对话边界域：43
 - 跨域：3

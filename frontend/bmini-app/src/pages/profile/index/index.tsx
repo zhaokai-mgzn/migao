@@ -5,6 +5,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
 import { visibleAdminSurfaces } from '../../../utils/adminPermission'
 import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+import { INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
 
 /**
@@ -13,6 +14,9 @@ import './index.scss'
  * 员工信息（昵称/角色/租户）+ 快捷入口 + 退出登录。
  * 与 C 端消费者 profile 不同：不展示订单/售后/手机号绑定（B 端员工管理他人的订单，
  * 个人消费数据无意义），聚焦员工身份与安全退出。
+ *
+ * issue #5747：工人面**三页**都要从这里可达 —— 此前只有「扫码报工」，拍照入库与补打
+ * 入库标签在 `/b/` 内**零入口**（只在 `/w/` 报工页页头，见 src/utils/pageEntries.ts）。
  */
 export default function ProfilePage() {
   const { user, isLoggedIn, logout } = useAuthStore()
@@ -61,6 +65,16 @@ export default function ProfilePage() {
     Taro.navigateTo({ url: '/pages/production/index/index' })
   }
 
+  /** 拍照入库入口（issue #5747；未登录工人身份时由该页自己引导去工号 + PIN 登录） */
+  const handleInbound = () => {
+    Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })
+  }
+
+  /** 补打入库标签入口（issue #5747；同上，标签不在手边时不必先扫洗水码） */
+  const handleReprint = () => {
+    Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })
+  }
+
   // ========== 未登录 ==========
   if (!isLoggedIn) {
     return (
@@ -104,6 +118,19 @@ export default function ProfilePage() {
       <View className='profile-menu'>
         <View className='menu-item' onClick={handleProduction}>
           <Text className='menu-item__text'>扫码报工</Text>
+          <Text className='menu-item__arrow'>›</Text>
+        </View>
+
+        {/* ── 工人面另外两页（issue #5747）──
+            拍照入库 / 补打入库标签此前只在 `/w/` 报工页页头可达，站在 `/b/` 里的人
+            一步也走不到（用户 2026-09-28 反馈）。两页自身会按身份分流：
+            未登录工人 ⇒ 显式引导去工号 + PIN 登录，登录后回原页继续。 */}
+        <View className='menu-item' onClick={handleInbound}>
+          <Text className='menu-item__text'>拍照入库</Text>
+          <Text className='menu-item__arrow'>›</Text>
+        </View>
+        <View className='menu-item' onClick={handleReprint}>
+          <Text className='menu-item__text'>补打入库标签</Text>
           <Text className='menu-item__arrow'>›</Text>
         </View>
 

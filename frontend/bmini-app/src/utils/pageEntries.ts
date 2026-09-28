@@ -143,6 +143,26 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
       '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫洗水码）',
   },
   {
+    // issue #5747：这两页此前在 `/b/` 内**零入口**（只有 `/w/` 页头与扫标签深链），
+    // 用户 2026-09-28 反馈「B 端 H5 没有拍照入库和打印标签的功能」⇒ 在「我的」页补显式入口。
+    route: INBOUND_PAGE_ROUTE,
+    from: 'src/pages/profile/index/index.tsx',
+    nav: 'navigateTo',
+    via: 'INBOUND_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '商家/工人身份（「我的」→ 拍照入库；未登录工人身份时由该页自身引导去工号 + PIN 登录，登录后回原页继续）',
+  },
+  {
+    route: REPRINT_PAGE_ROUTE,
+    from: 'src/pages/profile/index/index.tsx',
+    nav: 'navigateTo',
+    via: 'REPRINT_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '商家/工人身份（「我的」→ 补打入库标签；标签贴丢 / 磨花时不必先扫洗水码，与 `/w/` 那条入口同用途）',
+  },
+  {
     route: '/pages/admin/pool/index',
     from: 'src/pages/profile/index/index.tsx',
     nav: 'navigateTo',
