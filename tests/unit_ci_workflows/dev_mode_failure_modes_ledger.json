@@ -740,6 +740,45 @@
         "#5742",
         "#5704"
       ]
+    },
+    {
+      "id": "FM-E19",
+      "state": "guarded",
+      "symptom": "**逐分支网络往返**：`reap-merged --apply` 原先对**每个**目标各做一次「删远程 + 探远程」⇒ 往返次数 = **2 × 目标数**。实测（2026-09-28）单次 `git ls-remote --heads origin <b>` = **3.70s**（本机 SSH，无连接复用），而 `dev-worktree.sh add`（把 reap 接在 `add` 路径上）因此整条命令 **~7 分钟**才返回 ⇒ 用户侧表现 = **「挂死」**（本条原先记在 `not_solidified` 的 `NS-3`：「既未复现也未证伪」—— 任何 60s 级等待窗口都会把它读成死锁）。**同一现场的前后对照**：修前 dry-run 报 **55 个「可收尾」**、apply 整轮 ≈ **6.8 分钟**（2×55 次往返）；修后 apply 整轮 **17.7s**（含 `gh pr list` 取数），**再跑 dry-run 可收尾 = 0**。",
+      "guards": "**判据**（`tests/unit_ci_workflows/test_lifecycle_land_and_reap.py`）：`::test_remote_round_trips_are_constant_not_per_branch`（删 3 个远程分支 ⇒ `push --delete` **恰好 1 次**、批量读数 **≤ 2 次**）+ `::test_remote_round_trips_do_not_grow_with_target_count`（**不变性**：目标数 1 → 3，往返次数**不增长**）+ `::test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe`（自证也必须走批量读数）+ `::test_batch_reading_unavailable_is_marked_undecidable`（**红证半边**：批量读数取不到 ⇒ 显式返回「无法判定」⇒ 调用方退回逐分支探测，**判定语义逐字不变**，只是慢）。**实现**（`scripts/issue_lifecycle.py`）：`remote_heads`（一次 `git ls-remote --heads origin`，进程内缓存）/ `remote_branch_gone` / `batch_delete_remote_branches`（**一次** `git push origin --delete <b1> <b2> …`）。🔴 **真值不解析 stderr**：返回值是三态 `deleted` / `already-absent` / `failed`，判据 = **删除前后两次批量读数之差** —— 「删前就不在」属**陈旧 remote-tracking ref**（出口 = `git fetch --prune origin`），**不许**报成「✅ 已删除」（假陈述）。**顺带销账的另一半**：陈旧 remote-tracking ref 原先**常驻删除面**（现取 55 个，每轮都被尝试删除并「自证通过」）⇒ 现在**不进候选**并具名给出出口（实测：候选 72 → 17、可收尾 55 → 1）。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_remote_round_trips_are_constant_not_per_branch",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_remote_round_trips_do_not_grow_with_target_count",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_batch_reading_unavailable_is_marked_undecidable",
+        "scripts/issue_lifecycle.py::batch_delete_remote_branches",
+        "scripts/issue_lifecycle.py::remote_heads"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E19",
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py"
+      ],
+      "refs": [
+        "#5707",
+        "#5744"
+      ]
+    },
+    {
+      "id": "FM-E20",
+      "state": "guarded",
+      "symptom": "**拿未 fetch 的旧 ref 当判定基线** ⇒ 「刚合并」被读成「落后」。实测（2026-09-28）：`land` 的 ⑦ `preset-refresh` 步判红 —— 输出逐字「❌ 活锚内容与 origin/main 不一致：1 个文件内容不同」（那个文件正是刚合并的 `SKILL.md`），而活锚其实**只差一次 fetch**（基线仓的 `origin/main` 还停在合并前）；同一条命令在**手工 fetch 后**立刻转绿。⇒ 形态 = 「判定对着**陈旧快照**做」，与 `FM-E18` 同族：**判据本身没错，错在它读的那份东西已经过期**。",
+      "guards": "**修法**（`scripts/preset-anchor-refresh.sh`）：⑤ 自检**之前**先 `git -C \"${BASELINE}\" fetch --quiet origin \"${REF#origin/}\"`（fetch 非破坏性；失败 ⇒ 打印「可能对着**旧** ref 判」的降级提示，**不静默**）。**判据** = `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_preset_refresh_fetches_the_baseline_before_self_check`（`preset_refresh_order_problems` 纯函数：fetch 必须在**自检调用之前**；红证 = 删掉那一行 / 把它挪到自检之后 ⇒ 各能单独变红，内存构造）· 调用面 = `land` 的 ⑦ 步（`scripts/issue_lifecycle.py::cmd_land`）。🔴 **覆盖面（照实登记）**：判据是**文本顺序**判定 —— 它**证明不了**「运行期真的 fetch 成功」（那要真网络），也不覆盖「别的判定对着旧快照」的形态（同类面见 `FM-E18` 的时序根因）。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py::test_preset_refresh_fetches_the_baseline_before_self_check",
+        "scripts/preset-anchor-refresh.sh::BASELINE"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E20",
+        "scripts/preset-anchor-refresh.sh"
+      ],
+      "refs": [
+        "#5744"
+      ]
     }
   ],
   "relay_entries": [
@@ -1056,12 +1095,6 @@
       "item": "「仓库路径含空格 ⇒ read/edit 工具抽风 ⇒ **每包建 `/tmp/<唯一名>` 软链绕开**」——🔴 **本会话逐工具直连取证：未复现**；该规矩已按 `PD-6` **收窄成可判形态**（先直连；只有实测失败才绕），**不再是无条件步骤**。",
       "reason": "🔴 **证伪读数（现取，2026-09-27 +08）**：作业路径**本身就含空格**（工作区 `/Users/guangzhen.zk/ai native/migao-wt/relay2`，父段 `ai native` 含空格），对一个**三处空格**的路径（`.ns2 probe/带空 格/工具直连探针.md`）逐工具**直连**取证 —— `write` / `read` / `edit` / `grep` / `glob` **全部成功**（未建任何软链）⇒ 「路径含空格 ⇒ 工具抽风」**不成立**。真正会失败的是**调用方的写法**：① **未加引号的 shell 路径**（对照组 `cd /Users/guangzhen.zk/ai native/...` ⇒ `bash: cd: /Users/guangzhen.zk/ai: No such file or directory`，rc=1）；② **未用 `-z` 解析 git 输出**（`git status --porcelain` 对含空格路径输出 `?? \".ns2 probe/\"`，**带引号**）。⇒ 这两条是**写法纪律**、**不是工具的确定行为**，**无机械锁**（判据不管人怎么写命令）。",
       "restart_when": "① 出现**可复现的最小反例**（工具 + 版本 + 路径形态 + 原始报错，且**不建软链**也复现）⇒ 按 `FM-A5` / `FM-C2` 的口径入册并落判据；② 或工具侧把它做成**确定性**行为（例如含空格路径直接给出显式提示）⇒ 改为在技能里给**命令**而不是劝告；③ 或有人把「建软链」再写成**无条件步骤** ⇒ 那是**回归**（文本层无机械锁，账在本条 + `PD-6` + `docs/wiki/CI-CD.md::FM-E13`）。"
-    },
-    {
-      "id": "NS-3",
-      "item": "「`dev-worktree.sh add` 挂死 ⇒ 用裸 `git worktree add`」——🔴 **2026-09-28 已复现并证伪「死锁」**：真因是它自动接的 C2 清理（`reap-merged --apply`）**逐个分支串行**跑 `git ls-remote`，而单次实测 **3.70s**（本机 SSH，无连接复用）⇒ 全程 ≈ O(分支数) × 3.7s。**形态 = 分钟级慢，不是死锁**；任何 60s 级的等待窗口都会把它读成「挂死」（这正是「看似时好时坏」的来源）。",
-      "reason": "**量化读数（现取，2026-09-28 07:26 +08 起）**：`./scripts/dev-worktree.sh add <branch>` 在 **60s 超时被杀**后仍持续运行、**约 7 分钟**才完成并打印全部输出；`ps` 采到的实际子进程链 = `scripts/issue_lifecycle.py reap-merged --apply --no-artifacts --except <分支>` → `git ls-remote --heads origin <分支>`（逐个）；单次 `git ls-remote --heads origin main` 实测 `real 3.70s`。⇒ 两条路径（`dev-worktree.sh add` / 裸 `git worktree add`）**并存且都可用**（本包为省 7 分钟走的是裸命令 + 独立的 `preset-guard`）。**出口候选（本包不擅自改码，登记待裁）**：① 一次 `git ls-remote origin` 取全仓 refs 后本地比对 ⇒ **1 次往返**替代 N 次（推荐）；② 或把 `add` 路径里的 reap 降级为「只报不删」。",
-      "restart_when": "落码上述任一出口（或该清理被移出 `add` 路径）时，把本条移出 `not_solidified` 并补判据（判据口径 = 「`add` 路径的远端往返次数 ≤ 1」，可用内存构造的 `ps` / 调用计数夹具钉住）。"
     },
     {
       "id": "NS-4",

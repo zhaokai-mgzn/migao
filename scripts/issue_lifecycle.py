@@ -1036,6 +1036,24 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     self_branches = {b for b in (current_branch(cwd), current_branch(root), *args.exclude) if b}
     candidates = reap_candidates(cwd, root)
 
+    # 🔴 **陈旧 remote-tracking ref**：本地 `refs/remotes/origin/*` 有、**远程没有**（对方删了 / 本仓删过
+    # 但没 prune）⇒ 它不是「远程还在」：把它当远程目标会**每轮都尝试删一个不存在的分支**，并让
+    # 「可收尾」清单里常驻一堆幻影（实测 2026-09-28：55 个「可收尾」里绝大多数是这种）。
+    # 出口是 `git fetch --prune origin`（一次），**不是**「删除」⇒ 这里只把 `remote` 标志清掉，
+    # 候选**只靠 stale ref 存在**的会被下面的 `exists` 过滤掉（零额外网络：读的是同一份批量读数）。
+    heads = remote_heads(cwd)
+    if heads is not None:
+        stale_refs = [c.branch for c in candidates if c.remote and c.branch not in heads]
+        for c in candidates:
+            if c.remote and c.branch not in heads:
+                c.remote = False
+        if stale_refs:
+            print(f"\nℹ️  陈旧 remote-tracking ref {len(stale_refs)} 个（远程已无此分支）⇒ **不进删除面**"
+                  "（出口：`git fetch --prune origin`）。例："
+                  + "、".join(stale_refs[:5]) + ("…" if len(stale_refs) > 5 else ""))
+        # `Candidate` 没有 `exists`（那是 `Target` 的）⇒ 用它的三个存在面判：worktree 路径 / 本地分支 / 远程
+        candidates = [c for c in candidates if c.path is not None or c.local or c.remote]
+
     reapable: list[Candidate] = []
     skipped: list[tuple[Candidate, str, str]] = []
     for c in candidates:
@@ -1076,6 +1094,8 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
         return EXIT_UNMERGED if anchor_hits else EXIT_OK
 
     failures = 0
+    local_failed: set[str] = set()
+    remote_targets: list[Candidate] = []
     for c in reapable:
         print(f"\n🧹 收尾：{c.branch}" + (f"（{c.path}）" if c.path else "（无注册 worktree）"))
         try:
@@ -1084,11 +1104,23 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
                 print(f"✅ 已移除工作区：{c.path}")
             if c.local and delete_local_branch(c.branch, cwd):
                 print(f"✅ 已删除本地分支：{c.branch}")
-            if c.remote and delete_remote_branch(c.branch, cwd):
-                print(f"✅ 已删除远程分支：origin/{c.branch}")
+            if c.remote:
+                # 远程删除**攒到循环外一次 push**（`NS-3`：逐分支往返 3.70s/次 ⇒ 分钟级）
+                remote_targets.append(c)
         except RuntimeError as exc:
             print(f"❌ 收尾失败：{exc}")
             failures += 1
+            local_failed.add(c.branch)
+            continue
+
+    if remote_targets:
+        results = batch_delete_remote_branches([c.branch for c in remote_targets], cwd)
+        for c in remote_targets:
+            if results.get(c.branch) == "deleted":
+                print(f"✅ 已删除远程分支：origin/{c.branch}")
+
+    for c in reapable:
+        if c.branch in local_failed:
             continue
         ledger_add(c.branch, cwd)
         target = Target(c.branch, str(c.path) if c.path else None, c.path is not None, c.local, c.remote)
@@ -1193,6 +1225,77 @@ def delete_remote_branch(branch: str, cwd: Path) -> bool:
 
 # ── 自证干净 ──────────────────────────────────────────────────────────────────
 
+# ── 远程分支读数 / 删除：**批量一次**（`NS-3`：逐分支往返 = 分钟级慢，会被读成「挂死」）──────
+#
+# 实测（2026-09-28）：单次 `git ls-remote --heads origin <b>` = **3.70s**（本机 SSH，无连接复用），
+# 而 `reap-merged --apply` 原先**每个目标**各做一次「删远程 + 探远程」⇒ 41 个目标 ≈ **5 分钟**，
+# `dev-worktree.sh add`（它接在 reap 上）因此整条命令 **~7 分钟**。⇒ 两条读/写都收敛成**常数次**：
+#   ① 读：一次 `git ls-remote --heads origin` 取全量，进程内缓存；
+#   ② 写：一次 `git push origin --delete <b1> <b2> …`，每个分支的真值来自**删除后的一次批量读数**。
+
+#: `origin` 远程分支名的**进程内缓存**（`None` = **无法判定** ⇒ 调用方退回逐分支探测，语义不变）。
+_REMOTE_HEADS: dict[str, set[str] | None] = {}
+
+
+def remote_heads(cwd: Path, *, refresh: bool = False) -> set[str] | None:
+    """`origin` 的全部远程分支名 —— **一次** `git ls-remote --heads origin`（进程内缓存）。
+
+    返回 `None` = 无法判定（git 抖动 / 离线）⇒ 调用方**退回逐分支探测**（判定语义逐字不变，只是慢）。
+    """
+    key = str(cwd)
+    if refresh or key not in _REMOTE_HEADS:
+        proc = git("ls-remote", "--heads", "origin", cwd=cwd, check=False)
+        if proc.returncode != 0:
+            _REMOTE_HEADS[key] = None
+        else:
+            _REMOTE_HEADS[key] = {ln.split("refs/heads/", 1)[1].strip()
+                                  for ln in proc.stdout.splitlines() if "refs/heads/" in ln}
+    return _REMOTE_HEADS[key]
+
+
+def remote_branch_gone(branch: str, cwd: Path) -> bool | None:
+    """该远程分支是否已不存在。`None` = 无法判定（批量读数取不到 ⇒ 调用方逐分支探测）。"""
+    heads = remote_heads(cwd)
+    return None if heads is None else branch not in heads
+
+
+def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, str]:
+    """**一次** `git push origin --delete <b1> <b2> …` ⇒ `{分支: "deleted" | "already-absent" | "failed"}`。
+
+    🔴 真值**不解析 stderr**（格式会变），也不是「不在读数里就算删了」：判据 = **删除前后两次批量读数之差**
+    —— 只有「删前在、删后不在」才叫**本次删掉**；「删前就不在」是**陈旧 remote-tracking ref**
+    （出口 = `git fetch --prune origin`，**不是**「删除」）⇒ **不许报成「✅ 已删除」**（那是假陈述）。
+    读不到删除后的读数 ⇒ 退回逐分支探测（慢，但只在异常路径）。
+    """
+    if not branches:
+        return {}
+    before = remote_heads(cwd)
+    proc = git("push", "origin", "--delete", *branches, cwd=cwd, check=False)
+    after = remote_heads(cwd, refresh=True)
+    if after is None:
+        results = {b: ("deleted" if not git("ls-remote", "--heads", "origin", b,
+                                            cwd=cwd, check=False).stdout.strip() else "failed")
+                   for b in branches}
+    else:
+        results = {}
+        for b in branches:
+            if b in after:
+                results[b] = "failed"
+            elif before is not None and b in before:
+                results[b] = "deleted"
+            else:
+                results[b] = "already-absent"
+    for b, verdict in results.items():
+        if verdict == "failed":
+            print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")
+        elif verdict == "already-absent":
+            print(f"ℹ️  远程分支 `{b}` **本就不存在**（本地 remote-tracking ref 陈旧 "
+                  f"⇒ 出口 = `git fetch --prune origin`，不是「删除」）")
+    if proc.returncode != 0 and any(v == "deleted" for v in results.values()):
+        print(f"     git push 原始输出：{(proc.stderr or proc.stdout).strip()[:400]}")
+    return results
+
+
 def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
     """收尾后**自证**：worktree / 本地分支 / 远程分支 三项都为空或不存在。"""
     print("\n── 自证干净 ──")
@@ -1208,8 +1311,11 @@ def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
     print(f"  {'✅' if gone_local else '❌'} 本地分支不存在：{target.branch}")
     ok = ok and gone_local
 
-    ls_remote = git("ls-remote", "--heads", "origin", target.branch, cwd=cwd, check=False)
-    gone_remote = not ls_remote.stdout.strip()
+    gone_remote = remote_branch_gone(target.branch, cwd)
+    if gone_remote is None:
+        # 批量读数不可用 ⇒ **退回逐分支探测**（判定语义不变，只是慢）
+        ls_remote = git("ls-remote", "--heads", "origin", target.branch, cwd=cwd, check=False)
+        gone_remote = not ls_remote.stdout.strip()
     print(f"  {'✅' if gone_remote else '❌'} 远程分支不存在：origin/{target.branch}")
     ok = ok and gone_remote
 

@@ -123,6 +123,15 @@ case "${RESOLVED}" in
      echo "   ⇒ 刷新本镜像**不会**让活锚跟上；换链见 AGENTS.md「开发环境准备」（先备份、再 ln -sfn）。" ;;
 esac
 
+# ④.5 基线仓先 fetch：自检读的是**基线仓的** `${REF}` —— 拿**未 fetch 的旧 ref** 自检，会把
+#      「刚合并的预设改动」读成「活锚落后」（2026-09-28 实测：`land` 的 ⑦ 步因此判红，
+#      而活锚其实只差一次 fetch）。fetch 非破坏性；失败只降级为「可能对着旧 ref 判」，不静默。
+if [ "${RUN_CHECK}" = "1" ]; then
+  if ! git -C "${BASELINE}" fetch --quiet origin "${REF#origin/}" 2>/dev/null; then
+    echo "⚠️  基线仓（${BASELINE}）fetch ${REF} 失败（离线 / 无权限？）⇒ 下面的自检可能对着**旧** ref 判"
+  fi
+fi
+
 # ⑤ 自检（默认必须跑）：刷新后仍红 = 刷新没解决问题（例如活锚根本指向别处）
 if [ "${RUN_CHECK}" = "1" ]; then
   echo
