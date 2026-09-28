@@ -849,6 +849,27 @@
         "#5742",
         "#5749"
       ]
+    },
+    {
+      "id": "FM-E23",
+      "state": "guarded",
+      "symptom": "**控制流里的管道把「被判定命令的 rc」吞掉**（同一天在两个地方各咬一次，2026-09-28）：① `pr-check` 的门控步原先写 `if git diff origin/main...HEAD | grep -qE '<路径>'` —— `git diff` **真失败**（rc≠0：`origin/main` 不在检出里 / 无共同祖先）时，管道 rc 取的是 `grep` 的 0 ⇒ 落进 else 并把原因写成「未命中受管用例面」= **归因写错 + 静默跳过**；② 侦察命令 `gh pr checks --watch | grep … | tail` 把**判红吞成退出 0**，于是「两条 dependabot 都红」一度被读成「有一条绿」（当场更正）。",
+      "guards": "**判据 22** = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::pipe_rc_problems`（纯函数，跑**真 workflow**）：`if/elif/while` 行里出现「**被判定命令**（git/gh/npm/python3/bash/node） | grep|head|tail|wc|sort|uniq|sed|awk」，且该 `run` 块**没有** `-o pipefail` ⇒ 必须登记在 `PIPE_RC_EXEMPTIONS`（**只许缩短**，每条写明「为什么这里判的确实是管道末端的结果」）—— **未登记即红**、**豁免陈旧即红**。承重判据：`::test_real_workflows_have_no_unregistered_control_flow_pipe`（基线）/ `::test_new_control_flow_pipe_turns_it_red`（注入红证）/ `::test_pipefail_marks_it_fine`（对照）/ `::test_comment_only_mention_does_not_count`（对照：注释不算实现）/ `::test_stale_exemption_turns_it_red`（只许缩短）。**现取基线 = 2 条刻意形态**（已在豁免表逐条写明理由）。**修法实例**：门控步改成「先 `git fetch origin main` + `if ! CHANGED=\"$(git diff --name-only …)\"; then ::error::…; exit 1`（判 `git diff` 的 rc），有 `origin/main` 时再判命中」。**射程（如实登记）**：只判`if/elif/while` 里的管道（宽口径的另外 30 块「有管道无 pipefail」**不进**射程 —— 一次拉进来会把存量全判红，代价与收益不成比例；重启条件 = 出现第二例由宽口径形态造成的真缺陷）。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::pipe_rc_problems",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_real_workflows_have_no_unregistered_control_flow_pipe",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_new_control_flow_pipe_turns_it_red",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_stale_exemption_turns_it_red"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E23",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py",
+        ".github/workflows/pr-check.yml::probe_face"
+      ],
+      "refs": [
+        "#5757",
+        "#5761"
+      ]
     }
   ],
   "relay_entries": [

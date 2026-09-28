@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（47 case）
+## 杂项域（48 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3172,7 +3172,7 @@
 数据: 每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』
 数据: 每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**
 数据: 覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）
-数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 21 条（`FM-E1`~`FM-E22`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
+数据: CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 22 条（`FM-E1`~`FM-E23`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）
 数据: **未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`
 数据: **抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）
 数据: **抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）
@@ -3465,6 +3465,18 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-27 新增（issue #4184；用户逐字裁定 B = 「通路建好并自证（含新鲜度判据从 warning 翻成 gate），但首次发布由人手动触发」）：C 端 H5 此前**没有任何部署通路**（线上落后源码 28 天而无人知道），而它的落地面是 nginx 静态根**本身**（同根下住着工人端 w/ 与商家端 b/）⇒ 本腿是第一条「拥有静态根本身」的发布腿。落码 = 远端执行体（单一出处）+ CI 包装 + 落地面断言 + workflow（**手动面才发布**：paths 恰好只有 frontend/mini-app/**、写盘步 if 逐字要求 workflow_dispatch+inputs.publish=='true'、默认 false）+ 新鲜度判据默认翻红 + 对账面同批接线与缺口台账（never_in_trigger）+ 26 条注入式红证（含「只改注释 ⇒ 不红」对照、6 种坏形态的落地面判红、4 条模式/兜底面红证）。⚠️ **首次发布尚未发生** ⇒ h5-freshness 这条腿在 main 上**会红**（真实且可操作，不许用「先 warning 一段时间」藏起来）。取号 MC-046：main 上 MC-001~MC-038 已占用（现取）。 ｜ tags: ci, deploy, trigger-surface, red-proof, fail-closed, manual-only
+
+### MC-042. 控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」 🔵
+```
+你: 在 workflow 的 run 块里用 `if <命令> | grep …` 判红时，必须让「命令自身失败」与「没匹配」可区分：要么 `set -o pipefail`，要么登记豁免并写明「本条判的是管道末端的结果」；新出现一处未登记的这类管道、或删掉命令自身 rc 的判定、或让豁免登记变陈旧，都必须有东西变红
+期望: direct_reply
+数据: 判定本体的唯一实现 = `if/elif/while` 行里出现「被判定命令（git/gh/npm/python3/bash/node） | grep|head|tail|wc|sort/uniq/sed/awk」，且该 `run` 块**没有** `-o pipefail` ⇒ 必须登记在 `PIPE_RC_EXEMPTIONS`（台账**只许缩短**）
+数据: 现取基线 = **2 条刻意的管道末端判定**：`.github/workflows/flaky-ledger-reconcile.yml::reconcile`（问 help 里有没有 `--branch`）与 `.github/workflows/pr-check.yml::label-needs-changes`（问标签在不在）—— 两条都逐字写明「加 pipefail 会把结论读反」
+数据: 判据四条：基线 / 注入红证（新增一处未登记管道 ⇒ 红）/ 对照（同一段加 `pipefail` ⇒ 不红）/ 对照（只在注释里提及 ⇒ 不红）/ 陈旧豁免（现取命中里找不到 ⇒ 删它，红）
+数据: 现场（2026-09-28 同一天两个地方各咬一次）：① `pr-check` 门控步原先 `if git diff origin/main...HEAD | grep -qE '<路径>'` ⇒ `git diff` 真失败（rc≠0）时管道 rc 取 `grep` 的 0 ⇒ 落 else 并把原因写成「未命中受管用例面」= 归因写错 + 静默跳过（已修：先 fetch + 判 `git diff` 的 rc + fail-closed 出声）；② 侦察命令 `gh pr checks --watch | grep … | tail` 把**判红吞成退出 0** ⇒ 「两条 dependabot 都红」一度被读成「有一条绿」（当场更正）
+跳过: [backend-contract] CI shell 的结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 22（pipe_rc_problems）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-28 新增（用户逐字「做完你的下一步建议的3点就收尾」；现场见 data_checks 第 4 条）：先把射程量出来（宽口径 32 块 / 47 行；窄口径 2 块，且两块都是刻意的管道末端判定）⇒ 判据取窄口径 + 豁免表只许缩短，避免把存量 32 块一次性拉成假红。 ｜ tags: ci, shell, exit-code, red-proof, ledger
 
 ## 商家入驻域（5 case）
 
@@ -7999,8 +8011,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：564（活跃 126，跳过 438）
-- tier 分布：smoke 12 / normal 519 / adversarial 31
+- 用例总数：565（活跃 126，跳过 439）
+- tier 分布：smoke 12 / normal 520 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8015,7 +8027,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：47
+- 杂项域：48
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：51
@@ -8089,6 +8101,7 @@
 - MC-040: 用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）
 - MC-048: 真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备
 - MC-046: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
+- MC-042: 控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

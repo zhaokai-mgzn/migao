@@ -978,7 +978,7 @@ cases:
       - "每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』"
       - "每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**"
       - "覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）"
-      - "CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 21 条（`FM-E1`~`FM-E22`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）"
+      - "CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 22 条（`FM-E1`~`FM-E23`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）"
       - "**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`"
       - "**抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）"
       - "**抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）"
@@ -1752,4 +1752,37 @@ cases:
         - c-end-h5-publish.yml
         - h5-freshness-guard.yml
         - deploy-reconcile.yml
+      verifies: []
+
+  - id: MC-042
+    legacy_id: ""
+    title: "控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」"
+    domains:
+      - misc
+      - ci
+      - workflow-shell
+    tier: normal
+    tags:
+      - ci
+      - shell
+      - exit-code
+      - red-proof
+      - ledger
+    truths_ref: []
+    user_inputs:
+      - "在 workflow 的 run 块里用 `if <命令> | grep …` 判红时，必须让「命令自身失败」与「没匹配」可区分：要么 `set -o pipefail`，要么登记豁免并写明「本条判的是管道末端的结果」；新出现一处未登记的这类管道、或删掉命令自身 rc 的判定、或让豁免登记变陈旧，都必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判定本体的唯一实现 = `if/elif/while` 行里出现「被判定命令（git/gh/npm/python3/bash/node） | grep|head|tail|wc|sort/uniq/sed/awk」，且该 `run` 块**没有** `-o pipefail` ⇒ 必须登记在 `PIPE_RC_EXEMPTIONS`（台账**只许缩短**）"
+      - "现取基线 = **2 条刻意的管道末端判定**：`.github/workflows/flaky-ledger-reconcile.yml::reconcile`（问 help 里有没有 `--branch`）与 `.github/workflows/pr-check.yml::label-needs-changes`（问标签在不在）—— 两条都逐字写明「加 pipefail 会把结论读反」"
+      - "判据四条：基线 / 注入红证（新增一处未登记管道 ⇒ 红）/ 对照（同一段加 `pipefail` ⇒ 不红）/ 对照（只在注释里提及 ⇒ 不红）/ 陈旧豁免（现取命中里找不到 ⇒ 删它，红）"
+      - "现场（2026-09-28 同一天两个地方各咬一次）：① `pr-check` 门控步原先 `if git diff origin/main...HEAD | grep -qE '<路径>'` ⇒ `git diff` 真失败（rc≠0）时管道 rc 取 `grep` 的 0 ⇒ 落 else 并把原因写成「未命中受管用例面」= 归因写错 + 静默跳过（已修：先 fetch + 判 `git diff` 的 rc + fail-closed 出声）；② 侦察命令 `gh pr checks --watch | grep … | tail` 把**判红吞成退出 0** ⇒ 「两条 dependabot 都红」一度被读成「有一条绿」（当场更正）"
+    skip_reason: "[backend-contract] CI shell 的结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 22（pipe_rc_problems）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-28 新增（用户逐字「做完你的下一步建议的3点就收尾」；现场见 data_checks 第 4 条）：先把射程量出来（宽口径 32 块 / 47 行；窄口径 2 块，且两块都是刻意的管道末端判定）⇒ 判据取窄口径 + 豁免表只许缩短，避免把存量 32 块一次性拉成假红。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_dev_mode_failure_modes.py
       verifies: []
