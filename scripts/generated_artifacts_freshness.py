@@ -57,9 +57,11 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import io
 import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -318,6 +320,113 @@ def summary_line(report: dict) -> str:
             f"verdict={report.get('verdict', '?')} why={why}")
 
 
+# ── 合并探测（`FM-E22`）：把「本树 × 基线」的**合并结果**物化出来，对**它**再判一次 ────────────
+#
+# 病灶（issue #5741 的机制，台账 `FM-E18`）：两个**各自新鲜**的分支合并后，块 hunk 取并集、而两侧
+# **同值的汇总 hunk 干净合并不重算** ⇒ **落地的那份生成物比源陈旧**；而 PR 面的新鲜度判定跑在
+# 「发起时的快照」上 ⇒ 它看不到**合并结果**这一面（`FM-E18` 的时序根因）。
+# 本探测把「合到 `<ref>` 之后的那棵树」取出来，对**它**再判一次 ⇒ 这一面变成**PR 面可拦**。
+#
+# 🔴 **只读**：`git merge-tree --write-tree`（不落工作区、不改索引）+ `git archive <tree> <判定面路径>`
+#    经 `tarfile` 解到临时目录（**不写仓内对象**）。判定面只需用例库 / 渲染器 / 两个生成物。
+
+#: 合并探测要物化的路径（够跑 `evaluate()` 即可；整仓 `git archive` 太重）。
+MERGE_PROBE_PATHS: tuple[str, ...] = (".github", "docs/testing/mibao-verification-cases.md",
+                                      "tests/agent_eval/eval_cases.py")
+
+
+def _git_rc(repo: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:
+    """**判 rc 的** git 调用（`check=False` 的 stdout 不作证据 —— 台账 `NS` 口径）。"""
+    return subprocess.run(["git", *args], cwd=str(repo), capture_output=True, timeout=timeout)
+
+
+def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int = DEFAULT_WINDOW,
+                render_timeout: int = 300, tree_report: dict | None = None) -> dict:
+    """判「**把本树合并到 `<ref>` 之后**，生成物会不会陈旧」（`FM-E22`）。返回机器可读报告。
+
+    三态 `verdict` ∈ {`fresh`, `drifted`, `undecidable`}；`undecidable` 含「取不到 `<ref>`」与
+    「与 `<ref>` 冲突」（后者 GitHub 侧本来就会拦合并 ⇒ 不在此重复下判定，但**出声**、不当通过）。
+    `attribution` 给「本树 / 合并结果」两侧读数 ⇒ **归因不指向错误的对象**（`FM-E4` 的教训）。
+    """
+    report: dict = {
+        "schema": 1, "ref": ref, "base_sha": "", "merge_tree": "", "verdict": "undecidable",
+        "tree_verdict": "", "merge_verdict": "", "attribution": "", "problems": [],
+        "recompute_command": f"{recompute_command()} --merge-probe {ref}",
+    }
+    head = _git_rc(repo, "rev-parse", "--verify", "HEAD")
+    if head.returncode != 0:
+        report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：本检出没有 HEAD")
+        return report
+    base = _git_rc(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    if base.returncode != 0:
+        report["problems"].append(
+            f"{ERROR_PREFIX}合并探测**无法判定**：取不到 `{ref}` —— 先 `git fetch origin {ref}`；"
+            "**取不到 ≠ 通过**（三态 3 不得当 0 读）")
+        return report
+    report["base_sha"] = base.stdout.decode().strip()
+
+    merged = _git_rc(repo, "merge-tree", "--write-tree", "HEAD", ref)
+    out_text = merged.stdout.decode("utf-8", "replace")
+    lines = out_text.strip().splitlines()
+    # `git merge-tree --write-tree`：**rc=0 干净**；**rc=1 = 有冲突**（仍会写出带冲突标记的 tree，
+    # 首行是 tree oid）；rc>1 才是调用失败。⇒ **先判冲突**，再取 tree（否则会把冲突读成「工具坏了」）。
+    if merged.returncode == 1 or "CONFLICT" in out_text:
+        report["problems"].append(
+            f"{ERROR_PREFIX}合并探测**无法判定**：本树与 `{ref}`（{report['base_sha'][:8]}）**冲突** "
+            f"⇒ 合并结果不存在（GitHub 侧此刻也会拦合并）⇒ 先 rebase 到最新 `{ref}` 再重判")
+        return report
+    if merged.returncode != 0 or not lines:
+        tail = (merged.stderr.decode("utf-8", "replace") or out_text).strip()
+        report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：`git merge-tree` 退出 "
+                                  f"{merged.returncode}：{tail[:200]}")
+        return report
+    report["merge_tree"] = lines[0].strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        dest = Path(td)
+        arc = _git_rc(repo, "archive", report["merge_tree"], *MERGE_PROBE_PATHS)
+        if arc.returncode != 0 or not arc.stdout:
+            why = (arc.stderr.decode("utf-8", "replace") or "").strip()[:200]
+            report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：`git archive` 退出 "
+                                      f"{arc.returncode}：{why}")
+            return report
+        try:
+            with tarfile.open(fileobj=io.BytesIO(arc.stdout)) as tf:
+                tf.extractall(dest)
+        except (tarfile.TarError, OSError) as exc:
+            report["problems"].append(f"{ERROR_PREFIX}合并探测**无法判定**：解包失败（{type(exc).__name__}）")
+            return report
+        tree = tree_report or evaluate(repo, python=python, window=window, render_timeout=render_timeout)
+        merge = evaluate(dest, python=python, window=window, render_timeout=render_timeout)
+
+    report["tree_verdict"] = str(tree.get("verdict") or "")
+    report["merge_verdict"] = str(merge.get("verdict") or "")
+    if merge["verdict"] == "drifted":
+        report["verdict"] = "drifted"
+        report["problems"] += [
+            f"❌ 合并探测：把本树合并到 `{ref}`（{report['base_sha'][:8]}）之后，生成物与 "
+            f"`{CASES_REL}/**` **不同源** —— **落地的那一份会比源陈旧**",
+            *merge["problems"],
+        ]
+    elif merge["verdict"] == "undecidable":
+        report["problems"].append(
+            f"{ERROR_PREFIX}合并探测**无法判定**（合并结果这一侧）："
+            f"{'；'.join(merge.get('undecidable') or [])[:200]} —— 取不到 ≠ 通过")
+        return report
+    else:
+        report["verdict"] = "fresh"
+        report["problems"].append(f"✅ 合并探测：把本树合并到 `{ref}`（{report['base_sha'][:8]}）之后，"
+                                  f"生成物仍与 `.github/cases/**` 同源")
+    report["attribution"] = (
+        f"归因（别指向错误的对象）：本树 = **{report['tree_verdict']}** / 合并结果 = "
+        f"**{report['merge_verdict']}** ⇒ "
+        + ("本树自己就不新鲜 ⇒ **重渲染并提交生成物**（不许手改）；"
+           if report["tree_verdict"] == "drifted"
+           else "本树是新鲜的，**合并结果**才陈旧 ⇒ 两侧**各自渲染**后合并出的汇总行不重算（`FM-E18` 的形态）"
+                "⇒ `git rebase` 到最新 main 后**再重渲染一次**；"))
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="生成物新鲜度判定（render + 逐字节比对；单一实现）")
     ap.add_argument("--repo", default=str(DEFAULT_REPO), help="仓根（缺省 = 本文件所在仓库）")
@@ -326,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--python", default=sys.executable, help="跑渲染器的解释器（缺省 = 本进程的）")
     ap.add_argument("--window", type=int, default=DEFAULT_WINDOW, help="漂移候选区间的提交数")
     ap.add_argument("--json", default="", help="把机器可读报告写到该路径")
+    ap.add_argument("--merge-probe", default="", metavar="REF",
+                    help="额外判「把本树合并到该 ref 之后」生成物是否新鲜（`FM-E22`；缺省不跑）")
     args = ap.parse_args(argv)
 
     report = evaluate(Path(args.repo), python=args.python, cases_rel=args.cases,
@@ -335,9 +446,30 @@ def main(argv: list[str] | None = None) -> int:
     if report["verdict"] != "fresh":
         print(report["error_annotation"])
     print(summary_line(report))
+    rc = {"fresh": RC_FRESH, "drifted": RC_DRIFT}.get(report["verdict"], RC_UNDECIDABLE)
+
+    probe: dict | None = None
+    if args.merge_probe:
+        probe = probe_merge(Path(args.repo), args.merge_probe, python=args.python,
+                            window=args.window, tree_report=report)
+        for line in probe["problems"]:
+            print(line)
+        if probe.get("attribution"):
+            print(f"   {probe['attribution']}")
+        print(f"MIGAO-GENFRESH-PROBE ref={probe['ref']} base={probe['base_sha'][:8] or '?'} "
+              f"tree={probe['tree_verdict'] or '?'} merged={probe['merge_verdict'] or '?'} "
+              f"verdict={probe['verdict']}")
+        if probe["verdict"] == "drifted":
+            rc = RC_DRIFT
+        elif probe["verdict"] == "undecidable" and rc == RC_FRESH:
+            rc = RC_UNDECIDABLE
+
     if args.json:
-        Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"fresh": RC_FRESH, "drifted": RC_DRIFT}.get(report["verdict"], RC_UNDECIDABLE)
+        payload = dict(report)
+        if probe is not None:
+            payload["merge_probe"] = probe
+        Path(args.json).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return rc
 
 
 if __name__ == "__main__":

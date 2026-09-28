@@ -635,6 +635,9 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `FM-E22` 的合并探测要算 merge-base / `origin/main...HEAD` ⇒ 浅克隆不够
+          fetch-depth: 0
 
       - name: Verify case truths_ref resolve
         run: |
@@ -663,6 +666,29 @@ jobs:
           #  ⇒ **main 可以先漂移**，而第一个撞上它的无辜 PR 才红）。两侧同源由
           # tests/unit_ci_workflows/test_main_freshness_guard.py 的判据钉住（反向查内联实现）。
           python3 scripts/generated_artifacts_freshness.py
+
+      - name: Detect 受管用例面 changes（决定是否跑**合并探测**；未命中 ⇒ 显式打印「未跑」）
+        id: probe_face
+        run: |
+          # `FM-E22`：**合并结果**这一面原先无判据（`FM-E18` 的时序根因）—— 两个各自新鲜的分支合并后，
+          # 生成物可能比源陈旧，而 PR 面的新鲜度判定只看**本树**。探测**只在受管用例面改动时**跑：
+          # 不碰它的 PR **不替 main 侧的漂移背锅**（`FM-E4` 的归因纪律）。
+          PROBE_FACE_RE='(\.github/cases/|\.github/render_cases\.py|docs/testing/mibao-verification-cases\.md|tests/agent_eval/eval_cases\.py)'
+          if git diff --name-only "origin/main...HEAD" | grep -qE "$PROBE_FACE_RE"; then
+            echo "probe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "probe=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ 本次改动未命中受管用例面 ⇒ **合并探测未跑**（这不是「通过」；判定面 = \`.github/cases/**\` / 渲染器 / 两个生成物）"
+          fi
+
+      - name: Merge-result freshness（把本树合并到 main 之后，生成物还会新鲜吗）
+        if: steps.probe_face.outputs.probe == 'true'
+        run: |
+          # 判定本体仍是**同一份实现**（`scripts/generated_artifacts_freshness.py`，只多一个 `--merge-probe`）。
+          # 三态：`0` = 合并结果仍新鲜 / `1` = 合并结果**会**陈旧（先 rebase 到最新 main，**再重渲染一次**）/
+          # `3` = 无法判定（取不到 main，或与 main 冲突 —— 后者 GitHub 侧本来也会拦合并）。
+          git fetch --no-tags --quiet origin main
+          python3 scripts/generated_artifacts_freshness.py --merge-probe origin/main
 
   # ============ 断言可信度门禁（假红/假绿结构性护栏 A 层，#3483 T1 扩展格）============
   #

@@ -724,7 +724,7 @@
       "id": "FM-E18",
       "state": "guarded",
       "symptom": "**生成物文件的 git 三方合并产物**：两个**各自自洽**的分支合并后，**块 hunk 取并集**（46 + 1 = 47），而**两侧同值的汇总 hunk 干净合并、不重算** ⇒ 落进 main 的 casebook 汇总读数比 `.github/cases/**` **少 1**；而 `git merge-tree` **零冲突**、文件**语法合法**、且**内部自洽**（分域合计 == 总数）⇒ PR 面与 `Case Contract (truths_ref)` 都不会红。**现场（2026-09-28，issue #5741）**：`docs/testing/mibao-verification-cases.md` 提交版 558（杂项域 46）/ 现取 559（47），而**行数两侧同为 8112、仅 4 行不同** ⇒ 「行数相同」与「文件内部自洽」都**不能**当新鲜度证据。**一条命令复现（零冲突、幂等）**：`git fetch origin refs/pull/5733/head e3d35c130 && tree=$(git merge-tree --write-tree 2550bc4f4 e3d35c130 | head -1)` ⇒ 该树与落进 main 的那份 casebook **逐字节相同**（`diff` 0 行），而它的用例源已是 47 条。",
-      "guards": "**判据**：`tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count`（行为级：夹具把汇总读数整体减 1、**不增减任何行**、且分域合计仍等于总数 ⇒ 判定本体必须 `rc=1`、**具名**报出该产物、并给出「提交版 N 行 / 现取 N 行」这一**相同**的行数读数）+ `::test_line_count_compare_mutant_turns_that_fixture_green`（**判别力自证**：把「逐字节相等」换成「只比行数」的**内存变异体** ⇒ 同一夹具**变绿** ⇒ 上面那条红是这条比较挣来的）；夹具构造函数 `::make_summary_stale_in_place`（渲染格式变了就 fail-closed，不做静默）。**判定本体不新增第二份实现**：仍是 `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，**没有「跳过」这一态**）。🔴 **为什么「再加一条判据」不是这道题的答案**：漏点在**时序** —— 「**检查跑的那份快照 ≠ 实际落地的那份合并结果**」（PR 面校验的是发起时的 merge 快照，native auto-merge 落下的是基线前进之后的新合并结果）。两条真出口（都会动合并门禁 / 仓库设置，**需人裁定**，本包有意不做）：① 分支保护打开 **Require branches to be up to date before merging**（基线前进 ⇒ 强制重跑，代价 = 每次合并多一轮 CI）；② 合并落地后**即时**重渲染校验，把 main 侧那条腿从「报告型 + ≤1 个 cron 周期延迟」改成「即时 + 阻断」。**现状承接面** = `Main Freshness Guard（main 侧生成物新鲜度）`（判红自动开 P1 值班单 —— 本条的现场正是它的产物），**报告型、非阻断**。",
+      "guards": "**判据**：`tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count`（行为级：夹具把汇总读数整体减 1、**不增减任何行**、且分域合计仍等于总数 ⇒ 判定本体必须 `rc=1`、**具名**报出该产物、并给出「提交版 N 行 / 现取 N 行」这一**相同**的行数读数）+ `::test_line_count_compare_mutant_turns_that_fixture_green`（**判别力自证**：把「逐字节相等」换成「只比行数」的**内存变异体** ⇒ 同一夹具**变绿** ⇒ 上面那条红是这条比较挣来的）；夹具构造函数 `::make_summary_stale_in_place`（渲染格式变了就 fail-closed，不做静默）。**判定本体不新增第二份实现**：仍是 `scripts/generated_artifacts_freshness.py`（三态 `0/1/3`，**没有「跳过」这一态**）。🔴 **为什么「再加一条判据」不是这道题的答案**：漏点在**时序** —— 「**检查跑的那份快照 ≠ 实际落地的那份合并结果**」（PR 面校验的是发起时的 merge 快照，native auto-merge 落下的是基线前进之后的新合并结果）。两条真出口（都会动合并门禁 / 仓库设置，**需人裁定**，本包有意不做）：① 分支保护打开 **Require branches to be up to date before merging**（基线前进 ⇒ 强制重跑，代价 = 每次合并多一轮 CI）；② 合并落地后**即时**重渲染校验，把 main 侧那条腿从「报告型 + ≤1 个 cron 周期延迟」改成「即时 + 阻断」。**现状承接面** = `Main Freshness Guard（main 侧生成物新鲜度）`（判红自动开 P1 值班单 —— 本条的现场正是它的产物），**报告型、非阻断**。\n\n🔻 **2026-09-28 追加（第三条出口，**不改门禁配置**）**：已落码 = `FM-E22` 的**合并探测**（`scripts/generated_artifacts_freshness.py --merge-probe` + `pr-check` 的路径门控步）—— 它把「**合到 main 之后**会不会陈旧」在 PR 面判出来。⇒ 本条上文的**两条「需人裁定」出口**（分支保护 `Require branches to be up to date` / 落地后即时阻断）**仍未被采用**（代价见那两条）。",
       "criteria": [
         "tests/unit_ci_workflows/test_main_freshness_guard.py::test_merge_union_shape_is_red_even_with_equal_line_count",
         "tests/unit_ci_workflows/test_main_freshness_guard.py::test_line_count_compare_mutant_turns_that_fixture_green",
@@ -798,6 +798,29 @@
       "refs": [
         "#5707",
         "#5745"
+      ]
+    },
+    {
+      "id": "FM-E22",
+      "state": "guarded",
+      "symptom": "**合并结果这一面原先无判据**（`FM-E18` 的时序根因）：两个**各自新鲜**的分支合并后，块 hunk 取并集、而两侧**同值的汇总 hunk 干净合并不重算** ⇒ **落地的那份生成物比源陈旧**（2026-09-28 现场：提交版 **8112 行 / 现取 8112 行、仅 4 行不同**，`git merge-tree` **零冲突**）。而 PR 面的新鲜度判定只看**本树**、main 侧那条腿只在合并后按 cron 报告 ⇒ 中间有一段**无人判**的窗口，首撞者常常是**下一个无辜 PR**（`FM-E4`）。",
+      "guards": "**新判据（PR 面可拦）**：`scripts/generated_artifacts_freshness.py::probe_merge`（**同一份实现**，只多一个开关 `--merge-probe <ref>`）—— `git merge-tree --write-tree HEAD <ref>` 取**合并结果那棵树** → `git archive <tree> <判定面路径>` 经 `tarfile` 解到临时目录 → 对**它**跑同一个 `evaluate()`。🔴 **只读**：不落工作区、不改索引、**不写仓内对象**。三态：`0` 合并结果仍新鲜 / `1` 合并结果**会**陈旧 / `3` 无法判定（取不到基线 **或**与基线**冲突** —— 后者 GitHub 侧本来也会拦合并 ⇒ 出声但不谎称通过）。**归因两面都给读数**（本树 / 合并结果）⇒ 不把「两侧各自渲染后合并」误指成「谁忘了重渲染」。**接线**（`.github/workflows/pr-check.yml` 的 `case-truth-check`，required job）：checkout 改 `fetch-depth: 0`（要算 merge-base）＋「Detect 受管用例面 changes」**路径门控**（`.github/cases` / 渲染器 / 两个生成物）＋ 探测步（先 `git fetch --no-tags --quiet origin main`）。🔴 **路径门控是有意的**：不碰受管用例面的 PR **不替 main 侧的漂移背锅**（`FM-E4` 的归因纪律）。**判据** = `tests/unit_ci_workflows/test_main_freshness_guard.py::probe_wiring_problems`（纯函数：探测在跑 + 门控在 + `fetch-depth: 0` + 门控覆盖四条路径 + 先取 main）+ `::TestMergeProbe`（**真 git 夹具**：两侧各自新鲜、合并结果陈旧 ⇒ `drifted`；自比 ⇒ `fresh`；基线取不到 ⇒ `undecidable`；CLI 退出码 1/0）+ **5 条接线变异红证**（撤探测 / 撤门控 / 撤 fetch-depth / 撤一条门控路径 / 不取基线）+ 「只加注释 ⇒ 不红」对照。\n\n**门控面本身也要登记**：`tests/unit_ci_workflows/declaration_gate_registry.json` 的 `gates` 新增 `case-truth-check-merge-probe`（逐字路径谓词 + `must_cover` 四条 + `uncovered` 两条）—— **未登记即红**（`test_gate_coverage_and_same_source.py::test_every_path_gated_pr_gate_is_registered`：凡「会被路径门控的 PR 门禁」必须登记，否则它的断言可能整段不跑而无人变红）。\n\n⚠️ **夹具环境读数（本单实测一次）**：真 git 夹具的提交必须**注入身份**（`GIT_AUTHOR_*` / `GIT_COMMITTER_*`）—— runner 上没有 `user.name/email` ⇒ `git commit` 报 `Author identity unknown` ⇒ **本机全绿、CI 整片红**（形态同族 `FM-A14`「夹具没跟上运行期环境」）。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::probe_wiring_problems",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::test_probe_flags_the_merge_result_that_would_be_stale",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py::test_cli_exit_codes",
+        "scripts/generated_artifacts_freshness.py::probe_merge",
+        ".github/workflows/pr-check.yml::--merge-probe origin/main"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E22",
+        ".github/workflows/pr-check.yml",
+        "tests/unit_ci_workflows/test_main_freshness_guard.py"
+      ],
+      "refs": [
+        "#5741",
+        "#5742",
+        "#5749"
       ]
     }
   ],
