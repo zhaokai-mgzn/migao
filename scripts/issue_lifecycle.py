@@ -1259,13 +1259,29 @@ def remote_branch_gone(branch: str, cwd: Path) -> bool | None:
     return None if heads is None else branch not in heads
 
 
-def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, str]:
-    """**一次** `git push origin --delete <b1> <b2> …` ⇒ `{分支: "deleted" | "already-absent" | "failed"}`。
+#: 「批量删除被坏 ref 毒化」时的**逐个补删上限**（只补「此刻仍在」的；超过就不补并出声）。
+_REMOTE_DELETE_RETRY_MAX = 20
 
-    🔴 真值**不解析 stderr**（格式会变），也不是「不在读数里就算删了」：判据 = **删除前后两次批量读数之差**
-    —— 只有「删前在、删后不在」才叫**本次删掉**；「删前就不在」是**陈旧 remote-tracking ref**
-    （出口 = `git fetch --prune origin`，**不是**「删除」）⇒ **不许报成「✅ 已删除」**（那是假陈述）。
-    读不到删除后的读数 ⇒ 退回逐分支探测（慢，但只在异常路径）。
+
+def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, str]:
+    """**一次** `git push origin --delete <b1> <b2> …` ⇒ 四态 `{分支: verdict}`。
+
+    verdict 与**各自能证明什么**（本函数是删除的唯一闸门 ⇒ 每一态都必须能被它自己证实）：
+
+    | verdict | 含义 | 谁证实 |
+    |---|---|---|
+    | `deleted` | **本次真的删掉**（删前在、删后不在） | 删前 + 删后两次批量读数 |
+    | `already-absent` | **删前就不在**（陈旧 remote-tracking ref；出口 = `git fetch --prune origin`） | 删前读数 |
+    | `absent-unverified` | **删前读数取不到**，只知道此刻不在 ⇒ **不许**报成「已删除」 | 逐分支探测（只看「此刻」） |
+    | `failed` | 此刻仍在（含 push 被拒 / 读不出存在性） | 删后读数或逐分支探测 |
+
+    🔴 **两条实测教训（都来自独立验收，2026-09-28）**：
+    ① **回退路径曾谎报**（P2-④ 反例）：删后批量读数取不到而走逐分支探测时，「删前就不在」的幽灵分支
+       被报成 `deleted`（`{'ghost-never-pushed': 'deleted'}`）—— 那是**假陈述** ⇒ 现在这一路只给
+       `absent-unverified`（**判不了「是不是我删的」就不说**）。
+    ② **一批会被一个坏 ref 毒化**（P2-⑤ 实测）：`push --delete a b c` 里只要有一个不存在的 ref，
+       **整批被拒**（连本该删掉的也留着）⇒ 对「此刻仍在」的逐个**补删**（上限 `_REMOTE_DELETE_RETRY_MAX`），
+       不把失败面从 1 个放大到 N 个。
     """
     if not branches:
         return {}
@@ -1273,9 +1289,8 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
     proc = git("push", "origin", "--delete", *branches, cwd=cwd, check=False)
     after = remote_heads(cwd, refresh=True)
     if after is None:
-        # 读不到批量读数 ⇒ 逐分支探测。🔴 **必须判 `.returncode`**：`check=False` 的 stdout 不是证据
-        # （§19.1「无法判定 ≠ 通过」；这条形态正是 `test_unchecked_rc_evidence_guard` 的射程）。
-        results = {}
+        # 删后读数取不到 ⇒ 逐分支探测：只判「此刻在不在」，**判不了**「是不是我删的」
+        results: dict[str, str] = {}
         for b in branches:
             probe = git("ls-remote", "--heads", "origin", b, cwd=cwd, check=False)
             if probe.returncode != 0:
@@ -1286,17 +1301,35 @@ def batch_delete_remote_branches(branches: list[str], cwd: Path) -> dict[str, st
                 print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")
                 results[b] = "failed"
             else:
-                results[b] = "deleted"
+                print(f"ℹ️  远程分支 `{b}` 此刻已不在 —— 但**删前读数取不到** ⇒ 判不了是不是本次删掉的，"
+                      "**不报「已删除」**")
+                results[b] = "absent-unverified"
         return results
-    else:
-        results = {}
-        for b in branches:
-            if b in after:
-                results[b] = "failed"
-            elif before is not None and b in before:
-                results[b] = "deleted"
-            else:
-                results[b] = "already-absent"
+
+    results = {}
+    for b in branches:
+        if b in after:
+            results[b] = "failed"
+        elif before is not None and b in before:
+            results[b] = "deleted"
+        else:
+            results[b] = "already-absent"
+
+    still = [b for b, v in results.items() if v == "failed"]
+    if still:
+        if len(still) <= _REMOTE_DELETE_RETRY_MAX:
+            print(f"ℹ️  批量删除后有 {len(still)} 个仍在远程 ⇒ **逐个补删**（一个坏 ref 不该拖累整批）")
+            for b in still:
+                git("push", "origin", "--delete", b, cwd=cwd, check=False)
+            after2 = remote_heads(cwd, refresh=True)
+            if after2 is not None:
+                for b in still:
+                    if b not in after2:
+                        results[b] = "deleted"
+        else:
+            print(f"⚠️  仍在远程的分支有 {len(still)} 个 > 补删上限 {_REMOTE_DELETE_RETRY_MAX} ⇒ "
+                  "**不逐个补删**（如实登记为「失败面未逐个收敛」；出口 = 人工/下一轮 reap）")
+
     for b, verdict in results.items():
         if verdict == "failed":
             print(f"⚠️  远程分支删除失败（可能已被删/无权限）：{b}")

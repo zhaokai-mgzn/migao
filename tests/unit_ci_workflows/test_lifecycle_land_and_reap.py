@@ -1130,7 +1130,11 @@ def test_remote_round_trips_do_not_grow_with_target_count(fx: Fixture):
         return (len([c for c in calls if c[:2] == ("push", "origin")]),
                 len([c for c in calls if c[0] == "ls-remote"]))
 
-    assert counts_for(1) == counts_for(3), "往返次数随目标数增长 ⇒ 又回到「逐分支轮询」（NS-3 复发）"
+    base1, base3 = counts_for(1), counts_for(3)
+    assert base1[0] >= 1 and base1[1] >= 1, (
+        f"基线读数不成立（push={base1[0]} / ls-remote={base1[1]}）—— 零调用的桩会让关系式断言"
+        "**空集恒真**（独立验收 P2-②）")
+    assert base1 == base3, "往返次数随目标数增长 ⇒ 又回到「逐分支轮询」（NS-3 复发）"
 
 
 def test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe(fx: Fixture):
@@ -1146,6 +1150,60 @@ def test_verify_clean_uses_the_batch_reading_not_a_per_branch_probe(fx: Fixture)
     assert ok is False, "本地/远程都还在 ⇒ 自证必须判「未清」（这是靶子，不是通过）"
     per_branch = [c for c in calls if c[0] == "ls-remote" and len(c) == 4]  # ("ls-remote","--heads","origin",<b>)
     assert per_branch == [], f"`verify_clean` 退回了逐分支探测（批量读数没被用上）：{per_branch}"
+
+
+def test_verify_clean_remote_check_is_load_bearing(fx: Fixture, tmp_path: Path):
+    """🔴 **验收 P2-① 的承载体**：原判据可被「整段删掉远程自证」绕过（本地分支兜住 `ok=False` + 空集恒真）
+    ⇒ 这里用**只剩远程**的夹具 + 变异红证，让「远程检查」成为承重项。"""
+    module = _load_module(MODULE)
+    branch = "remote-only-probe"
+    _git(fx.repo, "branch", branch)
+    fx.push_branch(branch)
+    _git(fx.repo, "branch", "-D", branch)                     # 本地删掉 ⇒ **只剩远程**
+    module._REMOTE_HEADS.clear()
+    target = module.Target(branch, None, False, False, True)
+    ok, calls = _count_remote_calls(module, lambda: module.verify_clean(target, fx.repo, fx.repo))
+    assert ok is False, "只剩远程还在 ⇒ 自证必须判「未清」（本地已没了 ⇒ 这个 False **只能**来自远程检查）"
+    assert [c for c in calls if c[0] == "ls-remote" and len(c) == 4] == [], "退回了逐分支探测"
+
+    dest = _mutate_module(tmp_path / "mut-remote", "    ok = ok and gone_remote", "    pass  # 变异：不判远程")
+    mutant = _load_module(dest)
+    module._REMOTE_HEADS.clear()
+    assert mutant.verify_clean(target, fx.repo, fx.repo) is True, \
+        "把远程判定删掉后仍是 False ⇒ 上面那条 False 不是远程检查挣来的（空断言）"
+
+
+def test_ghost_branch_is_never_reported_as_deleted(fx: Fixture, tmp_path: Path):
+    """🔴 **验收 P2-④ 的承载体**（真反例）：幽灵分支（从未推送）在任何路径下**都不许**被报成 `deleted`。
+
+    - 正常路径（读数可用）⇒ `already-absent`；
+    - **回退路径**（删后批量读数取不到）⇒ 原版**曾谎报 `deleted`** ⇒ 现在只许 `absent-unverified`。
+    """
+    module = _load_module(MODULE)
+    ghost = "ghost-never-pushed"
+
+    module._REMOTE_HEADS.clear()
+    normal, _c1 = _count_remote_calls(module, lambda: module.batch_delete_remote_branches([ghost], fx.repo))
+    assert normal == {ghost: "already-absent"}, normal
+
+    module._REMOTE_HEADS.clear()
+    real = module.remote_heads
+    module.remote_heads = lambda cwd, refresh=False: None if refresh else real(cwd)
+    try:
+        fallback, _c2 = _count_remote_calls(
+            module, lambda: module.batch_delete_remote_branches([ghost], fx.repo))
+    finally:
+        module.remote_heads = real
+        module._REMOTE_HEADS.clear()
+    assert fallback == {ghost: "absent-unverified"}, (
+        f"回退路径把幽灵分支报成 {fallback} —— `deleted` 是**假陈述**（判不了「是不是我删的」）")
+
+    dest = _mutate_module(tmp_path / "mut-ghost",
+                          '            results[b] = "already-absent"', '            results[b] = "deleted"')
+    mutant = _load_module(dest)
+    mutant._REMOTE_HEADS.clear()
+    mutated, _c3 = _count_remote_calls(mutant, lambda: mutant.batch_delete_remote_branches([ghost], fx.repo))
+    assert mutated == {ghost: "deleted"}, f"变异体没改判（锚点失效）：{mutated}"
 
 
 def test_batch_reading_unavailable_is_marked_undecidable(fx: Fixture):
