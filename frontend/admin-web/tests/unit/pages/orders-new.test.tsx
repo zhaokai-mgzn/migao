@@ -244,11 +244,15 @@ describe('NewOrderPage', () => {
     fireEvent.click(await screen.findByText('测试窗帘'))
     await screen.findByText('帘体')   // #4508：等商品落地（空态没有组壳）
 
-    // Label 无 htmlFor 关联，按「用料米数」label 所在容器定位输入框（#4598 改名前叫「数量」）
-    openWizardStep('尺寸与数量')
+    // ⚠️ 2026-09-28 布局重排：「用料米数」已移入步骤 1「用料与规格（系统推导）」且**默认只读**
+    // （值照旧能读，要输入先点「改」）；净尺寸常显 ⇒ 原来的 `openWizardStep('尺寸与数量')` 已无对应按钮。
+    openWizardStep('用料与规格')
     const qtyLabel = await screen.findByText('用料米数')
     const qtyInput = qtyLabel.closest('div')!.querySelector('input') as HTMLInputElement
+    expect(qtyInput).toHaveAttribute('readonly')
     expect(qtyInput).toHaveValue('1')
+    editMeters()
+    expect(qtyInput).not.toHaveAttribute('readonly')
 
     // 清空 → 输入框为空（不再被强改回 1）
     fireEvent.change(qtyInput, { target: { value: '' } })
@@ -275,11 +279,11 @@ describe('NewOrderPage', () => {
 
   /**
    * 窗宽 / 窗高必填（issue #4420，用户 2026-09-19 裁定）。
-   * `Label` 无 `htmlFor` 关联 ⇒ 按 label 文本定位其所在容器里的 input。
+   * `Label` 无 `htmlFor` 关联 ⇒ 按 label 文本定位其所在容器里的 input（定位法一字未改）。
+   * ⚠️ 2026-09-28 布局重排：净尺寸已从手风琴区块 1 提到**组级常显**（商品 / 颜色之后、门幅之前）
+   * ⇒ 不再需要先展开某一步（原 `openWizardStep('尺寸与数量')` 已无对应按钮）。
    */
   const fillSize = (idx = 0, w = '6.6', h = '2.6') => {
-    // issue #4511：手风琴 ⇒ 展开②会收起①，取用①的输入前必须先把它展开
-    openWizardStep('尺寸与数量', idx)
     const pick = (label: string) =>
       screen
         .getAllByText(label)
@@ -291,20 +295,45 @@ describe('NewOrderPage', () => {
   /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
   /**
    * 展开向导某一步（issue #4511 手风琴：展开一步自动收起同级其它）。
-   * ⚠️ issue #4874 **两步化**：区块 1 = 「尺寸与数量 · 工艺规格」、区块 2 = 「加工项 · 特殊选项」
-   * ⇒ 原四段锚点（尺寸与数量 / 工艺规格 / 加工项 / 特殊选项）合并为两个，
-   * 本文件各判据的锚点随之改成**新结构的等价锚点**（工艺规格并进区块 1、特殊选项并进区块 2）。
+   * ⚠️ issue #4874 **两步化** → ⚠️ 2026-09-28 布局重排**三步化**：
+   * 区块 1 = 「用料与规格（系统推导）」、区块 2 = 「加工项」、区块 3 = 「其他」
+   * （特殊选项与部位备注从原区块 1/2 搬进新区块 3；净尺寸已提到组级常显、不再是手风琴的一步）。
+   * 本文件各判据的锚点随之改成**新结构的等价锚点**。
    */
   const openWizardStep = (title: string, idx = 0) => {
     const btns = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })
     const btn = btns[idx]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
-  /** 区块 1（尺寸与数量 + 工艺规格） */
-  const expandCraft = (idx = 0) => openWizardStep('尺寸与数量', idx)
-  /** 区块 2（加工项 + 特殊选项） */
+  /** 区块 1（用料与规格：用料米数 / 单价 / 推导读数 / 改工艺参数） */
+  const expandCraft = (idx = 0) => {
+    openWizardStep('用料与规格', idx)
+    // 「改工艺参数」（内含加工类型 / 款式 / 用料公式 / 对花 / 花距 / 配布边）平时收起，
+    // 只在「推导方案未就绪」时默认展开（`craftEditOpen = craftEditTouched ?? plan === null`）
+    // ⇒ 只在它收起时点开（点第二下会把已展开的收回去）。
+    const btn = screen.getAllByTestId('craft-plan-edit')[idx]
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  }
+  /** 区块 2（加工项） */
   const expandProcessing = (idx = 0) => openWizardStep('加工项', idx)
-  const expandSpecial = (idx = 0) => openWizardStep('加工项', idx)
+  /** 区块 3（其他：特殊选项 + 部位备注） */
+  const expandSpecial = (idx = 0) => openWizardStep('其他', idx)
+
+  /**
+   * 「用料米数」常态**只读**（2026-09-28 布局：值由算料引擎给，要改才点「改」）
+   * ⇒ 要输入先切到编辑态；已在编辑态时不再点（否则把输入框收回去）。
+   */
+  const editMeters = (idx = 0) => {
+    const btn = screen.getAllByTestId('meters-edit')[idx]
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  }
+  /** 展开步骤 1 并把「用料米数」切到可输入态，返回该框（它就是**加工费米数**，issue #4598） */
+  const openMetersEditor = async () => {
+    openWizardStep('用料与规格')
+    editMeters()
+    const label = await screen.findByText('用料米数')
+    return label.closest('div')!.querySelector('input') as HTMLInputElement
+  }
 
   /**
    * chips 字段一击即中（issue #4489 判据 1）：按 `radiogroup` 名 + 选项名点击。
@@ -375,8 +404,8 @@ describe('NewOrderPage', () => {
     expect(procRow.querySelectorAll('input')).toHaveLength(1)
 
     // 面料米数 3 → 数量 3 → 加工费 5 × 3 = 15（数量联动重算）
-    openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
+    // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+    const qtyInput = await openMetersEditor()
     fireEvent.change(qtyInput, { target: { value: '3' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥15.00')
@@ -425,8 +454,8 @@ describe('NewOrderPage', () => {
     })
 
     // 面料 2.5 米 → 数量 2.5 → 加工费 3×2.5 = 7.5
-    openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
+    // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+    const qtyInput = await openMetersEditor()
     fireEvent.change(qtyInput, { target: { value: '2.5' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥7.50')
@@ -471,8 +500,8 @@ describe('NewOrderPage', () => {
     })
 
     // 面料 10 米 → 数量 10（**不再**恒为 1）⇒ 加工费 50 × 10 = 500
-    openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
+    // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+    const qtyInput = await openMetersEditor()
     fireEvent.change(qtyInput, { target: { value: '10' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥500.00')
@@ -501,8 +530,8 @@ describe('NewOrderPage', () => {
     render(<NewOrderPage />)
     await pickProduct('测试9999')
 
-    openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
+    // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+    const qtyInput = await openMetersEditor()
     fireEvent.change(qtyInput, { target: { value: '20' } })
 
     const totalRow = await screen.findByText('订单金额')
@@ -875,8 +904,8 @@ describe('NewOrderPage', () => {
 
     it('双拼：配布边米数默认 = 主布米数；改过 ⇒ metersSource=人工指定', async () => {
       await setupCurtain()
-      openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
+      // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+      const qtyInput = await openMetersEditor()
       fireEvent.change(qtyInput, { target: { value: '3' } })
       expandCraft()
       pickChip('款式', '拼色')
@@ -1149,12 +1178,15 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
       expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
       // 它们的默认档改在**加工项**上「可见可改」：布帘 ⇒ 「定型」默认勾上（真值源 §10）
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认预选**韩折
+      // （改前默认不勾）—— 断言改为钉住新默认：推荐条与勾选态两侧同时钉（`韩折 + 定型`）。
       openWizardStep('加工项')
+      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩折 + 定型')
       expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
         true
       )
       expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
-        false
+        true
       )
     })
 
@@ -1179,16 +1211,18 @@ describe('NewOrderPage', () => {
       fireEvent.click(screen.getByRole('checkbox', { name }))
     }
 
-    it('判据 5（#4521/#4874 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份**区块 1 + 区块 2', async () => {
+    it('判据 5（#4521/#4874 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份**步骤 1/2/3', async () => {
       await setupCurtain()
       expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
-      // ⚠️ issue #4874 **两步化**：四段手风琴合并为两段
-      // （红证：改前这里有 4 个 WizardStep / 4 个序号按钮）
-      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
-      expect(screen.getAllByRole('button', { name: /^1 尺寸与数量/ })).toHaveLength(1)
+      // ⚠️ 2026-09-28 布局重排：手风琴由 #4874 的**两步**变**三步**
+      // （1 用料与规格（系统推导）/ 2 加工项 / 3 其他；净尺寸已提到组级常显 ⇒ 旧「尺寸与数量」段退场）
+      // ⇒ 等价强度的新断言（钉住新版面）：三段各一份、没有第 4 段、旧段名不再有对应按钮
+      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(3)
+      expect(screen.getAllByRole('button', { name: /^1 用料与规格/ })).toHaveLength(1)
       expect(screen.getAllByRole('button', { name: /^2 加工项/ })).toHaveLength(1)
-      expect(screen.queryByRole('button', { name: /^3 / })).toBeNull()
+      expect(screen.getAllByRole('button', { name: /^3 其他/ })).toHaveLength(1)
       expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
+      expect(screen.queryByRole('button', { name: /尺寸与数量/ })).toBeNull()
       // 行头（「部位 N」+ 行内「删除」）整体移除：删除只保留在**组头**一处
       expect(screen.queryByText(/^部位 \d+$/)).toBeNull()
     })
@@ -1218,6 +1252,12 @@ describe('NewOrderPage', () => {
     it('判据 7（#4874 改判）：纱帘**不再由主布行派生** —— 费用明细里没有「纱帘」汇总行', async () => {
       await setupCurtain() // 主布 ¥100/米 × 1 米
       pickBody('纱帘')
+      // ⚠️ 2026-09-28 布局重排：纱帘也默认预选推荐组合「韩折」（组合价 ¥5/米 ⇒ 会多算 5 元加工费）。
+      // 本判据只验「**纱帘不派生汇总行**」这一件事 ⇒ 先「全不采纳」把推荐项撤掉，
+      // 让订单额回到单变量（主布 100），否则被推荐默认挡在后面验不到。
+      // （新默认本身由判据 4b / 判据 4 钉住 —— 那是它的归属判据。）
+      expandProcessing()
+      fireEvent.click(screen.getByTestId('processing-recommended-reject'))
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
       // 改前：`totals.sheerSubtotal > 0` ⇒ 费用汇总里多一行「纱帘」
@@ -1239,13 +1279,11 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       pickBody('纱帘')
       fillSize(0, '6.6', '2.6')
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
+      const qtyInput = await openMetersEditor()
       // 反转（用户 2026-09-21：「订单中选择纱帘时，**用料算法和布帘的用料算法完全一致**」）：
       // ① 原「纱帘按实际买多少填，不自动算料」的专属提示**已删除**（红证：改前它就在这）
       expect(screen.queryByText('纱帘按实际买多少填，不自动算料')).toBeNull()
-      const qtyInput = (await screen.findByText('用料米数'))
-        .closest('div')!
-        .querySelector('input') as HTMLInputElement
       fireEvent.change(qtyInput, { target: { value: '5' } })
       // ② 手改米数 ⇒ 与布帘**同一套**「人工指定 + 恢复按公式计算」通道
       // （红证：改前纱帘走的是「不算料」分支 ⇒ 该按钮根本不出现）
@@ -1269,13 +1307,17 @@ describe('NewOrderPage', () => {
         })
       )
       expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
-      expect(screen.queryByRole('button', { name: /^1 尺寸与数量/ })).toBeNull()
+      // ⚠️ 2026-09-28 布局重排：步骤 1 改名「用料与规格（系统推导）」、新增步骤 3「其他」
+      // ⇒ 三步**全不出现**（布料行没有加工 ⇒ 整组手风琴不渲染）
+      expect(screen.queryByRole('button', { name: /^1 用料与规格/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /^2 加工项/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^3 其他/ })).toBeNull()
     })
 
     it('判据 11（#4598）：帘行米数输入框 label = 「用料米数」（它就是加工费米数）；布料行仍是「数量」', async () => {
       await setupCurtain()
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28 布局重排：「用料米数」已移入步骤 1「用料与规格（系统推导）」（净尺寸常显）
+      openWizardStep('用料与规格')
 
       // 帘（成品）行：label = 「用料米数」—— 这个数就是**加工费米数**
       // （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），且由算料写回。
@@ -1381,6 +1423,11 @@ describe('NewOrderPage', () => {
 
     it('判据 2：勾「韩折」⇒ 落库 `processingItems[].name` 含「韩折」且 `craft=「韩褶」`（**派生**，不是页面选的）', async () => {
       await setup()
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
+      // ⇒ 先「全不采纳」撤掉推荐，再手勾「韩折」（这才是本条判据要验的动作）
+      expandProcessing()
+      fireEvent.click(screen.getByTestId('processing-recommended-reject'))
+      expect(checkedNames()).toEqual([])
       toggle('韩折')
       const info = await submitAndGetInfo()
 
@@ -1424,6 +1471,12 @@ describe('NewOrderPage', () => {
       expandProcessing()
       expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
         false
+      )
+      // ⚠️ 2026-09-28 布局重排：纱帘**只**默认预选工艺项「韩折」（不带定型）—— 钉住新默认
+      expect(screen.getByTestId('processing-recommended-names')).toHaveTextContent('韩折')
+      expect(screen.getByTestId('processing-recommended-names')).not.toHaveTextContent('定型')
+      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+        true
       )
       expect((await submitAndGetInfo()).isShaped).toBe(false)
     })
@@ -1656,16 +1709,22 @@ describe('NewOrderPage', () => {
     })
 
     it('判据 9a：已选摘要带出**工艺名**（`已选 N 项 · 工艺：X`）', async () => {
-      // 去掉「定型」⇒ 布帘默认勾选不会占一格，计数只反映手选的工艺项
+      // 去掉「定型」⇒ 布帘默认勾选不会占一格，计数只反映工艺项
       await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '定型'))
-      fireEvent.click(screen.getByRole('checkbox', { name: '韩折' }))
+      // ⚠️ 2026-09-28 布局重排：目录里有「韩折」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
+      // （改前要手点一下）—— 断言改为钉住新默认；摘要口径（已选 N 项 · 工艺：X）一字未动
+      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+        true
+      )
       collapseProcessing()
-      // 工艺取**派生值**（`craftHint`）—— 与②工艺规格摘要同一个取值点
+      // 工艺取**派生值**（`craftHint`）—— 与步骤 1 摘要同一个取值点
       expect(screen.getByText('已选 1 项 · 工艺：韩褶')).toBeInTheDocument()
     })
 
     it('判据 9b：没选工艺项 ⇒ 摘要只写「已选 N 项」（不出现空的「工艺：」）', async () => {
-      await setup()
+      // ⚠️ 2026-09-28 布局重排：目录里的「韩折」现在**默认已勾选**（推荐组合）⇒ 要验「没选工艺项」
+      // 需要一份**没有工艺项**的目录（只留 打孔 / 定型 / 罗马杆安装）
+      await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '韩折'))
       // 布帘 ⇒ 「定型」默认勾上（1 项，无 `craftHint`）
       collapseProcessing()
       expect(screen.getByText('已选 1 项')).toBeInTheDocument()
@@ -1678,7 +1737,8 @@ describe('NewOrderPage', () => {
   // 点击 ⇒ 收起/展开**整张卡的卡片体**。复用 `WizardStep` 的模式（`button` +
   // `aria-expanded` + chevron，单一实现 = 页面里的 `CollapsibleHeader`）。
   //
-  // 与卡**体内**既有的四步手风琴（#4511）**正交**：那是「哪一步展开」，这是「整卡展开」。
+  // 与卡**体内**既有的三步手风琴（#4511；2026-09-28 由两步重排为 1 用料与规格 / 2 加工项 / 3 其他）
+  // **正交**：那是「哪一步展开」，这是「整卡展开」。
   // ══════════════════════════════════════════════════════════════════════════
   describe('#4679 商品卡组头可折叠（点头部收起/展开整卡）', () => {
     /**
@@ -1690,6 +1750,8 @@ describe('NewOrderPage', () => {
       screen.getByRole('button', { name: new RegExp(`^${index} ${name}`) })
     /**
      * 卡片体存在判据 = 体内**向导步骤**开关的数量（整卡收起 ⇒ 体内一切都不渲染）。
+     * ⚠️ 2026-09-28 布局重排：步骤 1 由「尺寸与数量 · 工艺规格」改名「用料与规格（系统推导）」
+     * ⇒ 探针改为 `用料与规格`（`尺寸与数量` 已无对应按钮）。
      * 用 `^\\d+ ${title}`（不是 `^1 `）⇒ 对任意组序都成立。
      */
     const bodyStepCount = (title: string) =>
@@ -1749,7 +1811,7 @@ describe('NewOrderPage', () => {
       render(<NewOrderPage />)
       await pickFirst('遮光窗帘')
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
-      expect(bodyStepCount('尺寸与数量')).toBe(1)
+      expect(bodyStepCount('用料与规格')).toBe(1)
     })
 
     it('判据 2（红证）：点头部 ⇒ **整卡收起**（aria-expanded=false + 体内 ①~④ 全不渲染）；再点 ⇒ 展开', async () => {
@@ -1761,7 +1823,7 @@ describe('NewOrderPage', () => {
 
       fireEvent.click(headerToggle(1, '遮光窗帘'))
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'false')
-      for (const title of ['尺寸与数量', '加工项']) {
+      for (const title of ['用料与规格', '加工项', '其他']) {
         expect(bodyStepCount(title)).toBe(0)
       }
       // 收起 ≠ 看不出是哪一行：商品名 / 帘体 / 金额仍留在组头
@@ -1772,7 +1834,7 @@ describe('NewOrderPage', () => {
 
       fireEvent.click(headerToggle(1, '遮光窗帘'))
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
-      expect(bodyStepCount('尺寸与数量')).toBe(1)
+      expect(bodyStepCount('用料与规格')).toBe(1)
     })
 
     it('判据 3：收起时组头**带出尺寸与米数摘要**（用户口径「顺手带出更好」）', async () => {
@@ -1793,20 +1855,20 @@ describe('NewOrderPage', () => {
       await pickFirst('遮光窗帘')
       await pickSecond('雪尼尔窗帘')
       expect(screen.getByText('共 2 个商品')).toBeInTheDocument()
-      expect(bodyStepCount('尺寸与数量')).toBe(2)
+      expect(bodyStepCount('用料与规格')).toBe(2)
 
       fireEvent.click(headerToggle(1, '遮光窗帘'))
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'false')
       expect(headerToggle(2, '雪尼尔窗帘')).toHaveAttribute('aria-expanded', 'true')
-      expect(bodyStepCount('尺寸与数量')).toBe(1) // 只剩第 2 张的体
+      expect(bodyStepCount('用料与规格')).toBe(1) // 只剩第 2 张的体
 
       // 反向：再收起第 2 张 ⇒ 两张都收起；展开第 1 张 ⇒ 第 2 张仍收起（不是全局开关）
       fireEvent.click(headerToggle(2, '雪尼尔窗帘'))
-      expect(bodyStepCount('尺寸与数量')).toBe(0)
+      expect(bodyStepCount('用料与规格')).toBe(0)
       fireEvent.click(headerToggle(1, '遮光窗帘'))
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
       expect(headerToggle(2, '雪尼尔窗帘')).toHaveAttribute('aria-expanded', 'false')
-      expect(bodyStepCount('尺寸与数量')).toBe(1)
+      expect(bodyStepCount('用料与规格')).toBe(1)
     })
 
     it('判据 5（反向护栏）：点「删除」⇒ **只删**、不触发折叠；收起态下删除仍可用', async () => {
@@ -1829,7 +1891,7 @@ describe('NewOrderPage', () => {
       fireEvent.click(deleteButtons()[1])
       expect(screen.queryByRole('button', { name: /雪尼尔窗帘/ })).toBeNull()
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
-      expect(bodyStepCount('尺寸与数量')).toBe(1)
+      expect(bodyStepCount('用料与规格')).toBe(1)
     })
   })
 
@@ -1875,28 +1937,42 @@ describe('NewOrderPage', () => {
       )
     }
 
-    it('判据 ①（红证）：**只有两个**步骤区块，标题即新结构（改前四段：尺寸/工艺规格/加工项/特殊选项）', async () => {
+    it('判据 ①（红证）：**只有三个**步骤区块，标题即新结构（改前四段 / #4874 两步 / 2026-09-28 三步）', async () => {
       await setupCurtain()
-      // 红证：改前 `getAllByTestId(/^wizard-step-/)` = 4（四段手风琴）
-      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
-      expect(screen.getByRole('button', { name: /^1 尺寸与数量 · 工艺规格/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /^2 加工项 · 特殊选项/ })).toBeInTheDocument()
-      // 反向断言：改前第 3/4 段的序号锚点不再存在
-      expect(screen.queryByRole('button', { name: /^3 / })).toBeNull()
+      // ⚠️ 2026-09-28 布局重排：手风琴由 #4874 的**两步**变**三步**
+      // （1 用料与规格（系统推导）/ 2 加工项 / 3 其他）；净尺寸已提到组级常显。
+      // 红证：改前（#4874）这里 = 2（「1 尺寸与数量 · 工艺规格」/「2 加工项 · 特殊选项」）
+      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(3)
+      expect(screen.getByRole('button', { name: /^1 用料与规格（系统推导）/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^2 加工项/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^3 其他/ })).toBeInTheDocument()
+      // 反向断言：旧的 3/4 段序号锚点不再存在（新第 3 段是「其他」，不是旧的第 3 段）
       expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
-      // 原四段的**内容**都还在（只是换了归属）：尺寸 / 工艺规格 / 加工项 / 特殊选项
-      openWizardStep('尺寸与数量')
-      expect(screen.getByText('用料米数')).toBeInTheDocument()
+      // 原四段的**内容**都还在（只是换了归属 + 位置）：尺寸 / 用料与规格 / 加工项 / 特殊选项
+      // ① 净尺寸**常显在组级**（不再属于任何手风琴步骤 —— 旧「尺寸与数量」段已不存在）
+      expect(screen.getByLabelText('窗宽 (米)')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /尺寸与数量/ })).toBeNull()
+      // ② 步骤 1：用料米数 / 单价**常态只读**（2026-09-28 新形态），点「改」才可输入
+      expandCraft()
+      const metersOf = () =>
+        screen.getByText('用料米数').closest('div')!.querySelector('input') as HTMLInputElement
+      expect(metersOf()).toHaveAttribute('readonly')
+      fireEvent.click(screen.getByTestId('meters-edit'))
+      expect(metersOf()).not.toHaveAttribute('readonly')
       expect(screen.getByRole('radiogroup', { name: '加工类型' })).toBeInTheDocument()
+      // ③ 步骤 2：手选加工项
       openWizardStep('加工项')
-      // 区块 2 里**同时**有「加工项」（手选 checkbox）与「特殊选项」（19 项 = 原④段的内容）
       expect(screen.getByRole('checkbox', { name: '定型' })).toBeInTheDocument()
+      // ④ 「特殊选项」（19 项 = 原④段的内容）与「部位备注」已移入**新区块 3「其他」**
+      openWizardStep('其他')
       expect(screen.getByRole('button', { name: '加铅块' })).toBeInTheDocument()
+      expect(screen.getByTestId('line-item-remark')).toBeInTheDocument()
     })
 
     it('判据 ⑤（红证）：选韩褶公式 ⇒ 展示**自动算出的褶数**；本文件试算桩永不返回 ⇒ 「—」（不编数）', async () => {
       await setupCurtain()
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里 ⇒ 展开步骤 1 + 该块
+      expandCraft()
       // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩褶公式（褶数法）」
       expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
       // 红证：改前页面**没有**用料公式控件、也没有褶数展示块 ⇒ 下面这行必红
@@ -1907,7 +1983,8 @@ describe('NewOrderPage', () => {
 
     it('判据 ⑤b（红证）：选褶倍数公式 ⇒ 出现档位 chips，文案**逐字取自算料配置** tiers[*].label', async () => {
       await setupCurtain()
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里
+      expandCraft()
       fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
       const tiers = screen.getByTestId('craft-tier-options')
       // fixture 的 label 与键名不同字（`标准档（2.0倍）` ≠ `standard`）⇒ 页面写死一套中文档位名必红
@@ -1923,7 +2000,8 @@ describe('NewOrderPage', () => {
     it('判据 ⑤c（红证）：档位**进落库**（`processingInfo.craftTier` 不再钉死 standard）', async () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28 布局重排：用料公式 / 档位 chips 在步骤 1 的「改工艺参数」块里
+      expandCraft()
       fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
       fireEvent.click(
         within(screen.getByTestId('craft-tier-options')).getByRole('radio', {
@@ -1944,7 +2022,8 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       // 显式提示（红证：改前没有这个提示元素 —— 配置读不到时页面**静默**按钉死的档位算）
       expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
-      openWizardStep('尺寸与数量')
+      // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里
+      expandCraft()
       // 公式值域不依赖配置（常量与引擎同源）⇒ chips 仍在，缺省 = pleat
       expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
       // 档位**值域取不到** ⇒ 不渲染档位 chips（编一套 = 第二份档位真值）

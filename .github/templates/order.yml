@@ -19,6 +19,7 @@ business_truths:
   - [order.create-flow] 创建订单前置：必须先调 product_detail 查 SKU；多 SKU 必须让用户选规格（颜色/售卖方式/门幅），单 SKU 直接用；禁止跳过 SKU 选择直接下单（order_create.py）
   # 发货链真值（issue #5651 收口时登记）：销售单（三联纸）与桌面纸面消费的「实发」
   - [order.shipment-actual-quantity-owner] 实发数量（这一单**实际**发了多少）的唯一真值载体 = `order_shipment_items`（shipped_quantity / unit / set_count / roll_count），与 `order_items.quantity`（**下单**数量）是两个真值；消费入口 = `OrderShipmentService.readShipment`，任何消费方（工人 H5 / 桌面纸面）不得另建第二份投影；缺值一律 null（**不填 0** —— 0 是「一件都没发」的另一个意思）
+  - [order.admin-new-order-input-surface] 管理端「新增订单」页的**输入面** = 商品（含颜色）+ **净窗宽 / 净窗高**（#5202「三项输入收敛」）；门幅 / 用料米数 / 单价 / 加工类型 / 自动识别特征一律**系统推导**、常态只读展示（各自可就地「改」）；加工项区给出**系统推荐组合**（目录里的「韩折」= 工艺默认韩褶 + 布帘的「定型」，真值源 §10）供**采纳 / 全不采纳**；特殊选项与部位备注收在第三步「其他」；「拍照 / 上传识别」入口挂在**商品信息**卡（2026-09-28 用户裁定）
   - [order.shipment-read-faces] 该真值有**两个读面**且共用同一份读实现 `OrderShipmentService.readShipment`：工人面 `GET /api/worker/shipment/orders/{orderId}`（工人 session 准入，零商家权限码）与管理面 `GET /api/admin/orders/{id}/shipments`（商家 session，权限码 `order:list`）；两面响应形状逐字同源；跨租户统一 404（与「订单不存在」**逐字同形**，不是 403 —— 403 等于承认该 id 存在）
 reviewer_asserts:
   - API: POST /api/admin/orders/{id}/confirm-payment（pending 订单）

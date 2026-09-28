@@ -131,18 +131,35 @@ const feeMatched = (amount = 133) => ({
 })
 
 /**
- * 展开向导**区块 2**「加工项 · 特殊选项」（issue #4874 两步化；#4489 判据 3：默认收起）。
+ * 展开向导**区块 2**「加工项」（issue #4874 两步化；#4489 判据 3：默认收起）。
  * ⚠️ 手风琴是**互斥**的（`setOpenStep(openStep === n ? 0 : n)`）⇒ 展开区块 2 会**卸载**区块 1
- * 的子内容（宽高/用料米数/单价/部位备注全在里面）—— 商家实际也是这样：翻到区块 2 就看不到区块 1。
+ * （`用料米数` / `单价` 的只读读数）与区块 3（部位备注）的子内容 —— 商家实际也是这样：翻到
+ * 区块 2 就看不到另两步的内容。
  */
 const expandProcessing = () => {
   const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
-/** 把每个商品行的**区块 1**「尺寸与数量 · 工艺规格」展开回来（部位备注输入位就在它里面） */
-const openSizeSteps = () => {
-  screen.getAllByRole('button', { name: /^1 尺寸与数量/ }).forEach((btn) => {
+/**
+ * 把每个商品行的**步骤 3「其他」**展开回来。
+ * ⚠️ **2026-09-28 布局重排**：部位备注（`line-item-remark`）从原步骤 1「尺寸与数量」移入
+ * 步骤 3「其他」（与「特殊选项」同一步 —— 都是「低频但要能改」的两项）；
+ * 净窗宽 / 窗高已提到**组级**（常显，不再属于任何手风琴步骤）。
+ */
+const openOtherSteps = () => {
+  screen.getAllByRole('button', { name: /^3 其他/ }).forEach((btn) => {
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  })
+}
+
+/**
+ * 把每个商品行的**步骤 1「用料与规格（系统推导）」**展开回来（`用料米数` 读数在它里面）。
+ * ⚠️ 2026-09-28 布局重排前这是 `openSizeSteps`（标题「尺寸与数量 · 工艺规格」已退场，
+ * 净窗宽 / 净窗高提到**组级**常显）；步骤之间**互斥** ⇒ 展开步骤 3 会把它卸载。
+ */
+const openSpecSteps = () => {
+  screen.getAllByRole('button', { name: /^\d+ 用料与规格/ }).forEach((btn) => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   })
 }
@@ -205,7 +222,7 @@ describe('下单页部位备注写侧（#5685）', () => {
 
   it('判据 1（红证）：填了备注 ⇒ 提交 payload 的 processingInfo.remark **逐字**等于输入，且试算同值', async () => {
     await setupLine()
-    openSizeSteps() // 区块 2 展开后区块 1 已收起 ⇒ 备注输入位要显式展开回来
+    openOtherSteps() // 步骤 2 展开后其余步骤已收起 ⇒ 备注输入位（在**步骤 3「其他」**）要显式展开回来
     // 客户现行系统里的原话就是这个形态（`公式--48个折`）
     const typed = '公式--48个折'
     fireEvent.change(remarkInput(), { target: { value: typed } })
@@ -235,7 +252,7 @@ describe('下单页部位备注写侧（#5685）', () => {
 
   it('判据 2b（红证）：只打空格 ⇒ 同样**不落键**（纯空白 = 未填，不是真值）', async () => {
     await setupLine()
-    openSizeSteps()
+    openOtherSteps()
     fireEvent.change(remarkInput(), { target: { value: '   ' } })
     // 前提自证：空白确实进了输入框（否则这条判据会退化成上一条的重复）
     expect(remarkInput().value).toBe('   ')
@@ -248,7 +265,7 @@ describe('下单页部位备注写侧（#5685）', () => {
 
   it('判据 3（红证）：上限 200 —— maxLength 挡住超长输入 + 字数提示可见', async () => {
     await setupLine()
-    openSizeSteps()
+    openOtherSteps()
     const input = remarkInput()
     // ① 浏览器层上限：`maxLength=200`（服务端不截断 ⇒ 超长必须在录入处挡住）
     expect(input.maxLength).toBe(200)
@@ -268,7 +285,7 @@ describe('下单页部位备注写侧（#5685）', () => {
 
   it('判据 4（红证）：备注是**逐行**的 —— 第二行没填 ⇒ 第二行的 processingInfo 里没有该键', async () => {
     await setupLine()
-    openSizeSteps()
+    openOtherSteps()
     const typed = '公式--48个折'
     fireEvent.change(remarkInput(0), { target: { value: typed } })
 
@@ -277,19 +294,36 @@ describe('下单页部位备注写侧（#5685）', () => {
     fireEvent.click(await screen.findByText('点击搜索并选择商品', {}, { timeout: 2000 }))
     const dialog = await screen.findByRole('dialog', { name: '选择商品' }, { timeout: 2000 })
     fireEvent.click(await within(dialog).findByText('遮光窗帘', {}, { timeout: 2000 }))
-
-    // 第二行的宽高（必填）—— 两行的区块 1 都展开着 ⇒ 下标 1 = 第二行
-    // ⚠️ 显式压到 2s：`tests/setup.ts` 把 `asyncUtilTimeout` 提到了 5s，与 vitest 默认单测超时
-    // **相等** ⇒ 未命中时会报「Test timed out」而不是「找不到元素」，红证里读不出判据。
-    await waitFor(() => expect(screen.getAllByTestId('line-item-remark')).toHaveLength(2), {
-      timeout: 2000,
-    })
-    expect(remarkInput(1).value).toBe('')
+    // 第二行的宽高（必填）—— 净尺寸已提到**组级**（常显，不属于任何手风琴步骤）。
+    // ⚠️ 第二行是**异步**出现的（商品详情接口回来后才建行）⇒ 先等两组的净尺寸都上屏。
+    await waitFor(() => expect(screen.getAllByText('窗宽 (米)')).toHaveLength(2), { timeout: 2000 })
     fireEvent.change(inputOf('窗宽 (米)', 1), { target: { value: '3.3' } })
     fireEvent.change(inputOf('窗高 (米)', 1), { target: { value: '2.6' } })
+
     // 第二行也要**真的就绪**：算料试算落回米数后才过得了「数量须大于 0」的提交闸门
-    // （不等它 ⇒ validate() 失败 ⇒ 一次 createOrder 都不会发生，而红证会读成"备注没落库"）
-    await waitFor(() => expect(inputOf('用料米数', 1)).toHaveValue('13.3'), { timeout: 2000 })
+    // （不等它 ⇒ validate() 失败 ⇒ 一次 createOrder 都不会发生，而红证会读成"备注没落库"）。
+    // 2026-09-28 布局重排：`用料米数` 读数在**步骤 1「用料与规格（系统推导）」**里 ⇒ 两行都展开
+    // （步骤互斥：上一段把第 1 行停在步骤 3 ⇒ 它现在收起着），下标 1 = 第二行。
+    await waitFor(
+      () => {
+        openSpecSteps()
+        expect(inputOf('用料米数', 1)).toHaveValue('13.3')
+      },
+      { timeout: 2000 }
+    )
+
+    // 部位备注在**步骤 3「其他」**（新行缺省停在步骤 1）⇒ 逐行展开；
+    // ⚠️ 顺序要紧：步骤 3 一展开，该行的 `用料米数` 读数就随步骤 1 卸载 ⇒ 必须放在上面之后。
+    // ⚠️ 显式压到 2s：`tests/setup.ts` 把 `asyncUtilTimeout` 提到了 5s，与 vitest 默认单测超时
+    // **相等** ⇒ 未命中时会报「Test timed out」而不是「找不到元素」，红证里读不出判据。
+    await waitFor(
+      () => {
+        openOtherSteps()
+        expect(screen.getAllByTestId('line-item-remark')).toHaveLength(2)
+      },
+      { timeout: 2000 }
+    )
+    expect(remarkInput(1).value).toBe('')
 
     await submit()
     await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())

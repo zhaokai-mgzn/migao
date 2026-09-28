@@ -127,7 +127,11 @@ const feeMatched = (amount = 133) => ({
   },
 })
 
-/** 展开向导**区块 2**「加工项 · 特殊选项」（issue #4874 两步化；#4489 判据 3：默认收起） */
+/**
+ * 展开向导**步骤 2「加工项」**（issue #4874 两步化；#4489 判据 3：默认收起）。
+ * ⚠️ 2026-09-28 布局重排：本步标题由「加工项 · 特殊选项」改为「加工项」（特殊选项移入步骤 3「其他」），
+ * 顶部新增推荐组合条（`processing-recommended`）；`fee-unit-price-override` 仍在本步里。
+ */
 const expandProcessing = () => {
   const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)

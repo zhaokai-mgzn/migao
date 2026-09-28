@@ -156,21 +156,69 @@ test.describe('订单创建', () => {
    * 本组断言只依赖**结构**（标题/档位/控件名与几何），不依赖任何未 mock 的后端端点 ⇒ 在无 Java 后端的
    * E2E 栈里同样稳定。
    */
-  test.describe('两步化 + 帘体档位 + 用料公式 + 收货物流控件（issue #4874/#4875）', () => {
+  test.describe('分区块化 + 帘体档位 + 用料公式 + 收货物流控件（issue #4874/#4875；2026-09-28 版面重排）', () => {
     test.beforeEach(async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
       await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).first().click()
       await expect(page.getByTestId('wizard-step-1')).toBeVisible({ timeout: 10_000 })
     })
 
-    test('订单项录入只有两个步骤区块（原四段手风琴已合并）', async ({ page }) => {
+    test('订单项录入分三个步骤区块（原四段手风琴已合并；净尺寸提到组级）', async ({ page }) => {
       await expect(page.getByTestId('wizard-step-1')).toBeVisible()
       await expect(page.getByTestId('wizard-step-2')).toBeVisible()
-      // 反向断言：原 ③④ 两个步骤号**不得**再出现（合并 = 真的合并，不是并存）
-      await expect(page.getByTestId('wizard-step-3')).toHaveCount(0)
+      await expect(page.getByTestId('wizard-step-3')).toBeVisible()
+      // 反向断言：第四段步骤号**不得**出现（合并 = 真的合并，不是并存）
       await expect(page.getByTestId('wizard-step-4')).toHaveCount(0)
-      await expect(page.getByTestId('wizard-step-1')).toContainText('尺寸与数量 · 工艺规格')
-      await expect(page.getByTestId('wizard-step-2')).toContainText('加工项 · 特殊选项')
+      await expect(page.getByTestId('wizard-step-1')).toContainText('用料与规格（系统推导）')
+      await expect(page.getByTestId('wizard-step-2')).toContainText('加工项')
+      await expect(page.getByTestId('wizard-step-3')).toContainText('其他')
+      // 2026-09-28：净尺寸（窗宽 / 窗高）提到**组级常显** ⇒ 不再是任何一步的内容
+      await expect(page.getByText('窗宽 (米)')).toBeVisible()
+      await expect(page.getByTestId('wizard-step-1')).not.toContainText('窗宽 (米)')
+      await expect(page.getByTestId('wizard-step-3')).not.toContainText('窗宽 (米)')
+    })
+
+    /**
+     * 2026-09-28 版面重排的两条**真浏览器**判据（§15.2）：
+     * ① 净尺寸排在**推导读数之前**（`用料米数` 在步骤 1 里，净尺寸在它上方）；
+     * ② 推导读数（用料米数 / 单价）常态 `readonly`，点「改」才可输入。
+     * ⚠️ 这里**不**断言「推荐组合条」（`processing-recommended`）：它只在目录里真有「韩折」时渲染，
+     * 而本 spec 的加工项目录来自 fixture（`铅坠安装` / `罗马杆环安装`）⇒ 由 vitest 的确定性目录桩钉住
+     * （`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`，用例 OR-052）。
+     */
+    test('净尺寸前置 + 推导读数常态只读（点「改」才可输入）', async ({ page }) => {
+      // 用两个输入框自身的 `aria-label` 取节点再比**文档顺序**（`compareDocumentPosition`）——
+      // 与 vitest 侧同一条判据同法（`<label>` 里还有必填星号等子节点 ⇒ 按文本内容取不可靠）。
+      // 三态**显式**返回（`missing` ⇒ 红）：两框不在时不得退化成「顺序也算对」。
+      const sizeOrder = await page.evaluate(() => {
+        const size = document.querySelector('[aria-label="窗宽 (米)"]')
+        const meters = document.querySelector('[aria-label="用料米数"]')
+        if (!size || !meters) return 'missing'
+        return size.compareDocumentPosition(meters) & Node.DOCUMENT_POSITION_FOLLOWING
+          ? 'size-first'
+          : 'meters-first'
+      })
+      expect(sizeOrder).toBe('size-first')
+
+      const meters = page.getByLabel('用料米数')
+      await expect(meters).toHaveAttribute('readonly', '')
+      await page.getByTestId('meters-edit').first().click()
+      await expect(meters).not.toHaveAttribute('readonly', '')
+
+      const price = page.getByLabel('单价 (¥/米)')
+      await expect(price).toHaveAttribute('readonly', '')
+      await page.getByTestId('price-edit').first().click()
+      await expect(price).not.toHaveAttribute('readonly', '')
+    })
+
+    test('「拍照 / 上传识别」入口挂在「商品信息」卡（2026-09-28 用户裁定）', async ({ page }) => {
+      // 全页只有这一个入口，且它**不在**收货信息卡里
+      await expect(page.getByTestId('image-recognize-button')).toHaveCount(1)
+      await expect(page.getByTestId('image-recognize-button')).toBeVisible()
+      const receiverCard = page.locator('div.p-6', { hasText: '收货信息' }).last()
+      await expect(receiverCard.getByTestId('image-recognize-button')).toHaveCount(0)
+      const goodsCard = page.locator('div.p-6', { hasText: '商品信息' }).last()
+      await expect(goodsCard.getByTestId('image-recognize-button')).toHaveCount(1)
     })
 
     test('帘体只剩「布帘 / 纱帘」两档（「布帘+纱帘」已移除）', async ({ page }) => {
@@ -180,7 +228,10 @@ test.describe('订单创建', () => {
       await expect(page.getByRole('radio', { name: '布帘+纱帘' })).toHaveCount(0)
     })
 
-    test('工艺规格：用料公式在、褶距已移除（步骤 1 默认展开）', async ({ page }) => {
+    test('工艺规格：用料公式在、褶距已移除（步骤 1 的「改工艺参数」区里）', async ({ page }) => {
+      // 2026-09-28：用料公式 / 档位渲染在步骤 1 的「改工艺参数」展开区内（推导未就绪时该区已展开）
+      const editBtn = page.getByTestId('craft-plan-edit').first()
+      if ((await editBtn.getAttribute('aria-expanded')) === 'false') await editBtn.click()
       await expect(page.getByRole('radio', { name: '韩褶公式（褶数法）' })).toBeVisible()
       await expect(page.getByRole('radio', { name: '褶倍数公式（倍数法）' })).toBeVisible()
       // 反向断言：褶距控件与文案都不得再出现（#4874 第 7 条）

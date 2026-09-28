@@ -139,6 +139,16 @@ async function setupCurtain() {
   await waitFor(() => expect(inputOf('用料米数').value).toMatch(/^13\.3/))
 }
 
+/**
+ * 2026-09-28 布局重排：「用料米数」常态 = **只读展示**（值由算料引擎推导 ⇒ 用户口径
+ * 「其他信息尽量推导」）⇒ **要输入先点「改」**把它变成输入框（点第二次回只读）。
+ * 只读态的**读值**断言照旧成立（框还在，只是 `readOnly`）—— 本文件里需要**输入**的用例才点它。
+ */
+const openMetersEdit = () => {
+  const btn = screen.getAllByTestId('meters-edit')[0]
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 /** 点提交（收货信息填好）—— 用于读「既有可见校验」是否把非法值拦下 */
 async function submitOrder() {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
@@ -194,6 +204,7 @@ beforeEach(() => {
 describe('#5210 接受差异 ①：负数不再被整键吞掉，改由**既有可见校验**拦下', { timeout: 20000 }, () => {
   it('用料米数敲 "-5"：框里留得住 → 提交被「数量须大于 0」拦下（不落单）', async () => {
     await setupCurtain()
+    openMetersEdit() // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」才可输入
     const qty = inputOf('用料米数')
     fireEvent.change(qty, { target: { value: '-5' } })
     // 旧实现：`-` 属非法字符 ⇒ **整键忽略**，框里仍是 13.3（本断言在旧实现下必红）
@@ -226,6 +237,7 @@ describe('#5210 接受差异 ①：负数不再被整键吞掉，改由**既有�
 describe('#5210 接受差异 ②：不完整输入 "." 落 null（不再出现 NaN）', { timeout: 20000 }, () => {
   it('用料米数敲 "."：框里落到 "0"（`?? 0` 站点），提交被「数量须大于 0」拦下', async () => {
     await setupCurtain()
+    openMetersEdit() // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」才可输入
     const qty = inputOf('用料米数')
     fireEvent.change(qty, { target: { value: '.' } })
     // 旧实现：`Number('.') = NaN` ⇒ 框里显示空白（`NaN` 不是有限数）；新实现：null ⇒ `?? 0` ⇒ 0
@@ -269,6 +281,7 @@ describe('#5210 接受差异 ③：> 3 位小数失焦归一到 3 位', { timeou
 describe('#5210 差异面之外的**同口径**（负控：收敛不得顺手改这些 —— 两版都绿）', { timeout: 20000 }, () => {
   it('清空 + 失焦：米数落 0（框里回落显示 `0`）、宽高落 null（框里空）—— 与旧实现逐字同口径', async () => {
     await setupCurtain()
+    openMetersEdit() // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」才可输入
     const qty = inputOf('用料米数')
     fireEvent.change(qty, { target: { value: '' } })
     fireEvent.blur(qty)
@@ -289,6 +302,7 @@ describe('#5210 差异面之外的**同口径**（负控：收敛不得顺手改
 
   it('只聚焦 + 离开：米数**不得**被标成「人工指定」（失焦不回调 ⇒ 不唤醒调用方副作用）', async () => {
     await setupCurtain()
+    openMetersEdit() // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」才可输入
     const qty = inputOf('用料米数')
     fireEvent.focus(qty)
     fireEvent.blur(qty)

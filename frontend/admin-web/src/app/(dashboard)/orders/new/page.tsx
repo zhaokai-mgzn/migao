@@ -260,6 +260,15 @@ interface OrderLineItem {
    */
   shapedItemTouched: boolean
   /**
+   * 商家**手改过工艺项**（2026-09-28 下单页布局：工艺默认「韩折」由系统**预选**）—— 落在**行状态**里
+   * （同 `shapedItemTouched`，收起/展开重挂不丢）。
+   *
+   * 手改过（勾 / 取消 / 点「全不采纳」）⇒ 换商品 / 改帘体 / 目录到达**不得**再把推荐组合勾回来
+   * （同 #4489 的「手改留痕」纪律）。**不是**第二个工艺真值：工艺的唯一派生点仍是
+   * 「勾选的工艺项的 `craftHint`」（{@link craftFromItems}）。
+   */
+  craftItemTouched: boolean
+  /**
    * 用料米数来源（真值源 §8：褶数/用料**必须带来源**，防多渠道不一致）—— issue #4434。
    * `公式计算` = 由算料引擎试算预填（宽/高/开数/拼次变化时自动重算）；
    * `人工指定` = 商家手改过 ⇒ **试算不得静默改回**（只有显式「恢复按公式计算」才切回）。
@@ -420,6 +429,19 @@ const FEE_SOURCE_LABELS: Record<string, string> = {
 const SHAPED_ITEM_NAME = '定型'
 
 /**
+ * 「韩折」加工项名（**V83 目录逐字** —— `api_admin_processing-items` 契约快照里 `pi-v83-1-02`）——
+ * 系统**推荐组合**里的那个工艺项（2026-09-28 用户裁定）。
+ *
+ * 它的 `craftHint = 韩褶`（= `lib/craft-calc-request.ts::DEFAULT_CRAFT_NAME`）⇒ 勾它 = 工艺是韩褶；
+ * 工艺的唯一派生点仍是「勾选的工艺项的 `craftHint`」（{@link craftFromItems}）⇒
+ * **预选加工项**不新增第二份工艺口径（#4566 的纪律：前端不补一份默认工艺）。
+ *
+ * 用户 2026-09-28（下单页布局）：「正常用户提供净窗高 / 窗宽，然后再确认是否要韩折 / 打孔 /
+ * 定型等信息即可」⇒ 这套推荐组合由系统**预选**、商家一键「全不采纳」可撤（撤过即留痕，不再勾回）。
+ */
+const DEFAULT_CRAFT_ITEM_NAME = '韩折'
+
+/**
  * 该行的**手选加工项**清单 —— 滤掉**自动推导特征**（`超高`/`超宽`/`倒幅`）。
  *
  * 为什么目录里有它们却要滤掉：商家配「加工费组合」时必须能选到它们
@@ -544,6 +566,55 @@ function withShapedDefault(
     ...line.selectedProcessing,
     [item.id]: { selected, qty: prev?.qty ?? deriveProcessingQty(line.quantity) },
   }
+}
+
+/**
+ * 「韩折」加工项的**默认勾选**（2026-09-28 用户裁定：商家只提供净窗宽 / 净窗高，再确认
+ * 「是否要韩折 / 打孔 / 定型」即可 ⇒ 推荐组合由系统**预选**，一键「全不采纳」可撤）。
+ *
+ * 与 {@link withShapedDefault} 三条边界**逐字同构**（手改留痕 / 目录无此项 / 已是目标态），
+ * 只多一条：**布料组整组无加工**（#4493）⇒ 不为它勾任何项。
+ */
+function withCraftItemDefault(
+  line: OrderLineItem
+): Record<string, { selected: boolean; qty: number }> {
+  if (line.craftItemTouched) return line.selectedProcessing
+  if (line.saleForm === SALE_FORM_FABRIC) return line.selectedProcessing
+  const item = line.processingItems.find((pi) => pi.name === DEFAULT_CRAFT_ITEM_NAME)
+  if (!item) return line.selectedProcessing
+  const prev = line.selectedProcessing[item.id]
+  if (prev?.selected === true) return line.selectedProcessing
+  return {
+    ...line.selectedProcessing,
+    [item.id]: { selected: true, qty: prev?.qty ?? deriveProcessingQty(line.quantity) },
+  }
+}
+
+/**
+ * **推荐组合的预选**（下单页的唯一入口）= 定型（真值源 §10：按帘体）∪ 韩折（工艺默认）。
+ *
+ * 三处调用点（目录到达 / 改帘体 / 换商品 / 布料切回成品帘）共用同一个入口 ——
+ * 避免两套默认各补一半（同 #4489 的「默认只能有一个来源」纪律）。
+ */
+function withRecommendedItemDefaults(
+  line: OrderLineItem
+): Record<string, { selected: boolean; qty: number }> {
+  const withShaped = withShapedDefault(line)
+  return withCraftItemDefault({ ...line, selectedProcessing: withShaped })
+}
+
+/**
+ * **推荐组合的项名**（目录名，2026-09-28）= 工艺默认「韩折」+ 帘体的定型默认（真值源 §10：布帘是 /
+ * 纱帘否）；布料组整组无加工（#4493）⇒ 空。
+ *
+ * 与 {@link withRecommendedItemDefaults} 是**同一份口径的两个读法**（预选 / 界面展示）——
+ * 名字在这里只出现一次，避免「预选勾了 A、界面推荐写着 B」。
+ */
+function recommendedItemNamesOf(line: OrderLineItem): string[] {
+  if (line.saleForm === SALE_FORM_FABRIC) return []
+  return defaultIsShapedForBody(line.curtainBody)
+    ? [DEFAULT_CRAFT_ITEM_NAME, SHAPED_ITEM_NAME]
+    : [DEFAULT_CRAFT_ITEM_NAME]
 }
 
 /**
@@ -778,6 +849,48 @@ type AutoFeatureDecision = 'adopt' | 'reject' | 'add'
 
 /** 强制加那一行的依据文案（系统没推算依据可引用 ⇒ 照实说明「未推算」，不编一个理由） */
 const MANUAL_ADD_REASON = '系统未推算，商家手动加'
+
+/**
+ * **净尺寸**那一行的就地徽标（issue #4658 的放置 × 2026-09-28 的搬迁）——
+ * 生效特征名（`超高` / `超宽` / `倒幅` / 派生「拼接」）+ 「门幅未维护」。
+ *
+ * 商家填尺寸时就看得见系统识别结果（不必翻到下面的推导面板）。
+ * 2026-09-28：尺寸从行内「区块 1」提到**组级**（紧跟商品 / 颜色）⇒ 本函数随之提到**模块级**，
+ * 由组级与行内**共用同一份判定**（两份就会出现「组头说超高、面板说没有」——本仓明令禁止）。
+ *
+ * 被**不采纳**的项不出现在徽标里（徽标 = **生效值**，与推导面板读同一份 `autoFeatures`）。
+ */
+function sizeAutoBadgesOf(line: OrderLineItem): React.ReactNode {
+  if (line.saleForm === SALE_FORM_FABRIC) return null
+  const autoFeatures = autoFeatureRowsOf(line).filter((row) => !row.rejected)
+  /** 「SKU 未维护门幅」——必须先有一个选中的 SKU（issue #4899：否则「还没选规格」被显示成「未维护」） */
+  const doorWidthMissing =
+    line.selectedSku !== null && parseDoorWidth(line.selectedSku.doorWidth) === null
+  if (autoFeatures.length === 0 && !doorWidthMissing) return null
+  return (
+    <span data-testid="size-auto-badges" className="flex items-center gap-1 shrink-0">
+      {autoFeatures.map((row) => (
+        <span
+          key={row.name}
+          data-testid={`size-auto-badge-${row.name}`}
+          title={row.reason}
+          className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
+        >
+          {row.name}
+        </span>
+      ))}
+      {doorWidthMissing && (
+        <span
+          data-testid="size-door-width-missing"
+          title="该 SKU 未维护门幅 —— 系统不按缺省门幅推算（分幅与加工类型判不了；超高/超宽是按净窗宽高与企业阈值判的）"
+          className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
+        >
+          门幅未维护
+        </span>
+      )}
+    </span>
+  )
+}
 
 /**
  * 该行**推导项裁决 / 落库 / 拼接派生**的**同一份**入参（issue #5230 收敛）——
@@ -1203,6 +1316,7 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     processingFeeOverride: null,
     openCountTouched: false,
     shapedItemTouched: false,
+    craftItemTouched: false,
     // issue #5202：默认档**不是**商家的选择（`cuttingModeTouched=false` ⇒ 加工类型按服务端推导/规则）
     cuttingModeTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
@@ -1528,8 +1642,8 @@ export default function NewOrderPage() {
       prev.map((it) => {
         if (it.processingItems === processingCatalog) return it
         const next: OrderLineItem = { ...it, processingItems: processingCatalog }
-        // 目录到达 ⇒ 按帘体补「定型」的**默认勾选**（issue #4566；商家手动改过的不覆盖）
-        return { ...next, selectedProcessing: withShapedDefault(next) }
+        // 目录到达 ⇒ 补**推荐组合**的默认勾选（定型 #4566 + 韩折，2026-09-28；商家手改过的不覆盖）
+        return { ...next, selectedProcessing: withRecommendedItemDefaults(next) }
       })
     )
   }, [processingCatalog, processingCatalogLoading])
@@ -1656,8 +1770,8 @@ export default function NewOrderPage() {
           metersSource: METERS_SOURCE_FORMULA,
         }
         // 定型默认随帘体（#4566）：写「定型」加工项的勾选态，商家手改过则不覆盖
-        // （⚠️ 与用料算法无关，不动）
-        next.selectedProcessing = withShapedDefault(next)
+        // （⚠️ 与用料算法无关，不动）；韩折（工艺默认，2026-09-28）同批按同一入口补
+        next.selectedProcessing = withRecommendedItemDefaults(next)
         return next
       })
     )
@@ -1740,7 +1854,13 @@ export default function NewOrderPage() {
       const groupLines = prev.filter((l) => l.groupId === groupId)
       if (groupLines.length === 0) return prev
       if (form !== SALE_FORM_FABRIC) {
-        return prev.map((l) => (l.groupId === groupId ? { ...l, saleForm: form } : l))
+        return prev.map((l) => {
+          if (l.groupId !== groupId) return l
+          const next: OrderLineItem = { ...l, saleForm: form }
+          // 布料 ⇒ 成品帘：推荐组合按帘体重新预选（布料组整组无加工 ⇒ 切回来要把默认补回来；
+          // 商家撤过的那一位有手改留痕 ⇒ 不会被勾回）- 2026-09-28
+          return { ...next, selectedProcessing: withRecommendedItemDefaults(next) }
+        })
       }
       const at = prev.findIndex((l) => l.groupId === groupId)
       const kept: OrderLineItem = {
@@ -1762,6 +1882,30 @@ export default function NewOrderPage() {
       next.splice(at, 0, kept)
       return next
     })
+  }
+
+  /**
+   * **净尺寸**（2026-09-28 下单页布局）：窗宽 / 窗高是商家**最先**要填的两格 ⇒ 已从行内「区块 1」
+   * 提到**组级**（商品 / 颜色之后、门幅之前），与「门幅规则要等尺寸填齐才能自动选」同序。
+   *
+   * 尺寸仍是**行状态**（一套帘共用一份）⇒ 回调按行 id 落；两条联动与改前**逐字同源**：
+   * ① 宽 → 打开方式（真值源 §10 的启发式；手改过 `openCountTouched` ⇒ 不覆盖）；
+   * ② 尺寸齐了 ⇒ 该组还没选门幅时按**门幅规则**补默认（issue #4877 裁定 C）。
+   */
+  const handleLineWidthChange = (line: OrderLineItem, w: number | null) => {
+    updateLineItem(line.id, {
+      width: w,
+      ...(w !== null && !line.openCountTouched
+        ? { craft: { ...line.craft, openCount: deriveOpenCount(w) } }
+        : {}),
+    })
+    autoSelectSkuByRuleForGroup(line.groupId, { width: w })
+  }
+
+  /** 净窗高 —— 同 {@link handleLineWidthChange}（高变 ⇒ 门幅规则可能改判 ⇒ 补默认） */
+  const handleLineHeightChange = (line: OrderLineItem, h: number | null) => {
+    updateLineItem(line.id, { height: h })
+    autoSelectSkuByRuleForGroup(line.groupId, { height: h })
   }
 
   /** 删除整个商品组（含其下所有部位行）；至少保留一组 */
@@ -1889,8 +2033,8 @@ export default function NewOrderPage() {
         productLoading: next.productLoading,
         unitPrice: next.unitPrice,
         processingItems: next.processingItems,
-        // 换商品 = 清空勾选 ⇒ 按帘体补「定型」的默认勾选（issue #4566）
-        selectedProcessing: withShapedDefault(next),
+        // 换商品 = 清空勾选 ⇒ 按帘体补**推荐组合**的默认勾选（定型 #4566 + 韩折，2026-09-28）
+        selectedProcessing: withRecommendedItemDefaults(next),
       }
     })
   }
@@ -1960,10 +2104,63 @@ export default function NewOrderPage() {
       processingFeeOverride: null,
       // 手改过定型（勾或取消）⇒ 留痕，改帘体不再覆盖
       ...(pi.name === SHAPED_ITEM_NAME ? { shapedItemTouched: true } : {}),
+      // 手改过**工艺项**（勾 / 取消 —— 「全不采纳」也走这里）⇒ 留痕：之后换商品 / 改帘体 /
+      // 目录到达都不再把推荐组合勾回来（2026-09-28，同族纪律）
+      ...(pi.craftHint ? { craftItemTouched: true } : {}),
     })
 
     if (replaced) {
       toast.info(`一张单只能有一个工艺：已把「${replaced.name}」换成「${pi.name}」`)
+    }
+  }
+
+  /**
+   * **推荐组合的采纳 / 全不采纳**（2026-09-28 用户裁定）。
+   *
+   * 为什么不是「逐项调 `toggleProcessing`」：那会各写一次**全量** `selectedProcessing`，
+   * 后一次读到的是**旧 props** ⇒ 前一项的勾选被覆盖（连环调只在选中项相同时才碰巧正确）。
+   * ⇒ 本函数**一次**算完整份对象再写。
+   *
+   * 两条留痕：删过 / 采纳过都算商家的表态 —— `craftItemTouched` / `shapedItemTouched`
+   * 只在**该项真在推荐集里**时才置位（否则「纱帘只推荐韩折」会把定型也锁死）。
+   */
+  const decideRecommendedItems = (line: OrderLineItem, decision: 'adopt' | 'reject') => {
+    const names = recommendedItemNamesOf(line)
+    const recommended = line.processingItems.filter((pi) => names.includes(pi.name))
+    if (recommended.length === 0) return
+    const want = decision === 'adopt'
+    const nextSelected = { ...line.selectedProcessing }
+    /** 被推荐组合顶掉的工艺项（**工艺单值护栏**，与 `toggleProcessing` 同口径） */
+    let replaced: ProcessingItem | undefined
+    for (const pi of recommended) {
+      const prev = nextSelected[pi.id]
+      if (want && pi.craftHint) {
+        // 一张单只能有一个工艺声明：采纳工艺项 ⇒ 取消**别的**已选工艺项（推荐集之外的才算「别的」）
+        replaced ??= line.processingItems.find(
+          (other) =>
+            other.id !== pi.id &&
+            Boolean(other.craftHint) &&
+            !names.includes(other.name) &&
+            other.craftHint !== pi.craftHint &&
+            nextSelected[other.id]?.selected === true
+        )
+        if (replaced) nextSelected[replaced.id] = { ...nextSelected[replaced.id], selected: false }
+      }
+      nextSelected[pi.id] = {
+        selected: want,
+        // 采纳 ⇒ 数量按当前米数推导（与 `toggleProcessing` 同一口径）；撤回 ⇒ 保留原数量
+        qty: want && !prev?.selected ? deriveProcessingQty(line.quantity) : prev?.qty ?? 1,
+      }
+    }
+    updateLineItem(line.id, {
+      selectedProcessing: nextSelected,
+      // 加工项一变 ⇒ 组合键就变 ⇒ 上一组合的人工改价必须清掉（同 `toggleProcessing`，#4878）
+      processingFeeOverride: null,
+      ...(names.includes(SHAPED_ITEM_NAME) ? { shapedItemTouched: true } : {}),
+      ...(names.includes(DEFAULT_CRAFT_ITEM_NAME) ? { craftItemTouched: true } : {}),
+    })
+    if (replaced) {
+      toast.info(`一张单只能有一个工艺：已把「${replaced.name}」换成「${DEFAULT_CRAFT_ITEM_NAME}」`)
     }
   }
 
@@ -2592,11 +2789,17 @@ export default function NewOrderPage() {
           {/* ============= 商品信息（多行项） ============= */}
           <Card>
             <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
+              {/* 识别入口挂在**商品信息**标题行（2026-09-28 用户裁定，红框即本行）——
+                  它一次产出「明细（要走选品面板建行）+ 收货信息 + 备注」，产出最多的一块就是这里；
+                  收货信息只占其中一小块 ⇒ 入口不再挂在那边（避免「拍照入口属于收货信息」的错觉）。 */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <SectionTitle icon={<Package className="w-4 h-4" />} title="商品信息" />
-                <span className="text-xs text-neutral-400">
-                  共 {lineItems.length} 个商品
-                </span>
+                <div className="flex items-center gap-3">
+                  <ImageRecognizeButton targetType="order" onRecognized={handleRecognized} />
+                  <span className="text-xs text-neutral-400">
+                    共 {lineItems.length} 个商品
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -2613,6 +2816,9 @@ export default function NewOrderPage() {
                     onChangeSaleForm={(form) => handleSaleFormChange(group.id, form)}
                     onChangeCurtainBody={(body) => handleCurtainBodyChange(group.id, body)}
                     onRemoveGroup={() => removeGroup(group.id)}
+                    // 净尺寸（2026-09-28）：两格尺寸提到组级（商品 / 颜色之后）—— 落在本组主行上
+                    onChangeWidth={(w) => handleLineWidthChange(group.lines[0], w)}
+                    onChangeHeight={(h) => handleLineHeightChange(group.lines[0], h)}
                     onChangeQty={(lineId, q) => {
                       const target = lineItems.find((l) => l.id === lineId)
                       if (target) handleLineQtyChange(target, q)
@@ -2629,21 +2835,6 @@ export default function NewOrderPage() {
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
                         // 部位备注（issue #5685）：只进行状态 —— 落库由 `buildLineProcessingInfo` 单点完成
                         onChangeRemark={(r) => updateLineItem(line.id, { remark: r })}
-                        onChangeWidth={(w) => {
-                          updateLineItem(line.id, {
-                            width: w,
-                            // **宽 → 打开方式**联动（真值源 §10 的启发式）：手改过就不覆盖
-                            ...(w !== null && !line.openCountTouched
-                              ? { craft: { ...line.craft, openCount: deriveOpenCount(w) } }
-                              : {}),
-                          })
-                          // 尺寸齐了 ⇒ 若该组还没选门幅，按**门幅规则**补默认（issue #4877 裁定 C）
-                          autoSelectSkuByRuleForGroup(line.groupId, { width: w })
-                        }}
-                        onChangeHeight={(h) => {
-                          updateLineItem(line.id, { height: h })
-                          autoSelectSkuByRuleForGroup(line.groupId, { height: h })
-                        }}
                         onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
                         onChangeCraft={(patch) => {
                           updateLineItem(line.id, {
@@ -2689,6 +2880,10 @@ export default function NewOrderPage() {
                         onProcessingFeeOverrideChange={(p) =>
                           updateLineItem(line.id, { processingFeeOverride: p })
                         }
+                        // 推荐组合的采纳 / 全不采纳（2026-09-28）：一次写整份勾选态
+                        onRecommendedDecision={(decision) =>
+                          decideRecommendedItems(line, decision)
+                        }
                       />
                     )}
                   />
@@ -2721,10 +2916,9 @@ export default function NewOrderPage() {
                   选择客户
                 </button>
               </div>
-              {/* 图片识别快通道（issue #5321 包 1）：拍照/上传 → 预填收货信息 + 备注 */}
-              <div className="mb-4">
-                <ImageRecognizeButton targetType="order" onRecognized={handleRecognized} />
-              </div>
+              {/* 图片识别快通道（issue #5321 包 1；**2026-09-28 起入口挂在「商品信息」标题行**）——
+                  本卡不再放入口：识别一次产出的是「明细 + 收货信息 + 备注」，
+                  商家在商品信息那里点一次即预填本卡（识别到的收货字段仍带 `RecognizedBadge`）。 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-start gap-2">
                   <Input
@@ -3374,9 +3568,6 @@ interface LineItemBlockProps {
   /** 「恢复按公式计算」（issue #4434）：切回算料预填（手改后不会被静默改回，只能显式恢复） */
   onRestoreFormula: () => void
   onChangePrice: (p: number) => void
-  /** 成品宽 / 高（米；issue #4420 必填） */
-  onChangeWidth: (w: number | null) => void
-  onChangeHeight: (h: number | null) => void
   onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
   /**
@@ -3409,6 +3600,13 @@ interface LineItemBlockProps {
   onDerivedOptionDecision: (name: string, decision: 'adopt' | 'reject') => void
   /** 「改单价」（元/米，issue #4874）：`null` = 清空（回到未改过） */
   onProcessingFeeOverrideChange: (price: number | null) => void
+  /**
+   * **推荐组合的裁决**（2026-09-28）：`adopt` 采纳（把推荐项勾上）· `reject` 全不采纳（取消）。
+   *
+   * ⚠️ 必须是**一次整份写**的回调：逐项调 `onToggleProcessing` 会各写一次全量
+   * `selectedProcessing` ⇒ 后一次覆盖前一次，只剩最后一项生效。
+   */
+  onRecommendedDecision: (decision: 'adopt' | 'reject') => void
   /**
    * **部位备注**（issue #5685）：行级自由文本 —— 上游原样存进行状态，落库由
    * `buildLineProcessingInfo` 单点完成（**不在回调里拼 payload**）。
@@ -3508,6 +3706,12 @@ interface ProductGroupBlockProps {
   onChangeCurtainBody: (body: CurtainBody) => void
   /** 删除整个商品组 */
   onRemoveGroup: () => void
+  /**
+   * **净尺寸**（2026-09-28 布局）：宽 / 高两格由组级渲染（商品 / 颜色之后、门幅之前）——
+   * 与「门幅规则要等尺寸填齐才能自动选最优门幅」（#4877/#4899）同序。
+   */
+  onChangeWidth: (w: number | null) => void
+  onChangeHeight: (h: number | null) => void
   /** 渲染本组这一套帘（由页面传入，保证 props 装配只有一处） */
   renderPosition: (line: OrderLineItem) => React.ReactNode
   /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
@@ -3653,6 +3857,8 @@ function ProductGroupBlock({
   onChangeSaleForm,
   onChangeCurtainBody,
   onRemoveGroup,
+  onChangeWidth,
+  onChangeHeight,
   renderPosition,
   onChangeQty,
   onChangePrice,
@@ -3663,6 +3869,12 @@ function ProductGroupBlock({
    * 与卡体内四步手风琴（#4511）正交：那是「哪一步展开」，这是「整卡展开」。
    */
   const [open, setOpen] = useState(true)
+  /**
+   * **规格 chips 的展开态**（2026-09-28 布局）：门幅由规则自动选中 ⇒ 常态**只读展示**
+   * （商家零点击），点「改」才展开 chips 换一个。规则判不了（还没选颜色 / 没有可用 SKU）⇒
+   * 没有可展示的读数 ⇒ 直接给 chips（不假装有结果）。
+   */
+  const [skuPickerOpen, setSkuPickerOpen] = useState(false)
   const colorOptions = useMemo(() => uniqueColors(group.product?.skus), [group.product])
   const skuOptions = useMemo(() => {
     if (!group.product?.skus || group.selectedColorId == null) return []
@@ -3673,6 +3885,10 @@ function ProductGroupBlock({
   const errProduct = errors[`line_${first.id}_product`]
   const errColor = errors[`line_${first.id}_color`]
   const errSpec = errors[`line_${first.id}_spec`]
+  // 净尺寸（2026-09-28 提到组级）的就地报错 + 识别徽标来源，与行内同源
+  const errWidth = errors[`line_${first.id}_width`]
+  const errHeight = errors[`line_${first.id}_height`]
+  const sizeAutoBadges = sizeAutoBadgesOf(first)
   const colorName = colorOptions.find((c) => c.id === group.selectedColorId)?.name
   const groupAmount = group.lines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0),
@@ -3843,121 +4059,206 @@ function ProductGroupBlock({
                   </div>
                 )}
 
-                {group.selectedColorId != null && skuOptions.length > 0 && (
-                  <div className="mb-4">
-                    <Label required>门幅 / 售卖方式</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {skuOptions.map((sku) => {
-                        const active = group.selectedSku?.id === sku.id
+                {/* ===== 组级属性条：售卖形态 + 帘体（2026-09-28 布局）=====
+                    两档收成**一行小开关**并提到门幅之前：商家先答「怎么卖 / 什么帘」（它们决定下面出什么），
+                    再填净尺寸。改前它们是两个各带一段说明的独立块，且排在门幅之后。
+                    ⚠️ 不放进组头：组头是 `<button>`（`CollapsibleHeader`），里面再嵌 radio 是**非法嵌套**。 */}
+                <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-neutral-600">售卖形态</span>
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="售卖形态">
+                      {([SALE_FORM_FINISHED, SALE_FORM_FABRIC] as SaleForm[]).map((form) => {
+                        const active = group.saleForm === form
                         return (
                           <button
-                            key={sku.id}
+                            key={form}
                             type="button"
-                            onClick={() => onSelectSku(sku)}
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => onChangeSaleForm(form)}
                             className={
-                              'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
+                              'h-8 px-2.5 rounded border text-xs transition-colors ' +
                               (active
                                 ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
                                 : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
                             }
                           >
-                            <div className="text-left">
-                              <div className="font-medium">
-                                {sku.doorWidth || '默认规格'}
-                              </div>
-                              <div className="text-xs text-neutral-400 mt-0.5">
-                                库存 {sku.stock ?? 0}
-                              </div>
-                            </div>
-                            <span className="text-sm font-semibold">
-                              ¥{Number(sku.price).toFixed(2)}
-                            </span>
+                            {form}
                           </button>
                         )
                       })}
                     </div>
+                  </div>
+                  {group.saleForm !== SALE_FORM_FABRIC && (
+                    <div className="flex items-center gap-2">
+                      {/* 帘体（issue #4521；#4874 收窄为两档）——**商品组级**：它决定这条明细行的
+                          **部位**（`curtainType`）与**落库几行**，也决定「定型」的默认档（真值源 §10）。
+                          ⚠️ **用料算法与帘体无关**（2026-09-21 裁定：纱帘与布帘**完全一致**）。 */}
+                      <span className="text-xs font-medium text-neutral-600">帘体</span>
+                      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="帘体">
+                        {CURTAIN_BODY_OPTIONS.map((body) => {
+                          const active = group.curtainBody === body
+                          return (
+                            <button
+                              key={body}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => onChangeCurtainBody(body)}
+                              className={
+                                'h-8 px-2.5 rounded border text-xs transition-colors ' +
+                                (active
+                                  ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                                  : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                              }
+                            >
+                              {body}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <span className="text-xs text-neutral-400">
+                    {group.saleForm === SALE_FORM_FABRIC
+                      ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 加工项，也不生成加工单）'
+                      : '成品帘：做成帘，需要宽高 / 工艺规格与加工项'}
+                  </span>
+                </div>
+
+                {/* ===== 净尺寸（2026-09-28 布局：商家**最先**要填的两格）=====
+                    为什么提到门幅之前：
+                    ① 门幅规则要**等尺寸填齐**才能自动选最优门幅（#4877 裁定 C / #4899）——
+                       改前尺寸在门幅下面，商家先撞上「选门幅」，而规则此时还判不了；
+                    ② #5202 的「三项输入收敛」说的就是「颜色 + 净窗宽 + 净窗高」，尺寸正是其中两格；
+                    ③ 其余信息（门幅 / 用料米数 / 单价 / 加工类型 / 特征）一律**系统推导**，见下一块与行内。 */}
+                {group.saleForm !== SALE_FORM_FABRIC && (
+                  <div className="mb-4 rounded border border-neutral-200 bg-neutral-50/50 p-3">
+                    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-sm font-medium text-neutral-700">净尺寸</span>
+                      <span className="text-xs text-neutral-400">
+                        按窗户净尺寸填，单位米（成品宽 = 窗宽、成品高 = 窗高）—— 一套帘共用一份尺寸
+                      </span>
+                      {sizeAutoBadges}
+                    </div>
+                    <div className="grid max-w-md grid-cols-2 gap-3">
+                      <div>
+                        <Label required>窗宽 (米)</Label>
+                        {/* 识别来的尺寸要**标出来**（issue #5349 判据 4：识别输入 ≠ 系统推导） */}
+                        {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.width) && (
+                          <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.width} />
+                        )}
+                        <NumberInput
+                          value={first.width}
+                          onChange={(next) => onChangeWidth(positiveOrNull(next))}
+                          decimals={3}
+                          placeholder="如 6.6"
+                          aria-label="窗宽 (米)"
+                          className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                        />
+                        {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
+                      </div>
+                      <div>
+                        <Label required>窗高 (米)</Label>
+                        {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.height) && (
+                          <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.height} />
+                        )}
+                        <NumberInput
+                          value={first.height}
+                          onChange={(next) => onChangeHeight(positiveOrNull(next))}
+                          decimals={3}
+                          placeholder="如 2.6"
+                          aria-label="窗高 (米)"
+                          className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                        />
+                        {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===== 门幅 / 规格（系统推导：规则自动选中 ⇒ 只读展示 + 「改」）=====
+                    issue #4877 裁定 C：多门幅时按**门幅规则**自动选最省的 ⇒ 商家常态**零点击**；
+                    这里只读展示系统选了哪一支（门幅 / 单价 / 库存 / 来源），要换才点「改」展开 chips。
+                    规则判不了（还没选颜色 / 该颜色没有 SKU）⇒ 没有读数可展示 ⇒ 直接给 chips。 */}
+                {group.selectedColorId != null && skuOptions.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label required>门幅 / 规格</Label>
+                      {group.selectedSku && (
+                        <button
+                          type="button"
+                          data-testid="sku-picker-toggle"
+                          aria-expanded={skuPickerOpen}
+                          onClick={() => setSkuPickerOpen(!skuPickerOpen)}
+                          className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {skuPickerOpen ? '收起规格' : '改'}
+                        </button>
+                      )}
+                    </div>
+                    {group.selectedSku && !skuPickerOpen ? (
+                      <div
+                        data-testid="sku-summary"
+                        className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
+                      >
+                        {/* ⚠️ 文案刻意与 chips 里的 `{sku.doorWidth}`（如 `2.8米`）**不同形**
+                            （`门幅 2.8米`）—— 同一行里既有只读读数又有可点 chips 时，
+                            两者的可访问名必须能分开（否则点 chips 的用例会点到只读读数上）。 */}
+                        <span className="text-sm font-medium text-neutral-900">
+                          门幅 {group.selectedSku.doorWidth || '默认规格'}
+                        </span>
+                        <span className="text-sm text-neutral-600">
+                          ¥{Number(group.selectedSku.price).toFixed(2)}/米
+                        </span>
+                        <span className="text-xs text-neutral-400">
+                          库存 {group.selectedSku.stock ?? 0}
+                        </span>
+                        <span
+                          data-testid="sku-summary-source"
+                          className="text-xs text-primary-600"
+                        >
+                          {first.skuAutoSelected ? '系统按门幅规则自动选中' : '人工选定'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {skuOptions.map((sku) => {
+                          const active = group.selectedSku?.id === sku.id
+                          return (
+                            <button
+                              key={sku.id}
+                              type="button"
+                              onClick={() => onSelectSku(sku)}
+                              className={
+                                'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
+                                (active
+                                  ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                                  : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                              }
+                            >
+                              <div className="text-left">
+                                <div className="font-medium">
+                                  {sku.doorWidth || '默认规格'}
+                                </div>
+                                <div className="text-xs text-neutral-400 mt-0.5">
+                                  库存 {sku.stock ?? 0}
+                                </div>
+                              </div>
+                              <span className="text-sm font-semibold">
+                                ¥{Number(sku.price).toFixed(2)}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
                   </div>
                 )}
               </>
             )}
           </>
-        )}
-
-        {/* **售卖形态**（issue #4493，用户裁定）——放在**商品公共属性区**：
-            它和「商品 / 颜色 / 门幅」一起定义「这一组是什么、怎么卖」，而且**决定这一组下面出什么**
-            （布料 ⇒ 没有部位行）。同一块布既能按米卖、也能做成帘 ⇒ 组级，不是行级、也不是商品属性。 */}
-        {group.product && (
-          <div className="mb-4">
-            <Label required>售卖形态</Label>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="售卖形态">
-              {([SALE_FORM_FINISHED, SALE_FORM_FABRIC] as SaleForm[]).map((form) => {
-                const active = group.saleForm === form
-                return (
-                  <button
-                    key={form}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => onChangeSaleForm(form)}
-                    className={
-                      'h-9 px-3 rounded border text-sm transition-colors ' +
-                      (active
-                        ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                        : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                    }
-                  >
-                    {form}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-neutral-400">
-              {group.saleForm === SALE_FORM_FABRIC
-                ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 加工项，也不生成加工单）'
-                : '成品帘：做成帘，需要宽高 / 工艺规格与加工项'}
-            </p>
-          </div>
-        )}
-
-        {/* **帘体**（issue #4521；#4874 收窄为两档）——**商品组级**，与售卖形态同层：
-            它决定这条明细行的**部位**（`curtainType`：布帘缺省不写 / 纱帘显式写 —— 工序路线的
-            索引键）与**落库几行**（各一行；「布 + 纱」= 两个商品组）。
-            ⚠️ **用料算法与帘体无关**（2026-09-21 用户裁定：纱帘与布帘**完全一致**）——
-            两种帘体走同一条算料链路，这里不再有「哪种不算料」的分支。
-            取代了原来的「部位」字段与「新增部位」按钮 —— 那两者让商家能选出**自相矛盾**的组合。 */}
-        {group.product && group.saleForm !== SALE_FORM_FABRIC && (
-          <div className="mb-4">
-            <Label required>帘体</Label>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="帘体">
-              {CURTAIN_BODY_OPTIONS.map((body) => {
-                const active = group.curtainBody === body
-                return (
-                  <button
-                    key={body}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => onChangeCurtainBody(body)}
-                    className={
-                      'h-9 px-3 rounded border text-sm transition-colors ' +
-                      (active
-                        ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                        : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                    }
-                  >
-                    {body}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-neutral-400">
-              {/* ⚠️ issue #4874：「布帘+纱帘」档已整体移除 ⇒ 这里不再有那一档的说明文案。
-                  ⚠️ 2026-09-21 口径反转：**两种帘体用料算法完全一致** ⇒ 说明文案不再分叉
-                  （原「纱帘：买多少填多少（不自动算料）」已删除）。 */}
-              按所选用料公式自动算用料米数（布帘 / 纱帘同一算法）
-            </p>
-          </div>
         )}
 
         {group.saleForm === SALE_FORM_FABRIC ? (
@@ -3987,8 +4288,6 @@ function LineItemBlock({
   onChangeQty,
   onRestoreFormula,
   onChangePrice,
-  onChangeWidth,
-  onChangeHeight,
   onToggleProcessing,
   onChangeCraft,
   onAutoFeatureDecision,
@@ -3999,10 +4298,21 @@ function LineItemBlock({
   onChangePlanOverrides,
   onDerivedOptionDecision,
   onProcessingFeeOverrideChange,
+  onRecommendedDecision,
   onChangeRemark,
 }: LineItemBlockProps) {
-  /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
+  /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 用料与规格 / 2 加工项 / 3 其他（2026-09-28 重排） */
   const [openStep, setOpenStep] = useState(1)
+  /**
+   * **用料米数 / 单价**的就地编辑态（2026-09-28 布局）—— 常态 `false` = 只读展示
+   * （「其他信息尽量推导」：这两个数分别由算料引擎与所选规格给），点「改」才变输入框。
+   */
+  const [metersEditOpen, setMetersEditOpen] = useState(false)
+  const [priceEditOpen, setPriceEditOpen] = useState(false)
+  /** **系统推荐组合**在本行的实例（目录里没有该项 ⇒ 不出现，如老租户未重建目录；布料组 ⇒ 空） */
+  const recommendedItems = line.processingItems.filter((pi) =>
+    recommendedItemNamesOf(line).includes(pi.name)
+  )
   /**
    * 加工项**一级分类导航 + 关键字搜索**（issue #4576）—— 纯**展示态**。
    *
@@ -4296,40 +4606,14 @@ function LineItemBlock({
   const hasAnyProcessingSelection = processingDetailsOf(line).length > 0
 
   /**
-   * ① 尺寸行旁的**就地徽标**（issue #4658）—— 生效特征名 + （门幅走了默认值时的）提示。
-   *
-   * 与 ②「系统识别」块**读同一份** `autoFeatures`（同一**服务端判定**结果，issue #4976 包 2b ⇒
-   * 严禁第二份推导实现）。被**不采纳**的不出现在徽标里（徽标 = 生效值）。
+   * ① 尺寸行旁的**就地徽标** —— 2026-09-28 随「净尺寸」一起搬到**组级**：
+   * 单一实现 = 模块级 `sizeAutoBadgesOf(line)`（组级与行内共用，避免两份判定各说各话）。
    */
-  const sizeAutoBadges =
-    !isFabricLine && (autoFeatures.length > 0 || doorWidthMissing) ? (
-      <span data-testid="size-auto-badges" className="flex items-center gap-1 shrink-0">
-        {autoFeatures.map((row) => (
-          <span
-            key={row.name}
-            data-testid={`size-auto-badge-${row.name}`}
-            title={row.reason}
-            className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
-          >
-            {row.name}
-          </span>
-        ))}
-        {doorWidthMissing && (
-          <span
-            data-testid="size-door-width-missing"
-            title="该 SKU 未维护门幅 —— 系统不按缺省门幅推算（分幅与加工类型判不了；超高/超宽是按净窗宽高与企业阈值判的）"
-            className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
-          >
-            门幅未维护
-          </span>
-        )}
-      </span>
-    ) : null
 
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
-  const errWidth = errors[`line_${line.id}_width`]
-  const errHeight = errors[`line_${line.id}_height`]
+  // ⚠️ 2026-09-28：`errWidth` / `errHeight` 的渲染点随「净尺寸」搬到了组级
+  // （`ProductGroupBlock` 直接读同一个 `errors` 键）⇒ 这里不再取，避免留一份没人读的变量。
 
   /** 摘要（issue #4420）：一眼看懂「这是什么、多大、多少钱」—— 部位已移除（#4521）⇒ 取帘体 */
   const summarySpec = [
@@ -4357,69 +4641,53 @@ function LineItemBlock({
                 序号/摘要/展开态按新结构走：摘要同时带出尺寸米数单价**与**工艺规格的合并结果。 */}
             <WizardStep
               step={1}
-              title="尺寸与数量 · 工艺规格"
-              badges={sizeAutoBadges}
+              title="用料与规格（系统推导）"
               summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米 · ${summarySpec || '按行业默认'}`}
               {...stepProps(1)}
             >
-            {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
-            <div className="pt-3 border-t border-neutral-100">
-              <p className="mb-3 text-xs text-neutral-400">
-                宽 / 高按<strong>窗户净尺寸</strong>填，单位米（成品宽 = 窗宽、成品高 = 窗高）——
-                <strong>一套帘共用一份尺寸</strong>（同一商品组内主布与纱帘同宽同高）
-              </p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <Label required>窗宽 (米)</Label>
-                  {/* 识别来的尺寸要**标出来**（issue #5349 判据 4：识别输入 `[图片识别]`
-                      ≠ 推导出的项「系统推导」—— 否则商家不知道这一格该不该信）。
-                      徽标只在**被识别填过的那一行**上（行状态 `recognizedSizeKeys`）。 */}
-                  {(line.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.width) && (
-                    <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.width} />
-                  )}
-                  {/* 三项输入之一（issue #5202）；数字框能打出 `0.`（如 0.5 米窄窗） */}
-                  <NumberInput
-                    value={line.width}
-                    onChange={(next) => onChangeWidth(positiveOrNull(next))}
-                    decimals={3}
-                    placeholder="如 6.6"
-                    aria-label="窗宽 (米)"
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                  />
-                  {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
-                </div>
-                <div>
-                  <Label required>窗高 (米)</Label>
-                  {/* 同窗宽：识别预填的格子必须有来源标注（issue #5349 判据 4） */}
-                  {(line.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.height) && (
-                    <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.height} />
-                  )}
-                  {/* 三项输入之一（issue #5202） */}
-                  <NumberInput
-                    value={line.height}
-                    onChange={(next) => onChangeHeight(positiveOrNull(next))}
-                    decimals={3}
-                    placeholder="如 2.6"
-                    aria-label="窗高 (米)"
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                  />
-                  {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
-                </div>
+            {/* **用料与规格（系统推导）**（2026-09-28 布局）——这里只剩**推导读数**：
+                用料米数 / 单价常态**只读展示**（值分别来自算料引擎与所选规格），要改才点「改」
+                就地变输入框；净窗宽 / 净窗高已提到**组级**（商品 / 颜色之后 —— 那才是商家唯一的输入面），
+                「部位备注」移入下一步「其他」。
+                ⚠️ 手改留痕一字未变：改用料 ⇒ `人工指定` + 记下本次入参签名（未跟随要显式告知 + 一键恢复）。 */}
+            <div className="pt-4 border-t border-neutral-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   {/* label = 「用料米数」（issue #4598）：这个输入框的值**就是加工费米数**
                       （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），
                       而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几套」。
                       ⚠️ 布料行（`FabricRow`）**不改**：布料按 `sellingMethod` 卖布，不是同一个业务。 */}
-                  <Label required>用料米数</Label>
+                  {/* ⚠️ 用 `<span>` 而**不是** `<div>` 承载「标签 + 改」这一行：既有判据按
+                      「`用料米数` 标签的 `closest('div')` 里找 input」定位输入框 ⇒ 换成 div 会把
+                      这个最近的 div 变成「只有标签和按钮」那一行，输入框就找不到了（实测）。
+                      span 是 phrasing content，`label` + `button` 放进去合法。 */}
+                  <span className="flex items-center justify-between gap-2">
+                    <Label required>用料米数</Label>
+                    {/* 「改」= 就地把只读读数变成输入框（2026-09-28）；常态只读 ⇒ 三个「看起来必须填」
+                        的框不再出现在首屏（用户口径「其他信息尽量推导」）。 */}
+                    <button
+                      type="button"
+                      data-testid="meters-edit"
+                      aria-expanded={metersEditOpen}
+                      onClick={() => setMetersEditOpen(!metersEditOpen)}
+                      className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                    >
+                      {metersEditOpen ? '收起' : '改'}
+                    </button>
+                  </span>
                   {/* issue #5202：换成保留原始文本的数字框 —— 改前 `value={line.quantity || ''}`
                       + `Number(raw)` 会把 `0` 渲染成空串（输入 "0" 当场清空 ⇒ 打不出 "0.5"）。 */}
                   <NumberInput
                     value={line.quantity}
                     onChange={(next) => onChangeQty(next ?? 0)}
+                    readOnly={!metersEditOpen}
                     decimals={3}
                     placeholder="米"
                     aria-label="用料米数"
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className={
+                      'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15' +
+                      (metersEditOpen ? '' : ' bg-neutral-50 text-neutral-600')
+                    }
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
                   {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
@@ -4471,41 +4739,35 @@ function LineItemBlock({
                     )}
                 </div>
                 <div>
-                  <Label required>单价 (¥/米)</Label>
+                  {/* 同「用料米数」：用 `<span>` 承载「标签 + 改」行，保住既有 `closest('div')` 定位法 */}
+                  <span className="flex items-center justify-between gap-2">
+                    <Label required>单价 (¥/米)</Label>
+                    {/* 单价来自所选规格（SKU）；「改」用于议价等人工改价（2026-09-28 起常态只读） */}
+                    <button
+                      type="button"
+                      data-testid="price-edit"
+                      aria-expanded={priceEditOpen}
+                      onClick={() => setPriceEditOpen(!priceEditOpen)}
+                      className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                    >
+                      {priceEditOpen ? '收起' : '改'}
+                    </button>
+                  </span>
                   <NumberInput
                     value={line.unitPrice}
                     onChange={(next) => onChangePrice(next ?? 0)}
+                    readOnly={!priceEditOpen}
                     decimals={3}
                     aria-label="单价 (¥/米)"
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className={
+                      'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15' +
+                      (priceEditOpen ? '' : ' bg-neutral-50 text-neutral-600')
+                    }
                   />
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
               </div>
 
-              {/* **部位备注**（issue #5685）：商家自由文本 —— 写「**这个数字怎么来的**」
-                  （算料依据的人工说明，例：`公式--48个折`）。客户现行加工单/扫码端就有这一行。
-                  ① 上限 **200 字符**：由 `maxLength` **挡住**超长输入（服务端不截断 ⇒ 前端必须挡；
-                     且**不静默截断**商家已写的内容），字数提示让商家看得见还剩多少；
-                  ② 缺值（空 / 纯空白）⇒ `processingInfo` 里**不落键**（见 `buildLineProcessingInfo`），
-                     下游读侧按「缺值不渲染」处理。
-                  ⚠️ 只加这一个输入位：既有控件、布局与它们落库的语义一字未动。 */}
-              <div className="mt-4">
-                <Label>部位备注</Label>
-                <input
-                  type="text"
-                  data-testid="line-item-remark"
-                  aria-label="部位备注"
-                  maxLength={REMARK_MAX_LENGTH}
-                  value={line.remark ?? ''}
-                  onChange={(e) => onChangeRemark(e.target.value)}
-                  placeholder="如：公式--48个折（写清这个数字怎么来的）"
-                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                />
-                <p data-testid="line-item-remark-counter" className="mt-1 text-xs text-neutral-400">
-                  {(line.remark ?? '').length}/{REMARK_MAX_LENGTH}
-                </p>
-              </div>
             </div>
 
               {/* ===== 推导结果（issue #5202；契约 #5200 §四）=====
@@ -4973,23 +5235,54 @@ function LineItemBlock({
               </div>
             </WizardStep>
 
-            {/* ② **加工项 · 特殊选项**（issue #4874 两步化：区块 2 = 加工项 + 特殊选项）
-                —— 用户 2026-09-21：「另外两个（加工项 + 特殊选项）合并」。 */}
+            {/* ② **加工项**（2026-09-28 布局：本步只说「勾了什么加工项」——
+                「特殊选项」已移入 ③其他） */}
             <WizardStep
               step={2}
-              title="加工项 · 特殊选项"
+              title="加工项"
               summary={
                 // #4576：摘要里带上**工艺**（哪一项），不再让商家回头数；计数口径不变（仍只数**手选**项）
-                // #4874：并入 ④特殊选项 ⇒ 摘要合并（未选特殊选项时不出现那一段，不留「· 特殊选项 0 项」噪音）
-                (selectedProcessingCount > 0
+                selectedProcessingCount > 0
                   ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
-                  : '未选') +
-                ((line.craft.specialOptions ?? []).length > 0
-                  ? `${selectedProcessingCount > 0 ? ' · ' : ''}特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
-                  : '')
+                  : '未选'
               }
               {...stepProps(2)}
             >
+              {/* ===== **系统推荐组合**（2026-09-28 用户裁定）=====
+                  用户口径：「正常用户提供净窗高 / 窗宽，然后再确认是否要韩折 / 打孔 / 定型等信息即可」
+                  ⇒ 推荐组合（韩折 + 布帘「定型」）由系统**预选**，商家在这里一键**采纳 / 全不采纳**。
+                  撤过就留痕（`craftItemTouched` / `shapedItemTouched`）⇒ 换商品 / 改帘体不再勾回。
+                  为什么预选的是**加工项**：工艺的唯一派生点仍是「勾选的工艺项的 `craftHint`」（#4566）。 */}
+              {recommendedItems.length > 0 && (
+                <div
+                  data-testid="processing-recommended"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-primary-100 bg-primary-50/40 px-3 py-2"
+                >
+                  <span className="text-xs text-neutral-600">系统推荐：</span>
+                  <span
+                    data-testid="processing-recommended-names"
+                    className="text-xs font-medium text-neutral-900"
+                  >
+                    {recommendedItems.map((pi) => pi.name).join(' + ')}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="processing-recommended-adopt"
+                    onClick={() => onRecommendedDecision('adopt')}
+                    className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                  >
+                    采纳
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="processing-recommended-reject"
+                    onClick={() => onRecommendedDecision('reject')}
+                    className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-700"
+                  >
+                    全不采纳
+                  </button>
+                </div>
+              )}
               {processingLoading ? (
                 <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
               ) : handPickableItems.length === 0 ? (
@@ -5190,12 +5483,55 @@ function LineItemBlock({
                 </div>
               )}
 
-              {/* 特殊选项（原向导 ④，已并入区块 2）—— issue #4511：从工艺规格里抽出来，与加工项平级 */}
-              <div className="pt-4 mt-4 border-t border-neutral-100">
+            </WizardStep>
+
+            {/* ③ **其他**（2026-09-28 布局）——把「低频但要能改」的两项收进折叠，
+                首屏只剩四件事：① 商品 / 颜色 ② 净尺寸 ③ 推导读数 ④ 加工项确认。
+                两块内容一字未改：特殊选项仍走 `onChangeCraft`；部位备注仍只落在行状态、
+                由 `buildLineProcessingInfo` 单点落库。 */}
+            <WizardStep
+              step={3}
+              title="其他"
+              summary={
+                [
+                  (line.craft.specialOptions ?? []).length > 0
+                    ? `特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
+                    : null,
+                  (line.remark ?? '').trim() !== '' ? '有部位备注' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '特殊选项 / 部位备注'
+              }
+              {...stepProps(3)}
+            >
+              <div className="pt-3 border-t border-neutral-100">
                 <OrderExtraOptions
                   value={line.craft.specialOptions}
                   onChange={(next) => onChangeCraft({ specialOptions: next })}
                 />
+              </div>
+
+              {/* **部位备注**（issue #5685）：商家自由文本 —— 写「**这个数字怎么来的**」
+                  （算料依据的人工说明，例：`公式--48个折`）。客户现行加工单/扫码端就有这一行。
+                  ① 上限 **200 字符**：由 `maxLength` **挡住**超长输入（服务端不截断 ⇒ 前端必须挡；
+                     且**不静默截断**商家已写的内容），字数提示让商家看得见还剩多少；
+                  ② 缺值（空 / 纯空白）⇒ `processingInfo` 里**不落键**（见 `buildLineProcessingInfo`），
+                     下游读侧按「缺值不渲染」处理。 */}
+              <div className="mt-4">
+                <Label>部位备注</Label>
+                <input
+                  type="text"
+                  data-testid="line-item-remark"
+                  aria-label="部位备注"
+                  maxLength={REMARK_MAX_LENGTH}
+                  value={line.remark ?? ''}
+                  onChange={(e) => onChangeRemark(e.target.value)}
+                  placeholder="如：公式--48个折（写清这个数字怎么来的）"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                />
+                <p data-testid="line-item-remark-counter" className="mt-1 text-xs text-neutral-400">
+                  {(line.remark ?? '').length}/{REMARK_MAX_LENGTH}
+                </p>
               </div>
             </WizardStep>
 

@@ -208,6 +208,19 @@ const inputOf = (label: string, idx = 0) =>
 
 const qtyInput = () => inputOf('用料米数')
 
+/**
+ * 「用料米数」/「单价 (¥/米)」**2026-09-28 布局重排**后**常态只读**（两个数分别由算料引擎与
+ * 所选规格给 —— 用户口径「其他信息尽量推导」）⇒ 要输入先点就地「改」（`meters-edit` /
+ * `price-edit`）把它变回可写输入框。用例照**真实商家的操作路径**走：
+ * 不靠 `fireEvent.change` 直写只读框（那只会在 DOM 层"看起来通过"，绕开了商家的实际入口）。
+ */
+const editMeters = () => {
+  const btn = screen.getByTestId('meters-edit')
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  // 自证：点完真的可写（否则下面那些 `change` 写的是一个只读框 = 与真实路径不符）
+  expect(qtyInput()).not.toHaveAttribute('readonly')
+}
+
 const checkedChips = (label: string) =>
   within(screen.getByRole('radiogroup', { name: label }))
     .getAllByRole('radio')
@@ -413,7 +426,10 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ fabric_width: 2.8 }))
 
     const before = craftCalcCalls().length
-    fireEvent.click(screen.getByRole('button', { name: /3\.2米/ }))
+    // 2026-09-28 布局重排：门幅 chips 收进只读摘要的「改」面板（`sku-picker-toggle`）——
+    // 已选中一支时必须先点「改」展开 chips，才能改选另一支（改门幅这一步的语义未变）
+    fireEvent.click(screen.getByTestId('sku-picker-toggle'))
+    fireEvent.click(await screen.findByRole('button', { name: /3\.2米/ }))
     // 红证：`fabric_width` 不进签名 ⇒ 入参没变 ⇒ effect 不触发 ⇒ 本断言红
     await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(before))
     expect(craftCalcCalls().at(-1)).toMatchObject({ fabric_width: 3.2 })
@@ -456,6 +472,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await fillThreeInputs({ sku: '2\\.8米' })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
+    editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     fireEvent.change(qtyInput(), { target: { value: '20' } })
     expect(qtyInput()).toHaveValue('20')
 
@@ -516,6 +533,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await fillThreeInputs({ sku: '2\\.8米' })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
+    editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     fireEvent.change(qtyInput(), { target: { value: '7.7' } }) // 人工指定：手填 7.7 米
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } }) // 改参数 ⇒ 签名变 ⇒ 告知出现
 
@@ -556,6 +574,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await fillThreeInputs({ sku: '2\\.8米' })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
+    editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     fireEvent.change(qtyInput(), { target: { value: '7.7' } }) // = 推导值（`plan.meters`）
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
 
@@ -579,6 +598,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     // 降级提示（既有判据 7）与告知**同帧**并存 ⇒ 告知里的「不可比」是**说出来的**，不是省掉的
     expect(screen.getByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
 
+    editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     fireEvent.change(qtyInput(), { target: { value: '7.7' } })
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
 
@@ -803,6 +823,7 @@ describe('#5202 加工类型单点取值 + 数字输入框', { timeout: 20000 },
     await fillThreeInputs({ sku: '2\\.8米' })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
 
+    editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     const q = qtyInput()
     // 改前：`value={line.quantity || ''}` + `Number(raw)` ⇒ 0 渲染成空串 ⇒ 输入 "0" 当场清空
     fireEvent.change(q, { target: { value: '0' } })

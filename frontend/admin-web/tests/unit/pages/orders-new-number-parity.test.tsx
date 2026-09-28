@@ -28,11 +28,12 @@
  * 8 个站点的 `type="text"` + `inputMode="decimal"` + `className` **逐字**（与旧实现一字不差 ——
  * `check-ui-regression.sh` 比对 neutral token，className 变了就是 UI 回退）。
  *
- * ## 向导两步（本文件的分组依据）
+ * ## 向导步骤（本文件的分组依据；**2026-09-28 布局重排**后为三步）
  *
- * 区块 1「尺寸与数量 · 工艺规格」= 窗宽 / 窗高 / 用料米数 / 单价 + **人工加接高**（在「改工艺参数」展开区里）；
- * 区块 2「加工项 · 特殊选项」= **改单价（override）**。两步是**互斥展开**的（`openStep` 单值）
- * ⇒ 站点按所在区块分组渲染，不硬凑一个 render。
+ * 步骤 1「用料与规格（系统推导）」= 用料米数 / 单价（**常态只读**，要输入先点「改」）+
+ * **人工加接高**（在「改工艺参数」展开区里）；净窗宽 / 净窗高已提到**组级常显**（不属任何步骤）；
+ * 步骤 2「加工项」= **改单价（override）**（特殊选项已移入步骤 3）。三步是**互斥展开**的
+ * （`openStep` 单值）⇒ 站点按所在步骤分组渲染，不硬凑一个 render。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -211,6 +212,20 @@ const expandProcessing = () => {
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
+/**
+ * 2026-09-28 布局重排：「用料米数」/「单价 (¥/米)」常态 = **只读展示**（值分别来自算料引擎与
+ * 所选规格 ⇒ 用户口径「其他信息尽量推导」）⇒ **要输入先点「改」**把它就地从只读读数变成输入框
+ * （点第二次回只读）。只读态的**读值**断言（`toHaveValue`）照旧成立 —— 框还在，只是 `readOnly`。
+ */
+const openMetersEdit = () => {
+  const btn = screen.getAllByTestId('meters-edit')[0]
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+const openPriceEdit = () => {
+  const btn = screen.getAllByTestId('price-edit')[0]
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 async function submitOrder() {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
@@ -264,6 +279,7 @@ describe('#5210 区块 1：窗宽 / 窗高 / 用料米数 / 单价 (¥/米)', { 
 
   it('① 用料米数：逐键 "0"/"0."/"0.5" 留在框里，且**提交 payload 的 quantity = 0.5**', async () => {
     await setupCurtain()
+    openMetersEdit() // 2026-09-28 布局重排：用料米数常态只读 ⇒ 先点「改」才可输入
     const qty = inputOf('用料米数')
     expect(typeZeroDotFive(qty)).toEqual(['0', '0.', '0.5'])
 
@@ -288,6 +304,7 @@ describe('#5210 区块 1：窗宽 / 窗高 / 用料米数 / 单价 (¥/米)', { 
 
   it('④ 单价 (¥/米)：逐键留在框里，且**提交 payload 的 unitPrice = 0.5**', async () => {
     await setupCurtain()
+    openPriceEdit() // 2026-09-28 布局重排：单价常态只读（来自所选规格）⇒ 先点「改」才可输入
     const price = inputOf('单价 (¥/米)')
     expect(typeZeroDotFive(price)).toEqual(['0', '0.', '0.5'])
 
@@ -412,11 +429,18 @@ describe('#5210 精度：进出数字框不得改值（尤其用料米数 / 尺�
 describe('#5210 形态：8 格都是 text + decimal，className 与旧实现逐字一致', { timeout: 20000 }, () => {
   beforeEach(stubApis)
 
-  /** 一次断言把「控件形态 + 类名」钉死（两条实现都必须满足） */
-  function expectNumberBox(el: HTMLInputElement, className: string) {
+  /**
+   * 一次断言把「控件形态 + 类名」钉死（两条实现都必须满足）。
+   *
+   * ⚠️ 2026-09-28 布局重排：「用料米数」/「单价 (¥/米)」常态**只读**，只读态在既有类名之后
+   * **逐字追加**一段只读观感后缀（灰底 / 灰字）⇒ 这里仍按**整串逐字相等**钉死
+   * （强度不变：基础类名一字未动 + 只读后缀也一字不动，两段都钉）。
+   */
+  const READONLY_SUFFIX = ' bg-neutral-50 text-neutral-600'
+  function expectNumberBox(el: HTMLInputElement, className: string, suffix = '') {
     expect(el.getAttribute('type')).toBe('text')
     expect(el.getAttribute('inputmode')).toBe('decimal')
-    expect(el.className).toBe(className)
+    expect(el.className).toBe(className + suffix)
   }
 
   it('区块 1 的 5 格（窗宽 / 窗高 / 用料米数 / 单价 / 人工加接高）', async () => {
@@ -424,8 +448,8 @@ describe('#5210 形态：8 格都是 text + decimal，className 与旧实现逐�
     openCraftParams()
     expectNumberBox(inputOf('窗宽 (米)'), FULL_INPUT_CLASS)
     expectNumberBox(inputOf('窗高 (米)'), FULL_INPUT_CLASS)
-    expectNumberBox(inputOf('用料米数'), FULL_INPUT_CLASS)
-    expectNumberBox(inputOf('单价 (¥/米)'), FULL_INPUT_CLASS)
+    expectNumberBox(inputOf('用料米数'), FULL_INPUT_CLASS, READONLY_SUFFIX)
+    expectNumberBox(inputOf('单价 (¥/米)'), FULL_INPUT_CLASS, READONLY_SUFFIX)
     expectNumberBox(
       (await screen.findByTestId('craft-plan-join-height-input')) as HTMLInputElement,
       COMPACT_INPUT_CLASS
