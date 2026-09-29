@@ -120,7 +120,8 @@ class ProductionScanServiceTest {
         service = new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
                 operationQueryService, productionService, stuckPointService,
                 new ProcessingSetReadService(orderSetMapper, positionOperationMapper, orderItemMapper,
-                        processingOrderMapper, orderMapper, productionService));
+                        processingOrderMapper, orderMapper, productionService),
+                orderMapper);
         when(operationQueryService.operationsByName(TENANT)).thenReturn(catalog());
     }
 

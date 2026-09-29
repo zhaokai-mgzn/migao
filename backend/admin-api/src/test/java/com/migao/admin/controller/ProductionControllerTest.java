@@ -217,7 +217,8 @@ class ProductionControllerTest {
                         // 套件读面（issue #5247）：真实对象（只 mock Mapper）—— 与商家/agent
                         // 套件读面共用同一份 `set_overview` 聚合。
                         new ProcessingSetReadService(orderSetMapper, positionOperationMapper,
-                                orderItemMapper, processingOrderMapper, orderMapper, productionService)));
+                                orderItemMapper, processingOrderMapper, orderMapper, productionService),
+                        orderMapper));
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionStuckPointService",
                 stuckPointService);
         // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
