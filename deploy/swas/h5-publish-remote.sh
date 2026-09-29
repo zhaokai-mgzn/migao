@@ -29,7 +29,9 @@
 #   # ② 本地沙箱复跑（不联网、不碰真实静态根 —— 守卫测试与人工排障）
 #   H5_PUBLISH_FROM_DIR=frontend/worker-h5 H5_STATIC_ROOT=/tmp/h5-sandbox bash deploy/swas/h5-publish-remote.sh
 #
-# 发布内容 = `index.html` + `src/**`（含 `styles.css`）；`tests/**` **不发**。
+# 发布内容 = `index.html` + **`machine.html`（一体机机台页）** + `src/**`（含 `styles.css`）；`tests/**` **不发**。
+#   ⚠️ 2026-09-29（母单 #5161）：`machine.html` 原先**不在发布集里** ⇒ 线上 `/w/machine.html` 打不开，
+#   且会被 nginx `try_files` 静默回落成 C 端 H5（HTTP 200，不报错）—— 机台页等于没上线。本单补进发布集。
 # 幂等：连跑两次结果逐字节一致（先把目标子树收敛为空，再整份拷入）。
 # 退出码：0 = 已发布且自证通过；非零 = **什么都没改 / 已显式失败**（绝不静默半成品）。
 # ══════════════════════════════════════════════════════════════════════════════
@@ -143,9 +145,11 @@ main() {
   [ -f "$SRC/index.html" ] || die "源码里没有 index.html：$SRC"
   [ -d "$SRC/src" ] || die "源码里没有 src/：$SRC"
   [ -f "$SRC/src/app.mjs" ] || die "源码里没有 src/app.mjs（工人端入口）：$SRC"
+  [ -f "$SRC/machine.html" ] || die "源码里没有 machine.html（一体机机台页）：$SRC"
 
-  # 发布内容 = index.html + src/**（tests/** 不发；**逐字拷贝**，不做任何加工）
+  # 发布内容 = index.html + machine.html + src/**（tests/** 不发；**逐字拷贝**，不做任何加工）
   cp "$SRC/index.html" "$STAGE/index.html"
+  cp "$SRC/machine.html" "$STAGE/machine.html"
   cp -R "$SRC/src" "$STAGE/src"
 
   PARENT_BEFORE="$(file_sha256_or_absent "$STATIC_ROOT/index.html")"

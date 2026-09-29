@@ -636,6 +636,10 @@ def _make_static_root(tmp_path: Path) -> Path:
     (root / "w" / "src").mkdir(parents=True)
     shutil.copy(WORKER_H5_DIR / "index.html", root / "w" / "index.html")
     shutil.copy(WORKER_H5_DIR / "src" / "app.mjs", root / "w" / "src" / "app.mjs")
+    # 机台页（母单 #5161）：worker-h5 落地面断言新增 ④/⑤ 段（machine.html / src/machine.mjs）
+    # ⇒ 「正确落地」的夹具必须含这两个文件，否则是**夹具造的假红**（2026-09-29 实证：漏改此处 ⇒ helper 腿红）。
+    shutil.copy(WORKER_H5_DIR / "machine.html", root / "w" / "machine.html")
+    shutil.copy(WORKER_H5_DIR / "src" / "machine.mjs", root / "w" / "src" / "machine.mjs")
     (tmp_path / "sentinel-outside.txt").write_text("静态根之外的文件，任何情况下都不该被动", encoding="utf-8")
     return root
 

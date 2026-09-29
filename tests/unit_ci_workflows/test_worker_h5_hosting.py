@@ -65,6 +65,10 @@ VERIFY_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "worker-h5-verify-served.sh"
 WORKER_H5_DIR = REPO_ROOT / "frontend" / "worker-h5"
 WORKER_INDEX = WORKER_H5_DIR / "index.html"
 WORKER_APP = WORKER_H5_DIR / "src" / "app.mjs"
+# 一体机机台页（母单 #5161）：2026-09-29 前**不在发布集**（远端脚本只拷 index.html + src/**）
+# ⇒ 线上 /w/machine.html 打不开、且被 try_files 静默回落成 C 端 H5。本判据钉住它必须发布。
+WORKER_MACHINE = WORKER_H5_DIR / "machine.html"
+WORKER_MACHINE_APP = WORKER_H5_DIR / "src" / "machine.mjs"
 
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/swas-h5-publish-ci.sh"
@@ -422,6 +426,10 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     published_app = root / SUBDIR / "src" / "app.mjs"
     assert _file_sha(published_index) == _file_sha(WORKER_INDEX), "发布的 index.html 与仓库不一致"
     assert _file_sha(published_app) == _file_sha(WORKER_APP), "发布的 src/app.mjs 与仓库不一致"
+    # ② 一体机机台页也必须发布（红证：把它从远端脚本的发布集里删掉 ⇒ 本断言红）
+    published_machine = root / SUBDIR / "machine.html"
+    assert published_machine.is_file(), "machine.html 没被发布（机台页线上打不开）"
+    assert _file_sha(published_machine) == _file_sha(WORKER_MACHINE), "发布的 machine.html 与仓库不一致"
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
     assert "TARO_" not in body and "小布智能助手" not in body
@@ -546,6 +554,9 @@ def test_verify_served_is_green_on_real_worker_h5(tmp_path):
     (served / SUBDIR / "src").mkdir(parents=True)
     (served / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
     (served / SUBDIR / "src" / "app.mjs").write_bytes(WORKER_APP.read_bytes())
+    # 「已正确发布」的树里也必须有机台页（母单 #5161）—— 否则 ④/⑤ 段的红是本夹具造的假红
+    (served / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
+    (served / SUBDIR / "src" / "machine.mjs").write_bytes(WORKER_MACHINE_APP.read_bytes())
     server = _serve(served)
     try:
         _wait_port("127.0.0.1", server.server_address[1])

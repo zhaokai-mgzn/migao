@@ -21,6 +21,8 @@ BASE=${BASE%/}
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_INDEX="$ROOT/frontend/worker-h5/index.html"
 LOCAL_APP="$ROOT/frontend/worker-h5/src/app.mjs"
+LOCAL_MACHINE="$ROOT/frontend/worker-h5/machine.html"
+LOCAL_MACHINE_APP="$ROOT/frontend/worker-h5/src/machine.mjs"
 
 C_END_MARKERS=("TARO_" "小布智能助手")
 WORKER_MARKERS=("src/app.mjs")
@@ -50,9 +52,13 @@ echo "== worker-h5 落地面身份断言 =="
 echo "   BASE_URL=$BASE"
 [ -f "$LOCAL_INDEX" ] || { echo "❌ 本仓库缺少 ${LOCAL_INDEX}（无法比对身份）" >&2; exit 2; }
 [ -f "$LOCAL_APP" ]   || { echo "❌ 本仓库缺少 ${LOCAL_APP}（无法比对身份）" >&2; exit 2; }
+[ -f "$LOCAL_MACHINE" ] || { echo "❌ 本仓库缺少 ${LOCAL_MACHINE}（无法比对身份）" >&2; exit 2; }
+[ -f "$LOCAL_MACHINE_APP" ] || { echo "❌ 本仓库缺少 ${LOCAL_MACHINE_APP}（无法比对身份）" >&2; exit 2; }
 
 EXPECTED_INDEX_SHA="$(file_sha256 "$LOCAL_INDEX")"
 EXPECTED_APP_SHA="$(file_sha256 "$LOCAL_APP")"
+EXPECTED_MACHINE_SHA="$(file_sha256 "$LOCAL_MACHINE")"
+EXPECTED_MACHINE_APP_SHA="$(file_sha256 "$LOCAL_MACHINE_APP")"
 echo "   仓库 index.html 哈希=$EXPECTED_INDEX_SHA"
 echo "   仓库 src/app.mjs 哈希=$EXPECTED_APP_SHA"
 echo ""
@@ -108,8 +114,40 @@ if [ -s "$TMPDIR_RUN/app.mjs" ]; then
 fi
 echo ""
 
+
+# ── ④ /w/machine.html + /w/src/machine.mjs（一体机机台页；母单 #5161）──────────
+# 背景：2026-09-29 前 `machine.html` **不在发布集**（远端脚本只拷 index.html + src/**）⇒ 线上打不开、
+# 还会被 nginx `try_files` 静默回落成 C 端 H5（HTTP 200 不报错）。本段是该缺口的**绊线**。
+echo "④ GET $BASE/w/machine.html"
+CODE=$(fetch "$BASE/w/machine.html" "$TMPDIR_RUN/machine.html")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— machine.html 没进发布集？）"; fi
+if [ -s "$TMPDIR_RUN/machine.html" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/machine.html")"
+  if [ "$GOT" = "$EXPECTED_MACHINE_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/machine.html（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 ${EXPECTED_MACHINE_SHA}（回落成了别的东西？）"
+  fi
+fi
+echo ""
+
+echo "⑤ GET $BASE/w/src/machine.mjs"
+CODE=$(fetch "$BASE/w/src/machine.mjs" "$TMPDIR_RUN/machine.mjs")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— 机台页脚本没落上去？）"; fi
+if [ -s "$TMPDIR_RUN/machine.mjs" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/machine.mjs")"
+  if [ "$GOT" = "$EXPECTED_MACHINE_APP_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/src/machine.mjs（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 $EXPECTED_MACHINE_APP_SHA"
+  fi
+fi
+echo ""
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "❌ 落地面身份断言**失败 $FAILURES 条**：$BASE/w/ 返回的不是本仓库的工人端 H5"
   exit 1
 fi
-echo "✅ 落地面身份断言全过：$BASE/w/ = 本仓库 frontend/worker-h5/（index.html 与 src/app.mjs 哈希逐字节一致，无 C 端标识）"
+echo "✅ 落地面身份断言全过：$BASE/w/ = 本仓库 frontend/worker-h5/（index.html / machine.html / src/app.mjs / src/machine.mjs 哈希逐字节一致，无 C 端标识）"
