@@ -406,7 +406,11 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-neutral-800">销售额数据</h3>
-            <span className="text-xs text-neutral-400">数据更新时间：{updateTime === '--' ? updateTime : updateTime.slice(11, 19)}</span>
+            {/* 🔴 issue #5792：`updateTime` 是 `formatFullDateTime()` 的**已格式化**结果
+                （`2026年9月29日 15:30`）—— 它**不是** ISO 串，再 `.slice(11, 19)` 切出来的是
+                `日 15:3` 这种下标碎片（页头同一字段显示正常 ⇒ 同页两处不一致）。
+                ⇒ 两处**同源同格式**，不再二次加工。 */}
+            <span className="text-xs text-neutral-400">数据更新时间：{updateTime}</span>
           </div>
           <div className="h-[240px]">
             {loading ? (

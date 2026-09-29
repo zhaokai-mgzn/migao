@@ -67,10 +67,13 @@ public class DashboardController {
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
         OffsetDateTime monthStart = businessClock.startOfDay(businessClock.today().withDayOfMonth(1));
         OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
+        // 🔴 issue #5792：本月营收必须带**上界**（与上月窗口的右界写法对称）——
+        // 改前只有下界 ⇒ 任何未来创建时间的单都落进「本月」，使「环比」系统性偏高。
+        OffsetDateTime nextMonthStart = monthStart.plusMonths(1);
 
         // #2886 性能优化：订单维度原来 8 次串行 selectCount/selectList → 1 次 SQL FILTER 聚合
         Map<String, Object> orderStats = orderMapper.selectDashboardOrderStats(
-                todayStart, tomorrowStart, yesterdayStart, monthStart, lastMonthStart);
+                todayStart, tomorrowStart, yesterdayStart, monthStart, nextMonthStart, lastMonthStart);
         long totalOrders = toLong(orderStats.get("total_orders"));
 
         // 今日/昨日订单数与销售额（环比）
@@ -390,10 +393,13 @@ public class DashboardController {
     public ApiResponse<List<ProductRankingResponse>> getProductRanking(
             @RequestParam(defaultValue = "day") String period,
             @RequestParam(defaultValue = "10") int limit) {
-        // day: 近7天; month: 近30天（避免当天0点无数据导致"暂无数据"）
+        // 🔴 issue #5792：窗口口径 = **近 7 天（含今天）**，起点 = today-6。
+        // 改前是 `today-7` ⇒ 实际覆盖「今天 + 前 7 天」= **8 天**，而前端文案与表头 `title`
+        // 都对外承诺「近7天」（另两条判据依赖该文案）⇒ 两边不符。
+        // 本期与上期**等长且紧邻**：[today-6, 今天] 与 [today-13, today-7)。
         OffsetDateTime periodStart = "month".equals(period)
-                ? businessClock.startOfDay(businessClock.today().minusDays(30))
-                : businessClock.startOfDay(businessClock.today().minusDays(7));
+                ? businessClock.startOfDay(businessClock.today().minusDays(29))
+                : businessClock.startOfDay(businessClock.today().minusDays(6));
         OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusDays(30) : periodStart.minusDays(7);
 
         // #2886 性能优化：本周期聚合一次 SQL（替代原来全量明细拉到 JVM 分组排序 + 每商品一次上期查询）

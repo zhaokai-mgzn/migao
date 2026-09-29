@@ -432,9 +432,11 @@ public class DailyBriefingService {
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
         OffsetDateTime monthStart = businessClock.startOfDay(businessClock.today().withDayOfMonth(1));
         OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
+        // issue #5792：与看板同口径 —— 本月营收必须带上界（未来单不得虚增本月）
+        OffsetDateTime nextMonthStart = monthStart.plusMonths(1);
 
         Map<String, Object> orderStats = orderMapper.selectDashboardOrderStats(
-                todayStart, tomorrowStart, yesterdayStart, monthStart, lastMonthStart);
+                todayStart, tomorrowStart, yesterdayStart, monthStart, nextMonthStart, lastMonthStart);
         Map<String, Object> userStats = userMapper.selectDashboardUserStats(todayStart);
         OffsetDateTime activeThreshold = businessClock.nowOffset().minusMinutes(30);
         Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);

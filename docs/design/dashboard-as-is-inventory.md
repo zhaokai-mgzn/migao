@@ -46,7 +46,7 @@
 |---|---|---|---|
 | 订单趋势折线 | `trendData[].orders` | `DashboardController::getOrderTrend` → `OrderMapper::selectOrderTrend` | `startOfDay(today − (days−1))` ⇒ 含今天共 `days` 天；SQL `GROUP BY DATE(created_at)`；缺日补 0 |
 | 销售额面积图 | `trendData[].amount` | 同上 | `COALESCE(SUM(total_amount),0)`；🔴 **无状态过滤**（与「本月销售额」口径不同） |
-| 右上角「数据更新时间」 | `updateTime.slice(11,19)` | 无（纯前端切片） | 🔴 截的是 **ISO 串的 UTC 时分秒**；而页头同一字段走 `formatFullDateTime`（浏览器本地时区）⇒ **两处不同源** |
+| 右上角「数据更新时间」 | `updateTime.slice(11,19)` | 无（纯前端切片） | 🔴 **2026-09-29 订正（issue #5792 实作时复核）**：`updateTime` 的值来自本页 `now()` = `formatFullDateTime(...)`，**已经是格式化串**（`2026年9月29日 15:30`）⇒ 这一处 `.slice(11,19)` 切出的是 `日 15:3` 这类**下标碎片**（初稿误记为「UTC 时分秒」）。页头同一字段直接显示、故正常 ⇒ **两处不同源**；已在 #5792 修为同源同格式 |
 
 ### 2.3 列表区
 
@@ -144,7 +144,7 @@
 | 前端死 API | `dashboardApi.getOrderStatusDistribution` / `getActiveSessions` / `getPendingTasks` 零调用 | `lib/api.ts` + 全量 grep |
 | 类型缺口 | 后端 `/briefing/today` 返回 `sourceSnapshot`，前端 `TodayBriefingResponse` **没有该字段** | `BriefingController::getToday` vs `types/index.ts` |
 | 空态与失败态混淆 | rejected 只 `console.error`，UI 退化成空数据 / 0 | `dashboard/page.tsx` 的 `fetchData`；`RecentOrders` / `TrendChart` 空态分支 |
-| 同页口径不一致（6 处） | ① 今日销售额无状态过滤 vs 本月过滤四态；② 本月无上界；③ 环比分母 0 一律回 0；④ 销量排行 `day` 实为近 8 天且不随 7/30 切换；⑤ 待发货计数含 `producing` 而下钻只过滤「待发货」；⑥ 时间显示两处不同源（浏览器本地 vs UTC 切片） | `DashboardController::getStats` + `selectDashboardOrderStats` + `selectProductRanking` + `dashboard/page.tsx` |
+| 同页口径不一致（6 处） | ① 今日销售额无状态过滤 vs 本月过滤四态；② 本月无上界（#5792 已修：新增 `nextMonthStart` 上界）；③ 环比分母 0 一律回 0；④ 销量排行 `day` 实为近 8 天且不随 7/30 切换（#5792 已取齐为「近 7 天含今天」）；⑤ 待发货计数含 `producing` 而下钻只过滤「待发货」；⑥ 时间显示两处不同源（页头完整格式 vs 销售额卡对**已格式化串**再切片的碎片 —— #5792 已修） | `DashboardController::getStats` + `selectDashboardOrderStats` + `selectProductRanking` + `dashboard/page.tsx` |
 
 ## 8. 盘点边界（如实登记）
 

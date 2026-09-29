@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -23,7 +24,10 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.migao.admin.time.BusinessClock;
+
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -96,7 +100,7 @@ class DashboardControllerTest {
 
         /** #2886：一次性 stub 聚合查询（原 17 次串行查询的 mock 全部移除） */
         private void stubAggregations() {
-            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any())).thenReturn(Map.of(
+            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any(), any())).thenReturn(Map.of(
                     "total_orders", 50L,
                     "today_orders", 5L,
                     "yesterday_orders", 3L,
@@ -146,7 +150,7 @@ class DashboardControllerTest {
         @DisplayName("小数销售额舍入口径一致：todaySales 与 monthRevenue 均四舍五入（P2-3）")
         void decimalSalesRoundingConsistent() throws Exception {
             // given: 今日订单 119.8 元（如 59.9×2），本月订单 100.2 元
-            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any())).thenReturn(Map.of(
+            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any(), any())).thenReturn(Map.of(
                     "total_orders", 50L,
                     "today_orders", 5L,
                     "yesterday_orders", 3L,
@@ -184,12 +188,50 @@ class DashboardControllerTest {
                     .andExpect(status().isOk());
 
             // 聚合一次；不得回退到原 17 次串行查询模式
-            verify(orderMapper, times(1)).selectDashboardOrderStats(any(), any(), any(), any(), any());
+            verify(orderMapper, times(1)).selectDashboardOrderStats(any(), any(), any(), any(), any(), any());
             verify(orderMapper, never()).selectCount(any());
             verify(orderMapper, never()).selectList(any());
             verify(orderItemMapper, never()).selectList(any());
             verify(userMapper, never()).selectCount(any());
             verify(sessionMapper, never()).selectCount(any());
+        }
+
+        @Test
+        @DisplayName("issue #5792：本月营收窗口**必须有上界**（与上月窗口对称）—— 未来创建时间的单不得虚增本月")
+        void monthRevenueWindowHasUpperBound() throws Exception {
+            stubAggregations();
+
+            mockMvc.perform(get("/api/admin/dashboard/stats"))
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<OffsetDateTime> monthStart = ArgumentCaptor.forClass(OffsetDateTime.class);
+            ArgumentCaptor<OffsetDateTime> nextMonthStart = ArgumentCaptor.forClass(OffsetDateTime.class);
+            // 🔴 缺陷形态（改前）：`month_revenue` 的 FILTER 只有 `created_at >= monthStart`，
+            //    而上月那条**有**上界 ⇒ 同页两个口径不对称：任何未来时间的单都落进「本月」，
+            //    「环比」因此系统性偏高。判据 = 控制器必须把**本月上界**也传下去。
+            // ⚠️ 参数序（与接口签名逐字对齐）：todayStart, tomorrowStart, yesterdayStart,
+            //    monthStart, nextMonthStart, lastMonthStart —— captor 必须在第 4/5 位
+            verify(orderMapper, times(1)).selectDashboardOrderStats(
+                    any(), any(), any(), monthStart.capture(), nextMonthStart.capture(), any());
+
+            BusinessClock clock = new BusinessClock();
+            LocalDate today = clock.today();
+            LocalDate firstOfMonth = today.withDayOfMonth(1);
+            // 参数语义逐条钉死：本月起点 = 当月 1 日 00:00（含）、本月上界 = 下月 1 日 00:00（不含）
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    firstOfMonth, monthStart.getValue().toLocalDate(),
+                    "monthStart 必须是当月 1 日 00:00（业务时区）");
+            // ⚠️ 本仓 `BusinessClock.startOfDay()` 返回的是**带 +08 偏移**的 OffsetDateTime（不是 UTC 0）
+            //    —— 我第一版把它按 UTC 偏移断言，属于**判据写错**（不是实现错），此处按真实约定钉死。
+            org.junit.jupiter.api.Assertions.assertEquals(8 * 3600, monthStart.getValue().getOffset().getTotalSeconds(),
+                    "monthStart 的偏移必须是 +08（业务时区）；写成 UTC 会让「本月」边界与页面口径差 8 小时");
+            org.junit.jupiter.api.Assertions.assertEquals(8 * 3600, nextMonthStart.getValue().getOffset().getTotalSeconds(),
+                    "本月上界的偏移同样必须是 +08");
+            org.junit.jupiter.api.Assertions.assertNotNull(nextMonthStart.getValue(),
+                    "本月上界（下月 1 日 00:00）必须传给 SQL —— 缺失即未来单虚增本月（issue #5792）");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    firstOfMonth.plusMonths(1), nextMonthStart.getValue().toLocalDate(),
+                    "本月上界必须是下月 1 日 00:00（不含），与上月窗口的右界写法对称");
         }
     }
 
@@ -378,6 +420,40 @@ class DashboardControllerTest {
             // #2886 回归防护：上期销量只查一次（IN 批量），不再每商品一次
             verify(orderItemMapper, times(1)).selectPrevPeriodQuantities(any(), any(), any());
             verify(orderItemMapper, never()).selectList(any());
+        }
+
+        @Test
+        @DisplayName("issue #5792：排行窗口 = **近 7 天**（含今天），不是 8 天 —— 与文案/`title` 对外承诺取齐")
+        void rankingWindowIsSevenDaysInclusive() throws Exception {
+            // ⚠️ 判据自证：必须有**真实商品行** —— 上期查询只在 productIds 非空时才发
+            //    （stub 成空列表 ⇒ `selectPrevPeriodQuantities` 压根不调用，断言会在「没发生」上失败，
+            //     那是我判据写错、不是实现错。第一次就是这么错的）
+            when(orderItemMapper.selectProductRanking(any(), anyInt())).thenReturn(List.of(
+                    Map.of("product_id", "p1", "product_name", "测试商品", "qty", 10L, "amt", 1000L)));
+
+            mockMvc.perform(get("/api/admin/dashboard/product-ranking"))
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<OffsetDateTime> periodStart = ArgumentCaptor.forClass(OffsetDateTime.class);
+            ArgumentCaptor<OffsetDateTime> prevStart = ArgumentCaptor.forClass(OffsetDateTime.class);
+            verify(orderItemMapper, times(1)).selectProductRanking(periodStart.capture(), anyInt());
+            verify(orderItemMapper, times(1)).selectPrevPeriodQuantities(any(), prevStart.capture(), periodStart.capture());
+
+            BusinessClock clock = new BusinessClock();
+            LocalDate today = clock.today();
+            // 🔴 缺陷形态（改前）：`startOfDay(today - 7d)` 且查询无上界 ⇒ 窗口 = 今天 + 前 7 天 = **8 天**，
+            //    而前端文案与 th 的 title 都写「近7天」⇒「近 7 天含今天」= 起点应为 today-6。
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    today.minusDays(6), periodStart.getValue().toLocalDate(),
+                    "排行本期起点必须是 today-6（近 7 天**含今天**）；today-7 即 8 天，与文案不符");
+            // 上一统计周期 = 紧邻的等长 7 天：[today-13, today-7)
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    today.minusDays(13), prevStart.getValue().toLocalDate(),
+                    "上一统计周期必须与本期**等长**（7 天）且紧邻其前");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    7, java.time.temporal.ChronoUnit.DAYS.between(
+                            prevStart.getValue().toLocalDate(), periodStart.getValue().toLocalDate()),
+                    "本期起点 - 上期起点 = 7 天（两窗等长且不重叠）");
         }
     }
 

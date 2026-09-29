@@ -171,11 +171,18 @@ test.describe('仪表盘页面', () => {
     await expect(page.getByRole('heading', { name: '经营看板' })).toBeVisible()
   })
 
-  test('日期显示格式正确 — 数据更新时间', async ({ page }) => {
-    // formatFullDateTime 输出格式：YYYY年M月D日 HH:mm（无星期）
-    // 显示为：数据更新时间：2026年6月20日 14:30
-    const datePattern = /\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}/
-    await expect(page.getByText(datePattern)).toBeVisible()
+  test('两处「数据更新时间」都是**完整格式**且逐字一致（issue #5792）', async ({ page }) => {
+    // `formatFullDateTime` 输出：`YYYY年M月D日 HH:mm`（无星期）⇒ 形如「数据更新时间：2026年6月20日 14:30」
+    const datePattern = /数据更新时间：\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/
+    // 🔴 旧判据是 `expect(page.getByText(/\d{4}年…/)).toBeVisible()`（**单元素**定位）——
+    //    修复前只有页头是完整格式、销售额卡是 `.slice(11,19)` 的碎片，所以旧判据恰好只命中 1 个元素而通过。
+    //    修复后**两处都是完整格式** ⇒ 旧判据当场「strict mode violation: resolved to 2 elements」。
+    //    ⇒ 判据升级为「两处都完整 + 逐字相等」，与单测那条同源（内容级，不是存在性）。
+    const stamps = page.getByText(/数据更新时间：/)
+    await expect(stamps).toHaveCount(2)
+    const texts = await stamps.allTextContents()
+    for (const t of texts) expect(t).toMatch(datePattern)
+    expect(new Set(texts).size).toBe(1)
   })
 
   test('3 个经营数据卡片标题正确渲染', async ({ page }) => {

@@ -114,11 +114,22 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('should render data update time', async () => {
+  it('两处「数据更新时间」显示**同一个完整时间**，且都不是下标碎片（issue #5792 红证）', async () => {
     render(<DashboardPage />)
+    // 🔴 原判据是 `expect(elements.length).toBeGreaterThanOrEqual(1)` —— **空断言**：
+    // 它只证明「页面上有这句文案」，而缺陷恰恰是其中之一把**已格式化串**再切片
+    // （`formatFullDateTime()` 返回 `2026年9月29日 15:30`，再 `.slice(11, 19)` ⇒ `日 15:3`）。
     await waitFor(() => {
-      const elements = screen.getAllByText(/数据更新时间：/)
-      expect(elements.length).toBeGreaterThanOrEqual(1)
+      const els = screen.getAllByText(/数据更新时间：/)
+      // 自证面非空：页头 + 销售额卡两处都在（否则下面的逐条断言在空集上恒真）
+      expect(els.length).toBeGreaterThanOrEqual(2)
+      const texts = els.map((el) => el.textContent ?? '')
+      // ① 两处**逐字相等**（同一份 updateTime，不得一处格式化、一处切片）
+      expect(new Set(texts).size).toBe(1)
+      // ② 且长得像完整日期时间（`YYYY年M月D日 HH:mm`），不是 `日 15:3` 这类碎片
+      for (const t of texts) {
+        expect(t).toMatch(/数据更新时间：\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/)
+      }
     })
   })
 
@@ -423,6 +434,26 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
     // #3000：可见说明（非 hover title）：本期近7天 与 上期前7天 对比 → 用户无需懂「环比」术语
     // 说明只随排行数据渲染（ranking.length>0），须等待数据加载完成，避免 flaky（标题在 loading 期间即出现）
+    await waitFor(() => {
+      expect(screen.getByText(/环比.*近7天.*前7天/)).toBeInTheDocument()
+    })
+  })
+
+  // ── #5792 类级：卡片**宣称的周期**必须与**实际请求的周期**一致（防后端窗口悄悄变而文案不改）──
+
+  it('销量排行：`period=day` 的语义 = 近 7 天（含今天），且与用户可见文案逐字一致（issue #5792）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => expect(mockGetProductRanking).toHaveBeenCalled())
+
+    // ① 页面请求的周期标识 —— 后端据此算窗口（`day` ⇒ 近 7 天**含今天**；改前实现是 8 天）
+    const [period] = mockGetProductRanking.mock.calls[0]
+    expect(period).toBe('day')
+
+    // ② 用户可见文案宣称的周期：表头 title 与环比脚注两处都必须是「近7天」
+    //    ⇒ 与 ① 是同一事实的两面：后端改窗口若忘了改口径，本判据与后端
+    //      `rankingWindowIsSevenDaysInclusive`（钉窗口日期为 today-6）会有一侧变红。
+    const th = screen.getByText('成交量').closest('th') as HTMLElement
+    expect(th.getAttribute('title')).toContain('近7天')
     await waitFor(() => {
       expect(screen.getByText(/环比.*近7天.*前7天/)).toBeInTheDocument()
     })

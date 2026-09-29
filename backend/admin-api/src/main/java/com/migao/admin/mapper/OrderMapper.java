@@ -29,6 +29,10 @@ public interface OrderMapper extends BaseMapper<Order> {
     /**
      * 看板 stats 订单维度聚合（#2886 性能优化：替代原来 8 次串行 selectCount/selectList）。
      * 一次查询返回：总订单数 / 今日订单数+销售额 / 昨日订单数+销售额 / 本月营收 / 上月营收 / 待发货订单数。
+     *
+     * <p>🔴 issue #5792：**本月营收必须带上界**（`created_at < nextMonthStart`）——
+     * 改前只有下界，而上月那条**有**上界 ⇒ 同页两个口径不对称：任何**未来创建时间**的订单
+     * 都会落进「本月」，使「环比」系统性偏高。本参数与 {@code lastMonthStart} 的右界写法对称。</p>
      * 租户条件由 TenantLineInnerInterceptor 自动注入（与 selectOrderTrend 同模式）。
      */
     @Select("SELECT " +
@@ -37,7 +41,7 @@ public interface OrderMapper extends BaseMapper<Order> {
             "COUNT(*) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart}) AS yesterday_orders, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{todayStart} AND created_at < #{tomorrowStart}), 0) AS today_sales, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart}), 0) AS yesterday_sales, " +
-            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{monthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS month_revenue, " +
+            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{monthStart} AND created_at < #{nextMonthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS month_revenue, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{lastMonthStart} AND created_at < #{monthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS last_month_revenue, " +
             "COUNT(*) FILTER (WHERE status IN ('confirmed','producing')) AS pending_ship " +
             "FROM orders WHERE deleted = 0")
@@ -46,6 +50,7 @@ public interface OrderMapper extends BaseMapper<Order> {
             @Param("tomorrowStart") OffsetDateTime tomorrowStart,
             @Param("yesterdayStart") OffsetDateTime yesterdayStart,
             @Param("monthStart") OffsetDateTime monthStart,
+            @Param("nextMonthStart") OffsetDateTime nextMonthStart,
             @Param("lastMonthStart") OffsetDateTime lastMonthStart);
 
     /**
