@@ -3599,3 +3599,24 @@ export interface CuttingHeightPreview {
   hits: CuttingHeightPreviewHit[]
   misses: CuttingHeightPreviewMiss[]
 }
+
+
+// ── 工人端页面开关（V141，母单 #5161）──
+/**
+ * 工人端页面集合响应。
+ *
+ * 🔴 `pages` 是**页面可见性**，不是权限码：工人 session 的 `permissions` 恒为 `[]`，
+ * 工人可达面恒为 `/api/worker/**`。关掉一个页面 ≠ 挡住对应接口。
+ */
+export interface WorkerPageConfigResponse {
+  /** `default` = 本租户没配过（正在用默认值 = 全部页面都开）；`stored` = 商家配置。 */
+  source: string
+  pages: string[]
+  /** 页面键 → 商家面人话名（服务端一处给出，前端不自己维护第二份词表）。 */
+  labels: Record<string, string>
+}
+
+/** 写面请求体（**全量替换**：`pages` 必填，缺键 ⇒ 422）。 */
+export interface WorkerPageConfigBody {
+  pages: string[]
+}

@@ -62,6 +62,14 @@ public class TenantParamAuditService {
     /** 参数域：裁高（定高）配置（V140，母单 #5161）—— 与算料配置并列的第二个产线口径。 */
     public static final String DOMAIN_CUTTING_HEIGHT = "cutting_height";
 
+    /**
+     * 参数域：工人端页面开关（V141，母单 #5161）。
+     *
+     * <p>⚠️ 本域的参数<b>不是权限</b>：它只决定工人端页面上看得见什么，不参与任何授权判定
+     * （工人 session 的 {@code permissions} 恒为 {@code []}）。</p>
+     */
+    public static final String DOMAIN_WORKER_PAGES = "worker_pages";
+
     /** 操作形态：全量替换写（当前唯一写面）。 */
     public static final String OPERATION_PUT = "put";
 

@@ -120,6 +120,18 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.CuttingHeightConfigMapper cuttingHeightConfigMapper;
 
     /**
+     * 工人端页面开关服务（V141，母单 #5161）：新控制器 {@code WorkerPageConfigController} 与
+     * {@code WorkerProfileController} 的构造依赖 ⇒ 本上下文必须能装配它
+     * （本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
+     */
+    @MockBean
+    private com.migao.admin.service.WorkerPageConfigService workerPageConfigService;
+
+    /** 其 mapper（{@code test_security_config_mapper_mocks} 的元守卫要求：每个 mapper 都必须被 mock）。 */
+    @MockBean
+    private com.migao.admin.mapper.WorkerPageConfigMapper workerPageConfigMapper;
+
+    /**
      * 工人档案服务（issue #4869）：新控制器 {@code AdminWorkerController} 的构造依赖
      * ⇒ 本上下文必须能装配它（本类对全部服务一律 {@code @MockBean}，与上面几条同款）。
      */

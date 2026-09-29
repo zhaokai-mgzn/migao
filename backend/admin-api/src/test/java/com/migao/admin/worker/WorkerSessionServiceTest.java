@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -105,6 +106,7 @@ class WorkerSessionServiceTest {
         assertThat(payload.get("worker_id")).isEqualTo(WORKER_ID);
         assertThat(payload.get("worker_no")).isEqualTo(WORKER_NO);
         assertThat(payload.get("worker_name")).isEqualTo("张三");
+        // 母单 #5161：闲置超时是**全局默认值**（一周），与设备标签无关。
         assertThat(payload.get("idle_minutes")).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
 
         ArgumentCaptor<WorkerSession> captor = ArgumentCaptor.forClass(WorkerSession.class);
@@ -238,17 +240,76 @@ class WorkerSessionServiceTest {
         assertThat(payload.get("idle_minutes")).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
     }
 
+    // ============================================================ ⑥ 长会话全局默认值（母单 #5161）
+
     @Test
-    @DisplayName("闲置超时可配区间 5~60：越界回落默认 15（不静默接受非法配置）")
-    void idleMinutesOutOfRangeFallsBackToDefault() {
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 1);
-        assertThat(service.effectiveIdleMinutes()).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
+    @DisplayName("🔴 闲置超时全局默认值 = 一周（10080 分钟，用户 2026-09-29 逐字裁定）")
+    void idleTimeoutDefaultsToOneWeek() {
+        assertThat(WorkerSessionService.DEFAULT_IDLE_MINUTES).isEqualTo(10080);
+        assertThat(service.effectiveIdleMinutes()).isEqualTo(10080);
+    }
 
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 600);
-        assertThat(service.effectiveIdleMinutes()).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
+    @Test
+    @DisplayName("🔴 可配区间 = 5 ~ 默认值（单一真值：上限直接取默认值，不抄第二遍）")
+    void configurableRangeUpperBoundIsTheDefaultItself() {
+        assertThat(WorkerSessionService.MIN_IDLE_MINUTES).isEqualTo(5);
+        assertThat(WorkerSessionService.MAX_IDLE_MINUTES).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
 
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 30);
-        assertThat(service.effectiveIdleMinutes()).isEqualTo(30);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 10079);
+        assertThat(service.effectiveIdleMinutes()).as("区间内（含默认值本身）不回落").isEqualTo(10079);
+
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 5);
+        assertThat(service.effectiveIdleMinutes()).as("下界含").isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("🔴 越界/非法值 ⇒ 回落默认并打警告（不静默接受非法配置）")
+    void outOfRangeFallsBackToTheGlobalDefault() {
+        for (int bad : new int[] {0, -1, 4, 10081, 100000}) {
+            org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", bad);
+            assertThat(service.effectiveIdleMinutes()).as("idleMinutes=%s", bad).isEqualTo(10080);
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 登录落库的闲置过期 ≈ 一周；手机端与一体机同长（不分设备档）")
+    void loginPersistsOneWeekExpiryForEveryDevice() {
+        when(userMapper.selectOne(any(Wrapper.class))).thenReturn(worker(WORKER_NO, PIN, "active"));
+
+        for (String label : new String[] {"H5", "PAD-车间-01", "一体机-车间东"}) {
+            clearInvocations(workerSessionMapper);
+            service.login(TENANT, WORKER_NO, PIN, label);
+
+            ArgumentCaptor<WorkerSession> captor = ArgumentCaptor.forClass(WorkerSession.class);
+            verify(workerSessionMapper).insert(captor.capture());
+            assertThat(captor.getValue().getIdleExpiresAt())
+                    .as("设备标签 %s 也按一周（10080 分钟）过期", label)
+                    .isAfter(OffsetDateTime.now().plusDays(6));
+        }
+    }
+
+    @Test
+    @DisplayName("会话活跃期顺延用的是同一个全局默认值（一周）")
+    void touchExtendsByTheGlobalDefault() {
+        when(workerSessionMapper.selectActiveById("sess-1")).thenReturn(activeSession("sess-1"));
+
+        service.resolveIdentityOrNull("sess-1");
+
+        ArgumentCaptor<OffsetDateTime> expiry = ArgumentCaptor.forClass(OffsetDateTime.class);
+        verify(workerSessionMapper).touch(eq("sess-1"), any(), expiry.capture());
+        assertThat(expiry.getValue()).isAfter(OffsetDateTime.now().plusDays(6));
+    }
+
+    @Test
+    @DisplayName("tenantIdOf：租户由会话行解出（给 GET /api/worker/me 读配置用）；无效 session ⇒ 401")
+    void tenantIdComesFromTheSessionRow() {
+        when(workerSessionMapper.selectActiveById("sess-1")).thenReturn(activeSession("sess-1"));
+        assertThat(service.tenantIdOf("sess-1")).isEqualTo(TENANT);
+
+        when(workerSessionMapper.selectActiveById("sess-gone")).thenReturn(null);
+        assertThatThrownBy(() -> service.tenantIdOf("sess-gone"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(401));
     }
 
     // ============================================================ 夹具

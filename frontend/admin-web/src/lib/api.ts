@@ -84,6 +84,8 @@ import type {
   CuttingHeightConfigBody,
   CuttingHeightConfigResponse,
   CuttingHeightPreview,
+  WorkerPageConfigBody,
+  WorkerPageConfigResponse,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -1796,4 +1798,15 @@ export const cuttingHeightApi = {
       '/api/admin/production/cutting-height-config/preview',
       data,
     ),
+}
+
+
+// ── 工人端页面开关（V141，母单 #5161）──
+// 读面挂生产域读码 production:view；写面是 processing:manage（类级）。
+// 🔴 页面键的合法性**由服务端判**（闭词表 + 422 逐条理由）：前端不自己过滤要提交的键
+//（静默丢键 = 商家以为改了却没改）。
+export const workerPageConfigApi = {
+  get: () => request.get<ApiResponse<WorkerPageConfigResponse>>('/api/admin/worker-page-config'),
+  update: (data: WorkerPageConfigBody) =>
+    request.put<ApiResponse<WorkerPageConfigResponse>>('/api/admin/worker-page-config', data),
 }

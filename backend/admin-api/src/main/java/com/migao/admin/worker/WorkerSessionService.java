@@ -30,7 +30,12 @@ import java.util.UUID;
  *       ⇒ 报工写库的 {@code worker_id}/{@code worker_name} 与 body 里的同名字段**无关**
  *       （设计 #4716 W1 的红证：body 传别人的 id ⇒ 仍记成登录者）。</li>
  *   <li><b>闲置超时由服务端算</b>：{@code idle_expires_at} 过期 ⇒ 401（**不静默续期**）
- *       —— 共用 PAD 上「上一个人走了没登出」不得把活记到上一个人头上（W3）。</li>
+ *       —— 共用 PAD 上「上一个人走了没登出」不得把活记到上一个人头上（W3）。
+ *       ⚠️ 默认值自 2026-09-29 起 = 一周（{@code DEFAULT_IDLE_MINUTES}，用户裁定「改全局默认值」）
+ *       ⇒ 这条护栏在**默认配置下基本不生效**，共用屏的日常护栏是手动「切换工人」。
+ *       因此工人端页面必须**常驻显示「当前工人：XXX」**（数据源 = 服务端
+ *       {@code GET /api/worker/production/current-worker}，见 {@code frontend/worker-h5/src/render.mjs}），
+ *       并在报工前把身份显示得很显眼 —— 这条口径是长会话的直接配套（用户 2026-09-29 裁定）。</li>
  *   <li><b>快速切换立即失效旧会话</b>：{@link #switchWorker} 结束旧 session（{@code switched}）
  *       ⇒ 旧 session id 再用 ⇒ 401（W2）。</li>
  *   <li><b>与商家账号彻底分离</b>：本服务只签发 {@code roles=["worker"]}、
@@ -49,14 +54,25 @@ public class WorkerSessionService {
     /** 工人 session 的请求头（与前端 `workerSession.ts` 逐字同名）。 */
     public static final String SESSION_HEADER = "X-Worker-Session-Id";
 
-    /** 闲置超时默认值（分钟）：主会话裁定 R2 = 默认 15、可配 5~60。 */
-    public static final int DEFAULT_IDLE_MINUTES = 15;
+    /**
+     * 闲置超时**全局默认值**（分钟）= 一周（10080）—— 用户 2026-09-29 逐字裁定
+     * （母单 #5161；用户逐字「让工人**提前登录我们的 H5 页面**，我们把登录 Session 的
+     * **过期时间设置长一点**」⇒ 选定「**改全局默认值**（手机端同长）」，**不**分设备档）。
+     *
+     * <p>🔴 <b>单一真值</b>：默认值只写在这里一处；{@link #MAX_IDLE_MINUTES} 直接取它
+     * ⇒ 改默认值不会出现「区间上限没跟上」的第二处漂移。</p>
+     *
+     * <p>⚠️ <b>后果（用户已知情并裁定，照实登记）</b>：闲置保护实际上退化为「基本不过期」
+     * ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的**唯一护栏只剩手动
+     * 「切换工人」**（{@link #switchWorker}，旧 session 立即失效）。</p>
+     */
+    public static final int DEFAULT_IDLE_MINUTES = 10080;
 
     /** 闲置超时可配区间下界（分钟）。 */
     public static final int MIN_IDLE_MINUTES = 5;
 
-    /** 闲置超时可配区间上界（分钟）。 */
-    public static final int MAX_IDLE_MINUTES = 60;
+    /** 闲置超时可配区间上界（分钟）= 默认值（区间「5 ~ 默认值」，上界不抄第二遍）。 */
+    public static final int MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES;
 
     private final WorkerSessionMapper workerSessionMapper;
     private final UserMapper userMapper;
@@ -149,6 +165,24 @@ public class WorkerSessionService {
         workerSessionMapper.touch(session.getId(), now, now.plusMinutes(effectiveIdleMinutes()));
         return new WorkerIdentity(session.getWorkerId(), session.getWorkerName(),
                 WorkerIdentity.SOURCE_SERVER_SESSION, session.getId());
+    }
+
+    /**
+     * 会话所属租户（**由会话行解出**，不来自请求）—— 给 {@code GET /api/worker/me} 这类
+     * 需要按会话租户读配置的端点用。
+     *
+     * <p>与 {@link #resolveIdentity} / {@link #currentWorker} 走**同一处**读行/定租户
+     * （{@link #loadActiveSession}）⇒「会话租户必须与请求租户一致」那条 fail-closed 判定
+     * 不会在第二条路径上被绕过。</p>
+     *
+     * @throws BusinessException 401 —— 会话无效 / 已结束 / 已闲置超时
+     */
+    public Long tenantIdOf(String sessionId) {
+        WorkerSession session = loadActiveSession(sessionId);
+        if (session == null) {
+            throw BusinessException.authFailed("工人登录已失效，请重新登录");
+        }
+        return session.getTenantId();
     }
 
     /**
