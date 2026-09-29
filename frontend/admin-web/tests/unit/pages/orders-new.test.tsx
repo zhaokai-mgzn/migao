@@ -150,6 +150,15 @@ vi.mock('sonner', () => ({
 
 import NewOrderPage from '@/app/(dashboard)/orders/new/page'
 
+/**
+ * 展开底部吸底条里的**费用明细**（🔴 2026-09-29 第三次裁定：明细默认收起；优惠金额 / 实收款
+ * 也在这张明细里）—— 本文件凡是读费用明细 / 优惠 / 实收款的用例，渲染后先展开。
+ */
+const expandFee = () => {
+  const btn = screen.queryByTestId('fee-detail-toggle')
+  if (btn && btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 describe('NewOrderPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -164,6 +173,7 @@ describe('NewOrderPage', () => {
 
   it('should render page title', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('新增订单')).toBeInTheDocument()
     })
@@ -171,6 +181,7 @@ describe('NewOrderPage', () => {
 
   it('should render product section header', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('商品信息')).toBeInTheDocument()
     })
@@ -178,6 +189,7 @@ describe('NewOrderPage', () => {
 
   it('should render customer info section header', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('收货信息')).toBeInTheDocument()
     })
@@ -185,6 +197,7 @@ describe('NewOrderPage', () => {
 
   it('should render fee detail section header', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('费用明细')).toBeInTheDocument()
     })
@@ -192,6 +205,7 @@ describe('NewOrderPage', () => {
 
   it('should render submit button', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('提交订单')).toBeInTheDocument()
     })
@@ -199,6 +213,7 @@ describe('NewOrderPage', () => {
 
   it('should render cancel button', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('取消')).toBeInTheDocument()
     })
@@ -206,6 +221,7 @@ describe('NewOrderPage', () => {
 
   it('should render customer name input', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByPlaceholderText('请输入收货人姓名')).toBeInTheDocument()
     })
@@ -213,6 +229,7 @@ describe('NewOrderPage', () => {
 
   it('should show amount summary rows', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('商品小计')).toBeInTheDocument()
       expect(screen.getByText('加工费')).toBeInTheDocument()
@@ -222,6 +239,7 @@ describe('NewOrderPage', () => {
 
   it('should show discount and actual amount fields', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(screen.getByText('优惠金额 (¥)')).toBeInTheDocument()
       expect(screen.getByText('实收款 (¥)')).toBeInTheDocument()
@@ -238,6 +256,7 @@ describe('NewOrderPage', () => {
     })
 
     render(<NewOrderPage />)
+    expandFee()
 
     // 走「点击搜索并选择商品」→ 弹窗选择「测试窗帘」→ 展开数量/单价区域
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
@@ -339,11 +358,22 @@ describe('NewOrderPage', () => {
    * 旧写法 `getByLabelText(name)` + `fireEvent.change(<select>)` 在 chips 下已不成立。
    */
   const pickChip = (group: string, option: string, idx = 0) => {
-    // issue #4511 手风琴：先展开**该行**的②工艺规格 —— 展开它会收起别行的②
-    // ⇒ 此时 DOM 里只剩这一个 radiogroup（所以下面取 [0] 而不是 [idx]）。
+    // issue #4511 手风琴：先展开**该行**的①用料与规格（下拉在「改工艺参数」展开区里）
     expandCraft(idx)
-    const groups = screen.getAllByRole('radiogroup', { name: group })
-    fireEvent.click(within(groups[0]).getByRole('radio', { name: option }))
+    // 2026-09-29 第三次裁定：枚举字段由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；
+    // 页面侧仍是 chips 的那几组（帘体 / 售卖形态 / 拼接人工加）走 radiogroup 分支。
+    const select = screen.queryAllByRole('combobox', { name: group })[0] as
+      | HTMLSelectElement
+      | undefined
+    if (select) {
+      const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === option)
+      if (!hit) throw new Error(`下拉「${group}」里没有「${option}」`)
+      fireEvent.change(select, { target: { value: hit.value } })
+      return
+    }
+    fireEvent.click(
+      within(screen.getAllByRole('radiogroup', { name: group })[idx]).getByText(option)
+    )
   }
 
   const fillCustomerAndSubmit = async () => {
@@ -388,6 +418,7 @@ describe('NewOrderPage', () => {
     })
 
     render(<NewOrderPage />)
+    expandFee()
     await pickProduct('遮光窗帘')
 
     // 勾选加工项：面料默认 1 米 → 数量 1 → 加工费 5（组合价目 5 元/米 × 1 米）
@@ -443,6 +474,7 @@ describe('NewOrderPage', () => {
     })
 
     render(<NewOrderPage />)
+    expandFee()
     await pickProduct('雪纺纱')
     expandProcessing()
     fireEvent.click(await screen.findByRole('checkbox'))
@@ -489,6 +521,7 @@ describe('NewOrderPage', () => {
     })
 
     render(<NewOrderPage />)
+    expandFee()
     await pickProduct('棉麻布')
     expandProcessing()
     fireEvent.click(await screen.findByRole('checkbox'))
@@ -527,6 +560,7 @@ describe('NewOrderPage', () => {
     })
 
     render(<NewOrderPage />)
+    expandFee()
     await pickProduct('测试9999')
 
     // ⚠️ 2026-09-28：用料米数在步骤 1 且默认只读 ⇒ 展开该步 + 点「改」后才可输入
@@ -607,6 +641,7 @@ describe('NewOrderPage', () => {
 
     it('收货信息区提供「选择客户」入口', async () => {
       render(<NewOrderPage />)
+      expandFee()
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /选择客户/ })).toBeInTheDocument()
       })
@@ -614,6 +649,7 @@ describe('NewOrderPage', () => {
 
     it('点击「选择客户」打开客户选择弹窗并加载客户列表', async () => {
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       // 弹窗内搜索框出现
       await waitFor(() => {
@@ -629,6 +665,7 @@ describe('NewOrderPage', () => {
 
     it('选中客户后自动回填 收货人姓名/手机号/地址（省市区拼接）', async () => {
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       fireEvent.click(await screen.findByText('张老板'))
       await waitFor(() => {
@@ -665,6 +702,7 @@ describe('NewOrderPage', () => {
         },
       })
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       fireEvent.click(await screen.findByText('王老板'))
       await waitFor(() => {
@@ -682,6 +720,7 @@ describe('NewOrderPage', () => {
 
     it('客户档案没录常用物流 ⇒ 两控**不编造默认值**（未指定 / 空），#4419/#4874', async () => {
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       fireEvent.click(await screen.findByText('张老板'))
       await waitFor(() => {
@@ -695,6 +734,7 @@ describe('NewOrderPage', () => {
 
     it('搜索关键词触发 getCustomers 携带 keyword', async () => {
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       const search = await screen.findByPlaceholderText(/搜索客户/)
       fireEvent.change(search, { target: { value: '张' } })
@@ -742,6 +782,7 @@ describe('NewOrderPage', () => {
         },
       })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct(productName)
       await screen.findByText('窗宽 (米)')
       expandCraft()
@@ -1023,6 +1064,7 @@ describe('NewOrderPage', () => {
   describe('#4508/#4521 空态不渲染组壳；选了商品也**没有部位行**', () => {
     it('刚进页面（未选商品）⇒ **不出现**「商品 1」等组壳元素（红证：修复前出现两次）', async () => {
       render(<NewOrderPage />)
+      expandFee()
       await screen.findByText('点击搜索并选择商品')
       expect(screen.queryByText('商品 1')).toBeNull()
       expect(screen.queryByText('帘体')).toBeNull()
@@ -1036,6 +1078,7 @@ describe('NewOrderPage', () => {
         data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
       })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('帘体')
       expect(screen.queryByText('商品 1')).toBeNull()
@@ -1058,6 +1101,7 @@ describe('NewOrderPage', () => {
 
     it('下单页**不再出现**「樘窗」输入框（红证：修复前存在）', async () => {
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('窗宽 (米)')
       expect(screen.queryByLabelText('樘窗')).toBeNull()
@@ -1066,6 +1110,7 @@ describe('NewOrderPage', () => {
 
     it('提交 payload **不再写** craftLineId（跨行分组已去掉；配布边配对键另见 §4.8 判据）', async () => {
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -1102,6 +1147,7 @@ describe('NewOrderPage', () => {
         },
       })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('窗宽 (米)')
       expandCraft()
@@ -1115,6 +1161,7 @@ describe('NewOrderPage', () => {
         data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
       })
       render(<NewOrderPage />)
+      expandFee()
       fireEvent.click(await screen.findByText('点击搜索并选择商品'))
       fireEvent.click(await screen.findByText('遮光窗帘'))
       await screen.findByText('窗宽 (米)')
@@ -1157,11 +1204,19 @@ describe('NewOrderPage', () => {
     it('判据 4：默认档在界面上**可见可改**（不是藏起来的隐式默认）', async () => {
       await setupCurtain()
       expandCraft()
-      const checked = (group: string) =>
-        within(screen.getAllByRole('radiogroup', { name: group })[0])
+      // 2026-09-29 第三次裁定：枚举字段由 chips 改**原生下拉** ⇒ 读数 = 当前选中项
+      // 2026-09-29 第三次裁定：枚举字段由 chips 改**原生下拉** ⇒ 读数 = 当前选中项；
+      // 页面侧仍是 chips 的几组（帘体 / 售卖形态）走 radiogroup + `aria-checked` 分支
+      const checked = (group: string): string[] => {
+        const select = screen.queryAllByRole('combobox', { name: group })[0] as
+          | HTMLSelectElement
+          | undefined
+        if (select) return [select.selectedOptions[0]?.textContent ?? '']
+        return within(screen.getByRole('radiogroup', { name: group }))
           .getAllByRole('radio')
           .filter((r) => r.getAttribute('aria-checked') === 'true')
-          .map((r) => r.textContent)
+          .map((r) => r.textContent ?? '')
+      }
       expect(checked('加工类型')).toEqual(['定高买宽'])
       expect(checked('款式')).toEqual(['单色'])
       // ⚠️ issue #4874：**褶距控件与默认值都退场**（红证：改前这里有 `褶距` 输入框、值为 0.125）
@@ -1375,6 +1430,7 @@ describe('NewOrderPage', () => {
       })
       mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('窗宽 (米)')
     }
@@ -1504,7 +1560,7 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
       expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
       // 「对花」保留（它是**算料输入**：定宽买高时每幅加 1 个花距；ERP 91 项加工费里 0 行含对花）
-      expect(screen.getByRole('radiogroup', { name: '是否对花' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: '是否对花' })).toBeInTheDocument()
     })
 
     it('判据 6：目录里**没有**「定型」项（老租户未重建目录）⇒ 不报错，且 `isShaped` **不写**', async () => {
@@ -1547,6 +1603,7 @@ describe('NewOrderPage', () => {
       })
       mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('窗宽 (米)')
       expandProcessing()
@@ -1814,6 +1871,7 @@ describe('NewOrderPage', () => {
     it('判据 1：**默认展开**（aria-expanded=true + 卡片体在）—— 改前默认行为不变', async () => {
       mockTwoProducts()
       render(<NewOrderPage />)
+      expandFee()
       await pickFirst('遮光窗帘')
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
       expect(bodyStepCount('用料与规格')).toBe(1)
@@ -1822,6 +1880,7 @@ describe('NewOrderPage', () => {
     it('判据 2（红证）：点头部 ⇒ **整卡收起**（aria-expanded=false + 体内 ①~④ 全不渲染）；再点 ⇒ 展开', async () => {
       mockTwoProducts()
       render(<NewOrderPage />)
+      expandFee()
       await pickFirst('遮光窗帘')
       // 红证（改前）：组头不可点 ⇒ 本行 `getByRole('button', …)` 直接抛错，判据 2 必红。
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
@@ -1846,6 +1905,7 @@ describe('NewOrderPage', () => {
     it('判据 3：收起时组头**带出尺寸与米数摘要**（用户口径「顺手带出更好」）', async () => {
       mockTwoProducts()
       render(<NewOrderPage />)
+      expandFee()
       await pickFirst('遮光窗帘')
       fillSize('6.6', '2.6')
       fireEvent.click(headerToggle(1, '遮光窗帘'))
@@ -1858,6 +1918,7 @@ describe('NewOrderPage', () => {
     it('判据 4：多商品**各卡独立**折叠（收起第 1 张不影响第 2 张）', async () => {
       mockTwoProducts()
       render(<NewOrderPage />)
+      expandFee()
       await pickFirst('遮光窗帘')
       await pickSecond('雪尼尔窗帘')
       expect(screen.getByText('共 2 个商品')).toBeInTheDocument()
@@ -1880,6 +1941,7 @@ describe('NewOrderPage', () => {
     it('判据 5（反向护栏）：点「删除」⇒ **只删**、不触发折叠；收起态下删除仍可用', async () => {
       mockTwoProducts()
       render(<NewOrderPage />)
+      expandFee()
       await pickFirst('遮光窗帘')
       await pickSecond('雪尼尔窗帘')
 
@@ -1927,14 +1989,31 @@ describe('NewOrderPage', () => {
         },
       })
       render(<NewOrderPage />)
+      expandFee()
       await pickProduct('遮光窗帘')
       await screen.findByText('窗宽 (米)')
     }
     /** 收货信息里的两个物流控件（issue #4874；**可编辑**，不是只读提示） */
     const logisticsType = () => screen.getByTestId('order-logistics-type') as HTMLSelectElement
     const logisticsCompany = () => screen.getByTestId('order-logistics-company') as HTMLInputElement
-    const formulaRadio = (name: string) =>
-      within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
+    /** 某个枚举字段**下拉**的当前选中项（🔴 2026-09-29 第三次裁定：chips ⇒ 原生下拉） */
+    const pickOption = (group: string, name: string) => {
+      const select = screen.getByRole('combobox', { name: group }) as HTMLSelectElement
+      const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === name)
+      if (!hit) throw new Error(`下拉「${group}」里没有「${name}」`)
+      fireEvent.change(select, { target: { value: hit.value } })
+    }
+    /** 用料公式**下拉**的当前选中项（🔴 2026-09-29 第三次裁定：chips ⇒ 原生下拉） */
+    const formulaSelected = () =>
+      (screen.getByRole('combobox', { name: '用料公式' }) as HTMLSelectElement).selectedOptions[0]
+        ?.textContent ?? ''
+    /** 选某一档（旧 `fireEvent.click(formulaRadio(...))` 的等价写法） */
+    const pickFormula = (name: string) => {
+      const select = screen.getByRole('combobox', { name: '用料公式' }) as HTMLSelectElement
+      const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === name)
+      if (!hit) throw new Error(`用料公式下拉里没有「${name}」`)
+      fireEvent.change(select, { target: { value: hit.value } })
+    }
     const pickCustomer = async (name: string) => {
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       fireEvent.click(await screen.findByText(name))
@@ -1966,7 +2045,7 @@ describe('NewOrderPage', () => {
         screen.getByText('用料米数').closest('div')!.querySelector('input') as HTMLInputElement
       expect(metersOf()).not.toHaveAttribute('readonly')
       expect(screen.queryByTestId('meters-edit')).toBeNull()
-      expect(screen.getByRole('radiogroup', { name: '加工类型' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: '加工类型' })).toBeInTheDocument()
       // ③ 步骤 2：手选加工项 + **特殊选项 / 部位备注**（同一步、一同可见，不再有第二个折叠块）
       openWizardStep('加工项')
       expect(screen.getByRole('checkbox', { name: '定型' })).toBeInTheDocument()
@@ -1979,7 +2058,7 @@ describe('NewOrderPage', () => {
       // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里 ⇒ 展开步骤 1 + 该块
       expandCraft()
       // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩褶公式（褶数法）」
-      expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+      expect(formulaSelected()).toBe('韩褶公式（褶数法）')
       // 红证：改前页面**没有**用料公式控件、也没有褶数展示块 ⇒ 下面这行必红
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('—')
@@ -1990,13 +2069,13 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里
       expandCraft()
-      fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+      pickFormula('褶倍数公式（倍数法）')
       const tiers = screen.getByTestId('craft-tier-options')
       // fixture 的 label 与键名不同字（`标准档（2.0倍）` ≠ `standard`）⇒ 页面写死一套中文档位名必红
       expect(
-        within(tiers)
-          .getAllByRole('radio')
-          .map((r) => r.textContent)
+        Array.from((within(tiers).getByRole('combobox') as HTMLSelectElement).options).map(
+          (o) => o.textContent ?? ''
+        )
       ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
       // 褶数块只在韩褶公式下出现
       expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
@@ -2007,12 +2086,8 @@ describe('NewOrderPage', () => {
       fillSize(0, '6.6', '2.6')
       // ⚠️ 2026-09-28 布局重排：用料公式 / 档位 chips 在步骤 1 的「改工艺参数」块里
       expandCraft()
-      fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
-      fireEvent.click(
-        within(screen.getByTestId('craft-tier-options')).getByRole('radio', {
-          name: '经济档（1.8倍）',
-        })
-      )
+      pickFormula('褶倍数公式（倍数法）')
+      pickOption('档位', '经济档（1.8倍）')
 
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -2030,7 +2105,7 @@ describe('NewOrderPage', () => {
       // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里
       expandCraft()
       // 公式值域不依赖配置（常量与引擎同源）⇒ chips 仍在，缺省 = pleat
-      expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+      expect(formulaSelected()).toBe('韩褶公式（褶数法）')
       // 档位**值域取不到** ⇒ 不渲染档位 chips（编一套 = 第二份档位真值）
       expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 

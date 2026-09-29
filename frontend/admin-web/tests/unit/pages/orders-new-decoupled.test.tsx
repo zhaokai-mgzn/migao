@@ -112,6 +112,15 @@ const expandProcessing = () => {
   if (btns.length && btns[0].getAttribute('aria-expanded') === 'false') fireEvent.click(btns[0])
 }
 
+/**
+ * 展开底部吸底条里的**费用明细**（🔴 2026-09-29 第三次裁定：明细默认收起 ⇒ 未展开时
+ * 明细**不渲染**，`加工费` 等行读不到）。
+ */
+const expandFee = () => {
+  const btn = screen.queryByTestId('fee-detail-toggle')
+  if (btn && btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -126,6 +135,7 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
 
   it('挂载时加载店铺级加工项目录（只加载一次）', async () => {
     render(<NewOrderPage />)
+    expandFee()
     await waitFor(() => {
       expect(mockGetProcessingItems).toHaveBeenCalledTimes(1)
     })
@@ -134,6 +144,7 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
 
   it('选商品后仍不调用商品维度加工项端点，选择器来自店铺级目录', async () => {
     render(<NewOrderPage />)
+    expandFee()
 
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
@@ -157,6 +168,7 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
 
   it('目录加载完成后选商品，加工项仍可选并计入加工费', async () => {
     render(<NewOrderPage />)
+    expandFee()
     // 先等目录就绪，再选商品（真实用户路径）
     await waitFor(() => {
       expect(mockGetProcessingItems).toHaveBeenCalledTimes(1)

@@ -146,8 +146,18 @@ const inputOf = (label: string, idx = 0) =>
  * 定高买宽下 2.6+0.3 = 2.9 > 2.8 识别出「超高」）→ 勾一个加工项
  * 🔴 #5030：宽方向**不再加左右余量**；且门幅**已无缺省值**（issue #4877）⇒ 门幅由 SKU 提供。
  */
+/**
+ * 展开底部吸底条里的**费用明细**（🔴 2026-09-29 第三次裁定：明细默认收起 —— 常态只占一行）。
+ * 本文件的判据全在明细里 ⇒ 渲染后先展开。
+ */
+const expandFee = () => {
+  const btn = screen.queryByTestId('fee-detail-toggle')
+  if (btn && btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 async function setupLine() {
   render(<NewOrderPage />)
+  expandFee()
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
   await screen.findByText('窗宽 (米)')

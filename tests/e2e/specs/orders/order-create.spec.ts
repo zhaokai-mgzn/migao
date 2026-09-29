@@ -234,14 +234,23 @@ test.describe('订单创建', () => {
       // 2026-09-28：用料公式 / 档位渲染在步骤 1 的「改工艺参数」展开区内（推导未就绪时该区已展开）
       const editBtn = page.getByTestId('craft-plan-edit').first()
       if ((await editBtn.getAttribute('aria-expanded')) === 'false') await editBtn.click()
-      await expect(page.getByRole('radio', { name: '韩褶公式（褶数法）' })).toBeVisible()
-      await expect(page.getByRole('radio', { name: '褶倍数公式（倍数法）' })).toBeVisible()
+      // 🔴 2026-09-29 第三次裁定：五组枚举由 chips 改**原生下拉**（用户口径「比较占空间」）
+      // ⇒ 断言由「两个 radio 可见」改成「下拉里就是这两档」（判据强度不变）
+      const formula = page.getByLabel('用料公式')
+      await expect(formula).toBeVisible()
+      await expect(formula.locator('option')).toHaveText([
+        '韩褶公式（褶数法）',
+        '褶倍数公式（倍数法）',
+      ])
       // 反向断言：褶距控件与文案都不得再出现（#4874 第 7 条）
       await expect(page.getByLabel('褶距')).toHaveCount(0)
       await expect(page.getByText('褶距', { exact: true })).toHaveCount(0)
     })
 
     test('收货信息含「常用物流/快递」与「常用物流公司」两个控件', async ({ page }) => {
+      // 🔴 2026-09-29 第三次裁定：「常用物流」收进**折叠**（选客户时自动带出 ⇒ 常态不占视线）
+      // ⇒ 真浏览器判据改为「展开后两个控件都在」（同一份断言，只多了一步展开）
+      await page.getByTestId('logistics-section').locator('summary').click()
       await expect(page.getByLabel('常用物流/快递')).toBeVisible()
       await expect(page.getByLabel('常用物流公司')).toBeVisible()
       // 「未指定」是真值：客户档案没录时不编造「快递」（#4419 口径）

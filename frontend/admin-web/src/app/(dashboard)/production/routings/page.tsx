@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   AlertCircle,
   ArrowDown,
@@ -770,7 +771,25 @@ interface MatrixRow {
   cells: Map<string, OperationPosition>
 }
 
+/**
+ * `useSearchParams` 必须包在 Suspense 里（Next 的静态预渲染期读 searchParams 要求边界；
+ * 形态照 `app/(dashboard)/production/processing/page.tsx` 与 `chat/page.tsx`）——
+ * 页面本体是纯客户组件，fallback 留空即可。
+ *
+ * 为什么需要它（2026-09-29）：下单页「参数说明」把「工艺配置 → 算料配置」做成**可点深链**
+ * （`/production/routings?tab=calc`，入口常量 = `frontend/admin-web/src/lib/meters-formula-legend.ts::CRAFT_CALC_ENTRY`）
+ * ⇒ 本页必须**认这个参数**，否则点进去停在第一个 tab（用户口径「点击直接跳转过去」）。
+ */
 export default function ProcessConfigPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProcessConfigContent />
+    </Suspense>
+  )
+}
+
+function ProcessConfigContent() {
+  const searchParams = useSearchParams()
   // ── 只读面 ──
   const [catalog, setCatalog] = useState<OperationsCatalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
@@ -794,7 +813,13 @@ export default function ProcessConfigPage() {
    * **并回同一张表** —— 删掉那个独立区块**不减少任何定价入口**），原【打包发货】的位置改放
    * **工艺路线**。</p>
    */
-  const [tab, setTab] = useState<'process' | 'calc' | 'cut'>('process')
+  const [tab, setTab] = useState<'process' | 'calc' | 'cut'>(() =>
+    searchParams?.get('tab') === 'calc'
+      ? 'calc'
+      : searchParams?.get('tab') === 'cut'
+        ? 'cut'
+        : 'process'
+  )
   /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')

@@ -387,11 +387,10 @@ async function setupLine(opts: { doorWidth?: string; width?: string; height?: st
   fireEvent.click(await screen.findByText('遮光窗帘'))
   await screen.findByText('窗宽 (米)')
   // 有 SKU 时必须先选颜色（尺寸才跟着该 SKU 的门幅走）。
-  // 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：门幅 chips
-  // **常态就在**（旧「只读摘要 + 点『改』展开」已删除）⇒ 直接点这一支。
+  // 2026-09-29（第二次裁定）：门幅改**一行摘要 + 下拉** ⇒ 直接改下拉的值。
   if (doorWidth) {
     fireEvent.click(await screen.findByRole('button', { name: '米白' }))
-    fireEvent.click(await screen.findByText(doorWidth))
+    await waitFor(() => pickSku(doorWidth))
   }
   openSizing()
   fireEvent.change(inputOf('窗宽 (米)'), { target: { value: width } })
@@ -448,14 +447,10 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
   it('多门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 自动选中 **3.2**（否则 2.8 会判「需接高」/ 没选则「未维护」）', async () => {
     await setupLineMultiDoorWidth({ widths: ['2.8米', '3.2米'], width: '3.0', height: '2.75' })
     openSizing()
-    // 2026-09-29：门幅 chips **常态就在** ⇒ 「选的是哪一支」直接读 chips 的选中态
-    // （`aria-pressed`）。断言强度不降：仍**真的钉住「选中的是 3.2」**（正面 + 反面），
-    // 只是读数面由旧的只读摘要换成 chips 自己。来源文案也换成人话（含窗宽数）。
-    expect(await screen.findByRole('button', { name: /3\.2米/ })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'false')
+    // 2026-09-29（第二次裁定）：门幅改**一行摘要 + 下拉** ⇒ 「选的是哪一支」的读数面 = **下拉的选中项**
+    // （正面 + 反面都钉，断言强度不降）；来源文案照旧说人话（含窗宽数）。
+    await waitFor(() => expect(selectedSkuText()).toContain('3.2米'))
+    expect(selectedSkuText()).not.toContain('2.8米')
     expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('窗宽 3 米')
     // 3.2 才做得下单幅（2.75 + 0.3 = 3.05 ≤ 3.2）⇒ 既不该报「需接高」，也不该是「门幅未维护」
     expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
@@ -469,15 +464,15 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
     openSizing()
     expect(screen.queryByTestId('door-width-suboptimal')).toBeNull()
 
-    // 2026-09-29：chips 常态就在（旧「先点『改』展开」已删除）⇒ 直接点另一支
+    // 2026-09-29（第二次裁定）：门幅改**一行摘要 + 下拉** ⇒ 换一支 = 改下拉的值
     // 客服改成 3.2（仍可行，但不是规则解）⇒ 提示可选 2.8；选择**不被自动改回**
-    fireEvent.click(await screen.findByText('3.2米'))
+    await waitFor(() => pickSku('3\\.2米'))
     const tip = await screen.findByTestId('door-width-suboptimal')
     expect(tip.textContent).toContain('2.8 米门幅')
     expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
-    // 钉住「**手选的是哪一支**」：选中态在 chips 上（正面 + 反面 + 来源=你手动选的规格）
-    expect(screen.getByRole('button', { name: /3\.2米/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'false')
+    // 钉住「**手选的是哪一支**」：下拉的选中项（正面 + 反面 + 来源=你手动选的规格）
+    expect(selectedSkuText()).toContain('3.2米')
+    expect(selectedSkuText()).not.toContain('2.8米')
     expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('你手动选的规格')
   })
 
@@ -494,6 +489,55 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
  * 选商品（**给定 SKU 明细**：可含「同门幅多售卖方式」与库存）→ 选颜色（不点门幅，交给规则）→
  * 填宽高（传 `null` ⇒ **不填**，用于「尺寸未填」形态）。
  */
+/**
+ * 选规格（2026-09-29 第二次裁定：门幅 chips 网格 ⇒ **一行摘要 + 下拉**）——
+ * 在下拉选项文本里找第一支命中项再选中（比较用正则，调用点可写 `'2\\.8米'`）。
+ */
+/**
+ * 某个枚举字段**下拉**的当前选中项（界面选中态的唯一证据）。
+ * 🔴 2026-09-29 第三次裁定：枚举字段由 chips 改**原生下拉**（用户口径「比较占空间」）⇒
+ * 读数从 `aria-checked=true` 的 chip 换成 `<select>` 的当前选中项（判据强度不变）。
+ */
+const checkedChips = (label: string) => {
+  // 2026-09-29 第三次裁定：枚举字段改**原生下拉** ⇒ 读数 = 当前选中项；
+  // 页面侧仍是 chips 的几组（帘体 / 售卖形态）走 radiogroup + aria-checked 分支。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) return [select.selectedOptions[0]?.textContent ?? '']
+  return within(screen.getByRole('radiogroup', { name: label }))
+    .getAllByRole('radio')
+    .filter((r) => r.getAttribute('aria-checked') === 'true')
+    .map((r) => r.textContent ?? '')
+}
+
+/** 选某一档（客服手选 / 选「未指定」交还给规则）—— 一次 `change` 即生效 */
+const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
+  fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
+}
+
+const pickSku = (pattern: string) => {
+  const select = screen.getByTestId('sku-select') as HTMLSelectElement
+  const re = new RegExp(pattern)
+  const option = Array.from(select.options).find((o) => re.test(o.textContent ?? ''))
+  if (!option) throw new Error(`规格下拉里没有匹配「${pattern}」的选项`)
+  fireEvent.change(select, { target: { value: option.value } })
+}
+
+/** 当前选中的规格文本（读数面；旧 chips 的 `aria-pressed` 已随形态退场） */
+const selectedSkuText = () => {
+  const select = screen.getByTestId('sku-select') as HTMLSelectElement
+  return select.selectedOptions[0]?.textContent ?? ''
+}
+
 async function setupLineWithSkus(opts: {
   skus: Array<{ doorWidth: string; stock?: number; price?: number }>
   width?: string | null
@@ -546,13 +590,11 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
 
     // 改成 2.75 ⇒ 2.8 不可行、3.2 可行 ⇒ **应自动改选 3.2**（停在 2.8 会报「需接高」⇒ 红）
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.75' } })
-    // 2026-09-29：门幅 chips **常态就在** ⇒ 「自动改选」的证据面 = chips 的选中态（`aria-pressed`）——
-    // 改前停在不最优的旧门幅 ⇒ 3.2 的 `aria-pressed` 仍是 false（且报「需接高」）⇒ 本断言必红；
+    // 2026-09-29（第二次裁定）：门幅改**一行摘要 + 下拉** ⇒ 「自动改选」的证据面 = 下拉的**选中项**
+    // —— 改前停在不最优的旧门幅 ⇒ 选中项仍是 2.8（且报「需接高」）⇒ 本断言必红；
     // 用 `waitFor` 等**改选落地**（规则重算是一次服务端往返，不可即时读）
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /3\.2米/ })).toHaveAttribute('aria-pressed', 'true')
-    )
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => expect(selectedSkuText()).toContain('3.2米'))
+    expect(selectedSkuText()).not.toContain('2.8米')
     expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('系统按窗宽')
     // 改选落地后，「需接高」告警随旧门幅一起消失（改选是一次服务端往返 ⇒ 再等一次）
     await waitFor(() => expect(screen.queryByTestId('door-width-needs-splice')).toBeNull())
@@ -566,14 +608,14 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
   // 回归护栏（**不是**红证条）：客服手选过 ⇒ 规则**不覆盖**，只提示可换最优。
   it('客服**手选**过 ⇒ 规则不覆盖（改尺寸后仍保持手选 + 只给提示）', async () => {
     await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], height: '2.4' })
-    // 2026-09-29：chips 常态就在 ⇒ 直接手选 3.2（旧「先点『改』展开」已删除）
+    // 2026-09-29（第二次裁定）：chips ⇒ 下拉 ⇒ 手选 = 改下拉的值（先点『改』那一步早已删除）
     //（「手选不被规则覆盖」这条判据本身一字未动）
-    fireEvent.click(await screen.findByText('3.2米')) // 手选（非规则解）
+    await waitFor(() => pickSku('3\\.2米')) // 手选（非规则解）
     openSizing()
     expect(await screen.findByTestId('door-width-suboptimal')).toBeInTheDocument()
-    // 钉住「**手选的是哪一支**」：选中态在 chips 上（正面 + 反面 + 来源=你手动选的规格）
-    expect(screen.getByRole('button', { name: /3\.2米/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'false')
+    // 钉住「**手选的是哪一支**」：下拉的选中项（正面 + 反面 + 来源=你手动选的规格）
+    expect(selectedSkuText()).toContain('3.2米')
+    expect(selectedSkuText()).not.toContain('2.8米')
     expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('你手动选的规格')
 
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.5' } }) // 规则解仍是 2.8
@@ -760,18 +802,6 @@ describe('#5014 自动选 SKU：有库存优先 → 单价低者优先 → 按 i
  * ⇒ 8a/8b 的 `checkedChips('加工类型')` 恒为 `['未指定']`、8d 落库 `cuttingMode` 为 `undefined`。
  */
 describe('#5020 加工类型自动推导：未指定 ⇒ 自动选中；客服改后不被规则覆盖', () => {
-  /** 某个 radiogroup 里 `aria-checked=true` 的 chip 文案（界面选中态的唯一证据） */
-  const checkedChips = (label: string): string[] =>
-    within(screen.getByRole('radiogroup', { name: label }))
-      .getAllByRole('radio')
-      .filter((el) => el.getAttribute('aria-checked') === 'true')
-      .map((el) => el.textContent ?? '')
-
-  /** 点某个 chip（客服手选 / 点「未指定」交还给规则） */
-  const pickChip = (label: string, text: string) => {
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
-  }
-
   it('判据 8a：未指定加工类型 ⇒ 按规则**自动选中**（成品高 2.75 ⇒ 定高买宽）', async () => {
     // 尺寸留空建单（`setupLineWithSkus` 的 `null` 档）⇒ 展开步骤后先点「未指定」，再填尺寸
     await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
@@ -1119,7 +1149,7 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
   it('#5130 加工类型只决定「倒幅」：切「定宽买高」⇒ 超宽 + 倒幅（依据文案 = 阈值式）', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const block = screen.getByTestId('auto-detected-features')
     await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
@@ -1173,7 +1203,7 @@ describe('#4662 / #5130 「超宽」判据已换为企业阈值 + 加工类型�
   it('#5130 小窗不再判「超宽」（旧「含褶倍」判据退役）⇒ 落库组合键只剩「倒幅」', async () => {
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '2.6' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const block = screen.getByTestId('auto-detected-features')
     await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
@@ -1213,7 +1243,7 @@ describe('#4662 / #5130 「超宽」判据已换为企业阈值 + 加工类型�
   it('#4662 反向：切「定宽买高」+ 高不超门幅 ⇒ 提示「系统实际会按定高买宽算」', async () => {
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '1.5' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const notice = await screen.findByTestId('auto-feature-notice-cutting-mode-conflict')
     expect(notice.textContent).toContain('系统实际会按定高买宽算')

@@ -120,6 +120,30 @@ export const OPEN_COUNT_OPTIONS: ReadonlyArray<{ value: number; label: string }>
  */
 export const DEFAULT_OPEN_COUNT = 2
 
+/**
+ * **加工项名字的别名表**（同一件东西的两种写法）—— 唯一真值源，页面与识别映射**都**从这里取。
+ *
+ * 为什么必须有一张表：目录名 2026-09-28 由 ERP 写法「**韩折**」统一为「**韩褶**」
+ * （V139 只保证**新种子**；老租户重建目录之前目录里仍是「韩折」）⇒ 任何「按名字找项」的代码
+ * 直接写 `name === '韩褶'` 都会在老目录上**静默失效**。
+ * 实证（2026-09-29 云测试环境，用户实测报障）：租户目录里是「韩折」⇒ ②加工项 的推荐条只剩
+ * 「定型」、预选也只勾上「定型」（用户原话「可以把韩折也加上」）。
+ *
+ * ⚠️ **只登记「同一件东西的改名」**：不做同义词联想（联想 = 替客户改需求）。
+ */
+export const CRAFT_ITEM_NAME_ALIASES: Record<string, string> = { 韩折: '韩褶' }
+
+/**
+ * 加工项名 → **规范 key**（`韩折` 与 `韩褶` 同 key）。
+ *
+ * 凡「按名字找加工项 / 比较两个名字」的地方（推荐组合的预选与展示、识别结果落勾选、
+ * 工艺单值护栏）**一律**先过本函数再比 —— 直接比字符串就是上面那条实测缺陷的形态。
+ */
+export function craftItemKeyOf(name: string | null | undefined): string {
+  const text = typeof name === 'string' ? name.trim() : ''
+  return CRAFT_ITEM_NAME_ALIASES[text] ?? text
+}
+
 /** 款式（§4.2 `style`） */
 export const STYLE_OPTIONS = ['单色', '拼色'] as const
 

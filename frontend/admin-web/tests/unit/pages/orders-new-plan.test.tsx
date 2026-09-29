@@ -218,12 +218,20 @@ const editMeters = () => {
 }
 
 const checkedChips = (label: string) =>
-  within(screen.getByRole('radiogroup', { name: label }))
-    .getAllByRole('radio')
-    .filter((r) => r.getAttribute('aria-checked') === 'true')
-    .map((r) => r.textContent)
+  // 2026-09-29 第三次裁定：下拉**恒有一档选中**（含「未指定」档）⇒ 读数 = 当前选中项
+  [ (screen.getByRole('combobox', { name: label }) as HTMLSelectElement).selectedOptions[0]?.textContent ?? '' ]
 
 const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
   fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
 }
 
@@ -234,13 +242,30 @@ const pickProduct = async () => {
 }
 
 /** 三项输入：颜色 + 净窗宽 + 净窗高（**商家只填这三项**）；门幅由测试显式点选 */
+/**
+ * 选规格（2026-09-29 第二次裁定：门幅 chips 网格 ⇒ **一行摘要 + 下拉**）——
+ * 参数是**正则串**（调用点写 `'2\\.8米'`），在下拉选项文本里找第一支命中项再选中。
+ */
+const pickSku = (pattern: string) => {
+  const select = screen.getByTestId('sku-select') as HTMLSelectElement
+  const re = new RegExp(pattern)
+  const option = Array.from(select.options).find((o) => re.test(o.textContent ?? ''))
+  if (!option) throw new Error(`规格下拉里没有匹配「${pattern}」的选项`)
+  fireEvent.change(select, { target: { value: option.value } })
+}
+
+/** 当前选中的规格文本（读数面；旧 chips 的 `aria-pressed` 已随形态退场） */
+const selectedSkuText = () => {
+  const select = screen.getByTestId('sku-select') as HTMLSelectElement
+  return select.selectedOptions[0]?.textContent ?? ''
+}
+
 const fillThreeInputs = async (opts: { sku?: string } = {}) => {
   fireEvent.click(await screen.findByRole('button', { name: '米白' }))
   fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-  if (opts.sku !== undefined) {
-    fireEvent.click(await screen.findByRole('button', { name: new RegExp(opts.sku) }))
-  }
+  const pattern = opts.sku
+  if (pattern !== undefined) await waitFor(() => pickSku(pattern))
 }
 
 /** 「改」入口（就地人工改的**唯一**入口；默认收起 —— 推导结果只读展示） */
@@ -305,11 +330,12 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
 
     // 推导结果**只读展示**（改前：页面没有这个块 ⇒ 必红）
     expect(await screen.findByTestId('craft-plan-mode')).toHaveTextContent('定高买宽')
-    // **甲**（issue #5287 ①b）：来源标到**每一项** —— 加工类型这一档的归属挂在它**自己**身上
-    expect(screen.getByTestId('craft-plan-mode-source')).toHaveTextContent('系统推导')
-    // 块级 `craft-plan-source` **退为汇总**（判据 2：块级不得单独承担项级归属）
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('来源汇总')
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 0 项')
+    // **甲**（issue #5287 ①b）+ 2026-09-29 第二次裁定：「系统推导」是常态 ⇒ **不占版面**
+    // （只有**人工改过**的那一项才标出来 —— 见判据 1b 与「逐项归属」两条；判据强度不减）
+    expect(screen.queryByTestId('craft-plan-mode-source')).toBeNull()
+    // 块级「来源汇总」**已退场**（用户实测读不懂）⇒ 由**结论句 + 逐项白话**承担展示
+    expect(screen.queryByTestId('craft-plan-source')).toBeNull()
+    expect(screen.getByTestId('craft-plan-headline')).toBeInTheDocument()
     // 推导依据可读（商家要能核对判定）：plan.reason + 候选逐条
     expect(screen.getByTestId('craft-plan-reason')).toHaveTextContent('成品高 2.6')
     const candidates = within(await screen.findByTestId('craft-plan-candidates'))
@@ -343,11 +369,10 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     await waitFor(() =>
       expect(craftCalcCalls().at(-1)).toMatchObject({ cutting_mode: '定宽买高' })
     )
-    // 人工覆盖进请求 ⇒ **加工类型这一项**的来源变「人工指定」（甲：标在项上，不在块上）
+    // 人工覆盖进请求 ⇒ **加工类型这一项**的来源标「人工指定」（甲：标在项上，不在块上）
     expect(await screen.findByTestId('craft-plan-mode-source')).toHaveTextContent('人工指定')
-    // 块级只报**汇总**（其余三项仍是系统推导）
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 1 项')
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('系统推导 3 项')
+    // 块级汇总**已退场**；其余三项也不再逐项写「系统推导」（用户口径：读着吵）
+    expect(screen.queryByTestId('craft-plan-source')).toBeNull()
 
     const before = craftCalcCalls().length
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
@@ -377,7 +402,7 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     expect(await screen.findByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
     // 推导没就绪 ⇒ 工艺参数**默认展开**（人工兜底是唯一出路；收起会让人无从下手）
     expect(craftParamsToggle()).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('radiogroup', { name: '加工类型' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '加工类型' })).toBeInTheDocument()
     // 数量照旧按算料结果预填（**不猜**一个推导方案出来）
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
   })
@@ -422,8 +447,9 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ fabric_width: 2.8 }))
 
     const before = craftCalcCalls().length
-    // 2026-09-29：门幅 chips **常态就在**（旧「只读摘要 + 点『改』展开」已删除）—— 直接点另一支
-    fireEvent.click(await screen.findByRole('button', { name: /3\.2米/ }))
+    // 2026-09-29（第二次裁定）：门幅改**一行摘要 + 下拉** ⇒ 换一支 = 改下拉的值
+    //（改门幅这一步的语义未变：改完照旧重发试算）
+    pickSku('3\\.2米')
     // 红证：`fabric_width` 不进签名 ⇒ 入参没变 ⇒ effect 不触发 ⇒ 本断言红
     await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(before))
     expect(craftCalcCalls().at(-1)).toMatchObject({ fabric_width: 3.2 })
@@ -1368,15 +1394,16 @@ describe('#5287 项级来源 + 引擎拒绝态（判据 2/3/4/5）', { timeout: 
     // 请求面自证：加工类型那个键**根本没发**（引擎收到的 `cutting_mode_sent == false`）
     expect(craftCalcCalls().at(-1)).not.toHaveProperty('cutting_mode')
 
-    // 逐项归属（甲）：接高 = 人工指定；加工类型 / 拼次 / 接宽 = 系统推导
-    expect(screen.getByTestId('craft-plan-join-height-source')).toHaveTextContent('人工指定')
-    expect(screen.getByTestId('craft-plan-mode-source')).toHaveTextContent('系统推导')
-    expect(screen.getByTestId('craft-plan-splice-source')).toHaveTextContent('系统推导')
-    expect(screen.getByTestId('craft-plan-join-width-source')).toHaveTextContent('系统推导')
-    // 红证：把项级标注去掉、只留块级（改前的形态）⇒ 上面四条必红
-    expect(screen.getByTestId('craft-plan-mode-source')).not.toHaveTextContent('人工指定')
-    // 块级汇总（不是项级归属的载体）
-    expect(screen.getByTestId('craft-plan-source')).toHaveTextContent('人工指定 1 项')
+    // 逐项归属（甲，2026-09-29 第二次裁定收窄）：**人工改过的那一项**标「（人工）」（标在项自己身上）；
+    // 常态的「系统推导」不再逐项重复（用户口径：读着吵）⇒ 其余三项**没有**该标注
+    expect(screen.getByTestId('craft-plan-join-height')).toHaveTextContent('0.05')
+    expect(screen.getByTestId('craft-plan-join-height')).toHaveTextContent('（人工）')
+    expect(screen.getByTestId('craft-plan-splice')).not.toHaveTextContent('（人工）')
+    expect(screen.getByTestId('craft-plan-join-width')).not.toHaveTextContent('（人工）')
+    expect(screen.queryByTestId('craft-plan-mode-source')).toBeNull()
+    expect(screen.queryByTestId('craft-plan-join-height-source')).toBeNull()
+    // 块级汇总已退场（不是项级归属的载体，也不再是任何东西的载体）
+    expect(screen.queryByTestId('craft-plan-source')).toBeNull()
   })
 
   it('判据 3（红证）：引擎拒绝该组合 ⇒ 同帧**两处**都不得再写「已并入」，改用「未生效」', async () => {
@@ -1406,8 +1433,9 @@ describe('#5287 项级来源 + 引擎拒绝态（判据 2/3/4/5）', { timeout: 
     })
     await waitFor(() => expect(screen.getByText(/算料试算失败.*拼次只能是 0/)).toBeInTheDocument())
 
-    // 两处（`craft-plan-splice` 与 `craft-plan-derived-options`）都**不得**再宣称「已并入」
-    const spliceLine = screen.getByTestId('craft-plan-splice')
+    // 两处（`craft-plan-splice-state` 与 `craft-plan-derived-options`）都**不得**再宣称「已并入」
+    //（2026-09-29 第二次裁定：拼接那一档的**下游处置**从「拼接」行里拆出来单独一行，判据改读新 testid）
+    const spliceLine = screen.getByTestId('craft-plan-splice-state')
     expect(spliceLine).not.toHaveTextContent('已并入')
     expect(spliceLine).toHaveTextContent('未生效')
     const derived = screen.getByTestId('craft-plan-derived-options')
@@ -1433,7 +1461,7 @@ describe('#5287 项级来源 + 引擎拒绝态（判据 2/3/4/5）', { timeout: 
     )
     pickChip('拼接（人工加）', '拼2次')
     await waitFor(() =>
-      expect(screen.getByTestId('craft-plan-splice')).toHaveTextContent('已并入')
+      expect(screen.getByTestId('craft-plan-splice-state')).toHaveTextContent('已并入')
     )
     expect(screen.getByTestId('craft-plan-derived-options')).toHaveTextContent('已并入')
   })

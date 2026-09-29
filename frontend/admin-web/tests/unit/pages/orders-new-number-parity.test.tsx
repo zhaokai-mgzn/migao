@@ -183,6 +183,16 @@ function typeZeroDotFive(el: HTMLInputElement): string[] {
 }
 
 const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
   fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
 }
 
@@ -195,7 +205,13 @@ async function setupCurtain() {
   fireEvent.click(await screen.findByRole('button', { name: '米白' }))
   fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-  fireEvent.click(await screen.findByRole('button', { name: /2\.8米/ }))
+  // 选规格（2026-09-29 第二次裁定：门幅 chips 网格 ⇒ **一行摘要 + 下拉**）
+  await waitFor(() => {
+    const select = screen.getByTestId('sku-select') as HTMLSelectElement
+    const option = Array.from(select.options).find((o) => /2\.8米/.test(o.textContent ?? ''))
+    if (!option) throw new Error('规格下拉里没有 2.8米')
+    fireEvent.change(select, { target: { value: option.value } })
+  })
   // 算料写回「用料米数」（各用例的桩可能给不同精度 ⇒ 只等它**落下来**，不等某个具体值）
   await waitFor(() => expect(inputOf('用料米数').value).toMatch(/^13\.3/))
 }
