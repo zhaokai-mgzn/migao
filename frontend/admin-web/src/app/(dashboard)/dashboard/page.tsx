@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
+import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
@@ -34,6 +34,14 @@ function fmtSigned(n: number): string {
   if (n === 0) return '0%'
   const sign = n > 0 ? '+' : '-'
   return `${sign}${Math.abs(n)}%`
+}
+
+/** 分块失败告警里显示的**人话块名**（键 = Promise.allSettled 的四块） */
+const BLOCK_LABELS: Record<string, string> = {
+  stats: '经营数据与待处理',
+  trend: '趋势图',
+  orders: '近期订单',
+  ranking: '商品销量排行',
 }
 
 function now(): string {
@@ -198,6 +206,15 @@ export default function DashboardPage() {
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
   const [updateTime, setUpdateTime] = useState('--')
+  // 🔴 issue #5792（客观缺陷 ④）：**失败态与空数据必须可区分**。
+  // 改前：4 个接口任一失败只 `console.error` ⇒ UI 退化成「空态」或「0」，
+  // 商家无法区分「今天没单」与「接口挂了」—— 加了指标之后这会直接影响决策。
+  // 口径：① 失败**不清零**（保留上次成功值，避免把故障画成业务事实）；② 显式告警 + 分块列出；
+  //       ③ 重试**只重发失败的那一块**（已成功的块不重复打后端）。
+  const [blockErrors, setBlockErrors] = useState<Record<string, string>>({})
+  // ⚠️ 标记的读/清一律**就地内联**成 `setBlockErrors(...)`，不抽组件内小函数：
+  //    `fetchData`（useCallback）声明的更早，抽函数会形成前向引用，ESLint `react-hooks/immutability`
+  //    判 **error**（本地 `tsc` 看不见，CI 的 eslint 步会红 —— 已实跑踩过）。
   // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
   const [briefingEnabled, setBriefingEnabled] = useState(false)
 
@@ -214,29 +231,58 @@ export default function DashboardPage() {
         dashboardApi.getProductRanking('day', 10),
       ])
 
+      // 每块：成功 ⇒ 清掉自己的失败标记；失败 ⇒ 记标记 + **不动**上次成功值（不清零）
       if (statsRes.status === 'fulfilled') {
         const s = statsRes.value.data.data
         setStats(s)
         setLowStockCount(s.lowStockItems ?? 0)
         setPendingShipment(s.pendingShipOrders ?? 0)
         setProcessingShipment(s.processingPendingOrders ?? 0)
+        setBlockErrors((prev) => {
+          if (!('stats' in prev)) return prev
+          const next = { ...prev }
+          delete next.stats
+          return next
+        })
       } else {
         console.error('Dashboard stats:', statsRes.reason)
+        setBlockErrors((prev) => ({ ...prev, stats: BLOCK_LABELS.stats }))
       }
       if (trendRes.status === 'fulfilled') {
         setTrendData(Array.isArray(trendRes.value.data.data) ? trendRes.value.data.data : [])
+        setBlockErrors((prev) => {
+          if (!('trend' in prev)) return prev
+          const next = { ...prev }
+          delete next.trend
+          return next
+        })
       } else {
         console.error('Dashboard trend:', trendRes.reason)
+        setBlockErrors((prev) => ({ ...prev, trend: BLOCK_LABELS.trend }))
       }
       if (ordersRes.status === 'fulfilled') {
         setRecentOrders(ordersRes.value.data.data || [])
+        setBlockErrors((prev) => {
+          if (!('orders' in prev)) return prev
+          const next = { ...prev }
+          delete next.orders
+          return next
+        })
       } else {
         console.error('Dashboard recent orders:', ordersRes.reason)
+        setBlockErrors((prev) => ({ ...prev, orders: BLOCK_LABELS.orders }))
       }
       if (rkRes.status === 'fulfilled') {
         setRanking((rkRes.value.data as any)?.data || [])
+        setBlockErrors((prev) => {
+          if (!('ranking' in prev)) return prev
+          const next = { ...prev }
+          delete next.ranking
+          return next
+        })
       } else {
         console.error('Dashboard ranking:', rkRes.reason)
+        setBlockErrors((prev) => ({ ...prev, ranking: BLOCK_LABELS.ranking }))
       }
       setUpdateTime(now())
     } catch (error) {
@@ -244,6 +290,41 @@ export default function DashboardPage() {
       console.error('Dashboard load:', error)
     } finally {
       setLoading(false)
+    }
+  }, [trendDays])
+
+  /**
+   * 只重试**失败的那一块**（issue #5792 ④）—— 已成功的块不重复打后端。
+   * 与整页「刷新」的区别：刷新会重发 4 个接口；重试只补缺口。
+   */
+  const retryBlock = useCallback(async (key: string) => {
+    try {
+      if (key === 'stats') {
+        const r = await dashboardApi.getStats()
+        const s = r.data.data
+        setStats(s)
+        setLowStockCount(s.lowStockItems ?? 0)
+        setPendingShipment(s.pendingShipOrders ?? 0)
+        setProcessingShipment(s.processingPendingOrders ?? 0)
+      } else if (key === 'trend') {
+        const r = await dashboardApi.getOrderTrend(trendDays)
+        setTrendData(Array.isArray(r.data.data) ? r.data.data : [])
+      } else if (key === 'orders') {
+        const r = await dashboardApi.getRecentOrders(5)
+        setRecentOrders(r.data.data || [])
+      } else if (key === 'ranking') {
+        const r = await dashboardApi.getProductRanking('day', 10)
+        setRanking((r.data as any)?.data || [])
+      }
+      setBlockErrors((prev) => {
+        if (!(key in prev)) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    } catch (error) {
+      console.error('Dashboard retry:', key, error)
+      setBlockErrors((prev) => ({ ...prev, [key]: BLOCK_LABELS[key] ?? key }))
     }
   }, [trendDays])
 
@@ -272,6 +353,11 @@ export default function DashboardPage() {
   // 销量排行最大值（进度条基准）
   const maxSalesQty = Math.max(...ranking.map(r => r.salesQty || 0), 1)
 
+  // 失败块（按 BLOCK_LABELS 的声明顺序稳定输出，便于判据断言与用户扫读）
+  const failedBlocks = Object.keys(BLOCK_LABELS).filter((k) => k in blockErrors).map((k) => BLOCK_LABELS[k])
+  const errorKeyOfLabel = (label: string) =>
+    Object.keys(BLOCK_LABELS).find((k) => BLOCK_LABELS[k] === label) ?? label
+
   return (
     <div className="p-5 sm:p-6">
       {/* 顶部 */}
@@ -288,6 +374,28 @@ export default function DashboardPage() {
           刷新
         </button>
       </div>
+
+      {/* 🔴 失败态显式告警（issue #5792 ④）：与空态**可区分** —— 空态说「暂无数据」，
+          这里说「加载失败 + 是哪几块 + 上次成功值仍在」。不清零是关键：把故障画成 0 = 误导决策。 */}
+      {failedBlocks.length > 0 && (
+        <div
+          data-testid="dashboard-load-failed"
+          role="alert"
+          className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="font-medium">数据加载失败：{failedBlocks.join('、')}</span>
+          <span className="text-amber-700">下方显示的仍是上次成功取到的值（不是 0，也不是「暂无数据」）</span>
+          <button
+            type="button"
+            data-testid="dashboard-retry-block"
+            onClick={() => failedBlocks.forEach((b) => retryBlock(errorKeyOfLabel(b)))}
+            className="ml-auto rounded border border-amber-300 bg-white/70 px-2 py-0.5 font-medium text-amber-800 transition-colors hover:bg-white"
+          >
+            只重试失败项
+          </button>
+        </div>
+      )}
 
       {/* 米宝「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
       <TodayOverviewBar
