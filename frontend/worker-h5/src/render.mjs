@@ -21,7 +21,97 @@ import { operationDisplayName } from '../../shared/operation-display.mjs'
 
 /** 初始态：未登录。 */
 export function initialState() {
-  return { mode: 'login', worker: null, view: null, selection: { setId: null, orderItemId: null }, notice: null, error: null }
+  return {
+    mode: 'login',
+    worker: null,
+    view: null,
+    selection: { setId: null, orderItemId: null },
+    notice: null,
+    error: null,
+    // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
+    pages: null,
+    pagesUnread: false,
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 工人端页面开关（V141，母单 #5161）—— `GET /api/worker/me` 的 `pages` 的**唯一**消费处。
+//
+// 它回答「本机这个工人能走到哪几页」，**不是**权限（准入仍在服务端 `/api/worker/**`）。
+// 与后端 `com.migao.admin.worker.WorkerPages` 的闭词表**逐字同名**（改一边 ⇒ 判据红）：
+//   · `report`   —— 报工主流程（本页，`/w/`）
+//   · `order`    —— 订单页（⚠️ `/w/` **暂无对应面**：`render.mjs` 里没有订单 UI 入口
+//                   ⇒ 本包**不为它造 UI**，只登记「键存在、`/w/` 暂无对应面」；
+//                   将来 `/w/` 长出订单面时，在这里按 `effectivePages().has(PAGE_ORDER)` 门控）
+//   · `cut_calc` —— 机台模式（`/w/machine.html` 的入口链接）
+//   · `shipment` —— 发货页（⚠️ 同上：`/w/` 暂无对应面 ⇒ 不造 UI；准入面
+//                   `/api/worker/shipment/**` 已在后端，缺的只是入口）
+// ════════════════════════════════════════════════════════════════════════════════
+
+/** 页面键：报工主流程（本页）。 */
+export const PAGE_REPORT = 'report'
+
+/** 页面键：机台模式（一体机，`/w/machine.html`）。 */
+export const PAGE_CUT_CALC = 'cut_calc'
+
+/** 页面键：订单页 —— **`/w/` 暂无对应面**（登记，不造 UI）。 */
+export const PAGE_ORDER = 'order'
+
+/** 页面键：发货页 —— **`/w/` 暂无对应面**（登记，不造 UI）。 */
+export const PAGE_SHIPMENT = 'shipment'
+
+/**
+ * 默认页面集合 = 后端 `WorkerPages.defaultPages()` 的**逐字镜像**（缺行 ⇒ 默认四页全开）。
+ *
+ * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
+ * `tests/worker-h5-pages.test.mjs` 逐值比对四个键 + 顺序，改一边不改另一边 ⇒ 红。
+ */
+export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
+
+/** 机台模式入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。 */
+export const MACHINE_ENTRY_HREF = '/w/machine.html'
+
+/**
+ * 本机实际可走的页面集合（**唯一判据**）—— 三态各不相同，绝不合并：
+ *   ① `pagesUnread` ⇒ **fail-open**：读不到权限 ⇒ 按**全开**运行（把「开关没读到」变成
+ *      「活干不了」是更坏的失败），同时由页面**显式**提示这是降级态（见 `permUnreadNotice`）；
+ *   ② `pages == null`（还没读过）/ 空数组 ⇒ 同上按默认全开（后端对**成功**的读面恒回非空数组，
+ *      故空数组只可能来自旧版服务端 / 异常数据 ⇒ 与"读不到"同口径）；
+ *   ③ 非空数组 ⇒ **就是它**（未知键自动被忽略：前端不认识的面不因为多一个字符串就冒出来）。
+ *
+ * @param {object} state
+ * @returns {{opened: Set<string>, unread: boolean}} 生效页面集 + 是否处于「没读到权限」的降级态
+ */
+export function effectivePages(state) {
+  const pages = Array.isArray(state?.pages) ? state.pages.filter((p) => typeof p === 'string') : null
+  const unread = state?.pagesUnread === true || pages === null || pages.length === 0
+  return { opened: new Set(unread ? DEFAULT_PAGES : pages), unread }
+}
+
+/** 读不到页面权限时给工人的**显式**一句话（不许静默降级：工人得知道"这不是本机被关了页"）。 */
+export const permUnreadNotice = '未能读取页面权限，本机按全开运行（可继续报工；若与本机应开的页面不符，请找管理员）'
+
+/**
+ * 「本机未开报工页」视图（`pages` 不含 `report` 时的**显式**终点）。
+ *
+ * 🔴 为什么必须显式：静默留着一个扫不动码的页面 = 工人以为"扫码枪坏了 / 码脏了"，
+ * 反复重扫、找错人修 —— 而真因是这台设备/这个工人没开报工页。⇒ 说清三件事：
+ * ① 本机未开此页（不是码的问题）；② 出口 = 找管理员在「工人端页面」里开；
+ * ③ 出口 = 换设备 / 换工人（页面开关是**租户级**的，换人换机可能就开了）。
+ *
+ * ⚠️ 这里**只**管可见性：真正的准入仍在服务端（`/api/worker/**`）—— 本视图不代替鉴权。
+ */
+function reportPageClosedView(state) {
+  return `${header(state)}
+  <section class="wh5-card" id="wh5-report-closed">
+    <h1 class="wh5-title">本机未开报工页</h1>
+    <p class="wh5-sub">本机（本租户）的「工人端页面」里**没有**开报工页 ⇒ 这个页面上的扫码 / 报工入口已停用，不是码的问题。</p>
+    <ul class="wh5-closed-exits">
+      <li>找管理员在「设置 · 工人端页面」里把<b>报工</b>打开</li>
+      <li>或换一台已开报工页的设备 / 换一个已开报工页的工人（页面开关按租户下发）</li>
+    </ul>
+    <button id="wh5-logout" class="wh5-ghost" type="button">登出 / 换工人</button>
+  </section>`
 }
 
 /**
@@ -36,6 +126,14 @@ export function reduce(state, action) {
       const worker = action.worker ?? null
       return { ...state, worker, mode: worker ? (state.view ? state.mode : 'scan') : 'login' }
     }
+    // 页面权限读到（或**读不到**）：`action.pages` = 数组 ⇒ 用它；null/缺省 ⇒ fail-open 并按全开跑
+    // 🔴 换人换权限：登录成功 / 切换工人后必须**重拉**（app.mjs），`logout` 会把这两个键一并清回初值
+    case 'pages':
+      return {
+        ...state,
+        pages: Array.isArray(action.pages) ? [...action.pages] : null,
+        pagesUnread: action.pagesUnread === true,
+      }
     case 'logout':
       return { ...initialState() }
     case 'resolved': {
@@ -204,10 +302,17 @@ export function doneNotice(receipt) {
  * 判据 = `frontend/bmini-app/tests/page-entry-reachability.test.ts`（把这里的路由段与
  * bmini 的路由常量**逐值比对**：改一边不改另一边 ⇒ 红）。
  */
-function workerEntriesBar() {
+function workerEntriesBar(state) {
+  const { opened } = effectivePages(state)
+  // 🔴 入口栏按页面集过滤（本单）：机台模式（`cut_calc`）在**集合里才有链接**。
+  // 两条跨应用静态入口**不受** `pages` 影响（`/b/#/pages/worker/*` 不属于这四个键
+  // ⇒ 没有对应开关就不该由它决定去留：误删会让 #5052 那两页重新变成「走不到」）。
+  const machine = opened.has(PAGE_CUT_CALC)
+    ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">机台模式</a>`
+    : ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
     <a class="wh5-entry" href="/b/#/pages/worker/inbound/index">拍照入库</a>
-    <a class="wh5-entry" href="/b/#/pages/worker/reprint/index">补打入库标签</a>
+    <a class="wh5-entry" href="/b/#/pages/worker/reprint/index">补打入库标签</a>${machine}
   </nav>`
 }
 
@@ -220,7 +325,19 @@ function header(state) {
     <span class="wh5-worker" id="wh5-current-worker">当前工人：${name}${no ? `（工号 ${no}）` : ''}</span>
     <button id="wh5-switch" class="wh5-ghost" type="button">切换</button>
     <button id="wh5-logout" class="wh5-ghost" type="button">登出</button>
-  </header>${workerEntriesBar()}`
+  </header>${permUnreadBanner(state)}${workerEntriesBar(state)}`
+}
+
+/**
+ * 「页面权限没读到」的常驻提示（fail-open 的**可观察面**）。
+ *
+ * 🔴 为什么必须有这一句：降级跑 ≠ 正常跑 —— 不写出来，商家改过的开关被静默忽略，
+ * 而页面上一切正常（最坏的形态：**没人发现开关失效**）。
+ */
+function permUnreadBanner(state) {
+  return effectivePages(state).unread
+    ? `<p class="wh5-perm-unread" id="wh5-perm-unread" role="status">${esc(permUnreadNotice)}</p>`
+    : ''
 }
 
 function loginView(state) {
@@ -424,6 +541,16 @@ function cutPlanView(v) {
 }
 
 /**
+ * 闲置登出兜底分钟数 = 与服务端**同源**的全局默认（`WorkerSessionService.DEFAULT_IDLE_MINUTES`，10080）。
+ *
+ * 🔴 改前的兜底是 `15`（字面）：与服务端「全局默认 = 一周」（2026-09-29 用户裁定）**不符**
+ * ⇒ 只在「拿不到 `idle_minutes`」时生效的一条路径上，前端会比服务端早 **10065 分钟**把工人踢出
+ * （页面上是"无缘无故要我重登"）。正常链路服务端**恒回** `idle_minutes`（登录 / 续期 / `me` 三个响应都带），
+ * 所以它只影响降级路径 —— 但降级路径的字面值**必须**与服务端同源，否则就是第二份会漂的默认值。
+ */
+export const DEFAULT_WORKER_IDLE_MINUTES = 10080
+
+/**
  * 渲染整页（返回 HTML 串；调用方负责 `root.innerHTML = ...`）。
  *
  * @param {object} state 状态机当前态
@@ -432,6 +559,9 @@ function cutPlanView(v) {
 export function renderPage(state, view = state.view) {
   const s = { ...state, view: view ?? state.view }
   if (!s.worker) return loginView(s)
+  // 🔴 报工页门控（本单）：`report` 不在集合里 ⇒ **显式**给「本机未开报工页」终点，
+  // 绝不静默留一个"扫不动码"的页面（旧码选套 / 主屏 / 开工按钮一并不可达 —— 唯一入口在这里）。
+  if (!effectivePages(s).opened.has(PAGE_REPORT)) return reportPageClosedView(s)
   if (!s.view) return scanView(s)
   if (s.mode === 'select' && (s.view.needs_selection ?? []).length > 0) return selectView(s)
   return mainView(s)
