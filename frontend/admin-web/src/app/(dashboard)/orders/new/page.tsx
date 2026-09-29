@@ -63,6 +63,9 @@ import {
   SPLICE_ITEM_NAME,
   type CraftPlanOverrides,
 } from '@/lib/craft-calc-request'
+// 用料公式的**参数说明**（2026-09-29 用户裁定：公式串「用户看不懂里面的数字代表什么，
+// 应该要把参数名带上，如果用户要修改参数也知道去改什么」）—— 纯函数，**不解析公式串**
+import { metersFormulaLegend } from '@/lib/meters-formula-legend'
 import {
   COMPONENT_ROLE_EDGE,
   CURTAIN_BODY_CLOTH,
@@ -70,6 +73,7 @@ import {
   CURTAIN_BODY_SHEER,
   CURTAIN_TYPE_SHEER,
   DEFAULT_CUTTING_MODE,
+  DEFAULT_OPEN_COUNT,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
@@ -1216,17 +1220,12 @@ function heightFromDoorWidth(doorWidth: string | undefined): number | null {
 }
 
 /**
- * 宽 → 打开方式（真值源 §10 的启发式，**今天未落码**）：
- * 「≤2.2m 默认单开、>2.2m 默认双开、大窗（>5m）四开」。
+ * ~~宽 → 打开方式（真值源 §10 的启发式）~~ —— **已整体删除**（2026-09-29 用户裁定逐字：
+ * 「打开方式默认改成双开，**不要自动推算**」）。
  *
- * ⚠️ 只在商家**没手改过**打开方式时联动（`openCountTouched` 落在**行状态**里，
- * 不放组件内 state —— 收起/展开不会丢，同 #4489 的教训）。
+ * 缺省档改由 `lib/order-craft-fields.ts::DEFAULT_OPEN_COUNT`（双开）承担；改窗宽**不再**联动开数。
+ * 留痕位 `openCountTouched` 一字未动（商家手改过的值仍然只由商家自己改回）。
  */
-function deriveOpenCount(width: number): number {
-  if (width > 5) return 4
-  if (width > 2.2) return 2
-  return 1
-}
 
 /**
  * **人工加拼次**的取值（issue #5202 · 裁定 4）：`由推导决定` + `0~3`。
@@ -1314,7 +1313,9 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     //   由页面侧 `derivedCraftSpec` 解析 ⇒ 这里不持有第二份真值）。
     // ⚠️ #4566：`craft` / `isShaped` **不在**这里 —— 它们由**加工项**派生
     // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态），前端不补默认。
-    craft: createDefaultCraftSpec(),
+    // 打开方式缺省 = **双开**（2026-09-29 用户裁定：「打开方式默认改成双开，不要自动推算」）——
+    // 旧的「按窗宽启发式自动写开数」已随 `deriveOpenCount` 删除。
+    craft: { ...createDefaultCraftSpec(), openCount: DEFAULT_OPEN_COUNT },
     edgeMeters: null,
     edgeUnitPrice: null,
     processingFeeOverride: null,
@@ -1897,12 +1898,9 @@ export default function NewOrderPage() {
    * ② 尺寸齐了 ⇒ 该组还没选门幅时按**门幅规则**补默认（issue #4877 裁定 C）。
    */
   const handleLineWidthChange = (line: OrderLineItem, w: number | null) => {
-    updateLineItem(line.id, {
-      width: w,
-      ...(w !== null && !line.openCountTouched
-        ? { craft: { ...line.craft, openCount: deriveOpenCount(w) } }
-        : {}),
-    })
+    // ⚠️ 2026-09-29（用户裁定）：改窗宽**不再**联动打开方式 —— 旧启发式 `deriveOpenCount` 已删除，
+    // 开数只由商家显式改（`openCountTouched` 留痕不变）。尺寸齐了仍按门幅规则补默认门幅。
+    updateLineItem(line.id, { width: w })
     autoSelectSkuByRuleForGroup(line.groupId, { width: w })
   }
 
@@ -3873,12 +3871,8 @@ function ProductGroupBlock({
    * 与卡体内四步手风琴（#4511）正交：那是「哪一步展开」，这是「整卡展开」。
    */
   const [open, setOpen] = useState(true)
-  /**
-   * **规格 chips 的展开态**（2026-09-28 布局）：门幅由规则自动选中 ⇒ 常态**只读展示**
-   * （商家零点击），点「改」才展开 chips 换一个。规则判不了（还没选颜色 / 没有可用 SKU）⇒
-   * 没有可展示的读数 ⇒ 直接给 chips（不假装有结果）。
-   */
-  const [skuPickerOpen, setSkuPickerOpen] = useState(false)
+  // ⚠️ 2026-09-29（用户裁定「移除这种设计」）：门幅 chips 常态就展开 ——
+  // `skuPickerOpen` 连同「只读摘要 + 点『改』」一并删除（规则解仍由页面自动选中，直接点 chips 换一支）。
   const colorOptions = useMemo(() => uniqueColors(group.product?.skus), [group.product])
   const skuOptions = useMemo(() => {
     if (!group.product?.skus || group.selectedColorId == null) return []
@@ -4181,81 +4175,60 @@ function ProductGroupBlock({
                   </div>
                 )}
 
-                {/* ===== 门幅 / 规格（系统推导：规则自动选中 ⇒ 只读展示 + 「改」）=====
-                    issue #4877 裁定 C：多门幅时按**门幅规则**自动选最省的 ⇒ 商家常态**零点击**；
-                    这里只读展示系统选了哪一支（门幅 / 单价 / 库存 / 来源），要换才点「改」展开 chips。
-                    规则判不了（还没选颜色 / 该颜色没有 SKU）⇒ 没有读数可展示 ⇒ 直接给 chips。 */}
+                {/* ===== 门幅 / 规格（规则自动选中 ⇒ **chips 直接可选**，2026-09-29 用户裁定）=====
+                    issue #4877 裁定 C 未变（多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）；
+                    变的是**呈现**：旧的「只读摘要 + 点『改』才出 chips」已整体删除
+                    —— 用户口径「移除这种设计，当前编辑态就是允许用户直接更改的」。
+                    chips 常态就在（选中态 = 规则解），**为什么选它**写在下面那行
+                    （旧文案「系统按门幅规则自动选中」没说人话：用户不知道那是什么规则）。
+                    规则判不了（还没选颜色 / 该颜色没有 SKU）⇒ 本来就只有 chips。 */}
                 {group.selectedColorId != null && skuOptions.length > 0 && (
                   <div className="mb-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label required>门幅 / 规格</Label>
-                      {group.selectedSku && (
-                        <button
-                          type="button"
-                          data-testid="sku-picker-toggle"
-                          aria-expanded={skuPickerOpen}
-                          onClick={() => setSkuPickerOpen(!skuPickerOpen)}
-                          className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
-                        >
-                          {skuPickerOpen ? '收起规格' : '改'}
-                        </button>
-                      )}
-                    </div>
-                    {group.selectedSku && !skuPickerOpen ? (
-                      <div
-                        data-testid="sku-summary"
-                        className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
-                      >
-                        {/* ⚠️ 文案刻意与 chips 里的 `{sku.doorWidth}`（如 `2.8米`）**不同形**
-                            （`门幅 2.8米`）—— 同一行里既有只读读数又有可点 chips 时，
-                            两者的可访问名必须能分开（否则点 chips 的用例会点到只读读数上）。 */}
-                        <span className="text-sm font-medium text-neutral-900">
-                          门幅 {group.selectedSku.doorWidth || '默认规格'}
-                        </span>
-                        <span className="text-sm text-neutral-600">
-                          ¥{Number(group.selectedSku.price).toFixed(2)}/米
-                        </span>
-                        <span className="text-xs text-neutral-400">
-                          库存 {group.selectedSku.stock ?? 0}
-                        </span>
-                        <span
-                          data-testid="sku-summary-source"
-                          className="text-xs text-primary-600"
-                        >
-                          {first.skuAutoSelected ? '系统按门幅规则自动选中' : '人工选定'}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {skuOptions.map((sku) => {
-                          const active = group.selectedSku?.id === sku.id
-                          return (
-                            <button
-                              key={sku.id}
-                              type="button"
-                              onClick={() => onSelectSku(sku)}
-                              className={
-                                'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
-                                (active
-                                  ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                  : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                              }
-                            >
-                              <div className="text-left">
-                                <div className="font-medium">
-                                  {sku.doorWidth || '默认规格'}
-                                </div>
-                                <div className="text-xs text-neutral-400 mt-0.5">
-                                  库存 {sku.stock ?? 0}
-                                </div>
+                    <Label required>门幅 / 规格</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {skuOptions.map((sku) => {
+                        const active = group.selectedSku?.id === sku.id
+                        return (
+                          <button
+                            key={sku.id}
+                            type="button"
+                            // `aria-pressed` = 「这一支就是当前选中的规格」——chips 常态就在的形态下，
+                            // 选中态必须**在无障碍树上**可读（旧只读摘要 `sku-summary` 承担的那个读数面）。
+                            aria-pressed={active}
+                            onClick={() => onSelectSku(sku)}
+                            className={
+                              'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
+                              (active
+                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                            }
+                          >
+                            <div className="text-left">
+                              <div className="font-medium">{sku.doorWidth || '默认规格'}</div>
+                              <div className="text-xs text-neutral-400 mt-0.5">
+                                库存 {sku.stock ?? 0}
                               </div>
-                              <span className="text-sm font-semibold">
-                                ¥{Number(sku.price).toFixed(2)}
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
+                            </div>
+                            <span className="text-sm font-semibold">
+                              ¥{Number(sku.price).toFixed(2)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {group.selectedSku && (
+                      /* 「**为什么是这一支**」说人话（2026-09-29 用户裁定）：规则原文
+                         「拼接最少 → 用料最少 → 接高接宽最少 → 表序」放 `title`，
+                        正文只讲商家关心的那两步（不用拼接、用料最省）。 */
+                      <p
+                        data-testid="sku-choice-reason"
+                        title="规则：候选门幅按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优"
+                        className="mt-1 text-xs text-primary-600"
+                      >
+                        {first.skuAutoSelected
+                          ? `系统按${Number(first.width) > 0 ? `窗宽 ${Number(first.width)} 米` : '窗宽 / 窗高'}挑了最省料的门幅：先保证不用拼接，再比用料多少 —— 要换直接点上面任一规格`
+                          : '你手动选的规格'}
+                      </p>
                     )}
                     {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
                   </div>
@@ -4305,14 +4278,14 @@ function LineItemBlock({
   onRecommendedDecision,
   onChangeRemark,
 }: LineItemBlockProps) {
-  /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 用料与规格 / 2 加工项 / 3 其他（2026-09-28 重排） */
-  const [openStep, setOpenStep] = useState(1)
   /**
-   * **用料米数 / 单价**的就地编辑态（2026-09-28 布局）—— 常态 `false` = 只读展示
-   * （「其他信息尽量推导」：这两个数分别由算料引擎与所选规格给），点「改」才变输入框。
+   * 当前展开的**向导步骤**（issue #4511 手风琴）：1 用料与规格 / 2 加工项（2026-09-29 两步化
+   * —— 原「③ 其他」已并入 ② 的第二块「特殊选项」，见 `OrderExtraOptions` 的渲染点）。
    */
-  const [metersEditOpen, setMetersEditOpen] = useState(false)
-  const [priceEditOpen, setPriceEditOpen] = useState(false)
+  const [openStep, setOpenStep] = useState(1)
+  // ⚠️ 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+  // 「用料米数 / 单价」的**只读展示 + 点「改」**编辑态**已整体删除** —— 两个框常态就是可编辑输入框
+  // （`metersEditOpen` / `priceEditOpen` 连同两个按钮一起退场）。
   /** **系统推荐组合**在本行的实例（目录里没有该项 ⇒ 不出现，如老租户未重建目录；布料组 ⇒ 空） */
   const recommendedItems = line.processingItems.filter((pi) =>
     recommendedItemNamesOf(line).includes(pi.name)
@@ -4446,6 +4419,23 @@ function LineItemBlock({
     pi.categoryName || processingCategoryGroups.find((g) => g.items.includes(pi))?.name || ''
   /** 该行**工艺**（#4566 派生值）—— ③ 已选摘要与 ② 工艺规格摘要**共用**同一个取值点 */
   const lineCraft = craftFromItems(line)
+  /**
+   * **用料公式的参数说明**（2026-09-29 用户裁定）—— 只解释公式串里的数是**哪个参数**、
+   * 要改去哪改；数值全部取自同一次算料响应 / 算料配置（见 lib 头注释：**不解析公式串**、
+   * 取不到就整条不出现）。
+   */
+  const metersLegend = metersFormulaLegend({
+    formula: effectiveCraftCalcFormula(
+      { formula: line.craft.formula, craft: lineCraft },
+      calcConfig
+    ),
+    width: line.width,
+    openCount: line.craft.openCount,
+    pleatCount: line.calc?.pleat_count ?? null,
+    perFold: line.calc?.per_fold ?? null,
+    fullness: line.calc?.fullness ?? null,
+    config: calcConfig,
+  })
 
   /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
@@ -4661,37 +4651,19 @@ function LineItemBlock({
                       （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），
                       而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几套」。
                       ⚠️ 布料行（`FabricRow`）**不改**：布料按 `sellingMethod` 卖布，不是同一个业务。 */}
-                  {/* ⚠️ 用 `<span>` 而**不是** `<div>` 承载「标签 + 改」这一行：既有判据按
-                      「`用料米数` 标签的 `closest('div')` 里找 input」定位输入框 ⇒ 换成 div 会把
-                      这个最近的 div 变成「只有标签和按钮」那一行，输入框就找不到了（实测）。
-                      span 是 phrasing content，`label` + `button` 放进去合法。 */}
-                  <span className="flex items-center justify-between gap-2">
-                    <Label required>用料米数</Label>
-                    {/* 「改」= 就地把只读读数变成输入框（2026-09-28）；常态只读 ⇒ 三个「看起来必须填」
-                        的框不再出现在首屏（用户口径「其他信息尽量推导」）。 */}
-                    <button
-                      type="button"
-                      data-testid="meters-edit"
-                      aria-expanded={metersEditOpen}
-                      onClick={() => setMetersEditOpen(!metersEditOpen)}
-                      className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
-                    >
-                      {metersEditOpen ? '收起' : '改'}
-                    </button>
-                  </span>
+                  {/* 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+                      常态**可编辑** —— 只读展示 + 点「改」那套已删除；算料结果照旧写回这个框，
+                      商家要覆盖就**直接改**（一改 `metersSource` 即翻「人工指定」，留痕不变）。 */}
+                  <Label required>用料米数</Label>
                   {/* issue #5202：换成保留原始文本的数字框 —— 改前 `value={line.quantity || ''}`
                       + `Number(raw)` 会把 `0` 渲染成空串（输入 "0" 当场清空 ⇒ 打不出 "0.5"）。 */}
                   <NumberInput
                     value={line.quantity}
                     onChange={(next) => onChangeQty(next ?? 0)}
-                    readOnly={!metersEditOpen}
                     decimals={3}
                     placeholder="米"
                     aria-label="用料米数"
-                    className={
-                      'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15' +
-                      (metersEditOpen ? '' : ' bg-neutral-50 text-neutral-600')
-                    }
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
                   {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
@@ -4729,6 +4701,26 @@ function LineItemBlock({
                       {line.calc.formula_text}
                     </p>
                   ) : null}
+                  {/* **公式参数说明**（2026-09-29 用户裁定）：公式串照旧原样渲染（后端产出），
+                      这里补一行「哪个数是哪个参数」，并指出**要改去哪改**。
+                      ⚠️ 数取自同一次算料响应 / 算料配置 —— 不从公式串里反推（那是第二份真值源）。 */}
+                  {metersLegend && (
+                    <>
+                      <p
+                        data-testid="meters-formula-legend"
+                        className="mt-1 text-[11px] text-neutral-500"
+                      >
+                        参数说明：
+                        {metersLegend.params.map((p) => `${p.value}=${p.name}`).join(' · ')}
+                      </p>
+                      <p
+                        data-testid="meters-formula-legend-where"
+                        className="text-[11px] text-neutral-400"
+                      >
+                        {metersLegend.where}
+                      </p>
+                    </>
+                  )}
                   {line.calcError && <p className="mt-1 text-xs text-red-600">{line.calcError}</p>}
                   {/* 非韩褶不自动算用料（issue #4488，用户裁定）：加工项直接体现费用 ⇒ 米数手填。
                       **不静默停在默认 1 米** —— 那会让「1 米 × 单价」直接算出一个错金额。 */}
@@ -4743,30 +4735,14 @@ function LineItemBlock({
                     )}
                 </div>
                 <div>
-                  {/* 同「用料米数」：用 `<span>` 承载「标签 + 改」行，保住既有 `closest('div')` 定位法 */}
-                  <span className="flex items-center justify-between gap-2">
-                    <Label required>单价 (¥/米)</Label>
-                    {/* 单价来自所选规格（SKU）；「改」用于议价等人工改价（2026-09-28 起常态只读） */}
-                    <button
-                      type="button"
-                      data-testid="price-edit"
-                      aria-expanded={priceEditOpen}
-                      onClick={() => setPriceEditOpen(!priceEditOpen)}
-                      className="text-xs text-primary-600 underline underline-offset-2 hover:text-primary-700"
-                    >
-                      {priceEditOpen ? '收起' : '改'}
-                    </button>
-                  </span>
+                  {/* 单价来自所选规格（SKU）；2026-09-29 起常态**可编辑**（议价等人工改价直接改） */}
+                  <Label required>单价 (¥/米)</Label>
                   <NumberInput
                     value={line.unitPrice}
                     onChange={(next) => onChangePrice(next ?? 0)}
-                    readOnly={!priceEditOpen}
                     decimals={3}
                     aria-label="单价 (¥/米)"
-                    className={
-                      'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15' +
-                      (priceEditOpen ? '' : ' bg-neutral-50 text-neutral-600')
-                    }
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
@@ -4854,9 +4830,41 @@ function LineItemBlock({
                             : `用料 ${plan.meters} 米`}
                         </span>
                       </div>
-                      <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
-                        依据：{plan.reason}
-                      </p>
+                      {/* **推导依据默认收起**（2026-09-29 用户裁定：「这里的推算过程太多太细了」）——
+                          结论留在上面那行（加工类型 / 用料 / 拼接 / 接高接宽），逐条依据与每个候选
+                          **要核对时**再展开。⚠️ 收起的只是**默认展开态**：`craft-plan-reason` /
+                          `craft-plan-candidates` 照旧渲染（既有判据仍读得到），红证方向 = 整块删掉。 */}
+                      <details data-testid="craft-plan-details" className="mt-1.5">
+                        <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
+                          推导依据（展开可核对每个候选）
+                        </summary>
+                        <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
+                          依据：{plan.reason}
+                        </p>
+                        <ul data-testid="craft-plan-candidates" className="mt-1.5 space-y-0.5">
+                          {(plan.candidates ?? []).map((candidate) => (
+                            <li
+                              key={candidate.key}
+                              data-testid={`craft-plan-candidate-${candidate.key}`}
+                              className="text-[11px] text-neutral-500"
+                            >
+                              <span className="text-neutral-600">
+                                {craftPlanCandidateLabel(candidate.key)}
+                              </span>
+                              {candidate.feasible ? (
+                                <span className="text-neutral-700">
+                                  ：可行 · 用料 {candidate.meters ?? '—'} 米 · 拼接{' '}
+                                  {candidate.splice_times ?? 0} 次
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400">
+                                  ：不可行 —— {candidate.reason}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                       {/* **推导出的特殊选项**（拼N次 / 接高；issue #5211）—— 它们会进
                           `processingInfo.specialOptions` ⇒ 服务端**插工序**（`拼2次-布` / `接高-布`）
                           + **计件**（0.8/1.2/1.6、1.0 元/幅）⇒ 推导错 = 多插一道工序、多算工钱
@@ -4936,29 +4944,7 @@ function LineItemBlock({
                           数量按算料结果（单一来源），请核对。
                         </p>
                       )}
-                      <ul data-testid="craft-plan-candidates" className="mt-1.5 space-y-0.5">
-                        {(plan.candidates ?? []).map((candidate) => (
-                          <li
-                            key={candidate.key}
-                            data-testid={`craft-plan-candidate-${candidate.key}`}
-                            className="text-[11px] text-neutral-500"
-                          >
-                            <span className="text-neutral-600">
-                              {craftPlanCandidateLabel(candidate.key)}
-                            </span>
-                            {candidate.feasible ? (
-                              <span className="text-neutral-700">
-                                ：可行 · 用料 {candidate.meters ?? '—'} 米 · 拼接{' '}
-                                {candidate.splice_times ?? 0} 次
-                              </span>
-                            ) : (
-                              <span className="text-neutral-400">
-                                ：不可行 —— {candidate.reason}
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      {/* 候选逐条已移入上面的「推导依据」折叠项（`craft-plan-candidates` 只有一处） */}
                     </>
                   ) : (
                     <p data-testid="craft-plan-unavailable" className="text-xs text-amber-700">
@@ -4979,7 +4965,7 @@ function LineItemBlock({
                   onClick={() => setCraftEditTouched(!craftEditOpen)}
                   className="h-8 px-3 rounded border border-neutral-300 bg-white text-xs text-neutral-600 hover:border-neutral-400 transition-colors"
                 >
-                  {craftEditOpen ? '收起工艺参数' : '改工艺参数 / 人工加接高接宽拼接'}
+                  {craftEditOpen ? '收起工艺参数' : '改工艺参数（加工类型 / 打开方式 / 款式 / 用料公式）'}
                 </button>
                 {craftEditOpen && (
                   <div className="mt-3">
@@ -4997,8 +4983,13 @@ function LineItemBlock({
                   edgeUnitPrice={line.edgeUnitPrice}
                   onEdgeUnitPriceChange={onEdgeUnitPriceChange}
                 />
+                  </div>
+                )}
 
-              {/* **系统识别**（issue #4658：从 ③加工项 移到 ②工艺规格）—— 为什么归这里：
+              {/* **系统识别**（2026-09-29 起**常态可见**）—— issue #4658 的**归属**口径未变
+                  （它在 ①用料与规格 里，不在 ②加工项），变的是**不再藏在「改工艺参数」按钮后面**：
+                  用户 2026-09-29 裁定「推导出的（系统识别 + 人工加 / 改）这两部分应该合并到
+                  用料与规格那里」⇒ 两块与上面那块推导读数并列、直接可见。 为什么归这里：
                   它由「窗宽/窗高 + SKU 门幅」推出、产出进**加工费组合键** ⇒ 属**规格/报价**语义；
                   且它**不可手选、与加工项勾选无联动** ⇒ 放在「你勾什么」的加工项区会误导。
                   这里**紧挨推导依据**展示（`reason` 逐条显示，商家要能核对判定）。
@@ -5234,21 +5225,28 @@ function LineItemBlock({
                         </p>
                       )}
                     </div>
-                  </div>
-                )}
               </div>
             </WizardStep>
 
-            {/* ② **加工项**（2026-09-28 布局：本步只说「勾了什么加工项」——
-                「特殊选项」已移入 ③其他） */}
+            {/* ② **加工项**（2026-09-29 两步化：本步 = 「勾什么加工项」+ 「特殊选项」+ 「部位备注」
+                —— 原 ③ 其他 已并入本步的第二、三块，不再单独占一个折叠步骤） */}
             <WizardStep
               step={2}
               title="加工项"
               summary={
                 // #4576：摘要里带上**工艺**（哪一项），不再让商家回头数；计数口径不变（仍只数**手选**项）
-                selectedProcessingCount > 0
-                  ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
-                  : '未选'
+                // 2026-09-29：**特殊选项**并入本步 ⇒ 摘要里一并报它的项数（折叠时也看得见）
+                [
+                  selectedProcessingCount > 0
+                    ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
+                    : '未选',
+                  (line.craft.specialOptions ?? []).length > 0
+                    ? `特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
+                    : null,
+                  (line.remark ?? '').trim() !== '' ? '有部位备注' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
               }
               {...stepProps(2)}
             >
@@ -5487,28 +5485,14 @@ function LineItemBlock({
                 </div>
               )}
 
-            </WizardStep>
-
-            {/* ③ **其他**（2026-09-28 布局）——把「低频但要能改」的两项收进折叠，
-                首屏只剩四件事：① 商品 / 颜色 ② 净尺寸 ③ 推导读数 ④ 加工项确认。
-                两块内容一字未改：特殊选项仍走 `onChangeCraft`；部位备注仍只落在行状态、
-                由 `buildLineProcessingInfo` 单点落库。 */}
-            <WizardStep
-              step={3}
-              title="其他"
-              summary={
-                [
-                  (line.craft.specialOptions ?? []).length > 0
-                    ? `特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
-                    : null,
-                  (line.remark ?? '').trim() !== '' ? '有部位备注' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || '特殊选项 / 部位备注'
-              }
-              {...stepProps(3)}
-            >
-              <div className="pt-3 border-t border-neutral-100">
+              {/* ===== **特殊选项**（2026-09-29 用户裁定逐字：「其他的这块选择区域归属到加工项
+                  区域中，不要单独搞个折叠块了，用户打开加工项区域时一同打开，另外不要命名叫
+                  『其他』，改成**特殊选项**」）=====
+                  ① 19 项清单与选项名（join key）一字未动，写侧仍是 `onChangeCraft` 唯一通路；
+                  ② 「部位备注」同批并入本步（它原本也住在 ③）；
+                  ③ 原 ③ 的折叠壳与 `stepProps(3)` 一并删除 ⇒ 下单页只剩**两步**。 */}
+              <div className="mt-4 pt-4 border-t border-neutral-100">
+                <div className="text-sm font-medium text-neutral-700 mb-2">特殊选项</div>
                 <OrderExtraOptions
                   value={line.craft.specialOptions}
                   onChange={(next) => onChangeCraft({ specialOptions: next })}

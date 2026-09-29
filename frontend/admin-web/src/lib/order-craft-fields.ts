@@ -112,6 +112,14 @@ export const OPEN_COUNT_OPTIONS: ReadonlyArray<{ value: number; label: string }>
   })
 )
 
+/**
+ * **打开方式缺省 = 双开**（2026-09-29 用户裁定逐字：「打开方式默认改成双开，**不要自动推算**」）。
+ *
+ * 旧行为 = 按窗宽启发式自动写（页面侧 `deriveOpenCount`：`≤2.2 单开 / >2.2 双开 / >5 四开`），
+ * 该函数**已整体删除** —— 开数只由商家显式改（`openCountTouched` 留痕不变）。
+ */
+export const DEFAULT_OPEN_COUNT = 2
+
 /** 款式（§4.2 `style`） */
 export const STYLE_OPTIONS = ['单色', '拼色'] as const
 

@@ -133,13 +133,11 @@ const inputOf = (label: string, idx = 0) =>
 const qtyInput = (idx = 0) => inputOf('用料米数', idx)
 
 /**
- * 2026-09-28 布局重排：「用料米数」常态 = **只读展示**（值由算料引擎推导 ⇒ 用户口径
- * 「其他信息尽量推导」）⇒ **要输入先点「改」**（`meters-edit`）把它变回输入框。
- * 只读态的**读值**断言（`toHaveValue` / 试算写回）照旧成立 —— 框还在，只是 `readOnly`。
+ * 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+ * 「用料米数」**常态可编辑** —— 旧「只读展示 + 点『改』」已删除 ⇒ 本 helper 改成**自证可写**。
  */
 const openMetersEdit = () => {
-  const btn = screen.getAllByTestId('meters-edit')[0]
-  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  expect(qtyInput().readOnly).toBe(false)
 }
 
 const pickProduct = async () => {
@@ -183,12 +181,12 @@ describe('下单页算料试算接线（#4434）', () => {
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
 
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
-    // 入参 = 标准档 + 韩褶 + 开数（缺省 1）；**前端不补默认值、不重算**
-    // issue #4493：宽 → 打开方式联动（真值源 §10：>5m 四开）⇒ 入参带 open_count=4
+    // 入参 = 标准档 + 韩褶 + 开数（**缺省双开**，2026-09-29 用户裁定：「打开方式默认改成双开，
+    // 不要自动推算」——旧「宽 → 打开方式」启发式（>5m 四开）已整体删除 ⇒ 入参恒带 open_count=2）
     expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({
       width: 6.6,
       height: 2.6,
-      open_count: 4,
+      open_count: 2,
       mounting: 's_hook',
       craft_tier: 'standard',
     })
@@ -458,6 +456,30 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
       // 缺省档 = 配置里**真实存在**的档位键（fixture 里 standard 在 ⇒ 用它）
       craft_tier: 'standard',
     })
+  })
+
+  it('判据 1b（2026-09-29 改判）：算料配置 `default_formula=fullness` ⇒ 下单页缺省**仍为韩褶公式**', async () => {
+    // 用户 2026-09-29 逐字：「**用料公式默认改成韩褶公式**」⇒ 下单页的缺省口径**恒定**，
+    // 不再随算料配置的兜底键漂移（前两档不变：商家显式选 > 工艺推导）。
+    // 红证：把 `defaultCraftCalcFormula(配置)` 装回 `effectiveCraftCalcFormula` 的第 ③ 档 ⇒
+    // chips 会选中「褶倍数公式（倍数法）」、请求带 `formula=fullness` ⇒ 本判据必红。
+    mockGetCraftCalcConfig.mockResolvedValue({
+      data: {
+        data: {
+          source: 'stored',
+          config: { ...CALC_CONFIG_OK.data.data.config, default_formula: 'fullness' },
+        },
+      },
+    })
+    render(<NewOrderPage />)
+    await pickProduct()
+    openStep1()
+    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalled())
+    expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({ formula: 'pleat' })
   })
 
   it('判据 2（红证）：选褶倍数公式 ⇒ 出现档位 chips，文案逐字 = 算料配置 `tiers[*].label`', async () => {
