@@ -101,22 +101,27 @@ function Harness({
 
 const inputByName = (name: string) => screen.getByLabelText(name) as HTMLInputElement
 
-/** 枚举字段的 chips 组（issue #4489：一击即中的单选按钮组） */
-const chipGroup = (name: string) => screen.getByRole('radiogroup', { name })
-/** 组内单个 chip —— 文案即候选值（`未指定` = 键不落库的那一档） */
-const chip = (group: string, name: string) => within(chipGroup(group)).getByRole('radio', { name })
-/** 组内全部 chip 的**可见文案**（逐字断言用；比旧版比对 `<option>.value` 更贴近商家所见） */
-const chipLabels = (group: string) =>
-  within(chipGroup(group))
-    .getAllByRole('radio')
-    .map((el) => el.textContent)
+/** 某个字段的**下拉**（2026-09-29 第三次裁定：chips 表 ⇒ 原生下拉一行 —— 用户口径「比较占空间」） */
+const selectGroup = (name: string) => screen.getByRole('combobox', { name }) as HTMLSelectElement
+/** 该下拉**当前选中**的档位文案（= 旧 `chip(...).aria-checked === true` 的等价读数面） */
+const selectedOption = (group: string) => selectGroup(group).selectedOptions[0]?.textContent ?? ''
+/** 选某一档（`name` = 选项文案；与旧 `fireEvent.click(chip(...))` 一一对应） */
+const pickOption = (group: string, name: string) => {
+  const select = selectGroup(group)
+  const option = Array.from(select.options).find((o) => (o.textContent ?? '') === name)
+  if (!option) throw new Error(`下拉「${group}」里没有「${name}」`)
+  fireEvent.change(select, { target: { value: option.value } })
+}
+/** 可选项文案清单（旧 `getAllByRole('radio').map(r => r.textContent)` 的等价读数面） */
+const optionLabels = (group: string) =>
+  Array.from(selectGroup(group).options).map((o) => o.textContent ?? '')
 
 describe('OrderCraftFields', () => {
   it('渲染保留的工艺控件（加工类型/打开方式/款式/用料公式/是否对花）', () => {
     render(<Harness />)
     // 枚举字段 = chips 组（一击即中）；本组件已无任何数值输入框（褶距已移除，见 #4874 判据）
     for (const name of ['加工类型', '打开方式', '款式', '用料公式', '是否对花']) {
-      expect(chipGroup(name)).toBeInTheDocument()
+      expect(selectGroup(name)).toBeInTheDocument()
     }
   })
 
@@ -132,13 +137,13 @@ describe('OrderCraftFields', () => {
   // ── issue #4874 ②：用料公式 chips（值域与算料引擎同源，文案只有一份）────────────────
   it('#4874 用料公式 chips 逐字 = 韩褶公式（褶数法）/ 褶倍数公式（倍数法）', () => {
     render(<Harness />)
-    expect(chipLabels('用料公式')).toEqual(['韩褶公式（褶数法）', '褶倍数公式（倍数法）'])
+    expect(optionLabels('用料公式')).toEqual(['韩褶公式（褶数法）', '褶倍数公式（倍数法）'])
   })
 
   it('#4874 选用料公式 ⇒ onChange 收到 `formula`（值域 = pleat / fullness）', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('用料公式', '褶倍数公式（倍数法）'))
+    pickOption('用料公式', '褶倍数公式（倍数法）')
     expect(spy).toHaveBeenCalledWith({ formula: 'fullness' })
   })
 
@@ -156,26 +161,21 @@ describe('OrderCraftFields', () => {
 
   it('#4874 选褶倍数公式 ⇒ **不**展示褶数块，改为展示档位 chips', () => {
     render(<Harness pleatCount={52} />)
-    fireEvent.click(chip('用料公式', '褶倍数公式（倍数法）'))
+    pickOption('用料公式', '褶倍数公式（倍数法）')
     expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
     expect(screen.getByTestId('craft-tier-options')).toBeInTheDocument()
   })
 
   // ── issue #4874 ④⑤：档位 = 算料配置 `tiers` 的键（值）+ `label`（文案）───────────────
-  it('#4874 档位 chips 值域与文案**逐字取自算料配置**（红证：写死一套中文档位名 ⇒ 必红）', () => {
+  it('#4874 档位下拉的值域与文案**逐字取自算料配置**（红证：写死一套中文档位名 ⇒ 必红）', () => {
     render(<Harness initial={{ formula: 'fullness' }} />)
-    const group = chipGroup('档位')
-    expect(
-      within(group)
-        .getAllByRole('radio')
-        .map((r) => r.textContent)
-    ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
+    expect(optionLabels('档位')).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
   })
 
   it('#4874 选档位 ⇒ onChange 收到 `craftTier`（键 = 配置的阶位键，不是文案）', () => {
     const spy = vi.fn()
     render(<Harness initial={{ formula: 'fullness' }} onChangeSpy={spy} />)
-    fireEvent.click(chip('档位', '经济档（1.8倍）'))
+    pickOption('档位', '经济档（1.8倍）')
     expect(spy).toHaveBeenCalledWith({ craftTier: 'economy' })
   })
 
@@ -185,9 +185,9 @@ describe('OrderCraftFields', () => {
     expect(screen.getByTestId('craft-calc-config-missing')).toBeInTheDocument()
     // 档位**值域无从得知** ⇒ 不渲染 chips（编一套 = 第二份档位真值）
     expect(screen.queryByTestId('craft-tier-options')).toBeNull()
-    expect(screen.queryByRole('radiogroup', { name: '档位' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: '档位' })).toBeNull()
     // 录入不被阻断：其余 chips 照常可用
-    expect(chipGroup('款式')).toBeInTheDocument()
+    expect(selectGroup('款式')).toBeInTheDocument()
   })
 
   // issue #4566 红证（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**，对花我觉得**直接通过
@@ -198,8 +198,8 @@ describe('OrderCraftFields', () => {
   // （连枚举都不在）⇒ 负向断言**保留**（删掉才是降级）。
   it('#4566 **不再有**「工艺」与「是否定型」控件（红证：修复前两个 radiogroup 存在）', () => {
     render(<Harness />)
-    expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
-    expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: '工艺' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: '是否定型' })).toBeNull()
     expect(screen.queryByRole('radio', { name: '韩褶' })).toBeNull()
     expect(screen.queryByRole('radio', { name: '四爪钩' })).toBeNull()
   })
@@ -208,7 +208,7 @@ describe('OrderCraftFields', () => {
   // 部位已由**帘体**（商品组级）承载 ⇒ 本组件再出现部位 = 商家能选出与帘体矛盾的部位。
   it('#4521 **不再有**「部位」字段（红证：修复前 radiogroup name=部位 存在）', () => {
     render(<Harness />)
-    expect(screen.queryByRole('radiogroup', { name: '部位' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: '部位' })).toBeNull()
     expect(screen.queryByRole('radio', { name: '帘头' })).toBeNull()
   })
 
@@ -222,34 +222,35 @@ describe('OrderCraftFields', () => {
     expect(screen.queryByText(/纱帘米数来源/)).toBeNull()
   })
 
-  // issue #4489 判据「枚举字段全部可见且**一击可选**」：
-  // 红证 = 修复前是 `<select>`（无 radiogroup/radio 角色）⇒ 本判据必红；
-  // 且「一击」是实质断言：**一次点击**即 `aria-checked=true`，不需要先「展开」。
-  it('#4489 枚举字段一击即中：点一下 chip 就选中（无需先展开下拉）', () => {
+  // issue #4489 判据「枚举字段全部可见且**一击可选**」→ 🔴 2026-09-29 第三次裁定**改判**：
+  // 用户实测口径「控件和设计也比较占空间」⇒ 这五组改**原生下拉**（一行排开）。
+  // 判据随之迁移为「**改一次即生效**」：一次 `change` 写出值、选中态当场改变；强度不减。
+  it('#4489（2026-09-29 改判）枚举字段改一次即生效：下拉选中态随之改变', () => {
     render(<Harness />)
-    expect(chip('加工类型', '定高买宽')).toHaveAttribute('aria-checked', 'false')
-    fireEvent.click(chip('加工类型', '定高买宽'))
-    expect(chip('加工类型', '定高买宽')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('加工类型', '未指定')).toHaveAttribute('aria-checked', 'false')
+    // 本组件只渲染传进来的值（缺省档由页面 `createDefaultCraftSpec` 给）⇒ 裸 Harness 停在「未指定」
+    expect(selectedOption('加工类型')).toBe('未指定')
+    pickOption('加工类型', '定宽买高')
+    expect(selectedOption('加工类型')).toBe('定宽买高')
+    expect(selectedOption('加工类型')).not.toBe('未指定')
   })
 
   it('加工类型 / 款式 chips 的候选逐字 = 定高买宽·定宽买高 / 单色·拼色', () => {
     render(<Harness />)
-    expect(chipLabels('加工类型')).toEqual(['未指定', '定高买宽', '定宽买高'])
-    expect(chipLabels('款式')).toEqual(['未指定', '单色', '拼色'])
+    expect(optionLabels('加工类型')).toEqual(['未指定', '定高买宽', '定宽买高'])
+    expect(optionLabels('款式')).toEqual(['未指定', '单色', '拼色'])
   })
 
   it('选款式 ⇒ onChange 收到 camelCase patch', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     expect(spy).toHaveBeenCalledWith({ style: '拼色' })
   })
 
   it('打开方式选中「双开」⇒ openCount 是数字 2（不是字符串）', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('打开方式', '双开'))
+    pickOption('打开方式', '双开')
     expect(spy).toHaveBeenCalledWith({ openCount: 2 })
   })
 
@@ -258,7 +259,7 @@ describe('OrderCraftFields', () => {
   it('#4387 打开方式候选含三开（3）⇒ 选中后 openCount 是数字 3', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    expect(chipLabels('打开方式')).toEqual(['未指定', '单开', '双开', '三开', '四开'])
+    expect(optionLabels('打开方式')).toEqual(['未指定', '单开', '双开', '三开', '四开'])
     // 四档逐档验数字映射（比只验一档更强：错位 / 字符串都会红）
     for (const [label, count] of [
       ['单开', 1],
@@ -266,7 +267,7 @@ describe('OrderCraftFields', () => {
       ['三开', 3],
       ['四开', 4],
     ] as const) {
-      fireEvent.click(chip('打开方式', label))
+      pickOption('打开方式', label)
       expect(spy).toHaveBeenCalledWith({ openCount: count })
     }
   })
@@ -274,22 +275,21 @@ describe('OrderCraftFields', () => {
   // issue #4489 硬约束：「未指定」与「否」是两个真值 ⇒ 三态必须是**三段**分段按钮。
   // 红证：若把三态做成两段（是/否）或布尔开关，本判据必红（「未指定」档消失）。
   // ⚠️ #4566 后本组件**只剩「是否对花」**用三态（「是否定型」已搬到加工项）。
-  it('#4489 三态字段是三段分段按钮，「未指定」档保留（没问过 ≠ 否）', () => {
+  it('#4489 三态字段是三档下拉，「未指定」档保留（没问过 ≠ 否）', () => {
     render(<Harness />)
-    expect(chipLabels('是否对花')).toEqual(['未指定', '是', '否'])
-    // 未指定 ⇒ 两档都不是选中态（不是被当成「否」）
-    expect(chip('是否对花', '未指定')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('是否对花', '否')).toHaveAttribute('aria-checked', 'false')
-    // 显式「否」⇒ 只有「否」是选中态（未指定与否在 UI 上可区分）
-    fireEvent.click(chip('是否对花', '否'))
-    expect(chip('是否对花', '否')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('是否对花', '未指定')).toHaveAttribute('aria-checked', 'false')
+    expect(optionLabels('是否对花')).toEqual(['未指定', '是', '否'])
+    // 未指定 ⇒ 选中态就是「未指定」（不是被当成「否」）
+    expect(selectedOption('是否对花')).toBe('未指定')
+    // 显式「否」⇒ 选中态翻「否」（未指定与否在 UI 上可区分）
+    pickOption('是否对花', '否')
+    expect(selectedOption('是否对花')).toBe('否')
+    expect(selectedOption('是否对花')).not.toBe('未指定')
   })
 
   it('花距输入框只在「是否对花 = 是」时出现', () => {
     render(<Harness />)
     expect(screen.queryByLabelText('花距')).not.toBeInTheDocument()
-    fireEvent.click(chip('是否对花', '是'))
+    pickOption('是否对花', '是')
     expect(screen.getByLabelText('花距')).toBeInTheDocument()
   })
 
@@ -301,27 +301,27 @@ describe('OrderCraftFields', () => {
 
   it('款式 = 拼色 ⇒ 出现配布边米数（默认显示主布米数）与配布边单价', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     expect(inputByName('配布边米数')).toHaveValue('3')
     expect(inputByName('配布边单价')).toHaveValue('')
   })
 
   it('配布边米数可编辑 ⇒ onEdgeMetersChange 收到新米数', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     fireEvent.change(inputByName('配布边米数'), { target: { value: '2.5' } })
     expect(inputByName('配布边米数')).toHaveValue('2.5')
   })
 
   it('配布边米数提示「默认 = 主布米数，可编辑」', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     expect(screen.getByText(/默认 = 主布米数/)).toBeInTheDocument()
   })
 
   it('配布边米数未改过 ⇒ 来源「跟随主布」；改过 ⇒ 来源「人工指定」', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     expect(screen.getByText('配布边米数来源：跟随主布')).toBeInTheDocument()
     fireEvent.change(inputByName('配布边米数'), { target: { value: '2' } })
     expect(screen.getByText('配布边米数来源：人工指定')).toBeInTheDocument()
@@ -329,7 +329,7 @@ describe('OrderCraftFields', () => {
 
   it('配布边米数清空 ⇒ 回到「跟随主布」（不是 0，也不落 0 米）', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     fireEvent.change(inputByName('配布边米数'), { target: { value: '2' } })
     fireEvent.change(inputByName('配布边米数'), { target: { value: '' } })
     expect(screen.getByText('配布边米数来源：跟随主布')).toBeInTheDocument()
@@ -344,7 +344,7 @@ describe('OrderCraftFields', () => {
   it('判据 3（红证·issue #5218 #2）：花距逐键 0 → . → 6 ⇒ DOM "0"/"0."/"0.6"，且 0 是合法值', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('是否对花', '是'))
+    pickOption('是否对花', '是')
     const el = inputByName('花距')
 
     fireEvent.change(el, { target: { value: '0' } })
@@ -365,7 +365,7 @@ describe('OrderCraftFields', () => {
 
   it('判据 4（红证·issue #5218 #3）：配布边米数输入 0 ⇒ 不落 0（仍跟随主布）+ **显式告知**（不再无声跳回）', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     const el = inputByName('配布边米数')
 
     fireEvent.change(el, { target: { value: '0' } })
@@ -388,7 +388,7 @@ describe('OrderCraftFields', () => {
 
   it('配布边单价 0：不落 0（后端单价必须 > 0）但**框里保留**输入，填 12.5 才生效', () => {
     render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
+    pickOption('款式', '拼色')
     const el = inputByName('配布边单价')
     fireEvent.change(el, { target: { value: '0' } })
     expect(el).toHaveValue('0')

@@ -126,68 +126,82 @@ const TRI_STATE_CHIPS: ChipOption<boolean | undefined>[] = [
   { value: false, label: '否' },
 ]
 
+/** 下拉的统一样式（与页面其它 select 同形） */
+const SELECT_CLASS =
+  'w-full h-9 px-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
+
 /**
- * 单选 chips 组（issue #4489）——**一击即中**：一眼全见，点一下即选，省掉下拉「先展开再选」。
- *
- * 语义用 `radiogroup` / `radio`（单选 + 可聚焦），不用 listbox：
- * `aria-checked` 让「未指定」与「否」在无障碍树上也是两个不同档（三态字段的硬约束）。
+ * `<option value>` 的编码：字符串档**直接用它自己**（判据可读 `toHaveValue('pleat')`）；
+ * 数字 / 布尔 / `undefined` 用 `String()`（`''` 即「未指定」档）。回读一律走 `selectedIndex`
+ * （不当字符串解谜 —— 那会把「档位值」与「展示文案」耦合成第二份口径）。
  */
-function ChipGroup<T>({
+function optionValue<T>(option: ChipOption<T>): string {
+  if (option.value === undefined) return ''
+  return typeof option.value === 'string' ? option.value : String(option.value)
+}
+
+/**
+ * 单选**下拉**组（🔴 2026-09-29 第三次裁定：由 chips 改判而来）。
+ *
+ * 用户实测口径：「这部分的控件和设计也比较占空间，能否简化」⇒ 五组枚举（加工类型 / 打开方式 /
+ * 款式 / 用料公式 / 是否对花）由**多行 chips** 改成**一行五个下拉**（高度 ~260px → ~70px）。
+ *
+ * 语义不变（**硬约束，一条都没放宽**）：
+ * - 三态字段（是否对花）仍是**三档**（未指定 / 是 / 否）—— 合并会让下游把「没问过」当成「不对花」；
+ * - 加工类型的「自动」标记（`data-testid="cutting-mode-auto"`）保留 —— 那是「这一档是系统替你选的」
+ *   的唯一告知面（issue #5020）；
+ * - 选中态由 `<select>` 自身承载（无障碍树上即 `combobox` + 当前值）。
+ */
+function SelectGroup<T>({
   label,
   options,
   value,
   onChange,
   autoNote,
+  testId,
 }: {
   label: string
   options: ReadonlyArray<ChipOption<T>>
   value: T
   onChange: (next: T) => void
-  /**
-   * 「**这一档是系统按规则自动选的**」标记（issue #5020）—— 只用于加工类型。
-   *
-   * 为什么要有它：未指定时页面按门幅规则**自动选中**一档（客服看得到选中态），但「自动选的」
-   * 与「客服自己点的」在界面上**长得一样** ⇒ 不标出来，客服会以为自己选过（也就不会去核对）。
-   * 文案与门幅提示（`door-width-suboptimal` 一族）同一口径：**只是告知，不改值**。
-   */
+  /** 「**这一档是系统按规则自动选的**」标记（issue #5020）—— 只用于加工类型。 */
   autoNote?: boolean
+  /** 稳定锚点（判据按它定位，不按中文 label）。 */
+  testId: string
 }) {
+  const selectId = `${testId}-select`
+  const current = options.find((o) => optionValue(o) === optionValue({ value } as ChipOption<T>))
   return (
     <div>
-      <div className={LABEL_CLASS}>
+      <label htmlFor={selectId} className={LABEL_CLASS}>
         {label}
         {autoNote && (
           <span
             data-testid="cutting-mode-auto"
-            title="加工类型未指定 ⇒ 系统按门幅规则自动选中（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 倒幅）；点任意一档即可覆盖"
+            title="加工类型未指定 ⇒ 系统按门幅规则自动选中（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 倒幅）；改下拉即可覆盖"
             className="ml-1.5 rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] font-normal leading-4 text-neutral-500"
           >
             自动
           </span>
         )}
-      </div>
-      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-        {options.map((option) => {
-          const active = option.value === value
-          return (
-            <button
-              key={option.label}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => onChange(option.value)}
-              className={
-                'h-9 px-3 rounded border text-sm transition-colors ' +
-                (active
-                  ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                  : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-              }
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
+      </label>
+      <select
+        id={selectId}
+        data-testid={testId}
+        aria-label={label}
+        value={current ? optionValue(current) : ''}
+        onChange={(e) => {
+          const picked = options[e.target.selectedIndex]
+          if (picked) onChange(picked.value)
+        }}
+        className={SELECT_CLASS}
+      >
+        {options.map((option) => (
+          <option key={option.label} value={optionValue(option)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -277,14 +291,15 @@ export default function OrderCraftFields({
         <span className="text-neutral-500">工艺与定型请在「加工项」里勾选</span>
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* ⚠️ 「部位」字段已移除（issue #4521，用户裁定「移除部位功能，其实完全不需要」）：
             主帘缺省即布帘；纱帘由页面侧的**帘体**选择承载（`curtainBody`）——
             这里再放一个部位下拉 = 让商家能选出一个与帘体矛盾的部位（两条真值打架）。
             ⚠️ 「工艺」chip 组已移除（issue #4566）：工艺改由**加工项**勾选派生（工艺项的 `craftHint`）
             —— 留一个可录键 = 与加工项派生的第二份口径打架（且 ERP 的「工艺+特征」组合名匹配不上）。
             ⚠️ 「是否定型」三段 chip 组已移除（同 #4566）：定型是加工项目录里的**手选特征**项。 */}
-        <ChipGroup
+        <SelectGroup
+          testId="craft-select-cutting-mode"
           label="加工类型"
           options={toChipOptions(CUTTING_MODE_OPTIONS)}
           value={value.cuttingMode}
@@ -292,14 +307,16 @@ export default function OrderCraftFields({
           autoNote={cuttingModeAuto}
         />
 
-        <ChipGroup
+        <SelectGroup
+          testId="craft-select-open-count"
           label="打开方式"
           options={OPEN_COUNT_CHIPS}
           value={value.openCount}
           onChange={(next) => onChange({ openCount: next })}
         />
 
-        <ChipGroup
+        <SelectGroup
+          testId="craft-select-style"
           label="款式"
           options={toChipOptions(STYLE_OPTIONS)}
           value={value.style}
@@ -310,14 +327,16 @@ export default function OrderCraftFields({
             那就自动算出褶数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）。
             ⚠️ 原「褶距」number 输入框**已删除**（同一批需求：「移除订单的工艺规格中的褶距字段」）
             —— 留一个可录键 = 与算料引擎的档位口径打架（引擎算分幅时**不读**褶距，只按档位取倍数）。 */}
-        <ChipGroup
+        <SelectGroup
+          testId="craft-select-formula"
           label="用料公式"
           options={formulaOptions}
           value={effectiveFormula}
           onChange={(next) => onChange({ formula: next })}
         />
 
-        <ChipGroup
+        <SelectGroup
+          testId="craft-select-has-pattern"
           label="是否对花"
           options={TRI_STATE_CHIPS}
           value={value.hasPattern}
@@ -362,7 +381,8 @@ export default function OrderCraftFields({
 
       {effectiveFormula !== CRAFT_CALC_FORMULA_PLEAT && tierOptions.length > 0 && (
         <div className="mt-3" data-testid="craft-tier-options">
-          <ChipGroup
+          <SelectGroup
+            testId="craft-select-tier"
             label="档位"
             options={tierOptions}
             /* 生效档位（issue #4878 独立复核 P2）：公式 chips 显示的是**生效**值

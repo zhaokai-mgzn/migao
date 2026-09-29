@@ -137,6 +137,15 @@ const expandProcessing = () => {
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
+/**
+ * 展开底部吸底条里的**费用明细**（🔴 2026-09-29 第三次裁定：明细默认收起 —— 常态只占一行
+ * 「订单金额 + 提交/取消」，把宽度与高度还给商品列表）。本文件全部判据都在明细里 ⇒ 渲染后先展开。
+ */
+const expandFee = () => {
+  const btn = screen.queryByTestId('fee-detail-toggle')
+  if (btn && btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 const inputOf = (label: string, idx = 0) =>
   screen
     .getAllByText(label)
@@ -145,6 +154,7 @@ const inputOf = (label: string, idx = 0) =>
 /** 选商品 → 填宽高（触发算料试算 → 预填「用料米数」）→ 勾一个 per_meter 加工项 */
 async function setupLine() {
   render(<NewOrderPage />)
+  expandFee()
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
   await screen.findByText('窗宽 (米)')
@@ -331,6 +341,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
 
   it('#4874 没有选配任何加工项（也未触发自动识别）⇒ 整块不渲染（无组合可展示、也无价可改）', async () => {
     render(<NewOrderPage />)
+    expandFee()
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
     await screen.findByText('窗宽 (米)')
@@ -360,6 +371,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
       feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
     )
     render(<NewOrderPage />)
+    expandFee()
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
     await screen.findByText('窗宽 (米)')

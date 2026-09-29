@@ -493,6 +493,37 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
  * 选规格（2026-09-29 第二次裁定：门幅 chips 网格 ⇒ **一行摘要 + 下拉**）——
  * 在下拉选项文本里找第一支命中项再选中（比较用正则，调用点可写 `'2\\.8米'`）。
  */
+/**
+ * 某个枚举字段**下拉**的当前选中项（界面选中态的唯一证据）。
+ * 🔴 2026-09-29 第三次裁定：枚举字段由 chips 改**原生下拉**（用户口径「比较占空间」）⇒
+ * 读数从 `aria-checked=true` 的 chip 换成 `<select>` 的当前选中项（判据强度不变）。
+ */
+const checkedChips = (label: string) => {
+  // 2026-09-29 第三次裁定：枚举字段改**原生下拉** ⇒ 读数 = 当前选中项；
+  // 页面侧仍是 chips 的几组（帘体 / 售卖形态）走 radiogroup + aria-checked 分支。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) return [select.selectedOptions[0]?.textContent ?? '']
+  return within(screen.getByRole('radiogroup', { name: label }))
+    .getAllByRole('radio')
+    .filter((r) => r.getAttribute('aria-checked') === 'true')
+    .map((r) => r.textContent ?? '')
+}
+
+/** 选某一档（客服手选 / 选「未指定」交还给规则）—— 一次 `change` 即生效 */
+const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
+  fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
+}
+
 const pickSku = (pattern: string) => {
   const select = screen.getByTestId('sku-select') as HTMLSelectElement
   const re = new RegExp(pattern)
@@ -771,18 +802,6 @@ describe('#5014 自动选 SKU：有库存优先 → 单价低者优先 → 按 i
  * ⇒ 8a/8b 的 `checkedChips('加工类型')` 恒为 `['未指定']`、8d 落库 `cuttingMode` 为 `undefined`。
  */
 describe('#5020 加工类型自动推导：未指定 ⇒ 自动选中；客服改后不被规则覆盖', () => {
-  /** 某个 radiogroup 里 `aria-checked=true` 的 chip 文案（界面选中态的唯一证据） */
-  const checkedChips = (label: string): string[] =>
-    within(screen.getByRole('radiogroup', { name: label }))
-      .getAllByRole('radio')
-      .filter((el) => el.getAttribute('aria-checked') === 'true')
-      .map((el) => el.textContent ?? '')
-
-  /** 点某个 chip（客服手选 / 点「未指定」交还给规则） */
-  const pickChip = (label: string, text: string) => {
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
-  }
-
   it('判据 8a：未指定加工类型 ⇒ 按规则**自动选中**（成品高 2.75 ⇒ 定高买宽）', async () => {
     // 尺寸留空建单（`setupLineWithSkus` 的 `null` 档）⇒ 展开步骤后先点「未指定」，再填尺寸
     await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
@@ -1130,7 +1149,7 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
   it('#5130 加工类型只决定「倒幅」：切「定宽买高」⇒ 超宽 + 倒幅（依据文案 = 阈值式）', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const block = screen.getByTestId('auto-detected-features')
     await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
@@ -1184,7 +1203,7 @@ describe('#4662 / #5130 「超宽」判据已换为企业阈值 + 加工类型�
   it('#5130 小窗不再判「超宽」（旧「含褶倍」判据退役）⇒ 落库组合键只剩「倒幅」', async () => {
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '2.6' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const block = screen.getByTestId('auto-detected-features')
     await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
@@ -1224,7 +1243,7 @@ describe('#4662 / #5130 「超宽」判据已换为企业阈值 + 加工类型�
   it('#4662 反向：切「定宽买高」+ 高不超门幅 ⇒ 提示「系统实际会按定高买宽算」', async () => {
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '1.5' })
     openSizing()
-    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+    pickChip('加工类型', '定宽买高')
 
     const notice = await screen.findByTestId('auto-feature-notice-cutting-mode-conflict')
     expect(notice.textContent).toContain('系统实际会按定高买宽算')

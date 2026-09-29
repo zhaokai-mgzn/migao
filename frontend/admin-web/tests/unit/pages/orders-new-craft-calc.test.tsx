@@ -431,15 +431,29 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     const craftEdit = screen.queryAllByTestId('craft-plan-edit')[0]
     if (craftEdit?.getAttribute('aria-expanded') === 'false') fireEvent.click(craftEdit)
   }
-  const formulaRadio = (name: string) =>
-    within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
+  /** 用料公式**下拉**的当前选中项（🔴 2026-09-29 第三次裁定：chips ⇒ 原生下拉） */
+  const formulaSelected = () =>
+    (screen.getByRole('combobox', { name: '用料公式' }) as HTMLSelectElement).selectedOptions[0]
+      ?.textContent ?? ''
+  /** 可选档文案清单（旧 `getAllByRole('radio').map(textContent)` 的等价读数面） */
+  const optionLabels = (group: string) =>
+    Array.from((screen.getByRole('combobox', { name: group }) as HTMLSelectElement).options).map(
+      (o) => o.textContent ?? ''
+    )
+  /** 选某一档（旧 `fireEvent.click(formulaRadio(...))` 的等价写法） */
+  const pickOption = (group: string, name: string) => {
+    const select = screen.getByRole('combobox', { name: group }) as HTMLSelectElement
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === name)
+    if (!hit) throw new Error(`下拉「${group}」里没有「${name}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+  }
 
   it('判据 1（红证）：缺省公式 = 算料配置的 `default_formula`，且选韩褶公式 ⇒ 展示**自动算出的褶数**', async () => {
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
     // 红证（改前）：页面既没有「用料公式」控件，也没有褶数展示块 ⇒ 下面两行必红
-    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
     // 试算还没发（宽高未填）⇒ 褶数是「—」：**不编数**
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
 
@@ -474,7 +488,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
-    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
 
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
@@ -486,15 +500,11 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
-    fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+    pickOption('用料公式', '褶倍数公式（倍数法）')
 
-    const tiers = await screen.findByTestId('craft-tier-options')
+    await screen.findByTestId('craft-tier-options')
     // fixture label 与键名不同字（`标准档（2.0倍）` ≠ `standard`）⇒ 页面写死中文档位名必红
-    expect(
-      within(tiers)
-        .getAllByRole('radio')
-        .map((r) => r.textContent)
-    ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
+    expect(optionLabels('档位')).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
     // 褶数块只在韩褶公式下出现
     expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
   })
@@ -507,12 +517,9 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
-    fireEvent.click(
-      within(await screen.findByTestId('craft-tier-options')).getByRole('radio', {
-        name: '经济档（1.8倍）',
-      })
-    )
+    pickOption('用料公式', '褶倍数公式（倍数法）')
+    await screen.findByTestId('craft-tier-options')
+    pickOption('档位', '经济档（1.8倍）')
     // 签名变化（formula / craft_tier 都进了签名）⇒ 必须重发试算，且带上所选档
     await waitFor(() => {
       const params = mockCraftCalcPreview.mock.calls.map((c) => c[0])
@@ -533,7 +540,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
     openStep1()
     // 公式值域与引擎常量同源（不依赖配置）⇒ chips 仍在；档位值域取不到 ⇒ 不渲染 chips
-    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
     expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })

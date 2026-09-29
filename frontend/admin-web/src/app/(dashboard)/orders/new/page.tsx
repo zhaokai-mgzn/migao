@@ -1473,6 +1473,11 @@ export default function NewOrderPage() {
   const [productSearchLoading, setProductSearchLoading] = useState(false)
 
   // ===== 收货信息 =====
+  /**
+   * **费用明细展开态**（2026-09-29 第三次裁定）：明细收进**底部吸底条**，常态只占一行
+   * （订单金额 + 未定价提示 + 提交/取消），点「费用明细」才展开逐行。
+   */
+  const [feeDetailOpen, setFeeDetailOpen] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
@@ -2922,9 +2927,11 @@ export default function NewOrderPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 左侧：商品行项 + 收货信息 */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* **单列全宽**（2026-09-29 第三次裁定）：右栏（加急/到货日 + 费用明细）原来吃掉 1/3 宽，
+          商品列表被挤窄 ⇒ 费用明细改**底部吸底条**、主区全宽（加急/到货日压成一行）。
+          ⚠️ 吸底条的 `sticky bottom-0` 生效于页面滚动根 —— 明细展开时内部自己滚（`max-h`），
+          不把整条撑高。 */}
+      <div className="space-y-6">
           {/* ============= 商品信息（多行项） ============= */}
           <Card>
             <div className="p-6">
@@ -3170,16 +3177,13 @@ export default function NewOrderPage() {
               </div>
             </div>
           </Card>
-        </div>
-
-        {/* 右侧：费用明细 + 操作 */}
-        <div className="space-y-6">
           {/* 加急 / 要求到货日（issue #5177）：**做在订单上**（不是售后页）——
-              加急单在智能派单页走「加急订单（不参与合并）」，到货日是派单排序键。 */}
+              加急单在智能派单页走「加急订单（不参与合并）」，到货日是派单排序键。
+              2026-09-29：主区改全宽 ⇒ 本卡压成**一行**（开关 + 到货日并排），不再竖排占高。 */}
           <Card>
             <div className="p-6">
               <SectionTitle icon={<Zap className="w-4 h-4" />} title="加急 / 到货日" />
-              <div className="mt-4 space-y-4">
+              <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3">
                 <div className="flex items-start gap-3">
                   {/*
                     开关用 `role="switch"` 的按钮（**不是** `<input type="checkbox">`）：
@@ -3211,7 +3215,7 @@ export default function NewOrderPage() {
                     </span>
                   </span>
                 </div>
-                <div>
+                <div className="min-w-[12rem]">
                   <label
                     htmlFor="requiredDeliveryDate"
                     className="block text-sm font-medium text-neutral-700 mb-1.5"
@@ -3233,8 +3237,59 @@ export default function NewOrderPage() {
             </div>
           </Card>
 
-          <Card>
-            <div className="p-6">
+          {/* **费用明细 → 底部吸底汇总条**（2026-09-29 第三次裁定，用户原话「费用计算占了很大
+              一块区域，导致商品列表很拥挤」）：常态只占**一行**（订单金额 + 未定价提示 + 提交/取消），
+              逐行明细点「费用明细」才展开（内部自己滚，不撑高吸底条）。 */}
+          <div
+            data-testid="fee-summary-bar"
+            className="sticky bottom-0 z-20 rounded-xl border border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur shadow-[0_-2px_12px_rgba(0,0,0,0.05)]"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-sm text-neutral-500">合计</span>
+                <span
+                  data-testid="fee-summary-total"
+                  className="text-xl font-semibold text-primary-600"
+                >
+                  {formatAmount(totals.total)}
+                </span>
+                {unpricedCount > 0 && (
+                  <span className="text-xs text-amber-600">
+                    {unpricedCount} 行加工费未定价（组合那半按 0 计）
+                  </span>
+                )}
+                {feePreviewPending && pricedLines.length > 0 && (
+                  <span className="text-xs text-neutral-400">加工费计价中…</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="fee-detail-toggle"
+                  aria-expanded={feeDetailOpen}
+                  onClick={() => setFeeDetailOpen((v) => !v)}
+                  className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm text-neutral-600 hover:border-neutral-400 transition-colors"
+                >
+                  {feeDetailOpen ? '收起明细' : '费用明细'}
+                </button>
+                <Button onClick={handleSubmit} loading={submitting} size="lg">
+                  提交订单
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push('/orders')}
+                  size="lg"
+                  disabled={submitting}
+                >
+                  取消
+                </Button>
+              </div>
+            </div>
+            {feeDetailOpen && (
+              <div
+                data-testid="fee-detail-panel"
+                className="mt-4 max-h-[60vh] overflow-auto pr-1"
+              >
               <SectionTitle icon={<Receipt className="w-4 h-4" />} title="费用明细" />
 
               {/* 行项费用构成（issue #4420 重设计；**issue #4488② 改为按商品组合并**）。
@@ -3519,24 +3574,9 @@ export default function NewOrderPage() {
                   <p className="mt-1 text-xs text-neutral-400">默认与订单金额（扣除优惠后）一致；手动输入后自动反算优惠金额</p>
                 </div>
               </dl>
-            </div>
-          </Card>
-
-          <div className="flex flex-col gap-2">
-            <Button onClick={handleSubmit} loading={submitting} className="w-full" size="lg">
-              提交订单
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => router.push('/orders')}
-              className="w-full"
-              size="lg"
-              disabled={submitting}
-            >
-              取消
-            </Button>
+              </div>
+            )}
           </div>
-        </div>
       </div>
 
       {/* 识别到的明细 ⇒ 选品（issue #5345）：识别**不建行**，商家在面板上选了才建行 */}

@@ -209,10 +209,8 @@ const checkedItems = () =>
 
 /** 某个单选 chips 组里**当前选中**的档（用于打开方式 / 加工类型这类 `radiogroup`） */
 const checkedChips = (label: string) =>
-  within(screen.getByRole('radiogroup', { name: label }))
-    .getAllByRole('radio')
-    .filter((r) => r.getAttribute('aria-checked') === 'true')
-    .map((r) => r.textContent)
+  // 2026-09-29 第三次裁定：下拉**恒有一档选中**（含「未指定」档）⇒ 读数 = 当前选中项
+  [ (screen.getByRole('combobox', { name: label }) as HTMLSelectElement).selectedOptions[0]?.textContent ?? '' ]
 
 /** 展开「改工艺参数」区（推导方案就绪时它默认收起；展开才能看加工类型 / 打开方式 / 用料公式 chips） */
 const openCraftParams = () => {

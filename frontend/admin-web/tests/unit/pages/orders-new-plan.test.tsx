@@ -218,12 +218,20 @@ const editMeters = () => {
 }
 
 const checkedChips = (label: string) =>
-  within(screen.getByRole('radiogroup', { name: label }))
-    .getAllByRole('radio')
-    .filter((r) => r.getAttribute('aria-checked') === 'true')
-    .map((r) => r.textContent)
+  // 2026-09-29 第三次裁定：下拉**恒有一档选中**（含「未指定」档）⇒ 读数 = 当前选中项
+  [ (screen.getByRole('combobox', { name: label }) as HTMLSelectElement).selectedOptions[0]?.textContent ?? '' ]
 
 const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
   fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
 }
 
@@ -394,7 +402,7 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     expect(await screen.findByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
     // 推导没就绪 ⇒ 工艺参数**默认展开**（人工兜底是唯一出路；收起会让人无从下手）
     expect(craftParamsToggle()).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('radiogroup', { name: '加工类型' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '加工类型' })).toBeInTheDocument()
     // 数量照旧按算料结果预填（**不猜**一个推导方案出来）
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
   })

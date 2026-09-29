@@ -183,6 +183,16 @@ function typeZeroDotFive(el: HTMLInputElement): string[] {
 }
 
 const pickChip = (label: string, text: string) => {
+  // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
+  // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
+  // （帘体 / 售卖形态 / 拼接人工加）走下面的 radiogroup 分支 —— 两条路径都显式处理。
+  const select = screen.queryAllByRole('combobox', { name: label })[0] as HTMLSelectElement | undefined
+  if (select) {
+    const hit = Array.from(select.options).find((o) => (o.textContent ?? '') === text)
+    if (!hit) throw new Error(`下拉「${label}」里没有「${text}」`)
+    fireEvent.change(select, { target: { value: hit.value } })
+    return
+  }
   fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
 }
 
