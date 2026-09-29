@@ -1,6 +1,6 @@
 // case_ids: UI-003, UI-004, DA-005, DA-006, DA-007
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 
 // Mock request (for /api/admin/orders/statistics)
 const mockRequestGet = vi.fn()
@@ -508,6 +508,47 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('经营看板')).toBeInTheDocument()
     })
+  })
+
+  // ── #5792 ④ 失败态与空数据**可区分**（改前：失败只 console.error ⇒ UI 退化成空态或 0）──
+
+  it('接口失败 ⇒ 显式告警并**指名失败块**，且不把故障画成「暂无数据」（issue #5792 ④）', async () => {
+    // 只让 stats 失败（其余成功）⇒ 告警必须只点名「经营数据与待处理」，且趋势/订单/排行不报
+    mockGetStats.mockRejectedValue(new Error('Network error'))
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      const alert = screen.getByTestId('dashboard-load-failed')
+      expect(alert).toBeInTheDocument()
+      // ① 指名是哪一块（不是「加载失败」四个字）
+      expect(alert.textContent).toContain('经营数据与待处理')
+      expect(alert.textContent).not.toContain('趋势图')
+      expect(alert.textContent).not.toContain('近期订单')
+      // ② 与空态**可区分**：这里必须说「失败」，而不是「暂无」
+      expect(alert.textContent).toContain('失败')
+      // ③ 反向自证：趋势图那块的正常内容**照旧**（仅一块失败不得拖垮整页）
+      expect(screen.getByText('订单趋势')).toBeInTheDocument()
+    })
+  })
+
+  it('🔴 失败**不清零**：刷新时接口挂掉 ⇒ 保留上次成功值 + 出告警（不是把数字画成 0）', async () => {
+    render(<DashboardPage />)
+    // 先等首次成功加载落地（用「较昨日 +25.5%」这个由 stats 派生的唯一文案做锚）
+    await waitFor(() => {
+      expect(screen.getByText(/较昨日 \+25\.5%/)).toBeInTheDocument()
+    })
+
+    // 再让刷新失败
+    mockGetStats.mockRejectedValue(new Error('Network error'))
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-load-failed')).toBeInTheDocument()
+    })
+    // 🔴 关键判据：上次成功值仍在（若实现改成「失败即清零」，这里会变成 0%/消失 —— 那正是要治的形态）
+    expect(screen.getByText(/较昨日 \+25\.5%/)).toBeInTheDocument()
+    // 且**不得**退化成空态文案
+    expect(screen.queryByText('暂无近期订单')).not.toBeInTheDocument()
   })
 
   it('should handle empty trend data', async () => {
