@@ -212,6 +212,9 @@ export default function DashboardPage() {
   // 口径：① 失败**不清零**（保留上次成功值，避免把故障画成业务事实）；② 显式告警 + 分块列出；
   //       ③ 重试**只重发失败的那一块**（已成功的块不重复打后端）。
   const [blockErrors, setBlockErrors] = useState<Record<string, string>>({})
+  // ⚠️ 标记的读/清一律**就地内联**成 `setBlockErrors(...)`，不抽组件内小函数：
+  //    `fetchData`（useCallback）声明的更早，抽函数会形成前向引用，ESLint `react-hooks/immutability`
+  //    判 **error**（本地 `tsc` 看不见，CI 的 eslint 步会红 —— 已实跑踩过）。
   // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
   const [briefingEnabled, setBriefingEnabled] = useState(false)
 
@@ -235,31 +238,51 @@ export default function DashboardPage() {
         setLowStockCount(s.lowStockItems ?? 0)
         setPendingShipment(s.pendingShipOrders ?? 0)
         setProcessingShipment(s.processingPendingOrders ?? 0)
-        clearBlockError('stats')
+        setBlockErrors((prev) => {
+          if (!('stats' in prev)) return prev
+          const next = { ...prev }
+          delete next.stats
+          return next
+        })
       } else {
         console.error('Dashboard stats:', statsRes.reason)
-        setBlockError('stats')
+        setBlockErrors((prev) => ({ ...prev, stats: BLOCK_LABELS.stats }))
       }
       if (trendRes.status === 'fulfilled') {
         setTrendData(Array.isArray(trendRes.value.data.data) ? trendRes.value.data.data : [])
-        clearBlockError('trend')
+        setBlockErrors((prev) => {
+          if (!('trend' in prev)) return prev
+          const next = { ...prev }
+          delete next.trend
+          return next
+        })
       } else {
         console.error('Dashboard trend:', trendRes.reason)
-        setBlockError('trend')
+        setBlockErrors((prev) => ({ ...prev, trend: BLOCK_LABELS.trend }))
       }
       if (ordersRes.status === 'fulfilled') {
         setRecentOrders(ordersRes.value.data.data || [])
-        clearBlockError('orders')
+        setBlockErrors((prev) => {
+          if (!('orders' in prev)) return prev
+          const next = { ...prev }
+          delete next.orders
+          return next
+        })
       } else {
         console.error('Dashboard recent orders:', ordersRes.reason)
-        setBlockError('orders')
+        setBlockErrors((prev) => ({ ...prev, orders: BLOCK_LABELS.orders }))
       }
       if (rkRes.status === 'fulfilled') {
         setRanking((rkRes.value.data as any)?.data || [])
-        clearBlockError('ranking')
+        setBlockErrors((prev) => {
+          if (!('ranking' in prev)) return prev
+          const next = { ...prev }
+          delete next.ranking
+          return next
+        })
       } else {
         console.error('Dashboard ranking:', rkRes.reason)
-        setBlockError('ranking')
+        setBlockErrors((prev) => ({ ...prev, ranking: BLOCK_LABELS.ranking }))
       }
       setUpdateTime(now())
     } catch (error) {
@@ -269,17 +292,6 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }, [trendDays])
-
-  /** 记一块的失败（带**可行动**的归因文案，不是「加载失败」四个字） */
-  const setBlockError = (key: string) =>
-    setBlockErrors((prev) => ({ ...prev, [key]: BLOCK_LABELS[key] ?? key }))
-  const clearBlockError = (key: string) =>
-    setBlockErrors((prev) => {
-      if (!(key in prev)) return prev   // 无变化 ⇒ 返回同一引用（不触发重渲染）
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
 
   /**
    * 只重试**失败的那一块**（issue #5792 ④）—— 已成功的块不重复打后端。
@@ -304,10 +316,15 @@ export default function DashboardPage() {
         const r = await dashboardApi.getProductRanking('day', 10)
         setRanking((r.data as any)?.data || [])
       }
-      clearBlockError(key)
+      setBlockErrors((prev) => {
+        if (!(key in prev)) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
     } catch (error) {
       console.error('Dashboard retry:', key, error)
-      setBlockError(key)
+      setBlockErrors((prev) => ({ ...prev, [key]: BLOCK_LABELS[key] ?? key }))
     }
   }, [trendDays])
 
