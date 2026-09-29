@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
 import type { Order, OrderStatus, OrderStatusTab } from '@/types'
-import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels } from '@/types'
+import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels, toBackendStatusParam } from '@/types'
 
 interface SearchState {
   orderId: string
@@ -191,12 +191,12 @@ export default function OrdersPage() {
       // 状态映射：前端枚举 → 后端枚举。
       // 'all' / 'processing' 不传 status，'processing' tab 传 hasProcessing=true 给后端过滤
       if (activeTab !== 'all' && activeTab !== 'processing') {
-        apiParams.status = FrontendToBackendStatus[activeTab as OrderStatus]
+        apiParams.status = toBackendStatusParam(activeTab as OrderStatus)
       } else if (activeTab === 'processing') {
         apiParams.hasProcessing = true
         // #387: 当 category + status 同时指定时，叠加 status 过滤
         if (extraStatusFilter) {
-          apiParams.status = FrontendToBackendStatus[extraStatusFilter]
+          apiParams.status = toBackendStatusParam(extraStatusFilter)
         }
       }
 

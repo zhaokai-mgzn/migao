@@ -172,10 +172,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             wrapper.eq(Order::getUserId, userId);
         }
 
-        // 状态筛选
-        if (StringUtils.hasText(status)) {
-            wrapper.eq(Order::getStatus, status);
-        }
+        // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
+        applyStatusFilter(wrapper, status);
 
         // 跟进状态筛选
         if (StringUtils.hasText(followStatus)) {
@@ -308,10 +306,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             wrapper.eq(Order::getUserId, userId);
         }
 
-        // 状态筛选
-        if (StringUtils.hasText(status)) {
-            wrapper.eq(Order::getStatus, status);
-        }
+        // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
+        applyStatusFilter(wrapper, status);
 
         wrapper.orderByDesc(Order::getCreatedAt);
 
@@ -2571,5 +2567,31 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         return null;
+    }
+
+    /**
+     * 订单状态筛选：支持**逗号分隔多值**（issue #5792）。
+     *
+     * <p>为什么需要：前端「待发货」在业务上是 **`confirmed` + `producing`** 两个状态之和
+     * （`frontend/admin-web/src/types/index.ts` 的映射注释已这么写），而后端此前只收单值
+     * ⇒ 列表比计数少（看板卡说 N 条、点进去只看到其中一部分）。
+     * 现按 `in` 处理 ⇒ 与计数的口径取齐（本仓同族缺陷的修法见 issue #5792 的口径整改）。</p>
+     */
+    static void applyStatusFilter(
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> wrapper,
+            String status) {
+        if (!StringUtils.hasText(status)) {
+            return;
+        }
+        java.util.List<String> statuses = java.util.Arrays.stream(status.split(","))
+                .map(String::trim)
+                .filter(x -> !x.isEmpty())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+        if (statuses.size() == 1) {
+            wrapper.eq(com.migao.admin.entity.Order::getStatus, statuses.get(0));
+        } else {
+            wrapper.in(com.migao.admin.entity.Order::getStatus, statuses);
+        }
     }
 }

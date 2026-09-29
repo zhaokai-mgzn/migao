@@ -470,9 +470,24 @@ export type BackendOrderStatus =
   | 'cancelled'
 
 // 前端到后端状态映射（用于API请求时的status参数）
+/**
+ * 前端筛选 → **后端 status 查询参数**（可能是逗号分隔多值，issue #5792）。
+ *
+ * 🔴 改前这里是 `FrontendToBackendStatus[status]` 直接取单值，而映射注释写着
+ * 「confirmed 和 producing 都算待发货」⇒ **注释与行为不符**：列表只筛 `confirmed`，
+ * 于是看板卡（计数 = 两状态之和）说 N 条、点进去只看到其中一部分 ——
+ * 「计数与下钻不一致」。列表页自己选「待发货」也是同一个错。
+ *
+ * 现在按**多值**下发（后端 `OrderService.applyStatusFilter` 支持逗号分隔、按 `in` 处理）。
+ */
+export function toBackendStatusParam(status: OrderStatus): string {
+  if (status === 'pending_shipment') return 'confirmed,producing'
+  return FrontendToBackendStatus[status]
+}
+
 export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = {
   pending_payment: 'pending',
-  pending_shipment: 'confirmed', // confirmed 和 producing 都算待发货
+  pending_shipment: 'confirmed', // confirmed 和 producing 都算待发货（多值下发见 toBackendStatusParam）
   shipped: 'shipped',
   completed: 'completed',
   closed: 'cancelled',
