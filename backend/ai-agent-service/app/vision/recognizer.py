@@ -88,6 +88,21 @@ _NOT_RECOGNISED = "图片未给出该字段"
 #: 留空理由：模型没给置信度 —— 按最低处理（宁可留空，不冒错填的风险）
 _NO_CONFIDENCE = "未给出置信度，无法判断把握程度，宁可不填"
 
+#: 订单侧的**工艺要求字段**（issue #5794）—— 用户口径：「如果用户是根据图片下单的，就需要根据
+#: 图中客户要求来决定工艺规格和加工项选择了，**不能选错**」。
+#: 值必须能**直接喂给页面控件**（打开方式 = 开数 `1`~`4`；款式 = `单色` / `拼色`），
+#: 与尺寸同一条纪律：形状错的「很自信的读数」下游一定错 ⇒ 硬闸放在置信度闸**之前**。
+_OPEN_COUNT_BY_TEXT: Dict[str, str] = {
+    "单开": "1", "一开": "1",
+    "双开": "2", "两开": "2", "二开": "2",
+    "三开": "3", "四开": "4",
+}
+#: 开数只认 `1`~`4`（`lib/order-craft-fields.ts::OPEN_COUNT_OPTIONS` 同值域；表外开数**不猜**）
+_OPEN_COUNT_RANGE: Tuple[int, int] = (1, 4)
+_COUNT_NUMBER_RE = re.compile(r"\d+")
+_STYLE_SOLID = "单色"
+_STYLE_MIXED = "拼色"
+
 
 def build_messages(target_type: str, image_urls: List[str]) -> List[HumanMessage]:
     """构造发给 vision 的多模态消息（文本提示 + 逐图 `image_url` 块）。"""
@@ -228,6 +243,22 @@ def _resolve(
             return None, size_reason
         value = size
 
+    # 订单侧的第四 / 第五道硬闸（issue #5794）：**客户写明的工艺要求**必须是能直接进页面控件的值
+    # （打开方式 = 开数 `1`~`4`；款式 = `单色` / `拼色`）。同样放在置信度闸之前 ——
+    # 识别填错 = 工艺/加工项选错 = 少做工序 / 多收钱（用户口径「**不能选错**」）。
+    # ⚠️ `processing_items` 不过数值闸：它是**目录名清单**，页面按目录逐名匹配（匹配不上的忽略）。
+    if target_type == "order" and field.key == "open_count":
+        count, count_reason = _normalise_open_count(value)
+        if count is None:
+            return None, count_reason
+        value = count
+
+    if target_type == "order" and field.key == "style":
+        style, style_reason = _normalise_style(value)
+        if style is None:
+            return None, style_reason
+        value = style
+
     # 发货侧的第三道硬闸（issue #5648）：**实发数量**必须是正数。
     # 同样放在置信度闸**之前** —— 一个「很自信地抄错」的数量，置信度再高也不能填：
     # 数量错 = 少发/多发，而货已经出了车间（追回来比改一张单贵得多）。
@@ -276,6 +307,44 @@ def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:
     if not low <= metres <= high:
         return None, f"「{value}」不在帘宽 / 帘高的合理量程（{low}~{high} 米）内 ⇒ 宁可不填"
     return f"{metres:g}", None
+
+
+def _normalise_open_count(value: str) -> Tuple[Optional[str], Optional[str]]:
+    """打开方式原文 → `(开数串 "1"~"4", None)`；**认不出 ⇒ `(None, 留空理由)`**。
+
+    「只抄写明的那一档」的**机械半边**（另一半是提示词）：`双开` / `两开` / `2开` / `2` 都归 `2`；
+    表外档（`5开`）与写不清的（`开着`）一律留空 —— 页面 `openCount` 只吃 `1`~`4`
+    （`lib/order-craft-fields.ts::OPEN_COUNT_OPTIONS`），填一个表外档 = 控件上没有任何一档选中
+    （商家以为"识别填过了"，实际等于没填）。
+    """
+    text = value.strip()
+    for label, count in _OPEN_COUNT_BY_TEXT.items():
+        if label in text:
+            return count, None
+    numbers = _COUNT_NUMBER_RE.findall(text)
+    if len(numbers) == 1:
+        count = int(numbers[0])
+        low, high = _OPEN_COUNT_RANGE
+        if low <= count <= high:
+            return str(count), None
+        return None, (
+            f"「{value}」不在打开方式的可选档（单开 / 双开 / 三开 / 四开）内 ⇒ 宁可不填"
+        )
+    return None, f"「{value}」读不出打开方式（单开 / 双开 / 三开 / 四开）⇒ 宁可不填"
+
+
+def _normalise_style(value: str) -> Tuple[Optional[str], Optional[str]]:
+    """款式原文 → `('单色' | '拼色', None)`；**认不出 ⇒ `(None, 留空理由)`**。
+
+    「拼色 / 双拼 / 双拼色」都归 `拼色`（真值源 §8：拼 2 次口语叫双拼色）；
+    「单色 / 素色 / 纯色」归 `单色`。含「拼」优先判拼色（`单色拼边` 这类写法里客户要的是拼色）。
+    """
+    text = value.strip()
+    if "拼" in text:
+        return _STYLE_MIXED, None
+    if any(word in text for word in ("单色", "素色", "纯色")):
+        return _STYLE_SOLID, None
+    return None, f"「{value}」读不出款式（只认单色 / 拼色）⇒ 宁可不填"
 
 
 def _normalise_quantity(value: str) -> Tuple[Optional[str], Optional[str]]:

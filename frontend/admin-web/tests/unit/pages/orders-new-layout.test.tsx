@@ -29,6 +29,8 @@ const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockCraftCalcPreview = vi.fn()
 const mockFeePreview = vi.fn()
+// 图片识别（issue #5794）：页面快通道的上传 + 识别两个端点（判据 12 驱动它们）
+const mockImageRecognize = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...a: unknown[]) => mockCreateOrder(...a) },
@@ -41,6 +43,11 @@ vi.mock('@/lib/api', () => ({
     getCustomers: () => Promise.resolve({ data: { data: { items: [], total: 0 } } }),
   },
   craftCalcApi: { preview: (...a: unknown[]) => mockCraftCalcPreview(...a) },
+  // 图片识别（issue #5794 判据 12）：上传拿 URL → 识别端点回字段表
+  uploadApi: {
+    uploadImage: () => Promise.resolve({ data: { data: { url: 'https://cdn.test/order.png' } } }),
+  },
+  imageRecognizeApi: { recognize: (...a: unknown[]) => mockImageRecognize(...a) },
   // 自动特征判定面（issue #4976 包 2b）：本文件与它正交 ⇒ 服务端替身返回「不判」，
   // 免得提交闸门拦住无关断言（同 `orders-new-item-remark.test.tsx` 的口径）。
   autoFeaturesApi: {
@@ -273,6 +280,8 @@ const stubApis = () => {
   })
   mockCraftCalcPreview.mockResolvedValue(CALC_OK)
   mockFeePreview.mockResolvedValue(feeMatched())
+  // 缺省：识别端点回「零可用字段」（degraded）—— 只有判据 12 会真的驱动它
+  mockImageRecognize.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
 }
 
 describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 常态可编辑 / 推荐组合 / 特殊选项并入加工项）', () => {
@@ -459,5 +468,49 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(screen.getByTestId('craft-plan-manual')).toBeTruthy()
     // 反向自证：工艺参数 chips 确实**随它收起**（它们仍归「改工艺参数」这一层）
     expect(screen.queryByRole('radiogroup', { name: '加工类型' })).toBeNull()
+  })
+
+  it('判据 12（2026-09-29 新增）：图片下单 ⇒ **按图中客户要求**选工艺规格与加工项（不按系统默认）', async () => {
+    mockImageRecognize.mockResolvedValue({
+      data: {
+        data: {
+          degraded: false,
+          fields: [
+            { key: 'open_count', label: '打开方式', value: '单开', source: '[图片识别]', reason: null },
+            { key: 'style', label: '款式', value: '拼色', source: '[图片识别]', reason: null },
+            {
+              key: 'processing_items',
+              label: '加工项',
+              value: '打孔、定型',
+              source: '[图片识别]',
+              reason: null,
+            },
+          ],
+        },
+      },
+    })
+    await setupLine()
+    // 前置自证：**系统默认**是「双开 + 韩褶 + 定型」（判据 5 / 8 钉的就是它们）
+    openCraftParams()
+    expect(checkedChips('打开方式')).toEqual(['双开'])
+    openStep(/^\d+ 加工项/)
+    expect(checkedItems()).toEqual(['韩褶', '定型'])
+    openStep(/^\d+ 用料与规格/)
+
+    const file = new File(['x'], 'order.png', { type: 'image/png' })
+    fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
+
+    // ① 留痕可见（①用料与规格 里逐字说出「按图选了什么」）
+    const note = await screen.findByTestId('recognized-craft-note')
+    expect(note.textContent).toContain('打开方式 单开')
+    expect(note.textContent).toContain('款式 拼色')
+    expect(note.textContent).toContain('加工项 打孔、定型')
+    // ② 打开方式 / 款式按图（**盖过**缺省双开、缺省单色）
+    openCraftParams()
+    expect(checkedChips('打开方式')).toEqual(['单开'])
+    expect(checkedChips('款式')).toEqual(['拼色'])
+    // ③ 加工项按图 = 打孔 + 定型；**默认的「韩褶」被取消**（客户没提它 ⇒ 不能选错）
+    openStep(/^\d+ 加工项/)
+    expect(checkedItems()).toEqual(['定型', '打孔'])
   })
 })

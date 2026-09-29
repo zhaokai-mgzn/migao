@@ -7,7 +7,12 @@ import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Rec
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { urgencyRequestFields } from '@/lib/order-urgency'
-import { buildOrderPrefill, ORDER_DERIVATION_INPUT_KEYS, sizeTargetLineIndex } from '@/lib/image-recognize'
+import {
+  buildOrderPrefill,
+  ORDER_DERIVATION_INPUT_KEYS,
+  RECOGNIZE_SOURCE_TAG,
+  sizeTargetLineIndex,
+} from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 // 识别到的明细 ⇒ 匹配候选 ⇒ **人选** ⇒ 建订单行（issue #5345）。纯函数在 `lib/order-line-match.ts`：
 // 排序 / 理由 / 不猜商品 / 单价只来自 SKU / 门幅既不在那里也不在这里（唯一来源 = 所选 SKU）。
@@ -192,6 +197,13 @@ interface OrderLineItem {
    * ——留痕落在行状态里，收起/展开重挂不丢。
    */
   recognizedSizeKeys?: string[]
+  /**
+   * **识别来的工艺要求**（issue #5794）——展示用文本（如「打开方式 双开 · 款式 拼色 · 加工项 韩褶、定型」）。
+   *
+   * 为什么留痕：客户在图上写的要求**盖过系统默认**（默认双开 / 默认韩褶+定型都可能与客户要的相反），
+   * 覆盖必须让商家看得见、对得上（用户口径「根据图中客户要求来决定……**不能选错**」）。
+   */
+  recognizedCraftText?: string
   /**
    * 这一行是**图片识别建出来的**（issue #5345）—— 驱动行上的 `[图片识别]` 徽标（判据 3）。
    *
@@ -1480,17 +1492,87 @@ export default function NewOrderPage() {
       const sizeKeys: string[] = Object.values(ORDER_DERIVATION_INPUT_KEYS).filter((key) =>
         prefill.recognizedFields.includes(key)
       )
-      if (sizeKeys.length > 0) {
+      // **客户写明的工艺要求**（issue #5794）：打开方式 / 款式 / 加工项 —— 与尺寸**同一行**
+      // （图上写的是一套帘的要求）。⚠️ 与收货信息「只填空字段」的口径**不同**：这里是**客户显式
+      // 要求**，必须盖过系统默认 —— 用户口径「根据图中客户要求来决定工艺规格和加工项选择了，
+      // **不能选错**」；覆盖**留痕可见**（`recognizedCraftText` 在 ①用料与规格 里逐字展示）。
+      const craftSpecRecognized = prefill.openCount !== undefined || prefill.style !== undefined
+      const itemNames = prefill.processingItemNames ?? []
+      const hasItemRequest = itemNames.length > 0
+
+      if (sizeKeys.length > 0 || craftSpecRecognized || hasItemRequest) {
         // 先取成局部常量：`setLineItems` 的回调是**延迟执行**的，TS 对属性访问的收窄跨不过它
         const curtainWidth = prefill.curtainWidth
         const curtainHeight = prefill.curtainHeight
+        const openCount = prefill.openCount
+        const style = prefill.style
+        void craftSpecRecognized
         setLineItems((prev) => {
-          const index = sizeTargetLineIndex(prev)
-          if (index < 0) return prev
+          const emptySizeIndex = sizeTargetLineIndex(prev)
+          // 尺寸仍**只落在空尺寸行**（不覆盖商家敲进去的数 —— 尺寸错 ⇒ 米数错 ⇒ 钱错）；
+          // 工艺要求是**整套帘的口径**，不能因为"尺寸已经填过"就不生效 ⇒ 退到第 0 行。
+          const target = emptySizeIndex >= 0 ? emptySizeIndex : prev.length > 0 ? 0 : -1
+          if (target < 0) return prev
+          const line = prev[target]
           const next = [...prev]
-          next[index] = { ...next[index], recognizedSizeKeys: sizeKeys }
-          if (curtainWidth !== undefined) next[index].width = curtainWidth
-          if (curtainHeight !== undefined) next[index].height = curtainHeight
+          const patched: OrderLineItem = { ...line }
+          if (sizeKeys.length > 0 && emptySizeIndex >= 0) {
+            patched.recognizedSizeKeys = sizeKeys
+            if (curtainWidth !== undefined) patched.width = curtainWidth
+            if (curtainHeight !== undefined) patched.height = curtainHeight
+          }
+          if (craftSpecRecognized || hasItemRequest) {
+            // 识别到的加工项里哪些**本租户目录里没有** ⇒ 只提示、不勾选（不替客户造一个不存在的项）。
+            // ⚠️ 目录取自**这一行**的 `processingItems`（页面唯一那份目录）—— 用页面级 state 会在
+            // 它的初始化之前被引用（TDZ），也会让这个回调多一个会漂的依赖。
+            const catalogNames = new Set(patched.processingItems.map((pi) => pi.name))
+            const unmatchedItems = itemNames.filter((name) => !catalogNames.has(name))
+            patched.recognizedCraftText = [
+              openCount !== undefined
+                ? `打开方式 ${OPEN_COUNT_LABEL[openCount] ?? `${openCount} 开`}`
+                : null,
+              style !== undefined ? `款式 ${style}` : null,
+              hasItemRequest
+                ? `加工项 ${itemNames.join('、')}` +
+                  (unmatchedItems.length > 0
+                    ? `（${unmatchedItems.join('、')} 目录里没有 ⇒ 未勾选，请手工核对）`
+                    : '')
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            patched.craft = {
+              ...patched.craft,
+              ...(openCount !== undefined ? { openCount } : {}),
+              ...(style !== undefined ? { style } : {}),
+            }
+            // 留痕：识别是**外来的明确要求** ⇒ 之后补推荐默认时不得再动它
+            if (openCount !== undefined) patched.openCountTouched = true
+            if (hasItemRequest) {
+              const selected = { ...patched.selectedProcessing }
+              // ① 客户写明的项 ⇒ 勾上
+              for (const item of patched.processingItems) {
+                if (itemNames.includes(item.name)) {
+                  selected[item.id] = {
+                    selected: true,
+                    qty: selected[item.id]?.qty ?? deriveProcessingQty(patched.quantity),
+                  }
+                }
+              }
+              // ② 系统**推荐默认**里、客户没提的项 ⇒ 取消 —— 否则「默认韩褶 + 定型」会把客户的单子
+              //    改成系统以为的样子（用户说的「不能选错」正是这个形态）
+              const recommended = recommendedItemNamesOf(patched)
+              for (const item of patched.processingItems) {
+                if (recommended.includes(item.name) && !itemNames.includes(item.name)) {
+                  selected[item.id] = { selected: false, qty: selected[item.id]?.qty ?? 1 }
+                }
+              }
+              patched.selectedProcessing = selected
+              patched.craftItemTouched = true
+              patched.shapedItemTouched = true
+            }
+          }
+          next[target] = patched
           return next
         })
       }
@@ -4747,6 +4829,13 @@ function LineItemBlock({
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
               </div>
+              {/* **识别来的工艺要求**（issue #5794）—— 逐字说出「按图选了什么」，商家一眼可核对
+                  （用户口径「根据图中客户要求来决定工艺规格和加工项选择了，**不能选错**」）。 */}
+              {line.recognizedCraftText && (
+                <p data-testid="recognized-craft-note" className="mt-2 text-xs text-primary-600">
+                  {RECOGNIZE_SOURCE_TAG} 按图中客户要求：{line.recognizedCraftText}
+                </p>
+              )}
 
             </div>
 

@@ -255,6 +255,78 @@ class TestExtractFieldsOrderSize:
         assert extract_fields("product", payload)[4]["value"] == "门幅2.8米"
 
 
+class TestCustomerCraftGates:
+    """客户写明的**工艺要求**（issue #5794）—— 值必须能**直接进页面控件**。
+
+    与尺寸 / 手机号同一条纪律：形状错 ⇒ 下游一定错（工艺 / 加工项选错 = 少做一道工序 / 多收一笔钱）
+    ⇒ 硬闸放在**置信度闸之前**（「很自信地抄错」也要拦）。
+    """
+
+    def _field(self, key: str, value, confidence: float = 0.95):
+        payload = json.dumps(
+            {"fields": {key: {"value": value, "confidence": confidence}}}, ensure_ascii=False
+        )
+        return next(f for f in extract_fields("order", payload) if f["key"] == key)
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("双开", "2"),
+            ("两开", "2"),
+            ("2开", "2"),
+            ("2", "2"),
+            ("单开", "1"),
+            ("三开", "3"),
+            ("四开", "4"),
+            ("双开（左右各一片）", "2"),
+        ],
+    )
+    def test_open_count_is_normalised_to_the_page_option_value(self, raw, expected):
+        """页面 `openCount` 只吃 `1`~`4`（`OPEN_COUNT_OPTIONS`）⇒ 归一到那个值域。"""
+        assert self._field("open_count", raw)["value"] == expected
+
+    @pytest.mark.parametrize("raw", ["5开", "开着", "看不清"])
+    def test_open_count_outside_the_option_set_is_left_empty(self, raw):
+        """表外档 / 写不清 ⇒ 留空（**不猜**：猜错 = 客户要双开、系统给他单开）。"""
+        field = self._field("open_count", raw)
+        assert field["value"] is None
+        assert "打开方式" in field["reason"]
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("单色", "单色"),
+            ("素色", "单色"),
+            ("拼色", "拼色"),
+            ("双拼色", "拼色"),
+            ("单色拼边", "拼色"),
+        ],
+    )
+    def test_style_is_normalised_to_the_two_legal_values(self, raw, expected):
+        assert self._field("style", raw)["value"] == expected
+
+    def test_style_that_is_neither_solid_nor_mixed_is_left_empty(self):
+        field = self._field("style", "粉红色")
+        assert field["value"] is None
+        assert "款式" in field["reason"]
+
+    def test_craft_shape_gate_runs_before_the_confidence_gate(self):
+        field = self._field("open_count", "5开", confidence=0.99)
+        assert field["value"] is None
+        assert "置信度" not in field["reason"]
+
+    def test_processing_items_are_passed_through_as_written(self):
+        """加工项是**目录名清单**（顿号分隔）：识别只负责抄名字，匹配目录是页面侧的事。"""
+        field = self._field("processing_items", "韩褶、定型")
+        assert field["value"] == "韩褶、定型"
+
+    def test_size_gate_still_runs_for_the_size_fields(self):
+        """反向自证：新增两道闸**没有**顶掉尺寸闸（同一段代码里，顺序敏感）。"""
+        field = self._field("curtain_width", "2.8×2.4")
+        assert field["value"] is None
+        assert "宽" in field["reason"]
+
+
 class TestMarker:
     def test_every_filled_field_carries_the_marker(self):
         for target_type, fixture in (("product", PRODUCT_VISION_FIXTURE),

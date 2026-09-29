@@ -149,6 +149,11 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
       'quantity',
       'curtain_width',
       'curtain_height',
+      // 2026-09-29（issue #5794）：客户写明的**工艺要求**三格（打开方式 / 款式 / 加工项）——
+      // 用户口径「根据图中客户要求来决定工艺规格和加工项选择了，**不能选错**」
+      'open_count',
+      'style',
+      'processing_items',
     ])
     const overlap = keys.product.filter((k) => keys.order.includes(k))
     expect(overlap).toEqual([])
@@ -164,7 +169,7 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     expect([...consumed].sort()).toEqual([
       'color', 'craft', 'curtain_height', 'curtain_width', 'customer_address',
       'customer_name', 'customer_phone', 'door_width', 'items', 'material',
-      'name', 'quantity',
+      'name', 'open_count', 'processing_items', 'quantity', 'style',
     ])
     expect([...consumed].filter((k) => !known.has(k))).toEqual([])
   })
