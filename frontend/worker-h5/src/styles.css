@@ -56,9 +56,10 @@ html, body {
   font-weight: 600;
   text-decoration: none;
 }
-/* 「页面权限没读到」常驻提示（fail-open 的可观察面，母单 #5161）—— 与报错/通知**视觉可分**：
-   它是"降级态"而不是"这一次操作失败"，所以用描边卡而不是红字。 */
-.wh5-perm-unread {
+/* 页头的「菜单/降级」常驻提示（两态共用一件：`report` 菜单未开 / 页面权限没读到；母单 #5161）
+   —— 与报错/通知**视觉可分**：它是"菜单现状 / 降级态"而不是"这一次操作失败"，所以用描边卡而不是红字。
+   🔴 两态都是**非阻断**语义：提示在 ≠ 页面被挡（2026-09-29 用户逐字改判，口径以 B 端 H5 为准）。 */
+.wh5-perm-notice {
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid #f0c36d;
@@ -67,14 +68,6 @@ html, body {
   color: #7a5b00;
   font-size: 14px;
   line-height: 1.5;
-}
-/* 「本机未开报工页」视图的两个出口（找管理员开 / 换设备换工人） */
-.wh5-closed-exits {
-  margin: 12px 0 16px;
-  padding-left: 20px;
-  color: var(--wh5-ink);
-  font-size: 15px;
-  line-height: 1.7;
 }
 .wh5-ghost {
   min-height: 44px;

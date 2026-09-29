@@ -154,38 +154,41 @@ test('机台入口在**每一个登录后视图**都在（页头是共用件：�
   assert.equal(deglue(selecting).includes(MACHINE_ENTRY), true, '旧码选套屏丢了机台入口')
 })
 
-// ── 判据 ②：report 门控 ────────────────────────────────────────────────────────────────
+// ── 判据 ②：**不硬拦截**（菜单显隐语义；2026-09-29 用户逐字改判，口径以 B 端 H5 为准）──────
 
-test('🔴 ② `report` ∉ pages ⇒ 渲染**显式**「本机未开报工页」视图（不静默留扫不动码的页面）', () => {
+test('🔴 ② `report` ∉ pages ⇒ 页面**照旧可用** + 一条**非阻断**提示（不拦访问）', () => {
   const html = renderPage(loggedIn([PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]), null)
-  assert.match(html, /id="wh5-report-closed"/, '必须有一个可定位的显式视图（不是空白页）')
-  assert.match(html, /本机未开报工页/, '标题要说清「本机未开此页」')
-  assert.match(html, /工人端页面/, '出口①必须点名去哪里开 = 管理员的「工人端页面」')
-  assert.match(html, /换一台|换一个/, '出口②必须给"换设备 / 换工人"')
-  // 不是「码坏了」的误导：这句话必须说出"与码无关"
-  assert.match(html, /不是码的问题/, '要说清与扫码无关（否则工人反复重扫 / 找错人修）')
-  // 🔴 报工入口一个都不许留（否则只是"多了一段提示"，而页面照样扫得动）
-  assert.ok(!html.includes('id="wh5-scan"'), '没开报工页却仍渲染输码框 ⇒ 门控没生效')
-  assert.ok(!html.includes('id="wh5-report"'), '没开报工页却仍渲染开工按钮 ⇒ 门控没生效')
+  // 提示：显式、可定位
+  assert.match(html, /id="wh5-report-menu-closed"/, '必须有可定位的非阻断提示（菜单没开要说出来）')
+  assert.match(html, /菜单未开报工页/, '提示要说清是"菜单未开"（不是码坏了）')
+  assert.match(html, /本机报工仍可用/, '提示必须写明"页面仍可用"（否则读起来像被挡）')
+  assert.match(html, /工人端页面/, '出口必须点名去哪里开 = 管理员的「工人端页面」')
+  assert.match(html, /换一台|换一个/, '再给一条出口（换设备 / 换工人）')
+  // 🔴 **不拦截**：报工主流程照旧（扫水洗唛 / 报工都能用）
+  assert.match(html, /id="wh5-scan"/, '`report` 关掉就把扫码框挡掉 = 硬拦截（B 端 H5 不是这个语义）')
+  assert.match(html, /id="wh5-report-menu-closed"[^>]*>/, '提示必须是**一条提示**，不是"整页替换"')
+  assert.ok(!html.includes('id="wh5-report-closed"'), '旧的硬拦截视图不得再出现')
 })
 
-test('🔴 ② 红证：去掉 `report` 门控（照常渲染扫码屏）⇒「显式视图」判定必红', () => {
-  // 变异体按内存构造：`report` 不在集合里，却照常渲染 scanView 的形态
-  const gated = renderPage(loggedIn([PAGE_ORDER]), null)
-  const ungated = renderPage(loggedIn(DEFAULT_PAGES), null)
-  assert.match(gated, /id="wh5-report-closed"/, '对照：真渲染下是显式视图（本判定绿）')
-  assert.ok(
-    !ungated.includes('id="wh5-report-closed"') && ungated.includes('id="wh5-scan"'),
-    '变异体确实是"照常渲染扫码屏"这一形态',
-  )
-  // 判定读数随之改变 ⇒ 本判据不是空断言
-  assert.notEqual(/id="wh5-report-closed"/.test(ungated), /id="wh5-report-closed"/.test(gated))
+test('🔴 ② 双向钉住「不拦截」：去掉提示 ⇒ 红；把页面挡掉 ⇒ 也红', () => {
+  // (a) 提示被去掉（只留能用的页面）⇒ 判定必红
+  const noNotice = renderPage(loggedIn(DEFAULT_PAGES), null)
+  assert.ok(!noNotice.includes('id="wh5-report-menu-closed"'), '对照：`report` 已开时本来就没有这条提示')
+  // (b) 页面被挡掉（`wh5-scan` 不渲染）⇒ 判定也必红（= 改前那版硬门控的形态）
+  const gatedForm = `${noNotice.replace('id="wh5-scan"', 'id="wh5-scan-gated-away"')}`
+  assert.ok(!gatedForm.includes('id="wh5-scan"'), '变异体确实是"页面被挡掉"这一形态')
+  // 两条判据各自只对一种变异敏感 —— 任一侧坏掉都会被下面任一 assert 抓住
+  const withReportClosed = renderPage(loggedIn([PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]), null)
+  assert.equal(withReportClosed.includes('id="wh5-report-menu-closed"'), true, '提示在')
+  assert.equal(withReportClosed.includes('id="wh5-scan"'), true, '页面也在（提示 ≠ 拦截）')
+  assert.notEqual(withReportClosed.includes('id="wh5-scan"'), gatedForm.includes('id="wh5-scan"'))
+  assert.notEqual(withReportClosed.includes('id="wh5-report-menu-closed"'), noNotice.includes('id="wh5-report-menu-closed"'))
 })
 
-test('🔴 ② `report` ∈ pages ⇒ 报工主流程**照旧**（门控不得误伤正常路径）', () => {
+test('🔴 ② `report` ∈ pages ⇒ 报工主流程**照旧**，且**没有**那条提示', () => {
   const scan = renderPage(loggedIn(DEFAULT_PAGES), null)
   assert.match(scan, /id="wh5-scan"/, '报工页已开却拿不到扫码入口 = 门控做反了')
-  assert.ok(!scan.includes('id="wh5-report-closed"'), '报工页已开不该出现"未开"视图')
+  assert.ok(!scan.includes('id="wh5-report-menu-closed"'), '报工页已开不该出现"菜单未开"提示')
   const main = renderPage(loggedIn(DEFAULT_PAGES, {
     mode: 'main',
     view: {
@@ -231,16 +234,21 @@ test('🔴 ③ `pages` 缺失 / 非数组 ⇒ 同一 fail-open 口径（旧版�
 })
 
 test('🔴 ③ 红证：改成 fail-closed ⇒ 判定必红（读数对照）', () => {
-  // 对照两态：① 读不到权限（= 本单要求的 fail-open ⇒ report 在生效集合里）
-  //           ② `report` 不在集合里（= fail-closed 会得到的形态：工人被挡在报工页外）
+  // 两态的**可观察差**必须存在，否则本判据是空断言：
+  //   ① 读不到权限（本单要求的 fail-open）⇒ 提示走 `wh5-perm-unread`（"按全开运行"）
+  //   ② `report` 明示关掉 ⇒ 提示走 `wh5-report-menu-closed`，但**页面照旧**（不拦截）
   const failOpen = renderPage(loggedIn(null, { pagesUnread: true }), null)
-  const failClosedForm = renderPage(loggedIn([PAGE_ORDER]), null)
-  assert.equal(failOpen.includes('id="wh5-scan"'), true, 'fail-open：扫码入口还在')
-  assert.equal(failClosedForm.includes('id="wh5-scan"'), false, 'fail-closed：扫码入口没了')
+  const reportOff = renderPage(loggedIn([PAGE_ORDER]), null)
+  assert.equal(failOpen.includes('id="wh5-perm-unread"'), true, 'fail-open：降级提示在')
+  assert.equal(reportOff.includes('id="wh5-perm-unread"'), false, '读到了权限就不该报"读不到"')
+  assert.equal(reportOff.includes('id="wh5-report-menu-closed"'), true, '`report` 关掉 ⇒ 菜单提示在')
+  // 🔴 两种口径都**不挡页面**（这是本单改判后的硬口径）
+  assert.equal(failOpen.includes('id="wh5-scan"'), true, 'fail-open：扫码入口在')
+  assert.equal(reportOff.includes('id="wh5-scan"'), true, '`report` 关掉也不拦访问（B 端 H5 语义）')
   assert.notEqual(
-    failOpen.includes('id="wh5-scan"'),
-    failClosedForm.includes('id="wh5-scan"'),
-    '两种口径必须给出不同读数（否则本判据证明不了 fail-open）',
+    failOpen.includes('id="wh5-perm-unread"'),
+    reportOff.includes('id="wh5-perm-unread"'),
+    '两种口径必须给出不同读数（否则本判据证明不了两个提示态可分）',
   )
 })
 
