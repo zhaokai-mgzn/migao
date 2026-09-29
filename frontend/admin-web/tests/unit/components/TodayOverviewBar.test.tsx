@@ -183,4 +183,14 @@ describe('buildInsightSentence（一句话经营解读生成）', () => {
     expect(s).not.toContain('含加工订单占')
     expect(s).not.toContain('库存偏低')
   })
+
+  it('🔴 issue #5792：环比为 null（无上期可比）⇒ 概览句显示「—」而不是「0%」', () => {
+    // `0%` 的语义是「与上期持平」；「上期为 0、没有可比基数」是另一件事
+    expect(formatOrderChange(null)).toBe('—')
+    expect(formatOrderChange(undefined)).toBe('—')
+    // 有基线时的既有语义不变
+    expect(formatOrderChange(0)).toBe('0%')
+    expect(formatOrderChange(12.5)).toBe('+12.5%')
+    expect(formatOrderChange(-3)).toBe('-3%')
+  })
 })

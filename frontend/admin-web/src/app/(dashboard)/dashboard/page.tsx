@@ -50,6 +50,24 @@ const BLOCK_LABELS: Record<string, string> = {
   orderStatus: '订单状态分布',
 }
 
+/**
+ * 环比徽章（issue #5792 口径整改）：`null` = **无上期可比** ⇒ 文案「—」+ 悬停说明。
+ *
+ * 为什么不是 0%：0% 的语义是「与上期**持平**」，与「上期为 0、根本没有可比基数」是两件事；
+ * 折叠成 0% 会被读成「没有变化」⇒ 误导（加了这个悬停说明，才让「—」可解释）。
+ */
+function changeBadge(
+  prefix: string,
+  v: number | null | undefined,
+): { text: string; up: boolean; title: string; neutral: boolean } {
+  if (v == null) {
+    // ⚠️ `neutral` 必须显式带上：否则徽章会落到「非上涨 = 红色 + 向下箭头」那一支，
+    //    把「没有可比基数」画成**下跌** —— 又是一种误导。
+    return { text: `${prefix} —`, up: false, neutral: true, title: '无上期可比（上期为 0）—— 这不是「与上期持平」' }
+  }
+  return { text: `${prefix} ${fmtSigned(v)}`, up: v > 0, neutral: false, title: '' }
+}
+
 function now(): string {
   return formatFullDateTime(new Date().toISOString())
 }
@@ -131,7 +149,7 @@ const METRIC_STYLES: Record<string, { tile: string; icon: string; spark: string 
 }
 
 function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, metric = 'orders' }: {
-  title: string; value: string; change?: { text: string; up: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
+  title: string; value: string; change?: { text: string; up: boolean; title?: string; neutral?: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
 }) {
   const style = METRIC_STYLES[metric] || METRIC_STYLES.orders
   return (
@@ -142,11 +160,19 @@ function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, m
           <span className="text-sm text-neutral-500">{title}</span>
         </div>
         {change && (
-          <span className={cn(
-            'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-            change.up ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
-          )}>
-            {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+          <span
+            title={change.title || undefined}
+            className={cn(
+              'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+              change.neutral
+                ? 'bg-neutral-100 text-neutral-500'
+                : change.up
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : 'bg-red-50 text-red-600'
+            )}
+          >
+            {/* 中性态**不画箭头**：没有可比基数时，任何方向箭头都是编造 */}
+            {!change.neutral && (change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
             {change.text}
           </span>
         )}
@@ -431,8 +457,8 @@ export default function DashboardPage() {
       <TodayOverviewBar
         todayOrders={stats?.todayOrders ?? 0}
         todaySales={stats?.todaySales ?? 0}
-        orderChange={stats?.todayOrdersChange ?? 0}
-        salesChange={stats?.todaySalesChange ?? 0}
+        orderChange={stats?.todayOrdersChange ?? null}
+        salesChange={stats?.todaySalesChange ?? null}
         processingCount={processingShipment}
         pendingCount={pendingShipment}
         lowStockCount={lowStockCount}
@@ -466,7 +492,7 @@ export default function DashboardPage() {
                 metric="orders"
                 title="今日订单数"
                 value={stats?.todayOrders?.toLocaleString() || '0'}
-                change={{ text: `较昨日 ${fmtSigned(stats?.todayOrdersChange ?? 0)}`, up: (stats?.todayOrdersChange ?? 0) > 0 }}
+                change={changeBadge('较昨日', stats?.todayOrdersChange)}
                 icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
@@ -475,7 +501,7 @@ export default function DashboardPage() {
                 metric="sales"
                 title="今日销售额"
                 value={fmtCurrency(stats?.todaySales || 0)}
-                change={{ text: `较昨日 ${fmtSigned(stats?.todaySalesChange ?? 0)}`, up: (stats?.todaySalesChange ?? 0) > 0 }}
+                change={changeBadge('较昨日', stats?.todaySalesChange)}
                 icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
                 sparkline={salesSeries.slice(-14)}
                 chartType="bar"
@@ -491,7 +517,7 @@ export default function DashboardPage() {
                 metric="month"
                 title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
-                change={{ text: `较上月 ${fmtSigned(stats?.monthRevenueChange ?? 0)}`, up: (stats?.monthRevenueChange ?? 0) > 0 }}
+                change={changeBadge('较上月', stats?.monthRevenueChange)}
                 icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>

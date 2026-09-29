@@ -79,20 +79,22 @@ public class DashboardController {
         // 今日/昨日订单数与销售额（环比）
         long todayOrders = toLong(orderStats.get("today_orders"));
         long yesterdayOrders = toLong(orderStats.get("yesterday_orders"));
-        double todayOrdersChange = yesterdayOrders > 0
+        // 🔴 issue #5792 口径整改：分母为 0 ⇒ **null**（= 无上期可比），不是 0。
+        // 改前一律回 0 ⇒ 与「与上期持平」不可区分，会被读成「没有变化」= **误导**。
+        Double todayOrdersChange = yesterdayOrders > 0
                 ? ((double) (todayOrders - yesterdayOrders) / yesterdayOrders) * 100
-                : 0;
+                : null;
         long todaySales = toLong(orderStats.get("today_sales"));
         long yesterdaySales = toLong(orderStats.get("yesterday_sales"));
-        double todaySalesChange = yesterdaySales > 0
-                ? ((double) (todaySales - yesterdaySales) / yesterdaySales) * 100 : 0;
+        Double todaySalesChange = yesterdaySales > 0
+                ? ((double) (todaySales - yesterdaySales) / yesterdaySales) * 100 : null;
 
         // 本月/上月营收（环比）
         long monthRevenue = toLong(orderStats.get("month_revenue"));
         long lastMonthRevenue = toLong(orderStats.get("last_month_revenue"));
-        double monthRevenueChange = lastMonthRevenue > 0
+        Double monthRevenueChange = lastMonthRevenue > 0
                 ? ((double) (monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
-                : 0;
+                : null;
 
         // #2886：客户维度 2 次串行 count → 1 次 FILTER 聚合
         Map<String, Object> userStats = userMapper.selectDashboardUserStats(todayStart);
@@ -137,15 +139,15 @@ public class DashboardController {
 
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
-                .todayOrdersChange(Math.round(todayOrdersChange * 10.0) / 10.0)
+                .todayOrdersChange(round1(todayOrdersChange))
                 .todaySales(todaySales)
-                .todaySalesChange(Math.round(todaySalesChange * 10.0) / 10.0)
+                .todaySalesChange(round1(todaySalesChange))
                 .totalCustomers(totalCustomers)
                 .newCustomersToday(newCustomersToday)
                 .activeSessions(activeSessions)
                 .aiSessionRate(aiSessionRate)
                 .monthRevenue(monthRevenue)
-                .monthRevenueChange(Math.round(monthRevenueChange * 10.0) / 10.0)
+                .monthRevenueChange(round1(monthRevenueChange))
                 .totalProducts(totalProducts)
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
@@ -159,6 +161,11 @@ public class DashboardController {
     }
 
     /** 聚合结果数值转换：BigDecimal 按原有 setScale(HALF_UP) 口径舍入，避免 decimal 截断 */
+    /** 环比取一位小数；**null 透传**（null 表示「无上期可比」，不得被折算成 0） */
+    private static Double round1(Double v) {
+        return v == null ? null : Math.round(v * 10.0) / 10.0;
+    }
+
     private static long toLong(Object v) {
         if (v == null) {
             return 0L;
@@ -472,14 +479,14 @@ public class DashboardController {
     @Builder
     public static class DashboardStatsResponse {
         private long todayOrders;
-        private double todayOrdersChange;
+        private Double todayOrdersChange;
         private long todaySales;
-        private double todaySalesChange;        private long totalCustomers;
+        private Double todaySalesChange;        private long totalCustomers;
         private long newCustomersToday;
         private long activeSessions;
         private double aiSessionRate;
         private long monthRevenue;
-        private double monthRevenueChange;
+        private Double monthRevenueChange;
         private long totalProducts;
         private long totalOrders;
         private long totalTickets;
