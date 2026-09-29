@@ -75,4 +75,25 @@ class OrderMapperTest {
                 .as("OrderMapper should extend BaseMapper<Order>")
                 .isTrue();
     }
+
+    @Test
+    @DisplayName("issue #5792：看板聚合含「待支付」计数 + 本月营收带上界（口径形态钉死）")
+    void dashboardStatsAggregateShape() throws Exception {
+        Method method = OrderMapper.class.getMethod("selectDashboardOrderStats",
+                java.time.OffsetDateTime.class, java.time.OffsetDateTime.class,
+                java.time.OffsetDateTime.class, java.time.OffsetDateTime.class,
+                java.time.OffsetDateTime.class, java.time.OffsetDateTime.class);
+        Select select = method.getAnnotation(Select.class);
+        assertThat(select).as("方法必须带 @Select（判据空跑即红）").isNotNull();
+        String sql = String.join(" ", select.value());
+
+        // 待支付订单数：给「钱还没到」的风险面一个真计数
+        // ⚠️ 不得用 /dashboard/pending-tasks 代替 —— 那是上限 5 条的**任务列表**，
+        //    拿它当计数会把「≤5」误报成总数。
+        assertThat(sql).contains("COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders");
+
+        // 本月营收必须有**上界**（与上月窗口对称）—— 否则未来创建时间的单会虚增本月
+        assertThat(sql).contains("created_at >= #{monthStart} AND created_at < #{nextMonthStart}");
+        assertThat(sql).contains("created_at >= #{lastMonthStart} AND created_at < #{monthStart}");
+    }
 }

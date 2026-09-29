@@ -58,6 +58,7 @@ function mockApiSuccess() {
         lowStockItems: 2,
         // #2886: 待发货/含加工计数由 stats 聚合返回（替代 2 个重复计数接口）
         pendingShipOrders: 8,
+        pendingPaymentOrders: 6,
         processingPendingOrders: 3,
       },
     },
@@ -623,6 +624,22 @@ describe('DashboardPage', () => {
       expect(alert.textContent).not.toContain('近期订单')
       expect(alert.textContent).not.toContain('商品销量排行')
     })
+  })
+
+  // ── #5792 第二阶段：待支付订单卡（钱还没到）──
+
+  it('待支付订单卡：数字取 `pendingPaymentOrders`，下钻用端点枚举值（不依赖中文标签映射）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('待支付订单')).toBeInTheDocument()
+    })
+    const card = screen.getByText('待支付订单').closest('a') as HTMLAnchorElement
+    expect(card).not.toBeNull()
+    // 🔴 数字来自服务端聚合（`pending_payment_orders` FILTER），不是本地推算；
+    //    且**不得**把「问题面」写成 0 而不显示（6 来自 mock）
+    expect(card.textContent).toContain('6')
+    // 下钻走 `pending_payment`（`resolveStatusParam` 直接匹配枚举值 ⇒ 不依赖标签词表）
+    expect(card.getAttribute('href')).toBe('/orders?status=pending_payment')
   })
 
   it('should handle empty trend data', async () => {

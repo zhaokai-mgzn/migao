@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（67 case）
+## 前端 UI 域（68 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8115,6 +8115,18 @@
 ```
 溯源: 2026-09-29 新增（issue #5792 第二阶段）：把「已写好但从未接线」的订单状态分布图接入经营看板，并补 jsdom 的 ResizeObserver stub。 ｜ tags: ui, dashboard, dead-code, wiring
 
+### UI-070. 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment` 🔵
+```
+你: 用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点结论之一：看板缺「钱还没到」的风险面
+期望: direct_reply
+数据: 判据 1·**计数来自真聚合**：`OrderMapper.selectDashboardOrderStats` 必须含 `COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders`。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java 的 `dashboardStatsAggregateShape`。
+数据: 判据 2·🔴 **不得用 `/dashboard/pending-tasks` 当计数**：那是**任务列表**且每类上限 5 条（`LIMIT 5`）⇒ 拿它当「待支付订单数」会把「≤5」误报成总数。执行点 = 同一条判据（钉住真值来源是聚合 FILTER）。
+数据: 判据 3·**下钻可用**：卡片链接必须是 `/orders?status=pending_payment`（`resolveStatusParam` 直接匹配枚举值 ⇒ 不依赖中文标签词表）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「待支付订单卡」。
+数据: 判据 4·**注入式红证**（已实跑）：把卡片数字写死成 `count={0}` ⇒ 该条 **1 failed**（断言数字来自服务端字段）；还原后 49 passed。
+跳过: [backend-contract] 前端卡片 + 后端 SQL 形态判据（无 LLM 环节，不进 agent-eval 冒烟）
+```
+溯源: 2026-09-29 新增（issue #5792 第二阶段）：补「待支付订单」计数与卡片（下钻到订单列表的待支付筛选）。 ｜ tags: ui, dashboard, metrics
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8144,8 +8156,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：574（活跃 126，跳过 448）
-- tier 分布：smoke 12 / normal 529 / adversarial 31
+- 用例总数：575（活跃 126，跳过 449）
+- tier 分布：smoke 12 / normal 530 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8170,7 +8182,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：67
+- 前端 UI 域：68
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8329,4 +8341,5 @@
 - UI-052: 工艺项页·**种子自愈**：就绪度按「两条基础路线是否齐」判 + 缺 `布料工序路线` 时补套入口**缺失即显示**（幂等）
 - UI-068: 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）
 - UI-069: 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己
+- UI-070: 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`
 
