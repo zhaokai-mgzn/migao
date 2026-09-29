@@ -80,6 +80,43 @@ describe('FormCard', () => {
     expect(onAction).toHaveBeenCalledWith(`__FORM__|${expected}`)
   })
 
+  it('数字字段（数量(米)）键盘用 digit ⇒ 小数点打得出来，且 0.5 原样进值 / 原样提交', () => {
+    const onAction = jest.fn()
+    render(<FormCard data={baseForm} onAction={onAction} />)
+    // 🔴 `type='number'` 的数字键盘**没有小数点键** ⇒ 「2.5 米」这类小数在真机上**根本打不出来**
+    //    （用户报障「输入框无法输入小数点」的原身）；`digit` 是小程序里唯一带小数点的数字键盘
+    //    （先例 = 工人端报工数量，UI-055 判据 5）。
+    const qty = screen.getByPlaceholderText('请输入数量(米)') as HTMLInputElement
+    expect(qty.getAttribute('type')).toBe('digit')
+    // 逐键：清空 → "0" → "0." → "0.5"（中间态不得被吞，原样留在框里）
+    fireEvent.change(qty, { target: { value: '' } })
+    fireEvent.change(qty, { target: { value: '0' } })
+    expect(qty.value).toBe('0')
+    fireEvent.change(qty, { target: { value: '0.' } })
+    expect(qty.value).toBe('0.')
+    fireEvent.change(qty, { target: { value: '0.5' } })
+    expect(qty.value).toBe('0.5')
+    // 手机上仍是普通键盘 —— 本单**只**把数字字段的键盘从「打不出小数点」改成 `digit`，
+    // 不顺手扩大射程（手机号字段现有形态 = `text`，要改成数字键盘是**另一件事**，
+    // 故这里只钉「没被数字字段的修复带偏」）。已知缺口照实登记在 PR body，不在这里留白。
+    expect(
+      (screen.getByPlaceholderText('11 位手机号') as HTMLInputElement).getAttribute('type')
+    ).not.toBe('digit')
+    // 补全必填后提交：0.5 原样序列化（本地校验 / 序列化都不得把小数改掉）
+    fireEvent.change(screen.getByPlaceholderText('请输入姓名'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByPlaceholderText('11 位手机号'), { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByPlaceholderText('省市区+详细地址'), { target: { value: '杭州市西湖区' } })
+    fireEvent.click(screen.getByText('提交'))
+    expect(onAction).toHaveBeenCalledWith(
+      `__FORM__|${JSON.stringify({
+        customer_name: '张三',
+        customer_phone: '13800138000',
+        customer_address: '杭州市西湖区',
+        quantity: '0.5',
+      })}`
+    )
+  })
+
   it('输入修改后应清除该字段错误', () => {
     const onAction = jest.fn()
     render(<FormCard data={baseForm} onAction={onAction} />)
