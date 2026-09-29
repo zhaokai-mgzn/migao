@@ -354,3 +354,30 @@ PY
   **唯一护栏只剩手动「切换工人」**（`switchWorker` 仍立即失效旧会话）；
   ② 因此一体机页面必须**常驻显示「当前工人：XXX」**、报工前身份显眼（落点 = `frontend/worker-h5`）。
 - ⚠️ **不放宽权限**：工人 session/JWT 的 `permissions` 仍恒为 `[]`，`/api/admin/**` 对 `worker` 仍 403。
+
+### 7.3 独立验收复核（2026-09-29，复核者只读 `origin/main`，无我的结论）
+
+复核者按「交付物可达性三问（谁发射 / 哪个入口可达 / 有无测试钉住）」逐项取证，结论与处置**照实登记**：
+
+| # | 复核发现 | 我的自证 | 处置 |
+|---|---|---|---|
+| 1 | 裁高配置：**可达** | 一致 | — |
+| 2 | 一体机机台模式：**可达** | 一致 | — |
+| 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `docs/wiki/CONTRACT-LEDGER.md` §九 |
+| 4 | 工人端页面开关判**部分可达**：后端齐，但 `/api/worker/me` **零消费方** ⇒ 开关不改变工人看到的任何东西 | 🔴 **成立，我认账**（这是我从 P0-E 划走、又还没做的那一半） | **补包**：`frontend/worker-h5` 消费 `/api/worker/me` —— 按 `report` 门控报工主流程、按 `cut_calc` 门控机台模式入口；**取不到页面集时 fail-open + 显式提示**（不把「开关没读到」变成「活干不了」）；`order` / `shipment` 在 `/w/` **暂无对应面** ⇒ 不为它们造 UI，只登记 |
+| 5 | 会话超时一周：**可达** | 一致 | — |
+| a | 本文 §2.7「改 `ProductionScanService.resolve`」与实现形态的描述 | — | **本条更正**（见下） |
+| b | 本文 §2.8 声称「前端守卫 + 同构判据」已落地 | — | **确认未落地**（同第 4 条），补包后仍**不含**「未登记即红」的机械守卫 ⇒ 照实登记为缺口 |
+| c | `CHANGELOG` 未登记 P0-E 的三件 | — | 本 PR（#5782）已补三条 |
+| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 |
+| e | 无 worker 页面键的机械守卫（`test_menu_three_sources_are_isomorphic.py` 不含） | — | 登记为缺口（本期只落**行为判据**：页面不在集合 ⇒ 走不到 / 入口不出现） |
+
+**§2.7 更正（复核 a）**：那 9 个明细键的**实际落点**是**扫码读面**的 `set_overview.positions[]` 与旧码 `selections[].positions[]`
+（`ProductionScanService::scanDetailOverview` → `withPositionDetail`），取值复用 `ProductionService::orderSpecByItemId`（与 `getOperations` 同源、Java 侧零重算）；
+**商家端** `GET /api/admin/processing-order-sets/{id}` 的部位形状**不含**这 9 键（键集被 `ProcessingOrderSetControllerTest.POSITION_KEYS` 冻结）——
+两个读面形状**不再逐字相同**，这是**有意**的，已登记在契约账本 §九。§2.7 原文把它写成「改 `resolve` 的 `positions[]`」，措辞以本段为准。
+
+**§2.8 更正（复核 b）**：本节当时的「+ 前端守卫 + 同构判据」是**设计意图**，不是交付事实。实际分两批：
+① **已交付**（P0-E）：租户级配置表 + `GET/PUT /api/admin/worker-page-config` + 商家端配置面 + 工人侧 `GET /api/worker/me`；
+② **补包**（复核第 4 条）：`worker-h5` 的**消费方**（页面/入口可见性）。⚠️ 即便补包落地，**仍缺**「未登记即红」的机械守卫（复核 e）——
+登记为缺口，不假装已覆盖。
