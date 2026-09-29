@@ -753,16 +753,16 @@ TOOL_MENU_NODE: dict[str, str] = {
     "role_manage": "岗位权限",
     "settings_manage": "企业基础信息",
     "notification_manage": "通知中心",
-    "product_search": "商品列表",
-    "product_detail": "商品列表",
-    "product_manage": "商品列表",
-    "product_update": "商品列表",
-    "sku_update": "商品列表",
+    "product_search": "商品管理",
+    "product_detail": "商品管理",
+    "product_manage": "商品管理",
+    "product_update": "商品管理",
+    "sku_update": "商品管理",
     # issue #5314：批量改价 / 批量上下架（`product:create` = 商品列表页的写码）
-    "product_batch_update": "商品列表",
-    "inventory_manage": "商品列表",
-    "batch_stock_query": "商品列表",
-    "category_manage": "商品列表",
+    "product_batch_update": "商品管理",
+    "inventory_manage": "商品管理",
+    "batch_stock_query": "商品管理",
+    "category_manage": "商品管理",
     "processing_item_query": "加工项管理",
     "processing_item_manage": "加工项管理",
     "processing_order_query": "生产看板",
@@ -773,7 +773,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     "piecework_query": "计件工资",
     "knowledge_search": "知识库",
     # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
-    "stock_ledger_query": "商品列表",            # product:list
+    "stock_ledger_query": "商品管理",            # product:list
     "inbound_order_query": "入库单",             # inbound:view
     "operation_catalog_query": "工艺配置",       # 端点方法级 processing:manage（#5247 新增，收窄）
     "briefing_query": "每日简报",                # dashboard:view
@@ -1733,7 +1733,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/dashboard": "经营看板",
     "/after-sales": "售后工单",
     "/orders": "订单列表",
-    "/products": "商品列表",
+    "/products": "商品管理",
     "/processing": "加工项管理",
     "/production/pool": "智能派单",
     "/production/remnants": "余料台账",
@@ -1864,7 +1864,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "在线接待", "agent-workspace/human-sessions/page.tsx",
         ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
     "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
-    "/products": MenuReadAnchor("商品列表", "products/page.tsx", ("productApi.getProducts",)),
+    "/products": MenuReadAnchor("商品管理", "products/page.tsx", ("productApi.getProducts",)),
     "/production/processing": MenuReadAnchor("加工项管理", "production/processing/page.tsx", (
         "processingItemApi.getProcessingItems", "productionApi.getFeeCombinations",
         "productionApi.getFeeGaps", "processingCategoryApi.getProcessingCategories")),
@@ -2694,9 +2694,9 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     "product:list": AuthorizationCensusEntry(
         roles=('sales',),
         endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
-        menu_nodes=('auth:商品列表', 'controller:商品列表', 'frontend:商品列表'),
+        menu_nodes=('auth:商品管理', 'controller:商品管理', 'frontend:商品管理'),
         tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
     ),
 }
 

@@ -7180,7 +7180,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（63 case）
+## 前端 UI 域（65 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -7534,6 +7534,7 @@
 数据: 「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变
 数据: 侧边栏七大组（#5271 按业务动线重排）：工作台(经营看板+每日简报) / 智能客服(在线接待+知识库) / 商品与加工项(商品列表+加工项管理) / 交易管理(订单列表+售后工单+客户列表+财务对账) / 生产管理(生产看板+智能派单+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；**菜单项一项不少不减（21 项）**，只改分组归属与组名（原「客户管理」组并入交易管理组、原生产管理组的物料三项拆入新组「仓储与物料」）；权限过滤不回归（组内无可见子项则整组隐藏）
 数据: 侧边栏交互（#5271）：分组默认**只展开当前路由所在组**（组标题显示项数徽标，收起不等于丢项）；路由变化 ⇒ 自动展开新所在组；折叠态仍按组渲染锚点（组图标 + title=组名，分组信息不丢）；小屏为抽屉式浮层（遮罩点击关闭、内容区不占宽度），桌面端常驻可折叠
+数据: 🔴 **2026-09-29 改判（issue #5778，用户逐条裁定）**：上面的七组清单**已作废**，现为 **6 组 + 2 一级项**：工作台(经营看板+每日简报) / **客户服务**(在线接待+客户列表+知识库+售后工单) / 交易管理(订单列表+财务对账) / 生产管理(生产看板+智能派单+**加工项管理**+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息)；**一级项** = 分组之前的「商品管理」(`/products`，原「商品与加工项」组撤销后升为一级项) 与分组之后的「通知中心」。仍 **21 项一项不少不减**；权限码 / 路径 / 门控一字未动（合并只改分组归属）。新增「常用（收藏）」= 用户自钉 4~6 项 pin 在侧边栏最顶部（权限被收回则该项自动消失）。**本改判不削弱任何既有断言**：更新后的判据与红证在 UI-066 / UI-067，旧 IA 的反向钉子（「客户管理」组与 `customer-center` 不得长回来）逐条保留并新增 `product-center` / `smart-customer-service` 两条。
 数据: 菜单搜索 / 命令面板（#5271）：⌘K（Ctrl+K）打开、侧边栏顶部入口亦可打开；空查询列出**当前用户有权访问**的全部菜单项；命中面 = 菜单名 ∪ 组名 ∪ 拼音首字母别名（如 ddlb→订单列表）；↑/↓ 选择、Enter 跳转、Esc/点遮罩关闭；无权限的项**不得**出现在结果里（搜索不是绕过权限的口子）
 数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
 数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
@@ -8051,6 +8052,38 @@
 真值: frontend-fix.vitest, order.shipment-actual-quantity-owner, order.shipment-read-faces
 溯源: 2026-09-27 新增（issue #5651 收口）：销售单数量列从「订单行投影」接到「实发明细」（后端读面由 OR-051 同批补上）。四态口径由 lib/sales-shipment.ts 单点判定，纸面只渲染结果；缺值一律显式（「未发」/「—」/「不适用」），永不印 0。**同批修正**：SalesDoc 的 formatAmount 缺值不再输出 0.00 而输出显式占位（同族：缺数据显示成 0）。 ｜ tags: ui, order, print, sales-doc, shipment, actual-quantity
 
+### UI-066. 商家后台大菜单重排：6 组 + 一级项「商品管理」+ 尾部「通知中心」= 21 项一项不少不减（加工项归生产管理 / 客户侧独立成组） 🔵
+```
+你: 用户 2026-09-29 会话逐条裁定：「加工项应该属于生产管理」「客户管理也不属于交易管理」「（售后）和客户管理应该属于一类？都属于服务客户的功能」「智能客服和客户管理是否应该合并到一个大菜单下？你考量下」「商品列表改成商品管理，直接作为一级菜单使用」
+期望: direct_reply
+数据: 判据 1·**三源同构（组层）**：`frontend/admin-web/src/config/menu.ts` 的 `menuGroups` / `backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` / `backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java` 的 `buildMenusByPermissions` 的「组 key + 组名 + 顺序」逐值相等，且为 **6 组**：`workspace 工作台 / customer-service 客户服务 / trade-center 交易管理 / production-center 生产管理 / inventory-center 仓储与物料 / org-center 组织管理`。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py 的 test_menu_is_isomorphic_across_three_sources（该守卫本轮新增「一级项层 / 独立项层」两段判据 + 第 ⑥ 条注入式红证）。
+数据: 判据 2·**加工项管理归生产管理组**（用户第 1 条）：`production-center` 组内顺序 = 生产看板 → 智能派单 → **加工项管理** → 工艺配置 → 计件工资（5 项），且 `product-center` 组**不再存在**。执行点 = frontend/admin-web/tests/unit/pages/processing-merged.test.tsx（「加工项管理由生产管理组承载」）+ tests/unit/pages/processing-fees.test.tsx + backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java 的 productionCenterGroupMirrorsMenuTs / productCenterGroupIsGone。
+数据: 判据 3·**客户侧独立成「客户服务」组**（用户第 2/3 条）：该组成员与顺序 = 在线接待 → 客户列表 → 知识库 → 售后工单；`trade-center` 收窄为 订单列表 → 财务对账。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx（「客户服务」组内顺序）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java 的 currentUserMenusDropRemovedChatEntry / currentUserMenusAbsorbCustomerCenterIntoTrade。
+数据: 判据 4·🔴 **「商品管理」是顶层一级项**（用户第 4 条「直接作为一级菜单使用」）：它渲染在**所有分组之前**、不属于任何组（服务端 = `MenuController` 顶层节点 + `AuthService` 顶层 `menuItem`），且**不得**与任何组内项重名同路径。执行点 = 三源同构守卫的「一级项层」判据（含负控「一级项不得同时出现在某个组里」）+ MenuControllerTest 的 topLevelStandaloneItemMirrorsFrontend + frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的「顶部一级项」用例。
+数据: 判据 5·**面包屑与侧边栏一致（§15.2）**：`/products` ⇒「商品管理 > 商品管理」；`/customers`、`/after-sales`、`/knowledge`、`/agent-workspace*`、`/chat` ⇒ 首项「客户服务」；`/production/processing` 与旧路径 `/processing` ⇒ 首项「生产管理」。执行点 = frontend/admin-web/tests/unit/components/Header.test.tsx + frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举）。
+数据: 判据 6·**RBAC 单一真值源同批对齐**：`rbac/manifest.json` 的 `menu_nodes` / `menus.{frontend,controller,auth}` 与本 IA 逐值相等，产物 `rbac/readings.json` 新鲜（`python3 rbac/generate_readings.py --check`）；菜单树上的两个商品域动作码节点（`新增商品` / `商品分类管理`）随 `product-center` 撤销而删除（**权限码本身仍在权限目录里**）。执行点 = tests/unit_ci_workflows/test_rbac_single_source_manifest.py + test_rbac_derived_pages.py（ACTION_NODE_CODES 只许缩短）。
+数据: 判据 7·**权限码 / 路径 / 门控一字不动（零可见性 delta）**：纯信息架构调整，不改任何端点的码；后端 `AuthServiceTest` 的角色可见性用例（负控 / inbound 独立门控 / 客户侧）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的权限过滤表逐条精确断言。
+跳过: [ui-only] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 与 pytest 执行
+```
+真值: frontend-fix.vitest
+溯源: 2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。 ｜ tags: ui, menu, ia, navigation, rbac
+
+### UI-067. 侧边栏「常用（收藏）」：用户自选钉 4~6 项 pin 在顶部（权限优先于偏好 / 无效 key 静默丢弃 / 满额拒绝 / 本机持久化） 🔵
+```
+你: 用户 2026-09-29 裁定：「只做常用（收藏）—— 用户自己钉 4~6 项，pin 在侧边栏顶部」
+期望: direct_reply
+数据: 判据 1·🔴 **权限优先于偏好**（本用例的安全判据）：钉过的项若当前无权（或企业开关关了「每日简报」）⇒ **必须**从「常用」消失。红证 = 只持 order:list 时 `resolvePinnedItems` 只回 `orders`（反向自证：全权时三项都在）。执行点 = frontend/admin-web/tests/unit/lib/menu-pinned.test.ts 的「钉过但当前无权的项 ⇒ 从「常用」消失」+「企业开关关掉「每日简报」⇒ 即使钉过也不出现」。
+数据: 判据 2·**不做死引用**：菜单项被删/改名（key 不再存在）或清单为空 / 钉住项一项都不可见 ⇒ 静默丢弃，且「常用」区**整区不渲染**（返回 null，不留空标题）。执行点 = 同文件的「菜单项被删/改名 ⇒ 静默丢弃」+「钉住的项一项都不可见 ⇒ 返回 null」。
+数据: 判据 3·**上限 6 且满额拒绝**（不静默顶掉别人的位置）：`togglePinned` 满额时原样返回；渲染面星标不翻转、计数停在 `6/6`、localStorage 不含第 7 项。执行点 = 同文件的「togglePinned 三态」+ frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「钉满 6 项后再钉第 7 项 ⇒ 被拒」。
+数据: 判据 4·**脏数据清洗 + 静默降级**：非 JSON / 非数组 / 元素非字符串 / 空串 / 重复 / 超长 ⇒ 逐个注入后读回合法子集（不抛错）；`localStorage` 读写抛错（隐私模式 / 配额满）⇒ 读回空表、写静默失败，侧边栏不白屏。执行点 = 同文件的三条持久化用例。
+数据: 判据 5·**保留用户的钉序**（不是菜单自身顺序）：先钉 finance 再钉 orders ⇒ 常用区就是 finance 在前；反例自证 = 菜单自身顺序 orders 在前。执行点 = 同文件的「保留用户钉的顺序」。
+数据: 判据 6·**渲染面**：未钉任何项时整区不渲染；点星标 ⇒ 该项出现在 `data-group-key="pinned"` 的「常用」区（DOM 最顶部）、计数 `1/6`、落盘 localStorage；再点即取消（区消失、落盘空表）；刷新后从 localStorage 恢复。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「常用（收藏）」5 条。
+数据: 判据 7·**合成 key 不撞车**：`PINNED_GROUP_KEY`（`pinned`）不得是任何真实菜单组的 key（否则 `data-group-key` 撞车）。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 IA 事实用例 + menu-pinned.test.ts 的「返回的合成组」。
+跳过: [ui-only] 纯前端个性化偏好（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 执行
+```
+真值: frontend-fix.vitest
+溯源: 2026-09-29 新增（issue #5778）：用户裁定只做「常用（收藏）」。**边界如实登记**：持久化在 localStorage ⇒ 换浏览器 / 换设备不同步；服务端同步（偏好表 + 迁移 + 端点）本轮有意不做（不是漏做）。不做「按使用频率自动推荐」（无使用数据来源）。 ｜ tags: ui, menu, favorites, preference
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8080,8 +8113,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：570（活跃 126，跳过 444）
-- tier 分布：smoke 12 / normal 525 / adversarial 31
+- 用例总数：572（活跃 126，跳过 446）
+- tier 分布：smoke 12 / normal 527 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8106,7 +8139,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：63
+- 前端 UI 域：65
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

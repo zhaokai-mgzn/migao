@@ -1,4 +1,4 @@
-// case_ids: HR-001, DF-007, UI-005, UI-011, UI-028, PR-038, PR-106
+// case_ids: HR-001, DF-007, UI-005, UI-011, UI-028, PR-038, PR-106, UI-067
 /**
  * 侧边栏（`Sidebar.tsx`）——**既有能力不许退化**的判据（issue #5271 按新 IA 重写期望文案）。
  *
@@ -17,7 +17,7 @@
  * （有 `expect(links).toHaveLength(21)` 这类**更强**的新钉子作反向证明）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock useAuthStore
@@ -54,22 +54,27 @@ vi.mock('@/lib/api', () => ({
 
 import Sidebar from '@/components/layout/Sidebar'
 
-/** issue #5271 新 IA：7 组（key / 组名 / 组内项顺序） */
+/** issue #5778 新 IA：**6 组**（key / 组名 / 组内项顺序） */
 const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
   { key: 'workspace', name: '工作台', items: [['dashboard', '经营看板'], ['briefing', '每日简报']] },
-  { key: 'smart-customer-service', name: '智能客服', items: [['human-sessions', '在线接待'], ['knowledge', '知识库']] },
-  { key: 'product-center', name: '商品与加工项', items: [['products', '商品列表'], ['processing', '加工项管理']] },
   {
-    key: 'trade-center',
-    name: '交易管理',
-    items: [['orders', '订单列表'], ['after-sales', '售后工单'], ['customers', '客户列表'], ['finance', '财务对账']],
+    key: 'customer-service',
+    name: '客户服务',
+    items: [
+      ['human-sessions', '在线接待'],
+      ['customers', '客户列表'],
+      ['knowledge', '知识库'],
+      ['after-sales', '售后工单'],
+    ],
   },
+  { key: 'trade-center', name: '交易管理', items: [['orders', '订单列表'], ['finance', '财务对账']] },
   {
     key: 'production-center',
     name: '生产管理',
     items: [
       ['production-board', '生产看板'],
       ['production-pool', '智能派单'],
+      ['processing', '加工项管理'],
       ['production-process', '工艺配置'],
       ['production-piecework', '计件工资'],
     ],
@@ -89,9 +94,15 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     items: [['employees', '员工管理'], ['roles', '岗位权限'], ['settings', '企业基础信息']],
   },
 ]
+/** 顶部一级项（渲染在分组**之前**，不属于任何组）：#5778 起「商品管理」不再占一个单成员组 */
+const STANDALONE_TOP_KEYS = ['products']
 const GROUP_KEYS = GROUPS.map((g) => g.key)
-/** 展开全部组后应渲染的 21 项（分组项在前、独立项在后） */
-const ALL_MENU_KEYS = [...GROUPS.flatMap((g) => g.items.map(([k]) => k)), 'notifications']
+/** 展开全部组后应渲染的 21 项（顶部一级项 → 分组项 → 尾部独立项，== `flattenMenu` 顺序） */
+const ALL_MENU_KEYS = [
+  ...STANDALONE_TOP_KEYS,
+  ...GROUPS.flatMap((g) => g.items.map(([k]) => k)),
+  'notifications',
+]
 
 const groupButton = (key: string) => screen.getByTestId(`sidebar-group-toggle-${key}`)
 /** 展开指定组（幂等：已展开则不点）—— 新 IA 默认只展开当前路由所在组 */
@@ -154,19 +165,20 @@ describe('Sidebar', () => {
     expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
-  it('should render all menu items（issue #5271 新 IA：7 组 21 项）', async () => {
+  it('should render all menu items（issue #5778 新 IA：6 组 + 一级项 + 独立项 = 21 项）', async () => {
     mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 分组标题（#5271 重排后七大组：商品与加工项 / 交易管理 / 生产管理 / 仓储与物料）
+    // 分组标题（#5778 重排后六大组：客户服务 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
     expect(screen.getByText('工作台')).toBeInTheDocument()
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('交易管理')).toBeInTheDocument()
     expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('组织管理')).toBeInTheDocument()
-    // 旧组名不再出现（#5271：商品管理 → 商品与加工项；订单管理/客户管理 → 交易管理）
-    expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+    // 🔴 旧组名不再出现：#5778 起「商品与加工项」撤销、「智能客服」改判为「客户服务」，
+    // 且「商品管理」不再是**组名**（它是一级项，不渲染组标题）⇒ 这里按「组标题」断言它不出现。
+    expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
+    expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
     expect(screen.queryByText('订单管理')).not.toBeInTheDocument()
     expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
 
@@ -179,7 +191,8 @@ describe('Sidebar', () => {
     for (const [, name] of GROUPS.flatMap((g) => g.items)) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
-    // UI-005/UI-011: 智能客服分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
+    // UI-005/UI-011: **客户服务**分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
+    // #5778：客户列表 / 售后工单也并入本组
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
     // 每日简报由企业开关控制（#3468）：开关开 ⇒ 可见
     expect(screen.getByText('每日简报')).toBeInTheDocument()
@@ -193,17 +206,18 @@ describe('Sidebar', () => {
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('21 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（分组项在前、独立项在后）', async () => {
+  it('21 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（一级项在前 → 分组项 → 独立项）', async () => {
     mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
     expandAll()
+    // #5778：一级项「商品管理」渲染在**所有分组之前**；客户服务组含 在线接待/客户列表/知识库/售后工单
     expect(menuKeys()).toEqual([
+      'products',
       'dashboard', 'briefing',
-      'human-sessions', 'knowledge',
-      'products', 'processing',
-      'orders', 'after-sales', 'customers', 'finance',
-      'production-board', 'production-pool', 'production-process', 'production-piecework',
+      'human-sessions', 'customers', 'knowledge', 'after-sales',
+      'orders', 'finance',
+      'production-board', 'production-pool', 'processing', 'production-process', 'production-piecework',
       'inbound-orders', 'production-remnants', 'production-saving-board',
       'employees', 'roles', 'settings',
       'notifications',
@@ -227,7 +241,7 @@ describe('Sidebar', () => {
     expandAll()
     expect(linkFor('经营看板')).toHaveAttribute('href', '/dashboard')
     expect(linkFor('每日简报')).toHaveAttribute('href', '/briefing')
-    expect(linkFor('商品列表')).toHaveAttribute('href', '/products')
+    expect(linkFor('商品管理')).toHaveAttribute('href', '/products')
     expect(linkFor('加工项管理')).toHaveAttribute('href', '/production/processing')
     expect(linkFor('订单列表')).toHaveAttribute('href', '/orders')
     expect(linkFor('售后工单')).toHaveAttribute('href', '/after-sales')
@@ -296,24 +310,24 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /products', () => {
     mockUsePathname.mockReturnValue('/products')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // /products 是「商品与加工项」组 ⇒ 该组默认展开（新交互 ①②）
-    const link = linkFor('商品列表')
+    // #5778：「商品管理」升为**一级项**（渲染在分组之前、不属任何组）⇒ 它**恒渲染**，无需展开任何组
+    const link = linkFor('商品管理')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
   it('should not highlight inactive menu items', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 非当前组默认收起 ⇒ 先展开「商品与加工项」再断言它**不高亮**（断言强度不变）
-    expandGroups('product-center')
-    const link = linkFor('商品列表')
+    // 非当前组默认收起 ⇒ 先展开「客户服务」再断言它**不高亮**（断言强度不变）
+    expandGroups('customer-service')
+    const link = linkFor('客户列表')
     expect(getActiveClass(link)).not.toContain('bg-primary-600')
   })
 
   it('should highlight nested route for /products/123', () => {
     mockUsePathname.mockReturnValue('/products/123')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = linkFor('商品列表')
+    const link = linkFor('商品管理')
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
@@ -331,7 +345,7 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
     // /chat 不属于任何菜单项 ⇒ 无组可展开；展开智能客服后「在线接待」仍在 DOM 且不得高亮
-    expandGroups('smart-customer-service')
+    expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
     expect(getActiveClass(humanLink)).not.toContain('bg-primary-600')
   })
@@ -350,10 +364,13 @@ describe('Sidebar', () => {
   it('/orders/new 时「订单列表」高亮（嵌套路由前缀匹配回归保护）', () => {
     mockUsePathname.mockReturnValue('/orders/new')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // #5778：交易管理组现为「订单列表 + 财务对账」（售后工单已移入客户服务组）——
+    // 同组对照项随之换成「财务对账」，断言**强度一条没减**（仍是「前缀命中只高亮订单列表」）。
+    expandGroups('trade-center')
     const ordersLink = linkFor('订单列表')
-    const afterSalesLink = linkFor('售后工单')
+    const financeLink = linkFor('财务对账')
     expect(getActiveClass(ordersLink)).toContain('bg-primary-600')
-    expect(getActiveClass(afterSalesLink)).not.toContain('bg-primary-600')
+    expect(getActiveClass(financeLink)).not.toContain('bg-primary-600')
   })
 
   it('前缀同时命中（/production/pool ↔ /production）时**只有一项**高亮 —— 最长前缀胜出', () => {
@@ -368,17 +385,19 @@ describe('Sidebar', () => {
 
   it('should toggle group expansion when clicking group header', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // /dashboard ⇒ 「商品与加工项」默认**收起**（新交互 ①），故先点开、再点收
-    expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
-    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('false')
+    // /dashboard ⇒ 「组织管理」默认**收起**（新交互 ①），故先点开、再点收。
+    // ⚠️ #5778：原锚点「商品与加工项」组已撤销（商品列表升为一级项 ⇒ 不再有单成员组），
+    // 本用例改用「组织管理」（3 项、非当前路由所在组）—— 断言的**强度一条没减**。
+    expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+    expect(groupButton('org-center').getAttribute('aria-expanded')).toBe('false')
 
-    await user.click(screen.getByText('商品与加工项'))
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
-    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('true')
+    await user.click(screen.getByText('组织管理'))
+    expect(screen.getByText('员工管理')).toBeInTheDocument()
+    expect(groupButton('org-center').getAttribute('aria-expanded')).toBe('true')
 
-    await user.click(screen.getByText('商品与加工项'))
-    expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
-    expect(groupButton('product-center').getAttribute('aria-expanded')).toBe('false')
+    await user.click(screen.getByText('组织管理'))
+    expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+    expect(groupButton('org-center').getAttribute('aria-expanded')).toBe('false')
   })
 
   // ── 独立菜单项 ──
@@ -387,7 +406,8 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // #5271: 交易管理是**唯一**的合并组（原「订单管理」+「客户管理」组的客户列表/财务对账）
     expect(screen.getAllByText('交易管理').length).toBe(1)
-    expect(screen.getAllByText('商品与加工项').length).toBe(1)
+    // #5778：「商品管理」现在是一级项（渲染恰一次，但不是组标题）
+    expect(screen.getAllByText('商品管理').length).toBe(1)
     // #3081: AI 客服配置已移除（合并进企业基础信息），不再渲染
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
     // #2969: 岗位权限归入组织管理组（唯一）—— 该组默认收起，先展开；通知中心仍为独立菜单（唯一）
@@ -398,25 +418,30 @@ describe('Sidebar', () => {
 
   // ── UI-005: 智能客服大类分组与图标 ──
 
-  it('「智能客服」大类位于「工作台」之后、「商品与加工项」之前', () => {
+  it('（#5778）一级项「商品管理」在所有组之前、「客户服务」在「工作台」之后、「交易管理」之前', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const workspace = screen.getByText('工作台')
-    const smartCs = screen.getByText('智能客服')
-    const productCenter = screen.getByText('商品与加工项')
     const follows = (a: HTMLElement, b: HTMLElement) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-    expect(follows(workspace, smartCs)).toBe(true)
-    expect(follows(smartCs, productCenter)).toBe(true)
+    const productItem = linkFor('商品管理')
+    const workspace = screen.getByText('工作台')
+    const customerService = screen.getByText('客户服务')
+    const trade = screen.getByText('交易管理')
+    // 一级项渲染在**所有分组之前**（#5778：商品列表升为一级项）
+    expect(follows(productItem, workspace)).toBe(true)
+    expect(follows(workspace, customerService)).toBe(true)
+    expect(follows(customerService, trade)).toBe(true)
   })
 
-  it('「智能客服」下子菜单顺序：在线接待 在前、知识库次之（#2969/#3081/#3094 米宝·在线对话 入口已移除）', () => {
+  it('（#5778）「客户服务」组内顺序：在线接待 → 客户列表 → 知识库 → 售后工单', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expandGroups('smart-customer-service')
-    const groupContainer = screen.getByText('智能客服').closest('[data-group-key]') as HTMLElement
+    expandGroups('customer-service')
+    const groupContainer = screen.getByText('客户服务').closest('[data-group-key]') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
-    expect(links.length).toBe(2)
+    expect(links.length).toBe(4)
     expect(links[0].textContent).toContain('在线接待')
-    expect(links[1].textContent).toContain('知识库')
+    expect(links[1].textContent).toContain('客户列表')
+    expect(links[2].textContent).toContain('知识库')
+    expect(links[3].textContent).toContain('售后工单')
   })
 
   it('「在线接待」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
@@ -428,14 +453,14 @@ describe('Sidebar', () => {
     expect(Array.from(workspaceGroup.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual([
       '/dashboard',
     ])
-    // 在线接待整体仍存在（移入智能客服分组）
-    expandGroups('smart-customer-service')
+    // 在线接待整体仍存在（#5778 起移入「客户服务」分组）
+    expandGroups('customer-service')
     expect(screen.getByText('在线接待')).toBeInTheDocument()
   })
 
   it('「在线接待」渲染 Headphones 图标，与「经营看板」BarChart3 图标明确区分', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expandGroups('smart-customer-service')
+    expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
     expect(within(humanLink).getByTestId('icon-headphones')).toBeInTheDocument()
     expect(within(humanLink).queryByTestId('icon-bar-chart3')).not.toBeInTheDocument()
@@ -443,10 +468,13 @@ describe('Sidebar', () => {
     expect(within(dashboardLink).getByTestId('icon-bar-chart3')).toBeInTheDocument()
   })
 
-  it('「智能客服」大类渲染 MessageSquare 图标（#3081 AI 客服配置菜单已移除）', () => {
+  it('（#5778）「客户服务」组渲染 MessageSquare 图标（#3081 AI 客服配置菜单已移除）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const groupButtonEl = screen.getByText('智能客服').closest('button')!
+    const groupButtonEl = screen.getByText('客户服务').closest('button')!
+    // ⚠️ 组图标**不得**与组内任一项同图（判据 = 图标两两不同，issue #5582）——
+    // 曾用 Headphones（与组内「在线接待」同图）⇒ 实测判红；改用空闲的 MessageSquare。
     expect(within(groupButtonEl).getByTestId('icon-message-square')).toBeInTheDocument()
+    expect(within(groupButtonEl).queryByTestId('icon-headphones')).not.toBeInTheDocument()
   })
 
   it('「米宝·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
@@ -488,10 +516,11 @@ describe('Sidebar', () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       // 有权限的（组头恒在；项要先展开该组）
       expect(screen.getByText('工作台')).toBeInTheDocument()
-      expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+      // #5778：「商品管理」是**一级项**（恒渲染，不需要展开任何组）
+      expect(screen.getByText('商品管理')).toBeInTheDocument()
       expect(screen.getByText('交易管理')).toBeInTheDocument()
-      expandGroups('product-center', 'trade-center')
-      expect(screen.getByText('商品列表')).toBeInTheDocument()
+      expandGroups('trade-center')
+      expect(screen.getByText('订单列表')).toBeInTheDocument()
       expect(screen.getByText('订单列表')).toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
@@ -519,11 +548,12 @@ describe('Sidebar', () => {
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 可见项**精确**清单：经营看板 + 商品列表 + 订单列表 + 省料看板 + 通知中心
+      // 可见项**精确**清单（渲染顺序）：商品管理（一级项）+ 经营看板 + 订单列表 + 省料看板 + 通知中心
       expect(menuKeys()).toEqual(
-        ['dashboard', 'products', 'orders', 'production-saving-board', 'notifications'])
-      // UI-005/UI-011: 无 agent:session / knowledge:view → 智能客服整组隐藏（#3081 已移除 AI 客服配置菜单）
-      expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
+        ['products', 'dashboard', 'orders', 'production-saving-board', 'notifications'])
+      // UI-005/UI-011: 无 agent:session / knowledge:view / customer:view / after_sales:view →
+      // **客户服务**整组隐藏（#5778 组名改判；#3081 已移除 AI 客服配置菜单）
+      expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
@@ -538,7 +568,7 @@ describe('Sidebar', () => {
       expect(screen.queryByText('工作台')).not.toBeInTheDocument()
       expect(screen.queryByText('经营看板')).not.toBeInTheDocument()
       // 分组标题应该都不在（含工作台在内，七组全空 ⇒ 整组剔除）
-      for (const name of ['工作台', '商品与加工项', '交易管理', '订单管理', '智能客服', '生产管理', '仓储与物料', '组织管理', '客户管理']) {
+      for (const name of ['工作台', '客户服务', '交易管理', '订单管理', '商品与加工项', '智能客服', '生产管理', '仓储与物料', '组织管理', '客户管理']) {
         expect(screen.queryByText(name)).not.toBeInTheDocument()
       }
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
@@ -555,8 +585,8 @@ describe('Sidebar', () => {
         user: { id: '5', username: 'cs', name: '客服', permissions: ['agent:session'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('智能客服')).toBeInTheDocument()
-      expandGroups('smart-customer-service')
+      expect(screen.getByText('客户服务')).toBeInTheDocument()
+      expandGroups('customer-service')
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
@@ -571,8 +601,8 @@ describe('Sidebar', () => {
         user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:view'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('智能客服')).toBeInTheDocument()
-      expandGroups('smart-customer-service')
+      expect(screen.getByText('客户服务')).toBeInTheDocument()
+      expandGroups('customer-service')
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
@@ -588,8 +618,8 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
-      expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      // 组内两项都不可见 ⇒ 智能客服**整组剔除**（空组不渲染）；#5699 P4 后经营看板也需 dashboard:view
+      expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
+      // 组内四项都不可见 ⇒ 客户服务**整组剔除**（空组不渲染）；#5699 P4 后经营看板也需 dashboard:view
       expect(menuKeys()).toEqual(['notifications'])
     })
 
@@ -600,7 +630,8 @@ describe('Sidebar', () => {
         user: { id: '8', username: 'as', name: '售后', permissions: ['after_sales:view'], roles: [] },
       })
       const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expandGroups('trade-center')
+      // #5778：售后工单已随「服务客户」动线移入**客户服务**组（原交易管理组）
+      expandGroups('customer-service')
       expect(screen.getByText('售后工单')).toBeInTheDocument()
       expect(screen.queryByText('订单列表')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['after-sales', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
@@ -611,7 +642,8 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // 组内无可见项 ⇒ 交易管理整组剔除；#5699 P4 后经营看板也需 dashboard:view
+      // 组内无可见项 ⇒ **客户服务**整组剔除（#5778：售后工单已在该组）；#5699 P4 后经营看板也需 dashboard:view
+      expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
       expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['notifications'])
     })
@@ -701,7 +733,12 @@ describe('Sidebar', () => {
     await waitFor(() => expect(screen.getByText('每日简报')).toBeInTheDocument())
     expandAll()
 
-    const items: [string, string][] = [...GROUPS.flatMap((g) => g.items), ['notifications', '通知中心']]
+    // #5778：加上**顶部一级项**「商品管理」（它在分组之前渲染、不属于任何组）
+    const items: [string, string][] = [
+      ['products', '商品管理'],
+      ...GROUPS.flatMap((g) => g.items),
+      ['notifications', '通知中心'],
+    ]
     const byIcon = new Map<string, string[]>()
     for (const [, name] of items) {
       const link = linkFor(name)
@@ -715,12 +752,115 @@ describe('Sidebar', () => {
       .filter(([, names]) => names.length > 1)
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
 
-    expect(items, '面非空自证：21 项（20 组内项 + 通知中心）').toHaveLength(21)
+    expect(items, '面非空自证：21 项（1 一级项 + 19 组内项 + 通知中心）').toHaveLength(21)
     expect(
       collisions,
       `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`
         + '出口：给后出现的那一项换一个语义相近的 lucide 图标（menu.ts + menu-icons.ts + tests/setup.ts 白名单三处同批）。',
     ).toEqual([])
     expect(byIcon.size).toBe(items.length)
+  })
+
+  // ── 「常用（收藏）」渲染面（#5778：用户自己钉 4~6 项，pin 在侧边栏顶部）──
+
+  describe('常用（收藏）', () => {
+    beforeEach(() => {
+      window.localStorage.clear()
+      mockBriefingEnabled = true
+      mockUsePathname.mockReturnValue('/dashboard')
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
+      })
+    })
+
+    it('未钉任何项 ⇒ **整个「常用」区不渲染**（不留空标题），且每项有一枚可点的星标', async () => {
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
+      expect(document.querySelector('[data-group-key="pinned"]')).toBeNull()
+      expect(screen.queryByText('常用')).not.toBeInTheDocument()
+      // 星标在（当前项恒显、其余 hover 才显 —— 但按钮元素一直在 DOM 里）
+      // ⚠️ 交易管理组默认收起 ⇒ 先展开再断言（不是「找不到就等于没有」）
+      expandGroups('trade-center')
+      expect(screen.getByTestId('sidebar-pin-orders')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-pin-orders').getAttribute('data-pinned')).toBe('false')
+    })
+
+    it('点星标 ⇒ 该项进入顶部「常用」区（`data-group-key="pinned"`）+ 计数 `1/6` + 落盘 localStorage', async () => {
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
+      expandGroups('trade-center')
+
+      fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
+
+      const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
+      expect(pinnedSec).toBeTruthy()
+      expect(within(pinnedSec).getByText('常用')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('1/6')
+      // 钉住的项在「常用」区里可点，且 href 正确
+      expect(within(pinnedSec).getByText('订单列表')).toBeInTheDocument()
+      expect(within(pinnedSec).getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
+      // 渲染序：顶部一级项「商品管理」仍是最前；「常用」区紧随其后（在**所有分组之前**）
+      const allKeys = menuKeys()
+      // DOM 顺序（实测）：**常用**区在最顶部 → 顶部一级项 → 分组 → 尾部独立项
+      //（用户钉的东西必须在第一眼位置，「商品管理」是一级项紧随其后）
+      expect(allKeys[0]).toBe('orders')
+      expect(allKeys[1]).toBe('products')
+      // 反恒真：orders 在交易管理组里**也**渲染（常用区是快捷方式，不是搬家）
+      expect(allKeys.filter((k) => k === 'orders')).toHaveLength(2)
+      // 落盘（键名与纯函数同源常量）
+      const raw = window.localStorage.getItem('migao.sidebar.pinned.v1')
+      expect(JSON.parse(raw!)).toEqual(['orders'])
+      // 星标状态翻成已钉（钉住后该项在「常用」区与域内各一枚 ⇒ 两枚都是已钉态）
+      const pins = screen.getAllByTestId('sidebar-pin-orders')
+      expect(pins.length).toBeGreaterThanOrEqual(2)
+      for (const el of pins) expect(el.getAttribute('data-pinned')).toBe('true')
+    })
+
+    it('🔴 取消钉住 ⇒ 「常用」区消失（清单为空）+ 落盘为空表', async () => {
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
+      expandGroups('trade-center')
+
+      fireEvent.click(screen.getByTestId('sidebar-pin-orders'))
+      expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy()
+
+      // 「常用」区里那一枚永远可见 ⇒ 再点它即取消（取「常用」区内的那一枚，避开拓扑歧义）
+      const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
+      fireEvent.click(within(pinnedSec).getByTestId('sidebar-pin-orders'))
+      expect(document.querySelector('[data-group-key="pinned"]')).toBeNull()
+      expect(JSON.parse(window.localStorage.getItem('migao.sidebar.pinned.v1')!)).toEqual([])
+    })
+
+    it('启动时从 localStorage 恢复（惰性：首帧为空、effect 后出现）—— 恢复的项不可见（无权）则整区不渲染', async () => {
+      window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['orders']))
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => {
+        expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy()
+      })
+      // 换成只持 product:list 的账号 ⇒ orders 无权 ⇒ 常用区整区消失（权限优先于偏好）
+      cleanup()
+      window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['orders']))
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '2', username: 'pm', name: '商品', permissions: ['product:list'], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(screen.getByText('商品管理')).toBeInTheDocument())
+      expect(document.querySelector('[data-group-key="pinned"]')).toBeNull()
+    })
+
+    it('钉满 6 项后再钉第 7 项 ⇒ **被拒**（计数停在 6/6、localStorage 不含第 7 项）', async () => {
+      const six = ['orders', 'finance', 'customers', 'employees', 'roles', 'settings']
+      window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(six))
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      await waitFor(() => expect(document.querySelector('[data-group-key="pinned"]')).toBeTruthy())
+      expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('6/6')
+
+      expandGroups('inventory-center')
+      fireEvent.click(screen.getByTestId('sidebar-pin-inbound-orders'))
+
+      expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('6/6')
+      expect(JSON.parse(window.localStorage.getItem('migao.sidebar.pinned.v1')!)).toEqual(six)
+      expect(screen.getByTestId('sidebar-pin-inbound-orders').getAttribute('data-pinned')).toBe('false')
+    })
   })
 })

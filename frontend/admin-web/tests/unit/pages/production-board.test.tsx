@@ -147,21 +147,25 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 拆出去的是面料进出与消耗三项（入库单 / 余料台账 / 省料看板）⇒ 新组「仓储与物料」。
     // ⚠️ issue #4416 把原第 2 项「工序库」与第 3 项「工艺路线」合并为「工艺配置」⇒ 项数 5 → 4；
     //    issue #4490（含同日**规格修订**）把「加工费管理」与「加工项管理」合并为单一入口
-    //    （#4542 起菜单名 =「加工项管理」），并按用户裁定**归入商品与加工项组**；
+    //    （#4542 起菜单名 =「加工项管理」）；
     //    issue #5034 / #5177 / #5159 / #5191 先后往本组加过 4 项，**#5271 把它们中的 3 项搬走**。
-    expect(links).toHaveLength(4)
+    // 🔴 #5778（用户裁定「加工项应该属于生产管理」）：加工项管理自「商品与加工项」组**移入本组**
+    //    ⇒ 4 → **5 项**（位次 = 智能派单之后、工艺配置之前）。
+    expect(links).toHaveLength(5)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
-    expect(links[2].textContent).toContain('工艺配置')
-    expect(links[2]).toHaveAttribute('href', '/production/routings')
-    expect(links[3].textContent).toContain('计件工资')
-    expect(links[3]).toHaveAttribute('href', '/production/piecework')
+    expect(links[2].textContent).toContain('加工项管理')
+    expect(links[2]).toHaveAttribute('href', '/production/processing')
+    expect(links[3].textContent).toContain('工艺配置')
+    expect(links[3]).toHaveAttribute('href', '/production/routings')
+    expect(links[4].textContent).toContain('计件工资')
+    expect(links[4]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
-    // 合并项**不在本组**（归商品与加工项组；它的结构/图标断言在 processing-merged.test.tsx）
-    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('加工项管理')
+    // #5778：合并项**现在就在本组**（归生产管理组；它的结构/图标断言在 processing-merged.test.tsx）
+    expect(Array.from(links).map((a) => a.textContent).join('|')).toContain('加工项管理')
     // issue #5271：面料三项也不在本组（移入「仓储与物料」组）
     const productionText = Array.from(links).map((a) => a.textContent).join('|')
     expect(productionText).not.toContain('入库单')
@@ -185,7 +189,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(links[2]).toHaveAttribute('href', '/production/saving-board')
   })
 
-  it('「加工单」不再是独立菜单项：交易管理组只余四个业务项（issue #4357；#5271 组名改判）', () => {
+  it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     // 交易管理组：加工单已并入生产管理组（issue #4357 —— 与生产看板合并为单一入口）
@@ -195,17 +199,18 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const tradeGroup = screen.getByText('交易管理').closest('[data-group-key]') as HTMLElement
     expect(within(tradeGroup).queryByText('加工单')).not.toBeInTheDocument()
     expect(within(tradeGroup).getByText('订单列表')).toBeInTheDocument()
-    expect(within(tradeGroup).getByText('售后工单')).toBeInTheDocument()
-    expect(within(tradeGroup).getByText('客户列表')).toBeInTheDocument()
     expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
-    expect(tradeGroup.querySelectorAll('a')).toHaveLength(4)
+    // #5778：售后工单 / 客户列表已移入「客户服务」组 ⇒ 本组只余「下单 → 收款」两项
+    expect(tradeGroup.querySelectorAll('a')).toHaveLength(2)
+    expect(within(tradeGroup).queryByText('售后工单')).not.toBeInTheDocument()
+    expect(within(tradeGroup).queryByText('客户列表')).not.toBeInTheDocument()
 
     // 全站不再有指向 /processing-orders 的菜单项（旧入口收敛到 /production）——
     // 展开**全部**组后再查全站 href，避免「因为收起所以查不到」的恒真断言
     for (const key of [
       'workspace',
-      'smart-customer-service',
-      'product-center',
+      'customer-service',
+      'trade-center',
       'production-center',
       'inventory-center',
       'org-center',
@@ -227,6 +232,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',    // 生产看板（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
+      'production:view',    // 加工项管理（#5778 移入本组）
       'production:view',    // 工艺配置
       'production:view',    // 计件工资
     ])

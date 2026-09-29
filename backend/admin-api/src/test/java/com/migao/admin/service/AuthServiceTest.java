@@ -539,15 +539,16 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("全权账号：七个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
+    @DisplayName("全权账号：一个顶层一级项 + 六个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
+        // #5778：顶层第一项 = **一级项**「商品管理」（不属于任何组，与前端 `standaloneTopItems` 同构）
         assertThat(keysOf(menus)).containsExactly(
-                "workspace", "smart-customer-service", "product-center", "trade-center",
+                "products", "workspace", "customer-service", "trade-center",
                 "production-center", "inventory-center", "org-center", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "工作台", "智能客服", "商品与加工项", "交易管理",
+                "商品管理", "工作台", "客户服务", "交易管理",
                 "生产管理", "仓储与物料", "组织管理", "通知中心");
 
         // 工作台（#5271 由「独立项」改为组）
@@ -555,28 +556,26 @@ class AuthServiceTest {
         assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板", "每日简报");
         assertThat(pathsOf(workspace.getChildren())).containsExactly("/dashboard", "/briefing");
 
-        var cs = groupByKey(menus, "smart-customer-service");
-        assertThat(keysOf(cs.getChildren())).containsExactly("human-sessions", "knowledge");
-        assertThat(pathsOf(cs.getChildren()))
-                .containsExactly("/agent-workspace/human-sessions", "/knowledge");
-
-        var product = groupByKey(menus, "product-center");
-        assertThat(keysOf(product.getChildren())).containsExactly("products", "processing");
-        assertThat(namesOf(product.getChildren())).containsExactly("商品列表", "加工项管理");
-        // #4490/#4542：加工项管理与加工费管理合并为单入口，路径 /production/processing
-        assertThat(pathsOf(product.getChildren())).containsExactly("/products", "/production/processing");
+        // 客户服务组（#5778 新建）：原「智能客服」组 + 客户侧两项
+        var cs = groupByKey(menus, "customer-service");
+        assertThat(keysOf(cs.getChildren()))
+                .containsExactly("human-sessions", "customers", "knowledge", "after-sales");
+        assertThat(pathsOf(cs.getChildren())).containsExactly(
+                "/agent-workspace/human-sessions", "/customers", "/knowledge", "/after-sales");
 
         var trade = groupByKey(menus, "trade-center");
         assertThat(keysOf(trade.getChildren()))
-                .containsExactly("orders", "after-sales", "customers", "finance");
+                .containsExactly("orders", "finance");
         assertThat(pathsOf(trade.getChildren()))
-                .containsExactly("/orders", "/after-sales", "/customers", "/finance");
+                .containsExactly("/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "production-process", "production-piecework");
+                "production-board", "production-pool", "processing",
+                "production-process", "production-piecework");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/routings", "/production/piecework");
+                "/production", "/production/pool", "/production/processing",
+                "/production/routings", "/production/piecework");
 
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
@@ -590,9 +589,12 @@ class AuthServiceTest {
 
         // #3094/#5271：旧 `chat`「米宝 · 在线对话」节点已删除；「会话监控」从来不在侧边栏里
         assertThat(allNames(menus)).doesNotContain("米宝 · 在线对话", "会话监控");
-        // #5271：旧「客户管理」组不再存在（其两项已并入交易管理组）
-        assertThat(keysOf(menus)).doesNotContain("customer-center");
-        assertThat(allNames(menus)).doesNotContain("客户管理");
+        // #5271/#5778：旧「客户管理」组（`customer-center`）不再存在（本轮新建的是 `customer-service`）
+        assertThat(keysOf(menus)).doesNotContain("customer-center", "product-center",
+                "smart-customer-service");
+        assertThat(allNames(menus)).doesNotContain("客户管理", "商品与加工项", "智能客服");
+        // #5778：顶层一级项「商品管理」不在任何组内（它不是 `menuGroup`）
+        assertThat(allNames(menus)).contains("商品管理");
     }
 
     @Test
@@ -611,7 +613,7 @@ class AuthServiceTest {
                 "/production", "/production/routings", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
         assertThat(allNames(readOnly)).doesNotContain("智能派单");
-        // 加工项管理（product-center 组）同批改用读码 ⇒ 也随 production:view 可见
+        // 加工项管理（#5778 起归「生产管理」组）同批改用读码 ⇒ 也随 production:view 可见
         assertThat(allNames(readOnly)).contains("加工项管理");
 
         // 🔴 issue #5699（P4，子菜单粒度）之后**各页按自己的码**门控（不再「同组一起放行」）：
@@ -663,7 +665,6 @@ class AuthServiceTest {
                 "production-center", "smart-customer-service", "product-center",
                 "inventory-center", "org-center", "customer-center");
     }
-
     @Test
     @DisplayName("仓储与物料组：入库单落在**独立的** inbound:view 判定里（不得塞进 processing:manage）")
     void currentUserMenusGateInboundOrdersIndependently() {
@@ -684,29 +685,35 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("交易管理组吸收客户列表/财务对账；「客户管理」组（customer-center）不再存在")
+    @DisplayName("客户侧归「客户服务」组、财务留在「交易管理」组；旧「客户管理」组（customer-center）不再存在")
     void currentUserMenusAbsorbCustomerCenterIntoTrade() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
                 menusForPermissions("customer:view", "finance:view");
 
         // #5699 P4：经营看板按 `dashboard:view` 门控 ⇒ 本组权限集不含它时工作台组不出现。
-        assertThat(keysOf(menus)).containsExactly("trade-center", "notifications");
+        // 🔴 #5778：客户列表移入「客户服务」组、财务对账留在「交易管理」组 ⇒ 两个组同时出现。
+        assertThat(keysOf(menus)).containsExactly("customer-service", "trade-center", "notifications");
+        var customerService = groupByKey(menus, "customer-service");
+        assertThat(customerService.getName()).isEqualTo("客户服务");
+        assertThat(namesOf(customerService.getChildren())).containsExactly("客户列表");
+        assertThat(pathsOf(customerService.getChildren())).containsExactly("/customers");
         var trade = groupByKey(menus, "trade-center");
         assertThat(trade.getName()).isEqualTo("交易管理");
-        assertThat(namesOf(trade.getChildren())).containsExactly("客户列表", "财务对账");
-        assertThat(pathsOf(trade.getChildren())).containsExactly("/customers", "/finance");
+        assertThat(namesOf(trade.getChildren())).containsExactly("财务对账");
+        assertThat(pathsOf(trade.getChildren())).containsExactly("/finance");
         assertThat(keysOf(menus)).doesNotContain("customer-center", "customers", "finance");
     }
 
     @Test
-    @DisplayName("智能客服组：只剩在线接待 + 知识库（旧「米宝 · 在线对话」节点已删除，无权限则整组不出现）")
+    @DisplayName("客户服务组：在线接待 + 客户列表 + 知识库 + 售后工单（旧「米宝 · 在线对话」节点已删除，无权限则整组不出现）")
     void currentUserMenusDropRemovedChatEntry() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
                 // issue #5246（已合入 main）：知识库节点码 = 读码 knowledge:view
                 menusForPermissions("agent:session", "knowledge:view");
 
-        var cs = groupByKey(menus, "smart-customer-service");
-        assertThat(cs.getName()).isEqualTo("智能客服");
+        var cs = groupByKey(menus, "customer-service");
+        assertThat(cs.getName()).isEqualTo("客户服务");
+        // 只持这两个码 ⇒ 组内只剩「在线接待 + 知识库」（客户列表/售后工单按下钻码门控）
         assertThat(namesOf(cs.getChildren())).containsExactly("在线接待", "知识库");
         assertThat(pathsOf(cs.getChildren()))
                 .containsExactly("/agent-workspace/human-sessions", "/knowledge");

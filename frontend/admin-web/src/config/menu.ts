@@ -125,7 +125,10 @@ export const menuGroups: MenuGroup[] = [
   {
     key: 'customer-service',
     name: '客户服务',
-    icon: 'Headphones',
+    // 🔴 组图标必须与该组**任一项**的图标不同（判据 = 图标两两不同，issue #5582 的渲染面）。
+    // 曾用 `Headphones` ⇒ 与组内「在线接待」同图（紧挨着出现 = 视觉上没有区分度，实测已判红）⇒
+    // 改用 `MessageSquare`（原「智能客服」组的图标，正好空闲；语义仍是「客户对话/服务」）。
+    icon: 'MessageSquare',
     children: [
       { key: 'human-sessions', name: '在线接待', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session', keywords: ['zxjd', 'jiedai', 'kefu', '客服', '人工'] },
       // #2969：客户列表原在「客户管理」组；#5271 曾并入交易管理组；本轮移入本组（服务客户动线）

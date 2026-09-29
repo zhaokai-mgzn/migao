@@ -66,18 +66,30 @@ public class MenuController {
         // issue #5246（已合入 main）：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）——
         // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。
         MenuNode cs2 = new MenuNode("knowledge:view", "知识库");
-        MenuNode p1 = new MenuNode("product:list", "商品列表");
+        // 商品管理（本轮 2026-09-29 用户裁定）：节点名由「商品列表」改为**「商品管理」**，
+        // 并**升为顶层一级节点**（见下方 `List.of(...)` 的第一项）—— 码不变（`product:list`）。
+        // ⚠️ 本节点**不再属于任何组**：原 `product-center`「商品与加工项」组已撤销
+        // （加工项管理移入生产管理组、商品列表升为一级项 ⇒ 组内已空）。
+        // 🔴 两个动作码节点（`p2` / `p3`）**仍保留**（它们不是菜单项，是权限目录里的动作码），
+        // 只是**不再挂在任何组下** ⇒ 对应的 `ACTION_NODES` 登记同步删除（未登记的动作节点会判红）。
+        MenuNode p1 = new MenuNode("product:list", "商品管理");
         // issue #5291：加工项管理 = 生产域读码（写面 @RequirePermission 仍 processing:manage）。
+        // 本轮（2026-09-29 用户裁定）：改挂「生产管理」组（原「商品与加工项」组）。
         MenuNode p4 = new MenuNode("production:view", "加工项管理");
-        // 动作码节点（非菜单项）：与菜单项同域，**统一追加在组尾**（导航项 = 前缀子序列）
-        MenuNode p2 = new MenuNode("product:create", "新增商品");
-        MenuNode p3 = new MenuNode("product:category", "商品分类管理");
+        // 🔴 本轮**删除**了两个动作码节点声明（原 `p2` = `product:create`「新增商品」、
+        // `p3` = `product:category`「商品分类管理」）：它们原挂在已撤销的 `product-center` 组下，
+        // 组撤销后**不属于任何位置**（既不是组内动作、也不是一级项）⇒ 留着就是**死声明**
+        //（`_parse_controller_top_items` 会把它们读成「未声明的顶层一级项」而判红）。
+        // = 删的是**权限树上的两个勾选项**，**不是权限码**：`product:create` / `product:category`
+        // 仍在权限目录里、仍可被角色授予（判据：`test_rbac_derived_pages.py` 的 `ACTION_NODE_CODES`
+        // 台账同批删除这两条，见该文件的「只许缩短」口径）。
         MenuNode o1 = new MenuNode("order:list", "订单列表");
         // 旧 label「退换货」→「售后工单」（#5271 改名消除与菜单名的漂移）；
         // code 由 issue #5246 改为**读**码 `after_sales:view`（原写码 `order:refund`）。
+        // 本轮（2026-09-29 用户裁定）：随「服务客户」动线移入**客户服务组**（原交易管理组）。
         MenuNode o3 = new MenuNode("after_sales:view", "售后工单");
         // 旧 label「客户管理」→「客户列表」（#5271；code 不变 customer:view）——
-        // 该节点原挂在已消失的 `customers` 顶层组，现随交易动线并入 `trade-center`。
+        // 本轮（2026-09-29 用户裁定）：由交易管理组移入**客户服务组**（「客户管理不属于交易管理」）。
         MenuNode c1 = new MenuNode("customer:view", "客户列表");
         MenuNode f1 = new MenuNode("finance:view", "财务对账");
         // 动作码节点：组尾追加（与权限页「操作权限」一节单独勾选的形态一致）
@@ -113,10 +125,21 @@ public class MenuController {
 
         return List.of(
             new MenuNode("workspace", "工作台", List.of(d1, d2)),
-            new MenuNode("smart-customer-service", "智能客服", List.of(cs1, cs2)),
-            new MenuNode("product-center", "商品与加工项", List.of(p1, p4, p2, p3)),
-            new MenuNode("trade-center", "交易管理", List.of(o1, o3, c1, f1, o2)),
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr2, pr3)),
+            // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
+            // 它与 **menu.ts 的 `standaloneTopItems`** 对应 —— 前端把它渲染在**分组之前**的一级项，
+            // 本树同样把它放成**顶层节点**（不是组）。⚠️ 位置 = **紧跟在「工作台」组之后**，
+            // 与前端渲染顺序一致（判据取「导航型节点**名**的组归属 + 组层」两段，
+            // 顶层一级项不在任何组内 ⇒ 必须与「组」分开表达）。
+            new MenuNode("product:list", "商品管理"),
+            // 客户服务（本轮新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
+            // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 客户列表 / 知识库 /
+            // 售后工单）—— 三源同构守卫按**前缀子序列**比对，乱序即红。
+            new MenuNode("customer-service", "客户服务", List.of(cs1, c1, cs2, o3)),
+            // 交易管理（本轮收窄为「下单 → 收款」两项）
+            new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
+            // 生产管理（本轮收进「加工项管理」= p4，位于「智能派单」之后、「工艺配置」之前，
+            // 与 menu.ts 的组内顺序逐字一致）
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, p4, pr2, pr3)),
             new MenuNode("inventory-center", "仓储与物料", List.of(i1, prRemnants, prSaving)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2))
         );

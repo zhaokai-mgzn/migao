@@ -1,4 +1,4 @@
-// case_ids: UI-028
+// case_ids: UI-028, UI-066
 /**
  * 菜单命令面板 ⌘K（`CommandPalette`，issue #5271）——四项新交互中的「菜单搜索」。
  *
@@ -34,20 +34,20 @@ vi.mock('@/lib/api', () => ({
 
 import CommandPalette from '@/components/layout/CommandPalette'
 
-/** 新 IA 全量 21 项（独立项在最后） */
+/** 新 IA 全量 21 项（#5778：一级项在前 → 分组项 → 独立项，== `flattenMenu` 顺序） */
 const ALL_KEYS = [
+  'products',
   'dashboard',
   'briefing',
   'human-sessions',
-  'knowledge',
-  'products',
-  'processing',
-  'orders',
-  'after-sales',
   'customers',
+  'knowledge',
+  'after-sales',
+  'orders',
   'finance',
   'production-board',
   'production-pool',
+  'processing',
   'production-process',
   'production-piecework',
   'inbound-orders',
@@ -158,17 +158,17 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('↑/↓ 移动高亮 + Enter 跳转：router.push 收到**被高亮那一项**的 path', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('lb') // keywords 命中：商品列表(splb) / 订单列表(ddlb) / 客户列表(khlb)
-    expect(renderedKeys()).toEqual(['products', 'orders', 'customers'])
+    expect(renderedKeys()).toEqual(['products', 'customers', 'orders'])
     expect(highlightedKeys()).toEqual(['products'])
 
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['orders'])
-    press('ArrowDown')
     expect(highlightedKeys()).toEqual(['customers'])
+    press('ArrowDown')
+    expect(highlightedKeys()).toEqual(['orders'])
 
     press('Enter')
     expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockPush).toHaveBeenCalledWith('/customers')
+    expect(mockPush).toHaveBeenCalledWith('/orders')
     expect(mockOnClose).toHaveBeenCalledTimes(1)
   })
 
@@ -176,9 +176,9 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('lb')
     press('ArrowUp')
-    expect(highlightedKeys()).toEqual(['customers'])
+    expect(highlightedKeys()).toEqual(['orders'])
     press('Enter')
-    expect(mockPush).toHaveBeenCalledWith('/customers')
+    expect(mockPush).toHaveBeenCalledWith('/orders')
   })
 
   it('查询变化 ⇒ 高亮归零（否则会停在越界/错位的下标上）', () => {
@@ -186,7 +186,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     typeQuery('lb')
     press('ArrowDown')
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['customers'])
+    expect(highlightedKeys()).toEqual(['orders'])
 
     typeQuery('caiwu') // 单结果集：若不归零，高亮下标会停在 2（越界 ⇒ 无高亮）
     expect(renderedKeys()).toEqual(['finance'])
