@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, RotateCcw, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
@@ -53,6 +53,11 @@ export default function AfterSalesPage() {
   // 筛选
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<AfterSalesStatus | ''>('')
+  // 🔴 issue #5792：看板「超时工单」卡跳 `?overdue=1` ⇒ 这里必须**真的筛**，
+  // 否则会出现「卡片说 3 条、点进去一屏工单」= 计数与下钻不一致（本单在治的那类缺陷）。
+  // 口径与服务端同源（`AfterSalesTicketMapper.applyOverdue`）：pending/processing 且 deadline 已过。
+  const urlParams = useSearchParams()
+  const [overdueOnly, setOverdueOnly] = useState(urlParams.get('overdue') === '1' || urlParams.get('overdue') === 'true')
 
   // 实际搜索参数
   const [searchParams, setSearchParams] = useState<{
@@ -81,6 +86,7 @@ export default function AfterSalesPage() {
       }
       if (searchParams.keyword) params.keyword = searchParams.keyword
       if (searchParams.status) params.status = searchParams.status
+      if (overdueOnly) params.overdue = true
 
       const res = await afterSalesApi.getTickets(params as any)
       const pageData = res.data?.data
@@ -92,7 +98,7 @@ export default function AfterSalesPage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, searchParams])
+  }, [current, pageSize, searchParams, overdueOnly])
 
   useEffect(() => {
     loadTickets()
@@ -108,6 +114,7 @@ export default function AfterSalesPage() {
   const handleReset = () => {
     setKeyword('')
     setStatusFilter('')
+    setOverdueOnly(false)
     setCurrent(1)
     setSearchParams({ keyword: '', status: '' })
   }
@@ -249,6 +256,22 @@ export default function AfterSalesPage() {
                 { value: 'closed', label: '已关闭' },
               ]}
             />
+            {/* 🔴 issue #5792：「只看超时」的**可见指示 + 一键清除** ——
+                没有它用户会以为「工单怎么变少了」（看板卡跳进来的筛选必须可解释、可撤销）。 */}
+            {overdueOnly && (
+              <div className="flex items-end pb-1">
+                <button
+                  type="button"
+                  data-testid="after-sales-overdue-chip"
+                  onClick={() => setOverdueOnly(false)}
+                  title="点击清除筛选（口径 = 待处理/处理中且已过截止时间）"
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
+                >
+                  只看超时工单
+                  <span aria-hidden className="text-amber-600">×</span>
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <Button variant="secondary" onClick={handleReset} disabled={loading}>

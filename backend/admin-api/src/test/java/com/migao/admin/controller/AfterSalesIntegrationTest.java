@@ -147,7 +147,7 @@ class AfterSalesIntegrationTest {
 
         PageResponse<AfterSalesListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(ticket1, ticket2));
 
-        when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), eq(1L)))
+        when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), eq(false), eq(1L)))
                 .thenReturn(pageResponse);
 
         // When & Then

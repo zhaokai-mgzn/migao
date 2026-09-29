@@ -6,6 +6,14 @@ import userEvent from '@testing-library/user-event'
 
 // Mock API
 const mockGetTickets = vi.fn()
+
+// issue #5792：`?overdue=1` 要能被判据控制（看板「超时工单」卡就是这么跳过来的）。
+// `vi.hoisted` 是因为 vi.mock 会被提升到文件顶部，普通顶层变量在工厂里会命中 TDZ。
+const h = vi.hoisted(() => ({ params: new URLSearchParams() }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
+  useSearchParams: () => h.params,
+}))
 const mockGetOrders = vi.fn()
 const mockCreateTicket = vi.fn()
 
@@ -230,5 +238,30 @@ describe('AfterSalesPage', () => {
     // 未知状态 → neutral + 「暂无数据」
     const unknownChip = screen.getAllByText('暂无数据').find((el) => el.className.includes('bg-neutral-100'))
     expect(unknownChip).toBeTruthy()
+  })
+
+  // ── #5792：看板「超时工单」卡的下钻必须**真的筛**（否则就是新的"计数与下钻不一致"）──
+
+  it('🔴 `?overdue=1` ⇒ 请求带 `overdue: true`，并显示可清除的筛选指示', async () => {
+    h.params = new URLSearchParams('overdue=1')
+    render(<AfterSalesPage />)
+    await waitFor(() => expect(mockGetTickets).toHaveBeenCalled())
+    // ① **真的发给服务端**（口径与服务端同源，不是前端假装筛）
+    expect(mockGetTickets.mock.calls.at(-1)?.[0]).toMatchObject({ overdue: true })
+    // ② 可见指示（用户要知道列表为什么变短）
+    expect(screen.getByTestId('after-sales-overdue-chip')).toBeInTheDocument()
+  })
+
+  it('🔴 点掉筛选指示 ⇒ 重新拉取且**不再带** `overdue`（筛选可撤销，不是单程票）', async () => {
+    h.params = new URLSearchParams('overdue=1')
+    render(<AfterSalesPage />)
+    await waitFor(() => expect(screen.getByTestId('after-sales-overdue-chip')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('after-sales-overdue-chip'))
+    await waitFor(() => {
+      const last = mockGetTickets.mock.calls.at(-1)?.[0] as Record<string, unknown>
+      expect(last.overdue).toBeUndefined()
+    })
+    expect(screen.queryByTestId('after-sales-overdue-chip')).toBeNull()
   })
 })

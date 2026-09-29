@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（69 case）
+## 前端 UI 域（70 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8140,6 +8140,19 @@
 ```
 溯源: 2026-09-29 新增（issue #5792）：把「今日/昨日销售额」与「本月营收」口径对齐（只算四态），并把「无上期可比」从 0% 改为显式 null + 「—」中性态。 ｜ tags: ui, dashboard, metrics, semantics
 
+### UI-072. 超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销 🔵
+```
+你: 用户 2026-09-29：「经营看板需要重构一下」→ 盘点查出「最该被老板看见的是有几单快超期了」；用户同日要求「AI 接待占比做成可插拔」「未来跟着租户购买模块决定」，本单沿用同一纪律：**同一数字只算一份**
+期望: direct_reply
+数据: 判据 1·🔴 **口径只有一处**：`AfterSalesTicketMapper.applyOverdue` = `status ∈ (pending,processing)` ∧ `deadline` 非空 ∧ `deadline` 已过；三个读面（简报快照 `overdue_tickets` / 看板卡 / 列表筛选）都调它，不得各写一份 wrapper。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/AfterSalesTicketMapperTest.java 的 `applyOverdueShape`（三条缺一即红）。
+数据: 判据 2·**列表筛选同源**：`GET /api/admin/after-sales?overdue=true` 走同一 `applyOverdue`。执行点 = 同文件的形态判据 + `AfterSalesControllerTest`。
+数据: 判据 3·🔴 **下钻真的筛**：看板「超时工单」卡链接 `/after-sales?overdue=1`，列表页必须**把 `overdue: true` 发给服务端**（不是前端假装筛），并显示**可清除**的筛选指示。执行点 = frontend/admin-web/tests/unit/pages/after-sales.test.tsx 的两条（带 `?overdue=1` ⇒ 请求带 `overdue:true` 且指示可见；点掉指示 ⇒ 请求不再带 `overdue`）。
+数据: 判据 4·**卡片数字与服务端一致**：卡片数字取 `stats.overdueTickets`、`href` 逐字等于 `/after-sales?overdue=1`。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「超时工单卡」。
+数据: 判据 5·**注入式红证**（均已实跑）：前端去掉「把 overdue 发给服务端」⇒ 该条 **1 failed**；后端去掉 `deadline IS NOT NULL` 条件 ⇒ `applyOverdueShape` **FAILURE**。
+跳过: [backend-contract] 口径单源 + 前端筛选接线（无 LLM 环节，不进 agent-eval）
+```
+溯源: 2026-09-29 新增（issue #5792 第二阶段）：超时工单口径收敛到 mapper 的 `applyOverdue` 一处，补看板卡与列表筛选（下钻真的筛、可撤销）。 ｜ tags: ui, dashboard, metrics, single-source
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8169,8 +8182,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：576（活跃 126，跳过 450）
-- tier 分布：smoke 12 / normal 531 / adversarial 31
+- 用例总数：577（活跃 126，跳过 451）
+- tier 分布：smoke 12 / normal 532 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8195,7 +8208,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：69
+- 前端 UI 域：70
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8356,4 +8369,5 @@
 - UI-069: 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己
 - UI-070: 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`
 - UI-071: 看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态
+- UI-072: 超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销
 

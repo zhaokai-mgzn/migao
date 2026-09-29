@@ -10799,6 +10799,24 @@ _CASE_UI_071 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-072 [NORMAL] 超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销（源: cases/ui.yml）──
+_CASE_UI_072 = EvalCase(
+    id='UI-072',
+    legacy_id='',
+    title='超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29：「经营看板需要重构一下」→ 盘点查出「最该被老板看见的是有几单快超期了」；用户同日要求「AI 接待占比做成可插拔」「未来跟着租户购买模块决定」，本单沿用同一纪律：**同一数字只算一份**'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **口径只有一处**：`AfterSalesTicketMapper.applyOverdue` = `status ∈ (pending,processing)` ∧ `deadline` 非空 ∧ `deadline` 已过；三个读面（简报快照 `overdue_tickets` / 看板卡 / 列表筛选）都调它，不得各写一份 wrapper。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/AfterSalesTicketMapperTest.java 的 `applyOverdueShape`（三条缺一即红）。', '判据 2·**列表筛选同源**：`GET /api/admin/after-sales?overdue=true` 走同一 `applyOverdue`。执行点 = 同文件的形态判据 + `AfterSalesControllerTest`。', '判据 3·🔴 **下钻真的筛**：看板「超时工单」卡链接 `/after-sales?overdue=1`，列表页必须**把 `overdue: true` 发给服务端**（不是前端假装筛），并显示**可清除**的筛选指示。执行点 = frontend/admin-web/tests/unit/pages/after-sales.test.tsx 的两条（带 `?overdue=1` ⇒ 请求带 `overdue:true` 且指示可见；点掉指示 ⇒ 请求不再带 `overdue`）。', '判据 4·**卡片数字与服务端一致**：卡片数字取 `stats.overdueTickets`、`href` 逐字等于 `/after-sales?overdue=1`。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「超时工单卡」。', '判据 5·**注入式红证**（均已实跑）：前端去掉「把 overdue 发给服务端」⇒ 该条 **1 failed**；后端去掉 `deadline IS NOT NULL` 条件 ⇒ `applyOverdueShape` **FAILURE**。'],
+    skip_reason='[backend-contract] 口径单源 + 前端筛选接线（无 LLM 环节，不进 agent-eval）',
+    tags=['ui', 'dashboard', 'metrics', 'single-source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11410,6 +11428,7 @@ ALL_CASES = (
     _CASE_UI_069,
     _CASE_UI_070,
     _CASE_UI_071,
+    _CASE_UI_072,
     _CASE_UT_001,
     _CASE_UT_002,
 )

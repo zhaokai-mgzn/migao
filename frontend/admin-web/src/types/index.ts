@@ -2143,6 +2143,8 @@ export interface DashboardStats {
   pendingShipOrders: number
   /** 待支付订单数（issue #5792 第二阶段）—— 与「待发货」并列的风险面 */
   pendingPaymentOrders: number
+  /** 超时工单数（issue #5792；口径 = `AfterSalesTicketMapper.applyOverdue`，与列表筛选同源） */
+  overdueTickets: number
   processingPendingOrders: number
   lowStockItems: number
 }

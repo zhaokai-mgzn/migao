@@ -45,10 +45,14 @@ public class AfterSalesController {
             @RequestParam(defaultValue = "20") long size,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String ticketType,
-            @RequestParam(required = false) String keyword) {
-        log.info("查询售后工单列表: page={}, size={}, status={}, ticketType={}, keyword={}", page, size, status, ticketType, keyword);
+            @RequestParam(required = false) String keyword,
+            // issue #5792：只看超时工单（`?overdue=true`）—— 口径与看板卡/简报同源
+            @RequestParam(required = false, defaultValue = "false") boolean overdue) {
+        log.info("查询售后工单列表: page={}, size={}, status={}, ticketType={}, keyword={}, overdue={}",
+                page, size, status, ticketType, keyword, overdue);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPage(page, size, status, ticketType, keyword, tenantId);
+        PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPage(
+                page, size, status, ticketType, keyword, overdue, tenantId);
         return ApiResponse.success(result);
     }
 

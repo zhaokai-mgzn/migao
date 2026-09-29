@@ -168,12 +168,19 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * @return 分页响应
      */
     public PageResponse<AfterSalesListResponse> getTicketPage(long page, long size, String status,
-                                                               String ticketType, String keyword, Long tenantId) {
+                                                               String ticketType, String keyword,
+                                                               boolean overdue, Long tenantId) {
         LambdaQueryWrapper<AfterSalesTicket> wrapper = new LambdaQueryWrapper<>();
 
         // 状态筛选
         if (StringUtils.hasText(status)) {
             wrapper.eq(AfterSalesTicket::getStatus, status);
+        }
+
+        // 🔴 issue #5792：「只看超时」筛选 —— 口径与看板卡/简报**同源**
+        //（`AfterSalesTicketMapper.applyOverdue`）：否则会出现「卡片说 3 条、点进去列表 5 条」。
+        if (overdue) {
+            AfterSalesTicketMapper.applyOverdue(wrapper, businessClock.nowOffset());
         }
 
         // 工单类型筛选
