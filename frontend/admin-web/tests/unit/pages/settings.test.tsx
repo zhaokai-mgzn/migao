@@ -1,4 +1,4 @@
-// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054, UI-064
+// case_ids: AU-009, ST-001, ST-003, ST-009, ST-010, UI-034, UI-037, UI-054, UI-064, PG-045
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -27,6 +27,8 @@ vi.mock('lucide-react', () => {
     SlidersHorizontal: stub('sliders-horizontal'),
     // issue #5668: 「手机端入口」卡片图标
     Smartphone: stub('smartphone'),
+    // V141（母单 #5161）：「工人端页面」tab 图标
+    HardHat: stub('hard-hat'),
     ChevronDown: stub('chevron-down'),
     AlertCircle: stub('alert-circle'),
     ExternalLink: stub('external-link'),
