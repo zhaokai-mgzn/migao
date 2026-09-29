@@ -7270,6 +7270,60 @@ _CASE_PG_045 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-046 [NORMAL] 扫码读面补 9 个部位明细键（只加不改：宽高/工艺/加工类型/开数/褶倍/定型/用料；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_046 = EvalCase(
+    id='PG-046',
+    legacy_id='',
+    title='扫码读面补 9 个部位明细键（只加不改：宽高/工艺/加工类型/开数/褶倍/定型/用料；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？'],
+    expectations=['direct_reply'],
+    data_checks=['positions[] 追加 width / height / craft / curtain_type / open_count / cutting_mode / fullness / is_shaped / fabric_meters', '既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**', '新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）', '不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）'],
+    skip_reason='[backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。',
+    tags=['processing', 'scan', 'contract', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-047 [NORMAL] 一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_047 = EvalCase(
+    id='PG-047',
+    legacy_id='',
+    title='一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['扫一下这个部位，这刀该裁多高？顺手把这道工序报掉。'],
+    expectations=['direct_reply'],
+    data_checks=['GET /api/worker/production/cutting-height?token=… ：工人 session 准入（无 ⇒ 401）、零商家权限码、只读', '裁剪高度逐部位给出，命中/取整复用 CuttingHeightConfigService.preview（不重算）；命中而未配置取值的项显式进 missing 且不计入、不按 0 算', '报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体', '常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符', '🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）'],
+    skip_reason='[backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。',
+    tags=['processing', 'worker', 'cutting_height', 'terminal', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-048 [NORMAL] 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_048 = EvalCase(
+    id='PG-048',
+    legacy_id='',
+    title='工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人手机上该看到哪几页？一体机也一样吗？'],
+    expectations=['direct_reply'],
+    data_checks=['GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）', "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'", 'GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话'],
+    skip_reason='[backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。',
+    tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -11056,6 +11110,9 @@ ALL_CASES = (
     _CASE_PP_015,
     _CASE_PG_044,
     _CASE_PG_045,
+    _CASE_PG_046,
+    _CASE_PG_047,
+    _CASE_PG_048,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

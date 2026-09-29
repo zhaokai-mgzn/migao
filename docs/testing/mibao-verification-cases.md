@@ -4547,7 +4547,7 @@
 真值: order.admin-new-order-input-surface
 溯源: 2026-09-28 新增（用户当次会话逐字要求，无关联 issue —— 会话内零新开 issue 的口径下用本用例承载规格）：把「下单页输入面 = 颜色 + 净窗宽 + 净窗高，其余系统推导」这条口径钉成可执行判据。**只动版面与默认预选**：门幅规则、算料、取价、判定面、落库构造点一律复用既有单一真值源（本用例不复制任何推导口径）。 ｜ tags: order, admin-web, layout, derivation, processing-items
 
-## 加工项域（16 case）
+## 加工项域（19 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -4812,6 +4812,46 @@
 ```
 真值: processing-manage.cutting-height-config
 溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
+
+### PG-046. 扫码读面补 9 个部位明细键（只加不改：宽高/工艺/加工类型/开数/褶倍/定型/用料；单测覆盖，非 LLM 行为） 🔵
+```
+你: 扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？
+期望: direct_reply
+数据: positions[] 追加 width / height / craft / curtain_type / open_count / cutting_mode / fullness / is_shaped / fabric_meters
+数据: 既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**
+数据: 新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）
+数据: 不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）
+跳过: [backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。
+```
+真值: processing-manage.scan-position-detail-keys
+溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ tags: processing, scan, contract, backend-contract
+
+### PG-047. 一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；单测覆盖，非 LLM 行为） 🔵
+```
+你: 扫一下这个部位，这刀该裁多高？顺手把这道工序报掉。
+期望: direct_reply
+数据: GET /api/worker/production/cutting-height?token=… ：工人 session 准入（无 ⇒ 401）、零商家权限码、只读
+数据: 裁剪高度逐部位给出，命中/取整复用 CuttingHeightConfigService.preview（不重算）；命中而未配置取值的项显式进 missing 且不计入、不按 0 算
+数据: 报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体
+数据: 常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符
+数据: 🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）
+跳过: [backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。
+```
+真值: processing-manage.worker-cutting-height-terminal
+溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
+
+### PG-048. 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为） 🔵
+```
+你: 工人手机上该看到哪几页？一体机也一样吗？
+期望: direct_reply
+数据: GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）
+数据: 缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'
+数据: GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
+数据: worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
+跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
+```
+真值: processing-manage.worker-page-config
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ## 加工单域（56 case）
 
@@ -8040,8 +8080,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：567（活跃 126，跳过 441）
-- tier 分布：smoke 12 / normal 522 / adversarial 31
+- 用例总数：570（活跃 126，跳过 444）
+- tier 分布：smoke 12 / normal 525 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8060,7 +8100,7 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：51
-- 加工项域：16
+- 加工项域：19
 - 加工单域：56
 - 商品域：105
 - 工具注册器域：1
