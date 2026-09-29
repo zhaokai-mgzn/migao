@@ -317,7 +317,11 @@ function workerEntriesBar(state) {
   //    「参考现在 B 端 H5 页面的设计，即使关掉了依然能通过菜单进入页面」）⇒ 链接消失 ≠ 页面不可达：
   //    机台页地址 `/w/machine.html` 直接敲 URL **仍可进入**（静态页，本包不给它加访问门禁）。
   //    同款语义的另一半 = 页头的 `pageNoticeBanner`（`report` 关掉时页面**照旧可用**，只多一句话）。
-  // 两条跨应用静态入口**不受** `pages` 影响（`/b/#/pages/worker/*` 不属于这四个键
+  // 两条跨应用静态入口**不受** `pages` 影响
+  // 🔴 写法纪律：这句里**不得**出现 `/` 紧跟 `*` 的形态（例如写 glob 路径）——
+  //    bmini 的跨应用判据用**朴素注释剥离器**（`tests/helpers/h5PlatformLists.ts::stripComments`
+  //    的 `/\*[\s\S]*?\*/`），它会把 `/*` 与后面任意 `*/` 配对 ⇒ **把这之后的真代码整段删掉**，
+  //    判据随即报「找不到真跳转」而在 main 上恒红（2026-09-29 实证：本句原写「`/b/#/pages/worker/` + 一个星号」）。（`/b/#/pages/worker/<页>` 不属于这四个键
   // ⇒ 没有对应开关就不该由它决定去留：误删会让 #5052 那两页重新变成「走不到」）。
   const machine = opened.has(PAGE_CUT_CALC)
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">机台模式</a>`

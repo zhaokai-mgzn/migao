@@ -104,6 +104,13 @@ function escapeRe(text: string): string {
  * 导航形态的正则 —— **格式容忍**（不当"原文逐字"读：换行 / 重排 / 加空格都不该判红，
  * 见 `migao-dev-flow` §23 的「判据把原文当代码读」那一族）。
  */
+/** 剥离后**丢掉**的函数名（`raw` 有、`stripComments(raw)` 没有）—— L7 的判定核。 */
+function lostFunctions(raw: string): string[] {
+  const names = (text: string) => Array.from(text.matchAll(/function\s+([A-Za-z0-9_$]+)\s*\(/g)).map((m) => m[1])
+  const kept = new Set(names(stripComments(raw)))
+  return names(raw).filter((name) => !kept.has(name))
+}
+
 function navPattern(nav: EntryNav, via: string): RegExp {
   const q = escapeRe(via)
   if (nav === 'href') return new RegExp(`href=["'][^"']*${q}`)
@@ -237,6 +244,32 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(workerH5.includes("INBOUND_PAGE_ROUTE")).toBe(false)
   })
 
+
+  it('L7 🔴 类级：注释剥离**不得吞掉真代码**（注释里的 `/` 紧跟 `*` 会与后面任意 `*/` 配对 ⇒ 判据读到的内容缺函数）', () => {
+    // 实证（2026-09-29，母单 #5161 的消费方包）：`render.mjs` 一句注释写了 glob 形态
+    // 「`/b/#/pages/worker/` + 星号」⇒ 朴素剥离器把那个 `/*` 与**后面**的 `*/` 配对 ⇒
+    // `workerEntriesBar` 的**函数体整段消失** ⇒ 本文件多条判据在 **main 上恒红**（卡住所有 PR）。
+    const files = Array.from(new Set(PAGE_ENTRY_LEDGER.map((e) => e.from))).filter(
+      (rel) => rel.endsWith('.ts') || rel.endsWith('.tsx') || rel.endsWith('.mjs'),
+    )
+    const problems = files.flatMap((rel) => lostFunctions(readReal(rel)).map((fn) => `${rel}::${fn}`))
+    expect(problems).toEqual([])
+  })
+
+  it('L7 🔴 红证：合成语料里注释含 glob ⇒ 上一条判据的判定核**必须报出**那个被吞掉的函数', () => {
+    const injected =
+      'function keepMe() {}\n' +
+      '// 见 `/b/#/pages/worker/*`（注释里的 `/*`）\n' +
+      'function goneMe() {}\n' +                       // ← 夹在中间的函数会被配对删掉
+      '/** 文档注释：它的 `*/` 才是配对的另一半（**非贪婪** ⇒ 配到最近的这个）*/\n'
+    // 先自证「注入形态确实咬穿」（否则本红证是空断言）
+    expect(stripComments(injected).includes('function goneMe(')).toBe(false)
+    expect(stripComments(injected).includes('function keepMe(')).toBe(true)
+    // 判定核必须报出 goneMe（= 真语料上 L7 会红的那种形态）
+    expect(lostFunctions(injected)).toContain('goneMe')
+    expect(lostFunctions('function a() {}\nfunction b() {}\n')).toEqual([])
+  })
+
   it('L6 平台缺口必须有登记，且由真的调用它的文件接线（Taro API 之外那一类）', () => {
     expect(WORKER_SURFACE_PLATFORM_GAPS.length).toBeGreaterThanOrEqual(1)
     for (const gap of WORKER_SURFACE_PLATFORM_GAPS) {
@@ -332,11 +365,13 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     const input = realInput()
     const uncalled: Reader = (rel) =>
       rel === 'frontend/worker-h5/src/render.mjs'
-        ? readReal(rel).replace('</header>${workerEntriesBar()}', '</header>')
+        // 🔴 注入必须**签名/位置无关**（2026-09-29 实证：消费方给函数加了参数、页头又多了
+        //    `pageNoticeBanner(state)` ⇒ 原来那句字面量替换**没生效**，本红证反而变成恒红）
+        ? readReal(rel).replace(/\$\{workerEntriesBar\([^)]*\)\}/, '')
         : readReal(rel)
     const mutated = uncalled('frontend/worker-h5/src/render.mjs')
-    expect(mutated).toContain('function workerEntriesBar()')
-    expect(mutated.includes('${workerEntriesBar()}')).toBe(false)
+    expect(mutated).toContain('function workerEntriesBar(')
+    expect(mutated.includes('${workerEntriesBar(')).toBe(false)
     const problems = entryProblems({ ...input, read: uncalled })
     expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
   })
