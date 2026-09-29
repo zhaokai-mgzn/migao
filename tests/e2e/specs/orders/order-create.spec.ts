@@ -171,7 +171,11 @@ test.describe('订单创建', () => {
       await expect(page.getByTestId('wizard-step-4')).toHaveCount(0)
       await expect(page.getByTestId('wizard-step-1')).toContainText('用料与规格（系统推导）')
       await expect(page.getByTestId('wizard-step-2')).toContainText('加工项')
-      await expect(page.getByTestId('wizard-step-2')).toContainText('特殊选项')
+      // ②加工项**默认收起**（summary 只报计数）⇒ 特殊选项 / 部位备注点在它里面；
+      // 用户 2026-09-29 裁定「打开加工项区域时一同打开」⇒ 展开后两块与加工项同屏可见。
+      const step2 = page.getByTestId('wizard-step-2')
+      await step2.getByRole('button').first().click()
+      await expect(step2).toContainText('特殊选项')
       // 2026-09-28：净尺寸（窗宽 / 窗高）提到**组级常显** ⇒ 不再是任何一步的内容
       await expect(page.getByText('窗宽 (米)')).toBeVisible()
       await expect(page.getByTestId('wizard-step-1')).not.toContainText('窗宽 (米)')

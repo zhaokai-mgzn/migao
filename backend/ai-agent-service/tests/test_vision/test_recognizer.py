@@ -133,6 +133,12 @@ class TestExtractFieldsOrder:
             ("quantity", "数量", "3 套", FIELD_MARKER),
             ("curtain_width", "帘宽", "2.8", FIELD_MARKER),
             ("curtain_height", "帘高", "2.4", FIELD_MARKER),
+            # 2026-09-29（issue #5794）：客户写明的**工艺要求**三格 —— 本夹具没写 ⇒ 整格留空
+            # （`value=None` / `source=None`）。⚠️ 内核**不做语义判定**（原样透传），
+            # 「中文 → 语义」的换算与「认不出就不落键」都在消费侧（建单页 `lib/image-recognize.ts`）。
+            ("open_count", "打开方式", None, None),
+            ("style", "款式", None, None),
+            ("processing_items", "加工项", None, None),
         ]
 
     def test_order_side_is_stricter_than_product_side_on_the_same_confidence(self):
