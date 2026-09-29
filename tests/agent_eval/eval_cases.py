@@ -10745,6 +10745,24 @@ _CASE_UI_068 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-069 [NORMAL] 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己（源: cases/ui.yml）──
+_CASE_UI_069 = EvalCase(
+    id='UI-069',
+    legacy_id='',
+    title='经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点（PR #5788）查出「`/dashboard/order-status` 端点与 `OrderStatusChart` 组件都已写好、**从未被任何页面引用**」；本单把死代码接进页面'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**接线为真**：页面必须真调 `dashboardApi.getOrderStatusDistribution()`，并把返回条目的 `count` 合计渲染成「共 N 单」（证明数据流到组件，而不是渲染空态）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「订单状态分布图接线」。', '判据 2·🔴 **单独失败只点名自己**：该端点失败 ⇒ 失败告警里出现「订单状态分布」，且**不得**连坐点名其他块（趋势图/近期订单/商品销量排行）。执行点 = 同文件的第二条。', '判据 3·**被接线的组件必须能在 jsdom 里渲染**：`OrderStatusChart` 用 recharts `ResponsiveContainer`（需 `ResizeObserver`，jsdom 不提供）—— 它此前是死代码所以这个不兼容一直没暴露；`frontend/admin-web/tests/setup.ts` 提供最小 stub。执行点 = 上述两条（无 stub 则整页 44+ 条一起红，实测 `ResizeObserver is not defined`）。', '判据 4·**注入式红证**（已实跑）：把 `allSettled` 里的端点调用换成 `Promise.resolve({data:{data:[]}})`（= 未接线形态）⇒ 上述两条 **2 failed**（`toHaveBeenCalled` 与合计断言）；还原后 48 passed。'],
+    skip_reason='[backend-contract] 纯前端接线与显隐判定（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 执行',
+    tags=['ui', 'dashboard', 'dead-code', 'wiring'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11353,6 +11371,7 @@ ALL_CASES = (
     _CASE_UI_066,
     _CASE_UI_067,
     _CASE_UI_068,
+    _CASE_UI_069,
     _CASE_UT_001,
     _CASE_UT_002,
 )

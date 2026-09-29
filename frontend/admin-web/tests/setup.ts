@@ -1,4 +1,18 @@
+// case_ids: UI-069
 import '@testing-library/jest-dom'
+
+// issue #5792（第二阶段）：recharts 的 `ResponsiveContainer` 需要 `ResizeObserver`，而 jsdom 不提供。
+// ⚠️ 这个坑此前一直没暴露，因为 `OrderStatusChart` 是**从没被任何页面引用的死代码**
+//    （端点与组件都写好了、就是没接线）⇒ 把死代码接进页面时，测试立刻报 `ResizeObserver is not defined`。
+// 最小 stub：只提供接口形状，不做任何测量（图表在断言里只用标题/合计等文本，不依赖布局尺寸）。
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
+}
 // issue #4414：部署关键路径上的单测 flake —— CI 负载下 `waitFor`/`findBy*` 的**默认 1s 超时**不够，
 // 表现为「数据还没渲染出来」的间歇性红（`deploy-frontend` 的 Unit tests 步会因此挡住整条部署腿）。
 // 提到 5s：正常情况仍在毫秒级返回（waitFor 是轮询，不是固定等待），只在真的慢时才多等。
