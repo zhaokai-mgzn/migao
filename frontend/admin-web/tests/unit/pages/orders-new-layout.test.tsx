@@ -145,8 +145,9 @@ const CALC_OK = {
         join_width_m: null as number | null,
         meters: 13.3,
         auto: true,
-        reason:
-          '自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：定高买宽单幅可做，用料 13.3 米',
+        // ⚠️ reason 是**具体算例的事实陈述**（不得复述「选优顺序」——那份口径的单一真值源在
+        // `docs/design/order-auto-derivation.md`，在别处复述会被 C1/C2 守卫判红）。
+        reason: '自动推导：定高买宽单幅可做，用料 13.3 米',
         candidates: [
           { key: 'fixed_height', feasible: true, meters: 13.3, splice_times: 0, reason: null },
           {

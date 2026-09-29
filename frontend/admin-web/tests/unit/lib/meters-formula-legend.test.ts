@@ -27,8 +27,6 @@ describe('用料公式参数说明（2026-09-29 用户裁定）', () => {
       fullness: 2,
       config: CONFIG,
     })
-    expect(legend).not.toBeNull()
-    // 公式串 `(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米` 里出现的数 = 这五个
     expect(legend!.params).toEqual([
       { value: '6.6', name: '净窗宽（米）' },
       { value: '0.3', name: '每片余量（米 · 算料配置）' },

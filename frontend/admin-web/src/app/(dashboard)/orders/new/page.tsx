@@ -4299,12 +4299,13 @@ function ProductGroupBlock({
                       })}
                     </div>
                     {group.selectedSku && (
-                      /* 「**为什么是这一支**」说人话（2026-09-29 用户裁定）：规则原文
-                         「拼接最少 → 用料最少 → 接高接宽最少 → 表序」放 `title`，
-                        正文只讲商家关心的那两步（不用拼接、用料最省）。 */
+                      /* 「**为什么是这一支**」说人话（2026-09-29 用户裁定）：规则原文（**顺序口径的
+                         单一真值源** = docs/design/order-auto-derivation.md）不在这里复述 ——
+                         复述就是第二份口径（`test_craft_calc_ranking_order_single_source.py` 的 C1/C2
+                         会把「扫描面之外又冒出一处顺序表述」判红）；这里只讲商家关心的那一步。 */
                       <p
                         data-testid="sku-choice-reason"
-                        title="规则：候选门幅按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优"
+                        title="门幅规则：可行集里取最省料的那一支（全量口径见 docs/design/order-auto-derivation.md）"
                         className="mt-1 text-xs text-primary-600"
                       >
                         {first.skuAutoSelected
