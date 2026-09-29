@@ -92,26 +92,34 @@ export function effectivePages(state) {
 export const permUnreadNotice = '未能读取页面权限，本机按全开运行（可继续报工；若与本机应开的页面不符，请找管理员）'
 
 /**
- * 「本机未开报工页」视图（`pages` 不含 `report` 时的**显式**终点）。
+ * 「本机菜单未开报工页」的**非阻断**提示（`report` ∉ `pages` 时）。
  *
- * 🔴 为什么必须显式：静默留着一个扫不动码的页面 = 工人以为"扫码枪坏了 / 码脏了"，
- * 反复重扫、找错人修 —— 而真因是这台设备/这个工人没开报工页。⇒ 说清三件事：
- * ① 本机未开此页（不是码的问题）；② 出口 = 找管理员在「工人端页面」里开；
- * ③ 出口 = 换设备 / 换工人（页面开关是**租户级**的，换人换机可能就开了）。
+ * 🔴 **2026-09-29 用户逐字改判（口径以 B 端 H5 为准）**：
+ * 「参考现在 B 端 H5 页面的设计，即使关掉了依然能通过菜单进入页面」
+ * —— B 端 H5 的页面开关语义 = **菜单 / 入口按开关显隐**，而**不是**「访问被挡」。
+ * ⇒ 本页**照旧渲染、照旧可用**（扫水洗唛 / 报工都还能用），只多挂这一句**非阻断**的话。
  *
- * ⚠️ 这里**只**管可见性：真正的准入仍在服务端（`/api/worker/**`）—— 本视图不代替鉴权。
+ * ⚠️ 改前的形态（已撤，**不要改回去**）：`report` ∉ `pages` ⇒ 渲染一个不渲染 `wh5-scan` /
+ * `wh5-report` 的「本机未开报工页」视图 —— 那是**硬拦截**，与 B 端 H5 不一致，
+ * 且把「菜单没开」变成「活干不了」（工人手上唯一常开的那一页被清空）。
  */
-function reportPageClosedView(state) {
-  return `${header(state)}
-  <section class="wh5-card" id="wh5-report-closed">
-    <h1 class="wh5-title">本机未开报工页</h1>
-    <p class="wh5-sub">本机（本租户）的「工人端页面」里**没有**开报工页 ⇒ 这个页面上的扫码 / 报工入口已停用，不是码的问题。</p>
-    <ul class="wh5-closed-exits">
-      <li>找管理员在「设置 · 工人端页面」里把<b>报工</b>打开</li>
-      <li>或换一台已开报工页的设备 / 换一个已开报工页的工人（页面开关按租户下发）</li>
-    </ul>
-    <button id="wh5-logout" class="wh5-ghost" type="button">登出 / 换工人</button>
-  </section>`
+export const reportMenuClosedNotice = '本机菜单未开报工页（按管理员配置显隐）；本机报工仍可用 —— 如非预期，请找管理员在「工人端页面」里开，或换一台设备 / 换一个工人'
+
+/**
+ * 页头的**菜单/降级提示条**（两态共用一件，都是**非阻断**语义；都不挡任何入口）。
+ *
+ * 判据 = `tests/worker-h5-pages.test.mjs` 的 `::② …`（**双向**钉住「不拦截」）：
+ * 去掉它 ⇒ 红；把页面挡掉（`wh5-scan` 不渲染）⇒ 也红。
+ */
+function pageNoticeBanner(state) {
+  const { opened, unread } = effectivePages(state)
+  if (unread) {
+    return `<p class="wh5-perm-notice" id="wh5-perm-unread" role="status">${esc(permUnreadNotice)}</p>`
+  }
+  if (!opened.has(PAGE_REPORT)) {
+    return `<p class="wh5-perm-notice" id="wh5-report-menu-closed" role="status">${esc(reportMenuClosedNotice)}</p>`
+  }
+  return ''
 }
 
 /**
@@ -304,7 +312,11 @@ export function doneNotice(receipt) {
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
-  // 🔴 入口栏按页面集过滤（本单）：机台模式（`cut_calc`）在**集合里才有链接**。
+  // 🔴 入口栏按页面集**显隐**（本单）：机台模式（`cut_calc`）在**集合里才有链接**。
+  // 🔴 **这是「菜单显隐」语义，不是「访问拦截」**（2026-09-29 用户逐字改判，口径以 B 端 H5 为准：
+  //    「参考现在 B 端 H5 页面的设计，即使关掉了依然能通过菜单进入页面」）⇒ 链接消失 ≠ 页面不可达：
+  //    机台页地址 `/w/machine.html` 直接敲 URL **仍可进入**（静态页，本包不给它加访问门禁）。
+  //    同款语义的另一半 = 页头的 `pageNoticeBanner`（`report` 关掉时页面**照旧可用**，只多一句话）。
   // 两条跨应用静态入口**不受** `pages` 影响（`/b/#/pages/worker/*` 不属于这四个键
   // ⇒ 没有对应开关就不该由它决定去留：误删会让 #5052 那两页重新变成「走不到」）。
   const machine = opened.has(PAGE_CUT_CALC)
@@ -325,19 +337,7 @@ function header(state) {
     <span class="wh5-worker" id="wh5-current-worker">当前工人：${name}${no ? `（工号 ${no}）` : ''}</span>
     <button id="wh5-switch" class="wh5-ghost" type="button">切换</button>
     <button id="wh5-logout" class="wh5-ghost" type="button">登出</button>
-  </header>${permUnreadBanner(state)}${workerEntriesBar(state)}`
-}
-
-/**
- * 「页面权限没读到」的常驻提示（fail-open 的**可观察面**）。
- *
- * 🔴 为什么必须有这一句：降级跑 ≠ 正常跑 —— 不写出来，商家改过的开关被静默忽略，
- * 而页面上一切正常（最坏的形态：**没人发现开关失效**）。
- */
-function permUnreadBanner(state) {
-  return effectivePages(state).unread
-    ? `<p class="wh5-perm-unread" id="wh5-perm-unread" role="status">${esc(permUnreadNotice)}</p>`
-    : ''
+  </header>${pageNoticeBanner(state)}${workerEntriesBar(state)}`
 }
 
 function loginView(state) {
@@ -559,9 +559,10 @@ export const DEFAULT_WORKER_IDLE_MINUTES = 10080
 export function renderPage(state, view = state.view) {
   const s = { ...state, view: view ?? state.view }
   if (!s.worker) return loginView(s)
-  // 🔴 报工页门控（本单）：`report` 不在集合里 ⇒ **显式**给「本机未开报工页」终点，
-  // 绝不静默留一个"扫不动码"的页面（旧码选套 / 主屏 / 开工按钮一并不可达 —— 唯一入口在这里）。
-  if (!effectivePages(s).opened.has(PAGE_REPORT)) return reportPageClosedView(s)
+  // 🔴 **不硬拦截**（2026-09-29 用户逐字改判，口径以 B 端 H5 为准）：
+  // `report` ∉ `pages` **不再**挡页面 —— 页面照旧渲染、照旧可用（扫水洗唛 / 报工都能用），
+  // 只在页头挂一条**非阻断**提示（`pageNoticeBanner`，两态共用）。页面开关的语义 =
+  // **菜单 / 入口显隐**，不是「访问被挡」；真正的准入仍在服务端 `/api/worker/**`。
   if (!s.view) return scanView(s)
   if (s.mode === 'select' && (s.view.needs_selection ?? []).length > 0) return selectView(s)
   return mainView(s)
