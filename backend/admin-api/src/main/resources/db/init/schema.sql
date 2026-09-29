@@ -1069,6 +1069,29 @@ CREATE TABLE IF NOT EXISTS craft_calc_configs (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_craft_calc_configs_tenant
     ON craft_calc_configs (tenant_id)
     WHERE deleted = 0;
+-- 裁高（定高）**租户级配置**（V140，母单 #5161；设计单 docs/design/cutting-height-config-and-terminal.md）
+-- 单行/租户，**缺行 = 用默认种子**（壁达现场弹窗那 7 项）—— 不做开租播种：种子唯一来源 =
+-- CuttingHeightDefaults（Java 一处）。命中口径复用 production_route_rules 的
+-- trigger_kind / trigger_value / position，不新造第二套匹配实现。
+CREATE TABLE IF NOT EXISTS cutting_height_configs (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    rounding JSONB NOT NULL DEFAULT '{"mode": "half_up", "digits": 3}'::jsonb,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+-- 租户级**单行**（部分唯一索引：软删行不占位）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_cutting_height_configs_tenant
+    ON cutting_height_configs (tenant_id)
+    WHERE deleted = 0;
+COMMENT ON TABLE cutting_height_configs IS
+    '裁高（定高）**租户级配置**（V140，母单 #5161）。单行/租户，**缺行 = 用默认种子**'
+    '（CuttingHeightDefaults，逐字 = 壁达现场弹窗 7 项）—— 不做开租播种。'
+    'items = 增量项档案（value=null 表示**有项无值**，如壁达的「画线」）；'
+    'rounding = 取整规则（默认保留三位小数 = mm 精度）。';
 COMMENT ON TABLE craft_calc_configs IS
     '算料公式**租户级配置**（V80，issue #4528 = 包 E）。单行/租户，**缺行 = 用引擎默认值**'
     '（source=''default''）—— 不做开租播种：默认值唯一来源是算料引擎 '

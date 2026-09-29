@@ -7252,6 +7252,24 @@ _CASE_PG_044 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-045 [NORMAL] 裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（部位级档案 + 同名/工艺/加工项/定型触发 + 取整三位小数；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_045 = EvalCase(
+    id='PG-045',
+    legacy_id='',
+    title='裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（部位级档案 + 同名/工艺/加工项/定型触发 + 取整三位小数；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这台裁高机这一单的布帘要裁多高？'],
+    expectations=['direct_reply'],
+    data_checks=['裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)，按 rounding 取整后输出（默认保留三位小数 = mm 精度）', '命中口径 = 复用 production_route_rules 的 trigger_kind / trigger_value / position（特殊选项 / 工艺 / 加工项 / 定型 + 部位限定），**不另写第二份匹配实现**', '命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**', '缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）', '本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）'],
+    skip_reason='[backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。',
+    tags=['processing', 'cutting_height', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -11037,6 +11055,7 @@ ALL_CASES = (
     _CASE_PG_043,
     _CASE_PP_015,
     _CASE_PG_044,
+    _CASE_PG_045,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

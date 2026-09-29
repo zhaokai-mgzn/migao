@@ -59,6 +59,9 @@ public class TenantParamAuditService {
     /** 参数域：算料配置（当前唯一写面 = {@code PUT /api/admin/production/craft-calc-config}）。 */
     public static final String DOMAIN_CRAFT_CALC = "craft_calc";
 
+    /** 参数域：裁高（定高）配置（V140，母单 #5161）—— 与算料配置并列的第二个产线口径。 */
+    public static final String DOMAIN_CUTTING_HEIGHT = "cutting_height";
+
     /** 操作形态：全量替换写（当前唯一写面）。 */
     public static final String OPERATION_PUT = "put";
 
