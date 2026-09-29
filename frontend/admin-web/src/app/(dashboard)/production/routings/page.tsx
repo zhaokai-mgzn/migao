@@ -21,6 +21,7 @@ import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuard
 import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf, type CalcScalarKey } from '@/lib/craft-calc-glossary'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
+import { CuttingHeightConfigPanel } from '@/components/production/CuttingHeightConfigPanel'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
 import type {
@@ -793,7 +794,7 @@ export default function ProcessConfigPage() {
    * **并回同一张表** —— 删掉那个独立区块**不减少任何定价入口**），原【打包发货】的位置改放
    * **工艺路线**。</p>
    */
-  const [tab, setTab] = useState<'process' | 'calc'>('process')
+  const [tab, setTab] = useState<'process' | 'calc' | 'cut'>('process')
   /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
@@ -2336,6 +2337,7 @@ export default function ProcessConfigPage() {
             {([
               { key: 'process', label: '工序管理' },
               { key: 'calc', label: '算料配置' },
+              { key: 'cut', label: '裁高配置' },
             ] as const).map((t) => (
               <button
                 key={t.key}
@@ -3100,6 +3102,11 @@ export default function ProcessConfigPage() {
                 {calcDraft && <CraftCalcGlossary config={calcDraft} />}
               </div>
             )}
+
+            {/* ══════════════ tab「裁高配置」：裁剪高度口径（母单 #5161） ══════════════
+                本 tab 只回答一个问题：「这一刀该多高」——`裁剪高度 = 成品高 + 命中增量项`。
+                命中口径由**服务端**判（`POST …/preview`）；本版**不算不写机器**（下发归上游设计单）。 */}
+            {tab === 'cut' && <CuttingHeightConfigPanel />}
           </div>
         </>
       )}
