@@ -59,6 +59,7 @@ function mockApiSuccess() {
         // #2886: 待发货/含加工计数由 stats 聚合返回（替代 2 个重复计数接口）
         pendingShipOrders: 8,
         pendingPaymentOrders: 6,
+        overdueTickets: 4,
         processingPendingOrders: 3,
       },
     },
@@ -676,6 +677,17 @@ describe('DashboardPage', () => {
     expect(badge.getAttribute('title')).toContain('无上期可比')
     // 反向自证：不得出现 0%（那是「与上期持平」，另一回事）
     expect(screen.queryByText(/较昨日 0%/)).toBeNull()
+  })
+
+  // ── #5792：超时工单卡（下钻必须真的筛 —— 与 after-sales 页的 `?overdue=` 配套）──
+
+  it('🔴 超时工单卡：数字取 `overdueTickets`，下钻到 `?overdue=1`（列表页会真的筛）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('超时工单')).toBeInTheDocument())
+    const card = screen.getByRole('link', { name: /超时工单/ }) as HTMLAnchorElement
+    expect(card.textContent).toContain('4')   // 数字来自服务端聚合，不是本地推算
+    // 与 after-sales 页的筛选参数逐字对齐（那边已实装可见指示 + 可清除）
+    expect(card.getAttribute('href')).toBe('/after-sales?overdue=1')
   })
 
   it('should handle empty trend data', async () => {

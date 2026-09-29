@@ -452,12 +452,9 @@ public class DailyBriefingService {
                 new LambdaQueryWrapper<AfterSalesTicket>()
                         .eq(AfterSalesTicket::getTenantId, tenantId)
                         .eq(AfterSalesTicket::getStatus, "pending"));
-        long overdueTickets = afterSalesTicketMapper.selectCount(
-                new LambdaQueryWrapper<AfterSalesTicket>()
-                        .eq(AfterSalesTicket::getTenantId, tenantId)
-                        .in(AfterSalesTicket::getStatus, "pending", "processing")
-                        .isNotNull(AfterSalesTicket::getDeadline)
-                        .lt(AfterSalesTicket::getDeadline, OffsetDateTime.now()));
+        // issue #5792：超时工单口径收敛到 `AfterSalesTicketMapper.applyOverdue`（单一真值）——
+        // 同一个数字此后还出现在经营看板与工单列表筛选，三处不得各写一份 wrapper。
+        long overdueTickets = afterSalesTicketMapper.selectOverdueCount(tenantId, OffsetDateTime.now());
 
         Map<String, Number> metrics = new LinkedHashMap<>();
         metrics.put("today_orders", toLong(orderStats.get("today_orders")));

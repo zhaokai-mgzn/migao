@@ -106,6 +106,10 @@ public class DashboardController {
                 new LambdaQueryWrapper<AfterSalesTicket>()
                         .eq(AfterSalesTicket::getTenantId, tenantId));
 
+        // 超时工单数（issue #5792）：口径与简报快照、工单列表筛选**同源**
+        //（`AfterSalesTicketMapper.applyOverdue`）—— 三处共用一个数字，不允许各算一份。
+        long overdueTickets = afterSalesTicketMapper.selectOverdueCount(tenantId, businessClock.nowOffset());
+
         // #2886：活跃会话/AI 会话 2 次串行 count → 1 次 FILTER 聚合
         OffsetDateTime activeThreshold = businessClock.nowOffset().minusMinutes(30);
         Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);
@@ -151,6 +155,7 @@ public class DashboardController {
                 .totalProducts(totalProducts)
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
+                .overdueTickets(overdueTickets)
                 .pendingShipOrders(pendingShipOrders)
                 .pendingPaymentOrders(pendingPaymentOrders)
                 .processingPendingOrders(processingPendingOrders)
@@ -490,6 +495,8 @@ public class DashboardController {
         private long totalProducts;
         private long totalOrders;
         private long totalTickets;
+        /** 超时工单数（issue #5792；口径 = `AfterSalesTicketMapper.applyOverdue`） */
+        private long overdueTickets;
         // 待处理区 3 卡片 (#387)
         private long pendingShipOrders;
         /** 待支付订单数（issue #5792 第二阶段） */

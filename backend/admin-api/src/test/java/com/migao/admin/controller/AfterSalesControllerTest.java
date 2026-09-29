@@ -91,7 +91,7 @@ class AfterSalesControllerTest extends BaseControllerTest {
 
             PageResponse<AfterSalesListResponse> page = PageResponse.of(1L, 1L, 20L, List.of(item));
 
-            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), eq("processing"), isNull(), isNull(), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), eq("processing"), isNull(), isNull(), eq(false), eq(TEST_TENANT_ID)))
                     .thenReturn(page);
 
             mockMvc.perform(get(BASE).param("status", "processing"))
@@ -104,7 +104,7 @@ class AfterSalesControllerTest extends BaseControllerTest {
         void filterByType() throws Exception {
             PageResponse<AfterSalesListResponse> page = PageResponse.of(0L, 1L, 20L, List.of());
 
-            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), isNull(), eq("exchange"), isNull(), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), isNull(), eq("exchange"), isNull(), eq(false), eq(TEST_TENANT_ID)))
                     .thenReturn(page);
 
             mockMvc.perform(get(BASE).param("ticketType", "exchange"))
@@ -114,7 +114,7 @@ class AfterSalesControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("多条件组合筛选 -> 200")
         void combinedFilters() throws Exception {
-            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), eq("pending"), eq("return"), eq("张三"), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.getTicketPage(eq(1L), eq(20L), eq("pending"), eq("return"), eq("张三"), eq(false), eq(TEST_TENANT_ID)))
                     .thenReturn(PageResponse.of(1L, 1L, 20L, List.of(new AfterSalesListResponse())));
 
             mockMvc.perform(get(BASE)
@@ -244,12 +244,12 @@ class AfterSalesControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("列表查询携带租户 ID")
         void listPassesTenantId() throws Exception {
-            when(afterSalesTicketService.getTicketPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.getTicketPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(false), eq(TEST_TENANT_ID)))
                     .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
 
             mockMvc.perform(get(BASE));
 
-            verify(afterSalesTicketService).getTicketPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID));
+            verify(afterSalesTicketService).getTicketPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(false), eq(TEST_TENANT_ID));
         }
     }
 }

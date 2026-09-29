@@ -138,7 +138,7 @@ class AfterSalesTicketServiceTest {
 
         // when
         PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPage(
-                1, 20, null, null, null, 1L);
+                1, 20, null, null, null, false, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -163,7 +163,7 @@ class AfterSalesTicketServiceTest {
 
         // when
         PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPage(
-                1, 10, "pending", "return", null, 1L);
+                1, 10, "pending", "return", null, false, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -183,7 +183,7 @@ class AfterSalesTicketServiceTest {
 
         // when
         PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPage(
-                1, 20, null, null, null, 1L);
+                1, 20, null, null, null, false, 1L);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
