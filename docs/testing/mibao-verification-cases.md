@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（68 case）
+## 前端 UI 域（69 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8127,6 +8127,19 @@
 ```
 溯源: 2026-09-29 新增（issue #5792 第二阶段）：补「待支付订单」计数与卡片（下钻到订单列表的待支付筛选）。 ｜ tags: ui, dashboard, metrics
 
+### UI-071. 看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态 🔵
+```
+你: 用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点查出同页 6 处口径硬伤，本单整改其中两处
+期望: direct_reply
+数据: 判据 1·**今日/昨日销售额与本月营收同口径**（只算 `confirmed/producing/shipped/completed`）：`OrderMapper.selectDashboardOrderStats` 的 `today_sales` / `yesterday_sales` 两条 FILTER 都必须带状态过滤。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java 的 `dashboardStatsAggregateShape`。改前无状态过滤 ⇒ 未付款/已取消的单也算「今日销售额」，而同页「本月销售额」不含 ⇒ 两个「销售额」两套口径。
+数据: 判据 2·🔴 **上期为 0 ⇒ 环比为 `null`**（不是 0）：三个环比字段（`todayOrdersChange`/`todaySalesChange`/`monthRevenueChange`）在分母为 0 时必须序列化为 `null`。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/DashboardControllerTest.java 的 `changeIsNullWhenBaselineIsZero`。`0%` 的语义是「与上期持平」，与「没有可比基数」是两件事 ⇒ 折叠成 0 会被读成「没有变化」。
+数据: 判据 3·**前端「—」中性态**：环比为 `null` ⇒ 徽章文案「较昨日 —」、底色**中性灰**、**不画方向箭头**（没有可比基数时任何方向箭头都是编造），并带悬停说明「无上期可比」。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「上期为 0 ⇒ 徽章显示『较昨日 —』」。
+数据: 判据 4·**概览句同口径**：`formatOrderChange(null)` ⇒ 「—」，而 `0` 仍为「0%」（有基线且真持平）。执行点 = frontend/admin-web/tests/unit/components/TodayOverviewBar.test.tsx。
+数据: 判据 5·**注入式红证**（均已实跑）：把 `null` 折叠成 0 ⇒ 前端该条 **1 failed**；去掉今日销售额的状态过滤 ⇒ `OrderMapperTest` **FAILURE**。
+跳过: [backend-contract] 口径与语义整改（SQL 形态 + DTO 序列化 + 前端渲染），由 Java 单测与 vitest 执行；不涉 LLM，不进 agent-eval
+```
+溯源: 2026-09-29 新增（issue #5792）：把「今日/昨日销售额」与「本月营收」口径对齐（只算四态），并把「无上期可比」从 0% 改为显式 null + 「—」中性态。 ｜ tags: ui, dashboard, metrics, semantics
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8156,8 +8169,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：575（活跃 126，跳过 449）
-- tier 分布：smoke 12 / normal 530 / adversarial 31
+- 用例总数：576（活跃 126，跳过 450）
+- tier 分布：smoke 12 / normal 531 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8182,7 +8195,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：68
+- 前端 UI 域：69
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8342,4 +8355,5 @@
 - UI-068: 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）
 - UI-069: 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己
 - UI-070: 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`
+- UI-071: 看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态
 

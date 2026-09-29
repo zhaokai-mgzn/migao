@@ -10781,6 +10781,24 @@ _CASE_UI_070 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-071 [NORMAL] 看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态（源: cases/ui.yml）──
+_CASE_UI_071 = EvalCase(
+    id='UI-071',
+    legacy_id='',
+    title='看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点查出同页 6 处口径硬伤，本单整改其中两处'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**今日/昨日销售额与本月营收同口径**（只算 `confirmed/producing/shipped/completed`）：`OrderMapper.selectDashboardOrderStats` 的 `today_sales` / `yesterday_sales` 两条 FILTER 都必须带状态过滤。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java 的 `dashboardStatsAggregateShape`。改前无状态过滤 ⇒ 未付款/已取消的单也算「今日销售额」，而同页「本月销售额」不含 ⇒ 两个「销售额」两套口径。', '判据 2·🔴 **上期为 0 ⇒ 环比为 `null`**（不是 0）：三个环比字段（`todayOrdersChange`/`todaySalesChange`/`monthRevenueChange`）在分母为 0 时必须序列化为 `null`。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/DashboardControllerTest.java 的 `changeIsNullWhenBaselineIsZero`。`0%` 的语义是「与上期持平」，与「没有可比基数」是两件事 ⇒ 折叠成 0 会被读成「没有变化」。', '判据 3·**前端「—」中性态**：环比为 `null` ⇒ 徽章文案「较昨日 —」、底色**中性灰**、**不画方向箭头**（没有可比基数时任何方向箭头都是编造），并带悬停说明「无上期可比」。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「上期为 0 ⇒ 徽章显示『较昨日 —』」。', '判据 4·**概览句同口径**：`formatOrderChange(null)` ⇒ 「—」，而 `0` 仍为「0%」（有基线且真持平）。执行点 = frontend/admin-web/tests/unit/components/TodayOverviewBar.test.tsx。', '判据 5·**注入式红证**（均已实跑）：把 `null` 折叠成 0 ⇒ 前端该条 **1 failed**；去掉今日销售额的状态过滤 ⇒ `OrderMapperTest` **FAILURE**。'],
+    skip_reason='[backend-contract] 口径与语义整改（SQL 形态 + DTO 序列化 + 前端渲染），由 Java 单测与 vitest 执行；不涉 LLM，不进 agent-eval',
+    tags=['ui', 'dashboard', 'metrics', 'semantics'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11391,6 +11409,7 @@ ALL_CASES = (
     _CASE_UI_068,
     _CASE_UI_069,
     _CASE_UI_070,
+    _CASE_UI_071,
     _CASE_UT_001,
     _CASE_UT_002,
 )

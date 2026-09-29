@@ -9,10 +9,10 @@ export interface TodayOverviewBarProps {
   todayOrders: number
   /** 今日销售额 */
   todaySales: number
-  /** 订单环比（百分比，正=较昨日上涨） */
-  orderChange: number
-  /** 销售额环比（百分比，正=较昨日上涨） */
-  salesChange: number
+  /** 订单环比（百分比，正=较昨日上涨）；`null` = 无上期可比 */
+  orderChange: number | null | null
+  /** 销售额环比（百分比，正=较昨日上涨）；`null` = 无上期可比 */
+  salesChange: number | null | null
   /** 含加工待发货订单数 */
   processingCount: number
   /** 待发货订单数 */
@@ -36,7 +36,10 @@ export function processingRatio(processingCount: number, pendingCount: number): 
  * 订单环比格式化：正数带加号、负数带负号、0 渲染 0%、非有限值渲染 —。
  * 不做任何写死百分比，数值完全来自入参（API 派生）。
  */
-export function formatOrderChange(orderChange: number): string {
+export function formatOrderChange(orderChange: number | null | null | undefined): string {
+  // 🔴 null = **无上期可比**（上期为 0）⇒ 显示「—」，**不是** 0%：
+  //    0% 会被读成「与上期持平」，那是另一个意思（口径整改见 issue #5792）。
+  if (orderChange == null) return '—'
   if (!Number.isFinite(orderChange)) return '—'
   if (orderChange === 0) return '0%'
   const sign = orderChange > 0 ? '+' : '-'
@@ -56,8 +59,8 @@ function fmtCurrency(n: number): string {
 export interface InsightParams {
   todayOrders: number
   todaySales: number
-  orderChange: number
-  salesChange: number
+  orderChange: number | null
+  salesChange: number | null
   /** 含加工占比百分比（0-100） */
   processingRatioPct: number
   lowStockCount: number

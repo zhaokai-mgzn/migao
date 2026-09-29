@@ -642,6 +642,42 @@ describe('DashboardPage', () => {
     expect(card.getAttribute('href')).toBe('/orders?status=pending_payment')
   })
 
+  // ── #5792 口径整改：无上期 ⇒ 「—」中性态（不是 0%、不是红色下跌）──
+
+  it('🔴 上期为 0（环比为 null）⇒ 徽章显示「较昨日 —」+ **中性灰**且**不画方向箭头**', async () => {
+    mockGetStats.mockResolvedValue({
+      data: {
+        data: {
+          todayOrders: 5,
+          todayOrdersChange: null,   // 🔴 后端「无上期」的显式信号
+          todaySales: 1000,
+          todaySalesChange: null,
+          monthRevenue: 2000,
+          monthRevenueChange: null,
+          lowStockItems: 0,
+          pendingShipOrders: 0,
+          processingPendingOrders: 0,
+        },
+      },
+    })
+    render(<DashboardPage />)
+    // ⚠️ 订单与销售额**两条**徽章文案相同（都是「较昨日 —」）⇒ 必须用 getAllByText
+    //    （用 getByText 会因「命中多个」抛错，在 waitFor 里表现为**超时**，误导排查方向）
+    let badges: HTMLElement[] = []
+    await waitFor(() => {
+      badges = screen.getAllByText('较昨日 —')
+      expect(badges.length).toBeGreaterThanOrEqual(2)
+    })
+    const badge = badges[0]
+    // 中性态：灰底（不是红/绿）+ **无 svg 箭头**（没有可比基数时任何方向箭头都是编造）
+    expect(badge.className).toContain('bg-neutral-100')
+    expect(badge.querySelector('svg')).toBeNull()
+    // 且悬停可解释（用户看到「—」要知道为什么）
+    expect(badge.getAttribute('title')).toContain('无上期可比')
+    // 反向自证：不得出现 0%（那是「与上期持平」，另一回事）
+    expect(screen.queryByText(/较昨日 0%/)).toBeNull()
+  })
+
   it('should handle empty trend data', async () => {
     mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
     render(<DashboardPage />)

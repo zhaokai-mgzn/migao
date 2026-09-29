@@ -39,8 +39,11 @@ public interface OrderMapper extends BaseMapper<Order> {
             "COUNT(*) AS total_orders, " +
             "COUNT(*) FILTER (WHERE created_at >= #{todayStart} AND created_at < #{tomorrowStart}) AS today_orders, " +
             "COUNT(*) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart}) AS yesterday_orders, " +
-            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{todayStart} AND created_at < #{tomorrowStart}), 0) AS today_sales, " +
-            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart}), 0) AS yesterday_sales, " +
+            // 🔴 issue #5792 口径整改：销售额**只算四态**（confirmed/producing/shipped/completed），
+            // 与「本月营收」同口径。改前今日/昨日销售额**无状态过滤** ⇒ 未付款、已取消/关闭的单也算进
+            // 「今日销售额」，而同页的「本月销售额」不含 ⇒ 两个「销售额」用两套口径，商家无法解释差异。
+            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{todayStart} AND created_at < #{tomorrowStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS today_sales, " +
+            "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS yesterday_sales, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{monthStart} AND created_at < #{nextMonthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS month_revenue, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{lastMonthStart} AND created_at < #{monthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS last_month_revenue, " +
             "COUNT(*) FILTER (WHERE status IN ('confirmed','producing')) AS pending_ship, " +

@@ -122,6 +122,37 @@ class DashboardControllerTest {
         }
 
         @Test
+        @DisplayName("issue #5792 口径整改：**上期为 0 ⇒ 环比为 null**（无上期可比 ≠ 与上期持平 0%）")
+        void changeIsNullWhenBaselineIsZero() throws Exception {
+            // 上期全为 0（昨日无单/无销售额、上月无营收）⇒ 三个环比都必须是 null
+            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any(), any())).thenReturn(Map.of(
+                    "total_orders", 5L,
+                    "today_orders", 5L,
+                    "yesterday_orders", 0L,
+                    "today_sales", new BigDecimal("1000"),
+                    "yesterday_sales", new BigDecimal("0"),
+                    "month_revenue", new BigDecimal("1000"),
+                    "last_month_revenue", new BigDecimal("0"),
+                    "pending_ship", 0L));
+            when(userMapper.selectDashboardUserStats(any())).thenReturn(Map.of(
+                    "total_customers", 1L, "new_customers_today", 0L));
+            when(sessionMapper.selectDashboardSessionStats(any())).thenReturn(Map.of(
+                    "active_sessions", 0L, "ai_sessions", 0L));
+            when(orderItemMapper.selectProcessingPendingOrdersCount()).thenReturn(0L);
+            when(productMapper.selectCount(any())).thenReturn(0L);
+            when(afterSalesTicketMapper.selectCount(any())).thenReturn(0L);
+            when(productService.getLowStockSkuCount(eq(1L), eq(100))).thenReturn(0L);
+
+            mockMvc.perform(get("/api/admin/dashboard/stats"))
+                    .andExpect(status().isOk())
+                    // 🔴 关键：`0%` 的语义是「与上期持平」，与「上期为 0、没有可比基数」是**两件事**；
+                    //    改前一律回 0 ⇒ 会被读成「没有变化」。这里要求显式 null（JSON 里就是 null）。
+                    .andExpect(jsonPath("$.data.todayOrdersChange").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.todaySalesChange").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.monthRevenueChange").value(org.hamcrest.Matchers.nullValue()));
+        }
+
+        @Test
         @DisplayName("返回完整统计数据 -> 200（#2886 聚合查询）")
         void returnFullStats() throws Exception {
             stubAggregations();

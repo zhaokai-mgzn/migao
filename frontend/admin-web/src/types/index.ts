@@ -2124,15 +2124,18 @@ export interface LoginLog {
 // Dashboard 统计数据
 export interface DashboardStats {
   todayOrders: number
-  todayOrdersChange: number
+  /** 🔴 `null` = **无上期可比**（上期为 0）—— 与「与上期持平(0%)」**语义不同**，不得折叠成 0 */
+  todayOrdersChange: number | null
   todaySales: number
-  todaySalesChange: number
+  /** 🔴 `null` = **无上期可比**（上期为 0）—— 与「与上期持平(0%)」**语义不同**，不得折叠成 0 */
+  todaySalesChange: number | null
   totalCustomers: number
   newCustomersToday: number
   activeSessions: number
   aiSessionRate: number
   monthRevenue: number
-  monthRevenueChange: number
+  /** 🔴 `null` = **无上期可比**（上期为 0）—— 与「与上期持平(0%)」**语义不同**，不得折叠成 0 */
+  monthRevenueChange: number | null
   totalProducts: number
   totalOrders: number
   totalTickets: number

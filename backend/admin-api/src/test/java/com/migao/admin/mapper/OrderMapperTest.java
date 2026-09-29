@@ -94,6 +94,15 @@ class OrderMapperTest {
         //    拿它当计数会把「≤5」误报成总数。
         assertThat(sql).contains("COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders");
 
+        // 🔴 issue #5792 口径整改：今日/昨日销售额必须与「本月营收」**同口径**（只算四态），
+        //    否则同页两个「销售额」用两套口径（含未付款/已取消 vs 不含）⇒ 商家无法解释差异。
+        assertThat(sql).contains(
+                "created_at >= #{todayStart} AND created_at < #{tomorrowStart} AND status IN "
+                        + "('confirmed','producing','shipped','completed')");
+        assertThat(sql).contains(
+                "created_at >= #{yesterdayStart} AND created_at < #{todayStart} AND status IN "
+                        + "('confirmed','producing','shipped','completed')");
+
         // 本月营收必须有**上界**（与上月窗口对称）—— 否则未来创建时间的单会虚增本月
         assertThat(sql).contains("created_at >= #{monthStart} AND created_at < #{nextMonthStart}");
         assertThat(sql).contains("created_at >= #{lastMonthStart} AND created_at < #{monthStart}");
