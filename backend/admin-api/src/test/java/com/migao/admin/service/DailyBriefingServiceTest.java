@@ -120,7 +120,8 @@ class DailyBriefingServiceTest {
 
     /** 标准聚合快照 mock（与 Dashboard 同口径） */
     private void stubAggregations() {
-        when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any())).thenReturn(Map.of(
+        // issue #5792：签名加 `nextMonthStart`（本月营收上界）⇒ 与 Dashboard 同口径的 stub 同步补一个 any()
+        when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any(), any())).thenReturn(Map.of(
                 "total_orders", 50L,
                 "today_orders", 5L,
                 "yesterday_orders", 3L,
