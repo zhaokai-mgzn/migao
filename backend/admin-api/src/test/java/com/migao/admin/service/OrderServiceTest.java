@@ -2921,4 +2921,30 @@ class OrderServiceTest {
         assertThat(detail.getLogisticsType()).isEqualTo("logistics");
         assertThat(detail.getLogisticsCompany()).isEqualTo("四季安");
     }
+
+    // ── issue #5792：状态筛选支持**逗号分隔多值**（前端「待发货」= confirmed + producing）──
+
+    @Test
+    @DisplayName("🔴 `applyStatusFilter`：单值用 =、多值用 IN（改前只收单值 ⇒ 列表比计数少）")
+    void statusFilterSupportsMultiValue() throws Exception {
+        // 单值：仍走等值（不因兼容多值而放宽成 IN —— 语义与既有行为一致）
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> one =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        OrderService.applyStatusFilter(one, "confirmed");
+        assertThat(one.getSqlSegment()).contains("status =").doesNotContain("IN");
+
+        // 多值：IN 两个状态（这就是「待发货」的正确口径）
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> many =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        OrderService.applyStatusFilter(many, "confirmed,producing");
+        String seg = many.getSqlSegment();
+        assertThat(seg).contains("status IN");
+        assertThat(many.getParamNameValuePairs().values()).contains("confirmed", "producing");
+
+        // 空/空白：不动 wrapper（不误加条件把列表清空）
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.Order> none =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        OrderService.applyStatusFilter(none, "  ");
+        assertThat(none.getSqlSegment()).isEmpty();
+    }
 }

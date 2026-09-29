@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（70 case）
+## 前端 UI 域（71 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8153,6 +8153,18 @@
 ```
 溯源: 2026-09-29 新增（issue #5792 第二阶段）：超时工单口径收敛到 mapper 的 `applyOverdue` 一处，补看板卡与列表筛选（下钻真的筛、可撤销）。 ｜ tags: ui, dashboard, metrics, single-source
 
+### UI-073. 订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐） 🔵
+```
+你: 用户 2026-09-29：「经营看板需要重构一下」→ 盘点查出「待发货卡计数含 producing、而链接只筛待发货」= 计数与下钻不一致；用户同日要求同一数字只能有一份口径
+期望: direct_reply
+数据: 判据 1·🔴 **映射层修，而不是改卡片**：前端类型里的注释一直写着「`pending_shipment: 'confirmed'` // confirmed 和 producing 都算待发货」，而实际只下发单值 ⇒ 列表比计数少。修在 `toBackendStatusParam()`：`pending_shipment` ⇒ `'confirmed,producing'`，其余仍单值（**不放宽其他筛选的语义**）。执行点 = frontend/admin-web/tests/unit/pages/orders-status-drilldown.test.tsx 的「纯映射」条。
+数据: 判据 2·**端到端下钻链**：看板卡跳 `/orders?status=待发货`（中文标签）⇒ 列表页请求带 `status='confirmed,producing'`。执行点 = 同文件的「端到端」条（该文件**不 mock `@/types`**，跑真映射；`orders.test.tsx` 把 `@/types` 整体 mock 成后端状态键，该判据在那里不可测，故独立成文件并写明原因）。
+数据: 判据 3·**后端支持多值**：`OrderService.applyStatusFilter` 单值用 `=`、多值用 `IN`、空白不动 wrapper。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `statusFilterSupportsMultiValue`。
+数据: 判据 4·**注入式红证**（均已实跑）：前端恢复单值 ⇒ 2 failed；后端只取第一个状态 ⇒ `statusFilterSupportsMultiValue` **FAILURE**。
+跳过: [backend-contract] 口径/筛选参数与前端下钻映射（无 LLM 环节，不进 agent-eval）
+```
+溯源: 2026-09-29 新增（issue #5792 口径②）：把「待发货 = confirmed + producing」从注释变成行为（后端多值 + 前端映射），修掉看板卡与订单列表的计数/下钻不一致。 ｜ tags: ui, orders, caliber, multi-value
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8182,8 +8194,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：577（活跃 126，跳过 451）
-- tier 分布：smoke 12 / normal 532 / adversarial 31
+- 用例总数：578（活跃 126，跳过 452）
+- tier 分布：smoke 12 / normal 533 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8208,7 +8220,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：70
+- 前端 UI 域：71
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8370,4 +8382,5 @@
 - UI-070: 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`
 - UI-071: 看板口径整改：今日/昨日销售额只算四态（与本月同口径）+ 上期为 0 ⇒ 环比为 null 且显示「—」中性态
 - UI-072: 超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销
+- UI-073: 订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）
 

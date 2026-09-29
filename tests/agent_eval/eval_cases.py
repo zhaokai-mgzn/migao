@@ -10817,6 +10817,24 @@ _CASE_UI_072 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-073 [NORMAL] 订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）（源: cases/ui.yml）──
+_CASE_UI_073 = EvalCase(
+    id='UI-073',
+    legacy_id='',
+    title='订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29：「经营看板需要重构一下」→ 盘点查出「待发货卡计数含 producing、而链接只筛待发货」= 计数与下钻不一致；用户同日要求同一数字只能有一份口径'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·🔴 **映射层修，而不是改卡片**：前端类型里的注释一直写着「`pending_shipment: 'confirmed'` // confirmed 和 producing 都算待发货」，而实际只下发单值 ⇒ 列表比计数少。修在 `toBackendStatusParam()`：`pending_shipment` ⇒ `'confirmed,producing'`，其余仍单值（**不放宽其他筛选的语义**）。执行点 = frontend/admin-web/tests/unit/pages/orders-status-drilldown.test.tsx 的「纯映射」条。", "判据 2·**端到端下钻链**：看板卡跳 `/orders?status=待发货`（中文标签）⇒ 列表页请求带 `status='confirmed,producing'`。执行点 = 同文件的「端到端」条（该文件**不 mock `@/types`**，跑真映射；`orders.test.tsx` 把 `@/types` 整体 mock 成后端状态键，该判据在那里不可测，故独立成文件并写明原因）。", '判据 3·**后端支持多值**：`OrderService.applyStatusFilter` 单值用 `=`、多值用 `IN`、空白不动 wrapper。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `statusFilterSupportsMultiValue`。', '判据 4·**注入式红证**（均已实跑）：前端恢复单值 ⇒ 2 failed；后端只取第一个状态 ⇒ `statusFilterSupportsMultiValue` **FAILURE**。'],
+    skip_reason='[backend-contract] 口径/筛选参数与前端下钻映射（无 LLM 环节，不进 agent-eval）',
+    tags=['ui', 'orders', 'caliber', 'multi-value'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11429,6 +11447,7 @@ ALL_CASES = (
     _CASE_UI_070,
     _CASE_UI_071,
     _CASE_UI_072,
+    _CASE_UI_073,
     _CASE_UT_001,
     _CASE_UT_002,
 )
