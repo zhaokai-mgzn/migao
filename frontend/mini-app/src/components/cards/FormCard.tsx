@@ -109,7 +109,20 @@ export default function FormCard({ data, onAction, disabled }: FormCardProps) {
           const isPhone = isPhoneKey(field.key)
           const isNumber = isNumberKey(field.key)
           const isAddress = isAddressKey(field.key)
-          const inputType = isNumber ? 'number' : 'text'
+          /**
+           * 数字字段的键盘 = `digit`（**不是** `number`）—— issue #5198 同族订正。
+           *
+           * 小程序里两种数字键盘的差别是**一字之差、能力不同**：`number` 是**纯数字**键盘
+           * （**没有小数点键** ⇒ 「2.5 米」「12.5 元」在真机上**根本打不出来**），`digit` 才带小数点键。
+           * 本卡片的字段面（`NUMBER_KEYS` = quantity / price / amount / stock / width / height /
+           * meter / …）全是**按米 / 按元的小数**字段 ⇒ 用 `number` 等于把商家的小数需求挡在键盘上。
+           * 先例 = 工人端报工数量（`bmini-app/src/pages/production/index/index.tsx` 用 `digit`，
+           * UI-055 判据 5）；类级判据 = `tests/numeric-input-keyboard-guard.test.ts`，
+           * 实例判据 = `tests/form-card.test.tsx`「数字字段（数量(米)）键盘用 digit」。
+           * ⚠️ 手机号字段（`isPhoneKey`）仍走 `number`（`inputType` 只在非手机号分支生效）——
+           * 纯数字字段的键盘本来就该没有小数点键。
+           */
+          const inputType = isNumber ? 'digit' : 'text'
 
           return (
             <View key={`ff-${idx}`} className={`form-card__field${error ? ' form-card__field--error' : ''}`}>
