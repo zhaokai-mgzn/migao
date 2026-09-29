@@ -203,6 +203,7 @@ DDL `source VARCHAR(32) DEFAULT 'customer'` 现状：服务端各路径均显式
 
 | 差异 | 值域 | 裁定与理由 |
 |---|---|---|
+| **扫码读面的部位明细键 vs 商家端部位形状**（母单 #5161 / P0-C） | 扫码读面（`/api/admin/production/scan` 与 `/api/worker/production/scan`）的 `set_overview.positions[]` / 旧码 `selections[].positions[]` **有** 9 个明细键（`width` / `height` / `craft` / `curtain_type` / `open_count` / `cutting_mode` / `fullness` / `is_shaped` / `fabric_meters`）；**商家端** `GET /api/admin/processing-order-sets/{id}` 的部位形状**没有**这 9 键 | **有意**（不动冻结键集）：商家端的部位键集由 `ProcessingOrderSetControllerTest.POSITION_KEYS` **冻结**（动它 = 同时改冻结契约与既有消费方），而这 9 键的**唯一消费方 = 一体机 / 工人端详情面** ⇒ 只在扫码读面加，**不为了「两处逐字一致」去动商家端**。若将来商家端也要（例如工单打印），**另开一单**同批改两侧与冻结键集 |
 | 商品状态（agent `product_manage`） | 后端/前端 4 值 `draft/on_sale/off_sale/under_review`；**Agent 2 值 `on_sale/off_sale`** | **有意的权限边界（#3686 裁定，不扩枚举）**：Agent 只负责上下架；新建草稿、`draft→under_review→on_sale` 送审是 admin-web 后台的商品运营流程（需人工编辑资料并承担审核语义）。给 Agent 放开这两值 = 对话可跳过审核门禁（越权），违反最小权限。真值同时写在 `product_manage.py` 的 `status` 字段 description 内。**需要 Agent 送审时必须先补权限设计 + 审核责任归属，再改枚举** |
 
 ## 十、工具层权限码与失败映射契约（issue #4106）
