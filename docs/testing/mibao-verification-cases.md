@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（65 case）
+## 前端 UI 域（66 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8089,6 +8089,20 @@
 真值: frontend-fix.vitest
 溯源: 2026-09-29 新增（issue #5778）：用户裁定只做「常用（收藏）」。**边界如实登记**：持久化在 localStorage ⇒ 换浏览器 / 换设备不同步；服务端同步（偏好表 + 迁移 + 端点）本轮有意不做（不是漏做）。不做「按使用频率自动推荐」（无使用数据来源）。 ｜ tags: ui, menu, favorites, preference
 
+### UI-068. 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0） 🔵
+```
+你: 用户 2026-09-29 追加要求原话：「AI 接待占比这个需要设计成可插拔的，未来有部分企业可能未购买智能客服」；同日裁定判定口径 = 方案 B（按租户派生），并指明「未来是跟着租户购买模块决定的」
+期望: direct_reply
+数据: 判据 1·**注册表化**：依赖企业能力的卡片必须在 `frontend/admin-web/src/lib/dashboard-cards.ts` 的注册表里声明 `requires`，组件内不得散落 `if`。执行点 = frontend/admin-web/tests/unit/lib/dashboard-cards.test.ts 的「注册表里『AI 接待占比』依赖 `aiService` 能力位」。
+数据: 判据 2·🔴 **缺省 = 不渲染**（保守口径，与 `false` 同待遇）：能力位未下发（老后端 / 请求失败 / 字段拼错）时**不知道**企业有没有买 ⇒ 不显示，而不是显示来源不明的数字。执行点 = 同文件的表驱动五态（undefined / {} / false / true / 另一位为假）。
+数据: 判据 3·**未购买 ⇒ 卡片不渲染**，**不是**渲染成 0、**不是**空白占位（0 会被读成业务事实）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「`aiService` 未启用/未下发 ⇒ 卡片不渲染」，含反向自证（`queryByText('AI 接待占比')` 为 null）。
+数据: 判据 4·**启用 ⇒ 数字来自服务端**：`aiSessionRate` / `activeSessions` 取自 `/api/admin/dashboard/stats`（前端不硬编码 0）。执行点 = 同文件「`aiService = true` ⇒ 渲染卡片，数字取服务端 `aiSessionRate`」。
+数据: 判据 5·**单点判定 + 未来可替换**：租户级判定收敛在 `AdminGate.tenantUsesAiService`（当前 = 租户有任一岗位持 `agent:session`；用户指明未来改为「跟着租户购买模块决定」）⇒ 届时**只改该函数体**，能力位契约与端侧判据不动。执行点 = backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java 的 `tenantUsesAiServiceFollowsSessionReadCode` + `AuthServiceTest::capabilitiesExposeAiServiceByTenant`（含查询失败 ⇒ 保守 false 的第三态）。
+数据: 判据 6·**类级元守卫**：注册表里每个 `requires` 都必须是**已知能力位**（类型被放宽时仍能挡运行期拼错）。执行点 = dashboard-cards.test.ts 的「类级元守卫」。
+跳过: [backend-contract] 纯前端显隐判定 + 后端能力位单测（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 与 Java 单测执行
+```
+溯源: 2026-09-29 新增（issue #5792）：用户要求 AI 接待占比可插拔 ⇒ 建立能力位驱动的卡片注册表，并在服务端收敛出一处租户级判定（`AdminGate.tenantUsesAiService`）。 ｜ tags: ui, dashboard, pluggable, capability
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8118,8 +8132,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：572（活跃 126，跳过 446）
-- tier 分布：smoke 12 / normal 527 / adversarial 31
+- 用例总数：573（活跃 126，跳过 447）
+- tier 分布：smoke 12 / normal 528 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8144,7 +8158,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：65
+- 前端 UI 域：66
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8301,4 +8315,5 @@
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序不上表，由 `matrix-orphan-hint` 报数不静默）
 - UI-051: 工艺项页·🔴 **一口价写面**（`operation-price-<工序>` 就地改价，寻址 = 收敛后那一行的 `id`）+ 旧【布料单】定价区/两格写面**已随去部位化退场**
 - UI-052: 工艺项页·**种子自愈**：就绪度按「两条基础路线是否齐」判 + 缺 `布料工序路线` 时补套入口**缺失即显示**（幂等）
+- UI-068: 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）
 

@@ -51,6 +51,28 @@ public final class AdminGate {
      */
     public static final String MIBAO_CHAT_GRANT_CODE = "agent:chat";
 
+    /**
+     * 「本租户是否**启用智能客服**」——**唯一判定处**（可插拔指标的开关）。
+     *
+     * <p>用途：经营看板上「AI 接待占比」这类指标**只在企业用到智能客服时才该出现**
+     * （用户 2026-09-29：「AI 接待占比这个需要设计成可插拔的，未来有部分企业可能未购买智能客服」）。</p>
+     *
+     * <p>🔴 **当前口径（用户 2026-09-29 裁定 = 方案 B）**：租户只要有**任一员工**持有会话读码
+     * {@code agent:session}，即视为该租户在用智能客服。判定在**租户维度**（不是"我有没有权"）——
+     * 否则无该码的决策者反而看不到 AI 接入情况，与「经营看板给决策者看」的初衷冲突。</p>
+     *
+     * <p>🔮 **未来口径（用户同句指示：「未来是跟着租户购买模块决定的」）**：本函数改为读
+     * **租户已购模块**（例如 {@code tenants} 上的模块位 / 独立的租户模块表）。
+     * ⇒ 届时**只改本函数体**：`Capabilities.aiService` 的签名、`/api/auth/me` 的契约、
+     * 看板指标卡的注册表与判据都**不动**（这正是把它收敛成一处的理由）。</p>
+     *
+     * @param tenantHasAgentSessionRead 该租户是否有员工持有 {@code agent:session}
+     * @return 启用 ⇒ {@code true}
+     */
+    public static boolean tenantUsesAiService(boolean tenantHasAgentSessionRead) {
+        return tenantHasAgentSessionRead;
+    }
+
     private AdminGate() {
     }
 

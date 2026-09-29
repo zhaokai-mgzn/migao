@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react'
+import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown, AlertTriangle, Headphones } from 'lucide-react'
 import { dashboardApi } from '@/lib/api'
+// issue #5792：可插拔指标卡的**注册表**（能力位判定收敛在 lib 里，组件不散落 if）
+import { visiblePluggableCards } from '@/lib/dashboard-cards'
+import { useAuthStore } from '@/store/auth'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
 import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
@@ -212,6 +215,9 @@ export default function DashboardPage() {
   // 口径：① 失败**不清零**（保留上次成功值，避免把故障画成业务事实）；② 显式告警 + 分块列出；
   //       ③ 重试**只重发失败的那一块**（已成功的块不重复打后端）。
   const [blockErrors, setBlockErrors] = useState<Record<string, string>>({})
+  // 服务端下发的能力位（issue #5792）：端侧**不判权限码**，只消费布尔位
+  const capabilities = useAuthStore((st) => st.user?.capabilities)
+  const pluggableCards = visiblePluggableCards(capabilities)
   // ⚠️ 标记的读/清一律**就地内联**成 `setBlockErrors(...)`，不抽组件内小函数：
   //    `fetchData`（useCallback）声明的更早，抽函数会形成前向引用，ESLint `react-hooks/immutability`
   //    判 **error**（本地 `tsc` 看不见，CI 的 eslint 步会红 —— 已实跑踩过）。
@@ -465,6 +471,41 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ②′ 可插拔指标区（issue #5792）：**只在企业启用对应能力时出现**
+          —— 未购买/未下发 ⇒ 整块**不渲染**（不是渲染成 0、不是空白占位）。
+          当前只有「AI 接待占比」一张；新增卡片只改 `@/lib/dashboard-cards` 的注册表。 */}
+      {pluggableCards.length > 0 && (
+        <div className="mb-6">
+          <SectionHeading icon={<Headphones className="h-3.5 w-3.5 text-accent-600" />} colorClass="bg-accent-50">
+            客户服务
+          </SectionHeading>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {pluggableCards.map((card) => (
+              <div
+                key={card.key}
+                data-testid={`dashboard-card-${card.key}`}
+                className="rounded-xl border border-neutral-200 bg-white p-5 shadow-card"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs text-neutral-400">{card.title}</p>
+                    <p className="mt-1 text-2xl font-semibold text-neutral-900">
+                      {stats ? `${stats.aiSessionRate ?? 0}%` : '—'}
+                    </p>
+                  </div>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-50">
+                    <Headphones className="h-4 w-4 text-accent-600" />
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-neutral-400">
+                  AI 自动接待占活跃会话的比例（活跃会话 {(stats?.activeSessions ?? 0)} 个）
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ③ 趋势图 */}
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

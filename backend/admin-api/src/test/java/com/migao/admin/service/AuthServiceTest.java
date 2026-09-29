@@ -77,6 +77,10 @@ class AuthServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    /** issue #5792：`Capabilities.aiService` 的租户级判定走它（方案 B） */
+    @Mock
+    private com.migao.admin.mapper.PermissionMapper permissionMapper;
+
     @Mock
     private TenantMapper tenantMapper;
 
@@ -495,6 +499,31 @@ class AuthServiceTest {
      */
 
     /** 以指定权限集取回「商户管理员」的菜单面（即 buildMenusByPermissions 的输出）。 */
+    // ── issue #5792：能力位 `aiService`（可插拔指标卡的开关；租户级判定）──
+
+    @Test
+    @DisplayName("issue #5792：`capabilities.aiService` 随**租户**是否持 `agent:session` 变 —— 三种情形逐条钉住")
+    void capabilitiesExposeAiServiceByTenant() {
+        authenticateAs("user-001", 1L);
+        when(userService.getUserById("user-001")).thenReturn(testUser);
+        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("dashboard:view"));
+
+        // ① 租户有任一岗位持会话读码 ⇒ 启用（看板可渲染 AI 接待占比）
+        when(permissionMapper.tenantHasPermissionCode(1L, "agent:session")).thenReturn(true);
+        assertThat(authService.getCurrentUser().getCapabilities().getAiService()).isTrue();
+
+        // ② 租户无人持该码 ⇒ 不启用
+        when(permissionMapper.tenantHasPermissionCode(1L, "agent:session")).thenReturn(false);
+        assertThat(authService.getCurrentUser().getCapabilities().getAiService()).isFalse();
+
+        // ③ 🔴 判定查询**失败** ⇒ 保守按「未启用」（宁可不显示该指标，也不显示来源不明的数字）
+        when(permissionMapper.tenantHasPermissionCode(1L, "agent:session"))
+                .thenThrow(new RuntimeException("db down"));
+        assertThat(authService.getCurrentUser().getCapabilities().getAiService()).isFalse();
+
+        clearAuthentication();
+    }
+
     private List<com.migao.admin.dto.UserInfoResponse.MenuItem> menusForPermissions(String... permissions) {
         authenticateAs("user-001", 1L);
         when(userService.getUserById("user-001")).thenReturn(testUser);

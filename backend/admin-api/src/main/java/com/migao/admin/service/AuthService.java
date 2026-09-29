@@ -59,6 +59,7 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final MeterRegistry meterRegistry;
     private final UserMapper userMapper;
+    private final com.migao.admin.mapper.PermissionMapper permissionMapper;
     private final UserIdentityMapper userIdentityMapper;
     private final TenantMapper tenantMapper;
     private final PlatformAdminMapper platformAdminMapper;
@@ -890,7 +891,9 @@ public class AuthService {
                     .permissions(permissions)
                     .menus(menus)
                     // 平台超管恒持 "*" ⇒ 能力位为真（走通配，不是特例分支）
-                    .capabilities(capabilitiesOf(permissions))
+                    // ⚠️ 平台超管的 tenantId 是 -1（不对应任何租户）⇒ `aiService` 按「未启用」处理
+                    //    （它不该看某个租户的 AI 接入指标；与"宁可不显示"的保守策略一致）。
+                    .capabilities(capabilitiesOf(permissions, -1L))
                     .build();
         }
 
@@ -933,7 +936,7 @@ public class AuthService {
                 .menus(menus)
                 // 米宝唤出能力位（issue #5642）：唯一判定 = `AdminGate.canSummonMibao`
                 // （"*" 通配 ⇒ 管理员自动落入 ⇒ 既有行为零回归；被显式授权的员工也落入）
-                .capabilities(capabilitiesOf(permissions))
+                .capabilities(capabilitiesOf(permissions, user.getTenantId()))
                 .build();
     }
 
@@ -945,9 +948,21 @@ public class AuthService {
      * @param permissions 生效权限集合
      * @return 能力位
      */
-    private UserInfoResponse.Capabilities capabilitiesOf(List<String> permissions) {
+    private UserInfoResponse.Capabilities capabilitiesOf(List<String> permissions, Long tenantId) {
+        // 🔴 issue #5792：`aiService` 是**租户级**可插拔开关（用户 2026-09-29 裁定 = 方案 B：
+        //   租户只要有任一岗位持会话读码 `agent:session`，即视为在用智能客服）。
+        //   判定收敛在 `AdminGate.tenantUsesAiService` 一处 —— 未来改成「跟着租户购买模块决定」时**只改它**。
+        //   ⚠️ 保守策略：查询失败 ⇒ `false`（宁可不显示该指标，也不要显示一个来源不明的数字）。
+        boolean tenantUsesAi = false;
+        try {
+            tenantUsesAi = AdminGate.tenantUsesAiService(
+                    permissionMapper.tenantHasPermissionCode(tenantId, "agent:session"));
+        } catch (Exception e) {
+            log.warn("判定租户是否启用智能客服失败，按未启用处理: tenantId={}, err={}", tenantId, e.getMessage());
+        }
         return UserInfoResponse.Capabilities.builder()
                 .mibaoChat(AdminGate.canSummonMibao(permissions))
+                .aiService(tenantUsesAi)
                 .build();
     }
 
