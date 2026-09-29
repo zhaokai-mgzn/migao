@@ -7,6 +7,7 @@ import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
@@ -113,6 +114,31 @@ public class ProductionScanService {
     private static final List<String> DEGRADED_NEEDS_SELECTION = List.of("set", "position");
 
     /**
+     * 扫码详情面「部位明细键」（母单 #5161 / P0-C）：一屏要看到宽高 / 工艺 / 加工类型 / 开数 /
+     * 褶倍 / 定型 / 用料 / 部位备注。
+     *
+     * <p>🔴 <b>只加不改</b>：这 9 键是**追加**到 {@code set_overview.positions[]} 与
+     * {@code selections[].positions[]} 的既有三键（{@code order_item_id} / {@code position_kind} /
+     * {@code position_name}）之后的；既有键与它们的值**一字不动**（`remark` 见 issue #5685）。</p>
+     *
+     * <p><b>两个名字上的取舍（照实登记，供评审裁定）</b>：</p>
+     * <ul>
+     *   <li><b>用料键 = {@code fabric_meters}</b>（不是 `material_meters`）—— 它是**算料引擎输出的
+     *       快照键名**，与 {@code ProductionService#getOperations} 的 {@code positions[]} **同源同名**；
+     *       改名 = 同一份引擎数据两个名字（本仓明令禁止的第二份口径）。</li>
+     *   <li><b>部位备注复用既有 {@code remark}</b>（issue #5685 已登记在契约账本），
+     *       本单**不新增** {@code position_remark} 别名 —— 同一件事实（订单行
+     *       {@code processing_info.remark}）不得有两个键名；新增别名会让两个名字各自漂移。</li>
+     *   <li>其余 6 键（{@code curtain_type} / {@code open_count} / {@code cutting_mode} /
+     *       {@code is_shaped} …）取**派单侧指定的 snake_case 形态**；{@code craft} / {@code width} /
+     *       {@code height} / {@code fullness} 与快照键**逐字同名**。</li>
+     * </ul>
+     */
+    private static final List<String> POSITION_DETAIL_KEYS = List.of(
+            "width", "height", "craft", "curtain_type", "open_count", "cutting_mode",
+            "fullness", "is_shaped", "fabric_meters");
+
+    /**
      * URL 里承载码值的键（**与前端 counterpart {@code frontend/worker-h5/src/scan-input.mjs} 的
      * {@code CODE_KEYS} 同一份口径**：只认这三个，其它 query 参数一律不当码值）。
      */
@@ -149,6 +175,13 @@ public class ProductionScanService {
      * 读面迟早不同 —— 而工人据此领活、系统据此计件（设计 §4.1 单一口径）。</p>
      */
     private final ProcessingSetReadService processingSetReadService;
+
+    /**
+     * 订单行规格快照的**唯一取数**需要订单本体（{@link ProductionService#orderSpecByItemId} 按
+     * {@code order_items.order_id} 查行）—— 本类在两条路径上都已从加工单拿到 {@code order_id}
+     * （{@code po.getOrderId()}），这里只补一次按主键取单。
+     */
+    private final OrderMapper orderMapper;
 
     // ============================================================ 解析入口
 
@@ -417,8 +450,8 @@ public class ProductionScanService {
         //    全部来自**同一份** `setOperations`（与上面的推断/进度/卡点同源）
         //    ⇒ 页面不再另写一份聚合（第二份口径）。🔴 实现自 issue #5247 起在
         //    `ProcessingSetReadService`（全仓唯一一份），与商家/agent 套件读面**同一份**。
-        result.put("set_overview",
-                processingSetReadService.setOverview(set, setOperations, tenantId));
+        result.put("set_overview", scanDetailOverview(po, processingSetReadService
+                .setOverview(set, setOperations, tenantId), tenantId));
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
@@ -529,6 +562,10 @@ public class ProductionScanService {
      *
      * <p>部位取自该单**活跃工序实例**的 {@code order_item_id}（= 真能报工的部位；未实例化的套给空清单，
      * 因为对它无可报之事），按 {@code set_index} 升序、套内按既有读面同序（部位名 → seq）。</p>
+     *
+     * <p>🔴 <b>母单 #5161 / P0-C</b>：每个部位行**追加**明细键（见 {@link #POSITION_DETAIL_KEYS}）——
+     * 与 {@code set_overview.positions[]} **同一份**取数（{@code orderSpecByItemId}），
+     * 同一展厅屏不出现两套部位形状。</p>
      */
     private List<Map<String, Object>> selectionView(ProcessingOrder po, Long tenantId) {
         List<ProcessingOrderSet> sets = orderSetMapper.selectList(
@@ -538,6 +575,7 @@ public class ProductionScanService {
                         .eq(ProcessingOrderSet::getDeleted, 0)
                         .orderByAsc(ProcessingOrderSet::getSetIndex));
         List<ProcessingPositionOperation> operations = processingSetReadService.listOrderOperations(po.getId(), tenantId);
+        Map<String, Map<String, Object>> specByItemId = specByItemIdOf(po, tenantId);
 
         List<Map<String, Object>> views = new ArrayList<>();
         for (ProcessingOrderSet set : sets == null ? List.<ProcessingOrderSet>of() : sets) {
@@ -548,8 +586,9 @@ public class ProductionScanService {
                         || !seen.add(op.getOrderItemId())) {
                     continue;
                 }
-                positions.add(ProcessingSetReadService.positionEntry(op.getOrderItemId(), op.getPositionKind(),
-                        op.getPositionName()));
+                positions.add(withPositionDetail(ProcessingSetReadService.positionEntry(
+                        op.getOrderItemId(), op.getPositionKind(), op.getPositionName()),
+                        specByItemId == null ? null : specByItemId.get(op.getOrderItemId())));
             }
             Map<String, Object> view = new LinkedHashMap<>();
             view.put("set_id", set.getId());
@@ -559,6 +598,138 @@ public class ProductionScanService {
             views.add(view);
         }
         return views;
+    }
+
+    // ============================================================ 部位明细键（母单 #5161 / P0-C）
+
+    /**
+     * 把订单行规格快照按 {@code order_items.id} 索引 —— **复用** {@link ProductionService#orderSpecByItemId}
+     * （规格可见面的唯一取数实现），本类不另建第二份。
+     *
+     * <p>取不到订单（脏数据）⇒ 空索引 ⇒ 明细键**键恒在且为 null**（不猜、不崩）。</p>
+     */
+    private Map<String, Map<String, Object>> specByItemIdOf(ProcessingOrder po, Long tenantId) {
+        if (po == null || po.getOrderId() == null) {
+            return Map.of();
+        }
+        Order order = orderMapper.selectById(po.getOrderId());
+        return order == null ? Map.of() : productionService.orderSpecByItemId(order, tenantId);
+    }
+
+    /**
+     * 给 {@code set_overview} **追加**部位明细键（**只加不改**：既有键与值一字不动）。
+     *
+     * <p>合并发生在**扫码读面**这一层、不在 {@code ProcessingSetReadService.setOverview} 里：
+     * 后者的调用方还有商家/agent 套件读面（issue #5247 的单一聚合）。母单 #5161 / P0-C 的要求面是
+     * **工人扫码详情**；把明细键塞进共用聚合会顺手改掉商家端响应形状（另一条契约面）。
+     * ⚠️ 代价（如实登记）：商家端 {@code GET /api/admin/processing-order-sets/{id}} 的
+     * {@code set_overview.positions[]} **不含**这 9 键 ⇒ 两个读面的部位形状**不再逐字相同**。</p>
+     */
+    private Map<String, Object> scanDetailOverview(ProcessingOrder po, Map<String, Object> overview,
+                                                   Long tenantId) {
+        if (overview.get("positions") instanceof List<?> raw) {
+            overview.put("positions", withPositionDetail(raw, specByItemIdOf(po, tenantId)));
+        }
+        return overview;
+    }
+
+    /** {@link #scanDetailOverview} 的列表版（就地用 {@code positions} 的值建新表，不改入参）。 */
+    private static List<Map<String, Object>> withPositionDetail(List<?> positions,
+                                                                Map<String, Map<String, Object>> specByItemId) {
+        List<Map<String, Object>> views = new ArrayList<>();
+        for (Object raw : positions) {
+            if (raw instanceof Map<?, ?> item) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> view = (Map<String, Object>) item;
+                Object orderItemId = view.get("order_item_id");
+                views.add(withPositionDetail(view, orderItemId == null
+                        ? null : specByItemId.get(String.valueOf(orderItemId))));
+            }
+        }
+        return views;
+    }
+
+    /**
+     * 一个部位行的**明细键**（母单 #5161 / P0-C）：{@code width} / {@code height} / {@code craft} /
+     * {@code curtain_type} / {@code open_count} / {@code cutting_mode} / {@code fullness} /
+     * {@code is_shaped} / {@code fabric_meters}（= {@link #POSITION_DETAIL_KEYS}）。
+     *
+     * <p>🔴 <b>逐字取库/取快照，本类不重算</b>（算料 / 规格单一真值）。逐键来源：</p>
+     * <table border="1">
+     *   <caption>取值来源（缺值 ⇒ 键恒在且为 {@code null}，不补默认值、不折 0）</caption>
+     *   <tr><th>键</th><th>来源</th></tr>
+     *   <tr><td>{@code width}</td><td>{@code order_items.width}（V63 列）</td></tr>
+     *   <tr><td>{@code height}</td><td>{@code order_items.height}（V63 列）</td></tr>
+     *   <tr><td>{@code craft}</td><td>工艺列 → {@code OrderLineCraftFields.toSnapshotKeys}（工艺列**唯一映射点**），
+     *       键 {@code craft}</td></tr>
+     *   <tr><td>{@code curtain_type}</td><td>同上，键 {@code curtainType}（{@code order_items.curtain_type}）</td></tr>
+     *   <tr><td>{@code open_count}</td><td>同上，键 {@code openCount}（{@code order_items.open_count}）</td></tr>
+     *   <tr><td>{@code cutting_mode}</td><td>同上，键 {@code cuttingMode}（{@code order_items.cutting_mode}）</td></tr>
+     *   <tr><td>{@code is_shaped}</td><td>同上，键 {@code isShaped}（{@code order_items.is_shaped}，定型）</td></tr>
+     *   <tr><td>{@code fullness}</td><td>快照键 {@code fullness}（列 {@code order_items.fullness} 之上由
+     *       {@code processing_info} 的**引擎输出**覆盖 —— 优先级与 {@code getOperations} 同一份）</td></tr>
+     *   <tr><td>{@code fabric_meters}</td><td>算料输出快照键 {@code fabric_meters}（单一真值 = ai-agent 算料引擎，
+     *       Java 侧**不重算**；缺键 ⇒ {@code null}）</td></tr>
+     * </table>
+     *
+     * <p>部位级备注**不在本方法里**：既有 {@code remark} 键（issue #5685，
+     * 订单行 {@code processing_info.remark}）已经是同一件事实 —— 不新增 {@code position_remark} 别名。</p>
+     */
+    private static Map<String, Object> withPositionDetail(Map<String, Object> entry,
+                                                          Map<String, Object> snapshot) {
+        Map<String, Object> view = new LinkedHashMap<>(entry);
+        for (String key : POSITION_DETAIL_KEYS) {
+            view.putIfAbsent(key, null);
+        }
+        if (snapshot == null) {
+            return view;
+        }
+        // 宽高 = `order_items.width` / `height`（V63 列，逐字取）
+        putIfPresent(view, "width", dec(snapshot.get("width")));
+        putIfPresent(view, "height", dec(snapshot.get("height")));
+        // 工艺规格键：快照里是 camelCase（`OrderLineCraftFields.toSnapshotKeys` 的唯一口径）⇒ 在此**只搬不改**
+        putIfPresent(view, "craft", snapshot.get("craft"));
+        putIfPresent(view, "curtain_type", snapshot.get("curtainType"));
+        putIfPresent(view, "open_count", snapshot.get("openCount"));
+        putIfPresent(view, "cutting_mode", snapshot.get("cuttingMode"));
+        putIfPresent(view, "is_shaped", snapshot.get("isShaped"));
+        // 褶倍 / 用料 = **算料输出快照键**（snake_case；单一真值 = ai-agent 引擎）
+        putIfPresent(view, "fullness", dec(snapshot.get("fullness")));
+        putIfPresent(view, "fabric_meters", dec(snapshot.get("fabric_meters")));
+        return view;
+    }
+
+    /**
+     * 数字键的**类型**归一（值不动，只保证 wire 上是数字）。
+     *
+     * <p>快照值有两种来源：{@code order_items} 的列（{@link BigDecimal}）与 `processing_info` 里
+     * 引擎落的值（**可能是字符串**，如 {@code "12.35"}）。展示面若把两种形态原样透出，
+     * 同一屏上「用料 12.35」与「用料 "12.35"」会因消费方而异（数字 vs 文本）——
+     * ⇒ 数字键统一走本方法；**解析不了 ⇒ 原样返回**（不吞值、不猜 0；口径同
+     * {@code OrderLineCraftFields.decimalOrNull} 的宽松判定，但**不打印 WARN**：规格列可空是常态）。
+     */
+    private static Object dec(Object raw) {
+        if (raw == null || raw instanceof BigDecimal) {
+            return raw;
+        }
+        if (raw instanceof Number number) {
+            return new BigDecimal(number.toString());
+        }
+        try {
+            return new BigDecimal(String.valueOf(raw).trim());
+        } catch (NumberFormatException notANumber) {
+            return raw;
+        }
+    }
+
+    /**
+     * 源键**在场**才覆盖（{@code 0} / {@code false} 是**在场**的取值，必须原样留下 —— 不折成 {@code null}）；
+     * 源键缺席 ⇒ 保留前面写入的 {@code null}（键恒在、不省键）。
+     */
+    private static void putIfPresent(Map<String, Object> view, String key, Object value) {
+        if (value != null) {
+            view.put(key, value);
+        }
     }
 
     // ============================================================ 整形

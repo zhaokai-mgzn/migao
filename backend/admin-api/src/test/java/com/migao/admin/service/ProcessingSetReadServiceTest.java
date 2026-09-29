@@ -392,17 +392,69 @@ class ProcessingSetReadServiceTest {
 
     // ══════════════════ 结构性判据：聚合只有一份
 
+    /**
+     * 工人扫码面的部位明细键（母单 #5161 / P0-C，与 {@code ProductionScanService.POSITION_DETAIL_KEYS}
+     * 逐字同表 —— 两份清单漂移 ⇒ 本测试红）。
+     */
+    private static final List<String> SCAN_POSITION_DETAIL_KEYS = List.of(
+            "width", "height", "craft", "curtain_type", "open_count", "cutting_mode",
+            "fullness", "is_shaped", "fabric_meters");
+
     @Test
-    @DisplayName("🔴 工人扫码面与套件读面同源：同一份数据下两侧 set_overview 逐值相等")
+    @DisplayName("🔴 工人扫码面与套件读面同源：同一份聚合逐值相等 + 扫码面**只**多出既定的明细键")
     void workerScanAndSetReadShareTheSameOverview() {
         stubScan();
 
         Map<String, Object> scan = scanService(service).resolve(TOKEN, null, TENANT);
         Map<String, Object> read = service.setDetail(SET_ID, TENANT);
 
-        assertThat(scan.get("set_overview"))
-                .as("两消费者必须逐值相等（同一份聚合实现）")
+        // ① **同一份聚合**（`set_no` / `set_index` / `cut_plan` / 每个部位的既有四键 + 工序明细）
+        //    —— 这条断言是「聚合只有一份」的判据本体，**不得**为新增键而放宽成"子集/逐键抽查"。
+        assertThat(stripScanDetailKeys(scan.get("set_overview")))
+                .as("两消费者的共享聚合体必须逐值相等（同一份实现）")
                 .isEqualTo(read.get("set_overview"));
+        // ② 唯一允许的差 = 工人扫码面在**每个部位行**上追加既定的 9 个明细键（母单 #5161 / P0-C）。
+        //    断言"差**恰好**是这 9 键"（不是"多了一些键"）：键名/个数一漂 ⇒ 红。
+        assertThat(detailKeysAdded((Map<String, Object>) scan.get("set_overview"),
+                read.get("set_overview")))
+                .as("扫码面相对套件读面多出的键**恰好**是这 9 个（多了/少了都说明有第二份口径）")
+                .containsExactlyInAnyOrderElementsOf(SCAN_POSITION_DETAIL_KEYS);
+    }
+
+    /** 剥掉工人扫码面追加的明细键 ⇒ 得到应与套件读面**逐值相等**的共享聚合体。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> stripScanDetailKeys(Object overviewObject) {
+        Map<String, Object> overview = new java.util.LinkedHashMap<>((Map<String, Object>) overviewObject);
+        if (overview.get("positions") instanceof List<?> raw) {
+            List<Map<String, Object>> positions = new java.util.ArrayList<>();
+            for (Object item : raw) {
+                Map<String, Object> position = new java.util.LinkedHashMap<>((Map<String, Object>) item);
+                for (String key : SCAN_POSITION_DETAIL_KEYS) {
+                    position.remove(key);
+                }
+                positions.add(position);
+            }
+            overview.put("positions", positions);
+        }
+        return overview;
+    }
+
+    /** 扫码面相对套件读面**多出的键**（逐部位行取并集）。 */
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<String> detailKeysAdded(Map<String, Object> scanOverview,
+                                                         Object readOverviewObject) {
+        Map<String, Object> readOverview = (Map<String, Object>) readOverviewObject;
+        java.util.Set<String> added = new java.util.LinkedHashSet<>();
+        List<Map<String, Object>> scanPositions = (List<Map<String, Object>>) scanOverview.get("positions");
+        List<Map<String, Object>> readPositions = (List<Map<String, Object>>) readOverview.get("positions");
+        for (int i = 0; i < scanPositions.size(); i++) {
+            for (String key : scanPositions.get(i).keySet()) {
+                if (!readPositions.get(i).containsKey(key)) {
+                    added.add(key);
+                }
+            }
+        }
+        return added;
     }
 
     @Test
@@ -420,7 +472,11 @@ class ProcessingSetReadServiceTest {
         Map<String, Object> readOverview = (Map<String, Object>) read.get("set_overview");
         assertThat(scanOverview).as("扫码面跟着变").containsEntry("set_no", "MUTATED-5247");
         assertThat(readOverview).as("读面跟着变").containsEntry("set_no", "MUTATED-5247");
-        assertThat(scanOverview).as("变的是同一处 ⇒ 两侧仍逐值相等").isEqualTo(readOverview);
+        // 比对前剥掉扫码面**追加**的部位明细键（母单 #5161 / P0-C；薄壳的差，见上一条判据）
+        // ⇒ 变的是同一处共享聚合 ⇒ 剥壳后两侧仍逐值相等。
+        assertThat(stripScanDetailKeys(scanOverview))
+                .as("变的是同一处 ⇒ 两侧（共享聚合体）仍逐值相等")
+                .isEqualTo(readOverview);
     }
 
     @Test
@@ -596,7 +652,7 @@ class ProcessingSetReadServiceTest {
         return new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
                 operationQueryService, productionService,
                 new ProductionStuckPointService(productionService, positionOperationMapper, orderSetMapper, 4.0),
-                readService);
+                readService, orderMapper);
     }
 
     /** 单点变异：**只**改共享聚合的一处 ⇒ 所有消费者必须跟着变（注入式判据）。 */

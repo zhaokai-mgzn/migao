@@ -763,8 +763,14 @@ public class ProductionService {
      *
      * <p><b>只读、不重算</b>：算料输出（`fabric_meters` / `processingMeters`）逐字取
      * `processing_info` 里已落的值 —— 算料单一真值是 ai-agent 的引擎，Java 侧不复制第二份逻辑。</p>
+     *
+     * <p>🔴 <b>包内可复用（母单 #5161 / P0-C）</b>：{@code ProductionScanService} 的扫码详情面
+     * （{@code set_overview.positions[]} / {@code selections[].positions[]}）要补的宽高 / 工艺 /
+     * 加工类型 / 开数 / 褶倍 / 用料键**就是这一份** —— 规格可见面**只有这一份取数**，
+     * 在扫码侧再写一遍 = 第二份口径（漂移的那一份不会变红）。可见性从 {@code private} 放到包内，
+     * 仍是**只读**、不新增任何写面。</p>
      */
-    private Map<String, Map<String, Object>> orderSpecByItemId(Order order, Long tenantId) {
+    Map<String, Map<String, Object>> orderSpecByItemId(Order order, Long tenantId) {
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getOrderId, order.getId())
                 .eq(OrderItem::getTenantId, tenantId)

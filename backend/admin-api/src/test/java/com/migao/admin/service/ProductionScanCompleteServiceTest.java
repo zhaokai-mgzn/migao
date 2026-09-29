@@ -134,7 +134,8 @@ class ProductionScanCompleteServiceTest {
         scanService = new ProductionScanService(setPartTokenMapper, orderSetMapper,
                 processingOrderMapper, operationQueryService, productionService, stuckPointService,
                 new ProcessingSetReadService(orderSetMapper, positionOperationMapper, orderItemMapper,
-                        processingOrderMapper, orderMapper, productionService));
+                        processingOrderMapper, orderMapper, productionService),
+                orderMapper);
         service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService);
 
         // 幂等占位：默认「首次」（claim=true）。重复提交的用例单独把它改成 false。
