@@ -27,6 +27,9 @@ export const STORAGE_KEY = 'migao:worker-h5:session'
 /** session 过期/失效的错误码（页面据此回落「未登录」）。 */
 export const SESSION_EXPIRED = 'SESSION_EXPIRED'
 
+/** `GET /api/worker/me` 读不到（非 401）⇒ 页面按「全开」运行并**显式**提示（见 `readMe`）。 */
+export const PAGES_UNREAD = 'PAGES_UNREAD'
+
 /** 默认 baseUrl：同源（页面与 API 同在 app.migaozn.com ⇒ 无跨域）。 */
 const SAME_ORIGIN = ''
 
@@ -165,6 +168,36 @@ export function createApi(opts = {}) {
     async currentWorker() {
       const d = await request('/api/worker/production/current-worker')
       return { workerId: d.worker_id, workerNo: d.worker_no, workerName: d.worker_name }
+    },
+
+    /**
+     * 自助读面（V141，母单 #5161）：`GET /api/worker/me` ⇒ 我是谁 + **本租户给我开了哪几个工人端页面**。
+     *
+     * 🔴 `pages` 只决定「页面上看不看得见」，**不是**权限码（后端 `WorkerProfileController` 的类注释
+     * 有完整理由）：真正的准入仍在服务端（`/api/worker/**`）—— 前端拿不到、也不该拿它当授权。
+     *
+     * 🔴 读取失败**必须可分辨**（调用方据此 fail-open + 在页面上显式说出来）：这里把所有非 401 失败
+     * （5xx / 断网 / 响应形状不对）**统一**抛成 `code = PAGES_UNREAD`，由 `app.mjs::refreshPages()`
+     * 转成「按全开运行」+ 显式提示。
+     * <p>刻意**不**在这里 fail-open：把「读不到」伪装成「读到了全开」，页面就没法把「这是降级态」
+     * 说出来（后端只对**成功**的读面回非空数组 ⇒ 两种情况在此可分）。</p>
+     */
+    async readMe() {
+      try {
+        const d = await request('/api/worker/me')
+        return {
+          workerId: d.worker_id,
+          workerName: d.worker_name,
+          // `pages` 缺失 / 不是数组 ⇒ **原样**回 `null`（由调用方按 fail-open 处置），这里不补默认值
+          pages: Array.isArray(d.pages) ? d.pages : null,
+        }
+      } catch (e) {
+        if (e?.code === SESSION_EXPIRED) throw e // 会话过期是身份面的事，原样上抛（调用方据此回落未登录）
+        const err = new Error(e?.message ?? '未能读取页面权限')
+        err.code = PAGES_UNREAD
+        err.status = e?.status
+        throw err
+      }
     },
 
     /**

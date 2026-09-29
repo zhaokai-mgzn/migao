@@ -10,9 +10,17 @@
 //   ② 一步切换 —— 切完**不丢扫码上下文**（本文件只换 session，不清 `state.view`）；
 //   ③ 闲置登出 —— 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App，只靠定时器会漏）。
 
-import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
 import { parseScanInput, tenantIdFromLocation } from './scan-input.mjs'
-import { afterComplete, doneNotice, initialState, legacySelection, reduce, renderPage } from './render.mjs'
+import {
+  afterComplete,
+  DEFAULT_WORKER_IDLE_MINUTES,
+  doneNotice,
+  initialState,
+  legacySelection,
+  reduce,
+  renderPage,
+} from './render.mjs'
 
 /**
  * 「未确认提交」的本地持久化键（issue #4814）。
@@ -114,11 +122,47 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
-  /** 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。 */
+  /**
+   * 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。
+   *
+   * 🔴 兜底必须与服务端**同源**（母单 #5161 顺手修的不一致）：改前这里是字面 `15`，
+   * 而服务端全局默认 = 一周（`WorkerSessionService.DEFAULT_IDLE_MINUTES = 10080`，
+   * 2026-09-29 用户裁定）。正常链路服务端**恒回** `idle_minutes`（登录响应就带 ⇒ 进 state），
+   * 故兜底只在拿不到时生效；但字面 `15` 会让降级路径比服务端早 10065 分钟踢人。
+   */
   function armIdle() {
     if (idleTimer) clearTimeout(idleTimer)
-    const minutes = state.worker?.idleMinutes ?? 15
+    const minutes = state.worker?.idleMinutes ?? DEFAULT_WORKER_IDLE_MINUTES
     idleTimer = setTimeout(() => { void checkAlive() }, Math.max(1, minutes) * 60_000)
+  }
+
+  /**
+   * 拉一次自助读面（`GET /api/worker/me`）把**页面集**放进 state 并重渲染。
+   *
+   * 🔴 调用点 = 「会话就绪」的每一处：首屏（`boot`）/ 登录成功 / 与服务器对账（`checkAlive`）
+   * —— 缺了登录那处，**换人会沿用上一个人的页面集**（切换工人后页面开关不生效）。
+   *
+   * 🔴 fail-open（本单硬约束，**故意**与 `completeByScan` 的 fail-closed 不同口径）：
+   * 读不到页面权限 ⇒ **按全开运行**并让页面显式提示 —— 把「开关没读到」变成「活干不了」
+   * 是更坏的失败（挡的是计件工资，而这里本来就只是可见性）。
+   * 唯一例外 = 401：那是身份面的事，交给 `fail()` 回落未登录（绝不静默按上一个人继续）。
+   *
+   * @returns {Promise<boolean>} 是否拿到了页面集（false = 降级态，页面已显式提示）
+   */
+  async function refreshPages() {
+    try {
+      const me = await api.readMe()
+      // `pages` 缺失 / 非数组 ⇒ 原样传 null ⇒ `effectivePages` 按全开跑 + 打提示（不在这里编一份默认值）
+      dispatch({ type: 'pages', pages: me.pages })
+      return Array.isArray(me.pages) && me.pages.length > 0
+    } catch (e) {
+      if (e?.code === PAGES_UNREAD) {
+        dispatch({ type: 'pages', pages: null, pagesUnread: true })
+        return false
+      }
+      fail(e) // 401 / 会话过期：回落未登录（清本地已由 api 完成）
+      return false
+    }
   }
 
   /** 与**服务端**对一次账：401 ⇒ 回落未登录（绝不静默按上一个人记账）。 */
@@ -127,6 +171,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     try {
       const w = await api.currentWorker()
       dispatch({ type: 'worker', worker: { workerName: w.workerName, workerNo: w.workerNo } })
+      await refreshPages() // 页面开关可能被商家在中途改过 ⇒ 每次对账顺带刷新（换人换权限）
       armIdle()
     } catch (e) {
       fail(e)
@@ -152,6 +197,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
           worker: { workerName: s.workerName, workerNo: s.workerNo, idleMinutes: s.idleMinutes },
         })
         armIdle()
+        // 🔴 登录成功也要拉页面集（本单）：换人换权限 —— 上一个人的页面开关不得沿用给当前这位工人
+        await refreshPages()
         // 扫码落地：URL 里带码 ⇒ 登录后直接解析（一次扫码 = 1 步）
         const code = parseScanInput(href, href)
         if (code) await doScan(code)
@@ -275,6 +322,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   return {
     get state() { return state },
     dispatch,
+    /** 手工刷新页面集（`GET /api/worker/me`）：供装配层/测试在会话就绪后显式调用一次。 */
+    refreshPages,
     destroy() {
       if (idleTimer) clearTimeout(idleTimer)
       doc.removeEventListener('visibilitychange', onVisible)
@@ -294,6 +343,8 @@ export async function boot() {
     try {
       const w = await api.currentWorker()
       app.dispatch({ type: 'worker', worker: { workerName: w.workerName, workerNo: w.workerNo } })
+      // 页面集随会话就绪一起拉（本单）：读不到 ⇒ 页面按全开跑 + 显式提示（fail-open）
+      await app.refreshPages()
     } catch {
       app.dispatch({ type: 'logout' })
     }
