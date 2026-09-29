@@ -475,7 +475,7 @@ class TestToolCallE2E:
     """Tool 调用链路测试"""
 
     async def test_product_search_tool_e2e(self, auth_headers):
-        """用户问商品 → Agent 调 product_search → 返回商品列表"""
+        """用户问商品 → Agent 调 product_search → 返回商品管理"""
         patches = _patch_app_deps() + [
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),

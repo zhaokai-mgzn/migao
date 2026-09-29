@@ -8063,7 +8063,7 @@
 数据: 判据 5·**面包屑与侧边栏一致（§15.2）**：`/products` ⇒「商品管理 > 商品管理」；`/customers`、`/after-sales`、`/knowledge`、`/agent-workspace*`、`/chat` ⇒ 首项「客户服务」；`/production/processing` 与旧路径 `/processing` ⇒ 首项「生产管理」。执行点 = frontend/admin-web/tests/unit/components/Header.test.tsx + frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举）。
 数据: 判据 6·**RBAC 单一真值源同批对齐**：`rbac/manifest.json` 的 `menu_nodes` / `menus.{frontend,controller,auth}` 与本 IA 逐值相等，产物 `rbac/readings.json` 新鲜（`python3 rbac/generate_readings.py --check`）；菜单树上的两个商品域动作码节点（`新增商品` / `商品分类管理`）随 `product-center` 撤销而删除（**权限码本身仍在权限目录里**）。执行点 = tests/unit_ci_workflows/test_rbac_single_source_manifest.py + test_rbac_derived_pages.py（ACTION_NODE_CODES 只许缩短）。
 数据: 判据 7·**权限码 / 路径 / 门控一字不动（零可见性 delta）**：纯信息架构调整，不改任何端点的码；后端 `AuthServiceTest` 的角色可见性用例（负控 / inbound 独立门控 / 客户侧）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的权限过滤表逐条精确断言。
-跳过: [ui-only] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 与 pytest 执行
+跳过: [backend-contract] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（前端）与 pytest（tests/unit_ci_workflows 的三源同构守卫）执行
 ```
 真值: frontend-fix.vitest
 溯源: 2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。 ｜ tags: ui, menu, ia, navigation, rbac
@@ -8079,7 +8079,7 @@
 数据: 判据 5·**保留用户的钉序**（不是菜单自身顺序）：先钉 finance 再钉 orders ⇒ 常用区就是 finance 在前；反例自证 = 菜单自身顺序 orders 在前。执行点 = 同文件的「保留用户钉的顺序」。
 数据: 判据 6·**渲染面**：未钉任何项时整区不渲染；点星标 ⇒ 该项出现在 `data-group-key="pinned"` 的「常用」区（DOM 最顶部）、计数 `1/6`、落盘 localStorage；再点即取消（区消失、落盘空表）；刷新后从 localStorage 恢复。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「常用（收藏）」5 条。
 数据: 判据 7·**合成 key 不撞车**：`PINNED_GROUP_KEY`（`pinned`）不得是任何真实菜单组的 key（否则 `data-group-key` 撞车）。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 IA 事实用例 + menu-pinned.test.ts 的「返回的合成组」。
-跳过: [ui-only] 纯前端个性化偏好（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 执行
+跳过: [backend-contract] 纯前端个性化偏好（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 执行
 ```
 真值: frontend-fix.vitest
 溯源: 2026-09-29 新增（issue #5778）：用户裁定只做「常用（收藏）」。**边界如实登记**：持久化在 localStorage ⇒ 换浏览器 / 换设备不同步；服务端同步（偏好表 + 迁移 + 端点）本轮有意不做（不是漏做）。不做「按使用频率自动推荐」（无使用数据来源）。 ｜ tags: ui, menu, favorites, preference

@@ -96,15 +96,24 @@ describe('「常用（收藏）」：持久化（SSR 安全 + 脏数据清洗）
       ['重复项', '["orders","orders","customers"]'],
       ['元素是数组（嵌套）', '[["orders"]]'],
     ]
+    /** 每条坏形状的**精确**清洗结果（弱断言的反面：逐条点名读数） */
+    const EXPECTED_SANITIZED: Record<string, string[]> = {
+      '非 JSON': [],
+      'JSON 但不是数组': [],
+      '数组里混了数字与 null': ['orders'],
+      '数组里混了空串与空白': ['customers'],
+      '重复项': ['orders', 'customers'],
+      '元素是数组（嵌套）': [],
+    }
     for (const [name, raw] of cases) {
       window.localStorage.setItem(PINNED_STORAGE_KEY, raw)
       // 不抛错 + 只保留合法项（自证：下面每条都真的读了一次）
       const got = loadPinned()
-      expect(Array.isArray(got), name).toBe(true)
+      // 🔴 用**精确期望值**（不是"是个数组"这类弱断言）：每条坏形状各报它的清洗结果
+      expect(got, name).toEqual(EXPECTED_SANITIZED[name])
       for (const k of got) {
-        expect(typeof k, name).toBe('string')
         expect(k.trim(), name).toBe(k)
-        expect(k.length, name).toBeGreaterThan(0)
+        expect(k, name).not.toBe('')
       }
       expect(new Set(got).size, name).toBe(got.length)
     }
@@ -204,13 +213,14 @@ describe('「常用（收藏）」：合成分组（pinnedGroup）', () => {
     expect(
       pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, pinned, { permissions: [], roles: [] }),
     ).toBeNull()
-    // 反向自证：有权限时同一份清单返回非 null
-    expect(pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN)).not.toBeNull()
+    // 反向自证：有权限时同一份清单返回**精确内容**（不是「非 null」这种弱断言）
+    expect(
+      pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN)!.items.map((i) => i.key),
+    ).toEqual(['orders', 'finance'])
   })
 
   it('返回的合成组：key/名固定为「常用」、`items` 只含可见项且保持用户的钉序', () => {
     const g = pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, ['customers', 'orders'], ADMIN)
-    expect(g).not.toBeNull()
     expect(g!.key).toBe(PINNED_GROUP_KEY)
     expect(g!.name).toBe('常用')
     expect(g!.items.map((i) => i.key)).toEqual(['customers', 'orders'])

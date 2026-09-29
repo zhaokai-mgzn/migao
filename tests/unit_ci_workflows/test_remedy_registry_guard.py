@@ -364,13 +364,37 @@ def sidebar_nodes() -> frozenset:
     """真实侧边栏的**可导航节点** = 分组名 ∪ 页面（菜单项 ∪ 独立项）。
 
     为什么分组名也算（issue #5454）：`「组织管理 → 岗位权限」` 是**组 → 项**的真实导航路径
-    （#5271 后侧边栏就是七大组 + 组内项）。只认页面会把这条**正确**指路判红 ⇒ 假红。
+    （#5271 后侧边栏就是若干组 + 组内项）。只认页面会把这条**正确**指路判红 ⇒ 假红。
+
+    🔴 #5778：侧边栏多了**顶部一级项**数组（`standaloneTopItems`，现为「商品管理」）——
+    漏掉它 ⇒ 任何指向「商品管理」的**正确**话术被判「不在真实侧边栏里」（实测踩过：
+    31 处 ai-agent 话术与测试在同一次改动里被判红）。故三个数组一起取，且各自 fail-closed。
     """
     src = menu.MENU_TS.read_text(encoding="utf8")
     out = {name for _key, name, _items in menu._parse_frontend(src)} | set(page_labels())
     out |= set(menu._parse_standalone(src))
+    out |= set(_standalone_top_labels(src))
     assert out, "侧边栏可导航节点解析为 0 ⇒ 页面指针判据会空跑（fail-closed）"
     return frozenset(out)
+
+
+def _standalone_top_labels(src: str) -> list[str]:
+    """`menu.ts` 的 `standaloneTopItems` → 一级项名（渲染在**所有分组之前**）。
+
+    与 `menu._parse_standalone` 同一解析形态（同一种对象字面量），但**取不同的数组**：
+    裸串 `export const standaloneItems` 是 `standaloneTopItems` 的**子串** ⇒ 必须锚行首区分。
+    """
+    starts = [m.start() for m in re.finditer(r"^export const standaloneTopItems", src, re.M)]
+    assert starts, (
+        "`menu.ts` 里找不到 `export const standaloneTopItems`（解析失配 ⇒ 红）"
+        "—— #5778 起顶部一级项靠它表达；若有意取消该形态，请同批改本判据（不许静默空跑）")
+    body = src[starts[0]:]
+    nxt = re.search(r"\nexport const ", body)
+    if nxt:
+        body = body[: nxt.start()]
+    names = re.findall(r"\{\s*key:\s*'[^']+',\s*name:\s*'([^']+)'", body)
+    assert names, "`standaloneTopItems` 解析出 0 项（解析失配 ⇒ 红，一级项也是导航的一部分）"
+    return names
 
 
 def page_pointers(text: str) -> list[tuple[str, str]]:

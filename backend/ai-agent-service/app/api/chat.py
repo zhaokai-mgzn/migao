@@ -777,7 +777,7 @@ def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str,
 
     Args:
         content: LLM 最终回复文本（引用匹配依据）
-        products: 商品列表，兼容裸数组与 card.data（{"products": [...]}）两种形态
+        products: 商品管理，兼容裸数组与 card.data（{"products": [...]}）两种形态
 
     Returns:
         被文本引用的商品子集；文本为空或未引用任何商品时返回 []（不发卡）。
@@ -1902,7 +1902,7 @@ async def send_message(
     - event: text - AI 文本回复（流式）
     - event: tool_call - Tool 调用通知
     - event: tool_result - Tool 执行结果
-    - event: card - 卡片数据（商品列表、订单等）
+    - event: card - 卡片数据（商品管理、订单等）
     - event: error - 错误信息
     - event: done - 对话完成
     
@@ -2584,7 +2584,7 @@ async def get_quick_actions(
             "id": "product_manage",
             "name": "商品管理",
             "icon": "package",
-            "prompt": "查看商品列表",
+            "prompt": "查看商品管理",
         },
         {
             "id": "dashboard",

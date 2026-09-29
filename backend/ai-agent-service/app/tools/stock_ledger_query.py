@@ -44,7 +44,7 @@ class StockLedgerQueryTool(BaseTool):
     )
 
     # 权限码（admin-api 目录）：`StockLedgerController.GET /api/admin/stock-ledger` 方法级
-    # `@RequirePermission("product:list")` —— 与侧边栏「商品列表」节点同码（页面可见性 ≡ Agent 能力）。
+    # `@RequirePermission("product:list")` —— 与侧边栏「商品管理」节点同码（页面可见性 ≡ Agent 能力）。
     required_permissions = ["product:list"]
     read_only = True
     destructive = False
@@ -79,7 +79,7 @@ class StockLedgerQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询库存台账",
-                suggestion="请联系管理员为您开通「商品列表」查看权限后重试",
+                suggestion="请联系管理员为您开通「商品管理」查看权限后重试",
             )
 
         # 参数名必须与 `StockLedgerController.getLedger` 的 `@RequestParam` **逐字一致**

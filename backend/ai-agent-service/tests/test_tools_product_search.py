@@ -19,7 +19,7 @@ def tool():
 
 @pytest.fixture
 def sample_product_records():
-    """模拟 admin-api 返回的商品列表"""
+    """模拟 admin-api 返回的商品管理"""
     return [
         {
             "id": "prod_001",
@@ -422,7 +422,7 @@ class TestProductSearchFormatProducts:
     """商品搜索 - _format_products 方法"""
 
     def test_format_products_normal(self, tool, sample_product_records):
-        """格式化正常商品列表"""
+        """格式化正常商品管理"""
         products = tool._format_products(sample_product_records)
 
         assert len(products) == 2

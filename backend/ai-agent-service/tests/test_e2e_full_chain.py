@@ -63,7 +63,7 @@ def make_jwt_token(payload: dict) -> str:
 # ========== Helper: Mock admin-api 响应工厂 ==========
 
 def mock_product_list_response(tenant_id: int, products: list) -> dict:
-    """构造 admin-api 商品列表响应"""
+    """构造 admin-api 商品管理响应"""
     return {
         "success": True,
         "data": {

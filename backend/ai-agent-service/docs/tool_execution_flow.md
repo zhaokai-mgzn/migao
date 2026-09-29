@@ -25,7 +25,7 @@ Tool 执行涉及多个组件的协作：
 ```python
 class ProductSearchTool(BaseTool):
     name = "product_search"
-    description = "搜索商品列表"
+    description = "搜索商品管理"
     parameters = {...}
     
     async def execute(self, context: ToolContext, **kwargs) -> ToolResult:

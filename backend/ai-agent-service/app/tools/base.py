@@ -430,7 +430,7 @@ class BaseTool(ABC):
     示例：
         class ProductSearchTool(BaseTool):
             name = "product_search"
-            description = "搜索商品列表"
+            description = "搜索商品管理"
             
             async def execute(self, context: ToolContext, keyword: str = "") -> ToolResult:
                 # 实现搜索逻辑

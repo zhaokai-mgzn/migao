@@ -963,7 +963,7 @@ class TestRoleMirrorGuardIsNotVacuous:
     _PLANTED_TEXTS = {
         "renamed_role_default": (
             "String[][] defaultPermissions = {\n"
-            '        {"商品列表", "product:list", "product", "list", "x"}\n'
+            '        {"商品管理", "product:list", "product", "list", "x"}\n'
             "};\n"
             "Role operatorRole = Role.builder()\n"
             '        .code("operator")\n'
