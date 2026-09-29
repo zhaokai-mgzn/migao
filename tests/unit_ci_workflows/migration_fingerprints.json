@@ -135,6 +135,7 @@
     "V137__formalize_legacy_roles.sql": "sha256:71a3cd649d514cbdbe4540d8f27bd22b09553e699a870b51fe1deb1867a9dff5",
     "V138__add_production_execute_permission.sql": "sha256:bda54cd254964b214d508cf11a0076eb7a76f295e270c226d57198bc9ff27bf7",
     "V139__rename_hanzhe_item_and_fee_keys.sql": "sha256:30d8786da95eb3af5784a6289bf33c6060793a698c5b97aa003d0be8b2e4cac4",
-    "schema.sql": "sha256:501bb91edea71972ac17f4db31811759a0a2e83429e300f07397fcf3a8910ce0"
+    "V140__create_cutting_height_configs.sql": "sha256:0481a00e558e53f3832bcecf288e55377b9a0f2ffa4af59c1b82af00cb6b1a7d",
+    "schema.sql": "sha256:87c704bc7b44f758aba5b720b3ae4963fb879428c06400da3d2a9bcd05ba2969"
   }
 }

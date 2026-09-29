@@ -64,6 +64,8 @@
 --       —— 套号落库 + 一部位一码的码载体（扫码报工闭环的数据层地基）；
 --       worker_sessions / worker_report_audits = V98，issue #4733
 --       —— 工人登录态（报工身份的**唯一根**：服务端解身份、忽略 body 同名字段）+ 报工身份旁路账）
+--       cutting_height_configs = V140，母单 #5161 —— 裁高（定高）租户级配置
+--       （缺行 = 用默认种子，**不插种子行**）；
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates
