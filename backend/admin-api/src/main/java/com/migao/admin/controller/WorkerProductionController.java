@@ -6,6 +6,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.WorkerCuttingHeightService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,8 @@ public class WorkerProductionController {
     private final ProductionScanService productionScanService;
     /** 扫码报工主闭环（切片 ②）：一次事务记账 + 未确定工序拒绝记账 + A 模式 {@code done_at}。 */
     private final ProductionScanCompleteService productionScanCompleteService;
+    /** 一体机裁高读面（母单 #5161）：同一个算面 + 同一个码解析，**只读**、不写机器。 */
+    private final WorkerCuttingHeightService workerCuttingHeightService;
 
     /**
      * 工人扫工页读面：加工单工序树 + 进度。
@@ -169,6 +172,30 @@ public class WorkerProductionController {
         WorkerIdentity identity = requireWorker(sessionId);
         return ApiResponse.success(productionScanCompleteService.complete(
                 body, TenantContext.getTenantId(), clientRequestId, identity));
+    }
+
+    /**
+     * 一体机（机台旁那块屏 + 有线扫码枪）的**只读**裁高读面（母单 #5161；设计
+     * {@code docs/design/cutting-height-config-and-terminal.md} §2.5 / §2.6）。
+     *
+     * <p>GET /api/worker/production/cutting-height?token=…（短码 / 裸 token / 整条印刷 URL）</p>
+     *
+     * <p>一次请求给一屏：扫码定位到的（套 × 部位）+ 该单**逐部位**的订单详情字段与裁剪高度
+     * （{@code base} / {@code cutting_height} / {@code rounding} / {@code hits[]} / {@code misses[]}
+     * / {@code missing[]}）—— 计算**逐字复用** {@link com.migao.admin.service.CuttingHeightConfigService#preview}
+     * （本层不重算工艺/选项/加工项，也不写第二份命中实现）。</p>
+     *
+     * <p>🔴 <b>不写机器</b>（用户 2026-09-29 裁定①）：本包的终点是「请在机器屏输入 X.XXX 米」。</p>
+     *
+     * <p>🔴 权限：本路径在 {@code /api/worker/**} 内 ⇒ **零商家权限码**（工人 {@code permissions=[]}，
+     * 加 {@code @RequirePermission} 只会恒 403）；准入 = 有效工人 session（无 ⇒ 401，fail-closed）。</p>
+     */
+    @GetMapping("/cutting-height")
+    public ApiResponse<Map<String, Object>> cuttingHeight(
+            @RequestParam(name = "token") String token,
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
+        requireWorker(sessionId);
+        return ApiResponse.success(workerCuttingHeightService.read(token, TenantContext.getTenantId()));
     }
 
     /** 有效工人 session 或 401（fail-closed 的**唯一**一处判据：工人路径上「谁」没有第二条来源）。 */

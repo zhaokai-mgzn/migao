@@ -68,6 +68,9 @@ class WorkerProductionControllerTest {
     private ProductionScanService productionScanService;
     @Mock
     private ProductionScanCompleteService productionScanCompleteService;
+    /** 一体机裁高读面（母单 #5161）—— 身份判据与既有端点**同一处**（本类只钉构造函数接线）。 */
+    @Mock
+    private com.migao.admin.service.WorkerCuttingHeightService workerCuttingHeightService;
 
     private MockMvc mockMvc;
 
@@ -79,7 +82,7 @@ class WorkerProductionControllerTest {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
                 new WorkerProductionController(productionService, workerSessionService,
-                        productionScanService, productionScanCompleteService);
+                        productionScanService, productionScanCompleteService, workerCuttingHeightService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
