@@ -376,7 +376,9 @@ def problems_server_wiring(corpus: dict[str, str]) -> list[str]:
     if not re.search(r"\bcanSummonMibao\s*\(", gate):
         out.append("`AdminGate` 没有对外暴露米宝唤出判定（`canSummonMibao`）")
     # 能力位必须**由这一处**算出，且出现在两个 return 分支（平台超管 / 商户管理员）
-    calls = len(re.findall(r"capabilities\(capabilitiesOf\(permissions\)\)", auth))
+    # ⚠️ 2026-09-29（issue #5792）：`capabilitiesOf` 增加了**租户级**参数
+    #    （`aiService` 可插拔开关需要租户维度）⇒ 正则放宽为"任意实参"，但**分支数仍是 2** 的语义不变。
+    calls = len(re.findall(r"capabilities\(capabilitiesOf\(permissions\s*,[^)]*\)\)", auth))
     if calls != 2:
         out.append(f"`AuthService.getCurrentUser` 经 `capabilitiesOf(permissions)` 下发能力位的分支数为 {calls}（应为 2：平台超管 + 商户管理员）")
     if "AdminGate.canSummonMibao(permissions)" not in auth:

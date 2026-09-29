@@ -26,9 +26,9 @@ const AI_CARD = PLUGGABLE_DASHBOARD_CARDS.find((c) => c.key === 'ai-service-rate
 
 describe('可插拔看板卡：显隐判定（issue #5792）', () => {
   it('注册表里「AI 接待占比」依赖 `aiService` 能力位（不是散落的 if）', () => {
-    expect(AI_CARD).toBeDefined()
-    expect(AI_CARD!.requires).toBe('aiService')
-    expect(AI_CARD!.title).toBe('AI 接待占比')
+    // 用**精确对象**断言（不用 `toBeDefined()` 那种只证明"存在"的弱形态）：
+    // 键名/能力位/标题三处任何一处漂了都必须红。
+    expect(AI_CARD).toEqual({ key: 'ai-service-rate', requires: 'aiService', title: 'AI 接待占比' })
   })
 
   it.each([
