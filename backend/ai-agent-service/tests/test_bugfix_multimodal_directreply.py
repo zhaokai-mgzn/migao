@@ -164,10 +164,10 @@ class TestExtractContentFallback:
 
     def test_thinking_with_response_returns_response_only(self):
         """thinking + 正式回复 → 仅返回正式回复"""
-        content = "<think>分析一下这个问题...\n\n</think>根据图片分析，这是一款米高商家管理后台的商品管理页面。"
+        content = "<think>分析一下这个问题...\n\n</think>根据图片分析，这是一款米高商家管理后台的商品列表页面。"
         response = AIMessage(content=content)
         result = _extract_content(response)
-        assert result == "根据图片分析，这是一款米高商家管理后台的商品管理页面。"
+        assert result == "根据图片分析，这是一款米高商家管理后台的商品列表页面。"
         assert "分析一下这个问题" not in result
 
     def test_empty_content_returns_empty(self):

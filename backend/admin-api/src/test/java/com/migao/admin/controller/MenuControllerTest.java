@@ -103,6 +103,36 @@ class MenuControllerTest {
         return out;
     }
 
+    /**
+     * 顶层**组**（`children` 非空的那些）—— #5778 起顶层节点里混有一个**一级项**
+     * （「商品管理」，`children` 为空）。
+     *
+     * ⚠️ 不能用 `codes(tree)` 直接比对组序列：一级项与组共用同一层，且它的 `code` 是
+     * `product:list`（与「省料看板」同码，`code` 不唯一）⇒ 混进来会让断言失败。
+     * ⚠️ 也不能用 `path` 区分：`MenuNode`（`GET /api/admin/menus` 的 DTO）**没有 `path` 字段**
+     * —— 它的字段只有 `code` / `label` / `children` ⇒ 唯一可靠的判据是 **`children` 是否非空**。
+     */
+    private static List<JsonNode> topLevelGroups(JsonNode tree) {
+        List<JsonNode> out = new ArrayList<>();
+        tree.forEach(n -> {
+            if (n.path("children").size() > 0) {
+                out.add(n);
+            }
+        });
+        return out;
+    }
+
+    /** 顶层**一级项**（`children` 为空、直接跳转的那些 —— 现为「商品管理」）。 */
+    private static List<JsonNode> topLevelStandaloneItems(JsonNode tree) {
+        List<JsonNode> out = new ArrayList<>();
+        tree.forEach(n -> {
+            if (n.path("children").size() == 0) {
+                out.add(n);
+            }
+        });
+        return out;
+    }
+
     /** 取指定组 key 的节点（找不到 ⇒ 报错并附实得 key 列表，避免后续断言假绿）。 */
     private static JsonNode group(JsonNode tree, String key) {
         for (JsonNode node : tree) {
@@ -137,10 +167,12 @@ class MenuControllerTest {
     @DisplayName("#5778 新 IA：顶层一级项（商品管理）不在任何组内，且排在组之前")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
-        assertEquals("商品管理", tree.get(0).path("label").asText(),
+        var tops = topLevelStandaloneItems(tree);
+        assertEquals(1, tops.size(), "顶层一级项应恰有 1 个（商品管理）—— 实得 = " + labels(tree));
+        assertEquals("商品管理", tops.get(0).path("label").asText(),
                 "顶层第 1 项必须是**一级项**「商品管理」（前端 `standaloneTopItems` 渲染在所有分组之前）");
-        assertEquals("product:list", tree.get(0).path("code").asText());
-        assertEquals(0, tree.get(0).path("children").size(),
+        assertEquals("product:list", tops.get(0).path("code").asText());
+        assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");
     }
 
@@ -148,8 +180,11 @@ class MenuControllerTest {
     @DisplayName("#5271 新 IA：七个顶层组的 key 与组名按 menu.ts 顺序逐值一致")
     void topLevelGroupsMirrorFrontendOrder() throws Exception {
         JsonNode tree = fetchTree();
-        assertEquals(GROUP_KEYS, codes(tree), "顶层组 key / 顺序与前端 config/menu.ts 的 menuGroups 不一致");
-        assertEquals(GROUP_LABELS, labels(tree), "顶层组名 / 顺序与前端 config/menu.ts 的 menuGroups 不一致");
+        // #5778：顶层混有一个**一级项**（商品管理）⇒ 组序列取「有 key 的那些」
+        assertEquals(GROUP_KEYS, codes(topLevelGroups(tree)),
+                "顶层组 key / 顺序与前端 config/menu.ts 的 menuGroups 不一致");
+        assertEquals(GROUP_LABELS, labels(topLevelGroups(tree)),
+                "顶层组名 / 顺序与前端 config/menu.ts 的 menuGroups 不一致");
     }
 
     @Test
@@ -268,8 +303,9 @@ class MenuControllerTest {
             int expected = 1;
             // 「商品管理」是**顶层一级项** ⇒ 不在 allChildren（它不属于任何组），单独在下面断言
             if ("商品管理".equals(name)) {
-                JsonNode tree = fetchTree();
-                assertEquals(1, tree.findValues("label").stream().filter(name::equals).count(),
+                // 顶层一级项：不在 allChildren（它不属于任何组）⇒ 按「顶层一级项里有且仅有一项」断言
+                assertEquals(1, topLevelStandaloneItems(fetchTree()).stream()
+                                .filter(n -> "商品管理".equals(n.path("label").asText())).count(),
                         "顶层一级项「商品管理」的出现次数不是 1");
                 continue;
             }
@@ -280,9 +316,11 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 20 个组内菜单项（21 项 − 顶层一级项）+ 2 动作码节点
+        // 组内节点总数 = 20 个**组内**菜单项（21 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 22。
+        // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它的存在由
+        // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
         assertEquals(MENU_ITEM_LABELS.size() - 1 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 20 菜单项 + 2 动作码节点（实得全表 = " + all + "）");
+                "组内节点总数 = 20 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
     }
 
     @Test

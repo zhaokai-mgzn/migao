@@ -607,10 +607,11 @@ class AuthServiceTest {
 
         var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
+        // #5778：加工项管理已移入本组（位次 = 智能派单之后、工艺配置之前）
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("生产看板", "工艺配置", "计件工资");
+                .containsExactly("生产看板", "加工项管理", "工艺配置", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/routings", "/production/piecework");
+                "/production", "/production/processing", "/production/routings", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
         assertThat(allNames(readOnly)).doesNotContain("智能派单");
         // 加工项管理（#5778 起归「生产管理」组）同批改用读码 ⇒ 也随 production:view 可见

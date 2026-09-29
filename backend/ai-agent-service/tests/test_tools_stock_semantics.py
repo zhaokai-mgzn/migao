@@ -28,7 +28,7 @@
 而两者都自称「低库存」。
 
 产品裁定（issue #3783）：权威口径 = **100**（与后台 Dashboard 卡片 / DailyBriefing /
-admin-web 商品管理同源，见 #1396），单点来源 = `app/tools/stock_semantics.py`；
+admin-web 商品列表同源，见 #1396），单点来源 = `app/tools/stock_semantics.py`；
 工具对 LLM 可见的 schema 描述 / `default` **必须由该来源生成**（不允许工具里另写字面量）。
 
 守卫强度：`test_no_bare_threshold_literal_in_tools` 是防「两套变三套」的硬守卫 ——

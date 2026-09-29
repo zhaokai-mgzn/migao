@@ -27,7 +27,7 @@ def detail_tool():
 
 @pytest.fixture
 def mixed_status_records():
-    """模拟 admin-api 返回的含下架商品管理（tenantId 缺省 → 通过租户校验）"""
+    """模拟 admin-api 返回的含下架商品列表（tenantId 缺省 → 通过租户校验）"""
     return [
         {
             "id": "prod_on_001",

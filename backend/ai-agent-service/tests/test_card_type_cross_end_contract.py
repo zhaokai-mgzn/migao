@@ -279,7 +279,7 @@ class TestExtractorsAndTruthSources:
     def test_admin_web_extractor_is_non_vacuous(self):
         types = _renderer_card_types(RENDERERS["B端桌面 admin-web ToolResultCard"])
         assert types, "B 端桌面提取结果为空 —— 子集断言会真空通过（恒真的空断言）"
-        assert "product_list" in types, f"B 端桌面应渲染商品管理卡，实际提取到 {sorted(types)}"
+        assert "product_list" in types, f"B 端桌面应渲染商品列表卡，实际提取到 {sorted(types)}"
 
     def test_backend_extraction_is_non_vacuous(self):
         found = _all_backend_card_tools()
