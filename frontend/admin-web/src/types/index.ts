@@ -3546,3 +3546,56 @@ export interface RemnantMatchView {
   unmatched: RemnantMatchUnmatched[]
   unconfiguredItems: string[]
 }
+
+
+// ── 裁高（定高）配置（母单 #5161；设计单 docs/design/cutting-height-config-and-terminal.md）──
+/** 命中口径：与 production_route_rules 同集合（trigger_kind + 触发值 + 部位限定）。 */
+export interface CuttingHeightHit {
+  trigger_kind: string
+  trigger_value: string
+  position: string | null
+}
+/** 增量项档案；`value === null` = **有项无值**（如壁达的「画线」）。 */
+export interface CuttingHeightItem {
+  key: string
+  name: string
+  value: number | null
+  direction: string
+  height_join: boolean
+  hit: CuttingHeightHit
+  hit_expr: string | null
+  enabled: boolean
+  order: number
+}
+export interface CuttingHeightRounding {
+  mode: string
+  digits: number
+}
+export interface CuttingHeightConfigBody {
+  items: CuttingHeightItem[]
+  rounding: CuttingHeightRounding
+}
+export interface CuttingHeightConfigResponse {
+  source: string
+  config: CuttingHeightConfigBody
+}
+export interface CuttingHeightPreviewHit {
+  key: string
+  name: string
+  value: number
+  direction: string
+  height_join: boolean
+}
+export interface CuttingHeightPreviewMiss {
+  key: string
+  name: string
+  reason: string
+}
+export interface CuttingHeightPreview {
+  source: string
+  base: number
+  cutting_height: number
+  rounding: CuttingHeightRounding
+  hits: CuttingHeightPreviewHit[]
+  misses: CuttingHeightPreviewMiss[]
+}

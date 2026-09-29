@@ -3,6 +3,7 @@ description: 加工项/加工分类管理
 red_flags: []
 business_truths:
   - [processing-manage.crud] 加工项支持 CRUD
+  - [processing-manage.cutting-height-config] 裁高（定高）配置：`裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)`，按取整规则输出；增量项是**租户级档案**（key / 名称 / 取值 / 方向 add|subtract / 是否接高 / 命中口径 / 启停 / 顺序）；命中口径**复用** `production_route_rules` 的 `trigger_kind`（option 特殊选项 / craft 工艺 / processing_item 加工项 / shaped 定型）+ `trigger_value`（**逐字**）+ `position`（部位限定，null = 不限），**不另写第二份匹配**；**命中而未配置取值**的项（壁达的「画线」即此形态）显式进 `misses(reason=unresolved)` 且**不计入合计、不按 0 算**；缺行 ⇒ 读面回默认种子（壁达现场 7 项，画线留空）+ `source='default'`；PUT 全量替换，缺键 / 未知键 / 非法值 ⇒ 422 逐条理由（不静默回退默认值）；默认取整 = 保留三位小数（机器支持三位小数）；**本版只算不写机器**（不下发）。端点：`GET/PUT /api/admin/production/cutting-height-config`、`POST /api/admin/production/cutting-height-config/preview`。设计单：docs/design/cutting-height-config-and-terminal.md
   - [processing-manage.order-judge] 含加工订单判定逻辑
   - [processing-manage.category-sort] 加工分类支持排序
   - [processing-manage.pricing-methods] 加工项计价方式仅 per_meter/per_set/fixed/per_area（行业加工费按米计价、辅料含在加工费中）；无 per_piece 与「每米数量」密度（issue #3005 回滚 #2986）

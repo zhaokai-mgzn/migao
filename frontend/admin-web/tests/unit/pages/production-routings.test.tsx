@@ -340,7 +340,16 @@ const mockApplySeedTemplate = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
 const mockUpdateCraftCalcConfig = vi.fn()
 
+const mockGetCuttingHeightConfig = vi.fn()
+const mockUpdateCuttingHeightConfig = vi.fn()
+const mockPreviewCuttingHeight = vi.fn()
+
 vi.mock('@/lib/api', () => ({
+  cuttingHeightApi: {
+    get: (...a: unknown[]) => mockGetCuttingHeightConfig(...a),
+    update: (...a: unknown[]) => mockUpdateCuttingHeightConfig(...a),
+    preview: (...a: unknown[]) => mockPreviewCuttingHeight(...a),
+  },
   productionApi: {
     getRoutings: (...a: unknown[]) => mockGetRoutings(...a),
     updateRouting: (...a: unknown[]) => mockUpdateRouting(...a),
@@ -2863,16 +2872,19 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('routing-draft-empty-13')).toHaveTextContent('从工序库选择')
   })
 
-  it('**两个 tab**（工序管理 / 算料配置）且默认落前者；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
+  it('**三个 tab**（工序管理 / 算料配置 / 裁高配置）且默认落第一个；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
     const tabs = screen.getByTestId('process-config-tabs')
-    expect(within(tabs).getAllByRole('tab')).toHaveLength(2)
+    expect(within(tabs).getAllByRole('tab')).toHaveLength(3)
     const processTab = screen.getByTestId('process-config-tab-process')
     const calcTab = screen.getByTestId('process-config-tab-calc')
+    const cutTab = screen.getByTestId('process-config-tab-cut')
     expect(processTab).toHaveTextContent('工序管理')
     expect(calcTab).toHaveTextContent('算料配置')
+    // 母单 #5161：第三个 tab「裁高配置」（裁剪高度口径）
+    expect(cutTab).toHaveTextContent('裁高配置')
     expect(processTab).toHaveAttribute('data-state', 'active')
 
     // 合并后的判据：**同一屏里两张都在**（改前是「切换互斥」）

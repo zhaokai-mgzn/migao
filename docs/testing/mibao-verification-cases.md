@@ -4547,7 +4547,7 @@
 真值: order.admin-new-order-input-surface
 溯源: 2026-09-28 新增（用户当次会话逐字要求，无关联 issue —— 会话内零新开 issue 的口径下用本用例承载规格）：把「下单页输入面 = 颜色 + 净窗宽 + 净窗高，其余系统推导」这条口径钉成可执行判据。**只动版面与默认预选**：门幅规则、算料、取价、判定面、落库构造点一律复用既有单一真值源（本用例不复制任何推导口径）。 ｜ tags: order, admin-web, layout, derivation, processing-items
 
-## 加工项域（15 case）
+## 加工项域（16 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -4798,6 +4798,20 @@
 ```
 真值: order.processing-item-name-canonical
 溯源: 2026-09-28 新增（用户当次会话逐字裁定，无关联 issue —— 会话内零新开的口径下用本用例承载规格）：把「加工项名与加工费组合成员名统一为『韩褶』」钉成可执行判据。**改名历史**：V83 重建目录时名字照 ERP 附件逐字写「韩折」（`craft_hint` 一直是「韩褶」）；用户在更早的裁定里也一直写「韩褶」（逐字例：V68 头部的 2026-09-19「选**韩褶 + 打孔**是一种收费」）⇒ 本单收口。**组合键是取价 join key**，故改名必须连带重算存量键（否则报价整体落 unprice d）；历史快照不改（照实登记）。 ｜ tags: processing, catalog, fee-combination, migration, naming
+
+### PG-045. 裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（部位级档案 + 同名/工艺/加工项/定型触发 + 取整三位小数；单测覆盖，非 LLM 行为） 🔵
+```
+你: 这台裁高机这一单的布帘要裁多高？
+期望: direct_reply
+数据: 裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)，按 rounding 取整后输出（默认保留三位小数 = mm 精度）
+数据: 命中口径 = 复用 production_route_rules 的 trigger_kind / trigger_value / position（特殊选项 / 工艺 / 加工项 / 定型 + 部位限定），**不另写第二份匹配实现**
+数据: 命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**
+数据: 缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）
+数据: 本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）
+跳过: [backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。
+```
+真值: processing-manage.cutting-height-config
+溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
 
 ## 加工单域（56 case）
 
@@ -8026,8 +8040,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：566（活跃 126，跳过 440）
-- tier 分布：smoke 12 / normal 521 / adversarial 31
+- 用例总数：567（活跃 126，跳过 441）
+- tier 分布：smoke 12 / normal 522 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8046,7 +8060,7 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：51
-- 加工项域：15
+- 加工项域：16
 - 加工单域：56
 - 商品域：105
 - 工具注册器域：1

@@ -81,6 +81,9 @@ import type {
   RouteRuleTriggerOptions,
   CraftCalcConfig,
   CraftCalcConfigResponse,
+  CuttingHeightConfigBody,
+  CuttingHeightConfigResponse,
+  CuttingHeightPreview,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -1778,3 +1781,19 @@ const api = {
 }
 
 export default api
+
+
+// ── 裁高（定高）配置（母单 #5161）──
+// 读面（GET / preview）挂生产域读码 production:view；写面（PUT）是 processing:manage（类级）。
+// 🔴 命中口径**由服务端判**（POST …/preview）：前端不自己按名字比一遍（第二份口径）。
+export const cuttingHeightApi = {
+  get: () =>
+    request.get<ApiResponse<CuttingHeightConfigResponse>>('/api/admin/production/cutting-height-config'),
+  update: (data: CuttingHeightConfigBody) =>
+    request.put<ApiResponse<CuttingHeightConfigResponse>>('/api/admin/production/cutting-height-config', data),
+  preview: (data: Record<string, unknown>) =>
+    request.post<ApiResponse<CuttingHeightPreview>>(
+      '/api/admin/production/cutting-height-config/preview',
+      data,
+    ),
+}
