@@ -7306,9 +7306,9 @@ _CASE_PG_047 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-048 [NORMAL] 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
-_CASE_PG_048 = EvalCase(
-    id='PG-048',
+# ── PG-065 [NORMAL] 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_065 = EvalCase(
+    id='PG-065',
     legacy_id='',
     title='工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）',
     skill=Skill.PRODUCT,
@@ -11112,7 +11112,7 @@ ALL_CASES = (
     _CASE_PG_045,
     _CASE_PG_046,
     _CASE_PG_047,
-    _CASE_PG_048,
+    _CASE_PG_065,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

@@ -1040,7 +1040,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: PG-048
+  - id: PG-065
     legacy_id: ""
     title: "工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）"
     domains:
@@ -1066,7 +1066,7 @@ cases:
       - "GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403"
       - "worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话"
     skip_reason: "[backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。"
-    merge_log: "2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。"
+    merge_log: "2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java"

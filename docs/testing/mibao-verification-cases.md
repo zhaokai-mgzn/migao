@@ -4840,7 +4840,7 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
 
-### PG-048. 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为） 🔵
+### PG-065. 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 工人手机上该看到哪几页？一体机也一样吗？
 期望: direct_reply
@@ -4851,7 +4851,7 @@
 跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
 真值: processing-manage.worker-page-config
-溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ## 加工单域（56 case）
 
