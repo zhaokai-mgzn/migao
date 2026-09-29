@@ -7185,7 +7185,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（66 case）
+## 前端 UI 域（67 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8103,6 +8103,18 @@
 ```
 溯源: 2026-09-29 新增（issue #5792）：用户要求 AI 接待占比可插拔 ⇒ 建立能力位驱动的卡片注册表，并在服务端收敛出一处租户级判定（`AdminGate.tenantUsesAiService`）。 ｜ tags: ui, dashboard, pluggable, capability
 
+### UI-069. 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己 🔵
+```
+你: 用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点（PR #5788）查出「`/dashboard/order-status` 端点与 `OrderStatusChart` 组件都已写好、**从未被任何页面引用**」；本单把死代码接进页面
+期望: direct_reply
+数据: 判据 1·**接线为真**：页面必须真调 `dashboardApi.getOrderStatusDistribution()`，并把返回条目的 `count` 合计渲染成「共 N 单」（证明数据流到组件，而不是渲染空态）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「订单状态分布图接线」。
+数据: 判据 2·🔴 **单独失败只点名自己**：该端点失败 ⇒ 失败告警里出现「订单状态分布」，且**不得**连坐点名其他块（趋势图/近期订单/商品销量排行）。执行点 = 同文件的第二条。
+数据: 判据 3·**被接线的组件必须能在 jsdom 里渲染**：`OrderStatusChart` 用 recharts `ResponsiveContainer`（需 `ResizeObserver`，jsdom 不提供）—— 它此前是死代码所以这个不兼容一直没暴露；`frontend/admin-web/tests/setup.ts` 提供最小 stub。执行点 = 上述两条（无 stub 则整页 44+ 条一起红，实测 `ResizeObserver is not defined`）。
+数据: 判据 4·**注入式红证**（已实跑）：把 `allSettled` 里的端点调用换成 `Promise.resolve({data:{data:[]}})`（= 未接线形态）⇒ 上述两条 **2 failed**（`toHaveBeenCalled` 与合计断言）；还原后 48 passed。
+跳过: [backend-contract] 纯前端接线与显隐判定（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 执行
+```
+溯源: 2026-09-29 新增（issue #5792 第二阶段）：把「已写好但从未接线」的订单状态分布图接入经营看板，并补 jsdom 的 ResizeObserver stub。 ｜ tags: ui, dashboard, dead-code, wiring
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8132,8 +8144,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：573（活跃 126，跳过 447）
-- tier 分布：smoke 12 / normal 528 / adversarial 31
+- 用例总数：574（活跃 126，跳过 448）
+- tier 分布：smoke 12 / normal 529 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8158,7 +8170,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：66
+- 前端 UI 域：67
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8316,4 +8328,5 @@
 - UI-051: 工艺项页·🔴 **一口价写面**（`operation-price-<工序>` 就地改价，寻址 = 收敛后那一行的 `id`）+ 旧【布料单】定价区/两格写面**已随去部位化退场**
 - UI-052: 工艺项页·**种子自愈**：就绪度按「两条基础路线是否齐」判 + 缺 `布料工序路线` 时补套入口**缺失即显示**（幂等）
 - UI-068: 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）
+- UI-069: 经营看板接上「订单状态分布」图：读 `/dashboard/order-status`、显示合计；单独失败只点名自己
 

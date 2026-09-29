@@ -19,6 +19,8 @@ const mockGetStats = vi.fn()
 const mockGetOrderTrend = vi.fn()
 const mockGetRecentOrders = vi.fn()
 const mockGetProductRanking = vi.fn()
+// issue #5792 第二阶段：订单状态分布（端点此前未被任何页面调用）
+const mockGetOrderStatus = vi.fn()
 // 智能每日经营简报（issue #3468）：企业开关接口（默认关闭）
 const mockBriefingGetConfig = vi.fn()
 
@@ -28,6 +30,7 @@ vi.mock('@/lib/api', () => ({
     getOrderTrend: (...args: any[]) => mockGetOrderTrend(...args),
     getRecentOrders: (...args: any[]) => mockGetRecentOrders(...args),
     getProductRanking: (...args: any[]) => mockGetProductRanking(...args),
+    getOrderStatusDistribution: (...args: any[]) => mockGetOrderStatus(...args),
   },
   briefingApi: {
     getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
@@ -75,6 +78,14 @@ function mockApiSuccess() {
       data: [
         { rank: 1, productId: 'p1', productName: '2699色卡', salesQty: 30, qtyDisplay: '30', salesAmount: 12000, amountDisplay: '1.2w', dailyChange: 15.5 },
         { rank: 2, productId: 'p2', productName: '窗帘轨道', salesQty: 20, qtyDisplay: '20', salesAmount: 8000, amountDisplay: '8000', dailyChange: -5.2 },
+      ],
+    },
+  })
+  mockGetOrderStatus.mockResolvedValue({
+    data: {
+      data: [
+        { status: 'pending_payment', label: '待支付', count: 3, color: '#f59e0b' },
+        { status: 'pending_shipment', label: '待发货', count: 4, color: '#48618f' },
       ],
     },
   })
@@ -587,6 +598,31 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
     await waitFor(() => expect(screen.getByText('经营看板')).toBeInTheDocument())
     expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
+  })
+
+  // ── #5792 第二阶段：订单状态分布图**接线**（端点与组件此前都已写好、从未被引用）──
+
+  it('订单状态分布图接线：读 `getOrderStatusDistribution` 并显示合计（把死代码接进页面）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => expect(mockGetOrderStatus).toHaveBeenCalled())
+    // 端点返回 3 + 4 ⇒ 组件标题下的「共 7 单」（证明数据**真的流到组件**，不是写死的空态）
+    await waitFor(() => {
+      expect(screen.getByText('订单状态分布')).toBeInTheDocument()
+      expect(screen.getByText('共 7 单')).toBeInTheDocument()
+    })
+  })
+
+  it('🔴 订单状态分布**单独失败**时只点名它自己（不牵连其他块、也不退化成空图）', async () => {
+    mockGetOrderStatus.mockRejectedValue(new Error('Network error'))
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const alert = screen.getByTestId('dashboard-load-failed')
+      expect(alert.textContent).toContain('订单状态分布')
+      // 反向自证：其他块（经营数据/趋势/近期订单/排行）**不得**被连坐点名
+      expect(alert.textContent).not.toContain('趋势图')
+      expect(alert.textContent).not.toContain('近期订单')
+      expect(alert.textContent).not.toContain('商品销量排行')
+    })
   })
 
   it('should handle empty trend data', async () => {

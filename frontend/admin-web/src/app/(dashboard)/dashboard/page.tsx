@@ -8,11 +8,13 @@ import { dashboardApi } from '@/lib/api'
 import { visiblePluggableCards } from '@/lib/dashboard-cards'
 import { useAuthStore } from '@/store/auth'
 import { cn, formatFullDateTime } from '@/lib/utils'
-import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
+import type { DashboardStats, OrderTrendPoint, Order, ProductRanking, OrderStatusDistribution } from '@/types'
 import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
 import TrendChart from '@/components/dashboard/TrendChart'
 import RecentOrders from '@/components/dashboard/RecentOrders'
 import BriefingCard from '@/components/dashboard/BriefingCard'
+// issue #5792 第二阶段：订单状态分布（端点与组件此前都已写好，但**从未接线** —— 本次接上）
+import OrderStatusChart from '@/components/dashboard/OrderStatusChart'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -45,6 +47,7 @@ const BLOCK_LABELS: Record<string, string> = {
   trend: '趋势图',
   orders: '近期订单',
   ranking: '商品销量排行',
+  orderStatus: '订单状态分布',
 }
 
 function now(): string {
@@ -223,6 +226,7 @@ export default function DashboardPage() {
   //    判 **error**（本地 `tsc` 看不见，CI 的 eslint 步会红 —— 已实跑踩过）。
   // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
   const [briefingEnabled, setBriefingEnabled] = useState(false)
+  const [orderStatus, setOrderStatus] = useState<OrderStatusDistribution[]>([])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -230,11 +234,12 @@ export default function DashboardPage() {
       // #2886: 4 个接口一次并发（原 3 波串行 → 1 波，整页接口等待从 ~640ms 降到单波 max）
       //   pendingShipOrders / processingPendingOrders / lowStockItems 均由 stats 聚合返回，
       //   不再单独请求 pending-shipment-count / processing-shipment-count 两个重复计数接口
-      const [statsRes, trendRes, ordersRes, rkRes] = await Promise.allSettled([
+      const [statsRes, trendRes, ordersRes, rkRes, osRes] = await Promise.allSettled([
         dashboardApi.getStats(),
         dashboardApi.getOrderTrend(trendDays),
         dashboardApi.getRecentOrders(5),
         dashboardApi.getProductRanking('day', 10),
+        dashboardApi.getOrderStatusDistribution(),
       ])
 
       // 每块：成功 ⇒ 清掉自己的失败标记；失败 ⇒ 记标记 + **不动**上次成功值（不清零）
@@ -290,6 +295,18 @@ export default function DashboardPage() {
         console.error('Dashboard ranking:', rkRes.reason)
         setBlockErrors((prev) => ({ ...prev, ranking: BLOCK_LABELS.ranking }))
       }
+      if (osRes.status === 'fulfilled') {
+        setOrderStatus(Array.isArray(osRes.value.data.data) ? osRes.value.data.data : [])
+        setBlockErrors((prev) => {
+          if (!('orderStatus' in prev)) return prev
+          const next = { ...prev }
+          delete next.orderStatus
+          return next
+        })
+      } else {
+        console.error('Dashboard order status:', osRes.reason)
+        setBlockErrors((prev) => ({ ...prev, orderStatus: BLOCK_LABELS.orderStatus }))
+      }
       setUpdateTime(now())
     } catch (error) {
       // Promise.allSettled 不会整体 reject，此分支仅兜底
@@ -321,6 +338,9 @@ export default function DashboardPage() {
       } else if (key === 'ranking') {
         const r = await dashboardApi.getProductRanking('day', 10)
         setRanking((r.data as any)?.data || [])
+      } else if (key === 'orderStatus') {
+        const r = await dashboardApi.getOrderStatusDistribution()
+        setOrderStatus(Array.isArray(r.data.data) ? r.data.data : [])
       }
       setBlockErrors((prev) => {
         if (!(key in prev)) return prev
@@ -587,6 +607,15 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ③′ 订单状态分布（issue #5792 第二阶段）：端点与组件此前都已写好、从未接线 */}
+
+      <div className="mb-6">
+
+        <OrderStatusChart data={orderStatus} loading={loading} />
+
+      </div>
+
 
       {/* ④ 列表 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
