@@ -3050,17 +3050,20 @@ export default function NewOrderPage() {
           {/* ============= 收货信息 ============= */}
           <Card>
             <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <SectionTitle icon={<User className="w-4 h-4" />} title="收货信息" />
-                {/* #3102: 选择已有客户快捷回填收货信息 */}
-                <button
-                  type="button"
-                  onClick={() => setCustomerModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  选择客户
-                </button>
+                {/* #3102: 选择已有客户快捷回填收货信息 —— 🔴 2026-09-29 第三次裁定把它升为**主路径**：
+                    选客户即带出姓名 / 电话 / 地址 / 常用物流（用户口径「未来都是选择客户带出其他信息，
+                    新增客户的情况可能一开始会多，未来就能简化选择」）⇒ 手工填写退为**兜底**，不再抢视线。 */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-400">
+                    选客户自动带出姓名 / 电话 / 地址 / 常用物流
+                  </span>
+                  <Button type="button" size="sm" onClick={() => setCustomerModalOpen(true)}>
+                    <UserPlus className="w-4 h-4 mr-1.5" />
+                    选择客户
+                  </Button>
+                </div>
               </div>
               {/* 图片识别快通道（issue #5321 包 1；**2026-09-28 起入口挂在「商品信息」标题行**）——
                   本卡不再放入口：识别一次产出的是「明细 + 收货信息 + 备注」，
@@ -3114,7 +3117,14 @@ export default function NewOrderPage() {
                   —— 两个**可编辑**控件（词表唯一真值 = `lib/logistics.ts`），选客户时按档案带出，
                   随建单提交顶层 `logisticsType` / `logisticsCompany`（后端 #4872 落 `orders` 两列）。
                   ⚠️ 原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径）。 */}
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <details
+                data-testid="logistics-section"
+                className="mt-4 rounded border border-neutral-200 bg-neutral-50/40 px-3 py-2"
+              >
+                <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-700">
+                  常用物流（可选 · 选客户时自动带出）
+                </summary>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label
                     htmlFor="order-logistics-type"
@@ -3161,7 +3171,8 @@ export default function NewOrderPage() {
                     ))}
                   </datalist>
                 </div>
-              </div>
+                </div>
+              </details>
               <div className="mt-4">
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                   备注
