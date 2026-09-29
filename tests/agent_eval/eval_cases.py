@@ -10727,6 +10727,24 @@ _CASE_UI_067 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-068 [NORMAL] 经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）（源: cases/ui.yml）──
+_CASE_UI_068 = EvalCase(
+    id='UI-068',
+    legacy_id='',
+    title='经营看板可插拔指标卡：`capabilities.aiService` 决定「AI 接待占比」卡**在不在**（未启用 ⇒ 不渲染，不是渲染成 0）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29 追加要求原话：「AI 接待占比这个需要设计成可插拔的，未来有部分企业可能未购买智能客服」；同日裁定判定口径 = 方案 B（按租户派生），并指明「未来是跟着租户购买模块决定的」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**注册表化**：依赖企业能力的卡片必须在 `frontend/admin-web/src/lib/dashboard-cards.ts` 的注册表里声明 `requires`，组件内不得散落 `if`。执行点 = frontend/admin-web/tests/unit/lib/dashboard-cards.test.ts 的「注册表里『AI 接待占比』依赖 `aiService` 能力位」。', '判据 2·🔴 **缺省 = 不渲染**（保守口径，与 `false` 同待遇）：能力位未下发（老后端 / 请求失败 / 字段拼错）时**不知道**企业有没有买 ⇒ 不显示，而不是显示来源不明的数字。执行点 = 同文件的表驱动五态（undefined / {} / false / true / 另一位为假）。', "判据 3·**未购买 ⇒ 卡片不渲染**，**不是**渲染成 0、**不是**空白占位（0 会被读成业务事实）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「`aiService` 未启用/未下发 ⇒ 卡片不渲染」，含反向自证（`queryByText('AI 接待占比')` 为 null）。", '判据 4·**启用 ⇒ 数字来自服务端**：`aiSessionRate` / `activeSessions` 取自 `/api/admin/dashboard/stats`（前端不硬编码 0）。执行点 = 同文件「`aiService = true` ⇒ 渲染卡片，数字取服务端 `aiSessionRate`」。', '判据 5·**单点判定 + 未来可替换**：租户级判定收敛在 `AdminGate.tenantUsesAiService`（当前 = 租户有任一岗位持 `agent:session`；用户指明未来改为「跟着租户购买模块决定」）⇒ 届时**只改该函数体**，能力位契约与端侧判据不动。执行点 = backend/admin-api/src/test/java/com/migao/admin/security/AdminGateTest.java 的 `tenantUsesAiServiceFollowsSessionReadCode` + `AuthServiceTest::capabilitiesExposeAiServiceByTenant`（含查询失败 ⇒ 保守 false 的第三态）。', '判据 6·**类级元守卫**：注册表里每个 `requires` 都必须是**已知能力位**（类型被放宽时仍能挡运行期拼错）。执行点 = dashboard-cards.test.ts 的「类级元守卫」。'],
+    skip_reason='[backend-contract] 纯前端显隐判定 + 后端能力位单测（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest 与 Java 单测执行',
+    tags=['ui', 'dashboard', 'pluggable', 'capability'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11334,6 +11352,7 @@ ALL_CASES = (
     _CASE_UI_065,
     _CASE_UI_066,
     _CASE_UI_067,
+    _CASE_UI_068,
     _CASE_UT_001,
     _CASE_UT_002,
 )

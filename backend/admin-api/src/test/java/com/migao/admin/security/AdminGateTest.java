@@ -78,4 +78,13 @@ class AdminGateTest {
                 .as("管理员集合必须含米宝唤出码（否则「默认可唤」与「授权码」会分叉）")
                 .contains(AdminGate.MIBAO_CHAT_GRANT_CODE);
     }
+
+    // ── issue #5792：可插拔指标开关的**唯一判定处** ──
+
+    @Test
+    @DisplayName("issue #5792：`tenantUsesAiService` 就是「租户持会话读码」（方案 B）——未来改购买模块只改它")
+    void tenantUsesAiServiceFollowsSessionReadCode() {
+        assertThat(AdminGate.tenantUsesAiService(true)).isTrue();
+        assertThat(AdminGate.tenantUsesAiService(false)).isFalse();
+    }
 }

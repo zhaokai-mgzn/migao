@@ -58,7 +58,16 @@ export interface User {
    * 🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位
    * （⇒ 改一处即小程序端与 admin-web 两端同步）。`false` ⇒ 必须给「需要管理员授权」+ 可行动引导。
    */
-  capabilities?: { mibaoChat?: boolean }
+  capabilities?: {
+    mibaoChat?: boolean
+    /**
+     * 本租户是否**启用智能客服**（issue #5792 的可插拔开关）——
+     * `true` ⇒ 经营看板渲染「AI 接待占比」等指标卡；`false`/缺省 ⇒ **不渲染**
+     * （不是渲染成 0、不是空白占位）。判定真值在服务端（`AdminGate.tenantUsesAiService`），
+     * 端侧**不自己判权限码**（与 `mibaoChat` 同一范式）。
+     */
+    aiService?: boolean
+  }
 }
 
 // 菜单项类型

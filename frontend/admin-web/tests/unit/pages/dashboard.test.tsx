@@ -551,6 +551,44 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('暂无近期订单')).not.toBeInTheDocument()
   })
 
+  // ── #5792 可插拔：能力位决定卡片**在不在**（端侧不判权限码）──
+
+  it('🔴 `capabilities.aiService = true` ⇒ 渲染「AI 接待占比」卡，数字取服务端 `aiSessionRate`', async () => {
+    mockUseAuthStore.mockImplementation((sel: any) =>
+      sel ? sel({ user: { capabilities: { aiService: true } } }) : { user: { capabilities: { aiService: true } } },
+    )
+    mockGetStats.mockResolvedValue({
+      data: { data: { todayOrders: 10, todaySales: 39800, aiSessionRate: 66.7, activeSessions: 9 } },
+    })
+    render(<DashboardPage />)
+    const card = await screen.findByTestId('dashboard-card-ai-service-rate')
+    expect(card.textContent).toContain('AI 接待占比')
+    // 数字**来自服务端字段**（不是前端硬编码 0）
+    expect(card.textContent).toContain('66.7%')
+    expect(card.textContent).toContain('9')
+  })
+
+  it('🔴 `aiService` 未启用/未下发 ⇒ 卡片**不渲染**（不是渲染成 0、也不是空白占位）', async () => {
+    // 缺省：能力位根本没有这个字段（老后端 / 请求失败）
+    mockUseAuthStore.mockImplementation((sel: any) =>
+      sel ? sel({ user: { capabilities: {} } }) : { user: { capabilities: {} } },
+    )
+    const { unmount } = render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('经营看板')).toBeInTheDocument())
+    expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
+    // 反向自证：**不得**用 0 占位冒充「未购买」
+    expect(screen.queryByText('AI 接待占比')).toBeNull()
+    unmount()
+
+    // 明确 false
+    mockUseAuthStore.mockImplementation((sel: any) =>
+      sel ? sel({ user: { capabilities: { aiService: false } } }) : { user: { capabilities: { aiService: false } } },
+    )
+    render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('经营看板')).toBeInTheDocument())
+    expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
+  })
+
   it('should handle empty trend data', async () => {
     mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
     render(<DashboardPage />)

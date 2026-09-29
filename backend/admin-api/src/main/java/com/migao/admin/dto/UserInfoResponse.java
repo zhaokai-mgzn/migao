@@ -58,6 +58,16 @@ public class UserInfoResponse {
          * （**不是**静默隐藏入口、**不是** 403 白屏）。
          */
         private Boolean mibaoChat;
+
+        /**
+         * 本租户是否**启用智能客服**（{@code AdminGate.tenantUsesAiService}）——
+         * 经营看板「AI 接待占比」等指标的**可插拔开关**。
+         *
+         * <p>{@code false} / 缺省 ⇒ 端侧**不渲染**这些指标卡（**不是**渲染成 0、**不是**空白占位）；
+         * {@code true} ⇒ 正常渲染且数字取服务端字段。判定口径与未来改法见
+         * {@link com.migao.admin.security.AdminGate#tenantUsesAiService}。</p>
+         */
+        private Boolean aiService;
     }
 
     /**
