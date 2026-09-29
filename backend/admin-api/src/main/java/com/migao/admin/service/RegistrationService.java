@@ -649,7 +649,7 @@ public class RegistrationService {
         String[][] defaultPermissions = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
                 {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
-                {"商品列表", "product:list", "product", "list", "查看商品列表"},
+                {"商品管理", "product:list", "product", "list", "查看商品管理"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},
                 // 商品分类**读**码（issue #5291）：分类读端点（`CategoryController.getCategoryTree`）

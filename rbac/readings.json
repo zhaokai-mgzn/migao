@@ -75,7 +75,7 @@
     "names": {
       "dashboard:view": "仪表板查看",
       "product:manage": "商品管理",
-      "product:list": "商品列表",
+      "product:list": "商品管理",
       "product:create": "新增商品",
       "product:category": "商品分类",
       "product:category:view": "商品分类查看",

@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": "#5699",
   "stage": "P5+P6+I4",
-  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。",
+  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。 ｜ 2026-09-29（issue #5778）：`codes.names[\"product:list\"]` 随菜单改名由「商品列表」改为「商品管理」（两处目录 Java 与迁移链同批）。",
   "codes": {
     "registration": [
       "dashboard:view",
@@ -75,7 +75,7 @@
     "names": {
       "dashboard:view": "仪表板查看",
       "product:manage": "商品管理",
-      "product:list": "商品列表",
+      "product:list": "商品管理",
       "product:create": "新增商品",
       "product:category": "商品分类",
       "product:category:view": "商品分类查看",
