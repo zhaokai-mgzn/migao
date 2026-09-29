@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
-import { menuGroups, standaloneItems } from '@/config/menu'
+import { menuGroups, standaloneTopItems, standaloneItems } from '@/config/menu'
 import { resolveMenuIcon } from '@/config/menu-icons'
 import {
   filterMenuItems,
@@ -62,6 +62,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const opts = { permissions: user?.permissions || [], roles: user?.roles, briefingEnabled }
     return flattenMenu(
       visibleMenuGroups(menuGroups, opts),
+      filterMenuItems(standaloneTopItems, opts),
       filterMenuItems(standaloneItems, opts),
     )
   }, [user?.permissions, user?.roles, briefingEnabled])

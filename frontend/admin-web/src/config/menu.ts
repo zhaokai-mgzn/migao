@@ -8,22 +8,45 @@
 // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
 //
 // ══════════════════════════════════════════════════════════════════════════════
-// issue #5271 菜单重设计：信息架构按**业务动线**重排（7 组 / 21 项，一项不少不减）
+// issue #5271 菜单重设计 + **本轮（用户 2026-09-29 裁定）再重排**：
+// 信息架构**7 组 → 6 组**，仍 **21 项，一项不少不减**
 // ══════════════════════════════════════════════════════════════════════════════
 //
-// ## 为什么重排（现状诊断，证据见 issue #5271）
+// ## 本轮（用户 2026-09-29 逐条裁定）改了什么 —— 四条
 //
-// 重设计前「生产管理」是 **7 项的杂物抽屉**，把四种不同使用场景混编在一起：
-// 决策屏（生产看板 / 智能派单 / 省料看板）+ 台账（余料台账 / 入库单）
-// + 基础配置（工艺配置）+ 结算（计件工资）—— 一个生产主管找「入库单」与找「省料看板」
-// 是两件事，却挤在同一个折叠组里；而「商品管理」只有 2 项。
+//   ① **加工项归生产管理**：`processing`（加工项管理 `/production/processing`）由
+//      「商品与加工项」组移入「生产管理」组 —— 它本质是**加工定价资料**（加工费组合的
+//      `items[]` 取自加工项目录），与「生产看板 / 工艺配置 / 计件工资」同域；
+//      用户原话：「加工项应该属于生产管理」。
+//   ② **客户侧独立成组**：「客户列表」+「售后工单」由「交易管理」移出，
+//      与**原「智能客服」组**（在线接待 / 知识库）合并为**「客户服务」组**
+//      （key = `customer-service`）—— 用户原话：「客户管理也不属于交易管理」
+//      「收购（=售后）和客户管理应该属于一类？都属于服务客户的功能」。
+//   ③ **交易管理只留「下单 → 收款」**：订单列表 + 财务对账（两项）。
+//   ④ **「商品与加工项」→「商品」**：加工项搬走后原组名不再成立（组内只剩商品列表）。
 //
-// ## 重排口径（用户 2026-09-23 裁定 = 方案 A「按业务动线重排」）
+// ## 为什么①②是本次的核心口径（证据 = 岗位权限矩阵，**零可见性 delta**）
 //
-//   · **拆的是语义不是数量**：生产管理组按「加工执行 / 面料进出」拆成两组；
-//   · **并的是动线**：客户列表与财务对账并入交易组（谁下单 → 单到哪 → 售后 → 收款对账），
-//     原「客户管理」组（`customer-center`）因此**不再存在**；
-//   · **不动的**：工作台、智能客服、组织管理三组的成员与名称（无证据支持改动）。
+// `RegistrationService` 的种子矩阵里，岗位 `customer_service` 的权限集**恰好 100% 覆盖**
+// 「智能客服」组（`agent:session` / `knowledge:view`）与「客户列表 / 售后工单」
+// （`customer:view` / `after_sales:view`）的全部 6 个码，而持这 6 个码的岗位只有
+// 客服 / 运营 / admin ⇒ **这两个组今天就是同一批人在用**，分组却把它们切成两块。
+// 合并对**所有**岗位的可见项**零变化**（纯分组归属）：码不动、路径不动、门控不动。
+//
+// ## 本轮**没改**的（有意）
+//
+//   · **不做第 4 处菜单源**：本文件仍是唯一前端真值源（判据见三源同构守卫）；
+//   · **知识库仍留在「客户服务」组内**（用户 2026-09-29 裁定：不单独成项、不沉底）——
+//     通知中心是**全局项**（无权限码、另有顶栏铃铛入口）故可沉底；知识库是**功能域模块**
+//     （需 `knowledge:view`、且侧边栏是它**唯一**入口）⇒ 沉底代价不对称；
+//   · **通知中心维持现状**（仍在可滚动 `nav` 尾部，本轮不做固定底栏）。
+//
+// ## 上一轮（issue #5271，用户 2026-09-23 裁定 = 方案 A「按业务动线重排」）的遗产
+//
+//   · 生产管理组按「加工执行 / 面料进出」**拆**出「仓储与物料」组（本轮保留）；
+//   · 原「客户管理」组（`customer-center`）**已不存在**且**不得长回来**
+//     —— 本轮新建的是 `customer-service`（新语义），不是它的复活；
+//   · 组 key `production` → `production-center`（三源统一）。
 //
 // ## 硬约束（改动本文件前必读）
 //
@@ -62,7 +85,7 @@ export interface MenuGroup {
   children: MenuItem[]
 }
 
-// 带子级的菜单组（issue #5271 重设计：七大组按业务动线重排）
+// 带子级的菜单组（本轮 2026-09-29 重排：**六大组**；顺序即渲染顺序与三源比对顺序）
 export const menuGroups: MenuGroup[] = [
   {
     key: 'workspace',
@@ -76,65 +99,52 @@ export const menuGroups: MenuGroup[] = [
       { key: 'briefing', name: '每日简报', icon: 'Newspaper', path: '/briefing', permissionCode: 'dashboard:view', briefingToggle: true, keywords: ['mrjb', 'jianbao', '简报', '日报'] },
     ],
   },
-  // UI-005/UI-011: 智能客服大类（#3094 米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB；均不可见时整组隐藏）
-  // #2969: 知识库归入智能客服组
-  // 🔴 #5271 收口：本组在 `AuthService.buildMenusByPermissions` 里**多一个** `chat`「米宝 · 在线对话」
-  // 节点（#3094 从侧边栏移除后服务端没跟）—— 属守卫当时**看不到**的漂移（它只比生产管理组）。
-  // 现状：三源均为 2 项（在线接待 / 知识库），判据见三源同构守卫（#5271 起比对全树）。
+  // 客户服务（本轮 2026-09-29 用户裁定**新建**）：原「智能客服」组（在线接待 / 知识库）
+  // + 原「交易管理」组的客户侧两项（客户列表 / 售后工单）**合并为一个组**。
+  //
+  // ## 为什么合并（用户原话 + 零 delta 证据）
+  //
+  // 用户：「收购（售后）和客户管理应该属于一类？都属于服务客户的功能」
+  //      「智能客服和客户管理是否应该合并到一个大菜单下？」⇒ 裁定合并。
+  // 证据（岗位权限矩阵，`RegistrationService` 种子表）：`customer_service` 岗位权限集**恰好
+  // 100% 覆盖**本组 4 项的全部码（`agent:session` / `knowledge:view` / `customer:view` /
+  // `after_sales:view`），持这批码的岗位只有 客服 / 运营 / admin ⇒ 这 4 项**本就是同一批人在用**。
+  // 合并**所有岗位可见项零变化**（纯分组归属：码 / 路径 / 门控一字不动）。
+  //
+  // ## 组名为什么叫「客户服务」而不是沿用「智能客服」
+  //
+  // 组内除「在线接待」外都是**客户侧业务项**（客户列表 / 售后工单）—— 沿用「智能客服」会让
+  // 后两项名不副实（正是用户指出的「交易管理装不下客户管理」的同型问题）。
+  //
+  // ## 保留项（漏带 = 静默回退别人刚修的授权口径）
+  //
+  //   · `knowledge:view`（issue #5246）：知识库用**读**码 —— 「看知识库」与「改知识库」是两件事；
+  //   · 知识库**仍留在本组内**（用户 2026-09-29 裁定：不单独成项、不沉底 —— 通知中心是全局项
+  //     （无码 + 另有顶栏铃铛入口）故可沉底，知识库是功能域模块且侧边栏是它**唯一**入口）。
+  //   · 已删除的 `chat`「米宝 · 在线对话」节点**不得长回来**（#3094 从侧边栏移除，走右下角 FAB）。
   {
-    key: 'smart-customer-service',
-    name: '智能客服',
-    icon: 'MessageSquare',
+    key: 'customer-service',
+    name: '客户服务',
+    icon: 'Headphones',
     children: [
       { key: 'human-sessions', name: '在线接待', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session', keywords: ['zxjd', 'jiedai', 'kefu', '客服', '人工'] },
-      // issue #5246（已合入 main）：知识库节点用**读**码 `knowledge:view` —— 读写拆码后
-      // 「看知识库」与「改知识库」是两件事；节点挂写码会让只读角色（客服/运营）看不到菜单。
-      // #5271 重排本组时**必须保留**该码（漏带 = 静默回退别人刚修的授权口径）。
+      // #2969：客户列表原在「客户管理」组；#5271 曾并入交易管理组；本轮移入本组（服务客户动线）
+      { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
       { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:view', keywords: ['zsk', 'zhishi', 'qa'] },
+      // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view` —— `order:refund`
+      // 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。**必须保留**该码。
+      { key: 'after-sales', name: '售后工单', icon: 'LifeBuoy', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
     ],
   },
-  // issue #5271：「商品管理」→「商品与加工项」——组内第二项（加工项管理）本身是**加工定价资料**，
-  // 组名带上它，商家才知道「加工费组合去哪配」。
-  {
-    key: 'product-center',
-    name: '商品与加工项',
-    icon: 'Store',
-    children: [
-      { key: 'products', name: '商品列表', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'shangpin'] },
-      // issue #4490（用户裁定 2026-09-19；同日**规格修订**：「加工项管理和加工费管理**合并后的菜单
-      // 放入到商品管理大菜单下**」）：「加工项管理」(/production/processing) 与「加工费管理」
-      // (/production/processing-fees) **合并为单一入口** —— 两者是同一业务域、同一入口
-      //（节点码自 issue #5291 起 = 生产域**读**码 production:view；页内写动作仍 processing:manage）、
-      // 同一业务域（加工费组合的 items[] 必须取自加工项目录的活跃加工项），拆开意味着
-      // 「建组合发现缺加工项要跳到另一个菜单组去建」。
-      // issue #4542（用户裁定 2026-09-19：把菜单名从 #4490 的合并名改回「加工项管理」）：
-      // 菜单名 = **「加工项管理」** —— 与**服务端既有菜单名同名**（`MenuController.java` 与
-      // `AuthService.java` 的菜单表一直叫「加工项管理」），本次改名顺带消掉这条**前端漂移**
-      // （#4440「菜单三处同构实为漂移」登记的同款形态）。
-      // ⚠️ **名字不再提「加工费」，但功能一个没减**：本页仍是**两个 tab**（`加工项` / `加工费组合`，
-      // 沿用 #4482 在工艺配置确立的范式，不平铺）——「加工费组合」定价面**原样保留**，改的只是**菜单名**；
-      // 读到这里请勿以为加工费管理被删（它的能力断言在 processing-fees.test.tsx，一条不少）。
-      // 两个旧路径都保留为重定向（/processing、/production/processing-fees → 本路径），旧深链不 404。
-      // 图标沿用原「加工项管理」的 Scissors（本项默认 tab 就是「加工项」）。
-      // ⚠️ **路径有意不改**：改路径会让刚上线的两条旧路径重定向再叠一层。
-      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/production/processing', permissionCode: 'production:view', keywords: ['jgx', 'jiagong', 'jiagongfei', '加工费'] },
-    ],
-  },
-  // issue #5271：原「订单管理」+ 原「客户管理」组的两个项 → **交易管理**（一条动线：
-  // 谁下单 → 单到哪 → 售后 → 收款对账）。客户列表与财务对账原本各自挂在「客户管理」组，
-  // 商家真实动线却要跨组反复横跳。
+  // 交易管理（本轮 2026-09-29 收窄为**「下单 → 收款」两项**）：客户列表 / 售后工单是**服务客户**
+  // 的动作，已移入「客户服务」组（用户原话：「客户管理也不属于交易管理」）。
+  // 保留的这两项是同一动线：谁下单 → 收款对账。
   {
     key: 'trade-center',
     name: '交易管理',
     icon: 'ShoppingCart',
     children: [
       { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['ddlb', 'dingdan'] },
-      // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view` —— `order:refund`
-      // 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。
-      // #5271 重排本组时**必须保留**该码。
-      { key: 'after-sales', name: '售后工单', icon: 'LifeBuoy', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
-      // #2969：客户列表原在「客户管理」组；#5271 并入交易管理组（动线合并，见上）
-      { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
       // #2969：财务对账原在「客户管理」组；#5271 并入交易管理组（订单 → 收款 → 对账）
       { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view', keywords: ['cw', 'caiwu', 'duizhang', '对账'] },
     ],
@@ -169,6 +179,22 @@ export const menuGroups: MenuGroup[] = [
       // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），
       // 路由守卫同批改挂读码（`app/(dashboard)/layout.tsx`）。
       { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:view', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
+      // 加工项管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组移入本组**，原话
+      // 「加工项应该属于生产管理」）—— 它是**加工定价资料**（加工费组合的 `items[]` 必须取自
+      // 加工项目录的活跃加工项），与「生产看板 / 工艺配置 / 计件工资」同域
+      //（同组内「建组合发现缺加工项要跳到另一个菜单组去建」的割裂就此消除）。
+      //
+      // 沿革（**一字不动地保留**，只改归属）：
+      //   · issue #4490（用户裁定 2026-09-19；同日规格修订「合并后的菜单放入到商品管理大菜单下」）：
+      //     「加工项管理」(/production/processing) 与「加工费管理」(/production/processing-fees)
+      //     **合并为单一入口**；本次移组**不撤销该合并**（仍是同一入口、同一页）；
+      //   · issue #4542（用户裁定 2026-09-19）：菜单名 = **「加工项管理」**（与服务端同名）；
+      //   · ⚠️ **名字不再提「加工费」，但功能一个没减**：本页仍是**两个 tab**（`加工项` / `加工费组合`，
+      //     沿用 #4482 在工艺配置确立的范式）——「加工费组合」定价面**原样保留**，改的只是**菜单名**；
+      //     读到这里请勿以为加工费管理被删（能力断言在 processing-fees.test.tsx，一条不少）；
+      //   · 节点码自 issue #5291 起 = 生产域**读**码 `production:view`（页内写动作仍 `processing:manage`）；
+      //   · 两个旧路径都保留为重定向（/processing、/production/processing-fees → 本路径），旧深链不 404。
+      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/production/processing', permissionCode: 'production:view', keywords: ['jgx', 'jiagong', 'jiagongfei', '加工费'] },
       // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。
@@ -222,7 +248,30 @@ export const menuGroups: MenuGroup[] = [
   },
 ]
 
-// 一级独立菜单项（无子级，直接跳转，排在分组后面）
+// 一级独立菜单项（无子级，**直接跳转**）
+//
+// ## 两个位置，语义不同（本轮 2026-09-29 定型）
+//
+//   · `standaloneTopItems` —— **顶部一级项**，渲染在**所有分组之前**：
+//     「商品管理」。用户 2026-09-29 裁定「商品列表改成商品管理，直接作为一级菜单使用」——
+//     它是**唯一成员**的组会退化成一个没有分组的名字（点开只为看一项），故**不做单成员组**，
+//     改为一级项平铺。**它是「分组」之外的第一梯队**：与分组同级、一眼可见、无需展开。
+//   · `standaloneItems` —— **尾部项**，渲染在**所有分组之后**：
+//     「通知中心」（全员可见，与顶栏铃铛一致，无需权限码）。
+//
+// 🔴 两个数组**都是导航**：进 ⌘K 索引（`flattenMenu` 的 `top` + `bottom`）、进三源同构守卫、
+//    进面包屑覆盖判据（PG-038 按菜单项 `path` 穷举，本文件是它的输入面）。
+export const standaloneTopItems: MenuItem[] = [
+  // 商品管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组升为一级菜单项**，原话
+  // 「商品列表改成商品管理，直接作为一级菜单使用」）。
+  // · 组名/菜单名取值：用户原话是「商品列表改成商品管理」⇒ 菜单名 = **「商品管理」**；
+  // · 路径与权限码一字不动（`/products`、`product:list`）⇒ 纯信息架构调整，零授权 delta；
+  // · 与它同动线的「加工项管理」已移入「生产管理」组 ⇒ 原「商品与加工项」组（`product-center`）
+  //   **不再存在**（组内已空）。原组里的两个动作码节点（`product:create` / `product:category`）
+  //   由服务端权限树承载（判据里的 `ACTION_NODES` 按**节点归属组**登记）。
+  { key: 'products', name: '商品管理', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'spgl', 'shangpin', '商品'] },
+]
+
 export const standaloneItems: MenuItem[] = [
   // 通知中心：全员可见（与顶栏铃铛一致，无需权限码）
   { key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications', keywords: ['tzx', 'tongzhi', 'xiaoxi'] },

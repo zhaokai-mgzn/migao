@@ -47,6 +47,138 @@ export function visibleMenuGroups(groups: MenuGroup[], opts: MenuFilterOptions):
     .filter((g) => g.children.length > 0)
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 「常用（收藏）」—— 用户自选钉在侧边栏顶部的快捷入口
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ## 它是什么，不是什么
+//
+//   · ✅ 它是**用户偏好**（一份有序的菜单项 `key` 清单），不是第四处菜单源 ——
+//     渲染时经**同一套**权限过滤（`visibleMenuGroups` / `filterMenuItems`）解析 ⇒ **权限被收回，
+//     该项自动从「常用」消失**，结构上不可能出现「收藏了一个不该看的东西」；
+//   · ❌ 它**不重排**任何菜单项：钉住的项在它原本的组里**照旧出现**（「常用」是**快捷方式**，
+//     不是「搬家」）—— 这样「在域内找它」与「一键直达」两条动线都在，且被钉页面仍是域内高亮项。
+//
+// ## 两道护栏（消除脏数据）
+//
+//   · 上限 `PINNED_MAX`（6）—— 超出**拒绝**（不是静默截断），调用方据此给用户可行动提示；
+//   · `key` 已不存在（菜单项被删/改名）⇒ 解析时**静默丢弃**，侧边栏不出现死链、不抛错。
+//
+// ## 边界（如实登记）
+//
+//   持久化在 `localStorage`（与既有的折叠态 / 浮窗位置同一模式）⇒ **换浏览器 / 换设备不同步**；
+//   同步需新建服务端偏好表 + 迁移 + 端点，本轮**有意不做**。
+
+/** 「常用」最多钉几项（超过 ⇒ `togglePinned` 拒绝） */
+export const PINNED_MAX = 6
+
+/** localStorage 键（带版本号 ⇒ 将来改格式时可安全换键，不会读到旧形状） */
+export const PINNED_STORAGE_KEY = 'migao.sidebar.pinned.v1'
+
+/** 「常用」区在侧边栏里的合成分组 key —— **不是** `menu.ts` 的组，不得与任何组 key 重名 */
+export const PINNED_GROUP_KEY = 'pinned'
+export const PINNED_GROUP_NAME = '常用'
+
+/** 解析持久化值：只接受「字符串数组」，去重、去空、按首次出现顺序、**截断到上限** */
+function parsePinned(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const v of raw) {
+    if (typeof v !== 'string') continue
+    const k = v.trim()
+    if (!k || out.includes(k)) continue
+    out.push(k)
+    if (out.length >= PINNED_MAX) break
+  }
+  return out
+}
+
+/**
+ * 读取「常用」清单（SSR 安全 + 静默降级）。
+ *
+ * 读不到（无 localStorage / 被禁 / JSON 坏 / 形状不对）⇒ 一律回**空表**，绝不抛错 ——
+ * 一个个性化偏好不该让整个侧边栏白屏。
+ */
+export function loadPinned(storageKey: string = PINNED_STORAGE_KEY): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return []
+    return parsePinned(JSON.parse(raw))
+  } catch {
+    return []
+  }
+}
+
+/** 写入「常用」清单（失败静默 —— 隐私模式/配额满时按「本次不生效」处理，不改内存态） */
+export function savePinned(keys: string[], storageKey: string = PINNED_STORAGE_KEY): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(parsePinned(keys)))
+  } catch {
+    /* 静默：偏好写不进去不影响可用性 */
+  }
+}
+
+/**
+ * 切换收藏：**纯函数**（给定现值 + 目标 key ⇒ 新值），I/O 留给调用方。
+ *
+ * 三态：已钉 ⇒ 取消；未钉且未满 ⇒ 追加到**末尾**（「常用」内顺序 = 用户钉的顺序）；
+ * 未钉且已满 ⇒ **原样返回**（调用方据此提示「最多 6 项」；不静默顶掉别人的位置）。
+ */
+export function togglePinned(current: string[], key: string): string[] {
+  const cur = parsePinned(current)
+  if (cur.includes(key)) return cur.filter((k) => k !== key)
+  if (cur.length >= PINNED_MAX) return cur
+  return [...cur, key]
+}
+
+/** 该项是否已钉（视图用） */
+export function isPinned(pinned: string[], key: string): boolean {
+  return pinned.includes(key)
+}
+
+/**
+ * 按「常用」清单解析出**当前用户真的看得到**的项（顺序 = 用户钉的顺序）。
+ *
+ * 🔴 两条过滤**必须**都在：① key 已在菜单里不存在（改名/删除）⇒ 丢；② 存在但**当前无权**
+ * （或企业开关关掉了「每日简报」）⇒ 丢。漏掉 ② 就是「收藏可以绕过菜单权限」的漏洞。
+ */
+export function resolvePinnedItems(
+  groups: MenuGroup[],
+  standaloneTop: MenuItem[],
+  standaloneBottom: MenuItem[],
+  pinned: string[],
+  opts: MenuFilterOptions,
+): MenuItem[] {
+  const visibleAll = [
+    ...groups.flatMap((g) => filterMenuItems(g.children, opts)),
+    ...filterMenuItems(standaloneTop, opts),
+    ...filterMenuItems(standaloneBottom, opts),
+  ]
+  const byKey = new Map(visibleAll.map((i) => [i.key, i]))
+  return parsePinned(pinned)
+    .map((k) => byKey.get(k))
+    .filter((i): i is MenuItem => !!i)
+}
+
+/**
+ * 「常用」合成分组（侧边栏渲染用）。
+ *
+ * 返回 `null` 表示**整区不渲染**（清单为空，或钉住的项**一项都不可见**）——
+ * 空标题比没有标题更糟（用户会以为功能坏了）。
+ */
+export function pinnedGroup(
+  groups: MenuGroup[],
+  standaloneTop: MenuItem[],
+  standaloneBottom: MenuItem[],
+  pinned: string[],
+  opts: MenuFilterOptions,
+): { key: string; name: string; items: MenuItem[] } | null {
+  const items = resolvePinnedItems(groups, standaloneTop, standaloneBottom, pinned, opts)
+  return items.length > 0 ? { key: PINNED_GROUP_KEY, name: PINNED_GROUP_NAME, items } : null
+}
+
 /** 路由是否命中某菜单项（`/dashboard` 额外认 `/`；其余按「自身或子路径」前缀匹配） */
 /**
  * **旧深链 → 菜单项 path** 的别名（issue #4439）。
@@ -115,19 +247,32 @@ export function initialExpandedGroups(groups: MenuGroup[], activeGroupKey: strin
 }
 
 export interface FlatMenuItem extends MenuItem {
-  /** 所属组 key（独立项为空串） */
+  /** 所属组 key（一级独立项为空串） */
   groupKey: string
-  /** 所属组名（独立项为空串） */
+  /** 所属组名（一级独立项为空串） */
   groupName: string
 }
 
-/** 拍平（命令面板 ⌘K 用）：分组项按组顺序在前，独立项在后 */
-export function flattenMenu(groups: MenuGroup[], standalone: MenuItem[]): FlatMenuItem[] {
+/**
+ * 拍平（命令面板 ⌘K 用）：**顶部一级项 → 分组项（按组顺序）→ 尾部独立项**。
+ *
+ * 顺序 == 侧边栏渲染顺序 ⇒ ⌘K 空查询时的「全量索引」与侧边栏逐项对齐（不同源会让用户
+ * 在面板里看到的顺序与菜单对不上）。
+ *
+ * 两级独立项（本轮 2026-09-29 引入）：`standaloneTop` = 渲染在**分组之前**的一级项
+ * （如「商品管理」）；`standaloneBottom` = 渲染在**分组之后**的独立项（如「通知中心」）。
+ * 两者都**不是**分组，`groupKey`/`groupName` 留空（面板上不显示「组名」标签）。
+ */
+export function flattenMenu(
+  groups: MenuGroup[],
+  standaloneTop: MenuItem[] = [],
+  standaloneBottom: MenuItem[] = [],
+): FlatMenuItem[] {
   const fromGroups = groups.flatMap((g) =>
     g.children.map((c) => ({ ...c, groupKey: g.key, groupName: g.name })),
   )
-  const fromStandalone = standalone.map((c) => ({ ...c, groupKey: '', groupName: '' }))
-  return [...fromGroups, ...fromStandalone]
+  const flat = (items: MenuItem[]) => items.map((c) => ({ ...c, groupKey: '', groupName: '' }))
+  return [...flat(standaloneTop), ...fromGroups, ...flat(standaloneBottom)]
 }
 
 /**

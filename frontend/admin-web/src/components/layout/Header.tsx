@@ -39,25 +39,30 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // ⚠️ 本表是 `find` 取**首个命中**、顺序敏感 ⇒ 前缀不得写宽（`p.startsWith('/b')` 会抢走别的匹配）。
   { match: (p) => p.startsWith('/briefing'), crumbs: [{ label: '工作台' }, { label: '每日简报' }] },
 
-  // 智能客服组（与侧边栏"智能客服"分组对齐，#2969 知识库归入本组）
-  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '智能客服' }, { label: '米宝 · 在线对话' }] },
-  { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '智能客服' }, { label: '在线接待' }] },
-  { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '智能客服' }, { label: '会话监控' }] },
-  { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '智能客服' }, { label: '客服工作台' }] },
-  { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '智能客服' }, { label: '知识库' }] },
+  // 客户服务组（本轮 2026-09-29 用户裁定**新建**：原「智能客服」组 + 客户侧两项合并）
+  // 🔴 首项 = 组名「客户服务」，与侧边栏 `config/menu.ts` 的 `customer-service` 组逐字一致
+  // （判据 PG-038：末项 label == 菜单名）。
+  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客户服务' }, { label: '米宝 · 在线对话' }] },
+  { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '客户服务' }, { label: '在线接待' }] },
+  // 「会话监控」是**非菜单路由**（侧边栏无此项，属域内下钻）—— 首项仍取它所属的业务组名。
+  { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '客户服务' }, { label: '会话监控' }] },
+  { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '客户服务' }, { label: '客服工作台' }] },
+  { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '客户服务' }, { label: '知识库' }] },
 
-  // 商品与加工项组（issue #5271 组名：原「商品管理」→「商品与加工项」）
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品与加工项' }, { label: '商品列表' }] },
-  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品与加工项' }, { label: '商品分类管理' }] },
+  // 商品管理（本轮 2026-09-29 用户裁定：由「商品与加工项」组**升为一级菜单项**，
+  // 菜单名 = 「商品管理」）⇒ 首项 = 「商品管理」（无父组，与侧边栏一级项同名）。
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品管理' }] },
+  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
   { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '生产管理' }, { label: '生产明细' }] },
-  // issue #4490（含同日规格修订）：旧「加工项管理」(/processing) 已并入 /production/processing，
-  // 且按用户裁定**归入商品管理组**（生产管理组不再有它）⇒ 面包屑必须跟着入口走，否则
-  // §15.2「面包屑与侧边栏菜单名一致」不成立。本路径现为重定向，这里保留一条同口径的兜底。
+  // issue #4490（含同日规格修订）：旧「加工项管理」(/processing) 已并入 /production/processing。
+  // 🔴 本轮（2026-09-29 用户裁定）：该入口**由「商品与加工项」组移入「生产管理」组**
+  // ⇒ 面包屑首项随之改判为「生产管理」（§15.2「面包屑与侧边栏一致」—— 不改就两边对不上）。
+  // 本路径现为重定向，这里保留一条同口径的兜底。
   // issue #4542：菜单名 = 「加工项管理」（与服务端 `MenuController`/`AuthService` 同名）；
   // 该页仍是两个 tab（加工项 / 加工费组合），改名不减功能。
-  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品与加工项' }, { label: '加工项管理' }] },
+  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '生产管理' }, { label: '加工项管理' }] },
 
   // 生产管理组（与侧边栏"生产管理"分组对齐，issue #4357 补 —— 此前本组**无任何面包屑条目**
   // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立）
@@ -78,10 +83,11 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）。
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
-  // issue #4490（含同日规格修订）：加工项 + 加工费合并为 /production/processing（两个 tab），
-  // 按用户裁定归**商品管理**组 ⇒ 面包屑写「商品管理 / 加工项管理」（#4542 改名后与服务端同名）。
+  // issue #4490（含同日规格修订）：加工项 + 加工费合并为 /production/processing（两个 tab）。
+  // 🔴 本轮（2026-09-29 用户裁定）：归**生产管理**组（原「商品管理」组）⇒ 面包屑写
+  // 「生产管理 / 加工项管理」（#4542 改名后与服务端同名）。
   // 前缀同时覆盖旧路径 /production/processing-fees（它重定向到 ?tab=fees）⇒ 旧深链的面包屑也写该名。
-  { match: (p) => p.startsWith('/production/processing'), crumbs: [{ label: '商品与加工项' }, { label: '加工项管理' }] },
+  { match: (p) => p.startsWith('/production/processing'), crumbs: [{ label: '生产管理' }, { label: '加工项管理' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
@@ -90,12 +96,14 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '入库单' }] },
 
-  // 交易管理组（issue #5271：原「订单管理」+ 原「客户管理」的客户列表/财务对账**并为一组** ——
-  // 一条动线：谁下单 → 单到哪 → 售后 → 收款对账）
+  // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
+  // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）
   { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '订单列表' }] },
-  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '交易管理' }, { label: '售后工单' }] },
-  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '交易管理' }, { label: '客户列表' }] },
   { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '交易管理' }, { label: '财务对账' }] },
+
+  // 客户服务组的两项业务页（与上面的 /agent-workspace、/knowledge 同组）
+  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '客户服务' }, { label: '售后工单' }] },
+  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '客户服务' }, { label: '客户列表' }] },
 
   // 组织管理组（与侧边栏"组织管理"分组对齐，#2969 员工/岗位权限/企业信息归入本组）
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },
