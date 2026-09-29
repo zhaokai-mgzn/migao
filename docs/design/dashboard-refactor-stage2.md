@@ -33,6 +33,24 @@
 
 ### 2.2 落地口径
 
+### 2.3 🔴 未决缺口（实施前必须先定，2026-09-29 实作时发现）
+
+**「该企业是否启用智能客服」在本仓目前没有真值源** —— 实测：
+
+- `tenants` 表**没有** `ai_service_enabled` 之类字段（只有 `briefing_enabled` / `notification_enabled` 两个先例）；
+- 全仓 grep `ai_service|aiService|agent_enabled|customer_service_enabled` 在 admin-api 与建库脚本里**零命中**；
+- 现有相关的只有**权限码**：`agent:session`（会话读）/ `agent:session:manage`（写）。
+
+⇒ 因此 `capabilities.aiService` 的**判定依据必须先裁定**（三选一，各有代价）：
+
+| 方案 | 判定 | 代价 |
+|---|---|---|
+| A. 企业级新开关 | `tenants.ai_service_enabled`（迁移 + 设置页开关），与 `briefing_enabled` 同范式 | 最正确、可运营；代价 = 迁移 + 设置页 + 控制台（**超一个包**） |
+| B. 按**租户**派生 | 租户下**任一岗位**持有 `agent:session` ⇒ true | 零迁移；但「岗位权限配置」同时决定两件事（授权与产品可见性），且新租户默认无该码时卡片全不显示 |
+| C. 按**当前用户**派生 | 我是否持有 `agent:session` | 最省事；但**把「企业有没有买」退化成「我有没有权」** —— 无该码的老板将看不到 AI 接入情况，与「经营看板给决策者看」的初衷冲突 |
+
+**本 Agent 建议 A**（语义最准、可运营、可审计），但它超一个包；若本阶段要零迁移，则退 B（**不得**用 C）。
+
 1. **新增能力位** `capabilities.aiService`（服务端判定「该企业是否启用智能客服能力」；
    判定依据必须落成**一处**，且与既有 `agent:session` 等码的关系写明 —— 建议：
    企业级开关（若人类裁定要独立开关）或按「是否持有智能客服相关码」派生，二选一，**不得两处各判**）。
