@@ -11,6 +11,7 @@
  */
 import type { RecognizedField } from './api'
 import type { ProductColor, ProductFormData } from '@/types'
+import { craftItemKeyOf } from './order-craft-fields'
 import { nextTempId, normalizeDoorWidth, rebuildSkus } from './sku-utils'
 
 /** 预填来源标记（与内核返回的 `source` 逐字一致 —— 徽标文案单一事实源，不另写一份） */
@@ -178,25 +179,25 @@ export function styleOf(raw: string): string | undefined {
 }
 
 /**
- * **目录改名的别名表**（V139：`韩折` ⇒ `韩褶`）—— 图上照旧写「韩折」的老单占多数，
- * 不归一就永远匹配不上目录（**少勾一项 = 少做一道工序**）。
- *
- * ⚠️ 只登记**同一件东西的改名**，不做同义词联想（联想 = 替客户改需求）。
+ * **目录改名的别名表在 `lib/order-craft-fields.ts`**（`CRAFT_ITEM_NAME_ALIASES` / `craftItemKeyOf`）
+ * —— 页面侧的「按名字找加工项」用的是**同一份**表（两边各写一份 = 同一真值两处口径，
+ * 本仓反复复发的形态）。这里只消费它。
  */
-export const PROCESSING_ITEM_ALIASES: Record<string, string> = { 韩折: '韩褶' }
 
 /**
- * 加工项原文 → 目录名清单（顿号 / 逗号 / 分号 / 斜杠 / 空白分隔，去重）。
+ * 加工项原文 → 目录名清单（顿号 / 逗号 / 分号 / 斜杠 / 空白分隔，去重 + 归一到**规范 key**）。
  *
  * ⚠️ **目录里没有的名字原样保留**（页面按目录逐名匹配，匹配不上的**只提示、不勾选**）——
- * 这里"纠正"一个名字就等于替客户改需求；唯一的例外是上面登记过的**改名别名**。
+ * 这里"纠正"一个名字就等于替客户改需求。
+ * 唯一例外 = {@link craftItemKeyOf} 里登记的**改名别名**（V139：`韩折` ⇒ `韩褶`）——
+ * 归一后页面按同一个 key 匹配目录，因此老目录里的「韩折」照样能勾上。
  */
 export function processingItemNamesOf(raw: string): string[] {
   const names = raw
     .split(/[、,，;；/／\s]+/)
     .map((name) => name.trim())
     .filter((name) => name !== '')
-    .map((name) => PROCESSING_ITEM_ALIASES[name] ?? name)
+    .map((name) => craftItemKeyOf(name))
   return Array.from(new Set(names))
 }
 

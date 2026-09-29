@@ -135,7 +135,13 @@ async function setupCurtain() {
   fireEvent.click(await screen.findByRole('button', { name: '米白' }))
   fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
-  fireEvent.click(await screen.findByRole('button', { name: /2\.8米/ }))
+  // 选规格（2026-09-29 第二次裁定：门幅 chips 网格 ⇒ **一行摘要 + 下拉**）
+  await waitFor(() => {
+    const select = screen.getByTestId('sku-select') as HTMLSelectElement
+    const option = Array.from(select.options).find((o) => /2\.8米/.test(o.textContent ?? ''))
+    if (!option) throw new Error('规格下拉里没有 2.8米')
+    fireEvent.change(select, { target: { value: option.value } })
+  })
   await waitFor(() => expect(inputOf('用料米数').value).toMatch(/^13\.3/))
 }
 

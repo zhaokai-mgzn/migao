@@ -12,7 +12,11 @@
  *    表外公式 ⇒ 不出说明（宁可没有，也不说错）。
  */
 import { describe, it, expect } from 'vitest'
-import { marginForOpenCount, metersFormulaLegend } from '@/lib/meters-formula-legend'
+import {
+  CRAFT_CALC_ENTRY,
+  marginForOpenCount,
+  metersFormulaLegend,
+} from '@/lib/meters-formula-legend'
 
 const CONFIG = { margin_single: 0.3, margin_multi: 0.3 }
 
@@ -34,10 +38,13 @@ describe('用料公式参数说明（2026-09-29 用户裁定）', () => {
       { value: '52', name: '自动算出的褶数' },
       { value: '0.25', name: '每折吃布（米 · 算料配置）' },
     ])
-    // 「要改去哪改」——用户口径「如果用户要修改参数也知道去改什么」
-    expect(legend!.where).toContain('净尺寸')
-    expect(legend!.where).toContain('打开方式')
-    expect(legend!.where).toContain('工艺配置 → 算料配置')
+    // 「要改去哪改」——用户口径「如果用户要修改参数也知道去改什么」；末段是**可点深链**
+    expect(legend!.where.prefix).toContain('净尺寸')
+    expect(legend!.where.prefix).toContain('打开方式')
+    expect(legend!.where.linkLabel).toBe('工艺配置 → 算料配置')
+    expect(legend!.where.linkHref).toBe(CRAFT_CALC_ENTRY)
+    // 入口常量本身也钉死（深链必须与工艺配置页认的参数一致：`?tab=calc`）
+    expect(CRAFT_CALC_ENTRY).toBe('/production/routings?tab=calc')
   })
 
   it('判据 ①b：余量按**开数**取键（单开 ⇒ margin_single；多开 ⇒ margin_multi），与引擎同口径', () => {

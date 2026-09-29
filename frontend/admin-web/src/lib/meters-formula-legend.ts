@@ -47,8 +47,28 @@ export interface MetersFormulaLegend {
   /** 逐条「数 = 名字」—— 与公式串里的**出现顺序一致**（先出现的先说） */
   params: MetersFormulaParam[]
   /** 「要改这个参数，去哪儿改」—— 按参数名给出页面上的入口（不含公式串里的派生量） */
-  where: string
+  where: MetersFormulaWhere
 }
+
+/**
+ * 「要改参数去哪儿改」的**结构化**形态（2026-09-29 用户裁定：「工艺配置 → 算料配置」这句
+ * 要能**点进**去）—— 前半句是纯文本，末段是一个**可点链接**（页面渲染 `<Link>`）。
+ */
+export interface MetersFormulaWhere {
+  /** 前半句（纯文本，逐项给出参数 → 入口） */
+  prefix: string
+  /** 链接文案 */
+  linkLabel: string
+  /** 链接目标（算料配置页；**深链靠 `?tab=calc`**，由工艺配置页自己消费） */
+  linkHref: string
+}
+
+/**
+ * **工艺配置 → 算料配置**页的深链（issue #4528 把算料配置做成 `/production/routings` 的第二个 tab）。
+ * ⚠️ 与「加工费组合」的入口 `PRICING_ENTRY`（订单页）同一手法：**入口只有一份**，
+ * 页面与文案都从这里取（各写一份 = 死链没人发现）。
+ */
+export const CRAFT_CALC_ENTRY = '/production/routings?tab=calc'
 
 const FORMULA_PLEAT = 'pleat'
 
@@ -90,9 +110,13 @@ export function metersFormulaLegend(
     const text = num(value)
     if (text !== null) params.push({ value: text, name })
   }
-  const where =
-    '改参数：净窗宽 / 净窗高 → 上方「净尺寸」；开数（打开方式）与用料公式 →「改工艺参数」；' +
-    '每片余量 / 每折吃布 / 褶倍 →「工艺配置 → 算料配置」'
+  const where: MetersFormulaWhere = {
+    prefix:
+      '改参数：净窗宽 / 净窗高 → 上方「净尺寸」；开数（打开方式）与用料公式 →「改工艺参数」；' +
+      '每片余量 / 每折吃布 / 褶倍 → ',
+    linkLabel: '工艺配置 → 算料配置',
+    linkHref: CRAFT_CALC_ENTRY,
+  }
 
   if (formula === FORMULA_PLEAT) {
     // 顺序 = 公式串里出现的先后：窗宽 → 余量 → 褶倍 → 褶数 → 每折吃布

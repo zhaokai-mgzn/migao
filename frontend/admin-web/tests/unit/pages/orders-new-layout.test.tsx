@@ -333,24 +333,34 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
   it('判据 4（2026-09-29 改判）：门幅 chips **常态可选**；来源文案说人话（按窗宽挑最省料的那支）', async () => {
     await setupLine()
-    // ① chips 常态就在（旧「只读摘要 + 点『改』展开」已删除）—— 选中态在无障碍树上可读（`aria-pressed`）
-    // 红证方向：把 chips 藏回「改」后面 / 删掉 `aria-pressed` ⇒ 下面两条红
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'true')
+    // ① 下拉与摘要都在（用户实测原话：常显 chips 网格「比较浪费空间」）
+    const select = screen.getByTestId('sku-select') as HTMLSelectElement
+    expect(select.selectedOptions[0]?.textContent).toContain('2.8米')
+    expect(screen.getByTestId('sku-summary').textContent).toContain('门幅 2.8米')
     expect(screen.queryByTestId('sku-picker-toggle')).toBeNull()
     // ② 「为什么是这一支」= **可理解的原因**（含窗宽数），不再是那句没头没尾的「系统按门幅规则自动选中」
     const reason = screen.getByTestId('sku-choice-reason')
     expect(reason.textContent).toContain('窗宽 6.6 米')
     expect(reason.textContent).toContain('最省料')
     expect(reason.textContent).not.toContain('门幅规则')
+    // ③ **门幅推导细节**：默认收起；展开后有候选清单 / 规则解 / 服务端依据（前端不编一句）
+    const details = screen.getByTestId('door-width-details') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    fireEvent.click(within(details).getByText('门幅推导细节'))
+    expect(details.open).toBe(true)
+    expect(screen.getByTestId('door-width-candidates').textContent).toContain('2.8米')
+    expect(screen.getByTestId('door-width-rule-solution').textContent).toContain('2.8 米')
+    expect(screen.getByTestId('door-width-plan-reason').textContent).toContain('替身：单幅可做')
   })
 
-  it('判据 4b：商家点一下 chips ⇒ 选中态仍钉在同一支，来源翻「你手动选的规格」', async () => {
+  it('判据 4b：改下拉 ⇒ 规格换掉，来源翻「你手动选的规格」', async () => {
     await setupLine()
-    fireEvent.click(screen.getByRole('button', { name: /2\.8米/ }))
+    const select = screen.getByTestId('sku-select') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: select.options[0].value } })
     await waitFor(() =>
       expect(screen.getByTestId('sku-choice-reason').textContent).toContain('你手动选的规格')
     )
-    expect(screen.getByRole('button', { name: /2\.8米/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(select.selectedOptions[0]?.textContent).toContain('2.8米')
   })
 
   it('判据 5：推荐组合**默认预选**（韩褶 + 布帘定型），推荐条逐字给出这组名字', async () => {

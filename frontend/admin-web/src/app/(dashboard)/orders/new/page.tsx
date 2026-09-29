@@ -71,6 +71,9 @@ import {
 // 用料公式的**参数说明**（2026-09-29 用户裁定：公式串「用户看不懂里面的数字代表什么，
 // 应该要把参数名带上，如果用户要修改参数也知道去改什么」）—— 纯函数，**不解析公式串**
 import { metersFormulaLegend } from '@/lib/meters-formula-legend'
+// 用料方案的**结论表达**（2026-09-29 用户第二次裁定：旧形态的「来源汇总 / 分幅 — / 接高 — 米」
+// 读不懂）—— 纯函数，只做措辞、不重算
+import { craftPlanConclusionOf } from '@/lib/craft-plan-conclusion'
 import {
   COMPONENT_ROLE_EDGE,
   CURTAIN_BODY_CLOTH,
@@ -87,6 +90,7 @@ import {
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
+  craftItemKeyOf,
   createDefaultCraftSpec,
   curtainTypeOfBody,
   defaultIsShapedForBody,
@@ -344,6 +348,29 @@ interface OrderLineItem {
 }
 
 /** 开数 → 中文标签（复用 lib 的单一映射，不另写一份） */
+/**
+ * 用料方案「逐项白话」的 label → **既有 testid**（2026-09-29 第二次裁定把六个 span 收成一张列表
+ * ⇒ testid 由这张表给，判据仍按 testid 定位、不按文案 —— 文案会变，判据不该跟着碎）。
+ */
+const CRAFT_PLAN_ITEM_TESTIDS: Record<string, string> = {
+  工艺: 'craft-plan-craft',
+  门幅: 'craft-plan-door-width',
+  分幅: 'craft-plan-panels',
+  拼接: 'craft-plan-splice',
+  接高: 'craft-plan-join-height',
+  接宽: 'craft-plan-join-width',
+}
+
+/** 逐项明细里**哪一项可能被人工改过**（label → `planSources` 的键）—— 用来标「（人工）」 */
+const CRAFT_PLAN_MANUAL_SOURCE_BY_LABEL: Record<
+  string,
+  'cuttingMode' | 'spliceTimes' | 'joinHeightM' | 'joinWidthM'
+> = {
+  拼接: 'spliceTimes',
+  接高: 'joinHeightM',
+  接宽: 'joinWidthM',
+}
+
 const OPEN_COUNT_LABEL: Record<number, string> = Object.fromEntries(
   OPEN_COUNT_OPTIONS.map((o) => [o.value, o.label])
 )
@@ -600,7 +627,12 @@ function withCraftItemDefault(
 ): Record<string, { selected: boolean; qty: number }> {
   if (line.craftItemTouched) return line.selectedProcessing
   if (line.saleForm === SALE_FORM_FABRIC) return line.selectedProcessing
-  const item = line.processingItems.find((pi) => pi.name === DEFAULT_CRAFT_ITEM_NAME)
+  // ⚠️ **按规范 key 找项**（`craftItemKeyOf`）：目录里的工艺项可能是「韩折」（V139 之前的
+  // ERP 写法）而代码里的规范名是「韩褶」—— 直接比名字会让推荐与预选在老目录上**静默失效**
+  // （2026-09-29 云测试环境实测：租户目录是「韩折」⇒ 推荐条只剩「定型」）。
+  const item = line.processingItems.find(
+    (pi) => craftItemKeyOf(pi.name) === craftItemKeyOf(DEFAULT_CRAFT_ITEM_NAME)
+  )
   if (!item) return line.selectedProcessing
   const prev = line.selectedProcessing[item.id]
   if (prev?.selected === true) return line.selectedProcessing
@@ -624,17 +656,29 @@ function withRecommendedItemDefaults(
 }
 
 /**
- * **推荐组合的项名**（目录名，2026-09-28）= 工艺默认「韩褶」+ 帘体的定型默认（真值源 §10：布帘是 /
- * 纱帘否）；布料组整组无加工（#4493）⇒ 空。
+ * **推荐组合的项名**（**目录里的实际名字**，2026-09-28；2026-09-29 改为别名容错）= 工艺默认
+ * 「韩褶 / 韩折」+ 帘体的定型默认（真值源 §10：布帘是 / 纱帘否）；布料组整组无加工（#4493）⇒ 空。
  *
  * 与 {@link withRecommendedItemDefaults} 是**同一份口径的两个读法**（预选 / 界面展示）——
  * 名字在这里只出现一次，避免「预选勾了 A、界面推荐写着 B」。
+ *
+ * ⚠️ 与预选**同一条纪律**：按 {@link craftItemKeyOf} 取规范 key 找项，并把**目录里的名字**
+ * 返回（而不是代码里写死的规范名）—— 否则老目录（工艺项叫「韩折」）上推荐条会少一项。
  */
 function recommendedItemNamesOf(line: OrderLineItem): string[] {
   if (line.saleForm === SALE_FORM_FABRIC) return []
-  return defaultIsShapedForBody(line.curtainBody)
-    ? [DEFAULT_CRAFT_ITEM_NAME, SHAPED_ITEM_NAME]
-    : [DEFAULT_CRAFT_ITEM_NAME]
+  const names: string[] = []
+  const craftItem = line.processingItems.find(
+    (pi) => craftItemKeyOf(pi.name) === craftItemKeyOf(DEFAULT_CRAFT_ITEM_NAME)
+  )
+  if (craftItem) names.push(craftItem.name)
+  if (defaultIsShapedForBody(line.curtainBody)) {
+    const shapedItem = line.processingItems.find(
+      (pi) => craftItemKeyOf(pi.name) === craftItemKeyOf(SHAPED_ITEM_NAME)
+    )
+    if (shapedItem) names.push(shapedItem.name)
+  }
+  return names
 }
 
 /**
@@ -1525,8 +1569,13 @@ export default function NewOrderPage() {
             // 识别到的加工项里哪些**本租户目录里没有** ⇒ 只提示、不勾选（不替客户造一个不存在的项）。
             // ⚠️ 目录取自**这一行**的 `processingItems`（页面唯一那份目录）—— 用页面级 state 会在
             // 它的初始化之前被引用（TDZ），也会让这个回调多一个会漂的依赖。
-            const catalogNames = new Set(patched.processingItems.map((pi) => pi.name))
-            const unmatchedItems = itemNames.filter((name) => !catalogNames.has(name))
+            // ⚠️ 比较一律走**规范 key**（`craftItemKeyOf`）：目录里可能是「韩折」而识别值已归一到
+            // 「韩褶」，直接比字符串会**静默不勾选**（2026-09-29 云测试环境实测的同一形态）。
+            const catalogKeys = new Set(patched.processingItems.map((pi) => craftItemKeyOf(pi.name)))
+            const requestedKeys = new Set(itemNames.map((name) => craftItemKeyOf(name)))
+            const unmatchedItems = itemNames.filter(
+              (name) => !catalogKeys.has(craftItemKeyOf(name))
+            )
             patched.recognizedCraftText = [
               openCount !== undefined
                 ? `打开方式 ${OPEN_COUNT_LABEL[openCount] ?? `${openCount} 开`}`
@@ -1550,9 +1599,9 @@ export default function NewOrderPage() {
             if (openCount !== undefined) patched.openCountTouched = true
             if (hasItemRequest) {
               const selected = { ...patched.selectedProcessing }
-              // ① 客户写明的项 ⇒ 勾上
+              // ① 客户写明的项 ⇒ 勾上（按**规范 key** 比）
               for (const item of patched.processingItems) {
-                if (itemNames.includes(item.name)) {
+                if (requestedKeys.has(craftItemKeyOf(item.name))) {
                   selected[item.id] = {
                     selected: true,
                     qty: selected[item.id]?.qty ?? deriveProcessingQty(patched.quantity),
@@ -1561,9 +1610,11 @@ export default function NewOrderPage() {
               }
               // ② 系统**推荐默认**里、客户没提的项 ⇒ 取消 —— 否则「默认韩褶 + 定型」会把客户的单子
               //    改成系统以为的样子（用户说的「不能选错」正是这个形态）
-              const recommended = recommendedItemNamesOf(patched)
+              const recommendedKeys = new Set(
+                recommendedItemNamesOf(patched).map((name) => craftItemKeyOf(name))
+              )
               for (const item of patched.processingItems) {
-                if (recommended.includes(item.name) && !itemNames.includes(item.name)) {
+                if (recommendedKeys.has(craftItemKeyOf(item.name)) && !requestedKeys.has(craftItemKeyOf(item.name))) {
                   selected[item.id] = { selected: false, qty: selected[item.id]?.qty ?? 1 }
                 }
               }
@@ -2240,8 +2291,12 @@ export default function NewOrderPage() {
       selectedProcessing: nextSelected,
       // 加工项一变 ⇒ 组合键就变 ⇒ 上一组合的人工改价必须清掉（同 `toggleProcessing`，#4878）
       processingFeeOverride: null,
-      ...(names.includes(SHAPED_ITEM_NAME) ? { shapedItemTouched: true } : {}),
-      ...(names.includes(DEFAULT_CRAFT_ITEM_NAME) ? { craftItemTouched: true } : {}),
+      ...(names.map(craftItemKeyOf).includes(craftItemKeyOf(SHAPED_ITEM_NAME))
+        ? { shapedItemTouched: true }
+        : {}),
+      ...(names.map(craftItemKeyOf).includes(craftItemKeyOf(DEFAULT_CRAFT_ITEM_NAME))
+        ? { craftItemTouched: true }
+        : {}),
     })
     if (replaced) {
       toast.info(`一张单只能有一个工艺：已把「${replaced.name}」换成「${DEFAULT_CRAFT_ITEM_NAME}」`)
@@ -4257,62 +4312,80 @@ function ProductGroupBlock({
                   </div>
                 )}
 
-                {/* ===== 门幅 / 规格（规则自动选中 ⇒ **chips 直接可选**，2026-09-29 用户裁定）=====
-                    issue #4877 裁定 C 未变（多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）；
-                    变的是**呈现**：旧的「只读摘要 + 点『改』才出 chips」已整体删除
-                    —— 用户口径「移除这种设计，当前编辑态就是允许用户直接更改的」。
-                    chips 常态就在（选中态 = 规则解），**为什么选它**写在下面那行
-                    （旧文案「系统按门幅规则自动选中」没说人话：用户不知道那是什么规则）。
-                    规则判不了（还没选颜色 / 该颜色没有 SKU）⇒ 本来就只有 chips。 */}
+                {/* ===== 门幅 / 规格（**一行摘要 + 下拉 + 推导细节**；2026-09-29 第二次裁定）=====
+                    issue #4877 裁定 C 未变（多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）。
+                    形态：常显 chips 网格「比较浪费空间」（用户实测原话）⇒ 改为**一行摘要 + 下拉选择**，
+                    并新增可展开的「门幅推导细节」（规则解 / 引擎依据 / 候选清单）。
+                    ⚠️ 「为什么是这一支」仍说人话；**顺序口径不在本文件复述**（真值源 = 设计文档，
+                    复述会被 `test_craft_calc_ranking_order_single_source.py` 判红）。 */}
                 {group.selectedColorId != null && skuOptions.length > 0 && (
                   <div className="mb-4">
                     <Label required>门幅 / 规格</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {skuOptions.map((sku) => {
-                        const active = group.selectedSku?.id === sku.id
-                        return (
-                          <button
-                            key={sku.id}
-                            type="button"
-                            // `aria-pressed` = 「这一支就是当前选中的规格」——chips 常态就在的形态下，
-                            // 选中态必须**在无障碍树上**可读（旧只读摘要 `sku-summary` 承担的那个读数面）。
-                            aria-pressed={active}
-                            onClick={() => onSelectSku(sku)}
-                            className={
-                              'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
-                              (active
-                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                            }
-                          >
-                            <div className="text-left">
-                              <div className="font-medium">{sku.doorWidth || '默认规格'}</div>
-                              <div className="text-xs text-neutral-400 mt-0.5">
-                                库存 {sku.stock ?? 0}
-                              </div>
-                            </div>
-                            <span className="text-sm font-semibold">
-                              ¥{Number(sku.price).toFixed(2)}
-                            </span>
-                          </button>
-                        )
-                      })}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        data-testid="sku-select"
+                        aria-label="门幅 / 规格"
+                        value={group.selectedSku ? String(group.selectedSku.id) : ''}
+                        onChange={(e) => {
+                          const picked = skuOptions.find((sku) => String(sku.id) === e.target.value)
+                          if (picked) onSelectSku(picked)
+                        }}
+                        className="h-9 min-w-[15rem] max-w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      >
+                        {group.selectedSku === null && <option value="">请选择规格</option>}
+                        {skuOptions.map((sku) => (
+                          <option key={sku.id} value={String(sku.id)}>
+                            {sku.doorWidth || '默认规格'} · ¥{Number(sku.price).toFixed(2)}/米 · 库存{' '}
+                            {sku.stock ?? 0}
+                          </option>
+                        ))}
+                      </select>
+                      {group.selectedSku && (
+                        <span data-testid="sku-summary" className="text-sm text-neutral-600">
+                          门幅 {group.selectedSku.doorWidth || '默认规格'} · ¥
+                          {Number(group.selectedSku.price).toFixed(2)}/米 · 库存{' '}
+                          {group.selectedSku.stock ?? 0}
+                        </span>
+                      )}
                     </div>
                     {group.selectedSku && (
-                      /* 「**为什么是这一支**」说人话（2026-09-29 用户裁定）：规则原文（**顺序口径的
-                         单一真值源** = docs/design/order-auto-derivation.md）不在这里复述 ——
-                         复述就是第二份口径（`test_craft_calc_ranking_order_single_source.py` 的 C1/C2
-                         会把「扫描面之外又冒出一处顺序表述」判红）；这里只讲商家关心的那一步。 */
-                      <p
-                        data-testid="sku-choice-reason"
-                        title="门幅规则：可行集里取最省料的那一支（全量口径见 docs/design/order-auto-derivation.md）"
-                        className="mt-1 text-xs text-primary-600"
-                      >
+                      <p data-testid="sku-choice-reason" className="mt-1 text-xs text-primary-600">
                         {first.skuAutoSelected
-                          ? `系统按${Number(first.width) > 0 ? `窗宽 ${Number(first.width)} 米` : '窗宽 / 窗高'}挑了最省料的门幅：先保证不用拼接，再比用料多少 —— 要换直接点上面任一规格`
+                          ? `系统按${Number(first.width) > 0 ? `窗宽 ${Number(first.width)} 米` : '窗宽 / 窗高'}挑了最省料的门幅 —— 要换直接改上面的下拉`
                           : '你手动选的规格'}
                       </p>
                     )}
+                    {/* **门幅推导细节**（2026-09-29 新增）：把「为什么是这一支」的依据与候选摆出来。
+                        ⚠️ 规则解与依据都来自**服务端** `doorWidthPlan`（前端不编一句、不自己算可行性）。 */}
+                    <details data-testid="door-width-details" className="mt-1.5">
+                      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
+                        门幅推导细节
+                      </summary>
+                      <div className="mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[11px] text-neutral-500">
+                        <p data-testid="door-width-candidates">
+                          候选门幅（该颜色共 {skuOptions.length} 支）：
+                          {skuOptions.map((sku, i) => (
+                            <span key={sku.id}>
+                              {i > 0 ? ' / ' : ''}
+                              {sku.doorWidth || '默认规格'}
+                              {sku.id === group.selectedSku?.id ? '（当前）' : ''}
+                            </span>
+                          ))}
+                        </p>
+                        <p data-testid="door-width-rule-solution">
+                          规则解：
+                          {first.doorWidthPlan?.door_width != null
+                            ? `${first.doorWidthPlan.door_width} 米`
+                            : '不可判定（缺尺寸 / 该颜色没有可用门幅）'}
+                        </p>
+                        {first.doorWidthPlan?.reason ? (
+                          <p data-testid="door-width-plan-reason">
+                            系统依据：{first.doorWidthPlan.reason}
+                          </p>
+                        ) : null}
+                        <p>选了非规则解时，系统只提示、不替你改。</p>
+                      </div>
+                    </details>
                     {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
                   </div>
                 )}
@@ -4581,6 +4654,33 @@ function LineItemBlock({
   const canRejectJoinHeight = joinHeightOption !== null && derivedOptionState(joinHeightOption) === 'merged'
   const canRejectSplice = spliceOption !== null && derivedOptionState(spliceOption) === 'merged'
   /**
+   * **用料方案的结论表达**（2026-09-29 用户第二次裁定）—— 只做措辞：数全部取自引擎推导方案
+   * （`plan`），拼接那一档复用既有 `craftPlanSpliceText`（同一档不许两份文案）。
+   * ⚠️ 拼接取**生效值**（人工加优先，同旧形态）：`spliceOption` 已经把 `planOverrides` 算进去。
+   * ⚠️ 位置**必须在 `planSources` / `spliceOption` 之后**（它们都是 `const`，提前引用会 TDZ 崩渲染）。
+   */
+  const craftPlanConclusion = craftPlanConclusionOf({
+    panels: plan?.panels ?? null,
+    spliceTimes: line.planOverrides?.spliceTimes ?? plan?.splice_times ?? null,
+    spliceText: spliceOption ?? (plan ? craftPlanSpliceText(plan) : null),
+    joinHeightM: plan?.join_height_m ?? null,
+    joinWidthM: plan?.join_width_m ?? null,
+    doorWidth: plan?.door_width ?? null,
+    craft: lineCraft ?? null,
+    craftIsDefault: !lineCraft,
+  })
+  /**
+   * 逐项明细 + **项级「人工」标注**（issue #5287 ①b 的甲口径，2026-09-29 第二次裁定收窄）：
+   * 「系统推导」是常态 ⇒ **不再逐项写**（用户实测读着吵）；**人工改过的那一项**必须还看得见
+   * （否则「谁定的」这条信息就没了 —— 判据要的是可归属，不是常显）。
+   */
+  const craftPlanItems = craftPlanConclusion.items.map((item) => {
+    const key = CRAFT_PLAN_MANUAL_SOURCE_BY_LABEL[item.label]
+    return key && planSources[key] === 'manual'
+      ? { ...item, value: `${item.value}（人工）` }
+      : item
+  })
+  /**
    * 「改」入口的展开态（issue #5202）：`null` = **跟随默认** —— 推导没就绪（`plan === null`）时
    * **默认展开**（人工兜底是唯一出路，收起会让商家无从下手），推导就绪后默认收起（三项输入收敛）。
    * 商家点过之后就按他点的来（不再被推导到达 / 消失牵动）。
@@ -4751,11 +4851,10 @@ function LineItemBlock({
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
                   {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
                   <p className="mt-1 text-xs text-neutral-400">= 加工费米数</p>
-                  {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼。
-                      ⚠️ 2026-09-21 口径反转：纱帘与布帘**用料算法完全一致** ⇒ 原「纱帘按实际买多少填，
-                      不自动算料 / 没有公式可恢复」的专属分支已删除（两种帘体走同一条渲染路径：
-                      公式串 /「人工指定 + 恢复按公式计算」/ 算料错误提示一律一视同仁）。 */}
-                  {line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
+                  {/* 算料来源（issue #4434）：**公式串与参数说明已移到下方「整行」块**
+                      （2026-09-29 第二次裁定：「推导说明的右侧空白也能利用起来，把文案完全平铺开」）
+                      —— 这里只留「人工指定」这条**与输入框直接相关**的状态与一键恢复。 */}
+                  {line.metersSource === LINE_METERS_SOURCE_MANUAL && (
                     <>
                       <p className="mt-1 text-xs text-amber-600">
                         人工指定
@@ -4778,30 +4877,6 @@ function LineItemBlock({
                           按新参数重算。
                         </p>
                       )}
-                    </>
-                  ) : line.calc?.formula_text ? (
-                    <p className="mt-1 text-xs text-neutral-400 break-words">
-                      {line.calc.formula_text}
-                    </p>
-                  ) : null}
-                  {/* **公式参数说明**（2026-09-29 用户裁定）：公式串照旧原样渲染（后端产出），
-                      这里补一行「哪个数是哪个参数」，并指出**要改去哪改**。
-                      ⚠️ 数取自同一次算料响应 / 算料配置 —— 不从公式串里反推（那是第二份真值源）。 */}
-                  {metersLegend && (
-                    <>
-                      <p
-                        data-testid="meters-formula-legend"
-                        className="mt-1 text-[11px] text-neutral-500"
-                      >
-                        参数说明：
-                        {metersLegend.params.map((p) => `${p.value}=${p.name}`).join(' · ')}
-                      </p>
-                      <p
-                        data-testid="meters-formula-legend-where"
-                        className="text-[11px] text-neutral-400"
-                      >
-                        {metersLegend.where}
-                      </p>
                     </>
                   )}
                   {line.calcError && <p className="mt-1 text-xs text-red-600">{line.calcError}</p>}
@@ -4830,6 +4905,47 @@ function LineItemBlock({
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
               </div>
+              {/* **公式 + 参数说明（整行平铺）**（2026-09-29 第二次裁定）：原来挤在左列里 ⇒
+                  右半边全空（用户原话「推导说明的右侧空白也能利用起来，把文案完全平铺开」）。
+                  公式串仍是**后端产出、原样渲染**（前端不自拼）；参数说明给「哪个数是哪个参数」
+                  + 「要改去哪改」，末段是**算料配置页的深链**（`CRAFT_CALC_ENTRY`）。 */}
+              {line.metersSource !== LINE_METERS_SOURCE_MANUAL && line.calc?.formula_text && (
+                <div
+                  data-testid="meters-formula-block"
+                  className="mt-3 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
+                >
+                  <p
+                    data-testid="meters-formula-text"
+                    className="text-xs text-neutral-500 break-words"
+                  >
+                    {line.calc.formula_text}
+                  </p>
+                  {metersLegend && (
+                    <>
+                      <p
+                        data-testid="meters-formula-legend"
+                        className="mt-1 text-xs text-neutral-500"
+                      >
+                        参数说明：
+                        {metersLegend.params.map((p) => `${p.value}=${p.name}`).join(' · ')}
+                      </p>
+                      <p
+                        data-testid="meters-formula-legend-where"
+                        className="mt-0.5 text-xs text-neutral-400"
+                      >
+                        {metersLegend.where.prefix}
+                        <Link
+                          href={metersLegend.where.linkHref}
+                          data-testid="craft-calc-entry"
+                          className="text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {metersLegend.where.linkLabel}
+                        </Link>
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
               {/* **识别来的工艺要求**（issue #5794）—— 逐字说出「按图选了什么」，商家一眼可核对
                   （用户口径「根据图中客户要求来决定工艺规格和加工项选择了，**不能选错**」）。 */}
               {line.recognizedCraftText && (
@@ -4853,56 +4969,30 @@ function LineItemBlock({
                 >
                   {plan ? (
                     <>
+                      {/* **结论 + 逐项白话**（2026-09-29 用户第二次裁定）：旧形态把引擎的**内部读数**
+                          原样摊开（`来源汇总：人工指定 0 项 · 系统推导 4 项（逐项见括号）` / `分幅 —` /
+                          `接高 — 米`）⇒ 用户读不出「到底要不要拼接 / 接高 / 接宽 / 分幅」。
+                          数一律取自引擎 `plan`（`craftPlanConclusionOf` 只做措辞，不重算任何几何/用料）。 */}
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
                         <span className="font-medium text-neutral-600">用料方案（系统推导）</span>
                         <span data-testid="craft-plan-mode" className="text-neutral-900">
                           加工类型：{plan.cutting_mode}
-                          {/* **项级**来源（甲，issue #5287 ①b）：这一档是商家自己点的、还是引擎替他定的 */}
-                          <span data-testid="craft-plan-mode-source" className="ml-1 text-neutral-500">
-                            （{craftPlanSourceText(planSources.cuttingMode)}）
-                          </span>
+                          {/* **项级**来源（甲，issue #5287 ①b）：只在**人工改过**时标出来 ——
+                              「（系统推导）」是常态，逐项重复只是噪声（用户实测读着吵）。 */}
+                          {planSources.cuttingMode === 'manual' && (
+                            <span
+                              data-testid="craft-plan-mode-source"
+                              className="ml-1 text-amber-600"
+                            >
+                              （人工指定）
+                            </span>
+                          )}
                         </span>
-                        {/* 块级**退为汇总**（甲）：只报「四项里各有几项是谁定的」，逐项归属在各项自己身上 */}
-                        <span data-testid="craft-plan-source" className="text-neutral-500">
-                          {craftPlanSourceSummary(planSources)}
-                        </span>
-                        {/* 工艺**不在** `plan` 里（没有几何依据）：一律「系统默认 · 可改」—— 
-                            真值路径 = ③加工项里勾带 `craft_hint` 的工艺项（#4566）。 */}
-                        <span data-testid="craft-plan-craft" className="text-neutral-500">
-                          工艺 {lineCraft ?? `${DEFAULT_CRAFT_NAME}（系统默认，可在③加工项改）`}
-                        </span>
-                        <span data-testid="craft-plan-door-width" className="text-neutral-500">
-                          门幅 {plan.door_width ?? '—'} 米
-                        </span>
-                        <span data-testid="craft-plan-panels" className="text-neutral-500">
-                          分幅 {plan.panels ?? '—'}
-                        </span>
-                        <span data-testid="craft-plan-splice" className="text-neutral-500">
-                          拼接 {spliceOption ?? craftPlanSpliceText(plan)}
-                          <span data-testid="craft-plan-splice-source" className="ml-1">
-                            （{craftPlanSourceText(planSources.spliceTimes)}）
-                          </span>
-                          {spliceOption !== null
-                            ? derivedOptionState(spliceOption) === 'merged'
-                              ? '（已并入特殊选项 ⇒ 插工序 + 计件）'
-                              : derivedOptionState(spliceOption) === 'engine-rejected'
-                                ? '（未生效：引擎拒绝本次参数组合 ⇒ 不插工序、不计件；原因见上方红字）'
-                                : derivedOptionState(spliceOption) === 'manual'
-                                  ? '（你在②特殊选项里手工勾过 ⇒ 人工优先）'
-                                  : '（已忽略：不插工序、不计件）'
-                            : ''}
-                        </span>
-                        <span data-testid="craft-plan-join-height" className="text-neutral-500">
-                          接高 {plan.join_height_m ?? '—'} 米
-                          <span data-testid="craft-plan-join-height-source" className="ml-1">
-                            （{craftPlanSourceText(planSources.joinHeightM)}）
-                          </span>
-                        </span>
-                        <span data-testid="craft-plan-join-width" className="text-neutral-500">
-                          接宽 {plan.join_width_m ?? '—'} 米
-                          <span data-testid="craft-plan-join-width-source" className="ml-1">
-                            （{craftPlanSourceText(planSources.joinWidthM)}）
-                          </span>
+                        <span
+                          data-testid="craft-plan-headline"
+                          className="rounded bg-primary-50 px-1.5 font-medium text-primary-700"
+                        >
+                          {craftPlanConclusion.headline}
                         </span>
                         <span
                           data-testid="craft-plan-meters"
@@ -4920,6 +5010,38 @@ function LineItemBlock({
                             : `用料 ${plan.meters} 米`}
                         </span>
                       </div>
+                      <ul
+                        data-testid="craft-plan-items"
+                        className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-neutral-500"
+                      >
+                        {craftPlanItems.map((item) => (
+                          <li key={item.label}>
+                            {item.label}{' '}
+                            <span
+                              className="text-neutral-700"
+                              data-testid={CRAFT_PLAN_ITEM_TESTIDS[item.label]}
+                            >
+                              {item.value}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {/* 拼接那一档的**下游处置**（并入特殊选项 / 引擎拒绝 / 人工勾过）要说清 ——
+                          推导错 = 多插一道工序、多算工钱（issue #5211）。 */}
+                      {spliceOption !== null && (
+                        <p
+                          data-testid="craft-plan-splice-state"
+                          className="mt-0.5 text-[11px] text-neutral-500"
+                        >
+                          {derivedOptionState(spliceOption) === 'merged'
+                            ? '拼接已并入特殊选项 ⇒ 插工序 + 计件'
+                            : derivedOptionState(spliceOption) === 'engine-rejected'
+                              ? '拼接未生效：引擎拒绝本次参数组合 ⇒ 不插工序、不计件（原因见上方红字）'
+                              : derivedOptionState(spliceOption) === 'manual'
+                                ? '拼接是你在特殊选项里手工勾的 ⇒ 人工优先'
+                                : '拼接已忽略：不插工序、不计件'}
+                        </p>
+                      )}
                       {/* **推导依据默认收起**（2026-09-29 用户裁定：「这里的推算过程太多太细了」）——
                           结论留在上面那行（加工类型 / 用料 / 拼接 / 接高接宽），逐条依据与每个候选
                           **要核对时**再展开。⚠️ 收起的只是**默认展开态**：`craft-plan-reason` /
