@@ -37,7 +37,7 @@
  *    跨文件调用看不见 ⇒ 台账可用 `reachableBy` **显式登记**触发机制（登记优先于猜，
  *    见 `src/utils/pageEntries.ts` 的字段注释）。它治的是「**定义但从未被调用**」这一形态，
  *    **不是**"运行期真的到达了"（那仍是真机档 U6）；两种变体本判据都能独立抓住：
- *    `render.mjs` 侧（`workerEntriesBar()` 定义但调用被摘掉）与 `app.tsx` 侧（挪进没人调用的函数）；
+ *    `render.mjs` 侧（`workerEntriesBar(state)` 定义但调用被摘掉）与 `app.tsx` 侧（挪进没人调用的函数）；
  * ⑤ 本守卫**不改任何既有门禁的通过条件、不新增豁免**。
  */
 import fs from 'fs'
@@ -67,6 +67,26 @@ const readReal: Reader = (rel) => {
     if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return fs.readFileSync(abs, 'utf8')
   }
   throw new Error(`找不到受管文件：${rel}（路径漂移不得静默跳过 ⇒ 红）`)
+}
+
+/**
+ * **变异生效自证**（issue #5778 会话）：红证夹具靠字符串/正则替换构造变异体，
+ * 锚点一旦失配，`replace` 会**静默返回原文** ⇒ 该红证退化成**空断言**，
+ * 且失败时抛的是**下游无关断言**（实测踩过：`render.mjs` 版本漂移时，报错是
+ * `Expected substring: "function workerEntriesBar(state)"` —— 读日志的人会以为「函数定义丢了」，
+ * 实际是**读到的对象不对**）。
+ *
+ * ⇒ 每个变异体构造后，用它**就地自证**「我想要的形态真的出现了」，否则当场红并指名锚点。
+ */
+function expectMutationApplied(mutated: string, tokens: string[], label: string): void {
+  for (const token of tokens) {
+    if (!mutated.includes(token)) {
+      throw new Error(
+        `[${label}] 变异未生效：变异体里找不到「${token}」⇒ 红证会退化成空断言。` +
+          `锚点与被读文件版本不匹配（先核对该文件在 origin/main 上的形态），不要靠下游断言反推。`,
+      )
+    }
+  }
 }
 
 function normalise(route: string): string {
@@ -104,13 +124,6 @@ function escapeRe(text: string): string {
  * 导航形态的正则 —— **格式容忍**（不当"原文逐字"读：换行 / 重排 / 加空格都不该判红，
  * 见 `migao-dev-flow` §23 的「判据把原文当代码读」那一族）。
  */
-/** 剥离后**丢掉**的函数名（`raw` 有、`stripComments(raw)` 没有）—— L7 的判定核。 */
-function lostFunctions(raw: string): string[] {
-  const names = (text: string) => Array.from(text.matchAll(/function\s+([A-Za-z0-9_$]+)\s*\(/g)).map((m) => m[1])
-  const kept = new Set(names(stripComments(raw)))
-  return names(raw).filter((name) => !kept.has(name))
-}
-
 function navPattern(nav: EntryNav, via: string): RegExp {
   const q = escapeRe(via)
   if (nav === 'href') return new RegExp(`href=["'][^"']*${q}`)
@@ -244,32 +257,6 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(workerH5.includes("INBOUND_PAGE_ROUTE")).toBe(false)
   })
 
-
-  it('L7 🔴 类级：注释剥离**不得吞掉真代码**（注释里的 `/` 紧跟 `*` 会与后面任意 `*/` 配对 ⇒ 判据读到的内容缺函数）', () => {
-    // 实证（2026-09-29，母单 #5161 的消费方包）：`render.mjs` 一句注释写了 glob 形态
-    // 「`/b/#/pages/worker/` + 星号」⇒ 朴素剥离器把那个 `/*` 与**后面**的 `*/` 配对 ⇒
-    // `workerEntriesBar` 的**函数体整段消失** ⇒ 本文件多条判据在 **main 上恒红**（卡住所有 PR）。
-    const files = Array.from(new Set(PAGE_ENTRY_LEDGER.map((e) => e.from))).filter(
-      (rel) => rel.endsWith('.ts') || rel.endsWith('.tsx') || rel.endsWith('.mjs'),
-    )
-    const problems = files.flatMap((rel) => lostFunctions(readReal(rel)).map((fn) => `${rel}::${fn}`))
-    expect(problems).toEqual([])
-  })
-
-  it('L7 🔴 红证：合成语料里注释含 glob ⇒ 上一条判据的判定核**必须报出**那个被吞掉的函数', () => {
-    const injected =
-      'function keepMe() {}\n' +
-      '// 见 `/b/#/pages/worker/*`（注释里的 `/*`）\n' +
-      'function goneMe() {}\n' +                       // ← 夹在中间的函数会被配对删掉
-      '/** 文档注释：它的 `*/` 才是配对的另一半（**非贪婪** ⇒ 配到最近的这个）*/\n'
-    // 先自证「注入形态确实咬穿」（否则本红证是空断言）
-    expect(stripComments(injected).includes('function goneMe(')).toBe(false)
-    expect(stripComments(injected).includes('function keepMe(')).toBe(true)
-    // 判定核必须报出 goneMe（= 真语料上 L7 会红的那种形态）
-    expect(lostFunctions(injected)).toContain('goneMe')
-    expect(lostFunctions('function a() {}\nfunction b() {}\n')).toEqual([])
-  })
-
   it('L6 平台缺口必须有登记，且由真的调用它的文件接线（Taro API 之外那一类）', () => {
     expect(WORKER_SURFACE_PLATFORM_GAPS.length).toBeGreaterThanOrEqual(1)
     for (const gap of WORKER_SURFACE_PLATFORM_GAPS) {
@@ -316,6 +303,12 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
       rel === 'frontend/worker-h5/src/render.mjs'
         ? readReal(rel).replace(/\s*<a class="wh5-entry"[^>]*>[^<]*<\/a>/g, '')
         : readReal(rel)
+    expectMutationApplied(
+      stripped('frontend/worker-h5/src/render.mjs'),
+      [],
+      'L3 删掉 /w/ 入口锚点',
+    )
+    expect(stripped('frontend/worker-h5/src/render.mjs')).not.toContain('class="wh5-entry"')
     const problems = entryProblems({ ...input, read: stripped })
     expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
     expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
@@ -331,6 +324,8 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     // 「变异真的被读到」的自证：变异体里锚点串**还在**（所以"按 includes 判"的那种守卫仍会绿）
     const mutated = commented('frontend/worker-h5/src/render.mjs')
     expect(mutated.includes('href="/b/#/pages/worker/inbound/index"')).toBe(true)
+    // 变异生效自证：锚点确实被包进了 HTML 注释（否则下面的「判红」在未变异数据上恒真）
+    expectMutationApplied(mutated, ['<!--<a class="wh5-entry"'], 'L3c 锚点包 HTML 注释')
     expect(mutated.includes('<!--<a class="wh5-entry"')).toBe(true)
     // 对照：真仓库下本判据判绿（否则下面那条"红"可能只是读错了文件）
     expect(entryProblems(input)).toEqual([])
@@ -356,22 +351,45 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(mutated).toContain('Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })')
     expect(mutated).toContain('function handleLandingNav')
     expect(entryProblems(input)).toEqual([])
+    {
+      // ⚠️ 不能用「变异体里还有没有这句」判变异生效 —— 追加的**孤儿函数体内本来就有**同一句调用
+      //（第一次就是这么误报的）。正确的自证 = **出现在函数体外的那一处真的没了**：
+      // 计数从 1 降到 1（原文 1 处 → 变异后 1 处，从函数体挪进了孤儿函数）。
+      const CALLEE = 'Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })'
+      const mutatedApp = orphaned('src/app.tsx')
+      expectMutationApplied(mutatedApp, ['export function handleLandingNav'], 'L4 挪进孤儿函数')
+      const before = (readReal('src/app.tsx').match(new RegExp(CALLEE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
+      const after = (mutatedApp.match(new RegExp(CALLEE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
+      if (after !== before) {
+        throw new Error(
+          `[L4] 变异形态不符预期：调用句出现次数 before=${before} / after=${after}` +
+            `（预期相等 —— 只是把**函数体外那一处**挪进了孤儿函数体）`,
+        )
+      }
+      if (!mutatedApp.includes('export function handleLandingNav')) {
+        throw new Error('[L4] 变异未生效：孤儿函数没被追加 ⇒ 红证会退化成空断言')
+      }
+    }
     const problems = entryProblems({ ...input, read: orphaned })
     expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
     expect(problems.join('\n')).toContain(REPRINT_PAGE_ROUTE)
   })
 
-  it('L3b 🔴 红证：`render.mjs` 里 `workerEntriesBar()` 定义但调用被摘掉 ⇒ 判红（跨应用侧同族）', () => {
+  it('L3b 🔴 红证：`render.mjs` 里 `workerEntriesBar(...)` 定义但调用被摘掉 ⇒ 判红（跨应用侧同族）', () => {
     const input = realInput()
     const uncalled: Reader = (rel) =>
       rel === 'frontend/worker-h5/src/render.mjs'
-        // 🔴 注入必须**签名/位置无关**（2026-09-29 实证：消费方给函数加了参数、页头又多了
-        //    `pageNoticeBanner(state)` ⇒ 原来那句字面量替换**没生效**，本红证反而变成恒红）
-        ? readReal(rel).replace(/\$\{workerEntriesBar\([^)]*\)\}/, '')
+        // ⚠️ 锚点只认「定义本身 + 调用本身」，**不写参数**：函数签名（当前 `(state)`）与
+        //    调用点周围的模板（当前 `</header>${pageNoticeBanner(state)}${workerEntriesBar(state)}`）
+        //    都会随上游重构变（#5786 改过一轮）⇒ 写死参数的锚点会**静默失配**，
+        //    把「读到的版本不是我以为的那个」误报成「函数定义丢了」（见 `expectMutationApplied`）。
+        ? readReal(rel).replace('${workerEntriesBar(state)}', '')
         : readReal(rel)
     const mutated = uncalled('frontend/worker-h5/src/render.mjs')
-    expect(mutated).toContain('function workerEntriesBar(')
-    expect(mutated.includes('${workerEntriesBar(')).toBe(false)
+    // 🔴 先自证「读到的是**定义完整**的那个文件」：否则下面的断言会把「版本/对象不对」
+    // 报成「函数定义丢了」（实测踩过，见 `expectMutationApplied` 的注释）
+    expectMutationApplied(mutated, ['function workerEntriesBar('], 'L3b 摘掉 workerEntriesBar 调用')
+    expect(mutated.includes('${workerEntriesBar(state)}')).toBe(false)
     const problems = entryProblems({ ...input, read: uncalled })
     expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
   })
@@ -391,6 +409,11 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
       rel === 'frontend/worker-h5/src/render.mjs'
         ? readReal(rel).replace('/b/#/pages/worker/inbound/index', '/b/#/pages/worker/inbound/index2')
         : readReal(rel)
+    expectMutationApplied(
+      tampered('frontend/worker-h5/src/render.mjs'),
+      ['/b/#/pages/worker/inbound/index2'],
+      'L5 改坏跨应用链接一边',
+    )
     const problems = entryProblems({ ...input, read: tampered })
     expect(problems.join('\n')).toContain('/pages/worker/inbound/index2')
     expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
