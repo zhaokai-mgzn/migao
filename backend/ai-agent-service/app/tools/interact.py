@@ -382,7 +382,7 @@ class InteractTool(BaseTool):
                 "title": title,
                 "options": options,
             }
-            # pageMeta 透传：加工项/商品列表分页场景（processing_item_query 返回的
+            # pageMeta 透传：加工项/商品管理分页场景（processing_item_query 返回的
             # pageMeta 提示 LLM 原样透传，前端 ChoiceCard 据此渲染翻页按钮）。
             # 生产回归（sess_fba38395ed094a9d）：签名缺该参数 → TypeError 崩溃，
             # 用户选完分类后 agent 无回复。https://github.com/zhaokai-mgzn/migao/issues/2892

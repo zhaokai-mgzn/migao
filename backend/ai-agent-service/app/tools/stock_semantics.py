@@ -23,7 +23,7 @@ DB 实测（2026-09-18，云 dev）印证该真值：
 ## 二、「低库存」阈值口径 = 100（含上界 ≤，issue #3783）
 
 **业务口径 = 100**（`LOW_STOCK_THRESHOLD`），与后台同源
-（#1396：Dashboard 卡片 / DailyBriefing / admin-web 商品列表均为 100）。
+（#1396：Dashboard 卡片 / DailyBriefing / admin-web 商品管理均为 100）。
 
 **上界语义 = 含上界**（`≤`，非 `<`）：admin-api 两条 SQL 都是 `ps.stock <= 阈值`
 （`ProductMapper.findLowStockByColor` 与 `ProductService` 处理 `stockBelow` 处），

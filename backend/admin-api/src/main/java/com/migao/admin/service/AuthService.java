@@ -1244,6 +1244,14 @@ public class AuthService {
         // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
         // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— `menuItem` 只有 key/name/path。
 
+        // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
+        // **顶层一级项**（不是组）—— 与前端 `menu.ts` 的 `standaloneTopItems` 逐值同构。
+        // 🔴 位置 = **整份菜单的最前面**（前端把它渲染在**所有分组之前**）—— 三源同构守卫按
+        // 「组层顺序」比对，本项若落在组之间就会让组层与前端不一致（判红）。
+        if (isAll || permissions.contains("product:list")) {
+            menus.add(menuItem("products", "商品管理", "/products"));
+        }
+
         // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
         List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
         // 经营看板（issue #5699 **P4**）：子菜单粒度 = 节点码 ≡ 该页第一屏读码 `dashboard:view`
@@ -1262,50 +1270,49 @@ public class AuthService {
             menus.add(menuGroup("workspace", "工作台", workspaceChildren));
         }
 
-        // 智能客服分组（在线接待 / 知识库；#3081 AI 客服配置已合并进企业基础信息）。
-        // 🔴 #5271 收口：旧实现多一个 `chat`「米宝 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）——
-        // 本次删除，本组与前端 menu.ts 一致为 2 项。
-        List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
+        // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
+        // 见本方法**开头**的顶层 `menus.add(...)`（位置 = 所有分组之前）。
+
+        // 客户服务分组（本轮 2026-09-29 用户裁定**新建**）：原「智能客服」组（在线接待 / 知识库）
+        // + 客户侧两项（客户列表 / 售后工单）**合并为一个组**（「都属于服务客户的功能」）。
+        // 🔴 组内顺序**必须**逐字镜像 `menu.ts` 的 `customer-service` 组（三源同构守卫按前缀子序列比对）：
+        //    在线接待 → 客户列表 → 知识库 → 售后工单。
+        // 🔴 #5271 收口：旧实现多一个 `chat`「米宝 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）
+        // —— 已删除，本组**不得**再长回该节点。
+        List<UserInfoResponse.MenuItem> customerServiceChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {
-            csChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
+            customerServiceChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
+        }
+        // 客户列表（本轮由交易管理组移入本组）：码不变 `customer:view`。
+        if (isAll || permissions.contains("customer:view")) {
+            customerServiceChildren.add(menuItem("customers", "客户列表", "/customers"));
         }
         // issue #5246（已合入 main）：知识库节点用**读**码 `knowledge:view`。
+        // 本轮用户裁定：知识库**留在本组内**（不单独成项、不沉底）。
         if (isAll || permissions.contains("knowledge:view")) {
-            csChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
+            customerServiceChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
         }
-        if (!csChildren.isEmpty()) {
-            menus.add(menuGroup("smart-customer-service", "智能客服", csChildren));
-        }
-
-        // 商品与加工项分组（#5271：组名由「商品管理」改判；组 key `product-center` 不变）
-        List<UserInfoResponse.MenuItem> productChildren = new java.util.ArrayList<>();
-        if (isAll || permissions.contains("product:list")) {
-            productChildren.add(menuItem("products", "商品列表", "/products"));
-        }
-        // issue #5291：加工项管理改挂生产域**读**码 `production:view`（写面仍是 processing:manage）。
-        if (isAll || permissions.contains("production:view")) {
-            // #4490/#4542：加工项管理与加工费管理**合并为单一入口**（该页两个 tab）；
-            // 路径 = `/production/processing`（旧 `/processing`、`/production/processing-fees`
-            // 由前端重定向兜底）—— 逐字镜像 menu.ts（本处此前是 `/processing`，属三源路径漂移，本次收口）。
-            productChildren.add(menuItem("processing", "加工项管理", "/production/processing"));
-        }
-        if (!productChildren.isEmpty()) {
-            menus.add(menuGroup("product-center", "商品与加工项", productChildren));
+        // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view`（原写码 `order:refund`）。
+        // 本轮由交易管理组移入本组。
+        if (isAll || permissions.contains("after_sales:view")) {
+            customerServiceChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
+        }        if (!customerServiceChildren.isEmpty()) {
+            menus.add(menuGroup("customer-service", "客户服务", customerServiceChildren));
         }
 
-        // 交易管理分组（#5271：原「订单管理」+ 原「客户管理」组的客户列表 / 财务对账 → 一条动线：
-        // 谁下单 → 单到哪 → 售后 → 收款对账）。组 key `trade-center` 不变；
-        // 「客户管理」组（`customer-center`）**不再存在**。
+        // 生产管理分组的「加工项管理」项（本轮由已撤销的「商品与加工项」组移入本组）：
+        // issue #5291：改挂生产域**读**码 `production:view`（写面仍是 processing:manage）。
+        // #4490/#4542：加工项管理与加工费管理**合并为单一入口**（该页两个 tab）；
+        // 路径 = `/production/processing`（旧 `/processing`、`/production/processing-fees`
+        // 由前端重定向兜底）—— 与 `menu.ts` 逐字一致。
+        // ⚠️ 本项**必须**加在「智能派单」之后、「工艺配置」之前（组内顺序三源逐值相等）。
+
+        // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
+        // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
+        // 顺序 = 订单列表 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("order:list")) {
             tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
-        }
-        // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view`（原写码 `order:refund`）。
-        if (isAll || permissions.contains("after_sales:view")) {
-            tradeChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
-        }
-        if (isAll || permissions.contains("customer:view")) {
-            tradeChildren.add(menuItem("customers", "客户列表", "/customers"));
         }
         if (isAll || permissions.contains("finance:view")) {
             tradeChildren.add(menuItem("finance", "财务对账", "/finance"));
@@ -1322,8 +1329,13 @@ public class AuthService {
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         // issue #5291：生产看板 / 工艺配置 / 计件工资按生产域**读**码门控；智能派单沿用 processing:manage。
+        // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
+        // 🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/test_agent_permission_parity.py` 的
+        // `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一** auth 菜单解析器）用的形态是
+        // `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))` —— `{` 与 `.add` 之间
+        // 插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：本行注释曾让「生产看板」
+        // 从 `rbac/readings.json` 的 `menus.auth` 里消失，而「清单 == 生成物」对账因此判红）。
         if (isAll || permissions.contains("production:view")) {
-            // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
             productionChildren.add(menuItem("production-board", "生产看板", "/production"));
         }
         // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
@@ -1331,6 +1343,13 @@ public class AuthService {
         // `processing:manage` 而端点挂读码 = 「节点码 ≠ 页面读码」；P4 按子菜单粒度收敛为同码。
         if (isAll || permissions.contains("processing:view")) {
             productionChildren.add(menuItem("production-pool", "智能派单", "/production/pool"));
+        }
+        // 加工项管理（本轮 2026-09-29 由「商品与加工项」组移入本组）。
+        // 🔴 位置 = 「智能派单」之后、「工艺配置」之前 —— 与 `menu.ts` 的组内顺序逐值一致。
+        // ⚠️ 写法必须仍是 `children.add(menuItem(...))` 直调（三源同构守卫按该形态解析）；
+        // 不要为「先算再填」引入中间变量或三元表达式 —— 那样解析器看不见本项（实测已踩）。
+        if (isAll || permissions.contains("production:view")) {
+            productionChildren.add(menuItem("processing", "加工项管理", "/production/processing"));
         }
         // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
         // （旧路径 /production/operations 是重定向）—— 服务端此前仍是合并前的两个节点。

@@ -50,7 +50,7 @@ MIBAO_PRESET_SUGGESTIONS: dict[str, dict[str, list[str]]] = {
         "completed":  ["查看今日订单汇总", "处理下一订单", "查看经营数据"],
     },
     "order_create": {
-        "initial":   ["查看待处理订单", "查看商品列表", "新建客户订单"],
+        "initial":   ["查看待处理订单", "查看商品管理", "新建客户订单"],
         "querying":  ["选择商品添加到订单", "填写客户收货信息", "查看历史订单参考"],
         "confirming": ["确认订单金额", "提交订单", "通知仓库备货"],
         "processing": ["查看物流发货", "打印订单详情", "查看关联客户信息"],
@@ -112,7 +112,7 @@ MIBAO_PRESET_SUGGESTIONS: dict[str, dict[str, list[str]]] = {
     },
     # --- 商品域 ---
     "product_inquiry": {
-        "initial":   ["查看商品列表", "按分类浏览商品", "搜索商品信息"],
+        "initial":   ["查看商品管理", "按分类浏览商品", "搜索商品信息"],
         "querying":  ["查看商品详情", "查看商品库存", "查看关联加工项"],
         "confirming": ["修改商品信息", "调整商品价格", "更新商品图片"],
         "processing": ["查看商品销量", "查看商品评价", "查看关联订单"],

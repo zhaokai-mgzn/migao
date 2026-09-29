@@ -3,23 +3,32 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, Star, Pin } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
-import { menuGroups, standaloneItems, type MenuItem } from '@/config/menu'
+// 本轮（2026-09-29）新增 `standaloneTopItems`：渲染在**分组之前**的一级项（「商品管理」）。
+import { menuGroups, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
 // issue #5271: 图标注册表独立成模块 —— 原内联 `iconMap[...] || BarChart3` 的静默回落
 // 现在有判据（tests/unit/lib/menu-icons.test.ts）
 import { resolveMenuIcon } from '@/config/menu-icons'
 // issue #5271: 过滤/高亮/搜索/展开判定抽成纯函数（可对「全部菜单项 × 全部路由」穷举断言）
+// 本轮新增「常用（收藏）」一族纯函数（持久化 + 上限 + 无效 key 丢弃 + 权限过滤都在那边）
 import {
   filterMenuItems,
   visibleMenuGroups,
   resolveActivePath,
   resolveActiveGroupKey,
   initialExpandedGroups,
+  loadPinned,
+  savePinned,
+  togglePinned,
+  isPinned,
+  pinnedGroup,
+  PINNED_GROUP_KEY,
+  PINNED_MAX,
 } from '@/lib/menu-nav'
 import { briefingApi } from '@/lib/api'
 
@@ -83,11 +92,14 @@ export default function Sidebar({
   const filterOpts = { permissions: user?.permissions || [], roles: user?.roles, briefingEnabled }
   const groups = visibleMenuGroups(menuGroups, filterOpts)
   const standalone = filterMenuItems(standaloneItems, filterOpts)
+  // 顶部一级项（「商品管理」，本轮 2026-09-29）；`filterMenuItems` 对空数组安全（返回空表）
+  const standaloneTop = filterMenuItems(standaloneTopItems, filterOpts)
 
   // ── 高亮：最长前缀胜出（沿用重设计前的口径）──
   const activePath = resolveActivePath(
     [
       ...groups.flatMap((g) => g.children.map((i) => i.path)),
+      ...standaloneTop.map((i) => i.path),
       ...standalone.map((i) => i.path),
     ],
     pathname,
@@ -95,6 +107,86 @@ export default function Sidebar({
   const isActive = (path: string) => activePath === path
 
   const activeGroupKey = resolveActiveGroupKey(groups, pathname)
+
+  // ── 「常用（收藏）」──
+  // 初值恒为空表：**首帧与 SSR 一致**，读 localStorage 放到 useEffect（避免 hydration 不一致）。
+  const [pinned, setPinned] = useState<string[]>([])
+  useEffect(() => {
+    setPinned(loadPinned())
+  }, [])
+
+  const onTogglePin = (key: string) => {
+    setPinned((prev) => {
+      const next = togglePinned(prev, key)
+      // 满额时 `togglePinned` 原样返回（不静默顶掉已有项）⇒ 这里就不落盘、不改态，
+      // 由标题上的 `n/6` 计数向用户说明「已经满了」。
+      if (next.length === prev.length && !prev.includes(key)) return prev
+      savePinned(next)
+      return next
+    })
+  }
+
+  // 「常用」区（`null` ⇒ 整区不渲染：清单为空，或钉住的项一项都不可见）
+  const favorites = pinnedGroup(groups, standaloneTop, standalone, pinned, filterOpts)
+
+  // 🔴 pinned 与普通分组**分开渲染**（不是往 groups 里塞一个合成组）：
+  // `resolveActiveGroupKey` / `initialExpandedGroups` 都按「分组」语义工作，
+  // 把「常用」混进 groups 会让它把当前路由的所在组抢走（被钉项在「常用」与域内各有一份）。
+  const renderItem = (item: MenuItem, opts: { alwaysShowPin: boolean }) => {
+    const Icon = resolveMenuIcon(item.icon)
+    const active = isActive(item.path)
+    const pinnedNow = isPinned(pinned, item.key)
+    // 星标：常态隐藏（`opacity-0`）以免 21 项每行都多一个图标；当前项与 hover 时可见。
+    // iOS 无 hover ⇒ 当前项那一枚恒显（「想钉的大多是自己现在在用的」）。
+    // 「常用」区里**恒显**（否则没法取消）。
+    const showPin = !collapsed && (opts.alwaysShowPin || active || pinnedNow)
+    return (
+      <Link
+        key={item.key}
+        href={item.path}
+        onClick={onMobileClose}
+        data-menu-key={item.key}
+        className={cn(
+          'group/item relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+          active
+            ? 'bg-primary-600 text-white shadow-sm'
+            : 'text-neutral-300 hover:bg-white/5 hover:text-white',
+          collapsed && 'justify-center px-2',
+        )}
+        title={collapsed ? item.name : undefined}
+      >
+        {active && (
+          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
+        )}
+        <Icon className="h-5 w-5 flex-shrink-0" />
+        {!collapsed && <span className="flex-1 truncate">{item.name}</span>}
+        {!collapsed && (
+          <button
+            type="button"
+            data-testid={`sidebar-pin-${item.key}`}
+            data-pinned={pinnedNow ? 'true' : 'false'}
+            aria-label={pinnedNow ? `取消常用：${item.name}` : `加入常用：${item.name}`}
+            aria-pressed={pinnedNow}
+            title={pinnedNow ? '取消常用' : '加入常用'}
+            onClick={(e) => {
+              // 星标是 Link 内的按钮 ⇒ 必须阻止跳转（点它只钉、不导航）
+              e.preventDefault()
+              e.stopPropagation()
+              onTogglePin(item.key)
+            }}
+            className={cn(
+              'flex-shrink-0 rounded p-0.5 transition-opacity',
+              'text-neutral-300 hover:bg-white/10 hover:text-white',
+              active && 'text-white',
+              showPin ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100',
+            )}
+          >
+            <Star className={cn('h-3.5 w-3.5', pinnedNow && 'fill-current')} />
+          </button>
+        )}
+      </Link>
+    )
+  }
 
   // ── 分组展开态：初值 = 只展开当前所在组；路由变化 ⇒ 自动展开新所在组 ──
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() =>
@@ -175,6 +267,49 @@ export default function Sidebar({
 
       {/* 导航菜单 */}
       <nav className="flex-1 overflow-y-auto px-2 py-1">
+        {/* ── 「常用（收藏）」（本轮 2026-09-29）── 用户自选、钉在**最顶部** */}
+        {favorites && (
+          <div data-group-key={PINNED_GROUP_KEY} className="mb-4">
+            {collapsed ? (
+              <div
+                data-testid={`sidebar-group-anchor-${PINNED_GROUP_KEY}`}
+                title={favorites.name}
+                className="mb-1 flex flex-col items-center gap-1 pt-2"
+              >
+                <Pin className="h-3.5 w-3.5 text-neutral-500" />
+              </div>
+            ) : (
+              // 恒展开（不提供折叠）——「常用」一旦收起就失去它存在的意义
+              <div
+                data-testid={`sidebar-group-label-${PINNED_GROUP_KEY}`}
+                className="mb-1 flex w-full items-center gap-2 rounded-md px-3 py-1.5"
+              >
+                <Pin className="h-3.5 w-3.5 flex-shrink-0 text-neutral-500" />
+                <span className="flex-1 text-xs font-medium tracking-wide text-neutral-400">
+                  {favorites.name}
+                </span>
+                {/* `n/上限`：满额时用户一眼知道为什么再钉不进去（`togglePinned` 是拒绝、不顶替） */}
+                <span
+                  data-testid="sidebar-pinned-count"
+                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500"
+                >
+                  {favorites.items.length}/{PINNED_MAX}
+                </span>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {favorites.items.map((item) => renderItem(item, { alwaysShowPin: true }))}
+            </div>
+          </div>
+        )}
+
+        {/* ── 顶部一级项（「商品管理」，本轮 2026-09-29）── 与分组同级、无需展开 */}
+        {standaloneTop.length > 0 && (
+          <div data-testid="sidebar-standalone-top" className="mb-2 space-y-0.5">
+            {standaloneTop.map((item) => renderItem(item, { alwaysShowPin: false }))}
+          </div>
+        )}
+
         {groups.map((group) => {
           const GroupIcon = resolveMenuIcon(group.icon)
           const isExpanded = !!expandedGroups[group.key]
@@ -218,32 +353,10 @@ export default function Sidebar({
 
               {(collapsed || isExpanded) && (
                 <div className="space-y-0.5">
-                  {group.children.map((item: MenuItem) => {
-                    const Icon = resolveMenuIcon(item.icon)
-                    const active = isActive(item.path)
-                    return (
-                      <Link
-                        key={item.key}
-                        href={item.path}
-                        onClick={onMobileClose}
-                        data-menu-key={item.key}
-                        className={cn(
-                          'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
-                          active
-                            ? 'bg-primary-600 text-white shadow-sm'
-                            : 'text-neutral-300 hover:bg-white/5 hover:text-white',
-                          collapsed && 'justify-center px-2',
-                        )}
-                        title={collapsed ? item.name : undefined}
-                      >
-                        {active && (
-                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-                        )}
-                        <Icon className="h-5 w-5 flex-shrink-0" />
-                        {!collapsed && <span className="truncate">{item.name}</span>}
-                      </Link>
-                    )
-                  })}
+                  {group.children.map((item: MenuItem) =>
+                    // 星标常态隐藏（`opacity-0` + hover/当前项才显），避免每行都多一个图标
+                    renderItem(item, { alwaysShowPin: false }),
+                  )}
                 </div>
               )}
             </div>
@@ -255,32 +368,7 @@ export default function Sidebar({
           <div className="my-2 border-t border-white/5" />
         )}
         <div className="space-y-0.5">
-          {standalone.map((item) => {
-            const Icon = resolveMenuIcon(item.icon)
-            const active = isActive(item.path)
-            return (
-              <Link
-                key={item.key}
-                href={item.path}
-                onClick={onMobileClose}
-                data-menu-key={item.key}
-                className={cn(
-                  'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
-                  active
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-neutral-300 hover:bg-white/5 hover:text-white',
-                  collapsed && 'justify-center px-2',
-                )}
-                title={collapsed ? item.name : undefined}
-              >
-                {active && (
-                  <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-                )}
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                {!collapsed && <span className="truncate">{item.name}</span>}
-              </Link>
-            )
-          })}
+          {standalone.map((item) => renderItem(item, { alwaysShowPin: false }))}
         </div>
       </nav>
 

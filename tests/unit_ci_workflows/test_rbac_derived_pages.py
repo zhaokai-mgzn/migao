@@ -122,16 +122,6 @@ ROUTE_GUARD_GATE_MISMATCHES: dict[str, str] = {}
 #: 它们是「**动作**」（去某个页面里的某个动作），没有 `path` ⇒ 不属「页面 → 码」面；
 #: 现值由 M1 形态面 `menu-tree` 登记。
 ACTION_NODE_CODES: dict[str, dict[str, str]] = {
-    "商品分类管理": {
-        "code": "product:category",
-        "reason": "分类管理的入口在商品列表页内，**没有独立页面**（判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE['/categories']` 登记的是同一件事）",
-        "owner": "商品域菜单面（`menu.ts` 的 product-center 组）+ 本判据的动作节点台账",
-    },
-    "新增商品": {
-        "code": "product:create",
-        "reason": "「新增商品」是商品列表页内的动作（`ProductController` 的写码），不是页面",
-        "owner": "商品域菜单面 + 本判据的动作节点台账",
-    },
     "新增员工": {
         "code": "employee:create",
         "reason": "「新增员工」是员工管理页内的动作（`UserController` 的写码），不是页面",

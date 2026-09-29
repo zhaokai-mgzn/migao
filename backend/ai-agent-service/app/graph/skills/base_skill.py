@@ -2309,7 +2309,7 @@ _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE = (
     "这条边界**是真的**：管理后台的商品图片写入（主图 / 详情图）当前**不在你的能力内** —— "
     "相关写工具没有绑定给你，点名调用只会失败。但光说做不到不算交付，请**重新给出回复**，"
     "两件事都要有：① 如实说明「米宝在商品域现在只做查询与改价，改图不在能力内」；"
-    "② 给出去处 —— 请商家到后台「商品列表」页面（/products 的图片按钮）自行操作。"
+    "② 给出去处 —— 请商家到后台「商品管理」页面（/products 的图片按钮）自行操作。"
     "**禁止**承诺代办、发写确认卡，或出现「已为您设置主图 / 主图已更新 / 设置成功」这类"
     "谎称已执行的措辞；也**不要**为此转人工（这是产品边界，不是人工能代的活）。"
 )
@@ -3270,7 +3270,7 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
 PERMISSION_LABELS = {
     "dashboard:view": "仪表板查看",
     "product:manage": "商品管理",
-    "product:list": "商品列表",
+    "product:list": "商品管理",
     "product:create": "新增商品",
     "product:category": "商品分类",
     "processing:manage": "加工管理",
@@ -3450,17 +3450,17 @@ def _sanitize_tool_args(tool, tool_args: dict) -> dict:
 # 修复：写工具丢弃**图片类**未知参数时不再静默 —— 直接失败 + 指引（不执行），误宣链源头切断。
 # ⚠️ #5318 改判：指引**不再点名 product_manage**（它自 #5247 起已从 B 端全部 skill 解绑
 # ⇒ 点名就是把模型推向必然 tool_not_found 的调用）；改为「如实说明图片写入不在能力内 +
-# 引导商家到后台「商品列表」页面(/products)」。
+# 引导商家到后台「商品管理」页面(/products)」。
 # ⚠️ 只对图片类参数生效：非图片类未知参数维持 issue #3361 的静默净化（存量用例依赖，
 # 见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）；只读工具永远静默
 # （查询类模型爱带多余参数，不能因此失败）。
 _IMAGE_DROP_GUIDANCE = {
     "images": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
-              "后台「商品列表」页面(/products)操作",
+              "后台「商品管理」页面(/products)操作",
     "detail_images": "商品详情图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
-                     "后台「商品列表」页面(/products)操作",
+                     "后台「商品管理」页面(/products)操作",
     "main_image": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
-                  "后台「商品列表」页面(/products)操作",
+                  "后台「商品管理」页面(/products)操作",
 }
 
 

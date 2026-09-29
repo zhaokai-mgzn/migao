@@ -1,3 +1,9 @@
+# case_ids: PR-026, PR-027
+# 🔴 2026-09-29（issue #5778）：菜单项「商品列表」改名「商品管理」⇒ 纠正话术常量
+# `_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE` 与本文件的三处断言同批改判（话术必须与菜单名一致，
+# 否则用户按话术在侧边栏找不到入口）。判据强度一格不放宽：仍是「含后台 + 具体页面名 + /products 路径」。
+# 本文件原无 case_ids 声明（存量）；因本次修改它，按 QA Growth Gate 规则补上它服务的用例
+#（traces.tests 已把本文件登记给 PR-026 / PR-027）。
 """商品图片域的能力守卫（issue #3931 → **#5318 改判**）— 语义归一判据（锚点 × 否定 × 自我主体）。
 
 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
@@ -13,7 +19,7 @@ agent 拒绝：「我这个商品管理入口只能改价格、名称、描述�
 `tool_not_found`，且每次命中都多烧一次重答 —— 守卫从纠错器变成 bug 制造器。
 ⇒ 本文件按新裁定改判（**不是删守卫**）：
   · 判据（锚点 × 否定 × 自我主体）与判别性用例**原样保留**（仍是同一类「AI 自我否定」形态）；
-  · **纠正方向换掉**：如实说明「这条能力当前不在米宝能力内」+ 引导商家到后台「商品列表」页面
+  · **纠正方向换掉**：如实说明「这条能力当前不在米宝能力内」+ 引导商家到后台「商品管理」页面
     （判据见 `TestProductImageCorrectiveAdjudication`）；
   · **注入话术不得点名任何模型调不到的工具**（同一类判据的机械形态，含其它图片话术面）。
 """
@@ -162,13 +168,13 @@ class TestProductImageCorrectiveAdjudication:
         )
 
     def test_corrective_direction_is_honest_and_points_to_backend_page(self):
-        """新方向两件事齐备：① 如实说明「该能力当前不在能力内」② 给出去处（后台商品列表页）。"""
+        """新方向两件事齐备：① 如实说明「该能力当前不在能力内」② 给出去处（后台商品管理页）。"""
         text = _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
         assert "不在" in text and "能力内" in text, (
             "纠正话术未如实说明「该能力当前不在米宝能力内」"
         )
-        assert "后台" in text and "商品列表" in text, (
-            "纠正话术未引导商家到后台「商品列表」页面（光说做不到不算交付）"
+        assert "后台" in text and "商品管理" in text, (
+            "纠正话术未引导商家到后台「商品管理」页面（光说做不到不算交付）"
         )
         assert "/products" in text, "纠正话术缺少可执行的后台页面路径"
         assert "禁止" in text or "不得" in text, (

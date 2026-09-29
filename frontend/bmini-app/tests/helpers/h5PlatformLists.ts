@@ -83,10 +83,62 @@ export function jsSdkOnlyApis(): Set<string> {
  * 去掉注释后再扫用法 —— 否则**说明文字里的引用会被当成使用**
  * （`migao-dev-flow` §17.3：内容扫描式机制分不清「引用」与「使用」；
  *  实证：`src/utils/platform.ts` 的 JSDoc 里写了 `Taro.scanCode` 就被算成一处命中）。
- * 只处理 `//` 与块注释；`https://` 里的 `//` 用 `[^:]` 前缀排除。
+ * 只处理 `//` 与块注释。
+ *
+ * 🔴 **为什么不能再用正则一行了事**（issue #5778 会话实测到的真因）：
+ * 旧实现是「块注释正则」+「行注释正则」，行注释那条只给 `https://` 开了个「前一字符不是冒号」的例外，
+ * **看不见「字符串 / 模板字符串内部的 `//`」**。而 `render.mjs` 正是在**模板字符串**里写跨应用入口：
+ * `<a href="/b/#/pages/worker/inbound/index">` —— 那个 `//` 被当成行注释起点，
+ * **该行剩余部分连同整个 `<nav>` 段一起被删掉**（实测：22908 字节 → 13916 字节，
+ * `content.includes('wh5-entries') === false`）⇒ 依赖它的判据把「真跳转链接存在」读成「不存在」，
+ * 报出「`render.mjs` 里找不到 href + /pages/worker/inbound/index 的真跳转」——
+ * **读错对象被报成了代码缺陷**（正是本单要治的形态）。
+ *
+ * ⇒ 改为**字符串感知**的单遍扫描：只在**代码位置**消注释；进入 `'` / `"` / 模板字符串后一律原样保留
+ * （URL 里的 `//`、字符串里的 `/*` 都不再误伤）。
+ * ⚠️ **已知边界（如实登记）**：正则字面量不做特殊识别 —— 含 `//` 或 `/*` 的正则仍可能被误判；
+ * 本判据扫的是业务源码，实测无此形态。要彻底解决需走语法单元（AST），不在本单射程。
  */
 export function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  let out = ''
+  let i = 0
+  const n = text.length
+  while (i < n) {
+    const c = text[i]
+    const next = i + 1 < n ? text[i + 1] : ''
+    if (c === '/' && next === '/') {
+      const nl = text.indexOf('\n', i)
+      i = nl === -1 ? n : nl
+      continue
+    }
+    if (c === '/' && next === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end === -1 ? n : end + 2
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const quote = c
+      out += c
+      i += 1
+      while (i < n) {
+        const d = text[i]
+        out += d
+        i += 1
+        if (d === '\\') {
+          if (i < n) {
+            out += text[i]
+            i += 1
+          }
+          continue
+        }
+        if (d === quote) break
+      }
+      continue
+    }
+    out += c
+    i += 1
+  }
+  return out
 }
 
 /**

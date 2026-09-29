@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 商品搜索 Tool
 
-搜索商品列表，根据关键词、分类等条件查询商品。
+搜索商品管理，根据关键词、分类等条件查询商品。
 
 ⚠️ 后端契约（admin-api `dto/ProductQueryRequest.java`）：查询参数只有
 keyword/name/productId/categoryId/status/recommended/page/size/stockBelow/skuCode/
@@ -35,7 +35,7 @@ STOCK_STATUS_TO_STOCK_BELOW: Dict[str, int] = {
 class ProductSearchTool(BaseTool):
     """商品搜索 Tool
     
-    搜索商品列表，支持关键词、分类、价格区间筛选。
+    搜索商品管理，支持关键词、分类、价格区间筛选。
     
     使用场景：
     - 用户询问"有什么窗帘"
@@ -258,7 +258,7 @@ class ProductSearchTool(BaseTool):
                     f"{scanned_count} -> {total}（后端不支持价格筛选）"
                 )
             
-            # 格式化商品列表
+            # 格式化商品管理
             products = self._format_products(verified_records)
             
             logger.info(
@@ -342,13 +342,13 @@ class ProductSearchTool(BaseTool):
         return f"不高于 {max_price} 元"
     
     def _format_products(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """格式化商品列表
+        """格式化商品管理
         
         Args:
             records: 原始商品记录
             
         Returns:
-            List: 格式化后的商品列表
+            List: 格式化后的商品管理
         """
         products = []
         for record in records:

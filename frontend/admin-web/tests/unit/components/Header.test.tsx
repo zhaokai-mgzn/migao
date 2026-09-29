@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033, UI-037, PG-038
+// case_ids: UI-005, UI-033, UI-037, PG-038, UI-066
 /**
  * Header 组件测试
  *
@@ -92,14 +92,15 @@ describe('Header', () => {
     expect(screen.getByText('经营看板')).toBeInTheDocument()
   })
 
-  // issue #5271：组名「商品管理」→「商品与加工项」（组内第二项「加工项管理」本身是加工定价资料）
-  it('/products 路径应显示"商品与加工项 > 商品列表"面包屑', async () => {
+  // 🔴 #5778：菜单项「商品列表」改名「商品管理」并升为**一级项**（无父组）⇒ 面包屑为
+  // 「商品管理 > 商品管理」（首项 = 一级项身份，末项 == 菜单名，§15.2）。
+  it('/products 路径应显示"商品管理 > 商品管理"面包屑（一级项）', async () => {
     mockPathname = '/products'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    expect(screen.getAllByText('商品管理')).toHaveLength(2)
+    expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
   })
 
   // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
@@ -112,13 +113,15 @@ describe('Header', () => {
     expect(screen.getByText('订单列表')).toBeInTheDocument()
   })
 
-  it('/customers 路径应显示"交易管理 > 客户列表"面包屑（#2969 建组；#5271 并入交易管理）', async () => {
+  // 🔴 #5778：客户列表由「交易管理」移入**客户服务**组（「客户管理不属于交易管理」）
+  it('/customers 路径应显示"客户服务 > 客户列表"面包屑（#5778 归入客户服务组）', async () => {
     mockPathname = '/customers'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('客户列表')).toBeInTheDocument()
+    expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
   })
 
   it('/notifications 路径应显示"通知中心"面包屑（#2969 独立菜单）', async () => {
@@ -147,13 +150,12 @@ describe('Header', () => {
 
   // ─── 子路径匹配 ───
 
-  it('/products/123 子路径应匹配"商品管理 > 商品列表"', async () => {
+  it('/products/123 子路径应匹配"商品管理 > 商品管理"（前缀命中）', async () => {
     mockPathname = '/products/123'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    expect(screen.getAllByText('商品管理')).toHaveLength(2)
   })
 
   it('/agent-workspace 子路径优先匹配（/agent-workspace/sessions）', async () => {
@@ -161,16 +163,16 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('会话监控')).toBeInTheDocument()
   })
 
-  it('/agent-workspace 精确路径应显示"智能客服 > 客服工作台"（#2969 归入智能客服组）', async () => {
+  it('/agent-workspace 精确路径应显示"客户服务 > 客服工作台"（#5778 组名改判）', async () => {
     mockPathname = '/agent-workspace'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
   })
 
@@ -411,35 +413,35 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    expect(screen.getByText('商品管理')).toBeInTheDocument()
     expect(screen.getByText('商品分类管理')).toBeInTheDocument()
   })
 
   // issue #4490（含同日**规格修订**）：「加工项管理」(/processing) 并入 /production/processing，
   // 并按用户裁定归**商品管理**组 ⇒ 面包屑跟着入口走（§15.2）。issue #4542（用户裁定）把菜单名
   // 定为「加工项管理」（与服务端同名）⇒ 旧路径现为重定向，兜底面包屑也写该名。
-  it('/processing 路径面包屑（旧路径 → 商品管理 > 加工项管理，issue #4490/#4542）', async () => {
+  it('/processing 路径面包屑（旧路径 → 生产管理 > 加工项管理，issue #4490/#4542；#5778 移组）', async () => {
     mockPathname = '/processing'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再渲染（issue #4542 改名）
     expect(screen.queryByText('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')).not.toBeInTheDocument()
   })
 
   // issue #4490：合并后的唯一入口（两个 tab：加工项 / 加工费组合）—— 面包屑必须与新菜单名/分组一致
-  it('/production/processing 路径面包屑（商品管理 > 加工项管理，更具体子路径优先于 /production）', async () => {
+  it('/production/processing 路径面包屑（生产管理 > 加工项管理，更具体子路径优先于 /production）', async () => {
     mockPathname = '/production/processing'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    // 🔴 #5778：本项已由「商品与加工项」组移入**生产管理**组 ⇒ 首项改判为「生产管理」
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
-    // 不得回落到 /production 的「生产看板」；也不得写成「生产管理」（分组已按裁定改）
+    // 不得回落到 /production 的「生产看板」（更具体子路径必须先命中）
     expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
-    expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
   })
 
   it('/production/processing-fees 旧路径面包屑也写新名（重定向到 ?tab=fees，issue #4490）', async () => {
@@ -447,7 +449,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品与加工项')).toBeInTheDocument()
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
   })
@@ -586,31 +588,32 @@ describe('Header', () => {
     expect(screen.queryByText('加工单')).not.toBeInTheDocument()
   })
 
-  it('/knowledge 路径面包屑（#2969 知识库归入智能客服组）', async () => {
+  it('/knowledge 路径面包屑（#5778 归入客户服务组）', async () => {
     mockPathname = '/knowledge'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('知识库')).toBeInTheDocument()
     expect(screen.queryByText('知识库管理')).not.toBeInTheDocument()
   })
 
-  it('/after-sales 路径面包屑', async () => {
+  // 🔴 #5778：售后工单由「交易管理」移入**客户服务**组（与客户列表同类：「服务客户」）
+  it('/after-sales 路径面包屑（#5778 归入客户服务组）', async () => {
     mockPathname = '/after-sales'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('交易管理')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
   })
 
-  it('/chat 路径面包屑（#2969 归入智能客服组）', async () => {
+  it('/chat 路径面包屑（#5778 归入客户服务组）', async () => {
     mockPathname = '/chat'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
     // #3081: /chat/config 页面已删除（合并进企业基础信息），不再有 AI 客服配置面包屑
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
@@ -657,7 +660,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
     expect(screen.queryByText('快捷回复')).not.toBeInTheDocument()
   })

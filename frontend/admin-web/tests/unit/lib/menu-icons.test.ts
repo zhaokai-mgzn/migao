@@ -27,14 +27,17 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { menuGroups, standaloneItems, type MenuItem } from '@/config/menu'
+import { menuGroups, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
 import { menuIconMap, resolveMenuIcon, registeredIconNames } from '@/config/menu-icons'
 
 const MENU_TS = readFileSync(join(process.cwd(), 'src/config/menu.ts'), 'utf-8')
 
+// #5778：**两个**独立项数组都要计入（顶部一级项「商品管理」+ 尾部「通知中心」）——
+// 漏一个会让节点数少 1、且「注册表 ⇄ 使用面」双向判据假红。
 const allItems = (): MenuItem[] => [
   ...menuGroups.map((g) => ({ key: g.key, name: g.name, icon: g.icon, path: '' }) as MenuItem),
   ...menuGroups.flatMap((g) => g.children),
+  ...standaloneTopItems,
   ...standaloneItems,
 ]
 
@@ -53,7 +56,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
     expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(24)
-    expect(allItems().length).toBe(28) // 7 组头 + 20 组内项 + 1 独立项
+    expect(allItems().length).toBe(27) // #5778：6 组头 + 1 一级项 + 19 组内项 + 1 独立项
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -100,7 +103,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
 
   // ── 判据④：图标两两不同（issue #5582）──────────────────────────────────────────
   //
-  // 病根（用户实测）：「左侧菜单栏有部分子菜单的图标完全一样」—— 28 个节点里 4 组同图
+  // 病根（用户实测）：「左侧菜单栏有部分子菜单的图标完全一样」—— 27 个节点里 4 组同图
   // （`BarChart3` 经营/省料看板、`ShieldCheck` 售后/岗位权限、`Calculator` 财务/计件工资、
   //   `Building2` 组织管理组/企业基础信息），且这些节点在侧边栏里**紧挨着出现** ⇒ 视觉上没有区分度。
   //
@@ -117,10 +120,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：28 个节点（7 组 + 20 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：27 个节点（6 组 + 1 一级项 + 19 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(28)
+    expect(items.length).toBe(27)
     expect(items.map((i) => i.name)).toEqual(
       expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础信息']),
     )

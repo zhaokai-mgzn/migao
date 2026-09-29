@@ -153,19 +153,20 @@ describe('RolesPage', () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const tree = within(await screen.findByTestId('perm-menu-sections'))
-    // 菜单组头 = 侧边栏菜单组名（issue #5271 新 IA：7 组，逐组点名）
+    // 菜单组头 = 侧边栏菜单组名（#5778 新 IA：**6 组 + 1 个一级项**，逐组点名）
     expect(tree.getByText('工作台')).toBeInTheDocument()
-    expect(tree.getByText('智能客服')).toBeInTheDocument()
-    expect(tree.getByText('商品与加工项')).toBeInTheDocument()
+    expect(tree.getByText('客户服务')).toBeInTheDocument()
     expect(tree.getByText('交易管理')).toBeInTheDocument()
     expect(tree.getByText('生产管理')).toBeInTheDocument()
     expect(tree.getByText('仓储与物料')).toBeInTheDocument()
     expect(tree.getByText('组织管理')).toBeInTheDocument()
-    // 旧组名不再作为**组头**：issue #5271 三处改判（商品管理 → 商品与加工项；
-    // 订单管理 + 客户管理 → 交易管理；`customer-center` 组消失）。
-    // ⚠️ 「商品管理」还会出现**一次** —— 那是「操作权限」节里的同名权限项（product:manage，非菜单码）
-    expect(tree.getAllByText('商品与加工项')).toHaveLength(1)
+    // 旧组名不再出现：issue #5271 / #5778 三处改判（商品与加工项**撤销**；智能客服 → 客户服务；
+    // 订单管理 + 客户管理 → 交易管理）。
+    // ⚠️ 「商品管理」在本容器里出现**一次**：#5778 起它是**菜单项名**（一级项）。
+    //（「操作权限」节的同名权限项渲染在另一容器里，不在本判据的取值面内）
+    expect(tree.queryByText('商品与加工项')).not.toBeInTheDocument()
     expect(tree.getAllByText('商品管理')).toHaveLength(1)
+    expect(tree.queryByText('智能客服')).not.toBeInTheDocument()
     expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
     expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
     // 菜单项 = 侧边栏菜单项名
@@ -178,7 +179,7 @@ describe('RolesPage', () => {
     //（否则「勾得动 / 看不到」会漂移：它现在确实决定一个菜单项与 5 个读端点的可见性）。
     expect(tree.getByText('每日简报')).toBeInTheDocument()
     expect(tree.getByText('经营看板')).toBeInTheDocument()
-    expect(tree.getByText('商品列表')).toBeInTheDocument()
+    // #5778：「商品列表」改名「商品管理」（上方已按「出现两次」断言：菜单项 + 操作权限项）
     // issue #4490：「加工项管理」+「加工费管理」合并为单一入口；#4542 起菜单名 =「加工项管理」
     // （权限树与真实侧边栏同源）
     expect(tree.getByText('加工项管理')).toBeInTheDocument()
@@ -186,7 +187,8 @@ describe('RolesPage', () => {
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
     expect(tree.getByText('财务对账')).toBeInTheDocument()
-    // issue #5271：生产管理组 4 项 + 新组「仓储与物料」3 项都要在权限树里（否则「勾得动/看不到」漂移）
+    // #5778：生产管理组 5 项（含移入的「加工项管理」）+「仓储与物料」3 项都要在权限树里
+    //（否则「勾得动/看不到」漂移）
     expect(tree.getByText('生产看板')).toBeInTheDocument()
     expect(tree.getByText('智能派单')).toBeInTheDocument()
     expect(tree.getByText('工艺配置')).toBeInTheDocument()
@@ -263,16 +265,16 @@ describe('RolesPage', () => {
     expect(knowledgeItem.querySelector('input')!.checked).toBe(false)
   })
 
-  it('菜单组全选：勾选「智能客服」组头 → 组内权限码全部授予并随提交落库', async () => {
+  it('菜单组全选：勾选「客户服务」组头 → 组内权限码全部授予并随提交落库', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    // 智能客服组含 agent:session（在线接待）+ **knowledge:view**（知识库；issue #5246 起读码，
-    // 写码 knowledge:manage 不再挂在菜单节点上）（#3081 已移除 agent:quickreply）
-    const groupHeader = (await screen.findByText('智能客服')).closest('div')!
+    // #5778：客户服务组（原「智能客服」组）含 agent:session（在线接待）+ **knowledge:view**
+    //（知识库；issue #5246 起读码，写码 knowledge:manage 不再挂在菜单节点上）（#3081 已移除 agent:quickreply）
+    const groupHeader = (await screen.findByText('客户服务')).closest('div')!
     fireEvent.click(groupHeader.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
-    fireEvent.change(textboxes[0], { target: { value: '智能客服岗' } })
+    fireEvent.change(textboxes[0], { target: { value: '客户服务岗' } })
     fireEvent.change(textboxes[1], { target: { value: 'cs' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     await waitFor(() => {

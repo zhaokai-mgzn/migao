@@ -1,3 +1,7 @@
+# case_ids: PR-026
+# 🔴 2026-09-29（issue #5778）：菜单项「商品列表」改名「商品管理」⇒ 指引文案与本文件的三处断言
+# 同批改判（判据强度一格不放宽：仍是「含后台 + 给出具体页面名」）。
+# 本文件原无 case_ids 声明（存量）；因本次修改它，按 QA Growth Gate 规则补上（PR-026）。
 """写工具净化不再静默 — 图片类参数丢弃即失败并给出**可达的**去处（issue #3930 → #5318 改判）。
 
 生产实证（sess_2efa2071bb1747d8，2026-09-15）：用户「先把这张色卡图设为主图」，
@@ -92,8 +96,8 @@ class TestWriteToolImageArgsDroppedFailsWithGuidance:
             f"指引又点名了已从 B 端解绑的工具：{result_dict['error']}"
         )
         assert "images" in result_dict["error"]
-        assert "后台" in result_dict["error"] and "商品列表" in result_dict["error"], (
-            f"指引未给出去处（后台商品列表页）：{result_dict['error']}"
+        assert "后台" in result_dict["error"] and "商品管理" in result_dict["error"], (
+            f"指引未给出去处（后台商品管理页）：{result_dict['error']}"
         )
         assert tool.executed == [], "丢弃参数后不得执行写工具（空字段调用正是「没有要修改的字段」误宣链）"
         parsed = json.loads(result_str)
@@ -147,8 +151,8 @@ class TestDroppedArgsGuidance:
         msg = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "images": ["x"]})
         assert "product_manage" not in msg, msg
-        assert "后台" in msg and "商品列表" in msg, msg
+        assert "后台" in msg and "商品管理" in msg, msg
         msg2 = _dropped_args_guidance(
             _FakeWriteTool(), {"product_id": "p1", "detail_images": ["x"]})
         assert "product_manage" not in msg2, msg2
-        assert "后台" in msg2 and "商品列表" in msg2, msg2
+        assert "后台" in msg2 and "商品管理" in msg2, msg2

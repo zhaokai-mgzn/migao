@@ -75,7 +75,7 @@
     "names": {
       "dashboard:view": "仪表板查看",
       "product:manage": "商品管理",
-      "product:list": "商品列表",
+      "product:list": "商品管理",
       "product:create": "新增商品",
       "product:category": "商品分类",
       "product:category:view": "商品分类查看",
@@ -282,20 +282,18 @@
       "工作台": null,
       "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
-      "智能客服": null,
+      "客户服务": null,
       "在线接待": "agent:session",
+      "客户列表": "customer:view",
       "知识库": "knowledge:view",
-      "商品与加工项": null,
-      "商品列表": "product:list",
-      "加工项管理": "production:view",
+      "售后工单": "after_sales:view",
       "交易管理": null,
       "订单列表": "order:list",
-      "售后工单": "after_sales:view",
-      "客户列表": "customer:view",
       "财务对账": "finance:view",
       "生产管理": null,
       "生产看板": "production:view",
       "智能派单": "processing:view",
+      "加工项管理": "production:view",
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "仓储与物料": null,
@@ -306,6 +304,7 @@
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
+      "商品管理": "product:list",
       "通知中心": null
     },
     "controller": {
@@ -313,10 +312,8 @@
       "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
-      "商品列表": "product:list",
+      "商品管理": "product:list",
       "加工项管理": "production:view",
-      "新增商品": "product:create",
-      "商品分类管理": "product:category",
       "订单列表": "order:list",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
@@ -335,16 +332,18 @@
       "新增员工": "employee:create"
     },
     "auth": {
+      "商品管理": "product:list",
       "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
       "在线接待": "agent:session",
-      "知识库": "knowledge:view",
-      "商品列表": "product:list",
-      "订单列表": "order:list",
-      "售后工单": "after_sales:view",
       "客户列表": "customer:view",
+      "知识库": "knowledge:view",
+      "售后工单": "after_sales:view",
+      "订单列表": "order:list",
       "财务对账": "finance:view",
+      "生产看板": "production:view",
       "智能派单": "processing:view",
+      "加工项管理": "production:view",
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
@@ -376,8 +375,8 @@
       "code": "dashboard:view"
     },
     {
-      "key": "smart-customer-service",
-      "name": "智能客服",
+      "key": "customer-service",
+      "name": "客户服务",
       "path": null,
       "code": null
     },
@@ -388,28 +387,22 @@
       "code": "agent:session"
     },
     {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "code": "customer:view"
+    },
+    {
       "key": "knowledge",
       "name": "知识库",
       "path": "/knowledge",
       "code": "knowledge:view"
     },
     {
-      "key": "product-center",
-      "name": "商品与加工项",
-      "path": null,
-      "code": null
-    },
-    {
-      "key": "products",
-      "name": "商品列表",
-      "path": "/products",
-      "code": "product:list"
-    },
-    {
-      "key": "processing",
-      "name": "加工项管理",
-      "path": "/production/processing",
-      "code": "production:view"
+      "key": "after-sales",
+      "name": "售后工单",
+      "path": "/after-sales",
+      "code": "after_sales:view"
     },
     {
       "key": "trade-center",
@@ -422,18 +415,6 @@
       "name": "订单列表",
       "path": "/orders",
       "code": "order:list"
-    },
-    {
-      "key": "after-sales",
-      "name": "售后工单",
-      "path": "/after-sales",
-      "code": "after_sales:view"
-    },
-    {
-      "key": "customers",
-      "name": "客户列表",
-      "path": "/customers",
-      "code": "customer:view"
     },
     {
       "key": "finance",
@@ -458,6 +439,12 @@
       "name": "智能派单",
       "path": "/production/pool",
       "code": "processing:view"
+    },
+    {
+      "key": "processing",
+      "name": "加工项管理",
+      "path": "/production/processing",
+      "code": "production:view"
     },
     {
       "key": "production-process",
@@ -518,6 +505,12 @@
       "name": "企业基础信息",
       "path": "/settings",
       "code": "system:manage"
+    },
+    {
+      "key": "products",
+      "name": "商品管理",
+      "path": "/products",
+      "code": "product:list"
     },
     {
       "key": "notifications",
@@ -843,7 +836,7 @@
     },
     {
       "key": "products",
-      "name": "商品列表",
+      "name": "商品管理",
       "path": "/products",
       "gate": "product:list",
       "units": {

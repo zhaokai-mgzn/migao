@@ -125,7 +125,7 @@ class ProductBatchUpdateTool(BaseTool):
         "缺席一律被拒；newValue 是商家明确给出的值（不得自行推算幅度）。"
         "【批量类型·只有两个】batch_type=product_price（商品级统一定价批量改价，field=basePrice）"
         "/ product_status（批量上/下架，field=status，取值 on_sale / off_sale）。"
-        "其它类型（改名 / 改图 / 改库存 / 自由字段）**不支持** —— 如实说明并引导到商品列表页 /products。"
+        "其它类型（改名 / 改图 / 改库存 / 自由字段）**不支持** —— 如实说明并引导到商品管理页 /products。"
         "【阈值】单批最多 50 条：N>50 一律拒绝并提示**分批**（本工具不做后台异步任务）。"
         "【撤销】执行成功后**必须告诉商家可以撤销**：action=revert + batch_id 会逐条还原为改前值 "
         "old_value；部分失败**逐条报告、不做整体回滚**（回滚会掩盖真问题）—— 把失败条目与原因如实转述。"
@@ -252,7 +252,7 @@ class ProductBatchUpdateTool(BaseTool):
                 suggestion=(f"batch_type 只支持 {BATCH_TYPE_PRICE}（商品级批量改价）/ "
                             f"{BATCH_TYPE_STATUS}（批量上/下架）—— 请从这两个里选一个。"
                             "改名 / 改图 / 改库存 / 自由字段的批量**不在**本工具范围，"
-                            "请如实告知商家并引导到商品列表页 /products 操作。"),
+                            "请如实告知商家并引导到商品管理页 /products 操作。"),
             )
         if not isinstance(items, list) or not items:
             return ToolResult(
@@ -378,7 +378,7 @@ class ProductBatchUpdateTool(BaseTool):
             return admin_api_failure(
                 response, error=msg, message=f"批量执行失败: {msg}",
                 suggestion=("批量执行失败：请按返回的 error.code 处理（批次不存在/状态不允许执行等），"
-                            "不要把失败说成已完成；必要时引导商家在商品列表页 /products 核对"),
+                            "不要把失败说成已完成；必要时引导商家在商品管理页 /products 核对"),
             )
 
         data: Dict[str, Any] = dict(response.get("data") or {})
@@ -396,7 +396,7 @@ class ProductBatchUpdateTool(BaseTool):
             f"如发现改错，可调本工具 action=revert, batch_id={batch_id} **撤销**（逐条还原为改前值）。"
             if data.get("revertible") is not False else
             f"本批次当前**不可撤销**（revertible=false，status={data.get('status')}）—— 请如实告知商家，"
-            "不要在商品列表页之外另做补偿性改动。"
+            "不要在商品管理页之外另做补偿性改动。"
         )
         return ToolResult(
             success=True,
