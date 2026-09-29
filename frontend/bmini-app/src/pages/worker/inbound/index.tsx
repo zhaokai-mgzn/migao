@@ -2,7 +2,7 @@
  * 工人**拍照入库**（issue #5052 **P3**；设计 `docs/design/inbound-photo-and-label.md` §4 / §6 / §7）
  *
  * 一条链：**拍照 → 本机解码优先（0 次 LLM）→ 识别兜底 → 工人确认 → 过账（不可逆，二次确认）
- * → 出 50×30mm 标签 → 送打印**。
+ * → 出 30×40mm 标签 → 送打印**。
  *
  * ## 为什么走 `/api/worker/**` 而不是 `/api/admin/**`
  *
@@ -21,7 +21,7 @@
  * 能力缺口**动手前**说清楚：打印区在任何操作之前就先渲染 `probePrintCapability()` 的结论
  * （iOS / 非 HTTPS / 无蓝牙 / 非 h5 各有各的文案），而不是等点了打印才失败。
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { confirmAdminAction } from '../../../utils/adminConfirm'
@@ -43,6 +43,7 @@ import {
   probePrintCapability,
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
+import { printerLink, printerLinkText } from '../../../utils/inbound/printerLink'
 import {
   SDK_UNAVAILABLE_HINT,
   createH5CanvasFactory,
@@ -98,6 +99,10 @@ export default function WorkerInboundPage() {
 
   // 能力探测**在动手前**做（不是打完才失败）：h5 + 安全上下文 + 非 iOS + 有 Web Bluetooth
   const capability: PrintCapability = useMemo(() => probePrintCapability(), [])
+  // 连接状态是**运行期事实**（与上面的能力探测**是两件事**）：订阅传输层每次真实交互写的状态仓。
+  // 浏览器侧做不到持续真值（Web Bluetooth 权限模型不允许静默重连）⇒ 口径见 `printerLink.ts`。
+  const [link, setLink] = useState(printerLink.get())
+  useEffect(() => printerLink.subscribe(setLink), [])
 
   const onPick = useCallback(async () => {
     setError('')
@@ -299,6 +304,13 @@ export default function WorkerInboundPage() {
         <Text className='admin-card__note' data-testid='inbound-print-capability'>
           {capability.ok ? PRINT_READY_HINT : capability.hint}
         </Text>
+
+        {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
+        {capability.ok && (
+          <Text className='admin-card__note' data-testid='inbound-printer-link'>
+            {printerLinkText(link)}
+          </Text>
+        )}
 
         {step === 'photo' && (
           <View className='admin-card' data-testid='inbound-step-photo'>

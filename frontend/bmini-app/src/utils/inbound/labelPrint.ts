@@ -38,7 +38,7 @@ export class LabelTransportError extends Error {
 export interface LabelTransport {
   /** 通道标识（显示用；也用于判据断言「用的是哪条通道」） */
   readonly id: string
-  /** 人读名称（如「德佟 DP30S（浏览器蓝牙）」） */
+  /** 人读名称（如「德佟 DP235S（浏览器蓝牙）」） */
   readonly label: string
   /**
    * 真正把位图送给打印机。

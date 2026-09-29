@@ -1,10 +1,10 @@
 // case_ids: BM-010
 /**
- * **50×30mm 标签的像素口径：单一真值 + 逐值正确**（issue #5052 P3；设计 §7.2 / 验收判据 7）
+ * **30×40mm 标签的像素口径：单一真值 + 逐值正确**（issue #5052 CP-1；设计 §7.2 / 验收判据 7）
  *
  * ## 为什么这条要单独成守卫
  *
- * 「同一物理口径出现第二份字面量」是本仓被点过名的形态：400 / 384 / 240 一旦在 bmini 的渲染器里
+ * 「同一物理口径出现第二份字面量」是本仓被点过名的形态：240 / 320 / 384 一旦在 bmini 的渲染器里
  * 再抄一份，**改纸型不会跟着改渲染器**（或反过来），而两边**都不会报错** —— 打出来的标签
  * 尺寸错、二维码被非整数倍重采样糊掉，直到工人扫不出来才发现。
  *
@@ -16,9 +16,9 @@
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
- * | C1 | 逐值正确 + **派生关系自洽**（8 dots/mm × 50/48/30mm） | 把 `effectiveWidthPx` 改成 400 ⇒ 红 |
+ * | C1 | 逐值正确 + **派生关系自洽**（8 dots/mm × 30mm 纸宽 / 40mm 纸高 / 48mm 头宽） | 把 `headWidthPx` 改成 240 ⇒ 红 |
  * | C2 | 🔴 **任一份**像素口径字面量都只许来自真值源：出图链路里 400 / 384 / 240 **一个都不许有** | 在 `labelPageKit.ts` 写一行 `const x = 384`（**只写 384**）⇒ 红 |
- * | C2b | 全仓范围内 `384` 只出现在介质矩阵（另外两个数与无关业务重号，口径见下） | 别处复制一份 `effectiveWidthPx = 384` ⇒ 红 |
+ * | C2b | 全仓范围内 `384`（打印头宽）只出现在介质矩阵（另外两个数与无关业务重号，口径见下） | 别处复制一份 `headWidthPx = 384` ⇒ 红 |
  * | C3 | 渲染/版面模块源码里**不出现**这组像素字面量（只能从 `truth` 取） | 同上（C3 会点名文件） |
  * | C4 | 判据本身能红（注入式：改坏真值 ⇒ 同一个判定函数判红） | 注入未生效 ⇒ 红（空断言） |
  *
@@ -61,7 +61,7 @@ const PIPELINE_DIRS = [
   'frontend/bmini-app/src/pages/worker',
 ]
 /** 像素口径字面量（**分别**判，不再是"两个数同时出现才算"） */
-const PIXEL_LITERALS = [400, 384, 240]
+const PIXEL_LITERALS = [240, 320, 384]
 const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|json)$/
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.next', 'build', '.git'])
 
@@ -121,30 +121,35 @@ function geometryProblems(geometry: {
   dotsPerMm: number
   widthPx: number
   effectiveWidthPx: number
+  headWidthPx: number
   heightPx: number
 }): string[] {
   const problems: string[] = []
   if (geometry.dpi !== 203) problems.push(`dpi=${geometry.dpi}（目标机口径 203dpi）`)
   if (geometry.dotsPerMm !== 8) problems.push(`dotsPerMm=${geometry.dotsPerMm}（203dpi ⇒ 8 dots/mm）`)
-  if (geometry.widthPx !== geometry.dotsPerMm * 50) problems.push('widthPx ≠ dotsPerMm × 50mm')
-  if (geometry.effectiveWidthPx !== geometry.dotsPerMm * 48) problems.push('effectiveWidthPx ≠ dotsPerMm × 48mm')
-  if (geometry.heightPx !== geometry.dotsPerMm * 30) problems.push('heightPx ≠ dotsPerMm × 30mm')
+  if (geometry.widthPx !== geometry.dotsPerMm * 30) problems.push('widthPx ≠ dotsPerMm × 30mm')
+  if (geometry.heightPx !== geometry.dotsPerMm * 40) problems.push('heightPx ≠ dotsPerMm × 40mm')
+  if (geometry.headWidthPx !== geometry.dotsPerMm * 48) problems.push('headWidthPx ≠ dotsPerMm × 48mm')
+  // 有效打宽 = min(纸宽, 打印头宽)：30mm 纸 < 48mm 头 ⇒ 整幅可打（240px）
+  if (geometry.effectiveWidthPx !== Math.min(geometry.widthPx, geometry.headWidthPx)) {
+    problems.push('effectiveWidthPx ≠ min(纸宽, 打印头宽)')
+  }
   if (geometry.effectiveWidthPx > geometry.widthPx) problems.push('有效打宽 > 纸宽（物理上不成立）')
   return problems
 }
 
-describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () => {
-  it('C1 逐值正确，且与 mm↔dots 的派生关系自洽（不是四个孤立的数）', () => {
+describe('30×40mm 标签像素口径：单一真值（issue #5052 CP-1）', () => {
+  it('C1 逐值正确，且与 mm↔dots 的派生关系自洽（不是几个孤立的数）', () => {
     const geometry = inboundLabelGeometry()
     expect(geometryProblems(geometry)).toEqual([])
-    expect(inboundLabelMedia().pageSize).toBe('50mm 30mm')
+    expect(inboundLabelMedia().pageSize).toBe('30mm 40mm')
     expect(inboundLabelMedia().pageMargin).toBe('0')
-    // 画布 = **有效打宽 × 纸高**（安全侧：DP30S 有效打宽未核实，见设计 §8.5 ④）
+    // 画布 = **有效打宽 × 纸高**（30mm 纸 < 48mm 头 ⇒ 有效打宽 = 纸宽，整幅可打）
     expect(geometry.canvasWidthPx).toBe(geometry.effectiveWidthPx)
     expect(geometry.canvasHeightPx).toBe(geometry.heightPx)
   })
 
-  it('C1 真值源里 50×30 是**待实测**介质（真机参数没核实 ⇒ 不许写成 measured）', () => {
+  it('C1 真值源里 30×40 是**待实测**介质（真机参数没核实 ⇒ 不许写成 measured）', () => {
     const spec = inboundLabelMedia()
     expect(spec.id).toBe(INBOUND_LABEL_MEDIA_ID)
     expect(spec.measurement).toBe('pending-field-measurement')
@@ -152,7 +157,7 @@ describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () =>
     expect((spec.pendingMeasurements || []).join('\n')).toContain('有效打印宽度')
   })
 
-  it('C2 出图链路里**一个**像素字面量都没有（400 / 384 / 240 逐个数，不放过"只写一个"）', () => {
+  it('C2 出图链路里**一个**像素字面量都没有（240 / 320 / 384 逐个数，不放过"只写一个"）', () => {
     const pipeline = readCorpus(PIPELINE_DIRS)
     // 反空跑：射程真的扫到了出图链路的源码
     expect(pipeline.length).toBeGreaterThanOrEqual(10)
@@ -167,14 +172,14 @@ describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () =>
     const problems = pixelLiteralProblems(injected).join('\n')
     expect(problems).toContain('labelPageKit.ts')
     expect(problems).toContain('384')
-    // 只写 240 / 只写 400 也各自命中（旧口径在这两种形态下同样恒绿）
+    // 只写 240 / 只写 320 也各自命中（旧口径在这两种形态下同样恒绿）
     expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const h = 240\n' }]).join('\n')).toContain('240')
-    expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const w = 400\n' }]).join('\n')).toContain('400')
+    expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const h = 320\n' }]).join('\n')).toContain('320')
     // ② 对照：真仓库的出图链路下同一判定判绿（否则上面那条"红"可能只是读错了语料）
     expect(pixelLiteralProblems(readCorpus(PIPELINE_DIRS))).toEqual([])
   })
 
-  it('C2b 全仓 `384` 只许出现在介质矩阵（另外两个数与无关业务重号，故按链路判，口径见文件头）', () => {
+  it('C2b 全仓 `384`（打印头宽）只许出现在介质矩阵（240/320 与无关业务重号，故按链路判，口径见文件头）', () => {
     const problems = pixelLiteralProblems(readCorpus(['frontend', 'backend']), [384], [MATRIX_REL])
     expect(problems).toEqual([])
     // 反空跑：真值源里**确实**写着这个数（否则"全仓 0 命中"会假绿）
@@ -185,7 +190,7 @@ describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () =>
     const offenders: string[] = []
     for (const rel of RENDER_FILES) {
       const code = stripComments(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'))
-      for (const literal of [/\b400\b/, /\b384\b/, /\b240\b/]) {
+      for (const literal of [/\b240\b/, /\b320\b/, /\b384\b/]) {
         if (literal.test(code)) offenders.push(`${rel} → ${literal}`)
       }
     }
@@ -195,12 +200,14 @@ describe('50×30mm 标签像素口径：单一真值（issue #5052 P3）', () =>
   it('C4 注入式红证：改坏真值 ⇒ 同一个判定函数必须判红（判据不是空断言）', () => {
     const real = inboundLabelGeometry()
     expect(geometryProblems(real)).toEqual([])
-    // 注入 A：有效打宽被写成纸宽（"反正机器应该能打满" 这个想当然）
-    expect(geometryProblems({ ...real, effectiveWidthPx: real.widthPx })).not.toEqual([])
+    // 注入 A：有效打宽被写成**比纸宽还大**（"反正机器应该能打满"这个想当然）
+    expect(geometryProblems({ ...real, effectiveWidthPx: real.widthPx + real.dotsPerMm })).not.toEqual([])
     // 注入 B：dots/mm 漂到 8.47（有人按 215dpi 算过）
     expect(geometryProblems({ ...real, dotsPerMm: 8.47 })).not.toEqual([])
     // 注入 C：高度按 32mm 画（报错方向也要能红）
     expect(geometryProblems({ ...real, heightPx: 256 })).not.toEqual([])
+    // 注入 D：打印头宽按 30mm 记（= 把纸宽当成头宽）⇒ 派生关系不再自洽
+    expect(geometryProblems({ ...real, headWidthPx: real.widthPx })).not.toEqual([])
   })
 
   it('C5 码形态一次定死：https://app.migaozn.com/i/<短码>（缺码 ⇒ null，不编造）', () => {

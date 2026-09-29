@@ -1,6 +1,6 @@
 // case_ids: BM-012
 /**
- * 入库标签 **50×30mm 版面**判据（issue #5052 P3；设计 §7.1，验收判据 6 / 8）
+ * 入库标签 **30×40mm 版面**判据（issue #5052 P3 / CP-1；设计 §7.1，验收判据 6 / 8）
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
@@ -10,7 +10,7 @@
  * | C4 | 二维码按**整数倍点阵**（非整数倍重采样会把码糊掉） | `cellPx` 取小数 ⇒ 红 |
  * | C5 | 缺字段不编造（品名缺失时给的是「未填品名」标注，不是编一个名字） | — |
  *
- * ⚠️ 本文件**不写 384 / 240 字面量**（那会让「单一真值」守卫多一处语料）：尺寸一律从
+ * ⚠️ 本文件**不写 240 / 320 字面量**（那会让「单一真值」守卫多一处语料）：尺寸一律从
  * `inboundLabelGeometry()` 取。
  */
 import { layoutInboundLabel, estimateTextWidth, fitTextVisible, MISSING_CODE_TEXT } from '../src/utils/inbound/labelLayout'
@@ -58,7 +58,7 @@ function fakeCanvasFactory() {
   }
 }
 
-describe('入库标签版面（50×30mm）', () => {
+describe('入库标签版面（30×40mm）', () => {
   it('C1 正常短码 ⇒ 画出二维码，且码内容 = https://app.migaozn.com/i/<短码>', () => {
     const plan = layoutInboundLabel(FULL_VIEW)
     expect(plan.qr?.payload).toBe('https://app.migaozn.com/i/ABCD2345')

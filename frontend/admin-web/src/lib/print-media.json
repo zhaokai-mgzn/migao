@@ -40,29 +40,30 @@
       "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92 pt）。⛔ 本矩阵只登记**在用**介质：#4946 的 30mm 横版与 #5052-P2 的 50×30 版式各有归属，不在本表重复登记、本单也不动它们的版式。"
     },
     {
-      "id": "label-50x30",
-      "label": "入库标签 50mm × 30mm（横版 · 热敏）",
+      "id": "label-30x40",
+      "label": "入库标签 30mm × 40mm（竖版 · 热敏）",
       "technology": "thermal-transfer",
-      "pageSize": "50mm 30mm",
+      "pageSize": "30mm 40mm",
       "pageMargin": "0",
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 5,
       "measurement": "pending-field-measurement",
       "pendingMeasurements": [
-        "DP30S 的**有效打印宽度**精确值（dots/mm）与纸宽范围 —— 现值按 203dpi 的 2 英寸头常见有效打宽 **48mm / 384px** 取**安全侧**，不是实测读数（设计 §8.5 ④）",
-        "最小标签高度 / 间隙（gap）定位下限 —— 50mm×30mm 能否稳定定位、是否需要黑标（black mark）",
-        "打印原点偏移（左边距 / 顶边距的实际落点）—— 1:1 送点阵后是否需要原点校正",
+        "**DP235S 的打印头 dpi 与有效打印宽度** —— 现值按 203dpi / 8 dots/mm / 头宽 **48mm（384px）** 取**安全侧**，不是实测读数；连上后读 `getPrinterInfo()` 的 `printerDPI` / `printerWidth` 回填（设计 §8.5 ④）",
+        "30mm×40mm 不干胶的**间隙定位与间隔长度下限** —— 本实现按微打 APP 读数送参（`gapType` = 间隙纸、`gapLength` = 3.00mm）；能否稳定定位、是否需要黑标（black mark）待实测",
+        "**打印原点偏移**（左 / 顶边距的实际落点）与**出纸方向**的对应 —— 本实现按**竖版画布 + orientation=0**；微打 APP 的横版模板用 270° ⇒ 真机打一张核对（1:1 送点阵后是否需要原点校正）",
         "热敏亚银合成纸在**布卷曲面 / PE 袋**的 24h 附着与褪色（耗材实测，设计 §8.5 ⑤）",
         "满电连续「拍照 + 打印」张数 / 单张打印耗时（现场节拍预算）"
       ],
-      "note": "热敏（direct thermal，DP30S 为热敏机、不带碳带）+ **设备侧（客户端 canvas）渲染**后经 **Web Bluetooth** 直打；出图侧已由用户改判为**设备侧渲染**（设计 §7.2 的『服务端出图』作废，**像素口径照抄**）。像素口径真值 = 本节 `dotGeometry`：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、**有效打印宽 48mm ⇒ 384px（安全侧）**、高 30mm ⇒ 240px、**1:1 不缩放不裁切**。🔴 本口径**全仓只有这一份**（守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`：别处出现第二份 400/384/240 ⇒ 红）；bmini 侧经 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 本文件**，不复制、不做构建期拷贝。⚠️ technology 取本矩阵既有的 `thermal-transfer` 档（热敏/热转印同档）；DP30S 实为**热敏**机 —— 耗材必须买「热敏亚银」，买成需碳带的普通亚银 PET 会打不出字（设计 §3.3 确认项③）。",
+      "note": "热敏（direct thermal，**DP235S** 为热敏机、不带碳带）+ **设备侧（客户端 canvas）渲染**后经 **Web Bluetooth** 直打（形态 A 下小程序原生页复用同一份口径）。🔴 **2026-09-29 用户裁定：入库标签由 50×30 横版改为 30×40 竖版**（照实机 30×40 合格证式样；字段仍取本仓入库口径，**不引入库数据里没有的列**）。像素口径真值 = 本节 `dotGeometry`：203dpi = 8 dots/mm、纸宽 30mm ⇒ 240px、纸高 40mm ⇒ 320px；**纸宽 30mm < 打印头宽 48mm（384px，安全侧待实测）⇒ 有效打宽 = 纸宽 = 240px，整幅可打**；**1:1 不缩放不裁切**。🔴 本口径**全仓只有这一份**（守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`：别处出现第二份 240/320/384 ⇒ 红）；bmini 侧经 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 本文件**，不复制、不做构建期拷贝。⚠️ technology 取本矩阵既有的 `thermal-transfer` 档（热敏/热转印同档）；DP235S 实为**热敏**机 —— 耗材必须买「热敏亚银」，买成需碳带的普通亚银 PET 会打不出字（设计 §3.3 确认项③）。",
       "dotGeometry": {
         "dpi": 203,
         "dotsPerMm": 8,
-        "widthPx": 400,
-        "effectiveWidthPx": 384,
-        "heightPx": 240
+        "widthPx": 240,
+        "effectiveWidthPx": 240,
+        "headWidthPx": 384,
+        "heightPx": 320
       }
     },
     {

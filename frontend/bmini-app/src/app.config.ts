@@ -14,7 +14,7 @@ export default defineAppConfig({
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',
     // 工人**拍照入库**（issue #5052 P3）：拍上游标签 → 本机解码优先（0 次 LLM）→ 工人确认
-    // → 过账（不可逆，二次确认）→ 出 50×30mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
+    // → 过账（不可逆，二次确认）→ 出 30×40mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
     // 走 `/api/worker/inbound/**`（工人零商家权限码，不是管理面）。
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `INBOUND_PAGE_ROUTE` 必须逐字等于它
     // （守卫 tests/inbound-page-platform-gaps.test.ts 判据 G0：没登记进这里 = 死链 ⇒ 红）

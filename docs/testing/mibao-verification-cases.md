@@ -714,19 +714,19 @@
 ```
 溯源: 2026-09-26 新增（issue #5654）：管理面 11 项「只有电脑端能做」中的 4 项下放到手机端（载体 = bmini-app 的 h5 产物，#5650）。四项全部消费既有端点（零后端改动）；权限可见性以**端点码**为判据（并登记了与 admin-web 菜单节点码的两处分歧）；写动作全部二次确认；计件报表与 PC 同一个端点、同一份服务端聚合（判据夹具用「per_worker 之和 ≠ total」证明页面没重算）。 ｜ tags: bmini, admin-surface, permission, h5, backend_contract
 
-### BM-010. 入库标签 50×30mm 像素口径 - 单一真值（400/384/240/8 dots/mm），别处出现第二份字面量即红 🔵
+### BM-010. 入库标签 30×40mm 像素口径 - 单一真值（240/320/384/8 dots/mm），别处出现第二份字面量即红 🔵
 ```
-你: 工人拍照入库出标签时，设备侧（客户端 canvas）按 50×30mm 的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、**有效打印宽 48mm ⇒ 384px（安全侧）**、高 30mm ⇒ 240px，1:1 不缩放不裁切
+你: 工人拍照入库出标签时，设备侧（客户端 canvas）按 30×40mm **竖版**的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 30mm ⇒ 240px、纸高 40mm ⇒ 320px；**有效打宽 = 纸宽 240px**（30mm 纸窄于 48mm 打印头 ⇒ 整幅可打；头宽按 384px 记安全侧），1:1 不缩放不裁切
 期望: direct_reply
-数据: 判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×50`、`effectiveWidthPx == dotsPerMm×48`、`heightPx == dotsPerMm×30`（四个孤立的数不算数；红证：把 effectiveWidthPx 改成 400 或 dotsPerMm 改成 8.47 ⇒ 红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts
-数据: 判据 2·**单一真值**：全仓（frontend + backend 的 ts/tsx/js/jsx/mjs/json）**只有一个文件**同时写着 384 与 240 = `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384/240 ⇒ 实测判红）。
-数据: 判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 400/384/240（只能从真值源取）。
-数据: 判据 4·**待实测显式登记**：50×30 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（DP30S 有效打印宽度等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。
+数据: 判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×30`、`heightPx == dotsPerMm×40`、`headWidthPx == dotsPerMm×48`、`effectiveWidthPx == min(纸宽, 打印头宽)`（孤立的数不算数；红证：把 headWidthPx 记成纸宽、或 dotsPerMm 改成 8.47、或 heightPx 按 32mm 画 ⇒ 各自判红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts
+数据: 判据 2·**单一真值**：全仓 `384`（打印头宽）**只出现在** `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）；240 / 320 与无关业务重号 ⇒ 改按**出图链路**逐字面量判（「只写一个数」也算，这正是旧口径漏掉的形态）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384 ⇒ 实测判红）。
+数据: 判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 240/320/384（只能从真值源取）。
+数据: 判据 4·**待实测显式登记**：30×40 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（**DP235S** 的打印头 dpi / 有效打印宽度、间隙定位、原点偏移与出纸方向等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。
 数据: 判据 5·**判据自身排除在语料外**（B1）：守卫文件自己会写 384/240，必须显式排除，否则判据永远红或永远抓不到真违规。
 跳过: [backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: inbound-label-flow.short-code-and-public-entry
-溯源: 2026-09-27 新增（issue #5052 P3+P4）：设备侧 canvas 渲染 50×30mm 入库标签的像素口径单一真值化（#5651 介质矩阵扩表 + bmini 跨工程消费）。 ｜ tags: bmini, inbound, label, single-source
+溯源: 2026-09-27 新增（issue #5052 P3+P4）：设备侧 canvas 渲染 50×30mm 入库标签的像素口径单一真值化（#5651 介质矩阵扩表 + bmini 跨工程消费）。⚠️ 2026-09-29 改判更新（issue #5052 CP-1）：实机德佟 **DP235S** 到货 ⇒ 标签改 **30×40 竖版**（照其 30×40 合格证式样），点阵口径随之改为 240/320 + 头宽 384 单列，判据 2 的谓词从「同时出现两个数」改成「逐字面量」。 ｜ tags: bmini, inbound, label, single-source
 
 ### BM-011. 入库标签短码口径 - 与 WorkerShortLinkService / WorkerInbound 控制器逐值一致（端点/头名/字母表） 🔵
 ```
