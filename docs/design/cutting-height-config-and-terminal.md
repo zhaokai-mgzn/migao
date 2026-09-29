@@ -12,6 +12,9 @@
 > | ③ | 「**根据壁达代码里面的计算公式和参数**进行设计，**不用考虑我的补充项**」 | 配置字段与算法**对齐壁达契约与表达式引擎**（§1）；现场便签的手写值（画线 0.145 / 绑带 0.14·0.16）**不进默认种子** |
 > | ④ | 粒度 = **部位级**（帘身 / 纱 / 帘头），增量项**按工艺 / 选项命中** | §2.1 / §2.2 |
 > | ⑤ | 工人端页面权限 = **租户级页面开关**起步，预留逐人覆盖 | §2.8 |
+> | ⑥ | 「机器支持**三位小数**，用 **2.935**」 | 取整默认 = **保留三位小数**（`rounding.digits=3`）；机器寄存器是整型 mm ⇒ 3 位小数恰好是 mm 精度 |
+> | ⑦ | 「我**没有命中规则表**，需要你去读壁达代码」 | 已读：壁达**没有**独立的命中规则表，命中由**三处触发源 + 表达式判定**构成（§1.5）；米高侧**复用既有 `production_route_rules` 触发口径**，不另造 DSL（§2.2） |
+> | ⑧ | 计算器里的手改「**只读即可**」 | 手改**只改本次显示**、不落库、不留痕（§2.6） |
 >
 > **配套（上游，位于本仓库之外的调研工作区 `migao-device-integration/docs/`）**：
 > 《裁剪机接入（扫码 → 明细 → 算高 → 串口写入）》·《壁达「定高」算法调研 —— 裁剪高度口径的参照物》·
@@ -110,6 +113,44 @@ PY
 ⇒ **「画线」在壁达里是一个"有项无值"的扩展项** —— 这解释了现场为什么要在机器上贴便签（上游照片 2）。
 **我们的设计必须能表达"未配置取值"这种状态**（而不是替它编一个数，也不是静默按 0 算）。
 
+### 1.5 🔴 「命中」是怎么来的（回答"没有命中规则表"这一条）
+
+**结论：壁达里没有一张独立的「命中规则表」。** 增量项**命中与否**由三处构成，且**判定入口在表达式引擎**里：
+
+| # | 触发源 | 证据（逐字） | 含义 |
+|---|---|---|---|
+| **A** | **特殊选项 / 附加工艺** | 符号 `ExtractBangDaiFromExpandItemsForLine` · `ExtractBangDaiFromComponentsForLine` · `ResolveBangDaiUsage`；字符串「绑带从附加工艺拆出 Seq=」「布帘默认补绑带 Seq=」「未匹配到系统附加工艺，跳过」 | 扩展项由**订单上的选项/附加工艺**派生（绑带就是这一路的典型） |
+| **B** | **部位限定** | 符号 `ExpandPartFilterItems` · `FillPartItemsByExpandItem` · `ExpandPart` · `ValidateExpandItemDirection` | 同一个扩展项**只对某些部位**生效（布帘/纱帘/帘头） |
+| **C** | **接高（加高拼接）** | 符号 `AddAutoHeightJoinExpandItem` · `EnsureAutoHeightJoinForLine` · `ResolveDefaultHeightJoinProduct` · `HasHeightJoin` · `IsHeightJoinExpandItem`；字符串「**货号超高需要接高，但系统特殊选项未配置**」「接高布使用主布2.8门幅货号」「未找到对应2.8门幅，无法生成接高布明细」 | 接高是**自动触发**的：**货号超高** ⇒ 需要接高 ⇒ 且**依赖特殊选项配置**（没配就显式报错，不静默） |
+| **判定入口** | 表达式函数 | `ExpandNameExistsComputeMethod`（`GetExpandNameExist`）· `ComponentExistsComputeMethod` · `Contains`（「包含(特殊选项」）· 变量「常量：**安装工艺 特殊选项 部位 做法 是否定型**」 | **命中与否是在公式里判的**：`包含(特殊选项,"X")` / `存在扩展项("X")` ⇒ 这正是"没有独立规则表"的原因 |
+
+**引擎可调用的完整函数族**（`BeedaERP.StringCalculate.dll` 的 `*ComputeMethod`，逐字符号）：
+`ComponentExists` / `ExpandNameExists` / **`ComponentPleatNumber`**（褶数之和）· `ComponentCategory` / `ComponentCategoryQty` / `ComponentQty` / `ComponentQuotationQty` ·
+`ComponentProductSpec` / `ComponentProductNumber` / `ComponentProductMaterialQuality` / `ComponentProductDesignType` ·
+`ComponentPrice` / `ComponentProductPrice` / `ComponentWholeClothPurchasePrice` · `CustomParam`（部位自定义参数）·
+`EvenCeil` / `EvenFloor` / `Abs` · `Contains` · `GetDecimalDigit` · 日期族（`DateAdd` / `DateDiff` / `DateFormat` / `DateNow` / `DatePart`）。
+中文函数（逐字）：`保留一位小数_第二位大于0才进一(x)` · `偶数取整(x)` · `取小(...numbers)` · `取正(x)` · `向下取整(x)` · `保留小数点后1位(x)` · `包含()` · 「条件语句，条件成立取第一个值，不成立取第二个」。
+
+> **客户端里查不到任何默认取值表**（对 `0.08` / `包布折` 一类串做了全量检索 ⇒ 零命中）⇒ **取值与"选项→项"的对应行都在它服务端**（`SaveCurtainExpandItemView` 那张扩展项档案 + 订单上的选项）。
+> ⇒ 我们**拿不到它的行**，但**拿到了它的形态**；「选项/工艺 ↔ 增量项」的对应行必须**现场取证**（§5 第 3 条）。
+
+### 1.6 米高侧**已经有一张同构的"命中"真值源**（可直接复用，不必新造）
+
+`backend/admin-api/src/main/java/com/migao/admin/entity/ProductionRouteRule.java`（表 `production_route_rules`，V71/V72/V77）**就是**「订单选配 → 车间行为」的那张表：
+
+| 列 | 取值 | 与裁高增量项的关系 |
+|---|---|---|
+| `trigger_kind` | **闭词表** `craft`（工艺）/ `option`（特殊选项）/ `shaped`（定型）/ `processing_item`（加工项）/ 部位维（`trigger_value` = 部位名，写面镜像进 `position`） | 增量项的命中触发源**逐档对得上**壁达的 A 类 |
+| `trigger_value` | 工艺名 / 特殊选项名（**逐字 = ERP 写法**，join key） | 命中判据的键 |
+| `position` | 布帘 / 纱帘 / 帘头；`NULL` = 不限部位 | 对位壁达的 B 类（部位限定） |
+| `priority` | **升序**生效（顺序敏感） | 多触发叠加时的序 |
+| `status` | 停用 | 停用语义 |
+
+订单侧选项的取数口也已存在：`ProcessingOrderService.specialOptions(entry)`（`processingInfo.specialOptions: string[]`，归一化 = 只认字符串数组、去重保序）。
+
+⇒ **设计取舍（最少代码阶梯：复用优先）**：裁高增量项**不新造一套命中 DSL**，而是**复用同一份触发口径**（`trigger_kind` + `trigger_value` + `position`），
+并给条目留一个**条件表达式兜底**（对位壁达的 `包含(特殊选项,…)`）。判据：**出现第二份触发匹配实现 ⇒ 红**（§3-3）。
+
 ---
 
 ## 2. 对齐设计（米高侧）
@@ -122,7 +163,7 @@ PY
 | `BodyFixHeightExpression` / `GauzeFixHeightExpression` / `FixHeightExpression` | `formulas[]`：**加工类型 × 部位** 各一条表达式 | 裁定④：部位级 |
 | 扩展项 `ExpandItem*` | `items[]`：**增量项档案**（名称 + 取值 + 部位 + 命中条件 + 方向） | 弹窗 chip 的落点 |
 | `IsHeightJoinExpandItem` / `AddAutoHeightJoinExpandItem` / `EnsureAutoHeightJoinForLine` | `items[].height_join` + `items[].auto_ensure` | 「加高拼接」是**一类**增量项，且可**自动补齐** |
-| `IsExpandItemsManuallyEdited` | `items[].auto_hit`（默认自动推导）+ 计算器里**手改可回溯** | 人工勾选降级为**例外路径**（上游裁定②：免人工勾选） |
+| `IsExpandItemsManuallyEdited` | `items[].hit`（**复用既有触发口径，默认自动推导**）+ 计算器里手改**只读展示** | 人工勾选降级为**例外路径**（上游裁定②）；手改按裁定⑧**不落库** |
 | `ExpandDirection` | `items[].direction = add \| subtract` | 支持减项 |
 | `IsRounding` + `保留一位小数…` / `偶数取整` | `rounding { mode, digits }`（显式可配） | 机器寄存器是**整型 mm**，取整必须显式 |
 | 「常量：」变量字典 / `GetComponentPleatNumber` / `GetExpandNameExist` | `vars` 字典 + `has_item(key)` / `pleat_count` | **第一版只启用米高能逐字供数的子集** |
@@ -140,12 +181,19 @@ PY
   ],
   "items": [
     { "key": "baobuzhe", "name": "包布折", "value": 0.08, "direction": "add",
-      "applies_to": ["布帘"], "height_join": false, "auto_hit": { "any": [ { "field": "工艺", "eq": "包布折" } ] },
+      "applies_to": ["布帘"], "height_join": false,
+      "hit": { "trigger_kind": "option", "trigger_value": "包布折", "position": "布帘" },
+      "hit_expr": null,
       "enabled": true, "order": 10 }
   ],
   "rounding": { "mode": "half_up", "digits": 3 }
 }
 ```
+
+- `hit` = **复用 `production_route_rules` 的触发口径**（§1.6）：`trigger_kind ∈ {craft, option, shaped, processing_item}` × `trigger_value`（逐字）× `position`（部位限定）。
+- `hit_expr` = **兜底**（默认 `null`）：只有当触发口径表达不了时才写条件表达式（对位壁达 `包含(特殊选项,…)` / `存在扩展项(…)`）。
+  **两个都填 ⇒ 422**（避免两套判据漂移）。
+- `rounding` = **保留三位小数**（裁定⑥：机器三位小数、用 2.935；`digits=3` 恰为 mm 精度）。
 
 **默认种子 = 壁达现场弹窗那 7 项**（值取现场弹窗，§1.4）：
 
@@ -171,8 +219,8 @@ PY
 
 - `vars` **逐字取库/取快照**（成品宽高、褶倍、褶数、开数、安装工艺、特殊选项、部位备注、部位定型…），
   **禁止在 Java 侧重算**（沿用「算料/规格单一真值」纪律）。
-- **命中推导**（裁定④）：`auto_hit` 规则求值（部位 × 工艺 × 特殊选项 × 是否定型 × 是否打孔 × 褶数/褶倍阈值）。
-- **取整**：`rounding` 决定输出；**未配置取整 ⇒ 显式告警**，不隐式取整。
+- **命中推导**（裁定④ + §1.6）：按 `hit` 触发口径求值（部位 × 工艺 × 特殊选项 × 加工项 × 是否定型），**复用 `production_route_rules` 那一份匹配实现**；表达不了的场景才走 `hit_expr`。
+- **取整**：`rounding` 决定输出，**默认保留三位小数**（裁定⑥：机器三位小数、用 `2.935`）；**未配置取整 ⇒ 显式告警**，不隐式取整。
 - **缺项必须显式**：成品高缺失 / 项未配置取值 / 越界 —— 一律**指名报缺**，绝不静默按 0 算（这正是现场便签存在的原因）。
 
 ### 2.4 与算料的关系（**两套公式，禁止互相替代**）
@@ -203,7 +251,7 @@ PY
 
 - **不写机器**（裁定①）：本期终点 = 「给人一个**可核对**的数」。
 - 扫码枪三条工程要点（上游已取证）：**不依赖 `focus()`**（HID 输入直接进 keydown 缓冲）· 兼容后缀 `CR+LF`/双 Enter · 中文输入法不吃字符。
-- 手改（对位 `IsExpandItemsManuallyEdited`）：本期**至少会话内可见**「哪些项被手改过」；落库留痕随下期。
+- 手改（对位 `IsExpandItemsManuallyEdited`）：按裁定⑧ **只读即可** —— 手改**只改本次显示**，**不落库、不留痕**；界面上标出「本次手改」，刷新即回到规则推导值。
 
 ### 2.7 扫码响应补字段（既有登记缺口）
 
@@ -228,7 +276,7 @@ PY
 |---|---|---|
 | 1 | **术语不混用**：界面/文档里「裁剪高度」与「用料米数」不得互相替代 | 任一处以用料米数当裁剪高度 ⇒ 红 |
 | 2 | **两套公式分离**：算料输出不得直接当裁高下发 | 把 `hem_margin` 结果当裁高 ⇒ 红 |
-| 3 | **命中可复算**：给定订单工艺，命中项集合由规则复算 | 靠人工勾选才得到同一集合 ⇒ 红 |
+| 3 | **命中可复算**：给定订单工艺/选项，命中项集合由**同一份触发口径**（`production_route_rules` 的 `trigger_kind`+`trigger_value`+`position`）复算 | ① 靠人工勾选才得到同一集合 ⇒ 红；② **出现第二份触发匹配实现**（把 `trigger_value` 与选项名再比一遍）⇒ 红 |
 | 4 | **未配置显式**：`画线` 这种"有项无值"必须在界面与出参里标出来 | 静默按 0 计 ⇒ 红 |
 | 5 | **取整显式**：取整规则进配置且可测 | 隐式取整（含"没配就默认四舍五入"）⇒ 红 |
 | 6 | **配置写面 fail-closed**：缺键 / 未知键 / 非法值 ⇒ 422 逐条理由，不静默回退默认 | 缺键被按默认值存 ⇒ 红 |
@@ -253,11 +301,12 @@ PY
 
 | # | 事项 | 现状 | 谁/何时 |
 |---|---|---|---|
-| 1 | **取整规则默认值** | 壁达用 `IsRounding` + 公式函数控制；我们的默认待定 | 需客户口径（上游 §5 已列） |
-| 2 | 每项**增量值的来源**（0.08 / 0.1 / 0.015 是租户级还是机型级） | 现场照片给出**本租户当前值**；层级未证 | 现场 / 壁达实施方 |
-| 3 | `auto_hit` 的**完整命中规则表**（哪些工艺/选项触发哪些项） | 只有弹窗那一单的实证 | 现场对照几单反推 |
-| 4 | 手改是否需要**落库留痕**（本期只做会话内可见） | 本期最小 | 有质量追溯需求时 |
+| 1 | ~~取整规则默认值~~ | ✅ **已裁定（⑥）**：保留三位小数（`2.935`） | — |
+| 2 | 每项**增量值的来源**（0.08 / 0.1 / 0.015 是租户级还是机型级） | 现场照片给出**本租户当前值**；层级未证；**客户端里查不到任何默认表**（§1.5）⇒ 只在它服务端 | 现场 / 壁达实施方 |
+| 3 | 「**选项/工艺 ↔ 增量项**」的对应行 | ✅ 机制已定位（§1.5/§1.6：壁达无独立表，靠特殊选项/附加工艺 + 部位 + 接高；米高复用 `production_route_rules`）；**对应行本身**仍只有弹窗那一单的实证 | 现场对照几单反推（客户口径） |
+| 4 | ~~手改是否落库留痕~~ | ✅ **已裁定（⑧）**：只读，不落库 | — |
 | 5 | 一体机是否需要**工号 PIN 登录**（读面是否匿名） | 照抄上游「工号+PIN 一次性登录」 | 现场试用后定 |
+| 6 | **接高**（`height_join`）第一版是否启用 | 已进 schema（对位 `IsHeightJoinExpandItem`），触发条件是「货号超高 + 特殊选项配置」 | 有接高单再做 |
 
 ## 6. 分期与并行边界（按文件所有权切包）
 
