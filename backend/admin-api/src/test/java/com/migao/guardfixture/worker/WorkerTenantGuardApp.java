@@ -14,6 +14,7 @@ import com.migao.admin.security.SecurityConfig;
 import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.ServiceTokenFilter;
 import com.migao.admin.security.WorkerSessionFilter;
+import com.migao.admin.service.WorkerCuttingHeightService;
 import com.migao.admin.worker.WorkerSessionService;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.mapper.MapperFactoryBean;
@@ -129,6 +130,16 @@ public class WorkerTenantGuardApp {
     @Bean
     MeterRegistry meterRegistry() {
         return new SimpleMeterRegistry();
+    }
+
+    /**
+     * 一体机裁高读面（母单 #5161）：本守卫只行使「工人会话 ⇒ 租户」这一条链，**不**断言裁高读面
+     * ⇒ 用替身满足 {@code WorkerProductionController} 的构造依赖（与 {@link #stringRedisTemplate()}
+     * 同款边界登记：凡本链不经过的生产依赖都不进装配面）。
+     */
+    @Bean
+    WorkerCuttingHeightService workerCuttingHeightService() {
+        return mock(WorkerCuttingHeightService.class);
     }
 
     /** 真 Mapper（**不是** mock）：本守卫的全部意义就是行使租户拦截器那条真实路径。 */

@@ -6,6 +6,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.WorkerCuttingHeightService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import org.junit.jupiter.api.AfterEach;
@@ -64,6 +65,9 @@ class WorkerScanEndpointTest {
     /** 切片② 的写入口依赖：本类只测读面契约，故只满足构造签名（**不**被调用）。 */
     @Mock
     private ProductionScanCompleteService productionScanCompleteService;
+    /** 一体机裁高读面（母单 #5161）同理：本类只测扫描读面契约，故只满足构造签名。 */
+    @Mock
+    private WorkerCuttingHeightService workerCuttingHeightService;
 
     private MockMvc mockMvc;
 
@@ -75,7 +79,7 @@ class WorkerScanEndpointTest {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
                 new WorkerProductionController(productionService, workerSessionService, productionScanService,
-                        productionScanCompleteService);
+                        productionScanCompleteService, workerCuttingHeightService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();

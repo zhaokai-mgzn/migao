@@ -168,6 +168,24 @@ export function createApi(opts = {}) {
     },
 
     /**
+     * 一体机**裁高读面**（母单 #5161）：扫一次水洗唛 ⇒ 一屏（订单详情 + 逐部位裁剪高度）。
+     *
+     * 🔴 **只读**：`GET /api/worker/production/cutting-height?token=…` —— 本包**不写机器**
+     * （不开串口、不发 Modbus、不写下发；用户 2026-09-29 裁定①）。页面终点 = 大字给出
+     * 「请在机器屏输入 X.XXX 米」，由人在机器屏上输入。
+     *
+     * 计算全在**服务端**（复用 `CuttingHeightConfigService.preview` ⇒ 与商家端配置页预演同一份口径）：
+     * 前端只渲染 `base` / `cutting_height` / `rounding` / `hits[]` / `misses[]` / `missing[]`，
+     * **不自己算**命中、不猜缺值（缺 ⇒ `null`，页面显示「—」）。
+     *
+     * @param {string} token 码值（短码 / 裸 token / 整条印刷 URL —— 归一在服务端）
+     */
+    async readCuttingHeight(token) {
+      const qs = new URLSearchParams({ token })
+      return request(`/api/worker/production/cutting-height?${qs.toString()}`)
+    },
+
+    /**
      * 扫码完成 —— **工人页唯一的写入口**（切片② 的 `POST /api/worker/production/scan/complete`）。
      *
      * 一次事务（明细 + CAS 推进 + `done_at` + 完工判定）+ 未确定工序拒绝记账（422，零写入）

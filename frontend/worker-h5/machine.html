@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!-- 一体机「机台模式」（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6）。
+     形态 = 机器旁一块屏 + 一把**有线扫码枪**（HID 键盘楔）：
+       扫水洗唛（部位级码 /s/<短码> 或 token）⇒ 屏一 订单详情 ⇒ 屏二 裁高计算器
+       ⇒ 大字「请在机器屏输入 X.XXX 米」。
+     🔴 本页**不写机器**（不开串口 / 不发 Modbus / 不写下发，用户 2026-09-29 裁定①）：
+        下发由人在机器屏上完成；本页只给出一个**可核对**的数。
+     🔴 本页**没有任何文本输入元素**（无 input[type=text] / textarea / contenteditable；只有按钮与
+        勾选框）⇒ 中文输入法没有合成目标，扫码枪的字符不会被吃掉
+        （兜底见 src/machine.mjs 的 createScanBuffer：isComposing + compositionstart/end）。
+     零依赖：不引框架/扫码 SDK；页面与 /api 同源 ⇒ 无跨域。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>机台模式 · 裁高</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body class="wh5-machine-body">
+  <main id="machine-root" class="wh5-machine"></main>
+  <script type="module" src="./src/machine-app.mjs"></script>
+</body>
+</html>

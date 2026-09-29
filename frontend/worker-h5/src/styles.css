@@ -221,3 +221,101 @@ html, body {
   .wh5-alt { min-height: 64px; font-size: 20px; }
   .wh5-ghost { min-height: 64px; font-size: 20px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   机台模式（一体机 / PAD，母单 #5161；设计 §2.6）—— 横屏大字 + 常驻扫码枪
+   断点沿用上面**既有**的 ≥768px（PAD/一体机），手机窄屏只是同一份布局的缩水版。
+   🔴 本面**没有任何可编辑元素**（无 input）：中文输入法没有合成目标 ⇒ 扫码枪字符不被吃。
+   ══════════════════════════════════════════════════════════════════════════════ */
+.wh5-machine-body { background: var(--wh5-bg); }
+
+.wh5-machine {
+  display: block;
+  min-height: 100vh;
+  padding: 16px;
+  color: #f8fafc;
+  font-size: 18px;
+}
+
+.wh5-machine__panel { display: flex; flex-direction: column; gap: 16px; min-height: 80vh; }
+.wh5-machine__head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.wh5-machine__head h1 { margin: 0; font-size: 30px; letter-spacing: 1px; }
+.wh5-machine__worker { margin-left: auto; font-size: 20px; color: #94a3b8; }
+
+.wh5-machine__tabs { display: flex; gap: 12px; flex-wrap: wrap; }
+.wh5-machine__tab {
+  min-height: 56px;
+  padding: 0 20px;
+  border: 2px solid #334155;
+  border-radius: 12px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 20px;
+}
+.wh5-machine__tab.is-active { border-color: #14b8a6; background: #134e4a; color: #fff; }
+
+.wh5-machine__body { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+.wh5-machine__col { flex: 1 1 320px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
+
+.wh5-machine__kv-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0; }
+.wh5-machine__kv { background: var(--wh5-card); color: var(--wh5-ink); border-radius: 12px; padding: 12px 16px; }
+.wh5-machine__kv dt { font-size: 15px; color: var(--wh5-muted); }
+.wh5-machine__kv dd { margin: 4px 0 0; font-size: 24px; font-weight: 600; }
+
+.wh5-machine__hits { display: flex; flex-direction: column; gap: 10px; }
+.wh5-machine__hit {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 64px; padding: 0 16px;
+  background: var(--wh5-card); color: var(--wh5-ink); border-radius: 12px;
+  font-size: 22px;
+}
+.wh5-machine__hit input { width: 28px; height: 28px; }
+.wh5-machine__hit.is-off { opacity: .45; text-decoration: line-through; }
+.wh5-machine__hit-value { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.wh5-machine__warns { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.wh5-machine__warn { color: #fde68a; background: #78350f; border-radius: 10px; padding: 10px 14px; font-size: 18px; list-style: none; }
+.wh5-machine__warn b { color: #fca5a5; }
+
+.wh5-machine__sum { margin: 0; background: var(--wh5-card); color: var(--wh5-ink); border-radius: 12px; padding: 12px 16px; }
+.wh5-machine__sum > div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--wh5-line); }
+.wh5-machine__sum > div:last-child { border-bottom: 0; }
+.wh5-machine__sum dt { color: var(--wh5-muted); }
+.wh5-machine__sum dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.wh5-machine__big { margin: 0; font-size: 34px; line-height: 1.3; }
+.wh5-machine__big b { font-size: 1.6em; color: #5eead4; font-variant-numeric: tabular-nums; }
+.wh5-machine__big--error { color: #fca5a5; }
+.wh5-machine__edited { margin: 0; color: #fde68a; font-size: 18px; }
+.wh5-machine__missing { margin: 0; color: #fde68a; font-size: 20px; }
+.wh5-machine__notice { margin: 0; color: #93c5fd; }
+.wh5-machine__hint { margin: 0; font-size: 20px; color: #94a3b8; }
+.wh5-machine__empty { color: #94a3b8; }
+
+.wh5-machine__actions { display: flex; gap: 16px; }
+.wh5-machine__cta, .wh5-machine__back {
+  min-height: 72px; padding: 0 28px; border-radius: 14px; border: 0;
+  background: var(--wh5-brand); color: #fff; font-size: 24px; font-weight: 700;
+}
+.wh5-machine__back { background: #334155; font-weight: 400; }
+
+/* 一体机 / PAD（≥768px，沿用既有断点）：远距离可读的大字 */
+@media (min-width: 768px) {
+  .wh5-machine { padding: 28px; font-size: 22px; }
+  .wh5-machine__head h1 { font-size: 40px; }
+  .wh5-machine__worker { font-size: 26px; }
+  .wh5-machine__tab { min-height: 72px; font-size: 26px; }
+  .wh5-machine__hit { min-height: 80px; font-size: 28px; }
+  .wh5-machine__kv dd { font-size: 30px; }
+  .wh5-machine__big { font-size: 44px; }
+  .wh5-machine__big b { font-size: 2em; }
+  .wh5-machine__cta, .wh5-machine__back { min-height: 96px; font-size: 30px; }
+}
+
+/* 报工区（与裁高值同屏）：大字值 + 【完成】+ 回执/报错 —— 报工失败必须一眼看到 */
+.wh5-machine__report { display: flex; flex-direction: column; gap: 12px; background: #0b1220; border: 1px solid #1e293b; border-radius: 14px; padding: 16px; }
+.wh5-machine__done { margin: 0; font-size: 26px; font-weight: 700; color: #5eead4; }
+.wh5-machine__cta[disabled] { opacity: .5; }
+@media (min-width: 768px) {
+  .wh5-machine__done { font-size: 32px; }
+}
