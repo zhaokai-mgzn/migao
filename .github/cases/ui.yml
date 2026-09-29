@@ -2446,3 +2446,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # UI-070（issue #5792 第二阶段）：待支付订单卡（钱还没到）
+  # ==========================================================================
+  - id: UI-070
+    legacy_id: ""
+    title: "经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`"
+    domains:
+      - ui
+      - frontend
+      - backend
+      - dashboard
+    tier: normal
+    tags:
+      - ui
+      - dashboard
+      - metrics
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点结论之一：看板缺「钱还没到」的风险面"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**计数来自真聚合**：`OrderMapper.selectDashboardOrderStats` 必须含 `COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders`。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java 的 `dashboardStatsAggregateShape`。"
+      - "判据 2·🔴 **不得用 `/dashboard/pending-tasks` 当计数**：那是**任务列表**且每类上限 5 条（`LIMIT 5`）⇒ 拿它当「待支付订单数」会把「≤5」误报成总数。执行点 = 同一条判据（钉住真值来源是聚合 FILTER）。"
+      - "判据 3·**下钻可用**：卡片链接必须是 `/orders?status=pending_payment`（`resolveStatusParam` 直接匹配枚举值 ⇒ 不依赖中文标签词表）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「待支付订单卡」。"
+      - "判据 4·**注入式红证**（已实跑）：把卡片数字写死成 `count={0}` ⇒ 该条 **1 failed**（断言数字来自服务端字段）；还原后 49 passed。"
+    skip_reason: "[backend-contract] 前端卡片 + 后端 SQL 形态判据（无 LLM 环节，不进 agent-eval 冒烟）"
+    merge_log: "2026-09-29 新增（issue #5792 第二阶段）：补「待支付订单」计数与卡片（下钻到订单列表的待支付筛选）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -2138,6 +2138,8 @@ export interface DashboardStats {
   totalTickets: number
   // 待处理区 3 卡片 (#387, #1396)
   pendingShipOrders: number
+  /** 待支付订单数（issue #5792 第二阶段）—— 与「待发货」并列的风险面 */
+  pendingPaymentOrders: number
   processingPendingOrders: number
   lowStockItems: number
 }

@@ -120,6 +120,10 @@ public class DashboardController {
         // 待发货订单数（status = 待发货）
         long pendingShipOrders = toLong(orderStats.get("pending_ship"));
 
+        // 待支付订单数（issue #5792 第二阶段）：钱还没到的订单 —— 与「待发货」并列的风险面。
+        // 计数来自 `selectDashboardOrderStats` 的 FILTER（**不是** `/pending-tasks` 那个上限 5 条的任务列表）。
+        long pendingPaymentOrders = toLong(orderStats.get("pending_payment_orders"));
+
         // 含加工待发货订单：#2886 原「全量待发货 ID 拉取 + order_items IN 两次往返」→ JOIN 一次统计
         long processingPendingOrders = orderItemMapper.selectProcessingPendingOrdersCount();
 
@@ -146,6 +150,7 @@ public class DashboardController {
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
                 .pendingShipOrders(pendingShipOrders)
+                .pendingPaymentOrders(pendingPaymentOrders)
                 .processingPendingOrders(processingPendingOrders)
                 .lowStockItems(lowStockItems)
                 .build();
@@ -480,6 +485,8 @@ public class DashboardController {
         private long totalTickets;
         // 待处理区 3 卡片 (#387)
         private long pendingShipOrders;
+        /** 待支付订单数（issue #5792 第二阶段） */
+        private long pendingPaymentOrders;
         private long processingPendingOrders;
         private long lowStockItems;
     }

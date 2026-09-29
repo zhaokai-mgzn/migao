@@ -69,8 +69,8 @@
 
 | 指标 | 后端现状 | 前端要做的 | 判据要点 |
 |---|---|---|---|
-| **待支付订单数** | `GET /api/admin/dashboard/pending-tasks` **已实现**且返回项自带 `link`（待支付订单 + 待处理售后工单） | 接进看板「待处理」区；`dashboardApi.getPendingTasks` 已封装但**零调用** | 数字来自该端点；**下钻链接用后端给的 `link`**（不前端拼）；失败态走 §1-4 的口径 |
-| **超时工单数** | 简报快照 `DailyBriefingService::aggregateSnapshot` 已算 `overdue_tickets`（`pending/processing` 且 `deadline` 已过） | 需要把该值暴露到看板可消费的读面（**注意**：它现在只在 `/briefing/snapshot` 的响应里；要么复用该端点，要么在 `/stats` 增加同名指标 —— **择一，不得两处各算**） | 口径 = 简报快照那一份；判据钉「同一个值在简报与看板一致」 |
+| **待支付订单数** | ✅ **已交付**（PR #5802）：`/stats` 增 `pending_payment_orders` 聚合 FILTER | 第 4 张卡 + 下钻 `/orders?status=pending_payment` | 数字来自聚合 FILTER |
+| **超时工单数** | `/briefing/snapshot` 已算 `overdue_tickets`（`pending/processing` 且 `deadline` 已过） | ⛔ **被前置条件挡住**：`after-sales` 页**不支持任何筛选参数**（全页无 `searchParams`）⇒ 做下钻卡会立刻制造一个新的「计数与下钻不一致」缺陷 | 需先给 after-sales 页加筛选能力（跨模块） |
 | **AI 接待占比** | `/stats` 已返回 `aiSessionRate`（另有 `activeSessions`） | 新卡；**必须可插拔**（§2：`capabilities.aiService`） | 未购买 ⇒ 卡不渲染；已购买 ⇒ 数字来自 `aiSessionRate` |
 | **订单状态分布图** | `GET /api/admin/dashboard/order-status` + 组件 `frontend/admin-web/src/components/dashboard/OrderStatusChart.tsx` **都已写好**，从未被任何页面引用 | 接线即可（组件已是死代码） | 逐状态计数与后端一致；空态与失败态按 §1-4 区分 |
 

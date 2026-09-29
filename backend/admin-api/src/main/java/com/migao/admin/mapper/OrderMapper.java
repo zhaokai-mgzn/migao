@@ -28,7 +28,7 @@ public interface OrderMapper extends BaseMapper<Order> {
 
     /**
      * 看板 stats 订单维度聚合（#2886 性能优化：替代原来 8 次串行 selectCount/selectList）。
-     * 一次查询返回：总订单数 / 今日订单数+销售额 / 昨日订单数+销售额 / 本月营收 / 上月营收 / 待发货订单数。
+     * 一次查询返回：总订单数 / 今日订单数+销售额 / 昨日订单数+销售额 / 本月营收 / 上月营收 / 待发货订单数 / 待支付订单数。
      *
      * <p>🔴 issue #5792：**本月营收必须带上界**（`created_at < nextMonthStart`）——
      * 改前只有下界，而上月那条**有**上界 ⇒ 同页两个口径不对称：任何**未来创建时间**的订单
@@ -43,7 +43,11 @@ public interface OrderMapper extends BaseMapper<Order> {
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{yesterdayStart} AND created_at < #{todayStart}), 0) AS yesterday_sales, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{monthStart} AND created_at < #{nextMonthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS month_revenue, " +
             "COALESCE(SUM(total_amount) FILTER (WHERE created_at >= #{lastMonthStart} AND created_at < #{monthStart} AND status IN ('confirmed','producing','shipped','completed')), 0) AS last_month_revenue, " +
-            "COUNT(*) FILTER (WHERE status IN ('confirmed','producing')) AS pending_ship " +
+            "COUNT(*) FILTER (WHERE status IN ('confirmed','producing')) AS pending_ship, " +
+            // issue #5792 第二阶段：待支付订单数（问题面：钱还没到）。
+            // ⚠️ 不能用 `/dashboard/pending-tasks` 代替 —— 那是**任务列表**且每类上限 5 条，
+            //    拿它当计数会把「≤5」误报成总数。
+            "COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders " +
             "FROM orders WHERE deleted = 0")
     Map<String, Object> selectDashboardOrderStats(
             @Param("todayStart") OffsetDateTime todayStart,

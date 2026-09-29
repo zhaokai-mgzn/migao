@@ -208,6 +208,8 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [ranking, setRanking] = useState<ProductRanking[]>([])
   const [pendingShipment, setPendingShipment] = useState(0)
+  // issue #5792 第二阶段：待支付订单（钱还没到）
+  const [pendingPayment, setPendingPayment] = useState(0)
   const [processingShipment, setProcessingShipment] = useState(0)
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
@@ -248,6 +250,7 @@ export default function DashboardPage() {
         setStats(s)
         setLowStockCount(s.lowStockItems ?? 0)
         setPendingShipment(s.pendingShipOrders ?? 0)
+        setPendingPayment(s.pendingPaymentOrders ?? 0)
         setProcessingShipment(s.processingPendingOrders ?? 0)
         setBlockErrors((prev) => {
           if (!('stats' in prev)) return prev
@@ -328,6 +331,7 @@ export default function DashboardPage() {
         setStats(s)
         setLowStockCount(s.lowStockItems ?? 0)
         setPendingShipment(s.pendingShipOrders ?? 0)
+        setPendingPayment(s.pendingPaymentOrders ?? 0)
         setProcessingShipment(s.processingPendingOrders ?? 0)
       } else if (key === 'trend') {
         const r = await dashboardApi.getOrderTrend(trendDays)
@@ -440,7 +444,10 @@ export default function DashboardPage() {
       {/* ① 待处理任务 */}
       <div className="mb-6">
         <SectionHeading icon={<Package className="h-3.5 w-3.5 text-amber-600" />} colorClass="bg-amber-50">待处理</SectionHeading>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* issue #5792 第二阶段：待支付订单（钱还没到）。下钻用**端点枚举值**
+              （`resolveStatusParam` 直接匹配 `pending_payment`），不依赖中文标签映射。 */}
+          <Link href="/orders?status=pending_payment"><PendingCard title="待支付订单" count={pendingPayment} icon={<DollarSign className="w-4 h-4 text-amber-600" />} color="amber" /></Link>
           <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
           <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>

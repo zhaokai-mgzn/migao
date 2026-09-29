@@ -10763,6 +10763,24 @@ _CASE_UI_069 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-070 [NORMAL] 经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`（源: cases/ui.yml）──
+_CASE_UI_070 = EvalCase(
+    id='UI-070',
+    legacy_id='',
+    title='经营看板「待支付订单」卡：计数来自服务端聚合 FILTER，下钻用端点枚举值 `pending_payment`',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-29：「经营看板需要重构一下，当前的功能不满足当前整体产品功能需要了」→ 盘点结论之一：看板缺「钱还没到」的风险面'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**计数来自真聚合**：`OrderMapper.selectDashboardOrderStats` 必须含 `COUNT(*) FILTER (WHERE status = 'pending') AS pending_payment_orders`。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/OrderMapperTest.java 的 `dashboardStatsAggregateShape`。", '判据 2·🔴 **不得用 `/dashboard/pending-tasks` 当计数**：那是**任务列表**且每类上限 5 条（`LIMIT 5`）⇒ 拿它当「待支付订单数」会把「≤5」误报成总数。执行点 = 同一条判据（钉住真值来源是聚合 FILTER）。', '判据 3·**下钻可用**：卡片链接必须是 `/orders?status=pending_payment`（`resolveStatusParam` 直接匹配枚举值 ⇒ 不依赖中文标签词表）。执行点 = frontend/admin-web/tests/unit/pages/dashboard.test.tsx 的「待支付订单卡」。', '判据 4·**注入式红证**（已实跑）：把卡片数字写死成 `count={0}` ⇒ 该条 **1 failed**（断言数字来自服务端字段）；还原后 49 passed。'],
+    skip_reason='[backend-contract] 前端卡片 + 后端 SQL 形态判据（无 LLM 环节，不进 agent-eval 冒烟）',
+    tags=['ui', 'dashboard', 'metrics'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11372,6 +11390,7 @@ ALL_CASES = (
     _CASE_UI_067,
     _CASE_UI_068,
     _CASE_UI_069,
+    _CASE_UI_070,
     _CASE_UT_001,
     _CASE_UT_002,
 )
