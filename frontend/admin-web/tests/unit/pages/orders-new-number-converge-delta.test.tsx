@@ -140,13 +140,11 @@ async function setupCurtain() {
 }
 
 /**
- * 2026-09-28 布局重排：「用料米数」常态 = **只读展示**（值由算料引擎推导 ⇒ 用户口径
- * 「其他信息尽量推导」）⇒ **要输入先点「改」**把它变成输入框（点第二次回只读）。
- * 只读态的**读值**断言照旧成立（框还在，只是 `readOnly`）—— 本文件里需要**输入**的用例才点它。
+ * 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+ * 「用料米数」**常态可编辑** —— 旧「只读展示 + 点『改』」已删除 ⇒ 本 helper 改成**自证可写**。
  */
 const openMetersEdit = () => {
-  const btn = screen.getAllByTestId('meters-edit')[0]
-  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  expect(inputOf('用料米数').readOnly).toBe(false)
 }
 
 /** 点提交（收货信息填好）—— 用于读「既有可见校验」是否把非法值拦下 */

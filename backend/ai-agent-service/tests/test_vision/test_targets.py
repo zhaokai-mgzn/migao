@@ -40,9 +40,13 @@ class TestSchemas:
         assert field_keys("order") == (
             "customer_name", "customer_phone", "customer_address",
             "items", "quantity", "curtain_width", "curtain_height",
+            # 2026-09-29（issue #5794）：客户写明的**工艺要求**三格 —— 用户口径「如果用户是根据图片
+            # 下单的，就需要根据图中客户要求来决定工艺规格和加工项选择了，**不能选错**」。
+            "open_count", "style", "processing_items",
         )
         assert [f.label for f in TARGET_FIELDS["order"]] == [
             "客户名", "电话", "地址", "商品明细", "数量", "帘宽", "帘高",
+            "打开方式", "款式", "加工项",
         ]
 
     def test_shipment_target_fields(self):

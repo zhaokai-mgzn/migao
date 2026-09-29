@@ -213,17 +213,15 @@ const expandProcessing = () => {
 }
 
 /**
- * 2026-09-28 布局重排：「用料米数」/「单价 (¥/米)」常态 = **只读展示**（值分别来自算料引擎与
- * 所选规格 ⇒ 用户口径「其他信息尽量推导」）⇒ **要输入先点「改」**把它就地从只读读数变成输入框
- * （点第二次回只读）。只读态的**读值**断言（`toHaveValue`）照旧成立 —— 框还在，只是 `readOnly`。
+ * 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+ * 「用料米数」/「单价 (¥/米)」**常态可编辑** —— 旧的「只读展示 + 点『改』才变输入框」已整体删除
+ * ⇒ 本 helper 改成**自证可写**（调用点与断言强度都不减：仍钉「这两个框能输入」）。
  */
 const openMetersEdit = () => {
-  const btn = screen.getAllByTestId('meters-edit')[0]
-  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  expect(inputOf('用料米数').readOnly).toBe(false)
 }
 const openPriceEdit = () => {
-  const btn = screen.getAllByTestId('price-edit')[0]
-  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  expect(inputOf('单价 (¥/米)').readOnly).toBe(false)
 }
 
 async function submitOrder() {
@@ -432,15 +430,15 @@ describe('#5210 形态：8 格都是 text + decimal，className 与旧实现逐�
   /**
    * 一次断言把「控件形态 + 类名」钉死（两条实现都必须满足）。
    *
-   * ⚠️ 2026-09-28 布局重排：「用料米数」/「单价 (¥/米)」常态**只读**，只读态在既有类名之后
-   * **逐字追加**一段只读观感后缀（灰底 / 灰字）⇒ 这里仍按**整串逐字相等**钉死
-   * （强度不变：基础类名一字未动 + 只读后缀也一字不动，两段都钉）。
+   * ⚠️ 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
+   * 「用料米数」/「单价 (¥/米)」**常态可编辑** ⇒ 旧的**只读观感后缀**
+   * （` bg-neutral-50 text-neutral-600`）**整条退场**（它随「只读展示 + 点『改』」一起删除）。
+   * 本判据仍按**整串逐字相等**钉死基础类名（强度不变：类名一字未动，只是不再追加后缀）。
    */
-  const READONLY_SUFFIX = ' bg-neutral-50 text-neutral-600'
-  function expectNumberBox(el: HTMLInputElement, className: string, suffix = '') {
+  function expectNumberBox(el: HTMLInputElement, className: string) {
     expect(el.getAttribute('type')).toBe('text')
     expect(el.getAttribute('inputmode')).toBe('decimal')
-    expect(el.className).toBe(className + suffix)
+    expect(el.className).toBe(className)
   }
 
   it('区块 1 的 5 格（窗宽 / 窗高 / 用料米数 / 单价 / 人工加接高）', async () => {
@@ -448,8 +446,9 @@ describe('#5210 形态：8 格都是 text + decimal，className 与旧实现逐�
     openCraftParams()
     expectNumberBox(inputOf('窗宽 (米)'), FULL_INPUT_CLASS)
     expectNumberBox(inputOf('窗高 (米)'), FULL_INPUT_CLASS)
-    expectNumberBox(inputOf('用料米数'), FULL_INPUT_CLASS, READONLY_SUFFIX)
-    expectNumberBox(inputOf('单价 (¥/米)'), FULL_INPUT_CLASS, READONLY_SUFFIX)
+    // 常态可编辑 ⇒ 与窗宽 / 窗高**同一串**类名（无只读后缀）
+    expectNumberBox(inputOf('用料米数'), FULL_INPUT_CLASS)
+    expectNumberBox(inputOf('单价 (¥/米)'), FULL_INPUT_CLASS)
     expectNumberBox(
       (await screen.findByTestId('craft-plan-join-height-input')) as HTMLInputElement,
       COMPACT_INPUT_CLASS

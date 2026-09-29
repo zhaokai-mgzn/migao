@@ -163,30 +163,34 @@ test.describe('订单创建', () => {
       await expect(page.getByTestId('wizard-step-1')).toBeVisible({ timeout: 10_000 })
     })
 
-    test('订单项录入分三个步骤区块（原四段手风琴已合并；净尺寸提到组级）', async ({ page }) => {
+    test('订单项录入分两个步骤区块（2026-09-29 两步化：特殊选项并入②加工项；净尺寸在组级）', async ({ page }) => {
       await expect(page.getByTestId('wizard-step-1')).toBeVisible()
       await expect(page.getByTestId('wizard-step-2')).toBeVisible()
-      await expect(page.getByTestId('wizard-step-3')).toBeVisible()
-      // 反向断言：第四段步骤号**不得**出现（合并 = 真的合并，不是并存）
+      // 反向断言：第三 / 第四段步骤号**不得**出现（合并 = 真的合并，不是并存）
+      await expect(page.getByTestId('wizard-step-3')).toHaveCount(0)
       await expect(page.getByTestId('wizard-step-4')).toHaveCount(0)
       await expect(page.getByTestId('wizard-step-1')).toContainText('用料与规格（系统推导）')
       await expect(page.getByTestId('wizard-step-2')).toContainText('加工项')
-      await expect(page.getByTestId('wizard-step-3')).toContainText('其他')
+      // ②加工项**默认收起**（summary 只报计数）⇒ 特殊选项 / 部位备注点在它里面；
+      // 用户 2026-09-29 裁定「打开加工项区域时一同打开」⇒ 展开后两块与加工项同屏可见。
+      const step2 = page.getByTestId('wizard-step-2')
+      await step2.getByRole('button').first().click()
+      await expect(step2).toContainText('特殊选项')
       // 2026-09-28：净尺寸（窗宽 / 窗高）提到**组级常显** ⇒ 不再是任何一步的内容
       await expect(page.getByText('窗宽 (米)')).toBeVisible()
       await expect(page.getByTestId('wizard-step-1')).not.toContainText('窗宽 (米)')
-      await expect(page.getByTestId('wizard-step-3')).not.toContainText('窗宽 (米)')
     })
 
     /**
-     * 2026-09-28 版面重排的两条**真浏览器**判据（§15.2）：
+     * 2026-09-28 / **2026-09-29 改判**的两条**真浏览器**判据（§15.2）：
      * ① 净尺寸排在**推导读数之前**（`用料米数` 在步骤 1 里，净尺寸在它上方）；
-     * ② 推导读数（用料米数 / 单价）常态 `readonly`，点「改」才可输入。
+     * ② 推导读数（用料米数 / 单价）**常态可编辑** —— 用户 2026-09-29 逐字「**移除这种设计**，
+     *    当前编辑态就是允许用户直接更改的」⇒ 旧的「只读 + 点『改』」两个入口整条退场。
      * ⚠️ 这里**不**断言「推荐组合条」（`processing-recommended`）：它只在目录里真有「韩褶」时渲染（目录名 2026-09-28 由 ERP 写法「韩折」统一为「韩褶」，见 db/migration/V139），
      * 而本 spec 的加工项目录来自 fixture（`铅坠安装` / `罗马杆环安装`）⇒ 由 vitest 的确定性目录桩钉住
      * （`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`，用例 OR-052）。
      */
-    test('净尺寸前置 + 推导读数常态只读（点「改」才可输入）', async ({ page }) => {
+    test('净尺寸前置 + 推导读数常态可编辑（不再有「改」入口）', async ({ page }) => {
       // 用两个输入框自身的 `aria-label` 取节点再比**文档顺序**（`compareDocumentPosition`）——
       // 与 vitest 侧同一条判据同法（`<label>` 里还有必填星号等子节点 ⇒ 按文本内容取不可靠）。
       // 三态**显式**返回（`missing` ⇒ 红）：两框不在时不得退化成「顺序也算对」。
@@ -201,14 +205,12 @@ test.describe('订单创建', () => {
       expect(sizeOrder).toBe('size-first')
 
       const meters = page.getByLabel('用料米数')
-      await expect(meters).toHaveAttribute('readonly', '')
-      await page.getByTestId('meters-edit').first().click()
       await expect(meters).not.toHaveAttribute('readonly', '')
+      await expect(page.getByTestId('meters-edit')).toHaveCount(0)
 
       const price = page.getByLabel('单价 (¥/米)')
-      await expect(price).toHaveAttribute('readonly', '')
-      await page.getByTestId('price-edit').first().click()
       await expect(price).not.toHaveAttribute('readonly', '')
+      await expect(page.getByTestId('price-edit')).toHaveCount(0)
     })
 
     test('「拍照 / 上传识别」入口挂在「商品信息」卡（2026-09-28 用户裁定）', async ({ page }) => {

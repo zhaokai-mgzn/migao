@@ -453,23 +453,30 @@ export { FORMULA_LABELS as CRAFT_CALC_FORMULA_LABELS } from './craft-display'
 /**
  * **生效用料公式**（issue #4874 的**唯一口径**）—— 优先级：
  * ① 商家**显式选**的（页面 chips）⇒ ② **工艺推导**（`CRAFT_CALC_FORMULA_BY_CRAFT`，
- * 权威表在算料引擎 `resolve_craft_rule` 的**有守卫副本**）⇒ ③ **算料配置的兜底**
- * `default_formula` ⇒ ④ 常量 `pleat`。
+ * 权威表在算料引擎 `resolve_craft_rule` 的**有守卫副本**）⇒ ③ **常量 `pleat`**（韩褶公式）。
  *
- * 为什么必须先工艺推导再配置兜底：算料引擎的优先级逐字是「`formula` 入参**保留为显式覆盖**
- * （显式 > 本表 > `default_formula` 兜底）」⇒ 前端若把「配置兜底」当默认值**显式**发出去，
+ * 为什么必须先工艺推导：算料引擎的优先级逐字是「`formula` 入参**保留为显式覆盖**
+ * （显式 > 本表 > `default_formula` 兜底）」⇒ 前端若把兜底当默认值**显式**发出去，
  * 就等于把「打孔 ⇒ 倍数法」（#4527 用户裁定）顶掉（页面按韩褶口径发请求、后端按打孔口径算）。
  * 页面与 chips 展示**共用本函数**（同一份解析 ⇒ 页面显示 = 请求 = 落库）。
+ *
+ * 🔴 **2026-09-29 改判**（用户裁定逐字：「**用料公式默认改成韩褶公式**」）—— 第 ③ 档由
+ * 「算料配置的 `default_formula`」换成**常量 `pleat`**：下单页缺省口径**恒为韩褶公式**，
+ * 不再随租户配置漂移（前两档不变）。配置里的那个兜底键仍归它自己的读面
+ * （{@link defaultCraftCalcFormula}，工艺配置页用）—— 本函数**不再消费**它。
  */
 export function effectiveCraftCalcFormula(
   input: { formula?: string; craft?: string },
   config: Pick<CraftCalcConfig, 'default_formula'> | null | undefined
 ): string {
+  // ⚠️ 第二个入参保留（调用点与「配置未加载 ⇒ 页面显式提示」的契约都在它上面），
+  // 但缺省解析已与配置无关 —— 见上面那段改判说明。
+  void config
   const explicit = typeof input.formula === 'string' ? input.formula.trim() : ''
   if (explicit !== '') return explicit
   const byCraft = input.craft ? CRAFT_CALC_FORMULA_BY_CRAFT[input.craft] : undefined
   if (byCraft) return byCraft
-  return defaultCraftCalcFormula(config)
+  return CRAFT_CALC_FORMULA_PLEAT
 }
 
 /**

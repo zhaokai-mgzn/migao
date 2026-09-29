@@ -128,8 +128,76 @@ export interface OrderPrefill {
    */
   curtainWidth?: number
   curtainHeight?: number
+  /**
+   * **客户写明的工艺要求**（issue #5794）—— 用户口径：「如果用户是根据图片下单的，就需要根据
+   * 图中客户要求来决定工艺规格和加工项选择了，**不能选错**」。
+   *
+   * 三格都是**结构化值**（不是一段自由文本）：自由文本进不了勾选控件（同 #5349 的教训）。
+   * `undefined` / 空数组 = 没识别到 / 认不出（**不填**，也不猜一档）。
+   */
+  openCount?: number
+  style?: string
+  processingItemNames?: string[]
   /** 实际预填的**页面字段名**（`customerName` / `curtain_width` / …），供 `recognized-marker-*` 徽标 */
   recognizedFields: string[]
+}
+
+/**
+ * 打开方式原文 → 开数（`1`~`4`）；认不出 / 表外档 ⇒ `undefined`（**不填，也不猜一档**）。
+ *
+ * 与内核 `recognizer._normalise_open_count` **同一份口径**（内核是硬闸，这里是二次防御：
+ * 深通道 / 别的产出方也可能给出这一格）。表外档（`5开`）**不猜**：页面 `openCount` 只吃
+ * `1`~`4`（`lib/order-craft-fields.ts::OPEN_COUNT_OPTIONS`），填表外档 = 控件上一档都不选中。
+ */
+export function openCountOf(raw: string): number | undefined {
+  const text = raw.trim()
+  const byText: Record<string, number> = {
+    单开: 1,
+    一开: 1,
+    双开: 2,
+    两开: 2,
+    二开: 2,
+    三开: 3,
+    四开: 4,
+  }
+  for (const [label, count] of Object.entries(byText)) {
+    if (text.includes(label)) return count
+  }
+  const numbers = text.match(/\d+/g) ?? []
+  if (numbers.length !== 1) return undefined
+  const count = Number(numbers[0])
+  return Number.isInteger(count) && count >= 1 && count <= 4 ? count : undefined
+}
+
+/** 款式原文 → `单色` / `拼色`；认不出 ⇒ `undefined`（含「拼」优先判拼色，与内核同口径） */
+export function styleOf(raw: string): string | undefined {
+  const text = raw.trim()
+  if (text.includes('拼')) return '拼色'
+  if (['单色', '素色', '纯色'].some((word) => text.includes(word))) return '单色'
+  return undefined
+}
+
+/**
+ * **目录改名的别名表**（V139：`韩折` ⇒ `韩褶`）—— 图上照旧写「韩折」的老单占多数，
+ * 不归一就永远匹配不上目录（**少勾一项 = 少做一道工序**）。
+ *
+ * ⚠️ 只登记**同一件东西的改名**，不做同义词联想（联想 = 替客户改需求）。
+ */
+export const PROCESSING_ITEM_ALIASES: Record<string, string> = { 韩折: '韩褶' }
+
+/**
+ * 加工项原文 → 目录名清单（顿号 / 逗号 / 分号 / 斜杠 / 空白分隔，去重）。
+ *
+ * ⚠️ **目录里没有的名字原样保留**（页面按目录逐名匹配，匹配不上的**只提示、不勾选**）——
+ * 这里"纠正"一个名字就等于替客户改需求；唯一的例外是上面登记过的**改名别名**。
+ */
+export function processingItemNamesOf(raw: string): string[] {
+  const names = raw
+    .split(/[、,，;；/／\s]+/)
+    .map((name) => name.trim())
+    .filter((name) => name !== '')
+    .map((name) => PROCESSING_ITEM_ALIASES[name] ?? name)
+  return Array.from(new Set(names))
 }
 
 /** 明细/数量 —— 尺寸之外的明细信息**不进 lineItems**（要选真 SKU，超出本包范围）⇒ 拼一行进备注 */
@@ -222,6 +290,25 @@ export function buildOrderPrefill(
   if (curtainHeight !== undefined) {
     prefill.curtainHeight = curtainHeight
     prefill.recognizedFields.push(ORDER_DERIVATION_INPUT_KEYS.height)
+  }
+
+  // **客户写明的工艺要求**（issue #5794）：打开方式 / 款式 / 加工项 —— 用户口径「根据图中客户要求
+  // 来决定工艺规格和加工项选择了，**不能选错**」。三格都只认**结构化值**（认不出 ⇒ 该键不出现，
+  // 页面据此**一格都不动**）；工艺 / 加工项的**选中动作**在页面侧（本文件不碰任何推导，判据 2）。
+  const openCount = openCountOf(valueOf(fields, 'open_count'))
+  if (openCount !== undefined) {
+    prefill.openCount = openCount
+    prefill.recognizedFields.push('open_count')
+  }
+  const style = styleOf(valueOf(fields, 'style'))
+  if (style !== undefined) {
+    prefill.style = style
+    prefill.recognizedFields.push('style')
+  }
+  const processingItemNames = processingItemNamesOf(valueOf(fields, 'processing_items'))
+  if (processingItemNames.length > 0) {
+    prefill.processingItemNames = processingItemNames
+    prefill.recognizedFields.push('processing_items')
   }
 
   // 明细 / 数量：标签取响应里的 `label`（口径由内核给，前端不另写一份文案）

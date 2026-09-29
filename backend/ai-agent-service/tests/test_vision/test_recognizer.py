@@ -133,6 +133,12 @@ class TestExtractFieldsOrder:
             ("quantity", "数量", "3 套", FIELD_MARKER),
             ("curtain_width", "帘宽", "2.8", FIELD_MARKER),
             ("curtain_height", "帘高", "2.4", FIELD_MARKER),
+            # 2026-09-29（issue #5794）：客户写明的**工艺要求**三格 —— 本夹具没写 ⇒ 整格留空
+            # （`value=None` / `source=None`）。⚠️ 内核**不做语义判定**（原样透传），
+            # 「中文 → 语义」的换算与「认不出就不落键」都在消费侧（建单页 `lib/image-recognize.ts`）。
+            ("open_count", "打开方式", None, None),
+            ("style", "款式", None, None),
+            ("processing_items", "加工项", None, None),
         ]
 
     def test_order_side_is_stricter_than_product_side_on_the_same_confidence(self):
@@ -253,6 +259,45 @@ class TestExtractFieldsOrderSize:
         """商品侧的 `door_width` 不套这条闸（它的门幅是**商品属性**，不是窗帘成品尺寸）。"""
         payload = '{"fields": {"door_width": {"value": "门幅2.8米", "confidence": 0.9}}}'
         assert extract_fields("product", payload)[4]["value"] == "门幅2.8米"
+
+
+class TestCustomerCraftRequestsPassThrough:
+    """客户写明的**工艺要求**三格（issue #5794）在内核里**原样透传**，判定在消费侧。
+
+    用户口径：「如果用户是根据图片下单的，就需要根据图中客户要求来决定工艺规格和加工项选择了，
+    **不能选错**」。分工（同 #5349）：内核只负责「抄清楚客户写了什么」；「中文 → 语义」的换算
+    与「认不出就不落键」的判定都在建单页 `frontend/admin-web/src/lib/image-recognize.ts`
+    （`openCountOf` / `styleOf` / `processingItemNamesOf`，25 条纯函数判据）。
+
+    ⚠️ 所以这三格**刻意没有**形状硬闸（尺寸 / 手机号那种）：那两处的错值会直接进推导链与发货，
+    而这三格进的是**勾选控件**，消费侧认不出 ⇒ 一格都不动（绝不猜一档）。
+    """
+
+    def _field(self, key: str, value, confidence: float = 0.95):
+        payload = json.dumps(
+            {"fields": {key: {"value": value, "confidence": confidence}}}, ensure_ascii=False
+        )
+        return next(f for f in extract_fields("order", payload) if f["key"] == key)
+
+    @pytest.mark.parametrize(
+        "key,raw",
+        [
+            ("open_count", "双开"),
+            ("open_count", "2 开"),
+            ("style", "双拼色"),
+            ("processing_items", "韩折、定型"),
+        ],
+    )
+    def test_customer_requests_are_passed_through_verbatim(self, key, raw):
+        field = self._field(key, raw)
+        assert field["value"] == raw
+        assert field["source"] == FIELD_MARKER
+
+    def test_size_shape_gate_is_untouched(self):
+        """反向自证：新增三格**没有**动到尺寸闸（同一段解析代码里）。"""
+        field = self._field("curtain_width", "2.8×2.4")
+        assert field["value"] is None
+        assert "宽" in field["reason"]
 
 
 class TestMarker:

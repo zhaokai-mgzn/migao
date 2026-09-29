@@ -209,15 +209,11 @@ const inputOf = (label: string, idx = 0) =>
 const qtyInput = () => inputOf('用料米数')
 
 /**
- * 「用料米数」/「单价 (¥/米)」**2026-09-28 布局重排**后**常态只读**（两个数分别由算料引擎与
- * 所选规格给 —— 用户口径「其他信息尽量推导」）⇒ 要输入先点就地「改」（`meters-edit` /
- * `price-edit`）把它变回可写输入框。用例照**真实商家的操作路径**走：
- * 不靠 `fireEvent.change` 直写只读框（那只会在 DOM 层"看起来通过"，绕开了商家的实际入口）。
+ * 「用料米数」/「单价 (¥/米)」**2026-09-29**（用户裁定「移除这种设计，当前编辑态就是允许用户
+ * 直接更改的」）起**常态可写** —— 旧「点就地『改』变回输入框」已删除。用例照**真实商家的操作路径**
+ * 走：不靠 `fireEvent.change` 直写只读框（那只会在 DOM 层"看起来通过"）；这里仍**自证**框可写。
  */
 const editMeters = () => {
-  const btn = screen.getByTestId('meters-edit')
-  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
-  // 自证：点完真的可写（否则下面那些 `change` 写的是一个只读框 = 与真实路径不符）
   expect(qtyInput()).not.toHaveAttribute('readonly')
 }
 
@@ -426,9 +422,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await waitFor(() => expect(craftCalcCalls().at(-1)).toMatchObject({ fabric_width: 2.8 }))
 
     const before = craftCalcCalls().length
-    // 2026-09-28 布局重排：门幅 chips 收进只读摘要的「改」面板（`sku-picker-toggle`）——
-    // 已选中一支时必须先点「改」展开 chips，才能改选另一支（改门幅这一步的语义未变）
-    fireEvent.click(screen.getByTestId('sku-picker-toggle'))
+    // 2026-09-29：门幅 chips **常态就在**（旧「只读摘要 + 点『改』展开」已删除）—— 直接点另一支
     fireEvent.click(await screen.findByRole('button', { name: /3\.2米/ }))
     // 红证：`fabric_width` 不进签名 ⇒ 入参没变 ⇒ effect 不触发 ⇒ 本断言红
     await waitFor(() => expect(craftCalcCalls().length).toBeGreaterThan(before))

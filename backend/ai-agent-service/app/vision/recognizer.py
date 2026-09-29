@@ -88,6 +88,17 @@ _NOT_RECOGNISED = "图片未给出该字段"
 #: 留空理由：模型没给置信度 —— 按最低处理（宁可留空，不冒错填的风险）
 _NO_CONFIDENCE = "未给出置信度，无法判断把握程度，宁可不填"
 
+#: 订单侧的**工艺要求字段**（issue #5794）—— 用户口径：「如果用户是根据图片下单的，就需要根据
+#: 图中客户要求来决定工艺规格和加工项选择了，**不能选错**」。
+#:
+#: 🔴 **本内核不对这三格做语义判定**（与尺寸 / 手机号那两道形状闸**有意不同**）：判定在**消费侧**
+#: —— 建单页 `frontend/admin-web/src/lib/image-recognize.ts` 的 `openCountOf` / `styleOf` /
+#: `processingItemNamesOf`：认得出才落键，认不出 ⇒ 页面**一格都不动**（绝不猜一档）。两条理由：
+#: ① 这三格进的是**勾选控件**，认不出的值不落键就没有任何后果（而尺寸 / 手机号的错值会直接进
+#:    推导链与发货 ⇒ 那两处必须在内核里拦）；
+#: ② 「中文 → 语义」的换算只写在**消费侧一处**，避免同一张对照表在两端各写一份（本仓反复复发的
+#:    「第二份口径」形态）。
+
 
 def build_messages(target_type: str, image_urls: List[str]) -> List[HumanMessage]:
     """构造发给 vision 的多模态消息（文本提示 + 逐图 `image_url` 块）。"""
@@ -227,6 +238,9 @@ def _resolve(
         if size is None:
             return None, size_reason
         value = size
+
+    # ⚠️ 客户写明的工艺要求（`open_count` / `style` / `processing_items`，issue #5794）**在这里不过闸**
+    # —— 原样透传，判定与换算在消费侧（建单页 `lib/image-recognize.ts`）。理由见本模块顶部那段注释。
 
     # 发货侧的第三道硬闸（issue #5648）：**实发数量**必须是正数。
     # 同样放在置信度闸**之前** —— 一个「很自信地抄错」的数量，置信度再高也不能填：
