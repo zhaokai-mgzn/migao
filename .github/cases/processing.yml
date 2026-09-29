@@ -969,3 +969,109 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ── 裁高机线（母单 #5161）后续包 ──────────────────────────────────────────
+  - id: PG-046
+    legacy_id: ""
+    title: "扫码读面补 9 个部位明细键（只加不改：宽高/工艺/加工类型/开数/褶倍/定型/用料；单测覆盖，非 LLM 行为）"
+    domains:
+      - processing
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - scan
+      - contract
+      - backend-contract
+    truths_ref:
+      - processing-manage.scan-position-detail-keys
+    user_inputs:
+      - "扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "positions[] 追加 width / height / craft / curtain_type / open_count / cutting_mode / fullness / is_shaped / fabric_meters"
+      - "既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**"
+      - "新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）"
+      - "不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）"
+    skip_reason: "[backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。"
+    merge_log: "2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-047
+    legacy_id: ""
+    title: "一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；单测覆盖，非 LLM 行为）"
+    domains:
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - worker
+      - cutting_height
+      - terminal
+      - backend-contract
+    truths_ref:
+      - processing-manage.worker-cutting-height-terminal
+    user_inputs:
+      - "扫一下这个部位，这刀该裁多高？顺手把这道工序报掉。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "GET /api/worker/production/cutting-height?token=… ：工人 session 准入（无 ⇒ 401）、零商家权限码、只读"
+      - "裁剪高度逐部位给出，命中/取整复用 CuttingHeightConfigService.preview（不重算）；命中而未配置取值的项显式进 missing 且不计入、不按 0 算"
+      - "报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体"
+      - "常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符"
+      - "🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）"
+    skip_reason: "[backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。"
+    merge_log: "2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java"
+        - "frontend/worker-h5/tests/worker-h5-machine.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-065
+    legacy_id: ""
+    title: "工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）"
+    domains:
+      - processing
+      - hr
+    tier: normal
+    persona: ""
+    tags:
+      - processing
+      - worker
+      - rbac
+      - tenant_config
+      - backend-contract
+    truths_ref:
+      - processing-manage.worker-page-config
+    user_inputs:
+      - "工人手机上该看到哪几页？一体机也一样吗？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）"
+      - "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'"
+      - "GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403"
+      - "worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话"
+    skip_reason: "[backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。"
+    merge_log: "2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-045, BM-006
+// case_ids: PG-065, BM-006
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.WorkerPageConfig;

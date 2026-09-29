@@ -318,3 +318,66 @@ PY
 | **P0-D** | 一体机页面（kiosk + 常驻扫码 + 裁高计算器） | `frontend/worker-h5` 新增文件 |
 | **P0-E** | 工人端页面开关 + `/api/worker/me` + 前端守卫 + 同构判据 | worker 域 |
 | **P1（挂起）** | 下发链路（Modbus / 机台档案 / 小桥） | 见上游设计单 §3 P2/P4 |
+
+---
+
+## 7. 实施状态（2026-09-29）
+
+| 包 | 内容 | 状态 |
+|---|---|---|
+| **P0-A** | 裁高配置后端（单行租户配置 + 默认种子 + 命中口径复用 route rules + 只读预演 + 租户参数审计） | ✅ **main**（PR #5777，squash `7d78d44c7`） |
+| **P0-B** | 商家端第三个 tab「裁高配置」（`/production/routings`） | ✅ **main**（同上） |
+| **P0-C** | 扫码响应补 9 个部位明细键（只加不改；契约真值源由集成侧补登） | 🚧 PR #5779 |
+| **P0-D** | 一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + **一步报工**（不写机器） | 🚧 PR #5780 |
+| **P0-E** | 工人端租户级页面开关 + `GET /api/worker/me` + 工人会话超时改一周 | 🚧 包在跑 |
+| P1 | 自定义表达式（`formulas[]`） | ⬜ 未做（见 §7.1 差异 1） |
+| P1（挂起） | 下发链路（Modbus / 机台档案 / 小桥） | ⛔ 用户裁定不做 |
+
+### 7.1 与本设计单的**三处已登记差异**（实现为准，不粉饰）
+
+1. **`formulas[]` 未落**：部位级可配表达式需要**表达式求值器** ⇒ 本版**不建死列**（建了没人读 = 假承诺）；
+   部位差异由 `items[].hit.position` 承载；表达式层登记为下一期。
+2. **`misses` 只报 `unresolved`**：**未命中**的项不进 `misses`（一份档案里绝大多数项对某张单都不命中，
+   报出来只会把「真的缺东西」淹掉）。
+3. **`POST …/preview` 挂**写码 **`processing:manage`**（**不是** `production:view`）：本仓有一条
+   「**写动词挂读码**」的**只许缩短**台账（`tests/unit_ci_workflows/test_rbac_submenu_granularity.py` 的
+   `WRITE_UNDER_READ_CODE`，现取上限 12）；把只读预演挂读码会把台账 **12 → 13**，而**增长它须人裁定**
+   ⇒ 取「与配置保存同一个面」。差异写在控制器方法注释里。
+
+### 7.2 补充裁定：工人端会话时长（用户 2026-09-29 逐字「一周」）
+
+- 口径：**改全局默认值**（手机端同长），**不加机台档、不区分 deviceLabel**。
+- 落码：`WorkerSessionService.DEFAULT_IDLE_MINUTES = 10080`（一周）；`MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES`
+  （单一真值，不抄第二遍）；可配区间 `5 ~ 10080`；越界/非法 ⇒ **回落默认 + WARN**。
+- 🔴 **照实登记两个后果**（用户已知情并裁定）：
+  ① 闲置保护实际上**退化为「基本不过期」** ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的
+  **唯一护栏只剩手动「切换工人」**（`switchWorker` 仍立即失效旧会话）；
+  ② 因此一体机页面必须**常驻显示「当前工人：XXX」**、报工前身份显眼（落点 = `frontend/worker-h5`）。
+- ⚠️ **不放宽权限**：工人 session/JWT 的 `permissions` 仍恒为 `[]`，`/api/admin/**` 对 `worker` 仍 403。
+
+### 7.3 独立验收复核（2026-09-29，复核者只读 `origin/main`，无我的结论）
+
+复核者按「交付物可达性三问（谁发射 / 哪个入口可达 / 有无测试钉住）」逐项取证，结论与处置**照实登记**：
+
+| # | 复核发现 | 我的自证 | 处置 |
+|---|---|---|---|
+| 1 | 裁高配置：**可达** | 一致 | — |
+| 2 | 一体机机台模式：**可达** | 一致 | — |
+| 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `docs/wiki/CONTRACT-LEDGER.md` §九 |
+| 4 | 工人端页面开关判**部分可达**：后端齐，但 `/api/worker/me` **零消费方** ⇒ 开关不改变工人看到的任何东西 | 🔴 **成立，我认账**（这是我从 P0-E 划走、又还没做的那一半） | **补包**：`frontend/worker-h5` 消费 `/api/worker/me` —— 按 `report` 门控报工主流程、按 `cut_calc` 门控机台模式入口；**取不到页面集时 fail-open + 显式提示**（不把「开关没读到」变成「活干不了」）；`order` / `shipment` 在 `/w/` **暂无对应面** ⇒ 不为它们造 UI，只登记 |
+| 5 | 会话超时一周：**可达** | 一致 | — |
+| a | 本文 §2.7「改 `ProductionScanService.resolve`」与实现形态的描述 | — | **本条更正**（见下） |
+| b | 本文 §2.8 声称「前端守卫 + 同构判据」已落地 | — | **确认未落地**（同第 4 条），补包后仍**不含**「未登记即红」的机械守卫 ⇒ 照实登记为缺口 |
+| c | `CHANGELOG` 未登记 P0-E 的三件 | — | 本 PR（#5782）已补三条 |
+| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 |
+| e | 无 worker 页面键的机械守卫（`test_menu_three_sources_are_isomorphic.py` 不含） | — | 登记为缺口（本期只落**行为判据**：页面不在集合 ⇒ 走不到 / 入口不出现） |
+
+**§2.7 更正（复核 a）**：那 9 个明细键的**实际落点**是**扫码读面**的 `set_overview.positions[]` 与旧码 `selections[].positions[]`
+（`ProductionScanService::scanDetailOverview` → `withPositionDetail`），取值复用 `ProductionService::orderSpecByItemId`（与 `getOperations` 同源、Java 侧零重算）；
+**商家端** `GET /api/admin/processing-order-sets/{id}` 的部位形状**不含**这 9 键（键集被 `ProcessingOrderSetControllerTest.POSITION_KEYS` 冻结）——
+两个读面形状**不再逐字相同**，这是**有意**的，已登记在契约账本 §九。§2.7 原文把它写成「改 `resolve` 的 `positions[]`」，措辞以本段为准。
+
+**§2.8 更正（复核 b）**：本节当时的「+ 前端守卫 + 同构判据」是**设计意图**，不是交付事实。实际分两批：
+① **已交付**（P0-E）：租户级配置表 + `GET/PUT /api/admin/worker-page-config` + 商家端配置面 + 工人侧 `GET /api/worker/me`；
+② **补包**（复核第 4 条）：`worker-h5` 的**消费方**（页面/入口可见性）。⚠️ 即便补包落地，**仍缺**「未登记即红」的机械守卫（复核 e）——
+登记为缺口，不假装已覆盖。
