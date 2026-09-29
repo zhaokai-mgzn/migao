@@ -633,8 +633,8 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('待支付订单')).toBeInTheDocument()
     })
-    const card = screen.getByText('待支付订单').closest('a') as HTMLAnchorElement
-    expect(card).not.toBeNull()
+    // 用 `getByRole('link', {name})` 定位：找不到会直接抛 ⇒ 不需要 `not.toBeNull()` 那种**弱断言**
+    const card = screen.getByRole('link', { name: /待支付订单/ }) as HTMLAnchorElement
     // 🔴 数字来自服务端聚合（`pending_payment_orders` FILTER），不是本地推算；
     //    且**不得**把「问题面」写成 0 而不显示（6 来自 mock）
     expect(card.textContent).toContain('6')

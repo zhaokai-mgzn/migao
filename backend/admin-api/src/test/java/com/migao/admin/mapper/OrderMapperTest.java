@@ -1,5 +1,7 @@
 package com.migao.admin.mapper;
 
+// case_ids: UI-070
+
 import com.migao.admin.entity.Order;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
