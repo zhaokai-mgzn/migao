@@ -100,7 +100,7 @@ export interface InboundDraftView {
     skuCode?: string | null
     quantity?: number | string | null
     batchNo?: string | null
-    /** 过账后每行一个短码（草稿态为 null）—— P3 用它出 50×30mm 标签 */
+    /** 过账后每行一个短码（草稿态为 null）—— P3 用它出 30×40mm 标签 */
     shortCode?: string | null
     printCount?: number | null
   }[]
@@ -240,7 +240,7 @@ export async function postInboundDraft(
   }
 }
 
-/** 按短码读标签详情（50×30mm 渲染所需的全部业务字段；跨租户 404 / 已撤销 410） */
+/** 按短码读标签详情（30×40mm 渲染所需的全部业务字段；跨租户 404 / 已撤销 410） */
 export async function getInboundLabel(shortCode: string): Promise<InboundResponse<InboundLabelView>> {
   try {
     const url = INBOUND_ENDPOINTS.labelDetail.replace('{shortCode}', encodeURIComponent(shortCode))

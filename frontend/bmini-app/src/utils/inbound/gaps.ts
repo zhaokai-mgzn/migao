@@ -148,6 +148,7 @@ export const INBOUND_PRINT_GAP_WIRING: { reason: PrintFailureReason; wiredBy: st
   { reason: 'not-h5', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'insecure-context', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'no-bluetooth-api', wiredBy: 'src/utils/inbound/printCapability.ts' },
+  { reason: 'wechat-webview', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'ios-unsupported', wiredBy: 'src/utils/inbound/printCapability.ts' },
   { reason: 'sdk-unavailable', wiredBy: 'src/utils/inbound/lpapiTransport.ts' },
   { reason: 'user-cancelled', wiredBy: 'src/utils/inbound/labelPrint.ts' },

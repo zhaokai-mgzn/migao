@@ -40,7 +40,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(matrix.media.map((m) => m.id)).toEqual([
       'a4',
       'label-50x60',
-      'label-50x30',
+      'label-30x40',
       'continuous-241x140',
     ])
     const a4 = printMediaSpec('a4')
@@ -50,19 +50,22 @@ describe('打印介质矩阵（issue #5651）', () => {
     const label = printMediaSpec('label-50x60')
     expect(label.technology).toBe('thermal-transfer')
     expect(label.pageSize).toBe('50mm 60mm')
-    // 入库标签 50×30（issue #5052 P3）：纸型 + 点阵口径同源在矩阵里，**待实测**（真机参数未核实）
-    const inbound = printMediaSpec('label-50x30')
-    expect(inbound.pageSize).toBe('50mm 30mm')
+    // 入库标签 30×40（issue #5052 CP-1，2026-09-29 用户裁定改竖版）：纸型 + 点阵口径同源在矩阵里，
+    // **待实测**（真机参数未核实）
+    const inbound = printMediaSpec('label-30x40')
+    expect(inbound.pageSize).toBe('30mm 40mm')
     expect(inbound.measurement).toBe('pending-field-measurement')
     expect(inbound.pendingMeasurements.length).toBeGreaterThanOrEqual(3)
     expect(inbound.dotGeometry?.dpi).toBe(203)
-    // 🔴 逐值一致性用**派生关系**断言（`8 dots/mm × 50mm = 纸宽像素`），不在这里再抄一份
-    //    400/384/240 字面量 —— 那会变成「同一物理口径的第二份字面量」（bmini 侧的守卫会判红）
+    // 🔴 逐值一致性用**派生关系**断言（`8 dots/mm × 30mm = 纸宽像素`），不在这里再抄一份
+    //    240/320/384 字面量 —— 那会变成「同一物理口径的第二份字面量」（bmini 侧的守卫会判红）
     const dots = inbound.dotGeometry?.dotsPerMm as number
     expect(dots).toBe(8)
-    expect(inbound.dotGeometry?.widthPx).toBe(dots * 50)
-    expect(inbound.dotGeometry?.effectiveWidthPx).toBe(dots * 48)
-    expect(inbound.dotGeometry?.heightPx).toBe(dots * 30)
+    expect(inbound.dotGeometry?.widthPx).toBe(dots * 30)
+    expect(inbound.dotGeometry?.heightPx).toBe(dots * 40)
+    expect(inbound.dotGeometry?.headWidthPx).toBe(dots * 48)
+    // 有效打宽 = min(纸宽, 打印头宽)：30mm 纸 < 48mm 头 ⇒ 整幅可打
+    expect(inbound.dotGeometry?.effectiveWidthPx).toBe(dots * 30)
     const tri = printMediaSpec('continuous-241x140')
     expect(tri.technology).toBe('dot-matrix')
     expect(tri.continuousFeed).toBe(true)

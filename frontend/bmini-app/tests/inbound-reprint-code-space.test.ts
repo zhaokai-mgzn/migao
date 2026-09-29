@@ -175,6 +175,16 @@ const PIXEL_PROBE = new RegExp(
   `\\b(${[inboundLabelGeometry().effectiveWidthPx, inboundLabelGeometry().heightPx].join('|')})\\b`,
 )
 
+/**
+ * 纸型字面量探针（**类级**，不写死具体毫米数）。
+ *
+ * 历史形态：这里原本是 `/50mm\s*30mm|50×30/` —— 标签改成 30×40 之后那条正则**静默失效**
+ * （守卫还在、还会绿，只是再也抓不到任何东西）。⇒ 改成「任意 `宽mm × 高mm` / `宽mm 高mm` 形态」，
+ * 换纸型时不需要人记得回来改这一行。
+ */
+const PAPER_SIZE_PROBE =
+  /\d+(?:\.\d+)?\s*mm\s*[×xX]\s*\d+(?:\.\d+)?\s*mm|\d+(?:\.\d+)?\s*mm\s+\d+(?:\.\d+)?\s*mm/
+
 /** 同族页面的判据函数（真判据 + 注入式红证**共用同一份**判定，见 migao-dev-flow §23.5） */
 function labelPageProblems(pages: { file: string; code: string }[]): string[] {
   const problems: string[] = []
@@ -185,7 +195,7 @@ function labelPageProblems(pages: { file: string; code: string }[]): string[] {
     if (/printImageData/.test(code)) problems.push(`${page.file}: 直连传输层（printImageData）绕过送打印入口`)
     if (/\/api\/worker\//.test(code)) problems.push(`${page.file}: 手写端点字面量（应用 INBOUND_ENDPOINTS）`)
     if (PIXEL_PROBE.test(code)) problems.push(`${page.file}: 自带像素口径字面量（应取 inboundLabelGeometry）`)
-    if (/50mm\s*30mm|50×30/.test(code)) problems.push(`${page.file}: 自带纸型字面量（应取 inboundLabelPageSize）`)
+    if (PAPER_SIZE_PROBE.test(code)) problems.push(`${page.file}: 自带纸型字面量（应取 inboundLabelPageSize）`)
     if (!/createH5CanvasFactory/.test(code)) problems.push(`${page.file}: 未用共用画布工厂（第二份画布实现会分叉）`)
     // 「前端不自行计数」（验收判据 8）：页面里对 `printCount` 做算术 ⇒ 纸上与服务端两份数都不会报错
     if (/printCount\s*(\+\+|[+\-*/]=?)/.test(code) || /(\+\+|--)\s*\w*printCount/.test(code)) {

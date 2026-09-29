@@ -23,6 +23,7 @@ export type PrintFailureReason =
   | 'not-h5'
   | 'insecure-context'
   | 'no-bluetooth-api'
+  | 'wechat-webview'
   | 'ios-unsupported'
   | 'sdk-unavailable'
   | 'user-cancelled'
@@ -43,6 +44,10 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
     '当前页面不是 HTTPS 安全上下文，浏览器禁止用蓝牙。请把地址栏的 http:// 换成 https:// 重新打开本站再打印（企业内网的 http 地址一律打不了）。',
   'no-bluetooth-api':
     '这个浏览器没有提供蓝牙接口（Web Bluetooth）。请换 Android 版 Chrome 或桌面版 Chrome / Edge 打开；iPhone 上任何浏览器都不行。',
+  // 2026-09-29 新增：安卓微信内置浏览器（X5）同样**没有**蓝牙接口，但它的可行动出口与
+  // 「换一个浏览器」不同 —— 人就在微信里，要教的是**怎么离开微信**（右上角 ⋯ → 在浏览器打开）。
+  'wechat-webview':
+    '微信里打开的网页没有蓝牙接口，打不了标签（含群里/公众号里点开的链接）。请点右上角「⋯」→「在浏览器打开」改用系统浏览器（安卓手机有这一项）；或在电脑端补打。',
   'ios-unsupported':
     'iPhone / iPad 上的浏览器（含 Safari）不支持本打印通道 —— 这是 Apple 未实现 Web Bluetooth，不是本页的故障。请改用安卓手机打印，或在电脑端补打。',
   'sdk-unavailable':
@@ -51,9 +56,9 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
   //    所以"这次记了没有"取决于 `result.printRecorded`，由 `printFailureText` 统一补一句。
   //    历史缺陷（issue #5052 验收 D6）：这里曾写「重打不会重复计数」——与实现和 `print-failed` 两条都相反。
   'user-cancelled':
-    '已取消选择打印机（这次没打成）。请点「选打印机」重新选择 DP30S 后重试。',
+    '已取消选择打印机（这次没打成）。请点「选打印机」重新选择 DP235S 后重试。',
   'device-unsupported':
-    '选中的设备不是标签打印机（或不是 DP30S 系列）。请在系统弹出的设备列表里选择名字以 DP 开头的标签机。',
+    '选中的设备不是标签打印机（或不是德佟 DP 系列）。请在系统弹出的设备列表里选择名字以 DP 开头的标签机。',
   'connect-failed':
     '连不上打印机：请确认打印机已开机、在 3 米内、且没被别的手机占用，然后重试。',
   'print-failed':
@@ -74,6 +79,8 @@ export interface PrintEnv {
   userAgent?: string
   /** 是否运行在 iOS/iPadOS（含 iPad 桌面 UA 的 `Macintosh` + 触摸点特例由调用方判） */
   isIos?: boolean
+  /** 是否运行在微信内置浏览器（UA 含 `MicroMessenger`）—— 出口是「在浏览器打开」，不是「换浏览器」 */
+  isWechat?: boolean
 }
 
 /** 浏览器真实环境快照（**只在 h5 分支被调用**） */
@@ -86,6 +93,7 @@ export function readPrintEnv(): PrintEnv {
     hasBluetoothApi: typeof nav?.bluetooth !== 'undefined' && nav?.bluetooth !== null,
     userAgent: ua,
     isIos: /iPhone|iPad|iPod/i.test(ua),
+    isWechat: /MicroMessenger/i.test(ua),
   }
 }
 
@@ -115,7 +123,10 @@ export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapab
     return { ok: false, reason: 'ios-unsupported', hint: PRINT_FAILURE_HINTS['ios-unsupported'] }
   }
   if (!env.hasBluetoothApi) {
-    return { ok: false, reason: 'no-bluetooth-api', hint: PRINT_FAILURE_HINTS['no-bluetooth-api'] }
+    // 微信内置浏览器（含小程序里打开的网页）没有这个接口 ⇒ 出口是「在浏览器打开」，
+    // **不是**「换一个浏览器」（人在微信里，"换浏览器"不是他能执行的动作）
+    const reason: PrintFailureReason = env.isWechat ? 'wechat-webview' : 'no-bluetooth-api'
+    return { ok: false, reason, hint: PRINT_FAILURE_HINTS[reason] }
   }
   return { ok: true, hint: '' }
 }
@@ -149,7 +160,7 @@ export function printFailureText(hint: string, printRecorded: boolean): string {
 }
 
 /** 页面文案：动手前的能力说明（h5 且可用时的正向说法也固定一句，免得页面各写一份） */
-export const PRINT_READY_HINT = '点「选打印机」后选择 DP30S 标签机即可打印'
+export const PRINT_READY_HINT = '点「选打印机」后选择 DP235S 标签机即可打印'
 
 /** 本页是否处在「可打印」平台（给页面做分支用；真正的判定仍是 `probePrintCapability`） */
 export function isPrintPlatform(): boolean {

@@ -1077,16 +1077,16 @@ _CASE_BM_009 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-010 [NORMAL] 入库标签 50×30mm 像素口径 - 单一真值（400/384/240/8 dots/mm），别处出现第二份字面量即红（源: cases/bmini.yml）──
+# ── BM-010 [NORMAL] 入库标签 30×40mm 像素口径 - 单一真值（240/320/384/8 dots/mm），别处出现第二份字面量即红（源: cases/bmini.yml）──
 _CASE_BM_010 = EvalCase(
     id='BM-010',
     legacy_id='',
-    title='入库标签 50×30mm 像素口径 - 单一真值（400/384/240/8 dots/mm），别处出现第二份字面量即红',
+    title='入库标签 30×40mm 像素口径 - 单一真值（240/320/384/8 dots/mm），别处出现第二份字面量即红',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人拍照入库出标签时，设备侧（客户端 canvas）按 50×30mm 的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、**有效打印宽 48mm ⇒ 384px（安全侧）**、高 30mm ⇒ 240px，1:1 不缩放不裁切'],
+    user_inputs=['工人拍照入库出标签时，设备侧（客户端 canvas）按 30×40mm **竖版**的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 30mm ⇒ 240px、纸高 40mm ⇒ 320px；**有效打宽 = 纸宽 240px**（30mm 纸窄于 48mm 打印头 ⇒ 整幅可打；头宽按 384px 记安全侧），1:1 不缩放不裁切'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×50`、`effectiveWidthPx == dotsPerMm×48`、`heightPx == dotsPerMm×30`（四个孤立的数不算数；红证：把 effectiveWidthPx 改成 400 或 dotsPerMm 改成 8.47 ⇒ 红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts', '判据 2·**单一真值**：全仓（frontend + backend 的 ts/tsx/js/jsx/mjs/json）**只有一个文件**同时写着 384 与 240 = `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384/240 ⇒ 实测判红）。', '判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 400/384/240（只能从真值源取）。', '判据 4·**待实测显式登记**：50×30 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（DP30S 有效打印宽度等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。', '判据 5·**判据自身排除在语料外**（B1）：守卫文件自己会写 384/240，必须显式排除，否则判据永远红或永远抓不到真违规。'],
+    data_checks=['判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×30`、`heightPx == dotsPerMm×40`、`headWidthPx == dotsPerMm×48`、`effectiveWidthPx == min(纸宽, 打印头宽)`（孤立的数不算数；红证：把 headWidthPx 记成纸宽、或 dotsPerMm 改成 8.47、或 heightPx 按 32mm 画 ⇒ 各自判红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts', '判据 2·**单一真值**：全仓 `384`（打印头宽）**只出现在** `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）；240 / 320 与无关业务重号 ⇒ 改按**出图链路**逐字面量判（「只写一个数」也算，这正是旧口径漏掉的形态）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384 ⇒ 实测判红）。', '判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 240/320/384（只能从真值源取）。', '判据 4·**待实测显式登记**：30×40 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（**DP235S** 的打印头 dpi / 有效打印宽度、间隙定位、原点偏移与出纸方向等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。', '判据 5·**判据自身排除在语料外**（B1）：守卫文件自己会写 384/240，必须显式排除，否则判据永远红或永远抓不到真违规。'],
     skip_reason='[backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'inbound', 'label', 'single-source'],
     persona='',

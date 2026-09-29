@@ -1,5 +1,5 @@
 /**
- * 入库标签 **50×30mm 版面**（纯函数，issue #5052 P3；设计 §7.1 / §7.2）
+ * 入库标签 **30×40mm 版面**（纯函数，issue #5052 P3 / CP-1；设计 §7.1 / §7.2）
  *
  * 这一层**只算坐标**，不碰 canvas、不碰蓝牙、不发请求 ⇒ 全部判据能在 CI 里跑
  * （`frontend/bmini-app/tests/inbound-label-layout.test.ts`）。

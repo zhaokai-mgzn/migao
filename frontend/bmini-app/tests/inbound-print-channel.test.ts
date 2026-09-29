@@ -31,6 +31,14 @@ import {
   printFailureHint,
   type PrintFailureReason,
 } from '../src/utils/inbound/printCapability'
+import { LABEL_PRINT_PARAMS, createLpapiTransport } from '../src/utils/inbound/lpapiTransport'
+import {
+  createPrinterLinkStore,
+  isAbnormalPrintable,
+  linkStateAfterFailure,
+  printerLinkText,
+  type PrinterLinkState,
+} from '../src/utils/inbound/printerLink'
 import { INBOUND_PRINT_GAP_WIRING } from '../src/utils/inbound/gaps'
 import { layoutInboundLabel } from '../src/utils/inbound/labelLayout'
 import { renderInboundLabel, type RenderedLabel } from '../src/utils/inbound/labelCanvas'
@@ -266,6 +274,25 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
     expect(unknown.reason).toBe('insecure-context')
     const noApi = probePrintCapability({ platform: 'h5', secureContext: true, hasBluetoothApi: false, isIos: false })
     expect(noApi.reason).toBe('no-bluetooth-api')
+    // 安卓微信内置浏览器（X5）没有 `navigator.bluetooth` ⇒ **不能**只说"换浏览器"，
+    // 要说清**当下这一步**怎么做（右上角 → 在浏览器打开）；iOS 仍优先（iPhone 上换浏览器也不行）
+    const wechat = probePrintCapability({
+      platform: 'h5',
+      secureContext: true,
+      hasBluetoothApi: false,
+      isIos: false,
+      isWechat: true,
+    })
+    expect(wechat.reason).toBe('wechat-webview')
+    expect(wechat.hint).toContain('浏览器打开')
+    const wechatIos = probePrintCapability({
+      platform: 'h5',
+      secureContext: true,
+      hasBluetoothApi: false,
+      isIos: true,
+      isWechat: true,
+    })
+    expect(wechatIos.reason).toBe('ios-unsupported')
     const ok = probePrintCapability({ platform: 'h5', secureContext: true, hasBluetoothApi: true, isIos: false })
     expect(ok.ok).toBe(true)
     expect(ok.hint).toBe('')
@@ -320,6 +347,8 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
     expect(PRINT_FAILURE_HINTS['ios-unsupported']).toMatch(/iPhone|iPad/)
     expect(PRINT_FAILURE_HINTS['insecure-context']).toMatch(/HTTPS/)
     expect(PRINT_FAILURE_HINTS['no-bluetooth-api']).toMatch(/Chrome/)
+    // 微信里没有蓝牙接口 ⇒ 出口是「在浏览器打开」（**不是**"换个浏览器" —— 人要的是怎么离开微信）
+    expect(PRINT_FAILURE_HINTS['wechat-webview']).toMatch(/浏览器打开/)
     expect(PRINT_FAILURE_HINTS['not-h5']).toMatch(/Chrome|电脑/)
     expect(PRINT_FAILURE_HINTS['user-cancelled']).toMatch(/取消/)
     expect(PRINT_FAILURE_HINTS['connect-failed']).toMatch(/开机|3 米/)
@@ -513,5 +542,226 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
     const problems = recordedConsumptionProblems(reverted).join('\n')
     expect(problems).toContain('没有消费 result.printRecorded')
     expect(problems).toContain('src/pages/worker/inbound/index.tsx')
+  })
+})
+
+/** D10：页面必须**订阅并渲染**连接状态（真判据与注入式红证共用同一份） */
+function linkConsumptionProblems(pages: { file: string; code: string }[]): string[] {
+  const problems: string[] = []
+  for (const page of pages) {
+    const code = stripComments(page.code)
+    if (!/printerLink\.subscribe\(/.test(code)) {
+      problems.push(`${page.file}: 没有订阅 printerLink —— 连接状态会永远停在打开页面那一刻`)
+    }
+    if (!/printerLinkText\(/.test(code)) {
+      problems.push(`${page.file}: 没有渲染 printerLinkText(...) —— 工人看不到打印机连没连上`)
+    }
+  }
+  return problems
+}
+
+/**
+ * 打印机**连接状态**（issue #5052 CP-1；2026-09-29 用户要求「提示用户是否已连接打印机」）
+ *
+ * 它是**运行期事实**（与 `./printCapability` 的能力探测**是两件事**）：能打 ≠ 已连上
+ * （机器可能没开机）。判据三件：① 四态文案各自可行动；② `unselected`（还没选过）**不许**说成故障；
+ * ③ 两个出标签的页面**订阅并渲染**它。浏览器侧的持续真值**做不到**（Web Bluetooth 权限模型
+ * 不允许静默重连）⇒ 口径 = 「最后一次真实交互的读数」，文案里明写，不谎报"持续在线"。
+ */
+describe('打印机连接状态（DP235S）', () => {
+  it('D10 四态文案两两不同、各有可行动出口', () => {
+    const texts = (['unselected', 'connecting', 'connected', 'disconnected'] as const).map((status) =>
+      printerLinkText({ status }),
+    )
+    expect(new Set(texts).size).toBe(4)
+    for (const text of texts) expect(text.trim().length).toBeGreaterThanOrEqual(10)
+    // 🔴「还没选过」不许说成"断开/失败"（那是故障感：会把人引去排障一个不存在的问题）
+    expect(printerLinkText({ status: 'unselected' })).not.toMatch(/断开|失败|未连上/)
+    expect(printerLinkText({ status: 'disconnected' })).toMatch(/3 米|开机/)
+    expect(printerLinkText({ status: 'connected', deviceName: 'DP235S-1234' })).toContain('DP235S-1234')
+    // 机器自检提示必须被带出来，否则「已连接」会掩盖「打不出来」
+    expect(printerLinkText({ status: 'connected', warning: '未检测到纸张' })).toContain('未检测到纸张')
+  })
+
+  it('D10 状态仓：`set` 通知订阅者，退订后不再收到（页面订阅的就是它）', () => {
+    const store = createPrinterLinkStore()
+    const seen: string[] = []
+    const off = store.subscribe((state) => seen.push(state.status))
+    store.set({ status: 'connecting' })
+    store.set({ status: 'connected', deviceName: 'DP235S' })
+    off()
+    store.set({ status: 'disconnected' })
+    expect(seen).toEqual(['connecting', 'connected'])
+    expect(store.get().status).toBe('disconnected')
+    store.reset()
+    expect(store.get().status).toBe('unselected')
+  })
+
+  it('D10 🔴 「打不出来」≠「没连上」：打印失败仍算已连接，取消不冒充断开', () => {
+    const connected: PrinterLinkState = { status: 'connected', deviceName: 'DP235S' }
+    // 送数据失败（缺纸 / 开盖 / 过热）⇒ 仍是已连接（异常交给自检提示说）
+    expect(linkStateAfterFailure('print-failed', connected, 'DP235S').status).toBe('connected')
+    // 用户点取消 / SDK 没起来 ⇒ **没有产生关于打印机的信息** ⇒ 保持原读数，不冒充"断开"
+    expect(linkStateAfterFailure('user-cancelled', connected).status).toBe('connected')
+    expect(linkStateAfterFailure('sdk-unavailable', connected).status).toBe('connected')
+    expect(linkStateAfterFailure('user-cancelled', { status: 'unselected' }).status).toBe('unselected')
+    // 连不上 ⇒ 未连上（这才是该让人去排障的那一种）
+    expect(linkStateAfterFailure('connect-failed', connected, 'DP235S').status).toBe('disconnected')
+  })
+
+  it('D10 机器自检态的口径：`LPA_Printable` ≥ 20 才算异常（不抄整张表）', () => {
+    // 0/1/2/10/11/12 = 可打印 / 正在打印 / 马达转动 / 无任务 / 页面未收完 / 任务被取消 ⇒ 正常或瞬时
+    for (const code of [0, 1, 2, 10, 11, 12]) expect(isAbnormalPrintable(code)).toBe(false)
+    for (const code of [20, 30, 33, 34, 35, 50]) expect(isAbnormalPrintable(code)).toBe(true)
+    // 取不到 ⇒ 不冒充异常（宁可不提示，也不编一句"打印机异常"）
+    expect(isAbnormalPrintable(undefined)).toBe(false)
+    expect(isAbnormalPrintable(null)).toBe(false)
+  })
+
+  it('D10 🔴 两个出标签的页面必须**订阅并渲染**连接状态（只渲染不订阅 ⇒ 状态停在打开页面那一刻）', () => {
+    const pages = srcSources().filter((source) => /pages\/worker\/(inbound|reprint)\/index\.tsx$/.test(source.file))
+    expect(pages.map((page) => page.file).sort()).toEqual([
+      'src/pages/worker/inbound/index.tsx',
+      'src/pages/worker/reprint/index.tsx',
+    ])
+    expect(linkConsumptionProblems(pages)).toEqual([])
+    // 注入式红证：把订阅删掉 ⇒ 同一判定必须点名
+    const reverted = pages.map((page) => ({
+      ...page,
+      code: page.code.replace(/printerLink\.subscribe\(/g, '__gone('),
+    }))
+    const problems = linkConsumptionProblems(reverted).join('\n')
+    expect(problems).toContain('没有订阅')
+    expect(problems).toContain('src/pages/worker/inbound/index.tsx')
+  })
+})
+
+/**
+ * 🔴 **真实 SDK 回执包络的判据**（issue #5052 CP-1，2026-09-29）
+ *
+ * 为什么单独成块：本文件上面所有替身喂的都是**自造包络**（`{success}` / `{code}`），而
+ * `lpapi-ble@1.7.260618` 的**真实**包络是 `{statusCode, resultInfo}` / `{statusCode, errMsg}`
+ * （实测 `libs/index.umd.js` 的 `success()` / `complete()` / `onResult({statusCode, errMsg})`）。
+ * 替身对替身 ⇒ 传输层的错误判定**可以是空的**而判据全绿 —— 这正是本块要钉住的形态。
+ */
+describe('打印通道：真实 SDK 回执包络（statusCode）', () => {
+  const LPA = { OK: 0, CANCEL: 25, UN_SUPPORTED: 19 } as const
+
+  function fakeLpapi(env: {
+    requestDevice?: unknown
+    openPrinter?: unknown
+    printImageData?: unknown
+    printerInfo?: unknown
+  }) {
+    const calls = {
+      requestDevice: 0,
+      openPrinter: 0,
+      printImageData: 0,
+      options: {} as Record<string, unknown>,
+      initOptions: {} as Record<string, unknown>,
+    }
+    const printer = {
+      async requestDevice() {
+        calls.requestDevice += 1
+        return env.requestDevice ?? { statusCode: LPA.OK, resultInfo: [] }
+      },
+      async openPrinter() {
+        calls.openPrinter += 1
+        return env.openPrinter ?? { statusCode: LPA.OK }
+      },
+      async printImageData(options: Record<string, unknown>) {
+        calls.printImageData += 1
+        calls.options = options
+        return env.printImageData ?? { statusCode: LPA.OK }
+      },
+      getPrinterInfo: () => env.printerInfo,
+    }
+    return {
+      calls,
+      module: {
+        getInstance: (options?: Record<string, unknown>) => {
+          calls.initOptions = options || {}
+          return printer
+        },
+        // 厂商静态表（实测挂在导出的 LPAPI 类上）
+        getPrintableMessage: (code: number) => `厂商文案-${code}`,
+      },
+    }
+  }
+
+  it('🔴 用户点取消（`{statusCode: 25}`，**resolve 回来**）⇒ user-cancelled，且不再试连接', async () => {
+    const fake = fakeLpapi({ requestDevice: { statusCode: LPA.CANCEL, resultInfo: [] } })
+    const transport = createLpapiTransport({ lpapi: fake.module, link: createPrinterLinkStore() })
+    await expect(transport.print(fakeLabel(), { printCount: 1 })).rejects.toMatchObject({
+      reason: 'user-cancelled',
+    })
+    expect(fake.calls.openPrinter).toBe(0)
+    expect(fake.calls.printImageData).toBe(0)
+  })
+
+  it('🔴 旧判定（查 `success`/`result`/`code`）对真实包络**恒判通过** —— 这正是当年漏掉取消的原因', () => {
+    // 与历史实现同源的口径，**在内存里**复现：它拿到取消回执却认为一切正常
+    const legacyLooksOk = (res: any) =>
+      !(res?.success === false || res?.result === false || (typeof res?.code === 'number' && res.code !== 0))
+    expect(legacyLooksOk({ statusCode: LPA.CANCEL, resultInfo: [] })).toBe(true)
+    expect(legacyLooksOk({ statusCode: LPA.UN_SUPPORTED, resultInfo: '当前环境不支持 WebBluetooth 功能！' })).toBe(
+      true,
+    )
+    // 现口径：同一份回执必须被认出来（否则上面那条"红证"只是空断言）
+    expect({ statusCode: LPA.CANCEL }.statusCode).not.toBe(LPA.OK)
+  })
+
+  it('环境不支持（`{statusCode: 19}`）⇒ sdk-unavailable（不是"打印机没开机"）', async () => {
+    const fake = fakeLpapi({
+      requestDevice: { statusCode: LPA.UN_SUPPORTED, resultInfo: '当前环境不支持 WebBluetooth 功能！' },
+    })
+    const transport = createLpapiTransport({ lpapi: fake.module, link: createPrinterLinkStore() })
+    const error: any = await transport.print(fakeLabel(), { printCount: 1 }).then(
+      () => null,
+      (e) => e,
+    )
+    expect(error?.reason).toBe('sdk-unavailable')
+  })
+
+  it('成功路径（`{statusCode: 0}`）⇒ 1:1 送点阵 + 带齐打印参数 + 状态置已连接', async () => {
+    const fake = fakeLpapi({ printerInfo: { printable: 0 } })
+    const store = createPrinterLinkStore()
+    const transport = createLpapiTransport({ lpapi: fake.module, link: store })
+    const plan = fakeLabel()
+    await transport.print(plan, { printCount: 7 })
+    expect(fake.calls.printImageData).toBe(1)
+    const sent = fake.calls.options
+    expect(sent.width).toBe(plan.widthPx)
+    expect(sent.height).toBe(plan.heightPx)
+    expect(sent.copies).toBe(1)
+    expect(sent.gapType).toBe(LABEL_PRINT_PARAMS.gapType)
+    expect(sent.gapLength).toBe(LABEL_PRINT_PARAMS.gapLength)
+    expect(sent.orientation).toBe(LABEL_PRINT_PARAMS.orientation)
+    expect(store.get().status).toBe('connected')
+    expect(store.get().warning).toBe('')
+  })
+
+  it('🔴 缺纸（`printable = 35`）⇒ 状态仍是**已连接**，但把厂商自检文案带出来', async () => {
+    const fake = fakeLpapi({ printerInfo: { printable: 35 } })
+    const store = createPrinterLinkStore()
+    const transport = createLpapiTransport({ lpapi: fake.module, link: store })
+    await transport.print(fakeLabel(), { printCount: 1 })
+    expect(store.get().status).toBe('connected')
+    expect(store.get().warning).toBe('厂商文案-35')
+    expect(printerLinkText(store.get())).toContain('厂商文案-35')
+  })
+
+  it('🔴 不锁型号：`getInstance` 不传 `models`（实机 DP235S ≠ 当时写死的 DP30S）', async () => {
+    const fake = fakeLpapi({})
+    const transport = createLpapiTransport({ lpapi: fake.module, link: createPrinterLinkStore() })
+    await transport.print(fakeLabel(), { printCount: 1 })
+    expect(fake.calls.initOptions).not.toHaveProperty('models')
+    expect(fake.calls.initOptions.webBLE).toBe(true)
+  })
+
+  it('🔴 打印参数值本身钉住（改一个数 ⇒ 红）：不干胶=间隙纸 2 / 间隔 3mm / 不旋转', () => {
+    expect(LABEL_PRINT_PARAMS.gapType).toBe(2)
+    expect(LABEL_PRINT_PARAMS.gapLength).toBe(3)
+    expect(LABEL_PRINT_PARAMS.orientation).toBe(0)
   })
 })
