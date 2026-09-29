@@ -1,5 +1,11 @@
 // case_ids: UI-055, CH-009
 /**
+ * @case_ids UI-055, CH-009
+ *
+ * 声明与仓库既有形态逐字一致（与 `frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts` 同款：
+ * `// case_ids:` 行 + JSDoc `@case_ids` 双声明）—— 两种解析口径都认得出「本文件声明了哪些用例」。
+ */
+/**
  * 静态扫描：Taro 端（mini-app / bmini-app）的**数字键盘**不得把小数点挡在门外（issue #5198 同族，
  * UI-055 判据 5 的**类级**半边）。
  *
