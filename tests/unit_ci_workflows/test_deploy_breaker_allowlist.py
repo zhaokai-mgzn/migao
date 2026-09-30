@@ -858,8 +858,13 @@ def test_comment_only_edit_does_not_trip_any_criterion():
     audit_allowlist_form(bare, "剥掉整行注释后")
     assert bare != good, "注入未生效（判据自证：注释确实存在）"
 
-    # 只改注释（把注释文本整个换掉）⇒ 行为判据的读数必须**逐字不变**
-    retext = re.sub(r"(?m)^(\s*)#.*$", r"\1# (注释已改写 —— 负控)", good)
+    # 只改注释（把注释文本整个换掉）⇒ 行为判据的读数必须**逐字不变**。
+    # ⚠️ 这里**不用**朴素的 `#` 截断正则：本仓 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`
+    #    把「未先清空字符串就按 `#` 截断」判为假绿形态（字符串里的 `#` 会吃掉行尾）⇒ 逐行判前缀。
+    retext = "".join(
+        "# (注释已改写 —— 负控)\n" if ln.lstrip().startswith("#") else ln
+        for ln in good.splitlines(keepends=True)
+    )
     assert retext != good and strip_comment_lines(retext) == strip_comment_lines(good), (
         "负控自证失败：注释改写没有保持**代码面**逐字一致"
     )

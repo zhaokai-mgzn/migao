@@ -94,6 +94,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
+          set -euo pipefail
           EXPECTED_TAG="sha-${GITHUB_SHA::7}"
           IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${EXPECTED_TAG}"
           # ⚠️ **先去重、后判定镜像**的顺序很重要：`image_tag` 非空 = 人工回滚（MODE=rollback），
