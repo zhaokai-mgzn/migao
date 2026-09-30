@@ -1,5 +1,21 @@
 name: PR Check
 
+# ── 执行环境（issue #5814，2026-09-30）────────────────────────────────────────────
+# 本 workflow **全部 job** 跑在自托管 runner（`runs-on: [self-hosted, migao-mac]`，
+# 注册名 `migao-mac-m1` / 标签 `self-hosted, macOS, ARM64, migao-mac`）。
+# 迁移面（哪些 job 在哪一侧）**不靠本注释**：登记表 =
+# `tests/unit_ci_workflows/runner_plane_ledger.json`，判据 =
+# `tests/unit_ci_workflows/test_runner_plane_ledger.py`（未登记 / 漂移即红）。
+# 环境可复现脚本 = `scripts/setup-self-hosted-runner.sh`（幂等、不打印任何密钥）。
+# 🔴 **可用性代价**：本机睡眠 / 关机 / 重启期间，本文件里被翻成 required 的 job
+#   不会有人来报状态 ⇒ PR 卡在 `BLOCKED`（GitHub 报 "Expected — waiting for status
+#   to be reported"）。快速回退与重启条件见 PR body 与 docs/wiki/CI-CD.md 的
+#   「自托管 runner 执行面」节。
+# ⚠️ `actions/setup-python@v7` 在本机**必然失败**（macOS 预编译产物把 `/Users/runner`
+#   烤死、`/Users` 归 root）⇒ 各个用它的 job 都带
+#   `if: runner.environment != 'self-hosted'`；自托管侧 python/pip 由 runner PATH 的
+#   shim 提供（`scripts/setup-self-hosted-runner.sh` 的 `_shims`）。
+
 on:
   pull_request:
     branches: [main]
@@ -26,7 +42,7 @@ jobs:
   # ============ 安全门禁：拦截 .env 文件 ============
   block-env-files:
     name: Block .env files (except .env.example)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v7
@@ -51,7 +67,7 @@ jobs:
   # ============ admin-api 单测全量 ============
   admin-api-test:
     name: admin-api unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -108,9 +124,13 @@ jobs:
 
       # ── 为什么这两步不能省（issue #5192）─────────────────────────────────────
       # 本 job **没有 `services:`**、也不装 PG：真库判据（`*RealDbTest` 等 14 个类）各自跑
-      # 一次性 `initdb` + `pg_ctl` 集群，需要的是**二进制**而不是服务 —— 而二进制是
-      # `ubuntu-latest`（24.04）镜像**恰好自带**的（`/usr/lib/postgresql/16/bin`，
-      # `PgCluster.BIN_DIRS` 那几条 Debian 绝对路径命中，非显式安装）。
+      # 一次性 `initdb` + `pg_ctl` 集群，需要的是**二进制**而不是服务 —— 而二进制由
+      # runner **恰好自带**，非本 job 显式安装，两侧形态不同：
+      #   · 托管侧：`ubuntu-latest`（24.04）镜像里的 `/usr/lib/postgresql/16/bin`
+      #     （`PgCluster.BIN_DIRS` 那几条 Debian 绝对路径命中）；
+      #   · 自托管侧（`runs-on: [self-hosted, migao-mac]`，issue #5814）：本机
+      #     PostgreSQL 16 的 `initdb`/`pg_ctl` 由 runner 的 PATH 直接解析（`command -v` 命中；
+      #     见 `scripts/setup-self-hosted-runner.sh` 写出的 `.env` 的 PATH 行）。
       # ⇒ 镜像换代 / 换 runner / 自建 runner 时命中失败，若无人拦，`Assumptions.abort`
       #   会让「缺 PG」与「通过」在结果列上**长得一样（都绿）**：全体真库判据**静默腐烂**，
       #   且**没有任何东西会变红**（本仓点名的形态）。
@@ -151,7 +171,7 @@ jobs:
   # ============ CI workflow 辅助工具单测（CI workflow 逻辑，曾长期无人运行）============
   ci-workflow-tests:
     name: ci workflow helper unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     # ── 超时上限（当前 20 分钟）：口径 = **追认合法**，判据 = 本段，裁定载体 = issue #5365 ──
     # 沿革（历史事实，不改写）：3 → 8（#4793，2026-09-20）→ 12（#5203，2026-09-23）
     #   → **20**（#5534，2026-09-25。依据：该类 job 近 7 次 success = 7:59 / 8:19 / 11:02 /
@@ -183,13 +203,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.11'
 
       # ── 为什么这两步不能省（issue #5203）─────────────────────────────────────
       # 本 job 也**不装 PG 服务**：13 个真库判据模块各自起一次性 `initdb` + `pg_ctl` 集群，
-      # 要的是**二进制**而不是服务 —— 二进制是 `ubuntu-latest`（24.04）镜像**恰好自带**的
-      # （`/usr/lib/postgresql/16/bin`，与 tests/unit_ci_workflows/pg_cluster.py 的 BIN_DIRS 同源）。
+      # 要的是**二进制**而不是服务 —— 二进制由 runner **恰好自带**（同上一 job 的两侧形态：
+      # 托管侧 = `ubuntu-latest`（24.04）的 `/usr/lib/postgresql/16/bin`，与
+      # tests/unit_ci_workflows/pg_cluster.py 的 BIN_DIRS 同源；自托管侧 = 本机 PostgreSQL 16
+      # 由 runner PATH 解析到，issue #5814）。
       # 改前 Python 侧探测**只认 PATH**（`shutil.which`）⇒ 该目录不在 PATH ⇒ 83 条真库判据
       # 每次 CI 都 `pytest.skip` 成**绿**（实测：CI 87 skip；「只藏 PG 三个二进制」精确复现 83 条）。
       # ⇒ 两道锁：① 下面这道**前置断言**（找不到二进制即红，并打印实际解析到的路径，便于区分
@@ -232,7 +255,7 @@ jobs:
 
   admin-web-test:
     name: admin-web typecheck + unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     # 2026-09-04 提升：runner 高峰慢时 10 分钟不够（实测 10m16s 被取消），改为 15 分钟
     timeout-minutes: 15
     steps:
@@ -332,7 +355,7 @@ jobs:
   # 业务流程测试和真实后端验证由 post-deploy smoke 负责。
   e2e-quality-gate:
     name: E2E quality gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     # 2026-09-04 提升：GitHub 托管 runner 高峰慢时 6 分钟跑不完（多次 exceed 6m 超时），
     # 改为 15 分钟吸收慢 runner 波动（issue #2786 环境问题）
     timeout-minutes: 15
@@ -416,7 +439,7 @@ jobs:
   # ============ UI 回退检测 — 防「工作区旧 UI 覆盖验收版」复发（#2579 教训）============
   ui-regression-check:
     name: UI Regression Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
@@ -443,12 +466,13 @@ jobs:
   # 确定性层（无 LLM 方差）→ 可安全作为 required 候选。
   case-coverage-gate:
     name: Case Coverage Gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.11'
 
@@ -498,7 +522,7 @@ jobs:
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
   qa-growth-gate:
     name: QA Growth Gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
@@ -630,7 +654,7 @@ jobs:
   # ============ Case Contract — 用例↔真值引用校验（fail-closed）============
   case-truth-check:
     name: Case Contract (truths_ref)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     steps:
@@ -725,7 +749,7 @@ jobs:
   # 未实装项如实登记在 `.github/case-trust-unimplemented.json`（**不写恒真规则凑数**）。
   case-trust-gate:
     name: Case Trust Gate (断言可信度)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
@@ -734,6 +758,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-python@v7
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.11'
 
@@ -770,13 +795,14 @@ jobs:
   #   完整登记见 `.github/llm-finding-ledger.json` 的 `unimplemented` 与脚本头部。
   llm-sink-ledger:
     name: LLM Sink Ledger (红例→确定性下沉)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.11'
 
@@ -808,7 +834,7 @@ jobs:
   #      （实测 2.5h 内 smoke 85 次 ≈ 43% 的总评测次数）。
   gitleaks-scan:
     name: Secret Scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     steps:
@@ -824,7 +850,7 @@ jobs:
   # ============ Danger Scan — PR 破坏性变更检测（workflow/批量删除/部署文件）============
   danger-scan:
     name: Danger Scan (破坏性变更检测)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     steps:
@@ -910,7 +936,7 @@ jobs:
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
   label-needs-changes:
     name: Label needs-changes on any CI failure
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 2
     if: failure() && github.event_name == 'pull_request'
     needs:
@@ -940,7 +966,7 @@ jobs:
   # 依赖所有前置 job：任一失败 → 此 job 跳过；全部成功 → 移除 needs-changes
   clear-needs-changes:
     name: Clear stale needs-changes label
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 1
     if: github.event_name == 'pull_request'
     needs:

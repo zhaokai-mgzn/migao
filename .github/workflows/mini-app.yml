@@ -1,4 +1,13 @@
 name: Mini-App CI
+
+# ── 执行环境（issue #5814，2026-09-30）────────────────────────────────────────────
+# 本 workflow 的 job 跑在**自托管 runner**（`runs-on: [self-hosted, migao-mac]`，
+# 注册名 `migao-mac-m1` / 标签 `self-hosted, macOS, ARM64, migao-mac`）。
+# 迁移面登记表 = `tests/unit_ci_workflows/runner_plane_ledger.json`，
+# 判据 = `tests/unit_ci_workflows/test_runner_plane_ledger.py`（未登记 / 漂移即红）。
+# 环境可复现脚本 = `scripts/setup-self-hosted-runner.sh`（幂等、不打印任何密钥）。
+# 🔴 本机睡眠 / 关机 / 重启期间这条腿**不会有人来报状态** ⇒ PR 会卡在 `BLOCKED`
+#   （"Expected — waiting for status to be reported"）。回退与重启条件见 PR body。
 permissions:
   contents: read
 
@@ -27,7 +36,7 @@ jobs:
   # 与 pr-check/ai-agent-tests 同款 bash 变更检测（不加第三方 action）。
   typecheck-and-test:
     name: mini-app typecheck + unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -82,7 +91,7 @@ jobs:
   # issue #2693 跟进：恢复实验（2026-09-01）——重新启用该 job，观察最新 CI 失败日志定位环境差异
   xiaobu-h5-visual:
     name: xiaobu H5 visual regression
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

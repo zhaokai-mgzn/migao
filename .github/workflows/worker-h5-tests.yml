@@ -1,5 +1,14 @@
 name: Worker H5 Tests
 
+# ── 执行环境（issue #5814，2026-09-30）────────────────────────────────────────────
+# 本 workflow 的 job 跑在**自托管 runner**（`runs-on: [self-hosted, migao-mac]`，
+# 注册名 `migao-mac-m1` / 标签 `self-hosted, macOS, ARM64, migao-mac`）。
+# 迁移面登记表 = `tests/unit_ci_workflows/runner_plane_ledger.json`，
+# 判据 = `tests/unit_ci_workflows/test_runner_plane_ledger.py`（未登记 / 漂移即红）。
+# 环境可复现脚本 = `scripts/setup-self-hosted-runner.sh`（幂等、不打印任何密钥）。
+# 🔴 本机睡眠 / 关机 / 重启期间这条腿**不会有人来报状态** ⇒ PR 会卡在 `BLOCKED`
+#   （"Expected — waiting for status to be reported"）。回退与重启条件见 PR body。
+
 # ── 为什么单独成一个 workflow（issue #4786，承接 #4765 的 D6）────────────────────
 # `frontend/worker-h5/` 是工人端 H5 第一切片（#4765，已随 `01e72187f` 合入 main）：
 # **零依赖 + 零构建** —— 纯 ES module（`.mjs`）+ HTML/CSS，测试用 **Node 内置 `--test`**，
@@ -66,7 +75,7 @@ permissions:
 jobs:
   worker-h5-test:
     name: worker-h5 unit tests (node --test)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     # 实测：29 条测试本地 ~0.2s（node 20 / node 24 均 29 pass）；超时只用于兜住
     # runner 排队与慢启动，不用于掩盖真实失败。
     timeout-minutes: 5

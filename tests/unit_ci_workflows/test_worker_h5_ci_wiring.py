@@ -53,6 +53,8 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "worker-h5-tests.yml"
 TESTS_DIR = REPO_ROOT / "frontend" / "worker-h5" / "tests"
 
 JOB = "worker-h5-test"
+#: 自托管迁移面（issue #5814）的 `runs-on` 取值（登记表见 runner_plane_ledger.json）
+SELF_HOSTED_RUNS_ON = ["self-hosted", "migao-mac"]
 NODE_STEP = "Run worker-h5 unit tests (node --test)"
 DETECT_STEP = "Verify test files exist"
 WORKER_H5_GLOB = "frontend/worker-h5/**"
@@ -195,7 +197,16 @@ def test_real_workflow_wires_worker_h5_tests():
 def test_workflow_is_valid_yaml_with_expected_job():
     wf = _load()
     job = _job(wf)
-    assert job.get("runs-on") == "ubuntu-latest", f"`{JOB}` 的 runs-on 变了：{job.get('runs-on')!r}"
+    # ⚠️ **换执行环境，不变式不变**（issue #5814，2026-09-30）：本腿从 GitHub 托管迁到自托管
+    # runner（`runs-on: [self-hosted, migao-mac]`）。本断言此前逐字钉 `"ubuntu-latest"`，
+    # 迁移后同步改成「**只允许这两个已登记取值**」—— 钉的仍是「执行面**已登记**且没被
+    # 悄悄换成第三个取值」，不是放开：第三个取值 / 缺 `runs-on` 照样判红。
+    # 执行面的**单一真相源** = tests/unit_ci_workflows/runner_plane_ledger.json
+    # （判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py），本文件不另造一份台账。
+    assert job.get("runs-on") in ("ubuntu-latest", SELF_HOSTED_RUNS_ON), (
+        f"`{JOB}` 的 runs-on 是未登记的取值：{job.get('runs-on')!r}"
+        "（只允许 ubuntu-latest 或自托管迁移面 [self-hosted, migao-mac]）"
+    )
     assert _by_name(job, NODE_STEP).get("run", "").strip() == (
         f"node --test {TEST_GLOB}"
     ), f"`{NODE_STEP}` 的命令变了 —— 与守卫的 TEST_GLOB 不再同源"

@@ -44,6 +44,76 @@
     · **复算 #5687（同一天第二个新守卫，结论：三张面**一张都没命中**）**：新增 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：消红路径未登记即红）时按上面清单自查 —— 面 1 **命中**（声明了 `# case_ids: MC-024`，新用例号顺延自当时最大号 MC-023）；面 2 / 面 3 **未命中**（该文件的模块级字面量注释里没有那七个措辞、也不含 `*.sh` 语料字面量）⇒ 两条 pytest 全绿 ⇒ **无须**动 `declaration_gate_registry.json` / `guard_scope_ledger.json`。⇒ 与上面的「边界 ①」合起来读：**三张面是按形态触发的，不是「新守卫一律要登记三处」**（把它读成后者会去改错册子）。
     · 🔴 **本节只覆盖「新建守卫文件」这一种形态**：往**既有**守卫文件里加判据（如本单同时给 `test_flaky_ledger_kind_semantics.py` 加了 10 条）**不在本节面内** —— 那类改动命中的是各面自己的判据（如用例号真实性、弱断言面），**没有**「新文件三张面」这条路径。
   · **`Flaky Ledger Reconcile` 的红是给人看的，不是拦合并的（issue #5687 顺带登记，**有意不修**）**：该 job **不在** `branches/main/protection` 的 required 集合里（人已裁定：用阻塞换可见性不划算）。它的**唯一**价值是「把 `kind=flaky` 且 `status=open` 且没有 `follow_up` 的欠账渲染成 job summary + `::error::`」。⇒ 🔴 **别把「它没红」读成「没问题」**：`kind=suspect-window-deterministic`（跨时间桶的「重跑通过」）这类**窗口型确定性缺陷**此前**只有这一个信号**，而它可以无限循环（缺陷留在 main 上、明天同一时段再红一次）。真正的护栏改成**在判定侧收紧**：跨桶 ⇒ 不再判普通 `flaky` + **强制跟踪**（缺 `follow_up` ⇒ `selftest` / `append` 判违规，fail-closed）；判据见 `tests/unit_ci_workflows/test_rerun_to_clear_paths.py`（类级 meta-guard：任何以重跑结果为唯一依据消红/降级的路径**未登记即红**）与 `tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`（实例，含 run `36280962072` 的真实读数复算）。
+## 自托管 runner 执行面（issue #5814，2026-09-30）
+
+PR 面验证腿（`pr-check` / `ai-agent-tests` / `mini-app` / `bmini-app` / `worker-h5-tests` /
+`demo-evidence`）跑在**本机自托管 runner** 上（`runs-on: [self-hosted, migao-mac]`）。
+
+### 1. 哪条腿在哪一侧 = 登记表，不是散文
+
+- 登记表：`tests/unit_ci_workflows/runner_plane_ledger.json`（**每个 job 逐条**登记 `runs-on` 取值 + `kind` + `reason`）。
+- 判据：`tests/unit_ci_workflows/test_runner_plane_ledger.py` —— **未登记即红**（新增/改名的 job 没同步登记）·
+  **`runs-on` 漂移即红**（悄悄改回托管侧）· **删条目即红**（登记指向空气）· 自托管侧用了
+  `actions/setup-python` 却**没带**自托管跳过条件即红 · 留在托管侧的腿**没给理由**即红。
+- 留托管侧的巩固理由逐条给：`docker-build-leg`（自托管面**没有 docker**）·
+  `held_by_other_package`（冻结清单点名的其它在飞包）· `llm-eval-leg`（真实 LLM 评测，PR 面已按
+  用户裁定不自动跑，权威档在本机手动）· `not_migrated_this_round`（**只是现状登记，不为安全性背书**）·
+  `pr-triggered-not-migrated_this_round`（**本包唯一一条「命中迁移判据但未迁」的腿**，显式点名不粉饰）。
+
+### 2. 环境必须可复原（`scripts/setup-self-hosted-runner.sh`）
+
+这台机器上 CI 能不能跑起来，靠的是**仓库之外**的四件东西；丢了它，pr-check 的两条 **required**
+腿会在自托管上必红**而没有任何东西会变红**（铁律 12(c)③）：
+
+| 件 | 作用 | 丢了的后果 |
+|---|---|---|
+| `~/actions-runner-migao/.env` | `PATH`（含 Homebrew）/ `JAVA_HOME` / `GIT_ALTERNATE_OBJECT_DIRECTORIES` | launchd 默认 PATH 无 Homebrew ⇒ fail-closed 的 PG 前置断言找不到 `initdb`/`pg_ctl`/`psql` ⇒ 必红 |
+| `_shims/{python,python3,pip}` | 自托管侧跳过 `actions/setup-python` 后的替身 | 判据步 `python -m pytest` 直接 command not found |
+| `_work/migao/migao` 预置工作区 | 本机到 github.com 的**批量** git 传输会被掐断（实测 `early EOF`） | `actions/checkout` 卡满超时被 cancelled |
+| 注册（`.runner` + launchd 服务） | runner 进程本身 | 没有任何 runner 认领 job ⇒ required 腿 `BLOCKED` |
+
+⇒ 一条命令复现/自愈：`./scripts/setup-self-hosted-runner.sh`（幂等；`RUNNER_SERVICE=1` 装成常驻服务）；
+只读自检：`./scripts/setup-self-hosted-runner.sh --check`（漂移即非零）。脚本**不打印任何密钥**
+（registration token 现取现用、不落盘）。
+
+### 3. 为什么 `actions/setup-python@v7` 必须被跳过（实测，不是偏好）
+
+它在 macOS 上的预编译产物把解包路径**烤死**成 `/Users/runner` ⇒ 在非该用户的主机上
+`mkdir: /Users/runner: Permission denied`（`/Users` 归 root、无法创建）⇒ **必然失败**。
+⇒ 用到它的 job 该步一律带 `if: runner.environment != 'self-hosted'`，**托管侧一字不改**；
+自托管侧 `python`/`pip` 由 `_shims` 提供。**双侧等价性**：两条路径都提供 3.11 解释器
+（托管侧 = `setup-python` 的 `python-version: '3.11'`，自托管侧 = Homebrew `python@3.11` 的 shim）
+⇒ 判据步的命令文本逐字不变，变的只是解释器的**来源**。
+
+### 4. 🔴 可用性代价与回退（必读）
+
+**触发条件**：这台 Mac **睡眠 / 关机 / 重启 / runner 掉线**期间，被翻成 required 的 job
+**不会有人来报状态** ⇒ 所有 PR 卡 `BLOCKED`，GitHub 报 `Expected — waiting for status to be reported`
+（**没有任何东西会变红**，只是「永远等不到」）。
+
+**快速回退**（把执行面整体退回 GitHub 托管；一条命令，可在任意工作区对 `origin/main` 执行）：
+
+```bash
+git grep -l 'self-hosted, migao-mac' origin/main -- .github/workflows \
+  | xargs -I{} sh -c 'git show origin/main:{} | sed "s/runs-on: \[self-hosted, migao-mac\]/runs-on: ubuntu-latest/" > /tmp/ro.yml && cp /tmp/ro.yml {}'
+```
+
+（等价的最小手工动作 = 对上述六条 workflow 的每个 job 把 `runs-on: [self-hosted, migao-mac]`
+改回 `runs-on: ubuntu-latest`，并**同批**把 `runner_plane_ledger.json` 的对应条目改回
+`ubuntu-latest` + `kind` 改成具名分类 —— 判据会拦下只改一边的改动。）
+
+**重启条件**：`cd ~/actions-runner-migao && ./svc.sh start`（或 `./run.sh` 前台）；
+起来后 `./scripts/setup-self-hosted-runner.sh --check` 必须绿，再 `gh api repos/{owner}/{repo}/actions/runners`
+确认 `status=online`。**在 runner 重新在线之前不要推新的 PR**（推了也会 BLOCKED）。
+
+### 5. 本机限制（登记，不当成「已验证」）
+
+- `/bin/bash` = **3.2.57**：待迁六条腿的 `declare -A` / `mapfile` / `${v,,}` / `[[ -v` 各 **0** 命中；
+  新增脚本文本必须避开 bash 4+ 语法。
+- **没有 docker** ⇒ docker 构建腿（`deploy-*.yml` / 三条 publish 腿）**有意**留在 GitHub 托管侧。
+- 自托管 runner **并发度 = 1 台机器**（不是 GitHub 的托管池）⇒ 多条腿可能互相抢 CPU / 端口 / 磁盘，
+  这是迁移的真实代价，本节不声称它已被解决。
+
 ## 红证机具的可靠性：改磁盘文件的变异**可能不被读到**（2026-09-27 实测，关联 issue #5687）
 
 **这一节是一个被实测证伪的假设的下场记录**：做红证时我以为「改磁盘上的真文件 → 跑 pytest ⇒ 判据必红」是稳的。**它不是。**

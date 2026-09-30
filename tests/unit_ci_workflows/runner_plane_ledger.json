@@ -1,0 +1,656 @@
+{
+  "schema": "runner-plane-ledger/v1",
+  "issue": 5814,
+  "measured": {
+    "at": "2026-09-30",
+    "source": "issue #5814 的自托管 runner 实证（smoke leg run 36667138732）+ 本仓 .github/workflows/*.yml 现取",
+    "recompute": "python3 -m pytest tests/unit_ci_workflows/test_runner_plane_ledger.py -q -s",
+    "self_hosted_runner": {
+      "name": "migao-mac-m1",
+      "labels": [
+        "self-hosted",
+        "macOS",
+        "ARM64",
+        "migao-mac"
+      ],
+      "runs_on_value": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "setup": "scripts/setup-self-hosted-runner.sh",
+      "no_docker": "自托管面**未安装 docker** ⇒ docker 构建腿有意留在托管侧",
+      "bash": "/bin/bash = 3.2.57（待迁腿已核 declare -A / mapfile / ${v,,} / [[ -v 各 0 命中）",
+      "setup_python": "actions/setup-python@v7 在非 /Users/runner 主机上必然失败（macOS 预编译产物把 /Users/runner 烤死、/Users 归 root）⇒ 自托管侧必须带 if: runner.environment != 'self-hosted'；python/pip 由 _shims 提供"
+    }
+  },
+  "jobs": [
+    {
+      "workflow": ".github/workflows/agent-eval-adversarial.yml",
+      "job": "agent-eval-adversarial",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/agent-eval.yml",
+      "job": "agent-eval",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/ai-agent-tests.yml",
+      "job": "ai-agent-service-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/automerge.yml",
+      "job": "enable-auto-merge",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/automerge.yml",
+      "job": "enable-auto-merge-bot-safe",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/automerge.yml",
+      "job": "detect-dangling-prs",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/bmini-app.yml",
+      "job": "typecheck-and-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/bmini-app.yml",
+      "job": "build",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/bmini-app.yml",
+      "job": "tabbar-geometry",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/bmini-h5-publish.yml",
+      "job": "publish",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "`docker build` 发布腿，自托管面无 docker"
+    },
+    {
+      "workflow": ".github/workflows/c-end-h5-publish.yml",
+      "job": "publish",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "发布腿（写线上静态根），自托管面无 docker 且本包只做 PR 面"
+    },
+    {
+      "workflow": ".github/workflows/case-draft.yml",
+      "job": "trigger",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/case-redraft.yml",
+      "job": "trigger",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/close-linked-issues.yml",
+      "job": "close-linked-issues",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/demo-evidence.yml",
+      "job": "admin-web-demo-path",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/demo-evidence.yml",
+      "job": "mini-app-e2e-preflight",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/deploy-admin-api.yml",
+      "job": "build-and-deploy",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "该腿在部署机上跑 `docker build`，而自托管面**没有 docker**（本机实测）⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/deploy-admin-api.yml",
+      "job": "smoke-test",
+      "runs_on": null,
+      "triggers_on_pull_request": false,
+      "kind": "reusable-workflow-call",
+      "delegates_runs_on_to": "./.github/workflows/smoke-test.yml",
+      "reason": "复用 workflow 调用 job（本 job 无 `runs-on`）⇒ 执行环境由被调用方决定，见被调用文件内同名 job"
+    },
+    {
+      "workflow": ".github/workflows/deploy-ai-agent-service.yml",
+      "job": "build-and-deploy",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "同 deploy-admin-api：docker build 腿，自托管面无 docker"
+    },
+    {
+      "workflow": ".github/workflows/deploy-ai-agent-service.yml",
+      "job": "smoke-test",
+      "runs_on": null,
+      "triggers_on_pull_request": false,
+      "kind": "reusable-workflow-call",
+      "delegates_runs_on_to": "./.github/workflows/smoke-test.yml",
+      "reason": "复用 workflow 调用 job（本 job 无 `runs-on`）⇒ 执行环境由被调用方决定，见被调用文件内同名 job"
+    },
+    {
+      "workflow": ".github/workflows/deploy-frontend.yml",
+      "job": "build-and-deploy",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "docker build 腿，自托管面无 docker"
+    },
+    {
+      "workflow": ".github/workflows/deploy-frontend.yml",
+      "job": "post-deploy-probe",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "与同一 workflow 的构建腿同批（部署面），自托管面无 docker"
+    },
+    {
+      "workflow": ".github/workflows/deploy-prod.yml",
+      "job": "deploy-prod",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "docker build 腿，自托管面无 docker"
+    },
+    {
+      "workflow": ".github/workflows/deploy-reconcile.yml",
+      "job": "reconcile",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包，零共享写路径）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/drift-audit.yml",
+      "job": "audit",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/e2e-real.yml",
+      "job": "e2e-real",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/fixture-record.yml",
+      "job": "re-record",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/flaky-ledger-reconcile.yml",
+      "job": "reconcile",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/flaky-triage.yml",
+      "job": "triage",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/h5-freshness-guard.yml",
+      "job": "h5-freshness",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/issue-contract-check.yml",
+      "job": "check-contract",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/llm-thinking-probe.yml",
+      "job": "probe",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/main-freshness-guard.yml",
+      "job": "freshness",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/mechanism-liveness.yml",
+      "job": "registry",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/mechanism-liveness.yml",
+      "job": "watchdog",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/mini-app.yml",
+      "job": "typecheck-and-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/mini-app.yml",
+      "job": "xiaobu-h5-visual",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/nightly-verification.yml",
+      "job": "smoke-p1",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/nightly-verification.yml",
+      "job": "e2e-fixture-full",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/post-deploy-eval.yml",
+      "job": "eval",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/post-deploy-eval.yml",
+      "job": "report",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/post-merge-verify.yml",
+      "job": "verify",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "pr-triggered-not-migrated_this_round",
+      "reason": "🔴 **本包唯一一条未迁的 PR 触发腿**：`on: pull_request` 且**不做 docker 构建** —— 命中本包迁移判据，但**不在**本包指令点名的六条 workflow 内（指令边界）⇒ 如实登记为缺口，**不写成「有意保留」**。判据 = 本表 + tests/unit_ci_workflows/test_runner_plane_ledger.py::test_no_unregistered_pr_triggered_github_hosted_leg_goes_unnoticed（未登记即红）"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "block-env-files",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "admin-api-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "ci-workflow-tests",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "admin-web-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "e2e-quality-gate",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "ui-regression-check",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "case-coverage-gate",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "qa-growth-gate",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "case-truth-check",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "case-trust-gate",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "llm-sink-ledger",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "gitleaks-scan",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "danger-scan",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "label-needs-changes",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-check.yml",
+      "job": "clear-needs-changes",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/pr-issue-link.yml",
+      "job": "issue-link-check",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": true,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/redproof-sweep.yml",
+      "job": "sweep-live",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/release.yml",
+      "job": "release",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/smoke-test.yml",
+      "job": "smoke-test",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/stale-report-reaper.yml",
+      "job": "reap-stale-reports",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "held_by_other_package",
+      "reason": "冻结清单点名（另一个在飞的包）——本包有意不碰"
+    },
+    {
+      "workflow": ".github/workflows/stale.yml",
+      "job": "stale",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/verify-trigger.yml",
+      "job": "trigger",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "not_migrated_this_round",
+      "reason": "本包未纳入（本包只迁 pr-check / ai-agent-tests / mini-app / bmini-app / worker-h5-tests / demo-evidence 六条 PR 面验证腿）；**这不是「已验证可留在托管侧」**，仅登记现状"
+    },
+    {
+      "workflow": ".github/workflows/worker-h5-publish.yml",
+      "job": "publish",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "docker-build-leg",
+      "reason": "发布腿（写线上静态根），自托管面无 docker 且本包只做 PR 面"
+    },
+    {
+      "workflow": ".github/workflows/worker-h5-tests.yml",
+      "job": "worker-h5-test",
+      "runs_on": [
+        "self-hosted",
+        "migao-mac"
+      ],
+      "triggers_on_pull_request": true,
+      "kind": "self-hosted",
+      "reason": "本包迁入（issue #5814）；环境真值 = scripts/setup-self-hosted-runner.sh，环境假设判据 = tests/unit_ci_workflows/test_runner_plane_ledger.py"
+    },
+    {
+      "workflow": ".github/workflows/xiaobu-acceptance.yml",
+      "job": "shards",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    },
+    {
+      "workflow": ".github/workflows/xiaobu-acceptance.yml",
+      "job": "xiaobu-acceptance",
+      "runs_on": "ubuntu-latest",
+      "triggers_on_pull_request": false,
+      "kind": "llm-eval-leg",
+      "reason": "真实 LLM 评测腿：PR 面已按用户裁定不自动跑（#4262），权威执行点是本机手动档 ⇒ 有意留在托管侧"
+    }
+  ],
+  "coverage_boundary": [
+    "本表是**纯静态**的：只判 `.github/workflows/*.yml` 的 `runs-on` 取值与 `on.pull_request` 触发面，**不判**该 job 在自托管上是否真能跑绿（那是运行期事实）。",
+    "「已登记为 self-hosted」≠「已验证跑绿」：本包只对**改动的 workflow 语法**与**环境假设**（setup-python 跳过条件）落判据；逐条腿的真跑读数由 PR 上的 CI 结果承担。",
+    "`on.pull_request` 的有无**不构成**「这条腿会不会被上报」的判据：带 `paths:` 过滤的 workflow（worker-h5-tests / demo-evidence）仍可能在某些 PR 上完全不触发 —— 这是**既有**语义，本表不改也不判。",
+    "自托管 runner 的**可用性**（机器睡眠 / 关机 / 掉线 ⇒ required 腿 `BLOCKED`）在判据面之外：没有任何静态判据能变红。",
+    "「哪些 github-hosted 条目**有意**如此」只对逐条写了 reason 的那批（`held_by_other_package` / `docker-build-leg` / `llm-eval-leg`）成立；`not_migrated_this_round` 那一批**只是现状登记**，不为它们留在托管侧的安全性背书。",
+    "本表冻结的是「取值」，不是「job 名」：重命名 job 会让 `(workflow, job)` 键对不上 ⇒ 判红（这是有意的，改名要同步改本表）。",
+    "**缺口（如实登记，不粉饰）**：`.github/workflows/post-merge-verify.yml::verify` 是 `on.pull_request` 触发且不做 docker 构建的腿 ⇒ 按本包判据它**应该**迁；它没迁的唯一理由是「不在本包指令点名的六条 workflow 内」。它**不构成**一个未登记项（本表已登记为 `pr-triggered-not-migrated_this_round` 并由判据显式点名），但它是真实剩余面 ⇒ 由集成侧裁定是否另开一包或并入本包。"
+  ],
+  "frozen_note": "`jobs` 是**冻结快照**：判据禁止「静默删除」——删条目 / 加未登记条目 / 改 `runs_on` 三者**各自判红**（未登记即红）。真要把某条腿迁回托管侧或迁进自托管，须同批改本表 + PR body 写明理由。"
+}

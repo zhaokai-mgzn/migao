@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（48 case）
+## 杂项域（49 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3477,6 +3477,21 @@
 跳过: [backend-contract] CI shell 的结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 22（pipe_rc_problems）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-28 新增（用户逐字「做完你的下一步建议的3点就收尾」；现场见 data_checks 第 4 条）：先把射程量出来（宽口径 32 块 / 47 行；窄口径 2 块，且两块都是刻意的管道末端判定）⇒ 判据取窄口径 + 豁免表只许缩短，避免把存量 32 块一次性拉成假红。 ｜ tags: ci, shell, exit-code, red-proof, ledger
+
+### MC-049. PR 面验证腿的执行面登记：`runs-on` 取值逐条登记（未登记 / 漂移 / 删条目各自判红），自托管侧 setup-python 跳过条件在位，runner 环境由仓库内脚本可复原 🔵
+```
+你: 某条 PR 验证腿被悄悄改回 GitHub 托管、或新增一条用了没人审过的 runner 的 job、或把已迁的腿删掉只剩一条指向空气的登记、或把自托管侧那条 setup-python 的跳过条件摘掉时，都必须有东西具名报出；而只改注释时不得报红
+期望: direct_reply
+数据: **登记表只许按登记语义改**（`tests/unit_ci_workflows/runner_plane_ledger.json`）：每个 job 的 `runs-on` **逐值**等于登记值；**未登记即红**（新增/改名的 job 必须同步登记）· **删条目即红**（现取里有、登记里没有）· **登记了不存在的 job 即红**（指向空气）。三种坏形态都只判红、不自动改写
+数据: **自托管侧的环境假设必须成立**：凡 `runs-on == [self-hosted, migao-mac]` 且用到 `actions/setup-python@v7` 的 job，该步**必须**带 `if: ... runner.environment != 'self-hosted'` —— 本机实测该 action 在非 `/Users/runner` 主机上必然失败（macOS 预编译产物把 `/Users/runner` 烤死、`/Users` 归 root），删掉这个条件 = 自托管侧必红。红证 = 内存把某条自托管 job 的该步 `if` 置空 ⇒ 报「缺自托管跳过条件」
+数据: **留在托管侧的腿不许靠缺省静默兜底**：`github-hosted` 类条目必须有非空 `reason`；复用 workflow 调用 job（无 `runs-on`）必须有 `delegates_runs_on_to`；**PR 触发 + 留在托管侧**的腿必须具名归类（`docker-build-leg` / `held_by_other_package` / `llm-eval-leg` / `not_migrated_this_round` / `pr-triggered-not-migrated_this_round`），宽松缺省即红
+数据: **缺口不粉饰**：本包唯一一条「命中迁移判据（`on.pull_request` 且不做 docker 构建）但不在本包指令边界内、因而未迁」的腿必须以 `pr-triggered-not-migrated_this_round` **显式点名**；该条目一条都没有 ⇒ 红（要么真补上了、要么被写成「有意保留」—— 两者都要同批改登记表与判据）
+数据: **runner 环境可复原**：`scripts/setup-self-hosted-runner.sh` 必须在位且仍提供 `_shims` / `.env` 的 `GIT_ALTERNATE_OBJECT_DIRECTORIES` / 只读自检档（`--check`）；其 `RUNNER_LABELS` 默认值必须与 workflow 侧 `runs-on` 的自托管标签**同源**（两边各写一份就判红）
+数据: **fail-closed**：登记表 `jobs` 为空 / 语料为空 ⇒ **非空违规**（不许「没东西可判 ⇒ 绿」）；台账本身缺 `coverage_boundary` / `frozen_note` / `measured.recompute` ⇒ 红（判据不得是「指向空气的判据」）。对照读数：只改注释 ⇒ 不红
+数据: **明确的边界（不判，不要读成覆盖面更大）**：① 该腿在自托管上**是否真能跑绿**是运行期事实；② 自托管 runner 的**可用性**（机器睡眠 / 关机 ⇒ required 腿 `BLOCKED`）没有任何静态判据能变红；③ `on.pull_request.paths:` 造成的「某些 PR 上根本不触发」是**既有**语义、本表不改；④ `not_migrated_this_round` 那批留在托管侧的**安全性**未被背书 —— 逐条登记在登记表 `coverage_boundary`
+跳过: [backend-contract] CI 执行面的静态判据（纯 YAML + JSON 解析，零网络、零 `gh`、零时钟）由 tests/unit_ci_workflows/test_runner_plane_ledger.py 的 12 条离线判据验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-30 新增（issue #5814；用户裁定 B2「仓库转 private + 全量自托管」，顺序「runner 先就位 → 迁腿 → 最后转 private」，本包只做迁腿）：PR 面验证腿从 GitHub 托管迁到自托管 runner（`runs-on: [self-hosted, migao-mac]`，注册名 `migao-mac-m1`）。配套三件：① 执行面登记表 runner_plane_ledger.json（68 个 job 逐条登记 kind + reason，`github-hosted` 那批**逐条**给理由 —— docker 构建腿 / 冻结清单点名的其它在飞包 / LLM 评测腿 / 本轮未纳入）；② runner 环境可复现脚本 scripts/setup-self-hosted-runner.sh（原先只存在于 `~/` 与 issue 评论里 ⇒ 铁律 12(c)③ 形态），带只读 `--check` 自检档；③ 本判据（12 条，含 6 条注入式红证 + 只改注释对照）。取号 MC-049：现取 main 的 misc.yml `- id:` 差集为空（MC-001~MC-048 连续无缺），且**逐 ref 全量扫** main + 全部本地/远端分支的 misc.yml **0 命中 MC-049**（在飞撞号拦不住，故按 MC-048 的取证法自查）。 ｜ tags: ci, runner-plane, self-hosted, ledger, drift, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -8199,8 +8214,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：578（活跃 126，跳过 452）
-- tier 分布：smoke 12 / normal 533 / adversarial 31
+- 用例总数：579（活跃 126，跳过 453）
+- tier 分布：smoke 12 / normal 534 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8215,7 +8230,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：48
+- 杂项域：49
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：51
@@ -8290,6 +8305,7 @@
 - MC-048: 真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备
 - MC-046: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
 - MC-042: 控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」
+- MC-049: PR 面验证腿的执行面登记：`runs-on` 取值逐条登记（未登记 / 漂移 / 删条目各自判红），自托管侧 setup-python 跳过条件在位，runner 环境由仓库内脚本可复原
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

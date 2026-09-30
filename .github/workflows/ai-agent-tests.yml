@@ -1,5 +1,14 @@
 name: AI Agent Service Unit Tests
 
+# ── 执行环境（issue #5814，2026-09-30）────────────────────────────────────────────
+# 本 workflow 的 job 跑在**自托管 runner**（`runs-on: [self-hosted, migao-mac]`，
+# 注册名 `migao-mac-m1` / 标签 `self-hosted, macOS, ARM64, migao-mac`）。
+# 迁移面登记表 = `tests/unit_ci_workflows/runner_plane_ledger.json`，
+# 判据 = `tests/unit_ci_workflows/test_runner_plane_ledger.py`（未登记 / 漂移即红）。
+# 环境可复现脚本 = `scripts/setup-self-hosted-runner.sh`（幂等、不打印任何密钥）。
+# 🔴 本机睡眠 / 关机 / 重启期间这条腿**不会有人来报状态** ⇒ PR 会卡在 `BLOCKED`
+#   （"Expected — waiting for status to be reported"）。回退与重启条件见 PR body。
+
 on:
   pull_request:
     branches: [main]
@@ -25,7 +34,7 @@ jobs:
   # 跳过空跑，省 CI 队列与时长（与 pr-check 的 agent-eval-smoke 同款 bash 检测）。
   ai-agent-service-test:
     name: ai-agent-service unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -63,8 +72,12 @@ jobs:
             echo "⏭️ 无 ai-agent 相关变更（前端/Java/依赖清单类 PR），跳过单测空跑"
           fi
 
+      # ⚠️ 自托管侧**必须跳过**：setup-python 的 macOS 预编译产物把 `/Users/runner` 烤死在
+      # 解包路径里（mkdir: /Users/runner: Permission denied），非该用户的主机上必然失败。
+      # 托管侧（`runner.environment != 'self-hosted'`）**一字不改**；自托管侧 python/pip
+      # 由 runner 的 PATH shim 提供（判据 = scripts/setup-self-hosted-runner.sh ⋅ _shims）。
       - name: Set up Python 3.11
-        if: steps.detect.outputs.run_tests == 'true'
+        if: steps.detect.outputs.run_tests == 'true' && runner.environment != 'self-hosted'
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'

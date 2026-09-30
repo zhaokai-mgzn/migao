@@ -4727,6 +4727,24 @@ _CASE_MC_042 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-049 [NORMAL] PR 面验证腿的执行面登记：`runs-on` 取值逐条登记（未登记 / 漂移 / 删条目各自判红），自托管侧 setup-python 跳过条件在位，runner 环境由仓库内脚本可复原（源: cases/misc.yml）──
+_CASE_MC_049 = EvalCase(
+    id='MC-049',
+    legacy_id='',
+    title='PR 面验证腿的执行面登记：`runs-on` 取值逐条登记（未登记 / 漂移 / 删条目各自判红），自托管侧 setup-python 跳过条件在位，runner 环境由仓库内脚本可复原',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['某条 PR 验证腿被悄悄改回 GitHub 托管、或新增一条用了没人审过的 runner 的 job、或把已迁的腿删掉只剩一条指向空气的登记、或把自托管侧那条 setup-python 的跳过条件摘掉时，都必须有东西具名报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**登记表只许按登记语义改**（`tests/unit_ci_workflows/runner_plane_ledger.json`）：每个 job 的 `runs-on` **逐值**等于登记值；**未登记即红**（新增/改名的 job 必须同步登记）· **删条目即红**（现取里有、登记里没有）· **登记了不存在的 job 即红**（指向空气）。三种坏形态都只判红、不自动改写', "**自托管侧的环境假设必须成立**：凡 `runs-on == [self-hosted, migao-mac]` 且用到 `actions/setup-python@v7` 的 job，该步**必须**带 `if: ... runner.environment != 'self-hosted'` —— 本机实测该 action 在非 `/Users/runner` 主机上必然失败（macOS 预编译产物把 `/Users/runner` 烤死、`/Users` 归 root），删掉这个条件 = 自托管侧必红。红证 = 内存把某条自托管 job 的该步 `if` 置空 ⇒ 报「缺自托管跳过条件」", '**留在托管侧的腿不许靠缺省静默兜底**：`github-hosted` 类条目必须有非空 `reason`；复用 workflow 调用 job（无 `runs-on`）必须有 `delegates_runs_on_to`；**PR 触发 + 留在托管侧**的腿必须具名归类（`docker-build-leg` / `held_by_other_package` / `llm-eval-leg` / `not_migrated_this_round` / `pr-triggered-not-migrated_this_round`），宽松缺省即红', '**缺口不粉饰**：本包唯一一条「命中迁移判据（`on.pull_request` 且不做 docker 构建）但不在本包指令边界内、因而未迁」的腿必须以 `pr-triggered-not-migrated_this_round` **显式点名**；该条目一条都没有 ⇒ 红（要么真补上了、要么被写成「有意保留」—— 两者都要同批改登记表与判据）', '**runner 环境可复原**：`scripts/setup-self-hosted-runner.sh` 必须在位且仍提供 `_shims` / `.env` 的 `GIT_ALTERNATE_OBJECT_DIRECTORIES` / 只读自检档（`--check`）；其 `RUNNER_LABELS` 默认值必须与 workflow 侧 `runs-on` 的自托管标签**同源**（两边各写一份就判红）', '**fail-closed**：登记表 `jobs` 为空 / 语料为空 ⇒ **非空违规**（不许「没东西可判 ⇒ 绿」）；台账本身缺 `coverage_boundary` / `frozen_note` / `measured.recompute` ⇒ 红（判据不得是「指向空气的判据」）。对照读数：只改注释 ⇒ 不红', '**明确的边界（不判，不要读成覆盖面更大）**：① 该腿在自托管上**是否真能跑绿**是运行期事实；② 自托管 runner 的**可用性**（机器睡眠 / 关机 ⇒ required 腿 `BLOCKED`）没有任何静态判据能变红；③ `on.pull_request.paths:` 造成的「某些 PR 上根本不触发」是**既有**语义、本表不改；④ `not_migrated_this_round` 那批留在托管侧的**安全性**未被背书 —— 逐条登记在登记表 `coverage_boundary`'],
+    skip_reason='[backend-contract] CI 执行面的静态判据（纯 YAML + JSON 解析，零网络、零 `gh`、零时钟）由 tests/unit_ci_workflows/test_runner_plane_ledger.py 的 12 条离线判据验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'runner-plane', 'self-hosted', 'ledger', 'drift', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11122,6 +11140,7 @@ ALL_CASES = (
     _CASE_MC_048,
     _CASE_MC_046,
     _CASE_MC_042,
+    _CASE_MC_049,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

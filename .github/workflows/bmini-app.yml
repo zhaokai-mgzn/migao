@@ -1,4 +1,13 @@
 name: Bmini-App CI
+
+# ── 执行环境（issue #5814，2026-09-30）────────────────────────────────────────────
+# 本 workflow 的 job 跑在**自托管 runner**（`runs-on: [self-hosted, migao-mac]`，
+# 注册名 `migao-mac-m1` / 标签 `self-hosted, macOS, ARM64, migao-mac`）。
+# 迁移面登记表 = `tests/unit_ci_workflows/runner_plane_ledger.json`，
+# 判据 = `tests/unit_ci_workflows/test_runner_plane_ledger.py`（未登记 / 漂移即红）。
+# 环境可复现脚本 = `scripts/setup-self-hosted-runner.sh`（幂等、不打印任何密钥）。
+# 🔴 本机睡眠 / 关机 / 重启期间这条腿**不会有人来报状态** ⇒ PR 会卡在 `BLOCKED`
+#   （"Expected — waiting for status to be reported"）。回退与重启条件见 PR body。
 permissions:
   contents: read
 
@@ -25,7 +34,7 @@ jobs:
   # v1.3 门控：job 保持运行（required check 永不悬空），仅当 bmini-app 相关路径有变更才执行。
   typecheck-and-test:
     name: bmini-app typecheck + unit tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -86,7 +95,7 @@ jobs:
   # ⚠️ 本单**只加构建腿**，不动 required 集合（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
   build:
     name: bmini-app build (h5 + weapp)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -146,7 +155,7 @@ jobs:
   # ⚠️ 只加腿、**不动 required 集合**（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
   tabbar-geometry:
     name: bmini H5 tabBar geometry (e2e)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, migao-mac]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
