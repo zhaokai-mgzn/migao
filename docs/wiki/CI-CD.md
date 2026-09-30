@@ -267,7 +267,8 @@ gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
 | **job 级**硬超时 | 三个 deploy workflow 的 `build-and-deploy`（`timeout-minutes: 45`） | 脚本整体卡死时由 GitHub 终止 run ⇒ run 进终态 ⇒ **锁一定释放** |
 | 失败**不留坏状态** | `swas-deploy-ci.sh` | 失败**自动重试 1 次** → 仍失败**回滚到 `.last-good-tag`（上一个可用镜像）** → 回滚也不行 ⇒ `::error::` 显式告警 |
 | 严格蓝绿（**内层**兜底） | `deploy/swas/deploy.sh`（#4785） | 新容器先起 → 健康检查通过 → **才**切流量；不通过 ⇒ **旧容器一动不动**（**失败窗口 = 0**）⇒ 坏镜像**永远碰不到**旧容器（外层回滚仍保留，见下） |
-| 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的部署**已失败过** ⇒ 不再自动补部署（防止反复重试坏 commit、覆盖手工回滚）；fail-open |
+| 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的**最新一条** run 只有结论落在**允许名单**（`success` / `skipped` / `neutral` / 空）才继续补部署；**其余一切结论**（`failure` / `cancelled` / `timed_out` / `startup_failure` / `action_required` / `stale` / 将来新增的）一律跳闸（防反复重试坏 commit、覆盖手工回滚）；同 sha 的 run **还在跑/排队** ⇒ 也跳过（重复 dispatch 是纯 churn）。**fail-open**：查询失败 / 无同 sha 记录 ⇒ 照旧补部署；跳闸时**显式**打印人工出口 `gh workflow run <wf> --ref main` |
+| 推送**显式上界 + 一次重试**（#5814） | 三个 deploy workflow 的 `Build and push Docker image` / `Build and push` | 单次构建/推送挂 `timeout`（`PUSH_TIMEOUT_SECS`，默认 720s）⇒ 超时/失败**重试 1 次**（最坏 2×720s = 24min，**明显小于**上面那条 job 级 45min）；两次都不成 ⇒ `::error::` **点名卡在「推送到 ACR」** 后非零退出（不再留下「40 分钟零输出 + 一个 cancelled」这种不可归因的形态）。⚠️ 三条部署腿的 `Skip if already built (schedule reconcile)` 也加了同一道闸门 ⇒ 挂死的 commit **不会被自己的 cron 反复重试** |
 
 ### 严格蓝绿（issue #4785）：新容器先起 → 健康检查通过 → 再切流量
 

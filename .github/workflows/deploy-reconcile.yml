@@ -37,12 +37,22 @@
 #      无改动 ⇒ HEAD 的代码状态与线上已部署的一致 ⇒ 不补 ⇒ docs/ci/case 提交不会空转。
 #   ④ 每个分支的**判定依据**都 echo + 落 `$GITHUB_STEP_SUMMARY`，末尾给结论行 +
 #      `::notice::`/`::warning::` ⇒ 不再出现「success 但看不出它为什么没动」。
-# 断路器（issue #4767 ③）**语义逐字保留**：同一 `headSha == main HEAD` 最近一次结论为
-# `failure` ⇒ 跳过；**fail-open**（查询失败 / 无记录 / 结论非 failure，含 cancelled）
-# ⇒ 照旧补部署。
+# 断路器（issue #4767 ③；**判定形态由 #5814 B 扩充**）：同一 `headSha == main HEAD` 的**最新一条**
+# run，只有结论落在**允许名单**（`success` / `skipped` / `neutral` / 空）才继续补部署；
+# **其余一切结论**（`failure` / `cancelled` / `timed_out` / `startup_failure` / `action_required` /
+# `stale` / GitHub 将来新增的任何一种）**一律跳闸**。**另**：同 sha 的 run **还没跑完**
+# （`status != completed`）⇒ 也跳过（重复 dispatch 是纯 churn）。
+# 🔴 **为什么从「只认 failure」改成允许名单（#5814 的实测）**：被 `timeout-minutes: 45` 打死的
+# run 报的是 **cancelled**（**不是** failure）⇒ 旧断路器不跳闸 ⇒ 本对账每 20min 对同一个挂死的
+# commit 再补一次 ⇒ 又一个 run 挂 40min ⇒ **无限循环**（三条部署腿各自的 `on.schedule` 也在
+# 独立重试同一个 commit）。黑名单形态（把 `cancelled` 加进去）在 GitHub 新增一种结论时会
+# **静默退回 fail-open** = 本 bug 原样复发；允许名单让新结论**默认跳闸**（fail-closed）。
+# **fail-open 保留**（#4767 的承重语义，一字未动）：查询失败 / 无同 sha 记录 ⇒ 不在任何跳闸
+# 分支里 ⇒ **照旧补部署** —— 本检查自己出错绝不停掉对账。
+# 人工出口：跳闸时**显式**打印 `gh workflow run <wf> --ref main`（stdout + `$GITHUB_STEP_SUMMARY`）。
 # 已知 residual（如实登记，不粉饰）：若 C 的部署**已 failure**、其后又有 docs 提交 H，
-# 断路器按 `headSha == H` 查不到记录 ⇒ 会把含 C 的 HEAD 再部署一次。本次**不扩断路器**
-# （扩它=改 #4767 语义）；「回滚点被覆盖」的风险另由 #4808 治。
+# 断路器按 `headSha == H` 查不到记录 ⇒ 会把含 C 的 HEAD 再部署一次。
+# ⚠️ 本单（#5814）**不扩**这一条：「回滚点被覆盖」的风险另由 #4808 治。
 #
 # 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发（已失效）
 # 与 schedule 对账保留不动。
@@ -135,7 +145,7 @@ jobs:
           reconcile_one() {
             local svc="$1" wf="$2" svc_path="$3" extra="$4"
             local image="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
-            local runs last p drift reason
+            local runs last_conclusion last_status p drift reason
             local -a pathspec
             # ── 判据 ③（前置，最先判）：目标 workflow 必须**已在 default branch 上** ──
             # 为什么需要（**实测**，issue #5668 的 PR 首轮）：**新增一条腿的那个 PR 里**，被对账的
@@ -150,19 +160,57 @@ jobs:
               NOTARGET=$((NOTARGET + 1))
               return 0
             fi
-            # ── 断路器（issue #4767 ③，语义逐字保留）：这个 commit 的部署**已经失败过** ⇒ 不再自动补部署 ──
-            # 反复重试同一个坏 commit 会把「已回滚到上一个可用镜像」的环境**再打挂一次**。
-            # **fail-open**：查询失败 / 无记录 / 结论不是 failure（含 in_progress、cancelled）⇒
-            # 一律照旧补部署 —— 本检查自己出错**绝不**停掉对账。
+            # ── 取「同 sha 的最新一条 run」（承重读数，B 的两条判据都用它）──────────────
+            # 取 `[0]`（`gh run list` 是**倒序**，`[0]` = 最新的一条）**同时**读出 conclusion 与
+            # status：conclusion 为空 = 该 run 还没跑完（GitHub 只在 completed 时给 conclusion）。
+            # 用**一次** jq 调用同时取两个字段（拆成两次解析会读到不一致的快照）。
+            # **fail-open**：`gh` 查询失败 / 无记录 ⇒ `runs=[]` ⇒ 两个变量都为空 ⇒ 不落进
+            # 下面任何跳闸分支 ⇒ 照旧补部署（本检查自己出错绝不停掉对账）。
             runs=$(gh run list --workflow "$wf" --branch main --limit 30 \
-                     --json headSha,conclusion 2>/dev/null || echo "[]")
-            last=$(printf '%s' "$runs" | jq -r --arg s "$HEAD_SHA" \
-                     '[.[] | select(.headSha == $s)][0].conclusion // ""' 2>/dev/null || echo "")
-            if [ "$last" = "failure" ]; then
-              echo "⛔ ${svc}：main HEAD ${HEAD7} 的部署**已失败过**（conclusion=failure）——跳过自动补部署。"
-              echo "   理由：自动重试同一个坏 commit 会覆盖手工回滚（issue #4767 ③）。人工确认后重跑："
-              echo "   gh workflow run ${wf} --ref main"
-              echo "| ${svc} | ⛔ 断路器：\`${HEAD7}\` 的部署已 failure（conclusion=failure） | **不补部署**（fail-open；人工确认后重跑） |" >> "$SUMMARY"
+                     --json headSha,conclusion,status 2>/dev/null || echo "[]")
+            last_pair=$(printf '%s' "$runs" | jq -r --arg s "$HEAD_SHA" \
+                     '[.[] | select(.headSha == $s)][0] | "\(.conclusion // "")|\(.status // "")"' 2>/dev/null || echo "")
+            last_conclusion="${last_pair%%|*}"
+            last_status="${last_pair##*|}"
+            # ── 同 commit 的 run 还没跑完 ⇒ 跳过（纯 churn，issue #5814 B）──────────────
+            # 重复 dispatch 只会排在 concurrency 组里白等（`cancel-in-progress: false`）⇒
+            # 它是**纯 churn**：事故里 job 排队 30~42min（正常 0.1min）。
+            # `status != completed` 覆盖 queued / in_progress / waiting / requested / pending。
+            # 取 `[0]`（= 列表中**最新**的一条，`gh run list` 是倒序）而不是第一条匹配 —— 否则
+            # 一个**还在跑**的新 run 会被一条更老的终态记录遮住，本判据就永远不生效。
+            if [ -n "$last_status" ] && [ "$last_status" != "completed" ]; then
+              echo "⏸️ ${svc}：${HEAD7} 已有同 commit 的 run 在跑/排队（status=${last_status}）——本轮不补部署。"
+              echo "   理由：重复 dispatch 是纯 churn（`concurrency: cancel-in-progress: false` 会让它白等），"
+              echo "   且会与本腿的 cron 互相放大（issue #5814）。等那个 run 出终态后下一轮会自然复核。"
+              echo "| ${svc} | ⏸️ 同 commit 的 run 仍在跑/排队（\`status=${last_status}\`） | **不补部署**（避免重复 dispatch churn） |" >> "$SUMMARY"
+              SKIPPED=$((SKIPPED + 1))
+              return 0
+            fi
+            # ── 断路器（issue #4767 ③，本单按 #5814 B 把判定扩成「允许名单」）──────────────
+            # 这个 commit 的部署只要落进了**不可恢复的终态**，就不再自动补部署。
+            # 反复重试同一个坏 commit 不仅无用，还会把「已回滚到上一个可用镜像」的环境**再打挂一次**。
+            # 🔴 **为什么是允许名单（而不是把 cancelled 加进黑名单）**：事故里被
+            # `timeout-minutes: 45` 打死报的是 **cancelled**（不是 failure）⇒ 只认 failure 的
+            # 旧断路器不跳闸 ⇒ 本对账每 20min 再补一次 ⇒ 又一个 run 挂 40min ⇒ **无限循环**
+            # （三条腿各自的 cron 也在独立重试同一个挂死的 commit）。黑名单形态在 GitHub
+            # **将来新增一种结论**时会**静默退回 fail-open** = 本 bug 原样复发；允许名单让
+            # 新结论**默认跳闸**（fail-closed）。
+            # **保留 fail-open**：查询失败（`runs=[]`）/ 无同 sha 记录（`last_conclusion` 为空）
+            # ⇒ 不在任何跳闸分支里 ⇒ 照旧补部署 —— 本检查自己出错**绝不**停掉对账。
+            is_recoverable="true"
+            if [ -n "$last_conclusion" ]; then
+              case "$last_conclusion" in
+                success | skipped | neutral) is_recoverable="true" ;;
+                *) is_recoverable="false" ;;
+              esac
+            fi
+            if [ "$is_recoverable" != "true" ]; then
+              echo "⛔ ${svc}：main HEAD ${HEAD7} 的部署落在**不可恢复的终态**（conclusion=${last_conclusion}）——跳过自动补部署。"
+              echo "   理由：自动重试同一个坏 commit 会覆盖手工回滚（issue #4767 ③），并让本对账与"
+              echo "   部署腿自己的 cron 互相放大成无限循环（issue #5814：超时打死报的是 cancelled，"
+              echo "   旧断路器只认 failure ⇒ 每 20min 再补一次 ⇒ 又一个 run 挂 40min）。"
+              echo "   人工确认（看该 run 的日志）后复跑：gh workflow run ${wf} --ref main"
+              echo "| ${svc} | ⛔ 断路器：\`${HEAD7}\` 的部署落在不可恢复终态（\`conclusion=${last_conclusion}\`） | **不补部署**（人工确认后 \`gh workflow run ${wf} --ref main\`） |" >> "$SUMMARY"
               SKIPPED=$((SKIPPED + 1))
               return 0
             fi
