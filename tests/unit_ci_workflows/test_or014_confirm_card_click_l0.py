@@ -23,7 +23,7 @@
 
 断言（`must_succeed`/`amount_verify`/`precondition`/`pre_clean`）**零改动**，本文件末格锁定。
 
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（`.github/workflows/pr-check.yml`），
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用下方最小替身（与
 `test_eval_auto_respond_l0.py` 同形）。被锁的是纯函数 `resolve_auto_respond` 与
 用例声明本身，不该因缺一个 HTTP 客户端而不可测。

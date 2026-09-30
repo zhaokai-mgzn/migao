@@ -33,7 +33,7 @@
 
 `completion_verdict` / `blocking_groups` / `write_summary_json` 都是**纯函数**
 （吃 results 列表），零 LLM / 零网络（`migao-dev-flow` §16.1：能下层不上层）。
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（`.github/workflows/pr-check.yml`），
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用下方最小替身（与
 `test_eval_summary_attribution.py` 同形）。
 """

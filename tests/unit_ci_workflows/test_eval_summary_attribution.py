@@ -47,7 +47,7 @@
 `local_runner` 的 `run_case` 产出的 `results` 结构就是全部输入契约，
 故用"构造 results → 调写入函数 → 读 JSON"即可完整覆盖（`migao-dev-flow` §16.1：能下层不上层）。
 
-⚠️ 本目录（`tests/unit_ci_workflows`）在 CI 只 `pip install pytest pyyaml`（见
+⚠️ 本目录（`tests/unit_ci_workflows`）在 CI 只 `pip install pytest pytest-xdist pyyaml`（见
 `.github/workflows/pr-check.yml`），而 `local_runner` 有模块级 `import httpx`
 → 见下方 `_load_runner()` 的最小替身（与 `test_eval_runner_same_round_scope.py` 同形）。
 """

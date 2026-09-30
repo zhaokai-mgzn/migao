@@ -49,7 +49,7 @@ job log 的轨迹行对 `processing_item_query` **只打结果摘要**
 的字段增补，外加 `check_arg_values` 消费那批字段），`run_case` 产出的 `results` 结构就是全部输入契约
 （`migao-dev-flow` §16.1：能下层不上层）。**行为复核并入下一次全量档**（issue #3823 收口评论）。
 
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（见 `.github/workflows/pr-check.yml`），而
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（见 `.github/workflows/pr-check.yml`），而
 `local_runner` 有模块级 `import httpx` ⇒ 用下方 `_load_runner()` 的最小替身
 （与 `tests/unit_ci_workflows/test_eval_denial_trace_shape.py` 同形）。
 """

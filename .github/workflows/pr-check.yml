@@ -226,8 +226,23 @@ jobs:
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
           MIGAO_REQUIRE_REALDB: "1"
         run: |
-          pip install -q pytest pyyaml
-          python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider
+          pip install -q pytest pytest-xdist pyyaml
+          # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────
+          # 病灶（实测，不是估算）：本 job 是 PR 反馈时长的**唯一关键路径** —— run
+          # `36689037058` 本 job **997s**，其中 `Run ci workflow helper tests` 一步 **989s**，
+          # 而同 run 其余 14 条腿**全部 < 60s**（最长 41s）⇒ PR 反馈 ≈ 该 job 时长。
+          # 该套件是**纯 CPU / 子进程绑定**（281 处 `subprocess.*`、无网络、无 DB 服务），
+          # `-n` 是**唯一不削断言**的提速手段。`-n 4` 对应托管 runner 的 4 vCPU
+          # （`Standard_DS2_v2`）—— 与 `verify-all.sh` 的本地腿**逐字同款**
+          # （同源契约判据 = tests/unit_ci_workflows/test_ci_helper_leg.py）。
+          # 🔴 不许用"少跑"换快：库存 / skip 上限 / 形态三重判定 =
+          # `tests/unit_ci_workflows/test_helper_leg_execution_shape.py` +
+          # `tests/unit_ci_workflows/helper_leg_shape_ledger.json`（消费点 =
+          # `tests/unit_ci_workflows/conftest.py::helper_leg_shape_problems`）。
+          # ⚠️ 真库族在并行下**不需要**跑得更多：各模块的临时集群本来就是每模块独立
+          # （自己的 `sockdir` / `datadir` / `_free_port()`，unix socket 不占 TCP 端口）
+          # ⇒ 并行不改变隔离手段，只改变它们同时存在的数量。
+          python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
 
 
   admin-web-test:

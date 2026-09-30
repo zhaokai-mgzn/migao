@@ -33,7 +33,7 @@ prompt 实际内容逐项比对，不写死任何名字」。本文件把它推�
 
 ## 为什么是**纯静态**（不 import 后端 app 包）
 
-本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pyyaml`
+本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pytest-xdist pyyaml`
 （没有 pydantic/langchain 等后端依赖，见 `tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py`
 的同款说明）。故两侧都由**文本 + AST** 取：prompt 侧读 `.md` 原文，事实侧从**源码字面量**反解
 （`_VALIDATION_RULES` / `CurtainCalcTool.parameters` / 模块级常量）。每个事实源都 **fail-closed**：

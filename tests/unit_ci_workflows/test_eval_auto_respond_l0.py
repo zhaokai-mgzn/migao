@@ -21,7 +21,7 @@
 | ⑤ | `repeat_until` 轮的**载荷饿死**：文字提到"验证码"不得挤掉**可回填的 form 卡**（`#3829` / OR-026） | 恢复旧优先级 ⇒ `test_soft_code_mention_no_longer_starves_fillable_form_card` 得到 `'123456'` ⇒ 红 |
 | ⑥ | **S1 全族**（`repeat_until` 同时声明 `code` + 载荷）的离线重放台账：窗口内必须交付载荷 | 同上 ⇒ 全族 `__FORM__` 命中 0（`0/7,0/8×5`）⇒ 红 |
 | ⑦ | **有卡可答、却无载荷可填**（`#3862`）：本轮 `auto_respond` 只声明了文本而 agent 发了 form/confirm/choice 卡 ⇒ 独立 kind `no_fillable_payload`（**不许静默降级**）；另加**类级元守卫**：`resolve_auto_respond` 里每个 `return fallback` 出口都必须标记 | 删掉任一签名出口 ⇒ `test_no_payload_form_card_is_signed_not_silent` 得到 `'确认下单'` ⇒ 红；抹掉任一 `# SILENT-OK:` 标记 ⇒ `test_every_card_branch_fallback_exit_is_marked` ⇒ 红 |
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（`.github/workflows/pr-check.yml`），
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用下方最小替身（与
 `test_eval_summary_attribution.py` / `test_eval_runner_same_round_scope.py` 同形）。
 被锁的是**纯函数**（`resolve_auto_respond` / `resolve_repeat_turn` / `payload_window_audit`

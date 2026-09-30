@@ -18,7 +18,7 @@
 
 ## 判据为什么是**纯静态 AST**（不 import 后端 app 包）
 
-本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pyyaml`
+本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pytest-xdist pyyaml`
 （见 `.github/workflows/pr-check.yml`）—— **没有** pydantic/langchain 等后端依赖。
 故注册表真值由 AST 从
 `backend/ai-agent-service/app/tools/registry.py::create_default_registry()` 反解：

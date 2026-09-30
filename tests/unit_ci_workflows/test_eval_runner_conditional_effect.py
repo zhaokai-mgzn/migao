@@ -29,7 +29,7 @@
 喂给 runner 的同一批断言函数 ⇒ 证明「用例里写的」与「运行期判的」是同一件事
 （不是两套各自漂移的口径）。
 
-⚠️ 本目录跑在 CI 的 `ci workflow helper unit tests` job（只 `pip install pytest pyyaml`），
+⚠️ 本目录跑在 CI 的 `ci workflow helper unit tests` job（只 `pip install pytest pytest-xdist pyyaml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 见下方 `_load_runner()` 的最小替身。
 """
 import sys
