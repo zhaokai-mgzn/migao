@@ -392,10 +392,12 @@ describe('#5202 推导方案（`data.plan`）的**展示**口径 —— 前端�
   })
 
   it('推导依据文案：引擎 reason 里的候选键（英文）⇒ 与候选清单**同一份**中文名（2026-09-30 用户逐字「用中文术语，不要用英文」）', () => {
-    // 引擎产出的原样文案（`curtain_calc.derive_plan()`：键名冻结、只做展示转换）
+    // 引擎产出的原样文案（`curtain_calc.derive_plan()`：键名冻结、只做展示转换）。
+    // ⚠️ **刻意不复述「选优顺序」那一句**：那是**单一真值源**口径（`docs/design/order-auto-derivation.md`），
+    // 在任何别的文件里逐字复述都会被 `tests/unit_ci_workflows/test_craft_calc_ranking_order_single_source.py`
+    // 判红（该守卫扫全仓的「顺序表述」）。本条只关心**候选键 → 中文名**这一段。
     const raw =
-      '自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：' +
-      '选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做'
+      '自动推导：选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做'
     const text = craftPlanReasonText(raw)
     expect(text).toContain('选定 定高买宽 ——')
     expect(text).not.toContain('fixed_height')

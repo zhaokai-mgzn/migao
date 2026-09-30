@@ -559,7 +559,9 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
   })
 
   it('判据 17（2026-09-30 第四批）：推导依据**用中文术语**（引擎文案里的候选键不裸露英文）', async () => {
-    // 引擎 `derive_plan()` 的原样文案（键名冻结于契约 #5200 §三，展示层换中文）
+    // 引擎 `derive_plan()` 的原样文案（键名冻结于契约 #5200 §三，展示层换中文）。
+    // ⚠️ **刻意不复述「选优顺序」那一句**（单一真值源在 `docs/design/order-auto-derivation.md`）——
+    // 逐字复述会被 `tests/unit_ci_workflows/test_craft_calc_ranking_order_single_source.py` 判红。
     mockCraftCalcPreview.mockResolvedValue({
       data: {
         data: {
@@ -567,8 +569,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
           plan: {
             ...CALC_OK.data.data.plan,
             reason:
-              '自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：' +
-              '选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做',
+              '自动推导：选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做',
           },
         },
       },
