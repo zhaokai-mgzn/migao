@@ -63,7 +63,8 @@ RUNNER_NAME="${RUNNER_NAME:-migao-mac-m1}"
 RUNNER_LABELS="${RUNNER_LABELS:-migao-mac}"          # runner 侧附加标签（workflow 侧另写 self-hosted）
 RUNNER_VERSION="${RUNNER_VERSION:-2.337.0}"          # 按需升级：gh api repos/actions/runner/releases/latest
 MIRROR_REPO="${MIRROR_REPO:-$HOME/ai native/migao}"  # 本机已有克隆 ⇒ 预置工作区 + alternates 的来源
-TOOL_CACHE="${TOOL_CACHE:-$RUNNER_DIR/_tool}"        # actions/setup-node 等的工具缓存
+TOOL_CACHE="${TOOL_CACHE:-$RUNNER_DIR/_work/_tool}"  # 实测落点 = `_work/_tool`（runner 默认的
+                                                     # RUNNER_TOOL_CACHE 就在 work 目录下）
 
 HB="${HOMEBREW_PREFIX:-/opt/homebrew}"
 PY_BIN="$HB/opt/python@3.11/bin"
@@ -199,7 +200,9 @@ EOF
   if p="$(workdir_problem "$d")"; then :; else
     prob "预置工作区 $d 不健康：${p}（自愈：$0 --reseed-workdir）"
   fi
-  [ -d "$TOOL_CACHE" ] || prob "缺 tool cache ${TOOL_CACHE}（setup-node 无法命中缓存）"
+  if [ ! -d "${TOOL_CACHE}" ] && [ ! -d "${RUNNER_DIR}/_work/_tool" ]; then
+    prob "缺 tool cache（期望位置之一：${TOOL_CACHE} 或 ${RUNNER_DIR}/_work/_tool）——setup-node 无法命中缓存"
+  fi
 
   if [ "$problems" = "0" ]; then
     ok "自托管 runner 环境自检通过（${RUNNER_DIR}）"
@@ -238,7 +241,7 @@ OS="$(uname -s | tr 'A-Z' 'a-z')"                     # darwin / linux
 ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] && RUNNER_ARCH="arm64" || RUNNER_ARCH="x64"
 
 # 1. 工具缓存目录（setup-node / setup-python 的 `_tool` 落点）
-[ -d "$TOOL_CACHE" ] || { mkdir -p "$TOOL_CACHE"; ok "建 tool cache $TOOL_CACHE"; }
+[ -d "$TOOL_CACHE" ] || { mkdir -p "$TOOL_CACHE"; ok "建 tool cache ${TOOL_CACHE}"; }
 
 # 2. shim：Homebrew 的 python@3.11 只提供 `python3`，而 CI 判据步写的是 `python -m pytest`
 #    ⇒ 补 `python` / `python3` / `pip` 三个**名字**（`.env` 的 PATH 把 `_shims` 排在最前）
