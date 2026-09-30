@@ -4727,6 +4727,24 @@ _CASE_MC_042 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-050 [NORMAL] 本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出（源: cases/misc.yml）──
+_CASE_MC_050 = EvalCase(
+    id='MC-050',
+    legacy_id='',
+    title='本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 CI 的 `-n` 或本地腿的 `-n` 被改（只改一边、或改了没同步台账 `helper_leg_shape_ledger.json`）、台账声明的消费点被删或改名、冻结库存被填成 0、跑整套时本轮收集数低于冻结基线、或 skip 读数偏离冻结值时，都必须有东西具名报出；而只改注释、或跑子集（`pytest tests/unit_ci_workflows/<某个文件>`）时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（台账 ⇄ 两边声明三方一致）**：`.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` job 与 `verify-all.sh` 的 `ci_helper_leg()` 里那条 pytest argv 的 `-n` 取值，必须**都等于**台账 `shape.parallel_workers`（现取，不写死；只改一边 ⇒ 红）', '**判据 2（消费点逐字存在）**：台账 `consumption_marker` == `tests/unit_ci_workflows/conftest.py::CONSUMPTION_MARKER`，且该函数可调用、红证孔 `MIGAO_FAIL_HELPER_LEG_SHAPE` 在 conftest 里真存在（删判定 / 台账变成没人读的表 ⇒ 红）', '**判据 3（冻结库存是实值 + 两态 skip 读数自洽）**：`frozen_inventory.collected_total > 0`，`skipped_reading` 必须同时有 `MIGAO_REQUIRE_REALDB` 与 `default` 两态且都是非负整数，且更严形态（注入标记）的读数 ≤ 本地形态（放宽 / 只给一态 ⇒ 红）', '**判据 4（运行期牙齿，唯一在单进程与 `-n` 下都传得到退出码的通道）**：跑**整套**时本轮 `request.session.testscollected` ≥ 冻结基线、skip 读数 == 该环境冻结读数；**子集运行不判**（否则研发日常的定位运行会假红）；一旦收集面少了一份判据文件就不早退（fail-closed）', '🔴 红证：并行度漂移（CI 侧 / 本地侧各一）/ 库存塌陷（含「塌 10 条」量级）/ skip 变多与变少两个方向 / 台账缺字段 / 消费点对不上 / 缺一态 ⇒ 各能单独变红；对照读数：真语料零问题、跑子集不报。另有一条**端到端**红证：`MIGAO_FAIL_HELPER_LEG_SHAPE=1 python3 -m pytest tests/unit_ci_workflows -q -p no:cacheprovider -n 4` ⇒ 非零退出（读数记在 PR body）'],
+    skip_reason='[backend-contract] CI 执行形态的静态/结构判据（零网络、零时钟、不烧 token）由 tests/unit_ci_workflows/test_helper_leg_execution_shape.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'parallelism', 'xdist', 'execution-shape', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11122,6 +11140,7 @@ ALL_CASES = (
     _CASE_MC_048,
     _CASE_MC_046,
     _CASE_MC_042,
+    _CASE_MC_050,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

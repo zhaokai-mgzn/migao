@@ -45,7 +45,7 @@ failed=role_manage!权限不足,employee_manage!权限不足
 不含任何判定逻辑 —— `run_case` 产出的 `results` 结构就是全部输入契约（`migao-dev-flow` §16.1：
 能下层不上层）。**行为复核并入下一次全量档**（issue #4197 第五节）。
 
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`，而 `local_runner` 有模块级 `import httpx`
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`，而 `local_runner` 有模块级 `import httpx`
 → 用下方 `_load_runner()` 的最小替身（与 `test_eval_runner_readback_scope.py` 同形）。
 """
 import re

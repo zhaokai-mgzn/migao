@@ -1,0 +1,36 @@
+{
+  "schema": "ci-helper-leg-shape/v1",
+  "issue": "#5814",
+  "what": "`tests/unit_ci_workflows/**`（CI job `ci workflow helper unit tests`，required）的**执行形态**登记：并行度（pytest-xdist `-n`）必须与 CI 和本地腿**同时**声明的那一个值一致；「跑起来的判据库存」不得低于冻结基线；skip 读数必须**逐值等于**冻结读数（不许变多，也不许悄悄变少）。",
+  "why": "这条腿是 PR 反馈时长的**唯一关键路径**：2026-09-30 实测 run `36689037058` 该 job **997s**，其中 `Run ci workflow helper tests` 一步 **989s**，而同 run 其余 14 个 job **全部 < 60s**（最长 41s）⇒ PR 反馈 ≈ 该 job 时长。它此前是**单进程**跑整套判据（纯 CPU / 子进程绑定：281 处 `subprocess.*`、无网络、无 DB 服务）⇒ 并行化是唯一不削断言、不减覆盖面的提速手段。",
+  "judged_by": "tests/unit_ci_workflows/test_helper_leg_execution_shape.py",
+  "enforced_by": "tests/unit_ci_workflows/conftest.py::helper_leg_shape_problems（会话收口时的 fail-closed 判定）",
+  "consumption_marker": "helper_leg_shape_problems",
+  "shape": {
+    "parallel_workers": 4,
+    "parallel_flag": "-n",
+    "source": {
+      "ci": ".github/workflows/pr-check.yml",
+      "local": "verify-all.sh"
+    }
+  },
+  "frozen_inventory": {
+    "commit": "56db10be8",
+    "collected_total": 5765,
+    "skipped_reading": {
+      "MIGAO_REQUIRE_REALDB": 1,
+      "default": 1
+    },
+    "measured_at": "2026-09-30T17:12+08",
+    "recompute": "MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -2",
+    "note": "`collected_total` 是判据**库存**（收集面），与负载无关 ⇒ 它是这条腿「有没有悄悄少跑」的机械读数：**只许涨**（新增判据文件必然抬高它；低于它 = 收集面被截断 / worker 崩 / 整批判据消失）。\n`skipped_reading` 按当前环境选键：`MIGAO_REQUIRE_REALDB` 为真（= CI 的形态，见 `tests/unit_ci_workflows/test_realdb_failclosed.py`）⇒ **1**，否则 ⇒ **1**（两条读数本机实测相同：本机有 PG 二进制 ⇒ 真库族两个形态都真跑；那 1 条是本机的 `test_roundtrip_report.py::test_zstd_frame_without_decompressor_is_not_silent`，本机装了 `zstandard` ⇒ 走不到「无解压器」分支，CI 无该模块 ⇒ 那里真跑）。判定要求 skip 读数**逐值相等**：变多 = 静默跳过（真库族退回 skip 一族）；变少 = 有判据没被收集（同上）。\n基线时点 = `56db10be8`（`origin/main`）+ 本 PR 新增的 5 条判据（`test_helper_leg_execution_shape.py`）；改前（不含该文件）实测 **5760**。复算口径里的「+5」就是本 PR 自己的贡献。"
+  },
+  "confidence_boundary": [
+    "只裁**本腿的执行形态**：不判任何一条断言的覆盖面，也不为存量判据的安全性背书。",
+    "`collected_total` / `skipped_reading` 是**冻结读数**（钉在 `frozen_inventory.commit`），**不**绑 `origin/main`（CI 的 pr-check 是 `fetch-depth: 1` ⇒ merge-base 取不到；§18.3 / #4313）。",
+    "并行化带来的**非确定性**（同一份代码两次运行，测试到 worker 的分配可能不同）不在面内：判据只钉「库存 / skip 读数 / 形态」，不钉分配。",
+    "xdist 下**资源竞争**（真库族的临时集群）只判「隔离手段在位」（各模块自己的 `sockdir` / `datadir` / `_free_port()`），不判竞争概率。",
+    "`-n` 的**收益**（墙钟）刻意不进判据：降成本的固化禁挂钟（§23 G6），判据只钉与负载无关的工作量读数。",
+    "fail-closed 的**真值侧**：判定跑在 xdist 的 worker 进程里（控制器按设计不收集用例，读不到库存）⇒ 若某轮**一个 worker 都没启动**，该轮没有任何进程会判红 —— 这种形态由 `pytest` 自身的退出码承接（worker 起不来 = 非零），不在本台账的射程内。"
+  ]
+}

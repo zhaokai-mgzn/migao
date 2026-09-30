@@ -39,7 +39,7 @@
 | ⑦ | **孪生入口**（验收侧 `acceptance_runner.needs_code` 的文字腿）同一语义 | 只修评测侧 ⇒ 红（同一缺陷在姊妹 runner 里复活） |
 | ⑧ | **词表单一归属**：`tests/agent_eval/*.py` 里定义"验证码词表"的文件只能有一个 | 谁再复制一张表 ⇒ 红并指名 |
 
-⚠️ 本目录在 CI 只 `pip install pytest pyyaml`（`.github/workflows/pr-check.yml`），
+⚠️ 本目录在 CI 只 `pip install pytest pytest-xdist pyyaml`（`.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 用与 `test_eval_auto_respond_l0.py` 同形的最小替身。
 被锁的是**纯函数**（`text_requests_code` / `_agent_asked_for_code` / `resolve_repeat_turn`）与
 姊妹 runner 的文字腿，不该因缺一个 HTTP 客户端而不可测。

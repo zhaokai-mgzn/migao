@@ -20,6 +20,7 @@
 """
 import copy
 import hashlib
+import json
 import os
 import pickle
 import sys
@@ -287,3 +288,150 @@ def corpus_loader_uncached():
 
 
 install_corpus_memo()
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 本腿**执行形态**的 fail-closed 判定（issue #5814：并行化不得静默少跑）
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 病灶（并行化最容易出的坏形态）
+#
+# 这条腿从**单进程**改成 `pytest-xdist -n 4` 之后，最危险的坏结果不是"跑得慢"，而是
+# **「变快」其实只是「少跑了」**：worker 崩掉 / 收集面被截断 / 整批判据被静默跳过 —— 三者都只让
+# 墙钟**变小**，而 required 检查照旧**绿**（「没跑」长得像「通过」）。⇒ 判定必须是
+# **与负载无关的工作量读数**，不能是"看了 CI 绿"。
+#
+# ## 判定渠道（2026-09-30 逐条实测；选这个是因为前三条都**不成立**）
+#
+# | 尝试 | 实测结果 |
+# |---|---|
+# | 只 `session.exitstatus = 1` | pytest 仍退出 **0**（xdist 的 `DSession.pytest_sessionfinish` 是 trylast，之后回写它） |
+# | 抛 `pytest.exit.Exception` | 单进程退出 **1**；`-n 4` 下每个 worker 退出 1，**控制器仍退出 0**（控制器只认 `workeroutput["shouldfail"]`，不看 worker 的 exitstatus） |
+# | 在 worker 里设 `session.shouldfail` | 控制器仍退出 **0**（`remote.pytest_sessionfinish` 在本钩子**之前**就把 `workeroutput` 快照发走了） |
+# | **本轮收集到的用例数**（`request.session.testscollected`，评测在**测试体内**） | **单进程与 `-n` 下都拿得到整套库存**（本机实测：子集 14 / 全量 5763，两种形态读数一致） |
+#
+# ⇒ 判据落在**测试体内**（`test_helper_leg_execution_shape.py::test_live_inventory_is_not_below_the_frozen_baseline`）：
+# 测试失败是 pytest 里**唯一**在单进程与 xdist 两种形态下都必定传成非零退出码的通道。
+#
+# ## 只在"**这一轮跑的是整套**"时判库存（否则会把定位用的子集运行判红 = 假红）
+#
+# `pytest tests/unit_ci_workflows/<某个文件>` 是研发日常，它的库存当然远小于冻结基线。
+# 区分口径是**结构性的、不是启发式的**：本轮收集里**有没有覆盖目录下全部的 `test_*.py`**。
+# 只要有一份判据文件没进来（= 收集面被截断的形态），判定就**不早退**、照旧按基线判 —— fail-closed。
+# 真值（"目录下有哪些判据文件"）**现取**，不写死清单（新增文件 ⇒ 自动进面）。
+_LEDGER_PATH = Path(__file__).parent / "helper_leg_shape_ledger.json"
+
+#: 台账 `consumption_marker` 必须逐字等于**判定本体**的函数名（删了 / 改名 ⇒ 判据红）。
+CONSUMPTION_MARKER = "helper_leg_shape_problems"
+
+
+def _helper_leg_ledger() -> dict:
+    """读执行形态台账（读不到 ⇒ 返回 `{}`，判定按 fail-closed 判红）。"""
+    try:
+        return json.loads(_LEDGER_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 —— 读不到是判红的一种形态，不是崩溃
+        return {}
+
+
+def _frozen_skip_reading(inv: dict, require_realdb: bool) -> int | None:
+    """按**当前环境**取冻结的 skip 读数（`skipped_reading` 的键 = 环境标记名）。
+
+    键 = `MIGAO_REQUIRE_REALDB`（CI 的形态：注入该标记）或 `default`。取不到 ⇒ `None`（判红）。
+    """
+    table = inv.get("skipped_reading")
+    if not isinstance(table, dict) or not table:
+        return None
+    key = "MIGAO_REQUIRE_REALDB" if require_realdb else "default"
+    return None if key not in table else int(table[key])
+
+
+def _current_test_files() -> set[str]:
+    """本目录下**现取**的判据文件名集合（真值；不写死清单 —— 新增文件自动进面）。"""
+    try:
+        return {p.name for p in Path(__file__).parent.glob("test_*.py")}
+    except OSError:
+        return set()
+
+
+def helper_leg_shape_problems(collected: int, skipped: int, ledger: dict | None = None,
+                              collected_names=None,
+                              require_realdb: bool | None = None) -> list[str]:
+    """本腿执行形态的**纯函数**判定（红证可在内存里构造，不必跑整轮）。
+
+    四条不变式（任一不成立 ⇒ 返回非空 ⇒ 判红）：
+
+    | # | 不变式 | 回归时会怎么红 |
+    |---|---|---|
+    | ① | 台账在册（`shape.parallel_workers` + `frozen_inventory` 齐备） | 台账被删空 / 被改名 ⇒ 无对象可判 ⇒ 红（fail-closed） |
+    | ② | **跑整套**时：`collected` ≥ `frozen_inventory.collected_total` | 收集面被截断 / worker 崩 / 整批判据消失 ⇒ 红（"变快"只是"少跑"） |
+    | ③ | **跑整套**时：`skipped` == 该环境的冻结读数 | 静默跳过变多（真库族退回 skip 一族）/ 有判据没过收集面 ⇒ 红 |
+    | ④ | 跑子集时**不早退的形态**也要能被判到（`collected_names` 里少一份文件 ⇒ 照旧按②③判） | 反过来的坏形态：把判据的早退条件写成"库存小就放过" ⇒ 真丢文件时也放过 |
+    """
+    book = _helper_leg_ledger() if ledger is None else ledger
+    if not book:
+        return [f"执行形态台账读不到或为空：{_LEDGER_PATH}（issue #5814 ⇒ fail-closed 判红）"]
+    shape = book.get("shape") or {}
+    inv = book.get("frozen_inventory") or {}
+    if not shape.get("parallel_workers") or not inv:
+        return [
+            "执行形态台账缺 `shape.parallel_workers` 或 `frozen_inventory` ⇒ 无对象可判"
+            f"（issue #5814）：shape={shape} / frozen_inventory={inv}"
+        ]
+    floor = int(inv.get("collected_total") or 0)
+    if floor <= 0:
+        return [f"冻结基线的 `collected_total` 未填（= {floor}）⇒ 判据是空断言（issue #5814）"]
+    if require_realdb is None:
+        require_realdb = pg_cluster.require_realdb()
+    frozen_skips = _frozen_skip_reading(inv, bool(require_realdb))
+    if frozen_skips is None:
+        return [
+            "冻结台账里取不到本环境的 `skipped_reading`（键 = `MIGAO_REQUIRE_REALDB` / `default`）"
+            f"⇒ 无对象可判，fail-closed 判红（issue #5814）：{inv.get('skipped_reading')!r}"
+        ]
+    # 这一轮跑的是不是**整套**：结构判据 = 收集面覆盖了目录下全部判据文件（现取真值）
+    if collected_names is None:
+        collected_names = _current_test_files()
+    missing_files = _current_test_files() - set(collected_names)
+    whole_suite = not missing_files
+    if not whole_suite:
+        return []
+    bad: list[str] = []
+    if collected < floor:
+        bad.append(
+            f"判据库存塌了：本轮收集 {collected} < 冻结基线 {floor}（差 {floor - collected} 条）——"
+            "并行化的收益若来自「少跑」，它是坏形态而不是优化（issue #5814）"
+        )
+    if skipped != frozen_skips:
+        bad.append(
+            f"skip 读数与冻结读数不符：本轮 skip {skipped} != 冻结 {frozen_skips}"
+            f"（`MIGAO_REQUIRE_REALDB`={bool(require_realdb)}）—— 比冻结多 = 有判据退回静默跳过；"
+            "比冻结少 = 有判据根本没过收集面（两者都让「变快」可能只是「少跑」，issue #5814）"
+        )
+    return bad
+
+
+def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
+    """**运行期**的收集面判定：只在「本轮跑的是整套」时按冻结基线判库存（其余形态早退）。
+
+    区分口径是**结构性的**（不是启发式）：本轮 `session.items` 有没有覆盖目录下**全部**
+    `test_*.py`（真值现取）。子集运行（`pytest tests/unit_ci_workflows/<某个文件>`，
+    研发日常）⇒ 不判；一旦**少了一份判据文件**，既不是"整套"，也不是"合法的子集" ⇒
+    照旧按基线判 —— fail-closed，不放过真实的收集面截断。
+    """
+    book = _helper_leg_ledger() if ledger is None else ledger
+    inv = (book.get("frozen_inventory") or {})
+    floor = int(inv.get("collected_total") or 0)
+    if floor <= 0:
+        return []
+    names = {(getattr(item, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
+             for item in list(getattr(session, "items", []) or [])}
+    if _current_test_files() - names:
+        return []                      # 子集运行（或本文件自己被筛掉）：库存判据不适用
+    if os.environ.get("MIGAO_FAIL_HELPER_LEG_SHAPE") == "1":     # 红证孔（默认关闭）
+        return ["（红证孔 MIGAO_FAIL_HELPER_LEG_SHAPE=1 有意注入）判据本体未被调用即判红"]
+    collected = int(getattr(session, "testscollected", 0) or 0)
+    if collected < floor:
+        return [
+            f"判据库存塌了：本轮收集 {collected} < 冻结基线 {floor}（差 {floor - collected} 条）——"
+            f"并行化的收益若来自「少跑」，它是坏形态而不是优化（issue #5814；台账 = {_LEDGER_PATH.name}）"
+        ]
+    return []

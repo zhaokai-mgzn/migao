@@ -22,7 +22,7 @@
 "SSE 面成功 vs 落库面失败"这对**互相矛盾**的输入做**判别性**断言：
 honored ⇒ 红；`source` 被拿掉（= 声明无消费者）⇒ 绿。后者就是"声明了却没人读"的红证。
 
-⚠️ 本目录跑在 CI 的 `ci workflow helper unit tests` job（只 `pip install pytest pyyaml`），
+⚠️ 本目录跑在 CI 的 `ci workflow helper unit tests` job（只 `pip install pytest pytest-xdist pyyaml`），
 而 `local_runner` 有模块级 `import httpx` ⇒ 见下方 `_load_runner()` 的最小替身。
 """
 from __future__ import annotations

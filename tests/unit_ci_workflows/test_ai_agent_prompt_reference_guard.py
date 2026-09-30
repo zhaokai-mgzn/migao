@@ -36,7 +36,7 @@ System Prompt 少一整层、模型行为漂移，而**没有任何东西变红*
 
 ## 为什么是**纯静态 AST**（不 import 后端 app 包）
 
-本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pyyaml`
+本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pytest-xdist pyyaml`
 （见 `.github/workflows/pr-check.yml`）—— **没有** pydantic/langchain 等后端依赖。
 故真值由 AST 从 `base_skill.py` 反解；运行时行为（缺失即抛错）由
 `backend/ai-agent-service/tests/test_prompt_snapshots.py` 的行为用例覆盖。

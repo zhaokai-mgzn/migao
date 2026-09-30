@@ -79,7 +79,7 @@ GB-02 / issue #2780）—— 以上**均属有意保留**。
 
 ## 为什么是**纯静态**（不 import 后端 app 包）
 
-本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pyyaml`
+本文件跑在 CI 的 `ci workflow helper unit tests` job 里，该 job 只 `pip install pytest pytest-xdist pyyaml`
 （见 `.github/workflows/pr-check.yml`）—— **没有** pydantic/langchain 等后端依赖。
 运行时行为（默认注册表里确实没有该工具、skill 工具集确实不含它）由
 `backend/ai-agent-service/tests/test_tools_registry.py` /

@@ -14,7 +14,7 @@
 不可能每次改动都靠它兜底（`migao-dev-flow` §16.1：L0 静态不变式优先）。
 
 ⚠️ 本目录（`tests/unit_ci_workflows`）跑在 CI 的 `ci workflow helper unit tests` job 里，
-该 job 只 `pip install pytest pyyaml`（见 `.github/workflows/pr-check.yml`），
+该 job 只 `pip install pytest pytest-xdist pyyaml`（见 `.github/workflows/pr-check.yml`），
 而 `local_runner` 有模块级 `import httpx` → 见下方 `_load_runner()` 的最小替身。
 
 另有 §③（issue #3792，OR-013）：**用例脆弱** —— 多步意图压在单轮且无 `repeat_until` 兜底
