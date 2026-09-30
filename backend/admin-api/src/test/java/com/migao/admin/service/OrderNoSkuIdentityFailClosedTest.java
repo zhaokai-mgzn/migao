@@ -81,6 +81,12 @@ class OrderNoSkuIdentityFailClosedTest {
 
     @InjectMocks
     private OrderService orderService;
+    /**
+     * 制单人留痕（issue #5835）：本类不涉及制单人口径 ⇒ 解析恒为 null ⇒ 两列不写
+     * （与「取不到操作者」同一条路径，既有断言一字未动）。
+     */
+    @Mock(lenient = true)
+    private com.migao.admin.service.UserService userService;
 
     /** 加工费取价依赖（本类不涉及加工费口径 ⇒ 空价目表 ⇒ 未定价 0） */
     @Mock(lenient = true)
