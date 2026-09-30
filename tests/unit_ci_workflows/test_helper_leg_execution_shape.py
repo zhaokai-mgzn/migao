@@ -197,8 +197,12 @@ def test_session_hook_is_wired_and_fires_on_a_short_inventory(monkeypatch, reque
     # ⚠️ 不能用 `session.items` 判"跑整套"：`-k` 过滤下 `items` **已被筛过**（实测：全量收集 +
     # `-k 本测试` ⇒ `items` 只剩 2 条）⇒ 那样会让本判据**在最该跑的注入形态下反而 skip**
     # （「判据自己可能不跑」的形态）。改用**收集规模**：本目录全量 ≈5.8k 条、聚焦运行 ≤ 20 条。
-    if int(getattr(session, "testscollected", 0) or 0) < 100:
-        pytest.skip("聚焦运行（收集面 ≪ 整套）⇒ 真钩子按「跑整套才判」早退，本形态判不了接线")
+    # 🔴 口径必须与钩子**同源**（issue #5814）：钩子的早退判据是**结构性**的
+    # （本轮是否覆盖目录下全部 `test_*.py`），不是"收集数小"。旧版这里用
+    # `testscollected < 100` 这种启发式门 ⇒ 中等子集（实测 9 文件 / 145 条）越过它、
+    # 而钩子仍结构性早退 ⇒ `DID NOT RAISE` **假红**。现统一走 `conftest.is_subset_run`。
+    if conftest.is_subset_run(session):
+        pytest.skip("子集运行（未覆盖目录下全部判据文件）⇒ 真钩子按结构性早退，本形态判不了接线")
     assert callable(getattr(conftest, "pytest_sessionfinish", None)), (
         "收口钩子不存在 ⇒ 判定本体没人消费（#5825 踩过的形态）")
     # "短库存"必须**相对本轮真实收集数**构造：台账现在的冻结值（5767）已**低于** main 的
@@ -346,3 +350,48 @@ def test_criteria_are_not_vacuous_injected_red_proofs() -> None:
     assert conftest.helper_leg_shape_problems(floor, frozen_skips, missing_state, whole,
                                               require_realdb=False) != [], (
         "缺本环境的冻结读数却不报 ⇒ 另一个环境会静默无对象可判")
+
+
+# ── #5814：**「是否子集运行」只允许一处判定**（假红的根因就是它被写成了两份口径）────
+
+class _FakeSession:
+    """最小假 session：只需要 `items`（每个 item 带 `nodeid`）。"""
+
+    def __init__(self, nodeids):
+        self.items = [type("I", (), {"nodeid": n})() for n in nodeids]
+
+
+def test_is_subset_run_classifies_by_structure_not_by_count() -> None:
+    """行为级：覆盖全部判据文件 ⇒ 非子集；少一份文件 ⇒ 子集（**与收集数无关**）。"""
+    all_files = sorted(conftest._current_test_files())
+    assert all_files, "本目录应当有判据文件（否则本判据是空断言）"
+    full = _FakeSession([f"{n}::test_x" for n in all_files])
+    assert conftest.is_subset_run(full) is False, "覆盖全部文件 ⇒ 不该判成子集"
+    part = _FakeSession([f"{n}::test_x" for n in all_files[:-1]])
+    assert conftest.is_subset_run(part) is True, "少一份文件 ⇒ 必须判成子集"
+    # 🔴 关键：**收集数多**不等于"不是子集"。旧实现用 `testscollected < 100` 当门 ⇒
+    # 9 个文件 / 145 条会越过它、而钩子仍结构性早退 ⇒ `DID NOT RAISE` 假红（实测）。
+    many = _FakeSession([f"{all_files[0]}::test_x{i}" for i in range(500)])
+    assert conftest.is_subset_run(many) is True, "500 条但只来自 1 个文件 ⇒ 仍是子集"
+
+
+def test_subset_predicate_has_exactly_one_source() -> None:
+    """类级守卫：两个消费点必须调**同一个**判定，且不得回退成数值启发式。
+
+    会怎么红：钩子内联第二份子集判定 / 本文件把 skip 改回数值阈值 / 共享判定被删。
+    """
+    import inspect
+    assert callable(getattr(conftest, "is_subset_run", None)), (
+        "共享判定 `conftest.is_subset_run` 不存在 ⇒ 两个消费点又会各自写一份口径")
+    floor_src = inspect.getsource(conftest.collection_floor_problems)
+    assert "is_subset_run(session)" in floor_src, "库存判据必须走共享判定"
+    assert "_current_test_files() - names" not in floor_src, (
+        "库存判据不得内联第二份子集判定（口径分家 = #5814 假红根因）")
+    me = pathlib.Path(__file__).read_text(encoding="utf-8")
+    assert "conftest.is_subset_run(session)" in me, "本文件的 skip 必须走共享判定"
+    # ⚠️ 只扫**代码行**（去注释）：注释里引用旧阈值是**正当的**（说明历史），
+    # 而"逐字写在断言里"会让判据扫到它自己（自指假红 —— 这两条本会话都实测踩过）。
+    code = "\n".join(l for l in me.splitlines() if not l.strip().startswith("#"))
+    # 禁用串用拼接构造，避免本判据自身成为命中源
+    for bad in ("or 0) < 1" + "00", "testscollected < 1" + "00"):
+        assert bad not in code, f"不得用数值启发式判子集（{bad!r}）—— 那是假红的根因"
