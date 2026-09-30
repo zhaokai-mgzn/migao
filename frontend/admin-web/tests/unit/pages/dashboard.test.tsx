@@ -465,7 +465,10 @@ describe('DashboardPage', () => {
     // ② 用户可见文案宣称的周期：表头 title 与环比脚注两处都必须是「近7天」
     //    ⇒ 与 ① 是同一事实的两面：后端改窗口若忘了改口径，本判据与后端
     //      `rankingWindowIsSevenDaysInclusive`（钉窗口日期为 today-6）会有一侧变红。
-    const th = screen.getByText('成交量').closest('th') as HTMLElement
+    // 🔴 2026-09-30 修 flake：`waitFor(…toHaveBeenCalled())` 只保证**发起了请求**，不保证**已渲染** ⇒
+    // 紧随其后的同步 `getByText` 会抢跑（实测 CI：`Unable to find an element with the text: 成交量`，
+    // 本文件 L468 / 部署腿 run 36699408618 红）。改成 `findBy*` **等渲染**；断言一字未改。
+    const th = (await screen.findByText('成交量')).closest('th') as HTMLElement
     expect(th.getAttribute('title')).toContain('近7天')
     await waitFor(() => {
       expect(screen.getByText(/环比.*近7天.*前7天/)).toBeInTheDocument()
@@ -575,10 +578,14 @@ describe('DashboardPage', () => {
     })
     render(<DashboardPage />)
     const card = await screen.findByTestId('dashboard-card-ai-service-rate')
-    expect(card.textContent).toContain('AI 接待占比')
-    // 数字**来自服务端字段**（不是前端硬编码 0）
-    expect(card.textContent).toContain('66.7%')
-    expect(card.textContent).toContain('9')
+    // 🔴 2026-09-30 修 flake（两阶段渲染：骨架先出、数字后到）：等「元素在」≠ 等「数字到」⇒
+    // 把**被断言的数字**纳入等待；断言本身一字未改。
+    await waitFor(() => {
+      expect(card.textContent).toContain('AI 接待占比')
+      // 数字**来自服务端字段**（不是前端硬编码 0）
+      expect(card.textContent).toContain('66.7%')
+      expect(card.textContent).toContain('9')
+    })
   })
 
   it('🔴 `aiService` 未启用/未下发 ⇒ 卡片**不渲染**（不是渲染成 0、也不是空白占位）', async () => {
@@ -636,9 +643,12 @@ describe('DashboardPage', () => {
     })
     // 用 `getByRole('link', {name})` 定位：找不到会直接抛 ⇒ 不需要 `not.toBeNull()` 那种**弱断言**
     const card = screen.getByRole('link', { name: /待支付订单/ }) as HTMLAnchorElement
-    // 🔴 数字来自服务端聚合（`pending_payment_orders` FILTER），不是本地推算；
-    //    且**不得**把「问题面」写成 0 而不显示（6 来自 mock）
-    expect(card.textContent).toContain('6')
+    // 🔴 2026-09-30 修 flake：上面那条 waitFor 只等到**标题**在，数字是第二阶段才到（断言一字未改）。
+    await waitFor(() => {
+      // 🔴 数字来自服务端聚合（`pending_payment_orders` FILTER），不是本地推算；
+      //    且**不得**把「问题面」写成 0 而不显示（6 来自 mock）
+      expect(card.textContent).toContain('6')
+    })
     // 下钻走 `pending_payment`（`resolveStatusParam` 直接匹配枚举值 ⇒ 不依赖标签词表）
     expect(card.getAttribute('href')).toBe('/orders?status=pending_payment')
   })
@@ -685,7 +695,10 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
     await waitFor(() => expect(screen.getByText('超时工单')).toBeInTheDocument())
     const card = screen.getByRole('link', { name: /超时工单/ }) as HTMLAnchorElement
-    expect(card.textContent).toContain('4')   // 数字来自服务端聚合，不是本地推算
+    // 🔴 2026-09-30 修 flake：同上 —— 等标题 ≠ 等数字（断言一字未改）。
+    await waitFor(() => {
+      expect(card.textContent).toContain('4')   // 数字来自服务端聚合，不是本地推算
+    })
     // 与 after-sales 页的筛选参数逐字对齐（那边已实装可见指示 + 可清除）
     expect(card.getAttribute('href')).toBe('/after-sales?overdue=1')
   })
