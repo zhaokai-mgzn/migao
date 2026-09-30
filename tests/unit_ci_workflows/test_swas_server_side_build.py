@@ -493,20 +493,76 @@ def test_time_budget_red_proofs():
     assert problems(600, 3000, 75 * 60), "把构建上界压到 600s 没判红（容不下冷构建）"
 
 
-def test_admin_web_build_args_have_a_server_side_override_point():
-    """admin-web 的构建期变量必须仍在（且给出**服务器侧**覆盖口）。
+#: admin-web 构建期变量的**默认值**（= 改前 CI 上 `secrets.X || <默认>` 的**有效值**，
+#: 因为那几个 secret 从未在仓里登记 ⇒ 表达式恒落默认值）。这是**行为面契约**：不许丢、不许改。
+ADMIN_WEB_BUILD_DEFAULTS = {
+    "NEXT_PUBLIC_API_BASE_URL": "https://api.migaozn.com",
+    "NEXT_PUBLIC_AI_API_BASE_URL": "https://ai-api.migaozn.com",
+    "NEXT_PUBLIC_COOKIE_DOMAIN": ".migaozn.com",
+    "NEXT_PUBLIC_BMINI_H5_URL": "https://app.migaozn.com/b/",
+}
 
-    C′ 之后构建在服务器上跑 ⇒ 这些 `NEXT_PUBLIC_*` 必须在 deploy.sh 里被传（或走 Dockerfile 的
-    ARG 缺省值），并留一个**服务器侧**覆盖口 —— 不能因为「构建搬走了」就静默丢掉可配置性。
+
+def test_admin_web_build_args_keep_the_pre_change_effective_defaults():
+    """🔴 **默认值不许丢/不许漂移**：deploy.sh 传的默认值必须**逐字等于**改前的有效值，
+    且必须与 `frontend/admin-web/Dockerfile` 的 `ARG` 缺省值**一致**（同一个真值的两个落点）。
+
+    C′ 把构建从 CI 搬到服务器 ⇒ 这些构建期变量的注入点也跟着搬。搬的过程中最容易发生的静默退化
+    就是「默认值丢了/改了」：前端会把错误的 API 域名 baked 进 JS（`NEXT_PUBLIC_*` 是**构建期文本
+    替换**），而且**构建成功、部署成功、页面照样打得开** ⇒ 只有用户点功能时才炸。
     """
     d = _code(deploy_text())
-    for var in ("NEXT_PUBLIC_API_BASE_URL", "NEXT_PUBLIC_AI_API_BASE_URL",
-                "NEXT_PUBLIC_COOKIE_DOMAIN", "NEXT_PUBLIC_BMINI_H5_URL"):
-        # 实际形态带引号：`--build-arg "VAR=${VAR:-<默认>}"` ⇒ 断言要容忍那个引号
-        assert re.search(rf'--build-arg "?{re.escape(var)}=', d), (
-            f"deploy.sh 构建 admin-web 时没有传 {var}"
+    df = _code(AI_DOCKERFILE.parent.parent.parent.joinpath("frontend/admin-web/Dockerfile").read_text(encoding="utf-8")) \
+        if (AI_DOCKERFILE.parent.parent.parent / "frontend/admin-web/Dockerfile").is_file() else ""
+    assert df, "读不到 frontend/admin-web/Dockerfile（判据会退化成空断言）"
+    for var, default in ADMIN_WEB_BUILD_DEFAULTS.items():
+        # ① deploy.sh 必须传它，且默认值逐字正确（形态：--build-arg "VAR=${VAR:-<默认>}"）
+        m = re.search(rf'--build-arg "?{re.escape(var)}=\$\{{{re.escape(var)}:-([^}}]*)\}}"', d)
+        assert m, f"deploy.sh 构建 admin-web 时没有以 `${{{var}:-<默认>}}` 形态传 {var}"
+        assert m.group(1) == default, (
+            f"{var} 的默认值漂移：deploy.sh 给 {m.group(1)!r}，改前的有效值是 {default!r}"
+            "（那会把错误的地址 baked 进前端 JS，且**构建/部署全绿**，只有用户点功能才炸）"
         )
-    assert ".env.build" in deploy_text(), (
-        "缺少服务器侧覆盖口（`.env.build`）—— 构建期变量的覆盖面被静默砍掉了"
+        # ② 与 Dockerfile 的 ARG 缺省值**一致**（同一真值的两个落点 ⇒ 不许各写各的）
+        md = re.search(rf"^ARG {re.escape(var)}=(\S+)$", df, re.M)
+        assert md, f"frontend/admin-web/Dockerfile 缺 `ARG {var}=…` 的缺省值"
+        assert md.group(1) == default, (
+            f"{var} 在 Dockerfile 里的 ARG 缺省值 {md.group(1)!r} 与 deploy.sh 的默认值 {default!r} 不一致"
+            "（两处都在，就必须同源）"
+        )
+    # ③ 服务器侧覆盖口必须在（否则「可配置」被静默砍掉）
+    assert re.search(r'if \[ -f \.env\.build \]; then', d), (
+        "缺少服务器侧覆盖口（`.env.build` 的存在性判断）—— 构建期变量的覆盖面被静默砍掉了"
     )
-    assert re.search(r'if \[ -f \.env\.build \]; then', d), "`.env.build` 的加载必须带存在性判断"
+
+
+def test_admin_web_defaults_red_proofs():
+    """红证：把任一默认值改坏 / 删掉一行 ⇒ 必须红。"""
+    d = _code(deploy_text())
+    df = _code((AI_DOCKERFILE.parent.parent.parent / "frontend/admin-web/Dockerfile").read_text(encoding="utf-8"))
+
+    def problems(deploy: str, dockerfile: str) -> list[str]:
+        out = []
+        for var, default in ADMIN_WEB_BUILD_DEFAULTS.items():
+            m = re.search(rf'--build-arg "?{re.escape(var)}=\$\{{{re.escape(var)}:-([^}}]*)\}}"', deploy)
+            if not m or m.group(1) != default:
+                out.append(f"deploy:{var}")
+            md = re.search(rf"^ARG {re.escape(var)}=(\S+)$", dockerfile, re.M)
+            if not md or md.group(1) != default:
+                out.append(f"dockerfile:{var}")
+        return out
+
+    assert problems(d, df) == [], "前提：真值先绿"
+    # ① 默认值被改坏 ⇒ 红
+    assert problems(d.replace("NEXT_PUBLIC_API_BASE_URL:-https://api.migaozn.com",
+                              "NEXT_PUBLIC_API_BASE_URL:-https://api.example.com"), df), \
+        "把 API 域名默认值改坏后没红 ⇒ 默认值契约是空断言"
+    # ② 整行被删掉 ⇒ 红
+    assert problems(re.sub(r'\s*_build_args\+=\(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=[^\n]*\n', "\n", d), df), \
+        "删掉 COOKIE_DOMAIN 的注入行后没红"
+    # ③ 两处不同源（只改 Dockerfile）⇒ 红
+    assert problems(d, df.replace("ARG NEXT_PUBLIC_COOKIE_DOMAIN=.migaozn.com",
+                                  "ARG NEXT_PUBLIC_COOKIE_DOMAIN=.other.com")), \
+        "Dockerfile 与 deploy.sh 的默认值不同源却没红"
+    # ④ 对照：只加注释 ⇒ 不红
+    assert problems(d + "\n# 注释：提到 NEXT_PUBLIC_API_BASE_URL 的默认值\n", df) == []
