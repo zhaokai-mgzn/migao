@@ -4745,6 +4745,24 @@ _CASE_MC_050 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-051 [NORMAL] 「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出（源: cases/misc.yml）──
+_CASE_MC_051 = EvalCase(
+    id='MC-051',
+    legacy_id='',
+    title='「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当一条判据宣称自己守某个接线（钩子 / 入口接线 / 台账读取 / CI 步骤调用）时，它必须在测试文件里显式声明被守的接线锚并登记进台账 `wiring_claims_ledger.json`；有声明没登记、台账给不存在的声明盖章、接线锚被删或改名或不带 .py 后缀、台账被清空、登记缺 case_ids —— 都必须有东西具名报出；而只改注释不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（PR #5829 的实例，逐字）**：`pytest_sessionfinish` 收口钩子被 `#5825` 整个丢掉，而 5 条判据文件照样全绿 —— 因为判据本体被测到了、**消费点 / 接线没人测** ⇒ 落进 main。理由逐字：**判据绿只是「判据函数被调用过」，不代表「它接在真流程上」**', '**判据 1（未登记即红）**：全仓 `tests/unit_ci_workflows/**/*.py` 里出现声明标记 `WIRING_UNDER_TEST`，而台账 `claims` 里没有对应条目 ⇒ 具名报出该文件', '**判据 2（台账未被兑现即红）**：台账每条必须能在它声称的文件里逐字找到同一句声明（`WIRING_UNDER_TEST = "<锚>"`）⇒ 台账不许给不存在的声明盖章', '**判据 3（声明必须指名真对象）**：`::` 左边是仓内**存在**的文件、右边在该文件里**逐字出现**，且左边必须以 `.py` 结尾（避免与既有「裸文件名 + 冒号 + 行号」的禁令混淆）', '**判据 4（fail-closed）**：台账 `claims` 为空 ⇒ 红；**判据 5**：每条必须写下 `case_ids`（用例面关联）', '**判据 6（判别力自证）**：四种坏形态（声明未登记 / 台账未兑现 / 接线锚被删 / 台账清空）在**内存里各自判红**；另有真语料上的双向自证 —— 对**真** `tests/unit_ci_workflows/conftest.py` 的文本做内存变异（摘掉被守的接线行）⇒ 判据 3 报出该锚', '**判据 7（对照读数）**：只把声明行改成注释（同一段文本、不同语法） ⇒ **不红**'],
+    skip_reason='[backend-contract] 接线声明的静态/结构判据（只读仓内文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_wiring_claims_registry.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'wiring', 'evidence-quality', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11141,6 +11159,7 @@ ALL_CASES = (
     _CASE_MC_046,
     _CASE_MC_042,
     _CASE_MC_050,
+    _CASE_MC_051,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

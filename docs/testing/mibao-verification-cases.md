@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（49 case）
+## 杂项域（50 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3490,6 +3490,21 @@
 跳过: [backend-contract] CI 执行形态的静态/结构判据（零网络、零时钟、不烧 token）由 tests/unit_ci_workflows/test_helper_leg_execution_shape.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-30 新增（issue #5814 的本包：把 PR 反馈时长从 ≈17 分钟压到 5–7 分钟 —— 手段是**削掉那条吃掉 97% 关键路径的 job**，**不降任何门禁**）：病 = required job `ci workflow helper unit tests` 是 PR 反馈的唯一关键路径（run 36689037058 该 job 997s，其中 Run ci workflow helper tests 一步 989s，而同 run 其余 14 条腿全部 < 60s、最长 41s），它此前**单进程**跑整套判据（纯 CPU / 子进程绑定：281 处 subprocess.*，无网络、无 DB 服务）。交付形态 = ① 形态变更（**唯一**允许的变化）：CI 与本地腿同批加 `-n 4`（pytest-xdist，托管 runner 4 vCPU）+ CI 侧补 `pip install pytest-xdist`；② 判据 tests/unit_ci_workflows/test_helper_leg_execution_shape.py + 台账 tests/unit_ci_workflows/helper_leg_shape_ledger.json（并行度三方一致 / 消费点在位 / 冻结库存与两态 skip 读数 / 运行期库存牙齿 + 注入式红证）；③ conftest 的运行期判定本体 collection_floor_problems（只在跑整套时判，子集不判）。取号 MC-050（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-048，在飞 ci/5814-migrate-pr-legs 占 MC-049 ⇒ 取下一个空号）。⚠️ 判定渠道是**逐条实测选出来的**（三条更直觉的路都不成立：只设 session.exitstatus ⇒ pytest 仍退出 0；抛 pytest.exit.Exception ⇒ -n 下 worker 退出 1 而**控制器仍退出 0**；在 worker 里设 session.shouldfail ⇒ 快照已被 remote 钩子先发走）⇒ 最终落在**测试体内**的库存判据（测试失败是单进程与 xdist 下都必定传成非零的唯一通道）。 ｜ tags: ci, parallelism, xdist, execution-shape, red-proof, ledger
+
+### MC-051. 「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出 🔵
+```
+你: 当一条判据宣称自己守某个接线（钩子 / 入口接线 / 台账读取 / CI 步骤调用）时，它必须在测试文件里显式声明被守的接线锚并登记进台账 `wiring_claims_ledger.json`；有声明没登记、台账给不存在的声明盖章、接线锚被删或改名或不带 .py 后缀、台账被清空、登记缺 case_ids —— 都必须有东西具名报出；而只改注释不得报红
+期望: direct_reply
+数据: **病（PR #5829 的实例，逐字）**：`pytest_sessionfinish` 收口钩子被 `#5825` 整个丢掉，而 5 条判据文件照样全绿 —— 因为判据本体被测到了、**消费点 / 接线没人测** ⇒ 落进 main。理由逐字：**判据绿只是「判据函数被调用过」，不代表「它接在真流程上」**
+数据: **判据 1（未登记即红）**：全仓 `tests/unit_ci_workflows/**/*.py` 里出现声明标记 `WIRING_UNDER_TEST`，而台账 `claims` 里没有对应条目 ⇒ 具名报出该文件
+数据: **判据 2（台账未被兑现即红）**：台账每条必须能在它声称的文件里逐字找到同一句声明（`WIRING_UNDER_TEST = "<锚>"`）⇒ 台账不许给不存在的声明盖章
+数据: **判据 3（声明必须指名真对象）**：`::` 左边是仓内**存在**的文件、右边在该文件里**逐字出现**，且左边必须以 `.py` 结尾（避免与既有「裸文件名 + 冒号 + 行号」的禁令混淆）
+数据: **判据 4（fail-closed）**：台账 `claims` 为空 ⇒ 红；**判据 5**：每条必须写下 `case_ids`（用例面关联）
+数据: **判据 6（判别力自证）**：四种坏形态（声明未登记 / 台账未兑现 / 接线锚被删 / 台账清空）在**内存里各自判红**；另有真语料上的双向自证 —— 对**真** `tests/unit_ci_workflows/conftest.py` 的文本做内存变异（摘掉被守的接线行）⇒ 判据 3 报出该锚
+数据: **判据 7（对照读数）**：只把声明行改成注释（同一段文本、不同语法） ⇒ **不红**
+跳过: [backend-contract] 接线声明的静态/结构判据（只读仓内文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_wiring_claims_registry.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-30 新增（issue #5814 的本包：把本会话真实踩过的两类「证据质量」缺陷固化进研发模式 —— ① flake 修复靠跑绿证明不了 ② 判据本体绿 ≠ 接线在；用户逐字口径「把这两类证据质量缺陷固化成 .agent-presets/migao 里的规则（各带实例），并评估哪些能落机械守卫」）：规则正文 = `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §28（v1.92.0），实例 = PR #5828（注入 300ms 延迟双向对照：修前 4 failed / 47 passed，报错与 CI 逐字相同 ⇒ 修后 51 passed）与 PR #5829（直连真钩子 + 真 session 测接线）。本条落地的是**能机械化**的那一半：测试文件显式声明 `WIRING_UNDER_TEST` 并登记进台账 tests/unit_ci_workflows/wiring_claims_ledger.json，由 tests/unit_ci_workflows/test_wiring_claims_registry.py 判「未登记即红 / 台账未兑现即红 / 接线锚被删或改名即红 / 台账清空即红」，并内建判别力自证与「只改注释 ⇒ 不红」对照。⚠️ 未机械化的一半如实登记在 SKILL.md §28.5。取号 MC-051（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-050）。 ｜ tags: ci, wiring, evidence-quality, red-proof, ledger
 
 ## 商家入驻域（5 case）
 
@@ -8223,8 +8238,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：579（活跃 126，跳过 453）
-- tier 分布：smoke 12 / normal 534 / adversarial 31
+- 用例总数：580（活跃 126，跳过 454）
+- tier 分布：smoke 12 / normal 535 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8239,7 +8254,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：49
+- 杂项域：50
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：51
@@ -8315,6 +8330,7 @@
 - MC-046: C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红
 - MC-042: 控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」
 - MC-050: 本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出
+- MC-051: 「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

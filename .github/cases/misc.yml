@@ -1822,3 +1822,40 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_helper_leg_execution_shape.py
       verifies: []
+
+  - id: MC-051
+    legacy_id: ""
+    title: "「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - wiring
+      - evidence-quality
+      - red-proof
+      - ledger
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**静态/结构事实**（测试文件里的声明标记 ⇄ 台账 ⇄ 接线锚在仓内的可解析性），
+    # 由 tests/unit_ci_workflows/test_wiring_claims_registry.py 验证，非 LLM 行为，不进入 agent-eval 冒烟。
+    user_inputs:
+      - "当一条判据宣称自己守某个接线（钩子 / 入口接线 / 台账读取 / CI 步骤调用）时，它必须在测试文件里显式声明被守的接线锚并登记进台账 `wiring_claims_ledger.json`；有声明没登记、台账给不存在的声明盖章、接线锚被删或改名或不带 .py 后缀、台账被清空、登记缺 case_ids —— 都必须有东西具名报出；而只改注释不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（PR #5829 的实例，逐字）**：`pytest_sessionfinish` 收口钩子被 `#5825` 整个丢掉，而 5 条判据文件照样全绿 —— 因为判据本体被测到了、**消费点 / 接线没人测** ⇒ 落进 main。理由逐字：**判据绿只是「判据函数被调用过」，不代表「它接在真流程上」**"
+      - "**判据 1（未登记即红）**：全仓 `tests/unit_ci_workflows/**/*.py` 里出现声明标记 `WIRING_UNDER_TEST`，而台账 `claims` 里没有对应条目 ⇒ 具名报出该文件"
+      - "**判据 2（台账未被兑现即红）**：台账每条必须能在它声称的文件里逐字找到同一句声明（`WIRING_UNDER_TEST = \"<锚>\"`）⇒ 台账不许给不存在的声明盖章"
+      - "**判据 3（声明必须指名真对象）**：`::` 左边是仓内**存在**的文件、右边在该文件里**逐字出现**，且左边必须以 `.py` 结尾（避免与既有「裸文件名 + 冒号 + 行号」的禁令混淆）"
+      - "**判据 4（fail-closed）**：台账 `claims` 为空 ⇒ 红；**判据 5**：每条必须写下 `case_ids`（用例面关联）"
+      - "**判据 6（判别力自证）**：四种坏形态（声明未登记 / 台账未兑现 / 接线锚被删 / 台账清空）在**内存里各自判红**；另有真语料上的双向自证 —— 对**真** `tests/unit_ci_workflows/conftest.py` 的文本做内存变异（摘掉被守的接线行）⇒ 判据 3 报出该锚"
+      - "**判据 7（对照读数）**：只把声明行改成注释（同一段文本、不同语法） ⇒ **不红**"
+    skip_reason: "[backend-contract] 接线声明的静态/结构判据（只读仓内文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_wiring_claims_registry.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-30 新增（issue #5814 的本包：把本会话真实踩过的两类「证据质量」缺陷固化进研发模式 —— ① flake 修复靠跑绿证明不了 ② 判据本体绿 ≠ 接线在；用户逐字口径「把这两类证据质量缺陷固化成 .agent-presets/migao 里的规则（各带实例），并评估哪些能落机械守卫」）：规则正文 = `.agent-presets/migao/skills/migao-dev-flow/SKILL.md` §28（v1.92.0），实例 = PR #5828（注入 300ms 延迟双向对照：修前 4 failed / 47 passed，报错与 CI 逐字相同 ⇒ 修后 51 passed）与 PR #5829（直连真钩子 + 真 session 测接线）。本条落地的是**能机械化**的那一半：测试文件显式声明 `WIRING_UNDER_TEST` 并登记进台账 tests/unit_ci_workflows/wiring_claims_ledger.json，由 tests/unit_ci_workflows/test_wiring_claims_registry.py 判「未登记即红 / 台账未兑现即红 / 接线锚被删或改名即红 / 台账清空即红」，并内建判别力自证与「只改注释 ⇒ 不红」对照。⚠️ 未机械化的一半如实登记在 SKILL.md §28.5。取号 MC-051（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-050）。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_wiring_claims_registry.py
+      verifies: []
