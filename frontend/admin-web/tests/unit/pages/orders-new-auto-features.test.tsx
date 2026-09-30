@@ -451,7 +451,10 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
     // （正面 + 反面都钉，断言强度不降）；来源文案照旧说人话（含窗宽数）。
     await waitFor(() => expect(selectedSkuText()).toContain('3.2米'))
     expect(selectedSkuText()).not.toContain('2.8米')
-    expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('窗宽 3 米')
+    // 🔴 2026-09-30 第五批改判：常显的来源文案已删（用户逐字「这种文字我觉得没有添加的必要」）⇒
+    // 「是系统按窗宽挑的」这条读数改钉在**手选提示的反面**上（自动挑中 ⇒ 那条一个字都不出现）。
+    expect(selectedSkuText()).toContain('3.2米')
+    expect(screen.queryByTestId('door-width-manual-note')).toBeNull()
     // 3.2 才做得下单幅（2.75 + 0.3 = 3.05 ≤ 3.2）⇒ 既不该报「需接高」，也不该是「门幅未维护」
     expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
     expect(screen.queryByTestId('door-width-missing')).toBeNull()
@@ -473,7 +476,8 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
     // 钉住「**手选的是哪一支**」：下拉的选中项（正面 + 反面 + 来源=你手动选的规格）
     expect(selectedSkuText()).toContain('3.2米')
     expect(selectedSkuText()).not.toContain('2.8米')
-    expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('你手动选的规格')
+    // 手选过的证据面：推导细节里那条**只在手选时出现**的提示（常态一个字都不多）
+    expect(screen.getByTestId('door-width-manual-note')).toHaveTextContent('手动选的')
   })
 
   it('所选门幅**单幅做不出**（成品高 2.75 对 2.8 门幅）⇒ 显式「需接高」强告警（缺口 0.25 米）', async () => {
@@ -595,7 +599,8 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
     // 用 `waitFor` 等**改选落地**（规则重算是一次服务端往返，不可即时读）
     await waitFor(() => expect(selectedSkuText()).toContain('3.2米'))
     expect(selectedSkuText()).not.toContain('2.8米')
-    expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('系统按窗宽')
+    // 同上：自动改选的证据面 = 下拉选中项（上行已钉）+ **手选提示不出现**
+    expect(screen.queryByTestId('door-width-manual-note')).toBeNull()
     // 改选落地后，「需接高」告警随旧门幅一起消失（改选是一次服务端往返 ⇒ 再等一次）
     await waitFor(() => expect(screen.queryByTestId('door-width-needs-splice')).toBeNull())
     // 🔴 **#5130 改判**：旧旁证（「3.2 生效 ⇒ 超高消失」）已不成立 —— 「超高」现在只看净窗高与
@@ -616,7 +621,8 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
     // 钉住「**手选的是哪一支**」：下拉的选中项（正面 + 反面 + 来源=你手动选的规格）
     expect(selectedSkuText()).toContain('3.2米')
     expect(selectedSkuText()).not.toContain('2.8米')
-    expect(screen.getByTestId('sku-choice-reason')).toHaveTextContent('你手动选的规格')
+    // 手选过的证据面：推导细节里那条**只在手选时出现**的提示（常态一个字都不多）
+    expect(screen.getByTestId('door-width-manual-note')).toHaveTextContent('手动选的')
 
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.5' } }) // 规则解仍是 2.8
     await waitFor(() => expect(screen.getByTestId('door-width-suboptimal')).toBeInTheDocument())
