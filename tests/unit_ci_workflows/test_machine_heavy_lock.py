@@ -384,6 +384,28 @@ class TestVerifyAllWiring:
             "`macquire` 出现在顶层 `case \"$MODE\" in` **之后** —— 重活已经开始跑了才拿锁（接线顺序错）"
         )
 
+    def test_only_the_full_suite_tier_takes_the_lock(self):
+        """**只有会拉起全量套件的那一档拿锁** —— 其余档不拿（否则并行开发被无谓串行，另一种浪费）。
+
+        ⚠️ 这条判的反方向坏形态：`heavy_lock_wanted` 恒真 ⇒ `quick/full/…` 也抢机器级锁 ⇒
+        两个会话连「改一行 + 跑快档」都要排队。恒假那一侧由 `test_lock_is_held_while_the_heavy_leg_runs…` 兜。
+        """
+        fn = _extract_fn("heavy_lock_wanted")
+        body = (
+            fn + "\n"
+            'for m in quick full frontend backend agent redproof gate; do\n'
+            '  MODE="$m"\n'
+            '  if heavy_lock_wanted; then echo "$m=WANT"; else echo "$m=NONE"; fi\n'
+            "done\n"
+        )
+        r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, cwd=str(REPO))
+        got = dict(ln.split("=") for ln in r.stdout.split("\n") if "=" in ln)
+        assert got.get("gate") == "WANT", f"gate 档（全量套件的唯一入口）**必须**拿锁：{got}\n{r.stderr}"
+        others = {k: v for k, v in got.items() if k != "gate"}
+        assert all(v == "NONE" for v in others.values()), (
+            f"以下档位也拿锁了 —— 它们不是「同一台机器上的重活」：{others}"
+        )
+
     def test_lock_is_held_while_the_heavy_leg_runs_and_released_on_exit(self, tmp_path):
         """**行为判据**（真进程，走 verify-all.sh 里**真实的**那两个函数）：重活期间锁必须持着。
 
