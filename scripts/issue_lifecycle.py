@@ -1572,12 +1572,13 @@ def pending_close_rows(pr_rows: list[dict], open_nums: set[int],
 
 
 
-#: 「人为要求」标记（2026-09-25 用户裁定：会话内零新开 issue，唯一例外 = 人类显式要求）
+#: 「人为要求」标记（2026-09-25 用户裁定；🔴 2026-09-30 改判后**语义收窄**：新业务需求
+#: **直接开单、不需要任何标记**；该标记只用于「**范围外的顺带发现**，人类当场要求开单」这一类）
 HUMAN_REQUEST_MARKER = "人为要求："
 
 
 def is_human_requested(body: str) -> bool:
-    """body 里出现 `人为要求：…` 标记 ⇒ 该单是**人类显式要求**开的（唯一合法例外）。
+    """body 里出现 `人为要求：…` 标记 ⇒ 该单是**人类显式要求**开的（顺带发现类开单的声明面）。
 
     口径：**不要求首行** —— 标记可能在标题下一行、或被 GitHub 模板挪位；只要正文里出现该标记即算。
     （判据侧的"首行"措辞是给人读的约定；机械判据用"出现即算"，**更不容易误伤**。)
@@ -1585,10 +1586,11 @@ def is_human_requested(body: str) -> bool:
     return HUMAN_REQUEST_MARKER in (body or "")
 
 
-#: 「会话内零新开 issue」政策的**生效时刻**（= 该政策 PR 的合并时间，2026-09-25 12:01:24Z）。
-#: ⚠️ **政策不追溯**：生效前创建的单**豁免**（那时规则还不存在）—— 否则这条腿会因历史存量
-#: **天天红**（实测：政策生效当天 main 侧腿立刻因 28 条存量判定为「有违规」而失败）。
-NEW_ISSUES_POLICY_EFFECTIVE = "2026-09-25T12:01:24Z"
+#: 分诊清单的**下界时刻**（历史沿革 = 「会话内零新开 issue」政策的生效时刻 2026-09-25 12:01:24Z）。
+#: 🔴 **2026-09-30 改判后本常量不再代表任何"政策"**：用户逐字「『会话内零新开 issue』是铁律
+#: 这个铁律要改，如果有新业务需求就直接开issue」⇒ 该政策废止；本常量只剩「清单从哪一刻起算」
+#: 这一个含义（下界之前的单不进清单 —— 避免把历史存量当噪音刷在每次合并上）。
+NEW_ISSUES_TRIAGE_FLOOR = "2026-09-25T12:01:24Z"
 
 
 #: 机器人 / GitHub App 作者的 login 前缀（冗余判据；主判据是 `author.is_bot`）。
@@ -1610,24 +1612,24 @@ def is_bot_authored(row: dict) -> bool:
 
     ## 三态（不许把"取不到"当 0 读）
 
-    `author` 字段缺失 / 取不到 ⇒ **返回 False** = 按保守**计入违规**（调用方在那一行标注
+    `author` 字段缺失 / 取不到 ⇒ **返回 False** = 按保守**进清单**（调用方在那一行标注
     「来源未知（按保守计入）」）。⇒ 「取不到」既不当机器人放过、也不静默成 0 条。
 
     ## 反向不成立（不许被读成"已能分辨会话来源"）
 
     会话用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」在机械上**不可分辨** ⇒
-    人自己开的单**照样**被判红（本判据已知的代价，见 `violates_new_issues_policy`）。
+    人自己开的单**照样**进清单（本判据已知的代价，见 `unmarked_new_issues`）。
     """
     author = row.get("author")
     if not isinstance(author, dict):
-        return False                                  # 取不到 ⇒ 保守：不算机器人（仍计入违规）
+        return False                                  # 取不到 ⇒ 保守：不算机器人（仍进清单）
     if author.get("is_bot") is True or author.get("isBot") is True:
         return True
     return str(author.get("login") or "").startswith(BOT_LOGIN_PREFIX)
 
 
 def _new_issues_scope(rows: list[dict], effective: str) -> list[dict]:
-    """政策**实际约束的总体**：生效后创建、且正文无 `人为要求：` 标记的行（不追溯 + 唯一例外先剔除）。"""
+    """清单的总体：**下界之后**创建、且正文无 `人为要求：` 标记的行（下界之前不进清单 + 带标记的先剔除）。"""
     out = []
     for r in rows:
         if not isinstance(r, dict) or not r.get("number"):
@@ -1646,43 +1648,49 @@ def _issue_triple(r: dict) -> tuple[int, str, str]:
     return (int(r["number"]), str(r.get("createdAt") or "")[:19], str(r.get("title") or "")[:70])
 
 
-def violates_new_issues_policy(rows: list[dict],
-                               effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
-    """纯函数（可单测）：挑出**政策生效之后**创建、正文无 `人为要求：` 标记、**且非机器人创建**的 issue。
+def unmarked_new_issues(rows: list[dict],
+                               effective: str = NEW_ISSUES_TRIAGE_FLOOR) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：挑出**清单下界之后**创建、正文无 `人为要求：` 标记、**且非机器人创建**的 issue。
 
-    三态之外的第四条纪律：**规则不追溯**（新规则只在生效之后适用）—— 判据不得拿历史存量开刀，
-    否则"让机制上线"本身就制造了一条天天红的腿（实测过一次）。
+    🔴 **2026-09-30 改判后本函数不再判「违规」**：用户逐字「『会话内零新开 issue』是铁律
+    这个铁律要改，如果有新业务需求就直接开issue」⇒ **新业务需求直接开单是合法路径**，
+    所以这份清单只是**给人分诊**（核「范围外的顺带发现有没有被私开」），**不是判红依据**。
+    历史留档（改名前的名字 = `violates_new_issues_policy`）：它曾是「会话内零新开」政策的判据。
 
     ⚠️ **如实登记：本函数声称的对象是「会话新建的单」，但它机械上只能给出「非机器人建的无标记单」** ——
     会话用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」在机械上**不可分辨** ⇒
-    **人自己开的单也会被判红**（宁可误伤、不可放过的**已知代价**）。**这不是"已能分辨会话来源"**。
+    **人自己开的单也会进清单**（本判据的**已知代价**，靠人看）。**这不是"已能分辨会话来源"**。
     机器人创建的行由 `bot_created_new_issues()` 单列，理由见 `is_bot_authored`（结构上不可能是会话违规）。
     """
     return sorted(_issue_triple(r) for r in _new_issues_scope(rows, effective) if not is_bot_authored(r))
 
 
 def bot_created_new_issues(rows: list[dict],
-                           effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[tuple[int, str, str]]:
-    """纯函数（可单测）：政策窗口内**机器人 / GitHub App 创建**的行 ⇒ 单独打印（**不计违规**）。
+                           effective: str = NEW_ISSUES_TRIAGE_FLOOR) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：清单窗口内**机器人 / GitHub App 创建**的行 ⇒ 单独打印（**不进清单**）。
 
-    与其配对的是 `violates_new_issues_policy`（人 / 来源未知的行）；两者一起构成窗口内**生效后**总体的划分。
+    与其配对的是 `unmarked_new_issues`（人 / 来源未知的行）；两者一起构成窗口内**下界之后**总体的划分。
     """
     return sorted(_issue_triple(r) for r in _new_issues_scope(rows, effective) if is_bot_authored(r))
 
 
 def unknown_source_new_issues(rows: list[dict],
-                              effective: str = NEW_ISSUES_POLICY_EFFECTIVE) -> list[int]:
-    """纯函数（可单测）：政策窗口内 `author` **取不到**的行号 ⇒ 供打印侧标注「来源未知（按保守计入）」。
+                              effective: str = NEW_ISSUES_TRIAGE_FLOOR) -> list[int]:
+    """纯函数（可单测）：清单窗口内 `author` **取不到**的行号 ⇒ 供打印侧标注「来源未知（按保守计入）」。
 
-    刻意**不**在这里判定是否违规（那是 `violates_new_issues_policy` 的事，且口径是**计入违规**）——
+    刻意**不**在这里分诊（那是 `unmarked_new_issues` 的事，且口径是**计入清单**）——
     本函数只提供标注集合，专治"取不到 ⇒ 静默放过"（三态不许合并）。
     """
     return sorted(int(r["number"]) for r in _new_issues_scope(rows, effective)
                   if not isinstance(r.get("author"), dict))
 
 
-def non_human_requested(rows: list[dict]) -> list[tuple[int, str, str]]:
-    """纯函数（可单测）：从未带标记的 issue 行里挑出「非人为要求」的 ⇒ [(number, createdAt, title)]。"""
+def without_human_request_marker(rows: list[dict]) -> list[tuple[int, str, str]]:
+    """纯函数（可单测）：从**未带** `人为要求：` 标记的 issue 行里挑出来 ⇒ [(number, createdAt, title)]。
+
+    用途（2026-09-30 改判后）= 分诊清单的**过滤器**（新业务需求不需要标记 ⇒ 带标记只表示
+    「顺带发现 + 人类当场要求开单」这一类），**不再表示"违规"**。
+    """
     out = []
     for r in rows:
         if not isinstance(r, dict) or not r.get("number"):
@@ -1858,58 +1866,60 @@ def cmd_close(args: argparse.Namespace) -> int:
 
 
 def cmd_check_new_issues(args: argparse.Namespace) -> int:
-    """报告型：现取「新建但**没有**人为要求标记、**且非机器人创建**」的 issue（会话内零新开政策的机械判据）。
+    """报告型：列出窗口内新建、**且正文无 `人为要求：` 标记**的 issue（**分诊清单，不是违规**）。
 
-    口径（2026-09-25 用户裁定）：一次 agent 会话**不得新建 issue**，唯一例外 = 人类显式要求，
-    且该单正文里要有 `人为要求：…` 标记。本命令**只报告、零写**：
-      · 退出码 0 = 窗口内没有违规；1 = 有违规（逐条列出）；3 = **无法判定**（gh 取不到 ⇒ 不得当 0 读）。
+    🔴 口径改判（2026-09-30 用户逐字「『会话内零新开 issue』是铁律 这个铁律要改，如果有新业务需求
+    就直接开issue」）：**新业务需求 ⇒ 直接开单**是合法默认路径、**不需要任何标记** ⇒ 本命令
+    **不再判违规**，退出码只有两态：**0 = 清单已给出**（有无条目都是 0）、
+    **3 = 无法判定**（gh 取不到 ⇒ 不得当 0 读）。清单只有一个用途：给人核「**范围外的顺带发现**」
+    （做 A 时撞见的 B 缺陷 / 基建问题）有没有被私开成单 —— 那一类仍走三条出路（链内修 /
+    并入既有台账 / 在会话里向人类提出），人类当场要求开单时正文写 `人为要求：…`（带标记的不进清单）。
 
-    ## 总体按作者收窄（2026-09-27 链内修，实测 #5723；方向 = 收窄到它声称的对象，不是放宽门禁）
+    本命令**只报告、零写**（不下结论、不关单、不打标签）。
 
-    **机器人 / GitHub App 创建的单不计入违规**、单独打印一行（理由见 `is_bot_authored` 的"结构性"一节）——
-    修之前这条腿把**本腿自己的出口**（P1 值班单，作者恒为 `app/github-actions`）读成"会话违规" ⇒
-    **一旦红过就会自己把自己喂红**（实测 #5723 在窗口内被逐条列为违规）。人开的单**照旧逐条列出并判红**。
+    ## 历史（留档，勿当现行口径）
 
-    ## ⚠️ 如实登记：会话来源**不可分辨**（禁止读成"已能分辨会话来源"）
-
-    会话在 GitHub 上用的是**人的 token** ⇒ 「会话新建」与「**人自己新建**」机械上**不可分辨**
-    ⇒ **人自己开的单照样被判红**；处置面留人（这正是本命令"报告型、不自动关"的原因）。
-    三态不许合并：`author` 取不到 ⇒ **按保守计入违规**并在该行标注「来源未知（按保守计入）」；
-    `gh` 取不到列表 ⇒ 3（「取不到」既不当 0 条、也不当"没有违规"）。
-
-    为什么是报告型而不是"自动关"：判"这单到底有没有人为要求"要人看（人可能在对话里要求过但没写标记）
-    ⇒ 本仓口径一贯是**发现面自动、处置面留人**。
+    原语义 = 「会话内零新开 issue」政策的机械判据（生效时刻 2026-09-25T12:01:24Z，`rc=1` = 有违规）。
+    该政策已于 2026-09-30 由用户裁定废止 ⇒ `rc=1` 这一态**随之取消**：留着它会让**每一条业务需求单**
+    被判红，即"让机制上线"本身制造一条常在红的腿（与 2026-09-25 那次「不追溯」修正同源）。
+    两次历史修正继续有效：① **不追溯**（下界之前的单不进清单）；② **按作者收窄**（机器人 / GitHub App
+    创建的单**不进清单**、单列一行 —— 会话用人 token ⇒ 结构上不可能是机器人身份；最要紧的一例是本腿
+    自己的出口 = P1 值班单，`author = app/github-actions`，实测 #5723）。
     """
     cwd = Path.cwd()
     # ⚠️ `_gh_json` 的契约 = 失败回 **None**（不是元组）⇒ 调用方必须把 None 与「空集」分开（fail-closed）。
     rows = _gh_json([
         "issue", "list", "--state", "all", "--limit", str(args.limit),
         "--search", f"created:>={args.since}",
-        # ⚠️ `author` 是**必需**字段：少了它，机器人创建的行会退化成"来源未知" ⇒ 按保守计入违规
-        # ⇒ 值班单出口又把本腿喂红（2026-09-27 修的就是这个形态；判据 =
-        # tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py::test_cli_requests_the_author_field）。
+        # ⚠️ `author` 是**必需**字段：少了它，机器人创建的行会退化成"来源未知" ⇒ 混进分诊清单
+        # ⇒ 值班单出口（P1 值班 issue 由 bot 开）每次都出现在清单里（2026-09-27 修的就是这个形态；
+        # 判据 = tests/unit_ci_workflows/test_issue_lifecycle_pending_close.py::test_cli_requests_the_author_field）。
         "--json", "number,title,body,createdAt,author",
     ], cwd)
     if rows is None:
         print("❌ 无法判定：取不到 issue 列表（gh 不可用 / 未认证 / 输出非 JSON）—— **不得当 0 读**")
-        # ⚠️ 三态必须分开：0 = 无违规 / 1 = **有违规** / 3 = **无法判定**。
+        # ⚠️ 三态必须分开：0 = 清单已给出 / 3 = **无法判定**。（rc=1「有违规」这一态已随政策废止取消。）
         # 本判据第一版在这里写了 EXIT_USAGE（=1）⇒ 把"取不到数据"混同成"有违规"（我自己的判据当场抓到）。
         return EXIT_UNKNOWN
     grandfathered = [r for r in rows if isinstance(r, dict)
-                     and str(r.get('createdAt') or '') < NEW_ISSUES_POLICY_EFFECTIVE]
-    bad = violates_new_issues_policy(rows, NEW_ISSUES_POLICY_EFFECTIVE)
-    bots = bot_created_new_issues(rows, NEW_ISSUES_POLICY_EFFECTIVE)
-    unknown = set(unknown_source_new_issues(rows, NEW_ISSUES_POLICY_EFFECTIVE))
-    print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条；其中**政策生效前**（{NEW_ISSUES_POLICY_EFFECTIVE}）"
-          f"创建 ⇒ **豁免**（规则不追溯）= {len(grandfathered)} 条；**违规**（生效后新建且无标记）= {len(bad)} 条")
-    # 单独一行：机器人创建的行**不算违规**（会话用人 token ⇒ 不可能机器人身份），但**不静默丢弃**。
+                     and str(r.get('createdAt') or '') < NEW_ISSUES_TRIAGE_FLOOR]
+    unmarked = unmarked_new_issues(rows, NEW_ISSUES_TRIAGE_FLOOR)
+    bots = bot_created_new_issues(rows, NEW_ISSUES_TRIAGE_FLOOR)
+    unknown = set(unknown_source_new_issues(rows, NEW_ISSUES_TRIAGE_FLOOR))
+    print(f"窗口 created:>={args.since}：抓到 {len(rows)} 条；其中**下界之前**（{NEW_ISSUES_TRIAGE_FLOOR}）"
+          f"创建 ⇒ **不进清单** = {len(grandfathered)} 条；**无 `人为要求：` 标记 ⇒ 进清单** = {len(unmarked)} 条")
+    print("  ⚠️ **本清单不是违规**（2026-09-30 用户裁定：新业务需求直接开单、不需要标记）——")
+    print("     它只用于人核「**范围外的顺带发现**有没有被私开成单」；那类仍走三条出路"
+          "（① 链内修 ② 并入既有台账 ③ 在会话里向人类提出）。")
+    # 单独一行：机器人创建的行**不进清单**（会话用人 token ⇒ 不可能机器人身份），但**不静默丢弃**。
     print(f"  · 机器人创建（非会话来源，含本腿的值班单出口）= {len(bots)} 条："
           + ("；".join(f"#{n} {c} {t}" for n, c, t in bots) or "（无）"))
-    for num, created, title in bad:
+    for num, created, title in unmarked:
         print(f"  · #{num} {created} {title}"
               + ("（**来源未知（按保守计入）**：`author` 取不到 ⇒ 不当作「非机器人」放过）" if num in unknown else ""))
-        print(f"    ↳ 处置：① 链内修 ② 并入既有台账 ③ 在会话里向人类提出；若确系人为要求 ⇒ 在该单正文补 `人为要求：…`")
-    return 1 if bad else 0
+        print("    ↳ 是新业务需求 ⇒ **无需任何标记**（写清需求 + 已定口径即可）；是范围外顺带发现 ⇒ "
+              "① 链内修 ② 并入既有台账 ③ 在会话里向人类提出；人类当场要求开单 ⇒ 正文补 `人为要求：…`")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1964,7 +1974,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_new = sub.add_parser(
         "check-new-issues",
-        help="报告型：现取「新建但无 `人为要求：` 标记**且非机器人创建**」的 issue（会话内零新开政策的机械判据）",
+        help="报告型：分诊清单 —— 新建且无 `人为要求：` 标记、非机器人创建的 issue（**不是违规**；2026-09-30 起新业务需求直接开单）",
     )
     p_new.add_argument("--since", default=str(date.today()), help="窗口起点（created:>= 的值，默认今天）")
     p_new.add_argument("--limit", type=int, default=200, help="抓最近 N 条（默认 200）")
