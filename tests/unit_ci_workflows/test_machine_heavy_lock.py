@@ -75,8 +75,23 @@ def _write_lock(lock_file: Path, *, name: str, pid: str, cwd: str = "/tmp") -> N
     )
 
 
-#: 长命进程的真身（`node` 才会一直活着；把 `_work/vitest` 放进 argv 就能同时命中「族」与「射程」）。
-_LONG_LIVED_JS = "setInterval(function(){}, 1000)"
+#: 桩脚本的内容：一直活着、且**忽略参数**（`sleep 60 --held …` 会当场报错退出 ⇒ 造不出可观察的孤儿）。
+_LONG_LIVED = "while :; do sleep 1; done\n"
+
+
+def _write_stub(root: Path, name: str) -> Path:
+    """写一个长命桩脚本 `root/_work/<name>`。
+
+    ⚠️ 用 `sh` 而不是 `node`：CI 的 `ci workflow helper unit tests` job **不装 node**
+    （它只装 python + PG 二进制）⇒ 依赖 `node` 的判据会在 CI 上整片红。`sh` 到处都有。
+    进程命令行 = `sh <root>/_work/vitest --held` ⇒ token `vitest` 的 basename 命中**族**，
+    且它落在给定工作根下 ⇒ 命中**射程**（两条都成立才会被回收）。
+    """
+    prog = root / "_work" / name
+    prog.parent.mkdir(parents=True, exist_ok=True)
+    prog.write_text("#!/bin/sh\n" + _LONG_LIVED, encoding="utf-8")
+    prog.chmod(0o755)
+    return prog
 
 
 def launch_short_lived(source_lines: list[str], args: list[str]) -> None:
@@ -89,21 +104,23 @@ def launch_short_lived(source_lines: list[str], args: list[str]) -> None:
 def _spawn_orphan(root: Path) -> int:
     """造一个**真孤儿**：父进程起完就退场 ⇒ 子进程复归 init（PPID=1）。
 
-    argv = `['node', '<root>/_work/vitest', '--held']` —— 族判定取 token 的 basename（`node`），
+    argv = `['sh', '<root>/_work/vitest', '--held']` —— 族判定取 token 的 basename（`vitest`），
     射程判定看到 `<root>/_work/vitest` 这个 token（落在给定的已知工作根下）。两条都成立才杀。
+    ⚠️ 用 `sh` 不用 `node`：CI 那条 job 不装 node（详见 `_write_stub`）。
     """
     marker = root / "orphan.pid"
     marker.parent.mkdir(parents=True, exist_ok=True)
+    prog = _write_stub(root, "vitest")
     launch_short_lived(
         [
             "import subprocess,sys,time",
-            "p = subprocess.Popen(['node', '-e', sys.argv[2], sys.argv[1], '--held'],"
+            "p = subprocess.Popen(['sh', sys.argv[1], '--held'],"
             " start_new_session=True, stdin=subprocess.DEVNULL,"
             " stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
-            "open(sys.argv[3],'w').write(str(p.pid))",
+            "open(sys.argv[2],'w').write(str(p.pid))",
             "time.sleep(0.15)",
         ],
-        [str(root / "_work" / "vitest"), _LONG_LIVED_JS, str(marker)],
+        [str(prog), str(marker)],
     )
     return _remember(_wait_for_orphan(marker))
 
@@ -113,17 +130,18 @@ def _spawn_with_live_parent(root: Path) -> tuple[int, int]:
     marker = root / "live-child.pid"
     parent_marker = root / "live-parent.pid"
     marker.parent.mkdir(parents=True, exist_ok=True)
+    prog = _write_stub(root, "vitest")
     holder = subprocess.Popen(
         [
             "python3", "-c",
             "import os,subprocess,sys,time\n"
-            "p = subprocess.Popen(['node', '-e', sys.argv[2], sys.argv[1], '--held'],"
+            "p = subprocess.Popen(['sh', sys.argv[1], '--held'],"
             " start_new_session=True, stdin=subprocess.DEVNULL,"
             " stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
-            "open(sys.argv[3],'w').write(str(p.pid))\n"
-            "open(sys.argv[4],'w').write(str(os.getpid()))\n"
+            "open(sys.argv[2],'w').write(str(p.pid))\n"
+            "open(sys.argv[3],'w').write(str(os.getpid()))\n"
             "time.sleep(120)\n",
-            str(root / "_work" / "vitest"), _LONG_LIVED_JS, str(marker), str(parent_marker),
+            str(prog), str(marker), str(parent_marker),
         ],
     )  # ⚠️ 不开管道：孙进程继承管道会把「父进程」攒住不放（见上方注释）
     _remember(holder.pid)
@@ -181,7 +199,7 @@ def _kill_all_spawned() -> None:
         except (ProcessLookupError, PermissionError):
             continue  # 已经退出 / 不是本进程能杀的 —— 收尾尽力而为，不影响判定
     # 兜底（只对**本文件造出来的形状**、且只在 pytest 的临时目录下）：
-    # `node -e setInterval… <tmp>/…/vitest` —— 射程靠 `pytest-of-` 前缀收敛，不碰任何别人的进程。
+    # `sh <tmp>/…/vitest --held` —— 射程靠 `pytest-of-` 前缀收敛，不碰任何别人的进程。
     subprocess.run(["pkill", "-f", "pytest-of-.*/vitest --held"], capture_output=True)
 
 
