@@ -487,6 +487,50 @@ class TestVerifyAllWiring:
         )
 
 
+class TestPurePredicates:
+    """`MIGAO_HEAVY_LIB=1` 时脚本只装函数、不上膛 ⇒ 纯谓词可**零子进程、零时钟**直接调用。
+
+    这是**射程判定**的单元面（防误杀的最后一道）：`_runner_of_command`（族）与
+    `_command_in_roots`（路径前缀）。误杀的两个已知坏形态（同名非孤儿 / 工作根之外）在
+    `TestOrphanReaping` 已用**真进程**判过 —— 这里是它们的**纯函数版**，红得更快、更好定位。
+    """
+
+    def _call(self, body: str, roots: Path | None = None) -> subprocess.CompletedProcess:
+        env = {**os.environ, "MIGAO_HEAVY_LIB": "1"}
+        if roots is not None:
+            env["MIGAO_HEAVY_ROOTS"] = str(roots)
+        return subprocess.run(
+            ["bash", "-c", f'source "{SCRIPT}"\n{body}'],
+            capture_output=True, text=True, env=env, cwd=str(REPO),
+        )
+
+    def test_runner_family_matches_the_observed_shapes(self):
+        r = self._call(
+            '_runner_of_command "node --import tsx/esm apps/cli/src/bin.ts web"; echo; '
+            '/usr/bin/python3 -m pytest tests/unit_ci_workflows >/dev/null 2>&1 || true; '
+            '_runner_of_command "/usr/bin/python3 -m pytest tests/unit_ci_workflows"; echo; '
+            '_runner_of_command "node (vitest)"; echo; '
+            '_runner_of_command "bash scripts/x.sh" || echo NONE'
+        )
+        got = [ln.strip() for ln in r.stdout.split("\n") if ln.strip()]
+        assert got == ["node", "pytest", "node", "NONE"], (
+            f"族判定与现场观测到的形态不符（2026-09-30 现场：`node …` / `node (vitest)`）：{got}"
+        )
+
+    def test_scope_is_prefix_based_and_outside_paths_do_not_match(self, tmp_path):
+        inside = tmp_path / "work" / "vitest"
+        outside = tmp_path / "elsewhere" / "vitest"
+        r = self._call(
+            f'_command_in_roots "{inside}" && echo IN || echo NO; '
+            f'_command_in_roots "{outside}" && echo IN || echo NO',
+            roots=tmp_path / "work",
+        )
+        got = [ln.strip() for ln in r.stdout.split("\n") if ln.strip()]
+        assert got == ["IN", "NO"], (
+            f"射程必须是**路径前缀**判定（工作根之下的命中、之外的不命中）：实得 {got}\n{r.stderr}"
+        )
+
+
 class TestStaticContract:
     def test_script_is_executable_and_syntax_clean(self):
         assert SCRIPT.is_file(), "缺少 scripts/machine-heavy-lock.sh"
