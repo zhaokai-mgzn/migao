@@ -692,6 +692,11 @@ CREATE TABLE orders (
     follow_status VARCHAR(20) DEFAULT 'pending',    -- 跟进状态: pending/following/completed
     -- 来自 V20260901__add_order_user_id.sql
     user_id VARCHAR(64),                            -- 下单用户ID（users.id，C 端数据隔离依据）
+    -- 来自 V142__add_order_created_by.sql（issue #5835）——
+    -- 制单人 = **建单操作者**，与上面的 `user_id`（下单用户ID / C 端数据隔离依据）**是两个事实**：
+    -- C 端顾客自助下单时 user_id = 顾客，而他**不是**制单人（后台没人在建单）⇒ 那种情况本列为 NULL。
+    created_by VARCHAR(64),                         -- 建单操作者的员工 users.id；NULL = 未采集（存量单 / 内部服务占位 internal-service / 匿名 / C 端自助下单）⇒ 列表显示「—」且不参与按人筛选。不填 FK（同 agent_batches.created_by）
+    created_by_name VARCHAR(64),                    -- 制单人姓名**快照**（昵称优先，缺失回落 username）—— 列表展示与模糊筛选都用它（快照避免改名 / 删号后历史失真）
     -- 来自 V100__add_order_logistics_columns.sql（issue #4872）
     logistics_type VARCHAR(16),                     -- 收货物流类型：express 快递 / logistics 物流专线（与 order_logistics.logistics_type 同词表）；NULL = 建单未传（不猜，与下单页「未指定」同口径）
     logistics_company VARCHAR(128),                 -- 收货物流/快递公司；NULL = 建单未传（不猜）
@@ -2335,6 +2340,10 @@ CREATE INDEX idx_orders_order_no ON orders(order_no);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX idx_orders_deleted ON orders(deleted);
+
+-- 制单人模糊筛选（issue #5835，来自 V142__add_order_created_by.sql）
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_created_by_name
+    ON orders(tenant_id, created_by_name) WHERE created_by_name IS NOT NULL AND deleted = 0;
 
 -- order_items 索引
 CREATE INDEX idx_order_items_tenant ON order_items(tenant_id);
