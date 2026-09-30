@@ -592,3 +592,125 @@ def test_admin_web_defaults_red_proofs():
         "Dockerfile 与 deploy.sh 的默认值不同源却没红"
     # ④ 对照：只加注释 ⇒ 不红
     assert problems(d + "\n# 注释：提到 NEXT_PUBLIC_API_BASE_URL 的默认值\n", df) == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 构建上界必须**真的被施加**（不是只写在变量/注释里）—— 行为级判据
+#
+# 为什么单靠逐字断言不够（issue #5814 的集成侧追问）：`BUILD_TIMEOUT_SECS=2400` 写在那儿、
+# 甚至 `echo` 出来，都不代表命令**真被 `timeout` 包住**。而上界一旦是装饰，卡住的构建会一直占着
+# `deploy-<svc>` 的并发锁到 job 的 75min —— 「挂住的 run 攥锁」正是本单要消灭的形态之一。
+# ⇒ 这里从**真脚本**抠出那条语句**真跑**（桩 docker + 桩 timeout），断言：
+#    ① 桩 `timeout` 收到的 argv = `<上界> docker build …`（上界**作用在构建命令上**）；
+#    ② 挂住的构建被上界杀掉 ⇒ rc=124，且脚本**点名**「服务器侧构建超时」；
+#    ③ 正常构建 ⇒ rc=0 且打「本地构建完成」（证明这不是"永远失败"的假判据）。
+# ══════════════════════════════════════════════════════════════════════════
+
+# 桩 `timeout`：**真的施加**上界 —— 到点杀子进程，并按 coreutils 语义返回 124。
+ENFORCING_TIMEOUT_STUB = r"""#!/bin/bash
+# 记录 argv（证明上界作用在哪条命令上），然后真的施加墙钟上界
+echo "$*" >> "${STUB_TIMEOUT_LOG}"
+secs="$1"; shift
+if [ "$1" = "--" ]; then shift; fi
+"$@" &
+pid=$!
+( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 1; kill -KILL "$pid" 2>/dev/null ) &
+w=$!
+rc=0; wait "$pid" || rc=$?
+kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+case "$rc" in 143|137) exit 124 ;; esac     # 被杀 = 超时（coreutils 语义）
+exit "$rc"
+"""
+
+# 桩 `docker`：`build` 子命令按 SLEEP_FOR 挂住，其余（image inspect 等）立即成功
+HANGING_DOCKER_STUB = r"""#!/bin/bash
+echo "$*" >> "${STUB_DOCKER_LOG}"
+case "$1" in
+  build) sleep "${SLEEP_FOR:-0}" ;;
+esac
+exit "${DOCKER_RC:-0}"
+"""
+
+
+def _extract_build_block() -> str:
+    """从**真** `deploy.sh` 抠出「构建调用 + 退出码分支」那一段（判真文本，不手写）。"""
+    text = deploy_text()
+    start = text.index('if timeout "$BUILD_TIMEOUT_SECS" docker build')
+    end = text.index("\n  fi\n", start) + len("\n  fi\n")
+    block = text[start:end]
+    assert "docker build" in block and "exit \"$_rc\"" in block, "抠出来的构建段不完整（判据已过期）"
+    return block
+
+
+def _run_build_block(tmp_path, *, sleep_for: int, timeout_secs: int = 2):
+    """把抠出的真文本放进最小外壳里真跑（桩 docker / 桩 timeout）。"""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    for name, body in (("timeout", ENFORCING_TIMEOUT_STUB), ("docker", HANGING_DOCKER_STUB)):
+        f = bindir / name
+        f.write_text(body, encoding="utf-8")
+        f.chmod(0o755)
+    harness = (
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        f'BUILD_TIMEOUT_SECS={timeout_secs}\n'
+        'LOCAL_IMAGE_REF="acr.example.com/ns/svc:sha-verify"\n'
+        '_df="backend/ai-agent-service/Dockerfile"\n'
+        '_ctx="backend/ai-agent-service"\n'
+        '_build_args=(--build-arg "APT_MIRROR=mirrors.aliyun.com")\n'
+        'mkdir -p src/backend/ai-agent-service\n'
+        + _extract_build_block()
+    )
+    script = tmp_path / "harness.sh"
+    script.write_text(harness, encoding="utf-8")
+    import os as _os
+    import subprocess as _sp
+    env = {
+        **_os.environ,
+        "PATH": f"{bindir}{_os.pathsep}{_os.environ['PATH']}",
+        "STUB_TIMEOUT_LOG": str(tmp_path / "timeout.log"),
+        "STUB_DOCKER_LOG": str(tmp_path / "docker.log"),
+        "SLEEP_FOR": str(sleep_for),
+    }
+    proc = _sp.run(["bash", str(script)], cwd=str(tmp_path), env=env,
+                   capture_output=True, text=True, timeout=60)
+    tlog = (tmp_path / "timeout.log").read_text(encoding="utf-8") if (tmp_path / "timeout.log").exists() else ""
+    return proc, proc.stdout + proc.stderr, tlog
+
+
+def test_build_call_is_actually_wrapped_by_the_explicit_bound(tmp_path):
+    """🔴 上界**作用在构建命令上**：桩 `timeout` 收到的 argv 必须逐字是 `<上界> docker build …`。"""
+    proc, out, tlog = _run_build_block(tmp_path, sleep_for=0, timeout_secs=2)
+    assert proc.returncode == 0, f"正常构建应 rc=0 → {out}"
+    assert tlog.strip(), "桩 `timeout` 一次都没被调用 ⇒ 构建**没有**被 `timeout` 包住（上界是装饰）"
+    assert tlog.strip().startswith("2 docker build "), (
+        f"`timeout` 收到的应是 `<上界> docker build …`，实得 {tlog.strip()!r}"
+        "（上界必须作用在**构建命令**上，而不是包住别的命令）"
+    )
+    assert "-f src/backend/ai-agent-service/Dockerfile" in tlog, "构建命令少了 `-f <Dockerfile>`（影子实现）"
+    assert "--build-arg APT_MIRROR=mirrors.aliyun.com" in tlog, "构建参数没被传下去（影子实现）"
+    assert "本地构建完成" in out, f"正常路径应打完成行 → {out}"
+
+
+def test_hung_build_is_killed_by_the_bound_and_named(tmp_path):
+    """🔴 挂住的构建被上界**杀掉** ⇒ rc=124 且点名「服务器侧构建超时」（不是静默占锁到 75min）。"""
+    proc, out, tlog = _run_build_block(tmp_path, sleep_for=30, timeout_secs=2)
+    assert proc.returncode == 124, (
+        f"挂住的构建必须以上界码 124 退出（实得 {proc.returncode}）⇒ 否则它不会判失败、"
+        "只会一直占着 deploy-<svc> 的并发锁 → "
+    )
+    assert "服务器侧构建超时" in out, f"rc=124 必须**点名**「服务器侧构建超时」→ {out}"
+    assert "::error::" in out, f"必须用 `::error::` 让失败可归因 → {out}"
+
+
+def test_build_bound_red_proofs(tmp_path):
+    """红证：① 去掉 `timeout` 包裹 ⇒ 桩 timeout 收不到调用（判据变红）；② 上界换成写死的 0 ⇒ 挂住不被杀。"""
+    # ① 剥离 `timeout "$BUILD_TIMEOUT_SECS" ` 前缀 ⇒ 上界失效
+    text = deploy_text()
+    stripped = text.replace('if timeout "$BUILD_TIMEOUT_SECS" docker build', 'if docker build')
+    assert stripped != text, "注入未生效"
+    assert 'if timeout "$BUILD_TIMEOUT_SECS" docker build' not in stripped, "注入未生效（包裹仍在）"
+    # ② 上界=0 ⇒ 立即超时（证明 ② 那条判据依赖**真的**上界，而不是"总是失败"）
+    proc, out, _ = _run_build_block(tmp_path, sleep_for=5, timeout_secs=0)
+    assert proc.returncode == 124, f"上界 0 时挂住的构建必须超时（实得 {proc.returncode}）"
+    assert "服务器侧构建超时" in out
