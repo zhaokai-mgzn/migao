@@ -3970,6 +3970,45 @@
       "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "AI Agent Service Unit Tests",
+      "job": "ai-agent-service unit tests",
+      "run_id": 36725314472,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/36725314472",
+      "pr": 5837,
+      "head_sha": "e86b4d4a0d4988cf74d623c2b57b89fb9076b126",
+      "head_branch": "feat/orders-list-creator",
+      "first_failure_step": "",
+      "rerun_result": "failure",
+      "kind": "infra_suspect",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ai-agent-service unit tests",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-09-30T14:00:29Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ai-agent-service unit tests",
+          "step": "",
+          "assertion": null,
+          "timestamp": "2026-09-30T14:04:51Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-09-30T14:04:52Z",
+      "reason": "失败落在「取代码 · 装依赖 · 配环境」步骤（或 job 从未跑起来）⇒ 环境/基础设施问题",
+      "remedy": "**先区分「环境抖动」与「确定性不可解析」**（#5088 实证：dependabot 的 `npm ERESOLVE` 两次尝试逐字同一个错误 ⇒ 是依赖冲突，不是环境抖动）：两次报错逐字相同 ⇒ 查依赖锁定 / peer 冲突；偶发一次 ⇒ runner 容量 / 依赖源 / 网络",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
