@@ -184,6 +184,21 @@ def run_gate(repo, *, mode="gate", env=None, plant_foreign_stale=False,
     """
     e = dict(os.environ)
     e.update(env or {})
+    # ── 机器级重活锁的**测试面隔离**（issue #5814）────────────────────────────────────
+    # `verify-all.sh` 的 `gate` 档会 `acquire` 机器级重活锁（默认 `$HOME/.migao-heavy.lock`）。
+    # 本函数跑在**最小桩仓库**里（只有 verify-all.sh + growth_gate.py + 桩 scripts/），
+    # ⇒ 必须显式把锁文件指到**本仓库临时目录**，否则两个问题同时发生：
+    #   ① 桩仓库若带上了真实现的 `scripts/machine-heavy-lock.sh`，它会去抢**共享路径**上的
+    #      真锁 ⇒ 判据与「本机真的在跑一份全量套件」互相阻塞（**假红**，且是把别人的重活搅进来）；
+    #   ② 不带真实现时 `acquire` 只得 127 ⇒ gate 当场非零退出 ⇒ 本文件全部用例假红。
+    # ⚠️ 锁文件必须放在**仓库之外**（`<repo>.migao-heavy.lock`，仍是每次运行的临时目录）：放进 repo 内
+    #    会变成一条 **untracked 改动** ⇒ `gate_check()` 的变更集非空 + 打「未提交」告警 ⇒
+    #    把「无未提交改动」这类场景（本文件与 `test_gate_uncommitted_noop.py` 都有）判成假红。
+    #    （真跑时的默认值 `$HOME/.migao-heavy.lock` 也在仓库之外 —— 同一条口径。）
+    # 口径：**锁文件随运行**（临时目录 ⇒ 用完即弃）；真实现仍只在仓内一份
+    # （`scripts/machine-heavy-lock.sh`），桩仓库照抄它即可（见 `test_gate_uncommitted_noop.py` 的 `_min_repo`）。
+    _repo_path = Path(repo)
+    e["MIGAO_HEAVY_LOCK_FILE"] = str(_repo_path.parent / (_repo_path.name + ".migao-heavy.lock"))
     assert TMP.is_dir(), "本守卫依赖 /tmp 存放 report() 日志（CI 与 macOS 均有）"
     body = 'echo "PID=$$"; '
     if plant_foreign_stale:

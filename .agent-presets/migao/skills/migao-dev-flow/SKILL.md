@@ -310,6 +310,49 @@ PR 合并前，CI 自动扫描变更文件，按类型强制对应测试（G5 �
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。
+
+### 4.1 部署**只覆盖有改动的模块**（v1.91.0 新增，2026-09-30，issue #5814）
+
+> **规则（来源 = 用户逐字「改了哪个模块就部署哪个模块，**不要动其他镜像**」）**：
+> 一次合并**只部署代码 / 配置面真有改动的那些模块**；**未改动的模块不重建、不重启、不换镜像**。
+
+**判定真值源（别猜，两条并集）**：
+
+| 面 | 载体（唯一真相源） |
+|---|---|
+| 代码面 | 各服务部署腿的 `on.push.paths`：`.github/workflows/deploy-admin-api.yml` / `deploy-ai-agent-service.yml` / `deploy-frontend.yml` |
+| 配置面（与镜像**同源**） | `.github/workflows/deploy-reconcile.yml` 里那条 `reconcile_one <svc> <wf> <svc_path> "<extra>"` 的 **pathspec**（现取实得：admin-api 的 extra = `deploy/swas`） |
+
+**触发面 ⇄ 对账面同源**还有两条**既有机械承载**（**引用它们，不要另写一套**）：
+
+- **漂移判据**：`deploy-reconcile.yml` 的**判据②**（`git log <p>..HEAD -- <pathspec>`，`p` = 该腿**上次成功部署**的
+  commit）——「自上次成功部署起该服务路径**无改动** ⇒ **不补部署**」（承接 #3235 的防 502 窗口本意）；
+- **判据 + 台账**：`tests/unit_ci_workflows/test_config_change_triggers_deploy.py`（MC-023）·
+  `tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`（「触发面有、对账面没有」的存量缺口，**未登记即红**）。
+
+**现取命令（零成本、可复算）**：
+
+```bash
+# ① 线上在跑的 sha —— 从**容器真身**取（不看 run 结论、不看健康检查：三者可以同时骗人，见 §7.1）
+docker inspect --format '{{.Config.Image}}' <容器名>          # 形如 …/admin-api:sha-<7>；tag 就是 <head 7 位>
+#   （部署腿的 tag 规则现取：IMAGE_TAG=sha-${GITHUB_SHA::7}）
+
+# ② 自那个 commit 起，某服务路径有没有改动 —— **输出为空 ⇒ 该模块不部署**
+git log --oneline <sha-7>..origin/main -- backend/admin-api deploy/swas
+git log --oneline <sha-7>..origin/main -- backend/ai-agent-service
+git log --oneline <sha-7>..origin/main -- frontend/admin-web
+```
+
+**手动部署同理**：先算上面的漂移集，**只触发命中的那条腿**：
+
+```bash
+gh workflow run deploy-admin-api.yml --ref main   # 仅当漂移集**包含** admin-api 时才跑这一条
+```
+
+⛔ **反例（逐字禁止项）**：为「顺手刷一下」重建**未改动模块**的镜像 ⇒
+① 白烧一轮**跨境推送**（本仓实测 **17–33 分钟**，且常卡死在 45 min 上界）；
+② 无谓**重启线上容器**、制造 **502 窗口**（#3235）；
+③ 让「**哪个 commit 在线上**」更难追溯。
 - **部署后验证（2026-09-01 修正：`/actuator/health` 公网 404 是 nginx 屏蔽的预期行为，勿当成故障）**：
   ```bash
   curl -s https://ai-api.migaozn.com/health          # ai-agent → {"status":"healthy"}
@@ -2924,6 +2967,7 @@ python3 scripts/next_case_id.py --help    # 三态退出码：0 = 已给号 / 2 
   ③ **判据**：实例 = `tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **同名非孤儿与工作根之外都不误杀** / 接线与**顺序** / 准入守卫 then 分支必须 `exit 1` / EXIT trap 静态契约；**7 条注入式红证实测全红**，红证只在自己造的临时进程上跑）；类级元守卫 = `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py` + 台账 `tests/unit_ci_workflows/heavy_entry_ledger.json`（现取集合 ⇄ 台账**双向相等**、`lock=required` 必须同时有 acquire 与 release、豁免必须写理由、**未登记即红**）。
   ④ **值守面取舍**：**不加常驻守护**（不新增 launchd / 常驻进程）—— 值守面 = `acquire` 的**拒绝行为** + `status`；**拒绝本身就是机制**。
   **未实装 / 边界（照实登记，§19.1）**：元守卫只认载体里逐字写出的整目录 pytest 调用（`$(…)` / 变量拼接 / 别的运行器不在面内）；台账不保证接入的锁真的生效；**盖不到**「绕过脚本直接 `pytest tests/unit_ci_workflows`」那一路（无锁，靠纪律 + 唯一入口）。本节**不改任何门禁的通过条件、不新增豁免**。
+  ⑤ **同批并入（用户逐字要求「改了哪个模块就部署哪个模块，不要动其他镜像，这个原则应该写进研发模式」）**：新增 **§4.1「部署只覆盖有改动的模块」** —— 引用既有机制（各腿 `on.push.paths` · `deploy-reconcile.yml` 判据②的漂移判据 · `test_config_change_triggers_deploy.py` + `reconcile_trigger_paths_ledger.json`）而**不另写一套口径**，并给出两条**现取命令**（从容器真身取线上 sha + `git log <sha>..origin/main -- <路径>`）+ 手动部署只触发命中腿的写法 + 逐字反例。⚠️ **机械守卫本包只登记不实现**（避免与在飞的部署包抢同一批 `deploy-*.yml` / `deploy/swas/**` 文件），缺口与建议形态写在 PR body 的「未固化项」。
 
 ## 版本沿革（v1.1 → v1.82.0）
 - v1.90.0（2026-09-30 **新增 §15.7「改 web 页面 ⇒ 必跑一轮 Playwright 页面多模态验收」+ 可执行承载体**，本次；来源 = 用户逐字「改web页面都要求进行一轮Playwright页面多模态验收，写进米高研发模式中」）：
