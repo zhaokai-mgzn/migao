@@ -51,6 +51,7 @@
 # 环境变量（判据用来把锁放到临时目录，**不改默认路径**）：
 #   MIGAO_HEAVY_LOCK_FILE  锁文件路径（默认 `$HOME/.migao-heavy.lock`）
 #   MIGAO_HEAVY_ROOTS      已知工作根（冒号分隔；默认见 `_default_roots`）
+#   MIGAO_HEAVY_OWNER_PID  `release` 的显式持有者逃生口（默认比对 `$PPID` —— 也就是 `acquire` 时记下的那个）
 #
 # 退出码：0 = 成功；1 = 锁被活的持有者占着（**拒绝**：这是准入判定，不是脚本错误）；
 #         2 = 用法错误；3 = 无法判定（锁机制不可用/状态不一致 —— fail-closed，**不得当 0 读**）。
@@ -59,10 +60,6 @@ set -uo pipefail
 
 SELF="$0"
 LOCK_FILE="${MIGAO_HEAVY_LOCK_FILE:-$HOME/.migao-heavy.lock}"
-#: `acquire` 成功且**确实由本进程持有**时为 1（dispatch 据此决定 EXIT 时是否释放）。
-LOCK_HELD=0
-#: `acquire` 判定「拿不到锁」时为 1（dispatch 据此用退出码 1 退出 —— 与脚本错误 2/3 分开）。
-LOCK_REFUSED=0
 
 # ── 过程视图（**单一实现**：一条 `ps` 拿全量，供孤儿回收与 status 共用）────────────────
 # 为什么是 `ps -o pid=,ppid=,command=`：`pid=`/`ppid=` 的数字**不带表头**、`command=` 是**完整
@@ -266,7 +263,6 @@ cmd_acquire() {
   case "$state" in
     held)
       _report_holder
-      LOCK_REFUSED=1
       return 1
       ;;
     free)
@@ -290,7 +286,6 @@ cmd_acquire() {
     echo "❌ 无法写入锁文件 $LOCK_FILE —— 无法判定（fail-closed，不得当成功）" >&2
     return 3
   fi
-  LOCK_HELD=1
   echo "  🔒 已获取机器级重活锁：name=$name pid=$holder_pid worktree=$worktree"
   echo "     释放：$SELF release（或调用方以 trap … EXIT 兜住异常退出）"
   return 0
@@ -371,7 +366,7 @@ else
     acquire|release|status)
       sub="$1"; shift
       "cmd_${sub}" "$@"
-      # ⚠️ **不在本进程退出时自动删锁**（`LOCK_HELD` 只作读数）：本脚本的 `$$` 与调用方的
+      # ⚠️ **不在本进程退出时自动删锁**：本脚本的 `$$` 与调用方的
       # `$PPID` 不是同一个进程，自动删会把「调用方还在跑」的活锁误删成空闲 ⇒ 准入当场失效。
       # 释放只有两条路：① 调用方显式 `release`（或 `trap … EXIT`）② 下一次 `acquire` 发现
       # 持有者 PID 已死（陈旧锁）时回收。调用方忘释放的最坏后果 = 一次「陈旧锁」，
