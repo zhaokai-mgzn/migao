@@ -51,6 +51,27 @@ SK=$4
 ACR_USERNAME=${5:-}
 ACR_PASSWORD=${6:-}
 IMAGE_TAG=${7:-latest}
+# ── C′ 服务器侧构建（issue #5814）──────────────────────────────────────────────
+# 第 8 个位置参数 = **要构建的服务键**（与 deploy/swas/docker-compose.yml 的服务名一致）。
+# 空 ⇒ 完全走既有「拉 ACR 预构建镜像」路径（行为与改动前逐字相同）。
+#
+# ⚠️ 为什么这些参数由 CI 侧注入、而不是写死在 deploy.sh 里：
+#   · `APT_MIRROR` / `PIP_INDEX_URL` 是**环境相关**的（GitHub 托管 runner 在境外、SWAS 在杭州）
+#     ⇒ 同一条码路要在两种环境下都跑对，故走参数，且默认值保持「不动 CI 行为」。
+#   · `BUILD_SERVICE` 决定**构建哪一个**服务 ⇒ 由调用它的那条 workflow 决定（三条腿各建自己那个）。
+SERVICE_KEY=${8:-}
+# apt 源：默认 deb.debian.org = **不改写 sources.list**（实测从国内 4009s 仍未下完 189MB ⇒ 服务器侧必须换源）
+SWAS_APT_MIRROR=${SWAS_APT_MIRROR:-mirrors.aliyun.com}
+# pip 源：服务器侧必须用国内 PyPI 镜像（CI 现传的是 https://pypi.org/simple/ = 境外）
+SWAS_PIP_INDEX_URL=${SWAS_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+# 单次构建的显式上界（秒）：冷构建实测 1782s ⇒ 2400s 留 ~35% 余量；超时 rc=124 显式判红。
+SWAS_BUILD_TIMEOUT_SECS=${SWAS_BUILD_TIMEOUT_SECS:-2400}
+case "$SERVICE_KEY" in
+  "" | admin-api | ai-agent | admin-web) ;;
+  *)
+    echo "::error::SERVICE_KEY=\`${SERVICE_KEY}\` 不是已知服务（允许：admin-api / ai-agent / admin-web，或留空）⇒ 拒绝发命令"
+    exit 1 ;;
+esac
 # 显式降级许可（issue #4852 ②）：`gh workflow run deploy-*.yml -f image_tag=<tag>` 是**人工回滚接口**
 # ⇒ workflow 在 MODE=rollback 时注入 `ALLOW_DOWNGRADE=1`（由本脚本转成远端环境变量）。
 # **只认 `1`**：其它值（空 / 0 / 拼错）一律当 0 ⇒ 许可只能由显式路径给出，不会被环境意外打开。
@@ -62,7 +83,20 @@ esac
 
 # ── 硬超时参数（issue #4767 ①）────────────────────────────────────────────────
 # DEPLOY_TIMEOUT_SECONDS：**一次「发起 SWAS 调用 + 轮询结果」的总墙钟上界**（不是次数上界）。
+# ⚠️ **C′ 下这个预算必须显著变大**（issue #5814）：构建就发生在远端这次 RunCommand 调用**之内**
+#    （冷构建实测 **1782s = 29.7min**），而默认 900s 会在构建还没跑完时就判「硬超时」⇒
+#    表现成「CI 报硬超时、远端其实还在构建」的**假失败**（而且它会走 recovery_manual，不做回滚）。
+#    ⇒ SERVICE_KEY 非空时默认抬到 3000s（= 构建上界 2400s + 部署余量 600s）。
+#    显式给 SWAS_DEPLOY_TIMEOUT_SECONDS 时仍以显式值为准（不偷偷覆盖人的意图）。
+C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-3000}
 DEPLOY_TIMEOUT_SECONDS=${SWAS_DEPLOY_TIMEOUT_SECONDS:-900}
+# ⚠️ **保持上面那一行在行首**：既有判据
+#    （tests/unit_ci_workflows/test_swas_deploy_ci_hardening.py 的墙钟锚点）按 `^DEPLOY_TIMEOUT_SECONDS=…`
+#    逐字取默认值 ⇒ 把它挤进 if 分支会让那条判据失效（判据本体不动，靠**保持锚点形态**兼容）。
+# C′ 下若调用方**没有显式**给预算，则切到「含构建」的预算（构建就发生在这次远端调用之内）：
+if [ -n "${SERVICE_KEY:-}" ] && [ -z "${SWAS_DEPLOY_TIMEOUT_SECONDS:-}" ]; then
+  DEPLOY_TIMEOUT_SECONDS=$C_BUILD_DEPLOY_TIMEOUT_SECONDS
+fi
 # CLI_TIMEOUT_SECONDS：**单次 aliyun CLI 调用**的上界（防 CLI 自己挂住 ⇒ 轮询永不返回）。
 CLI_TIMEOUT_SECONDS=${SWAS_CLI_TIMEOUT_SECONDS:-60}
 # POLL_INTERVAL_SECONDS：轮询间隔（线上 20s；守卫测试调小以免空耗）。
@@ -316,7 +350,7 @@ fi
 #    占位符（`deploy_attempt` 替换；渲染后仍留占位符 ⇒ 当场报错，绝不静默当「无许可」）。
 #    写成 `export …;` 前置（而不是 `${VAR}=… bash …` 前缀）⇒ 「cp → mv -f → bash deploy.sh」
 #    的**原子安装形态**逐字不变（那是既有护栏，见 tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py）。
-BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/__BOOTSTRAP_REF__ -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
+BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; export BUILD_SERVICE=__BUILD_SERVICE__ APT_MIRROR=__APT_MIRROR__ PIP_INDEX_URL=__PIP_INDEX_URL__ BUILD_TIMEOUT_SECS=__BUILD_TIMEOUT_SECS__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/__BOOTSTRAP_REF__ -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
 
 # ══════════════════════════════════════════════════════════════════════════
 # ⑤ 部署脚本**自己**也必须与镜像 tag 同源（issue #5120）
@@ -372,7 +406,20 @@ render_bootstrap() {
   [ -n "$ref" ] || return 1
   out=${BOOTSTRAP//"$IMAGE_TAG"/"$tag"}
   out=${out//__BOOTSTRAP_REF__/$ref}
+  # C′（issue #5814）：构建面参数**每次尝试各自渲染**（含回滚那次）——回滚构建的也是该 tag 的源码。
+  # ⚠️ 一律用 `${VAR:-}`：本函数会被**独立装配的渲染器**调用（守卫测试只装配 BOOTSTRAP + 三个
+  #    纯函数，不带这些变量）⇒ 引用未定义变量会在 `set -u` 下当场失败，把「同源」判据判成红。
+  out=${out//__BUILD_SERVICE__/${SERVICE_KEY:-}}
+  out=${out//__APT_MIRROR__/${SWAS_APT_MIRROR:-mirrors.aliyun.com}}
+  out=${out//__PIP_INDEX_URL__/${SWAS_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}}
+  out=${out//__BUILD_TIMEOUT_SECS__/${SWAS_BUILD_TIMEOUT_SECS:-2400}}
   case "$out" in *__BOOTSTRAP_REF__*) return 1 ;; esac
+  # 渲染漏一个占位符 ⇒ 远端会拿到字面量 `__BUILD_SERVICE__` 之类（非法服务名 / 坏镜像源）
+  # ⇒ **fail-closed**：占位符还在就当场报错，绝不把未渲染的命令发给服务器。
+  case "$out" in
+    *__BUILD_SERVICE__* | *__APT_MIRROR__* | *__PIP_INDEX_URL__* | *__BUILD_TIMEOUT_SECS__*)
+      return 1 ;;
+  esac
   printf '%s' "$out"
   return 0
 }

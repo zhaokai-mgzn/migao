@@ -62,8 +62,12 @@ jobs:
     runs-on: ubuntu-latest
     # 硬超时兜底（issue #4767 ①）：脚本被卡死时由 GitHub 终止 run ⇒ run 进**终态** ⇒
     # `deploy-admin-api` 的 concurrency 组释放。事故里挂住的 run 占锁 20+ 分钟 ⇒ 后续 main 的部署全被挡住。
-    # 45min 远高于实测正常 job（≈5-11min）⇒ 不误杀正常构建；真正的部署阶段上界在脚本里（15min/次尝试）。
-    timeout-minutes: 45
+    # 75min 的来历（issue #5814 C′）：构建已搬到**服务器侧**，其墙钟算在「发起+轮询」预算之内
+    # （`swas-deploy-ci.sh` 的 SWAS_DEPLOY_TIMEOUT_SECONDS，C′ 下默认 3000s = 50min，
+    #   = 构建上界 2400s + 部署余量 600s）⇒ job 上界必须**大于**它，否则 run 会先被 GitHub 打死，
+    # 而打死报的是 `cancelled`（**不是** failure）⇒ 断路器不跳闸 ⇒ cron 自放大（本单要消灭的形态）。
+    # 冷构建实测 1782s（29.7min）⇒ 75min 给足余量，且仍能兜住真正卡死的 run（lock 一定会释放）。
+    timeout-minutes: 75
     # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
     outputs:
       deployed: ${{ steps.sync.outputs.skip }}
@@ -187,6 +191,31 @@ jobs:
               esac
             fi
             LAST7=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
+            # ── 🔴 C′ 判据（issue #5814）：同 sha 的部署**已成功** ⇒ 该 commit 已构建部署过 ⇒ 跳过 ──
+            # 病（实测 + 机器可判）：C′ 之后 CI **不再推 ACR** ⇒ 上面那条 `docker manifest inspect`
+            # **恒不命中**（那一臂**保留**：将来若恢复推 ACR，判据自动复活）⇒ 若不补本臂，
+            # `skip` 恒为 false ⇒ **每次 cron 都完整构建 + 完整部署** = 3 条腿 × 3 次/小时
+            # = **9 次全量重部署/小时**（蓝绿预验证 + 换容器 + nginx reload + 迁移），
+            # **与代码有没有改动无关**。这正是 #2935/#5078 建的「已构建 ⇒ 秒退」被悄悄取消的形态，
+            # 而**没有任何东西会变红**（承重判据只桩了「结论分支」，不桩「镜像到底在不在」）。
+            # 判据来源 = **同 sha 的部署 run 结论**（与下面 #5816 断路器**同一份** `gh run list`
+            # ⇒ 零新增机制 / 零新增 secret）；语义正好等于改前 ACR 判据想近似的「该 commit 已部署过」。
+            # ⚠️ 位置在「仍在跑」检查**之后**（未跑完的 run 由下面那条 churn 闸门挡，不归本臂）。
+            if [ "$LAST_STATUS" = "completed" ] && [ "$LAST_CONCLUSION" = "success" ]; then
+              echo "✅ ${LAST7} 的部署**已成功**——该 commit 已构建部署过，跳过本轮构建部署"
+              echo "   判据来源（issue #5814 C′）：C′ 不推 ACR ⇒ 镜像必然不在 ACR，故改看「同 sha 的 run 结论」"
+              echo "   需要**强制重新部署**同一 commit：gh workflow run <本腿>.yml -f image_tag=sha-${LAST7}"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "## ✅ 部署腿跳过（C′ 已部署判据，issue #5814）"
+                echo ""
+                echo "- 服务：\`${GITHUB_WORKFLOW:-}\` · commit：\`${LAST7}\`"
+                echo "- 判据：同 sha 的部署 run 结论 = \`success\`（且 status=\`completed\`）⇒ 该 commit **已构建部署过**"
+                echo "- 为什么不是「镜像在 ACR」：C′ = 服务器侧构建 ⇒ **不推 ACR** ⇒ 该判据恒不成立"
+                echo "- 强制重新部署：\`gh workflow run <本腿>.yml -f image_tag=sha-${LAST7}\`"
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              exit 0
+            fi
             if [ "$is_recoverable" != "true" ]; then
               echo "⛔ 镜像 ${IMAGE} 缺失，但 ${LAST7} 最近一次部署是**不可恢复的终态**（结论=${LAST_CONCLUSION}）——跳过本轮构建部署。"
               echo "   理由（issue #5814）：自动重试同一个坏 commit 只会**再挂一次**（挂点 = 推送到 ACR，"
@@ -224,62 +253,21 @@ jobs:
         working-directory: backend/admin-api
         run: ./mvnw test -q
 
-      - name: Build and push Docker image
+      # ── C′ 服务器侧构建（issue #5814）：CI **不再构建、不再推 ACR** ──────────────
+      # 用户 2026-09-30 裁定 C′（服务器侧构建），推翻旧铁律「构建跑在 CI，服务器只拉预构建产物」。
+      # 根因：从境外 GitHub 托管 runner 跨境推大镜像到阿里云 ACR 会**无上界地挂住**
+      # （实测 `Build and push` 步 32 样本双峰：2~4min 健康 vs 11.7~43.4min 病态，中位 37.6~40.2min，
+      #  被 `timeout-minutes` 打死 ⇒ `cancelled`；失败率随体积单调上升）。
+      # 现在：CI 只把源码（经既有 codeload 通道）与驱动参数送到服务器，由 **deploy.sh 在它自己的
+      # flock 之内**就地 `docker build` + `docker compose up` ⇒ **根本不推 ACR** ⇒ 该根因结构性消失。
+      # 实测：冷构建 1782s／**只改源码 2s**（层全 CACHED）／内存峰值 1792MB／磁盘每次净增约 1GB。
+      # ⚠️ 本步**保留**一个显式自证：确认确实没有走推送路径（防将来有人把推送悄悄加回来）。
+      - name: Assert server-side build (no ACR push)
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
-        working-directory: backend/admin-api
-        # ── 显式上界 + 一次重试（issue #5814 A）────────────────────────────────────
-        # 事故（run 36582359732 的 job 109453551643）：构建 1~2min 跑完，随后
-        # `#14 pushing layers` → `#15 [auth] …aliyuncs.com pull,push token`（鉴权**成功**）
-        # ⇒ **约 40 分钟零输出** ⇒ `##[error]The operation was canceled.`
-        # （被 job 的 `timeout-minutes: 45` 打死；`exporting cache` 从未出现 ⇒ **不是** GHA cache 导出）。
-        # 该步 32 个样本**双峰**：2.0~4.2min（健康）vs 11.7~43.4min（病态，中位 37.6~40.2min）。
-        # 修法：给**单次 push 尝试**一个显式上界（`timeout`，coreutils；ubuntu-latest 自带），
-        # 超时/失败后**重试一次**（镜像推送幂等）。最坏墙钟 = 2 × 上界 = **24min**，
-        # **明显小于** `timeout-minutes: 45` ⇒ 不再出现「被 job 超时打死 ⇒ conclusion=cancelled
-        # ⇒ 断路器不跳闸 ⇒ cron 无限重试」这一环。
-        # ⚠️ 两次都不成 ⇒ **显式 ::error:: 点名卡在哪一步**（推送到 ACR 挂住）后非零退出。
-        env:
-          PUSH_TIMEOUT_SECS: '720'
-          RETRY_SLEEP_SECS: '15'
         run: |
           set -euo pipefail
-          IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
-          IMAGE_FULL=$IMG:${{ steps.tag.outputs.IMAGE_TAG }}
-          LOG=$(mktemp)
-          attempt_build_and_push() {
-            timeout "${PUSH_TIMEOUT_SECS}" docker build \
-              -t "$IMAGE_FULL" \
-              -t "$IMG:latest" \
-              . 2>&1 | tee "$LOG" || return $?
-            timeout "${PUSH_TIMEOUT_SECS}" docker push "$IMAGE_FULL" 2>&1 | tee -a "$LOG" || return $?
-            timeout "${PUSH_TIMEOUT_SECS}" docker push "$IMG:latest" 2>&1 | tee -a "$LOG" || return $?
-          }
-          echo "🚀 构建并推送 ${IMAGE_FULL}（单次尝试上界 ${PUSH_TIMEOUT_SECS}s，失败/超时重试 1 次）"
-          if attempt_build_and_push; then
-            echo "✅ 第 1 次尝试成功"
-          else
-            rc=$?
-            echo "::warning::第 1 次构建/推送失败或超时（rc=${rc}，上界 ${PUSH_TIMEOUT_SECS}s）——重试 1 次（推送幂等）"
-            if [ "$rc" = "124" ]; then
-              echo "::warning::第 1 次是**超时**（rc=124）⇒ 形态与 issue #5814 的事故一致：卡在「推送到 ACR」（日志末行通常停在图层上传）"
-            fi
-            sleep "${RETRY_SLEEP_SECS}"
-            if attempt_build_and_push; then
-              echo "✅ 第 2 次尝试成功（第 1 次 rc=${rc}）"
-            else
-              rc2=$?
-              echo "::error::构建并推送镜像两次都没成功（第 1 次 rc=${rc}，第 2 次 rc=${rc2}，单次上界 ${PUSH_TIMEOUT_SECS}s）"
-              if [ "$rc2" = "124" ]; then
-                echo "::error::**推送到 ACR 挂住**（第 2 次也是 rc=124 超时）——镜像 ${IMAGE_FULL} 未推送成功；"
-                echo "::error::这一步就是 issue #5814 的挂点（日志停在图层上传，鉴权已完成）⇒ 请人工确认 ACR/网络后复跑，不要依赖自动重试。"
-              else
-                echo "::error::第 2 次失败不是超时（rc=${rc2}）⇒ 看构建日志的报错行（下面最后 60 行）"
-              fi
-              echo "──── 最后一次尝试的日志（末 60 行）────"
-              tail -n 60 "$LOG" || true
-              exit 1
-            fi
-          fi
+          echo "构建位置 = **SWAS 服务器侧**（issue #5814 C′）；CI 不构建、不推 ACR。"
+          echo "镜像由 deploy/swas/deploy.sh 在服务器 flock 之内产出，tag=${IMAGE_TAG}。"
 
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
@@ -296,7 +284,8 @@ jobs:
           ALLOW_DOWNGRADE: ${{ steps.tag.outputs.MODE == 'rollback' && '1' || '0' }}
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
-            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG"
+            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
+            admin-api
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy
