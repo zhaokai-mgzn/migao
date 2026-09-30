@@ -208,6 +208,10 @@ export default function OrderTable({
                 <ArrowDown className="w-3.5 h-3.5 text-neutral-400" />
               </span>
             </th>
+            {/* 制单人（issue #5835）：建单的 B 端操作者（`orders.created_by_name` 快照）。
+                🔴 缺值渲染「—」—— 存量单 / 内部服务占位 / C 端自助下单从未采集过这个事实，
+                **不留空**（「没采集」也是一条要看得见的读数）。 */}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">制单人</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
             {/* 加急 / 到货日（issue #5177）：列表面就能看出哪些单要插队、承诺哪天到。
                 🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
@@ -220,13 +224,13 @@ export default function OrderTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={13} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={13} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
                 暂无数据
               </td>
             </tr>
@@ -336,6 +340,11 @@ export default function OrderTable({
                   {/* 下单时间 */}
                   <td className="px-4 py-4 whitespace-nowrap">
                     <DateTimeCell value={order.createdAt} />
+                  </td>
+
+                  {/* 制单人（issue #5835）：`null` = 未采集 ⇒ 渲染「—」（不静默留空） */}
+                  <td className="px-4 py-4 whitespace-nowrap text-neutral-700" data-testid={`order-creator-${order.id}`}>
+                    {order.createdByName || <span className="text-xs text-neutral-400">—</span>}
                   </td>
 
                   {/* 状态 */}

@@ -5980,6 +5980,24 @@ _CASE_OR_052 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-053 [NORMAL] 订单列表新增「制单人」列 + 按制单人**模糊**过滤（issue #5835，用户 2026-09-30 逐字）：制单人 = **建单操作者**（新增 orders.created_by / created_by_name 快照，**不复用** C 端隔离键 user_id）；**订单详情不加**；存量单显示「—」且不参与按人筛选（源: cases/order.yml）──
+_CASE_OR_053 = EvalCase(
+    id='OR-053',
+    legacy_id='',
+    title='订单列表新增「制单人」列 + 按制单人**模糊**过滤（issue #5835，用户 2026-09-30 逐字）：制单人 = **建单操作者**（新增 orders.created_by / created_by_name 快照，**不复用** C 端隔离键 user_id）；**订单详情不加**；存量单显示「—」且不参与按人筛选',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，并且支持根据制单人过滤」+（问询后逐字选定）过滤控件 = 「文本框模糊匹配」；存量单处置 = 「显示「—」，不参与「按人」筛选」'],
+    expectations=[],
+    data_checks=["判据 1·**列表有「制单人」列且渲染的是后端给的姓名**：表头逐字含「制单人」；行里渲染 `createdByName`；**缺值渲染「—」**（存量单 / 内部服务占位 / C 端自助下单从未采集过这个事实 ⇒「没采集」也要看得见，不留空）。执行点 = frontend/admin-web/tests/unit/pages/orders-creator-filter.test.tsx。红证：把 `order.createdByName || '—'` 改成恒渲染姓名 ⇒ 判据 1 的缺值断言红。", '判据 2·**输入 + 查询 ⇒ 请求真的带独立参数 `creator`**（且**不并入** `keyword` —— 后端 keyword 匹配的是客户姓名 / 电话 / 订单号，混进去会把「制单人姓张」筛成「客户姓张」）。执行点同上。红证：删掉 `apiParams.creator = search.creator` ⇒ 判据 2 红。', "判据 3·**重置真的清空**：`handleReset` 后输入框为空且搜索态回到无 `creator` 条件（不是「重置按钮被点过」）。执行点同上。红证：把 `setCreator('')` 从 `handleReset` 删掉 ⇒ 判据 3 红。", '判据 4·**建单落制单人（单点）**：建单时按当前登录身份写 `created_by`（员工 users.id）+ `created_by_name`（姓名快照）；**取不到 ⇒ 两列都不写（NULL）** —— 不猜、不编造（`internal-service` 占位身份**不算**制单人）。判据点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java（`createOrder_recordsCreatorFromCurrentOperator` / `createOrder_creatorUnresolvedLeavesBothColumnsNull`）。', '判据 5·**过滤落在快照列上的 LIKE**：`creator` 非空 ⇒ SQL 段含 `created_by_name LIKE ?`（**不 join users** —— 快照列自足）；缺参 ⇒ **不加任何条件**。判据点 = OrderServiceTest（`getOrderPage_creatorFilterMatchesCreatedByName` / `getOrderPage_withoutCreatorAddsNoCondition`）。', '判据 6·**姓名解析口径**：昵称优先、缺失回落 `username`；占位身份 `internal-service` / 未认证 / 用户不存在 ⇒ **null**（尽力而为的留痕字段，不打断建单主流程，失败留 warn 日志可归因）。判据点 = backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java。'],
+    skip_reason='[backend-contract] 本用例是**管理端订单列表**的确定性判据（前端 vitest 判 DOM 与请求参数、后端 JUnit 判落库与查询条件；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`，与库内其余同标记用例一致 —— 标记名是历史遗留的窄名，它判的是「不进 agent-eval、判据在 traces.tests」这件事',
+    tags=['order', 'admin-web', 'creator', 'list-filter'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -11220,6 +11238,7 @@ ALL_CASES = (
     _CASE_OR_050,
     _CASE_OR_051,
     _CASE_OR_052,
+    _CASE_OR_053,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

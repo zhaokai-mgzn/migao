@@ -3630,7 +3630,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（51 case）
+## 订单域（52 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -4595,6 +4595,20 @@
 ```
 真值: order.admin-new-order-input-surface
 溯源: 2026-09-28 新增（用户当次会话逐字要求，无关联 issue —— 会话内零新开 issue 的口径下用本用例承载规格）：把「下单页输入面 = 颜色 + 净窗宽 + 净窗高，其余系统推导」这条口径钉成可执行判据。**只动版面与默认预选**：门幅规则、算料、取价、判定面、落库构造点一律复用既有单一真值源（本用例不复制任何推导口径）。🔴 2026-09-29 改判（用户当次会话逐字，见 user_inputs 第二条；issue #5794）：判据 3 / 4 / 7 **改判**（「改」只读态整条退场 / 门幅 chips 常态可选 + 来源文案说人话 / 特殊选项并入②加工项 ⇒ 两步），并**新增判据 8~11**（双开缺省且不再自动推算 / 用料公式参数说明 / 推导依据默认收起 / 系统识别 + 人工加改常态可见）。**判据强度只增不减**：改判的两条仍是「正向 + 反向 + 落库证据」三面钉住（新增「两个开关必须**不存在**」的反向断言）；新增四条各带红证方向。旧口径逐条留档在对应判据末尾（留档 ≠ 生效）。🔴 2026-09-30 第四批（用户当次会话逐字，见 user_inputs 第三条；issue #5794 的续批）：判据 11 **改判**（人工加 / 改 ⇒ `hidden` 隐藏），**新增判据 17~21**（组级输入行 / 规格三格行 / 中文术语 / 用料米数可自由录入 / `.` 中间态不吞），并把 `orders-new-number-converge-delta` 的「敲 `.` 落 `0`」**改判**为「中间态留着、值仍落 0」。🔴 2026-09-30 第五批（用户当次会话逐字，见 user_inputs 第四条）：判据 4 / 10 **改判**（门幅两块重复文案删除 + 推导细节三条各自折叠、**不折叠套折叠**），**新增判据 22~24**（标题右侧栏 / 系统识别加接高·拼接 / 拼接可选档），并把 `orders-new-auto-features` 四处「门幅来源」读数改钉在「下拉选中项 + 手选提示的有·无」上。**未降门禁**：裁决入口从两处**收敛到一处**（同一件事不许两个操作面），`craft-plan-reason` / `craft-plan-candidates` 照旧；三条单点变异红证已实跑（读数逐条写在判据里）。 同批再落三件（判据 25~27）：用料公式缺省**跟着「韩褶」勾选走**（没勾 ⇒ 倍数法）且勾 / 反选韩褶**自动联动公式与米数**、② 摘要**逐项列名**、颜色 chips **字号对齐**组级输入行。⚠️ 判据 25 是**口径变更**（`effectiveCraftCalcFormula` 的第 ③ 档 pleat → fullness，**收窄**而非取消）⇒ `orders-new-craft-calc` 三条与 `orders-new` 两处「缺省 = pleat」的断言**逐条改判**（并保留「不随租户配置漂移」的判别性：配置给 `pleat` 而页面仍出倍数法）。判据 1 的**顺序口径一字未动**（净尺寸 → 门幅 → 用料米数），改判的两条各带**单点变异红证**（已实跑，读数逐条写在判据里）；人工加 / 改那一块的 **11 条既有页面判据一条未减**（`hidden` ≠ 删除 ⇒ 节点仍在 DOM）。 🔴 2026-09-30 第六批（用户当次会话逐字，见 user_inputs 第五条；issue #5794 的续批）：判据 10 **再改判**（第五批的「三条各自折叠」→ **一整块** `derivation-panel` 折叠区：默认收起、不折叠套折叠、一次展开看全部细节），判据 4 的落点措辞同步（`door-width-details` 不再是折叠项）；`orders-new.test.tsx` 判据 11 的旁注断言**改判为反向**（「= 加工费米数」整条删除）。**判据强度只增不减**：判据 10 多了「这一块自己必须是 `<details>`」+「整块里零个 `<details>`」两条形态断言（第五批形态必红），判据 11 由「旁注在」翻成「旁注在 DOM 里找不到」。两条单点变异红证已实跑（读数逐条写在判据 10 / 判据 11 里）。同批第三处：**步骤 1 标题去掉「（系统推导）」后缀**（用户逐字「移除红框中的文字」）⇒ OR-043 判据 1 改判（标题 = 「用料与规格」+ **反向断言**整页不得再有带该后缀的标题按钮），`orders-new.test.tsx` 判据 ① 与 `orders-new-auto-features.test.tsx` 的定位式同步收窄为 `/^1 用料与规格/`（**不是放宽**：另加了一条「后缀必须不存在」的反向断言），e2e 契约断言同步。 ｜ tags: order, admin-web, layout, derivation, processing-items
+
+### OR-053. 订单列表新增「制单人」列 + 按制单人**模糊**过滤（issue #5835，用户 2026-09-30 逐字）：制单人 = **建单操作者**（新增 orders.created_by / created_by_name 快照，**不复用** C 端隔离键 user_id）；**订单详情不加**；存量单显示「—」且不参与按人筛选 🔵
+```
+你: 用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，并且支持根据制单人过滤」+（问询后逐字选定）过滤控件 = 「文本框模糊匹配」；存量单处置 = 「显示「—」，不参与「按人」筛选」
+数据: 判据 1·**列表有「制单人」列且渲染的是后端给的姓名**：表头逐字含「制单人」；行里渲染 `createdByName`；**缺值渲染「—」**（存量单 / 内部服务占位 / C 端自助下单从未采集过这个事实 ⇒「没采集」也要看得见，不留空）。执行点 = frontend/admin-web/tests/unit/pages/orders-creator-filter.test.tsx。红证：把 `order.createdByName || '—'` 改成恒渲染姓名 ⇒ 判据 1 的缺值断言红。
+数据: 判据 2·**输入 + 查询 ⇒ 请求真的带独立参数 `creator`**（且**不并入** `keyword` —— 后端 keyword 匹配的是客户姓名 / 电话 / 订单号，混进去会把「制单人姓张」筛成「客户姓张」）。执行点同上。红证：删掉 `apiParams.creator = search.creator` ⇒ 判据 2 红。
+数据: 判据 3·**重置真的清空**：`handleReset` 后输入框为空且搜索态回到无 `creator` 条件（不是「重置按钮被点过」）。执行点同上。红证：把 `setCreator('')` 从 `handleReset` 删掉 ⇒ 判据 3 红。
+数据: 判据 4·**建单落制单人（单点）**：建单时按当前登录身份写 `created_by`（员工 users.id）+ `created_by_name`（姓名快照）；**取不到 ⇒ 两列都不写（NULL）** —— 不猜、不编造（`internal-service` 占位身份**不算**制单人）。判据点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java（`createOrder_recordsCreatorFromCurrentOperator` / `createOrder_creatorUnresolvedLeavesBothColumnsNull`）。
+数据: 判据 5·**过滤落在快照列上的 LIKE**：`creator` 非空 ⇒ SQL 段含 `created_by_name LIKE ?`（**不 join users** —— 快照列自足）；缺参 ⇒ **不加任何条件**。判据点 = OrderServiceTest（`getOrderPage_creatorFilterMatchesCreatedByName` / `getOrderPage_withoutCreatorAddsNoCondition`）。
+数据: 判据 6·**姓名解析口径**：昵称优先、缺失回落 `username`；占位身份 `internal-service` / 未认证 / 用户不存在 ⇒ **null**（尽力而为的留痕字段，不打断建单主流程，失败留 warn 日志可归因）。判据点 = backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java。
+跳过: [backend-contract] 本用例是**管理端订单列表**的确定性判据（前端 vitest 判 DOM 与请求参数、后端 JUnit 判落库与查询条件；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`，与库内其余同标记用例一致 —— 标记名是历史遗留的窄名，它判的是「不进 agent-eval、判据在 traces.tests」这件事
+```
+真值: order.creator-snapshot
+溯源: 2026-09-30 新增（issue #5835；用户当次会话逐字，见 user_inputs）—— 🔴 **本条是「新业务需求直接开单」改判后的第一张按新口径开的单**（铁律 12 于同日改判：新业务需求 ⇒ 直接开 issue）。背景（现取实测）：制单人此前**全系统未采集**（`Order` 实体无该列；加工单打印早已把它登记为缺口并按 `PROCESSING_DOC_NOT_COLLECTED_FIELDS` 印「未采集」，见 docs/design/print-media-matrix.md）。**本用例不复制任何口径**：真值登记在 `order.creator-snapshot`；`created_by_name` 是**快照**（改名 / 删号后历史不失真），`user_id` 语义（C 端隔离）**一字未动**。⚠️ **未固化（照实登记）**：① 「**订单详情不加**该字段」是用户裁定的**反向面**，当前**没有**机械判据钉住（详情页若将来误加，只有人看得到）—— 缺口登记在此，重启条件 = 下次改详情页字段时顺手补一条反向断言；② 前端判据只覆盖「请求带 `creator`」，**不覆盖**真实数据库上的 LIKE 语义（由后端判据 5 的 SQL 段断言承担）。 ｜ tags: order, admin-web, creator, list-filter
 
 ## 加工项域（19 case）
 
@@ -8238,8 +8252,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：580（活跃 126，跳过 454）
-- tier 分布：smoke 12 / normal 535 / adversarial 31
+- 用例总数：581（活跃 126，跳过 455）
+- tier 分布：smoke 12 / normal 536 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8257,7 +8271,7 @@
 - 杂项域：50
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：51
+- 订单域：52
 - 加工项域：19
 - 加工单域：56
 - 商品域：105

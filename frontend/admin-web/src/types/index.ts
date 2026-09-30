@@ -1829,6 +1829,14 @@ export interface Order {
    * `YYYY-MM-DD`；`null` = **未指定**（不猜、不写死默认）。
    */
   requiredDeliveryDate?: string | null
+  /**
+   * **制单人姓名**（issue #5835；库列 `orders.created_by_name`，V142 的**姓名快照**）——
+   * 订单列表「制单人」列读它。`null` / 缺省 = **未采集**（存量单 / 内部服务占位 / 匿名 /
+   * C 端自助下单）⇒ 列表渲染「—」，**不做客户端默认**（「没采集」不许静默留空）。
+   *
+   * 🔴 **不是** `userId`（那是「下单用户 ID / C 端数据隔离依据」）：两者是不同字段、不同口径。
+   */
+  createdByName?: string | null
 }
 
 // ===== 表单与请求参数 =====
@@ -1844,6 +1852,11 @@ export interface OrderListParams extends PageParams {
   hasProcessing?: boolean | '' // 是否加工筛选
   status?: OrderStatus | 'processing' | ''  // 状态筛选
   keyword?: string             // 关键词搜索（售后关联订单等场景）
+  /**
+   * **制单人**（issue #5835）：后端按 `created_by_name` 快照列做**模糊**匹配（`LIKE %值%`）。
+   * 空串 / 缺省 = 不过滤。存量单（该列 NULL）**不参与**筛选 —— 筛了就只出有制单人的单。
+   */
+  creator?: string
 }
 
 // 订单表单数据（创建/编辑）

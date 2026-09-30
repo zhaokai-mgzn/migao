@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: HR-002, DF-007, HR-007, HR-004, UI-040
+// case_ids: HR-002, DF-007, HR-007, HR-004, UI-040, OR-053
 
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
@@ -718,5 +718,73 @@ class UserServiceTest {
 
         // when / then
         assertThat(userService.resolveCurrentUserDisplayName()).isNull();
+    }
+    // ======================== 当前操作者（制单人解析，issue #5835）========================
+    // `OrderService.createOrder` 的制单人来自这里 —— 口径单独在这里守（那边是 mock）。
+    // 快照口径（用户 2026-09-30 裁定）：**昵称优先，缺失回落 `username`**（员工登录名）——
+    // ⚠️ 与上面 `resolveCurrentUserDisplayName` 的「回落手机号」**不同**（那是发货单的展示口径）。
+
+    @Test
+    @DisplayName("当前操作者 - 有昵称 ⇒ 昵称 + 员工 userId（制单人两列的直接来源）")
+    void resolveCurrentOperator_NicknamePreferred() {
+        // given
+        authenticateAs("staff-001");
+        when(userMapper.selectById("staff-001")).thenReturn(User.builder()
+                .id("staff-001").tenantId(1L).nickname("蒋雪云").username("jiangxy")
+                .phone("13900139000").role("admin").status("active").build());
+
+        // when
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+
+        // then
+        assertThat(operator).isNotNull();
+        assertThat(operator.userId()).isEqualTo("staff-001");
+        assertThat(operator.displayName()).isEqualTo("蒋雪云");
+    }
+
+    @Test
+    @DisplayName("当前操作者 - 昵称缺失 ⇒ 回落 `username`（**不是**手机号：与发货单口径有意不同）")
+    void resolveCurrentOperator_FallsBackToUsername() {
+        // given
+        authenticateAs("staff-002");
+        when(userMapper.selectById("staff-002")).thenReturn(User.builder()
+                .id("staff-002").tenantId(1L).nickname(null).username("jiangxy")
+                .phone("13900139000").role("admin").status("active").build());
+
+        // when
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+
+        // then
+        assertThat(operator.displayName()).isEqualTo("jiangxy");
+    }
+
+    @Test
+    @DisplayName("当前操作者 - 服务占位身份（internal-service）⇒ null（服务身份不是「某个人建的单」）")
+    void resolveCurrentOperator_InternalServicePlaceholderIsNotAnOperator() {
+        authenticateAs("internal-service");
+
+        assertThat(userService.resolveCurrentOperator()).isNull();
+        // 占位身份连查库都不该发生（不浪费一次查询、也不拿 C 端顾客行冒充员工）
+        verify(userMapper, never()).selectById("internal-service");
+    }
+
+    @Test
+    @DisplayName("当前操作者 - 未认证 / 用户查不到 ⇒ null（不抛异常，建单不许被留痕字段打断）")
+    void resolveCurrentOperator_UnauthenticatedOrMissing() {
+        SecurityContextHolder.clearContext();
+        assertThat(userService.resolveCurrentOperator()).isNull();
+
+        authenticateAs("ghost");
+        when(userMapper.selectById("ghost")).thenReturn(null);
+        assertThat(userService.resolveCurrentOperator()).isNull();
+    }
+
+    @Test
+    @DisplayName("当前操作者 - 查库失败 ⇒ 吞掉异常返回 null（留痕失败不得打断建单主流程）")
+    void resolveCurrentOperator_SwallowsLookupFailure() {
+        authenticateAs("staff-003");
+        when(userMapper.selectById("staff-003")).thenThrow(new RuntimeException("db down"));
+
+        assertThat(userService.resolveCurrentOperator()).isNull();
     }
 }

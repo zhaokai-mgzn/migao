@@ -95,6 +95,16 @@ public class OrderListResponse {
     private LocalDate requiredDeliveryDate;
 
     /**
+     * **制单人姓名**（issue #5835，V142 `orders.created_by_name` 的快照）——
+     * 列表「制单人」列读它（由 `BeanUtils.copyProperties(order, response)` 从实体同名字段带出，
+     * **不另立第二份口径**）。
+     *
+     * <p>`null` = **未采集**（存量单 / 内部服务占位 / 匿名 / C 端自助下单）⇒ 前端渲染「—」，
+     * **不是**空字符串（「没采集」不许静默留空）。</p>
+     */
+    private String createdByName;
+
+    /**
      * 订单明细简要列表（用于列表"采购商品"列展示）
      */
     private List<OrderItemBrief> items;

@@ -83,6 +83,27 @@ public class Order {
      */
     private String userId;
 
+    /**
+     * **制单人** = 建单的操作者（B 端员工账号 `users.id`）—— issue #5835，V142。
+     *
+     * <p>🔴 <b>与 {@link #userId} 是两个事实，不可互换</b>：{@code userId} 是「下单用户 / C 端隔离依据」，
+     * 本列是「谁在后台把这张单建出来的」。C 端顾客自助下单时 {@code userId} = 顾客，
+     * 而他**不是**制单人（后台没人在建单）⇒ 那种情况本列为 NULL。</p>
+     *
+     * <p>NULL = **未采集**（存量单 / 内部服务占位 {@code internal-service} / 匿名 / C 端自助下单）
+     * —— 不猜、不回填。列表显示「—」且不参与「按制单人」筛选。不填 FK
+     * （同 {@code agent_batches.created_by}）。</p>
+     */
+    private String createdBy;
+
+    /**
+     * **制单人姓名快照**（建单时取 {@code users.nickname}，缺失回落 {@code users.username}）—— V142。
+     *
+     * <p>列表展示与模糊筛选都用本列（快照避免改名 / 删号后历史失真）。取值口径
+     * 见 {@code OrderService.resolveCurrentOperator}（单一解析点）。</p>
+     */
+    private String createdByName;
+
     private BigDecimal totalAmount;
 
     /**
