@@ -217,6 +217,16 @@ const checkedChips = (label: string) =>
   // 2026-09-29 第三次裁定：下拉**恒有一档选中**（含「未指定」档）⇒ 读数 = 当前选中项
   [ (screen.getByRole('combobox', { name: label }) as HTMLSelectElement).selectedOptions[0]?.textContent ?? '' ]
 
+/**
+ * 展开**唯一那一块**「推导细节」折叠区（🔴 2026-09-30 第六批起：① 门幅 / ② 用料公式 / ③ 用料方案
+ * 三块都收在它里面，用它这一个标题行统一切换 —— 改前是三条各自折叠）。
+ */
+const openDerivationPanel = () => {
+  const panel = screen.getByTestId('derivation-panel') as HTMLDetailsElement
+  if (!panel.open) fireEvent.click(within(panel).getByText(/推导细节/))
+  return panel
+}
+
 /** 展开「改工艺参数」区（推导方案就绪时它默认收起；展开才能看加工类型 / 打开方式 / 用料公式 chips） */
 const openCraftParams = () => {
   const btn = screen.getAllByTestId('craft-plan-edit')[0]
@@ -345,12 +355,12 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     //    红证：把任一块加回来 ⇒ 本断言红（反向断言，防回潮）。
     expect(screen.queryByTestId('sku-summary')).toBeNull()
     expect(screen.queryByTestId('sku-choice-reason')).toBeNull()
-    // ③ 「为什么是这一支」的**唯一**落点 = 门幅推导细节：默认收起；展开后候选清单 / 规则解 / 服务端依据
+    // ③ 「为什么是这一支」的**唯一**落点 = 门幅推导细节：它在**唯一那一块**推导细节折叠区
+    //    （`derivation-panel`；🔴 2026-09-30 第六批：三条各自折叠 → **一整块**）里面，默认收起；
+    //    展开这一块后候选清单 / 规则解 / 服务端依据都读得到
     //    （旧口径「系统按门幅规则自动选中」的**可读替代**就在这里，判据强度未降）
-    const details = screen.getByTestId('door-width-details') as HTMLDetailsElement
-    expect(details.open).toBe(false)
-    fireEvent.click(within(details).getByText(/① 门幅/))
-    expect(details.open).toBe(true)
+    const panel = openDerivationPanel()
+    expect(panel.contains(screen.getByTestId('door-width-details'))).toBe(true)
     expect(screen.getByTestId('door-width-candidates').textContent).toContain('2.8米')
     expect(screen.getByTestId('door-width-rule-solution').textContent).toContain('2.8 米')
     expect(screen.getByTestId('door-width-plan-reason').textContent).toContain('替身：单幅可做')
@@ -460,31 +470,33 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(where.textContent).toContain('工艺配置 → 算料配置')
   })
 
-  it('判据 10（🔴 2026-09-30 第五批改判）：推导细节**默认全部收起**、**不折叠套折叠**，结论常显在标题行', async () => {
+  it('判据 10（🔴 2026-09-30 第六批改判）：推导细节**收拢为一个折叠区**、默认收起、不折叠套折叠', async () => {
     await setupLine()
-    // 用户逐字：「就不要折叠套折叠了，可以排版对每块推导工艺做一些说明文字，比如 1 2 3 或者
-    // 直接门幅 工艺之类的标题？…默认全部折叠，需要引导用户查看推导细节」
-    const panel = screen.getByTestId('derivation-panel')
+    // 用户逐字（第六批）：「推导细节都收拢到一个折叠区域，打开后展示全部细节，直接用一行展示这块的
+    // 标题+推导细节，默认折叠，通过文案提示用户可以打开」
+    const panel = screen.getByTestId('derivation-panel') as HTMLDetailsElement
+    // 形态：**这一块自己就是那个折叠项**（`<details>`），默认收起；引导语就是它的标题行
+    // （它在 ① 的标题右侧栏里 ⇒ 与标题**同一行**）
+    expect(panel.tagName).toBe('DETAILS')
+    expect(panel.open).toBe(false)
     expect(panel.textContent).toContain('推导细节（默认收起，点标题展开）')
-    const entries = Array.from(panel.querySelectorAll('details')) as HTMLDetailsElement[]
-    // 正好三条：① 门幅 / ② 用料公式 / ③ 用料方案（编号即标题 —— 用户说的「1 2 3」）
-    expect(entries).toHaveLength(3)
-    for (const d of entries) {
-      expect(d.open).toBe(false) // 默认全部折叠
-      expect(d.querySelector('details')).toBeNull() // **不许折叠套折叠**
-    }
+    // ① 门幅 / ② 用料公式 / ③ 用料方案 三块**全都收在它里面**（编号即标题 —— 用户说的「1 2 3」），
+    // 且**都不再是折叠项**：整块里除它自己外没有任何 `<details>`（改前 = 三条各自折叠 ⇒ 本断言必红）
+    expect(panel.querySelectorAll('details')).toHaveLength(0)
+    expect(panel.contains(screen.getByTestId('door-width-details'))).toBe(true)
+    expect(panel.contains(screen.getByTestId('meters-formula-block'))).toBe(true)
+    expect(panel.contains(screen.getByTestId('craft-plan'))).toBe(true)
     expect(panel.textContent).toContain('① 门幅')
     expect(panel.textContent).toContain('② 用料公式')
     expect(panel.textContent).toContain('③ 用料方案')
-    // 结论**常显**（在 ③ 的标题行上，不必展开）—— 2026-09-29 裁定「收的只是太多太细的那半」
+    // **一次展开 = 全部细节看得见**（用户逐字「打开后展示全部细节」）：结论、逐项、依据、候选都在这一块里
+    openDerivationPanel()
+    expect(panel.open).toBe(true)
     expect(screen.getByTestId('craft-plan-mode')).toBeTruthy()
     expect(screen.getByTestId('craft-plan-headline')).toBeTruthy()
     expect(screen.getByTestId('craft-plan-meters')).toBeTruthy()
-    // 依据与候选**仍在 DOM**（既有判据照旧读得到），展开 ③ 才看得见
     expect(screen.getByTestId('craft-plan-reason')).toBeTruthy()
     expect(screen.getByTestId('craft-plan-candidates')).toBeTruthy()
-    fireEvent.click(within(screen.getByTestId('craft-plan')).getByText(/③ 用料方案/))
-    expect((screen.getByTestId('craft-plan') as HTMLDetailsElement).open).toBe(true)
   })
 
   it('判据 11（🔴 2026-09-30 改判）：系统识别常态可见；**人工加 / 改本期隐藏**（用户逐字「先隐藏，本期不需要该功能」）', async () => {

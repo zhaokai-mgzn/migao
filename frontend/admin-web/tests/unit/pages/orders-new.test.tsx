@@ -1382,8 +1382,10 @@ describe('NewOrderPage', () => {
       // 叫「数量」会被商家读成「买几樘 / 几件」，而这个数直接决定加工费。
       const curtainLabel = screen.getByText('用料米数')
       expect(curtainLabel.closest('div')!.querySelector('input')).toBeTruthy()
-      // 旁注把口径写出来（商家一眼对得上加工费按哪个数算）
-      expect(screen.getByText('= 加工费米数')).toBeInTheDocument()
+      // 🔴 2026-09-30 第六批改判（用户逐字「= 加工费米数 这个直接移除」）：这行旁注**整条删除** ——
+      // 字段名「用料米数」本身已经说清它是加工费米数（`info.processingMeters = line.quantity`，
+      // 加工费 = 组合单价 × 它）。**反向断言**（防回潮）：帘行不得再出现这行旁注。
+      expect(screen.queryByText('= 加工费米数')).toBeNull()
       // 反向断言：帘行**不得**再留着旧文案「数量」
       expect(screen.queryByText('数量')).toBeNull()
 
@@ -2033,7 +2035,11 @@ describe('NewOrderPage', () => {
       // 手风琴由 2026-09-28 的**三步**回到**两步**（1 用料与规格（系统推导）/ 2 加工项）。
       // 红证：把 ③「其他」的折叠壳装回来 ⇒ 第一条长度断言 + `queryByRole(/^\d+ 其他/)` 必红。
       expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
-      expect(screen.getByRole('button', { name: /^1 用料与规格（系统推导）/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^1 用料与规格/ })).toBeInTheDocument()
+      // 🔴 2026-09-30 第六批改判（用户逐字「移除红框中的文字」，红框 = 标题里的「（系统推导）」后缀）：
+      // 步骤 1 就叫「用料与规格」——**反向断言**：整页不得再有带「（系统推导）」后缀的标题按钮
+      // （防回潮；红证：把后缀加回 `title=` ⇒ 本行红）。
+      expect(screen.queryByRole('button', { name: /（系统推导）/ })).toBeNull()
       expect(screen.getByRole('button', { name: /^2 加工项/ })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /^\d+ 其他/ })).toBeNull()
       // 反向断言：旧的 3 / 4 段序号锚点都不再存在
