@@ -324,11 +324,15 @@ def test_mutations_are_all_detected(tmp_path):
         "Dockerfile 的 ARG 缺省值置空": dict(
             dockerfile=dockerfile.replace("ARG NEXT_PUBLIC_BMINI_H5_URL=https://app.migaozn.com/b/", "ARG NEXT_PUBLIC_BMINI_H5_URL=")
         ),
+        # ⚠️ 变异锚点于 2026-09-30 随 issue #5814 的 C′ 迁移：`deploy-frontend.yml` 的
+        #    `--build-arg` 构建步已**整体删除**（构建改到服务器侧）⇒ 旧锚点会变成**空操作**
+        #    （变异没生效 ⇒ 被判成「未检出」，红证失效）。现锚在**仍然存在**的那一行行尾，
+        #    变异语义不变：**新增一处未登记的 `secrets.<公开地址>` 引用 ⇒ 必须被判红**。
         "deploy-frontend 新增未登记的 secrets 引用（Danger Scan 阻塞形态）": dict(
             workflow=workflow.replace(
-                "            --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \\\n",
-                "            --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \\\n"
-                f"            --build-arg {ENV_VAR}=${{{{ secrets.{ENV_VAR} }}}} \\\n",
+                "            admin-web\n",
+                "            admin-web\n"
+                f"            # 变异注入：{ENV_VAR}=${{{{ secrets.{ENV_VAR} }}}}\n",
             )
         ),
         "把二维码挪进无值分支（画假码）": dict(page_src=fake_qr),

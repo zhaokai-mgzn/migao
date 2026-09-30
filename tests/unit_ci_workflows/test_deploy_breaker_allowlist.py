@@ -72,9 +72,19 @@ SYNC_LEGS = DEPLOY_WORKFLOWS
 
 SYNC_STEP = "Skip if already built (schedule reconcile)"
 RECONCILE_STEP = "Reconcile deploys"
-BUILD_STEP = {"deploy-ai-agent-service.yml": "Build and push Docker image",
-              "deploy-admin-api.yml": "Build and push Docker image",
-              "deploy-frontend.yml": "Build and push"}
+# ⚠️ **射程随事实收窄**（issue #5814 C′，2026-09-30）：三条 deploy 腿的「Build and push」步
+# 已被**整体删除**（C′ = 服务器侧构建 ⇒ CI 不构建、不推 ACR）⇒ 它们**退出**本面
+# （留在这里会变成「点名一个不存在的对象」的空断言/陈旧条目，正是铁律 8 要拦的形态）。
+# 现取（`grep -rn "docker push\|--push" .github/workflows/`）**仍有**推送面的只剩
+# `bmini-h5-publish.yml`（静态落地面腿的传输镜像）⇒ 本面**随事实**从 3 条缩到 1 条。
+# 🔴 三条 deploy 腿的新不变式（**不得再长回推送**）由 `test_deploy_legs_do_not_push` 正向钉住
+#    —— 删掉判据只留空档是不够的（将来有人加回 `--push` 时不会有东西变红）。
+PUSH_LEGS = ("bmini-h5-publish.yml",)
+# 三条部署腿（C′ 之后**不得**出现任何推送面）
+NO_PUSH_LEGS = DEPLOY_WORKFLOWS
+BUILD_STEP = {"bmini-h5-publish.yml": "Pack product into transport image and push"}
+# 各腿推送步所在的 job（deploy 腿是 `build-and-deploy`；bmini 发布腿是 `publish`）
+PUSH_JOB = {"bmini-h5-publish.yml": "publish"}
 
 # 允许名单的**逐字**取值（`success` 之外的中性结论：`skipped` / `neutral`）。
 # 空（= 查不到同 sha 记录）在两条判据里都由「不落进跳闸分支」体现。
@@ -138,6 +148,12 @@ n=0
 [ -f "$COUNT_FILE" ] && n=$(cat "$COUNT_FILE")
 n=$((n + 1))
 echo "$n" > "$COUNT_FILE"
+# 可选：只让**匹配 ${STUB_FAIL_MATCH}** 的调用失败（用来专打 push，而不让前面的 docker build 先断）
+if [ -n "${STUB_FAIL_MATCH:-}" ]; then
+  case "$*" in
+    *"$STUB_FAIL_MATCH"*) echo "stub docker: 命中 STUB_FAIL_MATCH，失败（注入）" >&2; exit "${STUB_FAIL_RC:-1}" ;;
+  esac
+fi
 if [ "$n" -le "${STUB_FAIL_TIMES:-0}" ]; then
   echo "stub docker: 第 ${n} 次调用失败（注入）" >&2
   exit "${STUB_FAIL_RC:-1}"
@@ -177,13 +193,9 @@ BUILD_STEP_ANCHORS = ("--cache-from type=gha", "--cache-to type=gha,mode=max")
 # 集合**不是**从别的面推出来的（旧写法拿**整个文件**当基线、拿**构建步**当被测面 ⇒ 那个「⊆」
 # 是集合大小的巧合，不是判据）。
 BUILD_STEP_SECRETS_FROZEN = {
-    "deploy-ai-agent-service.yml": frozenset(),
-    "deploy-admin-api.yml": frozenset(),
-    "deploy-frontend.yml": frozenset({
-        "NEXT_PUBLIC_API_BASE_URL",
-        "NEXT_PUBLIC_AI_API_BASE_URL",
-        "NEXT_PUBLIC_COOKIE_DOMAIN",
-    }),
+    # ⚠️ 只列**仍有推送步**的腿（issue #5814 C′ 后三条 deploy 腿全部退出）—— 台账只许缩短。
+    # bmini 的推送步正文只用 `env:` 变量，不引用 `secrets.*`（登录凭据在它**上一步**）。
+    "bmini-h5-publish.yml": frozenset(),
 }
 
 
@@ -232,6 +244,19 @@ def _body(name: str, step_name: str, job: str = "build-and-deploy") -> str:
         f"反空跑锚点：{name} 的 step `{step_name}` 没有 run 正文（判据已过期）"
     )
     return body
+
+
+def _push_step(name: str) -> str:
+    """推送步的名字（本面只覆盖 PUSH_LEGS）——集中一处，避免各判据各写一遍。"""
+    return BUILD_STEP[name]
+
+
+def _push_job(name: str) -> str:
+    return PUSH_JOB.get(name, "build-and-deploy")
+
+
+def render_push_step(name: str) -> str:
+    return _render(name, _push_step(name), job=_push_job(name))
 
 
 def _render(name: str, step_name: str, job: str = "build-and-deploy") -> str:
@@ -626,7 +651,12 @@ def test_explicit_rollback_never_skips_even_with_unrecoverable_last_run(wf, tmp_
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A：`Build and push` 的显式上界 + 一次重试 + 可归因报错
+# A：推送步的**显式上界** + 可归因报错（issue #5814；C′ 后射程只剩 bmini 一条腿）
+#
+# 🔴 为什么射程变了（**现取，不按口头描述写**）：C′ 把三条 deploy 腿的「Build and push」整体删掉
+#    ⇒ 它们不再有推送面；`grep -rn "docker push\|--push" .github/workflows/` 现只剩
+#    `.github/workflows/bmini-h5-publish.yml` 一处。本面随事实从 3 条缩到 1 条；
+#    三条 deploy 腿改由 `test_deploy_legs_do_not_push` 正向钉住「不得长回推送」。
 # ══════════════════════════════════════════════════════════════════════════
 
 BUILD_ENV_STUB = {
@@ -635,12 +665,11 @@ BUILD_ENV_STUB = {
 }
 
 
-def run_build(name: str, tmp_path: Path, *, fail_times: int, fail_rc: int = 1, tag: str = "build"):
-    """真跑构建步（桩 docker/timeout）⇒ (rc, out, docker 调用日志)。
+def run_build(name: str, tmp_path: Path, *, fail_times: int, fail_rc: int = 1, tag: str = "build",
+              fail_match: str = ""):
+    """真跑推送步（桩 docker/timeout）⇒ (proc, out, docker 调用日志)。
 
-    `fail_times=1` = 第一次失败、第二次成功（**重试**路径）；
-    `fail_times=9` = 两次都失败（**报错**路径）；
-    `fail_rc=124` = 与 `timeout` 超时同码（演「推 ACR 挂住」）。
+    `fail_times=0` = 成功；`fail_times=9, fail_rc=124` = 演「推送到 ACR 挂住」（超时码 124）。
     """
     bindir = _make_bin(tmp_path, {"docker": BUILD_DOCKER_STUB, "timeout": TIMEOUT_STUB,
                                   "gh": GH_STUB})
@@ -652,114 +681,76 @@ def run_build(name: str, tmp_path: Path, *, fail_times: int, fail_rc: int = 1, t
         "STUB_COUNT_FILE": str(count),
         "STUB_FAIL_TIMES": str(fail_times),
         "STUB_FAIL_RC": str(fail_rc),
+        "STUB_FAIL_MATCH": fail_match,
         "GITHUB_ENV": str(tmp_path / f"genv-{tag}"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / f"gsum-{tag}"),
         "GITHUB_SHA": "abcdef1234567890",
     }
-    proc = _run(_render(name, BUILD_STEP[name]), tmp_path, bindir=bindir, env_extra=env, tag=tag)
+    proc = _run(render_push_step(name), tmp_path, bindir=bindir, env_extra=env, tag=tag)
     return proc, proc.stdout + proc.stderr, (log.read_text(encoding="utf-8") if log.exists() else "")
 
 
-@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
-def test_build_step_retries_once_after_first_failure(wf, tmp_path):
-    """🔴 A-①：第 1 次失败 ⇒ **重试 1 次**且第 2 次成功 ⇒ step 成功（rc=0）。
-
-    改前没有重试：一次推送抖动 = 该 commit 白挂 40min（事故读数）。
-    """
-    proc, out, log = run_build(wf, tmp_path, fail_times=1)
-    assert proc.returncode == 0, f"{wf}: 第 1 次失败后重试成功应 rc=0（去做一次重试！）→ {out}"
-    assert "重试 1 次" in out or "第 2 次尝试成功" in out, f"{wf}: 必须打印重试动作 → {out}"
+@pytest.mark.parametrize("wf", PUSH_LEGS)
+def test_push_step_succeeds_and_reaches_the_manifest_recheck(wf, tmp_path):
+    """A-①：正常路径 ⇒ rc=0，且**推送后立刻复验**（`docker manifest inspect`，fail-closed）仍在。"""
+    proc, out, log = run_build(wf, tmp_path, fail_times=0)
+    assert proc.returncode == 0, f"{wf}: 正常路径应 rc=0 → {out}"
     calls = [ln for ln in log.splitlines() if ln.strip()]
-    assert len(calls) >= 2, f"{wf}: docker 只被调用 {len(calls)} 次 ⇒ 没有重试 → {log!r}"
+    assert any("push" in c for c in calls), f"{wf}: 桩 docker 没看到 push 调用 → {log!r}"
+    assert any("manifest" in c and "inspect" in c for c in calls), (
+        f"{wf}: 推送后的 `docker manifest inspect` 复验不见了（那是 fail-closed 的承接面）→ {log!r}"
+    )
 
 
-@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
-def test_build_step_exhausted_retries_fail_loud_and_nonzero(wf, tmp_path):
-    """🔴 A-②：两次都不成 ⇒ **非零退出** + `::error::` **点名卡在哪一步**（推送到 ACR 挂住）。
+@pytest.mark.parametrize("wf", PUSH_LEGS)
+def test_push_step_timeout_fails_loud_and_nonzero(wf, tmp_path):
+    """A-②：超时（rc=124）⇒ **非零退出** + `::error::` **点名**「推送到 ACR 挂住」。
 
-    「40 分钟零输出 + 一个 cancelled」的坏形态被换成**可归因**的失败：结论不再是
-    「不知道挂在哪」，而是「推送到 ACR 挂住了」。
+    「40 分钟零输出 + 一个 cancelled」的坏形态被换成**可归因**的失败。
     """
-    proc, out, log = run_build(wf, tmp_path, fail_times=9, fail_rc=124)
-    assert proc.returncode != 0, f"{wf}: 两次都失败必须非零退出（否则会被当成部署成功）→ {out}"
-    assert "::error::" in out, f"{wf}: 必须用 `::error::` 让失败在 run 页面上可归因 → {out}"
-    assert "推送到 ACR 挂住" in out, (
-        f"{wf}: 超时（rc=124）时必须**点名**卡在「推送到 ACR」（issue #5814 的挂点）→ {out}"
-    )
-    assert "第 1 次" in out and "第 2 次" in out, f"{wf}: 两次尝试的读数都要有 → {out}"
+    # ⚠️ 必须**只让 push 失败**：若让第一次 `docker build` 就失败，脚本会在构建步就非零退出
+    #    （那是另一条码路），根本走不到推送的超时分支 ⇒ 红证会测错对象。
+    proc, out, log = run_build(wf, tmp_path, fail_times=0, fail_rc=124,
+                               fail_match="push")
+    assert proc.returncode != 0, f"{wf}: 推送超时必须非零退出（否则会被当成部署成功）→ {out}"
+    assert "::error::" in out, f"{wf}: 必须用 `::error::` 让失败可归因 → {out}"
+    assert "推送到 ACR 挂住" in out, f"{wf}: 超时必须**点名**卡在「推送到 ACR」→ {out}"
 
 
-@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
-def test_build_step_has_explicit_bound_and_retries_once(wf):
-    """🔴 A-③（**上界本身**的机械锁）：正文必须**真的**在命令前面挂 `timeout <上界>`。
+@pytest.mark.parametrize("wf", PUSH_LEGS)
+def test_push_step_has_explicit_bound_within_job_timeout(wf):
+    """🔴 A-③（**上界本身**的机械锁）：`timeout <上界>` 真的挂在 push 命令前，且上界 < job 上界。
 
-    ⚠️ 这条是「显式上界」这个**性质**的判据 —— 桩化的行为判据证明不了它（宿主没有 coreutils
-    `timeout` 时会被跳过）⇒ 用逐字断言钉住：① 出现 `timeout "${PUSH_TIMEOUT_SECS}"` 前缀；
-    ② 上界 × 2 **明显小于** job 的 `timeout-minutes`（否则仍会被 job 打死 ⇒ cancelled ⇒ 循环）。
+    ⚠️ 只判「命令前有没有 `timeout <上界>`」，**不判**「有没有复验」——`bmini-h5-publish.yml`
+    的 `docker push` 后**已有** `docker manifest inspect`（那是既有护栏，另有判据钉住），
+    把它算进本判据会**误判**（issue #5814 的施工单明确点名这一点）。
     """
-    body = _render(wf, BUILD_STEP[wf])
-    assert 'timeout "${PUSH_TIMEOUT_SECS}"' in body, (
-        f"{wf}: 构建/推送命令前必须挂 `timeout ${{PUSH_TIMEOUT_SECS}}`（显式上界）—— "
-        "否则又会「挂 40min 被 job 超时打死」（issue #5814 A）"
+    body = render_push_step(wf)
+    assert 'timeout "${PUSH_TIMEOUT_SECS}" docker push' in body, (
+        f"{wf}: push 命令前必须挂 `timeout ${{PUSH_TIMEOUT_SECS}}`（显式上界）—— "
+        "否则又会「挂 40min 被 job 超时打死（结论 cancelled ⇒ 断路器不跳闸）」"
     )
-    # `timeout` 必须包住 `docker`（而不是包住别的命令）
-    wrapped = re.findall(r'timeout "\$\{PUSH_TIMEOUT_SECS\}"\s+(\S+)', body)
-    assert wrapped, f"{wf}: 找不到 `timeout … docker` 的调用点（判据已过期）"
-    assert set(wrapped) == {"docker"}, (
-        f"{wf}: `timeout` 包的应是 docker 命令（实得 {sorted(set(wrapped))}）"
+    step = _step(wf, _push_step(wf), job=_push_job(wf))
+    bound_secs = int(str((step.get("env") or {}).get("PUSH_TIMEOUT_SECS", "")))
+    job_timeout_mins = int(_doc(wf)["jobs"][_push_job(wf)]["timeout-minutes"])
+    assert bound_secs < job_timeout_mins * 60, (
+        f"{wf}: 上界 {bound_secs}s 不小于 job 的 timeout-minutes={job_timeout_mins}min "
+        f"（= {job_timeout_mins * 60}s）⇒ job 会先超时 ⇒ 结论 `cancelled` ⇒ 断路器不跳闸"
     )
-    env = _step(wf, BUILD_STEP[wf]).get("env") or {}
-    bound_secs = int(str(env.get("PUSH_TIMEOUT_SECS", "")))
-    job_timeout_mins = int(_doc(wf)["jobs"]["build-and-deploy"]["timeout-minutes"])
-    assert bound_secs * 2 < job_timeout_mins * 60, (
-        f"{wf}: 最坏墙钟 = 2 × {bound_secs}s = {bound_secs * 2 // 60}min，不满足「明显小于 job 的 "
-        f"timeout-minutes={job_timeout_mins}min（= {job_timeout_mins * 60}s）」"
-        "（否则 job 仍会先超时 ⇒ cancelled ⇒ 无限循环）"
-    )
-    # 重试必须**恰好一次**：`attempt_build_and_push` 的两个调用点（首次 + 重试 1 次）；
-    # 三次以上 = 把抖动放大成占锁（`cancel-in-progress: false` 下尤其糟）。
-    assert body.count("if attempt_build_and_push; then") == 2, (
-        f"{wf}: 期望「首次 + 重试 1 次」两个调用点，实得 {body.count('if attempt_build_and_push; then')}"
-    )
-    assert "重试 1 次" in body, f"{wf}: 重试必须被显式命名（可读性 = 可维护性）"
-    assert "第 2 次尝试成功" in body, f"{wf}: 第二次成功的读数必须在（否则看不出重试发生没发生）"
 
 
-@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
-def test_build_step_keeps_existing_semantics(wf):
-    """🔴 **不降门禁 / 不砍护栏**：既有语义逐字保留。
-
-    · ai-agent 腿的 buildx 语义（`--provenance=false` / `--cache-from` / `--cache-to type=gha`）
-      一字不动（**注意**：`exporting cache` 从未出现在事故 run 里 ⇒ 本单**不主张**改 cache）；
-    · 三条腿的 `if:` 条件、镜像名/两个 tag、`--push`、`IMAGE_FULL` 的导出全保留；
-    · **不新增任何 `secrets.*` 引用**（`Danger Scan` 会 BLOCK）。
-    """
-    body = _body(wf, BUILD_STEP[wf])
-    cond = str(_step(wf, BUILD_STEP[wf]).get("if", ""))
-    assert cond == "steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'", (
-        f"{wf}: 构建步的 `if:` 被改动了（当前 {cond!r}）"
-    )
-    assert "--push" in body or "docker push" in body, f"{wf}: 推送动作不见了"
-    assert ":latest" in body, f"{wf}: `latest` tag 必须照推（既有语义）"
-    if wf == "deploy-ai-agent-service.yml":
-        for anchor in BUILD_STEP_ANCHORS + ("--provenance=false", "--build-arg PIP_INDEX_URL="):
-            assert anchor in body, f"{wf}: 既有 buildx 语义 `{anchor}` 被删/改动了"
-    if wf == "deploy-frontend.yml":
-        for anchor in ("NEXT_PUBLIC_API_BASE_URL", "NEXT_PUBLIC_AI_API_BASE_URL",
-                       "NEXT_PUBLIC_COOKIE_DOMAIN"):
-            assert anchor in body, f"{wf}: 构建期 baked 的 `{anchor}` 丢了"
-    # `secrets.*`：与**冻结表**逐值比（两个方向都点名），**零 git 依赖**（见顶部注释）
-    problems = build_step_secret_problems(wf, body)
-    assert not problems, "\n".join(problems)
+@pytest.mark.parametrize("wf", PUSH_LEGS)
+def test_push_step_keeps_existing_semantics(wf):
+    """🔴 **不降门禁 / 不砍护栏**：既有语义逐字保留（本单只加了一个上界前缀）。"""
+    body = _body(wf, _push_step(wf), job=_push_job(wf))
+    for anchor in ("docker build -f deploy/bmini-h5/Dockerfile", "docker manifest inspect",
+                   "GITHUB_STEP_SUMMARY"):
+        assert anchor in body, f"{wf}: 既有语义 `{anchor}` 被删/改动了"
+    assert build_step_secret_problems(wf, body) == [], "\n".join(build_step_secret_problems(wf, body))
 
 
-def test_build_step_secret_inventory_has_no_git_dependency(monkeypatch):
-    """🔴 **零 git / 零子进程自证**（本仓「本机全绿、CI 全红」的直接教训）。
-
-    CI 的 `ci workflow helper unit tests` job 是**浅克隆**（`actions/checkout@v7` 不给
-    `fetch-depth`）⇒ 任何读 `origin/main` 的基线都会退化成空集。
-    ⇒ 本判据把「不许依赖 git / 子进程」变成**机械断言**：把 `subprocess.run` 换成**炸弹**，
-    再跑一遍冻结表判定 —— 只要它碰子进程（= 将来有人又把基线接回 git），这里**必红**。
-    """
+def test_push_step_secret_inventory_has_no_git_dependency(monkeypatch):
+    """🔴 **零 git / 零子进程自证**：CI 的 pr-check 是浅克隆 ⇒ 读 `origin/main` 的基线会退化成空集。"""
     import subprocess as _sp
 
     def _bomb(*a, **kw):  # pragma: no cover - 命中即失败
@@ -769,38 +760,21 @@ def test_build_step_secret_inventory_has_no_git_dependency(monkeypatch):
         )
 
     monkeypatch.setattr(_sp, "run", _bomb)
-    for wf in DEPLOY_WORKFLOWS:
-        body = _body(wf, BUILD_STEP[wf])          # 只读仓内 YAML 文本（无子进程）
+    for wf in PUSH_LEGS:
+        body = _body(wf, _push_step(wf), job=_push_job(wf))
         assert build_step_secret_problems(wf, body) == [], wf
 
 
-@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
-def test_build_step_secret_frozen_table_red_proofs(wf):
-    """🔴 红证：① 注入一条 `secrets.NEW_ONE` ⇒ 红；② 从冻结表删一项（若该腿有）⇒ 红。
-
-    「不会红的判据 = 空断言」：这两条证明冻结表**真的**在判「构建步的 secret 面有没有变」。
-    """
-    body = _body(wf, BUILD_STEP[wf])
+@pytest.mark.parametrize("wf", PUSH_LEGS)
+def test_push_step_secret_frozen_table_red_proofs(wf):
+    """🔴 红证：注入一条 `secrets.NEW_ONE` ⇒ 红（证明冻结表真的有判别力）。"""
+    body = _body(wf, _push_step(wf), job=_push_job(wf))
     assert build_step_secret_problems(wf, body) == [], f"前提：真文本先绿（{wf}）"
-
     injected = body + '\n          echo "${{ secrets.NEW_ONE }}"\n'
     problems = build_step_secret_problems(wf, injected)
     assert any("NEW_ONE" in p for p in problems), (
         f"{wf}: 注入 `secrets.NEW_ONE` 后没被判红 ⇒ 冻结表没有判别力"
     )
-
-    if BUILD_STEP_SECRETS_FROZEN[wf]:
-        for dropped in sorted(BUILD_STEP_SECRETS_FROZEN[wf]):
-            narrowed = body.replace(f"secrets.{dropped}", "secrets.RENAMED")
-            problems = build_step_secret_problems(wf, narrowed)
-            assert any("RENAMED" in p for p in problems), (
-                f"{wf}: 把 `secrets.{dropped}` 改名后没被判红（新增方向失效）"
-            )
-        # 陈旧方向：冻结表里留着已不存在的一项 ⇒ 红
-        problems = build_step_secret_problems(wf, body.replace("secrets.NEXT_PUBLIC_API_BASE_URL", "secrets.X"))
-        assert any("陈旧" in p for p in problems), (
-            f"{wf}: 冻结表陈旧（有条目已不存在）时没被判红 ⇒ 「只许缩短」没锁住"
-        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1046,38 +1020,26 @@ def test_sync_criterion_has_discriminating_power(tmp_path):
         audit_sync_skips(rc, out, outputs, summary)
 
 
-def test_build_retry_criterion_has_discriminating_power(tmp_path):
-    """🔴 红证①-d：把构建步的重试**去掉**（只做一次）⇒ A-① 必红。
-
-    「重试」是 A 的核心动作；去掉它 ⇒ 一次推送抖动仍 = 该 commit 白挂 40min。
-    """
-    wf = "deploy-admin-api.yml"
-    good = _render(wf, BUILD_STEP[wf])
-    # 改前形态 = **只有一次尝试**（`set -euo pipefail` ⇒ 失败即整体非零退出）。
-    first = good.index("if attempt_build_and_push; then")
-    broken = good[:first] + "attempt_build_and_push\n"
+def test_bound_criterion_has_discriminating_power(tmp_path):
+    """🔴 红证：把 `timeout <上界>` 前缀**去掉** ⇒ A-③ 的逐字断言必红（上界不是纸面的）。"""
+    wf = PUSH_LEGS[0]
+    good = render_push_step(wf)
+    broken = good.replace('timeout "${PUSH_TIMEOUT_SECS}" docker push', "docker push")
     assert broken != good, "注入未生效（判据自证）"
-    assert "if attempt_build_and_push; then" not in broken, (
-        "注入未生效：重试调用点仍在（改前形态应只有一次尝试）"
-    )
-
-    bindir = _make_bin(tmp_path, {"docker": BUILD_DOCKER_STUB, "timeout": TIMEOUT_STUB})
-    log = tmp_path / "docker-pre.log"
-    env = {**BUILD_ENV_STUB, "STUB_DOCKER_LOG": str(log),
-           "STUB_COUNT_FILE": str(tmp_path / "cnt-pre"), "STUB_FAIL_TIMES": "1",
-           "STUB_FAIL_RC": "1", "GITHUB_ENV": str(tmp_path / "genv-pre")}
-    proc = _run(broken, tmp_path, bindir=bindir, env_extra=env, tag="build-prefix")
-    calls = [ln for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
-    assert len(calls) == 1, f"改前形态应只推一次，实得 {len(calls)} 次 ⇒ 注入失效"
-    assert proc.returncode != 0, "改前形态第 1 次失败即整体失败（无重试）"
+    assert 'timeout "${PUSH_TIMEOUT_SECS}" docker push' not in broken
+    with pytest.raises(AssertionError):
+        # 与 A-③ 同一句断言（不另写一份实现）
+        assert 'timeout "${PUSH_TIMEOUT_SECS}" docker push' in broken, (
+            f"{wf}: push 命令前必须挂 `timeout ${{PUSH_TIMEOUT_SECS}}`（显式上界）"
+        )
 
 
 def test_timeout_wrapper_is_actually_consulted(tmp_path):
     """🔴 A-④：`timeout` **真的**被调用（不是写了个没人用的变量）。
 
-    用桩 `timeout` 把它的 argv 落到一个文件里 ⇒ 断言**每个** docker 调用都被 `timeout` 包着。
-    这条补上了「宿主没有 coreutils `timeout` 时行为判据会退化」的缺口。
+    用桩 `timeout` 把 argv 落到文件 ⇒ 断言**推送调用**确实被 `timeout <上界>` 包着。
     """
+    wf = PUSH_LEGS[0]
     bindir = tmp_path / "stub-bin-timeout"
     bindir.mkdir(parents=True, exist_ok=True)
     argv_log = tmp_path / "timeout-argv.log"
@@ -1095,12 +1057,39 @@ def test_timeout_wrapper_is_actually_consulted(tmp_path):
 
     env = {**BUILD_ENV_STUB, "STUB_DOCKER_LOG": str(tmp_path / "d2.log"),
            "STUB_COUNT_FILE": str(tmp_path / "c2"), "STUB_FAIL_TIMES": "0",
-           "GITHUB_ENV": str(tmp_path / "g2")}
-    proc = _run(_render("deploy-admin-api.yml", BUILD_STEP["deploy-admin-api.yml"]),
-                tmp_path, bindir=bindir, env_extra=env, tag="build-timeout")
+           "GITHUB_ENV": str(tmp_path / "g2"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "g2sum")}
+    proc = _run(render_push_step(wf), tmp_path, bindir=bindir, env_extra=env, tag="push-timeout")
     assert proc.returncode == 0, f"{proc.stdout}{proc.stderr}"
     lines = [ln for ln in argv_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert lines, "`timeout` 一次都没被调用 ⇒ 显式上界是纸面的（判据已过期）"
-    assert all(ln.startswith(f"{BUILD_ENV_STUB['PUSH_TIMEOUT_SECS']} docker") for ln in lines), (
-        f"每次调用都应是 `timeout <上界> docker …`，实得 {lines}"
+    push_lines = [ln for ln in lines if "docker push" in ln]
+    assert push_lines, f"`timeout` 没包住 push 调用 ⇒ 上界没施加在推送面上：{lines}"
+    assert all(ln.startswith(f"{BUILD_ENV_STUB['PUSH_TIMEOUT_SECS']} docker push") for ln in push_lines), (
+        f"推送调用应是 `timeout <上界> docker push …`，实得 {push_lines}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# A′：三条**部署腿**不得再推 ACR（issue #5814 C′ 的正向不变式）
+# ══════════════════════════════════════════════════════════════════════════
+@pytest.mark.parametrize("wf", NO_PUSH_LEGS)
+def test_deploy_legs_do_not_push(wf):
+    """C′ 之后三条部署腿的不变式：**CI 不构建、不推 ACR**（构建改在服务器侧）。
+
+    为什么要有这一条（而不是「把它的上界判据删掉就算完」）：删掉判据只留下**空档** ——
+    将来有人把 `docker buildx build --push` / `docker push` 加回来时**不会有任何东西变红**，
+    而「跨境推 1.12GB 挂住 40min」正是被这次改动结构性地消掉的根因
+    ⇒ 必须有一条**正向**断言把「不许长回来」钉住（铁律 8 ②：回归即红）。
+    """
+    text = (WORKFLOWS / wf).read_text(encoding="utf-8")
+    body = "\n".join(ln.split("#", 1)[0] for ln in text.splitlines())
+    assert "docker push" not in body, (
+        f"{wf} 又出现 `docker push` —— issue #5814 C′ 之后部署腿**不推 ACR**；"
+        "若确需恢复推送，请同批恢复 PUSH_LEGS 射程与上界判据（并把这个不变式改成反面）"
+    )
+    assert "--push" not in body, f"{wf} 又出现 `--push` —— 同 `docker push`（C′ 之后部署腿不推 ACR）"
+    # 反空跑锚点：正文必须**真的**在讲服务器侧构建（否则本判据可能判的是一份空文件/错对象）
+    assert "server-side build" in body, (
+        f"{wf}: 既没有推送、也读不到「服务器侧构建」的落点 ⇒ 判据可能判错了对象"
     )

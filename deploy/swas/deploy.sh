@@ -1,15 +1,35 @@
 #!/bin/bash
-# migao 快速部署脚本：SWAS 服务器拉取 CI 预构建镜像（不做源码构建）
+# migao 部署脚本：默认拉 CI 预构建镜像；**C′ 形态**下在服务器侧就地构建那一个服务（issue #5814）
 #
 # 流程：拉 repo 内 canonical compose/nginx（**与镜像 tag 同源**，见第 0 段 / issue #5083）
-#       → pull 镜像 → up -d → 健康检查
-# 服务器每次部署从"源码构建 3 个服务（10-30min）"降为"拉镜像 + 滚动更新（<2min）"。
+#       → [C′：docker build 本地构建该服务] → pull 镜像 → up -d → 健康检查
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# C′（服务器侧构建，issue #5814）—— **用户 2026-09-30 裁定**，推翻本仓旧铁律
+# 「构建跑在 CI，服务器只拉预构建产物」（原文见 docs/deployment/swas-migration-lessons.md）
+#
+# 为什么推翻（**真机实测**，`swas-open run-command` 现取；详表见该文档与本 PR body）：
+# | 场景 | 实测 |
+# |---|---|
+# | 冷构建（无缓存，国内 apt+pip 镜像） | 1782 s（29.7 min）= apt 1100 s + pip 675 s |
+# | **改一个源码文件（日常部署真实路径）** | **2 s**（apt/pip 层全 CACHED） |
+# | 改 requirements.txt | 592 s（9.9 min）（apt 仍 CACHED，只重建 pip 层） |
+# | 内存峰值 | 1792 MB（可用从未低于 5669 MB）⇒ 内存不是问题 |
+# ⇒ 旧铁律记的「服务器自己 build 3 个服务（10–30min）」是**冷构建**读数；**稳态只改代码是秒级**，
+#    且**根本不推 ACR** ⇒ 「跨境推送 1.12GB 镜像挂住 40min」这个根因从结构上消失
+#    （PR #5816 只是给它加上界止血，本形态才是治愈）。
+#
+# ⚠️ **构建在 flock 之内**（本脚本第 1 段就拿了锁并持有到 EXIT）⇒ 旧文档 §二.2 记的
+#    「main 合并同刻触发 3 个 deploy ⇒ 单机并发 docker build ⇒ 容器互踩」被**同一把锁**串行化：
+#    后到的 run 要么等到锁、要么等 600s 超时退出（与既有部署等待语义**一致**，未新增第二把锁）。
+# ⚠️ 不侵入既有路径：`BUILD_SERVICE` 为空（默认）⇒ 本段**完全不执行**，行为与改动前逐字相同。
+# ══════════════════════════════════════════════════════════════════════════════
 #
 # 并发安全：flock 串行化（CI 可能并行触发）。
 # 镜像 tag：`${1:-latest}`。⚠️ 配置（compose/nginx）按该 tag 对应的 commit 取 ⇒ 实际部署必须给
 #           `sha-<7位hex>`（CI 的正常形态）；`latest` 这类**移动 tag** 追不到 commit ⇒ fail-closed。
 # 镜像仓库登录：若存在 .env.registry（ACR_USERNAME/ACR_PASSWORD）则登录；
-#               ACR 仓库设为公开读时无需登录。
+#               ACR 仓库设为公开读时无需登录；**C′ 本地构建时不需要 ACR 凭据**（见 registry_login）。
 set -euo pipefail
 
 LOCK=/tmp/migao-deploy.lock
@@ -27,6 +47,55 @@ trap 'flock -u 9' EXIT
 cd /opt/migao-deploy
 TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# C′ 参数（issue #5814）：`BUILD_SERVICE=<admin-api|ai-agent|admin-web>`（空 = 走既有「拉镜像」路径）
+#
+# | 变量 | 默认 | 作用 |
+# |---|---|---|
+# | `BUILD_SERVICE` | **空** | 要**在服务器侧构建**的那个服务键（与 compose 服务名一致）⇒ 空 = 完全不走本段 |
+# | `APT_MIRROR` | `deb.debian.org` | 传给 `--build-arg`；服务器侧传 `mirrors.aliyun.com`（否则 apt >1h，实测 4009s 仍未下完 189MB） |
+# | `PIP_INDEX_URL` | 空（用 Dockerfile 默认） | 服务器侧传国内 PyPI 镜像（CI 传的是 `https://pypi.org/simple/` = 境外） |
+# | `BUILD_TIMEOUT_SECS` | `2400` | **单次构建的显式上界**（秒）⇒ 冷构建实测 1782s，留 ~35% 余量；超时 rc=124 显式判红 |
+# ⚠️ 上界的意义与 PR #5816 同族：**不许无上界地挂住**（挂住只会等 job 超时 ⇒ `cancelled` ⇒ 断路器不跳闸 ⇒ cron 自放大）。
+# ══════════════════════════════════════════════════════════════════════════════
+BUILD_SERVICE=${BUILD_SERVICE:-}
+APT_MIRROR=${APT_MIRROR:-deb.debian.org}
+PIP_INDEX_URL=${PIP_INDEX_URL:-}
+BUILD_TIMEOUT_SECS=${BUILD_TIMEOUT_SECS:-2400}
+
+# 服务键 → (compose 服务名, 构建上下文, Dockerfile)。**唯一一处**映射，构建与拉取两侧共用 ⇒ 不会漂移。
+service_name_of() {
+  case "$1" in
+    admin-api) echo "admin-api" ;;
+    ai-agent)  echo "ai-agent" ;;
+    admin-web) echo "admin-web" ;;
+    *) echo "" ;;
+  esac
+}
+service_context_of() {
+  case "$1" in
+    admin-api) echo "backend/admin-api" ;;
+    ai-agent)  echo "backend/ai-agent-service" ;;
+    admin-web) echo "frontend/admin-web" ;;
+    *) echo "" ;;
+  esac
+}
+# compose 里的镜像名 = `${ACR_REGISTRY}/ai-customer-service/<compose 服务名>:${IMAGE_TAG}`
+# （见 deploy/swas/docker-compose.yml 的 `image:` 行）⇒ **本地构建必须打逐字相同的 ref**，
+# 否则 compose 找不到本地镜像 ⇒ 转而去 ACR pull 一个**本次从未推送**的 tag ⇒ 拉到旧镜像或失败。
+# ⚠️ compose 侧用 `${ACR_REGISTRY:-<默认>}` 插值 ⇒ 这里必须用同一个变量（并 export）才能保证同源。
+NAMESPACE=${ACR_NAMESPACE:-ai-customer-service}
+export ACR_REGISTRY="$REGISTRY"
+LOCAL_IMAGE_REF=""   # 非空 ⇒ 本次是 C′ 本地构建；下方 `pull` 段据此跳过该服务
+if [ -n "$BUILD_SERVICE" ]; then
+  _svc=$(service_name_of "$BUILD_SERVICE")
+  if [ -z "$_svc" ]; then
+    echo "❌ BUILD_SERVICE=\`$BUILD_SERVICE\` 不是已知服务（允许：admin-api / ai-agent / admin-web）⇒ 中止（拒绝猜）"
+    exit 1
+  fi
+  echo "== C′ 参数：服务=${_svc} 上界=${BUILD_TIMEOUT_SECS}s apt=${APT_MIRROR} pip=${PIP_INDEX_URL:-<Dockerfile 默认>} =="
+fi
 
 # ══════════════════════════════════════════════════════════════════════════
 # 0. 配置源与镜像 tag **同源**（issue #5083 / 无方向审计 P2-2.8）
@@ -98,6 +167,9 @@ disk_used_mb() { df -Pk / | awk 'NR==2 {print int($3/1024)}'; }
 
 # ACR 登录（**唯一一份**）：1.9 的「回滚点补回」与第 2 步的常规拉取共用 ⇒ 判据/凭据读取不会漂移。
 # ACR 是私有仓库（docs/wiki/CI-CD.md：服务器需凭据拉私有镜像）⇒ 补回前必须先登录，否则必然失败。
+# ⚠️ 本函数**在 C′ 本地构建时也照常登录**：虽然本次镜像本地构建、不推 ACR，但 1.9 的
+#    「深度清理后从 ACR 补回回滚点」仍需凭据（回滚点是**上一次**推上去的 tag）⇒ 不能因为
+#    本次走本地构建就跳过登录（那会把「失败即回滚」的能力悄悄砍掉）。
 registry_login() {
   if [ -f .env.registry ]; then
     # shellcheck disable=SC1091
@@ -231,6 +303,117 @@ cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
 cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
 # 蓝绿 override（issue #4785）：**只新增** green 探针服务，不改既有服务定义
 cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1.4 C′ 服务器侧构建（issue #5814）—— **在本脚本已持有的 flock 之内**
+#
+# 为什么能在**这里**构建：上面第 1 段刚把 `src/` 整棵仓库树解出来（它本来只为取 4 个配置
+# 文件而存在，取完就没用了）⇒ 构建上下文**零额外下载**。这也正是 C′ 成立的关键：
+# 源码已经在服务器上，不需要任何新的下发通道（RunCommand 命令体实测上限仅 43.8–50.7KB，
+# 装不下 gzip 后 2.5–2.8MB 的源码树 ⇒ 「一次 Base64 下发源码」不可实现，见 PR body 的阻塞登记）。
+#
+# 缓存（稳态秒级的**唯一**来源）：Docker 层缓存 + 下面 `docker builder prune` 的
+# `until=168h` ⇒ 7 天内的 apt/pip 层保住 ⇒ 「只改源码」的部署是 **2s**（实测）。
+# ⚠️ 不许无条件 `docker builder prune -af`：那会把稳态 2s 打回冷构建 29.7min。
+#
+# 退出码语义（与 PR #5816 同族，**有上界 + 会点名**）：
+#   rc=124 ⇒ `timeout` 打死 ⇒ 显式打 `::error::` 点名「服务器侧构建超时」并带上界值；
+#   其它非零 ⇒ 构建本身失败（看上方 docker 输出）。
+# ══════════════════════════════════════════════════════════════════════════════
+if [ -n "$BUILD_SERVICE" ]; then
+  echo "== 1.4 C′ 服务器侧构建（${_svc}，在 flock 之内；tag=${TAG}）=="
+  _ctx=$(service_context_of "$BUILD_SERVICE")
+  _df="$_ctx/Dockerfile"
+  if [ -z "$_ctx" ] || [ ! -f "src/$_df" ]; then
+    echo "❌ 源码包里找不到构建上下文/Dockerfile（src/${_df}）⇒ **中止**（tag=${TAG} 的源码树与该形态不同源）"
+    exit 1
+  fi
+  # ── 本地镜像 ref 由 **compose 自己求值**得出（唯一真相源，不在本脚本里重抄一遍）──────
+  # 硬编码 `${ACR_REGISTRY}/ai-customer-service/<svc>:${IMAGE_TAG}` 会在有人改 compose 时**静默漂移**
+  # ⇒ 表现为「构建成功但 compose 找不到该镜像 ⇒ 去 ACR pull 一个从未推送的 tag」。
+  # 这里读**已同步进来**的 ./docker-compose.yml（第 1 段刚从同源源码树 cp 过来）+ 与 compose
+  # 相同的环境变量（IMAGE_TAG 由下方 export、ACR_REGISTRY 已在第 0 段 export）⇒ 逐字同源。
+  export IMAGE_TAG="$TAG"
+  # ⚠️ `|| true`：本脚本是 `set -euo pipefail` ⇒ 命令替换里任一环失败会**当场静默退出**
+  #    （连下面那句 ❌ 都打不出来）⇒ 显式吞掉非零，交由紧随其后的 `-z` 判定给出可行动报错。
+  _image_ref=$(docker compose config --format json 2>/dev/null \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["services"][sys.argv[1]].get("image",""))' "$_svc" 2>/dev/null || true)
+  if [ -z "$_image_ref" ]; then
+    echo "❌ 取不到 compose 里 ${_svc} 的 \`image:\`（compose config 求值失败）⇒ **中止**（拒绝在 ref 不明时构建）"
+    echo "   diagnostic: docker compose config --format json | python3 -c '…services[\"$_svc\"]…'"
+    exit 1
+  fi
+  LOCAL_IMAGE_REF="$_image_ref"
+  echo "  ✅ 本地镜像 ref（与 compose 同源自证，由 compose config 求值）：${LOCAL_IMAGE_REF}"
+  # ── 磁盘前置检查（issue #5814 §四.4）────────────────────────────────────────
+  # 实测：每次构建净增约 1 GB、构建缓存已 1.36 GB、服务器总盘 **40 GB**（不是 70）⇒ 余量是真约束。
+  # 构建前先断言余量 ≥ 门槛（fail-closed：空间不够时**不动**正在跑的服务，直接中止）。
+  _df_mb=$(df -Pk / | awk 'NR==2 {print int($4/1024)}' || true)
+  _need_mb=${BUILD_MIN_FREE_MB:-4096}
+  echo "  构建前磁盘可用：${_df_mb}MB（门槛 ${_need_mb}MB）"
+  if [ "${_df_mb:-0}" -lt "$_need_mb" ]; then
+    echo "  ❌ 磁盘可用 ${_df_mb}MB < 门槛 ${_need_mb}MB ⇒ **中止构建**（旧容器保持不动、环境未受影响）"
+    echo "     回收出口（**人工**，本脚本不做无人值守删除 —— 铁律 10）："
+    echo "       · 遗留旧源码克隆：/opt/migao（2026-08-13 残留，实测 2.2 GB）"
+    echo "       · docker image prune -a：可回收约 2.4 GB（注意**不要**删掉回滚点，见第 0 段保留策略）"
+    echo "       · 构建缓存：docker builder prune --filter until=168h（**保留 7 天内**，别用 -af）"
+    echo "       · 或扩容磁盘（用户 2026-09-30 已表态「有必要会扩容」）"
+    exit 1
+  fi
+  # ── 构建参数 ───────────────────────────────────────────────────────────────
+  _build_args=(--build-arg "APT_MIRROR=$APT_MIRROR")
+  if [ -n "$PIP_INDEX_URL" ]; then _build_args+=(--build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"); fi
+  # admin-web 的构建期环境变量：**构建已搬到服务器侧** ⇒ 覆盖口也从 CI 的 `--build-arg` 挪到这里。
+  # 现取：默认值 = Dockerfile 的 ARG 缺省值 = 线上落位（与改前 CI 的 `secrets.X || <默认>` 的
+  # **有效值**一致 —— 那几个 secret 从未在仓里登记过，Danger Scan 也不允许新增未登记的 secret 引用）。
+  # 需要按环境覆盖时：在服务器上写 `/opt/migao-deploy/.env.build`（可选文件，缺省即不覆盖）。
+  # ⚠️ 这是 C′ 带来的**配置面迁移**（CI secret → 服务器 env 文件），已在 PR body 的缺口节登记。
+  if [ -f .env.build ]; then
+    # shellcheck disable=SC1091
+    set -a; . ./.env.build; set +a
+    echo "  ℹ️  已加载 .env.build（构建期变量覆盖口）"
+  fi
+  if [ "$_svc" = "admin-web" ]; then
+    _build_args+=(--build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-https://api.migaozn.com}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_AI_API_BASE_URL=${NEXT_PUBLIC_AI_API_BASE_URL:-https://ai-api.migaozn.com}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_COOKIE_DOMAIN=${NEXT_PUBLIC_COOKIE_DOMAIN:-.migaozn.com}")
+    _build_args+=(--build-arg "NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL:-https://app.migaozn.com/b/}")
+  fi
+  echo "  构建命令：timeout ${BUILD_TIMEOUT_SECS} docker build -f ${_df} -t ${LOCAL_IMAGE_REF} ${_build_args[*]} src/${_ctx}"
+  if timeout "$BUILD_TIMEOUT_SECS" docker build -f "src/$_df" -t "$LOCAL_IMAGE_REF" "${_build_args[@]}" "src/$_ctx"; then
+    echo "  ✅ 本地构建完成：${LOCAL_IMAGE_REF}"
+  else
+    _rc=$?
+    if [ "$_rc" = "124" ]; then
+      echo "::error::**服务器侧构建超时**（rc=124，超过上界 ${BUILD_TIMEOUT_SECS}s）—— 镜像 ${LOCAL_IMAGE_REF} 未产出；"
+      echo "::error::冷构建实测 1782s（apt 1100s + pip 675s）⇒ 超上界说明缓存已失效或网络劣化；请人工确认后复跑。"
+    else
+      echo "::error::服务器侧构建失败（rc=${_rc}，上界 ${BUILD_TIMEOUT_SECS}s）—— 镜像 ${LOCAL_IMAGE_REF} 未产出。"
+    fi
+    exit "$_rc"
+  fi
+  # 本地构建的镜像**必须真的在本地**（fail-closed）：否则后续 compose 会去 ACR pull 一个不存在的 tag，
+  # 表现成「部署成功但跑的是旧镜像」这类静默形态。
+  if ! docker image inspect "$LOCAL_IMAGE_REF" >/dev/null 2>&1; then
+    echo "❌ 构建报成功但 ${LOCAL_IMAGE_REF} **不在本地** ⇒ 中止（拒绝静默回落到 ACR）"
+    exit 1
+  fi
+  # ── 构建后回收（**非破坏性**，铁律 10 口径：只清构建缓存，不删带 tag 的镜像）──────
+  # `until=168h` = 只清 7 天前的缓存 ⇒ 保住稳态秒级所需的热层；`-a` 一律不用。
+  docker builder prune -f --filter until=168h >/dev/null 2>&1 \
+    || echo "  ⚠️ docker builder prune 失败（不影响本次部署；缓存偏多时人工清理）"
+  _df_after_mb=$(df -Pk / | awk 'NR==2 {print int($4/1024)}' || true)
+  _cache_mb=$(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | awk '$1=="Build Cache"{print $2}' || true)
+  echo "  构建后磁盘可用：${_df_after_mb}MB（构建前 ${_df_mb}MB）／构建缓存：${_cache_mb:-?}"
+  if [ "${_df_after_mb:-0}" -lt "$_need_mb" ]; then
+    echo "  ::warning::构建后磁盘可用 ${_df_after_mb}MB 已低于门槛 ${_need_mb}MB ⇒ 本次部署继续，但下次构建会被前置检查拦住"
+    echo "     处置：回收 /opt/migao（2.2GB）/ docker image prune -a（约 2.4GB）/ 扩容"
+  fi
+  # 构建完就把源码树删掉：它只被构建用了一次（配置已 cp 到 /opt/migao-deploy），
+  # 留着会让每次部署净增约 84MB 的常驻占用（实测该目录此前**从不清理**）。
+  # ⚠️ 只删本脚本自己解出来的 `src/` 与下载的 `src.tar.gz`（都在 /opt/migao-deploy 内），不碰别处。
+  rm -rf src src.tar.gz
+fi
 
 # 1.5 AI 自动甄别配置自愈：admin-api 需调用 ai-agent 内部端点做入驻甄别，
 # AI_AGENT_SERVICE_TOKEN 必须与 .env.ai-agent 的 SERVICE_TOKEN 一致，否则入驻全部
@@ -447,6 +630,24 @@ export IMAGE_TAG="$TAG"
 # 逐服务拉取：某个镜像尚未推送（首次接入）时跳过该服务，其余照常滚动更新
 UP_SERVICES="nginx"
 for svc in $ALLOWED_SERVICES; do
+  # ── C′（issue #5814）：本次**本地构建过**的那个服务不 pull ──────────────────
+  # 它刚在 1.4 段就地构建并打了**与 compose 逐字相同**的 ref ⇒ 本地已存在。
+  # ⚠️ 这里**不能**改成「先 pull 再回落本地」：compose pull 会去 ACR 找这个 tag（本次从未推送）
+  #    ⇒ 拉失败/拉超时白等 180s，且失败路径会打「可能尚未推送」这类误导性告警。
+  #    正确形态 = **按已知事实短路**：本地就是权威来源，直接进更新集。
+  if [ -n "$LOCAL_IMAGE_REF" ] && [ "$svc" = "$_svc" ]; then
+    echo "  ⏭️  $svc 本次为 C′ 本地构建（${LOCAL_IMAGE_REF}）⇒ **跳过 ACR pull**（本地镜像即权威来源）"
+    UP_SERVICES="$UP_SERVICES $svc"
+    continue
+  fi
+  # ── C′ 模式：本腿**只负责自己那个服务** ──────────────────────────────────────
+  # C′ 之后 CI **不再推 ACR** ⇒ 别的服务在本次 tag 下**必然不在 ACR** ⇒ 去 pull 只会白等
+  # 180s 超时、再打一句"可能尚未推送"的误导告警（单次部署白等最多 2×180s）。
+  # 它们的更新由**各自的腿**完成（三条腿同源于同一个 commit）⇒ 这里**显式跳过并说明理由**。
+  if [ -n "$LOCAL_IMAGE_REF" ]; then
+    echo "  ⏭️  $svc 不在本腿职责内（C′ 模式：本腿只构建/部署 ${_svc}）⇒ 跳过；它的更新由对应 deploy 腿完成"
+    continue
+  fi
   if timeout 180 docker compose pull "$svc" >/dev/null 2>&1; then
     UP_SERVICES="$UP_SERVICES $svc"
   else

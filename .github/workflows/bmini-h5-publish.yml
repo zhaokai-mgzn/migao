@@ -123,11 +123,35 @@ jobs:
 
       # 传输载体：上下文**只给 dist/**（给 frontend/bmini-app 会把 700MB+ 的 node_modules 灌进上下文）
       - name: Pack product into transport image and push
+        # ── 显式推送上界（issue #5814：补齐 PR #5816 唯一漏掉的一处）────────────────
+        # 病（实测，见 issue #5814）：`docker push` 大镜像到 ACR（cn-hangzhou）会**无上界地挂住**
+        # （日志停在 `pushing layers`，鉴权已完成，之后约 40min 零输出）；挂住只能等 job 的
+        # `timeout-minutes: 30` 把 run 打死，而打死报的是 `cancelled` ⇒ 断路器不跳闸 ⇒ cron 自放大。
+        # 三条 deploy 腿已由 PR #5816 加上界（单次 `PUSH_TIMEOUT_SECS=720` + 重试 1 次），
+        # 本处是当时留下的**唯一**未加固点 ⇒ 同批补上，避免再开一轮 CI。
+        # ⚠️ 既有语义一字不变：镜像名 / tag、`docker manifest inspect` 复验（fail-closed）
+        #    与 step summary 全保留 —— 本判据**只加一个上界前缀**。
+        env:
+          PUSH_TIMEOUT_SECS: '720'
         run: |
+          set -euo pipefail
           IMG="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}"
           TAG="sha-${GITHUB_SHA::7}"
           docker build -f deploy/bmini-h5/Dockerfile -t "$IMG:$TAG" frontend/bmini-app/dist
-          docker push "$IMG:$TAG"
+          # 单次推送的显式墙钟上界（coreutils `timeout`，ubuntu-latest 自带）：
+          # rc=124 = 超时 ⇒ 显式点名「推送到 ACR 挂住」，不静默、不无限等。
+          if timeout "${PUSH_TIMEOUT_SECS}" docker push "$IMG:$TAG"; then
+            echo "✅ 传输镜像已推送（单次上界 ${PUSH_TIMEOUT_SECS}s）"
+          else
+            rc=$?
+            if [ "$rc" = "124" ]; then
+              echo "::error::**推送到 ACR 挂住**（rc=124，超过上界 ${PUSH_TIMEOUT_SECS}s）—— 镜像 $IMG:$TAG 未推送成功；"
+              echo "::error::这一步就是 issue #5814 的挂点（日志通常停在 pushing layers / 图层上传，鉴权已完成）。"
+            else
+              echo "::error::传输镜像推送失败（rc=${rc}，上界 ${PUSH_TIMEOUT_SECS}s）—— 镜像 $IMG:$TAG 未推送成功。"
+            fi
+            exit "$rc"
+          fi
           # 推完立刻复验：推失败/推了一半 ⇒ 这里就红（在远端 pull 之前 fail-closed）
           docker manifest inspect "$IMG:$TAG" >/dev/null
           echo "传输镜像：\`$IMG:$TAG\`（内容 = 本次 CI 构建的 dist/）" >> "$GITHUB_STEP_SUMMARY"

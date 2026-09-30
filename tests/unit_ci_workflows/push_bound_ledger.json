@@ -1,0 +1,4 @@
+{
+  "_comment": "未加上界的推送面台账（只许缩短）。空 = 全仓每条 docker push 都有显式 timeout 上界。",
+  "unbounded": {}
+}

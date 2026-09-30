@@ -211,9 +211,24 @@ def test_deploy_job_has_timeout_minutes(wf):
         f"{wf} 的 build-and-deploy 没有 `timeout-minutes` —— 卡死的 run 会永久占住 "
         "deploy-* 的 concurrency 组（2026-09-21 事故：后续 main 的部署全被挡住）"
     )
-    assert 0 < int(job["timeout-minutes"]) <= 60, (
-        f"{wf} 的 timeout-minutes={job['timeout-minutes']} 超出 (0,60] —— "
-        "既要兜住「永久 in_progress」，也不能误杀正常构建（实测正常 job ≈5-11min）"
+    # ⚠️ 上界（60min）于 2026-09-30 随 issue #5814 的 C′ 放宽到 120min —— **只放宽、不取消**：
+    #    C′ 之后**构建搬到服务器侧**，而构建墙钟算在「发起 + 轮询」预算之内
+    #    （`swas-deploy-ci.sh` 的 C_BUILD_DEPLOY_TIMEOUT_SECONDS 默认 3000s = 50min；
+    #     依据 = 冷构建实测 1782s + 部署余量）⇒ job 上界**必须大于它**，否则 run 会先被 GitHub
+    #    打死，而打死报的是 `cancelled`（**不是** failure）⇒ `deploy-reconcile` 断路器不跳闸 ⇒ cron 自放大。
+    #    新上界仍**有界**（120min）⇒ 依然兜得住「永久 in_progress ⇒ 占住 concurrency 组」这一事故形态。
+    mins = int(job["timeout-minutes"])
+    assert 0 < mins <= 120, (
+        f"{wf} 的 timeout-minutes={mins} 超出 (0,120] —— 既要兜住「永久 in_progress」，"
+        "也不能误杀 C′ 下的冷构建（实测 1782s；预算 3000s）"
+    )
+    # 与 C′ 预算的**一致性**（三层上界同号：构建上界 < 轮询预算 < job 上界）
+    ci = read_script()
+    m = re.search(r"^C_BUILD_DEPLOY_TIMEOUT_SECONDS=\$\{SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-(\d+)\}", ci, re.M)
+    assert m, "找不到 C′ 的「发起+轮询」预算常量（判据已过期）"
+    assert mins * 60 > int(m.group(1)), (
+        f"{wf}: job 上界 {mins}min（= {mins * 60}s）不大于 C′ 轮询预算 {m.group(1)}s ⇒ "
+        "run 会先被 GitHub 打死，结论 `cancelled` ⇒ 断路器不跳闸 ⇒ cron 自放大"
     )
 
 
