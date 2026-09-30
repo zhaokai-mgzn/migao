@@ -16,14 +16,14 @@
   },
   "frozen_inventory": {
     "commit": "56db10be8",
-    "collected_total": 5765,
+    "collected_total": 5767,
     "skipped_reading": {
       "MIGAO_REQUIRE_REALDB": 1,
       "default": 1
     },
-    "measured_at": "2026-09-30T17:12+08",
+    "measured_at": "2026-09-30T18:20+08",
     "recompute": "MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -2",
-    "note": "`collected_total` 是判据**库存**（收集面），与负载无关 ⇒ 它是这条腿「有没有悄悄少跑」的机械读数：**只许涨**（新增判据文件必然抬高它；低于它 = 收集面被截断 / worker 崩 / 整批判据消失）。\n`skipped_reading` 按当前环境选键：`MIGAO_REQUIRE_REALDB` 为真（= CI 的形态，见 `tests/unit_ci_workflows/test_realdb_failclosed.py`）⇒ **1**，否则 ⇒ **1**（两条读数本机实测相同：本机有 PG 二进制 ⇒ 真库族两个形态都真跑；那 1 条是本机的 `test_roundtrip_report.py::test_zstd_frame_without_decompressor_is_not_silent`，本机装了 `zstandard` ⇒ 走不到「无解压器」分支，CI 无该模块 ⇒ 那里真跑）。判定要求 skip 读数**逐值相等**：变多 = 静默跳过（真库族退回 skip 一族）；变少 = 有判据没被收集（同上）。\n基线时点 = `56db10be8`（`origin/main`）+ 本 PR 新增的 5 条判据（`test_helper_leg_execution_shape.py`）；改前（不含该文件）实测 **5760**。复算口径里的「+5」就是本 PR 自己的贡献。"
+    "note": "`collected_total` 是判据**库存**（收集面），与负载无关 ⇒ 它是这条腿「有没有悄悄少跑」的机械读数：**只许涨**（新增判据文件必然抬高它；低于它 = 收集面被截断 / worker 崩 / 整批判据消失）。\n`skipped_reading` 按当前环境选键：`MIGAO_REQUIRE_REALDB` 为真（= CI 的形态，见 `tests/unit_ci_workflows/test_realdb_failclosed.py`）⇒ **1**，否则 ⇒ **1**（两条读数本机实测相同：本机有 PG 二进制 ⇒ 真库族两个形态都真跑；那 1 条是本机的 `test_roundtrip_report.py::test_zstd_frame_without_decompressor_is_not_silent`，本机装了 `zstandard` ⇒ 走不到「无解压器」分支，CI 无该模块 ⇒ 那里真跑）。判定要求 skip 读数**逐值相等**：变多 = 静默跳过（真库族退回 skip 一族）；变少 = 有判据没被收集（同上）。\n基线时点 = `56db10be8`（`origin/main`）+ 本用例文件新增的 **7** 条判据（`test_helper_leg_execution_shape.py`）；改前（不含该文件）实测 **5760**。复算口径里的「+7」= 该文件的贡献（其中 2 条是 `-n` / 控制器早退正在接线上的补充）。"
   },
   "confidence_boundary": [
     "只裁**本腿的执行形态**：不判任何一条断言的覆盖面，也不为存量判据的安全性背书。",
