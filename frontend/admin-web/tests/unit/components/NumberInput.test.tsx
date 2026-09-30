@@ -257,6 +257,26 @@ describe('NumberInput 行为保真守卫（issue #5210 收敛）', () => {
     expect(input().value).toBe('0.5')
   })
 
+  it('②c 调用方 `?? 0` 且**原值非 0**：敲 "6" 再敲 "." 不得把草稿洗成 "0"（吞小数点 ⇒ 商家打出 "05" / "06"）', () => {
+    function Mapped() {
+      const [v, setV] = useState<number | null>(13.3)
+      return <NumberInput data-testid="ni" value={v} onChange={(next) => setV(next ?? 0)} />
+    }
+    render(<Mapped />)
+    expect(input().value).toBe('13.3')
+    // 商家**全选改写**：`13.3` → `"6"`（完整，回调 6）→ `"6."`（中间态，回调 null，调用方映射成 0）
+    fireEvent.change(input(), { target: { value: '6' } })
+    expect(input().value).toBe('6')
+    fireEvent.change(input(), { target: { value: '6.' } })
+    // 红证（单点变异，实测）：把渲染期回显守卫的第二项从
+    // `(value ?? 0) === (lastEmittedRef.current ?? 0)` 换回 `(value ?? 0) === draftNumber(draft)`
+    // ⇒ 本断言收到 `'0'`（小数点被吞）。接着敲 "5" 得到 `"05"` —— 正是用户报的「06」形态
+    // （2026-09-30 现场截图：用料米数框里停在 "06"，数值永远改不成想敲的那个数）。
+    expect(input().value).toBe('6.')
+    fireEvent.change(input(), { target: { value: '6.5' } })
+    expect(input().value).toBe('6.5')
+  })
+
   it('②b 调用方把 0 归 null（`positiveOrNull`）：敲 "0" 不把框清空', () => {
     function Positive() {
       const [v, setV] = useState<number | null>(6.6)

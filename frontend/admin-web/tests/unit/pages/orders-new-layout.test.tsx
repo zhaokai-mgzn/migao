@@ -17,6 +17,11 @@
  * ④ ~~特殊选项 / 部位备注收进第三步「其他」（默认收起）~~ —— **2026-09-29 改判**：两块并入
  *    **②加工项**（并改名「特殊选项」），下单页只剩**两步**；
  * ⑤ 「拍照 / 上传识别」从「收货信息」卡移到**「商品信息」卡标题行**（它一次产出明细 + 收货信息 + 备注）。
+ * ⑥ **2026-09-30 第四批**（用户逐字，附 3 张截图）：「净尺寸能否和售卖形态放一行？」+「门幅放进用料与规格中，
+ *    和用料米数、单价放一行？」+「人工加 / 改先隐藏，本期不需要该功能」+「这里的 fixed_height，用中文术语，
+ *    不要用英文」+「这个用料米数输入框无法自由更改数值，修，改这个输入框不需要对其他参数进行联动」
+ *    ⇒ 判据 11 **改判**（人工加 / 改 ⇒ 常态不可见）、**新增判据 16~18**（组级输入行 / 规格三格行 / 中文术语 /
+ *    用料米数可自由录入）。**顺序口径（判据 1）一字未动**：净尺寸 → 门幅 / 规格 → 用料米数。
  *
  * ⚠️ 本文件钉的是**版面与默认值**，不复制任何算料 / 判定口径（那些各有单一真值源与自己的判据）。
  */
@@ -466,17 +471,24 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(details.open).toBe(true)
   })
 
-  it('判据 11（2026-09-29 新增）：系统识别 + 人工加 / 改**常态可见**（不依赖「改工艺参数」展开）', async () => {
+  it('判据 11（🔴 2026-09-30 改判）：系统识别常态可见；**人工加 / 改本期隐藏**（用户逐字「先隐藏，本期不需要该功能」）', async () => {
     await setupLine()
     // 收起「改工艺参数」（推导方案就绪时它默认收起；本判据先确保它在收起态）
     const toggle = screen.getAllByTestId('craft-plan-edit')[0]
     if (toggle.getAttribute('aria-expanded') === 'true') fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    // 用户裁定：「这两部分应该合并到用料与规格那里」⇒ 收起态下两块依然在（不再藏在按钮后面）
+    // 用户裁定：「这两部分应该合并到用料与规格那里」⇒ 收起态下**系统识别**依然在
     expect(screen.getByTestId('auto-detected-features')).toBeTruthy()
-    expect(screen.getByTestId('craft-plan-manual')).toBeTruthy()
+    // 🔴 2026-09-30（第四批）：`craft-plan-manual` 本期**隐藏** —— 形态 = `display:none`
+    // （`hidden` 类 ⇒ 屏幕上与**无障碍树**上都不存在，不是「藏在折叠里还能展开」），
+    // 而**节点仍在 DOM** ⇒ 11 条既有页面判据（接高上限 / 拼次落库 / 项级来源 / 引擎拒绝态）
+    // **一条不降**（铁律 8「只简化实现代码、不降测试门禁」）。
+    // 红证方向：① 去掉 `hidden`（入口重新露面）⇒ 第 1 条红；② 整块删掉（连根拔掉那 11 条）⇒ 第 2 条红。
+    const manual = screen.getByTestId('craft-plan-manual')
+    expect(manual).toHaveClass('hidden')
+    expect(manual).toBeInTheDocument()
     // 反向自证：工艺参数 chips 确实**随它收起**（它们仍归「改工艺参数」这一层）
-    expect(screen.queryByRole('radiogroup', { name: '加工类型' })).toBeNull()
+    expect(screen.queryByTestId('craft-select-cutting-mode')).toBeNull()
   })
 
   it('判据 12（2026-09-29 新增）：图片下单 ⇒ **按图中客户要求**选工艺规格与加工项（不按系统默认）', async () => {
@@ -521,5 +533,70 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     // ③ 加工项按图 = 打孔 + 定型；**默认的「韩褶」被取消**（客户没提它 ⇒ 不能选错）
     openStep(/^\d+ 加工项/)
     expect(checkedItems()).toEqual(['定型', '打孔'])
+  })
+
+  it('判据 16（2026-09-30 第四批）：净尺寸与**售卖形态同一行**；门幅 / 用料米数 / 单价**同一网格行**且在①用料与规格内', async () => {
+    await setupLine()
+    // ① 组级「输入行」= 售卖形态 + 帘体 + 净尺寸（商家唯二要选/要填的组级输入）
+    const inputRow = screen.getByTestId('group-input-row')
+    expect(inputRow.contains(screen.getByText('售卖形态'))).toBe(true)
+    expect(inputRow.contains(screen.getByText('帘体'))).toBe(true)
+    expect(inputRow.contains(screen.getByTestId('size-row'))).toBe(true)
+    expect(inputRow.contains(inputOf('窗宽 (米)'))).toBe(true)
+    expect(inputRow.contains(inputOf('窗高 (米)'))).toBe(true)
+    // ② 规格行 = 门幅 / 规格 + 用料米数 + 单价（三个**系统给**、商家可就地改的数）
+    const specRow = screen.getByTestId('spec-input-row')
+    expect(specRow.contains(screen.getByTestId('sku-select'))).toBe(true)
+    expect(specRow.contains(inputOf('用料米数'))).toBe(true)
+    expect(specRow.contains(inputOf('单价 (¥/米)'))).toBe(true)
+    // ③ 它在 **①用料与规格** 里（不再是组级独立块）
+    expect(screen.getByTestId('wizard-step-1').contains(specRow)).toBe(true)
+    // ④ 判据 1 的顺序口径不倒退：净尺寸 → 门幅 / 规格 → 用料米数
+    const sizeRow = screen.getByTestId('size-row')
+    const specLabel = screen.getByText('门幅 / 规格')
+    expect(appearsBefore(sizeRow, specLabel)).toBe(true)
+    expect(appearsBefore(specLabel, screen.getByText('用料米数'))).toBe(true)
+  })
+
+  it('判据 17（2026-09-30 第四批）：推导依据**用中文术语**（引擎文案里的候选键不裸露英文）', async () => {
+    // 引擎 `derive_plan()` 的原样文案（键名冻结于契约 #5200 §三，展示层换中文）
+    mockCraftCalcPreview.mockResolvedValue({
+      data: {
+        data: {
+          ...CALC_OK.data.data,
+          plan: {
+            ...CALC_OK.data.data.plan,
+            reason:
+              '自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）：' +
+              '选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做',
+          },
+        },
+      },
+    })
+    await setupLine()
+    const reason = screen.getByTestId('craft-plan-reason')
+    // 红证（单点变异，实测）：把页面那处 `craftPlanReasonText(plan.reason)` 换回 `plan.reason`
+    // ⇒ 第 1 条断言红（商家读到的正是「选定 fixed_height」）。
+    expect(reason.textContent).toContain('定高买宽')
+    expect(reason.textContent).not.toContain('fixed_height')
+    // 候选清单与依据**同一份**中文名（两处不得分叉）
+    expect(screen.getByTestId('craft-plan-candidate-fixed_height').textContent).toContain('定高买宽')
+  })
+
+  it('判据 18（2026-09-30 第四批）：用料米数**可自由录入小数**（原值 13.3 ⇒ 全选改 6.5，逐键都留得住）', async () => {
+    await setupLine()
+    const meters = inputOf('用料米数')
+    expect(meters.value).toBe('13.3')
+    // 商家全选改写 ⇒ 逐键序列 "6" → "6." → "6.5"（中间态不得被回显洗成 "0"）
+    fireEvent.change(meters, { target: { value: '6' } })
+    expect(meters.value).toBe('6')
+    fireEvent.change(meters, { target: { value: '6.' } })
+    // 红证（单点变异，实测）：把 `NumberInput` 渲染期回显守卫换回 `draftNumber(draft)` 形态
+    // ⇒ 本断言收到 `'0'`，再敲 "5" 得到 `"05"` —— 用户现场截图里的「06」同形。
+    expect(meters.value).toBe('6.')
+    fireEvent.change(meters, { target: { value: '6.5' } })
+    expect(meters.value).toBe('6.5')
+    // 落库证据：改完就是商家敲的那个数（不被推导改回）
+    expect((await submittedLine()).processingInfo.processingMeters).toBe(6.5)
   })
 })

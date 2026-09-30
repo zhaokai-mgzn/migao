@@ -68,6 +68,22 @@ export function craftPlanCandidateLabel(key: unknown): string {
 }
 
 /**
+ * 引擎 `plan.reason` 里的**候选键**（英文枚举）⇒ 与候选清单**同一份**中文名。
+ *
+ * 为什么必须在展示层换（2026-09-30 用户逐字「这里的 `fixed_height`，用中文术语，不要用英文」）：
+ * 键名冻结于契约 #5200 §三（跨语言**机器**契约，只由算料引擎产出）—— 中文名是**展示**语义，
+ * 单一真值源就是上面的 `CRAFT_PLAN_CANDIDATE_LABELS`（不在后端另造一份⇒两处会漂移）。
+ * 长键优先（`fixed_height_join_height` 不得被 `fixed_height` 截断）；未登记的键原样留着
+ * （不编中文名 = 不造第二份枚举）。
+ */
+export function craftPlanReasonText(reason: unknown): string {
+  if (typeof reason !== 'string') return ''
+  return Object.keys(CRAFT_PLAN_CANDIDATE_LABELS)
+    .sort((a, b) => b.length - a.length)
+    .reduce((text, key) => text.split(key).join(CRAFT_PLAN_CANDIDATE_LABELS[key]), reason)
+}
+
+/**
  * 拼接的**展示文案**（契约 #5200 §三 R5）：`1/2/3` ⇒ 服务端给的选项名 `拼1次`/`拼2次`/`拼3次`；
  * `0` ⇒ 不拼接；`≥ 4` ⇒ **数字 + 需人工处理**（**不得发明「拼4次」**这个选项名 —— 它不存在）。
  */
