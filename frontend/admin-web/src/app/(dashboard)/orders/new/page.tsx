@@ -51,6 +51,7 @@ import {
   craftPlanCandidateLabel,
   craftPlanHasSplice,
   craftPlanItemSourcesOf,
+  craftPlanReasonText,
   craftPlanSourceSummary,
   craftPlanSourceText,
   craftPlanSpliceText,
@@ -399,6 +400,16 @@ function deriveProcessingQty(fabricMeters: number): number {
 
 /** 试算防抖（issue #4434）：连打宽高时只在停手后发一次请求 */
 const CRAFT_CALC_DEBOUNCE_MS = 400
+
+/**
+ * **「人工加 / 改」是否显示**（2026-09-30 第四批；用户逐字「人工加 / 改**先隐藏**，本期不需要该功能」）。
+ *
+ * `false` ⇒ 那一块带 `hidden`（`display:none`：屏幕上与无障碍树上都不存在，**不是**「藏在折叠里」）。
+ * 「先隐藏」≠ 删除：`planOverrides` 的整条链路（请求面 `join_height_m` / `splice_times`、契约 #5200 §四 R7
+ * 的「人工值不再被推导改判」、落库与留痕）**一字未动**，**节点也仍在 DOM** ⇒ 11 条既有页面判据
+ * **一条不降**（铁律 8）。重新打开 = 置 `true`，并同批改回 `.github/cases/order.yml` OR-052 的判据 11。
+ */
+const SHOW_MANUAL_OVERRIDES = false
 
 /** 加工费计价预览防抖（issue #4450） */
 const FEE_PREVIEW_DEBOUNCE_MS = 300
@@ -2992,7 +3003,7 @@ export default function NewOrderPage() {
                       if (target) handleLineQtyChange(target, q)
                     }}
                     onChangePrice={(lineId, p) => updateLineItem(lineId, { unitPrice: p })}
-                    renderPosition={(line) => (
+                    renderPosition={(line, slots) => (
                       <LineItemBlock
                         key={line.id}
                         line={line}
@@ -3052,6 +3063,10 @@ export default function NewOrderPage() {
                         onRecommendedDecision={(decision) =>
                           decideRecommendedItems(line, decision)
                         }
+                        // 门幅 / 规格（2026-09-30 第四批）：与用料米数 / 单价同一行；
+                        // 节点的 JSX 由组级算（`ProductGroupBlock`）经 `slots` 传进来 ⇒ 只此一份。
+                        specPicker={slots.spec}
+                        specExtras={slots.specExtras}
                       />
                     )}
                   />
@@ -3824,6 +3839,10 @@ interface LineItemBlockProps {
    * `buildLineProcessingInfo` 单点完成（**不在回调里拼 payload**）。
    */
   onChangeRemark: (remark: string) => void
+  /** **门幅 / 规格**节点（2026-09-30 第四批）：与用料米数 / 单价同一行（组级算、行内渲染） */
+  specPicker?: React.ReactNode
+  /** 门幅的**来源说明 + 推导细节**（同上）：整行平铺在规格行下方 */
+  specExtras?: React.ReactNode
 }
 
 /** 部位备注的输入上限（issue #5685）—— 服务端不截断 ⇒ 由录入控件 `maxLength` 挡住 */
@@ -3840,11 +3859,17 @@ const REMARK_MAX_LENGTH = 200
 function FabricRow({
   line,
   errors,
+  specPicker,
   onChangeQty,
   onChangePrice,
 }: {
   line: OrderLineItem
   errors: Record<string, string>
+  /**
+   * **门幅 / 规格**节点（2026-09-30 第四批）—— 由组级传入的**唯一一份** JSX。
+   * 布料没有「用料与规格」这一步，但「按什么规格买」仍是这一行的输入 ⇒ 与数量 / 单价同一行。
+   */
+  specPicker?: React.ReactNode
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
 }) {
@@ -3854,7 +3879,8 @@ function FabricRow({
     'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
   return (
     <div className="rounded-lg border border-neutral-200 p-3">
-      <div className="grid grid-cols-2 gap-4">
+      <div className={'grid gap-4 ' + (specPicker ? 'sm:grid-cols-3' : 'grid-cols-2')}>
+        {specPicker && <div>{specPicker}</div>}
         <div>
           <Label required>数量</Label>
           {/* 布料行的数字框同样换掉（issue #5202）：吞键缺陷与帘行同源；#5210 起 = 共享 `NumberInput` */}
@@ -3924,8 +3950,17 @@ interface ProductGroupBlockProps {
    */
   onChangeWidth: (w: number | null) => void
   onChangeHeight: (h: number | null) => void
-  /** 渲染本组这一套帘（由页面传入，保证 props 装配只有一处） */
-  renderPosition: (line: OrderLineItem) => React.ReactNode
+  /**
+   * 渲染本组这一套帘（由页面传入，保证 props 装配只有一处）。
+   *
+   * `slots.spec` / `slots.specExtras` = **门幅 / 规格**节点（2026-09-30 第四批：它搬进①用料与规格，
+   * 与用料米数 / 单价同一行）。节点的 **JSX 只有一份**（在组级算），经这里交给行内渲染
+   * ⇒ 不会出现两处各写一遍门幅下拉的实现分叉。
+   */
+  renderPosition: (
+    line: OrderLineItem,
+    slots: { spec: React.ReactNode; specExtras: React.ReactNode }
+  ) => React.ReactNode
   /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
   onChangeQty: (lineId: string, qty: number) => void
   onChangePrice: (lineId: string, price: number) => void
@@ -4097,6 +4132,100 @@ function ProductGroupBlock({
   const errWidth = errors[`line_${first.id}_width`]
   const errHeight = errors[`line_${first.id}_height`]
   const sizeAutoBadges = sizeAutoBadgesOf(first)
+
+  /**
+   * **门幅 / 规格**节点（issue #4877 裁定 C 未变：多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）。
+   *
+   * 🔴 **2026-09-30 第四批**：用户逐字「门幅放进用料与规格中，和用料米数、单价放一行」
+   * —— 它和用料米数 / 单价一样是「**系统给的值、商家可就地改**」，三个数同一行最省空间，
+   * 也把动线说清（门幅决定用料与单价 ⇒ 三个数同屏）。
+   * ⚠️ 节点**只此一份**：成品帘经 `renderPosition` 的 `slots.spec` 交给 ①用料与规格，
+   * 布料经 `FabricRow` 的 `specPicker`（布料没有「用料与规格」这一步，但「按什么规格买」仍是它的输入）。
+   * ⚠️ 「为什么是这一支」仍说人话（`sku-choice-reason`）；**顺序口径不在本文件复述**
+   * （真值源 = 设计文档，复述会被 `test_craft_calc_ranking_order_single_source.py` 判红）。
+   */
+  const specPicker =
+    group.selectedColorId != null && skuOptions.length > 0 ? (
+      <>
+        <Label required>门幅 / 规格</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            data-testid="sku-select"
+            aria-label="门幅 / 规格"
+            value={group.selectedSku ? String(group.selectedSku.id) : ''}
+            onChange={(e) => {
+              const picked = skuOptions.find((sku) => String(sku.id) === e.target.value)
+              if (picked) onSelectSku(picked)
+            }}
+            className="h-9 min-w-[15rem] max-w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+          >
+            {group.selectedSku === null && <option value="">请选择规格</option>}
+            {skuOptions.map((sku) => (
+              <option key={sku.id} value={String(sku.id)}>
+                {sku.doorWidth || '默认规格'} · ¥{Number(sku.price).toFixed(2)}/米 · 库存{' '}
+                {sku.stock ?? 0}
+              </option>
+            ))}
+          </select>
+          {group.selectedSku && (
+            <span data-testid="sku-summary" className="text-sm text-neutral-600">
+              门幅 {group.selectedSku.doorWidth || '默认规格'} · ¥
+              {Number(group.selectedSku.price).toFixed(2)}/米 · 库存 {group.selectedSku.stock ?? 0}
+            </span>
+          )}
+        </div>
+        {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
+      </>
+    ) : null
+
+  /**
+   * 门幅的**来源说明 + 推导细节**（2026-09-29 新增，2026-09-30 随门幅搬进①用料与规格）：
+   * 整行平铺在规格行下方 —— 塞进三格中的第一格会把长句挤成三行、反而更占高度。
+   *
+   * ⚠️ **只给成品帘**：这套文案讲的是「按窗宽挑最省料的门幅 / 分幅 / 接高」，而布料没有净尺寸、
+   * 也没有分幅与加工 ⇒ 对布料说这句是**假话**（本批顺手去掉）。
+   */
+  const specExtras =
+    group.saleForm !== SALE_FORM_FABRIC && group.selectedColorId != null && skuOptions.length > 0 ? (
+      <>
+        {group.selectedSku && (
+          <p data-testid="sku-choice-reason" className="mt-1.5 text-xs text-primary-600">
+            {first.skuAutoSelected
+              ? `系统按${Number(first.width) > 0 ? `窗宽 ${Number(first.width)} 米` : '窗宽 / 窗高'}挑了最省料的门幅 —— 要换直接改上面的下拉`
+              : '你手动选的规格'}
+          </p>
+        )}
+        {/* **门幅推导细节**（2026-09-29 新增）：把「为什么是这一支」的依据与候选摆出来。
+            ⚠️ 规则解与依据都来自**服务端** `doorWidthPlan`（前端不编一句、不自己算可行性）。 */}
+        <details data-testid="door-width-details" className="mt-1.5">
+          <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
+            门幅推导细节
+          </summary>
+          <div className="mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[11px] text-neutral-500">
+            <p data-testid="door-width-candidates">
+              候选门幅（该颜色共 {skuOptions.length} 支）：
+              {skuOptions.map((sku, i) => (
+                <span key={sku.id}>
+                  {i > 0 ? ' / ' : ''}
+                  {sku.doorWidth || '默认规格'}
+                  {sku.id === group.selectedSku?.id ? '（当前）' : ''}
+                </span>
+              ))}
+            </p>
+            <p data-testid="door-width-rule-solution">
+              规则解：
+              {first.doorWidthPlan?.door_width != null
+                ? `${first.doorWidthPlan.door_width} 米`
+                : '不可判定（缺尺寸 / 该颜色没有可用门幅）'}
+            </p>
+            {first.doorWidthPlan?.reason ? (
+              <p data-testid="door-width-plan-reason">系统依据：{first.doorWidthPlan.reason}</p>
+            ) : null}
+            <p>选了非规则解时，系统只提示、不替你改。</p>
+          </div>
+        </details>
+      </>
+    ) : null
   const colorName = colorOptions.find((c) => c.id === group.selectedColorId)?.name
   const groupAmount = group.lines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0),
@@ -4267,12 +4396,20 @@ function ProductGroupBlock({
                   </div>
                 )}
 
-                {/* ===== 组级属性条：售卖形态 + 帘体（2026-09-28 布局）=====
-                    两档收成**一行小开关**并提到门幅之前：商家先答「怎么卖 / 什么帘」（它们决定下面出什么），
-                    再填净尺寸。改前它们是两个各带一段说明的独立块，且排在门幅之后。
-                    ⚠️ 不放进组头：组头是 `<button>`（`CollapsibleHeader`），里面再嵌 radio 是**非法嵌套**。 */}
-                <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-                  <div className="flex items-center gap-2">
+                {/* ===== 组级「输入行」：售卖形态 + 帘体 + 净尺寸（2026-09-30 第四批裁定）=====
+                    用户逐字「**净尺寸能否和售卖形态放一行？**」—— 能：三者都是**组级输入**
+                    （商家唯二要选 / 要填的东西：怎么卖 · 什么帘 · 多大）⇒ 合并成**一行**，
+                    省掉改前那张「净尺寸」独占的卡片（≈60px）与三段各占一行的说明。
+                    动线因此是三层：**输入行**（这里）→ **①用料与规格**（系统据此给的三个数：
+                    门幅 / 用料 / 单价）→ **②加工项**（要做什么工序）。
+                    ⚠️ 不放进组头：组头是 `<button>`（`CollapsibleHeader`），里面再嵌 radio 是**非法嵌套**。
+                    ⚠️ 净尺寸那句长说明搬进 `title`（悬浮可见）：一行里塞不下三段解释，
+                    而标签本身已经写了单位（米）。 */}
+                <div
+                  data-testid="group-input-row"
+                  className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3"
+                >
+                  <div className="flex items-center gap-2 pb-2">
                     <span className="text-xs font-medium text-neutral-600">售卖形态</span>
                     <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="售卖形态">
                       {([SALE_FORM_FINISHED, SALE_FORM_FABRIC] as SaleForm[]).map((form) => {
@@ -4298,7 +4435,7 @@ function ProductGroupBlock({
                     </div>
                   </div>
                   {group.saleForm !== SALE_FORM_FABRIC && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 pb-2">
                       {/* 帘体（issue #4521；#4874 收窄为两档）——**商品组级**：它决定这条明细行的
                           **部位**（`curtainType`）与**落库几行**，也决定「定型」的默认档（真值源 §10）。
                           ⚠️ **用料算法与帘体无关**（2026-09-21 裁定：纱帘与布帘**完全一致**）。 */}
@@ -4327,159 +4464,97 @@ function ProductGroupBlock({
                       </div>
                     </div>
                   )}
-                  <span className="text-xs text-neutral-400">
+                  {/* **净尺寸**（2026-09-28 提到组级 × 2026-09-30 并进同一行）：商家**最先**要填的两格。
+                      门幅规则要**等尺寸填齐**才能自动选最优门幅（#4877 裁定 C / #4899）⇒ 顺序一字未动
+                      （净尺寸 → 门幅 / 用料），只是不再独占一块。 */}
+                  {group.saleForm !== SALE_FORM_FABRIC && (
+                    <div data-testid="size-row" className="flex items-end gap-3">
+                      <span
+                        className="pb-2 text-xs font-medium text-neutral-600"
+                        title="按窗户净尺寸填，单位米（成品宽 = 窗宽、成品高 = 窗高）—— 一套帘共用一份尺寸"
+                      >
+                        净尺寸
+                      </span>
+                      <div>
+                        <Label required>窗宽 (米)</Label>
+                        <div className="flex items-center gap-1">
+                          {/* 宽度由**外层**约束（`w-24`）—— 输入框自己的 className 仍是 `w-full …`
+                              与旧实现逐字一致（`orders-new-number-parity` 的形态判据 + UI 回退检测都钉着它）。 */}
+                          <div className="w-24">
+                            <NumberInput
+                              value={first.width}
+                              onChange={(next) => onChangeWidth(positiveOrNull(next))}
+                              decimals={3}
+                              placeholder="如 6.6"
+                              aria-label="窗宽 (米)"
+                              className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                            />
+                          </div>
+                          {/* 识别来的尺寸要**标出来**（issue #5349 判据 4：识别输入 ≠ 系统推导） */}
+                          {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.width) && (
+                            <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.width} />
+                          )}
+                        </div>
+                        {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
+                      </div>
+                      <div>
+                        <Label required>窗高 (米)</Label>
+                        <div className="flex items-center gap-1">
+                          <div className="w-24">
+                            <NumberInput
+                              value={first.height}
+                              onChange={(next) => onChangeHeight(positiveOrNull(next))}
+                              decimals={3}
+                              placeholder="如 2.6"
+                              aria-label="窗高 (米)"
+                              className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                            />
+                          </div>
+                          {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.height) && (
+                            <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.height} />
+                          )}
+                        </div>
+                        {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
+                      </div>
+                      {sizeAutoBadges}
+                    </div>
+                  )}
+                  <span className="pb-2 text-xs text-neutral-400">
                     {group.saleForm === SALE_FORM_FABRIC
                       ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 加工项，也不生成加工单）'
                       : '成品帘：做成帘，需要宽高 / 工艺规格与加工项'}
                   </span>
                 </div>
 
-                {/* ===== 净尺寸（2026-09-28 布局：商家**最先**要填的两格）=====
-                    为什么提到门幅之前：
-                    ① 门幅规则要**等尺寸填齐**才能自动选最优门幅（#4877 裁定 C / #4899）——
-                       改前尺寸在门幅下面，商家先撞上「选门幅」，而规则此时还判不了；
-                    ② #5202 的「三项输入收敛」说的就是「颜色 + 净窗宽 + 净窗高」，尺寸正是其中两格；
-                    ③ 其余信息（门幅 / 用料米数 / 单价 / 加工类型 / 特征）一律**系统推导**，见下一块与行内。 */}
-                {group.saleForm !== SALE_FORM_FABRIC && (
-                  <div className="mb-4 rounded border border-neutral-200 bg-neutral-50/50 p-3">
-                    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-sm font-medium text-neutral-700">净尺寸</span>
-                      <span className="text-xs text-neutral-400">
-                        按窗户净尺寸填，单位米（成品宽 = 窗宽、成品高 = 窗高）—— 一套帘共用一份尺寸
-                      </span>
-                      {sizeAutoBadges}
-                    </div>
-                    <div className="grid max-w-md grid-cols-2 gap-3">
-                      <div>
-                        <Label required>窗宽 (米)</Label>
-                        {/* 识别来的尺寸要**标出来**（issue #5349 判据 4：识别输入 ≠ 系统推导） */}
-                        {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.width) && (
-                          <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.width} />
-                        )}
-                        <NumberInput
-                          value={first.width}
-                          onChange={(next) => onChangeWidth(positiveOrNull(next))}
-                          decimals={3}
-                          placeholder="如 6.6"
-                          aria-label="窗宽 (米)"
-                          className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                        />
-                        {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
-                      </div>
-                      <div>
-                        <Label required>窗高 (米)</Label>
-                        {(first.recognizedSizeKeys ?? []).includes(ORDER_DERIVATION_INPUT_KEYS.height) && (
-                          <RecognizedBadge fieldKey={ORDER_DERIVATION_INPUT_KEYS.height} />
-                        )}
-                        <NumberInput
-                          value={first.height}
-                          onChange={(next) => onChangeHeight(positiveOrNull(next))}
-                          decimals={3}
-                          placeholder="如 2.6"
-                          aria-label="窗高 (米)"
-                          className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                        />
-                        {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ===== 门幅 / 规格（**一行摘要 + 下拉 + 推导细节**；2026-09-29 第二次裁定）=====
-                    issue #4877 裁定 C 未变（多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）。
-                    形态：常显 chips 网格「比较浪费空间」（用户实测原话）⇒ 改为**一行摘要 + 下拉选择**，
-                    并新增可展开的「门幅推导细节」（规则解 / 引擎依据 / 候选清单）。
-                    ⚠️ 「为什么是这一支」仍说人话；**顺序口径不在本文件复述**（真值源 = 设计文档，
-                    复述会被 `test_craft_calc_ranking_order_single_source.py` 判红）。 */}
-                {group.selectedColorId != null && skuOptions.length > 0 && (
-                  <div className="mb-4">
-                    <Label required>门幅 / 规格</Label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        data-testid="sku-select"
-                        aria-label="门幅 / 规格"
-                        value={group.selectedSku ? String(group.selectedSku.id) : ''}
-                        onChange={(e) => {
-                          const picked = skuOptions.find((sku) => String(sku.id) === e.target.value)
-                          if (picked) onSelectSku(picked)
-                        }}
-                        className="h-9 min-w-[15rem] max-w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                      >
-                        {group.selectedSku === null && <option value="">请选择规格</option>}
-                        {skuOptions.map((sku) => (
-                          <option key={sku.id} value={String(sku.id)}>
-                            {sku.doorWidth || '默认规格'} · ¥{Number(sku.price).toFixed(2)}/米 · 库存{' '}
-                            {sku.stock ?? 0}
-                          </option>
-                        ))}
-                      </select>
-                      {group.selectedSku && (
-                        <span data-testid="sku-summary" className="text-sm text-neutral-600">
-                          门幅 {group.selectedSku.doorWidth || '默认规格'} · ¥
-                          {Number(group.selectedSku.price).toFixed(2)}/米 · 库存{' '}
-                          {group.selectedSku.stock ?? 0}
-                        </span>
-                      )}
-                    </div>
-                    {group.selectedSku && (
-                      <p data-testid="sku-choice-reason" className="mt-1 text-xs text-primary-600">
-                        {first.skuAutoSelected
-                          ? `系统按${Number(first.width) > 0 ? `窗宽 ${Number(first.width)} 米` : '窗宽 / 窗高'}挑了最省料的门幅 —— 要换直接改上面的下拉`
-                          : '你手动选的规格'}
-                      </p>
-                    )}
-                    {/* **门幅推导细节**（2026-09-29 新增）：把「为什么是这一支」的依据与候选摆出来。
-                        ⚠️ 规则解与依据都来自**服务端** `doorWidthPlan`（前端不编一句、不自己算可行性）。 */}
-                    <details data-testid="door-width-details" className="mt-1.5">
-                      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
-                        门幅推导细节
-                      </summary>
-                      <div className="mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[11px] text-neutral-500">
-                        <p data-testid="door-width-candidates">
-                          候选门幅（该颜色共 {skuOptions.length} 支）：
-                          {skuOptions.map((sku, i) => (
-                            <span key={sku.id}>
-                              {i > 0 ? ' / ' : ''}
-                              {sku.doorWidth || '默认规格'}
-                              {sku.id === group.selectedSku?.id ? '（当前）' : ''}
-                            </span>
-                          ))}
-                        </p>
-                        <p data-testid="door-width-rule-solution">
-                          规则解：
-                          {first.doorWidthPlan?.door_width != null
-                            ? `${first.doorWidthPlan.door_width} 米`
-                            : '不可判定（缺尺寸 / 该颜色没有可用门幅）'}
-                        </p>
-                        {first.doorWidthPlan?.reason ? (
-                          <p data-testid="door-width-plan-reason">
-                            系统依据：{first.doorWidthPlan.reason}
-                          </p>
-                        ) : null}
-                        <p>选了非规则解时，系统只提示、不替你改。</p>
-                      </div>
-                    </details>
-                    {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
-                  </div>
-                )}
+                {/* ===== 门幅 / 规格 =====
+                    🔴 **2026-09-30 第四批：整块搬进 ①用料与规格**（与用料米数 / 单价同一行）——
+                    节点 = 上面的 `specPicker` / `specExtras`（**只此一份** JSX），
+                    成品帘经 `renderPosition` 的 `slots` 传入、布料经 `FabricRow` 的 `specPicker` 传入。 */}
               </>
             )}
           </>
         )}
 
         {group.saleForm === SALE_FORM_FABRIC ? (
-          /* 布料单（issue #4493）：只有 米数 / 单价 —— 没有宽高、工艺规格、部位、加工项 */
+          /* 布料单（issue #4493）：只有 规格 / 米数 / 单价 —— 没有宽高、工艺规格、部位、加工项。
+             ⚠️ 2026-09-30 第四批：**门幅 / 规格**也并进这一行（布料的「按什么规格买」与数量 / 单价同屏）。
+             若该颜色还没选出可用规格（`specPicker` 为 null）⇒ 退回原来的两格。 */
           <FabricRow
             line={group.lines[0]}
             errors={errors}
+            specPicker={specPicker}
             onChangeQty={(q) => onChangeQty(group.lines[0].id, q)}
             onChangePrice={(v) => onChangePrice(group.lines[0].id, v)}
           />
         ) : (
           /* 一套帘（issue #4521）：一个商品组 = 一套帘 ⇒ 只渲染**一份** ①~④。
              「新增部位」已移除（用户裁定「移除部位功能，其实完全不需要」）——
-             需要纱帘时改**帘体**，不是再加一行。 */
-          <div className="space-y-3">{renderPosition(group.lines[0])}</div>
+             需要纱帘时改**帘体**，不是再加一行。
+             ⚠️ 2026-09-30 第四批：门幅 / 规格节点（`specPicker`）经 `slots` 交给行内
+             —— 它在 ①用料与规格 里与用料米数 / 单价同一行（节点只有一份 JSX）。 */
+          <div className="space-y-3">
+            {renderPosition(group.lines[0], { spec: specPicker, specExtras })}
+          </div>
         )}
       </div>
       )}
@@ -4506,6 +4581,8 @@ function LineItemBlock({
   onProcessingFeeOverrideChange,
   onRecommendedDecision,
   onChangeRemark,
+  specPicker,
+  specExtras,
 }: LineItemBlockProps) {
   /**
    * 当前展开的**向导步骤**（issue #4511 手风琴）：1 用料与规格 / 2 加工项（2026-09-29 两步化
@@ -4901,7 +4978,16 @@ function LineItemBlock({
                 「部位备注」移入下一步「其他」。
                 ⚠️ 手改留痕一字未变：改用料 ⇒ `人工指定` + 记下本次入参签名（未跟随要显式告知 + 一键恢复）。 */}
             <div className="pt-4 border-t border-neutral-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* **规格 / 用料 / 单价 —— 同一行三格**（2026-09-30 第四批；用户逐字「门幅放进用料与规格中，
+                  和用料米数、单价放一行」）。
+                  为什么这三个同屏：它们是**同一件事的三个数** —— 门幅决定分幅与用料、用料 × 单价 = 金额；
+                  且三者都是「**系统给、商家可就地改**」（2026-09-29 裁定：常态可编辑，无「改」入口）。
+                  ⚠️ `specPicker` 由组级传入（唯一一份 JSX）；未选颜色 / 该颜色无可用规格 ⇒ 退回两格。 */}
+              <div
+                data-testid="spec-input-row"
+                className={'grid grid-cols-1 gap-4 ' + (specPicker ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}
+              >
+                {specPicker && <div>{specPicker}</div>}
                 <div>
                   {/* label = 「用料米数」（issue #4598）：这个输入框的值**就是加工费米数**
                       （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），
@@ -4978,6 +5064,9 @@ function LineItemBlock({
                   {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
                 </div>
               </div>
+              {/* 门幅的**来源说明 + 推导细节**（`sku-choice-reason` / `door-width-details`）——
+                  整行平铺在规格行下方：塞进第一格会把长句挤成三行、反而更高。 */}
+              {specExtras}
               {/* **公式 + 参数说明（整行平铺）**（2026-09-29 第二次裁定）：原来挤在左列里 ⇒
                   右半边全空（用户原话「推导说明的右侧空白也能利用起来，把文案完全平铺开」）。
                   公式串仍是**后端产出、原样渲染**（前端不自拼）；参数说明给「哪个数是哪个参数」
@@ -5124,7 +5213,10 @@ function LineItemBlock({
                           推导依据（展开可核对每个候选）
                         </summary>
                         <p data-testid="craft-plan-reason" className="mt-1 text-[11px] text-neutral-500">
-                          依据：{plan.reason}
+                          {/* 引擎文案里的**候选键是英文枚举**（契约 #5200 §三：键名冻结）——
+                              展示层换成与下方候选清单**同一份**中文名（2026-09-30 用户逐字
+                              「这里的 `fixed_height`，用中文术语，不要用英文」）。 */}
+                          依据：{craftPlanReasonText(plan.reason)}
                         </p>
                         <ul data-testid="craft-plan-candidates" className="mt-1.5 space-y-0.5">
                           {(plan.candidates ?? []).map((candidate) => (
@@ -5433,10 +5525,18 @@ function LineItemBlock({
                         自动推导的工艺配置**仍能人工修改**；人工改过的项随请求**显式下发**
                         （契约 #5200 §四 R7 ⇒ `auto=false`，此后不再被推导改判）。
                         上限（裁定 5）：接高 / 接宽缺口 ≤ 0.1 米；接高只在「定高买宽」下成立、
-                        接宽只在「倒幅」下成立（契约订正 v1.1 ③）。 */}
+                        接宽只在「倒幅」下成立（契约订正 v1.1 ③）。
+                    🔴 **2026-09-30 第四批：本期隐藏**（用户逐字「人工加 / 改**先隐藏**，本期不需要该功能」）。
+                    形态 = `display:none`（`hidden` 类 ⇒ 屏幕上与**无障碍树**上都不存在，**不是**「藏在折叠里、
+                    商家还能展开」）—— 但**节点仍在 DOM**：11 条既有页面判据（接高上限不截断 / 拼次落库 /
+                    项级来源 / 引擎拒绝态）**一条不降**（铁律 8「只简化实现代码、不降测试门禁」）。
+                    重新启用 = 把 `SHOW_MANUAL_OVERRIDES` 置 `true`（同批改回 OR-052 判据 11）。 */}
                     <div
                       data-testid="craft-plan-manual"
-                      className="rounded border border-neutral-200 bg-white px-3 py-2"
+                      className={
+                        (SHOW_MANUAL_OVERRIDES ? '' : 'hidden ') +
+                        'rounded border border-neutral-200 bg-white px-3 py-2'
+                      }
                     >
                       <div className="text-xs font-medium text-neutral-600">
                         人工加 / 改（改过的项不再被自动推导覆盖）

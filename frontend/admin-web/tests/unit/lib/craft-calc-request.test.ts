@@ -30,6 +30,7 @@ import {
   craftPlanCandidateLabel,
   craftPlanHasSplice,
   craftPlanItemSourcesOf,
+  craftPlanReasonText,
   craftPlanSourceSummary,
   craftPlanSourceText,
   craftPlanSpliceText,
@@ -388,6 +389,25 @@ describe('#5202 推导方案（`data.plan`）的**展示**口径 —— 前端�
     expect(craftPlanCandidateLabel('fixed_width_join_height')).toBe('倒幅 + 接高')
     expect(craftPlanCandidateLabel('brand_new_key')).toBe('brand_new_key')
     expect(Object.keys(CRAFT_PLAN_CANDIDATE_LABELS)).toHaveLength(5)
+  })
+
+  it('推导依据文案：引擎 reason 里的候选键（英文）⇒ 与候选清单**同一份**中文名（2026-09-30 用户逐字「用中文术语，不要用英文」）', () => {
+    // 引擎产出的原样文案（`curtain_calc.derive_plan()`：键名冻结、只做展示转换）。
+    // ⚠️ **刻意不复述「选优顺序」那一句**：那是**单一真值源**口径（`docs/design/order-auto-derivation.md`），
+    // 在任何别的文件里逐字复述都会被 `tests/unit_ci_workflows/test_craft_calc_ranking_order_single_source.py`
+    // 判红（该守卫扫全仓的「顺序表述」）。本条只关心**候选键 → 中文名**这一段。
+    const raw =
+      '自动推导：选定 fixed_height —— 成品高 2.6 + 上下卷边 0.15 = 2.75 米 ≤ 门幅 2.8 米 ⇒ 定高买宽单幅可做'
+    const text = craftPlanReasonText(raw)
+    expect(text).toContain('选定 定高买宽 ——')
+    expect(text).not.toContain('fixed_height')
+    // 长键优先：`fixed_height_join_height` 不得被 `fixed_height` 截成「定高买宽_join_height」
+    expect(craftPlanReasonText('选定 fixed_width_join_width')).toBe('选定 倒幅 + 接宽')
+    expect(craftPlanReasonText('选定 fixed_height_join_height')).toBe('选定 定高买宽 + 接高')
+    // 未登记的键 / 非字符串 ⇒ 原样（不编中文名、不造第二份枚举）
+    expect(craftPlanReasonText('选定 brand_new_key')).toBe('选定 brand_new_key')
+    expect(craftPlanReasonText(null)).toBe('')
+    expect(craftPlanReasonText(undefined)).toBe('')
   })
 
   it('工艺默认名与映射表同源（工艺**不在** `plan` 里，页面只能标「系统默认 · 可改」）', () => {

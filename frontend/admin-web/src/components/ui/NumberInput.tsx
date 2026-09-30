@@ -112,10 +112,15 @@ const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(function Numb
      * ① 回显**逐值相等** ⇒ 不顶草稿（红证：tests/unit/components/NumberInput.test.tsx
      *    「⑤c 外部回传「空」不得吞掉正在输入的中间态」）；
      * ② 回显被调用方**映射**过（`onChange={(v) => onChangeQty(v ?? 0)}` / `positiveOrNull(v)`
-     *    ⇒ 回显值 ≠ 我们发出的值，但仍是这次输入的回显：草稿的数值读法与之相同）⇒ 同样不顶草稿。
-     *    缺这条 ⇒ 「框里已有 13.3，粘贴/全选改写 `0.`」会被父值洗成 `0`（小数点被吞），
-     *    「敲 `0`」在 `positiveOrNull` 那类站点会被洗成 `''`（框当场清空）。
-     *    红证：tests/unit/components/NumberInput.test.tsx「行为保真守卫 ②/②b」+
+     *    ⇒ 回显值 ≠ 我们发出的值，但仍是这次输入的回显）⇒ 同样不顶草稿。两个子形态：
+     *    ②a **`null` ⇄ `0` 互换**（`(value ?? 0) === (lastEmittedRef.current ?? 0)`）——
+     *    这是 `next ?? 0` / `positiveOrNull` 两个站点**唯一**的映射形态；
+     *    ②b 回显与**草稿的数值读法**相同（`(value ?? 0) === draftNumber(draft)`）—— 兜住其余映射。
+     *    缺 ②a ⇒ 「框里已有 `13.3`，全选改写 `6.`」会被父值（`null ⇒ 0`）洗成 `0`（小数点被吞），
+     *    接着敲 `5` 得到 `"05"` —— **用户 2026-09-30 现场截图里的「06」就是这个形态**
+     *    （用户原话「用料米数输入框无法自由更改数值」）；缺 ②b ⇒ 「敲 `0`」在 `positiveOrNull`
+     *    那类站点会被洗成 `''`（框当场清空）。
+     *    红证：tests/unit/components/NumberInput.test.tsx「行为保真守卫 ②/②b/②c」+
      *    tests/unit/pages/orders-new-number-parity.test.tsx 的逐键用例 +
      *    既有 orders-new-plan 判据 6b（窗宽 `positiveOrNull` 把 0 归 null）。形态同旧
      *    `NumberField.draftAlive`（`Number(draft === '' ? 0 : draft) === (value ?? 0)`，`''` 与 `0` 同义）。
@@ -125,7 +130,7 @@ const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(function Numb
      */
     const echo =
       editingRef.current &&
-      (value === lastEmittedRef.current || (value ?? 0) === draftNumber(draft))
+      ((value ?? 0) === (lastEmittedRef.current ?? 0) || (value ?? 0) === draftNumber(draft))
     if (!echo) setDraft(formatDraft(value))
   }
 
