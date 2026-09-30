@@ -85,13 +85,39 @@ def ci_text() -> str:
     return CI_SH.read_text(encoding="utf-8")
 
 
+
+def _strip_comment(line: str) -> str:
+    """剥掉**行尾注释**：先清空被引号包住的内容，**再**按 `#` 截断（顺序不许反）。
+
+    为什么不能 `line.split("#", 1)[0]`：字符串里的 `#`（如 `--build-arg FOO=a#b`、`echo "#x"`）
+    会被当成注释起点 ⇒ **吃掉行尾** ⇒ 判据假绿（issue #5323 同族；
+    守卫 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py 的 `test_naive_hash_cut_is_ledgered`）。
+    这里用**单遍扫描**：引号内一律不当注释（并保留引号本身，便于下游形态判定）。
+    """
+    out, quote, esc = [], "", False
+    for ch in line:
+        if esc:
+            out.append(ch); esc = False; continue
+        if quote:
+            if ch == "\\":
+                out.append(ch); esc = True; continue
+            if ch == quote:
+                quote = ""
+            out.append(ch); continue
+        if ch in "'\"":
+            quote = ch; out.append(ch); continue
+        if ch == "#":
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
 def _code_lines(text: str) -> list[str]:
     """剥掉注释（`#` 起行尾）后的代码行 —— 判据只吃**命令**，不吃说明文字。
 
     ⚠️ 必须剥：本单的说明文字里**故意**引用了被禁的形态（如「不许 `docker builder prune -af`」）
     ⇒ 不剥注释会让**教学材料自己触发判据**（假红），这正是本仓反复踩过的形态。
     """
-    return [ln.split("#", 1)[0] for ln in text.splitlines()]
+    return [_strip_comment(ln) for ln in text.splitlines()]
 
 
 def _code(text: str) -> str:

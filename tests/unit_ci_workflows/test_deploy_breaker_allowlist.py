@@ -246,6 +246,32 @@ def _body(name: str, step_name: str, job: str = "build-and-deploy") -> str:
     return body
 
 
+
+def _strip_comment(line: str) -> str:
+    """剥掉**行尾注释**：先清空被引号包住的内容，**再**按 `#` 截断（顺序不许反）。
+
+    为什么不能 `line.split("#", 1)[0]`：字符串里的 `#`（如 `--build-arg FOO=a#b`、`echo "#x"`）
+    会被当成注释起点 ⇒ **吃掉行尾** ⇒ 判据假绿（issue #5323 同族；
+    守卫 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py 的 `test_naive_hash_cut_is_ledgered`）。
+    这里用**单遍扫描**：引号内一律不当注释（并保留引号本身，便于下游形态判定）。
+    """
+    out, quote, esc = [], "", False
+    for ch in line:
+        if esc:
+            out.append(ch); esc = False; continue
+        if quote:
+            if ch == "\\":
+                out.append(ch); esc = True; continue
+            if ch == quote:
+                quote = ""
+            out.append(ch); continue
+        if ch in "'\"":
+            quote = ch; out.append(ch); continue
+        if ch == "#":
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
 def _push_step(name: str) -> str:
     """推送步的名字（本面只覆盖 PUSH_LEGS）——集中一处，避免各判据各写一遍。"""
     return BUILD_STEP[name]
@@ -1083,7 +1109,7 @@ def test_deploy_legs_do_not_push(wf):
     ⇒ 必须有一条**正向**断言把「不许长回来」钉住（铁律 8 ②：回归即红）。
     """
     text = (WORKFLOWS / wf).read_text(encoding="utf-8")
-    body = "\n".join(ln.split("#", 1)[0] for ln in text.splitlines())
+    body = "\n".join(_strip_comment(ln) for ln in text.splitlines())
     assert "docker push" not in body, (
         f"{wf} 又出现 `docker push` —— issue #5814 C′ 之后部署腿**不推 ACR**；"
         "若确需恢复推送，请同批恢复 PUSH_LEGS 射程与上界判据（并把这个不变式改成反面）"

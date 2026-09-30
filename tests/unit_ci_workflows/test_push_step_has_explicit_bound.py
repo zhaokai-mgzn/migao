@@ -106,15 +106,41 @@ def _iter_workflow_names() -> list[str]:
 STATEMENT_START_RE = re.compile(r"^\s{0,}[A-Za-z_./\"'$]")
 
 
+
+def _strip_comment(line: str) -> str:
+    """剥掉**行尾注释**：先清空被引号包住的内容，**再**按 `#` 截断（顺序不许反）。
+
+    为什么不能 `line.split("#", 1)[0]`：字符串里的 `#`（如 `--build-arg FOO=a#b`、`echo "#x"`）
+    会被当成注释起点 ⇒ **吃掉行尾** ⇒ 判据假绿（issue #5323 同族；
+    守卫 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py 的 `test_naive_hash_cut_is_ledgered`）。
+    这里用**单遍扫描**：引号内一律不当注释（并保留引号本身，便于下游形态判定）。
+    """
+    out, quote, esc = [], "", False
+    for ch in line:
+        if esc:
+            out.append(ch); esc = False; continue
+        if quote:
+            if ch == "\\":
+                out.append(ch); esc = True; continue
+            if ch == quote:
+                quote = ""
+            out.append(ch); continue
+        if ch in "'\"":
+            quote = ch; out.append(ch); continue
+        if ch == "#":
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
 def _cmd_lines(text: str) -> list[tuple[int, str, str]]:
     """纯函数：把 workflow 文本切成 (行号, 缩进, 正文)，剥掉注释行与行尾注释。
 
     只保留**非注释**行 ⇒ 注释里写 `docker push` / `timeout 720` 都是说明文字，不进判据。
-    行尾注释（`#` 起）一并截掉 ⇒「把 timeout 写进注释」不会假绿。
+    行尾注释一并截掉且**不误伤字符串里的 `#`**（`_strip_comment`）⇒「把 timeout 写进注释」不会假绿。
     """
     out: list[tuple[int, str, str]] = []
     for i, raw in enumerate(text.splitlines(), start=1):
-        body = raw.split("#", 1)[0].rstrip()
+        body = _strip_comment(raw)
         if not body.strip():
             continue
         out.append((i, raw[: len(raw) - len(raw.lstrip())], body))
@@ -135,7 +161,7 @@ def _shell_corpus(text: str) -> list[tuple[int, str, str]]:
     i = 0
     while i < len(lines):
         raw = lines[i]
-        stripped_comment = raw.split("#", 1)[0].rstrip()
+        stripped_comment = _strip_comment(raw)
         m_block = re.match(r"^(\s*)(?:-\s+)?(?:run|script):\s*(?:\|[-+]?|>[-+]?)?\s*$", stripped_comment)
         m_inline = re.match(r"^(\s*)(?:-\s+)?(?:run|script):\s+(\S.*)$", stripped_comment)
         if m_block:
@@ -149,7 +175,7 @@ def _shell_corpus(text: str) -> list[tuple[int, str, str]]:
                 sub_indent = len(sub) - len(sub.lstrip())
                 if sub_indent <= key_indent:
                     break
-                body = sub.split("#", 1)[0].rstrip()
+                body = _strip_comment(sub)
                 if body.strip():
                     out.append((i + 1, " " * sub_indent, body))
                 i += 1

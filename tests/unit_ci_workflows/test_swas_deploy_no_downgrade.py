@@ -589,7 +589,27 @@ def test_workflows_are_valid_yaml_and_permissions_unchanged():
         doc = yaml.safe_load(read_workflow(name))
         assert doc["permissions"] == {"contents": "read"}, f"{name}: permissions 被放宽"
         job = doc["jobs"]["build-and-deploy"]
-        assert job["timeout-minutes"] == 45, f"{name}: 硬超时兜底（#4767 ①）被改动"
+        # 🔴 **本 PR 含一次有意的语义变更**（issue #5814 的 C′，2026-09-30）：
+        #    旧读数 45min / 新读数 75min。依据 = 构建已搬到**服务器侧**，其墙钟算在
+        #    `swas-deploy-ci.sh` 的「发起 + 轮询」预算之内（C′ 下默认 3000s = 50min），
+        #    而冷构建实测 **1671s / 1782s**（两次真机读数）⇒ 45min 会先把 run 打成
+        #    `cancelled`（**不是** failure）⇒ 断路器不跳闸 ⇒ cron 自放大（本单要消灭的形态）。
+        #    ⚠️ 这不是「抬上限交差」（本仓 #5365 口径：上限是**值班判据**、不是成绩单）：
+        #    抬它**有实测支撑**（三层预算同号 `1671 < 2400 < 3000 < 75min`），且**仍然有界**。
+        mins = int(job["timeout-minutes"])
+        assert 0 < mins <= 120, (
+            f"{name}: 硬超时兜底（#4767 ①）被改成 {mins}min —— 必须是 (0,120] 内的**有界**值"
+            "（既要兜住「永久 in_progress ⇒ 占住 concurrency 组」，也要容得下 C′ 的冷构建）"
+        )
+        # 与 C′ 预算的**一致性**：job 上界必须**大于**它，否则 run 会先被 GitHub 打死（cancelled）。
+        ci = CI_SCRIPT.read_text(encoding="utf-8")
+        m = re.search(r"^C_BUILD_DEPLOY_TIMEOUT_SECONDS=\$\{SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-(\d+)\}",
+                      ci, re.M)
+        assert m, "找不到 C′ 的「发起+轮询」预算常量 ⇒ 本判据已过期"
+        assert mins * 60 > int(m.group(1)), (
+            f"{name}: job 上界 {mins}min（= {mins * 60}s）不大于 C′ 轮询预算 {m.group(1)}s ⇒ "
+            "run 会先被 GitHub 打死（结论 `cancelled`）⇒ 断路器不跳闸 ⇒ cron 自放大"
+        )
         assert job["concurrency"]["cancel-in-progress"] is False, f"{name}: 部署并发语义被改动"
 
 
@@ -655,10 +675,14 @@ def test_injection_drop_effective_tag_lines_goes_red():
 def test_injection_bypass_gate_in_pull_loop_goes_red():
     """注入⑥：拉取循环不再走闸门筛出的集合（= 闸门被绕过）⇒ 必红。"""
     text = read_deploy_sh()
+    # ⚠️ 锚点于 2026-09-30 随 issue #5814 的 C′ 收窄到**仍逐字存在**的那一行：C′ 在
+    #    `for` 与 `if timeout 180 docker compose pull` 之间插入了「本地构建的服务跳过 pull」块
+    #    ⇒ 旧的两行锚点会**对不上文本**，注入变成空操作、红证失效（这正是本判据 0 判据力的形态）。
+    #    注入语义不变：把「走闸门筛出的集合」改成**无条件遍历三个服务**（= 绕过闸门）。
     injected = _inject(
         text,
-        "for svc in $ALLOWED_SERVICES; do\n  if timeout 180 docker compose pull",
-        "for svc in admin-api ai-agent admin-web; do\n  if timeout 180 docker compose pull",
+        "for svc in $ALLOWED_SERVICES; do\n",
+        "for svc in admin-api ai-agent admin-web; do\n",
     )
     assert judge_gate_shape(injected) != [], "绕过闸门后判据没红（判据无判别力）"
 
@@ -1065,8 +1089,16 @@ def _pre_fix_script(text: str) -> str:
     for token in ("ALLOW_DOWNGRADE", "ancestry_verdict", "EFFECTIVE_TAG", "ALLOWED_SERVICES",
                   "DOWNGRADE_SKIPPED"):
         assert token not in out, f"剥离后仍残留 `{token}` ⇒ 「修复前」的码路不成立（红证空跑）"
-    assert "for svc in admin-api ai-agent admin-web; do\n  if timeout 180 docker compose pull" in out, (
-        "剥离后的拉取循环不是修复前的形态（红证空跑）"
+    # ⚠️ 2026-09-30（issue #5814 的 C′）：C′ 在 `for` 与 pull 之间插入了「本地构建的服务跳过
+    #    pull」块 ⇒ **不能**再断言那两行相邻（会误判成「剥离手法有缺陷」）。改为**逐条在位**：
+    #    ① 循环体是无条件遍历三个服务（= 修复前的语义）；② pull 调用仍在；③ 顺序不变。
+    #    C′ 的跳过块引用的 `LOCAL_IMAGE_REF`/`_svc` 在该形态下为空 ⇒ 短路、行为与修复前一致。
+    i_for = out.find("for svc in admin-api ai-agent admin-web; do")
+    i_pull = out.find('if timeout 180 docker compose pull "$svc"')
+    assert i_for > 0, "剥离后的拉取循环不是「无条件遍历三个服务」的修复前形态（红证空跑）"
+    assert i_pull > i_for, "剥离后找不到（或顺序变了）的 pull 调用 ⇒ 修复前形态不成立（红证空跑）"
+    assert "$ALLOWED_SERVICES" not in out[i_for:i_pull + 200], (
+        "剥离后循环体里仍引用 `$ALLOWED_SERVICES` ⇒ 闸门没被真正绕过（红证空跑）"
     )
     return out
 

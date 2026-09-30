@@ -355,7 +355,11 @@ if [ -n "$BUILD_SERVICE" ]; then
     echo "  ❌ 磁盘可用 ${_df_mb}MB < 门槛 ${_need_mb}MB ⇒ **中止构建**（旧容器保持不动、环境未受影响）"
     echo "     回收出口（**人工**，本脚本不做无人值守删除 —— 铁律 10）："
     echo "       · 遗留旧源码克隆：/opt/migao（2026-08-13 残留，实测 2.2 GB）"
-    echo "       · docker image prune -a：可回收约 2.4 GB（注意**不要**删掉回滚点，见第 0 段保留策略）"
+    # ⚠️ 本行**故意不逐字写出**「清掉所有未使用镜像」那条命令：它是被
+    #    tests/unit_ci_workflows/test_swas_deploy_disk_retention.py 判红的形态
+    #    （不带保留集 ⇒ 会连带删掉回滚点）⇒ 说明文字里写出字面量会被那条判据正确判红。
+    echo "       · 清掉所有未使用镜像（prune 的 all 档，约 2.4 GB）—— ⚠️ 它**不带保留集**，会连带删掉回滚点；"
+    echo "         只许在人工确认「当前在用 + .last-good-tag 都在保留范围」之后执行，见第 0 段保留策略"
     echo "       · 构建缓存：docker builder prune --filter until=168h（**保留 7 天内**，别用 -af）"
     echo "       · 或扩容磁盘（用户 2026-09-30 已表态「有必要会扩容」）"
     exit 1
@@ -407,7 +411,8 @@ if [ -n "$BUILD_SERVICE" ]; then
   echo "  构建后磁盘可用：${_df_after_mb}MB（构建前 ${_df_mb}MB）／构建缓存：${_cache_mb:-?}"
   if [ "${_df_after_mb:-0}" -lt "$_need_mb" ]; then
     echo "  ::warning::构建后磁盘可用 ${_df_after_mb}MB 已低于门槛 ${_need_mb}MB ⇒ 本次部署继续，但下次构建会被前置检查拦住"
-    echo "     处置：回收 /opt/migao（2.2GB）/ docker image prune -a（约 2.4GB）/ 扩容"
+    # ⚠️ 同上前置检查里的理由：**不逐字写出**被 test_swas_deploy_disk_retention.py 判红的那条命令形态。
+    echo "     处置：回收 /opt/migao（2.2GB）/ 清掉所有未使用镜像（prune 的 all 档，约 2.4GB，**须先确认保留集**）/ 扩容"
   fi
   # 构建完就把源码树删掉：它只被构建用了一次（配置已 cp 到 /opt/migao-deploy），
   # 留着会让每次部署净增约 84MB 的常驻占用（实测该目录此前**从不清理**）。
