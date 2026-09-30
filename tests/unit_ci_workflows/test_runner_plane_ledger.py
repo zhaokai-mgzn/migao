@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -324,3 +326,125 @@ def test_red_proof_comment_only_edit_is_not_red():
     mutated = text.replace("name: PR Check", "name: PR Check  # 只改注释", 1)
     assert mutated != text, "变异没生效（自证失败）⇒ 这条对照读数无意义"
     assert _problems(_ledger(), _live_jobs()) == [], "只改注释却判红了 —— 判据读的不是结构"
+
+
+# =============================================================================
+# 预置工作区的**健康判定 + 自愈**（集成侧两轮真机读数的加固项）
+#
+# 病（实测）：`actions/checkout` 用 `--depth=1` fetch ⇒ 预置仓库**必然** shallow 化
+#   （`.git` 仍 293M、服务端建的分支照样 fetch ✅ ⇒ **shallow 不是病**，当成病会
+#   **每个 job 之后都假红 + 白重建**）；真正的坏态是 `HEAD`/refs 指向**对象已不存在**的提交
+#   （实测退化成 `.git` 293M → 2.6M、`git fsck` 报 `invalid sha1 pointer`）——
+#   到了这个状态，下一次 checkout 又退回真·批量拉取 ⇒ early EOF 卡死。
+#
+# 判据（`0` = 健康）：
+#   ① `.git` 在 ② `HEAD` 可解析 ③ `HEAD^{commit}` 对象真的存在 ④ `git fsck` 无 `error`
+#   ⇒ 不满足就**重建**（`rm -rf` + `git clone --no-checkout <本机主仓>`，实测 293 MB / 0.28 s）。
+#
+# 三态 + 一条对照读数（全部用**真 git 夹具**跑脚本本体，不 mock —— 判据读的就是脚本的真实行为）：
+#   态 1 `--depth=1` 预置（shallow）⇒ **健康、不重建**（这条是**防假红**的反向判据）
+#   态 2 删掉 `HEAD` 指向的对象（复现 `invalid sha1 pointer`）⇒ 判坏 + 重建 + 复检通过
+#   态 3 健康仓库再跑一次 ⇒ 不重建（幂等）
+#   对照 安装档源码里「不健康就重建」的分支**必须**呼叫复检（删掉复检 ⇒ 红）
+# =============================================================================
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+    "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+}
+_FIXTURE_REPO = "zhaokai-mgzn/migao"
+
+
+def _git(args: list[str], cwd: Path, check: bool = True):
+    return subprocess.run(
+        ["git", *args], cwd=str(cwd), check=check,
+        capture_output=True, text=True,
+        env={**os.environ, **_GIT_ENV},
+    )
+
+
+def _run_setup(*args: str, runner_dir: Path, mirror: Path):
+    return subprocess.run(
+        ["bash", str(SETUP_SCRIPT), *args],
+        cwd=str(REPO), capture_output=True, text=True,
+        env={**os.environ, "RUNNER_DIR": str(runner_dir), "MIRROR_REPO": str(mirror),
+             "REPO": _FIXTURE_REPO, "HOME": str(runner_dir)},
+    )
+
+
+def _seed_mirror(root: Path) -> Path:
+    """最小「本机镜像仓库」（有 2 个提交，够复现 shallow / 悬空 HEAD 两态）。"""
+    mirror = root / "mirror"
+    mirror.mkdir(parents=True)
+    _git(["init", "-q", "."], mirror)
+    (mirror / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(["add", "a.txt"], mirror)
+    _git(["commit", "-q", "-m", "c1"], mirror)
+    (mirror / "b.bin").write_bytes(b"\x00" * 128)
+    _git(["add", "b.bin"], mirror)
+    _git(["commit", "-q", "-m", "c2"], mirror)
+    return mirror
+
+
+def _workdir(runner_dir: Path) -> Path:
+    repo = _FIXTURE_REPO.split("/")[1]
+    return runner_dir / "_work" / repo / repo
+
+
+def test_workdir_predicate_treats_shallow_as_healthy(tmp_path):
+    """态 1（**防假红**）：`actions/checkout` 留下的 shallow 仓库必须判**健康**、不被重建。"""
+    mirror = _seed_mirror(tmp_path)
+    runner_dir = tmp_path / "runner"
+    wd = _workdir(runner_dir)
+    wd.parent.mkdir(parents=True)
+    # ⚠️ 必须走 `file://`：**本地路径克隆会忽略 `--depth`**（Git 明确警告并做全量拷贝）
+    # ⇒ 用本地路径造的「shallow 夹具」其实不 shallow，红证会变成假绿。
+    _git(["clone", "-q", "--depth=1", "--no-checkout", f"file://{mirror}", str(wd)], tmp_path)
+    assert (wd / ".git" / "shallow").exists(), "夹具自证失败：没有造出 shallow 仓库"
+    r = _run_setup("--reseed-workdir", runner_dir=runner_dir, mirror=mirror)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "健康（未重建）" in r.stdout, r.stdout
+    assert "重建完成" not in r.stdout, "shallow 被当成病 ⇒ 每个 job 之后都会假红 + 白重建"
+
+
+def test_workdir_predicate_detects_missing_head_object_and_selfheals(tmp_path):
+    """态 2：`HEAD` 指向的对象被删（实测形态 = `invalid sha1 pointer`）⇒ 判坏 + 重建 + 复检。"""
+    mirror = _seed_mirror(tmp_path)
+    runner_dir = tmp_path / "runner"
+    wd = _workdir(runner_dir)
+    wd.parent.mkdir(parents=True)
+    _git(["clone", "-q", "--no-checkout", "--", str(mirror), str(wd)], tmp_path)
+    head = _git(["rev-parse", "HEAD"], wd).stdout.strip()
+    obj = wd / ".git" / "objects" / head[:2] / head[2:]
+    # 夹具自证：对象真的**是散对象**（否则删不到，红证会变成假绿）
+    assert obj.exists(), f"夹具自证失败：HEAD 对象不在散对象目录里（{obj}）"
+    obj.unlink()
+    assert _git(["cat-file", "-e", "HEAD^{commit}"], wd, check=False).returncode != 0
+
+    r = _run_setup("--reseed-workdir", runner_dir=runner_dir, mirror=mirror)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "不健康" in r.stdout and "重建完成并复检通过" in r.stdout, r.stdout
+    assert _git(["cat-file", "-e", "HEAD^{commit}"], wd, check=False).returncode == 0, "重建后 HEAD^{commit} 仍取不到"
+    assert _git(["fsck", "--no-progress"], wd, check=False).stdout.find("error") == -1
+
+
+def test_workdir_reseed_is_idempotent_on_healthy_repo(tmp_path):
+    """态 3：健康仓库再跑一次 ⇒ **不重建**（幂等；安装档每次运行都会走这条）。"""
+    mirror = _seed_mirror(tmp_path)
+    runner_dir = tmp_path / "runner"
+    wd = _workdir(runner_dir)
+    wd.parent.mkdir(parents=True)
+    _git(["clone", "-q", "--no-checkout", "--", str(mirror), str(wd)], tmp_path)
+    first = _run_setup("--reseed-workdir", runner_dir=runner_dir, mirror=mirror)
+    second = _run_setup("--reseed-workdir", runner_dir=runner_dir, mirror=mirror)
+    assert first.returncode == 0 and second.returncode == 0, first.stdout + second.stdout
+    assert "健康（未重建）" in second.stdout, second.stdout
+    assert "重建完成" not in second.stdout
+
+
+def test_install_path_checks_workdir_health_and_names_the_selfheal_command(tmp_path):
+    """对照读数：安装档源码里「不健康 ⇒ 重建 ⇒ **复检**」这条链必须在位（删掉复检即红）。"""
+    text = SETUP_SCRIPT.read_text(encoding="utf-8")
+    for token in ("--reseed-workdir", "workdir_problem", "cat-file -e 'HEAD^{commit}'",
+                  "重建完成并复检通过", "reseed_workdir"):
+        assert token in text, f"环境脚本里找不到 {token!r}（自愈链断了一环）"

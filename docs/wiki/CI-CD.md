@@ -70,6 +70,23 @@ PR 面验证腿（`pr-check` / `ai-agent-tests` / `mini-app` / `bmini-app` / `wo
 | `~/actions-runner-migao/.env` | `PATH`（含 Homebrew）/ `JAVA_HOME` / `GIT_ALTERNATE_OBJECT_DIRECTORIES` | launchd 默认 PATH 无 Homebrew ⇒ fail-closed 的 PG 前置断言找不到 `initdb`/`pg_ctl`/`psql` ⇒ 必红 |
 | `_shims/{python,python3,pip}` | 自托管侧跳过 `actions/setup-python` 后的替身 | 判据步 `python -m pytest` 直接 command not found |
 | `_work/migao/migao` 预置工作区 | 本机到 github.com 的**批量** git 传输会被掐断（实测 `early EOF`） | `actions/checkout` 卡满超时被 cancelled |
+
+#### 🔴 预置工作区是**脆的**：checkout 弄坏它 ⇒ 下一次又卡死（issue #5814，2026-09-30 两轮真机读数）
+
+`actions/checkout` 用 `--depth=1` fetch ⇒ 预置仓库**必然**被 shallow 化。**但 shallow 不是病**：
+实测 `shallow=true` 时 `.git` 仍是 293M，**服务端建的分支（dependabot 等）照样 fetch ✅**（alternates 仍兜住）。
+
+真正的坏态是 **`HEAD`/refs 指向「对象已不存在」的提交** —— 实测退化成 `.git` 从 293M 缩到 **2.6M**、
+`git fsck` 报 `invalid sha1 pointer` / `HEAD: invalid sha1 pointer` ⇒ **下一次 checkout 又退回真·批量拉取 ⇒ early EOF 卡死**。
+
+⇒ 健康判据（`0` = 健康）：`.git` 在 ∧ `HEAD` 可解析 ∧ `HEAD^{commit}` 对象存在 ∧ `git fsck` 无 `error`；
+不满足就**重建**（`rm -rf` + `git clone --no-checkout <本机主仓>`，实测 **293 MB / 0.28 s**，幂等）。
+命令入口：`./scripts/setup-self-hosted-runner.sh --reseed-workdir`（安装档每次运行都会先做这个判定）；
+判据 = `tests/unit_ci_workflows/test_runner_plane_ledger.py` 的三态 + 对照读数（**shallow ⇒ 健康、不重建**是防假红的反向判据）。
+
+> ⚠️ **这条脆弱性要写明白**：checkout 现在能过，**部分依赖**「预置仓库 + alternates 同时健康」。
+> 这就是为什么要有自愈脚本 + 判据，而不是靠「上次是绿的」。
+
 | 注册（`.runner` + launchd 服务） | runner 进程本身 | 没有任何 runner 认领 job ⇒ required 腿 `BLOCKED` |
 
 ⇒ 一条命令复现/自愈：`./scripts/setup-self-hosted-runner.sh`（幂等；`RUNNER_SERVICE=1` 装成常驻服务）；
