@@ -409,6 +409,21 @@ def helper_leg_shape_problems(collected: int, skipped: int, ledger: dict | None 
     return bad
 
 
+def is_subset_run(session) -> bool:
+    """本轮是否**结构性子集**（未覆盖本目录下全部 `test_*.py`）。
+
+    🔴 **单一真相源**（issue #5814）：`collection_floor_problems` 的**早退条件**与
+    `test_helper_leg_execution_shape.py::test_session_hook_is_wired_and_fires_on_a_short_inventory`
+    的 **skip 条件必须同口径**。两者曾经分家：钩子用**结构性**判据（覆盖不全部判据文件 ⇒ 早退），
+    而测试用 `session.testscollected < 100` 这种**启发式**门 ⇒ **中等子集**（实测：9 个判据文件 /
+    145 条）越过启发式门、而钩子仍按结构性早退 ⇒ 该测试拿到 `DID NOT RAISE` 的**假红**。
+    ⇒ 判定只允许写在这里一处，两边都调它。
+    """
+    names = {(getattr(item, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
+             for item in list(getattr(session, "items", []) or [])}
+    return bool(_current_test_files() - names)
+
+
 def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
     """**运行期**的收集面判定：只在「本轮跑的是整套」时按冻结基线判库存（其余形态早退）。
 
@@ -422,10 +437,8 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
     floor = int(inv.get("collected_total") or 0)
     if floor <= 0:
         return []
-    names = {(getattr(item, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
-             for item in list(getattr(session, "items", []) or [])}
-    if _current_test_files() - names:
-        return []                      # 子集运行（或本文件自己被筛掉）：库存判据不适用
+    if is_subset_run(session):
+        return []                      # 子集运行（或本文件自己被筛掉）：库存判据不适用（口径见 is_subset_run）
     if os.environ.get("MIGAO_FAIL_HELPER_LEG_SHAPE") == "1":     # 红证孔（默认关闭）
         return ["（红证孔 MIGAO_FAIL_HELPER_LEG_SHAPE=1 有意注入）判据本体未被调用即判红"]
     collected = int(getattr(session, "testscollected", 0) or 0)
