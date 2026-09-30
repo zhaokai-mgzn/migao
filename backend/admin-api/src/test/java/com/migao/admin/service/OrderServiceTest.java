@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
@@ -186,7 +186,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -207,7 +207,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -227,7 +227,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -246,7 +246,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when：C 端查询必须传 userId（数据隔离强制点）
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc");
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc", null);
 
         // then：wrapper 必须含 user_id 条件，且绑定值 = user-abc（值存于 paramNameValuePairs）
         assertThat(result).isNotNull();
@@ -260,7 +260,7 @@ class OrderServiceTest {
     @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
     void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
         // when：hasProcessing=true 触发 order_items 子查询过滤
-        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null);
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null, null);
 
         // then：子查询 SELECT 必须同时取回 processingInfo 列。
         //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，
@@ -276,6 +276,126 @@ class OrderServiceTest {
                 .as("order_items 子查询 SELECT 列必须包含加工信息列（order_id, processing_info）")
                 .anyMatch(s -> s.contains("processing"));
     }
+
+    // ======================== 制单人（issue #5835，V142）========================
+    // 用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，
+    // 并且支持根据制单人过滤」。本类守的是 **OrderService 这一侧**的半边：
+    //   ① 建单把解析出来的操作者**落进那一行**（取不到 ⇒ 两列都不写）；
+    //   ② 列表 `creator` 参数**落到 created_by_name 快照列上的 LIKE 条件**（缺参 ⇒ 不落条件）。
+    // 解析器自身的口径（昵称/回落 username/占位身份/查库失败）由
+    // `backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java` 用**真** UserService 守
+    // —— 本类的 `userService` 是 mock，钉不到解析内部。
+
+    @Test
+    @DisplayName("建单落制单人 —— 把当前操作者（users.id + 姓名快照）写进那行订单")
+    void createOrder_recordsCreatorFromCurrentOperator() {
+        when(userService.resolveCurrentOperator())
+                .thenReturn(new UserService.CurrentOperator("staff-001", "蒋雪云"));
+        stubCreateOrderPersistence("order-new");
+
+        orderService.createOrder(minimalCreateOrderRequest(), 1L);
+
+        // then：insert 的那一行必须带制单人（**有效果**，不是「解析方法被调用过」）
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(captor.capture());
+        assertThat(captor.getValue().getCreatedBy()).isEqualTo("staff-001");
+        assertThat(captor.getValue().getCreatedByName()).isEqualTo("蒋雪云");
+        assertThat(captor.getValue().getUserId())
+                .as("制单人不得改写 user_id（下单用户 ID，C 端数据隔离依据）")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("建单落制单人 —— 解析不到操作者（占位 / 匿名 / C 端自助）⇒ 两列都不写，且建单照常成功")
+    void createOrder_creatorUnresolvedLeavesBothColumnsNull() {
+        when(userService.resolveCurrentOperator()).thenReturn(null);
+        stubCreateOrderPersistence("order-new");
+
+        orderService.createOrder(minimalCreateOrderRequest(), 1L);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(captor.capture());
+        assertThat(captor.getValue().getCreatedBy()).isNull();
+        assertThat(captor.getValue().getCreatedByName()).isNull();
+        // 反空跑：单子真的建出来了（否则「两列为 null」可能只是因为根本没走到 insert）
+        assertThat(captor.getValue().getOrderNo()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("订单列表按制单人过滤 —— `creator` 落到 created_by_name 的 LIKE 条件（快照列，不 join users）")
+    void getOrderPage_creatorFilterMatchesCreatedByName() {
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of());
+        mockPage.setTotal(0);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "蒋");
+
+        ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), captor.capture());
+        LambdaQueryWrapper<Order> wrapper = captor.getValue();
+        assertThat(wrapper.getSqlSegment())
+                .as("过滤必须落在 created_by_name 快照列上（LIKE 模糊匹配）")
+                .contains("created_by_name")
+                .contains("LIKE");
+        assertThat(wrapper.getParamNameValuePairs().values())
+                .as("绑定值 = LIKE 的 `%值%`（两端通配由 MyBatis-Plus 的 like 语义补）")
+                .containsExactly("%蒋%");
+    }
+
+    @Test
+    @DisplayName("订单列表按制单人过滤 —— 缺参 / 空白 ⇒ 不落任何条件（缺省 = 不过滤，查询一字不变）")
+    void getOrderPage_withoutCreatorAddsNoCondition() {
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of());
+        mockPage.setTotal(0);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "   ");
+
+        ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), captor.capture());
+        assertThat(captor.getValue().getSqlSegment())
+                .as("`null` / 空白串都不得落 created_by_name 条件")
+                .doesNotContain("created_by_name");
+    }
+
+    /** 建单落库所需的公共桩（订单 insert + 明细 + 回读），只服务上面 issue #5835 的用例。 */
+    private void stubCreateOrderPersistence(String orderId) {
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId(orderId);
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+        when(orderMapper.selectById(orderId)).thenReturn(Order.builder()
+                .id(orderId)
+                .tenantId(1L)
+                .orderNo("ORD-20260425-0001")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build());
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId(orderId, 1L)).thenReturn(List.of());
+    }
+
+    /** 最小可建单请求（一条明细，单价/数量都过资金闸门）。 */
+    private OrderCreateRequest minimalCreateOrderRequest() {
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(BigDecimal.valueOf(2));
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setCustomerAddress("北京市朝阳区");
+        request.setItems(List.of(itemReq));
+        return request;
+    }
+
 
     // ======================== 订单详情测试 ========================
 
@@ -2115,7 +2235,7 @@ class OrderServiceTest {
         mockPage.setTotal(1);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
         PageResponse<OrderListResponse> page = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
         assertThat(page.getItems().get(0).getProcessingFee()).isEqualByComparingTo("98.40");
     }
 

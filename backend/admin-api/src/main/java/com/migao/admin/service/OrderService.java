@@ -162,14 +162,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param endDate         结束日期（YYYY-MM-DD 格式）
      * @param tenantId        租户ID
      * @param userId          下单用户ID（C 端数据隔离：非空时强制只查该用户的订单）
+     * @param creator         制单人姓名（issue #5835：非空时按 {@code created_by_name} **模糊**匹配）
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
         // C 端数据隔离：按下单用户过滤（必须精确匹配 user_id，忽略其他模糊条件）
         if (StringUtils.hasText(userId)) {
             wrapper.eq(Order::getUserId, userId);
+        }
+
+        // 制单人过滤（issue #5835，用户裁定「文本框模糊匹配」）：
+        // 只认**快照列** created_by_name（不 join users —— 见 V142 的注释）。
+        // 🔴 `like` 是**紧条件**：存量单该列为 NULL ⇒ 自然落选（用户裁定「筛了就只出有制单人的单」），
+        //    无需额外 `isNotNull` —— NULL LIKE 在 SQL 三值逻辑下不为真，条件自动把它排除。
+        if (StringUtils.hasText(creator)) {
+            wrapper.like(Order::getCreatedByName, creator.trim());
         }
 
         // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
@@ -559,6 +568,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setRemark(request.getRemark());
         // C 端数据隔离：绑定下单用户（可为空=游客/商户代录）
         order.setUserId(request.getUserId());
+        // ── 制单人（issue #5835，V142）──
+        // 用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，
+        // 并且支持根据制单人过滤」。
+        // **单点落库**：本方法是三条建单路径（B 端 admin-web 表单 / 米宝 order_create /
+        // 程序化调用）的**唯一共享入口** ⇒ 在这里统一解析当前操作者，各 controller 不各拼一遍
+        // （在 controller 里拼会漏掉 `createOrderForAgent` 这条手工 new 出来的路径）。
+        // 🔴 取不到（service 占位 internal-service / 匿名 / C 端自助下单）⇒ **两列都不写**
+        //    （留 NULL ⇒ 列表显示「—」且不参与按人筛选）。**不猜**：留痕字段宁缺勿造。
+        UserService.CurrentOperator creator = userService.resolveCurrentOperator();
+        if (creator != null) {
+            order.setCreatedBy(creator.userId());
+            order.setCreatedByName(creator.displayName());
+        }
         // 订单收货物流两列（issue #4872；用户原话「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司」）：
         // `orders.logistics_type` / `orders.logistics_company`（V100 迁移）。
         // 🔴 **未传 ⇒ 不写**（MyBatis-Plus 默认策略下 null 字段不进 INSERT ⇒ 落列默认

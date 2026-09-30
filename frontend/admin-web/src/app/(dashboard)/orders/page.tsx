@@ -14,6 +14,7 @@ import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatus
 interface SearchState {
   orderId: string
   receiver: string
+  creator: string
   startDate: string
   endDate: string
   productCode: string
@@ -42,6 +43,7 @@ const DEFAULT_DATE_RANGE = getDefaultDateRange()
 const EMPTY_SEARCH: SearchState = {
   orderId: '',
   receiver: '',
+  creator: '',
   startDate: DEFAULT_DATE_RANGE.startDate,
   endDate: DEFAULT_DATE_RANGE.endDate,
   productCode: '',
@@ -117,6 +119,12 @@ export default function OrdersPage() {
   // 表单输入状态（未提交）
   const [orderId, setOrderId] = useState('')
   const [receiver, setReceiver] = useState('')
+  /**
+   * 制单人（issue #5835）：文本框**模糊**匹配 —— 只走独立查询参数 `creator`，
+   * **不并入**下面那个 `keyword`（keyword 后端匹配的是客户姓名 / 电话 / 订单号，
+   * 塞进去会把「制单人姓张」变成「客户姓张」⇒ 筛错对象）。
+   */
+  const [creator, setCreator] = useState('')
   const [startDate, setStartDate] = useState(DEFAULT_DATE_RANGE.startDate)
   const [endDate, setEndDate] = useState(DEFAULT_DATE_RANGE.endDate)
   const [productCode, setProductCode] = useState('')
@@ -187,6 +195,8 @@ export default function OrdersPage() {
       if (search.receiver) apiParams.receiver = search.receiver
       if (search.productCode) apiParams.productCode = search.productCode
       if (search.productTitle) apiParams.productTitle = search.productTitle
+      // 制单人（issue #5835）：独立参数，后端按 `created_by_name` 快照列模糊匹配
+      if (search.creator) apiParams.creator = search.creator
 
       // 状态映射：前端枚举 → 后端枚举。
       // 'all' / 'processing' 不传 status，'processing' tab 传 hasProcessing=true 给后端过滤
@@ -233,6 +243,7 @@ export default function OrdersPage() {
     setSearch({
       orderId: orderId.trim(),
       receiver: receiver.trim(),
+      creator: creator.trim(),
       startDate,
       endDate,
       productCode: productCode.trim(),
@@ -244,6 +255,7 @@ export default function OrdersPage() {
   const handleReset = () => {
     setOrderId('')
     setReceiver('')
+    setCreator('')
     setStartDate(DEFAULT_DATE_RANGE.startDate)
     setEndDate(DEFAULT_DATE_RANGE.endDate)
     setProductCode('')
@@ -424,6 +436,19 @@ export default function OrdersPage() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
+          {/* 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜） */}
+          <div className="flex items-center gap-2">
+            <FieldLabel>制单人</FieldLabel>
+            <FieldInput
+              placeholder="请输入制单人姓名"
+              value={creator}
+              onChange={(e) => setCreator(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[repeat(4,1fr)_auto] gap-x-6 gap-y-4 items-center">
           {/* 下单时间 */}
           <div className="flex items-center gap-2">
             <FieldLabel>下单时间</FieldLabel>
@@ -443,9 +468,6 @@ export default function OrdersPage() {
               className="flex-1 min-w-[130px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-[repeat(3,1fr)_auto] gap-x-6 gap-y-4 items-center">
           {/* 商品货号 */}
           <div className="flex items-center gap-2">
             <FieldLabel>商品货号</FieldLabel>

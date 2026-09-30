@@ -174,6 +174,57 @@ public class UserService implements UserDetailsService {
     }
 
     /**
+     * **当前操作者**（id + 姓名快照）—— 订单「制单人」留痕用（issue #5835）。
+     *
+     * <p>与 {@link #resolveCurrentUserDisplayName()} <b>分开</b>而不是复用：那个方法的名字口径是
+     * 「昵称优先，**退化为手机号**」（它是发货单的展示字段，先例已定）；而制单人的快照口径
+     * 按用户裁定是「昵称优先，**缺失回落 username**」（员工登录名，比手机号更能认出是谁）。
+     * 两者**都从 {@code SecurityUser.userId} 查库**（不取 {@code SecurityUser.displayName} ——
+     * 内部服务调用时它恒为 "internal-service"，B 端登录时它是 JWT 的 username，都不是「姓名」）。</p>
+     *
+     * <p>身份口径 = 只有「实名到人的员工账号」才算 —— 占位 {@link #INTERNAL_SERVICE_USER_ID}
+     * （无 {@code X-User-Id} 的纯服务端调用）**不算**：那是服务身份，不是某个人建的单。</p>
+     *
+     * @return 操作者（`userId` 非空、`displayName` 可能为 null = 查不到姓名）；解析不到
+     *         （未认证 / 占位身份 / 用户不存在）返回 **null** —— 这是尽力而为的留痕字段，
+     *         不抛异常打断建单主流程（NULL = 未采集，见 V142 的注释）
+     */
+    public CurrentOperator resolveCurrentOperator() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !(auth.getPrincipal() instanceof SecurityUser securityUser)) {
+                return null;
+            }
+            String userId = securityUser.getUserId();
+            if (!StringUtils.hasText(userId) || INTERNAL_SERVICE_USER_ID.equals(userId)) {
+                return null;
+            }
+            User user = userMapper.selectById(userId);
+            if (user == null) {
+                return null;
+            }
+            String displayName = StringUtils.hasText(user.getNickname())
+                    ? user.getNickname()
+                    : user.getUsername();
+            return new CurrentOperator(userId, displayName);
+        } catch (Exception e) {
+            // 留痕字段不承担完整性：查库失败（如多租户上下文缺失）不应让建单整个失败。
+            // 不静默 —— 留痕失败必须可从日志归因（同族：ProcessingFeeCalculator 的 unpriced 告警）。
+            log.warn("解析当前操作者失败（制单人将留空）: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 内部服务占位身份（`ServiceTokenFilter.SERVICE_USERNAME`）：**不是**某个人，不算制单人。 */
+    private static final String INTERNAL_SERVICE_USER_ID = "internal-service";
+
+    /**
+     * 当前操作者：`userId` = 员工 `users.id`；`displayName` = 姓名快照（昵称优先，缺失回落 username）。
+     */
+    public record CurrentOperator(String userId, String displayName) {
+    }
+
+    /**
      * 加载用户角色
      *
      * @param user 用户实体
