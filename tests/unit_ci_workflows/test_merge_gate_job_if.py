@@ -54,6 +54,10 @@ DANGLING = "Detect dangling PRs (open >N min, no red, required not met)"
 DANGLING_WHERE = "automerge.yml:detect-dangling-prs"
 DANGLING_IF = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
 DRIFT = "Drift Audit (真相源契约)"
+#: #5814 后的**现役**真实锚点：`drift-audit.yml` 的 PR 腿已由 #5814 有意去掉
+#: （触发面降频；PR 面 run 251/265 → 0）⇒ 「裸判据必有一条真实 job」这条不变式
+#: 改挂到 `automerge.yml` 的 `Enable auto-merge`（`pull_request_target` 面上、不在 required 里）。
+AUTOMERGE_ARM = "Enable auto-merge"
 # 判据 2 的真实锚点（**必须保持计入**）：`pr-check.yml` 里 `if: github.event_name == 'pull_request'` 的 job
 PR_ONLY_JOB = "E2E quality gate"
 # 判据 3 的真实锚点（不可判 ⇒ 保守计入）：`pr-issue-link.yml` 的 `github.event.pull_request.user.type != 'Bot'`
@@ -142,11 +146,14 @@ def _cli(fake_gh, protection, *args, workflows_dir=WORKFLOWS_DIR, script=SCRIPT,
 
 
 def _real_repo_protection(mod):
-    """`required` = 「真实 PR job 集合 − Drift Audit」⇒ 差集**恰好** 1 条，裸判据清单非空（可判红）。
+    """`required` = 「真实 PR job 集合 − `Enable auto-merge`」⇒ 差集**恰好** 1 条，裸判据清单非空。
 
     **不写死数字**（仓库会演化）：全部由被测脚本自己的扫描反推。
+    🔴 **#5814 换锚点**：原锚点 `Drift Audit (真相源契约)` 的 PR 腿已被有意去掉（触发面降频）
+    ⇒ 它不再出现在「PR 事件上会跑的 job」集合里，继续拿它做差集就恒为 0（本判据要的
+    「差集恰好 1 条」这条不变式会失去承载体）。现役锚点 = `automerge.yml` 的 `Enable auto-merge`。
     """
-    return sorted(set(mod.scan_pr_jobs(WORKFLOWS_DIR).jobs) - {DRIFT})
+    return sorted(set(mod.scan_pr_jobs(WORKFLOWS_DIR).jobs) - {AUTOMERGE_ARM})
 
 
 # ── 判据 1：job 级 `if:` 可证明排除 `pull_request*` ⇒ 不计入 ─────────────────────
@@ -178,7 +185,7 @@ def test_criterion1_cli_bare_list_has_no_dangling_prs(fake_gh):
     mod = _load_module()
     proc = _cli(fake_gh, _real_repo_protection(mod), "--required")
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert DRIFT in proc.stdout
+    assert AUTOMERGE_ARM in proc.stdout
     assert DANGLING not in proc.stdout, proc.stdout
     assert f"排除 {DANGLING_WHERE}" in proc.stdout, proc.stdout
 
@@ -248,7 +255,7 @@ def test_criterion2_real_repo_pr_jobs_are_still_counted():
     scan = mod.scan_pr_jobs(WORKFLOWS_DIR)
     for name in (PR_ONLY_JOB, "QA Growth Gate", "Enable auto-merge",
                  "Enable auto-merge (bot, safe classes only)", UNCOVERED_JOB,
-                 "Reconcile and dispatch missing deploys", DRIFT):
+                 "Reconcile and dispatch missing deploys"):
         assert name in scan.jobs, f"{name} 被误判为「不在 PR 事件上创建」"
     # `--file-level on:` 闸门本身没被改坏：不声明 PR 触发的 workflow 的 job 一律不收
     assert PR_ONLY_JOB in scan.jobs

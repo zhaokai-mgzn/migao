@@ -202,21 +202,34 @@ def _audit_step() -> dict:
 
 
 def test_workflow_wires_exit_3_to_failure_not_pass():
-    """审计 step 把脚本返回码**原样** `exit`（非 0 = 失败），失败分支才打 `block/merge`。
+    """审计 step 把脚本返回码**原样** `exit`（非 0 = 失败）—— `3`（不可判）**不得**被读成通过。
 
     读的是**真正决定行为的脚本正文**（`RC=$?` → `exit $RC`），不是注释/文档措辞。
+
+    ## 触发面口径已于 #5814 对账（**牙齿一字未拔**）
+
+    #5814 去掉了本 workflow 的 `pull_request` 腿（触发面降频；理由与重启条件写在 `on:` 块）。
+    ⇒ 原先钉「PR 腿的 `block/merge` 步 `if:` 含 `github.event_name == 'pull_request'`」的那半句
+    必须换口径：那一步随 PR 面一起删掉了（**恒假的步骤**是另一个形态的静默放大器）。
+    🔴 **本判据证明的那件事一字未变**：`exit 3`（unjudgeable）⇒ 该步**判红而不是放行**；
+    现役的失败承接面 = 定时腿的 P1 值班 step（`github.event_name != 'pull_request'`）。
     """
     run = _audit_step()["run"]
     assert re.search(r"RC=\$\?", run), f"没有捕获脚本返回码：\n{run}"
     assert re.search(r"^\s*exit \$RC\s*$", run, re.M), (
         f"返回码没有被原样重放（可能被 `|| true` / 固定 `exit 0` 吃掉）⇒ `3` 会静默通过：\n{run}")
     assert "|| true" not in run.split("exit $RC")[0], f"返回码可能被吞：\n{run}"
-    # 失败分支（`failure()`）才打 block/merge；`success()` 分支只在真通过时摘标签
-    wf = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    steps = wf["jobs"]["audit"]["steps"]
-    block = next(s for s in steps if "block/merge" in (s.get("run") or ""))
-    assert "failure()" in block["if"], block["if"]
-    assert "github.event_name == 'pull_request'" in block["if"], block["if"]
+    # ── 换口径后的「失败承接面」：定时腿的 P1 值班 step（不再是 PR 腿的 block/merge）──
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["audit"]["steps"]
+    duty = [s for s in steps if "定时腿失败" in str(s.get("name") or "")]
+    assert duty, (
+        "没有「定时腿失败 ⇒ 开/更 P1 值班 issue」的 step ⇒ `exit 3` 判红后**没有承接面**"
+        f"（= 判了没人看）；实测 steps={[s.get('name') for s in steps]}")
+    cond = str(duty[0].get("if") or "")
+    assert "failure()" in cond, f"值班 step 不是失败分支（`3` 会被读成绿）：if={cond!r}"
+    assert "github.event_name != 'pull_request'" in cond, (
+        "值班 step 必须限定在**非 PR 面**（本 workflow #5814 起只有 schedule / workflow_dispatch）："
+        f"if={cond!r}")
     # 定时腿：`--fail-on-unknown` ⇒ 未知也判 3（非零），不会被读成"没漂移"
     assert "--fail-on-unknown" in run, run
 

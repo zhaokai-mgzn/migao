@@ -41,9 +41,14 @@ name: Mechanism Liveness (机制存活看门人)
 #  · 未固化的机制逐条登记在 `scripts/mechanism-registry.json` 的 `unfixed`（判据 5，**不许留白**）。
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  # ── #5814 触发面降频：去掉 `pull_request` 面，改**日报型** ────────────────────
+  # 改前 `registry` job 在每个 PR 上都跑一遍登记完整性（实测 09-27~09-29：266 次里
+  # 219 次是 PR 面）—— 而它是**确定性、离线**的判定（只读仓内登记 + 文件），
+  # 结果在同一个 main 上不随 PR 变化；PR 面唯一独有的收益是「新机制未登记 ⇒ 当场
+  # 打 `block/merge`」，而那一步现在由**每日档**照常承接（判红 → P1 值班 issue）。
+  # 🔴 **代价（如实登记，见 PR body「接受的缺口」）**：机制失活 / 新机制未登记的
+  #    最长发现延迟从「每个 PR」变成「≤24h」，且**不再有 PR 侧的 `block/merge` 即时拦截**。
+  #    重启条件（一旦出现「机制失活 24h 级以上才被发现」的实例）：把 `pull_request` 面加回来。
   schedule:
     # 每日 04:37 CST（UTC+8）= UTC 20:37，避开整点与 drift-audit（21:17 UTC）的 CI 高峰
     - cron: '37 20 * * *'
@@ -107,52 +112,6 @@ jobs:
           path: mechanism-liveness-report.json
           retention-days: 14
           if-no-files-found: warn
-
-      # ── fail-closed 的执行闸：auto-merge 会跳过带 `block/merge` 的 PR ──────────
-      - name: 判红 ⇒ 打 block/merge + 贴修复指引（PR 腿）
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set +e
-          BODY=$(mktemp)
-          {
-            echo "❌ **Mechanism Liveness 未通过 —— 本 PR 让某个维护类机制**不再出声**（或新增了未登记的机制）。**"
-            echo ''
-            echo '```'
-            cat /tmp/mechanism-liveness.txt 2>/dev/null || echo "(报告缺失)"
-            echo '```'
-            echo ''
-            echo "**这不是风格问题**：机制停摆/瞎了而**没有任何读数会因此改变**，是本仓实测藏了 **约 40 小时**"
-            echo "的缺陷类别（issue #5264 的台账 \`approve\` 一次都没发出去，却每轮打印与事实相反的 ✅；"
-            echo "issue #5307 的台账分支 required 测试恒红而没有一个消费面看得到）。"
-            echo ''
-            echo "**怎么改**：按上面逐条 finding 的『修法』；新增维护类机制 ⇒ 在"
-            echo "\`scripts/mechanism-registry.json\` 登记（机制名 / 工作流 / 期望可观测 / 判据 / 谁看）"
-            echo "并加读数步；确实无法产出读数 ⇒ 写进该登记的 \`unfixed\`（**原因 + 谁看**，不许留白）。"
-            echo ''
-            echo "复算（本机、零成本）：\`python3 scripts/mechanism_liveness.py --check\`"
-          } > "$BODY"
-          gh pr comment "$PR" --body-file "$BODY" \
-            || echo "::warning::无法在 PR 上贴修复指引（限流/权限）—— **不影响判红结论**，请直接读本 run 的 step summary"
-          gh pr edit "$PR" --add-label block/merge \
-            || echo "::warning::无法打 block/merge（限流/权限）—— **判红结论不变**，但 auto-merge 不会被本标签拦住，请人工确认"
-          exit 0
-
-      - name: 通过 ⇒ 摘 block/merge（PR 腿）
-        if: success() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set +e
-          LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
-          if echo "$LABELS" | grep -qx 'block/merge'; then
-            gh pr edit "$PR" --remove-label block/merge \
-              || echo "::warning::无法摘 block/merge（限流/权限）—— 它是**恢复态**的收尾动作，请人工确认"
-          fi
-          exit 0
 
   watchdog:
     name: Mechanism Liveness Watchdog (最近一次成功处置是否新鲜)

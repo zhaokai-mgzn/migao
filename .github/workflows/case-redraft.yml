@@ -13,10 +13,18 @@ permissions:
 
 jobs:
   trigger:
+    # 关键词门控（既有语义，一字未改）：只对**自动评审载荷**评论（`REVIEW_JSON` + reject/supplement）
+    # 触发，且已带 `ai-draft` 的 issue 不再触发（防环）。
+    # ── #5814 触发面降频（增量）：补一层**非 bot** 门控 ─────────────────────────
+    # `issue_comment` 的过滤**只能发生在 job 级**（GitHub 不允许按评论正文筛事件）⇒ 本腿的
+    # 事件量无法再降；唯一还能省的是「bot 自己的评论也创建一次 run」这一族。
+    # 实测读数（如实登记，不粉饰）：09-27~09-29 共 90 次 run，**全部**是 job 级 `if` 跳过的
+    # `skipped` ⇒ 本腿不是体积最大的放大器，本次也没有可观的量能降下来。
     if: |
       contains(github.event.comment.body, '<!-- REVIEW_JSON') &&
       (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"')) &&
-      !contains(github.event.issue.labels.*.name, 'ai-draft')
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

@@ -1,0 +1,57 @@
+{
+  "schema": "ci-pr-types-ledger/v1",
+  "issue": "#5814",
+  "what": "**类级元守卫 B**（触发面降频包）：凡顶层 `on.pull_request` **未声明 `types`** 的腿 ⇒ 默认全事件（每次 push 到 PR 的 `synchronize` 都重跑一次）⇒ 必须在本表登记（理由 + 证据）；**未登记即红**，登记了却已声明 `types` ⇒ **陈旧登记 ⇒ 红**（条数**只许缩短**）。判据 = `tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py::test_pr_types_are_registered`。",
+  "why": "`pull_request` 不写 `types` = `opened/synchronize/reopened` 全收 ⇒ 一个 PR 上每次 push 都会重跑一遍该腿。对**读 PR 元数据**（body / label）的腿，`synchronize` 不改变被判定对象 ⇒ 纯重跑（实测 `pr-issue-link` 106.3 次/日，本包已收窄到 `[opened, reopened, edited]`）。本表让「新造一条未声明 `types` 的 PR 腿」**当场红**。",
+  "shrink_only": "`no_types` 只许缩短：某条腿一旦声明了 `types` ⇒ 必须从本表删除（留着 ⇒ 陈旧登记 ⇒ 红）。`count_frozen` 是现取条数的冻结读数，与 `no_types` 条数**同步收窄**（三处一致才放行：本表 `count_frozen` ⇄ `no_types` 长度 ⇄ 现取语料）。",
+  "count_frozen": 6,
+  "no_types": [
+    {
+      "file": "ai-agent-tests.yml",
+      "reason": "**required** 判据 `ai-agent-service unit tests` 的宿主：必须在每个 PR 上被上报（否则翻转 required 会让 PR 永久 `BLOCKED`）。⇒ 不许在标题里加 `types`（本包硬约束：`ai-agent-tests.yml` 一律不许动）。",
+      "evidence": "gh api repos/zhaokai-mgzn/migao/branches/main/protection --jq '.required_status_checks.contexts[]' | grep 'ai-agent-service unit tests'"
+    },
+    {
+      "file": "bmini-app.yml",
+      "reason": "**required** 判据 `bmini-app typecheck + unit tests` 的宿主（同上：不许动）。",
+      "evidence": "同上命令 | grep 'bmini-app typecheck'"
+    },
+    {
+      "file": "demo-evidence.yml",
+      "reason": "非 required，但已用**更窄的 `paths`** 按改动面门控（`frontend/admin-web/**` / `frontend/mini-app/**` / `tests/e2e/**` / 自己的 workflow）⇒ 再叠 `types` 只会让「改了前端却不重跑证据」的风险上升，而 `paths` 已经把它挡在绝大多数 PR 之外。本包**有意不动**它（不在 9 条授权面内）。",
+      "evidence": "git show origin/main:.github/workflows/demo-evidence.yml | sed -n '/^on:/,/^permissions:/p'"
+    },
+    {
+      "file": "mini-app.yml",
+      "reason": "**required** 判据 `mini-app typecheck + unit tests` 的宿主（同上：不许动）。",
+      "evidence": "同上命令 | grep 'mini-app typecheck'"
+    },
+    {
+      "file": "pr-check.yml",
+      "reason": "**required** 判据集合（`QA Growth Gate` / `Case Trust Gate` / `Case Coverage Gate` / `Case Contract` / `Block .env files` / `UI Regression Check` / `LLM Sink Ledger`）的宿主 ⇒ 必须在**每个 PR 的每次 push** 上重新上报（否则 required 检查会因为「本次没有 run」而永久 pending）。⇒ 不许加 `types`（本包硬约束：`pr-check.yml` 一律不许动）。",
+      "evidence": "gh api repos/zhaokai-mgzn/migao/branches/main/protection --jq '.required_status_checks.contexts[]'"
+    },
+    {
+      "file": "worker-h5-tests.yml",
+      "reason": "非 required，但已用**更窄的 `paths`** 按改动面门控（`frontend/worker-h5/**` + 自己的 workflow）⇒ 同 `demo-evidence`：`paths` 已经把面收得比 `types` 更窄。本包**有意不动**它（不在 9 条授权面内）。",
+      "evidence": "git show origin/main:.github/workflows/worker-h5-tests.yml | sed -n '/^on:/,/^permissions:/p'"
+    }
+  ],
+  "coverage_boundary": [
+    {
+      "face": "「每个 `synchronize` 真的都重跑」这一运行期事实判不了",
+      "reason": "判据只核**声明形态**（有没有 `types`）。实际触发次数要读 Actions API，刻意不进判据（会随时间漂 ⇒ 同一份代码给不同读数）。本包对 `pr-issue-link` 的实测读数写在 PR body 的「改前量 → 改后预期量」表里。",
+      "recompute": "gh api repos/zhaokai-mgzn/migao/actions/workflows/pr-issue-link.yml/runs?created=<起>..<止> --jq '.total_count'"
+    },
+    {
+      "face": "`paths` 与 `types` 是**两个正交**的收窄手段，本表只判后者",
+      "reason": "用 `paths` 把面收窄的腿（`demo-evidence` / `worker-h5-tests`）在**形态上**仍「未声明 `types`」⇒ 它们留在本表里只是为了满足「未登记即红」的闭合性，**不代表**它们没被收窄。⇒ 「本表绿」≠「所有 PR 触发的腿都已收窄」。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py -q -k pr_types --no-header -s"
+    },
+    {
+      "face": "`pull_request_target` 不在本表射程",
+      "reason": "本表只扫顶层 `on.pull_request`。`pull_request_target`（`automerge.yml`）是**另一个**信任域的事件，其 `types` 由实例判据承接（本包未改它的 `types`）。",
+      "recompute": "git show origin/main:.github/workflows/automerge.yml | sed -n '/^on:/,/^permissions:/p'"
+    }
+  ]
+}
