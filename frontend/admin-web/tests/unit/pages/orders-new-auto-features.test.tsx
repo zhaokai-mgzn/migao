@@ -312,7 +312,8 @@ const openSizing = () => {
   // 自证「尺寸常显」：两格按 `aria-label` 可取（不再依赖任何手风琴步骤）
   expect(screen.getAllByLabelText('窗宽 (米)').length).toBeGreaterThan(0)
   expect(screen.getAllByLabelText('窗高 (米)').length).toBeGreaterThan(0)
-  const btn = screen.getAllByRole('button', { name: /^1 用料与规格（系统推导）/ })[0]
+  // 🔴 2026-09-30 第六批：步骤 1 标题去掉「（系统推导）」后缀（用户逐字「移除红框中的文字」）
+  const btn = screen.getAllByRole('button', { name: /^1 用料与规格/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
@@ -891,10 +892,10 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     // 🔴 issue #4877：门幅**必须显式**（已无缺省门幅）—— 不传门幅 = 不判，断言无据可依
     await setupLine({ doorWidth: '2.8米' })
     // #4878（origin/main）：系统识别块位置 = 行内区块 1；**2026-09-28 布局重排**后区块 1 改名为
-    // 「用料与规格（系统推导）」，「尺寸与数量」这一步已不存在（尺寸提到组级常显）
+    // 「用料与规格」（第六批起标题不带「（系统推导）」后缀），「尺寸与数量」这一步已不存在（尺寸提到组级常显）
     openSizing()
 
-    const block = within(stepSection('用料与规格（系统推导）')).getByTestId('auto-detected-features')
+    const block = within(stepSection('用料与规格')).getByTestId('auto-detected-features')
     // 🔴 #5130 改钉：判据 = 与**企业阈值**比 ⇒ 6.6 宽 > 6 ⇒ 出「超宽」；2.6 高 ≤ 4 ⇒ 不出「超高」
     //（#4661 的「按加工类型分流」已退役 —— 特征与加工类型无关，两者可同时为真）
     expect(within(block).getByText('超宽')).toBeInTheDocument()

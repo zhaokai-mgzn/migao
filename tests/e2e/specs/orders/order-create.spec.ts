@@ -169,7 +169,7 @@ test.describe('订单创建', () => {
       // 反向断言：第三 / 第四段步骤号**不得**出现（合并 = 真的合并，不是并存）
       await expect(page.getByTestId('wizard-step-3')).toHaveCount(0)
       await expect(page.getByTestId('wizard-step-4')).toHaveCount(0)
-      await expect(page.getByTestId('wizard-step-1')).toContainText('用料与规格（系统推导）')
+      await expect(page.getByTestId('wizard-step-1')).toContainText('用料与规格')
       await expect(page.getByTestId('wizard-step-2')).toContainText('加工项')
       // ②加工项**默认收起**（summary 只报计数）⇒ 特殊选项 / 部位备注点在它里面；
       // 用户 2026-09-29 裁定「打开加工项区域时一同打开」⇒ 展开后两块与加工项同屏可见。

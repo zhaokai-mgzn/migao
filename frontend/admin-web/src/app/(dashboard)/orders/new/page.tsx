@@ -4219,12 +4219,14 @@ function ProductGroupBlock({
     group.saleForm !== SALE_FORM_FABRIC && group.selectedColorId != null && skuOptions.length > 0 ? (
       <>
         {/* **门幅推导细节**（2026-09-29 新增）：把「为什么是这一支」的依据与候选摆出来。
-            ⚠️ 规则解与依据都来自**服务端** `doorWidthPlan`（前端不编一句、不自己算可行性）。 */}
-        <details data-testid="door-width-details" className="rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2">
-          <summary className="cursor-pointer text-xs text-neutral-600 hover:text-neutral-800">
+            ⚠️ 规则解与依据都来自**服务端** `doorWidthPlan`（前端不编一句、不自己算可行性）。
+            🔴 2026-09-30 第六批：这里**不再是折叠项** —— 整块推导细节只有一个折叠区
+            （`derivation-panel`），本块退回「① 的标题行 + 内容」（编号即标题）。 */}
+        <div data-testid="door-width-details" className="rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2">
+          <p className="text-xs text-neutral-600">
             <span className="font-medium">① 门幅</span>
             {group.selectedSku?.doorWidth ? ` · ${group.selectedSku.doorWidth}` : ''}
-          </summary>
+          </p>
           <div className="mt-1 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2 text-[11px] text-neutral-500">
             <p data-testid="door-width-candidates">
               候选门幅（该颜色共 {skuOptions.length} 支）：
@@ -4254,7 +4256,7 @@ function ProductGroupBlock({
             )}
             <p>选了非规则解时，系统只提示、不替你改。</p>
           </div>
-        </details>
+        </div>
       </>
     ) : null
   const colorName = colorOptions.find((c) => c.id === group.selectedColorId)?.name
@@ -5006,10 +5008,15 @@ function LineItemBlock({
    * ⚠️ 只搬**读数**：裁决入口（接高 / 拼接的采纳 / 不采纳）在 系统识别 块里、**只此一处**。
    */
   const derivationAside = (
-    <div className="space-y-1.5" data-testid="derivation-panel">
-      {/* **引导语**（用户 2026-09-30：「**默认全部折叠，需要引导用户查看推导细节**」）——
-          三条各自折叠（① 门幅 / ② 用料公式 / ③ 用料方案），**不折叠套折叠**。 */}
-      <p className="text-[11px] text-neutral-400">推导细节（默认收起，点标题展开）</p>
+    /* **一整块推导细节**（🔴 2026-09-30 第六批；用户逐字「推导细节都收拢到一个折叠区域，打开后展示
+       全部细节，直接用一行展示这块的标题+推导细节，默认折叠，通过文案提示用户可以打开」）——
+       改前是 ① 门幅 / ② 用料公式 / ③ 用料方案 **三条各自折叠**；现在**只有这一块**是可折叠的，
+       三块原样收进它里面（编号即标题），标题行 = 引导语，**不折叠套折叠**。 */
+    <details data-testid="derivation-panel" className="w-full">
+      <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-600">
+        推导细节（默认收起，点标题展开）
+      </summary>
+      <div className="mt-1.5 space-y-1.5">
               {/* 门幅的**来源说明 + 推导细节**（`sku-choice-reason` / `door-width-details`）——
                   整行平铺在规格行下方：塞进第一格会把长句挤成三行、反而更高。 */}
               {specExtras}
@@ -5018,13 +5025,14 @@ function LineItemBlock({
                   公式串仍是**后端产出、原样渲染**（前端不自拼）；参数说明给「哪个数是哪个参数」
                   + 「要改去哪改」，末段是**算料配置页的深链**（`CRAFT_CALC_ENTRY`）。 */}
               {line.metersSource !== LINE_METERS_SOURCE_MANUAL && line.calc?.formula_text && (
-                <details
+                /* 🔴 2026-09-30 第六批：同上 —— 这里退回「② 的标题行 + 内容」，折叠由整块那一个管。 */
+                <div
                   data-testid="meters-formula-block"
                   className="rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
                 >
-                  <summary className="cursor-pointer text-xs text-neutral-600 hover:text-neutral-800">
+                  <p className="text-xs text-neutral-600">
                     <span className="font-medium">② 用料公式</span>
-                  </summary>
+                  </p>
                   <p
                     data-testid="meters-formula-text"
                     className="mt-1 text-xs text-neutral-500 break-words"
@@ -5055,7 +5063,7 @@ function LineItemBlock({
                       </p>
                     </>
                   )}
-                </details>
+                </div>
               )}
               {/* ===== 推导结果（issue #5202；契约 #5200 §四）=====
                   商家**主动填的只有三项**（颜色 + 净窗宽 + 净窗高）⇒ 加工类型 / 分幅 / 拼接 /
@@ -5064,17 +5072,19 @@ function LineItemBlock({
                   `reason` 与**候选逐条**（含不可行的）都摆出来：裁定 3 要系统逐个「再算一遍」，
                   商家要能核对判定。 */}
               {!isFabricLine && line.calc && (
-                <details
+                <div
                   data-testid="craft-plan"
                   className="rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
                 >
-                  {/* **③ 用料方案的标题行**（2026-09-30 第五批）：结论**常显**在 summary 上
-                      （2026-09-29 裁定「收的只是太多太细的那半」⇒ 结论要一直看得见），
+                  {/* **③ 用料方案的标题行**（2026-09-30 第五批；🔴 第六批改判）：结论与逐项**都在这一块里** ——
+                      第六批起它不再自己折叠（整块推导细节一起展开，用户逐字「推导细节都收拢到一个折叠区域，
+                      打开后展示全部细节」）；2026-09-29 那条「结论常显」随之作废，那个数仍**常显在
+                      用料米数输入框**上（同一份算料结果）。旧文留档：结论常显在 summary 上
                       点标题才展开逐项与依据 —— **不再折叠套折叠**（用户 2026-09-30 逐字
                       「就不要折叠套折叠了，可以排版对每块推导工艺做一些说明文字，比如 1 2 3 或者
                       直接门幅 工艺之类的标题？注意排版，不要占用太大空间，默认全部折叠，
                       需要引导用户查看推导细节」）。 */}
-                  <summary className="cursor-pointer text-xs text-neutral-600 hover:text-neutral-800">
+                  <p className="text-xs text-neutral-600">
                     <span className="font-medium">③ 用料方案</span>
                     {plan && (
                       <>
@@ -5115,7 +5125,7 @@ function LineItemBlock({
                         
                       </>
                     )}
-                  </summary>
+                  </p>
                   {plan ? (
                     <>
                       {/* **结论 + 逐项白话**（2026-09-29 用户第二次裁定）：旧形态把引擎的**内部读数**
@@ -5226,9 +5236,10 @@ function LineItemBlock({
                       并填好净尺寸；若都已就绪仍无方案，加工类型 / 拼接 / 接高接宽请人工确认。
                     </p>
                   )}
-                </details>
+                </div>
               )}
-    </div>
+      </div>
+    </details>
   )
 
   return (
@@ -5243,7 +5254,7 @@ function LineItemBlock({
                 序号/摘要/展开态按新结构走：摘要同时带出尺寸米数单价**与**工艺规格的合并结果。 */}
             <WizardStep
               step={1}
-              title="用料与规格（系统推导）"
+              title="用料与规格"
               summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米 · ${summarySpec || '按行业默认'}`}
               aside={derivationAside}
               {...stepProps(1)}
@@ -5284,8 +5295,9 @@ function LineItemBlock({
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
-                  {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
-                  <p className="mt-1 text-xs text-neutral-400">= 加工费米数</p>
+                  {/* 🔴 2026-09-30 第六批（用户逐字「= 加工费米数 这个直接移除」）：这行旁注**整条删除** ——
+                      字段名「用料米数」本身已说明它就是加工费米数（`info.processingMeters = line.quantity`），
+                      再写一行只是噪声。旧文留档（不再渲染）：把口径写在旁边 —— 商家一眼对得上加工费按哪个数算。 */}
                   {/* 算料来源（issue #4434）：**公式串与参数说明已移到下方「整行」块**
                       （2026-09-29 第二次裁定：「推导说明的右侧空白也能利用起来，把文案完全平铺开」）
                       —— 这里只留「人工指定」这条**与输入框直接相关**的状态与一键恢复。 */}
