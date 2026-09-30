@@ -264,13 +264,17 @@ def test_setup_python_skip_condition_is_sourced_from_the_setup_script():
 
 
 def _self_hosted_label_default() -> str:
-    """从环境脚本现取 `RUNNER_LABELS` 的默认值（**不读工作树之外的东西**）。"""
+    """从环境脚本现取 `RUNNER_LABELS` 的默认值（**不读工作树之外的东西**）。
+
+    ⚠️ **不按 `#` 截断行尾**：`${VAR:-default}` 的默认值与 `}` 之间没有注释，先按 `#` 截断是
+    **本地朴素 `#` 截断**（字符串里的 `#` 会吃掉行尾 ⇒ 假绿），判据 =
+    `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`（本文件初版正是被它判红的）。
+    """
     for line in SETUP_SCRIPT.read_text(encoding="utf-8").splitlines():
         if line.startswith("RUNNER_LABELS="):
             raw = line.split("=", 1)[1]
             raw = raw.split(":-", 1)[1] if ":-" in raw else raw
-            raw = raw.split("}", 1)[0].split("#", 1)[0]   # `${VAR:-default}` 的默认值 + 丢掉行尾注释
-            return raw.strip().strip('"').strip("'")
+            return raw.split("}", 1)[0].strip().strip('"').strip("'")
     raise AssertionError("环境脚本里找不到 RUNNER_LABELS 的默认值")
 
 

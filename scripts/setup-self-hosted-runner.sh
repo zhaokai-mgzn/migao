@@ -60,7 +60,8 @@ set -uo pipefail
 REPO="${RUNNER_REPO:-zhaokai-mgzn/migao}"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner-migao}"
 RUNNER_NAME="${RUNNER_NAME:-migao-mac-m1}"
-RUNNER_LABELS="${RUNNER_LABELS:-migao-mac}"          # runner 侧附加标签（workflow 侧另写 self-hosted）
+# runner 侧附加标签；workflow 侧要同时写 `self-hosted`（见 runner_plane_ledger.json）
+RUNNER_LABELS="${RUNNER_LABELS:-migao-mac}"
 RUNNER_VERSION="${RUNNER_VERSION:-2.337.0}"          # 按需升级：gh api repos/actions/runner/releases/latest
 MIRROR_REPO="${MIRROR_REPO:-$HOME/ai native/migao}"  # 本机已有克隆 ⇒ 预置工作区 + alternates 的来源
 TOOL_CACHE="${TOOL_CACHE:-$RUNNER_DIR/_work/_tool}"  # 实测落点 = `_work/_tool`（runner 默认的
