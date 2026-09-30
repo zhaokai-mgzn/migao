@@ -85,7 +85,6 @@ import {
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
-  STANDARD_FULLNESS,
   STYLE_MIXED,
   buildCraftSpec,
   buildEdgeLineCraftSpec,
@@ -810,7 +809,10 @@ function autoFeatureParamsSignature(params: AutoFeaturesParams | null): string {
  * ⚠️ **只传「客服显式选的」加工类型**：**不能**传 {@link cuttingModeOf} —— 那一档正是本请求要
  * 算出来的东西（用它当入参 = 自激 + 循环依赖）。
  */
-function doorWidthParamsOf(line: OrderLineItem): DoorWidthPlanParams | null {
+function doorWidthParamsOf(
+  line: OrderLineItem,
+  calcConfig: CraftCalcConfig | null
+): DoorWidthPlanParams | null {
   const width = Number(line.width)
   const height = Number(line.height)
   if (!Number.isFinite(width) || width <= 0) return null
@@ -820,13 +822,26 @@ function doorWidthParamsOf(line: OrderLineItem): DoorWidthPlanParams | null {
     .map((sku) => parseDoorWidth(sku.doorWidth))
     .filter((g): g is number => g !== null)
   if (doorWidths.length === 0) return null
+  // 🔴 **用料口径必须与算料同源**（2026-09-30 现取实测）：门幅依据文案里会回显「用料 N 米」，
+  // 本请求若不带 `formula`，服务端就按**默认公式**算词 —— 实测同屏出现「门幅依据 用料 6.4 米」
+  // vs「公式 / 摘要 / 算料 6.3 米」（6.4 = 倍数法 2×3.2，6.3 = 韩褶公式 0.25×24+0.3）
+  // ⇒ 商家看到同一件事两个数。故**取算料同一份入参**（`craftCalcParamsOf(calcInputOf(...))`，
+  // 与上面试算 effect 逐字同源），页面不另拼第二份口径。
+  // ⚠️ 同时**不再塞常量 `fullness`**：算料请求根本不发它（褶倍/档位由服务端按 `craft_tier`
+  // + 租户算料配置解析）⇒ 留着它就是第二份口径（正是本次分叉的形态）。
+  const calc = craftCalcParamsOf(calcInputOf(line, calcConfig))
   const params: DoorWidthPlanParams = {
     width,
     height,
     door_widths: doorWidths,
-    open_count: line.craft.openCount,
-    fullness: STANDARD_FULLNESS,
+    open_count: calc?.open_count ?? line.craft.openCount,
   }
+  if (calc?.mounting) params.mounting = calc.mounting
+  if (calc?.craft_tier) params.craft_tier = calc.craft_tier
+  if (calc?.formula) params.formula = calc.formula
+  if (calc?.craft) params.craft = calc.craft
+  if (calc?.has_pattern !== undefined) params.has_pattern = calc.has_pattern
+  if (calc?.pattern_repeat !== undefined) params.pattern_repeat = calc.pattern_repeat
   if (line.craft.cuttingMode) params.cutting_mode = line.craft.cuttingMode
   const selected = parseDoorWidth(line.selectedSku?.doorWidth)
   if (selected !== null) params.selected_door_width = selected
@@ -843,7 +858,14 @@ function doorWidthParamsSignature(params: DoorWidthPlanParams | null): string {
     params.cutting_mode ?? '',
     params.selected_door_width ?? '',
     params.open_count ?? '',
-    params.fullness ?? '',
+    // 用料口径（与算料同源的那些键）**必须进签名** —— 漏项 ⇒ 改了公式/工艺不重发
+    // ⇒ 门幅依据静默停在旧口径（与判据 2 的「签名漏项」同族）
+    params.mounting ?? '',
+    params.craft_tier ?? '',
+    params.formula ?? '',
+    params.craft ?? '',
+    params.has_pattern ?? '',
+    params.pattern_repeat ?? '',
   ].join('|')
 }
 
@@ -2464,15 +2486,15 @@ export default function NewOrderPage() {
   const doorWidthSignature = useMemo(
     () =>
       lineItems
-        .map((l) => `${l.id}:${doorWidthParamsSignature(doorWidthParamsOf(l))}`)
+        .map((l) => `${l.id}:${doorWidthParamsSignature(doorWidthParamsOf(l, calcConfig))}`)
         .join(';'),
-    [lineItems]
+    [lineItems, calcConfig]
   )
 
   useEffect(() => {
     const targets: Array<{ id: string; params: DoorWidthPlanParams }> = []
     for (const line of lineItems) {
-      const params = doorWidthParamsOf(line)
+      const params = doorWidthParamsOf(line, calcConfig)
       if (params) targets.push({ id: line.id, params })
     }
     if (targets.length === 0) return
@@ -5211,8 +5233,8 @@ function LineItemBlock({
                     </>
                   ) : (
                     <p data-testid="craft-plan-unavailable" className="text-xs text-amber-700">
-                      推导服务未就绪：算料响应没有返回推导方案（`data.plan`）—— 加工类型 / 拼接 /
-                      接高接宽请人工确认（系统不会自行猜一个方案）。
+                      推导方案暂不可用（系统不会自行猜一个方案）：请确认已选规格（颜色 / 门幅）
+                      并填好净尺寸；若都已就绪仍无方案，加工类型 / 拼接 / 接高接宽请人工确认。
                     </p>
                   )}
                 </div>

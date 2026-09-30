@@ -133,7 +133,7 @@ const CALC_OK = {
       formula_text: '(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米',
       source: '公式计算',
       craft_tier: 'standard',
-      // 推导方案（形状同 `CraftCalcPlan`）——**必须给**，否则页面按「推导服务未就绪」降级，
+      // 推导方案（形状同 `CraftCalcPlan`）——**必须给**，否则页面按「推导方案暂不可用」降级，
       // 「用料方案（系统推导）」块（`craft-plan-*`）整块不出（判定折叠 / 结论常显的判据就无从断言）。
       plan: {
         cutting_mode: '定高买宽',

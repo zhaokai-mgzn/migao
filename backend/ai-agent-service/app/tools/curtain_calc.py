@@ -495,17 +495,17 @@ def derive_plan(
         """
         if join_width_m is not None:
             return CUTTING_MODE_FIXED_WIDTH, (
-                f"人工加接宽 {round(float(join_width_m), 3)} 米 ⇒ 蕴含**倒幅**"
+                f"人工加接宽 {round(float(join_width_m), 3)} 米 ⇒ 蕴含倒幅"
                 f"（定高买宽按宽买米、宽方向无缺口）"
             )
         if join_height_m is not None:
             return CUTTING_MODE_FIXED_HEIGHT, (
-                f"人工加接高 {round(float(join_height_m), 3)} 米 ⇒ 蕴含**定高买宽**"
+                f"人工加接高 {round(float(join_height_m), 3)} 米 ⇒ 蕴含定高买宽"
                 f"（倒幅幅长按米购买、高方向无缺口）"
             )
         if splice_times is not None and splice_times >= 1:
             return CUTTING_MODE_FIXED_WIDTH, (
-                f"人工拼 {splice_times} 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）"
+                f"人工拼 {splice_times} 次 ⇒ 蕴含倒幅（零拼接的定高买宽拼不起来）"
             )
         return cutting_mode or _auto_mode(), None
 
@@ -597,7 +597,7 @@ def derive_plan(
     if style == STYLE_MIXED and (win_splice or 0) >= 1:
         # R4（裁定 1）：「如果出现要拼几次的情况，那只能单色」⇒ 显式冲突告知，**不静默改款式**。
         notices.append(
-            f"款式为「{STYLE_MIXED}」但本次需要拼接 {win_splice} 次 —— 出现拼接时款式只能是**单色**"
+            f"款式为「{STYLE_MIXED}」但本次需要拼接 {win_splice} 次 —— 出现拼接时款式只能是单色"
             f"（用户 2026-09-22 裁定 1）⇒ 请人工裁定改款式或改门幅；系统不静默改款式（款式影响钱）。"
         )
 
@@ -610,19 +610,19 @@ def derive_plan(
         if cutting_mode is not None:
             mode_clause = f"加工类型按人工值「{cutting_mode}」逐字采用"
         elif implied_note is not None:
-            mode_clause = f"加工类型**未人工指定** ⇒ 由人工值蕴含为「{effective_mode}」"
+            mode_clause = f"加工类型未人工指定 ⇒ 由人工值蕴含为「{effective_mode}」"
         else:
-            mode_clause = f"加工类型**未人工指定** ⇒ 沿用系统推导的「{effective_mode}」"
+            mode_clause = f"加工类型未人工指定 ⇒ 沿用系统推导的「{effective_mode}」"
         reason = (
-            f"**人工覆盖**（裁定 4/6）：{mode_clause}"
+            f"人工覆盖（裁定 4/6）：{mode_clause}"
             f"（门幅 {door} 米 / 成品高 {need_h} 米 / 用料 T {round(total, 3)} 米），系统不再自动改判"
         )
         if join_h is not None:
-            reason += f"；人工加接高 {join_h} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，**不参与算料**）"
+            reason += f"；人工加接高 {join_h} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，不参与算料）"
         if join_w is not None:
             reason += (
-                f"；人工加接宽 {join_w} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，**不参与算料**）"
-                f"—— ⚠️ **人工接宽不自动省幅**（R7 逐字采用人工值）：本次用料 = "
+                f"；人工加接宽 {join_w} 米（≤ 上限 {MAX_JOIN_GAP_M} 米，不参与算料）"
+                f"—— ⚠️ 人工接宽不自动省幅（R7 逐字采用人工值）：本次用料 = "
                 f"{win_panels} 幅 × 幅长 {need_h} 米；若要按「省一整幅」算，"
                 f"请把拼次显式改为 {max(0, (win_panels or 0) - 1)} 次"
             )
@@ -647,7 +647,7 @@ def derive_plan(
     else:
         reason = (
             "自动推导（候选按「拼接最少 → 用料最少 → 接高接宽最少 → 表序」选优）："
-            f"选定 **{win_key}** —— "
+            f"选定 {win_key} —— "
             + next(c for c in candidates if c["key"] == win_key)["reason"]
         )
 
@@ -1201,7 +1201,7 @@ def judge_door_width_choice(
         return {
             "verdict": DOOR_WIDTH_VERDICT_INFEASIBLE,
             "suggestion": (
-                f"所选 {_num(selected)} 米门幅单幅做不出成品高 —— 本单**没有任何门幅**能单幅做成"
+                f"所选 {_num(selected)} 米门幅单幅做不出成品高 —— 本单没有任何门幅能单幅做成"
                 "（规则解同此结论，需接高）"
             ),
         }
@@ -1218,7 +1218,7 @@ def judge_door_width_choice(
                 "suggestion": (
                     f"所选 {_num(selected)} 米门幅单幅做不出（成品高 {_num(window_height)} + 上下卷边 "
                     f"{_num(hem_margin)} = {_num(need_height)} 米，缺口 "
-                    f"{_num(round(need_height - selected_eff, 3))} 米 ⇒ **需接高**）；"
+                    f"{_num(round(need_height - selected_eff, 3))} 米 ⇒ 需接高）；"
                     f"规则解 = {_num(door_width)} 米门幅"
                 ),
             }
@@ -1364,7 +1364,7 @@ def resolve_fabric_plan(
             "auto": auto,
             "reason": (
                 f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 ≤ "
-                f"门幅 {width} 米（有效 {eff} 米）⇒ 定高买宽单幅可做，取**可行集里最小门幅**"
+                f"门幅 {width} 米（有效 {eff} 米）⇒ 定高买宽单幅可做，取可行集里最小门幅"
                 f"（用料 {round(total, 3)} 米与门幅无关 ⇒ 取小 = 不占宽幅布）"
             ),
         }
@@ -1403,7 +1403,7 @@ def resolve_fabric_plan(
             "reason": (
                 f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 > 最宽门幅 "
                 f"{widest_width} 米（有效 {widest_eff} 米）⇒ 缺口 {gap} 米 ≤ 上限 {MAX_JOIN_GAP_M} 米"
-                f" ⇒ 接高（取**最宽**门幅使缺口最小）：接高**不参与算料** ⇒ 用料仍 "
+                f" ⇒ 接高（取最宽门幅使缺口最小）：接高不参与算料 ⇒ 用料仍 "
                 f"{round(total, 3)} 米（不另买加高条，裁定 5）"
             ),
         }
@@ -1426,7 +1426,7 @@ def resolve_fabric_plan(
             "auto": auto,
             "reason": (
                 f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 > 所有候选门幅"
-                f"（最宽 {widest_width} 米，有效 {widest_eff} 米）⇒ **倒幅**（定宽买高，"
+                f"（最宽 {widest_width} 米，有效 {widest_eff} 米）⇒ 倒幅（定宽买高，"
                 f"竖缝藏进褶皱）：用料 {round(total, 3)} 米 ÷ 门幅 {width} 米 ⇒ {panels} 幅"
                 f"（取分幅最少；并列取较小门幅）"
             ),
@@ -1907,14 +1907,14 @@ def build_quote(
                 "meters": None,   # ← 由下面唯一那个进位出口回填（与 `fabric_meters` 同源同一变量）
                 "auto": False,    # 拼色行：系统**没有**自动推导（款式与拼接冲突，需人工裁定）
                 "reason": (
-                    f"款式为「{STYLE_MIXED}」⇒ 本次用料按**拼色**每折吃布系数算"
-                    f"（纸表表头，用户 2026-09-19 裁定），**未走单色自动推导**；"
+                    f"款式为「{STYLE_MIXED}」⇒ 本次用料按拼色每折吃布系数算"
+                    f"（纸表表头，用户 2026-09-19 裁定），未走单色自动推导；"
                     f"按契约 R4（用户 2026-09-22 裁定 1「出现拼接时款式只能是单色」）"
                     f"需人工裁定款式或门幅 —— 系统不静默改款式（款式影响钱）。"
                 ),
                 "notices": [
                     *_p["notices"],
-                    f"款式为「{STYLE_MIXED}」：系统**不静默改款式**（款式影响钱）——"
+                    f"款式为「{STYLE_MIXED}」：系统不静默改款式（款式影响钱）——"
                     f"若确认要做拼接，请把款式改为单色后重算（R4）。",
                 ],
             }
