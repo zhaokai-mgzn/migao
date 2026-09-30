@@ -445,6 +445,43 @@ def judge_rails_intact(text: str) -> list:
     return v
 
 
+#: 切流前那道迁移失败门的标记（**唯一**：判据按它定位，移动/删除都会被看见）
+MIG_GATE_PRE = "# 迁移失败闸门（issue #5792）"
+#: 收尾兜底门的标记
+MIG_GATE_POST = "# 迁移失败闸门兜底（issue #5792）"
+#: 切流量那一步的注释锚点（顺序判据用）
+SWITCH_ANCHOR = "# ── ② 切换：替换正式容器"
+
+
+def judge_migration_failure_gate(text: str) -> list:
+    """⑦ 迁移失败必须在**切流量之前**拦住，并在收尾处兜底判红（issue #5792 实测）。
+
+    为什么需要它：`MigrationRunner` 是 `CommandLineRunner`（**在健康检查就绪之后**才跑）且
+    「单条失败只跳过这一条」，**不参与健康判定** ⇒ 2026-09-30 实测：schema 与代码不一致，
+    而蓝绿预验证、正式健康检查、Post-Deploy Smoke **三重全绿**，85 秒后冒烟才莫名 500。
+    ⇒ 判据：① 切流前有一道门；② 它**在切流之前**；③ 收尾有兜底（应急开关跳过蓝绿时不漏）；
+    ④ 门认的是 `MigrationRunner` 的真实失败标记 `❌ 迁移失败`（而不是「迁移」这种泛词）。
+    """
+    v = []
+    if MIG_GATE_PRE not in text:
+        v.append(
+            f"蓝绿预验证里缺少切流前的迁移失败门（找不到标记 `{MIG_GATE_PRE}`）"
+            " —— 静默迁移失败会变成「部署全绿 + 事后莫名 500」（issue #5792）"
+        )
+    else:
+        switch_at = text.find(SWITCH_ANCHOR)
+        if switch_at != -1 and text.index(MIG_GATE_PRE) > switch_at:
+            v.append(f"迁移失败门出现在 `{SWITCH_ANCHOR}` **之后** ⇒ 流量已切、旧容器已走，门就白设了")
+    if MIG_GATE_POST not in text:
+        v.append(
+            f"收尾缺少迁移失败兜底（找不到标记 `{MIG_GATE_POST}`）"
+            " —— 应急开关 `.blue-green-off` 跳过蓝绿时没有 green 可查，只能在收尾兜"
+        )
+    if 'grep -q "❌ 迁移失败"' not in text:
+        v.append('门没有认 `MigrationRunner` 的真实失败标记（缺 `grep -q "❌ 迁移失败"`）')
+    return v
+
+
 def judge_ci_wiring(ci_text: str, wf_texts: dict) -> list:
     """⑦ CI 侧接线：许可注入（含 #4767 自动回滚）+ 实际生效 tag 落 summary + 结论行。"""
     v = []
@@ -508,6 +545,7 @@ def all_deploy_violations(text: str) -> list:
         + judge_allow_downgrade(text)
         + judge_effective_tags(text)
         + judge_rails_intact(text)
+        + judge_migration_failure_gate(text)
     )
 
 
@@ -530,6 +568,7 @@ def test_real_files_satisfy_every_judgement():
     "judge_allow_downgrade",
     "judge_effective_tags",
     "judge_rails_intact",
+    "judge_migration_failure_gate",
 ])
 def test_each_deploy_judge_is_clean_on_the_real_script(judge_name):
     """逐条判据在真实脚本上各自干净（避免一条恒红被「整体红」掩盖）。"""
@@ -1405,3 +1444,45 @@ def test_legacy_literal_pin_would_misfire_on_legit_refactor(tmp_path):
     assert judge_permit_reaches_the_executed_command(refactored, tmp_path / "legacy", "sha-1a1a1a1", "1") == [], (
         "新判据在合法重构上也红了（本单没修好）"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 迁移失败门（issue #5792）—— 注入式红证
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_injection_remove_migration_gate_before_switch_goes_red():
+    """注入⑧：把**切流前**那道迁移失败门删掉（= 静默迁移失败照样切流量）⇒ 必红。"""
+    text = read_deploy_sh()
+    injected = _inject(text, MIG_GATE_PRE, "# （迁移失败门被移除）")
+    v = judge_migration_failure_gate(injected)
+    assert v != [], "删掉切流前的迁移失败门后判据没红（判据无判别力）"
+
+
+def test_injection_migration_gate_placed_after_switch_goes_red():
+    """注入⑨：把迁移失败门**挪到切流量之后**（门设晚了）⇒ 必红（顺序判据）。"""
+    text = read_deploy_sh()
+    moved = text.replace(MIG_GATE_PRE, "# （门被挪走）", 1)
+    # ⚠️ 要插在切流锚点**之后**才是「门设晚了」（第一版我插在锚点**之前** ⇒ 顺序仍然正确、
+    #    判据不红，红证自己失效 —— 注入方向写反了）。
+    injected = moved.replace(SWITCH_ANCHOR, SWITCH_ANCHOR + "\n" + MIG_GATE_PRE, 1)
+    v = judge_migration_failure_gate(injected)
+    assert any("之后" in item for item in v), f"门被挪到切流之后却不判红：{v}"
+
+
+def test_injection_remove_migration_gate_backstop_goes_red():
+    """注入⑩：把收尾兜底门删掉（应急开关跳过蓝绿时会漏）⇒ 必红。"""
+    text = read_deploy_sh()
+    injected = _inject(text, MIG_GATE_POST, "# （兜底门被移除）")
+    v = judge_migration_failure_gate(injected)
+    assert v != [], "删掉收尾兜底门后判据没红"
+
+
+def test_injection_generic_grep_instead_of_failure_marker_goes_red():
+    """注入⑪：门改认泛词「迁移」而不是真实失败标记 ⇒ 必红（`ℹ️ 迁移失败` 会被误判成失败）。"""
+    text = read_deploy_sh()
+    # ⚠️ 脚本里**两处**都用这个标记（切流前门 + 收尾兜底），`_inject` 只替第一处
+    #    ⇒ 另一处还在、判据（正确地）不红。要证明判据有判别力，必须**两处都**改掉。
+    assert text.count('grep -q "❌ 迁移失败"') >= 2, "门应在两处各有一份（切流前 + 收尾兜底）"
+    injected = text.replace('grep -q "❌ 迁移失败"', 'grep -q "迁移"')
+    v = judge_migration_failure_gate(injected)
+    assert v != [], "门认泛词后判据没红（会把已知存量非幂等的 ℹ️ 行误当失败）"

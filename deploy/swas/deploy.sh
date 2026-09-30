@@ -593,6 +593,17 @@ for svc in $UP_SERVICES; do
       $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
       exit 1
     fi
+    # 迁移失败闸门（issue #5792）：`MigrationRunner` 的语义是「单条失败只跳过这一条、继续跑后面的」，
+    # 且**不参与健康判定** ⇒ 实测（2026-09-30）schema 与代码不一致却**部署三重全绿**，
+    # 随后 Post-Deploy Smoke 在 85 秒后莫名 500（失败迁移把连接池里的连接留成 aborted 事务）。
+    # ⇒ 在**切流量之前**就断言：只认 ERROR 形态的「❌ 迁移失败」；
+    #   「已知存量非幂等」是 INFO 的「ℹ️ 迁移失败…」，**不算**（护栏②已按错因签名区分）。
+    if $BG_COMPOSE logs --tail=800 "$GREEN" 2>&1 | grep -q "❌ 迁移失败"; then
+      echo "  ❌ $svc 新镜像（tag=${TAG}）**迁移失败** ⇒ schema 可能与代码不一致，**不切流量**（旧容器保持服务、环境未受影响）："
+      $BG_COMPOSE logs --tail=800 "$GREEN" 2>&1 | grep -aE "❌ 迁移失败|本次有 .* 条迁移失败" | tail -8
+      $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
+      exit 1
+    fi
     echo "  ✅ $svc green 健康 ⇒ 新镜像已被证明能起，现在才替换正式容器"
   fi
 
@@ -680,5 +691,14 @@ fi
 echo "== 4. admin-api 迁移结果（MigrationRunner 事实 —— 静默迁移失败的唯一可见面）=="
 docker compose logs --tail=1500 admin-api 2>&1 | grep -aE "MigrationRunner|迁移|PSQLException|Caused by|ERROR: " \
   || echo "  （最近 1500 行里没有迁移行：容器可能未重启，或日志已被轮转）"
+
+# 迁移失败闸门兜底（issue #5792）：上面那段只是**打印事实**；这里把它变成**判红** ——
+# 应急开关（`.blue-green-off`）跳过蓝绿时没有 green 可查，只能在此兜住。
+# 只认 ERROR 形态的「❌ 迁移失败」（INFO 的「ℹ️ 迁移失败…」= 已知存量非幂等，不算）。
+if docker compose logs --tail=1500 admin-api 2>&1 | grep -q "❌ 迁移失败"; then
+  echo "  ❌ admin-api **迁移失败**（schema 可能与代码不一致）⇒ 本次部署判失败"
+  echo "     恢复：见上文「恢复：IMAGE_TAG=…」；修好数据/迁移后重跑该 tag 的部署"
+  exit 1
+fi
 
 echo "== deploy.sh 完成（耗时主要取决于镜像拉取） =="
