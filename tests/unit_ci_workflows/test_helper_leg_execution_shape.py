@@ -186,6 +186,50 @@ def test_live_inventory_is_not_below_the_frozen_baseline(request) -> None:
     assert problems == [], "运行期收集面判红：\n  - " + "\n  - ".join(problems)
 
 
+def test_session_hook_is_wired_and_fires_on_a_short_inventory(monkeypatch, request, capsys) -> None:
+    """**钩子在位且会红**（issue #5814）：收口钩子必须真驱动判定本体，且短库存时真判红。
+
+    病灶（**本包自己踩过一次，记实**）：`#5825` 把「判定」写进 `pytest_sessionfinish`，随后重写
+    那一段时**把钩子整个丢了**，而 5 条测试**照样全绿** —— 判据本体测到了，**消费点没人测**。
+    所以这条测的是**接线**：直连真钩子、拿真 session、把台账换成"短库存"版 ⇒ 必须抛红。
+    """
+    session = request.session
+    # ⚠️ 不能用 `session.items` 判"跑整套"：`-k` 过滤下 `items` **已被筛过**（实测：全量收集 +
+    # `-k 本测试` ⇒ `items` 只剩 2 条）⇒ 那样会让本判据**在最该跑的注入形态下反而 skip**
+    # （「判据自己可能不跑」的形态）。改用**收集规模**：本目录全量 ≈5.8k 条、聚焦运行 ≤ 20 条。
+    if int(getattr(session, "testscollected", 0) or 0) < 100:
+        pytest.skip("聚焦运行（收集面 ≪ 整套）⇒ 真钩子按「跑整套才判」早退，本形态判不了接线")
+    assert callable(getattr(conftest, "pytest_sessionfinish", None)), (
+        "收口钩子不存在 ⇒ 判定本体没人消费（#5825 踩过的形态）")
+    # "短库存"必须**相对本轮真实收集数**构造：台账现在的冻结值（5767）已**低于** main 的
+    # 现取收集数（别的包在长判据）⇒ 直接 +1 会构造出一个**根本不短**的库存，判据退化成空跑
+    # （**实测**：本文件初版就是这么写的，全量里 `DID NOT RAISE`）。
+    strict = json.loads(json.dumps(_LEDGER))
+    strict["frozen_inventory"]["collected_total"] = int(session.testscollected) + 1
+    monkeypatch.setattr(conftest, "_helper_leg_ledger", lambda: strict)
+    with pytest.raises(BaseException) as caught:
+        conftest.pytest_sessionfinish(session, 0)
+    assert caught.value.returncode == 1, (
+        f"钩子没把判红传成退出码 1（拿到 {caught.value!r}）⇒ required 检查不会红")
+    captured = capsys.readouterr()          # ⚠️ 只能读**一次**：第二次读会把缓冲取空（实测过）
+    printed = captured.out + captured.err
+    assert "库存塌了" in printed, f"钩子判红了但归因没打印（读数={printed[-200:]!r}）"
+    monkeypatch.setattr(conftest, "_helper_leg_ledger", lambda: _LEDGER)
+    conftest.pytest_sessionfinish(session, 0)      # 正常读数：不得抛（否则恒红 = 空断言）
+
+
+def test_session_hook_returns_early_on_the_xdist_controller(monkeypatch, request) -> None:
+    """控制器早退：`-n` 下控制器不收集用例 ⇒ 在它那里判库存会**假红整条腿**（issue #5814）。"""
+    session = request.session
+    monkeypatch.setattr(session.config.option, "numprocesses", 4, raising=False)
+    if hasattr(session.config, "workerinput"):
+        pytest.skip("本进程是 xdist worker（它**该**判）⇒ 控制器早退这一半不适用")
+    strict = json.loads(json.dumps(_LEDGER))
+    strict["frozen_inventory"]["collected_total"] = int(session.testscollected) + 1000
+    monkeypatch.setattr(conftest, "_helper_leg_ledger", lambda: strict)
+    conftest.pytest_sessionfinish(session, 0)      # 控制器早退 ⇒ 不得抛
+
+
 def test_collection_floor_guard_is_live_and_fail_closed() -> None:
     """元守卫：运行期判据**在位且会红**（空跑 = 没判据）。
 

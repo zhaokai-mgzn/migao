@@ -435,3 +435,40 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
             f"并行化的收益若来自「少跑」，它是坏形态而不是优化（issue #5814；台账 = {_LEDGER_PATH.name}）"
         ]
     return []
+
+
+def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
+    """会话收口：把**收集面**判在整轮读数上（fail-closed，不依赖某条测试是否被跑到）。
+
+    ⚠️ **为什么判定要写在测试体外、又要有一条测试体内的同款**（2026-09-30 实测）：
+
+    - 收口钩子**不依赖任何单条测试被跑到**（xdist 下测试会被分到别的 worker ⇒ 只写成测试，
+      就是"判据自己可能不跑"的形态）；
+    - 而收口钩子里的判红**在 xdist 下传不成退出码**（三条实测见上方判定渠道表）⇒
+      最后的 fail-closed 落点仍是**测试失败**（`test_helper_leg_execution_shape.py::
+      test_live_inventory_is_not_below_the_frozen_baseline`）。
+    ⇒ 两条都留：钩子负责"不依赖某条测试是否被跑到"，测试负责"把判红变成非零退出码"。
+    本钩子只在**真收集过用例的进程**里判（xdist 控制器按设计不收集 ⇒ 在那里 `testscollected`
+    恒为 0，判它会假红整条腿）。
+
+    🔴 **本钩子曾经被整个丢掉过**（PR #5825 重写判定段时漏掉；5 条判据文件测试**照样全绿**
+    ⇒ 缺陷落进 main，由本 PR 补回）：所以接线本身有判据 ——
+    `test_helper_leg_execution_shape.py::test_session_hook_is_wired_and_fires_on_a_short_inventory`
+    直连本钩子、把台账换成"短库存"版 ⇒ 必须 `pytest.exit.Exception(..., returncode=1)`。
+    ⚠️ `Exit` 的签名是 `(msg, returncode=None)` —— 写成 `Exception(1, "说明")` 会让 `returncode`
+    变成那句说明（**实测**），判红就拿不到退出码。
+    """
+    numprocesses = getattr(session.config.option, "numprocesses", None) or 0
+    if numprocesses and not hasattr(session.config, "workerinput"):
+        return                     # xdist 控制器：不收集、不执行 ⇒ 它没有可判的读数
+    problems = collection_floor_problems(session)
+    if not problems:
+        return
+    print("\n[helper-leg-shape] 本腿收集面判红（issue #5814，" + CONSUMPTION_MARKER + "）：")
+    for item in problems:
+        print("  - " + item)
+    if numprocesses:
+        session.shouldfail = "helper-leg-shape 判红（issue #5814）"   # xdist：worker 报给控制器
+        return
+    raise pytest.exit.Exception("helper-leg-shape 判红（issue #5814）：见上方逐条归因",
+                                returncode=1)
