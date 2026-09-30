@@ -35,9 +35,15 @@
      + worker-h5 静态落地面腿，issue #5001 + bmini-h5-hosting / c-end-h5 两条静态落地面腿，issue #5668 / #4184）；
    - 「无漂移」（HEAD 是 docs 提交，但自上次成功部署起该服务代码没动）⇒ 零 dispatch
      **但 summary 明写依据**（不是静默 success）；
-   - 「断路器命中」（同一 headSha 已 failure）⇒ 零 dispatch + 记明原因；
+   - 「断路器命中」（同一 headSha 落在**不可恢复的终态** —— `failure` / **`cancelled`** /
+     `timed_out` / …，见 issue #5814 B 的允许名单）⇒ 零 dispatch + 记明原因；
    - 「查询失败」⇒ **fail-open** 照旧补部署 + `::warning::`（#4767 语义不变）；
-   - 「cancelled」⇒ **不**被当成 failure（fail-open 保持）。
+   - 「`cancelled` 结论」⇒ **跳闸**（#5814 B **有意**改判 #4767 的旧读数：挂死的 run 报的就是
+     cancelled，旧断路器只认 failure ⇒ 每 20min 再补一次 ⇒ 无限循环）。**人工出口保留**
+     （`gh workflow run <wf> --ref main` / 重跑永远放行）。⚠️ 与本仓另一条同名措辞的判据
+     `tests/unit_ci_workflows/test_eval_cancelled_not_failure.py`（**评测 run**：取消 ≠ 结果、
+     不得建失败 issue）判的是**另一件事** —— 那条管「报告/建 issue 语义」，本条管
+     「要不要自动重试同一个不可变 commit」，两者的正确默认**相反**。
 3. 判据读的是**脚本当前文本 + 真实执行行为**，不是「与某个历史版本等值」。
    本文件**不联网、不碰真实云/真实 ACR、不写共享 `/tmp`**（一切产物落 pytest `tmp_path`）。
 
@@ -275,12 +281,12 @@ def run_reconcile(tmp_path: Path, repo: Path, runs_by_wf: dict, *,
     return proc, summary, dispatches
 
 
-def runs(sha: str, conclusion: str) -> list:
-    return [{"headSha": sha, "conclusion": conclusion}]
+def runs(sha: str, conclusion: str, status: str = "completed") -> list:
+    return [{"headSha": sha, "conclusion": conclusion, "status": status}]
 
 
-def runs_all(sha: str, conclusion: str) -> dict:
-    return {wf: runs(sha, conclusion) for wf in DEPLOY_WF.values()}
+def runs_all(sha: str, conclusion: str, status: str = "completed") -> dict:
+    return {wf: runs(sha, conclusion, status) for wf in DEPLOY_WF.values()}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -487,7 +493,16 @@ def test_head_image_present_does_not_dispatch(tmp_path):
 
 
 def test_breaker_skips_and_records_reason(tmp_path):
-    """#4767 断路器：同一 headSha 已 `failure` ⇒ 零 dispatch + 记明原因（fail-open 未削弱）。"""
+    """#4767 断路器（#5814 B 之后 = **不可恢复终态**断路器）：同一 headSha 已 `failure`
+    ⇒ 零 dispatch + 记明原因。
+
+    ⚠️ 本单（#5814 B）把判定从「只认 failure」扩成**允许名单** ⇒ 判据文本随之改准
+    （`已失败过（conclusion=failure）` → `落在不可恢复终态（conclusion=…）`）。
+    **承重语义一字未动**：命中 ⇒ 零 dispatch + summary 逐服务给出原因 + 人工出口
+    （`gh workflow run <wf> --ref main`）。fail-open 由同文件
+    `test_query_failure_fails_open_with_warning` / `test_git_history_loss_fails_open_not_silent`
+    与新增的 `tests/unit_ci_workflows/test_deploy_breaker_allowlist.py` 承接。
+    """
     fx = commit_repos(tmp_path)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D2"], "failure"), head7=fx["head7"],
@@ -495,20 +510,65 @@ def test_breaker_skips_and_records_reason(tmp_path):
     assert proc.returncode == 0, f"{proc.stderr}"
     assert dispatches == [], f"断路器命中后不该 dispatch → {dispatches}"
     assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
-    assert summary.count("断路器：") == 6 and "已失败过" in proc.stdout, f"{summary!r}"
+    assert summary.count("断路器：") == 6 and "不可恢复的终态" in proc.stdout, f"{summary!r}"
+    assert "gh workflow run" in proc.stdout and "gh workflow run" in summary, (
+        "跳闸必须给出**人工出口**（跳闸而不给出路 = 把机制变成黑箱）"
+    )
 
 
-def test_cancelled_is_not_treated_as_failure(tmp_path):
-    """#4767 的 fail-open：`cancelled` **不是** failure ⇒ 照旧补部署（语义未被削弱）。"""
+def test_cancelled_conclusion_trips_the_breaker(tmp_path):
+    """#5814 B：`cancelled` 结论 ⇒ **跳闸**（不再自动补部署）—— 这正是事故的循环入口。
+
+    ## 为什么改判（本单**有意**改掉 #4767 的旧读数，不是削弱它）
+    #4767 当时把 `cancelled` 当 fail-open（「取消不是结论」）是**合理的**：那时没有
+    「同一 commit 被反复自动重试」这条回路。但 #5814 的实测把因果关系反过来了：
+
+    · 挂死点（推 ACR 约 40min）**不是**部署脚本报错，而是被 job 的 `timeout-minutes: 45`
+      **打死** ⇒ GitHub 报的结论就是 **`cancelled`**（**不是** failure）；
+    · 旧断路器只认 `failure` ⇒ **不跳闸** ⇒ `deploy-reconcile.yml` 每 20min 对同一个 commit
+      再补一次 ⇒ 又一个 run 挂 40min ⇒ **无限循环**（三条腿各自的 `on.schedule` 也在独立重试）。
+
+    ⇒ 结论：**在「部署腿」这条路上**，`cancelled` 对同一个不可变 sha 而言是**不可恢复的终态**
+    （不由部署脚本自己结束）⇒ 必须跳闸。**这不是「把 cancelled 记成失败」**——本条与
+    `tests/unit_ci_workflows/test_eval_cancelled_not_failure.py`（**评测 run**：取消 ≠ 结果、
+    不得建失败 issue）判的是**两件事**：那条管**报告/建 issue 语义**，本条管
+    **「要不要自动重试同一个不可变 commit」**，两者的正确默认**恰好相反**（刻意不混）。
+
+    **人工出口保留**：`gh workflow run <wf> --ref main`（或重跑）永远放行 —— 跳闸只挡自动重试。
+    **fail-open 保留**：查询失败 / 无记录 ⇒ 照旧补部署（见 `test_query_failure_fails_open_with_warning`）。
+    """
     fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
     proc, summary, dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["D2"], "cancelled"), head7=fx["head7"],
     )
     assert proc.returncode == 0, f"{proc.stderr}"
-    assert sorted(dispatches) == sorted(DEPLOY_WF.values()), (
-        f"`cancelled` 被当成了 failure（= 削弱 #4767 的 fail-open）→ {dispatches}"
+    assert dispatches == [], (
+        f"`cancelled` 结论必须跳闸（#5814：挂死的 run 报的就是 cancelled）→ {dispatches}"
     )
-    assert "断路器跳过=0" in summary, f"{summary!r}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "conclusion=cancelled" in summary, f"跳闸原因必须点名结论 → {summary!r}"
+    assert "gh workflow run" in summary, f"跳闸必须给人工出口 → {summary!r}"
+
+
+def test_still_running_same_commit_is_skipped_as_churn(tmp_path):
+    """#5814 B：同 sha 的 run **还没跑完**（`status != completed`）⇒ 跳过 + 打印理由。
+
+    理由 = 重复 dispatch 是**纯 churn**：`deploy-<svc>` 是
+    `concurrency: {cancel-in-progress: false}` ⇒ 新 run 只会在队列里白等（事故实测排队 30~42min，
+    正常 0.1min）。这条也是「挂死循环」最直接的一环：在跑的 run 还没出终态时，
+    对账**每 20min** 就再压一个进去。
+    """
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    proc, summary, dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["D2"], "", status="in_progress"), head7=fx["head7"],
+    )
+    assert proc.returncode == 0, f"{proc.stderr}"
+    assert dispatches == [], f"同 commit 有 run 在跑时不该再 dispatch（纯 churn）→ {dispatches}"
+    assert "**结论**：dispatch=0 · 无漂移=0 · 断路器跳过=6" in summary, f"{summary!r}"
+    assert "在跑/排队" in proc.stdout and "status=in_progress" in proc.stdout, (
+        f"跳过必须显式打印「已有同 commit 的 run 在跑/排队」+ 状态 → {proc.stdout}"
+    )
+    assert "仍在跑/排队" in summary, f"{summary!r}"
 
 
 def test_query_failure_fails_open_with_warning(tmp_path):

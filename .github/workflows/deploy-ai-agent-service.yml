@@ -127,10 +127,74 @@ jobs:
             echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过，跳过构建部署"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "⚠️ 镜像 ${IMAGE} 缺失——该 commit 的部署触发可能被吞（连续快速合并），执行完整构建部署"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            # ── 不可恢复终态闸门（issue #5814 B/C）────────────────────────────────
+            # 镜像缺失**不等于**「该补一次构建」：这个 commit 最近一次部署如果是**不可恢复的
+            # 终态**（failure / cancelled / timed_out / startup_failure / action_required /
+            # stale），再补一次只会**再挂一次**。
+            # 事故读数（run 36582359732 的 job 109453551643，2026-09-28）：构建 1~2min 跑完，
+            # 随后挂在「推 ACR」约 40min ⇒ 被 `timeout-minutes: 45` 打死 ⇒
+            # conclusion=**cancelled**（**不是** failure）⇒ 旧断路器（只认 failure）不跳闸 ⇒
+            # 本腿自己的 cron（20min 一轮）与 `deploy-reconcile.yml` 的 cron 各自再 dispatch
+            # 一次 ⇒ 同一 commit 无限重试，每轮白占 `deploy-<svc>` 并发锁 45min
+            # （`cancel-in-progress: false`）⇒ 实测 job 排队 30~42min（正常 0.1min）。
+            # 判据形态 = **允许名单**（fail-closed）：只有
+            #   success / skipped / neutral / 空（查不到同 sha 记录）才继续补部署，
+            # **其余一切结论**（含 GitHub 将来新增的）都跳闸。为什么不用黑名单：黑名单在
+            # GitHub 新增一种结论时**静默退回 fail-open** = 本 bug 原样复发（#5814 的教训）。
+            #
+            # ⚠️ **边界（与人工出口）**：本判据只挡「自动补部署」这一条路。**复跑**同一个 commit
+            #   走 `gh workflow run <本腿>.yml --ref main` 或在 run 页面 Re-run（手动面，永远放行）；
+            #   显式回滚（`-f image_tag=<tag>`）在**更早**的分支就已放行，根本不进这里（#4852 的逃生口）。
+            # ⚠️ **fail-open 保留**：`gh` 查询失败 / 无记录 ⇒ is_recoverable 保持 "true" ⇒ 照旧补部署
+            #   —— 本检查自己出错**绝不**停掉部署（与 deploy-reconcile 同口径）。
+            last_runs=$(gh run list --workflow "${GITHUB_WORKFLOW:-}" --branch main --limit 30 \
+                          --json headSha,conclusion,status 2>/dev/null || echo "[]")
+            last_pair=$(printf '%s' "$last_runs" | jq -r --arg s "$GITHUB_SHA" \
+                          '[.[] | select(.headSha == $s)][0] | "\(.conclusion // "")|\(.status // "")"' 2>/dev/null || echo "")
+            LAST_CONCLUSION=""; LAST_STATUS=""
+            # ⚠️ 只有拿到**两个字段都解析出来**的形态（含 `|` 分隔符）才认这次查询 ——
+            # `jq` 缺失 / 解析报错 / 输出为空 ⇒ 一律当作「查不到」⇒ 保持 fail-open（见上）。
+            # 少了这道自证，`gh`/`jq` 不可用时 `LAST_STATUS` 会被 `##*|` 赋成整串 ⇒ 分支判反。
+            if [[ "$last_pair" == *"|"* ]]; then
+              LAST_CONCLUSION="${last_pair%%|*}"
+              LAST_STATUS="${last_pair##*|}"
+            fi
+            is_recoverable="true"
+            if [ -n "$LAST_STATUS" ] && [ "$LAST_STATUS" != "completed" ]; then
+              # 同 sha 的 run 还在 queued / in_progress / waiting / requested / pending ⇒
+              # 重复 dispatch 是纯 churn（concurrency 锁会让它白等）⇒ 交给在跑的那个。
+              is_recoverable="false"
+              LAST_CONCLUSION="status=${LAST_STATUS}（尚未跑完）"
+            elif [ -n "$LAST_CONCLUSION" ]; then
+              case "$LAST_CONCLUSION" in
+                success | skipped | neutral) is_recoverable="true" ;;
+                *) is_recoverable="false" ;;
+              esac
+            fi
+            LAST7=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
+            if [ "$is_recoverable" != "true" ]; then
+              echo "⛔ 镜像 ${IMAGE} 缺失，但 ${LAST7} 最近一次部署是**不可恢复的终态**（结论=${LAST_CONCLUSION}）——跳过本轮构建部署。"
+              echo "   理由（issue #5814）：自动重试同一个坏 commit 只会**再挂一次**（挂点 = 推送到 ACR，"
+              echo "   会占住 deploy-<svc> 并发锁直到 45min 超时），并让本腿的 cron 与 deploy-reconcile"
+              echo "   的 cron 互相放大成无限循环。人工确认（看该 run 的日志）后复跑："
+              echo "   gh workflow run <本腿>.yml --ref main"
+              echo "   · 该 commit 的代码有问题 ⇒ 先修或回滚；只是镜像推送抖动 ⇒ 用上面的命令复跑"
+              echo "   · 在 run 页面点 Re-run 同样放行（本判据只看「最近一次 run 的结论」）"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "## ⛔ 部署腿跳过（issue #5814 不可恢复终态闸门）"
+                echo ""
+                echo "- 服务：\`${GITHUB_WORKFLOW:-}\` · commit：\`${LAST7}\`"
+                echo "- 最近一次 run 的结论：\`${LAST_CONCLUSION}\`（不在允许名单 [success, skipped, neutral, 空] 内）"
+                echo "- 动作：**不补构建/部署**（自动重试坏 commit 只会再挂一次并占锁 45min）"
+                echo "- 人工出口：\`gh workflow run <本腿>.yml --ref main\`（或在该 run 页面 Re-run）"
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            else
+              echo "⚠️ 镜像 ${IMAGE} 缺失——该 commit 的部署触发可能被吞（连续快速合并），执行完整构建部署"
+              echo "   （最近一次同 sha 的 run 结论 = \`${LAST_CONCLUSION:-无记录}\` ⇒ 在允许名单内，可安全重试）"
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
-
       - name: Set up Python 3.11
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         uses: actions/setup-python@v7
@@ -173,17 +237,63 @@ jobs:
       - name: Build and push Docker image
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: backend/ai-agent-service
+        # ── 显式上界 + 一次重试（issue #5814 A）────────────────────
+        # 事故（run 36582359732 的 job 109453551643）：构建 1~2min 跑完，随后
+        # `#14 pushing layers` → `#15 [auth] …aliyuncs.com pull,push token`（鉴权**成功**）
+        # ⇒ **约 40 分钟零输出** ⇒ `##[error]The operation was canceled.`
+        # （被 job 的 `timeout-minutes: 45` 打死；`exporting cache` 从未出现 ⇒ **不是** GHA cache 导出）。
+        # 该步 32 个样本**双峰**：2.0~4.2min（健康）vs 11.7~43.4min（病态，中位 37.6~40.2min）。
+        # 修法：给**单次 push 尝试**一个显式上界（`timeout`，coreutils；ubuntu-latest 自带），
+        # 超时/失败后**重试一次**（镜像推送幂等；buildx 的 gha cache 已在 ⇒ 第二次重建快）。
+        # 最坏墙钟 = 2 × 上界 = **24min**，**明显小于** `timeout-minutes: 45` ⇒ 不再出现
+        # 「被 job 超时打死 ⇒ conclusion=cancelled ⇒ 断路器不跳闸 ⇒ cron 无限重试」这一环。
+        # ⚠️ 两次都不成 ⇒ **显式 ::error:: 点名卡在哪一步**（推送到 ACR 挂住）后非零退出。
+        # ⚠️ 既有语义一字不变：镜像名、`--provenance=false`、`--build-arg`、
+        #    `--cache-from/--cache-to type=gha`、`--push`、以及 `IMAGE_FULL` 的导出全保留。
+        env:
+          PUSH_TIMEOUT_SECS: '720'
+          RETRY_SLEEP_SECS: '15'
         run: |
+          set -euo pipefail
           IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
           IMAGE_FULL=$IMG:${{ steps.tag.outputs.IMAGE_TAG }}
-          docker buildx build \
-            --provenance=false \
-            --build-arg PIP_INDEX_URL=https://pypi.org/simple/ \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            -t $IMAGE_FULL \
-            -t $IMG:latest \
-            --push .
+          LOG=$(mktemp)
+          attempt_build_and_push() {
+            timeout "${PUSH_TIMEOUT_SECS}" docker buildx build \
+              --provenance=false \
+              --build-arg PIP_INDEX_URL=https://pypi.org/simple/ \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              -t "$IMAGE_FULL" \
+              -t "$IMG:latest" \
+              --push . 2>&1 | tee "$LOG"
+          }
+          echo "🚀 构建并推送 ${IMAGE_FULL}（单次尝试上界 ${PUSH_TIMEOUT_SECS}s，失败/超时重试 1 次）"
+          if attempt_build_and_push; then
+            echo "✅ 第 1 次尝试成功"
+          else
+            rc=$?
+            echo "::warning::第 1 次构建/推送失败或超时（rc=${rc}，上界 ${PUSH_TIMEOUT_SECS}s）——重试 1 次（推送幂等；buildx 的 gha cache 已在 ⇒ 重建快）"
+            if [ "$rc" = "124" ]; then
+              echo "::warning::第 1 次是**超时**（rc=124）⇒ 形态与 issue #5814 的事故一致：卡在「推送到 ACR」（日志末行通常停在 pushing layers / 图层上传）"
+            fi
+            sleep "${RETRY_SLEEP_SECS}"
+            if attempt_build_and_push; then
+              echo "✅ 第 2 次尝试成功（第 1 次 rc=${rc}）"
+            else
+              rc2=$?
+              echo "::error::构建并推送镜像两次都没成功（第 1 次 rc=${rc}，第 2 次 rc=${rc2}，单次上界 ${PUSH_TIMEOUT_SECS}s）"
+              if [ "$rc2" = "124" ]; then
+                echo "::error::**推送到 ACR 挂住**（第 2 次也是 rc=124 超时）——镜像 ${IMAGE_FULL} 未推送成功；"
+                echo "::error::这一步就是 issue #5814 的挂点（日志停在 pushing layers / 图层上传，鉴权已完成）⇒ 请人工确认 ACR/网络后复跑，不要依赖自动重试。"
+              else
+                echo "::error::第 2 次失败不是超时（rc=${rc2}）⇒ 看构建日志的报错行（下面最后 60 行）"
+              fi
+              echo "──── 最后一次尝试的日志（末 60 行）────"
+              tail -n 60 "$LOG" || true
+              exit 1
+            fi
+          fi
           echo "IMAGE_FULL=$IMAGE_FULL" >> $GITHUB_ENV
 
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）

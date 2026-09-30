@@ -618,7 +618,10 @@ def check_reconcile_breaker(text: str) -> None:
         "断路器必须查对应 deploy workflow 的 run 历史"
         "（`gh run list --workflow \"$wf\" --branch main --limit 30`；`$wf` 由逐服务调用传入）"
     )
-    assert "--json headSha,conclusion" in text, "断路器必须按 `headSha,conclusion` 取数"
+    assert "--json headSha,conclusion,status" in text, (
+        "断路器必须按 `headSha,conclusion,status` 取数 —— `status` 是 issue #5814 B 新增的："
+        "「同 sha 的 run 还没跑完（queued/in_progress）⇒ 不补部署（纯 churn）」这条判据要用它"
+    )
     # issue #4827：断路器的判据必须是**被部署的那个 commit** = **main HEAD**。
     # dispatch 出去后 deploy 构建的 tag 是 `sha-${GITHUB_SHA::7}`（各 deploy workflow 的
     # `Resolve image tag`）⇒ 「被部署的 commit」就是 main HEAD；换成 CODE_SHA（最后一个改代码
@@ -635,11 +638,22 @@ def check_reconcile_breaker(text: str) -> None:
         "按「最后一个改代码的 commit」判缺失 ⇒ 那个 tag 永远建不出来 ⇒ 每个后续 docs 提交"
         "都重复 dispatch（3 服务全量重建重部署：502 窗口 + 覆盖回滚，issue #4827）"
     )
-    assert re.search(r'\[ "\$last" = "failure" \]; then', text), (
-        "断路器必须以 `conclusion == failure` 为唯一触发条件"
+    # ⚠️ issue #5814 B **有意**把这里从「只认 failure」改成**允许名单**：
+    #    事故里被 `timeout-minutes: 45` 打死报的是 **cancelled**（不是 failure）⇒ 只认 failure
+    #    的旧断路器不跳闸 ⇒ 每 20min 再补一次 ⇒ 又一个 run 挂 40min ⇒ 无限循环。
+    #    允许名单让**将来新增的结论默认跳闸**（fail-closed）；黑名单形态会静默退回 fail-open。
+    assert re.search(r'success \| skipped \| neutral\) is_recoverable="true" ;;', text), (
+        "断路器必须是**允许名单**形态（#5814 B）：只有 success / skipped / neutral"
+        "（外加「查不到同 sha 记录」）才继续补部署；其余一切结论（cancelled / timed_out /"
+        " startup_failure / action_required / stale / 将来新增的）由 `*)` 兜底跳闸"
     )
-    m = re.search(r'if \[ "\$last" = "failure" \]; then(.*?)\n\s*fi\n', text, re.S)
-    assert m, "断路器的 `if [ \"$last\" = failure ]` 分支结构变了（判据已过期）"
+    assert "*)" in text, "允许名单缺 `*`（兜底）分支 ⇒ 未被枚举的结论会静默穿过"
+    assert not re.search(r'\[ "\$[A-Za-z_]+" = "(failure|cancelled|timed_out|stale)" \]', text), (
+        "断路器退回了**黑名单**形态（对结论做相等比较）⇒ GitHub 新增一种结论时会静默 fail-open"
+        "= issue #5814 原样复发"
+    )
+    m = re.search(r'if \[ "\$is_recoverable" != "true" \]; then(.*?)\n\s*fi\n', text, re.S)
+    assert m, "断路器的 `if [ \"$is_recoverable\" != \"true\" ]` 分支结构变了（判据已过期）"
     branch = m.group(1)
     # 命中分支里只允许出现「人工重跑」提示（`echo`），**不许**真的 dispatch
     dispatch_calls = [
@@ -922,7 +936,7 @@ def check_reconcile_decision_is_observable(text: str) -> None:
     """ⓒ 每个判定分支都必须把**依据**写进 `$GITHUB_STEP_SUMMARY`（不许静默 success）。"""
     assert "GITHUB_STEP_SUMMARY" in text, "对账结论没落 job summary ⇒ 后来人看不出它为什么没动"
     for branch, needle in (
-        ("断路器命中", "⛔ ${svc}：main HEAD ${HEAD7} 的部署**已失败过**"),
+        ("断路器命中", "⛔ ${svc}：main HEAD ${HEAD7} 的部署落在**不可恢复的终态**"),
         ("镜像已存在", "✅ ${svc} 镜像 ${image} 已存在"),
         ("无漂移", "✅ ${svc}：自上次成功部署 ${p:0:7} 起"),
         ("镜像缺失→dispatch", "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署"),

@@ -106,6 +106,19 @@ echo "stub docker: unexpected args: $*" >&2
 exit 127
 """
 
+# 桩 gh（issue #5814 B）：`Skip if already built` 现在多了一次 `gh run list`（取同 sha **最近一次**
+# 的结论与状态）⇒ **必须桩掉**，否则本文件的执行式守卫会去跑真实的 `gh`（网络 + 认证，慢且随环境变）。
+# 本文件**有意**让这个桩**直接失败**（rc=1）：
+#   · `… 2>/dev/null || echo "[]"` + `last_pair` 的 `|` 自证 ⇒ 走 **fail-open**（照旧写 skip=false）
+#     ⇒ ②/③/④ 这些既有判据的读数**逐字不变**（本单不靠改它们来迁就新代码）；
+#   · 「结论不可恢复 ⇒ 跳过」这条**新**判据需要「查询成功 + 指定结论」的正向输入，
+#     由同目录 `test_deploy_breaker_allowlist.py` 用它**自己的**桩提供（那里是本单的主判据面）。
+GH_STUB = """#!/bin/bash
+# 桩 gh：本文件只覆盖「查询不可用」这一面 ⇒ 恒非零（= fail-open 路径）。
+echo "stub gh: 查询不可用（本文件有意如此，见 GH_STUB 注释）" >&2
+exit 1
+"""
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # 工具：把 workflow 里的 step 正文抽出来，替换 GitHub 表达式后真跑
@@ -157,12 +170,14 @@ def render_sync_step(wf: str) -> str:
 
 def run_sync_step(wf: str, tmp_path: Path, *, event_name: str, sha: str,
                   image_present: bool, inputs_image_tag: str = "") -> tuple[int, str, dict]:
-    """真跑渲染后的 step 正文（桩 docker），返回 (rc, stdout+stderr, outputs)。"""
+    """真跑渲染后的 step 正文（桩 docker/gh —— `gh` 是本单 #5814 B 新增的依赖），
+    返回 (rc, stdout+stderr, outputs)。"""
     bindir = tmp_path / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
-    stub = bindir / "docker"
-    stub.write_text(DOCKER_STUB, encoding="utf-8")
-    stub.chmod(0o755)
+    for name, content in (("docker", DOCKER_STUB), ("gh", GH_STUB)):
+        stub = bindir / name
+        stub.write_text(content, encoding="utf-8")
+        stub.chmod(0o755)
 
     outputs_file = tmp_path / "github_output"
     outputs_file.write_text("", encoding="utf-8")
