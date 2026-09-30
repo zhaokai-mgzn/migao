@@ -1,4 +1,4 @@
-// case_ids: OR-036, OR-035, OR-040
+// case_ids: OR-036, OR-035, OR-040, OR-052
 // @vitest-environment jsdom
 /**
  * 新增订单页：**三项输入收敛 + 用料联动自动重算**（issue #5202 —— 母单 #5200 子单 C）。
@@ -14,9 +14,12 @@
  *    `N ≥ 4` ⇒ 显示数字 + 需人工处理，**不显示「拼4次」**（R5）；
  * 5. 接高/接宽人工加受 **≤0.1 米**上限约束：超限**就地报错**且**不发该键**（fail-closed，不静默截断）；
  * 6. 数字框能打出 `0.`（输入 `0` → `0`，`0.` → `0.`，`0.5` ⇒ 落库 0.5）；
- * 7. `data.plan` 缺席 ⇒ **显式降级**（不崩、不猜、界面提示「推导服务未就绪」+ 工艺参数默认展开供人工兜底）；
+ * 7. `data.plan` 缺席 ⇒ **显式降级**（不崩、不猜、界面提示「推导方案暂不可用」+ 工艺参数默认展开供人工兜底）；
  * 8. 加工类型**单点取值**：页面 chips / `/auto-features` / `/craft-calc` / 落库 读同一个值
- *    （优先级：商家显式 → `plan.cutting_mode` → `door-width-plan` → 不猜）。
+ *    （优先级：商家显式 → `plan.cutting_mode` → `door-width-plan` → 不猜）；
+ * 9. **门幅方案入参与算料同一份用料口径**（`formula` / `craft` / `mounting` / `craft_tier`）——
+ *    不同源 ⇒ 门幅依据文案里的「用料 N 米」与公式 / 算料不是同一个数（2026-09-30 线上实测 6.4 vs 6.3）；
+ * 10. 降级提示**不出现内部字段名**、不说「服务未就绪」（真实原因常是规格还没选），且给出可行动指引。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -382,7 +385,7 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     expect(checkedChips('加工类型')).toEqual(['定宽买高'])
   })
 
-  it('判据 7（降级）：服务端未给 `plan` ⇒ 显式提示「推导服务未就绪」+ 工艺参数默认展开（不崩、不猜）', async () => {
+  it('判据 7（降级）：服务端未给 `plan` ⇒ 显式提示「推导方案暂不可用」+ 工艺参数默认展开（不崩、不猜）', async () => {
     // 后端 `data.plan`（子单 A / #5201）还没上线时的形态：只增键不删键 ⇒ 老响应逐值不变
     mockCraftCalcPreview.mockResolvedValue({
       data: {
@@ -399,12 +402,52 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     await pickProduct()
     await fillThreeInputs({ sku: '2\\.8米' })
 
-    expect(await screen.findByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
+    expect(await screen.findByTestId('craft-plan-unavailable')).toHaveTextContent('推导方案暂不可用')
     // 推导没就绪 ⇒ 工艺参数**默认展开**（人工兜底是唯一出路；收起会让人无从下手）
     expect(craftParamsToggle()).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('combobox', { name: '加工类型' })).toBeInTheDocument()
     // 数量照旧按算料结果预填（**不猜**一个推导方案出来）
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
+  })
+
+  it('判据 9（同源）：门幅方案入参与算料**同一份用料口径**（formula / craft / mounting / craft_tier）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    await waitFor(() => expect(mockDoorWidthPlan).toHaveBeenCalled())
+    const doorWidthParams = (mockDoorWidthPlan.mock.calls.at(-1)?.[0] ?? {}) as Record<string, unknown>
+    const calcParams = craftCalcCalls().at(-1) as Record<string, unknown>
+
+    // 门幅依据文案会**回显明细里的用料**（服务端 `reason` 里带「用料 N 米」）⇒ 口径不同源
+    // ⇒ 同一屏出现两个数：实测线上「门幅依据 用料 6.4 米」vs「公式 / 摘要 / 算料 6.3 米」
+    // （6.4 = 倍数法 2×3.2，6.3 = 韩褶公式 0.25×24+0.3）。修前本请求里**没有** `formula` 键。
+    expect(doorWidthParams.formula).toBe('pleat')
+    expect(doorWidthParams.formula).toBe(calcParams.formula)
+    expect(doorWidthParams.mounting).toBe(calcParams.mounting)
+    expect(doorWidthParams.craft_tier).toBe(calcParams.craft_tier)
+    expect(doorWidthParams.mounting).toBeTruthy()
+    // 常量褶倍**不再是第二份口径**：算料请求根本不发 `fullness`（档位 / 公式由服务端按配置解析）
+    expect(doorWidthParams).not.toHaveProperty('fullness')
+  })
+
+  it('判据 10（说人话）：降级提示不出现内部字段名、不说「服务未就绪」，且给可行动指引', async () => {
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) => {
+      const data = { ...calcResponse(params).data.data } as Record<string, unknown>
+      delete data.plan // 后端未接线 / 降级态：响应里没有 `data.plan`
+      return Promise.resolve({ data: { data } })
+    })
+    render(<NewOrderPage />)
+    await pickProduct()
+    await fillThreeInputs({ sku: '2\\.8米' })
+
+    const notice = await screen.findByTestId('craft-plan-unavailable')
+    // 修前原文：「推导服务未就绪：算料响应没有返回推导方案（`data.plan`）——…」
+    // ⇒ 把**内部字段名** + **不准确的归因**（真实原因常是「规格还没选」）一起摆给商家（2026-09-30 实测）
+    expect(notice.textContent).not.toContain('data.plan')
+    expect(notice.textContent).not.toContain('服务未就绪')
+    expect(notice.textContent).toContain('规格')
+    expect(notice.textContent).toContain('人工确认')
   })
 })
 
@@ -616,7 +659,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     await fillThreeInputs({ sku: '2\\.8米' })
     await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
     // 降级提示（既有判据 7）与告知**同帧**并存 ⇒ 告知里的「不可比」是**说出来的**，不是省掉的
-    expect(screen.getByTestId('craft-plan-unavailable')).toHaveTextContent('推导服务未就绪')
+    expect(screen.getByTestId('craft-plan-unavailable')).toHaveTextContent('推导方案暂不可用')
 
     editMeters() // 2026-09-28：用料米数常态只读 ⇒ 输入前先点「改」
     fireEvent.change(qtyInput(), { target: { value: '7.7' } })
