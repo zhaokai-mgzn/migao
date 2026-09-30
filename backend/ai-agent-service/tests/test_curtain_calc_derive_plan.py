@@ -698,7 +698,7 @@ class TestImpliedModeIsDisclosedForEveryManualValue:
     而依据行写「**加工类型按人工值「定高买宽」逐字采用**」⇒ 把**引擎推导值**断言成**人工值**。
 
     引擎自己在**同族**情形下早有「蕴含」披露（`S3` 帧逐字「未显式给加工类型，但人工拼 2 次
-    ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）」），唯独接高 / 接宽两支**漏了**
+    ⇒ 蕴含倒幅（零拼接的定高买宽拼不起来）」），唯独接高 / 接宽两支**漏了**
     （源码里那段的条件原为 `cutting_mode is None and splice_times is not None and splice_times >= 1`）。
 
     红证形态（每条都能单独判红）：
@@ -713,7 +713,7 @@ class TestImpliedModeIsDisclosedForEveryManualValue:
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT, "接高 ⇒ 蕴含定高买宽"
         assert p["auto"] is False, "人工加接高 ⇒ auto=false（R7）"
         assert p["join_height_m"] == pytest.approx(0.05)
-        assert "未显式给加工类型，但人工加接高 0.05 米 ⇒ 蕴含**定高买宽**" in p["reason"], (
+        assert "未显式给加工类型，但人工加接高 0.05 米 ⇒ 蕴含定高买宽" in p["reason"], (
             "**判据 1**：未显式给加工类型时，让引擎选定高买宽的那个人工值必须被点名"
             "（与拼次那支同族同模板）"
         )
@@ -727,14 +727,14 @@ class TestImpliedModeIsDisclosedForEveryManualValue:
         """接宽支同理（原实现也漏）—— 断言它没被「只补接高」的改法落下。"""
         p = plan(window_height=3.0, join_width_m=0.05)
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
-        assert "未显式给加工类型，但人工加接宽 0.05 米 ⇒ 蕴含**倒幅**" in p["reason"]
+        assert "未显式给加工类型，但人工加接宽 0.05 米 ⇒ 蕴含倒幅" in p["reason"]
         assert "按人工值「倒幅」逐字采用" not in p["reason"]
 
     def test_splice_family_wording_is_pinned(self):
         """拼次那支的**逐字**口径不许漂（`S3` 帧的归档读数就是这句，改它就等于改告知）。"""
         p = plan(splice_times=2)
         assert (
-            "未显式给加工类型，但人工拼 2 次 ⇒ 蕴含**倒幅**（零拼接的定高买宽拼不起来）"
+            "未显式给加工类型，但人工拼 2 次 ⇒ 蕴含倒幅（零拼接的定高买宽拼不起来）"
             in p["reason"]
         )
 
@@ -749,7 +749,7 @@ class TestImpliedModeIsDisclosedForEveryManualValue:
         """`splice_times=0`（人工覆盖但不蕴含倒幅）⇒ 既不说「按人工值…加工类型」也不说「蕴含」。"""
         p = plan(splice_times=0)
         assert p["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT
-        assert "加工类型**未人工指定** ⇒ 沿用系统推导的「定高买宽」" in p["reason"]
+        assert "加工类型未人工指定 ⇒ 沿用系统推导的「定高买宽」" in p["reason"]
         assert "蕴含" not in p["reason"]
 
     def test_manual_value_that_overrides_explicit_mode_is_attributed_correctly(self):
@@ -764,5 +764,5 @@ class TestImpliedModeIsDisclosedForEveryManualValue:
         assert "按人工值「定宽买高」逐字采用" not in p["reason"], (
             "「定宽买高」是**引擎蕴含值**，不得断言成人工值（判据 2）"
         )
-        assert "人工拼 2 次 ⇒ 蕴含**倒幅**" in p["reason"], "取代关系要说出来"
+        assert "人工拼 2 次 ⇒ 蕴含倒幅" in p["reason"], "取代关系要说出来"
         assert "被蕴含值取代，实际按「定宽买高」算" in p["reason"]

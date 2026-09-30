@@ -65,14 +65,22 @@ OVER_LIMIT_HEIGHT = 3.9     # need_h = 4.2 > 3.2 ⇒ 缺口 1.0（> 上限）
 AT_LIMIT_HEIGHT = 3.0       # need_h = 3.3 − 3.2 = 缺口 0.1（恰为上限）
 
 #: 判据 3 的**改动前**快照摘要（240 + 240 例；见模块 docstring）
+#:
+#: 🔴 2026-09-30 **两处锚同批按「值面」重锚**（= 口径收窄，**不是**"跟着实现改期望值"）：
+#: 旧锚把**人读文案**也纳入快照 ⇒ 一次**纯文案**改动（`app/tools/curtain_calc.py` 去掉文案里的
+#: markdown 星号）就把它打红 —— 正是「断言实现**宽于**用例声明（逐**值**不变）」的**假红**
+#: （`migao-acceptance` v1.2）。现快照只取**值面**（递归剔除 `SNAPSHOT_EXCLUDED_KEYS`）。
+#: **内容级证明（本地可复算，2026-09-30）**：现行源与 `origin/main` 源在**值面**上逐位相同
+#: （`f077608c70dcf2af35e657eef5ac6657127f0f3ea007bcae60faa9b921028b59`）⇒ 本次确系**纯文案**；
+#: 文案侧另有判据（见 `SNAPSHOT_EXCLUDED_KEYS` 上方注释）。
 AGENT_QUOTE_DIGEST_BEFORE_5213 = (
-    "f5e2e258628a9d5425bad78e87dc8f23b3568a3d9002411892967834333e8404"
+    "bb64bd4f6663a9ffffd6e25980a0292a21c9dec66fa1b6f578741cc6626cb5ac"
 )
 
-#: 判据 3 的**现行**锚 = #5060（统一取整）**之后**的摘要。重锚理由与内容级证明见模块 docstring ③
-#: 与 `TestReAnchorIsFullyExplainedBy5060`（还原两处取整 ⇒ 摘要逐位回到上面那个原锚）。
+#: 判据 3 的**现行**锚 = #5060（统一取整）**之后**的**值面**摘要。重锚理由见上；
+#: `TestReAnchorIsFullyExplainedBy5060` 仍判「还原两处取整 ⇒ 摘要逐位回到 BEFORE_5213」。
 AGENT_QUOTE_DIGEST_AFTER_5060 = (
-    "e55954690b48094f613994bd444ec92b209eeafeb035e5224e8b8ef13f24539e"
+    "f077608c70dcf2af35e657eef5ac6657127f0f3ea007bcae60faa9b921028b59"
 )
 
 #: 判据 3 网格（与「改动前」那次测量逐值同参）—— 只放 agent 工具参数表里**真实存在**的两种调用形态
@@ -107,8 +115,26 @@ def criterion_2(src: str, mod: dict) -> bool:
     )
 
 
+#: 快照**不取**的键 = 人读文案（值面之外）。2026-09-30 收窄：旧快照连文案一起取 ⇒
+#: 一次**纯文案**改动（去掉文案里的 markdown 星号）会把它打红 = 「断言实现宽于用例声明」的**假红**。
+#: 文案侧有自己的判据：`tests/test_curtain_calc_derive_plan.py` 的逐字断言 +
+#: `tests/test_craft_calc_copy_has_no_markdown.py` 的 markdown 守卫 —— 本摘要不再顺带兜文案。
+SNAPSHOT_EXCLUDED_KEYS = frozenset({
+    "reason", "door_width_reason", "suggestion", "warning", "notices", "hint", "formula_text",
+})
+
+
+def _values_only(obj):
+    """递归剔除人读文案键（字典 / 列表都下钻）—— 只留值面。"""
+    if isinstance(obj, dict):
+        return {k: _values_only(v) for k, v in obj.items() if k not in SNAPSHOT_EXCLUDED_KEYS}
+    if isinstance(obj, list):
+        return [_values_only(v) for v in obj]
+    return obj
+
+
 def agent_quote_rows(mod: dict) -> list:
-    """agent 报价侧两条真实通路（**都不传 `cutting_mode`**）的逐值快照。"""
+    """agent 报价侧两条真实通路（**都不传 `cutting_mode`**）的逐值快照（**只取值面**）。"""
     rows = []
     for width in GRID_WIDTHS:
         for height in GRID_HEIGHTS:
@@ -118,7 +144,7 @@ def agent_quote_rows(mod: dict) -> list:
                                   fabric_price=98, has_pattern=has_pattern, pattern_repeat=repeat)
                     for label, extra in (("widths", {"fabric_widths": CANDIDATES}),
                                          ("single", {"fabric_width": 2.8})):
-                        quote = mod["build_quote"](**common, **extra)
+                        quote = _values_only(mod["build_quote"](**common, **extra))
                         rows.append({
                             "case": f"{label}|{width}|{height}|{fullness}|{has_pattern}",
                             "result": {k: round(v, 6) if isinstance(v, float) else v
@@ -133,7 +159,7 @@ def agent_quote_digest(mod: dict) -> str:
 
 
 def criterion_3(src: str, mod: dict) -> bool:
-    """**agent 报价侧逐值不变**：两条通路的结果快照与**改动前**逐位相等。"""
+    """**agent 报价侧逐值不变**：两条通路的结果快照（**值面**）与 #5060 之后的锚逐位相等。"""
     rows = agent_quote_rows(mod)
     if len(rows) != 480:  # fail-closed：网格被改小/踩空 ⇒ 判据会静默变弱
         raise AssertionError(f"判据 3 的网格应为 480 例，实得 {len(rows)} 例 —— 不得静默缩表")
