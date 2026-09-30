@@ -65,7 +65,12 @@ LOCK_FILE="${MIGAO_HEAVY_LOCK_FILE:-$HOME/.migao-heavy.lock}"
 # 为什么是 `ps -o pid=,ppid=,command=`：`pid=`/`ppid=` 的数字**不带表头**、`command=` 是**完整
 # 命令行**（进程名列 `comm` 在 macOS 上会被截断 / 变成 `(node)` 形态 ⇒ 不能用来判族）。
 _process_table() {
-  ps -A -o pid=,ppid=,command= 2>/dev/null || true
+  # ⚠️ **`-ww` 不能省**（CI 实测，2026-09-30；本脚本首轮 CI 红的就是它）：procps 的 `ps` 在
+  #    **输出不是终端**时按 **80 列**截断命令行（macOS 的 ps 不截断 ⇒ 本地绿 / CI 红）—— 落在 80 列
+  #    之后的工作根 token 被切断 ⇒ 族判定看不见 `vitest` / `node` / `pytest` ⇒ **孤儿回收静默失效**
+  #    且**不会报错**（实测报文：「孤儿回收：无」，而那个进程的 PPID 确实是 1）。
+  #    `-ww` = 不限宽（macOS 的 BSD ps 与 Linux 的 procps 都支持）。
+  ps -A -ww -o pid=,ppid=,command= 2>/dev/null || true
 }
 
 _pid_is_alive() {
@@ -77,15 +82,19 @@ _pid_is_alive() {
 }
 
 # 进程名族：从命令行**任意** token 取 basename（`node` / `node (vitest)` / `/…/pytest` 全覆盖）。
+# ⚠️ 命中时**设全局 `RUNNER_NAME` 并返回 0**（不往 stdout 打）：本函数在**逐进程**循环里被调用，
+#    命令替换会给每个候选额外 fork 一个子 shell —— 实测（2026-09-30，机器上孤儿多时）这一处
+#    连同下面的逐候选 `grep` 能把 `acquire` 拖到 **3.5 秒**，把判据的轮询窗口吃满 ⇒ 假红。
 _runner_of_command() {
   local tok base
+  RUNNER_NAME=""
   # shellcheck disable=SC2086  # 词分割是**有意**的：命令行要按空白切成 token
   for tok in $1; do
     base="${tok##*/}"
     case "$base" in
-      node|nodejs|vitest|jest|playwright|pytest) printf '%s\n' "$base"; return 0 ;;
+      node|nodejs|vitest|jest|playwright|pytest) RUNNER_NAME="$base"; return 0 ;;
       python|python2|python3|python3.*|python3.1[0-9])
-        case "$1" in *pytest*) printf '%s\n' 'pytest'; return 0 ;; esac ;;
+        case "$1" in *pytest*) RUNNER_NAME="pytest"; return 0 ;; esac ;;
     esac
   done
   return 1
@@ -134,17 +143,18 @@ _ancestors_of_self() {
 #    （`kill -TERM "61298 node node -e setInterval…"` ⇒ 报「已退出或无权」，孤儿照旧活着；
 #    根因 = 既有 IFS 咬掉前缀赋值）。本脚本初版就是这个缺陷，判据把它抓出来了。
 _orphan_candidates() {
-  local ancestors table pid ppid cmd runner
-  ancestors="$(_ancestors_of_self)"
+  local ancestors table pid ppid cmd
+  # 祖先链收成**一行**（前后各留一个空格）⇒ 逐候选用 `case` 比，不再每个候选起一个 `grep` 子进程。
+  ancestors=" $(_ancestors_of_self | tr '\n' ' ') "
   table="$(_process_table)"
   printf '%s\n' "$table" | while read -r pid ppid cmd; do
     [ -n "${cmd:-}" ] || continue
     [ "${ppid:-}" = "1" ] || continue
     case "$pid" in ''|*[!0-9]*) continue ;; esac
-    printf '%s\n' "$ancestors" | grep -qx -- "$pid" && continue
-    runner="$(_runner_of_command "$cmd")" || continue
+    case "$ancestors" in *" $pid "*) continue ;; esac
+    _runner_of_command "$cmd" || continue
     _command_in_roots "$cmd" || continue
-    printf '%s\t%s\t%s\n' "$pid" "$runner" "$cmd"
+    printf '%s\t%s\t%s\n' "$pid" "$RUNNER_NAME" "$cmd"
   done
 }
 
@@ -210,7 +220,7 @@ _load_avg() {
 }
 
 _top_cpu() {
-  ps -A -o %cpu= -o pid= -o command= 2>/dev/null \
+  ps -A -ww -o %cpu= -o pid= -o command= 2>/dev/null \
     | sort -k1,1 -nr 2>/dev/null | head -n "${1:-5}" || true
 }
 

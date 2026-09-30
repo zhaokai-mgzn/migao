@@ -179,7 +179,55 @@ exit 1
 
 
 def _alive(pid: int) -> bool:
-    return subprocess.run(["kill", "-0", str(pid)], capture_output=True).returncode == 0
+    """活着 = 进程存在**且不是僵尸**。
+
+    ⚠️ **为什么必须排除僵尸（CI 实测，2026-09-30；本判据首轮 CI 红的就是它）**：Linux 上被
+    `kill -TERM` 杀掉、但父进程（这里是 PID 1）**还没回收**的进程会以 `Z` 状态留在进程表里，
+    而 `kill -0 <pid>` 对僵尸**仍然成功** ⇒ 只看 `kill -0` 会把「已经杀掉了」读成「还活着」⇒ 假红
+    （macOS 的 launchd 回收更快，本地看不到这个形态 —— 正是「本地绿 / CI 红」的教科书形态）。
+    僵尸 = 进程**已经死了**、只是退出码还没被取走 ⇒ 「不再 alive」才是正确语义（不是放宽断言：
+    「不误杀」那两条要的是**真在跑**的进程，其 `stat` 不含 `Z`，照旧判 True）。
+    """
+    r = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return False
+    return "Z" not in r.stdout.upper()
+
+
+def _ps_command_of(pid: int, *, wide: bool = True) -> str:
+    """用**与脚本同一调用形态**的 `ps` 取该 pid 的命令行（前置自断言用）。
+
+    `wide=False` 复现 procps 的 80 列截断形态（红证用），`wide=True` = 脚本现在的形态。
+    """
+    argv = ["ps", "-A", "-ww" if wide else "-w", "-o", "pid=,ppid=,command="] if not wide else \
+           ["ps", "-A", "-ww", "-o", "pid=,ppid=,command="]
+    if not wide:
+        argv = ["ps", "-A", "-o", "pid=,ppid=,command="]
+    out = subprocess.run(argv, capture_output=True, text=True).stdout
+    for line in out.split("\n"):
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[0] == str(pid):
+            return parts[2]
+    return ""
+
+
+def _assert_ps_sees_full_command(pid: int, token: str) -> None:
+    """**前置自断言**：`ps` 必须看得见该进程命令行里的 `token`（否则族 / 射程判定没机会生效）。
+
+    ⚠️ 这条不是装饰：CI 首轮实测过「`ps` 按 80 列截断 ⇒ 候选被族判定拒掉 ⇒ 打印『孤儿回收：无』」
+    —— 在那样的环境里，**「不误杀」那两条判据会因为「根本没有候选」而恒绿**（假绿）。
+    """
+    cmd = _ps_command_of(pid)
+    assert token in cmd, (
+        f"前置：`ps` 必须看得见 pid={pid} 的完整命令行且含 {token!r}（否则本判据退化成空断言）—— "
+        f"实得 cmd={cmd!r}"
+    )
+
+
+def _stat_of(pid: int) -> str:
+    """给失败报文用的现场读数（`ps` 的 stat 列；空 = 进程已不在）。"""
+    r = subprocess.run(["ps", "-o", "stat=,command=", "-p", str(pid)], capture_output=True, text=True)
+    return r.stdout.strip() or "（进程已不在）"
 
 
 #: 本文件造出来的所有进程：测试收尾时**逐个杀干净**（不留后台 `sleep` —— 那会拖住 pytest 退出）
@@ -278,12 +326,15 @@ class TestOrphanReaping:
         pid = _spawn_orphan(root)
         try:
             assert _alive(pid), "前置：孤儿必须真的活着（否则断言恒真）"
+            _assert_ps_sees_full_command(pid, "vitest")
             r = _run_lock(["acquire", "reaper"], lock_file=clean_lock, roots=root)
             assert r.returncode == 0, f"acquire 必须成功：{r.stderr}"
             deadline = time.time() + 5
             while time.time() < deadline and _alive(pid):
                 time.sleep(0.05)
-            assert not _alive(pid), f"PPID=1 的孤儿没被回收（pid={pid}）：\n{r.stdout}"
+            assert not _alive(pid), (
+                f"PPID=1 的孤儿没被回收（pid={pid}，ps stat={_stat_of(pid)}）：\n{r.stdout}"
+            )
             assert str(pid) in r.stdout, "回收必须**打印杀了什么**（机械动作要留痕）：\n" + r.stdout
         finally:
             if _alive(pid):
@@ -295,6 +346,7 @@ class TestOrphanReaping:
         child, parent = _spawn_with_live_parent(root)
         try:
             assert _alive(child) and _alive(parent), "前置：父子都必须活着"
+            _assert_ps_sees_full_command(child, "vitest")
             r = _run_lock(["acquire", "reaper"], lock_file=clean_lock, roots=root)
             assert r.returncode == 0, f"acquire 必须成功：{r.stderr}"
             time.sleep(0.3)
@@ -314,6 +366,7 @@ class TestOrphanReaping:
         in_scope = tmp_path / "workroot"
         in_scope.mkdir(exist_ok=True)
         try:
+            _assert_ps_sees_full_command(pid, "vitest")
             r = _run_lock(["acquire", "reaper"], lock_file=clean_lock, roots=in_scope)
             assert r.returncode == 0, f"acquire 必须成功：{r.stderr}"
             time.sleep(0.3)
@@ -431,7 +484,7 @@ class TestVerifyAllWiring:
         env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock)}
         holder = subprocess.Popen(["bash", str(harness)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         try:
-            for _ in range(100):
+            for _ in range(200):
                 if lock.exists():
                     break
                 time.sleep(0.05)
@@ -544,11 +597,9 @@ class TestPurePredicates:
 
     def test_runner_family_matches_the_observed_shapes(self):
         r = self._call(
-            '_runner_of_command "node --import tsx/esm apps/cli/src/bin.ts web"; echo; '
-            '/usr/bin/python3 -m pytest tests/unit_ci_workflows >/dev/null 2>&1 || true; '
-            '_runner_of_command "/usr/bin/python3 -m pytest tests/unit_ci_workflows"; echo; '
-            '_runner_of_command "node (vitest)"; echo; '
-            '_runner_of_command "bash scripts/x.sh" || echo NONE'
+            'for c in "node --import tsx/esm apps/cli/src/bin.ts web" '
+            '"/usr/bin/python3 -m pytest tests/unit_ci_workflows" "node (vitest)" "bash scripts/x.sh"; do '
+            '  if _runner_of_command "$c"; then echo "$RUNNER_NAME"; else echo NONE; fi; done'
         )
         got = [ln.strip() for ln in r.stdout.split("\n") if ln.strip()]
         assert got == ["node", "pytest", "node", "NONE"], (
@@ -575,6 +626,29 @@ class TestStaticContract:
         assert os.access(SCRIPT, os.X_OK), "锁脚本必须可执行（否则入口接线会静默失败）"
         r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
         assert r.returncode == 0, f"bash -n 不过：\n{r.stderr}"
+
+    def test_process_table_asks_for_unbounded_width(self):
+        """`ps` 必须带 `-ww` —— procps 在**输出不是终端**时按 **80 列**截断命令行。
+
+        CI 实测（2026-09-30，本脚本首轮 CI 红的真因）：同一台机器上 macOS 的 `ps` 不截断、Linux 的
+        procps 截断 ⇒ 落在 80 列之后的工作根 token 被切断 ⇒ **族判定看不见 `vitest`** ⇒ 回收静默失效
+        （报文是「孤儿回收：无」，而那个进程的 PPID 确实是 1）—— 教科书式「本地绿 / CI 红」。
+        """
+        text = SCRIPT.read_text(encoding="utf-8")
+        m = re.search(r"^_process_table\(\) \{[\s\S]*?^\}", text, re.M)
+        assert m, "抽不到 `_process_table()`（结构变了要同步更新本判据）"
+        assert "-ww" in m.group(0), (
+            "`_process_table` 的 `ps` 少了 `-ww`：procps 下命令行会被按 80 列截断 ⇒ 孤儿回收静默失效"
+        )
+        bare = [
+            ln.strip() for ln in text.split("\n")
+            if re.search(r"\bps\s+-A\b.*command=", ln) and "-ww" not in ln
+            and not ln.lstrip().startswith("#")
+        ]
+        assert not bare, (
+            "以下 `ps … command=` 调用没带 `-ww`（每一个都是同一类静默失效点）：\n  - "
+            + "\n  - ".join(bare)
+        )
 
     def test_script_documents_why_orphan_reaping_is_safe(self):
         """注释里必须写清「为什么回收是安全的」（父已死 ⇒ 不可能是任何人等的结果 + 路径前缀射程）。"""
