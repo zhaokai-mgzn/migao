@@ -160,6 +160,55 @@ exec "$@"
 
 BUILD_STEP_ANCHORS = ("--cache-from type=gha", "--cache-to type=gha,mode=max")
 
+# ── 构建步**允许出现**的 `secrets.*` 引用：逐 workflow 冻结（**绝对口径、零 git 依赖**）──────────
+# 🔴 **为什么必须冻结，而不是读 `origin/main`**（issue #5814 的 CI 红；本仓**第二次**踩同族）：
+# 跑本判据的 job 是 `.github/workflows/pr-check.yml` 的 `ci-workflow-tests`
+# （`name: ci workflow helper unit tests`），它的 checkout 是**裸** `actions/checkout@v7`
+# ⇒ **`fetch-depth: 1`（浅克隆）⇒ `origin/main` 这个 ref 在 job 的仓库里不存在**
+# ⇒ `git show origin/main:<path>` 失败、而 `capture_output=True` 把 stderr 吞掉 ⇒ `stdout` 为空
+# ⇒ 基线集合退化成**空集** ⇒ 任何 `secrets.*` 引用都被判成「新增」⇒ **判据在 CI 恒红**
+# （同一份代码：本机 `3 passed` / CI `1 failed, 5706 passed` —— 这就是「本机全绿 ≠ CI 绿」）。
+# 同族先例与纪律（复用既有口径，不另立）：
+#   · `tests/unit_ci_workflows/test_admin_web_devserver_identity.py` 的 docstring（issue #4313 / 实证 PR #4320）；
+#   · `tests/unit_ci_workflows/test_contract_ledger_reject_codes.py`（「不读 `origin/main` —— 可变引用会让判据自红」）；
+#   · `tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py`（改前形态**逐字内联**，不读 `origin/main`）；
+#   · `migao-dev-flow` §18.3「按可变键定位被测对象」。
+# 台账**只许缩短**：下面是「现状」的逐字冻结 —— 改动它 = 一次**显式、可评审**的编辑；
+# 集合**不是**从别的面推出来的（旧写法拿**整个文件**当基线、拿**构建步**当被测面 ⇒ 那个「⊆」
+# 是集合大小的巧合，不是判据）。
+BUILD_STEP_SECRETS_FROZEN = {
+    "deploy-ai-agent-service.yml": frozenset(),
+    "deploy-admin-api.yml": frozenset(),
+    "deploy-frontend.yml": frozenset({
+        "NEXT_PUBLIC_API_BASE_URL",
+        "NEXT_PUBLIC_AI_API_BASE_URL",
+        "NEXT_PUBLIC_COOKIE_DOMAIN",
+    }),
+}
+
+
+def build_step_secret_problems(wf: str, body: str) -> list[str]:
+    """被测面（**构建步正文**）的 `secrets.*` 与冻结表的差集，两个方向都点名。
+
+    纯函数（**零子进程 / 零 git / 零网络**）⇒ 可注入、可单测，本机与 CI **同读数**。
+    """
+    measured = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", body))
+    frozen = BUILD_STEP_SECRETS_FROZEN[wf]
+    problems = []
+    added = sorted(measured - frozen)
+    if added:
+        problems.append(
+            f"{wf}：构建步**新增**了 secret 引用 {added} —— `Danger Scan` 会 BLOCK；"
+            f"若确需新增，先在 `BUILD_STEP_SECRETS_FROZEN` 里显式登记（可评审），不要让它静默出现"
+        )
+    stale = sorted(frozen - measured)
+    if stale:
+        problems.append(
+            f"{wf}：冻结表里有**已不存在**的 secret 引用 {stale} ⇒ 台账陈旧（只许缩短）："
+            f"请把 `BUILD_STEP_SECRETS_FROZEN` 里那一项删掉"
+        )
+    return problems
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # 工具
@@ -698,15 +747,60 @@ def test_build_step_keeps_existing_semantics(wf):
         for anchor in ("NEXT_PUBLIC_API_BASE_URL", "NEXT_PUBLIC_AI_API_BASE_URL",
                        "NEXT_PUBLIC_COOKIE_DOMAIN"):
             assert anchor in body, f"{wf}: 构建期 baked 的 `{anchor}` 丢了"
-    added_secrets = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", body))
-    original = set(re.findall(
-        r"secrets\.([A-Za-z0-9_]+)",
-        subprocess.run(["git", "show", "origin/main:.github/workflows/" + wf],
-                       cwd=str(REPO_ROOT), capture_output=True, text=True).stdout,
-    ))
-    assert added_secrets <= original, (
-        f"{wf}: 新增了 secret 引用 {sorted(added_secrets - original)}（Danger Scan 会 BLOCK）"
+    # `secrets.*`：与**冻结表**逐值比（两个方向都点名），**零 git 依赖**（见顶部注释）
+    problems = build_step_secret_problems(wf, body)
+    assert not problems, "\n".join(problems)
+
+
+def test_build_step_secret_inventory_has_no_git_dependency(monkeypatch):
+    """🔴 **零 git / 零子进程自证**（本仓「本机全绿、CI 全红」的直接教训）。
+
+    CI 的 `ci workflow helper unit tests` job 是**浅克隆**（`actions/checkout@v7` 不给
+    `fetch-depth`）⇒ 任何读 `origin/main` 的基线都会退化成空集。
+    ⇒ 本判据把「不许依赖 git / 子进程」变成**机械断言**：把 `subprocess.run` 换成**炸弹**，
+    再跑一遍冻结表判定 —— 只要它碰子进程（= 将来有人又把基线接回 git），这里**必红**。
+    """
+    import subprocess as _sp
+
+    def _bomb(*a, **kw):  # pragma: no cover - 命中即失败
+        raise AssertionError(
+            "secret 冻结表的判定**碰了子进程** ⇒ 在 CI 的浅克隆里会取不到基线、判据自红"
+            "（issue #5814 的 CI 红就是这个形态）—— 判定必须只看仓内文件文本"
+        )
+
+    monkeypatch.setattr(_sp, "run", _bomb)
+    for wf in DEPLOY_WORKFLOWS:
+        body = _body(wf, BUILD_STEP[wf])          # 只读仓内 YAML 文本（无子进程）
+        assert build_step_secret_problems(wf, body) == [], wf
+
+
+@pytest.mark.parametrize("wf", DEPLOY_WORKFLOWS)
+def test_build_step_secret_frozen_table_red_proofs(wf):
+    """🔴 红证：① 注入一条 `secrets.NEW_ONE` ⇒ 红；② 从冻结表删一项（若该腿有）⇒ 红。
+
+    「不会红的判据 = 空断言」：这两条证明冻结表**真的**在判「构建步的 secret 面有没有变」。
+    """
+    body = _body(wf, BUILD_STEP[wf])
+    assert build_step_secret_problems(wf, body) == [], f"前提：真文本先绿（{wf}）"
+
+    injected = body + '\n          echo "${{ secrets.NEW_ONE }}"\n'
+    problems = build_step_secret_problems(wf, injected)
+    assert any("NEW_ONE" in p for p in problems), (
+        f"{wf}: 注入 `secrets.NEW_ONE` 后没被判红 ⇒ 冻结表没有判别力"
     )
+
+    if BUILD_STEP_SECRETS_FROZEN[wf]:
+        for dropped in sorted(BUILD_STEP_SECRETS_FROZEN[wf]):
+            narrowed = body.replace(f"secrets.{dropped}", "secrets.RENAMED")
+            problems = build_step_secret_problems(wf, narrowed)
+            assert any("RENAMED" in p for p in problems), (
+                f"{wf}: 把 `secrets.{dropped}` 改名后没被判红（新增方向失效）"
+            )
+        # 陈旧方向：冻结表里留着已不存在的一项 ⇒ 红
+        problems = build_step_secret_problems(wf, body.replace("secrets.NEXT_PUBLIC_API_BASE_URL", "secrets.X"))
+        assert any("陈旧" in p for p in problems), (
+            f"{wf}: 冻结表陈旧（有条目已不存在）时没被判红 ⇒ 「只许缩短」没锁住"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
