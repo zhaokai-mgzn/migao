@@ -3691,7 +3691,7 @@
       "reason": "失败（2026-09-29T14:00:44Z）与重跑通过（2026-09-29T14:17:06Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
       "status": "open",
-      "follow_up": null
+      "follow_up": 5088
     },
     {
       "workflow": "AI Agent Service Unit Tests",
