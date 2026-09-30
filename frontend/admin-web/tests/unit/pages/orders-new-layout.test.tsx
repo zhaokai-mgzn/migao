@@ -617,6 +617,41 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect((await submittedLine()).processingInfo.processingMeters).toBe(6.5)
   })
 
+  it('判据 25（2026-09-30 第五批）：勾选 / 反选「韩褶」⇒ 用料公式与用料米数**自动联动**', async () => {
+    // 用户逐字：「如果加工项这里没有勾选韩折，用料公式默认得用倍数法，如果勾选了韩折，默认用韩褶公式。
+    // 而且勾选/反选韩折要自动联动用料公式和用料米数」
+    // 公式跟着工艺 ⇒ 试算入参的 `formula` 变 ⇒ 试算签名变 ⇒ 米数按新公式重算（无第二份状态）。
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) => {
+      const pleat = params.formula === 'pleat'
+      return Promise.resolve({
+        data: {
+          data: {
+            ...CALC_OK.data.data,
+            fabric_meters: pleat ? 13.3 : 12.0,
+            formula_text: pleat ? '韩褶公式：… 13.3米' : '褶倍数公式：… 12.0米',
+          },
+        },
+      })
+    })
+    await setupLine()
+    openStep(/^\d+ 加工项/)
+    const lastFormula = () => mockCraftCalcPreview.mock.calls.at(-1)?.[0]?.formula
+    // 缺省：推荐组合把「韩褶」勾上了 ⇒ 韩褶公式
+    await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
+    // 反选韩褶 ⇒ 缺省翻**倍数法**，米数按倍数法重算
+    fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
+    await waitFor(() => expect(lastFormula()).toBe('fullness'), { timeout: 5000 })
+    // ⚠️ 用料米数在 **①** 里，而手风琴是互斥的（打开 ② 时 ① 已收起）⇒ 读之前先把 ① 打开
+    openStep(/用料与规格/)
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue('12'), { timeout: 5000 })
+    // 再勾回来 ⇒ 回到韩褶公式，米数跟着回来
+    openStep(/^\d+ 加工项/)
+    fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
+    await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
+    openStep(/用料与规格/)
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue('13.3'), { timeout: 5000 })
+  }, 30000)
+
   it('判据 22（2026-09-30 第五批）：推算细节搬进 ① 标题**右侧**（不再压在表单下方）', async () => {
     await setupLine()
     // 用户逐字：「这里的一整趴如何推算的细节，放到 用料与规格（系统推导）这个标题的**右侧空白区域**」

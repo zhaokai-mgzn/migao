@@ -57,20 +57,23 @@ const line = (over: Partial<Parameters<typeof craftCalcParamsOf>[0]> = {}) => ({
 })
 
 describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () => {
-  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）+ 默认公式（韩褶）', () => {
+  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）+ 默认公式（**没勾韩褶 ⇒ 倍数法**）', () => {
     expect(craftCalcParamsOf(line())).toEqual({
       width: 6.6,
       height: 2.6,
       open_count: 1,
       mounting: CRAFT_CALC_MOUNTING,
       craft_tier: CRAFT_CALC_TIER,
-      formula: CRAFT_CALC_FORMULA_PLEAT,
+      // 🔴 2026-09-30 第五批改判：第 ③ 档由 `pleat` 换成 `fullness` —— 落到第 ③ 档 = **没勾韩褶**
+      // （用户逐字「如果加工项这里没有勾选韩折，用料公式默认得用倍数法」）。勾了韩褶走第 ② 档 ⇒ pleat。
+      formula: CRAFT_CALC_FORMULA_FULLNESS,
     })
   })
 
-  it('#4527 公式选择：缺省 ⇒ 韩褶公式（pleat）；显式指定 ⇒ 原样带出（不认的取值也不静默改写）', () => {
-    // 缺省 = 韩褶（用户裁定原话「默认用韩折的」，口语转写）
-    expect(craftCalcParamsOf(line())?.formula).toBe('pleat')
+  it('#4527 公式选择（🔴 2026-09-30 第五批改判）：**没勾韩褶** ⇒ 缺省倍数法；勾了韩褶 ⇒ 韩褶公式；显式指定 ⇒ 原样带出', () => {
+    // 缺省（`craft` 为空 = 没勾韩褶）⇒ 倍数法；勾了韩褶 ⇒ 第 ② 档（工艺推导）给 `pleat`
+    expect(craftCalcParamsOf(line())?.formula).toBe('fullness')
+    expect(craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))?.formula).toBe('pleat')
     expect(CRAFT_CALC_FORMULA_PLEAT).toBe('pleat')
     expect(CRAFT_CALC_FORMULA_FULLNESS).toBe('fullness')
     // 显式指定褶倍数公式 ⇒ 原样带出（前端不做映射、不做校验 —— 合法性由算料引擎判）
@@ -81,7 +84,11 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
   })
 
   it('#4527 公式进触发签名：换公式 ⇒ 签名变化（否则切了公式不会重算）', () => {
-    const pleat = craftCalcSignature(craftCalcParamsOf(line()))
+    // ⚠️ 2026-09-30 第五批：缺省（没勾韩褶）已经是 `fullness` ⇒ 对照面必须**显式**给两档
+    //（否则两边都落 `fullness`、签名相同 —— 那是本判据的**假红**形态，不是它要测的东西）
+    const pleat = craftCalcSignature(
+      craftCalcParamsOf(line({ formula: CRAFT_CALC_FORMULA_PLEAT }))
+    )
     const fullness = craftCalcSignature(
       craftCalcParamsOf(line({ formula: CRAFT_CALC_FORMULA_FULLNESS }))
     )

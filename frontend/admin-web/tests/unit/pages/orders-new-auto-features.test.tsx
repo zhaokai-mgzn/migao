@@ -1090,8 +1090,11 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     // 计数口径（有意变更）：预选项**计入**「已选 N 项」且摘要带上工艺名。
     // 摘要只在**收起**态可见（`CollapsibleHeader` 打开时换成了内容）⇒ 收起本步再读。
     fireEvent.click(screen.getAllByRole('button', { name: /^2 加工项/ })[0])
-    expect(within(stepSection('加工项')).getByText(/已选 2 项/)).toBeInTheDocument()
-    expect(within(stepSection('加工项')).getByText(/工艺：韩褶/)).toBeInTheDocument()
+    const summary = within(stepSection('加工项')).getByText(/已选 2 项/)
+    // 🔴 2026-09-30 第五批改判：摘要**逐项列出**勾选的加工项名（用户原话
+    // 「这里勾选上的和显示的不一致」—— 只写「已选 2 项 · 工艺：韩褶」让他对不上号）
+    expect(summary.textContent).toContain('定型')
+    expect(summary.textContent).toContain('韩褶')
     // 推导结果照旧**只读可见**；🔴 #5130 改钉：缺省档（6.6 宽）出「超宽」（改前 #4661 断言「超高」）
     openSizing()
     const block = screen.getByTestId('auto-detected-features')

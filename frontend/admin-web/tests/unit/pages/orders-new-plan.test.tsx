@@ -422,7 +422,9 @@ describe('#5202 三项输入收敛 + data.plan 只读展示', { timeout: 20000 }
     // 门幅依据文案会**回显明细里的用料**（服务端 `reason` 里带「用料 N 米」）⇒ 口径不同源
     // ⇒ 同一屏出现两个数：实测线上「门幅依据 用料 6.4 米」vs「公式 / 摘要 / 算料 6.3 米」
     // （6.4 = 倍数法 2×3.2，6.3 = 韩褶公式 0.25×24+0.3）。修前本请求里**没有** `formula` 键。
-    expect(doorWidthParams.formula).toBe('pleat')
+    // 🔴 2026-09-30 第五批改判：本 fixture **没勾韩褶** ⇒ 缺省公式 = **倍数法**
+    //（判据要的是「门幅方案与算料**同一份**口径」，下一行的同源断言才是本体）
+    expect(doorWidthParams.formula).toBe('fullness')
     expect(doorWidthParams.formula).toBe(calcParams.formula)
     expect(doorWidthParams.mounting).toBe(calcParams.mounting)
     expect(doorWidthParams.craft_tier).toBe(calcParams.craft_tier)

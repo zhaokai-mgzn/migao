@@ -477,9 +477,19 @@ export { FORMULA_LABELS as CRAFT_CALC_FORMULA_LABELS } from './craft-display'
  * 页面与 chips 展示**共用本函数**（同一份解析 ⇒ 页面显示 = 请求 = 落库）。
  *
  * 🔴 **2026-09-29 改判**（用户裁定逐字：「**用料公式默认改成韩褶公式**」）—— 第 ③ 档由
- * 「算料配置的 `default_formula`」换成**常量 `pleat`**：下单页缺省口径**恒为韩褶公式**，
- * 不再随租户配置漂移（前两档不变）。配置里的那个兜底键仍归它自己的读面
- * （{@link defaultCraftCalcFormula}，工艺配置页用）—— 本函数**不再消费**它。
+ * 「算料配置的 `default_formula`」换成**常量**：下单页缺省口径**不随租户配置漂移**（前两档不变）。
+ * 配置里的那个兜底键仍归它自己的读面（{@link defaultCraftCalcFormula}，工艺配置页用）
+ * —— 本函数**不再消费**它。
+ *
+ * 🔴 **2026-09-30 第五批收窄**（用户裁定逐字：「如果加工项这里**没有勾选韩折**，用料公式默认得用
+ * **倍数法**，如果**勾选了韩折**，默认用**韩褶公式**。而且勾选 / 反选韩折要**自动联动用料公式和
+ * 用料米数**」）—— 第 ③ 档从 `pleat` 改成 {@link CRAFT_CALC_FORMULA_FULLNESS}（倍数法）：
+ * 第 ② 档已经把「勾了韩褶 ⇒ `pleat`」这件事说清了（`CRAFT_CALC_FORMULA_BY_CRAFT.韩褶`），
+ * 所以**落到第 ③ 档 = 没勾韩褶**（例：只勾了「定型」）⇒ 缺省就该是倍数法。
+ * 联动是**结构自带**的：本函数的两个入参（显式值 / 工艺）都由**勾选态**派生，而 `formula` 进
+ * {@link craftCalcParamsOf} 的入参 ⇒ 勾 / 反选韩褶 ⇒ 公式变 ⇒ 试算签名变 ⇒ 米数重算（无第二份状态）。
+ * ⚠️ 商家**显式选过**公式（第 ① 档）时不联动 —— 人工选择优先，一字未改。
+ * **旧口径留档（不再生效）**：第 ③ 档 = 常量 `pleat`（2026-09-29 第三批）。
  */
 export function effectiveCraftCalcFormula(
   input: { formula?: string; craft?: string },
@@ -492,7 +502,8 @@ export function effectiveCraftCalcFormula(
   if (explicit !== '') return explicit
   const byCraft = input.craft ? CRAFT_CALC_FORMULA_BY_CRAFT[input.craft] : undefined
   if (byCraft) return byCraft
-  return CRAFT_CALC_FORMULA_PLEAT
+  // 没勾韩褶（`craft` 为空）⇒ 倍数法（2026-09-30 第五批；旧口径 = pleat）
+  return CRAFT_CALC_FORMULA_FULLNESS
 }
 
 /**

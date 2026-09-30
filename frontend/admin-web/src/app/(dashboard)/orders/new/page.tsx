@@ -4402,8 +4402,10 @@ function ProductGroupBlock({
               <>
                 {colorOptions.length > 0 && (
                   <div className="mb-4">
-                    <Label required>颜色</Label>
-                    <div className="flex flex-wrap gap-2">
+                    <Label required small>颜色</Label>
+                    {/* ⚠️ chips 尺寸 / 字号与「售卖形态 · 帘体」那排**逐字一致**（h-8 px-2.5 text-xs）——
+                        颜色动辄十几支，用 text-sm/h-9 会白占两三行（用户 2026-09-30 实测反馈）。 */}
+                    <div className="flex flex-wrap gap-1.5">
                       {colorOptions.map((c) => {
                         const active = group.selectedColorId === c.id
                         return (
@@ -4412,7 +4414,7 @@ function ProductGroupBlock({
                             type="button"
                             onClick={() => onSelectColor(c.id)}
                             className={
-                              'h-9 px-3 rounded border text-sm transition-colors ' +
+                              'h-8 px-2.5 rounded border text-xs transition-colors ' +
                               (active
                                 ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
                                 : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
@@ -4643,6 +4645,17 @@ function LineItemBlock({
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
+  /**
+   * 勾选的加工项**名字**（按目录顺序）—— 2026-09-30 第五批：摘要里**逐项列出来**。
+   *
+   * 用户原话：「这里勾选上的和显示的不一致」—— 改前摘要只写「已选 2 项 · 工艺：韩褶」，
+   * 而实际勾上的是「定型 + 韩褶」两项 ⇒ 商家对不上号（只能回头把这一步展开数一遍）。
+   * ⚠️ 名字**只**从目录取（`line.processingItems`）：目录里已找不到的勾选 id 没有可读名
+   * ⇒ 那种情况下回落旧的「工艺：X」形态（**不编名字**）。
+   */
+  const selectedProcessingNames = line.processingItems
+    .filter((pi) => line.selectedProcessing[pi.id]?.selected)
+    .map((pi) => pi.name)
   /**
    * **系统识别**（issue #4658 放置 + #4657 可采纳/不采纳）—— 只读 + 可裁决，**不计入**
    * `selectedProcessingCount`（不是手选项）。
@@ -5702,7 +5715,12 @@ function LineItemBlock({
                 // 2026-09-29：**特殊选项**并入本步 ⇒ 摘要里一并报它的项数（折叠时也看得见）
                 [
                   selectedProcessingCount > 0
-                    ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
+                    ? `已选 ${selectedProcessingCount} 项` +
+                      (selectedProcessingNames.length > 0
+                        ? ` · ${selectedProcessingNames.join(' + ')}`
+                        : lineCraft
+                          ? ` · 工艺：${lineCraft}`
+                          : '')
                     : '未选',
                   (line.craft.specialOptions ?? []).length > 0
                     ? `特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
@@ -6013,9 +6031,25 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
   )
 }
 
-function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
+function Label({
+  children,
+  required,
+  small,
+}: {
+  children: React.ReactNode
+  required?: boolean
+  /**
+   * **小号**（2026-09-30 第五批）：用户逐字「这里的**字体**可以和售卖形态的字体大小保持一致，
+   * 当前太占空间了」—— 颜色那一块的标签与 chips 与组级输入行（售卖形态 / 帘体 / 净尺寸）对齐。
+   */
+  small?: boolean
+}) {
   return (
-    <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+    <label
+      className={
+        'block font-medium text-neutral-700 ' + (small ? 'text-xs mb-1' : 'text-sm mb-1.5')
+      }
+    >
       {children}
       {required && <span className="text-red-500 ml-1">*</span>}
     </label>

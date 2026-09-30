@@ -871,7 +871,7 @@ describe('NewOrderPage', () => {
         // ⚠️ issue #4874：**褶距键已整体退场**（写侧不再落 `pleatSpacing`）；
         // 取而代之的是**用料公式 / 档位** —— 两者都是**商家在表单上看得见的真值**
         // （chips 显示缺省公式 + 档位），按同一纪律必须落库。
-        formula: 'pleat',
+        formula: 'fullness',
         craftTier: 'standard',
         hasPattern: false,
         // issue #4521 + #4566：定型默认（布帘 ⇒ 是）现在体现在「定型」**加工项的勾选态**上
@@ -1196,6 +1196,7 @@ describe('NewOrderPage', () => {
         style: '单色',
         // ⚠️ issue #4874：褶距默认档（0.125）**已随字段退场**；替换位 = **用料公式 + 算料档位**
         // （两者都是商家在 chips 上看得见的真值 ⇒ 按既有纪律必须落库）
+        // 🔴 2026-09-30 第五批：本条流程里**韩褶已（被推荐组合）勾选** ⇒ 缺省公式仍是韩褶公式
         formula: 'pleat',
         craftTier: 'standard',
       })
@@ -1222,7 +1223,7 @@ describe('NewOrderPage', () => {
       // ⚠️ issue #4874：**褶距控件与默认值都退场**（红证：改前这里有 `褶距` 输入框、值为 0.125）
       expect(screen.queryByLabelText('褶距')).toBeNull()
       expect(screen.queryByText('褶距')).toBeNull()
-      // 替换位 = **用料公式 chips**（默认 = 算料配置的 `default_formula` = pleat）+ **褶数展示**
+      // 替换位 = **用料公式 chips**（🔴 2026-09-30 第五批：本条流程里韩褶**已勾选** ⇒ 仍是韩褶公式）
       expect(checked('用料公式')).toEqual(['韩褶公式（褶数法）'])
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('—')
@@ -1770,7 +1771,7 @@ describe('NewOrderPage', () => {
       expect(screen.getByText('没有匹配的加工项')).toBeInTheDocument()
     })
 
-    it('判据 9a：已选摘要带出**工艺名**（`已选 N 项 · 工艺：X`）', async () => {
+    it('判据 9a（🔴 2026-09-30 第五批改判）：已选摘要**逐项列出勾选的加工项名**（`已选 N 项 · 名字 + 名字`）', async () => {
       // 去掉「定型」⇒ 布帘默认勾选不会占一格，计数只反映工艺项
       await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '定型'))
       // ⚠️ 2026-09-28 布局重排：目录里有「韩褶」（craftHint=韩褶）⇒ 推荐组合**默认已勾选**
@@ -1779,17 +1780,20 @@ describe('NewOrderPage', () => {
         true
       )
       collapseProcessing()
-      // 工艺取**派生值**（`craftHint`）—— 与步骤 1 摘要同一个取值点
-      expect(screen.getByText('已选 1 项 · 工艺：韩褶')).toBeInTheDocument()
+      // 名字取**目录里的项名**（与勾选态同一个来源）；旧形态「· 工艺：韩褶」只在
+      // 「勾选 id 在目录里已找不到」的兜底分支出现（判据 9a 的旧口径已留档）
+      expect(screen.getByText('已选 1 项 · 韩褶')).toBeInTheDocument()
     })
 
-    it('判据 9b：没选工艺项 ⇒ 摘要只写「已选 N 项」（不出现空的「工艺：」）', async () => {
+    it('判据 9b（🔴 2026-09-30 第五批改判）：没选工艺项 ⇒ 摘要**逐项列名**、且不出现空的「工艺：」', async () => {
       // ⚠️ 2026-09-28 布局重排：目录里的「韩褶」现在**默认已勾选**（推荐组合）⇒ 要验「没选工艺项」
       // 需要一份**没有工艺项**的目录（只留 打孔 / 定型 / 罗马杆安装）
       await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '韩褶'))
-      // 布帘 ⇒ 「定型」默认勾上（1 项，无 `craftHint`）
+      // 布帘 ⇒ 「定型」默认勾上（1 项，无 `craftHint`）⇒ 摘要逐项列出它的**名字**
       collapseProcessing()
-      expect(screen.getByText('已选 1 项')).toBeInTheDocument()
+      const summary = screen.getByText(/已选 1 项/)
+      expect(summary.textContent).toBe('已选 1 项 · 定型')
+      expect(summary.textContent).not.toContain('工艺：')
     })
   })
 
@@ -2057,8 +2061,11 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里 ⇒ 展开步骤 1 + 该块
       expandCraft()
-      // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩褶公式（褶数法）」
-      expect(formulaSelected()).toBe('韩褶公式（褶数法）')
+      // 🔴 2026-09-30 第五批：本 fixture **没勾韩褶** ⇒ 缺省公式 = 倍数法（没有褶数块）
+      expect(formulaSelected()).toBe('褶倍数公式（倍数法）')
+      expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+      // 选韩褶公式 ⇒ 褶数块出现；本文件试算桩永不返回 ⇒ 「—」（**不编数**）
+      pickFormula('韩褶公式（褶数法）')
       // 红证：改前页面**没有**用料公式控件、也没有褶数展示块 ⇒ 下面这行必红
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('—')
@@ -2097,7 +2104,7 @@ describe('NewOrderPage', () => {
       expect(info.formula).toBe('fullness')
     })
 
-    it('判据 ③（不静默）：算料配置读不到 ⇒ 显式提示「配置未加载」+ 按缺省（韩褶公式 + 标准档）走', async () => {
+    it('判据 ③（🔴 2026-09-30 第五批改判）：算料配置读不到 ⇒ 显式提示「配置未加载」+ 按缺省（倍数法 + 标准档）走', async () => {
       mockGetCraftCalcConfig.mockRejectedValue(new Error('boom'))
       await setupCurtain()
       // 显式提示（红证：改前没有这个提示元素 —— 配置读不到时页面**静默**按钉死的档位算）
@@ -2105,7 +2112,7 @@ describe('NewOrderPage', () => {
       // ⚠️ 2026-09-28 布局重排：用料公式 chips 在步骤 1 的「改工艺参数」块里
       expandCraft()
       // 公式值域不依赖配置（常量与引擎同源）⇒ chips 仍在，缺省 = pleat
-      expect(formulaSelected()).toBe('韩褶公式（褶数法）')
+      expect(formulaSelected()).toBe('褶倍数公式（倍数法）')
       // 档位**值域取不到** ⇒ 不渲染档位 chips（编一套 = 第二份档位真值）
       expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 
@@ -2113,7 +2120,8 @@ describe('NewOrderPage', () => {
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
       const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
-      expect(info.formula).toBe('pleat')
+      // 🔴 2026-09-30 第五批：本条流程没勾韩褶 ⇒ 缺省 = 倍数法
+      expect(info.formula).toBe('fullness')
       expect(info.craftTier).toBe('standard')
     })
 
