@@ -1,6 +1,6 @@
 {
   "_note": "抓取时刻的 admin-api 响应契约指纹（由 tests/contracts/conftest.py 在真实抓取成功时写出）。键集现算自 Java 源码 —— 数据变化不会让它过期，契约键集变化才会。判定见 tests/test_contract_snapshot_freshness.py；刷新 = 重跑一次真实抓取。",
-  "captured_at": "2026-09-29T21:15:29+08:00",
+  "captured_at": "2026-09-30T22:17:06+08:00",
   "contracts": {
     "api_admin_after-sales": [
       "assignedAt",
@@ -118,6 +118,7 @@
       "amount",
       "closeReason",
       "createdAt",
+      "createdByName",
       "customerAddress",
       "customerName",
       "customerPhone",
