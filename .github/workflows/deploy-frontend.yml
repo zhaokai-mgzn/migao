@@ -251,6 +251,13 @@ jobs:
       # ⚠️ 本步**保留**一个显式自证：确认确实没有走推送路径（防将来有人把推送悄悄加回来）。
       - name: Assert server-side build (no ACR push)
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
+        # ⚠️ 必须走 env 而不是在 run 正文里内联 `${{ … }}`：本仓的执行式守卫测试会**逐字渲染** run 正文
+        # （内联表达式渲染后是未展开的 `${{` 形态 ⇒ 既不可读也不好测）。
+        # 🔴 2026-09-30 修：原实现直接在正文里写 `${IMAGE_TAG}`，而该变量**只**在 `steps.tag.outputs` 里、
+        # **不是** env ⇒ 配上 `set -euo pipefail` 当场 `unbound variable` ⇒ **三条腿的部署全部被这一步挡住**
+        # （实测 run 36696120883 的 `Assert server-side build (no ACR push)` 红；判据只查文本、没人真跑过这步）。
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
         run: |
           set -euo pipefail
           echo "构建位置 = **SWAS 服务器侧**（issue #5814 C′）；CI 不构建、不推 ACR。"
