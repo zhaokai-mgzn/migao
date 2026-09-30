@@ -81,11 +81,11 @@ service_context_of() {
     *) echo "" ;;
   esac
 }
-# compose 里的镜像名 = `${ACR_REGISTRY}/ai-customer-service/<compose 服务名>:${IMAGE_TAG}`
-# （见 deploy/swas/docker-compose.yml 的 `image:` 行）⇒ **本地构建必须打逐字相同的 ref**，
-# 否则 compose 找不到本地镜像 ⇒ 转而去 ACR pull 一个**本次从未推送**的 tag ⇒ 拉到旧镜像或失败。
-# ⚠️ compose 侧用 `${ACR_REGISTRY:-<默认>}` 插值 ⇒ 这里必须用同一个变量（并 export）才能保证同源。
-NAMESPACE=${ACR_NAMESPACE:-ai-customer-service}
+# compose 里的镜像名由它自己插值（`${ACR_REGISTRY:-…}/<ns>/<compose 服务名>:${IMAGE_TAG}`）
+# ⇒ **本地构建必须打逐字相同的 ref**（否则 compose 找不到本地镜像 ⇒ 转而去 ACR pull 一个
+# **本次从未推送**的 tag ⇒ 拉到旧镜像或失败）。故下面第 1.4 段**不自己拼 ref**，而是让
+# `docker compose config` 求值（唯一真相源）。
+# ⚠️ compose 侧用 `${ACR_REGISTRY:-<默认>}` 插值 ⇒ 这里必须把同一个变量 export 出去才能同源。
 export ACR_REGISTRY="$REGISTRY"
 LOCAL_IMAGE_REF=""   # 非空 ⇒ 本次是 C′ 本地构建；下方 `pull` 段据此跳过该服务
 if [ -n "$BUILD_SERVICE" ]; then
@@ -473,7 +473,23 @@ if [ "${DISK_PCT:-0}" -gt 90 ]; then
   # 🔴 issue #4808 ②：`docker system prune -af` **会删带 tag 的镜像**，包括 `.last-good-tag`
   #    指向的那一套 ⇒ 回滚点会在这一步**静默消失**。故：先记下回滚点，清理后**立刻复核并补回**。
   RB_BEFORE=$(rollback_tag)
-  docker system prune -af --volumes 2>/dev/null || docker system prune -af 2>/dev/null || true
+  # ── 🔴 C′（issue #5814）：本形态下**镜像只在服务器本地构建、从不推 ACR** ⇒
+  #    `docker system prune -af` 会删掉**带 tag** 的镜像（包括 `.last-good-tag` 指向的回滚点），
+  #    而下面那段「从 ACR 补回」的**源已经不存在**（那个 tag 从未推送过）⇒
+  #    在 C′ 下执行 `-af` 等于**自己删掉 #4767「失败即回滚」的目标，且无法补回**。
+  #    ⇒ C′ 下**不走**这条深清路径，改由**既有保留策略**承担（`cleanup_project_images`：
+  #      只删本项目命名空间前缀、保留「在用 + `.last-good-tag` + 最近 N 个」，且回滚点有**三道**
+  #      独立防线）—— 「回滚点只许保留」在 C′ 下由保留策略保证。
+  #    ⚠️ **保留可检出信号 / 自动复活**：本分支只决定「要不要执行 `-af`」，「补回」那段**逐字保留** ⇒
+  #      将来若恢复推 ACR（`BUILD_SERVICE` 为空）时，深清 + 补回路径**自动复活**，行为与改前逐字相同。
+  if [ -n "$BUILD_SERVICE" ]; then
+    echo "  ⏭️  C′ 本地构建形态：**跳过 \`-af\` 深度清理**（镜像只在本地 ⇒ 删了就补不回来）"
+    echo "      改由保留策略清理：在用 tag + 回滚点 + 最近 ${KEEP_RECENT_TAGS} 个，且**只删本项目前缀**"
+    echo "      · C′ 下回滚点的**真实来源** = **本地镜像** + ${LAST_GOOD_FILE}（补回源 ACR 在 C′ 下不存在）"
+    echo "      · 磁盘仍吃紧时的**人工**出口：回收 /opt/migao（2.2GB，2026-08-13 遗留旧源码克隆）/ 扩容"
+  else
+    docker system prune -af --volumes 2>/dev/null || docker system prune -af 2>/dev/null || true
+  fi
   journalctl --vacuum-size=50M >/dev/null 2>&1 || true
   DISK_PCT2=$(disk_pct)
   echo "  清理后磁盘: ${DISK_PCT2}%（原 ${DISK_PCT}%）"

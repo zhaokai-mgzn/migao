@@ -1,0 +1,71 @@
+{
+  "_comment": "「部署腿的 skip/去重判据」的**真值来源登记表**（issue #5814）。判据 = tests/unit_ci_workflows/test_skip_source_reachability.py。语义：每条能判出 skip=true 的臂，其**真值来源**必须登记；且**至少一臂在当前架构下可命中**（不是恒假）——否则 skip 会恒为 false。台账**只许缩短**（删掉一臂的同时必须删条目，反之亦然）。",
+  "legs": [
+    "deploy-ai-agent-service.yml",
+    "deploy-admin-api.yml",
+    "deploy-frontend.yml"
+  ],
+  "step_name": "Skip if already built (schedule reconcile)",
+  "job_name": "build-and-deploy",
+  "arms": [
+    {
+      "id": "acr_manifest",
+      "anchor": "docker manifest inspect \"$IMAGE\"",
+      "source": "ACR 镜像存在性（外部探针：`docker manifest inspect`）",
+      "reachable_under_c_prime": false,
+      "why": "C′（issue #5814）= 服务器侧构建 ⇒ CI **不推 ACR** ⇒ 该探针**恒不成立**。保留不删：将来若因转 private 恢复推 ACR，它会自动复活。⚠️ 改前它是唯一的「已构建 ⇒ 秒退」判据 ⇒ C′ 让它恒假，正是本表要拦的形态。"
+    },
+    {
+      "id": "same_sha_success",
+      "anchor": "if [ \"$LAST_STATUS\" = \"completed\" ] && [ \"$LAST_CONCLUSION\" = \"success\" ]; then",
+      "source": "同 sha 的部署 run 结论（`gh run list`，**步内取值**，非外部探针）",
+      "reachable_under_c_prime": true,
+      "why": "C′ 下「该 commit 已构建部署过」的**正确来源**：`success`+`completed` ⇒ 已部署过。不补这一臂 ⇒ 每次 cron 都完整构建+部署（3 腿 × 3 次/小时 = 9 次全量重部署/小时，与代码改动无关）。",
+      "firing_proof": "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py::test_sync_leg_skips_when_same_sha_already_deployed"
+    },
+    {
+      "id": "same_sha_still_running",
+      "anchor": "if [ -n \"$LAST_STATUS\" ] && [ \"$LAST_STATUS\" != \"completed\" ]; then",
+      "source": "同 sha 的 run 是否仍在跑（**步内取值**）",
+      "reachable_under_c_prime": true,
+      "why": "重复 dispatch 是纯 churn（concurrency 锁会让它白等）⇒ 交给在跑的那个。",
+      "firing_proof": "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py::test_sync_leg_skips_while_same_commit_is_still_running"
+    },
+    {
+      "id": "unrecoverable_conclusion",
+      "anchor": "if [ \"$is_recoverable\" != \"true\" ]; then",
+      "source": "允许名单断路器（fail-closed，**步内取值**）",
+      "reachable_under_c_prime": true,
+      "why": "PR #5816 的断路器：不可恢复终态（failure/cancelled/timed_out/…）⇒ 不补部署。",
+      "firing_proof": "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py::test_sync_leg_skips_on_unrecoverable_conclusion"
+    }
+  ],
+  "external_probe_markers": [
+    "docker manifest inspect",
+    "curl ",
+    "gh api "
+  ],
+  "min_reachable_under_c_prime": 1,
+  "coverage_boundary": [
+    {
+      "face": "cron 真的会触发吗",
+      "reason": "本表是**静态**的：它只保证「存在一臂可命中」；cron 被 GitHub 节流 / concurrency 顶掉属运行期事实，不在面内。",
+      "recompute": "gh run list --workflow deploy-ai-agent-service.yml --branch main --limit 20"
+    },
+    {
+      "face": "该臂在真实 ACR/CI 环境下的取值",
+      "reason": "步内取值（LAST_CONCLUSION/LAST_STATUS）依赖 `gh run list` 的真实返回；本表只桩行为、不断言真值。",
+      "recompute": "gh run list --workflow <本腿>.yml --branch main --limit 30 --json headSha,conclusion,status"
+    },
+    {
+      "face": "恢复推 ACR 后 acr_manifest 臂是否真的复活",
+      "reason": "本表只登记「该臂未删」；复活与否取决于部署链路是否恢复推 ACR（改回去还要改本表的 reachable 标记）。",
+      "recompute": "grep -rn 'docker push\\|--push' .github/workflows/"
+    },
+    {
+      "face": "外部探针名单是否穷尽",
+      "reason": "`external_probe_markers` 是**现取**的标记集（manifest inspect / curl / gh api）；换成别的探测手段（如自研 CLI）不会命中 ⇒ 需要同批扩标记。",
+      "recompute": "grep -n 'docker manifest inspect\\|curl \\|gh api ' .github/workflows/deploy-*.yml"
+    }
+  ]
+}

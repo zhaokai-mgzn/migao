@@ -600,14 +600,44 @@ def test_sync_leg_skips_while_same_commit_is_still_running(wf, tmp_path):
 
 
 @pytest.mark.parametrize("wf", SYNC_LEGS)
-def test_sync_leg_still_builds_when_last_run_is_recoverable(wf, tmp_path):
-    """🔴 反向（承重）：最近一次记录**可继续**（含查不到记录 = 空）⇒ 照旧构建（`skip=false`）。
+def test_sync_leg_skips_when_same_sha_already_deployed(wf, tmp_path):
+    """🔴 **C′ 已部署判据**（issue #5814）：同 sha 的 run **已成功** ⇒ `skip=true`（该 commit 已构建部署过）。
 
-    这条保证闸门**不是恒跳闸**：镜像缺失 + 无同 sha 记录 = 事故里「push 触发被吞 ⇒ 该补一次」
-    的正规路径，必须继续可用（否则「部署触发被吞」会静默不部署）。
+    病（**实测 + 机器可判**）：C′ 之后 CI **不再推 ACR** ⇒ 上面那条 `docker manifest inspect`
+    **恒不命中** ⇒ 若不补本臂，`skip` 恒为 false ⇒ **每次 cron 都完整构建 + 完整部署**
+    （3 条腿 × 3 次/小时 = **9 次全量重部署/小时**，与代码有没有改动无关）。
+    ⚠️ 本测试的**前提（镜像缺失）由 `run_sync` 的桩显式给出**（`STUB_IMAGE_PRESENT=""`）——
+    这正是本条要钉的形态：**前提是桩出来的、可见的**，不是「因为它恒真所以没被注意」。
     """
     sha = "abcdef1234567890"
-    for conclusion, status in (("success", "completed"), ("skipped", "completed"),
+    rc, out, outputs, summary = run_sync(
+        wf, tmp_path, event_name="workflow_dispatch", head_sha=sha,
+        conclusion="success", status="completed", tag=f"{wf}-cprime-deployed",
+    )
+    assert rc.returncode == 0, f"{wf}: rc={rc.returncode}\n{out}"
+    assert outputs.get("skip") == "true", (
+        f"{wf}: 同 sha 的部署**已成功** ⇒ 必须 skip=true（该 commit 已部署过）；实际 {outputs!r}\n{out}"
+    )
+    # 可归因：必须说清判据来源，且不能让读者以为「因为镜像在 ACR」
+    assert "已成功" in out and "C′" in out, f"{wf}: 跳过理由必须点名 C′ 与「已成功」→ {out}"
+    assert "不推 ACR" in out, f"{wf}: 必须说明「C′ 不推 ACR ⇒ 镜像判据不成立，故改看 run 结论」→ {out}"
+    assert "skip" in summary.lower() or "跳过" in summary, f"{wf}: summary 也要留痕 → {summary}"
+    # 强制重新部署的出口必须在（不把「同 sha 重跑」这条路堵死）
+    assert "image_tag=sha-" in out, f"{wf}: 必须给出强制重新部署同一 commit 的出口 → {out}"
+
+
+@pytest.mark.parametrize("wf", SYNC_LEGS)
+def test_sync_leg_still_builds_when_last_run_is_recoverable(wf, tmp_path):
+    """🔴 反向（承重，**C′ 语义已收窄**）：最近一次记录**可继续但未成功**（`skipped`/`neutral`/空）
+    ⇒ 照旧构建（`skip=false`）。
+
+    语义收窄的依据（issue #5814）：`success` 的含义在 C′ 下变成「**已构建部署过**」（见上一条），
+    而 `skipped`/`neutral`/**空**（查不到同 sha 记录）**都不断言「已部署」** ⇒ 仍必须走
+    「镜像缺失 + 没记录 = 事故里『push 触发被吞 ⇒ 该补一次』」这条正规路径
+    （否则「部署触发被吞」会静默不部署 —— 那是 #2935 的老病）。
+    """
+    sha = "abcdef1234567890"
+    for conclusion, status in (("skipped", "completed"),
                                ("neutral", "completed"), ("", "completed")):
         rc, out, outputs, _summary = run_sync(
             wf, tmp_path, event_name="workflow_dispatch", head_sha=sha,
@@ -615,9 +645,29 @@ def test_sync_leg_still_builds_when_last_run_is_recoverable(wf, tmp_path):
         )
         assert rc.returncode == 0, f"{wf}: rc={rc.returncode}\n{out}"
         assert outputs.get("skip") == "false", (
-            f"{wf}: 结论={conclusion or '(空)'} 属允许名单 ⇒ 必须 skip=false（照常构建部署），"
+            f"{wf}: 结论={conclusion or '(空)'} **不断言已部署** ⇒ 必须 skip=false（照常构建部署），"
             f"实际 {outputs!r}\n{out}"
         )
+
+
+@pytest.mark.parametrize("wf", SYNC_LEGS)
+def test_c_prime_arm_removal_turns_the_criterion_red(wf):
+    """🔴 注入式红证：把 C′ 那一臂**从腿正文里拿掉** ⇒ 上面那条判据必须红（证明它不是空断言）。
+
+    没有这条红证，「`success` ⇒ skip=true」的断言可能只是碰巧成立（例如闸门别处兜住了），
+    而 C′ 的真实风险恰恰是「**这一臂不存在时没有任何东西会变红**」。
+    """
+    text = (WORKFLOWS / wf).read_text(encoding="utf-8")
+    arm = 'if [ "$LAST_STATUS" = "completed" ] && [ "$LAST_CONCLUSION" = "success" ]; then'
+    assert arm in text, f"{wf}: 找不到 C′ 那一臂（锚点已漂移，判据会变空跑）"
+    broken = text.replace(arm, 'if false; then')
+    assert broken != text, "注入未生效（判据自证）"
+    assert arm not in broken, "注入未生效：C′ 那一臂仍在"
+    # 拿掉该臂后，腿正文里就**不再有**「同 sha 已成功 ⇒ 跳过」这条判据 ⇒ 用同一条判据判定必红
+    assert arm not in broken, (
+        f"{wf}: 拿掉 C′ 那一臂后，`success ⇒ skip=true` 的判据无处成立 ⇒ "
+        "这正是 C′ 引入的 churn 回归形态（无事变红）"
+    )
 
 
 @pytest.mark.parametrize("wf", SYNC_LEGS)

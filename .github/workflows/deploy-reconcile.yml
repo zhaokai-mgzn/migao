@@ -215,6 +215,11 @@ jobs:
               return 0
             fi
             # ── 判据 ①：HEAD 的镜像已存在 ⇒ HEAD 这个 commit 已构建过（无漂移）
+            # ⚠️ **C′（issue #5814）下本判据对 ACR 恒不成立**（CI 改为服务器侧构建 ⇒ **不推 ACR**）
+            #    ⇒ 它成了**死判据**。**有效的漂移判据是下面的判据 ②**（「自上次成功部署起该服务的
+            #    代码路径有无改动」—— 它对 C′ 同样成立、且不依赖 ACR）。
+            #    ⇒ 本判据**保留不删**（将来若因转 private 恢复推 ACR，它会自动复活），
+            #      行为**一字不动**，只把 summary 说准（免读者以为「① 不成立 ⇒ 一定有漂移」）。
             if docker manifest inspect "$image" >/dev/null 2>&1; then
               echo "✅ ${svc} 镜像 ${image} 已存在——main HEAD ${HEAD7} 已构建，无漂移"
               echo "| ${svc} | ✅ 镜像已存在：\`${image}\` | **不补部署** |" >> "$SUMMARY"
@@ -233,7 +238,12 @@ jobs:
             fi
             if [ -n "$p" ] && [ -z "$drift" ]; then
               echo "✅ ${svc}：自上次成功部署 ${p:0:7} 起 ${svc_path} 无代码改动 ⇒ 无漂移（HEAD 的代码已在线上）"
-              echo "| ${svc} | ✅ 无漂移：自 \`${p:0:7}\`（上次成功部署）起 \`${svc_path}\` 无代码改动 | **不补部署** |" >> "$SUMMARY"
+              # （issue #5814 C′）判据 ① 在 C′ 下恒不成立（不推 ACR）⇒ 本条判据 ② 才是有效判据，
+              # 故在 summary 里点明，免读者把「① 不成立」误读成「一定有漂移」（改措辞、不动行为）。
+              # ⚠️ 表格的「判定依据」列**逐字保持原样**（`无漂移：自` 是既有判据的锚点，
+              #    见 tests/unit_ci_workflows/test_reconcile_no_silent_skip.py 的 `summary.count("无漂移：自")`）；
+              #    C′ 的说明只加在**「动作」列**里 ⇒ 既有判据一字不动，summary 仍自解释。
+              echo "| ${svc} | ✅ 无漂移：自 \`${p:0:7}\`（上次成功部署）起 \`${svc_path}\` 无代码改动 | **不补部署**（issue #5814 C′：判据 ① 对 ACR 恒不成立，判据 ② 为有效判据） |" >> "$SUMMARY"
               NODRIFT=$((NODRIFT + 1))
               return 0
             fi

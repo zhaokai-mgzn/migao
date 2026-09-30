@@ -191,6 +191,31 @@ jobs:
               esac
             fi
             LAST7=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
+            # ── 🔴 C′ 判据（issue #5814）：同 sha 的部署**已成功** ⇒ 该 commit 已构建部署过 ⇒ 跳过 ──
+            # 病（实测 + 机器可判）：C′ 之后 CI **不再推 ACR** ⇒ 上面那条 `docker manifest inspect`
+            # **恒不命中**（那一臂**保留**：将来若恢复推 ACR，判据自动复活）⇒ 若不补本臂，
+            # `skip` 恒为 false ⇒ **每次 cron 都完整构建 + 完整部署** = 3 条腿 × 3 次/小时
+            # = **9 次全量重部署/小时**（蓝绿预验证 + 换容器 + nginx reload + 迁移），
+            # **与代码有没有改动无关**。这正是 #2935/#5078 建的「已构建 ⇒ 秒退」被悄悄取消的形态，
+            # 而**没有任何东西会变红**（承重判据只桩了「结论分支」，不桩「镜像到底在不在」）。
+            # 判据来源 = **同 sha 的部署 run 结论**（与下面 #5816 断路器**同一份** `gh run list`
+            # ⇒ 零新增机制 / 零新增 secret）；语义正好等于改前 ACR 判据想近似的「该 commit 已部署过」。
+            # ⚠️ 位置在「仍在跑」检查**之后**（未跑完的 run 由下面那条 churn 闸门挡，不归本臂）。
+            if [ "$LAST_STATUS" = "completed" ] && [ "$LAST_CONCLUSION" = "success" ]; then
+              echo "✅ ${LAST7} 的部署**已成功**——该 commit 已构建部署过，跳过本轮构建部署"
+              echo "   判据来源（issue #5814 C′）：C′ 不推 ACR ⇒ 镜像必然不在 ACR，故改看「同 sha 的 run 结论」"
+              echo "   需要**强制重新部署**同一 commit：gh workflow run <本腿>.yml -f image_tag=sha-${LAST7}"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "## ✅ 部署腿跳过（C′ 已部署判据，issue #5814）"
+                echo ""
+                echo "- 服务：\`${GITHUB_WORKFLOW:-}\` · commit：\`${LAST7}\`"
+                echo "- 判据：同 sha 的部署 run 结论 = \`success\`（且 status=\`completed\`）⇒ 该 commit **已构建部署过**"
+                echo "- 为什么不是「镜像在 ACR」：C′ = 服务器侧构建 ⇒ **不推 ACR** ⇒ 该判据恒不成立"
+                echo "- 强制重新部署：\`gh workflow run <本腿>.yml -f image_tag=sha-${LAST7}\`"
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              exit 0
+            fi
             if [ "$is_recoverable" != "true" ]; then
               echo "⛔ 镜像 ${IMAGE} 缺失，但 ${LAST7} 最近一次部署是**不可恢复的终态**（结论=${LAST_CONCLUSION}）——跳过本轮构建部署。"
               echo "   理由（issue #5814）：自动重试同一个坏 commit 只会**再挂一次**（挂点 = 推送到 ACR，"
