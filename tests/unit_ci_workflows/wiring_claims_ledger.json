@@ -11,7 +11,7 @@
     "每条必须写下 `case_ids`（用例面关联）。",
     "本表**只裁接线面**，不是 `dev_mode_failure_modes_ledger.json` 的副本：那张表判「纪律有没有承载体」（`FM-A*` / `FM-E*` / `FM-R*` 记号 ⇄ 条目双向绑定），本表判「某条判据宣称守的接线，真对象在不在」⇒ **两表不互为副本、也互不重判**（§23.7 A6 口径）。"
   ],
-  "_boundary": "本表机械保证的是「**声明了的**接线锚在仓内真实存在，且声明与登记一致」。它**不保证**：① 「那段代码真的跑在真 session / 真入口上」（本仓没有通用 harness 去驱动每个消费点 ⇒ 「摘掉接线会红」的**行为面**实测仍是作者的一次动作）；② **完全没写声明标记**的测接线文件（形态学判据不做语义一刀切：「文件没声明」与「文件确实没测接线」静态不可区分）；③ 被引用的那条测试真的会红（判据**刻意不跑它** —— 否则「未登记即红」会退化成「全量套件再跑一遍」，那正是 §27 要治的机器重活）；④ `.py` 之外的语言（本仓接线面在 Python）。",
+  "_boundary": "本表机械保证的是「**声明了的**接线锚在仓内真实存在，且声明与登记一致」。它**不保证**：① 「那段代码真的跑在真 session / 真入口上」（本仓没有通用 harness 去驱动每个消费点 ⇒ 「摘掉接线会红」的**行为面**实测仍是作者的一次动作）；② **完全没写声明标记**的测接线文件（形态学判据不做语义一刀切：「文件没声明」与「文件确实没测接线」静态不可区分）；③ 被引用的那条测试真的会红（判据**刻意不跑它** —— 否则「未登记即红」会退化成「全量套件再跑一遍」，那正是 §27 要治的机器重活）；④ `.py` 之外的语言（本仓接线面在 Python）；⑤ **行为面**（钩子/消费点在真会话里真的被判到、判红真的传成非零退出码）由 `tests/unit_ci_workflows/test_helper_leg_execution_shape.py` 的两条直连判据承担（PR #5829）—— 本表**只**判「锚在不在」，不重复判它。",
   "skill": {
     "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
     "section": "## 28. 证据质量：**「跑绿」与「本体被调用」都不是证据**"
@@ -20,8 +20,9 @@
     {
       "declared_in": "tests/unit_ci_workflows/test_wiring_claims_registry.py",
       "wiring": "tests/unit_ci_workflows/conftest.py::helper_leg_shape_problems",
-      "covers": "本腿执行形态的**消费点**（纯函数判定本体）—— 触发者是真 pytest 会话的 `pytest_terminal_summary`（该钩子恰好在 `conftest.py` 里）。它由 `tests/unit_ci_workflows/test_helper_leg_execution_shape.py` 按台账 `consumption_marker` 逐字判「可调用」；本条目声明的是**接线这一半**：守卫必须能看见「该消费点被删 / 改名」并具名报出该锚（PR #5829 的实例）。",
-      "red_proof": "`tests/unit_ci_workflows/test_wiring_claims_registry.py::test_mutating_the_real_wiring_anchor_turns_it_red` —— 对真 `tests/unit_ci_workflows/conftest.py` 的文本做**内存变异**（把被守接线点的 `def` 改名）⇒ 本守卫判据 3 报出该接线锚 = 摘线注入红证（不写盘、不改仓内文件；同一测试内另有「不注入 ⇒ 不报」的反向对照）。",
+      "registered_at": "2026-09-30（#5829 合并进 main 之后）",
+      "covers": "本腿执行形态的**消费点**（纯函数判定本体）—— 触发者是真 pytest 会话的 `pytest_terminal_summary`（该钩子恰好在 `conftest.py` 里）。它由 `tests/unit_ci_workflows/test_helper_leg_execution_shape.py` 按台账 `consumption_marker` 逐字判「可调用」；本条目声明的是**接线这一半**：守卫必须能看见「该消费点被删 / 改名」并具名报出该锚。⚠️ 本守卫的摘线红证在**两条锚上都跑**（见 `anchor_injection_targets()`：本锚 + 台账 `consumption_marker` 那条），其中第二条 = PR #5825 丢掉 / PR #5829 补回的收口钩子 —— 只声明第一条（声明常数与台账必须逐字一致），第二条作为注入目标在测试内构造。",
+      "red_proof": "`tests/unit_ci_workflows/test_wiring_claims_registry.py::test_mutating_the_real_wiring_anchor_turns_it_red` —— 对台账里**每一条**锚（含台账在册的 `consumption_marker` 那条）各自的真文件做内存变异（符号改名）⇒ 判据 3 **各自**具名报出；不注入 ⇒ 都不报（反向对照）。",
       "case_ids": [
         "MC-051"
       ]
@@ -46,5 +47,9 @@
       "recompute": "按 §28.1 的四条出口之一在 PR body 留读数。",
       "status": "gap"
     }
-  ]
+  ],
+  "_runtime": {
+    "consumption_anchor": "tests/unit_ci_workflows/conftest.py::pytest_sessionfinish",
+    "_note": "**摘线红证的第二个注入目标**（不属于 `claims`）：本规则 2 的原始实例本体 —— 该收口钩子由 PR #5825 丢掉、PR #5829 补回（2026-09-30 合并）。它不在 `claims` 里是因为「声明常数 ⇄ 台账」必须**逐字一致**（一份测试文件只有一处声明）；但守卫必须**能看见它被删/改名**，故它是红证目标（见 `test_wiring_claims_registry.py::anchor_injection_targets`）。"
+  }
 }

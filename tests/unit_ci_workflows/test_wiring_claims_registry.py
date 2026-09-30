@@ -76,6 +76,20 @@ def _raise(message: str) -> "NoReturn":
     raise AssertionError(message)
 
 
+def ledger_extra_anchors(ledger: dict) -> list[str]:
+    """台账登记的**额外核验目标**（不属于 `claims`：声明常数与台账必须逐字一致，一份文件只有一处声明）。
+
+    `_runtime.consumption_anchor` = 本规则 2 的**原始实例本体**（`conftest.py::pytest_sessionfinish`：
+    被 PR #5825 丢掉、PR #5829 补回）。它**必须在核验面内** —— 否则「守卫能看见这条接线被删」
+    就没有证明（摘线红证会只剩一条，而**实例那一条恰好不在里面**）。
+    """
+    runtime = ledger.get("_runtime")
+    if not isinstance(runtime, dict):
+        return []
+    anchor = runtime.get("consumption_anchor")
+    return [anchor] if isinstance(anchor, str) and anchor.strip() else []
+
+
 def _mentions(text: str, symbol: str) -> bool:
     """`symbol` 是否在 `text` 里**作为独立标识符**出现（不是裸子串）。
 
@@ -148,26 +162,29 @@ def _problems(*, ledger: dict,
                 )
 
         # 判据 3：声明必须指名真对象（左边真文件 + 右边逐字出现 + `.py` 后缀）
-        if "::" not in anchor:
-            bad.append(f"{where}：`wiring` 必须是 `<仓库相对路径>::<符号>`，现取 {anchor!r}")
-        else:
-            path_rel, symbol = anchor.split("::", 1)
+        # —— 对**每一条**需要核的对象都判：本条的 `wiring` + 台账登记的第二注入目标
+        # (`_runtime.consumption_anchor`)。
+        for extra in [anchor] + ledger_extra_anchors(ledger):
+            if "::" not in extra:
+                bad.append(f"{where}：`{extra!r}` 必须是 `<仓库相对路径>::<符号>`")
+                continue
+            path_rel, symbol = extra.split("::", 1)
             if not path_rel.endswith(".py"):
                 bad.append(
-                    f"{where}：`wiring` 左边必须以 `.py` 结尾（避免与「裸文件名 + 冒号 + 行号」的"
+                    f"{where}：`{extra!r}` 左边必须以 `.py` 结尾（避免与「裸文件名 + 冒号 + 行号」的"
                     f"既有禁令混淆），现取 {path_rel!r}"
                 )
             elif read_text(path_rel) is None:
-                bad.append(f"{where}：`wiring` 左指的文件不在仓内：{path_rel} ⇒ 接线锚指向不存在的对象")
+                bad.append(f"{where}：`{extra!r}` 左指的文件不在仓内：{path_rel} ⇒ 接线锚指向不存在的对象")
             elif not symbol.strip():
-                bad.append(f"{where}：`wiring` 右边（被守的符号 / 可检索文本锚）为空")
+                bad.append(f"{where}：`{extra!r}` 右边（被守的符号 / 可检索文本锚）为空")
             else:
                 target = read_text(path_rel) or ""
-                # ⚠️ **词边界**匹配（不是裸子串）：否则「改名成 `zzz_removed_<符号>`」这种最自然的
+                # ⚠️ **标识符边界**匹配（不是裸子串）：否则「改名成 `zzz_removed_<符号>`」这种最自然的
                 # 摘线注入**照样命中**（新名字里含旧名字）⇒ 判据 3 变成空断言。本仓实测过这一形态。
                 if not _mentions(target, symbol):
                     bad.append(
-                        f"{where}：接线锚 {anchor!r} 在 {path_rel} 里**不存在**"
+                        f"{where}：接线锚 {extra!r} 在 {path_rel} 里**不存在**"
                         f" ⇒ 接线被删 / 改名（这就是「摘掉接线」的注入点）"
                     )
 
@@ -369,39 +386,73 @@ def test_counterexample_comment_only_declaration_does_not_turn_red() -> None:
     assert not any("test_zzz_comment_only.py" in b for b in bad), bad
 
 
+def anchor_injection_targets(ledger: dict) -> list[str]:
+    """**摘线红证的注入目标集**（逐条都要各自证明会红）。
+
+    ① 台账 `claims` 里在册的每条锚；② 台账 `consumption_marker` 指向的那条接线
+    —— 后者是**本规则 2 的原始实例**：`conftest.py::pytest_sessionfinish` 曾被 PR #5825 整个丢掉、
+    5 条判据文件照样全绿（PR #5829 补回）。它不进 `claims`（**声明常数与台账必须逐字一致**，
+    一份测试文件只有一处声明），但**必须在红证面内**：否则「守卫能看见这条接线被删」就没有证明。
+    """
+    targets: list[str] = []
+    for c in ledger.get("claims") or []:
+        if isinstance(c, dict) and isinstance(c.get("wiring"), str):
+            targets.append(c["wiring"])
+    marker = ((ledger.get("_runtime") or {}).get("consumption_anchor") if isinstance(ledger.get("_runtime"), dict) else None)
+    if isinstance(marker, str) and marker and marker not in targets:
+        targets.append(marker)
+    return targets
+
+
 def test_mutating_the_real_wiring_anchor_turns_it_red() -> None:
-    """**真语料上的双向自证**（不写盘）：对**真** `conftest.py` 的文本摘掉被守的接线行 ⇒ 判据 3 报出该锚。
+    """**真语料上的双向自证**（不写盘）：对**每一条**注入目标把真文件里那个符号改名 ⇒ 判据 3 **各自**具名报出。
 
     这是「摘掉接线 ⇒ 必须红」的实测形态：只改**内存**副本（红线：注入不落盘 ⇒ 判据之间零互相污染）。
+    逐条跑（不是只看一条）—— 目标集里有几条锚，就得有几条各自会红的证明。
     """
     led, units = _base()
-    # ⚠️ 这里的锚**拆成两行拼接**：本文件里不得逐字出现完整的 `<路径>::<被守符号>`，
-    # 否则下面那句 `replace` 会把它自己那块字符串也改名 ⇒ 报错文本里拼不回原锚（假红）。
-    default_anchor = ("tests/unit_ci_workflows/conftest.py::"
-                      "helper_leg_shape_problems")
-    real = repo_read_text("tests/unit_ci_workflows/conftest.py")
-    if real is None:
-        _raise("真语料取不到 ⇒ 本自证无从判定（fail-closed）")
-    symbol = default_anchor.split("::", 1)[1]
-    assert f"def {symbol}" in real, (
-        "被守的接线本体不在 conftest.py 里 ⇒ 台账声称的对象与实际不符（先修台账或先接线）"
-    )
-    # ⚠️ `replace` **不带 count**：本文件里那个符号其实出现在**两处**（`def <符号>` 与
-    # 台账消费点常量 `CONSUMPTION_MARKER = "<符号>"`）⇒ 只替换 def 会让守卫**照样命中**那个字符串
-    # ⇒ 注入无效、判据变空断言。这是「摘线注入先自证生效」的现场形态（§23 G 族）。
-    mutated = real.replace(symbol, f"zzz_removed_{symbol}")
-    assert mutated != real, "变异没生效 ⇒ 下面那条断言会变成空断言（§28.1 的同族形态）"
-    assert not _mentions(mutated, symbol), "变异没清干净（符号仍逐字在）⇒ 判据 3 无从判红"
+    targets = anchor_injection_targets(led)
+    if not targets:
+        _raise("注入目标集为空 ⇒ 本自证无从判定（fail-closed）")
+    instance_anchor = "tests/unit_ci_workflows/conftest.py::pytest_sessionfinish"
+    if instance_anchor not in targets:
+        _raise(
+            f"注入目标集里没有本规则 2 的**原始实例本体**（{instance_anchor}）⇒ 这条摘线红证恰好漏掉"
+            f"要治的那一条：{targets}"
+        )
+    replaced: set[str] = set()
+    for anchor in targets:
+        if "::" not in anchor:
+            _raise(f"注入目标不是 `<path>::<符号>`：{anchor!r}")
+        path_rel, symbol = anchor.split("::", 1)
+        real = repo_read_text(path_rel)
+        if real is None:
+            _raise(f"真语料取不到：{path_rel} ⇒ 本自证无从判定（fail-closed）")
+        if not _mentions(real, symbol):
+            _raise(f"接线锚 {anchor!r} 在 {path_rel} 里本就找不到 ⇒ 注入无从构造（先修台账）")
+        if any(symbol in done for done in replaced):
+            continue  # 已被前一条注入连带改掉（符号含于上游注入名）⇒ 跳过，避免「变异没生效」的假红
+        # ⚠️ `replace` **不带 count**：符号常在文件里出现**多处**（`def <符号>` 与台账消费点常量）
+        # ⇒ 只替换 def 会让守卫**照样命中**那个字符串 ⇒ 注入无效、判据变空断言（本包实测）。
+        mutated = real.replace(symbol, f"zzz_removed_{symbol}")
+        if mutated == real:
+            _raise(f"变异没生效（{anchor!r}）⇒ 下面那条断言会变成空断言（§28.1 的同族形态）")
+        if _mentions(mutated, symbol):
+            _raise(f"变异没清干净（{anchor!r} 仍逐字在）⇒ 判据 3 无从判红")
+        replaced.add(symbol)
 
-    def read_with_mutation(rel: str) -> str | None:
-        if rel == "tests/unit_ci_workflows/conftest.py":
-            return mutated
-        return repo_read_text(rel)
+        def read_with_mutation(rel: str, _p: str = path_rel, _m: str = mutated) -> str | None:
+            if rel == _p:
+                return _m
+            return repo_read_text(rel)
 
-    bad = _problems(ledger=led, units=units, read_text=read_with_mutation)
-    assert any(symbol in b and "接线被删" in b for b in bad), (
-        "摘掉真接线后守卫没有报出该锚 ⇒ 判据 3 是无判别力的空断言：\n  - " + "\n  - ".join(bad)
-    )
-    # 反向：不注入 ⇒ 不报（否则上一条可能是「恒定红」而不是「因注入而红」）
-    clean = _problems(ledger=led, units=units, read_text=repo_read_text)
-    assert not any("接线被删 / 改名" in b for b in clean), clean
+        bad = _problems(ledger=led, units=units, read_text=read_with_mutation)
+        if not any(symbol in b and "接线被删" in b for b in bad):
+            _raise(
+                f"摘掉真接线 {anchor!r} 后守卫没有报出该锚 ⇒ 判据 3 是无判别力的空断言：\n  - "
+                + "\n  - ".join(bad)
+            )
+        # 反向：不注入 ⇒ 不报（否则上一条可能是「恒定红」而不是「因注入而红」）
+        clean = _problems(ledger=led, units=units, read_text=repo_read_text)
+        if any("接线被删" in b for b in clean):
+            _raise("未注入时也报「接线被删」⇒ 上一条不是「因注入而红」：" + "\n  - ".join(clean))
