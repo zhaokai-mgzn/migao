@@ -9,9 +9,9 @@
 |--------|------|------|
 | `pr-check` | PR → main | 多 job 门禁: 拦截 .env / admin-api 单测 / admin-web tsc+lint+vitest / E2E 质量门禁(4 个 fixture spec) / UI 回退检测 / QA Growth Gate(G1+G5+弱断言) / Case Contract 校验 / needs-changes 打标（**agent-eval-smoke 已于 #3653 移除**：B 端云冒烟评的是已部署 main、与本 PR 无因果；B 端行为信号**不再挂在 PR 上** —— 原 `agent-behavior-eval` 映射 workflow 已按 #4275 整体删除，改由**本机按 §13.2 映射**承担）。**2026-09-26（#3507 ①）**：`admin-api unit tests` / `admin-web typecheck + unit tests` / `E2E quality gate` 三条腿改为 **job 内 diff 门控**（原先 `admin-web` 只门控 `next build`，其余步骤每个 PR 都跑） |
 | `ai-agent-tests` | PR → main | ai-agent-service 单测全量（排除 integration / e2e-real / 4 个 ignore 文件）；**v1.3 起 job 内门控**：无 ai-agent 相关变更时跳过实际单测（required check 仍报告 success，防 dependabot 空跑） |
-| `deploy-admin-api` | push main `backend/admin-api/**` | 单测 → Maven 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
-| `deploy-ai-agent-service` | push main `backend/ai-agent-service/**` | 单测全量 → 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
-| `deploy-frontend` | push main `frontend/admin-web/**` | tsc + vitest → 构建镜像推 ACR → 云助手触发 SWAS `deploy.sh` |
+| `deploy-admin-api` | push main `backend/admin-api/**` | 单测 → **服务器侧就地构建镜像（C′，2026-09-30 起；CI 不再构建、不再推 ACR）** → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
+| `deploy-ai-agent-service` | push main `backend/ai-agent-service/**` | 单测全量 → **服务器侧就地构建镜像（C′）** → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
+| `deploy-frontend` | push main `frontend/admin-web/**` | tsc + vitest → **服务器侧就地构建镜像（C′）** → 云助手触发 SWAS `deploy.sh` |
 | `smoke-test` | workflow_call (可复用) | P0 冒烟 (pytest+httpx)，被 deploy 工作流调用 |
 | `agent-eval` | workflow_dispatch（按需） | 米宝能力评测（normal tier 按需手动，真实 LLM + `cases/*.yml` 单一源；2026-08-29 起取消每日定时） |
 | `agent-eval-adversarial` | workflow_dispatch（按需） | 对抗用例评测（只追踪不阻塞）。⚠️ **口径订正（2026-09-26，#3507 ②）**：本行原写「schedule 每周六 03:00」**已不成立** —— 现取 `origin/main` 的 `on:` 只有 `workflow_dispatch`（每周一 cron 已按 #4974 删除，与本文件「真实 LLM 成本」段「全仓自动真实 LLM 触发 = 0 条」一致）；频率读数见 `tests/unit_ci_workflows/ci_cost_ledger.json` 的 `eval_cadence` |
@@ -186,11 +186,15 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 ## 部署链路（测试环境自动部署）
 
 ```
-push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag=sha-<7> 或 vX.Y.Z + latest）
-  → aliyun swas-open RunCommand（实例 b23c69e5..., 超时 3600s）
-  → 服务器执行 /opt/migao-deploy/deploy.sh <IMAGE_TAG>（先自愈式同步最新 deploy.sh）：
-     1. docker login ACR（服务器需凭据拉私有镜像）
-     2. docker compose pull（拉 CI 预构建镜像，不做源码构建）
+push main / push tag v*（路径过滤）→ CI **只跑测试**（C′ 起**不再构建、不再推 ACR**；tag 规则仍是 sha-<7> 或 vX.Y.Z）
+  → aliyun swas-open RunCommand（实例 b23c69e5..., 超时 3600s；**C′ 下轮询预算 3000s**）
+  → 服务器执行 /opt/migao-deploy/deploy.sh <SERVICE_KEY> <IMAGE_TAG>（先自愈式同步最新 deploy.sh）：
+     0. flock（既有那把锁；🔴 **C′ 的 `docker build` 就在锁内** —— 否则单机并发构建会互踩，见
+        [swas-migration-lessons §二.2](../deployment/swas-migration-lessons.md)）
+     1. **C′：就地 `docker build` 该服务镜像**（上界 `BUILD_TIMEOUT_SECS=2400s`，`rc=124` 显式点名判红；
+        apt 源可经 `APT_MIRROR` 覆盖、默认 `deb.debian.org` 保持 CI 行为不变；
+        admin-web 的 `NEXT_PUBLIC_*` 取服务器 `/opt/migao-deploy/.env.build`（可选）或**内置默认值**）
+     2. docker login ACR（服务器仍需凭据 —— 回滚点/依赖镜像仍可能从 ACR 取）
      3. 严格蓝绿（#4785）：逐服务「先起 green 探针（第二端口）→ 健康检查通过 → **才**替换正式容器」
      4. nginx 优雅 reload（失败回落 restart）+ 健康检查 8080/8000/3001
   → CI 轮询 DescribeInvocationResult 至 Success
@@ -231,7 +235,7 @@ issue #5083），把它们 `cp` 到 `nginx/` 与 compose 根，并无条件
 |------|---------|------|
 | push main（路径匹配） | `sha-<git 前7位>` + latest | 自动部署测试环境（SWAS） |
 | push tag `vX.Y.Z`（release.yml 打标） | `vX.Y.Z` + `sha-<7>` + latest | 自动部署测试环境（回归） |
-| workflow_dispatch（手动）空 image_tag | 构建当前代码 `sha-<7>` 并部署 | 手动部署测试环境 |
+| workflow_dispatch（手动）空 image_tag | **服务器侧构建**当前代码 `sha-<7>` 并部署 | 手动部署测试环境（`gh workflow run deploy-<svc>.yml --ref main`） |
 | workflow_dispatch 填 image_tag | 跳过构建，部署指定版本 | **回滚/指定版本** |
 
 生产发布：`deploy-prod.yml`（Environment 审批 + 指定版本），详见 [production-deployment.md](../deployment/production-deployment.md)。回滚见 [rollback.md](../deployment/rollback.md)。
@@ -268,7 +272,7 @@ gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
 | 失败**不留坏状态** | `swas-deploy-ci.sh` | 失败**自动重试 1 次** → 仍失败**回滚到 `.last-good-tag`（上一个可用镜像）** → 回滚也不行 ⇒ `::error::` 显式告警 |
 | 严格蓝绿（**内层**兜底） | `deploy/swas/deploy.sh`（#4785） | 新容器先起 → 健康检查通过 → **才**切流量；不通过 ⇒ **旧容器一动不动**（**失败窗口 = 0**）⇒ 坏镜像**永远碰不到**旧容器（外层回滚仍保留，见下） |
 | 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的**最新一条** run 只有结论落在**允许名单**（`success` / `skipped` / `neutral` / 空）才继续补部署；**其余一切结论**（`failure` / `cancelled` / `timed_out` / `startup_failure` / `action_required` / `stale` / 将来新增的）一律跳闸（防反复重试坏 commit、覆盖手工回滚）；同 sha 的 run **还在跑/排队** ⇒ 也跳过（重复 dispatch 是纯 churn）。**fail-open**：查询失败 / 无同 sha 记录 ⇒ 照旧补部署；跳闸时**显式**打印人工出口 `gh workflow run <wf> --ref main` |
-| 推送**显式上界 + 一次重试**（#5814） | 三个 deploy workflow 的 `Build and push Docker image` / `Build and push` | 单次构建/推送挂 `timeout`（`PUSH_TIMEOUT_SECS`，默认 720s）⇒ 超时/失败**重试 1 次**（最坏 2×720s = 24min，**明显小于**上面那条 job 级 45min）；两次都不成 ⇒ `::error::` **点名卡在「推送到 ACR」** 后非零退出（不再留下「40 分钟零输出 + 一个 cancelled」这种不可归因的形态）。⚠️ 三条部署腿的 `Skip if already built (schedule reconcile)` 也加了同一道闸门 ⇒ 挂死的 commit **不会被自己的 cron 反复重试** |
+| 推送**显式上界 + 一次重试**（#5814） | 三个 deploy workflow 的 `Build and push Docker image` / `Build and push` | 单次构建/推送挂 `timeout`（`PUSH_TIMEOUT_SECS`，默认 720s）⇒ 超时/失败**重试 1 次**（最坏 2×720s = 24min，**明显小于**上面那条 job 级 45min）；两次都不成 ⇒ `::error::` **点名卡在「推送到 ACR」** 后非零退出（不再留下「40 分钟零输出 + 一个 cancelled」这种不可归因的形态）。⚠️ 三条部署腿的 `Skip if already built (schedule reconcile)` 也加了同一道闸门 ⇒ 挂死的 commit **不会被自己的 cron 反复重试**。🔴 **2026-09-30（C′）后本条对三条 deploy 腿已失效** —— 它们**不再有 `Build and push` 步**（构建搬到服务器侧，见本文档「部署链路」节）；该上界**仍适用于** `bmini-h5-publish.yml` 的那处 `docker push`（PR #5821 补的） |
 
 ### 严格蓝绿（issue #4785）：新容器先起 → 健康检查通过 → 再切流量
 
