@@ -153,11 +153,9 @@ exit 1
     r = subprocess.run(["bash", "-c", script, "_", str(pid_file)], capture_output=True, text=True)
     if r.returncode != 0 or not r.stdout.strip():
         # 失败路径也要登记：进程可能已经起来了只是没复归 init ⇒ 不登记就是**漏进程**
-        if pid_file.exists():
-            try:
-                _SPAWNED.append(int(pid_file.read_text().strip()))
-            except ValueError:
-                pass
+        raw = pid_file.read_text().strip() if pid_file.exists() else ""
+        if raw.isdigit():
+            _SPAWNED.append(int(raw))
         raise AssertionError(f"没能造出 PPID=1 的孤儿（等待超时；pid_file={pid_file}）")
     return int(r.stdout.strip())
 
@@ -181,7 +179,7 @@ def _kill_all_spawned() -> None:
         try:
             os.kill(pid, 9)
         except (ProcessLookupError, PermissionError):
-            pass
+            continue  # 已经退出 / 不是本进程能杀的 —— 收尾尽力而为，不影响判定
     # 兜底（只对**本文件造出来的形状**、且只在 pytest 的临时目录下）：
     # `node -e setInterval… <tmp>/…/vitest` —— 射程靠 `pytest-of-` 前缀收敛，不碰任何别人的进程。
     subprocess.run(["pkill", "-f", "pytest-of-.*/vitest --held"], capture_output=True)
