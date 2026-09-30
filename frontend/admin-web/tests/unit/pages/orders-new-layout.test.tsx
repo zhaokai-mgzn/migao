@@ -334,36 +334,39 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(line.unitPrice).toBe(88)
   })
 
-  it('判据 4（2026-09-29 改判）：门幅 chips **常态可选**；来源文案说人话（按窗宽挑最省料的那支）', async () => {
+  it('判据 4（🔴 2026-09-30 第五批改判）：门幅常态可选；**两块重复文案已删**，「为什么是这一支」只在推导细节里', async () => {
     await setupLine()
-    // ① 下拉与摘要都在（用户实测原话：常显 chips 网格「比较浪费空间」）
+    // ① 下拉仍在（用户实测原话：常显 chips 网格「比较浪费空间」⇒ 改一行摘要 + 下拉）
     const select = screen.getByTestId('sku-select') as HTMLSelectElement
     expect(select.selectedOptions[0]?.textContent).toContain('2.8米')
-    expect(screen.getByTestId('sku-summary').textContent).toContain('门幅 2.8米')
     expect(screen.queryByTestId('sku-picker-toggle')).toBeNull()
-    // ② 「为什么是这一支」= **可理解的原因**（含窗宽数），不再是那句没头没尾的「系统按门幅规则自动选中」
-    const reason = screen.getByTestId('sku-choice-reason')
-    expect(reason.textContent).toContain('窗宽 6.6 米')
-    expect(reason.textContent).toContain('最省料')
-    expect(reason.textContent).not.toContain('门幅规则')
-    // ③ **门幅推导细节**：默认收起；展开后有候选清单 / 规则解 / 服务端依据（前端不编一句）
+    // ② 🔴 第五批（用户逐字「这种文字我觉得没有添加的必要，可以移除掉吧」）：两块**必须不存在** ——
+    //    `sku-summary` 与 `<select>` 里选中项是同一串字；`sku-choice-reason` 与下面的「规则解 + 系统依据」重复。
+    //    红证：把任一块加回来 ⇒ 本断言红（反向断言，防回潮）。
+    expect(screen.queryByTestId('sku-summary')).toBeNull()
+    expect(screen.queryByTestId('sku-choice-reason')).toBeNull()
+    // ③ 「为什么是这一支」的**唯一**落点 = 门幅推导细节：默认收起；展开后候选清单 / 规则解 / 服务端依据
+    //    （旧口径「系统按门幅规则自动选中」的**可读替代**就在这里，判据强度未降）
     const details = screen.getByTestId('door-width-details') as HTMLDetailsElement
     expect(details.open).toBe(false)
-    fireEvent.click(within(details).getByText('门幅推导细节'))
+    fireEvent.click(within(details).getByText(/① 门幅/))
     expect(details.open).toBe(true)
     expect(screen.getByTestId('door-width-candidates').textContent).toContain('2.8米')
     expect(screen.getByTestId('door-width-rule-solution').textContent).toContain('2.8 米')
     expect(screen.getByTestId('door-width-plan-reason').textContent).toContain('替身：单幅可做')
+    // 自动挑中时**一个字都不多**：手选才出现的那条不在
+    expect(screen.queryByTestId('door-width-manual-note')).toBeNull()
   })
 
-  it('判据 4b：改下拉 ⇒ 规格换掉，来源翻「你手动选的规格」', async () => {
+  it('判据 4b（🔴 第五批改判）：改下拉 ⇒ 规格换掉；「你手动选的」只收进推导细节（不再常显一行）', async () => {
     await setupLine()
     const select = screen.getByTestId('sku-select') as HTMLSelectElement
     fireEvent.change(select, { target: { value: select.options[0].value } })
-    await waitFor(() =>
-      expect(screen.getByTestId('sku-choice-reason').textContent).toContain('你手动选的规格')
-    )
+    await waitFor(() => expect(screen.getByTestId('door-width-manual-note')).toBeInTheDocument())
+    expect(screen.getByTestId('door-width-manual-note').textContent).toContain('手动选的')
     expect(select.selectedOptions[0]?.textContent).toContain('2.8米')
+    // 常显那一行仍然不存在（第五批口径：噪声不进常态面）
+    expect(screen.queryByTestId('sku-choice-reason')).toBeNull()
   })
 
   it('判据 5：推荐组合**默认预选**（韩褶 + 布帘定型），推荐条逐字给出这组名字', async () => {
@@ -457,18 +460,31 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(where.textContent).toContain('工艺配置 → 算料配置')
   })
 
-  it('判据 10（2026-09-29 新增）：推导依据 / 候选**默认收起**，结论仍常显', async () => {
+  it('判据 10（🔴 2026-09-30 第五批改判）：推导细节**默认全部收起**、**不折叠套折叠**，结论常显在标题行', async () => {
     await setupLine()
-    const details = screen.getByTestId('craft-plan-details') as HTMLDetailsElement
-    expect(details.open).toBe(false)
-    // 结论（加工类型 / 用料）不随折叠消失 —— 收的只是「太多太细」的那半
+    // 用户逐字：「就不要折叠套折叠了，可以排版对每块推导工艺做一些说明文字，比如 1 2 3 或者
+    // 直接门幅 工艺之类的标题？…默认全部折叠，需要引导用户查看推导细节」
+    const panel = screen.getByTestId('derivation-panel')
+    expect(panel.textContent).toContain('推导细节（默认收起，点标题展开）')
+    const entries = Array.from(panel.querySelectorAll('details')) as HTMLDetailsElement[]
+    // 正好三条：① 门幅 / ② 用料公式 / ③ 用料方案（编号即标题 —— 用户说的「1 2 3」）
+    expect(entries).toHaveLength(3)
+    for (const d of entries) {
+      expect(d.open).toBe(false) // 默认全部折叠
+      expect(d.querySelector('details')).toBeNull() // **不许折叠套折叠**
+    }
+    expect(panel.textContent).toContain('① 门幅')
+    expect(panel.textContent).toContain('② 用料公式')
+    expect(panel.textContent).toContain('③ 用料方案')
+    // 结论**常显**（在 ③ 的标题行上，不必展开）—— 2026-09-29 裁定「收的只是太多太细的那半」
     expect(screen.getByTestId('craft-plan-mode')).toBeTruthy()
+    expect(screen.getByTestId('craft-plan-headline')).toBeTruthy()
     expect(screen.getByTestId('craft-plan-meters')).toBeTruthy()
-    // 依据与候选**仍在 DOM**（既有判据照旧读得到），只是默认不展开
+    // 依据与候选**仍在 DOM**（既有判据照旧读得到），展开 ③ 才看得见
     expect(screen.getByTestId('craft-plan-reason')).toBeTruthy()
     expect(screen.getByTestId('craft-plan-candidates')).toBeTruthy()
-    fireEvent.click(within(details).getByText(/推导依据/))
-    expect(details.open).toBe(true)
+    fireEvent.click(within(screen.getByTestId('craft-plan')).getByText(/③ 用料方案/))
+    expect((screen.getByTestId('craft-plan') as HTMLDetailsElement).open).toBe(true)
   })
 
   it('判据 11（🔴 2026-09-30 改判）：系统识别常态可见；**人工加 / 改本期隐藏**（用户逐字「先隐藏，本期不需要该功能」）', async () => {
@@ -599,5 +615,108 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(meters.value).toBe('6.5')
     // 落库证据：改完就是商家敲的那个数（不被推导改回）
     expect((await submittedLine()).processingInfo.processingMeters).toBe(6.5)
+  })
+
+  it('判据 25（2026-09-30 第五批）：勾选 / 反选「韩褶」⇒ 用料公式与用料米数**自动联动**', async () => {
+    // 用户逐字：「如果加工项这里没有勾选韩折，用料公式默认得用倍数法，如果勾选了韩折，默认用韩褶公式。
+    // 而且勾选/反选韩折要自动联动用料公式和用料米数」
+    // 公式跟着工艺 ⇒ 试算入参的 `formula` 变 ⇒ 试算签名变 ⇒ 米数按新公式重算（无第二份状态）。
+    mockCraftCalcPreview.mockImplementation((params: Record<string, unknown>) => {
+      const pleat = params.formula === 'pleat'
+      return Promise.resolve({
+        data: {
+          data: {
+            ...CALC_OK.data.data,
+            fabric_meters: pleat ? 13.3 : 12.0,
+            formula_text: pleat ? '韩褶公式：… 13.3米' : '褶倍数公式：… 12.0米',
+          },
+        },
+      })
+    })
+    await setupLine()
+    openStep(/^\d+ 加工项/)
+    const lastFormula = () => mockCraftCalcPreview.mock.calls.at(-1)?.[0]?.formula
+    // 缺省：推荐组合把「韩褶」勾上了 ⇒ 韩褶公式
+    await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
+    // 反选韩褶 ⇒ 缺省翻**倍数法**，米数按倍数法重算
+    fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
+    await waitFor(() => expect(lastFormula()).toBe('fullness'), { timeout: 5000 })
+    // ⚠️ 用料米数在 **①** 里，而手风琴是互斥的（打开 ② 时 ① 已收起）⇒ 读之前先把 ① 打开
+    openStep(/用料与规格/)
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue('12'), { timeout: 5000 })
+    // 再勾回来 ⇒ 回到韩褶公式，米数跟着回来
+    openStep(/^\d+ 加工项/)
+    fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
+    await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
+    openStep(/用料与规格/)
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue('13.3'), { timeout: 5000 })
+  }, 30000)
+
+  it('判据 22（2026-09-30 第五批）：推算细节搬进 ① 标题**右侧**（不再压在表单下方）', async () => {
+    await setupLine()
+    // 用户逐字：「这里的一整趴如何推算的细节，放到 用料与规格（系统推导）这个标题的**右侧空白区域**」
+    const aside = screen.getByTestId('wizard-aside-1')
+    // 三块推导细节都在右侧栏：门幅推导细节 / 公式 + 参数说明 / 用料方案（只读）
+    expect(aside.contains(screen.getByTestId('door-width-details'))).toBe(true)
+    expect(aside.contains(screen.getByTestId('meters-formula-block'))).toBe(true)
+    expect(aside.contains(screen.getByTestId('craft-plan'))).toBe(true)
+    // ⚠️ 右侧栏必须是**标题按钮的兄弟**、排在其后：栏里有 `<details>` / 深链 / 按钮，
+    // 嵌进 `<button>` 就是非法嵌套（同 `CollapsibleHeader` 的既有约束）—— 判的是 DOM 结构，不是措辞。
+    const toggle = screen.getAllByRole('button', { name: /用料与规格/ })[0]
+    expect(toggle.contains(aside)).toBe(false)
+    expect(appearsBefore(toggle, aside)).toBe(true)
+    // 主体里只剩「表单 + 裁决」：三格行**不在**右侧栏里（在它下面的主体里）
+    expect(aside.contains(screen.getByTestId('spec-input-row'))).toBe(false)
+    expect(aside.contains(screen.getByTestId('auto-detected-features'))).toBe(false)
+    // 红证方向：把三块放回三格行之后（改前形态）⇒ `wizard-step-1-aside` 不存在 ⇒ 第一条红。
+  })
+
+  it('判据 23（2026-09-30 第五批）：系统识别块新增「接高 / 拼接」推导行（裁决入口**收敛一处**）', async () => {
+    mockCraftCalcPreview.mockResolvedValue({
+      data: {
+        data: {
+          ...CALC_OK.data.data,
+          plan: {
+            ...CALC_OK.data.data.plan,
+            cutting_mode: '定高买宽',
+            splice_times: 2,
+            splice_option: '拼2次',
+            join_height_m: 0.05,
+          },
+        },
+      },
+    })
+    await setupLine()
+    // 用户逐字：「系统识别（…可采纳 / 不采纳）这里再加**接高和拼接**两项」
+    const features = screen.getByTestId('auto-detected-features')
+    const derived = screen.getByTestId('craft-plan-derived-options')
+    expect(features.contains(derived)).toBe(true)
+    expect(derived.contains(screen.getByTestId('craft-plan-derived-option-拼2次'))).toBe(true)
+    expect(derived.contains(screen.getByTestId('craft-plan-derived-option-接高'))).toBe(true)
+    // **裁决入口只此一处**（用料方案块里不再有第二份 —— 同一件事不许两个操作面）
+    expect(screen.getAllByTestId('craft-plan-derived-options')).toHaveLength(1)
+    // 采纳 / 不采纳走**既有**机制（`onDerivedOptionDecision` / `derivedOptionDecisions`，不新造状态）
+    expect(screen.getByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已并入')
+    fireEvent.click(screen.getByTestId('craft-plan-derived-reject-接高'))
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已忽略')
+    )
+    fireEvent.click(screen.getByTestId('craft-plan-derived-adopt-接高'))
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-derived-option-接高')).toHaveTextContent('已并入')
+    )
+  })
+
+  it('判据 24（2026-09-30 第五批）：拼接**可选档**（由推导决定 / 不拼接 / 拼1~3次），选完照旧落库', async () => {
+    await setupLine()
+    // 用户逐字：「拼接…可以先不做自动推导，**能让用户选择即可**」——档位就是既有那一份
+    // `SPLICE_OVERRIDE_OPTIONS`（唯一真值），落库走既有 `planOverrides.spliceTimes` 链路。
+    const group = screen.getByRole('radiogroup', { name: '拼接（人工加）' })
+    expect(within(group).getByText('由推导决定')).toBeTruthy()
+    fireEvent.click(within(group).getByText('拼2次'))
+    expect(within(group).getByText('拼2次').getAttribute('aria-checked')).toBe('true')
+    // 落库证据：拼次进 `specialOptions`（⇒ 服务端插工序 + 计件）
+    const line = await submittedLine()
+    expect(line.processingInfo.specialOptions).toContain('拼2次')
   })
 })

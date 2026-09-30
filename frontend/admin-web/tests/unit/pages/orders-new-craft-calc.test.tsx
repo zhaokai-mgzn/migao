@@ -448,13 +448,16 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     fireEvent.change(select, { target: { value: hit.value } })
   }
 
-  it('判据 1（红证）：缺省公式 = 算料配置的 `default_formula`，且选韩褶公式 ⇒ 展示**自动算出的褶数**', async () => {
+  it('判据 1（🔴 2026-09-30 第五批改判）：**没勾韩褶** ⇒ 缺省公式 = 倍数法；选韩褶公式 ⇒ 展示**自动算出的褶数**', async () => {
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
     // 红证（改前）：页面既没有「用料公式」控件，也没有褶数展示块 ⇒ 下面两行必红
-    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
-    // 试算还没发（宽高未填）⇒ 褶数是「—」：**不编数**
+    expect(formulaSelected()).toBe('褶倍数公式（倍数法）')
+    // 🔴 2026-09-30 第五批：倍数法**没有**「自动算出的褶数」这一块（褶数是韩褶公式独有的读数）
+    expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+    // 选韩褶公式 ⇒ 褶数块出现；试算还没发（宽高未填）⇒ 显示「—」：**不编数**
+    pickOption('用料公式', '韩褶公式（褶数法）')
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
 
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
@@ -472,28 +475,29 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     })
   })
 
-  it('判据 1b（2026-09-29 改判）：算料配置 `default_formula=fullness` ⇒ 下单页缺省**仍为韩褶公式**', async () => {
-    // 用户 2026-09-29 逐字：「**用料公式默认改成韩褶公式**」⇒ 下单页的缺省口径**恒定**，
-    // 不再随算料配置的兜底键漂移（前两档不变：商家显式选 > 工艺推导）。
-    // 红证：把 `defaultCraftCalcFormula(配置)` 装回 `effectiveCraftCalcFormula` 的第 ③ 档 ⇒
-    // chips 会选中「褶倍数公式（倍数法）」、请求带 `formula=fullness` ⇒ 本判据必红。
+  it('判据 1b（🔴 2026-09-30 第五批改判）：算料配置 `default_formula=pleat` ⇒ 下单页缺省**仍为倍数法**（不勾韩褶时）', async () => {
+    // 2026-09-29 的口径是「缺省恒定 = 韩褶公式」；🔴 2026-09-30 第五批按用户逐字收窄为
+    // 「**没勾韩褶 ⇒ 倍数法**，勾了韩褶 ⇒ 韩褶公式」⇒ 判据的**对照面也换了**：
+    // 配置给 `pleat` 而页面仍出「倍数法」，才真正证明「缺省不随租户配置漂移」这条口径还活着
+    // （配置给与缺省相同的值 ⇒ 本判据什么都证不了 = 空断言）。
+    // 红证：把 `defaultCraftCalcFormula(配置)` 装回第 ③ 档 ⇒ chips 会选中「韩褶公式（褶数法）」⇒ 红。
     mockGetCraftCalcConfig.mockResolvedValue({
       data: {
         data: {
           source: 'stored',
-          config: { ...CALC_CONFIG_OK.data.data.config, default_formula: 'fullness' },
+          config: { ...CALC_CONFIG_OK.data.data.config, default_formula: 'pleat' },
         },
       },
     })
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
-    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
+    expect(formulaSelected()).toBe('褶倍数公式（倍数法）')
 
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalled())
-    expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({ formula: 'pleat' })
+    expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({ formula: 'fullness' })
   })
 
   it('判据 2（红证）：选褶倍数公式 ⇒ 出现档位 chips，文案逐字 = 算料配置 `tiers[*].label`', async () => {
@@ -532,7 +536,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.craftTier).toBe('economy')
   })
 
-  it('判据 4（不静默·红证）：算料配置读不到 ⇒ 按缺省（pleat + standard）走 **且显式提示**', async () => {
+  it('判据 4（🔴 2026-09-30 第五批改判）：算料配置读不到 ⇒ 按缺省（倍数法 + standard）走 **且显式提示**', async () => {
     mockGetCraftCalcConfig.mockRejectedValue(new Error('boom'))
     render(<NewOrderPage />)
     await pickProduct()
@@ -540,7 +544,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
     openStep1()
     // 公式值域与引擎常量同源（不依赖配置）⇒ chips 仍在；档位值域取不到 ⇒ 不渲染 chips
-    expect(formulaSelected()).toBe('韩褶公式（褶数法）')
+    expect(formulaSelected()).toBe('褶倍数公式（倍数法）')
     expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
@@ -549,7 +553,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     // 不阻断录入：试算照发，缺省档 = 常量 `standard`
     expect(mockCraftCalcPreview.mock.calls.at(-1)![0]).toMatchObject({
       craft_tier: 'standard',
-      formula: 'pleat',
+      formula: 'fullness',
     })
   })
 })
