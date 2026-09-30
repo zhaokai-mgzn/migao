@@ -11,6 +11,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 
 1. **测试先行（AI-TDD CP-1~CP-7）**：先写失败测试（Red）→ 最小实现（Green）→ 重构。全量单测必须 PASS。7 个检查点的正文见 [docs/wiki/Development.md](docs/wiki/Development.md) 的「AI-TDD 流程」。
 2. **三把工具**：提交前跑 `./verify-all.sh gate`（与 CI 同规则）、`./check-ui-regression.sh`（UI 回退）；跨模块改动加 `./contract-check.sh`。
+   **改 web 页面另加一轮「Playwright 页面多模态验收」**（真实登录 + 截图 + AI 读图判定；承载体与假绿清单见 `migao-dev-flow` §15.7）。
 3. **case_ids**：新增/修改测试文件头部必须声明 `# case_ids:`（对应 `.github/cases/` 用例，否则 CI QA Growth Gate block）。
 4. **GitHub 操作**：禁止直推 main，必须走 PR 且关联 Issue——**PR body 必写 `Closes #<issue号>`**（GitHub 只在 body 含 Closes/Fixes/Resolves 关键词时自动关 issue，标题里的「(issue #xx)」不生效；漏写合并后 issue 不会自动关闭，CI `pr-issue-link` 会打 `needs-issue-link` 标签提醒；无 issue 关联的基建 PR 标 `N/A（基建）`）。详见 `migao-dev-flow` 技能 §2.2/§3.3。合并后 GitHub 异步关闭偶发失效（close-on-merge best-effort，实证 #2910/#2919 未自动关）→ `close-linked-issues.yml` 解析 body 关键词做合并后补偿关闭 + schedule 定时对账兜底（issue #2937；cron 声明 30 分钟、实测被 GitHub 节流至 2~5.5h 触发；pull_request closed 事件对 native auto-merge 合并实测不可靠），无需人工；若 issue 仍悬挂再按 §2.2 人工兜底。
 5. **最少代码**：写码前爬「最少代码阶梯」（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；**先理解再爬梯**）。只简化实现代码、**不降测试门禁**，安全护栏与既有架构契约永不砍。全文见 [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md)。
