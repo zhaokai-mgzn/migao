@@ -84,8 +84,16 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   schedule:
     # `detect-dangling-prs` 的入口（其余两个 job 在 schedule 上被各自的 `if:` 跳过）：
-    # 悬空＝没有事件，只能靠定时扫；实测被节流到 2~5.5h（同 flaky-ledger-reconcile）。
-    - cron: '*/20 * * * *'
+    # 悬空＝没有事件，只能靠定时扫。
+    # ── #5814 触发面降频：`*/20` → **小时级**（`7 * * * *`；取 :07 错峰，见下）──────
+    # ⚠️ **不能删**：本 job 的 `if:` 要求 `schedule`/`workflow_dispatch`（判据 =
+    #    `tests/unit_ci_workflows/test_dangling_pr_scan.py::job_wiring_problems`），
+    #    且这是它**唯一**的自动入口（只留手动面 = 悬空 PR 永远扫不到）。
+    # 实测依据（本仓既有登记同源）：GitHub 对本仓 `*/N` 分钟级 cron 的投递被节流 ——
+    #    `*/20` 名义 72 次/日，实得 ~5 次/日（3 日 15 次）⇒ 降成小时级**几乎不损失**真实频率。
+    # :07 与 3 条 deploy 腿（:04/:08/:12/:24/:28/:32/:44/:48/:52）及 `deploy-reconcile`（:00/:20/:40）
+    #    不同刻；与 `close-linked-issues` 的 `*/30`（:00/:30）也不同刻。
+    - cron: '7 * * * *'
   workflow_dispatch:   # 手动重扫入口（与对账族一致；不派发任何评测）
 
 permissions:

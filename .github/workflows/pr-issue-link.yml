@@ -8,7 +8,12 @@ name: PR Issue Link Check
 
 on:
   pull_request:
-    types: [opened, edited, reopened, ready_for_review, synchronize]
+    # ── #5814 触发面降频：只留「PR body 会变」的事件类型 ────────────────────────
+    # 本检查读的是 `pull_request.body`（有没有 `Closes #NNN` 关键词）⇒ 只有 body 会变的事件
+    # 才需要重判；`synchronize`（每次 push 到 PR）与 `ready_for_review`（改草稿态）都不改 body
+    # ⇒ 改前每次 push 都白跑一遍（实测 09-27~09-29：319 次）。
+    # `edited` 覆盖后续任何 body 编辑（含补写 `Closes #NNN` 后摘标签那条路径）。
+    types: [opened, reopened, edited]
 
 permissions:
   pull-requests: write

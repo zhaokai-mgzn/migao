@@ -16,9 +16,17 @@ name: H5 Freshness Guard（C 端产物新鲜度）
 # 触发面：产物发布腿完成时（workflow_run：Mini-App CI / 两个已完成腿 / 本单新增的 C 端发布腿）
 #   + main 有新合并 + 手动；⛔ **无 cron**（用户 2026-09-21 裁定，未被推翻）。
 on:
+  # ── #5814 触发面降频：上游收窄到**发布腿**（去掉 PR 面的 `Mini-App CI`）──────────
+  # 本腿的判定对象是「**线上产物** vs `origin/main` 上 `frontend/mini-app/**` 的最近改动」，
+  # 与上游 CI 的**结论**无关 ⇒ `Mini-App CI`（PR 面腿，每个 PR 至少跑一次）的每一次完成都
+  # 白跑一次本腿（实测 09-27~09-29：210 次里绝大多数是这一半；下游读数同源、零信息增量）。
+  # 保留面 = 两条**发布腿**（发布完成 ⇒ 立刻重判新鲜度，这才是「落后了马上知道」的入口）
+  #   + `push: main`（main 有新合并 ⇒ 源码改动时间前进 ⇒ 可能变陈旧）
+  #   + `workflow_dispatch`（一次性诊断 / `no_gate`）。
+  # 🔴 代价（如实登记，见 PR body「接受的缺口」）：上游收窄后，**PR 阶段**的产物陈旧不再被
+  #    提前发现 —— 从「每个 PR 一次」退回「push to main / 发布完成 / 每日定时（若有）」。
   workflow_run:
     workflows:
-      - "Mini-App CI"
       - "Publish worker-h5 (app.migaozn.com/w/)"
       # 本单新增的 C 端发布腿：它发布完成后立刻重判新鲜度（否则要等下一次 push 才知道好了）
       - "Publish C-end H5 (app.migaozn.com 根)"

@@ -67,6 +67,8 @@ REQUIRED_SAMPLE = [
 ]
 
 DRIFT = "Drift Audit (真相源契约)"
+#: #5814 后的**现役**真实锚点（`drift-audit.yml` 的 PR 腿已有意去掉 ⇒ 不再可用）。
+AUTOMERGE_ARM = "Enable auto-merge"
 
 
 def _load_module():
@@ -315,10 +317,16 @@ def test_undecidable_when_merge_state_unknown(fake_gh):
 # ── ⑤ 元判据 --required-diff ──────────────────────────────────────────────────
 
 def test_required_diff_nonempty_is_one(fake_gh):
-    """差集非空 ⇒ 1（存在裸判据：会红但不拦合并）。"""
+    """差集非空 ⇒ 1（存在裸判据：会红但不拦合并）。
+
+    🔴 **#5814 换锚点**：原锚点 `Drift Audit (真相源契约)` 的 `pull_request` 腿已被有意去掉
+    （触发面降频；PR 面 run 251/265 → 0）⇒ 拿它做「差集恰好 1 条」的承载体就恒为空。
+    现役锚点 = `automerge.yml` 的 `Enable auto-merge`（`pull_request_target` 面上、不在 required 里）；
+    **不变式本身一字未改**：差集非空 ⇒ 1。
+    """
     proc = _run(fake_gh, "--required-diff", env=_env(fake_gh))
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert DRIFT in proc.stdout
+    assert AUTOMERGE_ARM in proc.stdout
 
 
 def test_required_diff_empty_is_zero(fake_gh):
@@ -344,13 +352,27 @@ def test_required_diff_unreadable_workflows_is_three(fake_gh, tmp_path):
 
 
 def test_required_diff_lists_real_bare_jobs():
-    """真实仓库锚点：`Drift Audit (真相源契约)` 必须出现在裸判据清单里（#4248 的中心 job）。"""
+    """真实仓库锚点：裸判据清单**非空**，且每条都能追到「哪个 workflow 的哪个 job」。
+
+    ## 锚点为何从 `Drift Audit (真相源契约)` 换成 `Enable auto-merge`（#5814）
+    `drift-audit.yml` 的 `pull_request` 腿已由 #5814 **有意去掉**（触发面降频；PR 面 run
+    251/265 → 0）⇒ 它**不再是**「PR 事件上会跑的 job」，本判据若继续拿它当锚点就会红。
+    🔴 **本判据的语义一字未变**（「裸判据清单非空 + 每个条目可归因到 `<workflow>:<job>`」）——
+    换的只是那个**现役**的真实锚点：`automerge.yml` 的 `Enable auto-merge` 是
+    `pull_request_target` 面上的 job、且**不在** required 集合里 ⇒ 同属「会判红但不拦合并」那一族。
+    （`Enable auto-merge` 同时是另一个文件的判据 2 锚点 ⇒ 它是本仓认可的现役锚点。）
+    """
     mod = _load_module()
     jobs = mod.job_names_on_pull_requests(WORKFLOWS_DIR)
     bare = mod.bare_jobs(jobs, REQUIRED_SAMPLE)
-    assert DRIFT in bare
+    assert bare, "裸判据清单为空 ⇒ `--required-diff` 永远判 0，元判据失去对象（判据在空集上恒真）"
+    assert AUTOMERGE_ARM in bare
     # 每个条目都要能追到「哪个 workflow 的哪个 job」——否则输出不可行动
-    assert jobs[DRIFT].endswith("drift-audit.yml:audit")
+    assert jobs[AUTOMERGE_ARM].endswith("automerge.yml:enable-auto-merge")
+    # 去掉 PR 腿那条**不许**再被读成「会判红但不拦合并」（否则读数在描述一个不存在的面）
+    assert DRIFT not in bare, (
+        "`Drift Audit (真相源契约)` 又出现在裸判据清单里 —— 那说明它的 `pull_request` 腿回来了；"
+        "若是有意恢复（见 .github/workflows/drift-audit.yml 的重启条件），本判据需同批对账")
 
 
 # ── ⑦ 写操作边界 ──────────────────────────────────────────────────────────────

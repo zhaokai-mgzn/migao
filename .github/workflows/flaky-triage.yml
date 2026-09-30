@@ -97,7 +97,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # 只分流 PR 运行（部署/定时/手动不参与）。第二道闸在脚本里（同一判据，双重）
-    if: github.event.workflow_run.event == 'pull_request'
+    #
+    # ── #5814 触发面降频：**上游结论 / 重试**门控（纯放大器治理）─────────────────
+    # 改前只有 `event == 'pull_request'` ⇒ 上游**首次就成功**的腿也触发一次分流，
+    # 而成功的腿**没有任何东西可分**（实测 09-27~09-29：857 次里 758 次 = 上游 success，
+    # `run_attempt > 1` 0 条 ／ 97 次 cancelled ／ 1 次 failure）。
+    # ⚠️ `run_attempt > 1` 这一半**绝不能省**：本腿的职责含「① 第二次绿 ⇒ 打
+    #    `flaky/rerun-green` + `block/merge` + 卸 auto-merge」—— 重跑转绿那一次
+    #    `conclusion=success` 而我们是**需要**知道的；只看 `failure` 会把这条机制打断
+    #    （= 降门禁，绝对不行）。取消档（`cancelled`）**故意不入闸**：它一路走到脚本里
+    #    由 `decide()` 判 `skip`（`MAX_ATTEMPTS` 那条红线），本闸不再多加一种语义。
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.run_attempt > 1
     steps:
       - name: Checkout（台账基线 = main；`workflow_run` 默认取默认分支，显式声明）
         uses: actions/checkout@v7

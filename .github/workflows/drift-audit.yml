@@ -27,6 +27,10 @@ name: Drift Audit (真相源契约)
 # 检查全绿后**秒级自动合并**。新增一个非 required 的检查**不会**拦住合并 ——
 # 所以本 job 在审计失败时给 PR 打 `block/merge`（auto-merge 会跳过带该标签的 PR），
 # 并在恢复后摘掉。这样"红"才真的会**停下合并**，而不只是"多一行日志"。
+# 🔴 **#5814 起：本 workflow 没有 PR 腿 ⇒ 上面这条 `block/merge` 通道在本文件内已无施加点**
+#    （PR 打标的两步随 PR 面一起去掉了 —— 恒假的步骤是另一个形态的"静默放大器"）。
+#    漂移的拦截改由下面「面外漂移的拦截点」的 ② 承担（定时腿 + P1 值班 issue）；
+#    要恢复 PR 阶段的即时拦截，须按 `on:` 块里登记的**重启条件**两条一起做。
 #
 # ── 边界（照实登记，勿当成"已覆盖"）────────────────────────────────────────
 #  · 运行期护栏（结论绑定 (sha, cases_fingerprint, policy_version, 环境指纹) + 用例前置
@@ -42,12 +46,14 @@ name: Drift Audit (真相源契约)
 #    条目 key 是**裸文件名**（如 `deploy-frontend.yml` 的 `stale` 条目），脚本拿它与**仓库相对
 #    全路径**比对 ⇒ 心跳类漂移**结构上永远是面外** ⇒ 没有任何 PR 会因它变红。
 #  · ⇒ 面外漂移的拦截点只有两条，且**都是人**：
-#    ① **PR 腿**：**面内**新增漂移 ⇒ 给该 PR 打 `block/merge`（`automerge.yml` 的 `if:` 会跳过
-#       带该标签的 PR）⇒ **未 arm** 的 PR 被拦；⚠️ **已 arm** 的 PR 标签拦不住（`#4248`：那个
-#       `if:` 只在 arm 时生效，停已 arm 的 PR 要 `gh pr merge --disable-auto`）。本 job **不在**
+#    ① **PR 腿**（🔴 **#5814 起已停用**：PR 面整个去掉了，见 `on:` 块与之上的重启条件）：
+#       **面内**新增漂移 ⇒ 给该 PR 打 `block/merge`（`automerge.yml` 的 `if:` 会跳过带该标签
+#       的 PR）⇒ **未 arm** 的 PR 被拦；⚠️ **已 arm** 的 PR 标签拦不住（`#4248`：那个 `if:`
+#       只在 arm 时生效，停已 arm 的 PR 要 `gh pr merge --disable-auto`）。本 job **不在**
 #       分支保护的 required 集合里 —— 该清单**会漂移**，要用
-#       `gh api repos/<owner>/<repo>/branches/main/protection` **现查**，不许凭名字/印象写死；
+#       `gh api repos/<owner>/<repo>/branches/main/protection` **现查**，不许凭名字/印象写死，
 #       故它的拦截力来自 `block/merge`，不是 required。
+#       （#5814 的停用理由与重启条件见 `on:` 块；下面②的定时腿 + P1 值班是**现役**的拦截通道。）
 #    ② **本文件的定时腿 + P1 值班 issue**：定时腿失败 ⇒ 开/更 issue 并打 `priority/P1`
 #       （值班口径；issue 正文登记「谁被拦」与清零判据）。
 #  · **有意不做**：定时腿失败时给 PR 打 `block/merge`。定时腿**没有 PR**（标签无处施加），而
@@ -68,9 +74,17 @@ name: Drift Audit (真相源契约)
 #      当前 `_period_minutes` 解析不了 ⇒ 落回 3 天阈值（**比本机制更松**，是既有行为，本包不动它）。
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  # ── #5814 触发面降频：**有意没有 `pull_request` 腿** ────────────────────────────
+  # （判据钉住这一事实：`tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py`
+  #   `::test_drift_audit_has_no_pull_request_leg_by_design` ⇒ 别以为是漏了又加回去。）
+  # 改前 PR 腿 = 全仓 PR 面 run 的最大来源之一（实测 09-27~09-29：265 次 run 里 212 次
+  # 是 `pull_request` ⇒ 约 71/日）；而它**不在分支保护的 required 集合**里 —— 它的拦截力
+  # 来自 `block/merge`（`automerge.yml` 的 `if:` 跳过带该标签的 PR，且只对**未 arm** 的 PR 有效）。
+  # 🔴 **代价（如实登记，见 PR body「接受的缺口 + 重启条件」）**：面内新增漂移的**发现延迟**
+  #    从「每个 PR」变成「≤24h（每日档）」，且**丢的是发现延迟、不是拦截力**
+  #    （它本来就不在 required 集合 ⇒ 判红不拦合并）。
+  #    重启条件：若将来要它**在 PR 阶段**拦漂移，须先把它翻进 required 集合 ＋ 恢复 PR 腿
+  #    （两条一起，缺一条都会变成「多一条与它无关的红 / 翻了却永不满足」）。
   schedule:
     # 每日 05:17 CST（UTC+8）= UTC 21:17，避开整点 CI 高峰
     - cron: '17 21 * * *'
@@ -174,47 +188,6 @@ jobs:
           path: drift-audit-report.json
           retention-days: 14
           if-no-files-found: warn
-
-      # ── fail-closed 的执行闸：auto-merge 会跳过带 `block/merge` 的 PR ──────────
-      - name: 审计失败 ⇒ 打 block/merge + 贴修复指引
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set +e
-          BODY=$(mktemp)
-          {
-            echo "❌ **Drift Audit 未通过 —— 本 PR 引入了新的「陈旧快照 / 移动靶」漂移。**"
-            echo ''
-            echo '```'
-            cat /tmp/drift-audit.txt 2>/dev/null || echo "(报告缺失)"
-            echo '```'
-            echo ''
-            echo "**怎么改**：上面的『怎么改（按判据逐条）』已按判据给出处置；"
-            echo "若确认是**应接受的存量**（不是新增回归）："
-            echo '```'
-            echo "python3 scripts/drift_audit.py --regen-baseline --reason '<你在 PR 里写的理由>'"
-            echo '```'
-            echo "契约（判定方式 + 违反后的处置）：\`docs/wiki/truth-source-contract.md\`；"
-            echo "判据集合：\`python3 scripts/drift_audit.py --list-checks\`。"
-            echo ''
-            echo "（已自动打上 \`block/merge\` 以阻止 auto-merge；修复后本 workflow 会自动摘掉。）"
-          } > "$BODY"
-          gh pr comment "$PR" --body-file "$BODY" || true
-          gh pr edit "$PR" --add-label block/merge || true
-          exit 0
-
-      - name: 审计通过 ⇒ 摘 block/merge
-        if: success() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set +e
-          LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
-          echo "$LABELS" | grep -qx 'block/merge' && gh pr edit "$PR" --remove-label block/merge || true
-          exit 0
 
       - name: 定时腿失败 ⇒ 开/更 P1 issue（**值班口径**：本通道不拦合并，见文件头登记）
         if: failure() && github.event_name != 'pull_request'
