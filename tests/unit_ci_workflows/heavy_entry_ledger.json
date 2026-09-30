@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "issue": "#5814",
+  "_what": "全量套件（tests/unit_ci_workflows）的**入口台账**：现取到的每个「会拉起整目录 pytest」的载体都必须在这里登记，并声明它有没有接机器级准入锁（`lock=required` 必须同时有 acquire 与 release / EXIT trap）。未登记即红 —— 将来有人再加一个全量入口却忘了接锁，会当场红，而不是等下一次把开发机打瘫。",
+  "_judged_by": "tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py",
+  "_invariants": [
+    "台账 entries 的 path 集合必须**逐项等于**语料普查现取到的载体集合（双向：漏登记 ⇒ 红；幽灵条目 ⇒ 红）",
+    "`lock=required` 条目的 invocation 片段必须**逐字**出现在载体文件里（防「给不存在的保护盖章」）",
+    "`lock=required` 条目必须**同时**有 acquire 与 release（EXIT trap 形态也算释放面）：只有 acquire ⇒ 一次异常退出就死锁；只有 release ⇒ 没拿过锁",
+    "`lock=exempt` 条目必须写明理由（`reason` 非空且 ≥10 字）—— 不许静默豁免",
+    "台账只许**缩短或改判**（把 required 改成 exempt 必须在 reason 里写清为什么，且要能被现场读数反驳）"
+  ],
+  "entries": [
+    {
+      "path": "verify-all.sh",
+      "carrier": "local-dispatch",
+      "lock": "required",
+      "invocation": "pytest tests/unit_ci_workflows",
+      "tier": "gate",
+      "leg": "ci workflow helper 判据集（ci_helper_leg）",
+      "acquire_site": "macquire / gate 档（case 之前）",
+      "note": "本仓**唯一**由人/agent 会话发起的全量入口。接线 = 进入 gate 档前 acquire、EXIT trap release；拿不到锁 ⇒ 非零退出 + 出声（不静默跳过、不记成 ✅）。"
+    },
+    {
+      "path": ".github/workflows/pr-check.yml",
+      "carrier": "ci-job",
+      "lock": "exempt",
+      "invocation": "pytest tests/unit_ci_workflows",
+      "job": "ci workflow helper unit tests",
+      "reason": "在 GitHub **托管** runner 上跑（`runs-on: ubuntu-latest`），不占本机资源 ⇒ 不需要本机锁。本条目登记它只为「现取集合 ⇄ 台账」双向相等，以及被别的判据引用时有个锚点。"
+    }
+  ],
+  "coverage_boundary": [
+    "只认载体文件里**逐字写出**的整目录 pytest 调用（`pytest … tests/unit_ci_workflows`，允许中间夹 pytest 选项）：`$(…)` / 变量拼接 / 由别的脚本算出来的目标不在面内（假绿方向，不会误伤）。",
+    "用**别的运行器**（vitest / jest / playwright / node --test）拉起同一批 Python 判据的形态不在面内。",
+    "语料 = `git ls-files` 里 `.sh/.py/.yml/.yaml` 且不在 `tests/unit_ci_workflows/**` / `docs/**` / `acceptance/**` / `.agents/**` / `.github/cases/**` 下的文件；台账自己的工具面（两个 .json + 本判据）也排除（引用 ≠ 调用）。",
+    "**散文里的整行引用**被排除：命中行以 `` ` `` / `（` / `(` / `\"` / `'` 开头 ⇒ 不算调用（例：`scripts/post_merge_verify.py` 的模块 docstring 提到那条命令，而它实际只跑**选中的子集**）。这一取舍的代价 = 「行以散文标点开头、后半句真是调用」的形态会漏（假绿方向）。",
+    "本判据**不保证**接入的锁真的生效（= `test_machine_heavy_lock.py` 的事），也**不保证**没有人绕过 `verify-all.sh` 直接 `pytest tests/unit_ci_workflows` —— 那一路没有锁，只在研发模式纪律（`.agent-presets/migao`）与 PR body 的「未固化/边界」里登记。"
+  ]
+}

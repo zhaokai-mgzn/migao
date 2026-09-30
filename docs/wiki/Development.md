@@ -263,6 +263,44 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 - 升级 requirements.txt 后立即本地 `pip install -r requirements.txt`，防依赖版本漂移导致本地/CI 行为不一致。
 - 每日定时真 LLM 任务连续失败 → 停用 schedule（保留 `workflow_dispatch`）修稳后再恢复，防自动开 issue 刷噪音（2026-09-06 已停 e2e-real/xiaobu-acceptance/nightly）。
 
+## 机器级重活并发准入（2026-09-30 固化，issue #5814）
+
+**病（现场实测，不是推断）**：2026-09-30 14:24 CST，三份**同样的**全量 `tests/unit_ci_workflows`
+同时跑在 8 核开发机上 —— ① 自托管 runner 的 CI job（现已停用）② 本会话一个 subagent 的
+`./verify-all.sh gate` ③ **另一个会话**一个 subagent 的 `./verify-all.sh gate`
+（`migao-wt/orders-new-batch5`）；外加 6 个 `node (vitest)` 孤儿（PPID=1）从 13:56 烧到 14:24
+（28 分钟纯浪费）；`load average` 一度 **45.44**，处置后回到 **2.87**。
+⇒ 类级病 = **同一台机器上的重活没有并发准入**（3 份里 2 份是 agent 会话造成的，与 runner 无关）。
+
+**修法（一条命令覆盖三类）**：`scripts/machine-heavy-lock.sh`
+
+```bash
+./scripts/machine-heavy-lock.sh status           # 只读：锁持有者 / load average / PPID=1 孤儿 / top CPU
+./scripts/machine-heavy-lock.sh acquire <名字>    # 拿锁（拿不到 ⇒ 非零退出 + 谁在跑 + 可复制 kill 命令）
+./scripts/machine-heavy-lock.sh release          # 释放（只释放自己持有的那份）
+```
+
+- **锁文件在机器级共享路径**（默认 `$HOME/.migao-heavy.lock`，可用 `MIGAO_HEAVY_LOCK_FILE` 覆盖）——
+  🔴 **绝不能放各自 worktree**：漏掉的正是**跨会话**那一路（两个会话各持各的锁 = 「有锁」与「没锁」
+  在机器上完全一样）。
+- **`acquire` 顺手回收孤儿**（机械动作，不靠人记得）：判定 = `PPID == 1` **且** 进程名命中测试
+  运行器族（node / vitest / jest / playwright / pytest）**且**命令行里有一个 token 落在已知工作根
+  （`_work` / `migao-wt` / 主工作区）之下。**为什么安全**：这类进程的父进程已经没了 ⇒
+  **不可能是任何人正在等的结果**；且用**路径前缀**限定射程 ⇒ **只杀 CI 工作区 / worktree 下的**，
+  **绝不按名字裸杀**（`MIGAO_HEAVY_ROOTS` 可覆盖射程）。
+- **接线**：`./verify-all.sh gate` 是**全量套件的唯一入口**（其余档不拿锁 —— 它们不是同一台机器上的
+  重活）。进入前 `acquire`、`trap … EXIT` 释放；**拿不到锁 ⇒ 非零退出 + 出声**（不是静默跳过、
+  更不是记成 ✅ —— 「没跑」必须长得像「没跑」）。三态语义（✅/❌/⏭️）一字未改。
+- **值守面**：`acquire` 的**拒绝行为** + `status` 读数。**没有常驻守护进程 / launchd agent** ——
+  **拒绝本身就是机制**（不是「提醒你记得去看」）。
+- 🔻 **盖不到的**：有人**绕过脚本**直接 `pytest tests/unit_ci_workflows`（那一路没有锁）；
+  靠研发模式纪律（`.agent-presets/migao`）+ 本节的唯一入口保证。
+
+**判据**：`tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **不误杀** /
+`verify-all.sh` 接线与顺序 / 静态契约）+ `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py`
+（**类级元守卫**：会拉起全量套件的入口必须已登记且接了锁，**未登记即红**；台账 =
+`tests/unit_ci_workflows/heavy_entry_ledger.json`）。
+
 ## 测试分层
 
 | 层 | 工具 | 覆盖要求 |
