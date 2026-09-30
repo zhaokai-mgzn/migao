@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.90.0
+version: 1.91.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -310,6 +310,49 @@ PR 合并前，CI 自动扫描变更文件，按类型强制对应测试（G5 �
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。
+
+### 4.1 部署**只覆盖有改动的模块**（v1.91.0 新增，2026-09-30，issue #5814）
+
+> **规则（来源 = 用户逐字「改了哪个模块就部署哪个模块，**不要动其他镜像**」）**：
+> 一次合并**只部署代码 / 配置面真有改动的那些模块**；**未改动的模块不重建、不重启、不换镜像**。
+
+**判定真值源（别猜，两条并集）**：
+
+| 面 | 载体（唯一真相源） |
+|---|---|
+| 代码面 | 各服务部署腿的 `on.push.paths`：`.github/workflows/deploy-admin-api.yml` / `deploy-ai-agent-service.yml` / `deploy-frontend.yml` |
+| 配置面（与镜像**同源**） | `.github/workflows/deploy-reconcile.yml` 里那条 `reconcile_one <svc> <wf> <svc_path> "<extra>"` 的 **pathspec**（现取实得：admin-api 的 extra = `deploy/swas`） |
+
+**触发面 ⇄ 对账面同源**还有两条**既有机械承载**（**引用它们，不要另写一套**）：
+
+- **漂移判据**：`deploy-reconcile.yml` 的**判据②**（`git log <p>..HEAD -- <pathspec>`，`p` = 该腿**上次成功部署**的
+  commit）——「自上次成功部署起该服务路径**无改动** ⇒ **不补部署**」（承接 #3235 的防 502 窗口本意）；
+- **判据 + 台账**：`tests/unit_ci_workflows/test_config_change_triggers_deploy.py`（MC-023）·
+  `tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json`（「触发面有、对账面没有」的存量缺口，**未登记即红**）。
+
+**现取命令（零成本、可复算）**：
+
+```bash
+# ① 线上在跑的 sha —— 从**容器真身**取（不看 run 结论、不看健康检查：三者可以同时骗人，见 §7.1）
+docker inspect --format '{{.Config.Image}}' <容器名>          # 形如 …/admin-api:sha-<7>；tag 就是 <head 7 位>
+#   （部署腿的 tag 规则现取：IMAGE_TAG=sha-${GITHUB_SHA::7}）
+
+# ② 自那个 commit 起，某服务路径有没有改动 —— **输出为空 ⇒ 该模块不部署**
+git log --oneline <sha-7>..origin/main -- backend/admin-api deploy/swas
+git log --oneline <sha-7>..origin/main -- backend/ai-agent-service
+git log --oneline <sha-7>..origin/main -- frontend/admin-web
+```
+
+**手动部署同理**：先算上面的漂移集，**只触发命中的那条腿**：
+
+```bash
+gh workflow run deploy-admin-api.yml --ref main   # 仅当漂移集**包含** admin-api 时才跑这一条
+```
+
+⛔ **反例（逐字禁止项）**：为「顺手刷一下」重建**未改动模块**的镜像 ⇒
+① 白烧一轮**跨境推送**（本仓实测 **17–33 分钟**，且常卡死在 45 min 上界）；
+② 无谓**重启线上容器**、制造 **502 窗口**（#3235）；
+③ 让「**哪个 commit 在线上**」更难追溯。
 - **部署后验证（2026-09-01 修正：`/actuator/health` 公网 404 是 nginx 屏蔽的预期行为，勿当成故障）**：
   ```bash
   curl -s https://ai-api.migaozn.com/health          # ai-agent → {"status":"healthy"}
@@ -2869,6 +2912,62 @@ python3 scripts/next_case_id.py --help    # 三态退出码：0 = 已给号 / 2 
   射程不变）：重号**进 main 时**仍会红在后合的那个 PR 上 ⇒ 工具是**事前**出口、判据是**事后**拦网，
   两者**不互为替代**；
 - ❌ 本节**不是新门禁、不改任何门禁的通过条件、不新增豁免**。
+
+## 27. 机器级重活准入：**同一台机器上的重活没有并发准入**（v1.91.0 新增，2026-09-30 issue #5814 现场实测）
+
+> **一句话规则（agent 必须照做）**：派重活 / 起长任务**之前**先跑
+> `./scripts/machine-heavy-lock.sh status`；**重活串行**；**先报人类再跑**。
+> 全量套件只有一个入口：`./verify-all.sh gate`（它自己 `acquire`，拿不到锁就**出声拒绝**）。
+
+**病（现场读数，不是推断）**：2026-09-30 14:24 CST，用户报「CPU 100%、机器很卡」。现取：三份**同样的**
+全量 `tests/unit_ci_workflows` 并发跑在 8 核开发机上 —— ① 自托管 runner 的 CI job（现已停用并卸载）
+② 本会话一个 subagent ③ **另一个会话** subagent（`migao-wt/orders-new-batch5`）；外加 6 个
+`node (vitest)` **孤儿**（PPID=1）从 13:56 烧到 14:24（**28 分钟纯浪费**）；`load average` 一度 **45.44**，
+处置后 **2.87**。⇒ 类级病 = **同一台机器上的重活没有并发准入**（3 份里 2 份是 agent 会话造成的，
+与 runner 无关）。
+
+**落码（一条命令覆盖三类）**：`scripts/machine-heavy-lock.sh`
+
+| 子命令 | 作用 |
+|---|---|
+| `acquire <名字>` | **机器级**并发准入：已被活的 PID 持有 ⇒ **非零退出** + 打印谁在跑（名字/PID/worktree/已跑多久）+ **可复制的一条 kill 命令**；陈旧锁 ⇒ 自己回收；内容含 `name/pid/started_at/worktree/cwd`。**顺手回收孤儿**（机械动作） |
+| `release` | 释放（含 `trap … EXIT` 形态，异常退出也释放） |
+| `status` | 只读：锁持有者 / `load average` / `PPID=1` 孤儿扫描 / top CPU（**只报告，不动作**） |
+
+- 🔴 **锁文件是机器级共享路径**（默认 `$HOME/.migao-heavy.lock`）：**绝不能放各自 worktree** ——
+  漏掉的正是**跨会话**那一路。
+- 🔴 **孤儿回收的安全理由**（这条必须能被复核）：判定 = `PPID == 1` **∧** 进程名命中测试运行器族
+  **∧** 命令行里有一个 token 落在已知工作根（`_work` / `migao-wt` / 主工作区）之下。父进程已经没了 ⇒
+  **不可能是任何人正在等的结果**；**路径前缀**限定射程 ⇒ 只杀 CI 工作区 / worktree 下的，
+  **绝不按名字裸杀**（`MIGAO_HEAVY_ROOTS` 可覆盖）。
+- **接线**：只包**会拉起全量套件**的那一档（`gate`；其余档不拿锁）；**拿不到锁 ⇒ 非零退出 + 出声**
+  （不是静默跳过、也不记成 ✅）。⚠️ **不改** `verify-all.sh` 既有的三态语义（✅ / ❌ / ⏭️）。
+- **值守面（铁律 10）**：= `acquire` 的**拒绝行为** + `status`。**没有常驻守护 / launchd agent** ——
+  **拒绝本身就是机制**，不是「提醒你去看看」。
+- 🔻 **如实登记的缺口**：盖不到「有人**绕过脚本**直接 `pytest tests/unit_ci_workflows`」—— 那一路没有锁，
+  靠本节的纪律 + `verify-all.sh` 的唯一入口，**不是**任何机械拦截。
+
+**判据（本条的承载体）**：
+- 实例面 = `tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **同名非孤儿不误杀** /
+  路径不在工作根下不误杀 / `verify-all.sh` 接线与**顺序**（`acquire` 必须在任何重活派发之前）/
+  准入守卫的 then 分支必须是 `exit 1`（控制流判据））—— 全部红证只在**自己造的临时进程**上跑，
+  `MIGAO_HEAVY_ROOTS` 指向 `tmp_path`（真杀面只可能是本判据造的那几个 PID）。
+- 类级元守卫 = `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py` + 台账
+  `tests/unit_ci_workflows/heavy_entry_ledger.json`：**会拉起全量套件的入口必须已登记**（现取集合
+  ⇄ 台账**双向相等**）、**接了锁的条目必须同时有 acquire 与 release**、豁免必须写明理由 ——
+  **未登记即红**（将来有人再加一个全量入口却忘了接锁，当场红，而不是等下一次把机器打瘫）。
+
+**边界（照实登记，§19.1）**：元守卫只认载体里**逐字写出**的整目录 pytest 调用（`$(…)` / 变量拼接 /
+别的运行器不在面内）；台账只裁**入口**，不保证接入的锁真的生效（那是实例判据的事）；
+也**不保证**没有人绕过入口。
+
+- v1.91.0（2026-09-30 **新增 §27「机器级重活准入」+ 落码 `scripts/machine-heavy-lock.sh` + `verify-all.sh gate` 接线 + 类级入口台账**，本次；来源 = issue #5814 的 2026-09-30 14:24 CST 现场实测：三份同样的全量 `tests/unit_ci_workflows` 并发跑在 8 核开发机上（其中 **2 份是 agent 会话**造成的，与 runner 无关）、6 个 `node (vitest)` 孤儿烧了 28 分钟、`load average` 一度 **45.44**）：
+  ① **落码**（`scripts/machine-heavy-lock.sh`）：`acquire`（机器级共享锁文件 `$HOME/.migao-heavy.lock`，**不放 worktree** —— 漏掉的正是跨会话那一路）/ `release`（含 EXIT trap 形态）/ `status`（持有者 + load + `PPID=1` 孤儿 + top CPU，只读）；`acquire` 顺手**回收孤儿**（判定 = `PPID==1` ∧ 测试运行器族 ∧ 命令行有 token 落在已知工作根下 ⇒ 父已死 ⇒ **不可能是任何人正在等的结果**；射程靠**路径前缀**收敛，**绝不按名字裸杀**）。
+  ② **接线（唯一入口）**：`verify-all.sh` 的 `gate` 档（全仓**唯一**会拉起全量套件的一档）进入前 `acquire`、`trap … EXIT` 释放；**拿不到锁 ⇒ 非零退出 + 出声**（不静默跳过、不记成 ✅）。⚠️ 既有的三态语义（✅ / ❌ / ⏭️）一字未改；`quick/full/frontend/backend/agent/redproof` **不拿锁**（它们不是同一台机器上的重活）。
+  ③ **判据**：实例 = `tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **同名非孤儿与工作根之外都不误杀** / 接线与**顺序** / 准入守卫 then 分支必须 `exit 1` / EXIT trap 静态契约；**7 条注入式红证实测全红**，红证只在自己造的临时进程上跑）；类级元守卫 = `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py` + 台账 `tests/unit_ci_workflows/heavy_entry_ledger.json`（现取集合 ⇄ 台账**双向相等**、`lock=required` 必须同时有 acquire 与 release、豁免必须写理由、**未登记即红**）。
+  ④ **值守面取舍**：**不加常驻守护**（不新增 launchd / 常驻进程）—— 值守面 = `acquire` 的**拒绝行为** + `status`；**拒绝本身就是机制**。
+  **未实装 / 边界（照实登记，§19.1）**：元守卫只认载体里逐字写出的整目录 pytest 调用（`$(…)` / 变量拼接 / 别的运行器不在面内）；台账不保证接入的锁真的生效；**盖不到**「绕过脚本直接 `pytest tests/unit_ci_workflows`」那一路（无锁，靠纪律 + 唯一入口）。本节**不改任何门禁的通过条件、不新增豁免**。
+  ⑤ **同批并入（用户逐字要求「改了哪个模块就部署哪个模块，不要动其他镜像，这个原则应该写进研发模式」）**：新增 **§4.1「部署只覆盖有改动的模块」** —— 引用既有机制（各腿 `on.push.paths` · `deploy-reconcile.yml` 判据②的漂移判据 · `test_config_change_triggers_deploy.py` + `reconcile_trigger_paths_ledger.json`）而**不另写一套口径**，并给出两条**现取命令**（从容器真身取线上 sha + `git log <sha>..origin/main -- <路径>`）+ 手动部署只触发命中腿的写法 + 逐字反例。⚠️ **机械守卫本包只登记不实现**（避免与在飞的部署包抢同一批 `deploy-*.yml` / `deploy/swas/**` 文件），缺口与建议形态写在 PR body 的「未固化项」。
 
 ## 版本沿革（v1.1 → v1.82.0）
 - v1.90.0（2026-09-30 **新增 §15.7「改 web 页面 ⇒ 必跑一轮 Playwright 页面多模态验收」+ 可执行承载体**，本次；来源 = 用户逐字「改web页面都要求进行一轮Playwright页面多模态验收，写进米高研发模式中」）：

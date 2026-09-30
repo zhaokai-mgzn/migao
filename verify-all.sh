@@ -692,6 +692,52 @@ fi
 # 「无未提交改动时控制台不得出现『未提交』」做**防误伤**断言，这里的结构性提示会误触它。
 echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/main...HEAD ∪ 工作区改动）"
 
+# ── 机器级重活并发准入（issue #5814）──────────────────────────────────────────
+# 为什么（2026-09-30 14:24 CST 现场实测，不是推断）：三份**同样的**全量 `tests/unit_ci_workflows`
+# 同时跑在 8 核开发机上 —— ① 自托管 runner 的 CI job（现已停用）② 本会话一个 subagent
+# ③ **另一个会话**一个 subagent（`migao-wt/orders-new-batch5`）；外加 6 个 `node (vitest)` 孤儿
+# （PPID=1）烧了 28 分钟；`load average` 一度 45.44。3 份里 2 份是 agent 会话造成的 ⇒ 类级病 =
+# **同一台机器上的重活没有并发准入**（与 runner 无关）。
+#
+# ⚠️ 只包**会拉起全量套件**的那一档（`gate` 档的 `ci workflow helper 判据集` 腿）。
+#    其余档（quick / full / frontend / backend / agent / redproof）**不拿锁** —— 它们不是
+#    「同一台机器上的重活」，给它们加锁只会让并行开发无谓串行（那是另一种浪费）。
+#
+# ⚠️ 不改变本脚本既有的三态语义（✅ / ❌ / ⏭️）：准入在最外层，拿不到锁时**非零退出 + 出声**，
+#    不是静默跳过、也不是记成通过（本仓口径：「没跑」必须长得像「没跑」）。
+heavy_lock_wanted() {
+  [ "$MODE" = "gate" ]
+}
+macquire() {
+  heavy_lock_wanted || return 0
+  local rc=0
+  "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    echo "❌ 机器级重活准入被拒（exit ${rc}）—— 本次**没有跑**任何检查（这不是「通过」）"
+    echo "   现场读取：$ROOT/scripts/machine-heavy-lock.sh status"
+    return "${rc}"
+  fi
+  # EXIT trap：异常退出（Ctrl-C / 被杀 / 中途 return）也必须释放；release 自己幂等。
+  trap '"$ROOT/scripts/machine-heavy-lock.sh" release >/dev/null 2>&1 || true' EXIT
+  return 0
+}
+# ⚠️ 必须在**任何重活派发之前**（`case "$MODE" in` 之前）—— 接线挪到 `report`/`gate_check` 之后
+#    就等于「重活已经开跑了才拿锁」。判据 = tests/unit_ci_workflows/test_machine_heavy_lock.py
+#    的 `TestVerifyAllWiring::test_acquire_happens_before_any_heavy_dispatch`（现取顺序，不是文本 grep）。
+
+# ⚠️ **必须直接调用**（不是命令替换 / 子 shell）：`macquire` 里的 `trap … EXIT` 是给**本 shell**
+#    挂的；若把它放进子 shell（`$(macquire)` / `if <子shell>` 的形态），那个子 shell 一退出
+#    EXIT 就触发 ⇒ **锁当场被释放**，而外层重活才刚要开始（准入形同虚设，且**不会有东西变红**
+#    —— 这正是本单最该防的形态；判据见 test_machine_heavy_lock.py 的 guard_body 与 held_while 两条）。
+macquire
+LOCK_RC=$?
+if [ "$LOCK_RC" -ne 0 ]; then
+  # 拿不到锁 ⇒ 出声拒绝并**非零退出**。⚠️ 此处不得回退成「跳过」或「记 ✅」——
+  # 本档存在的意义就是真跑全量套件，「没跑」不得等于「通过」。
+  exit 1
+fi
+
+
 case "$MODE" in
   quick)
     echo "========== MIGAO 快速验证 =========="

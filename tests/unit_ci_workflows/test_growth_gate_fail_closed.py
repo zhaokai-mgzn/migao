@@ -217,6 +217,11 @@ def _make_repo(tmp_path) -> Path:
         "cases:\n  - id: MC-012\n    title: stub\n    tier: normal\n", encoding="utf-8"
     )
     shutil.copy(VERIFY_ALL, repo / "verify-all.sh")
+    # 机器级重活锁的真实现（issue #5814）：`verify-all.sh` 的 `gate` 档会调它（桩仓库缺它 ⇒ acquire
+    # 127 ⇒ gate 非零退出 ⇒ 本文件全部用例假红）。锁文件由 `run_gate()` 指到 repo **之外**的
+    # 临时路径（不碰共享锁、也不在 repo 里留 untracked 改动）。
+    shutil.copy(REPO_ROOT / "scripts" / "machine-heavy-lock.sh",
+                repo / "scripts" / "machine-heavy-lock.sh")
     shutil.copy(GATE_PY, repo / ".github" / "growth_gate.py")
     shutil.copy(YAML_LIGHT, repo / ".github" / "yaml_light.py")
     # 桩规则源：**一条无害规则**（不是空 modules）—— 本文件只关心「哪些文件进入弱断言扫描集」。
