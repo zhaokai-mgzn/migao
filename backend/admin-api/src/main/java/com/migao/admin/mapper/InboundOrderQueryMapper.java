@@ -37,12 +37,14 @@ public interface InboundOrderQueryMapper {
                    o.posted_by                 AS postedBy,
                    o.created_at                AS createdAt,
                    COALESCE(a.item_count, 0)   AS itemCount,
-                   COALESCE(a.total_qty, 0)    AS totalQuantity
+                   COALESCE(a.total_qty, 0)    AS totalQuantity,
+                   a.batch_nos                 AS batchNos
               FROM inbound_orders o
               LEFT JOIN (
                     SELECT inbound_order_id,
                            COUNT(*)      AS item_count,
-                           SUM(quantity) AS total_qty
+                           SUM(quantity) AS total_qty,
+                           string_agg(batch_no, ',' ORDER BY batch_no) AS batch_nos
                       FROM inbound_order_items
                      WHERE deleted = 0
                      GROUP BY inbound_order_id

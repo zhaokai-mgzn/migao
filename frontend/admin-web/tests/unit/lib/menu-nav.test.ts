@@ -1,4 +1,4 @@
-// case_ids: UI-028, PR-106, PR-038
+// case_ids: UI-028, PR-106, PR-038, UI-074
 /**
  * 侧边栏导航**纯函数**穷举（issue #5271）。
  *
@@ -252,6 +252,9 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
     ['/production/remnants 同时命中 /production ⇒ 取最长', '/production/remnants', '/production/remnants'],
     ['/production/processing 同时命中 /production ⇒ 取最长（#5778 起该项归生产管理组）', '/production/processing', '/production/processing'],
     ['/inbound-orders 只命中自己', '/inbound-orders', '/inbound-orders'],
+    // issue #5844：建单页从弹窗改成独立整页 ⇒ 深链 /inbound-orders/new 必须仍高亮「入库单」
+    // （侧边栏 + 面包屑都靠 resolveActivePath；漏了会让新页「哪一项都不高亮」）
+    ['/inbound-orders/new 归「入库单」（issue #5844）', '/inbound-orders/new', '/inbound-orders'],
     ['/notifications（独立项）', '/notifications', '/notifications'],
     // issue #4439：真实菜单下的**用户可见判据** —— 旧深链必须高亮「生产看板」
     ['旧深链 /processing-orders/{id}/production ⇒ 高亮「生产看板」（issue #4439）', '/processing-orders/88/production', '/production'],

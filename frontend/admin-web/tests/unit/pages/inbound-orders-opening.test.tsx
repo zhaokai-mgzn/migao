@@ -1,10 +1,11 @@
 // case_ids: PR-062
 //
 // 批次建账/初始化入口（V118 / issue #5153）—— **前端**动线：
-//   ① 单条录入：建单弹窗把来源选成「期初建账」⇒ 出现「旧系统批次号」列，
-//      **0.5 米的实物尾料能提交**（改前被 `≥1 米` 在提交前挡下，见
-//      tests/unit/pages/inbound-orders.test.tsx 里那条改成 0 的判据）；
-//   ② Excel 批量：模板下载 + 上传 + 幂等键（导入标识）+ **逐行校验报告**渲染。
+//   ① 单条录入：来源选「期初建账」⇒ 出现「旧系统批次号」列、**0.5 米的实物尾料能提交**
+//      —— 🔴 该动线随建单入口一起**迁到独立整页** `/inbound-orders/new`（issue #5844），
+//      判据落在 `tests/unit/pages/inbound-orders-new.test.tsx`（**一条未弱化**，只是换了落点）；
+//   ② Excel 批量（本文件；仍在列表页的弹窗里）：模板下载 + 上传 + 幂等键（导入标识）
+//      + **逐行校验报告**渲染。
 //   ⚠️ 判据本体在 `src/lib/stock-quantity.ts`（下限 > 0）与后端 admin-api；
 //   本文件守的是「它们**确实被接进了这条动线**」—— 前端不接线，后端再对也没用。
 //   后端侧判据：backend/admin-api/src/test/java/com/migao/admin/service/
@@ -15,11 +16,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 const mockList = vi.fn()
 const mockDetail = vi.fn()
-const mockCreate = vi.fn()
 const mockPost = vi.fn()
 const mockCancel = vi.fn()
-const mockGetProducts = vi.fn()
-const mockGetProduct = vi.fn()
 const mockOpeningImport = vi.fn()
 const mockOpeningTemplate = vi.fn()
 
@@ -27,15 +25,15 @@ vi.mock('@/lib/api', () => ({
   inboundOrderApi: {
     list: (...a: unknown[]) => mockList(...a),
     detail: (...a: unknown[]) => mockDetail(...a),
-    create: (...a: unknown[]) => mockCreate(...a),
+    create: vi.fn(),
     post: (...a: unknown[]) => mockPost(...a),
     cancel: (...a: unknown[]) => mockCancel(...a),
     openingImport: (...a: unknown[]) => mockOpeningImport(...a),
     openingTemplate: (...a: unknown[]) => mockOpeningTemplate(...a),
   },
   productApi: {
-    getProducts: (...a: unknown[]) => mockGetProducts(...a),
-    getProduct: (...a: unknown[]) => mockGetProduct(...a),
+    getProducts: vi.fn(),
+    getProduct: vi.fn(),
   },
 }))
 
@@ -55,16 +53,6 @@ const listRow = {
   totalAmount: 6.25,
   itemCount: 1,
   totalQuantity: 0.5,
-}
-
-const product = { id: 'prod-1', name: '遮光窗帘布', skuCode: 'HUOHAO-01' }
-const sku = {
-  id: 11,
-  productId: 'prod-1',
-  colorName: '米白',
-  doorWidth: '2.8',
-  stock: 0,
-  price: 12.5,
 }
 
 /** 逐行报告：一行通过、一行 2.755 被拒 —— 与后端「全或无」语义一致（created=false） */
@@ -88,67 +76,6 @@ describe('批次建账入口（V118 / issue #5153，PR-062）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockList.mockResolvedValue({ data: { data: [listRow] } })
-    mockGetProducts.mockResolvedValue({ data: { data: { items: [product] } } })
-    mockGetProduct.mockResolvedValue({ data: { data: { ...product, skus: [sku] } } })
-    mockCreate.mockResolvedValue({ data: { data: {} } })
-  })
-
-  it('单条录入：来源选「期初建账」⇒ 出现旧系统批次号列，**0.5 米能提交**（改前被 ≥1 挡下）', async () => {
-    render(<InboundOrdersPage />)
-    await screen.findByText('RK-20260924-0301')
-
-    fireEvent.click(screen.getByRole('button', { name: /新建入库单/ }))
-    fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
-    fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }))
-    fireEvent.click(await screen.findByRole('checkbox'))
-
-    // 来源缺省 = 采购收货 ⇒ **没有**旧系统批次号列（那一列对采购入库没有意义：
-    // 旧系统批次号与系统批次号两列两义，填了后端会拒）
-    expect(screen.queryByLabelText(/旧系统批次号/)).toBeNull()
-
-    // 切到「期初建账」⇒ 明细表多出「旧系统批次号」一列（可填、随行提交）
-    fireEvent.change(screen.getByLabelText('单据来源'), { target: { value: 'opening' } })
-    expect(screen.getByText('旧系统批次号')).toBeInTheDocument()
-    expect(await screen.findByLabelText(/旧系统批次号/)).toBeInTheDocument()
-
-    // 🔴 本单的核心：0.5 米的实物尾料**不再**被提交前校验挡下
-    fireEvent.change(screen.getByLabelText(/数量$/), { target: { value: '0.5' } })
-    fireEvent.change(screen.getByLabelText(/旧系统批次号/), { target: { value: 'OLD-2024-0001' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
-
-    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
-    const payload = mockCreate.mock.calls[0][0]
-    expect(payload.source).toBe('opening')
-    expect(payload.items).toEqual([
-      {
-        productId: 'prod-1',
-        skuId: 11,
-        quantity: 0.5,
-        unitCost: null,
-        dyeLot: null,
-        legacyBatchNo: 'OLD-2024-0001',
-        rollLengthM: null,
-      },
-    ])
-    const { toast } = await import('sonner')
-    expect(toast.error).not.toHaveBeenCalled()
-  })
-
-  it('采购收货（缺省来源）不提交旧系统批次号（填了后端会拒 —— 两列两义）', async () => {
-    render(<InboundOrdersPage />)
-    await screen.findByText('RK-20260924-0301')
-
-    fireEvent.click(screen.getByRole('button', { name: /新建入库单/ }))
-    fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
-    fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }))
-    fireEvent.click(await screen.findByRole('checkbox'))
-    fireEvent.change(await screen.findByLabelText(/数量$/), { target: { value: '30' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
-
-    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
-    const payload = mockCreate.mock.calls[0][0]
-    expect(payload.source).toBe('purchase')
-    expect(payload.items[0].legacyBatchNo).toBeNull()
   })
 
   it('批量导入：下载模板 + 上传 + 幂等键 ⇒ 逐行校验报告逐行渲染（失败行给原因）', async () => {

@@ -2989,6 +2989,13 @@ export interface InboundOrderLine {
   itemCount: number
   /** 明细总数量（聚合） */
   totalQuantity: number
+  /**
+   * 该单**已生成**的批次号（聚合，逗号分隔；issue #5844）。
+   *
+   * 过账时**逐行**生成（一行 = 一个批次）⇒ 列表只能是聚合展示；草稿**未过账**时为
+   * `null`/空串（草稿不发号：批次号 = 「真的收货了」的标识）—— **不得**把空读成「没有批次」。
+   */
+  batchNos?: string | null
 }
 
 /** 入库单明细行（**一行 = 一个批次**） */

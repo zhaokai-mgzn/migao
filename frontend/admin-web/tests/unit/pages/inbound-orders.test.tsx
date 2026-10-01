@@ -1,9 +1,12 @@
-// case_ids: PR-037
+// case_ids: PR-037, UI-074
 //
 // PR-037（issue #5034，V111）：入库单页面 —— 「建单（草稿，不动库存）→ 过账（自动生成批次号 +
 //   自动加库存）→ 批次可追溯」这条动线在**前端**的可达性。
-//   本文件只守前端能守的部分：页面能渲染列表、建单弹窗把明细按「一行 = 一个批次」提交、
-//   数量「≥1 且最多 1 位小数」在**提交前**就被挡住（不是等后端 400）、过账按钮只在草稿态出现。
+//   本文件只守**列表页**能守的部分：页面能渲染列表、建单入口**导航到独立整页**
+//   `/inbound-orders/new`（issue #5844：建单不再是弹窗）、批次号在列表可见（UI-074）、
+//   过账按钮只在草稿态出现。
+//   🔴 建单表单本身的判据（一行 = 一个批次 / 数量口径 / 期初建账 / 明细批次号列）已随建单入口
+//   迁到 `tests/unit/pages/inbound-orders-new.test.tsx`（**一条未弱化**，只是换了落点）。
 //   （小数口径的判据本体见 tests/unit/lib/stock-quantity.test.ts 与 inbound-orders-decimal.test.tsx）
 //   「过账真的加了库存 / 批次号真的生成了 / 成本真的按移动加权平均算了」由后端守：
 //   backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java（PR-029~033）。
@@ -34,6 +37,29 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
+}))
+
+// 导航断言要拿到**稳定**的 push（setup.ts 里的 next/navigation mock 每次调用都新建 vi.fn）
+const { mockPush, stableRouter } = vi.hoisted(() => {
+  const mockPush = vi.fn()
+  return {
+    mockPush,
+    stableRouter: {
+      push: mockPush,
+      replace: vi.fn(),
+      back: vi.fn(),
+      forward: vi.fn(),
+      refresh: vi.fn(),
+      prefetch: vi.fn(),
+    },
+  }
+})
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => stableRouter,
+  usePathname: () => '/inbound-orders',
+  useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({}),
 }))
 
 import InboundOrdersPage from '@/app/(dashboard)/inbound-orders/page'
@@ -120,64 +146,64 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '' })
   })
 
-  it('建单：勾选 SKU 后按「一行 = 一个批次」提交，数量与单价随行提交', async () => {
-    mockCreate.mockResolvedValue({ data: { data: draftDetail } })
+  it('「新建入库单」**导航**到独立整页 /inbound-orders/new（issue #5844：不再是弹窗）', async () => {
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')
 
     fireEvent.click(screen.getByRole('button', { name: /新建入库单/ }))
-    // 商品搜索结果出现后选中商品 → 加载 SKU
-    fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
-    const productBtn = await screen.findByRole('button', { name: /遮光窗帘布/ })
-    fireEvent.click(productBtn)
 
-    const skuCheckbox = await screen.findByRole('checkbox')
-    fireEvent.click(skuCheckbox)
-
-    // 明细行出现：数量默认 1，改为 30、填单价 12.5、填缸号
-    const qty = await screen.findByLabelText(/数量$/)
-    fireEvent.change(qty, { target: { value: '30' } })
-    fireEvent.change(screen.getByLabelText(/单价$/), { target: { value: '12.5' } })
-    fireEvent.change(screen.getByLabelText(/缸号$/), { target: { value: 'G-2026-0912' } })
-
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
-
-    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
-    const payload = mockCreate.mock.calls[0][0]
-    // 采购收货（缺省来源）不得带旧系统批次号（V118 / issue #5153：两列两义，填了后端会拒）
-    expect(payload.source).toBe('purchase')
-    expect(payload.items).toEqual([
-      {
-        productId: 'prod-1',
-        skuId: 11,
-        quantity: 30,
-        unitCost: 12.5,
-        dyeLot: 'G-2026-0912',
-        legacyBatchNo: null,
-        rollLengthM: null,
-      },
-    ])
-    // 草稿态提交 —— 不得调过账
-    expect(mockPost).not.toHaveBeenCalled()
+    expect(mockPush).toHaveBeenCalledWith('/inbound-orders/new')
+    // 🔴 本页**不得**因此出现建单表单：建单是那个整页的事（改前这里弹 `Modal`、
+    //    商品结果被页脚截断 = 用户说的「布局很怪异」）
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '保存为草稿' })).not.toBeInTheDocument()
   })
 
-  it('数量越界（0）⇒ 提交前就被挡住（不把 0 米发给后端），且不调建单接口', async () => {
+  it('列表有「批次号」列：已过账显示真值、草稿显示「过账后生成」、作废显示「-」（UI-074）', async () => {
+    mockList.mockResolvedValue({
+      data: {
+        data: [
+          { ...draftRow, id: 'o-2', inboundNo: 'RK-20260923-0002', status: 'posted', batchNos: 'PC-20260923-0001' },
+          { ...draftRow, batchNos: null },
+          { ...draftRow, id: 'o-3', inboundNo: 'RK-20260923-0003', status: 'cancelled', batchNos: null },
+        ],
+      },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0002')
+
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('批次号')).toBeInTheDocument()
+
+    const cellOf = (no: string) =>
+      within(screen.getByText(no).closest('tr') as HTMLElement).getByTestId('inbound-batch-nos')
+    // 已过账：显示服务端给的真值（前端不生成号段）
+    expect(cellOf('RK-20260923-0002').textContent).toBe('PC-20260923-0001')
+    // 草稿：未过账 ⇒ 「过账后生成」（批次号 = 「真的收货了」的标识，草稿不发号）
+    expect(cellOf('RK-20260923-0001').textContent).toBe('过账后生成')
+    // 作废：永远不会过账 ⇒ 「-」，**不**谎报成「过账后生成」
+    expect(cellOf('RK-20260923-0003').textContent).toBe('-')
+  })
+
+  it('一个单多批次 ⇒ 聚合成「首个 等 N 个」（列表不把 N 个批次铺成 N 行）', async () => {
+    mockList.mockResolvedValue({
+      data: {
+        data: [
+          {
+            ...draftRow,
+            status: 'posted',
+            batchNos: 'PC-20260923-0001,PC-20260923-0002,PC-20260923-0003',
+          },
+        ],
+      },
+    })
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')
 
-    fireEvent.click(screen.getByRole('button', { name: /新建入库单/ }))
-    fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
-    fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }))
-    fireEvent.click(await screen.findByRole('checkbox'))
-
-    // ⚠️ 下限自 issue #5153 起是「大于 0」（0.5 米的尾料**可以**提交，见
-    //    inbound-orders-opening.test.tsx）；这里守的是「0 仍被挡住」。
-    fireEvent.change(await screen.findByLabelText(/数量$/), { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
-
-    expect(mockCreate).not.toHaveBeenCalled()
-    const { toast } = await import('sonner')
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('最多 1 位小数'))
+    const cell = within(screen.getByText('RK-20260923-0001').closest('tr') as HTMLElement).getByTestId(
+      'inbound-batch-nos',
+    )
+    expect(cell.textContent).toBe('PC-20260923-0001 等 3 个')
   })
 
   it('详情：草稿态显示「过账后生成」且有过账按钮；过账后显示批次号、过账按钮消失', async () => {
