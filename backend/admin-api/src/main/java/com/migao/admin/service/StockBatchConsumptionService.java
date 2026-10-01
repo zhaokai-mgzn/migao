@@ -56,6 +56,15 @@ import java.util.Set;
  * 而**异常不逸出事务边界 ⇒ 不会回滚**。⇒ 若在写库之后再抛业务异常，就会留下「有加工单、扣了半截」
  * 的半成品（同 #4116 对工序实例 payload 的处置）。故本服务的纪律是：
  * <b>{@link #plan} 只读校验（任何业务异常都在这里抛完）；{@link #apply} 只落账、不再抛业务异常。</b>
+ * （这条纪律针对**派工**这条链；盘点走 {@link #applyStocktake} 这个独立入口，「校验全部先于写入」
+ * 由 {@code BatchStocktakeService#stocktake} 承担 —— 见下节。）
+ *
+ * <h2>按批次盘点（V143，issue #5865）—— 批次账的第三个写面</h2>
+ * {@link #applyStocktake} 是**盘点差异**的唯一落账点：一行 = 一个批次的一次调整
+ * （{@code reason='stocktake'} + {@code stocktake_run_id} 幂等键；加工单号 / 订单号 / 订单明细行
+ * 三个扣料专属列**留空** —— 由 DB 约束 {@code ck_batch_consumption_source_shape} 钉住）。
+ * 全仓**所有**对 {@code stock_batch_consumptions} 的 insert 都住在<b>本类</b> —— 这不是纪律而是判据：
+ * {@code tests/unit_ci_workflows/test_batch_stocktake_write_point.py}（写入点唯一，未登记即红）。
  *
  * <h2>扣减米数 = 排料口径（V119，issue #5158）—— 「省料」真正产生的地方</h2>
  * 本单之前，扣减米数 = 公式米数（{@code toStockScaleByCeiling(order_items.quantity)}）⇒ 哪怕排料
