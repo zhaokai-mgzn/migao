@@ -175,6 +175,33 @@ describe('新建订单页 · 加急 / 到货日（PR-079 判据 2：缺省不变
     expect(Object.prototype.hasOwnProperty.call(body, 'priority')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(body, 'priorityLevel')).toBe(false)
   })
+
+  it('「要求到货日」的 label 与日期控件在**同一行**（issue #5915）：label 不再独占一行、控件不再撑满整格', async () => {
+    render(<NewOrderPage />)
+    await screen.findByText('新增订单')
+
+    const input = screen.getByLabelText('要求到货日') as HTMLInputElement
+    // label 仍是**真 label**（`getByLabelText` 取得到已经证明关联生效；这里再把关联本身钉死）
+    const label = screen.getByText('要求到货日', { selector: 'label' }) as HTMLLabelElement
+    expect(input.id).toBe('requiredDeliveryDate')
+    expect(label.htmlFor).toBe(input.id)
+
+    // 🔴 靶心（改前必红）：label 与控件是**同一个行容器的兄弟**，且该容器是 flex 行。
+    //    改前两者的父元素是那个**竖排**的 `min-w-[12rem]` 格（label 是 `block` + `mb-1.5`、控件 `w-full`）
+    //    ⇒ 下面第 1 条（row 不是 flex）当场红。
+    const row = label.parentElement as HTMLElement
+    expect(row).toBe(input.parentElement)
+    expect(row.className).toMatch(/(^|\s)flex(\s|$)/)
+    expect(row.className).toMatch(/(^|\s)items-center(\s|$)/)
+    // label 不再是「独占一行的块」：不得带 block / mb-*
+    expect(label.className).not.toMatch(/(^|\s)block(\s|$)/)
+    expect(label.className).not.toMatch(/(^|\s)mb-\d/)
+    // 控件不再撑满整格（并排后被 `w-full` 撑开的正是「另起一行」的成因）
+    expect(input.className).not.toMatch(/(^|\s)w-full(\s|$)/)
+
+    // 提示仍在（另起一行、文案一字未改）：本单只动排法，不动口径
+    expect(screen.getByText(/留空 = 未指定（不填就是不填，不猜一个日期）/)).toBeInTheDocument()
+  })
 })
 
 describe('订单列表页 · 加急徽标 / 到货日（PR-079 读面）', () => {

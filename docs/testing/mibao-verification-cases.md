@@ -6592,11 +6592,11 @@
 数据: 判据 7·**改单三态**：`isUrgent=null` = 不改（只改加急时到货日**不进 SET**，不被顺手抹掉）；`requiredDeliveryDate=""` = **清空**（必须真的写这一列 —— MyBatis-Plus 默认 NOT_NULL 策略会跳过 null 字段，走 `updateById` 永远清不掉）；`YYYY-MM-DD` = 设值。**fail-closed**：`2026/10/01` / `"  "`（全空白）/ `2026-13-45` / 两字段都不传 ⇒ 显式拒绝，且**一次 update 都不发**（红证 = 静默回落成「清空」⇒ 拒绝断言红且「零写入」断言红）。
 数据: 🔴 **wire 契约**：JSON 键名必须是 `isUrgent`（不是 `urgent`）—— 红证 = 把 DTO 字段从 `Boolean` 改成原生 `boolean` ⇒ Lombok getter 变 `isUrgent()` ⇒ Jackson 属性名变 `urgent` ⇒ 前端读不到加急标记。到货日出线格式 `YYYY-MM-DD`，其前提（`application.yml` 的 `write-dates-as-timestamps: false`）**读真值源**断言，不是在测试里自选格式。
 数据: 判据 6·**不损失客户（真库双向）**：标加急/填到货日、以及取消加急/清空到货日 ⇒ `total_amount` / `actual_amount` / `discount_amount` **逐值不变**。
-数据: **订单页 UI（§15.1 断言结果可见）**：订单新建页与详情页的加急开关 + 到货日选择器写进请求体；**不勾/不填 ⇒ 请求体里不出现这两个键**（不得默认勾上加急）；列表页加急角标随值出现/消失（红证 = 把缺省改成「总是加急」⇒ 角标断言红）。
+数据: **订单页 UI（§15.1 断言结果可见）**：订单新建页与详情页的加急开关 + 到货日选择器写进请求体；**不勾/不填 ⇒ 请求体里不出现这两个键**（不得默认勾上加急）；列表页加急角标随值出现/消失（红证 = 把缺省改成「总是加急」⇒ 角标断言红）。**版式（issue #5915，用户 2026-10-01 逐字「要求到货日能否和日期选择控件放一行？」）**：新建页那一格的 label 与原生日期控件在**同一个 flex 行容器**里（label 不再是 `block + mb-1.5` 独占一行、控件不再 `w-full`），label 的 `htmlFor` ↔ 控件 `id` 关联保持；下方提示仍另起一行、**文案一字未改**。红证 = 把 label 改回 `block`、或给控件加回 `w-full` ⇒ frontend/admin-web/tests/unit/pages/orders-urgency.test.tsx 的行容器/宽度断言红。
 跳过: [backend-contract] 订单字段与迁移的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟
 ```
 真值: order-urgency.queue-jump
-溯源: 2026-09-23 新增（issue #5177）：订单级加急/到货日字段（V120）零联动 + 缺省不变 + 改单三态 fail-closed + wire 键名 + 不损失客户 + 订单页录入位。取号 PR-079。 ｜ tags: order-urgency, pool-board, real-db, backend-contract
+溯源: 2026-09-23 新增（issue #5177）：订单级加急/到货日字段（V120）零联动 + 缺省不变 + 改单三态 fail-closed + wire 键名 + 不损失客户 + 订单页录入位。取号 PR-079。 2026-10-01 版式补记（issue #5915）：新建订单页「要求到货日」的 label 与日期控件改为**同一行**（`flex items-center`，label 不再独占一行、控件不再 `w-full`），提示仍另起一行；缺省口径与请求体一字未改。 ｜ tags: order-urgency, pool-board, real-db, backend-contract
 
 ### PR-080. 🔴 加急插队：加急单**不进池**、立刻单派（`pooled=false`）；混进成批批次 ⇒ **整批显式拒绝**（不静默少派） 🔵
 ```

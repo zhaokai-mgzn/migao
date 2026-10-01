@@ -3452,19 +3452,26 @@ export default function NewOrderPage() {
                   </span>
                 </div>
                 <div className="min-w-[12rem]">
-                  <label
-                    htmlFor="requiredDeliveryDate"
-                    className="block text-sm font-medium text-neutral-700 mb-1.5"
-                  >
-                    要求到货日
-                  </label>
-                  <input
-                    type="date"
-                    id="requiredDeliveryDate"
-                    value={requiredDeliveryDate}
-                    onChange={(e) => setRequiredDeliveryDate(e.target.value)}
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                  />
+                  {/* 要求到货日：label 与日期控件**同一行**（issue #5915 —— 用户 2026-10-01：
+                      「要求到货日能否和日期选择控件放一行？」）。改前 label 是 `block + mb-1.5`
+                      （独占一行）、控件 `w-full`（撑满该格）⇒ 这一格是竖排，与本卡外面「开关 + 到货日」
+                      的并排不一致，还多占一行高度。提示仍**另起一行、整格宽**，文案一字未改。
+                      ⚠️ `htmlFor` ↔ `id` 的关联必须留着（`getByLabelText('要求到货日')` 与点 label 聚焦都靠它）。 */}
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="requiredDeliveryDate"
+                      className="shrink-0 whitespace-nowrap text-sm font-medium text-neutral-700"
+                    >
+                      要求到货日
+                    </label>
+                    <input
+                      type="date"
+                      id="requiredDeliveryDate"
+                      value={requiredDeliveryDate}
+                      onChange={(e) => setRequiredDeliveryDate(e.target.value)}
+                      className="h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    />
+                  </div>
                   <p className="mt-1 text-xs text-neutral-400">
                     留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，在智能派单页排得越前
                   </p>
