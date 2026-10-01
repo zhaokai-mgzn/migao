@@ -137,7 +137,7 @@ const feeMatched = (amount = 133) => ({
  * 区块 2 就看不到另两步的内容。
  */
 const expandProcessing = () => {
-  const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+  const btn = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
@@ -148,7 +148,7 @@ const expandProcessing = () => {
  * 都住在 **②加工项**（原 ③ 其他 的折叠壳已删除）；净窗宽 / 窗高仍常显在**组级**。
  */
 const openOtherSteps = () => {
-  screen.getAllByRole('button', { name: /^\d+ 加工项/ }).forEach((btn) => {
+  screen.getAllByRole('button', { name: /^\d+\s*加工项/ }).forEach((btn) => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   })
 }
@@ -159,7 +159,7 @@ const openOtherSteps = () => {
  * 净窗宽 / 净窗高提到**组级**常显）；步骤之间**互斥** ⇒ 展开步骤 3 会把它卸载。
  */
 const openSpecSteps = () => {
-  screen.getAllByRole('button', { name: /^\d+ 用料与规格/ }).forEach((btn) => {
+  screen.getAllByRole('button', { name: /^\d+\s*用料与规格/ }).forEach((btn) => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   })
 }

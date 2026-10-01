@@ -155,7 +155,7 @@ const feeMatched = () => ({
 })
 
 const expandProcessing = () => {
-  const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+  const btn = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 

@@ -1,6 +1,14 @@
 // case_ids: UI-069
 import '@testing-library/jest-dom'
 
+// ⚠️ jsdom 30 起（issue #5906 迁移）：**按可访问名定位内联元素时不要再写死空格**。
+// 机制：`dom-accessibility-api` 拿子节点的 computed `display` 当名字分隔符
+// （`display !== "inline" ? " " : ""`），而 jsdom 26 对没有 UA 规则的 `<span>` 返回**空串**
+// （于是每个内联子元素前后都被塞一个空格）、jsdom 30 返回规范初值 `"inline"`（不再塞）。
+// ⇒ 同一个 `<span>{step}</span><span>{title}</span>` 按钮，可访问名由 `1 用料与规格` 变成 `1用料与规格`。
+// （浏览器里 `<span>` 的 computed display 本就是 `inline` ⇒ jsdom 30 与真机同口径，jsdom 26 的空串是它自己的缺口。）
+// 约定：这类定位串一律写 `/^\d+\s*<标题>/`（对分隔符不敏感），别写 `/^\d+ <标题>/`。
+
 // issue #5792（第二阶段）：recharts 的 `ResponsiveContainer` 需要 `ResizeObserver`，而 jsdom 不提供。
 // ⚠️ 这个坑此前一直没暴露，因为 `OrderStatusChart` 是**从没被任何页面引用的死代码**
 //    （端点与组件都写好了、就是没接线）⇒ 把死代码接进页面时，测试立刻报 `ResizeObserver is not defined`。

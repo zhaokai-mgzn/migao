@@ -387,14 +387,14 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
   it('判据 5：推荐组合**默认预选**（韩褶 + 布帘定型），推荐条逐字给出这组名字', async () => {
     await setupLine()
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     expect(checkedItems()).toEqual(['韩褶', '定型'])
     expect(screen.getByTestId('processing-recommended-names').textContent).toBe('韩褶 + 定型')
   })
 
   it('判据 5b：「全不采纳」⇒ 两项都取消，且落库不再含它们', async () => {
     await setupLine()
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     fireEvent.click(screen.getByTestId('processing-recommended-reject'))
     expect(checkedItems()).toEqual([])
 
@@ -407,7 +407,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
   it('判据 5c：「采纳」把推荐组合勾回来，并按**工艺单值护栏**顶掉别的工艺项', async () => {
     await setupLine()
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     fireEvent.click(screen.getByTestId('processing-recommended-reject'))
     fireEvent.click(screen.getByRole('checkbox', { name: '打孔' }))
     expect(checkedItems()).toEqual(['打孔'])
@@ -420,13 +420,13 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
   it('判据 6：撤销过（手改留痕）⇒ 改帘体**不再**把推荐组合勾回来', async () => {
     await setupLine()
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     fireEvent.click(screen.getByTestId('processing-recommended-reject'))
     expect(checkedItems()).toEqual([])
 
     fireEvent.click(screen.getByRole('radio', { name: '纱帘' }))
     fireEvent.click(screen.getByRole('radio', { name: '布帘' }))
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     // 红证方向：删掉 `craftItemTouched` / `shapedItemTouched` 的留痕 ⇒ 换帘体时被勾回 ⇒ 红
     expect(checkedItems()).toEqual([])
   })
@@ -434,16 +434,16 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
   it('判据 7（2026-09-29 改判）：「特殊选项」并入②加工项 —— 没有独立的「其他」步骤，打开加工项两块一起可见', async () => {
     await setupLine()
     // ① 结构面：下单页**只有两步**（旧 ③「其他」的折叠壳与 `stepProps(3)` 已删除）
-    expect(screen.getByRole('button', { name: /^\d+ 加工项/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^\d+\s*加工项/ })).toHaveAttribute(
       'aria-expanded',
       'false'
     )
-    expect(screen.queryByRole('button', { name: /^\d+ 其他/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^\d+\s*其他/ })).toBeNull()
     // ② ②加工项收起时，加工项与「特殊选项 / 部位备注」都不在首屏
     expect(screen.queryByTestId('line-item-remark')).toBeNull()
     expect(screen.queryByRole('button', { name: '加铅块' })).toBeNull()
     // ③ 打开②加工项 ⇒ 三块**一同可见**（不再需要第二个折叠块）
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     expect(screen.getByTestId('processing-recommended')).toBeTruthy()
     expect(screen.getByRole('button', { name: '加铅块' })).toBeTruthy()
     expect(screen.getByText('特殊选项')).toBeTruthy()
@@ -548,9 +548,9 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     // 前置自证：**系统默认**是「双开 + 韩褶 + 定型」（判据 5 / 8 钉的就是它们）
     openCraftParams()
     expect(checkedChips('打开方式')).toEqual(['双开'])
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     expect(checkedItems()).toEqual(['韩褶', '定型'])
-    openStep(/^\d+ 用料与规格/)
+    openStep(/^\d+\s*用料与规格/)
 
     const file = new File(['x'], 'order.png', { type: 'image/png' })
     fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
@@ -565,7 +565,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(checkedChips('打开方式')).toEqual(['单开'])
     expect(checkedChips('款式')).toEqual(['拼色'])
     // ③ 加工项按图 = 打孔 + 定型；**默认的「韩褶」被取消**（客户没提它 ⇒ 不能选错）
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     expect(checkedItems()).toEqual(['定型', '打孔'])
   })
 
@@ -652,7 +652,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
       })
     })
     await setupLine()
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     const lastFormula = () => mockCraftCalcPreview.mock.calls.at(-1)?.[0]?.formula
     // 缺省：推荐组合把「韩褶」勾上了 ⇒ 韩褶公式
     await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
@@ -663,7 +663,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     openStep(/用料与规格/)
     await waitFor(() => expect(inputOf('用料米数')).toHaveValue('12'), { timeout: 5000 })
     // 再勾回来 ⇒ 回到韩褶公式，米数跟着回来
-    openStep(/^\d+ 加工项/)
+    openStep(/^\d+\s*加工项/)
     fireEvent.click(screen.getByRole('checkbox', { name: '韩褶' }))
     await waitFor(() => expect(lastFormula()).toBe('pleat'), { timeout: 5000 })
     openStep(/用料与规格/)

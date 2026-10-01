@@ -315,7 +315,7 @@ describe('下单页算料试算接线（#4434）', () => {
 
     mockCraftCalcPreview.mockClear()
     // issue #4511 手风琴：加工项是向导③ ⇒ 先展开该步，再勾选（勾选即改入参签名 ⇒ 重发试算）
-    const processingStep = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+    const processingStep = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })[0]
     if (processingStep.getAttribute('aria-expanded') === 'false') fireEvent.click(processingStep)
     fireEvent.click(await screen.findByRole('checkbox', { name: '打孔' }))
     // 旧口径下打孔返回 null ⇒ 永不发请求 ⇒ 本断言红（这正是本条要防的形态）
@@ -355,7 +355,7 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    const processingStep = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+    const processingStep = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })[0]
     if (processingStep.getAttribute('aria-expanded') === 'false') fireEvent.click(processingStep)
     fireEvent.click(await screen.findByRole('checkbox', { name: '穿杆' }))
     await new Promise((r) => setTimeout(r, 600))
@@ -432,7 +432,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
    * `components/orders/OrderCraftFields.tsx` 渲染在它里面 —— 算料响应无 `plan` 时该区缺省展开）。
    */
   const openStep1 = () => {
-    const btn = screen.getAllByRole('button', { name: /^\d+ 用料与规格/ })[0]
+    const btn = screen.getAllByRole('button', { name: /^\d+\s*用料与规格/ })[0]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
     const craftEdit = screen.queryAllByTestId('craft-plan-edit')[0]
     if (craftEdit?.getAttribute('aria-expanded') === 'false') fireEvent.click(craftEdit)

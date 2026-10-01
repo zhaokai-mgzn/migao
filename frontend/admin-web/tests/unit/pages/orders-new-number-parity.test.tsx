@@ -256,7 +256,7 @@ const openCraftParams = () => {
 
 /** 展开向导区块 2「加工项 · 特殊选项」（默认收起；**打开它会收起区块 1** ⇒ 两步分区渲染） */
 const expandProcessing = () => {
-  const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+  const btn = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
