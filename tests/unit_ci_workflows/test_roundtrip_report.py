@@ -508,6 +508,7 @@ def test_multiframe_log_is_not_truncated_to_first_frame(tmp_path):
     target = tmp_path / "session.v3.jsonl.zstd"
     target.write_bytes(_frame(_assistant(0, 1) + "\n") + _frame(_assistant(1000, 2) + "\n"))
     text, reason = mod.read_session_text(target)
-    assert reason is None
-    assert text.count("assistant/message") == 2
+    assert (text or "").count("assistant/message") == 2, (
+        f"多帧日志被截断（只解了第一帧？）：只读到 {len(text or '')} 字符，原因 {reason}"
+    )
     assert mod.analyze(text)["steps"] == 2

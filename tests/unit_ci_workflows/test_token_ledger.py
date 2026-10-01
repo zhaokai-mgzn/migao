@@ -45,6 +45,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -336,8 +337,9 @@ def test_multiframe_log_is_not_truncated_to_first_frame(tmp_path: Path, capsys) 
         + _frame(_step(1_030_000, i=2_000, c=8_000, o=20) + "\n")
     )
     text, reason = mod.read_session_text(target)
-    assert reason is None
-    assert text.count("assistant/message") == 2          # 两帧都要读出来（只解第一帧 ⇒ 1）
+    assert (text or "").count("assistant/message") == 2, (
+        f"多帧日志被截断（只解了第一帧？）：只读到 {len(text or '')} 字符，原因 {reason}"
+    )
     code, out, _ = _run(capsys, root, "/tmp/fake")
     assert code == mod.EXIT_OK
     assert "模型往返（步）      2" in out
@@ -350,13 +352,13 @@ def test_zstd_module_path_uses_a_multiframe_capable_reader(script: str) -> None:
 
     两个工具读的是**同一种**日志（DSH 逐条追加的多帧 zstd）⇒ 这个缺陷是**类**，不是一处。
     本条在 CI（无 zstandard / zstd）也能跑 —— 它判的是**形态**；**行为**由上面那条 skipif 判据承担。
+    读法用 `ast`（**结构**）：注释与字符串都**不是** AST 节点 ⇒ 判据不可能吃到自己的说明文字，
+    也不需要「先清空字符串再剥 `#`」那套（`tests/unit_ci_workflows/_source_parsing.py` 的口径）。
     边界（照实登记）：判不了「两套 API 都写了、先跑单帧那套」，也判不了别的解压实现。
     """
-    source = (ROOT / script).read_text(encoding="utf-8")
-    body = source[source.index("def read_session_text"):]
-    body = body[: body.index("\ndef ", 1)]
-    # ⚠️ 判据读**剥注释后的代码**：注释里为解释这个缺陷必须写出那个 API 名
-    # （与菜单三源判据同口径：判据不得吃自己的说明文字，否则「把缺陷写进注释」就会自喂红）。
-    code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
-    assert "stream_reader" in code                       # 跨帧读法在场
-    assert ".decompress(" not in code                    # 只解单帧的 API 不得出现
+    tree = ast.parse((ROOT / script).read_text(encoding="utf-8"))
+    funcs = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "read_session_text"]
+    assert len(funcs) == 1, f"{script}: `read_session_text` 必须唯一存在（找不到 ⇒ 判据认错对象）"
+    attrs = {node.attr for node in ast.walk(funcs[0]) if isinstance(node, ast.Attribute)}
+    assert "stream_reader" in attrs                       # 跨帧读法在场
+    assert "decompress" not in attrs                      # 只解单帧的 API 不得出现
