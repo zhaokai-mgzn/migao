@@ -67,16 +67,18 @@ export default function NewProductPage() {
   return (
     <>
       {/* 快通道入口：拍照/上传识别 → 字段候选（映射不到的键一律不填，见 lib/image-recognize.ts）。
-          🔴 这条入口**不依赖米宝**（判据 5）：没有 LLM 也能用。 */}
-      <div className="max-w-6xl mx-auto px-6 pt-4">
-        <ImageRecognizeButton targetType="product" onRecognized={handleRecognized} />
-      </div>
+          🔴 这条入口**不依赖米宝**（判据 5）：没有 LLM 也能用。
+          🔴 落点由 `ProductForm` 的标题卡片决定（issue #5918）：改前这里是页面自己的一个 `pt-4`
+          容器 —— 按钮悬在表单卡片**外面**，与 /orders/new 的同一入口两种版式。 */}
       {/* 未识别前 `initialData` 传 `undefined` —— `ProductForm` 以 `!!initialData` 判「编辑态」，
           传 `{}` 会让新增页标题变成「编辑商品」 */}
       <ProductForm
         initialData={prefill ?? undefined}
         onSubmit={handleSubmit}
         submitText="提交并上架"
+        titleActions={
+          <ImageRecognizeButton targetType="product" onRecognized={handleRecognized} />
+        }
         recognizedFields={recognizedFields}
         interpretedFields={interpretedFields}
       />

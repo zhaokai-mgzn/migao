@@ -1953,14 +1953,18 @@ cases:
     data_checks:
       - "判据 1·**货号级一列**：`products.roll_length_m NUMERIC(8,2)`（可空、**不设默认值**）。注入：给它加 `DEFAULT 60` ⇒ 「未配置」这一档从库里消失 ⇒ 断言红。"
       - "判据 2·**NULL = 未知，禁止推算**：`ProductRollAllocation.allocate(qty, null)` / `(qty, <=0)` 一律返回未分配（`rollCount == null`，三字段全 null）——不得用任何兜底常量算出一个看似合理的分配（行业卷长是区间值，见 docs/curtain-selling-method-industry-research.md §5）。"
-      - "判据 3·**读面契约**：商品详情/编辑表单读得到 `rollLengthM`（product_detail / 商品编辑页回显），写入走 `rollLengthM`。"
+      - "判据 3·**读面契约**：商品详情/编辑表单读得到 `rollLengthM`（product_detail / 商品编辑页回显），写入走 `rollLengthM`。🔴 2026-10-01（issue #5919）：**只改展示文案**（标称口径，见判据 5）—— 字段名 / 提交载荷 / 存储与派生方式**一字未动**。"
       - "判据 4·**边界语义**：`quantity < rollLength` ⇒ `rollCount = 0` 且余量 = 全部数量（「0 整卷 + 全部散剪」是**真实结论**，与「未分配 null」不是一回事）；恰好整卷倍数 ⇒ 余量 `0`（不是 null）。"
+      - "判据 5·**两处展示文案同源 + 标称口径**（issue #5919；2026-10-01 用户裁定「只改文案，不动数据模型」）：字段标签在商品表单（frontend/admin-web/src/components/products/ProductForm.tsx 的 `FieldRow`）与商品详情页（frontend/admin-web/src/app/(dashboard)/products/[id]/ProductDetail.tsx 的 `dt`，仍是**只读**展示）**逐字一致**且含「标称」；副说明（仅作建单时的默认值与整卷换算、**实际卷长以入库单 / 订单行为准**）在**两处都渲染**。**同源 = 单点定义**：两份文案都来自 frontend/admin-web/src/lib/product-roll-length.ts 的 `ROLL_LENGTH_LABEL` / `ROLL_LENGTH_HINT`，任何一处各写一份字面量即判红。类级元守卫 = frontend/admin-web/tests/unit/roll-length-copy-single-source.test.ts（关键串只许出现在单点定义处 / 两个展示面都必须引用同一份常量 / 措辞不许被稀释 / 含判别力自证）；实例判据 = frontend/admin-web/tests/unit/components/ProductForm.test.tsx（PR-042 条）与 frontend/admin-web/tests/unit/pages/product-detail.test.tsx 的判据 5 条。🔴 **改前实测**（同一批 5 个测试文件）：`9 failed / 43 passed` —— 其中本判据相关 **5** 条判红（文案护栏 3 条 + 详情页 1 条 + 商品表单 1 条）。**不做**：不改字段名 / 提交载荷 `rollLengthM`，不把商品级参数改成从入库单动态派生（批次级实际卷长属商品详情的批次面板）。"
     skip_reason: "[backend-contract] 商品基础参数契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java 执行"
-    merge_log: "2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。"
+    merge_log: "2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。 ｜ 2026-10-01（issue #5919，用户裁定「只改文案」）：新增**判据 5** —— 卷长字段**正名为标称值**，商品表单与商品详情页两处文案**同源**（单点定义 frontend/admin-web/src/lib/product-roll-length.ts + 两个展示面都引用 + 副说明两处可见）；判据 3 补「只改文案、字段名与载荷未动」的边界。**存储 / 派生方式一字未动**：`products.roll_length_m` 仍是货号级基础参数（不从入库单派生 —— 行内卷长是区间值、不同批次不同）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_product_roll_length_migration.py"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java"
+        - "frontend/admin-web/tests/unit/roll-length-copy-single-source.test.ts"
+        - "frontend/admin-web/tests/unit/components/ProductForm.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/product-detail.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -4464,6 +4468,42 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/StockBatchControllerTest.java"
         - "tests/unit_ci_workflows/test_batch_stocktake_write_point.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-120
+    legacy_id: ""
+    title: "商品页版式：「拍照 / 上传识别」进「新增商品」标题卡片内的标题行右侧（识别在重置前），不再悬在卡片外"
+    domains:
+      - product
+      - ui
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - admin-web
+      - layout
+      - image-recognize
+      - backend_contract
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-10-01 走查截图 + 提问：「放到新增商品标题右侧合适位置是否更好」⇒ 裁定：是，且建单页同步对齐"
+    expectations: []
+    data_checks:
+      - "判据 1·**落点在标题卡片内**（issue #5918）：`image-recognize-button` 是标题卡片 `pf-title-card` 的后代，且与「重置」同处 `pf-title-actions` 这一行、**识别在前**（DOM 顺序）；全页只有**一个**识别入口（不再有游离于卡片外的第二处）。执行点 = frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx 判据 1。红证：改前页面把它渲染在表单卡片**之外**的独立容器里（页面底色上），且 `pf-title-card` / `pf-title-actions` 都不存在 ⇒ 该文件 3 条判红（实测同一批 9 failed / 43 passed 中的 3 条）。"
+      - "判据 2·**功能一条不减 + 识别结果不落库**：选图 → 上传（`uploadApi.uploadImage`）→ 识别（`imageRecognizeApi.recognize`，target 逐字 `product` + 上传得到的地址）→ 字段回填（含来源徽标 `recognized-marker-name` 与结果区 `image-recognize-result`），全程**零** `productApi.createProduct`（识别结果只填表，提交永远是人的动作）。执行点同上，判据 2 / 2b。"
+      - "判据 3·**建单页不退化**（跨页口径）：/orders/new 的同一入口仍在「商品信息」卡标题行（frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx 判据 2：按钮在商品信息卡内、**不在**收货信息卡内）。两页的按钮文案 / 组件 / 回调语义不变。"
+      - "**类级元守卫**（判据 4）= frontend/admin-web/tests/unit/recognize-entry-placement-guard.test.ts：凡 frontend/admin-web/src 下渲染 `<ImageRecognizeButton` 的文件都必须**登记落点**（未登记即红、台账双向相等、豁免台账只许缩短），且每条登记必须同时给出①容器文件 + 逐字容器锚 ②断言「按钮在卡片里」的**运行期证据**（测试文件 + 用例标题逐字可查 —— 台账不许空口声称有人守着）；含四种坏形态（未登记 / 死条目 / 容器锚缺失 / 证据缺失）的判别力自证。"
+      - "**改 web 页面 ⇒ 多模态验收**（migao-dev-flow §15.7）：真实登录 + 全页截图 + 读图逐条判定；证据目录、被测 commit 与逐条判定写在承接 PR 的 body 里。"
+    skip_reason: "[backend-contract] 管理端商品页版面与识别入口落点的**确定性 DOM 判据**（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：计分通道 = `traces.tests`（vitest），与库内同类条目共用这个历史遗留的窄标记"
+    merge_log: "2026-10-01 新增（issue #5918，用户 2026-10-01 走查截图裁定「放到新增商品标题右侧合适位置」并要求建单页同步对齐）：改前**同一个组件在两页两种版式** —— 商品页把它渲染成表单卡片**外面**的独立容器（悬在页面底色上），建单页在「商品信息」卡标题行里。落地 = `ProductForm` 新增 `titleActions` 标题行动作槽（落点由卡片决定、页面只给内容与回调），商品页经该槽注入识别按钮 ⇒ 与「重置」同排、识别在前。**功能一条未减**（选图→上传→识别→回填的判据继续绿），识别结果仍**不落库**。类级固化 = 渲染点必须登记落点（未登记即红）+ 容器锚与运行期证据双向可查 + 判别力自证。取号 PR-120（现取脚本 `scripts/next_case_id.py PR` 给出的是**历史空档 PR-014**，而该号是 #4371 解耦时**已注销**的用例（tests/unit_ci_workflows/test_eval_product_name_pollution.py 里有「留注释防被当成漏登记再塞回来」的明文）⇒ 按取号口径「空档≠可用」取当前最大号 + 1）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx"
+        - "frontend/admin-web/tests/unit/recognize-entry-placement-guard.test.ts"
+        - "frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

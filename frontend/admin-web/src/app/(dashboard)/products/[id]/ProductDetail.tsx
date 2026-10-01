@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
 import BatchStockPanel from '@/components/products/BatchStockPanel'
 import { productApi } from '@/lib/api'
+import { ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL } from '@/lib/product-roll-length'
 import request from '@/lib/request'
 import { useRouteId } from '@/lib/use-route-id'
 import { resolveImageUrl } from '@/lib/utils'
@@ -294,10 +295,14 @@ export default function ProductDetailPage() {
                 </div>
               )}
               <div>
-                <dt className="text-xs text-neutral-500">1 卷 = 多少米</dt>
+                <dt className="text-xs text-neutral-500">{ROLL_LENGTH_LABEL}</dt>
                 <dd className="text-sm text-neutral-900 mt-0.5">
                   {product.rollLengthM != null ? `${product.rollLengthM} 米` : '未配置'}
                 </dd>
+                {/* 副说明与商品表单**同源**（issue #5919）：只作建单默认值与整卷换算 */}
+                <p className="mt-1 text-xs text-neutral-400 leading-relaxed" data-testid="roll-length-hint">
+                  {ROLL_LENGTH_HINT}
+                </p>
               </div>
               {product.salesCount != null && (
                 <div>
