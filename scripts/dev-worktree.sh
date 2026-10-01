@@ -59,6 +59,22 @@
 #   活锚目标必须是**独立克隆**（不是任何会被开发的 worktree —— 那在 rm/prune 清理半径内，
 #   被删即软链悬空、DSH 静默加载不到研发模式，issue #3956 实证）；见根 AGENTS.md「开发环境准备」。
 #
+# 地雷 C：**跨工作区共享 node_modules 的软链** × **任何删/重建 node_modules 的动作**
+#   （v1.14，2026-10-01，issue #5930）：
+#   现场实测（本机 22:18）：主工作区 `tests/node_modules` 变成**空目录**，而 **git 里看不见任何异常**
+#   （软链不入库、破坏发生在**仓库外**）⇒ 静默失效，没有任何判据会报。共同根因是一个**类**：
+#   worktree 里把依赖软链到主工作区（`node_modules` → 主仓库同名目录），此后
+#   ① `npm ci`（第一步就是删 node_modules）**会穿过软链把目标清空** —— 本包实测：目标目录仍在、
+#      内容全空（fixture 3 → 0 个文件；现场读数 = 空目录），读数与复算命令写进 issue #5930；
+#   ② 删除 worktree 的动作**不得**再给它一次机会 —— 本脚本 `rm` 现在**先解链再删**（见下）。
+#   两条口径（**同源**，别处不另写一份）：
+#     · 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区
+#       （正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节，与 `add` 的输出同源）；
+#     · `rm` 的**顺序即安全顺序**：`unlink_symlinks_before_remove` 必须**先于** `git worktree remove`，
+#       否则删除动作就可能穿过软链打到仓库外。判据 =
+#       tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py（控制流判据 + PATH 垫片见证
+#       「删除那一刻 worktree 里还有没有软链」+ 真 fixture 上断言外部目标逐字节完好）。
+#
 # 会话锁（v1.3，2026-09-04 新增）：
 #   多 DSH 会话并行开发防踩脚 —— add 时自动在 $REPO_ROOT/.git/sessions/ 登记会话锁
 #   （进程 PID + 时间戳），同一分支已有活跃锁时拒绝重复建工作区；
@@ -98,7 +114,8 @@ usage() {
   # head 上限需覆盖「用法」块 + v1.8 的预设地雷说明（加新条目时同步上调，否则 --help 会截断）
   # v1.9（issue #3972）：用法块 +1 行（rebase 子命令）⇒ 上限同步 +2
   # v1.10（issue #4026）：用法块 +2 行（活锚自检/自愈脚本）⇒ 上限再 +2
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -46
+  # v1.14（issue #5930）：新增「地雷 C：删除不许穿过软链」段（文件头 +18 行）⇒ 上限 46 → 80
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -80
   exit 1
 }
 
@@ -415,6 +432,10 @@ cmd_add() {
   [ -f "$REPO_ROOT/package.json" ] && echo "      npm ci"
   [ -d "$REPO_ROOT/frontend/mini-app" ] && echo "      cd frontend/mini-app && npm ci"
   echo "   ⚠️  build 产物（dist/）不入库，worktree 之间互不影响。"
+  echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
+  echo "      软链（${path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："
+  echo "      2026-10-01 实测一次 worktree 内的 npm ci 就把主工作区 tests/node_modules 清成空目录（issue #5930）。"
+  echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示**同源**，不另写一份）。"
   echo "   ⚠️  本工作区已把 .agent-presets/** 对齐 origin/main（**本分支自己改过预设 ⇒ 跳过刷新**："
   echo "      那是分支产物、不是创建时刻快照）。要 rebase 请用："
   echo "      ./scripts/dev-worktree.sh rebase ${branch}"
@@ -447,6 +468,43 @@ wt_branch_of() {
     | sed 's#^refs/heads/##'
 }
 
+# ── 删除前解链（v1.14，2026-10-01，issue #5930）────────────────────────────────
+# 为什么必须在 `git worktree remove` **之前**：删除动作一旦拿到一个**活着的**软链，它就可能
+# 被"跟随"而删掉**目标**（软链指向的、仓库外的东西）。这不是假想 —— 现场真实发生过：
+# worktree 的 `tests/node_modules` 指向主工作区，随后「删/重建 node_modules」的动作把**主工作区**
+# 的依赖清空了，而 git 里毫无痕迹（软链不入库）。解链 = 只删**链接本身**，不跟随、不递归。
+unlink_symlinks_before_remove() {
+  local wt="$1"
+  [ -d "${wt}" ] || return 0
+  local n=0 outside=0 inrepo=0 printed=0 p t note
+  while IFS= read -r p; do
+    [ -n "${p}" ] || continue
+    if [ "${printed}" = "0" ]; then
+      echo "🔗 解链检查（删除**之前**先摘掉软链 —— 防删除动作穿过软链打到仓库外的目标）："
+      printed=1
+    fi
+    n=$((n + 1))
+    t="$(readlink "${p}" 2>/dev/null || echo '?')"
+    note=""
+    case "${t}" in
+      "${REPO_ROOT}"/*) note=" ⚠️ 指向**本仓库工作区** —— 跨工作区共享 node_modules 的典型形态（issue #5930 的成因）"; inrepo=$((inrepo + 1)) ;;
+      /*)                note=" ⚠️ 指向**工作区之外** —— 删除动作若穿过它，打到的是仓库外的数据";   outside=$((outside + 1)) ;;
+    esac
+    echo "     - ${p} → ${t}${note}"
+    unlink "${p}" 2>/dev/null || rm -f -- "${p}" 2>/dev/null || true
+  done < <(find "${wt}" -type l -print 2>/dev/null || true)
+  if [ "${n}" = "0" ]; then
+    echo "🔗 解链检查：worktree 内无符号链接 —— 删除动作没有可穿越的软链面。"
+    return 0
+  fi
+  echo "✅ 已解链 ${n} 个符号链接（指向仓库外 ${outside} 个 / 指向本仓库工作区 ${inrepo} 个）—— 只删链接本身，未触碰任何目标。"
+  if [ "$((outside + inrepo))" -gt 0 ]; then
+    echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
+    echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示同源）。"
+  fi
+  return 0
+}
+
 cmd_rm() {
   [ $# -ge 1 ] || usage
   local target="$1"
@@ -466,6 +524,9 @@ cmd_rm() {
     path="${line#worktree }"
     branch="$target"
   fi
+
+  # v1.14（issue #5930）：**顺序即安全顺序** —— 解链必须在这一行**之前**，绝不让删除动作穿过软链。
+  unlink_symlinks_before_remove "$path"
 
   git -C "$REPO_ROOT" worktree remove "$path" --force
   echo "✅ 已移除工作区：${path}"

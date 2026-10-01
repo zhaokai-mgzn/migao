@@ -1,0 +1,16 @@
+{
+  "schema": "worktree-dep-symlink-exemptions/1",
+  "_what": "「跨工作区 node_modules 软链」配方（把 node_modules 软链到主工作区/其他工作区）在仓内的**豁免台账**（issue #5930）。",
+  "_why": "这类配方一旦被当作步骤照抄，就会让「任何删/重建 node_modules 的动作」穿过软链打到**仓库外**的目标（2026-10-01 22:18 实测：一次 worktree 内的 npm ci 把主工作区 tests/node_modules 清成空目录），而 git 里看不见任何异常 ⇒ 静默失效。",
+  "_judged_by": "tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py::test_no_script_or_doc_teaches_cross_workspace_node_modules_symlink",
+  "_freeze": "本台账**只许缩短**：条数上界冻结在判据里的 FROZEN_MAX_EXEMPTIONS（现取 = 1）；每条必须**仍命中真实语料**（陈旧登记即红，必须销账）；新增豁免要同时改判据里的上界 —— 那是一次**显式**放宽，会在 diff 里看得见。",
+  "_rule": "命中 = 行首 `ln` + `-s` 族旗标 + 该行含 `node_modules`；`#` 开头的注释行不算命中（**反例可以用注释写**）。",
+  "exemptions": [
+    {
+      "path": "tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py",
+      "snippet": "ln -sfn <主仓库>/frontend/admin-web/node_modules <worktree>/frontend/admin-web/node_modules",
+      "reason": "**病灶引用，不是教步骤**（引用 ≠ 使用）：这一行是 issue #5241 的**证据锚** —— 它逐字复刻旧 `ui_smoke_merchant.sh` 依赖准备段的原样写法，用来解释「Turbopack 报 Symlink … points out of the filesystem root、而 `next dev` 先打印 ✓ Ready」这一条真实日志的成因。改写它会削弱 #5241 的证据链，故**登记而不改写**。它所在的上下文逐字写着「worktree 形态的依赖准备**不得**把主仓库 node_modules 软链进来」⇒ 无被照抄的风险。",
+      "registered_at": "2026-10-01（issue #5930；现取 = 1 条，冻结上界见判据）"
+    }
+  ]
+}

@@ -43,7 +43,9 @@
 # ① 从被测 SHA 建 worktree，并补齐 gitignored 的本地环境（否则 admin-api 起不来）
 W=../migao-wt/<branch>; cp <main>/backend/admin-api/.env $W/backend/admin-api/.env
 cp <main>/backend/admin-api/src/main/resources/rsa/private.pem $W/backend/admin-api/src/main/resources/rsa/
-ln -sfn <main>/tests/node_modules $W/tests/node_modules
+# ❌ 禁止（issue #5930 事故后）：ln -sfn <main>/tests/node_modules $W/tests/node_modules
+#    该姿势会让「删/重建 node_modules」的动作穿过软链打到主工作区（实测：npm ci 把目标清空）；
+#    改为在本工作区内装依赖：cd $W/tests && npm ci
 # ② 起栈（避开并发会话的 3001/8080）：admin-api SERVER_PORT=8090 + SMS_BYPASS_CODE=123456；
 #    admin-web 用独立端口并指向 8090；把该 origin 加进 API 的 CORS_ALLOWED_ORIGINS
 # ③ 跑走查（脚本见下），断言：菜单「工艺路线」存在 / 路线列表渲染真实工序 / 缺口区含
