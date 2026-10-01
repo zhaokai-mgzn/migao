@@ -107,7 +107,12 @@ test.describe('订单创建', () => {
   test.describe('校验/取消', () => {
     test('未填收货信息提交报错', async ({ page }) => {
       await page.getByRole('button', { name: '提交订单' }).click()
-      await expect(page.getByText('请输入收货人姓名')).toBeVisible()
+      // issue #5840：报错现在**行内 + 吸底错误汇总条**各出现一次 ⇒ 同一个文本命中 2 个元素，
+      // Playwright strict mode 直接判失败（这就是本用例在 #5851 合并后判红的原因）。
+      // 断言拆两条：① **至少一处**行内报错可见（`.first()`）；② 更强的 —— 汇总条本身必须在，
+      // 它才是 #5840 新加的「哪儿缺」定位面。
+      await expect(page.getByTestId('submit-error-summary')).toBeVisible()
+      await expect(page.getByText('请输入收货人姓名').first()).toBeVisible()
     })
     test('点击取消返回列表', async ({ page }) => {
       await page.getByRole('button', { name: '取消' }).click()
