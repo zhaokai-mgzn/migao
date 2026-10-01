@@ -130,12 +130,19 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await page.getByTestId('print-preview-print').click()
     const after = await readPageRules(page)
     expect(after.count, `实测 @page 规则：${JSON.stringify(after.rules)}`).toBe(1)
-    expect(after.rules[0]).toContain('241mm 140mm')
+    // ⚠️ 纸型读**样式文本**：Chrome 的 CSSOM **不序列化 `@page` 的 `size` 描述符**
+    //    （实测 `rule.cssText` 只剩 `@page { margin: 6mm 12mm; }`），拿 cssText 判尺寸会假红
+    const pageCss = await readStyleText(page)
+    expect(pageCss).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
 
     // 打印媒体下：只有目标单据在版面上，兄弟单据既不显形也不占版面
     await page.emulateMedia({ media: 'print' })
     await page.waitForTimeout(600) // 等 transition-all 结束（见 shipment-doc.spec.ts 的同款说明）
-    await expect(page.locator('.sales-print-area')).toBeVisible()
+    // ⚠️ 选择器必须精确到「**上纸那一份**」：预览层里还有一份不带 target 的副本
+    // （`page.locator('.sales-print-area')` 会命中 2 个 ⇒ strict mode 红）
+    await expect(page.locator('.sales-print-area[data-print-target="sales"]')).toBeVisible()
+    // 而预览副本在打印媒体下**不上纸**（这条防的是「一次出两份」）
+    await expect(page.locator('.print-preview-doc .sales-print-area')).toBeHidden()
     for (const sibling of ['.shipment-print-area', '.quotation-print-area', '.processing-print-area']) {
       await expect(page.locator(sibling)).toBeHidden()
     }
@@ -217,11 +224,24 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     expect(shot.width).toBeGreaterThan(2400)
     expect(shot.width / shot.height).toBeGreaterThan(1.6)
     expect(shot.width / shot.height).toBeLessThan(1.85)
-    // 铺满整张纸（纸框的边框就在边缘 ⇒ 覆盖率应当接近满幅；缩在左上角的截图会掉到 ~0.8 以下）
-    expect(shot.inkWidthRatio).toBeGreaterThan(0.9)
-    expect(shot.inkHeightRatio).toBeGreaterThan(0.9)
+    // 铺满整张纸 —— 判据是**像素覆盖率**（实测读数，见 PR body 的独立探针）：
+    // 正常截图 inkW≈0.90；而把预览的 `scale(0.82)` 一起内联进截图时内容会缩在左上角
+    // ⇒ inkW ≈ 0.90 × 0.82 ≈ 0.74 ⇒ 阈值 0.8 是**可归因分界**。
+    expect(shot.inkWidthRatio).toBeGreaterThan(0.8)
+    // 纵向**只做下界限**：销售单单联固定 128mm，明细少的单子底部本来就是空白
+    // （实测 2 行 ⇒ inkH≈0.64），拿它当「铺满」判据会假红；缩在左上角的截图会同时掉到 <0.55。
+    expect(shot.inkHeightRatio).toBeGreaterThan(0.5)
   })
 })
+
+/** 读出文档里所有 `<style>` 的文本（`@page` 的 `size` 描述符只有这里读得到） */
+async function readStyleText(page: any): Promise<string> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('style'))
+      .map((el) => el.textContent || '')
+      .join('\n')
+  )
+}
 
 /** 读出文档里所有 `@page` 规则（CSSOM；跨域表读不到就跳过，不静默当成 0） */
 async function readPageRules(page: any): Promise<{ count: number; rules: string[] }> {

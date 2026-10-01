@@ -61,10 +61,17 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
   const limitPx = limitMm * PX_PER_MM
   let maxContentPx = 0
   for (const sheet of sheets) {
-    // 🔴 **内容**高度只认 `scrollHeight`：销售单的 `.sales-sheet` 固定 128mm + `overflow:hidden`，
-    // `offsetHeight` 恒等于纸高（内容装得下时会把读数抬到 128mm）、只有 `scrollHeight`
-    // 反映真实内容（超了就是超了，没超就是没超）。`scrollHeight` 拿不到（0）才退回 `offsetHeight`。
+    // 🔴 量的是**内容真实高度**，不是容器高度：销售单的 `.sales-sheet` 固定 128mm + `overflow:hidden`
+    // ⇒ `scrollHeight` **恒 ≥ 纸高**（装得下也报 128mm，实测还会因取整变成 128.1mm ⇒ 5 行明细
+    // 被误判「超出 0.1mm」）。做法：临时摘掉固定高度与裁切 → 量 → **同一帧内**还原
+    // （浏览器不会在 JS 执行中间绘制，屏幕上看不到这一下）。
+    const savedHeight = sheet.style.height
+    const savedOverflow = sheet.style.overflow
+    sheet.style.height = 'auto'
+    sheet.style.overflow = 'visible'
     const contentPx = sheet.scrollHeight > 0 ? sheet.scrollHeight : sheet.offsetHeight
+    sheet.style.height = savedHeight
+    sheet.style.overflow = savedOverflow
     maxContentPx = Math.max(maxContentPx, contentPx)
   }
   const contentMm = round1(maxContentPx / PX_PER_MM)
@@ -113,7 +120,10 @@ export default function PrintDocPreview({
     setScale(Math.min(1, available / (box.widthMm * PX_PER_MM)))
   }, [target, box.widthMm])
 
-  // 纸面自检：渲染完量一次（预览实例是屏幕态的同一份 DOM，所以量出来的就是纸面要印的东西）
+  // 纸面自检：渲染完量一次（预览实例是屏幕态的同一份 DOM，所以量出来的就是纸面要印的东西）。
+  // 🔴 **必须重试到量到为止**：单据组件在 `useEffect(() => setMounted(true))` 之后才渲染出内容
+  // （真浏览器实测：首帧量不到 `data-print-sheet` ⇒ 自检永远停在「正在量纸面…」）。
+  // 上限 20 次 × 50ms = 1s：超过就**如实**停在「正在量纸面…」，不编一个读数出来。
   useEffect(() => {
     if (!target) {
       setCheck(null)
@@ -121,8 +131,24 @@ export default function PrintDocPreview({
     }
     const stage = stageRef.current
     if (!stage) return
-    const frame = requestAnimationFrame(() => setCheck(measureSheets(stage, usable.heightMm)))
-    return () => cancelAnimationFrame(frame)
+    let cancelled = false
+    let timer = 0
+    let tries = 0
+    const tick = () => {
+      if (cancelled) return
+      const result = measureSheets(stage, usable.heightMm)
+      tries += 1
+      if (result !== null || tries >= 20) {
+        setCheck(result)
+        return
+      }
+      timer = window.setTimeout(tick, 50)
+    }
+    timer = window.setTimeout(tick, 0)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [target, media, children, usable.heightMm])
 
   if (!target) return null
