@@ -175,8 +175,11 @@ def parse_session(text: str, caps: tuple[int, ...] = CAP_LADDER) -> dict:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 rec = None
-            if isinstance(rec, dict) and isinstance(rec.get("data"), dict):
-                value = rec["data"].get("delegationDepth")
+            # ⚠️ 真形态：`delegationDepth` 在**顶层**（与 type/version/id/createdAt/cwd/isSeeded/agentPreset 同级），
+            # **不在 `data` 里**（`session/title` 才在 `data.title`）。曾经读 `rec["data"]["delegationDepth"]`
+            # ⇒ 真机恒为 None ⇒ 归因① 100%「未知」（#5927）。取证：`zstd -dc <会话日志> | head -1`。
+            if isinstance(rec, dict):
+                value = rec.get("delegationDepth")
                 if isinstance(value, int):
                     depth = value
             continue
@@ -354,6 +357,8 @@ def summarize(rows: list[dict], caps: tuple[int, ...], price_cache: float, price
             slot[0] += row["fresh"] + row["cache"] + row["out"]
             slot[1] += steps
         key = "主会话" if row["depth"] == 0 else (f"子代理 depth={row['depth']}" if isinstance(row["depth"], int) else "未知")
+        if not isinstance(row["depth"], int):
+            tot["depth_unknown"] += 1
         slot = by_depth.setdefault(key, [0, 0, 0])
         slot[0] += 1
         slot[1] += row["fresh"] + row["cache"] + row["out"]
@@ -451,6 +456,9 @@ def render(report: dict, scope: dict, top: int) -> str:
     add("── 归因 ①：谁花的（子代理是第二份独立上下文）────────────────────────")
     for key, (n, billed, steps) in report["by_depth"]:
         add(f"{key:<20} 会话 {n:>5}  计费 {fmt(billed):>15}  {billed / t['billed']:>6.1%}  步 {fmt(steps)}")
+    if t.get("depth_unknown"):
+        add(f"  ⚠️ {t['depth_unknown']} 个会话读不出 `delegationDepth`（日志形态漂移？）—— 它们被归进「未知」，"
+            f"**不等于「这些会话没有子代理」**；口径与取证见 `#5927`（首行顶层字段）。")
     add("")
     add("── 归因 ②：停顿 vs 全价输入（缓存是否失效）─────────────────────────")
     add(f"{'相邻两步间隔':<12} {'步数':>8} {'平均上下文':>11} {'平均全价输入':>13} {'全价占比':>9} {'占全部全价':>10}")
