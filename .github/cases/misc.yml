@@ -1862,10 +1862,6 @@ cases:
   - id: MC-052
     legacy_id: ""
     title: "技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；**换了措辞的「旧落点」口径副本同样红**；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）"
-
-  - id: MC-052
-    legacy_id: ""
-    title: "批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红"
     domains:
       - misc
       - ci
@@ -1900,6 +1896,16 @@ cases:
         - pr-check.yml
       tests:
         - tests/unit_ci_workflows/test_skill_load_surface.py
+      verifies: []
+  - id: MC-053
+    legacy_id: ""
+    title: "批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
       - guard
       - inventory
       - ledger
@@ -1918,9 +1924,9 @@ cases:
       - "**判据 3（来源族形状互斥是 DB 对象，三面都要有）**：`schema.sql` 必须含 `ck_batch_consumption_source_shape` 且其谓词同时包含「盘点行带 `stocktake_run_id`」「盘点行不带加工单号」「扣料行必须带加工单号」；`schema.sql` 与**活迁移**都必须含部分唯一索引 `uk_batch_consumption_stocktake`（谓词 `stocktake_run_id IS NOT NULL`）与 `reason` 取值集合里的 `'stocktake'`；Java 常量 `REASON_STOCKTAKE` 的取值必须与 DB 侧**逐字相同**（漂移 ⇒ DB 当场拒掉应用写出来的行）；引入该来源的活迁移必须在 `migration_fingerprints.json` 里登记。判据 = 同文件 `test_source_families_are_disjoint_in_the_database`"
       - "**判据 4（fail-closed）**：登记表为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；登记的文件已不再写台账 ⇒ 红（陈旧登记只许缩短）。判据 = 同文件 `write_point_problems` 的三条分支"
       - "**判据 5（判别力自证，随判据常驻）**：六种坏形态在**内存语料**上各自判红（第二个写入点 / 登记表清空 / 零命中 / 第二处 Σdelta 聚合 / 形状约束被删 / Java 常量与 DB 取值漂移 / 活迁移未登记指纹账本），另有一条**对照读数** —— 把 `consumptionMapper.insert(...)` 只写进**注释** ⇒ **不红**（注释不是写入点；判据不许被自己的文案喂红）。判据 = 同文件 `test_injected_bad_corpora_are_named`"
-      - "**边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-118 的真库/mock 判据）"
+      - "**边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）"
     skip_reason: "[backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-052（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-051）。"
+    merge_log: "2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 MC-053，同步 main 时发现该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_batch_stocktake_write_point.py"

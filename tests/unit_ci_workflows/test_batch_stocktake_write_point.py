@@ -1,4 +1,4 @@
-# case_ids: MC-052
+# case_ids: MC-053
 """**批次账写入点唯一 + 来源族形状在 DB 上互斥** 的类级元守卫（issue #5865，铁律 8）。
 
 ## 为什么要有它（这一类缺陷长什么样）
@@ -213,7 +213,7 @@ def test_batch_ledger_has_exactly_one_write_point() -> None:
     sources = java_sources()
     problems = write_point_problems(sources, BATCH_LEDGER_WRITE_POINTS)
     live = batch_ledger_write_points(sources)
-    print(f"[MC-052] 批次台账写入点现取 = {live}（登记 = {list(BATCH_LEDGER_WRITE_POINTS)}）")
+    print(f"[MC-053] 批次台账写入点现取 = {live}（登记 = {list(BATCH_LEDGER_WRITE_POINTS)}）")
     assert problems == [], "\n".join(problems)
 
 
@@ -222,7 +222,7 @@ def test_batch_remaining_is_derived_in_one_place() -> None:
     sources = java_sources()
     problems = derived_reader_problems(sources, DERIVED_REMAINING_READERS)
     live = [p for p, t in sorted(sources.items()) if any(c in java_code(t) for c in _SUM_CALLS)]
-    print(f"[MC-052] Σdelta 读口现取 = {live}")
+    print(f"[MC-053] Σdelta 读口现取 = {live}")
     assert problems == [], "\n".join(problems)
 
 

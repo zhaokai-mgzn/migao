@@ -4423,8 +4423,7 @@ cases:
         - pr-check.yml
         - bmini-h5-publish.yml
       verifies: []
-
-  - id: PR-118
+  - id: PR-119
     legacy_id: ""
     title: "按批次库存盘点（最小录入式）：实盘录入 + 差异落批次分录 + SKU 库存同事务对齐（issue #5865）"
     domains:
@@ -4452,11 +4451,11 @@ cases:
       - "🔴 红线⑤**幂等**：`delta = 0`（实盘 == 当刻余量）⇒ **零写入**（分录 / 台账 / SKU 库存三处都不动）；同一 `runId` 重放 ⇒ 该批次跳过（读半边 `stocktakeRecordedBatchIds` + 写半边部分唯一索引），跨请求不双记。判据 = `BatchStocktakeRealDbTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdDoesNotDoubleBook`（三张表行数与 SKU 库存逐值不变）+ `BatchStocktakeServiceTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdWritesNothing`"
       - "🔴 红线⑥**不静默取整**：实盘米数沿用 `StockQuantity.requireOneDecimal` —— `2.755` ⇒ 400（文案「最多支持 1 位小数…服务端不做静默取整」），且零写入。判据 = `BatchStocktakeServiceTest#rejectsNegativeAndOverPrecisionAndWritesNothing` + `BatchStocktakeRealDbTest#invalidAmountIsRejectedWithoutAnyWrite`"
       - "🔴 红线⑦**盘点后 `/reconcile` 的批次部分不得增大**：`diff = Σ批次余量 − product_skus.stock` 由两条腿各自聚合（批次分录腿与销售台账腿），盘点让两边按**同一个 Σdelta** 变 ⇒ 差额恒等。真库判据用「盘前差额 −40（批次 60 / SKU 100）」做夹具（判别力：只动一条腿的实现会得到 −41.5）。判据 = `BatchStocktakeRealDbTest#journalKeepsQuantityAndRealignsBothLedgers` 的 `[#5865 红线⑦] 盘前 diff = -40，盘后 diff = -40` 读数"
-      - "**端到端可见**（判据 9）= `UI-076`：商品详情批次面板按货号列出批次与当前余量 + 实盘输入 + **差异预览（± 与合计）** + 提交后列表刷新为新余量"
-      - "**类级元守卫**（判据 8）= `MC-052` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里"
+      - "**端到端可见**（判据 9）= `UI-077`：商品详情批次面板按货号列出批次与当前余量 + 实盘输入 + **差异预览（± 与合计）** + 提交后列表刷新为新余量"
+      - "**类级元守卫**（判据 8）= `MC-053` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里"
     skip_reason: "[backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无米宝工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟"
     precondition: "本用例是 [backend-contract] 账务面用例：前置（租户 / 商品 / SKU 库存 / 批次行）由判据自建 —— `BatchStocktakeRealDbTest` 在 `@BeforeAll` 起一次性真 PG 集群并跑真 `schema.sql` 建终态后插入夹具；`BatchStocktakeServiceTest` 用桩 mapper 造「入库量 60 + Σdelta」的派生余量。前置不成立时判据直接红（真库缺 PG 由 `PgCluster` fail-closed，不走 skip）；agent-eval 栈不跑它"
-    merge_log: "2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-118（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = PR-117）。"
+    merge_log: "2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-119（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 PR-119，同步 main 时发现该号已被并行包占用 ⇒ 按「后合入者让号」顺延）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeServiceTest.java"

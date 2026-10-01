@@ -1,4 +1,4 @@
-// case_ids: PR-055, PR-066, PR-118
+// case_ids: PR-055, PR-066, PR-119
 // 批次账只读端点（V116，issue #5145 阶段 1）：GET /api/admin/batch-stock/{batches,distribution,
 // reconcile,candidates,consumptions} —— 租户上下文透传、过滤参数原样下传、响应形状、
 // 权限点（product:list，复用商品读权限，不新造权限点）。
@@ -93,7 +93,7 @@ class StockBatchControllerTest extends BaseControllerTest {
     }
 
     @Test
-    @DisplayName("PR-118 POST /stocktake —— 200：租户上下文 + 请求体逐值下传，回执按行回盘前/实盘/差异/盘后")
+    @DisplayName("PR-119 POST /stocktake —— 200：租户上下文 + 请求体逐值下传，回执按行回盘前/实盘/差异/盘后")
     void stocktakeOk() throws Exception {
         BatchStocktakeRequest request = new BatchStocktakeRequest();
         request.setProductId("prod-1");

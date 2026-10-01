@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-076, PR-118
+// case_ids: UI-077, PR-119
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
@@ -80,8 +80,8 @@ beforeEach(() => {
   })
 })
 
-describe('按批次盘点录入（UI-076 / PR-118）', () => {
-  it('UI-076 差异预览：实盘 58.5 vs 余量 60 ⇒ 逐行 -1.5 + 合计 -1.5；盘盈显示 +', () => {
+describe('按批次盘点录入（UI-077 / PR-119）', () => {
+  it('UI-077 差异预览：实盘 58.5 vs 余量 60 ⇒ 逐行 -1.5 + 合计 -1.5；盘盈显示 +', () => {
     render(<BatchStocktakeForm productId="prod-1" batches={[batch() as never]} />)
 
     fireEvent.change(screen.getByTestId('stocktake-input-7'), { target: { value: '58.5' } })
@@ -93,7 +93,7 @@ describe('按批次盘点录入（UI-076 / PR-118）', () => {
     expect(screen.getByTestId('stocktake-total')).toHaveTextContent('+2')
   })
 
-  it('UI-076 不静默取整：2.755 / -1 ⇒ 行内说明 + 按钮禁用 + 零请求', () => {
+  it('UI-077 不静默取整：2.755 / -1 ⇒ 行内说明 + 按钮禁用 + 零请求', () => {
     render(<BatchStocktakeForm productId="prod-1" batches={[batch() as never]} />)
 
     fireEvent.change(screen.getByTestId('stocktake-input-7'), { target: { value: '2.755' } })
@@ -110,7 +110,7 @@ describe('按批次盘点录入（UI-076 / PR-118）', () => {
     expect(mockStocktake).not.toHaveBeenCalled()
   })
 
-  it('UI-076 零差异零请求：实盘 == 余量 ⇒ 按钮禁用（后端另有零写入判据）', () => {
+  it('UI-077 零差异零请求：实盘 == 余量 ⇒ 按钮禁用（后端另有零写入判据）', () => {
     render(<BatchStocktakeForm productId="prod-1" batches={[batch() as never]} />)
 
     fireEvent.change(screen.getByTestId('stocktake-input-7'), { target: { value: '60' } })
@@ -121,7 +121,7 @@ describe('按批次盘点录入（UI-076 / PR-118）', () => {
     expect(mockStocktake).not.toHaveBeenCalled()
   })
 
-  it('UI-076 提交载荷：只带真的变了差异的行 + runId 幂等键 + 成功提示', async () => {
+  it('UI-077 提交载荷：只带真的变了差异的行 + runId 幂等键 + 成功提示', async () => {
     const onApplied = vi.fn()
     render(
       <BatchStocktakeForm productId="prod-1" batches={[batch() as never]} onApplied={onApplied} />,
@@ -141,7 +141,7 @@ describe('按批次盘点录入（UI-076 / PR-118）', () => {
     expect(screen.getByTestId('stocktake-result')).toHaveTextContent('1 个批次已落账')
   })
 
-  it('UI-076 幂等键语义：成功 ⇒ 下一笔换新 runId；失败 ⇒ 重试复用同一个 runId', async () => {
+  it('UI-077 幂等键语义：成功 ⇒ 下一笔换新 runId；失败 ⇒ 重试复用同一个 runId', async () => {
     render(<BatchStocktakeForm productId="prod-1" batches={[batch() as never]} />)
 
     fireEvent.change(screen.getByTestId('stocktake-input-7'), { target: { value: '58.5' } })
@@ -173,7 +173,7 @@ describe('按批次盘点录入（UI-076 / PR-118）', () => {
     expect((mockStocktake.mock.calls[3][0] as { runId: string }).runId).toBe(thirdRunId)
   })
 
-  it('UI-076 结果可见：面板提交成功后列表刷新为**新余量**（不是「提交成功但列表还是旧值」）', async () => {
+  it('UI-077 结果可见：面板提交成功后列表刷新为**新余量**（不是「提交成功但列表还是旧值」）', async () => {
     mockBatches
       .mockResolvedValueOnce({ data: { data: [batch()] } })
       .mockResolvedValue({ data: { data: [batch({ remainingMeters: '58.5', consumedMeters: '1.5' })] } })
