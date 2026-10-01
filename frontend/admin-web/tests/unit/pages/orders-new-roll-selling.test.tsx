@@ -139,6 +139,10 @@ const fillCustomer = () => {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+  // ⚠️ main #5851（下单页补齐提交校验）起「常用物流/快递 + 常用物流公司」也是**提交闸门**
+  // —— 与本包正交，但要让提交真的发生（否则本文件所有 payload 断言都会退化成超时）。
+  fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
+  fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰速运' } })
 }
 
 const submit = async () => {
@@ -216,7 +220,7 @@ describe('下单页整卷售卖录入（#5846）', () => {
 
     await submit()
 
-    expect(await screen.findByText(/卷数不能为负数|卷数必须/)).toBeInTheDocument()
+    expect(await screen.findByTestId('roll-count-error')).toHaveTextContent(/卷数不能为负数/)
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
@@ -226,7 +230,7 @@ describe('下单页整卷售卖录入（#5846）', () => {
 
     await submit()
 
-    expect(await screen.findByText(/卷数必须是整数/)).toBeInTheDocument()
+    expect(await screen.findByTestId('roll-count-error')).toHaveTextContent(/卷数必须是整数/)
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
@@ -236,7 +240,7 @@ describe('下单页整卷售卖录入（#5846）', () => {
 
     await submit()
 
-    expect(await screen.findByText(/每卷米数必须大于 0/)).toBeInTheDocument()
+    expect(await screen.findByTestId('roll-length-error')).toHaveTextContent(/每卷米数必须大于 0/)
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
@@ -247,7 +251,7 @@ describe('下单页整卷售卖录入（#5846）', () => {
 
     await submit()
 
-    expect(await screen.findByText(/每卷米数必须大于 0/)).toBeInTheDocument()
+    expect(await screen.findByTestId('roll-length-error')).toHaveTextContent(/每卷米数必须大于 0/)
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 

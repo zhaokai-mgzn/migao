@@ -4157,7 +4157,11 @@ function FabricRow({
             aria-label="卷数"
             className={inputClass}
           />
-          {errRollCount && <p className="mt-1 text-sm text-red-600">{errRollCount}</p>}
+          {errRollCount && (
+            <p data-testid="roll-count-error" className="mt-1 text-sm text-red-600">
+              {errRollCount}
+            </p>
+          )}
         </div>
         <div>
           <Label>每卷米数</Label>
@@ -4168,7 +4172,11 @@ function FabricRow({
             aria-label="每卷米数"
             className={inputClass}
           />
-          {errRollLength && <p className="mt-1 text-sm text-red-600">{errRollLength}</p>}
+          {errRollLength && (
+            <p data-testid="roll-length-error" className="mt-1 text-sm text-red-600">
+              {errRollLength}
+            </p>
+          )}
         </div>
       </div>
       {rollsTotal !== null && rollDiff !== null && (
