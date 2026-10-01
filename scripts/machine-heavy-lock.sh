@@ -40,8 +40,19 @@
 # ## 用法
 #
 #   ./scripts/machine-heavy-lock.sh status            # 只读：锁持有者 / load / PPID=1 孤儿 / top CPU
-#   ./scripts/machine-heavy-lock.sh acquire <名字>     # 拿锁（拿不到 ⇒ 非零退出 + 打印谁在跑 + kill 命令）
-#   ./scripts/machine-heavy-lock.sh release           # 释放（只释放**自己**持有的那份）
+#   ./scripts/machine-heavy-lock.sh acquire <名字>              # 拿锁（拿不到 ⇒ **立即**非零退出 + 打印谁在跑 + kill 命令）
+#   ./scripts/machine-heavy-lock.sh acquire <名字> --wait <秒>   # 拿锁（拿不到 ⇒ 内部轮询至多 <秒>；超时仍非零退出 + 具名）
+#   ./scripts/machine-heavy-lock.sh release                    # 释放（只释放**自己**持有的那份）
+#
+# ## 拿不到锁时怎么办（**重试约定**，2026-10-01 补，issue #5863）
+#
+# `acquire` 的**默认语义是立即拒绝**（`held` ⇒ `return 1`），它**不排队**。于是「谁重试得勤谁拿到」——
+# 实测（2026-10-01 11:04~11:38 +08）：一个以 **30s 固定间隔**重试的客户端探测 **56 次 / 约 34 分钟，一次未中**；
+# 同期锁被 3 个持有者轮转（pid 48499 / 29770 / 75210），60s 采样显示**释放瞬间总被当场接走**。
+# ⇒ 两条**等价**的合规做法（选一条，别自己发明第三套）：
+#   ① **`--wait <秒>`**（推荐）：由本脚本内部轮询，间隔 **2~5 秒随机抖动**，客户端只调用一次；
+#   ② 客户端自己循环 ⇒ 间隔**必须短且带抖动**（`sleep $((2 + RANDOM % 4))`）；
+#      ⛔ **不要**用固定长间隔 —— 在多客户端竞争下那是**系统性饿死**（见上实测）。
 #
 # 调用方接线范式（`verify-all.sh` 的 `gate` 档就是这么做的）：
 #
@@ -259,16 +270,23 @@ _report_holder() {
 }
 
 # ── 子命令 ───────────────────────────────────────────────────────────────────
-cmd_acquire() {
-  local name="${1:-}"
-  if [ -z "$name" ]; then
-    echo "用法: $0 acquire <名字>（例：'verify-all.sh gate'）" >&2
-    return 2
-  fi
-  # ── ① 先回收孤儿（机械动作：不靠人记得；**先于**拿锁，免得锁被孤儿拖着的负载误判）──
-  reap_orphans
+#: `--wait` 的轮询间隔区间（秒）。**抖动是有意的**：多个等待者若同刻醒来会互相踩（惊群），
+#: 而固定间隔已被实测证明会让慢的一方饿死（见文件头「重试约定」）。
+WAIT_MIN_SECONDS=2
+WAIT_MAX_SECONDS=5
 
-  # ── ② 准入判定 ────────────────────────────────────────────────────────────
+_wait_backoff_seconds() {
+  # 纯函数（判据直调）：返回本次重试前应睡的秒数，落在 [WAIT_MIN_SECONDS, WAIT_MAX_SECONDS]。
+  echo $(( WAIT_MIN_SECONDS + RANDOM % (WAIT_MAX_SECONDS - WAIT_MIN_SECONDS + 1) ))
+}
+
+_acquire_once() {
+  # 单次准入尝试。0 = 拿到；1 = 被**活的**持有者占着（可等）；3 = 无法判定（**不可等**，fail-closed）。
+  # ⚠️ `reap_orphans` 只在**第一次**尝试时跑（它最坏要 3.5 秒，见 `_process_table` 的注）：轮询里
+  #    每次都跑会把 2~5s 的间隔撑成 5.5~8.5s，且对「锁是否空出来」没有任何帮助。
+  local name="$1" do_reap="${2:-1}"
+  [ "${do_reap}" = "1" ] && reap_orphans
+
   local state; state="$(_lock_state)"
   case "$state" in
     held)
@@ -283,9 +301,13 @@ cmd_acquire() {
       echo "  ♻️  回收**陈旧**锁：原持有者 pid=${old_pid:-未知} 已不存在（进程表里查不到）"
       rm -f "$LOCK_FILE"
       ;;
+    *)
+      echo "❌ 锁状态不可判定（state=${state}）—— fail-closed，不得当成功" >&2
+      return 3
+      ;;
   esac
 
-  # ── ③ 记录持有者（pid = 调用方的 shell：`$PPID`；cwd/worktree 现场取）────────
+  # 记录持有者（pid = 调用方的 shell：`$PPID`；cwd/worktree 现场取）
   # 取调用方 PID 而不是本子进程的 `$$`：本脚本由调用方以 `$(…)` / 独立进程方式唤起，
   # 记录 `$$` 会在脚本一退出就变成陈旧锁。`$PPID` = 真正在做重活的那个 shell。
   local holder_pid="${PPID:-$$}"
@@ -298,6 +320,56 @@ cmd_acquire() {
   fi
   echo "  🔒 已获取机器级重活锁：name=$name pid=$holder_pid worktree=$worktree"
   echo "     释放：$SELF release（或调用方以 trap … EXIT 兜住异常退出）"
+  return 0
+}
+
+cmd_acquire() {
+  local name="${1:-}"; [ $# -gt 0 ] && shift
+  local wait_seconds=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --wait)
+        if [ $# -lt 2 ]; then
+          echo "用法: $0 acquire <名字> [--wait <秒>]（--wait 缺参数）" >&2; return 2
+        fi
+        case "$2" in
+          ''|*[!0-9]*) echo "用法: $0 acquire <名字> [--wait <秒>]（--wait 要非负整数秒，现值：$2）" >&2; return 2 ;;
+        esac
+        wait_seconds="$2"; shift 2 ;;
+      *)
+        echo "用法: $0 acquire <名字> [--wait <秒>]（未知参数：$1）" >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$name" ]; then
+    echo "用法: $0 acquire <名字> [--wait <秒>]（例：'verify-all.sh gate'）" >&2
+    return 2
+  fi
+
+  # 默认（wait_seconds=0）**与既有语义逐字等价**：一次尝试，拿不到就立即非零退出。
+  local deadline=$(( $(date +%s) + wait_seconds ))
+  local waited=0 first=1 rc=0
+  while :; do
+    rc=0; _acquire_once "$name" "$first" || rc=$?
+    first=0
+    [ "${rc}" -eq 0 ] && break
+    # 只有「被活的持有者占着」才值得等；**无法判定（3）立即失败** —— 不拿等待掩盖它。
+    [ "${rc}" -eq 1 ] || return "${rc}"
+    [ "${wait_seconds}" -gt 0 ] || return 1
+    local now; now="$(date +%s)"
+    if [ "${now}" -ge "${deadline}" ]; then
+      echo "⏱️  等待已到上限（--wait ${wait_seconds}s）仍未拿到锁 —— **本次没有跑**任何重活（这不是「通过」）"
+      _report_holder
+      return 1
+    fi
+    local nap remain; nap="$(_wait_backoff_seconds)"; remain=$(( deadline - now ))
+    [ "${nap}" -le "${remain}" ] || nap="${remain}"
+    waited=$(( waited + nap ))
+    echo "⏳ 锁被占，${nap}s 后重试（已等 ${waited}s / 上限 ${wait_seconds}s）"
+    sleep "${nap}"
+  done
+  if [ "${waited}" -gt 0 ]; then
+    echo "  ⏳ 本次为**排队等待**后取得：累计等待 ${waited}s（上限 ${wait_seconds}s）"
+  fi
   return 0
 }
 

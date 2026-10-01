@@ -699,22 +699,52 @@ echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/
 # （PPID=1）烧了 28 分钟；`load average` 一度 45.44。3 份里 2 份是 agent 会话造成的 ⇒ 类级病 =
 # **同一台机器上的重活没有并发准入**（与 runner 无关）。
 #
-# ⚠️ 只包**会拉起全量套件**的那一档（`gate` 档的 `ci workflow helper 判据集` 腿）。
-#    其余档（quick / full / frontend / backend / agent / redproof）**不拿锁** —— 它们不是
-#    「同一台机器上的重活」，给它们加锁只会让并行开发无谓串行（那是另一种浪费）。
+# 🔻 **射程（v1.96.0 改判，issue #5863）**：**所有会跑全量测试的档都拿锁**
+#    （`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`）。
+#    原实现只包 `gate`，理由写的是「其余档不是同一台机器上的重活」—— **那个前提与事实不符**：
+#      · `full`  = 三模块**全量**单测（本脚本自己的档位说明：~10-15 分钟）
+#      · `quick` = 三模块全量（~3-5 分钟）；`frontend`/`backend`/`agent` = 单模块**全量**
+#      · `redproof` = 红证机具**实跑**，其档内注释逐字写着「单机具实测 2~30 分钟」
+#    实测（2026-10-01）：`gate` 持锁期间 `load average` **16.71 / 28.71 / 20.14**（8 核），
+#    而单份档的内部并行最多打满 ~8 核（同日早先采样 9.01）⇒ **锁外确有重活在同跑**，
+#    准入形同虚设（这比「等待不公平」更根本：前者是排队问题，后者是漏检）。
+#    ⚠️ 未知 / 空档位**不拿锁**（避免把「未初始化 MODE」也串行化）—— 判据的正反两侧都钉着。
 #
 # ⚠️ 不改变本脚本既有的三态语义（✅ / ❌ / ⏭️）：准入在最外层，拿不到锁时**非零退出 + 出声**，
 #    不是静默跳过、也不是记成通过（本仓口径：「没跑」必须长得像「没跑」）。
 heavy_lock_wanted() {
-  [ "$MODE" = "gate" ]
+  # ⚠️ **刻意不用 `case "$MODE" in`**（2026-10-01 实测，issue #5863）：本脚本有**多个判据**靠
+  #    **文本定位**「顶层 `case "$MODE" in`」，函数里再写一个**同名** case 会让它们认错对象：
+  #      · `test_verify_all_quick_scope.py::_mode_block` 取**第一个**匹配 ⇒ 报「顶层 case 里找不到 `quick)` 分支」
+  #      · `test_machine_heavy_lock.py::test_acquire_happens_before_any_heavy_dispatch` ⇒ 报「接线顺序错」
+  #    用 `for` 列档位既避开这个陷阱，语义也更直白（判据读的是本函数的**现取行为**，与写法无关）。
+  local tier
+  for tier in quick full frontend backend agent redproof gate; do
+    [ "$MODE" = "$tier" ] && return 0
+  done
+  return 1
 }
 macquire() {
   heavy_lock_wanted || return 0
   local rc=0
-  "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || rc=$?
+  # `MIGAO_HEAVY_WAIT=<秒>`：**显式**选择「排队等待」（由锁脚本内部轮询，2~5s 抖动 + 到点即止）。
+  # ⚠️ **未设置时行为一字不改**：拿不到锁仍**立即**拒绝 + 出声 —— 那是既有机制与可见性（见 §27），
+  #    本开关只是给「我愿意排队」的调用方一个合规入口（2026-10-01 issue #5863：默认语义不排队，
+  #    客户端各自自旋时，用固定长间隔重试的那一方会被系统性饿死）。
+  if [ -n "${MIGAO_HEAVY_WAIT:-}" ]; then
+    "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" --wait "${MIGAO_HEAVY_WAIT}" || rc=$?
+  else
+    "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || rc=$?
+  fi
   if [ "${rc}" -ne 0 ]; then
     echo "❌ 机器级重活准入被拒（exit ${rc}）—— 本次**没有跑**任何检查（这不是「通过」）"
     echo "   现场读取：$ROOT/scripts/machine-heavy-lock.sh status"
+    # ⚠️ 这一行**刻意**写成 `[ … ] && echo …` 而不是嵌套 `if`：判据
+    #    `test_machine_heavy_lock.py::TestVerifyAllWiring::test_guard_body_really_exits_nonzero`
+    #    用**非贪婪**正则取「rc 非零 ⇒ 拒绝」块的 body（匹配到**第一个** `fi`）⇒ 分支里再嵌
+    #    一层 `if … fi` 会让 body 提前结束、`return "${rc}"` 落到块外 ⇒ 判红（**判据是对的**：
+    #    它要保证拒绝分支里真的把退出码返回出去；这里顺着它写，而不是放宽它）。
+    [ -n "${MIGAO_HEAVY_WAIT:-}" ] && echo "   （已按 MIGAO_HEAVY_WAIT=${MIGAO_HEAVY_WAIT} 排队等待至上限，仍未取得）"
     return "${rc}"
   fi
   # EXIT trap：异常退出（Ctrl-C / 被杀 / 中途 return）也必须释放；release 自己幂等。
